@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ttakkari.api import artifacts, auth, sessions, system, workspaces
+from ttakkari.api import artifacts, auth, push, sessions, system, workspaces
 from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
 from ttakkari.db import dispose_engine, init_engine
@@ -76,7 +76,7 @@ def create_app() -> FastAPI:
         return JSONResponse({"code": "validation", "message": "요청 형식이 올바르지 않습니다.", "errors": errors},
                             status_code=422)
 
-    for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router):
+    for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router):
         app.include_router(r)
     return app
 

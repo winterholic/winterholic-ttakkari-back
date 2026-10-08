@@ -310,14 +310,24 @@ class RunManager:
                target_type="run", target_id=run.id, detail={"status": status})
         await self._commit(db, run)
         sess = await db.get(ChatSession, run.session_id)
-        try:
-            await notify_run_finished(run, sess.title if sess else None)
-        except Exception:
-            log.exception("push notification failed for run %s", run.id)
+        # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
+        task = asyncio.create_task(_notify(run, sess.title if sess else None))
+        _background.add(task)
+        task.add_done_callback(_background.discard)
 
     async def _commit(self, db: AsyncSession, run: Run) -> None:
         await db.commit()
         events.notify(run.id)
+
+
+_background: set[asyncio.Task[None]] = set()
+
+
+async def _notify(run: Run, title: str | None) -> None:
+    try:
+        await notify_run_finished(run, title)
+    except Exception:
+        log.exception("push notification failed for run %s", run.id)
 
 
 manager = RunManager()

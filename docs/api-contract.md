@@ -92,6 +92,7 @@
 |---|---|---|
 | GET | `/api/artifacts?workspace_id=&session_id=&run_id=&kind=&q=&limit=&offset=` | Library 목록(최신순) |
 | POST | `/api/artifacts` | `{workspace_id, rel_path, session_id?}` 워크스페이스 파일을 결과물로 등록 |
+| POST | `/api/uploads` | multipart `file`, `workspace_id`, `session_id?` → 201 `ArtifactOut`(`source: upload`). 기본 200MB 초과 413 `too_large`. 결과 ID 를 다음 Run 의 `context_artifact_ids` 에 넣으면 에이전트가 파일 경로를 받는다 |
 | GET | `/api/artifacts/{id}` | `ArtifactOut` |
 | DELETE | `/api/artifacts/{id}` | 204. 관리 영역 복사본도 지운다 |
 | GET | `/api/artifacts/{id}/content?variant=original|preview` | 뷰어용 인라인(Bearer). Range 지원. 민감 파일은 403 |
@@ -100,9 +101,27 @@
 | GET | `/api/dl/{token}` | 첨부 다운로드(인증 헤더 불필요) |
 | POST | `/api/artifacts/{id}/preview/retry` | 실패·불가 상태의 미리보기 변환 재시도 |
 
-`ArtifactOut` 주요 필드: `kind` (`markdown|html|pdf|pptx|docx|sheet|image|code|other`) 로 뷰어를 고른다. `source` (`agent_output|agent_modified|user_registered`), `preview_status` (`not_required|pending|processing|ready|failed|unavailable`), `export_policy` (`allow|deny|sensitive`), `downloadable`.
+`ArtifactOut` 주요 필드: `kind` (`markdown|html|pdf|pptx|docx|sheet|image|code|other`) 로 뷰어를 고른다. `source` (`agent_output|agent_modified|user_registered|upload`), `preview_status` (`not_required|pending|processing|ready|failed|unavailable`), `export_policy` (`allow|deny|sensitive`), `downloadable`.
 
 뷰어 규칙:
 - `not_required` 인 형식은 `content?variant=original` 을 받아 프론트가 직접 렌더한다(markdown, pdf, sheet, image, code, html).
 - `pptx`, `docx` 는 `preview_status == ready` 일 때 `content?variant=preview` (PDF) 를 PDF 뷰어로 연다. `unavailable|failed` 면 원본 다운로드만 제공한다.
 - `html` 은 `download-link?inline=true` 로 받은 URL 을 `<iframe sandbox="" src>` 로 연다. 앱 출처에 `srcdoc` 으로 넣지 않는다(디자인 시스템 docs/19 §4). API 도메인이 프론트와 다른 출처라 격리되고, 응답에도 CSP sandbox 가 붙는다.
+
+## Push (Web Push)
+
+VAPID 키는 `~/.ttakkari/vapid.json`(0600)에 있다. `ttakkari gen-vapid` 로 만들고, 없으면 처음 쓸 때 자동 생성한다. 키를 바꾸면 기존 구독이 모두 무효가 되므로 이미 있으면 덮어쓰지 않는다. 푸시 서비스가 `sub` 를 검사하면 이 파일의 `subject` 를 실제 `mailto:` 주소로 바꾼다.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/push/vapid-public-key` | `{public_key}` base64url. `pushManager.subscribe` 의 `applicationServerKey` |
+| POST | `/api/push/subscriptions` | 본문은 브라우저 `PushSubscription.toJSON()` (`endpoint` https 필수, `keys.p256dh`, `keys.auth`) + 선택 `label`. endpoint 기준 upsert. 204 |
+| DELETE | `/api/push/subscriptions` | `{endpoint}`. 없어도 204 |
+| POST | `/api/push/test` | 모든 구독에 테스트 알림. `{sent, removed, failed}` |
+
+Run 이 끝나면(`succeeded|failed|cancelled|interrupted`) 모든 구독에 보낸다. payload 는 `{title, body, url, tag}`:
+- `title`: `작업 완료|작업 실패|작업 취소됨|작업 중단됨`
+- `body`: 세션 제목, 성공이면 ` · ` 와 결과 첫 줄. 80자 초과면 자른다. 푸시 서버를 거치므로 경로·에러 원문은 넣지 않는다
+- `url`: `/chat/<session_id>`, `tag`: session_id (같은 세션 알림은 하나로 합쳐진다)
+
+푸시 서비스가 404/410 을 돌려주면 그 구독을 지운다. 다른 오류는 로그만 남긴다. 발송 결과는 감사 로그 `push.run_finished` 에 집계(`sent|removed|failed`)로 남는다.

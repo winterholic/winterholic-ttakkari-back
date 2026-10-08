@@ -90,6 +90,18 @@ def _cmd_init_config(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_gen_vapid(_: argparse.Namespace) -> int:
+    from ttakkari.push import vapid
+
+    path = vapid.vapid_path()
+    if path.exists():
+        print(f"이미 존재합니다. 덮어쓰지 않습니다(기존 구독이 무효가 됩니다): {path}")
+        return 0
+    vapid.generate(path)
+    print(f"생성했습니다: {path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="ttakkari")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -103,6 +115,8 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("migrate", help="DB 마이그레이션을 head 까지 적용").set_defaults(func=_cmd_migrate)
     sub.add_parser("set-password", help="로그인 비밀번호 설정").set_defaults(func=_cmd_set_password)
     sub.add_parser("init-config", help="~/.ttakkari/config.env 생성").set_defaults(func=_cmd_init_config)
+
+    sub.add_parser("gen-vapid", help="Web Push VAPID 키 생성(~/.ttakkari/vapid.json)").set_defaults(func=_cmd_gen_vapid)
 
     args = parser.parse_args(argv)
     sys.exit(args.func(args))

@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     upload_max_bytes: int = 200 * 1024 * 1024
     artifact_retention_days: int = 90
     soffice_bin: str | None = None
+    # Web Push VAPID 연락처(mailto: 또는 https:). Apple 은 형식이 틀리면 거절한다. 비우면 vapid.json 값.
+    vapid_subject: str | None = None
 
     login_max_failures: int = 5
     login_lock_seconds: int = 15 * 60

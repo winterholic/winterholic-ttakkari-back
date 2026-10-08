@@ -145,7 +145,8 @@ async def view_content(art_id: uuid.UUID, _: User, db: Db, request: Request,
 
 
 @router.post("/artifacts/{art_id}/download-link", response_model=DownloadLinkOut)
-async def download_link(art_id: uuid.UUID, _: User, db: Db, request: Request, variant: Variant = "original") -> DownloadLinkOut:
+async def download_link(art_id: uuid.UUID, _: User, db: Db, request: Request, variant: Variant = "original",
+                        inline: bool = False) -> DownloadLinkOut:
     """브라우저 기본 다운로드는 Authorization 헤더를 못 싣는다. 그래서 짧게 사는 서명 링크를 따로 발급한다."""
     art = await get_artifact(db, art_id)
     if art.export_policy != ExportPolicy.allow:
@@ -155,14 +156,24 @@ async def download_link(art_id: uuid.UUID, _: User, db: Db, request: Request, va
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": art.export_policy, "message": "반출이 차단된 파일입니다."})
     _file_for(art, variant)
     token, exp = issue_download_token(art.id, variant)
-    record(db, action="artifact.download_link", target_type="artifact", target_id=art.id, detail={"variant": variant},
-           ip=client_ip(request))
+    record(db, action="artifact.download_link", target_type="artifact", target_id=art.id,
+           detail={"variant": variant, "inline": inline}, ip=client_ip(request))
     await db.commit()
-    return DownloadLinkOut(url=f"/api/dl/{token}", expires_at=exp)
+    # inline 링크는 HTML 미리보기용이다. 프론트와 다른 출처(이 API 도메인)에서 sandbox iframe 으로 연다.
+    return DownloadLinkOut(url=f"/api/{'view' if inline else 'dl'}/{token}", expires_at=exp)
+
+
+@router.get("/view/{token}")
+async def view_inline(token: str, db: Db, request: Request) -> FileResponse:
+    return await _serve_token(token, db, request, inline=True)
 
 
 @router.get("/dl/{token}")
 async def download(token: str, db: Db, request: Request) -> FileResponse:
+    return await _serve_token(token, db, request, inline=False)
+
+
+async def _serve_token(token: str, db: Db, request: Request, *, inline: bool) -> FileResponse:
     try:
         claims = decode(token, "download")
     except jwt.PyJWTError as e:
@@ -180,6 +191,8 @@ async def download(token: str, db: Db, request: Request) -> FileResponse:
                detail={"jti": claims.get("jti"), "variant": claims.get("var")}, ip=client_ip(request),
                user_agent=request.headers.get("user-agent"))
         await db.commit()
+    if inline:
+        return FileResponse(path, media_type=mime, headers={**INLINE_HEADERS, "Content-Disposition": _disposition("inline", name)})
     return FileResponse(path, media_type=mime, headers={
         "Content-Disposition": _disposition("attachment", name), "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, no-store", "Content-Security-Policy": "sandbox",

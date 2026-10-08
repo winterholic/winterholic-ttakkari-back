@@ -95,7 +95,8 @@
 | GET | `/api/artifacts/{id}` | `ArtifactOut` |
 | DELETE | `/api/artifacts/{id}` | 204. 관리 영역 복사본도 지운다 |
 | GET | `/api/artifacts/{id}/content?variant=original|preview` | 뷰어용 인라인(Bearer). Range 지원. 민감 파일은 403 |
-| POST | `/api/artifacts/{id}/download-link?variant=` | `{url, expires_at}` 5분짜리 서명 링크. `url` 은 백엔드 기준 상대경로 |
+| POST | `/api/artifacts/{id}/download-link?variant=&inline=` | `{url, expires_at}` 5분짜리 서명 링크. `url` 은 백엔드 기준 상대경로. `inline=true` 면 `/api/view/{token}`(인라인, CSP sandbox) |
+| GET | `/api/view/{token}` | 인라인 열람(인증 헤더 불필요). HTML 미리보기 iframe 의 src 로만 쓴다 |
 | GET | `/api/dl/{token}` | 첨부 다운로드(인증 헤더 불필요) |
 | POST | `/api/artifacts/{id}/preview/retry` | 실패·불가 상태의 미리보기 변환 재시도 |
 
@@ -104,4 +105,4 @@
 뷰어 규칙:
 - `not_required` 인 형식은 `content?variant=original` 을 받아 프론트가 직접 렌더한다(markdown, pdf, sheet, image, code, html).
 - `pptx`, `docx` 는 `preview_status == ready` 일 때 `content?variant=preview` (PDF) 를 PDF 뷰어로 연다. `unavailable|failed` 면 원본 다운로드만 제공한다.
-- `html` 은 받은 텍스트를 `<iframe sandbox="allow-scripts" srcdoc>` 로만 렌더한다(`allow-same-origin` 금지). 응답에도 CSP sandbox 헤더가 붙어 있다.
+- `html` 은 `download-link?inline=true` 로 받은 URL 을 `<iframe sandbox="" src>` 로 연다. 앱 출처에 `srcdoc` 으로 넣지 않는다(디자인 시스템 docs/19 §4). API 도메인이 프론트와 다른 출처라 격리되고, 응답에도 CSP sandbox 가 붙는다.

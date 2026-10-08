@@ -401,3 +401,14 @@ async def test_reference_mode_gone_is_410(client, auth, new_session, make_dir, r
     (root / "big.txt").unlink()
     r = await client.get(f"/api/artifacts/{a['id']}/content", headers=auth)
     assert r.status_code == 410 and r.json()["code"] == "gone"
+
+
+async def test_inline_view_link_serves_inline_with_sandbox(client, auth, new_session):
+    _, _, _, arts = await _run_artifacts(client, auth, new_session)
+    a = arts["report.md"]
+    link = (await client.post(f"/api/artifacts/{a['id']}/download-link", params={"inline": "true"}, headers=auth)).json()
+    assert link["url"].startswith("/api/view/")
+    r = await client.get(link["url"])
+    assert r.status_code == 200
+    assert r.headers["content-disposition"].startswith("inline")
+    assert "sandbox" in r.headers["content-security-policy"]

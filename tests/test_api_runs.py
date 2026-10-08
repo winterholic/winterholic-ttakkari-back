@@ -404,3 +404,24 @@ async def test_run_events_rows_unique_seq_in_db(client, auth, new_session):
     async with sessionmaker()() as db:
         seqs = list(await db.scalars(select(RunEvent.seq).where(RunEvent.run_id == uuid.UUID(run["id"])).order_by(RunEvent.seq)))
     assert seqs == sorted(set(seqs))
+
+
+async def test_shutdown_keeps_slot_waiting_run_queued(client, auth, new_session, monkeypatch):
+    from ttakkari.runs import manager as mgr
+
+    monkeypatch.setattr(mgr.manager, "_sem", asyncio.Semaphore(1))
+    _ws, s1 = await new_session()
+    _ws2, s2 = await new_session()
+    first = await start_run(client, auth, s1["id"], "SLEEP")
+    await wait_status(client, auth, first["id"], "running")
+    waiting = await start_run(client, auth, s2["id"], "SLEEP second")
+    await asyncio.sleep(0.5)
+    assert (await client.get(f"/api/runs/{waiting['id']}", headers=auth)).json()["status"] == "queued"
+    await mgr.manager.shutdown()
+    try:
+        assert (await client.get(f"/api/runs/{first['id']}", headers=auth)).json()["status"] == "interrupted"
+        assert (await client.get(f"/api/runs/{waiting['id']}", headers=auth)).json()["status"] == "queued"
+    finally:
+        mgr.manager._shutting_down = False
+        monkeypatch.setattr(mgr.manager, "_sem", None)
+        await client.post(f"/api/runs/{waiting['id']}/cancel", headers=auth)

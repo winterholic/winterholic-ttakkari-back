@@ -150,7 +150,9 @@ class RunManager:
         except asyncio.CancelledError:
             async with sm() as db:
                 run = await db.get(Run, run_id)
-                if run is not None and run.status not in {s.value for s in (RunStatus.succeeded, RunStatus.failed)}:
+                # 동시 실행 슬롯을 기다리다 서버가 내려간 Run 은 시작도 안 했다. 대기열에 남겨 재시작 뒤 이어서 돌린다.
+                not_started = run is not None and run.status == RunStatus.queued and self._shutting_down
+                if run is not None and not not_started and run.status not in {s.value for s in (RunStatus.succeeded, RunStatus.failed)}:
                     h = self._handles.get(run_id)
                     status = RunStatus.cancelled if (h and h.cancel_requested) else RunStatus.interrupted
                     await self._finish(db, run, status, error=None if status == RunStatus.cancelled else "서버 종료로 중단")

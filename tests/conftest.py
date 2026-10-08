@@ -19,7 +19,9 @@ for _d in (HOME, ALLOWED, OUTSIDE):
     _d.mkdir()
 FAKES = Path(__file__).parent / "fake_agents"
 AGENT_LOG = _BASE / "agent-log.jsonl"
-TEST_DB = "postgresql+asyncpg://localhost/ttakkari_test"
+# 동시에 여러 작업이 pytest 를 돌릴 수 있어 DB 이름을 바꿀 수 있게 한다. 운영 DB(ttakkari)는 막는다.
+TEST_DB = os.environ.get("TTAKKARI_TEST_DB", "postgresql+asyncpg://localhost/ttakkari_test")
+assert not TEST_DB.endswith("/ttakkari"), "운영 DB 로 테스트하지 않는다"
 
 os.environ.update({
     "TTAKKARI_ENV": "dev",
@@ -45,7 +47,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from ttakkari.config import get_settings
 
 get_settings.cache_clear()
-assert str(get_settings().database_url).endswith("/ttakkari_test"), "테스트는 ttakkari_test DB 만 쓴다"
+assert str(get_settings().database_url) == TEST_DB, "테스트 DB 설정이 적용되지 않았다"
 
 from ttakkari.db import sessionmaker
 from ttakkari.main import app

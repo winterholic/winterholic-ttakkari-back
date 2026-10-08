@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import shutil
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 import jwt
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import or_, select
 
@@ -14,13 +24,15 @@ from ttakkari.api.deps import Db, broker_http, get_artifact, get_workspace
 from ttakkari.artifacts import preview
 from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import (
+    _safe_filename,
     content_path,
     preview_file,
     register_file,
     remove_stored,
 )
 from ttakkari.audit import record
-from ttakkari.broker.policy import BrokerError, resolve_in_root
+from ttakkari.broker.policy import BrokerError, ResolvedPath, resolve_in_root
+from ttakkari.config import get_settings
 from ttakkari.models import Artifact, ExportPolicy, PreviewStatus, utcnow
 from ttakkari.schemas import ArtifactOut, ArtifactRegisterIn, DownloadLinkOut
 from ttakkari.security.auth import User, client_ip, decode, issue_download_token
@@ -78,6 +90,48 @@ async def register_artifact(body: ArtifactRegisterIn, _: User, db: Db, request: 
         await db.commit()
         raise broker_http(e) from e
     record(db, action="artifact.register", target_type="artifact", target_id=art.id, ip=client_ip(request))
+    await db.commit()
+    if needs_server_preview(art.kind):
+        preview.enqueue(art.id)
+    return ArtifactOut.from_model(art)
+
+
+UPLOAD_CHUNK = 1024 * 1024
+
+
+@router.post("/uploads", response_model=ArtifactOut, status_code=201)
+async def upload(
+    _: User, db: Db, request: Request,
+    file: Annotated[UploadFile, File()],
+    workspace_id: Annotated[uuid.UUID, Form()],
+    session_id: Annotated[uuid.UUID | None, Form()] = None,
+) -> ArtifactOut:
+    """폰에서 올린 파일. 다음 지시의 context_artifact_ids 로 넘기면 에이전트가 원본 경로를 받는다."""
+    s = get_settings()
+    ws = await get_workspace(db, workspace_id)
+    name = _safe_filename(file.filename or "upload")
+    if name.startswith("."):
+        name = "_" + name
+    d = s.uploads_root / uuid.uuid4().hex
+    d.mkdir(parents=True, mode=0o700)
+    dest = d / name
+    size = 0
+    try:
+        with dest.open("wb") as f:
+            while chunk := await file.read(UPLOAD_CHUNK):
+                size += len(chunk)
+                if size > s.upload_max_bytes:
+                    raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE,
+                                        {"code": "too_large", "message": f"{s.upload_max_bytes // (1024 * 1024)}MB 까지 올릴 수 있어요."})
+                f.write(chunk)
+        art = await register_file(db, ResolvedPath(root=d.resolve(), path=dest.resolve()), source="upload",
+                                  workspace_id=ws.id, session_id=session_id, rel_path=name,
+                                  export_allowed=ws.export_allowed, keep_in_place=True)
+    except BaseException:
+        shutil.rmtree(d, ignore_errors=True)
+        raise
+    record(db, action="artifact.upload", target_type="artifact", target_id=art.id, detail={"size": size},
+           ip=client_ip(request))
     await db.commit()
     if needs_server_preview(art.kind):
         preview.enqueue(art.id)

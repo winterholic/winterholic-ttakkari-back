@@ -161,7 +161,8 @@ class RunManager:
         outbox = s.outbox_root / str(run.id)
         outbox.mkdir(parents=True, exist_ok=True)
         run.outbox_path = str(outbox)
-        write_roots = [root, outbox, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
+        # 업로드 폴더는 guard 보호 영역(~/.ttakkari) 안이라 에이전트가 첨부를 읽으려면 허용 목록에 있어야 한다.
+        write_roots = [root, outbox, s.uploads_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
 
         prompt = await _compose_prompt(db, run)
         adapter = ADAPTERS[run.engine]
@@ -406,7 +407,7 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
         lines.append(f"- {art.filename}: {art.original_path}")
     if not lines:
         return run.prompt
-    return "[사용자가 지금 보고 있는 파일]\n" + "\n".join(lines) + "\n\n" + run.prompt
+    return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + run.prompt
 
 
 async def _git(root: Path, *args: str) -> tuple[int, str]:

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     cancel_grace_seconds: float = 5.0
 
     copy_max_bytes: int = 200 * 1024 * 1024
+    upload_max_bytes: int = 200 * 1024 * 1024
     artifact_retention_days: int = 90
     soffice_bin: str | None = None
 
@@ -69,6 +70,10 @@ class Settings(BaseSettings):
         return self.data_dir / "artifacts"
 
     @property
+    def uploads_root(self) -> Path:
+        return self.data_dir / "uploads"
+
+    @property
     def outbox_root(self) -> Path:
         return self.data_dir / "outbox"
 
@@ -81,7 +86,7 @@ class Settings(BaseSettings):
         return self.env == "prod"
 
     def ensure_dirs(self) -> None:
-        for d in (self.home, self.data_dir, self.artifact_store, self.outbox_root):
+        for d in (self.home, self.data_dir, self.artifact_store, self.outbox_root, self.uploads_root):
             d.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 

@@ -47,6 +47,7 @@ async def register_file(
     rel_path: str | None = None,
     export_allowed: bool = True,
     force_copy: bool = False,
+    keep_in_place: bool = False,
 ) -> Artifact:
     """검증된 경로를 Artifact 로 등록한다.
 
@@ -60,7 +61,8 @@ async def register_file(
 
     art_id = uuid.uuid4()
     sensitive = is_sensitive(resolved.path)
-    copy = force_copy or st.st_size <= s.copy_max_bytes
+    # 업로드 파일은 이미 관리 영역에 있으니 다시 복사하지 않는다.
+    copy = not keep_in_place and (force_copy or st.st_size <= s.copy_max_bytes)
     if copy:
         dest_dir = s.artifact_store / str(art_id)
         dest_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -133,6 +135,10 @@ def preview_file(art: Artifact) -> Path | None:
 
 
 def remove_stored(art: Artifact) -> None:
+    s = get_settings()
     if art.storage_mode == "copy":
-        d = get_settings().artifact_store / str(art.id)
-        shutil.rmtree(d, ignore_errors=True)
+        shutil.rmtree(s.artifact_store / str(art.id), ignore_errors=True)
+    elif art.source == "upload":
+        d = Path(art.original_path).parent
+        if d.parent == s.uploads_root.resolve():
+            shutil.rmtree(d, ignore_errors=True)

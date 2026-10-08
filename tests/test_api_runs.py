@@ -14,7 +14,7 @@ from sqlalchemy import select
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import ChatSession, Run, RunEvent
-from ttakkari.runs.manager import recover_interrupted
+from ttakkari.runs.manager import recover_interrupted, resume_queued
 
 
 def pid_alive(pid: int) -> bool:
@@ -102,15 +102,58 @@ async def test_child_env_is_scrubbed_and_cwd_is_workspace(client, auth, new_sess
     assert "--dangerously-skip-permissions" in argv and argv[0] == "-p"
 
 
-async def test_second_run_while_running_is_409(client, auth, new_session):
+async def test_second_run_while_running_is_queued_then_runs(client, auth, new_session):
     _ws, sess = await new_session()
     run = await start_run(client, auth, sess["id"], "SLEEP")
     await wait_status(client, auth, run["id"], "running")
     r = await client.post(f"/api/sessions/{sess['id']}/runs", json={"prompt": "again"}, headers=auth)
-    assert r.status_code == 409 and r.json()["code"] == "conflict"
+    assert r.status_code == 202 and r.json()["status"] == "queued"
+    second = r.json()
     sess_now = (await client.get(f"/api/sessions/{sess['id']}", headers=auth)).json()
-    assert sess_now["active_run_id"] == run["id"]
+    assert sess_now["active_run_id"] in (run["id"], second["id"])
     await client.post(f"/api/runs/{run['id']}/cancel", headers=auth)
+    done = await wait_run(client, auth, second["id"])
+    assert done["status"] == "succeeded"
+
+
+async def test_concurrent_posts_run_one_at_a_time(client, auth, new_session):
+    _ws, sess = await new_session()
+    a, b = await asyncio.gather(
+        client.post(f"/api/sessions/{sess['id']}/runs", json={"prompt": "SLEEP a"}, headers=auth),
+        client.post(f"/api/sessions/{sess['id']}/runs", json={"prompt": "SLEEP b"}, headers=auth),
+    )
+    assert a.status_code == b.status_code == 202
+    await asyncio.sleep(1.0)
+    runs = (await client.get(f"/api/sessions/{sess['id']}/runs", headers=auth)).json()
+    assert sorted(r["status"] for r in runs) == ["queued", "running"]
+    for r in runs:
+        await client.post(f"/api/runs/{r['id']}/cancel", headers=auth)
+
+
+async def test_cancel_queued_run_never_starts(client, auth, new_session):
+    _ws, sess = await new_session()
+    first = await start_run(client, auth, sess["id"], "SLEEP")
+    await wait_status(client, auth, first["id"], "running")
+    second = await start_run(client, auth, sess["id"], "never")
+    r = await client.post(f"/api/runs/{second['id']}/cancel", headers=auth)
+    assert r.status_code == 200 and r.json()["status"] == "cancelled"
+    await client.post(f"/api/runs/{first['id']}/cancel", headers=auth)
+    await asyncio.sleep(1.0)
+    assert not any("never" in " ".join(c["argv"]) for c in agent_calls())
+
+
+async def test_shutdown_marks_running_run_interrupted(client, auth, new_session):
+    from ttakkari.runs.manager import manager
+
+    _ws, sess = await new_session()
+    run = await start_run(client, auth, sess["id"], "SLEEP")
+    await wait_status(client, auth, run["id"], "running")
+    await manager.shutdown()
+    try:
+        got = (await client.get(f"/api/runs/{run['id']}", headers=auth)).json()
+        assert got["status"] == "interrupted"
+    finally:
+        manager._shutting_down = False
 
 
 async def test_run_in_other_session_is_not_blocked(client, auth, new_session):
@@ -232,11 +275,12 @@ async def test_recover_interrupted_marks_running_runs(client, auth, new_session)
     try:
         ids = await _insert_runs(ws, sess, child.pid)
         await asyncio.sleep(0.5)  # ps 에 명령줄이 보일 때까지
-        assert await recover_interrupted() == 2
+        assert await recover_interrupted() == 1
 
-        for rid in ids[:2]:
-            run = (await client.get(f"/api/runs/{rid}", headers=auth)).json()
-            assert run["status"] == "interrupted" and run["finished_at"] and "재시작" in run["error"]
+        run = (await client.get(f"/api/runs/{ids[0]}", headers=auth)).json()
+        assert run["status"] == "interrupted" and run["finished_at"] and "재시작" in run["error"]
+        # 시작하지 않은 대기 Run 은 남겨 두었다가 resume_queued 가 이어서 돌린다.
+        assert (await client.get(f"/api/runs/{ids[1]}", headers=auth)).json()["status"] == "queued"
         assert (await client.get(f"/api/runs/{ids[2]}", headers=auth)).json()["status"] == "succeeded"
 
         evs = await run_events(client, auth, str(ids[0]))
@@ -244,6 +288,8 @@ async def test_recover_interrupted_marks_running_runs(client, auth, new_session)
         assert evs[0]["type"] == "run.finished" and evs[0]["payload"]["status"] == "interrupted"
         # 남은 에이전트 프로세스 그룹에는 SIGTERM 이 갔다.
         assert child.wait(timeout=5) == -signal.SIGTERM
+        assert await resume_queued() == 1
+        assert (await wait_run(client, auth, str(ids[1])))["status"] == "succeeded"
         # interrupted 이후에는 같은 세션에 새 Run 을 받을 수 있다.
         assert (await run_to_end(client, auth, sess["id"], "after restart"))["status"] == "succeeded"
     finally:
@@ -257,7 +303,7 @@ async def test_recover_does_not_kill_unrelated_process_with_reused_pid(client, a
     other = subprocess.Popen(["sleep", "60"], start_new_session=True)  # noqa: ASYNC220
     try:
         ids = await _insert_runs(ws, sess, other.pid)
-        assert await recover_interrupted() == 2
+        assert await recover_interrupted() == 1
         assert (await client.get(f"/api/runs/{ids[0]}", headers=auth)).json()["status"] == "interrupted"
         await asyncio.sleep(0.3)
         assert other.poll() is None  # PID 재사용으로 엉뚱한 프로세스를 죽이면 안 된다

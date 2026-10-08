@@ -15,7 +15,12 @@ from ttakkari.api import artifacts, auth, push, sessions, system, workspaces
 from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
 from ttakkari.db import dispose_engine, init_engine
-from ttakkari.runs.manager import expire_artifacts, manager, recover_interrupted
+from ttakkari.runs.manager import (
+    expire_artifacts,
+    manager,
+    recover_interrupted,
+    resume_queued,
+)
 
 log = logging.getLogger("ttakkari")
 RETENTION_INTERVAL = 3600
@@ -38,6 +43,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     n = await recover_interrupted()
     if n:
         log.warning("marked %d runs as interrupted after restart", n)
+    await resume_queued()
     await preview.start_worker()
     retention = asyncio.create_task(_retention_loop())
     try:
@@ -55,7 +61,7 @@ def create_app() -> FastAPI:
                   docs_url=None if s.is_prod else "/docs", redoc_url=None, openapi_url=None if s.is_prod else "/openapi.json")
     app.add_middleware(
         CORSMiddleware, allow_origins=s.cors_origins, allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range"],
         expose_headers=["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
     )
 

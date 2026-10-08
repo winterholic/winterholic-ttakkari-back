@@ -65,6 +65,7 @@ class RunManager:
     def __init__(self) -> None:
         self._handles: dict[uuid.UUID, _Handle] = {}
         self._sem: asyncio.Semaphore | None = None
+        self._shutting_down = False
 
     @property
     def sem(self) -> asyncio.Semaphore:
@@ -103,9 +104,35 @@ class RunManager:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
 
+    async def dispatch(self, session_id: uuid.UUID) -> uuid.UUID | None:
+        """세션 대기열의 다음 Run 을 시작한다. 엔진 대화는 순서대로만 이어갈 수 있어 세션당 하나씩만 돌린다.
+
+        세션 행을 FOR UPDATE 로 잠가, 지시 접수와 Run 종료가 동시에 들어와도 두 개가 함께 시작되지 않게 한다.
+        """
+        if self._shutting_down:
+            return None
+        async with sessionmaker()() as db:
+            await db.execute(select(ChatSession.id).where(ChatSession.id == session_id).with_for_update())
+            rows = list(await db.scalars(
+                select(Run).where(Run.session_id == session_id, Run.status.in_([RunStatus.queued, RunStatus.running]))
+                .order_by(Run.created_at)))
+            if any(r.status == RunStatus.running or r.id in self._handles for r in rows):
+                await db.rollback()
+                return None
+            nxt = rows[0] if rows else None
+            if nxt is not None:
+                self.start(nxt.id)
+            await db.commit()
+            return nxt.id if nxt else None
+
+    async def cancel_queued(self, db: AsyncSession, run: Run) -> None:
+        """아직 시작하지 않은(프로세스 없는) 대기 Run 을 취소한다."""
+        await self._finish(db, run, RunStatus.cancelled)
+
     async def shutdown(self) -> None:
+        # 재시작으로 끊긴 Run 은 사용자 취소와 구분해 interrupted 로 남긴다.
+        self._shutting_down = True
         for h in list(self._handles.values()):
-            h.cancel_requested = True
             if h.proc is not None:
                 await self._terminate(h.proc)
             h.task.cancel()
@@ -134,6 +161,13 @@ class RunManager:
                 run = await db.get(Run, run_id)
                 if run is not None:
                     await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
+        finally:
+            self._handles.pop(run_id, None)
+            if not self._shutting_down:
+                async with sm() as db:
+                    sid = await db.scalar(select(Run.session_id).where(Run.id == run_id))
+                if sid is not None:
+                    _spawn(self.dispatch(sid))
 
     async def _run(self, db: AsyncSession, run_id: uuid.UUID) -> None:
         s = get_settings()
@@ -221,7 +255,9 @@ class RunManager:
         if diff:
             events.append(db, run, "run.diff", diff)
 
-        if h and h.cancel_requested:
+        if self._shutting_down and not (h and h.cancel_requested):
+            await self._finish(db, run, RunStatus.interrupted, error="서버 종료로 중단")
+        elif h and h.cancel_requested:
             await self._finish(db, run, RunStatus.cancelled)
         elif timed_out:
             await self._finish(db, run, RunStatus.failed, error=f"시간 초과({s.run_timeout_seconds}초)")
@@ -311,16 +347,21 @@ class RunManager:
         await self._commit(db, run)
         sess = await db.get(ChatSession, run.session_id)
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
-        task = asyncio.create_task(_notify(run, sess.title if sess else None))
-        _background.add(task)
-        task.add_done_callback(_background.discard)
+        _spawn(_notify(run, sess.title if sess else None))
 
     async def _commit(self, db: AsyncSession, run: Run) -> None:
         await db.commit()
         events.notify(run.id)
 
 
-_background: set[asyncio.Task[None]] = set()
+_background: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:
+    # 참조를 잡아 두지 않으면 태스크가 끝나기 전에 GC 될 수 있다.
+    task = asyncio.create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
 
 
 async def _notify(run: Run, title: str | None) -> None:
@@ -336,7 +377,8 @@ manager = RunManager()
 async def recover_interrupted() -> int:
     """서버가 죽었다 살아나면 실행 중이던 Run 은 프로세스를 잃은 것이다. 상태를 정리해 사용자가 이어서 지시할 수 있게 한다."""
     async with sessionmaker()() as db:
-        rows = list(await db.scalars(select(Run).where(Run.status.in_([RunStatus.queued, RunStatus.running]))))
+        # 시작하지 않은 대기 Run 은 그대로 두고 resume_queued 가 이어서 돌린다.
+        rows = list(await db.scalars(select(Run).where(Run.status == RunStatus.running)))
         for run in rows:
             if run.pid and _looks_like_agent(run.pid):
                 with contextlib.suppress(ProcessLookupError, PermissionError):
@@ -348,6 +390,14 @@ async def recover_interrupted() -> int:
                                                     "result_text": None, "cost_usd": None, "exit_code": None})
         await db.commit()
         return len(rows)
+
+
+async def resume_queued() -> int:
+    async with sessionmaker()() as db:
+        sids = list(await db.scalars(select(Run.session_id).where(Run.status == RunStatus.queued).distinct()))
+    for sid in sids:
+        await manager.dispatch(sid)
+    return len(sids)
 
 
 async def expire_artifacts() -> int:

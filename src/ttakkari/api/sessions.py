@@ -100,10 +100,8 @@ async def create_run(session_id: uuid.UUID, body: RunIn, _: User, db: Db, reques
     ws = await get_workspace(db, s.workspace_id)
     if ws.archived_at is not None or s.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 세션입니다.")
-    # 같은 세션의 엔진 대화는 순서대로만 이어갈 수 있다. 동시에 두 지시를 받지 않는다.
-    busy = await db.scalar(select(func.count()).select_from(Run).where(Run.session_id == s.id, Run.status.in_(ACTIVE)))
-    if busy:
-        raise HTTPException(status.HTTP_409_CONFLICT, "이 세션에서 이미 작업이 실행 중입니다.")
+    # 실행 중이어도 받는다. 세션 대기열에 쌓이고 앞 Run 이 끝나면 순서대로 시작한다(manager.dispatch).
+    ahead = await db.scalar(select(func.count()).select_from(Run).where(Run.session_id == s.id, Run.status.in_(ACTIVE)))
     run = Run(session_id=s.id, workspace_id=ws.id, prompt=body.prompt,
               context_artifact_ids=[str(a) for a in body.context_artifact_ids], engine=s.engine,
               model=body.model or s.model, effort=body.effort or s.effort)
@@ -112,11 +110,12 @@ async def create_run(session_id: uuid.UUID, body: RunIn, _: User, db: Db, reques
         s.title = body.prompt.strip().splitlines()[0][:60] or s.title
     s.updated_at = utcnow()
     await db.flush()
-    events.append(db, run, "run.status", {"status": RunStatus.queued})
+    events.append(db, run, "run.status", {"status": RunStatus.queued, "ahead": ahead or 0})
     record(db, action="run.create", target_type="run", target_id=run.id, ip=client_ip(request),
            detail={"engine": run.engine, "workspace": str(ws.id)})
     await db.commit()
-    manager.start(run.id)
+    await manager.dispatch(s.id)
+    await db.refresh(run)
     return run
 
 
@@ -134,6 +133,11 @@ async def cancel_run(run_id: uuid.UUID, _: User, db: Db, request: Request) -> Ru
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run 이 없습니다.")
     if run.status in TERMINAL_RUN_STATUSES:
+        return run
+    if run.status == RunStatus.queued and not manager.is_active(run_id):
+        await manager.cancel_queued(db, run)
+        record(db, action="run.cancel", target_type="run", target_id=run_id, ip=client_ip(request))
+        await db.commit()
         return run
     ok = await manager.cancel(run_id)
     record(db, action="run.cancel", target_type="run", target_id=run_id, outcome="ok" if ok else "error",

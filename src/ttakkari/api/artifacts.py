@@ -17,7 +17,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import or_, select
 
 from ttakkari.api.deps import Db, broker_http, get_artifact, get_workspace
@@ -97,6 +97,12 @@ async def register_artifact(body: ArtifactRegisterIn, _: User, db: Db, request: 
 
 
 UPLOAD_CHUNK = 1024 * 1024
+EXPIRED_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>링크 만료</title>
+<body style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;line-height:1.6">
+<h1 style="font-size:1.25rem">다운로드 링크가 만료됐어요</h1>
+<p>보안을 위해 링크는 5분 동안만 쓸 수 있어요. 따까리 앱에서 결과물을 열고 다시 다운로드해 주세요.</p>
+</body></html>"""
 
 
 @router.post("/uploads", response_model=ArtifactOut, status_code=201)
@@ -217,23 +223,26 @@ async def download_link(art_id: uuid.UUID, _: User, db: Db, request: Request, va
     return DownloadLinkOut(url=f"/api/{'view' if inline else 'dl'}/{token}", expires_at=exp)
 
 
-@router.get("/view/{token}")
-async def view_inline(token: str, db: Db, request: Request) -> FileResponse:
+@router.get("/view/{token}", response_model=None)
+async def view_inline(token: str, db: Db, request: Request) -> FileResponse | HTMLResponse:
     return await _serve_token(token, db, request, inline=True)
 
 
-@router.get("/dl/{token}")
-async def download(token: str, db: Db, request: Request) -> FileResponse:
+@router.get("/dl/{token}", response_model=None)
+async def download(token: str, db: Db, request: Request) -> FileResponse | HTMLResponse:
     return await _serve_token(token, db, request, inline=False)
 
 
-async def _serve_token(token: str, db: Db, request: Request, *, inline: bool) -> FileResponse:
+async def _serve_token(token: str, db: Db, request: Request, *, inline: bool) -> FileResponse | HTMLResponse:
     try:
         claims = decode(token, "download")
     except jwt.PyJWTError as e:
         record(db, actor="user", action="artifact.download", outcome="denied", detail={"reason": type(e).__name__},
                ip=client_ip(request))
         await db.commit()
+        if "text/html" in request.headers.get("accept", ""):
+            # 브라우저로 직접 연 링크는 JSON 대신 사람이 읽는 안내를 보여 준다.
+            return HTMLResponse(EXPIRED_HTML, status_code=403, headers={"Cache-Control": "no-store"})
         raise HTTPException(status.HTTP_403_FORBIDDEN, "다운로드 링크가 만료되었거나 올바르지 않습니다.") from e
     art = await get_artifact(db, uuid.UUID(claims["sub"]))
     # 링크 발급 후 정책이 바뀌었을 수 있으니 다시 본다.

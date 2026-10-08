@@ -44,9 +44,9 @@
 | POST | `/api/sessions` | `{workspace_id, title?, engine?, model?, effort?}` → 201 |
 | GET/PATCH | `/api/sessions/{id}` | PATCH: `{title?, model?, effort?, archived?}` |
 | GET | `/api/sessions/{id}/runs` | `RunOut[]` (오래된 순 = 대화 순서) |
-| POST | `/api/sessions/{id}/runs` | `{prompt, context_artifact_ids?, model?, effort?}` → 202 `RunOut`. 같은 세션에 실행 중 Run 이 있으면 409 |
+| POST | `/api/sessions/{id}/runs` | `{prompt, context_artifact_ids?, model?, effort?}` → 202 `RunOut`. 실행 중 Run 이 있으면 `queued` 로 세션 대기열에 들어가 앞 Run 이 끝나면 순서대로 시작한다(여러 기기가 동시에 보내도 한 번에 하나) |
 | GET | `/api/runs/{id}` | `RunOut` |
-| POST | `/api/runs/{id}/cancel` | 취소. 최대 5초 기다렸다가 최신 `RunOut` |
+| POST | `/api/runs/{id}/cancel` | 취소. 아직 시작 안 한 대기 Run 은 바로 `cancelled`. 실행 중이면 최대 5초 기다렸다가 최신 `RunOut` |
 | GET | `/api/runs/{id}/events?after=0&limit=500` | `RunEventOut[]` (폴링·초기 로드용) |
 | GET | `/api/runs/{id}/stream?after=0` | SSE. 아래 참고 |
 | GET | `/api/runs/{id}/diff` | text/plain unified diff (git 워크스페이스만) |
@@ -70,7 +70,7 @@
 
 | type | payload |
 |---|---|
-| `run.status` | `{status}` |
+| `run.status` | `{status, ahead?}` (`ahead` = 접수 시점에 앞에 있던 Run 수) |
 | `checkpoint` | `{ref}` git 체크포인트 커밋. 되돌릴 때 기준점 |
 | `agent.session` | `{engine_session_id, model}` |
 | `message` | `{text}` 에이전트 응답(마크다운) |

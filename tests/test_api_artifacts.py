@@ -412,3 +412,10 @@ async def test_inline_view_link_serves_inline_with_sandbox(client, auth, new_ses
     assert r.status_code == 200
     assert r.headers["content-disposition"].startswith("inline")
     assert "sandbox" in r.headers["content-security-policy"]
+
+
+async def test_expired_link_in_browser_shows_html(client):
+    r = await client.get("/api/dl/not-a-token", headers={"Accept": "text/html,application/xhtml+xml"})
+    assert r.status_code == 403 and "text/html" in r.headers["content-type"] and "만료" in r.text
+    j = await client.get("/api/dl/not-a-token")
+    assert j.status_code == 403 and j.json()["code"] == "forbidden"

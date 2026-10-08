@@ -27,6 +27,7 @@ from ttakkari.broker.policy import BrokerError, ResolvedPath, is_within
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import Artifact, ChatSession, Run, RunStatus, Workspace, utcnow
+from ttakkari.push.service import notify_run_finished
 from ttakkari.runs import events
 from ttakkari.schemas import ArtifactOut
 
@@ -307,6 +308,11 @@ class RunManager:
         record(db, actor="agent", action="run.finished", outcome="ok" if status == RunStatus.succeeded else "error",
                target_type="run", target_id=run.id, detail={"status": status})
         await self._commit(db, run)
+        sess = await db.get(ChatSession, run.session_id)
+        try:
+            await notify_run_finished(run, sess.title if sess else None)
+        except Exception:
+            log.exception("push notification failed for run %s", run.id)
 
     async def _commit(self, db: AsyncSession, run: Run) -> None:
         await db.commit()

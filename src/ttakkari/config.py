@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -135,7 +136,8 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    s = Settings()
+    # 테스트는 운영 설정 파일(~/.ttakkari/config.env)을 읽지 않는다. 운영 값이 테스트 기대값을 바꾸지 않게.
+    s = Settings(_env_file=None) if os.environ.get("TTAKKARI_NO_ENV_FILE") else Settings()
     if not s.jwt_secret:
         if s.is_prod:
             raise RuntimeError("TTAKKARI_JWT_SECRET 가 비어 있습니다. ~/.ttakkari/config.env 에 설정하세요.")

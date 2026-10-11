@@ -24,6 +24,7 @@ TEST_DB = os.environ.get("TTAKKARI_TEST_DB", "postgresql+asyncpg://localhost/tta
 assert not TEST_DB.endswith("/ttakkari"), "운영 DB 로 테스트하지 않는다"
 
 os.environ.update({
+    "TTAKKARI_NO_ENV_FILE": "1",
     "TTAKKARI_ENV": "dev",
     "TTAKKARI_DATABASE_URL": TEST_DB,
     "TTAKKARI_HOME": str(HOME),

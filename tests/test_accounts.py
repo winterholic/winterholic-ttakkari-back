@@ -198,3 +198,15 @@ def test_usage_api_parsing_prefers_limits_list():
     assert [(w.key, w.percent) for w in windows_from_api({"five_hour": {"utilization": 60.0}})] == [("five_hour", 60)]
     assert keychain_service(None) == "Claude Code-credentials"
     assert keychain_service("/Users/winterholic/.ttakkari/accounts/890cf835-c9cf-4322-840e-a11b1bf98a4e") == "Claude Code-credentials-a519acfa"
+
+
+def test_reset_time_parsed_from_codex_limit_message():
+    from datetime import datetime, timedelta
+
+    from ttakkari.runs.profiles import reset_seconds_from
+
+    when = datetime.now().astimezone() + timedelta(hours=3)
+    msg = f"You’ve hit your usage limit. Upgrade to Pro ... or try again at {when:%b} {when.day}th, {when.year} {when:%I:%M %p}."
+    left = reset_seconds_from(None, msg)
+    assert left is not None and abs(left - 3 * 3600) < 120
+    assert reset_seconds_from("no date here") is None

@@ -105,8 +105,30 @@ async def candidates(db: AsyncSession, session_engine: str) -> list[Profile]:
     return [p for p in pool if _cooldown.get(p.id, 0) <= now] + [p for p in pool if _cooldown.get(p.id, 0) > now]
 
 
-def cool_down(account_id: uuid.UUID) -> None:
-    _cooldown[account_id] = time.monotonic() + get_settings().profile_cooldown_seconds
+# Codex: "try again at Oct 12th, 2026 12:16 AM." (2026-10-11 실측). 시간대 표기가 없어 서버 현지 시각으로 읽는다.
+RESET_AT_RE = re.compile(r"try again at ([A-Z][a-z]{2,8}) (\d{1,2})(?:st|nd|rd|th)?,? (\d{4}) (\d{1,2}):(\d{2}) ?([AP]M)", re.IGNORECASE)
+
+
+def reset_seconds_from(*texts: str | None) -> int | None:
+    """한도 메시지에서 초기화 시각을 읽어 남은 초로. 못 읽으면 None(기본 쉬는 시간을 쓴다)."""
+    for t in texts:
+        m = RESET_AT_RE.search(t or "")
+        if not m:
+            continue
+        mon, day, year, hh, mm, ap = m.groups()
+        try:
+            # 메시지에 시간대가 없다. Codex 는 사용자 현지 시각으로 적는다(10-11 실측 문구가 KST 자정 근처) → 현지로 본다.
+            when = datetime.strptime(f"{mon[:3]} {day} {year} {hh}:{mm} {ap.upper()}", "%b %d %Y %I:%M %p").astimezone()
+        except ValueError:
+            continue
+        left = when.timestamp() - time.time()
+        if 0 < left < 8 * 86400:
+            return int(left) + 30
+    return None
+
+
+def cool_down(account_id: uuid.UUID, seconds: int | None = None) -> None:
+    _cooldown[account_id] = time.monotonic() + (seconds or get_settings().profile_cooldown_seconds)
 
 
 def cooldown_remaining(account_id: uuid.UUID) -> int:

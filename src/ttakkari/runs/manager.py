@@ -266,7 +266,7 @@ class RunManager:
             limited = failed and profiles_mod.is_usage_limit(state.error, tail, None if rc == 0 else state.result_text)
             if limited and not stopped:
                 # 마지막 계정이어도 쉬게 해야 다음 지시가 한도 걸린 계정부터 다시 두드리지 않는다.
-                profiles_mod.cool_down(prof.id)
+                profiles_mod.cool_down(prof.id, profiles_mod.reset_seconds_from(state.error, tail))
             if stopped or not failed or not (missing or limited) or i == len(profiles) - 1:
                 if missing and i == len(profiles) - 1:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")

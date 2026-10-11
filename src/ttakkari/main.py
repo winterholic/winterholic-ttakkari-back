@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from ttakkari.api import artifacts, auth, push, sessions, system, workspaces
 from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
-from ttakkari.db import dispose_engine, init_engine
+from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
@@ -44,6 +44,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if n:
         log.warning("marked %d runs as interrupted after restart", n)
     await resume_queued()
+    try:
+        async with sessionmaker()() as db:
+            await workspaces.ensure_default_workspace(db)
+    except Exception as e:  # noqa: BLE001
+        # 기본 경로가 없어도 서버는 뜬다. 프론트가 /api/workspaces/default 로 다시 시도하며 오류를 보여 준다.
+        log.warning("default workspace not created: %s", e)
     await preview.start_worker()
     retention = asyncio.create_task(_retention_loop())
     try:

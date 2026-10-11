@@ -15,7 +15,7 @@ atexit.register(shutil.rmtree, _BASE, ignore_errors=True)
 HOME = _BASE / "home"
 ALLOWED = _BASE / "allowed"
 OUTSIDE = _BASE / "outside"
-for _d in (HOME, ALLOWED, OUTSIDE):
+for _d in (HOME, ALLOWED, OUTSIDE, ALLOWED / "default-root", ALLOWED / "default-docs"):
     _d.mkdir()
 FAKES = Path(__file__).parent / "fake_agents"
 AGENT_LOG = _BASE / "agent-log.jsonl"
@@ -28,6 +28,8 @@ os.environ.update({
     "TTAKKARI_DATABASE_URL": TEST_DB,
     "TTAKKARI_HOME": str(HOME),
     "TTAKKARI_ALLOWED_ROOTS": json.dumps([str(ALLOWED)]),
+    "TTAKKARI_DEFAULT_WORKSPACE_ROOT": str(ALLOWED / "default-root"),
+    "TTAKKARI_DEFAULT_WRITABLE_ROOTS": json.dumps([str(ALLOWED / "default-docs"), str(ALLOWED / "default-missing")]),
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",
     "TTAKKARI_CLAUDE_BIN": str(FAKES / "fake_claude.py"),
     "TTAKKARI_CODEX_BIN": str(FAKES / "fake_codex.py"),

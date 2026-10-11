@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         HOME / "development", HOME / "docs", HOME / "personal", HOME / "private-resources", HOME / "testing",
     ]
 
+    # 서버가 알아서 만드는 기본 워크스페이스. 에이전트 실행 위치가 루트이고, 추가 경로는 쓰기만 허용한다.
+    default_workspace_root: Path = HOME / "development"
+    default_writable_roots: list[Path] = [HOME / "docs", HOME / "personal", HOME / "private-resources", HOME / "testing"]
+
     claude_bin: str = "claude"
     codex_bin: str = "codex"
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
@@ -55,7 +59,7 @@ class Settings(BaseSettings):
     login_max_failures: int = 5
     login_lock_seconds: int = 15 * 60
 
-    @field_validator("allowed_roots", mode="after")
+    @field_validator("allowed_roots", "default_writable_roots", mode="after")
     @classmethod
     def _resolve_roots(cls, v: list[Path]) -> list[Path]:
         return [Path(p).expanduser().resolve() for p in v]

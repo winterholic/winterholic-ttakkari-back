@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.api.deps import Db, broker_http, get_workspace
 from ttakkari.audit import record
@@ -68,6 +69,39 @@ async def create_workspace(body: WorkspaceIn, _: User, db: Db, request: Request)
     record(db, action="workspace.create", target_type="workspace", target_id=ws.id, detail={"path": str(root)},
            ip=client_ip(request))
     await db.commit()
+    return ws
+
+
+@router.get("/default", response_model=WorkspaceOut)
+async def default_ws(_: User, db: Db) -> Workspace:
+    try:
+        return await ensure_default_workspace(db)
+    except BrokerError as e:
+        raise broker_http(e) from e
+
+
+async def ensure_default_workspace(db: AsyncSession) -> Workspace:
+    """기본 워크스페이스를 돌려준다. 없으면 config 값으로 만든다. 사용자가 워크스페이스를 고르는 단계를 없애기 위한 것이다."""
+    s = get_settings()
+    root = validate_workspace_root(str(s.default_workspace_root), s.allowed_roots)
+    ws = await db.scalar(select(Workspace).where(Workspace.root_path == str(root)))
+    if ws is not None:
+        if ws.archived_at is not None:
+            ws.archived_at = None
+            await db.commit()
+        return ws
+    # 아직 없는 폴더는 건너뛴다. 나중에 설정 화면에서 추가하면 된다.
+    extra = _validate_extra_roots([str(p) for p in s.default_writable_roots if p.is_dir()], root)
+    ws = Workspace(name="기본", root_path=str(root), is_git=(root / ".git").exists(), extra_writable_roots=extra)
+    db.add(ws)
+    record(db, action="workspace.create", target_type="workspace", detail={"path": str(root), "default": True})
+    try:
+        await db.commit()
+    except IntegrityError:
+        # 동시 요청이 먼저 만들었다.
+        await db.rollback()
+        ws = await db.scalar(select(Workspace).where(Workspace.root_path == str(root)))
+        assert ws is not None
     return ws
 
 

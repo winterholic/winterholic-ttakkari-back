@@ -226,3 +226,26 @@ async def test_patch_extra_writable_roots(client, auth, make_dir, outside_dir):
     # 이름만 바꾸면 기존 추가 경로는 유지된다.
     r = await client.patch(f"/api/workspaces/{ws['id']}", json={"name": "x"}, headers=auth)
     assert r.json()["extra_writable_roots"] == [str(a.resolve())]
+
+
+async def test_default_workspace_created_once_with_existing_extra_roots(client, auth):
+    from conftest import ALLOWED
+    r1 = await client.get("/api/workspaces/default", headers=auth)
+    assert r1.status_code == 200
+    ws = r1.json()
+    assert ws["root_path"] == str((ALLOWED / "default-root").resolve())
+    # 없는 폴더(default-missing)는 건너뛴다.
+    assert ws["extra_writable_roots"] == [str((ALLOWED / "default-docs").resolve())]
+    r2 = await client.get("/api/workspaces/default", headers=auth)
+    assert r2.json()["id"] == ws["id"]
+
+
+async def test_default_workspace_keeps_user_edits_and_unarchives(client, auth):
+    ws = (await client.get("/api/workspaces/default", headers=auth)).json()
+    await client.patch(f"/api/workspaces/{ws['id']}", json={"extra_writable_roots": [], "archived": True}, headers=auth)
+    again = (await client.get("/api/workspaces/default", headers=auth)).json()
+    assert again["id"] == ws["id"] and again["extra_writable_roots"] == [] and again["archived_at"] is None
+
+
+async def test_default_workspace_requires_auth(client):
+    assert (await client.get("/api/workspaces/default")).status_code == 401

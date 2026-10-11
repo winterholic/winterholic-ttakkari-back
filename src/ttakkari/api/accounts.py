@@ -72,12 +72,26 @@ class AccountOut(BaseModel):
     login: str
     login_label: str | None
     cooldown_seconds: int
+    # 처음 한 번 Mac Studio 터미널에서 실행할 로그인 명령(브라우저 인증). 이미 로그인됐으면 None.
+    login_command: str | None = None
+
+
+def accounts_dir() -> Path:
+    return get_settings().home / "accounts"
+
+
+def login_command(engine: str, config_dir: str | None) -> str:
+    if engine == "claude":
+        # 초기 프롬프트로 /login 을 넘기는 동작은 버전마다 다를 수 있어(확인 필요) claude 를 띄우고 /login 을 입력하게 안내한다.
+        return f"CLAUDE_CONFIG_DIR={config_dir} claude" if config_dir else "claude"
+    return f"CODEX_HOME={config_dir} codex login" if config_dir else "codex login"
 
 
 def _out(a: EngineAccount) -> AccountOut:
     login, label = profiles.identity(a.engine, a.config_dir)
     return AccountOut(id=a.id, name=a.name, engine=a.engine, config_dir=a.config_dir, enabled=a.enabled,
-                      priority=a.priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id))
+                      priority=a.priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
+                      login_command=None if login == "ok" else login_command(a.engine, a.config_dir))
 
 
 async def _get(db: Db, account_id: uuid.UUID) -> EngineAccount:
@@ -106,8 +120,14 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
     if len(rows) >= MAX_ACCOUNTS:
         raise HTTPException(status.HTTP_409_CONFLICT, f"계정은 {MAX_ACCOUNTS}개까지입니다.")
     top = await db.scalar(select(func.max(EngineAccount.priority)))
-    a = EngineAccount(name=body.name.strip(), engine=body.engine, config_dir=body.config_dir, enabled=body.enabled,
-                      priority=(top if top is not None else -1) + 1)
+    a = EngineAccount(id=uuid.uuid4(), name=body.name.strip(), engine=body.engine, config_dir=body.config_dir,
+                      enabled=body.enabled, priority=(top if top is not None else -1) + 1)
+    if a.config_dir is None and any(r.engine == body.engine and r.config_dir is None for r in rows):
+        # 같은 엔진의 기본 계정(~/.claude·~/.codex)이 이미 있으면, 새 계정의 로그인 보관 폴더는 따까리가 만든다.
+        # 사용자는 폴더를 몰라도 된다. 작업공간과는 무관하고 로그인 정보만 따로 둔다.
+        d = accounts_dir() / str(a.id)
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+        a.config_dir = str(d)
     db.add(a)
     record(db, action="account.create", target_type="account", detail={"name": a.name, "engine": a.engine},
            ip=client_ip(request))

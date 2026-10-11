@@ -98,3 +98,14 @@ async def test_default_account_does_not_inherit_parent_account_dir(client, auth,
         chat = await _session(client, auth, make_dir, engine=engine)
         await run_to_end(client, auth, chat["id"], "hi")
         assert agent_calls()[-1]["account_dir"] is None
+
+
+async def test_extra_account_gets_its_own_login_folder_automatically(client, auth):
+    a = (await client.post("/api/accounts", json={"name": "회사", "engine": "claude"}, headers=auth)).json()
+    assert a["config_dir"] == str(HOME / "accounts" / a["id"]) and (HOME / "accounts" / a["id"]).is_dir()
+    assert a["login_command"] == f"CLAUDE_CONFIG_DIR={a['config_dir']} claude"
+    # 기본 계정은 그대로 기본 위치를 쓴다.
+    base = next(x for x in (await client.get("/api/accounts", headers=auth)).json() if x["name"] == "claude")
+    assert base["config_dir"] is None
+    cx = (await client.post("/api/accounts", json={"name": "codex-2", "engine": "codex"}, headers=auth)).json()
+    assert cx["login_command"].startswith("CODEX_HOME=") and cx["login_command"].endswith("codex login")

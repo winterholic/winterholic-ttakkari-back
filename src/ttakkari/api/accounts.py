@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -15,8 +17,9 @@ from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.broker.policy import is_within
 from ttakkari.config import get_settings
-from ttakkari.models import EngineAccount
+from ttakkari.models import AppSetting, EngineAccount, utcnow
 from ttakkari.runs import profiles
+from ttakkari.runs import usage as usage_mod
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -133,6 +136,92 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
            ip=client_ip(request))
     await _commit(db)
     return _out(a)
+
+
+# /override·/usage 는 /{account_id} 라우트보다 먼저 등록해야 UUID 검증(422)에 먼저 걸리지 않는다.
+class OverrideIn(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=MAX_ACCOUNTS)
+    until: datetime
+
+
+class OverrideOut(BaseModel):
+    active: bool
+    ids: list[uuid.UUID] = Field(default_factory=list)
+    until: datetime | None = None
+
+
+@router.get("/override", response_model=OverrideOut)
+async def get_override(_: User, db: Db) -> OverrideOut:
+    ov = await profiles.get_override(db)
+    if not ov:
+        return OverrideOut(active=False)
+    return OverrideOut(active=True, ids=ov["ids"], until=ov["until"])
+
+
+@router.put("/override", response_model=OverrideOut)
+async def put_override(body: OverrideIn, _: User, db: Db, request: Request) -> OverrideOut:
+    """정한 시각까지만 이 순서로 쓴다. 지나면 저절로 기본 순서로 돌아간다."""
+    until = body.until if body.until.tzinfo else body.until.replace(tzinfo=UTC)
+    if until <= utcnow():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_input", "message": "끝나는 시각이 이미 지났어요."})
+    known = {a.id for a in await profiles.accounts(db)}
+    if not set(body.ids) <= known:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_input", "message": "없는 계정이 섞여 있어요."})
+    row = await db.get(AppSetting, profiles.OVERRIDE_KEY)
+    value = {"ids": [str(i) for i in body.ids], "until": until.isoformat()}
+    if row is None:
+        db.add(AppSetting(key=profiles.OVERRIDE_KEY, value=value))
+    else:
+        row.value = value
+    record(db, action="account.override", detail=value, ip=client_ip(request))
+    await db.commit()
+    return OverrideOut(active=True, ids=body.ids, until=until)
+
+
+@router.delete("/override", status_code=204)
+async def delete_override(_: User, db: Db) -> None:
+    row = await db.get(AppSetting, profiles.OVERRIDE_KEY)
+    if row is not None:
+        await db.delete(row)
+        await db.commit()
+
+
+class UsageWindowOut(BaseModel):
+    key: str
+    label: str
+    percent: int
+    resets_at: int | None
+
+
+class AccountUsageOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    engine: str
+    enabled: bool
+    rank: int
+    login: str
+    cooldown_seconds: int
+    windows: list[UsageWindowOut]
+    source: str | None
+    plan: str | None
+    error: str | None
+    updated_at: float | None
+
+
+@router.get("/usage", response_model=list[AccountUsageOut])
+async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]:
+    """계정별 사용량. 지금 적용되는 순서(임시 순서 반영)로 돌려준다. 계정마다 2분 캐시, refresh 면 새로."""
+    rows = await profiles.effective_order(db)
+
+    async def one(i: int, a: EngineAccount) -> AccountUsageOut:
+        login, _label = profiles.identity(a.engine, a.config_dir)
+        u = await usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=refresh)
+        return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, enabled=a.enabled, rank=i + 1, login=login,
+                               cooldown_seconds=profiles.cooldown_remaining(a.id),
+                               windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
+                               error=u.error, updated_at=u.updated_at)
+
+    return list(await asyncio.gather(*(one(i, a) for i, a in enumerate(rows))))
 
 
 @router.patch("/{account_id}", response_model=AccountOut)

@@ -45,6 +45,8 @@ class ParseState:
     usage: dict[str, Any] = field(default_factory=dict)
     touched_files: set[str] = field(default_factory=set)
     last_message: str | None = None
+    # claude rate_limit_event 의 unifiedWindows(계정 사용량 화면의 대체 출처)
+    rate_limits: dict[str, Any] | None = None
 
 
 class AgentAdapter(Protocol):

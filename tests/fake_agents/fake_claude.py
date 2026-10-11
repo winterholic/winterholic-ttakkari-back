@@ -35,6 +35,10 @@ def main():
                                 "account_dir": os.environ.get("CLAUDE_CONFIG_DIR")}) + "\n")
 
     emit({"type": "system", "subtype": "init", "session_id": sid, "model": "claude-haiku-4-5", "cwd": os.getcwd()})
+    emit({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "unifiedWindows": {
+        "five_hour": {"utilization": 0.42, "resetsAt": 1791732000},
+        "seven_day": {"utilization": 0.1, "resetsAt": 1792000000},
+        "seven_day_overage_included": {"utilization": 0, "resetsAt": 1792000000}}}})
 
     if "SLEEP" in prompt:
         time.sleep(60)

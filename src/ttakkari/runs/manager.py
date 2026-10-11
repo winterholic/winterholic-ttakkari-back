@@ -47,6 +47,7 @@ from ttakkari.orchestrator.runtime import (
 from ttakkari.push.service import notify_run_finished
 from ttakkari.runs import events
 from ttakkari.runs import profiles as profiles_mod
+from ttakkari.runs import usage as usage_mod
 from ttakkari.schemas import ArtifactOut
 
 log = logging.getLogger(__name__)
@@ -244,8 +245,9 @@ class RunManager:
             run.engine, run.profile = prof.engine, prof.name
             spec = LaunchSpec(
                 cwd=root, prompt=prompt, engine_session_id=resume_id,
-                # 모델 이름은 엔진마다 달라 처음 고른 엔진일 때만 넘긴다.
-                model=run.model if prof.engine == profiles[0].engine else None, effort=run.effort,
+                # 모델 이름은 엔진마다 다르다. 그 엔진의 모델일 때만 넘기고, 어느 엔진 것인지 모르면 첫 계정에만 넘긴다.
+                model=run.model if (profiles_mod.model_engine(run.model) or profiles[0].engine) == prof.engine else None,
+                effort=run.effort,
                 outbox=outbox, write_roots=write_roots, system_note=system_note,
                 codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers,
             )
@@ -253,6 +255,8 @@ class RunManager:
             adapter = ADAPTERS[prof.engine]
             await self._commit(db, run)
             state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h)
+            if state.rate_limits:
+                usage_mod.remember_stream(prof.id, usage_mod.windows_from_stream(state.rate_limits))
             if state.engine_session_id:
                 sess.engine_sessions = {**(sess.engine_sessions or {}), prof.key: state.engine_session_id}
                 sess.engine_session_id = state.engine_session_id

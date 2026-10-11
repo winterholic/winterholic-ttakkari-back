@@ -86,6 +86,10 @@ class ClaudeAdapter:
                         }))
                         if GUARD_MARKER in text:
                             out.append(Normalized("guard.blocked", {"call_id": block.get("tool_use_id"), "reason": text}))
+        elif t == "rate_limit_event":
+            info = obj.get("rate_limit_info")
+            if isinstance(info, dict):
+                state.rate_limits = info
         elif t == "result":
             state.result_text = obj.get("result")
             state.is_error = bool(obj.get("is_error")) or obj.get("subtype") not in (None, "success")

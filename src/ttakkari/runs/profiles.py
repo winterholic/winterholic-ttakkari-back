@@ -7,13 +7,14 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import HOME, get_settings
-from ttakkari.models import ChatSession, EngineAccount
+from ttakkari.models import AppSetting, ChatSession, EngineAccount, utcnow
 
 ENGINES = {"claude", "codex"}
 # 엔진이 사용량·속도 한도로 거절할 때의 문구. 문구가 바뀌면 폴백 없이 그냥 실패한다(ADR 0006 한계).
@@ -72,9 +73,34 @@ async def accounts(db: AsyncSession) -> list[EngineAccount]:
     return list(await db.scalars(select(EngineAccount).order_by(EngineAccount.priority, EngineAccount.created_at)))
 
 
+OVERRIDE_KEY = "account_priority_override"
+
+
+async def get_override(db: AsyncSession) -> dict | None:
+    """임시 우선순위 {ids, until(ISO)}. 기한이 지났으면 None."""
+    row = await db.get(AppSetting, OVERRIDE_KEY)
+    if row is None or not row.value.get("ids"):
+        return None
+    try:
+        until = datetime.fromisoformat(row.value["until"])
+    except (KeyError, ValueError):
+        return None
+    return row.value if until > utcnow() else None
+
+
+async def effective_order(db: AsyncSession) -> list[EngineAccount]:
+    """지금 적용되는 순서. 임시 우선순위가 살아 있으면 그 순서가 먼저, 나머지는 기본 순서로 뒤에 붙는다."""
+    rows = await accounts(db)
+    ov = await get_override(db)
+    if not ov:
+        return rows
+    rank = {aid: i for i, aid in enumerate(ov["ids"])}
+    return sorted(rows, key=lambda a: (rank.get(str(a.id), len(rank)), a.priority))
+
+
 async def candidates(db: AsyncSession, session_engine: str) -> list[Profile]:
-    """세션 엔진에 맞는 켜진 계정을 우선순위대로. 쉬는 계정은 뒤로 보낸다(전부 쉬면 순서대로 다시 시도)."""
-    pool = [_profile(a) for a in await accounts(db) if a.enabled and (session_engine == "auto" or a.engine == session_engine)]
+    """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). 쉬는 계정은 뒤로 보낸다(전부 쉬면 순서대로 다시 시도)."""
+    pool = [_profile(a) for a in await effective_order(db) if a.enabled and (session_engine == "auto" or a.engine == session_engine)]
     now = time.monotonic()
     return [p for p in pool if _cooldown.get(p.id, 0) <= now] + [p for p in pool if _cooldown.get(p.id, 0) > now]
 
@@ -117,3 +143,19 @@ def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:
     if not home.exists():
         return "missing", None
     return ("ok", None) if (home / "auth.json").exists() else ("unknown", None)
+
+
+CLAUDE_MODELS = {"opus", "sonnet", "haiku", "fable"}
+
+
+def model_engine(model: str | None) -> str | None:
+    """모델 이름이 어느 엔진 것인지. 모르면 None(첫 계정에만 넘긴다)."""
+    if not model:
+        return None
+    m = model.lower()
+    if m in CLAUDE_MODELS or m.startswith("claude"):
+        return "claude"
+    if m.startswith(("gpt", "codex", "o1", "o3", "o4")):
+        return "codex"
+    return None
+

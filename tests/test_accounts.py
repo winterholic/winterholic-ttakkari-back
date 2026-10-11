@@ -109,3 +109,92 @@ async def test_extra_account_gets_its_own_login_folder_automatically(client, aut
     assert base["config_dir"] is None
     cx = (await client.post("/api/accounts", json={"name": "codex-2", "engine": "codex"}, headers=auth)).json()
     assert cx["login_command"].startswith("CODEX_HOME=") and cx["login_command"].endswith("codex login")
+
+
+async def test_temporary_override_reorders_until_it_expires(client, auth, make_dir):
+    from datetime import UTC, datetime, timedelta
+
+    accs = await _accounts(client, auth)
+    until = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    r = await client.put("/api/accounts/override", json={"ids": [accs[1]["id"]], "until": until}, headers=auth)
+    assert r.status_code == 200 and r.json()["active"]
+    assert (await client.get("/api/accounts/override", headers=auth)).json()["ids"] == [accs[1]["id"]]
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    assert (await run_to_end(client, auth, sess["id"], "hi"))["profile"] == "codex"
+    # 기본 순서 자체는 그대로다.
+    assert [a["name"] for a in await _accounts(client, auth)] == ["claude", "codex"]
+    assert (await client.delete("/api/accounts/override", headers=auth)).status_code == 204
+    assert (await run_to_end(client, auth, sess["id"], "again"))["profile"] == "claude"
+    past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+    assert (await client.put("/api/accounts/override", json={"ids": [accs[1]["id"]], "until": past}, headers=auth)).status_code == 400
+
+
+async def test_expired_override_is_ignored(client, auth, make_dir):
+    from datetime import UTC, datetime, timedelta
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import AppSetting
+
+    accs = await _accounts(client, auth)
+    async with sessionmaker()() as db:
+        db.add(AppSetting(key="account_priority_override",
+                          value={"ids": [accs[1]["id"]], "until": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}))
+        await db.commit()
+    assert (await client.get("/api/accounts/override", headers=auth)).json() == {"active": False, "ids": [], "until": None}
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    assert (await run_to_end(client, auth, sess["id"], "hi"))["profile"] == "claude"
+
+
+async def test_model_goes_only_to_matching_engine(client, auth, make_dir):
+    sess = await _session(client, auth, make_dir, kind="orchestrator", model="opus")
+    await run_to_end(client, auth, sess["id"], "CLAUDE_LIMIT")
+    calls = agent_calls()
+    claude = next(c for c in calls if c["engine"] == "claude")["argv"]
+    codex = next(c for c in calls if c["engine"] == "codex")["argv"]
+    assert claude[claude.index("--model") + 1] == "opus" and "-m" not in codex
+
+
+async def test_usage_from_stream_and_codex_session_log(client, auth, make_dir, monkeypatch):
+    import json as _json
+
+    from ttakkari.runs import usage
+
+    async def no_token(_d):
+        return None
+    monkeypatch.setattr(usage, "_claude_token", no_token)
+    # 기본 계정(~/.codex)이 실제 홈의 로그를 읽지 않게 한다.
+    monkeypatch.setattr(usage, "HOME", HOME / "fake-home")
+    usage.clear_cache()
+    d = make_dir()
+    cx = (await client.post("/api/accounts", json={"name": "cx2", "engine": "codex"}, headers=auth)).json()
+    sess_dir = HOME / "accounts" / cx["id"] / "sessions" / "2026" / "10" / "11"
+    sess_dir.mkdir(parents=True)
+    (sess_dir / "rollout.jsonl").write_text(_json.dumps({"type": "event_msg", "payload": {"type": "token_count", "rate_limits": {
+        "primary": {"used_percent": 37.0, "window_minutes": 300, "resets_at": 1791734450},
+        "secondary": {"used_percent": 12.5, "window_minutes": 10080, "resets_at": 1792321250}, "plan_type": "plus"}}}) + "\n")
+    chat = await _session(client, auth, make_dir, engine="claude")
+    await run_to_end(client, auth, chat["id"], "hi")
+    rows = {r["name"]: r for r in (await client.get("/api/accounts/usage", params={"refresh": True}, headers=auth)).json()}
+    cl = rows["claude"]
+    assert cl["source"] == "stream" and [(w["key"], w["percent"]) for w in cl["windows"]] == [("five_hour", 42), ("seven_day", 10)]
+    assert cl["rank"] == 1 and "토큰" in cl["error"]
+    c2 = rows["cx2"]
+    assert c2["source"] == "session_log" and c2["plan"] == "plus"
+    assert [(w["label"], w["percent"]) for w in c2["windows"]] == [("5시간", 37), ("주간", 12)]
+    assert rows["codex"]["windows"] == [] and rows["codex"]["error"]
+    assert d
+
+
+def test_usage_api_parsing_prefers_limits_list():
+    from ttakkari.runs.usage import keychain_service, windows_from_api
+
+    body = {"five_hour": {"utilization": 60.0, "resets_at": "2026-10-11T15:19:59+00:00"},
+            "limits": [{"kind": "session", "percent": 61, "resets_at": "2026-10-11T15:19:59+00:00"},
+                       {"kind": "weekly_all", "percent": 52, "resets_at": "2026-10-15T00:59:59+00:00"},
+                       {"kind": "weekly_scoped", "percent": 30, "resets_at": "2026-10-15T00:59:59+00:00",
+                        "scope": {"model": {"display_name": "Fable"}}}]}
+    assert [(w.key, w.label, w.percent) for w in windows_from_api(body)] == [
+        ("five_hour", "5시간", 61), ("seven_day", "주간", 52), ("seven_day_fable", "주간 Fable", 30)]
+    assert [(w.key, w.percent) for w in windows_from_api({"five_hour": {"utilization": 60.0}})] == [("five_hour", 60)]
+    assert keychain_service(None) == "Claude Code-credentials"
+    assert keychain_service("/Users/winterholic/.ttakkari/accounts/890cf835-c9cf-4322-840e-a11b1bf98a4e") == "Claude Code-credentials-a519acfa"

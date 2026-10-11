@@ -54,10 +54,10 @@ from ttakkari.config import get_settings
 get_settings.cache_clear()
 assert str(get_settings().database_url) == TEST_DB, "테스트 DB 설정이 적용되지 않았다"
 
+from ttakkari.api.assistant import wait_indexing
 from ttakkari.db import sessionmaker
 from ttakkari.main import app
 from ttakkari.models import Base, Credential
-from ttakkari.api.assistant import wait_indexing
 from ttakkari.runs import profiles
 from ttakkari.runs.manager import _background, manager
 from ttakkari.security.auth import issue_access_token, limiter

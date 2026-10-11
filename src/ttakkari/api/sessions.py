@@ -61,10 +61,12 @@ async def _session_out(db: Db, s: ChatSession) -> SessionOut:
 @router.get("/sessions", response_model=list[SessionOut])
 async def list_sessions(_: User, db: Db, workspace_id: uuid.UUID | None = None, include_archived: bool = False,
                         limit: int = Query(50, le=200), before: str | None = None,
-                        parent_id: uuid.UUID | None = None) -> list[SessionOut]:
+                        parent_id: uuid.UUID | None = None, pool: str | None = None) -> list[SessionOut]:
     """parent_id 를 주면 그 오케스트레이터의 작업 세션, 안 주면 사이드바 목록(작업 세션 제외)."""
     q = select(ChatSession).order_by(ChatSession.updated_at.desc()).limit(limit)
     q = q.where(ChatSession.parent_id == parent_id) if parent_id else q.where(ChatSession.parent_id.is_(None))
+    if pool:
+        q = q.where(ChatSession.pool == pool)
     if workspace_id:
         q = q.where(ChatSession.workspace_id == workspace_id)
     if not include_archived:
@@ -80,7 +82,7 @@ async def create_session(body: SessionIn, _: User, db: Db) -> SessionOut:
     # 오케스트레이터는 Claude 우선, 사용량 한도면 다음 프로필로 넘어간다(ADR 0006).
     engine = "auto" if body.kind == SessionKind.orchestrator else (body.engine or ws.default_engine)
     s = ChatSession(workspace_id=ws.id, title=body.title or "새 작업", engine=engine,
-                    model=body.model, effort=body.effort, kind=body.kind)
+                    model=body.model, effort=body.effort, kind=body.kind, pool=body.pool)
     db.add(s)
     await db.commit()
     return await _session_out(db, s)

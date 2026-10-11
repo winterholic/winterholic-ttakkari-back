@@ -92,6 +92,8 @@ class SessionIn(BaseModel):
     effort: Effort | None = None
     # 작업 세션(worker)은 오케스트레이터 도구로만 만든다.
     kind: SessionKindName = "chat"
+    # personal | work. 회사 업무 탭에서 만든 대화는 회사 계정만 쓴다.
+    pool: Literal["personal", "work"] = "personal"
 
 
 class SessionPatch(BaseModel):
@@ -111,6 +113,7 @@ class SessionOut(ORM):
     engine_session_id: str | None
     kind: str
     parent_id: uuid.UUID | None
+    pool: str
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None

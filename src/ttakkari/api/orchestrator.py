@@ -86,7 +86,7 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     if (active or 0) >= MAX_ACTIVE_WORKERS:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"동시에 돌 수 있는 작업 세션은 {MAX_ACTIVE_WORKERS}개입니다.")
     w = ChatSession(workspace_id=orch.workspace_id, title=body.title, engine=body.engine, model=body.model,
-                    effort=body.effort, kind=SessionKind.worker, parent_id=orch.id)
+                    effort=body.effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool)
     db.add(w)
     await db.flush()
     await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)

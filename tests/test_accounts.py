@@ -61,7 +61,7 @@ async def test_disabled_account_is_skipped_and_explicit_engine_fails_clearly(cli
     assert (await run_to_end(client, auth, orch["id"], "hi"))["profile"] == "codex"
     chat = await _session(client, auth, make_dir, engine="claude")
     run = await run_to_end(client, auth, chat["id"], "hi")
-    assert run["status"] == "failed" and "켜진 claude 계정이 없습니다" in run["error"]
+    assert run["status"] == "failed" and "켜진 개인 claude 계정이 없습니다" in run["error"]
 
 
 async def test_second_claude_account_takes_over_with_its_config_dir(client, auth, make_dir):
@@ -137,7 +137,7 @@ async def test_expired_override_is_ignored(client, auth, make_dir):
 
     accs = await _accounts(client, auth)
     async with sessionmaker()() as db:
-        db.add(AppSetting(key="account_priority_override",
+        db.add(AppSetting(key="account_priority_override:personal",
                           value={"ids": [accs[1]["id"]], "until": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}))
         await db.commit()
     assert (await client.get("/api/accounts/override", headers=auth)).json() == {"active": False, "ids": [], "until": None}
@@ -210,3 +210,65 @@ def test_reset_time_parsed_from_codex_limit_message():
     left = reset_seconds_from(None, msg)
     assert left is not None and abs(left - 3 * 3600) < 120
     assert reset_seconds_from("no date here") is None
+
+
+async def test_work_pool_sessions_use_only_work_accounts(client, auth, make_dir):
+    from ttakkari.orchestrator.runtime import issue_token
+
+    w = (await client.post("/api/accounts", json={"name": "회사 codex", "engine": "codex", "pool": "work"}, headers=auth)).json()
+    assert w["pool"] == "work" and w["priority"] == 0
+    # 회사 대화는 개인 계정(claude 1순위)을 건너뛰고 회사 계정만 쓴다.
+    root = make_dir()
+    ws = (await client.post("/api/workspaces", json={"name": "w", "root_path": str(root)}, headers=auth)).json()
+    orch = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "orchestrator", "pool": "work"},
+                              headers=auth)).json()
+    assert orch["pool"] == "work"
+    run = await run_to_end(client, auth, orch["id"], "hi")
+    assert run["profile"] == "회사 codex" and agent_calls()[-1]["engine"] == "codex"
+    # 작업 세션도 회사 묶음을 물려받는다.
+    wid = (await client.post("/api/orchestrator/workers", json={"title": "t", "prompt": "go"},
+                             headers={"Authorization": f"Bearer {issue_token(orch['id'])}"})).json()["worker_id"]
+    worker = (await client.get(f"/api/sessions/{wid}", headers=auth)).json()
+    assert worker["pool"] == "work"
+    # 개인 대화는 여전히 개인 계정.
+    personal = await _session(client, auth, make_dir, kind="orchestrator")
+    assert (await run_to_end(client, auth, personal["id"], "hi"))["profile"] == "claude"
+    # 회사 대화 목록만 거르기
+    ids = [s["id"] for s in (await client.get("/api/sessions", params={"pool": "work"}, headers=auth)).json()]
+    assert ids == [orch["id"]]
+
+
+async def test_work_pool_with_no_enabled_accounts_fails_clearly(client, auth, make_dir):
+    root = make_dir()
+    ws = (await client.post("/api/workspaces", json={"name": "w", "root_path": str(root)}, headers=auth)).json()
+    s = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "orchestrator", "pool": "work"},
+                           headers=auth)).json()
+    run = await run_to_end(client, auth, s["id"], "hi")
+    assert run["status"] == "failed" and "회사" in run["error"]
+
+
+async def test_move_account_between_pools_and_reorder_within_pool(client, auth):
+    accs = await _accounts(client, auth)
+    r = await client.patch(f"/api/accounts/{accs[1]['id']}", json={"pool": "work"}, headers=auth)
+    assert r.json()["pool"] == "work"
+    a2 = (await client.post("/api/accounts", json={"name": "회사2", "engine": "claude", "pool": "work"}, headers=auth)).json()
+    r = await client.post("/api/accounts/reorder", params={"pool": "work"}, json={"ids": [a2["id"], accs[1]["id"]]}, headers=auth)
+    assert r.status_code == 200 and [a["name"] for a in r.json()] == ["회사2", "codex"]
+    assert (await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"], a2["id"]]}, headers=auth)).status_code == 400
+    usage = (await client.get("/api/accounts/usage", headers=auth)).json()
+    assert [(u["pool"], u["name"], u["rank"]) for u in usage] == [("personal", "claude", 1), ("work", "회사2", 1), ("work", "codex", 2)]
+
+
+async def test_override_is_per_pool(client, auth, make_dir):
+    from datetime import UTC, datetime, timedelta
+
+    a = (await client.post("/api/accounts", json={"name": "회사 A", "engine": "claude", "pool": "work"}, headers=auth)).json()
+    until = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    accs = await _accounts(client, auth)
+    personal_ids = [x["id"] for x in accs if x["pool"] == "personal"]
+    assert (await client.put("/api/accounts/override", params={"pool": "work"}, json={"ids": [personal_ids[0]], "until": until},
+                             headers=auth)).status_code == 400
+    r = await client.put("/api/accounts/override", params={"pool": "work"}, json={"ids": [a["id"]], "until": until}, headers=auth)
+    assert r.json()["active"]
+    assert (await client.get("/api/accounts/override", headers=auth)).json()["active"] is False
+    assert (await client.get("/api/accounts/override", params={"pool": "work"}, headers=auth)).json()["ids"] == [a["id"]]

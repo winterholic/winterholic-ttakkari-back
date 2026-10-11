@@ -227,10 +227,12 @@ class RunManager:
         is_orch = sess.kind == SessionKind.orchestrator
         system_note = await _system_note(db, outbox, orchestrator=is_orch)
         mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
-        profiles = await profiles_mod.candidates(db, sess.engine)
+        profiles = await profiles_mod.candidates(db, sess.engine, sess.pool)
         if not profiles:
             what = "엔진" if sess.engine == "auto" else sess.engine
-            await self._finish(db, run, RunStatus.failed, error=f"켜진 {what} 계정이 없습니다. 설정 > 계정에서 켜 주세요.")
+            where = "회사" if sess.pool == "work" else "개인"
+            await self._finish(db, run, RunStatus.failed,
+                               error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
             return
         h = self._handles.get(run.id)
         state = ParseState()

@@ -73,12 +73,16 @@ async def accounts(db: AsyncSession) -> list[EngineAccount]:
     return list(await db.scalars(select(EngineAccount).order_by(EngineAccount.priority, EngineAccount.created_at)))
 
 
-OVERRIDE_KEY = "account_priority_override"
+POOLS = ("personal", "work")
 
 
-async def get_override(db: AsyncSession) -> dict | None:
-    """임시 우선순위 {ids, until(ISO)}. 기한이 지났으면 None."""
-    row = await db.get(AppSetting, OVERRIDE_KEY)
+def override_key(pool: str) -> str:
+    return f"account_priority_override:{pool}"
+
+
+async def get_override(db: AsyncSession, pool: str = "personal") -> dict | None:
+    """임시 우선순위 {ids, until(ISO)}. 계정 묶음(개인·회사)마다 따로. 기한이 지났으면 None."""
+    row = await db.get(AppSetting, override_key(pool))
     if row is None or not row.value.get("ids"):
         return None
     try:
@@ -88,21 +92,22 @@ async def get_override(db: AsyncSession) -> dict | None:
     return row.value if until > utcnow() else None
 
 
-async def effective_order(db: AsyncSession) -> list[EngineAccount]:
-    """지금 적용되는 순서. 임시 우선순위가 살아 있으면 그 순서가 먼저, 나머지는 기본 순서로 뒤에 붙는다."""
-    rows = await accounts(db)
-    ov = await get_override(db)
+async def effective_order(db: AsyncSession, pool: str = "personal") -> list[EngineAccount]:
+    """그 묶음에서 지금 적용되는 순서. 임시 우선순위가 살아 있으면 그 순서가 먼저, 나머지는 기본 순서로 뒤에 붙는다."""
+    rows = [a for a in await accounts(db) if a.pool == pool]
+    ov = await get_override(db, pool)
     if not ov:
         return rows
     rank = {aid: i for i, aid in enumerate(ov["ids"])}
     return sorted(rows, key=lambda a: (rank.get(str(a.id), len(rank)), a.priority))
 
 
-async def candidates(db: AsyncSession, session_engine: str) -> list[Profile]:
+async def candidates(db: AsyncSession, session_engine: str, pool: str = "personal") -> list[Profile]:
     """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). 쉬는 계정은 뒤로 보낸다(전부 쉬면 순서대로 다시 시도)."""
-    pool = [_profile(a) for a in await effective_order(db) if a.enabled and (session_engine == "auto" or a.engine == session_engine)]
+    picked = [_profile(a) for a in await effective_order(db, pool)
+              if a.enabled and (session_engine == "auto" or a.engine == session_engine)]
     now = time.monotonic()
-    return [p for p in pool if _cooldown.get(p.id, 0) <= now] + [p for p in pool if _cooldown.get(p.id, 0) > now]
+    return [p for p in picked if _cooldown.get(p.id, 0) <= now] + [p for p in picked if _cooldown.get(p.id, 0) > now]
 
 
 # Codex: "try again at Oct 12th, 2026 12:16 AM." (2026-10-11 실측). 시간대 표기가 없어 서버 현지 시각으로 읽는다.

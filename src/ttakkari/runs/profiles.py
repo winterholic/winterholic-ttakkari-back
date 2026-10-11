@@ -1,13 +1,19 @@
-"""엔진 프로필(계정) 우선순위와 사용량 한도 폴백(ADR 0006)."""
+"""엔진 계정(프로필) 우선순위와 사용량 한도 폴백(ADR 0006). 계정은 DB(engine_accounts)에 있고 설정 화면에서 고친다."""
 
 from __future__ import annotations
 
+import json
 import re
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from ttakkari.config import get_settings
+from sqlalchemy import Text, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ttakkari.config import HOME, get_settings
+from ttakkari.models import ChatSession, EngineAccount
 
 ENGINES = {"claude", "codex"}
 # 엔진이 사용량·속도 한도로 거절할 때의 문구. 문구가 바뀌면 폴백 없이 그냥 실패한다(ADR 0006 한계).
@@ -17,14 +23,20 @@ USAGE_LIMIT_RE = re.compile(
     re.IGNORECASE,
 )
 
-_cooldown: dict[str, float] = {}
+_cooldown: dict[uuid.UUID, float] = {}
 
 
 @dataclass(frozen=True)
 class Profile:
+    id: uuid.UUID
     name: str
     engine: str
     config_dir: Path | None = None
+
+    @property
+    def key(self) -> str:
+        """sessions.engine_sessions 의 키. 이름을 바꿔도 대화가 이어지게 id 를 쓴다."""
+        return str(self.id)
 
     def env(self) -> dict[str, str]:
         if self.config_dir is None:
@@ -32,32 +44,51 @@ class Profile:
         return {"CLAUDE_CONFIG_DIR" if self.engine == "claude" else "CODEX_HOME": str(self.config_dir)}
 
 
-def load() -> list[Profile]:
-    out: list[Profile] = []
-    for raw in get_settings().engine_profiles:
+def _profile(a: EngineAccount) -> Profile:
+    return Profile(id=a.id, name=a.name, engine=a.engine, config_dir=Path(a.config_dir).expanduser() if a.config_dir else None)
+
+
+async def ensure_seeded(db: AsyncSession) -> None:
+    """계정이 하나도 없으면 설정(TTAKKARI_ENGINE_PROFILES)으로 만든다. 기존 대화의 엔진 이름 키를 계정 id 로 옮긴다."""
+    if await db.scalar(select(func.count()).select_from(EngineAccount)):
+        return
+    by_name: dict[str, EngineAccount] = {}
+    for i, raw in enumerate(get_settings().engine_profiles):
         engine = raw.get("engine", "")
-        name = raw.get("name") or engine
-        if engine not in ENGINES or any(p.name == name for p in out):
+        name = (raw.get("name") or engine)[:60]
+        if engine not in ENGINES or name in by_name:
             continue
-        cd = raw.get("config_dir")
-        out.append(Profile(name=name, engine=engine, config_dir=Path(cd).expanduser() if cd else None))
-    return out
+        acc = EngineAccount(name=name, engine=engine, config_dir=raw.get("config_dir"), enabled=True, priority=i)
+        db.add(acc)
+        by_name[name] = acc
+    await db.flush()
+    for sess in await db.scalars(select(ChatSession).where(ChatSession.engine_sessions.cast(Text) != "{}")):
+        sess.engine_sessions = {(str(by_name[k].id) if k in by_name else k): v for k, v in sess.engine_sessions.items()}
+    await db.commit()
 
 
-def candidates(session_engine: str) -> list[Profile]:
-    """세션 엔진에 맞는 프로필을 우선순위대로. 쉬는 프로필은 뒤로 보낸다(전부 쉬면 순서대로 다시 시도)."""
-    all_ = load()
-    pool = all_ if session_engine == "auto" else [p for p in all_ if p.engine == session_engine]
-    if not pool and session_engine in ENGINES:
-        pool = [Profile(name=session_engine, engine=session_engine)]
+async def accounts(db: AsyncSession) -> list[EngineAccount]:
+    await ensure_seeded(db)
+    return list(await db.scalars(select(EngineAccount).order_by(EngineAccount.priority, EngineAccount.created_at)))
+
+
+async def candidates(db: AsyncSession, session_engine: str) -> list[Profile]:
+    """세션 엔진에 맞는 켜진 계정을 우선순위대로. 쉬는 계정은 뒤로 보낸다(전부 쉬면 순서대로 다시 시도)."""
+    pool = [_profile(a) for a in await accounts(db) if a.enabled and (session_engine == "auto" or a.engine == session_engine)]
     now = time.monotonic()
-    ready = [p for p in pool if _cooldown.get(p.name, 0) <= now]
-    cooling = [p for p in pool if _cooldown.get(p.name, 0) > now]
-    return ready + cooling
+    return [p for p in pool if _cooldown.get(p.id, 0) <= now] + [p for p in pool if _cooldown.get(p.id, 0) > now]
 
 
-def cool_down(name: str) -> None:
-    _cooldown[name] = time.monotonic() + get_settings().profile_cooldown_seconds
+def cool_down(account_id: uuid.UUID) -> None:
+    _cooldown[account_id] = time.monotonic() + get_settings().profile_cooldown_seconds
+
+
+def cooldown_remaining(account_id: uuid.UUID) -> int:
+    return max(0, round(_cooldown.get(account_id, 0) - time.monotonic()))
+
+
+def clear_cooldown(account_id: uuid.UUID) -> None:
+    _cooldown.pop(account_id, None)
 
 
 def reset_cooldowns() -> None:
@@ -66,3 +97,23 @@ def reset_cooldowns() -> None:
 
 def is_usage_limit(*texts: str | None) -> bool:
     return any(t and USAGE_LIMIT_RE.search(t) for t in texts)
+
+
+def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:
+    """계정 로그인 상태를 짐작한다. (상태, 표시 이름). 토큰은 읽지 않는다.
+
+    claude: <config_dir>/.claude.json 의 oauthAccount.emailAddress(기본은 ~/.claude.json).
+    codex: <config_dir 또는 ~/.codex>/auth.json 존재 여부만(키체인 저장이면 알 수 없다).
+    """
+    base = Path(config_dir).expanduser() if config_dir else None
+    if engine == "claude":
+        f = (base / ".claude.json") if base else HOME / ".claude.json"
+        try:
+            email = (json.loads(f.read_text()).get("oauthAccount") or {}).get("emailAddress")
+        except (OSError, ValueError):
+            return ("missing" if base and not base.exists() else "unknown"), None
+        return ("ok", email) if email else ("unknown", None)
+    home = base or HOME / ".codex"
+    if not home.exists():
+        return "missing", None
+    return ("ok", None) if (home / "auth.json").exists() else ("unknown", None)

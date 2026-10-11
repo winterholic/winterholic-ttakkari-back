@@ -146,3 +146,14 @@ Run 이 끝나면(`succeeded|failed|cancelled|interrupted`) 모든 구독에 보
 
 `WorkerOut`: `{worker_id, title, engine, status(queued|running|succeeded|failed|cancelled|interrupted|idle), active_run_id, last_result, last_error, artifacts}`.
 
+## 엔진 계정(ADR 0006)
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/accounts` | 우선순위 순. `{id, name, engine, config_dir, enabled, priority, login(ok/unknown/missing), login_label, cooldown_seconds}` |
+| POST | `/api/accounts` | `{name, engine, config_dir?, enabled?}` → 201(맨 뒤 순위). 이름 중복 409, 상대 경로·`~/.ttakkari` 안 422 |
+| PATCH | `/api/accounts/{id}` | `{name?, config_dir?, enabled?}`. 다시 켜면 한도 대기도 풀린다 |
+| DELETE | `/api/accounts/{id}` | 204 |
+| POST | `/api/accounts/reorder` | `{ids}` 전체 순서 → 목록 |
+| POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
+

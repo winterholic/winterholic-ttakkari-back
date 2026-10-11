@@ -58,7 +58,8 @@ HANDOFF_CHARS = 1500
 REPORT_CHARS = 3000
 # 부모 프로세스가 Claude Code·Orca 안에서 떴을 때 자식 에이전트가 중첩 세션으로 오인하지 않게 지운다.
 STRIP_ENV_PREFIXES = ("TTAKKARI_", "ORCA_", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID")
-STRIP_ENV_KEYS = {"DATABASE_URL", "PGPASSWORD"}
+# 계정 폴더는 계정 설정으로만 정한다. 백엔드를 띄운 셸(예: Orca)의 값이 기본 계정에 새지 않게 지운다(ADR 0006).
+STRIP_ENV_KEYS = {"DATABASE_URL", "PGPASSWORD", "CLAUDE_CONFIG_DIR", "CODEX_HOME"}
 
 SYSTEM_NOTE = """\
 You are running unattended via Winterholic Ttakkari on the user's Mac Studio. The user is remote, usually on a phone, \
@@ -225,16 +226,17 @@ class RunManager:
         if sess.kind == SessionKind.orchestrator:
             system_note += "\n\n" + ORCHESTRATOR_NOTE
             mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id)}
-        profiles = profiles_mod.candidates(sess.engine)
+        profiles = await profiles_mod.candidates(db, sess.engine)
         if not profiles:
-            await self._finish(db, run, RunStatus.failed, error=f"쓸 수 있는 엔진 프로필이 없습니다({sess.engine}).")
+            what = "엔진" if sess.engine == "auto" else sess.engine
+            await self._finish(db, run, RunStatus.failed, error=f"켜진 {what} 계정이 없습니다. 설정 > 계정에서 켜 주세요.")
             return
         h = self._handles.get(run.id)
         state = ParseState()
         rc: int | None = None
         timed_out = False
         for i, prof in enumerate(profiles):
-            resume_id = (sess.engine_sessions or {}).get(prof.name)
+            resume_id = (sess.engine_sessions or {}).get(prof.key)
             prompt = base_prompt
             if resume_id is None:
                 # 이 프로필로는 처음이다. 앞선 대화가 있으면 맥락을 넘긴다(다른 엔진·계정에서 이어받음).
@@ -252,19 +254,20 @@ class RunManager:
             await self._commit(db, run)
             state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h)
             if state.engine_session_id:
-                sess.engine_sessions = {**(sess.engine_sessions or {}), prof.name: state.engine_session_id}
+                sess.engine_sessions = {**(sess.engine_sessions or {}), prof.key: state.engine_session_id}
                 sess.engine_session_id = state.engine_session_id
             failed = missing or rc != 0 or state.is_error
             stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
             limited = failed and profiles_mod.is_usage_limit(state.error, tail, None if rc == 0 else state.result_text)
+            if limited and not stopped:
+                # 마지막 계정이어도 쉬게 해야 다음 지시가 한도 걸린 계정부터 다시 두드리지 않는다.
+                profiles_mod.cool_down(prof.id)
             if stopped or not failed or not (missing or limited) or i == len(profiles) - 1:
                 if missing and i == len(profiles) - 1:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
                     return
                 break
-            if limited:
-                profiles_mod.cool_down(prof.name)
             nxt = profiles[i + 1]
             events.append(db, run, "engine.fallback", {
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",

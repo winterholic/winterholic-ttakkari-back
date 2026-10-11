@@ -26,12 +26,14 @@ MCP 서버는 백엔드 HTTP(`/api/orchestrator/*`)를 부른다. Run 은 백엔
 오케스트레이터의 한 턴은 짧다(맡기고 끝낸다). 사용자 메시지는 기존 세션 대기열에 쌓이므로 응답을 기다리지 않고 계속 보낼 수 있다.
 
 ### 엔진 프로필과 폴백
+계정은 DB `engine_accounts`(이름·엔진·계정 폴더·켜기·우선순위)에 있고 설정 > 계정에서 고친다(`/api/accounts`). 테이블이 비어 있으면 아래 설정값으로 한 번 채운다.
+기본 계정(계정 폴더 비움)은 엔진 기본 위치를 쓴다. 백엔드를 띄운 셸의 `CLAUDE_CONFIG_DIR`·`CODEX_HOME` 은 자식에게 넘기지 않는다(Orca 터미널에서 띄우면 Orca 의 Codex 계정이 새던 문제).
 `TTAKKARI_ENGINE_PROFILES`(JSON 배열, 순서 = 우선순위). 기본 `[{"name":"claude","engine":"claude"},{"name":"codex","engine":"codex"}]`.
 Claude 계정을 여러 개 쓰려면 `{"name":"claude-2","engine":"claude","config_dir":"~/.claude-2"}`(`CLAUDE_CONFIG_DIR`), Codex 는 `config_dir` 가 `CODEX_HOME`.
 - 세션 엔진 `auto`(오케스트레이터 기본·작업 세션 기본): 모든 프로필을 순서대로.
 - 세션 엔진 `claude`/`codex`: 그 엔진의 프로필만(계정 전환만, 엔진은 안 바꾼다).
 Run 이 사용량 한도로 실패하면(출력·오류 문구 휴리스틱, 아래 한계) 그 프로필을 `profile_cooldown_seconds`(기본 30분) 쉬게 하고 같은 Run 안에서 다음 프로필로 다시 실행한다. 이벤트 `engine.fallback`.
-엔진 대화 ID 는 프로필별로 `sessions.engine_sessions` 에 둔다. 처음 쓰는 프로필로 넘어가면 최근 대화 8턴을 프롬프트 앞에 붙여 맥락을 넘긴다.
+엔진 대화 ID 는 계정 id 별로 `sessions.engine_sessions` 에 둔다(이름을 바꿔도 이어진다). 처음 쓰는 프로필로 넘어가면 최근 대화 8턴을 프롬프트 앞에 붙여 맥락을 넘긴다.
 
 ## 버린 것
 - Agent SDK·app-server 상주 오케스트레이터: 지시 1회 = 프로세스 1회 구조(ADR 0002)를 유지하는 편이 재시작 복구·취소가 단순하다.

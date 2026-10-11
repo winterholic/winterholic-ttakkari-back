@@ -31,7 +31,8 @@ def main():
     if log:
         with open(log, "a") as f:
             f.write(json.dumps({"engine": "claude", "argv": argv, "pid": os.getpid(), "cwd": os.getcwd(),
-                                "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_"))}) + "\n")
+                                "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
+                                "account_dir": os.environ.get("CLAUDE_CONFIG_DIR")}) + "\n")
 
     emit({"type": "system", "subtype": "init", "session_id": sid, "model": "claude-haiku-4-5", "cwd": os.getcwd()})
 

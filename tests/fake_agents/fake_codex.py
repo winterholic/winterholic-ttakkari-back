@@ -25,7 +25,8 @@ def main():
     if log:
         with open(log, "a") as f:
             f.write(json.dumps({"engine": "codex", "argv": argv, "pid": os.getpid(), "cwd": os.getcwd(),
-                                "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_"))}) + "\n")
+                                "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
+                                "account_dir": os.environ.get("CODEX_HOME")}) + "\n")
 
     emit({"type": "thread.started", "thread_id": thread})
     if "SLEEP" in prompt:

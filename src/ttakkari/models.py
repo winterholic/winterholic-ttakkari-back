@@ -132,6 +132,21 @@ class ChatSession(Base):
     archived_at: Mapped[datetime | None]
 
 
+class EngineAccount(Base):
+    """엔진 계정(프로필). priority 오름차순이 폴백 순서다(ADR 0006). config_dir 로 계정을 고른다."""
+
+    __tablename__ = "engine_accounts"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(60), unique=True)
+    engine: Mapped[str] = mapped_column(String(16))
+    # claude 면 CLAUDE_CONFIG_DIR, codex 면 CODEX_HOME. 비우면 엔진 기본 위치(~/.claude, ~/.codex).
+    config_dir: Mapped[str | None] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class Run(Base):
     """사용자 지시 1회 = 에이전트 프로세스 1회."""
 

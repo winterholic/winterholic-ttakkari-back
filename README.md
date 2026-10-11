@@ -86,3 +86,10 @@ uv run pytest -q
 PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레이션 0006 이 `vector`·`pg_trgm` 확장을 만든다.
 에이전트는 모든 Run 에서 `ttakkari` MCP 도구(`recall`·`remember`·`share_file` 등)를 쓴다. 비서 지침은 `~/.ttakkari/harness/instructions.md`.
 
+## 배포(Mac Studio + Cloudflare 터널, 포트 안 엶)
+
+- 백엔드: `deploy/install-services.sh backend` → launchd(`net.winterholic.ttakkari.backend`)가 127.0.0.1:8787 로 상시 실행. 로그 `~/.ttakkari/logs/backend.log`.
+- 터널: `cloudflared tunnel login` → `cloudflared tunnel create ttakkari` → `~/.cloudflared/ttakkari.yml`(예시 `deploy/cloudflared-ttakkari.yml.example`) → `cloudflared tunnel route dns ttakkari ttakkari-api.winterholic.net` → `deploy/install-services.sh tunnel`.
+- 주소는 한 단계 서브도메인(`ttakkari-api.winterholic.net`)이어야 Cloudflare 무료 인증서(`*.winterholic.net`)가 덮는다. `api.ttakkari.winterholic.net` 은 TLS 핸드셰이크에서 실패했다.
+- 운영 `config.env`: `TTAKKARI_ENV=prod`, `TTAKKARI_CORS_ORIGINS` 에 `https://ttakkari.winterholic.net`, `TTAKKARI_TRUST_PROXY_IP_HEADER=CF-Connecting-IP`.
+

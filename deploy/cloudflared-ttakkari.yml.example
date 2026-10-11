@@ -1,0 +1,10 @@
+# ~/.cloudflared/ttakkari.yml (터널 만든 뒤 <TUNNEL_ID> 를 채운다)
+tunnel: <TUNNEL_ID>
+credentials-file: /Users/<you>/.cloudflared/<TUNNEL_ID>.json
+ingress:
+  - hostname: ttakkari-api.winterholic.net
+    service: http://127.0.0.1:8787
+    originRequest:
+      # SSE(실행 스트림)는 오래 열려 있다. 터널이 중간에 끊지 않게 넉넉히.
+      keepAliveTimeout: 90s
+  - service: http_status:404

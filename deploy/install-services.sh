@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Mac Studio 에서 백엔드와 Cloudflare 터널을 로그인 시 자동으로 띄우는 launchd 서비스(LaunchAgent)를 설치한다.
+# 포트는 열지 않는다. 백엔드는 127.0.0.1:8787 에만 붙고, 터널이 바깥(ttakkari-api.winterholic.net)과 잇는다.
+# 사용: ./install-services.sh backend | tunnel | all     해제: ./install-services.sh uninstall
+set -euo pipefail
+BACK="$(cd "$(dirname "$0")/.." && pwd)"
+LA="$HOME/Library/LaunchAgents"
+LOGS="$HOME/.ttakkari/logs"
+# launchd 는 셸 PATH 를 모른다. 에이전트가 claude·codex·git 을 찾을 수 있게 지금 PATH 를 그대로 넘긴다.
+RUN_PATH="${TTK_RUN_PATH:-$PATH}"
+mkdir -p "$LA" "$LOGS"
+
+backend() {
+  cat > "$LA/net.winterholic.ttakkari.backend.plist" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>net.winterholic.ttakkari.backend</string>
+  <key>WorkingDirectory</key><string>$BACK</string>
+  <key>ProgramArguments</key><array>
+    <string>$(command -v uv)</string><string>run</string><string>ttakkari</string><string>serve</string>
+    <string>--host</string><string>127.0.0.1</string><string>--port</string><string>8787</string>
+  </array>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$RUN_PATH</string><key>HOME</key><string>$HOME</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$LOGS/backend.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/backend.log</string>
+</dict></plist>
+PL
+  launchctl bootout "gui/$(id -u)/net.winterholic.ttakkari.backend" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$LA/net.winterholic.ttakkari.backend.plist"
+  echo "backend service installed"
+}
+
+tunnel() {
+  local cfg="$HOME/.cloudflared/ttakkari.yml"
+  [ -f "$cfg" ] || { echo "터널 설정이 없습니다: $cfg (먼저 터널을 만드세요)"; exit 1; }
+  cat > "$LA/net.winterholic.ttakkari.tunnel.plist" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>net.winterholic.ttakkari.tunnel</string>
+  <key>ProgramArguments</key><array>
+    <string>$(command -v cloudflared)</string><string>tunnel</string><string>--config</string><string>$cfg</string><string>run</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$LOGS/tunnel.log</string>
+  <key>StandardErrorPath</key><string>$LOGS/tunnel.log</string>
+</dict></plist>
+PL
+  launchctl bootout "gui/$(id -u)/net.winterholic.ttakkari.tunnel" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$LA/net.winterholic.ttakkari.tunnel.plist"
+  echo "tunnel service installed"
+}
+
+case "${1:-all}" in
+  backend) backend ;;
+  tunnel) tunnel ;;
+  all) backend; tunnel ;;
+  uninstall)
+    for n in backend tunnel; do
+      launchctl bootout "gui/$(id -u)/net.winterholic.ttakkari.$n" 2>/dev/null || true
+      rm -f "$LA/net.winterholic.ttakkari.$n.plist"
+    done
+    echo "uninstalled" ;;
+  *) echo "usage: $0 backend|tunnel|all|uninstall"; exit 2 ;;
+esac

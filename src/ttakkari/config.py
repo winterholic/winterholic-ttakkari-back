@@ -61,6 +61,11 @@ class Settings(BaseSettings):
 
     copy_max_bytes: int = 200 * 1024 * 1024
     upload_max_bytes: int = 200 * 1024 * 1024
+    # 폰 → 컴퓨터 파일 보내기(조각 업로드). 동영상 때문에 크게 잡는다.
+    transfer_max_bytes: int = 20 * 1024 * 1024 * 1024
+    transfer_chunk_bytes: int = 8 * 1024 * 1024
+    # 처음 보낼 때의 기본 폴더. 권한 폴더 안이어야 한다.
+    transfer_inbox: Path = HOME / "docs" / "inbox"
     artifact_retention_days: int = 90
     soffice_bin: str | None = None
     # Web Push VAPID 연락처(mailto: 또는 https:). Apple 은 형식이 틀리면 거절한다. 비우면 vapid.json 값.

@@ -29,6 +29,8 @@ os.environ.update({
     "TTAKKARI_HOME": str(HOME),
     "TTAKKARI_ALLOWED_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WORKSPACE_ROOT": str(ALLOWED / "default-root"),
+    "TTAKKARI_TRANSFER_INBOX": str(ALLOWED / "default-docs" / "inbox"),
+    "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
     "TTAKKARI_DEFAULT_WRITABLE_ROOTS": json.dumps([str(ALLOWED / "default-docs"), str(ALLOWED / "default-missing")]),
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",
     "TTAKKARI_CLAUDE_BIN": str(FAKES / "fake_claude.py"),

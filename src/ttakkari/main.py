@@ -19,6 +19,7 @@ from ttakkari.api import (
     push,
     sessions,
     system,
+    transfers,
     workspaces,
 )
 from ttakkari.artifacts import preview
@@ -30,6 +31,7 @@ from ttakkari.runs.manager import (
     recover_interrupted,
     resume_queued,
 )
+from ttakkari.transfer import service as transfer_service
 
 log = logging.getLogger("ttakkari")
 RETENTION_INTERVAL = 3600
@@ -37,6 +39,8 @@ RETENTION_INTERVAL = 3600
 
 async def _retention_loop() -> None:
     while True:
+        with contextlib.suppress(Exception):
+            transfer_service.sweep_stale()
         with contextlib.suppress(Exception):
             n = await expire_artifacts()
             if n:
@@ -98,7 +102,7 @@ def create_app() -> FastAPI:
                             status_code=422)
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
-              orchestrator.router, accounts.router):
+              orchestrator.router, accounts.router, transfers.router, transfers.tokens):
         app.include_router(r)
     return app
 

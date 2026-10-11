@@ -157,3 +157,19 @@ Run 이 끝나면(`succeeded|failed|cancelled|interrupted`) 모든 구독에 보
 | POST | `/api/accounts/reorder` | `{ids}` 전체 순서 → 목록 |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 
+## 폰 → 컴퓨터 파일 보내기
+
+목적지는 기본 워크스페이스의 실행 위치와 권한 폴더 안(`~/.ttakkari` 제외). 사진은 서버에서 손질한다: HEIC → JPG(`convert_heic`, 기본 켬), EXIF 방향대로 회전, 위치 정보 삭제(`strip_location`, 기본 켬), `image.jpg` 같은 뻔한 이름은 촬영 시각 `IMG_YYYYMMDD_HHMMSS`, 같은 이름은 `이름 (2)`.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/transfers/folders?path=` | path 없으면 권한 폴더 목록과 기본 폴더, 있으면 그 아래 폴더 |
+| POST | `/api/transfers/folders` | `{path}` 폴더 만들기 |
+| POST | `/api/transfers` | `{filename, size, dest_dir, convert_heic?, strip_location?, keep_original?}` → `{id, received, size, chunk_size}`. 최대 20GB |
+| PUT | `/api/transfers/{id}?offset=N` | 본문 = 조각 바이트. offset 이 받은 크기와 다르면 409 `offset_mismatch`(`message: received=N`) |
+| GET | `/api/transfers/{id}` | 받은 크기(이어 올리기용) |
+| POST | `/api/transfers/{id}/complete` | → `{files: [{path, name, size, artifact_id}], notes}`. 덜 받았으면 409 |
+| DELETE | `/api/transfers/{id}` | 취소 |
+| POST | `/api/transfers/simple` | multipart `files`(여러 개), `dest_dir?`(기본 `TTAKKARI_TRANSFER_INBOX`). 사용자 토큰 또는 업로드 전용 토큰(`ttk_up_…`) |
+| GET/POST/DELETE | `/api/transfer-tokens[/{id}]` | 업로드 전용 토큰. 원문은 만들 때 한 번만 |
+

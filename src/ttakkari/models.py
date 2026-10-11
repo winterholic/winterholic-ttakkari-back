@@ -147,6 +147,18 @@ class EngineAccount(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class TransferToken(Base):
+    """아이폰 단축어처럼 앱 밖에서 파일을 올릴 때 쓰는 업로드 전용 토큰. 원문은 만들 때 한 번만 보여 주고 해시만 둔다."""
+
+    __tablename__ = "transfer_tokens"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(60))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    last_used_at: Mapped[datetime | None]
+    revoked_at: Mapped[datetime | None]
+
+
 class Run(Base):
     """사용자 지시 1회 = 에이전트 프로세스 1회."""
 

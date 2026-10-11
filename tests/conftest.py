@@ -57,6 +57,7 @@ assert str(get_settings().database_url) == TEST_DB, "테스트 DB 설정이 적�
 from ttakkari.db import sessionmaker
 from ttakkari.main import app
 from ttakkari.models import Base, Credential
+from ttakkari.api.assistant import wait_indexing
 from ttakkari.runs import profiles
 from ttakkari.runs.manager import _background, manager
 from ttakkari.security.auth import issue_access_token, limiter
@@ -91,6 +92,8 @@ async def _clean(_schema_and_app):
     yield
     # 남은 가짜 에이전트(SLEEP)가 다음 테스트로 새지 않게 정리한다. 취소가 결과 보고 Run 을 다시 띄울 수 있어
     # (ADR 0006) 실행 중인 것과 백그라운드 디스패치가 모두 없어질 때까지 반복한다.
+    # 지식 색인(백그라운드)이 다음 테스트의 TRUNCATE 와 겹치면 교착이 난다.
+    await wait_indexing()
     for _ in range(20):
         if not manager._handles and not _background:
             break

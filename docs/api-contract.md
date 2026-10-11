@@ -27,8 +27,8 @@
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/api/workspaces?include_archived=` | `WorkspaceOut[]` |
-| POST | `/api/workspaces` | `{name, root_path, default_engine?, codex_sandbox?, export_allowed?}` → 201. `allowed_roots` 밖이면 403 `outside_root`, 중복 409 |
-| GET/PATCH | `/api/workspaces/{id}` | PATCH: `{name?, default_engine?, codex_sandbox?, export_allowed?, archived?}` |
+| POST | `/api/workspaces` | `{name, root_path, default_engine?, codex_sandbox?, export_allowed?, extra_writable_roots?}` → 201. `allowed_roots` 밖이면 403 `outside_root`(추가 쓰기 경로도 같은 검증, 루트 안쪽·중복은 빠짐, 최대 20개), 중복 409 |
+| GET/PATCH | `/api/workspaces/{id}` | PATCH: `{name?, default_engine?, codex_sandbox?, export_allowed?, extra_writable_roots?, archived?}`. extra_writable_roots 는 통째로 교체 |
 | GET | `/api/workspaces/{id}/files?path=.&show_hidden=false` | `DirListing {rel_path, entries: FileEntry[], truncated}` |
 | GET | `/api/workspaces/{id}/search?q=` | 파일명 부분 일치 `FileEntry[]` (최대 200) |
 

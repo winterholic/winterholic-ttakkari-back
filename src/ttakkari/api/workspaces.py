@@ -53,9 +53,13 @@ async def create_workspace(body: WorkspaceIn, _: User, db: Db, request: Request)
                ip=client_ip(request))
         await db.commit()
         raise broker_http(e) from e
+    try:
+        extra = _validate_extra_roots(body.extra_writable_roots, root)
+    except BrokerError as e:
+        raise broker_http(e) from e
     ws = Workspace(name=body.name, root_path=str(root), is_git=(root / ".git").exists(),
                    default_engine=body.default_engine, codex_sandbox=body.codex_sandbox,
-                   export_allowed=body.export_allowed)
+                   export_allowed=body.export_allowed, extra_writable_roots=extra)
     db.add(ws)
     try:
         await db.flush()
@@ -77,6 +81,13 @@ async def patch_ws(ws_id: uuid.UUID, body: WorkspacePatch, _: User, db: Db, requ
     ws = await get_workspace(db, ws_id)
     data = body.model_dump(exclude_unset=True)
     archived = data.pop("archived", None)
+    if data.get("extra_writable_roots") is not None:
+        try:
+            data["extra_writable_roots"] = _validate_extra_roots(data["extra_writable_roots"], Path(ws.root_path))
+        except BrokerError as e:
+            raise broker_http(e) from e
+    else:
+        data.pop("extra_writable_roots", None)
     for k, v in data.items():
         setattr(ws, k, v)
     if archived is not None:
@@ -86,6 +97,19 @@ async def patch_ws(ws_id: uuid.UUID, body: WorkspacePatch, _: User, db: Db, requ
            ip=client_ip(request))
     await db.commit()
     return ws
+
+
+def _validate_extra_roots(paths: list[str], root: Path) -> list[str]:
+    """추가 쓰기 경로도 워크스페이스 루트와 같은 기준(allowed_roots 안, 민감 경로 아님)으로 검증한다."""
+    allowed = get_settings().allowed_roots
+    out: list[str] = []
+    for raw in paths:
+        p = validate_workspace_root(raw, allowed)
+        # 루트 안쪽 경로는 이미 쓰기 가능하므로 저장하지 않는다.
+        if p == root or p.is_relative_to(root) or str(p) in out:
+            continue
+        out.append(str(p))
+    return out
 
 
 def _entry(p: Path, root: Path) -> FileEntry:

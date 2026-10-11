@@ -39,6 +39,8 @@ class WorkspaceIn(BaseModel):
     default_engine: EngineName = "claude"
     codex_sandbox: Literal["read-only", "workspace-write", "danger-full-access"] = "workspace-write"
     export_allowed: bool = True
+    # 루트 밖에서 에이전트가 쓰기를 허용받는 추가 경로. 각각 allowed_roots 검증을 거친다.
+    extra_writable_roots: list[str] = Field(default_factory=list, max_length=20)
 
 
 class WorkspacePatch(BaseModel):
@@ -46,6 +48,7 @@ class WorkspacePatch(BaseModel):
     default_engine: EngineName | None = None
     codex_sandbox: Literal["read-only", "workspace-write", "danger-full-access"] | None = None
     export_allowed: bool | None = None
+    extra_writable_roots: list[str] | None = Field(default=None, max_length=20)
     archived: bool | None = None
 
 
@@ -57,6 +60,7 @@ class WorkspaceOut(ORM):
     default_engine: str
     codex_sandbox: str
     export_allowed: bool
+    extra_writable_roots: list[str]
     created_at: datetime
     archived_at: datetime | None
 

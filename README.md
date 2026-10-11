@@ -28,7 +28,7 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 
 | 변수 | 의미 |
 |---|---|
-| `TTAKKARI_ALLOWED_ROOTS` | 워크스페이스로 등록할 수 있는 상위 경로 JSON 배열. 기본 `~/development`, `~/Documents`, `~/Desktop`, `~/Downloads` |
+| `TTAKKARI_ALLOWED_ROOTS` | 워크스페이스로 등록할 수 있는 상위 경로 JSON 배열. 기본 `~/development`, `~/docs`, `~/personal`, `~/private-resources`, `~/testing`. 워크스페이스의 `extra_writable_roots` 도 이 안쪽만 허용 |
 | `TTAKKARI_CORS_ORIGINS` | 프론트 origin JSON 배열 |
 | `TTAKKARI_ENV` | `prod` 면 refresh 쿠키가 `SameSite=None; Secure`, `/docs` 비활성 |
 | `TTAKKARI_TRUST_PROXY_IP_HEADER` | Cloudflare Tunnel 뒤면 `CF-Connecting-IP` |

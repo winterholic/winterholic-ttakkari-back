@@ -199,3 +199,30 @@ async def test_search_limit_200(client, auth, make_dir):
     ws = (await _create(client, auth, d)).json()
     r = await client.get(f"/api/workspaces/{ws['id']}/search", params={"q": "m"}, headers=auth)
     assert len(r.json()) == 200
+
+
+async def test_extra_writable_roots_validated_and_normalized(client, auth, make_dir):
+    root, a, b = make_dir(), make_dir(), make_dir()
+    inner = root / "sub"
+    inner.mkdir()
+    r = await _create(client, auth, root, extra_writable_roots=[str(a), str(a), str(inner), str(b)])
+    assert r.status_code == 201
+    # 중복과 루트 안쪽 경로는 빠진다.
+    assert r.json()["extra_writable_roots"] == [str(a.resolve()), str(b.resolve())]
+
+
+async def test_extra_writable_roots_outside_allowed_denied(client, auth, make_dir, outside_dir):
+    r = await _create(client, auth, make_dir(), extra_writable_roots=[str(outside_dir)])
+    assert r.status_code == 403 and r.json()["code"] == "outside_root"
+
+
+async def test_patch_extra_writable_roots(client, auth, make_dir, outside_dir):
+    ws = (await _create(client, auth, make_dir())).json()
+    a = make_dir()
+    r = await client.patch(f"/api/workspaces/{ws['id']}", json={"extra_writable_roots": [str(a)]}, headers=auth)
+    assert r.status_code == 200 and r.json()["extra_writable_roots"] == [str(a.resolve())]
+    bad = await client.patch(f"/api/workspaces/{ws['id']}", json={"extra_writable_roots": [str(outside_dir)]}, headers=auth)
+    assert bad.status_code == 403
+    # 이름만 바꾸면 기존 추가 경로는 유지된다.
+    r = await client.patch(f"/api/workspaces/{ws['id']}", json={"name": "x"}, headers=auth)
+    assert r.json()["extra_writable_roots"] == [str(a.resolve())]

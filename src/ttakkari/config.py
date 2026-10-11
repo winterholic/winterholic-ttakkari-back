@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     trust_proxy_ip_header: str | None = None
 
     # 워크스페이스로 등록할 수 있는 상위 경로. 이 밖은 등록 자체를 거부한다.
-    allowed_roots: list[Path] = [HOME / "development", HOME / "Documents", HOME / "Desktop", HOME / "Downloads"]
+    allowed_roots: list[Path] = [
+        HOME / "development", HOME / "docs", HOME / "personal", HOME / "private-resources", HOME / "testing",
+    ]
 
     claude_bin: str = "claude"
     codex_bin: str = "codex"

@@ -35,11 +35,15 @@ class Settings(BaseSettings):
     # 워크스페이스로 등록할 수 있는 상위 경로. 이 밖은 등록 자체를 거부한다.
     allowed_roots: list[Path] = [
         HOME / "development", HOME / "docs", HOME / "personal", HOME / "private-resources", HOME / "testing",
+        # 하네스(Claude Code·Codex 설정·스킬·hook)를 따까리가 고칠 수 있게(사용자 결정 10-11). 로그인 토큰은 guard 가 막는다.
+        HOME / ".claude", HOME / ".codex",
     ]
 
     # 서버가 알아서 만드는 기본 워크스페이스. 에이전트 실행 위치가 루트이고, 추가 경로는 쓰기만 허용한다.
     default_workspace_root: Path = HOME / "development"
-    default_writable_roots: list[Path] = [HOME / "docs", HOME / "personal", HOME / "private-resources", HOME / "testing"]
+    default_writable_roots: list[Path] = [
+        HOME / "docs", HOME / "personal", HOME / "private-resources", HOME / "testing", HOME / ".claude", HOME / ".codex",
+    ]
 
     # 엔진 프로필(순서 = 우선순위). config_dir 는 claude 면 CLAUDE_CONFIG_DIR, codex 면 CODEX_HOME 으로 계정을 고른다(ADR 0006).
     engine_profiles: list[dict[str, str]] = [{"name": "claude", "engine": "claude"}, {"name": "codex", "engine": "codex"}]

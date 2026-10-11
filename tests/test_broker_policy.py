@@ -78,7 +78,8 @@ def test_validate_workspace_root_requires_allowed_real_directory(tmp_path: Path)
 
 @pytest.mark.parametrize(
     "path",
-    [".env", ".env.local", "id_ed25519", "server.pem", ".ssh/config", ".aws/credentials", ".config/gcloud/application_default_credentials.json"],
+    [".env", ".env.local", "id_ed25519", "server.pem", ".ssh/config", ".aws/credentials", ".config/gcloud/application_default_credentials.json",
+     "home/.codex/auth.json", "home/.claude/.credentials.json"],
 )
 def test_is_sensitive_recognizes_sensitive_names_and_directories(path: str) -> None:
     assert is_sensitive(Path(path))
@@ -91,3 +92,10 @@ def test_is_sensitive_matches_case_insensitively() -> None:
 
 def test_unicode_lookalike_is_not_treated_as_ascii_env_name() -> None:
     assert not is_sensitive(Path(".еnv"))  # Cyrillic small letter ie
+
+
+def test_harness_folders_are_not_sensitive_except_login_tokens() -> None:
+    # 하네스 폴더는 권한 폴더로 열 수 있어야 한다. 토큰 파일만 막는다.
+    for ok in ("home/.claude", "home/.claude/settings.json", "home/.claude/skills/x/SKILL.md", "home/.codex/config.toml",
+               "proj/auth.json"):
+        assert not is_sensitive(Path(ok)), ok

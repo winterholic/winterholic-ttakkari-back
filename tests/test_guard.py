@@ -166,3 +166,12 @@ def test_bash_blocks_sudo_after_env_assignment(tmp_path: Path) -> None:
 
 def test_bash_allows_env_assignment_prefix(tmp_path: Path) -> None:
     assert check_bash("NODE_ENV=test npm test", tmp_path, GuardConfig(write_roots=[tmp_path])) is None
+
+
+def test_harness_edit_allowed_but_codex_token_read_blocked(tmp_path: Path) -> None:
+    harness = tmp_path / ".codex"
+    harness.mkdir()
+    (harness / "auth.json").write_text("{}")
+    cfg = GuardConfig(write_roots=[tmp_path])
+    assert check_bash(f"cat {harness}/config.toml", tmp_path, cfg) is None
+    assert check_bash(f"cat {harness}/auth.json", tmp_path, cfg) is not None

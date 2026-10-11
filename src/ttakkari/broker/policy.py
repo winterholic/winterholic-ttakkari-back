@@ -43,7 +43,9 @@ SENSITIVE_NAME_GLOBS = (
     "*.tfstate",
     "*.tfvars",
 )
-SENSITIVE_DIR_NAMES = (".ssh", ".aws", ".gnupg", ".kube", ".docker", ".azure", ".gcloud", ".config/gcloud", ".git")
+# 경로 조각 연속 일치. ".codex/auth.json" 처럼 파일까지 적으면 그 파일만 막는다(하네스 폴더를 권한 폴더로 열어도 로그인 토큰은 못 읽게).
+SENSITIVE_DIR_NAMES = (".ssh", ".aws", ".gnupg", ".kube", ".docker", ".azure", ".gcloud", ".config/gcloud", ".git",
+                       ".codex/auth.json")
 
 
 class BrokerError(Exception):

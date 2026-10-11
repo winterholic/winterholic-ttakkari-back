@@ -235,3 +235,13 @@ def test_mcp_server_lists_tools_over_stdio():
     assert names == {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker"}, p.stderr[-2000:]
     # 백엔드에 못 붙어도 서버가 죽지 않고 오류를 결과로 돌려준다.
     assert 3 in replies, p.stderr[-2000:]
+
+
+async def test_worker_list_has_summary_for_tabs(client, auth, make_dir):
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    wid = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "go"},
+                             headers=_orch(issue_token(orch["id"])))).json()["worker_id"]
+    wrun = (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json()[0]
+    await wait_run(client, auth, wrun["id"])
+    tab = (await client.get("/api/sessions", params={"parent_id": orch["id"]}, headers=auth)).json()[0]
+    assert tab["last_run_status"] == "succeeded" and tab["last_result"] == "done" and tab["last_run_profile"] == "claude"

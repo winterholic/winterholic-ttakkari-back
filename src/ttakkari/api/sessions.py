@@ -45,8 +45,16 @@ async def _session_out(db: Db, s: ChatSession) -> SessionOut:
     last = await db.scalar(select(Run).where(Run.session_id == s.id).order_by(Run.created_at.desc()).limit(1))
     if last is not None:
         out.last_run_status = last.status
+        out.last_run_profile = last.profile
         if last.status in ACTIVE:
             out.active_run_id = last.id
+            out.last_run_started_at = last.started_at
+        # 오케스트레이터 화면 오른쪽 탭의 한 줄 요약
+        done = last if last.status not in ACTIVE else await db.scalar(
+            select(Run).where(Run.session_id == s.id, Run.status.not_in(ACTIVE)).order_by(Run.created_at.desc()).limit(1))
+        if done is not None:
+            text = done.result_text or done.error or ""
+            out.last_result = " ".join(text.split())[:200] or None
     return out
 
 

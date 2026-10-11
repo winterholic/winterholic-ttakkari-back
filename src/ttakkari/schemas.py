@@ -116,6 +116,10 @@ class SessionOut(ORM):
     archived_at: datetime | None
     active_run_id: uuid.UUID | None = None
     last_run_status: str | None = None
+    last_run_profile: str | None = None
+    last_run_started_at: datetime | None = None
+    # 마지막으로 끝난 Run 의 결과(없으면 오류) 앞 200자. 오케스트레이터 화면의 작업 세션 탭에 쓴다.
+    last_result: str | None = None
 
 
 # ---- runs

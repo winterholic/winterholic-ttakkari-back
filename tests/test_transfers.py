@@ -153,3 +153,11 @@ async def test_simple_upload_with_user_token_and_dest(client, auth):
                           data={"dest_dir": str(DOCS / "here")}, headers=auth)
     assert r.status_code == 201 and Path(r.json()["files"][0]["path"]).parent == (DOCS / "here").resolve()
     assert (await client.post("/api/transfers/simple", files=[("files", ("a.txt", b"x", "text/plain"))])).status_code == 401
+
+
+async def test_cors_preflight_allows_chunk_put(client):
+    # 조각 업로드는 PUT + application/octet-stream 이라 브라우저가 preflight 를 보낸다(배포에서만 드러난 버그).
+    r = await client.options("/api/transfers/x?offset=0", headers={
+        "Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT",
+        "Access-Control-Request-Headers": "authorization,content-type"})
+    assert r.status_code == 200 and "PUT" in r.headers["access-control-allow-methods"]

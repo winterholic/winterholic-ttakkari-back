@@ -89,7 +89,7 @@ def create_app() -> FastAPI:
                   docs_url=None if s.is_prod else "/docs", redoc_url=None, openapi_url=None if s.is_prod else "/openapi.json")
     app.add_middleware(
         CORSMiddleware, allow_origins=s.cors_origins, allow_credentials=True,
-        allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range"],
         expose_headers=["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
     )
 

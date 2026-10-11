@@ -34,6 +34,9 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_ENGINE_PROFILES` | 엔진 프로필 JSON 배열(순서 = 우선순위). `{"name","engine","config_dir"?}`. 기본 claude → codex. 오케스트레이터·작업 세션(`auto`)은 사용량 한도면 다음 프로필로 넘어간다(ADR 0006) |
 | `TTAKKARI_PROFILE_COOLDOWN_SECONDS` | 한도에 걸린 프로필을 쉬게 하는 시간. 기본 1800 |
 | `TTAKKARI_INTERNAL_API_URL` | 오케스트레이터 MCP 서버가 부르는 백엔드 주소. 기본 `http://127.0.0.1:8787` |
+| `TTAKKARI_TRANSFER_INBOX` | 폰에서 보낸 파일 기본 폴더. 비우면 `~/.ttakkari/inbox`(에이전트가 읽고 쓸 수 있는 ~/.ttakkari 안 유일한 곳) |
+| `TTAKKARI_CONTEXT_EMBEDDER` | `e5`(기본, 로컬 multilingual-e5-large, 처음 2.3GB 내려받음) 또는 `hash`(테스트용) |
+| `TTAKKARI_CONTEXT_SOURCE_ROOTS` | 비서 관리 > 지식에 등록할 수 있는 상위 폴더 JSON 배열. 기본 홈 |
 | `TTAKKARI_CORS_ORIGINS` | 프론트 origin JSON 배열 |
 | `TTAKKARI_ENV` | `prod` 면 refresh 쿠키가 `SameSite=None; Secure`, `/docs` 비활성 |
 | `TTAKKARI_TRUST_PROXY_IP_HEADER` | Cloudflare Tunnel 뒤면 `CF-Connecting-IP` |
@@ -77,3 +80,9 @@ uv run pytest -q
 ```
 
 테스트는 가짜 엔진 스크립트(`tests/fake_agents/`)를 쓴다. 실제 CLI 를 부르지 않는다.
+
+## 비서 맥락(ADR 0007)
+
+PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레이션 0006 이 `vector`·`pg_trgm` 확장을 만든다.
+에이전트는 모든 Run 에서 `ttakkari` MCP 도구(`recall`·`remember`·`share_file` 등)를 쓴다. 비서 지침은 `~/.ttakkari/harness/instructions.md`.
+

@@ -42,7 +42,7 @@ def staging_root() -> Path:
 
 def write_scope(ws: Workspace) -> list[Path]:
     """보낼 수 있는 곳 = 기본 워크스페이스의 실행 위치 + 권한 폴더(에이전트가 쓸 수 있는 곳과 같다)."""
-    return [Path(ws.root_path).resolve(), *[Path(p).resolve() for p in ws.extra_writable_roots]]
+    return [get_settings().inbox_root.resolve(), Path(ws.root_path).resolve(), *[Path(p).resolve() for p in ws.extra_writable_roots]]
 
 
 def check_dest(raw: str, scope: list[Path], *, create: bool = False) -> Path:
@@ -55,7 +55,10 @@ def check_dest(raw: str, scope: list[Path], *, create: bool = False) -> Path:
     real = p.resolve()
     if not any(is_within(real, r) for r in scope):
         raise BrokerError("권한 폴더 밖이에요. 설정 > 권한 폴더에 먼저 추가해 주세요.", "outside_root")
-    if is_sensitive(real) or is_within(real, get_settings().home):
+    s = get_settings()
+    # ~/.ttakkari 안은 inbox 만 받는다(설정·비밀키·guard 정책은 그대로 보호).
+    in_home = is_within(real, s.home) and not is_within(real, s.inbox_root.resolve())
+    if is_sensitive(real) or in_home:
         raise BrokerError("이 폴더에는 보낼 수 없어요.", "sensitive")
     if real.exists() and not real.is_dir():
         raise BrokerError("폴더가 아니에요.", "not_a_dir")

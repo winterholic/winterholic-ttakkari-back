@@ -109,7 +109,7 @@ async def test_generic_video_name_is_dated(client, auth):
 
 
 async def test_destination_must_be_inside_permission_folders(client, auth, outside_dir):
-    for bad in (str(outside_dir), str(HOME / "data"), "relative/dir"):
+    for bad in (str(outside_dir), str(HOME / "data"), str(HOME / "config.env.d"), "relative/dir"):
         r = await client.post("/api/transfers", json={"filename": "a.txt", "size": 1, "dest_dir": bad}, headers=auth)
         assert r.status_code in (400, 403), (bad, r.text)
 
@@ -121,7 +121,7 @@ async def test_too_big_is_rejected_up_front(client, auth):
 
 async def test_folders_list_roots_and_children_and_mkdir(client, auth):
     top = (await client.get("/api/transfers/folders", headers=auth)).json()
-    assert str(DOCS.resolve()) in [r["path"] for r in top["roots"]] and top["default"] == str(DOCS / "inbox")
+    assert str(DOCS.resolve()) in [r["path"] for r in top["roots"]] and top["default"] == str((HOME / "inbox").resolve())
     r = await client.post("/api/transfers/folders", json={"path": str(DOCS / "사진")}, headers=auth)
     assert r.status_code == 201
     sub = (await client.get("/api/transfers/folders", params={"path": str(DOCS)}, headers=auth)).json()
@@ -137,7 +137,8 @@ async def test_shortcut_token_uploads_and_can_be_revoked(client, auth):
     assert r.status_code == 201, r.text
     names = sorted(f["name"] for f in r.json()["files"])
     assert names == ["IMG_20261011_153012.jpg", "memo.txt"]
-    assert all(Path(f["path"]).parent == (DOCS / "inbox").resolve() for f in r.json()["files"])
+    # 기본 받는 폴더는 ~/.ttakkari/inbox
+    assert all(Path(f["path"]).parent == (HOME / "inbox").resolve() for f in r.json()["files"])
     listed = (await client.get("/api/transfer-tokens", headers=auth)).json()
     assert listed[0]["last_used_at"] and listed[0]["token"] is None
     # 업로드 토큰으로는 다른 API 를 못 쓴다.

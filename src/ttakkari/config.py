@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     # 오케스트레이터 MCP 서버가 부를 백엔드 주소. serve 포트를 바꾸면 같이 바꾼다.
     internal_api_url: str = "http://127.0.0.1:8787"
 
+    # 비서 맥락(ADR 0007). e5 = 로컬 multilingual-e5-large, hash = 테스트용 결정적 임베딩.
+    context_embedder: str = "e5"
+    context_model: str = "intfloat/multilingual-e5-large"
+    # 모든 Run 에 넣는 고정 기억·비서 지침의 최대 글자 수(토큰 절약)
+    context_brief_chars: int = 3000
+    # 지식(RAG) 출처로 등록할 수 있는 상위 폴더
+    context_source_roots: list[Path] = [HOME]
+
     claude_bin: str = "claude"
     codex_bin: str = "codex"
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
@@ -64,8 +72,8 @@ class Settings(BaseSettings):
     # 폰 → 컴퓨터 파일 보내기(조각 업로드). 동영상 때문에 크게 잡는다.
     transfer_max_bytes: int = 20 * 1024 * 1024 * 1024
     transfer_chunk_bytes: int = 8 * 1024 * 1024
-    # 처음 보낼 때의 기본 폴더. 권한 폴더 안이어야 한다.
-    transfer_inbox: Path = HOME / "docs" / "inbox"
+    # 폰에서 보낸 파일의 기본 폴더. 비우면 <home>/inbox(~/.ttakkari/inbox). ~/.ttakkari 안에서 에이전트가 읽고 쓸 수 있는 유일한 곳이다.
+    transfer_inbox: Path | None = None
     artifact_retention_days: int = 90
     soffice_bin: str | None = None
     # Web Push VAPID 연락처(mailto: 또는 https:). Apple 은 형식이 틀리면 거절한다. 비우면 vapid.json 값.
@@ -97,6 +105,18 @@ class Settings(BaseSettings):
         return self.data_dir / "uploads"
 
     @property
+    def models_dir(self) -> Path:
+        return self.home / "models"
+
+    @property
+    def harness_dir(self) -> Path:
+        return self.home / "harness"
+
+    @property
+    def inbox_root(self) -> Path:
+        return Path(self.transfer_inbox).expanduser().resolve() if self.transfer_inbox else self.home / "inbox"
+
+    @property
     def outbox_root(self) -> Path:
         return self.data_dir / "outbox"
 
@@ -109,7 +129,7 @@ class Settings(BaseSettings):
         return self.env == "prod"
 
     def ensure_dirs(self) -> None:
-        for d in (self.home, self.data_dir, self.artifact_store, self.outbox_root, self.uploads_root):
+        for d in (self.home, self.data_dir, self.artifact_store, self.outbox_root, self.uploads_root, self.inbox_root):
             d.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 

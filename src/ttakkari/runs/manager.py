@@ -25,6 +25,7 @@ from ttakkari.artifacts.service import register_file
 from ttakkari.audit import record
 from ttakkari.broker.policy import BrokerError, ResolvedPath, is_within
 from ttakkari.config import get_settings
+from ttakkari.context.store import pinned_brief
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
@@ -38,6 +39,7 @@ from ttakkari.models import (
     utcnow,
 )
 from ttakkari.orchestrator.runtime import (
+    AGENT_NOTE,
     MCP_SERVER_NAME,
     ORCHESTRATOR_NOTE,
     mcp_server_spec,
@@ -218,14 +220,12 @@ class RunManager:
         outbox.mkdir(parents=True, exist_ok=True)
         run.outbox_path = str(outbox)
         # 업로드 폴더는 guard 보호 영역(~/.ttakkari) 안이라 에이전트가 첨부를 읽으려면 허용 목록에 있어야 한다.
-        write_roots = [root, outbox, s.uploads_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
+        write_roots = [root, outbox, s.uploads_root, s.inbox_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
 
         base_prompt = await _compose_prompt(db, run)
-        system_note = SYSTEM_NOTE.format(outbox=outbox)
-        mcp_servers: dict = {}
-        if sess.kind == SessionKind.orchestrator:
-            system_note += "\n\n" + ORCHESTRATOR_NOTE
-            mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id)}
+        is_orch = sess.kind == SessionKind.orchestrator
+        system_note = await _system_note(db, outbox, orchestrator=is_orch)
+        mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
         profiles = await profiles_mod.candidates(db, sess.engine)
         if not profiles:
             what = "엔진" if sess.engine == "auto" else sess.engine
@@ -540,6 +540,29 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
     if not lines:
         return run.prompt
     return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + run.prompt
+
+
+async def _system_note(db: AsyncSession, outbox: Path, *, orchestrator: bool) -> str:
+    """기본 안내 + 도구 안내 + 비서 지침(~/.ttakkari/harness) + 고정 기억. 매 Run 에 들어가므로 짧게 유지한다(ADR 0007)."""
+    parts = [SYSTEM_NOTE.format(outbox=outbox), AGENT_NOTE]
+    if orchestrator:
+        parts.append(ORCHESTRATOR_NOTE)
+    instructions = read_instructions()
+    if instructions:
+        parts.append("[User's standing instructions for this assistant]\n" + instructions)
+    brief = await pinned_brief(db)
+    if brief:
+        parts.append("[Pinned facts about the user — use recall for more]\n" + brief)
+    return "\n\n".join(parts)
+
+
+def read_instructions() -> str:
+    f = get_settings().harness_dir / "instructions.md"
+    try:
+        text = f.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return text[: get_settings().context_brief_chars]
 
 
 async def _handoff_context(db: AsyncSession, run: Run) -> str:

@@ -13,7 +13,9 @@ from fastapi.responses import JSONResponse
 
 from ttakkari.api import (
     accounts,
+    agent,
     artifacts,
+    assistant,
     auth,
     orchestrator,
     push,
@@ -24,6 +26,8 @@ from ttakkari.api import (
 )
 from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
+from ttakkari.context.embedder import warmup as embedder_warmup
+from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.runs.manager import (
     expire_artifacts,
@@ -41,6 +45,10 @@ async def _retention_loop() -> None:
     while True:
         with contextlib.suppress(Exception):
             transfer_service.sweep_stale()
+        with contextlib.suppress(Exception):
+            async with sessionmaker()() as db:
+                # 바뀐 파일만 다시 임베딩하므로 매시간 돌려도 싸다(ADR 0007).
+                await index_all(db)
         with contextlib.suppress(Exception):
             n = await expire_artifacts()
             if n:
@@ -64,6 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # 기본 경로가 없어도 서버는 뜬다. 프론트가 /api/workspaces/default 로 다시 시도하며 오류를 보여 준다.
         log.warning("default workspace not created: %s", e)
     await preview.start_worker()
+    embedder_warmup()
     retention = asyncio.create_task(_retention_loop())
     try:
         yield
@@ -102,7 +111,7 @@ def create_app() -> FastAPI:
                             status_code=422)
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
-              orchestrator.router, accounts.router, transfers.router, transfers.tokens):
+              orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router):
         app.include_router(r)
     return app
 

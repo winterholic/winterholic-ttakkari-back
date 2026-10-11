@@ -117,7 +117,7 @@ async def folders(_: User, db: Db, path: Annotated[str | None, Query(max_length=
     ws = await ensure_default_workspace(db)
     scope = service.write_scope(ws)
     roots = [FolderOut(name=r.name, path=str(r)) for r in scope]
-    inbox = str(get_settings().transfer_inbox)
+    inbox = str(get_settings().inbox_root)
     if path is None:
         return FoldersOut(path=None, parent=None, roots=roots, dirs=[], default=inbox, can_write=False)
     try:
@@ -236,7 +236,7 @@ async def simple(db: Db, request: Request, who: Annotated[str, Depends(_simple_a
                  keep_original: Annotated[bool, Form()] = False) -> CompleteOut:
     s = get_settings()
     ws = await ensure_default_workspace(db)
-    dest = dest_dir or str(s.transfer_inbox)
+    dest = dest_dir or str(s.inbox_root)
     try:
         service.check_dest(dest, service.write_scope(ws))
     except BrokerError as e:

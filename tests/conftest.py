@@ -29,8 +29,9 @@ os.environ.update({
     "TTAKKARI_HOME": str(HOME),
     "TTAKKARI_ALLOWED_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WORKSPACE_ROOT": str(ALLOWED / "default-root"),
-    "TTAKKARI_TRANSFER_INBOX": str(ALLOWED / "default-docs" / "inbox"),
     "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
+    "TTAKKARI_CONTEXT_EMBEDDER": "hash",
+    "TTAKKARI_CONTEXT_SOURCE_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WRITABLE_ROOTS": json.dumps([str(ALLOWED / "default-docs"), str(ALLOWED / "default-missing")]),
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",
     "TTAKKARI_CLAUDE_BIN": str(FAKES / "fake_claude.py"),
@@ -68,6 +69,8 @@ PASSWORD = "correct-horse-battery"
 async def _schema_and_app():
     eng = create_async_engine(TEST_DB)
     async with eng.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     await eng.dispose()

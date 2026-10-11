@@ -14,7 +14,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from ttakkari.config import get_settings
 from ttakkari.security.auth import ALGO, ISSUER, decode
 
-AUDIENCE = "ttakkari-orch"
+# 모든 Run 이 쓰는 세션 한정 토큰(ADR 0007). 오케스트레이터 도구는 세션 종류로 따로 막는다.
+AUDIENCE = "ttakkari-agent"
 MCP_SERVER_NAME = "ttakkari"
 _bearer = HTTPBearer(auto_error=False)
 
@@ -31,6 +32,18 @@ Do not wait or poll for workers to finish; you will receive a message starting w
 needed. Do not repeat the whole worker output.
 - Reuse an existing worker (message_worker) when the request continues its task; spawn a new one for unrelated work.
 - Small questions you can answer directly without tools, answer directly."""
+
+
+AGENT_NOTE = """\
+You have the `ttakkari` MCP tools, which reach the user's own Ttakkari app (memory, files, notifications).
+- Before assuming the user's preferences, projects, people or past decisions, call `recall` with a short query. \
+Do not ask the user for things memory can answer.
+- When the user states a durable fact, preference or decision about themselves or their work, save it with \
+`remember` (one fact per call, written so it reads well out of context). Use `link` for relations \
+(e.g. user —works_on→ project). Never store secrets or credentials.
+- To hand a file to the user that is not in the outbox, use `share_file`. Use `notify_user` only for things the \
+user must see now; finished runs already notify.
+- `list_sessions`/`read_session` show the user's other conversations when context from them is needed."""
 
 
 def issue_token(session_id: uuid.UUID) -> str:
@@ -58,11 +71,13 @@ async def require_orchestrator(
 OrchestratorSession = Annotated[uuid.UUID, Depends(require_orchestrator)]
 
 
-def mcp_server_spec(session_id: uuid.UUID) -> dict[str, Any]:
-    """엔진에 넘길 stdio MCP 서버 명세. TTAKKARI_* 는 자식 env 에서 지워지므로 접두사를 달리 쓴다."""
+def mcp_server_spec(session_id: uuid.UUID, role: str = "agent") -> dict[str, Any]:
+    """엔진에 넘길 stdio MCP 서버 명세. TTAKKARI_* 는 자식 env 에서 지워지므로 접두사를 달리 쓴다.
+
+    role: agent(공통 도구) | orchestrator(공통 + 작업 세션 도구)."""
     s = get_settings()
     return {
         "command": sys.executable,
         "args": ["-m", "ttakkari.orchestrator.mcp_server"],
-        "env": {"TTK_ORCH_TOKEN": issue_token(session_id), "TTK_API_URL": s.internal_api_url},
+        "env": {"TTK_ORCH_TOKEN": issue_token(session_id), "TTK_API_URL": s.internal_api_url, "TTK_ROLE": role},
     }

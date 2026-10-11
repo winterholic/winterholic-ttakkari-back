@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -254,3 +255,90 @@ class PushSubscription(Base):
     user_agent: Mapped[str | None] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     last_success_at: Mapped[datetime | None]
+
+
+# ---- 비서 맥락: 온톨로지 + RAG (ADR 0007)
+EMBED_DIM = 1024
+
+
+class CtxEntity(Base):
+    """나와 관련된 것(사람·프로젝트·조직·장소·도구·주제·취향). 온톨로지의 노드."""
+
+    __tablename__ = "ctx_entities"
+    __table_args__ = (UniqueConstraint("type", "name"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    type: Mapped[str] = mapped_column(String(30), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    aliases: Mapped[list[Any]] = mapped_column(default=list)
+    summary: Mapped[str | None] = mapped_column(Text)
+    attributes: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    embedding: Mapped[Any] = mapped_column(Vector(EMBED_DIM), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class CtxRelation(Base):
+    """(주어, 술어, 목적어). 예) winterholic —works_on→ Ttakkari."""
+
+    __tablename__ = "ctx_relations"
+    __table_args__ = (UniqueConstraint("subject_id", "predicate", "object_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    subject_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_entities.id", ondelete="CASCADE"), index=True)
+    predicate: Mapped[str] = mapped_column(String(60))
+    object_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_entities.id", ondelete="CASCADE"), index=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(20), default="manual")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class CtxMemory(Base):
+    """사실·취향·결정·사건·지침·메모 한 줄. pinned 는 모든 Run 의 시스템 프롬프트에 들어간다."""
+
+    __tablename__ = "ctx_memories"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(20), default="fact", index=True)
+    content: Mapped[str] = mapped_column(Text)
+    entity_ids: Mapped[list[Any]] = mapped_column(default=list)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    source: Mapped[str] = mapped_column(String(20), default="manual")
+    source_ref: Mapped[str | None] = mapped_column(Text)
+    embedding: Mapped[Any] = mapped_column(Vector(EMBED_DIM), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    archived_at: Mapped[datetime | None]
+
+
+class CtxSource(Base):
+    """색인할 폴더(또는 파일)와 패턴."""
+
+    __tablename__ = "ctx_sources"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    path: Mapped[str] = mapped_column(Text, unique=True)
+    pattern: Mapped[str] = mapped_column(String(100), default="**/*.md")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_indexed_at: Mapped[datetime | None]
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class CtxDocument(Base):
+    __tablename__ = "ctx_documents"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_sources.id", ondelete="CASCADE"), index=True)
+    path: Mapped[str] = mapped_column(Text, unique=True)
+    title: Mapped[str] = mapped_column(String(500))
+    sha256: Mapped[str] = mapped_column(String(64))
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0)
+    indexed_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class CtxChunk(Base):
+    __tablename__ = "ctx_chunks"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_documents.id", ondelete="CASCADE"), index=True)
+    ord: Mapped[int] = mapped_column(Integer)
+    heading: Mapped[str | None] = mapped_column(Text)
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[Any] = mapped_column(Vector(EMBED_DIM), nullable=True)
+

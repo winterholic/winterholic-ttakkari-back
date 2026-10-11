@@ -96,13 +96,18 @@ async def test_orchestrator_run_gets_mcp_server_and_role_note(client, auth, make
     cfg = json.loads(argv[argv.index("--mcp-config") + 1])
     srv = cfg["mcpServers"]["ttakkari"]
     assert srv["args"] == ["-m", "ttakkari.orchestrator.mcp_server"] and srv["env"]["TTK_ORCH_TOKEN"]
+    assert srv["env"]["TTK_ROLE"] == "orchestrator"
     assert "main orchestrator" in argv[argv.index("--append-system-prompt") + 1]
 
 
-async def test_chat_session_has_no_mcp_server(client, auth, make_dir):
+async def test_chat_session_gets_agent_tools_but_not_worker_tools(client, auth, make_dir):
     sess = await _session(client, auth, make_dir)
     await run_to_end(client, auth, sess["id"], "hi")
-    assert "--mcp-config" not in agent_calls()[-1]["argv"]
+    argv = agent_calls()[-1]["argv"]
+    srv = json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]["ttakkari"]
+    assert srv["env"]["TTK_ROLE"] == "agent"
+    note = argv[argv.index("--append-system-prompt") + 1]
+    assert "recall" in note and "main orchestrator" not in note
 
 
 async def test_codex_orchestrator_gets_mcp_server_via_config_flags(client, auth, make_dir):
@@ -219,22 +224,31 @@ async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, 
 
 # ---- MCP 서버(stdio 프로토콜)
 
-def test_mcp_server_lists_tools_over_stdio():
-    env = {**os.environ, "TTK_ORCH_TOKEN": "x", "TTK_API_URL": "http://127.0.0.1:9"}
+AGENT_TOOLS = {"recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
+               "notify_user", "list_sessions", "read_session"}
+WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker"}
+
+
+def _mcp_tools(role: str) -> tuple[set[str], dict]:
+    env = {**os.environ, "TTK_ORCH_TOKEN": "x", "TTK_API_URL": "http://127.0.0.1:9", "TTK_ROLE": role}
     msgs = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize",
          "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}},
         {"jsonrpc": "2.0", "method": "notifications/initialized"},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_workers", "arguments": {}}},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "recall", "arguments": {"query": "x"}}},
     ]
     p = subprocess.run([sys.executable, "-m", "ttakkari.orchestrator.mcp_server"], env=env, text=True, timeout=60,
                        input="".join(json.dumps(m) + "\n" for m in msgs), capture_output=True, check=False)
     replies = {r["id"]: r for r in (json.loads(x) for x in p.stdout.splitlines() if x.strip()) if "id" in r}
-    names = {t["name"] for t in replies[2]["result"]["tools"]}
-    assert names == {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker"}, p.stderr[-2000:]
-    # 백엔드에 못 붙어도 서버가 죽지 않고 오류를 결과로 돌려준다.
-    assert 3 in replies, p.stderr[-2000:]
+    return {t["name"] for t in replies[2]["result"]["tools"]}, replies
+
+
+def test_mcp_server_tools_by_role():
+    agent, replies = _mcp_tools("agent")
+    assert agent == AGENT_TOOLS and 3 in replies
+    orch, _ = _mcp_tools("orchestrator")
+    assert orch == AGENT_TOOLS | WORKER_TOOLS
 
 
 async def test_worker_list_has_summary_for_tabs(client, auth, make_dir):

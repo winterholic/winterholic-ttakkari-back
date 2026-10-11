@@ -126,3 +126,23 @@ Run 이 끝나면(`succeeded|failed|cancelled|interrupted`) 모든 구독에 보
 - `url`: `/chat/<session_id>`, `tag`: session_id (같은 세션 알림은 하나로 합쳐진다)
 
 푸시 서비스가 404/410 을 돌려주면 그 구독을 지운다. 다른 오류는 로그만 남긴다. 발송 결과는 감사 로그 `push.run_finished` 에 집계(`sent|removed|failed`)로 남는다.
+
+## 오케스트레이터(ADR 0006)
+
+- `POST /api/sessions` 에 `kind`(`chat` 기본 | `orchestrator`). 오케스트레이터는 엔진이 `auto` 로 고정된다.
+- `GET /api/sessions` 는 작업 세션을 빼고, `?parent_id=<오케스트레이터 id>` 면 그 작업 세션만.
+- `SessionOut` 에 `kind`, `parent_id`. `RunOut` 에 `origin`(`user` | `report` | `orchestrator`), `profile`(실제로 쓴 엔진 프로필).
+- Run 이벤트 `engine.fallback` `{from, to, reason: usage_limit|missing, detail}`.
+
+오케스트레이터 MCP 서버 전용(토큰 `aud=ttakkari-orch`, 세션 한정. 사용자 토큰은 401):
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| POST | `/api/orchestrator/workers` | `{title, prompt, engine?(auto), model?, effort?}` → 201 WorkerOut. 동시 실행 20개 초과 429 |
+| POST | `/api/orchestrator/workers/{id}/messages` | `{prompt}` → 202 |
+| GET | `/api/orchestrator/workers` | 목록(짧은 결과) |
+| GET | `/api/orchestrator/workers/{id}` | 상세(결과 4000자·오류·결과물 이름) |
+| POST | `/api/orchestrator/workers/{id}/stop` | 대기·실행 Run 취소 |
+
+`WorkerOut`: `{worker_id, title, engine, status(queued|running|succeeded|failed|cancelled|interrupted|idle), active_run_id, last_result, last_error, artifacts}`.
+

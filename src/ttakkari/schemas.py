@@ -9,6 +9,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 EngineName = Literal["claude", "codex"]
+# 세션 엔진. auto 는 엔진 프로필을 우선순위대로 쓰고 사용량 한도면 다음으로 넘어간다(ADR 0006).
+SessionEngine = Literal["claude", "codex", "auto"]
+SessionKindName = Literal["chat", "orchestrator"]
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
@@ -84,9 +87,11 @@ class DirListing(BaseModel):
 class SessionIn(BaseModel):
     workspace_id: uuid.UUID
     title: str | None = Field(default=None, max_length=300)
-    engine: EngineName | None = None
+    engine: SessionEngine | None = None
     model: str | None = Field(default=None, max_length=100)
     effort: Effort | None = None
+    # 작업 세션(worker)은 오케스트레이터 도구로만 만든다.
+    kind: SessionKindName = "chat"
 
 
 class SessionPatch(BaseModel):
@@ -104,6 +109,8 @@ class SessionOut(ORM):
     model: str | None
     effort: str | None
     engine_session_id: str | None
+    kind: str
+    parent_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None
@@ -136,6 +143,8 @@ class RunOut(ORM):
     cost_usd: float | None
     usage: dict[str, Any]
     checkpoint_ref: str | None
+    origin: str
+    profile: str | None
     last_seq: int
     created_at: datetime
     started_at: datetime | None

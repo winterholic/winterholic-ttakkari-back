@@ -31,6 +31,9 @@ def main():
     if "SLEEP" in prompt:
         time.sleep(60)
         return 0
+    if "CODEX_LIMIT" in prompt:
+        emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit."}})
+        return 1
     if "FAIL" in prompt:
         emit({"type": "turn.failed", "error": {"message": "fake codex failure"}})
         return 1

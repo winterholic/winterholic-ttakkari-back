@@ -38,6 +38,10 @@ def main():
     if "SLEEP" in prompt:
         time.sleep(60)
         return 0
+    if "CLAUDE_LIMIT" in prompt:
+        emit({"type": "result", "subtype": "success", "is_error": True, "result": "Claude AI usage limit reached|1760000000",
+              "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
+        return 1
     if "FAIL" in prompt:
         emit({"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "fake failure",
               "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})

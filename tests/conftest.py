@@ -54,7 +54,8 @@ assert str(get_settings().database_url) == TEST_DB, "테스트 DB 설정이 적�
 from ttakkari.db import sessionmaker
 from ttakkari.main import app
 from ttakkari.models import Base, Credential
-from ttakkari.runs.manager import manager
+from ttakkari.runs import profiles
+from ttakkari.runs.manager import _background, manager
 from ttakkari.security.auth import issue_access_token, limiter
 from ttakkari.security.passwords import hash_password
 
@@ -80,16 +81,26 @@ async def _clean(_schema_and_app):
         db.add(Credential(id=1, password_hash=hash_password(PASSWORD)))
         await db.commit()
     limiter.reset()
+    profiles.reset_cooldowns()
     AGENT_LOG.unlink(missing_ok=True)
     yield
-    # 남은 가짜 에이전트(SLEEP)가 다음 테스트로 새지 않게 정리한다.
-    for rid in list(manager._handles):
-        await manager.cancel(rid)
-    for h in list(manager._handles.values()):
-        try:
-            await h.task
-        except BaseException:  # noqa: BLE001, S110
-            pass
+    # 남은 가짜 에이전트(SLEEP)가 다음 테스트로 새지 않게 정리한다. 취소가 결과 보고 Run 을 다시 띄울 수 있어
+    # (ADR 0006) 실행 중인 것과 백그라운드 디스패치가 모두 없어질 때까지 반복한다.
+    for _ in range(20):
+        if not manager._handles and not _background:
+            break
+        for rid in list(manager._handles):
+            await manager.cancel(rid)
+        for h in list(manager._handles.values()):
+            try:
+                await h.task
+            except BaseException:  # noqa: BLE001, S110
+                pass
+        for t in list(_background):
+            try:
+                await t
+            except BaseException:  # noqa: BLE001, S110
+                pass
 
 
 @pytest_asyncio.fixture(loop_scope="session")

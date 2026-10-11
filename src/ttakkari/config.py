@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     default_workspace_root: Path = HOME / "development"
     default_writable_roots: list[Path] = [HOME / "docs", HOME / "personal", HOME / "private-resources", HOME / "testing"]
 
+    # 엔진 프로필(순서 = 우선순위). config_dir 는 claude 면 CLAUDE_CONFIG_DIR, codex 면 CODEX_HOME 으로 계정을 고른다(ADR 0006).
+    engine_profiles: list[dict[str, str]] = [{"name": "claude", "engine": "claude"}, {"name": "codex", "engine": "codex"}]
+    profile_cooldown_seconds: int = 30 * 60
+    # 오케스트레이터 MCP 서버가 부를 백엔드 주소. serve 포트를 바꾸면 같이 바꾼다.
+    internal_api_url: str = "http://127.0.0.1:8787"
+
     claude_bin: str = "claude"
     codex_bin: str = "codex"
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.

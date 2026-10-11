@@ -26,9 +26,25 @@ from ttakkari.audit import record
 from ttakkari.broker.policy import BrokerError, ResolvedPath, is_within
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.models import Artifact, ChatSession, Run, RunStatus, Workspace, utcnow
+from ttakkari.models import (
+    TERMINAL_RUN_STATUSES,
+    Artifact,
+    ChatSession,
+    Run,
+    RunOrigin,
+    RunStatus,
+    SessionKind,
+    Workspace,
+    utcnow,
+)
+from ttakkari.orchestrator.runtime import (
+    MCP_SERVER_NAME,
+    ORCHESTRATOR_NOTE,
+    mcp_server_spec,
+)
 from ttakkari.push.service import notify_run_finished
 from ttakkari.runs import events
+from ttakkari.runs import profiles as profiles_mod
 from ttakkari.schemas import ArtifactOut
 
 log = logging.getLogger(__name__)
@@ -37,6 +53,9 @@ ADAPTERS: dict[str, AgentAdapter] = {"claude": ClaudeAdapter(), "codex": CodexAd
 MAX_TOUCHED_ARTIFACTS = 50
 MAX_OUTBOX_FILES = 200
 STDERR_TAIL = 4000
+HANDOFF_TURNS = 8
+HANDOFF_CHARS = 1500
+REPORT_CHARS = 3000
 # 부모 프로세스가 Claude Code·Orca 안에서 떴을 때 자식 에이전트가 중첩 세션으로 오인하지 않게 지운다.
 STRIP_ENV_PREFIXES = ("TTAKKARI_", "ORCA_", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID")
 STRIP_ENV_KEYS = {"DATABASE_URL", "PGPASSWORD"}
@@ -200,47 +219,61 @@ class RunManager:
         # 업로드 폴더는 guard 보호 영역(~/.ttakkari) 안이라 에이전트가 첨부를 읽으려면 허용 목록에 있어야 한다.
         write_roots = [root, outbox, s.uploads_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
 
-        prompt = await _compose_prompt(db, run)
-        adapter = ADAPTERS[run.engine]
-        spec = LaunchSpec(
-            cwd=root, prompt=prompt, engine_session_id=sess.engine_session_id, model=run.model, effort=run.effort,
-            outbox=outbox, write_roots=write_roots, system_note=SYSTEM_NOTE.format(outbox=outbox),
-            codex_sandbox=ws.codex_sandbox,
-        )
-        env = _child_env(run.id, write_roots, s.home, s.guard_log)
-        cmd = adapter.build_command(spec, env)
-        await self._commit(db, run)
-
-        state = ParseState()
-        h = self._handles.get(run.id)
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd, cwd=str(root), env=env, stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                start_new_session=True, limit=32 * 1024 * 1024,
-            )
-        except FileNotFoundError:
-            await self._finish(db, run, RunStatus.failed, error=f"{run.engine} 실행 파일을 찾을 수 없습니다.")
+        base_prompt = await _compose_prompt(db, run)
+        system_note = SYSTEM_NOTE.format(outbox=outbox)
+        mcp_servers: dict = {}
+        if sess.kind == SessionKind.orchestrator:
+            system_note += "\n\n" + ORCHESTRATOR_NOTE
+            mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id)}
+        profiles = profiles_mod.candidates(sess.engine)
+        if not profiles:
+            await self._finish(db, run, RunStatus.failed, error=f"쓸 수 있는 엔진 프로필이 없습니다({sess.engine}).")
             return
-        if h:
-            h.proc = proc
-        run.pid = proc.pid
-        await self._commit(db, run)
-
-        stderr_task = asyncio.create_task(_drain_stderr(proc, h))
+        h = self._handles.get(run.id)
+        state = ParseState()
+        rc: int | None = None
         timed_out = False
-        try:
-            await asyncio.wait_for(self._pump(db, run, proc, adapter, state, root), s.run_timeout_seconds)
-        except TimeoutError:
-            timed_out = True
-            await self._terminate(proc)
-        rc = await proc.wait()
-        with contextlib.suppress(Exception):
-            await asyncio.wait_for(stderr_task, 5)
+        for i, prof in enumerate(profiles):
+            resume_id = (sess.engine_sessions or {}).get(prof.name)
+            prompt = base_prompt
+            if resume_id is None:
+                # 이 프로필로는 처음이다. 앞선 대화가 있으면 맥락을 넘긴다(다른 엔진·계정에서 이어받음).
+                prompt = await _handoff_context(db, run) + base_prompt
+            run.engine, run.profile = prof.engine, prof.name
+            spec = LaunchSpec(
+                cwd=root, prompt=prompt, engine_session_id=resume_id,
+                # 모델 이름은 엔진마다 달라 처음 고른 엔진일 때만 넘긴다.
+                model=run.model if prof.engine == profiles[0].engine else None, effort=run.effort,
+                outbox=outbox, write_roots=write_roots, system_note=system_note,
+                codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers,
+            )
+            env = _child_env(run.id, write_roots, s.home, s.guard_log) | prof.env()
+            adapter = ADAPTERS[prof.engine]
+            await self._commit(db, run)
+            state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h)
+            if state.engine_session_id:
+                sess.engine_sessions = {**(sess.engine_sessions or {}), prof.name: state.engine_session_id}
+                sess.engine_session_id = state.engine_session_id
+            failed = missing or rc != 0 or state.is_error
+            stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
+            tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
+            limited = failed and profiles_mod.is_usage_limit(state.error, tail, None if rc == 0 else state.result_text)
+            if stopped or not failed or not (missing or limited) or i == len(profiles) - 1:
+                if missing and i == len(profiles) - 1:
+                    await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
+                    return
+                break
+            if limited:
+                profiles_mod.cool_down(prof.name)
+            nxt = profiles[i + 1]
+            events.append(db, run, "engine.fallback", {
+                "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
+                "detail": (state.error or tail or "")[:500],
+            })
+            if h:
+                h.stderr_tail.clear()
         run.exit_code = rc
 
-        if state.engine_session_id and state.engine_session_id != sess.engine_session_id:
-            sess.engine_session_id = state.engine_session_id
         sess.updated_at = utcnow()
         run.cost_usd = state.cost_usd
         run.usage = state.usage
@@ -268,6 +301,37 @@ class RunManager:
         else:
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
             await self._finish(db, run, RunStatus.failed, error=state.error or tail.strip() or f"exit code {rc}")
+
+    async def _attempt(self, db: AsyncSession, run: Run, adapter: AgentAdapter, spec: LaunchSpec, env: dict[str, str],
+                       root: Path, h: _Handle | None) -> tuple[ParseState, int | None, bool, bool]:
+        """엔진 프로세스 한 번. (상태, 종료 코드, 시간 초과, 실행 파일 없음)."""
+        s = get_settings()
+        state = ParseState()
+        cmd = adapter.build_command(spec, env)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, cwd=str(root), env=env, stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                start_new_session=True, limit=32 * 1024 * 1024,
+            )
+        except FileNotFoundError:
+            return state, None, False, True
+        if h:
+            h.proc = proc
+        run.pid = proc.pid
+        await self._commit(db, run)
+
+        stderr_task = asyncio.create_task(_drain_stderr(proc, h))
+        timed_out = False
+        try:
+            await asyncio.wait_for(self._pump(db, run, proc, adapter, state, root), s.run_timeout_seconds)
+        except TimeoutError:
+            timed_out = True
+            await self._terminate(proc)
+        rc = await proc.wait()
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(stderr_task, 5)
+        return state, rc, timed_out, False
 
     async def _pump(self, db: AsyncSession, run: Run, proc: asyncio.subprocess.Process,
                     adapter: AgentAdapter, state: ParseState, cwd: Path) -> None:
@@ -346,8 +410,11 @@ class RunManager:
         })
         record(db, actor="agent", action="run.finished", outcome="ok" if status == RunStatus.succeeded else "error",
                target_type="run", target_id=run.id, detail={"status": status})
-        await self._commit(db, run)
         sess = await db.get(ChatSession, run.session_id)
+        parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
+        await self._commit(db, run)
+        if parent_id is not None:
+            _spawn(self.dispatch(parent_id))
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
         _spawn(_notify(run, sess.title if sess else None))
 
@@ -470,6 +537,51 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
     if not lines:
         return run.prompt
     return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + run.prompt
+
+
+async def _handoff_context(db: AsyncSession, run: Run) -> str:
+    """처음 쓰는 엔진 프로필에 앞선 대화(지시·답)를 넘긴다. 도구 호출 내역은 넘기지 않는다(ADR 0006 한계)."""
+    rows = list(await db.scalars(
+        select(Run).where(Run.session_id == run.session_id, Run.id != run.id, Run.status.in_(TERMINAL_RUN_STATUSES))
+        .order_by(Run.created_at.desc()).limit(HANDOFF_TURNS)))
+    if not rows:
+        return ""
+    lines = ["[이전 대화 — 다른 엔진·계정에서 이어받음. 참고만 하고 아래 새 지시에 답한다]"]
+    for r in reversed(rows):
+        lines.append(f"사용자: {r.prompt[:HANDOFF_CHARS]}")
+        if r.result_text or r.error:
+            lines.append(f"에이전트: {(r.result_text or f'(실패) {r.error}')[:HANDOFF_CHARS]}")
+    return "\n".join(lines) + "\n\n[새 지시]\n"
+
+
+async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:
+    """작업 세션 Run 이 끝나면 오케스트레이터에게 결과 보고 Run 을 넣는다. 시작 전 보고가 있으면 거기에 덧붙인다."""
+    if sess.kind != SessionKind.worker or sess.parent_id is None:
+        return None
+    parent = await db.get(ChatSession, sess.parent_id)
+    if parent is None or parent.archived_at is not None:
+        return None
+    label = {RunStatus.succeeded: "완료", RunStatus.failed: "실패", RunStatus.cancelled: "취소",
+             RunStatus.interrupted: "중단"}.get(RunStatus(run.status), run.status)
+    body = [f"[작업 보고] 작업 세션 '{sess.title}' (worker_id={sess.id}) {label}."]
+    if run.result_text:
+        body.append("결과:\n" + run.result_text[:REPORT_CHARS])
+    if run.error:
+        body.append("오류: " + run.error[:1000])
+    text = "\n".join(body)
+    pending = await db.scalar(
+        select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)
+        .order_by(Run.created_at.desc()).limit(1))
+    if pending is not None and not manager.is_active(pending.id):
+        pending.prompt = pending.prompt + "\n\n" + text
+        return parent.id
+    report = Run(session_id=parent.id, workspace_id=parent.workspace_id, prompt=text, engine=parent.engine,
+                 model=parent.model, effort=parent.effort, origin=RunOrigin.report)
+    db.add(report)
+    await db.flush()
+    events.append(db, report, "run.status", {"status": RunStatus.queued, "ahead": 0})
+    parent.updated_at = utcnow()
+    return parent.id
 
 
 async def _git(root: Path, *args: str) -> tuple[int, str]:

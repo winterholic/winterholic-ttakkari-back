@@ -25,6 +25,8 @@ class LaunchSpec:
     write_roots: list[Path]
     system_note: str
     codex_sandbox: str = "workspace-write"
+    # 붙일 stdio MCP 서버 {name: {command, args, env}}. 오케스트레이터 Run 에만 쓴다(ADR 0006).
+    mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass

@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from ttakkari.api.deps import Db, get_session, get_workspace
@@ -16,7 +17,9 @@ from ttakkari.models import (
     ChatSession,
     Run,
     RunEvent,
+    RunOrigin,
     RunStatus,
+    SessionKind,
     utcnow,
 )
 from ttakkari.runs import events
@@ -49,8 +52,11 @@ async def _session_out(db: Db, s: ChatSession) -> SessionOut:
 
 @router.get("/sessions", response_model=list[SessionOut])
 async def list_sessions(_: User, db: Db, workspace_id: uuid.UUID | None = None, include_archived: bool = False,
-                        limit: int = Query(50, le=200), before: str | None = None) -> list[SessionOut]:
+                        limit: int = Query(50, le=200), before: str | None = None,
+                        parent_id: uuid.UUID | None = None) -> list[SessionOut]:
+    """parent_id 를 주면 그 오케스트레이터의 작업 세션, 안 주면 사이드바 목록(작업 세션 제외)."""
     q = select(ChatSession).order_by(ChatSession.updated_at.desc()).limit(limit)
+    q = q.where(ChatSession.parent_id == parent_id) if parent_id else q.where(ChatSession.parent_id.is_(None))
     if workspace_id:
         q = q.where(ChatSession.workspace_id == workspace_id)
     if not include_archived:
@@ -63,8 +69,10 @@ async def create_session(body: SessionIn, _: User, db: Db) -> SessionOut:
     ws = await get_workspace(db, body.workspace_id)
     if ws.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 워크스페이스입니다.")
-    s = ChatSession(workspace_id=ws.id, title=body.title or "새 작업", engine=body.engine or ws.default_engine,
-                    model=body.model, effort=body.effort)
+    # 오케스트레이터는 Claude 우선, 사용량 한도면 다음 프로필로 넘어간다(ADR 0006).
+    engine = "auto" if body.kind == SessionKind.orchestrator else (body.engine or ws.default_engine)
+    s = ChatSession(workspace_id=ws.id, title=body.title or "새 작업", engine=engine,
+                    model=body.model, effort=body.effort, kind=body.kind)
     db.add(s)
     await db.commit()
     return await _session_out(db, s)
@@ -100,22 +108,30 @@ async def create_run(session_id: uuid.UUID, body: RunIn, _: User, db: Db, reques
     ws = await get_workspace(db, s.workspace_id)
     if ws.archived_at is not None or s.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 세션입니다.")
-    # 실행 중이어도 받는다. 세션 대기열에 쌓이고 앞 Run 이 끝나면 순서대로 시작한다(manager.dispatch).
+    run = await queue_run(db, s, body.prompt, context_artifact_ids=body.context_artifact_ids,
+                          model=body.model, effort=body.effort, ip=client_ip(request))
+    await db.refresh(run)
+    return run
+
+
+async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: RunOrigin = RunOrigin.user,
+                    context_artifact_ids: list[uuid.UUID] | None = None, model: str | None = None,
+                    effort: str | None = None, ip: str | None = None) -> Run:
+    """세션 대기열에 Run 을 넣고 차례가 되면 시작한다. 실행 중이어도 받는다(manager.dispatch 가 순서대로 돌린다)."""
     ahead = await db.scalar(select(func.count()).select_from(Run).where(Run.session_id == s.id, Run.status.in_(ACTIVE)))
-    run = Run(session_id=s.id, workspace_id=ws.id, prompt=body.prompt,
-              context_artifact_ids=[str(a) for a in body.context_artifact_ids], engine=s.engine,
-              model=body.model or s.model, effort=body.effort or s.effort)
+    run = Run(session_id=s.id, workspace_id=s.workspace_id, prompt=prompt, origin=origin,
+              context_artifact_ids=[str(a) for a in context_artifact_ids or []], engine=s.engine,
+              model=model or s.model, effort=effort or s.effort)
     db.add(run)
     if s.title == "새 작업":
-        s.title = body.prompt.strip().splitlines()[0][:60] or s.title
+        s.title = prompt.strip().splitlines()[0][:60] or s.title
     s.updated_at = utcnow()
     await db.flush()
     events.append(db, run, "run.status", {"status": RunStatus.queued, "ahead": ahead or 0})
-    record(db, action="run.create", target_type="run", target_id=run.id, ip=client_ip(request),
-           detail={"engine": run.engine, "workspace": str(ws.id)})
+    record(db, actor="user" if origin == RunOrigin.user else "agent", action="run.create", target_type="run",
+           target_id=run.id, ip=ip, detail={"engine": run.engine, "origin": origin})
     await db.commit()
     await manager.dispatch(s.id)
-    await db.refresh(run)
     return run
 
 

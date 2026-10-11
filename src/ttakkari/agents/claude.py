@@ -34,6 +34,9 @@ class ClaudeAdapter:
             "--append-system-prompt", spec.system_note,
             "--add-dir", str(spec.outbox),
         ]
+        if spec.mcp_servers:
+            servers = {name: {"type": "stdio", **srv} for name, srv in spec.mcp_servers.items()}
+            cmd += ["--mcp-config", json.dumps({"mcpServers": servers})]
         if s.claude_setting_sources:
             cmd += ["--setting-sources", s.claude_setting_sources]
         if spec.engine_session_id:

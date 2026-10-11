@@ -26,6 +26,13 @@ class CodexAdapter:
             "-c", f"sandbox_workspace_write.writable_roots={json.dumps(writable)}",
             "-c", f"developer_instructions={json.dumps(spec.system_note)}",
         ]
+        for name, srv in spec.mcp_servers.items():
+            env = ", ".join(f"{k}={json.dumps(v)}" for k, v in srv.get("env", {}).items())
+            opts += [
+                "-c", f"mcp_servers.{name}.command={json.dumps(srv['command'])}",
+                "-c", f"mcp_servers.{name}.args={json.dumps(srv.get('args', []))}",
+                "-c", f"mcp_servers.{name}.env={{{env}}}",
+            ]
         if spec.model:
             opts += ["-m", spec.model]
         if spec.effort:

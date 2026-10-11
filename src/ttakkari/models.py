@@ -34,6 +34,20 @@ class Engine(enum.StrEnum):
     codex = "codex"
 
 
+class SessionKind(enum.StrEnum):
+    chat = "chat"
+    orchestrator = "orchestrator"
+    worker = "worker"
+
+
+class RunOrigin(enum.StrEnum):
+    user = "user"
+    # 작업 세션이 끝나 오케스트레이터에게 들어가는 결과 보고
+    report = "report"
+    # 오케스트레이터가 도구로 작업 세션에 보낸 지시
+    orchestrator = "orchestrator"
+
+
 class RunStatus(enum.StrEnum):
     queued = "queued"
     running = "running"
@@ -109,6 +123,10 @@ class ChatSession(Base):
     effort: Mapped[str | None] = mapped_column(String(16))
     # 엔진 쪽 대화 ID(claude session_id / codex thread_id). 후속 지시를 resume 하는 데 쓴다.
     engine_session_id: Mapped[str | None] = mapped_column(String(100))
+    # 엔진 프로필 이름 → 그 프로필의 엔진 대화 ID. 프로필을 오가도 각자 이어간다(ADR 0006).
+    engine_sessions: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    kind: Mapped[str] = mapped_column(String(16), default=SessionKind.chat, index=True)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     archived_at: Mapped[datetime | None]
@@ -127,6 +145,9 @@ class Run(Base):
     model: Mapped[str | None] = mapped_column(String(100))
     effort: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), default=RunStatus.queued, index=True)
+    origin: Mapped[str] = mapped_column(String(16), default=RunOrigin.user)
+    # 실제로 실행한 엔진 프로필(폴백하면 마지막 프로필)
+    profile: Mapped[str | None] = mapped_column(String(40))
     pid: Mapped[int | None]
     exit_code: Mapped[int | None]
     error: Mapped[str | None] = mapped_column(Text)

@@ -200,6 +200,11 @@ class UsageWindowOut(BaseModel):
     resets_at: int | None
 
 
+class ResetCreditsOut(BaseModel):
+    available: int
+    next_expires_at: int | None
+
+
 class AccountUsageOut(BaseModel):
     id: uuid.UUID
     name: str
@@ -210,6 +215,7 @@ class AccountUsageOut(BaseModel):
     login: str
     cooldown_seconds: int
     windows: list[UsageWindowOut]
+    reset_credits: ResetCreditsOut | None = None
     source: str | None
     plan: str | None
     error: str | None
@@ -227,6 +233,7 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
         return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1, login=login,
                                cooldown_seconds=profiles.cooldown_remaining(a.id),
                                windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
+                               reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
                                error=u.error, updated_at=u.updated_at)
 
     return list(await asyncio.gather(*(one(i, a) for i, a in ordered)))
@@ -273,6 +280,29 @@ async def reorder(body: ReorderIn, _: User, db: Db, pool: Pool = "personal") -> 
         rows[aid].priority = i
     await db.commit()
     return [_out(rows[aid]) for aid in body.ids]
+
+
+class CodexResetOut(BaseModel):
+    outcome: str
+    message: str
+
+
+@router.post("/{account_id}/codex-reset", response_model=CodexResetOut)
+async def codex_reset(account_id: uuid.UUID, _: User, db: Db, request: Request) -> CodexResetOut:
+    """Codex rate-limit 재설정 크레딧을 한 개 쓴다(Orca 의 「지금 재설정」과 같은 동작). 되돌릴 수 없다."""
+    a = await _get(db, account_id)
+    if a.engine != "codex":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_input", "message": "Codex 계정만 재설정할 수 있어요."})
+    outcome, message = await usage_mod.codex_reset(a.config_dir)
+    if outcome == "reset":
+        # 한도가 풀렸으니 쉬던 계정을 바로 다시 쓴다.
+        profiles.clear_cooldown(a.id)
+    usage_mod.forget(a.id)
+    record(db, action="account.codex_reset", target_type="account", target_id=a.id,
+           outcome="ok" if outcome in ("reset", "nothing_to_reset") else "error", detail={"outcome": outcome},
+           ip=client_ip(request))
+    await db.commit()
+    return CodexResetOut(outcome=outcome, message=message)
 
 
 @router.post("/{account_id}/cooldown/clear", response_model=AccountOut)

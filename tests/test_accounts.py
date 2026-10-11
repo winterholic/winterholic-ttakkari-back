@@ -272,3 +272,47 @@ async def test_override_is_per_pool(client, auth, make_dir):
     assert r.json()["active"]
     assert (await client.get("/api/accounts/override", headers=auth)).json()["active"] is False
     assert (await client.get("/api/accounts/override", params={"pool": "work"}, headers=auth)).json()["ids"] == [a["id"]]
+
+
+async def test_codex_usage_from_backend_with_reset_credits_and_reset(client, auth, monkeypatch):
+    from ttakkari.runs import profiles, usage
+
+    usage.clear_cache()
+    cx = (await client.post("/api/accounts", json={"name": "cx-api", "engine": "codex"}, headers=auth)).json()
+
+    async def fake_get(_d, path):
+        if path == "usage":
+            return {"plan_type": "plus", "rate_limit": {
+                "primary_window": {"used_percent": 100, "limit_window_seconds": 18000, "reset_at": 1791731809},
+                "secondary_window": {"used_percent": 25, "limit_window_seconds": 604800, "reset_at": 1792300604}},
+                "rate_limit_reset_credits": {"available_count": 3}}
+        return {"available_count": 3, "credits": [
+            {"status": "available", "expires_at": "2026-10-29T18:45:40Z"},
+            {"status": "available", "expires_at": "2026-10-22T20:19:22Z"},
+            {"status": "used", "expires_at": "2026-10-01T00:00:00Z"}]}
+
+    calls = []
+
+    async def fake_post(_d, path, body):
+        calls.append((path, body))
+        return 200, {"code": "reset"}
+
+    monkeypatch.setattr(usage, "_codex_get", fake_get)
+    monkeypatch.setattr(usage, "_codex_post", fake_post)
+    row = next(r for r in (await client.get("/api/accounts/usage", params={"refresh": True}, headers=auth)).json()
+               if r["name"] == "cx-api")
+    assert row["source"] == "api" and row["plan"] == "plus"
+    assert [(w["key"], w["percent"]) for w in row["windows"]] == [("five_hour", 100), ("seven_day", 25)]
+    assert row["reset_credits"]["available"] == 3
+    # 쓸 수 있는 것 중 가장 먼저 만료되는 크레딧
+    from datetime import UTC, datetime
+    assert row["reset_credits"]["next_expires_at"] == int(datetime(2026, 10, 22, 20, 19, 22, tzinfo=UTC).timestamp())
+
+    import uuid as _uuid
+    profiles.cool_down(_uuid.UUID(cx["id"]))
+    r = await client.post(f"/api/accounts/{cx['id']}/codex-reset", headers=auth)
+    assert r.json() == {"outcome": "reset", "message": "재설정했어요. 한도가 바로 풀렸어요."}
+    assert calls[0][0] == "rate-limit-reset-credits/consume" and calls[0][1]["redeem_request_id"]
+    assert profiles.cooldown_remaining(_uuid.UUID(cx["id"])) == 0
+    claude = (await _accounts(client, auth))[0]
+    assert (await client.post(f"/api/accounts/{claude['id']}/codex-reset", headers=auth)).status_code == 400

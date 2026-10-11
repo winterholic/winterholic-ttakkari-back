@@ -5,7 +5,10 @@ Claude: 구독 사용량 API(GET https://api.anthropic.com/api/oauth/usage, anth
   `Claude Code-credentials`, CLAUDE_CONFIG_DIR 계정은 `Claude Code-credentials-<sha256(폴더)[:8]>`
   (2026-10-11 이 맥에서 등록 계정 3개로 대조). 다른 OS 는 `<폴더>/.credentials.json`.
   API 를 못 쓰면 따까리 실행 스트림의 `rate_limit_event` 로 받은 마지막 값을 쓴다.
-Codex: `<CODEX_HOME>/sessions/**/*.jsonl` 의 마지막 `rate_limits`(primary=5시간, secondary=주간).
+Codex: ChatGPT 백엔드(GET https://chatgpt.com/backend-api/wham/usage, 토큰은 `<CODEX_HOME>/auth.json`).
+  Orca(MIT, stablyai/orca `src/main/rate-limits/codex-backend-usage-client.ts`·`codex-reset-credit-client.ts`)에서
+  확인한 규격이다. rate-limit 재설정 크레딧(`/wham/rate-limit-reset-credits`, `.../consume`)도 같은 출처.
+  API 를 못 쓰면 `<CODEX_HOME>/sessions/**/*.jsonl` 의 마지막 `rate_limits`(primary=5시간, secondary=주간).
 
 토큰 값은 이 모듈 밖으로 나가지 않는다. 화면에는 퍼센트와 초기화 시각만 준다.
 """
@@ -46,8 +49,17 @@ class Window:
 
 
 @dataclass
+class ResetCredits:
+    """Codex rate-limit 재설정 크레딧. 한 번 쓰면 5시간·주간 한도가 바로 초기화된다."""
+
+    available: int
+    next_expires_at: int | None  # unix 초
+
+
+@dataclass
 class Usage:
     windows: list[Window] = field(default_factory=list)
+    reset_credits: ResetCredits | None = None
     source: str | None = None  # api | stream | session_log
     plan: str | None = None
     error: str | None = None
@@ -174,6 +186,104 @@ async def _fetch_claude(config_dir: str | None) -> Usage:
         return Usage(error=f"사용량 API 실패({type(e).__name__})")
 
 
+# ---- Codex: ChatGPT 백엔드(사용량·재설정 크레딧)
+
+CODEX_API = "https://chatgpt.com/backend-api/wham"
+
+
+def _codex_headers(config_dir: str | None) -> dict[str, str] | None:
+    f = (Path(config_dir) if config_dir else HOME / ".codex") / "auth.json"
+    try:
+        tokens = json.loads(f.read_text()).get("tokens") or {}
+    except (OSError, ValueError):
+        return None
+    tok = tokens.get("access_token")
+    if not isinstance(tok, str) or not tok:
+        return None
+    h = {"Authorization": f"Bearer {tok}", "User-Agent": "codex-cli", "OpenAI-Beta": "codex-1", "originator": "Codex Desktop"}
+    if tokens.get("account_id"):
+        h["ChatGPT-Account-Id"] = tokens["account_id"]
+    return h
+
+
+async def _codex_get(config_dir: str | None, path: str) -> dict[str, Any] | None:
+    h = _codex_headers(config_dir)
+    if h is None:
+        return None
+    async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+        r = await c.get(f"{CODEX_API}/{path}", headers=h)
+    return r.json() if r.status_code == 200 else None
+
+
+async def _codex_post(config_dir: str | None, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    h = _codex_headers(config_dir)
+    if h is None:
+        return 401, {}
+    async with httpx.AsyncClient(timeout=30.0) as c:
+        r = await c.post(f"{CODEX_API}/{path}", headers={**h, "Content-Type": "application/json"}, json=body)
+    try:
+        return r.status_code, r.json()
+    except ValueError:
+        return r.status_code, {}
+
+
+def windows_from_codex(body: dict[str, Any]) -> list[Window]:
+    rl = body.get("rate_limit") or {}
+    out = []
+    for part in ("primary_window", "secondary_window"):
+        w = rl.get(part)
+        if not isinstance(w, dict) or not isinstance(w.get("used_percent"), (int, float)):
+            continue
+        secs = w.get("limit_window_seconds") or 0
+        key = "five_hour" if secs and secs <= 10 * 3600 else "seven_day"
+        out.append(Window(key, label_of(key), round(w["used_percent"]), _ts(w.get("reset_at"))))
+    return _ordered(out)
+
+
+def credits_from(usage_body: dict[str, Any], credits_body: dict[str, Any] | None) -> ResetCredits | None:
+    raw = (credits_body or usage_body.get("rate_limit_reset_credits")) or {}
+    n = raw.get("available_count")
+    if not isinstance(n, (int, float)):
+        return None
+    exp = sorted(t for c in raw.get("credits") or [] if (c or {}).get("status") == "available"
+                 for t in [_ts(c.get("expires_at"))] if t)
+    return ResetCredits(available=max(0, int(n)), next_expires_at=exp[0] if exp else None)
+
+
+async def _fetch_codex(config_dir: str | None) -> Usage | None:
+    try:
+        body = await _codex_get(config_dir, "usage")
+        if not body or not isinstance(body.get("plan_type"), str):
+            return None
+        credits = credits_from(body, None)
+        if credits and credits.available > 0:
+            # 사용량 응답엔 개수만 온다. 다음 만료 시각은 크레딧 목록에서 읽는다.
+            credits = credits_from(body, await _codex_get(config_dir, "rate-limit-reset-credits")) or credits
+        return Usage(windows=windows_from_codex(body), source="api", plan=body["plan_type"], reset_credits=credits,
+                     updated_at=time.time())
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+RESET_OUTCOME = {
+    "reset": "재설정했어요. 한도가 바로 풀렸어요.",
+    "nothing_to_reset": "지금은 재설정할 한도가 없어요(크레딧은 그대로예요).",
+    "no_credit": "남은 재설정 크레딧이 없어요.",
+    "already_redeemed": "이미 처리된 요청이에요.",
+}
+
+
+async def codex_reset(config_dir: str | None) -> tuple[str, str]:
+    """rate-limit 재설정 크레딧 한 개를 쓴다. (결과 코드, 사람 말). 같은 요청이 두 번 쓰이지 않게 요청 id 를 준다."""
+    status, body = await _codex_post(config_dir, "rate-limit-reset-credits/consume", {"redeem_request_id": str(uuid.uuid4())})
+    if status == 401:
+        return "not_signed_in", "Codex 로그인 정보를 찾지 못했어요."
+    if status != 200:
+        return "error", f"재설정 요청이 실패했어요(HTTP {status})."
+    code = str(body.get("code") or "unknown")
+    return code, RESET_OUTCOME.get(code, f"알 수 없는 결과: {code}")
+
+
 # ---- Codex: 세션 로그
 
 def _find_rate_limits(x: Any) -> dict | None:
@@ -227,9 +337,13 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
             s = _stream[account_id]
             u = Usage(windows=s.windows, source="stream", updated_at=s.updated_at, error=u.error)
     else:
-        u = await asyncio.to_thread(codex_usage, config_dir)
+        u = await _fetch_codex(config_dir) or await asyncio.to_thread(codex_usage, config_dir)
     _cache[account_id] = (time.time(), u)
     return u
+
+
+def forget(account_id: uuid.UUID) -> None:
+    _cache.pop(account_id, None)
 
 
 def clear_cache() -> None:

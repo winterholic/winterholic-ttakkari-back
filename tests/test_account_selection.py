@@ -211,11 +211,16 @@ async def test_account_usage_marks_stale_and_passed_windows_and_running_count(cl
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
     claude_id = uuid.UUID(accs["claude"]["id"])
-    usage_mod.remember_stream(claude_id, [usage_mod.Window("five_hour", "5시간", 80, int(time.time()) - 60)])
-    usage_mod._stream[claude_id].updated_at = time.time() - 3600
     worker = await _session(client, auth, make_dir, engine="auto")
     await start_run(client, auth, worker["id"], "busy SLEEP")
     await _wait_calls(1)
+
+    async def streamed():
+        return claude_id in usage_mod._stream  # 실행 중 엔진이 낸 사용량 이벤트가 바로 반영된다
+
+    await _wait(streamed, 10, "실행 중 사용량 이벤트")
+    usage_mod.remember_stream(claude_id, [usage_mod.Window("five_hour", "5시간", 80, int(time.time()) - 60)])
+    usage_mod._stream[claude_id].updated_at = time.time() - 3600
     body = (await client.get("/api/orchestrator/accounts/usage", headers=h)).json()
     c = next(a for a in body["accounts"] if a["name"] == "claude")
     assert c["running_runs"] == 1 and c["usage"]["stale"] is True and c["usage"]["age_seconds"] >= 3600

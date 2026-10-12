@@ -356,7 +356,7 @@ class RunManager:
             adapter = ADAPTERS[prof.engine]
             await self._commit(db, run)
             attempt_start_seq = run.last_seq
-            state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h)
+            state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h, prof.id)
             if state.rate_limits:
                 usage_mod.remember_stream(prof.id, usage_mod.windows_from_stream(state.rate_limits))
             if state.engine_session_id:
@@ -434,7 +434,7 @@ class RunManager:
             await self._finish(db, run, RunStatus.failed, error=state.error or tail.strip() or f"exit code {rc}")
 
     async def _attempt(self, db: AsyncSession, run: Run, adapter: AgentAdapter, spec: LaunchSpec, env: dict[str, str],
-                       root: Path, h: _Handle | None) -> tuple[ParseState, int | None, bool, bool]:
+                       root: Path, h: _Handle | None, account_id: uuid.UUID | None = None) -> tuple[ParseState, int | None, bool, bool]:
         """엔진 프로세스 한 번. (상태, 종료 코드, 시간 초과, 실행 파일 없음)."""
         s = get_settings()
         state = ParseState()
@@ -455,7 +455,7 @@ class RunManager:
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
         timed_out = False
         try:
-            await asyncio.wait_for(self._pump(db, run, proc, adapter, state, root), s.run_timeout_seconds)
+            await asyncio.wait_for(self._pump(db, run, proc, adapter, state, root, account_id), s.run_timeout_seconds)
         except TimeoutError:
             timed_out = True
             await self._terminate(proc)
@@ -465,8 +465,10 @@ class RunManager:
         return state, rc, timed_out, False
 
     async def _pump(self, db: AsyncSession, run: Run, proc: asyncio.subprocess.Process,
-                    adapter: AgentAdapter, state: ParseState, cwd: Path) -> None:
+                    adapter: AgentAdapter, state: ParseState, cwd: Path,
+                    account_id: uuid.UUID | None = None) -> None:
         assert proc.stdout is not None
+        seen_limits = None
         while True:
             line = await proc.stdout.readline()
             if not line:
@@ -483,6 +485,10 @@ class RunManager:
             if not isinstance(obj, dict):
                 continue
             produced = adapter.parse_line(obj, state, cwd)
+            if account_id is not None and state.rate_limits is not seen_limits:
+                # 실행 중 엔진이 알려 준 사용량을 바로 반영해 수집 주기 사이에도 값이 신선하게 한다.
+                seen_limits = state.rate_limits
+                usage_mod.remember_stream(account_id, usage_mod.windows_from_stream(seen_limits or {}))
             if not produced:
                 continue
             for n in produced:

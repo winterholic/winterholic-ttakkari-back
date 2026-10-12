@@ -59,6 +59,16 @@ class Settings(BaseSettings):
         "claude": ["opus", "sonnet", "haiku"],
         "codex": ["gpt-6-luna", "gpt-6.1-sol"],
     }
+    # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
+    # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).
+    usage_poll_seconds: int = 300
+    usage_poll_busy_seconds: int = 90
+    usage_low_remaining_percent: int = 20
+    usage_poll_jitter: float = 0.15
+    usage_backoff_max_seconds: int = 30 * 60
+    usage_history_days: int = 14
+    # account_usage 도구가 값을 낡았다고 알리는 나이(보통 수집 주기의 3배).
+    usage_stale_seconds: int = 15 * 60
     # 한 Run 이 모든 계정의 한도 초기화를 기다릴 수 있는 최대 횟수. 넘으면 실패로 끝낸다(무한 대기 방지).
     max_limit_waits: int = 8
     # 오케스트레이터 MCP 서버가 부를 백엔드 주소. serve 포트를 바꾸면 같이 바꾼다.

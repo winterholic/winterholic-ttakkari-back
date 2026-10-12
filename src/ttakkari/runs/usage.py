@@ -24,6 +24,7 @@ import logging
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +32,7 @@ from typing import Any
 
 import httpx
 
-from ttakkari.config import HOME
+from ttakkari.config import HOME, get_settings
 
 log = logging.getLogger(__name__)
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
@@ -71,6 +72,25 @@ class Usage:
 
 _cache: dict[uuid.UUID, tuple[float, Usage]] = {}
 _stream: dict[uuid.UUID, Usage] = {}
+# 새 측정값이 생길 때마다 부른다(runs/usage_store.py 가 DB 에 남긴다). 정하지 않으면 메모리에만 둔다.
+_sink: Callable[[uuid.UUID, Usage], None] | None = None
+
+
+def set_sink(fn: Callable[[uuid.UUID, Usage], None] | None) -> None:
+    global _sink
+    _sink = fn
+
+
+def _emit(account_id: uuid.UUID, u: Usage) -> None:
+    if _sink is not None and u.windows and u.source in ("api", "stream"):
+        with contextlib.suppress(Exception):
+            _sink(account_id, u)
+
+
+def seed(account_id: uuid.UUID, u: Usage) -> None:
+    """재시작 직후 DB 의 마지막 측정값으로 캐시를 채운다. 이미 값이 있으면 건드리지 않는다."""
+    if account_id not in _cache and u.updated_at:
+        _cache[account_id] = (u.updated_at, u)
 
 
 def label_of(key: str) -> str:
@@ -107,6 +127,7 @@ def windows_from_stream(info: dict[str, Any]) -> list[Window]:
 def remember_stream(account_id: uuid.UUID, windows: list[Window]) -> None:
     if windows:
         _stream[account_id] = Usage(windows=windows, source="stream", updated_at=time.time())
+        _emit(account_id, _stream[account_id])
 
 
 # ---- Claude: 구독 사용량 API
@@ -328,7 +349,9 @@ def codex_usage(config_dir: str | None) -> Usage:
 
 async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, *, refresh: bool = False) -> Usage:
     hit = _cache.get(account_id)
-    if hit and not refresh and time.time() - hit[0] < TTL:
+    # 수집기가 주기마다 새로 읽어 두므로(runs/usage_collector.py) 화면이 그보다 자주 API 를 두드리지 않게 한다.
+    ttl = max(TTL, get_settings().usage_poll_seconds)
+    if hit and not refresh and time.time() - hit[0] < ttl:
         return hit[1]
     if engine == "claude":
         u = await _fetch_claude(config_dir)
@@ -339,6 +362,8 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     else:
         u = await _fetch_codex(config_dir) or await asyncio.to_thread(codex_usage, config_dir)
     _cache[account_id] = (time.time(), u)
+    if u.source == "api":  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
+        _emit(account_id, u)
     return u
 
 
@@ -349,7 +374,15 @@ def cached(account_id: uuid.UUID) -> Usage | None:
     hit = _cache.get(account_id)
     fresh = [u for u in (hit[1] if hit else None, _stream.get(account_id)) if u is not None and u.windows]
     if fresh:
-        return max(fresh, key=lambda u: u.updated_at or 0)
+        best = max(fresh, key=lambda u: u.updated_at or 0)
+        if best.source == "stream" and hit and hit[1].windows:
+            # 스트림은 모델별 주간 창을 안 줄 때가 많다. 초기화 전인 것만 조회 결과에서 채운다(조금 더 오래된 값).
+            have = {w.key for w in best.windows}
+            extra = [w for w in hit[1].windows if w.key not in have and not (w.resets_at and w.resets_at <= time.time())]
+            if extra:
+                return Usage(windows=_ordered(best.windows + extra), source="stream", plan=best.plan or hit[1].plan,
+                             updated_at=best.updated_at)
+        return best
     return hit[1] if hit else None
 
 

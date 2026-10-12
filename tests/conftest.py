@@ -32,6 +32,7 @@ os.environ.update({
     "TTAKKARI_DEFAULT_WORKSPACE_ROOT": str(ALLOWED / "default-root"),
     "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
     "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
+    "TTAKKARI_USAGE_POLL_SECONDS": "0",
     "TTAKKARI_CONTEXT_SOURCE_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WRITABLE_ROOTS": json.dumps([str(ALLOWED / "default-docs"), str(ALLOWED / "default-missing")]),
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",
@@ -59,7 +60,7 @@ from ttakkari.api.assistant import wait_indexing
 from ttakkari.db import sessionmaker
 from ttakkari.main import app
 from ttakkari.models import Base, Credential
-from ttakkari.runs import profiles
+from ttakkari.runs import profiles, usage_store
 from ttakkari.runs.manager import _background, manager
 from ttakkari.security.auth import issue_access_token, limiter
 from ttakkari.security.passwords import hash_password
@@ -83,6 +84,8 @@ async def _schema_and_app():
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean(_schema_and_app):
     await profiles.flush_persist()
+    await usage_store.flush()
+    usage_store.reset()
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     async with sessionmaker()() as db:
         await db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))

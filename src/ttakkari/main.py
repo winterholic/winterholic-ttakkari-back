@@ -18,6 +18,7 @@ from ttakkari.api import (
     artifacts,
     assistant,
     auth,
+    library_insight,
     orchestrator,
     planner,
     push,
@@ -31,13 +32,14 @@ from ttakkari.config import get_settings
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.planner import kr_holidays, reminders
-from ttakkari.runs import profiles
+from ttakkari.runs import profiles, usage_store
 from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
     recover_interrupted,
     resume_queued,
 )
+from ttakkari.runs.usage_collector import Collector
 from ttakkari.transfer import service as transfer_service
 
 log = logging.getLogger("ttakkari")
@@ -80,6 +82,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     with contextlib.suppress(Exception):
         async with sessionmaker()() as db:
             await profiles.load_cooldowns(db)
+    # 계정 사용량: 재시작 직후에도 마지막 측정값을 보이고, 새 값은 DB 에 쌓고, 주기 수집을 돌린다.
+    usage_store.install()
+    with contextlib.suppress(Exception):
+        async with sessionmaker()() as db:
+            await usage_store.load_latest(db)
     await resume_queued()
     try:
         async with sessionmaker()() as db:
@@ -91,10 +98,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     kr_holidays.warm(datetime.now(UTC).year)
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
+    collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
     try:
         yield
     finally:
         retention.cancel()
+        if collector:
+            collector.cancel()
         if reminder:
             reminder.cancel()
         await manager.shutdown()
@@ -130,7 +140,7 @@ def create_app() -> FastAPI:
                             status_code=422)
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
-              orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, planner.router):
+              orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router):
         app.include_router(r)
     return app
 

@@ -164,6 +164,20 @@ class EngineAccount(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class AccountUsageSample(Base):
+    """계정 사용량 측정값. 계정별 가장 최근 행이 '최신값', 나머지는 추세 판단용 이력이다(보존 기간 제한)."""
+
+    __tablename__ = "account_usage_samples"
+    __table_args__ = (Index("ix_account_usage_samples_account_measured", "account_id", "measured_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("engine_accounts.id", ondelete="CASCADE"))
+    measured_at: Mapped[datetime] = mapped_column(index=True)
+    source: Mapped[str] = mapped_column(String(16))  # api | stream | session_log
+    plan: Mapped[str | None] = mapped_column(String(40))
+    # [{key, percent, resets_at(unix 초)}]. 토큰은 어디에도 두지 않는다.
+    windows: Mapped[list[Any]] = mapped_column(default=list)
+
+
 class AppSetting(Base):
     """앱 단위 설정 한 줄(키-값). 예) 계정 임시 우선순위."""
 

@@ -156,7 +156,7 @@ payload 는 `{title, body, url, tag}`:
 | GET | `/api/orchestrator/workers` | 목록(짧은 결과) |
 | GET | `/api/orchestrator/workers/{id}` | 상세(결과 4000자·오류·결과물 이름) |
 | POST | `/api/orchestrator/workers/{id}/stop` | 대기·실행 Run 취소 |
-| GET | `/api/orchestrator/accounts/usage` | 계정별 배정 판단 정보(MCP `account_usage`). `{measured_at, priority_override_until, note, accounts:[{name, engine, scope, enabled, priority, available, limit:{waiting, until, reason(cooldown/usage_window)}, running_runs, models, orchestrator_model, usage:{source, plan, measured_at, age_seconds, stale, five_hour, weekly, model_weekly, error} 또는 null}]}`. 시각은 KST 오프셋 ISO, 윈도우는 `{used_percent, remaining_percent, resets_at, reset_since_measured}`. 캐시된 값만 쓰고 새로 조회·인증 파일 읽기·폴더/이메일/토큰 노출이 없다. 회사 업무 오케스트레이터는 회사 그룹만 |
+| GET | `/api/orchestrator/accounts/usage` | 계정별 배정 판단 정보(MCP `account_usage`). `{measured_at, priority_override_until, note, accounts:[{name, engine, scope, enabled, priority, available, limit:{waiting, until, reason(cooldown/usage_window)}, running_runs, models, orchestrator_model, usage:{source, plan, measured_at, age_seconds, stale, min_remaining_percent, five_hour, weekly, model_weekly, error} 또는 null}]}`. 시각은 KST 오프셋 ISO, 윈도우는 `{used_percent, remaining_percent, resets_at, reset_since_measured, resets_in_seconds, burn_percent_per_hour, exhausts_in_seconds, exhausts_before_reset}`(소모 속도는 DB 측정 이력에서 계산, 이력이 짧으면 null). 값은 수집기(계정당 약 5분, 실행 중·잔여 20% 미만이면 약 1.5분)와 실행 스트림이 채운다. 캐시된 값만 쓰고 새로 조회·인증 파일 읽기·폴더/이메일/토큰 노출이 없다. 회사 업무 오케스트레이터는 회사 그룹만 |
 
 `WorkerOut`: `{worker_id, title, engine, status(queued|running|succeeded|failed|cancelled|interrupted|idle), active_run_id, last_result, last_error, artifacts}`.
 

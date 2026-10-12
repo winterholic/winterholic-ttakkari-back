@@ -20,7 +20,8 @@ from ttakkari.config import get_settings
 from ttakkari.context import store
 from ttakkari.models import Artifact, ChatSession, CtxMemory, Run, Workspace
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
-from ttakkari.push.service import send_to_all
+from ttakkari.push.service import PushKind
+from ttakkari.push.service import notify as push_notify
 from ttakkari.schemas import ArtifactOut
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -193,9 +194,7 @@ async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 @router.post("/notify")
 async def notify(body: NotifyIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     await _session(db, sid)
-    counts = await send_to_all({"title": body.title, "body": body.body, "url": f"/chat/{sid}", "tag": f"agent-{sid}"},
-                               action="push.agent", target_id=sid)
-    return counts
+    return await push_notify(PushKind.agent, body.title, body.body, url=f"/chat/{sid}", tag=f"agent-{sid}", target_id=sid)
 
 
 @router.get("/sessions")

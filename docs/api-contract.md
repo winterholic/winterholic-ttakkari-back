@@ -124,6 +124,8 @@ VAPID 키는 `~/.ttakkari/vapid.json`(0600)에 있다. `ttakkari gen-vapid` 로 
 - Run 이 오류로 끝났을 때(`failed`): `작업 실패`
 - 에이전트가 MCP `notify_user`(`POST /api/agent/notify`)로 직접 보낼 때: 에이전트가 정한 title·body. 입력이나 승인이 필요해 멈춘 경우도 에이전트가 이 도구로 알린다(서버가 Run 을 멈춰 세우는 승인 상태는 없다)
 
+발송 진입점은 `push.service.notify(PushKind, title, body, url=, tag=, target_id=)` 하나다. 새 기능이 알림을 붙일 때는 `PushKind` 에 항목을 더하고 이 함수를 한 줄 부른다. 구독 관리와 발송 인프라는 그대로다.
+
 payload 는 `{title, body, url, tag}`:
 - `title`: 자동 알림은 `작업 실패`
 - `body`: 세션 제목. 80자 초과면 자른다. 푸시 서버를 거치므로 경로·에러 원문은 넣지 않는다

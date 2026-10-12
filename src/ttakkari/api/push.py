@@ -8,7 +8,7 @@ from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.models import PushSubscription
 from ttakkari.push import vapid
-from ttakkari.push.service import send_to_all
+from ttakkari.push.service import PushKind, notify
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api/push", tags=["push"])
@@ -67,5 +67,4 @@ async def unsubscribe(body: EndpointIn, _: User, db: Db, request: Request) -> Re
 async def test_push(_: User, db: Db, request: Request) -> dict:
     record(db, action="push.test", ip=client_ip(request))
     await db.commit()
-    payload = {"title": "테스트 알림", "body": "알림이 정상적으로 도착했습니다.", "url": "/chat", "tag": "ttakkari-test"}
-    return await send_to_all(payload, action="push.test_sent")
+    return await notify(PushKind.test, "테스트 알림", "알림이 정상적으로 도착했습니다.", tag="ttakkari-test")

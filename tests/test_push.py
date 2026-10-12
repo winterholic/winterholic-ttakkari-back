@@ -142,3 +142,15 @@ async def test_test_endpoint_sends(client, auth, monkeypatch):
     r = await client.post("/api/push/test", headers=auth)
     assert r.status_code == 200 and r.json()["sent"] == 1
     assert seen[0]["title"] == "테스트 알림"
+
+
+async def test_notify_is_single_entry_point_with_defaults(client, auth, monkeypatch):
+    await client.post("/api/push/subscriptions", json=SUB, headers=auth)
+    seen = []
+    monkeypatch.setattr(service, "webpush", lambda info, data=None, **k: seen.append(json.loads(data)))
+    counts = await service.notify(service.PushKind.agent, "제목", "본문")
+    assert counts["sent"] == 1
+    assert seen[0] == {"title": "제목", "body": "본문", "url": "/chat", "tag": "push.agent"}
+    async with sessionmaker()() as db:
+        rows = list(await db.scalars(select(AuditLog).where(AuditLog.action == "push.agent")))
+    assert len(rows) == 1

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import json
 import logging
 import uuid
@@ -18,6 +19,14 @@ from ttakkari.models import PushSubscription, Run, RunStatus, utcnow
 from ttakkari.push import vapid
 
 log = logging.getLogger(__name__)
+
+class PushKind(enum.StrEnum):
+    """알림 종류. 값은 감사 로그 action 이다. 새 기능이 알림을 붙이려면 여기에 항목을 더하고 `notify()` 를 부른다."""
+
+    run_failed = "push.run_finished"  # Run 오류 실패(자동). 이름은 기존 감사 로그와 이어지게 유지
+    agent = "push.agent"  # 에이전트가 MCP notify_user 로 직접 보냄
+    test = "push.test_sent"  # 설정 화면의 테스트 알림
+
 
 # 사용자가 직접 멈춘 cancelled, 배포·재시작으로 끊긴 interrupted, 정상 완료 succeeded 는 알리지 않는다.
 NOTIFY_TITLES = {RunStatus.failed: "작업 실패"}
@@ -50,7 +59,7 @@ def _send_sync(sub: dict[str, Any], payload: str) -> int | None:
     return None
 
 
-async def send_to_all(payload: dict[str, str], *, action: str, target_id: Any = None) -> dict[str, int]:
+async def _deliver(payload: dict[str, str], *, action: str, target_id: Any = None) -> dict[str, int]:
     """모든 구독에 보낸다. 404/410 이면 구독을 지운다. 결과 집계를 돌려준다."""
     async with sessionmaker()() as db:
         subs = [
@@ -90,7 +99,16 @@ async def send_to_all(payload: dict[str, str], *, action: str, target_id: Any = 
     return counts
 
 
+async def notify(kind: PushKind, title: str, body: str = "", *, url: str = "/chat", tag: str | None = None,
+                 target_id: Any = None) -> dict[str, int]:
+    """푸시 발송의 유일한 진입점. 기능 쪽에서는 `await notify(PushKind.x, "제목", "본문", url=...)` 한 줄이면 된다.
+    같은 `tag` 의 알림은 기기에서 하나로 합쳐진다. 결과 집계는 감사 로그 `kind` 값으로 남는다."""
+    payload = {"title": title, "body": body, "url": url, "tag": tag or kind.value}
+    return await _deliver(payload, action=kind.value, target_id=target_id)
+
+
 async def notify_run_finished(run: Run, session_title: str | None) -> None:
     if run.status not in NOTIFY_TITLES:
         return
-    await send_to_all(build_payload(run, session_title), action="push.run_finished", target_id=run.id)
+    p = build_payload(run, session_title)
+    await notify(PushKind.run_failed, p["title"], p["body"], url=p["url"], tag=p["tag"], target_id=run.id)

@@ -263,6 +263,7 @@ class RunManager:
                     await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
         finally:
             self._handles.pop(run_id, None)
+            profiles_mod.release(run_id)
             if not self._shutting_down:
                 async with sm() as db:
                     sid = await db.scalar(select(Run.session_id).where(Run.id == run_id))
@@ -291,6 +292,14 @@ class RunManager:
                                error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
             return
 
+        is_orch = sess.kind == SessionKind.orchestrator
+        # 계정 고르기: 모델이 정한 엔진 먼저, 다른 Run 이 안 쓰는 계정 먼저, 그다음 우선순위(ADR 0006).
+        # 메인 오케스트레이터는 시작할 때 우선순위를 지킨다. 지시마다 계정을 옮기면 엔진 대화를 이어 쓰지 못하고
+        # 인계문을 매번 다시 싣게 되며, 자기 작업 세션이 쓰는 계정이 바쁘다고 밀려나는 것도 이상하다.
+        prefer = profiles_mod.model_engine(run.model)
+        remaining = list(profiles)
+        prof = profiles_mod.choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer)
+
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
         resume_handoff = await _waiting_handoff(db, run) if resumed else ""
@@ -299,7 +308,7 @@ class RunManager:
         run.started_at = run.started_at or utcnow()
         events.append(db, run, "run.status", {"status": RunStatus.running})
         if resumed:
-            events.append(db, run, "run.resumed", {"account": profiles[0].name})
+            events.append(db, run, "run.resumed", {"account": prof.name})
         await self._commit(db, run)
 
         untracked_before: set[str] = set()
@@ -320,7 +329,6 @@ class RunManager:
         write_roots = [root, outbox, s.uploads_root, s.inbox_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
 
         base_prompt = await _compose_prompt(db, run)
-        is_orch = sess.kind == SessionKind.orchestrator
         system_note = await _system_note(db, outbox, orchestrator=is_orch, scope="work" if sess.pool == "work" else "all")
         mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
         h = self._handles.get(run.id)
@@ -329,7 +337,8 @@ class RunManager:
         timed_out = False
         attempt_handoff = resume_handoff
         paused_handoff: str | None = None
-        for i, prof in enumerate(profiles):
+        while True:
+            remaining.remove(prof)
             resume_id = (sess.engine_sessions or {}).get(prof.key)
             prompt = base_prompt
             # 처음 쓰는 계정은 앞선 대화를 통째로, 쓴 적 있는 계정은 그 뒤 다른 계정에서 오간 대화만 받는다.
@@ -367,15 +376,17 @@ class RunManager:
                     "account": prof.name, "engine": prof.engine, "reset_at": _iso(reset_at),
                     "detail": (state.error or tail or "")[:300],
                 })
-            if stopped or not failed or not (missing or limited) or i == len(profiles) - 1:
-                if missing and i == len(profiles) - 1:
+            # 이 Run 이 도는 동안 다른 Run 이 한도에 걸린 계정은 넘어갈 후보에서 뺀다.
+            remaining = [p for p in remaining if not profiles_mod.limited_until(p.id)]
+            if stopped or not failed or not (missing or limited) or not remaining:
+                if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
                     return
                 if limited and not stopped:
                     # 켜진 계정을 다 써 봤다. 실패로 끝내지 않고 초기화를 기다렸다가 이어서 한다.
                     paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
-            nxt = profiles[i + 1]
+            nxt = profiles_mod.choose(remaining, run.id, prefer_engine=prefer)
             events.append(db, run, "engine.fallback", {
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
@@ -385,6 +396,8 @@ class RunManager:
             attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
             if h:
                 h.stderr_tail.clear()
+            prof = nxt
+        profiles_mod.release(run.id)
         if paused_handoff is not None:
             _, blocked = await profiles_mod.availability(db, sess.engine, sess.pool)
             if blocked:

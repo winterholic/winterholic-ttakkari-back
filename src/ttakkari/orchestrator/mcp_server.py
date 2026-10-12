@@ -50,8 +50,8 @@ async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **p
 
 @server.tool()
 async def library_catalog() -> str:
-    """Browse context library categories and project landmarks before choosing what to recall.
-    Returns names, aliases, summaries and verified source paths; no document bodies."""
+    """Browse context library categories, knowledge/work-history collections and project landmarks before choosing
+    what to recall. Returns names, aliases, summaries and verified source paths; no document bodies."""
     return await _agent("GET", "/library")
 
 
@@ -97,9 +97,18 @@ async def forget(memory_id: str) -> str:
 
 
 @server.tool()
-async def list_artifacts(query: str | None = None, kind: str | None = None, limit: int = 20) -> str:
-    """List files in the user's library (results and uploads), newest first, with their paths on disk."""
-    return await _agent("GET", "/artifacts", q=query, kind=kind, limit=limit)
+async def list_artifacts(query: str | None = None, kind: str | None = None, limit: int = 20,
+                         area: Literal["files", "agent"] | None = None) -> str:
+    """List files in the user's library (results and uploads), newest first, with their paths on disk.
+    `area` keeps one tab: "files" (uploads and files handed to the user) or "agent" (files made while working)."""
+    return await _agent("GET", "/artifacts", q=query, kind=kind, limit=limit, area=area)
+
+
+@server.tool()
+async def set_artifact_area(artifact_id: str, area: Literal["files", "agent"]) -> str:
+    """Move a library file between the "files" and "agent" tabs (reversible). Files the user uploaded or registered
+    cannot be moved by you."""
+    return await _agent("PATCH", f"/artifacts/{artifact_id}", {"area": area})
 
 
 @server.tool()
@@ -127,12 +136,26 @@ async def read_session(session_id: str, last: int = 10) -> str:
     return await _agent("GET", f"/sessions/{session_id}", last=last)
 
 
+@server.tool()
+async def server_resources() -> str:
+    """Current load of the Mac running Ttakkari: CPU, memory, disk, network and top processes (names only).
+    Check it before starting heavy work."""
+    return await _agent("GET", "/system/resources")
+
+
 # ---- 메모·캘린더(ADR 0008). 시각은 모두 Asia/Seoul 이다.
 
 @server.tool()
 async def list_memo_categories() -> str:
     """List the user's memo categories in their order. A memo belongs to at most one category (or none)."""
     return await _agent("GET", "/memo-categories")
+
+
+@server.tool()
+async def list_memo_tags(category: str | None = None) -> str:
+    """List memo tags with how many memos use each (most used first), to reuse existing tags. `category` is a
+    category name, or "none" for uncategorized memos."""
+    return await _agent("GET", "/memos/tags", category=category)
 
 
 @server.tool()
@@ -243,6 +266,14 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     if effort:
         body["effort"] = effort
     return await _call("POST", "/workers", body)
+
+
+@orchestrator_tool
+async def account_usage() -> str:
+    """Per-account status for choosing where to run workers: engine, personal/work scope, usable models, 5-hour and
+    weekly used/remaining percent with reset times, when it was measured, limit-wait state and running Run count.
+    Values are the app's last observation (null = never seen, stale = old); this tool does not refresh them."""
+    return await _call("GET", "/accounts/usage")
 
 
 @orchestrator_tool

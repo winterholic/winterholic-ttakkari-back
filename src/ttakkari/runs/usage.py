@@ -342,6 +342,17 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     return u
 
 
+def cached(account_id: uuid.UUID) -> Usage | None:
+    """마지막으로 본 사용량(캐시·실행 스트림 중 더 최근 것). 네트워크도 인증 파일·키체인도 건드리지 않는다.
+
+    TTL 이 지난 값도 준다(낡았는지는 updated_at 으로 알린다). 한 번도 못 봤으면 None."""
+    hit = _cache.get(account_id)
+    fresh = [u for u in (hit[1] if hit else None, _stream.get(account_id)) if u is not None and u.windows]
+    if fresh:
+        return max(fresh, key=lambda u: u.updated_at or 0)
+    return hit[1] if hit else None
+
+
 def forget(account_id: uuid.UUID) -> None:
     _cache.pop(account_id, None)
 

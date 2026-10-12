@@ -54,6 +54,11 @@ class Settings(BaseSettings):
         "claude": {"model": "opus", "effort": "medium"},
         "codex": {"model": "gpt-6.1-sol", "effort": "high"},
     }
+    # 엔진별로 작업 세션에 지정할 수 있는 모델(account_usage 도구가 알려 준다). 프런트 새 세션 화면의 목록과 같다.
+    engine_models: dict[str, list[str]] = {
+        "claude": ["opus", "sonnet", "haiku"],
+        "codex": ["gpt-6-luna", "gpt-6.1-sol"],
+    }
     # 한 Run 이 모든 계정의 한도 초기화를 기다릴 수 있는 최대 횟수. 넘으면 실패로 끝낸다(무한 대기 방지).
     max_limit_waits: int = 8
     # 오케스트레이터 MCP 서버가 부를 백엔드 주소. serve 포트를 바꾸면 같이 바꾼다.

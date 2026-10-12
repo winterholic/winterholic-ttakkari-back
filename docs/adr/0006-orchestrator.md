@@ -16,7 +16,7 @@
 
 ### 오케스트레이터 도구(MCP)
 오케스트레이터 Run 에만 stdio MCP 서버 `ttakkari`(`python -m ttakkari.orchestrator.mcp_server`)를 붙인다.
-도구: `spawn_worker` `message_worker` `list_workers` `get_worker` `stop_worker`.
+도구: `spawn_worker` `message_worker` `list_workers` `get_worker` `stop_worker` `account_usage`(계정별 상태, 아래 "놀고 있는 계정 먼저").
 MCP 서버는 백엔드 HTTP(`/api/orchestrator/*`)를 부른다. Run 은 백엔드 프로세스 안의 매니저가 돌려야 해서 DB 를 직접 만지지 않는다.
 인증은 오케스트레이터 세션 하나에 묶인 짧은 JWT(`aud=ttakkari-orch`, `sid`)다. 그 세션의 작업 세션만 보고 만질 수 있다.
 
@@ -40,6 +40,18 @@ Run 이 사용량 한도로 실패하면(출력·오류 문구 휴리스틱, 아
 - 오케스트레이터가 다른 엔진으로 넘어가면 `orchestrator_fallback_models`(기본 claude=opus/medium, codex=gpt-6.1-sol/high)로 모델·생각 수준을 맞춘다. 직접 그 엔진 모델을 고른 Run 과 일반 대화는 건드리지 않는다.
 - 모든 계정이 한도면 실패로 끝내지 않는다. Run 을 `queued` 로 두고 `run.waiting` 을 남기며 푸시로 알린다. 가장 이른 초기화 시각에 같은 Run 을 다시 돌리고(인계문은 `run.waiting.handoff`), 계정 한도 해제·계정 켜기는 즉시 재시도한다. 같은 세션의 다음 지시는 이 Run 뒤에 선다. 한 Run 의 대기가 `max_limit_waits`(기본 8)를 넘으면 실패로 끝낸다.
 - 작업 세션(worker)도 같은 경로라 같은 동작이다. 대기 중에는 오케스트레이터에게 보고가 가지 않는다(Run 이 끝나지 않았으므로).
+
+### 놀고 있는 계정 먼저(2026-10-13)
+- 순서 규칙(`profiles.choose`): ① 모델 이름이 가리키는 엔진 ② 한도 여유가 있고 지금 다른 Run 이 쓰지 않는 계정 ③ 기존 우선순위. 한도에 걸린 계정은 먼저 걸러지고(`limited_until`: 쉬는 시각 + 사용량 캐시 100%), 퍼센트 잔여로 순서를 바꾸지는 않는다(값이 낡거나 없을 수 있고 순서가 불안정해진다). 모두 바쁘면 우선순위 그대로다.
+- 적용 지점: 한도 전환 때 다음 계정, 그리고 작업 세션·일반 대화의 Run 시작. 전환할 때는 그 사이 다른 Run 이 한도에 걸린 계정도 다시 걸러 낸다. 메인 오케스트레이터의 시작은 우선순위를 지킨다. 지시마다 계정을 옮기면 엔진 대화를 이어 쓰지 못하고 인계문을 매번 싣게 되며, 자기 작업 세션이 쓰는 계정이 바쁘다고 밀려나는 것도 이상하다. 오케스트레이터도 한도 전환 때는 같은 규칙이다(허용 모델 `orchestrator_fallback_models` 적용은 그대로).
+- "쓰는 중"은 매니저가 메모리(`profiles._in_use`, run id → 계정 id)에 적는다. 같은 프로세스에서 고르는 일과 적는 일 사이에 await 가 없어, 작업 세션 여러 개를 연달아 띄워도 같은 계정에 몰리지 않는다. 한도 대기 중인 Run 은 계정을 쓰지 않는다. 재시작하면 Run 도 함께 끝나서 DB 에 두지 않는다.
+- 엔진을 고정한 세션(`claude`/`codex`)은 그 엔진 계정만, 회사 업무 세션은 회사 그룹만 후보다(범위 규칙 그대로). `auto` 작업 세션은 엔진을 가리지 않고 놀고 있는 계정으로 가므로, 엔진이 중요하면 `spawn_worker` 에 engine·model 을 정한다.
+- 한계: 계정을 옮기면 그 계정에 이미 있던 엔진 대화를 못 이어 쓸 수 있다(인계문으로 대신한다). "쓰는 중" 판단은 이 서버가 시작한 Run 만 센다(엔진 CLI 를 사용자가 직접 돌리는 것은 모른다).
+
+### `account_usage` 도구(오케스트레이터 전용)
+- `GET /api/orchestrator/accounts/usage` 를 부른다. 계정마다 엔진·범위(personal/work)·켜짐·우선순위·`available`·한도 대기(`limit.waiting/until/reason`)·`running_runs`·지정 가능한 모델(설정 `engine_models`)·오케스트레이터 허용 모델·사용량(5시간·주간·모델별 주간의 사용/잔여 퍼센트, 초기화 시각, 측정 시각, 나이, `stale`)을 낸다.
+- 사용량은 앱이 마지막으로 본 값(사용량 화면이 채우는 캐시, 실행 스트림의 `rate_limit_event`)만 쓴다. 이 도구는 새로 조회하지 않으므로 인증 파일·키체인을 읽지 않고, 계정 폴더·이메일·토큰도 내지 않는다. 값이 없으면 `usage: null`, 15분보다 오래됐으면 `stale: true`, 측정 뒤 초기화 시각이 지났으면 `reset_since_measured: true`(잔여 null).
+- 회사 업무 오케스트레이터(`sessions.pool=work`)는 회사 그룹 계정만 본다. 개인 오케스트레이터는 전체를 보고 `scope` 로 구분한다.
 
 엔진 대화 ID 는 계정 id 별로 `sessions.engine_sessions` 에 둔다(이름을 바꿔도 이어진다). 처음 쓰는 프로필로 넘어가면 최근 대화 8턴을 프롬프트 앞에 붙여 맥락을 넘긴다.
 

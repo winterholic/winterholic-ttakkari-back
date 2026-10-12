@@ -156,6 +156,7 @@ payload 는 `{title, body, url, tag}`:
 | GET | `/api/orchestrator/workers` | 목록(짧은 결과) |
 | GET | `/api/orchestrator/workers/{id}` | 상세(결과 4000자·오류·결과물 이름) |
 | POST | `/api/orchestrator/workers/{id}/stop` | 대기·실행 Run 취소 |
+| GET | `/api/orchestrator/accounts/usage` | 계정별 배정 판단 정보(MCP `account_usage`). `{measured_at, priority_override_until, note, accounts:[{name, engine, scope, enabled, priority, available, limit:{waiting, until, reason(cooldown/usage_window)}, running_runs, models, orchestrator_model, usage:{source, plan, measured_at, age_seconds, stale, five_hour, weekly, model_weekly, error} 또는 null}]}`. 시각은 KST 오프셋 ISO, 윈도우는 `{used_percent, remaining_percent, resets_at, reset_since_measured}`. 캐시된 값만 쓰고 새로 조회·인증 파일 읽기·폴더/이메일/토큰 노출이 없다. 회사 업무 오케스트레이터는 회사 그룹만 |
 
 `WorkerOut`: `{worker_id, title, engine, status(queued|running|succeeded|failed|cancelled|interrupted|idle), active_run_id, last_result, last_error, artifacts}`.
 
@@ -213,6 +214,8 @@ payload 는 `{title, body, url, tag}`:
 ### 에이전트용(MCP 서버가 부름, 세션 한정 토큰)
 `GET /api/agent/memo-categories`, `GET|POST /api/agent/memos`, `GET|PATCH|DELETE /api/agent/memos/{id}`, `GET|POST /api/agent/events`, `PATCH|DELETE /api/agent/events/{id}`.
 - `GET /api/agent/events?from=&to=&q=` → `{events, holidays}`.
+- `GET /api/agent/memos/tags?category=<이름 또는 none>` → `{tags:[{name, count}]}` (MCP `list_memo_tags`). `/memos/{id}` 보다 먼저 등록해야 한다.
+- 보관함·서버(모든 Run, MCP `list_artifacts` `set_artifact_area` `server_resources`): `GET /api/agent/artifacts?area=files|agent`(항목에 `area`), `PATCH /api/agent/artifacts/{id}` `{area}` 로 분류 이동(되돌릴 수 있음, 감사 로그 `artifact.move` actor=agent, 사용자가 올리거나 등록한 파일 `upload`·`user_registered` 는 403 `user_owned`), `GET /api/agent/system/resources` 는 `GET /api/system/resources` 와 같은 값(프로세스 이름만).
 - 에이전트는 카테고리를 이름으로 쓴다: 목록 `category=<이름 또는 none>`, 만들기·고치기 `category`(빈 문자열이면 미분류), 응답에 `category` 이름. 없는 이름은 만들지 않고 422 로 있는 이름을 알려 준다.
 - `PATCH /api/agent/memos/{id}` 는 `append` 도 받는다. 사용자 메모의 `title`·`body` 를 바꾸려 하면 403 `user_owned`.
 - `DELETE` 는 보관 처리 `{archived: true}`. 에이전트가 만든 항목만 되고, 사용자가 만든 것은 403 `user_owned`.

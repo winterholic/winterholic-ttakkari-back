@@ -117,22 +117,61 @@ async def effective_order(db: AsyncSession, pool: str = "personal") -> list[Engi
 
 async def availability(db: AsyncSession, session_engine: str, pool: str = "personal") -> tuple[list[Profile], list[tuple[Profile, float]]]:
     """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). (쓸 수 있는 계정, [(한도 대기 중인 계정, 초기화 시각)])."""
-    from ttakkari.runs import usage as usage_mod
-
     free: list[Profile] = []
     blocked: list[tuple[Profile, float]] = []
-    now = time.time()
     for a in await effective_order(db, pool):
         if not a.enabled or not (session_engine == "auto" or a.engine == session_engine):
             continue
         p = _profile(a)
-        # 사용량 화면(캐시)이 5시간·주간 한도 100% 를 보여 주면 초기화 전에는 부르지 않는다.
-        until = max(_cooldown.get(p.id, 0), usage_mod.exhausted_until(p.id) or 0)
-        if until > now:
+        until = limited_until(p.id)
+        if until:
             blocked.append((p, until))
         else:
             free.append(p)
     return free, blocked
+
+
+def limited_until(account_id: uuid.UUID) -> float | None:
+    """한도로 쉬는 계정의 초기화 시각(unix 초). 쓸 수 있으면 None. 네트워크 없이 메모리만 본다.
+
+    한도 문구로 건 쉬는 시각과, 사용량 화면(캐시)이 5시간·주간 한도 100% 를 보여 주는 경우를 함께 본다."""
+    from ttakkari.runs import usage as usage_mod
+
+    until = max(_cooldown.get(account_id, 0), usage_mod.exhausted_until(account_id) or 0)
+    return until if until > time.time() else None
+
+
+# 지금 Run 이 쓰고 있는 계정(run id → 계정 id). 매니저와 같은 프로세스만 바꾸므로 DB 에 두지 않는다
+# (재시작하면 Run 도 함께 끝난다). 한도 대기 중인 Run 은 계정을 쓰지 않으니 넣지 않는다.
+_in_use: dict[uuid.UUID, uuid.UUID] = {}
+
+
+def release(run_id: uuid.UUID) -> None:
+    _in_use.pop(run_id, None)
+
+
+def running_counts() -> dict[uuid.UUID, int]:
+    """계정 id → 그 계정으로 지금 돌고 있는 Run 수."""
+    counts: dict[uuid.UUID, int] = {}
+    for aid in _in_use.values():
+        counts[aid] = counts.get(aid, 0) + 1
+    return counts
+
+
+def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, prefer_engine: str | None = None) -> Profile:
+    """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
+
+    순서: 모델이 정해 준 엔진 > 다른 Run 이 안 쓰는 계정(idle_first) > 기존 우선순위. 고르는 일과 적는 일 사이에
+    await 가 없어서, 동시에 시작한 Run 들이 같은 놀고 있는 계정에 몰리지 않는다. 한도 상태는 부른 쪽이 미리 걸러 둔다."""
+    busy = {aid for rid, aid in _in_use.items() if rid != run_id}
+    ranked = sorted(enumerate(pool), key=lambda ip: (
+        prefer_engine is not None and ip[1].engine != prefer_engine,
+        idle_first and ip[1].id in busy,
+        ip[0],
+    ))
+    prof = ranked[0][1]
+    _in_use[run_id] = prof.id
+    return prof
 
 
 async def candidates(db: AsyncSession, session_engine: str, pool: str = "personal") -> list[Profile]:

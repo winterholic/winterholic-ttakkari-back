@@ -14,6 +14,7 @@ from ttakkari.api.deps import Db
 from ttakkari.api.sessions import ACTIVE, queue_run
 from ttakkari.models import Artifact, ChatSession, Run, RunOrigin, SessionKind
 from ttakkari.orchestrator.runtime import OrchestratorSession
+from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
 
 router = APIRouter(prefix="/api/orchestrator", tags=["orchestrator"])
@@ -136,3 +137,10 @@ async def stop_worker(worker_id: uuid.UUID, sid: OrchestratorSession, db: Db) ->
             break
         await asyncio.sleep(0.25)
     return await _out(db, w)
+
+
+@router.get("/accounts/usage")
+async def accounts_usage(sid: OrchestratorSession, db: Db) -> dict:
+    """계정별 배정 판단 정보. 회사 업무 오케스트레이터는 회사 그룹 계정만 본다."""
+    orch = await _orchestrator(db, sid)
+    return await account_status(db, orch.pool)

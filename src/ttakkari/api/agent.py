@@ -10,7 +10,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 
-from ttakkari.api.deps import Db, broker_http
+from ttakkari import sysinfo
+from ttakkari.api.deps import Db, broker_http, get_artifact
 from ttakkari.api.planner import (
     EventIn,
     EventPatch,
@@ -43,7 +44,7 @@ from ttakkari.planner import kr_holidays
 from ttakkari.planner import service as planner
 from ttakkari.push.service import PushKind
 from ttakkari.push.service import notify as push_notify
-from ttakkari.schemas import ArtifactOut
+from ttakkari.schemas import ArtifactAreaIn, ArtifactOut
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -175,18 +176,37 @@ async def link(body: LinkIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 # ---- 파일
 
 @router.get("/artifacts")
-async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str | None = None, limit: int = 20) -> dict[str, Any]:
+async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str | None = None, limit: int = 20,
+                    area: Literal["files", "agent"] | None = None) -> dict[str, Any]:
     await _session(db, sid)
     stmt = select(Artifact).where(Artifact.deleted_at.is_(None))
     if kind:
         stmt = stmt.where(Artifact.kind == kind)
+    if area:
+        stmt = stmt.where(Artifact.area == area)
     if q:
         like = f"%{q.replace('%', r'\%').replace('_', r'\_')}%"
         stmt = stmt.where(or_(Artifact.filename.ilike(like), Artifact.rel_path.ilike(like)))
     rows = await db.scalars(stmt.order_by(Artifact.created_at.desc()).limit(min(limit, 100)))
     # 에이전트가 원본을 읽을 수 있게 원래 경로를 준다(관리 영역 복사본은 guard 보호 영역).
-    return {"artifacts": [{"id": str(a.id), "filename": a.filename, "kind": a.kind, "path": a.original_path,
+    return {"artifacts": [{"id": str(a.id), "filename": a.filename, "kind": a.kind, "area": a.area, "path": a.original_path,
                            "size": a.size_bytes, "created_at": a.created_at.isoformat()} for a in rows]}
+
+
+@router.patch("/artifacts/{art_id}")
+async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSession, db: Db) -> dict[str, Any]:
+    """보관함 분류를 옮긴다(파일 ↔ 에이전트 파일). 되돌릴 수 있다. 사용자가 올리거나 등록한 파일은 사용자만 옮긴다."""
+    await _session(db, sid)
+    art = await get_artifact(db, art_id)
+    if art.source in ("upload", "user_registered"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
+                            "사용자가 올린 파일의 분류는 앱에서만 바꿀 수 있어요."})
+    if art.area != body.area:
+        record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=art.id,
+               detail={"from": art.area, "to": body.area, "session": str(sid)})
+        art.area = body.area
+        await db.commit()
+    return {"id": str(art.id), "filename": art.filename, "area": art.area}
 
 
 @router.post("/share")
@@ -217,6 +237,15 @@ async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     if needs_server_preview(art.kind):
         preview.enqueue(art.id)
     return {"artifact": ArtifactOut.from_model(art).model_dump(mode="json")}
+
+
+# ---- 서버
+
+@router.get("/system/resources")
+async def system_resources(sid: AgentSession, db: Db) -> dict[str, Any]:
+    """이 맥의 CPU·메모리·디스크·네트워크와 상위 프로세스(이름만, 명령줄 없음). 사용자 화면과 같은 값이다."""
+    await _session(db, sid)
+    return await sysinfo.snapshot()
 
 
 # ---- 알림·다른 대화
@@ -274,6 +303,23 @@ async def _memos_out(db: Db, memos: list[Memo], *, body: bool) -> list[dict[str,
 async def agent_list_memo_categories(sid: AgentSession, db: Db) -> dict[str, Any]:
     await _session(db, sid)
     return {"categories": [{"name": c.name, "color": c.color} for c in await planner.list_categories(db)]}
+
+
+@router.get("/memos/tags")
+async def agent_list_memo_tags(sid: AgentSession, db: Db, category: str | None = None) -> dict[str, Any]:
+    """메모 태그와 쓰인 메모 수(많은 순). category: 카테고리 이름, "none" 이면 미분류."""
+    await _session(db, sid)
+    stmt = select(Memo.tags).where(Memo.deleted_at.is_(None))
+    cat = None if not category else planner.NONE if category.strip().lower() == "none" else await planner.resolve_category(db, category)
+    if cat is planner.NONE:
+        stmt = stmt.where(Memo.category_id.is_(None))
+    elif cat is not None:
+        stmt = stmt.where(Memo.category_id == cat)
+    counts: dict[str, int] = {}
+    for tags in await db.scalars(stmt):
+        for t in tags:
+            counts[t] = counts.get(t, 0) + 1
+    return {"tags": [{"name": n, "count": c} for n, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]}
 
 
 @router.get("/memos")

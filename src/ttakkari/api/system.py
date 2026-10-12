@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, text
 
+from ttakkari import sysinfo
 from ttakkari.api.deps import Db, get_workspace
 from ttakkari.artifacts.preview import soffice_path
 from ttakkari.audit import record
@@ -39,6 +40,12 @@ async def info(_: User) -> dict:
         "allowed_roots": [str(p) for p in s.allowed_roots],
         "max_concurrent_runs": s.max_concurrent_runs,
     }
+
+
+@router.get("/system/resources")
+async def resources(_: User) -> dict:
+    """이 맥의 CPU·메모리·디스크·네트워크와 상위 프로세스. 프로세스는 이름만 내고 명령줄은 내지 않는다."""
+    return await sysinfo.snapshot()
 
 
 @router.post("/system/stop-all")

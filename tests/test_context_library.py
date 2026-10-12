@@ -194,3 +194,22 @@ async def test_library_catalog_lists_project_landmarks_with_scope(client, auth, 
     result = await client.get("/api/agent/library", headers=_agent(session["id"]))
     assert result.status_code == 200
     assert [p["name"] for p in result.json()["projects"]] == ["work-project"]
+
+
+async def test_library_catalog_indexes_knowledge_collections_by_scope(client, auth, make_dir):
+    from test_context import _agent, _session
+
+    for scope, name in (("shared", "공용 스킬"), ("work", "사내 스킬"), ("personal", "개인 스킬")):
+        e = (await client.post("/api/assistant/entities", json={"name": name, "type": "topic", "scope": scope,
+                                                              "summary": "스킬 모음"}, headers=auth)).json()
+        d = make_dir()
+        (d / "SKILL.md").write_text("# 스킬\n설명")
+        s = await client.post("/api/assistant/sources", json={"path": str(d), "scope": scope, "category": "knowledge",
+                                                            "entity_id": e["id"]}, headers=auth)
+        assert s.status_code in (200, 201), s.text
+    await wait_indexing()
+    result = (await client.get("/api/assistant/library", headers=auth)).json()
+    assert {c["name"] for c in result["collections"]} == {"공용 스킬", "사내 스킬", "개인 스킬"}
+    session = await _session(client, auth, make_dir, pool="work")
+    result = (await client.get("/api/agent/library", headers=_agent(session["id"]))).json()
+    assert {c["name"] for c in result["collections"]} == {"공용 스킬", "사내 스킬"}

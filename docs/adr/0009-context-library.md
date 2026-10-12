@@ -65,6 +65,19 @@ scope는 personal / work / shared다. 회사 Run의 recall·엔터티 상세·�
 `GET /api/assistant/library?scope=all|personal|work`, `GET /api/agent/library`, 공통 MCP `library_catalog`로 목차를 본다.
 비서 관리의 기억·엔터티·출처 API는 scope와 출처 메타데이터를 노출한다. 기존 필드는 유지한다.
 
+`library_catalog` 응답의 `collections`는 프로젝트가 아닌 지식·작업 기록 모음(엔터티+knowledge/work-history 출처)의 2단 색인이다.
+이름·별칭·요약·범위·출처 수만 담고 문서 본문은 담지 않는다. 같은 범위 규칙을 따른다.
+
+## 스킬 지식 등록(2026-10-12)
+
+`~/.claude/skills`, `dev-experts-skills`, `biz-experts-skills`, `life-experts-skills`, `stock-experts`의 각 스킬 `SKILL.md`만 knowledge로 등록했다(241개).
+중첩 팩(`video-framework/packs/*`), `synced`, `.trash`, 심볼릭 링크 스킬은 제외한다.
+범위는 내용으로 나눴다. 개발 전문가 스킬과 범용 작업 방식 스킬은 shared, EZ Work 스킬 4개는 work,
+비즈니스·생활·주식 전문가 스킬과 local-only 스킬은 personal이다. 근거는 회사 세션에 노출해도 되는 범용 지식인지 여부다.
+`~/.claude/skills`는 work·shared·personal이 섞여 한 폴더 출처로 둘 수 없어 파일 출처를 쓴다.
+한계: 본문이 영어인 스킬은 한국어 일반어("디버깅")로 잘 안 걸린다. 스킬 이름·영어 키워드·도메인 용어로는 잘 걸린다.
+
+
 ## 검증 기준
 
 모델 import 불가 환경에서도 저장·검색, 한국어 별칭에서 키워드가 없는 연결 문서 발견, 미일치 빈 결과,

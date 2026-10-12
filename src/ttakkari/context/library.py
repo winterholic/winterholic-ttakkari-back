@@ -121,7 +121,19 @@ async def library_catalog(db: AsyncSession, *, scope: str = "all") -> dict[str, 
     categories = await db.execute(select(CtxSource.category, func.count(CtxSource.id))
                                  .where(CtxSource.enabled.is_(True), scope_clause(CtxSource.scope, scope))
                                  .group_by(CtxSource.category))
-    return {"retrieval": "lexical", "categories": dict(categories.all()),
+    # 프로젝트가 아닌 지식·작업 기록 모음의 2단 색인. 건강처럼 출처가 없는 종류는 나오지 않는다.
+    rows = await db.execute(
+        select(CtxEntity, CtxSource.category, func.count(CtxSource.id))
+        .join(CtxSource, CtxSource.entity_id == CtxEntity.id)
+        .where(CtxSource.enabled.is_(True), CtxSource.category != "projects", scope_clause(CtxSource.scope, scope),
+               scope_clause(CtxEntity.scope, scope))
+        .group_by(CtxEntity.id, CtxSource.category).order_by(CtxSource.category, CtxEntity.name).limit(100))
+    collections = [{"name": e.name, "aliases": e.aliases, "summary": (e.summary or "")[:240], "scope": e.scope,
+                    "category": category, "sources": n,
+                    "attributes": {k: v for k, v in e.attributes.items()
+                                   if k in {"root_path", "kind", "skill_count", "checked_at"}}}
+                   for e, category, n in rows.all()]
+    return {"retrieval": "lexical", "categories": dict(categories.all()), "collections": collections,
             "projects": [{"name": p.name, "aliases": p.aliases, "summary": (p.summary or "")[:240], "scope": p.scope,
                           "attributes": {k: v for k, v in p.attributes.items()
                                          if k in {"root_path", "checked_at", "remote_freshness"}}} for p in projects]}

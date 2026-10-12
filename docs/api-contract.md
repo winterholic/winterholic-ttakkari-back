@@ -241,6 +241,14 @@ payload 는 `{title, body, url, tag}`:
 
 - `GET /api/assistant/library?scope=all|personal|work`: 활성 출처의 종류별 수와 프로젝트 이정표. 사용자 인증 필요.
 - `POST /api/assistant/recall`: `{query, k?, scope?}`. 임베딩 모델 없는 전문·부분 일치 검색과 명시적 별칭·관계 확장.
+- 맥락 도서관 화면(`/context-library`)용 읽기 전용 집계. 모두 사용자 인증, `scope=all|personal|work`(personal/work 는 shared 포함):
+  - `GET /api/assistant/library/overview`: 종류×범위별 출처·문서·조각 수, 기억·엔터티 분포, 마지막 색인 시각, 색인 오류 출처.
+  - `GET /api/assistant/library/tree`: 종류 → 프로젝트·모음(엔터티, 없으면 "연결된 항목 없음") → 출처. 문서는 아래로 지연 로딩한다.
+  - `GET /api/assistant/library/sources/{id}/documents`, `GET /api/assistant/library/documents/{id}/chunks?limit=`: 문서 목록(조각 많은 순 500개)과 조각 미리보기. 범위 밖이면 404.
+  - `GET /api/assistant/library/graph`: 노드(엔터티 + 기억·출처·문서·조각 수 + 품질 플래그 isolated/no_alias/no_summary/no_evidence/duplicate_suspect), 엣지(술어), 중복 의심 쌍.
+  - `GET /api/assistant/library/entities/{id}`: 노드 상세(관계·연결된 기억 전문·묶인 출처).
+  - `GET /api/assistant/library/quality`: 조각 길이 분포·짧은/긴/중복 조각 예시, 문서·출처 무결성, 엔터티·관계·기억 지표와 판정 문장(`findings`).
+  - `POST /api/assistant/library/search-lab`: `{query, k?, scope?}`. recall 과 같은 검색 결과에 걸린 단어(`matched_terms`)·걸린 곳(`match_in`)·경로(`via`: keyword/entity/fuzzy)를 붙인다. 쓰기 없음.
 - `GET /api/agent/library`: 에이전트 세션 범위의 목차. MCP `library_catalog`에 연결한다.
 - 기존 `POST /api/agent/recall`은 회사 세션에서 work/shared 자료만 반환한다. 개인 세션은 전체 자료를 조회한다.
 - 기억 생성은 `scope`(personal/work/shared), `source_ref`를 받는다. 엔터티 생성은 `scope`, `attributes`를 받는다.

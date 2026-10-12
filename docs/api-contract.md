@@ -162,7 +162,7 @@ payload 는 `{title, body, url, tag}`:
 | POST | `/api/accounts` | `{name, engine, pool?, config_dir?, enabled?}` → 201(전체 목록 맨 뒤 순위). 이름 중복 409, 상대 경로·`~/.ttakkari` 안 422 |
 | PATCH | `/api/accounts/{id}` | `{name?, pool?, config_dir?, enabled?}`. `pool` 로 회사 그룹에 넣기/빼기(순서는 그대로). 다시 켜면 한도 대기도 풀린다 |
 | DELETE | `/api/accounts/{id}` | 204 |
-| POST | `/api/accounts/reorder` | `{ids}` 전체 계정 id 를 한 번씩 → 목록 |
+| POST | `/api/accounts/reorder` | `{ids}` 제출한 계정을 앞에 두고 누락된 계정은 기존 상대 순서대로 뒤에 둠. 중복·없는 id 는 400 → 전역 전체 목록 |
 | GET/PUT/DELETE | `/api/accounts/override` | 임시 순서 하나(전체 목록 기준). PUT `{ids, until}`. 회사 업무 탭은 이 순서에서 회사 그룹만 따른다 |
 | GET | `/api/accounts/usage` | 전체 목록의 지금 적용 순서. `rank` 는 그 순서의 번호, `pool` 로 회사 그룹 표시 |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |

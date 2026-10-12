@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -23,6 +24,7 @@ from ttakkari.runs import usage as usage_mod
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
+log = logging.getLogger(__name__)
 MAX_ACCOUNTS = 20
 
 
@@ -269,14 +271,21 @@ async def delete_account(account_id: uuid.UUID, _: User, db: Db, request: Reques
 
 @router.post("/reorder", response_model=list[AccountOut])
 async def reorder(body: ReorderIn, _: User, db: Db) -> list[AccountOut]:
-    """전체 목록(회사 그룹 포함)의 순서. 모든 계정 id 를 한 번씩 보낸다."""
-    rows = {a.id: a for a in await profiles.accounts(db)}
-    if set(body.ids) != set(rows) or len(body.ids) != len(rows):
+    """Put submitted accounts first; preserve the relative order of accounts added since the client read the list."""
+    current = await profiles.accounts(db)
+    rows = {a.id: a for a in current}
+    supplied = set(body.ids)
+    unknown = supplied - set(rows)
+    duplicate_count = len(body.ids) - len(supplied)
+    if unknown or duplicate_count:
+        log.warning("account reorder rejected: received=%d duplicate=%d unknown=%d current=%d missing=%d",
+                    len(body.ids), duplicate_count, len(unknown), len(rows), len(set(rows) - supplied))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "모든 계정 id 를 한 번씩 보내야 합니다.")
-    for i, aid in enumerate(body.ids):
-        rows[aid].priority = i
+    ordered = [rows[aid] for aid in body.ids] + [a for a in current if a.id not in supplied]
+    for i, account in enumerate(ordered):
+        account.priority = i
     await db.commit()
-    return [_out(rows[aid]) for aid in body.ids]
+    return [_out(a) for a in ordered]
 
 
 class CodexResetOut(BaseModel):

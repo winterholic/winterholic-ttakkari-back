@@ -25,13 +25,14 @@ from ttakkari.artifacts.service import register_file
 from ttakkari.audit import record
 from ttakkari.broker.policy import BrokerError, ResolvedPath, is_within
 from ttakkari.config import get_settings
-from ttakkari.context.store import pinned_brief
+from ttakkari.context.store import pinned_brief, recall
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     Artifact,
     ChatSession,
     Run,
+    RunEvent,
     RunOrigin,
     RunStatus,
     SessionKind,
@@ -229,6 +230,13 @@ class RunManager:
         mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
         profiles = await profiles_mod.candidates(db, sess.engine, sess.pool)
         if not profiles:
+            configured = [a for a in await profiles_mod.effective_order(db, sess.pool)
+                          if a.enabled and (sess.engine == "auto" or a.engine == sess.engine)]
+            if configured:
+                where = "회사" if sess.pool == "work" else "개인"
+                await self._finish(db, run, RunStatus.failed,
+                                   error=f"켜진 {where} 계정이 모두 사용량 한도 초기화를 기다리고 있습니다.")
+                return
             what = "엔진" if sess.engine == "auto" else sess.engine
             where = "회사" if sess.pool == "work" else "개인"
             await self._finish(db, run, RunStatus.failed,
@@ -238,12 +246,13 @@ class RunManager:
         state = ParseState()
         rc: int | None = None
         timed_out = False
+        attempt_handoff = ""
         for i, prof in enumerate(profiles):
             resume_id = (sess.engine_sessions or {}).get(prof.key)
             prompt = base_prompt
             if resume_id is None:
-                # 이 프로필로는 처음이다. 앞선 대화가 있으면 맥락을 넘긴다(다른 엔진·계정에서 이어받음).
-                prompt = await _handoff_context(db, run) + base_prompt
+                prompt = await _handoff_context(db, run) + prompt
+            prompt = attempt_handoff + prompt
             run.engine, run.profile = prof.engine, prof.name
             spec = LaunchSpec(
                 cwd=root, prompt=prompt, engine_session_id=resume_id,
@@ -256,6 +265,7 @@ class RunManager:
             env = _child_env(run.id, write_roots, s.home, s.guard_log) | prof.env()
             adapter = ADAPTERS[prof.engine]
             await self._commit(db, run)
+            attempt_start_seq = run.last_seq
             state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h)
             if state.rate_limits:
                 usage_mod.remember_stream(prof.id, usage_mod.windows_from_stream(state.rate_limits))
@@ -279,6 +289,7 @@ class RunManager:
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
                 "detail": (state.error or tail or "")[:500],
             })
+            attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
             if h:
                 h.stderr_tail.clear()
         run.exit_code = rc
@@ -584,6 +595,33 @@ async def _handoff_context(db: AsyncSession, run: Run) -> str:
         if r.result_text or r.error:
             lines.append(f"에이전트: {(r.result_text or f'(실패) {r.error}')[:HANDOFF_CHARS]}")
     return "\n".join(lines) + "\n\n[새 지시]\n"
+
+
+async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: ParseState,
+                           stderr: str, since_seq: int) -> str:
+    """Carry observable progress to the next account without assuming the failed turn was atomic."""
+    lines = ["[Previous account handoff]",
+             f"Account {profile} stopped: {(state.error or stderr or 'engine unavailable')[:500]}",
+             "Continue the current request. Inspect existing work and worker sessions before creating or repeating work.",
+             "Search recall for relevant memories and indexed work-history; verify the current state first."]
+    rows = list(await db.scalars(
+        select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.seq > since_seq,
+                               RunEvent.type.in_(("message", "tool.call", "tool.result", "guard.blocked")))
+        .order_by(RunEvent.seq.desc()).limit(12)))
+    for event in reversed(rows):
+        payload = event.payload or {}
+        detail = payload.get("text") or payload.get("output") or payload.get("name") or payload.get("reason")
+        if detail:
+            lines.append(f"{event.type}: {str(detail)[:500]}")
+    try:
+        hits = await recall(db, run.prompt[:500], 3, kinds=("memory", "chunk"))
+    except Exception:
+        log.exception("handoff context search failed for run %s", run.id)
+        hits = []
+    for hit in hits:
+        source = hit.meta.get("path") or hit.meta.get("source") or hit.kind
+        lines.append(f"Relevant memory/work-history ({source}): {hit.text[:700]}")
+    return "\n".join(lines) + "\n\n"
 
 
 async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:

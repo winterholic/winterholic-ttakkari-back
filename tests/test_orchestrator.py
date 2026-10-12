@@ -57,6 +57,57 @@ async def test_auto_engine_falls_back_to_codex_on_usage_limit_and_keeps_using_it
     assert calls[0]["argv"][1] == "resume"
 
 
+async def test_real_claude_session_limit_falls_back_to_codex_with_handoff(client, auth, make_dir):
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    await client.post("/api/assistant/memories", json={"content": "project alpha deploy requires a manual review"}, headers=auth)
+    await run_to_end(client, auth, sess["id"], "remember project alpha")
+    before = len(agent_calls())
+    run = await run_to_end(client, auth, sess["id"], "continue project alpha CLAUDE_SESSION_LIMIT")
+    assert run["status"] == "succeeded" and run["profile"] == "codex"
+    calls = agent_calls()[before:]
+    assert [c["engine"] for c in calls] == ["claude", "codex"]
+    prompt = calls[-1]["argv"][calls[-1]["argv"].index("--") + 1]
+    assert "remember project alpha" in prompt
+    assert "continue project alpha" in prompt
+    assert "Previous account" in prompt and "session limit" in prompt
+    assert "Existing worker was already created" in prompt
+    assert "project alpha deploy requires a manual review" in prompt
+    assert "work" in prompt
+    fb = [e for e in await run_events(client, auth, run["id"]) if e["type"] == "engine.fallback"]
+    assert len(fb) == 1 and fb[0]["payload"]["reason"] == "usage_limit"
+
+
+async def test_real_claude_session_limit_falls_back_to_second_claude(client, auth, make_dir):
+    d = make_dir()
+    a = (await client.post("/api/accounts", json={"name": "claude-2", "engine": "claude",
+                                                    "config_dir": str(d)}, headers=auth)).json()
+    accs = (await client.get("/api/accounts", headers=auth)).json()
+    ids = [accs[0]["id"], a["id"], accs[1]["id"]]
+    assert (await client.post("/api/accounts/reorder", json={"ids": ids}, headers=auth)).status_code == 200
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    await run_to_end(client, auth, sess["id"], "project beta stage 1")
+    before = len(agent_calls())
+    run = await run_to_end(client, auth, sess["id"], "CLAUDE_SESSION_LIMIT")
+    assert run["status"] == "succeeded" and run["profile"] == "claude-2"
+    calls = agent_calls()[before:]
+    assert [c["engine"] for c in calls] == ["claude", "claude"]
+    assert "--resume" in calls[0]["argv"] and "--resume" not in calls[1]["argv"]
+    prompt = calls[-1]["argv"][calls[-1]["argv"].index("-p") + 1]
+    assert "Previous account" in prompt and "session limit" in prompt
+    assert "project beta stage 1" in prompt
+    assert calls[-1]["account_dir"] == str(d)
+
+
+async def test_all_limited_accounts_are_not_retried_during_cooldown(client, auth, make_dir):
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    first = await run_to_end(client, auth, sess["id"], "CLAUDE_LIMIT CODEX_LIMIT")
+    assert first["status"] == "failed"
+    before = len(agent_calls())
+    second = await run_to_end(client, auth, sess["id"], "new request")
+    assert second["status"] == "failed" and "한도" in second["error"]
+    assert len(agent_calls()) == before
+
+
 async def test_first_use_of_profile_gets_previous_conversation(client, auth, make_dir):
     sess = await _session(client, auth, make_dir, kind="orchestrator")
     assert (await run_to_end(client, auth, sess["id"], "remember banana"))["profile"] == "claude"

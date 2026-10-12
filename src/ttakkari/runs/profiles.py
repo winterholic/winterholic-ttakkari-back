@@ -7,8 +7,9 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +20,7 @@ from ttakkari.models import AppSetting, ChatSession, EngineAccount, utcnow
 ENGINES = {"claude", "codex"}
 # 엔진이 사용량·속도 한도로 거절할 때의 문구. 문구가 바뀌면 폴백 없이 그냥 실패한다(ADR 0006 한계).
 USAGE_LIMIT_RE = re.compile(
-    r"usage limit|hit your (usage )?limit|limit reached|rate.?limit|quota|too many requests|\b429\b|"
+    r"usage limit|hit your (usage |session )?limit|limit reached|rate.?limit|quota|too many requests|\b429\b|"
     r"credit balance|out of credits|overloaded",
     re.IGNORECASE,
 )
@@ -102,20 +103,34 @@ async def effective_order(db: AsyncSession, pool: str = "personal") -> list[Engi
 
 
 async def candidates(db: AsyncSession, session_engine: str, pool: str = "personal") -> list[Profile]:
-    """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). 쉬는 계정은 뒤로 보낸다(전부 쉬면 순서대로 다시 시도)."""
+    """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). 한도 대기 중인 계정은 제외한다."""
     picked = [_profile(a) for a in await effective_order(db, pool)
               if a.enabled and (session_engine == "auto" or a.engine == session_engine)]
     now = time.monotonic()
-    return [p for p in picked if _cooldown.get(p.id, 0) <= now] + [p for p in picked if _cooldown.get(p.id, 0) > now]
+    return [p for p in picked if _cooldown.get(p.id, 0) <= now]
 
 
 # Codex: "try again at Oct 12th, 2026 12:16 AM." (2026-10-11 실측). 시간대 표기가 없어 서버 현지 시각으로 읽는다.
+SESSION_RESET_RE = re.compile(r"resets?\s+(\d{1,2}):(\d{2})\s*([ap]m)\s*\(([^)]+)\)", re.IGNORECASE)
 RESET_AT_RE = re.compile(r"try again at ([A-Z][a-z]{2,8}) (\d{1,2})(?:st|nd|rd|th)?,? (\d{4}) (\d{1,2}):(\d{2}) ?([AP]M)", re.IGNORECASE)
 
 
 def reset_seconds_from(*texts: str | None) -> int | None:
     """한도 메시지에서 초기화 시각을 읽어 남은 초로. 못 읽으면 None(기본 쉬는 시간을 쓴다)."""
     for t in texts:
+        session = SESSION_RESET_RE.search(t or "")
+        if session:
+            hh, mm, ap, zone_name = session.groups()
+            try:
+                zone = ZoneInfo(zone_name)
+                local = datetime.now(zone)
+                hour = int(hh) % 12 + (12 if ap.lower() == "pm" else 0)
+                when = local.replace(hour=hour, minute=int(mm), second=0, microsecond=0)
+                if when <= local:
+                    when += timedelta(days=1)
+                return int((when - local).total_seconds()) + 30
+            except (ValueError, ZoneInfoNotFoundError):
+                pass
         m = RESET_AT_RE.search(t or "")
         if not m:
             continue

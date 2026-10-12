@@ -51,7 +51,24 @@ async def test_reorder_changes_fallback_order(client, auth, make_dir):
     sess = await _session(client, auth, make_dir, kind="orchestrator")
     run = await run_to_end(client, auth, sess["id"], "hi")
     assert run["profile"] == "codex"
-    assert (await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"]]}, headers=auth)).status_code == 400
+    partial = await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"]]}, headers=auth)
+    assert partial.status_code == 200
+    assert [a["id"] for a in partial.json()] == [accs[0]["id"], accs[1]["id"]]
+    assert (await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"], accs[0]["id"]]},
+                              headers=auth)).status_code == 400
+    from uuid import uuid4
+    assert (await client.post("/api/accounts/reorder", json={"ids": [str(uuid4())]},
+                              headers=auth)).status_code == 400
+
+
+async def test_reorder_accepts_stale_subset_after_account_is_added(client, auth):
+    original = await _accounts(client, auth)
+    added = (await client.post("/api/accounts", json={"name": "new", "engine": "claude"}, headers=auth)).json()
+    later = (await client.post("/api/accounts", json={"name": "later", "engine": "codex"}, headers=auth)).json()
+    ordered = await client.post("/api/accounts/reorder",
+                                json={"ids": [original[1]["id"], original[0]["id"]]}, headers=auth)
+    assert ordered.status_code == 200, ordered.text
+    assert [a["id"] for a in ordered.json()] == [original[1]["id"], original[0]["id"], added["id"], later["id"]]
 
 
 async def test_disabled_account_is_skipped_and_explicit_engine_fails_clearly(client, auth, make_dir):
@@ -200,6 +217,16 @@ def test_usage_api_parsing_prefers_limits_list():
     assert keychain_service("/Users/winterholic/.ttakkari/accounts/890cf835-c9cf-4322-840e-a11b1bf98a4e") == "Claude Code-credentials-a519acfa"
 
 
+def test_reset_time_parsed_from_claude_session_limit_message():
+    from ttakkari.runs.profiles import is_usage_limit, reset_seconds_from
+
+    message = "You've hit your session limit \u00b7 resets 7:20pm (Asia/Seoul)"
+    assert is_usage_limit(message)
+    seconds = reset_seconds_from(message)
+    assert seconds is not None and 0 < seconds <= 86430
+    assert not is_usage_limit("session limit settings")
+
+
 def test_reset_time_parsed_from_codex_limit_message():
     from datetime import datetime, timedelta
 
@@ -260,9 +287,13 @@ async def test_tag_account_as_work_keeps_position_and_reorder_is_global(client, 
     a2 = (await client.post("/api/accounts", json={"name": "회사2", "engine": "claude", "pool": "work"}, headers=auth)).json()
     r = await client.post("/api/accounts/reorder", json={"ids": [a2["id"], accs[1]["id"], accs[0]["id"]]}, headers=auth)
     assert r.status_code == 200 and [a["name"] for a in r.json()] == ["회사2", "codex", "claude"]
-    assert (await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"], a2["id"]]}, headers=auth)).status_code == 400
+    partial = await client.post("/api/accounts/reorder",
+                                json={"ids": [accs[0]["id"], a2["id"]]}, headers=auth)
+    assert partial.status_code == 200
+    assert [a["id"] for a in partial.json()] == [accs[0]["id"], a2["id"], accs[1]["id"]]
     usage = (await client.get("/api/accounts/usage", headers=auth)).json()
-    assert [(u["pool"], u["name"], u["rank"]) for u in usage] == [("work", "회사2", 1), ("work", "codex", 2), ("personal", "claude", 3)]
+    assert [(u["id"], u["rank"]) for u in usage] == [
+        (accs[0]["id"], 1), (a2["id"], 2), (accs[1]["id"], 3)]
     # 회사 그룹에서 빼면 다시 개인으로, 자리는 그대로.
     r = await client.patch(f"/api/accounts/{accs[1]['id']}", json={"pool": "personal"}, headers=auth)
     assert r.json()["pool"] == "personal"

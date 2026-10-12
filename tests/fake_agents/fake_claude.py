@@ -43,6 +43,13 @@ def main():
     if "SLEEP" in prompt:
         time.sleep(60)
         return 0
+    if "CLAUDE_SESSION_LIMIT" in prompt and not os.environ.get("CLAUDE_CONFIG_DIR"):
+        emit({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "Existing worker was already created"}]}})
+        emit({"type": "result", "subtype": "error_during_execution", "is_error": True,
+              "result": "You've hit your session limit \u00b7 resets 7:20pm (Asia/Seoul)",
+              "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
+        return 1
     if "CLAUDE_LIMIT" in prompt:
         emit({"type": "result", "subtype": "success", "is_error": True, "result": "Claude AI usage limit reached|1760000000",
               "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})

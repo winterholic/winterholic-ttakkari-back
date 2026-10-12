@@ -212,12 +212,13 @@ def test_reset_time_parsed_from_codex_limit_message():
     assert reset_seconds_from("no date here") is None
 
 
-async def test_work_pool_sessions_use_only_work_accounts(client, auth, make_dir):
+async def test_work_group_sessions_use_only_work_accounts_personal_use_all(client, auth, make_dir):
     from ttakkari.orchestrator.runtime import issue_token
 
     w = (await client.post("/api/accounts", json={"name": "회사 codex", "engine": "codex", "pool": "work"}, headers=auth)).json()
-    assert w["pool"] == "work" and w["priority"] == 0
-    # 회사 대화는 개인 계정(claude 1순위)을 건너뛰고 회사 계정만 쓴다.
+    # 회사 그룹 계정도 전체 목록의 맨 뒤 순번을 받는다.
+    assert w["pool"] == "work" and w["priority"] == len(await _accounts(client, auth)) - 1
+    # 회사 대화는 개인 계정(claude 1순위)을 건너뛰고 회사 그룹 계정만 쓴다.
     root = make_dir()
     ws = (await client.post("/api/workspaces", json={"name": "w", "root_path": str(root)}, headers=auth)).json()
     orch = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "orchestrator", "pool": "work"},
@@ -225,20 +226,25 @@ async def test_work_pool_sessions_use_only_work_accounts(client, auth, make_dir)
     assert orch["pool"] == "work"
     run = await run_to_end(client, auth, orch["id"], "hi")
     assert run["profile"] == "회사 codex" and agent_calls()[-1]["engine"] == "codex"
-    # 작업 세션도 회사 묶음을 물려받는다.
     wid = (await client.post("/api/orchestrator/workers", json={"title": "t", "prompt": "go"},
                              headers={"Authorization": f"Bearer {issue_token(orch['id'])}"})).json()["worker_id"]
     worker = (await client.get(f"/api/sessions/{wid}", headers=auth)).json()
     assert worker["pool"] == "work"
-    # 개인 대화는 여전히 개인 계정.
+    # 개인 대화는 전체 목록 순서를 따른다(회사 계정도 후보에 있다).
     personal = await _session(client, auth, make_dir, kind="orchestrator")
     assert (await run_to_end(client, auth, personal["id"], "hi"))["profile"] == "claude"
+    # 회사 계정을 1순위로 올리면 개인 대화도 그 계정을 쓴다.
+    accs = await _accounts(client, auth)
+    ids = [w["id"]] + [a["id"] for a in accs if a["id"] != w["id"]]
+    assert (await client.post("/api/accounts/reorder", json={"ids": ids}, headers=auth)).status_code == 200
+    again = await _session(client, auth, make_dir, kind="orchestrator")
+    assert (await run_to_end(client, auth, again["id"], "hi"))["profile"] == "회사 codex"
     # 회사 대화 목록만 거르기
-    ids = [s["id"] for s in (await client.get("/api/sessions", params={"pool": "work"}, headers=auth)).json()]
-    assert ids == [orch["id"]]
+    got = [s["id"] for s in (await client.get("/api/sessions", params={"pool": "work"}, headers=auth)).json()]
+    assert got == [orch["id"]]
 
 
-async def test_work_pool_with_no_enabled_accounts_fails_clearly(client, auth, make_dir):
+async def test_work_session_with_no_enabled_work_accounts_fails_clearly(client, auth, make_dir):
     root = make_dir()
     ws = (await client.post("/api/workspaces", json={"name": "w", "root_path": str(root)}, headers=auth)).json()
     s = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "orchestrator", "pool": "work"},
@@ -247,31 +253,42 @@ async def test_work_pool_with_no_enabled_accounts_fails_clearly(client, auth, ma
     assert run["status"] == "failed" and "회사" in run["error"]
 
 
-async def test_move_account_between_pools_and_reorder_within_pool(client, auth):
+async def test_tag_account_as_work_keeps_position_and_reorder_is_global(client, auth):
     accs = await _accounts(client, auth)
     r = await client.patch(f"/api/accounts/{accs[1]['id']}", json={"pool": "work"}, headers=auth)
-    assert r.json()["pool"] == "work"
+    assert r.json()["pool"] == "work" and r.json()["priority"] == accs[1]["priority"]
     a2 = (await client.post("/api/accounts", json={"name": "회사2", "engine": "claude", "pool": "work"}, headers=auth)).json()
-    r = await client.post("/api/accounts/reorder", params={"pool": "work"}, json={"ids": [a2["id"], accs[1]["id"]]}, headers=auth)
-    assert r.status_code == 200 and [a["name"] for a in r.json()] == ["회사2", "codex"]
+    r = await client.post("/api/accounts/reorder", json={"ids": [a2["id"], accs[1]["id"], accs[0]["id"]]}, headers=auth)
+    assert r.status_code == 200 and [a["name"] for a in r.json()] == ["회사2", "codex", "claude"]
     assert (await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"], a2["id"]]}, headers=auth)).status_code == 400
     usage = (await client.get("/api/accounts/usage", headers=auth)).json()
-    assert [(u["pool"], u["name"], u["rank"]) for u in usage] == [("personal", "claude", 1), ("work", "회사2", 1), ("work", "codex", 2)]
+    assert [(u["pool"], u["name"], u["rank"]) for u in usage] == [("work", "회사2", 1), ("work", "codex", 2), ("personal", "claude", 3)]
+    # 회사 그룹에서 빼면 다시 개인으로, 자리는 그대로.
+    r = await client.patch(f"/api/accounts/{accs[1]['id']}", json={"pool": "personal"}, headers=auth)
+    assert r.json()["pool"] == "personal"
 
 
-async def test_override_is_per_pool(client, auth, make_dir):
+async def test_override_is_single_and_work_tab_follows_it(client, auth, make_dir):
     from datetime import UTC, datetime, timedelta
 
-    a = (await client.post("/api/accounts", json={"name": "회사 A", "engine": "claude", "pool": "work"}, headers=auth)).json()
+    w1 = (await client.post("/api/accounts", json={"name": "회사 A", "engine": "claude", "pool": "work"}, headers=auth)).json()
+    w2 = (await client.post("/api/accounts", json={"name": "회사 B", "engine": "claude", "pool": "work"}, headers=auth)).json()
     until = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
-    accs = await _accounts(client, auth)
-    personal_ids = [x["id"] for x in accs if x["pool"] == "personal"]
-    assert (await client.put("/api/accounts/override", params={"pool": "work"}, json={"ids": [personal_ids[0]], "until": until},
+    assert (await client.put("/api/accounts/override", json={"ids": ["00000000-0000-0000-0000-000000000001"], "until": until},
                              headers=auth)).status_code == 400
-    r = await client.put("/api/accounts/override", params={"pool": "work"}, json={"ids": [a["id"]], "until": until}, headers=auth)
+    r = await client.put("/api/accounts/override", json={"ids": [w2["id"]], "until": until}, headers=auth)
     assert r.json()["active"]
-    assert (await client.get("/api/accounts/override", headers=auth)).json()["active"] is False
-    assert (await client.get("/api/accounts/override", params={"pool": "work"}, headers=auth)).json()["ids"] == [a["id"]]
+    # 개인 대화는 임시 순서(회사 B)를 먼저, 회사 대화도 같은 순서에서 회사 그룹만 따른다.
+    p = await _session(client, auth, make_dir, kind="orchestrator")
+    assert (await run_to_end(client, auth, p["id"], "hi"))["profile"] == "회사 B"
+    root = make_dir()
+    ws = (await client.post("/api/workspaces", json={"name": "w2", "root_path": str(root)}, headers=auth)).json()
+    o = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "orchestrator", "pool": "work"}, headers=auth)).json()
+    assert (await run_to_end(client, auth, o["id"], "hi"))["profile"] == "회사 B"
+    assert (await client.delete("/api/accounts/override", headers=auth)).status_code == 204
+    o2 = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "orchestrator", "pool": "work"}, headers=auth)).json()
+    assert (await run_to_end(client, auth, o2["id"], "hi"))["profile"] == "회사 A"
+    assert w1["id"]
 
 
 async def test_codex_usage_from_backend_with_reset_credits_and_reset(client, auth, monkeypatch):

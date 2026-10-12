@@ -41,8 +41,8 @@
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/sessions?workspace_id=&include_archived=&limit=` | `SessionOut[]` (최근 갱신순). `active_run_id`, `last_run_status` 포함 |
-| POST | `/api/sessions` | `{workspace_id, title?, engine?, model?, effort?}` → 201 |
+| GET | `/api/sessions?workspace_id=&include_archived=&limit=` | `SessionOut[]` (최근 갱신순). `active_run_id`, `last_run_status`, `pool` 포함. `&pool=work` 면 회사 업무 대화만 |
+| POST | `/api/sessions` | `{workspace_id, title?, engine?, model?, effort?, kind?, pool?}` → 201. `pool`: `personal`(기본, 전체 계정 목록 순서) \| `work`(회사 그룹 계정만). 작업 세션은 오케스트레이터 값을 물려받는다 |
 | GET/PATCH | `/api/sessions/{id}` | PATCH: `{title?, model?, effort?, archived?}` |
 | GET | `/api/sessions/{id}/runs` | `RunOut[]` (오래된 순 = 대화 순서) |
 | POST | `/api/sessions/{id}/runs` | `{prompt, context_artifact_ids?, model?, effort?}` → 202 `RunOut`. 실행 중 Run 이 있으면 `queued` 로 세션 대기열에 들어가 앞 Run 이 끝나면 순서대로 시작한다(여러 기기가 동시에 보내도 한 번에 하나) |
@@ -154,13 +154,17 @@ payload 는 `{title, body, url, tag}`:
 
 ## 엔진 계정(ADR 0006)
 
+개인 계정 목록이 전체이고, 그 안의 일부가 「회사」 그룹이다(`pool=work` 태그). 개인 대화·워커는 회사 그룹까지 전체 순서로 계정을 고르고 한도 폴백도 그 순서다. 회사 업무 대화(`sessions.pool=work`)는 같은 순서에서 회사 그룹 계정만 쓴다. 켜기·임시 순서도 하나뿐이다.
+
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/accounts` | 우선순위 순. `{id, name, engine, config_dir, enabled, priority, login(ok/unknown/missing), login_label, cooldown_seconds}` |
-| POST | `/api/accounts` | `{name, engine, config_dir?, enabled?}` → 201(맨 뒤 순위). 이름 중복 409, 상대 경로·`~/.ttakkari` 안 422 |
-| PATCH | `/api/accounts/{id}` | `{name?, config_dir?, enabled?}`. 다시 켜면 한도 대기도 풀린다 |
+| GET | `/api/accounts` | 전체 계정 목록, 우선순위 순(회사 그룹 포함). `{id, name, engine, pool, config_dir, enabled, priority, login(ok/unknown/missing), login_label, cooldown_seconds}`. `pool` 은 그룹 태그: `work` = 회사 그룹, `personal` = 태그 없음 |
+| POST | `/api/accounts` | `{name, engine, pool?, config_dir?, enabled?}` → 201(전체 목록 맨 뒤 순위). 이름 중복 409, 상대 경로·`~/.ttakkari` 안 422 |
+| PATCH | `/api/accounts/{id}` | `{name?, pool?, config_dir?, enabled?}`. `pool` 로 회사 그룹에 넣기/빼기(순서는 그대로). 다시 켜면 한도 대기도 풀린다 |
 | DELETE | `/api/accounts/{id}` | 204 |
-| POST | `/api/accounts/reorder` | `{ids}` 전체 순서 → 목록 |
+| POST | `/api/accounts/reorder` | `{ids}` 전체 계정 id 를 한 번씩 → 목록 |
+| GET/PUT/DELETE | `/api/accounts/override` | 임시 순서 하나(전체 목록 기준). PUT `{ids, until}`. 회사 업무 탭은 이 순서에서 회사 그룹만 따른다 |
+| GET | `/api/accounts/usage` | 전체 목록의 지금 적용 순서. `rank` 는 그 순서의 번호, `pool` 로 회사 그룹 표시 |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 
 ## 메모·캘린더(ADR 0008)

@@ -73,16 +73,12 @@ async def accounts(db: AsyncSession) -> list[EngineAccount]:
     return list(await db.scalars(select(EngineAccount).order_by(EngineAccount.priority, EngineAccount.created_at)))
 
 
-POOLS = ("personal", "work")
+OVERRIDE_KEY = "account_priority_override"
 
 
-def override_key(pool: str) -> str:
-    return f"account_priority_override:{pool}"
-
-
-async def get_override(db: AsyncSession, pool: str = "personal") -> dict | None:
-    """임시 우선순위 {ids, until(ISO)}. 계정 묶음(개인·회사)마다 따로. 기한이 지났으면 None."""
-    row = await db.get(AppSetting, override_key(pool))
+async def get_override(db: AsyncSession) -> dict | None:
+    """임시 우선순위 {ids, until(ISO)}. 개인 전체 목록에 하나만 있다(회사 그룹도 그 순서를 따른다). 기한이 지났으면 None."""
+    row = await db.get(AppSetting, OVERRIDE_KEY)
     if row is None or not row.value.get("ids"):
         return None
     try:
@@ -93,13 +89,16 @@ async def get_override(db: AsyncSession, pool: str = "personal") -> dict | None:
 
 
 async def effective_order(db: AsyncSession, pool: str = "personal") -> list[EngineAccount]:
-    """그 묶음에서 지금 적용되는 순서. 임시 우선순위가 살아 있으면 그 순서가 먼저, 나머지는 기본 순서로 뒤에 붙는다."""
-    rows = [a for a in await accounts(db) if a.pool == pool]
-    ov = await get_override(db, pool)
-    if not ov:
-        return rows
-    rank = {aid: i for i, aid in enumerate(ov["ids"])}
-    return sorted(rows, key=lambda a: (rank.get(str(a.id), len(rank)), a.priority))
+    """지금 적용되는 순서. 임시 우선순위가 살아 있으면 그 순서가 먼저, 나머지는 기본 순서로 뒤에 붙는다.
+
+    pool="personal" 은 회사 그룹까지 포함한 전체 목록, "work" 는 그 전체 순서에서 회사 그룹만 거른 것이다.
+    """
+    rows = await accounts(db)
+    ov = await get_override(db)
+    if ov:
+        rank = {aid: i for i, aid in enumerate(ov["ids"])}
+        rows = sorted(rows, key=lambda a: (rank.get(str(a.id), len(rank)), a.priority))
+    return [a for a in rows if a.pool == "work"] if pool == "work" else rows
 
 
 async def candidates(db: AsyncSession, session_engine: str, pool: str = "personal") -> list[Profile]:

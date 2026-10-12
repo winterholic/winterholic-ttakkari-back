@@ -127,7 +127,7 @@ class ChatSession(Base):
     # 엔진 프로필 이름 → 그 프로필의 엔진 대화 ID. 프로필을 오가도 각자 이어간다(ADR 0006).
     engine_sessions: Mapped[dict[str, Any]] = mapped_column(default=dict)
     kind: Mapped[str] = mapped_column(String(16), default=SessionKind.chat, index=True)
-    # 이 대화가 쓸 계정 묶음(personal | work). 작업 세션은 오케스트레이터 것을 물려받는다.
+    # 이 대화가 쓸 수 있는 계정 범위(personal=전체 목록, work=회사 그룹만). 작업 세션은 오케스트레이터 것을 물려받는다.
     pool: Mapped[str] = mapped_column(String(16), default="personal", index=True)
     parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
@@ -146,7 +146,7 @@ class EngineAccount(Base):
     config_dir: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
-    # personal | work. 회사 업무 탭에서 만든 대화만 work 계정을 쓴다(순서·켜기도 따로).
+    # 회사 그룹 태그(personal | work). 순서·켜기는 전체 목록 하나이고, work 는 회사 업무 탭이 쓰는 부분집합이다.
     pool: Mapped[str] = mapped_column(String(16), default="personal", index=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

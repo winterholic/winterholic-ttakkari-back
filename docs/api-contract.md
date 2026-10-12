@@ -91,7 +91,7 @@
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/artifacts?workspace_id=&session_id=&run_id=&kind=&q=&limit=&offset=` | Library 목록(최신순) |
+| GET | `/api/artifacts?workspace_id=&session_id=&run_id=&kind=&changed=&q=&limit=&offset=` | Library 목록(최신순). `changed=true` 는 작업이 워크스페이스에서 바꾼 파일(`agent_modified`)만, `false` 는 그것을 뺀 결과물·업로드·등록 파일만, 생략하면 모두. 보관함 기본 목록은 `false`, 세션 화면은 생략 |
 | POST | `/api/artifacts` | `{workspace_id, rel_path, session_id?}` 워크스페이스 파일을 결과물로 등록 |
 | POST | `/api/uploads` | multipart `file`, `workspace_id`, `session_id?` → 201 `ArtifactOut`(`source: upload`). 기본 200MB 초과 413 `too_large`. 결과 ID 를 다음 Run 의 `context_artifact_ids` 에 넣으면 에이전트가 파일 경로를 받는다 |
 | GET | `/api/artifacts/{id}` | `ArtifactOut` |

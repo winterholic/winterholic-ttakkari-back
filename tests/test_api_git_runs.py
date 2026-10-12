@@ -69,6 +69,21 @@ async def test_modified_files_registered_as_agent_modified_artifacts(client, aut
     assert by["report.md"]["source"] == "agent_output"
 
 
+async def test_changed_filter_splits_modified_files_from_outputs(client, auth, new_session, make_git_dir):
+    root = make_git_dir()
+    _ws, sess = await new_session(root)
+    run = await run_to_end(client, auth, sess["id"], "MODIFY")
+
+    async def names(**params):
+        r = await client.get("/api/artifacts", params={"run_id": run["id"], **params}, headers=auth)
+        assert r.status_code == 200
+        return {a["filename"] for a in r.json()}
+
+    assert await names(changed="false") == {"report.md"}
+    assert await names(changed="true") == {"README.md", "new_file.txt"}
+    assert await names() == {"report.md", "README.md", "new_file.txt"}  # 생략하면 세션 화면처럼 모두
+
+
 async def test_diff_is_relative_to_dirty_checkpoint(client, auth, new_session, make_git_dir):
     root = make_git_dir()
     (root / "README.md").write_text("hello\nuncommitted before run\n")

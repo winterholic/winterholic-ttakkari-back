@@ -58,9 +58,15 @@ async def list_artifacts(
     _: User, db: Db,
     workspace_id: uuid.UUID | None = None, session_id: uuid.UUID | None = None, run_id: uuid.UUID | None = None,
     kind: str | None = None, q: str | None = Query(None, max_length=200),
+    changed: bool | None = None,
     limit: int = Query(50, le=200), offset: int = Query(0, ge=0),
 ) -> list[ArtifactOut]:
     stmt = select(Artifact).where(Artifact.deleted_at.is_(None))
+    # 보관함은 결과물·업로드만 보여 주려고 changed=false 를 보낸다. 작업이 고친 워크스페이스 파일은 세션 화면과 changed=true 에서만.
+    if changed is True:
+        stmt = stmt.where(Artifact.source == "agent_modified")
+    elif changed is False:
+        stmt = stmt.where(Artifact.source != "agent_modified")
     if workspace_id:
         stmt = stmt.where(Artifact.workspace_id == workspace_id)
     if session_id:

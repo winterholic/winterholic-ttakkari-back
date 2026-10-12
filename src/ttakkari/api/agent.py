@@ -30,6 +30,7 @@ from ttakkari.context import store
 from ttakkari.context.library import library_catalog
 from ttakkari.models import (
     Artifact,
+    ArtifactArea,
     ChatSession,
     CtxMemory,
     Memo,
@@ -190,7 +191,7 @@ async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str |
 
 @router.post("/share")
 async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    """에이전트가 만든(또는 찾은) 파일을 사용자 보관함에 올린다. 실행 위치·권한 폴더·inbox 안의 파일만."""
+    """에이전트가 만든(또는 찾은) 파일을 사용자 보관함(파일)에 올린다. 공유는 사용자에게 넘기겠다는 명시 신호다. 실행 위치·권한 폴더·inbox 안의 파일만."""
     sess = await _session(db, sid)
     ws = await db.get(Workspace, sess.workspace_id)
     assert ws is not None
@@ -207,8 +208,8 @@ async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
                                                         "message": "실행 위치·권한 폴더 안의 일반 파일만 공유할 수 있어요."})
     run_id = await db.scalar(select(Run.id).where(Run.session_id == sid).order_by(Run.created_at.desc()).limit(1))
     try:
-        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", workspace_id=ws.id,
-                                  session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),
+        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.files,
+                                  workspace_id=ws.id, session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),
                                   export_allowed=ws.export_allowed)
     except BrokerError as e:
         raise broker_http(e) from e

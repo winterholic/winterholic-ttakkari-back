@@ -175,6 +175,7 @@ class ArtifactOut(ORM):
     mime_type: str
     kind: str
     source: str
+    area: str
     rel_path: str | None
     storage_mode: str
     size_bytes: int
@@ -192,6 +193,10 @@ class ArtifactOut(ORM):
         out = cls.model_validate(a)
         out.downloadable = a.export_policy == "allow"
         return out
+
+
+class ArtifactAreaIn(BaseModel):
+    area: Literal["files", "agent"]
 
 
 class ArtifactRegisterIn(BaseModel):

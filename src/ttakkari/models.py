@@ -41,6 +41,18 @@ class SessionKind(enum.StrEnum):
     worker = "worker"
 
 
+class ArtifactArea(enum.StrEnum):
+    # 사용자가 올렸거나 사용자에게 전달하려고 낸 결과물
+    files = "files"
+    # 에이전트가 작업 중 만든 중간 산출물·자동 등록 파일
+    agent = "agent"
+
+
+def default_artifact_area(source: str) -> str:
+    """등록 경로(source)만으로 정하는 기본 분류. 사용자가 직접 넣은 것만 파일, 나머지는 에이전트 쪽이다."""
+    return ArtifactArea.files if source in ("upload", "user_registered") else ArtifactArea.agent
+
+
 class RunOrigin(enum.StrEnum):
     user = "user"
     # 작업 세션이 끝나 오케스트레이터에게 들어가는 결과 보고
@@ -225,6 +237,8 @@ class Artifact(Base):
     mime_type: Mapped[str] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(String(20))
     source: Mapped[str] = mapped_column(String(30))
+    # 보관함 기본 목록(files)과 에이전트 파일(agent)의 구분. source 는 출처, area 는 사용자에게 보이는 분류다.
+    area: Mapped[str] = mapped_column(String(10), default=ArtifactArea.agent, server_default=ArtifactArea.agent, index=True)
     # 서버 내부 전용. API 응답에는 rel_path 만 내보낸다.
     original_path: Mapped[str] = mapped_column(Text)
     rel_path: Mapped[str | None] = mapped_column(Text)

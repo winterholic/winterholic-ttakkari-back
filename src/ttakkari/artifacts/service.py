@@ -18,7 +18,13 @@ from ttakkari.broker.policy import (
     is_sensitive,
 )
 from ttakkari.config import get_settings
-from ttakkari.models import Artifact, ExportPolicy, PreviewStatus, utcnow
+from ttakkari.models import (
+    Artifact,
+    ExportPolicy,
+    PreviewStatus,
+    default_artifact_area,
+    utcnow,
+)
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +47,7 @@ async def register_file(
     resolved: ResolvedPath,
     *,
     source: str,
+    area: str | None = None,
     workspace_id: uuid.UUID | None,
     session_id: uuid.UUID | None = None,
     run_id: uuid.UUID | None = None,
@@ -88,6 +95,7 @@ async def register_file(
         mime_type=mime,
         kind=kind,
         source=source,
+        area=area or default_artifact_area(source),
         original_path=str(resolved.path),
         rel_path=rel_path if rel_path is not None else resolved.rel,
         storage_mode=mode,

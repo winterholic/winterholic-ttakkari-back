@@ -34,7 +34,12 @@ from ttakkari.audit import record
 from ttakkari.broker.policy import BrokerError, ResolvedPath, resolve_in_root
 from ttakkari.config import get_settings
 from ttakkari.models import Artifact, ExportPolicy, PreviewStatus, utcnow
-from ttakkari.schemas import ArtifactOut, ArtifactRegisterIn, DownloadLinkOut
+from ttakkari.schemas import (
+    ArtifactAreaIn,
+    ArtifactOut,
+    ArtifactRegisterIn,
+    DownloadLinkOut,
+)
 from ttakkari.security.auth import User, client_ip, decode, issue_download_token
 
 router = APIRouter(prefix="/api", tags=["artifacts"])
@@ -58,7 +63,7 @@ async def list_artifacts(
     _: User, db: Db,
     workspace_id: uuid.UUID | None = None, session_id: uuid.UUID | None = None, run_id: uuid.UUID | None = None,
     kind: str | None = None, q: str | None = Query(None, max_length=200),
-    changed: bool | None = None,
+    changed: bool | None = None, area: Literal["files", "agent"] | None = None,
     limit: int = Query(50, le=200), offset: int = Query(0, ge=0),
 ) -> list[ArtifactOut]:
     stmt = select(Artifact).where(Artifact.deleted_at.is_(None))
@@ -67,6 +72,9 @@ async def list_artifacts(
         stmt = stmt.where(Artifact.source == "agent_modified")
     elif changed is False:
         stmt = stmt.where(Artifact.source != "agent_modified")
+    # 보관함 탭: files 는 사용자가 올렸거나 넘겨받은 결과물, agent 는 에이전트가 작업 중 만든 파일. 생략하면 모두(세션 화면).
+    if area:
+        stmt = stmt.where(Artifact.area == area)
     if workspace_id:
         stmt = stmt.where(Artifact.workspace_id == workspace_id)
     if session_id:
@@ -153,6 +161,18 @@ async def upload(
 @router.get("/artifacts/{art_id}", response_model=ArtifactOut)
 async def get_art(art_id: uuid.UUID, _: User, db: Db) -> ArtifactOut:
     return ArtifactOut.from_model(await get_artifact(db, art_id))
+
+
+@router.patch("/artifacts/{art_id}", response_model=ArtifactOut)
+async def move_art(art_id: uuid.UUID, body: ArtifactAreaIn, _: User, db: Db, request: Request) -> ArtifactOut:
+    """보관함 분류를 바꾼다(파일 ↔ 에이전트 파일). 파일 내용·세션 연결은 그대로다."""
+    art = await get_artifact(db, art_id)
+    if art.area != body.area:
+        record(db, action="artifact.move", target_type="artifact", target_id=art.id,
+               detail={"from": art.area, "to": body.area}, ip=client_ip(request))
+        art.area = body.area
+        await db.commit()
+    return ArtifactOut.from_model(art)
 
 
 @router.delete("/artifacts/{art_id}", status_code=204)

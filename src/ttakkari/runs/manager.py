@@ -30,6 +30,7 @@ from ttakkari.db import sessionmaker
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     Artifact,
+    ArtifactArea,
     ChatSession,
     Run,
     RunEvent,
@@ -383,6 +384,10 @@ class RunManager:
 
     async def _collect_artifacts(self, db: AsyncSession, run: Run, ws: Workspace, outbox: Path, state: ParseState) -> None:
         root = Path(ws.root_path).resolve()
+        # 오케스트레이터에 맡겨진 작업 세션의 outbox 는 보고용 중간 산출물이라 에이전트 파일로 둔다.
+        # 사용자에게 넘길 것은 오케스트레이터가 share_file 로 올리고, 사용자와 직접 대화하는 세션의 outbox 는 그대로 결과물이다.
+        sess = await db.get(ChatSession, run.session_id)
+        outbox_area = ArtifactArea.agent if sess is not None and sess.kind == SessionKind.worker else ArtifactArea.files
         found: list[tuple[ResolvedPath, str, str | None]] = []
         to_preview: list[uuid.UUID] = []
         n = 0
@@ -405,7 +410,7 @@ class RunManager:
         for resolved, source, rel in found:
             try:
                 art = await register_file(
-                    db, resolved, source=source, workspace_id=ws.id, session_id=run.session_id, run_id=run.id,
+                    db, resolved, source=source, area=outbox_area if source == "agent_output" else None, workspace_id=ws.id, session_id=run.session_id, run_id=run.id,
                     rel_path=rel, export_allowed=ws.export_allowed,
                 )
             except (BrokerError, OSError) as e:

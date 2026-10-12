@@ -56,7 +56,7 @@ async def test_memory_pin_edit_delete(client, auth):
     r = await client.patch(f"/api/assistant/memories/{m['id']}", json={"pinned": True, "content": "반말로 짧게 답한다"}, headers=auth)
     assert r.json()["pinned"] and r.json()["content"] == "반말로 짧게 답한다"
     st = (await client.get("/api/assistant/status", headers=auth)).json()
-    assert "반말로 짧게 답한다" in st["brief"] and st["counts"]["memories"] == 1 and st["embedder"] == "hash"
+    assert "반말로 짧게 답한다" in st["brief"] and st["counts"]["memories"] == 1 and st["embedder"] == "none"
     assert (await client.delete(f"/api/assistant/memories/{m['id']}", headers=auth)).status_code == 204
     assert (await client.get("/api/assistant/memories", headers=auth)).json()["memories"] == []
 

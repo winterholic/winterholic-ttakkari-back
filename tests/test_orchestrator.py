@@ -275,7 +275,7 @@ async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, 
 
 # ---- MCP 서버(stdio 프로토콜)
 
-AGENT_TOOLS = {"recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
+AGENT_TOOLS = {"library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
                "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
                "list_events", "create_event", "update_event", "delete_event"}

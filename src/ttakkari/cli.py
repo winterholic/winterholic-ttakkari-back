@@ -102,6 +102,30 @@ def _cmd_gen_vapid(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_context_import(args: argparse.Namespace) -> int:
+    import json
+
+    from ttakkari import db
+    from ttakkari.broker.policy import is_sensitive
+    from ttakkari.context.library import import_catalog
+
+    path = Path(args.catalog).expanduser().resolve()
+    if is_sensitive(path) or path.suffix.lower() != ".json" or path.stat().st_size > 2 * 1024 * 1024:
+        raise ValueError("2MB 이하의 일반 JSON 목록 파일을 지정해 주세요.")
+    data = json.loads(path.read_text())
+
+    async def run():
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                return await import_catalog(session, data)
+        finally:
+            await db.dispose_engine()
+
+    print(json.dumps(asyncio.run(run()), ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="ttakkari")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -117,6 +141,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("init-config", help="~/.ttakkari/config.env 생성").set_defaults(func=_cmd_init_config)
 
     sub.add_parser("gen-vapid", help="Web Push VAPID 키 생성(~/.ttakkari/vapid.json)").set_defaults(func=_cmd_gen_vapid)
+    p = sub.add_parser("context-import", help="출처가 명시된 프로젝트 목록을 맥락 도서관에 등록·색인")
+    p.add_argument("catalog", help="JSON 목록 경로")
+    p.set_defaults(func=_cmd_context_import)
 
     args = parser.parse_args(argv)
     sys.exit(args.func(args))

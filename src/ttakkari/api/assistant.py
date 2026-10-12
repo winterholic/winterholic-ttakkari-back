@@ -18,8 +18,8 @@ from ttakkari.audit import record
 from ttakkari.broker.policy import is_sensitive, is_within
 from ttakkari.config import get_settings
 from ttakkari.context import store
-from ttakkari.context.embedder import E5Embedder, embed, get_embedder
 from ttakkari.context.indexer import index_source
+from ttakkari.context.library import library_catalog
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     CtxChunk,
@@ -41,6 +41,7 @@ EType = Literal["person", "project", "org", "place", "tool", "topic", "preferenc
 
 # 비서 관리 > 도구 탭에 보이는 목록. 실제 등록은 orchestrator/mcp_server.py 가 한다.
 TOOLS: list[dict[str, str]] = [
+    {"name": "library_catalog", "group": "맥락", "who": "모든 실행", "desc": "맥락 도서관의 종류와 프로젝트 이정표를 본다"},
     {"name": "recall", "group": "맥락", "who": "모든 실행", "desc": "나에 관한 기억·관계·색인된 문서를 찾는다"},
     {"name": "remember", "group": "맥락", "who": "모든 실행", "desc": "새 사실·취향·결정을 기억한다"},
     {"name": "get_entity", "group": "맥락", "who": "모든 실행", "desc": "사람·프로젝트 등의 요약과 관계를 본다"},
@@ -80,6 +81,8 @@ class MemoryIn(BaseModel):
     kind: Kind = "fact"
     entities: list[str] = Field(default_factory=list, max_length=10)
     pinned: bool = False
+    scope: Literal["personal", "work", "shared"] = "personal"
+    source_ref: str | None = Field(default=None, max_length=4096)
 
 
 class MemoryPatch(BaseModel):
@@ -94,6 +97,8 @@ class EntityIn(BaseModel):
     summary: str | None = Field(default=None, max_length=2000)
     aliases: list[str] = Field(default_factory=list, max_length=20)
     pinned: bool = False
+    scope: Literal["personal", "work", "shared"] = "personal"
+    attributes: dict[str, Any] = Field(default_factory=dict)
 
 
 class EntityPatch(BaseModel):
@@ -101,6 +106,7 @@ class EntityPatch(BaseModel):
     aliases: list[str] | None = Field(default=None, max_length=20)
     pinned: bool | None = None
     type: EType | None = None
+    attributes: dict[str, Any] | None = None
 
 
 class RelationIn(BaseModel):
@@ -113,22 +119,26 @@ class RelationIn(BaseModel):
 class SourceIn(BaseModel):
     path: str = Field(min_length=1, max_length=4096)
     pattern: str = Field(default="**/*.md", max_length=100)
+    scope: Literal["personal", "work", "shared"] = "personal"
+    category: Literal["projects", "work-history", "knowledge", "health"] = "knowledge"
+    entity_id: uuid.UUID | None = None
 
 
 class RecallIn(BaseModel):
     query: str = Field(min_length=1, max_length=1000)
     k: int = Field(default=8, ge=1, le=30)
+    scope: Literal["all", "personal", "work"] = "all"
 
 
 def _mem(m: CtxMemory, names: dict[str, str] | None = None) -> dict[str, Any]:
     return {"id": str(m.id), "kind": m.kind, "content": m.content, "pinned": m.pinned, "source": m.source,
             "entities": [names.get(i, i) for i in m.entity_ids] if names else m.entity_ids,
-            "created_at": m.created_at.isoformat()}
+            "created_at": m.created_at.isoformat(), "scope": m.scope, "source_ref": m.source_ref}
 
 
 def _ent(e: CtxEntity) -> dict[str, Any]:
     return {"id": str(e.id), "type": e.type, "name": e.name, "aliases": e.aliases, "summary": e.summary,
-            "pinned": e.pinned, "updated_at": e.updated_at.isoformat()}
+            "pinned": e.pinned, "updated_at": e.updated_at.isoformat(), "scope": e.scope, "attributes": e.attributes}
 
 
 def _bad(e: Exception) -> HTTPException:
@@ -139,7 +149,6 @@ def _bad(e: Exception) -> HTTPException:
 
 @router.get("/status")
 async def status_(_: User, db: Db) -> dict[str, Any]:
-    e = get_embedder()
     counts = {
         "memories": await db.scalar(select(func.count()).select_from(CtxMemory).where(CtxMemory.archived_at.is_(None))),
         "entities": await db.scalar(select(func.count()).select_from(CtxEntity)),
@@ -147,8 +156,8 @@ async def status_(_: User, db: Db) -> dict[str, Any]:
         "documents": await db.scalar(select(func.count()).select_from(CtxDocument)),
         "chunks": await db.scalar(select(func.count()).select_from(CtxChunk)),
     }
-    return {"embedder": e.name, "model": get_settings().context_model if e.name == "e5" else None,
-            "ready": e.ready if isinstance(e, E5Embedder) else True, "counts": counts,
+    return {"embedder": "none", "retrieval": "lexical", "model": None,
+            "ready": True, "counts": counts,
             "brief": await store.pinned_brief(db)}
 
 
@@ -176,9 +185,14 @@ async def tools(_: User) -> dict[str, Any]:
     return {"tools": TOOLS}
 
 
+@router.get("/library")
+async def library(_: User, db: Db, scope: Literal["all", "personal", "work"] = "all") -> dict[str, Any]:
+    return await library_catalog(db, scope=scope)
+
+
 @router.post("/recall")
 async def recall(body: RecallIn, _: User, db: Db) -> dict[str, Any]:
-    hits = await store.recall(db, body.query, body.k)
+    hits = await store.recall(db, body.query, body.k, scope=body.scope)
     return {"results": [{"type": h.kind, "id": h.id, "score": round(h.score, 3), "text": h.text, **h.meta} for h in hits]}
 
 
@@ -203,7 +217,8 @@ async def memories(_: User, db: Db, q: str | None = None, kind: Kind | None = No
 @router.post("/memories", status_code=201)
 async def add_memory(body: MemoryIn, _: User, db: Db) -> dict[str, Any]:
     try:
-        m = await store.remember(db, body.content, kind=body.kind, entities=body.entities, pinned=body.pinned)
+        m = await store.remember(db, body.content, kind=body.kind, entities=body.entities, pinned=body.pinned,
+                                 scope=body.scope, source_ref=body.source_ref)
     except store.ContextError as e:
         raise _bad(e) from e
     await db.commit()
@@ -217,7 +232,6 @@ async def patch_memory(mid: uuid.UUID, body: MemoryPatch, _: User, db: Db) -> di
         raise HTTPException(status.HTTP_404_NOT_FOUND, "기억이 없어요.")
     if body.content is not None and body.content != m.content:
         m.content = body.content
-        (m.embedding,) = await embed([body.content])
     if body.kind is not None:
         m.kind = body.kind
     if body.pinned is not None:
@@ -258,7 +272,8 @@ async def entity(eid: uuid.UUID, _: User, db: Db) -> dict[str, Any]:
 @router.post("/entities", status_code=201)
 async def add_entity(body: EntityIn, _: User, db: Db) -> dict[str, Any]:
     try:
-        e = await store.upsert_entity(db, body.name, body.type, summary=body.summary, aliases=body.aliases, pinned=body.pinned)
+        e = await store.upsert_entity(db, body.name, body.type, summary=body.summary, aliases=body.aliases, pinned=body.pinned,
+                                      scope=body.scope, attributes=body.attributes)
     except store.ContextError as ex:
         raise _bad(ex) from ex
     await db.commit()
@@ -274,7 +289,8 @@ async def patch_entity(eid: uuid.UUID, body: EntityPatch, _: User, db: Db) -> di
         e.type = body.type
     if body.aliases is not None:
         e.aliases = sorted({a.strip() for a in body.aliases if a.strip()})
-    e = await store.upsert_entity(db, e.name, e.type, summary=body.summary, pinned=body.pinned)
+    e = await store.upsert_entity(db, e.name, e.type, summary=body.summary, pinned=body.pinned,
+                                  scope=e.scope, attributes=body.attributes)
     await db.commit()
     return _ent(e)
 
@@ -328,7 +344,8 @@ async def _source_out(db: Db, s: CtxSource) -> dict[str, Any]:
     chunks = await db.scalar(select(func.coalesce(func.sum(CtxDocument.chunk_count), 0)).where(CtxDocument.source_id == s.id))
     return {"id": str(s.id), "path": s.path, "pattern": s.pattern, "enabled": s.enabled, "documents": docs,
             "chunks": int(chunks or 0), "last_indexed_at": s.last_indexed_at.isoformat() if s.last_indexed_at else None,
-            "last_error": s.last_error, "indexing": str(s.id) in _indexing}
+            "last_error": s.last_error, "indexing": str(s.id) in _indexing,
+            "scope": s.scope, "category": s.category, "entity_id": str(s.entity_id) if s.entity_id else None}
 
 
 _indexing: set[str] = set()
@@ -371,7 +388,12 @@ async def add_source(body: SourceIn, _: User, db: Db) -> dict[str, Any]:
         raise _bad(e) from e
     if await db.scalar(select(CtxSource).where(CtxSource.path == str(real))):
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 등록된 출처예요.")
-    s = CtxSource(path=str(real), pattern=body.pattern or "**/*.md")
+    if body.entity_id is not None:
+        entity = await db.get(CtxEntity, body.entity_id)
+        if entity is None or entity.scope != body.scope:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "같은 범위의 프로젝트 항목을 지정해 주세요.")
+    s = CtxSource(path=str(real), pattern=body.pattern or "**/*.md",
+                  scope=body.scope, category=body.category, entity_id=body.entity_id)
     db.add(s)
     await db.commit()
     _start_index(s.id)

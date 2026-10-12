@@ -52,9 +52,6 @@ class Settings(BaseSettings):
     # 오케스트레이터 MCP 서버가 부를 백엔드 주소. serve 포트를 바꾸면 같이 바꾼다.
     internal_api_url: str = "http://127.0.0.1:8787"
 
-    # 비서 맥락(ADR 0007). e5 = 로컬 multilingual-e5-large, hash = 테스트용 결정적 임베딩.
-    context_embedder: str = "e5"
-    context_model: str = "intfloat/multilingual-e5-large"
     # 모든 Run 에 넣는 고정 기억·비서 지침의 최대 글자 수(토큰 절약)
     context_brief_chars: int = 3000
     # 일정 알림을 찾는 주기(초). 0 이면 끈다(테스트는 직접 부른다).

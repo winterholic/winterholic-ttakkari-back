@@ -325,6 +325,7 @@ class CalendarEvent(Base):
 
 
 # ---- 비서 맥락: 온톨로지 + RAG (ADR 0007)
+# 기존 벡터 데이터의 비파괴 호환용. 현재 검색·색인은 임베딩을 생성하거나 사용하지 않는다(ADR 0009).
 EMBED_DIM = 1024
 
 
@@ -336,6 +337,7 @@ class CtxEntity(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     type: Mapped[str] = mapped_column(String(30), index=True)
     name: Mapped[str] = mapped_column(String(200))
+    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
     aliases: Mapped[list[Any]] = mapped_column(default=list)
     summary: Mapped[str | None] = mapped_column(Text)
     attributes: Mapped[dict[str, Any]] = mapped_column(default=dict)
@@ -365,6 +367,7 @@ class CtxMemory(Base):
     __tablename__ = "ctx_memories"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     kind: Mapped[str] = mapped_column(String(20), default="fact", index=True)
+    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
     content: Mapped[str] = mapped_column(Text)
     entity_ids: Mapped[list[Any]] = mapped_column(default=list)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
@@ -382,6 +385,9 @@ class CtxSource(Base):
     __tablename__ = "ctx_sources"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     path: Mapped[str] = mapped_column(Text, unique=True)
+    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    category: Mapped[str] = mapped_column(String(30), default="knowledge", server_default="knowledge")
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True)
     pattern: Mapped[str] = mapped_column(String(100), default="**/*.md")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_indexed_at: Mapped[datetime | None]
@@ -408,4 +414,3 @@ class CtxChunk(Base):
     heading: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
     embedding: Mapped[Any] = mapped_column(Vector(EMBED_DIM), nullable=True)
-

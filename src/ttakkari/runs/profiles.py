@@ -54,6 +54,10 @@ async def ensure_seeded(db: AsyncSession) -> None:
     """계정이 하나도 없으면 설정(TTAKKARI_ENGINE_PROFILES)으로 만든다. 기존 대화의 엔진 이름 키를 계정 id 로 옮긴다."""
     if await db.scalar(select(func.count()).select_from(EngineAccount)):
         return
+    # 서로 다른 Run·API 요청이 빈 목록을 함께 읽어도 기본 계정과 세션 키 이전은 한 트랜잭션만 한다.
+    await db.execute(select(func.pg_advisory_xact_lock(0x54544B, 1)))
+    if await db.scalar(select(func.count()).select_from(EngineAccount)):
+        return
     by_name: dict[str, EngineAccount] = {}
     for i, raw in enumerate(get_settings().engine_profiles):
         engine = raw.get("engine", "")
@@ -199,4 +203,3 @@ def model_engine(model: str | None) -> str | None:
     if m.startswith(("gpt", "codex", "o1", "o3", "o4")):
         return "codex"
     return None
-

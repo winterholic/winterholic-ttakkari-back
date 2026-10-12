@@ -28,7 +28,6 @@ from ttakkari.api import (
 )
 from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
-from ttakkari.context.embedder import warmup as embedder_warmup
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.planner import kr_holidays, reminders
@@ -50,7 +49,6 @@ async def _retention_loop() -> None:
             transfer_service.sweep_stale()
         with contextlib.suppress(Exception):
             async with sessionmaker()() as db:
-                # 바뀐 파일만 다시 임베딩하므로 매시간 돌려도 싸다(ADR 0007).
                 await index_all(db)
         with contextlib.suppress(Exception):
             n = await expire_artifacts()
@@ -85,7 +83,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # 기본 경로가 없어도 서버는 뜬다. 프론트가 /api/workspaces/default 로 다시 시도하며 오류를 보여 준다.
         log.warning("default workspace not created: %s", e)
     await preview.start_worker()
-    embedder_warmup()
     kr_holidays.warm(datetime.now(UTC).year)
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None

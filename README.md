@@ -35,7 +35,6 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_PROFILE_COOLDOWN_SECONDS` | 한도에 걸린 프로필을 쉬게 하는 시간. 기본 1800 |
 | `TTAKKARI_INTERNAL_API_URL` | 오케스트레이터 MCP 서버가 부르는 백엔드 주소. 기본 `http://127.0.0.1:8787` |
 | `TTAKKARI_TRANSFER_INBOX` | 폰에서 보낸 파일 기본 폴더. 비우면 `~/.ttakkari/inbox`(에이전트가 읽고 쓸 수 있는 ~/.ttakkari 안 유일한 곳) |
-| `TTAKKARI_CONTEXT_EMBEDDER` | `e5`(기본, 로컬 multilingual-e5-large, 처음 2.3GB 내려받음) 또는 `hash`(테스트용) |
 | `TTAKKARI_CONTEXT_SOURCE_ROOTS` | 비서 관리 > 지식에 등록할 수 있는 상위 폴더 JSON 배열. 기본 홈 |
 | `TTAKKARI_CORS_ORIGINS` | 프론트 origin JSON 배열 |
 | `TTAKKARI_ENV` | `prod` 면 refresh 쿠키가 `SameSite=None; Secure`, `/docs` 비활성 |
@@ -44,6 +43,23 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_MAX_CONCURRENT_RUNS`, `TTAKKARI_RUN_TIMEOUT_SECONDS` | 동시 실행 수, Run 타임아웃 |
 
 **uvicorn 워커는 1개만 쓴다.** 실행 중 프로세스를 메모리에서 관리한다(ADR 0001).
+
+## 맥락 도서관
+
+별도 텍스트 임베딩 모델·다운로드·외부 API 없이 PostgreSQL 키워드·부분 일치 검색과 온톨로지를 사용한다.
+`library_catalog`로 종류·프로젝트 목차를 보고, `recall`로 출처·시각이 붙은 기억과 문서 조각을 찾는다.
+프로젝트 별칭은 정식 이름·연결된 기억·프로젝트 문서로 이어진다. 회사 세션은 회사·공통 맥락만 검색한다.
+개인 세션과 비서 관리 화면은 전체 맥락을 볼 수 있다. 이것은 맥락 검색 범위 구분이며 파일 접근 권한을 대신하지 않는다.
+
+프로젝트 맥락은 출처를 명시한 로컬 JSON 목록으로 반복 등록할 수 있다.
+
+```sh
+uv run ttakkari context-import /absolute/path/catalog.json
+```
+
+기존 사용자 기억은 보존한다. 같은 프로젝트·기억 키·출처는 갱신하며, 지운 항목은 자동 부활시키지 않는다.
+등록 문서는 시작 시와 매시간 변경분을 색인하고, 비서 관리 > 지식에서 수동 재색인도 가능하다.
+설계와 목록 형식은 [ADR 0009](docs/adr/0009-context-library.md)을 따른다.
 
 ## 구조
 
@@ -92,4 +108,3 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 - 터널: `cloudflared tunnel login` → `cloudflared tunnel create ttakkari` → `~/.cloudflared/ttakkari.yml`(예시 `deploy/cloudflared-ttakkari.yml.example`) → `cloudflared tunnel route dns ttakkari ttakkari-api.winterholic.net` → `deploy/install-services.sh tunnel`.
 - 주소는 한 단계 서브도메인(`ttakkari-api.winterholic.net`)이어야 Cloudflare 무료 인증서(`*.winterholic.net`)가 덮는다. `api.ttakkari.winterholic.net` 은 TLS 핸드셰이크에서 실패했다.
 - 운영 `config.env`: `TTAKKARI_ENV=prod`, `TTAKKARI_CORS_ORIGINS` 에 `https://ttakkari.winterholic.net`, `TTAKKARI_TRUST_PROXY_IP_HEADER=CF-Connecting-IP`.
-

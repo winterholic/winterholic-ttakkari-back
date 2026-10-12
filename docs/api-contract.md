@@ -228,3 +228,14 @@ payload 는 `{title, body, url, tag}`:
 | POST | `/api/transfers/simple` | multipart `files`(여러 개), `dest_dir?`(기본 `TTAKKARI_TRANSFER_INBOX`). 사용자 토큰 또는 업로드 전용 토큰(`ttk_up_…`) |
 | GET/POST/DELETE | `/api/transfer-tokens[/{id}]` | 업로드 전용 토큰. 원문은 만들 때 한 번만 |
 
+## 맥락 도서관(ADR 0009)
+
+- `GET /api/assistant/library?scope=all|personal|work`: 활성 출처의 종류별 수와 프로젝트 이정표. 사용자 인증 필요.
+- `POST /api/assistant/recall`: `{query, k?, scope?}`. 임베딩 모델 없는 전문·부분 일치 검색과 명시적 별칭·관계 확장.
+- `GET /api/agent/library`: 에이전트 세션 범위의 목차. MCP `library_catalog`에 연결한다.
+- 기존 `POST /api/agent/recall`은 회사 세션에서 work/shared 자료만 반환한다. 개인 세션은 전체 자료를 조회한다.
+- 기억 생성은 `scope`(personal/work/shared), `source_ref`를 받는다. 엔터티 생성은 `scope`, `attributes`를 받는다.
+- 출처 생성은 `scope`, `category`(projects/work-history/knowledge/health), `entity_id`를 받는다. 연결 엔터티는 같은 범위여야 한다.
+- `/api/assistant/status`는 `embedder: "none"`, `retrieval: "lexical"`, `model: null`, `ready: true`를 반환한다.
+- 기존 필드는 유지한다. 검색 점수는 확률이 아니며, 문서 결과에는 원문 경로·제목·절·프로젝트·범위·색인 시각을 포함한다.
+

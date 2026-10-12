@@ -226,7 +226,7 @@ class RunManager:
 
         base_prompt = await _compose_prompt(db, run)
         is_orch = sess.kind == SessionKind.orchestrator
-        system_note = await _system_note(db, outbox, orchestrator=is_orch)
+        system_note = await _system_note(db, outbox, orchestrator=is_orch, scope="work" if sess.pool == "work" else "all")
         mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
         profiles = await profiles_mod.candidates(db, sess.engine, sess.pool)
         if not profiles:
@@ -559,7 +559,7 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
     return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + run.prompt
 
 
-async def _system_note(db: AsyncSession, outbox: Path, *, orchestrator: bool) -> str:
+async def _system_note(db: AsyncSession, outbox: Path, *, orchestrator: bool, scope: str = "all") -> str:
     """기본 안내 + 도구 안내 + 비서 지침(~/.ttakkari/harness) + 고정 기억. 매 Run 에 들어가므로 짧게 유지한다(ADR 0007)."""
     parts = [SYSTEM_NOTE.format(outbox=outbox), AGENT_NOTE]
     if orchestrator:
@@ -567,7 +567,7 @@ async def _system_note(db: AsyncSession, outbox: Path, *, orchestrator: bool) ->
     instructions = read_instructions()
     if instructions:
         parts.append("[User's standing instructions for this assistant]\n" + instructions)
-    brief = await pinned_brief(db)
+    brief = await pinned_brief(db, scope=scope)
     if brief:
         parts.append("[Pinned facts about the user — use recall for more]\n" + brief)
     return "\n\n".join(parts)
@@ -614,7 +614,9 @@ async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: Pars
         if detail:
             lines.append(f"{event.type}: {str(detail)[:500]}")
     try:
-        hits = await recall(db, run.prompt[:500], 3, kinds=("memory", "chunk"))
+        sess = await db.get(ChatSession, run.session_id)
+        hits = await recall(db, run.prompt[:500], 3, kinds=("memory", "chunk"),
+                            scope="work" if sess and sess.pool == "work" else "all")
     except Exception:
         log.exception("handoff context search failed for run %s", run.id)
         hits = []

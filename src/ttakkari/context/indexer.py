@@ -1,10 +1,11 @@
-"""RAG 색인: 등록된 폴더의 마크다운·텍스트를 제목 단위 조각으로 잘라 임베딩한다. 바뀐 파일만 다시 한다."""
+"""Model-free RAG ingestion. Preserve heading context and reindex changed files only."""
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -13,14 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.broker.policy import is_sensitive, is_within
 from ttakkari.config import get_settings
-from ttakkari.context.embedder import embed
 from ttakkari.models import CtxChunk, CtxDocument, CtxSource, utcnow
 
 log = logging.getLogger(__name__)
 CHUNK_CHARS = 1200
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_FILES = 5000
-EMBED_BATCH = 32
+EXCLUDED_DIRS = {"node_modules", "vendor", "target", "dist", "build", "coverage", "__pycache__", "venv"}
 TEXT_EXT = {".md", ".markdown", ".txt", ".org", ".rst"}
 HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
 
@@ -95,46 +95,71 @@ def chunk_markdown(text: str) -> list[tuple[str | None, str]]:
 
 
 def _files(src: CtxSource) -> list[Path]:
-    root = Path(src.path).expanduser()
+    root = Path(src.path).expanduser().resolve()
+    home = get_settings().home
+    if is_sensitive(root) or is_within(root, home):
+        raise ValueError("민감 경로는 색인할 수 없어요.")
     if root.is_file():
+        if root.suffix.lower() not in TEXT_EXT:
+            raise ValueError("텍스트 문서만 색인할 수 있어요.")
         return [root]
     if not root.is_dir():
         raise FileNotFoundError(f"폴더가 없어요: {root}")
-    home = get_settings().home
     out = []
-    for p in sorted(root.glob(src.pattern or "**/*.md")):
-        if len(out) >= MAX_FILES:
-            break
-        hidden = any(part.startswith(".") for part in p.relative_to(root).parts)
-        if p.is_file() and p.suffix.lower() in TEXT_EXT and not hidden and not is_sensitive(p) and not is_within(p.resolve(), home):
+    pattern = src.pattern or "**/*.md"
+    def scan_error(error: OSError) -> None:
+        raise error
+
+    for directory, dirs, names in os.walk(root, followlinks=False, onerror=scan_error):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in EXCLUDED_DIRS
+                         and not (Path(directory) / d).is_symlink())
+        for name in sorted(names):
+            p = Path(directory) / name
+            rel = p.relative_to(root)
+            matches = rel.match(pattern) or (pattern.startswith("**/") and rel.match(pattern[3:]))
+            if (name.startswith(".") or not matches or p.suffix.lower() not in TEXT_EXT
+                    or p.is_symlink() or not is_within(p.resolve(), root) or is_sensitive(p)):
+                continue
             out.append(p)
+            if len(out) > MAX_FILES:
+                raise ValueError(f"색인 파일 상한 {MAX_FILES}개를 넘었어요. 출처를 나눠 주세요.")
     return out
 
 
 async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
-    stats = {"files": 0, "updated": 0, "chunks": 0, "removed": 0}
+    stats = {"files": 0, "updated": 0, "chunks": 0, "removed": 0, "errors": 0}
     try:
         files = await asyncio.to_thread(_files, src)
-    except OSError as e:
+    except (OSError, ValueError) as e:
         src.last_error = str(e)
         await db.commit()
         raise
     seen: set[str] = set()
+    failures: list[str] = []
     for f in files:
         stats["files"] += 1
         path = str(f.resolve())
         seen.add(path)
         try:
+            if f.stat().st_size > MAX_FILE_BYTES:
+                raise ValueError(f"파일 크기 상한 {MAX_FILE_BYTES}바이트 초과")
             raw = f.read_bytes()
-        except OSError:
-            continue
-        if len(raw) > MAX_FILE_BYTES:
+            if len(raw) > MAX_FILE_BYTES:
+                raise ValueError(f"파일 크기 상한 {MAX_FILE_BYTES}바이트 초과")
+            text = raw.decode("utf-8")
+        except (OSError, ValueError) as exc:
+            stats["errors"] += 1
+            failures.append(f"{f}: {exc}")
+            log.warning("context index skipped %s: %s", f, exc)
             continue
         sha = hashlib.sha256(raw).hexdigest()
         doc = await db.scalar(select(CtxDocument).where(CtxDocument.path == path))
+        if doc is not None and doc.source_id != src.id:
+            stats["errors"] += 1
+            failures.append(f"{f}: 다른 출처에서 이미 색인된 문서")
+            continue
         if doc is not None and doc.sha256 == sha:
             continue
-        text = raw.decode("utf-8", errors="replace")
         pieces = chunk_markdown(text)
         title = next((h for h, _ in pieces if h), None) or f.stem
         if doc is None:
@@ -144,12 +169,8 @@ async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
         else:
             await db.execute(delete(CtxChunk).where(CtxChunk.document_id == doc.id))
             doc.sha256, doc.title = sha, title[:500]
-        for i in range(0, len(pieces), EMBED_BATCH):
-            batch = pieces[i:i + EMBED_BATCH]
-            # 조각만으로는 무슨 문서인지 모를 수 있어 파일 이름·제목을 앞에 붙여 임베딩한다.
-            vecs = await embed([f"{f.stem} {h or ''}\n{c}" for h, c in batch])
-            for j, ((h, c), v) in enumerate(zip(batch, vecs, strict=True)):
-                db.add(CtxChunk(document_id=doc.id, ord=i + j, heading=h, content=c, embedding=v))
+        for i, (h, c) in enumerate(pieces):
+            db.add(CtxChunk(document_id=doc.id, ord=i, heading=h, content=c))
         doc.chunk_count = len(pieces)
         doc.indexed_at = utcnow()
         stats["updated"] += 1
@@ -160,7 +181,7 @@ async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
         await db.delete(d)
         stats["removed"] += 1
     src.last_indexed_at = utcnow()
-    src.last_error = None
+    src.last_error = "\n".join(failures)[:4000] or None
     await db.commit()
     return stats
 

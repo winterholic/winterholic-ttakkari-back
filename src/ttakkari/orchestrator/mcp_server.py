@@ -49,9 +49,17 @@ async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **p
 
 
 @server.tool()
+async def library_catalog() -> str:
+    """Browse context library categories and project landmarks before choosing what to recall.
+    Returns names, aliases, summaries and verified source paths; no document bodies."""
+    return await _agent("GET", "/library")
+
+
+@server.tool()
 async def recall(query: str, k: int = 8) -> str:
-    """Search long-term memory about the user: saved facts/preferences/decisions, people/projects (with relations),
-    and indexed personal documents (work logs, notes). Use a short natural-language query in any language."""
+    """Search saved facts, entities/relations and indexed documents without an embedding model.
+    Use project names or aliases and a few concrete keywords. Hits include source paths and timestamps;
+    read the original for detail, and try different keywords when terminology differs."""
     return await _agent("POST", "/recall", {"query": query, "k": k})
 
 

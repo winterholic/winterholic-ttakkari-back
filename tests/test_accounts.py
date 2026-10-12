@@ -24,6 +24,41 @@ async def test_defaults_are_seeded_in_priority_order(client, auth):
     assert {a["login"] for a in accs} <= {"ok", "unknown", "missing"}
 
 
+async def test_concurrent_first_runs_seed_accounts_once(monkeypatch):
+    import asyncio
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import EngineAccount
+    from ttakkari.runs.profiles import ensure_seeded
+
+    barrier = asyncio.Barrier(2)
+    seen = set()
+    original = AsyncSession.scalar
+
+    async def simultaneous_empty_read(session, statement, *args, **kwargs):
+        value = await original(session, statement, *args, **kwargs)
+        sql = str(statement)
+        if id(session) not in seen and "count(*)" in sql and "engine_accounts" in sql:
+            seen.add(id(session))
+            await asyncio.wait_for(barrier.wait(), 5)
+        return value
+
+    monkeypatch.setattr(AsyncSession, "scalar", simultaneous_empty_read)
+
+    async def seed():
+        async with sessionmaker()() as db:
+            await ensure_seeded(db)
+
+    results = await asyncio.gather(seed(), seed(), return_exceptions=True)
+    assert not any(isinstance(r, BaseException) for r in results), results
+    async with sessionmaker()() as db:
+        rows = list(await db.scalars(select(EngineAccount).order_by(EngineAccount.priority)))
+        assert [a.name for a in rows] == ["claude", "codex"]
+
+
 async def test_create_rename_toggle_delete(client, auth, make_dir):
     d = make_dir()
     r = await client.post("/api/accounts", json={"name": "회사 계정", "engine": "claude", "config_dir": str(d)}, headers=auth)

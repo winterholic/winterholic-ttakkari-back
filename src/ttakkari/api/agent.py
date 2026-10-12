@@ -27,6 +27,7 @@ from ttakkari.audit import record
 from ttakkari.broker.policy import BrokerError, ResolvedPath, is_sensitive, is_within
 from ttakkari.config import get_settings
 from ttakkari.context import store
+from ttakkari.context.library import library_catalog
 from ttakkari.models import (
     Artifact,
     ChatSession,
@@ -94,19 +95,26 @@ def _err(e: store.ContextError) -> HTTPException:
 
 # ---- 맥락
 
+@router.get("/library")
+async def library(sid: AgentSession, db: Db) -> dict[str, Any]:
+    session = await _session(db, sid)
+    return await library_catalog(db, scope="work" if session.pool == "work" else "all")
+
+
 @router.post("/recall")
 async def recall(body: RecallIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    await _session(db, sid)
-    hits = await store.recall(db, body.query, body.k, kinds=tuple(body.kinds or ("memory", "chunk", "entity")))
+    session = await _session(db, sid)
+    hits = await store.recall(db, body.query, body.k, kinds=tuple(body.kinds or ("memory", "chunk", "entity")),
+                              scope="work" if session.pool == "work" else "all")
     return {"results": [{"type": h.kind, "id": h.id, "score": round(h.score, 3), "text": h.text, **h.meta} for h in hits]}
 
 
 @router.post("/remember")
 async def remember(body: RememberIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    await _session(db, sid)
+    session = await _session(db, sid)
     try:
         m = await store.remember(db, body.content, kind=body.kind, entities=body.entities, source="agent",
-                                 source_ref=f"session:{sid}")
+                                 source_ref=f"session:{sid}", scope=session.pool)
     except store.ContextError as e:
         raise _err(e) from e
     record(db, actor="agent", action="context.remember", target_type="memory", target_id=m.id)
@@ -132,9 +140,9 @@ async def forget(body: dict[str, str], sid: AgentSession, db: Db) -> dict[str, A
 
 @router.post("/entities")
 async def upsert_entity(body: EntityIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    await _session(db, sid)
+    session = await _session(db, sid)
     try:
-        e = await store.upsert_entity(db, body.name, body.type, summary=body.summary, aliases=body.aliases)
+        e = await store.upsert_entity(db, body.name, body.type, summary=body.summary, aliases=body.aliases, scope=session.pool)
     except store.ContextError as e2:
         raise _err(e2) from e2
     await db.commit()
@@ -143,18 +151,20 @@ async def upsert_entity(body: EntityIn, sid: AgentSession, db: Db) -> dict[str, 
 
 @router.get("/entities/{name}")
 async def get_entity(name: str, sid: AgentSession, db: Db) -> dict[str, Any]:
-    await _session(db, sid)
-    e = await store.find_entity(db, name)
+    session = await _session(db, sid)
+    scope = "work" if session.pool == "work" else "all"
+    e = await store.find_entity(db, name, scope=scope)
     if e is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "그런 항목이 없어요. recall 로 찾아보세요.")
-    return await store.entity_detail(db, e)
+    return await store.entity_detail(db, e, scope=scope)
 
 
 @router.post("/link")
 async def link(body: LinkIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    await _session(db, sid)
+    session = await _session(db, sid)
     try:
-        r = await store.link(db, body.subject, body.predicate, body.object, note=body.note, source="agent")
+        r = await store.link(db, body.subject, body.predicate, body.object, note=body.note, source="agent",
+                             scope="work" if session.pool == "work" else "all")
     except store.ContextError as e:
         raise _err(e) from e
     await db.commit()

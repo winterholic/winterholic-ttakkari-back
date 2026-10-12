@@ -32,6 +32,7 @@ os.environ.update({
     "TTAKKARI_DEFAULT_WORKSPACE_ROOT": str(ALLOWED / "default-root"),
     "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
     "TTAKKARI_CONTEXT_EMBEDDER": "hash",
+    "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
     "TTAKKARI_CONTEXT_SOURCE_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WRITABLE_ROOTS": json.dumps([str(ALLOWED / "default-docs"), str(ALLOWED / "default-missing")]),
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",

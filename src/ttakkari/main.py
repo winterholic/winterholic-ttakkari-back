@@ -31,7 +31,7 @@ from ttakkari.config import get_settings
 from ttakkari.context.embedder import warmup as embedder_warmup
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
-from ttakkari.planner import kr_holidays
+from ttakkari.planner import kr_holidays, reminders
 from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
@@ -59,6 +59,16 @@ async def _retention_loop() -> None:
         await asyncio.sleep(RETENTION_INTERVAL)
 
 
+async def _reminder_loop(interval: int) -> None:
+    # 시작하자마자 한 번 훑어 꺼져 있던 사이에 지난 알림을 따라잡는다(planner/reminders.py).
+    while True:
+        try:
+            await reminders.send_due()
+        except Exception as e:  # noqa: BLE001
+            log.warning("reminder scan failed: %s", e)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     s = get_settings()
@@ -78,10 +88,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     embedder_warmup()
     kr_holidays.warm(datetime.now(UTC).year)
     retention = asyncio.create_task(_retention_loop())
+    reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     try:
         yield
     finally:
         retention.cancel()
+        if reminder:
+            reminder.cancel()
         await manager.shutdown()
         await preview.stop_worker()
         await dispose_engine()

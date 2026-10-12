@@ -113,6 +113,7 @@ def span(ev: CalendarEvent) -> tuple[str, str]:
 
 
 # ---- 반복(RRULE)
+# NOTE: 반복 입력은 보류했다(재설계 예정, ADR 0008). API·MCP 는 rrule 을 받지 않고, 이미 저장된 규칙만 펼쳐 보여 준다.
 
 _UNTIL = re.compile(r"UNTIL=(\d{8})(T(\d{6})(Z?))?", re.IGNORECASE)
 
@@ -168,7 +169,9 @@ def event_out(ev: CalendarEvent, occ: tuple[datetime, datetime] | None = None) -
     end_shown = e - timedelta(days=1) if ev.all_day else e
     return {"id": str(ev.id), "title": ev.title, "description": ev.description, "location": ev.location,
             "all_day": ev.all_day, "start": fmt_local(s, ev.all_day), "end": fmt_local(end_shown, ev.all_day),
-            "rrule": ev.rrule, "recurring": bool(ev.rrule), "source": ev.source,
+            "rrule": ev.rrule, "recurring": bool(ev.rrule), "source": ev.source, "reminder": ev.reminder,
+            "remind_at": fmt_local(ev.remind_at, False) if ev.remind_at else None,
+            "reminder_sent": bool(ev.reminder and ev.reminded_at),
             "created_at": ev.created_at.isoformat(), "updated_at": ev.updated_at.isoformat()}
 
 
@@ -204,9 +207,22 @@ async def get_event(db: AsyncSession, event_id: Any, *, include_deleted: bool = 
     return ev
 
 
+def check_reminder(reminder: str | None, all_day: bool, recurring: bool) -> None:
+    from ttakkari.planner import reminders
+
+    if reminder and recurring:
+        raise bad("반복 일정에는 알림을 걸 수 없어요.")
+    reminders.check(reminder, all_day)
+
+
 def apply_event_fields(ev: CalendarEvent, fields: dict[str, Any]) -> None:
-    """검증을 거쳐 일정에 반영한다. fields 는 지정된 것만 담는다(PATCH). 종일 전환은 start/end 를 같이 받는다."""
+    """검증을 거쳐 일정에 반영한다. fields 는 지정된 것만 담는다(PATCH). 종일 전환은 start/end 를 같이 받는다.
+    시각이나 알림이 바뀌면 알림을 다시 예약한다(이미 보낸 알림도 새 시각 기준으로 다시 보낸다)."""
+    from ttakkari.planner import reminders
+
     all_day = fields.get("all_day", ev.all_day)
+    reminder = fields.get("reminder", ev.reminder)
+    check_reminder(reminder, all_day, bool(ev.rrule))
     if "all_day" in fields and fields["all_day"] != ev.all_day and not ("start" in fields and "end" in fields):
         raise bad("종일 여부를 바꿀 때는 시작과 끝을 함께 보내 주세요.")
     if "start" in fields or "end" in fields or "all_day" in fields:
@@ -216,8 +232,9 @@ def apply_event_fields(ev: CalendarEvent, fields: dict[str, Any]) -> None:
     for k in ("title", "description", "location"):
         if k in fields:
             setattr(ev, k, fields[k].strip() if k == "title" else fields[k])
-    if "rrule" in fields:
-        ev.rrule = normalize_rrule(fields["rrule"], ev.start_at) if fields["rrule"] else None
-    elif ev.rrule:
+    if ev.rrule and ("start" in fields or "end" in fields or "all_day" in fields):
         # 시작이 옮겨졌을 수 있으니 규칙을 새 시작에 맞춰 다시 검사한다.
         ev.rrule = normalize_rrule(ev.rrule, ev.start_at)
+    if fields.keys() & {"start", "end", "all_day", "reminder"}:
+        ev.reminder = reminder
+        reminders.schedule(ev)

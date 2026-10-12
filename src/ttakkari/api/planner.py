@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.models import CalendarEvent, Memo, utcnow
-from ttakkari.planner import kr_holidays
+from ttakkari.planner import kr_holidays, reminders
 from ttakkari.planner import service as svc
 from ttakkari.security.auth import User
 
@@ -21,6 +21,8 @@ router = APIRouter(prefix="/api", tags=["planner"])
 MAX_BODY = 200_000
 FromDate = Annotated[date, Query(alias="from")]
 ToDate = Annotated[date, Query()]
+# 시간 일정: at_start·10m·30m·1h·1d, 종일 일정: day_9am·prev_day_9am. null 이면 알림 없음(기본).
+Reminder = Literal["at_start", "10m", "30m", "1h", "1d", "day_9am", "prev_day_9am"]
 
 
 class MemoIn(BaseModel):
@@ -40,23 +42,26 @@ class MemoPatch(BaseModel):
 
 
 class EventIn(BaseModel):
+    # 반복(rrule)은 보류라 받지 않는다. 모르는 필드는 조용히 버리지 않고 422 로 알린다.
+    model_config = ConfigDict(extra="forbid")
     title: str = Field(min_length=1, max_length=200)
     start: str = Field(min_length=10, max_length=40)
     end: str | None = Field(default=None, min_length=10, max_length=40)
     all_day: bool = False
     description: str = Field(default="", max_length=10_000)
     location: str = Field(default="", max_length=200)
-    rrule: str | None = Field(default=None, max_length=500)
+    reminder: Reminder | None = None
 
 
 class EventPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     title: str | None = Field(default=None, min_length=1, max_length=200)
     start: str | None = Field(default=None, min_length=10, max_length=40)
     end: str | None = Field(default=None, min_length=10, max_length=40)
     all_day: bool | None = None
     description: str | None = Field(default=None, max_length=10_000)
     location: str | None = Field(default=None, max_length=200)
-    rrule: str | None = Field(default=None, max_length=500)
+    reminder: Reminder | None = None
 
 
 def new_event(body: EventIn, source: str) -> CalendarEvent:
@@ -66,7 +71,9 @@ def new_event(body: EventIn, source: str) -> CalendarEvent:
     ev.start_at, ev.end_at = svc.to_range(body.start, body.end or body.start, body.all_day)
     if body.end is None and not body.all_day:
         ev.end_at = ev.start_at + timedelta(hours=1)
-    ev.rrule = svc.normalize_rrule(body.rrule, ev.start_at) if body.rrule else None
+    svc.check_reminder(body.reminder, body.all_day, False)
+    ev.reminder = body.reminder
+    reminders.schedule(ev)
     return ev
 
 

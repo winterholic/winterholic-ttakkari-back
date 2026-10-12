@@ -271,6 +271,18 @@ class PushSubscription(Base):
 
 
 # ---- 메모·캘린더 (ADR 0008)
+class MemoCategory(Base):
+    """메모 카테고리. 메모는 0~1개에 속하고, 카테고리를 지우면 메모는 미분류(category_id NULL)로 남는다.
+    color 는 디자인 토큰의 범주 색 키(planner/service.CATEGORY_COLORS)이고 없어도 된다."""
+
+    __tablename__ = "memo_categories"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(30), unique=True)
+    color: Mapped[str | None] = mapped_column(String(20))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class Memo(Base):
     """마크다운 메모. rev 는 낙관적 잠금(자동 저장·에이전트 수정이 서로 덮어쓰지 않게). deleted_at 은 에이전트의 보관 삭제."""
 
@@ -279,6 +291,7 @@ class Memo(Base):
     title: Mapped[str] = mapped_column(String(200), default="")
     body: Mapped[str] = mapped_column(Text, default="")
     tags: Mapped[list[Any]] = mapped_column(default=list)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("memo_categories.id", ondelete="SET NULL"), index=True)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
     rev: Mapped[int] = mapped_column(Integer, default=1)
@@ -289,7 +302,9 @@ class Memo(Base):
 
 class CalendarEvent(Base):
     """일정. 시각은 Asia/Seoul 기준이다. 종일 일정은 start_at=시작일 0시, end_at=마지막 날 다음 날 0시(끝 제외, iCal 방식).
-    rrule 이 있으면 start_at 을 DTSTART 로 하는 반복 일정이고, 조회할 때 구간만 펼친다."""
+    rrule 이 있으면 start_at 을 DTSTART 로 하는 반복 일정이고, 조회할 때 구간만 펼친다.
+    NOTE: 반복 입력은 보류(재설계 예정, ADR 0008). 컬럼은 남겨 기존 값만 읽는다.
+    reminder 는 알림 옵션(planner/reminders.py), remind_at 은 보낼 시각, reminded_at 은 보냈거나 건너뛴 시각이다."""
 
     __tablename__ = "calendar_events"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -300,6 +315,9 @@ class CalendarEvent(Base):
     start_at: Mapped[datetime] = mapped_column(index=True)
     end_at: Mapped[datetime]
     rrule: Mapped[str | None] = mapped_column(String(500))
+    reminder: Mapped[str | None] = mapped_column(String(20))
+    remind_at: Mapped[datetime | None] = mapped_column(index=True)
+    reminded_at: Mapped[datetime | None]
     source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)

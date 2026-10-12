@@ -1,11 +1,17 @@
 """메모·캘린더·한국 공휴일(ADR 0008)."""
 from __future__ import annotations
 
-from datetime import date
+import uuid
+from datetime import date, datetime
 
+import pytest
 from test_context import _agent, _session
 
-from ttakkari.planner import kr_holidays
+from ttakkari.db import sessionmaker
+from ttakkari.models import CalendarEvent
+from ttakkari.planner import kr_holidays, reminders
+from ttakkari.planner.service import KST
+from ttakkari.push.service import PushKind
 
 # 정부 발표(공휴일에 관한 법률·관공서의 공휴일에 관한 규정, 천문연구원 월력요항)와 대조한 기대값.
 # 2026: 노동절은 2026-03-31 국회 의결로 5/1 부터 법정공휴일, 제헌절은 2026-02-10 공포·5/11 시행으로 올해부터 공휴일.
@@ -144,33 +150,102 @@ async def test_event_patch_and_delete(client, auth):
     assert (await client.get(f"/api/calendar/events/{e['id']}", headers=auth)).status_code == 404
 
 
-async def test_recurring_events_expand_in_range(client, auth):
-    w = (await client.post("/api/calendar/events", json={"title": "주간 회의", "start": "2026-10-05T10:00", "end": "2026-10-05T11:00",
-                                                         "rrule": "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"}, headers=auth)).json()
-    assert w["rrule"] == "FREQ=WEEKLY;BYDAY=MO;COUNT=4" and w["recurring"] is True
+async def test_rrule_input_rejected_but_stored_rules_still_expand(client, auth):
+    # 반복 입력은 보류(ADR 0008). 생성·수정 모두 422.
+    base = {"title": "주간 회의", "start": "2026-10-05T10:00", "end": "2026-10-05T11:00"}
+    assert (await client.post("/api/calendar/events", json={**base, "rrule": "FREQ=WEEKLY"}, headers=auth)).status_code == 422
+    e = (await client.post("/api/calendar/events", json=base, headers=auth)).json()
+    assert e["recurring"] is False and e["rrule"] is None
+    assert (await client.patch(f"/api/calendar/events/{e['id']}", json={"rrule": "FREQ=DAILY"}, headers=auth)).status_code == 422
+    # 이미 반복으로 저장된 일정(보류 전 데이터)은 그대로 펼쳐 보여 준다.
+    async with sessionmaker()() as db:
+        ev = await db.get(CalendarEvent, uuid.UUID(e["id"]))
+        ev.rrule = "FREQ=WEEKLY;BYDAY=MO;COUNT=4"
+        await db.commit()
     got = (await client.get("/api/calendar/events", params={"from": "2026-10-01", "to": "2026-11-30"}, headers=auth)).json()["events"]
-    assert [e["start"] for e in got] == ["2026-10-05T10:00", "2026-10-12T10:00", "2026-10-19T10:00", "2026-10-26T10:00"]
-    assert all(e["id"] == w["id"] and e["end"].endswith("T11:00") for e in got)
-    # 구간이 시작보다 한참 뒤여도 펼쳐진다.
-    later = (await client.get("/api/calendar/events", params={"from": "2026-10-20", "to": "2026-10-31"}, headers=auth)).json()["events"]
-    assert [e["start"][:10] for e in later] == ["2026-10-26"]
-    # 날짜만 있는 UNTIL 도 그날의 시간 일정을 포함한다.
-    u = (await client.post("/api/calendar/events", json={"title": "매일", "start": "2026-11-02T08:00",
-                                                         "rrule": "FREQ=DAILY;UNTIL=20261104"}, headers=auth)).json()
-    days = (await client.get("/api/calendar/events", params={"from": "2026-11-01", "to": "2026-11-10", "q": "매일"}, headers=auth)).json()["events"]
-    assert [e["start"][:10] for e in days] == ["2026-11-02", "2026-11-03", "2026-11-04"], u
-    y = (await client.post("/api/calendar/events", json={"title": "생일", "all_day": True, "start": "2020-03-05",
-                                                         "rrule": "FREQ=YEARLY"}, headers=auth)).json()
-    ys = (await client.get("/api/calendar/events", params={"from": "2027-03-01", "to": "2027-03-31", "q": "생일"}, headers=auth)).json()["events"]
-    assert [(e["start"], e["end"]) for e in ys] == [("2027-03-05", "2027-03-05")] and y["recurring"]
-
-
-async def test_invalid_rrule_rejected(client, auth):
-    base = {"title": "x", "start": "2026-10-05T10:00"}
-    for rule in ("FREQ=HOURLY", "FREQ=SECONDLY;COUNT=5", "garbage", "FREQ=WEEKLY\nDTSTART:20260101", "FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30"):
-        r = await client.post("/api/calendar/events", json={**base, "rrule": rule}, headers=auth)
-        assert r.status_code == 422, rule
+    assert [x["start"] for x in got] == ["2026-10-05T10:00", "2026-10-12T10:00", "2026-10-19T10:00", "2026-10-26T10:00"]
+    assert all(x["recurring"] for x in got)
+    # 제목 수정은 되고, 반복 일정에 알림은 걸 수 없다.
+    assert (await client.patch(f"/api/calendar/events/{e['id']}", json={"title": "회의"}, headers=auth)).status_code == 200
+    assert (await client.patch(f"/api/calendar/events/{e['id']}", json={"reminder": "10m"}, headers=auth)).status_code == 422
     assert (await client.get("/api/calendar/events", params={"from": "2026-01-01", "to": "2028-12-31"}, headers=auth)).status_code == 422
+
+
+# ---- 일정 알림
+
+def _kst(s: str) -> datetime:
+    return datetime.fromisoformat(s).replace(tzinfo=KST)
+
+
+@pytest.fixture
+def sent(monkeypatch) -> list[dict]:
+    calls: list[dict] = []
+
+    async def fake(kind, title, body="", **kw):
+        calls.append({"kind": kind, "title": title, "body": body, **kw})
+        return {"sent": 1, "removed": 0, "failed": 0}
+
+    monkeypatch.setattr(reminders, "notify", fake)
+    return calls
+
+
+async def test_reminder_options_and_schedule(client, auth):
+    off = (await client.post("/api/calendar/events", json={"title": "기본", "start": "2026-10-14T09:30"}, headers=auth)).json()
+    assert off["reminder"] is None and off["remind_at"] is None  # 기본은 꺼짐
+    t = (await client.post("/api/calendar/events", json={"title": "치과", "start": "2026-10-14T09:30", "reminder": "30m"},
+                           headers=auth)).json()
+    assert (t["reminder"], t["remind_at"]) == ("30m", "2026-10-14T09:00")
+    d = (await client.post("/api/calendar/events", json={"title": "생일", "all_day": True, "start": "2026-10-20",
+                                                         "reminder": "prev_day_9am"}, headers=auth)).json()
+    assert d["remind_at"] == "2026-10-19T09:00"
+    day = (await client.patch(f"/api/calendar/events/{d['id']}", json={"reminder": "day_9am"}, headers=auth)).json()
+    assert day["remind_at"] == "2026-10-20T09:00"
+    # 종류에 맞지 않는 옵션, 모르는 옵션은 422
+    assert (await client.post("/api/calendar/events", json={"title": "x", "all_day": True, "start": "2026-10-20",
+                                                            "reminder": "10m"}, headers=auth)).status_code == 422
+    assert (await client.post("/api/calendar/events", json={"title": "x", "start": "2026-10-20T10:00",
+                                                            "reminder": "5m"}, headers=auth)).status_code == 422
+    # 시각을 옮기면 다시 계산하고, null 이면 끈다.
+    moved = (await client.patch(f"/api/calendar/events/{t['id']}", json={"start": "2026-10-15T14:00", "end": "2026-10-15T15:00"},
+                                headers=auth)).json()
+    assert moved["remind_at"] == "2026-10-15T13:30"
+    cleared = (await client.patch(f"/api/calendar/events/{t['id']}", json={"reminder": None}, headers=auth)).json()
+    assert cleared["reminder"] is None and cleared["remind_at"] is None
+
+
+async def test_send_due_once_late_catch_up_and_skip(client, auth, sent):
+    mk = lambda title, start, rem: client.post("/api/calendar/events", json={"title": title, "start": start, "reminder": rem,
+                                                                              "location": "강남"}, headers=auth)
+    a = (await mk("회의", "2026-10-14T10:00", "10m")).json()
+    await mk("점심", "2026-10-14T12:00", "1h")
+    gone = (await mk("지운 일정", "2026-10-14T10:00", "10m")).json()
+    await client.delete(f"/api/calendar/events/{gone['id']}", headers=auth)
+    assert await reminders.send_due(_kst("2026-10-14T09:49")) == 0
+    assert await reminders.send_due(_kst("2026-10-14T09:50")) == 1
+    assert sent[0]["kind"] == PushKind.calendar_reminder and sent[0]["title"] == "회의"
+    assert sent[0]["body"] == "10월 14일(수) 10:00 · 10분 후 · 강남"
+    assert sent[0]["url"] == f"/calendar?event={a['id']}&date=2026-10-14" and sent[0]["tag"] == f"event-{a['id']}"
+    # 같은 시각에 다시 훑어도(겹친 스캔·재시작) 두 번 보내지 않는다.
+    assert await reminders.send_due(_kst("2026-10-14T09:51")) == 0
+    assert (await client.get(f"/api/calendar/events/{a['id']}", headers=auth)).json()["reminder_sent"] is True
+    # 서버가 꺼져 있었다가 늦게 떠도 일정 시작 뒤 1시간 안이면 보낸다.
+    assert await reminders.send_due(_kst("2026-10-14T12:30")) == 1 and sent[1]["title"] == "점심"
+    # 그보다 늦으면 보내지 않고 건너뛴 것으로 표시한다.
+    c = (await mk("저녁", "2026-10-14T18:00", "at_start")).json()
+    assert await reminders.send_due(_kst("2026-10-14T19:00")) == 0
+    assert (await client.get(f"/api/calendar/events/{c['id']}", headers=auth)).json()["reminder_sent"] is True
+    # 시각을 옮기면 다시 보낸다.
+    await client.patch(f"/api/calendar/events/{a['id']}", json={"start": "2030-01-01T10:00", "end": "2030-01-01T11:00"}, headers=auth)
+    assert await reminders.send_due(_kst("2030-01-01T10:00")) == 1 and sent[-1]["title"] == "회의"
+    assert len(sent) == 3
+
+
+async def test_reminder_past_event_is_not_sent(client, auth, sent):
+    # 이미 지난 일정에 알림을 켜도 보내지 않는다(만드는 시각 기준).
+    e = (await client.post("/api/calendar/events", json={"title": "지난 일", "start": "2020-01-01T10:00", "reminder": "10m"},
+                           headers=auth)).json()
+    assert e["reminder_sent"] is True
+    assert await reminders.send_due() == 0 and sent == []
 
 
 # ---- 에이전트 도구
@@ -197,7 +272,11 @@ async def test_agent_memo_tools_follow_forget_policy(client, auth, make_dir):
 
 async def test_agent_event_tools_and_next_week_listing(client, auth, make_dir):
     h = _agent((await _session(client, auth, make_dir))["id"])
-    mine = (await client.post("/api/agent/events", json={"title": "에이전트 일정", "start": "2026-10-13T15:00"}, headers=h)).json()
+    mine = (await client.post("/api/agent/events", json={"title": "에이전트 일정", "start": "2026-10-13T15:00", "reminder": "1h"},
+                              headers=h)).json()
+    assert mine["remind_at"] == "2026-10-13T14:00"
+    assert (await client.post("/api/agent/events", json={"title": "x", "start": "2026-10-13T15:00", "rrule": "FREQ=DAILY"},
+                              headers=h)).status_code == 422
     user = (await client.post("/api/calendar/events", json={"title": "사용자 일정", "all_day": True, "start": "2026-10-14"}, headers=auth)).json()
     got = (await client.get("/api/agent/events", params={"from": "2026-10-12", "to": "2026-10-18"}, headers=h)).json()
     assert [e["title"] for e in got["events"]] == ["에이전트 일정", "사용자 일정"]

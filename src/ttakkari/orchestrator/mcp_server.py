@@ -161,33 +161,39 @@ async def delete_memo(memo_id: str) -> str:
     return await _agent("DELETE", f"/memos/{memo_id}")
 
 
+ReminderOpt = Literal["at_start", "10m", "30m", "1h", "1d", "day_9am", "prev_day_9am"]
+
+
 @server.tool()
 async def list_events(start_date: str, end_date: str, query: str | None = None) -> str:
-    """List calendar events from start_date to end_date (YYYY-MM-DD, inclusive, at most 400 days), with recurring
-    events already expanded, plus Korean public holidays in that range. Times are Asia/Seoul wall time:
-    all-day events use dates, timed events use YYYY-MM-DDTHH:MM (end of an all-day event is inclusive)."""
+    """List calendar events from start_date to end_date (YYYY-MM-DD, inclusive, at most 400 days), plus Korean public
+    holidays in that range. Times are Asia/Seoul wall time: all-day events use dates, timed events use
+    YYYY-MM-DDTHH:MM (end of an all-day event is inclusive). `reminder` is the push reminder option or null."""
     return await _agent("GET", "/events", **{"from": start_date, "to": end_date, "q": query})
 
 
 @server.tool()
 async def create_event(title: str, start: str, end: str | None = None, all_day: bool = False,
-                       description: str = "", location: str = "", rrule: str | None = None) -> str:
+                       description: str = "", location: str = "", reminder: ReminderOpt | None = None) -> str:
     """Create an event in Asia/Seoul time. All-day: start/end are YYYY-MM-DD (end inclusive, defaults to start).
-    Timed: YYYY-MM-DDTHH:MM (end defaults to one hour later). `rrule` optional, e.g. 'FREQ=WEEKLY;BYDAY=MO;COUNT=10'
-    (DAILY/WEEKLY/MONTHLY/YEARLY only)."""
+    Timed: YYYY-MM-DDTHH:MM (end defaults to one hour later). Recurring events are not supported (on hold).
+    `reminder` (off by default; set it only when the user asks): timed events take at_start/10m/30m/1h/1d
+    (before start); all-day events take day_9am or prev_day_9am (KST). The user gets a phone push at that time."""
     return await _agent("POST", "/events", {"title": title, "start": start, "end": end, "all_day": all_day,
-                                            "description": description, "location": location, "rrule": rrule})
+                                            "description": description, "location": location, "reminder": reminder})
 
 
 @server.tool()
 async def update_event(event_id: str, title: str | None = None, start: str | None = None, end: str | None = None,
                        all_day: bool | None = None, description: str | None = None, location: str | None = None,
-                       rrule: str | None = None) -> str:
-    """Change fields of an event (the whole series if it recurs). Send only what changes; when changing all_day,
-    send start and end too. An empty `rrule` makes it non-recurring."""
-    patch = {"title": title, "start": start, "end": end, "all_day": all_day, "description": description,
-             "location": location, "rrule": rrule}
-    return await _agent("PATCH", f"/events/{event_id}", {k: v for k, v in patch.items() if v is not None})
+                       reminder: ReminderOpt | Literal["off"] | None = None) -> str:
+    """Change fields of an event. Send only what changes; when changing all_day, send start and end too (and a
+    reminder that fits the new kind if one is set). `reminder="off"` turns the reminder off."""
+    patch: dict[str, Any] = {k: v for k, v in {"title": title, "start": start, "end": end, "all_day": all_day,
+                                                "description": description, "location": location}.items() if v is not None}
+    if reminder is not None:
+        patch["reminder"] = None if reminder == "off" else reminder
+    return await _agent("PATCH", f"/events/{event_id}", patch)
 
 
 @server.tool()

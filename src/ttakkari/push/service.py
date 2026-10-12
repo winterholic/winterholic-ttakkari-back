@@ -1,4 +1,4 @@
-"""Web Push. 알림은 필요한 순간에만 보낸다: 에이전트의 notify_user, Run 의 오류 실패.
+"""Web Push. 알림은 필요한 순간에만 보낸다: 에이전트의 notify_user, Run 의 오류 실패, 사용자가 켠 일정 알림.
 성공 완료·취소·서버 재시작 중단은 알리지 않는다. 실패해도 Run 기록에는 영향을 주지 않는다(호출한 manager 가 예외를 잡는다)."""
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ class PushKind(enum.StrEnum):
     run_failed = "push.run_finished"  # Run 오류 실패(자동). 이름은 기존 감사 로그와 이어지게 유지
     agent = "push.agent"  # 에이전트가 MCP notify_user 로 직접 보냄
     test = "push.test_sent"  # 설정 화면의 테스트 알림
+    calendar_reminder = "push.calendar_reminder"  # 일정 알림(planner/reminders.py)
 
 
 # 사용자가 직접 멈춘 cancelled, 배포·재시작으로 끊긴 interrupted, 정상 완료 succeeded 는 알리지 않는다.

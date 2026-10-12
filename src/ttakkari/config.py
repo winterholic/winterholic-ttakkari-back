@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     context_model: str = "intfloat/multilingual-e5-large"
     # 모든 Run 에 넣는 고정 기억·비서 지침의 최대 글자 수(토큰 절약)
     context_brief_chars: int = 3000
+    # 일정 알림을 찾는 주기(초). 0 이면 끈다(테스트는 직접 부른다).
+    reminder_scan_seconds: int = 30
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더
     context_source_roots: list[Path] = [HOME]
 

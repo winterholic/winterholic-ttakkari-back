@@ -127,6 +127,7 @@ VAPID 키는 `~/.ttakkari/vapid.json`(0600)에 있다. `ttakkari gen-vapid` 로 
 발송 진입점은 `push.service.notify(PushKind, title, body, url=, tag=, target_id=)` 하나다. 새 기능이 알림을 붙일 때는 `PushKind` 에 항목을 더하고 이 함수를 한 줄 부른다. 구독 관리와 발송 인프라는 그대로다.
 
 payload 는 `{title, body, url, tag}`:
+- 일정 알림(`PushKind.calendar_reminder`)의 payload 는 아래 "일정" 절을 본다
 - `title`: 자동 알림은 `작업 실패`
 - `body`: 세션 제목. 80자 초과면 자른다. 푸시 서버를 거치므로 경로·에러 원문은 넣지 않는다
 - `url`: `/chat/<session_id>`, `tag`: session_id (같은 세션 알림은 하나로 합쳐진다)
@@ -184,18 +185,19 @@ payload 는 `{title, body, url, tag}`:
 | DELETE | `/api/memos/{id}` | 204. 완전 삭제 |
 
 ### 일정
-`EventOut`: `{id, title, description, location, all_day, start, end, rrule, recurring, source, created_at, updated_at}`. 목록의 `start`/`end` 는 그 **발생분**의 구간이고, `GET /{id}` 는 시리즈 자체의 구간이다.
+`EventOut`: `{id, title, description, location, all_day, start, end, rrule, recurring, reminder, remind_at, reminder_sent, source, created_at, updated_at}`. 목록의 `start`/`end` 는 그 **발생분**의 구간이고, `GET /{id}` 는 시리즈 자체의 구간이다.
+반복은 보류했고 재설계 예정이다(ADR 0008). 입력은 받지 않고, 보류 전에 저장된 `rrule` 만 읽어 펼친다.
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/api/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&q=` | `{events}` 시작 순. 반복 일정은 구간 안 발생분으로 펼친다. 구간 최대 400일(넘으면 422) |
-| POST | `/api/calendar/events` | `{title, start, end?, all_day?, description?, location?, rrule?}` → 201. `end` 생략: 종일은 하루, 시간은 1시간 |
+| POST | `/api/calendar/events` | `{title, start, end?, all_day?, description?, location?, reminder?}` → 201. `end` 생략: 종일은 하루, 시간은 1시간. 모르는 필드(`rrule` 포함)는 422 |
 | GET | `/api/calendar/events/{id}` | 시리즈 |
-| PATCH | `/api/calendar/events/{id}` | 보낸 필드만. `all_day` 를 바꾸면 `start`·`end` 도 같이(아니면 422). `rrule: ""` 은 반복 해제. 반복이면 시리즈 전체가 바뀐다 |
+| PATCH | `/api/calendar/events/{id}` | 보낸 필드만. `all_day` 를 바꾸면 `start`·`end` 도 같이(아니면 422). `reminder: null` 은 알림 끄기. 시각·알림이 바뀌면 알림을 다시 예약한다 |
 | DELETE | `/api/calendar/events/{id}` | 204. 완전 삭제 |
 | GET | `/api/calendar/holidays?from=&to=` | `{holidays: [{date, name, substitute}], coverage: {from_year, to_year}}`. 한국 공휴일(대체공휴일은 `substitute: true`). 2000~2050년, 구간 최대 400일 |
 
-`rrule`: `RRULE:` 접두사는 있어도 없어도 된다. `FREQ=DAILY|WEEKLY|MONTHLY|YEARLY` 만 허용하고 `DTSTART` 는 넣지 않는다(일정 `start` 가 DTSTART). 잘못된 규칙은 422.
+`reminder`(기본 `null` = 꺼짐): 시간 일정은 `at_start|10m|30m|1h|1d`(시작 기준 전), 종일 일정은 `day_9am|prev_day_9am`(당일·전날 09:00 KST). 종류에 맞지 않거나 반복 일정이면 422. `remind_at` 은 보낼 시각(KST), `reminder_sent` 는 보냈거나 늦어서 건너뛰었는지다. 발송은 푸시 `PushKind.calendar_reminder`(감사 로그 `push.calendar_reminder`), `url` 은 `/calendar?event=<id>&date=YYYY-MM-DD`.
 
 ### 에이전트용(MCP 서버가 부름, 세션 한정 토큰)
 `GET|POST /api/agent/memos`, `GET|PATCH|DELETE /api/agent/memos/{id}`, `GET|POST /api/agent/events`, `PATCH|DELETE /api/agent/events/{id}`.

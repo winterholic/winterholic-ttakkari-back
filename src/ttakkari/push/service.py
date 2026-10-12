@@ -1,4 +1,5 @@
-"""Run 종료 Web Push. 실패해도 Run 기록에는 영향을 주지 않는다(호출한 manager 가 예외를 잡는다)."""
+"""Web Push. 알림은 필요한 순간에만 보낸다: 에이전트의 notify_user, Run 의 오류 실패.
+성공 완료·취소·서버 재시작 중단은 알리지 않는다. 실패해도 Run 기록에는 영향을 주지 않는다(호출한 manager 가 예외를 잡는다)."""
 
 from __future__ import annotations
 
@@ -18,35 +19,19 @@ from ttakkari.push import vapid
 
 log = logging.getLogger(__name__)
 
-TITLES = {
-    RunStatus.succeeded: "작업 완료",
-    RunStatus.failed: "작업 실패",
-    RunStatus.cancelled: "작업 취소됨",
-    RunStatus.interrupted: "작업 중단됨",
-}
+# 사용자가 직접 멈춘 cancelled, 배포·재시작으로 끊긴 interrupted, 정상 완료 succeeded 는 알리지 않는다.
+NOTIFY_TITLES = {RunStatus.failed: "작업 실패"}
 BODY_LIMIT = 80
 GONE = {404, 410}
 
 
-def _first_line(text: str | None) -> str:
-    for line in (text or "").splitlines():
-        if line.strip():
-            return line.strip()
-    return ""
-
-
 def build_payload(run: Run, session_title: str | None) -> dict[str, str]:
-    """푸시 서버를 거치므로 경로·에러 원문은 넣지 않는다. 성공 때만 결과 첫 줄을 붙인다."""
-    parts = [session_title or "새 세션"]
-    if run.status == RunStatus.succeeded:
-        first = _first_line(run.result_text)
-        if first:
-            parts.append(first)
-    body = " · ".join(parts)
+    """푸시 서버를 거치므로 경로·에러 원문은 넣지 않는다."""
+    body = session_title or "새 세션"
     if len(body) > BODY_LIMIT:
         body = body[: BODY_LIMIT - 1] + "…"
     sid = str(run.session_id)
-    return {"title": TITLES.get(run.status, "작업 종료"), "body": body, "url": f"/chat/{sid}", "tag": sid}
+    return {"title": NOTIFY_TITLES.get(run.status, "작업 실패"), "body": body, "url": f"/chat/{sid}", "tag": sid}
 
 
 def _send_sync(sub: dict[str, Any], payload: str) -> int | None:
@@ -106,4 +91,6 @@ async def send_to_all(payload: dict[str, str], *, action: str, target_id: Any = 
 
 
 async def notify_run_finished(run: Run, session_title: str | None) -> None:
+    if run.status not in NOTIFY_TITLES:
+        return
     await send_to_all(build_payload(run, session_title), action="push.run_finished", target_id=run.id)

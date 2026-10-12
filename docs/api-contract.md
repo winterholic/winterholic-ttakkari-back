@@ -120,9 +120,13 @@ VAPID 키는 `~/.ttakkari/vapid.json`(0600)에 있다. `ttakkari gen-vapid` 로 
 | DELETE | `/api/push/subscriptions` | `{endpoint}`. 없어도 204 |
 | POST | `/api/push/test` | 모든 구독에 테스트 알림. `{sent, removed, failed}` |
 
-Run 이 끝나면(`succeeded|failed|cancelled|interrupted`) 모든 구독에 보낸다. payload 는 `{title, body, url, tag}`:
-- `title`: `작업 완료|작업 실패|작업 취소됨|작업 중단됨`
-- `body`: 세션 제목, 성공이면 ` · ` 와 결과 첫 줄. 80자 초과면 자른다. 푸시 서버를 거치므로 경로·에러 원문은 넣지 않는다
+푸시는 필요한 순간에만 간다. 정상 완료·취소·서버 재시작 중단에는 자동 알림이 없다. 보내는 경우는 둘이다.
+- Run 이 오류로 끝났을 때(`failed`): `작업 실패`
+- 에이전트가 MCP `notify_user`(`POST /api/agent/notify`)로 직접 보낼 때: 에이전트가 정한 title·body. 입력이나 승인이 필요해 멈춘 경우도 에이전트가 이 도구로 알린다(서버가 Run 을 멈춰 세우는 승인 상태는 없다)
+
+payload 는 `{title, body, url, tag}`:
+- `title`: 자동 알림은 `작업 실패`
+- `body`: 세션 제목. 80자 초과면 자른다. 푸시 서버를 거치므로 경로·에러 원문은 넣지 않는다
 - `url`: `/chat/<session_id>`, `tag`: session_id (같은 세션 알림은 하나로 합쳐진다)
 
 푸시 서비스가 404/410 을 돌려주면 그 구독을 지운다. 다른 오류는 로그만 남긴다. 발송 결과는 감사 로그 `push.run_finished` 에 집계(`sent|removed|failed`)로 남는다.

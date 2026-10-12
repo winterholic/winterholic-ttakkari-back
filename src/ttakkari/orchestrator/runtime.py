@@ -44,6 +44,8 @@ Do not ask the user for things memory can answer.
 - When the user states a durable fact, preference or decision about themselves or their work, save it with \
 `remember` (one fact per call, written so it reads well out of context). Use `link` for relations \
 (e.g. user —works_on→ project). Never store secrets or credentials.
+- Meeting minutes the user analyzed are readable with `list_meetings`, `get_meeting`, `search_meeting_items` \
+(decisions, open action items). They are read-only; the user approves what enters memory in the app.
 - To hand a file to the user that is not in the outbox, use `share_file`. Finished runs do not notify the \
 user, so call `notify_user` yourself, and only for things they must see now (a result they are waiting for, or \
 when you are blocked and need their input or approval).

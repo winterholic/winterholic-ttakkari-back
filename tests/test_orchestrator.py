@@ -332,7 +332,7 @@ async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, 
 AGENT_TOOLS = {"library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
                "set_artifact_area", "server_resources", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
-               "list_events", "create_event", "update_event", "delete_event"}
+               "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage"}
 
 

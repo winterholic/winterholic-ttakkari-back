@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더
     context_source_roots: list[Path] = [HOME]
 
+    # 회의록(ADR 0010). 전사 한 건의 최대 글자 수(분석 Run 의 인자 길이·컨텍스트 한도), 분석 Run 의 모델·생각 수준(비우면 세션 기본).
+    meeting_transcript_max_chars: int = 120_000
+    meeting_analysis_model: str | None = None
+    meeting_analysis_effort: str | None = "high"
+    # 클로바노트 연동용 브라우저(Playwright) 프로필 폴더. 아직 연동이 없어 읽지 않는다. 인증 정보는 이 폴더 밖 어디에도 두지 않는다.
+    clovanote_profile_dir: Path | None = None
+
     claude_bin: str = "claude"
     codex_bin: str = "codex"
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.

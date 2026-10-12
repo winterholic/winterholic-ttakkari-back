@@ -442,3 +442,86 @@ class CtxChunk(Base):
     heading: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
     embedding: Mapped[Any] = mapped_column(Vector(EMBED_DIM), nullable=True)
+
+
+# ---- 회의록 (ADR 0010)
+class MeetingStatus(enum.StrEnum):
+    uploaded = "uploaded"  # 녹음 보관됨, 전사 전
+    transcribing = "transcribing"  # 전사 Provider 가 처리 중
+    transcribed = "transcribed"  # 전사 텍스트 확보, 분석 전
+    analyzing = "analyzing"  # 분석 Run 진행
+    analyzed = "analyzed"  # 분석 끝, 대기 중인 제안 없음
+    review = "review"  # 분석 끝, 승인 대기 제안 있음
+    failed = "failed"  # failed_stage 가 어느 단계인지 알려 준다
+
+
+class MeetingItemKind(enum.StrEnum):
+    discussion = "discussion"
+    decision = "decision"
+    action = "action"
+    open_issue = "open_issue"
+
+
+class Meeting(Base):
+    __tablename__ = "meetings"
+    __table_args__ = (Index("ix_meetings_created", "created_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200))
+    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.uploaded, index=True)
+    # 연결한 프로젝트(ctx_entities). 없어도 된다.
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True)
+    held_at: Mapped[datetime | None]
+    participants: Mapped[list[Any]] = mapped_column(default=list)
+    source: Mapped[str] = mapped_column(String(10), default="text")  # audio | text
+    audio_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
+    # 전사 Provider 요청 기록. 인증 정보는 여기에 두지 않는다.
+    provider: Mapped[str | None] = mapped_column(String(30))
+    provider_job_id: Mapped[str | None] = mapped_column(String(200))
+    transcript: Mapped[str | None] = mapped_column(Text)
+    transcript_source: Mapped[str | None] = mapped_column(String(40))  # paste | file | provider:<id>
+    summary: Mapped[str | None] = mapped_column(Text)
+    analysis_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))
+    analysis_session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"))
+    # 분석 프롬프트에 넣은 기존 맥락 후보 {"M1": {type, id, text}, "A1": ...}. 충돌 참조는 이 표로만 해석한다.
+    analysis_context: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    failed_stage: Mapped[str | None] = mapped_column(String(20))  # transcription | analysis
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    analyzed_at: Mapped[datetime | None]
+
+
+class MeetingItem(Base):
+    __tablename__ = "meeting_items"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(Text)
+    detail: Mapped[str | None] = mapped_column(Text)
+    owner: Mapped[str | None] = mapped_column(String(100))
+    due: Mapped[str | None] = mapped_column(String(40))
+    evidence: Mapped[str | None] = mapped_column(Text)
+    # 분석이 지목한 기존 기억·액션과의 충돌 [{ref, type, target_id, text, reason, change}]. 반영은 제안으로만 한다.
+    conflicts: Mapped[list[Any]] = mapped_column(default=list)
+    # open | done | cancelled. 액션·미해결 쟁점에만 의미가 있고 나머지는 open 으로 둔다.
+    status: Mapped[str] = mapped_column(String(12), default="open")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class MeetingProposal(Base):
+    """맥락 도서관 반영 제안. 사용자가 승인해야만 기억·액션이 바뀐다(pending → approved | rejected)."""
+
+    __tablename__ = "meeting_proposals"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("meeting_items.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(24))  # add_memory | supersede_memory | update_action_item
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    reason: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    resolved_at: Mapped[datetime | None]

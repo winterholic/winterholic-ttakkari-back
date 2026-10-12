@@ -19,6 +19,7 @@ from ttakkari.api import (
     assistant,
     auth,
     library_insight,
+    meetings,
     orchestrator,
     planner,
     push,
@@ -140,7 +141,8 @@ def create_app() -> FastAPI:
                             status_code=422)
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
-              orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router):
+              orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router,
+              meetings.router, meetings.agent_router):
         app.include_router(r)
     return app
 

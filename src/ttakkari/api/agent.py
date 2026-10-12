@@ -132,9 +132,9 @@ async def forget(body: dict[str, str], sid: AgentSession, db: Db) -> dict[str, A
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "id 가 올바르지 않습니다.") from e
     m = await db.get(CtxMemory, mid)
-    # 사용자가 직접 넣은 기억은 에이전트가 지우지 못한다.
-    if m is not None and m.source == "manual":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "사용자가 넣은 기억은 비서 관리에서만 지울 수 있어요.")
+    # 사용자가 직접 넣은 기억, 사용자가 승인해 만든 회의 결정(source=meeting)은 에이전트가 지우지 못한다.
+    if m is not None and m.source in ("manual", "meeting"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "사용자가 넣거나 승인한 기억은 비서 관리에서만 지울 수 있어요.")
     ok = await store.forget(db, mid)
     await db.commit()
     return {"forgotten": ok}

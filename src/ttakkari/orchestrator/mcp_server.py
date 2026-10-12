@@ -247,6 +247,31 @@ async def delete_event(event_id: str) -> str:
     return await _agent("DELETE", f"/events/{event_id}")
 
 
+# ---- 회의록(ADR 0010). 읽기 전용이다. 제안 승인 같은 반영은 사용자가 앱에서만 한다.
+
+@server.tool()
+async def list_meetings(query: str | None = None, project: str | None = None, status: str | None = None, limit: int = 20) -> str:
+    """List the user's meeting minutes (newest first) with title, project, status, summary and item counts. `project` is a
+    project name or alias; `status` e.g. analyzed or review. Read-only; use get_meeting for the details."""
+    return await _agent("GET", "/meetings", q=query, project=project, status=status, limit=limit)
+
+
+@server.tool()
+async def get_meeting(meeting_id: str) -> str:
+    """Read one meeting: summary, participants and its discussions, decisions, action items (with owner, due, status) and
+    open issues. Decisions the user approved are also in `recall` as memories. Read-only; the raw transcript is only in the app."""
+    return await _agent("GET", f"/meetings/{meeting_id}")
+
+
+@server.tool()
+async def search_meeting_items(query: str | None = None, kind: Literal["discussion", "decision", "action", "open_issue"] | None = None,
+                               status: Literal["open", "done", "cancelled"] | None = None, project: str | None = None,
+                               limit: int = 20) -> str:
+    """Search decisions / action items / open issues across meetings, e.g. kind="action", status="open" for pending work
+    on a project. Each hit names its meeting. Without `query` it lists the newest. Read-only."""
+    return await _agent("GET", "/meetings/search", q=query, kind=kind, status=status, project=project, limit=limit)
+
+
 # ---- 오케스트레이터 전용
 
 def orchestrator_tool(fn):

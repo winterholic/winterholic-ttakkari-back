@@ -256,3 +256,18 @@ payload 는 `{title, body, url, tag}`:
 - `/api/assistant/status`는 `embedder: "none"`, `retrieval: "lexical"`, `model: null`, `ready: true`를 반환한다.
 - 기존 필드는 유지한다. 검색 점수는 확률이 아니며, 문서 결과에는 원문 경로·제목·절·프로젝트·범위·색인 시각을 포함한다.
 
+## 회의록(ADR 0010)
+
+사용자 인증. 오류는 `{code, message}`. 상태: `uploaded → transcribing → transcribed → analyzing → review | analyzed`, 실패는 `failed` + `failed_stage`(transcription | analysis) + `error`.
+
+- `GET /api/meetings/providers`: 전사 Provider 상태 `[{id, label, state: ready|unconfigured|not_implemented, message, profile_configured}]`. 경로·인증 정보는 내보내지 않는다. 클로바노트는 `not_implemented`.
+- `GET /api/meetings?scope=all|personal|work&q=&status=&project_id=&limit=&offset=`: 요약 목록(프로젝트·녹음·`counts`{discussion, decision, action, open_issue, pending_proposals}). 진행 중인 건은 조회 시점에 끝났는지 확인해 반영한다.
+- `POST /api/meetings` `{title, scope?, project_id?, held_at?, participants?, audio_artifact_id?, transcript?, transcript_source?: paste|file}`: 녹음(`POST /api/uploads` 로 먼저 올린 Artifact)이나 전사 텍스트 중 하나는 필요. 전사 텍스트가 있으면 `transcribed`, 녹음만 있으면 `uploaded`. 프로젝트는 회의 범위와 맞아야 한다(`scope_mismatch` 400). 전사는 `meeting_transcript_max_chars`(12만 자) 초과 시 413 `too_large`.
+- `GET /api/meetings/{id}`: 상세(`transcript`, `items[]`, `proposals[]`, `analysis_context[]`). `PATCH` 제목·프로젝트·일시·참석자. `DELETE` 는 승인해 만든 기억과 보관함 녹음을 남긴다.
+- `POST /api/meetings/{id}/transcript` `{text, source?}`: 전사 텍스트 입력·교체(`uploaded|transcribed|failed`).
+- `POST /api/meetings/{id}/transcribe`: 전사 Provider 에 요청(202). 쓸 수 없으면 409 `provider_unavailable` + 사유, 상태는 그대로.
+- `POST /api/meetings/{id}/analyze`(202), `POST /api/meetings/{id}/analyze/cancel`: 분석 Run(기존 Run·엔진 체계)을 시작·취소. 재분석은 항목과 대기 제안만 교체한다.
+- `PATCH /api/meetings/{id}/items/{item_id}` `{status?: open|done|cancelled, text?, owner?, due?}`: 액션·미해결 쟁점의 상태.
+- `POST /api/meetings/{id}/proposals/{pid}/approve|reject`: 제안 처리. 승인만 맥락 도서관(`add_memory`, `supersede_memory`)이나 이전 회의의 액션(`update_action_item`)을 바꾼다. 대상이 이미 바뀌었으면 409 `stale`.
+- 에이전트용(세션 한정 토큰, 읽기 전용, 회사 세션은 회사 회의만): `GET /api/agent/meetings?q=&project=&status=&limit=`, `GET /api/agent/meetings/{id}`, `GET /api/agent/meetings/search?q=&kind=&status=&project=&limit=`. MCP `list_meetings`·`get_meeting`·`search_meeting_items`. 쓰기·승인 경로는 없다.
+

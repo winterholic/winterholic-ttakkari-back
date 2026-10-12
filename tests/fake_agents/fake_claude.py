@@ -6,6 +6,7 @@
 """
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -73,6 +74,30 @@ def main():
         emit({"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "fake failure",
               "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
         return 1
+    if "FAKE_MEETING" in prompt:
+        # 회의록 분석(ADR 0010). 프롬프트에 후보로 준 [M1]·[A1] 참조를 읽어 충돌을 지목하고, 없는 참조(M99)도 일부러 섞는다.
+        refs = re.findall(r"^\[([MA]\d+)\] ", prompt, re.MULTILINE)
+        m_ref = next((r for r in refs if r.startswith("M")), None)
+        a_ref = next((r for r in refs if r.startswith("A")), None)
+        analysis = {
+            "summary": "릴리스 일정과 모바일 우선 전략을 논의했다.",
+            "participants": ["민수", "지연"],
+            "discussions": [{"topic": "릴리스 일정", "summary": "금요일 대신 목요일 배포 논의", "evidence": "목요일에 내자"}],
+            "decisions": [
+                {"text": "릴리스는 목요일로 앞당긴다", "rationale": "고객 일정", "evidence": "목요일에 내자",
+                 "conflicts": ([{"ref": m_ref, "reason": "기존 결정은 금요일 릴리스", "change": "supersede"}] if m_ref else [])
+                 + [{"ref": "M99", "reason": "없는 참조"}]
+                 + ([{"ref": a_ref, "reason": "금요일 배포 준비 액션이 필요 없어짐", "change": "cancel"}] if a_ref else [])},
+                {"text": "모바일 화면을 먼저 만든다", "rationale": None, "evidence": None, "conflicts": []},
+            ],
+            "action_items": [{"text": "배포 체크리스트를 작성한다", "owner": "민수", "due": "수요일", "evidence": None, "conflicts": []}],
+            "open_issues": [{"text": "데이터 이전 시점이 정해지지 않았다", "detail": "지연은 다음 주를 선호", "evidence": None}],
+        }
+        body = "{ not json" if "FAKE_MEETING_BADJSON" in prompt else "분석했습니다.\n```json\n" + json.dumps(analysis, ensure_ascii=False) + "\n```"
+        emit({"type": "assistant", "message": {"content": [{"type": "text", "text": body}]}})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": body, "session_id": sid,
+              "total_cost_usd": 0.01, "num_turns": 1, "duration_ms": 100})
+        return 0
     if "GARBAGE" in prompt:
         print("this line is not json", flush=True)
         print("{broken json", flush=True)

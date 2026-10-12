@@ -11,6 +11,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 
 from ttakkari.api.deps import Db, broker_http
+from ttakkari.api.planner import (
+    EventIn,
+    EventPatch,
+    FromDate,
+    MemoIn,
+    MemoPatch,
+    ToDate,
+    new_event,
+)
 from ttakkari.artifacts import preview
 from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import register_file
@@ -18,8 +27,18 @@ from ttakkari.audit import record
 from ttakkari.broker.policy import BrokerError, ResolvedPath, is_sensitive, is_within
 from ttakkari.config import get_settings
 from ttakkari.context import store
-from ttakkari.models import Artifact, ChatSession, CtxMemory, Run, Workspace
+from ttakkari.models import (
+    Artifact,
+    ChatSession,
+    CtxMemory,
+    Memo,
+    Run,
+    Workspace,
+    utcnow,
+)
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
+from ttakkari.planner import kr_holidays
+from ttakkari.planner import service as planner
 from ttakkari.push.service import PushKind
 from ttakkari.push.service import notify as push_notify
 from ttakkari.schemas import ArtifactOut
@@ -217,3 +236,118 @@ async def read_session(session_id: uuid.UUID, sid: AgentSession, db: Db, last: i
     return {"title": s.title, "kind": s.kind, "turns": [
         {"at": r.created_at.isoformat(), "origin": r.origin, "prompt": r.prompt[:2000],
          "result": (r.result_text or r.error or "")[:2000], "status": r.status} for r in reversed(runs)]}
+
+
+# ---- 메모·캘린더(ADR 0008)
+# 삭제는 되돌릴 수 있는 보관 처리이고, 에이전트가 만든 항목만 지운다(forget 과 같은 정책).
+# 사용자가 쓴 메모 본문은 덮어쓰지 못하고 덧붙이기만 한다.
+
+class AgentMemoPatch(MemoPatch):
+    append: str | None = Field(default=None, max_length=50_000)
+
+
+@router.get("/memos")
+async def agent_list_memos(sid: AgentSession, db: Db, q: str | None = None, tag: str | None = None,
+                           limit: int = 30) -> dict[str, Any]:
+    await _session(db, sid)
+    rows = await db.scalars(planner.memo_query(q, tag).limit(max(1, min(limit, 100))))
+    return {"memos": [planner.memo_out(m, body=False) for m in rows]}
+
+
+@router.get("/memos/{memo_id}")
+async def agent_get_memo(memo_id: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    return planner.memo_out(await planner.get_memo(db, memo_id))
+
+
+@router.post("/memos", status_code=status.HTTP_201_CREATED)
+async def agent_create_memo(body: MemoIn, sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    m = Memo(title=body.title.strip(), body=body.body, tags=planner.clean_tags(body.tags), pinned=body.pinned, source="agent")
+    db.add(m)
+    record(db, actor="agent", action="memo.create", target_type="memo", target_id=m.id, detail={"session": str(sid)})
+    await db.commit()
+    return planner.memo_out(m)
+
+
+@router.patch("/memos/{memo_id}")
+async def agent_patch_memo(memo_id: uuid.UUID, body: AgentMemoPatch, sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    m = await planner.get_memo(db, memo_id)
+    planner.check_rev(m, body.rev)
+    if m.source == "user" and (body.body is not None or body.title is not None):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
+                            "사용자가 쓴 메모의 제목·본문은 고칠 수 없어요. append 로 덧붙이거나 새 메모를 만드세요."})
+    if body.title is not None:
+        m.title = body.title.strip()
+    if body.body is not None:
+        m.body = body.body
+    if body.append:
+        m.body = (m.body.rstrip("\n") + "\n\n" if m.body else "") + body.append
+    if body.tags is not None:
+        m.tags = planner.clean_tags(body.tags)
+    if body.pinned is not None:
+        m.pinned = body.pinned
+    m.rev += 1
+    m.updated_at = utcnow()
+    record(db, actor="agent", action="memo.update", target_type="memo", target_id=m.id, detail={"session": str(sid)})
+    await db.commit()
+    return planner.memo_out(m)
+
+
+@router.delete("/memos/{memo_id}")
+async def agent_delete_memo(memo_id: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    m = await planner.get_memo(db, memo_id)
+    if m.source != "agent":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
+                            "사용자가 쓴 메모는 앱에서만 지울 수 있어요."})
+    m.deleted_at = utcnow()
+    record(db, actor="agent", action="memo.archive", target_type="memo", target_id=m.id, detail={"session": str(sid)})
+    await db.commit()
+    return {"archived": True}
+
+
+@router.get("/events")
+async def agent_list_events(sid: AgentSession, db: Db, from_: FromDate, to: ToDate,
+                            q: str | None = None) -> dict[str, Any]:
+    """구간의 일정(반복 일정은 펼쳐서)과 그 구간의 한국 공휴일."""
+    await _session(db, sid)
+    return {"events": await planner.list_events(db, from_, to, q), "holidays": kr_holidays.holidays_between(from_, to)}
+
+
+@router.post("/events", status_code=status.HTTP_201_CREATED)
+async def agent_create_event(body: EventIn, sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    ev = new_event(body, "agent")
+    db.add(ev)
+    record(db, actor="agent", action="calendar.create", target_type="calendar_event", target_id=ev.id,
+           detail={"session": str(sid)})
+    await db.commit()
+    return planner.event_out(ev)
+
+
+@router.patch("/events/{event_id}")
+async def agent_patch_event(event_id: uuid.UUID, body: EventPatch, sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    ev = await planner.get_event(db, event_id)
+    planner.apply_event_fields(ev, body.model_dump(exclude_unset=True))
+    ev.updated_at = utcnow()
+    record(db, actor="agent", action="calendar.update", target_type="calendar_event", target_id=ev.id,
+           detail={"session": str(sid)})
+    await db.commit()
+    return planner.event_out(ev)
+
+
+@router.delete("/events/{event_id}")
+async def agent_delete_event(event_id: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    ev = await planner.get_event(db, event_id)
+    if ev.source != "agent":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
+                            "사용자가 만든 일정은 앱에서만 지울 수 있어요."})
+    ev.deleted_at = utcnow()
+    record(db, actor="agent", action="calendar.archive", target_type="calendar_event", target_id=ev.id,
+           detail={"session": str(sid)})
+    await db.commit()
+    return {"archived": True}

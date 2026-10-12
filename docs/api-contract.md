@@ -163,6 +163,43 @@ payload 는 `{title, body, url, tag}`:
 | POST | `/api/accounts/reorder` | `{ids}` 전체 순서 → 목록 |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 
+## 메모·캘린더(ADR 0008)
+
+모두 사용자 토큰. 시각은 Asia/Seoul 벽시계 문자열이다: 시간 일정 `YYYY-MM-DDTHH:MM`(오프셋이 있으면 KST 로 환산), 종일 `YYYY-MM-DD`(**끝 날짜 포함**). 오류는 공통 형식 `{code, message}`; 검증 실패 422 `validation`.
+
+### 메모
+`MemoOut`: `{id, title, tags[], pinned, source(user|agent), rev, excerpt, created_at, updated_at, body}`. 목록에는 `body` 가 없다.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/memos?q=&tag=&pinned=&limit=&offset=` | `{memos}`. 고정 먼저, 최근 수정 순. `q` 는 제목·본문·태그 부분 일치 |
+| GET | `/api/memos/tags` | `{tags: [{name, count}]}` |
+| POST | `/api/memos` | `{title?, body?, tags?, pinned?}` → 201. 태그는 앞의 `#`·중복을 정리, 최대 20개·30자 |
+| GET | `/api/memos/{id}` | 본문 포함 |
+| PATCH | `/api/memos/{id}` | `{title?, body?, tags?, pinned?, rev?}`. `rev` 가 현재와 다르면 409 `conflict`(자동 저장 충돌). 성공하면 `rev` +1 |
+| DELETE | `/api/memos/{id}` | 204. 완전 삭제 |
+
+### 일정
+`EventOut`: `{id, title, description, location, all_day, start, end, rrule, recurring, source, created_at, updated_at}`. 목록의 `start`/`end` 는 그 **발생분**의 구간이고, `GET /{id}` 는 시리즈 자체의 구간이다.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD&q=` | `{events}` 시작 순. 반복 일정은 구간 안 발생분으로 펼친다. 구간 최대 400일(넘으면 422) |
+| POST | `/api/calendar/events` | `{title, start, end?, all_day?, description?, location?, rrule?}` → 201. `end` 생략: 종일은 하루, 시간은 1시간 |
+| GET | `/api/calendar/events/{id}` | 시리즈 |
+| PATCH | `/api/calendar/events/{id}` | 보낸 필드만. `all_day` 를 바꾸면 `start`·`end` 도 같이(아니면 422). `rrule: ""` 은 반복 해제. 반복이면 시리즈 전체가 바뀐다 |
+| DELETE | `/api/calendar/events/{id}` | 204. 완전 삭제 |
+| GET | `/api/calendar/holidays?from=&to=` | `{holidays: [{date, name, substitute}], coverage: {from_year, to_year}}`. 한국 공휴일(대체공휴일은 `substitute: true`). 2000~2050년, 구간 최대 400일 |
+
+`rrule`: `RRULE:` 접두사는 있어도 없어도 된다. `FREQ=DAILY|WEEKLY|MONTHLY|YEARLY` 만 허용하고 `DTSTART` 는 넣지 않는다(일정 `start` 가 DTSTART). 잘못된 규칙은 422.
+
+### 에이전트용(MCP 서버가 부름, 세션 한정 토큰)
+`GET|POST /api/agent/memos`, `GET|PATCH|DELETE /api/agent/memos/{id}`, `GET|POST /api/agent/events`, `PATCH|DELETE /api/agent/events/{id}`.
+- `GET /api/agent/events?from=&to=&q=` → `{events, holidays}`.
+- `PATCH /api/agent/memos/{id}` 는 `append` 도 받는다. 사용자 메모의 `title`·`body` 를 바꾸려 하면 403 `user_owned`.
+- `DELETE` 는 보관 처리 `{archived: true}`. 에이전트가 만든 항목만 되고, 사용자가 만든 것은 403 `user_owned`.
+- MCP 도구: `list_memos` `search_memos` `get_memo` `create_memo` `update_memo` `delete_memo` `list_events` `create_event` `update_event` `delete_event`.
+
 ## 폰 → 컴퓨터 파일 보내기
 
 목적지는 기본 워크스페이스의 실행 위치와 권한 폴더 안(`~/.ttakkari` 제외). 사진은 서버에서 손질한다: HEIC → JPG(`convert_heic`, 기본 켬), EXIF 방향대로 회전, 위치 정보 삭제(`strip_location`, 기본 켬), `image.jpg` 같은 뻔한 이름은 촬영 시각 `IMG_YYYYMMDD_HHMMSS`, 같은 이름은 `이름 (2)`.

@@ -17,7 +17,8 @@ ROLE = os.environ.get("TTK_ROLE", "orchestrator")
 server = MCPServer(
     name="ttakkari",
     instructions="The user's own Ttakkari app: long-term memory about the user (recall/remember/link), files "
-                 "(list_artifacts/share_file), notifications and other conversations."
+                 "(list_artifacts/share_file), notifications, other conversations, and the user's memos and calendar "
+                 "(Asia/Seoul)."
                  + (" As orchestrator, delegate work with spawn_worker; results come back as '[작업 보고]' messages, "
                     "so do not poll." if ROLE == "orchestrator" else ""),
 )
@@ -116,6 +117,83 @@ async def list_sessions(limit: int = 20) -> str:
 async def read_session(session_id: str, last: int = 10) -> str:
     """Read the last turns (instruction and result) of another conversation."""
     return await _agent("GET", f"/sessions/{session_id}", last=last)
+
+
+# ---- 메모·캘린더(ADR 0008). 시각은 모두 Asia/Seoul 이다.
+
+@server.tool()
+async def list_memos(tag: str | None = None, limit: int = 30) -> str:
+    """List the user's memos (pinned first, then newest). Returns title, tags and a short excerpt; use get_memo
+    for the full Markdown body."""
+    return await _agent("GET", "/memos", tag=tag, limit=limit)
+
+
+@server.tool()
+async def search_memos(query: str, limit: int = 20) -> str:
+    """Search memos by words in the title, body or tags."""
+    return await _agent("GET", "/memos", q=query, limit=limit)
+
+
+@server.tool()
+async def get_memo(memo_id: str) -> str:
+    """Read one memo with its full Markdown body and current `rev`."""
+    return await _agent("GET", f"/memos/{memo_id}")
+
+
+@server.tool()
+async def create_memo(body: str, title: str = "", tags: list[str] | None = None, pinned: bool = False) -> str:
+    """Save a new memo (Markdown). Use for 'jot this down' requests. Give a short title and 1-3 tags when obvious."""
+    return await _agent("POST", "/memos", {"title": title, "body": body, "tags": tags or [], "pinned": pinned})
+
+
+@server.tool()
+async def update_memo(memo_id: str, append: str | None = None, body: str | None = None, title: str | None = None,
+                      tags: list[str] | None = None, pinned: bool | None = None, rev: int | None = None) -> str:
+    """Edit a memo. On memos the user wrote you may only `append` text and change tags/pinned; title and body can be
+    replaced only on memos you created. Pass `rev` from get_memo to avoid overwriting a newer edit."""
+    patch = {"append": append, "body": body, "title": title, "tags": tags, "pinned": pinned, "rev": rev}
+    return await _agent("PATCH", f"/memos/{memo_id}", {k: v for k, v in patch.items() if v is not None})
+
+
+@server.tool()
+async def delete_memo(memo_id: str) -> str:
+    """Archive (soft-delete) a memo you created. Memos the user wrote cannot be deleted by you."""
+    return await _agent("DELETE", f"/memos/{memo_id}")
+
+
+@server.tool()
+async def list_events(start_date: str, end_date: str, query: str | None = None) -> str:
+    """List calendar events from start_date to end_date (YYYY-MM-DD, inclusive, at most 400 days), with recurring
+    events already expanded, plus Korean public holidays in that range. Times are Asia/Seoul wall time:
+    all-day events use dates, timed events use YYYY-MM-DDTHH:MM (end of an all-day event is inclusive)."""
+    return await _agent("GET", "/events", **{"from": start_date, "to": end_date, "q": query})
+
+
+@server.tool()
+async def create_event(title: str, start: str, end: str | None = None, all_day: bool = False,
+                       description: str = "", location: str = "", rrule: str | None = None) -> str:
+    """Create an event in Asia/Seoul time. All-day: start/end are YYYY-MM-DD (end inclusive, defaults to start).
+    Timed: YYYY-MM-DDTHH:MM (end defaults to one hour later). `rrule` optional, e.g. 'FREQ=WEEKLY;BYDAY=MO;COUNT=10'
+    (DAILY/WEEKLY/MONTHLY/YEARLY only)."""
+    return await _agent("POST", "/events", {"title": title, "start": start, "end": end, "all_day": all_day,
+                                            "description": description, "location": location, "rrule": rrule})
+
+
+@server.tool()
+async def update_event(event_id: str, title: str | None = None, start: str | None = None, end: str | None = None,
+                       all_day: bool | None = None, description: str | None = None, location: str | None = None,
+                       rrule: str | None = None) -> str:
+    """Change fields of an event (the whole series if it recurs). Send only what changes; when changing all_day,
+    send start and end too. An empty `rrule` makes it non-recurring."""
+    patch = {"title": title, "start": start, "end": end, "all_day": all_day, "description": description,
+             "location": location, "rrule": rrule}
+    return await _agent("PATCH", f"/events/{event_id}", {k: v for k, v in patch.items() if v is not None})
+
+
+@server.tool()
+async def delete_event(event_id: str) -> str:
+    """Archive (soft-delete) an event you created. Events the user made cannot be deleted by you; tell them to remove it in the app."""
+    return await _agent("DELETE", f"/events/{event_id}")
 
 
 # ---- 오케스트레이터 전용

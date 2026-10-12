@@ -270,6 +270,42 @@ class PushSubscription(Base):
     last_success_at: Mapped[datetime | None]
 
 
+# ---- 메모·캘린더 (ADR 0008)
+class Memo(Base):
+    """마크다운 메모. rev 는 낙관적 잠금(자동 저장·에이전트 수정이 서로 덮어쓰지 않게). deleted_at 은 에이전트의 보관 삭제."""
+
+    __tablename__ = "memos"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    tags: Mapped[list[Any]] = mapped_column(default=list)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
+    rev: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+    deleted_at: Mapped[datetime | None]
+
+
+class CalendarEvent(Base):
+    """일정. 시각은 Asia/Seoul 기준이다. 종일 일정은 start_at=시작일 0시, end_at=마지막 날 다음 날 0시(끝 제외, iCal 방식).
+    rrule 이 있으면 start_at 을 DTSTART 로 하는 반복 일정이고, 조회할 때 구간만 펼친다."""
+
+    __tablename__ = "calendar_events"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    location: Mapped[str] = mapped_column(String(200), default="")
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    start_at: Mapped[datetime] = mapped_column(index=True)
+    end_at: Mapped[datetime]
+    rrule: Mapped[str | None] = mapped_column(String(500))
+    source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    deleted_at: Mapped[datetime | None]
+
+
 # ---- 비서 맥락: 온톨로지 + RAG (ADR 0007)
 EMBED_DIM = 1024
 

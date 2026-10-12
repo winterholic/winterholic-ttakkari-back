@@ -10,6 +10,7 @@ dependencies = [
     "asyncpg>=0.32.0",
     "fastapi>=0.115",
     "fastembed>=0.9.0",
+    "holidays>=0.106",
     "httpx>=0.28.1",
     "mcp>=2.3.0",
     "pgvector>=0.5.1",

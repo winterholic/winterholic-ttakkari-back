@@ -5,6 +5,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -18,6 +19,7 @@ from ttakkari.api import (
     assistant,
     auth,
     orchestrator,
+    planner,
     push,
     sessions,
     system,
@@ -29,6 +31,7 @@ from ttakkari.config import get_settings
 from ttakkari.context.embedder import warmup as embedder_warmup
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
+from ttakkari.planner import kr_holidays
 from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
@@ -73,6 +76,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning("default workspace not created: %s", e)
     await preview.start_worker()
     embedder_warmup()
+    kr_holidays.warm(datetime.now(UTC).year)
     retention = asyncio.create_task(_retention_loop())
     try:
         yield
@@ -111,7 +115,7 @@ def create_app() -> FastAPI:
                             status_code=422)
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
-              orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router):
+              orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, planner.router):
         app.include_router(r)
     return app
 

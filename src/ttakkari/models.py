@@ -158,8 +158,11 @@ class EngineAccount(Base):
     config_dir: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
-    # 회사 그룹 태그(personal | work). 순서·켜기는 전체 목록 하나이고, work 는 회사 업무 탭이 쓰는 부분집합이다.
+    # 회사 모드 포함 여부(personal | work). 모든 계정은 개인 목록에 있고, work 는 그중 회사 모드에도 쓰려고 고른 계정이다.
     pool: Mapped[str] = mapped_column(String(16), default="personal", index=True)
+    # 회사 모드 전용 켜기·순서. enabled·priority(개인 모드)와 독립이고, pool=work 인 계정에만 의미가 있다.
+    work_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    work_priority: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 

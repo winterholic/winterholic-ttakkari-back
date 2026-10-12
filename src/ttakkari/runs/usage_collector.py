@@ -78,7 +78,7 @@ class Collector:
         s = get_settings()
         now = now if now is not None else time.time()
         async with sessionmaker()() as db:
-            rows = [(a.id, a.engine, a.config_dir) for a in await profiles.accounts(db) if a.enabled]
+            rows = [(a.id, a.engine, a.config_dir) for a in await profiles.accounts(db) if profiles.is_on(a) or profiles.is_on(a, "work")]
         live = {r[0] for r in rows}
         for gone in set(self._state) - live:
             del self._state[gone]

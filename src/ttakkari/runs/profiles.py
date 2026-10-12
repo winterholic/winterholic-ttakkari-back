@@ -88,11 +88,21 @@ async def accounts(db: AsyncSession) -> list[EngineAccount]:
 
 
 OVERRIDE_KEY = "account_priority_override"
+WORK_OVERRIDE_KEY = "account_priority_override:work"
 
 
-async def get_override(db: AsyncSession) -> dict | None:
-    """임시 우선순위 {ids, until(ISO)}. 개인 전체 목록에 하나만 있다(회사 그룹도 그 순서를 따른다). 기한이 지났으면 None."""
-    row = await db.get(AppSetting, OVERRIDE_KEY)
+def override_key(pool: str) -> str:
+    return WORK_OVERRIDE_KEY if pool == "work" else OVERRIDE_KEY
+
+
+def is_on(a: EngineAccount, pool: str = "personal") -> bool:
+    """그 모드에서 켜져 있는지. 개인 모드는 enabled, 회사 모드는 회사에 들어온 계정의 work_enabled 로 따로 센다."""
+    return (a.pool == "work" and a.work_enabled) if pool == "work" else a.enabled
+
+
+async def get_override(db: AsyncSession, pool: str = "personal") -> dict | None:
+    """임시 우선순위 {ids, until(ISO)}. 개인·회사 모드가 따로 가진다. 기한이 지났으면 None."""
+    row = await db.get(AppSetting, override_key(pool))
     if row is None or not row.value.get("ids"):
         return None
     try:
@@ -103,16 +113,19 @@ async def get_override(db: AsyncSession) -> dict | None:
 
 
 async def effective_order(db: AsyncSession, pool: str = "personal") -> list[EngineAccount]:
-    """지금 적용되는 순서. 임시 우선순위가 살아 있으면 그 순서가 먼저, 나머지는 기본 순서로 뒤에 붙는다.
+    """그 모드에서 지금 적용되는 순서. 임시 우선순위가 살아 있으면 그 순서가 먼저, 나머지는 기본 순서로 뒤에 붙는다.
 
-    pool="personal" 은 회사 그룹까지 포함한 전체 목록, "work" 는 그 전체 순서에서 회사 그룹만 거른 것이다.
+    personal 은 모든 계정을 priority 순으로, work 는 회사에 들어온 계정만 work_priority 순으로 본다.
     """
     rows = await accounts(db)
-    ov = await get_override(db)
+    if pool == "work":
+        rows = sorted((a for a in rows if a.pool == "work"), key=lambda a: (a.work_priority, a.priority))
+    ov = await get_override(db, pool)
     if ov:
         rank = {aid: i for i, aid in enumerate(ov["ids"])}
-        rows = sorted(rows, key=lambda a: (rank.get(str(a.id), len(rank)), a.priority))
-    return [a for a in rows if a.pool == "work"] if pool == "work" else rows
+        base = {a.id: i for i, a in enumerate(rows)}
+        rows = sorted(rows, key=lambda a: (rank.get(str(a.id), len(rank)), base[a.id]))
+    return rows
 
 
 async def availability(db: AsyncSession, session_engine: str, pool: str = "personal") -> tuple[list[Profile], list[tuple[Profile, float]]]:
@@ -120,7 +133,7 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
     free: list[Profile] = []
     blocked: list[tuple[Profile, float]] = []
     for a in await effective_order(db, pool):
-        if not a.enabled or not (session_engine == "auto" or a.engine == session_engine):
+        if not is_on(a, pool) or not (session_engine == "auto" or a.engine == session_engine):
             continue
         p = _profile(a)
         until = limited_until(p.id)

@@ -63,11 +63,11 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
 
 
 async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
-    """pool 은 부른 오케스트레이터 세션의 범위. work 면 회사 그룹 계정만, personal 이면 전체(scope 로 구분)."""
+    """pool 은 부른 오케스트레이터 세션의 범위. work 면 회사에 들어온 계정만 회사 순서·켜기로, personal 이면 전체를 개인 순서·켜기로(scope 로 구분)."""
     s = get_settings()
     now = time.time()
     counts = profiles.running_counts()
-    override = await profiles.get_override(db)
+    override = await profiles.get_override(db, pool)
     out = []
     order = await profiles.effective_order(db, pool)
     hist = await usage_store.history(db, [a.id for a in order], now=now)
@@ -78,8 +78,8 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
             reason = "cooldown" if profiles.cooldown_until(a.id) else "usage_window"
         orch = s.orchestrator_fallback_models.get(a.engine)
         out.append({
-            "name": a.name, "engine": a.engine, "scope": a.pool, "enabled": a.enabled, "priority": rank,
-            "available": a.enabled and not until,
+            "name": a.name, "engine": a.engine, "scope": a.pool, "enabled": profiles.is_on(a, pool), "priority": rank,
+            "available": profiles.is_on(a, pool) and not until,
             "limit": {"waiting": bool(until), "until": _iso(until), "reason": reason},
             "running_runs": counts.get(a.id, 0),
             "models": s.engine_models.get(a.engine, []),

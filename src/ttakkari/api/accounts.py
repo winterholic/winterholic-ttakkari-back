@@ -1,4 +1,6 @@
-"""엔진 계정 관리(ADR 0006). 이름·엔진·계정 폴더·켜기·우선순위. 순서가 사용량 한도 폴백 순서다."""
+"""엔진 계정 관리(ADR 0006). 이름·엔진·계정 폴더·켜기·우선순위. 순서가 사용량 한도 폴백 순서다.
+
+계정 추가·삭제는 개인 목록에서만 한다. 그중 회사 모드에도 쓸 계정을 고르면(pool=work) 회사 모드가 자기 순서·켜기·임시 순서를 따로 가진다."""
 
 from __future__ import annotations
 
@@ -58,10 +60,13 @@ class AccountIn(BaseModel):
 
 class AccountPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=60)
-    # 회사 그룹에 넣기/빼기. 전체 목록에서의 순서는 그대로다.
+    # work 로 회사 모드에 넣고(회사 순서 맨 뒤, 회사 모드에서 켠 채로), personal 로 뺀다. 개인 모드 순서·켜기는 그대로다.
     pool: Pool | None = None
     config_dir: str | None = Field(default=None, max_length=1024)
+    # 개인 모드 켜기
     enabled: bool | None = None
+    # 회사 모드 켜기. 개인 모드 enabled 와 독립이다. 회사에 들어온 계정에만 쓸 수 있다.
+    work_enabled: bool | None = None
 
     @field_validator("config_dir")
     @classmethod
@@ -81,6 +86,9 @@ class AccountOut(BaseModel):
     config_dir: str | None
     enabled: bool
     priority: int
+    # 회사 모드의 켜기·순서(pool=work 일 때만 의미). 개인 모드의 enabled·priority 와 독립이다.
+    work_enabled: bool
+    work_priority: int
     # ok(로그인 확인) | unknown(확인 못 함) | missing(계정 폴더 없음)
     login: str
     login_label: str | None
@@ -100,10 +108,14 @@ def login_command(engine: str, config_dir: str | None) -> str:
     return f"CODEX_HOME={config_dir} codex login" if config_dir else "codex login"
 
 
+def _next_work_priority(rows: list[EngineAccount]) -> int:
+    return max((r.work_priority for r in rows if r.pool == "work"), default=-1) + 1
+
+
 def _out(a: EngineAccount) -> AccountOut:
     login, label = profiles.identity(a.engine, a.config_dir)
     return AccountOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, config_dir=a.config_dir, enabled=a.enabled,
-                      priority=a.priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
+                      priority=a.priority, work_enabled=a.work_enabled, work_priority=a.work_priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
                       login_command=None if login == "ok" else login_command(a.engine, a.config_dir))
 
 
@@ -134,7 +146,8 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
         raise HTTPException(status.HTTP_409_CONFLICT, f"계정은 {MAX_ACCOUNTS}개까지입니다.")
     top = await db.scalar(select(func.max(EngineAccount.priority)))
     a = EngineAccount(id=uuid.uuid4(), name=body.name.strip(), engine=body.engine, config_dir=body.config_dir,
-                      enabled=body.enabled, priority=(top if top is not None else -1) + 1, pool=body.pool)
+                      enabled=body.enabled, priority=(top if top is not None else -1) + 1, pool=body.pool,
+                      work_enabled=body.enabled, work_priority=_next_work_priority(rows))
     if a.config_dir is None and any(r.engine == body.engine and r.config_dir is None for r in rows):
         # 같은 엔진의 기본 계정(~/.claude·~/.codex)이 이미 있으면, 새 계정의 로그인 보관 폴더는 따까리가 만든다.
         # 사용자는 폴더를 몰라도 된다. 작업공간과는 무관하고 로그인 정보만 따로 둔다.
@@ -161,36 +174,36 @@ class OverrideOut(BaseModel):
 
 
 @router.get("/override", response_model=OverrideOut)
-async def get_override(_: User, db: Db) -> OverrideOut:
-    ov = await profiles.get_override(db)
+async def get_override(_: User, db: Db, pool: Pool = "personal") -> OverrideOut:
+    ov = await profiles.get_override(db, pool)
     if not ov:
         return OverrideOut(active=False)
     return OverrideOut(active=True, ids=ov["ids"], until=ov["until"])
 
 
 @router.put("/override", response_model=OverrideOut)
-async def put_override(body: OverrideIn, _: User, db: Db, request: Request) -> OverrideOut:
-    """정한 시각까지만 이 순서로 쓴다(전체 목록 기준, 회사 업무 탭은 그중 회사 그룹만 따른다). 지나면 저절로 기본 순서로 돌아간다."""
+async def put_override(body: OverrideIn, _: User, db: Db, request: Request, pool: Pool = "personal") -> OverrideOut:
+    """정한 시각까지만 이 순서로 쓴다(pool 의 개인·회사 모드마다 따로). 지나면 저절로 기본 순서로 돌아간다."""
     until = body.until if body.until.tzinfo else body.until.replace(tzinfo=UTC)
     if until <= utcnow():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_input", "message": "끝나는 시각이 이미 지났어요."})
-    known = {a.id for a in await profiles.accounts(db)}
+    known = {a.id for a in await profiles.accounts(db) if pool == "personal" or a.pool == "work"}
     if not set(body.ids) <= known:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_input", "message": "없는 계정이 섞여 있어요."})
-    row = await db.get(AppSetting, profiles.OVERRIDE_KEY)
+    row = await db.get(AppSetting, profiles.override_key(pool))
     value = {"ids": [str(i) for i in body.ids], "until": until.isoformat()}
     if row is None:
-        db.add(AppSetting(key=profiles.OVERRIDE_KEY, value=value))
+        db.add(AppSetting(key=profiles.override_key(pool), value=value))
     else:
         row.value = value
-    record(db, action="account.override", detail=value, ip=client_ip(request))
+    record(db, action="account.override", detail={**value, "pool": pool}, ip=client_ip(request))
     await db.commit()
     return OverrideOut(active=True, ids=body.ids, until=until)
 
 
 @router.delete("/override", status_code=204)
-async def delete_override(_: User, db: Db) -> None:
-    row = await db.get(AppSetting, profiles.OVERRIDE_KEY)
+async def delete_override(_: User, db: Db, pool: Pool = "personal") -> None:
+    row = await db.get(AppSetting, profiles.override_key(pool))
     if row is not None:
         await db.delete(row)
         await db.commit()
@@ -215,6 +228,9 @@ class AccountUsageOut(BaseModel):
     pool: str
     enabled: bool
     rank: int
+    # 회사 모드의 켜기·순위. 회사에 들어온 계정(pool=work)만 work_rank 가 있다.
+    work_enabled: bool
+    work_rank: int | None
     login: str
     cooldown_seconds: int
     windows: list[UsageWindowOut]
@@ -227,13 +243,15 @@ class AccountUsageOut(BaseModel):
 
 @router.get("/usage", response_model=list[AccountUsageOut])
 async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]:
-    """계정별 사용량. 전체 목록의 지금 적용되는 순서(임시 순서 반영), rank 는 그 순서의 번호. 계정마다 2분 캐시, refresh 면 새로."""
+    """계정별 사용량. 개인 모드의 지금 적용되는 순서(임시 순서 반영), rank 는 그 순서의 번호, work_rank 는 회사 모드 순서의 번호. 계정마다 2분 캐시, refresh 면 새로."""
     ordered = list(enumerate(await profiles.effective_order(db)))
+    work_rank = {a.id: i + 1 for i, a in enumerate(await profiles.effective_order(db, "work"))}
 
     async def one(i: int, a: EngineAccount) -> AccountUsageOut:
         login, _label = profiles.identity(a.engine, a.config_dir)
         u = await usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=refresh)
-        return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1, login=login,
+        return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,
+                               work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=login,
                                cooldown_seconds=profiles.cooldown_remaining(a.id),
                                windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
                                reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
@@ -248,16 +266,24 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: 
     data = body.model_dump(exclude_unset=True)
     if "name" in data and data["name"] is not None:
         data["name"] = data["name"].strip()
-    if data.get("pool") is None:
-        data.pop("pool", None)
+    for k in ("pool", "enabled", "work_enabled"):
+        if k in data and data[k] is None:
+            del data[k]
+    if data.get("pool") == "work" and a.pool != "work":
+        # 회사 모드에 들일 때는 회사 순서 맨 뒤에 켠 채로 놓는다. 개인 모드 순서·켜기는 건드리지 않는다.
+        data["work_priority"] = _next_work_priority(await profiles.accounts(db))
+        data.setdefault("work_enabled", True)
+    if data.get("work_enabled") is not None and (data.get("pool") or a.pool) != "work":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "회사 모드에 넣은 계정만 회사 모드 켜기를 바꿀 수 있어요.")
     for k, v in data.items():
         setattr(a, k, v)
-    if data.get("enabled"):
+    revived = bool(data.get("enabled") or data.get("work_enabled"))
+    if revived:
         # 다시 켜면 한도 대기도 풀어 바로 쓰게 한다.
         profiles.clear_cooldown(a.id)
     record(db, action="account.update", target_type="account", target_id=a.id, detail=data, ip=client_ip(request))
     await _commit(db)
-    if data.get("enabled"):
+    if revived:
         await manager.release_waiting()
     return _out(a)
 
@@ -273,20 +299,28 @@ async def delete_account(account_id: uuid.UUID, _: User, db: Db, request: Reques
 
 
 @router.post("/reorder", response_model=list[AccountOut])
-async def reorder(body: ReorderIn, _: User, db: Db) -> list[AccountOut]:
-    """Put submitted accounts first; preserve the relative order of accounts added since the client read the list."""
-    current = await profiles.accounts(db)
+async def reorder(body: ReorderIn, _: User, db: Db, pool: Pool = "personal") -> list[AccountOut]:
+    """pool 모드의 기본 순서. 보낸 계정을 앞에 두고, 읽은 뒤 새로 생긴 계정은 기존 상대 순서로 뒤에 둔다.
+
+    personal 은 모든 계정이 대상이고 priority 를, work 는 회사에 들어온 계정만 대상이고 work_priority 를 바꾼다."""
+    everyone = await profiles.accounts(db)
+    current = [a for a in everyone if pool == "personal" or a.pool == "work"]
+    if pool == "work":
+        current.sort(key=lambda a: (a.work_priority, a.priority))
     rows = {a.id: a for a in current}
     supplied = set(body.ids)
     unknown = supplied - set(rows)
     duplicate_count = len(body.ids) - len(supplied)
     if unknown or duplicate_count:
-        log.warning("account reorder rejected: received=%d duplicate=%d unknown=%d current=%d missing=%d",
-                    len(body.ids), duplicate_count, len(unknown), len(rows), len(set(rows) - supplied))
+        log.warning("account reorder rejected: pool=%s received=%d duplicate=%d unknown=%d current=%d missing=%d",
+                    pool, len(body.ids), duplicate_count, len(unknown), len(rows), len(set(rows) - supplied))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "모든 계정 id 를 한 번씩 보내야 합니다.")
     ordered = [rows[aid] for aid in body.ids] + [a for a in current if a.id not in supplied]
     for i, account in enumerate(ordered):
-        account.priority = i
+        if pool == "work":
+            account.work_priority = i
+        else:
+            account.priority = i
     await db.commit()
     return [_out(a) for a in ordered]
 

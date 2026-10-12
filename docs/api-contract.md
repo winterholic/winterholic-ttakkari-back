@@ -42,7 +42,7 @@
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | `/api/sessions?workspace_id=&include_archived=&limit=` | `SessionOut[]` (최근 갱신순). `active_run_id`, `last_run_status`, `pool` 포함. `&pool=work` 면 회사 업무 대화만 |
-| POST | `/api/sessions` | `{workspace_id, title?, engine?, model?, effort?, kind?, pool?}` → 201. `pool`: `personal`(기본, 전체 계정 목록 순서) \| `work`(회사 그룹 계정만). 작업 세션은 오케스트레이터 값을 물려받는다 |
+| POST | `/api/sessions` | `{workspace_id, title?, engine?, model?, effort?, kind?, pool?}` → 201. `pool`: `personal`(기본, 모든 계정을 개인 모드 순서·켜기로) \| `work`(회사에 들어온 계정만 회사 모드 순서·켜기로). 작업 세션은 오케스트레이터 값을 물려받는다 |
 | GET/PATCH | `/api/sessions/{id}` | PATCH: `{title?, model?, effort?, archived?}` |
 | GET | `/api/sessions/{id}/runs` | `RunOut[]` (오래된 순 = 대화 순서) |
 | POST | `/api/sessions/{id}/runs` | `{prompt, context_artifact_ids?, model?, effort?}` → 202 `RunOut`. 실행 중 Run 이 있으면 `queued` 로 세션 대기열에 들어가 앞 Run 이 끝나면 순서대로 시작한다(여러 기기가 동시에 보내도 한 번에 하나) |
@@ -158,23 +158,23 @@ payload 는 `{title, body, url, tag}`:
 | POST | `/api/orchestrator/context/reset` | 메인 자신의 대화를 새로 시작. `{applies: "after this turn" \| "next turn"}` |
 | GET | `/api/orchestrator/workers/{id}` | 상세(결과 4000자·오류·결과물 이름) |
 | POST | `/api/orchestrator/workers/{id}/stop` | 대기·실행 Run 취소 |
-| GET | `/api/orchestrator/accounts/usage` | 계정별 배정 판단 정보(MCP `account_usage`). `{measured_at, priority_override_until, note, accounts:[{name, engine, scope, enabled, priority, available, limit:{waiting, until, reason(cooldown/usage_window)}, running_runs, models, orchestrator_model, usage:{source, plan, measured_at, age_seconds, stale, min_remaining_percent, five_hour, weekly, model_weekly, error} 또는 null}]}`. 시각은 KST 오프셋 ISO, 윈도우는 `{used_percent, remaining_percent, resets_at, reset_since_measured, resets_in_seconds, burn_percent_per_hour, exhausts_in_seconds, exhausts_before_reset}`(소모 속도는 DB 측정 이력에서 계산, 이력이 짧으면 null). 값은 수집기(계정당 약 5분, 실행 중·잔여 20% 미만이면 약 1.5분)와 실행 스트림이 채운다. 캐시된 값만 쓰고 새로 조회·인증 파일 읽기·폴더/이메일/토큰 노출이 없다. 회사 업무 오케스트레이터는 회사 그룹만 |
+| GET | `/api/orchestrator/accounts/usage` | 계정별 배정 판단 정보(MCP `account_usage`). `{measured_at, priority_override_until, note, accounts:[{name, engine, scope, enabled, priority, available, limit:{waiting, until, reason(cooldown/usage_window)}, running_runs, models, orchestrator_model, usage:{source, plan, measured_at, age_seconds, stale, min_remaining_percent, five_hour, weekly, model_weekly, error} 또는 null}]}`. 시각은 KST 오프셋 ISO, 윈도우는 `{used_percent, remaining_percent, resets_at, reset_since_measured, resets_in_seconds, burn_percent_per_hour, exhausts_in_seconds, exhausts_before_reset}`(소모 속도는 DB 측정 이력에서 계산, 이력이 짧으면 null). 값은 수집기(계정당 약 5분, 실행 중·잔여 20% 미만이면 약 1.5분)와 실행 스트림이 채운다. 캐시된 값만 쓰고 새로 조회·인증 파일 읽기·폴더/이메일/토큰 노출이 없다. 회사 업무 오케스트레이터는 회사에 들어온 계정만, 회사 모드 순서·켜기 기준(`enabled`·`priority`·`available` 이 그 모드 값) |
 
 `WorkerOut`: `{worker_id, title, engine, status(queued|running|succeeded|failed|cancelled|interrupted|idle), active_run_id, last_result, last_error, artifacts}`.
 
 ## 엔진 계정(ADR 0006)
 
-개인 계정 목록이 전체이고, 그 안의 일부가 「회사」 그룹이다(`pool=work` 태그). 개인 대화·워커는 회사 그룹까지 전체 순서로 계정을 고르고 한도 폴백도 그 순서다. 회사 업무 대화(`sessions.pool=work`)는 같은 순서에서 회사 그룹 계정만 쓴다. 켜기·임시 순서도 하나뿐이다.
+계정은 모두 개인 목록에 있고, 계정 추가·삭제도 개인 목록에서만 한다. 그중 회사 모드에도 쓸 계정을 고르면 `pool=work` 가 된다(회사에 들어온 계정). **개인 모드와 회사 모드는 켜기·기본 순서·임시 순서를 각자 따로 가진다.** 같은 계정을 개인 모드에선 끄고 회사 모드에선 켤 수 있다. 개인 대화·워커(`sessions.pool=personal`)는 모든 계정을 개인 순서(`priority`)·켜기(`enabled`)로 고르고 한도 폴백도 그 순서다. 회사 업무 대화(`sessions.pool=work`)는 회사에 들어온 계정만 회사 순서(`work_priority`)·켜기(`work_enabled`)로 고르고 폴백한다. 모드별 값은 `?pool=personal|work`(기본 personal)로 가른다.
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/accounts` | 전체 계정 목록, 우선순위 순(회사 그룹 포함). `{id, name, engine, pool, config_dir, enabled, priority, login(ok/unknown/missing), login_label, cooldown_seconds}`. `pool` 은 그룹 태그: `work` = 회사 그룹, `personal` = 태그 없음 |
-| POST | `/api/accounts` | `{name, engine, pool?, config_dir?, enabled?}` → 201(전체 목록 맨 뒤 순위). 이름 중복 409, 상대 경로·`~/.ttakkari` 안 422 |
-| PATCH | `/api/accounts/{id}` | `{name?, pool?, config_dir?, enabled?}`. `pool` 로 회사 그룹에 넣기/빼기(순서는 그대로). 다시 켜면 한도 대기도 풀린다 |
-| DELETE | `/api/accounts/{id}` | 204 |
-| POST | `/api/accounts/reorder` | `{ids}` 제출한 계정을 앞에 두고 누락된 계정은 기존 상대 순서대로 뒤에 둠. 중복·없는 id 는 400 → 전역 전체 목록 |
-| GET/PUT/DELETE | `/api/accounts/override` | 임시 순서 하나(전체 목록 기준). PUT `{ids, until}`. 회사 업무 탭은 이 순서에서 회사 그룹만 따른다 |
-| GET | `/api/accounts/usage` | 전체 목록의 지금 적용 순서. `rank` 는 그 순서의 번호, `pool` 로 회사 그룹 표시 |
+| GET | `/api/accounts` | 전체 계정 목록, 개인 우선순위 순. `{id, name, engine, pool, config_dir, enabled, priority, work_enabled, work_priority, login(ok/unknown/missing), login_label, cooldown_seconds}`. `pool`: `work` = 회사 모드에도 들어옴, `personal` = 개인 모드만. `enabled`·`priority` 는 개인 모드 값, `work_enabled`·`work_priority` 는 회사 모드 값(`pool=work` 인 계정에만 의미, 회사 목록은 `pool=work` 를 `work_priority` 순으로 본다) |
+| POST | `/api/accounts` | `{name, engine, pool?, config_dir?, enabled?}` → 201(개인 목록 맨 뒤 순위, `pool=work` 면 회사 순서 맨 뒤에도 `enabled` 값으로 켠 채로). 이름 중복 409, 상대 경로·`~/.ttakkari` 안 422 |
+| PATCH | `/api/accounts/{id}` | `{name?, pool?, config_dir?, enabled?, work_enabled?}`. `enabled`=개인 모드 켜기, `work_enabled`=회사 모드 켜기(회사에 들어오지 않은 계정이면 400). `pool=work` 로 회사 모드에 넣으면 회사 순서 맨 뒤에 `work_enabled=true` 로 들어가고, `pool=personal` 로 빼도 개인 모드 순서·켜기는 그대로다. 다시 켜면(두 모드 어느 쪽이든) 한도 대기도 풀린다 |
+| DELETE | `/api/accounts/{id}` | 204. 개인·회사 모드 모두에서 사라진다 |
+| POST | `/api/accounts/reorder?pool=` | `{ids}` 제출한 계정을 앞에 두고 누락된 계정은 기존 상대 순서대로 뒤에 둠. 중복·그 모드에 없는 id 는 400. `pool=personal`(기본)은 모든 계정을 대상으로 `priority`, `pool=work` 는 회사에 들어온 계정만 대상으로 `work_priority` 를 바꾼다. 응답은 그 모드 목록 |
+| GET/PUT/DELETE | `/api/accounts/override?pool=` | 임시 순서. 개인·회사 모드마다 따로 하나씩. PUT `{ids, until}`(`pool=work` 는 회사에 들어온 계정만 허용). 끝나면 그 모드만 기본 순서로 돌아간다 |
+| GET | `/api/accounts/usage` | 개인 모드의 지금 적용 순서(임시 순서 반영). `rank`·`enabled` 는 개인 모드, `work_rank`(회사 모드 순서 번호, 회사에 안 들어온 계정은 null)·`work_enabled` 는 회사 모드 값, `pool` 로 회사 표시 |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 
 ## 메모·캘린더(ADR 0008)

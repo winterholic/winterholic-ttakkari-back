@@ -281,15 +281,21 @@ def orchestrator_tool(fn):
 @orchestrator_tool
 async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex"] = "auto",
                        model: str | None = None,
-                       effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None) -> str:
+                       effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
+                       escalation_reason: str | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
-    `prompt` must be self-contained: the worker does not see this conversation. engine 'auto' prefers Claude Code
-    and falls back to Codex on usage limits. Returns the worker_id."""
+    `prompt` must be self-contained: the worker does not see this conversation.
+    Without `model`: claude → sonnet/high, codex or auto → gpt-6-luna/high (cheapest; use it for simple work).
+    opus / gpt-6.1-sol are orchestrator-grade and need `escalation_reason` (why this part needs deep reasoning,
+    a design decision or new ideas). On a usage limit the worker moves to another account with the same-grade
+    model of the other engine. Returns the worker_id."""
     body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine}
     if model:
         body["model"] = model
     if effort:
         body["effort"] = effort
+    if escalation_reason:
+        body["escalation_reason"] = escalation_reason
     return await _call("POST", "/workers", body)
 
 
@@ -302,10 +308,24 @@ async def account_usage() -> str:
 
 
 @orchestrator_tool
-async def message_worker(worker_id: str, prompt: str) -> str:
+async def message_worker(worker_id: str, prompt: str, fresh_context: bool = False) -> str:
     """Send a follow-up instruction to an existing worker. It continues the same conversation and is queued if
-    the worker is busy."""
-    return await _call("POST", f"/workers/{worker_id}/messages", {"prompt": prompt})
+    the worker is busy. fresh_context=True starts the worker's engine conversation over (use when its context is
+    high); then the prompt must be self-contained and say where the progress is recorded."""
+    return await _call("POST", f"/workers/{worker_id}/messages", {"prompt": prompt, "fresh_context": fresh_context})
+
+
+@orchestrator_tool
+async def my_context() -> str:
+    """Your own conversation's context usage (percent of the model's context window) from your last finished turn."""
+    return await _call("GET", "/context")
+
+
+@orchestrator_tool
+async def reset_my_context() -> str:
+    """Start your own conversation over from your next turn. This turn finishes normally. Before calling, make sure
+    unfinished work, decisions and next steps are recorded (remember / work-history / worker sessions)."""
+    return await _call("POST", "/context/reset")
 
 
 @orchestrator_tool

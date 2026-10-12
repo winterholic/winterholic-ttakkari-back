@@ -49,7 +49,7 @@ from ttakkari.orchestrator.runtime import (
     mcp_server_spec,
 )
 from ttakkari.push.service import PushKind, notify, notify_run_finished
-from ttakkari.runs import events
+from ttakkari.runs import context_usage, events
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
 from ttakkari.schemas import ArtifactOut
@@ -98,6 +98,8 @@ class RunManager:
         # 모든 계정이 사용량 한도라 초기화를 기다리는 Run → (재개 시각, 세션). 같은 세션의 다음 Run 도 이 Run 뒤에 선다.
         self._waiting: dict[uuid.UUID, tuple[float, uuid.UUID]] = {}
         self._wakers: dict[uuid.UUID, asyncio.Task[None]] = {}
+        # 실행 중에 새 대화로 바꾸라고 한 세션. 실행이 끝날 때 적용해야 그 Run 이 엔진 대화 id 를 다시 덮어쓰지 않는다.
+        self._reset_requests: set[uuid.UUID] = set()
 
     @property
     def sem(self) -> asyncio.Semaphore:
@@ -107,6 +109,9 @@ class RunManager:
 
     def is_active(self, run_id: uuid.UUID) -> bool:
         return run_id in self._handles
+
+    def request_context_reset(self, session_id: uuid.UUID) -> None:
+        self._reset_requests.add(session_id)
 
     def start(self, run_id: uuid.UUID) -> None:
         task = asyncio.create_task(self._execute(run_id), name=f"run-{run_id}")
@@ -329,6 +334,10 @@ class RunManager:
         write_roots = [root, outbox, s.uploads_root, s.inbox_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
 
         base_prompt = await _compose_prompt(db, run)
+        if is_orch:
+            # 시스템 프롬프트가 아니라 지시 앞에 붙인다. 매 턴 바뀌는 값이 시스템 프롬프트에 있으면 프롬프트 캐시가 깨진다.
+            ctx = await context_usage.latest(db, sess)
+            base_prompt = f"[내 대화 컨텍스트 사용률: {context_usage.describe(ctx)}]\n" + base_prompt
         system_note = await _system_note(db, outbox, orchestrator=is_orch, scope="work" if sess.pool == "work" else "all")
         mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
         h = self._handles.get(run.id)
@@ -406,8 +415,11 @@ class RunManager:
         run.exit_code = rc
 
         sess.updated_at = utcnow()
+        if sess.id in self._reset_requests:
+            self._reset_requests.discard(sess.id)
+            context_usage.reset_engine_sessions(sess)
         run.cost_usd = state.cost_usd
-        run.usage = state.usage
+        run.usage = {**state.usage, **context_usage.measure(state, prof.engine, prof.config_dir)}
         run.result_text = state.result_text or state.last_message
 
         diff = None
@@ -721,13 +733,16 @@ def _iso(epoch: float | None) -> str | None:
 def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first: profiles_mod.Profile) -> tuple[str | None, str | None]:
     """계정에 넘길 (모델, 생각 수준). 모델 이름은 엔진마다 다르다. 그 엔진의 모델일 때만 넘기고, 어느 엔진 것인지 모르면 첫 계정에만 넘긴다.
 
-    오케스트레이터가 다른 엔진으로 넘어가면 비서 지침의 허용 모델(설정 orchestrator_fallback_models)로 맞춘다."""
+    메인 오케스트레이터는 엔진마다 허용된 한 쌍(설정 orchestrator_fallback_models)으로만 띄운다.
+    작업 세션이 다른 엔진으로 넘어가면 같은 급의 상대 모델(model_counterparts)로 바꾼다."""
+    s = get_settings()
+    if sess.kind == SessionKind.orchestrator:
+        fb = s.orchestrator_fallback_models.get(prof.engine) or {}
+        return fb.get("model"), fb.get("effort") or run.effort
     if (profiles_mod.model_engine(run.model) or first.engine) == prof.engine:
         return run.model, run.effort
-    if sess.kind == SessionKind.orchestrator:
-        fb = get_settings().orchestrator_fallback_models.get(prof.engine) or {}
-        return fb.get("model"), fb.get("effort") or run.effort
-    return None, run.effort
+    peer = s.model_counterparts.get((run.model or "").lower())
+    return (peer if profiles_mod.model_engine(peer) == prof.engine else None), run.effort
 
 
 async def _waiting_handoff(db: AsyncSession, run: Run) -> str:
@@ -746,9 +761,10 @@ async def _handoff_context(db: AsyncSession, run: Run, resumed_profile: str | No
     """다른 엔진·계정에서 오간 앞선 대화(지시·답)를 넘긴다. 도구 호출 내역은 넘기지 않는다(ADR 0006 한계).
 
     resumed_profile 이 있으면 그 계정이 자기 엔진 대화를 이어 받는 경우다. 그 계정이 마지막으로 처리한 Run 뒤의 대화만 넘긴다."""
-    rows = list(await db.scalars(
-        select(Run).where(Run.session_id == run.session_id, Run.id != run.id, Run.status.in_(TERMINAL_RUN_STATUSES))
-        .order_by(Run.created_at.desc()).limit(HANDOFF_TURNS)))
+    stmt = select(Run).where(Run.session_id == run.session_id, Run.id != run.id, Run.status.in_(TERMINAL_RUN_STATUSES))
+    if (since := context_usage.reset_at(await db.get(ChatSession, run.session_id))) is not None:
+        stmt = stmt.where(Run.created_at > since)
+    rows = list(await db.scalars(stmt.order_by(Run.created_at.desc()).limit(HANDOFF_TURNS)))
     if resumed_profile:
         missed = []
         for r in rows:
@@ -820,6 +836,7 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
         body.append("결과:\n" + run.result_text[:REPORT_CHARS])
     if run.error:
         body.append("오류: " + run.error[:1000])
+    body.append("작업 세션 컨텍스트: " + context_usage.describe(await context_usage.latest(db, sess)))
     text = "\n".join(body)
     pending = await db.scalar(
         select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)

@@ -52,6 +52,10 @@ class ParseState:
     limit_hit: bool = False
     limit_text: str | None = None
     limit_resets_at: float | None = None
+    # 마지막 모델 요청이 차지한 컨텍스트(토큰)와 모델 한도. 메인이 세션 교체를 판단하는 근거다.
+    context_tokens: int | None = None
+    context_window: int | None = None
+    context_model: str | None = None
 
 
 class AgentAdapter(Protocol):

@@ -49,11 +49,27 @@ class Settings(BaseSettings):
     # 엔진 프로필(순서 = 우선순위). config_dir 는 claude 면 CLAUDE_CONFIG_DIR, codex 면 CODEX_HOME 으로 계정을 고른다(ADR 0006).
     engine_profiles: list[dict[str, str]] = [{"name": "claude", "engine": "claude"}, {"name": "codex", "engine": "codex"}]
     profile_cooldown_seconds: int = 30 * 60
-    # 오케스트레이터가 다른 엔진 계정으로 넘어갈 때 쓰는 모델·생각 수준(비서 지침의 허용 모델). 그 엔진의 모델을 직접 고른 Run 은 건드리지 않는다.
+    # 메인 오케스트레이터가 엔진별로 쓰는 유일한 모델·생각 수준. 세션에 다른 모델이 저장돼 있어도 이것으로 띄운다(사용자 결정 10-13).
     orchestrator_fallback_models: dict[str, dict[str, str]] = {
         "claude": {"model": "opus", "effort": "medium"},
         "codex": {"model": "gpt-6.1-sol", "effort": "high"},
     }
+    # 작업 세션 기본값. 모델을 안 고르면 엔진별 기본, engine=auto 면 토큰이 싼 Luna 로 띄운다.
+    worker_default_models: dict[str, dict[str, str]] = {
+        "claude": {"model": "sonnet", "effort": "high"},
+        "codex": {"model": "gpt-6-luna", "effort": "high"},
+        "auto": {"model": "gpt-6-luna", "effort": "high"},
+    }
+    # 오케스트레이터와 같은 급이라 작업 세션에 쓰려면 승격 사유가 필요한 모델.
+    peer_models: list[str] = ["opus", "fable", "gpt-6.1-sol"]
+    # 작업 세션이 한도 등으로 다른 엔진 계정으로 넘어갈 때 같은 급의 상대 모델.
+    model_counterparts: dict[str, str] = {
+        "gpt-6-luna": "sonnet", "sonnet": "gpt-6-luna", "haiku": "gpt-6-luna",
+        "gpt-6.1-sol": "opus", "opus": "gpt-6.1-sol", "fable": "gpt-6.1-sol",
+    }
+    # 메인에게 알리는 컨텍스트 사용률 기준(%): review 이상이면 교체 검토, replace 이상이면 교체.
+    context_review_percent: int = 50
+    context_replace_percent: int = 70
     # 엔진별로 작업 세션에 지정할 수 있는 모델(account_usage 도구가 알려 준다). 프런트 새 세션 화면의 목록과 같다.
     engine_models: dict[str, list[str]] = {
         "claude": ["opus", "sonnet", "haiku"],

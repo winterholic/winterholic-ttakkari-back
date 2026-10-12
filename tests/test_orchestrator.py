@@ -229,12 +229,12 @@ async def test_codex_orchestrator_gets_mcp_server_via_config_flags(client, auth,
 async def test_spawn_worker_runs_and_reports_back_to_orchestrator(client, auth, make_dir):
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
-    r = await client.post("/api/orchestrator/workers", json={"title": "보고서", "prompt": "write report"}, headers=h)
+    r = await client.post("/api/orchestrator/workers", json={"title": "보고서", "prompt": "write report", "engine": "claude"}, headers=h)
     assert r.status_code == 201, r.text
     wid = r.json()["worker_id"]
 
     worker = (await client.get(f"/api/sessions/{wid}", headers=auth)).json()
-    assert worker["kind"] == "worker" and worker["parent_id"] == orch["id"] and worker["engine"] == "auto"
+    assert worker["kind"] == "worker" and worker["parent_id"] == orch["id"] and worker["engine"] == "claude"
     wrun = (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json()[0]
     assert wrun["origin"] == "orchestrator"
     assert (await wait_run(client, auth, wrun["id"]))["status"] == "succeeded"
@@ -333,7 +333,8 @@ AGENT_TOOLS = {"library_catalog", "recall", "remember", "get_entity", "describe_
                "set_artifact_area", "server_resources", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
                "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items"}
-WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage"}
+WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
+                "my_context", "reset_my_context"}
 
 
 def _mcp_tools(role: str) -> tuple[set[str], dict]:
@@ -360,7 +361,7 @@ def test_mcp_server_tools_by_role():
 
 async def test_worker_list_has_summary_for_tabs(client, auth, make_dir):
     orch = await _session(client, auth, make_dir, kind="orchestrator")
-    wid = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "go"},
+    wid = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "go", "engine": "claude"},
                              headers=_orch(issue_token(orch["id"])))).json()["worker_id"]
     wrun = (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json()[0]
     await wait_run(client, auth, wrun["id"])

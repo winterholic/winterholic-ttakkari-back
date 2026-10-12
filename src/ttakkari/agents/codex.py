@@ -8,6 +8,32 @@ from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, t
 from ttakkari.config import get_settings
 
 SANDBOX_MODES = {"read-only", "workspace-write", "danger-full-access"}
+ROLLOUT_TAIL_BYTES = 4 * 1024 * 1024
+
+
+def read_context(codex_home: Path, thread_id: str) -> tuple[int, int] | None:
+    """(마지막 요청 토큰, 모델 컨텍스트 한도). exec --json 은 턴 합계만 주므로 세션 rollout 의 token_count 를 읽는다."""
+    files = sorted((codex_home / "sessions").glob(f"*/*/*/rollout-*{thread_id}.jsonl"), key=lambda p: p.stat().st_mtime)
+    if not files:
+        return None
+    try:
+        with files[-1].open("rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - ROLLOUT_TAIL_BYTES))
+            lines = f.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        if '"token_count"' not in line:
+            continue
+        try:
+            info = (json.loads(line).get("payload") or {}).get("info") or {}
+        except ValueError:
+            continue
+        last, window = info.get("last_token_usage") or {}, info.get("model_context_window")
+        if isinstance(last.get("total_tokens"), int) and isinstance(window, int) and window > 0:
+            return last["total_tokens"], window
+    return None
 
 
 class CodexAdapter:

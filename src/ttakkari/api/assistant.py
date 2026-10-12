@@ -76,6 +76,8 @@ TOOLS: list[dict[str, str]] = [
     {"name": "list_workers", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션 목록"},
     {"name": "get_worker", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션 상세"},
     {"name": "stop_worker", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션 멈추기"},
+    {"name": "my_context", "group": "작업 세션", "who": "오케스트레이터", "desc": "내 대화의 컨텍스트 사용률"},
+    {"name": "reset_my_context", "group": "작업 세션", "who": "오케스트레이터", "desc": "다음 턴부터 내 대화를 새로 시작"},
 ]
 
 

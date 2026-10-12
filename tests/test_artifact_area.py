@@ -53,7 +53,7 @@ async def test_direct_chat_outbox_is_files_but_modified_files_are_agent(client, 
 async def test_worker_outbox_is_agent_until_shared_by_orchestrator(client, auth, make_dir):
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
-    wid = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "write report"},
+    wid = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "write report", "engine": "claude"},
                              headers=h)).json()["worker_id"]
     wrun = (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json()[0]
     await wait_run(client, auth, wrun["id"])

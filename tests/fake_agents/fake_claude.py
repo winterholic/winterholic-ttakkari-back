@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """claude -p ... --output-format stream-json 을 흉내내는 가짜 엔진. 테스트 전용.
 
-프롬프트 키워드로 시나리오를 고른다: SLEEP, FAIL, GARBAGE, SENSITIVE, DOCX, MODIFY.
+프롬프트 키워드로 시나리오를 고른다: SLEEP, FAIL, GARBAGE, SENSITIVE, DOCX, MODIFY, CTX<n>.
 받은 argv 는 $FAKE_AGENT_LOG(JSONL) 에 기록한다. (매니저가 TTAKKARI_* env 를 지우므로 접두사를 달리 썼다.)
 """
 import json
@@ -127,9 +127,15 @@ def main():
         write_tool(readme, readme.read_text() + "modified by fake agent\n")
         write_tool(Path(os.getcwd()) / "new_file.txt", "brand new\n")
 
-    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": "done"}]}})
+    # CTX<n> 이면 컨텍스트 창(200k)의 n% 를 쓴 것처럼 마지막 요청 토큰을 알린다. 없으면 10%.
+    m = re.search(r"CTX(\d+)", prompt)
+    used = int(m.group(1) if m else 10) * 2000
+    usage = {"input_tokens": 10, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": used - 1015, "output_tokens": 5}
+    emit({"type": "assistant", "message": {"model": "claude-haiku-4-5", "usage": usage,
+                                           "content": [{"type": "text", "text": "done"}]}})
     emit({"type": "result", "subtype": "success", "is_error": False, "result": "done", "session_id": sid,
-          "total_cost_usd": 0.01, "num_turns": 2, "duration_ms": 100})
+          "total_cost_usd": 0.01, "num_turns": 2, "duration_ms": 100,
+          "modelUsage": {"claude-haiku-4-5": {"contextWindow": 200000}}})
     return 0
 
 

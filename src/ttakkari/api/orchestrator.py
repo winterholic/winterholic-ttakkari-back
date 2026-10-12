@@ -12,8 +12,12 @@ from sqlalchemy import func, select
 
 from ttakkari.api.deps import Db
 from ttakkari.api.sessions import ACTIVE, queue_run
+from ttakkari.audit import record
+from ttakkari.config import get_settings
 from ttakkari.models import Artifact, ChatSession, Run, RunOrigin, SessionKind
 from ttakkari.orchestrator.runtime import OrchestratorSession
+from ttakkari.runs import context_usage
+from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
 
@@ -28,17 +32,24 @@ class WorkerIn(BaseModel):
     engine: Literal["auto", "claude", "codex"] = "auto"
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    # 오케스트레이터와 같은 급(peer_models)을 작업 세션에 쓸 때만 필요하다.
+    escalation_reason: str | None = Field(default=None, max_length=1000)
 
 
 class MessageIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=100_000)
+    # True 면 이 작업 세션의 엔진 대화를 버리고 새로 시작한다(컨텍스트 교체). 지시는 자기 완결적이어야 한다.
+    fresh_context: bool = False
 
 
 class WorkerOut(BaseModel):
     worker_id: uuid.UUID
     title: str
     engine: str
+    model: str | None = None
+    effort: str | None = None
     status: str
+    context: str = ""
     active_run_id: uuid.UUID | None = None
     last_result: str | None = None
     last_error: str | None = None
@@ -65,9 +76,10 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
                                  .execution_options(populate_existing=True)))
     active = next((r for r in runs if r.status in ACTIVE), None)
     done = next((r for r in runs if r.status not in ACTIVE), None)
-    out = WorkerOut(worker_id=w.id, title=w.title, engine=w.engine,
+    out = WorkerOut(worker_id=w.id, title=w.title, engine=w.engine, model=w.model, effort=w.effort,
                     status=active.status if active else (done.status if done else "idle"),
-                    active_run_id=active.id if active else None)
+                    active_run_id=active.id if active else None,
+                    context=context_usage.describe(await context_usage.latest(db, w)))
     if done is not None:
         limit = RESULT_CHARS if detail else 300
         out.last_result = (done.result_text or "")[:limit] or None
@@ -86,10 +98,26 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
         .where(ChatSession.parent_id == orch.id, Run.status.in_(ACTIVE)))
     if (active or 0) >= MAX_ACTIVE_WORKERS:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"동시에 돌 수 있는 작업 세션은 {MAX_ACTIVE_WORKERS}개입니다.")
-    w = ChatSession(workspace_id=orch.workspace_id, title=body.title, engine=body.engine, model=body.model,
-                    effort=body.effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool)
+    s = get_settings()
+    default = s.worker_default_models.get(body.engine) or {}
+    model = body.model or default.get("model")
+    effort = body.effort or default.get("effort")
+    engine = body.engine
+    if engine != "auto" and model and profiles_mod.model_engine(model) not in (None, engine):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{model} 은(는) {engine} 엔진 모델이 아닙니다.")
+    peer = (model or "").lower() in {m.lower() for m in s.peer_models}
+    reason = (body.escalation_reason or "").strip()
+    if peer and not reason:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"{model} 은(는) 오케스트레이터와 같은 급이라 작업 세션에는 escalation_reason 이 필요합니다. "
+                            "중요한 설계 결정·어려운 추론·새로운 발상이 필요한 부분만 맡기고, 아니면 sonnet 이나 gpt-6-luna 를 쓰세요.")
+    w = ChatSession(workspace_id=orch.workspace_id, title=body.title, engine=engine, model=model,
+                    effort=effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool)
     db.add(w)
     await db.flush()
+    if peer:
+        record(db, actor="agent", action="orchestrator.escalate", target_type="session", target_id=w.id,
+               detail={"model": model, "effort": effort, "reason": reason[:500]})
     await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)
     return await _out(db, w)
 
@@ -100,8 +128,38 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
     w = await _worker(db, sid, worker_id)
     if w.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 작업 세션입니다.")
+    if body.fresh_context:
+        await _reset(db, w)
     await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)
     return await _out(db, w)
+
+
+async def _reset(db: Db, sess: ChatSession) -> bool:
+    """엔진 대화를 새로 시작하게 한다. 실행 중이면 그 Run 이 끝날 때 적용한다(True)."""
+    running = await db.scalars(select(Run.id).where(Run.session_id == sess.id, Run.status.in_(ACTIVE)))
+    if any(manager.is_active(rid) for rid in running):
+        manager.request_context_reset(sess.id)
+        return True
+    context_usage.reset_engine_sessions(sess)
+    await db.commit()
+    return False
+
+
+@router.get("/context")
+async def my_context(sid: OrchestratorSession, db: Db) -> dict:
+    orch = await _orchestrator(db, sid)
+    ctx = await context_usage.latest(db, orch)
+    return {"context": context_usage.describe(ctx), **(ctx or {})}
+
+
+@router.post("/context/reset")
+async def reset_my_context(sid: OrchestratorSession, db: Db) -> dict:
+    """메인 오케스트레이터 자신의 대화를 다음 턴부터 새로 시작한다. 지금 턴은 그대로 끝난다."""
+    orch = await _orchestrator(db, sid)
+    deferred = await _reset(db, orch)
+    record(db, actor="agent", action="orchestrator.context_reset", target_type="session", target_id=orch.id)
+    await db.commit()
+    return {"applies": "after this turn" if deferred else "next turn"}
 
 
 @router.get("/workers", response_model=list[WorkerOut])

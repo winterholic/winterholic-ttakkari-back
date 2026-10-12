@@ -59,6 +59,9 @@ class ClaudeAdapter:
             limited = obj.get("error") == "rate_limit"
             if limited:
                 state.limit_hit = True
+            # 서브에이전트(parent_tool_use_id)의 요청은 메인 대화 컨텍스트가 아니다.
+            if not obj.get("parent_tool_use_id"):
+                _note_context(obj.get("message") or {}, state)
             for block in obj.get("message", {}).get("content", []):
                 bt = block.get("type")
                 if bt == "text" and block.get("text"):
@@ -111,8 +114,22 @@ class ClaudeAdapter:
                 "num_turns": obj.get("num_turns"),
                 **{k: v for k, v in (obj.get("usage") or {}).items() if isinstance(v, (int, float))},
             }
+            mu = (obj.get("modelUsage") or {}).get(state.context_model or "") or {}
+            if isinstance(mu.get("contextWindow"), int):
+                state.context_window = mu["contextWindow"]
             out.append(Normalized("usage", {"cost_usd": state.cost_usd, **state.usage}))
         return out
+
+
+def _note_context(message: dict[str, Any], state: ParseState) -> None:
+    u = message.get("usage")
+    if not isinstance(u, dict):
+        return
+    keys = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+    total = sum(v for k in keys if isinstance(v := u.get(k), int))
+    if total:
+        state.context_tokens = total
+        state.context_model = message.get("model") or state.context_model
 
 
 def _slim_input(name: str, inp: dict[str, Any]) -> dict[str, Any]:

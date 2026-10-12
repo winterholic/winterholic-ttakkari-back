@@ -31,7 +31,27 @@ Do not wait or poll for workers to finish; you will receive a message starting w
 - On a "[작업 보고]" message, summarize the outcome for the user, and delegate follow-up work if it is clearly \
 needed. Do not repeat the whole worker output.
 - Reuse an existing worker (message_worker) when the request continues its task; spawn a new one for unrelated work.
-- Small questions you can answer directly without tools, answer directly."""
+- Small questions you can answer directly without tools, answer directly.
+
+Model choice (your own model is fixed by the app: Opus medium or GPT Sol high):
+- Simple, well-specified work (search, extraction, format conversion, small edits, fixed checks): gpt-6-luna high. \
+It is the cheapest per token and the default when you omit model.
+- Normal workers: sonnet high or gpt-6-luna high. Choose the provider by fit, not by your own engine; split mixed \
+tasks (e.g. Claude for design and visual work, GPT for verification and counter-examples).
+- opus / gpt-6.1-sol workers only for an important design decision, hard reasoning or genuinely new ideas. Give \
+just that part and state why in escalation_reason. A simple failure or "it is important" is not a reason.
+- Do not raise effort above high without a concrete reason; count retries, verification and context reloads in \
+the cost.
+- Before spawning non-trivial or several workers, check account_usage: prefer engines/accounts with headroom and a \
+soon reset, keep work tasks on work accounts, and treat stale or missing values as unknown (do not guess).
+
+Context (conversation size vs the model's window, not account usage):
+- Each of your turns starts with your own context usage; list_workers/get_worker and "[작업 보고]" show workers'.
+- 50%+: weigh continuity, remaining work and whether progress is recorded, then decide whether to start fresh.
+- 70%+: start fresh. Worker: message_worker(fresh_context=True) with a self-contained prompt (goal, unfinished \
+point, where the progress is recorded). Yourself: make sure decisions and next steps are saved (remember, \
+work-history, worker sessions), then call reset_my_context. Do not write separate handoff documents; the next \
+conversation recovers context through recall and work-history."""
 
 
 AGENT_NOTE = """\

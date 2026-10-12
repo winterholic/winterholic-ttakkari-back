@@ -6,9 +6,10 @@
 ## 결정
 
 ### 저장
-- `memos`: `title, body(마크다운), tags(JSONB 배열), pinned, source(user|agent), rev, deleted_at`. `rev` 는 저장할 때마다 1 오르는 낙관적 잠금 값이다. 편집기 자동 저장이 `rev` 를 같이 보내고, 다르면 409 `conflict` 로 막아 다른 기기·에이전트의 수정을 덮어쓰지 않는다.
+- `memos`: `title, body(마크다운), tags(JSONB 배열), category_id, pinned, source(user|agent), rev, deleted_at`. `rev` 는 저장할 때마다 1 오르는 낙관적 잠금 값이다. 편집기 자동 저장이 `rev` 를 같이 보내고, 다르면 409 `conflict` 로 막아 다른 기기·에이전트의 수정을 덮어쓰지 않는다.
 - `calendar_events`: `title, description, location, all_day, start_at, end_at, rrule, source, deleted_at`. 모두 `timestamptz` 로 저장하지만 입출력은 **Asia/Seoul 벽시계 문자열**이다(`2026-10-14T09:30`, 종일은 `2026-10-14`). 오프셋이 붙어 오면 KST 로 환산한다. 한국은 DST 가 없어 반복 전개를 벽시계로 해도 어긋나지 않는다.
 - 종일 일정은 API 에서 **끝 날짜를 포함**한다(사람·에이전트가 쓰기 쉽게). 저장은 iCal 처럼 끝을 제외한 다음 날 0시다.
+- `memo_categories`: `name(유일), color(선택, 토큰 범주 색 키), position`. 메모는 카테고리 0~1개다(폴더처럼 하나만, 여러 갈래 분류는 태그가 맡는다). 카테고리를 지우면 메모는 미분류로 남는다(FK `SET NULL`, 0012).
 - 검색은 `ILIKE`(메모는 제목·본문·태그, 일정은 제목·설명·장소)다. 개인 규모라 임베딩은 쓰지 않는다.
 
 ### 반복 일정(RRULE): 보류, 재설계 예정

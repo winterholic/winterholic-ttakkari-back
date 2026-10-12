@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 
@@ -242,32 +242,55 @@ async def read_session(session_id: uuid.UUID, sid: AgentSession, db: Db, last: i
 # 삭제는 되돌릴 수 있는 보관 처리이고, 에이전트가 만든 항목만 지운다(forget 과 같은 정책).
 # 사용자가 쓴 메모 본문은 덮어쓰지 못하고 덧붙이기만 한다.
 
+# 카테고리는 이름으로 주고받는다(에이전트가 id 를 따로 찾지 않게). 없는 이름은 만들지 않고 422 로 있는 이름을 알려 준다.
+
+class AgentMemoIn(MemoIn):
+    category: str | None = Field(default=None, max_length=60)
+
+
 class AgentMemoPatch(MemoPatch):
     append: str | None = Field(default=None, max_length=50_000)
+    # 빈 문자열이면 미분류로 옮긴다.
+    category: str | None = Field(default=None, max_length=60)
+
+
+async def _memos_out(db: Db, memos: list[Memo], *, body: bool) -> list[dict[str, Any]]:
+    names = {c.id: c.name for c in await planner.list_categories(db)}
+    return [{**planner.memo_out(m, body=body), "category": names.get(m.category_id)} for m in memos]
+
+
+@router.get("/memo-categories")
+async def agent_list_memo_categories(sid: AgentSession, db: Db) -> dict[str, Any]:
+    await _session(db, sid)
+    return {"categories": [{"name": c.name, "color": c.color} for c in await planner.list_categories(db)]}
 
 
 @router.get("/memos")
-async def agent_list_memos(sid: AgentSession, db: Db, q: str | None = None, tag: str | None = None,
-                           limit: int = 30) -> dict[str, Any]:
+async def agent_list_memos(sid: AgentSession, db: Db, q: str | None = None, tag: Annotated[list[str] | None, Query()] = None,
+                           category: str | None = None, limit: int = 30) -> dict[str, Any]:
+    """category: 카테고리 이름, "none" 이면 미분류."""
     await _session(db, sid)
-    rows = await db.scalars(planner.memo_query(q, tag).limit(max(1, min(limit, 100))))
-    return {"memos": [planner.memo_out(m, body=False) for m in rows]}
+    cat = None if not category else planner.NONE if category.strip().lower() == "none" else await planner.resolve_category(db, category)
+    rows = await db.scalars(planner.memo_query(q, tag, category=cat).limit(max(1, min(limit, 100))))
+    return {"memos": await _memos_out(db, list(rows), body=False)}
 
 
 @router.get("/memos/{memo_id}")
 async def agent_get_memo(memo_id: uuid.UUID, sid: AgentSession, db: Db) -> dict[str, Any]:
     await _session(db, sid)
-    return planner.memo_out(await planner.get_memo(db, memo_id))
+    return (await _memos_out(db, [await planner.get_memo(db, memo_id)], body=True))[0]
 
 
 @router.post("/memos", status_code=status.HTTP_201_CREATED)
-async def agent_create_memo(body: MemoIn, sid: AgentSession, db: Db) -> dict[str, Any]:
+async def agent_create_memo(body: AgentMemoIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     await _session(db, sid)
-    m = Memo(title=body.title.strip(), body=body.body, tags=planner.clean_tags(body.tags), pinned=body.pinned, source="agent")
+    cat = await planner.resolve_category(db, body.category) if body.category else body.category_id
+    m = Memo(title=body.title.strip(), body=body.body, tags=planner.clean_tags(body.tags), pinned=body.pinned, source="agent",
+             category_id=(await planner.get_category(db, cat)).id if cat else None)
     db.add(m)
     record(db, actor="agent", action="memo.create", target_type="memo", target_id=m.id, detail={"session": str(sid)})
     await db.commit()
-    return planner.memo_out(m)
+    return (await _memos_out(db, [m], body=True))[0]
 
 
 @router.patch("/memos/{memo_id}")
@@ -288,11 +311,15 @@ async def agent_patch_memo(memo_id: uuid.UUID, body: AgentMemoPatch, sid: AgentS
         m.tags = planner.clean_tags(body.tags)
     if body.pinned is not None:
         m.pinned = body.pinned
+    if body.category is not None:
+        m.category_id = await planner.resolve_category(db, body.category)
+    elif "category_id" in body.model_fields_set:
+        m.category_id = (await planner.get_category(db, body.category_id)).id if body.category_id else None
     m.rev += 1
     m.updated_at = utcnow()
     record(db, actor="agent", action="memo.update", target_type="memo", target_id=m.id, detail={"session": str(sid)})
     await db.commit()
-    return planner.memo_out(m)
+    return (await _memos_out(db, [m], body=True))[0]
 
 
 @router.delete("/memos/{memo_id}")

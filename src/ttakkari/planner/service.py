@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 from collections.abc import Iterable
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -13,7 +14,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import String, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.models import CalendarEvent, Memo
+from ttakkari.models import CalendarEvent, Memo, MemoCategory
 
 KST = ZoneInfo("Asia/Seoul")
 MAX_SPAN_DAYS = 400
@@ -46,6 +47,7 @@ def clean_tags(tags: Iterable[str]) -> list[str]:
 def memo_out(m: Memo, *, body: bool = True) -> dict[str, Any]:
     text = m.body or ""
     d: dict[str, Any] = {"id": str(m.id), "title": m.title, "tags": m.tags, "pinned": m.pinned, "source": m.source,
+                         "category_id": str(m.category_id) if m.category_id else None,
                          "rev": m.rev, "excerpt": re.sub(r"\s+", " ", text[:EXCERPT * 2]).strip()[:EXCERPT],
                          "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat()}
     if body:
@@ -53,10 +55,17 @@ def memo_out(m: Memo, *, body: bool = True) -> dict[str, Any]:
     return d
 
 
-def memo_query(q: str | None = None, tag: str | None = None, pinned: bool | None = None):
+def memo_query(q: str | None = None, tags: Iterable[str] | str | None = None, pinned: bool | None = None,
+               category: Any = None):
+    """tags 는 모두 가진 메모만(AND). category 는 카테고리 id, NONE 이면 미분류, None 이면 전체."""
     stmt = select(Memo).where(Memo.deleted_at.is_(None))
-    if tag:
-        stmt = stmt.where(Memo.tags.contains([tag]))
+    for t in [tags] if isinstance(tags, str) else tags or ():
+        if t:
+            stmt = stmt.where(Memo.tags.contains([t]))
+    if category is NONE:
+        stmt = stmt.where(Memo.category_id.is_(None))
+    elif category is not None:
+        stmt = stmt.where(Memo.category_id == category)
     if pinned is not None:
         stmt = stmt.where(Memo.pinned.is_(pinned))
     if q:
@@ -76,6 +85,61 @@ def check_rev(m: Memo, rev: int | None) -> None:
     """저장하려는 쪽이 본 버전이 낡았으면 덮어쓰지 않는다."""
     if rev is not None and rev != m.rev:
         raise bad("다른 곳에서 먼저 수정됐어요. 새로 불러온 뒤 다시 저장하세요.", "conflict", status.HTTP_409_CONFLICT)
+
+
+# ---- 메모 카테고리
+
+NONE = object()  # 미분류 필터
+# 디자인 토큰 --tk-color-chart-categorical-1..6 순서. 라이트·다크 대비가 맞춰진 범주 색이라 새 색을 만들지 않는다.
+CATEGORY_COLORS = ("blue", "green", "amber", "violet", "red", "gray")
+
+
+def category_out(c: MemoCategory, count: int = 0) -> dict[str, Any]:
+    return {"id": str(c.id), "name": c.name, "color": c.color, "position": c.position, "count": count}
+
+
+def clean_category_name(name: str) -> str:
+    name = re.sub(r"\s+", " ", name).strip()
+    if not name or len(name) > 30:
+        raise bad("카테고리 이름은 1~30자예요.")
+    return name
+
+
+async def list_categories(db: AsyncSession) -> list[MemoCategory]:
+    return list(await db.scalars(select(MemoCategory).order_by(MemoCategory.position, MemoCategory.created_at)))
+
+
+async def category_by_name(db: AsyncSession, name: str) -> MemoCategory | None:
+    key = clean_category_name(name).casefold()
+    return next((c for c in await list_categories(db) if c.name.casefold() == key), None)
+
+
+async def ensure_unique_name(db: AsyncSession, name: str, own: Any = None) -> None:
+    found = await category_by_name(db, name)
+    if found is not None and found.id != own:
+        raise bad("같은 이름의 카테고리가 있어요.", "duplicate", status.HTTP_409_CONFLICT)
+
+
+async def get_category(db: AsyncSession, category_id: Any) -> MemoCategory:
+    c = await db.get(MemoCategory, category_id)
+    if c is None:
+        raise bad("카테고리가 없어요.", "not_found", status.HTTP_404_NOT_FOUND)
+    return c
+
+
+async def resolve_category(db: AsyncSession, value: str | None) -> Any:
+    """메모 저장용. 빈 값·None 은 미분류, uuid 는 그 카테고리, 그 밖은 이름으로 찾는다(에이전트는 이름을 쓴다)."""
+    if not value or not value.strip():
+        return None
+    try:
+        return (await get_category(db, uuid.UUID(value))).id
+    except ValueError:
+        pass
+    found = await category_by_name(db, value)
+    if found is None:
+        names = ", ".join(c.name for c in await list_categories(db)) or "없음"
+        raise bad(f"'{value.strip()}' 카테고리가 없어요. 있는 카테고리: {names}")
+    return found.id
 
 
 # ---- 일정 시각

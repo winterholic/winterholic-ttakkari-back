@@ -173,16 +173,21 @@ payload 는 `{title, body, url, tag}`:
 모두 사용자 토큰. 시각은 Asia/Seoul 벽시계 문자열이다: 시간 일정 `YYYY-MM-DDTHH:MM`(오프셋이 있으면 KST 로 환산), 종일 `YYYY-MM-DD`(**끝 날짜 포함**). 오류는 공통 형식 `{code, message}`; 검증 실패 422 `validation`.
 
 ### 메모
-`MemoOut`: `{id, title, tags[], pinned, source(user|agent), rev, excerpt, created_at, updated_at, body}`. 목록에는 `body` 가 없다.
+`MemoOut`: `{id, title, tags[], category_id, pinned, source(user|agent), rev, excerpt, created_at, updated_at, body}`. 목록에는 `body` 가 없다.
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/memos?q=&tag=&pinned=&limit=&offset=` | `{memos}`. 고정 먼저, 최근 수정 순. `q` 는 제목·본문·태그 부분 일치 |
-| GET | `/api/memos/tags` | `{tags: [{name, count}]}` |
-| POST | `/api/memos` | `{title?, body?, tags?, pinned?}` → 201. 태그는 앞의 `#`·중복을 정리, 최대 20개·30자 |
+| GET | `/api/memos?q=&tag=&category=&pinned=&limit=&offset=` | `{memos}`. 고정 먼저, 최근 수정 순. `q` 는 제목·본문·태그 부분 일치. `tag` 는 여러 번 줄 수 있고 모두 가진 메모만(AND). `category` 는 카테고리 id 또는 `none`(미분류) |
+| GET | `/api/memos/tags?category=` | `{tags: [{name, count}]}`. `category` 를 주면 그 카테고리 메모의 태그만 |
+| POST | `/api/memos` | `{title?, body?, tags?, category_id?, pinned?}` → 201. 태그는 앞의 `#`·중복을 정리, 최대 20개·30자 |
 | GET | `/api/memos/{id}` | 본문 포함 |
-| PATCH | `/api/memos/{id}` | `{title?, body?, tags?, pinned?, rev?}`. `rev` 가 현재와 다르면 409 `conflict`(자동 저장 충돌). 성공하면 `rev` +1 |
+| PATCH | `/api/memos/{id}` | `{title?, body?, tags?, category_id?, pinned?, rev?}`. `category_id: null` 은 미분류로, 빼면 그대로. `rev` 가 현재와 다르면 409 `conflict`(자동 저장 충돌). 성공하면 `rev` +1 |
 | DELETE | `/api/memos/{id}` | 204. 완전 삭제 |
+| GET | `/api/memo-categories` | `{categories: [{id, name, color, position, count}], total, uncategorized}`. 순서대로 |
+| POST | `/api/memo-categories` | `{name, color?}` → 201. 이름 1~30자, 대소문자 무시 중복은 409 `duplicate`. `color` 는 `blue·green·amber·violet·red·gray`(토큰 `--tk-color-chart-categorical-1..6`) |
+| PATCH | `/api/memo-categories/{id}` | `{name?, color?}`. `color: null` 은 색 없음 |
+| PUT | `/api/memo-categories/order` | `{ids}`. 그 순서로 다시 매긴다 |
+| DELETE | `/api/memo-categories/{id}` | 204. 속한 메모는 미분류로 옮기고 `rev` +1(다른 기기 편집기가 지운 카테고리로 되돌려 쓰지 않게) |
 
 ### 일정
 `EventOut`: `{id, title, description, location, all_day, start, end, rrule, recurring, reminder, remind_at, reminder_sent, source, created_at, updated_at}`. 목록의 `start`/`end` 는 그 **발생분**의 구간이고, `GET /{id}` 는 시리즈 자체의 구간이다.
@@ -200,11 +205,12 @@ payload 는 `{title, body, url, tag}`:
 `reminder`(기본 `null` = 꺼짐): 시간 일정은 `at_start|10m|30m|1h|1d`(시작 기준 전), 종일 일정은 `day_9am|prev_day_9am`(당일·전날 09:00 KST). 종류에 맞지 않거나 반복 일정이면 422. `remind_at` 은 보낼 시각(KST), `reminder_sent` 는 보냈거나 늦어서 건너뛰었는지다. 발송은 푸시 `PushKind.calendar_reminder`(감사 로그 `push.calendar_reminder`), `url` 은 `/calendar?event=<id>&date=YYYY-MM-DD`.
 
 ### 에이전트용(MCP 서버가 부름, 세션 한정 토큰)
-`GET|POST /api/agent/memos`, `GET|PATCH|DELETE /api/agent/memos/{id}`, `GET|POST /api/agent/events`, `PATCH|DELETE /api/agent/events/{id}`.
+`GET /api/agent/memo-categories`, `GET|POST /api/agent/memos`, `GET|PATCH|DELETE /api/agent/memos/{id}`, `GET|POST /api/agent/events`, `PATCH|DELETE /api/agent/events/{id}`.
 - `GET /api/agent/events?from=&to=&q=` → `{events, holidays}`.
+- 에이전트는 카테고리를 이름으로 쓴다: 목록 `category=<이름 또는 none>`, 만들기·고치기 `category`(빈 문자열이면 미분류), 응답에 `category` 이름. 없는 이름은 만들지 않고 422 로 있는 이름을 알려 준다.
 - `PATCH /api/agent/memos/{id}` 는 `append` 도 받는다. 사용자 메모의 `title`·`body` 를 바꾸려 하면 403 `user_owned`.
 - `DELETE` 는 보관 처리 `{archived: true}`. 에이전트가 만든 항목만 되고, 사용자가 만든 것은 403 `user_owned`.
-- MCP 도구: `list_memos` `search_memos` `get_memo` `create_memo` `update_memo` `delete_memo` `list_events` `create_event` `update_event` `delete_event`.
+- MCP 도구: `list_memo_categories` `list_memos`(tags·category) `search_memos`(tags·category) `get_memo` `create_memo` `update_memo` `delete_memo` `list_events` `create_event` `update_event` `delete_event`.
 
 ## 폰 → 컴퓨터 파일 보내기
 

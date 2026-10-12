@@ -122,16 +122,24 @@ async def read_session(session_id: str, last: int = 10) -> str:
 # ---- 메모·캘린더(ADR 0008). 시각은 모두 Asia/Seoul 이다.
 
 @server.tool()
-async def list_memos(tag: str | None = None, limit: int = 30) -> str:
-    """List the user's memos (pinned first, then newest). Returns title, tags and a short excerpt; use get_memo
-    for the full Markdown body."""
-    return await _agent("GET", "/memos", tag=tag, limit=limit)
+async def list_memo_categories() -> str:
+    """List the user's memo categories in their order. A memo belongs to at most one category (or none)."""
+    return await _agent("GET", "/memo-categories")
 
 
 @server.tool()
-async def search_memos(query: str, limit: int = 20) -> str:
-    """Search memos by words in the title, body or tags."""
-    return await _agent("GET", "/memos", q=query, limit=limit)
+async def list_memos(tags: list[str] | None = None, category: str | None = None, limit: int = 30) -> str:
+    """List the user's memos (pinned first, then newest). Returns title, category, tags and a short excerpt; use
+    get_memo for the full Markdown body. `tags` keeps memos that have all of them; `category` is a category name,
+    or "none" for uncategorized memos."""
+    return await _agent("GET", "/memos", tag=tags or None, category=category, limit=limit)
+
+
+@server.tool()
+async def search_memos(query: str, tags: list[str] | None = None, category: str | None = None, limit: int = 20) -> str:
+    """Search memos by words in the title, body or tags, optionally narrowed by `tags` (all must match) and
+    `category` (a name, or "none" for uncategorized)."""
+    return await _agent("GET", "/memos", q=query, tag=tags or None, category=category, limit=limit)
 
 
 @server.tool()
@@ -141,17 +149,23 @@ async def get_memo(memo_id: str) -> str:
 
 
 @server.tool()
-async def create_memo(body: str, title: str = "", tags: list[str] | None = None, pinned: bool = False) -> str:
-    """Save a new memo (Markdown). Use for 'jot this down' requests. Give a short title and 1-3 tags when obvious."""
-    return await _agent("POST", "/memos", {"title": title, "body": body, "tags": tags or [], "pinned": pinned})
+async def create_memo(body: str, title: str = "", tags: list[str] | None = None, category: str | None = None,
+                      pinned: bool = False) -> str:
+    """Save a new memo (Markdown). Use for 'jot this down' requests. Give a short title and 1-3 tags when obvious.
+    `category` must be an existing category name (see list_memo_categories); leave it out when none fits."""
+    return await _agent("POST", "/memos", {"title": title, "body": body, "tags": tags or [], "category": category,
+                                           "pinned": pinned})
 
 
 @server.tool()
 async def update_memo(memo_id: str, append: str | None = None, body: str | None = None, title: str | None = None,
-                      tags: list[str] | None = None, pinned: bool | None = None, rev: int | None = None) -> str:
-    """Edit a memo. On memos the user wrote you may only `append` text and change tags/pinned; title and body can be
-    replaced only on memos you created. Pass `rev` from get_memo to avoid overwriting a newer edit."""
-    patch = {"append": append, "body": body, "title": title, "tags": tags, "pinned": pinned, "rev": rev}
+                      tags: list[str] | None = None, category: str | None = None, pinned: bool | None = None,
+                      rev: int | None = None) -> str:
+    """Edit a memo. On memos the user wrote you may only `append` text and change tags/category/pinned; title and body
+    can be replaced only on memos you created. `tags` replaces the whole list. `category` is an existing category
+    name, or "" to make it uncategorized. Pass `rev` from get_memo to avoid overwriting a newer edit."""
+    patch = {"append": append, "body": body, "title": title, "tags": tags, "category": category, "pinned": pinned,
+             "rev": rev}
     return await _agent("PATCH", f"/memos/{memo_id}", {k: v for k, v in patch.items() if v is not None})
 
 

@@ -7,11 +7,18 @@ import os
 import subprocess
 import sys
 import time
+from uuid import UUID
 
-from conftest import agent_calls
-from helpers import run_events, run_to_end, wait_run
+import pytest
+from conftest import AGENT_LOG, agent_calls
+from helpers import run_events, run_to_end, start_run, wait_event, wait_run
+from sqlalchemy import select
 
+from ttakkari.db import sessionmaker
+from ttakkari.models import AppSetting
 from ttakkari.orchestrator.runtime import issue_token
+from ttakkari.runs import profiles
+from ttakkari.runs.manager import manager
 
 
 async def _session(client, auth, make_dir, **body) -> dict:
@@ -34,6 +41,35 @@ async def _wait(pred, timeout: float = 20.0, what: str = "조건"):
             return v
         assert time.monotonic() < deadline, f"{what} 이(가) {timeout}초 안에 충족되지 않음"
         await asyncio.sleep(0.1)
+
+
+async def _wait_status(client, auth, run_id: str, status: str, timeout: float = 20.0) -> dict:
+    async def find():
+        r = (await client.get(f"/api/runs/{run_id}", headers=auth)).json()
+        return r if r["status"] == status else None
+
+    return await _wait(find, timeout, f"상태 {status}")
+
+
+@pytest.fixture
+def push_calls(monkeypatch):
+    calls: list[tuple] = []
+
+    async def fake_notify(kind, title, body="", **kw):
+        calls.append((kind, title, body, kw))
+        return {"sent": 0, "removed": 0, "failed": 0}
+
+    monkeypatch.setattr("ttakkari.runs.manager.notify", fake_notify)
+    return calls
+
+
+@pytest.fixture
+def limit_lock():
+    """락 파일이 있는 동안 가짜 엔진이 한도를 낸다(LIMIT_LOCK 지시). 내용은 초기화 시각."""
+    lock = AGENT_LOG.with_name(AGENT_LOG.name + ".lock")
+    lock.write_text(str(int(time.time()) + 3))
+    yield lock
+    lock.unlink(missing_ok=True)
 
 
 # ---- 엔진 프로필 폴백
@@ -98,14 +134,22 @@ async def test_real_claude_session_limit_falls_back_to_second_claude(client, aut
     assert calls[-1]["account_dir"] == str(d)
 
 
-async def test_all_limited_accounts_are_not_retried_during_cooldown(client, auth, make_dir):
+async def test_all_limited_accounts_wait_instead_of_failing_and_are_not_retried(client, auth, make_dir):
     sess = await _session(client, auth, make_dir, kind="orchestrator")
-    first = await run_to_end(client, auth, sess["id"], "CLAUDE_LIMIT CODEX_LIMIT")
-    assert first["status"] == "failed"
+    first = await start_run(client, auth, sess["id"], "CLAUDE_LIMIT CODEX_LIMIT")
+    waiting = await wait_event(client, auth, first["id"], "run.waiting")
+    assert waiting["payload"]["until"] and {a["name"] for a in waiting["payload"]["accounts"]} == {"claude", "codex"}
+    run = (await client.get(f"/api/runs/{first['id']}", headers=auth)).json()
+    assert run["status"] == "queued" and run["error"] is None
     before = len(agent_calls())
-    second = await run_to_end(client, auth, sess["id"], "new request")
-    assert second["status"] == "failed" and "한도" in second["error"]
+    # 대기 중인 Run 뒤에 선다. 계정을 다시 두드리지 않고, 같은 대기를 다시 알리지도 않는다.
+    second = await start_run(client, auth, sess["id"], "new request")
+    await manager.dispatch(UUID(sess["id"]))
+    await asyncio.sleep(0.3)
     assert len(agent_calls()) == before
+    assert (await client.get(f"/api/runs/{second['id']}", headers=auth)).json()["status"] == "queued"
+    waits = [e for e in await run_events(client, auth, first["id"]) if e["type"] == "run.waiting"]
+    assert len(waits) == 1
 
 
 async def test_first_use_of_profile_gets_previous_conversation(client, auth, make_dir):
@@ -121,15 +165,25 @@ async def test_first_use_of_profile_gets_previous_conversation(client, auth, mak
 
 async def test_explicit_engine_does_not_switch_engines(client, auth, make_dir):
     sess = await _session(client, auth, make_dir, engine="claude")
-    run = await run_to_end(client, auth, sess["id"], "CLAUDE_LIMIT")
-    assert run["status"] == "failed" and "usage limit" in run["error"]
+    run = await start_run(client, auth, sess["id"], "CLAUDE_LIMIT")
+    await wait_event(client, auth, run["id"], "run.waiting")
     assert {c["engine"] for c in agent_calls()} == {"claude"}
 
 
-async def test_all_profiles_limited_fails_with_last_error(client, auth, make_dir):
+async def test_all_profiles_limited_mid_run_pauses_with_progress_and_reset_time(client, auth, make_dir):
     sess = await _session(client, auth, make_dir, kind="orchestrator")
-    run = await run_to_end(client, auth, sess["id"], "CLAUDE_LIMIT CODEX_LIMIT")
-    assert run["status"] == "failed" and run["profile"] == "codex" and "usage limit" in run["error"]
+    run = await start_run(client, auth, sess["id"], "CLAUDE_LIMIT CODEX_LIMIT")
+    waiting = await wait_event(client, auth, run["id"], "run.waiting")
+    events = await run_events(client, auth, run["id"])
+    types = [e["type"] for e in events]
+    assert types.count("account.limited") == 2 and types.count("engine.fallback") == 1
+    assert "run.finished" not in types
+    limited = [e["payload"] for e in events if e["type"] == "account.limited"]
+    assert [x["account"] for x in limited] == ["claude", "codex"]
+    assert waiting["payload"]["until"]
+    assert (await client.get(f"/api/runs/{run['id']}", headers=auth)).json()["status"] == "queued"
+    # 계정 목록에는 초기화까지 남은 시간이 보인다.
+    assert all(a["cooldown_seconds"] > 0 for a in (await client.get("/api/accounts", headers=auth)).json())
 
 
 async def test_non_limit_failure_does_not_fall_back(client, auth, make_dir):
@@ -312,3 +366,164 @@ async def test_worker_list_has_summary_for_tabs(client, auth, make_dir):
     await wait_run(client, auth, wrun["id"])
     tab = (await client.get("/api/sessions", params={"parent_id": orch["id"]}, headers=auth)).json()[0]
     assert tab["last_run_status"] == "succeeded" and tab["last_result"] == "done" and tab["last_run_profile"] == "claude"
+
+
+# ---- 사용량 한도 대기·재개
+
+async def test_waiting_run_resumes_same_run_after_reset_with_progress_handoff(client, auth, make_dir, limit_lock, push_calls, monkeypatch):
+    monkeypatch.setattr(profiles, "RESET_BUFFER", 0)
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    run = await start_run(client, auth, sess["id"], "LIMIT_LOCK build the report")
+    waiting = await wait_event(client, auth, run["id"], "run.waiting")
+    assert "progress marker alpha" in waiting["payload"]["handoff"]
+    # 사용자에게 한 번 알린다(재개 시각 포함).
+    assert len(push_calls) == 1
+    kind, title, body, kw = push_calls[0]
+    assert kind.value == "push.run_waiting" and "사용량 한도" in title and "이어서 진행" in body
+    assert kw["url"] == f"/chat/{sess['id']}"
+
+    limit_lock.unlink()  # 한도가 풀린다. 초기화 시각(약 3초)이 지나면 같은 Run 이 이어서 돈다.
+    done = await _wait_status(client, auth, run["id"], "succeeded")
+    assert done["id"] == run["id"] and done["profile"] == "claude" and done["started_at"]
+    events = await run_events(client, auth, run["id"])
+    types = [e["type"] for e in events]
+    assert types.count("run.waiting") == 1 and types.count("run.resumed") == 1
+    assert types.index("run.waiting") < types.index("run.resumed") < types.index("run.finished")
+    # 시작할 때 한 번만 남기는 체크포인트·시작 시각을 다시 만들지 않는다.
+    assert types.count("checkpoint") <= 1
+    last = agent_calls()[-1]
+    assert last["engine"] == "claude"
+    prompt = last["argv"][last["argv"].index("-p") + 1]
+    assert "Previous account handoff" in prompt and "progress marker alpha" in prompt
+    assert "LIMIT_LOCK build the report" in prompt
+    assert len(push_calls) == 1
+
+
+async def test_cancel_waiting_run_disarms_wake(client, auth, make_dir, limit_lock, push_calls):
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    run = await start_run(client, auth, sess["id"], "LIMIT_LOCK cancel me")
+    await wait_event(client, auth, run["id"], "run.waiting")
+    assert UUID(run["id"]) in manager._waiting
+    r = await client.post(f"/api/runs/{run['id']}/cancel", headers=auth)
+    assert r.status_code == 200 and r.json()["status"] == "cancelled"
+    assert UUID(run["id"]) not in manager._waiting and UUID(run["id"]) not in manager._wakers
+
+
+async def test_clearing_account_limits_releases_waiting_run_immediately(client, auth, make_dir, limit_lock, push_calls):
+    limit_lock.write_text(str(int(time.time()) + 3600))
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    run = await start_run(client, auth, sess["id"], "LIMIT_LOCK wait an hour")
+    await wait_event(client, auth, run["id"], "run.waiting")
+    limit_lock.unlink()
+    for acc in (await client.get("/api/accounts", headers=auth)).json():
+        assert (await client.post(f"/api/accounts/{acc['id']}/cooldown/clear", headers=auth)).status_code == 200
+    done = await _wait_status(client, auth, run["id"], "succeeded", timeout=10)
+    assert done["profile"] == "claude"
+
+
+async def test_still_limited_after_release_waits_again_without_new_notification(client, auth, make_dir, limit_lock, push_calls):
+    limit_lock.write_text(str(int(time.time()) + 3600))
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    run = await start_run(client, auth, sess["id"], "LIMIT_LOCK still limited")
+    await wait_event(client, auth, run["id"], "run.waiting")
+    before = len(agent_calls())
+    await manager.release_waiting()  # 계정 쿨다운이 그대로라 호출 없이 다시 대기한다
+    await asyncio.sleep(0.3)
+    assert len(agent_calls()) == before and UUID(run["id"]) in manager._waiting
+    assert len([e for e in await run_events(client, auth, run["id"]) if e["type"] == "run.waiting"]) == 1
+    assert len(push_calls) == 1
+
+
+async def test_repeated_limit_waits_stop_at_max(client, auth, make_dir, limit_lock, push_calls, monkeypatch):
+    from ttakkari.config import get_settings
+
+    monkeypatch.setattr(profiles, "RESET_BUFFER", 0)
+    monkeypatch.setattr(get_settings(), "max_limit_waits", 1)
+    limit_lock.write_text(str(int(time.time()) + 2))
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    run = await start_run(client, auth, sess["id"], "LIMIT_LOCK never recovers")
+    await wait_event(client, auth, run["id"], "run.waiting")
+    limit_lock.write_text(str(int(time.time()) + 2))  # 풀렸다고 믿었지만 다시 한도
+    failed = await _wait_status(client, auth, run["id"], "failed", timeout=15)
+    assert "기다렸지만" in failed["error"]
+
+
+async def test_cooldown_survives_restart(client, auth, make_dir):
+    acc = (await client.get("/api/accounts", headers=auth)).json()[0]
+    aid = UUID(acc["id"])
+    profiles.cool_down(aid, 600)
+    await profiles.flush_persist()
+    async with sessionmaker()() as db:
+        row = await db.scalar(select(AppSetting).where(AppSetting.key == profiles.COOLDOWN_KEY))
+        assert str(aid) in row.value["until"]
+    profiles.reset_cooldowns()  # 프로세스 재시작
+    assert profiles.cooldown_remaining(aid) == 0
+    async with sessionmaker()() as db:
+        assert await profiles.load_cooldowns(db) == 1
+    assert 590 < profiles.cooldown_remaining(aid) <= 600
+    profiles.clear_cooldown(aid)
+    await profiles.flush_persist()
+    profiles.reset_cooldowns()
+    async with sessionmaker()() as db:
+        assert await profiles.load_cooldowns(db) == 0
+
+
+async def test_structured_rate_limit_event_triggers_fallback_even_without_known_wording(client, auth, make_dir):
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    run = await run_to_end(client, auth, sess["id"], "STRUCT_LIMIT please")
+    assert run["status"] == "succeeded" and run["profile"] == "codex"
+    claude = (await client.get("/api/accounts", headers=auth)).json()[0]
+    assert 3500 < claude["cooldown_seconds"] <= 3640  # 이벤트가 알려 준 resetsAt 까지 쉰다
+
+
+async def test_orchestrator_uses_allowed_model_when_switching_engine(client, auth, make_dir):
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    await run_to_end(client, auth, orch["id"], "CLAUDE_LIMIT")
+    codex = next(c for c in agent_calls() if c["engine"] == "codex")
+    assert codex["argv"][codex["argv"].index("-m") + 1] == "gpt-6.1-sol"
+    assert 'model_reasoning_effort="high"' in codex["argv"]
+    # 일반 대화는 모델을 건드리지 않는다.
+    profiles.reset_cooldowns()
+    chat = await _session(client, auth, make_dir, engine="auto")
+    before = len(agent_calls())
+    await run_to_end(client, auth, chat["id"], "CLAUDE_LIMIT")
+    codex = next(c for c in agent_calls()[before:] if c["engine"] == "codex")
+    assert "-m" not in codex["argv"]
+
+
+async def test_account_resuming_own_conversation_gets_turns_it_missed(client, auth, make_dir):
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    assert (await run_to_end(client, auth, sess["id"], "alpha one"))["profile"] == "claude"
+    claude = (await client.get("/api/accounts", headers=auth)).json()[0]
+    profiles.cool_down(UUID(claude["id"]), 600)
+    assert (await run_to_end(client, auth, sess["id"], "bravo two"))["profile"] == "codex"
+    assert (await client.post(f"/api/accounts/{claude['id']}/cooldown/clear", headers=auth)).status_code == 200
+    before = len(agent_calls())
+    assert (await run_to_end(client, auth, sess["id"], "charlie three"))["profile"] == "claude"
+    call = agent_calls()[before]
+    prompt = call["argv"][call["argv"].index("-p") + 1]
+    assert "--resume" in call["argv"]
+    assert "bravo two" in prompt and "charlie three" in prompt and "alpha one" not in prompt
+
+
+def test_limit_wording_and_reset_time_variants():
+    from datetime import datetime, timedelta
+
+    msgs = [
+        "You've hit your weekly limit · resets 3pm (Asia/Seoul)",
+        "You've hit your limit · resets Oct 20, 3pm (Asia/Seoul)",
+        "Weekly limit reached ∙ resets Mon 3pm (Asia/Seoul)",
+        "You're out of extra usage · resets 7:20pm",
+    ]
+    for m in msgs:
+        assert profiles.is_usage_limit(m), m
+        left = profiles.reset_seconds_from(m)
+        assert left is not None and 0 < left <= 8 * 86400, (m, left)
+    at = profiles.reset_epoch_from(f"Claude AI usage limit reached|{int(time.time()) + 7200}")
+    assert at is not None and 7190 < at - time.time() <= 7200
+    soon = datetime.now().astimezone() + timedelta(days=2)
+    text = f"resets {soon:%b} {soon.day}, 3pm (Asia/Seoul)"
+    left = profiles.reset_seconds_from(text)
+    assert left is not None and left < 4 * 86400
+    assert profiles.reset_epoch_from("nothing here") is None
+    assert not profiles.is_usage_limit("ordinary failure")

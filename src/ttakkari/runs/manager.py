@@ -9,11 +9,13 @@ import logging
 import os
 import signal
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
@@ -46,7 +48,7 @@ from ttakkari.orchestrator.runtime import (
     ORCHESTRATOR_NOTE,
     mcp_server_spec,
 )
-from ttakkari.push.service import notify_run_finished
+from ttakkari.push.service import PushKind, notify, notify_run_finished
 from ttakkari.runs import events
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
@@ -57,9 +59,11 @@ log = logging.getLogger(__name__)
 ADAPTERS: dict[str, AgentAdapter] = {"claude": ClaudeAdapter(), "codex": CodexAdapter()}
 MAX_TOUCHED_ARTIFACTS = 50
 MAX_OUTBOX_FILES = 200
+MAX_CHECKPOINT_UNTRACKED = 500
 STDERR_TAIL = 4000
 HANDOFF_TURNS = 8
 HANDOFF_CHARS = 1500
+WAIT_HANDOFF_CHARS = 6000
 REPORT_CHARS = 3000
 # 부모 프로세스가 Claude Code·Orca 안에서 떴을 때 자식 에이전트가 중첩 세션으로 오인하지 않게 지운다.
 STRIP_ENV_PREFIXES = ("TTAKKARI_", "ORCA_", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID")
@@ -91,6 +95,9 @@ class RunManager:
         self._handles: dict[uuid.UUID, _Handle] = {}
         self._sem: asyncio.Semaphore | None = None
         self._shutting_down = False
+        # 모든 계정이 사용량 한도라 초기화를 기다리는 Run → (재개 시각, 세션). 같은 세션의 다음 Run 도 이 Run 뒤에 선다.
+        self._waiting: dict[uuid.UUID, tuple[float, uuid.UUID]] = {}
+        self._wakers: dict[uuid.UUID, asyncio.Task[None]] = {}
 
     @property
     def sem(self) -> asyncio.Semaphore:
@@ -145,6 +152,9 @@ class RunManager:
                 await db.rollback()
                 return None
             nxt = rows[0] if rows else None
+            if nxt is not None and self._waiting.get(nxt.id, (0.0, nxt.id))[0] > time.time():
+                await db.rollback()
+                return None
             if nxt is not None:
                 self.start(nxt.id)
             await db.commit()
@@ -154,9 +164,72 @@ class RunManager:
         """아직 시작하지 않은(프로세스 없는) 대기 Run 을 취소한다."""
         await self._finish(db, run, RunStatus.cancelled)
 
+    def _arm(self, run_id: uuid.UUID, session_id: uuid.UUID, until: float) -> None:
+        """한도 대기 중인 Run 을 `until` 에 다시 돌린다. 맥이 잠들었다 깨도 늦지 않게 짧게 끊어 시계를 본다."""
+        self._disarm(run_id)
+        self._waiting[run_id] = (until, session_id)
+        self._wakers[run_id] = asyncio.create_task(self._wake(run_id, session_id, until), name=f"wake-{run_id}")
+
+    def _disarm(self, run_id: uuid.UUID) -> None:
+        self._waiting.pop(run_id, None)
+        waker = self._wakers.pop(run_id, None)
+        if waker is not None and waker is not asyncio.current_task():
+            waker.cancel()
+
+    async def _wake(self, run_id: uuid.UUID, session_id: uuid.UUID, until: float) -> None:
+        while (left := until - time.time()) > 0:
+            await asyncio.sleep(min(left, 60))
+        self._waiting.pop(run_id, None)
+        self._wakers.pop(run_id, None)
+        await self.dispatch(session_id)
+
+    async def _wait_for_reset(self, db: AsyncSession, run: Run, sess: ChatSession,
+                              blocked: list[tuple[profiles_mod.Profile, float]], handoff: str | None = None) -> None:
+        """쓸 수 있는 계정이 없다. Run 을 queued 로 두고 가장 이른 초기화 시각에 같은 Run 을 다시 돌린다.
+
+        계정을 계속 두드리지 않는다. 사용자에게 한 번 알리고(재시작 뒤 다시 대기해도 중복 알림 없음), 한도가 계속 반복되면
+        max_limit_waits 번째에 실패로 끝낸다. handoff 는 중간에 멈춘 Run 의 진행·미완료 내용으로, 재개 때 새 계정에 실린다."""
+        until = min(u for _, u in blocked)
+        prev = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type == "run.waiting")
+                               .order_by(RunEvent.seq.desc()).limit(1))
+        repeat = prev is not None and prev.seq == run.last_seq and abs(
+            (datetime.fromisoformat(prev.payload["until"]).timestamp() if prev.payload.get("until") else 0) - until) < 60
+        if not repeat:
+            waits = await db.scalar(select(func.count()).select_from(RunEvent).where(
+                RunEvent.run_id == run.id, RunEvent.type == "run.waiting")) or 0
+            if waits >= get_settings().max_limit_waits:
+                await self._finish(db, run, RunStatus.failed,
+                                   error=f"사용량 한도 때문에 {waits}번 기다렸지만 끝내지 못했습니다. 한도 상태를 확인해 주세요.")
+                return
+            if run.status == RunStatus.running:
+                run.status = RunStatus.queued
+                run.pid = None
+                events.append(db, run, "run.status", {"status": RunStatus.queued, "waiting": True})
+            if handoff is None and prev is not None:
+                handoff = str((prev.payload or {}).get("handoff") or "")
+            events.append(db, run, "run.waiting", {
+                "until": _iso(until),
+                "accounts": [{"name": p.name, "engine": p.engine, "resets_at": _iso(u)}
+                             for p, u in sorted(blocked, key=lambda b: b[1])],
+                "handoff": (handoff or "")[:WAIT_HANDOFF_CHARS],
+            })
+            await self._commit(db, run)
+            _spawn(_notify_waiting(run, sess.title, until))
+        self._arm(run.id, sess.id, until)
+
+    async def release_waiting(self) -> None:
+        """한도 대기를 풀고 바로 다시 시도한다(사용자가 계정 한도 상태를 풀거나 계정을 켰을 때). 여전히 못 쓰면 다시 대기한다."""
+        pending = list(self._waiting.items())
+        for rid, _ in pending:
+            self._disarm(rid)
+        for sid in {sid for _, (_, sid) in pending}:
+            await self.dispatch(sid)
+
     async def shutdown(self) -> None:
         # 재시작으로 끊긴 Run 은 사용자 취소와 구분해 interrupted 로 남긴다.
         self._shutting_down = True
+        for rid in list(self._wakers):
+            self._disarm(rid)
         for h in list(self._handles.values()):
             if h.proc is not None:
                 await self._terminate(h.proc)
@@ -206,18 +279,39 @@ class RunManager:
         assert sess is not None and ws is not None
         root = Path(ws.root_path)
 
+        # 쓸 수 있는 계정이 없으면 시작하지 않고 가장 이른 한도 초기화까지 기다린다(대기 Run 은 queued 로 남는다).
+        profiles, blocked = await profiles_mod.availability(db, sess.engine, sess.pool)
+        if not profiles:
+            if blocked:
+                await self._wait_for_reset(db, run, sess, blocked)
+                return
+            what = "엔진" if sess.engine == "auto" else sess.engine
+            where = "회사" if sess.pool == "work" else "개인"
+            await self._finish(db, run, RunStatus.failed,
+                               error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
+            return
+
+        # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
+        resumed = run.started_at is not None
+        resume_handoff = await _waiting_handoff(db, run) if resumed else ""
+        self._disarm(run.id)
         run.status = RunStatus.running
-        run.started_at = utcnow()
+        run.started_at = run.started_at or utcnow()
         events.append(db, run, "run.status", {"status": RunStatus.running})
+        if resumed:
+            events.append(db, run, "run.resumed", {"account": profiles[0].name})
         await self._commit(db, run)
 
         untracked_before: set[str] = set()
         if ws.is_git:
-            untracked_before = await _git_untracked(root)
-            ref = await _git_checkpoint(root, run.id)
-            if ref:
-                run.checkpoint_ref = ref
-                events.append(db, run, "checkpoint", {"ref": ref})
+            if run.checkpoint_ref:
+                untracked_before = await _checkpoint_untracked(db, run)
+            else:
+                untracked_before = await _git_untracked(root)
+                ref = await _git_checkpoint(root, run.id)
+                if ref:
+                    run.checkpoint_ref = ref
+                    events.append(db, run, "checkpoint", {"ref": ref, "untracked": sorted(untracked_before)[:MAX_CHECKPOINT_UNTRACKED]})
 
         outbox = s.outbox_root / str(run.id)
         outbox.mkdir(parents=True, exist_ok=True)
@@ -229,37 +323,23 @@ class RunManager:
         is_orch = sess.kind == SessionKind.orchestrator
         system_note = await _system_note(db, outbox, orchestrator=is_orch, scope="work" if sess.pool == "work" else "all")
         mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
-        profiles = await profiles_mod.candidates(db, sess.engine, sess.pool)
-        if not profiles:
-            configured = [a for a in await profiles_mod.effective_order(db, sess.pool)
-                          if a.enabled and (sess.engine == "auto" or a.engine == sess.engine)]
-            if configured:
-                where = "회사" if sess.pool == "work" else "개인"
-                await self._finish(db, run, RunStatus.failed,
-                                   error=f"켜진 {where} 계정이 모두 사용량 한도 초기화를 기다리고 있습니다.")
-                return
-            what = "엔진" if sess.engine == "auto" else sess.engine
-            where = "회사" if sess.pool == "work" else "개인"
-            await self._finish(db, run, RunStatus.failed,
-                               error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
-            return
         h = self._handles.get(run.id)
         state = ParseState()
         rc: int | None = None
         timed_out = False
-        attempt_handoff = ""
+        attempt_handoff = resume_handoff
+        paused_handoff: str | None = None
         for i, prof in enumerate(profiles):
             resume_id = (sess.engine_sessions or {}).get(prof.key)
             prompt = base_prompt
-            if resume_id is None:
-                prompt = await _handoff_context(db, run) + prompt
+            # 처음 쓰는 계정은 앞선 대화를 통째로, 쓴 적 있는 계정은 그 뒤 다른 계정에서 오간 대화만 받는다.
+            prompt = await _handoff_context(db, run, resumed_profile=prof.name if resume_id else None) + prompt
             prompt = attempt_handoff + prompt
             run.engine, run.profile = prof.engine, prof.name
+            model, effort = _launch_model(sess, run, prof, profiles[0])
             spec = LaunchSpec(
                 cwd=root, prompt=prompt, engine_session_id=resume_id,
-                # 모델 이름은 엔진마다 다르다. 그 엔진의 모델일 때만 넘기고, 어느 엔진 것인지 모르면 첫 계정에만 넘긴다.
-                model=run.model if (profiles_mod.model_engine(run.model) or profiles[0].engine) == prof.engine else None,
-                effort=run.effort,
+                model=model, effort=effort,
                 outbox=outbox, write_roots=write_roots, system_note=system_note,
                 codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers,
             )
@@ -276,23 +356,40 @@ class RunManager:
             failed = missing or rc != 0 or state.is_error
             stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
-            limited = failed and profiles_mod.is_usage_limit(state.error, tail, None if rc == 0 else state.result_text)
+            texts = (state.error, tail, None if rc == 0 else state.result_text, state.limit_text)
+            limited = failed and (state.limit_hit or profiles_mod.is_usage_limit(*texts))
+            reset_at: float | None = None
             if limited and not stopped:
                 # 마지막 계정이어도 쉬게 해야 다음 지시가 한도 걸린 계정부터 다시 두드리지 않는다.
-                profiles_mod.cool_down(prof.id, profiles_mod.reset_seconds_from(state.error, tail))
+                reset_at = state.limit_resets_at or profiles_mod.reset_epoch_from(*texts)
+                profiles_mod.cool_down(prof.id, None if reset_at is None else max(1, int(reset_at - time.time()) + profiles_mod.RESET_BUFFER))
+                events.append(db, run, "account.limited", {
+                    "account": prof.name, "engine": prof.engine, "reset_at": _iso(reset_at),
+                    "detail": (state.error or tail or "")[:300],
+                })
             if stopped or not failed or not (missing or limited) or i == len(profiles) - 1:
                 if missing and i == len(profiles) - 1:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
                     return
+                if limited and not stopped:
+                    # 켜진 계정을 다 써 봤다. 실패로 끝내지 않고 초기화를 기다렸다가 이어서 한다.
+                    paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
             nxt = profiles[i + 1]
             events.append(db, run, "engine.fallback", {
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
-                "detail": (state.error or tail or "")[:500],
+                "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
+                # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄
+                "mode": "resume" if (sess.engine_sessions or {}).get(nxt.key) else "handoff",
             })
             attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
             if h:
                 h.stderr_tail.clear()
+        if paused_handoff is not None:
+            _, blocked = await profiles_mod.availability(db, sess.engine, sess.pool)
+            if blocked:
+                await self._wait_for_reset(db, run, sess, blocked, handoff=paused_handoff)
+                return
         run.exit_code = rc
 
         sess.updated_at = utcnow()
@@ -425,6 +522,7 @@ class RunManager:
             preview.enqueue(art_id)
 
     async def _finish(self, db: AsyncSession, run: Run, status: RunStatus, error: str | None = None) -> None:
+        self._disarm(run.id)
         run.status = status
         run.finished_at = utcnow()
         if error:
@@ -461,6 +559,16 @@ def _spawn(coro) -> None:
 async def _notify(run: Run, title: str | None) -> None:
     try:
         await notify_run_finished(run, title)
+    except Exception:
+        log.exception("push notification failed for run %s", run.id)
+
+
+async def _notify_waiting(run: Run, title: str | None, until: float) -> None:
+    try:
+        when = datetime.fromtimestamp(until).astimezone().strftime("%m/%d %H:%M")
+        name = (title or "새 세션")[:60]
+        await notify(PushKind.run_waiting, "작업 대기 · 사용량 한도", f"{name} · {when}에 이어서 진행",
+                     url=f"/chat/{run.session_id}", tag=f"{run.session_id}-waiting", target_id=run.id)
     except Exception:
         log.exception("push notification failed for run %s", run.id)
 
@@ -587,14 +695,53 @@ def read_instructions() -> str:
     return text[: get_settings().context_brief_chars]
 
 
-async def _handoff_context(db: AsyncSession, run: Run) -> str:
-    """처음 쓰는 엔진 프로필에 앞선 대화(지시·답)를 넘긴다. 도구 호출 내역은 넘기지 않는다(ADR 0006 한계)."""
+def _iso(epoch: float | None) -> str | None:
+    return None if epoch is None else datetime.fromtimestamp(epoch, UTC).isoformat()
+
+
+def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first: profiles_mod.Profile) -> tuple[str | None, str | None]:
+    """계정에 넘길 (모델, 생각 수준). 모델 이름은 엔진마다 다르다. 그 엔진의 모델일 때만 넘기고, 어느 엔진 것인지 모르면 첫 계정에만 넘긴다.
+
+    오케스트레이터가 다른 엔진으로 넘어가면 비서 지침의 허용 모델(설정 orchestrator_fallback_models)로 맞춘다."""
+    if (profiles_mod.model_engine(run.model) or first.engine) == prof.engine:
+        return run.model, run.effort
+    if sess.kind == SessionKind.orchestrator:
+        fb = get_settings().orchestrator_fallback_models.get(prof.engine) or {}
+        return fb.get("model"), fb.get("effort") or run.effort
+    return None, run.effort
+
+
+async def _waiting_handoff(db: AsyncSession, run: Run) -> str:
+    ev = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type == "run.waiting")
+                         .order_by(RunEvent.seq.desc()).limit(1))
+    return str((ev.payload or {}).get("handoff") or "") if ev else ""
+
+
+async def _checkpoint_untracked(db: AsyncSession, run: Run) -> set[str]:
+    ev = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type == "checkpoint")
+                         .order_by(RunEvent.seq).limit(1))
+    return set((ev.payload or {}).get("untracked") or []) if ev else set()
+
+
+async def _handoff_context(db: AsyncSession, run: Run, resumed_profile: str | None = None) -> str:
+    """다른 엔진·계정에서 오간 앞선 대화(지시·답)를 넘긴다. 도구 호출 내역은 넘기지 않는다(ADR 0006 한계).
+
+    resumed_profile 이 있으면 그 계정이 자기 엔진 대화를 이어 받는 경우다. 그 계정이 마지막으로 처리한 Run 뒤의 대화만 넘긴다."""
     rows = list(await db.scalars(
         select(Run).where(Run.session_id == run.session_id, Run.id != run.id, Run.status.in_(TERMINAL_RUN_STATUSES))
         .order_by(Run.created_at.desc()).limit(HANDOFF_TURNS)))
+    if resumed_profile:
+        missed = []
+        for r in rows:
+            if r.profile == resumed_profile:
+                break
+            if r.profile:
+                missed.append(r)
+        rows = missed
     if not rows:
         return ""
-    lines = ["[이전 대화 — 다른 엔진·계정에서 이어받음. 참고만 하고 아래 새 지시에 답한다]"]
+    lines = ["[이 계정이 쉬는 동안 다른 계정에서 오간 대화 — 참고만 하고 아래 새 지시에 답한다]" if resumed_profile
+             else "[이전 대화 — 다른 엔진·계정에서 이어받음. 참고만 하고 아래 새 지시에 답한다]"]
     for r in reversed(rows):
         lines.append(f"사용자: {r.prompt[:HANDOFF_CHARS]}")
         if r.result_text or r.error:
@@ -603,19 +750,27 @@ async def _handoff_context(db: AsyncSession, run: Run) -> str:
 
 
 async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: ParseState,
-                           stderr: str, since_seq: int) -> str:
-    """Carry observable progress to the next account without assuming the failed turn was atomic."""
+                           stderr: str, since_seq: int, *, waiting: bool = False) -> str:
+    """Carry observable progress to the next account without assuming the failed turn was atomic.
+
+    waiting=True 는 한도 초기화를 기다렸다가 이어 받는 경우다. 같은 Run 의 지금까지 진행 전체를 더 길게 싣는다."""
     lines = ["[Previous account handoff]",
-             f"Account {profile} stopped: {(state.error or stderr or 'engine unavailable')[:500]}",
-             "Continue the current request. Inspect existing work and worker sessions before creating or repeating work.",
+             f"Account {profile} stopped on a usage limit: {(state.error or stderr or 'engine unavailable')[:500]}",
+             ("This request is not finished. The original request follows below; continue from where the progress "
+              "below stops, without repeating completed steps."),
+             "Inspect existing work and worker sessions before creating or repeating work.",
              "Search recall for relevant memories and indexed work-history; verify the current state first."]
     rows = list(await db.scalars(
         select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.seq > since_seq,
                                RunEvent.type.in_(("message", "tool.call", "tool.result", "guard.blocked")))
-        .order_by(RunEvent.seq.desc()).limit(12)))
+        .order_by(RunEvent.seq.desc()).limit(24 if waiting else 12)))
+    if rows:
+        lines.append("Progress so far in this request (oldest first):")
     for event in reversed(rows):
         payload = event.payload or {}
-        detail = payload.get("text") or payload.get("output") or payload.get("name") or payload.get("reason")
+        detail = payload.get("text") or payload.get("output") or payload.get("reason")
+        if event.type == "tool.call":
+            detail = f"{payload.get('name')} {json.dumps(payload.get('input'), ensure_ascii=False)[:300]}"
         if detail:
             lines.append(f"{event.type}: {str(detail)[:500]}")
     try:
@@ -628,7 +783,8 @@ async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: Pars
     for hit in hits:
         source = hit.meta.get("path") or hit.meta.get("source") or hit.kind
         lines.append(f"Relevant memory/work-history ({source}): {hit.text[:700]}")
-    return "\n".join(lines) + "\n\n"
+    text = "\n".join(lines)
+    return (text[:WAIT_HANDOFF_CHARS] if waiting else text) + "\n\n"
 
 
 async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:

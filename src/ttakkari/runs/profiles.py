@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
 import time
 import uuid
@@ -15,17 +17,24 @@ from sqlalchemy import Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import HOME, get_settings
+from ttakkari.db import sessionmaker
 from ttakkari.models import AppSetting, ChatSession, EngineAccount, utcnow
+
+log = logging.getLogger(__name__)
 
 ENGINES = {"claude", "codex"}
 # 엔진이 사용량·속도 한도로 거절할 때의 문구. 문구가 바뀌면 폴백 없이 그냥 실패한다(ADR 0006 한계).
+# Claude: "You've hit your session|weekly|usage limit · resets 7:20pm (Asia/Seoul)", "Claude AI usage limit reached|<epoch>".
+# Codex: "You've hit your usage limit. ... try again at Oct 12th, 2026 12:16 AM."
 USAGE_LIMIT_RE = re.compile(
-    r"usage limit|hit your (usage |session )?limit|limit reached|rate.?limit|quota|too many requests|\b429\b|"
-    r"credit balance|out of credits|overloaded",
+    r"usage limit|hit your (\w+ )?limit|reached your (\w+ )?limit|limit reached|rate.?limit|quota|too many requests|"
+    r"\b429\b|credit balance|out of (extra )?(credits|usage)|overloaded",
     re.IGNORECASE,
 )
 
+# 한도 걸린 계정이 쉬는 시각(unix 초). 재시작해도 초기화 전에 다시 두드리지 않게 app_settings 에도 적는다.
 _cooldown: dict[uuid.UUID, float] = {}
+COOLDOWN_KEY = "account_limits"
 
 
 @dataclass(frozen=True)
@@ -106,64 +115,172 @@ async def effective_order(db: AsyncSession, pool: str = "personal") -> list[Engi
     return [a for a in rows if a.pool == "work"] if pool == "work" else rows
 
 
+async def availability(db: AsyncSession, session_engine: str, pool: str = "personal") -> tuple[list[Profile], list[tuple[Profile, float]]]:
+    """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). (쓸 수 있는 계정, [(한도 대기 중인 계정, 초기화 시각)])."""
+    from ttakkari.runs import usage as usage_mod
+
+    free: list[Profile] = []
+    blocked: list[tuple[Profile, float]] = []
+    now = time.time()
+    for a in await effective_order(db, pool):
+        if not a.enabled or not (session_engine == "auto" or a.engine == session_engine):
+            continue
+        p = _profile(a)
+        # 사용량 화면(캐시)이 5시간·주간 한도 100% 를 보여 주면 초기화 전에는 부르지 않는다.
+        until = max(_cooldown.get(p.id, 0), usage_mod.exhausted_until(p.id) or 0)
+        if until > now:
+            blocked.append((p, until))
+        else:
+            free.append(p)
+    return free, blocked
+
+
 async def candidates(db: AsyncSession, session_engine: str, pool: str = "personal") -> list[Profile]:
-    """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). 한도 대기 중인 계정은 제외한다."""
-    picked = [_profile(a) for a in await effective_order(db, pool)
-              if a.enabled and (session_engine == "auto" or a.engine == session_engine)]
-    now = time.monotonic()
-    return [p for p in picked if _cooldown.get(p.id, 0) <= now]
+    """쓸 수 있는 계정만(한도 대기 중인 계정은 제외)."""
+    return (await availability(db, session_engine, pool))[0]
 
 
 # Codex: "try again at Oct 12th, 2026 12:16 AM." (2026-10-11 실측). 시간대 표기가 없어 서버 현지 시각으로 읽는다.
-SESSION_RESET_RE = re.compile(r"resets?\s+(\d{1,2}):(\d{2})\s*([ap]m)\s*\(([^)]+)\)", re.IGNORECASE)
+# Claude: "resets 7:20pm (Asia/Seoul)", "resets 3pm (Asia/Seoul)", "resets Oct 14, 3pm (...)", "resets Mon 3pm (...)".
+SESSION_RESET_RE = re.compile(
+    r"resets?\s+(?:(?P<mon>[A-Z][a-z]{2,8})\s+(?P<day>\d{1,2}),?\s+|(?P<wd>Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s+)?"
+    r"(?P<h>\d{1,2})(?::(?P<m>\d{2}))?\s*(?P<ap>[ap]m)\s*(?:\((?P<tz>[^)]+)\))?",
+    re.IGNORECASE,
+)
 RESET_AT_RE = re.compile(r"try again at ([A-Z][a-z]{2,8}) (\d{1,2})(?:st|nd|rd|th)?,? (\d{4}) (\d{1,2}):(\d{2}) ?([AP]M)", re.IGNORECASE)
+# 옛 Claude CLI: "Claude AI usage limit reached|1760000000"
+EPOCH_RESET_RE = re.compile(r"limit reached\|(\d{9,11})")
+MAX_RESET_SECONDS = 8 * 86400
+RESET_BUFFER = 30
+MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
 
-def reset_seconds_from(*texts: str | None) -> int | None:
-    """한도 메시지에서 초기화 시각을 읽어 남은 초로. 못 읽으면 None(기본 쉬는 시간을 쓴다)."""
+def _clock_reset(m: re.Match[str]) -> float | None:
+    """Claude 의 "resets ..." 문구에서 초기화 시각(unix 초)."""
+    try:
+        zone = ZoneInfo(m["tz"]) if m["tz"] else datetime.now().astimezone().tzinfo
+        now = datetime.now(zone)
+        hour = int(m["h"]) % 12 + (12 if m["ap"].lower() == "pm" else 0)
+        when = now.replace(hour=hour, minute=int(m["m"] or 0), second=0, microsecond=0)
+        if m["mon"]:
+            when = when.replace(month=MONTHS.index(m["mon"][:3].lower()) + 1, day=int(m["day"]))
+            if when <= now:
+                when = when.replace(year=when.year + 1)
+        elif m["wd"]:
+            when += timedelta(days=(WEEKDAYS.index(m["wd"][:3].lower()) - now.weekday()) % 7)
+            if when <= now:
+                when += timedelta(days=7)
+        elif when <= now:
+            when += timedelta(days=1)
+        return when.timestamp()
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+
+
+def reset_epoch_from(*texts: str | None) -> float | None:
+    """한도 메시지에서 초기화 시각(unix 초). 못 읽으면 None(기본 쉬는 시간을 쓴다)."""
+    now = time.time()
     for t in texts:
-        session = SESSION_RESET_RE.search(t or "")
-        if session:
-            hh, mm, ap, zone_name = session.groups()
+        if not t:
+            continue
+        found: float | None = None
+        if m := EPOCH_RESET_RE.search(t):
+            found = float(m[1])
+        elif m := SESSION_RESET_RE.search(t):
+            found = _clock_reset(m)
+        elif m := RESET_AT_RE.search(t):
+            mon, day, year, hh, mm, ap = m.groups()
             try:
-                zone = ZoneInfo(zone_name)
-                local = datetime.now(zone)
-                hour = int(hh) % 12 + (12 if ap.lower() == "pm" else 0)
-                when = local.replace(hour=hour, minute=int(mm), second=0, microsecond=0)
-                if when <= local:
-                    when += timedelta(days=1)
-                return int((when - local).total_seconds()) + 30
-            except (ValueError, ZoneInfoNotFoundError):
-                pass
-        m = RESET_AT_RE.search(t or "")
-        if not m:
-            continue
-        mon, day, year, hh, mm, ap = m.groups()
-        try:
-            # 메시지에 시간대가 없다. Codex 는 사용자 현지 시각으로 적는다(10-11 실측 문구가 KST 자정 근처) → 현지로 본다.
-            when = datetime.strptime(f"{mon[:3]} {day} {year} {hh}:{mm} {ap.upper()}", "%b %d %Y %I:%M %p").astimezone()
-        except ValueError:
-            continue
-        left = when.timestamp() - time.time()
-        if 0 < left < 8 * 86400:
-            return int(left) + 30
+                # 메시지에 시간대가 없다. Codex 는 사용자 현지 시각으로 적는다(10-11 실측 문구가 KST 자정 근처) → 현지로 본다.
+                found = datetime.strptime(f"{mon[:3]} {day} {year} {hh}:{mm} {ap.upper()}", "%b %d %Y %I:%M %p").astimezone().timestamp()
+            except ValueError:
+                found = None
+        if found is not None and 0 < found - now < MAX_RESET_SECONDS:
+            return found
     return None
 
 
+def reset_seconds_from(*texts: str | None) -> int | None:
+    """한도 메시지에서 초기화까지 남은 초(여유 포함). 못 읽으면 None."""
+    at = reset_epoch_from(*texts)
+    return None if at is None else int(at - time.time()) + RESET_BUFFER
+
+
 def cool_down(account_id: uuid.UUID, seconds: int | None = None) -> None:
-    _cooldown[account_id] = time.monotonic() + (seconds or get_settings().profile_cooldown_seconds)
+    _cooldown[account_id] = time.time() + (seconds or get_settings().profile_cooldown_seconds)
+    _persist()
+
+
+def cooldown_until(account_id: uuid.UUID) -> float | None:
+    until = _cooldown.get(account_id, 0)
+    return until if until > time.time() else None
 
 
 def cooldown_remaining(account_id: uuid.UUID) -> int:
-    return max(0, round(_cooldown.get(account_id, 0) - time.monotonic()))
+    return max(0, round(_cooldown.get(account_id, 0) - time.time()))
 
 
 def clear_cooldown(account_id: uuid.UUID) -> None:
-    _cooldown.pop(account_id, None)
+    if _cooldown.pop(account_id, None) is not None:
+        _persist()
 
 
 def reset_cooldowns() -> None:
     _cooldown.clear()
+
+
+_persist_lock: asyncio.Lock | None = None
+_persist_tasks: set[asyncio.Task] = set()
+
+
+def _persist() -> None:
+    try:
+        task = asyncio.get_running_loop().create_task(_save_cooldowns())
+    except RuntimeError:
+        return
+    _persist_tasks.add(task)
+    task.add_done_callback(_persist_tasks.discard)
+
+
+async def _save_cooldowns() -> None:
+    global _persist_lock
+    if _persist_lock is None:
+        _persist_lock = asyncio.Lock()
+    async with _persist_lock:
+        now = time.time()
+        snapshot = {str(k): v for k, v in _cooldown.items() if v > now}
+        try:
+            async with sessionmaker()() as db:
+                row = await db.get(AppSetting, COOLDOWN_KEY)
+                if row is None:
+                    db.add(AppSetting(key=COOLDOWN_KEY, value={"until": snapshot}))
+                else:
+                    row.value = {"until": snapshot}
+                await db.commit()
+        except Exception:
+            log.warning("account cooldown persist failed", exc_info=True)
+
+
+async def flush_persist() -> None:
+    for task in list(_persist_tasks):
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def load_cooldowns(db: AsyncSession) -> int:
+    """재시작 뒤 한도 상태를 되살린다. 이미 지난 시각은 버린다."""
+    row = await db.get(AppSetting, COOLDOWN_KEY)
+    now = time.time()
+    n = 0
+    for raw, until in ((row.value if row else {}).get("until") or {}).items():
+        try:
+            aid = uuid.UUID(raw)
+        except ValueError:
+            continue
+        if isinstance(until, (int, float)) and until > now and until > _cooldown.get(aid, 0):
+            _cooldown[aid] = float(until)
+            n += 1
+    return n
 
 
 def is_usage_limit(*texts: str | None) -> bool:

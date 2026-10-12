@@ -56,10 +56,15 @@ class ClaudeAdapter:
                 "engine_session_id": state.engine_session_id, "model": obj.get("model"),
             }))
         elif t == "assistant":
+            limited = obj.get("error") == "rate_limit"
+            if limited:
+                state.limit_hit = True
             for block in obj.get("message", {}).get("content", []):
                 bt = block.get("type")
                 if bt == "text" and block.get("text"):
                     state.last_message = block["text"]
+                    if limited:
+                        state.limit_text = block["text"]
                     out.append(Normalized("message", {"text": block["text"]}))
                 elif bt == "thinking" and block.get("thinking"):
                     out.append(Normalized("thinking", {"text": truncate(block["thinking"])}))
@@ -90,6 +95,11 @@ class ClaudeAdapter:
             info = obj.get("rate_limit_info")
             if isinstance(info, dict):
                 state.rate_limits = info
+                if info.get("status") == "rejected":
+                    state.limit_hit = True
+                    resets = info.get("resetsAt")
+                    if isinstance(resets, (int, float)) and resets > 0:
+                        state.limit_resets_at = float(resets)
         elif t == "result":
             state.result_text = obj.get("result")
             state.is_error = bool(obj.get("is_error")) or obj.get("subtype") not in (None, "success")

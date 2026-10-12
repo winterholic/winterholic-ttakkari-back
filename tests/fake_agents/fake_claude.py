@@ -43,6 +43,21 @@ def main():
     if "SLEEP" in prompt:
         time.sleep(60)
         return 0
+    lock = (log or "") + ".lock"
+    if "LIMIT_LOCK" in prompt and log and os.path.exists(lock):
+        # 락 파일이 있는 동안 한도. 내용은 초기화 시각(unix 초)이다. 파일을 지우면 한도가 풀린다.
+        emit({"type": "assistant", "message": {"content": [{"type": "text", "text": "progress marker alpha"}]}})
+        emit({"type": "result", "subtype": "success", "is_error": True,
+              "result": f"Claude AI usage limit reached|{Path(lock).read_text().strip()}",
+              "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
+        return 1
+    if "STRUCT_LIMIT" in prompt and not os.environ.get("CLAUDE_CONFIG_DIR"):
+        # 문구는 한도로 읽히지 않지만 구조화된 이벤트가 한도라고 알려 주는 경우.
+        emit({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "resetsAt": int(time.time()) + 3600}})
+        emit({"type": "assistant", "error": "rate_limit", "message": {"content": [{"type": "text", "text": "Please come back later"}]}})
+        emit({"type": "result", "subtype": "error_during_execution", "is_error": True, "result": "Please come back later",
+              "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
+        return 1
     if "CLAUDE_SESSION_LIMIT" in prompt and not os.environ.get("CLAUDE_CONFIG_DIR"):
         emit({"type": "assistant", "message": {"content": [
             {"type": "text", "text": "Existing worker was already created"}]}})

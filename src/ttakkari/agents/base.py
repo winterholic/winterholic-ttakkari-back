@@ -47,6 +47,11 @@ class ParseState:
     last_message: str | None = None
     # claude rate_limit_event 의 unifiedWindows(계정 사용량 화면의 대체 출처)
     rate_limits: dict[str, Any] | None = None
+    # 엔진이 구조화된 이벤트로 알려 준 한도 도달(Claude rate_limit_event status=rejected, assistant error=rate_limit).
+    # 문구 휴리스틱이 놓쳐도 한도로 본다.
+    limit_hit: bool = False
+    limit_text: str | None = None
+    limit_resets_at: float | None = None
 
 
 class AgentAdapter(Protocol):

@@ -32,6 +32,12 @@ def main():
     if "SLEEP" in prompt:
         time.sleep(60)
         return 0
+    lock = (log or "") + ".lock"
+    if "LIMIT_LOCK" in prompt and log and os.path.exists(lock):
+        with open(lock) as f:
+            reset = f.read().strip()
+        emit({"type": "turn.failed", "error": {"message": f"You've hit your usage limit. limit reached|{reset}"}})
+        return 1
     if "CODEX_LIMIT" in prompt:
         emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit."}})
         return 1

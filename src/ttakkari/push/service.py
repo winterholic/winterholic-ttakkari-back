@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 class PushKind(enum.StrEnum):
     """알림 종류. 값은 감사 로그 action 이다. 새 기능이 알림을 붙이려면 여기에 항목을 더하고 `notify()` 를 부른다."""
 
+    run_waiting = "push.run_waiting"  # 모든 계정이 사용량 한도라 Run 이 초기화를 기다림
     run_failed = "push.run_finished"  # Run 오류 실패(자동). 이름은 기존 감사 로그와 이어지게 유지
     agent = "push.agent"  # 에이전트가 MCP notify_user 로 직접 보냄
     test = "push.test_sent"  # 설정 화면의 테스트 알림

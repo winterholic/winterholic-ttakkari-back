@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     # 엔진 프로필(순서 = 우선순위). config_dir 는 claude 면 CLAUDE_CONFIG_DIR, codex 면 CODEX_HOME 으로 계정을 고른다(ADR 0006).
     engine_profiles: list[dict[str, str]] = [{"name": "claude", "engine": "claude"}, {"name": "codex", "engine": "codex"}]
     profile_cooldown_seconds: int = 30 * 60
+    # 오케스트레이터가 다른 엔진 계정으로 넘어갈 때 쓰는 모델·생각 수준(비서 지침의 허용 모델). 그 엔진의 모델을 직접 고른 Run 은 건드리지 않는다.
+    orchestrator_fallback_models: dict[str, dict[str, str]] = {
+        "claude": {"model": "opus", "effort": "medium"},
+        "codex": {"model": "gpt-6.1-sol", "effort": "high"},
+    }
+    # 한 Run 이 모든 계정의 한도 초기화를 기다릴 수 있는 최대 횟수. 넘으면 실패로 끝낸다(무한 대기 방지).
+    max_limit_waits: int = 8
     # 오케스트레이터 MCP 서버가 부를 백엔드 주소. serve 포트를 바꾸면 같이 바꾼다.
     internal_api_url: str = "http://127.0.0.1:8787"
 

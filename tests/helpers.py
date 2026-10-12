@@ -67,3 +67,15 @@ def parse_sse(text: str) -> list[dict]:
 
 def sse_events(text: str) -> list[dict]:
     return [{"id": int(e["id"]), **json.loads(e["data"])} for e in parse_sse(text) if e.get("event") == "run_event"]
+
+
+async def wait_event(client, auth, run_id: str, type_: str, timeout: float = 20.0) -> dict:
+    """Run 이 해당 type 의 이벤트를 남길 때까지 기다려 그 이벤트를 돌려준다."""
+    deadline = time.monotonic() + timeout
+    while True:
+        found = next((e for e in await run_events(client, auth, run_id) if e["type"] == type_), None)
+        if found:
+            return found
+        if time.monotonic() > deadline:
+            raise AssertionError(f"run {run_id} 에 {type_} 이벤트가 {timeout}초 안에 없음")
+        await asyncio.sleep(0.1)

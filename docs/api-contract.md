@@ -140,7 +140,12 @@ payload 는 `{title, body, url, tag}`:
 - `POST /api/sessions` 에 `kind`(`chat` 기본 | `orchestrator`). 오케스트레이터는 엔진이 `auto` 로 고정된다.
 - `GET /api/sessions` 는 작업 세션을 빼고, `?parent_id=<오케스트레이터 id>` 면 그 작업 세션만.
 - `SessionOut` 에 `kind`, `parent_id`. `RunOut` 에 `origin`(`user` | `report` | `orchestrator`), `profile`(실제로 쓴 엔진 프로필).
-- Run 이벤트 `engine.fallback` `{from, to, reason: usage_limit|missing, detail}`.
+- Run 이벤트(사용량 한도, ADR 0006 "한도 전환·대기"):
+  - `account.limited` `{account, engine, reset_at|null, detail}` 한도 감지. 그 계정은 `reset_at`(모르면 `profile_cooldown_seconds` 뒤)까지 쉰다.
+  - `engine.fallback` `{from, to, reason: usage_limit|missing, detail, reset_at, mode: resume|handoff}` 같은 Run 이 다음 계정으로 넘어감.
+  - `run.waiting` `{until, accounts:[{name, engine, resets_at}], handoff}` 쓸 수 있는 계정이 없다. Run 은 `queued` 로 남고 `until`(가장 이른 초기화)에 같은 Run 이 이어진다. `handoff` 는 재개용 내부 인계문이다.
+  - `run.resumed` `{account}` 대기 뒤 이어서 시작. 이어 받는 Run 은 `run.status`(`running`) 도 다시 남긴다.
+  - 대기를 시작할 때 푸시(`push.run_waiting`) 한 번. 대기 중 취소는 일반 대기 Run 취소와 같다.
 
 오케스트레이터 MCP 서버 전용(토큰 `aud=ttakkari-orch`, 세션 한정. 사용자 토큰은 401):
 

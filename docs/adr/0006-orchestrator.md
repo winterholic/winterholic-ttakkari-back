@@ -33,6 +33,14 @@ Claude 계정을 여러 개 쓰려면 `{"name":"claude-2","engine":"claude","con
 - 세션 엔진 `auto`(오케스트레이터 기본·작업 세션 기본): 모든 프로필을 순서대로.
 - 세션 엔진 `claude`/`codex`: 그 엔진의 프로필만(계정 전환만, 엔진은 안 바꾼다).
 Run 이 사용량 한도로 실패하면(출력·오류 문구 휴리스틱, 아래 한계) 그 프로필을 `profile_cooldown_seconds`(기본 30분) 쉬게 하고 같은 Run 안에서 다음 프로필로 다시 실행한다. 이벤트 `engine.fallback`.
+### 한도 전환·대기(2026-10-13)
+- 감지: 오류·stderr·결과 문구(`USAGE_LIMIT_RE`: session/weekly/usage limit, limit reached, quota 등)에 더해 Claude 구조화 이벤트(`rate_limit_event.status=rejected`, assistant `error=rate_limit`)도 한도로 본다. 초기화 시각은 `resets 3pm (Asia/Seoul)`·`resets Oct 20, 3pm`·`resets Mon 3pm`·`limit reached|<epoch>`·Codex `try again at ...` 에서 읽는다. 구조화 이벤트 형태는 가짜 엔진으로만 검증했고 실제 CLI 출력으로는 확인하지 못했다.
+- 계정은 초기화 시각까지 쉰다(`profiles._cooldown`, app_settings `account_limits` 에도 적어 재시작해도 유지). 사용량 화면(캐시)이 5시간·주간 100% 로 보이는 계정도 초기화 전에는 부르지 않는다(모델별 주간 한도는 무시).
+- 전환: 우선순위상 다음 계정으로 같은 Run 안에서 이어 간다. 이미 대화가 있는 계정이면 엔진 세션을 resume(그 계정이 쉬는 동안 다른 계정에서 오간 대화만 덧붙임), 처음이거나 엔진이 다르면 대화·이 Run 의 진행(최근 도구 호출·결과)·기억 검색 결과를 요약해 프롬프트에 싣는다(`engine.fallback.mode`). 엔진 간 세션 공유는 불가능해서 요약 전달만 현실적이다.
+- 오케스트레이터가 다른 엔진으로 넘어가면 `orchestrator_fallback_models`(기본 claude=opus/medium, codex=gpt-6.1-sol/high)로 모델·생각 수준을 맞춘다. 직접 그 엔진 모델을 고른 Run 과 일반 대화는 건드리지 않는다.
+- 모든 계정이 한도면 실패로 끝내지 않는다. Run 을 `queued` 로 두고 `run.waiting` 을 남기며 푸시로 알린다. 가장 이른 초기화 시각에 같은 Run 을 다시 돌리고(인계문은 `run.waiting.handoff`), 계정 한도 해제·계정 켜기는 즉시 재시도한다. 같은 세션의 다음 지시는 이 Run 뒤에 선다. 한 Run 의 대기가 `max_limit_waits`(기본 8)를 넘으면 실패로 끝낸다.
+- 작업 세션(worker)도 같은 경로라 같은 동작이다. 대기 중에는 오케스트레이터에게 보고가 가지 않는다(Run 이 끝나지 않았으므로).
+
 엔진 대화 ID 는 계정 id 별로 `sessions.engine_sessions` 에 둔다(이름을 바꿔도 이어진다). 처음 쓰는 프로필로 넘어가면 최근 대화 8턴을 프롬프트 앞에 붙여 맥락을 넘긴다.
 
 ## 버린 것

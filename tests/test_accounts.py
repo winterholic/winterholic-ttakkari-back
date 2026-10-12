@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from conftest import HOME, agent_calls
-from helpers import run_to_end
+from helpers import run_to_end, start_run, wait_event
 
 
 async def _accounts(client, auth) -> list[dict]:
@@ -122,11 +122,13 @@ async def test_second_claude_account_takes_over_with_its_config_dir(client, auth
     accs = await _accounts(client, auth)
     await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"], accs[2]["id"], accs[1]["id"]]}, headers=auth)
     chat = await _session(client, auth, make_dir, engine="claude")
-    run = await run_to_end(client, auth, chat["id"], "CLAUDE_LIMIT")
-    # 두 claude 계정 모두 한도면 실패하지만, 두 번째 계정은 자기 폴더로 실행됐다.
+    started = await start_run(client, auth, chat["id"], "CLAUDE_LIMIT")
+    # 두 claude 계정 모두 한도면 실패하지 않고 초기화를 기다리지만, 두 번째 계정은 자기 폴더로 실행됐다.
+    await wait_event(client, auth, started["id"], "run.waiting")
     calls = [c for c in agent_calls() if c["engine"] == "claude"]
     assert [c["account_dir"] for c in calls] == [None, str(d)]
-    assert run["profile"] == "claude-2"
+    run = (await client.get(f"/api/runs/{started['id']}", headers=auth)).json()
+    assert run["profile"] == "claude-2" and run["status"] == "queued"
     listed = {a["name"]: a for a in await _accounts(client, auth)}
     assert listed["claude"]["cooldown_seconds"] > 0 and listed["claude-2"]["cooldown_seconds"] > 0
     r = await client.post(f"/api/accounts/{listed['claude']['id']}/cooldown/clear", headers=auth)
@@ -203,7 +205,8 @@ async def test_model_goes_only_to_matching_engine(client, auth, make_dir):
     calls = agent_calls()
     claude = next(c for c in calls if c["engine"] == "claude")["argv"]
     codex = next(c for c in calls if c["engine"] == "codex")["argv"]
-    assert claude[claude.index("--model") + 1] == "opus" and "-m" not in codex
+    # claude 모델 이름(opus)은 codex 로 가지 않는다. 오케스트레이터는 지침의 허용 모델로 맞춘다.
+    assert claude[claude.index("--model") + 1] == "opus" and codex[codex.index("-m") + 1] == "gpt-6.1-sol"
 
 
 async def test_usage_from_stream_and_codex_session_log(client, auth, make_dir, monkeypatch):

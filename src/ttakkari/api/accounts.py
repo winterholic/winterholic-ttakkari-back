@@ -21,6 +21,7 @@ from ttakkari.config import get_settings
 from ttakkari.models import AppSetting, EngineAccount, utcnow
 from ttakkari.runs import profiles
 from ttakkari.runs import usage as usage_mod
+from ttakkari.runs.manager import manager
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
@@ -256,6 +257,8 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: 
         profiles.clear_cooldown(a.id)
     record(db, action="account.update", target_type="account", target_id=a.id, detail=data, ip=client_ip(request))
     await _commit(db)
+    if data.get("enabled"):
+        await manager.release_waiting()
     return _out(a)
 
 
@@ -303,6 +306,7 @@ async def codex_reset(account_id: uuid.UUID, _: User, db: Db, request: Request) 
     if outcome == "reset":
         # 한도가 풀렸으니 쉬던 계정을 바로 다시 쓴다.
         profiles.clear_cooldown(a.id)
+        await manager.release_waiting()
     usage_mod.forget(a.id)
     record(db, action="account.codex_reset", target_type="account", target_id=a.id,
            outcome="ok" if outcome in ("reset", "nothing_to_reset") else "error", detail={"outcome": outcome},
@@ -315,4 +319,6 @@ async def codex_reset(account_id: uuid.UUID, _: User, db: Db, request: Request) 
 async def clear(account_id: uuid.UUID, _: User, db: Db) -> AccountOut:
     a = await _get(db, account_id)
     profiles.clear_cooldown(a.id)
+    # 한도 대기 중이던 Run 이 있으면 바로 다시 시도한다. 여전히 못 쓰면 다시 대기한다.
+    await manager.release_waiting()
     return _out(a)

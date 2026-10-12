@@ -82,6 +82,7 @@ async def _schema_and_app():
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean(_schema_and_app):
+    await profiles.flush_persist()
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     async with sessionmaker()() as db:
         await db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
@@ -95,6 +96,9 @@ async def _clean(_schema_and_app):
     # (ADR 0006) 실행 중인 것과 백그라운드 디스패치가 모두 없어질 때까지 반복한다.
     # 지식 색인(백그라운드)이 다음 테스트의 TRUNCATE 와 겹치면 교착이 난다.
     await wait_indexing()
+    # 한도 대기 중인 Run 의 재개 타이머가 다음 테스트로 새지 않게 끈다.
+    for rid in list(manager._wakers) + list(manager._waiting):
+        manager._disarm(rid)
     for _ in range(20):
         if not manager._handles and not _background:
             break

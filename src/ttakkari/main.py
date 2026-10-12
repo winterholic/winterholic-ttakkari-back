@@ -31,6 +31,7 @@ from ttakkari.config import get_settings
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.planner import kr_holidays, reminders
+from ttakkari.runs import profiles
 from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
@@ -75,6 +76,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     n = await recover_interrupted()
     if n:
         log.warning("marked %d runs as interrupted after restart", n)
+    # 한도 상태를 되살린 뒤에 대기열을 돌려야 초기화 전 계정을 다시 두드리지 않는다.
+    with contextlib.suppress(Exception):
+        async with sessionmaker()() as db:
+            await profiles.load_cooldowns(db)
     await resume_queued()
     try:
         async with sessionmaker()() as db:

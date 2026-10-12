@@ -349,3 +349,17 @@ def forget(account_id: uuid.UUID) -> None:
 def clear_cache() -> None:
     _cache.clear()
     _stream.clear()
+
+
+def exhausted_until(account_id: uuid.UUID) -> float | None:
+    """마지막으로 본 사용량(네트워크 없이 캐시만)에서 5시간·주간 한도가 찬 계정의 초기화 시각(unix 초).
+
+    모델별 주간 한도는 다른 모델을 쓸 수 있어 무시한다. 초기화 시각이 지났거나 모르면 None."""
+    now = time.time()
+    cached = _cache.get(account_id)
+    until = 0.0
+    for u in (cached[1] if cached else None, _stream.get(account_id)):
+        for w in u.windows if u else []:
+            if w.key in ("five_hour", "seven_day") and w.percent >= 100 and w.resets_at and w.resets_at > now:
+                until = max(until, float(w.resets_at))
+    return until or None

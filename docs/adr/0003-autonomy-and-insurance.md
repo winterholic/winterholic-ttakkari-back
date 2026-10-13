@@ -19,6 +19,15 @@
 
 guard 는 hook 이 bypass 모드에서도 적용되는지 실측했다(`cat .env`, 워크스페이스 밖 Write 차단 확인).
 
+### 자체 MCP 조회 도구의 승인 (2026-10-13)
+
+Codex의 `approval_policy=never`는 승인 요청을 자동으로 허용하는 설정이 아니라, 요청이 필요하면 거부하는 설정이다.
+따까리 MCP의 조회 도구에 읽기 전용 annotation이 빠져 있어 `list_sessions`·`read_session`·`recall` 등이
+`MCP tool call requires approval, but approval policy is never`로 API 호출 전에 거부됐다.
+`orchestrator/tool_policy.py`의 조회 목록만 `readOnlyHint=true`, `destructiveHint=false`, `openWorldHint=false`로 등록하고,
+Codex 실행 인자에서 자체 서버 `ttakkari`의 해당 도구만 `tools.<tool>.approval_mode="approve"`로 허용한다.
+다른 MCP 서버와 데이터 변경·삭제·알림·작업 실행 도구에는 이 예외를 적용하지 않는다. OS 샌드박스와 세션 토큰 인증은 유지한다.
+
 ## 알려진 한계 (수용)
 - guard 는 셸 문자열 휴리스틱이다. 변수로 만든 경로(`F=.env; cat "$F"`), Bash 로 하는 워크스페이스 밖 쓰기(`touch ../x`)는 못 막는다. `tests/test_guard.py` 에 xfail 로 기록돼 있다.
 - Codex 샌드박스는 읽기를 막지 않는다. 에이전트가 비밀을 읽어 네트워크로 보내는 것은 어느 엔진이든 막지 못한다. 이 앱의 반출 통제는 "원격 사용자·탈취된 토큰"에 대한 것이고, 에이전트 자체를 적대자로 보는 격리는 아니다.

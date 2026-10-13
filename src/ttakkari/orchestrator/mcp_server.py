@@ -12,6 +12,9 @@ from typing import Any, Literal
 
 import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
+
+from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
 
 ROLE = os.environ.get("TTK_ROLE", "orchestrator")
 server = MCPServer(
@@ -22,6 +25,12 @@ server = MCPServer(
                  + (" As orchestrator, delegate work with spawn_worker; results come back as '[작업 보고]' messages, "
                     "so do not poll." if ROLE == "orchestrator" else ""),
 )
+
+READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
+
+
+def query_tool(fn):
+    return server.tool(annotations=READ_ONLY)(fn)
 
 
 async def _call(method: str, path: str, body: dict[str, Any] | None = None, *, prefix: str = "/api/orchestrator",
@@ -48,14 +57,14 @@ async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **p
     return await _call(method, path, body, prefix="/api/agent", params=params)
 
 
-@server.tool()
+@query_tool
 async def library_catalog() -> str:
     """Browse context library categories, knowledge/work-history collections and project landmarks before choosing
     what to recall. Returns names, aliases, summaries and verified source paths; no document bodies."""
     return await _agent("GET", "/library")
 
 
-@server.tool()
+@query_tool
 async def recall(query: str, k: int = 8) -> str:
     """Search saved facts, entities/relations and indexed documents without an embedding model.
     Use project names or aliases and a few concrete keywords. Hits include source paths and timestamps;
@@ -71,7 +80,7 @@ async def remember(content: str, kind: Literal["fact", "preference", "decision",
     return await _agent("POST", "/remember", {"content": content, "kind": kind, "entities": entities or []})
 
 
-@server.tool()
+@query_tool
 async def get_entity(name: str) -> str:
     """Look up a person/project/tool/topic by name or alias, with its relations and linked memories."""
     return await _agent("GET", f"/entities/{name}")
@@ -96,7 +105,7 @@ async def forget(memory_id: str) -> str:
     return await _agent("POST", "/forget", {"id": memory_id})
 
 
-@server.tool()
+@query_tool
 async def list_artifacts(query: str | None = None, kind: str | None = None, limit: int = 20,
                          area: Literal["files", "agent"] | None = None) -> str:
     """List files in the user's library (results and uploads), newest first, with their paths on disk.
@@ -124,19 +133,19 @@ async def notify_user(title: str, body: str = "") -> str:
     return await _agent("POST", "/notify", {"title": title, "body": body})
 
 
-@server.tool()
+@query_tool
 async def list_sessions(limit: int = 20) -> str:
     """List the user's recent conversations in Ttakkari."""
     return await _agent("GET", "/sessions", limit=limit)
 
 
-@server.tool()
+@query_tool
 async def read_session(session_id: str, last: int = 10) -> str:
     """Read the last turns (instruction and result) of another conversation."""
     return await _agent("GET", f"/sessions/{session_id}", last=last)
 
 
-@server.tool()
+@query_tool
 async def server_resources() -> str:
     """Current load of the Mac running Ttakkari: CPU, memory, disk, network and top processes (names only).
     Check it before starting heavy work."""
@@ -145,20 +154,20 @@ async def server_resources() -> str:
 
 # ---- 메모·캘린더(ADR 0008). 시각은 모두 Asia/Seoul 이다.
 
-@server.tool()
+@query_tool
 async def list_memo_categories() -> str:
     """List the user's memo categories in their order. A memo belongs to at most one category (or none)."""
     return await _agent("GET", "/memo-categories")
 
 
-@server.tool()
+@query_tool
 async def list_memo_tags(category: str | None = None) -> str:
     """List memo tags with how many memos use each (most used first), to reuse existing tags. `category` is a
     category name, or "none" for uncategorized memos."""
     return await _agent("GET", "/memos/tags", category=category)
 
 
-@server.tool()
+@query_tool
 async def list_memos(tags: list[str] | None = None, category: str | None = None, limit: int = 30) -> str:
     """List the user's memos (pinned first, then newest). Returns title, category, tags and a short excerpt; use
     get_memo for the full Markdown body. `tags` keeps memos that have all of them; `category` is a category name,
@@ -166,14 +175,14 @@ async def list_memos(tags: list[str] | None = None, category: str | None = None,
     return await _agent("GET", "/memos", tag=tags or None, category=category, limit=limit)
 
 
-@server.tool()
+@query_tool
 async def search_memos(query: str, tags: list[str] | None = None, category: str | None = None, limit: int = 20) -> str:
     """Search memos by words in the title, body or tags, optionally narrowed by `tags` (all must match) and
     `category` (a name, or "none" for uncategorized)."""
     return await _agent("GET", "/memos", q=query, tag=tags or None, category=category, limit=limit)
 
 
-@server.tool()
+@query_tool
 async def get_memo(memo_id: str) -> str:
     """Read one memo with its full Markdown body and current `rev`."""
     return await _agent("GET", f"/memos/{memo_id}")
@@ -209,7 +218,7 @@ async def delete_memo(memo_id: str) -> str:
 ReminderOpt = Literal["at_start", "10m", "30m", "1h", "1d", "day_9am", "prev_day_9am"]
 
 
-@server.tool()
+@query_tool
 async def list_events(start_date: str, end_date: str, query: str | None = None) -> str:
     """List calendar events from start_date to end_date (YYYY-MM-DD, inclusive, at most 400 days), plus Korean public
     holidays in that range. Times are Asia/Seoul wall time: all-day events use dates, timed events use
@@ -249,21 +258,21 @@ async def delete_event(event_id: str) -> str:
 
 # ---- 회의록(ADR 0010). 읽기 전용이다. 제안 승인 같은 반영은 사용자가 앱에서만 한다.
 
-@server.tool()
+@query_tool
 async def list_meetings(query: str | None = None, project: str | None = None, status: str | None = None, limit: int = 20) -> str:
     """List the user's meeting minutes (newest first) with title, project, status, summary and item counts. `project` is a
     project name or alias; `status` e.g. analyzed or review. Read-only; use get_meeting for the details."""
     return await _agent("GET", "/meetings", q=query, project=project, status=status, limit=limit)
 
 
-@server.tool()
+@query_tool
 async def get_meeting(meeting_id: str) -> str:
     """Read one meeting: summary, participants and its discussions, decisions, action items (with owner, due, status) and
     open issues. Decisions the user approved are also in `recall` as memories. Read-only; the raw transcript is only in the app."""
     return await _agent("GET", f"/meetings/{meeting_id}")
 
 
-@server.tool()
+@query_tool
 async def search_meeting_items(query: str | None = None, kind: Literal["discussion", "decision", "action", "open_issue"] | None = None,
                                status: Literal["open", "done", "cancelled"] | None = None, project: str | None = None,
                                limit: int = 20) -> str:
@@ -275,7 +284,9 @@ async def search_meeting_items(query: str | None = None, kind: Literal["discussi
 # ---- 오케스트레이터 전용
 
 def orchestrator_tool(fn):
-    return server.tool()(fn) if ROLE == "orchestrator" else fn
+    if ROLE != "orchestrator":
+        return fn
+    return query_tool(fn) if fn.__name__ in READ_ONLY_TOOLS else server.tool()(fn)
 
 
 @orchestrator_tool

@@ -359,6 +359,47 @@ def test_mcp_server_tools_by_role():
     assert orch == AGENT_TOOLS | WORKER_TOOLS
 
 
+@pytest.mark.parametrize("role", ["agent", "orchestrator"])
+def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
+    _, replies = _mcp_tools(role)
+    queries = {
+        "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
+        "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
+        "list_events", "list_meetings", "get_meeting", "search_meeting_items",
+        "account_usage", "my_context", "list_workers", "get_worker",
+    }
+    for tool in replies[2]["result"]["tools"]:
+        annotations = tool.get("annotations") or {}
+        if tool["name"] in queries:
+            assert annotations.get("readOnlyHint") is True, tool["name"]
+            assert annotations.get("destructiveHint") is False, tool["name"]
+            assert annotations.get("openWorldHint") is False, tool["name"]
+        else:
+            assert annotations.get("readOnlyHint") is not True, tool["name"]
+
+
+def test_codex_auto_approves_only_ttakkari_queries(make_dir):
+    from ttakkari.agents.base import LaunchSpec
+    from ttakkari.agents.codex import CodexAdapter
+
+    root = make_dir()
+    spec = LaunchSpec(cwd=root, prompt="read previous conversations", engine_session_id=None,
+                      model=None, effort=None, outbox=root, write_roots=[root], system_note="",
+                      mcp_servers={"ttakkari": {"command": "python", "args": [], "env": {}},
+                                   "other": {"command": "python", "args": [], "env": {}}})
+    argv = CodexAdapter().build_command(spec, {})
+    flags = [argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == "-c"]
+    approvals = {flag.split("=", 1)[0]: flag.split("=", 1)[1] for flag in flags if ".approval_mode=" in flag}
+    assert approvals['mcp_servers.ttakkari.tools.list_sessions.approval_mode'] == '"approve"'
+    assert approvals['mcp_servers.ttakkari.tools.read_session.approval_mode'] == '"approve"'
+    assert approvals['mcp_servers.ttakkari.tools.recall.approval_mode'] == '"approve"'
+    assert not any(key.startswith("mcp_servers.other.") for key in approvals)
+    for name in ("remember", "forget", "delete_memo", "notify_user", "spawn_worker", "stop_worker"):
+        assert f"mcp_servers.ttakkari.tools.{name}.approval_mode" not in approvals
+    assert 'approval_policy="never"' in flags
+    assert 'sandbox_mode="workspace-write"' in flags
+
+
 async def test_worker_list_has_summary_for_tabs(client, auth, make_dir):
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     wid = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "go", "engine": "claude"},

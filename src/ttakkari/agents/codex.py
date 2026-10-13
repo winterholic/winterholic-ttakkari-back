@@ -6,6 +6,7 @@ from typing import Any
 
 from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, truncate
 from ttakkari.config import get_settings
+from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
 
 SANDBOX_MODES = {"read-only", "workspace-write", "danger-full-access"}
 ROLLOUT_TAIL_BYTES = 4 * 1024 * 1024
@@ -59,6 +60,11 @@ class CodexAdapter:
                 "-c", f"mcp_servers.{name}.args={json.dumps(srv.get('args', []))}",
                 "-c", f"mcp_servers.{name}.env={{{env}}}",
             ]
+            # 무인 실행의 never 는 승인 요청을 자동 허용하지 않고 거절한다.
+            # 따까리 자체의 조회만 명시적으로 허용하고 다른 서버·변경 도구는 그대로 둔다.
+            if name == "ttakkari":
+                for tool in sorted(READ_ONLY_TOOLS):
+                    opts += ["-c", f'mcp_servers.{name}.tools.{tool}.approval_mode="approve"']
         if spec.model:
             opts += ["-m", spec.model]
         if spec.effort:

@@ -34,7 +34,7 @@ from ttakkari.config import get_settings
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.planner import kr_holidays, reminders
-from ttakkari.runs import profiles, usage_store
+from ttakkari.runs import desk_pool, profiles, usage_store
 from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
@@ -114,6 +114,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if reminder:
             reminder.cancel()
         await manager.shutdown()
+        await desk_pool.shutdown()
         await preview.stop_worker()
         await dispose_engine()
 

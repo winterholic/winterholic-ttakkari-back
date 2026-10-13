@@ -121,6 +121,12 @@ class Settings(BaseSettings):
         "claude": {"model": "haiku"},
     }
     desk_timeout_seconds: float = 25.0
+    # 접수 상주화(runs/desk_pool): 계정마다 엔진 프로세스를 하나 미리 띄워 기동 시간을 뺀다. 끄면 매번 CLI 를 새로 띄운다.
+    desk_warm_pool: bool = True
+    # 오래 띄워 둔 프로세스는 새로 띄운다(CLI 업데이트·인증 갱신을 늦게 반영하지 않게).
+    desk_warm_max_age_seconds: float = 600.0
+    # 이 시간 동안 안 쓴 계정은 다시 띄우지 않는다(안 쓰는 계정이 메모리·기동 요청을 계속 쓰지 않게).
+    desk_warm_idle_seconds: float = 6 * 60 * 60
     run_timeout_seconds: int = 2 * 60 * 60
     cancel_grace_seconds: float = 5.0
 

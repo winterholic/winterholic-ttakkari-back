@@ -205,3 +205,157 @@ def _clean_harness():
     yield
     for role in instructions.FILES:
         instructions.reset(role)
+
+
+# ---- 접수 상주 풀(desk_pool)
+
+def _warm(engine: str):
+    from ttakkari.runs import desk_pool
+
+    return next((w for w in desk_pool._warm.values() if w.key[0] == engine), None)
+
+
+async def _warm_ready(engine: str, other_than: int | None = None):
+    async def ready():
+        w = _warm(engine)
+        return w if w and w.alive() and w.proc.pid != other_than else None
+    return await _wait(ready, what=f"{engine} 상주 프로세스")
+
+
+def _pool_turns(mode: str) -> list[dict]:
+    return [c for c in agent_calls() if c.get("mode") == mode]
+
+
+def _cold_calls() -> list[dict]:
+    # 상주 claude 는 띄울 때도 argv 가 기록된다(--input-format 이 있으면 띄운 것).
+    return [c for c in _desk_calls() if "mode" not in c and "--input-format" not in c["argv"]]
+
+
+async def _route(client, auth, run_id: str) -> dict:
+    return next(e for e in await run_events(client, auth, run_id) if e["type"] == "desk.route")["payload"]
+
+
+def _gone(pid: int) -> bool:
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    return False
+
+
+async def test_warm_pool_off_runs_cli_each_time(client, auth, make_dir):
+    assert get_settings().desk_warm_pool is False
+    desk = await _desk(client, auth, make_dir)
+    for _ in range(2):
+        run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+        assert run["result_text"] == "desk answer by codex" and (await _route(client, auth, run["id"]))["warm"] is False
+    assert len(_cold_calls()) == 2 and not _pool_turns("app-server-spawn") and _warm("codex") is None
+
+
+async def test_warm_pool_answers_from_prespawned_codex_and_replaces_it(client, auth, make_dir, monkeypatch):
+    monkeypatch.setattr(get_settings(), "desk_warm_pool", True)
+    desk = await _desk(client, auth, make_dir)
+    # 첫 메시지는 풀이 비어 있어 1회 실행으로 받고, 그동안 다음 메시지용 프로세스를 띄운다.
+    first = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+    assert first["result_text"] == "desk answer by codex" and (await _route(client, auth, first["id"]))["warm"] is False
+    assert len(_cold_calls()) == 1
+    w = await _warm_ready("codex")
+    old_pid = w.proc.pid
+
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "다시 DESK_ANSWER"))["id"])
+    assert run["status"] == "succeeded" and run["result_text"] == "desk answer by codex" and run["model"] == "gpt-6-luna"
+    assert (await _route(client, auth, run["id"]))["warm"] is True
+    assert len(_cold_calls()) == 1
+    # 접수 플래그를 그대로 유지한다: hook 끄기는 띄울 때, 일회성·읽기 전용·지침·모델·effort 는 스레드에.
+    spawn = _pool_turns("app-server-spawn")[0]["argv"]
+    assert spawn[:3] == ["app-server", "--disable", "hooks"]
+    turn = _pool_turns("app-server-turn")[-1]
+    th = turn["thread"]
+    assert th["ephemeral"] is True and th["sandbox"] == "read-only" and th["approvalPolicy"] == "never"
+    assert th["model"] == "gpt-6-luna" and th["config"] == {"model_reasoning_effort": "low"}
+    assert "접수 담당" in th["developerInstructions"] and "다시 DESK_ANSWER" in turn["prompt"]
+    # 한 번 쓴 프로세스는 버리고(대화가 쌓이지 않게) 새로 띄운다.
+    await _wait(lambda: asyncio.sleep(0, _gone(old_pid)), what="쓴 프로세스 종료")
+    assert (await _warm_ready("codex", other_than=old_pid)).proc.pid != old_pid
+
+
+async def test_warm_pool_falls_back_to_cold_when_process_dies(client, auth, make_dir, monkeypatch):
+    import os
+    import signal
+
+    monkeypatch.setattr(get_settings(), "desk_warm_pool", True)
+    desk = await _desk(client, auth, make_dir)
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+    w = await _warm_ready("codex")
+    # 띄워 둔 프로세스가 밖에서 죽었다
+    os.killpg(w.proc.pid, signal.SIGKILL)
+    await _wait(lambda: asyncio.sleep(0, not w.alive()), what="죽음 감지")
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+    assert run["result_text"] == "desk answer by codex" and (await _route(client, auth, run["id"]))["warm"] is False
+    assert len(_cold_calls()) == 2
+
+    # 주고받는 도중에 죽어도 cold 로 다시 받는다
+    await _warm_ready("codex", other_than=w.proc.pid)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_DIE 하고"))["id"])
+    assert run["status"] == "succeeded" and run["result_text"] == "desk answer by codex"
+    assert (await _route(client, auth, run["id"]))["warm"] is False
+    assert len(_cold_calls()) == 3 and "DESK_DIE" in _pool_turns("app-server-turn")[-1]["prompt"]
+
+
+async def test_warm_pool_limit_timeout_and_claude_stream(client, auth, make_dir, monkeypatch):
+    monkeypatch.setattr(get_settings(), "desk_warm_pool", True)
+    desk = await _desk(client, auth, make_dir)
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+    await _warm_ready("codex")
+    # 상주 codex 가 한도를 알리면 cold 와 똑같이 계정을 쉬게 하고 claude 로 넘어간다(다시 부르지 않는다).
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_CODEX_LIMIT"))["id"])
+    assert run["result_text"] == "desk answer by claude"
+    retry = next(e for e in await run_events(client, auth, run["id"]) if e["type"] == "desk.retry")["payload"]
+    assert retry["reason"] == "usage_limit" and retry["warm"] is True
+    assert len(_cold_calls()) == 2  # 첫 codex + 첫 claude
+
+    w = await _warm_ready("claude")
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "또 DESK_ANSWER"))["id"])
+    assert run["result_text"] == "desk answer by claude" and (await _route(client, auth, run["id"]))["warm"] is True
+    argv = _pool_turns("stream-turn")[-1]["argv"]
+    assert argv[argv.index("--input-format") + 1] == "stream-json" and argv[argv.index("--model") + 1] == "haiku"
+    assert argv[argv.index("--setting-sources") + 1] == "local" and argv[argv.index("--tools") + 1] == ""
+    assert "--strict-mcp-config" in argv and "--no-session-persistence" in argv and "접수 담당" in argv[argv.index("--system-prompt") + 1]
+    assert len(_cold_calls()) == 2
+    profiles.reset_cooldowns()
+
+    # 상주 프로세스에서 시간 초과면 다음 계정으로 넘어가고 멈추지 않는다
+    await _warm_ready("codex", other_than=None)
+    await _warm_ready("claude", other_than=w.proc.pid)
+    monkeypatch.setattr(get_settings(), "desk_timeout_seconds", 0.5)
+    t = time.monotonic()
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_SLOW"))["id"])
+    assert run["status"] == "succeeded" and time.monotonic() - t < 10
+    retries = [e["payload"] for e in await run_events(client, auth, run["id"]) if e["type"] == "desk.retry"]
+    assert retries and retries[0]["warm"] is True and retries[0]["reason"].startswith("시간 초과")
+
+
+async def test_warm_pool_respawns_on_config_change_and_age(client, auth, make_dir, monkeypatch):
+    monkeypatch.setattr(get_settings(), "desk_warm_pool", True)
+    desk = await _desk(client, auth, make_dir)
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+    w = await _warm_ready("codex")
+    # 모델 설정이 바뀌면 옛 프로세스를 쓰지 않는다
+    models = get_settings().desk_models | {"codex": {"model": "gpt-6-luna", "effort": "medium"}}
+    monkeypatch.setattr(get_settings(), "desk_models", models)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+    assert (await _route(client, auth, run["id"]))["warm"] is False and len(_cold_calls()) == 2
+    w2 = await _warm_ready("codex", other_than=w.proc.pid)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])
+    assert (await _route(client, auth, run["id"]))["warm"] is True
+    assert _pool_turns("app-server-turn")[-1]["thread"]["config"] == {"model_reasoning_effort": "medium"}
+
+    # 오래된 프로세스는 요청이 없어도 새로 띄운다
+    w3 = await _warm_ready("codex", other_than=w2.proc.pid)
+    monkeypatch.setattr(get_settings(), "desk_warm_max_age_seconds", 0.5)
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_ANSWER"))["id"])  # 짧은 수명으로 다시 띄운다
+    w4 = await _warm_ready("codex", other_than=w3.proc.pid)
+    await _warm_ready("codex", other_than=w4.proc.pid)
+    await _wait(lambda: asyncio.sleep(0, _gone(w4.proc.pid)), what="오래된 프로세스 종료")

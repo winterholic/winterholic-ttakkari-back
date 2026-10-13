@@ -156,6 +156,42 @@ class RunOut(ORM):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    # 접수 세션의 사용자 메시지 Run 에만 채운다(목록·단건 조회). 판정이 없거나 다른 응답이면 null.
+    desk_feedback: DeskFeedbackBrief | None = None
+
+
+# ---- 접수 판정(ADR 0013)
+DeskAction = Literal["answer", "delegate"]
+DeskVerdict = Literal["ok", "should_delegate", "should_answer"]
+
+
+class DeskFeedbackIn(BaseModel):
+    verdict: DeskVerdict
+    note: str | None = Field(None, max_length=2000)
+    # should_delegate 이고 접수가 바로 답했던 Run 이면 그 메시지를 새 기획 세션에 넘긴다.
+    redo: bool = False
+
+
+class DeskFeedbackBrief(BaseModel):
+    verdict: DeskVerdict
+    decided: DeskAction
+    expected: DeskAction
+    note: str | None
+    updated_at: datetime
+
+
+class DeskFeedbackOut(DeskFeedbackBrief):
+    run_id: uuid.UUID
+    session_id: uuid.UUID
+    message: str
+    created_at: datetime
+    # redo 로 넘긴 기획 세션. 넘기지 않았으면 null.
+    lead_id: uuid.UUID | None = None
+
+
+class DeskEvalItem(BaseModel):
+    message: str
+    expected: DeskAction
 
 
 class RunEventOut(ORM):

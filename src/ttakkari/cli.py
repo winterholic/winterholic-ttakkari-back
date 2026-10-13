@@ -126,6 +126,27 @@ def _cmd_context_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_desk_eval(args: argparse.Namespace) -> int:
+    from ttakkari import db
+    from ttakkari.runs import desk_eval
+
+    async def run():
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                return await desk_eval.run_eval(session, args.limit, args.engine)
+        finally:
+            await db.dispose_engine()
+
+    try:
+        report = asyncio.run(run())
+    except RuntimeError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+    print(desk_eval.format_report(report))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="ttakkari")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -144,6 +165,11 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("context-import", help="출처가 명시된 프로젝트 목록을 맥락 도서관에 등록·색인")
     p.add_argument("catalog", help="JSON 목록 경로")
     p.set_defaults(func=_cmd_context_import)
+
+    p = sub.add_parser("desk-eval", help="접수 판정 모음을 지금 접수 지침·모델로 다시 분류해 정확도를 잰다(계정 사용량을 쓴다)")
+    p.add_argument("--limit", type=int, default=None, help="최근 판정 N개만")
+    p.add_argument("--engine", choices=["codex", "claude"], default=None, help="이 엔진 계정만(기본: 접수 엔진 순서)")
+    p.set_defaults(func=_cmd_desk_eval)
 
     args = parser.parse_args(argv)
     sys.exit(args.func(args))

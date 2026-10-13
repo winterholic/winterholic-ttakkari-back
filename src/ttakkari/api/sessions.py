@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from ttakkari.api import desk_feedback
 from ttakkari.api.deps import Db, get_session, get_workspace
 from ttakkari.audit import record
 from ttakkari.db import sessionmaker
@@ -107,9 +108,10 @@ async def patch_session(session_id: uuid.UUID, body: SessionPatch, _: User, db: 
 
 
 @router.get("/sessions/{session_id}/runs", response_model=list[RunOut])
-async def list_runs(session_id: uuid.UUID, _: User, db: Db) -> list[Run]:
+async def list_runs(session_id: uuid.UUID, _: User, db: Db) -> list[RunOut]:
     await get_session(db, session_id)
-    return list(await db.scalars(select(Run).where(Run.session_id == session_id).order_by(Run.created_at.asc())))
+    runs = list(await db.scalars(select(Run).where(Run.session_id == session_id).order_by(Run.created_at.asc())))
+    return await desk_feedback.runs_out(db, runs)
 
 
 @router.post("/sessions/{session_id}/runs", response_model=RunOut, status_code=202)
@@ -146,11 +148,11 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
-async def get_run(run_id: uuid.UUID, _: User, db: Db) -> Run:
+async def get_run(run_id: uuid.UUID, _: User, db: Db) -> RunOut:
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run 이 없습니다.")
-    return run
+    return (await desk_feedback.runs_out(db, [run]))[0]
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunOut)

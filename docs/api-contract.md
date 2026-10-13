@@ -147,6 +147,13 @@ payload 는 `{title, body, url, tag}`:
 - Run 이벤트: `desk.route {action: answer|delegate, account, engine, ms, fallback?}`, `desk.retry {account, engine, ms, reason}`(한도면 `usage_limit`), `desk.delegated {lead_id, title}`.
 - 넘기면 접수 아래 기획 세션(`kind=orchestrator`, `parent_id`=접수)에 `origin=desk` Run 이 생긴다. 기획 Run 이 끝날 때마다 접수 세션에 보고 Run(`origin=report`, `prompt` 가 `[기획 보고] 기획 세션 '<제목>' (lead_id=…) 완료|실패|취소|중단.`, `result_text`=기획의 마지막 답, 바로 succeeded)이 붙는다.
 - `GET /api/system/info` 의 `max_concurrent_runs` → `max_concurrent: {desk, leads, workers}`.
+- 접수 판정(실제 메시지로 접수 정확도 재기):
+  - `POST /api/runs/{id}/desk-feedback` `{verdict: ok|should_delegate|should_answer, note?(≤2000), redo?(false)}` → `DeskFeedbackOut`. 접수 세션(`kind=desk`)의 `origin=user` Run 만(아니면 422, 없으면 404). 끝나지 않았거나 `desk.route` 가 없으면 409. 접수가 이미 한 쪽을 가리키는 판정(answer 했는데 `should_answer`)도 409. 같은 Run 에 다시 보내면 덮어쓴다(`note` 포함, 안 주면 지움).
+  - `redo: true` 이고 `should_delegate`·접수가 answer 했던 Run 이면 그 메시지를 새 기획 세션에 넘기고(`origin=desk` Run) 그 Run 에 `desk.delegated {lead_id, title, redo: true}` 를 붙인다. 응답 `lead_id`. 이미 넘긴 Run 이면 다시 넘기지 않고 그 `lead_id`.
+  - `DeskFeedbackOut`: `{run_id, session_id, message, verdict, decided, expected, note, created_at, updated_at, lead_id}`. `decided` 는 판정 시점 `desk.route.action`, `expected` 는 사용자가 맞다고 한 쪽.
+  - `RunOut.desk_feedback`: `{verdict, decided, expected, note, updated_at} | null`. `GET /api/sessions/{id}/runs`·`GET /api/runs/{id}` 에서만 채운다.
+  - `GET /api/desk/feedback?limit=50` 최근 판정(수정순). `GET /api/desk/eval-set?format=json|jsonl&limit=` → `[{message, expected}]`(최근순).
+  - 재생 평가: `uv run ttakkari desk-eval [--limit N] [--engine codex|claude]`. eval-set 을 지금 접수 지침·모델로 다시 분류해 정확도·오답·지연 중앙값을 출력한다. 계정 사용량을 쓴다.
 - 비서 지침: `GET|PUT|DELETE /api/assistant/instructions?role=common|desk|lead|worker`(기본 `common`) → `{text, role, is_default}`. DELETE 는 기본값으로 되돌린다(기본값은 접수만 있다).
 - Run 이벤트(사용량 한도, ADR 0006 "한도 전환·대기"):
   - `account.limited` `{account, engine, reset_at|null, detail}` 한도 감지. 그 계정은 `reset_at`(모르면 `profile_cooldown_seconds` 뒤)까지 쉰다.

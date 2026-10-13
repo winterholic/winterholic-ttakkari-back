@@ -85,7 +85,8 @@ c "2/5 의존성"; uv sync --frozen --quiet
 c "3/5 마이그레이션"; uv run ttakkari migrate
 if [ "$TESTS" = 1 ]; then
   c "4/5 테스트"
-  if ! uv run pytest -q -x > "$STATE/last-test.log" 2>&1; then
+  # 잠금은 이 배포 프로세스가 계속 보유한다. 독립 잠금을 검사하는 테스트에는 소유 표시를 넘기지 않는다.
+  if ! env -u TTAKKARI_BACKEND_DEPLOY_LOCK_HELD uv run pytest -q -x > "$STATE/last-test.log" 2>&1; then
     tail -n 15 "$STATE/last-test.log"
     echo "테스트 실패 → 배포 중단(서비스는 이전 코드 그대로). 전체 로그: $STATE/last-test.log"
     exit 1

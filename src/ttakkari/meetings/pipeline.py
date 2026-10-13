@@ -16,7 +16,7 @@ from collections import Counter
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import String, cast, delete, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.api.sessions import queue_run
@@ -29,6 +29,7 @@ from ttakkari.context import store
 from ttakkari.context.search import scope_clause
 from ttakkari.db import sessionmaker
 from ttakkari.meetings import providers, vectors
+from ttakkari.meetings.projects import get_project, project_filter
 from ttakkari.meetings.schema import Analysis, AnalysisError, parse_analysis
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
@@ -41,6 +42,7 @@ from ttakkari.models import (
     MeetingItemKind,
     MeetingProposal,
     MeetingStatus,
+    PmsProject,
     Run,
     RunStatus,
     SessionKind,
@@ -107,11 +109,11 @@ def _check_transcript(text: str) -> str:
     return text
 
 
-async def check_project(db: AsyncSession, entity_id: uuid.UUID | None, scope: str) -> CtxEntity | None:
+async def check_project(db: AsyncSession, entity_id: uuid.UUID | None, scope: str) -> CtxEntity | PmsProject | None:
     if entity_id is None:
         return None
-    e = await db.get(CtxEntity, entity_id)
-    if e is None or e.type != "project":
+    e = await get_project(db, entity_id)
+    if e is None or (isinstance(e, CtxEntity) and e.type != "project"):
         raise PipelineError("연결할 프로젝트를 찾지 못했어요.", "bad_input", 400)
     # 회사 회의는 회사·공통, 개인 회의는 개인·공통 프로젝트만 잇는다(맥락 범위가 섞이지 않게).
     if e.scope not in (scope, "shared"):
@@ -130,12 +132,14 @@ async def create_meeting(db: AsyncSession, *, title: str, scope: str, entity_id:
         raise PipelineError("범위는 personal 또는 work 예요.", "bad_input", 400)
     if audio_artifact_id is None and not (transcript and transcript.strip()):
         raise PipelineError("녹음 파일이나 전사 텍스트가 필요해요.", "bad_input", 400)
-    await check_project(db, entity_id, scope)
+    project = await check_project(db, entity_id, scope)
     if audio_artifact_id is not None:
         art = await db.get(Artifact, audio_artifact_id)
         if art is None or art.deleted_at is not None:
             raise PipelineError("올린 녹음 파일을 찾지 못했어요.", "bad_input", 400)
-    m = Meeting(title=title[:200], scope=scope, entity_id=entity_id, held_at=held_at,
+    m = Meeting(title=title[:200], scope=scope,
+                pms_project_id=entity_id if isinstance(project, PmsProject) else None,
+                entity_id=entity_id if isinstance(project, CtxEntity) else None, held_at=held_at,
                 participants=[p.strip() for p in participants or [] if p.strip()][:50],
                 source="audio" if audio_artifact_id else "text", audio_artifact_id=audio_artifact_id,
                 status=S.uploaded, analysis_context={})
@@ -233,10 +237,15 @@ async def gather_context(db: AsyncSession, m: Meeting) -> dict[str, dict]:
     scope = "work" if m.scope == "work" else "all"
     own = f"meeting:{m.id}"
     mems: dict[str, tuple[str, str]] = {}  # id → (kind, text)
-    project = await db.get(CtxEntity, m.entity_id) if m.entity_id else None
+    project = await get_project(db, m.pms_project_id or m.entity_id)
     if project is not None:
+        if m.pms_project_id:
+            sources = select(literal("meeting:") + cast(Meeting.id, String)).where(Meeting.pms_project_id == m.pms_project_id)
+            linked = func.split_part(CtxMemory.source_ref, "#", 1).in_(sources)
+        else:
+            linked = CtxMemory.entity_ids.op("@>")([str(project.id)])
         rows = await db.scalars(
-            select(CtxMemory).where(CtxMemory.archived_at.is_(None), CtxMemory.entity_ids.op("@>")([str(project.id)]),
+            select(CtxMemory).where(CtxMemory.archived_at.is_(None), linked,
                                     CtxMemory.kind.in_(("decision", "instruction", "fact", "preference")),
                                     func.coalesce(CtxMemory.source_ref, "").not_like(own + "%"),
                                     scope_clause(CtxMemory.scope, scope))
@@ -252,10 +261,10 @@ async def gather_context(db: AsyncSession, m: Meeting) -> dict[str, dict]:
     refs: dict[str, dict] = {}
     for i, (mid, (kind, text)) in enumerate(list(mems.items())[:MAX_CONTEXT], 1):
         refs[f"M{i}"] = {"type": "memory", "id": mid, "kind": kind, "text": text[:CONTEXT_TEXT_CHARS]}
-    if m.entity_id:
+    if m.pms_project_id or m.entity_id:
         rows = await db.execute(
             select(MeetingItem, Meeting).join(Meeting, Meeting.id == MeetingItem.meeting_id)
-            .where(MeetingItem.kind == MeetingItemKind.action, MeetingItem.status == "open", Meeting.entity_id == m.entity_id,
+            .where(MeetingItem.kind == MeetingItemKind.action, MeetingItem.status == "open", project_filter(m.pms_project_id or m.entity_id),
                    Meeting.id != m.id, Meeting.scope == m.scope, Meeting.status.in_((S.analyzed, S.review)))
             .order_by(Meeting.created_at.desc(), MeetingItem.position).limit(MAX_OPEN_ACTIONS))
         for i, (it, mt) in enumerate(rows.all(), 1):
@@ -313,7 +322,7 @@ async def start_analysis(db: AsyncSession, m: Meeting) -> Run:
         raise PipelineError("지금 상태에서는 분석을 시작할 수 없어요.")
     s = get_settings()
     refs = await gather_context(db, m)
-    project = await db.get(CtxEntity, m.entity_id) if m.entity_id else None
+    project = await get_project(db, m.pms_project_id or m.entity_id)
     prompt = build_prompt(m, refs, project.name if project else None)
     ws = await ensure_default_workspace(db)
     # 사이드바를 어지럽히지 않게 보관 처리한 작업 세션에서 돌린다. 회의 범위가 계정 범위(pool)가 된다.

@@ -271,3 +271,16 @@ async def test_jobs_resume_after_restart(client, auth, fake):
     assert (await _job_done(client, auth, jid))["status"] == "succeeded"
     async with sessionmaker()() as db:
         assert await db.scalar(select(func.count()).select_from(ClovaNote)) >= 2
+
+
+async def test_pms_project_import_and_semantic_filter(client, auth, fake, make_dir):
+    p = (await client.post('/api/pms/projects', json={'name': 'PMS 녹음'}, headers=auth)).json()
+    job = (await client.post('/api/clovanote/notes/n-1/import', json={'project_id': p['id'], 'analyze': False}, headers=auth)).json()
+    done = await _job_done(client, auth, job['id'])
+    assert done['status'] == 'succeeded', done
+    m = (await client.get(f'/api/meetings/{done["meeting_id"]}', headers=auth)).json()
+    assert m['project'] == {'id': p['id'], 'name': p['name']}
+    await _vectors_ready(m['id'])
+    ph = await _agent_headers(client, auth, make_dir)
+    hits = (await client.get('/api/agent/meetings/semantic', params={'project': p['name'], 'q': '목요일'}, headers=ph)).json()['results']
+    assert hits and all(h['meeting_id'] == m['id'] for h in hits)

@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ttakkari.context import embedder
 from ttakkari.context.search import lexical, scope_clause, terms
 from ttakkari.db import sessionmaker
-from ttakkari.models import CtxEntity, Meeting, MeetingChunk, MeetingItem, utcnow
+from ttakkari.meetings.projects import get_project, project_filter
+from ttakkari.models import Meeting, MeetingChunk, MeetingItem, utcnow
 
 log = logging.getLogger(__name__)
 KST = ZoneInfo("Asia/Seoul")
@@ -94,7 +95,7 @@ async def reindex(meeting_id: uuid.UUID) -> None:
         if m is None:
             return
         items = list(await db.scalars(select(MeetingItem).where(MeetingItem.meeting_id == m.id)))
-        project = await db.get(CtxEntity, m.entity_id) if m.entity_id else None
+        project = await get_project(db, m.pms_project_id or m.entity_id)
         pieces = build_pieces(m, items, project.name if project else None)
         scope, entity_id, stamp = m.scope, m.entity_id, m.updated_at
         m.vector_status, m.vector_error = "pending", None
@@ -182,7 +183,7 @@ async def search(db: AsyncSession, query: str, k: int = 8, *, scope: str = "all"
     pool = max(k * 5, 30)
     base = [scope_clause(MeetingChunk.scope, scope)]
     if entity_id:
-        base.append(MeetingChunk.entity_id == entity_id)
+        base.append(MeetingChunk.meeting_id.in_(select(Meeting.id).where(project_filter(entity_id))))
     if kinds:
         base.append(MeetingChunk.kind.in_(kinds))
     if meeting_id:

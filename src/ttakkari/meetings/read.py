@@ -8,8 +8,8 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.context import store
 from ttakkari.context.search import lexical, scope_clause, terms
+from ttakkari.meetings.projects import find_project, project_filter
 from ttakkari.models import (
     Artifact,
     ClovaJob,
@@ -19,6 +19,7 @@ from ttakkari.models import (
     MeetingItem,
     MeetingItemKind,
     MeetingProposal,
+    PmsProject,
 )
 
 KINDS = tuple(k.value for k in MeetingItemKind)
@@ -44,6 +45,7 @@ async def meeting_rows(db: AsyncSession, meetings: list[Meeting]) -> list[dict[s
     ids = [m.id for m in meetings]
     ents = {e.id: e for e in await db.scalars(select(CtxEntity).where(CtxEntity.id.in_([m.entity_id for m in meetings if m.entity_id])))} \
         if any(m.entity_id for m in meetings) else {}
+    projects = {p.id: p for p in await db.scalars(select(PmsProject).where(PmsProject.id.in_([m.pms_project_id for m in meetings if m.pms_project_id])))} if any(m.pms_project_id for m in meetings) else {}
     arts = {a.id: a for a in await db.scalars(select(Artifact).where(Artifact.id.in_([m.audio_artifact_id for m in meetings if m.audio_artifact_id])))} \
         if any(m.audio_artifact_id for m in meetings) else {}
     counts: dict[uuid.UUID, dict[str, int]] = {i: {k: 0 for k in KINDS} for i in ids}
@@ -56,7 +58,7 @@ async def meeting_rows(db: AsyncSession, meetings: list[Meeting]) -> list[dict[s
             MeetingProposal.meeting_id.in_(ids), MeetingProposal.status == "pending").group_by(MeetingProposal.meeting_id))).all())
     out = []
     for m in meetings:
-        e, a = ents.get(m.entity_id), arts.get(m.audio_artifact_id)
+        e, a = projects.get(m.pms_project_id) or ents.get(m.entity_id), arts.get(m.audio_artifact_id)
         out.append({
             "id": str(m.id), "title": m.title, "scope": m.scope, "status": m.status, "failed_stage": m.failed_stage,
             "error": m.error, "project": {"id": str(e.id), "name": e.name} if e else None, "held_at": _iso(m.held_at),
@@ -90,7 +92,7 @@ def meeting_filter(*, scope: str, status: str | None = None, entity_id: uuid.UUI
     if status:
         clauses.append(Meeting.status == status)
     if entity_id:
-        clauses.append(Meeting.entity_id == entity_id)
+        clauses.append(project_filter(entity_id))
     return clauses
 
 
@@ -112,9 +114,9 @@ async def search_items(db: AsyncSession, *, scope: str = "all", q: str | None = 
     """결정·액션·논의·쟁점 항목을 찾는다. 질의가 있으면 어휘 검색 순위, 없으면 최신순. 읽기 전용이다."""
     entity_id = None
     if project:
-        e = await store.find_entity(db, project, "project", scope=scope)
+        e = await find_project(db, project, scope=scope)
         if e is None:
-            return {"items": [], "note": f"'{project}' 프로젝트를 찾지 못했어요. library_catalog 로 이름을 확인하세요."}
+            return {"items": [], "note": f"'{project}' 프로젝트를 찾지 못했어요. PMS에서 이름을 확인하세요."}
         entity_id = e.id
     stmt = (select(MeetingItem, Meeting).join(Meeting, Meeting.id == MeetingItem.meeting_id)
             .where(*meeting_filter(scope=scope, entity_id=entity_id)))
@@ -131,8 +133,9 @@ async def search_items(db: AsyncSession, *, scope: str = "all", q: str | None = 
     rows = (await db.execute(stmt.limit(max(1, min(limit, 50))))).all()
     names = {e.id: e.name for e in await db.scalars(select(CtxEntity).where(CtxEntity.id.in_([m.entity_id for _, m in rows if m.entity_id])))} \
         if rows else {}
+    names.update({p.id: p.name for p in await db.scalars(select(PmsProject).where(PmsProject.id.in_([m.pms_project_id for _, m in rows if m.pms_project_id])))})
     return {"items": [{**item_out(i), "meeting": {"id": str(m.id), "title": m.title, "scope": m.scope, "status": m.status,
-                                                   "held_at": _iso(m.held_at), "project": names.get(m.entity_id)}} for i, m in rows]}
+                                                   "held_at": _iso(m.held_at), "project": names.get(m.pms_project_id or m.entity_id)}} for i, m in rows]}
 
 
 def agent_meeting(row: dict[str, Any], items: list[MeetingItem]) -> dict[str, Any]:

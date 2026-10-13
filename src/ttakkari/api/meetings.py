@@ -16,9 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
-from ttakkari.context import store
 from ttakkari.meetings import pipeline, providers, read, vectors
-from ttakkari.models import ChatSession, Meeting, MeetingItem, MeetingStatus
+from ttakkari.meetings.projects import find_project
+from ttakkari.models import ChatSession, Meeting, MeetingItem, MeetingStatus, PmsProject
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.security.auth import User, client_ip
 
@@ -140,8 +140,9 @@ async def patch(mid: uuid.UUID, body: MeetingPatch, _: User, db: Db) -> dict[str
     data = body.model_dump(exclude_unset=True)
     try:
         if "project_id" in data:
-            await pipeline.check_project(db, data["project_id"], m.scope)
-            m.entity_id = data["project_id"]
+            project = await pipeline.check_project(db, data["project_id"], m.scope)
+            m.pms_project_id = data["project_id"] if isinstance(project, PmsProject) else None
+            m.entity_id = data["project_id"] if project and not isinstance(project, PmsProject) else None
     except pipeline.PipelineError as e:
         raise _http(e) from e
     if data.get("title"):
@@ -267,9 +268,9 @@ async def agent_list(sid: AgentSession, db: Db, q: str | None = None, project: s
     scope = await _agent_scope(db, sid)
     entity_id = None
     if project:
-        e = await store.find_entity(db, project, "project", scope=scope)
+        e = await find_project(db, project, scope=scope)
         if e is None:
-            return {"meetings": [], "note": f"'{project}' 프로젝트를 찾지 못했어요. library_catalog 로 이름을 확인하세요."}
+            return {"meetings": [], "note": f"'{project}' 프로젝트를 찾지 못했어요. PMS에서 이름을 확인하세요."}
         entity_id = e.id
     rows = await read.list_meetings(db, scope=scope, q=q, status=status_, entity_id=entity_id, limit=limit)
     keep = ("id", "title", "scope", "status", "project", "held_at", "summary")
@@ -291,9 +292,9 @@ async def agent_semantic(sid: AgentSession, db: Db, q: Annotated[str, Query(min_
     scope = await _agent_scope(db, sid)
     entity_id = None
     if project:
-        e = await store.find_entity(db, project, "project", scope=scope)
+        e = await find_project(db, project, scope=scope)
         if e is None:
-            return {"results": [], "note": f"'{project}' 프로젝트를 찾지 못했어요. library_catalog 로 이름을 확인하세요."}
+            return {"results": [], "note": f"'{project}' 프로젝트를 찾지 못했어요. PMS에서 이름을 확인하세요."}
         entity_id = e.id
     kinds = tuple(k for k in (kind or "").split(",") if k) or None
     hits = await vectors.search(db, q, limit, scope=scope, entity_id=entity_id, kinds=kinds)

@@ -501,6 +501,7 @@ class Meeting(Base):
     status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.uploaded, index=True)
     # 연결한 프로젝트(ctx_entities). 없어도 된다.
     entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True)
+    pms_project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_projects.id", ondelete="SET NULL"), index=True)
     held_at: Mapped[datetime | None]
     participants: Mapped[list[Any]] = mapped_column(default=list)
     source: Mapped[str] = mapped_column(String(10), default="text")  # audio | text

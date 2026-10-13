@@ -15,9 +15,9 @@ from sqlalchemy import func, or_, select
 
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
-from ttakkari.context import store
 from ttakkari.meetings import clova_jobs, pipeline
 from ttakkari.meetings import clovanote as cn
+from ttakkari.meetings.projects import find_project
 from ttakkari.models import ChatSession, ClovaJob, ClovaNote, Meeting
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.security.auth import User
@@ -243,9 +243,9 @@ async def agent_import(note_id: str, body: AgentImportIn, sid: AgentSession, db:
         return {"meeting_id": str(n.meeting_id), "note": "이미 가져온 노트예요. get_meeting 으로 읽으세요."}
     project_id = None
     if body.project:
-        e = await store.find_entity(db, body.project, "project", scope="work" if body.scope == "work" else "all")
+        e = await find_project(db, body.project, scope=body.scope)
         if e is None:
-            return {"error": "project_not_found", "note": f"'{body.project}' 프로젝트를 찾지 못했어요. library_catalog 로 이름을 확인하세요."}
+            return {"error": "project_not_found", "note": f"'{body.project}' 프로젝트를 찾지 못했어요. PMS에서 이름을 확인하세요."}
         project_id = e.id
     try:
         await pipeline.check_project(db, project_id, body.scope)

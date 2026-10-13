@@ -559,7 +559,7 @@ async def test_run_events_rows_unique_seq_in_db(client, auth, new_session):
 async def test_shutdown_keeps_slot_waiting_run_queued(client, auth, new_session, monkeypatch):
     from ttakkari.runs import manager as mgr
 
-    monkeypatch.setattr(mgr.manager, "_sem", asyncio.Semaphore(1))
+    monkeypatch.setattr(mgr.manager, "_sems", {"workers": asyncio.Semaphore(1)})
     _ws, s1 = await new_session()
     _ws2, s2 = await new_session()
     first = await start_run(client, auth, s1["id"], "SLEEP")
@@ -573,5 +573,4 @@ async def test_shutdown_keeps_slot_waiting_run_queued(client, auth, new_session,
         assert (await client.get(f"/api/runs/{waiting['id']}", headers=auth)).json()["status"] == "queued"
     finally:
         mgr.manager._shutting_down = False
-        monkeypatch.setattr(mgr.manager, "_sem", None)
         await client.post(f"/api/runs/{waiting['id']}/cancel", headers=auth)

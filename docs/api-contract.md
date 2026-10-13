@@ -137,9 +137,17 @@ payload 는 `{title, body, url, tag}`:
 
 ## 오케스트레이터(ADR 0006)
 
-- `POST /api/sessions` 에 `kind`(`chat` 기본 | `orchestrator`). 오케스트레이터는 엔진이 `auto` 로 고정된다.
-- `GET /api/sessions` 는 작업 세션을 빼고, `?parent_id=<오케스트레이터 id>` 면 그 작업 세션만.
-- `SessionOut` 에 `kind`, `parent_id`. `RunOut` 에 `origin`(`user` | `report` | `orchestrator`), `profile`(실제로 쓴 엔진 프로필).
+- `POST /api/sessions` 에 `kind`(`chat` 기본 | `orchestrator` | `desk`). 오케스트레이터·접수는 엔진이 `auto` 로 고정된다.
+- `GET /api/sessions` 는 하위 세션(기획·작업)을 빼고, `?parent_id=<id>` 면 그 하위 세션만(접수 → 기획 세션, 기획·오케스트레이터 → 작업 세션).
+- `SessionOut` 에 `kind`, `parent_id`. `RunOut` 에 `origin`(`user` | `report` | `orchestrator` | `desk`), `profile`(실제로 쓴 엔진 프로필).
+
+## 접수 → 기획 → 작업(ADR 0013)
+
+- 접수(`kind=desk`) 세션에 `POST /api/sessions/{id}/runs` 하면 대기열 없이 바로 돈다. 결과는 같은 Run 의 `result_text`·`message` 이벤트.
+- Run 이벤트: `desk.route {action: answer|delegate, account, engine, ms, fallback?}`, `desk.retry {account, engine, ms, reason}`(한도면 `usage_limit`), `desk.delegated {lead_id, title}`.
+- 넘기면 접수 아래 기획 세션(`kind=orchestrator`, `parent_id`=접수)에 `origin=desk` Run 이 생긴다. 기획 Run 이 끝날 때마다 접수 세션에 보고 Run(`origin=report`, `prompt` 가 `[기획 보고] 기획 세션 '<제목>' (lead_id=…) 완료|실패|취소|중단.`, `result_text`=기획의 마지막 답, 바로 succeeded)이 붙는다.
+- `GET /api/system/info` 의 `max_concurrent_runs` → `max_concurrent: {desk, leads, workers}`.
+- 비서 지침: `GET|PUT|DELETE /api/assistant/instructions?role=common|desk|lead|worker`(기본 `common`) → `{text, role, is_default}`. DELETE 는 기본값으로 되돌린다(기본값은 접수만 있다).
 - Run 이벤트(사용량 한도, ADR 0006 "한도 전환·대기"):
   - `account.limited` `{account, engine, reset_at|null, detail}` 한도 감지. 그 계정은 `reset_at`(모르면 `profile_cooldown_seconds` 뒤)까지 쉰다.
   - `engine.fallback` `{from, to, reason: usage_limit|missing, detail, reset_at, mode: resume|handoff}` 같은 Run 이 다음 계정으로 넘어감.

@@ -90,8 +90,10 @@ class Settings(BaseSettings):
     # 오케스트레이터 MCP 서버가 부를 백엔드 주소. serve 포트를 바꾸면 같이 바꾼다.
     internal_api_url: str = "http://127.0.0.1:8787"
 
-    # 모든 Run 에 넣는 고정 기억·비서 지침의 최대 글자 수(토큰 절약)
+    # 모든 Run 에 넣는 고정 기억의 최대 글자 수(토큰 절약)
     context_brief_chars: int = 3000
+    # 비서 지침 파일 하나의 최대 길이. 고정 기억(context_brief_chars)과 따로 센다.
+    instructions_max_chars: int = 8000
     # 일정 알림을 찾는 주기(초). 0 이면 끈다(테스트는 직접 부른다).
     reminder_scan_seconds: int = 30
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더
@@ -108,7 +110,17 @@ class Settings(BaseSettings):
     codex_bin: str = "codex"
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
     claude_setting_sources: str | None = None
-    max_concurrent_runs: int = 3
+    # 동시 실행 자리는 역할별로 따로 센다(ADR 0013). 접수는 짧고 가벼워서 따로, 기획이 작업 세션 자리를 막지 않게 따로.
+    max_concurrent_desk: int = 6
+    max_concurrent_leads: int = 4
+    max_concurrent_workers: int = 6
+    # 접수: 엔진 순서(앞이 먼저)와 엔진별 모델. 한도·시간 초과·잘못된 출력이면 다음 계정으로 넘어간다.
+    desk_engine_order: list[str] = ["codex", "claude"]
+    desk_models: dict[str, dict[str, str]] = {
+        "codex": {"model": "gpt-6-luna", "effort": "low"},
+        "claude": {"model": "haiku"},
+    }
+    desk_timeout_seconds: float = 25.0
     run_timeout_seconds: int = 2 * 60 * 60
     cancel_grace_seconds: float = 5.0
 

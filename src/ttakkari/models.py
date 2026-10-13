@@ -38,8 +38,11 @@ class Engine(enum.StrEnum):
 
 class SessionKind(enum.StrEnum):
     chat = "chat"
+    # 엔진을 직접 돌리며 작업 세션을 부리는 세션. parent_id 가 접수(desk)면 접수가 넘긴 일을 맡은 기획 세션이다(ADR 0013).
     orchestrator = "orchestrator"
     worker = "worker"
+    # 사용자가 대화하는 접수. 가벼운 모델이 바로 답하거나 기획 세션에 넘긴다. 세션 대기열 없이 메시지마다 따로 돈다.
+    desk = "desk"
 
 
 class ArtifactArea(enum.StrEnum):
@@ -60,6 +63,8 @@ class RunOrigin(enum.StrEnum):
     report = "report"
     # 오케스트레이터가 도구로 작업 세션에 보낸 지시
     orchestrator = "orchestrator"
+    # 접수가 기획 세션에 넘긴 사용자 요청
+    desk = "desk"
 
 
 class RunStatus(enum.StrEnum):

@@ -19,9 +19,21 @@ AUDIENCE = "ttakkari-agent"
 MCP_SERVER_NAME = "ttakkari"
 _bearer = HTTPBearer(auto_error=False)
 
-ORCHESTRATOR_NOTE = """\
+ORCHESTRATOR_INTRO = """\
 You are the user's main orchestrator in Winterholic Ttakkari. The user talks only to you, often from a phone, \
 and may send several messages in a row without waiting; they are queued and reach you one turn at a time.
+"""
+
+# 접수(desk)가 넘긴 일을 맡은 기획 세션(ADR 0013). 사용자는 접수와 대화하고, 이 세션의 매 턴 마지막 답이 사용자 대화에 보고로 붙는다.
+LEAD_INTRO = """\
+You are a lead (기획) session in Winterholic Ttakkari. A fast front desk talks with the user and hands you the \
+requests that need thinking or tools; a message starting with "[접수에서 넘긴 사용자 요청]" is such a request, \
+followed by recent conversation for reference. The user rarely reads this session directly: your final message of \
+every turn is relayed into the user's main conversation as a report, so end each turn with a short user-facing \
+summary (result first, what you started, what needs the user). Several requests can arrive in a row; they are queued.
+"""
+
+ORCHESTRATOR_BODY = """\
 - Delegate substantive work (coding, research, file work, long commands) to worker sessions with the \
 `ttakkari` MCP tools: spawn_worker for a new task, message_worker to follow up on an existing one, \
 list_workers/get_worker to check progress, stop_worker to cancel. Workers run in parallel and show up as tabs \
@@ -52,6 +64,9 @@ Context (conversation size vs the model's window, not account usage):
 point, where the progress is recorded). Yourself: make sure decisions and next steps are saved (remember, \
 work-history, worker sessions), then call reset_my_context. Do not write separate handoff documents; the next \
 conversation recovers context through recall and work-history."""
+
+ORCHESTRATOR_NOTE = ORCHESTRATOR_INTRO + ORCHESTRATOR_BODY
+LEAD_NOTE = LEAD_INTRO + ORCHESTRATOR_BODY
 
 
 AGENT_NOTE = """\

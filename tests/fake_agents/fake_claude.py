@@ -21,6 +21,21 @@ def opt(argv, name):
     return argv[argv.index(name) + 1] if name in argv else None
 
 
+def desk_reply(prompt, engine):
+    """접수 호출(ADR 0013)의 가짜 답. 사용자 메시지 부분의 키워드로 고른다(작업판·대화에 같은 말이 있어도 무시)."""
+    msg = prompt.split("[사용자 메시지]")[-1]
+    if "DESK_SLOW" in msg:
+        time.sleep(30)
+    if "DESK_GARBAGE" in msg:
+        return "not json at all"
+    if "DESK_CONTINUE" in msg:
+        m = re.search(r"lead_id=([0-9a-f-]{36})", prompt)
+        return json.dumps({"action": "delegate", "reply": "이어서 넘겼어요", "lead_id": m.group(1) if m else None})
+    if "DESK_DELEGATE" in msg:
+        return json.dumps({"action": "delegate", "reply": "넘겼어요", "lead_id": None, "title": "desk title"})
+    return json.dumps({"action": "answer", "reply": f"desk answer by {engine}"})
+
+
 def main():
     argv = sys.argv[1:]
     prompt = opt(argv, "-p") or ""
@@ -35,6 +50,10 @@ def main():
                                 "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
                                 "account_dir": os.environ.get("CLAUDE_CONFIG_DIR")}) + "\n")
 
+    if "--system-prompt" in argv:
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": desk_reply(prompt, "claude"),
+              "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
+        return 0
     emit({"type": "system", "subtype": "init", "session_id": sid, "model": "claude-haiku-4-5", "cwd": os.getcwd()})
     emit({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "unifiedWindows": {
         "five_hour": {"utilization": 0.42, "resetsAt": 1791732000},

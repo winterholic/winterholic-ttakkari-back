@@ -30,6 +30,7 @@ from ttakkari.models import (
     CtxSource,
     utcnow,
 )
+from ttakkari.runs import instructions as instructions_mod
 from ttakkari.security.auth import User
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
@@ -83,6 +84,12 @@ TOOLS: list[dict[str, str]] = [
 
 class InstructionsIO(BaseModel):
     text: str = Field(default="", max_length=MAX_INSTRUCTIONS)
+
+
+class InstructionsOut(InstructionsIO):
+    role: instructions_mod.Role = "common"
+    # 저장한 적 없이 기본값을 보여 주는 중(접수만 기본값이 있다)
+    is_default: bool = False
 
 
 class MemoryIn(BaseModel):
@@ -170,23 +177,27 @@ async def status_(_: User, db: Db) -> dict[str, Any]:
             "brief": await store.pinned_brief(db)}
 
 
-@router.get("/instructions", response_model=InstructionsIO)
-async def get_instructions(_: User) -> InstructionsIO:
-    f = get_settings().harness_dir / "instructions.md"
-    try:
-        return InstructionsIO(text=f.read_text(encoding="utf-8"))
-    except OSError:
-        return InstructionsIO(text="")
+@router.get("/instructions", response_model=InstructionsOut)
+async def get_instructions(_: User, role: instructions_mod.Role = "common") -> InstructionsOut:
+    """역할별 지침(ADR 0013). common 은 접수를 뺀 모든 실행, desk·lead·worker 는 그 역할에만 붙는다."""
+    return InstructionsOut(text=instructions_mod.read(role), role=role, is_default=instructions_mod.is_default(role))
 
 
-@router.put("/instructions", response_model=InstructionsIO)
-async def put_instructions(body: InstructionsIO, _: User, db: Db) -> InstructionsIO:
-    d = get_settings().harness_dir
-    d.mkdir(parents=True, exist_ok=True, mode=0o700)
-    (d / "instructions.md").write_text(body.text, encoding="utf-8")
-    record(db, action="assistant.instructions", detail={"chars": len(body.text)})
+@router.put("/instructions", response_model=InstructionsOut)
+async def put_instructions(body: InstructionsIO, _: User, db: Db, role: instructions_mod.Role = "common") -> InstructionsOut:
+    instructions_mod.write(role, body.text)
+    record(db, action="assistant.instructions", detail={"role": role, "chars": len(body.text)})
     await db.commit()
-    return body
+    return InstructionsOut(text=body.text, role=role)
+
+
+@router.delete("/instructions", response_model=InstructionsOut)
+async def reset_instructions(_: User, db: Db, role: instructions_mod.Role = "common") -> InstructionsOut:
+    """저장한 지침을 지워 기본값으로 되돌린다."""
+    instructions_mod.reset(role)
+    record(db, action="assistant.instructions.reset", detail={"role": role})
+    await db.commit()
+    return InstructionsOut(text=instructions_mod.read(role), role=role, is_default=True)
 
 
 @router.get("/tools")

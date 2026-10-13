@@ -38,7 +38,8 @@ async def info(_: User) -> dict:
         },
         "preview_converter": soffice_path() is not None,
         "allowed_roots": [str(p) for p in s.allowed_roots],
-        "max_concurrent_runs": s.max_concurrent_runs,
+        "max_concurrent": {"desk": s.max_concurrent_desk, "leads": s.max_concurrent_leads,
+                           "workers": s.max_concurrent_workers},
     }
 
 

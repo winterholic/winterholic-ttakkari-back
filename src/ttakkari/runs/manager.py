@@ -44,12 +44,14 @@ from ttakkari.models import (
 )
 from ttakkari.orchestrator.runtime import (
     AGENT_NOTE,
+    LEAD_NOTE,
     MCP_SERVER_NAME,
     ORCHESTRATOR_NOTE,
     mcp_server_spec,
 )
 from ttakkari.push.service import PushKind, notify, notify_run_finished
-from ttakkari.runs import context_usage, events
+from ttakkari.runs import context_usage, desk, events
+from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
 from ttakkari.schemas import ArtifactOut
@@ -96,7 +98,8 @@ class _Handle:
 class RunManager:
     def __init__(self) -> None:
         self._handles: dict[uuid.UUID, _Handle] = {}
-        self._sem: asyncio.Semaphore | None = None
+        # 역할별 동시 실행 자리(ADR 0013). 접수·기획·작업이 서로의 자리를 막지 않는다.
+        self._sems: dict[str, asyncio.Semaphore] = {}
         self._shutting_down = False
         # 모든 계정이 사용량 한도라 초기화를 기다리는 Run → (재개 시각, 세션). 같은 세션의 다음 Run 도 이 Run 뒤에 선다.
         self._waiting: dict[uuid.UUID, tuple[float, uuid.UUID]] = {}
@@ -104,11 +107,12 @@ class RunManager:
         # 실행 중에 새 대화로 바꾸라고 한 세션. 실행이 끝날 때 적용해야 그 Run 이 엔진 대화 id 를 다시 덮어쓰지 않는다.
         self._reset_requests: set[uuid.UUID] = set()
 
-    @property
-    def sem(self) -> asyncio.Semaphore:
-        if self._sem is None:
-            self._sem = asyncio.Semaphore(get_settings().max_concurrent_runs)
-        return self._sem
+    def sem(self, lane: str) -> asyncio.Semaphore:
+        if lane not in self._sems:
+            s = get_settings()
+            size = {"desk": s.max_concurrent_desk, "leads": s.max_concurrent_leads}.get(lane, s.max_concurrent_workers)
+            self._sems[lane] = asyncio.Semaphore(size)
+        return self._sems[lane]
 
     def is_active(self, run_id: uuid.UUID) -> bool:
         return run_id in self._handles
@@ -116,10 +120,11 @@ class RunManager:
     def request_context_reset(self, session_id: uuid.UUID) -> None:
         self._reset_requests.add(session_id)
 
-    def start(self, run_id: uuid.UUID) -> None:
+    def start(self, run_id: uuid.UUID, *, lane: str = "workers") -> None:
         if run_id in self._handles:
             return
-        task = asyncio.create_task(self._execute(run_id), name=f"run-{run_id}")
+        coro = self._execute_desk(run_id) if lane == "desk" else self._execute(run_id, lane)
+        task = asyncio.create_task(coro, name=f"run-{run_id}")
         self._handles[run_id] = _Handle(task=task)
         task.add_done_callback(lambda _t: self._handles.pop(run_id, None))
 
@@ -154,7 +159,15 @@ class RunManager:
         if self._shutting_down:
             return None
         async with sessionmaker()() as db:
-            await db.execute(select(ChatSession.id).where(ChatSession.id == session_id).with_for_update())
+            kind = await db.scalar(select(ChatSession.kind).where(ChatSession.id == session_id).with_for_update())
+            if kind == SessionKind.desk:
+                # 접수는 대화를 이어 쓰지 않는다. 메시지마다 따로, 바로 돈다(바쁜 접수 뒤에 줄 서지 않는다).
+                queued = list(await db.scalars(select(Run.id).where(Run.session_id == session_id,
+                                                                    Run.status == RunStatus.queued)))
+                for rid in queued:
+                    self.start(rid, lane="desk")
+                await db.commit()
+                return queued[0] if queued else None
             rows = list(await db.scalars(
                 select(Run).where(Run.session_id == session_id, Run.status.in_([RunStatus.queued, RunStatus.running]))
                 .order_by(Run.created_at)))
@@ -250,10 +263,15 @@ class RunManager:
 
     # ---- 실행
 
-    async def _execute(self, run_id: uuid.UUID) -> None:
+    async def _execute(self, run_id: uuid.UUID, lane: str = "workers") -> None:
         sm = sessionmaker()
         try:
-            async with self.sem, sm() as db:
+            if lane == "workers":
+                async with sm() as db:
+                    kind = await db.scalar(select(ChatSession.kind).join(Run, Run.session_id == ChatSession.id)
+                                           .where(Run.id == run_id))
+                lane = "leads" if kind == SessionKind.orchestrator else "workers"
+            async with self.sem(lane), sm() as db:
                 await self._run(db, run_id)
         except asyncio.CancelledError:
             async with sm() as db:
@@ -279,6 +297,41 @@ class RunManager:
                     sid = await db.scalar(select(Run.session_id).where(Run.id == run_id))
                 if sid is not None:
                     _spawn(self.dispatch(sid))
+
+    async def _execute_desk(self, run_id: uuid.UUID) -> None:
+        """접수 Run. 세션 대기열·엔진 대화 없이 한 번 고르고 끝난다. 실패해도 사용자 메시지를 기획으로 넘겨 멈추지 않게 한다."""
+        sm = sessionmaker()
+        try:
+            async with self.sem("desk"), sm() as db:
+                run = await db.get(Run, run_id)
+                if run is None or run.status != RunStatus.queued:
+                    return
+                sess = await db.get(ChatSession, run.session_id)
+                assert sess is not None
+                run.status = RunStatus.running
+                run.started_at = utcnow()
+                events.append(db, run, "run.status", {"status": RunStatus.running})
+                await self._commit(db, run)
+                await desk.handle(db, run, sess)
+                await self._finish(db, run, RunStatus.succeeded)
+        except asyncio.CancelledError:
+            async with sm() as db:
+                run = await db.get(Run, run_id)
+                # 자리를 기다리다 서버가 내려간 접수는 시작도 안 했다. 대기열에 남겨 재시작 뒤 돌린다.
+                not_started = run is not None and run.status == RunStatus.queued and self._shutting_down
+                if run is not None and not not_started and run.status not in TERMINAL_RUN_STATUSES:
+                    h = self._handles.get(run_id)
+                    status = RunStatus.cancelled if (h and h.cancel_requested) else RunStatus.interrupted
+                    await self._finish(db, run, status, error=None if status == RunStatus.cancelled else "서버 종료로 중단")
+            raise
+        except Exception as e:
+            log.exception("desk run %s crashed", run_id)
+            async with sm() as db:
+                run = await db.get(Run, run_id)
+                if run is not None and run.status not in TERMINAL_RUN_STATUSES:
+                    await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
+        finally:
+            self._handles.pop(run_id, None)
 
     async def _run(self, db: AsyncSession, run_id: uuid.UUID) -> None:
         s = get_settings()
@@ -346,7 +399,7 @@ class RunManager:
             # 시스템 프롬프트가 아니라 지시 앞에 붙인다. 매 턴 바뀌는 값이 시스템 프롬프트에 있으면 프롬프트 캐시가 깨진다.
             ctx = await context_usage.latest(db, sess)
             base_prompt = f"[내 대화 컨텍스트 사용률: {context_usage.describe(ctx)}]\n" + base_prompt
-        system_note = await _system_note(db, outbox, orchestrator=is_orch, scope="work" if sess.pool == "work" else "all")
+        system_note = await _system_note(db, outbox, sess, scope="work" if sess.pool == "work" else "all")
         mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
         h = self._handles.get(run.id)
         state = ParseState()
@@ -606,6 +659,8 @@ class RunManager:
                target_type="run", target_id=run.id, detail={"status": status})
         sess = await db.get(ChatSession, run.session_id)
         parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
+        if sess is not None:
+            await _post_lead_report(db, sess, run)
         await self._commit(db, run)
         if parent_id is not None:
             _spawn(self.dispatch(parent_id))
@@ -794,27 +849,24 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
     return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + run.prompt
 
 
-async def _system_note(db: AsyncSession, outbox: Path, *, orchestrator: bool, scope: str = "all") -> str:
-    """기본 안내 + 도구 안내 + 비서 지침(~/.ttakkari/harness) + 고정 기억. 매 Run 에 들어가므로 짧게 유지한다(ADR 0007)."""
+async def _system_note(db: AsyncSession, outbox: Path, sess: ChatSession, scope: str = "all") -> str:
+    """기본 안내 + 도구 안내 + 비서 지침(~/.ttakkari/harness, 공통 + 역할) + 고정 기억. 매 Run 에 들어가므로 짧게 유지한다(ADR 0007, 0020)."""
     parts = [SYSTEM_NOTE.format(outbox=outbox), AGENT_NOTE]
-    if orchestrator:
-        parts.append(ORCHESTRATOR_NOTE)
-    instructions = read_instructions()
-    if instructions:
-        parts.append("[User's standing instructions for this assistant]\n" + instructions)
+    role: instructions_mod.Role | None = None
+    if sess.kind == SessionKind.orchestrator:
+        # 접수가 만든 기획 세션은 사용자와 직접 대화하지 않는다. 옛 메인 오케스트레이터(부모 없음)는 그대로.
+        parts.append(LEAD_NOTE if sess.parent_id else ORCHESTRATOR_NOTE)
+        role = "lead"
+    elif sess.kind == SessionKind.worker:
+        role = "worker"
+    for label, text in (("User's standing instructions for this assistant", instructions_mod.read("common")),
+                        ("Instructions for your role", instructions_mod.read(role) if role else "")):
+        if text:
+            parts.append(f"[{label}]\n{text}")
     brief = await pinned_brief(db, scope=scope)
     if brief:
         parts.append("[Pinned facts about the user — use recall for more]\n" + brief)
     return "\n\n".join(parts)
-
-
-def read_instructions() -> str:
-    f = get_settings().harness_dir / "instructions.md"
-    try:
-        text = f.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""
-    return text[: get_settings().context_brief_chars]
 
 
 def _iso(epoch: float | None) -> str | None:
@@ -966,6 +1018,31 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     events.append(db, report, "run.status", {"status": RunStatus.queued, "ahead": 0})
     parent.updated_at = utcnow()
     return parent.id
+
+
+async def _post_lead_report(db: AsyncSession, sess: ChatSession, run: Run) -> None:
+    """기획 세션 Run 이 끝나면 그 마지막 답을 접수 대화에 보고로 붙인다(ADR 0013). 모델을 다시 부르지 않는다."""
+    if sess.kind != SessionKind.orchestrator or sess.parent_id is None:
+        return
+    parent = await db.get(ChatSession, sess.parent_id)
+    if parent is None or parent.kind != SessionKind.desk or parent.archived_at is not None:
+        return
+    label = {RunStatus.succeeded: "완료", RunStatus.failed: "실패", RunStatus.cancelled: "취소",
+             RunStatus.interrupted: "중단"}.get(RunStatus(run.status), run.status)
+    text = run.result_text or (f"(실패) {run.error}" if run.error else "")
+    if run.status == RunStatus.cancelled and not text:
+        return
+    now = utcnow()
+    report = Run(session_id=parent.id, workspace_id=parent.workspace_id, origin=RunOrigin.report,
+                 prompt=f"[기획 보고] 기획 세션 '{sess.title}' (lead_id={sess.id}) {label}.",
+                 engine=run.engine, profile=run.profile, model=run.model, status=RunStatus.succeeded,
+                 result_text=text, started_at=now, finished_at=now)
+    db.add(report)
+    await db.flush()
+    events.append(db, report, "run.status", {"status": RunStatus.succeeded})
+    events.append(db, report, "run.finished", {"status": RunStatus.succeeded, "error": None, "result_text": text,
+                                               "cost_usd": None, "exit_code": None, "lead_id": str(sess.id)})
+    parent.updated_at = now
 
 
 async def _git(root: Path, *args: str) -> tuple[int, str]:

@@ -5,6 +5,7 @@
 """
 import json
 import os
+import re
 import sys
 import time
 import uuid
@@ -12,6 +13,21 @@ import uuid
 
 def emit(obj):
     print(json.dumps(obj, ensure_ascii=False), flush=True)
+
+
+def desk_reply(prompt, engine):
+    """접수 호출(ADR 0013)의 가짜 답. 사용자 메시지 부분의 키워드로 고른다(작업판·대화에 같은 말이 있어도 무시)."""
+    msg = prompt.split("[사용자 메시지]")[-1]
+    if "DESK_SLOW" in msg:
+        time.sleep(30)
+    if "DESK_GARBAGE" in msg:
+        return "not json at all"
+    if "DESK_CONTINUE" in msg:
+        m = re.search(r"lead_id=([0-9a-f-]{36})", prompt)
+        return json.dumps({"action": "delegate", "reply": "이어서 넘겼어요", "lead_id": m.group(1) if m else None})
+    if "DESK_DELEGATE" in msg:
+        return json.dumps({"action": "delegate", "reply": "넘겼어요", "lead_id": None, "title": "desk title"})
+    return json.dumps({"action": "answer", "reply": f"desk answer by {engine}"})
 
 
 def main():
@@ -29,6 +45,13 @@ def main():
                                 "account_dir": os.environ.get("CODEX_HOME")}) + "\n")
 
     emit({"type": "thread.started", "thread_id": thread})
+    if "--ephemeral" in argv:
+        if "DESK_CODEX_LIMIT" in prompt.split("[사용자 메시지]")[-1]:
+            emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit."}})
+            return 1
+        emit({"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": desk_reply(prompt, "codex")}})
+        emit({"type": "turn.completed", "usage": {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 5}})
+        return 0
     if "SLEEP" in prompt:
         time.sleep(60)
         return 0

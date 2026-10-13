@@ -20,7 +20,7 @@ async def test_resources_shape(client, auth):
     assert len(cpu["per_core"]) == cpu["cores_logical"] and len(cpu["load_avg"]) == 3
     assert mem["total"] > 0 and 0 <= mem["used"] <= mem["total"] and mem["available"] > 0
     assert {"total", "used", "percent"} <= mem["swap"].keys()
-    assert body["host"]["uptime_seconds"] > 0 and body["host"]["hostname"]
+    assert (body["host"]["uptime_seconds"] is None or body["host"]["uptime_seconds"] > 0) and body["host"]["hostname"]
     assert body["network"]["rx_bytes_per_sec"] >= 0 and body["network"]["tx_bytes_per_sec"] >= 0
     # APFS 컨테이너 하나는 한 줄로 묶이고, 시스템 보조 볼륨은 나오지 않는다.
     mounts = [m for d in body["disks"] for m in d["mounts"]]
@@ -47,3 +47,13 @@ async def test_resources_cached(client, auth, monkeypatch):
     monkeypatch.setattr(sysinfo, "_collect", lambda: calls.append(1) or {})
     second = (await client.get(URL, headers=auth)).json()
     assert second["collected_at"] == first["collected_at"] and calls == []
+
+
+def test_collect_falls_back_to_current_process_when_pid_listing_is_denied(monkeypatch):
+    monkeypatch.setattr(sysinfo, "SAMPLE_SECONDS", 0)
+    monkeypatch.setattr(sysinfo.psutil, "process_iter", lambda: (_ for _ in ()).throw(PermissionError("denied")))
+    monkeypatch.setattr(sysinfo.psutil, "boot_time", lambda: (_ for _ in ()).throw(PermissionError("denied")))
+
+    result = sysinfo._collect()
+
+    assert result["processes"]["ttakkari"][0]["pid"] == os.getpid()

@@ -143,10 +143,14 @@ def _collect() -> dict[str, Any]:
     me = os.getpid()
     try:
         ours = {me, *(c.pid for c in psutil.Process(me).children(recursive=True))}
-    except psutil.Error:
+    except (psutil.Error, OSError):
         ours = {me}
 
-    procs = list(psutil.process_iter())
+    try:
+        procs = list(psutil.process_iter())
+    except (psutil.Error, OSError):
+        # macOS may deny the process table (for example, in a sandbox). Keep the backend row useful.
+        procs = [psutil.Process(me)]
     for p in procs:
         try:
             p.cpu_percent(None)
@@ -175,15 +179,25 @@ def _collect() -> dict[str, Any]:
     ttk.sort(key=lambda r: (r["kind"] != "backend", -r["memory_bytes"]))
 
     vm = psutil.virtual_memory()
-    sw = psutil.swap_memory()
+    try:
+        sw = psutil.swap_memory()
+        swap = {"total": sw.total, "used": sw.used, "percent": sw.percent}
+    except (psutil.Error, OSError):
+        # Some restricted macOS contexts deny vm.swapusage; retain a usable resource snapshot.
+        swap = {"total": 0, "used": 0, "percent": 0.0}
     level, free_pct = _sysctl("kern.memorystatus_vm_pressure_level", "kern.memorystatus_level")
     st = _static()
-    boot = psutil.boot_time()
+    try:
+        boot = psutil.boot_time()
+        uptime = int(time.time() - boot)
+    except (psutil.Error, OSError):
+        boot = None
+        uptime = None
     return {
         "collected_at": time.time(),
         "host": {
             "hostname": socket.gethostname(), "os": st["os"], "model": st["model"],
-            "boot_time": boot, "uptime_seconds": int(time.time() - boot),
+            "boot_time": boot, "uptime_seconds": uptime,
         },
         "cpu": {
             "percent": round(sum(per_core) / len(per_core), 1) if per_core else 0.0,
@@ -196,7 +210,7 @@ def _collect() -> dict[str, Any]:
             "total": vm.total, "used": vm.total - vm.available, "available": vm.available, "percent": vm.percent,
             "wired": getattr(vm, "wired", None),
             "pressure": PRESSURE.get(_int(level) or 0), "pressure_free_percent": _int(free_pct),
-            "swap": {"total": sw.total, "used": sw.used, "percent": sw.percent},
+            "swap": swap,
         },
         "disks": _disks(),
         "network": {

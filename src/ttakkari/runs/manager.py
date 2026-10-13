@@ -64,6 +64,9 @@ STDERR_TAIL = 4000
 HANDOFF_TURNS = 8
 HANDOFF_CHARS = 1500
 WAIT_HANDOFF_CHARS = 6000
+MAX_RESTART_RESUME_ATTEMPTS = 3
+RESTART_RESUME_BACKOFF_SECONDS = 30
+RUN_HEARTBEAT_SECONDS = 15
 REPORT_CHARS = 3000
 # 부모 프로세스가 Claude Code·Orca 안에서 떴을 때 자식 에이전트가 중첩 세션으로 오인하지 않게 지운다.
 STRIP_ENV_PREFIXES = ("TTAKKARI_", "ORCA_", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_THREAD_ID")
@@ -114,6 +117,8 @@ class RunManager:
         self._reset_requests.add(session_id)
 
     def start(self, run_id: uuid.UUID) -> None:
+        if run_id in self._handles:
+            return
         task = asyncio.create_task(self._execute(run_id), name=f"run-{run_id}")
         self._handles[run_id] = _Handle(task=task)
         task.add_done_callback(lambda _t: self._handles.pop(run_id, None))
@@ -307,13 +312,16 @@ class RunManager:
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
-        resume_handoff = await _waiting_handoff(db, run) if resumed else ""
+        resume_handoff = run.resume_handoff or (await _waiting_handoff(db, run) if resumed else "")
         self._disarm(run.id)
         run.status = RunStatus.running
+        run.error = None
+        run.resume_handoff = None
+        run.resume_after = None
         run.started_at = run.started_at or utcnow()
         events.append(db, run, "run.status", {"status": RunStatus.running})
         if resumed:
-            events.append(db, run, "run.resumed", {"account": prof.name})
+            events.append(db, run, "run.resumed", {"account": prof.name, "attempt": run.resume_attempts})
         await self._commit(db, run)
 
         untracked_before: set[str] = set()
@@ -438,12 +446,39 @@ class RunManager:
         elif h and h.cancel_requested:
             await self._finish(db, run, RunStatus.cancelled)
         elif timed_out:
-            await self._finish(db, run, RunStatus.failed, error=f"시간 초과({s.run_timeout_seconds}초)")
+            error = f"시간 초과({s.run_timeout_seconds}초)"
+            if run.resume_attempts:
+                await self._retry_restart_resume(db, run, error)
+            else:
+                await self._finish(db, run, RunStatus.failed, error=error)
         elif rc == 0 and not state.is_error:
             await self._finish(db, run, RunStatus.succeeded)
         else:
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
-            await self._finish(db, run, RunStatus.failed, error=state.error or tail.strip() or f"exit code {rc}")
+            error = state.error or tail.strip() or f"exit code {rc}"
+            if run.resume_attempts and not (h and h.cancel_requested):
+                await self._retry_restart_resume(db, run, error)
+            else:
+                await self._finish(db, run, RunStatus.failed, error=error)
+
+    async def _retry_restart_resume(self, db: AsyncSession, run: Run, error: str) -> None:
+        if run.resume_attempts >= MAX_RESTART_RESUME_ATTEMPTS:
+            await self._finish(db, run, RunStatus.failed,
+                               error=f"재개 {MAX_RESTART_RESUME_ATTEMPTS}회 실패 후 중단: {error}")
+            return
+        run.resume_attempts += 1
+        run.status = RunStatus.queued
+        run.finished_at = None
+        run.error = None
+        run.resume_handoff = f"[이전 재개 실패: {error[:500]}]\n" + await _interrupted_handoff(db, run)
+        delay = RESTART_RESUME_BACKOFF_SECONDS * (2 ** (run.resume_attempts - 1))
+        until = time.time() + delay
+        run.resume_after = datetime.fromtimestamp(until, UTC)
+        events.append(db, run, "run.status", {"status": RunStatus.queued, "restart_resume_retry": True,
+                                               "attempt": run.resume_attempts, "error": error[:500],
+                                               "resume_after": _iso(until)})
+        await self._commit(db, run)
+        self._arm(run.id, run.session_id, until)
 
     async def _attempt(self, db: AsyncSession, run: Run, adapter: AgentAdapter, spec: LaunchSpec, env: dict[str, str],
                        root: Path, h: _Handle | None, account_id: uuid.UUID | None = None) -> tuple[ParseState, int | None, bool, bool]:
@@ -464,6 +499,7 @@ class RunManager:
         run.pid = proc.pid
         await self._commit(db, run)
 
+        heartbeat_task = asyncio.create_task(_heartbeat(run.id), name=f"heartbeat-{run.id}")
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
         timed_out = False
         try:
@@ -471,6 +507,10 @@ class RunManager:
         except TimeoutError:
             timed_out = True
             await self._terminate(proc)
+        finally:
+            heartbeat_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat_task
         rc = await proc.wait()
         with contextlib.suppress(Exception):
             await asyncio.wait_for(stderr_task, 5)
@@ -573,6 +613,7 @@ class RunManager:
         _spawn(_notify(run, sess.title if sess else None))
 
     async def _commit(self, db: AsyncSession, run: Run) -> None:
+        run.heartbeat_at = utcnow()
         await db.commit()
         events.notify(run.id)
 
@@ -604,6 +645,18 @@ async def _notify_waiting(run: Run, title: str | None, until: float) -> None:
         log.exception("push notification failed for run %s", run.id)
 
 
+async def _heartbeat(run_id: uuid.UUID) -> None:
+    """Persist liveness independently of agent output, without contending on RunEvent.seq."""
+    while True:
+        await asyncio.sleep(RUN_HEARTBEAT_SECONDS)
+        async with sessionmaker()() as db:
+            run = await db.get(Run, run_id)
+            if run is None or run.status != RunStatus.running:
+                return
+            run.heartbeat_at = utcnow()
+            await db.commit()
+
+
 manager = RunManager()
 
 
@@ -616,21 +669,59 @@ async def recover_interrupted() -> int:
             if run.pid and _looks_like_agent(run.pid):
                 with contextlib.suppress(ProcessLookupError, PermissionError):
                     os.killpg(run.pid, signal.SIGTERM)
+            run.heartbeat_at = utcnow()
             run.status = RunStatus.interrupted
+            run.pid = None
             run.finished_at = utcnow()
-            run.error = "서버 재시작으로 중단됨"
+            run.error = "서버 종료로 중단"
+            run.resume_handoff = await _interrupted_handoff(db, run)
             events.append(db, run, "run.finished", {"status": RunStatus.interrupted, "error": run.error,
                                                     "result_text": None, "cost_usd": None, "exit_code": None})
         await db.commit()
         return len(rows)
 
 
+async def resume_interrupted() -> int:
+    """Queue only server-shutdown interruptions, with persisted bounded exponential backoff."""
+    async with sessionmaker()() as db:
+        rows = list(await db.scalars(
+            select(Run).where(Run.status == RunStatus.interrupted, Run.error == "서버 종료로 중단",
+                              Run.resume_attempts < MAX_RESTART_RESUME_ATTEMPTS)
+            .order_by(Run.created_at).with_for_update(skip_locked=True)
+        ))
+        waiting: list[tuple[uuid.UUID, uuid.UUID, float]] = []
+        now = time.time()
+        for run in rows:
+            if not run.resume_handoff:
+                run.resume_handoff = await _interrupted_handoff(db, run)
+            run.resume_attempts += 1
+            run.status = RunStatus.queued
+            run.finished_at = None
+            run.error = None
+            events.append(db, run, "run.status", {"status": RunStatus.queued, "restart_resume": True,
+                                                   "attempt": run.resume_attempts})
+            delay = RESTART_RESUME_BACKOFF_SECONDS * (2 ** (run.resume_attempts - 1))
+            until = now + delay
+            run.resume_after = datetime.fromtimestamp(until, UTC)
+            waiting.append((run.id, run.session_id, until))
+        await db.commit()
+    for run_id, session_id, until in waiting:
+        if until > time.time():
+            manager._arm(run_id, session_id, until)
+        else:
+            await manager.dispatch(session_id)
+    return len(waiting)
+
+
 async def resume_queued() -> int:
     async with sessionmaker()() as db:
-        sids = list(await db.scalars(select(Run.session_id).where(Run.status == RunStatus.queued).distinct()))
-    for sid in sids:
+        rows = list(await db.scalars(select(Run).where(Run.status == RunStatus.queued).order_by(Run.created_at)))
+    for run in rows:
+        if run.resume_attempts and run.resume_after and run.resume_after > utcnow():
+            manager._arm(run.id, run.session_id, run.resume_after.timestamp())
+    for sid in {run.session_id for run in rows}:
         await manager.dispatch(sid)
-    return len(sids)
+    return len({run.session_id for run in rows})
 
 
 async def expire_artifacts() -> int:
@@ -749,6 +840,30 @@ async def _waiting_handoff(db: AsyncSession, run: Run) -> str:
     ev = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type == "run.waiting")
                          .order_by(RunEvent.seq.desc()).limit(1))
     return str((ev.payload or {}).get("handoff") or "") if ev else ""
+
+
+async def _interrupted_handoff(db: AsyncSession, run: Run) -> str:
+    """Persist progress for restart recovery and warn that side effects may already exist."""
+    rows = list(await db.scalars(
+        select(RunEvent).where(RunEvent.run_id == run.id,
+                               RunEvent.type.in_(("message", "tool.call", "tool.result", "guard.blocked")))
+        .order_by(RunEvent.seq.desc()).limit(24)
+    ))
+    lines = [
+        "[서버 종료 후 이어서 실행: 원래 지시를 계속한다]",
+        "파일 변경과 외부 작업이 이미 반영됐는지 먼저 확인하라. 완료된 작업을 반복하거나 중복 생성하지 말라.",
+        "마지막 진행 기록:",
+    ]
+    for event in reversed(rows):
+        payload = event.payload or {}
+        detail = payload.get("text") or payload.get("output") or payload.get("reason")
+        if event.type == "tool.call":
+            detail = f"{payload.get('name')} {json.dumps(payload.get('input'), ensure_ascii=False)[:300]}"
+        if detail:
+            lines.append(f"{event.type}: {str(detail)[:500]}")
+    if run.profile:
+        lines.append(f"이전 엔진 프로필: {run.profile}; 엔진 세션은 저장된 대화 ID로 이어간다.")
+    return "\n".join(lines)[:WAIT_HANDOFF_CHARS] + "\n\n"
 
 
 async def _checkpoint_untracked(db: AsyncSession, run: Run) -> set[str]:

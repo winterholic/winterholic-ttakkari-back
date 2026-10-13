@@ -13,8 +13,8 @@ from sqlalchemy import select
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.models import ChatSession, Run, RunEvent
-from ttakkari.runs.manager import recover_interrupted, resume_queued
+from ttakkari.models import ChatSession, Run, RunEvent, RunStatus, utcnow
+from ttakkari.runs.manager import recover_interrupted, resume_interrupted, resume_queued
 
 
 def pid_alive(pid: int) -> bool:
@@ -270,15 +270,20 @@ async def _insert_runs(ws, sess, pid: int | None):
 
 
 async def test_recover_interrupted_marks_running_runs(client, auth, new_session):
+    from ttakkari.runs.manager import _looks_like_agent
+
     ws, sess = await new_session()
     child = _spawn_agent_like()
     try:
         ids = await _insert_runs(ws, sess, child.pid)
         await asyncio.sleep(0.5)  # ps 에 명령줄이 보일 때까지
+        identifiable = _looks_like_agent(child.pid)
         assert await recover_interrupted() == 1
 
         run = (await client.get(f"/api/runs/{ids[0]}", headers=auth)).json()
-        assert run["status"] == "interrupted" and run["finished_at"] and "재시작" in run["error"]
+        assert run["status"] == "interrupted" and run["finished_at"] and run["error"] == "서버 종료로 중단"
+        async with sessionmaker()() as db:
+            assert (await db.get(Run, ids[0])).heartbeat_at is not None
         # 시작하지 않은 대기 Run 은 남겨 두었다가 resume_queued 가 이어서 돌린다.
         assert (await client.get(f"/api/runs/{ids[1]}", headers=auth)).json()["status"] == "queued"
         assert (await client.get(f"/api/runs/{ids[2]}", headers=auth)).json()["status"] == "succeeded"
@@ -286,8 +291,9 @@ async def test_recover_interrupted_marks_running_runs(client, auth, new_session)
         evs = await run_events(client, auth, str(ids[0]))
         assert [e["seq"] for e in evs] == [3]  # last_seq=2 다음 번호
         assert evs[0]["type"] == "run.finished" and evs[0]["payload"]["status"] == "interrupted"
-        # 남은 에이전트 프로세스 그룹에는 SIGTERM 이 갔다.
-        assert child.wait(timeout=5) == -signal.SIGTERM
+        # ps 가 허용된 환경에서는 에이전트 프로세스 그룹에 SIGTERM 을 보낸다.
+        if identifiable:
+            assert child.wait(timeout=5) == -signal.SIGTERM
         assert await resume_queued() == 1
         assert (await wait_run(client, auth, str(ids[1])))["status"] == "succeeded"
         # interrupted 이후에는 같은 세션에 새 Run 을 받을 수 있다.
@@ -310,6 +316,150 @@ async def test_recover_does_not_kill_unrelated_process_with_reused_pid(client, a
     finally:
         other.kill()
         other.wait()
+
+
+async def test_only_server_shutdown_interruption_is_queued_for_resume(client, auth, new_session, monkeypatch):
+    from ttakkari.runs import manager as manager_module
+
+    ws, sess = await new_session()
+    ids = await _insert_runs(ws, sess, None)
+    async with sessionmaker()() as db:
+        running = await db.get(Run, ids[0])
+        running.started_at = utcnow()
+        cancelled = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="cancelled",
+                        engine="claude", status=RunStatus.cancelled)
+        failed = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="failed",
+                     engine="claude", status=RunStatus.failed, error="normal failure")
+        db.add_all([cancelled, failed])
+        await db.commit()
+
+    assert await recover_interrupted() == 1
+    monkeypatch.setattr(manager_module, "RESTART_RESUME_BACKOFF_SECONDS", 600)
+    assert await resume_interrupted() == 1
+    assert await resume_interrupted() == 0  # the same Run is claimed only once
+
+    async with sessionmaker()() as db:
+        resumed = await db.get(Run, ids[0])
+        not_resumed = await db.get(Run, cancelled.id)
+        normal_failure = await db.get(Run, failed.id)
+        assert resumed.status == "queued" and resumed.resume_attempts == 1
+        assert resumed.resume_after is not None and resumed.resume_after > utcnow()
+        assert resumed.resume_handoff and "먼저 확인" in resumed.resume_handoff
+        assert not_resumed.status == RunStatus.cancelled
+        assert normal_failure.status == RunStatus.failed
+    assert ids[0] in manager_module.manager._waiting
+    manager_module.manager._disarm(ids[0])
+
+
+async def test_interrupted_resume_stops_after_max_attempts(client, auth, new_session):
+    from ttakkari.runs.manager import MAX_RESTART_RESUME_ATTEMPTS
+
+    ws, sess = await new_session()
+    async with sessionmaker()() as db:
+        run = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="resume",
+                  engine="claude", status="interrupted", error="서버 종료로 중단",
+                  resume_attempts=MAX_RESTART_RESUME_ATTEMPTS)
+        db.add(run)
+        await db.commit()
+        run_id = run.id
+
+    assert await resume_interrupted() == 0
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        assert run.status == "interrupted"
+
+
+async def test_queued_restart_resume_restores_backoff_after_process_restart(client, auth, new_session):
+    from datetime import timedelta
+
+    from ttakkari.runs.manager import resume_queued
+
+    ws, sess = await new_session()
+    async with sessionmaker()() as db:
+        run = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="resume",
+                  engine="claude", status="queued", resume_attempts=2, resume_after=utcnow() + timedelta(hours=1))
+        db.add(run)
+        await db.commit()
+        run_id = run.id
+
+    await resume_queued()
+
+    from ttakkari.runs import manager as manager_module
+    assert run_id in manager_module.manager._waiting
+    manager_module.manager._disarm(run_id)
+
+
+async def test_failed_restart_resume_uses_exponential_backoff(client, auth, new_session):
+    from ttakkari.runs import manager as manager_module
+
+    ws, sess = await new_session()
+    run_id = (await _insert_runs(ws, sess, None))[0]
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        run.resume_attempts = 1
+        run.status = RunStatus.running
+        await manager_module.manager._retry_restart_resume(db, run, "temporary engine error")
+
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        assert run.status == RunStatus.queued and run.resume_attempts == 2
+        assert run.resume_after and run.resume_after > utcnow()
+        assert "temporary engine error" in (run.resume_handoff or "")
+    assert run_id in manager_module.manager._waiting
+    manager_module.manager._disarm(run_id)
+
+
+async def test_restart_resume_uses_saved_engine_session_and_progress(client, auth, new_session, monkeypatch):
+    from ttakkari.models import EngineAccount
+    from ttakkari.runs import manager as manager_module
+    from ttakkari.runs import profiles
+
+    ws, sess = await new_session()
+    run_id = (await _insert_runs(ws, sess, None))[0]
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        run.started_at = utcnow()
+        run.last_seq = 1
+        db.add(RunEvent(run_id=run.id, seq=1, type="message", payload={"text": "saved step"}))
+        chat = await db.get(ChatSession, uuid.UUID(sess["id"]))
+        await profiles.ensure_seeded(db)
+        account = await db.scalar(select(EngineAccount).where(EngineAccount.engine == "claude"))
+        assert account is not None
+        session_id = "existing-engine-session"
+        chat.engine_sessions = {str(account.id): session_id}
+        chat.engine_session_id = session_id
+        run.profile = account.name
+        await db.commit()
+
+    monkeypatch.setattr(manager_module, "RESTART_RESUME_BACKOFF_SECONDS", 0)
+    assert await recover_interrupted() == 1
+    assert await resume_interrupted() == 1
+    finished = await wait_run(client, auth, str(run_id))
+
+    assert finished["status"] == "succeeded"
+    call = next(c for c in agent_calls() if c["engine"] == "claude")
+    assert call["argv"][call["argv"].index("--resume") + 1] == session_id
+    prompt = call["argv"][call["argv"].index("-p") + 1]
+    assert "saved step" in prompt and "파일 변경과 외부 작업이 이미 반영됐는지 먼저 확인" in prompt
+
+
+async def test_live_run_heartbeat_is_persisted(client, auth, new_session, monkeypatch):
+    from ttakkari.runs import manager as manager_module
+
+    ws, sess = await new_session()
+    run_id = (await _insert_runs(ws, sess, None))[0]
+    monkeypatch.setattr(manager_module, "RUN_HEARTBEAT_SECONDS", 0.01)
+    task = asyncio.create_task(manager_module._heartbeat(run_id))
+    try:
+        await asyncio.sleep(0.04)
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run_id)).heartbeat_at is not None
 
 
 async def _finished_run(client, auth, new_session):

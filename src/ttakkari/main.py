@@ -39,6 +39,7 @@ from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
     recover_interrupted,
+    resume_interrupted,
     resume_queued,
 )
 from ttakkari.runs.usage_collector import Collector
@@ -89,6 +90,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     with contextlib.suppress(Exception):
         async with sessionmaker()() as db:
             await usage_store.load_latest(db)
+    n = await resume_interrupted()
+    if n:
+        log.warning("queued %d interrupted runs for bounded restart recovery", n)
     await resume_queued()
     try:
         async with sessionmaker()() as db:

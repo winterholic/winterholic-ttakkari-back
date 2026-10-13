@@ -228,6 +228,10 @@ class Run(Base):
     checkpoint_ref: Mapped[str | None] = mapped_column(String(100))
     outbox_path: Mapped[str | None] = mapped_column(Text)
     last_seq: Mapped[int] = mapped_column(Integer, default=0)
+    heartbeat_at: Mapped[datetime | None]
+    resume_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    resume_after: Mapped[datetime | None]
+    resume_handoff: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     started_at: Mapped[datetime | None]
     finished_at: Mapped[datetime | None]

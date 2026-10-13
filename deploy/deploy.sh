@@ -8,6 +8,9 @@
 set -euo pipefail
 BACK="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$BACK"
+if [ "${TTAKKARI_BACKEND_DEPLOY_LOCK_HELD:-}" != "1" ]; then
+  exec uv run python -m ttakkari.deploy_gate deploy-script "$0" "$@"
+fi
 LABEL="net.winterholic.ttakkari.backend"
 DOMAIN="gui/$(id -u)"
 PUBLIC="${TTK_PUBLIC_URL:-https://ttakkari-api.winterholic.net}"
@@ -34,11 +37,7 @@ health() {
 }
 
 restart() {
-  if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
-    launchctl kickstart -k "$DOMAIN/$LABEL"
-  else
-    "$BACK/deploy/install-services.sh" backend
-  fi
+  uv run python -m ttakkari.deploy_gate backend --own-run-id "${TTAKKARI_DEPLOY_RUN_ID:-${TTAKKARI_RUN_ID:-}}"
 }
 
 status() {
@@ -75,13 +74,6 @@ for a in "$@"; do
     *) echo "알 수 없는 옵션: $a"; exit 2 ;;
   esac
 done
-
-# 실행 중인 에이전트 작업이 있으면 재시작이 끊는다(interrupted). 먼저 알린다.
-active=$(psql -d ttakkari -Atc "select count(*) from runs where status in ('queued','running')" 2>/dev/null || echo "?")
-if [ "$active" != "0" ] && [ "$active" != "?" ]; then
-  echo "실행·대기 중인 작업 ${active}개가 재시작으로 중단됩니다(대기 중인 건 재시작 뒤 이어서 돕니다)."
-  read -r -p "계속할까요? [y/N] " yn; [ "$yn" = "y" ] || exit 1
-fi
 
 git rev-parse HEAD > "$STATE/previous"
 if [ "$PULL" = 1 ]; then

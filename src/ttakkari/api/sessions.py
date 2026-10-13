@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
@@ -107,9 +108,16 @@ async def patch_session(session_id: uuid.UUID, body: SessionPatch, _: User, db: 
 
 
 @router.get("/sessions/{session_id}/runs", response_model=list[RunOut])
-async def list_runs(session_id: uuid.UUID, _: User, db: Db) -> list[Run]:
+async def list_runs(session_id: uuid.UUID, _: User, db: Db, limit: int | None = Query(None, ge=1, le=500),
+                    before: datetime | None = None) -> list[Run]:
+    """limit 을 주면 before 보다 앞선 최근 limit 개만 시간순으로 준다. 접수 대화는 하나뿐이라 끝없이 길어진다(ADR 0014)."""
     await get_session(db, session_id)
-    return list(await db.scalars(select(Run).where(Run.session_id == session_id).order_by(Run.created_at.asc())))
+    q = select(Run).where(Run.session_id == session_id)
+    if before is not None:
+        q = q.where(Run.created_at < before)
+    if limit is None:
+        return list(await db.scalars(q.order_by(Run.created_at.asc())))
+    return list(await db.scalars(q.order_by(Run.created_at.desc()).limit(limit)))[::-1]
 
 
 @router.post("/sessions/{session_id}/runs", response_model=RunOut, status_code=202)

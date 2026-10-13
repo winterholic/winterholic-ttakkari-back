@@ -213,3 +213,56 @@ class DownloadLinkOut(BaseModel):
 class Page[T](BaseModel):
     items: list[T]
     next_cursor: str | None = None
+
+
+# ---- 작업 트리(ADR 0014)
+class DeskIn(BaseModel):
+    pool: Literal["personal", "work"] = "personal"
+
+
+class TaskNode(BaseModel):
+    """트리 한 칸. 세션 하나에 마지막 Run 상태를 붙인 것이다."""
+    id: uuid.UUID
+    parent_id: uuid.UUID | None
+    kind: str
+    title: str
+    pool: str
+    created_at: datetime
+    updated_at: datetime
+    archived_at: datetime | None
+    status: str | None = None
+    profile: str | None = None
+    model: str | None = None
+    last_result: str | None = None
+
+
+class TaskForest(BaseModel):
+    # roots 는 보여 줄 순서다. 뿌리의 parent_id 는 접수일 수 있으니 트리를 parent_id 만으로 세우지 않는다.
+    roots: list[uuid.UUID]
+    nodes: list[TaskNode]
+
+
+class TaskTree(BaseModel):
+    root_id: uuid.UUID
+    # 뿌리부터 요청한 세션까지(양끝 포함)
+    path: list[TaskNode]
+    nodes: list[TaskNode]
+
+
+class TaskRoot(TaskNode):
+    descendants: int = 0
+    active: int = 0
+    failed: int = 0
+
+
+class TaskLibrary(BaseModel):
+    roots: list[TaskRoot]
+    next_before: datetime | None = None
+
+
+class TaskHit(BaseModel):
+    node: TaskNode
+    root_id: uuid.UUID
+    path: list[TaskNode]
+    field: Literal["title", "prompt", "result"]
+    snippet: str

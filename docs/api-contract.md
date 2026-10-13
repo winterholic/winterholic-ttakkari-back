@@ -273,3 +273,19 @@ payload 는 `{title, body, url, tag}`:
 - `POST /api/meetings/{id}/proposals/{pid}/approve|reject`: 제안 처리. 승인만 맥락 도서관(`add_memory`, `supersede_memory`)이나 이전 회의의 액션(`update_action_item`)을 바꾼다. 대상이 이미 바뀌었으면 409 `stale`.
 - 에이전트용(세션 한정 토큰, 읽기 전용, 회사 세션은 회사 회의만): `GET /api/agent/meetings?q=&project=&status=&limit=`, `GET /api/agent/meetings/{id}`, `GET /api/agent/meetings/search?q=&kind=&status=&project=&limit=`. MCP `list_meetings`·`get_meeting`·`search_meeting_items`. 쓰기·승인 경로는 없다.
 
+## 프로젝트 관리 PMS · WBS(ADR 0012)
+
+사용자 인증. 오류는 `{code, message}`. 날짜는 `YYYY-MM-DD`(시간대 없음), 오늘 기준은 한국 시간. 칸반 카드와 WBS 줄은 같은 작업이다.
+
+- `GET /api/pms/projects?scope=all|personal|work&status=planning|active|on_hold|done&q=`: 요약 목록. 항목마다 `progress`(0-100), `counts`{total, todo, doing, review, done, overdue, due_soon, no_dates}(말단 작업 기준), `next_milestone`, `open_notes`, `members`.
+- `POST /api/pms/projects` `{name, description?, scope?, status?, start_date?, end_date?, members?, phases?: string[]}`: `phases` 는 처음부터 만들 최상위 단계 이름. 종료일이 시작일보다 빠르면 422 `bad_dates`.
+- `GET|PATCH|DELETE /api/pms/projects/{id}`: 삭제는 작업·마일스톤·이슈까지 지운다(204).
+- `GET /api/pms/projects/{id}/dashboard?today=`: `progress`, `planned_progress`(기간 대비 흘러간 %, 기간 없으면 null), `days_left`, `counts`, `overdue[]`·`due_soon[]`(7일), `by_assignee[]`(name "" = 미배정), `phases[]`, `milestones[]`, `notes`{open, issues, risks, high, top[]}.
+- `GET /api/pms/projects/{id}/tasks`: 트리 순서로 편 `tasks[]`. 항목: `id, parent_id, depth, wbs("1.1.2"), has_children, title, description, priority(low|normal|high|urgent), assignee, status(todo|doing|review|done), progress, start_date, end_date, dates_rollup, overdue, predecessors[]`. 하위 작업이 있으면 `status`·`progress`·(자식에 날짜가 있을 때) 기간은 자식에서 집계한 값이다.
+- `POST /api/pms/projects/{id}/tasks` `{title, parent_id?, after_id?, description?, priority?, assignee?, start_date?, end_date?, status?, progress?, predecessors?}`: `after_id` 를 주면 그 작업 바로 뒤 형제로 들어간다(parent_id 무시). 8단계 초과 422 `too_deep`. 응답 `{task, tasks}`.
+- `PATCH /api/pms/tasks/{id}`: 위 필드 일부. `assignee`·날짜는 null 로 비운다. 하위 작업이 있는 작업의 status/progress/집계된 기간은 422 `rollup`. 선행 작업 오류는 422 `bad_predecessor`·`predecessor_cycle`. 응답 `{task, tasks}`.
+- `POST /api/pms/tasks/{id}/move` `{parent_id: id|null, index?: int}`: 들여쓰기·내어쓰기·순서 변경 하나로. 자기 자손 아래로는 422 `bad_move`. 응답 `{task, tasks}`.
+- `DELETE /api/pms/tasks/{id}`: 하위 작업까지 지우고 다른 작업의 선행 참조에서 뺀다. 응답 `{removed, tasks}`.
+- `GET|POST /api/pms/projects/{id}/milestones`, `PATCH|DELETE /api/pms/milestones/{id}`: `{title, due_date, done}`. 응답에 `days`(오늘까지 남은 일수)·`overdue`.
+- `GET|POST /api/pms/projects/{id}/notes?status=open|resolved|all&kind=`, `PATCH|DELETE /api/pms/notes/{id}`: 이슈·리스크·메모 `{kind: issue|risk|note, title, body, severity: low|medium|high, owner, task_id, status: open|resolved}`. 열린 것·심각한 것 순.
+

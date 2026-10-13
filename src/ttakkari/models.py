@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -527,4 +528,77 @@ class MeetingProposal(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     result: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    resolved_at: Mapped[datetime | None]
+
+
+# ---- 프로젝트 관리 PMS · WBS (ADR 0012)
+class PmsProject(Base):
+    __tablename__ = "pms_projects"
+    __table_args__ = (Index("ix_pms_projects_created", "created_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    # planning | active | on_hold | done
+    status: Mapped[str] = mapped_column(String(12), default="planning", server_default="planning", index=True)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    # 사람 이름 텍스트 목록. 계정이 아니라 담당자 자동완성에 쓰는 이름표다.
+    members: Mapped[list[Any]] = mapped_column(default=list)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class PmsTask(Base):
+    """WBS 의 한 줄이자 칸반의 카드. 말단(자식 없음) 작업만 자기 상태·진행률을 갖고, 상위는 읽을 때 자식에서 집계한다."""
+
+    __tablename__ = "pms_tasks"
+    __table_args__ = (Index("ix_pms_tasks_project_parent", "project_id", "parent_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_tasks.id", ondelete="CASCADE"))
+    # 같은 부모 아래 순서. 0 부터 빈틈없이 매긴다.
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # todo | doing | review | done
+    status: Mapped[str] = mapped_column(String(10), default="todo", server_default="todo")
+    # low | normal | high | urgent
+    priority: Mapped[str] = mapped_column(String(10), default="normal", server_default="normal")
+    assignee: Mapped[str | None] = mapped_column(String(100))
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # 선행 작업 id 목록(끝→시작). 같은 프로젝트 안에서 순환 없이만 허용한다.
+    predecessors: Mapped[list[Any]] = mapped_column(default=list)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    done_at: Mapped[datetime | None]
+
+
+class PmsMilestone(Base):
+    __tablename__ = "pms_milestones"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    due_date: Mapped[date]
+    done: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class PmsNote(Base):
+    """이슈·리스크·메모 한 장."""
+
+    __tablename__ = "pms_notes"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_tasks.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(8), default="issue")  # issue | risk | note
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text, default="", server_default="")
+    severity: Mapped[str] = mapped_column(String(8), default="medium")  # low | medium | high
+    status: Mapped[str] = mapped_column(String(10), default="open")  # open | resolved
+    owner: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     resolved_at: Mapped[datetime | None]

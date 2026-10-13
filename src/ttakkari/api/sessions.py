@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
+from ttakkari.api import desk_feedback
 from ttakkari.api.deps import Db, get_session, get_workspace
 from ttakkari.audit import record
 from ttakkari.db import sessionmaker
@@ -109,15 +110,17 @@ async def patch_session(session_id: uuid.UUID, body: SessionPatch, _: User, db: 
 
 @router.get("/sessions/{session_id}/runs", response_model=list[RunOut])
 async def list_runs(session_id: uuid.UUID, _: User, db: Db, limit: int | None = Query(None, ge=1, le=500),
-                    before: datetime | None = None) -> list[Run]:
+                    before: datetime | None = None) -> list[RunOut]:
     """limit 을 주면 before 보다 앞선 최근 limit 개만 시간순으로 준다. 접수 대화는 하나뿐이라 끝없이 길어진다(ADR 0014)."""
     await get_session(db, session_id)
     q = select(Run).where(Run.session_id == session_id)
     if before is not None:
         q = q.where(Run.created_at < before)
     if limit is None:
-        return list(await db.scalars(q.order_by(Run.created_at.asc())))
-    return list(await db.scalars(q.order_by(Run.created_at.desc()).limit(limit)))[::-1]
+        runs = list(await db.scalars(q.order_by(Run.created_at.asc())))
+    else:
+        runs = list(await db.scalars(q.order_by(Run.created_at.desc()).limit(limit)))[::-1]
+    return await desk_feedback.runs_out(db, runs)
 
 
 @router.post("/sessions/{session_id}/runs", response_model=RunOut, status_code=202)
@@ -154,11 +157,11 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
 
 
 @router.get("/runs/{run_id}", response_model=RunOut)
-async def get_run(run_id: uuid.UUID, _: User, db: Db) -> Run:
+async def get_run(run_id: uuid.UUID, _: User, db: Db) -> RunOut:
     run = await db.get(Run, run_id)
     if run is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run 이 없습니다.")
-    return run
+    return (await desk_feedback.runs_out(db, [run]))[0]
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunOut)

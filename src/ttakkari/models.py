@@ -253,6 +253,23 @@ class RunEvent(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class DeskFeedback(Base):
+    """접수 분류에 대한 사용자 판정. 실제 메시지로 접수 지침·모델을 재는 평가 문항이 된다(ADR 0013).
+
+    message·decided 는 판정 시점에 복사해 둔다. Run 이 지워지면 판정도 같이 지운다(평가 문항도 사라진다)."""
+
+    __tablename__ = "desk_feedback"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), unique=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    decided: Mapped[str] = mapped_column(String(16))  # answer | delegate
+    expected: Mapped[str] = mapped_column(String(16))  # answer | delegate
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
     __table_args__ = (Index("ix_artifacts_created", "created_at"),)

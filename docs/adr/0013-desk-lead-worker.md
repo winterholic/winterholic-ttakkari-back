@@ -27,11 +27,13 @@
 - 전역 하네스를 받지 않는다.
   - Codex: `--disable hooks`(전역 Stop hook 이 기록을 강요해 추가 턴 3번, 입력 84.5k→20.4k, 20.9초→4.3~4.9초 실측), `--ephemeral`, `-s read-only`, 사용자 config.toml 의 MCP 서버 끄기, 빈 작업 폴더(`~/.ttakkari/desk`), `developer_instructions`=접수 지침.
   - Claude: `--settings {"disableAllHooks":true}`, `--setting-sources local`(전역 CLAUDE.md·스킬 제외), `--tools ""`, `--strict-mcp-config`, `--no-session-persistence`, `--system-prompt`=접수 지침. `disableAllHooks` 는 따까리 보험 hook 까지 끄므로 도구 없는 접수에만 쓴다.
-- 넘길 때: 작업판의 `lead_id` 가 이 접수의 기획 세션이면 그 세션 대기열에 넣고, 아니면 새 기획 세션을 만든다. 기획에는 `[접수에서 넘긴 사용자 요청]` + 원문 + 최근 대화 4턴, 첨부(`context_artifact_ids`)를 넘긴다(Run `origin=desk`).
+- 넘길 때: 작업판의 `lead_id` 가 이 접수의 보관 안 된 기획 세션이면 그 세션 대기열에 넣고, 아니면 새 기획 세션을 만든다. 기획에는 `[접수에서 넘긴 사용자 요청]` + 원문 + 최근 대화 4턴, 첨부(`context_artifact_ids`)를 넘긴다(Run `origin=desk`).
+- 중복 기획 방지: 넘기기 전에 접수 세션 행을 `FOR UPDATE` 로 잠그고 기획 목록을 다시 읽는다. `lead_dedup_seconds`(120초) 안에 이 접수에서 만든 기획 중 제목이 같으면(NFKC·대소문자 무시, 글자·숫자만 비교) 새로 만들지 않고 거기에 이어 넣는다. `desk.delegated` 이벤트에 `dedup: true`·`requested_title` 을 남긴다.
 
 ### 기획(lead)
 - 지침: `LEAD_NOTE`(사용자와 직접 대화하지 않음, 매 턴 마지막 답이 사용자에게 보고로 간다) + 기존 오케스트레이터 본문. 옛 메인은 `ORCHESTRATOR_NOTE` 그대로.
 - 기획 Run 이 끝날 때마다 마지막 답을 접수 대화에 보고 Run 으로 붙인다(`origin=report`, 바로 succeeded, 모델 호출 없음). 취소이고 답이 없으면 붙이지 않는다.
+- 자동 보관: 기획과 그 작업 세션에 대기·실행 Run 이 없고 마지막 활동(세션 `updated_at`, Run 종료 시각)이 `lead_archive_after_hours`(24시간) 넘게 지나면 작업 세션과 함께 `archived_at` 을 채운다(`runs/lead_archive.py`, `lead_archive_scan_seconds` 600초마다, 0 이면 끔). 접수 행을 잠그고 판단해 넘기기와 순서가 맞는다. 옛 메인·일반 대화·작업 세션 단독은 대상이 아니다. 보관된 기획에 직접 보내면 기존대로 409 이고, 되살리기는 `PATCH archived=false`.
 - 작업 세션 보고는 기획 세션으로 간다(부모가 기획이므로 기존 `_enqueue_report` 그대로). 그래서 사용자 질문이 작업 보고 뒤에 줄 서지 않는다.
 
 ### 역할별 지침(`~/.ttakkari/harness`)
@@ -57,5 +59,6 @@
 ## 알려진 한계
 - 접수 지연은 엔진 기동이 대부분이다(실측 luna 6~8.5초, haiku 4~7초, 계정 폴더·지침 길이에 따라 다름).
 - Codex 전역 `~/.codex/AGENTS.md`·계정 폴더의 AGENTS.md 가 접수 호출에 들어가는지는 확인하지 못했다(확인 필요). 입력이 hook 을 끈 뒤에도 약 19k 토큰이었다.
-- 접수 둘이 동시에 같은 새 일을 넘기면 기획 세션이 둘 생길 수 있다(작업판은 넘기는 순간의 상태다).
+- 동시에 넘긴 같은 일의 중복은 제목으로만 잡는다. 접수 모델이 메시지마다 제목을 따로 지어 같은 일이어도 제목이 다르면 기획이 둘 생긴다. 120초 안에 같은 제목으로 넘긴 다른 일은 반대로 한 기획에 합쳐진다.
+- 사용자가 보관 판단 직후(같은 순간) 그 기획에 직접 메시지를 보내면, 이미 보관 여부를 확인한 요청이 보관된 기획에 Run 을 넣을 수 있다. 직접 보내기 경로는 접수 행을 잠그지 않는다.
 - 기획 보고는 기획의 매 턴마다 붙는다. 작업 보고를 정리하는 턴도 보고로 올라온다.

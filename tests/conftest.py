@@ -33,6 +33,7 @@ os.environ.update({
     "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
     "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
     "TTAKKARI_USAGE_POLL_SECONDS": "0",
+    "TTAKKARI_LEAD_ARCHIVE_SCAN_SECONDS": "0",
     "TTAKKARI_CONTEXT_SOURCE_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WRITABLE_ROOTS": json.dumps([str(ALLOWED / "default-docs"), str(ALLOWED / "default-missing")]),
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",

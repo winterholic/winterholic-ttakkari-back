@@ -41,6 +41,23 @@ def desk_reply(prompt, engine):
     return json.dumps({"action": "answer", "reply": f"desk answer by {engine}"})
 
 
+def desk_stream(argv, log, sid):
+    """접수 상주 모드(desk_pool): stdin 의 stream-json 사용자 메시지마다 결과 한 줄. 띄울 때는 아무것도 쓰지 않는다."""
+    for line in sys.stdin:
+        msg = json.loads(line)
+        prompt = msg["message"]["content"]
+        if log:
+            with open(log, "a") as f:
+                f.write(json.dumps({"engine": "claude", "argv": argv, "pid": os.getpid(), "mode": "stream-turn",
+                                    "prompt": prompt, "account_dir": os.environ.get("CLAUDE_CONFIG_DIR")}) + "\n")
+        if "DESK_DIE" in prompt.split("[사용자 메시지]")[-1]:
+            return 1
+        emit({"type": "system", "subtype": "init", "session_id": sid, "model": "claude-haiku-4-5"})
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": desk_reply(prompt, "claude"),
+              "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
     prompt = opt(argv, "-p") or ""
@@ -55,6 +72,8 @@ def main():
                                 "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
                                 "account_dir": os.environ.get("CLAUDE_CONFIG_DIR")}) + "\n")
 
+    if "--system-prompt" in argv and opt(argv, "--input-format") == "stream-json":
+        return desk_stream(argv, log, sid)
     if "--system-prompt" in argv:
         emit({"type": "result", "subtype": "success", "is_error": False, "result": desk_reply(prompt, "claude"),
               "session_id": sid, "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})

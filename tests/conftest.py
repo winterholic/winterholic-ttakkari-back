@@ -42,6 +42,8 @@ os.environ.update({
     "TTAKKARI_RUN_TIMEOUT_SECONDS": "30",
     "TTAKKARI_CANCEL_GRACE_SECONDS": "1",
     "TTAKKARI_CORS_ORIGINS": '["http://localhost:5173"]',
+    # 접수 상주 풀은 test_desk 의 풀 테스트에서만 켠다. 나머지는 지금까지처럼 1회 실행(argv 검증)을 본다.
+    "TTAKKARI_DESK_WARM_POOL": "false",
     # 매니저가 TTAKKARI_* 를 자식 env 에서 지우므로 접두사가 다른 이름을 쓴다.
     "FAKE_AGENT_LOG": str(AGENT_LOG),
 })
@@ -61,7 +63,7 @@ from ttakkari.api.assistant import wait_indexing
 from ttakkari.db import sessionmaker
 from ttakkari.main import app
 from ttakkari.models import Base, Credential
-from ttakkari.runs import profiles, usage_store
+from ttakkari.runs import desk_pool, profiles, usage_store
 from ttakkari.runs.manager import _background, manager
 from ttakkari.security.auth import issue_access_token, limiter
 from ttakkari.security.passwords import hash_password
@@ -100,6 +102,7 @@ async def _clean(_schema_and_app):
     # (ADR 0006) 실행 중인 것과 백그라운드 디스패치가 모두 없어질 때까지 반복한다.
     # 지식 색인(백그라운드)이 다음 테스트의 TRUNCATE 와 겹치면 교착이 난다.
     await wait_indexing()
+    await desk_pool.shutdown()
     # 한도 대기 중인 Run 의 재개 타이머가 다음 테스트로 새지 않게 끈다.
     for rid in list(manager._wakers) + list(manager._waiting):
         manager._disarm(rid)

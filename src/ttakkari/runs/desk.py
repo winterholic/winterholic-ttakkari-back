@@ -67,6 +67,8 @@ class Attempt:
     text: str | None
     error: str | None
     elapsed_ms: int
+    # 상주 프로세스(desk_pool)로 받았는지. 경로별 지연을 운영 이벤트에서 나눠 보려고 남긴다.
+    warm: bool = False
 
 
 async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
@@ -87,13 +89,14 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         decision = _parse(res.text) if res.text else None
         if decision is not None:
             events.append(db, run, "desk.route", {"action": decision.action, "account": prof.name,
-                                                   "engine": prof.engine, "ms": res.elapsed_ms})
+                                                   "engine": prof.engine, "ms": res.elapsed_ms, "warm": res.warm})
             break
         reason = res.error or "출력 형식 오류"
         limited = profiles_mod.is_usage_limit(res.error)
         if limited:
             profiles_mod.cool_down(prof.id, profiles_mod.reset_seconds_from(res.error))
         events.append(db, run, "desk.retry", {"account": prof.name, "engine": prof.engine, "ms": res.elapsed_ms,
+                                               "warm": res.warm,
                                                "reason": "usage_limit" if limited else reason[:300]})
         await db.commit()
         events.notify(run.id)
@@ -253,6 +256,12 @@ def _parse(text: str) -> Decision | None:
 
 async def _ask(prof: profiles_mod.Profile, system: str, prompt: str) -> Attempt:
     s = get_settings()
+    if s.desk_warm_pool:
+        from ttakkari.runs import desk_pool
+
+        warm = await desk_pool.ask(prof, system, prompt)
+        if warm is not None:
+            return warm
     cfg = s.desk_models.get(prof.engine) or {}
     cwd = s.home / "desk"
     cwd.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -320,8 +329,12 @@ def _codex_mcp_servers(prof: profiles_mod.Profile) -> list[str]:
 
 
 def _claude_cmd(cfg: dict[str, str], system: str, prompt: str) -> list[str]:
-    s = get_settings()
-    cmd = [s.claude_bin, "-p", prompt, "--output-format", "json", "--system-prompt", system,
+    return [get_settings().claude_bin, "-p", prompt, "--output-format", "json", *_claude_flags(cfg, system)]
+
+
+def _claude_flags(cfg: dict[str, str], system: str) -> list[str]:
+    """접수용 claude 옵션. cold(1회 실행)와 상주(desk_pool)가 같이 쓴다."""
+    cmd = ["--system-prompt", system,
            # 사용자 hook 과 전역 CLAUDE.md·스킬을 빼고, 도구·MCP 없이 답만 받는다.
            "--settings", json.dumps({"disableAllHooks": True}), "--setting-sources", "local",
            "--tools", "", "--strict-mcp-config", "--no-session-persistence"]

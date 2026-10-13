@@ -35,8 +35,52 @@ def desk_reply(prompt, engine):
     return json.dumps({"action": "answer", "reply": f"desk answer by {engine}"})
 
 
+def log_call(record):
+    log = os.environ.get("FAKE_AGENT_LOG")
+    if log:
+        with open(log, "a") as f:
+            f.write(json.dumps({"engine": "codex", "pid": os.getpid(), "cwd": os.getcwd(),
+                                "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
+                                "account_dir": os.environ.get("CODEX_HOME"), **record}) + "\n")
+
+
+def app_server(argv):
+    """codex app-server(stdio JSON-RPC)의 접수용 부분만 흉내낸다(desk_pool). 스레드 하나, 턴 하나면 충분하다."""
+    log_call({"argv": argv, "mode": "app-server-spawn"})
+    thread = {}
+    for line in sys.stdin:
+        msg = json.loads(line)
+        method, params, rid = msg.get("method"), msg.get("params") or {}, msg.get("id")
+        if method == "initialize":
+            emit({"id": rid, "result": {"userAgent": "fake", "codexHome": os.environ.get("CODEX_HOME")}})
+        elif method == "thread/start":
+            thread = params | {"id": str(uuid.uuid4())}
+            emit({"id": rid, "result": {"thread": {"id": thread["id"]}, "model": params.get("model")}})
+            emit({"method": "thread/started", "params": {"thread": {"id": thread["id"]}}})
+        elif method == "turn/start":
+            prompt = params["input"][0]["text"]
+            msg_part = prompt.split("[사용자 메시지]")[-1]
+            log_call({"argv": argv, "mode": "app-server-turn", "thread": thread, "prompt": prompt})
+            if "DESK_DIE" in msg_part:
+                return 1
+            turn = {"id": str(uuid.uuid4()), "status": "inProgress", "error": None}
+            emit({"id": rid, "result": {"turn": turn}})
+            emit({"method": "turn/started", "params": {"threadId": thread["id"], "turn": turn}})
+            if "DESK_CODEX_LIMIT" in msg_part:
+                err = {"message": "You've hit your usage limit.", "codexErrorInfo": "usageLimitExceeded"}
+                emit({"method": "error", "params": {"error": err, "willRetry": False}})
+                emit({"method": "turn/completed", "params": {"turn": turn | {"status": "failed", "error": err}}})
+                continue
+            text = desk_reply(prompt, "codex")
+            emit({"method": "item/completed", "params": {"item": {"type": "agentMessage", "id": "m0", "text": text}}})
+            emit({"method": "turn/completed", "params": {"turn": turn | {"status": "completed"}}})
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
+    if argv and argv[0] == "app-server":
+        return app_server(argv)
     dash = argv.index("--")
     prompt = " ".join(argv[dash + 1:])
     resume = len(argv) > 1 and argv[1] == "resume"

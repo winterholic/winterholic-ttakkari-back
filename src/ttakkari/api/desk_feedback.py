@@ -97,7 +97,7 @@ async def put_feedback(run_id: uuid.UUID, body: DeskFeedbackIn, _: User, db: Db)
             lead_id = uuid.UUID(done.payload["lead_id"])
         else:
             # 작업판을 비워 넘긴다. 바로 답했던 메시지라 이어 맡을 기획 세션을 고른 판단이 없다.
-            lead = await desk._delegate(db, run, sess, [], desk.Decision("delegate", ""))
+            lead, _dedup = await desk._delegate(db, run, sess, desk.Decision("delegate", ""))
             events.append(db, run, "desk.delegated", {"lead_id": str(lead.id), "title": lead.title, "redo": True})
             lead_id = lead.id
     record(db, action="desk.feedback", target_type="run", target_id=run.id,

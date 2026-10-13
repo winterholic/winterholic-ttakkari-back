@@ -19,8 +19,10 @@ import re
 import signal
 import time
 import tomllib
+import unicodedata
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -34,6 +36,7 @@ from ttakkari.models import (
     RunOrigin,
     RunStatus,
     SessionKind,
+    utcnow,
 )
 from ttakkari.runs import events
 from ttakkari.runs import instructions as instructions_mod
@@ -101,9 +104,12 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
 
     reply = decision.reply
     if decision.action == "delegate":
-        lead = await _delegate(db, run, sess, leads, decision)
+        lead, dedup = await _delegate(db, run, sess, decision)
         reply = f"{reply}\n\n→ 기획 세션 「{lead.title}」"
-        events.append(db, run, "desk.delegated", {"lead_id": str(lead.id), "title": lead.title})
+        payload: dict[str, object] = {"lead_id": str(lead.id), "title": lead.title}
+        if dedup:
+            payload |= {"dedup": True, "requested_title": _new_title(run, decision)}
+        events.append(db, run, "desk.delegated", payload)
     run.result_text = reply
     events.append(db, run, "message", {"text": reply})
 
@@ -160,25 +166,66 @@ async def _history(db: AsyncSession, sess: ChatSession, run: Run, turns: int) ->
     return lines
 
 
-async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, leads: list[ChatSession],
-                    decision: Decision) -> ChatSession:
+async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Decision) -> tuple[ChatSession, bool]:
+    """넘길 기획 세션과, 같은 일로 보고 방금 만든 기획에 이어 넣었는지(dedup)를 돌려준다."""
     from ttakkari.api.sessions import queue_run
 
-    lead = next((x for x in leads if str(x.id) == (decision.lead_id or "")), None)
+    # 접수 행을 잠그고 기획 목록을 다시 읽는다. 작업판은 엔진을 부르기 전 상태라, 동시에 넘긴 다른 접수 Run 이 그사이 만든
+    # 기획을 못 본다. 자동 보관(runs/lead_archive)도 같은 행을 잠가 순서가 맞는다. 잠금은 queue_run 의 commit 에서 풀린다.
+    await db.scalar(select(ChatSession.id).where(ChatSession.id == sess.id).with_for_update())
+    lead = await _open_lead(db, sess, decision.lead_id)
+    dedup = False
     if lead is None:
-        first = run.prompt.strip().splitlines()[0] if run.prompt.strip() else ""
-        title = (decision.title or first or "새 일")[:60]
-        lead = ChatSession(workspace_id=sess.workspace_id, title=title, engine="auto",
-                           kind=SessionKind.orchestrator, parent_id=sess.id, pool=sess.pool)
-        db.add(lead)
-        await db.flush()
+        title = _new_title(run, decision)
+        lead = await _same_recent_lead(db, sess, title)
+        dedup = lead is not None
+        if lead is None:
+            lead = ChatSession(workspace_id=sess.workspace_id, title=title, engine="auto",
+                               kind=SessionKind.orchestrator, parent_id=sess.id, pool=sess.pool)
+            db.add(lead)
+            await db.flush()
     history = await _history(db, sess, run, LEAD_HISTORY_TURNS)
     body = ["[접수에서 넘긴 사용자 요청]", run.prompt]
     if history:
         body += ["", "[최근 대화 — 참고만]", *history]
     await queue_run(db, lead, "\n".join(body), origin=RunOrigin.desk,
                     context_artifact_ids=[uuid.UUID(str(a)) for a in run.context_artifact_ids or []])
-    return lead
+    return lead, dedup
+
+
+def _new_title(run: Run, decision: Decision) -> str:
+    first = run.prompt.strip().splitlines()[0] if run.prompt.strip() else ""
+    return (decision.title or first or "새 일")[:60]
+
+
+async def _open_lead(db: AsyncSession, sess: ChatSession, lead_id: str | None) -> ChatSession | None:
+    """이 접수의 보관 안 된 기획만. 보관된 기획을 고르면 새로 만든다(ADR 0013)."""
+    try:
+        lid = uuid.UUID(lead_id or "")
+    except ValueError:
+        return None
+    return await db.scalar(select(ChatSession).where(
+        ChatSession.id == lid, ChatSession.parent_id == sess.id, ChatSession.kind == SessionKind.orchestrator,
+        ChatSession.archived_at.is_(None)))
+
+
+def _title_key(title: str) -> str:
+    return "".join(ch for ch in unicodedata.normalize("NFKC", title).casefold() if ch.isalnum())
+
+
+async def _same_recent_lead(db: AsyncSession, sess: ChatSession, title: str) -> ChatSession | None:
+    """lead_dedup_seconds 안에 이 접수에서 만든 같은 제목(공백·대소문자·구두점 무시) 기획. 동시에 넘긴 같은 일을 하나로 모은다.
+
+    제목은 접수 모델이 메시지마다 따로 짓는다. 같은 일이어도 제목이 다르면 못 잡는다.
+    """
+    window, key = get_settings().lead_dedup_seconds, _title_key(title)
+    if window <= 0 or not key:
+        return None
+    rows = await db.scalars(select(ChatSession).where(
+        ChatSession.parent_id == sess.id, ChatSession.kind == SessionKind.orchestrator,
+        ChatSession.archived_at.is_(None), ChatSession.created_at >= utcnow() - timedelta(seconds=window))
+        .order_by(ChatSession.created_at.desc()))
+    return next((x for x in rows if _title_key(x.title) == key), None)
 
 
 def _parse(text: str) -> Decision | None:

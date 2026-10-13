@@ -121,6 +121,13 @@ class Settings(BaseSettings):
         "claude": {"model": "haiku"},
     }
     desk_timeout_seconds: float = 25.0
+    # 접수 둘이 동시에 같은 새 일을 넘길 때 기획이 둘 생기지 않게, 이 시간 안에 같은 접수에서 만든 같은 제목(공백·대소문자·
+    # 구두점 무시) 기획이 있으면 거기에 이어 넣는다. 0 이면 끈다.
+    lead_dedup_seconds: int = 120
+    # 끝난 기획 세션 자동 보관(접수 오른쪽 패널·작업판 정리). 기획과 그 작업 세션에 대기·실행 Run 이 없고 마지막 활동이
+    # after_hours 넘게 지난 것을 작업 세션과 함께 보관한다. scan_seconds 는 훑는 주기, 0 이면 끈다(테스트는 직접 부른다).
+    lead_archive_after_hours: float = 24
+    lead_archive_scan_seconds: int = 600
     run_timeout_seconds: int = 2 * 60 * 60
     cancel_grace_seconds: float = 5.0
 

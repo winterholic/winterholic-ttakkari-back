@@ -36,7 +36,7 @@ from ttakkari.config import get_settings
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.planner import kr_holidays, reminders
-from ttakkari.runs import profiles, usage_store
+from ttakkari.runs import lead_archive, profiles, usage_store
 from ttakkari.runs.manager import (
     expire_artifacts,
     manager,
@@ -75,6 +75,15 @@ async def _reminder_loop(interval: int) -> None:
         await asyncio.sleep(interval)
 
 
+async def _lead_archive_loop(interval: int) -> None:
+    while True:
+        try:
+            await lead_archive.archive_idle_leads()
+        except Exception as e:  # noqa: BLE001
+            log.warning("lead archive scan failed: %s", e)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     s = get_settings()
@@ -107,6 +116,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
+    lead_sweeper = (asyncio.create_task(_lead_archive_loop(s.lead_archive_scan_seconds))
+                    if s.lead_archive_scan_seconds > 0 else None)
     try:
         yield
     finally:
@@ -115,6 +126,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             collector.cancel()
         if reminder:
             reminder.cancel()
+        if lead_sweeper:
+            lead_sweeper.cancel()
         await manager.shutdown()
         await preview.stop_worker()
         await dispose_engine()

@@ -52,7 +52,7 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 class RecallIn(BaseModel):
     query: str = Field(min_length=1, max_length=1000)
     k: int = Field(default=8, ge=1, le=30)
-    kinds: list[Literal["memory", "chunk", "entity"]] | None = None
+    kinds: list[Literal["memory", "chunk", "entity", "meeting"]] | None = None
 
 
 class RememberIn(BaseModel):
@@ -106,7 +106,7 @@ async def library(sid: AgentSession, db: Db) -> dict[str, Any]:
 @router.post("/recall")
 async def recall(body: RecallIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     session = await _session(db, sid)
-    hits = await store.recall(db, body.query, body.k, kinds=tuple(body.kinds or ("memory", "chunk", "entity")),
+    hits = await store.recall(db, body.query, body.k, kinds=tuple(body.kinds or ("memory", "chunk", "entity", "meeting")),
                               scope="work" if session.pool == "work" else "all")
     return {"results": [{"type": h.kind, "id": h.id, "score": round(h.score, 3), "text": h.text, **h.meta} for h in hits]}
 

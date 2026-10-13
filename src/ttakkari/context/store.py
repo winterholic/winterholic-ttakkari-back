@@ -160,8 +160,8 @@ class Hit:
 
 
 async def recall(db: AsyncSession, query: str, k: int = 8, *,
-                 kinds: tuple[str, ...] = ("memory", "chunk", "entity"), scope: str = "all") -> list[Hit]:
-    """Lexical candidates + explicit entity aliases and one-hop context. No embedding/model calls."""
+                 kinds: tuple[str, ...] = ("memory", "chunk", "entity", "meeting"), scope: str = "all") -> list[Hit]:
+    """Lexical candidates + explicit entity aliases and one-hop context. 회의록 조각만 벡터 유사도를 더한다(ADR 0021)."""
     query = query.strip()
     words = terms(query)
     if not words:
@@ -215,6 +215,13 @@ async def recall(db: AsyncSession, query: str, k: int = 8, *,
             hits.append(Hit("entity", str(e.id), float(sc) + (0.8 if e in anchors else 0), text,
                             {"entity_type": e.type, "name": e.name, "aliases": e.aliases, "scope": e.scope,
                              "attributes": e.attributes, "updated_at": e.updated_at.isoformat()}))
+
+    if "meeting" in kinds:
+        from ttakkari.meetings import vectors
+
+        for h in await vectors.search(db, query, pool, scope=scope):
+            out = vectors.hit_out(h)
+            hits.append(Hit("meeting", str(h.chunk.id), h.score, out.pop("text"), {**out, "path": f"meeting:{h.meeting.id}"}))
 
     hits.sort(key=lambda h: h.score, reverse=True)
     # Prevent one long document from consuming the entire context budget.

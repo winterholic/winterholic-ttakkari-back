@@ -234,18 +234,18 @@ async def test_project_scope_rules_and_work_pool(client, auth, make_dir):
 
 # ---- 입력: 녹음·Provider
 
-async def test_audio_upload_waits_for_provider_and_clovanote_is_not_implemented(client, auth, new_session):
+async def test_audio_upload_waits_for_provider_when_clovanote_is_off(client, auth, new_session):
     ws, _ = await new_session()
     up = await client.post("/api/uploads", files={"file": ("회의.m4a", b"\x00audio", "audio/mp4")}, data={"workspace_id": ws["id"]}, headers=auth)
     art = up.json()
     m = await _create(client, auth, audio_artifact_id=art["id"], title="녹음 회의")
     assert m["status"] == "uploaded" and m["source"] == "audio" and m["audio"]["filename"] == "회의.m4a"
     prov = (await client.get("/api/meetings/providers", headers=auth)).json()["providers"]
-    assert prov == [{"id": "clovanote", "label": "클로바노트", "state": "not_implemented", "profile_configured": False,
-                     "message": prov[0]["message"]}] and "준비 중" in prov[0]["message"]
+    assert prov == [{"id": "clovanote", "label": "클로바노트", "state": "unconfigured", "profile_configured": False,
+                     "message": prov[0]["message"]}] and "꺼져" in prov[0]["message"]
     # 전사 요청은 상태를 바꾸지 않고 사유를 알린다. 전사 없이 분석도 못 한다.
     r = await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth)
-    assert r.status_code == 409 and r.json()["code"] == "provider_unavailable" and "준비 중" in r.json()["message"]
+    assert r.status_code == 409 and r.json()["code"] == "provider_unavailable" and "꺼져" in r.json()["message"]
     assert (await client.get(f"/api/meetings/{m['id']}", headers=auth)).json()["status"] == "uploaded"
     assert (await client.post(f"/api/meetings/{m['id']}/analyze", headers=auth)).status_code == 400
     # 전사 텍스트를 직접 넣으면 같은 파이프라인으로 분석한다

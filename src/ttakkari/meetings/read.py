@@ -12,6 +12,8 @@ from ttakkari.context import store
 from ttakkari.context.search import lexical, scope_clause, terms
 from ttakkari.models import (
     Artifact,
+    ClovaJob,
+    ClovaNote,
     CtxEntity,
     Meeting,
     MeetingItem,
@@ -64,6 +66,7 @@ async def meeting_rows(db: AsyncSession, meetings: list[Meeting]) -> list[dict[s
             "counts": {**counts[m.id], "pending_proposals": pending.get(m.id, 0)},
             "analysis_run_id": str(m.analysis_run_id) if m.analysis_run_id else None,
             "analysis_session_id": str(m.analysis_session_id) if m.analysis_session_id else None,
+            "vector": {"status": m.vector_status, "chunks": m.vector_chunks, "error": m.vector_error, "embedded_at": _iso(m.embedded_at)},
             "created_at": _iso(m.created_at), "updated_at": _iso(m.updated_at), "analyzed_at": _iso(m.analyzed_at)})
     return out
 
@@ -72,8 +75,14 @@ async def meeting_detail(db: AsyncSession, m: Meeting) -> dict[str, Any]:
     items = await db.scalars(select(MeetingItem).where(MeetingItem.meeting_id == m.id).order_by(MeetingItem.kind, MeetingItem.position))
     props = await db.scalars(select(MeetingProposal).where(MeetingProposal.meeting_id == m.id).order_by(MeetingProposal.created_at, MeetingProposal.id))
     context = [{"ref": ref, **{k: v for k, v in c.items() if k != "id"}} for ref, c in (m.analysis_context or {}).items()]
+    from ttakkari.meetings import clova_jobs
+
+    job = await db.scalar(select(ClovaJob).where(ClovaJob.meeting_id == m.id).order_by(ClovaJob.created_at.desc()).limit(1))
+    note = await db.scalar(select(ClovaNote).where(ClovaNote.meeting_id == m.id).limit(1))
+    clova = {"job": clova_jobs.job_out(job) if job else None,
+             "note": clova_jobs.note_out(note) if note else None} if (job or note) else None
     return {**(await meeting_rows(db, [m]))[0], "transcript": m.transcript, "items": [item_out(i) for i in items],
-            "proposals": [proposal_out(p) for p in props], "analysis_context": context}
+            "proposals": [proposal_out(p) for p in props], "analysis_context": context, "clovanote": clova}
 
 
 def meeting_filter(*, scope: str, status: str | None = None, entity_id: uuid.UUID | None = None):

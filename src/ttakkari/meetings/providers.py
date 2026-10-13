@@ -1,12 +1,13 @@
-"""전사(STT) Provider 인터페이스(ADR 0010). 분석은 전사 텍스트만 받으므로 Provider 를 바꿔도 분석 로직은 그대로다.
+"""전사(STT) Provider 인터페이스(ADR 0010·0021). 분석은 전사 텍스트만 받으므로 Provider 를 바꿔도 분석 로직은 그대로다.
 
-지금 등록된 것은 클로바노트 하나이고 구현되지 않았다. 네이버 화면 구성·자동화 가능 범위·업로드 제한은 가정하지 않는다.
-실제 자동화는 기존 브라우저 제어 기능과 합쳐 `ClovaNoteProvider` 의 submit/poll 을 채우는 별도 작업이다.
+등록된 것은 클로바노트 하나다. 실제 브라우저 자동화는 meetings/clovanote.py, 작업 큐는 meetings/clova_jobs.py 에 있다.
+submit 은 업로드 작업을 큐에 넣고 작업 id 를 돌려주며, poll 은 그 작업 행을 읽는다(빠르게 돌아온다).
 """
 
 from __future__ import annotations
 
 import enum
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol
@@ -33,6 +34,8 @@ class AudioInput:
     path: Path
     filename: str
     mime_type: str
+    meeting_id: uuid.UUID | None = None
+    auto_analyze: bool = True
 
 
 @dataclass(frozen=True)
@@ -60,24 +63,57 @@ class TranscriptionProvider(Protocol):
 
 
 class ClovaNoteProvider:
-    """클로바노트(네이버) 어댑터 자리. 인증은 사람이 브라우저 프로필에 한 번 로그인해 두는 방식을 염두에 두고,
-    따까리는 비밀번호·쿠키를 코드·DB·응답 어디에도 두지 않는다. 설정은 clovanote_profile_dir 뿐이다."""
+    """클로바노트. 인증은 사람이 전용 Chrome 프로필에 한 번 로그인해 두는 방식이고(clovanote.py 주석),
+    따까리는 비밀번호를 어디에도 두지 않는다. 로그인 상태는 마지막 확인 결과(status_cache)로 판단한다."""
 
     id = "clovanote"
     label = "클로바노트"
 
     def availability(self) -> ProviderAvailability:
-        return ProviderAvailability(ProviderState.not_implemented, "클로바노트 연동 준비 중이에요. 전사 텍스트를 직접 넣으면 분석할 수 있어요.")
+        from ttakkari.meetings.clovanote import client
+
+        if not get_settings().clovanote_enabled:
+            return ProviderAvailability(ProviderState.unconfigured, "클로바노트 연동이 꺼져 있어요.")
+        st = client.status_cache
+        if st is not None and st.state == "login_required":
+            return ProviderAvailability(ProviderState.unconfigured, "클로바노트 로그인이 필요해요. 회의록 화면 위의 '재로그인'을 눌러 주세요.")
+        return ProviderAvailability(ProviderState.ready, "클로바노트로 전사해요.")
 
     @property
     def profile_configured(self) -> bool:
-        return get_settings().clovanote_profile_dir is not None
+        return get_settings().clovanote_profile.exists()
 
     async def submit(self, audio: AudioInput) -> str:
-        raise ProviderNotAvailable(self.availability().message)
+        from ttakkari.db import sessionmaker
+        from ttakkari.meetings import clova_jobs
+
+        if audio.meeting_id is None:
+            raise ProviderNotAvailable("회의록 없이 클로바노트에 올릴 수 없어요.")
+        async with sessionmaker()() as db:
+            job = await clova_jobs.enqueue(db, "upload", meeting_id=audio.meeting_id, params={"auto_analyze": audio.auto_analyze})
+            await db.commit()
+            job_id = str(job.id)
+        clova_jobs.kick()
+        return job_id
 
     async def poll(self, job_id: str) -> TranscriptionPoll:
-        raise ProviderNotAvailable(self.availability().message)
+        from sqlalchemy import select
+
+        from ttakkari.db import sessionmaker
+        from ttakkari.models import ClovaJob, ClovaNote
+
+        async with sessionmaker()() as db:
+            job = await db.get(ClovaJob, uuid.UUID(job_id))
+            if job is None:
+                return TranscriptionPoll("failed", error="클로바노트 작업을 찾지 못했어요.")
+            if job.status == "failed":
+                return TranscriptionPoll("failed", error=job.error or "클로바노트 처리에 실패했어요.")
+            if job.status != "succeeded":
+                return TranscriptionPoll("pending")
+            note = await db.scalar(select(ClovaNote).where(ClovaNote.note_id == job.note_id)) if job.note_id else None
+        if note is None or not note.transcript:
+            return TranscriptionPoll("failed", error="클로바노트 전사를 받지 못했어요.")
+        return TranscriptionPoll("done", text=note.transcript)
 
 
 # 새 Provider 는 여기에 등록한다. 테스트는 가짜 Provider 를 끼워 파이프라인을 확인한다.

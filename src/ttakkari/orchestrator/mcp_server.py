@@ -66,9 +66,10 @@ async def library_catalog() -> str:
 
 @query_tool
 async def recall(query: str, k: int = 8) -> str:
-    """Search saved facts, entities/relations and indexed documents without an embedding model.
-    Use project names or aliases and a few concrete keywords. Hits include source paths and timestamps;
-    read the original for detail, and try different keywords when terminology differs."""
+    """Search saved facts, entities/relations, indexed documents and meeting minutes (type "meeting": summary, decisions,
+    action items and transcript passages; these also match by meaning via local vectors). Use project names or aliases
+    and a few concrete keywords. Hits include source paths/meeting ids and timestamps; read the original for detail
+    (get_meeting for meetings), and try different keywords when terminology differs."""
     return await _agent("POST", "/recall", {"query": query, "k": k})
 
 
@@ -279,6 +280,50 @@ async def search_meeting_items(query: str | None = None, kind: Literal["discussi
     """Search decisions / action items / open issues across meetings, e.g. kind="action", status="open" for pending work
     on a project. Each hit names its meeting. Without `query` it lists the newest. Read-only."""
     return await _agent("GET", "/meetings/search", q=query, kind=kind, status=status, project=project, limit=limit)
+
+
+@query_tool
+async def search_meetings(query: str, project: str | None = None,
+                          kind: Literal["summary", "decision", "action", "open_issue", "discussion", "transcript"] | None = None,
+                          limit: int = 8) -> str:
+    """Meaning-based search over meeting minutes and transcript passages (local vector embeddings + keywords), e.g.
+    "배포 일정 언제로 정했지" finds the passage even when worded differently. Each hit has meeting_id, title, date, kind and the
+    passage text. Use get_meeting for the structured result. Read-only."""
+    return await _agent("GET", "/meetings/semantic", q=query, project=project, kind=kind, limit=limit)
+
+
+# ---- 클로바노트(ADR 0021). 사용자의 클로바노트 계정에 있는 녹음·전사의 사본(동기화로 채운다).
+
+@query_tool
+async def list_clovanote_notes(query: str | None = None, state: Literal["ready", "processing", "failed"] | None = None,
+                               imported: bool | None = None, limit: int = 20) -> str:
+    """List the user's Clova Note (클로바노트) recordings synced into Ttakkari: title, recorded time, duration, speakers,
+    whether a transcript exists and the meeting it was imported into (meeting_id). `imported=false` finds notes not yet
+    turned into meeting minutes. Read-only; call sync_clovanote first if the newest recording is missing."""
+    return await _agent("GET", "/clovanote/notes", q=query, state=state, imported=imported, limit=limit)
+
+
+@query_tool
+async def get_clovanote_note(note_id: str, offset: int = 0, limit: int = 200) -> str:
+    """Read a Clova Note transcript as speaker/time segments [{speaker, start_ms, end_ms, text}]. Long notes are paged:
+    pass next_offset to continue. Read-only."""
+    return await _agent("GET", f"/clovanote/notes/{note_id}", offset=offset, limit=limit)
+
+
+@server.tool()
+async def sync_clovanote() -> str:
+    """Fetch the latest note list and transcripts from the user's Clova Note account into Ttakkari (runs in the background,
+    usually under a minute). Personal sessions only."""
+    return await _agent("POST", "/clovanote/sync")
+
+
+@server.tool()
+async def import_clovanote_note(note_id: str, scope: Literal["personal", "work"] = "personal", project: str | None = None,
+                                analyze: bool = True) -> str:
+    """Turn a Clova Note into Ttakkari meeting minutes and (by default) start the analysis that extracts decisions and
+    action items. `project` is a project name or alias. This never changes the context library by itself: the user approves
+    proposals in the app."""
+    return await _agent("POST", f"/clovanote/notes/{note_id}/import", {"scope": scope, "project": project, "analyze": analyze})
 
 
 # ---- 오케스트레이터 전용

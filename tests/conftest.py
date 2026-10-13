@@ -34,6 +34,10 @@ os.environ.update({
     "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
     "TTAKKARI_USAGE_POLL_SECONDS": "0",
     "TTAKKARI_LEAD_ARCHIVE_SCAN_SECONDS": "0",
+    "TTAKKARI_CONTEXT_EMBEDDER": "hash",
+    "TTAKKARI_CLOVANOTE_POLL_SECONDS": "0",
+    # 실제 Chrome·네이버에 닿지 않게 끈다. 클로바노트 테스트는 가짜 클라이언트를 끼워 켠다(test_clovanote.py).
+    "TTAKKARI_CLOVANOTE_ENABLED": "false",
     "TTAKKARI_CONTEXT_SOURCE_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WRITABLE_ROOTS": json.dumps([str(ALLOWED / "default-docs"), str(ALLOWED / "default-missing")]),
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",

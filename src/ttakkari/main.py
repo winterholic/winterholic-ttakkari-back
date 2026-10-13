@@ -18,6 +18,7 @@ from ttakkari.api import (
     artifacts,
     assistant,
     auth,
+    clovanote,
     desk_feedback,
     library_insight,
     meetings,
@@ -35,6 +36,8 @@ from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
 from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
+from ttakkari.meetings import clova_jobs
+from ttakkari.meetings import vectors as meeting_vectors
 from ttakkari.planner import kr_holidays, reminders
 from ttakkari.runs import desk_pool, lead_archive, profiles, usage_store
 from ttakkari.runs.manager import (
@@ -113,6 +116,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning("default workspace not created: %s", e)
     await preview.start_worker()
     kr_holidays.warm(datetime.now(UTC).year)
+    # 회의록 벡터 색인(끊긴 것·아직 없는 것)과 클로바노트 작업 큐(ADR 0021)
+    with contextlib.suppress(Exception):
+        n = await meeting_vectors.resume_pending()
+        if n:
+            log.info("meeting vectors: %d meetings queued for indexing", n)
+    await clova_jobs.start()
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
@@ -128,6 +137,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             reminder.cancel()
         if lead_sweeper:
             lead_sweeper.cancel()
+        await clova_jobs.stop()
         await manager.shutdown()
         await desk_pool.shutdown()
         await preview.stop_worker()
@@ -163,7 +173,7 @@ def create_app() -> FastAPI:
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
               orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router,
-              meetings.router, meetings.agent_router, pms.router, tasks.router, desk_feedback.router):
+              meetings.router, meetings.agent_router, clovanote.router, clovanote.agent_router, pms.router, tasks.router, desk_feedback.router):
         app.include_router(r)
     return app
 

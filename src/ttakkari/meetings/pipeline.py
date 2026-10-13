@@ -28,7 +28,7 @@ from ttakkari.config import get_settings
 from ttakkari.context import store
 from ttakkari.context.search import scope_clause
 from ttakkari.db import sessionmaker
-from ttakkari.meetings import providers
+from ttakkari.meetings import providers, vectors
 from ttakkari.meetings.schema import Analysis, AnalysisError, parse_analysis
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
@@ -157,7 +157,7 @@ async def set_transcript(db: AsyncSession, m: Meeting, text: str, source: str = 
     m.updated_at = utcnow()
 
 
-async def request_transcription(db: AsyncSession, m: Meeting, provider_id: str | None = None) -> None:
+async def request_transcription(db: AsyncSession, m: Meeting, provider_id: str | None = None, *, auto_analyze: bool = True) -> None:
     """녹음을 전사 Provider 에 맡긴다. 쓸 수 없는 Provider 면 상태를 바꾸지 않고 사유를 알린다."""
     if m.audio_artifact_id is None:
         raise PipelineError("전사할 녹음 파일이 없어요.", "bad_input", 400)
@@ -178,7 +178,8 @@ async def request_transcription(db: AsyncSession, m: Meeting, provider_id: str |
     except BrokerError as e:
         raise PipelineError(str(e), "gone", 410) from e
     try:
-        job_id = await provider.submit(providers.AudioInput(path=path, filename=art.filename, mime_type=art.mime_type))
+        job_id = await provider.submit(providers.AudioInput(path=path, filename=art.filename, mime_type=art.mime_type,
+                                                            meeting_id=m.id, auto_analyze=auto_analyze))
     except providers.ProviderNotAvailable as e:
         raise PipelineError(str(e), "provider_unavailable") from e
     except Exception as e:
@@ -206,7 +207,7 @@ async def sync_transcription(db: AsyncSession, m: Meeting) -> bool:
         transition(m, S.failed, stage="transcription", error=poll.error or "전사에 실패했어요.")
         return True
     try:
-        m.transcript, m.transcript_source = _check_transcript(poll.text or ""), f"provider:{m.provider}"
+        m.transcript, m.transcript_source = _check_transcript(poll.text or ""), f"provider:{m.provider}"[:40]
     except PipelineError as e:
         transition(m, S.failed, stage="transcription", error=str(e))
         return True
@@ -380,6 +381,8 @@ async def reconcile(db: AsyncSession, m: Meeting) -> bool:
     if m.status == S.transcribing:
         changed = await sync_transcription(db, m)
         await db.commit()
+        if changed:
+            vectors.schedule(m.id)
         return changed
     run = await db.scalar(select(Run).where(Run.id == m.analysis_run_id).execution_options(populate_existing=True)) \
         if m.analysis_run_id else None
@@ -402,6 +405,7 @@ async def reconcile(db: AsyncSession, m: Meeting) -> bool:
     record(db, actor="system", action="meeting.analysis_finished", target_type="meeting", target_id=m.id,
            outcome="ok" if m.status != S.failed else "error", detail={"status": m.status})
     await db.commit()
+    vectors.schedule(m.id)
     _spawn(_notify_done(m.id, m.title, m.status))
     return True
 

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.context import store
-from ttakkari.meetings import pipeline, providers, read
+from ttakkari.meetings import pipeline, providers, read, vectors
 from ttakkari.models import ChatSession, Meeting, MeetingItem, MeetingStatus
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.security.auth import User, client_ip
@@ -38,6 +38,12 @@ class MeetingIn(BaseModel):
     audio_artifact_id: uuid.UUID | None = None
     transcript: str | None = Field(default=None, max_length=2_000_000)
     transcript_source: Literal["paste", "file"] = "paste"
+    # 만들자마자 처리까지: 녹음이면 클로바노트 전사 → 분석, 전사 텍스트면 바로 분석(ADR 0021).
+    auto_process: bool = False
+
+
+class TranscribeIn(BaseModel):
+    auto_analyze: bool = True
 
 
 class MeetingPatch(BaseModel):
@@ -103,8 +109,23 @@ async def create(body: MeetingIn, _: User, db: Db, request: Request) -> dict[str
     except pipeline.PipelineError as e:
         raise _http(e) from e
     record(db, action="meeting.create", target_type="meeting", target_id=m.id, ip=client_ip(request),
-           detail={"scope": m.scope, "source": m.source, "status": m.status})
+           detail={"scope": m.scope, "source": m.source, "status": m.status, "auto": body.auto_process})
     await db.commit()
+    if m.transcript:
+        vectors.schedule(m.id)
+    if body.auto_process:
+        # 자동 처리 실패는 회의 생성을 되돌리지 않는다. 사유는 상세 화면의 버튼·오류로 다시 보인다.
+        try:
+            if m.status == MeetingStatus.uploaded:
+                await pipeline.request_transcription(db, m, auto_analyze=True)
+                await db.commit()
+            elif m.status == MeetingStatus.transcribed:
+                await pipeline.start_analysis(db, m)
+        except pipeline.PipelineError as e:
+            await db.rollback()
+            m = await _get(db, m.id)
+            out = await read.meeting_detail(db, m)
+            return {**out, "auto_error": {"code": e.code, "message": str(e)}}
     return await read.meeting_detail(db, m)
 
 
@@ -130,6 +151,7 @@ async def patch(mid: uuid.UUID, body: MeetingPatch, _: User, db: Db) -> dict[str
     if data.get("participants") is not None:
         m.participants = [p.strip() for p in data["participants"] if p.strip()][:50]
     await db.commit()
+    vectors.schedule(m.id)
     return await read.meeting_detail(db, m)
 
 
@@ -152,15 +174,16 @@ async def put_transcript(mid: uuid.UUID, body: TranscriptIn, _: User, db: Db) ->
     except pipeline.PipelineError as e:
         raise _http(e) from e
     await db.commit()
+    vectors.schedule(m.id)
     return await read.meeting_detail(db, m)
 
 
 @router.post("/{mid}/transcribe", status_code=status.HTTP_202_ACCEPTED)
-async def transcribe(mid: uuid.UUID, _: User, db: Db) -> dict[str, Any]:
-    """녹음을 전사 Provider 에 맡긴다. 클로바노트가 준비되기 전에는 409 provider_unavailable 과 사유를 돌려준다."""
+async def transcribe(mid: uuid.UUID, _: User, db: Db, body: TranscribeIn | None = None) -> dict[str, Any]:
+    """녹음을 클로바노트에 올려 전사한다(작업 큐). 로그인이 풀렸으면 409 provider_unavailable 과 사유를 돌려준다."""
     m = await _get(db, mid)
     try:
-        await pipeline.request_transcription(db, m)
+        await pipeline.request_transcription(db, m, auto_analyze=body.auto_analyze if body else True)
     except pipeline.PipelineError as e:
         raise _http(e) from e
     await db.commit()
@@ -200,17 +223,20 @@ async def patch_item(mid: uuid.UUID, item_id: uuid.UUID, body: ItemPatch, _: Use
         if k in data and (k != "text" or data[k]):
             setattr(it, k, data[k].strip() if isinstance(data[k], str) else data[k])
     await db.commit()
+    vectors.schedule(mid, delay=3.0)
     return read.item_out(it)
 
 
 async def _resolve(db: AsyncSession, mid: uuid.UUID, pid: uuid.UUID, fn) -> dict[str, Any]:
     m = await _get(db, mid)
     try:
-        await fn(db, m, pid)
+        p = await fn(db, m, pid)
     except pipeline.PipelineError as e:
         await db.rollback()
         raise _http(e) from e
     await db.commit()
+    if p.kind == "update_action_item" and p.status == "approved" and p.payload.get("target_meeting_id"):
+        vectors.schedule(uuid.UUID(p.payload["target_meeting_id"]))
     return await read.meeting_detail(db, m)
 
 
@@ -256,6 +282,22 @@ async def agent_search(sid: AgentSession, db: Db, q: str | None = None, kind: Li
                        limit: int = 20) -> dict[str, Any]:
     scope = await _agent_scope(db, sid)
     return await read.search_items(db, scope=scope, q=q, kind=kind, status=status_, project=project, limit=limit)
+
+
+@agent_router.get("/semantic")
+async def agent_semantic(sid: AgentSession, db: Db, q: Annotated[str, Query(min_length=1, max_length=500)],
+                         project: str | None = None, kind: str | None = None, limit: int = Query(8, ge=1, le=30)) -> dict[str, Any]:
+    """회의록 조각 의미 검색(어휘 + 로컬 벡터, ADR 0021). 회사 세션은 회사 회의만."""
+    scope = await _agent_scope(db, sid)
+    entity_id = None
+    if project:
+        e = await store.find_entity(db, project, "project", scope=scope)
+        if e is None:
+            return {"results": [], "note": f"'{project}' 프로젝트를 찾지 못했어요. library_catalog 로 이름을 확인하세요."}
+        entity_id = e.id
+    kinds = tuple(k for k in (kind or "").split(",") if k) or None
+    hits = await vectors.search(db, q, limit, scope=scope, entity_id=entity_id, kinds=kinds)
+    return {"results": [vectors.hit_out(h) for h in hits]}
 
 
 @agent_router.get("/{mid}")

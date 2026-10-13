@@ -332,7 +332,8 @@ async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, 
 AGENT_TOOLS = {"library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
                "set_artifact_area", "server_resources", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
-               "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items"}
+               "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items",
+               "search_meetings", "list_clovanote_notes", "get_clovanote_note", "sync_clovanote", "import_clovanote_note"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
                 "my_context", "reset_my_context"}
 
@@ -365,7 +366,8 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
     queries = {
         "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
         "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
-        "list_events", "list_meetings", "get_meeting", "search_meeting_items",
+        "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
+        "list_clovanote_notes", "get_clovanote_note",
         "account_usage", "my_context", "list_workers", "get_worker",
     }
     for tool in replies[2]["result"]["tools"]:

@@ -213,21 +213,27 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
            balance_usage: bool = False) -> Profile:
     """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
 
-    순서: 모델이 정해 준 엔진 > (balance_usage 이고 측정값이 전부 신선하면) 상한 여유 > 다른 Run 이 안 쓰는 계정 > 우선순위.
-    balance_usage 에 stale/null 측정이 있으면 기존 우선순위 폴백을 쓴다. 고르는 일과 적는 일 사이에 await 가 없다."""
+    balance_usage이면 신선한 측정이 있는 후보 > 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 우선순위.
+    stale/null 후보끼리는 모델·유휴·우선순위로 고른다. 고정 엔진·회사 범위는 호출자가 pool로 제한한다.
+    고르는 일과 적는 일 사이에 await 가 없다."""
     busy = {aid for rid, aid in _in_use.items() if rid != run_id}
     headroom = {p.id: _usage_headroom(p) for p in pool} if balance_usage else {}
-    balance = balance_usage and all(value is not None for value in headroom.values())
-    ranked = sorted(enumerate(pool), key=lambda ip: (
-        prefer_engine is not None and ip[1].engine != prefer_engine,
-        -headroom[ip[1].id][0] if balance else 0,
-        headroom[ip[1].id][1] if balance else 0,
-        idle_first and ip[1].id in busy,
-        ip[0],
-    ))
+    def rank(ip: tuple[int, Profile]) -> tuple:
+        index, profile = ip
+        room = headroom.get(profile.id)
+        return (
+            balance_usage and room is None,
+            -room[0] if room is not None else 0,
+            room[1] if room is not None else 0,
+            prefer_engine is not None and profile.engine != prefer_engine,
+            idle_first and profile.id in busy,
+            index,
+        )
+
+    ranked = sorted(enumerate(pool), key=rank)
     prof = ranked[0][1]
     log.info("run %s account selection: account=%s balance_usage=%s usage_ranked=%s headroom=%s",
-             run_id, prof.name, balance_usage, balance, headroom.get(prof.id))
+             run_id, prof.name, balance_usage, headroom.get(prof.id) is not None, headroom.get(prof.id))
     _in_use[run_id] = prof.id
     return prof
 

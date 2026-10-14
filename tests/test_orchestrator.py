@@ -23,11 +23,19 @@ from ttakkari.runs.manager import manager
 
 def test_design_capacity_policy_waits_for_claude_and_uses_pms_wbs():
     note = " ".join(ORCHESTRATOR_NOTE.split())
-    assert "Design and visual work should use Claude" in note
+    assert "visual work should use Claude" in note
     assert "do not send it to GPT" in note
     assert "PMS project WBS/backlog" in note
     assert "report the wait to the user" in note
     assert "list_pms_projects/create_pms_task" in note
+
+
+def test_general_work_assignment_uses_usage_and_auto_engine():
+    note = " ".join(ORCHESTRATOR_NOTE.split())
+    assert "Before each worker assignment, check account_usage" in note
+    assert 'use engine="auto"' in note
+    assert "read its progress, stop it, and reassign the unfinished work" in note
+    assert 'Claude with engine="claude"' in note
 
 
 async def test_orchestrator_can_record_deferred_design_in_pms(client, auth, make_dir):
@@ -407,12 +415,13 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
             assert annotations.get("readOnlyHint") is not True, tool["name"]
 
 
-def test_codex_auto_approves_ttakkari_queries_and_delegated_pms(make_dir):
+@pytest.mark.parametrize("engine_session_id", [None, "existing-thread"])
+def test_codex_auto_approves_all_delegated_ttakkari_tools(make_dir, engine_session_id):
     from ttakkari.agents.base import LaunchSpec
     from ttakkari.agents.codex import CodexAdapter
 
     root = make_dir()
-    spec = LaunchSpec(cwd=root, prompt="read previous conversations", engine_session_id=None,
+    spec = LaunchSpec(cwd=root, prompt="read previous conversations", engine_session_id=engine_session_id,
                       model=None, effort=None, outbox=root, write_roots=[root], system_note="",
                       mcp_servers={"ttakkari": {"command": "python", "args": [], "env": {}},
                                    "other": {"command": "python", "args": [], "env": {}}})
@@ -425,10 +434,17 @@ def test_codex_auto_approves_ttakkari_queries_and_delegated_pms(make_dir):
     assert approvals['mcp_servers.ttakkari.tools.request_backend_deploy.approval_mode'] == '"approve"'
     assert approvals['mcp_servers.ttakkari.tools.backend_deploy_status.approval_mode'] == '"approve"'
     assert not any(key.startswith("mcp_servers.other.") for key in approvals)
-    for name in ("remember", "forget", "delete_memo", "notify_user", "spawn_worker", "stop_worker"):
-        assert f"mcp_servers.ttakkari.tools.{name}.approval_mode" not in approvals
+    for name in AGENT_TOOLS | WORKER_TOOLS:
+        assert approvals.get(f"mcp_servers.ttakkari.tools.{name}.approval_mode") == '"approve"', name
+    assert "mcp_servers.ttakkari.tools.unknown_tool.approval_mode" not in approvals
     assert 'approval_policy="never"' in flags
     assert 'sandbox_mode="workspace-write"' in flags
+
+
+def test_auto_approval_policy_covers_registered_tools():
+    from ttakkari.orchestrator.tool_policy import AUTO_APPROVED_TOOLS
+
+    assert AUTO_APPROVED_TOOLS == AGENT_TOOLS | WORKER_TOOLS
 
 
 async def test_worker_list_has_summary_for_tabs(client, auth, make_dir):

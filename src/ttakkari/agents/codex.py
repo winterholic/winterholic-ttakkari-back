@@ -61,7 +61,7 @@ class CodexAdapter:
                 "-c", f"mcp_servers.{name}.env={{{env}}}",
             ]
             # 무인 실행의 never 는 승인 요청을 자동 허용하지 않고 거절한다.
-            # 조회·PMS 관리·사용자가 요청한 자기 배포 예약을 허용한다. 쓰기의 readOnlyHint는 바꾸지 않는다.
+            # 사용자 지시를 실행하는 자체 앱 도구를 명시적으로 허용한다. 쓰기의 readOnlyHint는 바꾸지 않는다.
             if name == "ttakkari":
                 for tool in sorted(AUTO_APPROVED_TOOLS):
                     opts += ["-c", f'mcp_servers.{name}.tools.{tool}.approval_mode="approve"']

@@ -107,7 +107,7 @@ def test_usage_cap_blocks_at_or_above_threshold_and_expired_window_is_ignored(mo
     assert profiles.usage_limit_until(profile) is None
 
 
-def test_auto_choose_balances_fresh_usage_but_stale_values_keep_priority():
+def test_auto_choose_balances_fresh_usage_and_prefers_it_to_stale_values():
     a, b = _p("a", "codex"), _p("b", "claude")
     a = Profile(a.id, a.name, a.engine, max_used_percent=95)
     now = int(time.time())
@@ -119,11 +119,76 @@ def test_auto_choose_balances_fresh_usage_but_stale_values_keep_priority():
     try:
         assert profiles.choose([a, b], rid, balance_usage=True) is b
         usage_mod._stream[b.id].updated_at = time.time() - 3600
-        # 하나라도 stale/null 이면 추측하지 않고 기존 순서를 따른다.
+        # stale 값을 추측하지 않고 남아 있는 신선한 계정을 고른다.
         assert profiles.choose([a, b], uuid.uuid4(), balance_usage=True) is a
     finally:
         for run_id in list(profiles._in_use):
             profiles.release(run_id)
+
+
+@pytest.mark.parametrize("unknown_kind", ["missing", "stale", "reset"])
+def test_unknown_usage_does_not_disable_comparison_of_fresh_accounts(unknown_kind):
+    low, unknown, high = _p("low"), _p("unknown"), _p("high", "codex")
+    now = int(time.time())
+    for account, used in [(low, 98), (high, 35)]:
+        usage_mod.remember_stream(account.id, [usage_mod.Window("five_hour", "5시간", used, now + 3600)])
+    if unknown_kind != "missing":
+        usage_mod.remember_stream(unknown.id, [usage_mod.Window("five_hour", "5시간", 0,
+                                                               now - 1 if unknown_kind == "reset" else now + 3600)])
+        if unknown_kind == "stale":
+            usage_mod._stream[unknown.id].updated_at = now - 3600
+    rid = uuid.uuid4()
+    try:
+        assert profiles.choose([low, unknown, high], rid, balance_usage=True) is high
+    finally:
+        profiles.release(rid)
+
+
+def test_auto_choose_usage_precedes_model_engine_preference():
+    claude, codex = _p("claude"), _p("codex", "codex")
+    now = int(time.time())
+    usage_mod.remember_stream(claude.id, [usage_mod.Window("seven_day", "주간", 98, now + 86400)])
+    usage_mod.remember_stream(codex.id, [usage_mod.Window("seven_day", "주간", 35, now + 86400)])
+    rid = uuid.uuid4()
+    try:
+        assert profiles.choose([claude, codex], rid, prefer_engine="claude", balance_usage=True) is codex
+    finally:
+        profiles.release(rid)
+
+
+@pytest.mark.parametrize("kind", ["worker", "orchestrator"])
+async def test_auto_runs_switch_engines_by_usage_and_keep_model_grade(client, auth, make_dir, kind):
+    accounts = {a["name"]: a for a in (await client.get("/api/accounts", headers=auth)).json()}
+    now = int(time.time())
+    for name, used in [("claude", 10), ("codex", 90)]:
+        usage_mod.remember_stream(uuid.UUID(accounts[name]["id"]), [
+            usage_mod.Window("five_hour", "5시간", used, now + 3600),
+        ])
+    if kind == "worker":
+        orch = await _session(client, auth, make_dir, kind="orchestrator")
+        response = await client.post("/api/orchestrator/workers", json={
+            "title": "automatic task", "prompt": "first task", "engine": "auto",
+        }, headers=_orch(issue_token(orch["id"])))
+        assert response.status_code == 201
+        sid = response.json()["worker_id"]
+        first = await wait_run(client, auth, response.json()["active_run_id"])
+    else:
+        sess = await _session(client, auth, make_dir, kind=kind, model="opus")
+        sid = sess["id"]
+        first = await run_to_end(client, auth, sid, "first task")
+    assert first["engine"] == "claude", first
+    first_call = next(c for c in agent_calls() if any("first task" in arg for arg in c["argv"]))
+    assert ("sonnet" if kind == "worker" else "opus") in first_call["argv"]
+    usage_mod.remember_stream(uuid.UUID(accounts["claude"]["id"]), [
+        usage_mod.Window("five_hour", "5시간", 98, now + 3600),
+    ])
+    usage_mod.remember_stream(uuid.UUID(accounts["codex"]["id"]), [
+        usage_mod.Window("five_hour", "5시간", 35, now + 3600),
+    ])
+    second = await run_to_end(client, auth, sid, "second task")
+    assert second["engine"] == "codex", second
+    second_call = next(c for c in agent_calls() if any("second task" in arg for arg in c["argv"]))
+    assert ("gpt-6-luna" if kind == "worker" else "gpt-6.1-sol") in second_call["argv"]
 
 
 # ---- 시작할 때: 작업 세션은 놀고 있는 계정으로

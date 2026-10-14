@@ -110,6 +110,8 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 "Accounts at their max_used_percent in either the 5-hour or weekly window wait until reset. "
                 "All Run roles compare eligible accounts by remaining_to_limit_percent; reset time breaks ties. "
                 "Fixed-engine sessions compare within that engine; desk keeps its configured engine order. "
-                "When usage is stale or missing, keep the existing priority fallback.",
+                "Fresh measured candidates rank before unknown candidates; unknowns keep model/idle/priority fallback. "
+                "For general workers use engine=auto: headroom precedes model engine preference; "
+                "explicit worker engines lock that engine (Claude for design).",
         "accounts": out,
     }

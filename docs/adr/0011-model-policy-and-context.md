@@ -7,7 +7,7 @@
 
 ### 모델
 - 메인 오케스트레이터는 엔진마다 한 쌍만 쓴다: Claude `opus`/medium, Codex `gpt-6.1-sol`/high(`orchestrator_fallback_models`). 세션에 다른 모델이 저장돼 있어도 실행 때 이것으로 띄운다.
-- 작업 세션은 모델을 안 고르면 claude→`sonnet`/high, codex·auto→`gpt-6-luna`/high. auto 기본을 Luna 로 둔 것은 토큰이 가장 싸서다.
+- 작업 세션은 모델을 안 고르면 claude→`sonnet`/high, codex·auto→`gpt-6-luna`/high. auto 기본을 Luna 로 둔 것은 토큰이 가장 싸서다. auto에서는 신선한 계정 상한 여유가 모델의 엔진 선호보다 우선하며 Claude가 선택되면 동일 등급인 `sonnet`/high로 실행한다. 모든 사용량이 미확인일 때는 모델·유휴·기존 우선순위로 고른다(2026-10-15).
 - `opus`·`fable`·`gpt-6.1-sol` 작업 세션은 `escalation_reason` 이 있어야 만든다. 사유는 감사 로그(`orchestrator.escalate`)에 남는다. 하드 차단 대신 사유를 요구한 이유: 중요한 설계·추론은 실제로 필요하고, 무엇이 중요한지는 오케스트레이터가 판단한다.
 - 작업 세션이 한도로 다른 엔진 계정으로 넘어가면 같은 급의 상대 모델로 바꾼다(`model_counterparts`: luna↔sonnet, sol↔opus). 이전엔 모델 없이 넘어가 그 엔진의 기본 모델로 떴다.
 - 접수·기획·작업·일반 대화는 신선한 5시간·주간 사용량을 보고 허용 후보 중 상한까지 여유가 큰 계정에 배정한다. 고정 엔진 작업도 그 엔진 안에서 비교하며, 접수는 설정된 엔진 순서를 지킨다. 여유가 같으면 초기화 시각이 가까운 계정, 그다음 기존 우선순위를 따른다. 값이 stale/null 이면 기존 우선순위 폴백을 쓴다.

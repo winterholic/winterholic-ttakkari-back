@@ -167,7 +167,7 @@ payload 는 `{title, body, url, tag}`:
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/orchestrator/workers` | `{title, prompt, engine?(auto), model?, effort?, escalation_reason?}` → 201 WorkerOut. 모델을 안 주면 claude→sonnet/high, codex·auto→gpt-6-luna/high. opus·fable·gpt-6.1-sol 은 `escalation_reason` 없으면 400, 엔진과 맞지 않는 모델도 400(ADR 0011). 동시 실행 20개 초과 429 |
+| POST | `/api/orchestrator/workers` | `{title, prompt, engine?(auto), model?, effort?, escalation_reason?}` → 201 WorkerOut. 모델을 안 주면 claude→sonnet/high, codex·auto→gpt-6-luna/high. auto는 매 턴 신선한 상한 여유를 모델 엔진 선호보다 먼저 비교하며 다른 엔진 선택 시 동일 등급 상대 모델을 쓴다. 명시한 claude/codex는 엔진 잠금이다. opus·fable·gpt-6.1-sol 은 `escalation_reason` 없으면 400, 엔진과 맞지 않는 모델도 400(ADR 0011). 동시 실행 20개 초과 429 |
 | POST | `/api/orchestrator/workers/{id}/messages` | `{prompt, fresh_context?(false)}` → 202. `fresh_context` 면 엔진 대화를 새로 시작(실행 중이면 그 Run 이 끝난 뒤) |
 | GET | `/api/orchestrator/workers` | 목록(짧은 결과). WorkerOut 에 `model, effort, context`(예: `72% (144k/200k) · 교체 기준 이상…`, 잰 값 없으면 `알 수 없음…`) |
 | GET | `/api/orchestrator/context` | 메인 자신의 컨텍스트 `{context, context_tokens?, context_window?, context_percent?}` |

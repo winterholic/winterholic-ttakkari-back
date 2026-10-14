@@ -1,4 +1,4 @@
-"""조회 도구의 의미와 사용자가 위임한 PMS 관리의 실행 권한을 구분한다."""
+"""자체 MCP 실행 권한과 도구의 읽기·쓰기 의미를 구분한다(ADR 0003)."""
 
 READ_ONLY_TOOLS = frozenset({
     "list_checklist", "list_checklist_templates", "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
@@ -16,4 +16,13 @@ DEPLOY_TOOLS = frozenset({"request_backend_deploy"})
 # 사용자가 일일·고정 체크리스트 전체 관리를 MCP에 명시적으로 위임했다.
 CHECKLIST_TOOLS = frozenset({"create_checklist_item", "update_checklist_item", "delete_checklist_item",
                              "create_checklist_template", "update_checklist_template", "delete_checklist_template"})
-AUTO_APPROVED_TOOLS = READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS
+# 사용자 지시에 따른 자체 앱 관리는 무인 실행에서 승인 프롬프트를 만들지 않는다.
+# 실제 권한은 API의 세션 토큰·역할·범위 검사로 제한한다. 쓰기를 readOnlyHint로 위장하지 않는다.
+ASSISTANT_WRITE_TOOLS = frozenset({
+    "remember", "describe_entity", "link", "forget", "share_file", "set_artifact_area", "notify_user",
+    "create_memo", "update_memo", "delete_memo", "create_event", "update_event", "delete_event",
+    "sync_clovanote", "import_clovanote_note",
+})
+WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
+AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS
+                       | ASSISTANT_WRITE_TOOLS | WORKER_MANAGEMENT_TOOLS)

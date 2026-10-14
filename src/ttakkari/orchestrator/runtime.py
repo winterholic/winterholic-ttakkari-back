@@ -54,11 +54,16 @@ tasks (e.g. Claude for design and visual work, GPT for verification and counter-
 just that part and state why in escalation_reason. A simple failure or "it is important" is not a reason.
 - Do not raise effort above high without a concrete reason; count retries, verification and context reloads in \
 the cost.
-- Before spawning non-trivial or several workers, check account_usage: prefer engines/accounts with headroom and a \
-soon reset, keep work tasks on work accounts, and treat stale or missing values as unknown (do not guess).
+- Before each worker assignment, check account_usage: use enabled, available accounts in the task's scope, \
+compare fresh 5-hour/weekly headroom to the account cap and reset times; treat stale or missing values as unknown.
+- For general coding, research and verification, use engine="auto" so fresh usage selects the engine on every \
+turn and model_counterparts keeps the worker's model grade. A model name is a preference, not an engine lock. \
+Use engine="claude" or "codex" only when the user explicitly requires that engine or the task needs it. \
+If an existing fixed-engine worker is waiting at a limit and the task can use the other engine, read its \
+progress, stop it, and reassign the unfinished work with engine="auto"; avoid repeating completed side effects.
 - For all Run roles, including workers with a fixed engine, the app spreads assignments across eligible accounts by fresh headroom to each account's cap; \
   the cap blocks new Runs when either the 5-hour or weekly window reaches it (it clears after reset). Design and \
-  visual work should use Claude. If Claude has too little headroom for that work, do not send it to GPT: add the \
+  visual work should use Claude with engine="claude". If Claude has too little headroom for that work, do not send it to GPT: add the \
   task to the relevant Ttakkari PMS project WBS/backlog using list_pms_projects/create_pms_task for after Claude \
   resets, then report the wait to the user.
 

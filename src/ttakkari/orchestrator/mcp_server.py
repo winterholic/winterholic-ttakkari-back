@@ -358,9 +358,11 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
                        escalation_reason: str | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     `prompt` must be self-contained: the worker does not see this conversation.
-    Without `model`: claude → sonnet/high, codex or auto → gpt-6-luna/high (cheapest; use it for simple work).
+    Use engine="auto" for general tasks: fresh usage chooses the engine on each turn; the model is a preference.
+    Explicit engine="claude"/"codex" locks that engine, including on a usage limit (use Claude for design).
+    Without `model`: claude → sonnet/high, codex or auto → gpt-6-luna/high (or sonnet/high when Claude is selected).
     opus / gpt-6.1-sol are orchestrator-grade and need `escalation_reason` (why this part needs deep reasoning,
-    a design decision or new ideas). On a usage limit the worker moves to another account with the same-grade
+    a design decision or new ideas). Auto workers can move to another account with the same-grade
     model of the other engine. Returns the worker_id."""
     body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine}
     if model:

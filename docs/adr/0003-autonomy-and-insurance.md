@@ -19,14 +19,19 @@
 
 guard 는 hook 이 bypass 모드에서도 적용되는지 실측했다(`cat .env`, 워크스페이스 밖 Write 차단 확인).
 
-### 자체 MCP 조회 도구의 승인 (2026-10-13)
+### 자체 MCP 도구의 승인 (2026-10-15 갱신)
 
 Codex의 `approval_policy=never`는 승인 요청을 자동으로 허용하는 설정이 아니라, 요청이 필요하면 거부하는 설정이다.
 따까리 MCP의 조회 도구에 읽기 전용 annotation이 빠져 있어 `list_sessions`·`read_session`·`recall` 등이
 `MCP tool call requires approval, but approval policy is never`로 API 호출 전에 거부됐다.
-`orchestrator/tool_policy.py`의 조회 목록만 `readOnlyHint=true`, `destructiveHint=false`, `openWorldHint=false`로 등록하고,
-Codex 실행 인자에서 자체 서버 `ttakkari`의 해당 도구만 `tools.<tool>.approval_mode="approve"`로 허용한다.
-다른 MCP 서버와 데이터 변경·삭제·알림·작업 실행 도구에는 이 예외를 적용하지 않는다. OS 샌드박스와 세션 토큰 인증은 유지한다.
+`orchestrator/tool_policy.py`의 조회 목록만 `readOnlyHint=true`, `destructiveHint=false`, `openWorldHint=false`로 등록한다.
+Codex 실행 인자에서는 자체 서버 `ttakkari`의 등록된 도구를 `tools.<tool>.approval_mode="approve"`로 명시적으로 허용한다.
+조회뿐 아니라 사용자 지시에 따른 기억·메모·일정·파일·알림·PMS·체크리스트·작업자 관리·배포 예약이 포함된다.
+작업자 생성·후속 지시·중단·컨텍스트 교체가 누락되면 사용량에 따른 재배정도 호출 전에 차단되므로, 등록 도구 전체와
+허용 목록의 일치 및 새 실행·resume 양쪽 실행 인자를 회귀 테스트한다. 쓰기 도구를 읽기 전용으로 표시하지 않는다.
+다른 MCP 서버와 알 수 없는 도구에는 이 예외를 적용하지 않는다. 사용자 지시의 범위, API의 세션 토큰·역할·개인/회사 검사,
+OS 샌드박스와 guard는 유지한다. 허용 설정은 새로 띄우는 CLI 프로세스에 적용되므로 이미 실행 중인 턴의 설정은 바뀌지 않는다.
+도구별 설정은 [OpenAI 공식 설정 명세](https://learn.chatgpt.com/docs/config-file/config-reference)를 따른다.
 
 ## 알려진 한계 (수용)
 - guard 는 셸 문자열 휴리스틱이다. 변수로 만든 경로(`F=.env; cat "$F"`), Bash 로 하는 워크스페이스 밖 쓰기(`touch ../x`)는 못 막는다. `tests/test_guard.py` 에 xfail 로 기록돼 있다.

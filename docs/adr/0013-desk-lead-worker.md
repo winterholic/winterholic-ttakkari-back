@@ -23,7 +23,7 @@
 - 메시지마다 따로 돈다. 세션 대기열에 줄 서지 않고, 엔진 대화를 이어 쓰지 않는다. 앞 메시지가 처리 중이어도 다음 메시지가 바로 시작한다(자리 `max_concurrent_desk`, 기본 6).
 - 한 번에 고른다: `{"action":"answer","reply":…}` 또는 `{"action":"delegate","reply":…,"lead_id":…|null,"title":…}`. 도구는 없다. 백엔드가 작업판(기획 세션 상태·작업 세션 수·최근 결과)과 최근 대화 6턴을 프롬프트에 넣는다.
   - 근거(2026-10-13 실측, 30문항 분류): luna(effort low) 30/30·첫 답 중앙값 4.8초, haiku 29/30·7.4초, 로컬 kanana-2-3b 8bit 23/30·0.06초, kanana-1.5-8b 4bit 23/30(작업 요청 4건 놓침). 작은 모델은 여러 번 오가는 도구 호출에 약하다(Kanana-2 카드의 BFCL-v3 Multi-Turn 17%·5.5%).
-- 엔진 순서 `desk_engine_order`(기본 codex → claude), 모델 `desk_models`(luna low / haiku). 엔진 안에서는 계정 우선순위·켜기·회사 범위·한도 쉬는 중을 그대로 따른다. 한도면 그 계정을 쉬게 하고(`cool_down`), 시간 초과(`desk_timeout_seconds`, 25초)·출력 형식 오류면 다음 계정으로. 다 실패하면 기획으로 넘긴다. 접수 때문에 메시지가 멈추지 않게 한다.
+- 엔진 순서 `desk_engine_order`(기본 codex → claude), 모델 `desk_models`(luna low / haiku). 엔진 안에서는 신선한 사용량의 계정별 상한 여유를 비교하고, 값이 없거나 낡으면 기존 우선순위를 따른다. 켜기·회사 범위·한도 쉬는 중은 그대로 따른다. 한도면 그 계정을 쉬게 하고(`cool_down`), 시간 초과(`desk_timeout_seconds`, 25초)·출력 형식 오류면 다음 계정으로. 다 실패하면 기획으로 넘긴다. 접수 때문에 메시지가 멈추지 않게 한다.
 - 전역 하네스를 받지 않는다.
   - Codex: `--disable hooks`(전역 Stop hook 이 기록을 강요해 추가 턴 3번, 입력 84.5k→20.4k, 20.9초→4.3~4.9초 실측), `--ephemeral`, `-s read-only`, 사용자 config.toml 의 MCP 서버 끄기, 빈 작업 폴더(`~/.ttakkari/desk`), `developer_instructions`=접수 지침.
   - Claude: `--settings {"disableAllHooks":true}`, `--setting-sources local`(전역 CLAUDE.md·스킬 제외), `--tools ""`, `--strict-mcp-config`, `--no-session-persistence`, `--system-prompt`=접수 지침. `disableAllHooks` 는 따까리 보험 hook 까지 끄므로 도구 없는 접수에만 쓴다.

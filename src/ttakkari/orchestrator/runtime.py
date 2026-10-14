@@ -56,7 +56,7 @@ just that part and state why in escalation_reason. A simple failure or "it is im
 the cost.
 - Before spawning non-trivial or several workers, check account_usage: prefer engines/accounts with headroom and a \
 soon reset, keep work tasks on work accounts, and treat stale or missing values as unknown (do not guess).
-- For normal auto workers, the app spreads assignments across accounts by fresh headroom to each account's cap; \
+- For all Run roles, including workers with a fixed engine, the app spreads assignments across eligible accounts by fresh headroom to each account's cap; \
   the cap blocks new Runs when either the 5-hour or weekly window reaches it (it clears after reset). Design and \
   visual work should use Claude. If Claude has too little headroom for that work, do not send it to GPT: add the \
   task to the relevant Ttakkari PMS project WBS/backlog using list_pms_projects/create_pms_task for after Claude \

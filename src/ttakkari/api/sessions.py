@@ -84,7 +84,7 @@ async def create_session(body: SessionIn, _: User, db: Db) -> SessionOut:
     ws = await get_workspace(db, body.workspace_id)
     if ws.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 워크스페이스입니다.")
-    # 오케스트레이터는 Claude 우선, 사용량 한도면 다음 프로필로 넘어간다(ADR 0006). 접수는 엔진 순서를 따로 정한다(ADR 0013).
+    # 오케스트레이터는 auto 범위에서 사용량을 비교한다(ADR 0006). 접수는 엔진 순서를 따로 정한다(ADR 0013).
     engine = "auto" if body.kind in (SessionKind.orchestrator, SessionKind.desk) else (body.engine or ws.default_engine)
     s = ChatSession(workspace_id=ws.id, title=body.title or "새 작업", engine=engine,
                     model=body.model, effort=body.effort, kind=body.kind, pool=body.pool)

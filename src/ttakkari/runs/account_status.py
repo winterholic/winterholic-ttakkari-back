@@ -108,7 +108,8 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 "burn_percent_per_hour is the recent rise in used percent per hour (null = not enough history); "
                 "exhausts_in_seconds/exhausts_before_reset extrapolate it. "
                 "Accounts at their max_used_percent in either the 5-hour or weekly window wait until reset. "
-                "For auto workers, choose the account with the most remaining_to_limit_percent; reset time breaks ties. "
+                "All Run roles compare eligible accounts by remaining_to_limit_percent; reset time breaks ties. "
+                "Fixed-engine sessions compare within that engine; desk keeps its configured engine order. "
                 "When usage is stale or missing, keep the existing priority fallback.",
         "accounts": out,
     }

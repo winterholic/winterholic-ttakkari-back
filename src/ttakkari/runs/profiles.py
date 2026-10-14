@@ -226,6 +226,8 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
         ip[0],
     ))
     prof = ranked[0][1]
+    log.info("run %s account selection: account=%s balance_usage=%s usage_ranked=%s headroom=%s",
+             run_id, prof.name, balance_usage, balance, headroom.get(prof.id))
     _in_use[run_id] = prof.id
     return prof
 

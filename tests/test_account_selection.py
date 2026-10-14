@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 import uuid
 
+import pytest
 from conftest import agent_calls
 from helpers import run_events, run_to_end, start_run, wait_run
 from test_orchestrator import _orch, _session, _wait
@@ -126,6 +127,67 @@ def test_auto_choose_balances_fresh_usage_but_stale_values_keep_priority():
 
 
 # ---- 시작할 때: 작업 세션은 놀고 있는 계정으로
+
+async def _uneven_codex_accounts(client, auth, make_dir):
+    mine = (await client.post("/api/accounts", json={
+        "name": "mine-codex", "engine": "codex", "config_dir": str(make_dir()),
+    }, headers=auth)).json()
+    accounts = {a["name"]: a for a in (await client.get("/api/accounts", headers=auth)).json()}
+    daddy = accounts["codex"]
+    await client.patch(f"/api/accounts/{daddy['id']}", json={"max_used_percent": 95}, headers=auth)
+    await client.post("/api/accounts/reorder", json={
+        "ids": [daddy["id"], mine["id"], accounts["claude"]["id"]],
+    }, headers=auth)
+    now = int(time.time())
+    for account, five_hour, weekly in [(daddy, 58, 25), (mine, 3, 28), (accounts["claude"], 99, 99)]:
+        usage_mod.remember_stream(uuid.UUID(account["id"]), [
+            usage_mod.Window("five_hour", "5시간", five_hour, now + 3600),
+            usage_mod.Window("seven_day", "주간", weekly, now + 86400),
+        ])
+    return daddy, mine
+
+
+@pytest.mark.parametrize("kind,engine", [("orchestrator", "auto"), ("chat", "codex"), ("worker", "codex")])
+async def test_all_run_roles_choose_codex_with_more_usage_headroom(client, auth, make_dir, kind, engine):
+    _, mine = await _uneven_codex_accounts(client, auth, make_dir)
+    if kind == "worker":
+        orch = await _session(client, auth, make_dir, kind="orchestrator")
+        response = await client.post("/api/orchestrator/workers", json={
+            "title": "small task", "prompt": "small task", "engine": engine,
+        }, headers=_orch(issue_token(orch["id"])))
+        assert response.status_code == 201
+        run = await wait_run(client, auth, response.json()["active_run_id"])
+    else:
+        sess = await _session(client, auth, make_dir, kind=kind, engine=engine)
+        run = await run_to_end(client, auth, sess["id"], "small task")
+    assert run["status"] == "succeeded", run
+    assert run["profile"] == mine["name"]
+
+
+async def test_desk_chooses_codex_with_more_usage_headroom_and_releases_it(client, auth, make_dir):
+    _, mine = await _uneven_codex_accounts(client, auth, make_dir)
+    sess = await _session(client, auth, make_dir, kind="desk")
+    run = await run_to_end(client, auth, sess["id"], "hello DESK_ANSWER")
+    assert run["status"] == "succeeded", run
+    assert run["profile"] == mine["name"]
+    assert profiles.running_counts() == {}
+
+
+async def test_orchestrator_balances_usage_on_next_turn_and_resumes_saved_conversation(client, auth, make_dir):
+    daddy, mine = await _uneven_codex_accounts(client, auth, make_dir)
+    sess = await _session(client, auth, make_dir, kind="orchestrator")
+    first = await run_to_end(client, auth, sess["id"], "remember alpha")
+    assert first["profile"] == mine["name"]
+    now = int(time.time())
+    usage_mod.remember_stream(uuid.UUID(mine["id"]), [usage_mod.Window("five_hour", "5시간", 90, now + 3600)])
+    second = await run_to_end(client, auth, sess["id"], "remember bravo")
+    assert second["profile"] == daddy["name"]
+    usage_mod.remember_stream(uuid.UUID(mine["id"]), [usage_mod.Window("five_hour", "5시간", 3, now + 3600)])
+    third = await run_to_end(client, auth, sess["id"], "continue alpha")
+    assert third["profile"] == mine["name"]
+    call = agent_calls()[-1]
+    assert call["argv"][1] == "resume"
+    assert "remember bravo" in call["argv"][-1]
 
 async def test_workers_spread_over_idle_accounts(client, auth, make_dir):
     accs = await _three_accounts(client, auth, make_dir)

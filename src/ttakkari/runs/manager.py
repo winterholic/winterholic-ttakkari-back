@@ -332,6 +332,7 @@ class RunManager:
                     await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
         finally:
             self._handles.pop(run_id, None)
+            profiles_mod.release(run_id)
 
     async def _run(self, db: AsyncSession, run_id: uuid.UUID) -> None:
         s = get_settings()
@@ -356,13 +357,12 @@ class RunManager:
             return
 
         is_orch = sess.kind == SessionKind.orchestrator
-        # 계정 고르기: 모델이 정한 엔진 먼저, 다른 Run 이 안 쓰는 계정 먼저, 그다음 우선순위(ADR 0006).
-        # 메인 오케스트레이터는 시작할 때 우선순위를 지킨다. 지시마다 계정을 옮기면 엔진 대화를 이어 쓰지 못하고
-        # 인계문을 매번 다시 싣게 되며, 자기 작업 세션이 쓰는 계정이 바쁘다고 밀려나는 것도 이상하다.
+        # 모든 역할과 고정 엔진 세션도 신선한 사용량을 비교한다(ADR 0006).
+        # 모델·엔진 범위는 지키고, 계정 전환 시 저장된 엔진 대화와 _handoff_context로 이어 받는다.
         prefer = profiles_mod.model_engine(run.model)
         remaining = list(profiles)
         prof = profiles_mod.choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer,
-                                   balance_usage=sess.engine == "auto" and not is_orch)
+                                   balance_usage=True)
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
@@ -458,7 +458,7 @@ class RunManager:
                     paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
             nxt = profiles_mod.choose(remaining, run.id, prefer_engine=prefer,
-                                      balance_usage=sess.engine == "auto" and not is_orch)
+                                      balance_usage=True)
             events.append(db, run, "engine.fallback", {
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),

@@ -4,7 +4,7 @@
   도구 없음으로 띄운다. 지침은 비서 관리 > 지침 > 접수만 쓴다.
 - 도구 없이 한 번에 고르게 한다. 작업판(기획 세션 상태)과 최근 대화는 백엔드가 미리 넣는다. 작은 모델은 여러 번 오가는
   도구 호출에 약하다(2026-10-13 실측).
-- 계정은 엔진 순서(desk_engine_order, 기본 luna → haiku) 안에서 기존 우선순위대로. 한도·시간 초과·출력 오류면 다음 계정으로,
+- 계정은 엔진 순서(desk_engine_order, 기본 luna → haiku) 안에서 사용 상한까지 여유가 큰 순서로. 한도·시간 초과·출력 오류면 다음 계정으로,
   다 실패하면 기획으로 넘긴다. 접수 때문에 사용자 메시지가 멈추는 일은 없게 한다.
 """
 
@@ -82,7 +82,11 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
     system = instructions_mod.read("desk")
 
     decision: Decision | None = None
-    for prof in pool[:MAX_ATTEMPTS]:
+    for _ in range(min(MAX_ATTEMPTS, len(pool))):
+        # 접수도 같은 엔진의 계정끼리 사용량을 비교한다. 다른 엔진의 미측정값은 이 비교를 끄지 않는다.
+        candidates = [p for p in pool if p.engine == pool[0].engine]
+        prof = profiles_mod.choose(candidates, run.id, balance_usage=True)
+        pool.remove(prof)
         run.engine, run.profile = prof.engine, prof.name
         run.model = (s.desk_models.get(prof.engine) or {}).get("model")
         res = await _ask(prof, system, prompt)

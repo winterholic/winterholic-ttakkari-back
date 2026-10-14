@@ -104,3 +104,69 @@ async def test_search_lab_explains_matches(client, auth, make_dir):
     assert empty["results"] == []
     work = (await client.post(f"{P}/search-lab", json={"query": "알파 키워드", "scope": "work"}, headers=auth)).json()
     assert all(x["type"] != "chunk" for x in work["results"])
+
+
+async def test_search_lab_pages_past_ten_and_filters_scope(client, auth):
+    for i in range(23):
+        response = await client.post("/api/assistant/memories", json={
+            "content": f"페이지네이션 항목 페이지테스트 {i:02d}", "scope": "personal"}, headers=auth)
+        assert response.status_code == 201
+    for i in range(3):
+        response = await client.post("/api/assistant/memories", json={
+            "content": f"페이지네이션 항목 페이지테스트 회사 {i:02d}", "scope": "work"}, headers=auth)
+        assert response.status_code == 201
+
+    page1 = (await client.post(f"{P}/search-lab", json={
+        "query": "페이지테스트", "scope": "all", "limit": 10, "offset": 0}, headers=auth)).json()
+    page2 = (await client.post(f"{P}/search-lab", json={
+        "query": "페이지테스트", "scope": "all", "limit": 10, "offset": 10}, headers=auth)).json()
+    assert page1["total"] == 26
+    assert len(page1["results"]) == len(page2["results"]) == 10
+    assert {x["id"] for x in page1["results"]}.isdisjoint({x["id"] for x in page2["results"]})
+
+    work = (await client.post(f"{P}/search-lab", json={
+        "query": "페이지테스트", "scope": "work", "limit": 10, "offset": 0}, headers=auth)).json()
+    assert work["total"] == 3
+
+
+async def test_library_item_detail_has_full_memory_and_related_data(client, auth, make_dir):
+    entity = (await client.post("/api/assistant/entities", json={
+        "name": "상세 프로젝트", "type": "project", "scope": "personal"}, headers=auth)).json()
+    await client.post("/api/assistant/entities", json={
+        "name": "연결 도구", "type": "tool", "scope": "personal"}, headers=auth)
+    await client.post("/api/assistant/relations", json={
+        "subject": "상세 프로젝트", "predicate": "uses", "object": "연결 도구"}, headers=auth)
+    content = "상세 본문 " * 40
+    memory = (await client.post("/api/assistant/memories", json={
+        "content": content, "entities": ["상세 프로젝트"], "source_ref": "/docs/detail.md"}, headers=auth)).json()
+
+    response = await client.get(f"{P}/items/memory/{memory['id']}", headers=auth)
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["content"] == content.strip()
+    assert detail["source_ref"] == "/docs/detail.md"
+    assert detail["created_at"] and detail["updated_at"]
+    assert detail["entities"][0]["name"] == entity["name"]
+    assert detail["entities"][0]["relations"][0]["predicate"] == "uses"
+
+    root = make_dir()
+    body = "문서 조각의 전체 본문 " * 80
+    (root / "detail.md").write_text(f"# 상세\n{body}")
+    source = await client.post("/api/assistant/sources", json={
+        "path": str(root), "entity_id": entity["id"], "category": "projects"}, headers=auth)
+    assert source.status_code == 201
+    await wait_indexing()
+    docs = (await client.get(f"{P}/sources/{source.json()['id']}/documents", headers=auth)).json()
+    chunks = (await client.get(f"{P}/documents/{docs['documents'][0]['id']}/chunks?limit=50", headers=auth)).json()
+    chunk = chunks["chunks"][0]
+    response = await client.get(f"{P}/items/chunk/{chunk['id']}", headers=auth)
+    assert response.status_code == 200
+    chunk_detail = response.json()
+    assert len(chunk_detail["content"]) > 700
+    assert chunk["content"] == chunk_detail["content"][:700]
+    assert chunk_detail["source_path"] == str(root)
+    assert chunk_detail["category"] == "projects" and chunk_detail["project"] == "상세 프로젝트"
+    assert chunk_detail["created_at"] and chunk_detail["updated_at"]
+
+    entity_detail = (await client.get(f"{P}/items/entity/{entity['id']}", headers=auth)).json()
+    assert entity_detail["created_at"] and entity_detail["updated_at"]

@@ -422,11 +422,11 @@ def matched_terms(words: list[str], *fields: str | None) -> list[str]:
     return [w for w in words if any(w in h for h in hay)]
 
 
-async def search_lab(db: AsyncSession, query: str, k: int, scope: str) -> dict[str, Any]:
+async def search_lab(db: AsyncSession, query: str, limit: int, scope: str, offset: int = 0) -> dict[str, Any]:
     query = query.strip()
     words = terms(query)
     started = time.perf_counter()
-    hits = await store.recall(db, query, k, scope=scope)
+    hits = await store.recall(db, query, 1000, scope=scope, max_k=1000)
     elapsed = round((time.perf_counter() - started) * 1000)
     ents = list(await db.scalars(select(CtxEntity).where(scope_clause(CtxEntity.scope, scope))))
     folded = unicodedata.normalize("NFKC", query).casefold()
@@ -461,5 +461,41 @@ async def search_lab(db: AsyncSession, query: str, k: int, scope: str) -> dict[s
             "matched_terms": matched, "match_in": [name for name, ws in found.items() if ws], "via": via,
             "coverage": round(len(matched) / len(words), 2) if words else 0.0,
             "entities": mem_entities.get(h.id) if h.kind == "memory" else None, **m})
+    total = len(results)
     return {"query": query, "scope": scope, "terms": words, "anchors": sorted(anchor_names), "elapsed_ms": elapsed,
-            "results": results}
+            "total": total, "limit": limit, "offset": offset, "results": results[offset:offset + limit]}
+
+
+async def memory_detail(db: AsyncSession, memory: CtxMemory, scope: str) -> dict[str, Any]:
+    entities = []
+    for entity_id in memory.entity_ids:
+        try:
+            entity = await db.get(CtxEntity, uuid.UUID(str(entity_id)))
+        except ValueError:
+            entity = None
+        if entity and (scope == "all" or entity.scope in (scope, "shared")):
+            detail = await entity_evidence(db, entity, scope)
+            entities.append({"id": str(entity.id), "name": entity.name, "type": entity.type,
+                             "scope": entity.scope, "category": detail["sources"][0]["category"] if detail["sources"] else None,
+                             "relations": detail["relations"], "sources": detail["sources"]})
+    return {"kind": "memory", "id": str(memory.id), "content": memory.content, "memory_kind": memory.kind,
+            "scope": memory.scope, "pinned": memory.pinned, "source": memory.source,
+            "source_ref": memory.source_ref, "created_at": _iso(memory.created_at),
+            "updated_at": _iso(memory.updated_at), "entities": entities}
+
+
+async def chunk_detail(db: AsyncSession, chunk: CtxChunk, document: CtxDocument, source: CtxSource) -> dict[str, Any]:
+    entity = await db.get(CtxEntity, source.entity_id) if source.entity_id else None
+    return {"kind": "chunk", "id": str(chunk.id), "content": chunk.content, "heading": chunk.heading,
+            "ord": chunk.ord, "scope": source.scope, "category": source.category,
+            "project": entity.name if entity else None, "path": document.path, "title": document.title,
+            "source_path": source.path, "source_id": str(source.id), "document_id": str(document.id),
+            "indexed_at": _iso(document.indexed_at), "created_at": _iso(source.created_at),
+            "updated_at": _iso(document.indexed_at),
+            "entity": ({"id": str(entity.id), "name": entity.name, "type": entity.type,
+                        "relations": (await entity_evidence(db, entity, source.scope))["relations"]} if entity else None)}
+
+
+async def entity_detail_page(db: AsyncSession, entity: CtxEntity, scope: str) -> dict[str, Any]:
+    return {"kind": "entity", **await entity_evidence(db, entity, scope),
+            "created_at": _iso(entity.created_at), "updated_at": _iso(entity.updated_at)}

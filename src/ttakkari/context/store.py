@@ -160,13 +160,14 @@ class Hit:
 
 
 async def recall(db: AsyncSession, query: str, k: int = 8, *,
-                 kinds: tuple[str, ...] = ("memory", "chunk", "entity", "meeting"), scope: str = "all") -> list[Hit]:
+                 kinds: tuple[str, ...] = ("memory", "chunk", "entity", "meeting"), scope: str = "all",
+                 max_k: int = 30) -> list[Hit]:
     """Lexical candidates + explicit entity aliases and one-hop context. 회의록 조각만 벡터 유사도를 더한다(ADR 0021)."""
     query = query.strip()
     words = terms(query)
     if not words:
         return []
-    k = min(max(k, 1), 30)
+    k = min(max(k, 1), max_k)
     pool = max(k * 4, 20)
     hits: list[Hit] = []
     entity_text = func.concat_ws(" ", CtxEntity.name, cast(CtxEntity.aliases, Text), CtxEntity.summary)

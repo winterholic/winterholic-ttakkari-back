@@ -266,7 +266,8 @@ payload 는 `{title, body, url, tag}`:
   - `GET /api/assistant/library/graph`: 노드(엔터티 + 기억·출처·문서·조각 수 + 품질 플래그 isolated/no_alias/no_summary/no_evidence/duplicate_suspect), 엣지(술어), 중복 의심 쌍.
   - `GET /api/assistant/library/entities/{id}`: 노드 상세(관계·연결된 기억 전문·묶인 출처).
   - `GET /api/assistant/library/quality`: 조각 길이 분포·짧은/긴/중복 조각 예시, 문서·출처 무결성, 엔터티·관계·기억 지표와 판정 문장(`findings`).
-  - `POST /api/assistant/library/search-lab`: `{query, k?, scope?}`. recall 과 같은 검색 결과에 걸린 단어(`matched_terms`)·걸린 곳(`match_in`)·경로(`via`: keyword/entity/fuzzy)를 붙인다. 쓰기 없음.
+  - `POST /api/assistant/library/search-lab`: 기존 `{query, k?, scope?}` 요청을 유지하며, 화면은 `{query, limit?, offset?, scope?}`로 페이지를 요청한다. 응답에 `total, limit, offset`과 해당 페이지의 결과를 담는다. recall 과 같은 검색 결과에 걸린 단어(`matched_terms`)·걸린 곳(`match_in`)·경로(`via`: keyword/entity/fuzzy)를 붙인다. 쓰기 없음.
+  - `GET /api/assistant/library/items/{memory|chunk|entity}/{id}?scope=`: 항목 원문·출처·분류·생성/수정 시각과 연결된 엔터티·관계·기억을 읽는다. 범위 밖이면 404.
 - `GET /api/agent/library`: 에이전트 세션 범위의 목차. MCP `library_catalog`에 연결한다.
 - 기존 `POST /api/agent/recall`은 회사 세션에서 work/shared 자료만 반환한다. 개인 세션은 전체 자료를 조회한다.
 - 기억 생성은 `scope`(personal/work/shared), `source_ref`를 받는다. 엔터티 생성은 `scope`, `attributes`를 받는다.

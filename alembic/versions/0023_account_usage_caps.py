@@ -18,8 +18,8 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("engine_accounts", sa.Column("max_used_percent", sa.Integer(), server_default="100", nullable=False))
-    # 현재 개인 계정 식별(10-14): Claude 계정 1개와 이름이 Daddy codex 인 계정만 95%로 보호한다.
-    op.execute("UPDATE engine_accounts SET max_used_percent = 95 WHERE engine = 'claude' OR (engine = 'codex' AND name ILIKE '%daddy%')")
+    # 초기값(10-14): '내 클로드'(iuholic83)와 Daddy codex만 95%. 다른 Claude 계정은 100%이며 이후 비서관리에서 바꾼다.
+    op.execute("UPDATE engine_accounts SET max_used_percent = 95 WHERE (engine = 'claude' AND name ILIKE '%iuholic83%') OR (engine = 'codex' AND name ILIKE '%daddy%')")
 
 
 def downgrade() -> None:

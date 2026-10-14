@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 
 import pillow_heif
+import pytest
 from conftest import ALLOWED, HOME
 from PIL import Image
 
@@ -161,3 +162,91 @@ async def test_cors_preflight_allows_chunk_put(client):
         "Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT",
         "Access-Control-Request-Headers": "authorization,content-type"})
     assert r.status_code == 200 and "PUT" in r.headers["access-control-allow-methods"]
+
+
+async def test_shortcut_raw_upload_preserves_binary_and_encoded_filename(client, auth):
+    # 단축어의 요청 본문=파일: 파일 바이트 자체와 URL 인코딩된 이름을 보낸다.
+    name = "보고서 & 메모 + #1 📎.pdf"
+    data = b"%PDF-1.7\n" + bytes(range(256))
+    token = (await client.post("/api/transfer-tokens", json={}, headers=auth)).json()
+    h = {"Authorization": f"Bearer {token['token']}", "Content-Type": "application/octet-stream"}
+    r = await client.post("/api/transfers/raw", params={"filename": name}, content=data, headers=h)
+    assert r.status_code == 201, r.text
+    f = r.json()["files"][0]
+    assert f["name"] == name and f["size"] == len(data) and f["artifact_id"]
+    assert Path(f["path"]).parent == (HOME / "inbox").resolve()
+    assert Path(f["path"]).read_bytes() == data
+    assert (await client.get("/api/sessions", headers=h)).status_code == 401
+    listed = (await client.get("/api/transfer-tokens", headers=auth)).json()
+    assert listed[0]["last_used_at"]
+    await client.delete(f"/api/transfer-tokens/{token['id']}", headers=auth)
+    assert (await client.post("/api/transfers/raw", params={"filename": name}, content=data, headers=h)).status_code == 401
+
+
+async def test_shortcut_raw_heic_uses_existing_photo_processing(client, auth):
+    r = await client.post("/api/transfers/raw", params={"filename": "image.heic", "dest_dir": str(DOCS / "raw-photo")},
+                          content=_photo("HEIF"), headers={**auth, "Content-Type": "application/octet-stream"})
+    assert r.status_code == 201, r.text
+    f = r.json()["files"][0]
+    assert f["name"] == "IMG_20261011_153012.jpg"
+    with Image.open(f["path"]) as im:
+        assert im.format == "JPEG" and not dict(im.getexif().get_ifd(0x8825))
+
+
+async def test_shortcut_raw_can_keep_original_heic_and_choose_destination(client, auth):
+    dest = DOCS / "raw-shortcut"
+    data = _photo("HEIF")
+    r = await client.post("/api/transfers/raw", params={"filename": "IMG_0001.heic", "dest_dir": str(dest),
+                          "convert_heic": "false", "strip_location": "false"},
+                          content=data, headers=auth)
+    assert r.status_code == 201, r.text
+    f = r.json()["files"][0]
+    assert Path(f["path"]).parent == dest.resolve() and Path(f["path"]).read_bytes() == data
+
+
+async def test_shortcut_raw_empty_file_and_repeated_input(client, auth):
+    for expected in ("empty.txt", "empty (2).txt"):
+        r = await client.post("/api/transfers/raw", params={"filename": "empty.txt"}, content=b"", headers=auth)
+        assert r.status_code == 201, r.text
+        assert r.json()["files"][0]["name"] == expected
+        assert Path(r.json()["files"][0]["path"]).read_bytes() == b""
+
+
+async def test_shortcut_raw_requires_auth_name_and_allowed_destination(client, auth, outside_dir):
+    assert (await client.post("/api/transfers/raw", params={"filename": "x.bin"}, content=b"x")).status_code == 401
+    for params in ({}, {"filename": ""}):
+        assert (await client.post("/api/transfers/raw", params=params, content=b"x", headers=auth)).status_code == 422
+    r = await client.post("/api/transfers/raw", params={"filename": "x.bin", "dest_dir": str(outside_dir)},
+                          content=b"x", headers=auth)
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.parametrize("mime", ["application/json", "multipart/form-data; boundary=oops", "application/x-www-form-urlencoded"])
+async def test_shortcut_raw_rejects_wrong_request_body_mode(client, auth, mime):
+    r = await client.post("/api/transfers/raw", params={"filename": "x.bin"}, content=b'{"files":"wrong"}',
+                          headers={**auth, "Content-Type": mime})
+    assert r.status_code == 415 and r.json()["code"] == "wrong_body_type"
+
+
+async def test_shortcut_raw_stream_limit_and_disconnect_clean_staging(client, auth, monkeypatch):
+    from ttakkari.config import get_settings
+    from ttakkari.transfer import service
+    monkeypatch.setattr(get_settings(), "transfer_max_bytes", 4)
+    before = set(service.staging_root().iterdir()) if service.staging_root().exists() else set()
+
+    async def chunks():
+        yield b"123"
+        yield b"45"
+
+    r = await client.post("/api/transfers/raw", params={"filename": "large.bin"}, content=chunks(), headers=auth)
+    assert r.status_code == 413 and r.json()["code"] == "too_large"
+    r = await client.post("/api/transfers/raw", params={"filename": "large.bin"}, content=b"12345", headers=auth)
+    assert r.status_code == 413
+
+    async def broken():
+        yield b"12"
+        raise RuntimeError("upload interrupted")
+
+    with pytest.raises(RuntimeError, match="upload interrupted"):
+        await client.post("/api/transfers/raw", params={"filename": "broken.bin"}, content=broken(), headers=auth)
+    assert set(service.staging_root().iterdir()) == before

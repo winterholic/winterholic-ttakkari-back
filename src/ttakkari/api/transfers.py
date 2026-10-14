@@ -213,7 +213,7 @@ async def cancel(tid: uuid.UUID, _: User) -> None:
     service.cancel(str(tid))
 
 
-# ---- 한 번에 올리기(아이폰 단축어·스크립트). 사용자 토큰 또는 업로드 전용 토큰.
+# ---- 한 번에 올리기. 사용자 토큰 또는 업로드 전용 토큰.
 
 async def _simple_auth(db: Db, creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]) -> str:
     if creds is not None and creds.credentials.startswith(TOKEN_PREFIX):
@@ -268,6 +268,60 @@ async def simple(db: Db, request: Request, who: Annotated[str, Depends(_simple_a
     await db.commit()
     service.flush_previews()
     return CompleteOut(files=all_files, notes=notes)
+
+
+@router.post("/raw", response_model=CompleteOut, status_code=201, openapi_extra={
+    "requestBody": {"content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}},
+})
+async def raw(db: Db, request: Request, who: Annotated[str, Depends(_simple_auth)],
+              filename: Annotated[str, Query(min_length=1, max_length=1000)],
+              dest_dir: Annotated[str | None, Query(min_length=1, max_length=4096)] = None,
+              convert_heic: bool = True, strip_location: bool = True, keep_original: bool = False) -> CompleteOut:
+    """단축어의 요청 본문=파일. multipart 필드 없이 파일 한 개의 바이트를 그대로 받는다."""
+    mime = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if mime in {"application/json", "application/x-www-form-urlencoded"} or mime.startswith("multipart/"):
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, {
+            "code": "wrong_body_type", "message": "요청 본문을 '파일'로 선택하고 파일 변수를 넣어 주세요.",
+        })
+    s = get_settings()
+    length = request.headers.get("content-length")
+    if length is not None:
+        if not length.isascii() or not length.isdecimal():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_length", "message": "잘못된 파일 크기입니다."})
+        if int(length) > s.transfer_max_bytes:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, {"code": "too_large", "message": "파일이 너무 커요."})
+    ws = await ensure_default_workspace(db)
+    dest = dest_dir or str(s.inbox_root)
+    try:
+        service.check_dest(dest, service.write_scope(ws))
+    except BrokerError as e:
+        raise broker_http(e) from e
+    meta = service.create(service.Meta(id=str(uuid.uuid4()), filename=filename, size=0, dest_dir=dest,
+                                       convert_heic=convert_heic, strip_location=strip_location,
+                                       keep_original=keep_original))
+    try:
+        data = service.staging_root() / meta.id / "data"
+        size = 0
+        with data.open("wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > s.transfer_max_bytes:
+                    raise BrokerError("파일이 너무 커요.", "too_large")
+                f.write(chunk)
+        if length is not None and size != int(length):
+            raise BrokerError("아직 다 받지 못했어요.", "incomplete")
+        meta.size = size
+        service.save(meta)
+        files, notes = await service.finalize(db, ws, meta.id)
+    except BrokerError as e:
+        raise _err(e) from e
+    finally:
+        # 연결 중단·크기 초과·파일 처리 실패 모두 임시 바이트를 지운다.
+        service.cancel(meta.id)
+    record(db, action="transfer.raw", detail={"by": who, "files": [f.path for f in files]}, ip=client_ip(request))
+    await db.commit()
+    service.flush_previews()
+    return CompleteOut(files=[DeliveredOut(**f.__dict__) for f in files], notes=notes)
 
 
 # ---- 업로드 전용 토큰

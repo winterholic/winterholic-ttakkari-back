@@ -252,8 +252,11 @@ payload 는 `{title, body, url, tag}`:
 | GET | `/api/transfers/{id}` | 받은 크기(이어 올리기용) |
 | POST | `/api/transfers/{id}/complete` | → `{files: [{path, name, size, artifact_id}], notes}`. 덜 받았으면 409 |
 | DELETE | `/api/transfers/{id}` | 취소 |
-| POST | `/api/transfers/simple` | multipart `files`(여러 개), `dest_dir?`(기본 `TTAKKARI_TRANSFER_INBOX`). 사용자 토큰 또는 업로드 전용 토큰(`ttk_up_…`) |
+| POST | `/api/transfers/simple` | 스크립트용 multipart `files`(여러 개), `dest_dir?`(기본 `TTAKKARI_TRANSFER_INBOX`). 사용자 토큰 또는 업로드 전용 토큰(`ttk_up_…`) |
+| POST | `/api/transfers/raw?filename=` | 단축어용 파일 바이트 본문(한 요청에 한 파일). 이름은 확장자 포함·URL 인코딩. `Content-Type: application/octet-stream`, 사용자 토큰 또는 업로드 전용 토큰. 선택 쿼리: `dest_dir`, `convert_heic=true`, `strip_location=true`, `keep_original=false`. → 201 `CompleteOut`; 양식·JSON 본문 415 `wrong_body_type`, 크기 초과 413 `too_large` |
 | GET/POST/DELETE | `/api/transfer-tokens[/{id}]` | 업로드 전용 토큰. 원문은 만들 때 한 번만 |
+
+아이폰 공유 시트 설정은 [단축어 파일 전송](iphone-shortcut.md)을 따른다. `URL 콘텐츠 가져오기`의 **요청 본문 전체를 파일**로 선택하고 **반복 항목**을 파일 값으로 넣는다. 양식 안에 `files` 필드를 만들지 않는다. 여러 입력은 `각 항목 반복`으로 하나씩 전송한다. 서버는 기존 사진 손질·권한 폴더 검사·보관함 등록을 적용한다.
 
 ## 맥락 도서관(ADR 0009)
 

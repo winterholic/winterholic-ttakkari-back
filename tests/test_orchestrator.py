@@ -357,9 +357,9 @@ AGENT_TOOLS = {"library_catalog", "recall", "remember", "get_entity", "describe_
                "set_artifact_area", "server_resources", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
                "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items",
-               "search_meetings", "list_clovanote_notes", "get_clovanote_note", "sync_clovanote", "import_clovanote_note"}
+               "search_meetings", "list_clovanote_notes", "get_clovanote_note", "sync_clovanote", "import_clovanote_note",
+               "list_pms_projects", "create_pms_task", "manage_pms"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
-                "list_pms_projects", "create_pms_task",
                 "my_context", "reset_my_context"}
 
 
@@ -405,7 +405,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
             assert annotations.get("readOnlyHint") is not True, tool["name"]
 
 
-def test_codex_auto_approves_only_ttakkari_queries(make_dir):
+def test_codex_auto_approves_ttakkari_queries_and_delegated_pms(make_dir):
     from ttakkari.agents.base import LaunchSpec
     from ttakkari.agents.codex import CodexAdapter
 

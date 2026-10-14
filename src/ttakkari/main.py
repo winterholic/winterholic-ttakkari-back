@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from ttakkari.api import (
     accounts,
     agent,
+    agent_pms,
     artifacts,
     assistant,
     auth,
@@ -173,7 +174,7 @@ def create_app() -> FastAPI:
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
               orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router,
-              meetings.router, meetings.agent_router, clovanote.router, clovanote.agent_router, pms.router, tasks.router, desk_feedback.router):
+              meetings.router, meetings.agent_router, clovanote.router, clovanote.agent_router, pms.router, agent_pms.router, tasks.router, desk_feedback.router):
         app.include_router(r)
     return app
 

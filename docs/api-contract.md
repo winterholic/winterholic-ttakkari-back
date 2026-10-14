@@ -306,6 +306,17 @@ payload 는 `{title, body, url, tag}`:
 
 ## 프로젝트 관리 PMS · WBS(ADR 0012)
 
+에이전트의 PMS 전체 관리는 `POST /api/agent/pms`에 세션 Bearer 토큰을 사용한다. 요청은
+`{"operation":"list_tasks","project_id":"UUID","item_id":null,"data":{}}` 형식이다.
+`operation`은 프로젝트 `list_projects/create_project/get_project/update_project/delete_project`·`dashboard`,
+작업 `list_tasks/create_task/update_task/move_task/delete_task`,
+마일스톤 `list_milestones/create_milestone/update_milestone/delete_milestone`,
+이슈 `list_notes/create_note/update_note/delete_note`를 지원한다.
+프로젝트 소속 작업에는 `project_id`, 기존 작업·마일스톤·이슈 수정/이동/삭제에는 `item_id`를 쓴다.
+`data` 필드는 아래 사용자 API의 해당 요청 스키마와 같다. 생략은 보존, nullable 필드의 null은 해제이며 알 수 없는 필드는 422다.
+회사 세션은 회사 프로젝트만 관리한다. MCP의 `manage_pms`가 이 경로를 호출하며 PMS 변경은 사용자 위임에 따라 추가 승인 없이 실행된다.
+계획을 등록하는 것은 해당 계획의 실제 개발 승인이 아니다. 읽기와 쓰기의 도구 annotation은 구분한다.
+
 사용자 인증. 오류는 `{code, message}`. 날짜는 `YYYY-MM-DD`(시간대 없음), 오늘 기준은 한국 시간. 칸반 카드와 WBS 줄은 같은 작업이다.
 
 - `GET /api/pms/projects?scope=all|personal|work&status=planning|active|on_hold|done&q=`: 요약 목록. 항목마다 `progress`(0-100), `counts`{total, todo, doing, review, done, overdue, due_soon, no_dates}(말단 작업 기준), `next_milestone`, `open_notes`, `members`.

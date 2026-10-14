@@ -15,6 +15,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
+from ttakkari.pms import PmsOperation
 
 ROLE = os.environ.get("TTK_ROLE", "orchestrator")
 server = MCPServer(
@@ -364,18 +365,50 @@ async def account_usage() -> str:
     return await _call("GET", "/accounts/usage")
 
 
-@orchestrator_tool
-async def list_pms_projects(query: str | None = None) -> str:
-    """Find personal PMS projects for a task deferred until Claude usage resets. Use this before create_pms_task."""
-    return await _call("GET", "/pms/projects", params={"q": query})
+@query_tool
+async def list_pms_projects(query: str | None = None, scope: Literal["all", "personal", "work"] = "all") -> str:
+    """List PMS projects and their status/progress. Agents manage PMS/WBS on the user's behalf.
+    Work sessions see work projects only. Use manage_pms for project details and the full WBS tree."""
+    return await _agent("POST", "/pms", {"operation": "list_projects", "data": {"q": query, "scope": scope}})
 
 
-@orchestrator_tool
-async def create_pms_task(project_id: str, title: str, description: str = "", priority: Literal["low", "normal", "high", "urgent"] = "normal") -> str:
-    """Add a todo item to the selected personal project's WBS/backlog, for example design work waiting for Claude reset.
-    Include the original request and why it is waiting in `description`; tell the user the project and task afterward."""
-    return await _call("POST", f"/pms/projects/{project_id}/tasks",
-                       {"title": title, "description": description, "priority": priority})
+@server.tool()
+async def create_pms_task(project_id: str, title: str, description: str = "",
+                          priority: Literal["low", "normal", "high", "urgent"] = "normal",
+                          parent_id: str | None = None, after_id: str | None = None,
+                          predecessors: list[str] | None = None, assignee: str | None = None,
+                          start_date: str | None = None, end_date: str | None = None,
+                          status: Literal["todo", "doing", "review", "done"] = "todo", progress: int = 0) -> str:
+    """Create a WBS task, including hierarchy, predecessors, owner, dates and progress. Agents can manage PMS
+    without another approval. Dates are YYYY-MM-DD; leave unknown dates empty. Use real task UUIDs for links.
+    Returns the saved task and recalculated project tree. Use manage_pms to update/move/delete tasks."""
+    return await _agent("POST", "/pms", {"operation": "create_task", "project_id": project_id, "data": {
+        "title": title, "description": description, "priority": priority, "parent_id": parent_id,
+        "after_id": after_id, "predecessors": predecessors or [], "assignee": assignee,
+        "start_date": start_date, "end_date": end_date, "status": status, "progress": progress}})
+
+
+@server.tool()
+async def manage_pms(operation: PmsOperation, project_id: str | None = None, item_id: str | None = None,
+                     data: dict[str, Any] | None = None) -> str:
+    """Manage the user's PMS/WBS: projects, task tree/dependencies/progress, milestones and issues/risks.
+    User delegated full PMS management to agents; no extra approval is needed. This does not authorize
+    implementing the planned features. Work sessions remain scoped to work projects.
+
+    Project operations use project_id; update/move/delete task/milestone/note use item_id (real UUIDs).
+    list_projects data: scope=all|personal|work, q, status=planning|active|on_hold|done.
+    create/update_project data: name, description, scope, status, start_date/end_date, members; create also phases.
+    list_tasks returns the full numbered tree. create/update_task data: title, description, priority,
+    assignee, dates, status=todo|doing|review|done, progress=0..100, predecessors=[UUIDs]. Create also parent_id/after_id.
+    move_task data: parent_id=null to outdent, index to reorder. Parent progress/status roll up from children.
+    create/update_milestone data: title, due_date (required on create, YYYY-MM-DD), done.
+    list_notes data: status=open|resolved|all, kind=issue|risk|note. create/update_note data: title, body,
+    kind, severity=low|medium|high, owner, task_id; update also status=open|resolved.
+    get_project/dashboard/list_tasks/list_milestones and delete operations need no data (dashboard accepts today).
+    Null in update data clears nullable fields; omitted fields stay unchanged. Delete project/task removes
+    descendants, so first read the target and act within the user's task scope. Unknown fields are rejected."""
+    return await _agent("POST", "/pms", {"operation": operation, "project_id": project_id,
+                                          "item_id": item_id, "data": data or {}})
 
 
 @orchestrator_tool

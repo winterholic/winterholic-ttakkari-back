@@ -177,7 +177,7 @@ async def create_project(body: ProjectIn, _: User, db: Db, request: Request) -> 
     db.add(p)
     for i, title in enumerate(body.phases):
         db.add(PmsTask(project_id=p.id, position=i, title=title.strip()))
-    record(db, action="pms.project.create", target_type="pms_project", target_id=p.id, ip=client_ip(request),
+    record(db, actor="agent" if _ == "agent" else "user", action="pms.project.create", target_type="pms_project", target_id=p.id, ip=client_ip(request),
            detail={"scope": p.scope, "phases": len(body.phases)})
     await db.commit()
     return await _one(db, p)
@@ -212,7 +212,7 @@ async def patch_project(pid: uuid.UUID, body: ProjectPatch, _: User, db: Db) -> 
 async def delete_project(pid: uuid.UUID, _: User, db: Db, request: Request) -> None:
     """프로젝트와 그 작업·마일스톤·이슈를 모두 지운다."""
     p = await _project(db, pid)
-    record(db, action="pms.project.delete", target_type="pms_project", target_id=p.id, ip=client_ip(request),
+    record(db, actor="agent" if _ == "agent" else "user", action="pms.project.delete", target_type="pms_project", target_id=p.id, ip=client_ip(request),
            detail={"name": p.name})
     await db.delete(p)
     await db.commit()

@@ -327,6 +327,22 @@ async def import_clovanote_note(note_id: str, scope: Literal["personal", "work"]
     return await _agent("POST", f"/clovanote/notes/{note_id}/import", {"scope": scope, "project": project, "analyze": analyze})
 
 
+@server.tool()
+async def request_backend_deploy(revision: str) -> str:
+    """Reserve deployment of a committed, clean Ttakkari backend SHA. An independent controller tests it,
+    waits for ALL running work (including this turn) to finish, then restarts and verifies the version.
+    Return after acceptance; finish your turn instead of waiting/polling. Acceptance is not deployment success.
+    Only use when the user asked to deploy. No shell restart, lock-file writes or service permissions needed."""
+    return await _agent("POST", "/deploy", {"revision": revision})
+
+
+@query_tool
+async def backend_deploy_status(job_id: str) -> str:
+    """Read a persisted backend deployment reservation. succeeded means new version and PID verified;
+    requested/building/testing/waiting are pending, failed includes the reason. Do not wait in an active Run."""
+    return await _agent("GET", f"/deploy/{job_id}")
+
+
 # ---- 오케스트레이터 전용
 
 def orchestrator_tool(fn):

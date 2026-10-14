@@ -29,6 +29,7 @@ from ttakkari.broker.policy import BrokerError, ResolvedPath, is_within
 from ttakkari.config import get_settings
 from ttakkari.context.store import pinned_brief, recall
 from ttakkari.db import sessionmaker
+from ttakkari.deployment import Admission
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     Artifact,
@@ -101,6 +102,7 @@ class RunManager:
         # 역할별 동시 실행 자리(ADR 0013). 접수·기획·작업이 서로의 자리를 막지 않는다.
         self._sems: dict[str, asyncio.Semaphore] = {}
         self._shutting_down = False
+        self._restart_waker: asyncio.Task[None] | None = None
         # 모든 계정이 사용량 한도라 초기화를 기다리는 Run → (재개 시각, 세션). 같은 세션의 다음 Run 도 이 Run 뒤에 선다.
         self._waiting: dict[uuid.UUID, tuple[float, uuid.UUID]] = {}
         self._wakers: dict[uuid.UUID, asyncio.Task[None]] = {}
@@ -120,13 +122,31 @@ class RunManager:
     def request_context_reset(self, session_id: uuid.UUID) -> None:
         self._reset_requests.add(session_id)
 
-    def start(self, run_id: uuid.UUID, *, lane: str = "workers") -> None:
-        if run_id in self._handles:
-            return
+    def start(self, run_id: uuid.UUID, *, lane: str = "workers") -> bool:
+        if run_id in self._handles or self._shutting_down:
+            return False
+        lease = Admission(get_settings().home / "deploy").acquire()
+        if lease is None:
+            if self._restart_waker is None or self._restart_waker.done():
+                self._restart_waker = asyncio.create_task(self._resume_after_restart())
+            return False
         coro = self._execute_desk(run_id) if lane == "desk" else self._execute(run_id, lane)
         task = asyncio.create_task(coro, name=f"run-{run_id}")
         self._handles[run_id] = _Handle(task=task)
+        # 시작 전에 취소된 task도 잠금을 반환해야 재시작 예약이 영원히 막히지 않는다.
+        task.add_done_callback(lambda _t: lease.close())
         task.add_done_callback(lambda _t: self._handles.pop(run_id, None))
+        return True
+
+    async def _resume_after_restart(self) -> None:
+        while not self._shutting_down:
+            await asyncio.sleep(1)
+            lease = Admission(get_settings().home / "deploy").acquire()
+            if lease is not None:
+                lease.close()
+                self._restart_waker = None
+                await resume_queued()
+                return
 
     async def cancel(self, run_id: uuid.UUID) -> bool:
         h = self._handles.get(run_id)
@@ -164,10 +184,9 @@ class RunManager:
                 # 접수는 대화를 이어 쓰지 않는다. 메시지마다 따로, 바로 돈다(바쁜 접수 뒤에 줄 서지 않는다).
                 queued = list(await db.scalars(select(Run.id).where(Run.session_id == session_id,
                                                                     Run.status == RunStatus.queued)))
-                for rid in queued:
-                    self.start(rid, lane="desk")
+                started = [rid for rid in queued if self.start(rid, lane="desk")]
                 await db.commit()
-                return queued[0] if queued else None
+                return started[0] if started else None
             rows = list(await db.scalars(
                 select(Run).where(Run.session_id == session_id, Run.status.in_([RunStatus.queued, RunStatus.running]))
                 .order_by(Run.created_at)))
@@ -178,10 +197,9 @@ class RunManager:
             if nxt is not None and self._waiting.get(nxt.id, (0.0, nxt.id))[0] > time.time():
                 await db.rollback()
                 return None
-            if nxt is not None:
-                self.start(nxt.id)
+            started = nxt is not None and self.start(nxt.id)
             await db.commit()
-            return nxt.id if nxt else None
+            return nxt.id if started else None
 
     async def cancel_queued(self, db: AsyncSession, run: Run) -> None:
         """아직 시작하지 않은(프로세스 없는) 대기 Run 을 취소한다."""
@@ -251,6 +269,11 @@ class RunManager:
     async def shutdown(self) -> None:
         # 재시작으로 끊긴 Run 은 사용자 취소와 구분해 interrupted 로 남긴다.
         self._shutting_down = True
+        if self._restart_waker is not None:
+            self._restart_waker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._restart_waker
+            self._restart_waker = None
         for rid in list(self._wakers):
             self._disarm(rid)
         for h in list(self._handles.values()):

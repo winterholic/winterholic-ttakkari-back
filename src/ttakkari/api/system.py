@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, text
 
@@ -26,6 +27,12 @@ DIFF_LIMIT = 400_000
 async def health(db: Db) -> dict:
     await db.execute(text("select 1"))
     return {"ok": True}
+
+
+@router.get("/version")
+async def version(request: Request, response: Response) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return {"revision": request.app.state.revision, "pid": os.getpid()}
 
 
 @router.get("/system/info")

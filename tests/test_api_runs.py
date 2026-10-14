@@ -139,7 +139,7 @@ async def test_cancel_queued_run_never_starts(client, auth, new_session):
     assert r.status_code == 200 and r.json()["status"] == "cancelled"
     await client.post(f"/api/runs/{first['id']}/cancel", headers=auth)
     await asyncio.sleep(1.0)
-    assert not any("never" in " ".join(c["argv"]) for c in agent_calls())
+    assert not any("never" in c["argv"][c["argv"].index("-p") + 1] for c in agent_calls())
 
 
 async def test_shutdown_marks_running_run_interrupted(client, auth, new_session):

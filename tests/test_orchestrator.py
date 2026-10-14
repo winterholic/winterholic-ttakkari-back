@@ -353,7 +353,7 @@ async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, 
 
 # ---- MCP 서버(stdio 프로토콜)
 
-AGENT_TOOLS = {"library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
+AGENT_TOOLS = {"request_backend_deploy", "backend_deploy_status", "library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
                "set_artifact_area", "server_resources", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
                "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items",
@@ -389,6 +389,7 @@ def test_mcp_server_tools_by_role():
 def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
     _, replies = _mcp_tools(role)
     queries = {
+        "backend_deploy_status",
         "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
         "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
         "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
@@ -420,6 +421,8 @@ def test_codex_auto_approves_ttakkari_queries_and_delegated_pms(make_dir):
     assert approvals['mcp_servers.ttakkari.tools.list_sessions.approval_mode'] == '"approve"'
     assert approvals['mcp_servers.ttakkari.tools.read_session.approval_mode'] == '"approve"'
     assert approvals['mcp_servers.ttakkari.tools.recall.approval_mode'] == '"approve"'
+    assert approvals['mcp_servers.ttakkari.tools.request_backend_deploy.approval_mode'] == '"approve"'
+    assert approvals['mcp_servers.ttakkari.tools.backend_deploy_status.approval_mode'] == '"approve"'
     assert not any(key.startswith("mcp_servers.other.") for key in approvals)
     for name in ("remember", "forget", "delete_memo", "notify_user", "spawn_worker", "stop_worker"):
         assert f"mcp_servers.ttakkari.tools.{name}.approval_mode" not in approvals

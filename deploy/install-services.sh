@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mac Studio 에서 백엔드와 Cloudflare 터널을 로그인 시 자동으로 띄우는 launchd 서비스(LaunchAgent)를 설치한다.
 # 포트는 열지 않는다. 백엔드는 127.0.0.1:8787 에만 붙고, 터널이 바깥(ttakkari-api.winterholic.net)과 잇는다.
-# 사용: ./install-services.sh backend | tunnel | all     해제: ./install-services.sh uninstall
+# 사용: ./install-services.sh backend | deployer | tunnel | all     해제: ./install-services.sh uninstall
 set -euo pipefail
 BACK="$(cd "$(dirname "$0")/.." && pwd)"
 LA="$HOME/Library/LaunchAgents"
@@ -34,6 +34,29 @@ PL
   echo "backend service installed"
 }
 
+deployer() {
+  TTK_INSTALL_BACK="$BACK" TTK_INSTALL_PATH="$RUN_PATH" TTK_INSTALL_UV="$(command -v uv)" python3 - <<'PLIST'
+import os
+import plistlib
+from pathlib import Path
+root = Path.home()
+with (root / "Library/LaunchAgents/net.winterholic.ttakkari.deployer.plist").open("wb") as f:
+    plistlib.dump({
+        "Label": "net.winterholic.ttakkari.deployer",
+        "WorkingDirectory": os.environ["TTK_INSTALL_BACK"],
+        "ProgramArguments": [os.environ["TTK_INSTALL_UV"], "run", "--no-sync", "python", "-m",
+                             "ttakkari.deployment", "serve"],
+        "EnvironmentVariables": {"PATH": os.environ["TTK_INSTALL_PATH"], "HOME": str(root)},
+        "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 10,
+        "StandardOutPath": str(root / ".ttakkari/logs/deployer.log"),
+        "StandardErrorPath": str(root / ".ttakkari/logs/deployer.log"),
+    }, f)
+PLIST
+  launchctl bootout "gui/$(id -u)/net.winterholic.ttakkari.deployer" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$LA/net.winterholic.ttakkari.deployer.plist"
+  echo "deployer service installed"
+}
+
 tunnel() {
   local cfg="$HOME/.cloudflared/ttakkari.yml"
   [ -f "$cfg" ] || { echo "터널 설정이 없습니다: $cfg (먼저 터널을 만드세요)"; exit 1; }
@@ -59,13 +82,14 @@ PL
 
 case "${1:-all}" in
   backend) backend ;;
+  deployer) deployer ;;
   tunnel) tunnel ;;
-  all) backend; tunnel ;;
+  all) backend; deployer; tunnel ;;
   uninstall)
-    for n in backend tunnel; do
+    for n in backend deployer tunnel; do
       launchctl bootout "gui/$(id -u)/net.winterholic.ttakkari.$n" 2>/dev/null || true
       rm -f "$LA/net.winterholic.ttakkari.$n.plist"
     done
     echo "uninstalled" ;;
-  *) echo "usage: $0 backend|tunnel|all|uninstall"; exit 2 ;;
+  *) echo "usage: $0 backend|deployer|tunnel|all|uninstall"; exit 2 ;;
 esac

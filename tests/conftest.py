@@ -1,6 +1,7 @@
 """통합 테스트 공통 설정. env 는 ttakkari 를 import 하기 전에 먼저 정해야 한다(get_settings 는 lru_cache)."""
 from __future__ import annotations
 
+import asyncio
 import atexit
 import json
 import os
@@ -108,6 +109,13 @@ async def _clean(_schema_and_app):
     await wait_indexing()
     await desk_pool.shutdown()
     # 한도 대기 중인 Run 의 재개 타이머가 다음 테스트로 새지 않게 끈다.
+    if manager._restart_waker is not None:
+        manager._restart_waker.cancel()
+        try:
+            await manager._restart_waker
+        except asyncio.CancelledError:
+            pass
+        manager._restart_waker = None
     for rid in list(manager._wakers) + list(manager._waiting):
         manager._disarm(rid)
     for _ in range(20):

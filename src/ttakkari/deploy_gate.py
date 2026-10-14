@@ -114,27 +114,22 @@ async def _active_run_count(own_run_id: str | None) -> int:
 
 
 async def deploy_backend(own_run_id: str | None) -> bool:
-    from ttakkari.config import get_settings
+    # 구형 호출도 직접 kickstart하지 않는다. 작업 종료까지 기다리는 외부 감독에 넘긴다.
+    from ttakkari.deployment import JobStore, ensure_revision, revision, state_dir
 
-    settings = get_settings()
-    gate = RestartGate(settings.home / "deploy" / "backend-restart.lock")
-    label = "net.winterholic.ttakkari.backend"
-    domain = f"gui/{os.getuid()}"
-    back = Path(__file__).resolve().parents[2]
-
-    def restart() -> None:
-        if subprocess.run(["launchctl", "print", f"{domain}/{label}"], capture_output=True, check=False).returncode == 0:
-            subprocess.run(["launchctl", "kickstart", "-k", f"{domain}/{label}"], check=True)
-        else:
-            subprocess.run([str(back / "deploy" / "install-services.sh"), "backend"], check=True)
-
-    return await gate.restart_backend(lambda: _active_run_count(own_run_id), restart, own_run_id=own_run_id)
+    if own_run_id:
+        raise RuntimeError("작업 안에서는 request_backend_deploy MCP 도구로 예약하세요.")
+    sha = revision()
+    ensure_revision(sha)
+    job = JobStore(state_dir()).request(sha)
+    print(f"배포 예약: {job['id']} (완료 상태는 deploy/deploy.sh status에서 확인)")
+    return True
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("component", choices=("backend", "deploy-script"))
-    parser.add_argument("--own-run-id", default=os.environ.get("TTAKKARI_DEPLOY_RUN_ID") or None)
+    parser.add_argument("--own-run-id", default=os.environ.get("TTAKKARI_DEPLOY_RUN_ID") or os.environ.get("TTAKKARI_RUN_ID") or None)
     parser.add_argument("script", nargs="?")
     parser.add_argument("script_args", nargs=argparse.REMAINDER)
     args = parser.parse_args()

@@ -107,9 +107,24 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 
 ## 배포(Mac Studio + Cloudflare 터널, 포트 안 엶)
 
-제한된 실행 환경에서는 `UV_CACHE_DIR`와 `TTAKKARI_DEPLOY_STATE_DIR`를 허용된 쓰기 경로로 지정할 수 있다.
-후자는 current/previous/테스트 로그의 위치만 바꾼다. 배포 잠금은 기존 파일을 공유하며,
-기존 잠금 파일은 읽기 모드로 열어 `flock`을 잡는다. 이 설정은 서비스 재시작 권한을 부여하지 않는다.
+`deploy/install-services.sh deployer`로 독립 배포 감독(`net.winterholic.ttakkari.deployer`)을 설치한다.
+`deploy/deploy.sh [--no-pull]`은 배포를 **예약하고 즉시 반환**한다. 이 응답은 배포 성공이 아니다.
+`deploy/deploy.sh status [예약 ID]`로 상태를 확인한다. 로그는 `~/.ttakkari/deploy/jobs/<ID>.log`, 감독 로그는 `~/.ttakkari/logs/deployer.log`다.
+
+따까리 안의 작업은 커밋·푸시 후 `request_backend_deploy(revision=<전체 SHA>)` MCP 도구를 부르고 턴을 끝낸다.
+작업 안에서 잠금 파일을 쓰거나 `launchctl`을 호출하지 않는다. 개인 세션의 기존 인증 토큰만으로 예약하며 회사 세션은 거절한다.
+`backend_deploy_status(job_id)`는 상태 조회 도구다. 요청한 작업 자신도 종료를 기다리므로 활성 작업에서 완료를 기다리며 폴링하지 않는다.
+
+감독은 `requested → building → testing → waiting → migrating → restarting → verifying → succeeded` 순서로 처리한다.
+실패 시 `failed`와 이유를 남긴다. 테스트는 배포별 독립 DB를 만들고 정리한다.
+대기 중 다른 작업은 계속 실행된다. 실행 작업이 없을 때 작업 시작과 공유하는 배타 잠금을 잡고 다시 확인한 뒤 마이그레이션·재시작한다.
+이 구간에 들어온 요청은 DB 대기열에 남으며 확인 후 자동 재개한다. 감독이 종료되면 OS가 잠금을 반환하고 다음 기동에서 예약 상태를 이어 읽는다.
+
+성공은 로컬 DB health와 `/api/version`의 시작 시점 SHA·새 PID, 공개 health·버전까지 확인한 경우에만 기록한다.
+`current`는 검증된 커밋이고 `previous`는 그 이전 성공 기록이다. `rollback`도 직전 커밋의 배포를 예약하며 DB 마이그레이션을 되돌리지는 않는다. 감독·버전 확인 기능이 없는 구버전은 자동 롤백 전에 거절한다.
+같은 커밋의 중복 예약은 기존 ID를 반환한다. 다른 커밋의 동시 예약과 예약 이후 작업 트리 변경은 명시적으로 거절한다.
+빌드에는 기존 체크아웃을 사용하므로 배포 대기 중 해당 저장소를 추가 수정했다면 새 커밋으로 다시 예약해야 한다.
+`--skip-tests`는 운영자가 이미 같은 커밋을 검사했을 때만 직접 CLI에서 사용한다. 에이전트 예약 API는 테스트 생략·임의 명령·경로·환경 변수를 받지 않는다.
 
 - 백엔드: `deploy/install-services.sh backend` → launchd(`net.winterholic.ttakkari.backend`)가 127.0.0.1:8787 로 상시 실행. 로그 `~/.ttakkari/logs/backend.log`.
 - 터널: `cloudflared tunnel login` → `cloudflared tunnel create ttakkari` → `~/.cloudflared/ttakkari.yml`(예시 `deploy/cloudflared-ttakkari.yml.example`) → `cloudflared tunnel route dns ttakkari ttakkari-api.winterholic.net` → `deploy/install-services.sh tunnel`.

@@ -5,10 +5,12 @@ READ_ONLY_TOOLS = frozenset({
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
     "list_clovanote_notes", "get_clovanote_note",
-    "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
+    "backend_deploy_status", "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
 })
 
 # 2026-10-14 사용자 결정: PMS/WBS는 에이전트가 전체 관리하며 변경 시 승인을 다시 요구하지 않는다.
 # 쓰기를 READ_ONLY_TOOLS에 넣어 readOnlyHint로 위장하지 않는다.
 PMS_TOOLS = frozenset({"manage_pms", "create_pms_task", "list_pms_projects"})
-AUTO_APPROVED_TOOLS = READ_ONLY_TOOLS | PMS_TOOLS
+# 사용자 지시에 따른 자기 배포는 예약 API에 위임하고 작업 내 직접 재시작은 하지 않는다.
+DEPLOY_TOOLS = frozenset({"request_backend_deploy"})
+AUTO_APPROVED_TOOLS = READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS

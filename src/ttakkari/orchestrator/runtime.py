@@ -89,6 +89,9 @@ Do not ask the user for things memory can answer.
 - To hand a file to the user that is not in the outbox, use `share_file`. Finished runs do not notify the \
 user, so call `notify_user` yourself, and only for things they must see now (a result they are waiting for, or \
 when you are blocked and need their input or approval).
+- When the user asks to deploy Ttakkari itself, commit the clean backend and call `request_backend_deploy`
+  with its full SHA. This reserves an external deployment; finish the turn so it can wait for all work to end.
+  Never run launchctl or the backend restart script inside a Run, and never call acceptance "deployed".
 - `list_sessions`/`read_session` show the user's other conversations when context from them is needed."""
 
 

@@ -20,6 +20,7 @@ from ttakkari.api import (
     assistant,
     auth,
     clovanote,
+    deployments,
     desk_feedback,
     library_insight,
     meetings,
@@ -93,6 +94,8 @@ async def _lead_archive_loop(interval: int) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     s = get_settings()
     s.ensure_dirs()
+    from ttakkari.deployment import revision
+    app.state.revision = revision()
     init_engine()
     n = await recover_interrupted()
     if n:
@@ -178,7 +181,7 @@ def create_app() -> FastAPI:
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
               orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router,
-              meetings.router, meetings.agent_router, clovanote.router, clovanote.agent_router, pms.router, agent_pms.router, tasks.router, desk_feedback.router):
+              meetings.router, meetings.agent_router, clovanote.router, clovanote.agent_router, pms.router, agent_pms.router, tasks.router, desk_feedback.router, deployments.router):
         app.include_router(r)
     return app
 

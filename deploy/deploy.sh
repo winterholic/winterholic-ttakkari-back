@@ -1,100 +1,25 @@
 #!/usr/bin/env bash
-# 백엔드 수동 배포(Mac Studio). CI/CD 없이 이 스크립트 하나로 끝낸다.
-#   ./deploy/deploy.sh            # git pull → 의존성 → 마이그레이션 → 테스트 → 재시작 → 확인
-#   ./deploy/deploy.sh --no-pull  # 지금 작업 트리 그대로 배포
-#   ./deploy/deploy.sh --skip-tests
-#   ./deploy/deploy.sh status     # 서비스·health·최근 로그만 본다
-#   ./deploy/deploy.sh rollback   # 직전 배포 커밋으로 되돌려 재시작(마이그레이션은 되돌리지 않는다)
+# 예약 접수만 수행한다. 빌드·테스트·작업 종료 대기·재시작은 독립 launchd 서비스가 맡는다.
+# ./deploy/deploy.sh [--no-pull] [--skip-tests]
+# ./deploy/deploy.sh status [job-id]
 set -euo pipefail
 BACK="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$BACK"
-if [ "${TTAKKARI_BACKEND_DEPLOY_LOCK_HELD:-}" != "1" ]; then
-  exec uv run python -m ttakkari.deploy_gate deploy-script "$0" "$@"
+if [ -n "${TTAKKARI_RUN_ID:-}" ] && [ "${1:-}" != "status" ]; then
+  echo '따까리 작업에서는 request_backend_deploy MCP 도구로 예약하세요.' >&2
+  exit 1
 fi
-LABEL="net.winterholic.ttakkari.backend"
-DOMAIN="gui/$(id -u)"
-PUBLIC="${TTK_PUBLIC_URL:-https://ttakkari-api.winterholic.net}"
-# 버전 기록 위치만 지정할 수 있다. 배타 잠금은 기존 ~/.ttakkari/deploy/backend-restart.lock을 공유한다.
-STATE="${TTAKKARI_DEPLOY_STATE_DIR:-$HOME/.ttakkari/deploy}"
-mkdir -p "$STATE"
-c() { printf '\033[1m%s\033[0m\n' "$*"; }
-
-health() {
-  local ok=0
-  for _ in $(seq 1 30); do
-    if curl -fsS -m 3 http://127.0.0.1:8787/api/health >/dev/null 2>&1; then ok=1; break; fi
-    sleep 1
-  done
-  [ "$ok" = 1 ] && echo "local  : ok (127.0.0.1:8787)" || { echo "local  : 응답 없음"; return 1; }
-  local code host ip
-  code=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$PUBLIC/api/health" || true)
-  if [ "$code" = "000" ]; then
-    # 이 맥의 DNS 캐시(Tailscale 등)가 새 서브도메인을 아직 모를 수 있다. 공용 DNS 로 한 번 더 본다.
-    host="${PUBLIC#https://}"; host="${host%%/*}"
-    ip=$(dig +short "$host" @1.1.1.1 | head -1)
-    [ -n "$ip" ] && code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' --resolve "$host:443:$ip" "$PUBLIC/api/health" || true) (1.1.1.1 경유, 이 맥 DNS 캐시 확인 필요)"
-  fi
-  echo "public : $code ($PUBLIC)"
-}
-
-restart() {
-  uv run python -m ttakkari.deploy_gate backend --own-run-id "${TTAKKARI_DEPLOY_RUN_ID:-${TTAKKARI_RUN_ID:-}}"
-}
-
-status() {
-  c "서비스"
-  for n in backend tunnel; do
-    local st
-    st=$(launchctl print "$DOMAIN/net.winterholic.ttakkari.$n" 2>/dev/null | awk '/^\tstate =/{print $3; exit}')
-    echo "$n: ${st:-설치 안 됨}"
-  done
-  c "배포 커밋"; cat "$STATE/current" 2>/dev/null || echo "(기록 없음)"; git log --oneline -1
-  c "health"; health || true
-  c "최근 로그"; tail -n 15 "$HOME/.ttakkari/logs/backend.log" 2>/dev/null || true
-}
-
 case "${1:-}" in
-  status) status; exit 0 ;;
+  status) shift; exec uv run --no-sync python -m ttakkari.deployment status "$@" ;;
   rollback)
-    prev=$(cat "$STATE/previous" 2>/dev/null || true)
-    [ -n "$prev" ] || { echo "되돌릴 이전 배포 기록이 없습니다."; exit 1; }
-    c "롤백 → $prev"
+    prev=$(cat "$HOME/.ttakkari/deploy/previous")
+    if ! git cat-file -e "$prev:src/ttakkari/deployment.py" 2>/dev/null; then
+      echo '이전 커밋에는 배포 감독·버전 확인이 없어 자동 롤백할 수 없습니다. 수동 복구가 필요합니다.' >&2
+      exit 1
+    fi
+    [ -z "$(git status --porcelain)" ] || { echo '커밋 안 된 변경이 있습니다.'; exit 1; }
     git checkout --detach "$prev"
-    uv sync --frozen --quiet
-    restart; health
-    echo "$prev" > "$STATE/current"
-    echo "마이그레이션은 되돌리지 않았습니다. 필요하면: uv run alembic downgrade <revision>"
-    exit 0 ;;
+    exec uv run --no-sync python -m ttakkari.deployment request --no-pull
+    ;;
+  *) exec uv run --no-sync python -m ttakkari.deployment request "$@" ;;
 esac
-
-PULL=1; TESTS=1
-for a in "$@"; do
-  case "$a" in
-    --no-pull) PULL=0 ;;
-    --skip-tests) TESTS=0 ;;
-    *) echo "알 수 없는 옵션: $a"; exit 2 ;;
-  esac
-done
-
-git rev-parse HEAD > "$STATE/previous"
-if [ "$PULL" = 1 ]; then
-  c "1/5 git pull"
-  [ -z "$(git status --porcelain)" ] || { echo "커밋 안 된 변경이 있습니다. 커밋하거나 --no-pull 로 배포하세요."; exit 1; }
-  git pull --ff-only
-fi
-c "2/5 의존성"; uv sync --frozen --quiet
-c "3/5 마이그레이션"; uv run ttakkari migrate
-if [ "$TESTS" = 1 ]; then
-  c "4/5 테스트"
-  # 잠금은 이 배포 프로세스가 계속 보유한다. 독립 잠금을 검사하는 테스트에는 소유 표시를 넘기지 않는다.
-  if ! env -u TTAKKARI_BACKEND_DEPLOY_LOCK_HELD uv run pytest -q -x > "$STATE/last-test.log" 2>&1; then
-    tail -n 15 "$STATE/last-test.log"
-    echo "테스트 실패 → 배포 중단(서비스는 이전 코드 그대로). 전체 로그: $STATE/last-test.log"
-    exit 1
-  fi
-  tail -n 1 "$STATE/last-test.log"
-fi
-c "5/5 재시작"; restart
-health
-git rev-parse HEAD > "$STATE/current"
-c "배포됨: $(git log --oneline -1)"

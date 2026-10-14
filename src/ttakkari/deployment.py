@@ -1,0 +1,387 @@
+"""Persist deployment requests; a launchd controller owns preparation, idle waiting and restart."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import fcntl
+import json
+import logging
+import os
+import subprocess
+import sys
+import time
+import uuid
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
+
+import asyncpg
+import httpx
+from sqlalchemy.engine import make_url
+
+from ttakkari.config import get_settings
+from ttakkari.db import dispose_engine
+from ttakkari.deploy_gate import RestartGate, _active_run_count
+
+log = logging.getLogger(__name__)
+BACK = Path(__file__).resolve().parents[2]
+TERMINAL = {"succeeded", "failed"}
+LABEL = "net.winterholic.ttakkari.deployer"
+
+
+def state_dir() -> Path:
+    return get_settings().home / "deploy"
+
+
+def revision() -> str:
+    return subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=BACK, text=True
+    ).strip()
+
+
+def ensure_revision(expected: str) -> None:
+    dirty = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=BACK, text=True
+    ).strip()
+    if revision() != expected or dirty:
+        raise ValueError(
+            "예약한 커밋과 작업 트리가 다릅니다. 변경을 커밋하고 다시 배포하세요."
+        )
+
+
+class Admission:
+    def __init__(self, root: Path):
+        self.path = root / "run-admission.lock"
+
+    def acquire(self, *, exclusive: bool = False):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        lock = self.path.open("a")
+        try:
+            fcntl.flock(
+                lock, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB
+            )
+        except BlockingIOError:
+            lock.close()
+            return None
+        return lock
+
+
+class JobStore:
+    def __init__(self, root: Path):
+        self.root = root
+        self.jobs = root / "jobs"
+        self.jobs.mkdir(parents=True, exist_ok=True)
+
+    @contextmanager
+    def locked(self):
+        with (self.root / "requests.lock").open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+    def get(self, job_id: str) -> dict:
+        return json.loads((self.jobs / f"{uuid.UUID(job_id)}.json").read_text())
+
+    def all(self) -> list[dict]:
+        return sorted(
+            (json.loads(p.read_text()) for p in self.jobs.glob("*.json")),
+            key=lambda j: j["created_at"],
+        )
+
+    def _write(self, job: dict) -> dict:
+        job["updated_at"] = datetime.now(UTC).isoformat()
+        path = self.jobs / f"{uuid.UUID(job['id'])}.json"
+        tmp = path.with_suffix(".tmp")
+        with tmp.open("w") as f:
+            json.dump(job, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(path)
+        return job
+
+    def update(self, job_id: str, **fields) -> dict:
+        with self.locked():
+            return self._write(self.get(job_id) | fields)
+
+    def request(self, sha: str, *, skip_tests: bool = False) -> dict:
+        if len(sha) != 40 or any(c not in "0123456789abcdef" for c in sha):
+            raise ValueError("40자리 커밋 SHA가 필요합니다.")
+        with self.locked():
+            for job in self.all():
+                if job["status"] not in TERMINAL:
+                    if job["revision"] == sha and job["skip_tests"] == skip_tests:
+                        return job
+                    raise ValueError(
+                        "다른 배포가 진행 중입니다. 상태를 확인한 뒤 다시 예약하세요."
+                    )
+            return self._write(
+                {
+                    "id": str(uuid.uuid4()),
+                    "revision": sha,
+                    "skip_tests": skip_tests,
+                    "status": "requested",
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "error": None,
+                }
+            )
+
+
+class Controller:
+    def __init__(
+        self, root: Path, *, poll_seconds: float = 5, verify_seconds: float = 60
+    ):
+        self.store = JobStore(root)
+        self.admission = Admission(root)
+        self.poll_seconds = poll_seconds
+        self.verify_seconds = verify_seconds
+
+    def phase(self, job: dict, status: str, **fields) -> None:
+        job.update(self.store.update(job["id"], status=status, **fields))
+        log.info("deployment %s: %s", job["id"], status)
+
+    async def command(self, job: dict, *args: str, env: dict | None = None) -> None:
+        with (self.store.jobs / f"{job['id']}.log").open("a") as output:
+            output.write(f"\n$ {' '.join(args)}\n")
+            output.flush()
+            proc = await asyncio.create_subprocess_exec(
+                *args, cwd=BACK, env=env, stdout=output, stderr=output
+            )
+            if await proc.wait():
+                raise RuntimeError(
+                    f"명령 실패: {' '.join(args)}. 로그: {job['id']}.log"
+                )
+
+    async def prepare(self, job: dict) -> None:
+        ensure_revision(job["revision"])
+        self.phase(job, "building")
+        await self.command(job, "uv", "sync", "--frozen", "--quiet")
+        if not job["skip_tests"]:
+            self.phase(job, "testing")
+            # 배포별 DB를 써서 다른 세션의 pytest와 운영 데이터에 영향을 주지 않는다.
+            name = "ttakkari_deploy_" + uuid.UUID(job["id"]).hex
+            url = make_url(get_settings().database_url).set(drivername="postgresql")
+            admin = await asyncpg.connect(
+                url.set(database="postgres").render_as_string(hide_password=False)
+            )
+            created = False
+            try:
+                await admin.execute(f'CREATE DATABASE "{name}"')
+                created = True
+                test_url = url.set(
+                    drivername="postgresql+asyncpg", database=name
+                ).render_as_string(hide_password=False)
+                env = os.environ | {"TTAKKARI_TEST_DB": test_url}
+                env.pop("TTAKKARI_BACKEND_DEPLOY_LOCK_HELD", None)
+                await self.command(job, "uv", "run", "pytest", "-q", "-x", env=env)
+            finally:
+                try:
+                    if created:
+                        await admin.execute(f'DROP DATABASE "{name}"')
+                finally:
+                    await admin.close()
+        ensure_revision(job["revision"])
+        self.phase(job, "waiting", active_runs=None)
+
+    async def wait_idle(self, job: dict):
+        while True:
+            count = await _active_run_count(None)
+            self.phase(job, "waiting", active_runs=count)
+            if count == 0:
+                lease = self.admission.acquire(exclusive=True)
+                if lease is not None:
+                    try:
+                        if await _active_run_count(None) == 0:
+                            return lease
+                    except BaseException:
+                        lease.close()
+                        raise
+                    lease.close()
+            await asyncio.sleep(self.poll_seconds)
+
+    async def runtime(self) -> dict:
+        async with httpx.AsyncClient(timeout=3) as client:
+            base = get_settings().internal_api_url.rstrip("/")
+            health = await client.get(base + "/api/health")
+            health.raise_for_status()
+            if health.json().get("ok") is not True:
+                raise RuntimeError("health 응답이 정상 상태가 아닙니다.")
+            r = await client.get(base + "/api/version")
+            r.raise_for_status()
+            return r.json()
+
+    async def public_ready(self, job: dict) -> None:
+        base = os.environ.get(
+            "TTK_PUBLIC_URL", "https://ttakkari-api.winterholic.net"
+        ).rstrip("/")
+        for path in ("/api/health", "/api/version"):
+            proc = await asyncio.create_subprocess_exec(
+                "curl",
+                "-fsS",
+                "--max-time",
+                "5",
+                base + path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            out, _err = await proc.communicate()
+            if proc.returncode:
+                raise RuntimeError("공개 API 확인 실패")
+            value = json.loads(out)
+            if path.endswith("health") and value.get("ok") is not True:
+                raise RuntimeError("공개 health 확인 실패")
+            if path.endswith("version") and value.get("revision") != job["revision"]:
+                raise RuntimeError("공개 API 버전 불일치")
+
+    async def verify(self, job: dict, *, old_pid: int | None) -> None:
+        deadline = time.monotonic() + self.verify_seconds
+        error = "버전 또는 PID 확인 실패"
+        while True:
+            try:
+                value = await self.runtime()
+                if (
+                    value.get("revision") == job["revision"]
+                    and value.get("pid")
+                    and value["pid"] != old_pid
+                ):
+                    await self.public_ready(job)
+                    return
+                error = "요청한 버전 또는 새 PID가 아닙니다."
+            except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+                error = str(exc)
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"재시작 버전/PID 확인 실패: {error}")
+            await asyncio.sleep(self.poll_seconds)
+
+    def restart(self) -> None:
+        subprocess.run(
+            [
+                "launchctl",
+                "kickstart",
+                "-k",
+                f"gui/{os.getuid()}/net.winterholic.ttakkari.backend",
+            ],
+            check=True,
+        )
+
+    async def process(self, job: dict) -> None:
+        lease = None
+        try:
+            if job["status"] not in {"waiting", "restarting", "verifying"}:
+                await self.prepare(job)
+            elif job["status"] in {"restarting", "verifying"}:
+                # kickstart 뒤 감독이 끊겼다면 이미 올라온 버전부터 확인해 중복 재시작을 피한다.
+                try:
+                    await self.verify(job, old_pid=job.get("old_pid"))
+                except RuntimeError:
+                    pass
+                else:
+                    self.succeed(job)
+                    return
+            lease = await self.wait_idle(job)
+            ensure_revision(job["revision"])
+            current = self.store.root / "current"
+            previous_revision = current.read_text().strip() if current.exists() else None
+            try:
+                old_pid = (await self.runtime()).get("pid")
+            except (httpx.HTTPError, ValueError, RuntimeError):
+                old_pid = None
+            self.phase(job, "migrating", previous_revision=previous_revision)
+            await self.command(job, "uv", "run", "ttakkari", "migrate")
+            ensure_revision(job["revision"])
+            self.phase(job, "restarting", old_pid=old_pid)
+            self.restart()
+            self.phase(job, "verifying")
+            await self.verify(job, old_pid=old_pid)
+            self.succeed(job)
+        except Exception as exc:
+            log.exception("deployment %s failed", job["id"])
+            self.phase(job, "failed", error=str(exc))
+        finally:
+            if lease is not None:
+                lease.close()
+
+    def succeed(self, job: dict) -> None:
+        records = {"current": job["revision"]}
+        if job.get("previous_revision"):
+            records["previous"] = job["previous_revision"]
+        for name, sha in records.items():
+            path = self.store.root / name
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(sha + "\n")
+            tmp.replace(path)
+        self.phase(job, "succeeded", active_runs=0, error=None)
+
+    async def serve(self) -> None:
+        gate = RestartGate(self.store.root / "controller.lock")
+        lock = gate._acquire()
+        if lock is None:
+            raise RuntimeError("배포 감독이 이미 실행 중입니다.")
+        loaded_revision = revision()
+        try:
+            while True:
+                job = next(
+                    (j for j in self.store.all() if j["status"] not in TERMINAL), None
+                )
+                if job:
+                    deploy_gate = RestartGate(self.store.root / "backend-restart.lock")
+                    deploy_lock = deploy_gate._acquire()
+                    if deploy_lock is not None:
+                        try:
+                            await self.process(job)
+                        finally:
+                            deploy_gate._release(deploy_lock)
+                        if job["status"] in TERMINAL and revision() != loaded_revision:
+                            # 자기 코드가 바뀐 감독도 작업 경계에서만 다시 읽는다. 예약은 파일에 남는다.
+                            await dispose_engine()
+                            os.execv(
+                                sys.executable,
+                                [sys.executable, "-m", "ttakkari.deployment", "serve"],
+                            )
+                await asyncio.sleep(self.poll_seconds)
+        finally:
+            gate._release(lock)
+            await dispose_engine()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("serve")
+    request = sub.add_parser("request")
+    request.add_argument("--no-pull", action="store_true")
+    request.add_argument("--skip-tests", action="store_true")
+    status = sub.add_parser("status")
+    status.add_argument("job_id", nargs="?")
+    args = parser.parse_args()
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+    if args.command == "serve":
+        asyncio.run(Controller(state_dir()).serve())
+        return
+    if args.command == "status":
+        store = JobStore(state_dir())
+        print(
+            json.dumps(
+                store.get(args.job_id) if args.job_id else store.all(),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    if os.environ.get("TTAKKARI_RUN_ID"):
+        sys.exit(
+            "따까리 작업에서는 request_backend_deploy MCP 도구로 예약하세요. 직접 잠금·재시작 권한은 필요 없습니다."
+        )
+    ensure_revision(revision())
+    if not args.no_pull:
+        subprocess.run(["git", "pull", "--ff-only"], cwd=BACK, check=True)
+    sha = revision()
+    ensure_revision(sha)
+    job = JobStore(state_dir()).request(sha, skip_tests=args.skip_tests)
+    print(json.dumps(job, ensure_ascii=False, indent=2))
+    print("배포 예약 접수. 완료 상태는 deploy/deploy.sh status <id>로 확인하세요.")
+
+
+if __name__ == "__main__":
+    main()

@@ -167,7 +167,7 @@ def usage_limit_until(profile: Profile, now: float | None = None) -> float | Non
 def limited_until(account_id: uuid.UUID, max_used_percent: int = 100) -> float | None:
     """한도로 쉬는 계정의 초기화 시각(unix 초). 쓸 수 있으면 None. 네트워크 없이 메모리만 본다.
 
-    한도 문구로 건 쉬는 시각과, 사용량 화면(캐시)이 5시간·주간 한도 100% 를 보여 주는 경우를 함께 본다."""
+    실행 오류로 건 cooldown 과 신선한 5시간·주간 사용량이 계정 상한에 닿은 경우를 함께 본다."""
     profile = Profile(id=account_id, name="", engine="", max_used_percent=max_used_percent)
     until = max(_cooldown.get(account_id, 0), usage_limit_until(profile) or 0)
     return until if until > time.time() else None
@@ -212,8 +212,8 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
            balance_usage: bool = False) -> Profile:
     """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
 
-    순서: 모델이 정해 준 엔진 > 다른 Run 이 안 쓰는 계정(idle_first) > 기존 우선순위. 고르는 일과 적는 일 사이에
-    await 가 없어서, 동시에 시작한 Run 들이 같은 놀고 있는 계정에 몰리지 않는다. 한도 상태는 부른 쪽이 미리 걸러 둔다."""
+    순서: 모델이 정해 준 엔진 > (balance_usage 이고 측정값이 전부 신선하면) 상한 여유 > 다른 Run 이 안 쓰는 계정 > 우선순위.
+    balance_usage 에 stale/null 측정이 있으면 기존 우선순위 폴백을 쓴다. 고르는 일과 적는 일 사이에 await 가 없다."""
     busy = {aid for rid, aid in _in_use.items() if rid != run_id}
     headroom = {p.id: _usage_headroom(p) for p in pool} if balance_usage else {}
     balance = balance_usage and all(value is not None for value in headroom.values())

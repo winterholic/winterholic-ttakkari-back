@@ -213,7 +213,9 @@ async def test_reminder_options_and_schedule(client, auth):
     assert cleared["reminder"] is None and cleared["remind_at"] is None
 
 
-async def test_send_due_once_late_catch_up_and_skip(client, auth, sent):
+async def test_send_due_once_late_catch_up_and_skip(client, auth, sent, monkeypatch):
+    # 생성 시각도 스캔 시각과 같은 테스트 시간축을 써야 실제 날짜가 지나도 지난 알림으로 처리되지 않는다.
+    monkeypatch.setattr(reminders, "utcnow", lambda: _kst("2026-10-14T09:00"))
     mk = lambda title, start, rem: client.post("/api/calendar/events", json={"title": title, "start": start, "reminder": rem,
                                                                               "location": "강남"}, headers=auth)
     a = (await mk("회의", "2026-10-14T10:00", "10m")).json()

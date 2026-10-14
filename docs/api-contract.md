@@ -253,10 +253,14 @@ payload 는 `{title, body, url, tag}`:
 | POST | `/api/transfers/{id}/complete` | → `{files: [{path, name, size, artifact_id}], notes}`. 덜 받았으면 409 |
 | DELETE | `/api/transfers/{id}` | 취소 |
 | POST | `/api/transfers/simple` | 스크립트용 multipart `files`(여러 개), `dest_dir?`(기본 `TTAKKARI_TRANSFER_INBOX`). 사용자 토큰 또는 업로드 전용 토큰(`ttk_up_…`) |
-| POST | `/api/transfers/raw?filename=` | 단축어용 파일 바이트 본문(한 요청에 한 파일). 이름은 확장자 포함·URL 인코딩. `Content-Type: application/octet-stream`, 사용자 토큰 또는 업로드 전용 토큰. 선택 쿼리: `dest_dir`, `convert_heic=true`, `strip_location=true`, `keep_original=false`. → 201 `CompleteOut`; 양식·JSON 본문 415 `wrong_body_type`, 크기 초과 413 `too_large` |
+| POST | `/api/transfers/raw?filename=` | 단축어용 파일 바이트 본문(한 요청에 한 파일). 이름은 확장자 포함 권장·URL 인코딩. `Content-Type: application/octet-stream`, 사용자 토큰 또는 업로드 전용 토큰. 선택 쿼리: `dest_dir`, `convert_heic=true`, `strip_location=true`, `keep_original=false`. → 201 `RawCompleteOut`; 양식·JSON 본문 415 `wrong_body_type`, 크기 초과 413 `too_large` |
 | GET/POST/DELETE | `/api/transfer-tokens[/{id}]` | 업로드 전용 토큰. 원문은 만들 때 한 번만 |
 
 아이폰 공유 시트 설정은 [단축어 파일 전송](iphone-shortcut.md)을 따른다. `URL 콘텐츠 가져오기`의 **요청 본문 전체를 파일**로 선택하고 **반복 항목**을 파일 값으로 넣는다. 양식 안에 `files` 필드를 만들지 않는다. 여러 입력은 `각 항목 반복`으로 하나씩 전송한다. 서버는 기존 사진 손질·권한 폴더 검사·보관함 등록을 적용한다.
+
+`RawCompleteOut`은 기존 `files`, `notes`와 진단 필드 `success`, `receivedBytes`, `filename`, `savedPath`, `requestId`, `authPassed`, `contentLength`를 반환한다. `receivedBytes`는 손질 전 수신 크기이며 `files[].size`는 저장된 파일 크기다. `filename`은 요청 이름, `savedPath`는 첫 결과 파일의 실제 경로(원본 동시 저장 시 전체 경로는 `files`)다. 실제 파일 존재·크기와 DB 커밋을 확인한 뒤에만 `success=true`다. HTTP 오류·검증 오류·예상하지 못한 실패에는 `success=false`와 가능한 진단 값을 넣는다. 아직 본문을 읽지 못한 경우 `receivedBytes=null`, 읽은 빈 파일은 `receivedBytes=0`으로 구분한다. 예상하지 못한 실패는 500 `upload_failed`이며 requestId로 추적한다. 다른 API의 오류 응답 형식은 바꾸지 않는다.
+
+파일 본문 요청은 `uvicorn.error.transfer` 로그에 `request_received`, `auth_passed`, `body_received`, `file_saved`, `request_finished`를 같은 requestId와 UTC 시각으로 남긴다. 오류는 `request_failed`에 예외·실패 단계가 기록된다. Content-Length·읽은 바이트 수·요청 이름·저장 경로·상태코드를 기록하며 Authorization 값·토큰·파일 내용은 기록하지 않는다. 보관함 등록 실패는 실제 저장 파일을 유지하고 artifact_id=null을 반환하며 경고 로그를 남긴다.
 
 ## 맥락 도서관(ADR 0009)
 

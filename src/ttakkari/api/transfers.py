@@ -31,7 +31,7 @@ from ttakkari.broker.policy import BrokerError, is_sensitive
 from ttakkari.config import get_settings
 from ttakkari.models import TransferToken, utcnow
 from ttakkari.security.auth import User, client_ip, require_user
-from ttakkari.transfer import service
+from ttakkari.transfer import diagnostics, service
 
 router = APIRouter(prefix="/api/transfers", tags=["transfers"])
 _bearer = HTTPBearer(auto_error=False)
@@ -65,6 +65,16 @@ class DeliveredOut(BaseModel):
 class CompleteOut(BaseModel):
     files: list[DeliveredOut]
     notes: list[str]
+
+
+class RawCompleteOut(CompleteOut):
+    success: bool
+    receivedBytes: int
+    filename: str
+    savedPath: str
+    requestId: str
+    authPassed: bool
+    contentLength: str | None
 
 
 class FolderOut(BaseModel):
@@ -215,16 +225,26 @@ async def cancel(tid: uuid.UUID, _: User) -> None:
 
 # ---- 한 번에 올리기. 사용자 토큰 또는 업로드 전용 토큰.
 
-async def _simple_auth(db: Db, creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]) -> str:
+async def _simple_auth(db: Db, request: Request,
+                       creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]) -> str:
+    request.state.transfer_stage = "auth"
     if creds is not None and creds.credentials.startswith(TOKEN_PREFIX):
         tok = await db.scalar(select(TransferToken).where(TransferToken.token_hash == _hash(creds.credentials),
                                                           TransferToken.revoked_at.is_(None)))
         if tok is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "업로드 토큰이 올바르지 않아요.")
         tok.last_used_at = utcnow()
+        _auth_passed(request)
         return f"token:{tok.name}"
     await require_user(creds)
+    _auth_passed(request)
     return "owner"
+
+
+def _auth_passed(request: Request) -> None:
+    if hasattr(request.state, "raw_transfer"):
+        request.state.raw_transfer["authPassed"] = True
+        diagnostics.emit(request, "auth_passed")
 
 
 @router.post("/simple", response_model=CompleteOut, status_code=201)
@@ -270,13 +290,13 @@ async def simple(db: Db, request: Request, who: Annotated[str, Depends(_simple_a
     return CompleteOut(files=all_files, notes=notes)
 
 
-@router.post("/raw", response_model=CompleteOut, status_code=201, openapi_extra={
+@router.post("/raw", response_model=RawCompleteOut, status_code=201, openapi_extra={
     "requestBody": {"content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}},
 })
 async def raw(db: Db, request: Request, who: Annotated[str, Depends(_simple_auth)],
               filename: Annotated[str, Query(min_length=1, max_length=1000)],
               dest_dir: Annotated[str | None, Query(min_length=1, max_length=4096)] = None,
-              convert_heic: bool = True, strip_location: bool = True, keep_original: bool = False) -> CompleteOut:
+              convert_heic: bool = True, strip_location: bool = True, keep_original: bool = False) -> RawCompleteOut:
     """단축어의 요청 본문=파일. multipart 필드 없이 파일 한 개의 바이트를 그대로 받는다."""
     mime = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if mime in {"application/json", "application/x-www-form-urlencoded"} or mime.startswith("multipart/"):
@@ -302,26 +322,36 @@ async def raw(db: Db, request: Request, who: Annotated[str, Depends(_simple_auth
     try:
         data = service.staging_root() / meta.id / "data"
         size = 0
+        request.state.transfer_stage = "receiving"
         with data.open("wb") as f:
             async for chunk in request.stream():
                 size += len(chunk)
                 if size > s.transfer_max_bytes:
                     raise BrokerError("파일이 너무 커요.", "too_large")
                 f.write(chunk)
+        diagnostics.emit(request, "body_received", destDir=dest)
         if length is not None and size != int(length):
             raise BrokerError("아직 다 받지 못했어요.", "incomplete")
         meta.size = size
         service.save(meta)
+        request.state.transfer_stage = "saving"
         files, notes = await service.finalize(db, ws, meta.id)
+        request.state.transfer_stage = "checking_saved_file"
+        if not files or any(not Path(f.path).is_file() or Path(f.path).stat().st_size != f.size for f in files):
+            raise OSError("저장된 파일의 존재 또는 크기를 확인하지 못했습니다.")
+        request.state.raw_transfer["savedPath"] = files[0].path
     except BrokerError as e:
         raise _err(e) from e
     finally:
         # 연결 중단·크기 초과·파일 처리 실패 모두 임시 바이트를 지운다.
         service.cancel(meta.id)
     record(db, action="transfer.raw", detail={"by": who, "files": [f.path for f in files]}, ip=client_ip(request))
+    request.state.transfer_stage = "committing"
     await db.commit()
     service.flush_previews()
-    return CompleteOut(files=[DeliveredOut(**f.__dict__) for f in files], notes=notes)
+    request.state.raw_transfer["success"] = True
+    diagnostics.emit(request, "file_saved", savedFiles=[{"path": f.path, "size": f.size, "artifactId": f.artifact_id} for f in files])
+    return RawCompleteOut(files=[DeliveredOut(**f.__dict__) for f in files], notes=notes, **diagnostics.fields(request))
 
 
 # ---- 업로드 전용 토큰

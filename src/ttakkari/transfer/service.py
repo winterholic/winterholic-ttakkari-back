@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 import time
 import uuid
@@ -169,6 +170,8 @@ async def _register(db: AsyncSession, ws: Workspace, path: Path, root: Path) -> 
                                   rel_path=path.name, export_allowed=ws.export_allowed)
     except (BrokerError, OSError):
         # 보관함 등록이 안 돼도 파일은 이미 목적지에 있다.
+        logging.getLogger("uvicorn.error.transfer.registration").warning(
+            "file saved but library registration failed: path=%s", path, exc_info=True)
         return None
     await db.flush()
     if needs_server_preview(art.kind):

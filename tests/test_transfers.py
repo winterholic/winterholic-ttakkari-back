@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import json
+import logging
 from pathlib import Path
 
 import pillow_heif
@@ -247,6 +249,106 @@ async def test_shortcut_raw_stream_limit_and_disconnect_clean_staging(client, au
         yield b"12"
         raise RuntimeError("upload interrupted")
 
-    with pytest.raises(RuntimeError, match="upload interrupted"):
-        await client.post("/api/transfers/raw", params={"filename": "broken.bin"}, content=broken(), headers=auth)
+    r = await client.post("/api/transfers/raw", params={"filename": "broken.bin"}, content=broken(), headers=auth)
+    assert r.status_code == 500 and r.json()["success"] is False and r.json()["receivedBytes"] == 2
     assert set(service.staging_root().iterdir()) == before
+
+
+async def test_raw_diagnostics_report_received_and_saved_file_without_logging_token(client, auth, caplog):
+    caplog.set_level(logging.INFO, logger="uvicorn.error.transfer")
+    data = _photo("HEIF")
+    name = "사진 & 원본.heic"
+    token = (await client.post("/api/transfer-tokens", json={}, headers=auth)).json()["token"]
+    r = await client.post("/api/transfers/raw", params={"filename": name}, content=data,
+                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["success"] is True and body["authPassed"] is True
+    assert body["receivedBytes"] == len(data) and body["filename"] == name
+    assert body["savedPath"] == body["files"][0]["path"] and body["savedPath"].endswith(".jpg")
+    assert Path(body["savedPath"]).is_file() and len(body["requestId"]) == 32
+    events = [json.loads(record.message) for record in caplog.records if record.name == "uvicorn.error.transfer"]
+    assert {"request_received", "auth_passed", "body_received", "file_saved", "request_finished"} <= {e["event"] for e in events}
+    assert all(e["requestId"] == body["requestId"] for e in events)
+    assert events[0]["contentLength"] == str(len(data)) and events[0]["receivedBytes"] is None
+    assert events[-1]["status"] == 201 and events[-1]["success"] is True
+    assert token not in caplog.text and "Bearer" not in caplog.text
+
+
+async def test_raw_diagnostics_auth_and_validation_failures_are_not_empty_uploads(client, auth, caplog):
+    caplog.set_level(logging.INFO, logger="uvicorn.error.transfer")
+    r = await client.post("/api/transfers/raw", params={"filename": "x.pdf"}, content=b"test",
+                          headers={"Authorization": "Bearer ttk_up_INVALID_DIAGNOSTIC_TOKEN"})
+    assert r.status_code == 401
+    body = r.json()
+    assert body["success"] is False and body["authPassed"] is False
+    assert body["receivedBytes"] is None and body["savedPath"] is None
+    assert body["contentLength"] == "4" and body["filename"] == "x.pdf"
+    assert "ttk_up_INVALID_DIAGNOSTIC_TOKEN" not in caplog.text
+    r = await client.post("/api/transfers/raw", content=b"test", headers=auth)
+    assert r.status_code == 422 and r.json()["success"] is False and r.json()["authPassed"] is True
+
+
+async def test_raw_diagnostics_storage_exception_is_logged_and_cannot_return_success(client, auth, monkeypatch, caplog):
+    from ttakkari.transfer import service
+    caplog.set_level(logging.INFO, logger="uvicorn.error.transfer")
+
+    async def failed(*args):
+        raise OSError("diagnostic disk write failed")
+
+    monkeypatch.setattr(service, "finalize", failed)
+    r = await client.post("/api/transfers/raw", params={"filename": "failed.pdf"}, content=b"%PDF", headers=auth)
+    assert r.status_code == 500, r.text
+    assert r.json()["success"] is False and r.json()["receivedBytes"] == 4
+    assert r.json()["savedPath"] is None and r.json()["filename"] == "failed.pdf"
+    assert "diagnostic disk write failed" in caplog.text
+    assert any(rec.exc_info for rec in caplog.records if rec.name == "uvicorn.error.transfer")
+
+
+async def test_raw_diagnostics_checks_physical_file_before_success(client, auth, monkeypatch):
+    from ttakkari.transfer import service
+
+    async def phantom(*args):
+        return [service.Delivered(path=str(DOCS / "missing.pdf"), name="missing.pdf", size=4, artifact_id=None)], []
+
+    monkeypatch.setattr(service, "finalize", phantom)
+    r = await client.post("/api/transfers/raw", params={"filename": "missing.pdf"}, content=b"%PDF", headers=auth)
+    assert r.status_code == 500, r.text
+    assert r.json()["success"] is False
+
+
+async def test_raw_diagnostics_distinguishes_library_registration_failure_from_file_save(client, auth, monkeypatch, caplog):
+    from ttakkari.transfer import service
+
+    async def failed_registration(*args, **kwargs):
+        raise OSError("diagnostic artifact registration failed")
+
+    monkeypatch.setattr(service, "register_file", failed_registration)
+    r = await client.post("/api/transfers/raw", params={"filename": "saved-but-unlisted.pdf"}, content=b"%PDF", headers=auth)
+    assert r.status_code == 201, r.text
+    assert r.json()["success"] is True and Path(r.json()["savedPath"]).read_bytes() == b"%PDF"
+    assert r.json()["files"][0]["artifact_id"] is None
+    assert "diagnostic artifact registration failed" in caplog.text
+
+
+async def test_raw_photo_without_extension_is_saved_with_detected_image_extension(client, auth):
+    r = await client.post("/api/transfers/raw", params={"filename": "IMG_3558"}, content=_photo("PNG"), headers=auth)
+    assert r.status_code == 201, r.text
+    assert r.json()["filename"] == "IMG_3558" and r.json()["files"][0]["name"] == "IMG_3558.png"
+
+
+async def test_raw_diagnostics_logs_arrival_even_when_route_is_missing(caplog):
+    import httpx
+    from fastapi import FastAPI
+
+    from ttakkari.transfer.diagnostics import TransferDiagnosticsMiddleware
+    app = FastAPI()
+    app.add_middleware(TransferDiagnosticsMiddleware)
+    caplog.set_level(logging.INFO, logger="uvicorn.error.transfer")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post("/api/transfers/raw?filename=unavailable.pdf", content=b"%PDF")
+    assert r.status_code == 404
+    events = [json.loads(rec.message) for rec in caplog.records if rec.name == "uvicorn.error.transfer"]
+    assert events[0]["event"] == "request_received" and events[0]["filename"] == "unavailable.pdf"
+    assert events[-1]["status"] == 404 and events[-1]["success"] is False
+    assert events[-1]["receivedBytes"] is None

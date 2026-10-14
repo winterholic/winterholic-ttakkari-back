@@ -49,6 +49,7 @@ from ttakkari.runs.manager import (
     resume_queued,
 )
 from ttakkari.runs.usage_collector import Collector
+from ttakkari.transfer import diagnostics as transfer_diagnostics
 from ttakkari.transfer import service as transfer_service
 
 log = logging.getLogger("ttakkari")
@@ -154,9 +155,10 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range"],
         expose_headers=["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
     )
+    app.add_middleware(transfer_diagnostics.TransferDiagnosticsMiddleware)
 
     @app.exception_handler(HTTPException)
-    async def _http_exc(_: Request, exc: HTTPException) -> JSONResponse:
+    async def _http_exc(request: Request, exc: HTTPException) -> JSONResponse:
         # 오류 응답 형식을 {code, message} 하나로 고정한다(프론트 계약).
         detail = exc.detail
         if isinstance(detail, dict):
@@ -164,12 +166,14 @@ def create_app() -> FastAPI:
         else:
             body = {"code": {401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",
                              429: "rate_limited"}.get(exc.status_code, "error"), "message": str(detail)}
+        body.update(transfer_diagnostics.fields(request))
         return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_exc(_: Request, exc: RequestValidationError) -> JSONResponse:
+    async def _validation_exc(request: Request, exc: RequestValidationError) -> JSONResponse:
         errors = [{"loc": list(e.get("loc", [])), "msg": e.get("msg", "")} for e in exc.errors()]
-        return JSONResponse({"code": "validation", "message": "요청 형식이 올바르지 않습니다.", "errors": errors},
+        return JSONResponse({"code": "validation", "message": "요청 형식이 올바르지 않습니다.", "errors": errors,
+                             **transfer_diagnostics.fields(request)},
                             status_code=422)
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,

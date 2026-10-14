@@ -46,6 +46,7 @@
 | GET/PATCH | `/api/sessions/{id}` | PATCH: `{title?, model?, effort?, archived?}` |
 | GET | `/api/sessions/{id}/runs` | `RunOut[]` (오래된 순 = 대화 순서) |
 | POST | `/api/sessions/{id}/runs` | `{prompt, context_artifact_ids?, model?, effort?}` → 202 `RunOut`. 실행 중 Run 이 있으면 `queued` 로 세션 대기열에 들어가 앞 Run 이 끝나면 순서대로 시작한다(여러 기기가 동시에 보내도 한 번에 하나) |
+| GET | `/api/runs/failed?limit=30&since=&before=&before_id=` | 실패한 모든 세션의 `Run`만 최신순으로 반환. `{items: FailedRunOut[], next_before, next_before_id}`. `limit` 1~100, `since` 는 하한 시각, 다음 페이지는 `before`와 `before_id`를 함께 전달. `FailedRunOut`은 `RunOut`에 `failed_at, session_title, session_kind, session_parent_id, pool, workspace_name`을 더한다 |
 | GET | `/api/runs/{id}` | `RunOut` |
 | POST | `/api/runs/{id}/cancel` | 취소. 아직 시작 안 한 대기 Run 은 바로 `cancelled`. 실행 중이면 최대 5초 기다렸다가 최신 `RunOut` |
 | GET | `/api/runs/{id}/events?after=0&limit=500` | `RunEventOut[]` (폴링·초기 로드용) |
@@ -299,6 +300,7 @@ payload 는 `{title, body, url, tag}`:
 - `GET /api/clovanote/notes?q=&state=&imported=&samples=&limit=&offset=`: 노트 목록. 가져왔으면 `meeting{id,title,status}`, 가져오는 중이면 `import_job`. `GET /api/clovanote/notes/{note_id}`: + `segments[{speaker,start_ms,end_ms,text}]`, `transcript`.
 - `POST /api/clovanote/notes/{note_id}/import` `{scope?, project_id?, analyze?: true}`(202): 가져오기 작업. 이미 가져왔으면 409 `already_imported` + `meeting_id`.
 - `GET /api/clovanote/jobs?active=&kind=&limit=`, `GET /api/clovanote/jobs/{id}`, `POST /api/clovanote/jobs/{id}/retry`(실패한 sync·import 만).
+- `GET /api/clovanote/jobs/failed?limit=30&since=&before=&before_id=`: 실패한 백그라운드 작업을 최신순으로 반환. `{items, next_before, next_before_id}`. 각 항목은 작업 정보에 `failed_at, meeting_title, note_title`을 더한다. `limit` 1~100, 다음 페이지는 `before`와 `before_id`를 함께 보낸다. 실패한 upload 는 회의록에서 전사를 다시 요청해야 한다.
 - 에이전트용(회사 세션은 회사 회의로 가져온 노트만, 동기화 불가): `GET /api/agent/clovanote/notes?q=&state=&imported=&limit=`, `GET /api/agent/clovanote/notes/{id}?offset=&limit=`(구간 페이지), `POST /api/agent/clovanote/sync`, `POST /api/agent/clovanote/notes/{id}/import` `{scope?, project?(이름), analyze?}`. MCP `list_clovanote_notes`·`get_clovanote_note`·`sync_clovanote`·`import_clovanote_note`.
 
 ## 프로젝트 관리 PMS · WBS(ADR 0012)

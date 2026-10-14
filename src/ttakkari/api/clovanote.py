@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -157,6 +158,33 @@ async def list_jobs(_: User, db: Db, active: bool = False, kind: str | None = No
         q = q.where(ClovaJob.kind == kind)
     rows = await db.scalars(q.order_by(ClovaJob.created_at.desc()).limit(limit))
     return {"jobs": [clova_jobs.job_out(j) for j in rows]}
+
+
+@router.get("/jobs/failed")
+async def list_failed_jobs(_: User, db: Db, limit: int = Query(30, ge=1, le=100),
+                           before: datetime | None = None, before_id: uuid.UUID | None = None,
+                           since: datetime | None = None) -> dict[str, Any]:
+    """클로바노트 백그라운드 작업 중 실패한 것만 최신순으로 조회한다."""
+    if (before is None) != (before_id is None):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "before와 before_id를 함께 보내야 합니다.")
+    failed_at = func.coalesce(ClovaJob.finished_at, ClovaJob.updated_at, ClovaJob.created_at)
+    q = (select(ClovaJob, Meeting.title, ClovaNote.title)
+         .outerjoin(Meeting, Meeting.id == ClovaJob.meeting_id)
+         .outerjoin(ClovaNote, ClovaNote.note_id == ClovaJob.note_id)
+         .where(ClovaJob.status == "failed"))
+    if since is not None:
+        q = q.where(failed_at >= since)
+    if before is not None and before_id is not None:
+        q = q.where(or_(failed_at < before, (failed_at == before) & (ClovaJob.id < before_id)))
+    rows = list((await db.execute(q.order_by(failed_at.desc(), ClovaJob.id.desc()).limit(limit + 1))).all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    items = [{**clova_jobs.job_out(job), "failed_at": job.finished_at or job.updated_at or job.created_at,
+              "meeting_title": meeting_title, "note_title": note_title}
+             for job, meeting_title, note_title in rows]
+    last = items[-1] if has_more and items else None
+    return {"items": items, "next_before": last["failed_at"] if last else None,
+            "next_before_id": last["id"] if last else None}
 
 
 @router.get("/jobs/{job_id}")

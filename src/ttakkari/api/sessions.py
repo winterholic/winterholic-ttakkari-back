@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -22,11 +22,14 @@ from ttakkari.models import (
     RunOrigin,
     RunStatus,
     SessionKind,
+    Workspace,
     utcnow,
 )
 from ttakkari.runs import events
 from ttakkari.runs.manager import manager
 from ttakkari.schemas import (
+    FailedRunOut,
+    FailedRunsPage,
     RunEventOut,
     RunIn,
     RunOut,
@@ -121,6 +124,39 @@ async def list_runs(session_id: uuid.UUID, _: User, db: Db, limit: int | None = 
     else:
         runs = list(await db.scalars(q.order_by(Run.created_at.desc()).limit(limit)))[::-1]
     return await desk_feedback.runs_out(db, runs)
+
+
+@router.get("/runs/failed", response_model=FailedRunsPage)
+async def list_failed_runs(_: User, db: Db, limit: int = Query(30, ge=1, le=100),
+                           before: datetime | None = None, before_id: uuid.UUID | None = None,
+                           since: datetime | None = None) -> FailedRunsPage:
+    """모든 종류의 세션에서 실패한 Run을 최신순으로 조회한다."""
+    if (before is None) != (before_id is None):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "before와 before_id를 함께 보내야 합니다.")
+    failed_at = func.coalesce(Run.finished_at, Run.created_at)
+    q = (select(Run, ChatSession, Workspace.name)
+         .join(ChatSession, ChatSession.id == Run.session_id)
+         .join(Workspace, Workspace.id == Run.workspace_id)
+         .where(Run.status == RunStatus.failed))
+    if since is not None:
+        q = q.where(failed_at >= since)
+    if before is not None and before_id is not None:
+        q = q.where(or_(failed_at < before, (failed_at == before) & (Run.id < before_id)))
+    rows = list((await db.execute(q.order_by(failed_at.desc(), Run.id.desc()).limit(limit + 1))).all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    items = [FailedRunOut.model_validate({
+        **RunOut.model_validate(run).model_dump(),
+        "failed_at": run.finished_at or run.created_at,
+        "session_title": session.title,
+        "session_kind": session.kind,
+        "session_parent_id": session.parent_id,
+        "pool": session.pool,
+        "workspace_name": workspace_name,
+    }) for run, session, workspace_name in rows]
+    last = items[-1] if has_more and items else None
+    return FailedRunsPage(items=items, next_before=last.failed_at if last else None,
+                          next_before_id=last.id if last else None)
 
 
 @router.post("/sessions/{session_id}/runs", response_model=RunOut, status_code=202)

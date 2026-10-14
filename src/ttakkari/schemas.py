@@ -160,6 +160,22 @@ class RunOut(ORM):
     desk_feedback: DeskFeedbackBrief | None = None
 
 
+class FailedRunOut(RunOut):
+    """실패 목록용 Run과 소속 세션·워크스페이스 정보."""
+    failed_at: datetime
+    session_title: str
+    session_kind: str
+    session_parent_id: uuid.UUID | None
+    pool: str
+    workspace_name: str
+
+
+class FailedRunsPage(BaseModel):
+    items: list[FailedRunOut]
+    next_before: datetime | None = None
+    next_before_id: uuid.UUID | None = None
+
+
 # ---- 접수 판정(ADR 0013)
 DeskAction = Literal["answer", "delegate"]
 DeskVerdict = Literal["ok", "should_delegate", "should_answer"]

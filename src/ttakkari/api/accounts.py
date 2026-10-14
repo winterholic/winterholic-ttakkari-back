@@ -52,7 +52,7 @@ class AccountIn(BaseModel):
     pool: Pool = "personal"
     config_dir: str | None = Field(default=None, max_length=1024)
     enabled: bool = True
-    max_used_percent: int | None = Field(default=None, ge=1, le=100)
+    max_used_percent: int | None = Field(default=None, ge=50, le=100)
 
     @field_validator("config_dir")
     @classmethod
@@ -69,7 +69,7 @@ class AccountPatch(BaseModel):
     enabled: bool | None = None
     # 회사 모드 켜기. 개인 모드 enabled 와 독립이다. 회사에 들어온 계정에만 쓸 수 있다.
     work_enabled: bool | None = None
-    max_used_percent: int | None = Field(default=None, ge=1, le=100)
+    max_used_percent: int | None = Field(default=None, ge=50, le=100)
 
     @field_validator("config_dir")
     @classmethod
@@ -152,9 +152,7 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
     a = EngineAccount(id=uuid.uuid4(), name=body.name.strip(), engine=body.engine, config_dir=body.config_dir,
                       enabled=body.enabled, priority=(top if top is not None else -1) + 1, pool=body.pool,
                       work_enabled=body.enabled, work_priority=_next_work_priority(rows),
-                      max_used_percent=body.max_used_percent if body.max_used_percent is not None else
-                      (95 if (body.engine == "claude" and "내 클로드" in body.name) or
-                       (body.engine == "codex" and "daddy" in body.name.casefold()) else 100))
+                      max_used_percent=body.max_used_percent if body.max_used_percent is not None else 100)
     if a.config_dir is None and any(r.engine == body.engine and r.config_dir is None for r in rows):
         # 같은 엔진의 기본 계정(~/.claude·~/.codex)이 이미 있으면, 새 계정의 로그인 보관 폴더는 따까리가 만든다.
         # 사용자는 폴더를 몰라도 된다. 작업공간과는 무관하고 로그인 정보만 따로 둔다.

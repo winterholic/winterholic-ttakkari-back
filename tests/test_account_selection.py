@@ -145,10 +145,36 @@ async def test_workers_spread_over_idle_accounts(client, auth, make_dir):
 
 async def test_auto_worker_skips_account_at_its_configured_usage_cap(client, auth, make_dir):
     accs = await _three_accounts(client, auth, make_dir)
+    await client.patch(f"/api/accounts/{accs['claude']['id']}", json={"max_used_percent": 95}, headers=auth)
     claude_id = uuid.UUID(accs["claude"]["id"])
     now = int(time.time())
     usage_mod.remember_stream(claude_id, [usage_mod.Window("five_hour", "5시간", 30, now + 3600),
                                          usage_mod.Window("seven_day", "주간", 95, now + 86400)])
+    worker = await _session(client, auth, make_dir, engine="auto")
+    run = await run_to_end(client, auth, worker["id"], "small task")
+    assert run["status"] == "succeeded" and run["profile"] == "claude-2"
+
+
+async def test_account_cap_update_changes_usage_and_auto_assignment(client, auth, make_dir):
+    accs = await _three_accounts(client, auth, make_dir)
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    token = _orch(issue_token(orch["id"]))
+    claude_id = uuid.UUID(accs["claude"]["id"])
+    now = int(time.time())
+    usage_mod.remember_stream(claude_id, [usage_mod.Window("five_hour", "5시간", 95, now + 3600),
+                                         usage_mod.Window("seven_day", "주간", 20, now + 86400)])
+
+    before = (await client.get("/api/orchestrator/accounts/usage", headers=token)).json()
+    claude = next(a for a in before["accounts"] if a["name"] == "claude")
+    assert claude["max_used_percent"] == 100 and claude["available"] is True
+
+    changed = await client.patch(f"/api/accounts/{accs['claude']['id']}", json={"max_used_percent": 95}, headers=auth)
+    assert changed.status_code == 200 and changed.json()["max_used_percent"] == 95
+    after = (await client.get("/api/orchestrator/accounts/usage", headers=token)).json()
+    claude = next(a for a in after["accounts"] if a["name"] == "claude")
+    assert claude["max_used_percent"] == 95 and claude["remaining_to_limit_percent"] == 0
+    assert claude["available"] is False and claude["limit"]["waiting"] is True
+
     worker = await _session(client, auth, make_dir, engine="auto")
     run = await run_to_end(client, auth, worker["id"], "small task")
     assert run["status"] == "succeeded" and run["profile"] == "claude-2"
@@ -239,7 +265,7 @@ async def test_account_usage_reports_state_without_secrets(client, auth, make_di
     assert c["usage"]["five_hour"]["used_percent"] == 42 and c["usage"]["five_hour"]["remaining_percent"] == 58
     assert c["usage"]["weekly"]["remaining_percent"] == 90 and c["usage"]["five_hour"]["resets_at"].endswith("+09:00")
     assert c["usage"]["model_weekly"]["opus"]["used_percent"] == 70
-    assert c["max_used_percent"] == 95 and c["remaining_to_limit_percent"] == 53
+    assert c["max_used_percent"] == 100 and c["remaining_to_limit_percent"] == 58
     assert c["usage"]["source"] == "stream" and c["usage"]["stale"] is False and c["usage"]["measured_at"]
     assert c["limit"] == {"waiting": False, "until": None, "reason": None} and c["running_runs"] == 0
     # 한 번도 못 본 계정은 값이 없다고 알린다.

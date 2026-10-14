@@ -75,7 +75,8 @@ async def ensure_seeded(db: AsyncSession) -> None:
         name = (raw.get("name") or engine)[:60]
         if engine not in ENGINES or name in by_name:
             continue
-        cap = 95 if engine == "claude" or (engine == "codex" and "daddy" in name.casefold()) else 100
+        # 시드 시 지정된 보호 계정만 95%로 시작한다. 이후 값은 계정 DB와 비서관리에서 관리한다.
+        cap = 95 if (engine, name.casefold()) in {("claude", "내 클로드"), ("codex", "daddy codex")} else 100
         acc = EngineAccount(name=name, engine=engine, config_dir=raw.get("config_dir"), enabled=True, priority=i,
                             max_used_percent=cap)
         db.add(acc)

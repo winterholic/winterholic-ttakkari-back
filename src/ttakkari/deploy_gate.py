@@ -23,8 +23,12 @@ class RestartGate:
         self.max_wait_seconds = max_wait_seconds
 
     def _acquire(self):
-        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock = self.lock_path.open("a")
+        try:
+            # flock은 파일 내용을 바꾸지 않는다. 기존 잠금에는 쓰기 권한을 요구하지 않는다.
+            lock = self.lock_path.open("r")
+        except FileNotFoundError:
+            self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock = self.lock_path.open("a")
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:

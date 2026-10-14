@@ -2,10 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 
 from ttakkari.db import sessionmaker
 from ttakkari.deploy_gate import RestartGate, _active_run_count
 from ttakkari.models import Run
+
+
+def test_existing_restart_lock_needs_no_file_write(tmp_path, monkeypatch):
+    path = tmp_path / "restart.lock"
+    path.write_text("")
+    original = Path.open
+
+    def read_only_lock(self, mode="r", *args, **kwargs):
+        if self == path and any(flag in mode for flag in "wa+"):
+            raise PermissionError("existing deploy lock is read-only")
+        return original(self, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", read_only_lock)
+    gate = RestartGate(path)
+    first = gate._acquire()
+    assert first is not None
+    try:
+        assert gate._acquire() is None  # 동일 파일의 중복 배포 차단은 유지한다.
+    finally:
+        gate._release(first)
 
 
 def test_gate_rechecks_after_wait_and_excludes_deploying_run(tmp_path):

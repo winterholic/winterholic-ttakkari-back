@@ -14,7 +14,8 @@ fi
 LABEL="net.winterholic.ttakkari.backend"
 DOMAIN="gui/$(id -u)"
 PUBLIC="${TTK_PUBLIC_URL:-https://ttakkari-api.winterholic.net}"
-STATE="$HOME/.ttakkari/deploy"
+# 버전 기록 위치만 지정할 수 있다. 배타 잠금은 기존 ~/.ttakkari/deploy/backend-restart.lock을 공유한다.
+STATE="${TTAKKARI_DEPLOY_STATE_DIR:-$HOME/.ttakkari/deploy}"
 mkdir -p "$STATE"
 c() { printf '\033[1m%s\033[0m\n' "$*"; }
 

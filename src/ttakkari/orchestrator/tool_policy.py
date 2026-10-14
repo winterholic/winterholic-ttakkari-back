@@ -5,5 +5,5 @@ READ_ONLY_TOOLS = frozenset({
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
     "list_clovanote_notes", "get_clovanote_note",
-    "account_usage", "my_context", "list_workers", "get_worker",
+    "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
 })

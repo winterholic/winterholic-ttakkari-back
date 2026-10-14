@@ -16,9 +16,33 @@ from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import AppSetting
-from ttakkari.orchestrator.runtime import issue_token
+from ttakkari.orchestrator.runtime import ORCHESTRATOR_NOTE, issue_token
 from ttakkari.runs import profiles
 from ttakkari.runs.manager import manager
+
+
+def test_design_capacity_policy_waits_for_claude_and_uses_pms_wbs():
+    note = " ".join(ORCHESTRATOR_NOTE.split())
+    assert "Design and visual work should use Claude" in note
+    assert "do not send it to GPT" in note
+    assert "PMS project WBS/backlog" in note
+    assert "report the wait to the user" in note
+    assert "list_pms_projects/create_pms_task" in note
+
+
+async def test_orchestrator_can_record_deferred_design_in_pms(client, auth, make_dir):
+    project = (await client.post("/api/pms/projects", json={"name": "디자인 대기", "scope": "personal", "status": "active"}, headers=auth)).json()
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    h = _orch(issue_token(orch["id"]))
+    found = await client.get("/api/orchestrator/pms/projects", params={"q": "디자인 대기"}, headers=h)
+    assert found.status_code == 200 and found.json()["projects"][0]["id"] == project["id"]
+    created = await client.post(f"/api/orchestrator/pms/projects/{project['id']}/tasks", json={
+        "title": "Claude 초기화 후 디자인 시안", "description": "시각 작업 대기", "priority": "normal",
+    }, headers=h)
+    assert created.status_code == 201, created.text
+    assert created.json()["project"]["name"] == "디자인 대기"
+    assert created.json()["task"]["title"] == "Claude 초기화 후 디자인 시안"
+    assert created.json()["task"]["status"] == "todo"
 
 
 async def _session(client, auth, make_dir, **body) -> dict:
@@ -335,6 +359,7 @@ AGENT_TOOLS = {"library_catalog", "recall", "remember", "get_entity", "describe_
                "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items",
                "search_meetings", "list_clovanote_notes", "get_clovanote_note", "sync_clovanote", "import_clovanote_note"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
+                "list_pms_projects", "create_pms_task",
                 "my_context", "reset_my_context"}
 
 
@@ -368,7 +393,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
         "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
         "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
         "list_clovanote_notes", "get_clovanote_note",
-        "account_usage", "my_context", "list_workers", "get_worker",
+            "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

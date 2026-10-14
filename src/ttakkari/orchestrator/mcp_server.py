@@ -358,9 +358,24 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
 @orchestrator_tool
 async def account_usage() -> str:
     """Per-account status for choosing where to run workers: engine, personal/work scope, usable models, 5-hour and
-    weekly used/remaining percent with reset times, when it was measured, limit-wait state and running Run count.
+    weekly used/remaining percent, per-account usage cap and remaining headroom to that cap, reset times, when it
+    was measured, limit-wait state and running Run count.
     Values are the app's last observation (null = never seen, stale = old); this tool does not refresh them."""
     return await _call("GET", "/accounts/usage")
+
+
+@orchestrator_tool
+async def list_pms_projects(query: str | None = None) -> str:
+    """Find personal PMS projects for a task deferred until Claude usage resets. Use this before create_pms_task."""
+    return await _call("GET", "/pms/projects", params={"q": query})
+
+
+@orchestrator_tool
+async def create_pms_task(project_id: str, title: str, description: str = "", priority: Literal["low", "normal", "high", "urgent"] = "normal") -> str:
+    """Add a todo item to the selected personal project's WBS/backlog, for example design work waiting for Claude reset.
+    Include the original request and why it is waiting in `description`; tell the user the project and task afterward."""
+    return await _call("POST", f"/pms/projects/{project_id}/tasks",
+                       {"title": title, "description": description, "priority": priority})
 
 
 @orchestrator_tool

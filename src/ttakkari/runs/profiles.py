@@ -43,6 +43,7 @@ class Profile:
     name: str
     engine: str
     config_dir: Path | None = None
+    max_used_percent: int = 100
 
     @property
     def key(self) -> str:
@@ -56,7 +57,8 @@ class Profile:
 
 
 def _profile(a: EngineAccount) -> Profile:
-    return Profile(id=a.id, name=a.name, engine=a.engine, config_dir=Path(a.config_dir).expanduser() if a.config_dir else None)
+    return Profile(id=a.id, name=a.name, engine=a.engine, config_dir=Path(a.config_dir).expanduser() if a.config_dir else None,
+                   max_used_percent=a.max_used_percent)
 
 
 async def ensure_seeded(db: AsyncSession) -> None:
@@ -73,7 +75,9 @@ async def ensure_seeded(db: AsyncSession) -> None:
         name = (raw.get("name") or engine)[:60]
         if engine not in ENGINES or name in by_name:
             continue
-        acc = EngineAccount(name=name, engine=engine, config_dir=raw.get("config_dir"), enabled=True, priority=i)
+        cap = 95 if engine == "claude" or (engine == "codex" and "daddy" in name.casefold()) else 100
+        acc = EngineAccount(name=name, engine=engine, config_dir=raw.get("config_dir"), enabled=True, priority=i,
+                            max_used_percent=cap)
         db.add(acc)
         by_name[name] = acc
     await db.flush()
@@ -136,7 +140,7 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
         if not is_on(a, pool) or not (session_engine == "auto" or a.engine == session_engine):
             continue
         p = _profile(a)
-        until = limited_until(p.id)
+        until = limited_until(p.id, p.max_used_percent)
         if until:
             blocked.append((p, until))
         else:
@@ -144,13 +148,28 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
     return free, blocked
 
 
-def limited_until(account_id: uuid.UUID) -> float | None:
+def usage_limit_until(profile: Profile, now: float | None = None) -> float | None:
+    """신선한 사용량이 계정 상한에 닿은 경우 5시간·주간 창 모두 초기화될 때까지 쉰다."""
+    from ttakkari.runs import usage as usage_mod
+
+    now = time.time() if now is None else now
+    u = usage_mod.cached(profile.id)
+    if u is None or not u.windows or u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds:
+        return None
+    capped = [w for w in u.windows if w.key in ("five_hour", "seven_day")
+              and not (w.resets_at and w.resets_at <= now) and w.percent >= profile.max_used_percent]
+    if not capped:
+        return None
+    # 초기화 시각이 누락된 측정은 다음 짧은 수집 주기에서 해제 여부를 다시 판단한다.
+    return max((float(w.resets_at) for w in capped if w.resets_at and w.resets_at > now), default=now + 90)
+
+
+def limited_until(account_id: uuid.UUID, max_used_percent: int = 100) -> float | None:
     """한도로 쉬는 계정의 초기화 시각(unix 초). 쓸 수 있으면 None. 네트워크 없이 메모리만 본다.
 
     한도 문구로 건 쉬는 시각과, 사용량 화면(캐시)이 5시간·주간 한도 100% 를 보여 주는 경우를 함께 본다."""
-    from ttakkari.runs import usage as usage_mod
-
-    until = max(_cooldown.get(account_id, 0), usage_mod.exhausted_until(account_id) or 0)
+    profile = Profile(id=account_id, name="", engine="", max_used_percent=max_used_percent)
+    until = max(_cooldown.get(account_id, 0), usage_limit_until(profile) or 0)
     return until if until > time.time() else None
 
 
@@ -171,14 +190,37 @@ def running_counts() -> dict[uuid.UUID, int]:
     return counts
 
 
-def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, prefer_engine: str | None = None) -> Profile:
+def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[int, float] | None:
+    """상한까지 남은 최소 퍼센트와 그 창의 초기화 시각. stale/null 사용량은 순위 판단에 쓰지 않는다."""
+    from ttakkari.runs import usage as usage_mod
+
+    now = time.time() if now is None else now
+    u = usage_mod.cached(profile.id)
+    if u is None or not u.windows or u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds:
+        return None
+    current = [w for w in u.windows if w.key in ("five_hour", "seven_day")
+               and not (w.resets_at and w.resets_at <= now)]
+    if not current:
+        return None
+    minimum = min(max(0, profile.max_used_percent - w.percent) for w in current)
+    limiting = [w for w in current if max(0, profile.max_used_percent - w.percent) == minimum]
+    reset = min((float(w.resets_at) for w in limiting if w.resets_at), default=float("inf"))
+    return minimum, reset
+
+
+def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, prefer_engine: str | None = None,
+           balance_usage: bool = False) -> Profile:
     """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
 
     순서: 모델이 정해 준 엔진 > 다른 Run 이 안 쓰는 계정(idle_first) > 기존 우선순위. 고르는 일과 적는 일 사이에
     await 가 없어서, 동시에 시작한 Run 들이 같은 놀고 있는 계정에 몰리지 않는다. 한도 상태는 부른 쪽이 미리 걸러 둔다."""
     busy = {aid for rid, aid in _in_use.items() if rid != run_id}
+    headroom = {p.id: _usage_headroom(p) for p in pool} if balance_usage else {}
+    balance = balance_usage and all(value is not None for value in headroom.values())
     ranked = sorted(enumerate(pool), key=lambda ip: (
         prefer_engine is not None and ip[1].engine != prefer_engine,
+        -headroom[ip[1].id][0] if balance else 0,
+        headroom[ip[1].id][1] if balance else 0,
         idle_first and ip[1].id in busy,
         ip[0],
     ))

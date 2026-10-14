@@ -91,6 +91,40 @@ def test_limited_until_reads_cooldown_and_exhausted_usage_without_network():
     assert profiles.limited_until(bid) > time.time()
 
 
+def test_usage_cap_blocks_at_or_above_threshold_and_expired_window_is_ignored(monkeypatch):
+    aid = uuid.uuid4()
+    profile = Profile(id=aid, name="limited", engine="codex", max_used_percent=95)
+    now = int(time.time())
+    usage_mod.remember_stream(aid, [usage_mod.Window("five_hour", "5시간", 95, now + 3600),
+                                   usage_mod.Window("seven_day", "주간", 94, now + 86400)])
+    assert profiles.usage_limit_until(profile) > time.time()
+    usage_mod.remember_stream(aid, [usage_mod.Window("five_hour", "5시간", 94, now + 3600),
+                                   usage_mod.Window("seven_day", "주간", 95, now + 86400)])
+    assert profiles.usage_limit_until(profile) > time.time()
+    usage_mod.remember_stream(aid, [usage_mod.Window("five_hour", "5시간", 100, now - 1),
+                                   usage_mod.Window("seven_day", "주간", 10, now + 86400)])
+    assert profiles.usage_limit_until(profile) is None
+
+
+def test_auto_choose_balances_fresh_usage_but_stale_values_keep_priority():
+    a, b = _p("a", "codex"), _p("b", "claude")
+    a = Profile(a.id, a.name, a.engine, max_used_percent=95)
+    now = int(time.time())
+    usage_mod.remember_stream(a.id, [usage_mod.Window("five_hour", "5시간", 80, now + 3600),
+                                    usage_mod.Window("seven_day", "주간", 50, now + 86400)])
+    usage_mod.remember_stream(b.id, [usage_mod.Window("five_hour", "5시간", 30, now + 7200),
+                                    usage_mod.Window("seven_day", "주간", 45, now + 86400)])
+    rid = uuid.uuid4()
+    try:
+        assert profiles.choose([a, b], rid, balance_usage=True) is b
+        usage_mod._stream[b.id].updated_at = time.time() - 3600
+        # 하나라도 stale/null 이면 추측하지 않고 기존 순서를 따른다.
+        assert profiles.choose([a, b], uuid.uuid4(), balance_usage=True) is a
+    finally:
+        for run_id in list(profiles._in_use):
+            profiles.release(run_id)
+
+
 # ---- 시작할 때: 작업 세션은 놀고 있는 계정으로
 
 async def test_workers_spread_over_idle_accounts(client, auth, make_dir):
@@ -107,6 +141,17 @@ async def test_workers_spread_over_idle_accounts(client, auth, make_dir):
     # 기본 계정(claude) → claude-2 → codex. 이미 다른 Run 이 쓰는 계정은 건너뛴다.
     assert [c["engine"] for c in calls] == ["claude", "claude", "codex"]
     assert calls[0]["account_dir"] is None and calls[1]["account_dir"] == accs["claude-2"]["config_dir"]
+
+
+async def test_auto_worker_skips_account_at_its_configured_usage_cap(client, auth, make_dir):
+    accs = await _three_accounts(client, auth, make_dir)
+    claude_id = uuid.UUID(accs["claude"]["id"])
+    now = int(time.time())
+    usage_mod.remember_stream(claude_id, [usage_mod.Window("five_hour", "5시간", 30, now + 3600),
+                                         usage_mod.Window("seven_day", "주간", 95, now + 86400)])
+    worker = await _session(client, auth, make_dir, engine="auto")
+    run = await run_to_end(client, auth, worker["id"], "small task")
+    assert run["status"] == "succeeded" and run["profile"] == "claude-2"
 
 
 async def test_orchestrator_keeps_priority_at_start_even_if_account_is_busy(client, auth, make_dir):
@@ -194,6 +239,7 @@ async def test_account_usage_reports_state_without_secrets(client, auth, make_di
     assert c["usage"]["five_hour"]["used_percent"] == 42 and c["usage"]["five_hour"]["remaining_percent"] == 58
     assert c["usage"]["weekly"]["remaining_percent"] == 90 and c["usage"]["five_hour"]["resets_at"].endswith("+09:00")
     assert c["usage"]["model_weekly"]["opus"]["used_percent"] == 70
+    assert c["max_used_percent"] == 95 and c["remaining_to_limit_percent"] == 53
     assert c["usage"]["source"] == "stream" and c["usage"]["stale"] is False and c["usage"]["measured_at"]
     assert c["limit"] == {"waiting": False, "until": None, "reason": None} and c["running_runs"] == 0
     # 한 번도 못 본 계정은 값이 없다고 알린다.

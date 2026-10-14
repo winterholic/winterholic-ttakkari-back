@@ -11,11 +11,21 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from ttakkari.api.deps import Db
+from ttakkari.api.pms import TaskIn, _project, _task_response
 from ttakkari.api.sessions import ACTIVE, queue_run
 from ttakkari.audit import record
 from ttakkari.config import get_settings
-from ttakkari.models import Artifact, ChatSession, Run, RunOrigin, SessionKind
+from ttakkari.models import (
+    Artifact,
+    ChatSession,
+    PmsProject,
+    PmsTask,
+    Run,
+    RunOrigin,
+    SessionKind,
+)
 from ttakkari.orchestrator.runtime import OrchestratorSession
+from ttakkari.pms import service as pms_svc
 from ttakkari.runs import context_usage
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
@@ -202,3 +212,50 @@ async def accounts_usage(sid: OrchestratorSession, db: Db) -> dict:
     """계정별 배정 판단 정보. 회사 업무 오케스트레이터는 회사 그룹 계정만 본다."""
     orch = await _orchestrator(db, sid)
     return await account_status(db, orch.pool)
+
+
+@router.get("/pms/projects")
+async def pms_projects(sid: OrchestratorSession, db: Db, q: str | None = None) -> dict:
+    """Claude 한도 대기 작업을 WBS 에 기록할 PMS 프로젝트를 찾는다."""
+    await _orchestrator(db, sid)
+    stmt = select(PmsProject).where(PmsProject.scope == "personal").order_by(PmsProject.updated_at.desc())
+    if q:
+        stmt = stmt.where(PmsProject.name.ilike(f"%{q.strip()}%"))
+    rows = list(await db.scalars(stmt.limit(50)))
+    return {"projects": [{"id": p.id, "name": p.name, "status": p.status} for p in rows]}
+
+
+@router.post("/pms/projects/{pid}/tasks", status_code=201)
+async def create_pms_task(pid: uuid.UUID, body: TaskIn, sid: OrchestratorSession, db: Db) -> dict:
+    """작업자를 배정하지 않고 Claude 초기화 후 처리할 일을 PMS WBS 에 등록한다."""
+    await _orchestrator(db, sid)
+    project = await _project(db, pid)
+    tasks = await pms_svc.load_tasks(db, pid)
+    if len(tasks) >= pms_svc.MAX_TASKS:
+        raise pms_svc.bad(f"작업은 프로젝트당 {pms_svc.MAX_TASKS}개까지예요.", "too_many")
+    by_id = {t.id: t for t in tasks}
+    parent_id = body.parent_id
+    if body.after_id:
+        sibling = by_id.get(body.after_id)
+        if sibling is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "기준 작업이 없어요.")
+        parent_id = sibling.parent_id
+    elif parent_id and parent_id not in by_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "상위 작업이 없어요.")
+    _, nodes = pms_svc.build(tasks)
+    if parent_id and nodes[parent_id].depth + 1 >= pms_svc.MAX_DEPTH:
+        raise pms_svc.bad(f"작업은 {pms_svc.MAX_DEPTH}단계까지만 나눌 수 있어요.", "too_deep")
+    pms_svc.check_dates(body.start_date, body.end_date)
+    task = PmsTask(project_id=pid, parent_id=parent_id, title=body.title.strip(), description=body.description,
+                   priority=body.priority, assignee=body.assignee.strip() if body.assignee else None,
+                   start_date=body.start_date, end_date=body.end_date, status="todo", progress=0)
+    task.id = uuid.uuid4()
+    task.predecessors = pms_svc.clean_predecessors(task, body.predecessors, tasks)
+    siblings = pms_svc.siblings(tasks, parent_id)
+    index = next((i + 1 for i, sibling in enumerate(siblings) if sibling.id == body.after_id), len(siblings))
+    db.add(task)
+    siblings.insert(index, task)
+    pms_svc.resequence(siblings)
+    await db.flush()
+    await db.commit()
+    return {"project": {"id": project.id, "name": project.name}, **await _task_response(db, task)}

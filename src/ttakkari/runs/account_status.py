@@ -62,6 +62,14 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
     }
 
 
+def _cap_remaining(account_id, cap: int, usage: dict[str, Any] | None) -> int | None:
+    if not usage or usage["stale"]:
+        return None
+    remaining = [max(0, cap - window["used_percent"]) for window in (usage["five_hour"], usage["weekly"])
+                 if window and window["remaining_percent"] is not None]
+    return min(remaining) if remaining else None
+
+
 async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
     """pool 은 부른 오케스트레이터 세션의 범위. work 면 회사에 들어온 계정만 회사 순서·켜기로, personal 이면 전체를 개인 순서·켜기로(scope 로 구분)."""
     s = get_settings()
@@ -72,19 +80,25 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
     order = await profiles.effective_order(db, pool)
     hist = await usage_store.history(db, [a.id for a in order], now=now)
     for rank, a in enumerate(order, start=1):
-        until = profiles.limited_until(a.id)
+        until = profiles.limited_until(a.id, a.max_used_percent)
         reason = None
         if until:
             reason = "cooldown" if profiles.cooldown_until(a.id) else "usage_window"
         orch = s.orchestrator_fallback_models.get(a.engine)
+        usage = _usage(a.id, now, hist.get(a.id))
+        if profiles.usage_limit_until(profiles.Profile(a.id, a.name, a.engine,
+                                                       max_used_percent=a.max_used_percent), now):
+            reason = "usage_cap"
         out.append({
             "name": a.name, "engine": a.engine, "scope": a.pool, "enabled": profiles.is_on(a, pool), "priority": rank,
             "available": profiles.is_on(a, pool) and not until,
             "limit": {"waiting": bool(until), "until": _iso(until), "reason": reason},
             "running_runs": counts.get(a.id, 0),
+            "max_used_percent": a.max_used_percent,
+            "remaining_to_limit_percent": _cap_remaining(a.id, a.max_used_percent, usage),
             "models": s.engine_models.get(a.engine, []),
             "orchestrator_model": orch,
-            "usage": _usage(a.id, now, hist.get(a.id)),
+            "usage": usage,
         })
     return {
         "measured_at": _iso(now),
@@ -93,6 +107,8 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 f"and is not refreshed by this tool (null = never observed, stale = older than {s.usage_stale_seconds // 60} min). "
                 "burn_percent_per_hour is the recent rise in used percent per hour (null = not enough history); "
                 "exhausts_in_seconds/exhausts_before_reset extrapolate it. "
-                "New workers go to available accounts with no running Run first, then by priority.",
+                "Accounts at their max_used_percent in either the 5-hour or weekly window wait until reset. "
+                "For auto workers, choose the account with the most remaining_to_limit_percent; reset time breaks ties. "
+                "When usage is stale or missing, keep the existing priority fallback.",
         "accounts": out,
     }

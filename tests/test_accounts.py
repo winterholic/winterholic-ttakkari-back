@@ -22,6 +22,7 @@ async def test_defaults_are_seeded_in_priority_order(client, auth):
     assert [(a["name"], a["engine"], a["enabled"], a["priority"]) for a in accs] == [
         ("claude", "claude", True, 0), ("codex", "codex", True, 1)]
     assert {a["login"] for a in accs} <= {"ok", "unknown", "missing"}
+    assert {a["name"]: a["max_used_percent"] for a in accs} == {"claude": 95, "codex": 100}
 
 
 async def test_concurrent_first_runs_seed_accounts_once(monkeypatch):
@@ -65,9 +66,12 @@ async def test_create_rename_toggle_delete(client, auth, make_dir):
     assert r.status_code == 201, r.text
     a = r.json()
     assert a["priority"] == 2 and a["config_dir"] == str(d)
+    assert a["max_used_percent"] == 100
     assert (await client.post("/api/accounts", json={"name": "회사 계정", "engine": "codex"}, headers=auth)).status_code == 409
     r = await client.patch(f"/api/accounts/{a['id']}", json={"name": "개인", "enabled": False}, headers=auth)
     assert r.json()["name"] == "개인" and r.json()["enabled"] is False
+    assert (await client.patch(f"/api/accounts/{a['id']}", json={"max_used_percent": 95}, headers=auth)).json()["max_used_percent"] == 95
+    assert (await client.patch(f"/api/accounts/{a['id']}", json={"max_used_percent": 101}, headers=auth)).status_code == 422
     assert (await client.delete(f"/api/accounts/{a['id']}", headers=auth)).status_code == 204
     assert [x["name"] for x in await _accounts(client, auth)] == ["claude", "codex"]
 

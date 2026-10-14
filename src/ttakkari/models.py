@@ -164,6 +164,8 @@ class EngineAccount(Base):
     config_dir: Mapped[str | None] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
+    # 신규 작업 배정은 5시간·주간 중 하나라도 이 사용률 이상이면 초기화까지 쉰다.
+    max_used_percent: Mapped[int] = mapped_column(Integer, default=100, server_default="100")
     # 회사 모드 포함 여부(personal | work). 모든 계정은 개인 목록에 있고, work 는 그중 회사 모드에도 쓰려고 고른 계정이다.
     pool: Mapped[str] = mapped_column(String(16), default="personal", index=True)
     # 회사 모드 전용 켜기·순서. enabled·priority(개인 모드)와 독립이고, pool=work 인 계정에만 의미가 있다.

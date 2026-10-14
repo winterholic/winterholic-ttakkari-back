@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,6 +52,7 @@ class AccountIn(BaseModel):
     pool: Pool = "personal"
     config_dir: str | None = Field(default=None, max_length=1024)
     enabled: bool = True
+    max_used_percent: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("config_dir")
     @classmethod
@@ -67,6 +69,7 @@ class AccountPatch(BaseModel):
     enabled: bool | None = None
     # 회사 모드 켜기. 개인 모드 enabled 와 독립이다. 회사에 들어온 계정에만 쓸 수 있다.
     work_enabled: bool | None = None
+    max_used_percent: int | None = Field(default=None, ge=1, le=100)
 
     @field_validator("config_dir")
     @classmethod
@@ -86,6 +89,7 @@ class AccountOut(BaseModel):
     config_dir: str | None
     enabled: bool
     priority: int
+    max_used_percent: int
     # 회사 모드의 켜기·순서(pool=work 일 때만 의미). 개인 모드의 enabled·priority 와 독립이다.
     work_enabled: bool
     work_priority: int
@@ -115,7 +119,7 @@ def _next_work_priority(rows: list[EngineAccount]) -> int:
 def _out(a: EngineAccount) -> AccountOut:
     login, label = profiles.identity(a.engine, a.config_dir)
     return AccountOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, config_dir=a.config_dir, enabled=a.enabled,
-                      priority=a.priority, work_enabled=a.work_enabled, work_priority=a.work_priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
+                      priority=a.priority, max_used_percent=a.max_used_percent, work_enabled=a.work_enabled, work_priority=a.work_priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
                       login_command=None if login == "ok" else login_command(a.engine, a.config_dir))
 
 
@@ -147,7 +151,10 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
     top = await db.scalar(select(func.max(EngineAccount.priority)))
     a = EngineAccount(id=uuid.uuid4(), name=body.name.strip(), engine=body.engine, config_dir=body.config_dir,
                       enabled=body.enabled, priority=(top if top is not None else -1) + 1, pool=body.pool,
-                      work_enabled=body.enabled, work_priority=_next_work_priority(rows))
+                      work_enabled=body.enabled, work_priority=_next_work_priority(rows),
+                      max_used_percent=body.max_used_percent if body.max_used_percent is not None else
+                      (95 if (body.engine == "claude" and "내 클로드" in body.name) or
+                       (body.engine == "codex" and "daddy" in body.name.casefold()) else 100))
     if a.config_dir is None and any(r.engine == body.engine and r.config_dir is None for r in rows):
         # 같은 엔진의 기본 계정(~/.claude·~/.codex)이 이미 있으면, 새 계정의 로그인 보관 폴더는 따까리가 만든다.
         # 사용자는 폴더를 몰라도 된다. 작업공간과는 무관하고 로그인 정보만 따로 둔다.
@@ -228,6 +235,9 @@ class AccountUsageOut(BaseModel):
     pool: str
     enabled: bool
     rank: int
+    max_used_percent: int
+    remaining_to_limit_percent: int | None
+    stale: bool
     # 회사 모드의 켜기·순위. 회사에 들어온 계정(pool=work)만 work_rank 가 있다.
     work_enabled: bool
     work_rank: int | None
@@ -250,7 +260,14 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
     async def one(i: int, a: EngineAccount) -> AccountUsageOut:
         login, _label = profiles.identity(a.engine, a.config_dir)
         u = await usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=refresh)
+        now = time.time()
+        stale = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
+        headroom = None if stale else min((max(0, a.max_used_percent - w.percent) for w in u.windows
+                                           if w.key in ("five_hour", "seven_day")
+                                           and not (w.resets_at and w.resets_at <= now)), default=None)
         return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,
+                               max_used_percent=a.max_used_percent, remaining_to_limit_percent=headroom,
+                               stale=stale,
                                work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=login,
                                cooldown_seconds=profiles.cooldown_remaining(a.id),
                                windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
@@ -266,7 +283,7 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: 
     data = body.model_dump(exclude_unset=True)
     if "name" in data and data["name"] is not None:
         data["name"] = data["name"].strip()
-    for k in ("pool", "enabled", "work_enabled"):
+    for k in ("pool", "enabled", "work_enabled", "max_used_percent"):
         if k in data and data[k] is None:
             del data[k]
     if data.get("pool") == "work" and a.pool != "work":

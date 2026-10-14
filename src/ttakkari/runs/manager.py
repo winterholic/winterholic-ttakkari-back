@@ -361,7 +361,8 @@ class RunManager:
         # 인계문을 매번 다시 싣게 되며, 자기 작업 세션이 쓰는 계정이 바쁘다고 밀려나는 것도 이상하다.
         prefer = profiles_mod.model_engine(run.model)
         remaining = list(profiles)
-        prof = profiles_mod.choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer)
+        prof = profiles_mod.choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer,
+                                   balance_usage=sess.engine == "auto" and not is_orch)
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
@@ -447,7 +448,7 @@ class RunManager:
                     "detail": (state.error or tail or "")[:300],
                 })
             # 이 Run 이 도는 동안 다른 Run 이 한도에 걸린 계정은 넘어갈 후보에서 뺀다.
-            remaining = [p for p in remaining if not profiles_mod.limited_until(p.id)]
+            remaining = [p for p in remaining if not profiles_mod.limited_until(p.id, p.max_used_percent)]
             if stopped or not failed or not (missing or limited) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
@@ -456,7 +457,8 @@ class RunManager:
                     # 켜진 계정을 다 써 봤다. 실패로 끝내지 않고 초기화를 기다렸다가 이어서 한다.
                     paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
-            nxt = profiles_mod.choose(remaining, run.id, prefer_engine=prefer)
+            nxt = profiles_mod.choose(remaining, run.id, prefer_engine=prefer,
+                                      balance_usage=sess.engine == "auto" and not is_orch)
             events.append(db, run, "engine.fallback", {
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),

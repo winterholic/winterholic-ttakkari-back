@@ -28,6 +28,7 @@ class PushKind(enum.StrEnum):
     agent = "push.agent"  # 에이전트가 MCP notify_user 로 직접 보냄
     test = "push.test_sent"  # 설정 화면의 테스트 알림
     calendar_reminder = "push.calendar_reminder"  # 일정 알림(planner/reminders.py)
+    checklist_reminder = "push.checklist_reminder"
     meeting = "push.meeting"  # 회의록 분석 완료·실패(meetings/pipeline.py)
 
 

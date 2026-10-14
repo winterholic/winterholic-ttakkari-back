@@ -338,3 +338,20 @@ payload 는 `{title, body, url, tag}`:
 - `GET|POST /api/pms/projects/{id}/milestones`, `PATCH|DELETE /api/pms/milestones/{id}`: `{title, due_date, done}`. 응답에 `days`(오늘까지 남은 일수)·`overdue`.
 - `GET|POST /api/pms/projects/{id}/notes?status=open|resolved|all&kind=`, `PATCH|DELETE /api/pms/notes/{id}`: 이슈·리스크·메모 `{kind: issue|risk|note, title, body, severity: low|medium|high, owner, task_id, status: open|resolved}`. 열린 것·심각한 것 순.
 
+
+## 체크리스트
+
+화면 `/checklists`는 데스크톱 부가기능·모바일 더보기에서 연다. 날짜는 `YYYY-MM-DD`, 기본 오늘은 한국시간(Asia/Seoul)이다. 체크리스트는 날짜별 항목과 매일 반복할 고정 원본을 따로 보관한다.
+
+- `GET /api/checklists?day=YYYY-MM-DD` → `{day, items, completed, total}`. 항목은 `{id, day, title, checked, template_id}`. 오늘의 고정 항목을 중복 없이 생성한다. 과거 날짜에 현재 고정 원본을 소급 생성하지 않고, 미래 날짜의 고정 항목은 해당 날짜가 되었을 때 생성한다.
+- `POST /api/checklists/items` → 201. `{title, day?}`로 일일 항목 추가.
+- `PATCH /api/checklists/items/{id}` → `{title?, checked?}`. 체크/해제와 이름 변경은 보낸 필드만 적용한다. 명시적 null, 빈 이름, 알 수 없는 필드는 거절한다.
+- `DELETE /api/checklists/items/{id}` → 204. 해당 날짜에서 소프트 삭제한다. 고정 원본과 다른 날짜는 유지하며, 같은 날짜를 다시 조회해도 복원하지 않는다.
+- `GET /api/checklists/templates` → `{templates: [{id, title}]}`.
+- `POST /api/checklists/templates` → 201. `{title}`로 고정 항목을 만들고 오늘부터 미체크 상태로 추가한다.
+- `PATCH /api/checklists/templates/{id}` → `{title}`. 앞으로 생성하는 날짜의 원본을 수정한다. 이미 생성한 날짜별 이름·완료 기록은 유지한다.
+- `DELETE /api/checklists/templates/{id}` → 204. 앞으로 반복을 중단하며 기존 날짜별 기록은 유지한다.
+
+같은 API가 `/api/agent/checklists`에도 있으며 기존 MCP 세션 토큰과 세션 존재를 검사한다. MCP 8종은 `list_checklist`, `create_checklist_item`, `update_checklist_item`, `delete_checklist_item`, `list_checklist_templates`, `create_checklist_template`, `update_checklist_template`, `delete_checklist_template`이다. 조회와 쓰기의 readOnlyHint를 구분하고, 사용자가 위임한 체크리스트 변경 도구는 Codex에서 사전 허용한다. 변경은 사용자/에이전트 구분과 함께 감사 기록에 남긴다.
+
+알림은 기존 일정 스캔 루프와 푸시 서비스를 사용한다. 매일 KST **07:30에는 항목이 없거나 모두 완료해도 하루 정리 알림**을 보낸다. **12:00·16:00·20:00·22:00에는 미완료 항목이 있을 때만** 보낸다. 날짜·시간대별 DB 고유 키로 재시작과 동시 스캔에서 최대 한 번만 발송 시도한다. 발송 전에 시간대를 차지하므로 차지 직후 프로세스 종료나 발송 실패 때는 같은 시간대를 재시도하지 않는다. 실패는 로그·기존 푸시 감사 집계로 남긴다. 서버 중단 뒤에는 가장 최근 시간대만 1시간 미만 늦게 따라잡으며 이전 시간대 알림을 몰아 보내지 않는다. 알림을 열면 해당 날짜의 체크리스트로 이동한다. 실제 기기 수신에는 기존 PWA 푸시 구독·권한이 필요하다.

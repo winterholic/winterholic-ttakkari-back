@@ -466,5 +466,54 @@ async def stop_worker(worker_id: str) -> str:
     return await _call("POST", f"/workers/{worker_id}/stop")
 
 
+@query_tool
+async def list_checklist(day: str | None = None) -> str:
+    """List a day's checklist and completion counts. day is YYYY-MM-DD, defaults to today (Asia/Seoul)."""
+    return await _agent("GET", "/checklists", day=day)
+
+
+@query_tool
+async def list_checklist_templates() -> str:
+    """List fixed checklist templates repeated daily. Editing these preserves existing daily records."""
+    return await _agent("GET", "/checklists/templates")
+
+
+@server.tool()
+async def create_checklist_item(title: str, day: str | None = None) -> str:
+    """Add an item to a date's checklist (YYYY-MM-DD, default today)."""
+    return await _agent("POST", "/checklists/items", {"title": title, "day": day})
+
+
+@server.tool()
+async def update_checklist_item(item_id: str, title: str | None = None, checked: bool | None = None) -> str:
+    """Rename or check/uncheck one daily item. Use list_checklist for its ID."""
+    return await _agent("PATCH", f"/checklists/items/{item_id}",
+                        {k: v for k, v in {"title": title, "checked": checked}.items() if v is not None})
+
+
+@server.tool()
+async def delete_checklist_item(item_id: str) -> str:
+    """Remove an item from just that day's checklist. Fixed template remains for future days."""
+    return await _agent("DELETE", f"/checklists/items/{item_id}")
+
+
+@server.tool()
+async def create_checklist_template(title: str) -> str:
+    """Add a fixed item repeated from today, unchecked each day."""
+    return await _agent("POST", "/checklists/templates", {"title": title})
+
+
+@server.tool()
+async def update_checklist_template(template_id: str, title: str) -> str:
+    """Rename a fixed template for future daily copies. Existing daily records keep their text and checks."""
+    return await _agent("PATCH", f"/checklists/templates/{template_id}", {"title": title})
+
+
+@server.tool()
+async def delete_checklist_template(template_id: str) -> str:
+    """Stop a fixed item's future repetitions. Existing daily records are preserved."""
+    return await _agent("DELETE", f"/checklists/templates/{template_id}")
+
+
 if __name__ == "__main__":
     server.run("stdio")

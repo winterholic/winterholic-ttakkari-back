@@ -706,3 +706,30 @@ class PmsNote(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     resolved_at: Mapped[datetime | None]
+
+
+class ChecklistTemplate(Base):
+    __tablename__ = "checklist_templates"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(default=None)
+
+
+class ChecklistItem(Base):
+    __tablename__ = "checklist_items"
+    __table_args__ = (UniqueConstraint("day", "template_id"), Index("ix_checklist_items_day", "day"))
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    day: Mapped[date] = mapped_column(Date)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("checklist_templates.id"), default=None)
+    title: Mapped[str] = mapped_column(String(300))
+    checked: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(default=None)
+
+
+class ChecklistReminder(Base):
+    __tablename__ = "checklist_reminders"
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    slot: Mapped[str] = mapped_column(String(5), primary_key=True)
+    claimed_at: Mapped[datetime] = mapped_column(default=utcnow)

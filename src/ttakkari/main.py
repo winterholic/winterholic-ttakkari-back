@@ -19,6 +19,7 @@ from ttakkari.api import (
     artifacts,
     assistant,
     auth,
+    checklists,
     clovanote,
     deployments,
     desk_feedback,
@@ -40,7 +41,7 @@ from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.meetings import clova_jobs
 from ttakkari.meetings import vectors as meeting_vectors
-from ttakkari.planner import kr_holidays, reminders
+from ttakkari.planner import checklist_reminders, kr_holidays, reminders
 from ttakkari.runs import desk_pool, lead_archive, profiles, usage_store
 from ttakkari.runs.manager import (
     expire_artifacts,
@@ -78,6 +79,10 @@ async def _reminder_loop(interval: int) -> None:
             await reminders.send_due()
         except Exception as e:  # noqa: BLE001
             log.warning("reminder scan failed: %s", e)
+        try:
+            await checklist_reminders.send_due()
+        except Exception:
+            log.exception("checklist reminder scan failed")
         await asyncio.sleep(interval)
 
 
@@ -183,6 +188,8 @@ def create_app() -> FastAPI:
               orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router,
               meetings.router, meetings.agent_router, clovanote.router, clovanote.agent_router, pms.router, agent_pms.router, tasks.router, desk_feedback.router, deployments.router):
         app.include_router(r)
+    app.include_router(checklists.router)
+    app.include_router(checklists.agent_router)
     return app
 
 

@@ -58,6 +58,7 @@ async def test_active_forest_keeps_running_and_recent_roots_only(client, auth):
     assert str(old.id) not in ids and str(desk.id) not in ids
     node = next(n for n in body["nodes"] if n["id"] == str(w1.id))
     assert node["status"] == "running" and node["parent_id"] == str(live.id)
+    assert node["engine"] == "codex"
     assert next(n for n in body["nodes"] if n["id"] == str(recent.id))["last_result"] == "보냈다"
 
     assert (await client.get("/api/tasks/active", params={"recent_hours": 0}, headers=auth)).json()["roots"] == [str(live.id)]

@@ -267,6 +267,7 @@ class TaskNode(BaseModel):
     updated_at: datetime
     archived_at: datetime | None
     status: str | None = None
+    engine: str | None = None
     profile: str | None = None
     model: str | None = None
     last_result: str | None = None

@@ -211,7 +211,7 @@ async def _nodes(db: Db, sessions: list[ChatSession]) -> list[TaskNode]:
     ids = [s.id for s in sessions]
     if not ids:
         return []
-    last = {r.session_id: r for r in await db.execute(_latest(select(Run.session_id, Run.status, Run.profile, Run.model), ids))}
+    last = {r.session_id: r for r in await db.execute(_latest(select(Run.session_id, Run.status, Run.engine, Run.profile, Run.model), ids))}
     done = {r.session_id: r for r in await db.execute(_latest(
         select(Run.session_id, func.left(func.coalesce(Run.result_text, Run.error, ""), RESULT_CHARS * 2).label("text"))
         .where(Run.status.not_in(ACTIVE)), ids))}
@@ -222,7 +222,8 @@ async def _nodes(db: Db, sessions: list[ChatSession]) -> list[TaskNode]:
         out.append(TaskNode(
             id=s.id, parent_id=s.parent_id, kind=s.kind, title=s.title, pool=s.pool, created_at=s.created_at,
             updated_at=s.updated_at, archived_at=s.archived_at, status=lr.status if lr else None,
-            profile=lr.profile if lr else None, model=(lr.model if lr else None) or s.model, last_result=result))
+            engine=lr.engine if lr else s.engine, profile=lr.profile if lr else None,
+            model=(lr.model if lr else None) or s.model, last_result=result))
     return out
 
 

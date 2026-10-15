@@ -35,7 +35,8 @@ _tasks: set[asyncio.Task] = set()
 
 
 def _sig(u: usage_mod.Usage) -> tuple:
-    return tuple((w.key, w.percent, w.resets_at) for w in u.windows)
+    return (tuple((w.key, w.percent, w.resets_at, w.remaining_percent) for w in u.windows),
+            u.credits_balance, u.credits_error)
 
 
 async def record(account_id: uuid.UUID, u: usage_mod.Usage) -> bool:
@@ -53,7 +54,9 @@ async def record(account_id: uuid.UUID, u: usage_mod.Usage) -> bool:
     async with sessionmaker()() as db:
         db.add(AccountUsageSample(
             account_id=account_id, measured_at=datetime.fromtimestamp(u.updated_at or now, UTC), source=u.source or "api",
-            plan=u.plan, windows=[{"key": w.key, "percent": w.percent, "resets_at": w.resets_at} for w in u.windows]))
+            plan=u.plan, windows=[{"key": w.key, "label": w.label, "percent": w.percent, "resets_at": w.resets_at,
+                                   "remaining_percent": w.remaining_percent} for w in u.windows],
+            credits_balance=u.credits_balance, credits_error=u.credits_error))
         await db.commit()
     return True
 
@@ -99,11 +102,15 @@ async def load_latest(db: AsyncSession) -> int:
     rows = list(await db.scalars(select(AccountUsageSample).join(
         newest, (AccountUsageSample.account_id == newest.c.account_id) & (AccountUsageSample.measured_at == newest.c.m))))
     for r in rows:
-        windows = [usage_mod.Window(w["key"], usage_mod.label_of(w["key"]), int(w["percent"]), w.get("resets_at"))
+        windows = [usage_mod.Window(w["key"], w.get("label") or usage_mod.label_of(w["key"]), int(w["percent"]), w.get("resets_at"),
+                                    w.get("remaining_percent"))
                    for w in r.windows or [] if isinstance(w, dict) and "key" in w and "percent" in w]
         usage_mod.seed(r.account_id, usage_mod.Usage(windows=windows, source=r.source, plan=r.plan,
+                                                      credits_balance=r.credits_balance,
+                                                      credits_error=r.credits_error,
                                                       updated_at=r.measured_at.timestamp()))
-        _last[r.account_id] = (r.measured_at.timestamp(), tuple((w.key, w.percent, w.resets_at) for w in windows))
+        _last[r.account_id] = (r.measured_at.timestamp(), _sig(usage_mod.Usage(
+            windows=windows, credits_balance=r.credits_balance, credits_error=r.credits_error)))
     return len(rows)
 
 

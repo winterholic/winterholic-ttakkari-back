@@ -347,7 +347,10 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
 async def account_usage() -> str:
     """Per-account status for choosing where to run workers: engine, personal/work scope, usable models, 5-hour and
     weekly used/remaining percent, per-account usage cap and remaining headroom to that cap, reset times, when it
-    was measured, limit-wait state and running Run count.
+    was measured, limit-wait state and running Run count. Antigravity also includes model-group quota buckets
+    (`model_quotas`, with source `remaining_percent`) and a separate AI credit balance (`credits_balance`); these
+    are not an account-wide cap. A zero credit balance is distinct from null/unobserved, and `credits_error`
+    reports a failed credit lookup.
     Values are the app's last observation (null = never seen, stale = old); this tool does not refresh them."""
     return await _call("GET", "/accounts/usage")
 

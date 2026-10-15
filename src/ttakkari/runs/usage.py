@@ -21,6 +21,8 @@ import getpass
 import hashlib
 import json
 import logging
+import os
+import re
 import sys
 import time
 import uuid
@@ -47,6 +49,7 @@ class Window:
     label: str
     percent: int
     resets_at: int | None  # unix 초
+    remaining_percent: float | None = None  # Antigravity 공식 remaining_fraction 을 보존한다.
 
 
 @dataclass
@@ -61,6 +64,8 @@ class ResetCredits:
 class Usage:
     windows: list[Window] = field(default_factory=list)
     reset_credits: ResetCredits | None = None
+    credits_balance: int | None = None  # Antigravity AI 크레딧 잔액. Codex 재설정 크레딧과 별개.
+    credits_error: str | None = None
     source: str | None = None  # api | stream | session_log
     plan: str | None = None
     error: str | None = None
@@ -82,7 +87,7 @@ def set_sink(fn: Callable[[uuid.UUID, Usage], None] | None) -> None:
 
 
 def _emit(account_id: uuid.UUID, u: Usage) -> None:
-    if _sink is not None and u.windows and u.source in ("api", "stream"):
+    if _sink is not None and u.windows and u.source in ("api", "stream", "antigravity_cli"):
         with contextlib.suppress(Exception):
             _sink(account_id, u)
 
@@ -110,6 +115,96 @@ def _ts(v: Any) -> int | None:
         with contextlib.suppress(ValueError):
             return int(datetime.fromisoformat(v).timestamp())
     return None
+
+
+# ---- Antigravity CLI: 공식 /usage·/credits JSON 응답
+
+AGY_TIMEOUT = 20.0
+
+
+def windows_from_antigravity(body: dict[str, Any]) -> list[Window]:
+    """`agy --print /usage --output-format json` 의 모델 그룹별 quota 를 읽는다.
+
+    CLI JSON 은 공개 문서상 고정 API 계약은 아니므로 예상 필드가 없으면 빈 값으로 둔다.
+    percent 는 기존 UI 호환을 위해 사용률, remaining_percent 는 원천 잔여율 보존용이다.
+    """
+    command = body.get("command") or {}
+    data = command.get("data") or {}
+    if body.get("status") != "SUCCESS" or command.get("name") != "usage":
+        return []
+    out: list[Window] = []
+    for group in data.get("groups") or []:
+        if not isinstance(group, dict) or not isinstance(group.get("name"), str):
+            continue
+        group_name = group["name"].strip()
+        slug = re.sub(r"[^a-z0-9]+", "_", group_name.lower()).strip("_")
+        if not slug:
+            continue
+        for bucket in group.get("buckets") or []:
+            if not isinstance(bucket, dict):
+                continue
+            window = bucket.get("window")
+            fraction = bucket.get("remaining_fraction")
+            if window not in ("5h", "weekly") or not isinstance(fraction, (int, float)) or isinstance(fraction, bool) or not 0 <= fraction <= 1:
+                continue
+            remaining = float(fraction) * 100
+            label = f"{group_name} · {'5시간' if window == '5h' else '주간'}"
+            out.append(Window(f"agy_{slug}_{window}", label, round(100 - remaining), _ts(bucket.get("reset_time")), remaining))
+    rank = {"5h": 0, "weekly": 1}
+    return sorted(out, key=lambda w: rank.get(w.key.rsplit("_", 1)[-1], 2))
+
+
+def credits_from_antigravity(body: dict[str, Any]) -> int | None:
+    """`agy --print /credits --output-format json` 의 실제 AI 크레딧 잔액(0 포함)."""
+    command = body.get("command") or {}
+    value = (command.get("data") or {}).get("remaining_credits")
+    if body.get("status") != "SUCCESS" or command.get("name") != "credits":
+        return None
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+        return None
+    return int(value)
+
+
+async def _agy_command(command: str) -> dict[str, Any]:
+    env = os.environ.copy()
+    env["AGY_CLI_DISABLE_AUTO_UPDATE"] = "true"
+    proc = await asyncio.create_subprocess_exec(
+        "agy", "--print", f"/{command}", "--output-format", "json", "--log-file", os.devnull,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
+    )
+    try:
+        stdout, _stderr = await asyncio.wait_for(proc.communicate(), AGY_TIMEOUT)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise TimeoutError("agy usage command timed out")
+    if proc.returncode != 0:
+        raise RuntimeError(f"agy {command} exited {proc.returncode}")
+    try:
+        body = json.loads(stdout)
+    except (UnicodeDecodeError, ValueError) as e:
+        raise ValueError(f"agy {command} returned invalid JSON") from e
+    if not isinstance(body, dict):
+        raise TypeError(f"agy {command} returned invalid JSON shape")
+    return body
+
+
+async def _fetch_antigravity() -> Usage:
+    try:
+        usage_body, credits_body = await asyncio.gather(_agy_command("usage"), _agy_command("credits"), return_exceptions=True)
+        if isinstance(usage_body, BaseException):
+            return Usage(error=f"Antigravity quota 조회 실패({type(usage_body).__name__})")
+        windows = windows_from_antigravity(usage_body)
+        if not windows:
+            response = str(usage_body.get("response") or "").lower()
+            if usage_body.get("status") != "SUCCESS" and any(x in response for x in ("not logged in", "sign in", "login required", "not authenticated")):
+                return Usage(error="Antigravity CLI 로그인 상태를 확인하지 못했어요")
+            return Usage(error="Antigravity CLI quota 응답을 읽지 못했어요")
+        credits = None if isinstance(credits_body, BaseException) else credits_from_antigravity(credits_body)
+        return Usage(windows=windows, source="antigravity_cli", credits_balance=credits,
+                     credits_error=("Antigravity 크레딧 조회 실패" if credits is None else None), updated_at=time.time())
+    except (OSError, RuntimeError, TimeoutError, TypeError, ValueError) as e:
+        return Usage(error=f"Antigravity 조회 실패({type(e).__name__})")
 
 
 # ---- Claude: 실행 스트림(rate_limit_event)
@@ -354,9 +449,8 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     if hit and not refresh and time.time() - hit[0] < ttl:
         return hit[1]
     if engine == "antigravity":
-        # No documented usage API in agy; unknown is different from zero usage or unlimited headroom.
-        return Usage(error="Antigravity usage is not observable through the official CLI")
-    if engine == "claude":
+        u = await _fetch_antigravity()
+    elif engine == "claude":
         u = await _fetch_claude(config_dir)
         if not u.windows and account_id in _stream:
             # API 를 못 쓰면 실행 스트림에서 받은 마지막 값으로 대신한다(오류 문구는 남긴다).
@@ -365,7 +459,7 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     else:
         u = await _fetch_codex(config_dir) or await asyncio.to_thread(codex_usage, config_dir)
     _cache[account_id] = (time.time(), u)
-    if u.source == "api":  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
+    if u.source in ("api", "antigravity_cli"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
         _emit(account_id, u)
     return u
 

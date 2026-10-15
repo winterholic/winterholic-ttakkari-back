@@ -5,7 +5,7 @@
 
 ## 결정
 
-Ttakkari는 유료 SDK 대신 사용자가 로그인한 공식 단일 `agy` CLI를 headless NDJSON 어댑터로 실행한다. 초기 지원 모델은 계정의 `agy models` 출력으로 확인된 Gemini 3.8 Flash low/medium/high이며, 기본 worker 배정은 `gemini-3.8-flash-high` / `high`다. Claude·Codex 계정의 자동 순환에는 넣지 않는다. 명시적인 `engine="antigravity"` 선택만 허용한다. 엔진 사용량은 공식 CLI에서 관측할 수 없으므로 unknown으로 유지하고 0% 또는 무한 여유로 해석하지 않는다.
+Ttakkari는 유료 SDK 대신 사용자가 로그인한 공식 단일 `agy` CLI를 headless NDJSON 어댑터로 실행한다. 초기 지원 모델은 계정의 `agy models` 출력으로 확인된 Gemini 3.8 Flash low/medium/high이며, 기본 worker 배정은 `gemini-3.8-flash-high` / `high`다. Claude·Codex 계정의 자동 순환에는 넣지 않는다. 명시적인 `engine="antigravity"` 선택만 허용한다. 모델 quota와 AI 크레딧은 `/usage`·`/credits`의 정상 CLI 응답에서 관측 가능한 별도 단위로 수집한다. 조회 실패·stale·unknown은 0% 또는 무한 여유로 해석하지 않는다.
 
 기존 모델 정책과 상위 worker 설정은 Antigravity Claude/GPT 모델을 선택하지 않는다. 엔진 계정은 로그인된 단일 CLI를 나타내며 `config_dir` 기반 추가 계정은 지원하지 않는다.
 
@@ -15,6 +15,17 @@ Ttakkari는 유료 SDK 대신 사용자가 로그인한 공식 단일 `agy` CLI�
 - 재개 시 전역 최신 대화 옵션을 쓰지 않고 `--conversation <engine_session_id>`를 전달한다.
 - `--sandbox`와 `--mode accept-edits`를 사용하며 `--dangerously-skip-permissions`는 사용하지 않는다. timeout·취소에서 프로세스 그룹과 임시 파일을 정리한다.
 - MCP 설정은 세션 전용 임시 프로젝트의 `.agents/mcp_config.json`에 0600으로 만들고 프로세스 종료·초기화 후 제거한다. 토큰은 이벤트·로그로 기록하지 않는다.
+
+## 공식 CLI 사용량 수집 (2026-10-15)
+
+- 설치된 `agy 1.3.5`에서 `agy --print /usage --output-format json`은 성공 상태와 `command.data.groups[].buckets[]`를 반환했다. 각 버킷의 `window`, `remaining_fraction`, `reset_time`을 사용해 **모델 그룹별** 5시간·주간 quota를 표시한다. 현재 CLI 응답은 절대 요청 수/토큰 수가 아니라 잔여 비율이며, 그룹이 공유하는 quota를 개별 모델 값처럼 쪼개지 않는다.
+- `agy --print /credits --output-format json`은 `command.data.remaining_credits`를 반환했다. 화면에는 이 잔액만 AI 크레딧 단위로 따로 표시한다. 이번 실제 응답에는 청구주기 사용량 필드가 없어 그 수치는 표시하지 않는다.
+- `/usage` JSON 구조는 공식 안정 스키마로 문서화되지 않았다. [공개 CLI 저장소 이슈 #1045](https://github.com/google-antigravity/antigravity-cli/issues/1045)에서 현재 `command.data.groups[].buckets[]` 구조와 필드를 확인했으며, CLI 버전 변경 시 parser 회귀를 확인해야 한다.
+- `GET /api/accounts/usage`와 `account_usage` MCP는 quota `windows`와 별도 `credits_balance`를 전달한다. `windows[].percent`는 사용률 정수, `windows[].remaining_percent`는 원천 잔여 백분율이다. 전체 Antigravity 계정 상한 퍼센트는 만들지 않고, 이 그룹 quota를 기존 auto 계정 headroom 계산에 넣지 않는다.
+- 조회에는 로그인된 일반 사용자 프로필에서 공식 `agy` 실행만 사용한다. timeout·종료 코드·JSON 모양 오류는 조회 실패로 반환하고, 성공 응답 시각을 공통 stale 판정에 사용한다. 결과가 비어 있거나 오류일 때 0/100 기본값을 만들지 않는다. 계정 토큰·키체인·쿠키는 읽거나 복사하지 않는다.
+- 2026-10-15 실측: CLI 1.3.5에서 Gemini 그룹 5시간 잔여 98.37%, 주간 잔여 99.16%, Claude/GPT 그룹은 각 100%, AI 크레딧 잔액 0. 별도 직접 CLI 실행과 Ttakkari parser 경로 모두 성공했다. 과거 Run sandbox의 로그인 오류와는 달리, 현재 정상 CLI 프로세스에서 같은 설치본으로 조회가 성공했다. 이는 계정 전체 로그아웃이 아니며, 과거 실패의 세부 argv/env 전체는 당시 로그에 남지 않아 더 정밀한 차이는 확정하지 않는다.
+- 실행 차이 추가 확인: 같은 사용자 프로필·CLI 1.3.5·`CODEX_SANDBOX=seatbelt`에서 `agy models`, `/usage`, `/credits`의 직접 CLI 조회는 성공했다. `agy models` 시작 로그에 일시적인 “not logged in”과 app log/crash 파일 쓰기 `operation not permitted`가 먼저 나타났지만, 이후 시스템 keyring의 로그인 세션을 불러와 모델을 반환했다. 따라서 그 초기 문구만으로 로그아웃이라고 판단하면 안 된다. CLI의 quota 조회는 성공해도 에이전트 대화 실행이 성공한다는 뜻은 아니다. 실패했던 Run들의 argv·cwd·환경 전체 기록은 없어 status 명령과 model-turn 실행 차이 외의 원인을 단정하지 않는다.
+- macOS GUI의 접근성·스크린샷 권한이 허용되지 않아 모바일 브라우저 렌더 확인은 미실행이다. 컴포넌트 테스트와 production build는 실행했다.
 
 ## 검증 한계와 배포 조건
 

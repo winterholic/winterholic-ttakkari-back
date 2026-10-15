@@ -89,7 +89,7 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
     for _ in range(min(MAX_ATTEMPTS, len(pool))):
         # 접수도 같은 엔진의 계정끼리 사용량을 비교한다. 다른 엔진의 미측정값은 이 비교를 끄지 않는다.
         candidates = [p for p in pool if p.engine == pool[0].engine]
-        prof = profiles_mod.choose(candidates, run.id, balance_usage=True)
+        prof = await profiles_mod.choose_async(candidates, run.id, balance_usage=True)
         pool.remove(prof)
         run.engine, run.profile = prof.engine, prof.name
         run.model = (s.desk_models.get(prof.engine) or {}).get("model")
@@ -106,6 +106,10 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         events.append(db, run, "desk.retry", {"account": prof.name, "engine": prof.engine, "ms": res.elapsed_ms,
                                                "warm": res.warm,
                                                "reason": "usage_limit" if limited else reason[:300]})
+        from ttakkari.generation import fence_pending, wake
+        await fence_pending(db)
+        if get_settings().runtime_generation:
+            await wake(db, run.id)
         await db.commit()
         events.notify(run.id)
 

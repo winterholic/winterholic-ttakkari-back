@@ -92,9 +92,11 @@ def _emit(account_id: uuid.UUID, u: Usage) -> None:
             _sink(account_id, u)
 
 
-def seed(account_id: uuid.UUID, u: Usage) -> None:
+def seed(account_id: uuid.UUID, u: Usage, *, refresh: bool = False) -> None:
     """재시작 직후 DB 의 마지막 측정값으로 캐시를 채운다. 이미 값이 있으면 건드리지 않는다."""
-    if account_id not in _cache and u.updated_at:
+    prior = _cache.get(account_id)
+    newer = refresh and prior is not None and (u.updated_at or 0) > (prior[1].updated_at or 0)
+    if u.updated_at and (prior is None or newer):
         _cache[account_id] = (u.updated_at, u)
 
 

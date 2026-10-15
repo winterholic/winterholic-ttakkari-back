@@ -43,12 +43,13 @@ async def record(account_id: uuid.UUID, u: usage_mod.Usage) -> bool:
     """측정값 한 개를 남긴다. 거의 같은 값이 막 남았으면 건너뛴다(True 면 남김)."""
     if not u.windows:
         return False
+    from ttakkari import generation
     now = time.time()
     sig = _sig(u)
     prev = _last.get(account_id)
     if prev:
         age, same = now - prev[0], prev[1] == sig
-        if (same and age < SAME_VALUE_GAP) or age < MIN_GAP:
+        if (same and age < SAME_VALUE_GAP) or (age < MIN_GAP and not generation.current):
             return False
     _last[account_id] = (now, sig)
     async with sessionmaker()() as db:
@@ -57,6 +58,8 @@ async def record(account_id: uuid.UUID, u: usage_mod.Usage) -> bool:
             plan=u.plan, windows=[{"key": w.key, "label": w.label, "percent": w.percent, "resets_at": w.resets_at,
                                    "remaining_percent": w.remaining_percent} for w in u.windows],
             credits_balance=u.credits_balance, credits_error=u.credits_error))
+        if generation.current:
+            await generation.wake(db)
         await db.commit()
     return True
 
@@ -95,7 +98,7 @@ def install() -> None:
     usage_mod.set_sink(schedule_record)
 
 
-async def load_latest(db: AsyncSession) -> int:
+async def load_latest(db: AsyncSession, *, refresh: bool = False) -> int:
     """계정별 마지막 측정값으로 메모리 캐시를 채운다(재시작 직후 account_usage 가 비지 않게)."""
     newest = select(AccountUsageSample.account_id, func.max(AccountUsageSample.measured_at).label("m")).group_by(
         AccountUsageSample.account_id).subquery()
@@ -108,7 +111,7 @@ async def load_latest(db: AsyncSession) -> int:
         usage_mod.seed(r.account_id, usage_mod.Usage(windows=windows, source=r.source, plan=r.plan,
                                                       credits_balance=r.credits_balance,
                                                       credits_error=r.credits_error,
-                                                      updated_at=r.measured_at.timestamp()))
+                                                      updated_at=r.measured_at.timestamp()), refresh=refresh)
         _last[r.account_id] = (r.measured_at.timestamp(), _sig(usage_mod.Usage(
             windows=windows, credits_balance=r.credits_balance, credits_error=r.credits_error)))
     return len(rows)

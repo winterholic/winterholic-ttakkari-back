@@ -109,6 +109,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ttakkari.deployment import revision
     app.state.revision = revision()
     init_engine()
+    if s.runtime_generation:
+        from ttakkari.generation_service import lifespan as generation_lifespan
+        async with generation_lifespan(app):
+            yield
+        return
     n = await recover_interrupted()
     if n:
         log.warning("marked %d runs as interrupted after restart", n)
@@ -165,9 +170,11 @@ def create_app() -> FastAPI:
     s = get_settings()
     app = FastAPI(title="Winterholic Ttakkari", version="0.1.0", lifespan=lifespan,
                   docs_url=None if s.is_prod else "/docs", redoc_url=None, openapi_url=None if s.is_prod else "/openapi.json")
+    from ttakkari.generation_service import InflightMiddleware
+    app.add_middleware(InflightMiddleware)
     app.add_middleware(
         CORSMiddleware, allow_origins=s.cors_origins, allow_credentials=True,
-        allow_methods=["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range"],
+        allow_methods=["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range", "Idempotency-Key"],
         expose_headers=["Retry-After", "Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
     )
     app.add_middleware(transfer_diagnostics.TransferDiagnosticsMiddleware)

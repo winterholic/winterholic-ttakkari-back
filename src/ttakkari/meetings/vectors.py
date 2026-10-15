@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari import generation
 from ttakkari.context import embedder
 from ttakkari.context.search import lexical, scope_clause, terms
 from ttakkari.db import sessionmaker
@@ -139,7 +140,14 @@ def schedule(meeting_id: uuid.UUID, delay: float = 1.0) -> None:
     async def _go() -> None:
         try:
             await asyncio.sleep(delay)
-            await reindex(meeting_id)
+            if generation.current:
+                # The active generation's singleton consumer does the expensive work.
+                async with sessionmaker()() as db:
+                    await db.execute(update(Meeting).where(Meeting.id == meeting_id).values(vector_status="pending"))
+                    await generation.wake(db)
+                    await db.commit()
+            else:
+                await reindex(meeting_id)
         except asyncio.CancelledError:
             pass
         except Exception:

@@ -222,10 +222,12 @@ class Run(Base):
     """사용자 지시 1회 = 에이전트 프로세스 1회."""
 
     __tablename__ = "runs"
+    __table_args__ = (UniqueConstraint("session_id", "request_key", name="uq_runs_session_request"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
     prompt: Mapped[str] = mapped_column(Text)
+    request_key: Mapped[str | None] = mapped_column(String(120))
     context_artifact_ids: Mapped[list[Any]] = mapped_column(default=list)
     engine: Mapped[str] = mapped_column(String(16))
     model: Mapped[str | None] = mapped_column(String(100))
@@ -261,6 +263,48 @@ class RunEvent(Base):
     type: Mapped[str] = mapped_column(String(40))
     payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class RuntimeGeneration(Base):
+    __tablename__ = "runtime_generations"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    revision: Mapped[str] = mapped_column(String(40))
+    api_url: Mapped[str] = mapped_column(String(150))
+    pid: Mapped[int] = mapped_column(Integer)
+    process_started_at: Mapped[float] = mapped_column(Float)
+    state: Mapped[str] = mapped_column(String(24), default="standby")
+    heartbeat_at: Mapped[datetime] = mapped_column(default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class RuntimeControl(Base):
+    __tablename__ = "runtime_control"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    active_generation: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"))
+    epoch: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class RuntimeLease(Base):
+    __tablename__ = "runtime_leases"
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    generation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runtime_generations.id"), index=True)
+    token: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    lane: Mapped[str] = mapped_column(String(16), index=True)
+    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("engine_accounts.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class RuntimeCommand(Base):
+    __tablename__ = "runtime_commands"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(120), unique=True)
+    kind: Mapped[str] = mapped_column(String(24))
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"), index=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    acknowledged_at: Mapped[datetime | None]
 
 
 class DeskFeedback(Base):

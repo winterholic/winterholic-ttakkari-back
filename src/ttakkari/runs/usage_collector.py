@@ -82,7 +82,7 @@ class Collector:
         live = {r[0] for r in rows}
         for gone in set(self._state) - live:
             del self._state[gone]
-        counts = profiles.running_counts()
+        counts = await profiles.running_counts_async()
         done: list[uuid.UUID] = []
         for i, (aid, engine, cdir) in enumerate(rows):
             st = self._state.get(aid)

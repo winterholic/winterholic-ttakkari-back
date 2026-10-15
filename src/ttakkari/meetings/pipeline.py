@@ -345,7 +345,7 @@ async def cancel_analysis(db: AsyncSession, m: Meeting) -> None:
         raise PipelineError("분석 중이 아니에요.")
     run = await db.get(Run, m.analysis_run_id)
     if run is not None and run.status not in TERMINAL_RUN_STATUSES:
-        if run.status == RunStatus.queued and not manager.is_active(run.id):
+        if run.status == RunStatus.queued and not await manager.is_owned(run.id):
             await manager.cancel_queued(db, run)
             await db.commit()
         else:

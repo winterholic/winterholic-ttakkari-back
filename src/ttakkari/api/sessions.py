@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from datetime import datetime
 from typing import Annotated
@@ -13,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 from ttakkari.api import desk_feedback
 from ttakkari.api.deps import Db, get_session, get_workspace
 from ttakkari.audit import record
+from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
@@ -160,23 +162,32 @@ async def list_failed_runs(_: User, db: Db, limit: int = Query(30, ge=1, le=100)
 
 
 @router.post("/sessions/{session_id}/runs", response_model=RunOut, status_code=202)
-async def create_run(session_id: uuid.UUID, body: RunIn, _: User, db: Db, request: Request) -> Run:
+async def create_run(session_id: uuid.UUID, body: RunIn, _: User, db: Db, request: Request,
+                     request_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=120)] = None) -> Run:
     s = await get_session(db, session_id)
     ws = await get_workspace(db, s.workspace_id)
     if ws.archived_at is not None or s.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 세션입니다.")
     run = await queue_run(db, s, body.prompt, context_artifact_ids=body.context_artifact_ids,
-                          model=body.model, effort=body.effort, ip=client_ip(request))
+                          model=body.model, effort=body.effort, ip=client_ip(request), request_key=request_key)
     await db.refresh(run)
     return run
 
 
 async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: RunOrigin = RunOrigin.user,
                     context_artifact_ids: list[uuid.UUID] | None = None, model: str | None = None,
-                    effort: str | None = None, ip: str | None = None) -> Run:
+                    effort: str | None = None, ip: str | None = None, request_key: str | None = None) -> Run:
     """세션 대기열에 Run 을 넣고 차례가 되면 시작한다. 실행 중이어도 받는다(manager.dispatch 가 순서대로 돌린다)."""
+    if request_key:
+        await db.scalar(select(ChatSession.id).where(ChatSession.id == s.id).with_for_update())
+        existing = await db.scalar(select(Run).where(Run.session_id == s.id, Run.request_key == request_key))
+        if existing:
+            if (existing.prompt != prompt or existing.context_artifact_ids != [str(a) for a in context_artifact_ids or []]
+                    or (model is not None and existing.model != model) or (effort is not None and existing.effort != effort)):
+                raise HTTPException(409, "같은 요청 키가 다른 지시에 사용됐습니다.")
+            return existing
     ahead = await db.scalar(select(func.count()).select_from(Run).where(Run.session_id == s.id, Run.status.in_(ACTIVE)))
-    run = Run(session_id=s.id, workspace_id=s.workspace_id, prompt=prompt, origin=origin,
+    run = Run(session_id=s.id, workspace_id=s.workspace_id, prompt=prompt, origin=origin, request_key=request_key,
               context_artifact_ids=[str(a) for a in context_artifact_ids or []], engine=s.engine,
               model=model or s.model, effort=effort or s.effort)
     db.add(run)
@@ -187,6 +198,10 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
     events.append(db, run, "run.status", {"status": RunStatus.queued, "ahead": ahead or 0})
     record(db, actor="user" if origin == RunOrigin.user else "agent", action="run.create", target_type="run",
            target_id=run.id, ip=ip, detail={"engine": run.engine, "origin": origin})
+    from ttakkari import generation
+    if generation.current:
+        await generation.fence_pending(db)
+        await generation.wake(db, run.id)
     await db.commit()
     await manager.dispatch(s.id)
     return run
@@ -207,7 +222,7 @@ async def cancel_run(run_id: uuid.UUID, _: User, db: Db, request: Request) -> Ru
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Run 이 없습니다.")
     if run.status in TERMINAL_RUN_STATUSES:
         return run
-    if run.status == RunStatus.queued and not manager.is_active(run_id):
+    if run.status == RunStatus.queued and not await manager.is_owned(run_id):
         await manager.cancel_queued(db, run)
         record(db, action="run.cancel", target_type="run", target_id=run_id, ip=client_ip(request))
         await db.commit()
@@ -246,8 +261,14 @@ async def stream_run(run_id: uuid.UUID, _: User, db: Db, request: Request, after
 
     async def gen():
         nonlocal cursor
+        opened = time.monotonic()
         sm = sessionmaker()
         while True:
+            from ttakkari import generation
+            if (generation.current and generation.current.state == "draining"
+                    and time.monotonic() - opened > get_settings().runtime_sse_drain_seconds):
+                # EOF without "end" makes the existing client reconnect with Last-Event-ID.
+                return
             signal = events.signal_for(run_id)
             async with sm() as s:
                 rows = list(await s.scalars(
@@ -265,7 +286,8 @@ async def stream_run(run_id: uuid.UUID, _: User, db: Db, request: Request, after
             if await request.is_disconnected():
                 return
             try:
-                await asyncio.wait_for(signal.wait(), SSE_PING_SECONDS)
+                timeout = min(SSE_PING_SECONDS, get_settings().runtime_sse_drain_seconds) if generation.current else SSE_PING_SECONDS
+                await asyncio.wait_for(signal.wait(), timeout)
             except TimeoutError:
                 pass
 

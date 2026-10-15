@@ -298,7 +298,8 @@ async def search_meetings(query: str, project: str | None = None,
 @server.tool()
 async def request_backend_deploy(revision: str) -> str:
     """Reserve deployment of a committed, clean Ttakkari backend SHA. An independent controller tests it,
-    waits for ALL running work (including this turn) to finish, then restarts and verifies the version.
+    then applies the configured strategy: idle waits for ALL Runs; generation mode activates a ready
+    candidate and drains previous work without restarting its engines. Initial generation bootstrap is separate.
     Return after acceptance; finish your turn instead of waiting/polling. Acceptance is not deployment success.
     Only use when the user asked to deploy. No shell restart, lock-file writes or service permissions needed."""
     return await _agent("POST", "/deploy", {"revision": revision})
@@ -306,8 +307,9 @@ async def request_backend_deploy(revision: str) -> str:
 
 @query_tool
 async def backend_deploy_status(job_id: str) -> str:
-    """Read a persisted backend deployment reservation. succeeded means new version and PID verified;
-    requested/building/testing/waiting are pending, failed includes the reason. Do not wait in an active Run."""
+    """Read a persisted deployment reservation. Generation draining means the new version is active,
+    succeeded also confirms retirement of the previous generation. superseded_by points to a newer
+    cumulative reservation; recovery_pending requires inspection. Do not wait in an active Run."""
     return await _agent("GET", f"/deploy/{job_id}")
 
 

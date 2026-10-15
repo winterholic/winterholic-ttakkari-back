@@ -23,6 +23,18 @@ router = APIRouter(prefix="/api", tags=["system"])
 DIFF_LIMIT = 400_000
 
 
+@router.get("/ready")
+async def readiness() -> dict:
+    from ttakkari import generation
+    from ttakkari.generation_service import ready
+    if generation.current is None:
+        raise HTTPException(404, "Generation mode is disabled")
+    value = await ready(generation.current)
+    if not value["ready"]:
+        raise HTTPException(503, "Generation listener is reconnecting")
+    return value
+
+
 @router.get("/health")
 async def health(db: Db) -> dict:
     await db.execute(text("select 1"))

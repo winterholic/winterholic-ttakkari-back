@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from ttakkari import generation
 from ttakkari.artifacts.service import content_path
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
@@ -35,6 +36,8 @@ def soffice_path() -> str | None:
 
 
 def enqueue(artifact_id: uuid.UUID) -> None:
+    if generation.current:
+        return  # Artifact.preview_status is the durable cross-generation queue.
     _queue.put_nowait(artifact_id)
 
 
@@ -87,7 +90,20 @@ async def convert(art_id: uuid.UUID) -> None:
     await _set(art_id, preview_status=PreviewStatus.ready, preview_path=str(pdfs[0]), preview_mime="application/pdf")
 
 
+async def _generation_next():
+    async with sessionmaker()() as db:
+        if await db.scalar(select(Artifact.id).where(Artifact.preview_status == PreviewStatus.processing).limit(1)):
+            return None
+        return await db.scalar(select(Artifact.id).where(
+            Artifact.preview_status == PreviewStatus.pending, Artifact.deleted_at.is_(None))
+            .order_by(Artifact.created_at).limit(1))
+
+
 async def _run_worker() -> None:
+    if generation.current:
+        from ttakkari.generation_service import consume
+        await consume("preview", _generation_next, convert)
+        return
     while True:
         art_id = await _queue.get()
         try:
@@ -99,6 +115,9 @@ async def _run_worker() -> None:
 
 async def start_worker() -> None:
     global _worker
+    if generation.current:
+        _worker = asyncio.create_task(_run_worker())
+        return
     async with sessionmaker()() as db:
         # 재시작 전에 처리 중이던 변환을 다시 큐에 넣는다.
         rows = await db.scalars(
@@ -114,5 +133,11 @@ async def start_worker() -> None:
 
 
 async def stop_worker() -> None:
+    global _worker
     if _worker:
         _worker.cancel()
+        try:
+            await _worker
+        except asyncio.CancelledError:
+            pass
+        _worker = None

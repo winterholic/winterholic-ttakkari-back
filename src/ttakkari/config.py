@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     env: str = "dev"  # dev | prod
     database_url: str = "postgresql+asyncpg://localhost/ttakkari"
     home: Path = DEFAULT_HOME
+    # Opt-in only after one idle bootstrap into isolated releases.
+    runtime_generation: bool = False
+    runtime_api_url: str = "http://127.0.0.1:8791"
+    runtime_poll_seconds: float = Field(default=5, ge=0.05)
+    runtime_sse_drain_seconds: int = Field(default=45, ge=1)
+    release_revision: str | None = None
+    deploy_strategy: Literal["idle", "generations"] = "idle"
+    deploy_source_root: Path | None = None
+    migration_online: bool = False
+    database_pool_size: int = Field(default=5, ge=1, le=20)
+    database_pool_overflow: int = Field(default=3, ge=0, le=10)
 
     jwt_secret: str = Field(default="", repr=False)
     access_token_ttl_seconds: int = 15 * 60

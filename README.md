@@ -110,6 +110,9 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 
 ## 배포(Mac Studio + Cloudflare 터널, 포트 안 엶)
 
+기본값은 아래의 기존 `idle` 배포다. 개발된 세대별 무중단 경로는 최초 설치 후 별도로 활성화한다.
+[세대별 배포 구성·초기 전환·복구 기준](docs/design/generation-deployment.md)을 먼저 읽는다.
+
 `deploy/install-services.sh deployer`로 독립 배포 감독(`net.winterholic.ttakkari.deployer`)을 설치한다.
 `deploy/deploy.sh [--no-pull]`은 배포를 **예약하고 즉시 반환**한다. 이 응답은 배포 성공이 아니다.
 `deploy/deploy.sh status [예약 ID]`로 상태를 확인한다. 로그는 `~/.ttakkari/deploy/jobs/<ID>.log`, 감독 로그는 `~/.ttakkari/logs/deployer.log`다.
@@ -125,7 +128,7 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 
 성공은 로컬 DB health와 `/api/version`의 시작 시점 SHA·새 PID, 공개 health·버전까지 확인한 경우에만 기록한다.
 `current`는 검증된 커밋이고 `previous`는 그 이전 성공 기록이다. `rollback`도 직전 커밋의 배포를 예약하며 DB 마이그레이션을 되돌리지는 않는다. 감독·버전 확인 기능이 없는 구버전은 자동 롤백 전에 거절한다.
-같은 커밋의 중복 예약은 기존 ID를 반환한다. 다른 커밋의 동시 예약과 예약 이후 작업 트리 변경은 명시적으로 거절한다.
+기본 `idle` 모드에서 같은 커밋의 중복 예약은 기존 ID를 반환한다. 다른 커밋의 동시 예약과 예약 이후 작업 트리 변경은 명시적으로 거절한다.
 빌드에는 기존 체크아웃을 사용하므로 배포 대기 중 해당 저장소를 추가 수정했다면 새 커밋으로 다시 예약해야 한다.
 `--skip-tests`는 운영자가 이미 같은 커밋을 검사했을 때만 직접 CLI에서 사용한다. 에이전트 예약 API는 테스트 생략·임의 명령·경로·환경 변수를 받지 않는다.
 

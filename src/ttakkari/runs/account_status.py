@@ -81,7 +81,7 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
     """pool 은 부른 오케스트레이터 세션의 범위. work 면 회사에 들어온 계정만 회사 순서·켜기로, personal 이면 전체를 개인 순서·켜기로(scope 로 구분)."""
     s = get_settings()
     now = time.time()
-    counts = profiles.running_counts()
+    counts = await profiles.running_counts_async()
     override = await profiles.get_override(db, pool)
     out = []
     order = await profiles.effective_order(db, pool)

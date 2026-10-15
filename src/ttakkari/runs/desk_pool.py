@@ -107,6 +107,9 @@ def _key(prof: profiles_mod.Profile, system: str) -> tuple:
 
 
 def _schedule(prof: profiles_mod.Profile, key: tuple, system: str) -> None:
+    from ttakkari import generation
+    if generation.current and generation.current.state != "active":
+        return
     if prof.id in _spawning or prof.id in _warm:
         return
     task = asyncio.create_task(_spawn(prof, key, system))

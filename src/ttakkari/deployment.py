@@ -26,7 +26,7 @@ from ttakkari.deploy_gate import RestartGate, _active_run_count
 
 log = logging.getLogger(__name__)
 BACK = Path(__file__).resolve().parents[2]
-TERMINAL = {"succeeded", "failed"}
+TERMINAL = {"succeeded", "failed", "superseded"}
 LABEL = "net.winterholic.ttakkari.deployer"
 
 
@@ -35,16 +35,20 @@ def state_dir() -> Path:
 
 
 def revision() -> str:
+    if sha := get_settings().release_revision:
+        return sha
     return subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=BACK, text=True
     ).strip()
 
 
 def ensure_revision(expected: str) -> None:
+    source = get_settings().deploy_source_root or BACK
     dirty = subprocess.check_output(
-        ["git", "status", "--porcelain"], cwd=BACK, text=True
+        ["git", "status", "--porcelain"], cwd=source, text=True
     ).strip()
-    if revision() != expected or dirty:
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+    if head != expected or dirty:
         raise ValueError(
             "예약한 커밋과 작업 트리가 다릅니다. 변경을 커밋하고 다시 배포하세요."
         )
@@ -103,6 +107,13 @@ class JobStore:
         with self.locked():
             return self._write(self.get(job_id) | fields)
 
+    def claim(self, job_id: str) -> dict:
+        with self.locked():
+            job = self.get(job_id)
+            if job["status"] == "requested":
+                return self._write(job | {"status": "preparing"})
+            return job
+
     def request(self, sha: str, *, skip_tests: bool = False) -> dict:
         if len(sha) != 40 or any(c not in "0123456789abcdef" for c in sha):
             raise ValueError("40자리 커밋 SHA가 필요합니다.")
@@ -111,10 +122,11 @@ class JobStore:
                 if job["status"] not in TERMINAL:
                     if job["revision"] == sha and job["skip_tests"] == skip_tests:
                         return job
-                    raise ValueError(
-                        "다른 배포가 진행 중입니다. 상태를 확인한 뒤 다시 예약하세요."
-                    )
-            return self._write(
+                    if get_settings().deploy_strategy != "generations":
+                        raise ValueError(
+                            "다른 배포가 진행 중입니다. 상태를 확인한 뒤 다시 예약하세요."
+                        )
+            new_job = self._write(
                 {
                     "id": str(uuid.uuid4()),
                     "revision": sha,
@@ -122,8 +134,20 @@ class JobStore:
                     "status": "requested",
                     "created_at": datetime.now(UTC).isoformat(),
                     "error": None,
+                    "strategy": get_settings().deploy_strategy,
                 }
             )
+            if get_settings().deploy_strategy == "generations":
+                from ttakkari.generation_deployment import equivalent_contracts
+                source = get_settings().deploy_source_root or BACK
+                for old in self.all():
+                    if old["id"] == new_job["id"] or old["status"] != "requested" or old.get("strategy") != "generations":
+                        continue
+                    ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", old["revision"], sha],
+                        cwd=source, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                    if ancestry.returncode == 0 and equivalent_contracts(source, old["revision"], sha):
+                        self._write(old | {"status": "superseded", "superseded_by": new_job["id"]})
+            return new_job
 
 
 class Controller:
@@ -264,6 +288,13 @@ class Controller:
         )
 
     async def process(self, job: dict) -> None:
+        job.update(self.store.claim(job["id"]))
+        if job["status"] in TERMINAL:
+            return
+        if job.get("strategy") == "generations":
+            from ttakkari.generation_deployment import GenerationController
+            await GenerationController(self.store).process(job)
+            return
         lease = None
         try:
             if job["status"] not in {"waiting", "restarting", "verifying"}:

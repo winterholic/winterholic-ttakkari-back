@@ -1,0 +1,224 @@
+"""ASGI lifecycle for opt-in generation mode. Standby has no recovery sweep."""
+from __future__ import annotations
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+from sqlalchemy import select
+
+from ttakkari import generation
+from ttakkari.config import get_settings
+from ttakkari.db import dispose_engine, sessionmaker
+from ttakkari.models import ChatSession, Meeting, Run, RuntimeCommand, utcnow
+
+log = logging.getLogger(__name__)
+
+
+async def apply_reset(db, sess) -> None:
+    from ttakkari.runs import context_usage
+    commands = list(await db.scalars(select(RuntimeCommand).where(
+        RuntimeCommand.kind == "reset", RuntimeCommand.session_id == sess.id,
+        RuntimeCommand.acknowledged_at.is_(None))))
+    if commands:
+        context_usage.reset_engine_sessions(sess)
+        for command in commands:
+            command.acknowledged_at = utcnow()
+
+
+async def _commands(runtime, manager) -> None:
+    for command in await runtime.commands():
+        if command.kind == "cancel":
+            if command.run_id in manager._handles:
+                await manager.cancel(command.run_id)
+                await runtime.ack(command.id)
+            else:
+                async with sessionmaker()() as db:
+                    run = await db.get(Run, command.run_id)
+                    if run is None or run.status not in {"queued", "running"}:
+                        await runtime.ack(command.id)
+                    elif run.status == "queued" and not await manager.is_owned(run.id):
+                        await manager.cancel_queued(db, run)
+                        await db.commit()
+                        await runtime.ack(command.id)
+        elif command.kind == "reset":
+            if command.session_id:
+                manager._reset_requests.add(command.session_id)
+                async with sessionmaker()() as db:
+                    sess = await db.get(ChatSession, command.session_id)
+                    if sess and not await db.scalar(select(Run.id).where(
+                            Run.session_id == sess.id, Run.status == "running").limit(1)):
+                        await apply_reset(db, sess)
+                        await db.commit()
+        elif command.kind == "release_waiting":
+            await manager.release_waiting()
+            await runtime.ack(command.id)
+
+
+async def coordinate(runtime, manager) -> None:
+    from ttakkari.runs import desk_pool, profiles, usage_store
+    from ttakkari.runs.manager import resume_queued
+    previous = "standby"
+    while True:
+        try:
+            runtime.signal.clear()
+            await runtime.listen()
+            state = await runtime.refresh()
+            if state == "draining" and previous != state:
+                # In-use exchanges were popped out of _warm; this only stops idle/refill.
+                await desk_pool.shutdown()
+            previous = state
+            await _commands(runtime, manager)
+            if state == "active":
+                async with sessionmaker()() as db:
+                    await profiles.load_cooldowns(db)
+                    await usage_store.load_latest(db, refresh=True)
+                await resume_queued()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("generation coordinator failed; retrying without stealing work")
+        try:
+            await asyncio.wait_for(runtime.signal.wait(), get_settings().runtime_poll_seconds)
+        except TimeoutError:
+            pass
+
+
+async def periodic(name, operation, interval) -> None:
+    while True:
+        try:
+            async with generation.work(name) as acquired:
+                if acquired:
+                    await operation()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("generation maintenance failed: %s", name)
+        await asyncio.sleep(interval)
+
+
+async def consume(name, next_job, execute) -> None:
+    """A durable singleton queue; a transient DB error must not kill its consumer."""
+    while True:
+        worked = False
+        try:
+            async with generation.work(name) as acquired:
+                if acquired and (job_id := await next_job()):
+                    await execute(job_id)
+                    worked = True
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("generation queue failed: %s", name)
+        if not worked:
+            await asyncio.sleep(get_settings().runtime_poll_seconds)
+
+
+async def _retention() -> None:
+    from ttakkari.context.indexer import index_all
+    from ttakkari.runs.manager import expire_artifacts
+    from ttakkari.sharing.service import cleanup
+    from ttakkari.transfer.service import sweep_stale
+    sweep_stale()
+    async with sessionmaker()() as db:
+        await index_all(db)
+    await expire_artifacts()
+    await cleanup()
+
+
+async def _reminders() -> None:
+    from ttakkari.planner import checklist_reminders, reminders
+    await reminders.send_due()
+    await checklist_reminders.send_due()
+
+
+async def _vectors() -> None:
+    from ttakkari.meetings.vectors import reindex
+    async with sessionmaker()() as db:
+        mid = await db.scalar(select(Meeting.id).where(
+            Meeting.vector_status.in_(("pending", "none")),
+            (Meeting.transcript.is_not(None)) | (Meeting.summary.is_not(None)))
+            .order_by(Meeting.created_at).limit(1))
+    if mid:
+        await reindex(mid)
+
+
+async def ready(runtime) -> dict:
+    from ttakkari.api.assistant import _tasks as indexing
+    from ttakkari.meetings.vectors import _pending
+    from ttakkari.runs import usage_store
+    from ttakkari.runs.manager import _background, manager
+    value = await runtime.snapshot()
+    pending = sum(not t.done() for t in (*_background, *indexing, *usage_store._tasks, *_pending.values()))
+    value["finalizers"] = pending
+    value["drain_ready"] = await runtime.can_retire() and not (manager._handles or pending)
+    value["ready"] = runtime._listener is not None and not runtime._listener.is_closed()
+    return value
+
+
+@asynccontextmanager
+async def lifespan(app):
+    from ttakkari.artifacts import preview
+    from ttakkari.deployment import revision
+    from ttakkari.meetings.local_stt import jobs
+    from ttakkari.runs import desk_pool, lead_archive, profiles, usage_store
+    from ttakkari.runs.manager import manager
+    from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
+    s = get_settings()
+    if s.is_prod and not s.release_revision:
+        raise RuntimeError("generation production requires a pinned release revision")
+    runtime = generation.GenerationRuntime(s.home, revision=revision(), api_url=s.runtime_api_url)
+    tasks = []
+    generation.current = runtime
+    try:
+        await runtime.register()
+        await runtime.listen()
+        app.state.runtime = runtime
+        usage_store.install()
+        # Reading previous samples is harmless in standby. No recovery/start sweeps.
+        async with sessionmaker()() as db:
+            await profiles.load_cooldowns(db)
+            await usage_store.load_latest(db)
+        await preview.start_worker()
+        await jobs.start()
+        tasks.append(asyncio.create_task(coordinate(runtime, manager)))
+        tasks.append(asyncio.create_task(periodic("retention", _retention, 3600)))
+        tasks.append(asyncio.create_task(periodic("vectors", _vectors, s.runtime_poll_seconds)))
+        if s.reminder_scan_seconds > 0:
+            tasks.append(asyncio.create_task(periodic("reminders", _reminders, s.reminder_scan_seconds)))
+        if s.usage_poll_seconds > 0:
+            tasks.append(asyncio.create_task(periodic("usage", Collector().tick, TICK_SECONDS)))
+        if s.lead_archive_scan_seconds > 0:
+            tasks.append(asyncio.create_task(periodic("archive", lead_archive.archive_idle_leads, s.lead_archive_scan_seconds)))
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await jobs.stop()
+        await manager.shutdown()
+        await desk_pool.shutdown()
+        await preview.stop_worker()
+        await profiles.flush_persist()
+        await usage_store.flush()
+        await runtime.close()
+        generation.current = None
+        await dispose_engine()
+
+
+class InflightMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        runtime = generation.current
+        path = scope.get("path", "")
+        counted = runtime and scope["type"] == "http" and not (
+            path in {"/api/health", "/api/version", "/api/ready"} or path.endswith("/stream"))
+        if counted:
+            runtime.http_inflight += 1
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            if counted:
+                runtime.http_inflight -= 1

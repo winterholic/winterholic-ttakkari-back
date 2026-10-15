@@ -34,6 +34,7 @@ USAGE_LIMIT_RE = re.compile(
 
 # 한도 걸린 계정이 쉬는 시각(unix 초). 재시작해도 초기화 전에 다시 두드리지 않게 app_settings 에도 적는다.
 _cooldown: dict[uuid.UUID, float] = {}
+_cooldown_changes: dict[uuid.UUID, float | None] = {}
 COOLDOWN_KEY = "account_limits"
 
 
@@ -137,6 +138,11 @@ async def effective_order(db: AsyncSession, pool: str = "personal") -> list[Engi
 
 async def availability(db: AsyncSession, session_engine: str, pool: str = "personal") -> tuple[list[Profile], list[tuple[Profile, float]]]:
     """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). (쓸 수 있는 계정, [(한도 대기 중인 계정, 초기화 시각)])."""
+    from ttakkari import generation
+    if generation.current:
+        from ttakkari.runs import usage_store
+        await load_cooldowns(db)
+        await usage_store.load_latest(db, refresh=True)
     free: list[Profile] = []
     blocked: list[tuple[Profile, float]] = []
     for a in await effective_order(db, pool):
@@ -197,6 +203,16 @@ def running_counts() -> dict[uuid.UUID, int]:
     return counts
 
 
+async def running_counts_async() -> dict[uuid.UUID, int]:
+    from ttakkari import generation
+    if generation.current is None:
+        return running_counts()
+    from ttakkari.models import RuntimeLease
+    async with sessionmaker()() as db:
+        return dict((await db.execute(select(RuntimeLease.account_id, func.count()).where(
+            RuntimeLease.account_id.is_not(None)).group_by(RuntimeLease.account_id))).all())
+
+
 def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[int, float] | None:
     """상한까지 남은 최소 퍼센트와 그 창의 초기화 시각. stale/null 사용량은 순위 판단에 쓰지 않는다."""
     from ttakkari.runs import usage as usage_mod
@@ -216,7 +232,7 @@ def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[int, fl
 
 
 def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, prefer_engine: str | None = None,
-           balance_usage: bool = False) -> Profile:
+           balance_usage: bool = False, counts_override: dict[uuid.UUID, int] | None = None) -> Profile:
     """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
 
     balance_usage이면 신선한 측정이 있는 후보 > Run 당 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 우선순위.
@@ -227,6 +243,8 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
     for rid, aid in _in_use.items():
         if rid != run_id:
             counts[aid] = counts.get(aid, 0) + 1
+    if counts_override is not None:
+        counts = counts_override
     headroom = {p.id: _usage_headroom(p) for p in pool} if balance_usage else {}
     def rank(ip: tuple[int, Profile]) -> tuple:
         index, profile = ip
@@ -249,6 +267,13 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
              room[0] / (counts.get(prof.id, 0) + 1) if room is not None else None)
     _in_use[run_id] = prof.id
     return prof
+
+
+async def choose_async(pool: list[Profile], run_id: uuid.UUID, **kwargs) -> Profile:
+    from ttakkari import generation
+    if generation.current:
+        return await generation.current.choose_profile(pool, run_id, **kwargs)
+    return choose(pool, run_id, **kwargs)
 
 
 async def candidates(db: AsyncSession, session_engine: str, pool: str = "personal") -> list[Profile]:
@@ -325,6 +350,7 @@ def reset_seconds_from(*texts: str | None) -> int | None:
 
 def cool_down(account_id: uuid.UUID, seconds: int | None = None) -> None:
     _cooldown[account_id] = time.time() + (seconds or get_settings().profile_cooldown_seconds)
+    _cooldown_changes[account_id] = _cooldown[account_id]
     _persist()
 
 
@@ -338,12 +364,14 @@ def cooldown_remaining(account_id: uuid.UUID) -> int:
 
 
 def clear_cooldown(account_id: uuid.UUID) -> None:
-    if _cooldown.pop(account_id, None) is not None:
-        _persist()
+    _cooldown.pop(account_id, None)
+    _cooldown_changes[account_id] = None
+    _persist()
 
 
 def reset_cooldowns() -> None:
     _cooldown.clear()
+    _cooldown_changes.clear()
 
 
 _persist_lock: asyncio.Lock | None = None
@@ -364,16 +392,30 @@ async def _save_cooldowns() -> None:
     if _persist_lock is None:
         _persist_lock = asyncio.Lock()
     async with _persist_lock:
+        from ttakkari import generation
         now = time.time()
+        changes = dict(_cooldown_changes)
         snapshot = {str(k): v for k, v in _cooldown.items() if v > now}
         try:
             async with sessionmaker()() as db:
+                if generation.current:
+                    await db.execute(select(func.pg_advisory_xact_lock(0x54544B, 2)))
                 row = await db.get(AppSetting, COOLDOWN_KEY)
+                if generation.current:
+                    snapshot = {k: v for k, v in ((row.value if row else {}).get("until") or {}).items() if v > now}
+                    for aid, value in changes.items():
+                        if value and value > now:
+                            snapshot[str(aid)] = value
+                        else:
+                            snapshot.pop(str(aid), None)
                 if row is None:
                     db.add(AppSetting(key=COOLDOWN_KEY, value={"until": snapshot}))
                 else:
                     row.value = {"until": snapshot}
                 await db.commit()
+                for aid, value in changes.items():
+                    if _cooldown_changes.get(aid) == value:
+                        _cooldown_changes.pop(aid, None)
         except Exception:
             log.warning("account cooldown persist failed", exc_info=True)
 
@@ -386,6 +428,9 @@ async def flush_persist() -> None:
 async def load_cooldowns(db: AsyncSession) -> int:
     """재시작 뒤 한도 상태를 되살린다. 이미 지난 시각은 버린다."""
     row = await db.get(AppSetting, COOLDOWN_KEY)
+    from ttakkari import generation
+    if generation.current:
+        _cooldown.clear()
     now = time.time()
     n = 0
     for raw, until in ((row.value if row else {}).get("until") or {}).items():
@@ -396,6 +441,12 @@ async def load_cooldowns(db: AsyncSession) -> int:
         if isinstance(until, (int, float)) and until > now and until > _cooldown.get(aid, 0):
             _cooldown[aid] = float(until)
             n += 1
+    if generation.current:
+        for aid, value in _cooldown_changes.items():
+            if value:
+                _cooldown[aid] = value
+            else:
+                _cooldown.pop(aid, None)
     return n
 
 

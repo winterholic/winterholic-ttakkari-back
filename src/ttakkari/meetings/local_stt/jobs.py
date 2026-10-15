@@ -11,6 +11,7 @@ from pathlib import Path
 
 from sqlalchemy import String, select, update
 
+from ttakkari import generation
 from ttakkari.artifacts.service import content_path
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
@@ -249,7 +250,22 @@ async def _reconcile(job_id: uuid.UUID) -> None:
                     log.warning("local STT auto analysis unavailable: %s", exc.code)
 
 
+async def _generation_next():
+    async with sessionmaker()() as db:
+        # An orphan inference child may still be alive after its parent dies.
+        if await db.scalar(select(LocalSttJob.id).where(LocalSttJob.status == "running").limit(1)):
+            return None
+        return await db.scalar(select(LocalSttJob.id).join(Meeting, Meeting.id == LocalSttJob.meeting_id)
+            .where(LocalSttJob.status == "queued", (LocalSttJob.parent_job_id.is_not(None)) | (
+                (Meeting.provider == "local_whisper") & (Meeting.provider_job_id == LocalSttJob.id.cast(String))))
+            .order_by(LocalSttJob.created_at).limit(1))
+
+
 async def _loop() -> None:
+    if generation.current:
+        from ttakkari.generation_service import consume
+        await consume("stt", _generation_next, execute_job)
+        return
     while True:
         _wake.clear()
         try:
@@ -289,6 +305,9 @@ def kick() -> None:
 
 async def start() -> None:
     if not get_settings().local_stt_enabled:
+        return
+    if generation.current:
+        kick()
         return
     async with sessionmaker()() as db:
         await db.execute(

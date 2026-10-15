@@ -158,8 +158,8 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
 async def _reset(db: Db, sess: ChatSession) -> bool:
     """엔진 대화를 새로 시작하게 한다. 실행 중이면 그 Run 이 끝날 때 적용한다(True)."""
     running = await db.scalars(select(Run.id).where(Run.session_id == sess.id, Run.status.in_(ACTIVE)))
-    if any(manager.is_active(rid) for rid in running):
-        manager.request_context_reset(sess.id)
+    if any([await manager.is_owned(rid) for rid in running]):
+        await manager.request_context_reset(sess.id)
         return True
     context_usage.reset_engine_sessions(sess)
     await db.commit()
@@ -203,7 +203,7 @@ async def stop_worker(worker_id: uuid.UUID, sid: OrchestratorSession, db: Db) ->
     w = await _worker(db, sid, worker_id)
     runs = list(await db.scalars(select(Run).where(Run.session_id == w.id, Run.status.in_(ACTIVE))))
     # 대기 중인 것부터 지워야 실행 중인 것이 끝나는 순간 다음 것이 시작되지 않는다.
-    running = [r for r in runs if manager.is_active(r.id)]
+    running = [r for r in runs if await manager.is_owned(r.id)]
     for run in runs:
         if run not in running:
             await manager.cancel_queued(db, run)

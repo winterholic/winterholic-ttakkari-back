@@ -18,6 +18,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari import generation
 from ttakkari.agents.antigravity import AntigravityAdapter
 from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
 from ttakkari.agents.claude import ClaudeAdapter
@@ -97,10 +98,13 @@ class _Handle:
     proc: asyncio.subprocess.Process | None = None
     cancel_requested: bool = False
     stderr_tail: list[str] = field(default_factory=list)
+    owner: generation.GenerationRuntime | None = None
+    token: uuid.UUID | None = None
 
 
 class RunManager:
-    def __init__(self) -> None:
+    def __init__(self, *, runtime: generation.GenerationRuntime | None = None) -> None:
+        self._runtime = runtime
         self._handles: dict[uuid.UUID, _Handle] = {}
         # 역할별 동시 실행 자리(ADR 0013). 접수·기획·작업이 서로의 자리를 막지 않는다.
         self._sems: dict[str, asyncio.Semaphore] = {}
@@ -122,7 +126,21 @@ class RunManager:
     def is_active(self, run_id: uuid.UUID) -> bool:
         return run_id in self._handles
 
-    def request_context_reset(self, session_id: uuid.UUID) -> None:
+    @property
+    def runtime(self) -> generation.GenerationRuntime | None:
+        return self._runtime or generation.current
+
+    async def is_owned(self, run_id: uuid.UUID) -> bool:
+        if self.runtime is None:
+            return self.is_active(run_id)
+        from ttakkari.models import RuntimeLease
+        async with sessionmaker()() as db:
+            return await db.get(RuntimeLease, run_id) is not None
+
+    async def request_context_reset(self, session_id: uuid.UUID) -> None:
+        if self.runtime:
+            await self.runtime.command("reset", session_id=session_id)
+            return
         self._reset_requests.add(session_id)
 
     def start(self, run_id: uuid.UUID, *, lane: str = "workers") -> bool:
@@ -138,7 +156,8 @@ class RunManager:
         self._handles[run_id] = _Handle(task=task)
         # 시작 전에 취소된 task도 잠금을 반환해야 재시작 예약이 영원히 막히지 않는다.
         task.add_done_callback(lambda _t: lease.close())
-        task.add_done_callback(lambda _t: self._handles.pop(run_id, None))
+        task.add_done_callback(lambda t: self._handles.pop(run_id, None)
+                               if (h := self._handles.get(run_id)) and h.task is t else None)
         return True
 
     async def _resume_after_restart(self) -> None:
@@ -154,7 +173,25 @@ class RunManager:
     async def cancel(self, run_id: uuid.UUID) -> bool:
         h = self._handles.get(run_id)
         if h is None:
+            if self.runtime:
+                if await self.is_owned(run_id):
+                    await self.runtime.command("cancel", run_id=run_id)
+                    return True
+                async with sessionmaker()() as db:
+                    run = await db.get(Run, run_id)
+                    if run and run.status == RunStatus.queued:
+                        await self.cancel_queued(db, run)
+                        await db.commit()
+                        return True
             return False
+        if self.runtime and h.owner is None:
+            async with sessionmaker()() as db:
+                run = await db.get(Run, run_id)
+                if run is not None:
+                    await self.cancel_queued(db, run)
+                    await db.commit()
+            h.task.cancel()
+            return True
         h.cancel_requested = True
         if h.proc is None:
             # 아직 동시 실행 슬롯을 기다리는 중이면 태스크 자체를 취소한다.
@@ -181,6 +218,8 @@ class RunManager:
         """
         if self._shutting_down:
             return None
+        if self.runtime and await self.runtime.refresh() != "active":
+            return None
         async with sessionmaker()() as db:
             kind = await db.scalar(select(ChatSession.kind).where(ChatSession.id == session_id).with_for_update())
             if kind == SessionKind.desk:
@@ -206,6 +245,19 @@ class RunManager:
 
     async def cancel_queued(self, db: AsyncSession, run: Run) -> None:
         """아직 시작하지 않은(프로세스 없는) 대기 Run 을 취소한다."""
+        if self.runtime:
+            from ttakkari.generation import _control
+            from ttakkari.models import RuntimeCommand, RuntimeLease
+            await _control(db)
+            lease = await db.get(RuntimeLease, run.id)
+            if lease:
+                db.add(RuntimeCommand(key=str(uuid.uuid4()), kind="cancel", run_id=run.id,
+                                      generation_id=lease.generation_id))
+                await generation.wake(db)
+                return
+            await db.refresh(run)
+            if run.status != RunStatus.queued:
+                return
         await self._finish(db, run, RunStatus.cancelled)
 
     def _arm(self, run_id: uuid.UUID, session_id: uuid.UUID, until: float) -> None:
@@ -234,6 +286,8 @@ class RunManager:
         계정을 계속 두드리지 않는다. 사용자에게 한 번 알리고(재시작 뒤 다시 대기해도 중복 알림 없음), 한도가 계속 반복되면
         max_limit_waits 번째에 실패로 끝낸다. handoff 는 중간에 멈춘 Run 의 진행·미완료 내용으로, 재개 때 새 계정에 실린다."""
         until = min(u for _, u in blocked)
+        if self.runtime:
+            run.resume_after = datetime.fromtimestamp(until, UTC)
         prev = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type == "run.waiting")
                                .order_by(RunEvent.seq.desc()).limit(1))
         repeat = prev is not None and prev.seq == run.last_seq and abs(
@@ -262,6 +316,13 @@ class RunManager:
         self._arm(run.id, sess.id, until)
 
     async def release_waiting(self) -> None:
+        if self.runtime:
+            from sqlalchemy import update
+            async with sessionmaker()() as db:
+                await db.execute(update(Run).where(Run.status == RunStatus.queued).values(resume_after=None))
+                await generation.wake(db)
+                await db.commit()
+            return
         """한도 대기를 풀고 바로 다시 시도한다(사용자가 계정 한도 상태를 풀거나 계정을 켰을 때). 여전히 못 쓰면 다시 대기한다."""
         pending = list(self._waiting.items())
         for rid, _ in pending:
@@ -291,15 +352,29 @@ class RunManager:
 
     async def _execute(self, run_id: uuid.UUID, lane: str = "workers") -> None:
         sm = sessionmaker()
+        runtime, token = self.runtime, None
         try:
             if lane == "workers":
                 async with sm() as db:
                     kind = await db.scalar(select(ChatSession.kind).join(Run, Run.session_id == ChatSession.id)
                                            .where(Run.id == run_id))
                 lane = "leads" if kind == SessionKind.orchestrator else "workers"
+            if runtime:
+                limit = get_settings().max_concurrent_leads if lane == "leads" else get_settings().max_concurrent_workers
+                token = await runtime.claim(run_id, lane, limit)
+                if token is None:
+                    return
+                if h := self._handles.get(run_id):
+                    h.owner, h.token = runtime, token
             async with self.sem(lane), sm() as db:
+                if runtime and token:
+                    db.info["runtime_lease"] = (runtime, run_id, token)
                 await self._run(db, run_id)
+        except generation.OwnershipLost:
+            log.error("discarded stale writes for run %s", run_id)
         except asyncio.CancelledError:
+            if runtime is not None and token is None:
+                raise
             async with sm() as db:
                 run = await db.get(Run, run_id)
                 # 동시 실행 슬롯을 기다리다 서버가 내려간 Run 은 시작도 안 했다. 대기열에 남겨 재시작 뒤 이어서 돌린다.
@@ -311,14 +386,18 @@ class RunManager:
             raise
         except Exception as e:
             log.exception("run %s crashed", run_id)
+            if runtime is not None and token is None:
+                return  # A failed claim did not authorize any writes to this Run.
             async with sm() as db:
                 run = await db.get(Run, run_id)
                 if run is not None:
                     await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
         finally:
+            if runtime and token:
+                await runtime.release(run_id, token)
             self._handles.pop(run_id, None)
             profiles_mod.release(run_id)
-            if not self._shutting_down:
+            if not self._shutting_down and (runtime is None or token is not None):
                 async with sm() as db:
                     sid = await db.scalar(select(Run.session_id).where(Run.id == run_id))
                 if sid is not None:
@@ -327,8 +406,17 @@ class RunManager:
     async def _execute_desk(self, run_id: uuid.UUID) -> None:
         """접수 Run. 세션 대기열·엔진 대화 없이 한 번 고르고 끝난다. 실패해도 사용자 메시지를 기획으로 넘겨 멈추지 않게 한다."""
         sm = sessionmaker()
+        runtime, token = self.runtime, None
         try:
+            if runtime:
+                token = await runtime.claim(run_id, "desk", get_settings().max_concurrent_desk)
+                if token is None:
+                    return
+                if h := self._handles.get(run_id):
+                    h.owner, h.token = runtime, token
             async with self.sem("desk"), sm() as db:
+                if runtime and token:
+                    db.info["runtime_lease"] = (runtime, run_id, token)
                 run = await db.get(Run, run_id)
                 if run is None or run.status != RunStatus.queued:
                     return
@@ -340,7 +428,11 @@ class RunManager:
                 await self._commit(db, run)
                 await desk.handle(db, run, sess)
                 await self._finish(db, run, RunStatus.succeeded)
+        except generation.OwnershipLost:
+            log.error("discarded stale writes for desk run %s", run_id)
         except asyncio.CancelledError:
+            if runtime is not None and token is None:
+                raise
             async with sm() as db:
                 run = await db.get(Run, run_id)
                 # 자리를 기다리다 서버가 내려간 접수는 시작도 안 했다. 대기열에 남겨 재시작 뒤 돌린다.
@@ -352,11 +444,15 @@ class RunManager:
             raise
         except Exception as e:
             log.exception("desk run %s crashed", run_id)
+            if runtime is not None and token is None:
+                return
             async with sm() as db:
                 run = await db.get(Run, run_id)
                 if run is not None and run.status not in TERMINAL_RUN_STATUSES:
                     await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
         finally:
+            if runtime and token:
+                await runtime.release(run_id, token)
             self._handles.pop(run_id, None)
             profiles_mod.release(run_id)
 
@@ -368,6 +464,9 @@ class RunManager:
         sess = await db.get(ChatSession, run.session_id)
         ws = await db.get(Workspace, run.workspace_id)
         assert sess is not None and ws is not None
+        if self.runtime:
+            from ttakkari.generation_service import apply_reset
+            await apply_reset(db, sess)
         root = Path(ws.root_path)
 
         # 쓸 수 있는 계정이 없으면 시작하지 않고 가장 이른 한도 초기화까지 기다린다(대기 Run 은 queued 로 남는다).
@@ -387,8 +486,8 @@ class RunManager:
         # 모델·엔진 범위는 지키고, 계정 전환 시 저장된 엔진 대화와 _handoff_context로 이어 받는다.
         prefer = profiles_mod.model_engine(run.model)
         remaining = list(profiles)
-        prof = profiles_mod.choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer,
-                                   balance_usage=True)
+        choose = self.runtime.choose_profile if self.runtime else profiles_mod.choose_async
+        prof = await choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer, balance_usage=True)
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
@@ -483,8 +582,7 @@ class RunManager:
                     # 켜진 계정을 다 써 봤다. 실패로 끝내지 않고 초기화를 기다렸다가 이어서 한다.
                     paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
-            nxt = profiles_mod.choose(remaining, run.id, prefer_engine=prefer,
-                                      balance_usage=True)
+            nxt = await choose(remaining, run.id, prefer_engine=prefer, balance_usage=True)
             events.append(db, run, "engine.fallback", {
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
@@ -727,6 +825,9 @@ class RunManager:
         record(db, actor="agent", action="run.finished", outcome="ok" if status == RunStatus.succeeded else "error",
                target_type="run", target_id=run.id, detail={"status": status})
         sess = await db.get(ChatSession, run.session_id)
+        if self.runtime and sess:
+            from ttakkari.generation_service import apply_reset
+            await apply_reset(db, sess)
         parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
         if sess is not None:
             await _post_lead_report(db, sess, run)
@@ -737,6 +838,10 @@ class RunManager:
         _spawn(_notify(run, sess.title if sess else None))
 
     async def _commit(self, db: AsyncSession, run: Run) -> None:
+        h = self._handles.get(run.id)
+        if h and h.owner and h.token:
+            await h.owner.fence(db, run.id, h.token)
+            await generation.wake(db, run.id)
         run.heartbeat_at = utcnow()
         await db.commit()
         events.notify(run.id)
@@ -787,6 +892,13 @@ manager = RunManager()
 async def recover_interrupted() -> int:
     """서버가 죽었다 살아나면 실행 중이던 Run 은 프로세스를 잃은 것이다. 상태를 정리해 사용자가 이어서 지시할 수 있게 한다."""
     async with sessionmaker()() as db:
+        # An accidentally started legacy server must not perform a global sweep
+        # over a generation cluster, even if it currently has no active Runs.
+        from sqlalchemy import text
+        if await db.scalar(text("SELECT to_regclass('public.runtime_control')")):
+            from ttakkari.models import RuntimeControl
+            if await db.scalar(select(RuntimeControl.active_generation).where(RuntimeControl.id == 1)):
+                raise RuntimeError("generation runtime is registered; legacy recovery is forbidden")
         # 시작하지 않은 대기 Run 은 그대로 두고 resume_queued 가 이어서 돌린다.
         rows = list(await db.scalars(select(Run).where(Run.status == RunStatus.running)))
         for run in rows:
@@ -1077,7 +1189,7 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     pending = await db.scalar(
         select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)
         .order_by(Run.created_at.desc()).limit(1))
-    if pending is not None and not manager.is_active(pending.id):
+    if pending is not None and manager.runtime is None and not await manager.is_owned(pending.id):
         pending.prompt = pending.prompt + "\n\n" + text
         return parent.id
     report = Run(session_id=parent.id, workspace_id=parent.workspace_id, prompt=text, engine=parent.engine,

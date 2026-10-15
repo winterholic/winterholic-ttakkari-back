@@ -234,7 +234,7 @@ async def test_project_scope_rules_and_work_pool(client, auth, make_dir):
 
 # ---- 입력: 녹음·Provider
 
-async def test_audio_upload_waits_for_provider_when_clovanote_is_off(client, auth, new_session):
+async def test_audio_upload_waits_for_model_when_local_is_unconfigured(client, auth, new_session):
     ws, _ = await new_session()
     up = await client.post("/api/uploads", files={"file": ("회의.m4a", b"\x00audio", "audio/mp4")}, data={"workspace_id": ws["id"]}, headers=auth)
     art = up.json()
@@ -243,11 +243,11 @@ async def test_audio_upload_waits_for_provider_when_clovanote_is_off(client, aut
     prov = (await client.get("/api/meetings/providers", headers=auth)).json()["providers"]
     assert next(p for p in prov if p["id"] == "local_whisper")["state"] == "unconfigured"
     prov = [p for p in prov if p["id"] == "clovanote"]
-    assert prov == [{"id": "clovanote", "label": "클로바노트", "state": "unconfigured", "profile_configured": False,
+    assert prov == [{"id": "clovanote", "label": "클로바노트", "state": "unconfigured", "profile_configured": False, "is_default": False,
                      "message": prov[0]["message"]}] and "꺼져" in prov[0]["message"]
     # 전사 요청은 상태를 바꾸지 않고 사유를 알린다. 전사 없이 분석도 못 한다.
     r = await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth)
-    assert r.status_code == 409 and r.json()["code"] == "provider_unavailable" and "꺼져" in r.json()["message"]
+    assert r.status_code == 409 and r.json()["code"] == "provider_unavailable" and "모델 설치" in r.json()["message"]
     assert (await client.get(f"/api/meetings/{m['id']}", headers=auth)).json()["status"] == "uploaded"
     assert (await client.post(f"/api/meetings/{m['id']}/analyze", headers=auth)).status_code == 400
     # 전사 텍스트를 직접 넣으면 같은 파이프라인으로 분석한다
@@ -289,7 +289,7 @@ async def test_fake_provider_feeds_the_same_analysis_without_changes(client, aut
     providers.register_provider(fake)
     try:
         m = await _create(client, auth, audio_artifact_id=art["id"])
-        r = await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth)
+        r = await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth, json={"provider_id": "clovanote"})
         assert r.status_code == 202 and r.json()["status"] == "transcribing" and r.json()["provider"] == "clovanote"
         assert fake.submitted.filename == "a.mp3" and fake.submitted.path.is_file()
         assert (await client.get(f"/api/meetings/{m['id']}", headers=auth)).json()["status"] == "transcribing"  # pending
@@ -312,7 +312,7 @@ async def test_provider_failure_marks_transcription_failed(client, auth, new_ses
     providers.register_provider(Failing())
     try:
         m = await _create(client, auth, audio_artifact_id=art["id"])
-        await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth)
+        await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth, json={"provider_id": "clovanote"})
         m = (await client.get(f"/api/meetings/{m['id']}", headers=auth)).json()
         assert m["status"] == "failed" and m["failed_stage"] == "transcription" and m["error"] == "변환 실패"
     finally:

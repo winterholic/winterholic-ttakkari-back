@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
+from ttakkari.config import get_settings
 from ttakkari.meetings import pipeline, providers, read, vectors
 from ttakkari.meetings.projects import find_project
 from ttakkari.models import (
@@ -96,7 +97,7 @@ async def _fresh(db: AsyncSession, m: Meeting) -> Meeting:
 @router.get("/providers")
 async def list_providers(_: User) -> dict[str, Any]:
     """전사 Provider 상태. 경로·인증 정보는 담지 않는다."""
-    return {"providers": providers.describe_providers()}
+    return {"default_provider": get_settings().meeting_default_provider, "providers": providers.describe_providers()}
 
 
 @router.get("")
@@ -129,6 +130,9 @@ async def create(body: MeetingIn, _: User, db: Db, request: Request) -> dict[str
             if m.status == MeetingStatus.uploaded:
                 await pipeline.request_transcription(db, m, body.provider_id, auto_analyze=True)
                 await db.commit()
+                if m.provider == "local_whisper":
+                    from ttakkari.meetings.local_stt import jobs
+                    jobs.kick()
             elif m.status == MeetingStatus.transcribed:
                 await pipeline.start_analysis(db, m)
         except pipeline.PipelineError as e:
@@ -335,6 +339,9 @@ async def transcribe(mid: uuid.UUID, _: User, db: Db, body: TranscribeIn | None 
     except pipeline.PipelineError as e:
         raise _http(e) from e
     await db.commit()
+    if m.provider == "local_whisper":
+        from ttakkari.meetings.local_stt import jobs
+        jobs.kick()
     return await read.meeting_detail(db, m)
 
 

@@ -1,0 +1,42 @@
+{
+  "embedding": {
+    "metrics": {
+      "load_seconds": 0.5066240420565009,
+      "inference_seconds": 0.019578582840040326,
+      "peak_rss_bytes": 1720221696,
+      "process_exited": true,
+      "worker_pid": 89893,
+      "wall_seconds": 0.7929984170477837
+    },
+    "worker_gone": true,
+    "parent_rss_before": 27967488,
+    "parent_rss_after": 28131328,
+    "heavy_modules_in_parent": [],
+    "vectors": 1,
+    "dimensions": 1024
+  },
+  "stt": {
+    "metrics": {
+      "import_seconds": 0.12356041721068323,
+      "audio_decode_seconds": 0.006600415799766779,
+      "load_seconds": 1.3473784590605646,
+      "inference_seconds": 7.173640999943018,
+      "peak_rss_bytes": 3608985600,
+      "rtf_inference": 0.5748109775595367,
+      "enhancement_seconds": 0.0019081661012023687,
+      "release_request_seconds": 0.023849416989833117,
+      "process_exited": true,
+      "worker_pid": 89900,
+      "wall_seconds": 8.718791541876271
+    },
+    "worker_gone": true,
+    "parent_rss_before": 28131328,
+    "parent_rss_after": 28147712,
+    "heavy_modules_in_parent": [],
+    "sample": "fleurs-ko-test-0",
+    "duration": 12.48,
+    "segments": 1,
+    "characters": 66
+  },
+  "idle_parent_rss": 28147712
+}

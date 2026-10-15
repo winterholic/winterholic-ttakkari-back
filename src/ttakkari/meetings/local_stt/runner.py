@@ -1,35 +1,12 @@
-"""Async supervisor. Model lifetime ends at child exit, even on timeout/cancellation."""
-
+"""STT request adapter for a disposable model process."""
 from __future__ import annotations
 
-import asyncio
-import json
-import os
-import sys
-import tempfile
-import time
 from pathlib import Path
+
+from ttakkari.model_process import run_json_worker
 
 
 async def run_worker(audio_path: Path, params: dict, settings) -> dict:
-    cache = settings.home / "models" / "local-stt"
-    cache.mkdir(parents=True, exist_ok=True)
-    env = {
-        key: os.environ[key]
-        for key in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL")
-        if key in os.environ
-    }
-    env.update(
-        {
-            "HF_HOME": str(cache),
-            "HF_HUB_OFFLINE": "1",
-            "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
-            "HF_HUB_DISABLE_TELEMETRY": "1",
-            "TOKENIZERS_PARALLELISM": "false",
-            "PYANNOTE_METRICS_ENABLED": "0",
-            "DO_NOT_TRACK": "1",
-        }
-    )
     request = {
         **params,
         "audio_path": str(audio_path),
@@ -45,44 +22,8 @@ async def run_worker(audio_path: Path, params: dict, settings) -> dict:
         value = getattr(settings, "local_stt_" + field, None)
         if value is not None:
             request[field] = str(value)
-    started = time.perf_counter()
-    with tempfile.TemporaryDirectory(prefix="ttakkari-stt-") as temp:
-        env.update(
-            {
-                "HOME": temp,
-                "HF_HOME": str(Path(temp) / "hf"),
-                "MPLCONFIGDIR": str(Path(temp) / "mpl"),
-                "XDG_CACHE_HOME": str(Path(temp) / "cache"),
-                "TORCH_HOME": str(Path(temp) / "torch"),
-            }
-        )
-        output = Path(temp) / "result.json"
-        # stderr is a small fixed error code from worker.main; keep it off API output.
-        process = await asyncio.create_subprocess_exec(
-            str(settings.local_stt_python or sys.executable),
-            "-m",
-            "ttakkari.meetings.local_stt.worker",
-            str(output),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-            env=env,
-        )
-        try:
-            await asyncio.wait_for(
-                process.communicate(json.dumps(request).encode()),
-                timeout=settings.local_stt_timeout_seconds,
-            )
-            if process.returncode != 0 or not output.is_file():
-                raise RuntimeError("local_stt_worker_failed")
-            if output.stat().st_size > 64 * 1024 * 1024:
-                raise RuntimeError("local_stt_output_too_large")
-            result = json.loads(output.read_text(encoding="utf-8"))
-            result.setdefault("metrics", {}).update(
-                {"process_exited": True, "wall_seconds": time.perf_counter() - started}
-            )
-            return result
-        finally:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
+    return await run_json_worker(
+        module="ttakkari.meetings.local_stt.worker", request=request,
+        python=settings.local_stt_python, timeout=settings.local_stt_timeout_seconds,
+        error_prefix="local_stt_worker",
+    )

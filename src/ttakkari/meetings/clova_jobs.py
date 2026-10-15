@@ -85,6 +85,8 @@ def kick() -> None:
 async def start() -> None:
     """서버 시작: 끊긴 작업을 대기열로 되돌리고 워커·자동 동기화를 띄운다."""
     global _sync_loop
+    if not get_settings().clovanote_enabled:
+        return
     async with sessionmaker()() as db:
         await db.execute(update(ClovaJob).where(ClovaJob.status.in_(("running", "waiting")))
                          .values(status="queued", message="서버 재시작 후 이어서 처리해요"))

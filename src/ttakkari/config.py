@@ -104,8 +104,9 @@ class Settings(BaseSettings):
     meeting_transcript_max_chars: int = 120_000
     meeting_analysis_model: str | None = None
     meeting_analysis_effort: str | None = "high"
-    # ADR 0025: separate short-lived CPU worker. Default stays Clova; no automatic download.
-    local_stt_enabled: bool = False
+    # Local-first transcription; model files are never downloaded on a request.
+    meeting_default_provider: Literal["local_whisper", "clovanote"] = "local_whisper"
+    local_stt_enabled: bool = True
     local_stt_python: Path | None = None  # isolated venv python, defaults to this interpreter
     local_stt_model_path: Path | None = None  # local CTranslate2 large-v3 snapshot
     local_stt_timeout_seconds: int = 7200
@@ -121,18 +122,20 @@ class Settings(BaseSettings):
     clovanote_profile_dir: Path | None = None
     # 기본으로 열 클로바노트 워크스페이스(주소 /w/<id>/ 의 id). 비우면 계정의 첫 워크스페이스.
     clovanote_workspace_id: str | None = None
-    clovanote_enabled: bool = True
+    clovanote_enabled: bool = False
     # 브라우저를 창 없이 띄울지. 로그인 창은 이 값과 상관없이 창을 띄운다.
     clovanote_headless: bool = True
     # 쓰지 않는 브라우저를 닫기까지(초)
     clovanote_idle_seconds: float = 300.0
     # 클로바노트 노트 목록 자동 동기화 주기(초). 0 이면 끈다(테스트는 직접 부른다). 동기화는 창 없는 Chrome 을 잠깐 띄운다.
-    clovanote_poll_seconds: int = 1800
+    clovanote_poll_seconds: int = 0
     # 클로바노트 전사를 기다리는 최대 시간(초). 1시간 녹음도 보통 몇 분 안에 끝난다.
     clovanote_recognition_timeout_seconds: int = 2 * 60 * 60
 
     # 회의록 벡터 저장(ADR 0021). e5 = 로컬 multilingual-e5-large, hash = 테스트용 결정적 해시, off = 끔.
     context_embedder: str = "e5"
+    context_embedding_cpu_threads: int = Field(default=2, ge=1, le=16)
+    context_embedding_timeout_seconds: int = Field(default=300, ge=1)
     context_model: str = "intfloat/multilingual-e5-large"
 
     claude_bin: str = "claude"

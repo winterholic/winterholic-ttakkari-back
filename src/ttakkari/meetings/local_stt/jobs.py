@@ -27,6 +27,7 @@ from ttakkari.models import (
 
 log = logging.getLogger(__name__)
 _task: asyncio.Task | None = None
+_wake = asyncio.Event()
 
 
 class LocalWhisperProvider:
@@ -85,7 +86,7 @@ class LocalWhisperProvider:
             db.add(job)
             await db.commit()
             jid = str(job.id)
-        kick()
+        # The caller wakes the queue after committing the meeting/job link.
         return jid
 
     async def poll(self, job_id: str):
@@ -238,6 +239,7 @@ async def _reconcile(job_id: uuid.UUID) -> None:
 
 async def _loop() -> None:
     while True:
+        _wake.clear()
         try:
             async with sessionmaker()() as db:
                 # submit commits the job before the caller commits provider_job_id. Wait for that link.
@@ -258,7 +260,7 @@ async def _loop() -> None:
             if job_id:
                 await execute_job(job_id)
             else:
-                await asyncio.sleep(1)
+                await _wake.wait()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -268,6 +270,7 @@ async def _loop() -> None:
 
 def kick() -> None:
     global _task
+    _wake.set()
     if get_settings().local_stt_enabled and (_task is None or _task.done()):
         _task = asyncio.create_task(_loop())
 

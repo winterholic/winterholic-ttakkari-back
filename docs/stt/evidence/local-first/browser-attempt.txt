@@ -1,0 +1,1 @@
+미실행: 번들 Chromium 1243 실행 파일이 없었다. 설치된 Google Chrome channel로 재시도했으나 launch 직후 SIGABRT/TargetClosedError. Playwright 정리 로그에는 kill EPERM도 있었다. 서버는 헬퍼에서 종료했다. 화면 렌더·모바일 폭·스크린샷 검증은 미검증이다. 컴포넌트 테스트와 lint/typecheck/build는 별도로 실행했다.

@@ -1,6 +1,6 @@
 """전사(STT) Provider 인터페이스(ADR 0010·0021). 분석은 전사 텍스트만 받으므로 Provider 를 바꿔도 분석 로직은 그대로다.
 
-클로바노트와 선택 로컬 Whisper(ADR 0025)를 등록한다. 기본값은 클로바노트다.
+클로바노트와 선택 로컬 Whisper(ADR 0025)를 등록한다. 기본값은 로컬 Whisper다. 클로바노트는 명시 선택한다.
 실제 브라우저 자동화는 meetings/clovanote.py, 작업 큐는 meetings/clova_jobs.py 에 있다.
 submit 은 업로드 작업을 큐에 넣고 작업 id 를 돌려주며, poll 은 그 작업 행을 읽는다(빠르게 돌아온다).
 """
@@ -121,11 +121,11 @@ class ClovaNoteProvider:
 from ttakkari.meetings.local_stt.jobs import LocalWhisperProvider
 
 _REGISTRY: dict[str, TranscriptionProvider] = {"clovanote": ClovaNoteProvider(), "local_whisper": LocalWhisperProvider()}
-DEFAULT_PROVIDER = "clovanote"
+DEFAULT_PROVIDER = "local_whisper"
 
 
 def get_provider(provider_id: str | None = None) -> TranscriptionProvider:
-    p = _REGISTRY.get(provider_id or DEFAULT_PROVIDER)
+    p = _REGISTRY.get(provider_id or get_settings().meeting_default_provider)
     if p is None:
         raise ProviderNotAvailable("알 수 없는 전사 Provider 예요.")
     return p
@@ -145,5 +145,6 @@ def describe_providers() -> list[dict[str, object]]:
     for p in _REGISTRY.values():
         a = p.availability()
         out.append({"id": p.id, "label": p.label, "state": a.state.value, "message": a.message,
-                    "profile_configured": bool(getattr(p, "profile_configured", False))})
+                    "profile_configured": bool(getattr(p, "profile_configured", False)),
+                    "is_default": p.id == get_settings().meeting_default_provider})
     return out

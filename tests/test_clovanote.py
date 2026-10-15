@@ -86,6 +86,7 @@ def fake(monkeypatch):
     monkeypatch.setattr(clova_jobs, "POLL_SECONDS", 0.05)
     s = get_settings()
     monkeypatch.setattr(s, "clovanote_enabled", True)
+    monkeypatch.setattr(s, "meeting_default_provider", "clovanote")
     return f
 
 

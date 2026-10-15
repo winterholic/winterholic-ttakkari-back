@@ -196,5 +196,14 @@
   "auto_analyze": false,
   "wer": null,
   "cer": null,
-  "der": null
+  "der": null,
+  "vector_status": "ready",
+  "vector_chunks": 63,
+  "final_combined_checks": {
+    "tested_commit": "92c299d55dd56823c98f41964080eee12fc67115",
+    "passed": 671,
+    "xfailed": 2,
+    "subtests_passed": 6,
+    "seconds": 135.31
+  }
 }

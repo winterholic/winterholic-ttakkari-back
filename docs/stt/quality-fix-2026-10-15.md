@@ -122,3 +122,5 @@ same_audio=true, raw_evidence_preserved=true, utterance_contract_valid=true, mea
 - 실행: `TTAKKARI_NO_ENV_FILE=1 PYTHONPATH=src .venv/bin/python -u <결과함>/run-full-recovery.py`. 검증은 `PYTHONPATH=/private/tmp/ttakkari-stt-a27de474-4a5c336/src .venv/bin/python <결과함>/verify-recovery.py`로 read-only DB를 대조했다.
 - 결과함 `a27de474-2adc-4724-8c37-6fcd15fb1029`: 실행 로그·원본/새 전사/발화·실제 앞뒤 발화·지표·검증 스크립트. 개인 전사/원음/모델은 Git에 넣지 않는다.
 - 상주 운영 프로세스 d61e3a0·PID61369는 이 세션에서 재시작하지 않았다. 운영 데이터 복구는 완료했고, 새 품질 차단의 상주 적용은 후속 배포/재시작 대상이다.
+
+- 최종 합본(브라우저 MCP 동시 세션 확정 커밋 포함) 독립 체크아웃92c299d55dd56823c98f41964080eee12fc67115에서 전체 pytest671 passed,2 xfailed,6 subtests passed in135.31s. 새 회의 도서관 색인63조각/ready 확인. 이후 변경은 이 검증 기록뿐이다.

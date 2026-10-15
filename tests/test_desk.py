@@ -10,7 +10,10 @@ from conftest import agent_calls
 from helpers import run_events, start_run, wait_run
 
 from ttakkari.config import get_settings
+from ttakkari.experiments import qwen35_observer
+from ttakkari.experiments.qwen35_observer import ShadowObservationQueue
 from ttakkari.orchestrator.runtime import LEAD_NOTE, ORCHESTRATOR_NOTE, issue_token
+from ttakkari.runs import desk as desk_module
 from ttakkari.runs import instructions, profiles
 
 
@@ -359,3 +362,67 @@ async def test_warm_pool_respawns_on_config_change_and_age(client, auth, make_di
     w4 = await _warm_ready("codex", other_than=w3.proc.pid)
     await _warm_ready("codex", other_than=w4.proc.pid)
     await _wait(lambda: asyncio.sleep(0, _gone(w4.proc.pid)), what="오래된 프로세스 종료")
+
+
+async def test_desk_route_is_unchanged_when_observer_is_disabled_or_queue_is_full(
+    client, auth, make_dir, monkeypatch,
+):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "qwen35_shadow_enabled", False)
+    monkeypatch.setattr(desk_module.time, "strftime", lambda _fmt: "2026-10-16 00:00")
+    observed = []
+    actual_observer = desk_module.observe_if_enabled
+
+    def capture_observation(**kwargs):
+        observed.append(kwargs)
+        return actual_observer(**kwargs)
+
+    monkeypatch.setattr(desk_module, "observe_if_enabled", capture_observation)
+
+    async def answer_once():
+        desk = await _desk(client, auth, make_dir)
+        run = await wait_run(
+            client, auth, (await start_run(client, auth, desk["id"], "안녕 user@example.com"))["id"],
+        )
+        route = await _route(client, auth, run["id"])
+        call = _desk_calls()[-1]
+        return desk, run, route, call, call["argv"][-1]
+
+    baseline = await answer_once()
+    assert observed == []
+
+    queue = ShadowObservationQueue(maxsize=1)
+    monkeypatch.setattr(qwen35_observer, "_queue", queue)
+    monkeypatch.setattr(qwen35_observer, "_sampled", lambda *_args: True)
+    monkeypatch.setattr(settings, "env", "staging")
+    monkeypatch.setattr(settings, "qwen35_shadow_enabled", True)
+    monkeypatch.setattr(settings, "qwen35_shadow_sample_rate", 0.05)
+
+    enabled = await answer_once()
+    assert len(observed) == 1
+    snapshot = observed[-1]
+    saved = queue.get_nowait()
+    assert snapshot["request_text"] == "안녕 user@example.com"
+    assert snapshot["context_text"] == enabled[4]
+    assert saved.request_text == "안녕 [이메일 제거]"
+    assert "user@example.com" not in saved.context_text
+    assert saved.scope == snapshot["scope"] == enabled[0]["pool"]
+    assert saved.candidates == snapshot["candidates"]
+    assert "gpt-6-luna" in saved.candidates.model_ids
+    assert saved.candidates.tool_ids == saved.candidates.permission_ids == ()
+
+    assert queue.submit(saved) is True
+    overflow = await answer_once()
+    assert len(observed) == 2
+    assert observed[-1]["context_text"] == overflow[4]
+    assert queue.dropped["queue_full"] == 1
+    assert queue.qsize == 1
+
+    for candidate in (enabled, overflow):
+        assert candidate[1]["status"] == baseline[1]["status"] == "succeeded"
+        assert candidate[1]["result_text"] == baseline[1]["result_text"] == "desk answer by codex"
+        assert candidate[1]["engine"] == baseline[1]["engine"] == "codex"
+        assert candidate[1]["model"] == baseline[1]["model"] == "gpt-6-luna"
+        assert candidate[2]["action"] == baseline[2]["action"] == "answer"
+        assert candidate[3]["argv"] == baseline[3]["argv"]
+        assert candidate[4] == baseline[4]

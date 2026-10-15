@@ -23,6 +23,13 @@ router = APIRouter(prefix="/api", tags=["system"])
 DIFF_LIMIT = 400_000
 
 
+@router.get("/bootstrap-ready")
+async def bootstrap_readiness(request: Request) -> dict:
+    if not getattr(request.app.state, "bootstrap_hold", False):
+        raise HTTPException(404, "Bootstrap holding mode is disabled")
+    return {"holding": True, "revision": request.app.state.revision, "pid": os.getpid()}
+
+
 @router.get("/ready")
 async def readiness() -> dict:
     from ttakkari import generation

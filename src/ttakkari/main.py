@@ -109,6 +109,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ttakkari.deployment import revision
     app.state.revision = revision()
     init_engine()
+    from ttakkari.generation_bootstrap import holding
+    app.state.bootstrap_hold = holding()
+    if app.state.bootstrap_hold:
+        # The old deployer has drained Runs. Keep the interim app passive until
+        # its successor installs the immutable generation and proxy.
+        try:
+            yield
+        finally:
+            await dispose_engine()
+        return
     if s.runtime_generation:
         from ttakkari.generation_service import lifespan as generation_lifespan
         async with generation_lifespan(app):

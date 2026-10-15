@@ -213,6 +213,13 @@ class InflightMiddleware:
     async def __call__(self, scope, receive, send):
         runtime = generation.current
         path = scope.get("path", "")
+        if (scope["type"] == "http" and getattr(scope.get("app").state, "bootstrap_hold", False)
+                and path not in {"/api/health", "/api/version", "/api/bootstrap-ready"}):
+            from starlette.responses import JSONResponse
+            response = JSONResponse({"code": "deploying", "message": "최초 배포 전환 중입니다. 잠시 후 다시 시도해 주세요."},
+                                    status_code=503, headers={"Retry-After": "5"})
+            await response(scope, receive, send)
+            return
         counted = runtime and scope["type"] == "http" and not (
             path in {"/api/health", "/api/version", "/api/ready"} or path.endswith("/stream"))
         if counted:

@@ -34,6 +34,16 @@ def state_dir() -> Path:
     return get_settings().home / "deploy"
 
 
+def strategy() -> str:
+    marker = state_dir() / "generations-enabled.json"
+    if marker.exists():
+        value = json.loads(marker.read_text())
+        if value.get("protocol") != 1 or value.get("strategy") != "generations":
+            raise RuntimeError("invalid generation activation marker; refusing an idle restart")
+        return "generations"
+    return get_settings().deploy_strategy
+
+
 def revision() -> str:
     if sha := get_settings().release_revision:
         return sha
@@ -122,7 +132,7 @@ class JobStore:
                 if job["status"] not in TERMINAL:
                     if job["revision"] == sha and job["skip_tests"] == skip_tests:
                         return job
-                    if get_settings().deploy_strategy != "generations":
+                    if strategy() != "generations":
                         raise ValueError(
                             "다른 배포가 진행 중입니다. 상태를 확인한 뒤 다시 예약하세요."
                         )
@@ -134,10 +144,10 @@ class JobStore:
                     "status": "requested",
                     "created_at": datetime.now(UTC).isoformat(),
                     "error": None,
-                    "strategy": get_settings().deploy_strategy,
+                    "strategy": strategy(),
                 }
             )
-            if get_settings().deploy_strategy == "generations":
+            if strategy() == "generations":
                 from ttakkari.generation_deployment import equivalent_contracts
                 source = get_settings().deploy_source_root or BACK
                 for old in self.all():
@@ -291,6 +301,11 @@ class Controller:
         job.update(self.store.claim(job["id"]))
         if job["status"] in TERMINAL:
             return
+        if job.get("bootstrap"):
+            if job["status"] != "recovery_pending":
+                from ttakkari.generation_bootstrap import Bootstrap
+                await Bootstrap(self).process(job)
+            return
         if job.get("strategy") == "generations":
             from ttakkari.generation_deployment import GenerationController
             await GenerationController(self.store).process(job)
@@ -342,7 +357,36 @@ class Controller:
             tmp.replace(path)
         self.phase(job, "succeeded", active_runs=0, error=None)
 
+    def enter_pinned_supervisor(self) -> None:
+        marker = self.store.root / "supervisor.json"
+        if not marker.exists():
+            return
+        if os.environ.get("TTAKKARI_RUN_ID"):
+            raise RuntimeError("supervisor belongs to the external deployer")
+        value = json.loads(marker.read_text())
+        release = Path(value["release"])
+        if BACK.resolve() == release.resolve():
+            return
+        env = os.environ | {"TTAKKARI_RELEASE_REVISION": value["revision"],
+            "TTAKKARI_DEPLOY_SOURCE_ROOT": value["source"], "TTAKKARI_DEPLOY_STRATEGY": "generations"}
+        os.chdir(release)
+        python = str(release / ".venv/bin/python")
+        os.execve(python, [python, "-m", "ttakkari.deployment", "serve"], env)
+
+    def bootstrap_job(self) -> dict | None:
+        from ttakkari.generation_bootstrap import requested
+        if not requested(BACK, self.store.root):
+            return None
+        # Only a verified, successful legacy deploy may initiate the transition.
+        job = next((j for j in reversed(self.store.all()) if j["revision"] == revision()
+                    and j["status"] == "succeeded" and j.get("strategy", "idle") == "idle"
+                    and not j.get("bootstrap")), None)
+        if job:
+            return self.store.update(job["id"], status="bootstrapping", bootstrap=True)
+        return None
+
     async def serve(self) -> None:
+        self.enter_pinned_supervisor()
         gate = RestartGate(self.store.root / "controller.lock")
         lock = gate._acquire()
         if lock is None:
@@ -350,7 +394,7 @@ class Controller:
         loaded_revision = revision()
         try:
             while True:
-                if get_settings().deploy_strategy == "generations":
+                if strategy() == "generations":
                     from ttakkari.generation_deployment import GenerationController
                     try:
                         await GenerationController(self.store).reconcile_services()
@@ -359,6 +403,8 @@ class Controller:
                 job = next(
                     (j for j in self.store.all() if j["status"] not in TERMINAL), None
                 )
+                if job is None:
+                    job = self.bootstrap_job()
                 if job:
                     deploy_gate = RestartGate(self.store.root / "backend-restart.lock")
                     deploy_lock = deploy_gate._acquire()
@@ -367,6 +413,9 @@ class Controller:
                             await self.process(job)
                         finally:
                             deploy_gate._release(deploy_lock)
+                        if job.get("bootstrap") and job["status"] == "succeeded":
+                            await dispose_engine()
+                            self.enter_pinned_supervisor()
                         if job["status"] in TERMINAL and revision() != loaded_revision:
                             # 자기 코드가 바뀐 감독도 작업 경계에서만 다시 읽는다. 예약은 파일에 남는다.
                             await dispose_engine()

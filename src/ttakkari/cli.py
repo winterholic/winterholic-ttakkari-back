@@ -25,7 +25,9 @@ def _cmd_migrate(_: argparse.Namespace) -> int:
     from alembic.config import Config
 
     from alembic import command
-
+    from ttakkari.generation_bootstrap import assert_legacy_jobs_idle, holding
+    if holding():
+        asyncio.run(assert_legacy_jobs_idle())
     command.upgrade(Config(str(ALEMBIC_INI)), "head")
     return 0
 

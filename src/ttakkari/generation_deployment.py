@@ -98,7 +98,7 @@ def proxy_config(slot: int) -> dict:
     port = PORTS[slot]
     return {"admin": {"listen": "127.0.0.1:20191", "config": {"persist": False}}, "apps": {"http": {"servers": {"ttakkari": {
         "listen": ["127.0.0.1:8787"], "automatic_https": {"disable": True}, "routes": [
-            {"match": [{"path": ["/api/ready"]}], "handle": [{"handler": "static_response", "status_code": 404}]},
+            {"match": [{"path": ["/api/ready", "/api/bootstrap-ready"]}], "handle": [{"handler": "static_response", "status_code": 404}]},
             {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": f"127.0.0.1:{port}"}],
                          "flush_interval": -1, "stream_close_delay": 60_000_000_000}]}]}}}}}
 

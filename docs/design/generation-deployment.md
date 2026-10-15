@@ -1,12 +1,12 @@
 # 세대별 배포 구현과 운영 전환
 
-2026-10-16. 코드 구현·격리 검증 단계이며 운영 활성화는 하지 않았다.
+2026-10-16. 최초 안전 전환 자동화를 추가했다. 실제 운영 활성화는 독립 배포 감독의 예약 기록과 health·version·smoke 결과로 판정한다.
 
 ## 동작
 
 기존 앱을 두 슬롯(127.0.0.1:8791/8792) 사이에서 교체한다. Caddy는 고정 주소 127.0.0.1:8787을 받고, 전용 관리 주소는 다른 Caddy 인스턴스와 분리한 127.0.0.1:20191이다. cloudflared와 에이전트 MCP의 기존 진입점은 유지한다.
 
-- 기본 설정은 `runtime_generation=false`, `deploy_strategy=idle`이다. 코드 배포만으로 기존 서비스 구성이 바뀌지 않는다.
+- 기본 설정은 `runtime_generation=false`, `deploy_strategy=idle`이다. 이 운영 저장소에는 사용자가 승인한 `deploy/generation-bootstrap.json`이 있으므로, 해당 커밋의 기존 idle 배포 성공 뒤 최초 전환이 자동으로 이어진다. 승인 파일이 없는 설치는 기존 동작을 유지한다.
 - generation 앱은 매 기동마다 UUID를 등록하고 standby로 시작한다. standby는 Run 복구·STT 재등록·예열·색인을 수행하지 않는다.
 - DB control 행의 CAS로 active 세대를 바꾸면 구세대가 draining이 된다. 기존 Run의 부모·CLI·stdout·stdio MCP는 구세대에 남는다.
 - 신규 Run의 claim·전역 lane 상한·세션 순서는 `runtime_control`과 `runtime_leases`로 직렬화한다. desk 세션의 메시지별 병행 실행은 유지한다.
@@ -49,7 +49,21 @@
 
 ## 최초 전환: 기존 안전 배포 이후 외부 설치 작업 1회
 
-이 절차는 **아직 운영 실행하지 않았다**. 기존 코드에는 소유권 계약이 없으므로 최초 전환은 무중단으로 취급하지 않는다. 실제 LLM Run·전사·변환·색인·업로드가 끝났는지 확인한 뒤 진행해야 한다. 따까리 내부 Run에서 launchctl·서비스 재시작을 실행하지 않는다.
+최초 전환은 무중단으로 취급하지 않는다. 기존 서버에는 소유권 계약이 없으므로 기존 외부 감독이 모든 Run 종료를 기다린다. migration 직전 전사·문서 변환이 실행 중이면 재시작을 진행하지 않고 배포를 실패 처리한다. 기존 버전에는 HTTP 요청·색인 전수 계측이 없으므로 최초 구버전 재시작까지를 새 세대 drain 보장에 포함하지 않는다. 따까리 내부 Run에서 launchctl·서비스 재시작을 실행하지 않는다.
+
+### 2026-10-16 사용자 승인에 따른 자동 실행
+
+`request_backend_deploy`로 clean main SHA를 예약하면 기존 감독이 검사·idle migration·재시작·공개 버전을 확인한다. 새 단일 앱은 consumer·복구·예열을 시작하지 않는 holding 상태로 기동하며, health/version 외 요청은 일시적으로 503과 Retry-After를 받는다. 감독은 작업 경계에서 새 코드를 읽고 같은 예약의 상태를 `bootstrapping`으로 바꾼다.
+
+`generation_bootstrap.py`는 admission 배타 잠금 아래 고정 release/Python/Node 환경과 Caddy 구성을 준비하고 standby 슬롯을 시작한다. 기존 backend를 정리하고 로그인 자동 실행 plist를 `<deploy>/services/legacy-backend.plist`에 보관한다. Caddy의 로컬·공개 health/version, 인증된 조회, 기존 종료 Run의 SSE cursor를 확인한 뒤 DB 소유권을 활성화하고 다시 검증한다.
+
+감독 plist와 재실행 경로는 별도 고정 tools 릴리스로 지정한다. 기존 launchd 프로세스도 마지막에 고정 Python/코드로 exec하며, loaded launchd 설정이 아직 checkout을 가리켜도 `supervisor.json`을 읽어 고정 경로로 들어간다. `generations-enabled.json`을 원자적으로 기록한 뒤 이후 예약을 generations 방식으로 처리한다. config.env의 비밀값을 읽어 출력하거나 해당 파일을 고치지 않는다.
+
+활성화 전 실패는 standby·프록시를 정리하고 holding 앱을 정상 legacy 모드로 다시 기동한다. `bootstrap-failed.json`이 자동 재시도를 막는다. 활성화 시도 이후에는 새 세대가 작업을 맡았을 수 있으므로 legacy 복귀·자식 종료를 하지 않고 `recovery_pending`으로 남긴다. 완료/실패 결과는 전용 Web Push로 사용자에게 알리며 발송 결과는 예약에 남긴다.
+
+관측 파일: `<deploy>/jobs/<ID>.json`, `bootstrap-smoke.json`, `generations-enabled.json`, `supervisor.json`, `proxy.json`. `succeeded`와 `bootstrap=true`, DB active UUID 및 실제 슬롯 readiness·공개 SHA를 함께 확인해야 운영 활성화로 판단한다. 예약 접수와 최초 idle 배포 중간 성공은 최종 운영 활성화가 아니다.
+
+아래는 자동화가 수행하는 수동 복구용 기준 절차다.
 
 1. 기존 외부 감독의 idle 경로로 이 코드와 0030 migration을 배포한다. 기존 감독이 새 구현을 읽었는지 확인한다. 이 단계만으로 generation 활성화가 되지는 않는다.
 2. 실행할 커밋을 `Releases.archive`로 `<deploy>/releases/<SHA>`에 분리하고 `GenerationController.environment`로 고정 venv와 브라우저 MCP Node 의존성을 설치한다. lockfile을 사용하며 이미 준비한 환경은 다시 sync하지 않는다. 필요하면 같은 릴리스에서 격리 DB 검사를 재실행한다.
@@ -58,7 +72,7 @@
 5. `proxy_config(0)`의 JSON을 `<deploy>/proxy.json`에 저장해 전용 Caddy launchd 서비스의 `--config`로 지정한다. 이후 검증된 라우팅을 같은 파일에 원자적으로 보존하므로 Caddy 재기동 때 마지막 슬롯을 사용한다. 다른 Caddy와 공유하는 기본 autosave는 비활성이다. 실행 파일은 `command -v caddy`로 확인하고 설정은 `caddy validate`로 먼저 검증한다. 외부 주소는 기존 tunnel이 받는 8787이다.
 6. 로컬·공개 health/version, 인증된 읽기·가짜 Run 접수/완료, 이벤트 cursor와 중복 실행 여부를 확인한 뒤 `deploy_strategy=generations`로 후속 예약을 받는다. 원래 슬롯과 supervisor의 부팅 복구 동작도 확인한다.
 
-최초 설치 자동화 전체와 launchd의 실제 등록/해제는 이번 격리 시험 범위에 포함하지 않았다. 설치 시 현재 서비스·포트·기존 설정을 확인해야 하며, 이 문서는 서비스가 이미 전환됐다는 기록이 아니다.
+최초 설치 자동화는 후속 사용자 승인으로 추가했다. launchd의 실제 등록/해제는 Run 내부 검증에서 실행하지 않으며 독립 감독이 운영에서 수행한다. 이 문서만으로 서비스가 이미 전환됐다고 판단하지 않는다.
 
 ## 이후 배포
 

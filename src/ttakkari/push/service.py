@@ -30,6 +30,7 @@ class PushKind(enum.StrEnum):
     calendar_reminder = "push.calendar_reminder"  # 일정 알림(planner/reminders.py)
     checklist_reminder = "push.checklist_reminder"
     meeting = "push.meeting"  # 회의록 분석 완료·실패(meetings/pipeline.py)
+    deployment = "push.deployment"  # 사용자가 기다리는 최초 무중단 배포 전환 결과
 
 
 # 사용자가 직접 멈춘 cancelled, 배포·재시작으로 끊긴 interrupted, 정상 완료 succeeded 는 알리지 않는다.

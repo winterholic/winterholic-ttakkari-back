@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
 from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, truncate
+from ttakkari.agents.browser_mcp import BROWSER_TOOLS, SERVER_NAME, server_spec
 from ttakkari.config import get_settings
 from ttakkari.orchestrator.tool_policy import AUTO_APPROVED_TOOLS
 
@@ -44,6 +47,33 @@ class CodexAdapter:
         s = get_settings()
         sandbox = spec.codex_sandbox if spec.codex_sandbox in SANDBOX_MODES else "workspace-write"
         writable = [str(p) for p in spec.write_roots]
+        note = spec.system_note
+        servers = dict(spec.mcp_servers)
+        browser = None
+        if sys.platform == "darwin" and sandbox != "danger-full-access":
+            browser = server_spec(spec.outbox)
+            if browser:
+                servers[SERVER_NAME] = browser
+                note += (
+                    f"\nFor UI verification, use the configured {SERVER_NAME} MCP browser tools first. "
+                    "The browser is headless with an isolated profile; existing login sessions are not shared. "
+                    "Take screenshots without a filename to save automatically under this Run's outbox/browser. "
+                    "Close the browser when finished. If a browser tool fails to launch, stop browser attempts "
+                    "and report the error; do not fall back to a shell browser launch.\n"
+                )
+            preflight = shlex.join([sys.executable, str(Path(__file__).with_name("browser_preflight.py"))])
+            note += (
+                "\nBrowser launch on macOS: Before directly launching Chrome/Chromium/Playwright, "
+                f"run this read-only preflight INSIDE your command tool: {preflight}\n"
+                "If it returns blocked, unknown, fails, or cannot be read, do not launch a local browser. "
+                "Do not retry with another Chrome binary, headless mode, or --no-sandbox; these do not "
+                "remove the command sandbox's OS IPC restriction and may produce macOS crash dialogs. "
+                "Use an already configured, approved browser tool if available; otherwise report browser "
+                "verification as blocked and continue independent checks. Do not bypass the sandbox "
+                "or change security settings. permissions_allowed only checks prerequisite IPC permissions, "
+                "not browser health; on a launch permission error, stop without repeating it. "
+                "This is an instruction-level precaution, not an enforced command interceptor.\n"
+            )
         opts = [
             "--json", "--skip-git-repo-check",
             # 사용자 전역 config 가 danger-full-access 여도 워크스페이스 설정으로 덮는다. OS 샌드박스가 codex 의 보험이다.
@@ -51,9 +81,9 @@ class CodexAdapter:
             "-c", 'approval_policy="never"',
             "-c", "sandbox_workspace_write.network_access=true",
             "-c", f"sandbox_workspace_write.writable_roots={json.dumps(writable)}",
-            "-c", f"developer_instructions={json.dumps(spec.system_note)}",
+            "-c", f"developer_instructions={json.dumps(note)}",
         ]
-        for name, srv in spec.mcp_servers.items():
+        for name, srv in servers.items():
             env = ", ".join(f"{k}={json.dumps(v)}" for k, v in srv.get("env", {}).items())
             opts += [
                 "-c", f"mcp_servers.{name}.command={json.dumps(srv['command'])}",
@@ -64,6 +94,11 @@ class CodexAdapter:
             # 사용자 지시를 실행하는 자체 앱 도구를 명시적으로 허용한다. 쓰기의 readOnlyHint는 바꾸지 않는다.
             if name == "ttakkari":
                 for tool in sorted(AUTO_APPROVED_TOOLS):
+                    opts += ["-c", f'mcp_servers.{name}.tools.{tool}.approval_mode="approve"']
+            if name == SERVER_NAME and browser is not None:
+                opts += ["-c", f"mcp_servers.{name}.cwd={json.dumps(srv['cwd'])}",
+                         "-c", f"mcp_servers.{name}.enabled_tools={json.dumps(sorted(BROWSER_TOOLS))}"]
+                for tool in sorted(BROWSER_TOOLS):
                     opts += ["-c", f'mcp_servers.{name}.tools.{tool}.approval_mode="approve"']
         if spec.model:
             opts += ["-m", spec.model]

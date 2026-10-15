@@ -10,3 +10,4 @@ dist/
 build/
 
 .stt-runtime/
+.browser-runtime/node_modules/

@@ -12,6 +12,7 @@ Winterholic Ttakkari 백엔드. Mac Studio 에서 Claude Code·Codex 에이전�
 - PostgreSQL 17 (Homebrew `postgresql@17`)
 - 로그인된 `claude` CLI, `codex` CLI
 - 선택: LibreOffice (PPTX·DOCX 미리보기 변환)
+- macOS Codex 화면 검증: Node.js 18+·설치된 Google Chrome·Playwright MCP 런타임(아래)
 
 ## 처음 설정
 
@@ -142,3 +143,28 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 이전 외부 연동·기본 provider 설정 키는 제거되어 `extra=ignore`로 무시된다. 환경파일을 편집할 필요가 없다.
 설치·데이터 보존·배포 후 스모크: [제거·전환 안내](docs/stt/remove-clovanote-2026-10-15.md).
 백엔드 배포·마이그레이션은 기획 세션의 독립 배포 감독만 실행한다.
+
+## macOS Codex 브라우저 검증
+
+공식 Playwright MCP를 프로젝트 안에 고정 버전으로 설치한다. 배포 서버를 새로 구성할 때도 한 번 실행한다.
+
+```sh
+npm ci --prefix .browser-runtime --ignore-scripts
+```
+
+설치되어 있고 Node가 PATH에 있으면 제한된 macOS Codex Run(신규·재개)에 `ttakkari_browser` stdio MCP가 붙는다.
+화면 이동·DOM 스냅샷·스크린샷 등 18개 도구만 노출한다. 임의 Node 실행·페이지 JS 평가·파일 업로드는 노출하지 않는다.
+브라우저는 headless·isolated 프로필이며 Chromium 자체 샌드박스도 켠다. 기존 Chrome 로그인·쿠키를 공유하지 않는다.
+스크린샷은 파일명을 생략하면 해당 Run의 `outbox/browser/`에 저장된다. 작업이 끝나면 `browser_close`를 호출한다.
+런타임이 없으면 자동 다운로드하지 않는다. 쉘의 `workspace-write`와 `approval_policy=never`는 유지한다.
+
+명령 도구에서 Chrome을 직접 실행해야 한다면 먼저 `src/ttakkari/agents/browser_preflight.py`를 **그 명령 도구 안에서** 실행한다.
+검사는 현재 프로세스의 macOS IPC 권한만 조회하며 브라우저를 띄우지 않는다. `blocked`·`unknown`은 종료 코드 78이다.
+권한 거부 시 브라우저 종류·headless·`--no-sandbox`를 바꿔 반복하지 않고 브라우저 검증 미실행으로 보고한다.
+이 지침은 임의 쉘 명령을 강제 가로채는 보안 경계가 아니다. MCP 연결만으로 실제 브라우저 실행 성공을 보증하지 않는다.
+
+설정·사전 검사 단위 검증(브라우저·DB 미실행):
+
+```sh
+.venv/bin/python -m unittest discover -s tests -p 'test_browser*.py'
+```

@@ -57,7 +57,9 @@ async def require_user(
     if creds is None or creds.scheme.lower() != "bearer":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "인증이 필요합니다.", headers={"WWW-Authenticate": "Bearer"})
     try:
-        decode(creds.credentials, "api")
+        claims = decode(creds.credentials, "api")
+        if claims.get("sub") != "owner":
+            raise jwt.InvalidTokenError("owner subject required")
     except jwt.ExpiredSignatureError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "토큰이 만료되었습니다.", headers={"WWW-Authenticate": "Bearer"}) from e
     except jwt.PyJWTError as e:

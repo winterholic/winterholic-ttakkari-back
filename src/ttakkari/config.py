@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 30
     download_token_ttl_seconds: int = 5 * 60
 
+    # Keep disabled until the separate public UI and delivery environment are verified.
+    public_sharing_enabled: bool = False
+    public_share_origin: str = "https://ttakkari.winterholic.net"
+
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     # Cloudflare Tunnel 뒤에서만 CF-Connecting-IP 를 믿는다. 직접 노출 시 위조 가능.
     trust_proxy_ip_header: str | None = None

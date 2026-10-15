@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -737,3 +738,31 @@ class ChecklistReminder(Base):
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     slot: Mapped[str] = mapped_column(String(5), primary_key=True)
     claimed_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class PublicShare(Base):
+    """Only approved DTOs; bindings and resource IDs never enter public responses."""
+    __tablename__ = "public_shares"
+    __table_args__ = (
+        Index("uq_public_shares_active_root", "resource_type", "resource_id", unique=True,
+              postgresql_where=text("state = 'active'")),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    resource_type: Mapped[str] = mapped_column(String(20))
+    resource_id: Mapped[uuid.UUID]
+    created_by: Mapped[str] = mapped_column(String(10), default="owner")
+    secret_hash: Mapped[str | None] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(10), default="active")
+    revoked_at: Mapped[datetime | None]
+    revoked_reason: Mapped[str | None] = mapped_column(String(30))
+    source_scope: Mapped[str] = mapped_column(String(20))
+    selection: Mapped[dict[str, Any]]
+    download_formats: Mapped[list[Any]]
+    publication_revision: Mapped[int] = mapped_column(Integer, default=1)
+    source_revision: Mapped[str] = mapped_column(String(71))
+    snapshot_schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    source_bindings: Mapped[list[Any]]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    published_at: Mapped[datetime] = mapped_column(default=utcnow)
+    expires_at: Mapped[datetime]

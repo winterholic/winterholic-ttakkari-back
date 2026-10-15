@@ -27,8 +27,10 @@ from ttakkari.api import (
     orchestrator,
     planner,
     pms,
+    public_shares,
     push,
     sessions,
+    shares,
     system,
     tasks,
     transfers,
@@ -50,6 +52,8 @@ from ttakkari.runs.manager import (
     resume_queued,
 )
 from ttakkari.runs.usage_collector import Collector
+from ttakkari.sharing.middleware import ShareSecurityMiddleware
+from ttakkari.sharing.service import cleanup as cleanup_shares
 from ttakkari.transfer import diagnostics as transfer_diagnostics
 from ttakkari.transfer import service as transfer_service
 
@@ -68,6 +72,10 @@ async def _retention_loop() -> None:
             n = await expire_artifacts()
             if n:
                 log.info("expired %d artifacts", n)
+        try:
+            await cleanup_shares()
+        except Exception:  # noqa: BLE001 -- bounded maintenance: log failure without SQL/body/secret
+            log.warning("public share cleanup failed")
         await asyncio.sleep(RETENTION_INTERVAL)
 
 
@@ -159,10 +167,11 @@ def create_app() -> FastAPI:
                   docs_url=None if s.is_prod else "/docs", redoc_url=None, openapi_url=None if s.is_prod else "/openapi.json")
     app.add_middleware(
         CORSMiddleware, allow_origins=s.cors_origins, allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range"],
-        expose_headers=["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
+        allow_methods=["HEAD", "GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type", "Last-Event-ID", "Range"],
+        expose_headers=["Retry-After", "Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
     )
     app.add_middleware(transfer_diagnostics.TransferDiagnosticsMiddleware)
+    app.add_middleware(ShareSecurityMiddleware)
 
     @app.exception_handler(HTTPException)
     async def _http_exc(request: Request, exc: HTTPException) -> JSONResponse:
@@ -187,6 +196,9 @@ def create_app() -> FastAPI:
               orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router,
               meetings.router, meetings.agent_router, pms.router, agent_pms.router, tasks.router, desk_feedback.router, deployments.router):
         app.include_router(r)
+    app.include_router(shares.router)
+    app.include_router(shares.exports_router)
+    app.include_router(public_shares.router)
     app.include_router(checklists.router)
     app.include_router(checklists.agent_router)
     return app

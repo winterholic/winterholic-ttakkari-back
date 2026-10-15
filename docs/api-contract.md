@@ -5,7 +5,7 @@
 ## 공통
 
 - Base URL: 개발 `http://127.0.0.1:8787`, 운영은 HTTPS 터널 도메인.
-- 인증: `Authorization: Bearer <access_token>`. 예외는 `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/health`, `/api/dl/{token}`.
+- 인증: owner API는 `Authorization: Bearer <access_token>`. 예외는 `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, `/api/health`, `/api/dl/{token}` 및 별도 capability를 쓰는 `/api/public/shares/{share_id}` 계열이다.
 - 오류 본문은 항상 `{"code": string, "message": string}`. 검증 오류(422)만 `errors: [{loc, msg}]` 가 추가된다.
   - 주요 code: `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `validation`, `outside_root`, `bad_path`, `sensitive`, `deny`, `gone`, `no_preview`.
 - 시각은 ISO 8601 UTC. ID 는 UUID 문자열.
@@ -353,3 +353,21 @@ payload 는 `{title, body, url, tag}`:
 - 실제 Run 이벤트는 `agent.session`, `message`, `tool.call`, `tool.result`, `usage`, `error`로 정규화한다. `usage`의 token 필드는 CLI가 제공할 때만 기록하고 cost는 `null`이다. 대화 재개 키는 계정별 `engine_session_id`이며 CLI에는 `--conversation`으로 전달한다. 재개 요청 ID와 `init.conversation_id`가 다르면 새 대화로 교체하지 않고 Run을 오류로 종료한다.
 - **운영 제한:** ADR 0029의 이전 CLI 1.2.10 파일 작성·workspace 밖 차단 실측은 유지한다. 2026-10-15 CLI 1.3.5는 MCP dispatcher `call_mcp_tool`과 workspace 설정을 인식했지만 안전 fixture의 `server/discover` 미지원으로 연결 성공은 확인하지 못했다. Ttakkari MCP 서버 2.3.0의 직접 stdio discovery·tools/list는 성공했으나 실제 API 호출은 실패하도록 격리한 fixture였다. 설치 스크립트는 launchd에서 backend를 직접 실행하며 OS sandbox wrapper가 없지만, 이것은 운영 agy의 앱 상태 저장 권한을 증명하지 않는다. 이 세션에는 인증된 기존 backend Run 호출 경로가 없어 운영 agy 실행·재개·MCP는 미검증이고, 도구 sandbox에서 본 EPERM을 backend 실패로 일반화하지 않는다. `--help`에 `--log-file`만 로그 경로 override로 있으며, project flag는 ID/name이다. 공식 문서상 settings/session cache는 `~/.gemini/antigravity-cli` 아래에 고정돼 있고, 공개 저장소 [AGY_HOME 요청 #155](https://github.com/google-antigravity/antigravity-cli/issues/155)는 열린 기능 요청이다. 따라서 현재 실행 경계 안에서 정식 저장 위치 대체 경로를 확인하지 못했다. CLI가 결과 stdout 없이 exit 0을 반환하는 경우 Run은 실패로 처리하며 stderr 진단을 보존한다. 첫 단발 worker→보고는 매니저가 직접 연결하므로 재개/MCP 호출이 구조상 필수는 아니지만, 현재 API에 재개 비활성 capability는 없고 MCP 의존 작업·후속 Run은 별도 검증 대상이다. 상세 증거·경계는 [ADR 0029](adr/0029-antigravity-cli-engine.md)의 배포 조건을 따른다.
 - **통합 상태:** Antigravity 변경은 back `main`에 통합됐고 기준 커밋 `f89709a93c008a447d19c9410a7ee155ab182073`의 Qwen feedback export는 보존했다. 다른 세션의 미커밋 변경은 통합 커밋에 포함하지 않았다. API/worker 계약 구현과 단위 검증은 포함하지만, 실제 backend smoke와 디자인 worker 실행은 미완료다. 상세 범위는 [ADR 0029](adr/0029-antigravity-cli-engine.md)를 따른다.
+
+## 회의록 외부 공유와 내보내기 (ADR 0030)
+
+상태: backend 계약 구현, frontend 연결·운영 공개 활성화는 미완료다. `public_sharing_enabled` 기본값은 `false`이며 이 값이 꺼져 있으면 익명 조회·다운로드는 404다. 소유자 개인 export는 이 설정과 무관하게 동작한다. 현재 지원 형식은 TXT/MD/JSON/CSV이며 SRT/VTT/DOCX/PDF와 PMS/WBS/Artifact는 사용할 수 없다.
+
+| 메서드 | 경로 | 요청 / 응답 |
+|---|---|---|
+| POST | `/api/shares/preview` | owner Bearer, `{resource:{type:"meeting",id}, selection:{sections,include_people?,include_evidence?}, download_formats?, confirm_work_scope?}` → `{document, source_revision, format_options, warnings}`. `source_revision`은 이후 게시·export 요청에 그대로 돌려준다. 공개 전 화면에서 document와 warnings를 사용자가 확인한다. |
+| POST | `/api/shares` | owner Bearer, preview 입력 + `{expected_source_revision, expires_at?}` → 201 게시 정보와 일회성 capability URL. 링크 비밀은 fragment `#key=...`에 있으며 서버는 hash만 저장한다. `work` 범위는 `confirm_work_scope=true`가 필요하다. |
+| GET | `/api/shares?resource_type=meeting&resource_id={uuid}&offset=0` | owner Bearer → 해당 원본의 공유 상태·publication/source revision·만료·선택 목록. 링크 비밀은 반환하지 않는다. |
+| GET | `/api/shares/{share_id}` | owner Bearer → 단일 공유 상태와 회수 여부. |
+| PUT | `/api/shares/{share_id}/publication` | owner Bearer, 새 선택/형식/만료 + `expected_source_revision`, `expected_publication_revision` → 활성 공유의 snapshot과 publication revision을 갱신한다. capability 비밀은 회전하지 않고 기존 URL을 계속 쓴다. 응답에는 capability URL이 없다. |
+| DELETE | `/api/shares/{share_id}` | owner Bearer → 204. 비가역 회수. |
+| POST | `/api/exports` | owner Bearer, `{resource:{type:"meeting",id}, selection, format:"txt"\|"md"\|"json"\|"csv", part?, expected_source_revision}` → 선택된 최신 projection을 담은 attachment bytes. Preview의 revision이 바뀌었으면 409 `source_changed`; 미분석 CSV part는 409 `analysis_not_generated`, 선택되지 않거나 맞지 않는 part는 409 `format_not_applicable`. 공유 생성·Artifact 등록은 하지 않으며 public sharing off에서도 가능하다. |
+| GET/HEAD | `/api/public/shares/{share_id}` | 로그인 없이 `Authorization: Bearer ps1_…` capability 필요 → 게시된 선택 DTO JSON. URL query에 비밀을 넣지 않는다. |
+| GET/HEAD | `/api/public/shares/{share_id}/download?format={txt\|md\|json\|csv}&part={document\|utterances\|decisions\|actions\|discussions\|open_issues}&revision={publication_revision}` | 같은 capability 필요 → 승인된 snapshot에서 생성한 attachment. 조회·다운로드 모두 매 요청 활성·만료·원본·선택 part를 확인하며 다운로드는 응답 직전 `final_gate`를 통과해야 한다. 회수/삭제/만료 시 이후 요청은 404, 생성 중 재게시로 revision이 바뀌면 409이며 생성 bytes는 반환하지 않는다. 이미 인가되어 시작한 전송은 취소하지 않는다. |
+
+Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fragment를 브라우저에서 Authorization 헤더로 옮김 → 공개 조회/다운로드 → owner 목록·회수 순으로 연결한다. URL fragment는 서버 요청에 자동 전송하지 않는다. `format_options`의 `enabled`, `applicable`, `parts`, `reason`을 그대로 UI 상태에 사용한다. preview/download와 owner export 모두 서버가 선택된 section/part만 직렬화하며 frontend가 원본 회의 상세 API를 공개 페이지 데이터원으로 대신 호출하지 않는다. 정식 활성화 전에는 UI 캐시/CSP·외부 proxy 로그와 공개 전달 환경을 별도 확인해야 한다.

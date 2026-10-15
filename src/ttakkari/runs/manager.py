@@ -614,6 +614,12 @@ class RunManager:
                 if cleanup:
                     cleanup(spec)
         rc = proc.returncode
+        finalize_process = getattr(adapter, "finalize_process", None)
+        if finalize_process:
+            finalize_process(
+                state, return_code=rc,
+                stderr="".join(h.stderr_tail)[-STDERR_TAIL:] if h else "",
+            )
         return state, rc, timed_out, False
 
     async def _pump(self, db: AsyncSession, run: Run, proc: asyncio.subprocess.Process,

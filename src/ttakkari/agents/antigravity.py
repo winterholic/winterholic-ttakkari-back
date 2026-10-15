@@ -94,6 +94,12 @@ class AntigravityAdapter:
         except OSError:
             pass
 
+    def finalize_process(self, state: ParseState, *, return_code: int | None, stderr: str) -> None:
+        """Treat a silent zero-exit CLI as a failed run and preserve its diagnostic."""
+        if return_code == 0 and not state.is_error and state.result_text is None:
+            state.is_error = True
+            state.error = stderr.strip()[-8000:] or "Antigravity exited without a final response"
+
     def parse_line(self, obj: dict[str, Any], state: ParseState, cwd: Path) -> list[Normalized]:
         event = obj.get("event")
         if event == "init":

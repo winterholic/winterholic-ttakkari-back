@@ -119,3 +119,26 @@ async def test_antigravity_worker_result_is_reported_to_its_orchestrator(
     assert report is not None, "worker result was not reported to its orchestrator"
     assert "[작업 보고]" in report["prompt"] and "Fixture finished" in report["prompt"]
     assert (await wait_run(client, auth, report["id"]))["status"] == "succeeded"
+
+
+async def test_antigravity_empty_stdout_is_not_reported_as_success(client, auth, new_session, make_dir, monkeypatch):
+    account = await client.post("/api/accounts", json={"name": "Fixture agy", "engine": "antigravity"}, headers=auth)
+    assert account.status_code == 201, account.text
+    _workspace, chat = await new_session(engine="antigravity")
+
+    fake_cli = make_dir() / "agy_fake_empty.py"
+    fake_cli.write_text("#!/usr/bin/env python3\nimport sys\nprint('operation not permitted', file=sys.stderr)\n")
+    fake_cli.chmod(fake_cli.stat().st_mode | 0o111)
+
+    from ttakkari.agents import antigravity
+
+    monkeypatch.setattr(antigravity, "get_settings", lambda: SimpleNamespace(
+        antigravity_bin=str(fake_cli), run_timeout_seconds=30,
+    ))
+
+    response = await client.post(f"/api/sessions/{chat['id']}/runs", json={"prompt": "return a result"}, headers=auth)
+    assert response.status_code == 202, response.text
+    run = await wait_run(client, auth, response.json()["id"])
+
+    assert run["status"] == "failed"
+    assert "operation not permitted" in run["error"].lower()

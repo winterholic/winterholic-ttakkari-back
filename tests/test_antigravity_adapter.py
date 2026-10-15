@@ -95,6 +95,15 @@ def test_success_without_a_final_response_is_not_reported_as_a_successful_run():
     assert any(event.type == "error" for event in events)
 
 
+def test_zero_exit_without_result_surfaces_stderr_as_run_error():
+    state = ParseState()
+
+    AntigravityAdapter().finalize_process(state, return_code=0, stderr="operation not permitted\n")
+
+    assert state.is_error
+    assert "operation not permitted" in state.error.lower()
+
+
 def test_resume_rejects_cli_returning_a_different_conversation_id():
     state = ParseState(engine_session_id="requested-conversation")
     events = AntigravityAdapter().parse_line({

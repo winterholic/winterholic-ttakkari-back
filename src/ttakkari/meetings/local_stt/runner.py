@@ -26,6 +26,8 @@ async def run_worker(audio_path: Path, params: dict, settings) -> dict:
             "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
             "HF_HUB_DISABLE_TELEMETRY": "1",
             "TOKENIZERS_PARALLELISM": "false",
+            "PYANNOTE_METRICS_ENABLED": "0",
+            "DO_NOT_TRACK": "1",
         }
     )
     request = {
@@ -35,8 +37,25 @@ async def run_worker(audio_path: Path, params: dict, settings) -> dict:
         "max_audio_seconds": settings.local_stt_max_audio_seconds,
         "cpu_threads": settings.local_stt_cpu_threads,
     }
+    for field in (
+        "diarization_model_path",
+        "diarization_device",
+        "separation_model_path",
+    ):
+        value = getattr(settings, "local_stt_" + field, None)
+        if value is not None:
+            request[field] = str(value)
     started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="ttakkari-stt-") as temp:
+        env.update(
+            {
+                "HOME": temp,
+                "HF_HOME": str(Path(temp) / "hf"),
+                "MPLCONFIGDIR": str(Path(temp) / "mpl"),
+                "XDG_CACHE_HOME": str(Path(temp) / "cache"),
+                "TORCH_HOME": str(Path(temp) / "torch"),
+            }
+        )
         output = Path(temp) / "result.json"
         # stderr is a small fixed error code from worker.main; keep it off API output.
         process = await asyncio.create_subprocess_exec(

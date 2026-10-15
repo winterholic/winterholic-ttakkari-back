@@ -178,6 +178,87 @@ async def stt_segments(mid: uuid.UUID, jid: uuid.UUID, _: User, db: Db,
     return {"job": job_out(job), "segments": segments, "offset": offset}
 
 
+class CorrectionsIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    replacements: dict[
+        Annotated[str, Field(min_length=1, max_length=80)],
+        Annotated[str, Field(min_length=1, max_length=80)],
+    ] = Field(min_length=1, max_length=100)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+@router.post("/{mid}/stt/{jid}/corrections")
+async def stt_corrections(
+    mid: uuid.UUID, jid: uuid.UUID, body: CorrectionsIn, _: User, db: Db
+) -> dict:
+    """Preview literal corrections; original DB rows and meeting analysis are immutable."""
+    from ttakkari.meetings.local_stt.core import correct_terms
+
+    job = await _stt_job(db, mid, jid)
+    if job.status != "succeeded":
+        raise HTTPException(409, "전사 결과가 나온 뒤 교정 후보를 만들 수 있어요.")
+    rows = await db.scalars(
+        select(LocalSttSegment)
+        .where(LocalSttSegment.job_id == jid)
+        .order_by(LocalSttSegment.position)
+        .offset(body.offset)
+        .limit(body.limit)
+    )
+    segments = [
+        {
+            c.name: getattr(s, c.name)
+            for c in LocalSttSegment.__table__.columns
+            if c.name not in ("id", "job_id", "raw")
+        }
+        for s in rows
+    ]
+    return {
+        "candidate_only": True,
+        "segments": correct_terms(segments, body.replacements),
+        "offset": body.offset,
+    }
+
+
+class OverlapComparisonIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    references: list[Annotated[str, Field(min_length=1, max_length=20000)]] = Field(
+        min_length=2, max_length=2
+    )
+    human_verified: Literal[True]
+
+
+@router.post("/{mid}/stt/{jid}/overlap/{candidate_index}/compare")
+async def stt_compare_overlap(
+    mid: uuid.UUID,
+    jid: uuid.UUID,
+    candidate_index: int,
+    body: OverlapComparisonIn,
+    _: User,
+    db: Db,
+) -> dict:
+    """Compare a saved candidate against explicit human references; never overwrite a meeting."""
+    from ttakkari.meetings.local_stt.core import compare_overlap_candidate
+
+    job = await _stt_job(db, mid, jid)
+    candidates = job.result_metadata.get("overlap_candidates", [])
+    if not 0 <= candidate_index < len(candidates):
+        raise HTTPException(404, "중첩 재처리 후보가 없어요.")
+    candidate = candidates[candidate_index]
+    if candidate.get("status") != "succeeded":
+        raise HTTPException(409, "분리와 전사가 나온 후보만 비교할 수 있어요.")
+    decision = compare_overlap_candidate(
+        candidate["original_text"],
+        [t["text"] for t in candidate["tracks"]],
+        references=body.references,
+    )
+    return {
+        "candidate_only": True,
+        "decision": decision,
+        "start": candidate["start"],
+        "end": candidate["end"],
+    }
+
 @router.post("/{mid}/stt/{jid}/reprocess", status_code=202)
 async def stt_reprocess(mid: uuid.UUID, jid: uuid.UUID, body: ReprocessIn, _: User, db: Db) -> dict:
     from ttakkari.config import get_settings

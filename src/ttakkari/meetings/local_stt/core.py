@@ -204,3 +204,157 @@ def compare_candidate(original: str, candidate: str, *, reference: str | None) -
         "original": before,
         "candidate": after,
     }
+
+
+def overlap_regions(turns: list[dict], *, duration: float) -> list[dict]:
+    """Exact sweep of distinct active acoustic labels, without exclusive diarization."""
+    if not math.isfinite(duration) or duration < 0:
+        raise ValueError("Invalid duration")
+    events: dict[float, Counter] = {}
+    for t in turns:
+        a, b = _number(t["start"]), _number(t["end"])
+        label = t["speaker_id"]
+        if (
+            a is None
+            or b is None
+            or not 0 <= a < b <= duration + 0.02
+            or not isinstance(label, str)
+            or not label
+        ):
+            raise ValueError("Invalid diarization turn")
+        events.setdefault(a, Counter())[label] += 1
+        events.setdefault(min(b, duration), Counter())[label] -= 1
+    active, out, previous = Counter(), [], 0.0
+    for point in sorted(events):
+        labels = sorted(k for k, count in active.items() if count > 0)
+        if len(labels) > 1 and point > previous:
+            if out and out[-1]["end"] == previous and out[-1]["speaker_ids"] == labels:
+                out[-1]["end"] = point
+            else:
+                out.append({"start": previous, "end": point, "speaker_ids": labels})
+        active.update(events[point])
+        previous = point
+    return out
+
+
+def annotate_diarization(
+    segments: list[dict], turns: list[dict], *, duration: float
+) -> dict:
+    regions = overlap_regions(turns, duration=duration)
+    aligned = align_speakers(segments, turns)
+    for s in aligned:
+        s["words"] = align_speakers([{**w, "flags": []} for w in s["words"]], turns)
+        labels = {
+            t["speaker_id"]
+            for t in turns
+            if t["start"] < s["end"] and t["end"] > s["start"]
+        }
+        if len(labels) > 1 and not s["overlap"]:
+            s["flags"].append("speaker_change")
+        if s["overlap"]:
+            s["flags"].append("overlapping_speech")
+        if not any(t["start"] < s["end"] and t["end"] > s["start"] for t in turns):
+            s["flags"].append("speaker_uncovered")
+        # Successful empty annotation is distinct from a diarizer that never ran.
+        if not turns:
+            s["overlap"] = False
+    return {
+        "segments": aligned,
+        "turns": turns,
+        "overlap_regions": regions,
+        "speaker_count": len({t["speaker_id"] for t in turns}),
+        "identity_status": "not_run",
+        "speaker_identities": {},
+    }
+
+
+def compare_overlap_candidate(
+    original: str, tracks: list[str], *, references: list[str] | None
+) -> dict:
+    """Permutation-invariant two-source transcript comparison, not an acoustic score.
+
+    References must be independently human verified for this exact region. Concatenated
+    references are a content metric; they do not measure speaker attribution or timing.
+    """
+    from itertools import permutations
+
+    if not references or any(not r.strip() for r in references):
+        return {"adopt": False, "reason": "no_reference"}
+    if len(references) != 2 or len(tracks) != len(references):
+        return {"adopt": False, "reason": "source_count_mismatch"}
+    if any(not track.strip() for track in tracks):
+        return {"adopt": False, "reason": "empty_source"}
+    reference = " ".join(references)
+    before = error_rates(reference, original)
+    choices = []
+    for order in permutations(range(len(tracks))):
+        text = " ".join(tracks[i] for i in order)
+        after = error_rates(reference, text)
+        choices.append(
+            (after["character_edits"], after["word_edits"], list(order), after)
+        )
+    _, _, order, after = min(choices)
+    return {
+        "adopt": after["cer"] < before["cer"] and after["wer"] <= before["wer"],
+        "reason": "human_reference_comparison",
+        "permutation": order,
+        "original": before,
+        "candidate": after,
+    }
+
+
+def correct_terms(segments: list[dict], replacements: dict[str, str]) -> list[dict]:
+    """Explicit literal substitutions in a separate candidate field, never cascading."""
+    if (
+        not replacements
+        or len(replacements) > 100
+        or any(
+            not a or not b or len(a) > 80 or len(b) > 80
+            for a, b in replacements.items()
+        )
+    ):
+        raise ValueError("Invalid correction dictionary")
+    pattern = re.compile(
+        "|".join(re.escape(k) for k in sorted(replacements, key=len, reverse=True))
+    )
+    out = []
+    for s in segments:
+        corrected = pattern.sub(lambda m: replacements[m[0]], s["original_text"])
+        changed = corrected != s["original_text"]
+        out.append(
+            {
+                **s,
+                "corrected_text": corrected if changed else None,
+                "flags": list(s["flags"])
+                + (["term_correction_candidate"] if changed else []),
+            }
+        )
+    return out
+
+
+def flag_repetitions(segments: list[dict]) -> list[dict]:
+    """Review hints only. Repeated valid speech can trigger these rules."""
+    out = [{**s, "flags": list(s["flags"])} for s in segments]
+    normalized = [re.sub(r"\s+", "", s["original_text"]) for s in segments]
+    for i, text in enumerate(normalized):
+        # Minimum 3 chars/unit and four repetitions avoid short natural stutters.
+        if (
+            re.search(r"(.{3,80}?)\1{3,}", text)
+            and "phrase_repetition" not in out[i]["flags"]
+        ):
+            out[i]["flags"].append("phrase_repetition")
+    i = 0
+    while i < len(out):
+        j = i + 1
+        while (
+            j < len(out)
+            and normalized[j] == normalized[i]
+            and len(normalized[i]) >= 4
+            and out[j]["start"] - out[j - 1]["end"] <= 5
+        ):
+            j += 1
+        if j - i >= 3:
+            for s in out[i:j]:
+                s["flags"].append("consecutive_duplicate")
+        i = j
+    return out

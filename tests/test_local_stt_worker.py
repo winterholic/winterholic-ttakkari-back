@@ -46,3 +46,34 @@ def test_parent_guard_stops_after_request_finishes(monkeypatch):
 
     monkeypatch.setattr(worker.os, "_exit", fail)
     worker.watch_parent(123, stop)
+
+
+def test_finalization_wires_flags_correction_and_optional_enhancement(monkeypatch):
+    from ttakkari.meetings.local_stt import enhance
+
+    calls = []
+
+    def run(result, **kw):
+        calls.append(kw)
+        return {**result, "diarization_status": "unavailable"}
+
+    monkeypatch.setattr(enhance, "enhance_result", run)
+    from ttakkari.meetings.local_stt.core import normalize_segments
+
+    result = {
+        "text": "티티까리",
+        "segments": normalize_segments(
+            [{"start": 0, "end": 1, "text": "티티까리"}], duration=1
+        ),
+    }
+    out = worker.finalize_result(
+        result,
+        audio="waveform",
+        offset=0,
+        request={"corrections": {"티티까리": "따까리"}},
+        recognize=None,
+    )
+    assert out["segments"][0]["corrected_text"] == "따까리"
+    assert out["text"] == "티티까리" and result["segments"][0]["corrected_text"] is None
+    assert calls[0]["audio"] == "waveform"
+    assert out["diarization_status"] == "unavailable"

@@ -1,0 +1,14 @@
+...............FF..                                                      [100%]
+=================================== FAILURES ===================================
+_________ test_sequential_speaker_change_is_marked_even_with_majority __________
+tests/test_local_stt_enhancement.py:166: in test_sequential_speaker_change_is_marked_even_with_majority
+    assert 'speaker_change' in out['segments'][0]['flags']
+E   AssertionError: assert 'speaker_change' in []
+_________________ test_no_empty_separated_track_can_be_adopted _________________
+tests/test_local_stt_enhancement.py:170: in test_no_empty_separated_track_can_be_adopted
+    assert core.compare_overlap_candidate('', ['오늘 회의',''], references=['오늘 회의','예'])['adopt'] is False
+E   assert True is False
+=========================== short test summary info ============================
+FAILED tests/test_local_stt_enhancement.py::test_sequential_speaker_change_is_marked_even_with_majority
+FAILED tests/test_local_stt_enhancement.py::test_no_empty_separated_track_can_be_adopted
+2 failed, 17 passed in 1.52s

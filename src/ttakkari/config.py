@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     local_stt_cpu_threads: int = 4
     local_stt_profile: Literal["baseline", "improved"] = "baseline"
     local_stt_max_reprocess_seconds: int = 120
+    local_stt_diarization_model_path: Path | None = None  # complete offline Community-1 snapshot
+    local_stt_diarization_device: Literal["cpu", "mps", "cuda"] = "cpu"
+    local_stt_separation_model_path: Path | None = None  # offline SepFormer tensor weights
     # 클로바노트 연동(ADR 0021). Playwright 가 실제 Chrome(channel=chrome)을 이 전용 프로필로 띄운다. 비우면 <home>/clovanote-chrome.
     # 네이버 로그인은 사람이 한 번 하고(로그인 상태 유지), 쿠키는 이 폴더에만 있다. 비밀번호는 어디에도 두지 않는다.
     clovanote_profile_dir: Path | None = None

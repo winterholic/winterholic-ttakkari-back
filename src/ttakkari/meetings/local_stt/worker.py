@@ -14,6 +14,7 @@ import json
 import os
 import resource
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -39,12 +40,27 @@ def decode_options(profile: str, terms: list[str]) -> dict:
     }
 
 
+def finalize_result(
+    result: dict, *, audio, offset: float, request: dict, recognize
+) -> dict:
+    from .core import correct_terms, flag_repetitions
+    from .enhance import enhance_result
+
+    result = {**result, "segments": flag_repetitions(result["segments"])}
+    if request.get("corrections"):
+        result["segments"] = correct_terms(result["segments"], request["corrections"])
+    return enhance_result(
+        result, audio=audio, offset=offset, request=request, recognize=recognize
+    )
+
+
 def transcribe(request: dict) -> dict:
     started = time.perf_counter()
     # The parent supplies an isolated cache and prohibits credential discovery.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    os.environ["PYANNOTE_METRICS_ENABLED"] = "0"
     import av
     import ctranslate2
     from faster_whisper import WhisperModel
@@ -85,12 +101,9 @@ def transcribe(request: dict) -> dict:
     raw = [dataclasses.asdict(segment) for segment in iterator]
     inferred = time.perf_counter()
     segments = normalize_segments(raw, duration=len(audio) / 16000, offset=start)
-    del iterator, model, audio
-    gc.collect()
-    released = time.perf_counter()
     with path.open("rb") as source:
         audio_sha = hashlib.file_digest(source, "sha256").hexdigest()
-    return {
+    result = {
         "schema_version": 1,
         "engine": "faster-whisper",
         "engine_version": importlib.metadata.version("faster-whisper"),
@@ -116,12 +129,39 @@ def transcribe(request: dict) -> dict:
             "audio_decode_seconds": decoded - imports_done,
             "load_seconds": loaded - decoded,
             "inference_seconds": inferred - loaded,
-            "release_request_seconds": released - inferred,
             "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             * (1 if sys.platform == "darwin" else 1024),
             "rtf_inference": (inferred - loaded) / (end - start),
         },
     }
+
+    def recognize(samples, absolute_offset):
+        iterator, _ = model.transcribe(samples, **options)
+        source_raw = [dataclasses.asdict(s) for s in iterator]
+        return {
+            "text": "".join(s["text"] for s in source_raw).strip(),
+            "segments": normalize_segments(
+                source_raw, duration=len(samples) / 16000, offset=absolute_offset
+            ),
+            "raw_segments": source_raw,
+        }
+
+    result = finalize_result(
+        result, audio=audio, offset=start, request=request, recognize=recognize
+    )
+    enhanced = time.perf_counter()
+    del iterator, audio, recognize
+    model = None
+    gc.collect()
+    result["metrics"].update(
+        {
+            "enhancement_seconds": enhanced - inferred,
+            "release_request_seconds": time.perf_counter() - enhanced,
+            "peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            * (1 if sys.platform == "darwin" else 1024),
+        }
+    )
+    return result
 
 
 def watch_parent(parent_pid: int, stop: threading.Event) -> None:
@@ -139,7 +179,18 @@ def main() -> int:
     )
     guard.start()
     try:
-        result = transcribe(json.load(sys.stdin))
+        request = json.load(sys.stdin)
+        with tempfile.TemporaryDirectory(prefix="ttk-stt-runtime-") as cache:
+            os.environ.update(
+                {
+                    "HOME": cache,
+                    "HF_HOME": cache + "/hf",
+                    "MPLCONFIGDIR": cache + "/mpl",
+                    "XDG_CACHE_HOME": cache + "/cache",
+                    "TORCH_HOME": cache + "/torch",
+                }
+            )
+            result = transcribe(request)
         Path(sys.argv[1]).write_text(
             json.dumps(result, ensure_ascii=False, allow_nan=False), encoding="utf-8"
         )

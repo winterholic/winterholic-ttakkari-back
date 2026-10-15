@@ -1,0 +1,2 @@
+16 samples: audio SHA-256 / range / options matched per source; all child processes exited.
+Negative control: altered input hash detected.

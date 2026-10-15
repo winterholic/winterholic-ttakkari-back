@@ -1,0 +1,60 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+_______ test_overlap_sweep_unions_duplicate_labels_and_preserves_changes _______
+tests/test_local_stt_enhancement.py:16: in test_overlap_sweep_unions_duplicate_labels_and_preserves_changes
+    assert core.overlap_regions(turns, duration=6) == [
+           ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'overlap_regions'
+_________________ test_invalid_diarization_is_rejected[turns0] _________________
+tests/test_local_stt_enhancement.py:26: in test_invalid_diarization_is_rejected
+    core.overlap_regions(turns, duration=2)
+    ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'overlap_regions'
+_________________ test_invalid_diarization_is_rejected[turns1] _________________
+tests/test_local_stt_enhancement.py:26: in test_invalid_diarization_is_rejected
+    core.overlap_regions(turns, duration=2)
+    ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'overlap_regions'
+_________________ test_invalid_diarization_is_rejected[turns2] _________________
+tests/test_local_stt_enhancement.py:26: in test_invalid_diarization_is_rejected
+    core.overlap_regions(turns, duration=2)
+    ^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'overlap_regions'
+________ test_diarization_aligns_words_and_marks_overlap_and_uncovered _________
+tests/test_local_stt_enhancement.py:36: in test_diarization_aligns_words_and_marks_overlap_and_uncovered
+    result = core.annotate_diarization(segments, [turn(0, 2.5, 'A'), turn(2, 4, 'B')], duration=6)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'annotate_diarization'
+_____ test_overlap_comparison_handles_permutation_and_requires_all_sources _____
+tests/test_local_stt_enhancement.py:48: in test_overlap_comparison_handles_permutation_and_requires_all_sources
+    compare = core.compare_overlap_candidate
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'compare_overlap_candidate'
+__ test_only_overlaps_are_separated_with_budgets_and_no_reference_no_adoption __
+tests/test_local_stt_enhancement.py:58: in test_only_overlaps_are_separated_with_budgets_and_no_reference_no_adoption
+    from ttakkari.meetings.local_stt.enhance import reprocess_overlaps
+E   ModuleNotFoundError: No module named 'ttakkari.meetings.local_stt.enhance'
+_________ test_failed_separation_is_explicit_and_keeps_next_candidate __________
+tests/test_local_stt_enhancement.py:75: in test_failed_separation_is_explicit_and_keeps_next_candidate
+    from ttakkari.meetings.local_stt.enhance import reprocess_overlaps
+E   ModuleNotFoundError: No module named 'ttakkari.meetings.local_stt.enhance'
+_______________ test_diarizer_requires_local_model_before_import _______________
+tests/test_local_stt_enhancement.py:84: in test_diarizer_requires_local_model_before_import
+    from ttakkari.meetings.local_stt.diarization import diarize
+E   ModuleNotFoundError: No module named 'ttakkari.meetings.local_stt.diarization'
+__________ test_pyannote_output_keeps_regular_and_exclusive_separate ___________
+tests/test_local_stt_enhancement.py:90: in test_pyannote_output_keeps_regular_and_exclusive_separate
+    from ttakkari.meetings.local_stt.diarization import serialize_output
+E   ModuleNotFoundError: No module named 'ttakkari.meetings.local_stt.diarization'
+=========================== short test summary info ============================
+FAILED tests/test_local_stt_enhancement.py::test_overlap_sweep_unions_duplicate_labels_and_preserves_changes
+FAILED tests/test_local_stt_enhancement.py::test_invalid_diarization_is_rejected[turns0]
+FAILED tests/test_local_stt_enhancement.py::test_invalid_diarization_is_rejected[turns1]
+FAILED tests/test_local_stt_enhancement.py::test_invalid_diarization_is_rejected[turns2]
+FAILED tests/test_local_stt_enhancement.py::test_diarization_aligns_words_and_marks_overlap_and_uncovered
+FAILED tests/test_local_stt_enhancement.py::test_overlap_comparison_handles_permutation_and_requires_all_sources
+FAILED tests/test_local_stt_enhancement.py::test_only_overlaps_are_separated_with_budgets_and_no_reference_no_adoption
+FAILED tests/test_local_stt_enhancement.py::test_failed_separation_is_explicit_and_keeps_next_candidate
+FAILED tests/test_local_stt_enhancement.py::test_diarizer_requires_local_model_before_import
+FAILED tests/test_local_stt_enhancement.py::test_pyannote_output_keeps_regular_and_exclusive_separate
+10 failed in 0.81s

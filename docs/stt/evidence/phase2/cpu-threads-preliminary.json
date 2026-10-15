@@ -1,0 +1,332 @@
+[
+  {
+    "id": "fleurs-ko-test-0",
+    "threads": 4,
+    "audio_sha256": "e6bc095e55046de927d7c937f036f96ebb506570648ad9ae7c6576febfc4746a",
+    "start": 0.0,
+    "end": 12.48,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.09198433393612504,
+      "audio_decode_seconds": 0.006694375071674585,
+      "load_seconds": 1.2825594160240144,
+      "inference_seconds": 7.150624542031437,
+      "peak_rss_bytes": 3609083904,
+      "rtf_inference": 0.5729667100986728,
+      "enhancement_seconds": 0.003424957860261202,
+      "release_request_seconds": 0.016662416979670525,
+      "process_exited": true,
+      "wall_seconds": 8.597456292016432
+    },
+    "segments": 1,
+    "characters": 66,
+    "error_rates": {
+      "cer": 0.08928571428571429,
+      "wer": 0.21428571428571427,
+      "character_edits": 5,
+      "reference_characters": 56,
+      "word_edits": 3,
+      "reference_words": 14
+    }
+  },
+  {
+    "id": "fleurs-ko-test-1",
+    "threads": 4,
+    "audio_sha256": "a5a400dda19a17f0ceb0c4a2542387ae376e3f0518ba0f9769564402df55affd",
+    "start": 0.0,
+    "end": 10.8,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.08304366702213883,
+      "audio_decode_seconds": 0.0069525830913335085,
+      "load_seconds": 1.2675405000336468,
+      "inference_seconds": 6.896256666863337,
+      "peak_rss_bytes": 3608805376,
+      "rtf_inference": 0.6385422839688275,
+      "enhancement_seconds": 0.001101125031709671,
+      "release_request_seconds": 0.016883041942492127,
+      "process_exited": true,
+      "wall_seconds": 8.319934166967869
+    },
+    "segments": 1,
+    "characters": 53,
+    "error_rates": {
+      "cer": 0.023809523809523808,
+      "wer": 0.4,
+      "character_edits": 1,
+      "reference_characters": 42,
+      "word_edits": 6,
+      "reference_words": 15
+    }
+  },
+  {
+    "id": "fleurs-ko-test-2",
+    "threads": 4,
+    "audio_sha256": "989020dedbda7fa529b0b4e876f236e79b25a2915d093e23de94c8456e72b7b4",
+    "start": 0.0,
+    "end": 8.94,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.08504724991507828,
+      "audio_decode_seconds": 0.009639583062380552,
+      "load_seconds": 1.2692472499329597,
+      "inference_seconds": 6.547090042149648,
+      "peak_rss_bytes": 3610525696,
+      "rtf_inference": 0.7323366937527571,
+      "enhancement_seconds": 0.0010688328184187412,
+      "release_request_seconds": 0.01739470800384879,
+      "process_exited": true,
+      "wall_seconds": 7.97736075008288
+    },
+    "segments": 1,
+    "characters": 44,
+    "error_rates": {
+      "cer": 0.029411764705882353,
+      "wer": 0.45454545454545453,
+      "character_edits": 1,
+      "reference_characters": 34,
+      "word_edits": 5,
+      "reference_words": 11
+    }
+  },
+  {
+    "id": "private-first-180s",
+    "threads": 4,
+    "audio_sha256": "5d51a70971c192445ab4f4ae93d82481e97e1c50d0e8f76107f48a8c6e40d809",
+    "start": 0.0,
+    "end": 180.0,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.08512945892289281,
+      "audio_decode_seconds": 0.7607248749118298,
+      "load_seconds": 1.2649530000053346,
+      "inference_seconds": 28.503054999979213,
+      "peak_rss_bytes": 3871719424,
+      "rtf_inference": 0.15835030555544008,
+      "enhancement_seconds": 0.009209375130012631,
+      "release_request_seconds": 0.018732290947809815,
+      "process_exited": true,
+      "wall_seconds": 30.699278875021264
+    },
+    "segments": 19,
+    "characters": 361,
+    "error_rates": null
+  },
+  {
+    "id": "fleurs-ko-test-0",
+    "threads": 6,
+    "audio_sha256": "e6bc095e55046de927d7c937f036f96ebb506570648ad9ae7c6576febfc4746a",
+    "start": 0.0,
+    "end": 12.48,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.09424120793119073,
+      "audio_decode_seconds": 0.006623208988457918,
+      "load_seconds": 1.3591692082118243,
+      "inference_seconds": 6.226060082903132,
+      "peak_rss_bytes": 3608592384,
+      "rtf_inference": 0.498883019463392,
+      "enhancement_seconds": 0.0011576670221984386,
+      "release_request_seconds": 0.018895958084613085,
+      "process_exited": true,
+      "wall_seconds": 7.762379124993458
+    },
+    "segments": 1,
+    "characters": 66,
+    "error_rates": {
+      "cer": 0.08928571428571429,
+      "wer": 0.21428571428571427,
+      "character_edits": 5,
+      "reference_characters": 56,
+      "word_edits": 3,
+      "reference_words": 14
+    }
+  },
+  {
+    "id": "fleurs-ko-test-1",
+    "threads": 6,
+    "audio_sha256": "a5a400dda19a17f0ceb0c4a2542387ae376e3f0518ba0f9769564402df55affd",
+    "start": 0.0,
+    "end": 10.8,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.09224195801652968,
+      "audio_decode_seconds": 0.00602695788256824,
+      "load_seconds": 1.357846959028393,
+      "inference_seconds": 5.867064041085541,
+      "peak_rss_bytes": 3609034752,
+      "rtf_inference": 0.5432466704708834,
+      "enhancement_seconds": 0.001120041823014617,
+      "release_request_seconds": 0.017959583085030317,
+      "process_exited": true,
+      "wall_seconds": 7.396591959055513
+    },
+    "segments": 1,
+    "characters": 53,
+    "error_rates": {
+      "cer": 0.023809523809523808,
+      "wer": 0.4,
+      "character_edits": 1,
+      "reference_characters": 42,
+      "word_edits": 6,
+      "reference_words": 15
+    }
+  },
+  {
+    "id": "fleurs-ko-test-2",
+    "threads": 6,
+    "audio_sha256": "989020dedbda7fa529b0b4e876f236e79b25a2915d093e23de94c8456e72b7b4",
+    "start": 0.0,
+    "end": 8.94,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.0936912081670016,
+      "audio_decode_seconds": 0.00608824985101819,
+      "load_seconds": 1.3553356670308858,
+      "inference_seconds": 5.586772707989439,
+      "peak_rss_bytes": 3609673728,
+      "rtf_inference": 0.6249186474261118,
+      "enhancement_seconds": 0.0010568751022219658,
+      "release_request_seconds": 0.0199237079359591,
+      "process_exited": true,
+      "wall_seconds": 7.119865542044863
+    },
+    "segments": 1,
+    "characters": 44,
+    "error_rates": {
+      "cer": 0.029411764705882353,
+      "wer": 0.45454545454545453,
+      "character_edits": 1,
+      "reference_characters": 34,
+      "word_edits": 5,
+      "reference_words": 11
+    }
+  },
+  {
+    "id": "private-first-180s",
+    "threads": 6,
+    "audio_sha256": "5d51a70971c192445ab4f4ae93d82481e97e1c50d0e8f76107f48a8c6e40d809",
+    "start": 0.0,
+    "end": 180.0,
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": null,
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "metrics": {
+      "import_seconds": 0.09173887502402067,
+      "audio_decode_seconds": 0.764662625035271,
+      "load_seconds": 1.2230902081355453,
+      "inference_seconds": 24.24008316686377,
+      "peak_rss_bytes": 3937714176,
+      "rtf_inference": 0.13466712870479872,
+      "enhancement_seconds": 0.008700791047886014,
+      "release_request_seconds": 0.01662666699849069,
+      "process_exited": true,
+      "wall_seconds": 26.398051999974996
+    },
+    "segments": 19,
+    "characters": 361,
+    "error_rates": null
+  }
+]

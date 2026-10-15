@@ -34,6 +34,9 @@ ttakkari = "ttakkari.cli:main"
 [project.optional-dependencies]
 # Optional worker only. av 19 removed metadata_errors, still used by faster-whisper 1.2.1.
 stt = ["faster-whisper==1.2.1", "av>=15,<16"]
+# Independent opt-in workers; no model downloads during transcription.
+stt-diarization = ["pyannote.audio==4.0.3"]
+stt-separation = ["speechbrain==1.0.3", "torch==2.8.0", "torchaudio==2.8.0"]
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]

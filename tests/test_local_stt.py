@@ -282,3 +282,81 @@ async def test_restart_resumes_auto_analysis_after_poll_ingested_transcript(
     async with sessionmaker()() as db:
         assert (await db.get(Meeting, uuid.UUID(m["id"]))).analysis_run_id is not None
     assert len(local) == 1
+
+
+async def test_term_correction_preview_keeps_persisted_original(
+    local, client, auth, new_session
+):
+    m = await audio_meeting(client, auth, new_session)
+    jid = await submit(client, auth, m["id"])
+    await jobs.execute_job(jid)
+    path = f"/api/meetings/{m['id']}/stt/{jid}/corrections"
+    r = await client.post(path, headers=auth, json={"replacements": {"원본": "교정"}})
+    assert r.status_code == 200, r.text
+    assert r.json()["candidate_only"] is True
+    assert r.json()["segments"][0]["corrected_text"].startswith("교정")
+    raw = (
+        await client.get(f"/api/meetings/{m['id']}/stt/{jid}/segments", headers=auth)
+    ).json()["segments"][0]
+    assert raw["corrected_text"] is None and raw["original_text"].startswith("원본")
+    assert (
+        await client.post(path, json={"replacements": {"원본": "교정"}})
+    ).status_code == 401
+    assert (
+        await client.post(path, headers=auth, json={"replacements": {"": "bad"}})
+    ).status_code == 422
+    assert (
+        await client.post(
+            path,
+            headers=auth,
+            json={"replacements": {"원본": "교정"}, "surprise": True},
+        )
+    ).status_code == 422
+
+
+async def test_overlap_reference_comparison_is_explicit_and_preserves_meeting(
+    local, client, auth, new_session, monkeypatch
+):
+    run = jobs.run_worker
+
+    async def with_candidate(*args):
+        result = await run(*args)
+        result["overlap_candidates"] = [
+            {
+                "status": "succeeded",
+                "start": 0,
+                "end": 1,
+                "original_text": "오늘",
+                "tracks": [{"text": "오늘 회의"}, {"text": "시작합니다"}],
+                "decision": {"adopt": False, "reason": "no_reference"},
+            }
+        ]
+        return result
+
+    monkeypatch.setattr(jobs, "run_worker", with_candidate)
+    m = await audio_meeting(client, auth, new_session)
+    jid = await submit(client, auth, m["id"])
+    await jobs.execute_job(jid)
+    path = f"/api/meetings/{m['id']}/stt/{jid}/overlap/0/compare"
+    body = {"references": ["오늘 회의", "시작합니다"], "human_verified": True}
+    r = await client.post(path, headers=auth, json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["decision"]["adopt"] is True
+    assert r.json()["candidate_only"] is True
+    assert (
+        await client.post(
+            path,
+            headers=auth,
+            json={"references": body["references"], "human_verified": False},
+        )
+    ).status_code == 422
+    assert (
+        await client.post(path.replace("/0/", "/9/"), headers=auth, json=body)
+    ).status_code == 404
+    async with sessionmaker()() as db:
+        job = await db.get(LocalSttJob, jid)
+        meeting = await db.get(Meeting, uuid.UUID(m["id"]))
+        assert (
+            job.result_metadata["overlap_candidates"][0]["decision"]["adopt"] is False
+        )
+        assert meeting.transcript == "원본 발언입니다. FAKE_MEETING"

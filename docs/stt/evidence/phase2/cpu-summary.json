@@ -1,0 +1,106 @@
+{
+  "order": [
+    4,
+    6,
+    6,
+    4
+  ],
+  "repetitions_per_thread": 2,
+  "profile": "improved",
+  "compute_type": "int8",
+  "stt_engine": "faster-whisper 1.2.1 / CTranslate2 4.8.3",
+  "inference_processes_overlapped": false,
+  "preliminary_excluded": "Initial run overlapped synthetic separation inference; not used for comparison.",
+  "samples": {
+    "fleurs-ko-test-0": {
+      "wall_seconds_mean": {
+        "4": 8.569554291432723,
+        "6": 7.393492104485631
+      },
+      "wall_reduction_percent": 13.723726426738924,
+      "hypothesis_identical_all_runs": true,
+      "raw_wall_seconds": {
+        "4": [
+          8.555811957921833,
+          8.583296624943614
+        ],
+        "6": [
+          7.354289291892201,
+          7.432694917079061
+        ]
+      },
+      "peak_rss_bytes": {
+        "4": 3609182208,
+        "6": 3609280512
+      }
+    },
+    "fleurs-ko-test-1": {
+      "wall_seconds_mean": {
+        "4": 8.442359062493779,
+        "6": 7.06532950035762
+      },
+      "wall_reduction_percent": 16.310957067128097,
+      "hypothesis_identical_all_runs": true,
+      "raw_wall_seconds": {
+        "4": [
+          8.318692500004545,
+          8.566025624983013
+        ],
+        "6": [
+          7.014629666926339,
+          7.116029333788902
+        ]
+      },
+      "peak_rss_bytes": {
+        "4": 3609051136,
+        "6": 3609182208
+      }
+    },
+    "fleurs-ko-test-2": {
+      "wall_seconds_mean": {
+        "4": 8.009405457996763,
+        "6": 6.731851750053465
+      },
+      "wall_reduction_percent": 15.950668431547077,
+      "hypothesis_identical_all_runs": true,
+      "raw_wall_seconds": {
+        "4": [
+          7.976348708150908,
+          8.042462207842618
+        ],
+        "6": [
+          6.736423875205219,
+          6.727279624901712
+        ]
+      },
+      "peak_rss_bytes": {
+        "4": 3609247744,
+        "6": 3609477120
+      }
+    },
+    "private-first-180s": {
+      "wall_seconds_mean": {
+        "4": 29.56114379153587,
+        "6": 26.148863645619713
+      },
+      "wall_reduction_percent": 11.543126240241019,
+      "hypothesis_identical_all_runs": true,
+      "raw_wall_seconds": {
+        "4": [
+          29.483082208083943,
+          29.639205374987796
+        ],
+        "6": [
+          26.076853583101183,
+          26.220873708138242
+        ]
+      },
+      "peak_rss_bytes": {
+        "4": 3811016704,
+        "6": 4091265024
+      }
+    }
+  },
+  "accuracy_meeting": "unmeasured: no human reference",
+  "long_form_speedup": "unmeasured: only first 180 seconds compared"
+}

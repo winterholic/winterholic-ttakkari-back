@@ -1,0 +1,11 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_overlap_reference_comparison_is_explicit_and_preserves_meeting ______
+tests/test_local_stt.py:317: in test_overlap_reference_comparison_is_explicit_and_preserves_meeting
+    assert r.status_code==200,r.text
+E   AssertionError: {"detail":"Not Found"}
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+=========================== short test summary info ============================
+FAILED tests/test_local_stt.py::test_overlap_reference_comparison_is_explicit_and_preserves_meeting
+1 failed in 0.59s

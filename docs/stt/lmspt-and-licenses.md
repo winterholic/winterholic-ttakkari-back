@@ -29,16 +29,14 @@ LM-SPT 추론 속도·재합성 STT 정확도는 **미측정: 채택 대상에�
 ## 화자·중첩 검토
 
 [Community-1 공식 카드](https://huggingface.co/pyannote/speaker-diarization-community-1)는 일반 화자 구간과 exclusive diarization을 제공한다.
-겹침을 지운 exclusive 결과만으로 중첩 여부를 판단하면 안 된다. 원래 화자 구간의 동시 교집합을 보존하고,
-STT 시간축과 별도로 정렬해야 한다. 이번에는 이 정렬·모호성 알고리즘과 null 스키마만 검증했다.
+겹침을 지운 exclusive 결과만으로 중첩 여부를 판단하면 안 된다. 2차에서는 일반 화자 구간의 동시 교집합을 보존하고,
+STT 구간과 단어 시각에 정렬하는 선택 어댑터를 연결했다. 화자 모델은 로컬 snapshot만 받고 인물 식별과 분리한다.
+실제 Community-1 가중치는 접근 조건 동의·정식 로컬 준비 전이라 추론·DER는 여전히 미측정이다.
+토큰·HF 로그인 상태를 읽지 않았으며 사용자가 별도 설치 절차에서 모델을 준비해야 한다. 토큰 전달은 필요 없다.
 
-Community-1은 게이트 조건 동의·접근 허가가 필요한 모델이다. 현재 세션은 토큰·HF 로그인 상태를 읽지 않았고 모델을 받지 않았다.
-실제 화자 수 추정·동일 화자 연결·DER·Mac MPS/CPU 성능은 미측정이다. 화자 이름은 클러스터에 자동 붙이지 않는다.
-후속 실행을 위해서는 사용자가 모델 카드 조건에 동의하고, 기획 세션이 정식 권한으로 모델을 로컬에 준비해야 한다.
-토큰 값을 이 세션이나 보고서에 전달할 필요는 없다. 아직 pyannote용 설정·운영 어댑터를 추가하지 않았다.
-
-중첩 발화 음원 분리는 미구현이다. 실측 전에는 전체 녹음에 분리 모델을 적용하지 않는다.
-후속 기준은 중첩 주석이 있는 구간만 분리·재전사하고 원결과와 비교하여 개선 시만 채택하는 것이다.
+2차 중첩 처리 경로는 일반 화자 구간으로 탐지한 2인·15초 이하 구간에만 SepFormer를 적용한다(총 120초 한도).
+공개 한국어 합성 표본에서는 CER/WER가 모두 악화되어 채택하지 않았다. 분리 모델 경로는 기본 미설정이며 활성화를 권하지 않는다.
+실회의 중첩 탐지 성능·분리 후 개선은 모델·주석 준비 후 검증해야 한다. [2차 실측](phase2-2026-10-15.md) 참고.
 
 ## 라이선스와 배포 상태
 
@@ -63,3 +61,17 @@ FFmpeg 라이선스 표기는 설치된 `libavcodec`의 `avcodec_license()`/`avc
 런타임 문자열만으로 빌드 전체의 재배포 적합성을 단정하지 않는다.
 AI Hub 한국어 회의·대화 데이터는 [공식 포털](https://www.aihub.or.kr/)의 데이터별 이용 조건·접근 절차를 먼저 확인해야 하며 이번에는 받지 않았다.
 사용자 클로바 전사는 참조 비교에 쓸 수 있지만 사람이 확인한 정답과 같은 열에 합치지 않는다. 이번 수치에는 쓰지 않았다.
+
+## 2차 추가 선택 의존성·모델 (2026-10-15 원문 확인)
+
+| 구성 | 확인한 라이선스 | 사용·조건 |
+|---|---|---|
+| [SpeechBrain 1.0.3](https://github.com/speechbrain/speechbrain/blob/v1.0.3/LICENSE) | Apache-2.0 | 선택 extra. 저작권·라이선스·해당 NOTICE 조건 유지 |
+| [SepFormer WHAMR 가중치](https://huggingface.co/speechbrain/sepformer-whamr) | 모델 카드 Apache-2.0 | revision `9950fd8055b38679d2af5bef2366b5dba600ec66`. 공개 가중치를 개인 실험 환경에만 내려받음. 영어·2인 모델의 타 도메인 성능을 보증하지 않음 |
+| [PyTorch 2.8.0](https://github.com/pytorch/pytorch/blob/v2.8.0/LICENSE) | BSD-3-Clause 계열, 포함 구성 고지 별도 | CPU 실제 실행. 바이너리 재배포 없음 |
+| [torchaudio 2.8.0](https://github.com/pytorch/audio/blob/v2.8.0/LICENSE) | BSD-2-Clause | 파형 리샘플링만 사용 |
+| [TorchCodec 0.7.0](https://github.com/pytorch/torchcodec/blob/v0.7.0/LICENSE) | BSD-3-Clause, 링크된 FFmpeg 조건 별도 | pyannote의 고정 의존성으로 설치되지만 이 Mac에서는 libavutil 로딩 실패. 파일 디코딩 대신 파형 입력 |
+| [pyannote.audio 4.0.3](https://github.com/pyannote/pyannote-audio/blob/4.0.3/LICENSE) / [Community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) | 코드 MIT / 가중치 CC BY 4.0 및 모델 접근 조건 | 라이브러리 import 확인, 실제 모델 추론은 준비 전. 임의 공개 미러로 게이트를 우회하지 않음 |
+
+이 표는 직접 선택한 주요 구성과 모델의 원문 조건 확인이다. 전이 의존성 및 각 wheel에 포함된 모든 바이너리의 재배포 감사 완료를 뜻하지 않는다.
+원문 가중치·패키지·회의 원음은 Git이나 결과함에 재배포하지 않았다. 기존 LM-SPT 제외 판단은 유지한다.

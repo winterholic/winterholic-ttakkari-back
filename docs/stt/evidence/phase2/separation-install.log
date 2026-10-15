@@ -1,0 +1,11 @@
+Using Python 3.13.15 environment at: /Users/winterholic/testing/ttakkari-stt/venv
+Resolved 32 packages in 136ms
+Downloading sentencepiece (1.3MiB)
+ Downloaded sentencepiece
+Prepared 5 packages in 124ms
+Installed 5 packages in 7ms
+ + hyperpyyaml==1.2.3
+ + ruamel-yaml==0.18.17
+ + ruamel-yaml-clib==0.2.15
+ + sentencepiece==0.2.2
+ + speechbrain==1.0.3

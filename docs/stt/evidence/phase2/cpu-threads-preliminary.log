@@ -1,0 +1,8 @@
+4 fleurs-ko-test-0 8.597 {'cer': 0.08928571428571429, 'wer': 0.21428571428571427, 'character_edits': 5, 'reference_characters': 56, 'word_edits': 3, 'reference_words': 14}
+4 fleurs-ko-test-1 8.32 {'cer': 0.023809523809523808, 'wer': 0.4, 'character_edits': 1, 'reference_characters': 42, 'word_edits': 6, 'reference_words': 15}
+4 fleurs-ko-test-2 7.977 {'cer': 0.029411764705882353, 'wer': 0.45454545454545453, 'character_edits': 1, 'reference_characters': 34, 'word_edits': 5, 'reference_words': 11}
+4 private-first-180s 30.699 None
+6 fleurs-ko-test-0 7.762 {'cer': 0.08928571428571429, 'wer': 0.21428571428571427, 'character_edits': 5, 'reference_characters': 56, 'word_edits': 3, 'reference_words': 14}
+6 fleurs-ko-test-1 7.397 {'cer': 0.023809523809523808, 'wer': 0.4, 'character_edits': 1, 'reference_characters': 42, 'word_edits': 6, 'reference_words': 15}
+6 fleurs-ko-test-2 7.12 {'cer': 0.029411764705882353, 'wer': 0.45454545454545453, 'character_edits': 1, 'reference_characters': 34, 'word_edits': 5, 'reference_words': 11}
+6 private-first-180s 26.398 None

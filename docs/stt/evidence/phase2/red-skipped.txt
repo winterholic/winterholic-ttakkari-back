@@ -1,0 +1,12 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________________ test_all_skipped_regions_are_not_success ___________________
+tests/test_local_stt_enhancement.py:365: in test_all_skipped_regions_are_not_success
+    assert result['separation_status']=='skipped'
+E   AssertionError: assert 'succeeded' == 'skipped'
+E     
+E     - skipped
+E     + succeeded
+=========================== short test summary info ============================
+FAILED tests/test_local_stt_enhancement.py::test_all_skipped_regions_are_not_success
+1 failed in 0.46s

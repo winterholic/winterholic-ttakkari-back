@@ -1,0 +1,55 @@
+/Users/winterholic/testing/ttakkari-stt/venv/lib/python3.13/site-packages/speechbrain/utils/torch_audio_backend.py:57: UserWarning: torchaudio._backend.list_audio_backends has been deprecated. This deprecation is part of a large refactoring effort to transition TorchAudio into a maintenance phase. The decoding and encoding capabilities of PyTorch for both audio and video are being consolidated into TorchCodec. Please see https://github.com/pytorch/audio/issues/3902 for more information. It will be removed from the 2.9 release. 
+  available_backends = torchaudio.list_audio_backends()
+/Users/winterholic/testing/ttakkari-stt/venv/lib/python3.13/site-packages/speechbrain/utils/torch_audio_backend.py:57: UserWarning: torchaudio._backend.list_audio_backends has been deprecated. This deprecation is part of a large refactoring effort to transition TorchAudio into a maintenance phase. The decoding and encoding capabilities of PyTorch for both audio and video are being consolidated into TorchCodec. Please see https://github.com/pytorch/audio/issues/3902 for more information. It will be removed from the 2.9 release. 
+  available_backends = torchaudio.list_audio_backends()
+2026-10-15 11:14:34.948 python[52066:61313203] 2026-10-15 11:14:34.948167 [W:onnxruntime:Default, telemetry_1ds.cc:600 operator()] Failed to persist telemetry device ID; using an in-memory identifier
+2026-10-15 11:14:44.814 python[52066:61313315] Error: stepSQLStatement:toCompletionWithRetry - stepping returned unhandled result=8, DB=/Users/winterholic/Library/Caches/python/Cache.db
+{
+  "pid": 52066,
+  "kind": "synthetic_fleurs_overlap",
+  "source_ids": [
+    "fleurs-ko-test-0",
+    "fleurs-ko-test-1"
+  ],
+  "duration": 12.48,
+  "mixture_pcm_sha256": "b0c8020f9c4c1c6d2c32bed6c60380aae6f44a8f710610966ad57f5be10b64c7",
+  "assumptions": "Known source mixing interval supplied; not model-detected. Real meeting performance and overlap detection metrics unmeasured.",
+  "separator_revision": "9950fd8055b38679d2af5bef2366b5dba600ec66",
+  "speaker_attribution_measured": false,
+  "separation_load_seconds": 0.4477422919590026,
+  "separation_inference_seconds": 1.7995080000255257,
+  "stt_load_seconds": 1.2494474169798195,
+  "baseline_stt_seconds": 7.322980999946594,
+  "separated_stt_seconds": 19.612611833028495,
+  "decision": {
+    "adopt": false,
+    "reason": "human_reference_comparison",
+    "permutation": [
+      0,
+      1
+    ],
+    "original": {
+      "cer": 0.5816326530612245,
+      "wer": 0.7931034482758621,
+      "character_edits": 57,
+      "reference_characters": 98,
+      "word_edits": 23,
+      "reference_words": 29
+    },
+    "candidate": {
+      "cer": 0.7346938775510204,
+      "wer": 0.8620689655172413,
+      "character_edits": 72,
+      "reference_characters": 98,
+      "word_edits": 25,
+      "reference_words": 29
+    }
+  },
+  "peak_rss_bytes": 4475568128,
+  "original_preserved": true,
+  "weights_sha256": {
+    "masknet.ckpt": "897fc2de3cde8992891a2ee7164cd49877459e65d4867327c3c6b80da94aad01",
+    "decoder.ckpt": "059532c89f67474e98c737e3790d607b60dcdd420767e9259165a2e7370bdd97",
+    "encoder.ckpt": "68e6706cd485dd62a7f29ce596e79fb604dfdd352849a546650baa41fe8c34b7"
+  }
+}

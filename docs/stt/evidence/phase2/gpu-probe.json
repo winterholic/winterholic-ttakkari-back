@@ -1,0 +1,10 @@
+{
+  "torch": "2.8.0",
+  "mps_built": true,
+  "mps_available": false,
+  "cuda_available": false,
+  "mps_tensor_error": "RuntimeError: The MPS backend is supported on MacOS 13.0+.Current OS version can be queried using `sw_vers`",
+  "metal_default_device_found": false,
+  "mlx_exit_code": 1,
+  "mlx_message": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import mlx.core as mx; print(mx.default_device())\n    ^^^^^^^^^^^^^^^^^^^^^\nImportError: [metal::load_device] No Metal device available. This typically occurs in headless, sandboxed, or virtualized macOS sessions where the GPU is not accessible.\n"
+}

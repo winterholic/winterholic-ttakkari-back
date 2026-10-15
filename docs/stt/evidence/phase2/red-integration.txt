@@ -1,0 +1,39 @@
+..........FFFFF....F                                                     [100%]
+=================================== FAILURES ===================================
+________________ test_separator_requires_complete_local_weights ________________
+tests/test_local_stt_enhancement.py:106: in test_separator_requires_complete_local_weights
+    from ttakkari.meetings.local_stt.separation import load_separator
+E   ModuleNotFoundError: No module named 'ttakkari.meetings.local_stt.separation'
+_______ test_optional_enhancement_preserves_stt_and_reports_unavailable ________
+tests/test_local_stt_enhancement.py:115: in test_optional_enhancement_preserves_stt_and_reports_unavailable
+    report = enhance.enhance_result(result, audio=None, offset=0, request={'diarization_model_path':'/missing/local-model'}, recognize=None)
+             ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.enhance' has no attribute 'enhance_result'
+_______ test_optional_enhancement_runs_regular_turns_and_preserves_text ________
+tests/test_local_stt_enhancement.py:128: in test_optional_enhancement_runs_regular_turns_and_preserves_text
+    report = enhance.enhance_result(original, audio=None, offset=0, request={'diarization_model_path':str(tmp_path)}, recognize=None)
+             ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.enhance' has no attribute 'enhance_result'
+____ test_text_correction_is_explicit_non_cascading_and_preserves_original _____
+tests/test_local_stt_enhancement.py:140: in test_text_correction_is_explicit_non_cascading_and_preserves_original
+    result = core.correct_terms(source, {'티티까리':'따까리', '따까리':'Ttakkari'})
+             ^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'correct_terms'
+_____ test_korean_phrase_and_cross_segment_repetition_flags_do_not_delete ______
+tests/test_local_stt_enhancement.py:155: in test_korean_phrase_and_cross_segment_repetition_flags_do_not_delete
+    out = core.flag_repetitions(source)
+          ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.meetings.local_stt.core' has no attribute 'flag_repetitions'
+_______ test_enhancement_configuration_is_forwarded_and_secrets_are_not ________
+tests/test_local_stt_runner.py:81: in test_enhancement_configuration_is_forwarded_and_secrets_are_not
+    assert r['request']['diarization_model_path'] == str(s.local_stt_diarization_model_path)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'diarization_model_path'
+=========================== short test summary info ============================
+FAILED tests/test_local_stt_enhancement.py::test_separator_requires_complete_local_weights
+FAILED tests/test_local_stt_enhancement.py::test_optional_enhancement_preserves_stt_and_reports_unavailable
+FAILED tests/test_local_stt_enhancement.py::test_optional_enhancement_runs_regular_turns_and_preserves_text
+FAILED tests/test_local_stt_enhancement.py::test_text_correction_is_explicit_non_cascading_and_preserves_original
+FAILED tests/test_local_stt_enhancement.py::test_korean_phrase_and_cross_segment_repetition_flags_do_not_delete
+FAILED tests/test_local_stt_runner.py::test_enhancement_configuration_is_forwarded_and_secrets_are_not
+6 failed, 14 passed in 3.77s

@@ -101,7 +101,7 @@ class Collector:
                 log.warning("usage fetch crashed: %s", type(e).__name__)
                 u = usage_mod.Usage(error=type(e).__name__)
             # 실패 판단: API 로 못 읽었다(스트림·세션 로그 대용이거나 값이 없음).
-            ok = u.source == "api" and bool(u.windows)
+            ok = u.source in ("api", "antigravity_cli") and bool(u.windows)
             st.failures = 0 if ok else st.failures + 1
             st.last_fetch = now
             st.next_due = now + interval_for(s, running=counts.get(aid, 0), remaining=lowest_remaining(usage_mod.cached(aid), now),

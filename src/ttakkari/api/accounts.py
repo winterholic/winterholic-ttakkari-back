@@ -228,6 +228,7 @@ class UsageWindowOut(BaseModel):
     label: str
     percent: int
     resets_at: int | None
+    remaining_percent: float | None = None
 
 
 class ResetCreditsOut(BaseModel):
@@ -252,6 +253,8 @@ class AccountUsageOut(BaseModel):
     cooldown_seconds: int
     windows: list[UsageWindowOut]
     reset_credits: ResetCreditsOut | None = None
+    credits_balance: int | None = None
+    credits_error: str | None = None
     source: str | None
     plan: str | None
     error: str | None
@@ -279,6 +282,7 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
                                cooldown_seconds=profiles.cooldown_remaining(a.id),
                                windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
                                reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
+                               credits_balance=u.credits_balance, credits_error=u.credits_error,
                                error=u.error, updated_at=u.updated_at)
 
     return list(await asyncio.gather(*(one(i, a) for i, a in ordered)))

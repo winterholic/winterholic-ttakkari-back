@@ -192,6 +192,8 @@ class AccountUsageSample(Base):
     plan: Mapped[str | None] = mapped_column(String(40))
     # [{key, percent, resets_at(unix 초)}]. 토큰은 어디에도 두지 않는다.
     windows: Mapped[list[Any]] = mapped_column(default=list)
+    # Antigravity AI 크레딧 잔액. Codex rate-limit reset credit 과 다른 단위다.
+    credits_balance: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class AppSetting(Base):

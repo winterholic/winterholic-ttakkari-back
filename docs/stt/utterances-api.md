@@ -180,3 +180,19 @@ Authorization: Bearer …
 - 테스트는 실제 DB의 회의/job 개수 불변과 생성 함수·큐 깨우기 미호출을 확인한다. 계약 테스트에는 정상false/true·기본값·원본 보존·직접 계보·삭제·마이그레이션/되돌리기도 포함한다.
 
 배포 시 `alembic upgrade head`로0027을 적용한 뒤 새 코드를 실행한다. 운영 마이그레이션과 재시작은 배포 절차에서 수행한다.
+
+## 미회복 반복의 성공·분석 차단 (2026-10-15 후속)
+
+표시용 반복 접기는 음향 인식의 회복 증거가 아니다. 새 robust 결과는 job metadata에 다음을 따로 보존한다.
+
+- `original_text`, `/segments`의 `original_text`·`raw`: 최초 추론 원문과 원시 구간.
+- `quality_retries`: 8초 이하 재시도 창, 상향 온도, 원시 결과, 실패·빈 결과 보존·예산 소진 상태.
+- `post_retry_segments`: 재시도 뒤, 접기 **전** 구간. 실패·빈 재시도·예산 소진으로 원문을 유지한 구간도 포함한다.
+- `presentation_segments`, `utterances`: 표시용 구간과 발화. 원시 증거를 대체하지 않는다.
+- `quality.before`, `quality.after_retry`, `quality.after`: 최초 원시 인식, 재시도 뒤 접기 전, 접기 뒤의 반복 구간 수·문자 수·겹치지 않는 구간 시각 합계.
+
+`quality_gate`는 `after_retry`의 반복 시각 합계가 15초 이상이거나 반복 구간 문자 합계가 120자 이상이면 `quality.status="needs_review"`, `auto_analysis_allowed=false`, `reason="unresolved_repetition"`를 기록한다. 이는 검토를 요구하는 운영 기준이며 정확도·신뢰도의 통계 추정이 아니다. 두 번의 짧은 정상 반복은 탐지 규칙과 이 차단 기준에 걸리지 않고 그대로 유지된다.
+
+`execute_job`은 보존된 `post_retry_segments`로 지표와 판정을 다시 계산한다. 재시도 증거가 없는 결과는 원시 구간으로 판정한다. 미회복된 심각한 반복이면 job은 `failed`, 회의는 `failed`/`failed_stage="transcription"`이 된다. 검증 필요 사유를 반환하며 자동분석 Run을 생성하지 않는다. 후보 `job.transcript`와 원시 구간·재시도·접기 전 결과는 보존하지만 회의 본문으로 채택하지 않는다. `/stt`와 `/segments`에서 증거를 조회할 수 있으며, 성공을 전제하는 `/utterances`는 409다. `quality.after=0`만으로 성공을 판정하지 않는다.
+
+기존 완료 회의·원본 job·분석에는 소급 쓰기를 하지 않는다. 정식 `source_meeting_id`로 연결한 새 회의에서 원음을 다시 추론한다. 최초 재전사는 `auto_analyze=false`로 실행하고 실제 원시·재시도 결과를 확인한 뒤 분석 여부를 판단한다.

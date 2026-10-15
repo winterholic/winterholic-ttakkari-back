@@ -16,7 +16,9 @@ from ttakkari.models import LocalSttJob, LocalSttSegment, Meeting
 @pytest.fixture
 def local(monkeypatch, tmp_path):
     s = get_settings()
-    monkeypatch.setattr(s, "local_stt_python", __import__("pathlib").Path(__import__("sys").executable))
+    monkeypatch.setattr(
+        s, "local_stt_python", __import__("pathlib").Path(__import__("sys").executable)
+    )
     model = tmp_path / "model-revision"
     model.mkdir()
     (model / "model.bin").write_bytes(b"test")
@@ -361,3 +363,58 @@ async def test_overlap_reference_comparison_is_explicit_and_preserves_meeting(
             job.result_metadata["overlap_candidates"][0]["decision"]["adopt"] is False
         )
         assert meeting.transcript == "원본 발언입니다. FAKE_MEETING"
+
+
+async def test_unrecovered_loop_is_saved_as_failed_and_never_sent_to_analysis(
+    local, client, auth, new_session, monkeypatch
+):
+    from ttakkari.meetings import pipeline
+    from ttakkari.meetings.local_stt.core import normalize_segments
+    from ttakkari.meetings.local_stt.quality import recover_quality
+
+    m = await audio_meeting(client, auth, new_session)
+    jid = await submit(client, auth, m["id"])
+    async with sessionmaker()() as db:
+        job = await db.get(LocalSttJob, jid)
+        job.params = {**job.params, "auto_analyze": True}
+        await db.commit()
+    raw = [
+        {"start": i * 2, "end": i * 2 + 2, "text": "계속 같은 문장이 나옵니다."}
+        for i in range(12)
+    ]
+    result = recover_quality(
+        normalize_segments(raw, duration=24), audio=[], offset=0, recognize=None
+    )
+
+    async def run(*args):
+        return {
+            **result,
+            "duration": 24,
+            "raw_segments": raw,
+            "text": "계속 같은 문장이 나옵니다.",
+        }
+
+    async def forbidden_analysis(*args, **kwargs):
+        pytest.fail("Unrecovered severe repetition reached automatic analysis")
+
+    monkeypatch.setattr(jobs, "run_worker", run)
+    monkeypatch.setattr(pipeline, "start_analysis", forbidden_analysis)
+    await jobs.execute_job(jid)
+    async with sessionmaker()() as db:
+        job = await db.get(LocalSttJob, jid)
+        meeting = await db.get(Meeting, uuid.UUID(m["id"]))
+        rows = list(
+            await db.scalars(
+                select(LocalSttSegment).where(LocalSttSegment.job_id == jid)
+            )
+        )
+        assert job.status == "failed"
+        assert "검증" in job.error
+        assert job.result_metadata["quality"]["status"] == "needs_review"
+        assert job.result_metadata["quality"]["after"]["repeated_segments"] == 0
+        assert len(job.result_metadata["post_retry_segments"]) == 12
+        assert len(rows) == 12 and job.transcript
+        assert meeting.status == "failed" and meeting.failed_stage == "transcription"
+        assert meeting.transcript is None and meeting.analysis_run_id is None
+    polled = await jobs.LocalWhisperProvider().poll(str(jid))
+    assert polled.state == "failed"

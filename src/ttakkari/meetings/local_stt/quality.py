@@ -69,6 +69,22 @@ def repetition_metrics(segments: list[dict]) -> dict:
     }
 
 
+def quality_gate(metrics: dict) -> dict:
+    """Conservative review policy on acoustic output, never folded presentation.
+
+    Two short acknowledgements are not a loop. Sustained repetition (15 seconds)
+    or a dense repeated passage (120 characters) requires human review. These
+    are operational bounds, not calibrated accuracy/confidence estimates.
+    """
+    severe = metrics["repeated_seconds"] >= 15 or metrics["repeated_characters"] >= 120
+    return {
+        "status": "needs_review" if severe else "passed",
+        "auto_analysis_allowed": not severe,
+        "reason": "unresolved_repetition" if severe else None,
+        "policy": {"repeated_seconds": 15, "repeated_characters": 120},
+    }
+
+
 def recover_quality(segments: list[dict], *, audio, offset: float, recognize) -> dict:
     originals = flag_repetitions(deepcopy(segments))
     presentation, retries = [], []
@@ -150,6 +166,8 @@ def recover_quality(segments: list[dict], *, audio, offset: float, recognize) ->
         i = j
     before_fold = sum(len(s["original_text"]) for s in presentation)
     presentation = flag_repetitions(presentation)
+    post_retry = deepcopy(presentation)
+    after_retry = repetition_metrics(post_retry)
     folded = []
     for s in presentation:
         row = deepcopy(s)
@@ -169,11 +187,14 @@ def recover_quality(segments: list[dict], *, audio, offset: float, recognize) ->
         folded.append(row)
     return {
         "segments": originals,
+        "post_retry_segments": post_retry,
         "presentation_segments": folded,
         "quality_retries": retries,
         "quality": {
             "before": repetition_metrics(originals),
+            "after_retry": after_retry,
             "after": repetition_metrics(folded),
+            **quality_gate(after_retry),
             "retry_audio_seconds": used,
             "retry_budget_seconds": max_retry_seconds,
             "folded_characters": before_fold

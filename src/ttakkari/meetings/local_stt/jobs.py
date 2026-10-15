@@ -14,6 +14,7 @@ from sqlalchemy import String, select, update
 from ttakkari.artifacts.service import content_path
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
+from ttakkari.meetings.local_stt.quality import quality_gate, repetition_metrics
 from ttakkari.meetings.local_stt.runner import run_worker
 from ttakkari.models import (
     Artifact,
@@ -160,6 +161,15 @@ async def execute_job(job_id: uuid.UUID) -> None:
                 or s["original_text"] != r["text"]
             ):
                 raise ValueError("invalid_worker_segment")
+        # Recompute from preserved, unfolded output. Display folding is never
+        # evidence of recovery; missing retry evidence falls back to originals.
+        after_retry = repetition_metrics(result.get("post_retry_segments", segments))
+        gate = quality_gate(after_retry)
+        result["quality"] = {
+            **result.get("quality", {}),
+            "after_retry": after_retry,
+            **gate,
+        }
         async with sessionmaker()() as db:
             job = await db.get(LocalSttJob, job_id)
             if job is None:
@@ -173,9 +183,11 @@ async def execute_job(job_id: uuid.UUID) -> None:
             }
             job.transcript, job.status, job.finished_at = (
                 result["text"],
-                "succeeded",
+                "succeeded" if gate["auto_analysis_allowed"] else "failed",
                 utcnow(),
             )
+            if not gate["auto_analysis_allowed"]:
+                job.error = "재시도 뒤에도 심각한 반복이 남아 검증이 필요해요. 원본 구간을 확인해 주세요. 자동분석은 중단했어요."
             await db.commit()
     except asyncio.CancelledError:
         # runner has killed/reaped the child; next start may safely retry this attempt.

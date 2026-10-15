@@ -327,3 +327,56 @@ def test_retry_failure_is_evidence_and_preserves_original_speech():
     assert result["quality_retries"][0]["status"] == "failed_preserved"
     assert result["quality_retries"][0]["failure_type"] == "RuntimeError"
     assert "private engine details" not in str(result)
+
+
+def test_folding_does_not_turn_unrecovered_severe_loop_into_success():
+    from ttakkari.meetings.local_stt.quality import recover_quality
+
+    original = segments(["계속 같은 문장이 나옵니다."] * 12)
+    out = recover_quality(original, audio=[], offset=0, recognize=None)
+    # Presentation collapse removes duplicates, but is not acoustic recovery.
+    assert out["quality"]["after"]["repeated_segments"] == 0
+    assert out["quality"]["after_retry"]["repeated_segments"] == 12
+    assert len(out["post_retry_segments"]) == 12
+    assert out["quality"]["status"] == "needs_review"
+    assert out["quality"]["auto_analysis_allowed"] is False
+
+
+def test_successful_retry_can_recover_severe_loop_without_hiding_raw_evidence():
+    from ttakkari.meetings.local_stt.quality import recover_quality
+
+    original = segments(["계속 같은 문장이 나옵니다."] * 12)
+
+    def recognize(audio, offset):
+        raw = [
+            {"start": 0, "end": 8, "text": f"{int(offset)}번째 실제 발언을 확인합니다."}
+        ]
+        return {
+            "segments": core.normalize_segments(raw, duration=8, offset=offset),
+            "raw_segments": raw,
+        }
+
+    out = recover_quality(
+        original, audio=[0] * 24 * 16000, offset=0, recognize=recognize
+    )
+    assert out["quality"]["before"]["repeated_segments"] == 12
+    assert out["quality"]["after_retry"]["repeated_segments"] == 0
+    assert out["quality"]["status"] == "passed"
+    assert out["quality"]["auto_analysis_allowed"] is True
+
+
+@pytest.mark.parametrize(
+    ("seconds", "characters", "allowed"),
+    [(14.9, 119, True), (15, 119, False), (14.9, 120, False)],
+)
+def test_review_policy_bounds_apply_before_display_folding(
+    seconds, characters, allowed
+):
+    from ttakkari.meetings.local_stt.quality import quality_gate
+
+    assert (
+        quality_gate({"repeated_seconds": seconds, "repeated_characters": characters})[
+            "auto_analysis_allowed"
+        ]
+        is allowed
+    )

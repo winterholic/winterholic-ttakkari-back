@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>인프라 관제 · 검토용 시안 (I3.1/I3.2)</title>
+<!-- 검토용 시안. 값은 전부 예시이고 실제 상태가 아니다. 디자인 시스템은 front/src/vendor/ttakkari 의 산출물을 그대로 쓴다.
+     outbox 사본은 assets/ 로 경로만 바꿔 복사한다(scripts/build-outbox.sh). -->
+<link rel="stylesheet" href="../../../../front/src/vendor/ttakkari/tokens.css">
+<link rel="stylesheet" href="../../../../front/src/vendor/ttakkari/typography.css">
+<link rel="stylesheet" href="../../../../front/src/vendor/ttakkari/components.css">
+<style>
+/* 시안 전용 레이아웃. 색·간격·글자 크기는 디자인 시스템 토큰만 쓴다. */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.pt-bar { display: flex; align-items: center; gap: var(--tk-space-2); padding: var(--tk-space-2) var(--tk-space-3); background: var(--tk-color-surface-inverse); color: var(--tk-color-text-primary); border-bottom: var(--tk-border-width-hairline) solid var(--tk-color-border-default); }
+.pt-bar__states { display: flex; gap: var(--tk-space-1-5); overflow-x: auto; flex: 1 1 auto; padding-block: var(--tk-space-0-5); scrollbar-width: none; }
+.pt-bar__states::-webkit-scrollbar { display: none; }
+.pt-bar .tk-chip[aria-pressed="true"] { background: var(--tk-color-interactive-selected-bg); border-color: var(--tk-color-interactive-selected-border); color: var(--tk-color-interactive-selected-text); }
+.pt-bar [hidden] { display: none; }
+body[data-chrome="0"] .pt-bar { display: none; }
+
+.ic-ribbon { display: flex; align-items: center; gap: var(--tk-space-2); padding: var(--tk-space-1-5) var(--tk-space-4); background: var(--tk-color-status-neutral-bg); color: var(--tk-color-status-neutral-text); border-bottom: var(--tk-border-width-hairline) solid var(--tk-color-status-neutral-border); font: var(--tk-font-weight-medium) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+
+.ic-main { max-width: 72rem; margin-inline: auto; padding: var(--tk-space-4) var(--tk-space-4) var(--tk-space-12); display: flex; flex-direction: column; gap: var(--tk-space-4); }
+@media (min-width: 1024px) { .ic-main { padding-inline: var(--tk-space-6); } }
+.ic-main > * { margin: 0; }
+.ic-banner { border: var(--tk-border-width-hairline) solid var(--tk-_border); border-radius: var(--tk-radius-lg); }
+.ic-banner > .tk-button { --tk-_h: var(--tk-size-touch-target-min); --tk-_px: var(--tk-space-4); font-size: var(--tk-font-size-sm); }
+
+.ic-eyebrow { color: var(--tk-color-text-tertiary); font: var(--tk-font-weight-medium) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-h2 { color: var(--tk-color-text-secondary); font: var(--tk-font-weight-semibold) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-section { display: flex; flex-direction: column; gap: var(--tk-space-2); min-width: 0; }
+.ic-section__head { display: flex; align-items: center; justify-content: space-between; gap: var(--tk-space-2); }
+.ic-section > * { margin: 0; }
+
+/* 전체 상태 */
+.ic-hero { --_c: var(--tk-color-status-neutral-solid); --_bg: var(--tk-color-status-neutral-bg); --_bd: var(--tk-color-status-neutral-border); --_fg: var(--tk-color-status-neutral-text);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: var(--tk-space-3) var(--tk-space-4); padding: var(--tk-space-4);
+  border: var(--tk-border-width-hairline) solid var(--_bd); border-radius: var(--tk-radius-xl); background: var(--_bg); }
+.ic-hero[data-verdict="ok"] { --_c: var(--tk-color-status-success-solid); --_bg: var(--tk-color-status-success-bg); --_bd: var(--tk-color-status-success-border); --_fg: var(--tk-color-status-success-text); }
+.ic-hero[data-verdict="warn"] { --_c: var(--tk-color-status-warning-solid); --_bg: var(--tk-color-status-warning-bg); --_bd: var(--tk-color-status-warning-border); --_fg: var(--tk-color-status-warning-text); }
+.ic-hero[data-verdict="bad"] { --_c: var(--tk-color-status-danger-solid); --_bg: var(--tk-color-status-danger-bg); --_bd: var(--tk-color-status-danger-border); --_fg: var(--tk-color-status-danger-text); }
+.ic-hero__mark { display: grid; place-items: center; width: var(--tk-size-control-lg); height: var(--tk-size-control-lg); border-radius: var(--tk-radius-full); background: var(--_c); color: var(--tk-color-surface-default); }
+.ic-hero[data-verdict="ok"] .ic-hero__mark { color: var(--tk-color-status-success-on-solid); }
+.ic-hero[data-verdict="warn"] .ic-hero__mark { color: var(--tk-color-status-warning-on-solid); }
+.ic-hero[data-verdict="bad"] .ic-hero__mark { color: var(--tk-color-status-danger-on-solid); }
+.ic-hero[data-verdict="unknown"] .ic-hero__mark { color: var(--tk-color-status-neutral-on-solid); }
+.ic-hero__mark .tk-icon { --tk-_icon: var(--tk-size-icon-lg); }
+.ic-hero__body { display: flex; flex-direction: column; gap: var(--tk-space-1); min-width: 0; }
+.ic-hero__body > * { margin: 0; }
+.ic-hero__verdict { color: var(--_fg); font: var(--tk-font-weight-bold) var(--tk-font-size-2xl) / var(--tk-font-line-height-snug) var(--tk-font-family-sans); letter-spacing: var(--tk-font-letter-spacing-tight); }
+.ic-hero__line { color: var(--tk-color-text-primary); font: var(--tk-font-weight-medium) var(--tk-font-size-md) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-hero__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tk-space-1) var(--tk-space-3); color: var(--tk-color-text-secondary); font: var(--tk-font-weight-regular) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); font-variant-numeric: tabular-nums; }
+.ic-hero__meta > span { display: inline-flex; align-items: center; gap: var(--tk-space-1); }
+.ic-hero__act { align-self: start; }
+@media (max-width: 480px) { .ic-hero { grid-template-columns: auto minmax(0, 1fr); } .ic-hero__act { grid-column: 1 / -1; } .ic-hero__act .tk-button { width: 100%; } }
+
+/* 목록 */
+.ic-list { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); border-radius: var(--tk-radius-lg); background: var(--tk-color-surface-default); overflow: hidden; }
+.ic-list > li + li { border-top: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); }
+.ic-row { all: unset; box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--tk-space-1) var(--tk-space-2); width: 100%; min-height: var(--tk-size-touch-target-min); padding: var(--tk-space-3) var(--tk-space-4); cursor: pointer; }
+.ic-row:hover { background: var(--tk-color-interactive-hover-overlay); }
+.ic-row:focus-visible { outline: var(--tk-focus-ring-width) solid var(--tk-color-interactive-focus-ring); outline-offset: calc(-1 * var(--tk-focus-ring-width)); }
+.ic-row[aria-current="true"] { background: var(--tk-color-interactive-selected-bg); }
+.ic-row__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tk-space-1) var(--tk-space-2); min-width: 0; }
+.ic-row__name { color: var(--tk-color-text-primary); font: var(--tk-font-weight-semibold) var(--tk-font-size-md) / var(--tk-font-line-height-snug) var(--tk-font-family-sans); }
+.ic-row__host, .ic-row__dur { color: var(--tk-color-text-tertiary); font: var(--tk-font-weight-regular) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); font-variant-numeric: tabular-nums; }
+.ic-row__dur { color: var(--tk-color-text-secondary); font-weight: var(--tk-font-weight-medium); }
+.ic-row__chev { grid-row: 1 / span 3; grid-column: 2; color: var(--tk-color-text-tertiary); }
+.ic-row__line { grid-column: 1; color: var(--tk-color-text-secondary); font: var(--tk-font-weight-regular) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-row__line b { color: var(--tk-color-text-tertiary); font-weight: var(--tk-font-weight-medium); margin-right: var(--tk-space-1-5); }
+
+/* 칸 */
+.ic-cols { display: grid; gap: var(--tk-space-4); min-width: 0; }
+@media (min-width: 1024px) { .ic-cols[data-split="1"] { grid-template-columns: minmax(0, 1fr) minmax(24rem, 30rem); align-items: start; } }
+.ic-col { display: flex; flex-direction: column; gap: var(--tk-space-4); min-width: 0; }
+.ic-hosts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--tk-space-2); margin: 0; padding: 0; list-style: none; }
+.ic-card { display: flex; flex-direction: column; gap: var(--tk-space-1); min-width: 0; padding: var(--tk-space-3) var(--tk-space-4); border: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); border-radius: var(--tk-radius-lg); background: var(--tk-color-surface-default); }
+.ic-card[data-last] { border-style: dashed; background: var(--tk-color-surface-subtle); }
+.ic-card__top { display: flex; align-items: center; justify-content: space-between; gap: var(--tk-space-2); }
+.ic-card__name { color: var(--tk-color-text-primary); font: var(--tk-font-weight-semibold) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-card__sub, .ic-card__metric { color: var(--tk-color-text-tertiary); font: var(--tk-font-weight-regular) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); font-variant-numeric: tabular-nums; }
+.ic-card__metric { color: var(--tk-color-text-secondary); font-family: var(--tk-font-family-mono); }
+.ic-src { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); border-radius: var(--tk-radius-lg); background: var(--tk-color-surface-default); }
+.ic-src > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--tk-space-0-5) var(--tk-space-2); align-items: center; padding: var(--tk-space-2) var(--tk-space-4); min-height: var(--tk-size-touch-target-min); }
+.ic-src > li + li { border-top: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); }
+.ic-src__name { color: var(--tk-color-text-primary); font: var(--tk-font-weight-medium) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-src__note { grid-column: 1 / -1; color: var(--tk-color-text-tertiary); font: var(--tk-font-weight-regular) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); font-variant-numeric: tabular-nums; }
+.ic-details { border: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); border-radius: var(--tk-radius-lg); background: var(--tk-color-surface-default); }
+.ic-details > summary { display: flex; align-items: center; gap: var(--tk-space-2); min-height: var(--tk-size-touch-target-min); padding: var(--tk-space-2) var(--tk-space-4); cursor: pointer; color: var(--tk-color-text-secondary); font: var(--tk-font-weight-medium) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); border-radius: var(--tk-radius-lg); }
+.ic-details > summary:focus-visible { outline: var(--tk-focus-ring-width) solid var(--tk-color-interactive-focus-ring); outline-offset: calc(-1 * var(--tk-focus-ring-width)); }
+.ic-details[open] > summary { border-bottom: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); border-radius: var(--tk-radius-lg) var(--tk-radius-lg) 0 0; }
+.ic-details .ic-src { border: 0; border-radius: 0; }
+.ic-chev { color: var(--tk-color-text-tertiary); transition: transform var(--tk-motion-duration-fast) var(--tk-motion-easing-standard); }
+.ic-details[open] > summary .ic-chev { transform: rotate(90deg); }
+.ic-details > summary { list-style: none; }
+.ic-details > summary::-webkit-details-marker { display: none; }
+/* 마지막 값(갱신 실패·오래됨)은 점선과 낮은 면으로 지금 값과 구분한다. 투명도로 흐리게 하지 않는다(대비 유지). */
+.ic-src[data-last] { border-style: dashed; background: var(--tk-color-surface-subtle); }
+
+/* 상세 */
+.ic-detail { display: flex; flex-direction: column; gap: var(--tk-space-4); padding: var(--tk-space-4); border: var(--tk-border-width-hairline) solid var(--tk-color-border-default); border-radius: var(--tk-radius-xl); background: var(--tk-color-surface-default); min-width: 0; }
+.ic-detail > * { margin: 0; }
+@media (min-width: 1024px) { .ic-detail { position: sticky; top: var(--tk-space-4); } }
+.ic-detail__title { color: var(--tk-color-text-primary); font: var(--tk-font-weight-bold) var(--tk-font-size-xl) / var(--tk-font-line-height-snug) var(--tk-font-family-sans); }
+.ic-detail__title:focus { outline: none; }
+.ic-detail__head { display: flex; flex-direction: column; gap: var(--tk-space-1-5); }
+.ic-detail__head > * { margin: 0; }
+.ic-detail__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tk-space-2); color: var(--tk-color-text-tertiary); font: var(--tk-font-weight-regular) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-facts { display: flex; flex-direction: column; gap: var(--tk-space-3); margin: 0; }
+.ic-facts > div { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: var(--tk-space-3); }
+@media (max-width: 480px) { .ic-facts > div { grid-template-columns: 1fr; gap: var(--tk-space-0-5); } }
+.ic-facts dt { color: var(--tk-color-text-tertiary); font: var(--tk-font-weight-medium) var(--tk-font-size-xs) / var(--tk-font-line-height-relaxed) var(--tk-font-family-sans); }
+.ic-facts dd { margin: 0; color: var(--tk-color-text-primary); font: var(--tk-font-weight-regular) var(--tk-font-size-sm) / var(--tk-font-line-height-relaxed) var(--tk-font-family-sans); }
+.ic-ev { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); border-radius: var(--tk-radius-lg); }
+.ic-ev > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--tk-space-0-5) var(--tk-space-3); padding: var(--tk-space-2) var(--tk-space-3); }
+.ic-ev > li + li { border-top: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); }
+.ic-ev__k { color: var(--tk-color-text-secondary); font: var(--tk-font-weight-regular) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-ev__v { color: var(--tk-color-text-primary); font: var(--tk-font-weight-medium) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-mono); text-align: right; font-variant-numeric: tabular-nums; }
+.ic-ev__s { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--tk-space-1-5); color: var(--tk-color-text-tertiary); font: var(--tk-font-weight-regular) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); font-variant-numeric: tabular-nums; }
+.ic-tl { display: flex; flex-direction: column; gap: var(--tk-space-2); margin: 0; padding: 0; list-style: none; }
+.ic-tl > li { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: var(--tk-space-2); color: var(--tk-color-text-primary); font: var(--tk-font-weight-regular) var(--tk-font-size-sm) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); }
+.ic-tl time { color: var(--tk-color-text-tertiary); font-family: var(--tk-font-family-mono); font-size: var(--tk-font-size-xs); font-variant-numeric: tabular-nums; padding-top: var(--tk-space-px); }
+.ic-ext { display: flex; flex-wrap: wrap; gap: var(--tk-space-2); }
+.ic-ext .tk-button { min-height: var(--tk-size-touch-target-min); }
+.ic-back { align-self: flex-start; }
+
+/* 빈·권한·로딩 */
+.ic-state { max-width: 32rem; margin-inline: auto; }
+.ic-skel { display: flex; flex-direction: column; gap: var(--tk-space-2); margin: 0; padding: 0; list-style: none; }
+
+.tk-badge .tk-icon { --tk-_icon: var(--tk-size-icon-xs); }
+.tk-badge--neutral { --tk-_bg: var(--tk-color-status-neutral-bg); --tk-_fg: var(--tk-color-status-neutral-text); --tk-_border: var(--tk-color-status-neutral-border); }
+.ic-assume { display: inline-flex; align-items: center; padding: 0 var(--tk-space-1-5); border: var(--tk-border-width-hairline) dashed var(--tk-color-border-strong); border-radius: var(--tk-radius-sm); color: var(--tk-color-text-secondary); font: var(--tk-font-weight-medium) var(--tk-font-size-xs) / var(--tk-font-line-height-relaxed) var(--tk-font-family-sans); }
+</style>
+</head>
+<body data-chrome="1">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-bad" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></symbol>
+    <symbol id="i-unknown" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  </defs>
+</svg>
+
+<a class="tk-skip-link" href="#main">본문으로 건너뛰기</a>
+
+<nav class="pt-bar" aria-label="시안 도구(실제 화면 아님)">
+  <div class="pt-bar__states" id="pt-states" role="group" aria-label="상태 선택"></div>
+  <button class="tk-icon-button tk-icon-button--secondary" id="pt-theme" type="button" aria-label="라이트/다크 전환"><svg class="tk-icon" aria-hidden="true"><use href="#i-moon"/></svg></button>
+</nav>
+
+<div class="ic-ribbon" role="note"><svg class="tk-icon tk-icon--sm" aria-hidden="true"><use href="#i-info"/></svg><span>검토용 시안 · 값은 모두 예시이고 실제 상태가 아니에요</span></div>
+
+<header class="tk-header">
+  <div class="tk-header__inner">
+    <div class="tk-header__title">
+      <h1>인프라 관제</h1>
+      <div class="tk-header__meta" id="hdr-meta"></div>
+    </div>
+    <div class="tk-header__actions" id="hdr-actions"></div>
+  </div>
+</header>
+
+<main id="main" class="ic-main" tabindex="-1" aria-live="off"></main>
+<div class="sr-only" role="status" aria-live="polite" id="live"></div>
+
+<script>
+"use strict";
+/* ---------- 예시 데이터. 호스트·서비스 이름은 WBS 후보이고 상태·시각·수치는 전부 가정이다. ---------- */
+const ICON = { ok: "i-ok", warn: "i-warn", bad: "i-bad", unknown: "i-unknown" };
+const WORD = { ok: "정상", warn: "주의", bad: "문제", unknown: "미확인" };
+const BADGE = { ok: "success", warn: "warning", bad: "danger", unknown: "neutral" };
+
+const EXT = { grafana: "Grafana에서 보기", dozzle: "Dozzle에서 로그 보기" };
+
+const LOKI = {
+  id: "loki", sev: "bad", name: "Loki", host: "ubuntu-01", dur: "12분째",
+  impact: "로그 검색과 로그로 판단하는 항목이 동작하지 않아요",
+  basis: "/ready 응답 없음 · 3회 연속 실패",
+  next: ["Dozzle에서 loki 컨테이너의 마지막 로그 줄을 확인", "Grafana Explore에서 Loki 데이터소스 상태 확인"],
+  evidence: [
+    ["Loki /ready HTTP 확인", "응답 없음", "서비스 HTTP 확인", "14:32:00", "3회 연속 실패 = 문제 (가정)"],
+    ["Loki exporter up", "1", "Prometheus", "14:32:05", "수집은 되고 있어요. 서비스가 정상이라는 뜻은 아니에요"],
+    ["컨테이너 상태", "미확인", "Docker 읽기 권한 필요", "—", "권한 없이는 판정에서 제외"],
+  ],
+  log: [["14:20:08", "마지막으로 정상 응답"], ["14:23:08", "3회 연속 실패 → 문제로 판정 (판정 규칙 기록)"], ["14:32:00", "여전히 응답 없음"]],
+  ext: ["grafana", "dozzle"],
+};
+const DISK = {
+  id: "disk", sev: "warn", name: "디스크 /", host: "ubuntu-01", dur: "1시간째",
+  impact: "여유 공간이 줄고 있어요. 관측 범위에서 서비스 영향은 아직 없어요",
+  basis: "사용률 86% · 80% 초과를 1시간 유지",
+  next: ["Grafana 디스크 패널에서 7일 추세 확인", "빠르게 늘고 있다면 어떤 컨테이너 볼륨이 커졌는지 확인"],
+  evidence: [
+    ["디스크 사용률", "86%", "Prometheus", "14:32:05", "주의 80% · 문제 90% (기존 /resources 값, 호스트별 기준은 I2.3 대기)"],
+    ["80% 초과 유지", "1시간 4분", "Prometheus", "14:32:05", "단일 순간 값으로 판정하지 않아요"],
+  ],
+  log: [["13:28:05", "80% 초과 시작"], ["13:58:05", "30분 유지 → 주의로 판정 (판정 규칙 기록)"]],
+  ext: ["grafana"],
+};
+const LOKI_SRC = {
+  id: "loki-src", sev: "unknown", name: "Loki 수집원", host: "ubuntu-01", dur: "9분째",
+  impact: "로그로 판단하는 항목 3개를 판정하지 못했어요",
+  basis: "쿼리 타임아웃 · 마지막 성공 14:23:10",
+  next: ["Dozzle에서 loki 컨테이너 로그 확인", "복구되면 이 항목은 자동으로 다시 판정돼요"],
+  evidence: [["Loki 쿼리", "타임아웃", "Loki", "14:32:06", "응답 없음은 정상이 아니에요"], ["영향 받은 항목", "3개", "판정 규칙", "14:32:06", "정상으로 세지 않음"]],
+  log: [["14:23:10", "마지막으로 쿼리 성공"], ["14:32:06", "쿼리 타임아웃"]],
+  ext: ["grafana", "dozzle"],
+};
+const DOCKER = {
+  id: "docker", sev: "unknown", name: "컨테이너 상태", host: "ubuntu-01", dur: "계속",
+  impact: "컨테이너가 실제로 몇 개 떠 있는지 알 수 없어요",
+  basis: "Docker 읽기 권한 없음 · 추가 권한 전까지 미확인",
+  next: ["읽기 권한은 별도 결정이 필요해요 (I1.3/I2.2)", "cAdvisor 시리즈 수는 컨테이너 수로 세지 않아요"],
+  evidence: [["Docker 읽기", "권한 없음", "접근 시도 결과", "14:32:06", "권한 부여 전 미확인으로 유지"]],
+  log: [["14:32:06", "읽기 권한 없음 응답"]],
+  ext: ["dozzle"],
+};
+const STALE_PROM = {
+  id: "prom", sev: "unknown", name: "Prometheus 샘플", host: "ubuntu-01", dur: "23분째",
+  impact: "지금 상태를 알 수 없어요. 마지막 값만 보여 드려요",
+  basis: "마지막 샘플 14:09:11 · 수집원이 멈췄는지는 확인 필요",
+  next: ["Grafana에서 Prometheus 타깃 상태 확인", "Dozzle에서 prometheus 컨테이너 로그 확인"],
+  evidence: [["마지막 샘플", "14:09:11", "Prometheus", "14:32:08", "기준 5분 초과 = 오래됨 (가정)"]],
+  log: [["14:09:11", "마지막 샘플 수신"]],
+  ext: ["grafana", "dozzle"],
+};
+
+const HOSTS_OK = [
+  { name: "Mac Studio", sub: "따까리 실행", sev: "ok", metric: "CPU 12% · 메모리 41% · 디스크 52%", seen: "14:32:08" },
+  { name: "ubuntu-01", sub: "홈서버 컨테이너", sev: "ok", metric: "CPU 9% · 메모리 58% · 디스크 61%", seen: "14:32:05" },
+  { name: "win-server", sub: "Windows 개발서버", sev: "ok", metric: "CPU 6% · 메모리 47% · 디스크 38%", seen: "14:32:03" },
+];
+const SRC_OK = [
+  { name: "Mac snapshot", sev: "ok", note: "마지막 수신 14:32:08" },
+  { name: "Prometheus", sev: "ok", note: "마지막 수신 14:32:05" },
+  { name: "Loki", sev: "ok", note: "마지막 수신 14:32:06" },
+  { name: "서비스 HTTP 확인", sev: "ok", note: "마지막 확인 14:32:00" },
+];
+const SVC = [
+  ["따까리 백엔드", "Mac Studio"], ["Prometheus", "ubuntu-01"], ["Loki", "ubuntu-01"], ["Grafana", "ubuntu-01"],
+  ["Dozzle", "ubuntu-01"], ["monitoring-discord-bot", "ubuntu-01"], ["stock-gosu", "win-server"],
+];
+const svcRows = (skip = []) => SVC.filter(([n]) => !skip.includes(n)).map(([n, h]) => ({ name: n, sev: "ok", note: h }));
+
+const SCEN = {
+  normal: { label: "정상", verdict: "ok", line: "관측 범위에서 이상 없음", meta: ["호스트 3", "서비스 7", "수집원 4 모두 응답"], asOf: "14:32:08", age: "12초 전",
+    attention: [], hosts: HOSTS_OK, sources: SRC_OK, healthy: svcRows(), announce: "전체 상태 정상. 관측 범위에서 이상 없음. 14시 32분 기준." },
+  problem: { label: "문제", verdict: "bad", line: "문제 1건 · 주의 1건", meta: ["호스트 3 중 1에 영향", "서비스 7 중 6 정상", "수집원 4 중 3 정상"], asOf: "14:32:08", age: "12초 전",
+    attention: [LOKI, DISK], hosts: [HOSTS_OK[0], { ...HOSTS_OK[1], sev: "warn", metric: "CPU 9% · 메모리 58% · 디스크 86%" }, HOSTS_OK[2]],
+    sources: [SRC_OK[0], SRC_OK[1], { name: "Loki", sev: "bad", note: "/ready 응답 없음 · 마지막 정상 14:20:08" }, SRC_OK[3]], healthy: svcRows(["Loki"]), announce: "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요." },
+  loading: { label: "로딩", loading: true, announce: "관제 상태를 불러오는 중" },
+  denied: { label: "권한 없음", denied: true, announce: "관제 화면을 볼 권한이 없어요" },
+  failed: { label: "갱신 실패", verdict: "unknown", last: true, line: "지금 상태를 확인하지 못했어요", meta: [], asOf: "14:28:02", age: "4분 전",
+    banner: { tone: "danger", text: "<strong>갱신 실패</strong> · 관제 API에 연결하지 못했어요 (재시도 3회 실패). 아래는 14:28:02의 마지막 값이에요.", action: "다시 시도" },
+    prev: { verdict: "ok", text: "마지막으로 확인된 상태: 정상" },
+    attention: [], hosts: HOSTS_OK.map(h => ({ ...h, sev: "unknown", seen: "14:28:02", last: true })), sources: SRC_OK.map(s => ({ ...s, sev: "unknown", note: "마지막 값 14:28:02" })), healthy: [],
+    announce: "갱신 실패. 지금 상태는 미확인. 마지막 성공은 4분 전이고 그때는 정상이었어요." },
+  partial: { label: "부분 성공", verdict: "warn", line: "확인하지 못한 범위 2곳이 있어요", meta: ["서비스 7 중 6 정상", "확인 불가 2곳", "수집원 4 중 2 응답"], asOf: "14:32:08", age: "12초 전",
+    banner: { tone: "warning", text: "<strong>일부만 확인했어요</strong> · 확인하지 못한 범위는 정상으로 세지 않았어요." },
+    attention: [LOKI_SRC, DOCKER], hosts: HOSTS_OK.map((h, i) => i === 1 ? { ...h, sev: "unknown", metric: "컨테이너 상태 미확인 · 호스트 지표 정상" } : h),
+    sources: [SRC_OK[0], SRC_OK[1], { name: "Loki", sev: "unknown", note: "쿼리 응답 없음 · 마지막 성공 14:23:10" }, { name: "Docker 컨테이너 상태", sev: "unknown", note: "읽기 권한 없음" }],
+    healthy: svcRows(["Loki"]), announce: "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요." },
+  empty: { label: "빈 값", empty: true, announce: "연결된 관측 대상이 없어요" },
+  stale: { label: "오래된 값", verdict: "unknown", last: true, line: "마지막 값이 오래돼서 지금 상태를 알 수 없어요", meta: ["Prometheus 샘플 기준"], asOf: "14:09:11", age: "23분 전",
+    banner: { tone: "warning", text: "<strong>값이 오래됐어요</strong> · 5분 넘게 새 샘플이 없으면 정상으로 보여 주지 않아요 <span class=\"ic-assume\">기준 가정</span>" },
+    prev: { verdict: "ok", text: "14:09 기준 마지막 상태: 정상" },
+    attention: [STALE_PROM], hosts: HOSTS_OK.map(h => ({ ...h, sev: "unknown", seen: "14:09", last: true })), sources: [{ name: "Mac snapshot", sev: "ok", note: "마지막 수신 14:32:08" }, { name: "Prometheus", sev: "unknown", note: "마지막 샘플 14:09:11 · 오래됨" }, { name: "Loki", sev: "ok", note: "마지막 수신 14:32:06" }, { name: "서비스 HTTP 확인", sev: "ok", note: "마지막 확인 14:32:00" }],
+    healthy: [], announce: "전체 상태 미확인. 마지막 값이 23분 전이에요." },
+};
+const ORDER = ["normal", "problem", "loading", "denied", "failed", "partial", "empty", "stale"];
+
+/* ---------- 렌더 ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const icon = (id, cls = "") => `<svg class="tk-icon ${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;
+const badge = (sev, last) => `<span class="tk-badge tk-badge--${BADGE[sev]}">${icon(ICON[sev])}${WORD[sev]}${last ? " · 마지막 값" : ""}</span>`;
+const params = () => Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+const setParams = (p) => { const u = new URLSearchParams(location.hash.slice(1)); Object.entries(p).forEach(([k, v]) => v == null ? u.delete(k) : u.set(k, v)); history.replaceState(null, "", "#" + u.toString()); render(); };
+const wide = () => matchMedia("(min-width: 1024px)").matches;
+
+function detailHtml(it, { back }) {
+  const next = it.next.map(n => `<li>${n}</li>`).join("");
+  const ev = it.evidence.map(([k, v, s, t, c]) => `<li><span class="ic-ev__k">${k}</span><span class="ic-ev__v">${v}</span><span class="ic-ev__s"><span>${s}</span><span>·</span><span>${t}</span>${c ? `<span style="flex-basis:100%">${c}</span>` : ""}</span></li>`).join("");
+  const log = it.log.map(([t, x]) => `<li><time>${t}</time><span>${x}</span></li>`).join("");
+  return `
+  <section class="ic-detail" id="detail" aria-labelledby="d-title">
+    ${back ? `<button class="tk-button tk-button--ghost tk-button--sm ic-back" type="button" id="btn-back">${icon("i-left", "tk-icon--sm")}관제로 돌아가기</button>` : ""}
+    <div class="ic-detail__head">
+      <h2 class="ic-detail__title" id="d-title" tabindex="-1">${it.name}</h2>
+      <div class="ic-detail__meta">${badge(it.sev)}<span>${it.host}</span><span>·</span><span>${it.dur}</span></div>
+    </div>
+    <dl class="ic-facts">
+      <div><dt>영향</dt><dd>${it.impact}</dd></div>
+      <div><dt>근거</dt><dd>${it.basis}</dd></div>
+      <div><dt>다음 확인</dt><dd><ol style="margin:0;padding-left:var(--tk-space-4)">${next}</ol><p class="ic-card__sub" style="margin:var(--tk-space-2) 0 0">조치(재시작 등)는 사람이 판단해요. 이 화면은 자동 조치를 하지 않아요.</p></dd></div>
+    </dl>
+    <section class="ic-section" aria-labelledby="d-ev"><h3 class="ic-h2" id="d-ev">확인한 값</h3><ul class="ic-ev">${ev}</ul></section>
+    <section class="ic-section" aria-labelledby="d-log"><h3 class="ic-h2" id="d-log">판정 기록 <span class="ic-assume">수집 판정만 · 추정 사건 없음</span></h3><ol class="ic-tl">${log}</ol></section>
+    <section class="ic-section" aria-labelledby="d-ext"><h3 class="ic-h2" id="d-ext">더 자세히 보려면 <span class="ic-assume">선택 · URL 미확정</span></h3>
+      <div class="ic-ext">${it.ext.map(k => `<a class="tk-button tk-button--secondary" href="#" data-ext="${k}" target="_blank" rel="noopener noreferrer">${EXT[k]}${icon("i-ext", "tk-icon--sm")}<span class="sr-only"> (새 창, 시안에서는 이동하지 않아요)</span></a>`).join("")}</div>
+    </section>
+  </section>`;
+}
+
+function hostCard(h) {
+  return `<li><span class="ic-src__name">${h.name} <span class="ic-card__sub">· ${h.sub}</span></span>${badge(h.sev)}<span class="ic-src__note">${h.metric} · ${h.last ? "마지막 값" : "수신"} ${h.seen}</span></li>`;
+}
+const srcRow = (s) => `<li><span class="ic-src__name">${s.name}</span>${badge(s.sev)}<span class="ic-src__note">${s.note}</span></li>`;
+
+function renderState(m) {
+  const main = $("#main");
+  const hdrMeta = $("#hdr-meta"), act = $("#hdr-actions");
+  act.innerHTML = "";
+  hdrMeta.textContent = "Mac Studio · ubuntu-01 · win-server (후보)";
+  main.removeAttribute("aria-busy");
+  if (m.loading) {
+    hdrMeta.textContent = "불러오는 중"; // 권한 확인 전이라 호스트 이름을 미리 보여 주지 않는다
+    main.setAttribute("aria-busy", "true");
+    main.innerHTML = `<h2 class="sr-only">관제 상태를 불러오는 중</h2>
+      <div class="ic-hero" data-verdict="unknown" aria-hidden="true" style="background:var(--tk-color-surface-default);border-color:var(--tk-color-border-subtle)"><span class="tk-skeleton ic-hero__mark" style="border-radius:var(--tk-radius-full)"></span><div class="ic-hero__body"><span class="tk-skeleton tk-skeleton--text" style="width:30%;height:1.6rem"></span><span class="tk-skeleton tk-skeleton--text" style="width:70%"></span><span class="tk-skeleton tk-skeleton--text" style="width:55%"></span></div></div>
+      <div class="ic-section" aria-hidden="true"><span class="tk-skeleton tk-skeleton--text" style="width:40%"></span><ul class="ic-skel"><li class="tk-skeleton tk-skeleton--block"></li><li class="tk-skeleton tk-skeleton--block"></li></ul></div>
+      <div class="ic-section" aria-hidden="true"><span class="tk-skeleton tk-skeleton--text" style="width:20%"></span><ul class="ic-skel"><li class="tk-skeleton tk-skeleton--block"></li><li class="tk-skeleton tk-skeleton--block"></li><li class="tk-skeleton tk-skeleton--block"></li></ul></div>`;
+    return;
+  }
+  if (m.denied) {
+    hdrMeta.textContent = ""; // 권한이 없으면 호스트 이름도 보여 주지 않는다
+    main.innerHTML = `<div class="tk-empty tk-empty--boxed ic-state" role="alert">${icon("i-lock", "tk-icon--xl")}
+      <h2 class="tk-empty__title">관제를 볼 권한이 없어요</h2>
+      <p>이 계정에는 관제 조회 권한이 없어요. 상태 값은 불러오지 않았어요. 이전에 본 값도 이 화면에 남기지 않아요.</p>
+      <div class="tk-button-group"><button class="tk-button tk-button--secondary" type="button">다른 계정으로 로그인</button><button class="tk-button tk-button--ghost" type="button">다시 시도</button></div></div>`;
+    return;
+  }
+  if (m.empty) {
+    hdrMeta.textContent = "관측 대상 없음";
+    main.innerHTML = `<div class="tk-empty tk-empty--boxed ic-state">${icon("i-inbox", "tk-icon--xl")}
+      <h2 class="tk-empty__title">아직 연결된 관측 대상이 없어요</h2>
+      <p>수집원(Mac snapshot, Prometheus, Loki 등)이 연결되면 전체 상태가 여기에 나타나요. 지금은 아무것도 판정하지 않았고, 정상이라는 뜻도 아니에요.</p>
+      <p class="ic-card__sub" id="empty-why">연결 방법은 I2.2에서 정해진 뒤 여기에 안내해요. 시안에는 연결 기능이 없어요.</p></div>`;
+    return;
+  }
+
+  act.innerHTML = `<button class="tk-icon-button tk-icon-button--secondary" id="btn-refresh" type="button" aria-label="지금 다시 확인">${icon("i-refresh")}</button>`;
+  const p = params();
+  const sel = m.attention.find(a => a.id === p.d) || null;
+  const isWide = wide();
+  const cur = sel || (isWide ? m.attention[0] : null);
+  const detailOnly = !isWide && sel;
+
+  const banner = m.banner ? `<div class="tk-banner tk-banner--${m.banner.tone} ic-banner" role="${m.banner.tone === "danger" ? "alert" : "status"}">${icon(m.banner.tone === "danger" ? "i-bad" : "i-warn")}<span class="tk-banner__text">${m.banner.text}</span>${m.banner.action ? `<button class="tk-button tk-button--secondary tk-button--sm" type="button" id="btn-retry">${m.banner.action}</button>` : ""}</div>` : "";
+
+  const hero = `<section class="ic-hero" data-verdict="${m.verdict}" aria-labelledby="verdict">
+    <span class="ic-hero__mark">${icon(ICON[m.verdict])}</span>
+    <div class="ic-hero__body">
+      <p class="ic-eyebrow">전체 상태${m.last ? " · 마지막 값 기준" : ""}</p>
+      <h2 class="ic-hero__verdict" id="verdict">${WORD[m.verdict]}</h2>
+      <p class="ic-hero__line">${m.line}</p>
+      ${m.prev ? `<p class="ic-hero__meta"><span>${m.prev.text}</span></p>` : ""}
+      <p class="ic-hero__meta"><span>${icon("i-clock", "tk-icon--xs")}<time>${m.asOf}</time> ${m.last ? "마지막 성공" : "기준"} · ${m.age}</span></p>
+      ${m.meta.length ? `<p class="ic-hero__meta">${m.meta.map(x => `<span>${x}</span>`).join("")}</p>` : ""}
+    </div></section>`;
+
+  let attn = "";
+  if (m.attention.length) {
+    attn = `<section class="ic-section" aria-labelledby="h-attn"><div class="ic-section__head"><h2 class="ic-h2" id="h-attn">${m.last ? "마지막으로 확인된 항목" : "조치가 필요한 항목"}</h2><span class="tk-badge tk-badge--count tk-badge--neutral" aria-label="${m.attention.length}건">${m.attention.length}</span></div>
+      <ul class="ic-list">${m.attention.map(a => `<li><button class="ic-row" type="button" data-id="${a.id}" aria-controls="detail" ${cur && cur.id === a.id && isWide ? 'aria-current="true"' : ""}>
+        <span class="ic-row__head">${badge(a.sev)}<span class="ic-row__name">${a.name}</span><span class="ic-row__host">${a.host}</span><span class="ic-row__dur">${a.dur}</span></span>
+        <span class="ic-row__line"><b>영향</b>${a.impact}</span><span class="ic-row__line"><b>근거</b>${a.basis}</span>
+        <span class="ic-row__chev">${icon("i-right")}</span></button></li>`).join("")}</ul></section>`;
+  } else {
+    attn = `<section class="ic-section" aria-labelledby="h-attn"><h2 class="ic-h2" id="h-attn">조치가 필요한 항목</h2><p class="ic-card__sub" style="font-size:var(--tk-font-size-sm)">${m.last ? "마지막 값에는 문제·주의 항목이 없었어요. 지금 상태는 확인되지 않았어요." : "없어요. 관측한 서비스와 호스트가 모두 정상 범위예요."}</p></section>`;
+  }
+  const hosts = `<section class="ic-section" aria-labelledby="h-hosts"><h2 class="ic-h2" id="h-hosts">호스트</h2><ul class="ic-src" ${m.last ? "data-last" : ""}>${m.hosts.map(hostCard).join("")}</ul></section>`;
+  // 정상일 때는 수집원도 접어서 간결하게 둔다. 문제·미확인이 있으면 어디가 비었는지 바로 보여야 하므로 펼쳐 둔다.
+  const srcs = m.verdict === "ok"
+    ? `<details class="ic-details"><summary>${icon("i-right", "tk-icon--sm ic-chev")}수집원 ${m.sources.length}개 모두 응답 · 마지막 수신 ${m.asOf}</summary><ul class="ic-src">${m.sources.map(srcRow).join("")}</ul></details>`
+    : `<section class="ic-section" aria-labelledby="h-src"><h2 class="ic-h2" id="h-src">수집원 상태</h2><ul class="ic-src" ${m.last ? "data-last" : ""}>${m.sources.map(srcRow).join("")}</ul></section>`;
+  const healthy = m.healthy.length ? `<details class="ic-details"><summary>${icon("i-right", "tk-icon--sm ic-chev")}정상 서비스 ${m.healthy.length}개 보기</summary><ul class="ic-src">${m.healthy.map(s => `<li><span class="ic-src__name">${s.name}</span>${badge("ok")}<span class="ic-src__note">${s.note}</span></li>`).join("")}</ul></details>` : "";
+
+  if (detailOnly) {
+    main.innerHTML = detailHtml(sel, { back: true });
+  } else if (isWide && m.attention.length) {
+    main.innerHTML = `${banner}${hero}<div class="ic-cols" data-split="1"><div class="ic-col">${attn}${hosts}${srcs}${healthy}</div><div class="ic-col">${detailHtml(cur, { back: false })}</div></div>`;
+  } else {
+    main.innerHTML = `${banner}${hero}<div class="ic-cols"><div class="ic-col">${attn}${hosts}${srcs}${healthy}</div></div>`;
+  }
+}
+
+let lastRow = null;
+function render() {
+  const p = params();
+  const key = SCEN[p.s] ? p.s : "normal";
+  document.documentElement.dataset.theme = p.t === "dark" ? "dark" : "light";
+  document.body.dataset.chrome = p.chrome === "0" ? "0" : "1";
+  const m = SCEN[key];
+  // 시안 도구
+  const st = $("#pt-states");
+  st.innerHTML = ORDER.map(k => `<button type="button" class="tk-chip" data-s="${k}" aria-pressed="${k === key}">${SCEN[k].label}</button>`).join("");
+  $("#pt-theme").innerHTML = icon(p.t === "dark" ? "i-sun" : "i-moon");
+  renderState(m);
+  $("#live").textContent = m.announce;
+  const hasDetailOnly = !wide() && p.d && m.attention && m.attention.some(a => a.id === p.d);
+  if (hasDetailOnly) $("#d-title")?.focus();
+}
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button, a");
+  if (!t) return;
+  if (t.dataset.s) setParams({ s: t.dataset.s, d: null });
+  else if (t.id === "pt-theme") setParams({ t: params().t === "dark" ? "light" : "dark" });
+  else if (t.classList.contains("ic-row")) { lastRow = t.dataset.id; setParams({ d: t.dataset.id }); }
+  else if (t.id === "btn-back") { setParams({ d: null }); document.querySelector(`.ic-row[data-id="${lastRow}"]`)?.focus(); }
+  else if (t.id === "btn-refresh" || t.id === "btn-retry") {
+    t.setAttribute("aria-busy", "true"); $("#live").textContent = "다시 확인하는 중";
+    setTimeout(() => { t.removeAttribute("aria-busy"); $("#live").textContent = params().s === "failed" || params().s === "stale" ? "다시 확인했지만 아직 연결되지 않았어요" : "방금 갱신했어요"; }, 700);
+  } else if (t.dataset.ext) e.preventDefault();
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !wide() && params().d) { setParams({ d: null }); document.querySelector(`.ic-row[data-id="${lastRow}"]`)?.focus(); } });
+matchMedia("(min-width: 1024px)").addEventListener("change", render);
+addEventListener("hashchange", render);
+render();
+</script>
+</body>
+</html>

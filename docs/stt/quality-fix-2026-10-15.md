@@ -1,5 +1,7 @@
 # 한국어 실회의 반복 환각 교정 (2026-10-15)
 
+> 후속 실행: 정식 Community-1으로 전체 새 추론을 마쳤고 원본을 보존한 운영 파생 회의에 실제 저장했다. 아래 이전 측정의 “결과함만 저장”·“모델 설치 필요”는 당시 이력이다. 최종 후속 측정은 문서 끝에 기록했다.
+
 운영 회의·job·구간은 읽기 전용으로 조사했다. 원음과 개인 전사는 이 저장소에 넣지 않는다. 원회의와 원래 분석은 유지하며, 로컬 재전사 비교와 배포 후 재전사/분석 요청 경로를 제공한다.
 
 ## 근본 원인
@@ -102,3 +104,21 @@ same_audio=true, raw_evidence_preserved=true, utterance_contract_valid=true, mea
 ```
 
 새 전사와 발화·비교·검증 JSON, 원본 스냅샷과 재현 스크립트는 현재 결과함에도 저장했다. 운영 원회의와 분석은 유지했다. 이 실행에서도 운영 재전사 요청·재분석·배포는 실행하지 않았다.
+
+## 후속 운영 복구 (2026-10-15)
+
+이전 결과함 실행과 달리 이번에는 사용자 승인 범위에서 정식 새 회의를 만들고 **운영 DB에 실제 저장**했다. 원회의 전사/분석/원본 구간/승인 기억은 유지한다.
+
+- 원회의 `a34d67f5-6909-41e1-b287-a0872f938dd6` → 새 회의 `2ba7077c-6854-4f61-b199-55ef885cfdd3`, job `9642b67f-e394-4a29-9c5a-6cfa7c3b5261`. formal source_meeting_id와 같은 audio_artifact_id를 사용했다. 파생 회의는 1개다.
+- [운영 앱의 새 회의](https://ttakkari.winterholic.net/meetings/2ba7077c-6854-4f61-b199-55ef885cfdd3). 회의 transcribed/job succeeded, 본문36,397자와 job 전사 일치, 상세 stt_job_id 일치, 앱 읽기 도구 조회 확인. auto_analyze=false, 새 분석 Run 없음. 기존 잘못된 요약은 복사하지 않았다. 새 요약·결정·액션은 전사/화자 검수 후 분석이 필요하다.
+- 원음 SHA `5d51a70971c192445ab4f4ae93d82481e97e1c50d0e8f76107f48a8c6e40d809`,21,850,309B,0~2549.0973125초. 전체를 새로 추론했다. 캐시 전사 파일을 입력으로 사용하지 않았다.
+- 실제 options: VAD=true, condition_on_previous_text=false, temperature=[0,.2,.4,.6,.8,1],compression_ratio_threshold=2.4,log_prob_threshold=-1,no_speech_threshold=.6. 독립 VAD 창131개·최대25초, CPU6스레드.
+- 최초 원시502구간·재시도 뒤 접기 전502구간·표시용502구간 모두 반복 탐지0개/0초/0자. 기존은1427개/1238.48초/19978자. 문제 문장 두 개는 기존1429회·2회에서 새 원시/접기 전 모두0회. 재시도0초·접기0자이므로 숫자를 접어서만 낮춘 결과가 아니다.
+- 정식 Community-1 revision `3533c8cf8e369892e6b79ff1bf80f7b0286a54ee` 본체10개 파일·33,695,573B를 로컬 snapshot 목록의 hash와 대조했다. 전체 diarization_status=succeeded, 추정5음향군집·848발화·화자미상236·검증필요390·중첩표시201. 이 수치는 실제 인원/화자 정답 정확도가 아니다. CER/WER/DER 미측정.
+- 이번 추가 수정은 표시 접기와 성공 판정을 분리한다. post_retry_segments·quality.after_retry를 보존하고, 부모 execute_job에서 접기 전 지표를 재계산한다. 반복 탐지 구간의 시각합15초 또는 문자합120자 이상이면 job/회의 전사 실패·검증필요로 처리하고 본문 채택과 자동분석을 막는다. 원시/재시도/후보 본문은 유지한다. 짧은 두 번 반복은 보존한다. 운영 검토 기준이며 통계적 신뢰도 추정이 아니다.
+- 원회의/원본job/1450원시구간/분석5항목/0제안의 정규화 스냅샷 hash 일치. 회의 출처의 승인 기억0개도 전후 일치. 새 기억 승인 없음.
+- Whisper 추론966.235초, Community-1 추론1067.192초, 전체 모델 자식 벽시계2048.958초, peak RSS7,579,271,168B. 실제 PID8822 supervisor 회수/process_exited=true와 PID부재 확인.
+- 코드 커밋 `4a5c336ce5a1f0717c9747df709a53c589f0fdd7`. 회귀 red3 failed에서 start_analysis 진입을 재현했고 수정 뒤 관련36 passed. 새 격리 DB 전체661 passed,2 xfailed in146.37s. 동시 변경과 분리한 커밋 체크아웃/또 다른 새 DB에서도661 passed,2 xfailed in135.18s. 변경 Python ruff/compileall/diff check 통과.
+- 실행: `TTAKKARI_NO_ENV_FILE=1 PYTHONPATH=src .venv/bin/python -u <결과함>/run-full-recovery.py`. 검증은 `PYTHONPATH=/private/tmp/ttakkari-stt-a27de474-4a5c336/src .venv/bin/python <결과함>/verify-recovery.py`로 read-only DB를 대조했다.
+- 결과함 `a27de474-2adc-4724-8c37-6fcd15fb1029`: 실행 로그·원본/새 전사/발화·실제 앞뒤 발화·지표·검증 스크립트. 개인 전사/원음/모델은 Git에 넣지 않는다.
+- 상주 운영 프로세스 d61e3a0·PID61369는 이 세션에서 재시작하지 않았다. 운영 데이터 복구는 완료했고, 새 품질 차단의 상주 적용은 후속 배포/재시작 대상이다.

@@ -1,0 +1,112 @@
+{
+  "kind": "synthetic_pilot_only",
+  "n": 9,
+  "valid": 9,
+  "correct": 9,
+  "pass3_cases": 3,
+  "case_count": 3,
+  "latency_p50_ms": 5924.2,
+  "latency_p95_ms": 10513.786874944344,
+  "evaluation_phase": "post_prompt_tuning_synthetic_pilot",
+  "comparison_allowed": false,
+  "known_failures_before_this_pilot": {
+    "phase": "pre_prompt_tuning_exploratory_probe",
+    "observed_outputs": 1,
+    "semantic_validation_failures": 1,
+    "failure_rate_for_observed_probe_only": "1/1",
+    "failure": "answer accompanied by lead_id; rejected, not coerced",
+    "included_in_this_pilot_denominator": false
+  },
+  "initial_schema_failure_before_generation": {
+    "known_events": 1,
+    "failure": "empty-candidate schema rejected before generation; corrected with maxItems=0",
+    "counted_as_model_output": false
+  },
+  "historical_latency_comparison": {
+    "allowed": false,
+    "reason": "Prior Haiku value is a median from another dataset/run; this result is a small synthetic pilot p95."
+  },
+  "observations": [
+    {
+      "case_id": "syn-greeting",
+      "repeat": 1,
+      "expected": "answer",
+      "valid": true,
+      "action": "answer",
+      "correct": true,
+      "elapsed_ms": 10513.8
+    },
+    {
+      "case_id": "syn-greeting",
+      "repeat": 2,
+      "expected": "answer",
+      "valid": true,
+      "action": "answer",
+      "correct": true,
+      "elapsed_ms": 3217.0
+    },
+    {
+      "case_id": "syn-greeting",
+      "repeat": 3,
+      "expected": "answer",
+      "valid": true,
+      "action": "answer",
+      "correct": true,
+      "elapsed_ms": 3209.0
+    },
+    {
+      "case_id": "syn-code-task",
+      "repeat": 1,
+      "expected": "delegate",
+      "valid": true,
+      "action": "delegate",
+      "correct": true,
+      "elapsed_ms": 8356.2
+    },
+    {
+      "case_id": "syn-code-task",
+      "repeat": 2,
+      "expected": "delegate",
+      "valid": true,
+      "action": "delegate",
+      "correct": true,
+      "elapsed_ms": 5961.9
+    },
+    {
+      "case_id": "syn-code-task",
+      "repeat": 3,
+      "expected": "delegate",
+      "valid": true,
+      "action": "delegate",
+      "correct": true,
+      "elapsed_ms": 5924.2
+    },
+    {
+      "case_id": "syn-ambiguous",
+      "repeat": 1,
+      "expected": "abstain",
+      "valid": true,
+      "action": "abstain",
+      "correct": true,
+      "elapsed_ms": 7358.9
+    },
+    {
+      "case_id": "syn-ambiguous",
+      "repeat": 2,
+      "expected": "abstain",
+      "valid": true,
+      "action": "abstain",
+      "correct": true,
+      "elapsed_ms": 4979.5
+    },
+    {
+      "case_id": "syn-ambiguous",
+      "repeat": 3,
+      "expected": "abstain",
+      "valid": true,
+      "action": "abstain",
+      "correct": true,
+      "elapsed_ms": 4966.9
+    }
+  ]
+}

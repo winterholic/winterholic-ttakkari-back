@@ -1,0 +1,3 @@
+{"case_id":"syn-greeting","kind":"synthetic","message":"안녕하세요!","expected":"answer","severity":"none","context":{"board":"(맡긴 일 없음)","history":"(없음)"}}
+{"case_id":"syn-code-task","kind":"synthetic","message":"이 Python 파일의 오류를 찾아서 고쳐줘.","expected":"delegate","severity":"S1","context":{"board":"(맡긴 일 없음)","history":"(없음)"}}
+{"case_id":"syn-ambiguous","kind":"synthetic","message":"그거 이어서 해줘.","expected":"abstain","severity":"S1","context":{"board":"(맡긴 일 없음)","history":"(없음)"}}

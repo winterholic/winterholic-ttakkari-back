@@ -1,0 +1,91 @@
+{
+  "date": "2026-10-15",
+  "revision": 2,
+  "verdict": "insufficient_evidence_operational_replacement_on_hold",
+  "hardware": "Mac Studio M5 Max, 64GB",
+  "engine": "llama.cpp b11655 CPU-only; Metal initialization failed: failed to create command queue",
+  "model": "Qwen3.5-9B Q4_K_M GGUF, lmstudio-community revision d9006465af6fc714af653e381fbfa55ead5af84b",
+  "model_file_bytes": 5627044256,
+  "model_file_sha256": "cd76ec205963b3b33350093e6904d9de16c4e666fd104e1f632d25c7f15f2a13",
+  "post_prompt_tuning_synthetic_pilot": {
+    "dataset": "synthetic-cases.jsonl",
+    "n": 9,
+    "valid_schema_and_server_validation": 9,
+    "policy_correct": 9,
+    "pass3_cases": "3/3",
+    "latency_p50_ms": 5924.2,
+    "latency_p95_ms": 10513.8,
+    "case_types": ["greeting", "clear coding request", "ambiguous follow-up"],
+    "interpretation": "Small synthetic pilot only; not evidence for population accuracy or paired model comparison."
+  },
+  "pre_prompt_tuning_probe": {
+    "dataset": "separate exploratory probe",
+    "known_observed_outputs": 1,
+    "semantic_validation_failures": 1,
+    "observed_failure_rate": "1/1 known probe output; not an estimate of an unknown larger attempt set",
+    "failure": "action=answer was returned together with a non-null lead_id; validator rejected it without coercion",
+    "prompt_tuned_after_probe": true,
+    "combined_with_synthetic_pilot": false
+  },
+  "pre_generation_schema_failure": {
+    "known_events": 1,
+    "failure": "Initial empty-candidate enum schema was rejected before generation; the schema was changed to maxItems=0 for empty candidate arrays.",
+    "included_in_model_output_failure_rate": false,
+    "reported_separately": true
+  },
+  "resources_and_speed": {
+    "cold_start_load_seconds": 36,
+    "generation_tokens_per_second": 15.3,
+    "process_rss_snapshot_bytes": 10512285696,
+    "process_peak_rss_measured": false,
+    "host_available_memory_snapshot_bytes": 36021878784,
+    "host_memory_pressure": "normal"
+  },
+  "historical_baseline_not_paired": {
+    "haiku_synthetic_cases": 30,
+    "haiku_total_latency_median_seconds": 7.36,
+    "haiku_api_latency_median_seconds": 2.89,
+    "haiku_cost_usd_per_30": 0.069,
+    "luna_synthetic_cases": 30,
+    "luna_first_response_median_seconds": 4.8,
+    "luna_cost": "not measured",
+    "comparison_allowed": false,
+    "reason": "Different inputs, distribution, run, and statistic (historical median vs pilot p95)."
+  },
+  "actual_feedback_export": {
+    "source": "local read-only PostgreSQL desk_feedback query",
+    "feedback_rows": 1,
+    "policy_corrections": 0,
+    "user_confirmations_reference_only": 1,
+    "exported_allowlisted_records": 1,
+    "label_status": "user_confirmation_reference_only",
+    "sensitive_pattern_scan": "passed",
+    "review": "Redacted export manually reviewed for visible direct identifiers; no policy correction was present. This is not a human-confirmed policy label.",
+    "usable_as_policy_accuracy_ground_truth": false,
+    "usable_for_paired_replay": false,
+    "reason": "No corrected example; only the original user message is stored, not the full task-board/history prompt snapshot."
+  },
+  "not_measured_or_not_done": [
+    "paired Luna replay on the same approved inputs",
+    "paired Haiku replay (fresh usage availability was not exposed through a callable account_usage tool in this run)",
+    "policy accuracy on real corrected feedback (zero corrected samples)",
+    "live production shadow mode",
+    "MLX-LM inference benchmark",
+    "Metal/GPU performance",
+    "peak RSS, power draw, and total local inference cost",
+    "large/adversarial/long-input and changing-candidate strata"
+  ],
+  "operational_invariants": {
+    "desk_connected": false,
+    "production_execution_or_state_change": false,
+    "deploy_or_restart": false,
+    "shadow_output_executed": false
+  },
+  "implementation_verification": {
+    "unit_tests": 14,
+    "unit_tests_passed": 14,
+    "ruff": "passed",
+    "json_measurement_files_parse": true
+  },
+  "data_protection": "Raw feedback was queried locally in read-only mode. The exporter selects only message/decided/expected, omits notes and IDs, redacts deterministic patterns, validates an allowlist, scans before atomic mode-0600 export, and prints only counts. No raw feedback or secret was printed or sent to an external model."
+}

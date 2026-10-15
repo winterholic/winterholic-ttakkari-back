@@ -2,13 +2,44 @@ import asyncio
 import textwrap
 import time
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from helpers import wait_run
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import ChatSession
 from ttakkari.orchestrator.runtime import issue_token
+
+
+async def test_spawn_os_error_cleans_temporary_mcp_token_file(monkeypatch):
+    from ttakkari.agents.antigravity import AntigravityAdapter
+    from ttakkari.agents.base import LaunchSpec
+    from ttakkari.runs.manager import RunManager
+
+    session_id = str(uuid.uuid4())
+    run_spec = LaunchSpec(
+        cwd=Path("/workspace"), prompt="work", engine_session_id=None, model="gemini-3.8-flash-high",
+        effort="high", outbox=Path("/outbox"), write_roots=[Path("/workspace")], system_note="",
+        session_id=session_id,
+        mcp_servers={"ttakkari": {"command": "/usr/bin/python3", "env": {"TTK_ORCH_TOKEN": "test-only"}}},
+    )
+    adapter = AntigravityAdapter()
+    config = adapter.working_directory(run_spec) / ".agents" / "mcp_config.json"
+
+    async def denied(*args, **kwargs):
+        raise PermissionError("fixture spawn denied")
+
+    monkeypatch.setattr("ttakkari.runs.manager.asyncio.create_subprocess_exec", denied)
+    manager = RunManager()
+    with pytest.raises(PermissionError, match="fixture spawn denied"):
+        await manager._attempt(
+            db=None, run=SimpleNamespace(id=uuid.uuid4(), pid=None), adapter=adapter, spec=run_spec,
+            env={}, root=Path("/workspace"), h=None,
+        )
+
+    assert not config.exists()
 
 
 async def test_run_fails_closed_when_resume_returns_a_new_conversation(

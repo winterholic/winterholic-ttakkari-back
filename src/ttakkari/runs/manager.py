@@ -581,6 +581,11 @@ class RunManager:
             if cleanup:
                 cleanup(spec)
             return state, None, False, True
+        except OSError:
+            cleanup = getattr(adapter, "cleanup", None)
+            if cleanup:
+                cleanup(spec)
+            raise
         if h:
             h.proc = proc
         run.pid = proc.pid

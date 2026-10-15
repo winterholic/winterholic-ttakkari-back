@@ -286,7 +286,8 @@ async def stt_speaker_names(mid: uuid.UUID, jid: uuid.UUID, body: SpeakerNamesIn
 
 class RetranscribeIn(BaseModel):
     model_config = {"extra": "forbid"}
-    auto_analyze: bool = False
+    # Capability probes must fail in request validation, before creating any rows.
+    auto_analyze: bool = Field(default=False, strict=True)
 
 
 @router.post("/{mid}/retranscribe", status_code=202)
@@ -305,6 +306,7 @@ async def retranscribe(mid: uuid.UUID, body: RetranscribeIn, _: User, db: Db) ->
             audio_artifact_id=original.audio_artifact_id)
     except pipeline.PipelineError as exc:
         raise _http(exc) from exc
+    meeting.source_meeting_id = original.id
     job = LocalSttJob(meeting_id=meeting.id, audio_artifact_id=meeting.audio_artifact_id,
         params={"profile": "robust", "terms": [], "auto_analyze": body.auto_analyze,
                 "source_meeting_id": str(mid), "source_job_id": original.provider_job_id})
@@ -313,8 +315,11 @@ async def retranscribe(mid: uuid.UUID, body: RetranscribeIn, _: User, db: Db) ->
     meeting.provider, meeting.provider_job_id = "local_whisper", str(job.id)
     pipeline.transition(meeting, MeetingStatus.transcribing)
     await db.commit()
+    out = await read.meeting_detail(db, meeting)
+    # stt_job_id remains reserved for the adopted, successful transcript.
+    out["stt_job"] = {"id": str(job.id), "status": job.status}
     jobs.kick()
-    return await read.meeting_detail(db, meeting)
+    return out
 
 
 class CorrectionsIn(BaseModel):

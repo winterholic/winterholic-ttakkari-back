@@ -124,4 +124,5 @@ E5의 모델 파일 캐시와 검색용 DB 벡터는 계속 보존된다. 질의
 명시한 로컬 런타임·모델 경로는 기본값보다 우선한다. 설정이 없으면 이 저장소의 `.stt-runtime/venv/bin/python`과 `.stt-runtime/faster-whisper-large-v3`를 찾는다.
 코드의 루트는 사용자 홈 아래 `development/projects/winterholic-ttakkari/back`으로 고정되어 배포 체크아웃 위치와 분리된다.
 구 외부 연동 설정 키는 무시하므로 환경파일 편집은 필요 없다. 기존 전사·회의록을 보존하는 migration 0026은 배포 감독이 실행한다.
+재전사 계보를 저장·보충하는 migration 0027도 새 코드 실행 전에 적용한다. 목록·상세의 원본/파생 회의 ID, 재전사 작업 상태, 부작용 없는 API 지원 확인은 [발화·재전사 API 계약](utterances-api.md#재전사-계보작업-상태와-api-지원-확인)을 따른다.
 [기본 경로 설치·운영 스모크](remove-clovanote-2026-10-15.md), [ADR 0027](../adr/0027-retire-clovanote.md)을 참고한다.

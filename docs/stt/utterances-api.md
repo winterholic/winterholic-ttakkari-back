@@ -58,7 +58,7 @@
 
 ## 원본 보존 재전사·재분석
 
-`POST /api/meetings/{mid}/retranscribe {"auto_analyze": false}` → 202, 기존 회의 상세와 같은 응답 형식.
+`POST /api/meetings/{mid}/retranscribe {"auto_analyze": false}` → 202, 기존 회의 상세 필드와 새 작업의 `stt_job`을 반환한다. [재전사 계보·작업 상태 계약](#재전사-계보작업-상태와-api-지원-확인)을 함께 참조한다.
 
 - **새 회의 ID**를 반환한다. 같은 원음을 참조하고 제목에 `(재처리)`를 붙인다.
 - 원회의의 전사·분석·항목·제안·승인한 기억을 유지한다. 재처리 회의에서 `robust` job을 새로 만든다.
@@ -131,3 +131,52 @@ ECAPA: https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb (Apache-2.0, gat
 - `?fields=start,end,original_text,speaker_id,verification_status`: 쉼표로 구분한 segment 필드(식별자 세 필드 제외)를 선택한다. 중복은 제거한다. 선택과 무관하게 `id`, `job_id`, `audio_artifact_id`는 항상 포함한다. `raw`·`words`도 명시 선택할 수 있다.
 - `fields`를 지정한 응답은 job metadata도 `duration`, `start`, `end`, `speaker_count`, `diarization_status`, `overlap_detection_status`만 남긴다. 전체 전사·화자 turn·발화·재시도 토큰이 metadata로 다시 내려오는 것을 막는다. 값이 원래 없으면 만들지 않는다.
 - offset/limit/인증/job 격리는 기존과 같고, 빈 fields·알 수 없는 필드는422다. 필드 선택은 SQL 컬럼 선택에도 반영해 선택하지 않은 원시 구간/단어를 로드하지 않는다.
+
+## 재전사 계보·작업 상태와 API 지원 확인
+
+회의 목록 `GET /api/meetings`의 `meetings[]`와 상세 `GET /api/meetings/{mid}`에 항상 다음 필드를 포함한다. 생성·수정 등 회의 상세를 돌려주는 응답에도 같다.
+
+```json
+{
+  "source_meeting_id": null,
+  "derived_meeting_ids": ["재전사한-회의-UUID"]
+}
+```
+
+- `source_meeting_id: string | null`: 이 회의를 다시 전사할 때 직접 원본으로 삼은 회의 ID. 일반 생성 회의는 null이다. A→B→C이면 C의 source는 B다.
+- `derived_meeting_ids: string[]`: 이 회의를 직접 원본으로 삼아 생성한 회의들. 없으면 빈 배열이며 손자 버전은 포함하지 않는다. 생성 시각 오름차순, 동률은 UUID 오름차순이다. 전사 성공·실패·진행 상태와 관계없이 포함한다.
+- 목록의 검색·상태·페이지 필터는 회의 행 선택에만 적용한다. 각 행의 파생 ID 목록은 필터와 페이지 밖의 자식도 포함하며 잘라내지 않는다. 이름이나 원음 ID로 관계를 추측하지 않는다.
+- 연결은 `meetings.source_meeting_id`에 별도로 저장한다. 제목 변경·전사 job 정리와 무관하게 유지한다. 원본 회의 삭제 시 자식을 지우지 않고 source만 null로 바꾸며, 자식 삭제 시 부모의 파생 목록에서도 빠진다. 원본 삭제 후 null은 일반 생성과 구분하지 않는다.
+- migration **0027**은 기존 전체 전사 job의 `params.source_meeting_id`로 연결을 보충한다. 존재하는 회의의 유효한 ID만 사용하고 자기 참조·고아·잘못된 값·구간 후보 job은 제외한다. 복수 후보는 생성 시각·UUID 순 첫 유효한 전체 job을 사용한다. 전사·분석·job 원본과 회의의 수정 시각은 바꾸지 않는다.
+
+재전사 응답 예시(기존 회의 상세 필드 일부 생략):
+
+```json
+{
+  "id": "새-회의-UUID",
+  "status": "transcribing",
+  "source_meeting_id": "원본-회의-UUID",
+  "derived_meeting_ids": [],
+  "stt_job_id": null,
+  "stt_job": {"id": "새-전사-job-UUID", "status": "queued"}
+}
+```
+
+`stt_job`은 **재전사 POST 응답에 추가되는 필드**이며 새로 만든 작업의 ID와 큐 등록 상태다. 응답 구성 시 `queued`이고, 수신 시점에는 이미 실행이 시작됐을 수 있다. 이후 `GET /api/meetings/{새_mid}/stt`로 `queued`·`running`·`succeeded`·`failed`를 갱신한다. 회의의 `status:transcribing`은 큐 대기와 실제 인식을 모두 포함한다. 기존 `stt_job_id`는 **채택된 성공 전사** 전용이므로 새 작업 등록 시 null이고 전사 완료 후 설정된다. 진행 중 job ID로 의미를 바꾸지 않는다.
+
+프론트 b8bd459의 API 지원 확인 요청은 다음과 같다.
+
+```http
+POST /api/meetings/{mid}/retranscribe
+Content-Type: application/json
+Authorization: Bearer …
+
+{"auto_analyze":"probe"}
+```
+
+- 인증된 요청의 본문 검증은 회의 조회·원음/런타임 검사·회의 및 job 생성·worker 깨우기 **전에** 끝난다. 경로가 있는 서버는422이며, 유효한 UUID의 회의가 없거나 원음/런타임이 없어도 이 잘못된 본문은422다. 회의·job·분석을 생성하지 않는다. 해당 경로가 없는 구버전 서버의404/405를 프론트가 지원 안 함으로 해석한다.
+- `auto_analyze`는 JSON `true`/`false`만 허용한다. 생략 시false. 문자열 `"true"`/`"false"`·숫자0/1·null·배열·객체도422다. 미지 필드도422다. 미인증은401이다.
+- 정상 본문에서 없는 회의는404, 원음 없음·런타임 미준비는409이며 회의/job을 만들지 않는다. 본문 검증 실패 응답은 기존 공통 형식 `{"code":"validation","message":"…","errors":[{"loc":["body","auto_analyze"],"msg":"…"}]}`을 유지한다.
+- 테스트는 실제 DB의 회의/job 개수 불변과 생성 함수·큐 깨우기 미호출을 확인한다. 계약 테스트에는 정상false/true·기본값·원본 보존·직접 계보·삭제·마이그레이션/되돌리기도 포함한다.
+
+배포 시 `alembic upgrade head`로0027을 적용한 뒤 새 코드를 실행한다. 운영 마이그레이션과 재시작은 배포 절차에서 수행한다.

@@ -511,6 +511,9 @@ class Meeting(Base):
     participants: Mapped[list[Any]] = mapped_column(default=list)
     source: Mapped[str] = mapped_column(String(10), default="text")  # audio | text
     audio_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
+    # Direct source of a retranscribed version; independent of transcription attempts.
+    source_meeting_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("meetings.id", ondelete="SET NULL", name="fk_meetings_source_meeting_id"), index=True)
     # 전사 Provider 요청 기록. 인증 정보는 여기에 두지 않는다.
     provider: Mapped[str | None] = mapped_column(String(30))
     provider_job_id: Mapped[str | None] = mapped_column(String(200))

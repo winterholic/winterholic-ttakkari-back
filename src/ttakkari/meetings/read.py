@@ -57,7 +57,13 @@ async def meeting_rows(db: AsyncSession, meetings: list[Meeting]) -> list[dict[s
         if any(m.audio_artifact_id for m in meetings) else {}
     counts: dict[uuid.UUID, dict[str, int]] = {i: {k: 0 for k in KINDS} for i in ids}
     pending: dict[uuid.UUID, int] = {}
+    derived: dict[uuid.UUID, list[str]] = {i: [] for i in ids}
     if ids:
+        for source_id, child_id in (await db.execute(
+            select(Meeting.source_meeting_id, Meeting.id).where(Meeting.source_meeting_id.in_(ids))
+            .order_by(Meeting.created_at, Meeting.id)
+        )).all():
+            derived[source_id].append(str(child_id))
         for mid, kind, n in (await db.execute(select(MeetingItem.meeting_id, MeetingItem.kind, func.count())
                                               .where(MeetingItem.meeting_id.in_(ids)).group_by(MeetingItem.meeting_id, MeetingItem.kind))).all():
             counts[mid][kind] = n
@@ -70,6 +76,8 @@ async def meeting_rows(db: AsyncSession, meetings: list[Meeting]) -> list[dict[s
             "id": str(m.id), "title": m.title, "scope": m.scope, "status": m.status, "failed_stage": m.failed_stage,
             "error": m.error, "project": {"id": str(e.id), "name": e.name} if e else None, "held_at": _iso(m.held_at),
             "participants": m.participants, "source": m.source, "provider": m.provider,
+            "source_meeting_id": str(m.source_meeting_id) if m.source_meeting_id else None,
+            "derived_meeting_ids": derived[m.id],
             "audio": {"artifact_id": str(a.id), "filename": a.filename, "size_bytes": a.size_bytes} if a else None,
             "transcript_chars": len(m.transcript or ""), "transcript_source": m.transcript_source, "summary": m.summary,
             "counts": {**counts[m.id], "pending_proposals": pending.get(m.id, 0)},

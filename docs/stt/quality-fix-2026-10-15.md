@@ -86,3 +86,19 @@ repeated_segments: 1427 → 0; repeated_seconds: 1238.48 → 0; speaker_count_es
 ```
 
 스냅샷은 다른 작업과 분리한 git 저장소이며 기존 마이그레이션 테스트가 요구하는 .venv 실행 경로를 연결했다. 최종 소스 SHA-256은 실제 커밋 소스와 같고, 테스트 파일의 차이는 줄바꿈 포맷뿐이다. 전체 테스트 실행 로그·manifest·명령 스크립트는 결과함에 있다. 운영 환경 파일은 읽지 않았다.
+
+
+## 재개 실행의 독립 재검증
+
+결과함 `9f887c4a-d02d-4f80-8fbc-8ef60ccf3232`에서 같은 전체 녹음을 다시 실행했다. 위 최초 측정과 구분한다. 원음 SHA·전체 범위 일치, raw 502개와 표시용 502개·274발화, 반복 탐지 0개/0초, 추정 1군집·미상/검증 필요 42발화가 다시 확인됐다. 반복 재시도·접기는 사용되지 않았다.
+
+CPU 6스레드, Whisper 추론 1,088.991초, 전체 벽시계 1,108.537초, peak RSS 3,926,474,752바이트다. 실제 실행 프로세스 exit_code=0과 PID 부재를 확인했다. 원본/raw 일치·VAD 창 최대 길이·발화 시각과 순번·ECAPA overlap=null·검증 소스 해시 불변을 assert로 확인했다. [개인 텍스트를 제외한 재검증 집계](evidence/quality-fix/recheck-2026-10-15.json)에 보존했다.
+
+```text
+$ TTAKKARI_TEST_DB=postgresql+asyncpg://localhost/ttakkari_stt_final_9f887c4a .venv/bin/pytest -q --tb=short
+625 passed, 2 xfailed in 141.29s (0:02:21)
+$ TTAKKARI_NO_ENV_FILE=1 PYTHONPATH=src .venv/bin/python <현재 결과함>/verify-result.py
+same_audio=true, raw_evidence_preserved=true, utterance_contract_valid=true, measurement_process_exited=true
+```
+
+새 전사와 발화·비교·검증 JSON, 원본 스냅샷과 재현 스크립트는 현재 결과함에도 저장했다. 운영 원회의와 분석은 유지했다. 이 실행에서도 운영 재전사 요청·재분석·배포는 실행하지 않았다.

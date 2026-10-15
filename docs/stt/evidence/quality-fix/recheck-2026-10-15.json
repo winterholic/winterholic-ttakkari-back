@@ -1,0 +1,98 @@
+{
+  "duration": 2549.0973125,
+  "before": {
+    "repetition_runs": 47,
+    "longest_run_segments": 91,
+    "longest_run_span_seconds": 134.67999999999995,
+    "repeated_segments": 1427,
+    "repeated_characters": 19978,
+    "repeated_seconds": 1238.479999999994,
+    "repeated_regions": 959,
+    "segments": 1450,
+    "content_characters": 20390,
+    "loop_phrase_occurrences": 1429
+  },
+  "after_raw": {
+    "repetition_runs": 0,
+    "longest_run_segments": 0,
+    "longest_run_span_seconds": 0,
+    "repeated_segments": 0,
+    "repeated_characters": 0,
+    "repeated_seconds": 0,
+    "repeated_regions": 0,
+    "segments": 502,
+    "content_characters": 13401
+  },
+  "after_presentation": {
+    "repetition_runs": 0,
+    "longest_run_segments": 0,
+    "longest_run_span_seconds": 0,
+    "repeated_segments": 0,
+    "repeated_characters": 0,
+    "repeated_seconds": 0,
+    "repeated_regions": 0,
+    "segments": 502,
+    "content_characters": 13401,
+    "loop_phrase_occurrences": 0
+  },
+  "quality": {
+    "before": {
+      "repetition_runs": 0,
+      "longest_run_segments": 0,
+      "longest_run_span_seconds": 0,
+      "repeated_segments": 0,
+      "repeated_characters": 0,
+      "repeated_seconds": 0,
+      "repeated_regions": 0
+    },
+    "after": {
+      "repetition_runs": 0,
+      "longest_run_segments": 0,
+      "longest_run_span_seconds": 0,
+      "repeated_segments": 0,
+      "repeated_characters": 0,
+      "repeated_seconds": 0,
+      "repeated_regions": 0
+    },
+    "retry_audio_seconds": 0.0,
+    "retry_budget_seconds": 120,
+    "folded_characters": 0
+  },
+  "speaker_count_estimate": 1,
+  "utterances": 274,
+  "needs_review_utterances": 42,
+  "unassigned_utterances": 42,
+  "diarization_status": "succeeded",
+  "overlap_detection_status": "unsupported",
+  "decode_windows": 131,
+  "accuracy": {
+    "cer": null,
+    "wer": null,
+    "der": null,
+    "reason": "No human-verified transcript or speaker annotation"
+  },
+  "metrics": {
+    "import_seconds": 0.10963358310982585,
+    "audio_decode_seconds": 0.8677096250467002,
+    "load_seconds": 1.5460786670446396,
+    "inference_seconds": 1088.9910939158872,
+    "peak_rss_bytes": 3926474752,
+    "rtf_inference": 0.42720655997548823,
+    "enhancement_seconds": 16.981124666985124,
+    "release_request_seconds": 0.04081104206852615,
+    "wall_seconds": 1108.5369059580844
+  },
+  "verification": {
+    "same_audio": true,
+    "same_full_interval": true,
+    "raw_evidence_preserved": true,
+    "vad_windows_bounded": true,
+    "utterance_contract_valid": true,
+    "source_hashes_unchanged": true,
+    "measurement_process_exited": true,
+    "utterances": 274,
+    "speaker_count_estimate": 1
+  },
+  "cpu_threads": 6,
+  "test_result": "625 passed, 2 xfailed in 141.29s"
+}

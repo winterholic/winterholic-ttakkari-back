@@ -257,6 +257,15 @@ class ArtifactRegisterIn(BaseModel):
     session_id: uuid.UUID | None = None
 
 
+class ArtifactResolveIn(BaseModel):
+    """메시지 본문 링크의 대상 문자열. 절대경로·~·file://·상대경로·`:줄번호` 접미사를 그대로 받는다."""
+
+    path: str = Field(min_length=1, max_length=4096)
+    # 상대경로를 풀 기준 작업 폴더와, 그 세션이 이미 가진 결과물을 먼저 찾기 위한 힌트.
+    workspace_id: uuid.UUID | None = None
+    session_id: uuid.UUID | None = None
+
+
 class DownloadLinkOut(BaseModel):
     url: str
     expires_at: datetime

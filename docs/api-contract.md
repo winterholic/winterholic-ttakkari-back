@@ -96,6 +96,7 @@
 | POST | `/api/artifacts` | `{workspace_id, rel_path, session_id?}` 워크스페이스 파일을 결과물로 등록 |
 | POST | `/api/uploads` | multipart `file`, `workspace_id`, `session_id?` → 201 `ArtifactOut`(`source: upload`). 기본 200MB 초과 413 `too_large`. 결과 ID 를 다음 Run 의 `context_artifact_ids` 에 넣으면 에이전트가 파일 경로를 받는다 |
 | GET | `/api/artifacts/{id}` | `ArtifactOut` |
+| POST | `/api/artifacts/resolve` | `{path, workspace_id?, session_id?}` → `ArtifactOut`. 메시지 본문 링크의 경로 문자열(절대경로, `~/`, `file://`, 상대경로, 끝의 `:줄`·`#L줄` 허용)을 결과물로 바꿔 뷰어로 열게 한다. 이미 등록된 경로(outbox·업로드·에이전트가 고친 파일)면 그 결과물, 아니면 워크스페이스 루트나 outbox 안의 파일만 `area=agent` 로 새로 등록한다. 상대경로는 `workspace_id`(또는 `session_id` 의 워크스페이스) 기준이다. 허용 범위 밖은 403 `outside_root`, 민감 파일 403 `sensitive`, `..` 400 `bad_path`, 디렉터리 400 `not_a_file`, 없으면 404 |
 | PATCH | `/api/artifacts/{id}` | `{area: "files"\|"agent"}` 보관함 분류를 옮긴다(파일 내용은 그대로). `ArtifactOut` |
 | DELETE | `/api/artifacts/{id}` | 204. 관리 영역 복사본도 지운다 |
 | GET | `/api/artifacts/{id}/content?variant=original|preview` | 뷰어용 인라인(Bearer). Range 지원. 민감 파일은 403 |

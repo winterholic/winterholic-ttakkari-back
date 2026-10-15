@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -26,18 +27,34 @@ from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import (
     _safe_filename,
     content_path,
+    parse_link_path,
     preview_file,
     register_file,
     remove_stored,
 )
 from ttakkari.audit import record
-from ttakkari.broker.policy import BrokerError, ResolvedPath, resolve_in_root
+from ttakkari.broker.policy import (
+    BrokerError,
+    ResolvedPath,
+    is_sensitive,
+    is_within,
+    resolve_in_root,
+    validate_absolute_in_roots,
+)
 from ttakkari.config import get_settings
-from ttakkari.models import Artifact, ExportPolicy, PreviewStatus, utcnow
+from ttakkari.models import (
+    Artifact,
+    ChatSession,
+    ExportPolicy,
+    PreviewStatus,
+    Workspace,
+    utcnow,
+)
 from ttakkari.schemas import (
     ArtifactAreaIn,
     ArtifactOut,
     ArtifactRegisterIn,
+    ArtifactResolveIn,
     DownloadLinkOut,
 )
 from ttakkari.security.auth import User, client_ip, decode, issue_download_token
@@ -104,6 +121,89 @@ async def register_artifact(body: ArtifactRegisterIn, _: User, db: Db, request: 
         await db.commit()
         raise broker_http(e) from e
     record(db, action="artifact.register", target_type="artifact", target_id=art.id, ip=client_ip(request))
+    await db.commit()
+    if needs_server_preview(art.kind):
+        preview.enqueue(art.id)
+    return ArtifactOut.from_model(art)
+
+
+async def _latest_artifact(db, *conds) -> Artifact | None:
+    stmt = select(Artifact).where(Artifact.deleted_at.is_(None), *conds).order_by(Artifact.created_at.desc()).limit(1)
+    return await db.scalar(stmt)
+
+
+@router.post("/artifacts/resolve", response_model=ArtifactOut)
+async def resolve_artifact_link(body: ArtifactResolveIn, _: User, db: Db, request: Request) -> ArtifactOut:
+    """메시지 본문 링크의 경로 문자열을 결과물로 바꾼다(뷰어로 열 수 있게).
+
+    이미 등록된 파일이면 그 결과물을 돌려주고, 아니면 워크스페이스 루트나 outbox 안의 파일만 새로 등록한다.
+    이 밖의 경로, 민감 파일, 심볼릭 링크로 새는 경로는 열지 않는다.
+    """
+    s = get_settings()
+    try:
+        raw = parse_link_path(body.path)
+        ws = await db.get(Workspace, body.workspace_id) if body.workspace_id else None
+        sess = await db.get(ChatSession, body.session_id) if body.session_id else None
+        if ws is None and sess is not None:
+            ws = await db.get(Workspace, sess.workspace_id)
+
+        if not os.path.isabs(raw):
+            if ws is None:
+                raise BrokerError("상대경로를 풀 작업 폴더를 알 수 없습니다.", "bad_path")
+            try:
+                resolved = resolve_in_root(Path(ws.root_path), raw)
+            except BrokerError as e:
+                if e.code != "not_found" or sess is None:
+                    raise
+                # 작업 폴더에 없으면 이 세션이 낸 결과물의 이름으로 찾는다(outbox 파일을 이름만 적은 경우).
+                hit = await _latest_artifact(db, Artifact.session_id == sess.id,
+                                             or_(Artifact.rel_path == raw, Artifact.filename == raw))
+                if hit is None:
+                    raise
+                return ArtifactOut.from_model(hit)
+            known = [str(resolved.path)]
+        else:
+            known = [os.path.normpath(raw)]
+            resolved = None
+
+        # 이미 결과물로 등록된 경로(outbox·업로드·에이전트가 고친 파일)는 그대로 쓴다. 원본이 사라져도 보관 사본이 있다.
+        real_guess = str(Path(known[0]).resolve(strict=False))
+        hit = await _latest_artifact(db, Artifact.original_path.in_({*known, real_guess}))
+        if hit is not None:
+            return ArtifactOut.from_model(hit)
+
+        if resolved is None:
+            workspaces = list(await db.scalars(select(Workspace)))
+            roots = [Path(w.root_path) for w in sorted(workspaces, key=lambda w: w.id != (ws.id if ws else None))]
+            roots.append(s.outbox_root)
+            real = Path(known[0]).resolve(strict=False)
+            # 존재 여부를 흘리지 않도록 허용 범위 판정을 먼저 한다.
+            if not any(is_within(real, r.resolve()) for r in roots):
+                raise BrokerError("허용된 폴더 밖의 파일이라 열 수 없습니다.", "outside_root")
+            resolved = validate_absolute_in_roots(known[0], roots)
+        if is_sensitive(resolved.path):
+            raise BrokerError("민감한 파일은 열 수 없습니다.", "sensitive")
+
+        in_outbox = is_within(resolved.path, s.outbox_root.resolve())
+        owner = ws
+        for w in await db.scalars(select(Workspace)):
+            if is_within(resolved.path, Path(w.root_path).resolve()):
+                owner = w
+                break
+        art = await register_file(
+            db, resolved,
+            source="agent_output" if in_outbox else "user_registered",
+            area="agent",  # 링크를 눌러 열었다고 보관함 파일 탭에 쌓지 않는다.
+            workspace_id=owner.id if owner else None,
+            session_id=sess.id if sess else None,
+            export_allowed=owner.export_allowed if owner else True,
+        )
+    except BrokerError as e:
+        record(db, action="artifact.resolve", outcome="denied", detail={"path": body.path[:300], "code": e.code},
+               ip=client_ip(request))
+        await db.commit()
+        raise broker_http(e) from e
+    record(db, action="artifact.resolve", target_type="artifact", target_id=art.id, ip=client_ip(request))
     await db.commit()
     if needs_server_preview(art.kind):
         preview.enqueue(art.id)

@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import shutil
 import uuid
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,6 +111,32 @@ async def register_file(
     db.add(art)
     await db.flush()
     return art
+
+
+_LINE_SUFFIX = re.compile(r"(?::\d+(?:-\d+)?){1,2}$")
+_LINE_FRAGMENT = re.compile(r"#L?\d+(?:[-:]L?\d+)*$")
+
+
+def parse_link_path(raw: str) -> str:
+    """메시지 링크 대상을 파일 경로 문자열로 정리한다. 파일 시스템은 건드리지 않는다.
+
+    `<경로>` 꺾쇠, `file://` URL, `~/`, 끝의 `:줄`·`:줄:열`·`#L줄` 을 걷어낸다.
+    """
+    p = raw.strip()
+    if p.startswith("<") and p.endswith(">"):
+        p = p[1:-1].strip()
+    if p.lower().startswith("file:"):
+        u = urlparse(p)
+        if u.netloc not in ("", "localhost"):
+            raise BrokerError("이 기기의 파일 링크만 열 수 있습니다.", "bad_path")
+        p = unquote(u.path)
+    p = _LINE_FRAGMENT.sub("", p)
+    p = _LINE_SUFFIX.sub("", p)
+    if "\x00" in p or not p:
+        raise BrokerError("잘못된 경로입니다.", "bad_path")
+    if p == "~" or p.startswith("~/"):
+        p = str(Path.home() / p[2:])
+    return p
 
 
 def content_path(art: Artifact) -> Path:

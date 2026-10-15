@@ -96,13 +96,16 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
         if profiles.usage_limit_until(profiles.Profile(a.id, a.name, a.engine,
                                                        max_used_percent=a.max_used_percent), now):
             reason = "usage_cap"
+        remaining = _cap_remaining(a.id, a.max_used_percent, usage)
+        running = counts.get(a.id, 0)
         out.append({
             "name": a.name, "engine": a.engine, "scope": a.pool, "enabled": profiles.is_on(a, pool), "priority": rank,
             "available": profiles.is_on(a, pool) and not until,
             "limit": {"waiting": bool(until), "until": _iso(until), "reason": reason},
-            "running_runs": counts.get(a.id, 0),
+            "running_runs": running,
             "max_used_percent": a.max_used_percent,
-            "remaining_to_limit_percent": _cap_remaining(a.id, a.max_used_percent, usage),
+            "remaining_to_limit_percent": remaining,
+            "headroom_per_run_percent": None if remaining is None else remaining / (running + 1),
             "models": s.engine_models.get(a.engine, []),
             "orchestrator_model": orch,
             "usage": usage,
@@ -114,11 +117,14 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 f"and is not refreshed by this tool (null = never observed, stale = older than {s.usage_stale_seconds // 60} min). "
                 "burn_percent_per_hour is the recent rise in used percent per hour (null = not enough history); "
                 "exhausts_in_seconds/exhausts_before_reset extrapolate it. "
-                "Accounts at their max_used_percent in either the 5-hour or weekly window wait until reset. "
-                "All Run roles compare eligible accounts by remaining_to_limit_percent; reset time breaks ties. "
+                "Accounts last measured at their max_used_percent in either the 5-hour or weekly window remain blocked "
+                "even if stale, until reset, a newer lower measurement or a raised cap. "
+                "All Run roles compare eligible accounts by headroom_per_run_percent "
+                "(remaining_to_limit_percent / (running_runs + 1)); reset time breaks ties. "
+                "This is a load-sharing score, not a consumption prediction; a Run excludes its own claim when choosing. "
                 "Fixed-engine sessions compare within that engine; desk keeps its configured engine order. "
                 "Fresh measured candidates rank before unknown candidates; unknowns keep model/idle/priority fallback. "
-                "For general workers use engine=auto: headroom precedes model engine preference; "
+                "For general workers use engine=auto: headroom per Run precedes model engine preference; "
                 "explicit worker engines lock that engine (Claude for design).",
         "accounts": out,
     }

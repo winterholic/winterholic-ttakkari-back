@@ -1,0 +1,38 @@
+{
+  "collected_at_utc": "2026-10-15T15:20:11.040572Z",
+  "host": {
+    "os": "macOS 27.0",
+    "model": "Mac17,14",
+    "chip": "Apple M5 Max"
+  },
+  "cpu": {
+    "percent": 9.1,
+    "load_avg": [
+      3.47,
+      4.35,
+      3.77
+    ]
+  },
+  "memory": {
+    "total_bytes": 68719476736,
+    "available_bytes": 41309339648,
+    "percent": 39.9,
+    "pressure": "normal",
+    "swap_used_bytes": 0
+  },
+  "top_cpu": [
+    {
+      "name": "Google Chrome Helper (Renderer)",
+      "cpu_percent": 103.8
+    },
+    {
+      "name": "WallpaperAerialsExtension",
+      "cpu_percent": 9.0
+    },
+    {
+      "name": "python3.13",
+      "cpu_percent": 5.9
+    }
+  ],
+  "note": "Captured by Ttakkari server_resources after both owned servers shut down; top Chrome renderer reflects unrelated post-run load."
+}

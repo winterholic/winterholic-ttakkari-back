@@ -21,15 +21,12 @@ from ttakkari.runs import profiles
 from ttakkari.runs.manager import manager
 
 
-def test_design_capacity_policy_waits_for_claude_and_uses_pms_wbs():
+def test_design_capacity_policy_allows_explicit_gemini_when_user_authorizes_it():
     note = " ".join(ORCHESTRATOR_NOTE.split())
-    assert "visual work should use Claude" in note
-    assert "user explicitly authorized Antigravity" in note
+    assert "headroom as unknown" in note
+    assert 'Keep it out of engine="auto"' in note
+    assert 'engine="antigravity"' in note
     assert 'model="gemini-3.8-flash-high"' in note
-    assert "Otherwise do not send it to GPT" in note
-    assert "PMS project WBS/backlog" in note
-    assert "report the wait to the user" in note
-    assert "list_pms_projects/create_pms_task" in note
 
 
 def test_general_work_assignment_uses_usage_and_auto_engine():
@@ -37,7 +34,9 @@ def test_general_work_assignment_uses_usage_and_auto_engine():
     assert "Before each worker assignment, check account_usage" in note
     assert 'use engine="auto"' in note
     assert "read its progress, stop it, and reassign the unfinished work" in note
-    assert 'Claude with engine="claude"' in note
+    assert "UI/UX and visual work normally use Claude" in note
+    assert 'engine="antigravity"' in note
+    assert "Otherwise, record the wait in the relevant PMS WBS/backlog and report it." in note
 
 
 async def test_auto_worker_selection_excludes_explicit_antigravity_account(client, auth):

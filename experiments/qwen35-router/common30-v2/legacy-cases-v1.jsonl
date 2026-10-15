@@ -1,0 +1,30 @@
+{"case_id": "legacy-01", "kind": "synthetic", "message": "야", "expected_legacy": "CHAT"}
+{"case_id": "legacy-02", "kind": "synthetic", "message": "ㅎㅇ", "expected_legacy": "CHAT"}
+{"case_id": "legacy-03", "kind": "synthetic", "message": "고마워", "expected_legacy": "CHAT"}
+{"case_id": "legacy-04", "kind": "synthetic", "message": "수고했어", "expected_legacy": "CHAT"}
+{"case_id": "legacy-05", "kind": "synthetic", "message": "오늘 날씨 좋다", "expected_legacy": "CHAT"}
+{"case_id": "legacy-06", "kind": "synthetic", "message": "ㅋㅋㅋ 웃기네", "expected_legacy": "CHAT"}
+{"case_id": "legacy-07", "kind": "synthetic", "message": "지금 뭐 하고 있어?", "expected_legacy": "STATUS"}
+{"case_id": "legacy-08", "kind": "synthetic", "message": "백엔드 재시작 게이트 끝났어?", "expected_legacy": "STATUS"}
+{"case_id": "legacy-09", "kind": "synthetic", "message": "메모 작업 얼마나 됐어", "expected_legacy": "STATUS"}
+{"case_id": "legacy-10", "kind": "synthetic", "message": "아까 시킨 거 어떻게 됐어?", "expected_legacy": "STATUS"}
+{"case_id": "legacy-11", "kind": "synthetic", "message": "작업자들 다 놀고 있어?", "expected_legacy": "STATUS"}
+{"case_id": "legacy-12", "kind": "synthetic", "message": "배포 아직이야?", "expected_legacy": "STATUS"}
+{"case_id": "legacy-13", "kind": "synthetic", "message": "멈춘 세션 있어?", "expected_legacy": "STATUS"}
+{"case_id": "legacy-14", "kind": "synthetic", "message": "내일 일정 뭐 있지?", "expected_legacy": "LOOKUP"}
+{"case_id": "legacy-15", "kind": "synthetic", "message": "지난주에 적은 회의 메모 찾아줘", "expected_legacy": "LOOKUP"}
+{"case_id": "legacy-16", "kind": "synthetic", "message": "이번달 치과 예약 언제야", "expected_legacy": "LOOKUP"}
+{"case_id": "legacy-17", "kind": "synthetic", "message": "내가 저장한 API 키 관련 메모 보여줘", "expected_legacy": "LOOKUP"}
+{"case_id": "legacy-18", "kind": "synthetic", "message": "금요일에 뭐 잡혀있어?", "expected_legacy": "LOOKUP"}
+{"case_id": "legacy-19", "kind": "synthetic", "message": "로그인 페이지 다크모드 깨지는 거 고쳐줘", "expected_legacy": "WORK"}
+{"case_id": "legacy-20", "kind": "synthetic", "message": "오케스트레이터 슬롯 구조 어떻게 바꾸는 게 좋을까?", "expected_legacy": "WORK"}
+{"case_id": "legacy-21", "kind": "synthetic", "message": "이 에러 왜 나는지 봐줘", "expected_legacy": "WORK"}
+{"case_id": "legacy-22", "kind": "synthetic", "message": "카카오 모델 중에 가벼운 거 뭐 있어?", "expected_legacy": "WORK"}
+{"case_id": "legacy-23", "kind": "synthetic", "message": "MoE가 뭐야?", "expected_legacy": "WORK"}
+{"case_id": "legacy-24", "kind": "synthetic", "message": "PR 리뷰해줘", "expected_legacy": "WORK"}
+{"case_id": "legacy-25", "kind": "synthetic", "message": "내일 3시에 치과 일정 추가해줘", "expected_legacy": "WORK"}
+{"case_id": "legacy-26", "kind": "synthetic", "message": "메모 화면 좀 더 예쁘게 만들어", "expected_legacy": "WORK"}
+{"case_id": "legacy-27", "kind": "synthetic", "message": "이거 커밋하고 푸시해", "expected_legacy": "WORK"}
+{"case_id": "legacy-28", "kind": "synthetic", "message": "따까리 서버 재시작해줘", "expected_legacy": "WORK"}
+{"case_id": "legacy-29", "kind": "synthetic", "message": "사용량 많이 쓴 계정이 뭐야? 정리해서 알려줘", "expected_legacy": "WORK"}
+{"case_id": "legacy-30", "kind": "synthetic", "message": "이 문장 자연스럽게 다듬어줘", "expected_legacy": "WORK"}

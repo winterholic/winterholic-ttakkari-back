@@ -1,0 +1,114 @@
+{
+  "schema_valid": {
+    "0.8B": {
+      "attempts": 90,
+      "valid": 75,
+      "invalid": 15,
+      "invalid_by_type": {
+        "ValueError": 12,
+        "ValidationError": 3
+      },
+      "valid_action_counts": {
+        "abstain": 75
+      },
+      "exact_correct": 15,
+      "hard_denominator": 87,
+      "acceptable_set_correct": 18,
+      "acceptable_denominator": 90,
+      "nonabstain_coverage": 0,
+      "action_stability": "30/30 cases; all valid outputs abstain; same invalid cases each repeat"
+    },
+    "9B": {
+      "attempts": 90,
+      "valid": 90,
+      "invalid": 0,
+      "invalid_by_type": {},
+      "valid_action_counts": {
+        "answer": 39,
+        "delegate": 51
+      },
+      "exact_correct": 63,
+      "hard_denominator": 87,
+      "acceptable_set_correct": 66,
+      "acceptable_denominator": 90,
+      "nonabstain_coverage": 90,
+      "candidate_membership_violations": 0,
+      "action_stability": "30/30 cases across 3 repetitions"
+    }
+  },
+  "latency_ms": {
+    "0.8B": {
+      "server_startup_seconds_to_ready": 1.3270587921142578,
+      "attempt_latency_p50_ms": 976.54,
+      "attempt_latency_p95_ms": 5897.94,
+      "ttft_p50_ms": 112.8,
+      "ttft_p95_ms": 124.0,
+      "first_attempt_total_ms": 1065.87,
+      "runner_wall_seconds": 144.03
+    },
+    "9B": {
+      "server_startup_seconds_to_ready": 5.2449328899383545,
+      "attempt_latency_p50_ms": 3107.88,
+      "attempt_latency_p95_ms": 4174.37,
+      "ttft_p50_ms": 870.49,
+      "ttft_p95_ms": 953.02,
+      "first_attempt_total_ms": 4512.46,
+      "runner_wall_seconds": 293.49
+    }
+  },
+  "resources": {
+    "0.8b": {
+      "samples": 4,
+      "available_gb_min": 40.28,
+      "pressure_values": [
+        "normal"
+      ],
+      "swap_max_bytes": 0,
+      "llama_sampled_rss_gb_max": 1.97,
+      "external_processes_ge60_cpu": []
+    },
+    "9b": {
+      "samples": 8,
+      "available_gb_min": 35.94,
+      "pressure_values": [
+        "normal"
+      ],
+      "swap_max_bytes": 0,
+      "llama_sampled_rss_gb_max": 10.46,
+      "external_processes_ge60_cpu": [
+        [
+          "python3.13",
+          100.9
+        ]
+      ]
+    }
+  },
+  "luna_codex_attempt": {
+    "calls_attempted": 30,
+    "outputs_received": 0,
+    "failure": "Codex CLI app-server startup failed before model invocation: Operation not permitted (os error 1); no model score; no retry with broader permissions."
+  },
+  "haiku": {
+    "status": "not called; cap unavailable per user snapshot, Claude stale 99% to 02:30 KST. Inputs and command package frozen."
+  },
+  "legacy_historic": {
+    "Luna": {
+      "30/30": 30,
+      "p50_s": 4.8
+    },
+    "Haiku": {
+      "29/30": 29,
+      "end_to_end_median_s": 7.36
+    },
+    "Kanana-1.5-8B-Q4": {
+      "23/30": 23,
+      "repeat": 2
+    },
+    "Kanana-2-3B-Q4": {
+      "3/12": 3
+    },
+    "Kanana-2-3B-Q8": {
+      "7/12": 7
+    }
+  }
+}

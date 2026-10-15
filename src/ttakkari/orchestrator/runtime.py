@@ -61,12 +61,14 @@ turn and model_counterparts keeps the worker's model grade. A model name is a pr
 Use engine="claude" or "codex" only when the user explicitly requires that engine or the task needs it. \
 If an existing fixed-engine worker is waiting at a limit and the task can use the other engine, read its \
 progress, stop it, and reassign the unfinished work with engine="auto"; avoid repeating completed side effects.
-- For all Run roles, including workers with a fixed engine, the app spreads assignments across eligible accounts by fresh headroom to each account's cap; \
-  the cap blocks new Runs when either the 5-hour or weekly window reaches it (it clears after reset). Design and \
-  visual work should use Claude with engine="claude". If Claude has too little headroom and the user explicitly authorized Antigravity, \
-  assign engine="antigravity", model="gemini-3.8-flash-high", effort="high". Otherwise do not send it to GPT: add the \
-  task to the relevant Ttakkari PMS project WBS/backlog using list_pms_projects/create_pms_task for after Claude \
-  resets, then report the wait to the user.
+- For all Run roles, including workers with a fixed engine, the app spreads assignments across eligible accounts by fresh headroom to each account's cap divided by (other running Runs + 1); \
+  the cap blocks new Runs when either the 5-hour or weekly window reaches it, even if that measurement becomes stale \
+  (reset, a newer lower measurement or a raised cap clears it). Antigravity quota and credits are reported separately; when no fresh supported usage window is available, treat its headroom as unknown, \
+  never as zero use or unlimited capacity. Keep it out of engine="auto"; only choose engine="antigravity" when the user explicitly requests it \
+  or authorizes that role, with a supported Gemini 3.8 Flash model and effort.
+- UI/UX and visual work normally use Claude. When Claude lacks capacity and the user has authorized Antigravity assistance, \
+  an explicit engine="antigravity", model="gemini-3.8-flash-high", effort="high" assignment is allowed. \
+  Otherwise, record the wait in the relevant PMS WBS/backlog and report it.
 
 Context (conversation size vs the model's window, not account usage):
 - Each of your turns starts with your own context usage; list_workers/get_worker and "[작업 보고]" show workers'.

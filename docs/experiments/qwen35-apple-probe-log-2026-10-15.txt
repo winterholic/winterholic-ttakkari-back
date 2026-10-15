@@ -1,0 +1,103 @@
+2026-10-15 23:03 KST — pre-probe telemetry (Ttakkari server_resources)
+Mac17,14 / Apple M5 Max / 64 GiB; CPU 3.9%; available 38.88 GiB; pressure normal; swap 0; llama-server absent from sampled process list.
+
+Lock
+Atomic mkdir /private/tmp/ttakkari-apple-inference-bench.lock: succeeded.
+worker_id: 5a8337d4-47f0-4cf2-9cca-05e95f56a32a
+acquired_at_utc: 2026-10-15T14:03:31Z
+acquired_at_kst: 2026-10-15T23:03:31+0900
+acquisition shell PID: 64411
+The `ps` command was denied (`operation not permitted`), so process identity was recorded from the exec shell context and command. Before the probe owner.json was updated to the current probe shell PID 65187, with exact purpose.
+
+Commands / outputs
+command -v mlx_lm
+/Users/winterholic/.local/bin/mlx_lm
+
+command -v llama-server
+(not found; shell returned no path)
+
+mlx_lm --version
+Traceback (most recent call last):
+  File "/Users/winterholic/.local/bin/mlx_lm", line 4, in <module>
+    from mlx_lm.cli import main
+  File "/Users/winterholic/.local/share/uv/tools/mlx-lm/lib/python3.13/site-packages/mlx_lm/__init__.py", line 9, in <module>
+    from .convert import convert
+  File "/Users/winterholic/.local/share/uv/tools/mlx-lm/lib/python3.13/site-packages/mlx_lm/convert.py", line 7, in <module>
+    import mlx.core as mx
+ImportError: [metal::load_device] No Metal device available. This typically occurs in headless, sandboxed, or virtualized macOS sessions where the GPU is not accessible.
+
+Model weights downloaded: no
+Model loaded: no
+Inference: no
+Metal performance benchmark: no (access probe only)
+Model output / correctness score: none
+
+2026-10-15 23:05 KST — post-probe telemetry
+CPU 7.6%; available 37.99 GiB; pressure normal; swap 0; llama-server absent from sampled process list. No model process was started by this worker.
+
+2026-10-15 23:05:50 KST — lock cleanup
+Verified owner.json worker_id matched this worker, model_weights_loaded=false, model_process_started=false; no model process was started. Removed only owner.json and successfully `rmdir`'d the owned lock directory.
+release_at_utc: 2026-10-15T14:05:50Z
+release_at_kst: 2026-10-15T23:05:50+0900
+
+
+2026-10-15 23:08:36 KST onward — pinned artifact and CPU-only pilot attempt
+
+Read-only engine check
+Binary: /private/tmp/qwen35-router/llama/llama-b11655/llama-server
+Version: 0.6.0-dev (build 11655, commit 47f5a64ae), Darwin arm64
+Qwen3.5-35B-A3B GGUF source: lmstudio-community/Qwen3.5-35B-A3B-GGUF
+Pinned revision: 529ae8d8705097e646043ff81181c6564b6a8449
+Artifact: /private/tmp/qwen35-35b/Qwen3.5-35B-A3B-Q4_K_M.gguf
+Expected/actual bytes: 21,169,116,992
+SHA256 (HF LFS oid): f25d609171b8f80950a60f38696597f74025de4070682d2fb1eeffe306ca7d5d
+Xet metadata hash (not the file SHA256): 4c9023852adb1985d66b7921ce7a10335ce063319c435ff3bf2d003af5f52c3e
+GGUF magic: confirmed
+
+Atomic lock owner: c6ab567a-4140-4e6e-bf99-d1ca486d4d27; coordinator PID 69342. Session 86440 is the earlier download exec session ID, not an OS PID. Download PID 69357 exited 0.
+
+Fresh pre-load resource check 2026-10-15 23:17:48 KST (Ttakkari server_resources): M5 Max 64 GiB; available 36.22 GiB; CPU 2.9%; pressure normal; swap 0; no llama-server. Lock owner ID verified.
+
+Bounded CPU pilot command
+/private/tmp/qwen35-router/llama/llama-b11655/llama-server \
+  -m /private/tmp/qwen35-35b/Qwen3.5-35B-A3B-Q4_K_M.gguf \
+  -ngl 0 -t 2 -tb 2 -c 256 -b 16 -ub 16 -np 1 --no-warmup \
+  --host 127.0.0.1 --port 19483 --no-webui --jinja
+Owned OS PID: 78408 (recorded in owner.json before opening the start gate).
+Started: 2026-10-15T14:18:05.897972Z / 23:18:05.897 KST.
+
+Startup log excerpt
+0.00.015.380 I srv    load_model: loading model '/private/tmp/qwen35-35b/Qwen3.5-35B-A3B-Q4_K_M.gguf'
+0.00.170.265 E ggml_metal_init: error: failed to create command queue
+0.00.170.269 E ggml_backend_metal_device_init_backend: failed to allocate context
+0.00.170.475 E llama_init_from_model: failed to initialize the context: failed to initialize backend
+0.00.182.499 E common_fit_params: encountered an error while trying to fit params to free device memory: failed to create llama_context from model
+
+No HTTP health-ready response and no generation request were issued. No TTFT/prefill/decode/wall time or output quality exists. This was not a successful CPU pilot. Because the engine still attempted Metal and failed, no engine/device bypass was attempted.
+
+During-load resources (single snapshot, not certified peak), around 23:18:10 KST: llama-server PID 78408 CPU 99.9%, RSS 26,657,161,216 B (24.83 GiB); host available 29,428,908,032 B (27.40 GiB), pressure normal, swap 0. Another python3.13 PID 78443 was observed at 48.6% CPU / ~0.93 GiB at this snapshot; this worker did not launch that process and did not touch it.
+
+Stopped own exec session with Ctrl-C; the registered shell trap sent SIGTERM to only PID 78408 and waited. Post-stop resources at 23:18:22 KST: available 33.17 GiB, pressure normal, swap 0; llama-server absent. Lock/owner intentionally retained for coordinator review because this attempt ended on engine error. No unrelated process terminated.
+
+
+2026-10-15 23:20 KST — one explicitly CPU-only retry, stopped by fixed host safety gate
+
+Read-only option check: `llama-server --help` lists `--device <dev...>` and says `none = don't offload`. This option was absent from the first `-ngl 0` attempt. First attempt state, no-request outcome, PID 78408 cleanup and lock release were documented before reacquiring.
+
+Fresh pre-load resources 23:20:25 KST (Ttakkari server_resources): available 34,942,517,248 B (32.54 GiB), pressure normal, swap 0, CPU 7.6%, postgres PID 79094 at 100.1% at previous read / high background CPU; no llama-server. Atomic mkdir succeeded; owner worker_id d2a9d83e-3b5c-4a0b-b7f3-8b15118b2cee; coordinator PID 80745. owner.json was written before opening the gated process.
+
+Exact retry command
+/private/tmp/qwen35-router/llama/llama-b11655/llama-server \
+  -m /private/tmp/qwen35-35b/Qwen3.5-35B-A3B-Q4_K_M.gguf \
+  --device none -ngl 0 -t 2 -tb 2 -c 256 -b 16 -ub 16 -np 1 \
+  --no-warmup --host 127.0.0.1 --port 19483 --no-webui --jinja
+OS PID 81054; start time 2026-10-15T14:20:35.340673Z. Server log: `0.14.506365 ... model loaded`; `0.14.506372 ... listening on http://127.0.0.1:19483`. Approximate server-reported model load-to-ready: 14.506 s. No HTTP health/request/generation call was issued.
+
+Resource snapshots
+- 14:20:38.703Z: process RSS 25,161,056,256 B (23.43 GiB); available 38,251,003,904 B (35.62 GiB); pressure normal; swap0.
+- 14:20:43.987Z: process RSS 35,224,961,024 B (32.81 GiB); available 28,446,015,488 B (26.48 GiB); pressure normal; swap0.
+- 14:20:55.497Z at model-ready: process RSS 20,493,615,104 B (19.09 GiB); available 16,281,894,912 B (15.17 GiB); pressure warn; swap0. This crossed the fixed available-memory floor and pressure changed from normal.
+- Immediately stopped before request by Ctrl-C to own exec session. Log: `cleaning up before exit...`; only PID 81054 was targeted.
+- 14:21:03.242Z after stop: available 36,799,234,048 B (34.27 GiB); pressure normal; swap0; llama-server absent.
+
+No TTFT, prefill/decode, request wall, tokens/s, quality score, or cold/warm request repetitions exist. Result is model load feasibility only, with inference still unmeasured. Before releasing, owner.json worker_id matched d2a9d83e-3b5c-4a0b-b7f3-8b15118b2cee, model process false/unloaded, requests=0; removed only owner.json and rmdir'd own lock. No retry after this one.

@@ -1,0 +1,62 @@
+{
+  "legacy_script": {
+    "path": "/private/tmp/claude-501/-Users-winterholic-development-projects/900a2c72-a605-4640-83d0-186262ead460/scratchpad/route_eval.py",
+    "copied_to": "legacy-route_eval-v1.py",
+    "modified_local": "2026-10-13T21:02:29.218526+09:00",
+    "size_bytes": 2945,
+    "git_commit": "not tracked in git",
+    "sha256": "0805ed7f06962da0bf7c6509be614b056e313125aeb67bd51f2a006cc7ac6199"
+  },
+  "legacy_cases_sha256": "270180b2ac53bb3067fae6abc4a8d45a8c5b69a91742bbf795bb708f484cf242",
+  "v2_cases_sha256": "37b607c9679bba193f18578256a33f8477a3f36cf30e05283ae3ce32ac95b2b0",
+  "v2_system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+  "v2_policy_version": "qwen35-shadow-v2-manual-2026-10-15",
+  "host": "Apple M5 Max Mac17,14; macOS 27.0; 64 GiB RAM",
+  "runtime": "llama.cpp b11655 commit 47f5a64ae; binary SHA256 1bf5602a2be50097c44282a6ecc63234d94ee8f96d39fd45fed6eff4e74b6b41",
+  "model_0.8b": {
+    "repo": "lmstudio-community/Qwen3.5-0.8B-GGUF",
+    "revision": "26bab2c9369648924251c0ebb3dae012f5147707",
+    "file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+    "sha256": "f5b14da98939b60bbe1019a964eba656407e1e0b64f1fe3003ff6d650e93bfec",
+    "license": "Apache-2.0"
+  },
+  "model_9b": {
+    "repo": "lmstudio-community/Qwen3.5-9B-GGUF",
+    "revision": "d9006465af6fc714af653e381fbfa55ead5af84b",
+    "file": "Qwen3.5-9B-Q4_K_M.gguf",
+    "sha256": "cd76ec205963b3b33350093e6904d9de16c4e666fd104e1f632d25c7f15f2a13",
+    "license": "Apache-2.0"
+  },
+  "runtime_flags": "--device none --gpu-layers 0 --threads 6 --threads-batch 6 --ctx-size 4096 --parallel 1 --jinja --no-webui; same prompt/template/context/output schema; temperature 0, seed 20261015, max_tokens 1024, no thinking",
+  "lock": "/private/tmp/ttakkari-apple-inference-bench.lock atomic mkdir; both owned servers exited with code 0; lock absent after run; no unknown process terminated",
+  "legacy_labels": {
+    "CHAT": 6,
+    "STATUS": 7,
+    "LOOKUP": 5,
+    "WORK": 12
+  },
+  "historic_results_not_retested": {
+    "Luna": {
+      "30/30": 30,
+      "p50_s": 4.8
+    },
+    "Haiku": {
+      "29/30": 29,
+      "end_to_end_median_s": 7.36
+    },
+    "Kanana-1.5-8B-Q4": {
+      "23/30": 23,
+      "repeat": 2
+    },
+    "Kanana-2-3B-Q4": {
+      "3/12": 3
+    },
+    "Kanana-2-3B-Q8": {
+      "7/12": 7
+    }
+  },
+  "legacy_current_task_mapping": "not performed; original 4 categories are retained verbatim and reported separately from current 3 actions; no mechanical conversion",
+  "ambiguity": "common30-07 held as unresolved, allowed answer or abstain. Retained in all 30 case coverage / acceptable-set metric, excluded only from hard exact denominator before model outputs.",
+  "real_feedback": "one user feedback item is confirmation-only; corrected-policy score denominator 0. Synthetic 30 is never represented as real-log sample.",
+  "production_observer": "source default disabled / sample rate default 0.0; runtime environment not read; no production setting/service changed."
+}

@@ -107,6 +107,75 @@ def test_usage_cap_blocks_at_or_above_threshold_and_expired_window_is_ignored(mo
     assert profiles.usage_limit_until(profile) is None
 
 
+@pytest.mark.parametrize("key", ["five_hour", "seven_day"])
+@pytest.mark.parametrize("percent", [95, 96, 100])
+def test_stale_capped_window_stays_blocked_until_reset(key, percent):
+    profile = Profile(uuid.uuid4(), "protected", "claude", max_used_percent=95)
+    now = int(time.time())
+    reset = now + 86400
+    usage_mod.remember_stream(profile.id, [usage_mod.Window(key, key, percent, reset)])
+    usage_mod._stream[profile.id].updated_at = now - 3600
+    assert profiles.usage_limit_until(profile, now) == reset
+    assert profiles.usage_limit_until(profile, reset) is None
+
+
+def test_fresh_lower_usage_or_raised_cap_releases_stale_cap_block():
+    profile = Profile(uuid.uuid4(), "protected", "claude", max_used_percent=95)
+    now = int(time.time())
+    usage_mod.remember_stream(profile.id, [usage_mod.Window("seven_day", "weekly", 96, now + 86400)])
+    usage_mod._stream[profile.id].updated_at = now - 3600
+    assert profiles.usage_limit_until(profile, now) == now + 86400
+    raised = Profile(profile.id, profile.name, profile.engine, max_used_percent=100)
+    assert profiles.usage_limit_until(raised, now) is None
+    usage_mod.remember_stream(profile.id, [usage_mod.Window("seven_day", "weekly", 94, now + 86400)])
+    assert profiles.usage_limit_until(profile, now) is None
+
+
+def test_stale_capped_windows_wait_for_all_resets_and_recheck_missing_reset():
+    profile = Profile(uuid.uuid4(), "protected", "claude", max_used_percent=95)
+    now = int(time.time())
+    usage_mod.remember_stream(profile.id, [usage_mod.Window("five_hour", "5h", 95, now + 3600),
+                                          usage_mod.Window("seven_day", "weekly", 96, now + 86400)])
+    usage_mod._stream[profile.id].updated_at = now - 3600
+    assert profiles.usage_limit_until(profile, now + 3600) == now + 86400
+    usage_mod.remember_stream(profile.id, [usage_mod.Window("seven_day", "weekly", 96, None)])
+    usage_mod._stream[profile.id].updated_at = now - 3600
+    assert profiles.usage_limit_until(profile, now) == now + 90
+
+
+@pytest.mark.parametrize("idle_first", [True, False])
+def test_usage_balancing_shares_headroom_between_inflight_runs(idle_first):
+    a, b = _p("higher-room", "codex"), _p("other", "claude")
+    now = int(time.time())
+    for account, used in ((a, 10), (b, 11)):
+        usage_mod.remember_stream(account.id, [usage_mod.Window("seven_day", "weekly", used, now + 86400)])
+    rids = [uuid.uuid4() for _ in range(4)]
+    try:
+        selected = [profiles.choose([a, b], rid, idle_first=idle_first, prefer_engine="codex",
+                                    balance_usage=True) for rid in rids]
+        assert selected == [a, b, a, b]
+        # Re-ranking a Run excludes its own claim; completing a Run frees its share immediately.
+        assert profiles.choose([a, b], rids[0], balance_usage=True) is a
+        profiles.release(rids[0])
+        assert profiles.choose([a, b], uuid.uuid4(), balance_usage=True) is a
+    finally:
+        for rid in list(profiles._in_use):
+            profiles.release(rid)
+
+
+def test_busy_account_with_large_headroom_beats_nearly_capped_idle_account():
+    roomy, almost_capped = _p("roomy"), _p("almost-capped", "codex")
+    now = int(time.time())
+    for account, used in ((roomy, 10), (almost_capped, 99)):
+        usage_mod.remember_stream(account.id, [usage_mod.Window("seven_day", "weekly", used, now + 86400)])
+    rids = [uuid.uuid4() for _ in range(3)]
+    try:
+        assert all(profiles.choose([roomy, almost_capped], rid, balance_usage=True) is roomy for rid in rids)
+    finally:
+        for rid in rids:
+            profiles.release(rid)
+
+
 def test_auto_choose_balances_fresh_usage_and_prefers_it_to_stale_values():
     a, b = _p("a", "codex"), _p("b", "claude")
     a = Profile(a.id, a.name, a.engine, max_used_percent=95)
@@ -270,13 +339,16 @@ async def test_workers_spread_over_idle_accounts(client, auth, make_dir):
     assert calls[0]["account_dir"] is None and calls[1]["account_dir"] == accs["claude-2"]["config_dir"]
 
 
-async def test_auto_worker_skips_account_at_its_configured_usage_cap(client, auth, make_dir):
+@pytest.mark.parametrize("stale", [False, True])
+async def test_auto_worker_skips_account_at_its_configured_usage_cap(client, auth, make_dir, stale):
     accs = await _three_accounts(client, auth, make_dir)
     await client.patch(f"/api/accounts/{accs['claude']['id']}", json={"max_used_percent": 95}, headers=auth)
     claude_id = uuid.UUID(accs["claude"]["id"])
     now = int(time.time())
     usage_mod.remember_stream(claude_id, [usage_mod.Window("five_hour", "5시간", 30, now + 3600),
                                          usage_mod.Window("seven_day", "주간", 95, now + 86400)])
+    if stale:
+        usage_mod._stream[claude_id].updated_at = now - 3600
     worker = await _session(client, auth, make_dir, engine="auto")
     run = await run_to_end(client, auth, worker["id"], "small task")
     assert run["status"] == "succeeded" and run["profile"] == "claude-2"
@@ -426,6 +498,32 @@ async def test_account_usage_marks_stale_and_passed_windows_and_running_count(cl
     assert c["usage"]["five_hour"]["reset_since_measured"] is True and c["usage"]["five_hour"]["remaining_percent"] is None
     assert c["usage"]["weekly"] is None
     assert next(a for a in body["accounts"] if a["name"] == "claude-2")["running_runs"] == 0
+
+
+async def test_account_usage_keeps_stale_cap_block_and_reports_headroom_per_run(client, auth, make_dir):
+    accs = await _three_accounts(client, auth, make_dir)
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    capped_id, busy_id = uuid.UUID(accs["claude"]["id"]), uuid.UUID(accs["codex"]["id"])
+    await client.patch(f"/api/accounts/{capped_id}", json={"max_used_percent": 95}, headers=auth)
+    now = int(time.time())
+    usage_mod.remember_stream(capped_id, [usage_mod.Window("seven_day", "weekly", 96, now + 86400)])
+    usage_mod._stream[capped_id].updated_at = now - 3600
+    usage_mod.remember_stream(busy_id, [usage_mod.Window("seven_day", "weekly", 10, now + 86400)])
+    rid = uuid.uuid4()
+    try:
+        profiles.choose([Profile(busy_id, "codex", "codex")], rid, balance_usage=True)
+        response = await client.get("/api/orchestrator/accounts/usage", headers=_orch(issue_token(orch["id"])))
+        by = {a["name"]: a for a in response.json()["accounts"]}
+        capped = by["claude"]
+        assert capped["usage"]["stale"] and not capped["available"]
+        assert capped["limit"]["waiting"] and capped["limit"]["reason"] == "usage_cap"
+        assert capped["remaining_to_limit_percent"] is None
+        assert capped["headroom_per_run_percent"] is None
+        assert by["codex"]["remaining_to_limit_percent"] == 90
+        assert by["codex"]["running_runs"] == 1 and by["codex"]["headroom_per_run_percent"] == 45
+        assert by["claude-2"]["headroom_per_run_percent"] is None
+    finally:
+        profiles.release(rid)
 
 
 async def test_account_usage_work_scope_and_token_rules(client, auth, make_dir):

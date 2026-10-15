@@ -1,0 +1,118 @@
+{
+  "captured_at_utc": "2026-10-15T15:05:02.359Z",
+  "cpu": {
+    "percent": 33.1,
+    "per_core": [
+      3.4,
+      1.8,
+      0,
+      0,
+      0,
+      0,
+      12.3,
+      10.5,
+      7,
+      5.2,
+      3.4,
+      0,
+      91.4,
+      93.1,
+      91.4,
+      93,
+      91.4,
+      91.4
+    ],
+    "load_avg": [
+      6.19,
+      3.39,
+      2.61
+    ],
+    "cores_logical": 18,
+    "cores_physical": 18,
+    "performance_cores": 6,
+    "efficiency_cores": 12,
+    "chip": "Apple M5 Max"
+  },
+  "memory": {
+    "total": 68719476736,
+    "used": 27296481280,
+    "available": 41422995456,
+    "percent": 39.7,
+    "wired": 4143923200,
+    "pressure": "normal",
+    "pressure_free_percent": 79,
+    "swap": {
+      "total": 0,
+      "used": 0,
+      "percent": 0
+    }
+  },
+  "top_cpu": [
+    {
+      "pid": 29221,
+      "name": "llama-server",
+      "cpu_percent": 553.7,
+      "memory_bytes": 1971486720
+    },
+    {
+      "pid": 1604,
+      "name": "WallpaperAerialsExtension",
+      "cpu_percent": 7,
+      "memory_bytes": 28360704
+    },
+    {
+      "pid": 1395,
+      "name": "loginwindow",
+      "cpu_percent": 3.6,
+      "memory_bytes": 73498624
+    },
+    {
+      "pid": 87242,
+      "name": "OrbStack",
+      "cpu_percent": 3.4,
+      "memory_bytes": 65880064
+    },
+    {
+      "pid": 61369,
+      "name": "python3.13",
+      "cpu_percent": 3.2,
+      "memory_bytes": 273039360
+    }
+  ],
+  "top_memory": [
+    {
+      "pid": 29221,
+      "name": "llama-server",
+      "cpu_percent": 553.7,
+      "memory_bytes": 1971486720
+    },
+    {
+      "pid": 87229,
+      "name": "OrbStack Helper",
+      "cpu_percent": 0,
+      "memory_bytes": 1327906816
+    },
+    {
+      "pid": 2338,
+      "name": "Google Chrome",
+      "cpu_percent": 1,
+      "memory_bytes": 456507392
+    },
+    {
+      "pid": 86147,
+      "name": "claude",
+      "cpu_percent": 0.2,
+      "memory_bytes": 422510592
+    },
+    {
+      "pid": 26122,
+      "name": "Google Chrome Helper (Renderer)",
+      "cpu_percent": 0,
+      "memory_bytes": 371032064
+    }
+  ],
+  "ttakkari_total": {
+    "cpu_percent": 558.9,
+    "memory_bytes": 3901128704
+  }
+}

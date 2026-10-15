@@ -1,0 +1,2549 @@
+{
+  "dataset_sha256": "37b607c9679bba193f18578256a33f8477a3f36cf30e05283ae3ce32ac95b2b0",
+  "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+  "n": 90,
+  "valid": 90,
+  "invalid": 0,
+  "hard_scored_n": 87,
+  "exact_correct": 63,
+  "acceptable_set_correct": 66,
+  "abstain_valid": 0,
+  "coverage_non_abstain_valid": 90,
+  "invalid_by_type": {},
+  "attempt_latency_p50_ms": 3107.88,
+  "attempt_latency_p95_ms": 4174.37,
+  "valid_latency_p50_ms": 3107.88,
+  "valid_latency_p95_ms": 4174.37,
+  "ttft_p50_ms": 870.49,
+  "ttft_p95_ms": 953.02,
+  "first_attempt_total_ms": 4512.46,
+  "first_attempt_ttft_ms": 2694.37,
+  "server_startup_seconds_to_ready": 5.2449328899383545,
+  "total_run_seconds_from_server_start": 298.85,
+  "runner_wall_seconds": 293.49,
+  "observations": [
+    {
+      "case_id": "common30-01",
+      "repeat": 1,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "8eef7f1ba33890a62b4c44df67bd8a8119a08c17dc368e33f75f5127cabc671c",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076906.6255622,
+      "total_ms": 4512.46,
+      "ttft_ms": 2694.37,
+      "sse_events": 49,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"안녕하세요! 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "안녕하세요! 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-02",
+      "repeat": 1,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "46eb1c9bc0350b84b646470681df0a96922e42efe9bfea38d04b9fda4e5c7a5b",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076911.138239,
+      "total_ms": 2625.38,
+      "ttft_ms": 789.26,
+      "sse_events": 49,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"안녕하세요! 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "안녕하세요! 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-03",
+      "repeat": 1,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "6fa348bb3bd2096c1f50439df4322b07edb07ed0cfb643e57467a8856e233b05",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076913.763813,
+      "total_ms": 3022.74,
+      "ttft_ms": 808.23,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 항상 기꺼이 도와드리겠습니다. 다른 도움이 필요하시면 언제든 말씀해 주세요.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 항상 기꺼이 도와드리겠습니다. 다른 도움이 필요하시면 언제든 말씀해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-04",
+      "repeat": 1,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "9ab55ac4cad1b295b3cdddb8fcba2c07525c519488c9eb73909e2b971cc92ad2",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076916.786737,
+      "total_ms": 2898.86,
+      "ttft_ms": 826.05,
+      "sse_events": 55,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 수고하셨습니다! 오늘 하루도 잘 보내셨나요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 수고하셨습니다! 오늘 하루도 잘 보내셨나요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-05",
+      "repeat": 1,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "e244bfd54cb7cc23ec5350853f56affa84e9aec7e588ee9e3a6eccc071e53288",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076919.68578,
+      "total_ms": 2880.28,
+      "ttft_ms": 808.45,
+      "sse_events": 55,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 오늘 날씨가 정말 좋네요. 기분 좋은 하루 보내세요!\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 오늘 날씨가 정말 좋네요. 기분 좋은 하루 보내세요!",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-06",
+      "repeat": 1,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "7eb509710722bb7e128c2744b829e4f6ad7cc8c4cd8d0c6059f7c39d83319bd2",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076922.566248,
+      "total_ms": 3093.25,
+      "ttft_ms": 845.02,
+      "sse_events": 58,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"ㅋㅋㅋ 웃기네, 무슨 일이 그렇게 웃기셨나요? 😄\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "ㅋㅋㅋ 웃기네, 무슨 일이 그렇게 웃기셨나요? 😄",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-07",
+      "repeat": 1,
+      "expected_status": "hold",
+      "allowed_actions": [
+        "answer",
+        "abstain"
+      ],
+      "input_sha256": "58aaeee26199ad9fdf39e7caeedbdaeaa8241fe0aba65180dfc2132261607feb",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076925.659692,
+      "total_ms": 2890.56,
+      "ttft_ms": 860.31,
+      "sse_events": 54,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"현재는 특별한 작업을 하고 있지 않아요. 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "현재는 특별한 작업을 하고 있지 않아요. 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": null,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-08",
+      "repeat": 1,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d61e6acdd43fcf151e8be88c75d56a111d3d5ec5d195b3049380793265e03379",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076928.5504289,
+      "total_ms": 2849.4,
+      "ttft_ms": 916.09,
+      "sse_events": 52,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"백엔드 재시작 게이트는 완료되었습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "백엔드 재시작 게이트는 완료되었습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-09",
+      "repeat": 1,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d0e7d8011129831bffbe50d654897344b0d361ef6b632734dc06004ab1981c49",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076931.400013,
+      "total_ms": 2482.06,
+      "ttft_ms": 827.15,
+      "sse_events": 44,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"null\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "null",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-10",
+      "repeat": 1,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d0b0f3b9aec53dbd646cd4e5058c7c69f1997b0c92ad193ca2c13b84bf9dac83",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076933.8822541,
+      "total_ms": 3110.47,
+      "ttft_ms": 906.25,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"작업판에 맡긴 일이 없습니다. 어떤 작업을 진행해 드릴까요?\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "작업판에 맡긴 일이 없습니다. 어떤 작업을 진행해 드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-11",
+      "repeat": 1,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "657fe25144ce208456d5acf18c0009a5df128ca6fd0b2f3924fa2acfec156e62",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076936.992927,
+      "total_ms": 3058.2,
+      "ttft_ms": 866.63,
+      "sse_events": 58,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 지금 작업자들은 모두 휴식 중입니다. 잠시 후 다시 시작할 예정입니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 지금 작업자들은 모두 휴식 중입니다. 잠시 후 다시 시작할 예정입니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-12",
+      "repeat": 1,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "df74e03854186eb245480943b0ea25b27b5a529de89bd12ff1cf260eae3f9733",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076940.051336,
+      "total_ms": 3127.94,
+      "ttft_ms": 831.52,
+      "sse_events": 61,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"아직 배포가 완료되지 않았습니다. 현재 진행 상황을 확인하거나 배포 계획을 논의하고 싶으신가요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "아직 배포가 완료되지 않았습니다. 현재 진행 상황을 확인하거나 배포 계획을 논의하고 싶으신가요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-13",
+      "repeat": 1,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d1222bed9743698ba4c6b3cd06bd2690047cafdc5b8235c692caf481dfd83022",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076943.1794891,
+      "total_ms": 2938.3,
+      "ttft_ms": 828.7,
+      "sse_events": 56,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"현재 세션은 계속 진행 중입니다. 멈춘 세션은 없습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "현재 세션은 계속 진행 중입니다. 멈춘 세션은 없습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-14",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "bf88a94f87f8568a97e0c21120906636cf64a02384d87cec7c674d3a0c736dc3",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076946.1179929,
+      "total_ms": 2811.64,
+      "ttft_ms": 827.81,
+      "sse_events": 53,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"내일 일정을 확인해 드릴게요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "내일 일정을 확인해 드릴게요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-15",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "8b93fc0a12fdbb8473e2b5c589e25990b3932dd36e1335deee8a2181f62919b9",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076948.929831,
+      "total_ms": 4171.69,
+      "ttft_ms": 881.64,
+      "sse_events": 85,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"지난주에 적은 회의 메모를 찾아주는 작업은 일정·메모 조회/변경 등 생각이나 도구가 필요한 일입니다. 제공된 lead_ids 목록이 비어있으므로 null을 선택합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "지난주에 적은 회의 메모를 찾아주는 작업은 일정·메모 조회/변경 등 생각이나 도구가 필요한 일입니다. 제공된 lead_ids 목록이 비어있으므로 null을 선택합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-16",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5435bb8d3909dece0397374d474493b2e7c7ae0b42f04e4f6e4a7f552a6fb747",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076953.101728,
+      "total_ms": 2505.45,
+      "ttft_ms": 852.19,
+      "sse_events": 44,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"null\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "null",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-17",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "721c61b49d7b5606e7c95473eae83a161198230a78c840724c945e5916b2edd8",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076955.6073432,
+      "total_ms": 3017.13,
+      "ttft_ms": 890.41,
+      "sse_events": 57,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"저장된 API 키 관련 메모를 조회해 드릴게요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "저장된 API 키 관련 메모를 조회해 드릴게요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-18",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "189d0a24f7fb441f5c3283eca210dd750644e4a1a1bee196f66b237fef336e53",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076958.6246421,
+      "total_ms": 3093.94,
+      "ttft_ms": 885.08,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"금요일 일정은 아직 잡혀있지 않아요. 특별한 계획이 있으신가요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "금요일 일정은 아직 잡혀있지 않아요. 특별한 계획이 있으신가요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-19",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5119df2425ed96ca9eec0a3519579270a217af7e84015a5d935818655043e2fd",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076961.718791,
+      "total_ms": 3717.51,
+      "ttft_ms": 924.7,
+      "sse_events": 72,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"로그인 페이지 다크모드 깨짐 문제를 해결하기 위해 코드 수정이 필요하므로, 관련 개발자나 팀에 이 작업을 위임합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "로그인 페이지 다크모드 깨짐 문제를 해결하기 위해 코드 수정이 필요하므로, 관련 개발자나 팀에 이 작업을 위임합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-20",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5e14ce1383cc7a465d0417b0d0b4a8197f260d61dfc136a490ca87a068b14dd5",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076965.436492,
+      "total_ms": 3622.09,
+      "ttft_ms": 946.36,
+      "sse_events": 71,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"오케스트레이터 슬롯 구조 변경은 설계 및 도구 작업이 필요하므로, 관련 모델이나 도구를 통해 처리해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "오케스트레이터 슬롯 구조 변경은 설계 및 도구 작업이 필요하므로, 관련 모델이나 도구를 통해 처리해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-21",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "4a0e5ef105c02415b8d800393ffbdeb8564254c9f3ab19ce0d92ec5c1a689bcf",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076969.058771,
+      "total_ms": 4088.71,
+      "ttft_ms": 870.19,
+      "sse_events": 83,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"에러 로그나 스택 트레이스를 제공해 주세요. 구체적인 에러 메시지, 발생 위치 (파일/라인), 그리고 관련 코드 단락을 알려주시면 원인을 분석하고 해결 방안을 제시해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "에러 로그나 스택 트레이스를 제공해 주세요. 구체적인 에러 메시지, 발생 위치 (파일/라인), 그리고 관련 코드 단락을 알려주시면 원인을 분석하고 해결 방안을 제시해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-22",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "8719a66c6174607a9d697d7e37e6339e82fc3353c6218751030f59faa7dccade",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076973.147686,
+      "total_ms": 3149.45,
+      "ttft_ms": 884.49,
+      "sse_events": 60,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"카카오 모델 중 가벼운 모델을 추천해 드리기 위해 관련 정보를 조회하고 있습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "카카오 모델 중 가벼운 모델을 추천해 드리기 위해 관련 정보를 조회하고 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-23",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "35241d54d78b6434c85d5a848f255906ab68301e733305aa45d08dff8e7370e3",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076976.297343,
+      "total_ms": 5241.48,
+      "ttft_ms": 828.74,
+      "sse_events": 112,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"MoE(Mixture of Experts)는 여러 개의 작은 신경망(전문가)을 하나의 모델 안에 모아두고, 입력 데이터에 따라 필요한 전문가만 선택적으로 활성화하여 처리하는 방식입니다. 이렇게 하면 전체 모델을 항상 온전히 켜는 것보다 에너지 효율이 좋고, 특정 작업에 최적화된 전문가만 활용하여 성능을 높일 수 있습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "MoE(Mixture of Experts)는 여러 개의 작은 신경망(전문가)을 하나의 모델 안에 모아두고, 입력 데이터에 따라 필요한 전문가만 선택적으로 활성화하여 처리하는 방식입니다. 이렇게 하면 전체 모델을 항상 온전히 켜는 것보다 에너지 효율이 좋고, 특정 작업에 최적화된 전문가만 활용하여 성능을 높일 수 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-24",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "2f59bfb85147bde02fcf716ccfe7e8dbce8977f4e94c6ffa12f821b680fdd31d",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076981.5390458,
+      "total_ms": 3779.68,
+      "ttft_ms": 830.82,
+      "sse_events": 78,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"PR 리뷰를 요청하셨는데, 현재 작업판에 맡긴 일이 없고 최근 대화도 없습니다. 리뷰할 PR 링크나 파일 내용을 제공해 주시면 분석해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "PR 리뷰를 요청하셨는데, 현재 작업판에 맡긴 일이 없고 최근 대화도 없습니다. 리뷰할 PR 링크나 파일 내용을 제공해 주시면 분석해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-25",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "96a38344184e04fb62628fe943fb9da37e63a1929d193c8acf2d109091641204",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076985.318908,
+      "total_ms": 3149.82,
+      "ttft_ms": 928.59,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"알겠습니다. 내일 3 시 치과 일정을 추가해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "알겠습니다. 내일 3 시 치과 일정을 추가해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-26",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "cc2d7ca4f5c9bb8a2ad746269c7d7e4fc69177806f27754aa24ae4cfd5b8ae93",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076988.4689338,
+      "total_ms": 3442.53,
+      "ttft_ms": 884.51,
+      "sse_events": 68,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"메모 화면 디자인 변경은 시각적 요소와 사용자 인터페이스 수정이 필요한 작업입니다. 관련 도구나 권한이 필요합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "메모 화면 디자인 변경은 시각적 요소와 사용자 인터페이스 수정이 필요한 작업입니다. 관련 도구나 권한이 필요합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-27",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "80e79c5d657b5fa342d4892c52369d70d3c6ecacd090b943156535e0651c947f",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076991.911649,
+      "total_ms": 3566.38,
+      "ttft_ms": 884.6,
+      "sse_events": 69,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"작업판에 커밋하고 푸시할 코드가 없습니다. 어떤 파일을 수정했는지 또는 커밋 메시지를 작성해 주세요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "작업판에 커밋하고 푸시할 코드가 없습니다. 어떤 파일을 수정했는지 또는 커밋 메시지를 작성해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-28",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "c25246d066d8fbef547b750f25c02c39d5e0999c7c30bd472da033d263a70e0e",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076995.478236,
+      "total_ms": 3188.11,
+      "ttft_ms": 889.36,
+      "sse_events": 61,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"따까리 서버 재시작 요청을 처리하기 위해 관련 도구를 호출하고 있습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "따까리 서버 재시작 요청을 처리하기 위해 관련 도구를 호출하고 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-29",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "f45e86031d5f062bb40cfe8c32fcbe28b36dc374ca2555d0e51a7f9493ef29e4",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792076998.666542,
+      "total_ms": 3073.73,
+      "ttft_ms": 938.32,
+      "sse_events": 57,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"사용량 통계 조회 및 분석을 위해 관련 도구를 호출해야 합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "사용량 통계 조회 및 분석을 위해 관련 도구를 호출해야 합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-30",
+      "repeat": 1,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "02528b0f002af4ad0adb33e1eae90536bf5ed182fcb7036371fbfca895646d2b",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077001.740472,
+      "total_ms": 3743.63,
+      "ttft_ms": 870.03,
+      "sse_events": 76,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"문장 다듬기 요청이 들어왔으나, 다듬고자 하는 구체적인 문장이 제공되지 않았습니다. 다듬어 주실 문장을 입력해 주세요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "문장 다듬기 요청이 들어왔으나, 다듬고자 하는 구체적인 문장이 제공되지 않았습니다. 다듬어 주실 문장을 입력해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-01",
+      "repeat": 2,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "8eef7f1ba33890a62b4c44df67bd8a8119a08c17dc368e33f75f5127cabc671c",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077005.4843001,
+      "total_ms": 2645.25,
+      "ttft_ms": 812.12,
+      "sse_events": 49,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"안녕하세요! 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "안녕하세요! 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-02",
+      "repeat": 2,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "46eb1c9bc0350b84b646470681df0a96922e42efe9bfea38d04b9fda4e5c7a5b",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077008.129741,
+      "total_ms": 2601.01,
+      "ttft_ms": 792.58,
+      "sse_events": 49,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"안녕하세요! 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "안녕하세요! 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-03",
+      "repeat": 2,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "6fa348bb3bd2096c1f50439df4322b07edb07ed0cfb643e57467a8856e233b05",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077010.730929,
+      "total_ms": 3057.06,
+      "ttft_ms": 840.63,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 항상 기꺼이 도와드리겠습니다. 다른 도움이 필요하시면 언제든 말씀해 주세요.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 항상 기꺼이 도와드리겠습니다. 다른 도움이 필요하시면 언제든 말씀해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-04",
+      "repeat": 2,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "9ab55ac4cad1b295b3cdddb8fcba2c07525c519488c9eb73909e2b971cc92ad2",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077013.788194,
+      "total_ms": 2902.25,
+      "ttft_ms": 829.74,
+      "sse_events": 55,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 수고하셨습니다! 오늘 하루도 잘 보내셨나요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 수고하셨습니다! 오늘 하루도 잘 보내셨나요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-05",
+      "repeat": 2,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "e244bfd54cb7cc23ec5350853f56affa84e9aec7e588ee9e3a6eccc071e53288",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077016.6906419,
+      "total_ms": 2883.62,
+      "ttft_ms": 811.28,
+      "sse_events": 55,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 오늘 날씨가 정말 좋네요. 기분 좋은 하루 보내세요!\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 오늘 날씨가 정말 좋네요. 기분 좋은 하루 보내세요!",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-06",
+      "repeat": 2,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "7eb509710722bb7e128c2744b829e4f6ad7cc8c4cd8d0c6059f7c39d83319bd2",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077019.5744379,
+      "total_ms": 3107.88,
+      "ttft_ms": 862.29,
+      "sse_events": 58,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"ㅋㅋㅋ 웃기네, 무슨 일이 그렇게 웃기셨나요? 😄\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "ㅋㅋㅋ 웃기네, 무슨 일이 그렇게 웃기셨나요? 😄",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-07",
+      "repeat": 2,
+      "expected_status": "hold",
+      "allowed_actions": [
+        "answer",
+        "abstain"
+      ],
+      "input_sha256": "58aaeee26199ad9fdf39e7caeedbdaeaa8241fe0aba65180dfc2132261607feb",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077022.6825228,
+      "total_ms": 2888.55,
+      "ttft_ms": 861.79,
+      "sse_events": 54,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"현재는 특별한 작업을 하고 있지 않아요. 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "현재는 특별한 작업을 하고 있지 않아요. 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": null,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-08",
+      "repeat": 2,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d61e6acdd43fcf151e8be88c75d56a111d3d5ec5d195b3049380793265e03379",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077025.571249,
+      "total_ms": 2896.11,
+      "ttft_ms": 935.97,
+      "sse_events": 52,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"백엔드 재시작 게이트는 완료되었습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "백엔드 재시작 게이트는 완료되었습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-09",
+      "repeat": 2,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d0e7d8011129831bffbe50d654897344b0d361ef6b632734dc06004ab1981c49",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077028.467554,
+      "total_ms": 2484.45,
+      "ttft_ms": 836.74,
+      "sse_events": 44,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"null\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "null",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-10",
+      "repeat": 2,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d0b0f3b9aec53dbd646cd4e5058c7c69f1997b0c92ad193ca2c13b84bf9dac83",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077030.95219,
+      "total_ms": 3109.18,
+      "ttft_ms": 887.76,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"작업판에 맡긴 일이 없습니다. 어떤 작업을 진행해 드릴까요?\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "작업판에 맡긴 일이 없습니다. 어떤 작업을 진행해 드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-11",
+      "repeat": 2,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "657fe25144ce208456d5acf18c0009a5df128ca6fd0b2f3924fa2acfec156e62",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077034.061558,
+      "total_ms": 3040.59,
+      "ttft_ms": 870.49,
+      "sse_events": 58,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 지금 작업자들은 모두 휴식 중입니다. 잠시 후 다시 시작할 예정입니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 지금 작업자들은 모두 휴식 중입니다. 잠시 후 다시 시작할 예정입니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-12",
+      "repeat": 2,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "df74e03854186eb245480943b0ea25b27b5a529de89bd12ff1cf260eae3f9733",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077037.1023371,
+      "total_ms": 3137.21,
+      "ttft_ms": 832.55,
+      "sse_events": 61,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"아직 배포가 완료되지 않았습니다. 현재 진행 상황을 확인하거나 배포 계획을 논의하고 싶으신가요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "아직 배포가 완료되지 않았습니다. 현재 진행 상황을 확인하거나 배포 계획을 논의하고 싶으신가요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-13",
+      "repeat": 2,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d1222bed9743698ba4c6b3cd06bd2690047cafdc5b8235c692caf481dfd83022",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077040.239748,
+      "total_ms": 2951.92,
+      "ttft_ms": 839.05,
+      "sse_events": 56,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"현재 세션은 계속 진행 중입니다. 멈춘 세션은 없습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "현재 세션은 계속 진행 중입니다. 멈춘 세션은 없습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-14",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "bf88a94f87f8568a97e0c21120906636cf64a02384d87cec7c674d3a0c736dc3",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077043.191851,
+      "total_ms": 2825.3,
+      "ttft_ms": 845.63,
+      "sse_events": 53,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"내일 일정을 확인해 드릴게요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "내일 일정을 확인해 드릴게요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-15",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "8b93fc0a12fdbb8473e2b5c589e25990b3932dd36e1335deee8a2181f62919b9",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077046.017333,
+      "total_ms": 4167.28,
+      "ttft_ms": 877.38,
+      "sse_events": 85,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"지난주에 적은 회의 메모를 찾아주는 작업은 일정·메모 조회/변경 등 생각이나 도구가 필요한 일입니다. 제공된 lead_ids 목록이 비어있으므로 null을 선택합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "지난주에 적은 회의 메모를 찾아주는 작업은 일정·메모 조회/변경 등 생각이나 도구가 필요한 일입니다. 제공된 lead_ids 목록이 비어있으므로 null을 선택합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-16",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5435bb8d3909dece0397374d474493b2e7c7ae0b42f04e4f6e4a7f552a6fb747",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077050.184801,
+      "total_ms": 2518.51,
+      "ttft_ms": 863.93,
+      "sse_events": 44,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"null\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "null",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-17",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "721c61b49d7b5606e7c95473eae83a161198230a78c840724c945e5916b2edd8",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077052.703485,
+      "total_ms": 3020.81,
+      "ttft_ms": 885.8,
+      "sse_events": 57,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"저장된 API 키 관련 메모를 조회해 드릴게요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "저장된 API 키 관련 메모를 조회해 드릴게요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-18",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "189d0a24f7fb441f5c3283eca210dd750644e4a1a1bee196f66b237fef336e53",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077055.724488,
+      "total_ms": 3117.68,
+      "ttft_ms": 894.09,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"금요일 일정은 아직 잡혀있지 않아요. 특별한 계획이 있으신가요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "금요일 일정은 아직 잡혀있지 않아요. 특별한 계획이 있으신가요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-19",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5119df2425ed96ca9eec0a3519579270a217af7e84015a5d935818655043e2fd",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077058.8423512,
+      "total_ms": 3704.06,
+      "ttft_ms": 929.95,
+      "sse_events": 72,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"로그인 페이지 다크모드 깨짐 문제를 해결하기 위해 코드 수정이 필요하므로, 관련 개발자나 팀에 이 작업을 위임합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "로그인 페이지 다크모드 깨짐 문제를 해결하기 위해 코드 수정이 필요하므로, 관련 개발자나 팀에 이 작업을 위임합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-20",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5e14ce1383cc7a465d0417b0d0b4a8197f260d61dfc136a490ca87a068b14dd5",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077062.546586,
+      "total_ms": 3627.31,
+      "ttft_ms": 953.02,
+      "sse_events": 71,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"오케스트레이터 슬롯 구조 변경은 설계 및 도구 작업이 필요하므로, 관련 모델이나 도구를 통해 처리해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "오케스트레이터 슬롯 구조 변경은 설계 및 도구 작업이 필요하므로, 관련 모델이나 도구를 통해 처리해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-21",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "4a0e5ef105c02415b8d800393ffbdeb8564254c9f3ab19ce0d92ec5c1a689bcf",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077066.174089,
+      "total_ms": 4065.5,
+      "ttft_ms": 874.29,
+      "sse_events": 83,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"에러 로그나 스택 트레이스를 제공해 주세요. 구체적인 에러 메시지, 발생 위치 (파일/라인), 그리고 관련 코드 단락을 알려주시면 원인을 분석하고 해결 방안을 제시해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "에러 로그나 스택 트레이스를 제공해 주세요. 구체적인 에러 메시지, 발생 위치 (파일/라인), 그리고 관련 코드 단락을 알려주시면 원인을 분석하고 해결 방안을 제시해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-22",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "8719a66c6174607a9d697d7e37e6339e82fc3353c6218751030f59faa7dccade",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077070.239789,
+      "total_ms": 3175.72,
+      "ttft_ms": 905.95,
+      "sse_events": 60,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"카카오 모델 중 가벼운 모델을 추천해 드리기 위해 관련 정보를 조회하고 있습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "카카오 모델 중 가벼운 모델을 추천해 드리기 위해 관련 정보를 조회하고 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-23",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "35241d54d78b6434c85d5a848f255906ab68301e733305aa45d08dff8e7370e3",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077073.4156952,
+      "total_ms": 5260.87,
+      "ttft_ms": 846.42,
+      "sse_events": 112,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"MoE(Mixture of Experts)는 여러 개의 작은 신경망(전문가)을 하나의 모델 안에 모아두고, 입력 데이터에 따라 필요한 전문가만 선택적으로 활성화하여 처리하는 방식입니다. 이렇게 하면 전체 모델을 항상 온전히 켜는 것보다 에너지 효율이 좋고, 특정 작업에 최적화된 전문가만 활용하여 성능을 높일 수 있습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "MoE(Mixture of Experts)는 여러 개의 작은 신경망(전문가)을 하나의 모델 안에 모아두고, 입력 데이터에 따라 필요한 전문가만 선택적으로 활성화하여 처리하는 방식입니다. 이렇게 하면 전체 모델을 항상 온전히 켜는 것보다 에너지 효율이 좋고, 특정 작업에 최적화된 전문가만 활용하여 성능을 높일 수 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-24",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "2f59bfb85147bde02fcf716ccfe7e8dbce8977f4e94c6ffa12f821b680fdd31d",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077078.676778,
+      "total_ms": 3789.56,
+      "ttft_ms": 841.11,
+      "sse_events": 78,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"PR 리뷰를 요청하셨는데, 현재 작업판에 맡긴 일이 없고 최근 대화도 없습니다. 리뷰할 PR 링크나 파일 내용을 제공해 주시면 분석해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "PR 리뷰를 요청하셨는데, 현재 작업판에 맡긴 일이 없고 최근 대화도 없습니다. 리뷰할 PR 링크나 파일 내용을 제공해 주시면 분석해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-25",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "96a38344184e04fb62628fe943fb9da37e63a1929d193c8acf2d109091641204",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077082.4665432,
+      "total_ms": 3048.78,
+      "ttft_ms": 913.69,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"알겠습니다. 내일 3 시 치과 일정을 추가해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "알겠습니다. 내일 3 시 치과 일정을 추가해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-26",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "cc2d7ca4f5c9bb8a2ad746269c7d7e4fc69177806f27754aa24ae4cfd5b8ae93",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077085.5155141,
+      "total_ms": 3544.97,
+      "ttft_ms": 976.23,
+      "sse_events": 68,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"메모 화면 디자인 변경은 시각적 요소와 사용자 인터페이스 수정이 필요한 작업입니다. 관련 도구나 권한이 필요합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "메모 화면 디자인 변경은 시각적 요소와 사용자 인터페이스 수정이 필요한 작업입니다. 관련 도구나 권한이 필요합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-27",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "80e79c5d657b5fa342d4892c52369d70d3c6ecacd090b943156535e0651c947f",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077089.0607228,
+      "total_ms": 3552.03,
+      "ttft_ms": 894.58,
+      "sse_events": 69,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"작업판에 커밋하고 푸시할 코드가 없습니다. 어떤 파일을 수정했는지 또는 커밋 메시지를 작성해 주세요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "작업판에 커밋하고 푸시할 코드가 없습니다. 어떤 파일을 수정했는지 또는 커밋 메시지를 작성해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-28",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "c25246d066d8fbef547b750f25c02c39d5e0999c7c30bd472da033d263a70e0e",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077092.6129558,
+      "total_ms": 3244.56,
+      "ttft_ms": 991.3,
+      "sse_events": 61,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"따까리 서버 재시작 요청을 처리하기 위해 관련 도구를 호출하고 있습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "따까리 서버 재시작 요청을 처리하기 위해 관련 도구를 호출하고 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-29",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "f45e86031d5f062bb40cfe8c32fcbe28b36dc374ca2555d0e51a7f9493ef29e4",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077095.857725,
+      "total_ms": 3082.54,
+      "ttft_ms": 945.61,
+      "sse_events": 57,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"사용량 통계 조회 및 분석을 위해 관련 도구를 호출해야 합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "사용량 통계 조회 및 분석을 위해 관련 도구를 호출해야 합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-30",
+      "repeat": 2,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "02528b0f002af4ad0adb33e1eae90536bf5ed182fcb7036371fbfca895646d2b",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077098.940439,
+      "total_ms": 3764.36,
+      "ttft_ms": 891.35,
+      "sse_events": 76,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"문장 다듬기 요청이 들어왔으나, 다듬고자 하는 구체적인 문장이 제공되지 않았습니다. 다듬어 주실 문장을 입력해 주세요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "문장 다듬기 요청이 들어왔으나, 다듬고자 하는 구체적인 문장이 제공되지 않았습니다. 다듬어 주실 문장을 입력해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-01",
+      "repeat": 3,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "8eef7f1ba33890a62b4c44df67bd8a8119a08c17dc368e33f75f5127cabc671c",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077102.7050009,
+      "total_ms": 2651.04,
+      "ttft_ms": 817.83,
+      "sse_events": 49,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"안녕하세요! 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "안녕하세요! 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-02",
+      "repeat": 3,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "46eb1c9bc0350b84b646470681df0a96922e42efe9bfea38d04b9fda4e5c7a5b",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077105.3562229,
+      "total_ms": 2644.88,
+      "ttft_ms": 807.5,
+      "sse_events": 49,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"안녕하세요! 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "안녕하세요! 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-03",
+      "repeat": 3,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "6fa348bb3bd2096c1f50439df4322b07edb07ed0cfb643e57467a8856e233b05",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077108.0012832,
+      "total_ms": 3026.06,
+      "ttft_ms": 818.94,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 항상 기꺼이 도와드리겠습니다. 다른 도움이 필요하시면 언제든 말씀해 주세요.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 항상 기꺼이 도와드리겠습니다. 다른 도움이 필요하시면 언제든 말씀해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-04",
+      "repeat": 3,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "9ab55ac4cad1b295b3cdddb8fcba2c07525c519488c9eb73909e2b971cc92ad2",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077111.027544,
+      "total_ms": 2925.59,
+      "ttft_ms": 850.6,
+      "sse_events": 55,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 수고하셨습니다! 오늘 하루도 잘 보내셨나요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 수고하셨습니다! 오늘 하루도 잘 보내셨나요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-05",
+      "repeat": 3,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "e244bfd54cb7cc23ec5350853f56affa84e9aec7e588ee9e3a6eccc071e53288",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077113.953322,
+      "total_ms": 2894.0,
+      "ttft_ms": 820.34,
+      "sse_events": 55,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 오늘 날씨가 정말 좋네요. 기분 좋은 하루 보내세요!\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 오늘 날씨가 정말 좋네요. 기분 좋은 하루 보내세요!",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-06",
+      "repeat": 3,
+      "expected_status": "answer",
+      "allowed_actions": [
+        "answer"
+      ],
+      "input_sha256": "7eb509710722bb7e128c2744b829e4f6ad7cc8c4cd8d0c6059f7c39d83319bd2",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077116.847528,
+      "total_ms": 3112.51,
+      "ttft_ms": 857.26,
+      "sse_events": 58,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"ㅋㅋㅋ 웃기네, 무슨 일이 그렇게 웃기셨나요? 😄\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "ㅋㅋㅋ 웃기네, 무슨 일이 그렇게 웃기셨나요? 😄",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-07",
+      "repeat": 3,
+      "expected_status": "hold",
+      "allowed_actions": [
+        "answer",
+        "abstain"
+      ],
+      "input_sha256": "58aaeee26199ad9fdf39e7caeedbdaeaa8241fe0aba65180dfc2132261607feb",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077119.9602408,
+      "total_ms": 2881.25,
+      "ttft_ms": 853.41,
+      "sse_events": 54,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"현재는 특별한 작업을 하고 있지 않아요. 무엇을 도와드릴까요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "현재는 특별한 작업을 하고 있지 않아요. 무엇을 도와드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": null,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-08",
+      "repeat": 3,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d61e6acdd43fcf151e8be88c75d56a111d3d5ec5d195b3049380793265e03379",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077122.841679,
+      "total_ms": 2899.55,
+      "ttft_ms": 939.28,
+      "sse_events": 52,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"백엔드 재시작 게이트는 완료되었습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "백엔드 재시작 게이트는 완료되었습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-09",
+      "repeat": 3,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d0e7d8011129831bffbe50d654897344b0d361ef6b632734dc06004ab1981c49",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077125.741426,
+      "total_ms": 2504.23,
+      "ttft_ms": 847.59,
+      "sse_events": 44,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"null\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "null",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-10",
+      "repeat": 3,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d0b0f3b9aec53dbd646cd4e5058c7c69f1997b0c92ad193ca2c13b84bf9dac83",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077128.245846,
+      "total_ms": 3120.33,
+      "ttft_ms": 898.36,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"작업판에 맡긴 일이 없습니다. 어떤 작업을 진행해 드릴까요?\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "작업판에 맡긴 일이 없습니다. 어떤 작업을 진행해 드릴까요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-11",
+      "repeat": 3,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "657fe25144ce208456d5acf18c0009a5df128ca6fd0b2f3924fa2acfec156e62",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077131.36643,
+      "total_ms": 3068.89,
+      "ttft_ms": 878.28,
+      "sse_events": 58,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"네, 지금 작업자들은 모두 휴식 중입니다. 잠시 후 다시 시작할 예정입니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "네, 지금 작업자들은 모두 휴식 중입니다. 잠시 후 다시 시작할 예정입니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-12",
+      "repeat": 3,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "df74e03854186eb245480943b0ea25b27b5a529de89bd12ff1cf260eae3f9733",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077134.4355142,
+      "total_ms": 3123.61,
+      "ttft_ms": 839.13,
+      "sse_events": 61,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"아직 배포가 완료되지 않았습니다. 현재 진행 상황을 확인하거나 배포 계획을 논의하고 싶으신가요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "아직 배포가 완료되지 않았습니다. 현재 진행 상황을 확인하거나 배포 계획을 논의하고 싶으신가요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-13",
+      "repeat": 3,
+      "expected_status": "abstain",
+      "allowed_actions": [
+        "abstain"
+      ],
+      "input_sha256": "d1222bed9743698ba4c6b3cd06bd2690047cafdc5b8235c692caf481dfd83022",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077137.559305,
+      "total_ms": 2957.38,
+      "ttft_ms": 844.01,
+      "sse_events": 56,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"현재 세션은 계속 진행 중입니다. 멈춘 세션은 없습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "현재 세션은 계속 진행 중입니다. 멈춘 세션은 없습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-14",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "bf88a94f87f8568a97e0c21120906636cf64a02384d87cec7c674d3a0c736dc3",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077140.5168629,
+      "total_ms": 2833.15,
+      "ttft_ms": 849.63,
+      "sse_events": 53,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"내일 일정을 확인해 드릴게요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "내일 일정을 확인해 드릴게요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-15",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "8b93fc0a12fdbb8473e2b5c589e25990b3932dd36e1335deee8a2181f62919b9",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077143.350194,
+      "total_ms": 4174.37,
+      "ttft_ms": 880.61,
+      "sse_events": 85,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"지난주에 적은 회의 메모를 찾아주는 작업은 일정·메모 조회/변경 등 생각이나 도구가 필요한 일입니다. 제공된 lead_ids 목록이 비어있으므로 null을 선택합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "지난주에 적은 회의 메모를 찾아주는 작업은 일정·메모 조회/변경 등 생각이나 도구가 필요한 일입니다. 제공된 lead_ids 목록이 비어있으므로 null을 선택합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-16",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5435bb8d3909dece0397374d474493b2e7c7ae0b42f04e4f6e4a7f552a6fb747",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077147.5247512,
+      "total_ms": 2516.9,
+      "ttft_ms": 862.8,
+      "sse_events": 44,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"null\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "null",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-17",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "721c61b49d7b5606e7c95473eae83a161198230a78c840724c945e5916b2edd8",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077150.0418189,
+      "total_ms": 3040.39,
+      "ttft_ms": 900.91,
+      "sse_events": 57,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"저장된 API 키 관련 메모를 조회해 드릴게요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "저장된 API 키 관련 메모를 조회해 드릴게요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-18",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "189d0a24f7fb441f5c3283eca210dd750644e4a1a1bee196f66b237fef336e53",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077153.082391,
+      "total_ms": 3125.08,
+      "ttft_ms": 893.3,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"금요일 일정은 아직 잡혀있지 않아요. 특별한 계획이 있으신가요?\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "금요일 일정은 아직 잡혀있지 않아요. 특별한 계획이 있으신가요?",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-19",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5119df2425ed96ca9eec0a3519579270a217af7e84015a5d935818655043e2fd",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077156.2076511,
+      "total_ms": 3734.44,
+      "ttft_ms": 940.58,
+      "sse_events": 72,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"로그인 페이지 다크모드 깨짐 문제를 해결하기 위해 코드 수정이 필요하므로, 관련 개발자나 팀에 이 작업을 위임합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "로그인 페이지 다크모드 깨짐 문제를 해결하기 위해 코드 수정이 필요하므로, 관련 개발자나 팀에 이 작업을 위임합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-20",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "5e14ce1383cc7a465d0417b0d0b4a8197f260d61dfc136a490ca87a068b14dd5",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077159.942281,
+      "total_ms": 3608.25,
+      "ttft_ms": 958.28,
+      "sse_events": 71,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"오케스트레이터 슬롯 구조 변경은 설계 및 도구 작업이 필요하므로, 관련 모델이나 도구를 통해 처리해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "오케스트레이터 슬롯 구조 변경은 설계 및 도구 작업이 필요하므로, 관련 모델이나 도구를 통해 처리해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-21",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "4a0e5ef105c02415b8d800393ffbdeb8564254c9f3ab19ce0d92ec5c1a689bcf",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077163.550716,
+      "total_ms": 4097.23,
+      "ttft_ms": 881.16,
+      "sse_events": 83,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"에러 로그나 스택 트레이스를 제공해 주세요. 구체적인 에러 메시지, 발생 위치 (파일/라인), 그리고 관련 코드 단락을 알려주시면 원인을 분석하고 해결 방안을 제시해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "에러 로그나 스택 트레이스를 제공해 주세요. 구체적인 에러 메시지, 발생 위치 (파일/라인), 그리고 관련 코드 단락을 알려주시면 원인을 분석하고 해결 방안을 제시해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-22",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "8719a66c6174607a9d697d7e37e6339e82fc3353c6218751030f59faa7dccade",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077167.648152,
+      "total_ms": 3167.34,
+      "ttft_ms": 900.65,
+      "sse_events": 60,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"카카오 모델 중 가벼운 모델을 추천해 드리기 위해 관련 정보를 조회하고 있습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "카카오 모델 중 가벼운 모델을 추천해 드리기 위해 관련 정보를 조회하고 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-23",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "35241d54d78b6434c85d5a848f255906ab68301e733305aa45d08dff8e7370e3",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077170.815677,
+      "total_ms": 5269.41,
+      "ttft_ms": 848.92,
+      "sse_events": 112,
+      "raw_json": "{\"action\": \"answer\", \"reply\": \"MoE(Mixture of Experts)는 여러 개의 작은 신경망(전문가)을 하나의 모델 안에 모아두고, 입력 데이터에 따라 필요한 전문가만 선택적으로 활성화하여 처리하는 방식입니다. 이렇게 하면 전체 모델을 항상 온전히 켜는 것보다 에너지 효율이 좋고, 특정 작업에 최적화된 전문가만 활용하여 성능을 높일 수 있습니다.\",\"lead_id\": null,\"model_id\": null,\"tool_ids\": [],\"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "answer",
+        "reply": "MoE(Mixture of Experts)는 여러 개의 작은 신경망(전문가)을 하나의 모델 안에 모아두고, 입력 데이터에 따라 필요한 전문가만 선택적으로 활성화하여 처리하는 방식입니다. 이렇게 하면 전체 모델을 항상 온전히 켜는 것보다 에너지 효율이 좋고, 특정 작업에 최적화된 전문가만 활용하여 성능을 높일 수 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": false,
+      "acceptable_set_correct": false,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-24",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "2f59bfb85147bde02fcf716ccfe7e8dbce8977f4e94c6ffa12f821b680fdd31d",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077176.085279,
+      "total_ms": 3789.79,
+      "ttft_ms": 839.16,
+      "sse_events": 78,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"PR 리뷰를 요청하셨는데, 현재 작업판에 맡긴 일이 없고 최근 대화도 없습니다. 리뷰할 PR 링크나 파일 내용을 제공해 주시면 분석해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "PR 리뷰를 요청하셨는데, 현재 작업판에 맡긴 일이 없고 최근 대화도 없습니다. 리뷰할 PR 링크나 파일 내용을 제공해 주시면 분석해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-25",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "96a38344184e04fb62628fe943fb9da37e63a1929d193c8acf2d109091641204",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077179.875259,
+      "total_ms": 3139.76,
+      "ttft_ms": 917.68,
+      "sse_events": 59,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"알겠습니다. 내일 3 시 치과 일정을 추가해 드리겠습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "알겠습니다. 내일 3 시 치과 일정을 추가해 드리겠습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-26",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "cc2d7ca4f5c9bb8a2ad746269c7d7e4fc69177806f27754aa24ae4cfd5b8ae93",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077183.0152068,
+      "total_ms": 3453.04,
+      "ttft_ms": 899.63,
+      "sse_events": 68,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"메모 화면 디자인 변경은 시각적 요소와 사용자 인터페이스 수정이 필요한 작업입니다. 관련 도구나 권한이 필요합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "메모 화면 디자인 변경은 시각적 요소와 사용자 인터페이스 수정이 필요한 작업입니다. 관련 도구나 권한이 필요합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-27",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "80e79c5d657b5fa342d4892c52369d70d3c6ecacd090b943156535e0651c947f",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077186.4684281,
+      "total_ms": 3584.04,
+      "ttft_ms": 900.23,
+      "sse_events": 69,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"작업판에 커밋하고 푸시할 코드가 없습니다. 어떤 파일을 수정했는지 또는 커밋 메시지를 작성해 주세요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "작업판에 커밋하고 푸시할 코드가 없습니다. 어떤 파일을 수정했는지 또는 커밋 메시지를 작성해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-28",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "c25246d066d8fbef547b750f25c02c39d5e0999c7c30bd472da033d263a70e0e",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077190.052681,
+      "total_ms": 3199.77,
+      "ttft_ms": 899.01,
+      "sse_events": 61,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"따까리 서버 재시작 요청을 처리하기 위해 관련 도구를 호출하고 있습니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "따까리 서버 재시작 요청을 처리하기 위해 관련 도구를 호출하고 있습니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-29",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "f45e86031d5f062bb40cfe8c32fcbe28b36dc374ca2555d0e51a7f9493ef29e4",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077193.25264,
+      "total_ms": 3091.06,
+      "ttft_ms": 951.37,
+      "sse_events": 57,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"사용량 통계 조회 및 분석을 위해 관련 도구를 호출해야 합니다.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "사용량 통계 조회 및 분석을 위해 관련 도구를 호출해야 합니다.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    },
+    {
+      "case_id": "common30-30",
+      "repeat": 3,
+      "expected_status": "delegate",
+      "allowed_actions": [
+        "delegate"
+      ],
+      "input_sha256": "02528b0f002af4ad0adb33e1eae90536bf5ed182fcb7036371fbfca895646d2b",
+      "system_sha256": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+      "started_at_epoch": 1792077196.3438919,
+      "total_ms": 3759.3,
+      "ttft_ms": 884.08,
+      "sse_events": 76,
+      "raw_json": "{\"action\": \"delegate\", \"reply\": \"문장 다듬기 요청이 들어왔으나, 다듬고자 하는 구체적인 문장이 제공되지 않았습니다. 다듬어 주실 문장을 입력해 주세요.\", \"lead_id\": null, \"model_id\": null, \"tool_ids\": [], \"permission_ids\": [],\"abstain_reason\": null}",
+      "output": {
+        "action": "delegate",
+        "reply": "문장 다듬기 요청이 들어왔으나, 다듬고자 하는 구체적인 문장이 제공되지 않았습니다. 다듬어 주실 문장을 입력해 주세요.",
+        "lead_id": null,
+        "model_id": null,
+        "tool_ids": [],
+        "permission_ids": [],
+        "abstain_reason": null
+      },
+      "valid": true,
+      "exact_correct": true,
+      "acceptable_set_correct": true,
+      "candidate_membership_valid": true
+    }
+  ]
+}

@@ -20,10 +20,10 @@
 기획을 새 종류로 만들지 않고 `orchestrator` 를 그대로 썼다. 모델 정책(opus medium / sol high), MCP 작업 세션 도구, 한도 전환·대기, 컨텍스트 교체가 이미 이 종류에 붙어 있다. 옛 대화도 깨지지 않는다.
 
 ### 접수(desk)
-- 메시지마다 따로 돈다. 세션 대기열에 줄 서지 않고, 엔진 대화를 이어 쓰지 않는다. 앞 메시지가 처리 중이어도 다음 메시지가 바로 시작한다(자리 `max_concurrent_desk`, 기본 6).
+- 메시지마다 따로 돈다. 세션 대기열에 줄 서지 않고, 엔진 대화를 이어 쓰지 않는다. 앞 메시지가 처리 중이어도 다음 메시지가 바로 시작한다(자리 `max_concurrent_desk`, 기본 16).
 - 한 번에 고른다: `{"action":"answer","reply":…}` 또는 `{"action":"delegate","reply":…,"lead_id":…|null,"title":…}`. 도구는 없다. 백엔드가 작업판(기획 세션 상태·작업 세션 수·최근 결과)과 최근 대화 6턴을 프롬프트에 넣는다.
   - 근거(2026-10-13 실측, 30문항 분류): luna(effort low) 30/30·첫 답 중앙값 4.8초, haiku 29/30·7.4초, 로컬 kanana-2-3b 8bit 23/30·0.06초, kanana-1.5-8b 4bit 23/30(작업 요청 4건 놓침). 작은 모델은 여러 번 오가는 도구 호출에 약하다(Kanana-2 카드의 BFCL-v3 Multi-Turn 17%·5.5%).
-- 엔진 순서 `desk_engine_order`(기본 codex → claude), 모델 `desk_models`(luna low / haiku). 엔진 안에서는 신선한 사용량의 계정별 상한 여유를 비교하고, 값이 없거나 낡으면 기존 우선순위를 따른다. 켜기·회사 범위·한도 쉬는 중은 그대로 따른다. 한도면 그 계정을 쉬게 하고(`cool_down`), 시간 초과(`desk_timeout_seconds`, 25초)·출력 형식 오류면 다음 계정으로. 다 실패하면 기획으로 넘긴다. 접수 때문에 메시지가 멈추지 않게 한다.
+- 엔진 순서 `desk_engine_order`(기본 codex → claude), 모델 `desk_models`(luna low / haiku). 엔진 안에서는 신선한 사용량의 `상한 여유 / (다른 실행 중 Run 수 + 1)`를 비교하고, 값이 없거나 낡으면 모델·유휴·우선순위로 고른다. 마지막 측정이 상한 이상이면 낡아도 초기화·새로운 상한 미만 측정·상한 상향 전까지 차단한다(ADR 0006). 켜기·회사 범위·한도 쉬는 중은 그대로 따른다. 한도면 그 계정을 쉬게 하고(`cool_down`), 시간 초과(`desk_timeout_seconds`, 25초)·출력 형식 오류면 다음 계정으로. 다 실패하면 기획으로 넘긴다. 접수 때문에 메시지가 멈추지 않게 한다.
 - 전역 하네스를 받지 않는다.
   - Codex: `--disable hooks`(전역 Stop hook 이 기록을 강요해 추가 턴 3번, 입력 84.5k→20.4k, 20.9초→4.3~4.9초 실측), `--ephemeral`, `-s read-only`, 사용자 config.toml 의 MCP 서버 끄기, 빈 작업 폴더(`~/.ttakkari/desk`), `developer_instructions`=접수 지침.
   - Claude: `--settings {"disableAllHooks":true}`, `--setting-sources local`(전역 CLAUDE.md·스킬 제외), `--tools ""`, `--strict-mcp-config`, `--no-session-persistence`, `--system-prompt`=접수 지침. `disableAllHooks` 는 따까리 보험 hook 까지 끄므로 도구 없는 접수에만 쓴다.
@@ -48,7 +48,9 @@
 - 기존 `instructions.md` 의 "1. 오케스트레이션 방침"(모델·계정·컨텍스트)은 `lead.md` 로 옮겼다(백업 `instructions.md.bak-split-20261013`).
 
 ### 실행 자리
-`max_concurrent_runs`(3, 전부 공유) → 역할별: 접수 `max_concurrent_desk` 6, 기획 `max_concurrent_leads` 4, 작업·일반 대화 `max_concurrent_workers` 6. 기획 한 오케스트레이터당 동시 작업 세션 상한(20)은 그대로.
+`max_concurrent_runs`(3, 전부 공유) → 역할별로 독립 집계한다. 2026-10-13의 접수 6·기획 4·작업 6을 2026-10-15 사용자 요청에 따라 접수 `max_concurrent_desk` 16, 기획 `max_concurrent_leads` 16, 작업·일반 대화 `max_concurrent_workers` 16으로 통일·확대했다. 작업이 접수·기획의 응답 자리를 막지 않도록 역할별 분리는 유지한다. 무제한 실행 대신 상한을 두며 계정별 사용량 한도와 배정 정책은 그대로 적용한다. 기획 한 오케스트레이터당 동시 작업 세션 상한(20)은 그대로.
+
+환경변수 `TTAKKARI_MAX_CONCURRENT_DESK`·`TTAKKARI_MAX_CONCURRENT_LEADS`·`TTAKKARI_MAX_CONCURRENT_WORKERS`로 덮어쓸 수 있다. 실행 중인 매니저는 세마포어를 재생성하지 않으므로 변경은 백엔드 재시작 후 적용된다. 기존 `TTAKKARI_MAX_CONCURRENT_RUNS`는 현재 설정 필드가 아니므로 사용하지 않는다.
 
 ### 판정과 재생 평가(2026-10-13 추가)
 - 첫 정확도(luna 30/30)는 합성 문항이었다. 지침·모델을 바꿀 근거로 쓰려고 실제 메시지에 대한 사용자 판정을 모은다.

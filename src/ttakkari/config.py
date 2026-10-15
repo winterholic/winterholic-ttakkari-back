@@ -146,9 +146,9 @@ class Settings(BaseSettings):
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
     claude_setting_sources: str | None = None
     # 동시 실행 자리는 역할별로 따로 센다(ADR 0013). 접수는 짧고 가벼워서 따로, 기획이 작업 세션 자리를 막지 않게 따로.
-    max_concurrent_desk: int = 6
-    max_concurrent_leads: int = 4
-    max_concurrent_workers: int = 6
+    max_concurrent_desk: int = 16
+    max_concurrent_leads: int = 16
+    max_concurrent_workers: int = 16
     # 접수: 엔진 순서(앞이 먼저)와 엔진별 모델. 한도·시간 초과·잘못된 출력이면 다음 계정으로 넘어간다.
     desk_engine_order: list[str] = ["codex", "claude"]
     desk_models: dict[str, dict[str, str]] = {

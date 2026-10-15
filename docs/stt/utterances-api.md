@@ -196,3 +196,7 @@ Authorization: Bearer …
 `execute_job`은 보존된 `post_retry_segments`로 지표와 판정을 다시 계산한다. 재시도 증거가 없는 결과는 원시 구간으로 판정한다. 미회복된 심각한 반복이면 job은 `failed`, 회의는 `failed`/`failed_stage="transcription"`이 된다. 검증 필요 사유를 반환하며 자동분석 Run을 생성하지 않는다. 후보 `job.transcript`와 원시 구간·재시도·접기 전 결과는 보존하지만 회의 본문으로 채택하지 않는다. `/stt`와 `/segments`에서 증거를 조회할 수 있으며, 성공을 전제하는 `/utterances`는 409다. `quality.after=0`만으로 성공을 판정하지 않는다.
 
 기존 완료 회의·원본 job·분석에는 소급 쓰기를 하지 않는다. 정식 `source_meeting_id`로 연결한 새 회의에서 원음을 다시 추론한다. 최초 재전사는 `auto_analyze=false`로 실행하고 실제 원시·재시도 결과를 확인한 뒤 분석 여부를 판단한다.
+
+## 공개 조회·내보내기 후속 설계와 구현 상태
+
+[ADR0030](../adr/0030-public-capability-shares-and-exports.md)과 [공개 공유·내보내기 계약 v1](../sharing/public-share-export-contract.md)에 채택 STT job·발화 원본 ID/시각·표시명·검증 상태·분석 근거를 정규화하는 설계와 상세 구현 상태를 기록했다. 기존 owner API 인증과 원본 보존 계약은 유지한다. 공개 DTO는 별도 허용목록이며 기존 회의 상세/utterances 응답을 그대로 익명에게 제공하지 않는다. 2026-10-15 현재 TXT/MD/JSON/CSV formatter, owner `/api/exports`, public 생성 download API를 main에 통합했고 운영 배포는 별도 배포 예약 상태로 확인한다. public UI와 SRT/VTT/DOCX/PDF는 미구현이며 `public_sharing_enabled=false`다. 검증 범위는 [export 후속 작업기록](../work-history/2026-10-15-public-share-exports.md)을 따른다.

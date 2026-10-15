@@ -1,0 +1,14 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "action": {"type": "string", "enum": ["answer", "delegate", "abstain"]},
+    "reply": {"type": "string", "minLength": 1, "maxLength": 3000},
+    "lead_id": {"type": "null"},
+    "model_id": {"type": "null"},
+    "tool_ids": {"type": "array", "maxItems": 0, "items": {"type": "string"}},
+    "permission_ids": {"type": "array", "maxItems": 0, "items": {"type": "string"}},
+    "abstain_reason": {"enum": [null, "ambiguous", "insufficient_context", "unsafe"]}
+  },
+  "required": ["action", "reply", "lead_id", "model_id", "tool_ids", "permission_ids", "abstain_reason"]
+}

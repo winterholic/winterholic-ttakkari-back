@@ -51,9 +51,9 @@ class Profile:
         return str(self.id)
 
     def env(self) -> dict[str, str]:
-        if self.engine == "antigravity":
-            return {}
         if self.config_dir is None:
+            return {}
+        if self.engine == "antigravity":
             return {}
         return {"CLAUDE_CONFIG_DIR" if self.engine == "claude" else "CODEX_HOME": str(self.config_dir)}
 
@@ -154,12 +154,14 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
 
 
 def usage_limit_until(profile: Profile, now: float | None = None) -> float | None:
-    """신선한 사용량이 계정 상한에 닿은 경우 5시간·주간 창 모두 초기화될 때까지 쉰다."""
+    """마지막 사용량이 상한에 닿았으면 값이 낡아도 해당 창이 초기화될 때까지 쉰다."""
     from ttakkari.runs import usage as usage_mod
 
     now = time.time() if now is None else now
     u = usage_mod.cached(profile.id)
-    if u is None or not u.windows or u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds:
+    # 측정 실패·지연은 한도 회복의 증거가 아니다. 배정 순위와 달리 상한 차단에는
+    # stale 값도 쓴다. 새 측정·창 초기화·사용자가 상한을 올린 경우에만 풀린다.
+    if u is None or not u.windows:
         return None
     capped = [w for w in u.windows if w.key in ("five_hour", "seven_day")
               and not (w.resets_at and w.resets_at <= now) and w.percent >= profile.max_used_percent]
@@ -172,7 +174,7 @@ def usage_limit_until(profile: Profile, now: float | None = None) -> float | Non
 def limited_until(account_id: uuid.UUID, max_used_percent: int = 100) -> float | None:
     """한도로 쉬는 계정의 초기화 시각(unix 초). 쓸 수 있으면 None. 네트워크 없이 메모리만 본다.
 
-    실행 오류로 건 cooldown 과 신선한 5시간·주간 사용량이 계정 상한에 닿은 경우를 함께 본다."""
+    실행 오류로 건 cooldown 과 마지막 5시간·주간 사용량이 계정 상한에 닿은 경우를 함께 본다."""
     profile = Profile(id=account_id, name="", engine="", max_used_percent=max_used_percent)
     until = max(_cooldown.get(account_id, 0), usage_limit_until(profile) or 0)
     return until if until > time.time() else None
@@ -217,27 +219,34 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
            balance_usage: bool = False) -> Profile:
     """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
 
-    balance_usage이면 신선한 측정이 있는 후보 > 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 우선순위.
+    balance_usage이면 신선한 측정이 있는 후보 > Run 당 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 우선순위.
+    Run 당 여유 = 상한 여유 / (다른 실행 수 + 1). 실제 소모량 예측이 아닌 배정 점수다.
     stale/null 후보끼리는 모델·유휴·우선순위로 고른다. 고정 엔진·회사 범위는 호출자가 pool로 제한한다.
     고르는 일과 적는 일 사이에 await 가 없다."""
-    busy = {aid for rid, aid in _in_use.items() if rid != run_id}
+    counts: dict[uuid.UUID, int] = {}
+    for rid, aid in _in_use.items():
+        if rid != run_id:
+            counts[aid] = counts.get(aid, 0) + 1
     headroom = {p.id: _usage_headroom(p) for p in pool} if balance_usage else {}
     def rank(ip: tuple[int, Profile]) -> tuple:
         index, profile = ip
         room = headroom.get(profile.id)
         return (
             balance_usage and room is None,
-            -room[0] if room is not None else 0,
+            -room[0] / (counts.get(profile.id, 0) + 1) if room is not None else 0,
             room[1] if room is not None else 0,
             prefer_engine is not None and profile.engine != prefer_engine,
-            idle_first and profile.id in busy,
+            idle_first and counts.get(profile.id, 0) > 0,
             index,
         )
 
     ranked = sorted(enumerate(pool), key=rank)
     prof = ranked[0][1]
-    log.info("run %s account selection: account=%s balance_usage=%s usage_ranked=%s headroom=%s",
-             run_id, prof.name, balance_usage, headroom.get(prof.id) is not None, headroom.get(prof.id))
+    room = headroom.get(prof.id)
+    log.info("run %s account selection: account=%s balance_usage=%s usage_ranked=%s headroom=%s "
+             "other_running=%s headroom_per_run=%s",
+             run_id, prof.name, balance_usage, room is not None, room, counts.get(prof.id, 0),
+             room[0] / (counts.get(prof.id, 0) + 1) if room is not None else None)
     _in_use[run_id] = prof.id
     return prof
 
@@ -429,8 +438,8 @@ def model_engine(model: str | None) -> str | None:
         return "claude"
     if m.startswith("gpt-oss-"):
         return "antigravity"
-    if m.startswith("gemini-"):
-        return "antigravity"
     if m.startswith(("gpt", "codex", "o1", "o3", "o4")):
         return "codex"
+    if m.startswith("gemini-"):
+        return "antigravity"
     return None

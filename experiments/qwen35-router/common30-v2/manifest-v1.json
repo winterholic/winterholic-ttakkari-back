@@ -1,0 +1,57 @@
+{
+  "dataset": "Luna/Haiku/Kanana historic common synthetic 30, preserved; new task annotations independent",
+  "created_at": "2026-10-15T14:57:47.170837+00:00",
+  "source": {
+    "path": "/private/tmp/claude-501/-Users-winterholic-development-projects/900a2c72-a605-4640-83d0-186262ead460/scratchpad/route_eval.py",
+    "git_commit": null,
+    "note": "Claude scratchpad file outside Git; no commit exists for this source.",
+    "mtime_local": "2026-10-13T21:02:29.218526+09:00",
+    "size_bytes": 2945,
+    "sha256": "0805ed7f06962da0bf7c6509be614b056e313125aeb67bd51f2a006cc7ac6199"
+  },
+  "copied_source": {
+    "path": "legacy-route_eval-v1.py",
+    "sha256": "0805ed7f06962da0bf7c6509be614b056e313125aeb67bd51f2a006cc7ac6199"
+  },
+  "legacy_dataset": {
+    "path": "legacy-cases-v1.jsonl",
+    "sha256": "270180b2ac53bb3067fae6abc4a8d45a8c5b69a91742bbf795bb708f484cf242",
+    "n": 30,
+    "label_counts": {
+      "CHAT": 6,
+      "STATUS": 7,
+      "LOOKUP": 5,
+      "WORK": 12
+    }
+  },
+  "v2_dataset": {
+    "path": "common30-v2.jsonl",
+    "sha256": "ad195e1c0df18b5072dd1dcca732dcfa228ccfba6cd6f6a61269c84544f7f96e",
+    "n": 30,
+    "gold_status_counts": {
+      "answer": 6,
+      "delegate": 17,
+      "abstain": 6,
+      "hold": 1
+    },
+    "hard_scored_n": 29,
+    "hold_cases": [
+      "common30-07"
+    ]
+  },
+  "legacy_labels_are_not_mapped_to_v2": true,
+  "policy_version": "qwen35-shadow-v2-manual-2026-10-15",
+  "policy_evidence": "src/ttakkari/experiments/qwen35_shadow.py infer_once prompt + ADR 0013 desk boundary, interpreted for this isolated shadow task; observer remains disabled. Each v2 rationale is frozen before model outputs.",
+  "fixed_input_context": {
+    "board": "(맡긴 일 없음)",
+    "history": "(최근 대화 없음)"
+  },
+  "candidate_snapshot": {
+    "lead_ids": [],
+    "model_ids": [],
+    "tool_ids": [],
+    "permission_ids": [],
+    "note": "No executable candidates fabricated; delegate may have null lead_id in this offline measurement."
+  },
+  "metrics_policy": "Keep full 30 item denominator visible; report hard-label accuracy over 29 and acceptable-set result plus abstention/coverage for held common30-07; do not present held item as correct or silently drop it."
+}

@@ -1,0 +1,118 @@
+{
+  "captured_at_utc": "2026-10-15T15:16:44.901Z",
+  "cpu": {
+    "percent": 32.7,
+    "per_core": [
+      1.6,
+      1.5,
+      0,
+      0,
+      0,
+      0,
+      9.4,
+      7.8,
+      4.6,
+      3,
+      0,
+      1.5,
+      93.8,
+      93.7,
+      93.8,
+      92.3,
+      92.4,
+      93.8
+    ],
+    "load_avg": [
+      2.24,
+      3.56,
+      3.33
+    ],
+    "cores_logical": 18,
+    "cores_physical": 18,
+    "performance_cores": 6,
+    "efficiency_cores": 12,
+    "chip": "Apple M5 Max"
+  },
+  "memory": {
+    "total": 68719476736,
+    "used": 27501182976,
+    "available": 41218293760,
+    "percent": 40,
+    "wired": 3908173824,
+    "pressure": "normal",
+    "pressure_free_percent": 80,
+    "swap": {
+      "total": 0,
+      "used": 0,
+      "percent": 0
+    }
+  },
+  "top_cpu": [
+    {
+      "pid": 41685,
+      "name": "llama-server",
+      "cpu_percent": 561.2,
+      "memory_bytes": 1418182656
+    },
+    {
+      "pid": 1604,
+      "name": "WallpaperAerialsExtension",
+      "cpu_percent": 4.3,
+      "memory_bytes": 28409856
+    },
+    {
+      "pid": 87242,
+      "name": "OrbStack",
+      "cpu_percent": 3.3,
+      "memory_bytes": 65880064
+    },
+    {
+      "pid": 61369,
+      "name": "python3.13",
+      "cpu_percent": 3,
+      "memory_bytes": 292388864
+    },
+    {
+      "pid": 1626,
+      "name": "VTDecoderXPCService",
+      "cpu_percent": 2.1,
+      "memory_bytes": 68190208
+    }
+  ],
+  "top_memory": [
+    {
+      "pid": 41685,
+      "name": "llama-server",
+      "cpu_percent": 561.2,
+      "memory_bytes": 1418182656
+    },
+    {
+      "pid": 87229,
+      "name": "OrbStack Helper",
+      "cpu_percent": 0,
+      "memory_bytes": 1339899904
+    },
+    {
+      "pid": 43529,
+      "name": "Google Chrome Helper (Renderer)",
+      "cpu_percent": 0,
+      "memory_bytes": 1033814016
+    },
+    {
+      "pid": 50535,
+      "name": "Google Chrome Helper (Renderer)",
+      "cpu_percent": 0,
+      "memory_bytes": 505610240
+    },
+    {
+      "pid": 2338,
+      "name": "Google Chrome",
+      "cpu_percent": 0.2,
+      "memory_bytes": 457097216
+    }
+  ],
+  "ttakkari_total": {
+    "cpu_percent": 567,
+    "memory_bytes": 2630565888
+  }
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Ttakkari">
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="#080705"/>
+  <path d="M92 152 L188 152 L188 196 L136 196 L136 316 L188 316 L188 360 L92 360 Z" fill="#F4F4ED"/>
+  <path d="M208 152 L304 152 L304 196 L252 196 L252 316 L304 316 L304 360 L208 360 Z" fill="#F4F4ED"/>
+  <path d="M334 124 L378 124 L378 388 L334 388 Z" fill="#F4F4ED"/>
+  <rect x="378" y="234" width="52" height="44" rx="6" fill="#00F0B5"/>
+</svg>

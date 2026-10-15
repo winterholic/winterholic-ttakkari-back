@@ -1,0 +1,198 @@
+{
+ "shots": 134,
+ "overflow": [],
+ "errors": [],
+ "checks": [
+  {
+   "ok": true,
+   "name": "탭 ArrowRight → 결과물",
+   "detail": "#library"
+  },
+  {
+   "ok": true,
+   "name": "선택된 탭 aria-selected",
+   "detail": "false,true,false,false"
+  },
+  {
+   "ok": true,
+   "name": "탭 End → 도구",
+   "detail": "#tools"
+  },
+  {
+   "ok": true,
+   "name": "키보드 Tab 순서 14칸 포커스 링 표시",
+   "detail": "시안 보기 설정(상태·테마 → 다크 모드 전환 → 작업실 → 프로젝트 → 작업 → 작업 캔버스에서 보기 → 왜 이 도구예요? → v1 → v2 승인 대기 → INPUT → v2 승인하고 저장… → v1부터 다시 수정 → 원본 앱에서 정밀 편집 → 원본 다운로드"
+  },
+  {
+   "ok": true,
+   "name": "승인 모달에 대상 버전(v2) 표시",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "승인 모달: 파일·버전·해시·v1 보존 문구",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "승인 모달 Esc 닫힘",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "승인 완료 후 해시 s=approved",
+   "detail": "#work?s=approved&v=2"
+  },
+  {
+   "ok": true,
+   "name": "더블클릭해도 승인 카드 1개",
+   "detail": "1"
+  },
+  {
+   "ok": true,
+   "name": "뒤로가기로 승인 전 화면 복원",
+   "detail": "#work?s=compare"
+  },
+  {
+   "ok": true,
+   "name": "새로고침 후에도 같은 화면(승인 영역)",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "비교 방식 라디오 ArrowRight → 겹쳐보기",
+   "detail": "#work?s=compare&view=overlay"
+  },
+  {
+   "ok": true,
+   "name": "겹쳐보기 슬라이더 값 반영",
+   "detail": "20%"
+  },
+  {
+   "ok": true,
+   "name": "취소 확인: 무엇이 남고 사라지는지 설명",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "취소 후 s=cancelled",
+   "detail": "#work?s=cancelled"
+  },
+  {
+   "ok": true,
+   "name": "다시 시도(더블클릭) → running 1회",
+   "detail": "#work?s=running"
+  },
+  {
+   "ok": true,
+   "name": "도구 없음: 보내기가 실행으로 넘어가지 않음",
+   "detail": "#work?s=notools"
+  },
+  {
+   "ok": true,
+   "name": "도구 없음 이유가 화면 문장으로 보임",
+   "detail": "보낼 수 없어요: 연결·검증된 도구가 아직 없어요"
+  },
+  {
+   "ok": true,
+   "name": "실제 모드: 활성화 스위치 비활성 + 사유 문장",
+   "detail": "연결·검증된 기능이 아직 없어서 켤 수 없어요. 켜려면 ① 설치 확인 ②"
+  },
+  {
+   "ok": true,
+   "name": "도구 13개 후보 표시",
+   "detail": "13"
+  },
+  {
+   "ok": true,
+   "name": "미검증을 연결됨으로 표시하지 않음",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "비활성 테스트 클릭 시 안내 방송",
+   "detail": "지금은 쓸 수 없어요. 이유는 옆 설명을 확인하세요."
+  },
+  {
+   "ok": true,
+   "name": "연결 테스트 더블클릭해도 기록 1건 추가",
+   "detail": "2→3"
+  },
+  {
+   "ok": true,
+   "name": "필터가 새로고침 후에도 유지",
+   "detail": "{\"h\":\"#library?type=image&role=approved\",\"role\":\"approved\",\"pressed\":\"이미지\",\"count\":1}"
+  },
+  {
+   "ok": true,
+   "name": "필터 결과 0건 → \"필터 모두 풀기\" 제공",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "필터 모두 풀기 → 8개 복원",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "같은 파일명 2건이 목록에 분리 표시(작업명·버전·해시로 구분)",
+   "detail": "2"
+  },
+  {
+   "ok": true,
+   "name": "빈 프로젝트: 결과물 빈 상태",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "화면을 옮겨도 프로젝트 문맥 유지(p=p2)",
+   "detail": "#history?p=p2"
+  },
+  {
+   "ok": true,
+   "name": "이력 결과 링크 → 결과물 상세",
+   "detail": "#library?item=l1"
+  },
+  {
+   "ok": true,
+   "name": "문제 있는 실행이 \"완료\" 배지로 보이지 않음",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "목록 요약: 문제 있음 7건(완료로 세지 않음)",
+   "detail": "11건 · 문제 있음 7 (실패·부분 성공·정책 차단·확인 필요는 완료로 세지 않아요)"
+  },
+  {
+   "ok": true,
+   "name": "로그 민감값·경로 마스킹 표시",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "모바일: 결과물 선택 → 전체 화면 상세",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "모바일: 뒤로 → 목록 복귀(해시 #library?item=l1 → #library)",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "모바일: 새로고침해도 상세 복원(긴 파일명)",
+   "detail": ""
+  },
+  {
+   "ok": true,
+   "name": "모바일 긴 파일명 상세 가로 넘침 없음",
+   "detail": "388/388/390"
+  },
+  {
+   "ok": true,
+   "name": "모바일 작업실 상호작용 요소 높이 32px 이상(권장 44)",
+   "detail": ""
+  }
+ ],
+ "a11y": []
+}

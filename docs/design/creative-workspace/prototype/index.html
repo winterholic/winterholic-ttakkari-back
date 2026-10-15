@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>try{var t=localStorage.getItem('tk-theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<title>크리에이티브 작업실 시안 · Ttakkari</title>
+<link rel="icon" href="ds/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="ds/tokens.css">
+<link rel="stylesheet" href="ds/typography.css">
+<link rel="stylesheet" href="ds/prose.css">
+<link rel="stylesheet" href="ds/components.css">
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+<script src="ds/icons.js"></script>
+<script src="icons-extra.js"></script>
+<a class="tk-skip-link" href="#cw-main">본문으로 건너뛰기</a>
+
+<div class="tk-app">
+  <aside class="tk-app__sidebar" aria-label="탐색">
+    <div class="tk-app__brand"><a class="tk-header__brand" href="#work"><img src="ds/logo-mark.svg" alt=""><span>Ttakkari</span></a></div>
+    <nav class="tk-sidebar" aria-label="영역">
+      <div class="tk-nav">
+        <a class="tk-nav__link" href="#work" data-mock-link><svg class="tk-icon" aria-hidden="true"><use href="#i-chat"/></svg>채팅</a>
+        <a class="tk-nav__link" href="#work" data-mock-link><svg class="tk-icon" aria-hidden="true"><use href="#i-workspace"/></svg>작업</a>
+        <button type="button" class="tk-nav__link cw-nav-more"><svg class="tk-icon" aria-hidden="true"><use href="#i-more"/></svg>부가 기능<svg class="tk-icon" aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
+        <a class="tk-nav__link cw-nav-sub" href="#work" aria-current="page"><svg class="tk-icon" aria-hidden="true"><use href="#i-layers"/></svg>크리에이티브</a>
+      </div>
+    </nav>
+  </aside>
+
+  <main class="tk-app__main" id="cw-main" tabindex="-1">
+    <div class="tk-screen" id="cw-screen"></div>
+  </main>
+
+  <nav class="tk-tabbar" aria-label="영역">
+    <a class="tk-tabbar__item" href="#work" data-mock-link><svg class="tk-icon" aria-hidden="true"><use href="#i-chat"/></svg>채팅</a>
+    <a class="tk-tabbar__item" href="#work" data-mock-link><svg class="tk-icon" aria-hidden="true"><use href="#i-workspace"/></svg>작업</a>
+    <a class="tk-tabbar__item" href="#work" data-mock-link><svg class="tk-icon" aria-hidden="true"><use href="#i-file-text"/></svg>메모</a>
+    <a class="tk-tabbar__item" href="#work" data-mock-link><svg class="tk-icon" aria-hidden="true"><use href="#i-clock"/></svg>캘린더</a>
+    <a class="tk-tabbar__item" href="#work" aria-current="page"><svg class="tk-icon" aria-hidden="true"><use href="#i-more"/></svg>더보기</a>
+  </nav>
+</div>
+<div id="cw-live" class="cw-sr" role="status" aria-live="polite"></div>
+<script src="data.js"></script>
+<script src="proto.js"></script>
+</body>
+</html>

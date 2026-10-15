@@ -1,0 +1,92 @@
+/* Ttakkari prose · 자동 생성. .tk-prose 안의 문서 본문. Markdown 렌더 결과(h1~h4·p·ul·pre·table·GFM alert)를 클래스 없이 받는다(docs/08 §3).
+   .tk-prose--compact 는 에이전트 메시지 안 Markdown: 같은 규칙을 메시지 밀도(문단 12·제목 축소)로 받는다. */
+.tk-prose { --tk-_gap: var(--tk-component-prose-block-gap); --tk-_figure: var(--tk-component-prose-figure-gap); max-width: var(--tk-size-container-prose); color: var(--tk-color-text-primary); font-family: var(--tk-font-family-sans); font-size: var(--tk-font-size-md); line-height: var(--tk-font-line-height-prose); overflow-wrap: break-word; }
+.tk-prose--compact { --tk-_gap: var(--tk-component-prose-block-gap-compact); --tk-_figure: var(--tk-component-prose-block-gap); max-width: none; line-height: var(--tk-font-line-height-relaxed); }
+.tk-prose > * { margin-block: 0; }
+.tk-prose > * + * { margin-top: var(--tk-_gap); }
+.tk-prose > :is(pre, figure, table, details, blockquote, .tk-code, .tk-callout, .markdown-alert, .tk-table-wrap) { margin-block: var(--tk-_figure); }
+.tk-prose > :first-child { margin-top: 0; }
+.tk-prose > :last-child { margin-bottom: 0; }
+
+/* 제목 */
+.tk-prose :is(h1, h2, h3, h4) { color: var(--tk-color-text-primary); scroll-margin-top: var(--tk-size-layout-anchor-offset); text-wrap: balance; }
+.tk-prose h1 { font-size: var(--tk-font-size-3xl); font-weight: var(--tk-font-weight-bold); line-height: var(--tk-font-line-height-snug); letter-spacing: var(--tk-font-letter-spacing-tight); }
+.tk-prose h2 { font-size: var(--tk-font-size-2xl); font-weight: var(--tk-font-weight-semibold); line-height: var(--tk-font-line-height-heading); letter-spacing: var(--tk-font-letter-spacing-snug); margin-top: var(--tk-component-prose-h2-gap); }
+.tk-prose h3 { font-size: var(--tk-font-size-xl); font-weight: var(--tk-font-weight-semibold); line-height: var(--tk-font-line-height-heading); letter-spacing: var(--tk-font-letter-spacing-snug); margin-top: var(--tk-component-prose-h3-gap); }
+.tk-prose h4 { font-size: var(--tk-font-size-md); font-weight: var(--tk-font-weight-semibold); line-height: var(--tk-font-line-height-normal); margin-top: var(--tk-component-prose-h4-gap); }
+.tk-prose > :is(h1, h2, h3, h4) + * { margin-top: var(--tk-component-prose-heading-after); }
+.tk-prose :is(h1, h2, h3, h4) code { font-size: 0.9em; }
+/* 메시지 안 제목은 메시지보다 한 단계만 크다. 채팅이 문서처럼 보이지 않게 */
+.tk-prose--compact :is(h1, h2) { font-size: var(--tk-font-size-lg); margin-top: var(--tk-space-5); }
+.tk-prose--compact :is(h3, h4) { font-size: var(--tk-font-size-md); margin-top: var(--tk-space-4); }
+.tk-prose--compact > :is(h1, h2, h3, h4) + * { margin-top: var(--tk-space-2); }
+
+/* 문단·목록·강조 */
+.tk-prose strong { font-weight: var(--tk-font-weight-semibold); }
+.tk-prose a { color: var(--tk-color-text-link); text-decoration: underline; text-decoration-thickness: from-font; text-underline-offset: 0.2em; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+.tk-prose a:hover { color: var(--tk-color-text-link-hover); text-decoration-color: currentColor; }
+.tk-prose :is(ul, ol) { padding-left: var(--tk-component-prose-list-indent); }
+.tk-prose li + li, .tk-prose li > :is(ul, ol) { margin-top: var(--tk-component-prose-list-gap); }
+.tk-prose li::marker { color: var(--tk-color-text-tertiary); }
+.tk-prose ol > li::marker { font-family: var(--tk-font-family-mono); font-size: 0.875em; }
+.tk-prose li > input[type="checkbox"] { margin: 0 var(--tk-space-2) 0 0; accent-color: var(--tk-color-action-primary-bg); }
+.tk-prose blockquote { padding-left: var(--tk-space-4); border-left: var(--tk-border-width-accent) solid var(--tk-color-border-default); color: var(--tk-color-text-secondary); }
+.tk-prose hr { border: 0; border-top: var(--tk-border-width-hairline) solid var(--tk-color-border-default); margin-block: var(--tk-space-8); }
+.tk-prose mark { background: var(--tk-color-highlight-mark); color: var(--tk-color-highlight-mark-text); padding-inline: 0.15em; border-radius: var(--tk-radius-xs); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.tk-prose img { max-width: 100%; height: auto; border-radius: var(--tk-radius-lg); }
+.tk-prose figcaption { margin-top: var(--tk-space-2); font-size: var(--tk-font-size-sm); line-height: var(--tk-font-line-height-normal); color: var(--tk-color-text-secondary); }
+.tk-prose dl > dt { font-weight: var(--tk-font-weight-semibold); }
+.tk-prose dl > dd { margin: var(--tk-space-1) 0 var(--tk-space-3) var(--tk-space-4); color: var(--tk-color-text-secondary); }
+
+/* 인라인 코드 */
+.tk-prose :not(pre) > code:not([class]), .tk-code-inline { font-family: var(--tk-font-family-mono); font-size: var(--tk-component-inline-code-size); padding: 0.15em var(--tk-component-inline-code-padding-x); border-radius: var(--tk-component-inline-code-radius); background: var(--tk-component-inline-code-bg); color: var(--tk-component-inline-code-text); font-variant-ligatures: none; overflow-wrap: anywhere; }
+.tk-prose a > code { color: inherit; }
+
+/* 코드 블록(Markdown 의 맨 pre). 컴포넌트 .tk-code 를 쓰면 헤더·복사·줄 번호가 붙는다 */
+.tk-prose pre { padding: var(--tk-component-code-block-padding-y) var(--tk-component-code-block-padding-x); border-radius: var(--tk-component-code-block-radius); background: var(--tk-component-code-block-bg); border: var(--tk-border-width-hairline) solid var(--tk-component-code-block-border); color: var(--tk-color-ink-text); font-size: var(--tk-font-size-sm); line-height: var(--tk-font-line-height-relaxed); overflow-x: auto; tab-size: 2; }
+.tk-prose pre code { font-size: inherit; padding: 0; background: none; color: inherit; border-radius: 0; }
+.tk-prose pre ::selection, .tk-code ::selection { background: var(--tk-color-ink-selection); }
+
+/* 구문 강조: 외부 테마 CSS 없이 이 매핑만 쓴다. Prism(.token)·highlight.js(.hljs-)·Shiki(css-variables 테마) */
+.tk-prose pre {
+  --shiki-foreground: var(--tk-color-ink-text); --shiki-background: var(--tk-color-ink-bg);
+  --shiki-token-keyword: var(--tk-color-ink-keyword); --shiki-token-string: var(--tk-color-ink-string); --shiki-token-string-expression: var(--tk-color-ink-string);
+  --shiki-token-function: var(--tk-color-ink-function); --shiki-token-constant: var(--tk-color-ink-number); --shiki-token-comment: var(--tk-color-ink-comment);
+  --shiki-token-parameter: var(--tk-color-ink-text); --shiki-token-punctuation: var(--tk-color-ink-punctuation); --shiki-token-link: var(--tk-color-ink-keyword);
+}
+.tk-prose pre :is(.token.comment, .token.prolog, .hljs-comment) { color: var(--tk-color-ink-comment); font-style: italic; }
+.tk-prose pre :is(.token.keyword, .token.atrule, .token.important, .hljs-keyword, .hljs-built_in, .hljs-literal) { color: var(--tk-color-ink-keyword); }
+.tk-prose pre :is(.token.string, .token.char, .token.attr-value, .token.template-string, .hljs-string, .hljs-attr) { color: var(--tk-color-ink-string); }
+.tk-prose pre :is(.token.function, .hljs-title) { color: var(--tk-color-ink-function); }
+.tk-prose pre :is(.token.number, .token.boolean, .token.constant, .hljs-number) { color: var(--tk-color-ink-number); }
+.tk-prose pre :is(.token.class-name, .token.builtin, .hljs-type, .hljs-title.class_) { color: var(--tk-color-ink-type); }
+.tk-prose pre :is(.token.punctuation, .token.operator, .hljs-punctuation, .hljs-operator) { color: var(--tk-color-ink-punctuation); }
+
+/* 표 */
+.tk-prose table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: var(--tk-font-size-sm); line-height: var(--tk-font-line-height-relaxed); }
+.tk-prose th, .tk-prose td { padding: var(--tk-space-2) var(--tk-space-3); border-bottom: var(--tk-border-width-hairline) solid var(--tk-color-border-subtle); text-align: left; vertical-align: top; }
+.tk-prose th { font-weight: var(--tk-font-weight-medium); color: var(--tk-color-text-secondary); border-bottom-color: var(--tk-color-border-default); white-space: nowrap; }
+.tk-prose td > code { white-space: nowrap; }
+
+/* 접힘 */
+.tk-prose details { border: var(--tk-border-width-hairline) solid var(--tk-color-border-default); border-radius: var(--tk-radius-lg); padding: var(--tk-space-3) var(--tk-space-4); }
+.tk-prose details > summary { cursor: pointer; font-weight: var(--tk-font-weight-medium); }
+.tk-prose details[open] > summary { margin-bottom: var(--tk-space-3); }
+
+/* GFM alert(> [!NOTE] 등): 렌더러가 내는 .markdown-alert 를 콜아웃과 같은 모양으로 받는다(docs/06 §11) */
+.tk-prose .markdown-alert-note { --tk-_callout-bg: var(--tk-color-status-info-bg); --tk-_callout-bar: var(--tk-color-status-info-border); --tk-_callout-icon: var(--tk-color-status-info-icon); --tk-_callout-title: var(--tk-color-status-info-text); }
+.tk-prose .markdown-alert-tip { --tk-_callout-bg: var(--tk-color-status-success-bg); --tk-_callout-bar: var(--tk-color-status-success-border); --tk-_callout-icon: var(--tk-color-status-success-icon); --tk-_callout-title: var(--tk-color-status-success-text); }
+.tk-prose .markdown-alert-important { --tk-_callout-bg: var(--tk-color-agent-bg); --tk-_callout-bar: var(--tk-color-border-agent); --tk-_callout-icon: var(--tk-color-agent-text); --tk-_callout-title: var(--tk-color-agent-text); }
+.tk-prose .markdown-alert-warning { --tk-_callout-bg: var(--tk-color-status-warning-bg); --tk-_callout-bar: var(--tk-color-status-warning-border); --tk-_callout-icon: var(--tk-color-status-warning-icon); --tk-_callout-title: var(--tk-color-status-warning-text); }
+.tk-prose .markdown-alert-caution { --tk-_callout-bg: var(--tk-color-status-danger-bg); --tk-_callout-bar: var(--tk-color-status-danger-border); --tk-_callout-icon: var(--tk-color-status-danger-icon); --tk-_callout-title: var(--tk-color-status-danger-text); }
+.tk-prose .markdown-alert { padding: var(--tk-component-callout-padding); border-radius: var(--tk-component-callout-radius); background: var(--tk-_callout-bg, var(--tk-color-status-info-bg)); box-shadow: inset var(--tk-component-callout-bar) 0 0 var(--tk-_callout-bar, var(--tk-color-status-info-border)); }
+.tk-prose .markdown-alert > * + * { margin-top: var(--tk-space-2); }
+.tk-prose .markdown-alert > :first-child { margin-top: 0; }
+.tk-prose .markdown-alert-title { display: flex; align-items: center; gap: var(--tk-space-2); font-weight: var(--tk-font-weight-semibold); color: var(--tk-_callout-title); }
+.tk-prose .markdown-alert-title svg { width: var(--tk-size-icon-sm); height: var(--tk-size-icon-sm); fill: var(--tk-_callout-icon); }
+
+@media (max-width: 767px) {
+  .tk-prose h1 { font-size: var(--tk-font-size-2xl); }
+  .tk-prose h2 { font-size: var(--tk-font-size-xl); }
+  .tk-prose h3 { font-size: var(--tk-font-size-lg); }
+}

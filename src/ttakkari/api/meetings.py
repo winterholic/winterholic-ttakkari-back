@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
+import unicodedata
 import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -162,8 +163,13 @@ async def stt_jobs(mid: uuid.UUID, _: User, db: Db) -> dict:
     return {"jobs": [job_out(j) for j in rows]}
 
 
-async def _stt_job(db: AsyncSession, mid: uuid.UUID, jid: uuid.UUID) -> LocalSttJob:
-    job = await db.get(LocalSttJob, jid)
+async def _stt_job(db: AsyncSession, mid: uuid.UUID, jid: uuid.UUID, *, lock: bool = False) -> LocalSttJob:
+    if lock:
+        job = await db.scalar(
+            select(LocalSttJob).where(LocalSttJob.id == jid, LocalSttJob.meeting_id == mid)
+            .with_for_update().execution_options(populate_existing=True))
+    else:
+        job = await db.get(LocalSttJob, jid)
     if job is None or job.meeting_id != mid:
         raise HTTPException(404, "로컬 전사 작업이 없어요.")
     return job
@@ -171,15 +177,27 @@ async def _stt_job(db: AsyncSession, mid: uuid.UUID, jid: uuid.UUID) -> LocalStt
 
 @router.get("/{mid}/stt/{jid}/segments")
 async def stt_segments(mid: uuid.UUID, jid: uuid.UUID, _: User, db: Db,
-                       offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500)) -> dict:
+                       offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500),
+                       fields: str | None = Query(None, max_length=500)) -> dict:
     from ttakkari.meetings.local_stt.jobs import job_out
+    from ttakkari.meetings.local_stt.read_model import segment_fields
     job = await _stt_job(db, mid, jid)
-    rows = await db.scalars(select(LocalSttSegment).where(LocalSttSegment.job_id == jid)
-                            .order_by(LocalSttSegment.position).offset(offset).limit(limit))
-    segments = [{**{c.name: getattr(s, c.name) for c in LocalSttSegment.__table__.columns if c.name not in ("id", "job_id")},
-                 "id": str(s.id), "job_id": str(s.job_id),
+    try:
+        selected = segment_fields(fields)
+    except ValueError as exc:
+        raise HTTPException(422, "조회할 구간 필드를 확인해 주세요.") from exc
+    columns = [LocalSttSegment.id, LocalSttSegment.job_id] + [getattr(LocalSttSegment, name) for name in selected]
+    rows = (await db.execute(select(*columns).where(LocalSttSegment.job_id == jid)
+                            .order_by(LocalSttSegment.position).offset(offset).limit(limit))).mappings()
+    segments = [{**s, "id": str(s.id), "job_id": str(s.job_id),
                  "audio_artifact_id": str(job.audio_artifact_id) if job.audio_artifact_id else None} for s in rows]
-    return {"job": job_out(job), "segments": segments, "offset": offset}
+    info = job_out(job)
+    if fields is not None:
+        # Dropping raw/words alone would still return the whole transcript and
+        # retry token arrays through job metadata.
+        info["metadata"] = {key: value for key, value in info["metadata"].items()
+                            if key in ("duration", "start", "end", "speaker_count", "diarization_status", "overlap_detection_status")}
+    return {"job": info, "segments": segments, "offset": offset}
 
 
 class UtteranceOut(BaseModel):
@@ -188,6 +206,7 @@ class UtteranceOut(BaseModel):
     end: float
     speaker_id: str | None
     speaker_label: str | None
+    speaker_name: str | None
     text: str
     verification_status: str
     overlap: bool | None
@@ -203,6 +222,7 @@ class UtterancesOut(BaseModel):
     total: int
     has_more: bool
     speaker_count: int | None
+    speaker_names: dict[str, str]
     diarization_status: str
     overlap_detection_status: str
     audio_artifact_id: str | None
@@ -211,24 +231,57 @@ class UtterancesOut(BaseModel):
 @router.get("/{mid}/stt/{jid}/utterances", response_model=UtterancesOut)
 async def stt_utterances(mid: uuid.UUID, jid: uuid.UUID, _: User, db: Db,
                          offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500)):
-    from ttakkari.meetings.local_stt.utterances import build_utterances
+    from ttakkari.meetings.local_stt.read_model import job_utterances, named_utterances
     job = await _stt_job(db, mid, jid)
     if job.status != "succeeded":
         raise HTTPException(409, "전사가 끝난 뒤 발화 목록을 볼 수 있어요.")
     meta = job.result_metadata
-    utterances = meta.get("utterances")
-    if utterances is None:
-        rows = await db.scalars(select(LocalSttSegment).where(LocalSttSegment.job_id == jid)
-                                .order_by(LocalSttSegment.position))
-        segments = [{c.name: getattr(s, c.name) for c in LocalSttSegment.__table__.columns} for s in rows]
-        utterances = build_utterances(segments, meta.get("diarization", {}).get("turns", []),
-                                     overlap_known=meta.get("overlap_detection_status") == "succeeded")
-    return {"job_id": str(jid), "utterances": utterances[offset:offset+limit],
+    utterances = await job_utterances(db, job)
+    names = meta.get("speaker_names", {})
+    return {"job_id": str(jid), "utterances": named_utterances(utterances[offset:offset+limit], names),
             "offset": offset, "limit": limit, "total": len(utterances),
             "has_more": offset+limit < len(utterances), "speaker_count": meta.get("speaker_count"),
+            "speaker_names": names,
             "diarization_status": meta.get("diarization_status", "not_run"),
             "overlap_detection_status": meta.get("overlap_detection_status", "not_run"),
             "audio_artifact_id": str(job.audio_artifact_id) if job.audio_artifact_id else None}
+
+
+class SpeakerNamesIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    names: dict[
+        Annotated[str, Field(min_length=1, max_length=100)],
+        Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=40)],
+    ] = Field(max_length=100)
+
+    @field_validator("names")
+    @classmethod
+    def no_control_characters(cls, names: dict[str, str]) -> dict[str, str]:
+        if any(unicodedata.category(char) == "Cc" for name in names.values() for char in name):
+            raise ValueError("Names cannot contain control characters")
+        return names
+
+
+class SpeakerNamesOut(BaseModel):
+    job_id: str
+    names: dict[str, str]
+
+
+@router.put("/{mid}/stt/{jid}/speakers", response_model=SpeakerNamesOut)
+async def stt_speaker_names(mid: uuid.UUID, jid: uuid.UUID, body: SpeakerNamesIn,
+                            _: User, db: Db, request: Request):
+    from ttakkari.meetings.local_stt.read_model import job_utterances
+    job = await _stt_job(db, mid, jid, lock=True)
+    if job.status != "succeeded":
+        raise HTTPException(409, "전사가 끝난 뒤 화자 이름을 저장할 수 있어요.")
+    known = {row["speaker_id"] for row in await job_utterances(db, job) if row.get("speaker_id")}
+    if set(body.names) - known:
+        raise HTTPException(422, "이 전사 작업에 없는 화자 ID가 있어요.")
+    job.result_metadata = {**job.result_metadata, "speaker_names": body.names}
+    record(db, action="meeting.speakers.update", target_type="local_stt_job", target_id=jid,
+           ip=client_ip(request), detail={"speaker_count": len(body.names)})
+    await db.commit()
+    return {"job_id": str(jid), "names": body.names}
 
 
 class RetranscribeIn(BaseModel):
@@ -448,7 +501,7 @@ async def cancel_analyze(mid: uuid.UUID, _: User, db: Db) -> dict[str, Any]:
 
 @router.patch("/{mid}/items/{item_id}")
 async def patch_item(mid: uuid.UUID, item_id: uuid.UUID, body: ItemPatch, _: User, db: Db) -> dict[str, Any]:
-    await _get(db, mid)
+    m = await _get(db, mid)
     it = await db.get(MeetingItem, item_id)
     if it is None or it.meeting_id != mid:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "항목이 없어요.")
@@ -460,7 +513,7 @@ async def patch_item(mid: uuid.UUID, item_id: uuid.UUID, body: ItemPatch, _: Use
             setattr(it, k, data[k].strip() if isinstance(data[k], str) else data[k])
     await db.commit()
     vectors.schedule(mid, delay=3.0)
-    return read.item_out(it)
+    return await read.item_with_evidence(db, m, it)
 
 
 async def _resolve(db: AsyncSession, mid: uuid.UUID, pid: uuid.UUID, fn) -> dict[str, Any]:

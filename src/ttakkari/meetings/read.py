@@ -9,6 +9,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.context.search import lexical, scope_clause, terms
+from ttakkari.meetings.evidence import locate_evidence
+from ttakkari.meetings.local_stt.read_model import adopted_job, job_utterances
 from ttakkari.meetings.projects import find_project, project_filter
 from ttakkari.models import (
     Artifact,
@@ -27,9 +29,16 @@ def _iso(d) -> str | None:
     return d.isoformat() if d else None
 
 
-def item_out(it: MeetingItem) -> dict[str, Any]:
+def item_out(it: MeetingItem, *, utterances: list[dict] | None = None) -> dict[str, Any]:
+    start, uid = locate_evidence(it.evidence, utterances or [])
     return {"id": str(it.id), "kind": it.kind, "position": it.position, "text": it.text, "detail": it.detail,
-            "owner": it.owner, "due": it.due, "evidence": it.evidence, "status": it.status, "conflicts": it.conflicts}
+            "owner": it.owner, "due": it.due, "evidence": it.evidence, "status": it.status, "conflicts": it.conflicts,
+            "evidence_start": start, "evidence_utterance_id": uid}
+
+
+async def item_with_evidence(db: AsyncSession, m: Meeting, it: MeetingItem) -> dict[str, Any]:
+    job = await adopted_job(db, m)
+    return item_out(it, utterances=await job_utterances(db, job) if job else [])
 
 
 def proposal_out(p: MeetingProposal) -> dict[str, Any]:
@@ -75,7 +84,11 @@ async def meeting_detail(db: AsyncSession, m: Meeting) -> dict[str, Any]:
     items = await db.scalars(select(MeetingItem).where(MeetingItem.meeting_id == m.id).order_by(MeetingItem.kind, MeetingItem.position))
     props = await db.scalars(select(MeetingProposal).where(MeetingProposal.meeting_id == m.id).order_by(MeetingProposal.created_at, MeetingProposal.id))
     context = [{"ref": ref, **{k: v for k, v in c.items() if k != "id"}} for ref, c in (m.analysis_context or {}).items()]
-    return {**(await meeting_rows(db, [m]))[0], "transcript": m.transcript, "items": [item_out(i) for i in items],
+    job = await adopted_job(db, m)
+    utterances = await job_utterances(db, job) if job else []
+    return {**(await meeting_rows(db, [m]))[0], "transcript": m.transcript,
+            "stt_job_id": str(job.id) if job else None,
+            "items": [item_out(i, utterances=utterances) for i in items],
             "proposals": [proposal_out(p) for p in props], "analysis_context": context}
 
 

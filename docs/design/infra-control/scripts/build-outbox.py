@@ -18,6 +18,8 @@ html = (here / "prototype.html").read_text()
 html = html.replace("../../../../front/src/vendor/ttakkari/", "assets/")
 (out / "prototype.html").write_text(html)
 shutil.copy(here / "spec.md", out / "spec.md")
+shutil.copy(here / "summary.md", out / "summary.md")
+shutil.copy(here / "prerequisites.md", out / "prerequisites.md")
 for f in (here / "captures").iterdir():
     shutil.copy(f, out / "captures" / f.name)
 
@@ -35,7 +37,7 @@ for label, key in groups:
     rows.append(f"<section><h2>{label}</h2><div class=row>{''.join(cells)}</div></section>")
 extra = "".join(
     f'<figure><img src="captures/{n}.png" width="195" alt="{n}"><figcaption>{n}</figcaption></figure>'
-    for n in ("problem-detail-m390-light", "problem-detail-m390-dark", "partial-detail-m390-light", "partial-detail-m390-dark")
+    for n in ("problem-detail-m390-light", "problem-detail-m390-dark", "partial-detail-docker-m390-light", "partial-detail-svc-m390-light", "partial-detail-svc-m390-dark")
 )
 rows.append(f"<section><h2>모바일 상세</h2><div class=row>{extra}</div></section>")
 (out / "gallery.html").write_text(

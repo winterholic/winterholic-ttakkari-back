@@ -100,11 +100,11 @@ for (const th of THEMES) {
   const res = await ev(checkExpr); const name = `problem-detail-m390-${th}.png`; await shot(`${out}/${name}`, VIEWS[0]);
   report.results.push({ state: "problem-detail", theme: th, view: "m390", file: name, ...res });
 }
-// 부분 성공 상세 (docker 권한)
-for (const th of THEMES) {
-  await open("partial", th, VIEWS[0], "&d=docker");
-  const res = await ev(checkExpr); const name = `partial-detail-m390-${th}.png`; await shot(`${out}/${name}`, VIEWS[0]);
-  report.results.push({ state: "partial-detail", theme: th, view: "m390", file: name, ...res });
+// 부분 확인 상세: 권한 없음(docker)과 확인 원천 없음(svc, 빈 조회·수집 up 근거)
+for (const d of ["docker", "svc"]) for (const th of THEMES) {
+  await open("partial", th, VIEWS[0], `&d=${d}`);
+  const res = await ev(checkExpr); const name = `partial-detail-${d}-m390-${th}.png`; await shot(`${out}/${name}`, VIEWS[0]);
+  report.results.push({ state: `partial-detail-${d}`, theme: th, view: "m390", file: name, ...res });
 }
 // 320px 리플로우
 for (const st of STATES) {

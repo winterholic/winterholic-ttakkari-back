@@ -44,7 +44,8 @@ body[data-chrome="0"] .pt-bar { display: none; }
 .ic-hero[data-verdict="ok"] .ic-hero__mark { color: var(--tk-color-status-success-on-solid); }
 .ic-hero[data-verdict="warn"] .ic-hero__mark { color: var(--tk-color-status-warning-on-solid); }
 .ic-hero[data-verdict="bad"] .ic-hero__mark { color: var(--tk-color-status-danger-on-solid); }
-.ic-hero[data-verdict="unknown"] .ic-hero__mark { color: var(--tk-color-status-neutral-on-solid); }
+.ic-hero[data-verdict="unknown"] .ic-hero__mark, .ic-hero[data-verdict="partial"] .ic-hero__mark { color: var(--tk-color-status-neutral-on-solid); }
+.ic-reason { display: inline-flex; align-items: center; padding: 0 var(--tk-space-1-5); border: var(--tk-border-width-hairline) solid var(--tk-color-border-strong); border-radius: var(--tk-radius-sm); color: var(--tk-color-text-secondary); font: var(--tk-font-weight-medium) var(--tk-font-size-xs) / var(--tk-font-line-height-relaxed) var(--tk-font-family-sans); }
 .ic-hero__mark .tk-icon { --tk-_icon: var(--tk-size-icon-lg); }
 .ic-hero__body { display: flex; flex-direction: column; gap: var(--tk-space-1); min-width: 0; }
 .ic-hero__body > * { margin: 0; }
@@ -53,6 +54,7 @@ body[data-chrome="0"] .pt-bar { display: none; }
 .ic-hero__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tk-space-1) var(--tk-space-3); color: var(--tk-color-text-secondary); font: var(--tk-font-weight-regular) var(--tk-font-size-xs) / var(--tk-font-line-height-normal) var(--tk-font-family-sans); font-variant-numeric: tabular-nums; }
 .ic-hero__meta > span { display: inline-flex; align-items: center; gap: var(--tk-space-1); }
 .ic-hero__act { align-self: start; }
+.ic-hero__meta time { white-space: nowrap; }
 @media (max-width: 480px) { .ic-hero { grid-template-columns: auto minmax(0, 1fr); } .ic-hero__act { grid-column: 1 / -1; } .ic-hero__act .tk-button { width: 100%; } }
 
 /* 목록 */
@@ -161,7 +163,7 @@ body[data-chrome="0"] .pt-bar { display: none; }
   <button class="tk-icon-button tk-icon-button--secondary" id="pt-theme" type="button" aria-label="라이트/다크 전환"><svg class="tk-icon" aria-hidden="true"><use href="#i-moon"/></svg></button>
 </nav>
 
-<div class="ic-ribbon" role="note"><svg class="tk-icon tk-icon--sm" aria-hidden="true"><use href="#i-info"/></svg><span>검토용 시안 · 값은 모두 예시이고 실제 상태가 아니에요</span></div>
+<div class="ic-ribbon" role="note"><svg class="tk-icon tk-icon--sm" aria-hidden="true"><use href="#i-info"/></svg><span>검토용 시안 · 값과 시각은 예시예요. 실제 관측 표본(21:59~22:00 KST)은 「부분 확인」 화면에만 있고 실시간이 아니에요</span></div>
 
 <header class="tk-header">
   <div class="tk-header__inner">
@@ -179,21 +181,23 @@ body[data-chrome="0"] .pt-bar { display: none; }
 <script>
 "use strict";
 /* ---------- 예시 데이터. 호스트·서비스 이름은 WBS 후보이고 상태·시각·수치는 전부 가정이다. ---------- */
-const ICON = { ok: "i-ok", warn: "i-warn", bad: "i-bad", unknown: "i-unknown" };
-const WORD = { ok: "정상", warn: "주의", bad: "문제", unknown: "미확인" };
+const ICON = { ok: "i-ok", warn: "i-warn", bad: "i-bad", unknown: "i-unknown", partial: "i-unknown" };
+// partial 은 전체 상태 전용이다. 확인하지 못한 범위가 있다는 뜻이지 장애·기준 초과(주의)가 아니라서 중립색을 쓴다.
+const WORD = { ok: "정상", warn: "주의", bad: "문제", unknown: "미확인", partial: "일부 미확인" };
 const BADGE = { ok: "success", warn: "warning", bad: "danger", unknown: "neutral" };
 
 const EXT = { grafana: "Grafana에서 보기", dozzle: "Dozzle에서 로그 보기" };
 
-const LOKI = {
-  id: "loki", sev: "bad", name: "Loki", host: "ubuntu-01", dur: "12분째",
-  impact: "로그 검색과 로그로 판단하는 항목이 동작하지 않아요",
-  basis: "/ready 응답 없음 · 3회 연속 실패",
-  next: ["Dozzle에서 loki 컨테이너의 마지막 로그 줄을 확인", "Grafana Explore에서 Loki 데이터소스 상태 확인"],
+// 장애 예시는 실제 서비스 이름을 쓰지 않는다. 조사 표본에서는 실제 서비스 장애가 관측되지 않았다.
+const SAMPLE_API = {
+  id: "sample-api", sev: "bad", name: "sample-api", host: "ubuntu-01", dur: "12분째", tag: "예시 서비스",
+  impact: "이 서비스를 쓰는 화면이 응답을 받지 못해요",
+  basis: "HTTP 확인 응답 없음 · 3회 연속 (예시 기준)",
+  next: ["Dozzle에서 해당 컨테이너의 마지막 로그 줄을 확인", "Grafana에서 같은 시각의 지표 확인"],
   evidence: [
-    ["Loki /ready HTTP 확인", "응답 없음", "서비스 HTTP 확인", "14:32:00", "3회 연속 실패 = 문제 (가정)"],
-    ["Loki exporter up", "1", "Prometheus", "14:32:05", "수집은 되고 있어요. 서비스가 정상이라는 뜻은 아니에요"],
-    ["컨테이너 상태", "미확인", "Docker 읽기 권한 필요", "—", "권한 없이는 판정에서 제외"],
+    ["sample-api HTTP 확인", "응답 없음", "서비스 HTTP 확인 (원천 연결 가정)", "14:32:00", "3회 연속 실패 = 문제 (예시 기준)"],
+    ["수집 대상 up", "1", "Prometheus", "14:32:05", "수집은 되고 있어요. 서비스가 정상이라는 뜻은 아니에요"],
+    ["컨테이너 상태", "미확인", "Docker 읽기 권한 필요", "—", "권한 없이는 판정에서 제외 (장애 아님)"],
   ],
   log: [["14:20:08", "마지막으로 정상 응답"], ["14:23:08", "3회 연속 실패 → 문제로 판정 (판정 규칙 기록)"], ["14:32:00", "여전히 응답 없음"]],
   ext: ["grafana", "dozzle"],
@@ -210,26 +214,46 @@ const DISK = {
   log: [["13:28:05", "80% 초과 시작"], ["13:58:05", "30분 유지 → 주의로 판정 (판정 규칙 기록)"]],
   ext: ["grafana"],
 };
-const LOKI_SRC = {
-  id: "loki-src", sev: "unknown", name: "Loki 수집원", host: "ubuntu-01", dur: "9분째",
-  impact: "로그로 판단하는 항목 3개를 판정하지 못했어요",
-  basis: "쿼리 타임아웃 · 마지막 성공 14:23:10",
-  next: ["Dozzle에서 loki 컨테이너 로그 확인", "복구되면 이 항목은 자동으로 다시 판정돼요"],
-  evidence: [["Loki 쿼리", "타임아웃", "Loki", "14:32:06", "응답 없음은 정상이 아니에요"], ["영향 받은 항목", "3개", "판정 규칙", "14:32:06", "정상으로 세지 않음"]],
-  log: [["14:23:10", "마지막으로 쿼리 성공"], ["14:32:06", "쿼리 타임아웃"]],
-  ext: ["grafana", "dozzle"],
-};
-const DOCKER = {
-  id: "docker", sev: "unknown", name: "컨테이너 상태", host: "ubuntu-01", dur: "계속",
-  impact: "컨테이너가 실제로 몇 개 떠 있는지 알 수 없어요",
-  basis: "Docker 읽기 권한 없음 · 추가 권한 전까지 미확인",
-  next: ["읽기 권한은 별도 결정이 필요해요 (I1.3/I2.2)", "cAdvisor 시리즈 수는 컨테이너 수로 세지 않아요"],
-  evidence: [["Docker 읽기", "권한 없음", "접근 시도 결과", "14:32:06", "권한 부여 전 미확인으로 유지"]],
-  log: [["14:32:06", "읽기 권한 없음 응답"]],
+/* 아래 세 항목과 '부분 확인' 화면의 값은 2026-10-15 21:59~22:00 KST 읽기 전용 조사 표본이다(prerequisites.md §3~§4).
+   그 시각의 응답일 뿐 실시간 연결이 아니고, 서비스 정상·장애를 뜻하지 않는다. */
+const OBS_DOCKER = {
+  id: "docker", sev: "unknown", name: "컨테이너 상태 (Docker)", host: "ubuntu-01", dur: "표본 21:59", reason: "권한 없음",
+  impact: "컨테이너가 떠 있는지 알 수 없어요. 장애라는 뜻이 아니에요",
+  basis: "Docker API 읽기 권한 거부(permission denied) · 권한 부여 전까지 미확인",
+  next: ["읽기 권한을 줄지는 별도 결정이 필요해요 (I1.3·I2.2)", "그 전까지 컨테이너 항목은 미확인으로 두고, 권한을 우회하지 않아요"],
+  evidence: [
+    ["Docker API 읽기", "권한 거부", "접근 시도 결과", "21:59", "sudo 등으로 우회하지 않음"],
+    ["컨테이너 이름 시리즈", "이름 40 + 이름 없음 1", "Prometheus (cAdvisor)", "22:00", "컨테이너 수·정상 여부가 아니에요"],
+  ],
+  log: [["21:59", "읽기 시도 → permission denied (조사 기록)"]],
   ext: ["dozzle"],
 };
+const OBS_SVC = {
+  id: "svc", sev: "unknown", name: "서비스 응답 확인", host: "ubuntu-01", dur: "표본 22:00", reason: "확인 원천 없음",
+  impact: "앱이 사용자에게 응답하는지 판단할 원천이 아직 없어요. 장애라는 뜻이 아니에요",
+  basis: "수집 대상 up은 서비스 정상이 아니에요 · HTTP 확인용 수집은 계획 단계 (조사 시점)",
+  next: ["서비스별로 HTTP 확인 원천을 둘지 I2.1·I2.2에서 정해요", "그 전까지 서비스 정상/장애를 판정하지 않아요"],
+  evidence: [
+    ["수집 대상(Prometheus targets)", "3개 모두 up", "Prometheus", "22:00", "수집이 성공했다는 뜻. 서비스 정상 아님"],
+    ["Loki /ready", "ready", "Loki", "22:00", "프로세스 응답만. 로그 누락 없음의 증명 아님"],
+    ["Grafana /api/health", "HTTP 200", "Grafana", "21:59", "Grafana 자체 응답만"],
+    ["Dozzle /", "HTTP 307", "Dozzle", "21:59", "로그인 경로로 이동. 로그 내용은 보지 않음"],
+    ["Loki 빈 조회", "시계열 0개", "Loki", "22:00", "값 0·다운이 아니라 일치하는 시계열이 없다는 뜻"],
+  ],
+  log: [["22:00", "위 응답을 읽음 (조사 기록, 실시간 아님)"]],
+  ext: ["grafana", "dozzle"],
+};
+const OBS_WIN = {
+  id: "win", sev: "unknown", name: "win-server", host: "—", dur: "연결 안 함", reason: "연결 안 함",
+  impact: "이번 조사에서 연결하지 않아 상태를 알 수 없어요. 장애라는 뜻이 아니에요",
+  basis: "연결 경로·실행 서비스 미확인 (I1.1·I1.3 남은 부분)",
+  next: ["연결 경로를 확인하는 일은 I1.3에 남아 있어요"],
+  evidence: [["win-server 접속", "시도 안 함", "조사 범위", "—", "후보 호스트로만 기록됨"]],
+  log: [],
+  ext: [],
+};
 const STALE_PROM = {
-  id: "prom", sev: "unknown", name: "Prometheus 샘플", host: "ubuntu-01", dur: "23분째",
+  id: "prom", sev: "unknown", name: "Prometheus 샘플", host: "ubuntu-01", dur: "23분째", reason: "값 오래됨",
   impact: "지금 상태를 알 수 없어요. 마지막 값만 보여 드려요",
   basis: "마지막 샘플 14:09:11 · 수집원이 멈췄는지는 확인 필요",
   next: ["Grafana에서 Prometheus 타깃 상태 확인", "Dozzle에서 prometheus 컨테이너 로그 확인"],
@@ -241,26 +265,25 @@ const STALE_PROM = {
 const HOSTS_OK = [
   { name: "Mac Studio", sub: "따까리 실행", sev: "ok", metric: "CPU 12% · 메모리 41% · 디스크 52%", seen: "14:32:08" },
   { name: "ubuntu-01", sub: "홈서버 컨테이너", sev: "ok", metric: "CPU 9% · 메모리 58% · 디스크 61%", seen: "14:32:05" },
-  { name: "win-server", sub: "Windows 개발서버", sev: "ok", metric: "CPU 6% · 메모리 47% · 디스크 38%", seen: "14:32:03" },
 ];
 const SRC_OK = [
   { name: "Mac snapshot", sev: "ok", note: "마지막 수신 14:32:08" },
   { name: "Prometheus", sev: "ok", note: "마지막 수신 14:32:05" },
   { name: "Loki", sev: "ok", note: "마지막 수신 14:32:06" },
-  { name: "서비스 HTTP 확인", sev: "ok", note: "마지막 확인 14:32:00" },
+  { name: "서비스 HTTP 확인 (원천 연결 가정)", sev: "ok", note: "마지막 확인 14:32:00" },
 ];
 const SVC = [
   ["따까리 백엔드", "Mac Studio"], ["Prometheus", "ubuntu-01"], ["Loki", "ubuntu-01"], ["Grafana", "ubuntu-01"],
-  ["Dozzle", "ubuntu-01"], ["monitoring-discord-bot", "ubuntu-01"], ["stock-gosu", "win-server"],
+  ["Dozzle", "ubuntu-01"], ["monitoring-discord-bot", "ubuntu-01"], ["sample-api", "ubuntu-01"],
 ];
 const svcRows = (skip = []) => SVC.filter(([n]) => !skip.includes(n)).map(([n, h]) => ({ name: n, sev: "ok", note: h }));
 
 const SCEN = {
-  normal: { label: "정상", verdict: "ok", line: "관측 범위에서 이상 없음", meta: ["호스트 3", "서비스 7", "수집원 4 모두 응답"], asOf: "14:32:08", age: "12초 전",
+  normal: { label: "정상", verdict: "ok", line: "관측 범위에서 이상 없음", meta: ["호스트 2", "서비스 응답 확인 7 (예시)", "수집원 4 모두 응답"], asOf: "14:32:08", age: "12초 전",
     attention: [], hosts: HOSTS_OK, sources: SRC_OK, healthy: svcRows(), announce: "전체 상태 정상. 관측 범위에서 이상 없음. 14시 32분 기준." },
-  problem: { label: "문제", verdict: "bad", line: "문제 1건 · 주의 1건", meta: ["호스트 3 중 1에 영향", "서비스 7 중 6 정상", "수집원 4 중 3 정상"], asOf: "14:32:08", age: "12초 전",
-    attention: [LOKI, DISK], hosts: [HOSTS_OK[0], { ...HOSTS_OK[1], sev: "warn", metric: "CPU 9% · 메모리 58% · 디스크 86%" }, HOSTS_OK[2]],
-    sources: [SRC_OK[0], SRC_OK[1], { name: "Loki", sev: "bad", note: "/ready 응답 없음 · 마지막 정상 14:20:08" }, SRC_OK[3]], healthy: svcRows(["Loki"]), announce: "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요." },
+  problem: { label: "문제", verdict: "bad", line: "문제 1건 · 주의 1건", meta: ["호스트 2 중 1에 영향", "서비스 응답 확인 7 중 6 정상 (예시)", "수집원 4 모두 응답"], asOf: "14:32:08", age: "12초 전",
+    attention: [SAMPLE_API, DISK], hosts: [HOSTS_OK[0], { ...HOSTS_OK[1], sev: "warn", metric: "CPU 9% · 메모리 58% · 디스크 86%" }],
+    sources: SRC_OK, healthy: svcRows(["sample-api"]), announce: "전체 상태 문제. 문제 1건, 주의 1건. sample-api가 12분째 응답하지 않아요. 예시 화면이에요." },
   loading: { label: "로딩", loading: true, announce: "관제 상태를 불러오는 중" },
   denied: { label: "권한 없음", denied: true, announce: "관제 화면을 볼 권한이 없어요" },
   failed: { label: "갱신 실패", verdict: "unknown", last: true, line: "지금 상태를 확인하지 못했어요", meta: [], asOf: "14:28:02", age: "4분 전",
@@ -268,16 +291,27 @@ const SCEN = {
     prev: { verdict: "ok", text: "마지막으로 확인된 상태: 정상" },
     attention: [], hosts: HOSTS_OK.map(h => ({ ...h, sev: "unknown", seen: "14:28:02", last: true })), sources: SRC_OK.map(s => ({ ...s, sev: "unknown", note: "마지막 값 14:28:02" })), healthy: [],
     announce: "갱신 실패. 지금 상태는 미확인. 마지막 성공은 4분 전이고 그때는 정상이었어요." },
-  partial: { label: "부분 성공", verdict: "warn", line: "확인하지 못한 범위 2곳이 있어요", meta: ["서비스 7 중 6 정상", "확인 불가 2곳", "수집원 4 중 2 응답"], asOf: "14:32:08", age: "12초 전",
-    banner: { tone: "warning", text: "<strong>일부만 확인했어요</strong> · 확인하지 못한 범위는 정상으로 세지 않았어요." },
-    attention: [LOKI_SRC, DOCKER], hosts: HOSTS_OK.map((h, i) => i === 1 ? { ...h, sev: "unknown", metric: "컨테이너 상태 미확인 · 호스트 지표 정상" } : h),
-    sources: [SRC_OK[0], SRC_OK[1], { name: "Loki", sev: "unknown", note: "쿼리 응답 없음 · 마지막 성공 14:23:10" }, { name: "Docker 컨테이너 상태", sev: "unknown", note: "읽기 권한 없음" }],
-    healthy: svcRows(["Loki"]), announce: "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요." },
+  // 조사 표본(2026-10-15 21:59~22:00 KST)과 일치시킨 유일한 화면. 실시간 연결이 아니다.
+  partial: { label: "부분 확인", verdict: "partial", sample: true, line: "확인한 범위에서는 이상 없음 · 확인하지 못한 범위 3곳", meta: ["확인하지 못한 범위는 장애가 아니에요", "수집원 4곳은 응답"], asOf: "21:59~22:00", age: "조사 표본 · 실시간 아님",
+    banner: { tone: "neutral", icon: "i-info", text: "<strong>일부만 확인했어요</strong> · 확인하지 못한 범위는 장애로도 정상으로도 세지 않아요. 이유(권한 없음·원천 없음·연결 안 함)를 항목마다 적었어요." },
+    attention: [OBS_DOCKER, OBS_SVC, OBS_WIN],
+    hosts: [
+      { name: "Mac Studio", sub: "따까리 실행", sev: "ok", metric: "CPU 10% · 메모리 38% · 디스크 62% (/resources 기준 80%/90%)", seen: "22:00 표본" },
+      { name: "ubuntu-01", sub: "Prometheus host 라벨", sev: "unknown", metric: "수집 대상 3개 up · 호스트 지표는 조회하지 않음 · SSH 호스트명 winterholic과의 연결은 미확인", seen: "22:00 표본" },
+      { name: "win-server", sub: "후보 호스트", sev: "unknown", metric: "이번 조사에서 연결하지 않음", seen: "—" },
+    ],
+    sources: [
+      { name: "Mac snapshot", sev: "ok", note: "응답 22:00 표본 · /resources 와 같은 값" },
+      { name: "Prometheus", sev: "ok", note: "healthy · targets 3 up · 22:00 표본 · 보존 10y/100GiB (런타임 조회, 로컬 설정 30d/8GB와 다름)" },
+      { name: "Loki", sev: "ok", note: "ready · 22:00 표본 · 보존 90d (런타임 조회, 로컬 설정 14d와 다름)" },
+      { name: "Docker API", sev: "unknown", note: "읽기 권한 거부 · 21:59 표본" },
+    ],
+    healthy: [], announce: "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요." },
   empty: { label: "빈 값", empty: true, announce: "연결된 관측 대상이 없어요" },
   stale: { label: "오래된 값", verdict: "unknown", last: true, line: "마지막 값이 오래돼서 지금 상태를 알 수 없어요", meta: ["Prometheus 샘플 기준"], asOf: "14:09:11", age: "23분 전",
     banner: { tone: "warning", text: "<strong>값이 오래됐어요</strong> · 5분 넘게 새 샘플이 없으면 정상으로 보여 주지 않아요 <span class=\"ic-assume\">기준 가정</span>" },
     prev: { verdict: "ok", text: "14:09 기준 마지막 상태: 정상" },
-    attention: [STALE_PROM], hosts: HOSTS_OK.map(h => ({ ...h, sev: "unknown", seen: "14:09", last: true })), sources: [{ name: "Mac snapshot", sev: "ok", note: "마지막 수신 14:32:08" }, { name: "Prometheus", sev: "unknown", note: "마지막 샘플 14:09:11 · 오래됨" }, { name: "Loki", sev: "ok", note: "마지막 수신 14:32:06" }, { name: "서비스 HTTP 확인", sev: "ok", note: "마지막 확인 14:32:00" }],
+    attention: [STALE_PROM], hosts: HOSTS_OK.map(h => ({ ...h, sev: "unknown", seen: "14:09", last: true })), sources: [{ name: "Mac snapshot", sev: "ok", note: "마지막 수신 14:32:08" }, { name: "Prometheus", sev: "unknown", note: "마지막 샘플 14:09:11 · 오래됨" }, { name: "Loki", sev: "ok", note: "마지막 수신 14:32:06" }, { name: "서비스 HTTP 확인 (원천 연결 가정)", sev: "ok", note: "마지막 확인 14:32:00" }],
     healthy: [], announce: "전체 상태 미확인. 마지막 값이 23분 전이에요." },
 };
 const ORDER = ["normal", "problem", "loading", "denied", "failed", "partial", "empty", "stale"];
@@ -299,7 +333,7 @@ function detailHtml(it, { back }) {
     ${back ? `<button class="tk-button tk-button--ghost tk-button--sm ic-back" type="button" id="btn-back">${icon("i-left", "tk-icon--sm")}관제로 돌아가기</button>` : ""}
     <div class="ic-detail__head">
       <h2 class="ic-detail__title" id="d-title" tabindex="-1">${it.name}</h2>
-      <div class="ic-detail__meta">${badge(it.sev)}<span>${it.host}</span><span>·</span><span>${it.dur}</span></div>
+      <div class="ic-detail__meta">${badge(it.sev)}${reasonChip(it)}<span>${it.host}</span><span>·</span><span>${it.dur}</span>${it.tag ? `<span class="ic-assume">${it.tag}</span>` : ""}</div>
     </div>
     <dl class="ic-facts">
       <div><dt>영향</dt><dd>${it.impact}</dd></div>
@@ -307,23 +341,26 @@ function detailHtml(it, { back }) {
       <div><dt>다음 확인</dt><dd><ol style="margin:0;padding-left:var(--tk-space-4)">${next}</ol><p class="ic-card__sub" style="margin:var(--tk-space-2) 0 0">조치(재시작 등)는 사람이 판단해요. 이 화면은 자동 조치를 하지 않아요.</p></dd></div>
     </dl>
     <section class="ic-section" aria-labelledby="d-ev"><h3 class="ic-h2" id="d-ev">확인한 값</h3><ul class="ic-ev">${ev}</ul></section>
-    <section class="ic-section" aria-labelledby="d-log"><h3 class="ic-h2" id="d-log">판정 기록 <span class="ic-assume">수집 판정만 · 추정 사건 없음</span></h3><ol class="ic-tl">${log}</ol></section>
-    <section class="ic-section" aria-labelledby="d-ext"><h3 class="ic-h2" id="d-ext">더 자세히 보려면 <span class="ic-assume">선택 · URL 미확정</span></h3>
+    ${it.log.length ? `<section class="ic-section" aria-labelledby="d-log"><h3 class="ic-h2" id="d-log">판정 기록 <span class="ic-assume">수집 판정만 · 추정 사건 없음</span></h3><ol class="ic-tl">${log}</ol></section>` : ""}
+    ${it.ext.length ? `<section class="ic-section" aria-labelledby="d-ext"><h3 class="ic-h2" id="d-ext">더 자세히 보려면 <span class="ic-assume">선택 · 시안은 이동 안 함</span></h3>
       <div class="ic-ext">${it.ext.map(k => `<a class="tk-button tk-button--secondary" href="#" data-ext="${k}" target="_blank" rel="noopener noreferrer">${EXT[k]}${icon("i-ext", "tk-icon--sm")}<span class="sr-only"> (새 창, 시안에서는 이동하지 않아요)</span></a>`).join("")}</div>
-    </section>
+    </section>` : ""}
   </section>`;
 }
 
 function hostCard(h) {
   return `<li><span class="ic-src__name">${h.name} <span class="ic-card__sub">· ${h.sub}</span></span>${badge(h.sev)}<span class="ic-src__note">${h.metric} · ${h.last ? "마지막 값" : "수신"} ${h.seen}</span></li>`;
 }
-const srcRow = (s) => `<li><span class="ic-src__name">${s.name}</span>${badge(s.sev)}<span class="ic-src__note">${s.note}</span></li>`;
+// 수집원 행의 초록은 '응답했다'이지 '서비스가 정상'이 아니다. 그래서 글자도 정상이 아니라 응답으로 쓴다.
+const srcBadge = (sev) => sev === "ok" ? `<span class="tk-badge tk-badge--success">${icon("i-ok")}응답</span>` : badge(sev);
+const srcRow = (s) => `<li><span class="ic-src__name">${s.name}</span>${srcBadge(s.sev)}<span class="ic-src__note">${s.note}</span></li>`;
+const reasonChip = (a) => a.reason ? `<span class="ic-reason">사유 · ${a.reason}</span>` : "";
 
 function renderState(m) {
   const main = $("#main");
   const hdrMeta = $("#hdr-meta"), act = $("#hdr-actions");
   act.innerHTML = "";
-  hdrMeta.textContent = "Mac Studio · ubuntu-01 · win-server (후보)";
+  hdrMeta.textContent = "Mac Studio · ubuntu-01 (후보)";
   main.removeAttribute("aria-busy");
   if (m.loading) {
     hdrMeta.textContent = "불러오는 중"; // 권한 확인 전이라 호스트 이름을 미리 보여 주지 않는다
@@ -358,7 +395,7 @@ function renderState(m) {
   const cur = sel || (isWide ? m.attention[0] : null);
   const detailOnly = !isWide && sel;
 
-  const banner = m.banner ? `<div class="tk-banner tk-banner--${m.banner.tone} ic-banner" role="${m.banner.tone === "danger" ? "alert" : "status"}">${icon(m.banner.tone === "danger" ? "i-bad" : "i-warn")}<span class="tk-banner__text">${m.banner.text}</span>${m.banner.action ? `<button class="tk-button tk-button--secondary tk-button--sm" type="button" id="btn-retry">${m.banner.action}</button>` : ""}</div>` : "";
+  const banner = m.banner ? `<div class="tk-banner tk-banner--${m.banner.tone} ic-banner" role="${m.banner.tone === "danger" ? "alert" : "status"}">${icon(m.banner.icon || (m.banner.tone === "danger" ? "i-bad" : "i-warn"))}<span class="tk-banner__text">${m.banner.text}</span>${m.banner.action ? `<button class="tk-button tk-button--secondary tk-button--sm" type="button" id="btn-retry">${m.banner.action}</button>` : ""}</div>` : "";
 
   const hero = `<section class="ic-hero" data-verdict="${m.verdict}" aria-labelledby="verdict">
     <span class="ic-hero__mark">${icon(ICON[m.verdict])}</span>
@@ -367,15 +404,15 @@ function renderState(m) {
       <h2 class="ic-hero__verdict" id="verdict">${WORD[m.verdict]}</h2>
       <p class="ic-hero__line">${m.line}</p>
       ${m.prev ? `<p class="ic-hero__meta"><span>${m.prev.text}</span></p>` : ""}
-      <p class="ic-hero__meta"><span>${icon("i-clock", "tk-icon--xs")}<time>${m.asOf}</time> ${m.last ? "마지막 성공" : "기준"} · ${m.age}</span></p>
+      <p class="ic-hero__meta"><span>${icon("i-clock", "tk-icon--xs")}<time>${m.asOf}</time> ${m.sample ? "KST 관측" : m.last ? "마지막 성공" : "기준"} · ${m.age}</span></p>
       ${m.meta.length ? `<p class="ic-hero__meta">${m.meta.map(x => `<span>${x}</span>`).join("")}</p>` : ""}
     </div></section>`;
 
   let attn = "";
   if (m.attention.length) {
-    attn = `<section class="ic-section" aria-labelledby="h-attn"><div class="ic-section__head"><h2 class="ic-h2" id="h-attn">${m.last ? "마지막으로 확인된 항목" : "조치가 필요한 항목"}</h2><span class="tk-badge tk-badge--count tk-badge--neutral" aria-label="${m.attention.length}건">${m.attention.length}</span></div>
+    attn = `<section class="ic-section" aria-labelledby="h-attn"><div class="ic-section__head"><h2 class="ic-h2" id="h-attn">${m.last ? "마지막으로 확인된 항목" : m.attention.every(a => a.sev === "unknown") ? "확인하지 못한 항목 (장애 아님)" : "조치가 필요한 항목"}</h2><span class="tk-badge tk-badge--count tk-badge--neutral" aria-label="${m.attention.length}건">${m.attention.length}</span></div>
       <ul class="ic-list">${m.attention.map(a => `<li><button class="ic-row" type="button" data-id="${a.id}" aria-controls="detail" ${cur && cur.id === a.id && isWide ? 'aria-current="true"' : ""}>
-        <span class="ic-row__head">${badge(a.sev)}<span class="ic-row__name">${a.name}</span><span class="ic-row__host">${a.host}</span><span class="ic-row__dur">${a.dur}</span></span>
+        <span class="ic-row__head">${badge(a.sev)}${reasonChip(a)}<span class="ic-row__name">${a.name}</span><span class="ic-row__host">${a.host}</span><span class="ic-row__dur">${a.dur}</span>${a.tag ? `<span class="ic-assume">${a.tag}</span>` : ""}</span>
         <span class="ic-row__line"><b>영향</b>${a.impact}</span><span class="ic-row__line"><b>근거</b>${a.basis}</span>
         <span class="ic-row__chev">${icon("i-right")}</span></button></li>`).join("")}</ul></section>`;
   } else {
@@ -385,7 +422,7 @@ function renderState(m) {
   // 정상일 때는 수집원도 접어서 간결하게 둔다. 문제·미확인이 있으면 어디가 비었는지 바로 보여야 하므로 펼쳐 둔다.
   const srcs = m.verdict === "ok"
     ? `<details class="ic-details"><summary>${icon("i-right", "tk-icon--sm ic-chev")}수집원 ${m.sources.length}개 모두 응답 · 마지막 수신 ${m.asOf}</summary><ul class="ic-src">${m.sources.map(srcRow).join("")}</ul></details>`
-    : `<section class="ic-section" aria-labelledby="h-src"><h2 class="ic-h2" id="h-src">수집원 상태</h2><ul class="ic-src" ${m.last ? "data-last" : ""}>${m.sources.map(srcRow).join("")}</ul></section>`;
+    : `<section class="ic-section" aria-labelledby="h-src"><h2 class="ic-h2" id="h-src">수집원 응답 <span class="ic-assume">수집 상태 · 서비스 정상 아님</span></h2><ul class="ic-src" ${m.last ? "data-last" : ""}>${m.sources.map(srcRow).join("")}</ul></section>`;
   const healthy = m.healthy.length ? `<details class="ic-details"><summary>${icon("i-right", "tk-icon--sm ic-chev")}정상 서비스 ${m.healthy.length}개 보기</summary><ul class="ic-src">${m.healthy.map(s => `<li><span class="ic-src__name">${s.name}</span>${badge("ok")}<span class="ic-src__note">${s.note}</span></li>`).join("")}</ul></details>` : "";
 
   if (detailOnly) {

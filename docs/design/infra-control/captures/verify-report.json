@@ -1,5 +1,5 @@
 {
-  "when": "2026-10-15T12:54:02.333Z",
+  "when": "2026-10-15T13:09:37.571Z",
   "chrome": "Chrome/155.0.8059.79",
   "results": [
     {
@@ -9,7 +9,7 @@
       "file": "normal-m390-light.png",
       "pageHeight": 844,
       "overflowX": 0,
-      "textChecked": 62,
+      "textChecked": 58,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -34,7 +34,7 @@
       "file": "normal-d1280-light.png",
       "pageHeight": 900,
       "overflowX": 0,
-      "textChecked": 62,
+      "textChecked": 58,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -59,7 +59,7 @@
       "file": "normal-m390-dark.png",
       "pageHeight": 844,
       "overflowX": 0,
-      "textChecked": 62,
+      "textChecked": 58,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -84,7 +84,7 @@
       "file": "normal-d1280-dark.png",
       "pageHeight": 900,
       "overflowX": 0,
-      "textChecked": 62,
+      "textChecked": 58,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -107,9 +107,9 @@
       "theme": "light",
       "view": "m390",
       "file": "problem-m390-light.png",
-      "pageHeight": 1230,
+      "pageHeight": 1215,
       "overflowX": 0,
-      "textChecked": 75,
+      "textChecked": 73,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -126,16 +126,16 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요."
+      "live": "전체 상태 문제. 문제 1건, 주의 1건. sample-api가 12분째 응답하지 않아요. 예시 화면이에요."
     },
     {
       "state": "problem",
       "theme": "light",
       "view": "d1280",
       "file": "problem-d1280-light.png",
-      "pageHeight": 1166,
+      "pageHeight": 1108,
       "overflowX": 0,
-      "textChecked": 119,
+      "textChecked": 118,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -156,16 +156,16 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요."
+      "live": "전체 상태 문제. 문제 1건, 주의 1건. sample-api가 12분째 응답하지 않아요. 예시 화면이에요."
     },
     {
       "state": "problem",
       "theme": "dark",
       "view": "m390",
       "file": "problem-m390-dark.png",
-      "pageHeight": 1230,
+      "pageHeight": 1215,
       "overflowX": 0,
-      "textChecked": 75,
+      "textChecked": 73,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -182,16 +182,16 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요."
+      "live": "전체 상태 문제. 문제 1건, 주의 1건. sample-api가 12분째 응답하지 않아요. 예시 화면이에요."
     },
     {
       "state": "problem",
       "theme": "dark",
       "view": "d1280",
       "file": "problem-d1280-dark.png",
-      "pageHeight": 1166,
+      "pageHeight": 1108,
       "overflowX": 0,
-      "textChecked": 119,
+      "textChecked": 118,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -212,7 +212,7 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요."
+      "live": "전체 상태 문제. 문제 1건, 주의 1건. sample-api가 12분째 응답하지 않아요. 예시 화면이에요."
     },
     {
       "state": "loading",
@@ -403,9 +403,9 @@
       "theme": "light",
       "view": "m390",
       "file": "failed-m390-light.png",
-      "pageHeight": 1068,
+      "pageHeight": 1026,
       "overflowX": 0,
-      "textChecked": 41,
+      "textChecked": 38,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -429,9 +429,9 @@
       "theme": "light",
       "view": "d1280",
       "file": "failed-d1280-light.png",
-      "pageHeight": 973,
+      "pageHeight": 913,
       "overflowX": 0,
-      "textChecked": 41,
+      "textChecked": 38,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -455,9 +455,9 @@
       "theme": "dark",
       "view": "m390",
       "file": "failed-m390-dark.png",
-      "pageHeight": 1068,
+      "pageHeight": 1026,
       "overflowX": 0,
-      "textChecked": 41,
+      "textChecked": 38,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -481,9 +481,9 @@
       "theme": "dark",
       "view": "d1280",
       "file": "failed-d1280-dark.png",
-      "pageHeight": 973,
+      "pageHeight": 913,
       "overflowX": 0,
-      "textChecked": 41,
+      "textChecked": 38,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -507,9 +507,9 @@
       "theme": "light",
       "view": "m390",
       "file": "partial-m390-light.png",
-      "pageHeight": 1309,
+      "pageHeight": 1645,
       "overflowX": 0,
-      "textChecked": 77,
+      "textChecked": 69,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -526,16 +526,16 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요."
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
     },
     {
       "state": "partial",
       "theme": "light",
       "view": "d1280",
       "file": "partial-d1280-light.png",
-      "pageHeight": 1221,
+      "pageHeight": 1243,
       "overflowX": 0,
-      "textChecked": 113,
+      "textChecked": 103,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -556,16 +556,16 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요."
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
     },
     {
       "state": "partial",
       "theme": "dark",
       "view": "m390",
       "file": "partial-m390-dark.png",
-      "pageHeight": 1309,
+      "pageHeight": 1645,
       "overflowX": 0,
-      "textChecked": 77,
+      "textChecked": 69,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -582,16 +582,16 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요."
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
     },
     {
       "state": "partial",
       "theme": "dark",
       "view": "d1280",
       "file": "partial-d1280-dark.png",
-      "pageHeight": 1221,
+      "pageHeight": 1243,
       "overflowX": 0,
-      "textChecked": 113,
+      "textChecked": 103,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -612,7 +612,7 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요."
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
     },
     {
       "state": "empty",
@@ -711,9 +711,9 @@
       "theme": "light",
       "view": "m390",
       "file": "stale-m390-light.png",
-      "pageHeight": 1204,
+      "pageHeight": 1164,
       "overflowX": 0,
-      "textChecked": 50,
+      "textChecked": 48,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -737,9 +737,9 @@
       "theme": "light",
       "view": "d1280",
       "file": "stale-d1280-light.png",
-      "pageHeight": 1071,
+      "pageHeight": 1013,
       "overflowX": 0,
-      "textChecked": 78,
+      "textChecked": 77,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -767,9 +767,9 @@
       "theme": "dark",
       "view": "m390",
       "file": "stale-m390-dark.png",
-      "pageHeight": 1204,
+      "pageHeight": 1164,
       "overflowX": 0,
-      "textChecked": 50,
+      "textChecked": 48,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -793,9 +793,9 @@
       "theme": "dark",
       "view": "d1280",
       "file": "stale-d1280-dark.png",
-      "pageHeight": 1071,
+      "pageHeight": 1013,
       "overflowX": 0,
-      "textChecked": 78,
+      "textChecked": 77,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -824,16 +824,16 @@
       "view": "m390",
       "file": "problem-detail-m390-light.png",
       "overflowX": 0,
-      "textChecked": 49,
+      "textChecked": 73,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
       "headingLevels": [
         1,
         2,
-        3,
-        3,
-        3
+        2,
+        2,
+        2
       ],
       "headingSkip": false,
       "h1": 1,
@@ -841,7 +841,7 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요."
+      "live": "전체 상태 문제. 문제 1건, 주의 1건. sample-api가 12분째 응답하지 않아요. 예시 화면이에요."
     },
     {
       "state": "problem-detail",
@@ -849,16 +849,16 @@
       "view": "m390",
       "file": "problem-detail-m390-dark.png",
       "overflowX": 0,
-      "textChecked": 49,
+      "textChecked": 73,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
       "headingLevels": [
         1,
         2,
-        3,
-        3,
-        3
+        2,
+        2,
+        2
       ],
       "headingSkip": false,
       "h1": 1,
@@ -866,15 +866,15 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 문제. 문제 1건, 주의 1건. Loki가 12분째 응답하지 않아요."
+      "live": "전체 상태 문제. 문제 1건, 주의 1건. sample-api가 12분째 응답하지 않아요. 예시 화면이에요."
     },
     {
-      "state": "partial-detail",
+      "state": "partial-detail-docker",
       "theme": "light",
       "view": "m390",
-      "file": "partial-detail-m390-light.png",
+      "file": "partial-detail-docker-m390-light.png",
       "overflowX": 0,
-      "textChecked": 32,
+      "textChecked": 39,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -891,15 +891,15 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요."
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
     },
     {
-      "state": "partial-detail",
+      "state": "partial-detail-docker",
       "theme": "dark",
       "view": "m390",
-      "file": "partial-detail-m390-dark.png",
+      "file": "partial-detail-docker-m390-dark.png",
       "overflowX": 0,
-      "textChecked": 32,
+      "textChecked": 39,
       "contrastFails": [],
       "smallTargets": [],
       "noName": [],
@@ -916,7 +916,57 @@
       "lang": "ko",
       "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
       "busy": null,
-      "live": "전체 상태 주의. 확인하지 못한 범위 2곳이 있어요."
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
+    },
+    {
+      "state": "partial-detail-svc",
+      "theme": "light",
+      "view": "m390",
+      "file": "partial-detail-svc-m390-light.png",
+      "overflowX": 0,
+      "textChecked": 58,
+      "contrastFails": [],
+      "smallTargets": [],
+      "noName": [],
+      "headingLevels": [
+        1,
+        2,
+        3,
+        3,
+        3
+      ],
+      "headingSkip": false,
+      "h1": 1,
+      "mains": 1,
+      "lang": "ko",
+      "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
+      "busy": null,
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
+    },
+    {
+      "state": "partial-detail-svc",
+      "theme": "dark",
+      "view": "m390",
+      "file": "partial-detail-svc-m390-dark.png",
+      "overflowX": 0,
+      "textChecked": 58,
+      "contrastFails": [],
+      "smallTargets": [],
+      "noName": [],
+      "headingLevels": [
+        1,
+        2,
+        3,
+        3,
+        3
+      ],
+      "headingSkip": false,
+      "h1": 1,
+      "mains": 1,
+      "lang": "ko",
+      "title": "인프라 관제 · 검토용 시안 (I3.1/I3.2)",
+      "busy": null,
+      "live": "전체 상태 일부 미확인. 확인한 범위에서는 이상 없고, 확인하지 못한 범위 3곳은 장애가 아니에요. 조사 표본이며 실시간이 아니에요."
     }
   ],
   "keyboard": {
@@ -935,7 +985,7 @@
       },
       {
         "tag": "BUTTON",
-        "text": "문제Lokiubuntu-0112분째\n    ",
+        "text": "문제sample-apiubuntu-0112분",
         "outline": "solid 2px",
         "boxShadow": false
       },
@@ -965,7 +1015,7 @@
       },
       {
         "tag": "BUTTON",
-        "text": "문제Lokiubuntu-0112분째\n    ",
+        "text": "문제sample-apiubuntu-0112분",
         "outline": "solid 2px",
         "boxShadow": false
       },
@@ -980,10 +1030,10 @@
       "focus": "d-title",
       "detailVisible": true,
       "listVisible": false,
-      "title": "Loki"
+      "title": "sample-api"
     },
     "afterEsc": {
-      "focusText": "문제Lokiubuntu-0112분째\n    ",
+      "focusText": "문제sample-apiubuntu-0112분",
       "cls": "ic-row",
       "detailVisible": false
     }
@@ -1028,8 +1078,8 @@
   ],
   "desktopSplit": {
     "cols": true,
-    "selected": "Loki",
-    "detailTitle": "Loki",
+    "selected": "sample-api",
+    "detailTitle": "sample-api",
     "afterClick": {
       "selected": "디스크 /",
       "detailTitle": "디스크 /"

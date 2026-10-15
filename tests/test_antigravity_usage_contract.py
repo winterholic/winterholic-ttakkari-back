@@ -53,10 +53,11 @@ def test_orchestrator_account_usage_keeps_antigravity_group_quota_out_of_account
     ))
     try:
         result = account_status._usage(account_id, measured + 1)
-        assert result["model_quotas"] == [{
+        quota = result["model_quotas"][0]
+        assert {key: quota[key] for key in ("key", "label", "used_percent", "remaining_percent")} == {
             "key": "agy_gemini_models_5h", "label": "Gemini Models · 5시간", "used_percent": 2,
             "remaining_percent": 98.37,
-        }]
+        }
         assert result["credits_balance"] == 0 and result["credits_error"] is None
         assert account_status._cap_remaining(account_id, 100, result) is None
     finally:

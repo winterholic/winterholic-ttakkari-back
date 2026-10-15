@@ -5,10 +5,10 @@ Not implemented: HTMLCanvasElement's getContext() method: without installing the
 
  Test Files  61 passed | 1 skipped (62)
       Tests  351 passed | 1 skipped (352)
-   Start at  12:47:28
-   Duration  3.63s (environment 49%, tests 24%, import 19%, transform 7%)
+   Start at  12:54:01
+   Duration  3.61s (environment 50%, tests 24%, import 19%, transform 7%)
 
-Environment  jsdom was created 62 times · 22.85s total, 49% of tracked time
+Environment  jsdom was created 62 times · 23.08s total, 50% of tracked time
              create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
              learn more: https://vitest.dev/guide/improving-performance#test-environments
 

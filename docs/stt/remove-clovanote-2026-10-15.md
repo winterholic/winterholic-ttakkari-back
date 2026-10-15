@@ -7,7 +7,7 @@
 ## 제거·보존
 
 - backend: Playwright 브라우저 어댑터, 업로드/가져오기/동기화 큐·자동 시작, REST/agent API, 네 MCP 도구, 도구 권한/소개, provider·설정·로그인 코드 제거.
-- frontend: 연결·로그인·노트 탭·가져오기 대화상자·외부 전사 버튼·실패 작업 위젯·API 타입/클라이언트·전용 CSS 제거. 기존 탭 URL은 일반 목록을 연다. 공용 도서관 저장 상태는 VectorLine으로 분리해 유지했다.
+- frontend: 연결·로그인·노트 탭·가져오기 대화상자·외부 전사 버튼·실패 작업 위젯·API 타입/클라이언트·전용 CSS 제거. 구 서버가 폐기 provider나 예전 기본값을 보내도 local_whisper만 표시·전송하도록 제한했다. 기존 탭 URL은 일반 목록을 연다. 공용 도서관 저장 상태는 VectorLine으로 분리해 유지했다.
 - Playwright 런타임 사용처는 제거한 어댑터 한 곳뿐이었다. lockfile에서 playwright/pyee만 제거됐고 남은 패키지 버전은 모두 동일하다. 별도 브라우저 검사 도구를 앱 의존성으로 남기지 않는다.
 - 기존 meetings/items/proposals/chunks·녹음 Artifact·분석/PMS/검색 경로와 과거 provider 출처 문자열은 보존한다.
 - ~/.ttakkari/clovanote-chrome 폴더의 존재만 확인했으며 내용 조회·삭제는 하지 않았다.

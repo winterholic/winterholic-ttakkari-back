@@ -11,3 +11,5 @@
 - Playwright/pyee만lock제거, 기존버전동일. 프로필폴더 존재만확인·내용조회/삭제없음.
 - ADR0027 및 docs/stt/remove-clovanote-2026-10-15.md에 판단·설치·배포후API스모크 정리. 커밋SHA·Vercel상태는 최종 결과함 요약에 기록한다.
 - ~/work-history는 실행쓰기허용범위밖이므로 이 저장소의 작업기록과 결과함 입력용기록으로 남긴다.
+
+- 프론트 단계적 배포 호환: 구 서버가 외부 provider를 default로 보내는 회귀 표본을 추가해 실패를 확인하고, 로컬만 선택/전송하도록 제한했다. 최신 front d51120a3c76ac58b18656e6f2ca2224c0cb6b466, 전체351/1skipped 재검사 및 lint/build 확인.

@@ -260,3 +260,25 @@ def test_archive_test_environment_uses_candidate_revision_without_requiring_git(
     assert env["TTAKKARI_TEST_DB"].endswith("/isolated")
     assert "TTAKKARI_RUNTIME_GENERATION" not in env
     assert "TTAKKARI_DEPLOY_SOURCE_ROOT" not in env
+
+
+async def test_proxy_switch_persists_its_own_restart_config(tmp_path, monkeypatch):
+    import httpx
+
+    from ttakkari.generation_deployment import Slots
+    loaded = {}
+
+    def respond(request):
+        if request.method == "POST":
+            loaded.update(json.loads(request.content))
+            return httpx.Response(200)
+        return httpx.Response(200, json=loaded)
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: original_client(
+        transport=httpx.MockTransport(respond), **kwargs))
+    await Slots(tmp_path).switch(1)
+    saved = json.loads((tmp_path / "proxy.json").read_text())
+    assert saved == loaded
+    assert saved["admin"]["config"]["persist"] is False
+    assert saved["apps"]["http"]["servers"]["ttakkari"]["routes"][-1]["handle"][0]["upstreams"][0]["dial"] == "127.0.0.1:8792"

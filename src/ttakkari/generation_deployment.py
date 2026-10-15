@@ -96,7 +96,7 @@ class Releases:
 
 def proxy_config(slot: int) -> dict:
     port = PORTS[slot]
-    return {"admin": {"listen": "127.0.0.1:20191"}, "apps": {"http": {"servers": {"ttakkari": {
+    return {"admin": {"listen": "127.0.0.1:20191", "config": {"persist": False}}, "apps": {"http": {"servers": {"ttakkari": {
         "listen": ["127.0.0.1:8787"], "automatic_https": {"disable": True}, "routes": [
             {"match": [{"path": ["/api/ready"]}], "handle": [{"handler": "static_response", "status_code": 404}]},
             {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": f"127.0.0.1:{port}"}],
@@ -190,14 +190,23 @@ class Slots:
             return True
 
     async def switch(self, slot: int) -> None:
+        config = proxy_config(slot)
         async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post("http://127.0.0.1:20191/load", json=proxy_config(slot))
+            response = await client.post("http://127.0.0.1:20191/load", json=config)
             response.raise_for_status()
             response = await client.get("http://127.0.0.1:20191/config/")
             response.raise_for_status()
             actual = response.json()["apps"]["http"]["servers"]["ttakkari"]["routes"][-1]["handle"][0]["upstreams"][0]["dial"]
             if actual != f"127.0.0.1:{PORTS[slot]}":
                 raise RuntimeError("proxy did not retain the selected upstream")
+        self.root.mkdir(parents=True, exist_ok=True)
+        target = self.root / "proxy.json"
+        temp = target.with_suffix(".tmp")
+        with temp.open("w") as output:
+            json.dump(config, output)
+            output.flush()
+            os.fsync(output.fileno())
+        temp.replace(target)
 
     async def verify(self, revision: str) -> None:
         async with httpx.AsyncClient(timeout=5) as client:

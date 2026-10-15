@@ -53,7 +53,7 @@
 2. 실행할 커밋을 `Releases.archive`로 `<deploy>/releases/<SHA>`에 분리하고 `GenerationController.environment`로 고정 venv와 브라우저 MCP Node 의존성을 설치한다. lockfile을 사용하며 이미 준비한 환경은 다시 sync하지 않는다. 필요하면 같은 릴리스에서 격리 DB 검사를 재실행한다.
 3. 외부 감독도 별도 검증된 tools 릴리스의 Python/코드로 고정한다. 서비스의 WorkingDirectory와 Python을 해당 릴리스로 정하고 `TTAKKARI_DEPLOY_SOURCE_ROOT`만 개발 checkout을 가리킨다. 운영 app의 파일 변경으로 감독 코드·venv가 덮어써지지 않아야 한다.
 4. 공통 admission 잠금 아래 모든 기존 장기 작업·유한 요청 종료를 확인하고 기존 backend 서비스를 정리한다. 슬롯 0을 `Slots.start`로 시작하고 readiness에서 `protocol=1`, 기대 SHA·UUID·PID를 확인한다. `activate(candidate_uuid, expected=None)`로 최초 실행 담당자를 지정한다.
-5. `proxy_config(0)`의 JSON으로 전용 Caddy launchd 서비스를 설치한다. Caddy 실행 파일은 `command -v caddy`로 확인하고 설정은 `caddy validate`로 먼저 검증한다. 외부 주소는 기존 tunnel이 받는 8787이다.
+5. `proxy_config(0)`의 JSON을 `<deploy>/proxy.json`에 저장해 전용 Caddy launchd 서비스의 `--config`로 지정한다. 이후 검증된 라우팅을 같은 파일에 원자적으로 보존하므로 Caddy 재기동 때 마지막 슬롯을 사용한다. 다른 Caddy와 공유하는 기본 autosave는 비활성이다. 실행 파일은 `command -v caddy`로 확인하고 설정은 `caddy validate`로 먼저 검증한다. 외부 주소는 기존 tunnel이 받는 8787이다.
 6. 로컬·공개 health/version, 인증된 읽기·가짜 Run 접수/완료, 이벤트 cursor와 중복 실행 여부를 확인한 뒤 `deploy_strategy=generations`로 후속 예약을 받는다. 원래 슬롯과 supervisor의 부팅 복구 동작도 확인한다.
 
 최초 설치 자동화 전체와 launchd의 실제 등록/해제는 이번 격리 시험 범위에 포함하지 않았다. 설치 시 현재 서비스·포트·기존 설정을 확인해야 하며, 이 문서는 서비스가 이미 전환됐다는 기록이 아니다.

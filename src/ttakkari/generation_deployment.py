@@ -189,6 +189,61 @@ class Slots:
             probe.close()
             return True
 
+    @staticmethod
+    def config_slot(config: dict) -> int:
+        dial = config["apps"]["http"]["servers"]["ttakkari"]["routes"][-1]["handle"][0]["upstreams"][0]["dial"]
+        return PORTS.index(int(dial.removeprefix("127.0.0.1:")))
+
+    def persisted_slot(self) -> int | None:
+        try:
+            return self.config_slot(json.loads((self.root / "proxy.json").read_text()))
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            return None
+
+    async def current_slot(self) -> int | None:
+        async with httpx.AsyncClient(timeout=3) as client:
+            try:
+                response = await client.get("http://127.0.0.1:20191/config/")
+            except httpx.ConnectError:
+                return None
+            response.raise_for_status()
+            # A responding but unexpected admin belongs to an operator to inspect.
+            return self.config_slot(response.json())
+
+    def persist_proxy(self, slot: int) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        target = self.root / "proxy.json"
+        temp = target.with_suffix(".tmp")
+        with temp.open("w") as output:
+            json.dump(proxy_config(slot), output)
+            output.flush()
+            os.fsync(output.fileno())
+        temp.replace(target)
+
+    async def ensure_proxy(self, slot: int) -> None:
+        if await self.current_slot() is not None:
+            return
+        caddy = shutil.which("caddy")
+        if caddy is None:
+            raise RuntimeError("Caddy installation required")
+        self.persist_proxy(slot)
+        services, logs = self.root / "services", self.root / "logs"
+        services.mkdir(parents=True, exist_ok=True)
+        logs.mkdir(exist_ok=True)
+        label = "net.winterholic.ttakkari.proxy"
+        plist = services / f"{label}.plist"
+        plist.write_bytes(plistlib.dumps({"Label": label,
+            "ProgramArguments": [caddy, "run", "--config", str(self.root / "proxy.json")],
+            "EnvironmentVariables": {"HOME": str(Path.home()), "PATH": os.environ.get("PATH", "")},
+            "KeepAlive": True, "ThrottleInterval": 10, "RunAtLoad": True,
+            "StandardOutPath": str(logs / "proxy.log"), "StandardErrorPath": str(logs / "proxy.log")}))
+        await self._launchctl("bootstrap", f"gui/{os.getuid()}", str(plist))
+        for _ in range(50):
+            if await self.current_slot() is not None:
+                return
+            await asyncio.sleep(0.2)
+        raise RuntimeError("proxy readiness timed out; generation was preserved")
+
     async def switch(self, slot: int) -> None:
         config = proxy_config(slot)
         async with httpx.AsyncClient(timeout=10) as client:
@@ -199,14 +254,7 @@ class Slots:
             actual = response.json()["apps"]["http"]["servers"]["ttakkari"]["routes"][-1]["handle"][0]["upstreams"][0]["dial"]
             if actual != f"127.0.0.1:{PORTS[slot]}":
                 raise RuntimeError("proxy did not retain the selected upstream")
-        self.root.mkdir(parents=True, exist_ok=True)
-        target = self.root / "proxy.json"
-        temp = target.with_suffix(".tmp")
-        with temp.open("w") as output:
-            json.dump(config, output)
-            output.flush()
-            os.fsync(output.fileno())
-        temp.replace(target)
+        self.persist_proxy(slot)
 
     async def verify(self, revision: str) -> None:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -234,6 +282,37 @@ class GenerationController:
         async with sessionmaker()() as db:
             control = await db.get(RuntimeControl, 1)
             return control.active_generation if control else None
+
+    async def generation_info(self, generation_id):
+        async with sessionmaker()() as db:
+            row = await db.get(RuntimeGeneration, generation_id)
+            if row is None:
+                raise RuntimeError("active generation record is missing")
+            return {"id": row.id, "revision": row.revision, "api_url": row.api_url}
+
+    async def reconcile_services(self):
+        generation_id = await self.active()
+        if generation_id is None:
+            return  # The first transition from legacy mode requires an idle bootstrap.
+        info = await self.generation_info(generation_id)
+        slot = next((i for i in (0, 1) if self.slots.origin(i) == info["api_url"]), None)
+        if slot is None:
+            raise RuntimeError("active generation has an unmanaged origin")
+        ready = await self.slots.snapshot(slot)
+        if ready is None:
+            release = self.releases.root / "releases" / _sha(info["revision"])
+            if Releases.contract(release)["protocol"] != PROTOCOL:
+                raise RuntimeError("cannot restore an incompatible generation")
+            ready = await self.slots.start(slot, release, info["revision"])
+        # Registering a new process may replace a dead boot UUID for new work.
+        # Existing Run leases stay with the previous process and need explicit recovery.
+        current = await self.active()
+        if (ready.get("protocol") != PROTOCOL or ready["revision"] != info["revision"]
+                or uuid.UUID(ready["generation"]) != current):
+            raise RuntimeError("restored service identity differs from the active owner")
+        await self.slots.ensure_proxy(slot)
+        if await self.slots.current_slot() != slot or self.slots.persisted_slot() != slot:
+            await self.slots.switch(slot)
 
     async def command(self, job, release, *args, env=None):
         with (self.store.jobs / f"{job['id']}.log").open("ab") as output:

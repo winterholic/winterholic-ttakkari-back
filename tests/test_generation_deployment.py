@@ -48,6 +48,13 @@ class FakeSlots:
         self.stopped = []
         self.fail_switch = False
 
+    @staticmethod
+    def origin(slot):
+        return f"http://127.0.0.1:{8791 + slot}"
+
+    def persisted_slot(self):
+        return self.route
+
     async def start(self, slot, release, revision):
         self.rows[slot] = {"generation": str(uuid.uuid4()), "revision": revision, "protocol": 1,
                            "ready": True, "state": "standby", "drain_ready": False, "owned_runs": 0}
@@ -282,3 +289,121 @@ async def test_proxy_switch_persists_its_own_restart_config(tmp_path, monkeypatc
     assert saved == loaded
     assert saved["admin"]["config"]["persist"] is False
     assert saved["apps"]["http"]["servers"]["ttakkari"]["routes"][-1]["handle"][0]["upstreams"][0]["dial"] == "127.0.0.1:8792"
+
+
+async def test_supervisor_repairs_proxy_without_restarting_a_live_generation(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    slots = FakeSlots()
+    row = await slots.start(1, Path("release"), "a" * 40)
+    slots.route = 0
+    control = GenerationController(JobStore(tmp_path), slots=slots)
+
+    async def active():
+        return uuid.UUID(row["generation"])
+
+    async def info(gid):
+        return {"id": gid, "revision": "a" * 40, "api_url": "http://127.0.0.1:8792"}
+
+    async def current_slot():
+        return slots.route
+
+    async def ensure_proxy(slot):
+        assert slot == 1
+
+    async def forbidden(*args):
+        raise AssertionError("live generation must not restart")
+
+    monkeypatch.setattr(control, "active", active)
+    monkeypatch.setattr(control, "generation_info", info, raising=False)
+    monkeypatch.setattr(slots, "current_slot", current_slot, raising=False)
+    monkeypatch.setattr(slots, "ensure_proxy", ensure_proxy, raising=False)
+    monkeypatch.setattr(slots, "start", forbidden)
+    await control.reconcile_services()
+    assert slots.route == 1 and not slots.stopped
+    monkeypatch.setattr(slots, "switch", forbidden)
+    await control.reconcile_services()  # No reload/fsync on each supervisor poll.
+
+
+async def test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    slots = FakeSlots()
+    active_id = uuid.uuid4()
+    control = GenerationController(JobStore(tmp_path), slots=slots)
+
+    async def active():
+        return active_id
+
+    async def info(gid):
+        return {"id": gid, "revision": "a" * 40, "api_url": "http://127.0.0.1:8791"}
+
+    original_start = slots.start
+
+    async def restarted(slot, release, revision):
+        nonlocal active_id
+        row = await original_start(slot, release, revision)
+        active_id = uuid.UUID(row["generation"])
+        return row
+
+    async def current_slot():
+        return slots.route
+
+    async def ensure_proxy(slot):
+        assert slot == 0
+
+    monkeypatch.setattr(control, "active", active)
+    monkeypatch.setattr(control, "generation_info", info, raising=False)
+    monkeypatch.setattr(slots, "current_slot", current_slot, raising=False)
+    monkeypatch.setattr(slots, "ensure_proxy", ensure_proxy, raising=False)
+    monkeypatch.setattr(slots, "start", restarted)
+    release = tmp_path / "releases" / ("a" * 40) / "deploy"
+    release.mkdir(parents=True)
+    (release / "generation-contract.json").write_text(json.dumps({
+        "protocol": 1, "schema_revision": "0030_runtime_generations", "online_migration_from": []}))
+    await control.reconcile_services()
+    assert slots.route == 0 and len(slots.rows) == 1
+
+
+async def test_proxy_service_uses_its_own_persisted_config(tmp_path, monkeypatch):
+    import plistlib
+
+    from ttakkari.generation_deployment import Slots
+    slots = Slots(tmp_path)
+    booted = False
+
+    async def current():
+        return 1 if booted else None
+
+    async def launch(*args):
+        nonlocal booted
+        assert args[0] == "bootstrap"
+        service = plistlib.loads(Path(args[-1]).read_bytes())
+        assert service["ProgramArguments"][-2:] == ["--config", str(tmp_path / "proxy.json")]
+        assert service["KeepAlive"] is True
+        assert service["ThrottleInterval"] == 10
+        assert "LaunchAgents" not in args[-1]
+        booted = True
+
+    monkeypatch.setattr(slots, "current_slot", current)
+    monkeypatch.setattr(slots, "_launchctl", launch)
+    monkeypatch.setattr("ttakkari.generation_deployment.shutil.which", lambda _: "/fake/caddy")
+    await slots.ensure_proxy(1)
+    assert booted and slots.persisted_slot() == 1
+
+
+async def test_supervisor_never_routes_to_an_unowned_boot(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    slots = FakeSlots()
+    await slots.start(0, Path("release"), "a" * 40)
+    control = GenerationController(JobStore(tmp_path), slots=slots)
+
+    async def active():
+        return uuid.uuid4()
+
+    async def info(_):
+        return {"revision": "a" * 40, "api_url": slots.origin(0)}
+
+    monkeypatch.setattr(control, "active", active)
+    monkeypatch.setattr(control, "generation_info", info)
+    with pytest.raises(RuntimeError, match="identity"):
+        await control.reconcile_services()
+    assert slots.route is None

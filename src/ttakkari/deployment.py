@@ -350,6 +350,12 @@ class Controller:
         loaded_revision = revision()
         try:
             while True:
+                if get_settings().deploy_strategy == "generations":
+                    from ttakkari.generation_deployment import GenerationController
+                    try:
+                        await GenerationController(self.store).reconcile_services()
+                    except Exception:
+                        log.exception("generation services need recovery; preserving existing work")
                 job = next(
                     (j for j in self.store.all() if j["status"] not in TERMINAL), None
                 )

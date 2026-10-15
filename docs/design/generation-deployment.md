@@ -45,6 +45,8 @@
 
 `deploy/install-services.sh all`은 기존 idle 설치용이다. generation 구성에서 이를 다시 실행하면 8787 점유가 충돌하므로 사용하지 않는다. 슬롯 plists는 로그인 시 자동 로드되는 LaunchAgents 폴더에 두지 않고 `<deploy>/services`에 둔다. 슬롯은 KeepAlive를 사용하지만, 배출 완료 때 `bootout`하므로 retired 슬롯이 자동으로 살아나지 않는다.
 
+외부 감독은 각 조회 때 DB의 active 슬롯과 전용 프록시를 대조한다. 감독/로그인 세션이 다시 기동되면 active 릴리스만 복원한다. 이미 정상인 슬롯은 재시작하지 않으며, 메모리 설정과 저장된 proxy.json이 모두 맞으면 Caddy reload도 생략한다. draining/retired 슬롯과 이전 Run lease는 자동 복원·이전하지 않는다.
+
 ## 최초 전환: 기존 안전 배포 이후 외부 설치 작업 1회
 
 이 절차는 **아직 운영 실행하지 않았다**. 기존 코드에는 소유권 계약이 없으므로 최초 전환은 무중단으로 취급하지 않는다. 실제 LLM Run·전사·변환·색인·업로드가 끝났는지 확인한 뒤 진행해야 한다. 따까리 내부 Run에서 launchctl·서비스 재시작을 실행하지 않는다.
@@ -52,7 +54,7 @@
 1. 기존 외부 감독의 idle 경로로 이 코드와 0030 migration을 배포한다. 기존 감독이 새 구현을 읽었는지 확인한다. 이 단계만으로 generation 활성화가 되지는 않는다.
 2. 실행할 커밋을 `Releases.archive`로 `<deploy>/releases/<SHA>`에 분리하고 `GenerationController.environment`로 고정 venv와 브라우저 MCP Node 의존성을 설치한다. lockfile을 사용하며 이미 준비한 환경은 다시 sync하지 않는다. 필요하면 같은 릴리스에서 격리 DB 검사를 재실행한다.
 3. 외부 감독도 별도 검증된 tools 릴리스의 Python/코드로 고정한다. 서비스의 WorkingDirectory와 Python을 해당 릴리스로 정하고 `TTAKKARI_DEPLOY_SOURCE_ROOT`만 개발 checkout을 가리킨다. 운영 app의 파일 변경으로 감독 코드·venv가 덮어써지지 않아야 한다.
-4. 공통 admission 잠금 아래 모든 기존 장기 작업·유한 요청 종료를 확인하고 기존 backend 서비스를 정리한다. 슬롯 0을 `Slots.start`로 시작하고 readiness에서 `protocol=1`, 기대 SHA·UUID·PID를 확인한다. `activate(candidate_uuid, expected=None)`로 최초 실행 담당자를 지정한다.
+4. 공통 admission 잠금 아래 모든 기존 장기 작업·유한 요청 종료를 확인하고 기존 backend 서비스를 정리한다. 기존 backend의 로그인 자동 실행 plist도 별도 보관해 다음 로그인 때 8787을 다시 점유하지 않게 한다. 슬롯 0을 `Slots.start`로 시작하고 readiness에서 `protocol=1`, 기대 SHA·UUID·PID를 확인한다. `activate(candidate_uuid, expected=None)`로 최초 실행 담당자를 지정한다.
 5. `proxy_config(0)`의 JSON을 `<deploy>/proxy.json`에 저장해 전용 Caddy launchd 서비스의 `--config`로 지정한다. 이후 검증된 라우팅을 같은 파일에 원자적으로 보존하므로 Caddy 재기동 때 마지막 슬롯을 사용한다. 다른 Caddy와 공유하는 기본 autosave는 비활성이다. 실행 파일은 `command -v caddy`로 확인하고 설정은 `caddy validate`로 먼저 검증한다. 외부 주소는 기존 tunnel이 받는 8787이다.
 6. 로컬·공개 health/version, 인증된 읽기·가짜 Run 접수/완료, 이벤트 cursor와 중복 실행 여부를 확인한 뒤 `deploy_strategy=generations`로 후속 예약을 받는다. 원래 슬롯과 supervisor의 부팅 복구 동작도 확인한다.
 
@@ -74,6 +76,7 @@
 - DB CAS와 프록시 reload는 원자적이지 않다. journal의 후보·직전 UUID를 먼저 저장하고 실제 DB·프록시 상태를 읽어 반복 실행해도 수렴하도록 한다. 구세대를 종료한 직후 감독이 죽은 경우도 마지막 retiring 상태와 OS 생존 잠금·DB 소유권을 대조한다.
 - heartbeat 만료로 소유권을 빼앗지 않는다. 살아 있는 앱의 전역 startup recovery를 금지하며, generation control이 남아 있으면 legacy recovery도 거절한다.
 - active 슬롯의 같은 릴리스가 다시 기동되면 새 UUID가 신규 접수를 맡는다. 종료된 부모의 기존 Run lease는 새 UUID로 이전하지 않는다. 불확실한 엔진 작업은 격리된 채 유지하며 실제 자식 종료 확인 후 별도 복구한다.
+- 감독은 슬롯의 실제 boot UUID가 DB active와 일치할 때만 프록시 경로를 복원한다. 응답 중인 전용 admin이 예상 구성과 다르거나 다른 프로세스가 슬롯을 점유하면 강제 종료·덮어쓰기를 하지 않고 오류를 남긴다. Mac 재부팅 때는 기존 엔진 작업까지 유지된다는 의미가 아니다.
 - 부모 충돌 뒤 running STT/processing preview가 남아 있으면 새 추론/변환을 시작하지 않는다. 파일 잠금만 풀렸다고 자식이 끝났다고 간주하지 않는다. 실제 PID·시작 시각·그룹과 파일 상태를 확인하기 전에는 해당 큐를 재등록하지 않는다.
 - `recovery_pending`은 자동 조정으로 안전을 확인하지 못한 상태다. 원인이 해소되기 전에는 후속 예약을 활성화하지 않는다. 관측 불능을 작업 완료로 기록하지 않는다.
 - 외부 부작용의 exactly-once, 실행 중 함수 메모리 이전, Mac/DB/전원 장애에 대한 무중단은 보장 범위 밖이다. DB fencing은 오래된 쓰기를 거절하는 역할이다.

@@ -141,6 +141,16 @@ def main():
         emit({"type": "result", "subtype": "success", "is_error": False, "result": body, "session_id": sid,
               "total_cost_usd": 0.01, "num_turns": 1, "duration_ms": 100})
         return 0
+    if "NULBYTE" in prompt:
+        # 도구 출력에 NUL(\u0000)이 섞인 경우. Postgres text/jsonb 는 NUL 을 받지 않는다.
+        emit({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "toolu_nul", "name": "Bash", "input": {"command": "cat bin\u0000file"}}]}})
+        emit({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "toolu_nul", "content": "head\u0000tail", "is_error": False}]}})
+        print("raw\u0000stdout line", flush=True)
+        emit({"type": "result", "subtype": "success", "is_error": False, "result": "done\u0000ok", "session_id": sid,
+              "total_cost_usd": 0.0, "num_turns": 1, "duration_ms": 5})
+        return 0
     if "GARBAGE" in prompt:
         print("this line is not json", flush=True)
         print("{broken json", flush=True)

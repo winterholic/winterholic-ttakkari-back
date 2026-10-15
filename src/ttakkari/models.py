@@ -22,6 +22,9 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+# Session before_flush 훅을 등록한다(저장 직전 NUL 정화). 이름은 쓰지 않는다.
+import ttakkari.textsafe  # noqa: F401
+
 
 def utcnow() -> datetime:
     return datetime.now(UTC)

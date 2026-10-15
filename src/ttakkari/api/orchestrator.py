@@ -7,7 +7,7 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
 from ttakkari.api.deps import Db
@@ -39,11 +39,20 @@ MAX_ACTIVE_WORKERS = 20
 class WorkerIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     prompt: str = Field(min_length=1, max_length=100_000)
-    engine: Literal["auto", "claude", "codex"] = "auto"
+    engine: Literal["auto", "claude", "codex", "antigravity"] = "auto"
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     # 오케스트레이터와 같은 급(peer_models)을 작업 세션에 쓸 때만 필요하다.
     escalation_reason: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def antigravity_model_policy(self):
+        if self.engine == "antigravity":
+            if self.model is not None and not self.model.startswith("gemini-3.8-flash-"):
+                raise ValueError("Antigravity worker assignments currently support Gemini 3.8 Flash only.")
+            if self.effort not in (None, "low", "medium", "high"):
+                raise ValueError("Antigravity Gemini 3.8 Flash supports low, medium, or high effort only.")
+        return self
 
 
 class MessageIn(BaseModel):
@@ -115,6 +124,8 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     engine = body.engine
     if engine != "auto" and model and profiles_mod.model_engine(model) not in (None, engine):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{model} 은(는) {engine} 엔진 모델이 아닙니다.")
+    if engine == "antigravity" and (model not in s.engine_models.get(engine, []) or effort not in {"low", "medium", "high"}):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "현재 Antigravity는 Gemini 3.8 Flash와 low/medium/high effort를 지원합니다.")
     peer = (model or "").lower() in {m.lower() for m in s.peer_models}
     reason = (body.escalation_reason or "").strip()
     if peer and not reason:

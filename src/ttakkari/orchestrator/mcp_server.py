@@ -320,15 +320,16 @@ def orchestrator_tool(fn):
 
 
 @orchestrator_tool
-async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex"] = "auto",
+async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     `prompt` must be self-contained: the worker does not see this conversation.
     Use engine="auto" for general tasks: fresh usage chooses the engine on each turn; the model is a preference.
-    Explicit engine="claude"/"codex" locks that engine, including on a usage limit (use Claude for design).
-    Without `model`: claude → sonnet/high, codex or auto → gpt-6-luna/high (or sonnet/high when Claude is selected).
+    Explicit engine="claude"/"codex"/"antigravity" locks that engine, including on a usage limit.
+    Use antigravity only with an explicitly selected Gemini 3.8 Flash model; it is excluded from auto.
+    Without `model`: claude → sonnet/high, codex or auto → gpt-6-luna/high, antigravity → gemini-3.8-flash-high.
     opus / gpt-6.1-sol are orchestrator-grade and need `escalation_reason` (why this part needs deep reasoning,
     a design decision or new ideas). Auto workers can move to another account with the same-grade
     model of the other engine. Returns the worker_id."""

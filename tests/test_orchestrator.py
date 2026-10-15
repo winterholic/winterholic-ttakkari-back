@@ -24,7 +24,9 @@ from ttakkari.runs.manager import manager
 def test_design_capacity_policy_waits_for_claude_and_uses_pms_wbs():
     note = " ".join(ORCHESTRATOR_NOTE.split())
     assert "visual work should use Claude" in note
-    assert "do not send it to GPT" in note
+    assert "user explicitly authorized Antigravity" in note
+    assert 'model="gemini-3.8-flash-high"' in note
+    assert "Otherwise do not send it to GPT" in note
     assert "PMS project WBS/backlog" in note
     assert "report the wait to the user" in note
     assert "list_pms_projects/create_pms_task" in note
@@ -36,6 +38,19 @@ def test_general_work_assignment_uses_usage_and_auto_engine():
     assert 'use engine="auto"' in note
     assert "read its progress, stop it, and reassign the unfinished work" in note
     assert 'Claude with engine="claude"' in note
+
+
+async def test_auto_worker_selection_excludes_explicit_antigravity_account(client, auth):
+    added = await client.post("/api/accounts", json={"name": "Gemini CLI", "engine": "antigravity"}, headers=auth)
+    assert added.status_code == 201, added.text
+    agy_id = added.json()["id"]
+
+    async with sessionmaker()() as db:
+        automatic, _ = await profiles.availability(db, "auto", "personal")
+        explicit, _ = await profiles.availability(db, "antigravity", "personal")
+
+    assert all(p.engine != "antigravity" for p in automatic)
+    assert any(str(p.id) == agy_id and p.engine == "antigravity" for p in explicit)
 
 
 async def test_orchestrator_can_record_deferred_design_in_pms(client, auth, make_dir):

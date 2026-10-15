@@ -353,6 +353,9 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     ttl = max(TTL, get_settings().usage_poll_seconds)
     if hit and not refresh and time.time() - hit[0] < ttl:
         return hit[1]
+    if engine == "antigravity":
+        # No documented usage API in agy; unknown is different from zero usage or unlimited headroom.
+        return Usage(error="Antigravity usage is not observable through the official CLI")
     if engine == "claude":
         u = await _fetch_claude(config_dir)
         if not u.windows and account_id in _stream:

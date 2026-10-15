@@ -22,7 +22,7 @@ from ttakkari.models import AppSetting, ChatSession, EngineAccount, utcnow
 
 log = logging.getLogger(__name__)
 
-ENGINES = {"claude", "codex"}
+ENGINES = {"claude", "codex", "antigravity"}
 # 엔진이 사용량·속도 한도로 거절할 때의 문구. 문구가 바뀌면 폴백 없이 그냥 실패한다(ADR 0006 한계).
 # Claude: "You've hit your session|weekly|usage limit · resets 7:20pm (Asia/Seoul)", "Claude AI usage limit reached|<epoch>".
 # Codex: "You've hit your usage limit. ... try again at Oct 12th, 2026 12:16 AM."
@@ -51,6 +51,8 @@ class Profile:
         return str(self.id)
 
     def env(self) -> dict[str, str]:
+        if self.engine == "antigravity":
+            return {}
         if self.config_dir is None:
             return {}
         return {"CLAUDE_CONFIG_DIR" if self.engine == "claude" else "CODEX_HOME": str(self.config_dir)}
@@ -138,7 +140,9 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
     free: list[Profile] = []
     blocked: list[tuple[Profile, float]] = []
     for a in await effective_order(db, pool):
-        if not is_on(a, pool) or not (session_engine == "auto" or a.engine == session_engine):
+        if not is_on(a, pool) or not (
+            (session_engine == "auto" and a.engine in {"claude", "codex"}) or a.engine == session_engine
+        ):
             continue
         p = _profile(a)
         until = limited_until(p.id, p.max_used_percent)
@@ -397,6 +401,9 @@ def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:
     codex: <config_dir 또는 ~/.codex>/auth.json 존재 여부만(키체인 저장이면 알 수 없다).
     """
     base = Path(config_dir).expanduser() if config_dir else None
+    if engine == "antigravity":
+        # The official CLI exposes no read-only login-status API. Do not inspect its credentials.
+        return "unknown", None
     if engine == "claude":
         f = (base / ".claude.json") if base else HOME / ".claude.json"
         try:
@@ -420,6 +427,10 @@ def model_engine(model: str | None) -> str | None:
     m = model.lower()
     if m in CLAUDE_MODELS or m.startswith("claude"):
         return "claude"
+    if m.startswith("gpt-oss-"):
+        return "antigravity"
+    if m.startswith("gemini-"):
+        return "antigravity"
     if m.startswith(("gpt", "codex", "o1", "o3", "o4")):
         return "codex"
     return None

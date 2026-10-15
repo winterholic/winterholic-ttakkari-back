@@ -63,7 +63,8 @@ If an existing fixed-engine worker is waiting at a limit and the task can use th
 progress, stop it, and reassign the unfinished work with engine="auto"; avoid repeating completed side effects.
 - For all Run roles, including workers with a fixed engine, the app spreads assignments across eligible accounts by fresh headroom to each account's cap; \
   the cap blocks new Runs when either the 5-hour or weekly window reaches it (it clears after reset). Design and \
-  visual work should use Claude with engine="claude". If Claude has too little headroom for that work, do not send it to GPT: add the \
+  visual work should use Claude with engine="claude". If Claude has too little headroom and the user explicitly authorized Antigravity, \
+  assign engine="antigravity", model="gemini-3.8-flash-high", effort="high". Otherwise do not send it to GPT: add the \
   task to the relevant Ttakkari PMS project WBS/backlog using list_pms_projects/create_pms_task for after Claude \
   resets, then report the wait to the user.
 

@@ -48,7 +48,7 @@ Pool = Literal["personal", "work"]
 
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    engine: Literal["claude", "codex"]
+    engine: Literal["claude", "codex", "antigravity"]
     pool: Pool = "personal"
     config_dir: str | None = Field(default=None, max_length=1024)
     enabled: bool = True
@@ -58,6 +58,13 @@ class AccountIn(BaseModel):
     @classmethod
     def _dir(cls, v: str | None) -> str | None:
         return _clean_dir(v)
+
+    @field_validator("config_dir")
+    @classmethod
+    def _no_antigravity_account_folder(cls, value: str | None, info):
+        if info.data.get("engine") == "antigravity" and value:
+            raise ValueError("Antigravity uses the single logged-in agy profile; config_dir is not supported.")
+        return value
 
 
 class AccountPatch(BaseModel):
@@ -109,6 +116,8 @@ def login_command(engine: str, config_dir: str | None) -> str:
     if engine == "claude":
         # 초기 프롬프트로 /login 을 넘기는 동작은 버전마다 다를 수 있어(확인 필요) claude 를 띄우고 /login 을 입력하게 안내한다.
         return f"CLAUDE_CONFIG_DIR={config_dir} claude" if config_dir else "claude"
+    if engine == "antigravity":
+        return "agy"
     return f"CODEX_HOME={config_dir} codex login" if config_dir else "codex login"
 
 
@@ -279,6 +288,9 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
 async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: Db, request: Request) -> AccountOut:
     a = await _get(db, account_id)
     data = body.model_dump(exclude_unset=True)
+    if a.engine == "antigravity" and data.get("config_dir"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Antigravity uses one logged-in agy profile; config_dir is not supported.")
     if "name" in data and data["name"] is not None:
         data["name"] = data["name"].strip()
     for k in ("pool", "enabled", "work_enabled", "max_used_percent"):

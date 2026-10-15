@@ -37,6 +37,7 @@ class Base(DeclarativeBase):
 class Engine(enum.StrEnum):
     claude = "claude"
     codex = "codex"
+    antigravity = "antigravity"
 
 
 class SessionKind(enum.StrEnum):

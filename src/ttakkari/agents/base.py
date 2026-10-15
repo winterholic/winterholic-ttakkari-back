@@ -27,6 +27,7 @@ class LaunchSpec:
     codex_sandbox: str = "workspace-write"
     # 붙일 stdio MCP 서버 {name: {command, args, env}}. 오케스트레이터 Run 에만 쓴다(ADR 0006).
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    session_id: str | None = None
 
 
 @dataclass
@@ -38,6 +39,7 @@ class Normalized:
 @dataclass
 class ParseState:
     engine_session_id: str | None = None
+    resume_mismatch: bool = False
     result_text: str | None = None
     is_error: bool = False
     error: str | None = None
@@ -56,6 +58,7 @@ class ParseState:
     context_tokens: int | None = None
     context_window: int | None = None
     context_model: str | None = None
+    pending_tool_calls: set[str] = field(default_factory=set)
 
 
 class AgentAdapter(Protocol):

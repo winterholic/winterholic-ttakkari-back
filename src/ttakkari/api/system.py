@@ -42,6 +42,7 @@ async def info(_: User) -> dict:
         "engines": {
             "claude": shutil.which(s.claude_bin) is not None,
             "codex": shutil.which(s.codex_bin) is not None,
+            "antigravity": shutil.which(s.antigravity_bin) is not None,
         },
         "preview_converter": soffice_path() is not None,
         "allowed_roots": [str(p) for p in s.allowed_roots],

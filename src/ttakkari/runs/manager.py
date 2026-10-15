@@ -18,6 +18,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari.agents.antigravity import AntigravityAdapter
 from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.agents.codex import CodexAdapter
@@ -59,7 +60,9 @@ from ttakkari.schemas import ArtifactOut
 
 log = logging.getLogger(__name__)
 
-ADAPTERS: dict[str, AgentAdapter] = {"claude": ClaudeAdapter(), "codex": CodexAdapter()}
+ADAPTERS: dict[str, AgentAdapter] = {
+    "claude": ClaudeAdapter(), "codex": CodexAdapter(), "antigravity": AntigravityAdapter(),
+}
 MAX_TOUCHED_ARTIFACTS = 50
 MAX_OUTBOX_FILES = 200
 MAX_CHECKPOINT_UNTRACKED = 500
@@ -444,7 +447,7 @@ class RunManager:
                 cwd=root, prompt=prompt, engine_session_id=resume_id,
                 model=model, effort=effort,
                 outbox=outbox, write_roots=write_roots, system_note=system_note,
-                codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers,
+                codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers, session_id=str(sess.id),
             )
             env = _child_env(run.id, write_roots, s.home, s.guard_log) | prof.env()
             adapter = ADAPTERS[prof.engine]
@@ -563,40 +566,59 @@ class RunManager:
         """엔진 프로세스 한 번. (상태, 종료 코드, 시간 초과, 실행 파일 없음)."""
         s = get_settings()
         state = ParseState()
+        if adapter.engine == "antigravity":
+            state.engine_session_id = spec.engine_session_id
         cmd = adapter.build_command(spec, env)
+        working_directory = getattr(adapter, "working_directory", lambda _spec: root)(spec)
         try:
             proc = await asyncio.create_subprocess_exec(
-                *cmd, cwd=str(root), env=env, stdin=asyncio.subprocess.DEVNULL,
+                *cmd, cwd=str(working_directory), env=env, stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 start_new_session=True, limit=32 * 1024 * 1024,
             )
         except FileNotFoundError:
+            cleanup = getattr(adapter, "cleanup", None)
+            if cleanup:
+                cleanup(spec)
             return state, None, False, True
         if h:
             h.proc = proc
         run.pid = proc.pid
-        await self._commit(db, run)
-
-        heartbeat_task = asyncio.create_task(_heartbeat(run.id), name=f"heartbeat-{run.id}")
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
+        heartbeat_task: asyncio.Task | None = None
         timed_out = False
         try:
-            await asyncio.wait_for(self._pump(db, run, proc, adapter, state, root, account_id), s.run_timeout_seconds)
+            await self._commit(db, run)
+            heartbeat_task = asyncio.create_task(_heartbeat(run.id), name=f"heartbeat-{run.id}")
+            await asyncio.wait_for(self._pump(db, run, proc, adapter, state, root, account_id, spec), s.run_timeout_seconds)
         except TimeoutError:
             timed_out = True
             await self._terminate(proc)
+        except asyncio.CancelledError:
+            await self._terminate(proc)
+            raise
         finally:
-            heartbeat_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await heartbeat_task
-        rc = await proc.wait()
-        with contextlib.suppress(Exception):
-            await asyncio.wait_for(stderr_task, 5)
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await heartbeat_task
+            if proc.returncode is None:
+                await self._terminate(proc)
+            await proc.wait()
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(stderr_task, 5)
+            if adapter.engine == "antigravity":
+                with contextlib.suppress(OSError):
+                    (Path("/private/tmp") / f"ttakkari-agy-{run.id}.log").unlink()
+                cleanup = getattr(adapter, "cleanup", None)
+                if cleanup:
+                    cleanup(spec)
+        rc = proc.returncode
         return state, rc, timed_out, False
 
     async def _pump(self, db: AsyncSession, run: Run, proc: asyncio.subprocess.Process,
                     adapter: AgentAdapter, state: ParseState, cwd: Path,
-                    account_id: uuid.UUID | None = None) -> None:
+                    account_id: uuid.UUID | None = None, spec: LaunchSpec | None = None) -> None:
         assert proc.stdout is not None
         seen_limits = None
         while True:
@@ -615,6 +637,17 @@ class RunManager:
             if not isinstance(obj, dict):
                 continue
             produced = adapter.parse_line(obj, state, cwd)
+            if adapter.engine == "antigravity" and state.resume_mismatch:
+                for n in produced:
+                    events.append(db, run, n.type, n.payload)
+                await self._commit(db, run)
+                return
+            if adapter.engine == "antigravity" and obj.get("event") == "init" and spec is not None:
+                # The CLI has loaded the server config and started stdio MCP before exposing init.
+                # Remove the session token file before the agent can read the temporary project.
+                cleanup = getattr(adapter, "cleanup", None)
+                if cleanup:
+                    cleanup(spec)
             if account_id is not None and state.rate_limits is not seen_limits:
                 # 실행 중 엔진이 알려 준 사용량을 바로 반영해 수집 주기 사이에도 값이 신선하게 한다.
                 seen_limits = state.rate_limits
@@ -830,7 +863,7 @@ def _looks_like_agent(pid: int) -> bool:
                              check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return False
-    return any(name in out for name in ("claude", "codex"))
+    return any(name in out for name in ("claude", "codex", "/agy ", "antigravity"))
 
 def _tmp_dirs() -> list[Path]:
     dirs = {Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve()}

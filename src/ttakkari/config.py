@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     worker_default_models: dict[str, dict[str, str]] = {
         "claude": {"model": "sonnet", "effort": "high"},
         "codex": {"model": "gpt-6-luna", "effort": "high"},
+        "antigravity": {"model": "gemini-3.8-flash-high", "effort": "high"},
         "auto": {"model": "gpt-6-luna", "effort": "high"},
     }
     # 오케스트레이터와 같은 급이라 작업 세션에 쓰려면 승격 사유가 필요한 모델.
@@ -76,6 +77,9 @@ class Settings(BaseSettings):
     engine_models: dict[str, list[str]] = {
         "claude": ["opus", "sonnet", "haiku"],
         "codex": ["gpt-6-luna", "gpt-6.1-sol"],
+        "antigravity": [
+            "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high",
+        ],
     }
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).
@@ -134,6 +138,7 @@ class Settings(BaseSettings):
 
     claude_bin: str = "claude"
     codex_bin: str = "codex"
+    antigravity_bin: str = "/opt/homebrew/bin/agy"
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
     claude_setting_sources: str | None = None
     # 동시 실행 자리는 역할별로 따로 센다(ADR 0013). 접수는 짧고 가벼워서 따로, 기획이 작업 세션 자리를 막지 않게 따로.

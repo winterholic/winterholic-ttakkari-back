@@ -29,7 +29,8 @@ def _window(w: usage_mod.Window | None, now: float, points: list[usage_store.Poi
         return None
     # 초기화 시각이 측정 뒤에 지났으면 그 사이 한도가 새로 시작됐다. 지난 퍼센트로 잔여를 말하지 않는다.
     passed = bool(w.resets_at and w.resets_at <= now)
-    out: dict[str, Any] = {"used_percent": w.percent, "remaining_percent": None if passed else max(0, 100 - w.percent),
+    remaining = None if passed else (w.remaining_percent if w.remaining_percent is not None else max(0, 100 - w.percent))
+    out: dict[str, Any] = {"used_percent": w.percent, "remaining_percent": remaining,
                            "resets_at": _iso(w.resets_at), "reset_since_measured": passed,
                            "resets_in_seconds": None if not w.resets_at else max(0, round(w.resets_at - now))}
     burn = None if passed or not points else usage_store.burn_rate(points, w.key, w, now)
@@ -58,6 +59,12 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
         "weekly": _window(by_key.get("seven_day"), now, history.get("seven_day")),
         "model_weekly": {w.key.removeprefix("seven_day_"): _window(w, now, history.get(w.key))
                          for w in u.windows if w.key.startswith("seven_day_")},
+        # Antigravity reports shared group quotas, not per-account headroom. Preserve every
+        # observed bucket and its exact source percentage without feeding routing caps.
+        "model_quotas": [{"key": w.key, "label": w.label, **_window(w, now, history.get(w.key))}
+                         for w in u.windows if w.key.startswith("agy_")],
+        "credits_balance": u.credits_balance,
+        "credits_error": u.credits_error,
         "error": u.error,
     }
 

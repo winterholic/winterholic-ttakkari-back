@@ -194,6 +194,7 @@ class AccountUsageSample(Base):
     windows: Mapped[list[Any]] = mapped_column(default=list)
     # Antigravity AI 크레딧 잔액. Codex rate-limit reset credit 과 다른 단위다.
     credits_balance: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credits_error: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class AppSetting(Base):

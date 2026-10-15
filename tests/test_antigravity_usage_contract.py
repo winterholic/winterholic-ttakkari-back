@@ -1,9 +1,10 @@
+import time
 import uuid
 
 import pytest
 
 from ttakkari.api.accounts import AccountUsageOut, UsageWindowOut
-from ttakkari.runs import usage
+from ttakkari.runs import account_status, usage
 
 
 @pytest.mark.asyncio
@@ -40,3 +41,23 @@ def test_api_dto_keeps_exact_remaining_and_separate_credit_balance():
 
     assert payload["windows"][0]["remaining_percent"] == 75.25
     assert payload["credits_balance"] == 0
+
+
+def test_orchestrator_account_usage_keeps_antigravity_group_quota_out_of_account_cap():
+    account_id = uuid.uuid4()
+    measured = time.time()
+    usage._cache[account_id] = (measured, usage.Usage(
+        windows=[usage.Window("agy_gemini_models_5h", "Gemini Models · 5시간", 2,
+                              int(measured + 3600), 98.37)],
+        credits_balance=0, source="antigravity_cli", updated_at=measured,
+    ))
+    try:
+        result = account_status._usage(account_id, measured + 1)
+        assert result["model_quotas"] == [{
+            "key": "agy_gemini_models_5h", "label": "Gemini Models · 5시간", "used_percent": 2,
+            "remaining_percent": 98.37,
+        }]
+        assert result["credits_balance"] == 0 and result["credits_error"] is None
+        assert account_status._cap_remaining(account_id, 100, result) is None
+    finally:
+        usage._cache.pop(account_id, None)

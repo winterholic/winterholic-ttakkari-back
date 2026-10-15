@@ -83,7 +83,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "search_meeting_items", "group": "회의록", "who": "모든 실행", "desc": "회의의 결정·액션 아이템을 찾는다(프로젝트·상태로 좁히기). 읽기 전용"},
     {"name": "search_meetings", "group": "회의록", "who": "모든 실행", "desc": "회의록·전사 구간을 뜻으로 찾는다(로컬 벡터 + 키워드). 읽기 전용"},
     {"name": "spawn_worker", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션을 만들어 일을 맡긴다"},
-    {"name": "account_usage", "group": "작업 세션", "who": "오케스트레이터", "desc": "계정별 모델·5시간/주간 잔여·초기화·한도 대기·실행 중 Run 수"},
+    {"name": "account_usage", "group": "작업 세션", "who": "오케스트레이터", "desc": "계정별 모델·5시간/주간 잔여·Antigravity 모델 그룹 quota와 AI 크레딧·초기화·한도 대기·실행 중 Run 수"},
     {"name": "list_pms_projects", "group": "PMS", "who": "모든 실행", "desc": "PMS 프로젝트와 진행 상태를 찾는다(회사 실행은 회사 범위)"},
     {"name": "create_pms_task", "group": "PMS", "who": "모든 실행", "desc": "WBS 작업·계층·선행관계·담당·일정·진행률을 등록한다"},
     {"name": "manage_pms", "group": "PMS", "who": "모든 실행", "desc": "사용자를 대신해 프로젝트·작업 트리·선행관계·마일스톤·이슈를 생성·조회·수정·삭제한다"},

@@ -12,7 +12,9 @@ depends_on = None
 
 def upgrade():
     op.add_column("account_usage_samples", sa.Column("credits_balance", sa.Integer(), nullable=True))
+    op.add_column("account_usage_samples", sa.Column("credits_error", sa.String(length=120), nullable=True))
 
 
 def downgrade():
+    op.drop_column("account_usage_samples", "credits_error")
     op.drop_column("account_usage_samples", "credits_balance")

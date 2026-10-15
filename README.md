@@ -38,6 +38,7 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_MEETING_TRANSCRIPT_MAX_CHARS`, `TTAKKARI_MEETING_ANALYSIS_MODEL`, `TTAKKARI_MEETING_ANALYSIS_EFFORT` | 회의록(ADR 0010): 전사 한 건 최대 글자(기본 12만), 분석 Run 의 모델·생각 수준(기본 세션 기본 모델·high) |
 | `TTAKKARI_CLOVANOTE_PROFILE_DIR`, `TTAKKARI_CLOVANOTE_WORKSPACE_ID`, `TTAKKARI_CLOVANOTE_ENABLED`, `TTAKKARI_CLOVANOTE_POLL_SECONDS` | 클로바노트 연동(ADR 0021): 전용 Chrome 프로필(기본 `~/.ttakkari/clovanote-chrome`), 워크스페이스(비우면 첫 것), 켜기, 자동 동기화 주기(기본 1800초). 로그인은 회의록 화면의 '로그인 창 열기'로 일반 Chrome 에서 한 번('로그인 상태 유지' 필수). 비밀번호는 저장하지 않는다. 설치된 Google Chrome 이 필요하다 |
 | `TTAKKARI_CONTEXT_EMBEDDER` | 회의록 벡터 저장: `e5`(기본, 로컬 multilingual-e5-large) · `hash`(테스트) · `off` |
+| `TTAKKARI_LOCAL_STT_ENABLED`, `TTAKKARI_LOCAL_STT_PYTHON`, `TTAKKARI_LOCAL_STT_MODEL_PATH`, `TTAKKARI_LOCAL_STT_PROFILE` | 선택 로컬 Whisper(ADR 0025). 기본 꺼짐·baseline. 요청마다 자식 프로세스에서 로드·추론 후 종료한다. [설치·API·측정 안내](docs/stt/README.md). 클로바노트 기본값은 유지 |
 | `TTAKKARI_CONTEXT_SOURCE_ROOTS` | 비서 관리 > 지식에 등록할 수 있는 상위 폴더 JSON 배열. 기본 홈 |
 | `TTAKKARI_CORS_ORIGINS` | 프론트 origin JSON 배열 |
 | `TTAKKARI_ENV` | `prod` 면 refresh 쿠키가 `SameSite=None; Secure`, `/docs` 비활성 |

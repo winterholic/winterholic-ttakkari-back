@@ -44,6 +44,10 @@ async def test_worker_defaults_to_luna_and_engine_defaults(client, auth, make_di
     # auto + Luna 는 Codex 계정부터 쓴다.
     wrun = (await client.get(f"/api/sessions/{auto['worker_id']}/runs", headers=auth)).json()[0]
     assert (await wait_run(client, auth, wrun["id"]))["profile"] == "codex"
+    # Both fake workers belong to this test. Finish the Claude assertion as well,
+    # so fixture teardown need not signal a live process group in sandboxed macOS.
+    crun = (await client.get(f"/api/sessions/{claude['worker_id']}/runs", headers=auth)).json()[0]
+    assert (await wait_run(client, auth, crun["id"]))["profile"] == "claude"
 
 
 async def test_peer_model_worker_needs_escalation_reason(client, auth, make_dir):

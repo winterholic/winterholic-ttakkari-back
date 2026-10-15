@@ -80,6 +80,9 @@ class FakeClient:
 def fake(monkeypatch):
     f = FakeClient()
     monkeypatch.setattr(cn, "client", f)
+    # This fixture represents a closed, fake browser. Never enumerate the user's live
+    # Chrome processes (and do not require macOS sysctl permissions in the sandbox).
+    monkeypatch.setattr(cn, "login_chrome_pids", list)
     monkeypatch.setattr(clova_jobs, "POLL_SECONDS", 0.05)
     s = get_settings()
     monkeypatch.setattr(s, "clovanote_enabled", True)

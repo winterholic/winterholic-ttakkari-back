@@ -1,0 +1,401 @@
+{
+  "schema_version": 1,
+  "normalization": "NFC; CER excludes whitespace; WER whitespace tokens; punctuation kept",
+  "profiles": {
+    "baseline": {
+      "samples": [
+        {
+          "id": "fleurs-ko-test-0",
+          "audio_sha256": "e6bc095e55046de927d7c937f036f96ebb506570648ad9ae7c6576febfc4746a",
+          "start": 0.0,
+          "end": 12.48,
+          "metrics": {
+            "import_seconds": 0.08428670815192163,
+            "audio_decode_seconds": 0.0049409589264541864,
+            "load_seconds": 1.2581821659114212,
+            "inference_seconds": 7.1422839590813965,
+            "release_request_seconds": 0.01825262513011694,
+            "peak_rss_bytes": 3608559616,
+            "rtf_inference": 0.5722983941571631,
+            "process_exited": true,
+            "wall_seconds": 8.552114832913503
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": false,
+            "condition_on_previous_text": true,
+            "initial_prompt": null,
+            "vad_parameters": null
+          },
+          "duration_after_vad": 12.48,
+          "segments": 1,
+          "text_characters": 66,
+          "flagged_segments": 0,
+          "error_rates": {
+            "cer": 0.08928571428571429,
+            "wer": 0.21428571428571427,
+            "character_edits": 5,
+            "reference_characters": 56,
+            "word_edits": 3,
+            "reference_words": 14
+          }
+        },
+        {
+          "id": "fleurs-ko-test-1",
+          "audio_sha256": "a5a400dda19a17f0ceb0c4a2542387ae376e3f0518ba0f9769564402df55affd",
+          "start": 0.0,
+          "end": 10.8,
+          "metrics": {
+            "import_seconds": 0.08373495796695352,
+            "audio_decode_seconds": 0.004841709043830633,
+            "load_seconds": 1.2605887081008404,
+            "inference_seconds": 6.876579666975886,
+            "release_request_seconds": 0.017664791084825993,
+            "peak_rss_bytes": 3608723456,
+            "rtf_inference": 0.6367203395348042,
+            "process_exited": true,
+            "wall_seconds": 8.287917333189398
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": false,
+            "condition_on_previous_text": true,
+            "initial_prompt": null,
+            "vad_parameters": null
+          },
+          "duration_after_vad": 10.8,
+          "segments": 1,
+          "text_characters": 53,
+          "flagged_segments": 0,
+          "error_rates": {
+            "cer": 0.047619047619047616,
+            "wer": 0.4,
+            "character_edits": 2,
+            "reference_characters": 42,
+            "word_edits": 6,
+            "reference_words": 15
+          }
+        },
+        {
+          "id": "fleurs-ko-test-2",
+          "audio_sha256": "989020dedbda7fa529b0b4e876f236e79b25a2915d093e23de94c8456e72b7b4",
+          "start": 0.0,
+          "end": 8.94,
+          "metrics": {
+            "import_seconds": 0.08527000015601516,
+            "audio_decode_seconds": 0.004785832948982716,
+            "load_seconds": 1.2547787500079721,
+            "inference_seconds": 6.5428171248640865,
+            "release_request_seconds": 0.017739792121574283,
+            "peak_rss_bytes": 3631841280,
+            "rtf_inference": 0.7318587387991149,
+            "process_exited": true,
+            "wall_seconds": 7.949268833966926
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": false,
+            "condition_on_previous_text": true,
+            "initial_prompt": null,
+            "vad_parameters": null
+          },
+          "duration_after_vad": 8.94,
+          "segments": 1,
+          "text_characters": 45,
+          "flagged_segments": 0,
+          "error_rates": {
+            "cer": 0.029411764705882353,
+            "wer": 0.2727272727272727,
+            "character_edits": 1,
+            "reference_characters": 34,
+            "word_edits": 3,
+            "reference_words": 11
+          }
+        },
+        {
+          "id": "silence-8s",
+          "audio_sha256": "190415015d40eef0cd797e1b59ffe00846b01873050b12d44b3a216de3faa2a9",
+          "start": 0.0,
+          "end": 8.0,
+          "metrics": {
+            "import_seconds": 0.08573133288882673,
+            "audio_decode_seconds": 0.007612958084791899,
+            "load_seconds": 1.2600862919352949,
+            "inference_seconds": 5.350179082946852,
+            "release_request_seconds": 0.01793970912694931,
+            "peak_rss_bytes": 3608510464,
+            "rtf_inference": 0.6687723853683565,
+            "process_exited": true,
+            "wall_seconds": 6.764199499972165
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": false,
+            "condition_on_previous_text": true,
+            "initial_prompt": null,
+            "vad_parameters": null
+          },
+          "duration_after_vad": 8.0,
+          "segments": 1,
+          "text_characters": 11,
+          "flagged_segments": 1,
+          "error_rates": null
+        }
+      ],
+      "aggregate": {
+        "cer": 0.06060606060606061,
+        "wer": 0.3,
+        "labelled_samples": 3,
+        "reference_characters": 132,
+        "reference_words": 40,
+        "der": null,
+        "overlap_performance": null,
+        "omission_rate": null,
+        "hallucination_rate": null
+      }
+    },
+    "improved": {
+      "samples": [
+        {
+          "id": "fleurs-ko-test-0",
+          "audio_sha256": "e6bc095e55046de927d7c937f036f96ebb506570648ad9ae7c6576febfc4746a",
+          "start": 0.0,
+          "end": 12.48,
+          "metrics": {
+            "import_seconds": 0.0849379578139633,
+            "audio_decode_seconds": 0.005064834142103791,
+            "load_seconds": 1.2582504579331726,
+            "inference_seconds": 7.3114861669018865,
+            "release_request_seconds": 0.01855529099702835,
+            "peak_rss_bytes": 3608363008,
+            "rtf_inference": 0.5858562633735486,
+            "process_exited": true,
+            "wall_seconds": 8.72617116686888
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": true,
+            "condition_on_previous_text": false,
+            "initial_prompt": null,
+            "vad_parameters": {
+              "min_silence_duration_ms": 500,
+              "speech_pad_ms": 300
+            }
+          },
+          "duration_after_vad": 9.656,
+          "segments": 1,
+          "text_characters": 66,
+          "flagged_segments": 0,
+          "error_rates": {
+            "cer": 0.08928571428571429,
+            "wer": 0.21428571428571427,
+            "character_edits": 5,
+            "reference_characters": 56,
+            "word_edits": 3,
+            "reference_words": 14
+          }
+        },
+        {
+          "id": "fleurs-ko-test-1",
+          "audio_sha256": "a5a400dda19a17f0ceb0c4a2542387ae376e3f0518ba0f9769564402df55affd",
+          "start": 0.0,
+          "end": 10.8,
+          "metrics": {
+            "import_seconds": 0.09100641682744026,
+            "audio_decode_seconds": 0.005391708109527826,
+            "load_seconds": 1.2930376250296831,
+            "inference_seconds": 6.998816750012338,
+            "release_request_seconds": 0.018184166867285967,
+            "peak_rss_bytes": 3608838144,
+            "rtf_inference": 0.6480385879641053,
+            "process_exited": true,
+            "wall_seconds": 8.453796416986734
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": true,
+            "condition_on_previous_text": false,
+            "initial_prompt": null,
+            "vad_parameters": {
+              "min_silence_duration_ms": 500,
+              "speech_pad_ms": 300
+            }
+          },
+          "duration_after_vad": 7.96,
+          "segments": 1,
+          "text_characters": 53,
+          "flagged_segments": 0,
+          "error_rates": {
+            "cer": 0.023809523809523808,
+            "wer": 0.4,
+            "character_edits": 1,
+            "reference_characters": 42,
+            "word_edits": 6,
+            "reference_words": 15
+          }
+        },
+        {
+          "id": "fleurs-ko-test-2",
+          "audio_sha256": "989020dedbda7fa529b0b4e876f236e79b25a2915d093e23de94c8456e72b7b4",
+          "start": 0.0,
+          "end": 8.94,
+          "metrics": {
+            "import_seconds": 0.0905900839716196,
+            "audio_decode_seconds": 0.0048397500067949295,
+            "load_seconds": 1.2795307911001146,
+            "inference_seconds": 6.678516250103712,
+            "release_request_seconds": 0.020349958911538124,
+            "peak_rss_bytes": 3609034752,
+            "rtf_inference": 0.7470376118684242,
+            "process_exited": true,
+            "wall_seconds": 8.12380262487568
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": true,
+            "condition_on_previous_text": false,
+            "initial_prompt": null,
+            "vad_parameters": {
+              "min_silence_duration_ms": 500,
+              "speech_pad_ms": 300
+            }
+          },
+          "duration_after_vad": 6.04,
+          "segments": 1,
+          "text_characters": 44,
+          "flagged_segments": 0,
+          "error_rates": {
+            "cer": 0.029411764705882353,
+            "wer": 0.45454545454545453,
+            "character_edits": 1,
+            "reference_characters": 34,
+            "word_edits": 5,
+            "reference_words": 11
+          }
+        },
+        {
+          "id": "silence-8s",
+          "audio_sha256": "190415015d40eef0cd797e1b59ffe00846b01873050b12d44b3a216de3faa2a9",
+          "start": 0.0,
+          "end": 8.0,
+          "metrics": {
+            "import_seconds": 0.08354299981147051,
+            "audio_decode_seconds": 0.007224583066999912,
+            "load_seconds": 1.2753852079622447,
+            "inference_seconds": 0.04349408415146172,
+            "release_request_seconds": 0.019457124872133136,
+            "peak_rss_bytes": 3608821760,
+            "rtf_inference": 0.005436760518932715,
+            "process_exited": true,
+            "wall_seconds": 1.4742888328619301
+          },
+          "engine": "faster-whisper",
+          "engine_version": "1.2.1",
+          "runtime_version": "4.8.3",
+          "model": "large-v3",
+          "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+          "options": {
+            "language": "ko",
+            "task": "transcribe",
+            "beam_size": 5,
+            "temperature": 0,
+            "word_timestamps": true,
+            "vad_filter": true,
+            "condition_on_previous_text": false,
+            "initial_prompt": null,
+            "vad_parameters": {
+              "min_silence_duration_ms": 500,
+              "speech_pad_ms": 300
+            }
+          },
+          "duration_after_vad": 0.0,
+          "segments": 0,
+          "text_characters": 0,
+          "flagged_segments": 0,
+          "error_rates": null
+        }
+      ],
+      "aggregate": {
+        "cer": 0.05303030303030303,
+        "wer": 0.35,
+        "labelled_samples": 3,
+        "reference_characters": 132,
+        "reference_words": 40,
+        "der": null,
+        "overlap_performance": null,
+        "omission_rate": null,
+        "hallucination_rate": null
+      }
+    }
+  },
+  "unmeasured": {
+    "der": "No speaker reference annotations",
+    "overlap_performance": "No overlap annotations or separation model",
+    "omission_rate": "No timestamped human reference",
+    "hallucination_rate": "No human segment judgements",
+    "one_hour_wall_time": "No one-hour input processed; short clips must not be extrapolated"
+  }
+}

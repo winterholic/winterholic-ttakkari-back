@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "engine": "faster-whisper",
+  "engine_version": "1.2.1",
+  "runtime_version": "4.8.3",
+  "model": "large-v3",
+  "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+  "compute_type": "int8",
+  "device": "cpu",
+  "options": {
+    "language": "ko",
+    "task": "transcribe",
+    "beam_size": 5,
+    "temperature": 0,
+    "word_timestamps": true,
+    "vad_filter": true,
+    "condition_on_previous_text": false,
+    "initial_prompt": null,
+    "vad_parameters": {
+      "min_silence_duration_ms": 500,
+      "speech_pad_ms": 300
+    }
+  },
+  "audio_sha256": "5d51a70971c192445ab4f4ae93d82481e97e1c50d0e8f76107f48a8c6e40d809",
+  "duration": 2549.0973125,
+  "start": 0.0,
+  "end": 2549.0973125,
+  "duration_after_vad": 1911.952,
+  "metrics": {
+    "import_seconds": 0.08829183294437826,
+    "audio_decode_seconds": 0.7844575420022011,
+    "load_seconds": 1.3123662921134382,
+    "inference_seconds": 859.2941369158216,
+    "release_request_seconds": 0.029275584034621716,
+    "peak_rss_bytes": 11336941568,
+    "rtf_inference": 0.33709742374373225,
+    "process_exited": true
+  },
+  "segments": 495,
+  "text_characters": 13386,
+  "flagged_segments": 0,
+  "process_exit_code": 0,
+  "note": "Actual private meeting, no human reference. Transcript and source path intentionally omitted. Direct worker process completion confirmed by exec."
+}

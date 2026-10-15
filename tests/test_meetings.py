@@ -241,6 +241,8 @@ async def test_audio_upload_waits_for_provider_when_clovanote_is_off(client, aut
     m = await _create(client, auth, audio_artifact_id=art["id"], title="녹음 회의")
     assert m["status"] == "uploaded" and m["source"] == "audio" and m["audio"]["filename"] == "회의.m4a"
     prov = (await client.get("/api/meetings/providers", headers=auth)).json()["providers"]
+    assert next(p for p in prov if p["id"] == "local_whisper")["state"] == "unconfigured"
+    prov = [p for p in prov if p["id"] == "clovanote"]
     assert prov == [{"id": "clovanote", "label": "클로바노트", "state": "unconfigured", "profile_configured": False,
                      "message": prov[0]["message"]}] and "꺼져" in prov[0]["message"]
     # 전사 요청은 상태를 바꾸지 않고 사유를 알린다. 전사 없이 분석도 못 한다.

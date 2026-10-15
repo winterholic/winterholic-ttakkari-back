@@ -41,6 +41,7 @@ from ttakkari.context.indexer import index_all
 from ttakkari.db import dispose_engine, init_engine, sessionmaker
 from ttakkari.meetings import clova_jobs
 from ttakkari.meetings import vectors as meeting_vectors
+from ttakkari.meetings.local_stt import jobs as local_stt_jobs
 from ttakkari.planner import checklist_reminders, kr_holidays, reminders
 from ttakkari.runs import desk_pool, lead_archive, profiles, usage_store
 from ttakkari.runs.manager import (
@@ -132,6 +133,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if n:
             log.info("meeting vectors: %d meetings queued for indexing", n)
     await clova_jobs.start()
+    await local_stt_jobs.start()
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
@@ -148,6 +150,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if lead_sweeper:
             lead_sweeper.cancel()
         await clova_jobs.stop()
+        await local_stt_jobs.stop()
         await manager.shutdown()
         await desk_pool.shutdown()
         await preview.stop_worker()

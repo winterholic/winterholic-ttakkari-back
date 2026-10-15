@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -103,6 +104,15 @@ class Settings(BaseSettings):
     meeting_transcript_max_chars: int = 120_000
     meeting_analysis_model: str | None = None
     meeting_analysis_effort: str | None = "high"
+    # ADR 0025: separate short-lived CPU worker. Default stays Clova; no automatic download.
+    local_stt_enabled: bool = False
+    local_stt_python: Path | None = None  # isolated venv python, defaults to this interpreter
+    local_stt_model_path: Path | None = None  # local CTranslate2 large-v3 snapshot
+    local_stt_timeout_seconds: int = 7200
+    local_stt_max_audio_seconds: int = 7200
+    local_stt_cpu_threads: int = 4
+    local_stt_profile: Literal["baseline", "improved"] = "baseline"
+    local_stt_max_reprocess_seconds: int = 120
     # 클로바노트 연동(ADR 0021). Playwright 가 실제 Chrome(channel=chrome)을 이 전용 프로필로 띄운다. 비우면 <home>/clovanote-chrome.
     # 네이버 로그인은 사람이 한 번 하고(로그인 상태 유지), 쿠키는 이 폴더에만 있다. 비밀번호는 어디에도 두지 않는다.
     clovanote_profile_dir: Path | None = None

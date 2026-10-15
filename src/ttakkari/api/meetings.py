@@ -18,7 +18,15 @@ from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.meetings import pipeline, providers, read, vectors
 from ttakkari.meetings.projects import find_project
-from ttakkari.models import ChatSession, Meeting, MeetingItem, MeetingStatus, PmsProject
+from ttakkari.models import (
+    ChatSession,
+    LocalSttJob,
+    LocalSttSegment,
+    Meeting,
+    MeetingItem,
+    MeetingStatus,
+    PmsProject,
+)
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.security.auth import User, client_ip
 
@@ -40,10 +48,12 @@ class MeetingIn(BaseModel):
     transcript_source: Literal["paste", "file"] = "paste"
     # 만들자마자 처리까지: 녹음이면 클로바노트 전사 → 분석, 전사 텍스트면 바로 분석(ADR 0021).
     auto_process: bool = False
+    provider_id: str | None = Field(default=None, max_length=30)
 
 
 class TranscribeIn(BaseModel):
     auto_analyze: bool = True
+    provider_id: str | None = Field(default=None, max_length=30)
 
 
 class MeetingPatch(BaseModel):
@@ -117,7 +127,7 @@ async def create(body: MeetingIn, _: User, db: Db, request: Request) -> dict[str
         # 자동 처리 실패는 회의 생성을 되돌리지 않는다. 사유는 상세 화면의 버튼·오류로 다시 보인다.
         try:
             if m.status == MeetingStatus.uploaded:
-                await pipeline.request_transcription(db, m, auto_analyze=True)
+                await pipeline.request_transcription(db, m, body.provider_id, auto_analyze=True)
                 await db.commit()
             elif m.status == MeetingStatus.transcribed:
                 await pipeline.start_analysis(db, m)
@@ -132,6 +142,62 @@ async def create(body: MeetingIn, _: User, db: Db, request: Request) -> dict[str
 @router.get("/{mid}")
 async def get(mid: uuid.UUID, _: User, db: Db) -> dict[str, Any]:
     return await read.meeting_detail(db, await _fresh(db, await _get(db, mid)))
+
+
+class ReprocessIn(BaseModel):
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(gt=0, allow_inf_nan=False)
+    terms: list[str] = Field(default_factory=list, max_length=50)
+
+
+@router.get("/{mid}/stt")
+async def stt_jobs(mid: uuid.UUID, _: User, db: Db) -> dict:
+    from ttakkari.meetings.local_stt.jobs import job_out
+    await _get(db, mid)
+    rows = await db.scalars(select(LocalSttJob).where(LocalSttJob.meeting_id == mid).order_by(LocalSttJob.created_at.desc()).limit(100))
+    return {"jobs": [job_out(j) for j in rows]}
+
+
+async def _stt_job(db: AsyncSession, mid: uuid.UUID, jid: uuid.UUID) -> LocalSttJob:
+    job = await db.get(LocalSttJob, jid)
+    if job is None or job.meeting_id != mid:
+        raise HTTPException(404, "로컬 전사 작업이 없어요.")
+    return job
+
+
+@router.get("/{mid}/stt/{jid}/segments")
+async def stt_segments(mid: uuid.UUID, jid: uuid.UUID, _: User, db: Db,
+                       offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500)) -> dict:
+    from ttakkari.meetings.local_stt.jobs import job_out
+    job = await _stt_job(db, mid, jid)
+    rows = await db.scalars(select(LocalSttSegment).where(LocalSttSegment.job_id == jid)
+                            .order_by(LocalSttSegment.position).offset(offset).limit(limit))
+    segments = [{**{c.name: getattr(s, c.name) for c in LocalSttSegment.__table__.columns if c.name not in ("id", "job_id")},
+                 "id": str(s.id), "job_id": str(s.job_id),
+                 "audio_artifact_id": str(job.audio_artifact_id) if job.audio_artifact_id else None} for s in rows]
+    return {"job": job_out(job), "segments": segments, "offset": offset}
+
+
+@router.post("/{mid}/stt/{jid}/reprocess", status_code=202)
+async def stt_reprocess(mid: uuid.UUID, jid: uuid.UUID, body: ReprocessIn, _: User, db: Db) -> dict:
+    from ttakkari.config import get_settings
+    from ttakkari.meetings.local_stt import jobs
+    original = await _stt_job(db, mid, jid)
+    if original.status != "succeeded":
+        raise HTTPException(409, "전사 결과가 나온 뒤 구간을 다시 처리할 수 있어요.")
+    if jobs.LocalWhisperProvider().availability().state != providers.ProviderState.ready:
+        raise HTTPException(409, "로컬 음성 인식 설정이 필요해요.")
+    if (not body.start < body.end <= original.result_metadata.get("duration", 0)
+            or body.end-body.start > get_settings().local_stt_max_reprocess_seconds
+            or any(len(term) > 100 for term in body.terms)):
+        raise HTTPException(422, "재처리 구간·용어 길이를 확인해 주세요.")
+    # Preserve both attempts. This endpoint cannot change the meeting transcript or analysis.
+    candidate = LocalSttJob(meeting_id=mid, audio_artifact_id=original.audio_artifact_id, parent_job_id=jid,
+        params={"profile": "improved", "start": body.start, "end": body.end, "terms": body.terms, "auto_analyze": False})
+    db.add(candidate)
+    await db.commit()
+    jobs.kick()
+    return jobs.job_out(candidate)
 
 
 @router.patch("/{mid}")
@@ -181,10 +247,10 @@ async def put_transcript(mid: uuid.UUID, body: TranscriptIn, _: User, db: Db) ->
 
 @router.post("/{mid}/transcribe", status_code=status.HTTP_202_ACCEPTED)
 async def transcribe(mid: uuid.UUID, _: User, db: Db, body: TranscribeIn | None = None) -> dict[str, Any]:
-    """녹음을 클로바노트에 올려 전사한다(작업 큐). 로그인이 풀렸으면 409 provider_unavailable 과 사유를 돌려준다."""
+    """녹음을 선택 Provider에 맡긴다. 미설정이면 409 provider_unavailable과 사유를 돌려준다."""
     m = await _get(db, mid)
     try:
-        await pipeline.request_transcription(db, m, auto_analyze=body.auto_analyze if body else True)
+        await pipeline.request_transcription(db, m, body.provider_id if body else None, auto_analyze=body.auto_analyze if body else True)
     except pipeline.PipelineError as e:
         raise _http(e) from e
     await db.commit()

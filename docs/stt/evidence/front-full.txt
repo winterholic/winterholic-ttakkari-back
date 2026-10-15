@@ -1,0 +1,14 @@
+
+ RUN  v5.0.3 /Users/winterholic/development/projects/winterholic-ttakkari/front
+
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ Test Files  61 passed | 1 skipped (62)
+      Tests  353 passed | 1 skipped (354)
+   Start at  10:33:56
+   Duration  4.06s (environment 50%, tests 26%, import 18%, transform 6%)
+
+Environment  jsdom was created 62 times · 26.08s total, 50% of tracked time
+             create it once per worker with pool: 'vmThreads' (keeps per-file isolation) or isolate: false (shares it across files)
+             learn more: https://vitest.dev/guide/improving-performance#test-environments
+

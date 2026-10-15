@@ -1,0 +1,54 @@
+[core-red.txt]
+FAILED tests/test_local_stt_core.py::test_preserves_original_metrics_and_offsets
+FAILED tests/test_local_stt_core.py::test_missing_metrics_are_not_fabricated
+FAILED tests/test_local_stt_core.py::test_rejects_invalid_timestamps[-1-1] - ...
+FAILED tests/test_local_stt_core.py::test_rejects_invalid_timestamps[2-1] - M...
+FAILED tests/test_local_stt_core.py::test_rejects_invalid_timestamps[0-inf]
+FAILED tests/test_local_stt_core.py::test_rejects_invalid_timestamps[nan-1]
+FAILED tests/test_local_stt_core.py::test_rejects_invalid_timestamps[0-4] - M...
+FAILED tests/test_local_stt_core.py::test_flags_suspicion_without_deleting_speech
+FAILED tests/test_local_stt_core.py::test_prompt_bounds_deduplicates_and_never_treats_names_as_identity
+FAILED tests/test_local_stt_core.py::test_speaker_tie_and_overlap_are_explicit
+FAILED tests/test_local_stt_core.py::test_two_sequential_speakers_are_not_overlap
+FAILED tests/test_local_stt_core.py::test_reference_metrics_known_edits_and_empty_reference
+FAILED tests/test_local_stt_core.py::test_reprocess_never_automatically_adopts_without_reference
+FAILED tests/test_local_stt_core.py::test_candidate_equal_reference_score_does_not_win
+
+[worker-red.txt]
+ERROR tests/test_local_stt_worker.py
+
+[runner-red.txt]
+ERROR tests/test_local_stt_runner.py
+
+[integration-red.txt]
+ERROR tests/test_local_stt.py
+
+[benchmark-red.txt]
+ERROR tests/test_local_stt_benchmark.py
+
+[recovery-red.txt]
+FAILED tests/test_local_stt.py::test_restart_reconciles_finished_job_without_reinference
+1 failed, 8 passed in 3.22s
+
+[parent-guard-red.txt]
+FAILED tests/test_local_stt_worker.py::test_parent_guard_exits_when_supervisor_disappears
+FAILED tests/test_local_stt_worker.py::test_parent_guard_stops_after_request_finishes
+2 failed, 2 passed in 0.58s
+
+[front-red.txt]
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+      Tests  1 failed | 17 skipped (18)
+
+[front-detail-red.txt]
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+      Tests  1 failed | 18 skipped (19)
+
+[pytest-full.txt]
+E   PermissionError: [Errno 1] Operation not permitted (originated from sysctl() malloc 1/3)
+FAILED tests/test_clovanote.py::test_login_required_blocks_transcription_with_reason
+1 failed, 559 passed, 2 xfailed in 124.65s (0:02:04)
+
+[pytest-full-final.txt]
+E   PermissionError: [Errno 1] Operation not permitted
+ERROR tests/test_model_policy.py::test_worker_defaults_to_luna_and_engine_defaults
+562 passed, 2 xfailed, 1 error in 129.38s (0:02:09)

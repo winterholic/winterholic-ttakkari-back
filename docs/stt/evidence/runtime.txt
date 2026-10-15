@@ -1,0 +1,12 @@
+platform: macOS-27.0-arm64-arm-64bit-Mach-O arm64
+faster-whisper 1.2.1
+ctranslate2 4.8.3
+av 15.1.0
+onnxruntime 1.31.0
+mlx 0.32.4
+mlx-whisper 0.4.3
+CPU compute types: ['float32', 'int8', 'int8_float32']
+model.bin sha256: 69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1
+FFmpeg license reported: LGPL version 3 or later
+MLX probe exit: 1
+ImportError: [metal::load_device] No Metal device available. This typically occurs in headless, sandboxed, or virtualized macOS sessions where the GPU is not accessible.

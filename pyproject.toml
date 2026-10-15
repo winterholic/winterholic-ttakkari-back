@@ -31,6 +31,10 @@ dependencies = [
 [project.scripts]
 ttakkari = "ttakkari.cli:main"
 
+[project.optional-dependencies]
+# Optional worker only. av 19 removed metadata_errors, still used by faster-whisper 1.2.1.
+stt = ["faster-whisper==1.2.1", "av>=15,<16"]
+
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]
 build-backend = "uv_build"

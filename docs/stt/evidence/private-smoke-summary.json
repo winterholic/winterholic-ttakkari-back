@@ -1,0 +1,83 @@
+[
+  {
+    "schema_version": 1,
+    "engine": "faster-whisper",
+    "engine_version": "1.2.1",
+    "runtime_version": "4.8.3",
+    "model": "large-v3",
+    "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+    "compute_type": "int8",
+    "device": "cpu",
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": false,
+      "condition_on_previous_text": true,
+      "initial_prompt": null,
+      "vad_parameters": null
+    },
+    "audio_sha256": "5d51a70971c192445ab4f4ae93d82481e97e1c50d0e8f76107f48a8c6e40d809",
+    "duration": 2549.0973125,
+    "start": 0.0,
+    "end": 60.0,
+    "duration_after_vad": 60.0,
+    "metrics": {
+      "import_seconds": 11.239641041960567,
+      "audio_decode_seconds": 0.842616125009954,
+      "load_seconds": 1.3345746661070734,
+      "inference_seconds": 19.143011583946645,
+      "release_request_seconds": 0.02216283301822841,
+      "peak_rss_bytes": 3805855744,
+      "rtf_inference": 0.3190501930657774
+    },
+    "profile": "baseline",
+    "segments": 10,
+    "text_characters": 106,
+    "note": "Private meeting first 60 seconds; no reference. Worker completion checked by exec exit status. Initial smoke: improved profile supplied term hint; no accuracy claim."
+  },
+  {
+    "schema_version": 1,
+    "engine": "faster-whisper",
+    "engine_version": "1.2.1",
+    "runtime_version": "4.8.3",
+    "model": "large-v3",
+    "model_version": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+    "compute_type": "int8",
+    "device": "cpu",
+    "options": {
+      "language": "ko",
+      "task": "transcribe",
+      "beam_size": 5,
+      "temperature": 0,
+      "word_timestamps": true,
+      "vad_filter": true,
+      "condition_on_previous_text": false,
+      "initial_prompt": "따까리",
+      "vad_parameters": {
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 300
+      }
+    },
+    "audio_sha256": "5d51a70971c192445ab4f4ae93d82481e97e1c50d0e8f76107f48a8c6e40d809",
+    "duration": 2549.0973125,
+    "start": 0.0,
+    "end": 60.0,
+    "duration_after_vad": 22.568,
+    "metrics": {
+      "import_seconds": 0.08409941708669066,
+      "audio_decode_seconds": 0.7589557499159127,
+      "load_seconds": 1.300765208201483,
+      "inference_seconds": 8.843443249817938,
+      "release_request_seconds": 0.02420083316974342,
+      "peak_rss_bytes": 3806937088,
+      "rtf_inference": 0.14739072083029897
+    },
+    "profile": "improved",
+    "segments": 8,
+    "text_characters": 98,
+    "note": "Private meeting first 60 seconds; no reference. Worker completion checked by exec exit status. Initial smoke: improved profile supplied term hint; no accuracy claim."
+  }
+]

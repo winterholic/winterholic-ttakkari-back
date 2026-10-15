@@ -1,0 +1,60 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, initial
+INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002, push subscriptions
+INFO  [alembic.runtime.migration] Running upgrade 0002 -> 0003, orchestrator: session kind/parent, per-profile engine sessions, run origin/profile
+INFO  [alembic.runtime.migration] Running upgrade 0003 -> 0004, engine accounts
+INFO  [alembic.runtime.migration] Running upgrade 0004 -> 0005, transfer tokens
+INFO  [alembic.runtime.migration] Running upgrade 0005 -> 0006, assistant context: ontology + RAG (pgvector, pg_trgm)
+INFO  [alembic.runtime.migration] Running upgrade 0006 -> 0007, app settings (key-value): temporary account priority etc.
+INFO  [alembic.runtime.migration] Running upgrade 0007 -> 0008, account pools (personal | work) for accounts and sessions
+INFO  [alembic.runtime.migration] Running upgrade 0008 -> 0009, memos and calendar events
+INFO  [alembic.runtime.migration] Running upgrade 0009 -> 0010, account pools -> one global order with a work group tag
+INFO  [alembic.runtime.migration] Running upgrade 0010 -> 0011, calendar event reminders
+INFO  [alembic.runtime.migration] Running upgrade 0011 -> 0012, memo categories
+INFO  [alembic.runtime.migration] Running upgrade 0012 -> 0013, Model-free context library: scopes, project sources and lexical indexes.
+INFO  [alembic.runtime.migration] Running upgrade 0013 -> 0014, artifacts.area: 보관함 파일(files)과 에이전트 파일(agent) 분리
+INFO  [alembic.runtime.migration] Running upgrade 0014 -> 0015, account_usage_samples: 계정별 사용량 측정값(최신값 + 추세용 이력)
+INFO  [alembic.runtime.migration] Running upgrade 0015 -> 0016, meetings, meeting_items, meeting_proposals: 회의록(ADR 0010)
+INFO  [alembic.runtime.migration] Running upgrade 0016 -> 0017, work mode keeps its own on/off and order per account
+INFO  [alembic.runtime.migration] Running upgrade 0017 -> 0018, pms_projects, pms_tasks, pms_milestones, pms_notes: 프로젝트 관리 PMS·WBS(ADR 0012)
+INFO  [alembic.runtime.migration] Running upgrade 0018 -> 0019, persist Run heartbeat and bounded restart-resume state
+INFO  [alembic.runtime.migration] Running upgrade 0019 -> 0020, desk_feedback: 접수 분류에 대한 사용자 판정(ADR 0013)
+INFO  [alembic.runtime.migration] Running upgrade 0020 -> 0021, meeting_chunks(회의록 벡터), clovanote_notes, clovanote_jobs: 클로바노트 연동과 회의록 벡터 저장(ADR 0021)
+INFO  [alembic.runtime.migration] Running upgrade 0021 -> 0022, 회의록을 PMS 프로젝트에 연결한다. 기존 맥락 프로젝트 연결은 보존한다.
+INFO  [alembic.runtime.migration] Running upgrade 0022 -> 0023, per-account usage ceilings
+INFO  [alembic.runtime.migration] Running upgrade 0023 -> 0024, Daily checklists and recurring templates.
+Revision ID: 0024
+Revises: 0023
+INFO  [alembic.runtime.migration] Running upgrade 0024 -> 0025, On-demand local transcription attempts and immutable source segments.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 0025 -> 0024, On-demand local transcription attempts and immutable source segments.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade 0024 -> 0025, On-demand local transcription attempts and immutable source segments.
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.schemas
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.tables
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.types
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.constraints
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.defaults
+INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.comments
+INFO  [alembic.ddl.postgresql] Detected sequence named 'audit_logs_id_seq' as owned by integer column 'audit_logs(id)', assuming SERIAL and omitting
+INFO  [alembic.ddl.postgresql] Detected sequence named 'credentials_id_seq' as owned by integer column 'credentials(id)', assuming SERIAL and omitting
+INFO  [alembic.ddl.postgresql] Detected sequence named 'run_events_id_seq' as owned by integer column 'run_events(id)', assuming SERIAL and omitting
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_clovanote_notes_lexical' on 'clovanote_notes'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_chunks_embedding' on 'ctx_chunks'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_chunks_lexical' on 'ctx_chunks'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_chunks_trgm' on 'ctx_chunks'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_entities_embedding' on 'ctx_entities'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_entities_lexical' on 'ctx_entities'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_entities_trgm' on 'ctx_entities'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_memories_embedding' on 'ctx_memories'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_memories_lexical' on 'ctx_memories'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_ctx_memories_trgm' on 'ctx_memories'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_meeting_chunks_embedding' on 'meeting_chunks'
+INFO  [alembic.autogenerate.compare.constraints] Detected removed index 'ix_meeting_chunks_lexical' on 'meeting_chunks'
+ERROR [alembic.util.messaging] New upgrade operations detected: [('remove_index', Index('ix_clovanote_notes_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10a8d1f40>)), ('remove_index', Index('ix_ctx_chunks_embedding', Column('embedding', VECTOR(dim=1024), table=<ctx_chunks>))), ('remove_index', Index('ix_ctx_chunks_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10acdd010>)), ('remove_index', Index('ix_ctx_chunks_trgm', Column('content', TEXT(), table=<ctx_chunks>, nullable=False))), ('remove_index', Index('ix_ctx_entities_embedding', Column('embedding', VECTOR(dim=1024), table=<ctx_entities>))), ('remove_index', Index('ix_ctx_entities_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10a8f3dd0>)), ('remove_index', Index('ix_ctx_entities_trgm', Column('name', VARCHAR(length=200), table=<ctx_entities>, nullable=False))), ('remove_index', Index('ix_ctx_memories_embedding', Column('embedding', VECTOR(dim=1024), table=<ctx_memories>))), ('remove_index', Index('ix_ctx_memories_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10aa83e30>)), ('remove_index', Index('ix_ctx_memories_trgm', Column('content', TEXT(), table=<ctx_memories>, nullable=False))), ('remove_index', Index('ix_meeting_chunks_embedding', Column('embedding', VECTOR(dim=1024), table=<meeting_chunks>))), ('remove_index', Index('ix_meeting_chunks_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10acd1130>))]
+FAILED: New upgrade operations detected: [('remove_index', Index('ix_clovanote_notes_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10a8d1f40>)), ('remove_index', Index('ix_ctx_chunks_embedding', Column('embedding', VECTOR(dim=1024), table=<ctx_chunks>))), ('remove_index', Index('ix_ctx_chunks_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10acdd010>)), ('remove_index', Index('ix_ctx_chunks_trgm', Column('content', TEXT(), table=<ctx_chunks>, nullable=False))), ('remove_index', Index('ix_ctx_entities_embedding', Column('embedding', VECTOR(dim=1024), table=<ctx_entities>))), ('remove_index', Index('ix_ctx_entities_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10a8f3dd0>)), ('remove_index', Index('ix_ctx_entities_trgm', Column('name', VARCHAR(length=200), table=<ctx_entities>, nullable=False))), ('remove_index', Index('ix_ctx_memories_embedding', Column('embedding', VECTOR(dim=1024), table=<ctx_memories>))), ('remove_index', Index('ix_ctx_memories_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10aa83e30>)), ('remove_index', Index('ix_ctx_memories_trgm', Column('content', TEXT(), table=<ctx_memories>, nullable=False))), ('remove_index', Index('ix_meeting_chunks_embedding', Column('embedding', VECTOR(dim=1024), table=<meeting_chunks>))), ('remove_index', Index('ix_meeting_chunks_lexical', <alembic.util.sqla_compat._textual_index_element object at 0x10acd1130>))]

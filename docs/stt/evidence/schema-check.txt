@@ -1,0 +1,3 @@
+PASS: local STT migrated schema matches metadata
+PASS: deliberate missing local_stt_jobs.negative_control detected
+revision: 0025

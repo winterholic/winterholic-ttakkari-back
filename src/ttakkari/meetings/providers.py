@@ -1,6 +1,7 @@
 """전사(STT) Provider 인터페이스(ADR 0010·0021). 분석은 전사 텍스트만 받으므로 Provider 를 바꿔도 분석 로직은 그대로다.
 
-등록된 것은 클로바노트 하나다. 실제 브라우저 자동화는 meetings/clovanote.py, 작업 큐는 meetings/clova_jobs.py 에 있다.
+클로바노트와 선택 로컬 Whisper(ADR 0025)를 등록한다. 기본값은 클로바노트다.
+실제 브라우저 자동화는 meetings/clovanote.py, 작업 큐는 meetings/clova_jobs.py 에 있다.
 submit 은 업로드 작업을 큐에 넣고 작업 id 를 돌려주며, poll 은 그 작업 행을 읽는다(빠르게 돌아온다).
 """
 
@@ -116,8 +117,10 @@ class ClovaNoteProvider:
         return TranscriptionPoll("done", text=note.transcript)
 
 
-# 새 Provider 는 여기에 등록한다. 테스트는 가짜 Provider 를 끼워 파이프라인을 확인한다.
-_REGISTRY: dict[str, TranscriptionProvider] = {"clovanote": ClovaNoteProvider()}
+# No model import/load here; the local adapter only supervises a short-lived subprocess.
+from ttakkari.meetings.local_stt.jobs import LocalWhisperProvider
+
+_REGISTRY: dict[str, TranscriptionProvider] = {"clovanote": ClovaNoteProvider(), "local_whisper": LocalWhisperProvider()}
 DEFAULT_PROVIDER = "clovanote"
 
 

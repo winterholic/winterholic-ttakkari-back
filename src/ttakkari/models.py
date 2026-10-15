@@ -530,6 +530,46 @@ class Meeting(Base):
     embedded_at: Mapped[datetime | None]
 
 
+class LocalSttJob(Base):
+    """Immutable transcription attempts; child jobs are candidates, never replacements."""
+    __tablename__ = "local_stt_jobs"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    audio_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
+    parent_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("local_stt_jobs.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    params: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    result_metadata: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    transcript: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    started_at: Mapped[datetime | None]
+    finished_at: Mapped[datetime | None]
+
+
+class LocalSttSegment(Base):
+    __tablename__ = "local_stt_segments"
+    __table_args__ = (UniqueConstraint("job_id", "position"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("local_stt_jobs.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    start: Mapped[float] = mapped_column(Float)
+    end: Mapped[float] = mapped_column(Float)
+    original_text: Mapped[str] = mapped_column(Text)
+    corrected_text: Mapped[str | None] = mapped_column(Text)
+    speaker_id: Mapped[str | None] = mapped_column(String(100))
+    # Human identification is a separate, explicitly verified layer (not inferred from names).
+    identified_person: Mapped[str | None] = mapped_column(String(100))
+    overlap: Mapped[bool | None] = mapped_column(Boolean)
+    verification_status: Mapped[str] = mapped_column(String(20), default="unverified")
+    avg_logprob: Mapped[float | None] = mapped_column(Float)
+    no_speech_prob: Mapped[float | None] = mapped_column(Float)
+    compression_ratio: Mapped[float | None] = mapped_column(Float)
+    flags: Mapped[list[Any]] = mapped_column(default=list)
+    words: Mapped[list[Any]] = mapped_column(default=list)
+    raw: Mapped[dict[str, Any]] = mapped_column(default=dict)
+
+
 class MeetingItem(Base):
     __tablename__ = "meeting_items"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

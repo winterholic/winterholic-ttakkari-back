@@ -33,3 +33,11 @@ Ttakkari는 유료 SDK 대신 사용자가 로그인한 공식 단일 `agy` CLI�
 첫 단발 worker의 성공 및 worker→보고 경로에는 재개된 엔진 대화가 논리상 필요하지 않다. `RunManager`가 worker Run 종료 뒤 parent의 `[작업 보고]` Run을 직접 생성하므로 보고도 Antigravity MCP 호출에 의존하지 않는다. 반면 각 Antigravity Run에는 현재 MCP 서버 설정이 전달되며, MCP 기능을 실제로 쓰는 작업은 도구 discovery·호출을 별도 검증해야 한다. 현재 계약에는 재개를 끄는 one-shot/capability 필드가 없고 후속 메시지는 저장된 대화 ID로 재개를 시도하므로, 단발 배정은 “한 번만 실행하고 후속 메시지를 보내지 않는 작업 지침”으로만 성립한다. 재개 불일치 때 새 대화로 조용히 폴백하지 않는 동작은 유지한다. 그러므로 첫 **단발·MCP 비의존** smoke task의 선행 조건으로 실제 대화 재개를 요구할 필요는 없지만, 일반 재사용 세션·MCP 의존 설계 작업을 안전하게 배정하기 위한 운영 검증 게이트는 여전히 남는다.
 
 배포 전에는 해당 앱 저장소 쓰기 권한이 이미 허용된 정상 실행 환경에서만 무작위 표식 기반 대화 재개, 실제 Ttakkari MCP tool 호출·결과와 worker 보고, stop/자식 프로세스 정리, 허용/금지 파일 fixture 및 오류 cleanup을 확인해야 한다. 이 권한 없이는 실제 CLI 검증은 미실행으로 유지한다.
+
+## 통합 상태 (2026-10-15)
+
+- Antigravity adapter·API·MCP 계약 변경은 back `main`에 통합됐다. 기준 커밋 `f89709a93c008a447d19c9410a7ee155ab182073`의 Qwen router feedback export는 보존했다.
+- Adapter·policy·spawn cleanup 집중 테스트 15개, Ruff와 diff check를 통합 결과에서 다시 확인했다. DB 기반 Run API 및 운영 backend Run은 이번 통합 검증에서 실행하지 않았다. 공유 DB fixture의 FK 차단은 재시도하지 않았다.
+- 운영 smoke는 **미검증**이다. 인증된 기존 Run 경로 부재 및 미배포 상태라 실제 backend agy 호출, 상태 저장 권한, 대화 재개/표식 회수, CLI를 통한 MCP 호출을 입증하지 못했다.
+- 디자인 작업은 **실행하지 않음**. 승인 시 worker 요청은 `engine="antigravity"`, `model="gemini-3.8-flash-high"`, `effort="high"`로 명시하며 `auto`는 사용하지 않는다.
+- 다른 세션의 미커밋 변경은 통합 커밋에 포함하지 않았다. 해당 변경은 원래 작업 트리에 보존되어 있다.

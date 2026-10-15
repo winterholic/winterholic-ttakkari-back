@@ -1,7 +1,7 @@
 # Qwen3.5-35B-A3B Apple Silicon baseline attempt
 
-Date: 2026-10-15 (Asia/Seoul)  
-Host: Mac Studio, Apple M5 Max, 64 GiB unified memory, macOS 27.0.  
+Date: 2026-10-15 (Asia/Seoul)
+Host: Mac Studio, Apple M5 Max, 64 GiB unified memory, macOS 27.0.
 Track: Ttakkari PMS WBS 17.2. This is independent of the Qwen3.5-9B Shadow router; that router's goals and artifacts were not changed.
 
 ## Result

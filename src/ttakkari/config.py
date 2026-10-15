@@ -152,6 +152,10 @@ class Settings(BaseSettings):
         "claude": {"model": "haiku"},
     }
     desk_timeout_seconds: float = 25.0
+    # Qwen desk observer is preparation-only and opt-in in non-production environments.
+    # No queue consumer or persistent sink is started by application startup.
+    qwen35_shadow_enabled: bool = False
+    qwen35_shadow_sample_rate: float = Field(default=0.0, ge=0.0, le=0.05)
     # 접수 둘이 동시에 같은 새 일을 넘길 때 기획이 둘 생기지 않게, 이 시간 안에 같은 접수에서 만든 같은 제목(공백·대소문자·
     # 구두점 무시) 기획이 있으면 거기에 이어 넣는다. 0 이면 끈다.
     lead_dedup_seconds: int = 120

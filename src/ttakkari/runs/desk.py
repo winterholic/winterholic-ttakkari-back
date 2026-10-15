@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -29,6 +30,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
+from ttakkari.experiments.qwen35_observer import observe_if_enabled, record_drop
+from ttakkari.experiments.qwen35_shadow import CandidateSnapshot
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     ChatSession,
@@ -80,6 +83,7 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
     leads = await _leads(db, sess)
     prompt = await _prompt(db, run, sess, leads)
     system = instructions_mod.read("desk")
+    observe_shadow_route(s, run, sess, leads, pool, prompt, system)
 
     decision: Decision | None = None
     for _ in range(min(MAX_ATTEMPTS, len(pool))):
@@ -119,6 +123,38 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         events.append(db, run, "desk.delegated", payload)
     run.result_text = reply
     events.append(db, run, "message", {"text": reply})
+
+
+def observe_shadow_route(settings, run: Run, sess: ChatSession, leads: list[ChatSession], pool: list,
+                         prompt: str, system: str) -> None:
+    """Capture only when opted in; isolate every observer failure from live routing."""
+    if not settings.qwen35_shadow_enabled:
+        return
+    try:
+        model_ids = tuple(dict.fromkeys(
+            model for profile in pool
+            if (model := (settings.desk_models.get(profile.engine) or {}).get("model"))
+        ))
+        policy_digest = hashlib.sha256(system.encode("utf-8")).hexdigest()[:16]
+        observe_if_enabled(
+            enabled=True,
+            environment=settings.env,
+            request_text=run.prompt,
+            context_text=prompt,
+            policy_version=f"adr-0013:v1;desk-instructions-sha256:{policy_digest}",
+            scope=sess.pool,
+            candidates=CandidateSnapshot(
+                lead_ids=tuple(str(lead.id) for lead in leads),
+                model_ids=model_ids,
+                tool_ids=(),  # desk has no MCP/tool execution surface
+                permission_ids=(),
+            ),
+            sample_key=str(run.id),
+            sample_rate=settings.qwen35_shadow_sample_rate,
+        )
+    except Exception:  # noqa: BLE001 -- observer failures never affect the live route.
+        record_drop("observer_error")
+        log.warning("Qwen shadow observer failed; live desk route continues", exc_info=False)
 
 
 # ---- 작업판·대화

@@ -16,6 +16,8 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, ConfigDict, StrictStr, model_validator
 
+MAX_RESPONSE_BYTES = 16 * 1024
+
 
 @dataclass(frozen=True)
 class CandidateSnapshot:
@@ -194,6 +196,8 @@ async def infer_once(
     async with httpx.AsyncClient(timeout=timeout_seconds, trust_env=False) as client:
         response = await client.post(url, json=data)
         response.raise_for_status()
+    if len(response.content) > MAX_RESPONSE_BYTES:
+        raise ValueError("response_too_large")
     payload = response.json()
     raw = payload["choices"][0]["message"]["content"]
     if not isinstance(raw, str):

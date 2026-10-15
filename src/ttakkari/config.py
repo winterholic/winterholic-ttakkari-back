@@ -152,7 +152,7 @@ class Settings(BaseSettings):
         "claude": {"model": "haiku"},
     }
     desk_timeout_seconds: float = 25.0
-    # Qwen desk observer is preparation-only and opt-in in non-production environments.
+    # Qwen desk observer is preparation-only and opt-in only in test/staging environments.
     # No queue consumer or persistent sink is started by application startup.
     qwen35_shadow_enabled: bool = False
     qwen35_shadow_sample_rate: float = Field(default=0.0, ge=0.0, le=0.05)

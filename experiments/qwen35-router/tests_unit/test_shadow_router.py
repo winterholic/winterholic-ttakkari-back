@@ -270,6 +270,23 @@ def test_observer_refuses_production_even_when_enabled(environment):
     assert queue.qsize == 0
 
 
+def test_observer_refuses_dev_environment_even_when_enabled():
+    queue = qwen35_observer.ShadowObservationQueue(maxsize=1)
+    assert qwen35_observer.observe_if_enabled(
+        enabled=True,
+        environment="dev",
+        request_text="synthetic request",
+        context_text="synthetic context",
+        policy_version="adr-0013:v1",
+        scope="personal",
+        candidates=snapshot(),
+        sample_key="synthetic-3-6",
+        queue=queue,
+        sample_rate=0.05,
+    ) is False
+    assert queue.qsize == 0
+
+
 def test_observer_drops_oversize_payload_and_queue_full_without_blocking():
     queue = qwen35_observer.ShadowObservationQueue(maxsize=1)
     assert qwen35_observer.observe_if_enabled(

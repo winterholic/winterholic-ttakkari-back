@@ -247,7 +247,7 @@ def observe_if_enabled(
     sample_rate: float = 0.0,
 ) -> bool:
     """Enqueue a redacted immutable copy, failing closed and never raising."""
-    if not enabled or environment.strip().casefold() in {"prod", "production"}:
+    if not enabled or environment.strip().casefold() not in {"test", "testing", "staging"}:
         return False
     try:
         if scope not in {"personal", "work"}:

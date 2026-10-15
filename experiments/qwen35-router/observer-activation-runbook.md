@@ -4,7 +4,7 @@
 
 - 운영 Luna/Haiku의 prompt, 후보 선택, 실행, 응답은 그대로 유지한다.
 - `qwen35_shadow_enabled` 기본값은 `false`, `qwen35_shadow_sample_rate` 기본값은 `0.0`, 상한은 5%다. 앱 시작 시 모델·queue consumer를 만들지 않는다.
-- 비운영 설정을 명시적으로 켜면 현재 desk가 만든 request/context, ADR 0013 및 실제 desk 지침 해시, `personal`/`work` 범위와 그 시점의 lead/model/tool/permission 후보를 복사해 process-local bounded queue에 넣는다. desk는 도구·권한 후보가 없으므로 빈 목록이다.
+- test/staging 환경에서 설정을 명시적으로 켜면 현재 desk가 만든 request/context, ADR 0013 및 실제 desk 지침 해시, `personal`/`work` 범위와 그 시점의 lead/model/tool/permission 후보를 복사해 process-local bounded queue에 넣는다. 다른 환경은 거부한다. desk는 도구·권한 후보가 없으므로 빈 목록이다.
 - 입력은 allowlist 기반 기록 객체로만 구성한다. 일반 식별자·비밀·연락처·URL·경로·코드 패턴을 redaction하고 남은 패턴은 fail-closed한다. `redaction_counts`는 request/context별 변경 종류와 개수만 보존한다. 실제 라벨은 `policyverified/manualpending`, `regression_candidate=false`로 시작한다. 기존 Luna/Haiku 결과는 자동 정답이 아니다.
 - queue는 최대 4개, 60초 TTL이며 full/expiry/shutdown/validation 실패는 내용 없는 카운터로만 남긴다. isolated inference는 20초 timeout, 16 KiB response cap, reply 3,000자 schema cap을 쓴다. 현재 route에는 queue consumer·Qwen 실행·영속 sink가 연결되어 있지 않다. 따라서 현재 변경만 배포해도 live collection/paired evaluation은 수행되지 않는다.
 - 명시적으로 호출하는 미래 sink는 `personal`과 `work` 디렉터리를 분리하고 디렉터리 0700, 파일 0600, atomic write, 7일 보존을 적용한다. 현재 어떤 실제 경로에도 쓰지 않는다.

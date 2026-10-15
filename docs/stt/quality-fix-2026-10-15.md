@@ -53,4 +53,36 @@ PYTHONPATH=src .venv/bin/python "$OUT/compare-quality.py"
 
 반복 구간 수는 문장 반복/연속 중복 규칙에 걸린 segment 수다. 반복 길이는 해당 구간의 겹치지 않는 시각 합계이며, 긴 침묵 간격까지 합친 전체 span과 구분한다. 표시는 반복 접기 전 원시 인식과 접은 뒤 결과를 따로 비교한다. 정답 주석이 없으므로 CER/WER/DER·환각률·누락률을 계산하지 않는다.
 
-최종 전체 녹음 측정·검증 결과는 아래에 실행 후 기록한다.
+## 최종 동일 녹음 비교
+
+입력 SHA-256과 범위(0~2,549.0973125초)가 같음을 assert로 검증했다.
+
+| 측정 | 기존 운영 결과 | 새 원시 인식 | 새 표시용 결과 |
+|---|---:|---:|---:|
+| 인식 구간 | 1,450 | 502 | 502 |
+| 반복 탐지 구간 | 1,427 | 0 | 0 |
+| 반복 구간 시각 합계 | 1,238.48초 | 0초 | 0초 |
+| 반복 구간 문자 합계 | 19,978 | 0 | 0 |
+| 문제 문장 출현 | 1,429 | 0 | 0 |
+
+이번 입력에서는 재시도 원음 0초, 접은 문자 0개였다. 즉 반복 접기로 수치만 낮춘 결과가 아니라 새 원시 인식에서 반복 규칙에 걸리지 않았다. 예외 재시도·접기 경로는 합성 회귀 테스트로 확인했다. 이 결과는 전사 정확도 100%를 뜻하지 않는다.
+
+최종 화자 대안은 **1개 군집**을 추정했다. 표시 발화 274개, 검증 필요 42개, 화자 미상 42개다. 실제 다화자 분리의 실효성은 확인되지 않았다. 전사·화자 정답이 없어 WER/CER/DER는 모두 null이다. Community-1을 사용하려면 위 공식 조건 동의와 별도 snapshot 설치가 여전히 필요하다.
+
+- 최종 VAD 독립 창 131개. Whisper 추론 1082.355초, 벽시계 1111.133초, peak RSS 4,072,128,512바이트. 이번 측정 CPU 6스레드다. 기존 job은 실제 스레드 수를 기록하지 않아 시간 차이를 설정별 성능 개선율로 해석하지 않는다.
+- 최종 측정 실행 세션 exit_code=0, 자식 모델 요청 경로 별도 10초 smoke에서도 process_exited=true.
+- 구간 범위·발화 ID 유일성·ECAPA overlap=null 검증 PASS. 운영 원회의의 전사·상태·분석 Run·provider job 불변을 읽기 전용으로 재확인했다.
+- 새 전사는 결과함에만 저장했다. 운영 원회의 반영·재분석·배포는 **미실행**이다. 배포 후 `POST /api/meetings/{mid}/retranscribe`로 새 회의를 만들고 선택 재분석할 수 있다.
+
+## 검증 근거
+
+```text
+$ TTAKKARI_TEST_DB=postgresql+asyncpg://localhost/ttakkari_stt_snapshot_test PYTHONPATH=<snapshot>/src <backend>/.venv/bin/python -m pytest -q
+625 passed, 2 xfailed in 147.68s (0:02:27)
+$ uv lock --check && ruff check <변경 Python> && git diff --check
+Resolved 175 packages; All checks passed; diff 오류 없음
+$ PYTHONPATH=src .venv/bin/python "$OUT/compare-quality.py"
+repeated_segments: 1427 → 0; repeated_seconds: 1238.48 → 0; speaker_count_estimate: 1
+```
+
+스냅샷은 다른 작업과 분리한 git 저장소이며 기존 마이그레이션 테스트가 요구하는 .venv 실행 경로를 연결했다. 최종 소스 SHA-256은 실제 커밋 소스와 같고, 테스트 파일의 차이는 줄바꿈 포맷뿐이다. 전체 테스트 실행 로그·manifest·명령 스크립트는 결과함에 있다. 운영 환경 파일은 읽지 않았다.

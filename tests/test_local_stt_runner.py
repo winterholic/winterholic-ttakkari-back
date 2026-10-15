@@ -7,6 +7,19 @@ import pytest
 from ttakkari.meetings.local_stt import runner
 
 
+async def test_queued_legacy_profile_is_upgraded_without_mutating_saved_params(
+    tmp_path,
+):
+    s = settings(
+        tmp_path,
+        'import json,sys\nfrom pathlib import Path\nr=json.load(sys.stdin)\nPath(sys.argv[-1]).write_text(json.dumps({"request":r}))\n',
+    )
+    params = {"profile": "baseline"}
+    result = await runner.run_worker(tmp_path / "a.wav", params, s)
+    assert result["request"]["profile"] == "robust"
+    assert params == {"profile": "baseline"}
+
+
 def settings(tmp_path, source):
     python = tmp_path / "fake-worker"
     python.write_text("#!/usr/bin/env python3\n" + source, encoding="utf-8")
@@ -90,7 +103,9 @@ async def test_enhancement_configuration_is_forwarded_and_secrets_are_not(
     assert r["request"]["separation_model_path"] == str(
         s.local_stt_separation_model_path
     )
-    assert r["env"]["PYTHONPATH"] == str(__import__("pathlib").Path(runner.__file__).resolve().parents[3])
+    assert r["env"]["PYTHONPATH"] == str(
+        __import__("pathlib").Path(runner.__file__).resolve().parents[3]
+    )
     assert "HF_TOKEN" not in r["env"]
     assert r["env"]["PYANNOTE_METRICS_ENABLED"] == "0"
     assert r["env"]["HF_HOME"].startswith(r["env"]["HOME"])

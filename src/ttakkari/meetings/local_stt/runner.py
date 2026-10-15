@@ -6,9 +6,11 @@ from pathlib import Path
 from ttakkari.model_process import run_json_worker
 
 
-async def run_worker(audio_path: Path, params: dict, settings) -> dict:
+async def run_worker(audio_path: Path, params: dict, settings, *, production: bool = True) -> dict:
     request = {
         **params,
+        # Queued attempts from an older release also need the production fix.
+        "profile": "robust" if production else params.get("profile", "robust"),
         "audio_path": str(audio_path),
         "model_path": str(settings.local_stt_model_path),
         "max_audio_seconds": settings.local_stt_max_audio_seconds,
@@ -17,6 +19,7 @@ async def run_worker(audio_path: Path, params: dict, settings) -> dict:
     for field in (
         "diarization_model_path",
         "diarization_device",
+        "speaker_embedding_model_path",
         "separation_model_path",
     ):
         value = getattr(settings, "local_stt_" + field, None)

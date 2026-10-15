@@ -83,20 +83,31 @@ def enhance_result(
         "speaker_identities": {},
     }
     model = request.get("diarization_model_path")
-    if not model:
+    embedding = request.get("speaker_embedding_model_path")
+    if not model and not embedding:
         return out
-    if not (Path(model) / "config.yaml").is_file():
+    if model and not (Path(model) / "config.yaml").is_file():
         out["diarization_status"] = "unavailable"
         out["diarization_reason"] = "local_model_missing"
         return out
     try:
-        evidence = diarize(
-            audio,
-            model_path=Path(model),
-            offset=offset,
-            device=request.get("diarization_device", "cpu"),
-            cpu_threads=int(request.get("cpu_threads", 4)),
-        )
+        if model:
+            evidence = diarize(
+                audio,
+                model_path=Path(model),
+                offset=offset,
+                device=request.get("diarization_device", "cpu"),
+                cpu_threads=int(request.get("cpu_threads", 4)),
+            )
+        else:
+            from .embedding_diarization import diarize_embeddings
+
+            evidence = diarize_embeddings(
+                audio,
+                model_path=Path(embedding),
+                offset=offset,
+                cpu_threads=int(request.get("cpu_threads", 4)),
+            )
         out.update(
             annotate_diarization(
                 result["segments"], evidence["turns"], duration=result["duration"]
@@ -107,6 +118,13 @@ def enhance_result(
             diarization_status="succeeded",
             overlap_detection_status="succeeded",
         )
+        if evidence.get("overlap_supported") is False:
+            out["overlap_detection_status"] = "unsupported"
+            out["overlap_regions"] = []
+            for segment in out["segments"]:
+                segment["overlap"] = None
+                for word in segment["words"]:
+                    word["overlap"] = None
     except Exception as exc:  # noqa: BLE001 -- optional stage boundary, persisted failure status
         log.warning("Diarization failed: %s", type(exc).__name__)
         out.update(

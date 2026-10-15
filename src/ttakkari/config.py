@@ -112,11 +112,20 @@ class Settings(BaseSettings):
     local_stt_timeout_seconds: int = 7200
     local_stt_max_audio_seconds: int = 7200
     local_stt_cpu_threads: int = 4
-    local_stt_profile: Literal["baseline", "improved"] = "baseline"
+    local_stt_profile: Literal["baseline", "improved", "robust"] = "robust"
+
+    @field_validator("local_stt_profile")
+    @classmethod
+    def safe_operational_stt_profile(cls, value: str) -> str:
+        # Benchmark profiles stay available in the standalone worker only.
+        return "robust"
+
     local_stt_max_reprocess_seconds: int = 120
     local_stt_diarization_model_path: Path | None = None  # complete offline Community-1 snapshot
     local_stt_diarization_device: Literal["cpu", "mps", "cuda"] = "cpu"
+    local_stt_speaker_embedding_model_path: Path = STT_RUNTIME_ROOT / "ecapa-voxceleb"
     local_stt_separation_model_path: Path | None = None  # offline SepFormer tensor weights
+
     # 회의록 벡터 저장(ADR 0021). e5 = 로컬 multilingual-e5-large, hash = 테스트용 결정적 해시, off = 끔.
     context_embedder: str = "e5"
     context_embedding_cpu_threads: int = Field(default=2, ge=1, le=16)

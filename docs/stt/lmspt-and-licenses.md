@@ -54,6 +54,7 @@ STT 구간과 단어 시각에 정렬하는 선택 어댑터를 연결했다. �
 | [MLX/MLX Whisper](https://github.com/ml-explore/mlx-examples) 0.32.4/0.4.3 | MIT | 별도 조사 venv 설치. Metal 불가로 import 실패; 운영 의존성 제외 |
 | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | MIT | 미설치·미측정, 운영 의존성 제외 |
 | [pyannote.audio](https://github.com/pyannote/pyannote-audio/blob/develop/LICENSE) / [Community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) | 코드 MIT / 가중치 CC BY 4.0, 모델 게이트 조건 동의 필요. 출처 표시 조건 | 실제 추론 미실행 |
+| [SpeechBrain ECAPA VoxCeleb](https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb) | Apache-2.0, 공개·게이트 없음. 저작권·라이선스 고지 보존 | 기본 로컬 화자 대안. revision `0f99f2d0ebe89ac095bcc5903c4dd8f72b367286`, 별도 설치된 가중치를 사용하며 중첩 탐지는 지원하지 않음 |
 | [LM-SPT 코드](https://github.com/kakao/lmspt) / [가중치](https://huggingface.co/kakaocorp/lmspt) | Apache-2.0 / **CC BY-NC 4.0**, 공개 가중치의 상업 사용 허용 안 됨 | 소스 검토만, 의존성·가중치 제외 |
 | [Google FLEURS](https://huggingface.co/datasets/google/fleurs) | CC BY 4.0. Google FLEURS 및 [논문](https://arxiv.org/abs/2205.12446) 출처 표시 | 한국어 test 앞 3개, 공개 낭독. 회의 데이터가 아님 |
 

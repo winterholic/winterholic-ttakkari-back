@@ -182,6 +182,88 @@ async def stt_segments(mid: uuid.UUID, jid: uuid.UUID, _: User, db: Db,
     return {"job": job_out(job), "segments": segments, "offset": offset}
 
 
+class UtteranceOut(BaseModel):
+    id: str
+    start: float
+    end: float
+    speaker_id: str | None
+    speaker_label: str | None
+    text: str
+    verification_status: str
+    overlap: bool | None
+    flags: list[str]
+    segment_positions: list[int]
+
+
+class UtterancesOut(BaseModel):
+    job_id: str
+    utterances: list[UtteranceOut]
+    offset: int
+    limit: int
+    total: int
+    has_more: bool
+    speaker_count: int | None
+    diarization_status: str
+    overlap_detection_status: str
+    audio_artifact_id: str | None
+
+
+@router.get("/{mid}/stt/{jid}/utterances", response_model=UtterancesOut)
+async def stt_utterances(mid: uuid.UUID, jid: uuid.UUID, _: User, db: Db,
+                         offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=500)):
+    from ttakkari.meetings.local_stt.utterances import build_utterances
+    job = await _stt_job(db, mid, jid)
+    if job.status != "succeeded":
+        raise HTTPException(409, "전사가 끝난 뒤 발화 목록을 볼 수 있어요.")
+    meta = job.result_metadata
+    utterances = meta.get("utterances")
+    if utterances is None:
+        rows = await db.scalars(select(LocalSttSegment).where(LocalSttSegment.job_id == jid)
+                                .order_by(LocalSttSegment.position))
+        segments = [{c.name: getattr(s, c.name) for c in LocalSttSegment.__table__.columns} for s in rows]
+        utterances = build_utterances(segments, meta.get("diarization", {}).get("turns", []),
+                                     overlap_known=meta.get("overlap_detection_status") == "succeeded")
+    return {"job_id": str(jid), "utterances": utterances[offset:offset+limit],
+            "offset": offset, "limit": limit, "total": len(utterances),
+            "has_more": offset+limit < len(utterances), "speaker_count": meta.get("speaker_count"),
+            "diarization_status": meta.get("diarization_status", "not_run"),
+            "overlap_detection_status": meta.get("overlap_detection_status", "not_run"),
+            "audio_artifact_id": str(job.audio_artifact_id) if job.audio_artifact_id else None}
+
+
+class RetranscribeIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    auto_analyze: bool = False
+
+
+@router.post("/{mid}/retranscribe", status_code=202)
+async def retranscribe(mid: uuid.UUID, body: RetranscribeIn, _: User, db: Db) -> dict:
+    """A new meeting preserves the old transcript, analysis, items and approved memories."""
+    from ttakkari.meetings.local_stt import jobs
+    original = await _get(db, mid)
+    if original.audio_artifact_id is None:
+        raise HTTPException(409, "재전사할 원본 녹음이 없어요.")
+    if jobs.LocalWhisperProvider().availability().state != providers.ProviderState.ready:
+        raise HTTPException(409, "로컬 음성 인식 설정이 필요해요.")
+    try:
+        meeting = await pipeline.create_meeting(db, title=f"{original.title[:190]} (재처리)",
+            scope=original.scope, entity_id=original.pms_project_id or original.entity_id,
+            held_at=original.held_at, participants=original.participants,
+            audio_artifact_id=original.audio_artifact_id)
+    except pipeline.PipelineError as exc:
+        raise _http(exc) from exc
+    job = LocalSttJob(meeting_id=meeting.id, audio_artifact_id=meeting.audio_artifact_id,
+        params={"profile": "robust", "terms": [], "auto_analyze": body.auto_analyze,
+                "source_meeting_id": str(mid), "source_job_id": original.provider_job_id})
+    db.add(job)
+    await db.flush()
+    meeting.provider, meeting.provider_job_id = "local_whisper", str(job.id)
+    pipeline.transition(meeting, MeetingStatus.transcribing)
+    await db.commit()
+    jobs.kick()
+    return await read.meeting_detail(db, meeting)
+
+
 class CorrectionsIn(BaseModel):
     model_config = {"extra": "forbid"}
     replacements: dict[

@@ -23,21 +23,36 @@ from ttakkari.meetings.local_stt.core import normalize_segments, term_prompt
 
 
 def decode_options(profile: str, terms: list[str]) -> dict:
-    if profile not in ("baseline", "improved"):
+    if profile not in ("baseline", "improved", "robust"):
         raise ValueError("Invalid decoding profile")
-    return {
+    options = {
         "language": "ko",
         "task": "transcribe",
         "beam_size": 5,
         "temperature": 0,
         "word_timestamps": True,
-        "vad_filter": profile == "improved",
+        "vad_filter": profile != "baseline",
         "condition_on_previous_text": profile == "baseline",
-        "initial_prompt": term_prompt(terms) or None if profile == "improved" else None,
+        "initial_prompt": (term_prompt(terms) or None)
+        if profile != "baseline"
+        else None,
         "vad_parameters": {"min_silence_duration_ms": 500, "speech_pad_ms": 300}
-        if profile == "improved"
+        if profile != "baseline"
         else None,
     }
+    if profile == "robust":
+        options.update(
+            temperature=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.0,
+            no_speech_threshold=0.6,
+            vad_parameters={
+                "min_silence_duration_ms": 500,
+                "speech_pad_ms": 300,
+                "max_speech_duration_s": 25,
+            },
+        )
+    return options
 
 
 def finalize_result(
@@ -52,6 +67,43 @@ def finalize_result(
     return enhance_result(
         result, audio=audio, offset=offset, request=request, recognize=recognize
     )
+
+
+def pack_vad_chunks(chunks: list[dict]) -> list[dict]:
+    """Pack nearby speech without a long silent bridge; hard cap stays 25 seconds."""
+    out = []
+    for source in chunks:
+        if (
+            out
+            and source["start"] - out[-1]["end"] <= 2 * 16000
+            and source["end"] - out[-1]["start"] <= 25 * 16000
+        ):
+            out[-1]["end"] = source["end"]
+        else:
+            out.append(dict(source))
+    return out
+
+
+def decode_vad_chunks(audio, chunks: list[dict], decode) -> tuple[list[dict], float]:
+    """Decode each VAD region independently; no prompts or overlap cross boundaries."""
+    raw, seconds = [], 0.0
+    for index, chunk in enumerate(chunks):
+        a, b = chunk["start"], chunk["end"]
+        seconds += (b - a) / 16000
+        for source in decode(audio[a:b]):
+            shift = a / 16000
+            row = {
+                **source,
+                "start": source["start"] + shift,
+                "end": source["end"] + shift,
+                "vad_chunk_index": index,
+            }
+            row["words"] = [
+                {**w, "start": w["start"] + shift, "end": w["end"] + shift}
+                for w in source.get("words") or []
+            ]
+            raw.append(row)
+    return raw, seconds
 
 
 def transcribe(request: dict) -> dict:
@@ -85,9 +137,7 @@ def transcribe(request: dict) -> dict:
         raise ValueError("Invalid reprocessing interval")
     audio = audio[round(start * 16000) : round(min(end, duration) * 16000)]
     decoded = time.perf_counter()
-    options = decode_options(
-        request.get("profile", "improved"), request.get("terms", [])
-    )
+    options = decode_options(request.get("profile", "robust"), request.get("terms", []))
     model = WhisperModel(
         str(model_path),
         device="cpu",
@@ -97,8 +147,22 @@ def transcribe(request: dict) -> dict:
         local_files_only=True,
     )
     loaded = time.perf_counter()
-    iterator, info = model.transcribe(audio, **options)
-    raw = [dataclasses.asdict(segment) for segment in iterator]
+    if request.get("profile", "robust") == "robust":
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+
+        chunks = get_speech_timestamps(audio, VadOptions(**options["vad_parameters"]))
+
+        def decode(samples):
+            iterator, _ = model.transcribe(samples, **options)
+            return [dataclasses.asdict(s) for s in iterator]
+
+        duration_after_vad = sum(c["end"] - c["start"] for c in chunks) / 16000
+        chunks = pack_vad_chunks(chunks)
+        raw, _ = decode_vad_chunks(audio, chunks, decode)
+    else:
+        iterator, info = model.transcribe(audio, **options)
+        raw = [dataclasses.asdict(segment) for segment in iterator]
+        duration_after_vad = info.duration_after_vad
     inferred = time.perf_counter()
     segments = normalize_segments(raw, duration=len(audio) / 16000, offset=start)
     with path.open("rb") as source:
@@ -120,8 +184,17 @@ def transcribe(request: dict) -> dict:
         "text": "".join(s["text"] for s in raw).strip(),
         "segments": segments,
         "raw_segments": raw,
-        "language": info.language,
-        "duration_after_vad": info.duration_after_vad,
+        "language": "ko",
+        "duration_after_vad": duration_after_vad,
+        "decode_chunks": [
+            {"start": c["start"] / 16000 + start, "end": c["end"] / 16000 + start}
+            for c in chunks
+        ]
+        if request.get("profile", "robust") == "robust"
+        else None,
+        "chunk_policy": "independent_vad_max25s"
+        if request.get("profile", "robust") == "robust"
+        else "engine_30s",
         "diarization_status": "not_run",
         "overlap_detection_status": "not_run",
         "metrics": {
@@ -136,7 +209,9 @@ def transcribe(request: dict) -> dict:
     }
 
     def recognize(samples, absolute_offset):
-        iterator, _ = model.transcribe(samples, **options)
+        retry_options = decode_options("robust", request.get("terms", []))
+        retry_options["temperature"] = [0.4, 0.6, 0.8, 1.0]
+        iterator, _ = model.transcribe(samples, **retry_options)
         source_raw = [dataclasses.asdict(s) for s in iterator]
         return {
             "text": "".join(s["text"] for s in source_raw).strip(),
@@ -146,11 +221,27 @@ def transcribe(request: dict) -> dict:
             "raw_segments": source_raw,
         }
 
+    if request.get("profile", "robust") == "robust":
+        from .quality import recover_quality
+
+        result["original_text"] = result["text"]
+        result.update(
+            recover_quality(segments, audio=audio, offset=start, recognize=recognize)
+        )
     result = finalize_result(
         result, audio=audio, offset=start, request=request, recognize=recognize
     )
+    if request.get("profile", "robust") == "robust":
+        from .utterances import build_utterances, render_transcript
+
+        result["utterances"] = build_utterances(
+            result["presentation_segments"],
+            result.get("diarization", {}).get("turns", []),
+            overlap_known=result.get("overlap_detection_status") == "succeeded",
+        )
+        result["text"] = render_transcript(result["utterances"])
     enhanced = time.perf_counter()
-    del iterator, audio, recognize
+    del audio, recognize
     model = None
     gc.collect()
     result["metrics"].update(

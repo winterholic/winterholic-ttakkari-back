@@ -8,7 +8,7 @@
 기존 backend Python에 선택 의존성을 설치할 때는 `uv sync --extra stt`를 쓴다.
 별도 venv를 쓰면 그 Python에 저장소 패키지와 `[stt]` 의존성을 설치하고 `TTAKKARI_LOCAL_STT_PYTHON`으로 지정한다.
 런타임은 faster-whisper 1.2.1, PyAV 15.x다. PyAV 19는 `metadata_errors` 인자가 없어 이 엔진과 실제로 호환되지 않았다.
-ffmpeg CLI, Torch, MLX, LLM 교정 API는 이 경로에 필요하지 않다.
+Whisper만 실행할 때 ffmpeg CLI·Torch·MLX·LLM 교정 API는 필요하지 않다. 기본 화자 대안을 사용하려면 아래 `stt-speakers` 의존성과 공개 ECAPA 가중치를 별도 설치한다.
 
 다운로드는 STT 요청과 분리한다. 새 빈 HF_HOME으로 기존 토큰을 탐색하지 않고 공개 가중치만 받는 예:
 
@@ -28,14 +28,16 @@ PY
 TTAKKARI_LOCAL_STT_ENABLED=true
 TTAKKARI_LOCAL_STT_PYTHON=/absolute/stt-venv/bin/python
 TTAKKARI_LOCAL_STT_MODEL_PATH=/absolute/stt-model-cache/hub/models--Systran--faster-whisper-large-v3/snapshots/edaa852ec7e145841d8ffdb056a99866b5f0a478
-TTAKKARI_LOCAL_STT_PROFILE=baseline
+TTAKKARI_LOCAL_STT_PROFILE=robust
 TTAKKARI_LOCAL_STT_CPU_THREADS=4
 TTAKKARI_LOCAL_STT_TIMEOUT_SECONDS=7200
 TTAKKARI_LOCAL_STT_MAX_AUDIO_SECONDS=7200
 TTAKKARI_LOCAL_STT_MAX_REPROCESS_SECONDS=120
 ```
 
-`baseline`이 기본이다. `improved`는 VAD·이전 문맥 차단·용어 힌트 실험 설정이며 모든 평가 지표가 개선된 것은 아니다.
+`robust`가 운영 기본이다. VAD를 켜고 가까운 음성 구간만 최대 25초 창으로 묶어 독립 디코딩하며 이전 전사 문맥을 전달하지 않는다. 온도 `[0,.2,.4,.6,.8,1]` fallback과 압축비 2.4/logprob -1/no_speech .6 임계값을 명시한다. 반복·압축비 경고 구간은 최대 8초 창/작업당 120초 예산으로 온도를 올려 재디코딩한다. 남는 반복은 표시·분석용에서 접고 `needs_review`로 표시한다. 원본 인식 결과·단어 시각·재시도는 별도로 남긴다. 구 `baseline`/`improved` 환경 설정도 운영에서는 robust로 승격한다. 과거 두 프로필은 standalone benchmark worker에서만 재현용으로 유지한다.
+
+화자별 발화·페이지네이션·원본 보존 재전사 API는 [확정 계약](utterances-api.md)을 따른다. 실회의 결함 근거·수정 실측은 [품질 교정 기록](quality-fix-2026-10-15.md)을 참고한다.
 이번 Mac에서 설치·측정한 별도 Python은 `/Users/winterholic/testing/ttakkari-stt/venv/bin/python`이다.
 모델도 같은 `testing/ttakkari-stt/hf` 아래에 있다. 캐시에는 파일만 남고 실행 모델은 남지 않는다.
 
@@ -68,9 +70,11 @@ CER는 NFC 정규화 후 공백을 제외한 문자 편집 거리, WER는 공백
 최대 RSS는 프로세스 `getrusage` high-water mark다. `release_request_seconds`는 객체 해제 요청 시간이며 물리 메모리 반납 지연의 실측값이 아니다.
 실제 메모리 수명 보장은 부모가 확인한 자식 종료다. OS 캐시/메모리 압박 변화와 GPU 메모리는 별도 측정이 필요하다.
 
-## 2차 선택 기능 (기본 꺼짐)
+## 기본 화자 분리와 선택 중첩 기능
 
-기존 `stt`만 설치하면 화자·분리용 Torch/SpeechBrain을 import하지 않는다. 필요할 때 같은 STT 전용 Python에 추가한다.
+`uv sync --extra stt --extra stt-speakers`로 기본 화자 대안을 설치한다. 이 Mac의 `.stt-runtime/venv`에는 SpeechBrain 1.0.3·Torch/torchaudio 2.8.0과 공개 ECAPA 체크포인트를 준비했다. 기본 경로는 `.stt-runtime/ecapa-voxceleb`, 재정의는 `TTAKKARI_LOCAL_STT_SPEAKER_EMBEDDING_MODEL_PATH`다. 모델 가중치는 [SpeechBrain 모델 카드](https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb)의 공개 revision `0f99f2d0ebe89ac095bcc5903c4dd8f72b367286`에서 설치 단계에 받는다. `embedding_model.ckpt`를 weights_only=True로 읽으며 원격 YAML은 실행하지 않는다. 요청 중 다운로드는 없다.
+
+Community-1 snapshot을 명시하면 이를 우선 사용한다. 없으면 ECAPA 스펙트럴 군집으로 화자를 추정한다. 이 대안은 중첩 탐지를 지원하지 않으므로 overlap=null이다. 둘 다 없거나 실패하면 사유를 남기고 화자 미상으로 제공한다. 중첩 음원 분리는 계속 기본 꺼짐이다. 선택 기능이 필요할 때 같은 STT 전용 Python에 추가한다.
 
 ```sh
 uv sync --extra stt --extra stt-diarization --extra stt-separation

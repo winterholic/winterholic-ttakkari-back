@@ -38,7 +38,7 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_MEETING_TRANSCRIPT_MAX_CHARS`, `TTAKKARI_MEETING_ANALYSIS_MODEL`, `TTAKKARI_MEETING_ANALYSIS_EFFORT` | 회의록(ADR 0010): 전사 한 건 최대 글자(기본 12만), 분석 Run 의 모델·생각 수준(기본 세션 기본 모델·high) |
 | `TTAKKARI_CONTEXT_EMBEDDER` | 회의록 벡터 저장: `e5`(기본, 로컬 multilingual-e5-large) · `hash`(테스트) · `off`. E5도 요청별 자식 프로세스에서 로드·종료한다. 가중치는 사전 설치하며 요청 중 다운로드하지 않는다 |
 | `TTAKKARI_CONTEXT_EMBEDDING_CPU_THREADS`, `TTAKKARI_CONTEXT_EMBEDDING_TIMEOUT_SECONDS` | E5 자식의 CPU 스레드(기본 2), 요청 제한시간(기본 300초) |
-| `TTAKKARI_LOCAL_STT_ENABLED`, `TTAKKARI_LOCAL_STT_PYTHON`, `TTAKKARI_LOCAL_STT_MODEL_PATH`, `TTAKKARI_LOCAL_STT_PROFILE` | 기본 전사 엔진 로컬 Whisper(ADR 0025·0026). 기본 켜짐·baseline, 로컬 가중치 경로는 별도 지정. 요청마다 자식 프로세스에서 로드·추론 후 종료한다. [설치·API·측정 안내](docs/stt/README.md). 미준비 시 사유를 알리며 외부 엔진으로 자동 전환하지 않는다 |
+| `TTAKKARI_LOCAL_STT_ENABLED`, `TTAKKARI_LOCAL_STT_PYTHON`, `TTAKKARI_LOCAL_STT_MODEL_PATH`, `TTAKKARI_LOCAL_STT_PROFILE` | 기본 전사 엔진 로컬 Whisper(ADR 0025·0026). 기본 켜짐·robust(VAD·독립 25초 창·문맥 차단·온도 fallback·반복 재처리), 로컬 가중치 경로는 별도 지정. 구 baseline/improved 설정도 robust로 승격한다. 요청마다 자식 프로세스에서 로드·추론 후 종료한다. [설치·API·측정 안내](docs/stt/README.md). 미준비 시 사유를 알리며 외부 엔진으로 자동 전환하지 않는다 |
 | `TTAKKARI_CONTEXT_SOURCE_ROOTS` | 비서 관리 > 지식에 등록할 수 있는 상위 폴더 JSON 배열. 기본 홈 |
 | `TTAKKARI_CORS_ORIGINS` | 프론트 origin JSON 배열 |
 | `TTAKKARI_ENV` | `prod` 면 refresh 쿠키가 `SameSite=None; Secure`, `/docs` 비활성 |

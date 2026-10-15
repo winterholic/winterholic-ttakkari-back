@@ -335,7 +335,7 @@ def correct_terms(segments: list[dict], replacements: dict[str, str]) -> list[di
 def flag_repetitions(segments: list[dict]) -> list[dict]:
     """Review hints only. Repeated valid speech can trigger these rules."""
     out = [{**s, "flags": list(s["flags"])} for s in segments]
-    normalized = [re.sub(r"\s+", "", s["original_text"]) for s in segments]
+    normalized = [re.sub(r"[\W_]+", "", s["original_text"]) for s in segments]
     for i, text in enumerate(normalized):
         # Minimum 3 chars/unit and four repetitions avoid short natural stutters.
         if (

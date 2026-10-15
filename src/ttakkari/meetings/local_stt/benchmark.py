@@ -14,7 +14,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from ttakkari.meetings.local_stt.core import error_rates
-from ttakkari.meetings.local_stt.runner import run_worker
+from ttakkari.meetings.local_stt.runner import run_worker as _run_worker
+
+
+async def run_worker(audio_path: Path, params: dict, settings) -> dict:
+    # Historical profiles are allowed only from this standalone measurement entry.
+    return await _run_worker(audio_path, params, settings, production=False)
 
 
 def aggregate(rows: list[dict]) -> dict:

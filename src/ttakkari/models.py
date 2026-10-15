@@ -623,56 +623,13 @@ class MeetingChunk(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
-# ---- 클로바노트 연동 (ADR 0021)
-class ClovaNote(Base):
-    """클로바노트에 있는 노트 한 건의 사본. 목록 동기화로 메타를 채우고, 가져오기(import)할 때 전사·화자 구간을 받는다.
-    에이전트가 MCP 로 읽는 정본이다. 따까리 회의록으로 가져오면 meeting_id 가 이어진다."""
-
-    __tablename__ = "clovanote_notes"
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    note_id: Mapped[str] = mapped_column(String(100), unique=True)
-    workspace_id: Mapped[str | None] = mapped_column(String(100))
-    title: Mapped[str] = mapped_column(String(500), default="")
-    remote_status: Mapped[str | None] = mapped_column(String(40))  # 클로바노트가 준 상태 원문
-    state: Mapped[str] = mapped_column(String(16), default="unknown", index=True)  # processing | ready | failed | unknown
-    duration_ms: Mapped[int | None] = mapped_column(Integer)
-    recorded_at: Mapped[datetime | None]
-    remote_updated_at: Mapped[datetime | None]
-    speakers: Mapped[list[Any]] = mapped_column(default=list)
-    # [{speaker, start_ms, end_ms, text}] 화자·시각이 있는 전사 구간
-    segments: Mapped[list[Any]] = mapped_column(default=list)
-    transcript: Mapped[str | None] = mapped_column(Text)
-    remote_summary: Mapped[str | None] = mapped_column(Text)  # 클로바노트 AI 요약(있으면)
-    keywords: Mapped[list[Any]] = mapped_column(default=list)
-    meta: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    meeting_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("meetings.id", ondelete="SET NULL"), index=True)
-    transcript_fetched_at: Mapped[datetime | None]
-    synced_at: Mapped[datetime] = mapped_column(default=utcnow)
-    created_at: Mapped[datetime] = mapped_column(default=utcnow)
-
-
-class ClovaJob(Base):
-    """클로바노트 처리 작업 하나(목록 동기화·노트 가져오기·녹음 업로드). 화면이 단계·진행률·기록을 그대로 보여 준다."""
-
-    __tablename__ = "clovanote_jobs"
-    __table_args__ = (Index("ix_clovanote_jobs_created", "created_at"),)
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    kind: Mapped[str] = mapped_column(String(10))  # sync | import | upload
-    status: Mapped[str] = mapped_column(String(12), default="queued", index=True)  # queued | running | waiting | succeeded | failed
-    stage: Mapped[str] = mapped_column(String(30), default="queued")
-    progress: Mapped[int | None] = mapped_column(Integer)
-    message: Mapped[str | None] = mapped_column(Text)
-    error: Mapped[str | None] = mapped_column(Text)
-    note_id: Mapped[str | None] = mapped_column(String(100), index=True)
-    meeting_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("meetings.id", ondelete="SET NULL"), index=True)
-    params: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    result: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    # [{at, stage, message}] 화면의 처리 기록
-    steps: Mapped[list[Any]] = mapped_column(default=list)
-    created_at: Mapped[datetime] = mapped_column(default=utcnow)
-    started_at: Mapped[datetime | None]
-    finished_at: Mapped[datetime | None]
-    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+class RetiredIntegrationRecord(Base):
+    """Migration-only source snapshots; never used to connect to a retired service."""
+    __tablename__ = "retired_integration_records"
+    source: Mapped[str] = mapped_column(String(40), primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    payload: Mapped[dict[str, Any]] = mapped_column()
+    archived_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
 # ---- 프로젝트 관리 PMS · WBS (ADR 0012)

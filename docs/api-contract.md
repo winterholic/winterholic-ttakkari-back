@@ -287,12 +287,12 @@ payload 는 `{title, body, url, tag}`:
 
 사용자 인증. 오류는 `{code, message}`. 상태: `uploaded → transcribing → transcribed → analyzing → review | analyzed`, 실패는 `failed` + `failed_stage`(transcription | analysis) + `error`.
 
-- `GET /api/meetings/providers`: 전사 Provider 상태 `[{id, label, state: ready|unconfigured|not_implemented, message, profile_configured}]`. 경로·인증 정보는 내보내지 않는다. 클로바노트는 로그인이 풀렸으면 `unconfigured`(ADR 0021).
+- `GET /api/meetings/providers`: 전사 Provider 상태 `{default_provider: "local_whisper", providers: [{id, label, state, message, is_default}]}`. 로컬 엔진만 등록하며 경로·인증 정보는 내보내지 않는다(ADR 0027).
 - `GET /api/meetings?scope=all|personal|work&q=&status=&project_id=&limit=&offset=`: 요약 목록(프로젝트·녹음·`counts`{discussion, decision, action, open_issue, pending_proposals}). 진행 중인 건은 조회 시점에 끝났는지 확인해 반영한다.
-- `POST /api/meetings` `{title, scope?, project_id?, held_at?, participants?, audio_artifact_id?, transcript?, transcript_source?: paste|file, auto_process?: bool, provider_id?: string}`: `auto_process` 면 녹음은 선택 Provider로 전사(기본 클로바노트, 끝나면 분석), 전사 텍스트는 곧바로 분석. 막히면 회의는 만들고 응답에 `auto_error{code, message}`. 녹음(`POST /api/uploads` 로 먼저 올린 Artifact)이나 전사 텍스트 중 하나는 필요. 전사 텍스트가 있으면 `transcribed`, 녹음만 있으면 `uploaded`. 프로젝트는 회의 범위와 맞아야 한다(`scope_mismatch` 400). 전사는 `meeting_transcript_max_chars`(12만 자) 초과 시 413 `too_large`.
-- `GET /api/meetings/{id}`: 상세(`transcript`, `items[]`, `proposals[]`, `analysis_context[]`, `clovanote{job, note}`, 목록과 같은 `vector{status: none|pending|ready|failed, chunks, error, embedded_at}`). `PATCH` 제목·프로젝트·일시·참석자. `DELETE` 는 승인해 만든 기억과 보관함 녹음을 남긴다.
+- `POST /api/meetings` `{title, scope?, project_id?, held_at?, participants?, audio_artifact_id?, transcript?, transcript_source?: paste|file, auto_process?: bool, provider_id?: string}`: `auto_process` 면 녹음은 선택 Provider로 전사(기본 로컬 Whisper, 끝나면 분석), 전사 텍스트는 곧바로 분석. 막히면 회의는 만들고 응답에 `auto_error{code, message}`. 녹음(`POST /api/uploads` 로 먼저 올린 Artifact)이나 전사 텍스트 중 하나는 필요. 전사 텍스트가 있으면 `transcribed`, 녹음만 있으면 `uploaded`. 프로젝트는 회의 범위와 맞아야 한다(`scope_mismatch` 400). 전사는 `meeting_transcript_max_chars`(12만 자) 초과 시 413 `too_large`.
+- `GET /api/meetings/{id}`: 상세(`transcript`, `items[]`, `proposals[]`, `analysis_context[]`, 목록과 같은 `vector{status: none|pending|ready|failed, chunks, error, embedded_at}`). `PATCH` 제목·프로젝트·일시·참석자. `DELETE` 는 승인해 만든 기억과 보관함 녹음을 남긴다.
 - `POST /api/meetings/{id}/transcript` `{text, source?}`: 전사 텍스트 입력·교체(`uploaded|transcribed|failed`).
-- `POST /api/meetings/{id}/transcribe` `{auto_analyze?: true, provider_id?: string}`: 선택 Provider 전사 작업을 건다(202, `transcribing`). 기본은 클로바노트이며 진행은 상세의 `clovanote.job`. `local_whisper`는 별도 설정이 필요한 로컬 경로(ADR 0025). 쓸 수 없으면 409 `provider_unavailable` + 사유, 상태는 그대로.
+- `POST /api/meetings/{id}/transcribe` `{auto_analyze?: true, provider_id?: string}`: 선택 Provider 전사 작업을 건다(202, `transcribing`). `local_whisper`만 지원하며 기본 경로에서 런타임·모델을 찾는다(ADR 0027). 진행은 STT job API로 조회한다. 쓸 수 없으면 409 `provider_unavailable` + 사유, 상태는 그대로.
 - `GET /api/meetings/{id}/stt`: 로컬 시도 목록 `{jobs}`. 상태, `candidate_only`, 상위 시도, 원본 음성 식별값·실제 모델/시간/메모리 metadata. 파일 경로·토큰은 없음.
 - `GET /api/meetings/{id}/stt/{job}/segments?offset=0&limit=100`: `{job, segments, offset}`. 구간은 초 단위 절대 start/end·원문·별도 corrected_text·모델 실제 지표·단어 시각·음성 Artifact ID·원시 출력. 미실행 화자/중첩은 null. 최대 500개씩.
 - `POST /api/meetings/{id}/stt/{job}/reprocess` `{start, end, terms?: string[]}`: 202, 새 후보 시도. 성공한 원본의 시간 범위 내·기본 최대 120초. 원전사·분석 자동 교체 없음. 잘못된 범위는 422, 잘못 연결한 작업은 404. 사용자 인증 전용이며 에이전트 쓰기 API는 추가하지 않음.
@@ -300,20 +300,6 @@ payload 는 `{title, body, url, tag}`:
 - `PATCH /api/meetings/{id}/items/{item_id}` `{status?: open|done|cancelled, text?, owner?, due?}`: 액션·미해결 쟁점의 상태.
 - `POST /api/meetings/{id}/proposals/{pid}/approve|reject`: 제안 처리. 승인만 맥락 도서관(`add_memory`, `supersede_memory`)이나 이전 회의의 액션(`update_action_item`)을 바꾼다. 대상이 이미 바뀌었으면 409 `stale`.
 - 에이전트용(세션 한정 토큰, 읽기 전용, 회사 세션은 회사 회의만): `GET /api/agent/meetings?q=&project=&status=&limit=`, `GET /api/agent/meetings/{id}`, `GET /api/agent/meetings/search?q=&kind=&status=&project=&limit=`, `GET /api/agent/meetings/semantic?q=&project=&kind=&limit=`(조각 의미 검색, `results[{meeting_id, meeting_title, held_at, scope, kind, heading, text, score, similarity}]`). MCP `list_meetings`·`get_meeting`·`search_meeting_items`·`search_meetings`. 쓰기·승인 경로는 없다. `recall` 결과에도 `type: meeting` 이 섞인다.
-
-## 클로바노트(ADR 0021)
-
-사용자 인증. 작업(job): `{id, kind: sync|import|upload, status: queued|running|waiting|succeeded|failed, stage, progress(0-100|null), message, error, note_id, meeting_id, params, result, steps[{at, stage, message}], stages[{id, label}], created_at, started_at, finished_at, updated_at}`.
-노트: `{note_id, title, state: ready|processing|failed|unknown, remote_status, duration_ms, recorded_at, remote_updated_at, speakers[], has_transcript, transcript_chars, summary, meeting_id, missing, sample, progress, synced_at, transcript_fetched_at}`.
-
-- `GET /api/clovanote/status?refresh=`: `{state: ready|login_required|login_window|disabled|error|unknown, message, checked_at, account{name,email}, workspace{id,name}, quota{recognition_remain_minutes, summary_remain, refresh_at}, login{state: idle|waiting|session_only|done|timeout|failed, message, started_at, finished_at}, browser_running, active_jobs, notes, unimported, last_sync_at}`. `refresh=true` 면 실제로 확인(몇 초).
-- `POST /api/clovanote/login`(202): Mac 화면에 일반 Chrome 로그인 창. 영구 로그인 쿠키가 생기면 창을 닫고 확인한다. 진행은 status 의 `login`.
-- `POST /api/clovanote/sync`(202): 동기화 작업(같은 작업이 돌고 있으면 그것).
-- `GET /api/clovanote/notes?q=&state=&imported=&samples=&limit=&offset=`: 노트 목록. 가져왔으면 `meeting{id,title,status}`, 가져오는 중이면 `import_job`. `GET /api/clovanote/notes/{note_id}`: + `segments[{speaker,start_ms,end_ms,text}]`, `transcript`.
-- `POST /api/clovanote/notes/{note_id}/import` `{scope?, project_id?, analyze?: true}`(202): 가져오기 작업. 이미 가져왔으면 409 `already_imported` + `meeting_id`.
-- `GET /api/clovanote/jobs?active=&kind=&limit=`, `GET /api/clovanote/jobs/{id}`, `POST /api/clovanote/jobs/{id}/retry`(실패한 sync·import 만).
-- `GET /api/clovanote/jobs/failed?limit=30&since=&before=&before_id=`: 실패한 백그라운드 작업을 최신순으로 반환. `{items, next_before, next_before_id}`. 각 항목은 작업 정보에 `failed_at, meeting_title, note_title`을 더한다. `limit` 1~100, 다음 페이지는 `before`와 `before_id`를 함께 보낸다. 실패한 upload 는 회의록에서 전사를 다시 요청해야 한다.
-- 에이전트용(회사 세션은 회사 회의로 가져온 노트만, 동기화 불가): `GET /api/agent/clovanote/notes?q=&state=&imported=&limit=`, `GET /api/agent/clovanote/notes/{id}?offset=&limit=`(구간 페이지), `POST /api/agent/clovanote/sync`, `POST /api/agent/clovanote/notes/{id}/import` `{scope?, project?(이름), analyze?}`. MCP `list_clovanote_notes`·`get_clovanote_note`·`sync_clovanote`·`import_clovanote_note`.
 
 ## 프로젝트 관리 PMS · WBS(ADR 0012)
 

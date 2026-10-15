@@ -293,38 +293,6 @@ async def search_meetings(query: str, project: str | None = None,
     return await _agent("GET", "/meetings/semantic", q=query, project=project, kind=kind, limit=limit)
 
 
-# ---- 클로바노트(ADR 0021). 사용자의 클로바노트 계정에 있는 녹음·전사의 사본(동기화로 채운다).
-
-@query_tool
-async def list_clovanote_notes(query: str | None = None, state: Literal["ready", "processing", "failed"] | None = None,
-                               imported: bool | None = None, limit: int = 20) -> str:
-    """List the user's Clova Note (클로바노트) recordings synced into Ttakkari: title, recorded time, duration, speakers,
-    whether a transcript exists and the meeting it was imported into (meeting_id). `imported=false` finds notes not yet
-    turned into meeting minutes. Read-only; call sync_clovanote first if the newest recording is missing."""
-    return await _agent("GET", "/clovanote/notes", q=query, state=state, imported=imported, limit=limit)
-
-
-@query_tool
-async def get_clovanote_note(note_id: str, offset: int = 0, limit: int = 200) -> str:
-    """Read a Clova Note transcript as speaker/time segments [{speaker, start_ms, end_ms, text}]. Long notes are paged:
-    pass next_offset to continue. Read-only."""
-    return await _agent("GET", f"/clovanote/notes/{note_id}", offset=offset, limit=limit)
-
-
-@server.tool()
-async def sync_clovanote() -> str:
-    """Fetch the latest note list and transcripts from the user's Clova Note account into Ttakkari (runs in the background,
-    usually under a minute). Personal sessions only."""
-    return await _agent("POST", "/clovanote/sync")
-
-
-@server.tool()
-async def import_clovanote_note(note_id: str, scope: Literal["personal", "work"] = "personal", project: str | None = None,
-                                analyze: bool = True) -> str:
-    """Turn a Clova Note into Ttakkari meeting minutes and (by default) start the analysis that extracts decisions and
-    action items. `project` is a project name or alias. This never changes the context library by itself: the user approves
-    proposals in the app."""
-    return await _agent("POST", f"/clovanote/notes/{note_id}/import", {"scope": scope, "project": project, "analyze": analyze})
 
 
 @server.tool()

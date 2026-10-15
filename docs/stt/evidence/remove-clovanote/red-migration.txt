@@ -1,0 +1,9 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+____ test_retirement_preserves_every_source_row_and_meetings_and_downgrades ____
+tests/test_retire_clovanote_migration.py:47: in test_retirement_preserves_every_source_row_and_meetings_and_downgrades
+    assert await conn.fetchval("SELECT to_regclass('clovanote_notes')") is None
+E   AssertionError: assert 'clovanote_notes' is None
+=========================== short test summary info ============================
+FAILED tests/test_retire_clovanote_migration.py::test_retirement_preserves_every_source_row_and_meetings_and_downgrades
+1 failed in 1.02s

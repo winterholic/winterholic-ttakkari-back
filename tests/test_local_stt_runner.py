@@ -90,6 +90,7 @@ async def test_enhancement_configuration_is_forwarded_and_secrets_are_not(
     assert r["request"]["separation_model_path"] == str(
         s.local_stt_separation_model_path
     )
+    assert r["env"]["PYTHONPATH"] == str(__import__("pathlib").Path(runner.__file__).resolve().parents[3])
     assert "HF_TOKEN" not in r["env"]
     assert r["env"]["PYANNOTE_METRICS_ENABLED"] == "0"
     assert r["env"]["HF_HOME"].startswith(r["env"]["HOME"])

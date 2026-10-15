@@ -36,10 +36,8 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_INTERNAL_API_URL` | 오케스트레이터 MCP 서버가 부르는 백엔드 주소. 기본 `http://127.0.0.1:8787` |
 | `TTAKKARI_TRANSFER_INBOX` | 폰에서 보낸 파일 기본 폴더. 비우면 `~/.ttakkari/inbox`(에이전트가 읽고 쓸 수 있는 ~/.ttakkari 안 유일한 곳) |
 | `TTAKKARI_MEETING_TRANSCRIPT_MAX_CHARS`, `TTAKKARI_MEETING_ANALYSIS_MODEL`, `TTAKKARI_MEETING_ANALYSIS_EFFORT` | 회의록(ADR 0010): 전사 한 건 최대 글자(기본 12만), 분석 Run 의 모델·생각 수준(기본 세션 기본 모델·high) |
-| `TTAKKARI_CLOVANOTE_PROFILE_DIR`, `TTAKKARI_CLOVANOTE_WORKSPACE_ID`, `TTAKKARI_CLOVANOTE_ENABLED`, `TTAKKARI_CLOVANOTE_POLL_SECONDS` | 클로바노트 연동(ADR 0021): 전용 Chrome 프로필(기본 `~/.ttakkari/clovanote-chrome`), 워크스페이스(비우면 첫 것), 켜기, 선택 연동(기본 꺼짐), 자동 동기화 주기(기본 0초·꺼짐). 로그인은 회의록 화면의 '로그인 창 열기'로 일반 Chrome 에서 한 번('로그인 상태 유지' 필수). 비밀번호는 저장하지 않는다. 설치된 Google Chrome 이 필요하다 |
 | `TTAKKARI_CONTEXT_EMBEDDER` | 회의록 벡터 저장: `e5`(기본, 로컬 multilingual-e5-large) · `hash`(테스트) · `off`. E5도 요청별 자식 프로세스에서 로드·종료한다. 가중치는 사전 설치하며 요청 중 다운로드하지 않는다 |
 | `TTAKKARI_CONTEXT_EMBEDDING_CPU_THREADS`, `TTAKKARI_CONTEXT_EMBEDDING_TIMEOUT_SECONDS` | E5 자식의 CPU 스레드(기본 2), 요청 제한시간(기본 300초) |
-| `TTAKKARI_MEETING_DEFAULT_PROVIDER` | 기본 `local_whisper`. 클로바노트는 명시 선택 또는 운영자의 명시 `clovanote` 설정으로만 사용 |
 | `TTAKKARI_LOCAL_STT_ENABLED`, `TTAKKARI_LOCAL_STT_PYTHON`, `TTAKKARI_LOCAL_STT_MODEL_PATH`, `TTAKKARI_LOCAL_STT_PROFILE` | 기본 전사 엔진 로컬 Whisper(ADR 0025·0026). 기본 켜짐·baseline, 로컬 가중치 경로는 별도 지정. 요청마다 자식 프로세스에서 로드·추론 후 종료한다. [설치·API·측정 안내](docs/stt/README.md). 미준비 시 사유를 알리며 외부 엔진으로 자동 전환하지 않는다 |
 | `TTAKKARI_CONTEXT_SOURCE_ROOTS` | 비서 관리 > 지식에 등록할 수 있는 상위 폴더 JSON 배열. 기본 홈 |
 | `TTAKKARI_CORS_ORIGINS` | 프론트 origin JSON 배열 |
@@ -133,3 +131,14 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 - 터널: `cloudflared tunnel login` → `cloudflared tunnel create ttakkari` → `~/.cloudflared/ttakkari.yml`(예시 `deploy/cloudflared-ttakkari.yml.example`) → `cloudflared tunnel route dns ttakkari ttakkari-api.winterholic.net` → `deploy/install-services.sh tunnel`.
 - 주소는 한 단계 서브도메인(`ttakkari-api.winterholic.net`)이어야 Cloudflare 무료 인증서(`*.winterholic.net`)가 덮는다. `api.ttakkari.winterholic.net` 은 TLS 핸드셰이크에서 실패했다.
 - 운영 `config.env`: `TTAKKARI_ENV=prod`, `TTAKKARI_CORS_ORIGINS` 에 `https://ttakkari.winterholic.net`, `TTAKKARI_TRUST_PROXY_IP_HEADER=CF-Connecting-IP`.
+
+## 회의 전사 런타임 기본 경로 (ADR 0027)
+
+회의 녹음은 로컬 Whisper만 사용한다. 별도 서비스·Chrome·Playwright·외부 계정은 필요하지 않다.
+설정을 비우면 Python은 `~/development/projects/winterholic-ttakkari/back/.stt-runtime/venv/bin/python`,
+모델은 같은 `.stt-runtime/faster-whisper-large-v3/`에서 찾는다. 이 Mac에는 해당 환경과 공개 large-v3 가중치를 준비했다.
+앱 코드는 현재 배포본의 `src`를 자식의 PYTHONPATH로 전달하므로 런타임에 앱 패키지를 중복 설치하지 않는다.
+명시한 `TTAKKARI_LOCAL_STT_PYTHON`·`TTAKKARI_LOCAL_STT_MODEL_PATH`는 계속 우선한다.
+이전 외부 연동·기본 provider 설정 키는 제거되어 `extra=ignore`로 무시된다. 환경파일을 편집할 필요가 없다.
+설치·데이터 보존·배포 후 스모크: [제거·전환 안내](docs/stt/remove-clovanote-2026-10-15.md).
+백엔드 배포·마이그레이션은 기획 세션의 독립 배포 감독만 실행한다.

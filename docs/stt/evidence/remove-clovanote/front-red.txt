@@ -1,0 +1,847 @@
+
+ RUN  v5.0.3 /Users/winterholic/development/projects/winterholic-ttakkari/front
+
+ ❯ src/features/meetings/meetings.test.tsx (24 tests | 1 failed | 23 skipped) 1029ms
+   ❯ 외부 연동 제거 (1)
+     × 예전 노트 탭 주소도 보존된 회의록 목록을 연다 1028ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/meetings/meetings.test.tsx > 외부 연동 제거 > 예전 노트 탭 주소도 보존된 회의록 목록을 연다
+TestingLibraryElementError: Unable to find role="list" and name "회의록 목록"
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"tk-screen"[39m
+    [36m>[39m
+      [36m<header>[39m
+        [36m<h1>[39m
+          [0m회의록[0m
+        [36m</h1>[39m
+        [36m<a[39m
+          [33mclass[39m=[32m"tk-button tk-button--primary tk-button--sm"[39m
+          [33mdata-discover[39m=[32m"true"[39m
+          [33mhref[39m=[32m"/meetings/new"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-plus tk-icon"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.75"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M5 12h14"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M12 5v14"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0m새 회의록[0m
+        [36m</a>[39m
+      [36m</header>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tk-screen__body"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"tk-container tk-container--md"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"mt-page"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mt-clova-line"[39m
+            [36m>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"mt-clova-line__state"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"tk-dot tk-dot--online"[39m
+                [36m/>[39m
+                [36m<span>[39m
+                  [0m클로바노트 연결됨[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"mt-clova-line__meta"[39m
+              [36m>[39m
+                [36m<span>[39m
+                  [0m김대선[0m
+                [36m</span>[39m
+                [36m<span>[39m
+                  [0m변환 [0m
+                  [0m299[0m
+                  [0m분 남음[0m
+                [36m</span>[39m
+                [36m<span>[39m
+                  [0m아직 동기화 전[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"클로바노트에서 노트 동기화"[39m
+                [33mclass[39m=[32m"tk-button tk-button--xs mt-clova-line__action"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-refresh-cw tk-icon"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"1.75"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M21 3v5h-5"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 16H3v5"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0m동기화[0m
+              [36m</button>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33maria-label[39m=[32m"보기"[39m
+              [33mclass[39m=[32m"tk-segmented tk-segmented--block mt-tabs"[39m
+              [33mrole[39m=[32m"radiogroup"[39m
+            [36m>[39m
+              [36m<label>[39m
+                [36m<input[39m
+                  [33mname[39m=[32m"mt-view"[39m
+                  [33mtype[39m=[32m"radio"[39m
+                [36m/>[39m
+                [0m회의록[0m
+              [36m</label>[39m
+              [36m<label>[39m
+                [36m<input[39m
+                  [33mchecked[39m=[32m""[39m
+                  [33mname[39m=[32m"mt-view"[39m
+                  [33mtype[39m=[32m"radio"[39m
+                [36m/>[39m
+                [0m클로바노트[0m
+                [36m<span[39m
+                  [33maria-label[39m=[32m"안 가져온 노트 1개"[39m
+                  [33mclass[39m=[32m"mt-tabs__count"[39m
+                  [33mdata-alert[39m=[32m"true"[39m
+                [36m>[39m
+                  [0m1[0m
+                [36m</span>[39m
+              [36m</label>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mt-stack"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"mt-toolbar"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"tk-input-wrap mt-toolbar__search"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-search tk-icon"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"24"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"1.75"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"24"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"m21 21-4.34-4.34"[39m
+                    [36m/>[39m
+                    [36m<circle[39m
+                      [33mcx[39m=[32m"11"[39m
+                      [33mcy[39m=[32m"11"[39m
+                      [33mr[39m=[32m"8"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                  [36m<input[39m
+                    [33maria-label[39m=[32m"클로바노트 노트 찾기"[39m
+                    [33mclass[39m=[32m"tk-input tk-input--sm"[39m
+                    [33mplaceholder[39m=[32m"제목·전사 찾기"[39m
+                    [33mtype[39m=[32m"search"[39m
+                    [33mvalue[39m=[32m""[39m
+                  [36m/>[39m
+                [36m</span>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"tk-empty"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-mic tk-icon"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"1.75"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 19v3"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M19 10v2a7 7 0 0 1-14 0v-2"[39m
+                  [36m/>[39m
+                  [36m<rect[39m
+                    [33mheight[39m=[32m"13"[39m
+                    [33mrx[39m=[32m"3"[39m
+                    [33mwidth[39m=[32m"6"[39m
+                    [33mx[39m=[32m"9"[39m
+                    [33my[39m=[32m"2"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"tk-empty__title"[39m
+                [36m>[39m
+                  [0m가져온 클로바노트 노트가 없어요[0m
+                [36m</p>[39m
+                [36m<p>[39m
+                  [0m클로바노트 앱으로 녹음한 노트는 위 '동기화'를 누르면 여기에 나타나요. 30분마다 자동으로도 받아요.[0m
+                [36m</p>[39m
+              [36m</div>[39m
+              [36m<dialog[39m
+                [33maria-labelledby[39m=[32m"clova-import-title"[39m
+                [33mclass[39m=[32m"tk-dialog tk-dialog--sm"[39m
+                [33mdata-tk-modal[39m=[32m""[39m
+                [33mid[39m=[32m"clova-import"[39m
+                [33mtabindex[39m=[32m"-1"[39m
+              [36m>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"tk-dialog__header"[39m
+                [36m>[39m
+                  [36m<h2[39m
+                    [33mclass[39m=[32m"tk-dialog__title"[39m
+                    [33mid[39m=[32m"clova-import-title"[39m
+                  [36m>[39m
+                    [0m회의록으로 가져오기[0m
+                  [36m</h2>[39m
+                  [36m<button[39m
+                    [33maria-label[39m=[32m"닫기"[39m
+                    [33mclass[39m=[32m"tk-icon-button tk-icon-button--sm"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [36m<svg[39m
+                      [33maria-hidden[39m=[32m"true"[39m
+                      [33mclass[39m=[32m"lucide lucide-x tk-icon"[39m
+                      [33mfill[39m=[32m"none"[39m
+                      [33mheight[39m=[32m"24"[39m
+                      [33mstroke[39m=[32m"currentColor"[39m
+                      [33mstroke-linecap[39m=[32m"round"[39m
+                      [33mstroke-linejoin[39m=[32m"round"[39m
+                      [33mstroke-width[39m=[32m"1.75"[39m
+                      [33mviewBox[39m=[32m"0 0 24 24"[39m
+                      [33mwidth[39m=[32m"24"[39m
+                      [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                    [36m>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"M18 6 6 18"[39m
+                      [36m/>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"m6 6 12 12"[39m
+                      [36m/>[39m
+                    [36m</svg>[39m
+                  [36m</button>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"tk-dialog__body"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"tk-stack mt-form"[39m
+                  [36m>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"mt-prose"[39m
+                    [36m/>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"tk-field"[39m
+                    [36m>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-label"[39m
+                        [33mid[39m=[32m"_r_0_-scope"[39m
+                      [36m>[39m
+                        [0m범위[0m
+                      [36m</span>[39m
+                      [36m<div[39m
+                        [33maria-labelledby[39m=[32m"_r_0_-scope"[39m
+                        [33mclass[39m=[32m"tk-segmented tk-segmented--block"[39m
+                        [33mrole[39m=[32m"radiogroup"[39m
+                      [36m>[39m
+                        [36m<label>[39m
+                          [36m<input[39m
+                            [33mchecked[39m=[32m""[39m
+                            [33mname[39m=[32m"_r_0_-scope"[39m
+                            [33mtype[39m=[32m"radio"[39m
+                          [36m/>[39m
+                          [0m개인[0m
+                        [36m</label>[39m
+                        [36m<label>[39m
+                          [36m<input[39m
+                            [33mname[39m=[32m"_r_0_-scope"[39m
+                            [33mtype[39m=[32m"radio"[39m
+                          [36m/>[39m
+                          [0m회사[0m
+                        [36m</label>[39m
+                      [36m</div>[39m
+                    [36m</div>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"tk-field"[39m
+                    [36m>[39m
+                      [36m<label[39m
+                        [33mclass[39m=[32m"tk-label"[39m
+                        [33mfor[39m=[32m"_r_0_-p"[39m
+                        [33mid[39m=[32m"_r_0_-pl"[39m
+                      [36m>[39m
+                        [0mPMS 프로젝트 [0m
+                        [36m<span[39m
+                          [33mclass[39m=[32m"mt-optional"[39m
+                        [36m>[39m
+                          [0m선택[0m
+                        [36m</span>[39m
+                      [36m</label>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-select"[39m
+                      [36m>[39m
+                        [36m<button[39m
+                          [33maria-controls[39m=[32m"_r_2_"[39m
+                          [33maria-expanded[39m=[32m"false"[39m
+                          [33maria-haspopup[39m=[32m"listbox"[39m
+                          [33maria-labelledby[39m=[32m"_r_0_-pl _r_0_-p"[39m
+                          [33mclass[39m=[32m"tk-select__trigger"[39m
+                          [33mid[39m=[32m"_r_0_-p"[39m
+                          [33mrole[39m=[32m"combobox"[39m
+                          [33mtype[39m=[32m"button"[39m
+                        [36m>[39m
+                          [36m<span[39m
+                            [33mclass[39m=[32m"tk-select__value"[39m
+                          [36m>[39m
+                            [0m연결 안 함[0m
+                          [36m</span>[39m
+                        [36m</button>[39m
+                        [36m<div[39m
+                          [33maria-labelledby[39m=[32m"_r_0_-pl"[39m
+                          [33mclass[39m=[32m"tk-menu"[39m
+                          [33mhidden[39m=[32m""[39m
+                          [33mid[39m=[32m"_r_2_"[39m
+                          [33mrole[39m=[32m"listbox"[39m
+                        [36m>[39m
+                          [36m<button[39m
+                            [33maria-selected[39m=[32m"true"[39m
+                            [33mclass[39m=[32m"tk-menu__item"[39m
+                            [33mrole[39m=[32m"option"[39m
+                            [33mtabindex[39m=[32m"-1"[39m
+                            [33mtype[39m=[32m"button"[39m
+                          [36m>[39m
+                            [0m연결 안 함[0m
+                          [36m</button>[39m
+                          [36m<button[39m
+                            [33maria-selected[39m=[32m"false"[39m
+                            [33mclass[39m=[32m"tk-menu__item"[39m
+                            [33mrole[39m=[32m"option"[39m
+                            [33mtabindex[39m=[32m"-1"[39m
+                            [33mtype[39m=[32m"button"[39m
+                          [36m>[39m
+                            [0mPMS 개인 프로젝트[0m
+                          [36m</button>[39m
+                        [36m</div>[39m
+                      [36m</span>[39m
+                    [36m</div>[39m
+                    [36m<label[39m
+                      [33mclass[39m=[32m"tk-checkbox"[39m
+                    [36m>[39m
+                      [36m<input[39m
+                        [33mchecked[39m=[32m""[39m
+                        [33mtype[39m=[32m"checkbox"[39m
+                      [36m/>[39m
+                      [0m가져오자마자 결정·액션 분석[0m
+                    [36m</label>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"tk-help"[39m
+                    [36m>[39m
+                      [0m전사는 맥락 도서관에 검색용(벡터)으로 저장돼요. 결정을 기억으로 남기는 건 분석 뒤 승인할 때만이에요.[0m
+                    [36m</p>[39m
+                  [36m</div>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"tk-dialog__footer"[39m
+                [36m>[39m
+                  [36m<button[39m
+                    [33mclass[39m=[32m"tk-button"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0m취소[0m
+                  [36m</button>[39m
+                  [36m<button[39m
+                    [33mclass[39m=[32m"tk-button tk-button--primary"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0m가져오기[0m
+                  [36m</button>[39m
+                [36m</div>[39m
+              [36m</dialog>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+    [36m<p[39m
+      [33mdata-testid[39m=[32m"where"[39m
+    [36m>[39m
+      [0m/meetings[0m
+      [0m?view=clova[0m
+    [36m</p>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"tk-screen"[39m
+    [36m>[39m
+      [36m<header>[39m
+        [36m<h1>[39m
+          [0m회의록[0m
+        [36m</h1>[39m
+        [36m<a[39m
+          [33mclass[39m=[32m"tk-button tk-button--primary tk-button--sm"[39m
+          [33mdata-discover[39m=[32m"true"[39m
+          [33mhref[39m=[32m"/meetings/new"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-plus tk-icon"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"1.75"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M5 12h14"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M12 5v14"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [0m새 회의록[0m
+        [36m</a>[39m
+      [36m</header>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tk-screen__body"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"tk-container tk-container--md"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"mt-page"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mt-clova-line"[39m
+            [36m>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"mt-clova-line__state"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"tk-dot tk-dot--online"[39m
+                [36m/>[39m
+                [36m<span>[39m
+                  [0m클로바노트 연결됨[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<span[39m
+                [33mclass[39m=[32m"mt-clova-line__meta"[39m
+              [36m>[39m
+                [36m<span>[39m
+                  [0m김대선[0m
+                [36m</span>[39m
+                [36m<span>[39m
+                  [0m변환 [0m
+                  [0m299[0m
+                  [0m분 남음[0m
+                [36m</span>[39m
+                [36m<span>[39m
+                  [0m아직 동기화 전[0m
+                [36m</span>[39m
+              [36m</span>[39m
+              [36m<button[39m
+                [33maria-label[39m=[32m"클로바노트에서 노트 동기화"[39m
+                [33mclass[39m=[32m"tk-button tk-button--xs mt-clova-line__action"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-refresh-cw tk-icon"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"1.75"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M21 3v5h-5"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M8 16H3v5"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [0m동기화[0m
+              [36m</button>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33maria-label[39m=[32m"보기"[39m
+              [33mclass[39m=[32m"tk-segmented tk-segmented--block mt-tabs"[39m
+              [33mrole[39m=[32m"radiogroup"[39m
+            [36m>[39m
+              [36m<label>[39m
+                [36m<input[39m
+                  [33mname[39m=[32m"mt-view"[39m
+                  [33mtype[39m=[32m"radio"[39m
+                [36m/>[39m
+                [0m회의록[0m
+              [36m</label>[39m
+              [36m<label>[39m
+                [36m<input[39m
+                  [33mchecked[39m=[32m""[39m
+                  [33mname[39m=[32m"mt-view"[39m
+                  [33mtype[39m=[32m"radio"[39m
+                [36m/>[39m
+                [0m클로바노트[0m
+                [36m<span[39m
+                  [33maria-label[39m=[32m"안 가져온 노트 1개"[39m
+                  [33mclass[39m=[32m"mt-tabs__count"[39m
+                  [33mdata-alert[39m=[32m"true"[39m
+                [36m>[39m
+                  [0m1[0m
+                [36m</span>[39m
+              [36m</label>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"mt-stack"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"mt-toolbar"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"tk-input-wrap mt-toolbar__search"[39m
+                [36m>[39m
+                  [36m<svg[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"lucide lucide-search tk-icon"[39m
+                    [33mfill[39m=[32m"none"[39m
+                    [33mheight[39m=[32m"24"[39m
+                    [33mstroke[39m=[32m"currentColor"[39m
+                    [33mstroke-linecap[39m=[32m"round"[39m
+                    [33mstroke-linejoin[39m=[32m"round"[39m
+                    [33mstroke-width[39m=[32m"1.75"[39m
+                    [33mviewBox[39m=[32m"0 0 24 24"[39m
+                    [33mwidth[39m=[32m"24"[39m
+                    [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                  [36m>[39m
+                    [36m<path[39m
+                      [33md[39m=[32m"m21 21-4.34-4.34"[39m
+                    [36m/>[39m
+                    [36m<circle[39m
+                      [33mcx[39m=[32m"11"[39m
+                      [33mcy[39m=[32m"11"[39m
+                      [33mr[39m=[32m"8"[39m
+                    [36m/>[39m
+                  [36m</svg>[39m
+                  [36m<input[39m
+                    [33maria-label[39m=[32m"클로바노트 노트 찾기"[39m
+                    [33mclass[39m=[32m"tk-input tk-input--sm"[39m
+                    [33mplaceholder[39m=[32m"제목·전사 찾기"[39m
+                    [33mtype[39m=[32m"search"[39m
+                    [33mvalue[39m=[32m""[39m
+                  [36m/>[39m
+                [36m</span>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"tk-empty"[39m
+              [36m>[39m
+                [36m<svg[39m
+                  [33maria-hidden[39m=[32m"true"[39m
+                  [33mclass[39m=[32m"lucide lucide-mic tk-icon"[39m
+                  [33mfill[39m=[32m"none"[39m
+                  [33mheight[39m=[32m"24"[39m
+                  [33mstroke[39m=[32m"currentColor"[39m
+                  [33mstroke-linecap[39m=[32m"round"[39m
+                  [33mstroke-linejoin[39m=[32m"round"[39m
+                  [33mstroke-width[39m=[32m"1.75"[39m
+                  [33mviewBox[39m=[32m"0 0 24 24"[39m
+                  [33mwidth[39m=[32m"24"[39m
+                  [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                [36m>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M12 19v3"[39m
+                  [36m/>[39m
+                  [36m<path[39m
+                    [33md[39m=[32m"M19 10v2a7 7 0 0 1-14 0v-2"[39m
+                  [36m/>[39m
+                  [36m<rect[39m
+                    [33mheight[39m=[32m"13"[39m
+                    [33mrx[39m=[32m"3"[39m
+                    [33mwidth[39m=[32m"6"[39m
+                    [33mx[39m=[32m"9"[39m
+                    [33my[39m=[32m"2"[39m
+                  [36m/>[39m
+                [36m</svg>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"tk-empty__title"[39m
+                [36m>[39m
+                  [0m가져온 클로바노트 노트가 없어요[0m
+                [36m</p>[39m
+                [36m<p>[39m
+                  [0m클로바노트 앱으로 녹음한 노트는 위 '동기화'를 누르면 여기에 나타나요. 30분마다 자동으로도 받아요.[0m
+                [36m</p>[39m
+              [36m</div>[39m
+              [36m<dialog[39m
+                [33maria-labelledby[39m=[32m"clova-import-title"[39m
+                [33mclass[39m=[32m"tk-dialog tk-dialog--sm"[39m
+                [33mdata-tk-modal[39m=[32m""[39m
+                [33mid[39m=[32m"clova-import"[39m
+                [33mtabindex[39m=[32m"-1"[39m
+              [36m>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"tk-dialog__header"[39m
+                [36m>[39m
+                  [36m<h2[39m
+                    [33mclass[39m=[32m"tk-dialog__title"[39m
+                    [33mid[39m=[32m"clova-import-title"[39m
+                  [36m>[39m
+                    [0m회의록으로 가져오기[0m
+                  [36m</h2>[39m
+                  [36m<button[39m
+                    [33maria-label[39m=[32m"닫기"[39m
+                    [33mclass[39m=[32m"tk-icon-button tk-icon-button--sm"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [36m<svg[39m
+                      [33maria-hidden[39m=[32m"true"[39m
+                      [33mclass[39m=[32m"lucide lucide-x tk-icon"[39m
+                      [33mfill[39m=[32m"none"[39m
+                      [33mheight[39m=[32m"24"[39m
+                      [33mstroke[39m=[32m"currentColor"[39m
+                      [33mstroke-linecap[39m=[32m"round"[39m
+                      [33mstroke-linejoin[39m=[32m"round"[39m
+                      [33mstroke-width[39m=[32m"1.75"[39m
+                      [33mviewBox[39m=[32m"0 0 24 24"[39m
+                      [33mwidth[39m=[32m"24"[39m
+                      [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+                    [36m>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"M18 6 6 18"[39m
+                      [36m/>[39m
+                      [36m<path[39m
+                        [33md[39m=[32m"m6 6 12 12"[39m
+                      [36m/>[39m
+                    [36m</svg>[39m
+                  [36m</button>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"tk-dialog__body"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"tk-stack mt-form"[39m
+                  [36m>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"mt-prose"[39m
+                    [36m/>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"tk-field"[39m
+                    [36m>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-label"[39m
+                        [33mid[39m=[32m"_r_0_-scope"[39m
+                      [36m>[39m
+                        [0m범위[0m
+                      [36m</span>[39m
+                      [36m<div[39m
+                        [33maria-labelledby[39m=[32m"_r_0_-scope"[39m
+                        [33mclass[39m=[32m"tk-segmented tk-segmented--block"[39m
+                        [33mrole[39m=[32m"radiogroup"[39m
+                      [36m>[39m
+                        [36m<label>[39m
+                          [36m<input[39m
+                            [33mchecked[39m=[32m""[39m
+                            [33mname[39m=[32m"_r_0_-scope"[39m
+                            [33mtype[39m=[32m"radio"[39m
+                          [36m/>[39m
+                          [0m개인[0m
+                        [36m</label>[39m
+                        [36m<label>[39m
+                          [36m<input[39m
+                            [33mname[39m=[32m"_r_0_-scope"[39m
+                            [33mtype[39m=[32m"radio"[39m
+                          [36m/>[39m
+                          [0m회사[0m
+                        [36m</label>[39m
+                      [36m</div>[39m
+                    [36m</div>[39m
+                    [36m<div[39m
+                      [33mclass[39m=[32m"tk-field"[39m
+                    [36m>[39m
+                      [36m<label[39m
+                        [33mclass[39m=[32m"tk-label"[39m
+                        [33mfor[39m=[32m"_r_0_-p"[39m
+                        [33mid[39m=[32m"_r_0_-pl"[39m
+                      [36m>[39m
+                        [0mPMS 프로젝트 [0m
+                        [36m<span[39m
+                          [33mclass[39m=[32m"mt-optional"[39m
+                        [36m>[39m
+                          [0m선택[0m
+                        [36m</span>[39m
+                      [36m</label>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-select"[39m
+                      [36m>[39m
+                        [36m<button[39m
+                          [33maria-controls[39m=[32m"_r_2_"[39m
+                          [33maria-expanded[39m=[32m"false"[39m
+                          [33maria-haspopup[39m=[32m"listbox"[39m
+                          [33maria-labelledby[39m=[32m"_r_0_-pl _r_0_-p"[39m
+                          [33mclass[39m=[32m"tk-select__trigger"[39m
+                          [33mid[39m=[32m"_r_0_-p"[39m
+                          [33mrole[39m=[32m"combobox"[39m
+                          [33mtype[39m=[32m"button"[39m
+                        [36m>[39m
+                          [36m<span[39m
+                            [33mclass[39m=[32m"tk-select__value"[39m
+                          [36m>[39m
+                            [0m연결 안 함[0m
+                          [36m</span>[39m
+                        [36m</button>[39m
+                        [36m<div[39m
+                          [33maria-labelledby[39m=[32m"_r_0_-pl"[39m
+                          [33mclass[39m=[32m"tk-menu"[39m
+                          [33mhidden[39m=[32m""[39m
+                          [33mid[39m=[32m"_r_2_"[39m
+                          [33mrole[39m=[32m"listbox"[39m
+                        [36m>[39m
+                          [36m<button[39m
+                            [33maria-selected[39m=[32m"true"[39m
+                            [33mclass[39m=[32m"tk-menu__item"[39m
+                            [33mrole[39m=[32m"option"[39m
+                            [33mtabindex[39m=[32m"-1"[39m
+                            [33mtype[39m=[32m"button"[39m
+                          [36m>[39m
+                            [0m연결 안 함[0m
+                          [36m</button>[39m
+                          [36m<button[39m
+                            [33maria-selected[39m=[32m"false"[39m
+                            [33mclass[39m=[32m"tk-menu__item"[39m
+                            [33mrole[39m=[32m"option"[39m
+                            [33mtabindex[39m=[32m"-1"[39m
+                            [33mtype[39m=[32m"button"[39m
+                          [36m>[39m
+                            [0mPMS 개인 프로젝트[0m
+                          [36m</button>[39m
+                        [36m</div>[39m
+                      [36m</span>[39m
+                    [36m</div>[39m
+                    [36m<label[39m
+                      [33mclass[39m=[32m"tk-checkbox"[39m
+                    [36m>[39m
+                      [36m<input[39m
+                        [33mchecked[39m=[32m""[39m
+                        [33mtype[39m=[32m"checkbox"[39m
+                      [36m/>[39m
+                      [0m가져오자마자 결정·액션 분석[0m
+                    [36m</label>[39m
+                    [36m<p[39m
+                      [33mclass[39m=[32m"tk-help"[39m
+                    [36m>[39m
+                      [0m전사는 맥락 도서관에 검색용(벡터)으로 저장돼요. 결정을 기억으로 남기는 건 분석 뒤 승인할 때만이에요.[0m
+                    [36m</p>[39m
+                  [36m</div>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"tk-dialog__footer"[39m
+                [36m>[39m
+                  [36m<button[39m
+                    [33mclass[39m=[32m"tk-button"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0m취소[0m
+                  [36m</button>[39m
+                  [36m<button[39m
+                    [33mclass[39m=[32m"tk-button tk-button--primary"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0m가져오기[0m
+                  [36m</button>[39m
+                [36m</div>[39m
+              [36m</dialog>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+    [36m<p[39m
+      [33mdata-testid[39m=[32m"where"[39m
+    [36m>[39m
+      [0m/meetings[0m
+      [0m?view=clova[0m
+    [36m</p>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/features/meetings/meetings.test.tsx:441:25
+    439|     h.listMeetings.mockResolvedValue({ meetings: [summary()] });
+    440|     renderAt("/meetings?view=clova");
+    441|     expect(await screen.findByRole("list", { name: "회의록 목록" })).toBeTr…
+       |                         ^
+    442|     expect(screen.queryByRole("radio", { name: "클로바노트" })).toBeNull();
+    443|     expect(screen.queryByText("클로바노트 연결됨")).toBeNull();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 skipped (24)
+   Start at  12:40:32
+   Duration  1.58s (tests 70%, environment 15%, import 8%, transform 6%)
+

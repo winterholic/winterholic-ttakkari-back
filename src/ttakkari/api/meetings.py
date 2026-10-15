@@ -47,7 +47,7 @@ class MeetingIn(BaseModel):
     audio_artifact_id: uuid.UUID | None = None
     transcript: str | None = Field(default=None, max_length=2_000_000)
     transcript_source: Literal["paste", "file"] = "paste"
-    # 만들자마자 처리까지: 녹음이면 클로바노트 전사 → 분석, 전사 텍스트면 바로 분석(ADR 0021).
+    # 만들자마자 처리까지: 녹음이면 로컬 전사 → 분석, 전사 텍스트면 바로 분석(ADR 0021).
     auto_process: bool = False
     provider_id: str | None = Field(default=None, max_length=30)
 
@@ -97,7 +97,7 @@ async def _fresh(db: AsyncSession, m: Meeting) -> Meeting:
 @router.get("/providers")
 async def list_providers(_: User) -> dict[str, Any]:
     """전사 Provider 상태. 경로·인증 정보는 담지 않는다."""
-    return {"default_provider": get_settings().meeting_default_provider, "providers": providers.describe_providers()}
+    return {"default_provider": providers.DEFAULT_PROVIDER, "providers": providers.describe_providers()}
 
 
 @router.get("")
@@ -265,7 +265,6 @@ async def stt_compare_overlap(
 
 @router.post("/{mid}/stt/{jid}/reprocess", status_code=202)
 async def stt_reprocess(mid: uuid.UUID, jid: uuid.UUID, body: ReprocessIn, _: User, db: Db) -> dict:
-    from ttakkari.config import get_settings
     from ttakkari.meetings.local_stt import jobs
     original = await _stt_job(db, mid, jid)
     if original.status != "succeeded":

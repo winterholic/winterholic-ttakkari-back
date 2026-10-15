@@ -1,0 +1,36 @@
+
+ RUN  v5.0.3 /Users/winterholic/development/projects/winterholic-ttakkari/front
+
+ ❯ src/features/meetings/meetings.test.tsx (17 tests | 1 failed | 16 skipped) 33ms
+   ❯ 회의록 목록 (2)
+     × 비어 있으면 안내와 새 회의록 버튼 32ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/meetings/meetings.test.tsx > 회의록 목록 > 비어 있으면 안내와 새 회의록 버튼
+AssertionError: expected <p></p> to be null
+
+- Expected:
+null
+
++ Received:
+<p>
+  녹음을 올리면 클로바노트로 전사해 결정과 할 일을 정리해 줘요. 클로바노트에 이미 있는 녹음은 '클로바노트' 탭에서 가져와요.
+</p>
+
+ ❯ src/features/meetings/meetings.test.tsx:137:41
+    135|     renderAt("/meetings");
+    136|     expect(await screen.findByText("아직 회의록이 없어요")).toBeTruthy();
+    137|     expect(screen.queryByText(/클로바노트/)).toBeNull();
+       |                                         ^
+    138|     expect(screen.getAllByRole("link", { name: /새 회의록/ })[0].getAttrib…
+    139|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 skipped (17)
+   Start at  12:47:10
+   Duration  494ms (environment 44%, import 26%, transform 22%, tests 8%)
+

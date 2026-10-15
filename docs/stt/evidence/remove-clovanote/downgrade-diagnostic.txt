@@ -1,0 +1,181 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 0026 -> 0025, Retire the external integration without discarding source data (ADR 0027).
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1794, in _execute_context
+    context = constructor(
+        dialect, self, conn, execution_options, *args, **kw
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1670, in _init_compiled
+    compiled.construct_params(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        m,
+        ^^
+    ...<3 lines>...
+        _collected_params=param_dict,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/sql/compiler.py", line 2074, in construct_params
+    raise exc.InvalidRequestError(
+    ...<3 lines>...
+    )
+sqlalchemy.exc.InvalidRequestError: A value is required for bind parameter 'null' (Background on this error at: https://sqlalche.me/e/21/cd3x)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/alembic", line 10, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/config.py", line 1039, in main
+    CommandLine(prog=prog).main(argv=argv)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/config.py", line 1029, in main
+    self.run_cmd(cfg, options)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/config.py", line 963, in run_cmd
+    fn(
+    ~~^
+        config,
+        ^^^^^^^
+        *[getattr(options, k, None) for k in positional],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        **{k: getattr(options, k, None) for k in kwarg},
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/command.py", line 534, in downgrade
+    script.run_env()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/script/base.py", line 550, in run_env
+    util.load_python_file(self.dir, "env.py")
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/util/pyfiles.py", line 114, in load_python_file
+    module = load_module_py(module_id, path)
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/util/pyfiles.py", line 132, in load_module_py
+    spec.loader.exec_module(module)  # type: ignore
+    ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 1023, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/alembic/env.py", line 57, in <module>
+    run_migrations_online()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/alembic/env.py", line 51, in run_migrations_online
+    asyncio.run(run_async_migrations())
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 196, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 119, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 726, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/alembic/env.py", line 46, in run_async_migrations
+    await connection.run_sync(do_run_migrations)
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/engine.py", line 907, in run_sync
+    return await greenlet_spawn(
+           ^^^^^^^^^^^^^^^^^^^^^
+        fn, self._proxied, *arg, _require_await=False, **kw
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 212, in greenlet_spawn
+    result = context.switch(value)
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/alembic/env.py", line 36, in do_run_migrations
+    context.run_migrations()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "<string>", line 8, in run_migrations
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/runtime/environment.py", line 970, in run_migrations
+    self.get_context().run_migrations(**kw)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/runtime/migration.py", line 616, in run_migrations
+    step.migration_fn(**kw)
+    ~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/alembic/versions/0026_retire_clovanote.py", line 50, in downgrade
+    op.execute(sa.text(f"""INSERT INTO {table}
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        SELECT (jsonb_populate_record(NULL::{table}, CASE
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+            THEN payload || '{{"meeting_id":null}}'::jsonb ELSE payload END)).*
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        FROM retired_integration_records WHERE source='{table}'"""))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 8, in execute
+  File "<string>", line 3, in execute
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/operations/ops.py", line 2645, in execute
+    return operations.invoke(op)
+           ~~~~~~~~~~~~~~~~~^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/operations/base.py", line 448, in invoke
+    return fn(self, operation)
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/operations/toimpl.py", line 256, in execute_sql
+    operations.migration_context.impl.execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        operation.sqltext, execution_options=operation.execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/ddl/impl.py", line 259, in execute
+    self._exec(sql, execution_options)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/alembic/ddl/impl.py", line 252, in _exec
+    return conn.execute(construct, params)
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<9 lines>...
+        param_dict=param_dict,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1800, in _execute_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str(statement), parameters, None, None
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1794, in _execute_context
+    context = constructor(
+        dialect, self, conn, execution_options, *args, **kw
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1670, in _init_compiled
+    compiled.construct_params(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        m,
+        ^^
+    ...<3 lines>...
+        _collected_params=param_dict,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/sql/compiler.py", line 2074, in construct_params
+    raise exc.InvalidRequestError(
+    ...<3 lines>...
+    )
+sqlalchemy.exc.StatementError: (sqlalchemy.exc.InvalidRequestError) A value is required for bind parameter 'null'
+[SQL: INSERT INTO clovanote_notes
+            SELECT (jsonb_populate_record(NULL::clovanote_notes, CASE
+                WHEN payload->>'meeting_id' IS NOT NULL AND NOT EXISTS
+                    (SELECT 1 FROM meetings WHERE id=(payload->>'meeting_id')::uuid)
+                THEN payload || '{"meeting_id"$1}'::jsonb ELSE payload END)).*
+            FROM retired_integration_records WHERE source='clovanote_notes']
+[parameters: [immutabledict({})]]
+(Background on this error at: https://sqlalche.me/e/21/cd3x)

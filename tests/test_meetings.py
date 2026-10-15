@@ -242,9 +242,7 @@ async def test_audio_upload_waits_for_model_when_local_is_unconfigured(client, a
     assert m["status"] == "uploaded" and m["source"] == "audio" and m["audio"]["filename"] == "회의.m4a"
     prov = (await client.get("/api/meetings/providers", headers=auth)).json()["providers"]
     assert next(p for p in prov if p["id"] == "local_whisper")["state"] == "unconfigured"
-    prov = [p for p in prov if p["id"] == "clovanote"]
-    assert prov == [{"id": "clovanote", "label": "클로바노트", "state": "unconfigured", "profile_configured": False, "is_default": False,
-                     "message": prov[0]["message"]}] and "꺼져" in prov[0]["message"]
+    assert {p["id"] for p in prov} == {"local_whisper"}
     # 전사 요청은 상태를 바꾸지 않고 사유를 알린다. 전사 없이 분석도 못 한다.
     r = await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth)
     assert r.status_code == 409 and r.json()["code"] == "provider_unavailable" and "모델 설치" in r.json()["message"]
@@ -260,7 +258,7 @@ async def test_audio_upload_waits_for_model_when_local_is_unconfigured(client, a
 
 
 class FakeProvider:
-    id = "clovanote"
+    id = "test_provider"
     label = "가짜 전사"
 
     def __init__(self):
@@ -285,19 +283,19 @@ class FakeProvider:
 async def test_fake_provider_feeds_the_same_analysis_without_changes(client, auth, new_session):
     ws, _ = await new_session()
     art = (await client.post("/api/uploads", files={"file": ("a.mp3", b"ID3", "audio/mpeg")}, data={"workspace_id": ws["id"]}, headers=auth)).json()
-    fake, original = FakeProvider(), providers._REGISTRY["clovanote"]
+    fake = FakeProvider()
     providers.register_provider(fake)
     try:
         m = await _create(client, auth, audio_artifact_id=art["id"])
-        r = await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth, json={"provider_id": "clovanote"})
-        assert r.status_code == 202 and r.json()["status"] == "transcribing" and r.json()["provider"] == "clovanote"
+        r = await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth, json={"provider_id": "test_provider"})
+        assert r.status_code == 202 and r.json()["status"] == "transcribing" and r.json()["provider"] == "test_provider"
         assert fake.submitted.filename == "a.mp3" and fake.submitted.path.is_file()
         assert (await client.get(f"/api/meetings/{m['id']}", headers=auth)).json()["status"] == "transcribing"  # pending
         m = (await client.get(f"/api/meetings/{m['id']}", headers=auth)).json()
-        assert m["status"] == "transcribed" and m["transcript_source"] == "provider:clovanote" and m["transcript_chars"] == len(TRANSCRIPT)
+        assert m["status"] == "transcribed" and m["transcript_source"] == "provider:test_provider" and m["transcript_chars"] == len(TRANSCRIPT)
         assert (await _analyze(client, auth, m["id"]))["status"] in ("review", "analyzed")
     finally:
-        providers._REGISTRY["clovanote"] = original
+        providers.unregister_provider("test_provider")
 
 
 async def test_provider_failure_marks_transcription_failed(client, auth, new_session):
@@ -308,15 +306,14 @@ async def test_provider_failure_marks_transcription_failed(client, auth, new_ses
         async def poll(self, job_id):
             return providers.TranscriptionPoll("failed", error="변환 실패")
 
-    original = providers._REGISTRY["clovanote"]
     providers.register_provider(Failing())
     try:
         m = await _create(client, auth, audio_artifact_id=art["id"])
-        await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth, json={"provider_id": "clovanote"})
+        await client.post(f"/api/meetings/{m['id']}/transcribe", headers=auth, json={"provider_id": "test_provider"})
         m = (await client.get(f"/api/meetings/{m['id']}", headers=auth)).json()
         assert m["status"] == "failed" and m["failed_stage"] == "transcription" and m["error"] == "변환 실패"
     finally:
-        providers._REGISTRY["clovanote"] = original
+        providers.unregister_provider("test_provider")
 
 
 async def test_input_limits_and_state_guards(client, auth, monkeypatch):

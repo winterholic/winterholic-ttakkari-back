@@ -4,7 +4,6 @@ READ_ONLY_TOOLS = frozenset({
     "list_checklist", "list_checklist_templates", "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
-    "list_clovanote_notes", "get_clovanote_note",
     "backend_deploy_status", "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
 })
 
@@ -21,7 +20,6 @@ CHECKLIST_TOOLS = frozenset({"create_checklist_item", "update_checklist_item", "
 ASSISTANT_WRITE_TOOLS = frozenset({
     "remember", "describe_entity", "link", "forget", "share_file", "set_artifact_area", "notify_user",
     "create_memo", "update_memo", "delete_memo", "create_event", "update_event", "delete_event",
-    "sync_clovanote", "import_clovanote_note",
 })
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS

@@ -4,22 +4,21 @@ import pytest
 from test_local_stt import audio_meeting, local  # noqa: F401
 
 from ttakkari.config import Settings, get_settings
-from ttakkari.meetings import clova_jobs, providers
+from ttakkari.meetings import providers
 from ttakkari.meetings.local_stt import jobs
 
 
 def test_local_first_defaults_do_not_start_external_sync():
     s = Settings(_env_file=None)
-    assert s.meeting_default_provider == "local_whisper"
+    assert providers.DEFAULT_PROVIDER == "local_whisper"
     assert s.local_stt_enabled is True
-    assert s.clovanote_enabled is False
-    assert s.clovanote_poll_seconds == 0
 
 
 def test_default_provider_is_local_even_if_unconfigured(monkeypatch):
     monkeypatch.setattr(get_settings(), "local_stt_enabled", False)
     assert providers.get_provider().id == "local_whisper"
-    assert providers.get_provider("clovanote").id == "clovanote"
+    with pytest.raises(providers.ProviderNotAvailable):
+        providers.get_provider("removed")
 
 
 async def test_provider_description_marks_default_without_loading_model(client, auth):
@@ -27,14 +26,6 @@ async def test_provider_description_marks_default_without_loading_model(client, 
     assert result["default_provider"] == "local_whisper"
     engine = next(p for p in result["providers"] if p["id"] == "local_whisper")
     assert engine["is_default"] is True
-
-
-async def test_disabled_clova_start_does_not_touch_queue(monkeypatch):
-    def forbidden():
-        pytest.fail("disabled Clova must not open DB or start workers")
-
-    monkeypatch.setattr(clova_jobs, "sessionmaker", forbidden)
-    await clova_jobs.start()
 
 
 async def test_queue_sleeps_without_periodic_database_reads(monkeypatch):
@@ -109,8 +100,6 @@ async def test_default_submission_wakes_worker_after_meeting_link_commit(
     uuid.UUID(snapshots[-1])
 
 
-def test_explicit_default_override_is_respected(monkeypatch):
-    monkeypatch.setattr(get_settings(), "meeting_default_provider", "clovanote")
-    assert providers.get_provider().id == "clovanote"
-    flags = {p["id"]: p["is_default"] for p in providers.describe_providers()}
-    assert flags == {"clovanote": True, "local_whisper": False}
+def test_provider_default_is_always_local():
+    assert providers.get_provider().id == "local_whisper"
+    assert {p["id"]: p["is_default"] for p in providers.describe_providers()} == {"local_whisper": True}

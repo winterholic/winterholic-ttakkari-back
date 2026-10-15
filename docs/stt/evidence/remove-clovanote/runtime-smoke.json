@@ -1,0 +1,24 @@
+{
+  "python": "/Users/winterholic/development/projects/winterholic-ttakkari/back/.stt-runtime/venv/bin/python",
+  "model_path": "/Users/winterholic/development/projects/winterholic-ttakkari/back/.stt-runtime/faster-whisper-large-v3",
+  "audio_sha256": "e6bc095e55046de927d7c937f036f96ebb506570648ad9ae7c6576febfc4746a",
+  "duration": 12.48,
+  "profile": "baseline",
+  "characters": 66,
+  "segments": 1,
+  "metrics": {
+    "import_seconds": 12.306392333004624,
+    "audio_decode_seconds": 0.24593733297660947,
+    "load_seconds": 1.3611528750043362,
+    "inference_seconds": 7.188592917053029,
+    "peak_rss_bytes": 3617521664,
+    "rtf_inference": 0.5760090478407875,
+    "enhancement_seconds": 0.0013516249600797892,
+    "release_request_seconds": 0.022462042048573494,
+    "process_exited": true,
+    "worker_pid": 27610,
+    "wall_seconds": 21.16636975016445
+  },
+  "pid_absent": true,
+  "parent_imported_model": false
+}

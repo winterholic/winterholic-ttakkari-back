@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 HOME = Path.home()
 DEFAULT_HOME = HOME / ".ttakkari"
+STT_RUNTIME_ROOT = HOME / "development/projects/winterholic-ttakkari/back/.stt-runtime"
 
 
 class Settings(BaseSettings):
@@ -105,10 +106,9 @@ class Settings(BaseSettings):
     meeting_analysis_model: str | None = None
     meeting_analysis_effort: str | None = "high"
     # Local-first transcription; model files are never downloaded on a request.
-    meeting_default_provider: Literal["local_whisper", "clovanote"] = "local_whisper"
     local_stt_enabled: bool = True
-    local_stt_python: Path | None = None  # isolated venv python, defaults to this interpreter
-    local_stt_model_path: Path | None = None  # local CTranslate2 large-v3 snapshot
+    local_stt_python: Path = STT_RUNTIME_ROOT / "venv/bin/python"
+    local_stt_model_path: Path = STT_RUNTIME_ROOT / "faster-whisper-large-v3"
     local_stt_timeout_seconds: int = 7200
     local_stt_max_audio_seconds: int = 7200
     local_stt_cpu_threads: int = 4
@@ -117,21 +117,6 @@ class Settings(BaseSettings):
     local_stt_diarization_model_path: Path | None = None  # complete offline Community-1 snapshot
     local_stt_diarization_device: Literal["cpu", "mps", "cuda"] = "cpu"
     local_stt_separation_model_path: Path | None = None  # offline SepFormer tensor weights
-    # 클로바노트 연동(ADR 0021). Playwright 가 실제 Chrome(channel=chrome)을 이 전용 프로필로 띄운다. 비우면 <home>/clovanote-chrome.
-    # 네이버 로그인은 사람이 한 번 하고(로그인 상태 유지), 쿠키는 이 폴더에만 있다. 비밀번호는 어디에도 두지 않는다.
-    clovanote_profile_dir: Path | None = None
-    # 기본으로 열 클로바노트 워크스페이스(주소 /w/<id>/ 의 id). 비우면 계정의 첫 워크스페이스.
-    clovanote_workspace_id: str | None = None
-    clovanote_enabled: bool = False
-    # 브라우저를 창 없이 띄울지. 로그인 창은 이 값과 상관없이 창을 띄운다.
-    clovanote_headless: bool = True
-    # 쓰지 않는 브라우저를 닫기까지(초)
-    clovanote_idle_seconds: float = 300.0
-    # 클로바노트 노트 목록 자동 동기화 주기(초). 0 이면 끈다(테스트는 직접 부른다). 동기화는 창 없는 Chrome 을 잠깐 띄운다.
-    clovanote_poll_seconds: int = 0
-    # 클로바노트 전사를 기다리는 최대 시간(초). 1시간 녹음도 보통 몇 분 안에 끝난다.
-    clovanote_recognition_timeout_seconds: int = 2 * 60 * 60
-
     # 회의록 벡터 저장(ADR 0021). e5 = 로컬 multilingual-e5-large, hash = 테스트용 결정적 해시, off = 끔.
     context_embedder: str = "e5"
     context_embedding_cpu_threads: int = Field(default=2, ge=1, le=16)
@@ -209,10 +194,6 @@ class Settings(BaseSettings):
     @property
     def models_dir(self) -> Path:
         return self.home / "models"
-
-    @property
-    def clovanote_profile(self) -> Path:
-        return Path(self.clovanote_profile_dir).expanduser().resolve() if self.clovanote_profile_dir else self.home / "clovanote-chrome"
 
     @property
     def harness_dir(self) -> Path:

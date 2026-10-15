@@ -1,0 +1,41 @@
+Using Python 3.13.15 environment at: .stt-runtime/venv
+Resolved 23 packages in 118ms
+Downloading faster-whisper (1.1MiB)
+Downloading tokenizers (3.0MiB)
+Downloading hf-xet (3.4MiB)
+Downloading av (20.7MiB)
+Downloading ctranslate2 (1.2MiB)
+Downloading onnxruntime (19.9MiB)
+Downloading numpy (5.2MiB)
+ Downloaded faster-whisper
+ Downloaded ctranslate2
+ Downloaded tokenizers
+ Downloaded hf-xet
+ Downloaded numpy
+ Downloaded av
+ Downloaded onnxruntime
+Prepared 23 packages in 799ms
+Installed 23 packages in 22ms
+ + anyio==4.15.1
+ + av==15.1.0
+ + click==8.5.0
+ + ctranslate2==4.8.3
+ + faster-whisper==1.2.1
+ + filelock==4.2.0
+ + flatbuffers==25.12.19
+ + fsspec==2026.9.0
+ + h11==0.16.0
+ + hf-xet==1.7.0
+ + httpcore2==2.13.1
+ + httpx2==2.13.1
+ + huggingface-hub==2.2.0
+ + idna==3.20
+ + numpy==2.5.4
+ + onnxruntime==1.31.0
+ + packaging==26.3
+ + protobuf==7.36.2
+ + pyyaml==6.0.3
+ + tokenizers==0.23.3
+ + tqdm==4.70.1
+ + truststore==0.10.5
+ + typing-extensions==4.16.0

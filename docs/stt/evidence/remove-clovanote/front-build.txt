@@ -1,0 +1,41 @@
+$ tsc -b && vite build
+vite v8.3.3 building client environment for production...
+transforming...
+✓ 2777 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/manifest.webmanifest                           0.37 kB
+dist/index.html                                     1.42 kB │ gzip:   0.66 kB
+dist/assets/pdf.worker.min-CjEcRF4W.mjs         1,264.34 kB
+dist/assets/PdfView-stzPZ_JT.css                    0.26 kB │ gzip:   0.19 kB
+dist/assets/contextlib-C0MiCMG4.css                18.93 kB │ gzip:   3.20 kB
+dist/assets/pms-B9Nj2UmR.css                       44.03 kB │ gzip:   6.31 kB
+dist/assets/index-CWcAfv9N.css                    264.83 kB │ gzip:  37.85 kB
+dist/assets/SheetView-CHZVBRo4.js                   2.87 kB │ gzip:   1.42 kB
+dist/assets/contextlib-DPrKtLtc.js                  4.17 kB │ gzip:   1.87 kB
+dist/assets/ContextLibraryItemPage-DPNZqs1z.js      4.90 kB │ gzip:   1.60 kB
+dist/assets/GraphView-DZrGE0mg.js                   8.31 kB │ gzip:   3.81 kB
+dist/assets/CodeView-CCqyvrgh.js                    8.48 kB │ gzip:   3.62 kB
+dist/assets/jsx-runtime-D3jfb0Ew.js                 8.90 kB │ gzip:   3.38 kB
+dist/assets/WbsPage-BM-JmTsB.js                    24.76 kB │ gzip:   8.32 kB
+dist/assets/PmsPage-CVQZZKXv.js                    25.82 kB │ gzip:   7.80 kB
+dist/assets/pms-BWepq7J2.js                        27.20 kB │ gzip:   8.21 kB
+dist/assets/ContextLibraryPage-Bp9Ansr1.js         42.54 kB │ gzip:  12.01 kB
+dist/assets/CalendarPage-BN8q5SFE.js              313.59 kB │ gzip:  92.03 kB
+dist/assets/PdfView-CTZlC4jQ.js                   431.95 kB │ gzip: 130.14 kB
+dist/assets/xlsx-DRF5uM-7.js                      484.25 kB │ gzip: 157.73 kB
+dist/assets/index-DoP-kqpf.js                     856.25 kB │ gzip: 257.76 kB
+
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 176ms
+
+PWA v2.0.0
+mode      generateSW
+precache  29 entries (1641.28 KiB)
+files generated
+  dist/sw.js
+  dist/workbox-e217238d.js

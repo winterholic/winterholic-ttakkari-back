@@ -1,0 +1,396 @@
+
+ RUN  v5.0.3 /Users/winterholic/development/projects/winterholic-ttakkari/front
+
+ ❯ src/pages/FailedTasksPage.test.tsx (1 test | 1 failed) 1085ms
+   × 실패 원인과 실행 환경을 보여 주고 원래 세션으로 연결한다 1084ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/pages/FailedTasksPage.test.tsx > 실패 원인과 실행 환경을 보여 주고 원래 세션으로 연결한다
+TestingLibraryElementError: Unable to find role="heading" and name "백그라운드 작업"
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"tk-screen"[39m
+    [36m>[39m
+      [36m<header[39m
+        [33mclass[39m=[32m"tk-header"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"tk-header__inner"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33maria-label[39m=[32m"진행 중인 일 열기"[39m
+            [33mclass[39m=[32m"tk-icon-button tk-header__menu"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-menu tk-icon"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"1.75"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M4 5h16"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M4 12h16"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M4 19h16"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"tk-header__title"[39m
+          [36m>[39m
+            [36m<h1>[39m
+              [0m실패한 작업[0m
+            [36m</h1>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"tk-header__meta"[39m
+            [36m>[39m
+              [0m실패한 실행을 최신순으로 모아 봅니다.[0m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"tk-header__actions"[39m
+          [36m>[39m
+            [36m<a[39m
+              [33mclass[39m=[32m"tk-button tk-button--sm"[39m
+              [33mdata-discover[39m=[32m"true"[39m
+              [33mhref[39m=[32m"/tasks"[39m
+            [36m>[39m
+              [0m전체 작업[0m
+            [36m</a>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</header>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tk-screen__body"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"tk-container tk-container--thread tasks-page failed-tasks-page"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33maria-label[39m=[32m"실패 시기"[39m
+            [33mclass[39m=[32m"tk-segmented failed-tasks-page__period"[39m
+            [33mrole[39m=[32m"radiogroup"[39m
+          [36m>[39m
+            [36m<label>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mname[39m=[32m"failed-period"[39m
+                [33mtype[39m=[32m"radio"[39m
+              [36m/>[39m
+              [0m전체 기간[0m
+            [36m</label>[39m
+            [36m<label>[39m
+              [36m<input[39m
+                [33mname[39m=[32m"failed-period"[39m
+                [33mtype[39m=[32m"radio"[39m
+              [36m/>[39m
+              [0m7일[0m
+            [36m</label>[39m
+            [36m<label>[39m
+              [36m<input[39m
+                [33mname[39m=[32m"failed-period"[39m
+                [33mtype[39m=[32m"radio"[39m
+              [36m/>[39m
+              [0m30일[0m
+            [36m</label>[39m
+          [36m</div>[39m
+          [36m<section[39m
+            [33maria-labelledby[39m=[32m"failed-runs-title"[39m
+            [33mclass[39m=[32m"tk-section"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"tk-section__head"[39m
+            [36m>[39m
+              [36m<h2[39m
+                [33mclass[39m=[32m"tk-section__title"[39m
+                [33mid[39m=[32m"failed-runs-title"[39m
+              [36m>[39m
+                [0m에이전트 실행[0m
+              [36m</h2>[39m
+            [36m</div>[39m
+            [36m<ul[39m
+              [33mclass[39m=[32m"tk-list tk-list--inset failed-run-list"[39m
+            [36m>[39m
+              [36m<li>[39m
+                [36m<a[39m
+                  [33mclass[39m=[32m"tk-list__item tk-list__item--interactive failed-run"[39m
+                  [33mdata-discover[39m=[32m"true"[39m
+                  [33mhref[39m=[32m"/chat/s1"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"tk-list__body failed-run__body"[39m
+                  [36m>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"failed-run__titleline"[39m
+                    [36m>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-badge tk-badge--danger"[39m
+                      [36m>[39m
+                        [0m실패[0m
+                      [36m</span>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-list__title"[39m
+                      [36m>[39m
+                        [0m결제 흐름 정리[0m
+                      [36m</span>[39m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"tk-list__meta failed-run__meta"[39m
+                    [36m>[39m
+                      [0mstorefront[0m
+                      [0m · [0m
+                      [0m결제 개선[0m
+                      [0m · [0m
+                      [0m기획 세션[0m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"tk-list__meta failed-run__meta"[39m
+                    [36m>[39m
+                      [0mclaude[0m
+                      [0m · [0m
+                      [0m개인 Claude[0m
+                      [0m · [0m
+                      [0mopus[0m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"failed-run__reason"[39m
+                    [36m>[39m
+                      [0m시간 초과: 응답을 받지 못했습니다[0m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"tk-list__meta failed-run__time"[39m
+                    [36m>[39m
+                      [0m2026. 10. 13. 오후 01:02[0m
+                    [36m</span>[39m
+                  [36m</span>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"tk-list__end failed-run__linklabel"[39m
+                  [36m>[39m
+                    [0m원래 대화 열기[0m
+                  [36m</span>[39m
+                [36m</a>[39m
+              [36m</li>[39m
+            [36m</ul>[39m
+          [36m</section>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"tk-screen"[39m
+    [36m>[39m
+      [36m<header[39m
+        [33mclass[39m=[32m"tk-header"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"tk-header__inner"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33maria-label[39m=[32m"진행 중인 일 열기"[39m
+            [33mclass[39m=[32m"tk-icon-button tk-header__menu"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-menu tk-icon"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"1.75"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M4 5h16"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M4 12h16"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M4 19h16"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"tk-header__title"[39m
+          [36m>[39m
+            [36m<h1>[39m
+              [0m실패한 작업[0m
+            [36m</h1>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"tk-header__meta"[39m
+            [36m>[39m
+              [0m실패한 실행을 최신순으로 모아 봅니다.[0m
+            [36m</p>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"tk-header__actions"[39m
+          [36m>[39m
+            [36m<a[39m
+              [33mclass[39m=[32m"tk-button tk-button--sm"[39m
+              [33mdata-discover[39m=[32m"true"[39m
+              [33mhref[39m=[32m"/tasks"[39m
+            [36m>[39m
+              [0m전체 작업[0m
+            [36m</a>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</header>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"tk-screen__body"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"tk-container tk-container--thread tasks-page failed-tasks-page"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33maria-label[39m=[32m"실패 시기"[39m
+            [33mclass[39m=[32m"tk-segmented failed-tasks-page__period"[39m
+            [33mrole[39m=[32m"radiogroup"[39m
+          [36m>[39m
+            [36m<label>[39m
+              [36m<input[39m
+                [33mchecked[39m=[32m""[39m
+                [33mname[39m=[32m"failed-period"[39m
+                [33mtype[39m=[32m"radio"[39m
+              [36m/>[39m
+              [0m전체 기간[0m
+            [36m</label>[39m
+            [36m<label>[39m
+              [36m<input[39m
+                [33mname[39m=[32m"failed-period"[39m
+                [33mtype[39m=[32m"radio"[39m
+              [36m/>[39m
+              [0m7일[0m
+            [36m</label>[39m
+            [36m<label>[39m
+              [36m<input[39m
+                [33mname[39m=[32m"failed-period"[39m
+                [33mtype[39m=[32m"radio"[39m
+              [36m/>[39m
+              [0m30일[0m
+            [36m</label>[39m
+          [36m</div>[39m
+          [36m<section[39m
+            [33maria-labelledby[39m=[32m"failed-runs-title"[39m
+            [33mclass[39m=[32m"tk-section"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"tk-section__head"[39m
+            [36m>[39m
+              [36m<h2[39m
+                [33mclass[39m=[32m"tk-section__title"[39m
+                [33mid[39m=[32m"failed-runs-title"[39m
+              [36m>[39m
+                [0m에이전트 실행[0m
+              [36m</h2>[39m
+            [36m</div>[39m
+            [36m<ul[39m
+              [33mclass[39m=[32m"tk-list tk-list--inset failed-run-list"[39m
+            [36m>[39m
+              [36m<li>[39m
+                [36m<a[39m
+                  [33mclass[39m=[32m"tk-list__item tk-list__item--interactive failed-run"[39m
+                  [33mdata-discover[39m=[32m"true"[39m
+                  [33mhref[39m=[32m"/chat/s1"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"tk-list__body failed-run__body"[39m
+                  [36m>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"failed-run__titleline"[39m
+                    [36m>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-badge tk-badge--danger"[39m
+                      [36m>[39m
+                        [0m실패[0m
+                      [36m</span>[39m
+                      [36m<span[39m
+                        [33mclass[39m=[32m"tk-list__title"[39m
+                      [36m>[39m
+                        [0m결제 흐름 정리[0m
+                      [36m</span>[39m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"tk-list__meta failed-run__meta"[39m
+                    [36m>[39m
+                      [0mstorefront[0m
+                      [0m · [0m
+                      [0m결제 개선[0m
+                      [0m · [0m
+                      [0m기획 세션[0m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"tk-list__meta failed-run__meta"[39m
+                    [36m>[39m
+                      [0mclaude[0m
+                      [0m · [0m
+                      [0m개인 Claude[0m
+                      [0m · [0m
+                      [0mopus[0m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"failed-run__reason"[39m
+                    [36m>[39m
+                      [0m시간 초과: 응답을 받지 못했습니다[0m
+                    [36m</span>[39m
+                    [36m<span[39m
+                      [33mclass[39m=[32m"tk-list__meta failed-run__time"[39m
+                    [36m>[39m
+                      [0m2026. 10. 13. 오후 01:02[0m
+                    [36m</span>[39m
+                  [36m</span>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"tk-list__end failed-run__linklabel"[39m
+                  [36m>[39m
+                    [0m원래 대화 열기[0m
+                  [36m</span>[39m
+                [36m</a>[39m
+              [36m</li>[39m
+            [36m</ul>[39m
+          [36m</section>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/pages/FailedTasksPage.test.tsx:52:23
+     50|   expect(screen.getByText("claude · 개인 Claude · opus")).toBeTruthy();
+     51|   expect(screen.getByRole("link", { name: /원래 대화 열기/ }).getAttribute("…
+     52|   expect(await screen.findByRole("heading", { name: "백그라운드 작업" })).toB…
+       |                       ^
+     53|   expect(screen.getByText("클로바노트 응답 오류")).toBeTruthy();
+     54|   expect(screen.getByRole("link", { name: "회의록 보기" }).getAttribute("hr…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 17 passed (18)
+   Start at  12:43:35
+   Duration  1.57s (tests 64%, environment 19%, import 10%, transform 7%)
+

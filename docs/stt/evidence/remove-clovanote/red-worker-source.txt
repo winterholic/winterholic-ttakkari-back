@@ -1,0 +1,10 @@
+....F                                                                    [100%]
+=================================== FAILURES ===================================
+_______ test_enhancement_configuration_is_forwarded_and_secrets_are_not ________
+tests/test_local_stt_runner.py:93: in test_enhancement_configuration_is_forwarded_and_secrets_are_not
+    assert r["env"]["PYTHONPATH"] == str(__import__("pathlib").Path(runner.__file__).resolve().parents[3])
+           ^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'PYTHONPATH'
+=========================== short test summary info ============================
+FAILED tests/test_local_stt_runner.py::test_enhancement_configuration_is_forwarded_and_secrets_are_not
+1 failed, 4 passed in 2.99s

@@ -16,6 +16,7 @@ from ttakkari.models import LocalSttJob, LocalSttSegment, Meeting
 @pytest.fixture
 def local(monkeypatch, tmp_path):
     s = get_settings()
+    monkeypatch.setattr(s, "local_stt_python", __import__("pathlib").Path(__import__("sys").executable))
     model = tmp_path / "model-revision"
     model.mkdir()
     (model / "model.bin").write_bytes(b"test")

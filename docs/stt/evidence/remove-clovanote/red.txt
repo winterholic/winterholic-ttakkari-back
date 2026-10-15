@@ -1,0 +1,122 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+____________________ test_only_local_provider_is_registered ____________________
+tests/test_remove_clovanote.py:17: in test_only_local_provider_is_registered
+    assert {p['id'] for p in providers.describe_providers()} == {'local_whisper'}
+E   AssertionError: assert {'clovanote', 'local_whisper'} == {'local_whisper'}
+E     
+E     Extra items in the left set:
+E     'clovanote'
+E     Use -v to get more diff
+________ test_old_config_keys_are_ignored_but_current_keys_take_effect _________
+tests/test_remove_clovanote.py:27: in test_old_config_keys_are_ignored_but_current_keys_take_effect
+    assert not hasattr(s,'clovanote_enabled')
+E   AssertionError: assert not True
+E    +  where True = hasattr(Settings(env='dev', database_url='postgresql+asyncpg://localhost/ttakkari_remove_clova_test_20261015', home=PosixPath(...x=None, artifact_retention_days=90, soffice_bin=None, vapid_subject=None, login_max_failures=5, login_lock_seconds=900), 'clovanote_enabled')
+_____________ test_unconfigured_runtime_paths_have_stable_defaults _____________
+tests/test_remove_clovanote.py:34: in test_unconfigured_runtime_paths_have_stable_defaults
+    assert s.local_stt_python == Path.home()/'development/projects/winterholic-ttakkari/back/.stt-runtime/venv/bin/python'
+E   AssertionError: assert None == (PosixPath('/Users/winterholic') / 'development/projects/winterholic-ttakkari/back/.stt-runtime/venv/bin/python')
+E    +  where None = Settings(env='dev', database_url='postgresql+asyncpg://localhost/ttakkari_remove_clova_test_20261015', home=PosixPath(...x=None, artifact_retention_days=90, soffice_bin=None, vapid_subject=None, login_max_failures=5, login_lock_seconds=900).local_stt_python
+E    +  and   PosixPath('/Users/winterholic') = home()
+E    +    where home = Path.home
+_________________ test_removed_api_and_agent_tools_are_absent __________________
+tests/test_remove_clovanote.py:44: in test_removed_api_and_agent_tools_are_absent
+    assert (await client.get(path,headers=auth)).status_code==404
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1768: in get
+    return await self.request(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1629: in send
+    response = await self._send_handling_auth(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+.venv/lib/python3.13/site-packages/httpx/_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/httpx/_transports/asgi.py:170: in handle_async_request
+    await self.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/applications.py:1216: in __call__
+    await super().__call__(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+.venv/lib/python3.13/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+.venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+src/ttakkari/transfer/diagnostics.py:32: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/middleware/cors.py:91: in __call__
+    await self.simple_response(scope, receive, send, request_headers=headers)
+.venv/lib/python3.13/site-packages/starlette/middleware/cors.py:149: in simple_response
+    await self.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:2786: in app
+    await route.handle(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:1817: in handle
+    await self.original_router.handle(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:2869: in handle
+    await included_router._handle_selected(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:1843: in _handle_selected
+    await original_route.handle(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:1308: in handle
+    await effective_context.app(scope, receive, send)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:165: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+.venv/lib/python3.13/site-packages/fastapi/routing.py:151: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/fastapi/routing.py:727: in app
+    raw_response = await run_endpoint_function(
+.venv/lib/python3.13/site-packages/fastapi/routing.py:360: in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/api/clovanote.py:69: in get_status
+    if st.state != "login_window" and cn.login_chrome_pids():
+                                      ^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/meetings/clovanote.py:142: in login_chrome_pids
+    for p in psutil.process_iter(["pid", "cmdline"]):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/psutil/__init__.py:1541: in process_iter
+    a = set(pids())
+            ^^^^^^
+.venv/lib/python3.13/site-packages/psutil/__init__.py:1485: in pids
+    ret = sorted(_psplatform.pids())
+                 ^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/psutil/_psosx.py:320: in pids
+    ls = cext.pids()
+         ^^^^^^^^^^^
+E   PermissionError: [Errno 1] Operation not permitted (originated from sysctl() malloc 1/3)
+_________ test_historic_meetings_remain_readable_searchable_analyzable _________
+tests/test_remove_clovanote.py:63: in test_historic_meetings_remain_readable_searchable_analyzable
+    assert 'clovanote' not in detail.json()
+E   AssertionError: assert 'clovanote' not in {'id': '3a159227-e41b-4e54-b673-467e7975e17b', 'title': '예전 회의', 'scope': 'personal', 'status': 'transcribed', ...}
+E    +  where {'id': '3a159227-e41b-4e54-b673-467e7975e17b', 'title': '예전 회의', 'scope': 'personal', 'status': 'transcribed', ...} = json()
+E    +    where json = <Response [200 OK]>.json
+=========================== short test summary info ============================
+FAILED tests/test_remove_clovanote.py::test_only_local_provider_is_registered
+FAILED tests/test_remove_clovanote.py::test_old_config_keys_are_ignored_but_current_keys_take_effect
+FAILED tests/test_remove_clovanote.py::test_unconfigured_runtime_paths_have_stable_defaults
+FAILED tests/test_remove_clovanote.py::test_removed_api_and_agent_tools_are_absent
+FAILED tests/test_remove_clovanote.py::test_historic_meetings_remain_readable_searchable_analyzable
+5 failed in 0.76s

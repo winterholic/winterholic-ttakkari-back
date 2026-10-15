@@ -33,6 +33,8 @@ async def run_json_worker(
             "TOKENIZERS_PARALLELISM": "false",
             "PYANNOTE_METRICS_ENABLED": "0",
             "DO_NOT_TRACK": "1",
+            # The optional runtime contains dependencies, while workers use this release code.
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
         }
     )
     started = time.perf_counter()

@@ -1,6 +1,6 @@
 # 로컬 STT 실행·통합 안내
 
-현재 기본 전사 경로는 `local_whisper`다. 클로바노트 연동·자동 동기화는 기본 꺼짐이며, 로컬 미준비 시 외부 전사로 자동 전환하지 않는다. 기존 회의록 분석·PMS·벡터는 유지한다. [로컬 우선 전환 결정](../adr/0026-local-first-meetings.md)과 [요청 수명 검증](local-first-2026-10-15.md)을 함께 읽는다.
+현재 기본 전사 경로는 `local_whisper`다. 외부 전사 연동은 제거했으며, 로컬 미준비 시 외부 전사로 자동 전환하지 않는다. 기존 회의록 분석·PMS·벡터는 유지한다. [현행 결정 ADR 0027](../adr/0027-retire-clovanote.md)과 [요청 수명 검증](local-first-2026-10-15.md)을 함께 읽는다.
 먼저 [ADR 0025](../adr/0025-on-demand-local-stt.md), [1차 측정](measurement-2026-10-15.md), [2차 구현·실측과 잔여 항목](phase2-2026-10-15.md)을 읽는다.
 
 ## 설치 (운영 재시작은 기획 세션 담당)
@@ -25,9 +25,6 @@ PY
 설정 예(이번 세션은 운영 환경 파일을 읽거나 수정하지 않았다):
 
 ```text
-TTAKKARI_MEETING_DEFAULT_PROVIDER=local_whisper
-TTAKKARI_CLOVANOTE_ENABLED=false
-TTAKKARI_CLOVANOTE_POLL_SECONDS=0
 TTAKKARI_LOCAL_STT_ENABLED=true
 TTAKKARI_LOCAL_STT_PYTHON=/absolute/stt-venv/bin/python
 TTAKKARI_LOCAL_STT_MODEL_PATH=/absolute/stt-model-cache/hub/models--Systran--faster-whisper-large-v3/snapshots/edaa852ec7e145841d8ffdb056a99866b5f0a478
@@ -51,7 +48,7 @@ TTAKKARI_LOCAL_STT_MAX_REPROCESS_SECONDS=120
 - `POST /api/meetings/{id}/stt/{job}/reprocess {start: 10, end: 30, terms: ["프로젝트명"]}`: 후보만 생성. 원전사와 분석은 유지한다.
 
 프론트의 녹음 추가 폼은 로컬 엔진을 기본 선택한다. 기존 녹음 상세의 '로컬로 전사'로 재요청할 수도 있다.
-미설정 시 모델 설치 등의 사유를 표시하며 녹음은 보존한다. 클로바노트 상태 조회·로그인 안내는 해당 엔진 또는 별도 탭을 선택할 때만 실행한다. 기존 프론트에는 화자·중첩 후보 편집 UI가 없으며, 2차 선택 처리 결과는 STT job metadata·구간 API로 조회한다. 구간 조회·재처리는 현재 API로 제공한다.
+기본 경로에도 런타임·가중치가 없으면 설치 사유를 표시하며 녹음을 보존한다. 기존 프론트에는 화자·중첩 후보 편집 UI가 없으며, 2차 선택 처리 결과는 STT job metadata·구간 API로 조회한다. 구간 조회·재처리는 현재 API로 제공한다.
 로컬 전사 후 분석 Run은 기존 정책에 따라 외부 모델을 사용할 수 있다.
 
 ## 재현 측정
@@ -120,5 +117,7 @@ Whisper·선택 화자/분리 모델은 한 작업의 자식 프로세스 안에
 E5의 모델 파일 캐시와 검색용 DB 벡터는 계속 보존된다. 질의마다 모델을 다시 로드하므로 상주 방식보다 시작 비용이 추가된다.
 가중치가 없는 머신에서는 E5 사전 설치도 필요하다. 실패 시 색인은 failed 상태를 기록하고 검색은 오류 로그와 함께 기존 어휘 경로를 사용한다.
 
-기존 운영 환경에 명시한 설정값이 있으면 새 기본값보다 우선한다. 배포 담당 세션은 위 로컬 우선 설정과 설치된 Python/모델 경로를 적용해야 한다.
-이 작업은 운영 환경 파일을 읽거나 바꾸지 않았고 재시작·배포하지 않았다. 원본 파일·기존 클로바노트 전사와 회의록 데이터 마이그레이션은 필요 없다.
+명시한 로컬 런타임·모델 경로는 기본값보다 우선한다. 설정이 없으면 이 저장소의 `.stt-runtime/venv/bin/python`과 `.stt-runtime/faster-whisper-large-v3`를 찾는다.
+코드의 루트는 사용자 홈 아래 `development/projects/winterholic-ttakkari/back`으로 고정되어 배포 체크아웃 위치와 분리된다.
+구 외부 연동 설정 키는 무시하므로 환경파일 편집은 필요 없다. 기존 전사·회의록을 보존하는 migration 0026은 배포 감독이 실행한다.
+[기본 경로 설치·운영 스모크](remove-clovanote-2026-10-15.md), [ADR 0027](../adr/0027-retire-clovanote.md)을 참고한다.

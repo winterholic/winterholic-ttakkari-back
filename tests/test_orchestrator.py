@@ -422,6 +422,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
         "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
         "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
             "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
+            "luna_common30_v2_status",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

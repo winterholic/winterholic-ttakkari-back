@@ -76,6 +76,8 @@
 
 ## 이후 배포
 
+개인 따까리 변경은 관련 검사 통과·clean commit·push 후 별도 배포 요청을 기다리지 않고 예약한다. 사용자가 명시적으로 배포를 보류한 경우는 따른다. 진행 중 Run의 존재는 세대별 예약·전환의 차단 조건이 아니며, 예약한 Run 자신도 종료할 필요가 없다. 배포 완료만 기다리며 Run을 붙잡아 두지는 않는다.
+
 커밋·푸시 후 기존 `request_backend_deploy(revision=...)` 경로를 그대로 쓴다. API는 실제 source checkout의 clean HEAD를 확인한다. 예약 이후 source가 바뀌어도 이미 지정한 커밋의 archive는 바뀌지 않는다.
 
 `preparing/building/testing → prepared → starting → switching → draining → retiring → succeeded`로 진행한다. `draining`은 공개 경로가 새 SHA로 확인된 상태이고, `succeeded`는 구세대 종료까지 확인한 상태다. 같은 SHA의 중복 예약은 동일 ID를 돌려주며, 병합된 예약은 `superseded_by`를 남긴다.
@@ -95,7 +97,7 @@
 - `recovery_pending`은 자동 조정으로 안전을 확인하지 못한 상태다. 원인이 해소되기 전에는 후속 예약을 활성화하지 않는다. 관측 불능을 작업 완료로 기록하지 않는다.
 - 외부 부작용의 exactly-once, 실행 중 함수 메모리 이전, Mac/DB/전원 장애에 대한 무중단은 보장 범위 밖이다. DB fencing은 오래된 쓰기를 거절하는 역할이다.
 
-schema 계약이 다르면 명시된 `online_migration_from`에서만 online migration을 허용한다. 기본값은 빈 목록이다. online migration 연결에는 2초 lock timeout과 30초 statement timeout을 적용한다. 파괴적 변경은 기존 안전 전환 절차로 별도 처리한다. DB migration을 자동 downgrade해 rollback하지 않는다.
+schema 계약이 다르면 명시된 `online_migration_from`에서만 online migration을 허용한다. 현재 `0031_notifications`는 독립 알림 테이블만 추가하므로 `0030_runtime_generations`에서의 전환만 허용한다. 기존 테이블을 바꾸지 않는 이 경로 외에는 자동 허용하지 않는다. 새 migration의 head와 배포 계약이 어긋나면 회귀 검사에서 실패한다. online migration 연결에는 2초 lock timeout과 30초 statement timeout을 적용한다. 파괴적 변경은 기존 안전 전환 절차로 별도 처리한다. DB migration을 자동 downgrade해 rollback하지 않는다.
 
 ## 검증 범위
 

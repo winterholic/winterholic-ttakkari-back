@@ -20,6 +20,20 @@ def test_generation_queue_accepts_new_revision_and_deduplicates(tmp_path, monkey
     assert len([j for j in store.all() if j["status"] == "requested"]) == 2
 
 
+def test_application_generation_contract_matches_its_migration_head():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    from ttakkari.generation_deployment import Releases
+    source = Path(__file__).resolve().parents[1]
+    config = Config(str(source / "alembic.ini"))
+    config.set_main_option("script_location", str(source / "alembic"))
+    head = ScriptDirectory.from_config(config).get_current_head()
+    assert Releases.contract(source)["schema_revision"] == head, (
+        "Generation deployment would skip required migrations: update the schema contract and review online compatibility"
+    )
+
+
 def test_release_archive_does_not_follow_later_checkout_changes(tmp_path, make_git_dir):
     from conftest import git
 
@@ -111,6 +125,45 @@ async def test_controller_waits_to_retire_old_generation_without_restarting_it(t
     await c.process(store.get(job["id"]))
     assert store.get(job["id"])["status"] == "succeeded"
     assert slots.stopped == [0] and len(transitions) == 1
+
+
+async def test_external_controller_cuts_over_busy_generation_without_legacy_idle_gate(tmp_path, monkeypatch):
+    from ttakkari import deployment, generation_deployment
+    slots = FakeSlots()
+    old = await slots.start(0, Path("old"), "a" * 40)
+    old.update(state="active", owned_runs=2, drain_ready=False)
+    slots.route = 0
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    external = deployment.Controller(tmp_path)
+    job = external.store.request("b" * 40)
+    control = generation_deployment.GenerationController(external.store, slots=slots)
+    active_id = uuid.UUID(old["generation"])
+
+    async def active():
+        return active_id
+
+    async def activate(gid, *, expected):
+        nonlocal active_id
+        assert active_id == expected
+        active_id = gid
+
+    async def prepare(_job):
+        return Path("candidate")
+
+    async def forbidden(*args):
+        raise AssertionError("generation deployment must not wait for all Runs or restart legacy")
+
+    monkeypatch.setattr(control, "active", active)
+    monkeypatch.setattr(control, "activate", activate)
+    monkeypatch.setattr(control, "prepare", prepare)
+    monkeypatch.setattr(generation_deployment, "GenerationController", lambda _store: control)
+    monkeypatch.setattr(external, "wait_idle", forbidden)
+    monkeypatch.setattr(external, "restart", forbidden)
+    monkeypatch.setattr(deployment, "_active_run_count", forbidden)
+    await external.process(job)
+    assert external.store.get(job["id"])["status"] == "draining"
+    assert slots.route == 1 and not slots.stopped
+    assert slots.rows[0]["owned_runs"] == 2
 
 
 async def test_failed_proxy_switch_rolls_back_new_claim_owner_without_killing_candidate(tmp_path, monkeypatch):

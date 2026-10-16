@@ -1,4 +1,4 @@
-"""Persist deployment requests; a launchd controller owns preparation, idle waiting and restart."""
+"""Persist requests; an external controller owns generation cutover or legacy idle restart."""
 
 from __future__ import annotations
 

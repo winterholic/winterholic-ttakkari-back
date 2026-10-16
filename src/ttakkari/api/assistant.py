@@ -52,7 +52,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "list_artifacts", "group": "파일", "who": "모든 실행", "desc": "보관함 파일 목록과 경로(파일·에이전트 파일 탭으로 거르기)"},
     {"name": "set_artifact_area", "group": "파일", "who": "모든 실행", "desc": "보관함 파일을 파일 ↔ 에이전트 파일 탭으로 옮긴다(사용자가 올린 파일은 제외)"},
     {"name": "share_file", "group": "파일", "who": "모든 실행", "desc": "파일을 보관함에 올려 폰에서 보게 한다"},
-    {"name": "request_backend_deploy", "group": "서버", "who": "개인 실행", "desc": "커밋한 백엔드 배포를 예약한다. 독립 감독이 검사·작업 종료 대기 후 재시작한다"},
+    {"name": "request_backend_deploy", "group": "서버", "who": "개인 실행", "desc": "검증·커밋한 백엔드 배포를 예약한다. 무중단 모드는 기존 작업을 유지하며 새 요청을 전환한다. 슬롯이 차면 자동 대기한다"},
     {"name": "backend_deploy_status", "group": "서버", "who": "개인 실행", "desc": "배포 예약의 진행 상태·성공·실패 이유를 조회한다"},
     {"name": "server_resources", "group": "서버", "who": "모든 실행", "desc": "이 맥의 CPU·메모리·디스크·네트워크와 상위 프로세스"},
     {"name": "notify_user", "group": "알림", "who": "모든 실행", "desc": "폰으로 푸시 알림을 보낸다"},

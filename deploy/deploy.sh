@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 예약 접수만 수행한다. 빌드·테스트·작업 종료 대기·재시작은 독립 launchd 서비스가 맡는다.
+# 예약 접수만 수행한다. 독립 감독이 검사 후 세대 전환 또는 legacy idle 재시작을 맡는다.
 # ./deploy/deploy.sh [--no-pull] [--skip-tests]
 # ./deploy/deploy.sh status [job-id]
 set -euo pipefail

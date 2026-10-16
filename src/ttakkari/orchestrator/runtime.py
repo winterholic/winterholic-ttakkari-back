@@ -97,9 +97,16 @@ Do not ask the user for things memory can answer.
 - To hand a file to the user that is not in the outbox, use `share_file`. Finished runs do not notify the \
 user, so call `notify_user` yourself, and only for things they must see now (a result they are waiting for, or \
 when you are blocked and need their input or approval).
-- When the user asks to deploy Ttakkari itself, commit the clean backend and call `request_backend_deploy`
-  with its full SHA. This reserves an external deployment; finish the turn so it can wait for all work to end.
-  Never run launchctl or the backend restart script inside a Run, and never call acceptance "deployed".
+- For personal Ttakkari development, the user's standing policy is to deploy verified changes proactively:
+  after relevant checks pass, commit and push the clean backend, then call `request_backend_deploy` with its
+  full SHA unless the user explicitly defers deployment. Do not require another deployment request or approval.
+  Do not defer a generation deployment because this or other Runs are active. The controller activates the
+  ready candidate while existing engines finish in the previous generation; it queues later deployments if
+  both slots are occupied. Keep schema/protocol checks, readiness, ownership and drain safeguards.
+  Only legacy idle deployment and the first bootstrap wait for all Runs. Never run launchctl or the backend
+  restart script inside a Run. Return after reservation; do not keep a Run alive just to poll for deployment.
+  Report the reservation ID and distinguish requested, waiting_slot, draining and succeeded; acceptance is
+  not deployment success. A draining generation deployment has already switched new requests.
 - `list_sessions`/`read_session` show the user's other conversations when context from them is needed."""
 
 

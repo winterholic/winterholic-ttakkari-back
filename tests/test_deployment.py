@@ -188,6 +188,36 @@ async def test_agent_reserves_deploy_without_writing_protected_state_directly(
     ).status_code == 422
 
 
+async def test_generation_reservations_accept_active_runs_and_an_existing_deployment(
+    client, auth, new_session, monkeypatch, tmp_path
+):
+    from helpers import wait_status
+
+    m = deployment()
+    _ws, sess = await new_session()
+    run = await start_run(client, auth, sess["id"], "SLEEP")
+    await wait_status(client, auth, run["id"], "running")
+    headers = {"Authorization": f"Bearer {issue_token(uuid.UUID(sess['id']))}"}
+    # The activation marker overrides the install default of idle.
+    monkeypatch.setattr(m, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "idle")
+    (tmp_path / "generations-enabled.json").write_text('{"protocol":1,"strategy":"generations"}')
+    monkeypatch.setattr(m, "ensure_revision", lambda _sha: None)
+    first = m.JobStore(tmp_path).request("a" * 40)
+    m.JobStore(tmp_path).update(first["id"], status="draining")
+    try:
+        response = await client.post("/api/agent/deploy", json={"revision": "b" * 40}, headers=headers)
+        assert response.status_code == 202, response.text
+        job = response.json()
+        assert job["strategy"] == "generations" and job["status"] == "requested"
+        assert job["id"] != first["id"]
+        assert (await client.get(f"/api/runs/{run['id']}", headers=auth)).json()["status"] == "running"
+        assert m.JobStore(tmp_path).get(first["id"])["status"] == "draining"
+    finally:
+        await client.post(f"/api/runs/{run['id']}/cancel", headers=auth)
+        await wait_run(client, auth, run["id"])
+
+
 async def test_deferred_queue_resumes_automatically(client, auth, new_session):
     m = deployment()
     gate = m.Admission(get_settings().home / "deploy")

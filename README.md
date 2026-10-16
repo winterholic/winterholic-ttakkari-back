@@ -110,29 +110,37 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 
 ## 배포(Mac Studio + Cloudflare 터널, 포트 안 엶)
 
-기본값은 아래의 기존 `idle` 배포다. 개발된 세대별 무중단 경로는 최초 설치 후 별도로 활성화한다.
+`<home>/deploy/generations-enabled.json`으로 활성화된 설치는 세대별 무중단 배포를 사용한다.
+설정 기본값 `idle`은 아직 최초 전환을 하지 않은 설치용이며, 활성화 marker가 있으면 `generations`가 우선한다.
 [세대별 배포 구성·초기 전환·복구 기준](docs/design/generation-deployment.md)을 먼저 읽는다.
 
 `deploy/install-services.sh deployer`로 독립 배포 감독(`net.winterholic.ttakkari.deployer`)을 설치한다.
 `deploy/deploy.sh [--no-pull]`은 배포를 **예약하고 즉시 반환**한다. 이 응답은 배포 성공이 아니다.
 `deploy/deploy.sh status [예약 ID]`로 상태를 확인한다. 로그는 `~/.ttakkari/deploy/jobs/<ID>.log`, 감독 로그는 `~/.ttakkari/logs/deployer.log`다.
 
-따까리 안의 작업은 커밋·푸시 후 `request_backend_deploy(revision=<전체 SHA>)` MCP 도구를 부르고 턴을 끝낸다.
+개인 따까리 개발은 관련 검사를 통과한 변경을 커밋·푸시하고 `request_backend_deploy(revision=<전체 SHA>)` MCP 도구로 적극 예약한다.
+사용자가 명시적으로 배포를 보류하지 않았다면 별도 배포 요청·승인을 다시 요구하지 않는다.
+진행 중인 다른 작업이나 예약을 요청하는 작업 자신이 있다는 이유로 예약·전환을 미루지 않는다.
 작업 안에서 잠금 파일을 쓰거나 `launchctl`을 호출하지 않는다. 개인 세션의 기존 인증 토큰만으로 예약하며 회사 세션은 거절한다.
-`backend_deploy_status(job_id)`는 상태 조회 도구다. 요청한 작업 자신도 종료를 기다리므로 활성 작업에서 완료를 기다리며 폴링하지 않는다.
+`backend_deploy_status(job_id)`는 상태 조회 도구다. 배포 완료를 기다리려고 Run을 유지하며 폴링하지 않는다.
+접수 시 예약 ID와 상태를 보고하고, 기존 예약이 있다는 이유로 새 변경을 잊거나 사용자에게 다시 요청하도록 하지 않는다.
 
-감독은 `requested → building → testing → waiting → migrating → restarting → verifying → succeeded` 순서로 처리한다.
-실패 시 `failed`와 이유를 남긴다. 테스트는 배포별 독립 DB를 만들고 정리한다.
-대기 중 다른 작업은 계속 실행된다. 실행 작업이 없을 때 작업 시작과 공유하는 배타 잠금을 잡고 다시 확인한 뒤 마이그레이션·재시작한다.
-이 구간에 들어온 요청은 DB 대기열에 남으며 확인 후 자동 재개한다. 감독이 종료되면 OS가 잠금을 반환하고 다음 기동에서 예약 상태를 이어 읽는다.
+세대별 감독은 고정 SHA를 격리 빌드·검사하고 준비된 신세대로 신규 요청을 전환한다.
+`draining`은 신버전 전환을 확인한 상태이며, 구세대의 기존 엔진이 끝나면 종료하고 `succeeded`로 기록한다.
+두 슬롯이 사용 중이면 후속 예약은 자동 대기하며, 시작하지 않은 같은 계약의 누적 커밋만 최신 예약으로 합친다.
+검사·readiness·schema/protocol 호환성·실행 소유권·안전한 구세대 종료 조건은 유지한다.
+실패 시 이유와 복구 상태를 남긴다. 테스트는 배포별 독립 DB를 만들고 정리한다.
 
-성공은 로컬 DB health와 `/api/version`의 시작 시점 SHA·새 PID, 공개 health·버전까지 확인한 경우에만 기록한다.
+**최초 전환 전의 legacy `idle` 경로에만** 전체 Run 종료 대기와 admission 잠금 후 migration·재시작을 적용한다.
+이때 들어온 요청은 DB 대기열에 남으며 확인 후 자동 재개한다. 감독이 종료되면 OS가 잠금을 반환하고 다음 기동에서 예약 상태를 이어 읽는다.
+
+성공은 로컬 DB health와 `/api/version`의 시작 시점 SHA, 공개 health·버전까지 확인한 경우에만 기록한다. legacy 재시작은 PID 변경도 확인한다.
 `current`는 검증된 커밋이고 `previous`는 그 이전 성공 기록이다. `rollback`도 직전 커밋의 배포를 예약하며 DB 마이그레이션을 되돌리지는 않는다. 감독·버전 확인 기능이 없는 구버전은 자동 롤백 전에 거절한다.
 기본 `idle` 모드에서 같은 커밋의 중복 예약은 기존 ID를 반환한다. 다른 커밋의 동시 예약과 예약 이후 작업 트리 변경은 명시적으로 거절한다.
-빌드에는 기존 체크아웃을 사용하므로 배포 대기 중 해당 저장소를 추가 수정했다면 새 커밋으로 다시 예약해야 한다.
+legacy 빌드는 기존 체크아웃을 사용하므로 예약 이후 변경했다면 새 커밋으로 다시 예약해야 한다. 세대별 빌드는 예약 SHA의 immutable archive를 사용하므로 이후 개발이 기존 준비·배출 중인 릴리스를 바꾸지 않는다.
 `--skip-tests`는 운영자가 이미 같은 커밋을 검사했을 때만 직접 CLI에서 사용한다. 에이전트 예약 API는 테스트 생략·임의 명령·경로·환경 변수를 받지 않는다.
 
-- 백엔드: `deploy/install-services.sh backend` → launchd(`net.winterholic.ttakkari.backend`)가 127.0.0.1:8787 로 상시 실행. 로그 `~/.ttakkari/logs/backend.log`.
+- 최초 전환 전 백엔드: `deploy/install-services.sh backend` → launchd(`net.winterholic.ttakkari.backend`)가 127.0.0.1:8787 로 상시 실행. 세대별 전환 이후에는 이 설치 명령을 다시 실행하지 않는다. 프록시가 8787, 앱이 8791/8792를 사용한다.
 - 터널: `cloudflared tunnel login` → `cloudflared tunnel create ttakkari` → `~/.cloudflared/ttakkari.yml`(예시 `deploy/cloudflared-ttakkari.yml.example`) → `cloudflared tunnel route dns ttakkari ttakkari-api.winterholic.net` → `deploy/install-services.sh tunnel`.
 - 주소는 한 단계 서브도메인(`ttakkari-api.winterholic.net`)이어야 Cloudflare 무료 인증서(`*.winterholic.net`)가 덮는다. `api.ttakkari.winterholic.net` 은 TLS 핸드셰이크에서 실패했다.
 - 운영 `config.env`: `TTAKKARI_ENV=prod`, `TTAKKARI_CORS_ORIGINS` 에 `https://ttakkari.winterholic.net`, `TTAKKARI_TRUST_PROXY_IP_HEADER=CF-Connecting-IP`.

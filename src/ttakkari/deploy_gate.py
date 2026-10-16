@@ -1,4 +1,4 @@
-"""Serialize backend restarts and wait for active Runs after build/test work."""
+"""Legacy restart guards and external deployment reservation compatibility helpers."""
 from __future__ import annotations
 
 import argparse
@@ -114,7 +114,7 @@ async def _active_run_count(own_run_id: str | None) -> int:
 
 
 async def deploy_backend(own_run_id: str | None) -> bool:
-    # 구형 호출도 직접 kickstart하지 않는다. 작업 종료까지 기다리는 외부 감독에 넘긴다.
+    # 구형 호출도 직접 kickstart하지 않는다. 외부 감독이 활성 배포 전략을 선택한다.
     from ttakkari.deployment import JobStore, ensure_revision, revision, state_dir
 
     if own_run_id:

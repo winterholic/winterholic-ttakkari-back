@@ -298,10 +298,12 @@ async def search_meetings(query: str, project: str | None = None,
 @server.tool()
 async def request_backend_deploy(revision: str) -> str:
     """Reserve deployment of a committed, clean Ttakkari backend SHA. An independent controller tests it,
-    then applies the configured strategy: idle waits for ALL Runs; generation mode activates a ready
-    candidate and drains previous work without restarting its engines. Initial generation bootstrap is separate.
-    Return after acceptance; finish your turn instead of waiting/polling. Acceptance is not deployment success.
-    Only use when the user asked to deploy. No shell restart, lock-file writes or service permissions needed."""
+    then applies the configured strategy. With generations enabled, reserve verified personal Ttakkari changes
+    proactively under the user's standing authorization unless they defer deployment. Active Runs, including
+    the requester, do not block cutover: a ready candidate takes new requests while old engines drain. A full
+    pair of slots queues later deployments automatically. Legacy idle and initial bootstrap wait for all Runs.
+    Do not keep a Run alive just to poll. Acceptance is not deployment success; draining means new requests
+    already switched. No shell restart, lock-file writes or service permissions needed."""
     return await _agent("POST", "/deploy", {"revision": revision})
 
 

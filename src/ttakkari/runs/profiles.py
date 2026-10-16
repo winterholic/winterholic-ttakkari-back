@@ -8,7 +8,7 @@ import logging
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -18,6 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import HOME, get_settings
 from ttakkari.db import sessionmaker
+from ttakkari.model_catalog import (
+    ANTIGRAVITY_MODELS,
+    ANTIGRAVITY_QUOTA_GROUPS,
+    quota_group,
+)
 from ttakkari.models import AppSetting, ChatSession, EngineAccount, utcnow
 
 log = logging.getLogger(__name__)
@@ -45,6 +50,13 @@ class Profile:
     engine: str
     config_dir: Path | None = None
     max_used_percent: int = 100
+    model: str | None = None
+
+    @property
+    def limit_key(self) -> uuid.UUID:
+        """Share provider-denied cooldowns only within the relevant quota group."""
+        group = quota_group(self.model)
+        return uuid.uuid5(self.id, group) if self.engine == "antigravity" and group else self.id
 
     @property
     def key(self) -> str:
@@ -136,7 +148,8 @@ async def effective_order(db: AsyncSession, pool: str = "personal") -> list[Engi
     return rows
 
 
-async def availability(db: AsyncSession, session_engine: str, pool: str = "personal") -> tuple[list[Profile], list[tuple[Profile, float]]]:
+async def availability(db: AsyncSession, session_engine: str, pool: str = "personal", *,
+                       model: str | None = None) -> tuple[list[Profile], list[tuple[Profile, float]]]:
     """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). (쓸 수 있는 계정, [(한도 대기 중인 계정, 초기화 시각)])."""
     from ttakkari import generation
     if generation.current:
@@ -151,7 +164,9 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
         ):
             continue
         p = _profile(a)
-        until = limited_until(p.id, p.max_used_percent)
+        if p.engine == "antigravity":
+            p = replace(p, model=model or get_settings().worker_default_models["antigravity"]["model"])
+        until = profile_limited_until(p)
         if until:
             blocked.append((p, until))
         else:
@@ -169,8 +184,14 @@ def usage_limit_until(profile: Profile, now: float | None = None) -> float | Non
     # stale 값도 쓴다. 새 측정·창 초기화·사용자가 상한을 올린 경우에만 풀린다.
     if u is None or not u.windows:
         return None
-    capped = [w for w in u.windows if w.key in ("five_hour", "seven_day")
-              and not (w.resets_at and w.resets_at <= now) and w.percent >= profile.max_used_percent]
+    group = quota_group(profile.model) if profile.engine == "antigravity" else None
+    if profile.engine == "antigravity":
+        capped = [w for w in u.windows if group and w.key in {f"{group}_5h", f"{group}_weekly"}
+                  and not (w.resets_at and w.resets_at <= now)
+                  and (w.remaining_percent is not None and w.remaining_percent <= 0)]
+    else:
+        capped = [w for w in u.windows if w.key in ("five_hour", "seven_day")
+                  and not (w.resets_at and w.resets_at <= now) and w.percent >= profile.max_used_percent]
     if not capped:
         return None
     # 초기화 시각이 누락된 측정은 다음 짧은 수집 주기에서 해제 여부를 다시 판단한다.
@@ -183,6 +204,12 @@ def limited_until(account_id: uuid.UUID, max_used_percent: int = 100) -> float |
     실행 오류로 건 cooldown 과 마지막 5시간·주간 사용량이 계정 상한에 닿은 경우를 함께 본다."""
     profile = Profile(id=account_id, name="", engine="", max_used_percent=max_used_percent)
     until = max(_cooldown.get(account_id, 0), usage_limit_until(profile) or 0)
+    return until if until > time.time() else None
+
+
+def profile_limited_until(profile: Profile) -> float | None:
+    until = max(_cooldown.get(profile.id, 0), _cooldown.get(profile.limit_key, 0),
+                usage_limit_until(profile) or 0)
     return until if until > time.time() else None
 
 
@@ -364,8 +391,10 @@ def cooldown_remaining(account_id: uuid.UUID) -> int:
 
 
 def clear_cooldown(account_id: uuid.UUID) -> None:
-    _cooldown.pop(account_id, None)
-    _cooldown_changes[account_id] = None
+    for key in (account_id, *(uuid.uuid5(account_id, group) for group in ANTIGRAVITY_QUOTA_GROUPS)):
+        if key == account_id or key in _cooldown:
+            _cooldown.pop(key, None)
+            _cooldown_changes[key] = None
     _persist()
 
 
@@ -485,6 +514,8 @@ def model_engine(model: str | None) -> str | None:
     if not model:
         return None
     m = model.lower()
+    if m in ANTIGRAVITY_MODELS:
+        return "antigravity"
     if m in CLAUDE_MODELS or m.startswith("claude"):
         return "claude"
     if m.startswith("gpt-oss-"):

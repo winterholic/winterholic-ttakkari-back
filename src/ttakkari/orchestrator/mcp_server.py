@@ -330,11 +330,13 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
                        escalation_reason: str | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     `prompt` must be self-contained: the worker does not see this conversation.
-    Use engine="auto" for general tasks: fresh usage chooses the engine on each turn; the model is a preference.
+    Follow the current model routing policy; use native engine="auto" as a usage-balanced fallback.
     Explicit engine="claude"/"codex"/"antigravity" locks that engine, including on a usage limit.
-    Use antigravity only with an explicitly selected Gemini 3.8 Flash model; it is excluded from auto.
-    Without `model`: claude → sonnet/high, codex or auto → gpt-6-luna/high, antigravity → gemini-3.8-flash-high.
-    opus / gpt-6.1-sol are orchestrator-grade and need `escalation_reason` (why this part needs deep reasoning,
+    Prefer explicit Antigravity Sonnet 5.5 for normal work, Flash 3.8 for routine work, Argon 4 or Opus 5.5
+    for justified difficult work. It is excluded from native auto. Check model IDs and separate quota pools
+    with account_usage; model effort must match its low/medium/high suffix. Zero AI credits does not mean
+    zero baseline quota. Without model: antigravity → claude-sonnet-5-5-high, native auto → gpt-6-luna/high.
+    Argon, Antigravity Opus, native opus / gpt-6.1-sol need `escalation_reason` (why this part needs deep reasoning,
     a design decision or new ideas). Auto workers can move to another account with the same-grade
     model of the other engine. Returns the worker_id."""
     body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine}

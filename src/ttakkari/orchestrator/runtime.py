@@ -45,30 +45,13 @@ needed. Do not repeat the whole worker output.
 - Reuse an existing worker (message_worker) when the request continues its task; spawn a new one for unrelated work.
 - Small questions you can answer directly without tools, answer directly.
 
-Model choice (your own model is fixed by the app: Opus medium or GPT Sol high):
-- Simple, well-specified work (search, extraction, format conversion, small edits, fixed checks): gpt-6-luna high. \
-It is the cheapest per token and the default when you omit model.
-- Normal workers: sonnet high or gpt-6-luna high. Choose the provider by fit, not by your own engine; split mixed \
-tasks (e.g. Claude for design and visual work, GPT for verification and counter-examples).
-- opus / gpt-6.1-sol workers only for an important design decision, hard reasoning or genuinely new ideas. Give \
-just that part and state why in escalation_reason. A simple failure or "it is important" is not a reason.
-- Do not raise effort above high without a concrete reason; count retries, verification and context reloads in \
-the cost.
-- Before each worker assignment, check account_usage: use enabled, available accounts in the task's scope, \
-compare fresh 5-hour/weekly headroom to the account cap and reset times; treat stale or missing values as unknown.
-- For general coding, research and verification, use engine="auto" so fresh usage selects the engine on every \
-turn and model_counterparts keeps the worker's model grade. A model name is a preference, not an engine lock. \
-Use engine="claude" or "codex" only when the user explicitly requires that engine or the task needs it. \
-If an existing fixed-engine worker is waiting at a limit and the task can use the other engine, read its \
-progress, stop it, and reassign the unfinished work with engine="auto"; avoid repeating completed side effects.
-- For all Run roles, including workers with a fixed engine, the app spreads assignments across eligible accounts by fresh headroom to each account's cap divided by (other running Runs + 1); \
-  the cap blocks new Runs when either the 5-hour or weekly window reaches it, even if that measurement becomes stale \
-  (reset, a newer lower measurement or a raised cap clears it). Antigravity quota and credits are reported separately; when no fresh supported usage window is available, treat its headroom as unknown, \
-  never as zero use or unlimited capacity. Keep it out of engine="auto"; only choose engine="antigravity" when the user explicitly requests it \
-  or authorizes that role, with a supported Gemini 3.8 Flash model and effort.
-- UI/UX and visual work normally use Claude. When Claude lacks capacity and the user has authorized Antigravity assistance, \
-  an explicit engine="antigravity", model="gemini-3.8-flash-high", effort="high" assignment is allowed. \
-  Otherwise, record the wait in the relevant PMS WBS/backlog and report it.
+Model choice:
+- Follow the current Antigravity routing policy appended after role instructions. It supersedes older
+  Flash-only, native-only and Antigravity-Claude-exclusion rules. Check account_usage before assignments.
+- Keep the main orchestrator on native Opus medium or GPT Sol high; the worker policy below does not
+  change the main engine. Native auto remains available as a fallback with usage-balanced selection.
+- Check fresh quota, reset times, scope and running load. Unknown or stale quota is unknown capacity.
+- Preserve progress and inspect side effects before moving a limited worker to another engine or model.
 
 Context (conversation size vs the model's window, not account usage):
 - Each of your turns starts with your own context usage; list_workers/get_worker and "[작업 보고]" show workers'.
@@ -80,6 +63,33 @@ conversation recovers context through recall and work-history."""
 
 ORCHESTRATOR_NOTE = ORCHESTRATOR_INTRO + ORCHESTRATOR_BODY
 LEAD_NOTE = LEAD_INTRO + ORCHESTRATOR_BODY
+
+MODEL_ROUTING_NOTE = """\
+[Antigravity routing policy (2026-10-16)]
+This implements the user's newer decision and supersedes older conflicting model-routing rules in role
+instructions: Antigravity Claude is no longer excluded and Antigravity is no longer Flash-only.
+- For normal coding, research, writing, UI/UX and implementation, prefer engine="antigravity",
+  model="claude-sonnet-5-5-high", effort="high" while its baseline quota is available. The user wants
+  Antigravity Claude used frequently before drawing on native Claude/Codex subscriptions.
+- Use engine="antigravity", model="gemini-3.8-flash-high", effort="high" actively for simple searches,
+  extraction, conversions, small edits and routine checks; native Luna is a fallback, not a mandatory first choice.
+- Use Gemini 4 Argon for difficult reasoning, architecture and independent alternatives. Select
+  model="gemini-4-argon-high", effort="high" with a concrete escalation_reason. Antigravity Opus 5.5
+  (claude-opus-5-5-medium / medium or high / high) is also available for this scope with escalation_reason.
+  Do not promote routine work solely because a model has included quota. GPT-OSS is supported but is not
+  preferred over Claude. These task fits are routing policy, not measured model-performance rankings.
+- Check account_usage: Claude and GPT share one baseline quota pool, Gemini Flash another, and paid Pro
+  Argon a separate pool (Ultra may instead use the Gemini pool). Inspect the selected model's actual windows,
+  both 5-hour and weekly where present, reset times, freshness, scope and concurrent load. One exhausted
+  pool must not disable the others. AI credit balance is separate: zero credits does not mean zero baseline
+  allowance. Do not buy credits or enable paid overages to satisfy this preference.
+- Choose Antigravity explicitly; engine="auto" continues to select native Claude/Codex and does not map
+  Antigravity models. When the intended pool is exhausted, use another suitable available pool or native
+  sonnet/Luna; use native Opus/Sol only for justified difficult work. Keep company-account scope intact.
+- Model listing and quota availability do not verify MCP, persistence or resume. The separate Antigravity
+  connection/lifecycle fix must pass its actual capability checks before assigning tasks that depend on it.
+  Do not retry the same known failure or declare new models production-ready based on model listing alone.
+"""
 
 
 AGENT_NOTE = """\

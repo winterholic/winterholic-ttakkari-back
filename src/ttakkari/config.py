@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ttakkari.model_catalog import ANTIGRAVITY_DEFAULT, ANTIGRAVITY_MODELS
+
 HOME = Path.home()
 DEFAULT_HOME = HOME / ".ttakkari"
 STT_RUNTIME_ROOT = HOME / "development/projects/winterholic-ttakkari/back/.stt-runtime"
@@ -72,15 +74,17 @@ class Settings(BaseSettings):
         "claude": {"model": "opus", "effort": "medium"},
         "codex": {"model": "gpt-6.1-sol", "effort": "high"},
     }
-    # 작업 세션 기본값. 모델을 안 고르면 엔진별 기본, engine=auto 면 토큰이 싼 Luna 로 띄운다.
+    # 작업 세션 기본값. Antigravity는 Sonnet 우선, native auto fallback은 Luna.
     worker_default_models: dict[str, dict[str, str]] = {
         "claude": {"model": "sonnet", "effort": "high"},
         "codex": {"model": "gpt-6-luna", "effort": "high"},
-        "antigravity": {"model": "gemini-3.8-flash-high", "effort": "high"},
+        "antigravity": {"model": ANTIGRAVITY_DEFAULT, "effort": "high"},
         "auto": {"model": "gpt-6-luna", "effort": "high"},
     }
     # 오케스트레이터와 같은 급이라 작업 세션에 쓰려면 승격 사유가 필요한 모델.
-    peer_models: list[str] = ["opus", "fable", "gpt-6.1-sol"]
+    peer_models: list[str] = ["opus", "fable", "gpt-6.1-sol", *[
+        m for m in ANTIGRAVITY_MODELS if m.startswith(("claude-opus-", "gemini-4-argon-"))
+    ]]
     # 작업 세션이 한도 등으로 다른 엔진 계정으로 넘어갈 때 같은 급의 상대 모델.
     model_counterparts: dict[str, str] = {
         "gpt-6-luna": "sonnet", "sonnet": "gpt-6-luna", "haiku": "gpt-6-luna",
@@ -93,9 +97,7 @@ class Settings(BaseSettings):
     engine_models: dict[str, list[str]] = {
         "claude": ["opus", "sonnet", "haiku"],
         "codex": ["gpt-6-luna", "gpt-6.1-sol"],
-        "antigravity": [
-            "gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high",
-        ],
+        "antigravity": ANTIGRAVITY_MODELS,
     }
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).

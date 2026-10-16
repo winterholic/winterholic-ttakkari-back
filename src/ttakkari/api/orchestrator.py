@@ -15,6 +15,7 @@ from ttakkari.api.pms import TaskIn, _project, _task_response
 from ttakkari.api.sessions import ACTIVE, queue_run
 from ttakkari.audit import record
 from ttakkari.config import get_settings
+from ttakkari.model_catalog import ANTIGRAVITY_MODELS, thinking_level
 from ttakkari.models import (
     Artifact,
     ChatSession,
@@ -48,10 +49,15 @@ class WorkerIn(BaseModel):
     @model_validator(mode="after")
     def antigravity_model_policy(self):
         if self.engine == "antigravity":
-            if self.model is not None and not self.model.startswith("gemini-3.8-flash-"):
-                raise ValueError("Antigravity worker assignments currently support Gemini 3.8 Flash only.")
+            if self.model is not None and self.model not in ANTIGRAVITY_MODELS:
+                raise ValueError("Choose an available Antigravity CLI model from account_usage.")
             if self.effort not in (None, "low", "medium", "high"):
-                raise ValueError("Antigravity Gemini 3.8 Flash supports low, medium, or high effort only.")
+                raise ValueError("Antigravity models support low, medium, or high effort only.")
+            selected = self.model or get_settings().worker_default_models["antigravity"]["model"]
+            if self.effort and self.effort != thinking_level(selected):
+                raise ValueError("Antigravity effort must match the selected model's thinking level.")
+        elif self.engine == "auto" and self.model in ANTIGRAVITY_MODELS:
+            raise ValueError("Antigravity models require engine=antigravity; auto uses native Claude/Codex.")
         return self
 
 
@@ -120,12 +126,13 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     s = get_settings()
     default = s.worker_default_models.get(body.engine) or {}
     model = body.model or default.get("model")
-    effort = body.effort or default.get("effort")
+    effort = body.effort or (thinking_level(model) if body.engine == "antigravity" and model
+                            else default.get("effort"))
     engine = body.engine
     if engine != "auto" and model and profiles_mod.model_engine(model) not in (None, engine):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{model} 은(는) {engine} 엔진 모델이 아닙니다.")
     if engine == "antigravity" and (model not in s.engine_models.get(engine, []) or effort not in {"low", "medium", "high"}):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "현재 Antigravity는 Gemini 3.8 Flash와 low/medium/high effort를 지원합니다.")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "account_usage에 표시된 Antigravity 모델과 low/medium/high effort를 선택하세요.")
     peer = (model or "").lower() in {m.lower() for m in s.peer_models}
     reason = (body.escalation_reason or "").strip()
     if peer and not reason:

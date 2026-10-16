@@ -470,7 +470,7 @@ class RunManager:
         root = Path(ws.root_path)
 
         # 쓸 수 있는 계정이 없으면 시작하지 않고 가장 이른 한도 초기화까지 기다린다(대기 Run 은 queued 로 남는다).
-        profiles, blocked = await profiles_mod.availability(db, sess.engine, sess.pool)
+        profiles, blocked = await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
         if not profiles:
             if blocked:
                 await self._wait_for_reset(db, run, sess, blocked)
@@ -567,13 +567,13 @@ class RunManager:
             if limited and not stopped:
                 # 마지막 계정이어도 쉬게 해야 다음 지시가 한도 걸린 계정부터 다시 두드리지 않는다.
                 reset_at = state.limit_resets_at or profiles_mod.reset_epoch_from(*texts)
-                profiles_mod.cool_down(prof.id, None if reset_at is None else max(1, int(reset_at - time.time()) + profiles_mod.RESET_BUFFER))
+                profiles_mod.cool_down(prof.limit_key, None if reset_at is None else max(1, int(reset_at - time.time()) + profiles_mod.RESET_BUFFER))
                 events.append(db, run, "account.limited", {
-                    "account": prof.name, "engine": prof.engine, "reset_at": _iso(reset_at),
+                    "account": prof.name, "engine": prof.engine, "model": model, "reset_at": _iso(reset_at),
                     "detail": (state.error or tail or "")[:300],
                 })
             # 이 Run 이 도는 동안 다른 Run 이 한도에 걸린 계정은 넘어갈 후보에서 뺀다.
-            remaining = [p for p in remaining if not profiles_mod.limited_until(p.id, p.max_used_percent)]
+            remaining = [p for p in remaining if not profiles_mod.profile_limited_until(p)]
             if stopped or not failed or not (missing or limited) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
@@ -595,7 +595,7 @@ class RunManager:
             prof = nxt
         profiles_mod.release(run.id)
         if paused_handoff is not None:
-            _, blocked = await profiles_mod.availability(db, sess.engine, sess.pool)
+            _, blocked = await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
             if blocked:
                 await self._wait_for_reset(db, run, sess, blocked, handoff=paused_handoff)
                 return
@@ -1047,6 +1047,9 @@ async def _system_note(db: AsyncSession, outbox: Path, sess: ChatSession, scope:
     brief = await pinned_brief(db, scope=scope)
     if brief:
         parts.append("[Pinned facts about the user — use recall for more]\n" + brief)
+    if sess.kind == SessionKind.orchestrator:
+        from ttakkari.orchestrator.runtime import MODEL_ROUTING_NOTE
+        parts.append(MODEL_ROUTING_NOTE)
     return "\n\n".join(parts)
 
 
@@ -1060,6 +1063,10 @@ def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first
     메인 오케스트레이터는 엔진마다 허용된 한 쌍(설정 orchestrator_fallback_models)으로만 띄운다.
     작업 세션이 다른 엔진으로 넘어가면 같은 급의 상대 모델(model_counterparts)로 바꾼다."""
     s = get_settings()
+    if prof.engine == "antigravity" and sess.kind != SessionKind.orchestrator:
+        from ttakkari.model_catalog import thinking_level
+        model = prof.model or run.model
+        return model, run.effort or (thinking_level(model) if model else None)
     if sess.kind == SessionKind.orchestrator:
         fb = s.orchestrator_fallback_models.get(prof.engine) or {}
         return fb.get("model"), fb.get("effort") or run.effort

@@ -16,27 +16,31 @@ from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import AppSetting
-from ttakkari.orchestrator.runtime import ORCHESTRATOR_NOTE, issue_token
+from ttakkari.orchestrator.runtime import (
+    MODEL_ROUTING_NOTE,
+    ORCHESTRATOR_NOTE,
+    issue_token,
+)
 from ttakkari.runs import profiles
 from ttakkari.runs.manager import manager
 
 
-def test_design_capacity_policy_allows_explicit_gemini_when_user_authorizes_it():
-    note = " ".join(ORCHESTRATOR_NOTE.split())
-    assert "headroom as unknown" in note
-    assert 'Keep it out of engine="auto"' in note
+def test_design_capacity_policy_prefers_antigravity_claude_and_checks_separate_quotas():
+    note = " ".join(MODEL_ROUTING_NOTE.split())
     assert 'engine="antigravity"' in note
+    assert 'model="claude-sonnet-5-5-high"' in note
     assert 'model="gemini-3.8-flash-high"' in note
+    assert 'model="gemini-4-argon-high"' in note
+    assert "One exhausted pool must not disable the others" in note
 
 
 def test_general_work_assignment_uses_usage_and_auto_engine():
-    note = " ".join(ORCHESTRATOR_NOTE.split())
-    assert "Before each worker assignment, check account_usage" in note
-    assert 'use engine="auto"' in note
-    assert "read its progress, stop it, and reassign the unfinished work" in note
-    assert "UI/UX and visual work normally use Claude" in note
+    note = " ".join((ORCHESTRATOR_NOTE + MODEL_ROUTING_NOTE).split())
+    assert "Check account_usage before assignments" in note
+    assert 'engine="auto" continues to select native Claude/Codex' in note
+    assert "Preserve progress and inspect side effects" in note
     assert 'engine="antigravity"' in note
-    assert "Otherwise, record the wait in the relevant PMS WBS/backlog and report it." in note
+    assert "MCP, persistence or resume" in note
 
 
 async def test_auto_worker_selection_excludes_explicit_antigravity_account(client, auth):

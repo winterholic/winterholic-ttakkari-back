@@ -3,7 +3,15 @@
 - 상태: 구현 중
 - 날짜: 2026-10-15
 
-## 결정
+## 2026-10-16 모델 배정 방침 변경
+
+사용자 요청으로 아래 초기 Gemini-only·Claude 기본 배정 제외 결정을 대체한다. `agy models` 1.3.6에서 확인한 Sonnet/Opus 5.5, Gemini 4 Argon, Flash 3.8 low/medium/high와 GPT-OSS medium을 허용한다. 일반 작업의 Antigravity 기본값은 Sonnet high, 단순 범용 작업은 Flash high, 어려운 설계·추론·독립 대안은 사유를 명시한 Argon/Opus다. 메인 모델 방침은 유지한다.
+
+Claude/GPT, Gemini, 별도로 노출되는 Argon quota를 선택 모델에 따라 확인하며, 한 그룹의 소진·실행 거절이 다른 그룹을 막지 않도록 한다. AI 크레딧은 baseline allowance와 별개이며, 이 변경은 유료 overage를 켜지 않는다. 모델 목록·단발 응답과 MCP/대화 재개 성공은 별도 검증한다. 진행 중인 연결·설정 수명 수정의 완료를 이 모델 배정 변경으로 대신 주장하지 않는다.
+
+공식 근거: [모델](https://www.antigravity.google/docs/models), [baseline과 overages](https://www.antigravity.google/docs/plans). 실제 계정의 2026-10-16 `/usage`에는 paid Pro Argon의 별도 주간 창이 있었으며, 이 계정 상태를 모든 요금제에 일반화하지 않는다.
+
+## 초기 결정 (2026-10-15, 모델 제한은 위 방침으로 대체)
 
 Ttakkari는 유료 SDK 대신 사용자가 로그인한 공식 단일 `agy` CLI를 headless NDJSON 어댑터로 실행한다. 초기 지원 모델은 계정의 `agy models` 출력으로 확인된 Gemini 3.8 Flash low/medium/high이며, 기본 worker 배정은 `gemini-3.8-flash-high` / `high`다. Claude·Codex 계정의 자동 순환에는 넣지 않는다. 명시적인 `engine="antigravity"` 선택만 허용한다. 모델 quota와 AI 크레딧은 `/usage`·`/credits`의 정상 CLI 응답에서 관측 가능한 별도 단위로 수집한다. 조회 실패·stale·unknown은 0% 또는 무한 여유로 해석하지 않는다.
 

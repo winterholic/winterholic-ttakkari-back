@@ -196,7 +196,7 @@ legacy `/api/dl`로 이미 발급한 파일 링크나 독립 생성한 다른 sh
 
 ### 정규화 원본과 공개 투영 순서
 
-`build_meeting_document(db, meeting_id)`는 owner/공개 게시 후보 공용의 **순수 읽기** 서비스다. stable 상태 transcribed/analyzed만 F1에서 허용하고 나머지는409 `source_not_ready`. `_fresh`/reconcile/start_analysis/LLM/모델/기억 승인을 호출하지 않는다.
+`build_meeting_document(db, meeting_id)`는 owner/공개 게시 후보 공용의 **순수 읽기** 서비스다. stable 상태 transcribed/analyzed/review를 허용하고 나머지는409 `source_not_ready`. review는 분석이 끝나 승인 대기 제안이 남은 상태이며, analyzed와 동일하게 생성된 요약·항목을 제공한다. `_fresh`/reconcile/start_analysis/LLM/모델/기억 승인을 호출하지 않는다.
 
 1. Meeting + 채택 job(`adopted_job`) + 그 job의 `job_utterances`/speaker_names + MeetingItem을 일관된 DB snapshot에서 읽는다.
 2. local_whisper 출처인데 채택 job을 못 찾으면409 `stt_source_unresolved`. 최신 job/child/raw로 대체하지 않는다. job이 명시적으로 quality 차단 상태면409 `quality_review_required`. legacy metadata 부재는 unknown 경고이며 “검증 완료”로 바꾸지 않는다.

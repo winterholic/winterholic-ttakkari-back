@@ -13,7 +13,7 @@ from sqlalchemy.orm import load_only
 
 from ttakkari.meetings.evidence import locate_evidence
 from ttakkari.meetings.local_stt.read_model import adopted_job, job_utterances
-from ttakkari.models import Meeting, MeetingItem
+from ttakkari.models import Meeting, MeetingItem, MeetingStatus
 from ttakkari.sharing.errors import error
 from ttakkari.sharing.schemas import (
     SECTIONS,
@@ -53,12 +53,13 @@ async def build_meeting_document(db: AsyncSession, mid: uuid.UUID, selection: Se
     m = await db.scalar(stmt)
     if m is None:
         raise error(404, 'not_found')
-    if m.status not in ('transcribed', 'analyzed'):
+    if m.status not in (MeetingStatus.transcribed, MeetingStatus.analyzed, MeetingStatus.review):
         raise error(409, 'source_not_ready')
     if m.scope not in ('personal', 'work', 'shared'):
         raise error(409, 'source_not_ready')
     bindings = [{'type': 'meeting', 'id': str(m.id), 'parent_id': None, 'role': 'root'}]
-    analyzed = m.status == 'analyzed'
+    # Review means analysis finished with pending proposals, not unfinished content.
+    analyzed = m.status in (MeetingStatus.analyzed, MeetingStatus.review)
     transcript = None
     utterances = []
     if 'transcript' in selection.sections:

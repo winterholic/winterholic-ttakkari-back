@@ -305,6 +305,44 @@ async def test_owner_export_is_private_authenticated_revision_bound_and_not_feat
     unsupported = await client.post("/api/exports", headers=auth, json={**body, "format": "srt"})
     assert unsupported.status_code == 422 and unsupported.json()["code"] == "format_not_enabled"
 
+
+@pytest.mark.parametrize('local', [False, True])
+@pytest.mark.parametrize('scope', ['personal', 'work'])
+async def test_review_meeting_previews_and_exports_completed_analysis(client, auth, local, scope):
+    mid, _, _ = await source(scope=scope, local=local)
+    async with sessionmaker()() as db:
+        await db.execute(update(Meeting).where(Meeting.id == mid).values(status='review'))
+        await db.commit()
+    body = request(mid, sections=['summary', 'decisions', 'actions', 'discussions', 'open_issues', 'transcript'])
+    if scope == 'work':
+        denied = await client.post('/api/shares/preview', headers=auth, json=body)
+        assert denied.status_code == 403 and denied.json()['code'] == 'work_scope_confirmation_required'
+        body['confirm_work_scope'] = True
+    p = await preview(client, auth, body)
+    doc = p['document']
+    assert doc['analysis_state'] == 'available'
+    assert doc['summary'] == 'Approved summary'
+    assert doc['actions'][0]['text'] == 'Approved action'
+    assert doc['section_states']['decisions'] == 'empty'
+    assert doc['transcript']['text']
+    for fmt, part in [('txt', 'document'), ('md', 'document'), ('json', 'document'), ('csv', 'actions')]:
+        exported = await client.post('/api/exports', headers=auth, json={
+            'resource': body['resource'], 'selection': body['selection'], 'format': fmt, 'part': part,
+            'expected_source_revision': p['source_revision']})
+        assert exported.status_code == 200, exported.text
+        assert 'Approved action' in exported.text
+        assert 'PRIVATE_' not in exported.text
+
+
+@pytest.mark.parametrize('status', ['uploaded', 'transcribing', 'analyzing', 'failed'])
+async def test_unready_meeting_still_rejects_preview(client, auth, status):
+    mid, _, _ = await source()
+    async with sessionmaker()() as db:
+        await db.execute(update(Meeting).where(Meeting.id == mid).values(status=status))
+        await db.commit()
+    result = await client.post('/api/shares/preview', headers=auth, json=request(mid))
+    assert result.status_code == 409 and result.json()['code'] == 'source_not_ready'
+
 @pytest.mark.parametrize('mutation,expected', [('revoke', 404), ('expire', 404), ('root', 404),
     ('item', 404), ('scope', 404), ('republish', 409)])
 async def test_http_download_final_gate_after_concurrent_commit(client, auth, monkeypatch, mutation, expected):

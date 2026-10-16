@@ -373,11 +373,11 @@ payload 는 `{title, body, url, tag}`:
 
 ## 회의록 외부 공유와 내보내기 (ADR 0030)
 
-상태: backend 계약 구현, frontend 연결·운영 공개 활성화는 미완료다. `public_sharing_enabled` 기본값은 `false`이며 이 값이 꺼져 있으면 익명 조회·다운로드는 404다. 소유자 개인 export는 이 설정과 무관하게 동작한다. 현재 지원 형식은 TXT/MD/JSON/CSV이며 SRT/VTT/DOCX/PDF와 PMS/WBS/Artifact는 사용할 수 없다.
+상태(2026-10-16): 문서형 전사·선택 내보내기·공유 관리·별도 공개 UI를 연결했다. `public_sharing_enabled` 코드 기본값은 `true`로 전환하며 기존 회의가 자동 공개되지는 않는다. 운영자는 명시적 `false` 설정으로 익명 전달을 차단할 수 있다. 꺼져 있으면 익명 조회·다운로드는 404이며 소유자 개인 export는 계속 동작한다. 운영 배포 결과는 작업기록을 따른다. 현재 지원 형식은 TXT/MD/JSON/CSV이며 SRT/VTT/DOCX/PDF와 PMS/WBS/Artifact는 사용할 수 없다.
 
 | 메서드 | 경로 | 요청 / 응답 |
 |---|---|---|
-| POST | `/api/shares/preview` | owner Bearer, `{resource:{type:"meeting",id}, selection:{sections,include_people?,include_evidence?}, download_formats?, confirm_work_scope?}` → `{document, source_revision, format_options, warnings}`. `source_revision`은 이후 게시·export 요청에 그대로 돌려준다. 공개 전 화면에서 document와 warnings를 사용자가 확인한다. |
+| POST | `/api/shares/preview` | owner Bearer, `{resource:{type:"meeting",id}, selection:{sections,include_people?,include_evidence?}, download_formats?, confirm_work_scope?}` → `{document, source_revision, format_options, warnings, public_sharing_enabled}`. `source_revision`은 이후 게시·export 요청에 그대로 돌려준다. 공개 전 화면에서 document와 warnings를 사용자가 확인한다. `public_sharing_enabled=false`이면 UI는 공개 버튼을 잠그고 개인 다운로드는 허용한다. |
 | POST | `/api/shares` | owner Bearer, preview 입력 + `{expected_source_revision, expires_at?}` → 201 게시 정보와 일회성 capability URL. 링크 비밀은 fragment `#key=...`에 있으며 서버는 hash만 저장한다. `work` 범위는 `confirm_work_scope=true`가 필요하다. |
 | GET | `/api/shares?resource_type=meeting&resource_id={uuid}&offset=0` | owner Bearer → 해당 원본의 공유 상태·publication/source revision·만료·선택 목록. 링크 비밀은 반환하지 않는다. |
 | GET | `/api/shares/{share_id}` | owner Bearer → 단일 공유 상태와 회수 여부. |

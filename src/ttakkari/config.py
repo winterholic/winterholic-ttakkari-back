@@ -42,8 +42,9 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 30
     download_token_ttl_seconds: int = 5 * 60
 
-    # Keep disabled until the separate public UI and delivery environment are verified.
-    public_sharing_enabled: bool = False
+    # The separate public UI is available. Only owner-approved snapshots get a capability.
+    # Operators can explicitly disable delivery without disabling private exports.
+    public_sharing_enabled: bool = True
     public_share_origin: str = "https://ttakkari.winterholic.net"
 
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]

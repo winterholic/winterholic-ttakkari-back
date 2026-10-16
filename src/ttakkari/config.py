@@ -173,14 +173,18 @@ class Settings(BaseSettings):
     desk_timeout_seconds: float = 25.0
     # 접수 1순위는 로컬 Qwen3.5-4B(llama.cpp 서버, runs/desk_qwen). 서버 장애·시간 초과·잘못된 출력이면 위 엔진 순서(Luna→Haiku)로 넘어간다.
     desk_qwen_enabled: bool = True
-    desk_qwen_base_url: str = "http://127.0.0.1:18080"
-    desk_qwen_model: str = "qwen3.5-4b-q4_k_m"
-    desk_qwen_server_enabled: bool = True
+    # 비우면 백엔드(세대) 프로세스가 llama-server 자식 프로세스를 직접 띄우고 끝낸다(runs/desk_qwen_service, OS 서비스 등록 없음).
+    # 이미 떠 있는 서버를 쓰려면 주소를 지정한다: 이때는 health 만 확인하고 띄우지도 죽이지도 않는다.
+    desk_qwen_base_url: str = ""
+    desk_qwen_manage: bool = True
     desk_qwen_server_path: str = "~/private-resources/service-data/ttakkari-qwen/llama/llama-b11655/llama-server"
     desk_qwen_model_path: str = "~/private-resources/service-data/ttakkari-qwen/model/Qwen3.5-4B-Q4_K_M.gguf"
-    desk_qwen_server_threads: int = 6
-    desk_qwen_server_context: int = 8192
-    desk_qwen_server_startup_timeout_seconds: float = 15.0
+    desk_qwen_threads: int = 6
+    desk_qwen_ctx: int = 8192
+    desk_qwen_start_timeout_seconds: float = 120.0
+    # 모델 크기의 1.5배와 이 값 중 큰 쪽보다 가용 메모리가 적으면 띄우지 않는다(접수는 CLI 로 간다).
+    desk_qwen_min_free_memory_gb: float = 6.0
+    desk_qwen_model: str = "qwen3.5-4b-q4_k_m"
     desk_qwen_timeout_seconds: float = 20.0
     desk_qwen_connect_timeout_seconds: float = 1.0
     desk_qwen_cooldown_seconds: float = 60.0

@@ -19,6 +19,7 @@ EXPECTED_V2_FINGERPRINT = "2da6489597bf06326f19b1c72d24555388899443ba1ebd22d2bcf
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch):
     monkeypatch.setattr(get_settings(), "desk_qwen_enabled", True)
+    monkeypatch.setattr(get_settings(), "desk_qwen_base_url", "http://qwen.test")  # 외부 서버 모드(MockTransport 가 받는다)
     desk_qwen.reset_cooldown()
     yield
     desk_qwen.reset_cooldown()

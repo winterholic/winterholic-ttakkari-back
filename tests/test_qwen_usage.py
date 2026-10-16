@@ -141,64 +141,62 @@ async def test_actual_http_usage_is_captured_per_stage_and_missing_or_failure_st
 
 @pytest.mark.asyncio
 async def test_remote_qwen_url_never_spawns_a_local_process(monkeypatch):
-    settings = get_settings().model_copy(update={"desk_qwen_enabled": True,
-        "desk_qwen_base_url": "https://qwen.example.invalid", "desk_qwen_server_enabled": True})
-    monkeypatch.setattr(desk_qwen_server, "get_settings", lambda: settings)
-    async def unhealthy(_url, _timeout=1.0):
-        return False
-    monkeypatch.setattr(desk_qwen_server, "_healthy", unhealthy)
-    monkeypatch.setattr(desk_qwen_server.subprocess, "Popen", lambda *a, **k: pytest.fail("remote URL spawned local process"))
-    with pytest.raises(RuntimeError, match="remote endpoint unhealthy"):
+    # 사용자가 지정한 주소가 죽어 있어도 로컬 모델을 대신 켜지 않는다(서버 수명주기: runs/desk_qwen_service).
+    from ttakkari.runs.desk_qwen_service import QwenServer
+    monkeypatch.setattr(get_settings(), "desk_qwen_enabled", True)
+    monkeypatch.setattr(get_settings(), "desk_qwen_base_url", "https://qwen.example.invalid")
+    from ttakkari.runs import desk_qwen_service
+    q = QwenServer()
+    monkeypatch.setattr(desk_qwen_service, "service", q)
+    monkeypatch.setattr("ttakkari.runs.desk_qwen_server.service", q)
+    q.state, q.external_ready = "external", False
+    with pytest.raises(RuntimeError):
         await desk_qwen_server.ensure_running()
-    assert desk_qwen_server.status()["status"] == "unavailable"
+    assert desk_qwen_server.status()["status"] == "unavailable" and q.spawn_count == 0 and q._child is None
 
 
 @pytest.mark.asyncio
 async def test_healthy_configured_server_is_reused_and_never_owned(monkeypatch):
-    settings = get_settings().model_copy(update={"desk_qwen_enabled": True,
-        "desk_qwen_base_url": "http://127.0.0.1:18080", "desk_qwen_server_enabled": True})
-    monkeypatch.setattr(desk_qwen_server, "get_settings", lambda: settings)
-    async def healthy(_url, _timeout=1.0):
-        return True
-    monkeypatch.setattr(desk_qwen_server, "_healthy", healthy)
-    monkeypatch.setattr(desk_qwen_server.asyncio, "create_subprocess_exec", lambda *a, **k: pytest.fail("healthy server must be reused"))
+    from ttakkari.runs import desk_qwen_service
+    monkeypatch.setattr(get_settings(), "desk_qwen_enabled", True)
+    monkeypatch.setattr(get_settings(), "desk_qwen_base_url", "http://127.0.0.1:18080")
+    q = desk_qwen_service.QwenServer()
+    monkeypatch.setattr(desk_qwen_service, "service", q)
+    monkeypatch.setattr("ttakkari.runs.desk_qwen_server.service", q)
+    q.state, q.external_ready = "external", True
     assert await desk_qwen_server.ensure_running() == "http://127.0.0.1:18080"
     assert desk_qwen_server.status()["status"] == "external"
-    await desk_qwen_server.shutdown()
-    assert desk_qwen_server.status()["status"] == "not_started"
+    assert q.spawn_count == 0 and q._child is None
 
 
 @pytest.mark.asyncio
 async def test_generation_server_terminates_only_its_owned_child(monkeypatch, tmp_path):
-    binary, model = tmp_path / "llama-server", tmp_path / "model.gguf"
-    binary.touch(); model.touch()
-    settings = get_settings().model_copy(update={"desk_qwen_enabled": True,
-        "desk_qwen_base_url": "http://127.0.0.1:18080", "desk_qwen_server_enabled": True,
-        "desk_qwen_server_path": str(binary), "desk_qwen_model_path": str(model)})
-    monkeypatch.setattr(desk_qwen_server, "get_settings", lambda: settings)
-    monkeypatch.setattr(desk_qwen_server, "_generation_port", lambda: 18081)
-    class OwnedProcess:
-        returncode = None
-        terminated = 0
-        def terminate(self):
-            self.terminated += 1
-            self.returncode = 0
-        def kill(self):
-            self.returncode = -9
-        async def wait(self):
-            return self.returncode
-    proc = OwnedProcess()
-    async def spawn(*_argv, **_kwargs):
-        return proc
-    monkeypatch.setattr(desk_qwen_server.asyncio, "create_subprocess_exec", spawn)
-    async def healthy(url, timeout=1.0):
-        return url.endswith(":18081")
-    monkeypatch.setattr(desk_qwen_server, "_healthy", healthy)
-    origin = await desk_qwen_server.ensure_running()
-    assert origin == "http://127.0.0.1:18081"
-    assert desk_qwen_server.status()["status"] == "running"
-    await desk_qwen_server.shutdown()
-    assert proc.terminated == 1
+    # 자식 프로세스 소유·종료는 실제 가짜 llama-server 로 확인한다(상세: tests/test_desk_qwen_service.py).
+    import time
+    from pathlib import Path
+
+    import psutil
+
+    from ttakkari.runs import desk_qwen_service
+    fake = Path(__file__).parent / "fake_agents" / "fake_llama_server.py"
+    model = tmp_path / "model.gguf"
+    model.write_bytes(b"x")
+    s = get_settings()
+    for key, value in {"home": tmp_path / "home", "desk_qwen_enabled": True, "desk_qwen_manage": True, "desk_qwen_base_url": "",
+                       "desk_qwen_server_path": str(fake), "desk_qwen_model_path": str(model),
+                       "desk_qwen_min_free_memory_gb": 0.001}.items():
+        monkeypatch.setattr(s, key, value)
+    q = desk_qwen_service.QwenServer()
+    monkeypatch.setattr(desk_qwen_service, "service", q)
+    monkeypatch.setattr("ttakkari.runs.desk_qwen_server.service", q)
+    await q.start()
+    deadline = time.monotonic() + 20
+    while q.state != "ready" and time.monotonic() < deadline:
+        await asyncio.sleep(0.1)
+    assert q.state == "ready" and desk_qwen_server.status()["status"] == "running"
+    pid = q._child.pid
+    await desk_qwen_server.stop()
+    assert not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
     assert desk_qwen_server.status()["status"] == "not_started"
 
 

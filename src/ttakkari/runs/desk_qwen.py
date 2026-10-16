@@ -256,9 +256,19 @@ def mark_unavailable() -> None:
     _down_until = time.monotonic() + get_settings().desk_qwen_cooldown_seconds
 
 
+def endpoint() -> str | None:
+    """요청을 보낼 서버 주소. 지정한 외부 서버(health 가 실패 중이면 None), 아니면 이 프로세스가 소유한 서버(준비됐을 때만)."""
+    from ttakkari.runs.desk_qwen_service import service
+
+    s = get_settings()
+    if s.desk_qwen_base_url:
+        return s.desk_qwen_base_url if service.external_ready is not False else None
+    return service.endpoint
+
+
 def available() -> bool:
     s = get_settings()
-    return bool(s.desk_qwen_enabled) and time.monotonic() >= _down_until
+    return bool(s.desk_qwen_enabled) and time.monotonic() >= _down_until and endpoint() is not None
 
 
 def _http_client(timeout: httpx.Timeout) -> httpx.AsyncClient:
@@ -338,9 +348,11 @@ async def _chat(client: httpx.AsyncClient, messages: list[dict[str, str]], schem
         "response_format": {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}},
     }
     state = _meter_context.get()
-    base_url = state[3] if state is not None else s.desk_qwen_base_url.rstrip("/")
+    base = state[3] if state is not None else endpoint()  # 계측 중이면 접수가 고른 서버로 고정
+    if base is None:
+        raise QwenUnavailable("not_ready", cooldown=False)
     try:
-        r = await client.post(base_url + "/v1/chat/completions", json=payload)
+        r = await client.post(base.rstrip("/") + "/v1/chat/completions", json=payload)
     except Exception:
         await _record_http_call(name, None)
         raise
@@ -350,6 +362,16 @@ async def _chat(client: httpx.AsyncClient, messages: list[dict[str, str]], schem
     if not isinstance(obj, dict):
         raise TypeError("object expected")
     return obj
+
+
+async def warmup(base: str) -> None:
+    """서버가 막 떴을 때 첫 사용자 메시지가 모델 적재·프롬프트 prefill 을 뒤집어쓰지 않게 분류 호출을 한 번 미리 한다(결과는 버린다)."""
+    s = get_settings()
+    payload = {"model": s.desk_qwen_model, "messages": _kind_messages(EMPTY_BOARD, EMPTY_HISTORY, "안녕"), "temperature": 0, "seed": SEED,
+               "max_tokens": 20, "chat_template_kwargs": {"enable_thinking": False}, "cache_prompt": True,
+               "response_format": {"type": "json_schema", "json_schema": {"name": "desk_kind", "strict": True, "schema": KIND_SCHEMA}}}
+    async with _http_client(httpx.Timeout(90.0, connect=2.0)) as client:
+        (await client.post(base.rstrip("/") + "/v1/chat/completions", json=payload)).raise_for_status()
 
 
 def _kind_messages(board: str, history: str, message: str) -> list[dict[str, str]]:
@@ -448,6 +470,8 @@ async def decide(board_lines: list[str], history_lines: list[str], message: str,
         raise QwenUnavailable("disabled", cooldown=False)
     if time.monotonic() < _down_until:
         raise QwenUnavailable("cooldown", cooldown=False)
+    if endpoint() is None:
+        raise QwenUnavailable("not_ready", cooldown=False)
     board = "\n".join(board_lines) if board_lines else EMPTY_BOARD
     history = "\n".join(history_lines) if history_lines else EMPTY_HISTORY
     if len(board) + len(history) + len(message) > s.desk_qwen_max_prompt_chars:

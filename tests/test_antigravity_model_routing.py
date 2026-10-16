@@ -134,6 +134,8 @@ async def test_latest_policy_follows_role_instructions_without_discarding_them(m
     ("gemini-4-argon-high", "high", "Compare difficult architecture alternatives"),
     ("claude-opus-5-5-medium", "medium", "Resolve a difficult design decision"),
     (None, "high", None),
+    ("gemini-4-argon-high", "high", None),
+    ("claude-opus-5-5-medium", "medium", None),
 ])
 async def test_worker_api_launches_the_selected_cli_model_and_level(client, auth, make_dir, monkeypatch, model, level, reason):
     from types import SimpleNamespace
@@ -166,6 +168,9 @@ async def test_worker_api_launches_the_selected_cli_model_and_level(client, auth
         body['escalation_reason'] = reason
     response = await client.post("/api/orchestrator/workers", json=body,
                                  headers={"Authorization":f"Bearer {issue_token(uuid.UUID(orch['id']))}"})
+    if model and model.startswith(("gemini-4-argon-", "claude-opus-")) and not reason:
+        assert response.status_code == 400 and "escalation_reason" in response.text
+        return
     assert response.status_code == 201, response.text
     runs = (await client.get(f"/api/sessions/{response.json()['worker_id']}/runs", headers=auth)).json()
     run = await wait_run(client, auth, runs[0]['id'])

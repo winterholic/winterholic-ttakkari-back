@@ -24,7 +24,7 @@ def quota_group(model: str | None) -> str | None:
     if model.startswith(("claude-", "gpt-oss-")):
         return "agy_claude_and_gpt_models"
     if model.startswith("gemini-4-argon-"):
-        # The user's paid Pro snapshot exposes a separate allowance. A missing
+        # The observed snapshot exposes a separate allowance. A missing
         # Argon window is unknown, not proof of a shared pool or an empty quota.
         return "agy_gemini_4_argon"
     return "agy_gemini_models"

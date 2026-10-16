@@ -9,7 +9,7 @@
 
 Claude/GPT, Gemini, 별도로 노출되는 Argon quota를 선택 모델에 따라 확인하며, 한 그룹의 소진·실행 거절이 다른 그룹을 막지 않도록 한다. AI 크레딧은 baseline allowance와 별개이며, 이 변경은 유료 overage를 켜지 않는다. 모델 목록·단발 응답과 MCP/대화 재개 성공은 별도 검증한다. 진행 중인 연결·설정 수명 수정의 완료를 이 모델 배정 변경으로 대신 주장하지 않는다.
 
-공식 근거: [모델](https://www.antigravity.google/docs/models), [baseline과 overages](https://www.antigravity.google/docs/plans). 실제 계정의 2026-10-16 `/usage`에는 paid Pro Argon의 별도 주간 창이 있었으며, 이 계정 상태를 모든 요금제에 일반화하지 않는다.
+공식 근거: [모델](https://www.antigravity.google/docs/models), [baseline과 overages](https://www.antigravity.google/docs/plans). 실제 계정의 2026-10-16 `/usage`에는 Argon의 별도 주간 창이 있었으며, 이 계정 상태를 모든 요금제에 일반화하지 않는다.
 
 ## 초기 결정 (2026-10-15, 모델 제한은 위 방침으로 대체)
 

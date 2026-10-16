@@ -162,7 +162,7 @@ class ChatSession(Base):
     engine: Mapped[str] = mapped_column(String(16))
     model: Mapped[str | None] = mapped_column(String(100))
     effort: Mapped[str | None] = mapped_column(String(16))
-    # Only auto workers use this policy. NULL preserves legacy sessions and native main/desk routing.
+    # NULL is inferred for legacy auto workers; native main/desk routing stays separate.
     worker_task_type: Mapped[str | None] = mapped_column(String(20))
     # 고정 엔진 세션에서 한도 도달 시 다른 경로 대체 허용 여부(False=대체 허용, True=해당 엔진만 유지 후 대기).
     strict_engine: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

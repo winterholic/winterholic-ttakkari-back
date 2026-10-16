@@ -5,7 +5,7 @@
 - 중단된 worker `7ec7294c-a04a-4053-afda-dd42959aaa3e`의 코드 `d76f13cb04251f1be60be9e7307dd161d7af9b26`를 보존한 채 이어받았다. 두 기존 Run은 이미 cancelled이며 다시 실행하지 않는다. 기존 provider 대화 ID와 이벤트도 변경하지 않았다.
 - 운영 `/api/version`과 읽기 전용 runtime_generations 조회는 `ee700630e8c62456cce0b304c8c689227ae6feae`, PID 42581, active `http://127.0.0.1:8791`을 가리킨다. 해당 release 경로에 구 라우터가 있다. 이 시점에는 새 정책이 운영에 적용되지 않았다.
 - 운영 이벤트: 원래 Run은 20:17 시작, 21:06 Argon `Individual quota reached`, 이후 `run.waiting`의 재개 시각이 10/23 13:45 KST로 연장됐다. 구 `_run`은 고정 antigravity 엔진에서만 후보를 찾았다. 신규 사용자 지시도 같은 세션 뒤에 대기했다. 코드 추론과 이 실제 이벤트 관측을 구분한다.
-- canonical `back/`에는 다른 GPU 이력 작업의 미커밋 코드와 `0036_system_resource_samples.py`가 새로 있다. 과거 Qwen dirty 사유는 해소됐다. 이 파일들을 stash·삭제·덮어쓰기·혼합 커밋하지 않는다. clean 통합과 단일 migration graph가 배포 전제다.
+- GPU 이력 `f4fe3bf066ee7cef64b1a36ffe7a5c03e085d893`의 main 커밋을 별도 브랜치에 통합했다. 두 0036 head를 계약 검사에서 재현한 뒤, 미배포 라우팅 migration을 `0037_worker_routing`으로 옮겨 `0035_qwen_token_usage → 0036_system_resource_samples → 0037_worker_routing` 단일 그래프로 정리했다. generation protocol은 1이며 기존 online source들과 0036 source를 허용한다. canonical의 별도 Qwen 접수 수정은 진행 중이어서 건드리지 않는다.
 
 ## 이번 수정
 
@@ -23,9 +23,11 @@
 - d76 baseline: `pytest tests/test_worker_routing.py` → 41 passed (8.78s). 아래 예전 e9/4da의 전체 검사를 d76 검사로 재사용하지 않았다.
 - `recovery-red.txt`: 주간 timer 고착과 재개 모델 손실 2 failed, 5 passed. `isolation-red.txt`: 다른 모델의 legacy 대화 ID 재사용과 권한 문구 오분류 5 failed.
 - `focused-regression.txt`: worker routing, account selection, quota model routing, 모델 정책, orchestrator API/MCP 계약, generation 소유권·process·배포·bootstrap·graph 241 passed (58.58s). 실제 provider를 호출하는 검사가 아니라 synthetic CLI와 격리 PostgreSQL을 사용했다.
-- `migration-online.txt`: 격리 DB에서 0035 설치 → 운영 ee70063 ORM으로 running/queued·provider ID·handoff·checkpoint 저장 → online 0036 upgrade → 새 ORM 보존 검사 → 구 ORM read/heartbeat write 성공. 운영 migration 직접 실행 없음.
+- `final-migration-online.txt`: 격리 DB에서 0035 설치 → 운영 ee70063 ORM으로 running/queued·provider ID·handoff·checkpoint 저장 → online 0036 GPU/0037 routing upgrade → 새 ORM 보존 검사 → 구 ORM read/heartbeat write 성공. 운영 migration 직접 실행 없음. 초기 `migration-online.txt`는 GPU 통합 전 0036 routing 검사 이력이다.
 - `routing-production-replay.json`: 저장된 운영 quota/cooldown/lease를 읽기 전용 재생했을 때 Argon·AGY Claude pool 소진, Flash 여유에도 reasoning은 native Codex `gpt-6.1-sol/high` 선택. 이는 운영 새 라우터 실행·실제 모델 응답·MCP·CLI resume 증거가 아니다.
 - `ruff check src tests alembic` 및 `git diff --check` 통과. 저장소 전체 `ruff check .`는 변경하지 않은 Qwen experiments에서 기존 72개 오류를 보고했다(`lint.txt`). 이 파일들은 수정하지 않았다.
+
+- 최초 전체 회귀 `full-regression.txt`: 1166 passed, 2 failed, 3 skipped, 2 xfailed, 6 subtests passed (278.42s). 1건은 모델 생략 legacy AGY resume의 정규화 누락으로 재현 후 수정했다(`legacy-default-red/green.txt`, 관련 64 passed). 다른 1건은 fresh-context 검사가 동시 메인 작업 보고를 worker로 잘못 읽은 테스트 경쟁이었다. 정확한 Run outbox로 실행을 찾도록 보완해 원래의 새 대화·과거 문맥 차단 조건은 유지했다. 최종 통합 전체 회귀를 새로 실행한다.
 
 운영 새 정책의 실제 모델 응답·MCP 호출·provider resume는 미실행이다. 배포 예약 접수와 성공을 구분하고, 예약 후 활성 Run 종료를 기다리며 폴링하지 않는다. 최종 전체 회귀·통합 SHA·배포 예약 결과는 후속 항목에 기록한다.
 

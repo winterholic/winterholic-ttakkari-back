@@ -111,13 +111,16 @@ async def test_fresh_context_starts_new_engine_conversation_without_old_turns(cl
                              headers=h)).json()["worker_id"]
     wrun = (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json()[0]
     await wait_run(client, auth, wrun["id"])
-    before = len(agent_calls())
     r = await client.post(f"/api/orchestrator/workers/{wid}/messages",
                           json={"prompt": "bravo self-contained", "fresh_context": True}, headers=h)
     assert r.status_code == 202
     nxt = (await client.get(f"/api/sessions/{wid}/runs", headers=auth)).json()[-1]
     await wait_run(client, auth, nxt["id"])
-    call = agent_calls()[before]
+    # A worker completion also starts an orchestrator report. Identify this Run
+    # by its outbox root rather than assuming the next process is the worker.
+    calls = [c for c in agent_calls() if any(a.endswith(f"/{nxt['id']}") for a in c["argv"])]
+    assert len(calls) == 1, calls
+    call = calls[0]
     prompt = call["argv"][call["argv"].index("-p") + 1]
     assert "--resume" not in call["argv"] and "alpha" not in prompt and "bravo" in prompt
     # 새 대화 뒤에는 새로 잰 값만 보인다.

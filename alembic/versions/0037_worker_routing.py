@@ -3,8 +3,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0036_worker_routing"
-down_revision = "0035_qwen_token_usage"
+revision = "0037_worker_routing"
+down_revision = "0036_system_resource_samples"
 branch_labels = None
 depends_on = None
 

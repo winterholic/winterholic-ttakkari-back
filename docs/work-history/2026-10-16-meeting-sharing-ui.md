@@ -13,3 +13,7 @@
 - 이 기록 작성 시점에는 운영 배포·재시작을 수행하지 않았다. frontend push/Vercel와 backend 외부 배포 예약은 최종 마감에 기록한다.
 
 최종 재검증: 독립 DB `ttk_share_ui_activation_20261016`에서 `pytest tests/test_public_sharing.py tests/test_meeting_exports.py tests/test_public_share_migration.py -q --tb=short` → **59 passed in 4.65s**. Ruff **All checks passed!**, diff check exit 0. frontend 최종 전체 **458 passed, 1 skipped**, tsc/build/변경 파일 ESLint 통과, front 구현 커밋 `dfbb22f`. 실제 브라우저에서 합성 TXT 다운로드 파일 생성도 확인했다.
+
+운영 반영 준비: front 전체 SHA `dfbb22fb6e6fa284849aaea8a9664ef3587476ce` main push 및 Vercel **success / Deployment has completed** 확인. 실제 `/share/<invalid-id>`는 로그인으로 보내지 않고 별도 공개 화면을 렌더하며, 잘못된 합성 key는 public API 404 한 건만 호출하고 owner refresh는 호출하지 않았다. `curl -A Mozilla/5.0`에서 공개 HTML HTTP 200와 no-store/no-referrer/noindex/CSP를 확인했다. Cloudflare가 삽입한 외부 analytics script는 의도한 script CSP로 차단된다.
+
+backend의 기존 알림 API 커밋 `28f5022`와 공유 변경 `20d7275`를 clean 기본 checkout에서 정상 merge(`b0a8ce3`)했다. 새 DB `ttk_share_ui_join_20261016`의 public share/export/migration/notifications 통합 검사는 **77 passed in 5.70s**, Ruff 및 diff check 통과. 외부 배포 도구에 clean 전체 SHA를 예약하며 수락과 활성화 완료를 구분한다.

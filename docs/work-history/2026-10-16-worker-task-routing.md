@@ -38,6 +38,13 @@
 - 코드 검사에만 필요한 임시 `.venv` 링크는 제거한다. 기존 canonical의 실제 `.venv` 및 다른 작업자의 파일은 그대로 둔다.
 - 이 검증 시점 운영은 여전히 ee70063이고, canonical에는 별도 Qwen 접수 수정이 staging되어 있다. 후속 통합과 배포 예약은 source/cleanliness를 다시 확인한 뒤 수행한다. 예약의 성공 상태는 독립 controller가 정한다.
 
+## 최종 main 변경 통합 (22:20 KST)
+
+- 이후 clean main의 Qwen 접수 수정 `ba5685ce789496982a157900253faf6b7c65338a`도 통합했다. 계약 파일과 head 기대값 두 곳만 0037 기준으로 병합했고 Qwen 접수 코드·테스트·ADR은 그 커밋과 `git diff`가 없다. 기존 GPU 이력·Qwen 변경을 버리거나 혼합 작성하지 않았다.
+- 통합 코드 `eb1ce8eb2c8c776ff28c38b749e6b98e23fef09e`에서 desk/Qwen/live opt-in/service, generation deployment, worker routing, orchestrator 검사 → **196 passed, 4 skipped (62.44s)**. `main-integration-regression.txt/xml` 보존. opt-in live provider 검사는 skipped이며 실제 공급자 검증으로 간주하지 않는다.
+- core Ruff·diff check·0037 단일 head를 다시 확인했다. 실행 코드 변경 없이 이 기록을 커밋한 뒤 clean main을 fast-forward/push하고, 사용자 최신 지시에 따라 독립 controller에 전체 SHA로 배포 예약한다. 초기 worker 지시의 '예약하지 말 것'은 이번 사용자의 명시적 예약 지시로 대체됐다.
+- 배포 예약 응답·ID·정확한 상태는 현재 Run outbox의 `deployment-response.json`, `verification.json` 및 완료 보고를 기준으로 본다. 이 문서 작성 시점에 예약 접수를 미리 성공으로 단정하지 않는다. 예약 후 소스가 달라져 배포가 취소되지 않도록 원본을 추가 수정하거나 대기 폴링하지 않는다.
+
 ## 앞선 작업의 이력 (현재 상태로 해석하지 않음)
 
 ### 초기 auto 라우팅 구현·배포 보류 기록

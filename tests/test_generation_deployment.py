@@ -34,11 +34,12 @@ def test_application_generation_contract_matches_its_migration_head():
     )
 
 
-def test_qwen_usage_migration_is_allowed_online_from_knowledge_ledger():
+def test_qwen_usage_and_resource_history_migrations_are_allowed_online():
     from ttakkari.generation_deployment import Releases
     source = Path(__file__).resolve().parents[1]
     contract = Releases.contract(source)
-    assert contract["schema_revision"] == "0035_qwen_token_usage"
+    assert contract["schema_revision"] == "0036_system_resource_samples"
+    assert "0035_qwen_token_usage" in contract["online_migration_from"]
     assert "0034_knowledge_ledger" in contract["online_migration_from"]
 
 

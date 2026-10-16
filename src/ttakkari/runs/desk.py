@@ -203,27 +203,62 @@ async def _prompt(db: AsyncSession, run: Run, sess: ChatSession, leads: list[Cha
     ])
 
 
+def _qwen_context(board: list[str], history: list[str], message: str, max_chars: int) -> tuple[list[str], list[str]]:
+    # CPU 접수의 짧은 제한 시간 안에 분류·검증을 마쳐야 한다. 문장 중간을 잘라 근거를 바꾸지 않는다.
+    budget = min(max_chars, 2000) - 64
+    def size(b: list[str], h: list[str]) -> int:
+        return len("\n".join(b)) + len("\n".join(h)) + len(message)
+    if size(board, history) <= budget:
+        return board, history
+    compact = []
+    for line in board:
+        core = line.split(" · 최근 결과: ", 1)[0]
+        compact.append(core if "상태:" in core else line)
+    if size(compact, []) > budget:
+        return board, history  # 작업판을 빈 것으로 바꾸거나 사용자 메시지를 잘라서 답하지 않는다.
+    recent: list[str] = []
+    for line in reversed(history):
+        if size(compact, [line, *recent]) > budget:
+            break
+        recent.insert(0, line)
+    for index, line in enumerate(board):
+        candidate = compact.copy()
+        candidate[index] = line
+        if size(candidate, recent) <= budget:
+            compact = candidate
+    return compact, recent
+
+
 async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[ChatSession]) -> Decision | None:
     """1순위 로컬 Qwen. 못 쓰면 None 을 돌려주고 호출한 쪽이 Luna/Haiku 경로로 넘어간다."""
-    if not desk_qwen.available():
-        return None
     s = get_settings()
+    if not desk_qwen.available():
+        if s.desk_qwen_enabled:
+            reason = "not_ready" if desk_qwen.endpoint() is None else "cooldown"
+            events.append(db, run, "desk.skip", {"account": "qwen-local", "engine": "qwen", "ms": 0,
+                                                   "warm": False, "reason": reason})
+        return None
     board, history = await _context(db, run, sess, leads)
+    original_chars = len("\n".join(board)) + len("\n".join(history)) + len(run.prompt)
+    board, history = _qwen_context(board, history, run.prompt, s.desk_qwen_max_prompt_chars)
+    context_chars = len("\n".join(board)) + len("\n".join(history)) + len(run.prompt)
     base_url = desk_qwen.endpoint()
     if base_url is None:
         return None  # 서버가 준비 전이거나 실패 중: 기다리지 않고 Luna/Haiku 로 간다
+    started = time.monotonic()
     try:
         with desk_qwen.measure_operational_run(run.id, base_url):
             q = await desk_qwen.decide(board, history, run.prompt, [str(lead.id) for lead in leads])
     except desk_qwen.QwenUnavailable as exc:
-        if exc.cooldown:
-            events.append(db, run, "desk.retry", {"account": "qwen-local", "engine": "qwen", "ms": 0, "warm": False,
-                                                   "reason": exc.reason[:300]})
+        events.append(db, run, "desk.retry" if exc.cooldown else "desk.skip", {"account": "qwen-local", "engine": "qwen",
+                                               "ms": int((time.monotonic() - started) * 1000), "warm": False,
+                                               "reason": exc.reason[:300], "context_chars": context_chars})
         return None
     run.engine, run.profile, run.model = "qwen", None, s.desk_qwen_model
     events.append(db, run, "desk.route", {"action": q.action, "account": "qwen-local", "engine": "qwen", "ms": q.ms, "warm": True,
                                            "qwen": {"kind": q.kind, "abstained": q.abstained, "grounded": q.grounded, "verified": q.verified,
-                                   "calls": q.calls, "prompt_version": q.prompt_version}})
+                                   "calls": q.calls, "prompt_version": q.prompt_version,
+                                   "context_chars": context_chars, "context_compacted": context_chars < original_chars}})
     return Decision(q.action, q.reply, q.lead_id)
 
 

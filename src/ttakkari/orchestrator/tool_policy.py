@@ -5,6 +5,7 @@ READ_ONLY_TOOLS = frozenset({
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
     "backend_deploy_status", "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
+    "luna_common30_v2_status",
 })
 
 # 2026-10-14 사용자 결정: PMS/WBS는 에이전트가 전체 관리하며 변경 시 승인을 다시 요구하지 않는다.
@@ -22,5 +23,6 @@ ASSISTANT_WRITE_TOOLS = frozenset({
     "create_memo", "update_memo", "delete_memo", "create_event", "update_event", "delete_event",
 })
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
+BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS
-                       | ASSISTANT_WRITE_TOOLS | WORKER_MANAGEMENT_TOOLS)
+                       | ASSISTANT_WRITE_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS)

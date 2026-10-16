@@ -171,6 +171,7 @@ payload 는 `{title, body, url, tag}`:
   - `RunOut.desk_feedback`: `{verdict, decided, expected, note, updated_at} | null`. `GET /api/sessions/{id}/runs`·`GET /api/runs/{id}` 에서만 채운다.
   - `GET /api/desk/feedback?limit=50` 최근 판정(수정순). `GET /api/desk/eval-set?format=json|jsonl&limit=` → `[{message, expected}]`(최근순).
   - 재생 평가: `uv run ttakkari desk-eval [--limit N] [--engine codex|claude]`. eval-set 을 지금 접수 지침·모델로 다시 분류해 정확도·오답·지연 중앙값을 출력한다. 계정 사용량을 쓴다.
+  - 고정 벤치 API/MCP: 개인 오케스트레이터만 `start_luna_common30_v2()`로 시작하고 `luna_common30_v2_status(job_id)`로 체크포인트·raw 행을 읽는다. 요청 본문·모델·프롬프트·경로는 받지 않는다. 고정 `common30-v2.jsonl` 30개 × 3회, 개인 Codex 프로필의 `gpt-6-luna/high`만 사용한다. `luna_common30_v2_cancel(job_id)`는 취소하고 부분 결과를 저장한다. 엔드포인트는 `POST /api/orchestrator/luna-common30-v2`, `GET|DELETE /api/orchestrator/luna-common30-v2/{job_id}`. 응답은 실제 모델 호출 완료 상태를 포함하며 result rows는 raw output을 담는다.
 - 비서 지침: `GET|PUT|DELETE /api/assistant/instructions?role=common|desk|lead|worker`(기본 `common`) → `{text, role, is_default}`. DELETE 는 기본값으로 되돌린다(기본값은 접수만 있다).
 - Run 이벤트(사용량 한도, ADR 0006 "한도 전환·대기"):
   - `account.limited` `{account, engine, reset_at|null, detail}` 한도 감지. 그 계정은 `reset_at`(모르면 `profile_cooldown_seconds` 뒤)까지 쉰다.

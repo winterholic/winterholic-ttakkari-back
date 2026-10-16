@@ -298,18 +298,22 @@ def _parse(text: str) -> Decision | None:
 
 # ---- 엔진 호출
 
-async def _ask(prof: profiles_mod.Profile, system: str, prompt: str) -> Attempt:
+async def _ask(prof: profiles_mod.Profile, system: str, prompt: str, *,
+               cfg_override: dict[str, str] | None = None, timeout_seconds: float | None = None,
+               use_warm: bool = True, output_schema: Path | None = None) -> Attempt:
     s = get_settings()
-    if s.desk_warm_pool:
+    if use_warm and s.desk_warm_pool and cfg_override is None:
         from ttakkari.runs import desk_pool
 
         warm = await desk_pool.ask(prof, system, prompt)
         if warm is not None:
             return warm
-    cfg = s.desk_models.get(prof.engine) or {}
+    cfg = cfg_override if cfg_override is not None else (s.desk_models.get(prof.engine) or {})
+    timeout = timeout_seconds or s.desk_timeout_seconds
     cwd = s.home / "desk"
     cwd.mkdir(parents=True, exist_ok=True, mode=0o700)
-    cmd = _codex_cmd(prof, cfg, system, prompt, cwd) if prof.engine == "codex" else _claude_cmd(cfg, system, prompt)
+    cmd = (_codex_cmd(prof, cfg, system, prompt, cwd, output_schema=output_schema)
+           if prof.engine == "codex" else _claude_cmd(cfg, system, prompt))
     start = time.monotonic()
     ms = lambda: int((time.monotonic() - start) * 1000)
     try:
@@ -319,10 +323,10 @@ async def _ask(prof: profiles_mod.Profile, system: str, prompt: str) -> Attempt:
     except FileNotFoundError:
         return Attempt(None, f"{prof.engine} 실행 파일을 찾을 수 없습니다.", ms())
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), s.desk_timeout_seconds)
+        out, err = await asyncio.wait_for(proc.communicate(), timeout)
     except TimeoutError:
         _kill(proc)
-        return Attempt(None, f"시간 초과({s.desk_timeout_seconds:g}초)", ms())
+        return Attempt(None, f"시간 초과({timeout:g}초)", ms())
     except asyncio.CancelledError:
         _kill(proc)
         raise
@@ -346,11 +350,19 @@ def _env(prof: profiles_mod.Profile) -> dict[str, str]:
     return env | prof.env()
 
 
-def _codex_cmd(prof: profiles_mod.Profile, cfg: dict[str, str], system: str, prompt: str, cwd: Path) -> list[str]:
+def _codex_cmd(prof: profiles_mod.Profile, cfg: dict[str, str], system: str, prompt: str, cwd: Path, *,
+               output_schema: Path | None = None) -> list[str]:
     s = get_settings()
     cmd = [s.codex_bin, "exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", "read-only",
            # 전역 hook(work-history 기록 강제 등)이 돌면 추가 턴이 붙어 4배 넘게 느려진다(2026-10-13 실측).
-           "--disable", "hooks",
+           "--disable", "hooks", "--disable", "shell_tool", "--disable", "unified_exec",
+           "--disable", "web_search_request", "--disable", "standalone_web_search",
+           "--disable", "request_permissions_tool", "--disable", "sleep_tool", "--disable", "view_image",
+           "--disable", "collab", "--disable", "multi_agent_v2", "--disable", "apps",
+           "--disable", "enable_mcp_apps", "--disable", "tool_suggest", "--disable", "plugins",
+           "--disable", "code_mode", "--disable", "deferred_executor", "--disable", "token_budget",
+           "--disable", "current_time_reminder", "--disable", "apply_patch_freeform",
+           "-c", 'approval_policy="never"', "-c", "tools.update_plan.enabled=false",
            "-c", f"developer_instructions={json.dumps(system)}"]
     for name in _codex_mcp_servers(prof):
         cmd += ["-c", f"mcp_servers.{name}.enabled=false"]
@@ -358,6 +370,8 @@ def _codex_cmd(prof: profiles_mod.Profile, cfg: dict[str, str], system: str, pro
         cmd += ["-m", cfg["model"]]
     if cfg.get("effort"):
         cmd += ["-c", f'model_reasoning_effort="{cfg["effort"]}"']
+    if output_schema is not None:
+        cmd += ["--output-schema", str(output_schema)]
     return [*cmd, "-C", str(cwd), "--", prompt]
 
 

@@ -1,0 +1,27 @@
+{
+  "n": 125,
+  "valid": 125,
+  "hard_n": 125,
+  "exact": 121,
+  "acceptable": 121,
+  "p50_ms": 1035.03,
+  "p95_ms": 3723.28,
+  "confusion": {
+    "abstain->abstain": 28,
+    "abstain->answer": 2,
+    "abstain->delegate": 1,
+    "answer->abstain": 1,
+    "answer->answer": 39,
+    "delegate->delegate": 54
+  },
+  "cfg": {
+    "name": "s5",
+    "mode": "staged",
+    "fewshot": 2,
+    "ground": true,
+    "overlap": false,
+    "social_rule": false,
+    "prompt_v": 2,
+    "vote": 1
+  }
+}

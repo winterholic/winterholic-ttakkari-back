@@ -1,0 +1,29 @@
+{
+  "n": 81,
+  "valid": 81,
+  "hard_n": 77,
+  "exact": 36,
+  "acceptable": 40,
+  "p50_ms": 2734.69,
+  "p95_ms": 8372.07,
+  "confusion": {
+    "abstain->abstain": 1,
+    "abstain->answer": 20,
+    "abstain->delegate": 3,
+    "answer->answer": 18,
+    "delegate->abstain": 1,
+    "delegate->answer": 17,
+    "delegate->delegate": 17,
+    "hold->abstain": 3,
+    "hold->answer": 1
+  },
+  "cfg": {
+    "name": "h0",
+    "mode": "baseline",
+    "fewshot": false,
+    "ground": false,
+    "overlap": false,
+    "social_rule": false,
+    "vote": 1
+  }
+}

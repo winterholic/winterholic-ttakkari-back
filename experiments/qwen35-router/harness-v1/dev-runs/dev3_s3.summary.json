@@ -1,0 +1,27 @@
+{
+  "n": 61,
+  "valid": 61,
+  "hard_n": 60,
+  "exact": 57,
+  "acceptable": 58,
+  "p50_ms": 966.68,
+  "p95_ms": 3256.32,
+  "confusion": {
+    "abstain->abstain": 10,
+    "abstain->answer": 2,
+    "answer->answer": 19,
+    "answer->delegate": 1,
+    "delegate->delegate": 28,
+    "hold->delegate": 1
+  },
+  "cfg": {
+    "name": "s3",
+    "mode": "staged",
+    "fewshot": 1,
+    "ground": true,
+    "overlap": false,
+    "social_rule": false,
+    "prompt_v": 1,
+    "vote": 1
+  }
+}

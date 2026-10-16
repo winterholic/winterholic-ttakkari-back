@@ -1,0 +1,42 @@
+{
+  "owner_id": "qwen-harness-8f84b3ed-94f5-43b8-b2d6-9d276e893e99",
+  "started_at_utc": "2026-10-16T07:32:04Z",
+  "parent_pid": 96714,
+  "argv": [
+    "/private/tmp/qwen35-router/llama/llama-b11655/llama-server",
+    "--model",
+    "/private/tmp/qwen35-router/model/Qwen3.5-4B-Q4_K_M.gguf",
+    "--device",
+    "none",
+    "--gpu-layers",
+    "0",
+    "--threads",
+    "6",
+    "--threads-batch",
+    "6",
+    "--ctx-size",
+    "4096",
+    "--parallel",
+    "1",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "18793",
+    "--jinja",
+    "--no-webui"
+  ],
+  "loadavg_at_start": [
+    5.744140625,
+    6.97509765625,
+    6.810546875
+  ],
+  "child_pid": 96716,
+  "ready_seconds": 2.2,
+  "cmd_exit": 0,
+  "loadavg_at_end": [
+    7.0517578125,
+    7.06591796875,
+    6.86328125
+  ],
+  "child_exit_code": 0
+}

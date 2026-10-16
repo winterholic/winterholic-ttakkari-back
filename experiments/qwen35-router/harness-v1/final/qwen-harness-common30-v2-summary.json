@@ -1,0 +1,81 @@
+{
+  "n": 90,
+  "unique_case_repeat": 90,
+  "valid": 90,
+  "errors": 0,
+  "hard_n": 87,
+  "exact": 84,
+  "acceptable": 87,
+  "exact_pct": 96.6,
+  "p50_ms": 957.15,
+  "p95_ms": 1911.34,
+  "mean_ms": 1331.2,
+  "confusion": {
+    "abstain->abstain": 15,
+    "abstain->answer": 3,
+    "answer->answer": 18,
+    "delegate->delegate": 51,
+    "hold->answer": 3
+  },
+  "misroute_by_type": {
+    "abstain->answer": 3
+  },
+  "per_round": {
+    "1": {
+      "exact": 28,
+      "hard_n": 29,
+      "acceptable": 29
+    },
+    "2": {
+      "exact": 28,
+      "hard_n": 29,
+      "acceptable": 29
+    },
+    "3": {
+      "exact": 28,
+      "hard_n": 29,
+      "acceptable": 29
+    }
+  },
+  "unstable_cases": {},
+  "tokens": {
+    "prompt_tokens_total": 205230,
+    "completion_tokens_total": 1605,
+    "cached_prompt_tokens_total": 194241,
+    "model_calls": 114
+  },
+  "fixed_input_sha256": {
+    "dataset": "37b607c9679bba193f18578256a33f8477a3f36cf30e05283ae3ce32ac95b2b0",
+    "base_system": "850eb694411d25fe0d51c3960fe778a63503a74c022becd8ef14701816b5c1bd",
+    "schema_file": "d451347a2f19835d61a27fb62667f2dd92164ff181a490481f70d7d2ff7d8e7d"
+  },
+  "response_schema_sha256_json_sorted": "a55497f115755d306227f5f71497138b3f04cbed37b03600c6457ffe2c75f1bf",
+  "harness_prompt_sha256": {
+    "kind_system": "d8326292d57c61eddf59caf5ca3ac7805de578c3e3780c59971772d4123b155c",
+    "kind_system_plus_fewshot": "0e5f40714ef72ef6ceb12203ab1aa78dcb0686ffe08dc27690ee7e0cacbaf51a",
+    "reply_system": "f3987845b414c20fe08ad407ad9ce3c8bc3bf4f1a92542b7edb670f479c53e90",
+    "harness_prompts_file": "377ba72460e1cccd059d5106c446fe2e7a1ed1eb4c0207420af54afaffbe5f2e"
+  },
+  "config": {
+    "name": "harness-v1",
+    "mode": "staged",
+    "fewshot": 2,
+    "ground": true,
+    "overlap": true,
+    "social_rule": false,
+    "prompt_v": 2,
+    "vote": 1
+  },
+  "loadavg_start": [
+    5.52392578125,
+    6.90869140625,
+    6.7880859375
+  ],
+  "loadavg_end": [
+    7.1435546875,
+    7.083984375,
+    6.86865234375
+  ],
+  "ready_seconds": 2.2,
+  "wall_seconds": 119.8
+}

@@ -1,0 +1,27 @@
+{
+  "n": 125,
+  "valid": 124,
+  "hard_n": 125,
+  "exact": 77,
+  "acceptable": 77,
+  "p50_ms": 2615.19,
+  "p95_ms": 6471.81,
+  "confusion": {
+    "abstain->answer": 29,
+    "abstain->delegate": 1,
+    "abstain->None": 1,
+    "answer->answer": 39,
+    "answer->delegate": 1,
+    "delegate->answer": 16,
+    "delegate->delegate": 38
+  },
+  "cfg": {
+    "name": "h0",
+    "mode": "baseline",
+    "fewshot": false,
+    "ground": false,
+    "overlap": false,
+    "social_rule": false,
+    "vote": 1
+  }
+}

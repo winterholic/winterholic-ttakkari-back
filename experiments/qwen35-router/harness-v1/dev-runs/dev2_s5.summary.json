@@ -1,0 +1,31 @@
+{
+  "n": 81,
+  "valid": 81,
+  "hard_n": 77,
+  "exact": 70,
+  "acceptable": 75,
+  "p50_ms": 983.5,
+  "p95_ms": 2852.62,
+  "confusion": {
+    "abstain->abstain": 21,
+    "abstain->answer": 2,
+    "abstain->delegate": 1,
+    "answer->abstain": 3,
+    "answer->answer": 14,
+    "answer->delegate": 1,
+    "delegate->delegate": 35,
+    "hold->abstain": 2,
+    "hold->answer": 1,
+    "hold->delegate": 1
+  },
+  "cfg": {
+    "name": "s5",
+    "mode": "staged",
+    "fewshot": 2,
+    "ground": true,
+    "overlap": false,
+    "social_rule": false,
+    "prompt_v": 2,
+    "vote": 1
+  }
+}

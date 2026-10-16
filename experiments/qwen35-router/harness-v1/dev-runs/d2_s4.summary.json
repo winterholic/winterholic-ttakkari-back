@@ -1,0 +1,29 @@
+{
+  "n": 81,
+  "valid": 81,
+  "hard_n": 77,
+  "exact": 69,
+  "acceptable": 74,
+  "p50_ms": 944.17,
+  "p95_ms": 3061.59,
+  "confusion": {
+    "abstain->abstain": 22,
+    "abstain->answer": 2,
+    "answer->abstain": 4,
+    "answer->answer": 13,
+    "answer->delegate": 1,
+    "delegate->answer": 1,
+    "delegate->delegate": 34,
+    "hold->abstain": 2,
+    "hold->delegate": 2
+  },
+  "cfg": {
+    "name": "s4",
+    "mode": "staged",
+    "fewshot": true,
+    "ground": true,
+    "overlap": true,
+    "social_rule": false,
+    "vote": 1
+  }
+}

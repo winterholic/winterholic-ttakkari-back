@@ -1,0 +1,26 @@
+{
+  "n": 61,
+  "valid": 61,
+  "hard_n": 60,
+  "exact": 57,
+  "acceptable": 58,
+  "p50_ms": 1023.34,
+  "p95_ms": 3407.92,
+  "confusion": {
+    "abstain->abstain": 12,
+    "answer->abstain": 3,
+    "answer->answer": 17,
+    "delegate->delegate": 28,
+    "hold->delegate": 1
+  },
+  "cfg": {
+    "name": "s7_nofs",
+    "mode": "staged",
+    "fewshot": 0,
+    "ground": true,
+    "overlap": true,
+    "social_rule": false,
+    "prompt_v": 2,
+    "vote": 1
+  }
+}

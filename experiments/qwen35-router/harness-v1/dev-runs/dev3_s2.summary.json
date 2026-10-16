@@ -1,0 +1,26 @@
+{
+  "n": 61,
+  "valid": 61,
+  "hard_n": 60,
+  "exact": 47,
+  "acceptable": 48,
+  "p50_ms": 1552.01,
+  "p95_ms": 3212.26,
+  "confusion": {
+    "abstain->answer": 12,
+    "answer->answer": 19,
+    "answer->delegate": 1,
+    "delegate->delegate": 28,
+    "hold->delegate": 1
+  },
+  "cfg": {
+    "name": "s2",
+    "mode": "staged",
+    "fewshot": 1,
+    "ground": false,
+    "overlap": false,
+    "social_rule": false,
+    "prompt_v": 1,
+    "vote": 1
+  }
+}

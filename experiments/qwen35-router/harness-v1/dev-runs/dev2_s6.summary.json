@@ -1,0 +1,31 @@
+{
+  "n": 81,
+  "valid": 81,
+  "hard_n": 77,
+  "exact": 70,
+  "acceptable": 75,
+  "p50_ms": 984.56,
+  "p95_ms": 2839.38,
+  "confusion": {
+    "abstain->abstain": 22,
+    "abstain->answer": 1,
+    "abstain->delegate": 1,
+    "answer->abstain": 4,
+    "answer->answer": 13,
+    "answer->delegate": 1,
+    "delegate->delegate": 35,
+    "hold->abstain": 2,
+    "hold->answer": 1,
+    "hold->delegate": 1
+  },
+  "cfg": {
+    "name": "s6",
+    "mode": "staged",
+    "fewshot": 2,
+    "ground": true,
+    "overlap": true,
+    "social_rule": false,
+    "prompt_v": 2,
+    "vote": 1
+  }
+}

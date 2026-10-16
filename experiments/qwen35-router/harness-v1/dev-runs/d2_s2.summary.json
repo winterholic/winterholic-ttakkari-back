@@ -1,0 +1,29 @@
+{
+  "n": 81,
+  "valid": 81,
+  "hard_n": 77,
+  "exact": 50,
+  "acceptable": 55,
+  "p50_ms": 1630.05,
+  "p95_ms": 3301.96,
+  "confusion": {
+    "abstain->answer": 24,
+    "answer->abstain": 1,
+    "answer->answer": 16,
+    "answer->delegate": 1,
+    "delegate->answer": 1,
+    "delegate->delegate": 34,
+    "hold->abstain": 1,
+    "hold->answer": 1,
+    "hold->delegate": 2
+  },
+  "cfg": {
+    "name": "s2",
+    "mode": "staged",
+    "fewshot": true,
+    "ground": false,
+    "overlap": false,
+    "social_rule": false,
+    "vote": 1
+  }
+}

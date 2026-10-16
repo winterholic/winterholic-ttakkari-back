@@ -1,0 +1,91 @@
+case_id,repeat,expected,allowed,action,valid,exact,acceptable,total_ms,kind,evidence,grounded,calls,prompt_tokens,completion_tokens,reply
+common30-01,1,answer,answer,answer,True,True,True,16186.78,social,,,2,2389,30,안녕하세요! 따까리에서 환영합니다.
+common30-02,1,answer,answer,answer,True,True,True,1742.52,social,,,2,2391,30,안녕하세요! 따까리에서 환영합니다.
+common30-03,1,answer,answer,answer,True,True,True,1679.51,social,,,2,2393,27,"네, 언제든지 도와드릴게요."
+common30-04,1,answer,answer,answer,True,True,True,1603.91,social,,,2,2395,23,감사합니다!
+common30-05,1,answer,answer,answer,True,True,True,2030.58,social,,,2,2393,43,"날씨 좋은데, 기분 좋으시네요!"
+common30-06,1,answer,answer,answer,True,True,True,1792.88,social,,,2,2397,25,ㅋㅋㅋ 웃기네요!
+common30-07,1,hold,answer|abstain,answer,True,,True,1911.34,board_overview,,,2,2397,32,안녕하세요! 따까리 접수 담당입니다.
+common30-08,1,abstain,abstain,abstain,True,True,True,999.9,status,없음,False,1,2242,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-09,1,abstain,abstain,abstain,True,True,True,933.31,status,없음,False,1,2236,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-10,1,abstain,abstain,abstain,True,True,True,971.19,status,없음,False,1,2239,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-11,1,abstain,abstain,answer,True,False,False,1817.88,board_overview,,,2,2403,29,아직도 일하는 중이야.
+common30-12,1,abstain,abstain,abstain,True,True,True,965.7,status,없음,False,1,2234,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-13,1,abstain,abstain,abstain,True,True,True,952.22,status,없음,False,1,2236,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-14,1,delegate,delegate,delegate,True,True,True,887.04,work,,,1,2236,13,기획 세션에 넘길게요.
+common30-15,1,delegate,delegate,delegate,True,True,True,919.42,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-16,1,delegate,delegate,delegate,True,True,True,922.22,work,,,1,2237,13,기획 세션에 넘길게요.
+common30-17,1,delegate,delegate,delegate,True,True,True,911.39,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-18,1,delegate,delegate,delegate,True,True,True,917.26,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-19,1,delegate,delegate,delegate,True,True,True,959.27,work,,,1,2244,13,기획 세션에 넘길게요.
+common30-20,1,delegate,delegate,delegate,True,True,True,950.45,work,,,1,2245,13,기획 세션에 넘길게요.
+common30-21,1,delegate,delegate,delegate,True,True,True,957.89,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-22,1,delegate,delegate,delegate,True,True,True,982.44,work,,,1,2240,13,기획 세션에 넘길게요.
+common30-23,1,delegate,delegate,delegate,True,True,True,901.04,work,,,1,2236,13,기획 세션에 넘길게요.
+common30-24,1,delegate,delegate,delegate,True,True,True,907.28,work,,,1,2234,13,기획 세션에 넘길게요.
+common30-25,1,delegate,delegate,delegate,True,True,True,963.21,work,,,1,2241,13,기획 세션에 넘길게요.
+common30-26,1,delegate,delegate,delegate,True,True,True,910.08,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-27,1,delegate,delegate,delegate,True,True,True,914.36,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-28,1,delegate,delegate,delegate,True,True,True,910.01,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-29,1,delegate,delegate,delegate,True,True,True,954.39,work,,,1,2243,13,기획 세션에 넘길게요.
+common30-30,1,delegate,delegate,delegate,True,True,True,934.55,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-01,2,answer,answer,answer,True,True,True,1754.8,social,,,2,2389,30,안녕하세요! 따까리에서 환영합니다.
+common30-02,2,answer,answer,answer,True,True,True,1783.36,social,,,2,2391,30,안녕하세요! 따까리에서 환영합니다.
+common30-03,2,answer,answer,answer,True,True,True,1736.24,social,,,2,2393,27,"네, 언제든지 도와드릴게요."
+common30-04,2,answer,answer,answer,True,True,True,1647.48,social,,,2,2395,23,감사합니다!
+common30-05,2,answer,answer,answer,True,True,True,2115.4,social,,,2,2393,43,"날씨 좋은데, 기분 좋으시네요!"
+common30-06,2,answer,answer,answer,True,True,True,1753.22,social,,,2,2397,25,ㅋㅋㅋ 웃기네요!
+common30-07,2,hold,answer|abstain,answer,True,,True,1889.53,board_overview,,,2,2397,32,안녕하세요! 따까리 접수 담당입니다.
+common30-08,2,abstain,abstain,abstain,True,True,True,1030.74,status,없음,False,1,2242,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-09,2,abstain,abstain,abstain,True,True,True,981.19,status,없음,False,1,2236,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-10,2,abstain,abstain,abstain,True,True,True,983.79,status,없음,False,1,2239,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-11,2,abstain,abstain,answer,True,False,False,1818.63,board_overview,,,2,2403,29,아직도 일하는 중이야.
+common30-12,2,abstain,abstain,abstain,True,True,True,955.94,status,없음,False,1,2234,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-13,2,abstain,abstain,abstain,True,True,True,939.56,status,없음,False,1,2236,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-14,2,delegate,delegate,delegate,True,True,True,886.88,work,,,1,2236,13,기획 세션에 넘길게요.
+common30-15,2,delegate,delegate,delegate,True,True,True,910.21,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-16,2,delegate,delegate,delegate,True,True,True,916.04,work,,,1,2237,13,기획 세션에 넘길게요.
+common30-17,2,delegate,delegate,delegate,True,True,True,923.96,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-18,2,delegate,delegate,delegate,True,True,True,913.76,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-19,2,delegate,delegate,delegate,True,True,True,951.52,work,,,1,2244,13,기획 세션에 넘길게요.
+common30-20,2,delegate,delegate,delegate,True,True,True,951.53,work,,,1,2245,13,기획 세션에 넘길게요.
+common30-21,2,delegate,delegate,delegate,True,True,True,916.76,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-22,2,delegate,delegate,delegate,True,True,True,931.74,work,,,1,2240,13,기획 세션에 넘길게요.
+common30-23,2,delegate,delegate,delegate,True,True,True,913.53,work,,,1,2236,13,기획 세션에 넘길게요.
+common30-24,2,delegate,delegate,delegate,True,True,True,903.91,work,,,1,2234,13,기획 세션에 넘길게요.
+common30-25,2,delegate,delegate,delegate,True,True,True,957.03,work,,,1,2241,13,기획 세션에 넘길게요.
+common30-26,2,delegate,delegate,delegate,True,True,True,920.05,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-27,2,delegate,delegate,delegate,True,True,True,957.15,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-28,2,delegate,delegate,delegate,True,True,True,965.3,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-29,2,delegate,delegate,delegate,True,True,True,1011.93,work,,,1,2243,13,기획 세션에 넘길게요.
+common30-30,2,delegate,delegate,delegate,True,True,True,933.96,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-01,3,answer,answer,answer,True,True,True,1817.59,social,,,2,2389,30,안녕하세요! 따까리에서 환영합니다.
+common30-02,3,answer,answer,answer,True,True,True,1793.88,social,,,2,2391,30,안녕하세요! 따까리에서 환영합니다.
+common30-03,3,answer,answer,answer,True,True,True,1711.3,social,,,2,2393,27,"네, 언제든지 도와드릴게요."
+common30-04,3,answer,answer,answer,True,True,True,1655.59,social,,,2,2395,23,감사합니다!
+common30-05,3,answer,answer,answer,True,True,True,2044.31,social,,,2,2393,43,"날씨 좋은데, 기분 좋으시네요!"
+common30-06,3,answer,answer,answer,True,True,True,1690.75,social,,,2,2397,25,ㅋㅋㅋ 웃기네요!
+common30-07,3,hold,answer|abstain,answer,True,,True,1846.4,board_overview,,,2,2397,32,안녕하세요! 따까리 접수 담당입니다.
+common30-08,3,abstain,abstain,abstain,True,True,True,992.61,status,없음,False,1,2242,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-09,3,abstain,abstain,abstain,True,True,True,942.03,status,없음,False,1,2236,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-10,3,abstain,abstain,abstain,True,True,True,967.18,status,없음,False,1,2239,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-11,3,abstain,abstain,answer,True,False,False,1799.72,board_overview,,,2,2403,29,아직도 일하는 중이야.
+common30-12,3,abstain,abstain,abstain,True,True,True,961.87,status,없음,False,1,2234,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-13,3,abstain,abstain,abstain,True,True,True,939.06,status,없음,False,1,2236,15,작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.
+common30-14,3,delegate,delegate,delegate,True,True,True,896.57,work,,,1,2236,13,기획 세션에 넘길게요.
+common30-15,3,delegate,delegate,delegate,True,True,True,911.6,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-16,3,delegate,delegate,delegate,True,True,True,919.23,work,,,1,2237,13,기획 세션에 넘길게요.
+common30-17,3,delegate,delegate,delegate,True,True,True,920.14,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-18,3,delegate,delegate,delegate,True,True,True,923.04,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-19,3,delegate,delegate,delegate,True,True,True,961.48,work,,,1,2244,13,기획 세션에 넘길게요.
+common30-20,3,delegate,delegate,delegate,True,True,True,996.88,work,,,1,2245,13,기획 세션에 넘길게요.
+common30-21,3,delegate,delegate,delegate,True,True,True,956.61,work,,,1,2238,13,기획 세션에 넘길게요.
+common30-22,3,delegate,delegate,delegate,True,True,True,950.21,work,,,1,2240,13,기획 세션에 넘길게요.
+common30-23,3,delegate,delegate,delegate,True,True,True,927.88,work,,,1,2236,13,기획 세션에 넘길게요.
+common30-24,3,delegate,delegate,delegate,True,True,True,969.61,work,,,1,2234,13,기획 세션에 넘길게요.
+common30-25,3,delegate,delegate,delegate,True,True,True,998.82,work,,,1,2241,13,기획 세션에 넘길게요.
+common30-26,3,delegate,delegate,delegate,True,True,True,900.04,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-27,3,delegate,delegate,delegate,True,True,True,959.37,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-28,3,delegate,delegate,delegate,True,True,True,921.55,work,,,1,2239,13,기획 세션에 넘길게요.
+common30-29,3,delegate,delegate,delegate,True,True,True,958.03,work,,,1,2243,13,기획 세션에 넘길게요.
+common30-30,3,delegate,delegate,delegate,True,True,True,930.34,work,,,1,2238,13,기획 세션에 넘길게요.

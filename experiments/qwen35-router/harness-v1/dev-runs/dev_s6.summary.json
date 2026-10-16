@@ -1,0 +1,26 @@
+{
+  "n": 125,
+  "valid": 125,
+  "hard_n": 125,
+  "exact": 123,
+  "acceptable": 123,
+  "p50_ms": 983.55,
+  "p95_ms": 3501.69,
+  "confusion": {
+    "abstain->abstain": 30,
+    "abstain->delegate": 1,
+    "answer->abstain": 1,
+    "answer->answer": 39,
+    "delegate->delegate": 54
+  },
+  "cfg": {
+    "name": "s6",
+    "mode": "staged",
+    "fewshot": 2,
+    "ground": true,
+    "overlap": true,
+    "social_rule": false,
+    "prompt_v": 2,
+    "vote": 1
+  }
+}

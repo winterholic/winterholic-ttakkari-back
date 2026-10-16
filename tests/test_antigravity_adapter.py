@@ -34,7 +34,7 @@ def test_launch_uses_explicit_conversation_id_and_no_global_continue(monkeypatch
     assert "--continue" not in argv
     assert "--output-format" in argv and "stream-json" in argv
     assert "--sandbox" in argv
-    assert "--dangerously-skip-permissions" not in argv
+    assert "--dangerously-skip-permissions" in argv
 
 
 def test_stream_parser_normalizes_session_text_tools_errors_and_usage():

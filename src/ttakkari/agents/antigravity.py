@@ -35,6 +35,7 @@ class AntigravityAdapter:
             "--print-timeout", f"{settings.run_timeout_seconds}s",
             "--log-file", str(log_file),
             "--mode", "accept-edits",
+            "--dangerously-skip-permissions",
             "--sandbox",
         ]
         if spec.engine_session_id:

@@ -21,7 +21,7 @@ Ttakkari는 유료 SDK 대신 사용자가 로그인한 공식 단일 `agy` CLI�
 
 - 실제 `stream-json` NDJSON의 `init`, `step_update`, `result`, 도구 입력/출력, 상태, token usage를 Ttakkari Run 이벤트로 정규화한다.
 - 재개 시 전역 최신 대화 옵션을 쓰지 않고 `--conversation <engine_session_id>`를 전달한다.
-- `--sandbox`와 `--mode accept-edits`를 사용하며 `--dangerously-skip-permissions`는 사용하지 않는다. timeout·취소에서 프로세스 그룹과 임시 파일을 정리한다.
+- `--sandbox`와 `--mode accept-edits`를 사용한다. 2026-10-16 사용자 요청에 따라 `--dangerously-skip-permissions`를 함께 전달해 무인 실행 중 도구 승인 요청을 자동 허용한다. OS sandbox·파일 접근 경계는 유지하며 이 옵션을 프로세스 종료 권한 오류의 해결책으로 간주하지 않는다. timeout·취소에서 프로세스 그룹과 임시 파일을 정리한다.
 - MCP 설정은 세션 전용 임시 프로젝트의 `.agents/mcp_config.json`에 0600으로 만들고 실행 시도 종료 시 제거한다. `init` 뒤에도 CLI가 설정을 읽고 MCP를 연결하므로 `init`에서는 삭제하지 않는다. 프로세스 종료 처리 중 오류가 나도 설정 정리는 수행하며, 종료 오류는 실패로 전파한다. 토큰은 이벤트·로그로 기록하지 않는다.
 
 ## 2026-10-16 MCP 설정 수명 수정

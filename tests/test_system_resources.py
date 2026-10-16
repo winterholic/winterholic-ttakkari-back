@@ -16,6 +16,13 @@ async def test_resources_shape(client, auth):
     assert r.status_code == 200, r.text
     body = r.json()
     cpu, mem = body["cpu"], body["memory"]
+    gpu = body["gpu"]
+    assert gpu["status"] in {"available", "unavailable", "unsupported"}
+    if gpu["status"] == "available":
+        assert gpu["reason"] is None and 0 <= gpu["percent"] <= 100
+    else:
+        assert gpu["percent"] is None and gpu["reason"]
+    assert gpu["cores"] is None or gpu["cores"] > 0
     assert 0 <= cpu["percent"] <= 100 and cpu["cores_logical"] >= 1
     assert len(cpu["per_core"]) == cpu["cores_logical"] and len(cpu["load_avg"]) == 3
     assert mem["total"] > 0 and 0 <= mem["used"] <= mem["total"] and mem["available"] > 0

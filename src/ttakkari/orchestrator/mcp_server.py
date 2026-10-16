@@ -361,6 +361,26 @@ async def account_usage() -> str:
     return await _call("GET", "/accounts/usage")
 
 
+@orchestrator_tool
+async def start_luna_common30_v2() -> str:
+    """Start the fixed 30-case × 3 repetition common30-v2 benchmark on the active generation's personal
+    Codex profile using gpt-6-luna/high. No prompt, model, command, corpus or output path can be supplied.
+    Returns a job_id; poll with luna_common30_v2_status. Stop with luna_common30_v2_cancel."""
+    return await _call("POST", "/luna-common30-v2")
+
+
+@orchestrator_tool
+async def luna_common30_v2_status(job_id: str, offset: int = 0, limit: int = 10) -> str:
+    """Read status, summary, and one checkpoint page of raw rows (at most 20) for the fixed Luna benchmark."""
+    return await _call("GET", f"/luna-common30-v2/{job_id}", params={"offset": offset, "limit": limit})
+
+
+@orchestrator_tool
+async def luna_common30_v2_cancel(job_id: str) -> str:
+    """Cancel a fixed Luna benchmark and persist its partial checkpoint."""
+    return await _call("DELETE", f"/luna-common30-v2/{job_id}")
+
+
 @query_tool
 async def list_pms_projects(query: str | None = None, scope: Literal["all", "personal", "work"] = "all") -> str:
     """List PMS projects and their status/progress. Agents manage PMS/WBS on the user's behalf.

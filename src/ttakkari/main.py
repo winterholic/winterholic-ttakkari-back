@@ -179,6 +179,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if lead_sweeper:
             lead_sweeper.cancel()
         await local_stt_jobs.stop()
+        from ttakkari.runs import luna_benchmark
+        await luna_benchmark.shutdown()
         await manager.shutdown()
         await desk_pool.shutdown()
         await preview.stop_worker()

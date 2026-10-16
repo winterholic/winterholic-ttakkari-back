@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
@@ -27,7 +27,7 @@ from ttakkari.models import (
 )
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
-from ttakkari.runs import context_usage
+from ttakkari.runs import context_usage, luna_benchmark
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
@@ -230,6 +230,38 @@ async def accounts_usage(sid: OrchestratorSession, db: Db) -> dict:
     """계정별 배정 판단 정보. 회사 업무 오케스트레이터는 회사 그룹 계정만 본다."""
     orch = await _orchestrator(db, sid)
     return await account_status(db, orch.pool)
+
+
+@router.post("/luna-common30-v2", status_code=status.HTTP_202_ACCEPTED)
+async def start_luna_benchmark(sid: OrchestratorSession, db: Db) -> dict:
+    orch = await _orchestrator(db, sid)
+    if orch.pool != "personal":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "개인 계정 벤치는 개인 오케스트레이터에서만 실행할 수 있습니다.")
+    try:
+        job = await luna_benchmark.start(str(sid), db)
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    return {"job_id": str(job.id), "status": job.status, "contract": luna_benchmark.contract()}
+
+
+@router.get("/luna-common30-v2/{job_id}")
+async def get_luna_benchmark(job_id: uuid.UUID, sid: OrchestratorSession, db: Db,
+                             offset: int = Query(0, ge=0), limit: int = Query(10, ge=1, le=20)) -> dict:
+    await _orchestrator(db, sid)
+    job = luna_benchmark.get_job(job_id, str(sid))
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "평가 작업을 찾을 수 없습니다.")
+    return job.view(offset, limit)
+
+
+@router.delete("/luna-common30-v2/{job_id}")
+async def cancel_luna_benchmark(job_id: uuid.UUID, sid: OrchestratorSession, db: Db) -> dict:
+    await _orchestrator(db, sid)
+    job = luna_benchmark.get_job(job_id, str(sid))
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "평가 작업을 찾을 수 없습니다.")
+    await luna_benchmark.cancel(job)
+    return job.view()
 
 
 @router.get("/pms/projects")

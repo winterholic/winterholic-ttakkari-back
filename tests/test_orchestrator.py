@@ -388,6 +388,7 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "list_pms_projects", "create_pms_task", "manage_pms"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
                 "my_context", "reset_my_context"}
+BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}
 
 
 def _mcp_tools(role: str) -> tuple[set[str], dict]:
@@ -409,7 +410,7 @@ def test_mcp_server_tools_by_role():
     agent, replies = _mcp_tools("agent")
     assert agent == AGENT_TOOLS and 3 in replies
     orch, _ = _mcp_tools("orchestrator")
-    assert orch == AGENT_TOOLS | WORKER_TOOLS
+    assert orch == AGENT_TOOLS | WORKER_TOOLS | BENCHMARK_TOOLS
 
 
 @pytest.mark.parametrize("role", ["agent", "orchestrator"])
@@ -451,7 +452,7 @@ def test_codex_auto_approves_all_delegated_ttakkari_tools(make_dir, engine_sessi
     assert approvals['mcp_servers.ttakkari.tools.request_backend_deploy.approval_mode'] == '"approve"'
     assert approvals['mcp_servers.ttakkari.tools.backend_deploy_status.approval_mode'] == '"approve"'
     assert not any(key.startswith("mcp_servers.other.") for key in approvals)
-    for name in AGENT_TOOLS | WORKER_TOOLS:
+    for name in AGENT_TOOLS | WORKER_TOOLS | BENCHMARK_TOOLS:
         assert approvals.get(f"mcp_servers.ttakkari.tools.{name}.approval_mode") == '"approve"', name
     assert "mcp_servers.ttakkari.tools.unknown_tool.approval_mode" not in approvals
     assert 'approval_policy="never"' in flags
@@ -461,7 +462,7 @@ def test_codex_auto_approves_all_delegated_ttakkari_tools(make_dir, engine_sessi
 def test_auto_approval_policy_covers_registered_tools():
     from ttakkari.orchestrator.tool_policy import AUTO_APPROVED_TOOLS
 
-    assert AUTO_APPROVED_TOOLS == AGENT_TOOLS | WORKER_TOOLS
+    assert AUTO_APPROVED_TOOLS == AGENT_TOOLS | WORKER_TOOLS | BENCHMARK_TOOLS
 
 
 async def test_worker_list_has_summary_for_tabs(client, auth, make_dir):

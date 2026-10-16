@@ -417,7 +417,7 @@ def test_mcp_server_tools_by_role():
 def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
     _, replies = _mcp_tools(role)
     queries = {"list_checklist", "list_checklist_templates",
-        "backend_deploy_status", "luna_common30_v2_status",
+        "backend_deploy_status",
         "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
         "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
         "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",

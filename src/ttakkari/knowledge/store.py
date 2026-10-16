@@ -11,7 +11,7 @@ import re
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, or_, select, text, update
+from sqlalchemy import case, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.context.search import lexical, scope_clause, terms
@@ -507,6 +507,8 @@ async def recall(
     at = as_of or utcnow()
     anchors = set(words)
     found, visited = [], set()
+    anchor_paths = {}
+    hop_count = min(max(hops, 1), 2)
     truncated = False
     active_ids = set(
         await db.scalars(
@@ -515,17 +517,28 @@ async def recall(
             .where(*visible(scope))
         )
     )
-    for _ in range(min(max(hops, 1), 2)):
+    for hop in range(hop_count):
         if not anchors:
             break
+        truncated |= len(anchors) > 60
         anchors = set(sorted(anchors)[:60])
-        predicate, relevance = lexical(
-            func.concat_ws(" ", A.subject, A.predicate, A.object),
-            " ".join(sorted(anchors)),
-            sorted(anchors),
-        )
+        subject_match = func.lower(A.subject).in_(anchors)
+        object_match = func.lower(A.object).in_(anchors)
+        if hop == 0:
+            predicate, relevance = lexical(
+                func.concat_ws(" ", A.subject, A.predicate, A.object), query, words
+            )
+            exact = or_(
+                func.lower(A.subject) == query.strip().casefold(),
+                func.lower(A.object) == query.strip().casefold(),
+            )
+            relevance = relevance + case((exact, 1.0), else_=0.0)
+        else:
+            # A shared substring is not an edge. Expansion follows complete endpoint labels.
+            predicate = or_(subject_match, object_match)
+            relevance = case((subject_match, 2.0), else_=1.0)
         # Filter by question and visibility BEFORE applying the bounded candidate budget.
-        query = (
+        statement = (
             select(A, relevance.label("relevance"))
             .join(AE, AE.assertion_id == A.id)
             .join(E, E.id == AE.evidence_id)
@@ -541,14 +554,19 @@ async def recall(
                 *visible(scope),
                 U.active_branch.is_(True),
                 predicate,
+                A.id.not_in(visited),
             )
             .distinct()
             .order_by(relevance.desc(), A.id)
             .limit(501)
         )
-        candidates = (await db.execute(query)).all()
+        candidates = (await db.execute(statement)).all()
         truncated |= len(candidates) > 500
         additions = set()
+        next_paths = {}
+        # First-hop hits cannot consume the entire explicitly requested two-hop budget.
+        hop_limit = max(1, k // 2) if hop_count == 2 and hop == 0 else k - len(found)
+        selected = 0
         for a, _score in candidates[:500]:
             if a.id in visited:
                 continue
@@ -560,12 +578,37 @@ async def recall(
                 and e["active_branch"] is True
             ]
             d.pop("history", None)
+            if hop:
+                matched = (
+                    a.subject.casefold()
+                    if a.subject.casefold() in anchors
+                    else a.object.casefold()
+                )
+                via = anchor_paths[matched]
+                d["retrieval"] = {
+                    "hop": hop + 1,
+                    "matched_entity": a.subject
+                    if a.subject.casefold() == matched
+                    else a.object,
+                    "path_assertion_ids": [*via, str(a.id)],
+                    "identity_match": "exact_endpoint_label",
+                }
+            else:
+                d["retrieval"] = {
+                    "hop": 1,
+                    "matched_query": query,
+                    "path_assertion_ids": [str(a.id)],
+                }
             found.append(d)
             visited.add(a.id)
             additions.update([a.subject.casefold(), a.object.casefold()])
-            if len(found) >= k:
+            for endpoint in (a.subject.casefold(), a.object.casefold()):
+                next_paths.setdefault(endpoint, d["retrieval"]["path_assertion_ids"])
+            selected += 1
+            if selected >= hop_limit or len(found) >= k:
                 break
         anchors = additions
+        anchor_paths = next_paths
         if len(found) >= k:
             break
     return {

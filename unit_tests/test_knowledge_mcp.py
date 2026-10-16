@@ -21,6 +21,8 @@ async def test_stdio_entrypoint_registers_knowledge_tools():
         result = await client.list_tools()
         names = {t.name for t in result.tools}
         assert {
+            "knowledge_extraction_status",
+            "knowledge_retry_extraction",
             "knowledge_recall",
             "knowledge_assertion",
             "knowledge_start_extraction",

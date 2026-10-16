@@ -15,11 +15,54 @@ from ttakkari.knowledge import store
 from ttakkari.knowledge_models import KnowledgeExtractionJob as J
 from ttakkari.knowledge_models import KnowledgeRevision as R
 from ttakkari.knowledge_models import KnowledgeUnit as U
-from ttakkari.models import CtxSource, utcnow
+from ttakkari.models import CtxSource, Run, utcnow
 
 MAX_UNITS = 100
 MAX_CHARS = 20_000
-DEFAULT_VERSION = "evidence-extraction-v1"
+DEFAULT_VERSION = "evidence-extraction-v2"
+MAX_RETRIES = 3
+RETRYABLE_REASONS = {
+    "model_output_invalid",
+    "transient_timeout",
+    "connection_reset",
+    "temporary_provider_error",
+}
+INSTRUCTIONS = (
+    "모든 입력에 처리결과와 처리 사유를 주세요. 발화자·시점·분기와 사실/제안/부정/추론을 구분하고 "
+    "기술·건강·가치관·정체성·진로를 도메인 때문에 제외하지 마세요. "
+    "관계는 정확한 원문 quote와 0-based end-exclusive start/end로만 제출하세요. "
+    "사용자 확정·기억 pinned 승격을 하지 마세요. 애매한 항목은 추론/질문 후보로 두세요. "
+    "unsupported/error에는 구체적인 reason을 남기고 동일한 접근 거부를 그대로 재시도하지 마세요."
+)
+
+
+async def execution_context(db, session_id=None):
+    if session_id is None:
+        return {
+            "actor": "user_or_operator",
+            "run_id": None,
+            "model": None,
+            "inference": "unreported",
+        }
+    run = await db.scalar(
+        select(Run)
+        .where(Run.session_id == session_id, Run.status == "running")
+        .order_by(Run.created_at.desc(), Run.id)
+        .limit(1)
+    )
+    return {
+        "actor": "agent",
+        "session_id": str(session_id),
+        "run_id": str(run.id) if run else None,
+        "engine": run.engine if run else None,
+        "model": run.model if run else None,
+        "effort": run.effort if run else None,
+        "profile": run.profile if run else None,
+        "cost_usd_observed": run.cost_usd if run else None,
+        "cost_scope": "entire_run_not_extraction",
+        "observation_scope": "server_run_record",
+        "observed_at": utcnow().isoformat(),
+    }
 
 
 def job_out(j: J) -> dict:
@@ -28,6 +71,10 @@ def job_out(j: J) -> dict:
         "revision_id": str(j.revision_id),
         "extractor_version": j.extractor_version,
         "status": j.status,
+        "run_id": str(j.run_id) if j.run_id else None,
+        "parent_job_id": j.manifest.get("parent_job_id"),
+        "root_job_id": j.manifest.get("root_job_id", str(j.id)),
+        "retry_attempt": j.manifest.get("retry_attempt", 0),
         "cursor": j.cursor,
         "counts": j.counts,
         "error": j.error,
@@ -56,6 +103,7 @@ async def start(
     extractor_version: str = DEFAULT_VERSION,
     *,
     scope: str = "all",
+    execution: dict | None = None,
 ):
     revision = await db.scalar(
         select(R)
@@ -83,7 +131,13 @@ async def start(
     job = J(
         revision_id=revision_id,
         extractor_version=extractor_version,
-        manifest={"unit_ids": ids},
+        run_id=uuid.UUID(execution["run_id"])
+        if execution and execution.get("run_id")
+        else None,
+        manifest={
+            "unit_ids": ids,
+            "initial_execution": execution or await execution_context(db),
+        },
         counts={
             "total": len(ids),
             "accounted": 0,
@@ -118,19 +172,31 @@ async def next_batch(
         "sensitivity": revision.sensitivity,
         "account_usage": "inference_owned_by_calling_agent",
         "prompt_version": DEFAULT_VERSION,
-        "instructions": "모든 입력에 처리결과를 주세요. 발화자·시점·분기와 사실/제안/부정/추론을 구분하고 "
-        "기술·건강·가치관·정체성·진로를 도메인 때문에 제외하지 마세요. "
-        "관계는 정확한 원문 quote와 0-based end-exclusive start/end로만 제출하세요. "
-        "사용자 확정·기억 pinned 승격을 하지 마세요. 애매한 항목은 추론/질문 후보로 두세요.",
+        "instructions": INSTRUCTIONS,
+        "prompt_sha256": store.digest(INSTRUCTIONS),
     }
 
 
 async def submit(
-    db, jid: uuid.UUID, expected_cursor: int, results: list[dict], *, scope: str = "all"
+    db,
+    jid: uuid.UUID,
+    expected_cursor: int,
+    results: list[dict],
+    *,
+    scope: str = "all",
+    execution: dict | None = None,
 ):
     job = await get_job(db, jid, scope, lock=True)
     fingerprint = store.digest(
-        json.dumps(results, ensure_ascii=False, sort_keys=True, default=str)
+        json.dumps(
+            [
+                {k: v for k, v in r.items() if k != "reason" or v is not None}
+                for r in results
+            ],
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
     )
     if job.cursor != expected_cursor:
         if (
@@ -158,6 +224,11 @@ async def submit(
             db, uuid.UUID(str(result["unit_id"])), scope
         )
         chars += len(unit.body)
+        if (
+            result["outcome"] in ("error", "unsupported")
+            and not (result.get("reason") or "").strip()
+        ):
+            raise store.KnowledgeError("failure_disposition_requires_reason")
         if result["outcome"] == "candidates" and not result["claims"]:
             raise store.KnowledgeError("candidate_disposition_requires_claim")
         if result["outcome"] != "candidates" and result["claims"]:
@@ -178,12 +249,25 @@ async def submit(
         **job.manifest,
         "last_cursor": expected_cursor,
         "last_sha256": fingerprint,
+        "batches": [
+            *job.manifest.get("batches", []),
+            {
+                "cursor": expected_cursor,
+                "end_cursor": job.cursor,
+                "input_sha256": fingerprint,
+                "prompt_version": DEFAULT_VERSION,
+                "prompt_sha256": store.digest(INSTRUCTIONS),
+                "execution": execution or await execution_context(db),
+                "recorded_at": utcnow().isoformat(),
+            },
+        ],
         "dispositions": {
             **job.manifest.get("dispositions", {}),
             **{
                 str(r["unit_id"]): {
                     "outcome": r["outcome"],
                     "claim_count": len(r["claims"]),
+                    "reason": r.get("reason"),
                 }
                 for r in results
             },
@@ -198,3 +282,74 @@ async def submit(
     job.updated_at = utcnow()
     await db.flush()
     return job
+
+
+async def details(db, jid, scope="all"):
+    job = await get_job(db, jid, scope)
+    return {
+        **job_out(job),
+        "dispositions": job.manifest.get("dispositions", {}),
+        "batches": job.manifest.get("batches", []),
+        "initial_execution": job.manifest.get("initial_execution"),
+    }
+
+
+async def retry_failed(db, jid, *, scope="all", execution=None):
+    parent = await get_job(db, jid, scope, lock=True)
+    if parent.status != "partial" or parent.cursor != parent.counts["total"]:
+        raise store.KnowledgeError("retry_requires_finished_partial_job", 409)
+    attempt = parent.manifest.get("retry_attempt", 0) + 1
+    if attempt > MAX_RETRIES:
+        raise store.KnowledgeError("extraction_retry_budget_exceeded", 409)
+    ids = [
+        uid
+        for uid in parent.manifest["unit_ids"]
+        if parent.manifest.get("dispositions", {}).get(uid, {}).get("outcome")
+        == "error"
+        and (parent.manifest.get("dispositions", {}).get(uid, {}).get("reason") or "")
+        .split(":", 1)[0]
+        .strip()
+        .lower()
+        in RETRYABLE_REASONS
+    ]
+    if not ids:
+        raise store.KnowledgeError("no_retryable_units", 409)
+    # A repeat request names the same child; a further attempt must name that child's id.
+    version = (
+        "retry-" + store.digest(str(parent.id) + ":" + parent.extractor_version)[:40]
+    )
+    existing = await db.scalar(
+        select(J).where(
+            J.revision_id == parent.revision_id, J.extractor_version == version
+        )
+    )
+    if existing:
+        return existing
+    j = J(
+        revision_id=parent.revision_id,
+        extractor_version=version,
+        run_id=uuid.UUID(execution["run_id"])
+        if execution and execution.get("run_id")
+        else None,
+        manifest={
+            "unit_ids": ids,
+            "parent_job_id": str(parent.id),
+            "root_job_id": parent.manifest.get("root_job_id", str(parent.id)),
+            "base_extractor_version": parent.manifest.get(
+                "base_extractor_version", parent.extractor_version
+            ),
+            "retry_attempt": attempt,
+            "initial_execution": execution or await execution_context(db),
+        },
+        counts={
+            "total": len(ids),
+            "accounted": 0,
+            "candidates": 0,
+            "no_claim": 0,
+            "unsupported": 0,
+            "errors": 0,
+        },
+    )
+    db.add(j)
+    await db.flush()
+    return j

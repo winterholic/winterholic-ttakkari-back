@@ -285,7 +285,7 @@ async def status(_: User, db: Db, request: Request, scope: Scope = "all") -> dic
 class ExtractionIn(Strict):
     revision_id: uuid.UUID
     extractor_version: str = Field(
-        default="evidence-extraction-v1", min_length=1, max_length=100
+        default="evidence-extraction-v2", min_length=1, max_length=100
     )
 
 
@@ -308,6 +308,7 @@ class ExtractionResultIn(Strict):
     unit_id: uuid.UUID
     outcome: Literal["candidates", "no_claim", "unsupported", "error"]
     claims: list[ClaimIn] = Field(default_factory=list, max_length=30)
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class ExtractionBatchIn(Strict):
@@ -437,7 +438,10 @@ async def agent_start_extraction(body: ExtractionIn, sid: AgentSession, db: Db) 
 
     async with transaction(db):
         job = await extraction.start(
-            db, scope=await agent_scope(sid, db), **body.model_dump()
+            db,
+            scope=await agent_scope(sid, db),
+            execution=await extraction.execution_context(db, sid),
+            **body.model_dump(),
         )
         result = extraction.job_out(job)
     return result
@@ -463,7 +467,11 @@ async def agent_submit_extraction(
 
     async with transaction(db):
         job = await extraction.submit(
-            db, jid, scope=await agent_scope(sid, db), **body.model_dump()
+            db,
+            jid,
+            scope=await agent_scope(sid, db),
+            execution=await extraction.execution_context(db, sid),
+            **body.model_dump(),
         )
         result = extraction.job_out(job)
     return result
@@ -493,3 +501,44 @@ async def agent_revisions(
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/extractions/{jid}")
+async def extraction_details(
+    jid: uuid.UUID, _: User, db: Db, scope: Scope = "all"
+) -> dict:
+    from ttakkari.knowledge import extraction
+
+    async with transaction(db):
+        return await extraction.details(db, jid, scope)
+
+
+@router.post("/extractions/{jid}/retry", status_code=201)
+async def retry_extraction(jid: uuid.UUID, body: Strict, _: User, db: Db) -> dict:
+    from ttakkari.knowledge import extraction
+
+    async with transaction(db):
+        return extraction.job_out(await extraction.retry_failed(db, jid))
+
+
+@agent_router.get("/extractions/{jid}")
+async def agent_extraction_details(jid: uuid.UUID, sid: AgentSession, db: Db) -> dict:
+    from ttakkari.knowledge import extraction
+
+    async with transaction(db):
+        return await extraction.details(db, jid, await agent_scope(sid, db))
+
+
+@agent_router.post("/extractions/{jid}/retry", status_code=201)
+async def agent_retry_extraction(jid: uuid.UUID, sid: AgentSession, db: Db) -> dict:
+    from ttakkari.knowledge import extraction
+
+    async with transaction(db):
+        return extraction.job_out(
+            await extraction.retry_failed(
+                db,
+                jid,
+                scope=await agent_scope(sid, db),
+                execution=await extraction.execution_context(db, sid),
+            )
+        )

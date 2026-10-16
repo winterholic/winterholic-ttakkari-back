@@ -530,7 +530,7 @@ async def knowledge_assertion(assertion_id: str) -> str:
 
 
 @server.tool()
-async def knowledge_start_extraction(revision_id: str, extractor_version: str = 'evidence-extraction-v1') -> str:
+async def knowledge_start_extraction(revision_id: str, extractor_version: str = 'evidence-extraction-v2') -> str:
     """Start or resume evidence-based candidate extraction for an imported revision. No extra model is
     launched: use the current model, inspect account_usage and respect scope and batch budgets.
     Every unit requires a disposition; nontechnical personal context must not be discarded by domain."""
@@ -546,7 +546,7 @@ async def knowledge_next_batch(job_id: str, limit: int = 20) -> str:
 
 @server.tool()
 async def knowledge_submit_batch(job_id: str, expected_cursor: int, results: list[dict[str, Any]]) -> str:
-    """Submit an ordered result for every processed unit: {unit_id,outcome,claims}. Outcome is
+    """Submit an ordered result for every processed unit: {unit_id,outcome,claims,reason}. Outcome is
     candidates/no_claim/unsupported/error. Claims contain subject,predicate,object,quote,start,end,
     optional modality/polarity/valid_from/valid_to. Exact 0-based end-exclusive quotes are required.
     Missing units, forged confirmations and stale cursors are rejected; replay is idempotent."""
@@ -569,6 +569,21 @@ async def knowledge_sources(limit: int = 30, offset: int = 0) -> str:
     """List current imported immutable source revisions within this session's scope, for provenance
     or explicitly requested batch extraction. Does not assert whole-export coverage or review completion."""
     return await _agent('GET', '/knowledge/revisions', limit=limit, offset=offset)
+
+
+@query_tool
+async def knowledge_extraction_status(job_id: str) -> str:
+    """Inspect extraction dispositions, failure reasons, retry lineage and server-observed Run/model
+    receipts. Run costs cover the entire Run; do not report them as per-extraction costs."""
+    return await _agent('GET', f'/knowledge/extractions/{job_id}')
+
+
+@server.tool()
+async def knowledge_retry_extraction(job_id: str) -> str:
+    """Create/resume a child job for retryable errors only, max three attempts. Supported reason
+    codes: model_output_invalid, transient_timeout, connection_reset, temporary_provider_error.
+    Permission/quota failures, unsupported inputs and successful units are not retried. Parent history stays."""
+    return await _agent('POST', f'/knowledge/extractions/{job_id}/retry', {})
 
 
 if __name__ == "__main__":

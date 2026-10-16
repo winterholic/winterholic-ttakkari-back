@@ -5,7 +5,7 @@ READ_ONLY_TOOLS = frozenset({
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
     "backend_deploy_status", "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
-    "luna_common30_v2_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
+    "luna_common30_v2_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
 })
 
 # 2026-10-14 사용자 결정: PMS/WBS는 에이전트가 전체 관리하며 변경 시 승인을 다시 요구하지 않는다.
@@ -19,7 +19,7 @@ CHECKLIST_TOOLS = frozenset({"create_checklist_item", "update_checklist_item", "
 # 사용자 지시에 따른 자체 앱 관리는 무인 실행에서 승인 프롬프트를 만들지 않는다.
 # 실제 권한은 API의 세션 토큰·역할·범위 검사로 제한한다. 쓰기를 readOnlyHint로 위장하지 않는다.
 ASSISTANT_WRITE_TOOLS = frozenset({
-    "knowledge_start_extraction", "knowledge_submit_batch", "knowledge_review_assertion",
+    "knowledge_retry_extraction", "knowledge_start_extraction", "knowledge_submit_batch", "knowledge_review_assertion",
     "remember", "describe_entity", "link", "forget", "share_file", "set_artifact_area", "notify_user",
     "create_memo", "update_memo", "delete_memo", "create_event", "update_event", "delete_event",
 })

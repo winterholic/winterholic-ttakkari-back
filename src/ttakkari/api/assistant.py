@@ -42,6 +42,8 @@ EType = Literal["person", "project", "org", "place", "tool", "topic", "preferenc
 
 # 비서 관리 > 도구 탭에 보이는 목록. 실제 등록은 orchestrator/mcp_server.py 가 한다.
 TOOLS: list[dict[str, str]] = [
+    {"name": "knowledge_extraction_status", "group": "맥락", "who": "모든 실행", "desc": "추출 실행 기록·실패 사유·재처리 계보"},
+    {"name": "knowledge_retry_extraction", "group": "맥락", "who": "모든 실행", "desc": "재처리 가능한 실패만 최대3회 재개"},
     {"name": "knowledge_sources", "group": "맥락", "who": "모든 실행", "desc": "범위 내 원문 버전 목록"},
     {"name": "knowledge_recall", "group": "맥락", "who": "모든 실행", "desc": "원문 근거·시점·상태를 가진 지식과 관계 검색"},
     {"name": "knowledge_assertion", "group": "맥락", "who": "모든 실행", "desc": "관계의 근거와 정정 이력 조회"},

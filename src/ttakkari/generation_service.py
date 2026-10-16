@@ -172,6 +172,9 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:
         jobs.append(("usage", Collector().tick, TICK_SECONDS))
+    if s.resource_sample_seconds > 0:
+        from ttakkari.resource_history import collect_once
+        jobs.append(("resource-history", collect_once, s.resource_sample_seconds))
     if s.lead_archive_scan_seconds > 0:
         jobs.append(("archive", lead_archive.archive_idle_leads, s.lead_archive_scan_seconds))
     return jobs

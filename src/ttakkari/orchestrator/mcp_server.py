@@ -301,7 +301,7 @@ async def request_backend_deploy(revision: str) -> str:
     then applies the configured strategy. With generations enabled, reserve verified personal Ttakkari changes
     proactively under the user's standing authorization unless they defer deployment. Active Runs, including
     the requester, do not block cutover: a ready candidate takes new requests while old engines drain. A full
-    pair of slots queues later deployments automatically. Legacy idle and initial bootstrap wait for all Runs.
+    set of three slots queues later deployments automatically. Legacy idle and initial bootstrap wait for all Runs.
     Do not keep a Run alive just to poll. Acceptance is not deployment success; draining means new requests
     already switched. No shell restart, lock-file writes or service permissions needed."""
     return await _agent("POST", "/deploy", {"revision": revision})

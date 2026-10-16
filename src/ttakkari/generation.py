@@ -37,6 +37,7 @@ from ttakkari.models import (
 
 log = logging.getLogger(__name__)
 PROTOCOL = 1
+PORTS = (8791, 8792, 8793)
 CHANNEL = "ttakkari_runtime"
 
 
@@ -122,12 +123,14 @@ class GenerationRuntime:
                 for row in rows:
                     probe = _lock(self.home / "runtime" / f"{row.id}.lock")
                     if probe is None:
+                        if row.api_url == self.api_url:
+                            raise RuntimeError("generation origin already has a live owner")
                         live += 1
                     else:
                         probe.close()
                         row.state = "offline"
-                if live >= 2:
-                    raise RuntimeError("two live generations already exist")
+                if live >= len(PORTS):
+                    raise RuntimeError(f"{len(PORTS)} live generations already exist")
                 db.add(RuntimeGeneration(id=self.id, revision=self.revision, api_url=self.api_url,
                     pid=os.getpid(), process_started_at=psutil.Process().create_time(), state="active" if resume_slot else "standby"))
                 if resume_slot:

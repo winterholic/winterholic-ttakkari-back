@@ -4,7 +4,7 @@
 
 ## 동작
 
-기존 앱을 두 슬롯(127.0.0.1:8791/8792) 사이에서 교체한다. Caddy는 고정 주소 127.0.0.1:8787을 받고, 전용 관리 주소는 다른 Caddy 인스턴스와 분리한 127.0.0.1:20191이다. cloudflared와 에이전트 MCP의 기존 진입점은 유지한다.
+기존 앱을 세 슬롯(127.0.0.1:8791/8792/8793) 사이에서 교체한다. Caddy는 고정 주소 127.0.0.1:8787을 받고, 전용 관리 주소는 다른 Caddy 인스턴스와 분리한 127.0.0.1:20191이다. cloudflared와 에이전트 MCP의 기존 진입점은 유지한다.
 
 - 기본 설정은 `runtime_generation=false`, `deploy_strategy=idle`이다. 이 운영 저장소에는 사용자가 승인한 `deploy/generation-bootstrap.json`이 있으므로, 해당 커밋의 기존 idle 배포 성공 뒤 최초 전환이 자동으로 이어진다. 승인 파일이 없는 설치는 기존 동작을 유지한다.
 - generation 앱은 매 기동마다 UUID를 등록하고 standby로 시작한다. standby는 Run 복구·STT 재등록·예열·색인을 수행하지 않는다.
@@ -23,7 +23,7 @@
 |---|---|
 | `generation.py` | 세대 등록·CAS·claim·fencing·전역 계정 예약·제어 명령·LISTEN·OS 작업 잠금 |
 | `generation_service.py` | standby/active/draining 수명, 명령 소비, 주기 작업, readiness·유한 HTTP/후처리 집계 |
-| `generation_deployment.py` | 커밋 archive·전용 venv/Node 런타임·격리 DB 검사·두 슬롯 launchd·Caddy 전환·rollback·재조정 |
+| `generation_deployment.py` | 커밋 archive·전용 venv/Node 런타임·격리 DB 검사·세 슬롯 launchd·Caddy 전환·rollback·재조정 |
 | `deployment.py` | 기존 외부 예약/감독 유지, 예약 claim·병합, strategy에 따른 처리 분기 |
 | `0030_runtime_generations.py` | 기존 Run 상태값을 유지하는 additive 소유권·명령 테이블과 요청 멱등 키 |
 | `deploy/generation-contract.json` | 앱/명령 protocol, 목표 schema, 명시적으로 허용한 online migration 출발점 |
@@ -46,6 +46,25 @@
 `deploy/install-services.sh all`은 기존 idle 설치용이다. generation 구성에서 이를 다시 실행하면 8787 점유가 충돌하므로 사용하지 않는다. 슬롯 plists는 로그인 시 자동 로드되는 LaunchAgents 폴더에 두지 않고 `<deploy>/services`에 둔다. 슬롯은 KeepAlive를 사용하지만, 배출 완료 때 `bootout`하므로 retired 슬롯이 자동으로 살아나지 않는다.
 
 외부 감독은 각 조회 때 DB의 active 슬롯과 전용 프록시를 대조한다. 감독/로그인 세션이 다시 기동되면 active 릴리스만 복원한다. 이미 정상인 슬롯은 재시작하지 않으며, 메모리 설정과 저장된 proxy.json이 모두 맞으면 Caddy reload도 생략한다. draining/retired 슬롯과 이전 Run lease는 자동 복원·이전하지 않는다.
+
+### 3슬롯과 연속 배포
+
+`generation.PORTS`를 슬롯 수와 실행 세대 상한의 공통 기준으로 사용한다. 신규 접수 담당은 항상 한 세대이며, 나머지 최대 두 세대는 기존 작업을 마무리한다. 세대 수가 늘어도 Run lane/세션/계정 제한은 DB 전체에 걸쳐 유지한다. 동일 origin의 살아 있는 세대를 중복 등록하거나 네 번째 세대를 등록하는 것은 거절한다.
+
+감독은 매 주기마다 이전 배포의 `draining`/`retiring` 정리를 진행하고, 별도로 전환 전 예약 한 건을 처리한다. 빈 슬롯이 없으면 `waiting_slot`로 남긴다. 오래된 배포를 정리할 때는 해당 `previous_generation` UUID만 확인하고, 이미 다음 배포로 넘어간 candidate를 다시 활성화하거나 프록시를 되돌리지 않는다. `current`/`previous`는 공개·로컬 전환 확인 때 기록하므로 늦게 끝난 이전 배포가 최신 기록을 덮어쓰지 않는다. 소유권 불명·rollback·recovery 상태에서는 후속 전환을 막는다.
+
+### 고정된 배포 감독 갱신
+
+앱 배포만으로 `supervisor.json`의 고정 tools 버전은 바뀌지 않는다. 구버전 감독은 여전히 2슬롯과 순차 배출을 사용한다. 먼저 새 앱 SHA를 기존 `request_backend_deploy`로 배포한 뒤 **따까리 Run 밖의 호스트 터미널**에서 아래 명령을 한 번 실행한다. 실행 중인 앱 세대·Run·프록시는 재시작하지 않는다.
+
+```sh
+cd ~/.ttakkari/deploy/releases/<새 SHA>
+.venv/bin/python -m ttakkari.deployment upgrade-supervisor --revision <새 SHA>
+```
+
+이 명령은 Run 환경에서는 거절한다. 테스트를 생략하지 않은 `draining`/`succeeded` 배포 기록, immutable 릴리스, 현재 active UUID와 readiness, 로컬·공개 버전 일치를 확인하고 배포 상태 변경 잠금 아래 감독 plist와 `supervisor.json`만 갱신한다. 이후 외부 `launchctl`로 감독만 다시 기동한다. 기존 launchd가 예전 plist를 메모리에 갖고 있어도 구 진입점이 새 marker를 읽어 새 릴리스로 exec한다. 동시 배포 작업이 잠금을 쓰고 있으면 변경 없이 거절한다.
+
+명령의 `requested`는 실행 접수다. 새 감독이 실제 기동해 `controller.lock`을 획득하면 `supervisor-runtime.json`에 자신의 SHA·실행 경로·PID·8791/8792/8793 포트를 기록한다. 이 파일과 실제 세 번째 슬롯 전환까지 확인하기 전에는 운영 3슬롯 검증 완료로 보고하지 않는다. 이 최초 감독 교체는 Run 안에서 수행하지 않으며, 파일 덮어쓰기나 서비스 제어로 해당 제약을 우회하지 않는다.
 
 ## 최초 전환: 기존 안전 배포 이후 외부 설치 작업 1회
 

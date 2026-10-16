@@ -25,11 +25,10 @@ from sqlalchemy.engine import make_url
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.generation import PROTOCOL, _lock, activate
+from ttakkari.generation import PORTS, PROTOCOL, _lock, activate
 from ttakkari.models import RuntimeControl, RuntimeGeneration, RuntimeLease
 
 log = logging.getLogger(__name__)
-PORTS = (8791, 8792)
 
 
 def test_environment(revision: str, test_url: str) -> dict:
@@ -295,7 +294,7 @@ class GenerationController:
         if generation_id is None:
             return  # The first transition from legacy mode requires an idle bootstrap.
         info = await self.generation_info(generation_id)
-        slot = next((i for i in (0, 1) if self.slots.origin(i) == info["api_url"]), None)
+        slot = next((i for i in range(len(PORTS)) if self.slots.origin(i) == info["api_url"]), None)
         if slot is None:
             raise RuntimeError("active generation has an unmanaged origin")
         ready = await self.slots.snapshot(slot)
@@ -370,6 +369,9 @@ class GenerationController:
             return
         old_id = uuid.UUID(old["generation"])
         active = await self.active()
+        if active not in {old_id, uuid.UUID(job["candidate_generation"])}:
+            self.phase(job, "recovery_pending", error="newer generation is active; refusing stale rollback")
+            return
         if active != old_id:
             await self.activate(old_id, expected=active)
         await self.slots.switch(old_slot)
@@ -379,36 +381,58 @@ class GenerationController:
             await self.slots.stop(new_slot)
             self.phase(job, "failed")
 
-    def succeed(self, job):
+    def record_active(self, job):
         for name, value in (("previous", job["previous_revision"]), ("current", job["revision"])):
             path = self.store.root / name
             temp = path.with_suffix(".tmp")
             temp.write_text(value + "\n")
             temp.replace(path)
+
+    def succeed(self, job):
         self.phase(job, "succeeded", retired_generation=job["previous_generation"], error=None)
+
+    async def retire(self, job):
+        """Finish an older deployment without touching its now superseded candidate."""
+        previous = await self.slots.snapshot(job["previous_slot"])
+        if previous is None:
+            if job["status"] == "retiring" and await self.slots.retired(
+                    job["previous_slot"], job["previous_generation"]):
+                if await self.active() == uuid.UUID(job["candidate_generation"]):
+                    await self.slots.verify(job["revision"])
+                self.succeed(job)
+                return
+            raise RuntimeError("draining generation unreachable; work survival is unknown")
+        if previous["generation"] != job["previous_generation"]:
+            raise RuntimeError("draining slot identity changed; refusing to stop its new owner")
+        if await self.active() == uuid.UUID(previous["generation"]):
+            raise RuntimeError("previous generation is active; refusing retirement")
+        if previous.get("drain_ready"):
+            self.phase(job, "retiring")
+            await self.slots.stop(job["previous_slot"])
+            self.succeed(job)
 
     async def process(self, job):
         if job["status"] == "recovery_pending":
             return
+        if job["status"] in {"draining", "retiring"}:
+            try:
+                await self.retire(job)
+            except Exception as exc:
+                log.exception("generation retirement needs recovery: %s", job["id"])
+                self.phase(job, "recovery_pending", error=str(exc))
+            return
         try:
-            if job["status"] == "retiring" and await self.slots.snapshot(job["previous_slot"]) is None:
-                if await self.slots.retired(job["previous_slot"], job["previous_generation"]):
-                    await self.slots.verify(job["revision"])
-                    self.succeed(job)
-                    return
-                self.phase(job, "recovery_pending", error="retirement is not confirmed")
-                return
             if job["status"] == "rolling_back":
                 await self.rollback(job)
                 return
             if "candidate_slot" not in job:
-                snapshots = [await self.slots.snapshot(slot) for slot in (0, 1)]
+                snapshots = [await self.slots.snapshot(slot) for slot in range(len(PORTS))]
                 active = await self.active()
                 old_slot = next((i for i, row in enumerate(snapshots) if row and uuid.UUID(row["generation"]) == active), None)
                 if old_slot is None:
                     raise RuntimeError("generation bootstrap required; active slot is missing")
-                free = 1 - old_slot
-                if snapshots[free] is not None:
+                free = next((i for i, row in enumerate(snapshots) if row is None), None)
+                if free is None:
                     self.phase(job, "waiting_slot")
                     return
                 release = Path(job["release_path"]) if job.get("release_path") else await self.prepare(job)
@@ -432,20 +456,63 @@ class GenerationController:
             if job["status"] != "draining":
                 await self.slots.switch(job["candidate_slot"])
                 await self.slots.verify(job["revision"])
+                self.record_active(job)
                 self.phase(job, "draining", activated_revision=job["revision"])
-            previous = await self.slots.snapshot(job["previous_slot"])
-            if previous is None:
-                self.phase(job, "recovery_pending", error="draining generation unreachable; work survival is unknown")
-                return
-            if previous.get("drain_ready"):
-                self.phase(job, "retiring")
-                await self.slots.stop(job["previous_slot"])
-                self.succeed(job)
+            await self.retire(job)
         except Exception as exc:
             log.exception("generation deployment failed: %s", job["id"])
+            if job["status"] in {"draining", "retiring"}:
+                self.phase(job, "recovery_pending", error=str(exc))
+                return
             self.phase(job, "rolling_back" if job.get("candidate_generation") else "failed", error=str(exc))
             if job.get("candidate_generation"):
                 try:
                     await self.rollback(job)
                 except Exception:  # noqa: BLE001 -- persist failure; never discard it
                     self.phase(job, "recovery_pending", error="automatic reconciliation failed; inspect deployment journal")
+
+
+async def upgrade_supervisor(controller, revision: str) -> dict:
+    """External-host operation: change only the supervisor, never an app generation."""
+    from ttakkari.deploy_gate import RestartGate
+    from ttakkari.deployment import LABEL, strategy
+    from ttakkari.generation_bootstrap import Services, write_json
+
+    if os.environ.get("TTAKKARI_RUN_ID"):
+        raise RuntimeError("supervisor upgrade belongs to an external host command, never an agent Run")
+    revision = _sha(revision)
+    if strategy() != "generations":
+        raise RuntimeError("generation bootstrap is required before upgrading the supervisor")
+    gate = RestartGate(controller.store.root / "backend-restart.lock")
+    lock = gate._acquire()
+    if lock is None:
+        raise RuntimeError("deployment is changing state; retry the external upgrade after that operation")
+    try:
+        release = controller.store.root / "releases" / revision
+        receipts = [j for j in controller.store.all() if j["revision"] == revision
+                    and j["status"] in {"draining", "succeeded"} and not j.get("skip_tests", True)
+                    and j.get("strategy") == "generations" and j.get("release_path") == str(release)]
+        if not receipts:
+            raise RuntimeError("a verified, activated generation deployment is required")
+        if (json.loads((release / ".release.json").read_text()).get("revision") != revision
+                or not (release / ".venv/bin/python").is_file()):
+            raise RuntimeError("prepared release identity/runtime is invalid")
+        Releases.contract(release)
+        control = GenerationController(controller.store)
+        active = await control.active()
+        info = await control.generation_info(active)
+        slot = next((i for i in range(len(PORTS)) if control.slots.origin(i) == info["api_url"]), None)
+        ready = await control.slots.snapshot(slot) if slot is not None else None
+        if (info["revision"] != revision or not ready or ready["generation"] != str(active)
+                or ready["revision"] != revision):
+            raise RuntimeError("verified release is not the current ready owner")
+        await control.slots.verify(revision)
+        await Services(controller).pin_supervisor(release, revision)
+        result = {"revision": revision, "release": str(release), "status": "requested"}
+        write_json(controller.store.root / "supervisor-upgrade.json", result)
+    finally:
+        gate._release(lock)
+    # launchd may still have the old plist loaded. That entry point reads the new
+    # supervisor.json before taking the controller lock and execs the pinned code.
+    await control.slots._launchctl("kickstart", "-k", f"gui/{os.getuid()}/{LABEL}")
+    return result

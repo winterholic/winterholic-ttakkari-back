@@ -1,4 +1,4 @@
-"""Two real ASGI processes + fake engine, sharing only a disposable test DB/home."""
+"""Real ASGI generations + fake engines, sharing only a disposable test DB/home."""
 from __future__ import annotations
 
 import asyncio
@@ -8,7 +8,7 @@ import shutil
 import socket
 import sys
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
 import pytest
@@ -103,6 +103,42 @@ async def test_real_two_process_cutover_preserves_old_cli_and_runs_new_work(tmp_
             await wait_status(b, old_id, auth, "cancelled")
             snapshot = (await a.get("/api/ready")).json()
             assert snapshot["state"] == "draining" and snapshot["owned_runs"] == 0
+
+
+async def test_real_three_process_cutovers_keep_both_old_engines_and_proxy(tmp_path, new_session, auth):
+    sessions = [(await new_session())[1] for _ in range(3)]
+    async with AsyncExitStack() as stack:
+        a, ra = await stack.enter_async_context(server(tmp_path, "a" * 40))
+        aid = uuid.UUID(ra["generation"])
+        await activate(aid, expected=None)
+        routed, switch = await stack.enter_async_context(proxy(tmp_path, a.base_url))
+        first = await routed.post(f"/api/sessions/{sessions[0]['id']}/runs", headers=auth, json={"prompt": "SLEEP"})
+        assert first.status_code == 202, first.text
+        first_id = first.json()["id"]
+        first_before = await wait_status(a, first_id, auth, "running")
+        b, rb = await stack.enter_async_context(server(tmp_path, "b" * 40))
+        bid = uuid.UUID(rb["generation"])
+        await activate(bid, expected=aid)
+        await switch(b.base_url)
+        second = await routed.post(f"/api/sessions/{sessions[1]['id']}/runs", headers=auth, json={"prompt": "SLEEP"})
+        assert second.status_code == 202, second.text
+        second_id = second.json()["id"]
+        second_before = await wait_status(b, second_id, auth, "running")
+        c, rc = await stack.enter_async_context(server(tmp_path, "c" * 40))
+        await activate(uuid.UUID(rc["generation"]), expected=bid)
+        await switch(c.base_url)
+        assert (await routed.get("/api/version")).json()["revision"] == "c" * 40
+        third = await routed.post(f"/api/sessions/{sessions[2]['id']}/runs", headers=auth,
+                                  json={"prompt": "third generation work"})
+        assert third.status_code == 202, third.text
+        await wait_status(routed, third.json()["id"], auth, "succeeded")
+        for owner, rid, before in ((a, first_id, first_before), (b, second_id, second_before)):
+            live = await wait_status(owner, rid, auth, "running")
+            assert live["pid"] == before["pid"]
+            assert (await routed.post(f"/api/runs/{rid}/cancel", headers=auth)).status_code == 200
+            await wait_status(owner, rid, auth, "cancelled")
+            ready = (await owner.get("/api/ready")).json()
+            assert ready["state"] == "draining" and ready["owned_runs"] == 0
 
 
 @asynccontextmanager

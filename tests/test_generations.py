@@ -35,6 +35,47 @@ async def queued(new_session):
         return run
 
 
+async def test_three_generations_preserve_two_old_owners_and_enforce_global_limit(tmp_path, new_session):
+    from contextlib import AsyncExitStack
+
+    runs = [await queued(new_session) for _ in range(3)]
+    async with AsyncExitStack() as stack:
+        runtimes = []
+        for i in range(3):
+            runtime = GenerationRuntime(tmp_path, revision=str(i) * 40,
+                                        api_url=f"http://127.0.0.1:{18791 + i}")
+            stack.push_async_callback(runtime.close)
+            await runtime.register()
+            runtimes.append(runtime)
+        a, b, c = runtimes
+        await activate(a.id, expected=None)
+        ta = await a.claim(runs[0].id, "workers", 2)
+        await activate(b.id, expected=a.id)
+        tb = await b.claim(runs[1].id, "workers", 2)
+        await activate(c.id, expected=b.id)
+        assert ta and tb
+        assert await c.claim(runs[2].id, "workers", 2) is None
+        async with sessionmaker()() as db:
+            await a.fence(db, runs[0].id, ta)
+            await b.fence(db, runs[1].id, tb)
+        await a.release(runs[0].id, ta)
+        assert await c.claim(runs[2].id, "workers", 2)
+        fourth = GenerationRuntime(tmp_path, revision="d" * 40, api_url="http://127.0.0.1:18794")
+        stack.push_async_callback(fourth.close)
+        with pytest.raises(RuntimeError, match="live generations"):
+            await fourth.register()
+
+
+async def test_live_slot_cannot_be_registered_twice(tmp_path):
+    async with generations(tmp_path) as (a, _):
+        duplicate = GenerationRuntime(tmp_path, revision=a.revision, api_url=a.api_url)
+        try:
+            with pytest.raises(RuntimeError, match="origin"):
+                await duplicate.register()
+        finally:
+            await duplicate.close()
+
+
 async def test_standby_does_not_recover_another_generations_live_run(tmp_path, new_session):
     run = await queued(new_session)
     async with generations(tmp_path) as (a, b):

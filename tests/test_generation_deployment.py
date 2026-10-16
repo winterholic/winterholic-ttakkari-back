@@ -90,6 +90,217 @@ class FakeSlots:
         self.rows.pop(slot, None)
 
 
+async def test_overlapping_deployments_use_third_slot_and_retire_without_rerouting(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    slots = FakeSlots()
+    old = await slots.start(0, Path("unused"), "a" * 40)
+    old.update(state="active", owned_runs=1)
+    slots.route = 0
+    store = JobStore(tmp_path)
+    active = uuid.UUID(old["generation"])
+    control = GenerationController(store, slots=slots)
+
+    async def state():
+        return active
+
+    async def activate(gid, *, expected):
+        nonlocal active
+        assert active == expected
+        active = gid
+
+    async def prepare(_):
+        return Path("candidate")
+
+    monkeypatch.setattr(control, "active", state)
+    monkeypatch.setattr(control, "activate", activate)
+    monkeypatch.setattr(control, "prepare", prepare)
+    first = store.request("b" * 40)
+    await control.process(first)
+    assert first["status"] == "draining" and slots.route == 1
+    second = store.request("c" * 40)
+    await control.process(second)
+    assert second["status"] == "draining" and slots.route == 2
+    latest_owner = active
+    third = store.request("d" * 40)
+    await control.process(third)
+    assert third["status"] == "waiting_slot" and not slots.stopped
+    await control.process(store.get(first["id"]))
+    assert slots.route == 2 and active == latest_owner
+    old["drain_ready"] = True
+    await control.process(store.get(first["id"]))
+    assert store.get(first["id"])["status"] == "succeeded"
+    assert slots.stopped == [0] and slots.route == 2
+    assert (tmp_path / "current").read_text().strip() == "c" * 40
+    slots.rows[1]["drain_ready"] = True
+    await control.process(store.get(second["id"]))
+    assert slots.route == 2 and active == latest_owner
+    third = store.get(third["id"])
+    await control.process(third)
+    assert third["status"] == "draining" and slots.route == 0
+
+
+async def test_old_drain_cannot_stop_a_reused_slot_or_roll_back_latest(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    slots = FakeSlots()
+    reused = await slots.start(0, Path("unused"), "d" * 40)
+    reused["drain_ready"] = True
+    latest = await slots.start(2, Path("unused"), "c" * 40)
+    slots.route = 2
+    store = JobStore(tmp_path)
+    job = store.request("b" * 40)
+    job.update(store.update(job["id"], status="draining", previous_slot=0, candidate_slot=1,
+        previous_generation=str(uuid.uuid4()), candidate_generation=str(uuid.uuid4()), previous_revision="a" * 40))
+    control = GenerationController(store, slots=slots)
+
+    async def active():
+        return uuid.UUID(latest["generation"])
+
+    monkeypatch.setattr(control, "active", active)
+    await control.process(job)
+    assert job["status"] == "recovery_pending" and "identity" in job["error"]
+    assert not slots.stopped and slots.route == 2
+
+
+async def test_old_rollback_cannot_replace_a_newer_active_generation(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    slots = FakeSlots()
+    previous = await slots.start(0, Path("unused"), "a" * 40)
+    latest = await slots.start(2, Path("unused"), "c" * 40)
+    slots.route = 2
+    store = JobStore(tmp_path)
+    job = store.request("b" * 40)
+    job.update(store.update(job["id"], status="rolling_back", previous_slot=0, candidate_slot=1,
+        previous_generation=previous["generation"], candidate_generation=str(uuid.uuid4())))
+    control = GenerationController(store, slots=slots)
+
+    async def active():
+        return uuid.UUID(latest["generation"])
+
+    monkeypatch.setattr(control, "active", active)
+    await control.process(job)
+    assert job["status"] == "recovery_pending" and "stale rollback" in job["error"]
+    assert not slots.stopped and slots.route == 2
+
+
+async def test_supervisor_loop_advances_next_job_while_old_generation_drains(tmp_path, monkeypatch):
+    import asyncio
+
+    from ttakkari import deployment
+    from ttakkari.generation_deployment import GenerationController
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    monkeypatch.setattr(deployment, "revision", lambda: "a" * 40)
+    external = deployment.Controller(tmp_path)
+    first = external.store.request("a" * 40)
+    external.store.update(first["id"], status="draining")
+    second = external.store.request("b" * 40)
+    calls = []
+
+    async def reconcile(_):
+        pass
+
+    async def process(job):
+        calls.append(job["id"])
+        if job["id"] == second["id"]:
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(GenerationController, "reconcile_services", reconcile)
+    monkeypatch.setattr(external, "process", process)
+    with pytest.raises(asyncio.CancelledError):
+        await external.serve()
+    assert calls == [first["id"], second["id"]]
+
+
+async def test_supervisor_upgrade_is_forbidden_inside_a_run(tmp_path, monkeypatch):
+    from ttakkari.deployment import Controller
+    from ttakkari.generation_deployment import upgrade_supervisor
+    monkeypatch.setenv("TTAKKARI_RUN_ID", "any-run")
+    with pytest.raises(RuntimeError, match="external"):
+        await upgrade_supervisor(Controller(tmp_path), "a" * 40)
+    assert not (tmp_path / "supervisor.json").exists()
+
+
+async def test_external_supervisor_upgrade_requires_verified_current_release(tmp_path, monkeypatch):
+    from ttakkari import deployment, generation_deployment
+    from ttakkari.generation_bootstrap import Services
+    monkeypatch.delenv("TTAKKARI_RUN_ID", raising=False)
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    external = deployment.Controller(tmp_path)
+    sha = "a" * 40
+    job = external.store.request(sha)
+    slots = FakeSlots()
+    row = await slots.start(1, Path("unused"), sha)
+    slots.route = 1
+    control = generation_deployment.GenerationController(external.store, slots=slots)
+
+    async def active():
+        return uuid.UUID(row["generation"])
+
+    async def info(gid):
+        return {"id": gid, "revision": sha, "api_url": slots.origin(1)}
+
+    control.active, control.generation_info = active, info
+    monkeypatch.setattr(generation_deployment, "GenerationController", lambda _: control)
+    calls = []
+
+    async def pin(self, release, revision):
+        calls.append((release, revision))
+
+    async def launch(*args):
+        calls.append(args)
+
+    monkeypatch.setattr(Services, "pin_supervisor", pin)
+    monkeypatch.setattr(slots, "_launchctl", launch, raising=False)
+    with pytest.raises(RuntimeError, match="verified"):
+        await generation_deployment.upgrade_supervisor(external, sha)
+    assert calls == []
+    release = tmp_path / "releases" / sha
+    (release / "deploy").mkdir(parents=True)
+    (release / ".venv/bin").mkdir(parents=True)
+    (release / ".venv/bin/python").touch()
+    (release / ".release.json").write_text(json.dumps({"revision": sha}))
+    (release / "deploy/generation-contract.json").write_text(json.dumps({
+        "protocol": 1, "schema_revision": "0033_weather_analysis_engine", "online_migration_from": []}))
+    external.store.update(job["id"], status="succeeded", release_path=str(release))
+    result = await generation_deployment.upgrade_supervisor(external, sha)
+    assert calls[0] == (release, sha)
+    assert calls[1][0:2] == ("kickstart", "-k")
+    assert result["status"] == "requested" and result["revision"] == sha
+
+
+def test_controller_schedules_drains_and_next_deployment_in_same_pass(tmp_path, monkeypatch):
+    from ttakkari.deployment import Controller
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    control = Controller(tmp_path)
+    first = control.store.request("a" * 40)
+    control.store.update(first["id"], status="draining")
+    second = control.store.request("b" * 40)
+    third = control.store.request("c" * 40)
+    assert [j["id"] for j in control.pending_jobs()] == [first["id"], second["id"]]
+    control.store.update(first["id"], status="recovery_pending")
+    assert [j["id"] for j in control.pending_jobs()] == [first["id"]]
+    assert third["status"] == "requested"
+
+
+async def test_third_slot_proxy_config_is_persisted(tmp_path, monkeypatch):
+    import httpx
+
+    from ttakkari.generation_deployment import Slots
+    loaded = {}
+
+    def respond(request):
+        if request.method == "POST":
+            loaded.update(json.loads(request.content))
+        return httpx.Response(200, json=loaded)
+
+    original = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: original(transport=httpx.MockTransport(respond), **kw))
+    slots = Slots(tmp_path)
+    await slots.switch(2)
+    assert slots.persisted_slot() == 2
+    assert Slots.origin(2) == "http://127.0.0.1:8793"
+
+
 async def test_controller_waits_to_retire_old_generation_without_restarting_it(tmp_path, monkeypatch):
     from ttakkari.generation_deployment import GenerationController
     slots = FakeSlots()
@@ -377,7 +588,8 @@ async def test_supervisor_repairs_proxy_without_restarting_a_live_generation(tmp
     await control.reconcile_services()  # No reload/fsync on each supervisor poll.
 
 
-async def test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity(tmp_path, monkeypatch):
+@pytest.mark.parametrize("target_slot", [0, 2])
+async def test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity(tmp_path, monkeypatch, target_slot):
     from ttakkari.generation_deployment import GenerationController
     slots = FakeSlots()
     active_id = uuid.uuid4()
@@ -387,7 +599,7 @@ async def test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity(t
         return active_id
 
     async def info(gid):
-        return {"id": gid, "revision": "a" * 40, "api_url": "http://127.0.0.1:8791"}
+        return {"id": gid, "revision": "a" * 40, "api_url": slots.origin(target_slot)}
 
     original_start = slots.start
 
@@ -401,7 +613,7 @@ async def test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity(t
         return slots.route
 
     async def ensure_proxy(slot):
-        assert slot == 0
+        assert slot == target_slot
 
     monkeypatch.setattr(control, "active", active)
     monkeypatch.setattr(control, "generation_info", info, raising=False)
@@ -413,7 +625,7 @@ async def test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity(t
     (release / "generation-contract.json").write_text(json.dumps({
         "protocol": 1, "schema_revision": "0030_runtime_generations", "online_migration_from": []}))
     await control.reconcile_services()
-    assert slots.route == 0 and len(slots.rows) == 1
+    assert slots.route == target_slot and len(slots.rows) == 1
 
 
 async def test_proxy_service_uses_its_own_persisted_config(tmp_path, monkeypatch):

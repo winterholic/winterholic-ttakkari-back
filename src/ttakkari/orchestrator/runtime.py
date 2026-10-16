@@ -121,7 +121,7 @@ when you are blocked and need their input or approval).
   full SHA unless the user explicitly defers deployment. Do not require another deployment request or approval.
   Do not defer a generation deployment because this or other Runs are active. The controller activates the
   ready candidate while existing engines finish in the previous generation; it queues later deployments if
-  both slots are occupied. Keep schema/protocol checks, readiness, ownership and drain safeguards.
+  all three slots are occupied. Keep schema/protocol checks, readiness, ownership and drain safeguards.
   Only legacy idle deployment and the first bootstrap wait for all Runs. Never run launchctl or the backend
   restart script inside a Run. Return after reservation; do not keep a Run alive just to poll for deployment.
   Report the reservation ID and distinguish requested, waiting_slot, draining and succeeded; acceptance is

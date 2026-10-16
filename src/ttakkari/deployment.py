@@ -385,6 +385,17 @@ class Controller:
             return self.store.update(job["id"], status="bootstrapping", bootstrap=True)
         return None
 
+    def pending_jobs(self) -> list[dict]:
+        """Drain every old generation, then advance at most one unswitched deployment."""
+        pending = [j for j in self.store.all() if j["status"] not in TERMINAL]
+        drains, foreground = [], None
+        for job in pending:
+            if job.get("strategy") == "generations" and not job.get("bootstrap") and job["status"] in {"draining", "retiring"}:
+                drains.append(job)
+            elif foreground is None:
+                foreground = job
+        return drains + ([foreground] if foreground else [])
+
     async def serve(self) -> None:
         self.enter_pinned_supervisor()
         gate = RestartGate(self.store.root / "controller.lock")
@@ -393,6 +404,15 @@ class Controller:
             raise RuntimeError("배포 감독이 이미 실행 중입니다.")
         loaded_revision = revision()
         try:
+            marker = self.store.root / "supervisor.json"
+            if marker.exists():
+                pinned = json.loads(marker.read_text())
+                if pinned["revision"] != loaded_revision or Path(pinned["release"]).resolve() != BACK.resolve():
+                    raise RuntimeError("supervisor runtime differs from its pinned release")
+                from ttakkari.generation import PORTS
+                from ttakkari.generation_bootstrap import write_json
+                write_json(self.store.root / "supervisor-runtime.json", {
+                    "revision": loaded_revision, "release": str(BACK), "pid": os.getpid(), "ports": list(PORTS)})
             while True:
                 if strategy() == "generations":
                     from ttakkari.generation_deployment import GenerationController
@@ -400,12 +420,15 @@ class Controller:
                         await GenerationController(self.store).reconcile_services()
                     except Exception:
                         log.exception("generation services need recovery; preserving existing work")
-                job = next(
-                    (j for j in self.store.all() if j["status"] not in TERMINAL), None
-                )
-                if job is None:
-                    job = self.bootstrap_job()
-                if job:
+                jobs = self.pending_jobs()
+                if not jobs and (bootstrap := self.bootstrap_job()):
+                    jobs = [bootstrap]
+                for job in jobs:
+                    # A drain failure in this pass must fence any later cutover.
+                    blocked = any(j["status"] in {"recovery_pending", "rolling_back"}
+                                  and j["id"] != job["id"] for j in self.store.all())
+                    if blocked and job["status"] not in {"draining", "retiring", "recovery_pending", "rolling_back"}:
+                        break
                     deploy_gate = RestartGate(self.store.root / "backend-restart.lock")
                     deploy_lock = deploy_gate._acquire()
                     if deploy_lock is not None:
@@ -433,6 +456,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("serve")
+    upgrade = sub.add_parser("upgrade-supervisor")
+    upgrade.add_argument("--revision", required=True)
     request = sub.add_parser("request")
     request.add_argument("--no-pull", action="store_true")
     request.add_argument("--skip-tests", action="store_true")
@@ -444,6 +469,10 @@ def main() -> None:
     )
     if args.command == "serve":
         asyncio.run(Controller(state_dir()).serve())
+        return
+    if args.command == "upgrade-supervisor":
+        from ttakkari.generation_deployment import upgrade_supervisor
+        print(json.dumps(asyncio.run(upgrade_supervisor(Controller(state_dir()), args.revision))))
         return
     if args.command == "status":
         store = JobStore(state_dir())

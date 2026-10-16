@@ -133,7 +133,8 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 
 세대별 감독은 고정 SHA를 격리 빌드·검사하고 준비된 신세대로 신규 요청을 전환한다.
 `draining`은 신버전 전환을 확인한 상태이며, 구세대의 기존 엔진이 끝나면 종료하고 `succeeded`로 기록한다.
-두 슬롯이 사용 중이면 후속 예약은 자동 대기하며, 시작하지 않은 같은 계약의 누적 커밋만 최신 예약으로 합친다.
+세 슬롯(8791/8792/8793)이 모두 사용 중이면 후속 예약은 자동 대기하며, 시작하지 않은 같은 계약의 누적 커밋만 최신 예약으로 합친다.
+구버전 고정 감독은 앱 배포만으로 갱신되지 않는다. [감독 갱신 절차](docs/design/generation-deployment.md#고정된-배포-감독-갱신)에 따라 Run 밖에서 검증된 릴리스로 감독을 한 번 교체해야 3슬롯 연속 배포가 적용된다.
 검사·readiness·schema/protocol 호환성·실행 소유권·안전한 구세대 종료 조건은 유지한다.
 실패 시 이유와 복구 상태를 남긴다. 테스트는 배포별 독립 DB를 만들고 정리한다.
 
@@ -146,7 +147,7 @@ PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레�
 legacy 빌드는 기존 체크아웃을 사용하므로 예약 이후 변경했다면 새 커밋으로 다시 예약해야 한다. 세대별 빌드는 예약 SHA의 immutable archive를 사용하므로 이후 개발이 기존 준비·배출 중인 릴리스를 바꾸지 않는다.
 `--skip-tests`는 운영자가 이미 같은 커밋을 검사했을 때만 직접 CLI에서 사용한다. 에이전트 예약 API는 테스트 생략·임의 명령·경로·환경 변수를 받지 않는다.
 
-- 최초 전환 전 백엔드: `deploy/install-services.sh backend` → launchd(`net.winterholic.ttakkari.backend`)가 127.0.0.1:8787 로 상시 실행. 세대별 전환 이후에는 이 설치 명령을 다시 실행하지 않는다. 프록시가 8787, 앱이 8791/8792를 사용한다.
+- 최초 전환 전 백엔드: `deploy/install-services.sh backend` → launchd(`net.winterholic.ttakkari.backend`)가 127.0.0.1:8787 로 상시 실행. 세대별 전환 이후에는 이 설치 명령을 다시 실행하지 않는다. 프록시가 8787, 앱이 8791/8792/8793을 사용한다.
 - 터널: `cloudflared tunnel login` → `cloudflared tunnel create ttakkari` → `~/.cloudflared/ttakkari.yml`(예시 `deploy/cloudflared-ttakkari.yml.example`) → `cloudflared tunnel route dns ttakkari ttakkari-api.winterholic.net` → `deploy/install-services.sh tunnel`.
 - 주소는 한 단계 서브도메인(`ttakkari-api.winterholic.net`)이어야 Cloudflare 무료 인증서(`*.winterholic.net`)가 덮는다. `api.ttakkari.winterholic.net` 은 TLS 핸드셰이크에서 실패했다.
 - 운영 `config.env`: `TTAKKARI_ENV=prod`, `TTAKKARI_CORS_ORIGINS` 에 `https://ttakkari.winterholic.net`, `TTAKKARI_TRUST_PROXY_IP_HEADER=CF-Connecting-IP`.

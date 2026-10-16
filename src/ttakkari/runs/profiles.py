@@ -240,7 +240,7 @@ async def running_counts_async() -> dict[uuid.UUID, int]:
             RuntimeLease.account_id.is_not(None)).group_by(RuntimeLease.account_id))).all())
 
 
-def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[int, float] | None:
+def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[float, float] | None:
     """상한까지 남은 최소 퍼센트와 그 창의 초기화 시각. stale/null 사용량은 순위 판단에 쓰지 않는다."""
     from ttakkari.runs import usage as usage_mod
 
@@ -248,12 +248,18 @@ def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[int, fl
     u = usage_mod.cached(profile.id)
     if u is None or not u.windows or u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds:
         return None
-    current = [w for w in u.windows if w.key in ("five_hour", "seven_day")
+    group = quota_group(profile.model) if profile.engine == "antigravity" else None
+    keys = {f"{group}_5h", f"{group}_weekly"} if group else {"five_hour", "seven_day"}
+    current = [w for w in u.windows if w.key in keys
                and not (w.resets_at and w.resets_at <= now)]
+    if profile.engine == "antigravity":
+        current = [w for w in current if group and w.remaining_percent is not None]
     if not current:
         return None
-    minimum = min(max(0, profile.max_used_percent - w.percent) for w in current)
-    limiting = [w for w in current if max(0, profile.max_used_percent - w.percent) == minimum]
+    def room(w):
+        return max(0, w.remaining_percent) if group else max(0, profile.max_used_percent - w.percent)
+    minimum = min(room(w) for w in current)
+    limiting = [w for w in current if room(w) == minimum]
     reset = min((float(w.resets_at) for w in limiting if w.resets_at), default=float("inf"))
     return minimum, reset
 

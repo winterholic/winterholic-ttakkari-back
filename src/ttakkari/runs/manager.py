@@ -490,11 +490,15 @@ class RunManager:
 
         # 쓸 수 있는 계정이 없으면 시작하지 않고 가장 이른 한도 초기화까지 기다린다(대기 Run 은 queued 로 남는다).
         from ttakkari.meetings import routing as meeting_routing
+        from ttakkari.runs import worker_routing
         is_meeting = await db.scalar(select(Meeting.id).where(Meeting.analysis_run_id == run.id)) is not None
+        task_type = sess.worker_task_type if sess.kind == SessionKind.worker and sess.engine == "auto" and not is_meeting else None
 
         async def available_profiles():
             if is_meeting:
                 return await meeting_routing.availability(db)
+            if task_type:
+                return await worker_routing.availability(db, task_type, sess.pool, model=sess.model)
             return await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
 
         profiles, blocked = await available_profiles()
@@ -518,10 +522,26 @@ class RunManager:
         async def choose(candidates, run_id, **kwargs):
             if is_meeting:
                 candidates = meeting_routing.first_stage(candidates)
-            return await choose_account(candidates, run_id, **kwargs)
+            elif task_type:
+                all_candidates = candidates
+                candidates = worker_routing.first_stage(candidates, task_type)
+                counts = await profiles_mod.running_counts_async()
+                # Selection excludes this Run's own claim; receipts use the same denominator.
+                own = profiles_mod._in_use.get(run_id)
+                if own in counts:
+                    counts[own] = max(0, counts[own] - 1)
+            selected = await choose_account(candidates, run_id, **kwargs)
+            if task_type:
+                _, currently_blocked = await available_profiles()
+                events.append(db, run, "worker.routing", worker_routing.receipt(
+                    task_type, selected, all_candidates, currently_blocked, counts,
+                    trigger="initial" if not run.started_at else "fallback_or_resume"))
+            return selected
 
         def conversation_key(profile):
-            return meeting_routing.conversation_key(profile) if is_meeting else profile.key
+            if is_meeting:
+                return meeting_routing.conversation_key(profile)
+            return worker_routing.conversation_key(profile) if task_type else profile.key
         prof = await choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer, balance_usage=True)
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
@@ -573,12 +593,16 @@ class RunManager:
             resume_id = (sess.engine_sessions or {}).get(conversation_key(prof))
             prompt = base_prompt
             # 처음 쓰는 계정은 앞선 대화를 통째로, 쓴 적 있는 계정은 그 뒤 다른 계정에서 오간 대화만 받는다.
-            prompt = await _handoff_context(db, run, resumed_profile=prof.name if resume_id else None) + prompt
+            prompt = await _handoff_context(db, run, resumed_profile=prof.name if resume_id else None,
+                                            resumed_model=prof.model if task_type else None) + prompt
             prompt = attempt_handoff + prompt
             run.engine, run.profile = prof.engine, prof.name
             if is_meeting:
                 model, effort = prof.model, run.effort
                 run.model = model
+            elif task_type:
+                model, effort = prof.model, worker_routing.effort(prof, sess.effort)
+                run.model, run.effort = model, effort
             else:
                 model, effort = _launch_model(sess, run, prof, profiles[0])
             spec = LaunchSpec(
@@ -613,6 +637,10 @@ class RunManager:
                 })
             # 이 Run 이 도는 동안 다른 Run 이 한도에 걸린 계정은 넘어갈 후보에서 뺀다.
             remaining = [p for p in remaining if not profiles_mod.profile_limited_until(p)]
+            if missing and task_type:
+                # All models of an engine use the same executable. A different model cannot
+                # recover a missing binary; continue with a suitable different engine once.
+                remaining = [p for p in remaining if p.engine != prof.engine]
             if stopped or not failed or not (missing or limited) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
@@ -1150,10 +1178,12 @@ async def _checkpoint_untracked(db: AsyncSession, run: Run) -> set[str]:
     return set((ev.payload or {}).get("untracked") or []) if ev else set()
 
 
-async def _handoff_context(db: AsyncSession, run: Run, resumed_profile: str | None = None) -> str:
+async def _handoff_context(db: AsyncSession, run: Run, resumed_profile: str | None = None,
+                           resumed_model: str | None = None) -> str:
     """다른 엔진·계정에서 오간 앞선 대화(지시·답)를 넘긴다. 도구 호출 내역은 넘기지 않는다(ADR 0006 한계).
 
-    resumed_profile 이 있으면 그 계정이 자기 엔진 대화를 이어 받는 경우다. 그 계정이 마지막으로 처리한 Run 뒤의 대화만 넘긴다."""
+    resumed_profile 이 있으면 그 계정이 자기 엔진 대화를 이어 받는 경우다. task 정책 작업자는
+    resumed_model까지 일치하는 마지막 Run 뒤의 대화를 넘겨 같은 계정의 다른 모델 진행도 보존한다."""
     stmt = select(Run).where(Run.session_id == run.session_id, Run.id != run.id, Run.status.in_(TERMINAL_RUN_STATUSES))
     if (since := context_usage.reset_at(await db.get(ChatSession, run.session_id))) is not None:
         stmt = stmt.where(Run.created_at > since)
@@ -1161,7 +1191,7 @@ async def _handoff_context(db: AsyncSession, run: Run, resumed_profile: str | No
     if resumed_profile:
         missed = []
         for r in rows:
-            if r.profile == resumed_profile:
+            if r.profile == resumed_profile and (resumed_model is None or r.model == resumed_model):
                 break
             if r.profile:
                 missed.append(r)

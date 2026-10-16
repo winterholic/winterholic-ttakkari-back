@@ -27,23 +27,23 @@ from ttakkari.runs.manager import manager
 
 def test_design_capacity_policy_prefers_antigravity_claude_and_checks_separate_quotas():
     note = " ".join(MODEL_ROUTING_NOTE.split())
-    assert 'engine="antigravity"' in note
-    assert 'model="claude-sonnet-5-5-high"' in note
-    assert 'model="gemini-3.8-flash-high"' in note
-    assert 'model="gemini-4-argon-high"' in note
+    assert 'engine="auto"' in note
+    assert '"model": "claude-sonnet-5-5-high"' in note
+    assert '"model": "gemini-3.8-flash-high"' in note
+    assert '"model": "gemini-4-argon-high"' in note
     assert "One exhausted pool must not disable the others" in note
 
 
 def test_general_work_assignment_uses_usage_and_auto_engine():
     note = " ".join((ORCHESTRATOR_NOTE + MODEL_ROUTING_NOTE).split())
     assert "Check account_usage before assignments" in note
-    assert 'engine="auto" continues to select native Claude/Codex' in note
+    assert 'use engine="auto" and task_type' in note
     assert "Preserve progress and inspect side effects" in note
-    assert 'engine="antigravity"' in note
+    assert "Antigravity is included" in note
     assert "MCP, persistence or resume" in note
 
 
-async def test_auto_worker_selection_excludes_explicit_antigravity_account(client, auth):
+async def test_native_auto_paths_keep_excluding_antigravity_accounts(client, auth):
     added = await client.post("/api/accounts", json={"name": "Gemini CLI", "engine": "antigravity"}, headers=auth)
     assert added.status_code == 201, added.text
     agy_id = added.json()["id"]
@@ -493,7 +493,9 @@ async def test_waiting_run_resumes_same_run_after_reset_with_progress_handoff(cl
 
     limit_lock.unlink()  # 한도가 풀린다. 초기화 시각(약 3초)이 지나면 같은 Run 이 이어서 돈다.
     done = await _wait_status(client, auth, run["id"], "succeeded")
-    assert done["id"] == run["id"] and done["profile"] == "claude" and done["started_at"]
+    # Both accounts were limited; scheduling can cross the next whole second between attempts.
+    # The first eligible account may be either engine. The contract is same-Run progress recovery.
+    assert done["id"] == run["id"] and done["profile"] in {"claude", "codex"} and done["started_at"]
     events = await run_events(client, auth, run["id"])
     types = [e["type"] for e in events]
     assert types.count("run.waiting") == 1 and types.count("run.resumed") == 1
@@ -501,8 +503,9 @@ async def test_waiting_run_resumes_same_run_after_reset_with_progress_handoff(cl
     # 시작할 때 한 번만 남기는 체크포인트·시작 시각을 다시 만들지 않는다.
     assert types.count("checkpoint") <= 1
     last = agent_calls()[-1]
-    assert last["engine"] == "claude"
-    prompt = last["argv"][last["argv"].index("-p") + 1]
+    assert last["engine"] == done["engine"]
+    flag = "-p" if last["engine"] == "claude" else "--"
+    prompt = last["argv"][last["argv"].index(flag) + 1]
     assert "Previous account handoff" in prompt and "progress marker alpha" in prompt
     assert "LIMIT_LOCK build the report" in prompt
     assert len(push_calls) == 1

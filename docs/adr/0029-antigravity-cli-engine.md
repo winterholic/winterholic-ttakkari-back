@@ -1,5 +1,7 @@
 # ADR 0029: Antigravity CLI 작업 엔진
 
+
+> 2026-10-16 후속 결정: 신규 auto 작업자의 배정은 `runs/worker_routing.py`의 task_type 정책으로 대체했다. Antigravity 포함, 모델별 quota·fallback·대화 보존·배정 영수증·idle reroute는 [API 계약](../api-contract.md#작업자-task-routing-2026-10-16)을 따른다. 아래의 과거 native-only auto/Luna 기본·디자인 native Claude 고정 설명은 레거시 세션의 이력이며 신규 auto 작업자에 적용하지 않는다. 메인·접수·별도 회의/날씨 경로는 기존 계약을 유지한다.
 - 상태: 구현 중
 - 날짜: 2026-10-15
 

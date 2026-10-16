@@ -1,5 +1,7 @@
 # ADR 0011. 오케스트레이터 모델 정책과 컨텍스트 사용률 기반 세션 교체
 
+
+> 2026-10-16 후속 결정: 신규 auto 작업자의 배정은 `runs/worker_routing.py`의 task_type 정책으로 대체했다. Antigravity 포함, 모델별 quota·fallback·대화 보존·배정 영수증·idle reroute는 [API 계약](../api-contract.md#작업자-task-routing-2026-10-16)을 따른다. 아래의 과거 native-only auto/Luna 기본·디자인 native Claude 고정 설명은 레거시 세션의 이력이며 신규 auto 작업자에 적용하지 않는다. 메인·접수·별도 회의/날씨 경로는 기존 계약을 유지한다.
 - 상태: 채택 (2026-10-13)
 - 결정자: 사용자("오케스트레이션하는 애는 opus medium, sol high", "서브에이전트는 sonnet high, luna high", "간단한 작업이면 무조건 luna", "자동 핸드오프는 필요 없다", "50%면 고민, 70%면 갈아끼우기")
 

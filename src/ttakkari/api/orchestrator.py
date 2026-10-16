@@ -22,12 +22,13 @@ from ttakkari.models import (
     PmsProject,
     PmsTask,
     Run,
+    RunEvent,
     RunOrigin,
     SessionKind,
 )
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
-from ttakkari.runs import context_usage, luna_benchmark
+from ttakkari.runs import context_usage, luna_benchmark, worker_routing
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
@@ -43,6 +44,7 @@ class WorkerIn(BaseModel):
     engine: Literal["auto", "claude", "codex", "antigravity"] = "auto"
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    task_type: worker_routing.TaskType | None = None
     # 오케스트레이터와 같은 급(peer_models)을 작업 세션에 쓸 때만 필요하다.
     escalation_reason: str | None = Field(default=None, max_length=1000)
 
@@ -56,8 +58,11 @@ class WorkerIn(BaseModel):
             selected = self.model or get_settings().worker_default_models["antigravity"]["model"]
             if self.effort and self.effort != thinking_level(selected):
                 raise ValueError("Antigravity effort must match the selected model's thinking level.")
-        elif self.engine == "auto" and self.model in ANTIGRAVITY_MODELS:
-            raise ValueError("Antigravity models require engine=antigravity; auto uses native Claude/Codex.")
+        elif self.engine == "auto" and self.model is not None:
+            if self.model not in {m for models in get_settings().engine_models.values() for m in models}:
+                raise ValueError("Choose an available worker model from account_usage.")
+            if self.model in ANTIGRAVITY_MODELS and self.effort and self.effort != thinking_level(self.model):
+                raise ValueError("Antigravity effort must match the selected model's thinking level.")
         return self
 
 
@@ -65,6 +70,9 @@ class MessageIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=100_000)
     # True 면 이 작업 세션의 엔진 대화를 버리고 새로 시작한다(컨텍스트 교체). 지시는 자기 완결적이어야 한다.
     fresh_context: bool = False
+    reroute: bool = False
+    task_type: worker_routing.TaskType | None = None
+    escalation_reason: str | None = Field(default=None, max_length=1000)
 
 
 class WorkerOut(BaseModel):
@@ -73,6 +81,8 @@ class WorkerOut(BaseModel):
     engine: str
     model: str | None = None
     effort: str | None = None
+    task_type: str | None = None
+    routing: dict | None = None
     status: str
     context: str = ""
     active_run_id: uuid.UUID | None = None
@@ -102,9 +112,13 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
     active = next((r for r in runs if r.status in ACTIVE), None)
     done = next((r for r in runs if r.status not in ACTIVE), None)
     out = WorkerOut(worker_id=w.id, title=w.title, engine=w.engine, model=w.model, effort=w.effort,
+                    task_type=w.worker_task_type,
                     status=active.status if active else (done.status if done else "idle"),
                     active_run_id=active.id if active else None,
                     context=context_usage.describe(await context_usage.latest(db, w)))
+    if runs:
+        out.routing = await db.scalar(select(RunEvent.payload).where(
+            RunEvent.run_id == runs[0].id, RunEvent.type == "worker.routing").order_by(RunEvent.seq.desc()).limit(1))
     if done is not None:
         limit = RESULT_CHARS if detail else 300
         out.last_result = (done.result_text or "")[:limit] or None
@@ -125,22 +139,28 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"동시에 돌 수 있는 작업 세션은 {MAX_ACTIVE_WORKERS}개입니다.")
     s = get_settings()
     default = s.worker_default_models.get(body.engine) or {}
-    model = body.model or default.get("model")
-    effort = body.effort or (thinking_level(model) if body.engine == "antigravity" and model
+    task_type = body.task_type or worker_routing.infer_task_type(body.model)
+    if body.engine == "auto" and body.model and not worker_routing.accepts_model(task_type, body.model):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Model is outside the task_type policy; choose an explicit engine to pin it.")
+    model = body.model or (worker_routing.ROUTES[task_type][0][0][1] if body.engine == "auto" else default.get("model"))
+    effort = body.effort or (thinking_level(model) if model in ANTIGRAVITY_MODELS
                             else default.get("effort"))
     engine = body.engine
     if engine != "auto" and model and profiles_mod.model_engine(model) not in (None, engine):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{model} 은(는) {engine} 엔진 모델이 아닙니다.")
     if engine == "antigravity" and (model not in s.engine_models.get(engine, []) or effort not in {"low", "medium", "high"}):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "account_usage에 표시된 Antigravity 모델과 low/medium/high effort를 선택하세요.")
-    peer = (model or "").lower() in {m.lower() for m in s.peer_models}
+    peer = task_type == "reasoning" or (model or "").lower() in {m.lower() for m in s.peer_models}
+    if body.task_type and task_type != "reasoning" and model in s.peer_models:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Peer models require task_type=reasoning.")
     reason = (body.escalation_reason or "").strip()
     if peer and not reason:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"{model} 은(는) 오케스트레이터와 같은 급이라 작업 세션에는 escalation_reason 이 필요합니다. "
                             "중요한 설계 결정·어려운 추론·새로운 발상이 필요한 부분만 맡기고, 아니면 sonnet 이나 gpt-6-luna 를 쓰세요.")
     w = ChatSession(workspace_id=orch.workspace_id, title=body.title, engine=engine, model=model,
-                    effort=effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool)
+                    effort=effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool,
+                    worker_task_type=task_type)
     db.add(w)
     await db.flush()
     if peer:
@@ -156,6 +176,34 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
     w = await _worker(db, sid, worker_id)
     if w.archived_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 작업 세션입니다.")
+    if body.task_type and not body.reroute:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Changing task_type requires reroute=True.")
+    if body.reroute:
+        # Never alter the engine policy under a running/queued Run or silently discard its work.
+        await db.refresh(w, with_for_update=True)
+        if await db.scalar(select(Run.id).where(Run.session_id == w.id, Run.status.in_(ACTIVE)).limit(1)):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Finish or cancel the active Run after inspecting its progress before rerouting.")
+        task_type = body.task_type or w.worker_task_type or worker_routing.infer_task_type(w.model)
+        if task_type == "reasoning" and not (body.escalation_reason or "").strip():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "reasoning requires escalation_reason.")
+        # Preserve legacy provider conversations under the model they actually used.
+        previous = list(await db.scalars(select(Run).where(Run.session_id == w.id).order_by(Run.created_at.desc())))
+        saved = dict(w.engine_sessions or {})
+        for account in await profiles_mod.accounts(db):
+            old = saved.get(str(account.id))
+            last = next((r for r in previous if r.profile == account.name), None)
+            old_model = (last.model if last else None) or w.model
+            if old_model and profiles_mod.model_engine(old_model) != account.engine:
+                # Legacy Run.model retained the requested model even after a native engine fallback.
+                counterpart = get_settings().model_counterparts.get(old_model.lower())
+                old_model = counterpart if profiles_mod.model_engine(counterpart) == account.engine else None
+            if old and old_model:
+                saved.setdefault(f"{account.id}:{old_model}", old)
+        w.engine_sessions = saved
+        w.engine, w.worker_task_type = "auto", task_type
+        w.model, w.effort = worker_routing.ROUTES[task_type][0][0][1], "high"
+        record(db, actor="agent", action="orchestrator.reroute", target_type="session", target_id=w.id,
+               detail={"task_type": task_type, "reason": (body.escalation_reason or "")[:500]})
     if body.fresh_context:
         await _reset(db, w)
     await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)

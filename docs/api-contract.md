@@ -184,7 +184,7 @@ payload 는 `{title, body, url, tag}`:
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/orchestrator/workers` | `{title, prompt, engine?(auto), model?, effort?, escalation_reason?}` → 201 WorkerOut. 모델을 안 주면 claude→sonnet/high, codex·auto→gpt-6-luna/high. auto는 매 턴 신선한 상한 여유를 모델 엔진 선호보다 먼저 비교하며 다른 엔진 선택 시 동일 등급 상대 모델을 쓴다. 명시한 claude/codex는 엔진 잠금이다. opus·fable·gpt-6.1-sol 은 `escalation_reason` 없으면 400, 엔진과 맞지 않는 모델도 400(ADR 0011). 동시 실행 20개 초과 429 |
+| POST | `/api/orchestrator/workers` | `{title, prompt, engine?(auto), task_type?, model?, effort?, escalation_reason?}` → 201 WorkerOut. auto 작업자는 `general/routine/design/verification/reasoning` 별 코드 정책으로 Antigravity와 native를 선택한다(기본 general). 작업 적합성 → 알려진 모델 quota → 모델 단계 → Run 당 여유 순서다. reasoning 및 peer 모델은 `escalation_reason` 없으면 400. 고정 엔진은 그대로 잠금이다. 동시 실행 20개 초과 429 |
 | POST | `/api/orchestrator/workers/{id}/messages` | `{prompt, fresh_context?(false)}` → 202. `fresh_context` 면 엔진 대화를 새로 시작(실행 중이면 그 Run 이 끝난 뒤) |
 | GET | `/api/orchestrator/workers` | 목록(짧은 결과). WorkerOut 에 `model, effort, context`(예: `72% (144k/200k) · 교체 기준 이상…`, 잰 값 없으면 `알 수 없음…`) |
 | GET | `/api/orchestrator/context` | 메인 자신의 컨텍스트 `{context, context_tokens?, context_window?, context_percent?}` |
@@ -366,12 +366,12 @@ payload 는 `{title, body, url, tag}`:
 ## Antigravity CLI 엔진 (ADR 0029)
 
 - `EngineName`, `SessionEngine`, worker 및 계정의 `engine` 값에 `antigravity`를 추가한다. 계정 추가는 사용자가 이미 로그인한 단일 `agy` 프로필을 등록하며 `config_dir`는 받지 않는다. 계정 `login` 표시는 `unknown`으로 유지하지만, 사용량은 별도 정상 `agy` 조회에서 받은 quota·크레딧 실측을 반환한다.
-- `POST /api/orchestrator/workers`와 MCP `spawn_worker`는 명시적 `engine="antigravity"`를 허용한다. `auto`는 native Claude/Codex 폴백으로 유지하며 Antigravity 모델 ID를 잘못 번역하지 않도록 auto와의 조합은 거부한다. 2026-10-16 `agy models`에서 확인한 Claude Sonnet/Opus 5.5, Gemini 4 Argon, Gemini 3.8 Flash의 low/medium/high 및 GPT-OSS 120B medium을 지원한다. effort를 생략하면 모델 ID의 수준을 사용하며 서로 다른 수준 조합은 거부한다. 기본 Antigravity worker는 `claude-sonnet-5-5-high / high`다. Argon·Antigravity Opus는 구체적인 `escalation_reason`을 요구한다.
+- `POST /api/orchestrator/workers`와 MCP `spawn_worker`는 명시적 `engine="antigravity"`를 허용한다. 작업자 `auto`는 task_type별 Antigravity/native 후보를 사용하며 명시한 Antigravity 모델 ID도 허용한다. 메인·접수·레거시 auto와 회의록/날씨의 별도 경로는 기존 계약을 유지한다. 2026-10-16 `agy models`에서 확인한 Claude Sonnet/Opus 5.5, Gemini 4 Argon, Gemini 3.8 Flash의 low/medium/high 및 GPT-OSS 120B medium을 지원한다. effort를 생략하면 모델 ID의 수준을 사용하며 서로 다른 수준 조합은 거부한다. 기본 Antigravity worker는 `claude-sonnet-5-5-high / high`다. Argon·Antigravity Opus는 구체적인 `escalation_reason`을 요구한다.
 - 최신 모델 배정 방침은 일반 구현·조사·UI에 Antigravity Sonnet 우선, 단순 범용 작업에 Flash 적극 활용, 어려운 설계·추론·독립 대안에 Argon/Opus 활용이다. 메인 오케스트레이터의 native Opus medium/GPT Sol high는 유지한다. 새 방침은 역할 지침 뒤에 주입해 과거 Flash-only·Claude 제외 지침과의 충돌을 해소한다.
 - quota는 선택 모델의 관측된 그룹으로 판단한다. Claude/GPT, Gemini Flash, 별도 Argon 창을 독립적으로 검사하고 실행 중 quota 거절의 cooldown도 그룹별로 공유한다. Argon 창이 없는 경우는 unknown이며 다른 그룹의 여유로 대체하지 않는다. 소진 측정은 stale이어도 reset까지 유지하고, 정확한 잔여 비율을 사용해 0.1% 잔여를 정수 반올림으로 소진 처리하지 않는다. AI 크레딧 0은 baseline quota 0을 뜻하지 않는다. 유료 overage 설정은 변경하지 않는다.
 - 실제 Run 이벤트는 `agent.session`, `message`, `tool.call`, `tool.result`, `usage`, `error`로 정규화한다. `usage`의 token 필드는 CLI가 제공할 때만 기록하고 cost는 `null`이다. 대화 재개 키는 계정별 `engine_session_id`이며 CLI에는 `--conversation`으로 전달한다. 재개 요청 ID와 `init.conversation_id`가 다르면 새 대화로 교체하지 않고 Run을 오류로 종료한다.
 - `GET /api/accounts/usage`와 MCP `account_usage`는 `agy --print /usage --output-format json`의 모델 그룹별 5시간·주간 quota와 `/credits`의 AI 크레딧 잔액을 반환한다. quota는 `windows[]`에 기존 사용률 `percent`와 원천 잔여 `remaining_percent`를 함께 싣고, 크레딧은 별도 `credits_balance` 정수다. 전체계정 상한 퍼센트나 절대 요청/토큰 수는 만들지 않는다. 크레딧 청구주기 소모량은 현재 CLI JSON에서 받지 못하므로 표시하지 않는다.
-- 수집은 계정 사용량 공통 캐시·polling·stale 판정을 따른다. CLI 오류·timeout·미인증 또는 JSON schema 불일치는 `error`/미측정으로 반환하며 수치 0·100으로 대체하지 않는다. AI 크레딧 잔액 0은 `credits_balance: 0`, 미측정은 `null`로 구분한다. Antigravity quota를 기존 계정 전체 상한·auto 라우팅 headroom 계산에 더하지 않는다.
+- 수집은 계정 사용량 공통 캐시·polling·stale 판정을 따른다. CLI 오류·timeout·미인증 또는 JSON schema 불일치는 `error`/미측정으로 반환하며 수치 0·100으로 대체하지 않는다. AI 크레딧 잔액 0은 `credits_balance: 0`, 미측정은 `null`로 구분한다. Antigravity 전체 계정 상한으로 합치지 않으며, 새 작업자 라우팅은 선택 모델의 해당 그룹 창만으로 headroom을 계산한다. 크레딧 잔액은 배정 점수에 쓰지 않는다.
 - **운영 제한:** ADR 0029의 이전 CLI 1.2.10 파일 작성·workspace 밖 차단 실측은 유지한다. 2026-10-15 CLI 1.3.5는 MCP dispatcher `call_mcp_tool`과 workspace 설정을 인식했지만 안전 fixture의 `server/discover` 미지원으로 연결 성공은 확인하지 못했다. Ttakkari MCP 서버 2.3.0의 직접 stdio discovery·tools/list는 성공했으나 실제 API 호출은 실패하도록 격리한 fixture였다. 설치 스크립트는 launchd에서 backend를 직접 실행하며 OS sandbox wrapper가 없지만, 이것은 운영 agy의 앱 상태 저장 권한을 증명하지 않는다. 이 세션에는 인증된 기존 backend Run 호출 경로가 없어 운영 agy 실행·재개·MCP는 미검증이고, 도구 sandbox에서 본 EPERM을 backend 실패로 일반화하지 않는다. `--help`에 `--log-file`만 로그 경로 override로 있으며, project flag는 ID/name이다. 공식 문서상 settings/session cache는 `~/.gemini/antigravity-cli` 아래에 고정돼 있고, 공개 저장소 [AGY_HOME 요청 #155](https://github.com/google-antigravity/antigravity-cli/issues/155)는 열린 기능 요청이다. 따라서 현재 실행 경계 안에서 정식 저장 위치 대체 경로를 확인하지 못했다. CLI가 결과 stdout 없이 exit 0을 반환하는 경우 Run은 실패로 처리하며 stderr 진단을 보존한다. 첫 단발 worker→보고는 매니저가 직접 연결하므로 재개/MCP 호출이 구조상 필수는 아니지만, 현재 API에 재개 비활성 capability는 없고 MCP 의존 작업·후속 Run은 별도 검증 대상이다. 상세 증거·경계는 [ADR 0029](adr/0029-antigravity-cli-engine.md)의 배포 조건을 따른다.
 - **통합 상태:** Antigravity 변경은 back `main`에 통합됐고 기준 커밋 `f89709a93c008a447d19c9410a7ee155ab182073`의 Qwen feedback export는 보존했다. 다른 세션의 미커밋 변경은 통합 커밋에 포함하지 않았다. API/worker 계약 구현과 단위 검증은 포함하지만, 실제 backend smoke와 디자인 worker 실행은 미완료다. 상세 범위는 [ADR 0029](adr/0029-antigravity-cli-engine.md)를 따른다.
 
@@ -392,3 +392,24 @@ payload 는 `{title, body, url, tag}`:
 | GET/HEAD | `/api/public/shares/{share_id}/download?format={txt\|md\|json\|csv}&part={document\|utterances\|decisions\|actions\|discussions\|open_issues}&revision={publication_revision}` | 같은 capability 필요 → 승인된 snapshot에서 생성한 attachment. 조회·다운로드 모두 매 요청 활성·만료·원본·선택 part를 확인하며 다운로드는 응답 직전 `final_gate`를 통과해야 한다. 회수/삭제/만료 시 이후 요청은 404, 생성 중 재게시로 revision이 바뀌면 409이며 생성 bytes는 반환하지 않는다. 이미 인가되어 시작한 전송은 취소하지 않는다. |
 
 Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fragment를 브라우저에서 Authorization 헤더로 옮김 → 공개 조회/다운로드 → owner 목록·회수 순으로 연결한다. URL fragment는 서버 요청에 자동 전송하지 않는다. `format_options`의 `enabled`, `applicable`, `parts`, `reason`을 그대로 UI 상태에 사용한다. preview/download와 owner export 모두 서버가 선택된 section/part만 직렬화하며 frontend가 원본 회의 상세 API를 공개 페이지 데이터원으로 대신 호출하지 않는다. 정식 활성화 전에는 UI 캐시/CSP·외부 proxy 로그와 공개 전달 환경을 별도 확인해야 한다.
+
+
+### 작업자 task routing (2026-10-16)
+
+정책 단일 원본은 `runs/worker_routing.py`다. `account_usage.worker_routing`, 각 계정의 `model_capacity`, 역할 지침의 단계 목록은 이 원본에서 생성한다.
+
+| task_type | 모델 단계(같은 단계 안 계정은 부하 분산) |
+|---|---|
+| general | Antigravity Sonnet → Flash → native Sonnet/Luna |
+| routine | Flash → Luna → Antigravity Sonnet → native Sonnet |
+| design | Antigravity Sonnet → native Sonnet |
+| verification | Luna → Antigravity Sonnet → Flash → native Sonnet |
+| reasoning | Argon → Antigravity Opus medium → native Sol/Opus; 사유 필수 |
+
+- auto의 `model`은 모델군 선호이며 엔진 잠금이 아니다. 생략을 권장한다. task_type 생략은 general이며 Luna/Flash 모델 선호를 작업 종류로 오인하지 않는다. peer 모델만 reasoning으로 분류해 사유를 요구한다. Antigravity 모델군의 수준을 지정하면 해당 군의 후보에 적용한다. 실제 실행 모델은 Run에 기록한다.
+- `sessions.worker_task_type`은 nullable이고 기존 세션은 변경하지 않는다. 신규 작업자만 정책을 저장하며 auto 작업자의 매 Run과 한도 전환에서 적용한다. 회사 범위·켜기·지원 모델·기존 cooldown을 지킨다.
+- 미측정·stale·초기화 후 잔여는 unknown, stale 소진은 기존 초기화/갱신 규칙까지 차단이다. 알려진 후보를 우선하며 적합한 후보가 모두 한도면 기다린다. 일반 오류는 quota 전환으로 재실행하지 않는다.
+- 계정+모델별 provider 대화 ID를 보존한다. 같은 계정의 Sonnet↔Flash는 다른 대화, 동일 모델로 돌아오면 그 모델 대화를 재개하며 다른 계정에서의 진행은 기존 인계 경로로 전달한다.
+- `worker.routing` Run 이벤트는 정책 버전·task_type·선택 계정/실제 모델·모델그룹·알려진 잔여·부하 점수·후보·한도 제외·트리거를 기록한다. WorkerOut은 `task_type`, 최신 `routing`을 포함한다. 값이 unknown이면 null이다.
+- `POST /api/orchestrator/workers/{id}/messages` 및 MCP `message_worker`는 `reroute?`, `task_type?`, `escalation_reason?`을 받는다. `reroute=True`는 idle 작업자를 새 auto 정책으로 전환하고 기존 provider 대화를 보존한다. active/queued이면 409로 거부하며 기존 Run·fresh_context·새 지시를 변경하지 않는다. 먼저 진행/부작용을 확인한 뒤 기존 Run을 마치거나 취소한다. task_type만 변경하면 422, reasoning 사유가 없으면 400이다. `fresh_context`는 별도 동작이다.
+- 0035는 nullable 컬럼 추가만 한다. generation protocol은 그대로이며 0034 실행과 병행 가능한 additive migration이다. 세대의 소유권·drain·슬롯·준비 검사를 유지한다.

@@ -110,6 +110,7 @@ class SessionOut(ORM):
     engine: str
     model: str | None
     effort: str | None
+    worker_task_type: str | None = None
     engine_session_id: str | None
     kind: str
     parent_id: uuid.UUID | None

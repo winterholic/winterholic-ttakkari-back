@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
-from ttakkari.runs import profiles, usage_store
+from ttakkari.runs import profiles, usage_store, worker_routing
 from ttakkari.runs import usage as usage_mod
 
 KST = ZoneInfo("Asia/Seoul")
@@ -98,6 +98,9 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
             reason = "usage_cap"
         remaining = _cap_remaining(a.id, a.max_used_percent, usage)
         running = counts.get(a.id, 0)
+        model_capacity = {model: worker_routing.capacity(
+            profiles.Profile(a.id, a.name, a.engine, max_used_percent=a.max_used_percent, model=model), running)
+            for model in s.engine_models.get(a.engine, [])}
         out.append({
             "name": a.name, "engine": a.engine, "scope": a.pool, "enabled": profiles.is_on(a, pool), "priority": rank,
             "available": profiles.is_on(a, pool) and not until,
@@ -107,24 +110,29 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
             "remaining_to_limit_percent": remaining,
             "headroom_per_run_percent": None if remaining is None else remaining / (running + 1),
             "models": s.engine_models.get(a.engine, []),
+            "model_capacity": model_capacity,
             "orchestrator_model": orch,
             "usage": usage,
         })
     return {
         "measured_at": _iso(now),
         "priority_override_until": override["until"] if override else None,
+        "worker_routing": worker_routing.policy(),
         "note": "usage is collected by the app every ~5 min (~1.5 min while the account runs a Run or is below 20% left) "
                 f"and is not refreshed by this tool (null = never observed, stale = older than {s.usage_stale_seconds // 60} min). "
                 "burn_percent_per_hour is the recent rise in used percent per hour (null = not enough history); "
                 "exhausts_in_seconds/exhausts_before_reset extrapolate it. "
                 "Accounts last measured at their max_used_percent in either the 5-hour or weekly window remain blocked "
                 "even if stale, until reset, a newer lower measurement or a raised cap. "
-                "All Run roles compare eligible accounts by headroom_per_run_percent "
+                "Within each eligible task/model stage, compare accounts by headroom_per_run_percent "
                 "(remaining_to_limit_percent / (running_runs + 1)); reset time breaks ties. "
                 "This is a load-sharing score, not a consumption prediction; a Run excludes its own claim when choosing. "
                 "Fixed-engine sessions compare within that engine; desk keeps its configured engine order. "
                 "Fresh measured candidates rank before unknown candidates; unknowns keep model/idle/priority fallback. "
-                "For general workers use engine=auto: headroom per Run precedes model engine preference; "
-                "explicit worker engines lock that engine (Claude for design).",
+                "Auto workers use worker_routing and task_type; Antigravity is included. "
+                "Use model_capacity for model-specific quota and cooldowns; account-level availability alone is insufficient. "
+                "Task fit and known capacity precede stage priority, then headroom per Run. "
+                "Main/desk and legacy auto sessions retain their native account policy. "
+                "Explicit worker engines lock that engine; reroute an idle worker with message_worker(reroute=True).",
         "accounts": out,
     }

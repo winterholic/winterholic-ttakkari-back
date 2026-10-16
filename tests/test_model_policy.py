@@ -33,17 +33,18 @@ async def test_orchestrator_always_runs_on_its_allowed_model(client, auth, make_
     assert _model(agent_calls()[before]) == ("opus", "medium")
 
 
-async def test_worker_defaults_to_luna_and_engine_defaults(client, auth, make_dir):
+async def test_worker_defaults_to_general_task_policy_and_pinned_engine_defaults(client, auth, make_dir):
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
     auto = (await client.post("/api/orchestrator/workers", json={"title": "a", "prompt": "go"}, headers=h)).json()
-    assert (auto["engine"], auto["model"], auto["effort"]) == ("auto", "gpt-6-luna", "high")
+    assert (auto["engine"], auto["model"], auto["effort"]) == ("auto", "claude-sonnet-5-5-high", "high")
     claude = (await client.post("/api/orchestrator/workers", json={"title": "c", "prompt": "go", "engine": "claude"},
                                 headers=h)).json()
     assert (claude["model"], claude["effort"]) == ("sonnet", "high")
-    # auto + Luna 는 Codex 계정부터 쓴다.
+    # Without an Antigravity account, general tasks balance native Sonnet/Luna candidates.
     wrun = (await client.get(f"/api/sessions/{auto['worker_id']}/runs", headers=auth)).json()[0]
-    assert (await wait_run(client, auth, wrun["id"]))["profile"] == "codex"
+    actual = await wait_run(client, auth, wrun["id"])
+    assert (actual["engine"], actual["model"]) in {("claude", "sonnet"), ("codex", "gpt-6-luna")}
     # Both fake workers belong to this test. Finish the Claude assertion as well,
     # so fixture teardown need not signal a live process group in sandboxed macOS.
     crun = (await client.get(f"/api/sessions/{claude['worker_id']}/runs", headers=auth)).json()[0]
@@ -66,7 +67,7 @@ async def test_peer_model_worker_needs_escalation_reason(client, auth, make_dir)
 async def test_worker_switching_engine_gets_same_grade_model(client, auth, make_dir):
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
-    w = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "CODEX_LIMIT"}, headers=h)).json()
+    w = (await client.post("/api/orchestrator/workers", json={"title": "w", "prompt": "CODEX_LIMIT", "task_type":"verification"}, headers=h)).json()
     wrun = (await client.get(f"/api/sessions/{w['worker_id']}/runs", headers=auth)).json()[0]
     assert (await wait_run(client, auth, wrun["id"]))["profile"] == "claude"
     claude = next(c for c in agent_calls() if c["engine"] == "claude" and "CODEX_LIMIT" in json.dumps(c["argv"]))

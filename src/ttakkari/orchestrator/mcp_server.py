@@ -327,18 +327,21 @@ def orchestrator_tool(fn):
 async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
-                       escalation_reason: str | None = None) -> str:
+                       escalation_reason: str | None = None,
+                       task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     `prompt` must be self-contained: the worker does not see this conversation.
-    Follow the current model routing policy; use native engine="auto" as a usage-balanced fallback.
+    Use engine="auto" and task_type; the backend enforces the policy returned by account_usage.worker_routing.
+    general: Antigravity Sonnet, then Flash, then native Sonnet/Luna balanced by capacity.
+    routine: Flash first. design: Antigravity Sonnet then native Sonnet. verification: native Luna first.
+    reasoning: Argon, then Antigravity Opus, then native Sol/Opus; escalation_reason is required.
     Explicit engine="claude"/"codex"/"antigravity" locks that engine, including on a usage limit.
-    Prefer explicit Antigravity Sonnet 5.5 for normal work, Flash 3.8 for routine work, Argon 4 or Opus 5.5
-    for justified difficult work. It is excluded from native auto. Check model IDs and separate quota pools
-    with account_usage; model effort must match its low/medium/high suffix. Zero AI credits does not mean
-    zero baseline quota. Without model: antigravity → claude-sonnet-5-5-high, native auto → gpt-6-luna/high.
-    Argon, Antigravity Opus, native opus / gpt-6.1-sol need `escalation_reason` (why this part needs deep reasoning,
-    a design decision or new ideas). Auto workers can move to another account with the same-grade
-    model of the other engine. Returns the worker_id."""
+    Pin only for an explicit user requirement or a required tool/capability; check model_capacity first.
+    Unknown capacity is not confirmed spare quota. Zero AI credits is independent from baseline quota.
+    Auto chooses a model appropriate to the task on every Run and quota fallback, preserving per-model
+    conversations. Omit model/effort unless needed. Missing task_type is general; a Luna/Flash model hint
+    does not classify work as verification/routine. Peer model requests imply reasoning and require a reason.
+    Returns worker_id, task_type and the latest routing receipt when available."""
     body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine}
     if model:
         body["model"] = model
@@ -346,6 +349,8 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
         body["effort"] = effort
     if escalation_reason:
         body["escalation_reason"] = escalation_reason
+    if task_type:
+        body["task_type"] = task_type
     return await _call("POST", "/workers", body)
 
 
@@ -428,11 +433,19 @@ async def manage_pms(operation: PmsOperation, project_id: str | None = None, ite
 
 
 @orchestrator_tool
-async def message_worker(worker_id: str, prompt: str, fresh_context: bool = False) -> str:
+async def message_worker(worker_id: str, prompt: str, fresh_context: bool = False, reroute: bool = False,
+                         task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None,
+                         escalation_reason: str | None = None) -> str:
     """Send a follow-up instruction to an existing worker. It continues the same conversation and is queued if
     the worker is busy. fresh_context=True starts the worker's engine conversation over (use when its context is
-    high); then the prompt must be self-contained and say where the progress is recorded."""
-    return await _call("POST", f"/workers/{worker_id}/messages", {"prompt": prompt, "fresh_context": fresh_context})
+    high); then the prompt must be self-contained and say where the progress is recorded.
+    reroute=True converts an idle worker (including a legacy engine lock) to task-aware auto, preserving
+    provider conversations and recorded progress. Running/queued work must finish or be canceled after
+    inspecting side effects first (409 otherwise). task_type changes require reroute; reasoning requires
+    a new escalation_reason. Rerouting does not automatically repeat the earlier task."""
+    return await _call("POST", f"/workers/{worker_id}/messages", {
+        "prompt": prompt, "fresh_context": fresh_context, "reroute": reroute,
+        "task_type": task_type, "escalation_reason": escalation_reason})
 
 
 @orchestrator_tool

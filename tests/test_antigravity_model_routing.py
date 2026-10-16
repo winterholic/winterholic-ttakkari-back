@@ -178,9 +178,9 @@ async def test_worker_api_launches_the_selected_cli_model_and_level(client, auth
     assert json.loads(run['result_text']) == {'model':model or 'claude-sonnet-5-5-high', 'effort':level}
 
 
-def test_auto_does_not_silently_translate_an_antigravity_claude_id_to_native_claude():
-    with pytest.raises(ValidationError, match="engine=antigravity"):
-        WorkerIn(title="task", prompt="work", model="claude-sonnet-5-5-high", engine="auto")
+def test_auto_accepts_an_antigravity_model_for_task_aware_routing():
+    worker = WorkerIn(title="task", prompt="work", model="claude-sonnet-5-5-high", engine="auto")
+    assert worker.model == "claude-sonnet-5-5-high"
 
 
 def test_default_sonnet_high_cannot_be_combined_with_a_conflicting_effort():

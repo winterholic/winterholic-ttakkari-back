@@ -1,7 +1,8 @@
 {
   "protocol": 1,
-  "schema_revision": "0034_knowledge_ledger",
+  "schema_revision": "0035_worker_routing",
   "online_migration_from": [
+    "0034_knowledge_ledger",
     "0032_weather_briefings",
     "0033_weather_analysis_engine"
   ]

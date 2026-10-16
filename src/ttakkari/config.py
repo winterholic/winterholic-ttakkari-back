@@ -74,7 +74,7 @@ class Settings(BaseSettings):
         "claude": {"model": "opus", "effort": "medium"},
         "codex": {"model": "gpt-6.1-sol", "effort": "high"},
     }
-    # 작업 세션 기본값. Antigravity는 Sonnet 우선, native auto fallback은 Luna.
+    # 명시 엔진·레거시 기본값. 신규 auto 작업자는 runs/worker_routing.py의 task 정책을 사용한다.
     worker_default_models: dict[str, dict[str, str]] = {
         "claude": {"model": "sonnet", "effort": "high"},
         "codex": {"model": "gpt-6-luna", "effort": "high"},

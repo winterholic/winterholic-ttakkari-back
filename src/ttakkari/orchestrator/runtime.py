@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -12,6 +13,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ttakkari.config import get_settings
+from ttakkari.runs.worker_routing import policy
 from ttakkari.security.auth import ALGO, ISSUER, decode
 
 # 모든 Run 이 쓰는 세션 한정 토큰(ADR 0007). 오케스트레이터 도구는 세션 종류로 따로 막는다.
@@ -66,29 +68,30 @@ LEAD_NOTE = LEAD_INTRO + ORCHESTRATOR_BODY
 
 MODEL_ROUTING_NOTE = """\
 [Antigravity routing policy (2026-10-16)]
-This implements the user's newer decision and supersedes older conflicting model-routing rules in role
-instructions: Antigravity Claude is no longer excluded and Antigravity is no longer Flash-only.
-- For normal coding, research, writing, UI/UX and implementation, prefer engine="antigravity",
-  model="claude-sonnet-5-5-high", effort="high" while its baseline quota is available. The user wants
-  Antigravity Claude used frequently before drawing on native Claude/Codex subscriptions.
-- Use engine="antigravity", model="gemini-3.8-flash-high", effort="high" actively for simple searches,
-  extraction, conversions, small edits and routine checks; native Luna is a fallback, not a mandatory first choice.
-- Use Gemini 4 Argon for difficult reasoning, architecture and independent alternatives. Select
-  model="gemini-4-argon-high", effort="high" with a concrete escalation_reason. Antigravity Opus 5.5
-  (claude-opus-5-5-medium / medium or high / high) is also available for this scope with escalation_reason.
-  Do not promote routine work solely because a model has included quota. GPT-OSS is supported but is not
-  preferred over Claude. These task fits are routing policy, not measured model-performance rankings.
-- Check account_usage: Claude and GPT share one baseline quota pool, Gemini Flash another, and paid Pro
-  Argon a separate pool (Ultra may instead use the Gemini pool). Inspect the selected model's actual windows,
-  both 5-hour and weekly where present, reset times, freshness, scope and concurrent load. One exhausted
-  pool must not disable the others. AI credit balance is separate: zero credits does not mean zero baseline
-  allowance. Do not buy credits or enable paid overages to satisfy this preference.
-- Choose Antigravity explicitly; engine="auto" continues to select native Claude/Codex and does not map
-  Antigravity models. When the intended pool is exhausted, use another suitable available pool or native
-  sonnet/Luna; use native Opus/Sol only for justified difficult work. Keep company-account scope intact.
-- Model listing and quota availability do not verify MCP, persistence or resume. The separate Antigravity
-  connection/lifecycle fix must pass its actual capability checks before assigning tasks that depend on it.
-  Do not retry the same known failure or declare new models production-ready based on model listing alone.
+This backend-enforced task policy supersedes conflicting native-only, explicit-Antigravity-only,
+Luna-first-for-everything and Claude-for-everything instructions in older role files and memories.
+- For workers, use engine="auto" and task_type; omit model/effort unless needed. Antigravity is included.
+  general = normal coding/research/writing/implementation; routine = simple searches/extraction/conversion/
+  small edits/routine checks; design = visual composition/UI; verification = tests, consistency, counterexamples;
+  reasoning = difficult architecture, deep reasoning or independent alternatives, requiring escalation_reason.
+  Do not label routine work reasoning or verification just to reach a preferred model. Split mixed work only
+  when it benefits the task; these are task preferences, not universal measured model-performance rankings.
+- The authoritative ordered model stages (equal-stage candidates balance by load) are generated from code:
+""" + json.dumps(policy(), ensure_ascii=False) + """
+- Check account_usage before assignments, including model_capacity and worker_routing. The backend respects
+  scope, configured model IDs, enable flags, model-group cooldowns and stale exhaustion. Unknown capacity is
+  unknown; measured alternatives precede unknown candidates, then task-stage priority, then headroom per Run.
+  One exhausted pool must not disable the others. Zero AI credits does not mean zero baseline allowance.
+  Do not buy credits or enable paid overages. Antigravity effort matches the model suffix.
+- Explicit engines lock that engine including during a quota wait. Pin only for a user's explicit model/engine
+  requirement or a required tool/capability. Explain the requirement; do not pin from your own provider identity.
+  For a legacy/pinned worker needing a policy change, inspect progress and side effects first, then finish or
+  cancel its active Run and use message_worker(reroute=True, task_type=...) on the idle worker. Preserve progress
+  and inspect side effects; do not repeat completed actions. fresh_context is a separate decision.
+- Main orchestrator and desk keep their existing native policy; worker auto is a separate path. Review
+  worker.routing receipts for the actual model, quota evidence, exclusions and fallback reason.
+- Model listing and quota availability do not verify MCP, persistence or resume. Preserve the evidence scope
+  of actual capability checks. Do not retry a known sandbox failure unchanged or bypass the sandbox.
 """
 
 

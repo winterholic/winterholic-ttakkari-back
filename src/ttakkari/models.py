@@ -146,6 +146,8 @@ class ChatSession(Base):
     engine: Mapped[str] = mapped_column(String(16))
     model: Mapped[str | None] = mapped_column(String(100))
     effort: Mapped[str | None] = mapped_column(String(16))
+    # Only auto workers use this policy. NULL preserves legacy sessions and native main/desk routing.
+    worker_task_type: Mapped[str | None] = mapped_column(String(20))
     # 엔진 쪽 대화 ID(claude session_id / codex thread_id). 후속 지시를 resume 하는 데 쓴다.
     engine_session_id: Mapped[str | None] = mapped_column(String(100))
     # 엔진 프로필 이름 → 그 프로필의 엔진 대화 ID. 프로필을 오가도 각자 이어간다(ADR 0006).

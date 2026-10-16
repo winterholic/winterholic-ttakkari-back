@@ -208,6 +208,7 @@ payload 는 `{title, body, url, tag}`:
 | POST | `/api/accounts/reorder?pool=` | `{ids}` 제출한 계정을 앞에 두고 누락된 계정은 기존 상대 순서대로 뒤에 둠. 중복·그 모드에 없는 id 는 400. `pool=personal`(기본)은 모든 계정을 대상으로 `priority`, `pool=work` 는 회사에 들어온 계정만 대상으로 `work_priority` 를 바꾼다. 응답은 그 모드 목록 |
 | GET/PUT/DELETE | `/api/accounts/override?pool=` | 임시 순서. 개인·회사 모드마다 따로 하나씩. PUT `{ids, until}`(`pool=work` 는 회사에 들어온 계정만 허용). 끝나면 그 모드만 기본 순서로 돌아간다 |
 | GET | `/api/accounts/usage` | 개인 모드의 지금 적용 순서(임시 순서 반영). `max_used_percent`, 신선할 때만 `remaining_to_limit_percent`, `stale` 포함. `rank`·`enabled` 는 개인 모드, `work_rank`(회사 모드 순서 번호, 회사에 안 들어온 계정은 null)·`work_enabled` 는 회사 모드 값, `pool` 로 회사 표시 |
+| GET | `/api/accounts/qwen-usage` | 로컬 Qwen 접수의 실제 llama.cpp HTTP 호출 토큰. `{model, timezone: Asia/Seoul, collection_started_at, server, today, week}`. 기간별 입력·출력·합계 토큰, 전체/계측/usage 누락/실패 호출 수, 마지막 사용 시각을 반환한다. 오늘은 KST 00:00부터, 주간은 월요일 KST 00:00부터 현재까지. 평가는 제외하며 서버 응답 `usage.prompt_tokens`, `completion_tokens`, `total_tokens`가 모두 있고 합이 맞는 호출만 계측한다. 누락·실패 토큰은 null로 보존하며 프롬프트·응답 본문은 저장하지 않는다. |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 
 ## 메모·캘린더(ADR 0008)

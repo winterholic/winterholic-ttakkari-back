@@ -152,6 +152,14 @@ async def list_accounts(_: User, db: Db) -> list[AccountOut]:
     return [_out(a) for a in await profiles.accounts(db)]
 
 
+@router.get("/qwen-usage")
+async def qwen_usage(_: User, db: Db) -> dict:
+    """Local Qwen tokens from operational desk HTTP calls; evaluation requests are excluded."""
+    from ttakkari.runs import desk_qwen_server
+    from ttakkari.runs import qwen_usage as usage
+    return await usage.summary(db, server=desk_qwen_server.status())
+
+
 @router.post("", response_model=AccountOut, status_code=201)
 async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> AccountOut:
     rows = await profiles.accounts(db)

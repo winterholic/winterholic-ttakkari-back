@@ -210,11 +210,19 @@ async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[C
     s = get_settings()
     board, history = await _context(db, run, sess, leads)
     try:
-        q = await desk_qwen.decide(board, history, run.prompt, [str(lead.id) for lead in leads])
+        from ttakkari.runs import desk_qwen_server
+        base_url = await desk_qwen_server.ensure_running()
+        with desk_qwen.measure_operational_run(run.id, base_url):
+            q = await desk_qwen.decide(board, history, run.prompt, [str(lead.id) for lead in leads])
     except desk_qwen.QwenUnavailable as exc:
         if exc.cooldown:
             events.append(db, run, "desk.retry", {"account": "qwen-local", "engine": "qwen", "ms": 0, "warm": False,
                                                    "reason": exc.reason[:300]})
+        return None
+    except RuntimeError as exc:
+        desk_qwen.mark_unavailable()
+        events.append(db, run, "desk.retry", {"account": "qwen-local", "engine": "qwen", "ms": 0, "warm": False,
+                                               "reason": f"server_start: {type(exc).__name__}"})
         return None
     run.engine, run.profile, run.model = "qwen", None, s.desk_qwen_model
     events.append(db, run, "desk.route", {"action": q.action, "account": "qwen-local", "engine": "qwen", "ms": q.ms, "warm": True,

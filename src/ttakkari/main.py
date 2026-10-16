@@ -183,6 +183,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await luna_benchmark.shutdown()
         await manager.shutdown()
         await desk_pool.shutdown()
+        from ttakkari.runs import desk_qwen_server
+        await desk_qwen_server.shutdown()
         await preview.stop_worker()
         await dispose_engine()
 

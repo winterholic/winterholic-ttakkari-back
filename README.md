@@ -46,6 +46,7 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_TRUST_PROXY_IP_HEADER` | Cloudflare Tunnel 뒤면 `CF-Connecting-IP` |
 | `TTAKKARI_CLAUDE_SETTING_SOURCES` | 비우면 사용자 전역 설정(CLAUDE.md·스킬·hook) 포함. `project,local` 이면 제외 |
 | `TTAKKARI_MAX_CONCURRENT_DESK`, `TTAKKARI_MAX_CONCURRENT_LEADS`, `TTAKKARI_MAX_CONCURRENT_WORKERS` | 접수·기획·작업/일반 대화별 동시 실행 수. 기본 각각 16개이며 역할별로 독립 대기한다 |
+| `TTAKKARI_DESK_QWEN_SERVER_ENABLED`, `TTAKKARI_DESK_QWEN_SERVER_PATH`, `TTAKKARI_DESK_QWEN_MODEL_PATH` | 접수 요청 때 healthy Qwen 서버를 재사용하고 없으면 로컬 loopback에 llama-server 자식 프로세스를 띄운다(기동 제한 15초). 기본 실행 파일·모델은 `~/private-resources/service-data/ttakkari-qwen/`의 영구 배치 경로다. 세대별 포트와 프로세스 소유권을 분리하며 세대 종료 시 자신이 띄운 자식만 종료한다 |
 | `TTAKKARI_RUN_TIMEOUT_SECONDS` | Run 타임아웃 |
 
 **uvicorn 워커는 1개만 쓴다.** 실행 중 프로세스를 메모리에서 관리한다(ADR 0001).

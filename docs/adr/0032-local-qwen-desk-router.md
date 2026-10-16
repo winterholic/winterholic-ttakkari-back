@@ -15,13 +15,18 @@
 ## 결정
 - runs/desk_qwen.py: 모델은 요청 종류(kind)만 고르고 answer/delegate 는 코드가 정한다. 진행·상태 질문은 모델이 작업판/최근 대화에서 인용한 근거가 실제로 있을 때만 직접 답한다. 근거가 없으면 지어내지 않고 기획 세션으로 넘긴다(desk.route 이벤트의 qwen.abstained).
 - 기획 세션이 작업판에 있으면 lead_id 를 enum 제약으로 고른다(작업판 밖의 값은 나올 수 없다). 제목은 기존처럼 메시지 첫 줄.
-- 서버는 앱 밖의 llama.cpp(deploy/install-services.sh qwen, 127.0.0.1:18080, CPU-only, ctx 8192). 모델·서버는 ~/private-resources/service-data/ttakkari-qwen 에 둔다. 연결 실패·시간 초과·잘못된 출력·너무 긴 입력이면 Luna → Haiku 경로로 넘어가고, 실패 뒤 60초는 Qwen 을 건너뛴다. 접수 때문에 메시지가 멈추는 일은 없다(ADR 0013 불변식 유지).
+- llama.cpp 는 CPU-only, ctx 8192 로 영구 배치 모델을 쓴다. 최초 구성은 별도 LaunchAgent/127.0.0.1:18080 이었고, 현재 기동·포트·소유권은 아래 운영 연결 개정에 따른다. 연결 실패·시간 초과·잘못된 출력·너무 긴 입력이면 Luna → Haiku 경로로 넘어가고, 실패 뒤 60초는 Qwen 을 건너뛴다. 접수 때문에 메시지가 멈추는 일은 없다(ADR 0013 불변식 유지).
 - 끄려면 TTAKKARI_DESK_QWEN_ENABLED=false. 프롬프트는 측정 때와 글자까지 같아야 한다(tests/test_desk_qwen.py 가 SHA256 고정). 바꾸면 다시 측정한다.
 
 ## 알려진 한계
 - common30-11 같은 "워커/에이전트 상태" 질문이 작업판 일반 질문으로 분류돼 근거 검증을 건너뛰고 답이 지어질 수 있다(측정에서 1문항 x 3회). 개선은 dev 세트를 늘려서 한다.
 - 모델 호출이 직접 답변 경로에서 2회, 기획이 있으면 위임 경로에서 2회다. 서버는 --parallel 1 이라 동시 접수는 줄을 선다(시간 초과 20초 뒤 CLI 경로).
 - 기획 세션 선택(lead_id)은 신규 dev 26문항에서 위임 대상 23건을 모두 맞혔고 잘못 이어붙인 건 0건이었다. 실로그 검증 전이다.
+
+## 운영 연결 개정 2026-10-16
+- 서버 기동 책임을 수동 LaunchAgent 안내에서 backend lifespan 소유의 일반 자식 프로세스로 옮긴다. 접수 첫 호출 때 configured loopback 주소의 healthy 서버를 재사용하고, 없으면 영구 배치된 `llama-server`와 GGUF로 CPU-only 자식을 띄운다. 원격 URL에는 자식을 띄우지 않는다.
+- 세대 모드에서 Qwen 자식은 API 슬롯 8791/8792/8793에 대응하는 별도 loopback 포트(18081/18082/18083)를 쓴다. 요청을 맡은 세대만 자기 자식을 종료하고, 외부에서 띄운 서버는 종료하지 않는다. 실패·시간 초과 시 기존 Luna → Haiku 폴백과 60초 건너뛰기를 유지한다.
+- 운영 접수의 llama.cpp 응답 usage만 호출별 DB 원장에 저장한다. 평가 호출은 제외하고 prompt/response 본문은 보관하지 않는다. KST 오늘·월요일 시작 주간 사용량은 `/api/accounts/qwen-usage`로 제공한다. 계측 이력이 없던 기간은 수집 시작 시각과 함께 미수집으로 표시한다.
 
 ## 개정 2026-10-16 (harness-v2): 사실성 답변은 모든 경로에서 근거가 필요하다
 - 결함(확인): common30-11 사후 분석. kind 가 board_overview 로 나오면 근거 검증 없이 answer 가 됐고(무검증 경로), 응답 생성기는 작업판 전체를 보고 자유롭게 써서 "아직도 일하는 중이야" 같은 상태를 지어냈다. 호출 흐름: kind → (board_overview) → 정책 매핑 answer → reply. 근거 검증은 status 에만 있었다.

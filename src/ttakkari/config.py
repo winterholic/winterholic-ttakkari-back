@@ -172,10 +172,15 @@ class Settings(BaseSettings):
     }
     desk_timeout_seconds: float = 25.0
     # 접수 1순위는 로컬 Qwen3.5-4B(llama.cpp 서버, runs/desk_qwen). 서버 장애·시간 초과·잘못된 출력이면 위 엔진 순서(Luna→Haiku)로 넘어간다.
-    # 서버는 앱 밖에서 띄운다(deploy/qwen-desk-server.sh). 실패 직후에는 cooldown 동안 Qwen 을 건너뛰어 접수가 느려지지 않게 한다.
     desk_qwen_enabled: bool = True
     desk_qwen_base_url: str = "http://127.0.0.1:18080"
     desk_qwen_model: str = "qwen3.5-4b-q4_k_m"
+    desk_qwen_server_enabled: bool = True
+    desk_qwen_server_path: str = "~/private-resources/service-data/ttakkari-qwen/llama/llama-b11655/llama-server"
+    desk_qwen_model_path: str = "~/private-resources/service-data/ttakkari-qwen/model/Qwen3.5-4B-Q4_K_M.gguf"
+    desk_qwen_server_threads: int = 6
+    desk_qwen_server_context: int = 8192
+    desk_qwen_server_startup_timeout_seconds: float = 15.0
     desk_qwen_timeout_seconds: float = 20.0
     desk_qwen_connect_timeout_seconds: float = 1.0
     desk_qwen_cooldown_seconds: float = 60.0

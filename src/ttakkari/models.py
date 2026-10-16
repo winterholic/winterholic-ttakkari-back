@@ -266,6 +266,26 @@ class RunEvent(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class QwenTokenUsage(Base):
+    """One row per actual local Qwen HTTP call made while routing an operational desk Run."""
+
+    __tablename__ = "qwen_token_usage"
+    __table_args__ = (
+        UniqueConstraint("request_id", "call_index", name="uq_qwen_token_usage_request_call"),
+        Index("ix_qwen_token_usage_recorded_at", "recorded_at"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    request_id: Mapped[uuid.UUID] = mapped_column()
+    call_index: Mapped[int] = mapped_column(Integer)
+    stage: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(24))
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    recorded_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class RuntimeGeneration(Base):
     __tablename__ = "runtime_generations"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)

@@ -19,16 +19,23 @@ common30 에서 다시 재지 않았다. 프롬프트가 바뀌면 PROMPT_VERSIO
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import hashlib
 import json
+import logging
 import re
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
 
 from ttakkari.config import get_settings
+
+log = logging.getLogger(__name__)
 
 SEED = 20261015
 KINDS = ["social", "board_overview", "status", "work", "unclear"]
@@ -196,11 +203,57 @@ class QwenDecision:
 
 
 _down_until = 0.0
+_meter_context: contextvars.ContextVar[list | None] = contextvars.ContextVar("qwen_meter", default=None)
+
+
+@contextmanager
+def measure_operational_run(run_id: UUID, base_url: str):
+    """Enable per-HTTP-call metering only for the live desk routing path."""
+    state = [run_id, uuid4(), 0, base_url]
+    token = _meter_context.set(state)
+    try:
+        yield
+    finally:
+        _meter_context.reset(token)
+
+
+async def _record_http_call(name: str, response: httpx.Response | None) -> None:
+    state = _meter_context.get()
+    if state is None:
+        return  # benchmark/evaluation traffic is deliberately excluded
+    run_id, request_id, call_index, _base_url = state
+    state[2] += 1
+    stage = {"desk_kind": "kind", "desk_verify": "verification", "desk_social_guard": "social_guard",
+             "desk_social_reply": "response", "desk_reply": "response", "desk_lead": "lead_selection"}.get(name, "other")
+    status, values = "failed", (None, None, None)
+    if response is not None and response.is_success:
+        try:
+            usage = response.json().get("usage")
+            prompt = usage["prompt_tokens"]
+            completion = usage["completion_tokens"]
+            total = usage["total_tokens"]
+            if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (prompt, completion, total)) and total == prompt + completion:
+                status, values = "metered", (prompt, completion, total)
+            else:
+                status = "usage_missing"
+        except (KeyError, TypeError, ValueError, AttributeError):
+            status = "usage_missing"
+    try:
+        from ttakkari.runs.qwen_usage import persist_call
+        await persist_call(run_id=run_id, request_id=request_id, call_index=call_index, stage=stage,
+                           prompt_tokens=values[0], completion_tokens=values[1], total_tokens=values[2], status=status)
+    except (SQLAlchemyError, OSError, RuntimeError) as exc:  # metering must never change routing; log persistence failure
+        log.warning("Qwen usage write failed for run %s call %d: %s", run_id, call_index, type(exc).__name__)
 
 
 def reset_cooldown() -> None:
     global _down_until
     _down_until = 0.0
+
+
+def mark_unavailable() -> None:
+    global _down_until
+    _down_until = time.monotonic() + get_settings().desk_qwen_cooldown_seconds
 
 
 def available() -> bool:
@@ -284,7 +337,14 @@ async def _chat(client: httpx.AsyncClient, messages: list[dict[str, str]], schem
         "chat_template_kwargs": {"enable_thinking": False}, "cache_prompt": True,
         "response_format": {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}},
     }
-    r = await client.post(s.desk_qwen_base_url.rstrip("/") + "/v1/chat/completions", json=payload)
+    state = _meter_context.get()
+    base_url = state[3] if state is not None else s.desk_qwen_base_url.rstrip("/")
+    try:
+        r = await client.post(base_url + "/v1/chat/completions", json=payload)
+    except Exception:
+        await _record_http_call(name, None)
+        raise
+    await _record_http_call(name, r)
     r.raise_for_status()
     obj = json.loads(r.json()["choices"][0]["message"]["content"])
     if not isinstance(obj, dict):

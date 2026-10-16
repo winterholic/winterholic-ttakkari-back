@@ -214,6 +214,8 @@ async def lifespan(app):
         await luna_benchmark.shutdown()
         await manager.shutdown()
         await desk_pool.shutdown()
+        from ttakkari.runs import desk_qwen_server
+        await desk_qwen_server.shutdown()
         await preview.stop_worker()
         await profiles.flush_persist()
         await usage_store.flush()

@@ -41,7 +41,7 @@ from ttakkari.models import (
     SessionKind,
     utcnow,
 )
-from ttakkari.runs import events
+from ttakkari.runs import desk_qwen, events
 from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 
@@ -85,8 +85,8 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
     system = instructions_mod.read("desk")
     observe_shadow_route(s, run, sess, leads, pool, prompt, system)
 
-    decision: Decision | None = None
-    for _ in range(min(MAX_ATTEMPTS, len(pool))):
+    decision: Decision | None = await _try_qwen(db, run, sess, leads)
+    for _ in range(0 if decision is not None else min(MAX_ATTEMPTS, len(pool))):
         # 접수도 같은 엔진의 계정끼리 사용량을 비교한다. 다른 엔진의 미측정값은 이 비교를 끄지 않는다.
         candidates = [p for p in pool if p.engine == pool[0].engine]
         prof = await profiles_mod.choose_async(candidates, run.id, balance_usage=True)
@@ -187,15 +187,39 @@ async def _lead_line(db: AsyncSession, lead: ChatSession) -> str:
     return line
 
 
+async def _context(db: AsyncSession, run: Run, sess: ChatSession, leads: list[ChatSession]) -> tuple[list[str], list[str]]:
+    """작업판 줄과 최근 대화 줄. 엔진 프롬프트(_prompt)와 로컬 Qwen(desk_qwen)이 같은 재료를 쓴다."""
+    board = [await _lead_line(db, lead) for lead in leads]
+    return board, await _history(db, sess, run, HISTORY_TURNS)
+
+
 async def _prompt(db: AsyncSession, run: Run, sess: ChatSession, leads: list[ChatSession]) -> str:
-    board = [await _lead_line(db, lead) for lead in leads] or ["(맡긴 일 없음)"]
-    history = await _history(db, sess, run, HISTORY_TURNS)
+    board, history = await _context(db, run, sess, leads)
     return "\n".join([
         f"[지금] {time.strftime('%Y-%m-%d %H:%M')}",
-        "[작업판]", *board, "",
+        "[작업판]", *(board or ["(맡긴 일 없음)"]), "",
         "[최근 대화]", *(history or ["(없음)"]), "",
         "[사용자 메시지]", run.prompt,
     ])
+
+
+async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[ChatSession]) -> Decision | None:
+    """1순위 로컬 Qwen. 못 쓰면 None 을 돌려주고 호출한 쪽이 Luna/Haiku 경로로 넘어간다."""
+    if not desk_qwen.available():
+        return None
+    s = get_settings()
+    board, history = await _context(db, run, sess, leads)
+    try:
+        q = await desk_qwen.decide(board, history, run.prompt, [str(lead.id) for lead in leads])
+    except desk_qwen.QwenUnavailable as exc:
+        if exc.cooldown:
+            events.append(db, run, "desk.retry", {"account": "qwen-local", "engine": "qwen", "ms": 0, "warm": False,
+                                                   "reason": exc.reason[:300]})
+        return None
+    run.engine, run.profile, run.model = "qwen", None, s.desk_qwen_model
+    events.append(db, run, "desk.route", {"action": q.action, "account": "qwen-local", "engine": "qwen", "ms": q.ms, "warm": True,
+                                           "qwen": {"kind": q.kind, "abstained": q.abstained, "grounded": q.grounded, "calls": q.calls}})
+    return Decision(q.action, q.reply, q.lead_id)
 
 
 async def _history(db: AsyncSession, sess: ChatSession, run: Run, turns: int) -> list[str]:

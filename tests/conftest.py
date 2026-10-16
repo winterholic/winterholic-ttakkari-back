@@ -48,6 +48,7 @@ os.environ.update({
     "TTAKKARI_CORS_ORIGINS": '["http://localhost:5173"]',
     # 접수 상주 풀은 test_desk 의 풀 테스트에서만 켠다. 나머지는 지금까지처럼 1회 실행(argv 검증)을 본다.
     "TTAKKARI_DESK_WARM_POOL": "false",
+    "TTAKKARI_DESK_QWEN_ENABLED": "false",
     # 매니저가 TTAKKARI_* 를 자식 env 에서 지우므로 접두사가 다른 이름을 쓴다.
     "FAKE_AGENT_LOG": str(AGENT_LOG),
 })

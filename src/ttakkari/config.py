@@ -171,6 +171,16 @@ class Settings(BaseSettings):
         "claude": {"model": "haiku"},
     }
     desk_timeout_seconds: float = 25.0
+    # 접수 1순위는 로컬 Qwen3.5-4B(llama.cpp 서버, runs/desk_qwen). 서버 장애·시간 초과·잘못된 출력이면 위 엔진 순서(Luna→Haiku)로 넘어간다.
+    # 서버는 앱 밖에서 띄운다(deploy/qwen-desk-server.sh). 실패 직후에는 cooldown 동안 Qwen 을 건너뛰어 접수가 느려지지 않게 한다.
+    desk_qwen_enabled: bool = True
+    desk_qwen_base_url: str = "http://127.0.0.1:18080"
+    desk_qwen_model: str = "qwen3.5-4b-q4_k_m"
+    desk_qwen_timeout_seconds: float = 20.0
+    desk_qwen_connect_timeout_seconds: float = 1.0
+    desk_qwen_cooldown_seconds: float = 60.0
+    # 작업판+최근 대화+메시지 글자 수가 이보다 길면 Qwen 컨텍스트(서버 ctx 8192 기준)를 넘길 수 있어 CLI 경로로 보낸다.
+    desk_qwen_max_prompt_chars: int = 4000
     # Qwen desk observer is preparation-only and opt-in only in test/staging environments.
     # No queue consumer or persistent sink is started by application startup.
     qwen35_shadow_enabled: bool = False

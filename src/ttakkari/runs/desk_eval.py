@@ -68,6 +68,8 @@ async def eval_set(db: AsyncSession, limit: int | None = None) -> list[tuple[str
 
 async def run_eval(db: AsyncSession, limit: int | None = None, engine: str | None = None,
                    pool: str = "personal") -> Report:
+    if engine == "qwen":
+        return await _run_eval_qwen(db, limit)
     s = get_settings()
     engines = [engine] if engine else list(s.desk_engine_order)
     order = {e: i for i, e in enumerate(engines)}
@@ -89,6 +91,22 @@ async def run_eval(db: AsyncSession, limit: int | None = None, engine: str | Non
                 case.got, case.account, case.error = decision.action, prof.name, None
                 break
             case.error = res.error or "출력 형식 오류"
+        report.cases.append(case)
+    return report
+
+
+async def _run_eval_qwen(db: AsyncSession, limit: int | None) -> Report:
+    """로컬 Qwen 하네스로 같은 문항을 돌린다. 작업판·최근 대화는 비운 채(CLI 평가와 같은 조건)."""
+    from ttakkari.runs import desk_qwen
+
+    report = Report()
+    for message, expected in await eval_set(db, limit):
+        case = Case(message, expected, None, None, 0)
+        try:
+            d = await desk_qwen.decide([], [], message, [])
+            case.got, case.account, case.error, case.ms = d.action, "qwen-local", None, d.ms
+        except desk_qwen.QwenUnavailable as exc:
+            case.error = exc.reason
         report.cases.append(case)
     return report
 

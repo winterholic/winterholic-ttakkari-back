@@ -45,3 +45,25 @@
 - **기존 결함 수정**: 실패한 Run에 error가 없을 때 `run.status.value`가 str 컬럼이라 AttributeError였다. `str(run.status)`로 바꿨다.
 - **검증**: tests/test_weather_engine.py 신규(Codex 한도→Claude 유지, 둘 다 한도→Antigravity, 전부 불가→degraded, 대기 전환, 완료 기록, JSON 추출). 전체 pytest -q는 886 passed, 2 skipped, 2 xfailed. `ruff check src tests alembic` 통과(저장소 전체의 기존 ruff 오류 21건은 docs/experiments 스크립트라 손대지 않음). 공유 테스트 DB가 다른 작업과 충돌해 TTAKKARI_TEST_DB로 전용 DB를 썼다.
 - **미확인**: 실제 Antigravity·Claude Run으로 날씨 JSON을 받아 본 적은 없다. 이 환경의 CLI 제약은 위 기록과 같다.
+
+## 운영 Luna 한도 대기 사고와 수정 (2026-10-16 오후)
+
+증상: Codex 계정 둘이 모두 usage_cap(내 codex 11:43 KST, Daddy codex 13:09 KST 리셋)인데 날씨 브리핑이 계속 대기. Claude 계정은 여유.
+
+**증거 (운영 DB 조회, 읽기 전용)**
+- 대기 중인 Run은 2개. 둘 다 queued + run.waiting(until 11:43 KST).
+  - weather_briefings 2026-10-16 행의 Run: 세션 engine=codex 고정, 10:33 KST에 구버전(cd0c78e)이 수동 생성. 행은 generating, analysis_engine/analysis_route가 비어 있고 updated_at이 10:33 그대로다. 새 코드가 한 번도 손대지 않았다는 뜻이다.
+  - "Luna high 30문항×3 측정" worker 세션: engine=codex 명시 고정. 의도된 엔진 잠금이라 건드리지 않는다.
+- engine=auto 세션은 정상이다. 이 수정 작업 자체가 auto 세션이고 claude/sonnet으로 돌았다. 일반 Run 매니저는 원인이 아니다.
+- 운영 DB를 스크래치 DB로 복제해 weather.service.advance()를 돌리면 폴백이 동작했다. 로직이 아니라 호출되지 않는 것이 문제였다.
+
+**원인 1 (근본): 운영 주기 작업에 날씨 scan이 없었다.** 운영은 runtime_generation 모드라 main._reminder_loop가 아니라 generation_service.lifespan의 periodic(...) 목록이 주기 작업을 돈다. 날씨 scan()은 _reminder_loop에만 붙어 있었다. 결과적으로 매일 06:30 자동 실행, generating 행의 완료 수집, 한도 대기 폴백이 운영에서 한 번도 돌지 않았다. 수동 POST가 호출한 advance() 한 번이 전부였다. 오늘 06:30 자동 브리핑이 없었던 것도 같은 이유로 보인다(행이 manual, 10:33 생성).
+
+**원인 2: 구버전 고정 엔진 Run의 폴백 경로.** _fail_over는 대기 Run을 취소하고 바로 Antigravity로 넘겼다. Claude가 여유 있어도 구버전 codex 고정 Run은 Antigravity로 가게 된다.
+
+**수정**
+- generation_service.maintenance_jobs()로 주기 작업 등록을 한곳에 모으고 ("weather", _weather, reminder_scan_seconds)를 추가했다. 새 주기 작업이 운영 경로에서 빠지지 않도록 이 목록을 테스트한다.
+- _fail_over: 대기 Run의 engine이 auto가 아니면(구버전 고정 Run) 취소 뒤 choose_route를 다시 보고, auto가 가능하면 새 auto 세션으로 재시작한다. Claude가 model_counterparts로 이어 받고, 이력 사유는 locked_engine_waiting이다. 불가하면 기존대로 Antigravity, 그다음 degraded.
+- 명시 고정 엔진 세션 정책은 그대로다. 날씨 모듈이 만든 세션과 Run만 정리한다.
+
+**회귀 테스트**: test_stale_codex_locked_run_restarts_on_auto_while_claude_is_free, test_stale_codex_locked_run_goes_to_antigravity_when_claude_is_limited_too, test_generation_runtime_schedules_the_weather_scan. 수정 전에 첫 테스트가 `['antigravity'] == ['auto']`로 실패하는 것을 확인했다.

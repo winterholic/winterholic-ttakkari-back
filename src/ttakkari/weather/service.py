@@ -328,6 +328,7 @@ async def _is_waiting_for_limit(db, run: Run) -> bool:
 
 
 async def _fail_over(db, row: WeatherBriefing, run: Run) -> None:
+    from ttakkari.runs import profiles as profiles_mod
     from ttakkari.runs.manager import manager
 
     await manager.cancel_queued(db, run)
@@ -336,8 +337,12 @@ async def _fail_over(db, row: WeatherBriefing, run: Run) -> None:
         _degrade(row, "Antigravity 한도 대기로 데이터 기반 결과를 발행합니다.")
         await db.commit()
         return
-    from ttakkari.runs import profiles as profiles_mod
-
+    if run.engine != ROUTE_AUTO:
+        # 예전 버전이 만든 엔진 고정(codex) Run 이다. auto 로 다시 시도할 수 있으면 Claude 가 이어 받게 한다.
+        route, _ = await choose_route(db)
+        if route == ROUTE_AUTO:
+            await _launch(db, row, ROUTE_AUTO, "locked_engine_waiting")
+            return
     fallback_free, _ = await profiles_mod.availability(db, FALLBACK_ENGINE, "personal")
     if not fallback_free:
         _trace(row, "failover", None, "auto_limited+antigravity_unavailable")

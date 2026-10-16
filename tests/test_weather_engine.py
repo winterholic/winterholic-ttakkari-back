@@ -5,6 +5,7 @@ import json
 from datetime import date
 
 import pytest
+from sqlalchemy import select
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
@@ -253,3 +254,68 @@ def test_json_extraction_trims_overlong_summary_and_rejects_garbage():
     unsafe = {**VALID, "outfit": "노면이 미끄러우니 주의하세요."}
     with pytest.raises(ValueError, match="위험"):
         parse_model_result(json.dumps(unsafe, ensure_ascii=False), {})
+
+
+async def _stale_codex_locked_row(queued) -> tuple[WeatherBriefing, Run]:
+    """구버전(cd0c78e)이 만든 상태: engine=codex 고정 세션 + 한도 대기 Run + 엔진 기록 없는 generating 행."""
+    accs = await _accounts()
+    row = await _row()
+    async with sessionmaker()() as db:
+        workspace = await db.scalar(select(ChatSession.workspace_id).limit(1))
+        if workspace is None:
+            from ttakkari.api.workspaces import ensure_default_workspace
+            workspace = (await ensure_default_workspace(db)).id
+        session = ChatSession(workspace_id=workspace, title="날씨 브리핑 · old", engine="codex", model="gpt-6-luna",
+                              effort="low", pool="personal")
+        db.add(session)
+        await db.flush()
+        run = Run(session_id=session.id, workspace_id=workspace, prompt="p", origin=RunOrigin.system, engine="codex",
+                  model="gpt-6-luna", effort="low", request_key=f"weather:{DAY.isoformat()}", status=RunStatus.queued)
+        db.add(run)
+        await db.flush()
+        db.add(RunEvent(run_id=run.id, seq=1, type="run.waiting", payload={"until": None}))
+        run.last_seq = 1
+        saved = await db.get(WeatherBriefing, row.id)
+        saved.status, saved.session_id, saved.run_id = "generating", session.id, run.id
+        await db.commit()
+    _limit(accs["codex"])
+    return await _reload(row.id), run
+
+
+async def test_stale_codex_locked_run_restarts_on_auto_while_claude_is_free(queued):
+    row, stale = await _stale_codex_locked_row(queued)
+    await service.advance(row.id)
+    saved = await _reload(row.id)
+    assert [c["engine"] for c in queued] == ["auto"]
+    assert (saved.status, saved.analysis_engine, saved.run_id) == ("generating", "auto", queued[0]["run"])
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, stale.id)).status == RunStatus.cancelled
+        assert (await db.get(ChatSession, saved.session_id)).engine == "auto"
+    assert saved.analysis_route[-1]["reason"] == "locked_engine_waiting"
+
+
+async def test_stale_codex_locked_run_goes_to_antigravity_when_claude_is_limited_too(queued):
+    row, _ = await _stale_codex_locked_row(queued)
+    _limit(*[a for a in (await _accounts(antigravity=False)).values() if a.engine == "claude"])
+    await service.advance(row.id)
+    saved = await _reload(row.id)
+    assert [c["engine"] for c in queued] == ["antigravity"]
+    assert saved.analysis_engine == "antigravity"
+
+
+async def test_generation_runtime_schedules_the_weather_scan(monkeypatch):
+    """운영은 runtime_generation 모드다. 이 경로의 주기 작업에 날씨 scan 이 없으면 06:30 자동 실행도 폴백도 영원히 안 돈다."""
+    from ttakkari import generation_service
+    from ttakkari.config import get_settings
+
+    calls = []
+
+    async def fake_scan():
+        calls.append("scan")
+
+    monkeypatch.setattr(service, "scan", fake_scan)
+    jobs = {name: op for name, op, _ in generation_service.maintenance_jobs(get_settings().model_copy(
+        update={"reminder_scan_seconds": 30}))}
+    assert "weather" in jobs
+    await jobs["weather"]()
+    assert calls == ["scan"]

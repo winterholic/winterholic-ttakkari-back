@@ -132,6 +132,11 @@ async def _reminders() -> None:
     await checklist_reminders.send_due()
 
 
+async def _weather() -> None:
+    from ttakkari.weather import service
+    await service.scan()
+
+
 async def _vectors() -> None:
     from ttakkari.meetings.vectors import reindex
     async with sessionmaker()() as db:
@@ -156,14 +161,29 @@ async def ready(runtime) -> dict:
     return value
 
 
+def maintenance_jobs(s) -> list[tuple[str, object, float]]:
+    """주기 작업 목록. 운영은 이 경로로만 도니 새 주기 작업(날씨 scan 등)은 여기에 등록한다."""
+    from ttakkari.runs import lead_archive
+    from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
+
+    jobs: list[tuple[str, object, float]] = [
+        ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds)]
+    if s.reminder_scan_seconds > 0:
+        jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
+    if s.usage_poll_seconds > 0:
+        jobs.append(("usage", Collector().tick, TICK_SECONDS))
+    if s.lead_archive_scan_seconds > 0:
+        jobs.append(("archive", lead_archive.archive_idle_leads, s.lead_archive_scan_seconds))
+    return jobs
+
+
 @asynccontextmanager
 async def lifespan(app):
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.meetings.local_stt import jobs
-    from ttakkari.runs import desk_pool, lead_archive, profiles, usage_store
+    from ttakkari.runs import desk_pool, profiles, usage_store
     from ttakkari.runs.manager import manager
-    from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
     s = get_settings()
     if s.is_prod and not s.release_revision:
         raise RuntimeError("generation production requires a pinned release revision")
@@ -182,14 +202,8 @@ async def lifespan(app):
         await preview.start_worker()
         await jobs.start()
         tasks.append(asyncio.create_task(coordinate(runtime, manager)))
-        tasks.append(asyncio.create_task(periodic("retention", _retention, 3600)))
-        tasks.append(asyncio.create_task(periodic("vectors", _vectors, s.runtime_poll_seconds)))
-        if s.reminder_scan_seconds > 0:
-            tasks.append(asyncio.create_task(periodic("reminders", _reminders, s.reminder_scan_seconds)))
-        if s.usage_poll_seconds > 0:
-            tasks.append(asyncio.create_task(periodic("usage", Collector().tick, TICK_SECONDS)))
-        if s.lead_archive_scan_seconds > 0:
-            tasks.append(asyncio.create_task(periodic("archive", lead_archive.archive_idle_leads, s.lead_archive_scan_seconds)))
+        for name, operation, interval in maintenance_jobs(s):
+            tasks.append(asyncio.create_task(periodic(name, operation, interval)))
         yield
     finally:
         for task in tasks:

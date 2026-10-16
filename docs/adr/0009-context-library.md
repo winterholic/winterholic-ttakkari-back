@@ -5,6 +5,8 @@
 - 대체: ADR 0007의 e5-large·fastembed·벡터 혼합 검색. 저장된 기억·문서·관계와 nullable 벡터 열은 보존한다.
 - 2026-10-13: 회의록만 로컬 e5-large 벡터를 더했다([ADR 0021](0021-clovanote-and-meeting-vectors.md)). 기억·문서는 여전히 아래 어휘 검색이다.
 
+> 2026-10-16: [ADR 0031](0031-evidence-first-knowledge.md)과 [지식 기반 실행 설계](../knowledge/architecture.md)로 구조 고도화 착수. 아래 내용은 현재 운영 경로의 기준이며, 새 원본 원장·assertion·추출/검색 경로는 단계별 구현 전이다. scope와 기존 임베딩 정책은 유지한다.
+
 ## 구조
 
 큰 종류(projects / work-history / knowledge / health) → 프로젝트 이정표 → 근거 문서·기억의 세 층이다.

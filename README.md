@@ -52,6 +52,12 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 
 ## 맥락 도서관
 
+지식 기반 재설계는 [실행 설계](docs/knowledge/architecture.md)와 [ADR 0031](docs/adr/0031-evidence-first-knowledge.md)에 따른다.
+첫 단계의 `ttakkari context-inventory /path/to/export --expected-shards 6 --output /new/output/directory`는
+ChatGPT 원본의 모든 분기·처리상태를 읽기 전용으로 기록한다. `--timeout` 기본 60초, 초과 시 unknown/incomplete와 오류 원장을 남기고 exit 2로 끝난다.
+원본 밖 새 출력 폴더가 필요하며 추출·색인·DB 변경은 수행하지 않는다. 원본 처리와 의미 보존율은 별개다.
+
+
 별도 텍스트 임베딩 모델·다운로드·외부 API 없이 PostgreSQL 키워드·부분 일치 검색과 온톨로지를 사용한다.
 `library_catalog`로 종류·프로젝트 목차를 보고, `recall`로 출처·시각이 붙은 기억과 문서 조각을 찾는다.
 프로젝트 별칭은 정식 이름·연결된 기억·프로젝트 문서로 이어진다. 회사 세션은 회사·공통 맥락만 검색한다.

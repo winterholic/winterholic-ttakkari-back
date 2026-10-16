@@ -128,6 +128,58 @@ def _cmd_context_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_context_inventory(args: argparse.Namespace) -> int:
+    import json
+    import signal
+
+    from ttakkari.context.inventory import (
+        PARSER_VERSION,
+        inspect_export,
+        write_inventory,
+    )
+
+    class InventoryDeadlineExceeded(Exception):
+        pass
+
+    def deadline(signum, frame):
+        raise InventoryDeadlineExceeded
+
+    try:
+        if args.timeout <= 0:
+            raise ValueError('invalid_timeout')
+        # This standalone macOS CLI owns its process timer. Never arm this in the API.
+        previous = signal.getsignal(signal.SIGALRM)
+        if signal.getitimer(signal.ITIMER_REAL) != (0.0, 0.0):
+            raise ValueError('process_timer_already_active')
+        signal.signal(signal.SIGALRM, deadline)
+        try:
+            signal.setitimer(signal.ITIMER_REAL, args.timeout)
+            try:
+                report = inspect_export(Path(args.source), expected_shards=args.expected_shards)
+            except InventoryDeadlineExceeded:
+                report = {'schema_version': 1, 'parser_version': PARSER_VERSION,
+                          'status': 'incomplete', 'counts': {}, 'units': [],
+                          'corpus_fingerprint': None,
+                          'completeness_scope': 'unobserved_due_to_deadline',
+                          'errors': [{'code': 'inventory_deadline_exceeded',
+                                      'shard': None, 'json_pointer': None}],
+                          'capabilities': {'semantic_extraction': 'not_run',
+                                           'index_reconciliation': 'not_run',
+                                           'attachment_payloads': 'not_read',
+                                           'database_writes': False}}
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        write_inventory(report, Path(args.output), source=Path(args.source))
+    except (OSError, ValueError):
+        # Avoid exception text: a parser or path error can contain private data.
+        print('Inventory output failed; use a new directory outside the source.', file=sys.stderr)
+        return 2
+    print(json.dumps({'status': report['status'], 'counts': report['counts'],
+                      'corpus_fingerprint': report['corpus_fingerprint']}, ensure_ascii=False))
+    return 0 if report['status'] == 'complete' else 2
+
+
 def _cmd_desk_eval(args: argparse.Namespace) -> int:
     from ttakkari import db
     from ttakkari.runs import desk_eval
@@ -167,6 +219,13 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("context-import", help="출처가 명시된 프로젝트 목록을 맥락 도서관에 등록·색인")
     p.add_argument("catalog", help="JSON 목록 경로")
     p.set_defaults(func=_cmd_context_import)
+
+    p = sub.add_parser('context-inventory', help='ChatGPT 원본의 모든 분기를 읽기 전용으로 집계(추출·색인 아님)')
+    p.add_argument('source', help='내보내기 폴더 또는 conversations*.json 파일')
+    p.add_argument('--output', required=True, help='원본 밖의 새 출력 폴더(덮어쓰기 안 함)')
+    p.add_argument('--expected-shards', type=int, default=None, help='알고 있는 전체 shard 수; 불일치 시 실패')
+    p.add_argument('--timeout', type=float, default=60, help='원본 관측 제한 시간(초, 기본 60); 초과는 unknown/실패')
+    p.set_defaults(func=_cmd_context_inventory)
 
     p = sub.add_parser("desk-eval", help="접수 판정 모음을 지금 접수 지침·모델로 다시 분류해 정확도를 잰다(계정 사용량을 쓴다)")
     p.add_argument("--limit", type=int, default=None, help="최근 판정 N개만")

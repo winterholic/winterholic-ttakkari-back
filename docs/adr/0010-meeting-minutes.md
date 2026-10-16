@@ -12,7 +12,7 @@
 |---|---|
 | 녹음 파일 보관 | 기존 `POST /api/uploads` → Artifact(`source=upload`, 보관함 files). 회의는 `audio_artifact_id` 만 가진다. |
 | LLM 분석 | 기존 Run·엔진 체계. 분석 전용 작업 세션(`kind=worker`, 부모 없음, 보관 처리)을 만들고 `queue_run` 으로 돌린다. |
-| 계정 범위 | 회의 `scope` 가 세션 `pool` 이 된다. 회사 회의는 회사 계정만 쓴다. |
+| 계정 범위 | 2026-10-16 사용자 결정: 회의 `scope`/세션 `pool`은 데이터·MCP 조회 범위를 유지한다. 분석은 켜진 개인 계정(`pool=personal`, `enabled=true`)에서 Luna → Antigravity Flash → Antigravity Sonnet → native Sonnet 순서로 선택한다. 회사 계정은 분석 후보에서 제외한다. |
 | 맥락 반영 | `ctx_memories`(kind=decision), 프로젝트 `ctx_entities`. 새 엔터티·출처·색인 경로는 만들지 않는다. |
 | 알림 | `push.notify`. 분석이 끝나면 한 번 보낸다. |
 | 에이전트 읽기 | 공통 MCP 서버에 읽기 도구 3개(`list_meetings`, `get_meeting`, `search_meeting_items`). |
@@ -78,6 +78,8 @@ class TranscriptionProvider(Protocol):
   `ingest_transcript()` 로 넘기는 것까지 이미 구현·테스트한다(가짜 Provider 로).
 
 ## 분석 (Run)
+
+계정·모델 선택은 `meetings/routing.py`의 고정 체인이다. 모델별 5시간·주간 한도와 런타임 cooldown을 적용하고, 같은 단계의 개인 계정끼리 기존 잔여 한도/동시 Run 수 기준으로 분산한다. Flash와 Sonnet의 Antigravity quota는 별개이고 크레딧 0은 baseline 소진이 아니다. 전체 소진 시 초기화를 기다리고, 실행 중 한도·실행 파일 부재 시 남은 단계로 전환한다. 회의의 프로젝트·검색·승인·MCP 범위는 바꾸지 않는다.
 
 1. 서버가 후보 맥락을 모은다: 연결된 프로젝트의 기억 중 결정·지침·사실, 제목·프로젝트명으로 한 `store.recall`(기억만),
    같은 프로젝트의 이전 회의에서 아직 열린 액션 아이템. 각각 `M1..`, `A1..` 짧은 참조를 붙여 최대 40개로 자른다.

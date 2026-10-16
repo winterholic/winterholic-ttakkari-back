@@ -217,19 +217,22 @@ async def test_project_scope_rules_and_work_pool(client, auth, make_dir):
     assert r.status_code == 400 and r.json()["code"] == "scope_mismatch"
     assert (await client.post("/api/meetings", json={"title": "t", "scope": "personal", "project_id": shared, "transcript": "x"}, headers=auth)).status_code == 201
     assert (await client.post("/api/meetings", json={"title": "t", "transcript": "x", "project_id": str(uuid.uuid4())}, headers=auth)).status_code == 400
-    # 회사 회의의 분석 세션은 회사 계정 풀을 쓴다. 회사 계정이 없으면 실행하지 않고 이유를 남긴다.
+    # 회의 데이터/MCP 범위는 회사로 유지하되 개인 계정으로 분석한다.
+    for account in (await client.get("/api/accounts", headers=auth)).json():
+        await client.patch(f"/api/accounts/{account['id']}", json={"enabled": False}, headers=auth)
+    d = make_dir()
+    acc = (await client.post("/api/accounts", json={"name": "personal", "engine": "claude", "config_dir": str(d)}, headers=auth)).json()
     w = await _create(client, auth, scope="work", project_id=work, transcript=TRANSCRIPT)
     w = await _analyze(client, auth, w["id"])
     async with sessionmaker()() as db:
         sess = await db.get(ChatSession, uuid.UUID(w["analysis_session_id"]))
         assert sess.pool == "work" and sess.kind == "worker" and sess.archived_at is not None
-    assert w["status"] == "failed" and "회사" in w["error"]
-    # 회사 계정을 켜면 같은 회의를 다시 분석할 수 있다
-    d = make_dir()
-    acc = (await client.post("/api/accounts", json={"name": "co", "engine": "claude", "config_dir": str(d)}, headers=auth)).json()
+    assert w["status"] in ("review", "analyzed"), w.get("error")
+    assert w["scope"] == "work" and agent_calls()[-1]["account_dir"] == str(d)
+    # 회사 전용으로 바꾸면 분석 후보에서 빠진다. work_enabled로 우회하지 않는다.
     await client.patch(f"/api/accounts/{acc['id']}", json={"pool": "work"}, headers=auth)
     w = await _analyze(client, auth, w["id"])
-    assert w["status"] in ("review", "analyzed") and agent_calls()[-1]["account_dir"] == str(d)
+    assert w["status"] == "failed" and "개인" in w["error"]
 
 
 # ---- 입력: 녹음·Provider

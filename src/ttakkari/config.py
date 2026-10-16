@@ -125,6 +125,7 @@ class Settings(BaseSettings):
 
     # 회의록(ADR 0010). 전사 한 건의 최대 글자 수(분석 Run 의 인자 길이·컨텍스트 한도), 분석 Run 의 모델·생각 수준(비우면 세션 기본).
     meeting_transcript_max_chars: int = 120_000
+    # Legacy model hint; meeting routing now follows its fixed personal model chain.
     meeting_analysis_model: str | None = None
     meeting_analysis_effort: str | None = "high"
     # Local-first transcription; model files are never downloaded on a request.

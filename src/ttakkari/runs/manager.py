@@ -37,6 +37,7 @@ from ttakkari.models import (
     Artifact,
     ArtifactArea,
     ChatSession,
+    Meeting,
     Run,
     RunEvent,
     RunOrigin,
@@ -488,13 +489,21 @@ class RunManager:
         root = Path(ws.root_path)
 
         # 쓸 수 있는 계정이 없으면 시작하지 않고 가장 이른 한도 초기화까지 기다린다(대기 Run 은 queued 로 남는다).
-        profiles, blocked = await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
+        from ttakkari.meetings import routing as meeting_routing
+        is_meeting = await db.scalar(select(Meeting.id).where(Meeting.analysis_run_id == run.id)) is not None
+
+        async def available_profiles():
+            if is_meeting:
+                return await meeting_routing.availability(db)
+            return await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
+
+        profiles, blocked = await available_profiles()
         if not profiles:
             if blocked:
                 await self._wait_for_reset(db, run, sess, blocked)
                 return
             what = "엔진" if sess.engine == "auto" else sess.engine
-            where = "회사" if sess.pool == "work" else "개인"
+            where = "회사" if sess.pool == "work" and not is_meeting else "개인"
             await self._finish(db, run, RunStatus.failed,
                                error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
             return
@@ -504,7 +513,15 @@ class RunManager:
         # 모델·엔진 범위는 지키고, 계정 전환 시 저장된 엔진 대화와 _handoff_context로 이어 받는다.
         prefer = profiles_mod.model_engine(run.model)
         remaining = list(profiles)
-        choose = self.runtime.choose_profile if self.runtime else profiles_mod.choose_async
+        choose_account = self.runtime.choose_profile if self.runtime else profiles_mod.choose_async
+
+        async def choose(candidates, run_id, **kwargs):
+            if is_meeting:
+                candidates = meeting_routing.first_stage(candidates)
+            return await choose_account(candidates, run_id, **kwargs)
+
+        def conversation_key(profile):
+            return meeting_routing.conversation_key(profile) if is_meeting else profile.key
         prof = await choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer, balance_usage=True)
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
@@ -553,13 +570,17 @@ class RunManager:
         paused_handoff: str | None = None
         while True:
             remaining.remove(prof)
-            resume_id = (sess.engine_sessions or {}).get(prof.key)
+            resume_id = (sess.engine_sessions or {}).get(conversation_key(prof))
             prompt = base_prompt
             # 처음 쓰는 계정은 앞선 대화를 통째로, 쓴 적 있는 계정은 그 뒤 다른 계정에서 오간 대화만 받는다.
             prompt = await _handoff_context(db, run, resumed_profile=prof.name if resume_id else None) + prompt
             prompt = attempt_handoff + prompt
             run.engine, run.profile = prof.engine, prof.name
-            model, effort = _launch_model(sess, run, prof, profiles[0])
+            if is_meeting:
+                model, effort = prof.model, run.effort
+                run.model = model
+            else:
+                model, effort = _launch_model(sess, run, prof, profiles[0])
             spec = LaunchSpec(
                 cwd=root, prompt=prompt, engine_session_id=resume_id,
                 model=model, effort=effort,
@@ -574,7 +595,7 @@ class RunManager:
             if state.rate_limits:
                 usage_mod.remember_stream(prof.id, usage_mod.windows_from_stream(state.rate_limits))
             if state.engine_session_id:
-                sess.engine_sessions = {**(sess.engine_sessions or {}), prof.key: state.engine_session_id}
+                sess.engine_sessions = {**(sess.engine_sessions or {}), conversation_key(prof): state.engine_session_id}
                 sess.engine_session_id = state.engine_session_id
             failed = missing or rc != 0 or state.is_error
             stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
@@ -605,7 +626,7 @@ class RunManager:
                 "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
                 # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄
-                "mode": "resume" if (sess.engine_sessions or {}).get(nxt.key) else "handoff",
+                "mode": "resume" if (sess.engine_sessions or {}).get(conversation_key(nxt)) else "handoff",
             })
             attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
             if h:
@@ -613,7 +634,7 @@ class RunManager:
             prof = nxt
         profiles_mod.release(run.id)
         if paused_handoff is not None:
-            _, blocked = await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
+            _, blocked = await available_profiles()
             if blocked:
                 await self._wait_for_reset(db, run, sess, blocked, handoff=paused_handoff)
                 return

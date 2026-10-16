@@ -116,7 +116,11 @@ def main():
     if "FAIL" in prompt:
         emit({"type": "turn.failed", "error": {"message": "fake codex failure"}})
         return 1
-    emit({"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "codex done"}})
+    text = "codex done"
+    if "FAKE_MEETING" in prompt:
+        from fake_claude import meeting_reply
+        text = meeting_reply(prompt)
+    emit({"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": text}})
     emit({"type": "turn.completed", "usage": {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 5}})
     return 0
 

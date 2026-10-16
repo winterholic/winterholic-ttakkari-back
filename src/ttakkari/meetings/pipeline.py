@@ -325,7 +325,7 @@ async def start_analysis(db: AsyncSession, m: Meeting) -> Run:
     project = await get_project(db, m.pms_project_id or m.entity_id)
     prompt = build_prompt(m, refs, project.name if project else None)
     ws = await ensure_default_workspace(db)
-    # 사이드바를 어지럽히지 않게 보관 처리한 작업 세션에서 돌린다. 회의 범위가 계정 범위(pool)가 된다.
+    # 회의 범위는 MCP/맥락 접근에 유지한다. 분석 계정은 meetings.routing의 개인 계정 체인으로 고른다.
     sess = ChatSession(workspace_id=ws.id, title=f"회의록 분석 · {m.title}"[:300], engine="auto", kind=SessionKind.worker,
                        model=s.meeting_analysis_model, effort=s.meeting_analysis_effort, pool=m.scope, archived_at=utcnow())
     db.add(sess)

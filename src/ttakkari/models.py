@@ -70,6 +70,7 @@ class RunOrigin(enum.StrEnum):
     orchestrator = "orchestrator"
     # 접수가 기획 세션에 넘긴 사용자 요청
     desk = "desk"
+    system = "system"
 
 
 class RunStatus(enum.StrEnum):
@@ -378,8 +379,37 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
     url: Mapped[str] = mapped_column(Text)
+    dedupe_key: Mapped[str | None] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     read_at: Mapped[datetime | None]
+
+    __table_args__ = (Index("uq_notifications_dedupe_key", "dedupe_key", unique=True,
+                            postgresql_where=text("dedupe_key IS NOT NULL")),)
+
+
+class WeatherBriefing(Base):
+    """A single idempotent daily forecast collection and briefing lifecycle."""
+
+    __tablename__ = "weather_briefings"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    day: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="collecting")
+    request_source: Mapped[str] = mapped_column(String(12), default="scheduled")
+    raw_forecasts: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+    forecast: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+    source_errors: Mapped[dict[str, str] | None] = mapped_column(JSONB, default=None)
+    briefing: Mapped[dict[str, Any] | None] = mapped_column(default=None)
+    analysis_status: Mapped[str | None] = mapped_column(String(20))
+    failure: Mapped[str | None] = mapped_column(Text)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))
+    lease_until: Mapped[datetime | None]
+    scheduled_at: Mapped[datetime | None]
+    generated_at: Mapped[datetime | None]
+    push_sent_at: Mapped[datetime | None]
+    push_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
 class PushSubscription(Base):

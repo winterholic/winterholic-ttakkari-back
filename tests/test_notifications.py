@@ -20,7 +20,7 @@ async def test_notification_saved_without_push_subscription(client, auth):
     r = await client.get("/api/notifications", headers=auth)
     assert r.status_code == 200
     page = r.json()
-    assert page["unread_counts"] == {"all": 1, "tasks": 0, "assistant": 1, "planner": 0, "meetings": 0, "system": 0}
+    assert page["unread_counts"] == {"all": 1, "tasks": 0, "assistant": 1, "planner": 0, "weather": 0, "meetings": 0, "system": 0}
     item = page["items"][0]
     assert (item["title"], item["body"], item["url"], item["category"], item["read_at"]) == (
         "분석 결과", "내용", "/chat/session", "assistant", None)

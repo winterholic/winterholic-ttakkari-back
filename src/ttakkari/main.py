@@ -37,6 +37,9 @@ from ttakkari.api import (
     transfers,
     workspaces,
 )
+from ttakkari.api import (
+    weather as weather_api,
+)
 from ttakkari.artifacts import preview
 from ttakkari.config import get_settings
 from ttakkari.context.indexer import index_all
@@ -91,6 +94,11 @@ async def _reminder_loop(interval: int) -> None:
             await checklist_reminders.send_due()
         except Exception:
             log.exception("checklist reminder scan failed")
+        try:
+            from ttakkari.weather import service as weather_service
+            await weather_service.scan()
+        except Exception:
+            log.exception("weather briefing scan failed")
         await asyncio.sleep(interval)
 
 
@@ -220,6 +228,7 @@ def create_app() -> FastAPI:
     app.include_router(checklists.router)
     app.include_router(checklists.agent_router)
     app.include_router(notifications.router)
+    app.include_router(weather_api.router)
     return app
 
 

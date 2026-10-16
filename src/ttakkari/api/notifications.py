@@ -12,8 +12,8 @@ from ttakkari.models import Notification, utcnow
 from ttakkari.security.auth import User
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
-Category = Literal["tasks", "assistant", "planner", "meetings", "system"]
-CATEGORIES = ("tasks", "assistant", "planner", "meetings", "system")
+Category = Literal["tasks", "assistant", "planner", "weather", "meetings", "system"]
+CATEGORIES = ("tasks", "assistant", "planner", "weather", "meetings", "system")
 
 
 class NotificationOut(BaseModel):

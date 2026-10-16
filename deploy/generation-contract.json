@@ -1,5 +1,5 @@
 {
   "protocol": 1,
-  "schema_revision": "0031_notifications",
-  "online_migration_from": ["0030_runtime_generations"]
+  "schema_revision": "0032_weather_briefings",
+  "online_migration_from": ["0031_notifications"]
 }

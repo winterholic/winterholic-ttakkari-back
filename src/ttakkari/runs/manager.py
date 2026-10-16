@@ -705,17 +705,22 @@ class RunManager:
                 heartbeat_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await heartbeat_task
-            if proc.returncode is None:
-                await self._terminate(proc)
-            await proc.wait()
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(stderr_task, 5)
-            if adapter.engine == "antigravity":
-                with contextlib.suppress(OSError):
-                    (Path("/private/tmp") / f"ttakkari-agy-{run.id}.log").unlink()
-                cleanup = getattr(adapter, "cleanup", None)
-                if cleanup:
-                    cleanup(spec)
+            try:
+                if proc.returncode is None:
+                    await self._terminate(proc)
+                await proc.wait()
+            finally:
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(stderr_task, 5)
+                if adapter.engine == "antigravity":
+                    with contextlib.suppress(OSError):
+                        (Path("/private/tmp") / f"ttakkari-agy-{run.id}.log").unlink()
+                    # agy loads/reconnects MCP after init. Retain the private config
+                    # through the attempt, but remove it even if termination fails.
+                    # A signal failure still propagates; it is not proof of shutdown.
+                    cleanup = getattr(adapter, "cleanup", None)
+                    if cleanup:
+                        cleanup(spec)
         rc = proc.returncode
         finalize_process = getattr(adapter, "finalize_process", None)
         if finalize_process:
@@ -751,12 +756,6 @@ class RunManager:
                     events.append(db, run, n.type, n.payload)
                 await self._commit(db, run)
                 return
-            if adapter.engine == "antigravity" and obj.get("event") == "init" and spec is not None:
-                # The CLI has loaded the server config and started stdio MCP before exposing init.
-                # Remove the session token file before the agent can read the temporary project.
-                cleanup = getattr(adapter, "cleanup", None)
-                if cleanup:
-                    cleanup(spec)
             if account_id is not None and state.rate_limits is not seen_limits:
                 # 실행 중 엔진이 알려 준 사용량을 바로 반영해 수집 주기 사이에도 값이 신선하게 한다.
                 seen_limits = state.rate_limits

@@ -22,7 +22,13 @@ Ttakkari는 유료 SDK 대신 사용자가 로그인한 공식 단일 `agy` CLI�
 - 실제 `stream-json` NDJSON의 `init`, `step_update`, `result`, 도구 입력/출력, 상태, token usage를 Ttakkari Run 이벤트로 정규화한다.
 - 재개 시 전역 최신 대화 옵션을 쓰지 않고 `--conversation <engine_session_id>`를 전달한다.
 - `--sandbox`와 `--mode accept-edits`를 사용하며 `--dangerously-skip-permissions`는 사용하지 않는다. timeout·취소에서 프로세스 그룹과 임시 파일을 정리한다.
-- MCP 설정은 세션 전용 임시 프로젝트의 `.agents/mcp_config.json`에 0600으로 만들고 프로세스 종료·초기화 후 제거한다. 토큰은 이벤트·로그로 기록하지 않는다.
+- MCP 설정은 세션 전용 임시 프로젝트의 `.agents/mcp_config.json`에 0600으로 만들고 실행 시도 종료 시 제거한다. `init` 뒤에도 CLI가 설정을 읽고 MCP를 연결하므로 `init`에서는 삭제하지 않는다. 프로세스 종료 처리 중 오류가 나도 설정 정리는 수행하며, 종료 오류는 실패로 전파한다. 토큰은 이벤트·로그로 기록하지 않는다.
+
+## 2026-10-16 MCP 설정 수명 수정
+
+실제 CLI 대조 검사에서 `init` 시 설정 삭제를 생략하면 인증된 MCP 호출이 이루어졌고, 제품의 `RunManager._pump`가 `init`에서 삭제하던 경로를 수정했다. 성공·오류·시간 초과·취소 때의 설정 정리를 자식 프로세스 기반 회귀 검사로 검증한다. 프로세스 그룹 신호가 거부된 경우에도 설정 파일을 남기지 않도록 종료 정리를 `finally`로 감쌌다. 신호 거부를 무시하거나 다른 신호 경로로 우회하지 않으며, 파일 정리가 프로세스 종료의 증거는 아니다.
+
+수정본의 실제 CLI + 격리 DB/TCP backend 검사에서는 Flash 단발 응답, Flash·Argon의 인증된 `list_sessions` 무작위 표식 회수, 취소한 MCP 자식 PID 소멸·heartbeat 중단이 관측됐다. Sonnet은 MCP 호출 이벤트 뒤 backend 종료 처리의 `os.killpg(..., SIGTERM)`에서 `PermissionError`가 났으므로 해당 검사는 실패다. 명령 sandbox의 증거이며 운영 Sonnet 장애로 일반화하지 않는다. 실제 운영 프로세스의 모델 응답·MCP·대화 재개 및 장시간 안정성은 별도 검증이 필요하다. 이전 날짜의 미검증 기록은 당시 범위이며 이 수정의 성공을 의미하지 않는다.
 
 ## 공식 CLI 사용량 수집 (2026-10-15)
 

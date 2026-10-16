@@ -13,6 +13,72 @@ from ttakkari.models import ChatSession
 from ttakkari.orchestrator.runtime import issue_token
 
 
+@pytest.mark.parametrize("ending", ["success", "error", "timeout", "cancel"])
+async def test_mcp_config_survives_init_until_cli_exit_and_is_always_removed(
+    ending, client, auth, new_session, make_dir, monkeypatch
+):
+    """agy emits init before loading MCP; exercise that order with a real child process."""
+    from ttakkari.agents import antigravity
+    from ttakkari.config import get_settings
+
+    account = await client.post("/api/accounts", json={
+        "name": "MCP lifecycle fixture", "engine": "antigravity",
+    }, headers=auth)
+    assert account.status_code == 201, account.text
+    _workspace, chat = await new_session(engine="antigravity")
+    fixture_dir = make_dir()
+    ready = fixture_dir / "mcp-config-loaded"
+    fake_cli = fixture_dir / "agy_delayed_mcp.py"
+    fake_cli.write_text(textwrap.dedent(f"""\
+        #!/usr/bin/env python3
+        import json, time
+        from pathlib import Path
+        print(json.dumps({{"event": "init", "conversation_id": "delayed-mcp",
+                           "init": {{"model": "gemini-3.8-flash-high"}}}}), flush=True)
+        time.sleep(0.2)
+        config = Path('.agents/mcp_config.json')
+        if not config.exists():
+            print('MCP_CONFIG_REMOVED_BEFORE_LOAD', flush=True)
+            raise SystemExit(2)
+        assert config.stat().st_mode & 0o777 == 0o600
+        assert 'ttakkari' in json.loads(config.read_text())['mcpServers']
+        Path({str(ready)!r}).write_text('loaded')
+        if {ending!r} in {{'timeout', 'cancel'}}:
+            time.sleep(30)
+        print(json.dumps({{"event": "result", "result": {{
+            "conversation_id": "delayed-mcp",
+            "status": 'SUCCESS' if {ending!r} == 'success' else 'ERROR',
+            "response": 'MCP_CONFIG_LOADED', "error": 'fixture error'
+        }}}}), flush=True)
+        """))
+    fake_cli.chmod(0o700)
+    monkeypatch.setattr(antigravity, "get_settings", lambda: SimpleNamespace(
+        antigravity_bin=str(fake_cli), run_timeout_seconds=30,
+    ))
+    monkeypatch.setattr(get_settings(), "run_timeout_seconds", 1.5 if ending == "timeout" else 30)
+    response = await client.post(f"/api/sessions/{chat['id']}/runs", json={"prompt": "fixture"}, headers=auth)
+    assert response.status_code == 202, response.text
+    run_id = response.json()["id"]
+    if ending == "cancel":
+        deadline = time.monotonic() + 5
+        while not ready.exists() and time.monotonic() < deadline:
+            await asyncio.sleep(0.02)
+        assert ready.exists(), "CLI could not load MCP after init"
+        cancelled = await client.post(f"/api/runs/{run_id}/cancel", headers=auth)
+        assert cancelled.status_code == 200, cancelled.text
+    result = await wait_run(client, auth, run_id)
+    assert ready.exists(), "CLI could not load MCP after init"
+    assert result["status"] == {
+        "success": "succeeded", "error": "failed", "timeout": "failed", "cancel": "cancelled",
+    }[ending], result
+    if ending == "success":
+        assert result["result_text"] == "MCP_CONFIG_LOADED"
+    if ending == "timeout":
+        assert "시간 초과" in result["error"]
+    config = Path("/private/tmp/ttakkari-antigravity") / chat["id"] / ".agents/mcp_config.json"
+    assert not config.exists(), "MCP session token file survived CLI termination"
+
+
 async def test_spawn_os_error_cleans_temporary_mcp_token_file(monkeypatch):
     from ttakkari.agents.antigravity import AntigravityAdapter
     from ttakkari.agents.base import LaunchSpec
@@ -40,6 +106,47 @@ async def test_spawn_os_error_cleans_temporary_mcp_token_file(monkeypatch):
         )
 
     assert not config.exists()
+
+
+async def test_termination_permission_error_still_removes_temporary_mcp_token_file(monkeypatch):
+    from ttakkari.agents.antigravity import AntigravityAdapter
+    from ttakkari.agents.base import LaunchSpec
+    from ttakkari.runs.manager import RunManager
+
+    run_spec = LaunchSpec(
+        cwd=Path("/workspace"), prompt="work", engine_session_id=None, model="gemini-3.8-flash-high",
+        effort="high", outbox=Path("/outbox"), write_roots=[Path("/workspace")], system_note="",
+        session_id=str(uuid.uuid4()), mcp_servers={"ttakkari": {"command": "fixture-only"}},
+    )
+    adapter = AntigravityAdapter()
+    config = adapter.working_directory(run_spec) / ".agents/mcp_config.json"
+    stderr = asyncio.StreamReader()
+    stderr.feed_eof()
+    proc = SimpleNamespace(pid=12345, returncode=None, stderr=stderr)
+
+    async def spawn(*args, **kwargs):
+        return proc
+
+    async def no_op(*args, **kwargs):
+        pass
+
+    async def denied(*args, **kwargs):
+        raise PermissionError("fixture process-group signal denied")
+
+    manager = RunManager()
+    monkeypatch.setattr("ttakkari.runs.manager.asyncio.create_subprocess_exec", spawn)
+    monkeypatch.setattr(manager, "_commit", no_op)
+    monkeypatch.setattr(manager, "_pump", no_op)
+    monkeypatch.setattr(manager, "_terminate", denied)
+    try:
+        with pytest.raises(PermissionError, match="process-group signal denied"):
+            await manager._attempt(
+                db=None, run=SimpleNamespace(id=uuid.uuid4(), pid=None), adapter=adapter, spec=run_spec,
+                env={}, root=Path("/workspace"), h=None,
+            )
+        assert not config.exists(), "failed process termination leaked the MCP session token file"
+    finally:
+        adapter.cleanup(run_spec)
 
 
 async def test_run_fails_closed_when_resume_returns_a_new_conversation(

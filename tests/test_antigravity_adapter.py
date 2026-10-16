@@ -183,7 +183,7 @@ def test_actual_cli_target_file_field_is_tracked():
     assert result[0].payload["input"]["path"] == "src/new.tsx"
 
 
-def test_session_mcp_config_is_private_and_removed_after_cli_init(monkeypatch):
+def test_session_mcp_config_is_private_and_removed_by_terminal_cleanup(monkeypatch):
     from ttakkari.config import Settings
 
     monkeypatch.setattr("ttakkari.agents.antigravity.get_settings", lambda: Settings(

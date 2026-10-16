@@ -12,6 +12,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field, StringConstraints, field_validator
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +26,7 @@ from ttakkari.models import (
     LocalSttJob,
     LocalSttSegment,
     Meeting,
+    MeetingChunk,
     MeetingItem,
     MeetingStatus,
     PmsProject,
@@ -60,9 +62,17 @@ class TranscribeIn(BaseModel):
 
 class MeetingPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    scope: Literal["personal", "work"] | None = None
     project_id: uuid.UUID | None = None
     held_at: datetime | None = None
     participants: list[str] | None = Field(default=None, max_length=50)
+
+    @field_validator("scope")
+    @classmethod
+    def scope_not_null(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("범위는 개인 또는 회사여야 해요.")
+        return value
 
 
 class TranscriptIn(BaseModel):
@@ -425,16 +435,35 @@ async def stt_reprocess(mid: uuid.UUID, jid: uuid.UUID, body: ReprocessIn, _: Us
 
 
 @router.patch("/{mid}")
-async def patch(mid: uuid.UUID, body: MeetingPatch, _: User, db: Db) -> dict[str, Any]:
+async def patch(mid: uuid.UUID, body: MeetingPatch, _: User, db: Db, request: Request) -> dict[str, Any]:
     m = await _get(db, mid)
+    # Serialize classification changes with indexing and public-link revocation.
+    await db.refresh(m, with_for_update=True)
     data = body.model_dump(exclude_unset=True)
+    scope = data.get("scope", m.scope)
+    moved = scope != m.scope
+    if moved and m.status in (MeetingStatus.transcribing, MeetingStatus.analyzing):
+        raise _http(pipeline.PipelineError("전사·분석이 끝난 뒤 범위를 바꿀 수 있어요.", "meeting_busy", 409))
+    project_id = data.get("project_id", m.pms_project_id or m.entity_id)
     try:
-        if "project_id" in data:
-            project = await pipeline.check_project(db, data["project_id"], m.scope)
-            m.pms_project_id = data["project_id"] if isinstance(project, PmsProject) else None
-            m.entity_id = data["project_id"] if project and not isinstance(project, PmsProject) else None
+        if moved or "project_id" in data:
+            try:
+                project = await pipeline.check_project(db, project_id, scope)
+            except pipeline.PipelineError as e:
+                if not moved or "project_id" in data or e.code != "scope_mismatch":
+                    raise
+                project_id, project = None, None
+            m.pms_project_id = project_id if isinstance(project, PmsProject) else None
+            m.entity_id = project_id if project and not isinstance(project, PmsProject) else None
     except pipeline.PipelineError as e:
         raise _http(e) from e
+    if moved:
+        record(db, action="meeting.scope.update", target_type="meeting", target_id=m.id,
+               ip=client_ip(request), detail={"from": m.scope, "to": scope})
+        m.scope = scope
+        # Old-scope search results must disappear in the same transaction.
+        await db.execute(sql_delete(MeetingChunk).where(MeetingChunk.meeting_id == mid))
+        m.vector_status, m.vector_chunks, m.vector_error = "pending", 0, None
     if data.get("title"):
         m.title = data["title"].strip()[:200]
     if "held_at" in data:

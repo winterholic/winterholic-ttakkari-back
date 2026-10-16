@@ -121,6 +121,10 @@ async def reindex(meeting_id: uuid.UUID) -> None:
         m = await db.scalar(select(Meeting).where(Meeting.id == meeting_id).with_for_update())
         if m is None:
             return
+        if m.scope != scope:
+            # Another generation may have moved the meeting while embedding.
+            # The move already cleared the old chunks and queued fresh indexing.
+            return
         await db.execute(delete(MeetingChunk).where(MeetingChunk.meeting_id == meeting_id))
         db.add_all(MeetingChunk(meeting_id=meeting_id, kind=p.kind, ord=p.ord, heading=p.heading, content=p.content,
                                 scope=scope, entity_id=entity_id, embedding=v, model=model)

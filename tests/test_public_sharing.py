@@ -126,6 +126,18 @@ async def test_preview_reports_public_readiness_without_creating_a_share(client,
         params={'resource_type': 'meeting', 'resource_id': str(mid)})).json() == []
 
 
+async def test_meeting_scope_patch_revokes_existing_public_link(client, auth):
+    share, cap, _ = await publish(client, auth)
+    mid = share['resource']['id']
+    async with sessionmaker()() as db:
+        meeting = await db.get(Meeting, uuid.UUID(mid))
+        meeting.analysis_context = {}
+        await db.commit()
+    response = await client.patch(f'/api/meetings/{mid}', headers=auth, json={'scope': 'work'})
+    assert response.status_code == 200 and response.json()['scope'] == 'work'
+    assert (await client.get(f"/api/public/shares/{share['id']}", headers=cap)).status_code == 404
+
+
 async def test_capabilities_and_jwt_audiences_never_mix(client, auth):
     s, cap, body = await publish(client, auth)
     b, _, _ = await publish(client, auth)

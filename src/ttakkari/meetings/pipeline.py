@@ -547,8 +547,8 @@ async def approve(db: AsyncSession, m: Meeting, pid: uuid.UUID) -> MeetingPropos
         old: list[CtxMemory] = []
         for t in pl.get("targets", []):
             mem = await db.get(CtxMemory, uuid.UUID(t["id"]))
-            if mem is None or mem.archived_at is not None:
-                raise PipelineError("바꾸려던 기존 기억이 이미 사라졌어요. 이 제안은 거절하고 분석을 다시 돌려 주세요.", "stale")
+            if mem is None or mem.archived_at is not None or mem.scope not in (m.scope, "shared"):
+                raise PipelineError("바꾸려던 기억이 사라졌거나 회의 범위와 달라졌어요. 이 제안은 거절하고 분석을 다시 돌려 주세요.", "stale")
             old.append(mem)
         entity_ids = [str(m.entity_id)] if m.entity_id else []
         new = CtxMemory(kind=pl.get("memory_kind", "decision"), scope=m.scope, content=pl["content"][:4000], entity_ids=entity_ids,
@@ -561,7 +561,9 @@ async def approve(db: AsyncSession, m: Meeting, pid: uuid.UUID) -> MeetingPropos
         p.result = {"memory_id": str(new.id), "archived": [str(x.id) for x in old]}
     elif p.kind == "update_action_item":
         it = await db.get(MeetingItem, uuid.UUID(pl["target_item_id"]))
-        if it is None or it.status != "open" or it.text != pl.get("target_text"):
+        target_meeting = await db.get(Meeting, it.meeting_id) if it else None
+        if (it is None or it.status != "open" or it.text != pl.get("target_text")
+                or target_meeting is None or target_meeting.scope != m.scope):
             raise PipelineError("바꾸려던 액션이 이미 바뀌었거나 사라졌어요. 이 제안은 거절해 주세요.", "stale")
         if pl["change"] == "revise" and pl.get("new_text"):
             it.text = pl["new_text"][:1500]

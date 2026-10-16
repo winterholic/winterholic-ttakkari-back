@@ -1,4 +1,37 @@
-# 2026-10-16 작업자 배정 정책을 코드로 통합
+# 2026-10-16 작업자 배정·한도 인계 복구
+
+## 현재 상태 (22:08 KST 이후 검증 기준)
+
+- 중단된 worker `7ec7294c-a04a-4053-afda-dd42959aaa3e`의 코드 `d76f13cb04251f1be60be9e7307dd161d7af9b26`를 보존한 채 이어받았다. 두 기존 Run은 이미 cancelled이며 다시 실행하지 않는다. 기존 provider 대화 ID와 이벤트도 변경하지 않았다.
+- 운영 `/api/version`과 읽기 전용 runtime_generations 조회는 `ee700630e8c62456cce0b304c8c689227ae6feae`, PID 42581, active `http://127.0.0.1:8791`을 가리킨다. 해당 release 경로에 구 라우터가 있다. 이 시점에는 새 정책이 운영에 적용되지 않았다.
+- 운영 이벤트: 원래 Run은 20:17 시작, 21:06 Argon `Individual quota reached`, 이후 `run.waiting`의 재개 시각이 10/23 13:45 KST로 연장됐다. 구 `_run`은 고정 antigravity 엔진에서만 후보를 찾았다. 신규 사용자 지시도 같은 세션 뒤에 대기했다. 코드 추론과 이 실제 이벤트 관측을 구분한다.
+- canonical `back/`에는 다른 GPU 이력 작업의 미커밋 코드와 `0036_system_resource_samples.py`가 새로 있다. 과거 Qwen dirty 사유는 해소됐다. 이 파일들을 stash·삭제·덮어쓰기·혼합 커밋하지 않는다. clean 통합과 단일 migration graph가 배포 전제다.
+
+## 이번 수정
+
+1. 새 세대의 coordinator가 queued quota wait를 현재와 같은 실행 정책으로 재평가한다. 다른 적합 후보가 생기면 저장된 주간 reset 전에 같은 Run을 재개한다. active generation의 control 잠금과 Run 행 잠금, lease 부재 검사를 사용한다. cancelled/running/기존 소유권/재시작 backoff는 변경하지 않는다. 전부 막혔거나 strict_engine이면 원래 대기를 유지한다.
+2. 요청 모델을 `run.usage.routing_request`에 보존해 실제 마지막 fallback 모델과 분리한다. 구 Run은 원래 세션 모델로 복구한다. Argon reasoning이 재개 과정에서 Sonnet/general로 내려가지 않으며, native Sol high/Opus medium을 유지한다. NULL task_type인 구 auto worker도 원래 모델에서 작업 유형을 추론한다.
+3. 모델이 다른데 legacy account-only provider 대화 ID를 재사용하지 않는다. Argon ID는 보존하고 Opus는 별도 `account_id:model` 키로 시작한다. 맞는 모델의 저장된 provider ID는 resume한다. 인계문·기존 checkpoint·진행 이벤트와 부작용 확인 지시는 유지한다.
+4. 일반 권한 거부 줄의 파일/도구 이름에 `quota` 또는 `429`가 있어도 공급자 한도로 분류하지 않는다. 다른 줄의 실제 공급자 limit은 계속 감지한다. 권한/샌드박스 실패를 다른 공급자에서 재실행하는 경로를 만들지 않는다.
+
+`d76f13c`의 task별 모델·pool별 quota·strict_engine·Flash 독립 검증 표시는 이어받는다. general은 Sonnet 우선, routine은 범위가 명확한 반복·추출에 Flash를 활용한다. 복잡한 장기 자율 완수·아키텍처 최종 결정·UI 조작·독립 검증을 Flash의 보편적 강점으로 주장하지 않는다. 사용자 제공 외부 벤치마크 수치는 미검증 주장이다. 검증 결과/false_completion은 오케스트레이터가 기록한 관측이며 모델 성능의 보편적 비율이나 자동 판정이 아니다.
+
+## 검증 증거
+
+이번 원시 증거: `/Users/winterholic/.ttakkari/data/outbox/99e9c324-de0e-44cf-bbe7-bc2456219aa0/`.
+
+- d76 baseline: `pytest tests/test_worker_routing.py` → 41 passed (8.78s). 아래 예전 e9/4da의 전체 검사를 d76 검사로 재사용하지 않았다.
+- `recovery-red.txt`: 주간 timer 고착과 재개 모델 손실 2 failed, 5 passed. `isolation-red.txt`: 다른 모델의 legacy 대화 ID 재사용과 권한 문구 오분류 5 failed.
+- `focused-regression.txt`: worker routing, account selection, quota model routing, 모델 정책, orchestrator API/MCP 계약, generation 소유권·process·배포·bootstrap·graph 241 passed (58.58s). 실제 provider를 호출하는 검사가 아니라 synthetic CLI와 격리 PostgreSQL을 사용했다.
+- `migration-online.txt`: 격리 DB에서 0035 설치 → 운영 ee70063 ORM으로 running/queued·provider ID·handoff·checkpoint 저장 → online 0036 upgrade → 새 ORM 보존 검사 → 구 ORM read/heartbeat write 성공. 운영 migration 직접 실행 없음.
+- `routing-production-replay.json`: 저장된 운영 quota/cooldown/lease를 읽기 전용 재생했을 때 Argon·AGY Claude pool 소진, Flash 여유에도 reasoning은 native Codex `gpt-6.1-sol/high` 선택. 이는 운영 새 라우터 실행·실제 모델 응답·MCP·CLI resume 증거가 아니다.
+- `ruff check src tests alembic` 및 `git diff --check` 통과. 저장소 전체 `ruff check .`는 변경하지 않은 Qwen experiments에서 기존 72개 오류를 보고했다(`lint.txt`). 이 파일들은 수정하지 않았다.
+
+운영 새 정책의 실제 모델 응답·MCP 호출·provider resume는 미실행이다. 배포 예약 접수와 성공을 구분하고, 예약 후 활성 Run 종료를 기다리며 폴링하지 않는다. 최종 전체 회귀·통합 SHA·배포 예약 결과는 후속 항목에 기록한다.
+
+## 앞선 작업의 이력 (현재 상태로 해석하지 않음)
+
+### 초기 auto 라우팅 구현·배포 보류 기록
 
 사용자는 네이티브 Codex/Claude 쏠림과 Antigravity 저활용 진단 후 꼼꼼한 개선·검증을 요청했다. 원인은 worker auto의 Antigravity 제외, 도구 안내와 최신 역할 정책의 충돌, 모델/작업 성격보다 계정 여유를 먼저 비교하는 기본 경로였다. 메인·접수는 사용자 기존 결정대로 native 정책을 유지한다.
 

@@ -36,6 +36,10 @@ USAGE_LIMIT_RE = re.compile(
     r"\b429\b|credit balance|out of (extra )?(credits|usage)|overloaded",
     re.IGNORECASE,
 )
+PERMISSION_ERROR_RE = re.compile(
+    r"permission denied|operation not permitted|access denied|authorization failed|forbidden|\[ttakkari-guard\]",
+    re.IGNORECASE,
+)
 
 # 한도 걸린 계정이 쉬는 시각(unix 초). 재시작해도 초기화 전에 다시 두드리지 않게 app_settings 에도 적는다.
 _cooldown: dict[uuid.UUID, float] = {}
@@ -486,7 +490,11 @@ async def load_cooldowns(db: AsyncSession) -> int:
 
 
 def is_usage_limit(*texts: str | None) -> bool:
-    return any(t and USAGE_LIMIT_RE.search(t) for t in texts)
+    # File/tool names can contain 'quota' or '429'. An ordinary permission failure
+    # must not replay side effects through another provider. Check separate lines
+    # so an actual provider rejection after an earlier tool error is still detected.
+    return any(USAGE_LIMIT_RE.search(line) and not PERMISSION_ERROR_RE.search(line)
+               for text in texts if text for line in text.splitlines())
 
 
 def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:

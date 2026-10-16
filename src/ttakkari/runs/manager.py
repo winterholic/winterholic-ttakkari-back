@@ -493,16 +493,7 @@ class RunManager:
         from ttakkari.runs import worker_routing
         is_meeting = await db.scalar(select(Meeting.id).where(Meeting.analysis_run_id == run.id)) is not None
         is_orch = sess.kind == SessionKind.orchestrator
-        task_type = sess.worker_task_type if sess.kind == SessionKind.worker and sess.engine == "auto" and not is_meeting else None
-        pinned_fallback = (
-            sess.engine in {"claude", "codex", "antigravity"}
-            and not is_orch
-            and sess.kind != SessionKind.desk
-            and not is_meeting
-            and run.origin != RunOrigin.system
-            and not sess.strict_engine
-        )
-        requested_model = run.model or sess.model
+        task_type, pinned_fallback, requested_model = _routing_policy(sess, run, is_meeting)
         primary_pair = worker_routing.primary_target(sess.engine, requested_model) if pinned_fallback else None
         effective_task_type = (
             task_type
@@ -511,16 +502,7 @@ class RunManager:
         )
 
         async def available_profiles():
-            if is_meeting:
-                return await meeting_routing.availability(db)
-            if task_type:
-                return await worker_routing.availability(db, task_type, sess.pool, model=sess.model)
-            if pinned_fallback:
-                return await worker_routing.pinned_availability(
-                    db, sess.engine, sess.pool, model=requested_model,
-                    task_type=sess.worker_task_type, strict_engine=sess.strict_engine,
-                )
-            return await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
+            return await _available_profiles(db, sess, run, is_meeting)
 
         profiles, blocked = await available_profiles()
         if not profiles:
@@ -584,12 +566,22 @@ class RunManager:
 
         def lookup_resume_id(profile):
             es = sess.engine_sessions or {}
-            return es.get(conversation_key(profile)) or es.get(profile.key)
+            if saved := es.get(conversation_key(profile)):
+                return saved
+            # Legacy account-only IDs identify the original model. They cannot be
+            # reused for another model sharing the same provider account.
+            if profile.engine == sess.engine and (
+                profile.engine != "antigravity" or profile.model == requested_model
+            ):
+                return es.get(profile.key)
+            return None
 
         prof = await choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer, balance_usage=True)
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
+        routing_request = {"model": requested_model}
+        run.usage = {**(run.usage or {}), "routing_request": routing_request}
         resume_handoff = run.resume_handoff or (await _waiting_handoff(db, run) if resumed else "")
         self._disarm(run.id)
         run.status = RunStatus.running
@@ -676,12 +668,7 @@ class RunManager:
             if is_meeting:
                 model, effort = prof.model, run.effort
                 run.model = model
-            elif task_type or (
-                pinned_fallback and primary_pair and (
-                    prof.engine != primary_pair[0]
-                    or (prof.engine == "antigravity" and prof.model != primary_pair[1])
-                )
-            ):
+            elif task_type or pinned_fallback:
                 model, effort = prof.model, worker_routing.effort(prof, run.effort or sess.effort)
                 run.model, run.effort = model, effort
             else:
@@ -780,6 +767,7 @@ class RunManager:
         )
         verify_needed = worker_routing.needs_independent_verification(effective_task_type, selected_model)
         routing_usage: dict[str, object] = {
+            "routing_request": routing_request,
             "task_type": effective_task_type,
             "selected_engine": prof.engine,
             "selected_model": selected_model,
@@ -1138,6 +1126,7 @@ async def resume_interrupted() -> int:
 
 
 async def resume_queued() -> int:
+    await _reconsider_quota_waits()
     async with sessionmaker()() as db:
         rows = list(await db.scalars(select(Run).where(Run.status == RunStatus.queued).order_by(Run.created_at)))
     for run in rows:
@@ -1164,6 +1153,68 @@ async def expire_artifacts() -> int:
 
 
 # ---- helpers
+
+def _routing_policy(sess: ChatSession, run: Run, is_meeting: bool):
+    from ttakkari.runs import worker_routing
+    # run.model describes the last actual attempt after a fallback. Keep the original
+    # request stable across waits/restarts, including same-engine model switches.
+    request = (run.usage or {}).get("routing_request")
+    requested = request.get("model") if isinstance(request, dict) else (
+        sess.model if run.started_at else run.model or sess.model
+    )
+    task = ((sess.worker_task_type or worker_routing.infer_task_type(requested))
+            if sess.kind == SessionKind.worker and sess.engine == "auto" and not is_meeting else None)
+    pinned = (sess.engine in profiles_mod.ENGINES and sess.kind not in {SessionKind.orchestrator, SessionKind.desk}
+              and not is_meeting and run.origin != RunOrigin.system and not sess.strict_engine)
+    return task, pinned, requested
+
+
+async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_meeting: bool):
+    from ttakkari.meetings import routing as meeting_routing
+    from ttakkari.runs import worker_routing
+    task, pinned, requested = _routing_policy(sess, run, is_meeting)
+    if is_meeting:
+        return await meeting_routing.availability(db)
+    if task:
+        return await worker_routing.availability(db, task, sess.pool, model=requested)
+    if pinned:
+        return await worker_routing.pinned_availability(
+            db, sess.engine, sess.pool, model=requested, task_type=sess.worker_task_type,
+        )
+    return await profiles_mod.availability(db, sess.engine, sess.pool, model=requested)
+
+
+async def _reconsider_quota_waits() -> None:
+    """A stored reset is a wakeup hint, not a veto on newly eligible routes.
+
+    Only the active coordinator can clear unowned quota waits. It never steals a
+    lease, changes cancellation/backoff, or launches an engine while holding locks.
+    """
+    from ttakkari.models import RuntimeLease
+    async with sessionmaker()() as db:
+        if manager.runtime:
+            from ttakkari.generation import _control
+            control = await _control(db)
+            if control.active_generation != manager.runtime.id:
+                return
+        rows = list(await db.scalars(select(Run).where(
+            Run.status == RunStatus.queued, Run.resume_after > utcnow(),
+            ~select(RuntimeLease.run_id).where(RuntimeLease.run_id == Run.id).exists(),
+        ).with_for_update(skip_locked=True)))
+        for run in rows:
+            latest = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id)
+                                     .order_by(RunEvent.seq.desc()).limit(1))
+            if latest is None or latest.type != "run.waiting":
+                continue
+            sess = await db.get(ChatSession, run.session_id)
+            is_meeting = await db.scalar(select(Meeting.id).where(Meeting.analysis_run_id == run.id)) is not None
+            ready, _ = await _available_profiles(db, sess, run, is_meeting)
+            if ready:
+                # _waiting_handoff retains the previous provider progress even for a
+                # legacy wait that predates persisted resume_handoff.
+                run.resume_after = None
+                manager._disarm(run.id)
+        await db.commit()
 
 def _looks_like_agent(pid: int) -> bool:
     """재부팅 뒤에는 PID 가 재사용될 수 있다. 엉뚱한 프로세스 그룹을 죽이지 않게 이름을 확인한다."""

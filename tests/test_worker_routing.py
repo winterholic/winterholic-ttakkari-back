@@ -3,6 +3,7 @@ import json
 import time
 import uuid
 from dataclasses import replace
+from datetime import timedelta
 from importlib import import_module
 
 import pytest
@@ -12,7 +13,7 @@ from test_orchestrator import _orch, _session
 
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.db import sessionmaker
-from ttakkari.models import ChatSession
+from ttakkari.models import ChatSession, Run, RunEvent, RuntimeLease, utcnow
 from ttakkari.orchestrator.runtime import issue_token
 from ttakkari.runs import profiles, usage
 
@@ -611,3 +612,164 @@ async def test_flash_implementation_marks_independent_verification_and_records_f
     assert flash_bucket["verification_required_runs"] == 1
     assert flash_bucket["false_completion_runs"] == 1
 
+
+
+async def legacy_wait(client, auth, make_dir, accounts, *, last_model=ARGON, strict=False):
+    """Persist the shape of a pre-policy quota wait, without launching an agent."""
+    from ttakkari.runs import events
+
+    sess = await _session(client, auth, make_dir, engine="antigravity", model=ARGON)
+    codex = next(a for a in accounts if a["engine"] == "codex")
+    agy = next(a for a in accounts if a["engine"] == "antigravity")
+    async with sessionmaker()() as db:
+        s = await db.get(ChatSession, uuid.UUID(sess["id"]))
+        s.kind, s.strict_engine = "worker", strict
+        s.engine_sessions = {agy["id"]: "original-argon-conversation",
+                             f"{codex['id']}:gpt-6.1-sol": "saved-sol-conversation"}
+        r = Run(session_id=s.id, workspace_id=s.workspace_id, prompt="continue architecture review",
+                engine="antigravity" if last_model == ARGON else "codex", model=last_model,
+                status="queued", started_at=utcnow()-timedelta(hours=2),
+                resume_after=utcnow()+timedelta(days=7), last_seq=0,
+                checkpoint_ref="refs/ttakkari/checkpoint/preserved")
+        db.add(r)
+        await db.flush()
+        events.append(db, r, "tool.result", {"output": "commit d76f13c already created; check side effects"})
+        events.append(db, r, "run.waiting", {"until": r.resume_after.isoformat(),
+                                              "handoff": "PRESERVED PROGRESS: do not recreate d76f13c"})
+        await db.commit()
+        return r
+
+
+async def test_legacy_argon_wait_rechecks_routes_before_next_week_and_resumes_once(
+    client, auth, make_dir, accounts, synthetic, monkeypatch, tmp_path,
+):
+    import asyncio
+
+    from test_generations import generations
+
+    from ttakkari import generation
+    from ttakkari.generation import activate
+    from ttakkari.runs import usage_store
+    from ttakkari.runs.manager import manager, resume_queued
+
+    agy = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
+    quota(agy, claude=0, gemini=85, argon=0)  # Flash spare capacity cannot downgrade reasoning.
+    await usage_store.flush()
+    run = await legacy_wait(client, auth, make_dir, accounts)
+    async with generations(tmp_path) as (old, new):
+        await activate(old.id, expected=None)
+        await activate(new.id, expected=old.id)
+        monkeypatch.setattr(generation, "current", new)
+        monkeypatch.setattr(manager, "_runtime", new)
+        await asyncio.gather(resume_queued(), resume_queued())
+        async with sessionmaker()() as db:
+            assert (await db.get(Run, run.id)).resume_after is None, "new policy left the legacy weekly timer armed"
+        done = await wait_run(client, auth, str(run.id))
+        assert (done["engine"], done["model"], done["effort"]) == ("codex", "gpt-6.1-sol", "high")
+        calls = agent_calls()
+        assert len(calls) == 1
+        assert "saved-sol-conversation" in calls[0]["argv"]
+        assert "PRESERVED PROGRESS" in " ".join(calls[0]["argv"])
+        assert done["checkpoint_ref"] == run.checkpoint_ref
+        ev = await run_events(client, auth, str(run.id))
+        assert sum(e["type"] == "run.resumed" for e in ev) == 1
+        assert sum(e["type"] == "run.finished" for e in ev) == 1
+        assert next(e["payload"] for e in ev if e["type"] == "engine.fallback")["from_model"] == ARGON
+        while manager._handles:
+            await asyncio.gather(*(v.task for v in list(manager._handles.values())), return_exceptions=True)
+
+
+async def test_resumed_pinned_reasoning_keeps_original_model_after_native_fallback(
+    client, auth, make_dir, accounts, synthetic,
+):
+    from ttakkari.runs.manager import manager
+
+    agy = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
+    quota(agy, claude=75, argon=0)
+    run = await legacy_wait(client, auth, make_dir, accounts, last_model="gpt-6.1-sol")
+    async with sessionmaker()() as db:
+        row = await db.get(Run, run.id)
+        row.resume_after = None
+        await db.commit()
+    await manager.dispatch(run.session_id)
+    done = await wait_run(client, auth, str(run.id))
+    assert done["model"] == "claude-opus-5-5-medium", "resumed reasoning was downgraded to Sonnet"
+    assert "PRESERVED PROGRESS" in " ".join(agent_calls()[0]["argv"])
+
+
+@pytest.mark.parametrize("excluded", ["strict", "all_capped", "cancelled", "backoff", "owned"])
+async def test_wait_reconsideration_preserves_locks_cancellation_and_real_unavailability(
+    excluded, client, auth, make_dir, accounts, monkeypatch, tmp_path,
+):
+    from test_generations import generations
+
+    from ttakkari import generation
+    from ttakkari.generation import activate
+    from ttakkari.runs.manager import manager, resume_queued
+
+    agy = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
+    quota(agy, claude=0, argon=0)
+    if excluded == "all_capped":
+        for a in accounts:
+            if a["engine"] != "antigravity":
+                usage.seed(uuid.UUID(a["id"]), usage.Usage(windows=[
+                    usage.Window("five_hour", "5h", 100, int(time.time()+1000))], updated_at=time.time()), refresh=True)
+    run = await legacy_wait(client, auth, make_dir, accounts, strict=excluded == "strict")
+    async with generations(tmp_path) as (old, new):
+        await activate(old.id, expected=None)
+        if excluded == "owned":
+            async with sessionmaker()() as db:
+                row = await db.get(Run, run.id)
+                row.resume_after = None
+                await db.commit()
+            assert await old.claim(run.id, "workers", 2)
+        async with sessionmaker()() as db:
+            row = await db.get(Run, run.id)
+            row.resume_after = run.resume_after
+            if excluded == "cancelled":
+                row.status = "cancelled"
+            if excluded == "backoff":
+                row.resume_attempts = 1
+                db.add(RunEvent(run_id=row.id, seq=row.last_seq+1, type="run.status",
+                                payload={"restart_resume": True}))
+                row.last_seq += 1
+            await db.commit()
+        await activate(new.id, expected=old.id)
+        monkeypatch.setattr(generation, "current", new)
+        monkeypatch.setattr(manager, "_runtime", new)
+        await resume_queued()
+        async with sessionmaker()() as db:
+            row = await db.get(Run, run.id)
+            assert row.resume_after == run.resume_after
+            if excluded == "owned":
+                assert (await db.get(RuntimeLease, run.id)).generation_id == old.id
+        assert not agent_calls()
+
+
+async def test_legacy_argon_conversation_is_not_resumed_as_opus_on_same_account(
+    client, auth, make_dir, accounts, synthetic,
+):
+    from ttakkari.runs.manager import manager
+
+    agy = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
+    quota(agy, claude=80, argon=0)
+    run = await legacy_wait(client, auth, make_dir, accounts)
+    async with sessionmaker()() as db:
+        (await db.get(Run, run.id)).resume_after = None
+        await db.commit()
+    await manager.dispatch(run.session_id)
+    done = await wait_run(client, auth, str(run.id))
+    assert done["model"] == "claude-opus-5-5-medium"
+    assert "original-argon-conversation" not in agent_calls()[0]["argv"]
+    async with sessionmaker()() as db:
+        s = await db.get(ChatSession, run.session_id)
+        assert s.engine_sessions[str(agy)] == "original-argon-conversation"
+        assert f"{agy}:claude-opus-5-5-medium" in s.engine_sessions
+
+
+@pytest.mark.parametrize("message", [
+    "Permission denied: /workspace/quota.py", "403 Forbidden: quota project access denied",
+    "sandbox permission denied for /data/429/report", "MCP authorization failed: quota tool forbidden",
+])
+def test_permission_failures_with_quota_words_are_not_provider_limits(message):
+    assert not profiles.is_usage_limit(message)

@@ -1,5 +1,5 @@
 {
   "protocol": 1,
-  "schema_revision": "0032_weather_briefings",
-  "online_migration_from": ["0031_notifications"]
+  "schema_revision": "0033_weather_analysis_engine",
+  "online_migration_from": ["0032_weather_briefings"]
 }

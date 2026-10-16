@@ -400,6 +400,10 @@ class WeatherBriefing(Base):
     source_errors: Mapped[dict[str, str] | None] = mapped_column(JSONB, default=None)
     briefing: Mapped[dict[str, Any] | None] = mapped_column(default=None)
     analysis_status: Mapped[str | None] = mapped_column(String(20))
+    # 분석에 실제로 쓴 엔진·모델(dispatch 중에는 요청 경로 auto|antigravity)과 선택·전환 이력.
+    analysis_engine: Mapped[str | None] = mapped_column(String(20))
+    analysis_model: Mapped[str | None] = mapped_column(String(100))
+    analysis_route: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, default=None)
     failure: Mapped[str | None] = mapped_column(Text)
     session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"))
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))

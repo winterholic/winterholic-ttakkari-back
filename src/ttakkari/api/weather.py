@@ -27,6 +27,9 @@ class WeatherOut(BaseModel):
     source_errors: dict[str, str] | None
     briefing: dict[str, Any] | None
     analysis_status: str | None
+    analysis_engine: str | None
+    analysis_model: str | None
+    analysis_route: list[dict[str, Any]] | None
     failure: str | None
     scheduled_at: Any | None
     generated_at: Any | None

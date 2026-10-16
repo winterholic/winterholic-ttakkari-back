@@ -29,7 +29,7 @@ async def test_weather_api_requires_auth_and_returns_empty_history(client):
     assert (await client.get("/api/weather/briefings", headers={"Authorization": "Bearer invalid"})).status_code == 401
 
 
-async def test_manual_and_scheduler_share_one_daily_luna_low_run(client, auth, monkeypatch):
+async def test_manual_and_scheduler_share_one_daily_auto_run(client, auth, monkeypatch):
     async def collect():
         return {"suwon": {"raw": True}, "seoul": {"raw": True}}, sample_forecast(), {}
 
@@ -42,7 +42,9 @@ async def test_manual_and_scheduler_share_one_daily_luna_low_run(client, auth, m
     async with sessionmaker()() as db:
         saved = await db.get(WeatherBriefing, row["id"])
         run = await db.get(Run, saved.run_id)
-        assert (run.engine, run.model, run.effort) == ("codex", "gpt-6-luna", "low")
+        assert run.model == "gpt-6-luna" and run.effort == "low"
+        assert run.engine in {"auto", "claude", "codex"}  # 시작 전에는 auto, 시작하면 매니저가 고른 엔진
+        assert saved.analysis_engine in {"auto", "claude", "codex"}
     again = await client.post("/api/weather/generate", headers=auth)
     assert again.status_code == 202, again.text
     assert again.json()["id"] == row["id"]

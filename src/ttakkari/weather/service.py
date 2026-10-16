@@ -12,10 +12,12 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     ChatSession,
     Run,
+    RunEvent,
     RunStatus,
     SessionKind,
     WeatherBriefing,
@@ -26,8 +28,16 @@ from ttakkari.weather.open_meteo import normalize_forecast
 
 log = logging.getLogger("ttakkari.weather")
 KST = ZoneInfo("Asia/Seoul")
+# 기본 경로: engine=auto 세션. 가용 계정 여유로 Codex(Luna)·Claude(model_counterparts 의 sonnet)를 매니저가 고른다.
 MODEL = "gpt-6-luna"
 EFFORT = "low"
+# 마지막 폴백: Antigravity. 앱 정책상 auto 에서 제외되지만 날씨 브리핑에는 사용자가 명시 허용했다(2026-10-16).
+# 이 허용은 이 모듈에만 적용한다. 다른 기능의 auto 정책에는 넣지 않는다.
+# 입력 JSON 만 요약하는 단발 작업이라 high 는 과하고, 위험 조언 금지·길이 제한 같은 규칙이 많아 low 보다 medium 을 쓴다.
+FALLBACK_ENGINE = "antigravity"
+FALLBACK_MODEL = "gemini-3.8-flash-medium"
+FALLBACK_EFFORT = "medium"
+ROUTE_AUTO = "auto"
 LOCATIONS = {
     "suwon": ("수원", 37.2636, 127.0286),
     "seoul": ("서울", 37.5665, 126.9780),
@@ -116,16 +126,42 @@ def fallback_content(forecast: dict[str, Any], day: date, source_errors: dict[st
                            daypart=daypart, week=week).model_dump()
 
 
+def _json_candidates(text: str):
+    """엔진마다 코드 블록·머리말·꼬리말이 다르다. 모든 '{' 위치에서 JSON 객체 하나를 읽어 후보로 낸다."""
+    decoder = json.JSONDecoder()
+    pos = text.find("{")
+    while pos >= 0:
+        try:
+            value, end = decoder.raw_decode(text, pos)
+        except ValueError:
+            pos = text.find("{", pos + 1)
+            continue
+        if isinstance(value, dict):
+            yield value
+        pos = text.find("{", end)
+
+
 def parse_model_result(text: str, forecast: dict[str, Any]) -> dict[str, Any]:
-    """Reject unsafe claims and malformed JSON instead of silently substituting another model."""
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end < start:
-        raise ValueError("Codex 결과에 JSON 객체가 없습니다.")
-    data = BriefingContent.model_validate_json(text[start:end + 1]).model_dump()
-    all_text = " ".join(str(v) for v in data.values()).lower()
-    if any(word in all_text for word in ("자전거", "노면", "미끄러", "시야", "안개")):
-        raise ValueError("데이터로 뒷받침되지 않는 위험 또는 제외된 조언이 포함됐습니다.")
-    return data
+    """Reject unsafe claims and malformed JSON; the caller publishes data-only content instead of unverified text.
+
+    Engine fallback happens before dispatch (choose_route) and on limit waits, never by re-asking another model here."""
+    last_error: Exception | None = None
+    for candidate in _json_candidates(text or ""):
+        # 지시는 2~4문장이지만 일부 모델이 더 길게 쓴다. 뒤쪽 문장만 버리고 나머지 필드는 그대로 검증한다.
+        if isinstance(candidate.get("summary"), list) and len(candidate["summary"]) > 4:
+            candidate = {**candidate, "summary": candidate["summary"][:4]}
+        try:
+            data = BriefingContent.model_validate(candidate).model_dump()
+        except ValidationError as exc:
+            last_error = exc
+            continue
+        all_text = " ".join(str(v) for v in data.values()).lower()
+        if any(word in all_text for word in ("자전거", "노면", "미끄러", "시야", "안개")):
+            raise ValueError("데이터로 뒷받침되지 않는 위험 또는 제외된 조언이 포함됐습니다.")
+        return data
+    if last_error is not None:
+        raise last_error
+    raise ValueError("모델 결과에 JSON 객체가 없습니다.")
 
 
 def model_prompt(forecast: dict[str, Any], day: date, source_errors: dict[str, str] | None = None) -> str:
@@ -194,35 +230,121 @@ async def _collect() -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
     return raw_result, normalized, errors
 
 
-async def _dispatch_model(row_id, day: date) -> None:
-    """Create a normal user-owned Codex Run, preserving the engine account/profile routing."""
+def _trace(row: WeatherBriefing, stage: str, engine: str | None, reason: str | None = None) -> None:
+    """엔진 선택·전환 이력을 행에 남긴다(JSON 컬럼은 새 리스트로 바꿔야 변경이 감지된다)."""
+    entry = {"stage": stage, "engine": engine, "reason": reason, "at": utcnow().isoformat()}
+    row.analysis_route = [*(row.analysis_route or []), entry]
+    log.info("weather %s route: stage=%s engine=%s reason=%s", row.day, stage, engine, reason)
+
+
+async def choose_route(db, pool: str = "personal") -> tuple[str | None, str | None]:
+    """(route, 사유). auto 후보(Claude·Codex 중 한도 아닌 계정)가 있으면 auto, 없으면 Antigravity, 둘 다 없으면 None."""
+    from ttakkari.runs import profiles as profiles_mod
+
+    free, blocked = await profiles_mod.availability(db, ROUTE_AUTO, pool)
+    if free:
+        return ROUTE_AUTO, None
+    reason = "auto_limited" if blocked else "auto_no_account"
+    fallback_free, fallback_blocked = await profiles_mod.availability(db, FALLBACK_ENGINE, pool)
+    if fallback_free:
+        return FALLBACK_ENGINE, reason
+    return None, f"{reason}+{FALLBACK_ENGINE}_{'limited' if fallback_blocked else 'no_account'}"
+
+
+def _degrade(row: WeatherBriefing, reason: str) -> None:
+    """엔진을 쓸 수 없을 때도 알림이 빠지지 않도록 데이터 기반 내용으로 발행 상태로 만든다."""
+    row.briefing = fallback_content(row.forecast or {}, row.day, row.source_errors)
+    row.analysis_status = "failed"
+    row.status = "degraded"
+    row.failure = reason[:500]
+    row.generated_at = utcnow()
+    row.updated_at = utcnow()
+
+
+async def _launch(db, row: WeatherBriefing, route: str, reason: str | None) -> Run:
+    """route(auto|antigravity)에 맞는 세션을 만들거나 재사용해 Run 을 넣는다. queue_run 이 commit 한다."""
     from ttakkari.api.sessions import queue_run
     from ttakkari.api.workspaces import ensure_default_workspace
     from ttakkari.models import RunOrigin
 
+    engine, model, effort = ((ROUTE_AUTO, MODEL, EFFORT) if route == ROUTE_AUTO
+                             else (FALLBACK_ENGINE, FALLBACK_MODEL, FALLBACK_EFFORT))
+    session = await db.get(ChatSession, row.session_id) if row.session_id else None
+    # 엔진은 세션에 고정된다. 이전 경로의 세션(예전 codex 고정 포함)은 재사용하지 않는다.
+    if session is None or session.engine != engine:
+        workspace = await ensure_default_workspace(db)
+        session = ChatSession(workspace_id=workspace.id, title=f"날씨 브리핑 · {row.day.isoformat()}",
+                              engine=engine, model=model, effort=effort, kind=SessionKind.chat, pool="personal")
+        db.add(session)
+        await db.flush()
+        row.session_id = session.id
+    row.status = "starting"
+    row.analysis_engine, row.analysis_model = route, model
+    _trace(row, "dispatch", route, reason)
+    await db.commit()
+    prompt = model_prompt(row.forecast, row.day, row.source_errors)
+    suffix = "" if route == ROUTE_AUTO else f":{route}"
+    run = await queue_run(db, session, prompt, origin=RunOrigin.system, model=model, effort=effort,
+                          request_key=f"weather:{row.day.isoformat()}{suffix}")
+    row = await db.get(WeatherBriefing, row.id)
+    row.run_id = run.id
+    row.status = "generating"
+    row.lease_until = None
+    row.updated_at = utcnow()
+    await db.commit()
+    return run
+
+
+async def _dispatch_model(row_id, day: date) -> None:
+    """Pick an engine route and queue a normal user-owned Run. With no usable engine, publish data-only content."""
     async with sessionmaker()() as db:
         row = await db.get(WeatherBriefing, row_id)
         if row is None or row.forecast is None:
             return
-        session = await db.get(ChatSession, row.session_id) if row.session_id else None
-        if session is None:
-            workspace = await ensure_default_workspace(db)
-            session = ChatSession(workspace_id=workspace.id, title=f"날씨 브리핑 · {day.isoformat()}",
-                                  engine="codex", model=MODEL, effort=EFFORT, kind=SessionKind.chat, pool="personal")
-            db.add(session)
-            await db.flush()
-            row.session_id = session.id
-            row.status = "starting"
+        route, reason = await choose_route(db)
+        if route is None:
+            _trace(row, "dispatch", None, reason)
+            _degrade(row, f"사용 가능한 엔진이 없습니다({reason}).")
             await db.commit()
-        prompt = model_prompt(row.forecast, day, row.source_errors)
-        run = await queue_run(db, session, prompt, origin=RunOrigin.system, model=MODEL, effort=EFFORT,
-                              request_key=f"weather:{day.isoformat()}")
-        row = await db.get(WeatherBriefing, row_id)
-        row.run_id = run.id
-        row.status = "generating"
-        row.lease_until = None
-        row.updated_at = utcnow()
+            return
+        await _launch(db, row, route, reason)
+
+
+def effective_model(run: Run) -> str | None:
+    """Run 이 실제로 띄운 모델. 계정이 넘어가면 매니저(_launch_model)가 같은 급의 상대 모델로 바꾼다."""
+    from ttakkari.runs import profiles as profiles_mod
+
+    if not run.model or profiles_mod.model_engine(run.model) in (None, run.engine):
+        return run.model
+    peer = get_settings().model_counterparts.get(run.model.lower())
+    return peer if profiles_mod.model_engine(peer) == run.engine else None
+
+
+async def _is_waiting_for_limit(db, run: Run) -> bool:
+    """한도로 계정이 없어 초기화를 기다리는 Run 인가. 날씨는 몇 시간 기다리는 대신 다른 경로로 넘어간다."""
+    if run.status != RunStatus.queued:
+        return False
+    return await db.scalar(select(RunEvent.id).where(RunEvent.run_id == run.id, RunEvent.type == "run.waiting").limit(1)) is not None
+
+
+async def _fail_over(db, row: WeatherBriefing, run: Run) -> None:
+    from ttakkari.runs.manager import manager
+
+    await manager.cancel_queued(db, run)
+    if row.analysis_engine == FALLBACK_ENGINE:
+        _trace(row, "failover", None, "antigravity_limited")
+        _degrade(row, "Antigravity 한도 대기로 데이터 기반 결과를 발행합니다.")
         await db.commit()
+        return
+    from ttakkari.runs import profiles as profiles_mod
+
+    fallback_free, _ = await profiles_mod.availability(db, FALLBACK_ENGINE, "personal")
+    if not fallback_free:
+        _trace(row, "failover", None, "auto_limited+antigravity_unavailable")
+        _degrade(row, "Claude·Codex 한도 대기이고 Antigravity도 쓸 수 없어 데이터 기반 결과를 발행합니다.")
+        await db.commit()
+        return
+    await _launch(db, row, FALLBACK_ENGINE, "auto_limited_waiting")
 
 
 async def _publish(row_id) -> None:
@@ -269,7 +391,15 @@ async def advance(row_id) -> None:
         if row.status == "generating":
             run = await db.get(Run, row.run_id) if row.run_id else None
             if run is None or run.status not in {RunStatus.succeeded, RunStatus.failed, RunStatus.interrupted, RunStatus.cancelled}:
+                if run is not None and await _is_waiting_for_limit(db, run):
+                    await _fail_over(db, row, run)
+                    if row.status == "degraded":
+                        await _publish(row_id)
                 return
+            if run.engine:
+                # 실제로 돈 엔진과 모델을 남긴다. 계정 전환으로 요청한 모델과 다를 수 있다.
+                row.analysis_engine, row.analysis_model = run.engine, effective_model(run)
+                _trace(row, "completed", run.engine, f"{run.status}:{row.analysis_model}")
             if run.status == RunStatus.succeeded and run.result_text:
                 try:
                     content = parse_model_result(run.result_text, row.forecast or {})
@@ -285,7 +415,7 @@ async def advance(row_id) -> None:
                 content = fallback_content(row.forecast or {}, row.day, row.source_errors)
                 row.analysis_status = "failed"
                 row.status = "degraded"
-                row.failure = (run.error or run.status.value)[:500]
+                row.failure = (run.error or str(run.status))[:500]
             row.briefing = content
             row.generated_at = utcnow()
             row.lease_until = now + timedelta(minutes=2)
@@ -331,6 +461,8 @@ async def advance(row_id) -> None:
             row.lease_until = None
             row.updated_at = utcnow()
             await db.commit()
+    # 엔진이 없어 바로 degraded 가 된 경우 다음 scan 을 기다리지 않고 알린다.
+    await _publish(rid)
 
 
 async def start_for_day(day: date, source: str) -> WeatherBriefing:

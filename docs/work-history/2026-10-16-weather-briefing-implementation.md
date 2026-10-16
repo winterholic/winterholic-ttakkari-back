@@ -31,3 +31,17 @@
 1. 격리된 두 worktree의 변경만 선별해 clean commit/push한다. backend는 full SHA로 generation deploy를 예약하고 예약 상태를 그대로 기록한다. 프론트는 저장소의 기존 방식대로 push 후 Vercel production 상태와 공개 경로를 확인한다.
 2. 운영 Luna Run을 이 실행 환경에서 만들 수 없었던 한계를 PMS와 사용자 보고에 남긴다. 운영 모델 검증 전에는 실제 날씨 push 발송을 성공했다고 쓰지 않는다.
 3. 배포 후 health/migration/UI/API를 점검한다. 다음 06:30 첫 자동 실행 전이면 WX06을 done으로 표시하지 않는다.
+
+## 엔진 폴백 (2026-10-16 후속)
+
+사용자 지시: 날씨는 Luna 고정일 필요 없다. Codex 한도가 차면 Claude나 Antigravity로 넘어간다. 위 "Luna low 고정" 결정은 이 절로 대체한다.
+
+- **경로 선택** (weather/service.py `choose_route`): `profiles.availability("auto")`에 한도 아닌 Claude·Codex 계정이 있으면 engine=auto 세션(model gpt-6-luna, effort low)으로 Run을 넣는다. 계정 선택과 Claude 전환은 매니저가 하고, 모델은 `model_counterparts`에 따라 Claude에서는 sonnet이 된다. 둘 다 한도이면 Antigravity gemini-3.8-flash-medium / medium, 그것도 안 되면 즉시 데이터 기반(degraded, analysis_status=failed) 발행이다.
+- **Antigravity effort**: 입력 JSON만 요약하는 단발 작업이라 high는 과하다. 다만 위험 조언 금지와 길이 제한 규칙이 많아 low보다 medium을 택했다. 마지막 폴백이라 속도보다 규칙 준수를 우선한 판단이며 실측 비교는 아직 없다.
+- **정책 범위**: Antigravity는 앱 정책상 auto 후보에서 제외된다. 이 폴백은 날씨 모듈만의 명시 경로이고 `profiles.availability`의 auto 정의, 회의록, 데스크, 오케스트레이터는 건드리지 않았다.
+- **한도 대기 처리**: auto Run이 시작 뒤 모든 계정 한도로 run.waiting(queued)에 들어가면 매니저는 초기화까지 몇 시간 기다린다. 날씨는 `advance`의 generating 단계에서 이를 감지해 그 Run을 취소하고 Antigravity 새 세션으로 한 번 넘긴다. Antigravity Run이 대기에 들어가면 데이터 기반으로 발행한다. 일반 실패, 형식 오류, 안전 검사 실패는 전환하지 않고 기존처럼 degraded다.
+- **추적**: weather_briefings에 analysis_engine, analysis_model, analysis_route(JSON 이력: dispatch/completed와 사유)를 추가했다. 마이그레이션은 0033_weather_analysis_engine(nullable 컬럼 3개)이고 deploy/generation-contract.json은 0033, online from 0032로 갱신했다. 완료 시 analysis_engine/analysis_model은 Run이 실제로 쓴 엔진과 `effective_model`(매니저 `_launch_model` 규칙)이다. GET /api/weather/* 응답에도 포함된다.
+- **JSON 추출**: 첫 "{"~마지막 "}" 방식은 머리말·꼬리말에 중괄호가 있으면 깨진다. 모든 "{" 위치에서 raw_decode로 객체를 읽어 스키마에 맞는 첫 객체를 쓰도록 바꿨다. summary가 4문장을 넘으면 앞 4개만 쓴다. 코드 블록, 머리말, 꼬리말, 중괄호 섞인 설명 문장 케이스를 테스트했다.
+- **기존 결함 수정**: 실패한 Run에 error가 없을 때 `run.status.value`가 str 컬럼이라 AttributeError였다. `str(run.status)`로 바꿨다.
+- **검증**: tests/test_weather_engine.py 신규(Codex 한도→Claude 유지, 둘 다 한도→Antigravity, 전부 불가→degraded, 대기 전환, 완료 기록, JSON 추출). 전체 pytest -q는 886 passed, 2 skipped, 2 xfailed. `ruff check src tests alembic` 통과(저장소 전체의 기존 ruff 오류 21건은 docs/experiments 스크립트라 손대지 않음). 공유 테스트 DB가 다른 작업과 충돌해 TTAKKARI_TEST_DB로 전용 DB를 썼다.
+- **미확인**: 실제 Antigravity·Claude Run으로 날씨 JSON을 받아 본 적은 없다. 이 환경의 CLI 제약은 위 기록과 같다.

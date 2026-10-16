@@ -83,9 +83,11 @@ PL
 # 접수 1순위 로컬 Qwen(runs/desk_qwen)용 llama.cpp 서버. 모델·바이너리 경로는 환경변수로 받는다(없으면 설치하지 않는다).
 # 측정(common30-v2, 2026-10-16)과 같은 조건: CPU-only(--device none --gpu-layers 0), 6 thread, parallel 1. ctx 는 긴 작업판을 위해 8192.
 # 서버가 없거나 죽어 있어도 접수는 Luna/Haiku 로 동작한다(연결 실패 시 건너뛴다). `all` 에는 넣지 않는다(모델 경로가 필요하다).
+# 기본 경로: ~/private-resources/service-data/ttakkari-qwen/{model,llama}. 다른 곳에 두면
 #   TTK_QWEN_MODEL=/path/Qwen3.5-4B-Q4_K_M.gguf TTK_LLAMA_SERVER=/path/llama-server ./install-services.sh qwen
 qwen() {
-  local model="${TTK_QWEN_MODEL:-}" server="${TTK_LLAMA_SERVER:-}"
+  local base="$HOME/private-resources/service-data/ttakkari-qwen"
+  local model="${TTK_QWEN_MODEL:-$base/model/Qwen3.5-4B-Q4_K_M.gguf}" server="${TTK_LLAMA_SERVER:-$base/llama/llama-b11655/llama-server}"
   [ -f "$model" ] || { echo "TTK_QWEN_MODEL 에 gguf 경로를 주세요 (없음: '$model')"; exit 1; }
   [ -x "$server" ] || { echo "TTK_LLAMA_SERVER 에 llama-server 경로를 주세요 (없음: '$server')"; exit 1; }
   cat > "$LA/net.winterholic.ttakkari.qwen.plist" <<PL

@@ -218,7 +218,8 @@ async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[C
         return None
     run.engine, run.profile, run.model = "qwen", None, s.desk_qwen_model
     events.append(db, run, "desk.route", {"action": q.action, "account": "qwen-local", "engine": "qwen", "ms": q.ms, "warm": True,
-                                           "qwen": {"kind": q.kind, "abstained": q.abstained, "grounded": q.grounded, "calls": q.calls}})
+                                           "qwen": {"kind": q.kind, "abstained": q.abstained, "grounded": q.grounded, "verified": q.verified,
+                                   "calls": q.calls, "prompt_version": q.prompt_version}})
     return Decision(q.action, q.reply, q.lead_id)
 
 

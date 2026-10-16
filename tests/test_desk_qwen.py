@@ -318,6 +318,8 @@ async def test_failed_qwen_is_skipped_for_the_cooldown_and_desk_keeps_working(cl
     assert first["engine"] == second["engine"] == "codex" and len(seen) == 1  # 둘째 요청은 Qwen 을 부르지 않았다
     types = [e["type"] for e in await run_events(client, auth, second["id"])]
     assert "desk.retry" not in types  # 회로가 열려 있는 동안은 시도 자체가 없으므로 재시도 이벤트도 없다
+    skipped = [e["payload"] for e in await run_events(client, auth, second["id"]) if e["type"] == "desk.skip"]
+    assert skipped[0]["reason"] == "cooldown"
 
 
 async def test_unsupported_status_through_the_api_hands_over_to_a_planner(client, auth, make_dir, monkeypatch):
@@ -329,3 +331,53 @@ async def test_unsupported_status_through_the_api_hands_over_to_a_planner(client
     assert route["qwen"]["prompt_version"] == "harness-v2"
     assert run["result_text"].startswith(desk_qwen.ABSTAIN_TO_DELEGATE_REPLY)
     assert len(await _leads(client, auth, desk["id"])) == 1
+
+
+def test_qwen_context_keeps_board_identity_and_recent_turns_within_cpu_budget():
+    from ttakkari.runs.desk import _qwen_context
+    board = [f'- lead_id=lead{i} 「작업 {i}」 상태: 진행 중 · 작업 세션 2개(실행 중 1) · 최근 결과: ' + '상세 결과 ' * 60 for i in range(8)]
+    history = ['사용자: ' + '오래된 질문 ' * 100, '따까리: ' + '이전 답변 ' * 100, '사용자: 가장 최근 요청', '따까리: 가장 최근 답변']
+    compact_board, compact_history = _qwen_context(board, history, '이 작업 이어서 해줘', 4000)
+    assert sum(map(len, compact_board + compact_history)) + len('이 작업 이어서 해줘') + len(compact_board + compact_history) <= 2000
+    assert len(compact_board) == 8
+    for i, line in enumerate(compact_board):
+        assert f'lead_id=lead{i}' in line and '상태: 진행 중' in line
+        assert line == board[i] or line == board[i].split(' · 최근 결과: ')[0]
+    assert compact_history[-2:] == history[-2:]
+
+
+def test_qwen_context_does_not_change_short_input_or_hide_an_oversized_board():
+    from ttakkari.runs.desk import _qwen_context
+    assert _qwen_context(['작업판'], ['대화'], '안녕', 4000) == (['작업판'], ['대화'])
+    board = ['- lead_id=keep 「' + '긴 제목' * 1500 + '」 상태: 진행 중']
+    compact, _ = _qwen_context(board, [], '목록 보여줘', 4000)
+    assert compact == board
+
+
+async def test_production_size_context_is_still_routed_through_qwen(client, auth, make_dir, monkeypatch):
+    from ttakkari.runs import desk as module
+    board = [f'- lead_id=lead{i} 「작업 {i}」 상태: 완료 · 최근 결과: ' + '상세 결과 ' * 80 for i in range(8)]
+    history = ['사용자: ' + '이전 대화 ' * 100] * 5 + ['사용자: 고마워']
+    monkeypatch.setattr(module, '_context', lambda *_: asyncio.sleep(0, result=(board, history)))
+    calls = []
+    _use(monkeypatch, _server('social', reply='천만에요!', calls=calls))
+    sess = await _desk(client, auth, make_dir)
+    run = await wait_run(client, auth, (await start_run(client, auth, sess['id'], '고마워'))['id'])
+    assert run['engine'] == 'qwen'
+    assert run['result_text'] == '천만에요!'
+    kind = next(body for name, body in calls if name == 'desk_kind')
+    content = kind['messages'][-1]['content']
+    assert len(content) < 2100 and 'lead_id=lead7' in content and '고마워' in content
+
+
+async def test_input_skip_is_visible_without_marking_server_down(client, auth, make_dir, monkeypatch):
+    from ttakkari.runs import desk as module
+    board = ['- lead_id=keep 「' + '긴 제목' * 1500 + '」 상태: 진행 중']
+    monkeypatch.setattr(module, '_context', lambda *_: asyncio.sleep(0, result=(board, [])))
+    _use(monkeypatch, _server('social'))
+    sess = await _desk(client, auth, make_dir)
+    run = await wait_run(client, auth, (await start_run(client, auth, sess['id'], '안녕 DESK_ANSWER'))['id'])
+    assert run['engine'] == 'codex'
+    retries = [e['payload'] for e in await run_events(client, auth, run['id']) if e['type'] == 'desk.skip']
+    assert any(p.get('engine') == 'qwen' and p.get('reason') == 'prompt_too_long' for p in retries)
+    assert desk_qwen.available()

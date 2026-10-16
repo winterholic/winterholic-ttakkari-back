@@ -21,7 +21,6 @@ pytestmark = pytest.mark.skipif(not LIVE, reason="TTAKKARI_QWEN_LIVE_URL 이 없
 def _live(monkeypatch):
     monkeypatch.setattr(get_settings(), "desk_qwen_enabled", True)
     monkeypatch.setattr(get_settings(), "desk_qwen_base_url", LIVE)
-    monkeypatch.setattr(get_settings(), "desk_qwen_timeout_seconds", 60.0)
     desk_qwen.reset_cooldown()
     yield
     desk_qwen.reset_cooldown()
@@ -53,3 +52,16 @@ async def test_live_work_request_goes_to_a_planner(client, auth, make_dir):
     desk, run, route = await _send(client, auth, make_dir, "README 를 영어로 번역해줘")
     assert run["engine"] == "qwen" and route["action"] == "delegate" and route["qwen"]["kind"] == "work"
     assert len(await _leads(client, auth, desk["id"])) == 1
+
+
+async def test_live_populated_context_uses_default_timeout(client, auth, make_dir, monkeypatch):
+    from ttakkari.runs import desk as module
+    board = [f"- lead_id=lead{i} 「작업 {i}」 상태: 완료 · 최근 결과: " + "상세 결과 " * 80 for i in range(8)]
+    history = ["사용자: " + "오래된 대화 " * 100] * 5 + ["사용자: README 번역 작업"]
+    async def context(*_):
+        return board, history
+    monkeypatch.setattr(module, "_context", context)
+    _, run, route = await _send(client, auth, make_dir, "README 를 영어로 번역해줘")
+    assert run["engine"] == "qwen" and route["action"] == "delegate"
+    assert route["qwen"]["context_compacted"] is True
+    assert route["qwen"]["context_chars"] <= 2000

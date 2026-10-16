@@ -1,4 +1,4 @@
-"""Web Push. 알림은 필요한 순간에만 보낸다: 에이전트의 notify_user, Run 의 오류 실패, 사용자가 켠 일정 알림.
+"""알림함 저장과 Web Push. 알림은 필요한 순간에만 보낸다: 에이전트의 notify_user, Run 의 오류 실패, 사용자가 켠 일정 알림.
 성공 완료·취소·서버 재시작 중단은 알리지 않는다. 실패해도 Run 기록에는 영향을 주지 않는다(호출한 manager 가 예외를 잡는다)."""
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from sqlalchemy import delete, select
 
 from ttakkari import audit
 from ttakkari.db import sessionmaker
-from ttakkari.models import PushSubscription, Run, RunStatus, utcnow
+from ttakkari.models import Notification, PushSubscription, Run, RunStatus, utcnow
 from ttakkari.push import vapid
 
 log = logging.getLogger(__name__)
@@ -31,6 +31,18 @@ class PushKind(enum.StrEnum):
     checklist_reminder = "push.checklist_reminder"
     meeting = "push.meeting"  # 회의록 분석 완료·실패(meetings/pipeline.py)
     deployment = "push.deployment"  # 사용자가 기다리는 최초 무중단 배포 전환 결과
+
+
+INBOX_CATEGORY = {
+    PushKind.run_waiting: "tasks", PushKind.run_failed: "tasks", PushKind.agent: "assistant",
+    PushKind.calendar_reminder: "planner", PushKind.checklist_reminder: "planner",
+    PushKind.meeting: "meetings", PushKind.deployment: "system", PushKind.test: "system",
+}
+
+
+def internal_url(url: str) -> str:
+    return url if url.startswith("/") and not url.startswith("//") and "\\" not in url and not any(
+        ord(c) < 32 or ord(c) == 127 for c in url) else "/notifications"
 
 
 # 사용자가 직접 멈춘 cancelled, 배포·재시작으로 끊긴 interrupted, 정상 완료 succeeded 는 알리지 않는다.
@@ -107,7 +119,12 @@ async def _deliver(payload: dict[str, str], *, action: str, target_id: Any = Non
 async def notify(kind: PushKind, title: str, body: str = "", *, url: str = "/chat", tag: str | None = None,
                  target_id: Any = None) -> dict[str, int]:
     """푸시 발송의 유일한 진입점. 기능 쪽에서는 `await notify(PushKind.x, "제목", "본문", url=...)` 한 줄이면 된다.
-    같은 `tag` 의 알림은 기기에서 하나로 합쳐진다. 결과 집계는 감사 로그 `kind` 값으로 남는다."""
+    구독 유무·전송 결과와 무관하게 알림함에 먼저 저장한다. 같은 `tag` 는 기기에서만 합쳐지고 알림함은 개별 기록을 남긴다.
+    결과 집계는 감사 로그 `kind` 값으로 남는다."""
+    url = internal_url(url)
+    async with sessionmaker()() as db:
+        db.add(Notification(kind=kind.value, category=INBOX_CATEGORY[kind], title=title, body=body, url=url))
+        await db.commit()
     payload = {"title": title, "body": body, "url": url, "tag": tag or kind.value}
     return await _deliver(payload, action=kind.value, target_id=target_id)
 

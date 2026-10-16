@@ -123,9 +123,10 @@ VAPID 키는 `~/.ttakkari/vapid.json`(0600)에 있다. `ttakkari gen-vapid` 로 
 | DELETE | `/api/push/subscriptions` | `{endpoint}`. 없어도 204 |
 | POST | `/api/push/test` | 모든 구독에 테스트 알림. `{sent, removed, failed}` |
 
-푸시는 필요한 순간에만 간다. 정상 완료·취소·서버 재시작 중단에는 자동 알림이 없다. 보내는 경우는 둘이다.
+푸시는 필요한 순간에만 간다. Run의 정상 완료·취소·서버 재시작 중단에는 자동 알림이 없다.
 - Run 이 오류로 끝났을 때(`failed`): `작업 실패`
 - 에이전트가 MCP `notify_user`(`POST /api/agent/notify`)로 직접 보낼 때: 에이전트가 정한 title·body. 입력이나 승인이 필요해 멈춘 경우도 에이전트가 이 도구로 알린다(서버가 Run 을 멈춰 세우는 승인 상태는 없다)
+- 사용량 한도 대기, 사용자가 켠 일정 알림, 체크리스트 리마인더, 회의록 분석 완료·실패, 배포 결과, 설정의 테스트 알림
 
 발송 진입점은 `push.service.notify(PushKind, title, body, url=, tag=, target_id=)` 하나다. 새 기능이 알림을 붙일 때는 `PushKind` 에 항목을 더하고 이 함수를 한 줄 부른다. 구독 관리와 발송 인프라는 그대로다.
 
@@ -136,6 +137,20 @@ payload 는 `{title, body, url, tag}`:
 - `url`: `/chat/<session_id>`, `tag`: session_id (같은 세션 알림은 하나로 합쳐진다)
 
 푸시 서비스가 404/410 을 돌려주면 그 구독을 지운다. 다른 오류는 로그만 남긴다. 발송 결과는 감사 로그 `push.run_finished` 에 집계(`sent|removed|failed`)로 남는다.
+
+## 알림함
+
+`notify()`는 푸시 전송 전에 `notifications`에 제목·본문·앱 내부 경로를 저장한다. 푸시 구독이 없어도, 전송이 실패해도 보관된다. 기존 감사 로그에는 본문이 없으므로 과거 알림은 복원하지 않으며 0031 적용 후 발생한 알림부터 보관한다. 단일 사용자 앱으로 읽음 상태는 모든 기기가 공유한다. 모든 API는 사용자 인증이 필요하다.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/notifications` | 선택 `category`, `unread_only=false`, `before`(양수 ID), `limit=30`(1~100). ID 내림차순 `{items, next_before, unread_counts}` |
+| PATCH | `/api/notifications/{id}/read` | 최초 `read_at` 저장. 재요청도 같은 시각 유지. 갱신한 알림 반환, 없으면 404 |
+| POST | `/api/notifications/read-all` | `{through_id, category?}`. 해당 ID 이하·선택 유형의 미확인 알림만 읽음 처리. `{updated}`. 조회 이후 도착한 알림은 건드리지 않음 |
+
+알림 항목: `{id, kind, category, title, body, url, created_at, read_at}`. `read_at=null`은 안 읽음이다. `unread_counts`는 필터·페이지와 관계없는 유형별 미확인 개수 및 합계 `all`을 반환한다. `next_before=null`이면 마지막 페이지다.
+
+유형: `tasks`(작업 실패·사용량 대기), `assistant`(따까리가 보낸 소식), `planner`(일정·체크리스트), `meetings`(회의록), `system`(배포·테스트). 탭에는 전체·작업·따까리·일정·할 일·회의록·시스템으로 표시한다. 푸시의 `tag` 중복 합치기는 기기에서만 적용되며 알림함은 각각의 발생 기록을 남긴다. 외부 주소나 제어 문자가 포함된 목적지는 `/notifications`로 대체한다.
 
 ## 오케스트레이터(ADR 0006)
 

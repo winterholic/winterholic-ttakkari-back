@@ -368,6 +368,20 @@ class AuditLog(Base):
     user_agent: Mapped[str | None] = mapped_column(String(512))
 
 
+class Notification(Base):
+    """단일 사용자 알림함. 기기의 푸시 구독·전송 성공과 독립적으로 보관한다."""
+
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(60))
+    category: Mapped[str] = mapped_column(String(20), index=True)
+    title: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    read_at: Mapped[datetime | None]
+
+
 class PushSubscription(Base):
     """브라우저 Web Push 구독. endpoint 가 기기 식별자 역할을 하므로 unique 로 upsert 한다."""
 

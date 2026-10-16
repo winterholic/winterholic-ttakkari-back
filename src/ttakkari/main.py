@@ -24,6 +24,7 @@ from ttakkari.api import (
     desk_feedback,
     library_insight,
     meetings,
+    notifications,
     orchestrator,
     planner,
     pms,
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
     app.include_router(public_shares.router)
     app.include_router(checklists.router)
     app.include_router(checklists.agent_router)
+    app.include_router(notifications.router)
     return app
 
 

@@ -31,6 +31,13 @@
 
 운영 새 정책의 실제 모델 응답·MCP 호출·provider resume는 미실행이다. 배포 예약 접수와 성공을 구분하고, 예약 후 활성 Run 종료를 기다리며 폴링하지 않는다. 최종 전체 회귀·통합 SHA·배포 예약 결과는 후속 항목에 기록한다.
 
+## 최종 통합 검증 (22:17 KST)
+
+- 실행 코드 `3223fd3`(GPU main 통합 및 0037 graph)에서 `PYTHONPATH=src TTAKKARI_TEST_DB=postgresql+asyncpg://localhost/ttakkari_routing_99e9 .venv/bin/python -m pytest -q --tb=short --junitxml=.../final-full-regression.xml` → **1175 passed, 3 skipped, 2 xfailed, 6 subtests passed (263.37s)**. `final-full-regression.txt/xml` 원시 출력 보존.
+- `ruff check src tests alembic` → All checks passed. `alembic heads` → 0037_worker_routing 단일 head. `git diff --check` 통과.
+- 코드 검사에만 필요한 임시 `.venv` 링크는 제거한다. 기존 canonical의 실제 `.venv` 및 다른 작업자의 파일은 그대로 둔다.
+- 이 검증 시점 운영은 여전히 ee70063이고, canonical에는 별도 Qwen 접수 수정이 staging되어 있다. 후속 통합과 배포 예약은 source/cleanliness를 다시 확인한 뒤 수행한다. 예약의 성공 상태는 독립 controller가 정한다.
+
 ## 앞선 작업의 이력 (현재 상태로 해석하지 않음)
 
 ### 초기 auto 라우팅 구현·배포 보류 기록

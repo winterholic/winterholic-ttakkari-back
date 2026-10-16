@@ -492,13 +492,34 @@ class RunManager:
         from ttakkari.meetings import routing as meeting_routing
         from ttakkari.runs import worker_routing
         is_meeting = await db.scalar(select(Meeting.id).where(Meeting.analysis_run_id == run.id)) is not None
+        is_orch = sess.kind == SessionKind.orchestrator
         task_type = sess.worker_task_type if sess.kind == SessionKind.worker and sess.engine == "auto" and not is_meeting else None
+        pinned_fallback = (
+            sess.engine in {"claude", "codex", "antigravity"}
+            and not is_orch
+            and sess.kind != SessionKind.desk
+            and not is_meeting
+            and run.origin != RunOrigin.system
+            and not sess.strict_engine
+        )
+        requested_model = run.model or sess.model
+        primary_pair = worker_routing.primary_target(sess.engine, requested_model) if pinned_fallback else None
+        effective_task_type = (
+            task_type
+            or sess.worker_task_type
+            or (worker_routing.infer_task_type(requested_model) if (pinned_fallback or sess.kind == SessionKind.worker) else None)
+        )
 
         async def available_profiles():
             if is_meeting:
                 return await meeting_routing.availability(db)
             if task_type:
                 return await worker_routing.availability(db, task_type, sess.pool, model=sess.model)
+            if pinned_fallback:
+                return await worker_routing.pinned_availability(
+                    db, sess.engine, sess.pool, model=requested_model,
+                    task_type=sess.worker_task_type, strict_engine=sess.strict_engine,
+                )
             return await profiles_mod.availability(db, sess.engine, sess.pool, model=run.model)
 
         profiles, blocked = await available_profiles()
@@ -512,7 +533,6 @@ class RunManager:
                                error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
             return
 
-        is_orch = sess.kind == SessionKind.orchestrator
         # 모든 역할과 고정 엔진 세션도 신선한 사용량을 비교한다(ADR 0006).
         # 모델·엔진 범위는 지키고, 계정 전환 시 저장된 엔진 대화와 _handoff_context로 이어 받는다.
         prefer = profiles_mod.model_engine(run.model)
@@ -530,18 +550,42 @@ class RunManager:
                 own = profiles_mod._in_use.get(run_id)
                 if own in counts:
                     counts[own] = max(0, counts[own] - 1)
+            elif pinned_fallback:
+                all_candidates = candidates
+                candidates = worker_routing.pinned_first_stage(
+                    candidates, sess.engine, requested_model, sess.worker_task_type,
+                )
+                counts = await profiles_mod.running_counts_async()
+                own = profiles_mod._in_use.get(run_id)
+                if own in counts:
+                    counts[own] = max(0, counts[own] - 1)
             selected = await choose_account(candidates, run_id, **kwargs)
-            if task_type:
+            is_pinned_switched = bool(
+                pinned_fallback and primary_pair and (
+                    selected.engine != primary_pair[0]
+                    or (selected.engine == "antigravity" and selected.model != primary_pair[1])
+                )
+            )
+            if task_type or is_pinned_switched:
                 _, currently_blocked = await available_profiles()
                 events.append(db, run, "worker.routing", worker_routing.receipt(
-                    task_type, selected, all_candidates, currently_blocked, counts,
-                    trigger="initial" if not run.started_at else "fallback_or_resume"))
+                    effective_task_type or "general", selected, all_candidates, currently_blocked, counts,
+                    trigger="initial" if not run.started_at else "fallback_or_resume",
+                    fallback_from={"engine": primary_pair[0], "model": primary_pair[1]} if is_pinned_switched and primary_pair else None,
+                ))
             return selected
 
         def conversation_key(profile):
             if is_meeting:
                 return meeting_routing.conversation_key(profile)
-            return worker_routing.conversation_key(profile) if task_type else profile.key
+            if task_type or profile.engine == "antigravity" or (pinned_fallback and profile.engine != sess.engine):
+                return worker_routing.conversation_key(profile)
+            return profile.key
+
+        def lookup_resume_id(profile):
+            es = sess.engine_sessions or {}
+            return es.get(conversation_key(profile)) or es.get(profile.key)
+
         prof = await choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer, balance_usage=True)
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
@@ -556,6 +600,33 @@ class RunManager:
         events.append(db, run, "run.status", {"status": RunStatus.running})
         if resumed:
             events.append(db, run, "run.resumed", {"account": prof.name, "attempt": run.resume_attempts})
+        last_fallback: dict[str, object] | None = None
+        if pinned_fallback and primary_pair and (
+            prof.engine != primary_pair[0]
+            or (prof.engine == "antigravity" and prof.model != primary_pair[1])
+        ):
+            primary_blocked = [
+                (p, u) for p, u in blocked
+                if p.engine == primary_pair[0] and (p.engine != "antigravity" or p.model == primary_pair[1])
+            ]
+            from_prof, from_until = min(primary_blocked, key=lambda b: b[1]) if primary_blocked else (
+                profiles_mod.Profile(id=uuid.UUID(int=0), name=primary_pair[0], engine=primary_pair[0], model=primary_pair[1]),
+                None,
+            )
+            tier = (
+                "same_family"
+                if (prof.engine, prof.model) in worker_routing.same_family_counterparts(*primary_pair)
+                else "task_fit"
+            )
+            last_fallback = {
+                "from": from_prof.name, "from_engine": from_prof.engine, "from_model": from_prof.model,
+                "to": prof.name, "to_engine": prof.engine, "to_model": prof.model,
+                "reason": "usage_limit", "fallback_tier": tier,
+                "detail": f"고정 엔진({from_prof.engine}/{from_prof.model}) 한도로 {prof.engine}/{prof.model}({prof.name}) 경로로 전환",
+                "reset_at": _iso(from_until),
+                "mode": "resume" if lookup_resume_id(prof) else "handoff",
+            }
+            events.append(db, run, "engine.fallback", last_fallback)
         await self._commit(db, run)
 
         untracked_before: set[str] = set()
@@ -590,18 +661,28 @@ class RunManager:
         paused_handoff: str | None = None
         while True:
             remaining.remove(prof)
-            resume_id = (sess.engine_sessions or {}).get(conversation_key(prof))
+            resume_id = lookup_resume_id(prof)
             prompt = base_prompt
+            resumed_model = (
+                prof.model
+                if (task_type or (pinned_fallback and (prof.engine != sess.engine or prof.engine == "antigravity")))
+                else None
+            )
             # 처음 쓰는 계정은 앞선 대화를 통째로, 쓴 적 있는 계정은 그 뒤 다른 계정에서 오간 대화만 받는다.
             prompt = await _handoff_context(db, run, resumed_profile=prof.name if resume_id else None,
-                                            resumed_model=prof.model if task_type else None) + prompt
+                                            resumed_model=resumed_model) + prompt
             prompt = attempt_handoff + prompt
             run.engine, run.profile = prof.engine, prof.name
             if is_meeting:
                 model, effort = prof.model, run.effort
                 run.model = model
-            elif task_type:
-                model, effort = prof.model, worker_routing.effort(prof, sess.effort)
+            elif task_type or (
+                pinned_fallback and primary_pair and (
+                    prof.engine != primary_pair[0]
+                    or (prof.engine == "antigravity" and prof.model != primary_pair[1])
+                )
+            ):
+                model, effort = prof.model, worker_routing.effort(prof, run.effort or sess.effort)
                 run.model, run.effort = model, effort
             else:
                 model, effort = _launch_model(sess, run, prof, profiles[0])
@@ -619,7 +700,10 @@ class RunManager:
             if state.rate_limits:
                 usage_mod.remember_stream(prof.id, usage_mod.windows_from_stream(state.rate_limits))
             if state.engine_session_id:
-                sess.engine_sessions = {**(sess.engine_sessions or {}), conversation_key(prof): state.engine_session_id}
+                updates = {conversation_key(prof): state.engine_session_id}
+                if not task_type and prof.engine == sess.engine and prof.engine != "antigravity":
+                    updates[prof.key] = state.engine_session_id
+                sess.engine_sessions = {**(sess.engine_sessions or {}), **updates}
                 sess.engine_session_id = state.engine_session_id
             failed = missing or rc != 0 or state.is_error
             stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
@@ -641,6 +725,8 @@ class RunManager:
                 # All models of an engine use the same executable. A different model cannot
                 # recover a missing binary; continue with a suitable different engine once.
                 remaining = [p for p in remaining if p.engine != prof.engine]
+            elif missing and pinned_fallback:
+                remaining = []
             if stopped or not failed or not (missing or limited) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
@@ -650,12 +736,27 @@ class RunManager:
                     paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
                 break
             nxt = await choose(remaining, run.id, prefer_engine=prefer, balance_usage=True)
-            events.append(db, run, "engine.fallback", {
-                "from": prof.name, "to": nxt.name, "reason": "missing" if missing else "usage_limit",
+            tier = None
+            if pinned_fallback and primary_pair and (
+                nxt.engine != primary_pair[0]
+                or (nxt.engine == "antigravity" and nxt.model != primary_pair[1])
+            ):
+                tier = (
+                    "same_family"
+                    if (nxt.engine, nxt.model) in worker_routing.same_family_counterparts(*primary_pair)
+                    else "task_fit"
+                )
+            from_model = model or (primary_pair[1] if primary_pair and prof.engine == primary_pair[0] else prof.model)
+            last_fallback = {
+                "from": prof.name, "from_engine": prof.engine, "from_model": from_model,
+                "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
+                "reason": "missing" if missing else "usage_limit",
+                "fallback_tier": tier,
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
                 # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄
-                "mode": "resume" if (sess.engine_sessions or {}).get(conversation_key(nxt)) else "handoff",
-            })
+                "mode": "resume" if lookup_resume_id(nxt) else "handoff",
+            }
+            events.append(db, run, "engine.fallback", last_fallback)
             attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
             if h:
                 h.stderr_tail.clear()
@@ -673,7 +774,22 @@ class RunManager:
             self._reset_requests.discard(sess.id)
             context_usage.reset_engine_sessions(sess)
         run.cost_usd = state.cost_usd
-        run.usage = {**state.usage, **context_usage.measure(state, prof.engine, prof.config_dir)}
+        selected_model = model or run.model or (
+            prof.model or worker_routing.primary_target(prof.engine, sess.model)[1]
+            if prof.engine in {"claude", "codex", "antigravity"} else None
+        )
+        verify_needed = worker_routing.needs_independent_verification(effective_task_type, selected_model)
+        routing_usage: dict[str, object] = {
+            "task_type": effective_task_type,
+            "selected_engine": prof.engine,
+            "selected_model": selected_model,
+            "verification_required": verify_needed,
+            "verification_status": "pending" if verify_needed else "not_required",
+            "false_completion": None,
+        }
+        if last_fallback is not None:
+            routing_usage["fallback"] = last_fallback
+        run.usage = {**state.usage, **context_usage.measure(state, prof.engine, prof.config_dir), **routing_usage}
         run.result_text = state.result_text or state.last_message
 
         diff = None
@@ -884,9 +1000,15 @@ class RunManager:
         run.finished_at = utcnow()
         if error:
             run.error = error[:8000]
+        usage_info = run.usage or {}
         events.append(db, run, "run.finished", {
             "status": status, "error": run.error, "result_text": run.result_text,
             "cost_usd": run.cost_usd, "exit_code": run.exit_code,
+            "engine": run.engine, "profile": run.profile, "model": run.model,
+            "task_type": usage_info.get("task_type"),
+            "verification_required": usage_info.get("verification_required", False),
+            "verification_status": usage_info.get("verification_status"),
+            "fallback": usage_info.get("fallback"),
         })
         record(db, actor="agent", action="run.finished", outcome="ok" if status == RunStatus.succeeded else "error",
                target_type="run", target_id=run.id, detail={"status": status})
@@ -1254,7 +1376,19 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
         return None
     label = {RunStatus.succeeded: "완료", RunStatus.failed: "실패", RunStatus.cancelled: "취소",
              RunStatus.interrupted: "중단"}.get(RunStatus(run.status), run.status)
+    usage_info = run.usage or {}
     body = [f"[작업 보고] 작업 세션 '{sess.title}' (worker_id={sess.id}) {label}."]
+    if fb := usage_info.get("fallback"):
+        body.append(
+            f"경로 전환: {fb.get('from_engine')}/{fb.get('from_model')}({fb.get('from')}) → "
+            f"{fb.get('to_engine')}/{fb.get('to_model')}({fb.get('to')}) (사유: {fb.get('reason')})"
+        )
+    if run.status == RunStatus.succeeded and usage_info.get("verification_required"):
+        body.append(
+            "독립 검증 필요: 이 작업은 Gemini 3.8 Flash 계열이 수행했습니다. "
+            "최종 완료로 판단하기 전에 다른 공급자(task_type='verification', GPT-6 Luna 또는 Claude Sonnet)로 "
+            "독립 검증하고, 결과를 message_worker(verification_outcome='passed'|'failed')로 기록하세요."
+        )
     if run.result_text:
         body.append("결과:\n" + run.result_text[:REPORT_CHARS])
     if run.error:

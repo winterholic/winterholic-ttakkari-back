@@ -1,13 +1,13 @@
 # ADR 0029: Antigravity CLI 작업 엔진
 
 
-> 2026-10-16 후속 결정: 신규 auto 작업자의 배정은 `runs/worker_routing.py`의 task_type 정책으로 대체했다. Antigravity 포함, 모델별 quota·fallback·대화 보존·배정 영수증·idle reroute는 [API 계약](../api-contract.md#작업자-task-routing-2026-10-16)을 따른다. 아래의 과거 native-only auto/Luna 기본·디자인 native Claude 고정 설명은 레거시 세션의 이력이며 신규 auto 작업자에 적용하지 않는다. 메인·접수·별도 회의/날씨 경로는 기존 계약을 유지한다.
+> 2026-10-16 후속 결정: 신규 auto 작업자의 배정은 `runs/worker_routing.py`의 task_type 정책으로 대체하고, 고정 엔진 세션의 한도 도달 시 대체 경로(`strict_engine=False` 기본: 같은 모델 계열 다른 경로 → 작업 성격에 맞는 같은 등급 모델 → 대기) 및 Flash 구현 결과의 교차 검증(`verification`에서 Flash 제외, GPT/Claude 독립 검증 및 `false_completion` 기록)을 추가했다. 세부 명세는 [API 계약](../api-contract.md#작업자-task-routing-및-고정-엔진-한도-대체-2026-10-16)을 따른다. 메인·접수·별도 회의/날씨 경로는 기존 계약을 유지한다.
 - 상태: 구현 중
 - 날짜: 2026-10-15
 
 ## 2026-10-16 모델 배정 방침 변경
 
-사용자 요청으로 아래 초기 Gemini-only·Claude 기본 배정 제외 결정을 대체한다. `agy models` 1.3.6에서 확인한 Sonnet/Opus 5.5, Gemini 4 Argon, Flash 3.8 low/medium/high와 GPT-OSS medium을 허용한다. 일반 작업의 Antigravity 기본값은 Sonnet high, 단순 범용 작업은 Flash high, 어려운 설계·추론·독립 대안은 사유를 명시한 Argon/Opus다. 메인 모델 방침은 유지한다.
+사용자 요청으로 아래 초기 Gemini-only·Claude 기본 배정 제외 결정을 대체한다. `agy models` 1.3.6에서 확인한 Sonnet/Opus 5.5, Gemini 4 Argon, Flash 3.8 low/medium/high와 GPT-OSS medium을 허용한다(`Gemini 3.7 Flash`는 설치된 CLI 카탈로그에 없어 추가하지 않음). 일반 작업의 Antigravity 기본값은 Sonnet high, 단순 범용 작업은 Flash(기본 high, 단순 조회·추출·형식 변환은 low/medium 지정 가능), 독립 검증(`verification`)은 GPT-6 Luna 우선·Claude Sonnet 차선(Flash 제외), 어려운 설계·추론·독립 대안은 사유를 명시한 Argon/Opus다. 외부 벤치마크·후기 수치(확인 필요)는 작업 유형별 배치와 교차 검증 절차의 설계 근거로만 참고하며 검증된 성능 순위로 단정하지 않는다. 메인 모델 방침은 유지한다.
 
 Claude/GPT, Gemini, 별도로 노출되는 Argon quota를 선택 모델에 따라 확인하며, 한 그룹의 소진·실행 거절이 다른 그룹을 막지 않도록 한다. AI 크레딧은 baseline allowance와 별개이며, 이 변경은 유료 overage를 켜지 않는다. 모델 목록·단발 응답과 MCP/대화 재개 성공은 별도 검증한다. 진행 중인 연결·설정 수명 수정의 완료를 이 모델 배정 변경으로 대신 주장하지 않는다.
 

@@ -133,7 +133,7 @@ async def test_second_claude_account_takes_over_with_its_config_dir(client, auth
     await client.post("/api/accounts", json={"name": "claude-2", "engine": "claude", "config_dir": str(d)}, headers=auth)
     accs = await _accounts(client, auth)
     await client.post("/api/accounts/reorder", json={"ids": [accs[0]["id"], accs[2]["id"], accs[1]["id"]]}, headers=auth)
-    chat = await _session(client, auth, make_dir, engine="claude")
+    chat = await _session(client, auth, make_dir, engine="claude", strict_engine=True)
     started = await start_run(client, auth, chat["id"], "CLAUDE_LIMIT")
     # 두 claude 계정 모두 한도면 실패하지 않고 초기화를 기다리지만, 두 번째 계정은 자기 폴더로 실행됐다.
     await wait_event(client, auth, started["id"], "run.waiting")

@@ -28,7 +28,7 @@ from ttakkari.models import (
 )
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
-from ttakkari.runs import context_usage, luna_benchmark, worker_routing
+from ttakkari.runs import context_usage, events, luna_benchmark, worker_routing
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs.account_status import account_status
 from ttakkari.runs.manager import manager
@@ -45,6 +45,7 @@ class WorkerIn(BaseModel):
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     task_type: worker_routing.TaskType | None = None
+    strict_engine: bool = False
     # 오케스트레이터와 같은 급(peer_models)을 작업 세션에 쓸 때만 필요하다.
     escalation_reason: str | None = Field(default=None, max_length=1000)
 
@@ -67,12 +68,29 @@ class WorkerIn(BaseModel):
 
 
 class MessageIn(BaseModel):
-    prompt: str = Field(min_length=1, max_length=100_000)
+    prompt: str = Field(default="", max_length=100_000)
     # True 면 이 작업 세션의 엔진 대화를 버리고 새로 시작한다(컨텍스트 교체). 지시는 자기 완결적이어야 한다.
     fresh_context: bool = False
     reroute: bool = False
     task_type: worker_routing.TaskType | None = None
+    strict_engine: bool | None = None
     escalation_reason: str | None = Field(default=None, max_length=1000)
+    verification_outcome: Literal["passed", "failed"] | None = None
+    verification_note: str | None = Field(default=None, max_length=2000)
+    verifier_worker_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def require_prompt_unless_verification_only(self):
+        if not self.prompt.strip() and self.verification_outcome is None:
+            raise ValueError("prompt is required unless recording verification_outcome.")
+        return self
+
+
+class VerificationIn(BaseModel):
+    outcome: Literal["passed", "failed"]
+    note: str | None = Field(default=None, max_length=2000)
+    verifier_worker_id: uuid.UUID | None = None
+    run_id: uuid.UUID | None = None
 
 
 class WorkerOut(BaseModel):
@@ -82,7 +100,11 @@ class WorkerOut(BaseModel):
     model: str | None = None
     effort: str | None = None
     task_type: str | None = None
+    strict_engine: bool = False
     routing: dict | None = None
+    verification_required: bool = False
+    verification_status: str | None = None
+    false_completion: bool | None = None
     status: str
     context: str = ""
     active_run_id: uuid.UUID | None = None
@@ -112,13 +134,23 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
     active = next((r for r in runs if r.status in ACTIVE), None)
     done = next((r for r in runs if r.status not in ACTIVE), None)
     out = WorkerOut(worker_id=w.id, title=w.title, engine=w.engine, model=w.model, effort=w.effort,
-                    task_type=w.worker_task_type,
+                    task_type=w.worker_task_type, strict_engine=w.strict_engine,
                     status=active.status if active else (done.status if done else "idle"),
                     active_run_id=active.id if active else None,
                     context=context_usage.describe(await context_usage.latest(db, w)))
     if runs:
         out.routing = await db.scalar(select(RunEvent.payload).where(
             RunEvent.run_id == runs[0].id, RunEvent.type == "worker.routing").order_by(RunEvent.seq.desc()).limit(1))
+    usage_info = (done.usage or {}) if done is not None else {}
+    out.verification_required = bool(
+        usage_info.get("verification_required")
+        or (out.routing or {}).get("verification_required")
+        or worker_routing.needs_independent_verification(w.worker_task_type, (done.model if done else None) or w.model)
+    )
+    out.verification_status = usage_info.get("verification_status") or (
+        "pending" if out.verification_required else None
+    )
+    out.false_completion = usage_info.get("false_completion")
     if done is not None:
         limit = RESULT_CHARS if detail else 300
         out.last_result = (done.result_text or "")[:limit] or None
@@ -127,6 +159,56 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
             arts = await db.scalars(select(Artifact.filename).where(Artifact.run_id == done.id, Artifact.deleted_at.is_(None)))
             out.artifacts = list(arts)
     return out
+
+
+async def _record_verification(
+    db: Db, w: ChatSession, outcome: Literal["passed", "failed"],
+    note: str | None = None, verifier_worker_id: uuid.UUID | None = None,
+    run_id: uuid.UUID | None = None,
+) -> Run:
+    if run_id is not None:
+        target = await db.get(Run, run_id)
+        if target is None or target.session_id != w.id or target.status in ACTIVE:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "대상 완료 Run을 찾을 수 없습니다.")
+    else:
+        target = await db.scalar(
+            select(Run).where(Run.session_id == w.id, Run.status.not_in(ACTIVE))
+            .order_by(Run.created_at.desc()).limit(1)
+        )
+        if target is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "검증 결과를 기록할 완료된 Run이 없습니다.")
+    usage_data = dict(target.usage or {})
+    selected_model = usage_data.get("selected_model") or target.model or w.model
+    task_type = usage_data.get("task_type") or w.worker_task_type or worker_routing.infer_task_type(selected_model)
+    usage_data.update({
+        "task_type": task_type,
+        "selected_engine": usage_data.get("selected_engine") or target.engine or w.engine,
+        "selected_model": selected_model,
+        "verification_required": usage_data.get(
+            "verification_required",
+            worker_routing.needs_independent_verification(task_type, selected_model),
+        ),
+        "verification_status": outcome,
+        "false_completion": outcome == "failed",
+        "verification_note": (note or "")[:2000] or None,
+        "verifier_worker_id": str(verifier_worker_id) if verifier_worker_id else None,
+    })
+    target.usage = usage_data
+    events.append(db, target, "worker.verification", {
+        "worker_id": str(w.id),
+        "run_id": str(target.id),
+        "task_type": task_type,
+        "engine": usage_data["selected_engine"],
+        "model": selected_model,
+        "outcome": outcome,
+        "false_completion": outcome == "failed",
+        "note": usage_data["verification_note"],
+        "verifier_worker_id": usage_data["verifier_worker_id"],
+    })
+    record(db, actor="agent", action="orchestrator.verify_worker", target_type="run", target_id=target.id,
+           detail={"worker_id": str(w.id), "outcome": outcome, "false_completion": outcome == "failed",
+                   "model": selected_model, "task_type": task_type})
+    return target
 
 
 @router.post("/workers", response_model=WorkerOut, status_code=201)
@@ -160,7 +242,7 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
                             "중요한 설계 결정·어려운 추론·새로운 발상이 필요한 부분만 맡기고, 아니면 sonnet 이나 gpt-6-luna 를 쓰세요.")
     w = ChatSession(workspace_id=orch.workspace_id, title=body.title, engine=engine, model=model,
                     effort=effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool,
-                    worker_task_type=task_type)
+                    worker_task_type=task_type, strict_engine=body.strict_engine)
     db.add(w)
     await db.flush()
     if peer:
@@ -178,6 +260,10 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
         raise HTTPException(status.HTTP_409_CONFLICT, "보관된 작업 세션입니다.")
     if body.task_type and not body.reroute:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Changing task_type requires reroute=True.")
+    if body.strict_engine is not None:
+        w.strict_engine = body.strict_engine
+    if body.verification_outcome is not None:
+        await _record_verification(db, w, body.verification_outcome, body.verification_note, body.verifier_worker_id)
     if body.reroute:
         # Never alter the engine policy under a running/queued Run or silently discard its work.
         await db.refresh(w, with_for_update=True)
@@ -206,8 +292,54 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
                detail={"task_type": task_type, "reason": (body.escalation_reason or "")[:500]})
     if body.fresh_context:
         await _reset(db, w)
-    await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)
+    if body.prompt.strip():
+        await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)
+    else:
+        await db.commit()
     return await _out(db, w)
+
+
+@router.post("/workers/{worker_id}/verification", response_model=WorkerOut)
+async def verify_worker(worker_id: uuid.UUID, body: VerificationIn, sid: OrchestratorSession, db: Db) -> WorkerOut:
+    await _orchestrator(db, sid)
+    w = await _worker(db, sid, worker_id)
+    await _record_verification(db, w, body.outcome, body.note, body.verifier_worker_id, body.run_id)
+    await db.commit()
+    return await _out(db, w, detail=True)
+
+
+@router.get("/workers/metrics")
+async def worker_metrics(sid: OrchestratorSession, db: Db) -> dict:
+    orch = await _orchestrator(db, sid)
+    rows = list(await db.execute(
+        select(Run, ChatSession.worker_task_type)
+        .join(ChatSession, ChatSession.id == Run.session_id)
+        .where(ChatSession.kind == SessionKind.worker, ChatSession.pool == orch.pool, Run.status.not_in(ACTIVE))
+        .order_by(Run.created_at.desc())
+        .limit(500)
+    ))
+    by_model_task: dict[str, dict] = {}
+    for run, sess_task in rows:
+        u = run.usage or {}
+        model = u.get("selected_model") or run.model or "unknown"
+        task = u.get("task_type") or sess_task or "general"
+        key = f"{model}:{task}"
+        bucket = by_model_task.setdefault(key, {
+            "model": model, "engine": u.get("selected_engine") or run.engine, "task_type": task,
+            "total_runs": 0, "verification_required_runs": 0,
+            "verified_passed_runs": 0, "false_completion_runs": 0, "unverified_runs": 0,
+        })
+        bucket["total_runs"] += 1
+        if u.get("verification_required"):
+            bucket["verification_required_runs"] += 1
+        v_status = u.get("verification_status")
+        if v_status == "passed":
+            bucket["verified_passed_runs"] += 1
+        elif v_status == "failed" or u.get("false_completion") is True:
+            bucket["false_completion_runs"] += 1
+        elif u.get("verification_required"):
+            bucket["unverified_runs"] += 1
+    return {"pool": orch.pool, "metrics": list(by_model_task.values())}
 
 
 async def _reset(db: Db, sess: ChatSession) -> bool:

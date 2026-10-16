@@ -90,6 +90,7 @@ class SessionIn(BaseModel):
     engine: SessionEngine | None = None
     model: str | None = Field(default=None, max_length=100)
     effort: Effort | None = None
+    strict_engine: bool = False
     # 작업 세션(worker)은 오케스트레이터 도구로만 만든다.
     kind: SessionKindName = "chat"
     # personal | work. 회사 업무 탭에서 만든 대화는 회사 계정만 쓴다.
@@ -100,6 +101,7 @@ class SessionPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=300)
     model: str | None = Field(default=None, max_length=100)
     effort: Effort | None = None
+    strict_engine: bool | None = None
     archived: bool | None = None
 
 
@@ -111,6 +113,7 @@ class SessionOut(ORM):
     model: str | None
     effort: str | None
     worker_task_type: str | None = None
+    strict_engine: bool = False
     engine_session_id: str | None
     kind: str
     parent_id: uuid.UUID | None

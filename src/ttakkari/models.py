@@ -148,6 +148,8 @@ class ChatSession(Base):
     effort: Mapped[str | None] = mapped_column(String(16))
     # Only auto workers use this policy. NULL preserves legacy sessions and native main/desk routing.
     worker_task_type: Mapped[str | None] = mapped_column(String(20))
+    # 고정 엔진 세션에서 한도 도달 시 다른 경로 대체 허용 여부(False=대체 허용, True=해당 엔진만 유지 후 대기).
+    strict_engine: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # 엔진 쪽 대화 ID(claude session_id / codex thread_id). 후속 지시를 resume 하는 데 쓴다.
     engine_session_id: Mapped[str | None] = mapped_column(String(100))
     # 엔진 프로필 이름 → 그 프로필의 엔진 대화 ID. 프로필을 오가도 각자 이어간다(ADR 0006).
@@ -266,6 +268,26 @@ class RunEvent(Base):
     type: Mapped[str] = mapped_column(String(40))
     payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class QwenTokenUsage(Base):
+    """One row per actual local Qwen HTTP call made while routing an operational desk Run."""
+
+    __tablename__ = "qwen_token_usage"
+    __table_args__ = (
+        UniqueConstraint("request_id", "call_index", name="uq_qwen_token_usage_request_call"),
+        Index("ix_qwen_token_usage_recorded_at", "recorded_at"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    request_id: Mapped[uuid.UUID] = mapped_column()
+    call_index: Mapped[int] = mapped_column(Integer)
+    stage: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(24))
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    recorded_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
 class RuntimeGeneration(Base):

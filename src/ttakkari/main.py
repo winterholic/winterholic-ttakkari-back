@@ -156,6 +156,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # 기본 경로가 없어도 서버는 뜬다. 프론트가 /api/workspaces/default 로 다시 시도하며 오류를 보여 준다.
         log.warning("default workspace not created: %s", e)
     await preview.start_worker()
+    from ttakkari.runs.desk_qwen_service import service as qwen_service
+    await qwen_service.start()
     kr_holidays.warm(datetime.now(UTC).year)
     # 회의록 벡터 색인(끊긴 것·아직 없는 것)과 로컬 전사 큐
     with contextlib.suppress(Exception):
@@ -183,6 +185,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await luna_benchmark.shutdown()
         await manager.shutdown()
         await desk_pool.shutdown()
+        await qwen_service.stop()
         await preview.stop_worker()
         await dispose_engine()
 

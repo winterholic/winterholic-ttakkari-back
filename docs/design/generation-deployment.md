@@ -116,7 +116,7 @@ cd ~/.ttakkari/deploy/releases/<새 SHA>
 - `recovery_pending`은 자동 조정으로 안전을 확인하지 못한 상태다. 원인이 해소되기 전에는 후속 예약을 활성화하지 않는다. 관측 불능을 작업 완료로 기록하지 않는다.
 - 외부 부작용의 exactly-once, 실행 중 함수 메모리 이전, Mac/DB/전원 장애에 대한 무중단은 보장 범위 밖이다. DB fencing은 오래된 쓰기를 거절하는 역할이다.
 
-schema 계약이 다르면 명시된 `online_migration_from`에서만 online migration을 허용한다. 현재 `0031_notifications`는 독립 알림 테이블만 추가하므로 `0030_runtime_generations`에서의 전환만 허용한다. 기존 테이블을 바꾸지 않는 이 경로 외에는 자동 허용하지 않는다. 새 migration의 head와 배포 계약이 어긋나면 회귀 검사에서 실패한다. online migration 연결에는 2초 lock timeout과 30초 statement timeout을 적용한다. 파괴적 변경은 기존 안전 전환 절차로 별도 처리한다. DB migration을 자동 downgrade해 rollback하지 않는다.
+schema 계약이 다르면 명시된 `online_migration_from`에서만 online migration을 허용한다. 기존 테이블을 바꾸지 않는 migration만 온라인 출발점을 명시한다. 현재 `0034_knowledge_ledger`에서 `0035_qwen_token_usage`로는 독립 사용량 테이블을 추가하므로 온라인 전환을 허용한다. 새 migration의 head와 배포 계약이 어긋나면 회귀 검사에서 실패한다. online migration 연결에는 2초 lock timeout과 30초 statement timeout을 적용한다. 파괴적 변경은 기존 안전 전환 절차로 별도 처리한다. DB migration을 자동 downgrade해 rollback하지 않는다.
 
 ## 검증 범위
 

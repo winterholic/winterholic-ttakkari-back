@@ -209,8 +209,12 @@ async def _try_qwen(db: AsyncSession, run: Run, sess: ChatSession, leads: list[C
         return None
     s = get_settings()
     board, history = await _context(db, run, sess, leads)
+    base_url = desk_qwen.endpoint()
+    if base_url is None:
+        return None  # 서버가 준비 전이거나 실패 중: 기다리지 않고 Luna/Haiku 로 간다
     try:
-        q = await desk_qwen.decide(board, history, run.prompt, [str(lead.id) for lead in leads])
+        with desk_qwen.measure_operational_run(run.id, base_url):
+            q = await desk_qwen.decide(board, history, run.prompt, [str(lead.id) for lead in leads])
     except desk_qwen.QwenUnavailable as exc:
         if exc.cooldown:
             events.append(db, run, "desk.retry", {"account": "qwen-local", "engine": "qwen", "ms": 0, "warm": False,

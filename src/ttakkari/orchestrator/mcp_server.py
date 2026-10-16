@@ -328,21 +328,24 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None,
-                       task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None) -> str:
+                       task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None,
+                       strict_engine: bool = False) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     `prompt` must be self-contained: the worker does not see this conversation.
     Use engine="auto" and task_type; the backend enforces the policy returned by account_usage.worker_routing.
     general: Antigravity Sonnet, then Flash, then native Sonnet/Luna balanced by capacity.
-    routine: Flash first. design: Antigravity Sonnet then native Sonnet. verification: native Luna first.
+    routine: Flash first (gemini-3.8-flash-low/medium can be specified for simple lookup/extraction/formatting).
+    design: Antigravity Sonnet then native Sonnet.
+    verification: independent review using native GPT-6 Luna first, then Claude Sonnet (Flash is excluded).
     reasoning: Argon, then Antigravity Opus, then native Sol/Opus; escalation_reason is required.
-    Explicit engine="claude"/"codex"/"antigravity" locks that engine, including on a usage limit.
-    Pin only for an explicit user requirement or a required tool/capability; check model_capacity first.
-    Unknown capacity is not confirmed spare quota. Zero AI credits is independent from baseline quota.
-    Auto chooses a model appropriate to the task on every Run and quota fallback, preserving per-model
-    conversations. Omit model/effort unless needed. Missing task_type is general; a Luna/Flash model hint
-    does not classify work as verification/routine. Peer model requests imply reasoning and require a reason.
-    Returns worker_id, task_type and the latest routing receipt when available."""
-    body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine}
+    When a general/routine worker runs on Gemini 3.8 Flash, verification_required=True is returned: run an
+    independent cross-provider verification (task_type="verification") before final completion and record
+    message_worker(verification_outcome="passed"|"failed").
+    Explicit engine="claude"/"codex"/"antigravity" uses that engine first and, when all its enabled accounts hit
+    usage limits, falls back to same-family then task-fit routes before waiting; set strict_engine=True to
+    strictly lock the engine and wait for quota reset instead.
+    Returns worker_id, task_type, verification_required and the latest routing receipt when available."""
+    body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine, "strict_engine": strict_engine}
     if model:
         body["model"] = model
     if effort:
@@ -433,19 +436,37 @@ async def manage_pms(operation: PmsOperation, project_id: str | None = None, ite
 
 
 @orchestrator_tool
-async def message_worker(worker_id: str, prompt: str, fresh_context: bool = False, reroute: bool = False,
+async def message_worker(worker_id: str, prompt: str = "", fresh_context: bool = False, reroute: bool = False,
                          task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None,
-                         escalation_reason: str | None = None) -> str:
-    """Send a follow-up instruction to an existing worker. It continues the same conversation and is queued if
-    the worker is busy. fresh_context=True starts the worker's engine conversation over (use when its context is
-    high); then the prompt must be self-contained and say where the progress is recorded.
+                         escalation_reason: str | None = None,
+                         strict_engine: bool | None = None,
+                         verification_outcome: Literal["passed", "failed"] | None = None,
+                         verification_note: str | None = None,
+                         verifier_worker_id: str | None = None) -> str:
+    """Send a follow-up instruction to an existing worker or record its independent verification outcome.
+    fresh_context=True starts the worker's engine conversation over (use when its context is high); then the
+    prompt must be self-contained and say where the progress is recorded.
     reroute=True converts an idle worker (including a legacy engine lock) to task-aware auto, preserving
     provider conversations and recorded progress. Running/queued work must finish or be canceled after
     inspecting side effects first (409 otherwise). task_type changes require reroute; reasoning requires
-    a new escalation_reason. Rerouting does not automatically repeat the earlier task."""
-    return await _call("POST", f"/workers/{worker_id}/messages", {
+    a new escalation_reason. strict_engine toggles whether an explicit-engine worker waits on quota limits
+    (True) or falls back across same-family/task-fit routes (False).
+    verification_outcome="passed"|"failed" records whether independent cross-provider review confirmed the
+    worker's completion or found a false completion (rework required); prompt can be omitted when only
+    recording verification_outcome."""
+    payload: dict[str, Any] = {
         "prompt": prompt, "fresh_context": fresh_context, "reroute": reroute,
-        "task_type": task_type, "escalation_reason": escalation_reason})
+        "task_type": task_type, "escalation_reason": escalation_reason,
+    }
+    if strict_engine is not None:
+        payload["strict_engine"] = strict_engine
+    if verification_outcome is not None:
+        payload["verification_outcome"] = verification_outcome
+    if verification_note is not None:
+        payload["verification_note"] = verification_note
+    if verifier_worker_id is not None:
+        payload["verifier_worker_id"] = verifier_worker_id
+    return await _call("POST", f"/workers/{worker_id}/messages", payload)
 
 
 @orchestrator_tool

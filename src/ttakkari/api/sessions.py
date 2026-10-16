@@ -89,7 +89,8 @@ async def create_session(body: SessionIn, _: User, db: Db) -> SessionOut:
     # 오케스트레이터는 auto 범위에서 사용량을 비교한다(ADR 0006). 접수는 엔진 순서를 따로 정한다(ADR 0013).
     engine = "auto" if body.kind in (SessionKind.orchestrator, SessionKind.desk) else (body.engine or ws.default_engine)
     s = ChatSession(workspace_id=ws.id, title=body.title or "새 작업", engine=engine,
-                    model=body.model, effort=body.effort, kind=body.kind, pool=body.pool)
+                    model=body.model, effort=body.effort, strict_engine=body.strict_engine,
+                    kind=body.kind, pool=body.pool)
     db.add(s)
     await db.commit()
     return await _session_out(db, s)

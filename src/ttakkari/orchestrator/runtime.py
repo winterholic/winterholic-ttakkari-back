@@ -71,23 +71,32 @@ MODEL_ROUTING_NOTE = """\
 This backend-enforced task policy supersedes conflicting native-only, explicit-Antigravity-only,
 Luna-first-for-everything and Claude-for-everything instructions in older role files and memories.
 - For workers, use engine="auto" and task_type; omit model/effort unless needed. Antigravity is included.
-  general = normal coding/research/writing/implementation; routine = simple searches/extraction/conversion/
-  small edits/routine checks; design = visual composition/UI; verification = tests, consistency, counterexamples;
+  general = normal coding/research/writing/implementation (Sonnet first, Flash fallback);
+  routine = simple searches/extraction/conversion/small edits/routine checks (Flash first; gemini-3.8-flash-low
+  or gemini-3.8-flash-medium can be specified for simple lookup/extraction/format conversion);
+  design = visual composition/UI (Sonnet first);
+  verification = independent tests, consistency and counterexample review (GPT-6 Luna first, then Claude Sonnet;
+  Flash is excluded from verification);
   reasoning = difficult architecture, deep reasoning or independent alternatives, requiring escalation_reason.
   Do not label routine work reasoning or verification just to reach a preferred model. Split mixed work only
   when it benefits the task; these are task preferences, not universal measured model-performance rankings.
+- Independent verification for Flash implementation: when a general/routine worker runs on Gemini 3.8 Flash,
+  treat its output as requiring independent cross-provider verification (task_type="verification", GPT or Claude)
+  before final completion, and record the outcome via message_worker(verification_outcome="passed"|"failed").
+  Avoid assigning long unattended multi-stage shell/file-cleanup loops or direct computer/UI manipulation to Flash.
 - The authoritative ordered model stages (equal-stage candidates balance by load) are generated from code:
 """ + json.dumps(policy(), ensure_ascii=False) + """
 - Check account_usage before assignments, including model_capacity and worker_routing. The backend respects
   scope, configured model IDs, enable flags, model-group cooldowns and stale exhaustion. Unknown capacity is
   unknown; measured alternatives precede unknown candidates, then task-stage priority, then headroom per Run.
-  One exhausted pool must not disable the others. Zero AI credits does not mean zero baseline allowance.
-  Do not buy credits or enable paid overages. Antigravity effort matches the model suffix.
-- Explicit engines lock that engine including during a quota wait. Pin only for a user's explicit model/engine
-  requirement or a required tool/capability. Explain the requirement; do not pin from your own provider identity.
+  One exhausted pool must not disable the others (claude_and_gpt, gemini, and argon are evaluated separately). Zero AI credits
+  does not mean zero baseline allowance. Do not buy credits or enable paid overages.
+- Explicit engines (claude/codex/antigravity) use that engine first; if all enabled accounts of that engine hit
+  usage limits, the backend falls back to (1) same model family on another route, then (2) task-fit same-tier
+  models on other routes before waiting, recording engine.fallback and preserving progress via _attempt_handoff.
+  Pass strict_engine=True only when the session must wait on that exact engine without cross-route fallback.
   For a legacy/pinned worker needing a policy change, inspect progress and side effects first, then finish or
-  cancel its active Run and use message_worker(reroute=True, task_type=...) on the idle worker. Preserve progress
-  and inspect side effects; do not repeat completed actions. fresh_context is a separate decision.
+  cancel its active Run and use message_worker(reroute=True, task_type=...) on the idle worker.
 - Main orchestrator and desk keep their existing native policy; worker auto is a separate path. Review
   worker.routing receipts for the actual model, quota evidence, exclusions and fallback reason.
 - Model listing and quota availability do not verify MCP, persistence or resume. Preserve the evidence scope

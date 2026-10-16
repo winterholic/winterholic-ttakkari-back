@@ -48,6 +48,14 @@ async def health(db: Db) -> dict:
     return {"ok": True}
 
 
+@router.get("/qwen-status")
+async def qwen_status(response: Response) -> dict:
+    """접수 로컬 Qwen 서버 상태(인증 없음, 포트·pid·경로는 내지 않는다). 안 떠 있어도 접수는 CLI 로 동작한다."""
+    from ttakkari.runs.desk_qwen_service import service as qwen_service
+    response.headers["Cache-Control"] = "no-store"
+    return qwen_service.status()
+
+
 @router.get("/version")
 async def version(request: Request, response: Response) -> dict:
     response.headers["Cache-Control"] = "no-store"

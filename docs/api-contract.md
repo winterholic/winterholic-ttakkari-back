@@ -208,6 +208,7 @@ payload 는 `{title, body, url, tag}`:
 | POST | `/api/accounts/reorder?pool=` | `{ids}` 제출한 계정을 앞에 두고 누락된 계정은 기존 상대 순서대로 뒤에 둠. 중복·그 모드에 없는 id 는 400. `pool=personal`(기본)은 모든 계정을 대상으로 `priority`, `pool=work` 는 회사에 들어온 계정만 대상으로 `work_priority` 를 바꾼다. 응답은 그 모드 목록 |
 | GET/PUT/DELETE | `/api/accounts/override?pool=` | 임시 순서. 개인·회사 모드마다 따로 하나씩. PUT `{ids, until}`(`pool=work` 는 회사에 들어온 계정만 허용). 끝나면 그 모드만 기본 순서로 돌아간다 |
 | GET | `/api/accounts/usage` | 개인 모드의 지금 적용 순서(임시 순서 반영). `max_used_percent`, 신선할 때만 `remaining_to_limit_percent`, `stale` 포함. `rank`·`enabled` 는 개인 모드, `work_rank`(회사 모드 순서 번호, 회사에 안 들어온 계정은 null)·`work_enabled` 는 회사 모드 값, `pool` 로 회사 표시 |
+| GET | `/api/accounts/qwen-usage` | 로컬 Qwen 접수의 실제 llama.cpp HTTP 호출 토큰. `{model, timezone: Asia/Seoul, collection_started_at, server, today, week}`. 기간별 입력·출력·합계 토큰, 전체/계측/usage 누락/실패 호출 수, 마지막 사용 시각을 반환한다. 오늘은 KST 00:00부터, 주간은 월요일 KST 00:00부터 현재까지. 평가는 제외하며 서버 응답 `usage.prompt_tokens`, `completion_tokens`, `total_tokens`가 모두 있고 합이 맞는 호출만 계측한다. 누락·실패 토큰은 null로 보존하며 프롬프트·응답 본문은 저장하지 않는다. |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 
 ## 메모·캘린더(ADR 0008)
@@ -405,7 +406,7 @@ payload 는 `{title, body, url, tag}`:
 Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fragment를 브라우저에서 Authorization 헤더로 옮김 → 공개 조회/다운로드 → owner 목록·회수 순으로 연결한다. URL fragment는 서버 요청에 자동 전송하지 않는다. `format_options`의 `enabled`, `applicable`, `parts`, `reason`을 그대로 UI 상태에 사용한다. preview/download와 owner export 모두 서버가 선택된 section/part만 직렬화하며 frontend가 원본 회의 상세 API를 공개 페이지 데이터원으로 대신 호출하지 않는다. 정식 활성화 전에는 UI 캐시/CSP·외부 proxy 로그와 공개 전달 환경을 별도 확인해야 한다.
 
 
-### 작업자 task routing (2026-10-16)
+### 작업자 task routing 및 고정 엔진 한도 대체 (2026-10-16)
 
 정책 단일 원본은 `runs/worker_routing.py`다. `account_usage.worker_routing`, 각 계정의 `model_capacity`, 역할 지침의 단계 목록은 이 원본에서 생성한다.
 
@@ -414,13 +415,12 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 | general | Antigravity Sonnet → Flash → native Sonnet/Luna |
 | routine | Flash → Luna → Antigravity Sonnet → native Sonnet |
 | design | Antigravity Sonnet → native Sonnet |
-| verification | Luna → Antigravity Sonnet → Flash → native Sonnet |
+| verification | Luna → Antigravity Sonnet → native Sonnet (Flash 제외) |
 | reasoning | Argon → Antigravity Opus medium → native Sol/Opus; 사유 필수 |
 
-- auto의 `model`은 모델군 선호이며 엔진 잠금이 아니다. 생략을 권장한다. task_type 생략은 general이며 Luna/Flash 모델 선호를 작업 종류로 오인하지 않는다. peer 모델만 reasoning으로 분류해 사유를 요구한다. Antigravity 모델군의 수준을 지정하면 해당 군의 후보에 적용한다. 실제 실행 모델은 Run에 기록한다.
-- `sessions.worker_task_type`은 nullable이고 기존 세션은 변경하지 않는다. 신규 작업자만 정책을 저장하며 auto 작업자의 매 Run과 한도 전환에서 적용한다. 회사 범위·켜기·지원 모델·기존 cooldown을 지킨다.
-- 미측정·stale·초기화 후 잔여는 unknown, stale 소진은 기존 초기화/갱신 규칙까지 차단이다. 알려진 후보를 우선하며 적합한 후보가 모두 한도면 기다린다. 일반 오류는 quota 전환으로 재실행하지 않는다.
-- 계정+모델별 provider 대화 ID를 보존한다. 같은 계정의 Sonnet↔Flash는 다른 대화, 동일 모델로 돌아오면 그 모델 대화를 재개하며 다른 계정에서의 진행은 기존 인계 경로로 전달한다.
-- `worker.routing` Run 이벤트는 정책 버전·task_type·선택 계정/실제 모델·모델그룹·알려진 잔여·부하 점수·후보·한도 제외·트리거를 기록한다. WorkerOut은 `task_type`, 최신 `routing`을 포함한다. 값이 unknown이면 null이다.
-- `POST /api/orchestrator/workers/{id}/messages` 및 MCP `message_worker`는 `reroute?`, `task_type?`, `escalation_reason?`을 받는다. `reroute=True`는 idle 작업자를 새 auto 정책으로 전환하고 기존 provider 대화를 보존한다. active/queued이면 409로 거부하며 기존 Run·fresh_context·새 지시를 변경하지 않는다. 먼저 진행/부작용을 확인한 뒤 기존 Run을 마치거나 취소한다. task_type만 변경하면 422, reasoning 사유가 없으면 400이다. `fresh_context`는 별도 동작이다.
-- 0035는 nullable 컬럼 추가만 한다. generation protocol은 그대로이며 0034 실행과 병행 가능한 additive migration이다. 세대의 소유권·drain·슬롯·준비 검사를 유지한다.
+- auto의 `model`은 모델군 선호이며 엔진 잠금이 아니다. 생략을 권장한다. task_type 생략은 general이며 Luna/Flash 모델 선호를 작업 종류로 오인하지 않는다. peer 모델만 reasoning으로 분류해 사유를 요구한다. Antigravity 모델군의 수준을 지정하면 해당 군의 후보에 적용한다(예: 단순 검색·추출·형식 변환은 `routine`에서 `gemini-3.8-flash-low` 또는 `gemini-3.8-flash-medium` 지정 가능; `Gemini 3.7 Flash`는 현재 설치된 `agy models` 카탈로그에 없어 도입하지 않음). 실제 실행 모델은 Run에 기록한다.
+- 외부 제공사 발표·후기 기반의 모델 특성 자료(확인 필요: 코딩 벤치마크 대비 장기 에이전트 완수·컴퓨터 조작 편차 및 추론 토큰 증가 가능성)는 작업 성격별 배정·검증 정책 근거로만 참고하며, 검증된 자체 성능 순위로 단정하지 않는다.
+- **Flash 구현 작업의 독립 검증:** `general`·`routine` 작업이 `gemini-3.8-flash-*`로 실행되면 배정 영수증(`worker.routing`), `WorkerOut`, 완료 보고(`[작업 보고]`)에 `verification_required=true`와 `verification_status="pending"`을 표시한다. 최종 완료 판정 전에 `task_type="verification"`(GPT-6 Luna 우선, 불가 시 Claude Sonnet; Flash 배제)으로 교차 검증하고, `POST /api/orchestrator/workers/{id}/verification` 또는 `message_worker(verification_outcome="passed"|"failed", verification_note=..., verifier_worker_id=...)`로 결과를 기록한다. 검증 실패(`failed`)는 `false_completion=true`와 `worker.verification` Run 이벤트로 남기며 `GET /api/orchestrator/workers/metrics`에서 모델·작업유형별 재작업률(False Completion)을 집계 조회할 수 있다.
+- **고정 엔진 세션의 한도 대체(`strict_engine`):** `claude`·`codex`·`antigravity`로 고정한 작업·일반 대화 세션은 기본적으로 평상시 해당 엔진 계정을 먼저 쓰고, 해당 엔진의 켜진 계정이 **모두 사용량 한도**일 때 대기하기 전에 (1) 같은 모델 계열의 다른 경로(예: native Claude `sonnet`/`opus` ↔ Antigravity `claude-sonnet-5-5-high`/`claude-opus-5-5-medium`, Antigravity `gpt-oss-120b-medium` → native Codex `gpt-6-luna`), (2) 작업 성격에 맞는 다른 엔진·풀의 같은 등급 모델 순으로 넘어가며, 모든 경로가 한도일 때만 `_wait_for_reset`으로 대기한다. 전환 시 `_attempt_handoff`와 엔진·모델별 대화 키를 유지하고 `engine.fallback` 이벤트 및 `run.usage.fallback`(`from/to`, `from_engine/from_model`, `to_engine/to_model`, `reason`, `fallback_tier`)에 전환 경로와 사유를 남긴다. 세션별로 `strict_engine=true`(`SessionIn`/`SessionPatch`/`WorkerIn`/`MessageIn`)를 지정하면 기존처럼 해당 엔진만 고수하고 한도 시 대기한다. 메인 오케스트레이터(Opus medium / Sol high), 접수(desk), 회의 분석, 날씨 시스템 Run 및 `work` 계정 범위 분리는 변경하지 않는다.
+- Antigravity 모델 그룹 풀(`agy_claude_and_gpt_models`, `agy_gemini_models`, `agy_gemini_4_argon`)은 별도 `limit_key`와 창으로 판단해 한 풀 소진이 다른 풀을 막지 않는다.
+- `0036_worker_routing`(`down_revision = "0035_qwen_token_usage"`)은 `sessions.worker_task_type`(nullable)과 `sessions.strict_engine`(`server_default=false`)만 추가하는 additive migration으로 `0034`·`0035`와 온라인 호환된다.

@@ -278,10 +278,10 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
             counts[aid] = counts.get(aid, 0) + 1
     if counts_override is not None:
         counts = counts_override
-    headroom = {p.id: _usage_headroom(p) for p in pool} if balance_usage else {}
+    headroom = {(p.id, p.model): _usage_headroom(p) for p in pool} if balance_usage else {}
     def rank(ip: tuple[int, Profile]) -> tuple:
         index, profile = ip
-        room = headroom.get(profile.id)
+        room = headroom.get((profile.id, profile.model))
         return (
             balance_usage and room is None,
             -room[0] / (counts.get(profile.id, 0) + 1) if room is not None else 0,
@@ -293,7 +293,7 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
 
     ranked = sorted(enumerate(pool), key=rank)
     prof = ranked[0][1]
-    room = headroom.get(prof.id)
+    room = headroom.get((prof.id, prof.model))
     log.info("run %s account selection: account=%s balance_usage=%s usage_ranked=%s headroom=%s "
              "other_running=%s headroom_per_run=%s",
              run_id, prof.name, balance_usage, room is not None, room, counts.get(prof.id, 0),

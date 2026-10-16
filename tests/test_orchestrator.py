@@ -214,7 +214,7 @@ async def test_first_use_of_profile_gets_previous_conversation(client, auth, mak
 
 
 async def test_explicit_engine_does_not_switch_engines(client, auth, make_dir):
-    sess = await _session(client, auth, make_dir, engine="claude")
+    sess = await _session(client, auth, make_dir, engine="claude", strict_engine=True)
     run = await start_run(client, auth, sess["id"], "CLAUDE_LIMIT")
     await wait_event(client, auth, run["id"], "run.waiting")
     assert {c["engine"] for c in agent_calls()} == {"claude"}

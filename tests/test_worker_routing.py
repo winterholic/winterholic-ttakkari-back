@@ -432,3 +432,182 @@ async def test_reroute_maps_legacy_cross_engine_model_to_its_actual_counterpart(
     calls = [c for c in agent_calls() if "--model" in c["argv"] and c["argv"][c["argv"].index("--model")+1] == "sonnet"]
     assert "--resume" in calls[-1]["argv"]
     assert calls[-1]["argv"][calls[-1]["argv"].index("--resume")+1] == "legacy-sonnet-conversation"
+
+
+async def test_pinned_claude_session_falls_back_to_same_family_antigravity_then_other_engine_on_limit(
+    client, auth, make_dir, accounts, synthetic, monkeypatch,
+):
+    # Stage 1: native Claude hits limit -> switches to Antigravity claude-sonnet-5-5-high (same family).
+    monkeypatch.setenv("WORKER_TEST_LIMIT_MODEL", "sonnet")
+    response, _ = await spawn(client, auth, make_dir, engine="claude", task_type="general")
+    run = await result(client, auth, response)
+    assert run["status"] == "succeeded"
+    assert (run["engine"], run["model"]) == ("antigravity", SONNET)
+    ev = await run_events(client, auth, run["id"])
+    fb = next(e["payload"] for e in ev if e["type"] == "engine.fallback")
+    assert fb["from_engine"] == "claude" and fb["to_engine"] == "antigravity"
+    assert fb["to_model"] == SONNET and fb["fallback_tier"] == "same_family"
+    assert run["usage"]["fallback"]["to_model"] == SONNET
+
+    # Stage 2: when Antigravity claude_and_gpt pool is also exhausted, falls back to task-fit Flash / Luna.
+    agy_id = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
+    quota(agy_id, claude=0, gemini=85)
+    response2, _ = await spawn(client, auth, make_dir, engine="claude", task_type="general")
+    run2 = await result(client, auth, response2)
+    assert run2["status"] == "succeeded"
+    assert (run2["engine"], run2["model"]) == ("antigravity", FLASH)
+    ev2 = await run_events(client, auth, run2["id"])
+    fb2 = next(e["payload"] for e in ev2 if e["type"] == "engine.fallback")
+    assert fb2["from_engine"] == "claude" and fb2["to_model"] == FLASH
+    assert fb2["fallback_tier"] == "task_fit"
+
+
+async def test_pinned_antigravity_pool_exhaustion_uses_another_pool_without_blocking(
+    client, auth, make_dir, accounts, synthetic,
+):
+    claude_id = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "claude"))
+    usage.seed(
+        claude_id,
+        usage.Usage(windows=[usage.Window("five_hour", "5h", 100, int(time.time() + 1000))], updated_at=time.time()),
+        refresh=True,
+    )
+    agy_id = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
+    quota(agy_id, claude=0, gemini=90, argon=70)
+    response, _ = await spawn(client, auth, make_dir, engine="antigravity", model=SONNET, task_type="general")
+    run = await result(client, auth, response)
+    assert run["status"] == "succeeded"
+    assert (run["engine"], run["model"]) == ("antigravity", FLASH)
+    ev = await run_events(client, auth, run["id"])
+    fb = next(e["payload"] for e in ev if e["type"] == "engine.fallback")
+    assert fb["from_model"] == SONNET and fb["to_model"] == FLASH
+
+
+async def test_strict_engine_worker_waits_instead_of_switching_routes(
+    client, auth, make_dir, accounts, synthetic,
+):
+    from helpers import wait_event
+
+    claude_id = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "claude"))
+    usage.seed(
+        claude_id,
+        usage.Usage(windows=[usage.Window("five_hour", "5h", 100, int(time.time() + 1000))], updated_at=time.time()),
+        refresh=True,
+    )
+    response, _ = await spawn(client, auth, make_dir, engine="claude", strict_engine=True)
+    assert response.status_code == 201, response.text
+    assert response.json()["strict_engine"] is True
+    runs = (await client.get(f"/api/sessions/{response.json()['worker_id']}/runs", headers=auth)).json()
+    waiting = await wait_event(client, auth, runs[0]["id"], "run.waiting")
+    assert waiting["payload"] and not agent_calls()
+    await client.post(f"/api/runs/{runs[0]['id']}/cancel", headers=auth)
+
+
+async def test_work_scope_pinned_session_fallback_never_mixes_personal_accounts(
+    client, auth, make_dir, accounts, synthetic,
+):
+    claude_work = (
+        await client.post(
+            "/api/accounts",
+            json={"name": "claude-work", "engine": "claude", "pool": "work", "work_enabled": True},
+            headers=auth,
+        )
+    ).json()
+    codex = next(a for a in accounts if a["engine"] == "codex")
+    await client.patch(f"/api/accounts/{codex['id']}", json={"pool": "work", "work_enabled": True}, headers=auth)
+    usage.seed(
+        uuid.UUID(claude_work["id"]),
+        usage.Usage(windows=[usage.Window("five_hour", "5h", 100, int(time.time() + 1000))], updated_at=time.time()),
+        refresh=True,
+    )
+    orch = await _session(client, auth, make_dir, kind="orchestrator", pool="work")
+    h = _orch(issue_token(orch["id"]))
+    response = await client.post(
+        "/api/orchestrator/workers",
+        json={"title": "work-pinned", "prompt": "fixture", "engine": "claude"},
+        headers=h,
+    )
+    run = await result(client, auth, response)
+    assert run["status"] == "succeeded"
+    assert (run["engine"], run["profile"], run["model"]) == ("codex", "codex", "gpt-6-luna")
+
+
+async def test_verification_excludes_flash_and_routine_supports_low_medium_flash(
+    client, auth, make_dir, accounts, synthetic,
+):
+    from ttakkari.runs import worker_routing as routing
+
+    assert all(
+        not m.startswith("gemini-3.8-flash")
+        for stage in routing.ROUTES["verification"]
+        for _, m in stage
+    )
+    codex_id = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "codex"))
+    usage.seed(
+        codex_id,
+        usage.Usage(windows=[usage.Window("five_hour", "5h", 100, int(time.time() + 1000))], updated_at=time.time()),
+        refresh=True,
+    )
+    agy_id = uuid.UUID(next(a["id"] for a in accounts if a["engine"] == "antigravity"))
+    quota(agy_id, claude=0, gemini=95)
+    response, _ = await spawn(client, auth, make_dir, task_type="verification")
+    run = await result(client, auth, response)
+    assert (run["engine"], run["model"]) == ("claude", "sonnet")
+
+    low_resp, _ = await spawn(
+        client, auth, make_dir, task_type="routine", model="gemini-3.8-flash-low",
+    )
+    low_run = await result(client, auth, low_resp)
+    assert (low_run["engine"], low_run["model"], low_run["effort"]) == (
+        "antigravity", "gemini-3.8-flash-low", "low",
+    )
+
+
+async def test_flash_implementation_marks_independent_verification_and_records_false_completion(
+    client, auth, make_dir, accounts, synthetic,
+):
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    h = _orch(issue_token(orch["id"]))
+    resp = await client.post(
+        "/api/orchestrator/workers",
+        json={"title": "flash-impl", "prompt": "fixture", "task_type": "routine"},
+        headers=h,
+    )
+    run = await result(client, auth, resp)
+    assert run["model"] == FLASH
+    assert run["usage"]["verification_required"] is True
+    assert run["usage"]["verification_status"] == "pending"
+    assert run["usage"]["false_completion"] is None
+
+    wid = resp.json()["worker_id"]
+    worker_out = (await client.get(f"/api/orchestrator/workers/{wid}", headers=h)).json()
+    assert worker_out["verification_required"] is True
+    assert worker_out["verification_status"] == "pending"
+    assert worker_out["routing"]["verification_required"] is True
+    assert worker_out["routing"]["recommended_verifier"]["excluded_family"] == "gemini-3.8-flash"
+
+    orch_runs = (await client.get(f"/api/sessions/{orch['id']}/runs", headers=auth)).json()
+    report_run = next(r for r in orch_runs if "[작업 보고]" in r["prompt"])
+    assert "독립 검증 필요" in report_run["prompt"]
+
+    verify = await client.post(
+        f"/api/orchestrator/workers/{wid}/messages",
+        json={
+            "verification_outcome": "failed",
+            "verification_note": "Unit test fixture uncovered incomplete file cleanup",
+        },
+        headers=h,
+    )
+    assert verify.status_code == 202, verify.text
+    verified = verify.json()
+    assert verified["verification_status"] == "failed"
+    assert verified["false_completion"] is True
+
+    ev = await run_events(client, auth, run["id"])
+    ver_ev = next(e["payload"] for e in ev if e["type"] == "worker.verification")
+    assert ver_ev["outcome"] == "failed" and ver_ev["false_completion"] is True
+
+    metrics = (await client.get("/api/orchestrator/workers/metrics", headers=h)).json()
+    flash_bucket = next(m for m in metrics["metrics"] if m["model"] == FLASH and m["task_type"] == "routine")
+    assert flash_bucket["verification_required_runs"] == 1
+    assert flash_bucket["false_completion_runs"] == 1
+

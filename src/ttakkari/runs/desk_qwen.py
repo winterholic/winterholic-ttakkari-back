@@ -19,16 +19,23 @@ common30 에서 다시 재지 않았다. 프롬프트가 바뀌면 PROMPT_VERSIO
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import hashlib
 import json
+import logging
 import re
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
 
 from ttakkari.config import get_settings
+
+log = logging.getLogger(__name__)
 
 SEED = 20261015
 KINDS = ["social", "board_overview", "status", "work", "unclear"]
@@ -196,6 +203,47 @@ class QwenDecision:
 
 
 _down_until = 0.0
+_meter_context: contextvars.ContextVar[list | None] = contextvars.ContextVar("qwen_meter", default=None)
+
+
+@contextmanager
+def measure_operational_run(run_id: UUID, base_url: str):
+    """Enable per-HTTP-call metering only for the live desk routing path."""
+    state = [run_id, uuid4(), 0, base_url]
+    token = _meter_context.set(state)
+    try:
+        yield
+    finally:
+        _meter_context.reset(token)
+
+
+async def _record_http_call(name: str, response: httpx.Response | None) -> None:
+    state = _meter_context.get()
+    if state is None:
+        return  # benchmark/evaluation traffic is deliberately excluded
+    run_id, request_id, call_index, _base_url = state
+    state[2] += 1
+    stage = {"desk_kind": "kind", "desk_verify": "verification", "desk_social_guard": "social_guard",
+             "desk_social_reply": "response", "desk_reply": "response", "desk_lead": "lead_selection"}.get(name, "other")
+    status, values = "failed", (None, None, None)
+    if response is not None and response.is_success:
+        try:
+            usage = response.json().get("usage")
+            prompt = usage["prompt_tokens"]
+            completion = usage["completion_tokens"]
+            total = usage["total_tokens"]
+            if all(isinstance(v, int) and not isinstance(v, bool) and v >= 0 for v in (prompt, completion, total)) and total == prompt + completion:
+                status, values = "metered", (prompt, completion, total)
+            else:
+                status = "usage_missing"
+        except (KeyError, TypeError, ValueError, AttributeError):
+            status = "usage_missing"
+    try:
+        from ttakkari.runs.qwen_usage import persist_call
+        await persist_call(run_id=run_id, request_id=request_id, call_index=call_index, stage=stage,
+                           prompt_tokens=values[0], completion_tokens=values[1], total_tokens=values[2], status=status)
+    except (SQLAlchemyError, OSError, RuntimeError) as exc:  # metering must never change routing; log persistence failure
+        log.warning("Qwen usage write failed for run %s call %d: %s", run_id, call_index, type(exc).__name__)
 
 
 def reset_cooldown() -> None:
@@ -203,9 +251,24 @@ def reset_cooldown() -> None:
     _down_until = 0.0
 
 
+def mark_unavailable() -> None:
+    global _down_until
+    _down_until = time.monotonic() + get_settings().desk_qwen_cooldown_seconds
+
+
+def endpoint() -> str | None:
+    """요청을 보낼 서버 주소. 지정한 외부 서버(health 가 실패 중이면 None), 아니면 이 프로세스가 소유한 서버(준비됐을 때만)."""
+    from ttakkari.runs.desk_qwen_service import service
+
+    s = get_settings()
+    if s.desk_qwen_base_url:
+        return s.desk_qwen_base_url if service.external_ready is not False else None
+    return service.endpoint
+
+
 def available() -> bool:
     s = get_settings()
-    return bool(s.desk_qwen_enabled) and time.monotonic() >= _down_until
+    return bool(s.desk_qwen_enabled) and time.monotonic() >= _down_until and endpoint() is not None
 
 
 def _http_client(timeout: httpx.Timeout) -> httpx.AsyncClient:
@@ -284,12 +347,31 @@ async def _chat(client: httpx.AsyncClient, messages: list[dict[str, str]], schem
         "chat_template_kwargs": {"enable_thinking": False}, "cache_prompt": True,
         "response_format": {"type": "json_schema", "json_schema": {"name": name, "strict": True, "schema": schema}},
     }
-    r = await client.post(s.desk_qwen_base_url.rstrip("/") + "/v1/chat/completions", json=payload)
+    state = _meter_context.get()
+    base = state[3] if state is not None else endpoint()  # 계측 중이면 접수가 고른 서버로 고정
+    if base is None:
+        raise QwenUnavailable("not_ready", cooldown=False)
+    try:
+        r = await client.post(base.rstrip("/") + "/v1/chat/completions", json=payload)
+    except Exception:
+        await _record_http_call(name, None)
+        raise
+    await _record_http_call(name, r)
     r.raise_for_status()
     obj = json.loads(r.json()["choices"][0]["message"]["content"])
     if not isinstance(obj, dict):
         raise TypeError("object expected")
     return obj
+
+
+async def warmup(base: str) -> None:
+    """서버가 막 떴을 때 첫 사용자 메시지가 모델 적재·프롬프트 prefill 을 뒤집어쓰지 않게 분류 호출을 한 번 미리 한다(결과는 버린다)."""
+    s = get_settings()
+    payload = {"model": s.desk_qwen_model, "messages": _kind_messages(EMPTY_BOARD, EMPTY_HISTORY, "안녕"), "temperature": 0, "seed": SEED,
+               "max_tokens": 20, "chat_template_kwargs": {"enable_thinking": False}, "cache_prompt": True,
+               "response_format": {"type": "json_schema", "json_schema": {"name": "desk_kind", "strict": True, "schema": KIND_SCHEMA}}}
+    async with _http_client(httpx.Timeout(90.0, connect=2.0)) as client:
+        (await client.post(base.rstrip("/") + "/v1/chat/completions", json=payload)).raise_for_status()
 
 
 def _kind_messages(board: str, history: str, message: str) -> list[dict[str, str]]:
@@ -388,6 +470,8 @@ async def decide(board_lines: list[str], history_lines: list[str], message: str,
         raise QwenUnavailable("disabled", cooldown=False)
     if time.monotonic() < _down_until:
         raise QwenUnavailable("cooldown", cooldown=False)
+    if endpoint() is None:
+        raise QwenUnavailable("not_ready", cooldown=False)
     board = "\n".join(board_lines) if board_lines else EMPTY_BOARD
     history = "\n".join(history_lines) if history_lines else EMPTY_HISTORY
     if len(board) + len(history) + len(message) > s.desk_qwen_max_prompt_chars:

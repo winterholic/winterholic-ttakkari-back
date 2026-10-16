@@ -133,6 +133,10 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 "Use model_capacity for model-specific quota and cooldowns; account-level availability alone is insufficient. "
                 "Task fit and known capacity precede stage priority, then headroom per Run. "
                 "Main/desk and legacy auto sessions retain their native account policy. "
-                "Explicit worker engines lock that engine; reroute an idle worker with message_worker(reroute=True).",
+                "Explicit worker/chat engines use that engine first and fall back to same-family then task-fit routes "
+                "when all enabled accounts of the pinned engine hit usage limits (set strict_engine=True to wait instead); "
+                "reroute an idle worker with message_worker(reroute=True). "
+                "Flash (gemini-3.8-flash-*) is excluded from verification; when Flash completes a general/routine worker Run, "
+                "independent cross-provider verification (task_type='verification') is required before final completion.",
         "accounts": out,
     }

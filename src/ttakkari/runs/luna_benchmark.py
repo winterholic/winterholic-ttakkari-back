@@ -163,9 +163,12 @@ class Job:
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.checkpoint_path.parent, 0o700)
         temp = self.checkpoint_path.with_suffix(".tmp")
-        value = self.view()
-        value.update({"owner": self.owner, "generation_id": str(self.generation_id),
-                      "profile_id": str(self.profile_id)})
+        value = {
+            "job_id": str(self.id), "status": self.status, "contract": contract(),
+            "rows_offset": 0, "total_rows": len(self.rows), "rows": self.rows,
+            "summary": self.summary, "owner": self.owner,
+            "generation_id": str(self.generation_id), "profile_id": str(self.profile_id),
+        }
         temp.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
         os.chmod(temp, 0o600)
         temp.replace(self.checkpoint_path)
@@ -222,7 +225,10 @@ async def start(owner: str, db) -> Job:
             _job.task = asyncio.create_task(_run(_job, prof))
         except BaseException:
             _job.status = "failed_start"
-            _release_singleton(_job)
+            try:
+                _job.checkpoint()
+            finally:
+                _release_singleton(_job)
             raise
         return _job
 
@@ -240,8 +246,21 @@ async def _run(job: Job, prof: profiles.Profile) -> None:
                 job.checkpoint()
                 return
             await _run_owned(job, prof)
+    except asyncio.CancelledError:
+        if job.status in {"queued", "running"}:
+            job.status = "cancelled"
+        raise
+    except Exception:
+        if job.status in {"queued", "running"}:
+            job.status = "failed"
+        raise
     finally:
-        _release_singleton(job)
+        if job.status in {"queued", "running"}:
+            job.status = "failed"
+        try:
+            job.checkpoint()
+        finally:
+            _release_singleton(job)
 
 
 async def _run_owned(job: Job, prof: profiles.Profile) -> None:

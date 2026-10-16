@@ -91,6 +91,125 @@ def test_checkpoint_can_be_read_after_generation_switch_but_not_by_another_owner
     assert module.get_job(job_id, "owner-b") is None
 
 
+def test_checkpoint_recovery_preserves_all_raw_rows_across_api_pages(tmp_path, monkeypatch):
+    import uuid
+
+    from ttakkari.config import get_settings
+
+    module = _module()
+    monkeypatch.setenv("TTAKKARI_HOME", str(tmp_path))
+    get_settings.cache_clear()
+
+    for count in (30, 90):
+        job_id = uuid.uuid4()
+        expected = [{"row_id": f"raw-{n:03d}", "n": n} for n in range(count)]
+        job = module.Job(job_id, "owner", uuid.uuid4(), uuid.uuid4(), rows=expected,
+                         checkpoint_path=module._checkpoint_path(job_id))
+        job.checkpoint()
+
+        module._job = None  # Force restoration from disk with no live Job object.
+        restored = module.get_job(job_id, "owner")
+        assert restored is not None
+        assert restored.view(limit=100)["total_rows"] == count
+
+        recovered_rows = []
+        for offset in (0, 20, 40, 60, 80):
+            page = restored.view(offset=offset, limit=20)
+            assert page["total_rows"] == count
+            recovered_rows.extend(page["rows"])
+        assert recovered_rows == expected
+
+
+def test_runner_exception_checkpoints_terminal_failure(tmp_path, monkeypatch):
+    import asyncio
+    import uuid
+
+    from ttakkari.config import get_settings
+
+    module = _module()
+    monkeypatch.setenv("TTAKKARI_HOME", str(tmp_path))
+    get_settings.cache_clear()
+    job_id, generation_id, profile_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    job = module.Job(job_id, "owner", generation_id, profile_id,
+                     checkpoint_path=module._checkpoint_path(job_id))
+    job.checkpoint()
+
+    class Runtime:
+        id = generation_id
+        state = "active"
+
+        def work(self, _label):
+            class Work:
+                async def __aenter__(self):
+                    raise RuntimeError("work acquisition failed")
+
+                async def __aexit__(self, *_args):
+                    return False
+
+            return Work()
+
+    module.generation.current = Runtime()
+    try:
+        asyncio.run(module._run(job, object()))
+    except RuntimeError as exc:
+        assert str(exc) == "work acquisition failed"
+    else:
+        raise AssertionError("runner exception should propagate")
+
+    module._job = None
+    restored = module.get_job(job_id, "owner")
+    assert restored is not None
+    assert restored.status == "failed"
+
+
+def test_runner_cancellation_checkpoints_terminal_status(tmp_path, monkeypatch):
+    import asyncio
+    import uuid
+
+    from ttakkari.config import get_settings
+
+    module = _module()
+    monkeypatch.setenv("TTAKKARI_HOME", str(tmp_path))
+    get_settings.cache_clear()
+    job_id, generation_id, profile_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    job = module.Job(job_id, "owner", generation_id, profile_id,
+                     checkpoint_path=module._checkpoint_path(job_id))
+    job.checkpoint()
+    entered = asyncio.Event()
+
+    class Runtime:
+        id = generation_id
+        state = "active"
+
+        def work(self, _label):
+            class Work:
+                async def __aenter__(self):
+                    entered.set()
+                    await asyncio.Future()
+
+                async def __aexit__(self, *_args):
+                    return False
+
+            return Work()
+
+    module.generation.current = Runtime()
+
+    async def cancel_runner():
+        task = asyncio.create_task(module._run(job, object()))
+        await entered.wait()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(cancel_runner())
+    module._job = None
+    restored = module.get_job(job_id, "owner")
+    assert restored is not None
+    assert restored.status == "cancelled"
+
+
 def test_cross_generation_singleton_lock_rejects_a_second_start(tmp_path, monkeypatch):
     from ttakkari.config import get_settings
 

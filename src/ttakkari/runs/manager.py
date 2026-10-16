@@ -203,10 +203,28 @@ class RunManager:
     async def _terminate(self, proc: asyncio.subprocess.Process) -> None:
         if proc.returncode is not None:
             return
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(proc.pid, signal.SIGTERM)
+        grace = get_settings().cancel_grace_seconds
         try:
-            await asyncio.wait_for(proc.wait(), get_settings().cancel_grace_seconds)
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            # On macOS, a just-exited but unreaped group leader can make killpg
+            # report EPERM. Reap it before treating that error as a stale group.
+            try:
+                await asyncio.wait_for(proc.wait(), grace)
+            except TimeoutError:
+                pass
+            if proc.returncode is None:
+                raise
+            # Re-signal after reaping: descendants may still be alive in the
+            # process group even though its original leader has exited.
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+        try:
+            await asyncio.wait_for(proc.wait(), grace)
         except TimeoutError:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)

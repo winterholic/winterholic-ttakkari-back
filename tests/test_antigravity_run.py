@@ -149,6 +149,52 @@ async def test_termination_permission_error_still_removes_temporary_mcp_token_fi
         adapter.cleanup(run_spec)
 
 
+async def test_terminate_retries_process_group_after_eprem_and_reaps_exited_leader(monkeypatch):
+    from ttakkari.runs.manager import RunManager
+
+    calls = []
+
+    class ExitedLeader:
+        pid = 12345
+        returncode = None
+
+        async def wait(self):
+            self.returncode = 0
+            return self.returncode
+
+    def killpg(pid, sig):
+        calls.append((pid, sig))
+        if len(calls) == 1:
+            raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr("ttakkari.runs.manager.os.killpg", killpg)
+    await RunManager()._terminate(ExitedLeader())
+
+    assert len(calls) == 2, "after reaping an exited group leader, signal the group again to catch live children"
+
+
+async def test_terminate_does_not_suppress_eprem_while_leader_is_still_running(monkeypatch):
+    from ttakkari.runs.manager import RunManager
+
+    class RunningLeader:
+        pid = 12345
+        returncode = None
+
+        async def wait(self):
+            await asyncio.Future()
+
+    def denied(pid, sig):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr("ttakkari.runs.manager.os.killpg", denied)
+    monkeypatch.setattr(
+        "ttakkari.runs.manager.get_settings",
+        lambda: SimpleNamespace(cancel_grace_seconds=0.01),
+    )
+    with pytest.raises(PermissionError, match="Operation not permitted"):
+        await RunManager()._terminate(RunningLeader())
+
+
 async def test_run_fails_closed_when_resume_returns_a_new_conversation(
     client, auth, new_session, make_dir, monkeypatch
 ):

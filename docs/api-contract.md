@@ -268,6 +268,12 @@ payload 는 `{title, body, url, tag}`:
 - macOS의 `ioreg -r -d 1 -c IOAccelerator -l -w 0`을 고정 인자로 최대 2초 실행하고, 첫 유효 GPU 통계를 사용한다. 다른 어댑터끼리 값을 합치지 않는다. GPU 수집 실패가 나머지 리소스 응답을 막지 않는다.
 - 프론트는 4초마다 갱신한다. `gpu`가 없는 이전 서버 응답도 허용하고 GPU 안내를 표시한다. `unavailable|unsupported`는 막대 없이 `—`와 설명을 표시한다.
 
+### 서버 리소스 GPU 기록
+
+`GET /api/system/resources/history?range=1h|24h|7d` (사용자 인증) → `{range, from, to, bucket_seconds, points}`. 포인트에는 UTC `timestamp`, GPU 전체 사용률·사용 메모리, CPU 전체 사용률·사용 메모리, 표본/결측 개수가 들어간다. GPU 또는 전체 수집 실패 값은 `null`; 성공한 유휴 GPU는 `0`이다. `1h`는 30초 원본, `24h`는 1분 평균, `7d`는 10분 평균을 반환한다. 모든 평균에는 `sample_count`, GPU 결측에는 `failed_count`가 함께 온다.
+
+백엔드는 화면 접속 여부와 무관하게 30초마다 기존 `sysinfo.snapshot()`을 재사용해 적재한다(`TTAKKARI_RESOURCE_SAMPLE_SECONDS`, 기본 30, 0은 테스트/개발에서 끔). 원본은 90일 뒤 지우며 30초 간격 연속 수집 기준 상한은 약 259,200행이다. 90일간 원본 행은 향후 직접 분석에 쓸 수 있고 7일 화면 범위는 쿼리 시 집계하므로 추가 롤업 테이블은 두지 않는다. 집계는 PostgreSQL의 epoch 기반 버킷 연산을 사용한다.
+
 ## 폰 → 컴퓨터 파일 보내기
 
 목적지는 기본 워크스페이스의 실행 위치와 권한 폴더 안(`~/.ttakkari` 제외). 사진은 서버에서 손질한다: HEIC → JPG(`convert_heic`, 기본 켬), EXIF 방향대로 회전, 위치 정보 삭제(`strip_location`, 기본 켬), `image.jpg` 같은 뻔한 이름은 촬영 시각 `IMG_YYYYMMDD_HHMMSS`, 같은 이름은 `이름 (2)`.

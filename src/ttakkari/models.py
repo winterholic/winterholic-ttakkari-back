@@ -110,6 +110,22 @@ class Credential(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class SystemResourceSample(Base):
+    """Bounded historical samples from the always-on server resource collector."""
+
+    __tablename__ = "system_resource_samples"
+    __table_args__ = (Index("ix_system_resource_samples_sampled_at", "sampled_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    gpu_percent: Mapped[float | None] = mapped_column(Float)
+    gpu_memory_used_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    gpu_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    collection_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    cpu_percent: Mapped[float | None] = mapped_column(Float)
+    memory_used_bytes: Mapped[int | None] = mapped_column(BigInteger)
+
+
 class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

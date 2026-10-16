@@ -4,9 +4,11 @@ import asyncio
 import os
 import shutil
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select, text
 
@@ -15,7 +17,7 @@ from ttakkari.api.deps import Db, get_workspace
 from ttakkari.artifacts.preview import soffice_path
 from ttakkari.audit import record
 from ttakkari.config import get_settings
-from ttakkari.models import Run, RunStatus
+from ttakkari.models import Run, RunStatus, SystemResourceSample
 from ttakkari.runs.manager import manager
 from ttakkari.security.auth import User, client_ip
 
@@ -82,6 +84,66 @@ async def info(_: User) -> dict:
 async def resources(_: User) -> dict:
     """이 맥의 CPU·GPU·메모리·디스크·네트워크와 상위 프로세스. 명령줄은 내지 않는다."""
     return await sysinfo.snapshot()
+
+
+@router.get("/system/resources/history")
+async def resource_history(
+    _: User,
+    db: Db,
+    response: Response,
+    range: Literal["1h", "24h", "7d"] = Query(default="1h"),
+) -> dict:
+    """GPU history: raw samples for 1h, minute means for 24h, 10-minute means for 7d."""
+    response.headers["Cache-Control"] = "no-store"
+    window = {"1h": timedelta(hours=1), "24h": timedelta(hours=24), "7d": timedelta(days=7)}[range]
+    bucket_seconds = {"1h": 30, "24h": 60, "7d": 600}[range]
+    cutoff = datetime.now(UTC) - window
+    if range == "1h":
+        rows = list(await db.scalars(
+            select(SystemResourceSample).where(SystemResourceSample.sampled_at >= cutoff)
+            .order_by(SystemResourceSample.sampled_at)
+        ))
+        points = [{
+            "timestamp": row.sampled_at.isoformat(),
+            "gpu_percent": row.gpu_percent,
+            "gpu_memory_used_bytes": row.gpu_memory_used_bytes,
+            "cpu_percent": row.cpu_percent,
+            "memory_used_bytes": row.memory_used_bytes,
+            "gpu_status": row.gpu_status,
+            "collection_status": row.collection_status,
+            "sample_count": 1,
+            "failed_count": int(row.gpu_percent is None),
+        } for row in rows]
+    else:
+        bucket_seconds = 60 if range == "24h" else 600
+        result = await db.execute(text(f"""
+            SELECT to_timestamp(floor(extract(epoch FROM sampled_at) / {bucket_seconds}) * {bucket_seconds}) AS bucket,
+                   avg(gpu_percent) AS gpu_percent,
+                   min(gpu_percent) AS gpu_min_percent,
+                   max(gpu_percent) AS gpu_max_percent,
+                   avg(gpu_memory_used_bytes) AS gpu_memory_used_bytes,
+                   avg(cpu_percent) AS cpu_percent,
+                   avg(memory_used_bytes) AS memory_used_bytes,
+                   count(*) AS sample_count,
+                   count(*) FILTER (WHERE gpu_percent IS NULL) AS failed_count
+            FROM system_resource_samples
+            WHERE sampled_at >= :cutoff
+            GROUP BY bucket
+            ORDER BY bucket
+        """), {"cutoff": cutoff})
+        points = [{
+            "timestamp": row.bucket.isoformat(),
+            "gpu_percent": float(row.gpu_percent) if row.gpu_percent is not None else None,
+            "gpu_min_percent": float(row.gpu_min_percent) if row.gpu_min_percent is not None else None,
+            "gpu_max_percent": float(row.gpu_max_percent) if row.gpu_max_percent is not None else None,
+            "gpu_memory_used_bytes": int(row.gpu_memory_used_bytes) if row.gpu_memory_used_bytes is not None else None,
+            "cpu_percent": float(row.cpu_percent) if row.cpu_percent is not None else None,
+            "memory_used_bytes": int(row.memory_used_bytes) if row.memory_used_bytes is not None else None,
+            "sample_count": row.sample_count,
+            "failed_count": row.failed_count,
+        } for row in result]
+    return {"range": range, "from": cutoff.isoformat(), "to": datetime.now(UTC).isoformat(),
+            "bucket_seconds": bucket_seconds, "points": points}
 
 
 @router.post("/system/stop-all")

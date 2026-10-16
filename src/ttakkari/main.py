@@ -168,6 +168,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
+    from ttakkari import resource_history
+    resource_collector = (asyncio.create_task(resource_history.run(s.resource_sample_seconds))
+                          if s.resource_sample_seconds > 0 else None)
     lead_sweeper = (asyncio.create_task(_lead_archive_loop(s.lead_archive_scan_seconds))
                     if s.lead_archive_scan_seconds > 0 else None)
     try:
@@ -176,6 +179,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retention.cancel()
         if collector:
             collector.cancel()
+        if resource_collector:
+            resource_collector.cancel()
+            await asyncio.gather(resource_collector, return_exceptions=True)
         if reminder:
             reminder.cancel()
         if lead_sweeper:

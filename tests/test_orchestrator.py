@@ -384,7 +384,8 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "set_artifact_area", "server_resources", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
                "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items",
-               "search_meetings",
+               "search_meetings", "knowledge_sources", "knowledge_recall", "knowledge_assertion",
+               "knowledge_start_extraction", "knowledge_next_batch", "knowledge_submit_batch", "knowledge_review_assertion",
                "list_pms_projects", "create_pms_task", "manage_pms"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
                 "my_context", "reset_my_context"}
@@ -417,7 +418,7 @@ def test_mcp_server_tools_by_role():
 def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
     _, replies = _mcp_tools(role)
     queries = {"list_checklist", "list_checklist_templates",
-        "backend_deploy_status",
+        "backend_deploy_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
         "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
         "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
         "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",

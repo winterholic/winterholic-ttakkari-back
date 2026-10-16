@@ -9,11 +9,13 @@ import os
 import re
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.broker.policy import is_sensitive, is_within
 from ttakkari.config import get_settings
+from ttakkari.knowledge.store import import_text
+from ttakkari.knowledge_models import KnowledgeRevision
 from ttakkari.models import CtxChunk, CtxDocument, CtxSource, utcnow
 
 log = logging.getLogger(__name__)
@@ -147,6 +149,8 @@ async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
             if len(raw) > MAX_FILE_BYTES:
                 raise ValueError(f"파일 크기 상한 {MAX_FILE_BYTES}바이트 초과")
             text = raw.decode("utf-8")
+            if "\0" in text:
+                raise ValueError("unsupported_nul_in_source")
         except (OSError, ValueError) as exc:
             stats["errors"] += 1
             failures.append(f"{f}: {exc}")
@@ -159,6 +163,11 @@ async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
             failures.append(f"{f}: 다른 출처에서 이미 색인된 문서")
             continue
         if doc is not None and doc.sha256 == sha:
+            await import_text(db, source_key=f'indexed-document:{doc.id}', body=text,
+                              scope=src.scope, source_id=src.id, locator=path,
+                              sensitivity='sensitive' if src.category == 'health' else 'normal',
+                              origin='indexed_document')
+            await db.commit()
             continue
         pieces = chunk_markdown(text)
         title = next((h for h, _ in pieces if h), None) or f.stem
@@ -171,6 +180,10 @@ async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
             doc.sha256, doc.title = sha, title[:500]
         for i, (h, c) in enumerate(pieces):
             db.add(CtxChunk(document_id=doc.id, ord=i, heading=h, content=c))
+        await import_text(db, source_key=f'indexed-document:{doc.id}', body=text,
+                          scope=src.scope, source_id=src.id, locator=path,
+                          sensitivity='sensitive' if src.category == 'health' else 'normal',
+                          origin='indexed_document')
         doc.chunk_count = len(pieces)
         doc.indexed_at = utcnow()
         stats["updated"] += 1
@@ -178,6 +191,8 @@ async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
         await db.commit()
     gone = await db.scalars(select(CtxDocument).where(CtxDocument.source_id == src.id, CtxDocument.path.not_in(seen or {""})))
     for d in gone:
+        await db.execute(update(KnowledgeRevision).where(
+            KnowledgeRevision.source_key == f'indexed-document:{d.id}').values(active=False))
         await db.delete(d)
         stats["removed"] += 1
     src.last_indexed_at = utcnow()

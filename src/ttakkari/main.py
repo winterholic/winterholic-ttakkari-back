@@ -231,6 +231,9 @@ def create_app() -> FastAPI:
     app.include_router(checklists.agent_router)
     app.include_router(notifications.router)
     app.include_router(weather_api.router)
+    from ttakkari.api import knowledge
+    app.include_router(knowledge.router)
+    app.include_router(knowledge.agent_router)
     return app
 
 

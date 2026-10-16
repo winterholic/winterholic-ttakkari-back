@@ -1,5 +1,8 @@
 {
   "protocol": 1,
-  "schema_revision": "0033_weather_analysis_engine",
-  "online_migration_from": ["0032_weather_briefings"]
+  "schema_revision": "0034_knowledge_ledger",
+  "online_migration_from": [
+    "0032_weather_briefings",
+    "0033_weather_analysis_engine"
+  ]
 }

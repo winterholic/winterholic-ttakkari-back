@@ -41,3 +41,46 @@ K0 runtime/DB identity와 corpus 기준선, K1 후속 immutable schema·adapter�
 - unit25 및 Ruff clean. 실제 export CLI는 bounded timeout으로 unknown/incomplete/exit2를 반환; raw 전수 집계 성공으로 보고하지 않는다.
 - WBS 순서를 KD→K0→K1→K2→K3→K4→K5→K6→K7→K8로 정렬. K1은 5.4.6.3 doing, 설계 KD는 5.4.6.1 done. 전체 리팩터링 완료는 아니다.
 - 검증된 첫 tranche를 커밋·main push하고 standing policy의 request_backend_deploy로 예약한다. 예약 ID·최종 활성화 상태는 별도 앱 기록/사용자 보고로 남기며 예약 수락을 배포 성공으로 기록하지 않는다.
+
+## 후속 구현 — 2026-10-16 18시경
+
+사용자의 “후속 구현을 끝까지 이어가며 계속 검증” 지시에 따라 첫 CLI 이후를 직접 구현했다. backend 전용 worktree `back-knowledge-foundation`/branch `feat/knowledge-foundation-20261016`, frontend `front-knowledge-evidence`/branch `feat/knowledge-evidence-ui-20261016`에서 작업했다. 별도 작업자/모델을 띄우지 않았다. 현재 구현·운영 명령과 미완료 계약은 `docs/knowledge/operations.md`에 기록했다.
+
+### 새 코드
+
+- 0034의 7개 원장 테이블, 불변 unit/evidence/review SQL guard와 exact span/hash 검사, source binding·scope·출처 비활성/삭제 차단.
+- 원문 Markdown capture/backfill 및 ChatGPT 모든 분기/part/첨부 처리상태 adapter. raw revision SHA와 exact text/quote SHA 구분, 메시지/부모/JSON pointer/part char offset. 원문 파일 변경 없음.
+- 후보/assertion·검토/정정/철회·version 충돌·이력·impact API. agent가 user_confirmed를 위조할 수 없고 옛 정정/철회 주장을 재활성화하지 않는다. raw retrieval에도 알려진 정정/철회 annotation을 붙인다. 데이터 있는0034 downgrade는 거부한다(운영 rollback은 app만).
+- 7개 knowledge MCP, stdio 실제 프로세스 등록 검사. 처음에는 main entrypoint가 decorator보다 앞에 있어 등록 누락이 발생하는 RED를 관찰하고 수정했다. 역할별 명시 allowlist/readOnlyHint/자동 도구 정책 검사도 갱신했다.
+- 기존 recall 결과 순위는 유지하고 추가 knowledge evidence package를 연결. 질문·권한 필터를 candidate limit보다 먼저 적용하여 신규500건이 오래된 관련 주장을 가리는 RED를 고쳤다. current-branch reviewed graph의 1/2hop·cycle/budget·valid time. `as_of`는 현재 검토 상태에서 valid time을 조회하며 recorded-time 당시 상태의 replay는 아직 없다.
+- 추출 batch100/20,000char/cursor/manifest/outcome 및 후보만 생성하는 MCP 프로토콜. 별도 provider를 자동 호출하지 않으며 실제 전수 모델 추출·비용 측정은 남았다.
+- dev/holdout group leakage·macro Recall와 hit rate·graded nDCG/MRR·paired bootstrap·BM25/hybrid 비교 CLI.
+- frontend c8190d3: 도서관 근거·검토 화면, 발화자/시점/분기/hash/이력과 확인/보류/정정/철회. 압축 검색 응답에는 history가 없다는 실제 API 계약을 놓친 UI RED를 추가해, 상세를 불러온 뒤 검토하도록 고쳤다. 다른 세션의 AccountsSection 변경은 포함하지 않았다.
+
+### 실제 staging 측정과 분모
+
+운영을 수정하지 않고 로컬 `ttakkari`의 ctx 테이블만 read-only repeatable-read snapshot으로 새 DB `ttakkari_knowledge_stage_20261016`에 복사했다. source79/docs347/chunks5159/entities47/relations15/memories145. 이는 배포 runtime와 동일한 DB임을 입증한 것이 아니다. token/credential/계정 비밀 테이블은 복사하지 않았다.
+
+등록 문서347 중346 raw capture,1개 읽기/입력 실패로 partial. 원문 unit15,073, 문자3,138,247. 대상은 등록 문서이며 Downloads 원본 export 전수가 아니다. 알려진 동일 raw directory 열거 실패는 반복하지 않았다.
+
+기존 source-reviewed gold-v1 dev24, relevance occurrence32, unique gold path8 중7개가 captured corpus에 존재. 사용자 확정 라벨0. 7/8을 과거31/32나 전체 보존율과 혼동하지 않는다. 최초 원문 unit 검색 Recall@5 .3333은 기존 .4167보다 낮았다. 문서별 중복 제거 후 원문 .4167, nDCG .3210; 기존 .4167/.3321. BM25 .5/.3640, hybrid RRF .5208/.4348. hybrid paired Recall delta+.1042, 95% CI[-.0417,.2708]. 독립 holdout이 아니고 CI가0을 포함하므로 개선 입증/기본 전환 판정은 하지 않는다. 아직 assertion 전수 추출 전이므로 graph의 관계 발견력을 평가한 결과도 아니다.
+
+초기 BM25 구현은 corpus document frequency를 문서마다 재계산했고, 전체 staging 실험 중 이를 발견해 query당1회로 고쳤다. 첫 실험은 자연 종료(exit0); 후속 bounded CLI는 timeout120 안에 succeeded. 이 Run에서 pgrep는 sysmond service not found, 해당 실험 Python에 대한 shell kill은 operation not permitted였다. 다른 환경/운영 불능으로 일반화하거나 같은 거부를 재시도하지 않았다. 임시 Vite는 관리된 write_stdin Ctrl-C로 종료했다.
+
+### 검증
+
+- 초기 전체 회귀: 1018 passed/5 failed/2 xfailed. 5개는 새 MCP 도구를 기존 explicit expected tool/read-only set에 반영하지 않은 정합성 검사였다. allowlist를 실제 도구별로 갱신하고 targeted109 passed.
+- 그 뒤 전체1026 passed/2 xfailed/6 subtests. 추가 정정 체인·문서 다양성·populated downgrade·잘못된 source identity 입력 검증까지 넣은 최종 실행:
+  `PYTHONPATH=src TTAKKARI_TEST_DB=postgresql+asyncpg://localhost/ttakkari_knowledge_v2_test .venv/bin/python -m pytest -q`
+  **1030 passed, 2 xfailed, 6 subtests passed in214.73s**.
+- PostgreSQL 실제 migration up/down(빈 ledger)와 데이터 있는 downgrade 거부·보존을 검증. unit/evidence SQL rewrite, source 삭제, work privacy, forged confirmation, cursor/replay, 정정·철회 재수입 등 포함.
+- frontend `node node_modules/vitest/vitest.mjs run`: **495 passed,1 skipped**. typecheck·Vite production build·대상 ESLint 및 backend Ruff/diff-check 통과.
+- configured browser의 합성 예시320/390/1280px 가로 넘침0, 원문/hash/history 펼치기와 빈 사유 제출 방지. 마지막 browser console errors0/warnings0. 임시 측정 fixture의 ResizeObserver loop window 이벤트가 Vite 로그에 있었으며 실제 앱 동작의 오류로 일반화하지 않는다. 운영 인증/실사용자 흐름 완료는 아니다. browser와 Vite 종료, preview 파일 제거.
+
+로그·수입집계·old/new dev 평가와 브라우저 스냅샷/이미지는 outbox/dd217941-3fda-4c00-85d0-5996b3651f92에 저장했다. staging DB와 독립 테스트 DB는 재현을 위해 남아 있다. production 원본·ctx 데이터는 이번 측정으로 변경하지 않았다.
+
+### 남은 실행과 상태
+
+PMS 5.4.6의 K0~K8은 구현/증거/남은 점을 각각 갱신하고 doing으로 유지했다. 전체 원본/독립 관계 recall 미측정을 “문제 없음”이나 “전체 완료”로 바꾸지 않는다. 기존 배포63fb45ac...는 controller test-stage에서 local STT fixture1초 TimeoutError로 failed였다; 이 사실은 운영 STT 실패를 뜻하지 않는다. 이번 전체 검사에서는 해당 기존 STT 테스트가 통과했다.
+
+후속: 검증한 backend를 clean main에 합치고 push, standing policy로 독립 controller 배포 예약. 예약 직후 턴을 반환하고 결과를 기다리기 위한 polling을 하지 않는다. 활성화 결과 뒤 runtime/DB identity 확인 → production registered backfill → 접근 가능한 raw shard inventory/import → bounded 실제 추출/검토 → 독립 holdout·관계 recall·citation/p95 → canary. meetings/app-chat adapter, legacy provenance/정정 overlay, bitemporal recorded-time 조회, 오류 큐 UI도 남아 있다. 별도 승인 대기로 돌리지 않는다. 배포 예약 ID/최종 runtime는 앱의 deployment job/후속 사용자 보고에 남긴다.

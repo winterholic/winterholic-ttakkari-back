@@ -42,6 +42,13 @@ EType = Literal["person", "project", "org", "place", "tool", "topic", "preferenc
 
 # 비서 관리 > 도구 탭에 보이는 목록. 실제 등록은 orchestrator/mcp_server.py 가 한다.
 TOOLS: list[dict[str, str]] = [
+    {"name": "knowledge_sources", "group": "맥락", "who": "모든 실행", "desc": "범위 내 원문 버전 목록"},
+    {"name": "knowledge_recall", "group": "맥락", "who": "모든 실행", "desc": "원문 근거·시점·상태를 가진 지식과 관계 검색"},
+    {"name": "knowledge_assertion", "group": "맥락", "who": "모든 실행", "desc": "관계의 근거와 정정 이력 조회"},
+    {"name": "knowledge_start_extraction", "group": "맥락", "who": "모든 실행", "desc": "증분 후보 추출 작업 시작·재개"},
+    {"name": "knowledge_next_batch", "group": "맥락", "who": "모든 실행", "desc": "제한된 원본 묶음 조회"},
+    {"name": "knowledge_submit_batch", "group": "맥락", "who": "모든 실행", "desc": "원본별 처리결과와 정확한 근거가 있는 후보 제출"},
+    {"name": "knowledge_review_assertion", "group": "맥락", "who": "모든 실행", "desc": "원문 대조 검토·충돌·철회 기록"},
     {"name": "library_catalog", "group": "맥락", "who": "모든 실행", "desc": "맥락 도서관의 종류·지식/작업 기록 모음·프로젝트 이정표를 본다"},
     {"name": "recall", "group": "맥락", "who": "모든 실행", "desc": "나에 관한 기억·관계·색인된 문서를 찾는다"},
     {"name": "remember", "group": "맥락", "who": "모든 실행", "desc": "새 사실·취향·결정을 기억한다"},

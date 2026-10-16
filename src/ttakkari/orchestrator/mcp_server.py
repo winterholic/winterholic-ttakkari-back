@@ -515,5 +515,61 @@ async def delete_checklist_template(template_id: str) -> str:
     return await _agent("DELETE", f"/checklists/templates/{template_id}")
 
 
+@query_tool
+async def knowledge_recall(query: str, k: int = 8, hops: int = 1, as_of: str | None = None) -> str:
+    """Find immutable source evidence and reviewed assertions, including temporal status, speaker,
+    exact citations and bounded one/two-hop connections. Session scope is enforced by the API.
+    Candidate assertions are not served as established facts. as_of is an ISO timestamp."""
+    return await _agent('POST', '/knowledge/recall', {'query': query, 'k': k, 'hops': hops, 'as_of': as_of})
+
+
+@query_tool
+async def knowledge_assertion(assertion_id: str) -> str:
+    """Inspect a knowledge assertion's exact source quotes and append-only correction/review history."""
+    return await _agent('GET', f'/knowledge/assertions/{assertion_id}')
+
+
+@server.tool()
+async def knowledge_start_extraction(revision_id: str, extractor_version: str = 'evidence-extraction-v1') -> str:
+    """Start or resume evidence-based candidate extraction for an imported revision. No extra model is
+    launched: use the current model, inspect account_usage and respect scope and batch budgets.
+    Every unit requires a disposition; nontechnical personal context must not be discarded by domain."""
+    return await _agent('POST', '/knowledge/extractions', {'revision_id': revision_id, 'extractor_version': extractor_version})
+
+
+@query_tool
+async def knowledge_next_batch(job_id: str, limit: int = 20) -> str:
+    """Read the next bounded source batch for an extraction job. Keep speaker, time, branch and
+    fact/proposal/negation separate. Do not promote candidates to user-confirmed facts or pinned memory."""
+    return await _agent('GET', f'/knowledge/extractions/{job_id}/batch', limit=limit)
+
+
+@server.tool()
+async def knowledge_submit_batch(job_id: str, expected_cursor: int, results: list[dict[str, Any]]) -> str:
+    """Submit an ordered result for every processed unit: {unit_id,outcome,claims}. Outcome is
+    candidates/no_claim/unsupported/error. Claims contain subject,predicate,object,quote,start,end,
+    optional modality/polarity/valid_from/valid_to. Exact 0-based end-exclusive quotes are required.
+    Missing units, forged confirmations and stale cursors are rejected; replay is idempotent."""
+    return await _agent('POST', f'/knowledge/extractions/{job_id}/batches',
+                        {'expected_cursor': expected_cursor, 'results': results})
+
+
+@server.tool()
+async def knowledge_review_assertion(assertion_id: str, expected_version: int,
+                                     state: Literal['active','disputed','retracted'], reason: str) -> str:
+    """Record a source review or retraction after inspecting the exact evidence. Agent reviews are
+    source_reviewed, never user_confirmed. Use disputed for ambiguous or conflicting evidence."""
+    return await _agent('POST', f'/knowledge/assertions/{assertion_id}/reviews',
+                        {'expected_version': expected_version, 'state': state,
+                         'review_level': 'source_reviewed', 'reason': reason})
+
+
+@query_tool
+async def knowledge_sources(limit: int = 30, offset: int = 0) -> str:
+    """List current imported immutable source revisions within this session's scope, for provenance
+    or explicitly requested batch extraction. Does not assert whole-export coverage or review completion."""
+    return await _agent('GET', '/knowledge/revisions', limit=limit, offset=offset)
+
+
 if __name__ == "__main__":
     server.run("stdio")

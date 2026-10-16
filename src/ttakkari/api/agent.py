@@ -108,7 +108,12 @@ async def recall(body: RecallIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     session = await _session(db, sid)
     hits = await store.recall(db, body.query, body.k, kinds=tuple(body.kinds or ("memory", "chunk", "entity", "meeting")),
                               scope="work" if session.pool == "work" else "all")
-    return {"results": [{"type": h.kind, "id": h.id, "score": round(h.score, 3), "text": h.text, **h.meta} for h in hits]}
+    result = {"results": [{"type": h.kind, "id": h.id, "score": round(h.score, 3), "text": h.text, **h.meta} for h in hits]}
+    if body.kinds is None or set(body.kinds) & {"chunk", "entity"}:
+        from ttakkari.knowledge import store as knowledge
+        result["knowledge"] = await knowledge.recall(db, body.query, k=min(body.k,30),
+                                                       scope="work" if session.pool == "work" else "all")
+    return result
 
 
 @router.post("/remember")

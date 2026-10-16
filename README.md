@@ -57,6 +57,10 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 ChatGPT 원본의 모든 분기·처리상태를 읽기 전용으로 기록한다. `--timeout` 기본 60초, 초과 시 unknown/incomplete와 오류 원장을 남기고 exit 2로 끝난다.
 원본 밖 새 출력 폴더가 필요하며 추출·색인·DB 변경은 수행하지 않는다. 원본 처리와 의미 보존율은 별개다.
 
+후속 근거 원장·추출·정정·검색 API/MCP와 도서관 `근거·검토` 화면은 [운영 절차](docs/knowledge/operations.md)를 따른다.
+`knowledge-import-chatgpt`는 지정한 shard를 원장에 **쓰기**하며, `knowledge-backfill`은 등록 문서만 수집한다.
+`knowledge-eval`은 원문 gold로 기존/원문/BM25/관계/하이브리드 경로를 비교한다. 구조 구현과 운영 이행·검색 개선 입증은 별개다.
+
 
 별도 텍스트 임베딩 모델·다운로드·외부 API 없이 PostgreSQL 키워드·부분 일치 검색과 온톨로지를 사용한다.
 `library_catalog`로 종류·프로젝트 목차를 보고, `recall`로 출처·시각이 붙은 기억과 문서 조각을 찾는다.

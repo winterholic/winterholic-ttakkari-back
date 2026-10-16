@@ -67,3 +67,26 @@
 - 명시 고정 엔진 세션 정책은 그대로다. 날씨 모듈이 만든 세션과 Run만 정리한다.
 
 **회귀 테스트**: test_stale_codex_locked_run_restarts_on_auto_while_claude_is_free, test_stale_codex_locked_run_goes_to_antigravity_when_claude_is_limited_too, test_generation_runtime_schedules_the_weather_scan. 수정 전에 첫 테스트가 `['antigravity'] == ['auto']`로 실패하는 것을 확인했다.
+
+## 지난 날짜 브리핑 보기 (2026-10-16 프론트, 커밋 5d675d5)
+
+요청: 오늘뿐 아니라 다른 날짜에 한 브리핑도 `/weather`에서 확인.
+
+**백엔드 확인 (변경 없음)**
+- `GET /api/weather/briefings`는 day 내림차순, limit 1~100(기본 30), 페이지네이션 없음. `GET /briefings/{day}`는 없으면 404. 지난 날짜 열람에는 이 둘로 충분해서 백엔드는 건드리지 않았고 배포 예약도 하지 않았다.
+- 알림 링크는 이미 `/weather?date=YYYY-MM-DD`(service.py)라서 URL 키를 `date`로 유지했다.
+- 미해결: 목록 응답이 행마다 raw_forecasts·forecast 전체를 싣는다. 30건이면 크기가 상당할 수 있는데 실측은 못 했다. 그래서 목록 30초 폴링은 없앴고(상세만 진행 중일 때 5초 폴링), 포그라운드 복귀와 생성 성공 때만 무효화한다. 필요하면 날짜·상태만 주는 경량 목록 API를 따로 만든다.
+
+**프론트 변경**
+- 주소의 `date`가 화면 상태의 유일한 출처다. 없으면 KST 오늘, 형식이나 달력상 잘못된 값(2026-02-30)은 오늘로 대체하고 안내 문구를 띄운다. 이동은 `replace`라서 뒤로가기가 날짜 순회가 되지 않는다.
+- 날짜 이동은 ChecklistsPage 관례를 따랐다: 이전/다음(달력 ±1일), 날짜 입력(max=오늘), 오늘 버튼. 미래로는 이동 불가. 기존 이력 칩은 유지하고 상태 라벨을 완료/간이/실패/진행 중으로 구분했다.
+- 상태 구분: 진행 중(수집/생성), degraded는 "간이 브리핑" 경고, 실패는 사유 표시, 브리핑 없는 날(404)은 별도 빈 상태. 오늘이 비어 있으면 "지금 만들기", 지난 날짜면 새로 만들 수 없다는 안내와 "가장 최근 브리핑 보기".
+- 생성 API는 항상 오늘 행을 만들기 때문에 지난 날짜에서는 생성·다시 시도 버튼을 렌더하지 않고 핸들러도 오늘일 때만 호출한다. 대신 "오늘 브리핑으로" 버튼을 둔다.
+- 문구: 지난 날짜는 "오늘/현재" 대신 "이날/브리핑 당시". 올해가 아닌 날짜는 제목에 연도를 붙인다. "Luna가 정리" 문구는 엔진이 바뀔 수 있어 중립 문구로 바꿨다.
+- 푸터에 `analysis_engine`/`analysis_model`을 작게 표시한다(EngineBadge 재사용). 타입에 두 필드를 추가했다.
+
+**검증 (front)**
+- Vitest: WeatherPage 7건 + weatherData 5건 신규·갱신. 전체 75 files passed, 1 skipped; 492 tests passed, 1 skipped.
+- ESLint, `tsc -b`, `vite build` 모두 exit 0.
+- main push 04dd5f5→5d675d5, Vercel 커밋 상태 success("Deployment has completed").
+- 미확인: 로그인 세션이 없어 실제 인증 화면에서 모바일 레이아웃(날짜 이동 줄, 칩 스크롤)을 눈으로 확인하지 못했다. 테스트는 jsdom 기준이다. 공유 worktree에 있던 AccountsSection 미커밋 변경은 이번 커밋에 넣지 않았다.

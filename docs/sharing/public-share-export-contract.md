@@ -1,6 +1,6 @@
 # 공개 조회·내보내기 계약 v1 — 회의록 첫 수직 기능
 
-상태: **핵심 권한·회수 경합 및 TXT/MD/JSON/CSV formatter·owner export·public 생성 다운로드 구현, 미배포**. public UI와 SRT/VTT/DOCX/PDF는 미구현이며 공개 기능 기본 off다. 실제 구현·검증 범위는 §12–13, 나머지는 후속 목표 계약이다. [ADR 0030](../adr/0030-public-capability-shares-and-exports.md)의 단일 선택안을 구체화한다. 모델/effort 변경이나 후속 작업자 생성은 하지 않는다. 후속 구현자가 볼 공식 계약이며 별도 handoff 문서가 아니다.
+상태(2026-10-16): **핵심 권한·회수 경합·TXT/MD/JSON/CSV와 owner/public UI 연결 구현**. 코드 공개 기능 기본값을 on으로 전환하며 운영 배포 여부는 작업기록을 따른다. 사용자 선택·명시적 게시 없이 기존 자료가 공개되지는 않는다. SRT/VTT/DOCX/PDF와 PMS/WBS/Artifact는 후속이다. 최신 범위는 §14, §12–13의 기본 off·UI 미구현 표기는 2026-10-15 당시의 기록이다. [ADR 0030](../adr/0030-public-capability-shares-and-exports.md)의 단일 선택안을 구체화한다.
 
 ## 1. 현재 실체와 근거
 
@@ -342,7 +342,7 @@ UTF-8 BOM + CRLF, csv writer quoting으로 쉼표/따옴표/줄바꿈을 처리�
 | `src/ttakkari/sharing/exports.py` | 구현됨: 네 F1 pure formatter. 형식/part 적합성은 공통 wrapper가 검사하고 CSV 수식 방어·byte 한도를 적용한다. URL fetch/LLM 없음 |
 | `src/ttakkari/api/shares.py` (신규) | `/api/shares*`, `/api/exports` owner router. 모든 route에 User |
 | `src/ttakkari/api/public_shares.py` (신규) | public GET/HEAD/생성 download router, 별도 capability와 generic404; 로그인 리다이렉트/legacy 파일 URL 없음 |
-| `src/ttakkari/models.py`, `config.py`, 새 alembic revision | PublicShare 하나와 index, 기본 off인 public_sharing_enabled 설정. 기존 타 세션 수정 위에서 통합, migration 번호 재확인. 이 설계 작업은 파일을 건드리지 않음 |
+| `src/ttakkari/models.py`, `config.py`, 새 alembic revision | PublicShare와 index, public_sharing_enabled 설정. 초기 core의 기본값은 off였으며 §14 UI 연결 뒤 on으로 전환. migration 0028을 재사용하며 이번 연결에는 새 migration 없음 |
 | `src/ttakkari/main.py` | 새 router 두 개 등록, 공개 경로에도 오류/보안 header가 적용되도록 정확한 ASGI 범위 처리. 기존 User/private router 권한 완화·CORS origin 와일드카드 금지. HEAD/Retry-After만 필요한 CORS 허용표에 추가한다. 기존 retention loop에 만료/고아 snapshot 정리 호출을 추가하되 gate의 정확성을 정리 주기에 의존시키지 않음 |
 | `api/meetings.py`의 delete, item 교체 경로 | 삭제/선택 binding 소실 시 grant revoke+payload 제거. public gate를 최종 방어로 유지; 모델 실행/재전사 코드는 변경 불필요 |
 
@@ -386,3 +386,11 @@ F1 완료 기준은 migration round-trip, 관련 반례, 격리 DB 전체 pytest
 - preview `format_options`는 현재 활성 형식과 대상 part를 내보내며, 선택되었으나 미분석인 분석 CSV part는 다운로드에서 `analysis_not_generated`로 실패한다. 분석 완료 후 선택 항목이 비어 있는 CSV는 헤더만 반환한다. summary-only projection은 transcript/job 조회 경로를 실행하지 않는다.
 - UI/API 연결 계약은 [API 계약의 회의록 외부 공유와 내보내기](../api-contract.md#회의록-외부-공유와-내보내기)를 따른다. preview가 돌려준 `source_revision`을 게시와 `POST /api/exports`에 보내며, 게시 후에는 발급된 fragment capability를 헤더로 전달한다. `format_options`가 UI의 형식·part 비활성화 기준이다. 공개 기능 기본 off는 유지한다.
 - 검증 명령·출력, 미커밋 경계 및 미검증 UI/운영 표면: [2026-10-15 export 후속 작업기록](../work-history/2026-10-15-public-share-exports.md).
+
+## 14. 2026-10-16 UI 연결과 활성화
+
+문서형 전사, 선택 preview/개인 export, owner 공유 게시·snapshot 갱신·해제, 인증 없는 공개 snapshot 페이지를 연결했다. 코드 기본값은 `public_sharing_enabled=true`로 전환하며 명시적 false에서는 익명 전달을 차단한다. preview는 실제 설정을 `public_sharing_enabled`로 돌려주며 false일 때 `sharing_disabled` 경고를 포함한다. 사용자 자료의 자동 게시는 없다.
+
+공개 entry는 AuthProvider/AppShell 밖에서 초기화하며 cookie/owner token/refresh를 쓰지 않는다. key는 fragment에 유지하고 목차 이동은 이를 덮어쓰지 않는다. 공개 응답 실패 시 이전 본문도 내려 읽기 캐시를 화면에 남기지 않는다. CSP/no-store/no-referrer/noindex·API NetworkOnly·public 경로 SW fallback 제외를 적용한다.
+
+원래 계획한 PMS/WBS/Artifact 및 PDF/Word/자막은 여전히 제외한다. 합성 UI·격리 PostgreSQL/HTTP 검증과 운영 배포의 구분 및 결과는 [작업기록](../work-history/2026-10-16-meeting-sharing-ui.md)에 남긴다.

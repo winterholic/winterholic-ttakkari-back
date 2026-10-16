@@ -1,7 +1,7 @@
 # ADR 0030 — 선택한 자원의 공개 스냅샷과 공통 내보내기
 
 - 날짜: 2026-10-15
-- 상태: 설계안 확정. 핵심 권한·스냅샷·회수 경합과 TXT/MD/JSON/CSV formatter·owner export·public 생성 다운로드를 구현하고 격리 검증했다. public UI 미구현, `public_sharing_enabled=false` 기본 유지, 운영 마이그레이션·배포 미실행. 최신 구현·검증: [2026-10-15 export 후속 기록](../work-history/2026-10-15-public-share-exports.md)
+- 상태(2026-10-16): 핵심 권한·스냅샷·회수 경합·TXT/MD/JSON/CSV와 문서형 전사·선택 내보내기·공유 관리·별도 공개 UI를 구현했다. UI 검증 뒤 코드 기본값을 `public_sharing_enabled=true`로 전환한다. 회의는 자동 공개되지 않으며 명시적 false 설정으로 전달을 차단할 수 있다. 운영 배포 여부는 [UI 연결 작업기록](../work-history/2026-10-16-meeting-sharing-ui.md)을 따른다.
 - 기준: backend `4a07739cc6bdba75ef8d4b2877c91ea3fabf9f84` + 조사 시점의 작업 트리. 다른 세션의 미커밋 변경은 보존한다.
 - 선행: ADR 0010(회의록), 0012(PMS/WBS), 0028(STT); 상세 계약: [public-share-export-contract.md](../sharing/public-share-export-contract.md)
 
@@ -53,4 +53,4 @@ flowchart LR
 
 회수는 이후의 서버 접근을 차단한다. 이미 받은 파일·복사·스크린샷·이미 최종 인가된 전송까지 회수할 수 없다. no-store/noindex는 이 한계를 없애지 않는다. fragment는 HTTP 요청 URL에는 포함되지 않지만 브라우저 이력·확장·페이지 JS·수신자의 재공유에서 비밀이 보일 수 있다. 특정 수신자만 확인하는 신원 인증을 제공하지 않는다.
 
-본 문서는 현재 운영에서 이 권한 모델을 제공한다는 의미가 아니다. 후속 구현은 migration `0028`, strict 공개 DTO, owner 관리와 public gate, DB trigger 회수, TXT/MD/JSON/CSV formatter 및 owner export까지 포함한다. 가상 데이터와 격리 PostgreSQL/HTTP 테스트만 사용했다. 실제 사용자 자료의 링크 발급·운영 DB 변경·모델 실행·외부 전송·프론트 수정·배포·재시작은 하지 않았다. 공개 기능은 기본 off다. 최신 범위·검증은 상세 계약 §12–13 및 작업기록을 따른다.
+2026-10-15 구현 당시에는 migration `0028`, strict 공개 DTO, owner 관리와 public gate, DB trigger 회수, TXT/MD/JSON/CSV formatter 및 owner export까지 포함했고 공개 기능은 기본 off였다. 2026-10-16에는 별도 public UI와 owner 선택·검토·게시 흐름을 연결해 코드 기본값을 on으로 전환한다. 가상 자료·격리 PostgreSQL/HTTP·합성 브라우저 검증을 사용하며 실제 사용자 회의를 작업 중 임의 공개하지 않는다. 최신 범위·검증과 운영 배포 여부는 상세 계약 §14 및 작업기록을 따른다.

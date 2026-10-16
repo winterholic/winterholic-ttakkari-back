@@ -74,8 +74,10 @@ async def preview(body: PreviewIn):
     async with transaction(repeatable=True, readonly=True) as db:
         c = await candidate(db, body)
     from ttakkari.sharing.delivery import format_options
+    sharing_ready = get_settings().public_sharing_enabled
     return {'document': c.document.model_dump(mode='json'), 'source_revision': c.source_revision,
-            'format_options': format_options(c.document), 'warnings': ['public_ui_not_enabled', 'content_requires_owner_review']}
+            'format_options': format_options(c.document), 'public_sharing_enabled': sharing_ready,
+            'warnings': ['content_requires_owner_review'] + ([] if sharing_ready else ['sharing_disabled'])}
 
 
 async def owner_export(body: ExportIn) -> tuple[bytes, str]:

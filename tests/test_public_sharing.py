@@ -114,6 +114,18 @@ async def test_approved_projection_is_snapshot_and_owner_only(client, auth):
     assert (await client.delete(f'/api/shares/{s["id"]}', headers=cap)).status_code == 401
 
 
+@pytest.mark.parametrize('ready', [False, True])
+async def test_preview_reports_public_readiness_without_creating_a_share(client, auth, monkeypatch, ready):
+    monkeypatch.setattr(get_settings(), 'public_sharing_enabled', ready)
+    mid, _, _ = await source()
+    data = await preview(client, auth, request(mid))
+    assert data['public_sharing_enabled'] is ready
+    assert ('sharing_disabled' in data['warnings']) is (not ready)
+    assert 'public_ui_not_enabled' not in data['warnings']
+    assert (await client.get('/api/shares', headers=auth,
+        params={'resource_type': 'meeting', 'resource_id': str(mid)})).json() == []
+
+
 async def test_capabilities_and_jwt_audiences_never_mix(client, auth):
     s, cap, body = await publish(client, auth)
     b, _, _ = await publish(client, auth)

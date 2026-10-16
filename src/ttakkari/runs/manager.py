@@ -571,7 +571,8 @@ class RunManager:
             # Legacy account-only IDs identify the original model. They cannot be
             # reused for another model sharing the same provider account.
             if profile.engine == sess.engine and (
-                profile.engine != "antigravity" or profile.model == requested_model
+                profile.engine != "antigravity"
+                or profile.model == worker_routing.primary_target(sess.engine, requested_model)[1]
             ):
                 return es.get(profile.key)
             return None

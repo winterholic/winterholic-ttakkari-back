@@ -72,7 +72,7 @@ async def info(_: User) -> dict:
 
 @router.get("/system/resources")
 async def resources(_: User) -> dict:
-    """이 맥의 CPU·메모리·디스크·네트워크와 상위 프로세스. 프로세스는 이름만 내고 명령줄은 내지 않는다."""
+    """이 맥의 CPU·GPU·메모리·디스크·네트워크와 상위 프로세스. 명령줄은 내지 않는다."""
     return await sysinfo.snapshot()
 
 

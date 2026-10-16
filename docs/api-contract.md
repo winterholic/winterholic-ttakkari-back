@@ -256,6 +256,17 @@ payload 는 `{title, body, url, tag}`:
 - `DELETE` 는 보관 처리 `{archived: true}`. 에이전트가 만든 항목만 되고, 사용자가 만든 것은 403 `user_owned`.
 - MCP 도구: `list_memo_categories` `list_memos`(tags·category) `search_memos`(tags·category) `get_memo` `create_memo` `update_memo` `delete_memo` `list_events` `create_event` `update_event` `delete_event`.
 
+### 서버 GPU 리소스
+
+`GET /api/system/resources`(사용자 인증), `GET /api/agent/system/resources`(세션 인증)는 기존 CPU·메모리·디스크·네트워크에 `gpu` 객체를 추가한다. 2초 캐시를 공유한다.
+
+- `status`: `available|unavailable|unsupported`; `reason`: `null|collection_failed|statistics_missing|unsupported_os`.
+- `model`, `cores`: GPU 모델명과 코어 수, 알 수 없으면 `null`.
+- `percent`: GPU **전체** 사용률(0~100), 읽지 못했으면 `null`. 정상 유휴 값 `0`과 구분한다. GPU 코어별 사용률은 제공하지 않는다.
+- `memory_used_bytes`, `memory_allocated_bytes`: 드라이버가 보고하는 사용·할당 시스템 메모리 바이트, 누락·잘못된 값은 `null`. Apple Silicon 통합 메모리의 일부로, 전체 메모리에 더하거나 할당량을 VRAM 용량으로 해석하지 않는다.
+- macOS의 `ioreg -r -d 1 -c IOAccelerator -l -w 0`을 고정 인자로 최대 2초 실행하고, 첫 유효 GPU 통계를 사용한다. 다른 어댑터끼리 값을 합치지 않는다. GPU 수집 실패가 나머지 리소스 응답을 막지 않는다.
+- 프론트는 4초마다 갱신한다. `gpu`가 없는 이전 서버 응답도 허용하고 GPU 안내를 표시한다. `unavailable|unsupported`는 막대 없이 `—`와 설명을 표시한다.
+
 ## 폰 → 컴퓨터 파일 보내기
 
 목적지는 기본 워크스페이스의 실행 위치와 권한 폴더 안(`~/.ttakkari` 제외). 사진은 서버에서 손질한다: HEIC → JPG(`convert_heic`, 기본 켬), EXIF 방향대로 회전, 위치 정보 삭제(`strip_location`, 기본 켬), `image.jpg` 같은 뻔한 이름은 촬영 시각 `IMG_YYYYMMDD_HHMMSS`, 같은 이름은 `이름 (2)`.

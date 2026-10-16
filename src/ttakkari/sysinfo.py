@@ -1,7 +1,7 @@
 """이 맥(Mac Studio)의 자원 현황. 사용자 메뉴 > 서버 리소스 화면이 3~5초마다 부른다.
 
-psutil 이 주는 값을 쓰고, psutil 이 모르는 것(칩 이름, P/E 코어 수, 메모리 압력)만 sysctl 을
-고정 인자로 부른다. 요청 값은 어떤 명령에도 넘기지 않는다.
+psutil 이 주는 값을 쓰고, 칩 이름·P/E 코어·메모리 압력은 sysctl, GPU는 ioreg의
+IOAccelerator 통계를 고정 인자로 읽는다. 요청 값은 어떤 명령에도 넘기지 않는다.
 
 프로세스는 이름·pid·CPU·메모리만 낸다. 명령줄 인자에는 토큰이 섞일 수 있어 cmdline 은 읽지 않는다.
 다른 사용자(root) 프로세스는 macOS 가 메모리 조회를 막아(AccessDenied) 상위 목록에서 빠진다.
@@ -53,6 +53,60 @@ def _int(v: str | None) -> int | None:
         return int(v) if v is not None else None
     except ValueError:
         return None
+
+
+def _gpu() -> dict[str, Any]:
+    """첫 유효 GPU의 드라이버 통계. 코어별 사용률·전용 VRAM으로 해석하지 않는다.
+
+    ioreg의 XML(-a) 출력이 실패하는 환경에서도 읽을 수 있도록 텍스트에서 필요한 키만 읽는다.
+    누락·권한·타임아웃·잘못된 값은 0이 아닌 null로 둬 CPU 등 다른 수집을 유지한다.
+    """
+    result: dict[str, Any] = {
+        "status": "unavailable", "reason": "statistics_missing", "model": None, "cores": None,
+        "percent": None, "memory_used_bytes": None, "memory_allocated_bytes": None,
+    }
+    if platform.system() != "Darwin":
+        return {**result, "status": "unsupported", "reason": "unsupported_os"}
+    try:
+        command = subprocess.run(
+            ["/usr/sbin/ioreg", "-r", "-d", "1", "-c", "IOAccelerator", "-l", "-w", "0"],
+            capture_output=True, text=True, timeout=2, check=False, stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {**result, "reason": "collection_failed"}
+    if command.returncode != 0:
+        return {**result, "reason": "collection_failed"}
+
+    def number(values: str, key: str) -> int | float | None:
+        match = re.search(r'"' + re.escape(key) + r'"\s*=\s*(-?\d+(?:\.\d+)?)\s*(?=[,}])', values + "}")
+        if not match:
+            return None
+        raw = match.group(1)
+        return float(raw) if "." in raw else int(raw)
+
+    for device in re.split(r"(?m)^[ |]*\+-o ", command.stdout)[1:]:
+        stats = re.search(r'"PerformanceStatistics"\s*=\s*\{([^{}]*)\}', device)
+        if not stats:
+            continue
+        values = stats.group(1)
+
+        model = re.search(r'"model"\s*=\s*"([^"\n]+)"', device)
+        cores = re.search(r'"gpu-core-count"\s*=\s*(\d+)\s*$', device, re.MULTILINE)
+        percent = number(values, "Device Utilization %")
+        used, allocated = number(values, "In use system memory"), number(values, "Alloc system memory")
+        candidate = {
+            **result, "model": model.group(1) if model else None,
+            "cores": int(cores.group(1)) if cores and int(cores.group(1)) > 0 else None,
+            "percent": float(percent) if percent is not None and 0 <= percent <= 100 else None,
+            "memory_used_bytes": used if isinstance(used, int) and 0 <= used < 2**63 else None,
+            "memory_allocated_bytes": allocated if isinstance(allocated, int) and 0 <= allocated < 2**63 else None,
+        }
+        if candidate["percent"] is not None:
+            return {**candidate, "status": "available", "reason": None}
+        # Keep identity on partial readings without mixing different adapters' measurements.
+        if result["model"] is None:
+            result = candidate
+    return result
 
 
 @lru_cache(maxsize=1)
@@ -206,6 +260,7 @@ def _collect() -> dict[str, Any]:
             "cores_logical": psutil.cpu_count(logical=True), "cores_physical": psutil.cpu_count(logical=False),
             "performance_cores": st["performance_cores"], "efficiency_cores": st["efficiency_cores"], "chip": st["chip"],
         },
+        "gpu": _gpu(),
         "memory": {
             "total": vm.total, "used": vm.total - vm.available, "available": vm.available, "percent": vm.percent,
             "wired": getattr(vm, "wired", None),

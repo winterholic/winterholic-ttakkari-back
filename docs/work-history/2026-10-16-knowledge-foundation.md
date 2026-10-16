@@ -84,3 +84,8 @@ K0 runtime/DB identity와 corpus 기준선, K1 후속 immutable schema·adapter�
 PMS 5.4.6의 K0~K8은 구현/증거/남은 점을 각각 갱신하고 doing으로 유지했다. 전체 원본/독립 관계 recall 미측정을 “문제 없음”이나 “전체 완료”로 바꾸지 않는다. 기존 배포63fb45ac...는 controller test-stage에서 local STT fixture1초 TimeoutError로 failed였다; 이 사실은 운영 STT 실패를 뜻하지 않는다. 이번 전체 검사에서는 해당 기존 STT 테스트가 통과했다.
 
 후속: 검증한 backend를 clean main에 합치고 push, standing policy로 독립 controller 배포 예약. 예약 직후 턴을 반환하고 결과를 기다리기 위한 polling을 하지 않는다. 활성화 결과 뒤 runtime/DB identity 확인 → production registered backfill → 접근 가능한 raw shard inventory/import → bounded 실제 추출/검토 → 독립 holdout·관계 recall·citation/p95 → canary. meetings/app-chat adapter, legacy provenance/정정 overlay, bitemporal recorded-time 조회, 오류 큐 UI도 남아 있다. 별도 승인 대기로 돌리지 않는다. 배포 예약 ID/최종 runtime는 앱의 deployment job/후속 사용자 보고에 남긴다.
+
+
+## 다음 단계 진행 기록
+
+추출 v2 실행 기록·실패 단위 재처리, 정확한2-hop/경로 증거, 실제 원문50units/53관계 staging probe와 배포 supersession 관측은 [후속 작업 기록](2026-10-16-knowledge-extraction-runtime.md)에 이어 적었다. 전체 완료나 운영 이행 완료는 아니다.

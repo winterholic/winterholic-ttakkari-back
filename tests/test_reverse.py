@@ -272,7 +272,7 @@ def test_quote_relevance_check():
     assert reverse._line_relevant("도구 등록의 중심 허브", "src/server/EvidenceMcpServer.ts",
                                   1, {"src/server/EvidenceMcpServer.ts": texts["a.py"]}) is True
     assert reverse._line_relevant("완전히 다른 이야기 짓기", "a.py", 1, texts) is False
-    assert reverse._line_relevant("무엇이든", "missing.py", 1, texts) is True
+    assert reverse._line_relevant("무엇이든", "missing.py", 1, texts) is False
 
 
 def test_normalize_rejects_control_chars_ports_and_company(make_dir):

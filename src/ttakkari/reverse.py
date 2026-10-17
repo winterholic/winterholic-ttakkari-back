@@ -558,7 +558,7 @@ SURVEY_SYSTEM = (
 SYNTH_SYSTEM = (
     "당신은 소스 저장소를 분석하는 코드 리뷰어다. 한국어로 답한다. "
     "주어진 발췌에 나온 내용으로만 주장하고, 개요를 포함한 모든 주장에 "
-    "\"상대경로\" 또는 \"상대경로:줄\" 형태의 근거를 붙인다. "
+    "\"상대경로:줄\" 형태의 근거를 붙인다. 개요·모듈·아이디어에는 줄 인용이 필수다. "
     "발췌에 없는 내용은 주장하지 말고 limitations에 '확인 필요'로 적는다. "
     "modules의 path는 발췌 목록에 실제 있는 파일 경로만 쓴다. "
     + INJECTION_GUARD +
@@ -637,13 +637,13 @@ def _tokens(text: str) -> set[str]:
 
 def _line_relevant(claim: str, path: str, lineno: int,
                    line_texts: dict[str, dict[int, str]]) -> bool:
-    """인용 줄의 내용이 주장과 무관해 보이면 False. 줄을 모르면 True(면제)."""
+    """전달된 발췌 안의 실제 줄만 대조한다. 미전달·빈 줄은 근거로 인정하지 않는다."""
     lines = line_texts.get(path)
     if not lines or lineno not in lines:
-        return True
+        return False
     hay = _tokens(lines[lineno])
     if not hay:
-        return True
+        return False
     return bool((_tokens(claim) | _tokens(path)) & hay)
 
 
@@ -1547,14 +1547,27 @@ async def _synthesize_stage(survey: dict[str, Any], line_counts: dict[str, int],
                             line_texts: dict[str, dict[int, str]],
                             known: set[str], token: str) -> tuple[dict[str, Any], int]:
     """모델 합성: 고유 구분자로 감싼 발췌만으로 구조화 JSON을 만든다. 근거 없는 주장은 버린다."""
-    parts = [_fence(text, rel, token) for rel, text in survey["reads"].items()]
     prompt = ("다음 구분자 안 발췌만으로 저장소를 설명하는 구조화 JSON을 만들어라. "
-              "발췌 밖의 내용은 주장하지 마라.\n\n" + "\n\n".join(parts))
-    if len(prompt) > MAX_MODEL_PROMPT_CHARS:
-        prompt = prompt[:MAX_MODEL_PROMPT_CHARS]
+              "발췌 밖의 내용은 주장하지 마라.\n\n")
+    sent: set[str] = set()
+    for rel, text in survey["reads"].items():
+        part = _fence(text, rel, token)
+        separator = "\n\n" if sent else ""
+        if len(prompt) + len(separator) + len(part) > MAX_MODEL_PROMPT_CHARS:
+            continue
+        prompt += separator + part
+        sent.add(rel)
+    if not sent:
+        raise ReverseError(503, "no_excerpts", "합성에 전달할 발췌가 없습니다.")
     raw, _route = await _review(SYNTH_SYSTEM, prompt)
     data = _parse_model_json(raw)
-    return _validate_synthesis(data, known, line_counts, line_texts)
+    synth, dropped = _validate_synthesis(data, known & sent,
+                                          {p: n for p, n in line_counts.items() if p in sent},
+                                          {p: lines for p, lines in line_texts.items() if p in sent})
+    omitted = len(survey["reads"]) - len(sent)
+    if omitted:
+        synth["limitations"].append(f"입력 길이 상한으로 발췌 {omitted}개를 합성에 전달하지 못함")
+    return synth, dropped
 
 
 def _route_line(route: dict[str, Any]) -> str:

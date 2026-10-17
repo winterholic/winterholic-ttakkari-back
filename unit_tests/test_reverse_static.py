@@ -295,3 +295,43 @@ def test_retry_stages_reuse_and_reset():
     fresh = reverse._prepare_retry_stages(stages, root_ok=False)
     assert reverse._can_reuse_stages(stages, root_ok=False) is False
     assert all(s["status"] == "pending" for s in fresh)
+
+
+@pytest.mark.parametrize(("texts", "lineno"), [({}, 99), ({1: ""}, 1), ({1: "!!!"}, 1)])
+def test_unseen_citation_line_is_rejected(texts, lineno):
+    evidence = reverse._collect_evidence(
+        [f"app.py:{lineno}"], "app parser", {"app.py"}, {"app.py": 100},
+        {"app.py": texts}, require_line=True,
+    )
+    assert evidence == []
+
+
+async def test_synthesis_rejects_files_omitted_from_prompt(monkeypatch):
+    visible = "1: visible parser\n" + "2: " + "x" * 120
+    reads = {"visible.py": visible, "hidden.py": "1: hidden parser"}
+    prefix = ("다음 구분자 안 발췌만으로 저장소를 설명하는 구조화 JSON을 만들어라. "
+              "발췌 밖의 내용은 주장하지 마라.\n\n")
+    budget = len(prefix + reverse._fence(visible, "visible.py", "test")) + 2
+    monkeypatch.setattr(reverse, "MAX_MODEL_PROMPT_CHARS", budget)
+    captured = []
+
+    async def review(_system, prompt):
+        captured.append(prompt)
+        return json.dumps({
+            "overview": {"text": "visible parser", "evidence": ["visible.py:1"]},
+            "modules": [
+                {"path": "visible.py", "role": "visible parser", "evidence": ["visible.py:1"]},
+                {"path": "hidden.py", "role": "hidden parser", "evidence": ["hidden.py:1"]},
+            ],
+        }), {}
+
+    monkeypatch.setattr(reverse, "_review", review)
+    synth, dropped = await reverse._synthesize_stage(
+        {"reads": reads}, {"visible.py": 2, "hidden.py": 1},
+        {rel: reverse._line_map(text) for rel, text in reads.items()}, set(reads), "test",
+    )
+    assert len(captured[0]) <= budget
+    assert "hidden.py" not in captured[0]
+    assert [item["path"] for item in synth["modules"]] == ["visible.py"]
+    assert captured[0].rstrip().endswith("<<<END RV-test>>>")
+    assert dropped == 1

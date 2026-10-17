@@ -75,7 +75,7 @@ class Profile:
         if self.config_dir is None:
             return {}
         if self.engine == "antigravity":
-            return {}
+            raise ValueError("Antigravity account isolation is not supported by config_dir; refusing default authentication")
         return {"CLAUDE_CONFIG_DIR" if self.engine == "claude" else "CODEX_HOME": str(self.config_dir)}
 
 

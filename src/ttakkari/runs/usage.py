@@ -446,6 +446,10 @@ def codex_usage(config_dir: str | None) -> Usage:
 # ---- 묶기
 
 async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, *, refresh: bool = False) -> Usage:
+    # A non-default account must never inherit the host's quota, including a
+    # cached value measured before its account path was changed.
+    if engine == "antigravity" and config_dir:
+        return Usage(error="Antigravity account isolation is unsupported; default quota was not queried")
     hit = _cache.get(account_id)
     # 수집기가 주기마다 새로 읽어 두므로(runs/usage_collector.py) 화면이 그보다 자주 API 를 두드리지 않게 한다.
     ttl = max(TTL, get_settings().usage_poll_seconds)

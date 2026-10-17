@@ -178,6 +178,16 @@ async def qwen_usage(_: User, db: Db) -> dict:
 @router.post("", response_model=AccountOut, status_code=201)
 async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> AccountOut:
     rows = await profiles.accounts(db)
+    if body.engine == "antigravity":
+        # Serialize the check across requests and backend generations. A second
+        # generated config_dir does not isolate the official CLI's credentials.
+        await db.execute(select(func.pg_advisory_xact_lock(0x54544B, 3)))
+        rows = await profiles.accounts(db)
+        if any(r.engine == "antigravity" for r in rows):
+            raise HTTPException(status.HTTP_409_CONFLICT, {
+                "code": "antigravity_isolation_unsupported",
+                "message": "Antigravity 계정별 인증 격리가 검증되지 않아 추가 계정을 등록할 수 없습니다. 기존 계정은 유지됩니다.",
+            })
     if len(rows) >= MAX_ACCOUNTS:
         raise HTTPException(status.HTTP_409_CONFLICT, f"계정은 {MAX_ACCOUNTS}개까지입니다.")
     top = await db.scalar(select(func.max(EngineAccount.priority)))

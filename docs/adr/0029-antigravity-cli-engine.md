@@ -1,5 +1,13 @@
 # ADR 0029: Antigravity CLI 작업 엔진
 
+## 2026-10-17 다중 계정 조사 보충 (전체 기능 미완료)
+
+현재 사용자 요청은 계정별 독립 실행 인프라 구축이며, 아래의 과거 단일 계정 결정만으로 이를 완료했다고 해석하지 않는다. 공식 저장소 collaborator의 [macOS #1080](https://github.com/google-antigravity/antigravity-cli/issues/1080)은 격리 HOME과 깨끗한 cwd를 제안한다. 따라서 아래 과거 조사에서 HOME 대안을 확인하지 못했다는 기록은 현재 공식 지원 경로 전체의 부재를 뜻하지 않는다. 단 제안의 `agy login` 예시는 설치된 1.4.0에서 `agy help login` → `unknown subcommand: login`으로 확인됐으므로 그대로 실행 절차로 채택하지 않는다.
+
+이번 읽기 전용 실측에서 기본 HOME의 공식 `/usage`는 성공했고 빈 HOME에서는 `authentication failed or timed out`이 반환됐다. macOS `security default-keychain -d user`도 기본 HOME에서는 기존 login keychain을, 빈 HOME에서는 default keychain 부재를 반환했다. 이는 프로필 경로 및 인증 실패 분리 관측이며, 두 계정 OAuth·토큰 갱신·로그아웃 격리·재부팅 복구의 증거는 아니다. 원래 인증과 Keychain 설정은 변경하지 않았다.
+
+현재 코드의 두 번째 계정 자동 폴더 생성이 실제 CLI 인증을 바꾸지 않는 결함만 선행 수정했다. 추가 생성은 409, 기존 비기본 경로 실행·quota 조회는 명시적 실패로 닫는다. 외부 도구는 도입하지 않았다. 최종 격리 선정·다중 계정 구현과 두 계정 실제 코딩은 [후속 설계](../antigravity/multi-account-investigation.md)의 미완료 항목이다.
+
 
 > 2026-10-16 후속 결정: 신규 auto 작업자의 배정은 `runs/worker_routing.py`의 task_type 정책으로 대체하고, 고정 엔진 세션의 한도 도달 시 대체 경로(`strict_engine=False` 기본: 같은 모델 계열 다른 경로 → 작업 성격에 맞는 같은 등급 모델 → 대기) 및 Flash 구현 결과의 교차 검증(`verification`에서 Flash 제외, GPT/Claude 독립 검증 및 `false_completion` 기록)을 추가했다. 세부 명세는 [API 계약](../api-contract.md#작업자-task-routing-및-고정-엔진-한도-대체-2026-10-16)을 따른다. 메인·접수·별도 회의/날씨 경로는 기존 계약을 유지한다.
 - 상태: 구현 중

@@ -494,3 +494,23 @@ async def test_codex_usage_from_backend_with_reset_credits_and_reset(client, aut
     assert profiles.cooldown_remaining(_uuid.UUID(cx["id"])) == 0
     claude = (await _accounts(client, auth))[0]
     assert (await client.post(f"/api/accounts/{claude['id']}/codex-reset", headers=auth)).status_code == 400
+
+
+async def test_antigravity_second_account_cannot_alias_host_login(client, auth):
+    first = await client.post('/api/accounts', json={'name': 'agy-a', 'engine': 'antigravity'}, headers=auth)
+    assert first.status_code == 201, first.text
+    second = await client.post('/api/accounts', json={'name': 'agy-b', 'engine': 'antigravity'}, headers=auth)
+    assert second.status_code == 409, second.text
+    assert second.json()['code'] == 'antigravity_isolation_unsupported'
+    assert [a['name'] for a in await _accounts(client, auth) if a['engine'] == 'antigravity'] == ['agy-a']
+
+
+async def test_concurrent_antigravity_creation_cannot_alias_host_login(client, auth):
+    import asyncio
+    await _accounts(client, auth)
+    responses = await asyncio.gather(*(
+        client.post('/api/accounts', json={'name': f'agy-{i}', 'engine': 'antigravity'}, headers=auth)
+        for i in range(2)
+    ))
+    assert sorted(r.status_code for r in responses) == [201, 409]
+    assert len([a for a in await _accounts(client, auth) if a['engine'] == 'antigravity']) == 1

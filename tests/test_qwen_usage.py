@@ -290,3 +290,37 @@ async def test_flash_usage_records_deltas_and_survives_restarts():
     assert summ3["today"]["output_tokens"] == 20
     assert summ3["today"]["total_tokens"] == 200
     assert summ3["week"]["total_tokens"] == 200
+
+
+@pytest.mark.asyncio
+async def test_flash_partial_token_metrics_do_not_reset_or_double_count_counters():
+    from ttakkari.runs import qwen_flash_monitor
+
+    now = datetime.now(UTC)
+    full = {
+        "server": {"status": "running"},
+        "metrics_status": "available",
+        "input_tokens": 100,
+        "cached_input_tokens": 5,
+        "output_tokens": 10,
+    }
+    partial = {
+        "server": {"status": "running"},
+        "metrics_status": "partial",
+        "input_tokens": None,
+        "cached_input_tokens": None,
+        "output_tokens": 20,
+    }
+    recovered = {**full, "input_tokens": 120, "cached_input_tokens": 8, "output_tokens": 30}
+
+    async with sessionmaker()() as db:
+        await qwen_flash_monitor.record_observation(db, full, recorded_at=now)
+    async with sessionmaker()() as db:
+        assert await qwen_flash_monitor.record_observation(db, partial, recorded_at=now + timedelta(seconds=1)) is None
+    async with sessionmaker()() as db:
+        await qwen_flash_monitor.record_observation(db, recovered, recorded_at=now + timedelta(seconds=2))
+        summary = await qwen_flash_monitor.summary(db, now=now + timedelta(seconds=2))
+
+    assert summary["today"]["input_tokens"] == 120
+    assert summary["today"]["output_tokens"] == 30
+    assert summary["today"]["total_tokens"] == 150

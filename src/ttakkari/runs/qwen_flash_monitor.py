@@ -50,7 +50,10 @@ async def record_observation(
     raw_p = observation.get("input_tokens")
     raw_c = observation.get("cached_input_tokens")
     raw_o = observation.get("output_tokens")
-    if raw_p is None and raw_o is None:
+    # A partial token sample cannot safely advance the shared raw-counter baseline:
+    # treating a missing metric as zero would look like a server reset and recount
+    # already observed cumulative counters when the metric returns.
+    if raw_p is None or raw_c is None or raw_o is None:
         return None
 
     stmt = select(QwenFlashUsage).order_by(QwenFlashUsage.recorded_at.desc(), QwenFlashUsage.id.desc()).limit(1)

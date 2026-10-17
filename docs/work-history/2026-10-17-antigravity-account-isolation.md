@@ -17,3 +17,7 @@ ParaGravity의 pinned source `python3 -m unittest discover -s tests -v`는 fake 
 산출물은 `/Users/winterholic/.ttakkari/data/outbox/ad7d1def-393e-4621-b8d7-4b1e560254f3/`의 HTML 조사 보고서·상세 설계/운영 초안·회귀 XML/text·소스 manifest·비밀 없는 CLI 증거다. 직접 browser preflight는 nested sandbox의 IPC denied로 blocked라 shell 브라우저는 띄우지 않았다. configured ttakkari_browser MCP에서 check_ui.py의 JS를 동일 출처 iframe에 실행해 1440/1180/390 × light/dark 6개 조합 모두 overflow/offscreen/clipped/overlap/invisible/tinyText 빈 목록, Mermaid SVG 1/error0, console error0을 확인했다. 스킨 토큰 교체가 첫 시도에 잘못된 마커 때문에 적용되지 않은 것은 actual CSS marker로 고친 뒤 6개 조합을 재검사했다. MCP 브라우저는 종료했다.
 
 후속: 별도 HOME + 암호화 native Keychain은 다음 검증 후보일 뿐 최종 선정 아님. 공식 sign-in으로 서로 다른 identity 두 개를 확인하고 logout/refresh/재부팅까지 통과해야 한다. 계정 명시 지정·auth 상태 저장·worktree 충돌 강제·부작용 이후 자동 replay 제약도 미구현이다. 실제 모델 응답·conversation resume·MCP 실행은 /usage 성공과 별개로 미검증이다. 운영 인증을 보존하며 작업을 이어가야 한다.
+
+## 최신 통합 검증
+
+첫 원격 main push는 다른 세션의 Muse 변경이 먼저 반영돼 non-fast-forward로 거부됐다. force push 없이 fetch했고 Muse adapter·account·profiles·usage의 변경을 확인한 뒤 98433719addf6e2a8c7913ce3a3fa7c75c93dd22 위로 충돌 없이 rebase했다. 기존 diff가 우리 의도한 3개 구현 표면에만 남아 있음을 확인했다. 위 테스트 명령에 tests/test_muse_api.py, unit_tests/test_muse_registration.py, unit_tests/test_muse_usage.py를 추가한 최종 결과는 172 passed in 31.20s다. Ruff와 diff check도 다시 통과했다. 최종 /usage 재조회도 기존 HOME에서 SUCCESS/exit0으로 유지됐으며 모델 응답·재개·MCP·두 identity는 검증하지 않았다. configured MCP browser와 임시 localhost 보고서 서버 모두 종료했다. 검증된 선행 수정만 clean SHA로 push하고 generation 배포를 예약한다. 예약 수락을 운영 성공으로 보고하지 않는다.

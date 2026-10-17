@@ -114,7 +114,8 @@ async def reverse_get(job_id: str) -> str:
 
 @server.tool()
 async def reverse_retry(job_id: str) -> str:
-    """Restart a waiting, partial or failed reverse-engineering job from scratch.
+    """Retry a waiting, partial or failed reverse-engineering job.
+    Reuses collection stages if the source checkout is still available.
     Use it after quota resets or a transient model failure. Personal sessions only."""
     from urllib.parse import quote
 

@@ -263,6 +263,7 @@ def test_usage_probe_ambiguous_authentication_or_timeout_is_not_auth_failure(tmp
     from types import SimpleNamespace
 
     p = accounts.allocate(tmp_path, uuid4())
+    accounts.record_probe(p.home, success=True)
     monkeypatch.setattr(accounts, 'execution_env', lambda home, env, **kw: {'HOME': str(home)})
     outputs = [
         SimpleNamespace(returncode=0, stdout='agy 1.4.0', stderr=''),
@@ -273,7 +274,47 @@ def test_usage_probe_ambiguous_authentication_or_timeout_is_not_auth_failure(tmp
     monkeypatch.setattr(accounts.subprocess, 'run', lambda *a, **kw: outputs.pop(0))
     with pytest.raises(accounts.ProfileError, match='network_error'):
         accounts.check(p.home)
-    assert accounts.status(p.home)['auth_state'] != 'auth_required'
+    assert accounts.status(p.home)['auth_state'] == 'ready'
+    assert accounts.status(p.home)['last_error'] == 'network_error'
+
+
+def test_usage_probe_timeout_only_is_transient_and_preserves_readiness(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    p = accounts.allocate(tmp_path, uuid4())
+    accounts.record_probe(p.home, success=True)
+    monkeypatch.setattr(accounts, 'execution_env', lambda home, env, **kw: {'HOME': str(home)})
+    outputs = [
+        SimpleNamespace(returncode=0, stdout='agy 1.4.0', stderr=''),
+        SimpleNamespace(returncode=1, stdout=json.dumps({
+            'status': 'ERROR', 'response': 'request timed out'
+        }), stderr=''),
+    ]
+    monkeypatch.setattr(accounts.subprocess, 'run', lambda *a, **kw: outputs.pop(0))
+    with pytest.raises(accounts.ProfileError, match='network_error'):
+        accounts.check(p.home)
+    assert accounts.status(p.home)['auth_state'] == 'ready'
+    assert accounts.status(p.home)['last_error'] == 'network_error'
+
+
+def test_usage_probe_explicit_auth_failure_fails_closed(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    p = accounts.allocate(tmp_path, uuid4())
+    accounts.record_probe(p.home, success=True)
+    monkeypatch.setattr(accounts, 'execution_env', lambda home, env, **kw: {'HOME': str(home)})
+    outputs = [
+        SimpleNamespace(returncode=0, stdout='agy 1.4.0', stderr=''),
+        SimpleNamespace(returncode=1, stdout=json.dumps({
+            'status': 'ERROR', 'response': 'authentication failed'
+        }), stderr=''),
+    ]
+    monkeypatch.setattr(accounts.subprocess, 'run', lambda *a, **kw: outputs.pop(0))
+    with pytest.raises(accounts.ProfileError, match='auth_required'):
+        accounts.check(p.home)
+    assert accounts.status(p.home)['auth_state'] == 'auth_required'
 
 
 def test_reprovision_can_recover_after_keychain_creation_failure(tmp_path, monkeypatch):

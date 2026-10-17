@@ -290,6 +290,9 @@ def _probe_cli(home: Path | str, env: dict) -> tuple[str, dict]:
             raise ProfileError('network_error')
         if any(t in message for t in ('not logged in','login required','not authenticated','authentication failed','sign in')):
             raise ProfileError('auth_required')
+        if 'timed out' in message or 'timeout' in message:
+            # Fail this usage check, but keep a previously ready account eligible for a later attempt.
+            raise ProfileError('network_error')
         raise ProfileError('cli_error')
     if version.returncode:
         raise ProfileError('cli_error')
@@ -375,7 +378,7 @@ def record_run(home: Path | str, *, success: bool, error: str | None = None):
         return
     text = (error or '').lower()
     # `agy` reports an ambiguous auth-or-timeout message for both classes.
-    # Preserve readiness until an explicit auth signal is observed.
+    # The current Run still fails; preserve readiness so later Runs may retry it.
     if 'authentication failed' in text and ('timed out' in text or 'timeout' in text):
         return
     if any(t in text for t in _AUTH_FAILURE):

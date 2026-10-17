@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "supervisor": {"protocol": 1, "slots": 3},
-  "schema_revision": "0042_artcraft_tasks",
+  "schema_revision": "0043_reverse_jobs_jsonb",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -12,6 +12,7 @@
     "0038_qwen_flash_usage",
     "0039_ops_log_issues",
     "0040_ops_event_receipts",
-    "0041_reverse_jobs"
+    "0041_reverse_jobs",
+    "0042_artcraft_tasks"
   ]
 }

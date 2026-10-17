@@ -311,6 +311,9 @@ class Settings(BaseSettings):
     def outbox_root(self) -> Path:
         return self.data_dir / "outbox"
 
+    # 리버스 엔지니어링 원격 수집 허용 호스트(기본 github.com). https 전용이다.
+    reverse_allowed_hosts: list[str] = []
+
     @property
     def reverse_root(self) -> Path:
         return self.data_dir / "reverse"

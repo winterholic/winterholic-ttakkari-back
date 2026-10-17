@@ -52,3 +52,12 @@ Muse를 `general`·`routine` 첫 단계에 후보로 넣는 코드와 테스트�
 2. Wonder Full이 거부되면 `muse-spark-1.3`으로 같은 확인을 하고, `MUSE_FULL` 모델을 조정한다.
 3. 통과한 뒤 `TTAKKARI_MUSE_AUTO_ROUTING=true`를 켜고 백엔드를 배포 절차로 재시작한다(Run 안에서 launchctl 금지).
 4. 켠 뒤 `account_usage.muse_auto_routing=true`와 영수증의 `selected.engine`을 확인한다.
+
+## 후속 확인 (2026-10-17 22:18 KST)
+
+- `GET http://127.0.0.1:8787/api/version` 응답은 `revision=06096488e032274253732bf7e3e130850f6f17c5`, `pid=71193`이었다. 확인 시점의 배포 런타임은 Muse 라우팅 후보 커밋 전이었다.
+- 이번 Run의 명령 셸에서 `command -v muse`는 경로를 출력하지 않았고 `muse --version`은 `zsh: command not found: muse`로 끝났다. 이는 이 셸의 PATH 관측이다. 코드의 배포 실행은 `TTAKKARI_MUSE_BIN` 기본 절대경로와 `.muse-runtime` Node SDK bridge를 사용하므로 이 결과로 백엔드의 CLI/SDK 부재를 결론내리지 않는다. 배포 백엔드의 실제 설정 경로·패키지 가용성은 미확인이다.
+- `tests/test_muse_auto_routing.py`는 18 passed. 이는 격리된 pytest/가짜 계정 사용량의 라우팅 계약이며 실제 Muse coding·MCP·resume 수행 증거가 아니다.
+- 운영 `/api/orchestrator/workers`를 호출할 실행 도구와 유효한 orchestrator session/MCP 컨텍스트가 이 Run에 노출되지 않았다. 세 가지 실동작 Run은 시작하지 않았다. sandbox 가용성 거부를 같은 환경에서 재시도하거나 우회하지 않았고, 인증 파일·키체인·`.env`도 읽지 않았다.
+- `muse_enabled`와 `muse_auto_routing` 코드 기본값은 둘 다 false다. 배포 환경의 override 상태는 확인되지 않아 account_usage의 유효 `muse_auto_routing` 값도 미확인이다. 검증 완료 전에는 두 값을 변경하거나 활성화하지 않는다.
+- 계정 행에 대한 최신 근거는 이 문서 앞부분에 기록한 21:56 KST 조회다. 이번 후속 확인에서 DB/계정 API를 다시 조회하지 않았다. 그러므로 `muse 1` enabled, `내 Muse` disabled라는 값은 이전 관측으로만 보고하고 현재 상태로 단정하지 않는다.

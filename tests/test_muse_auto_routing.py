@@ -6,13 +6,21 @@ from importlib import import_module
 import pytest
 from helpers import run_events
 from test_orchestrator import _orch, _session
-from test_worker_routing import accounts, quota, result, spawn, synthetic  # noqa: F401  (fixtures)
+
+pytest_plugins = ["test_worker_routing"]
+
+from test_worker_routing import (  # noqa: F401  (fixtures imported for pytest)
+    quota,
+    result,
+    spawn,
+    synthetic,
+)
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import EngineAccount
 from ttakkari.orchestrator.runtime import issue_token, model_routing_note
-from ttakkari.runs import profiles, usage
+from ttakkari.runs import usage
 from ttakkari.runs import worker_routing as routing
 
 SONNET = "claude-sonnet-5-5-high"

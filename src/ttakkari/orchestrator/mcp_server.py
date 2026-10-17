@@ -58,6 +58,11 @@ async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **p
     return await _call(method, path, body, prefix="/api/agent", params=params)
 
 
+async def _pms(body: dict[str, Any]) -> str:
+    from ttakkari.oplog.limits import cap_text
+    return cap_text(await _agent("POST", "/pms", body))  # 서버 요약이 상한 안이지만 보호 영역 저장 사고를 막는 마지막 방어선
+
+
 @query_tool
 async def library_catalog() -> str:
     """Browse context library categories, knowledge/work-history collections and project landmarks before choosing
@@ -468,7 +473,7 @@ async def luna_common30_v2_cancel(job_id: str) -> str:
 async def list_pms_projects(query: str | None = None, scope: Literal["all", "personal", "work"] = "all") -> str:
     """List PMS projects and their status/progress. Agents manage PMS/WBS on the user's behalf.
     Work sessions see work projects only. Use manage_pms for project details and the full WBS tree."""
-    return await _agent("POST", "/pms", {"operation": "list_projects", "data": {"q": query, "scope": scope}})
+    return await _pms({"operation": "list_projects", "data": {"q": query, "scope": scope}})
 
 
 @server.tool()
@@ -480,8 +485,9 @@ async def create_pms_task(project_id: str, title: str, description: str = "",
                           status: Literal["todo", "doing", "review", "done"] = "todo", progress: int = 0) -> str:
     """Create a WBS task, including hierarchy, predecessors, owner, dates and progress. Agents can manage PMS
     without another approval. Dates are YYYY-MM-DD; leave unknown dates empty. Use real task UUIDs for links.
-    Returns the saved task and recalculated project tree. Use manage_pms to update/move/delete tasks."""
-    return await _agent("POST", "/pms", {"operation": "create_task", "project_id": project_id, "data": {
+    Returns a compact summary: the saved task, its ancestor path (status/progress after roll-up) and project counts,
+    not the whole tree. Use manage_pms list_tasks to read the tree and to update/move/delete tasks."""
+    return await _pms({"operation": "create_task", "project_id": project_id, "data": {
         "title": title, "description": description, "priority": priority, "parent_id": parent_id,
         "after_id": after_id, "predecessors": predecessors or [], "assignee": assignee,
         "start_date": start_date, "end_date": end_date, "status": status, "progress": progress}})
@@ -500,7 +506,10 @@ async def manage_pms(operation: PmsOperation, project_id: str | None = None, ite
     list_tasks reads the numbered WBS tree in pages and is compact by default: id, wbs, title, status, progress,
     parent_id, child_count; 50 per page. Optional data: parent_id (direct children only), depth, max_depth (0=top
     level), status=todo|doing|review|done, q (title substring), limit (<=200; <=25 when compact=false), offset,
-    compact=false (adds description, priority, assignee, dates, predecessors; use only on a narrowed set).
+    compact=false (adds description, priority, assignee, dates, predecessors; use only on a narrowed set),
+    max_chars (500-16000, default 6000; trims the page and keeps next_offset consistent).
+    create/update/move/delete_task return a summary only: task (not for delete), ancestors (compact, roll-up
+    status/progress), project (progress, counts, task_total); never the whole tree.
     Response: tasks, total (after filters), project_total, has_more, next_offset; call again with
     data.offset=next_offset until has_more is false. Browse top-down: max_depth=1 first, then parent_id per branch.
     create/update_task data: title, description, priority,
@@ -512,8 +521,7 @@ async def manage_pms(operation: PmsOperation, project_id: str | None = None, ite
     get_project/list_milestones and delete operations need no data; dashboard accepts today.
     Null in update data clears nullable fields; omitted fields stay unchanged. Delete project/task removes
     descendants, so first read the target and act within the user's task scope. Unknown fields are rejected."""
-    return await _agent("POST", "/pms", {"operation": operation, "project_id": project_id,
-                                          "item_id": item_id, "data": data or {}})
+    return await _pms({"operation": operation, "project_id": project_id, "item_id": item_id, "data": data or {}})
 
 
 @orchestrator_tool

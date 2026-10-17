@@ -189,6 +189,48 @@ async def tasks_page(db: AsyncSession, project_id: uuid.UUID, *, parent_id: uuid
             "next_offset": end if more else None}
 
 
+def _ancestor_chain(nodes: dict[uuid.UUID, Node], start: uuid.UUID | None) -> list[Node]:
+    """start 부터 최상위까지 거슬러 올라간 뒤 위에서 아래 순서로 돌려준다."""
+    chain: list[Node] = []
+    seen: set[uuid.UUID] = set()
+    while start is not None and start in nodes and start not in seen:
+        seen.add(start)
+        chain.append(nodes[start])
+        start = nodes[start].task.parent_id
+    return chain[::-1]
+
+
+def write_summary(ordered: list[Node], nodes: dict[uuid.UUID, Node], task_id: uuid.UUID | None,
+                  parent_ids: list[uuid.UUID | None], project_id: uuid.UUID, today: date | None = None) -> dict[str, Any]:
+    """에이전트 쓰기 응답. 전체 트리 대신 저장된 작업 1건, 집계가 바뀔 수 있는 조상 경로, 프로젝트 카운트만 담는다.
+
+    웹 화면이 쓰는 REST 응답(전체 트리)은 그대로 두고 MCP 경로에서만 쓴다.
+    """
+    today = today or today_kst()
+    out: dict[str, Any] = {}
+    chain_ids: set[uuid.UUID] = set()
+    chains: list[list[Node]] = []
+    if task_id is not None and task_id in nodes:
+        n = nodes[task_id]
+        task = task_out(n, today)
+        task["description_length"] = len(task.pop("description") or "")
+        out["task"] = task
+        chains.append(_ancestor_chain(nodes, n.task.parent_id))
+    for pid in parent_ids:
+        chains.append(_ancestor_chain(nodes, pid))
+    ancestors: list[dict[str, Any]] = []
+    for chain in chains:
+        for a in chain:
+            if a.task.id not in chain_ids:
+                chain_ids.add(a.task.id)
+                ancestors.append({**task_compact(a), "depth": a.depth})
+    out["ancestors"] = ancestors
+    out["project"] = {"id": str(project_id), "progress": overall(ordered),
+                      "counts": counts_of([n for n in ordered if n.is_leaf], today), "task_total": len(ordered)}
+    out["hint"] = "전체 트리는 포함하지 않습니다. list_tasks(parent_id, max_depth, status, q, offset)로 필요한 가지만 읽으세요."
+    return out
+
+
 # ---- 상태·진행률 동기화(말단 작업)
 
 def set_status(t: PmsTask, new: str) -> None:

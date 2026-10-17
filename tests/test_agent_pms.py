@@ -34,7 +34,7 @@ async def test_agent_manages_projects_tree_dependencies_milestones_and_notes(cli
     assert b["depth"] == 1 and b["predecessors"] == [a["id"]]
     assert (await call(client, h, "update_task", item_id=a["id"], data={"status": "done"}))["task"]["progress"] == 100
     moved = await call(client, h, "move_task", item_id=b["id"], data={"parent_id": None, "index": 0})
-    assert next(t for t in moved["tasks"] if t["id"] == b["id"])["depth"] == 0
+    assert "tasks" not in moved and moved["task"]["depth"] == 0
     m = await call(client, h, "create_milestone", project_id=pid, data={"title": "검토", "due_date": "2026-12-01"})
     assert (await call(client, h, "update_milestone", item_id=m["id"], data={"done": True}))["done"]
     assert len((await call(client, h, "list_milestones", project_id=pid))["milestones"]) == 1
@@ -225,10 +225,73 @@ async def test_list_tasks_default_page_caps_large_projects_and_stays_small(clien
     for i in range(60):
         await call(client, h, "create_task", project_id=pid, data={"title": f"작업 {i:02d} " + "가" * 20, "description": "본문 " * 500})
     r = await call(client, h, "list_tasks", project_id=pid)
-    assert r["returned"] == 50 and r["total"] == 60 and r["has_more"] and r["next_offset"] == 50
-    assert len(json.dumps(r, ensure_ascii=False)) < 15_000
-    last = await _list(client, h, pid, offset=r["next_offset"])
-    assert last["returned"] == 10 and not last["has_more"]
+    # 50개 쪽이어도 6,000자 상한이 먼저 걸리면 뒤를 덜고 next_offset 으로 이어 읽게 한다.
+    assert len(json.dumps(r, ensure_ascii=False)) <= 6000
+    assert r["total"] == 60 and r["has_more"] and r["truncated"] and r["next_offset"] == r["returned"] < 50
+    seen, page = [], r
+    while True:
+        seen += [t["id"] for t in page["tasks"]]
+        if not page["has_more"]:
+            break
+        page = await _list(client, h, pid, offset=page["next_offset"])
+        assert len(json.dumps(page, ensure_ascii=False)) <= 6000
+    assert len(seen) == len(set(seen)) == 60
+
+
+async def test_list_tasks_max_chars_bounds_and_full_mode_with_huge_descriptions(client, auth, make_dir):
+    h = await agent(client, auth, make_dir)
+    pid = (await call(client, h, "create_project", data={"name": "본문 큰 프로젝트"}))["id"]
+    for i in range(5):
+        await call(client, h, "create_task", project_id=pid, data={"title": f"작업 {i}", "description": "가" * 20_000})
+    full = await _list(client, h, pid, compact=False, limit=25, max_chars=16000)
+    assert len(json.dumps(full, ensure_ascii=False)) <= 16000 and full["returned"] >= 1
+    default = await _list(client, h, pid, compact=False)
+    assert len(json.dumps(default, ensure_ascii=False)) <= 6000
+    for bad in (499, 16001):
+        r = await client.post("/api/agent/pms", headers=h, json={"operation": "list_tasks", "project_id": pid,
+                                                                  "data": {"max_chars": bad}})
+        assert r.status_code == 422
+
+
+async def test_task_writes_return_small_summary_not_whole_tree(client, auth, make_dir):
+    h = await agent(client, auth, make_dir)
+    pid = (await call(client, h, "create_project", data={"name": "쓰기 요약"}))["id"]
+    parent = (await call(client, h, "create_task", project_id=pid, data={"title": "상위"}))["task"]
+    mid = (await call(client, h, "create_task", project_id=pid, data={"title": "중간", "parent_id": parent["id"]}))["task"]
+    for i in range(80):
+        await call(client, h, "create_task", project_id=pid, data={"title": f"형제 {i} " + "나" * 30, "description": "본문 " * 500})
+    leaf = await call(client, h, "create_task", project_id=pid,
+                      data={"title": "말단", "parent_id": mid["id"], "description": "설명 " * 2000})
+    assert set(leaf) == {"task", "ancestors", "project", "hint"}
+    assert "tasks" not in leaf and "description" not in leaf["task"] and leaf["task"]["description_length"] == 6000
+    assert [a["id"] for a in leaf["ancestors"]] == [parent["id"], mid["id"]]
+    assert leaf["project"]["task_total"] == 83 and leaf["project"]["counts"]["total"] == 81
+
+    upd = await call(client, h, "update_task", item_id=leaf["task"]["id"], data={"status": "done"})
+    assert upd["task"]["progress"] == 100 and [a["status"] for a in upd["ancestors"]] == ["done", "done"]
+    assert upd["project"]["counts"]["done"] == 1
+
+    moved = await call(client, h, "move_task", item_id=leaf["task"]["id"], data={"parent_id": parent["id"]})
+    assert moved["task"]["parent_id"] == parent["id"]
+    assert {a["id"] for a in moved["ancestors"]} == {parent["id"], mid["id"]}  # 새 경로와 떠난 경로 모두
+
+    gone = await call(client, h, "delete_task", item_id=mid["id"])
+    assert gone["removed"] == 1 and gone["deleted_id"] == mid["id"] and "task" not in gone
+    assert [a["id"] for a in gone["ancestors"]] == [parent["id"]]
+    for r in (leaf, upd, moved, gone):
+        assert len(json.dumps(r, ensure_ascii=False)) < 3000
+
+
+async def test_task_write_summary_respects_project_and_work_scope(client, auth, make_dir):
+    personal = await agent(client, auth, make_dir)
+    work = await agent(client, auth, make_dir, pool="work")
+    p = (await call(client, personal, "create_project", data={"name": "개인"}))["id"]
+    task = (await call(client, personal, "create_task", project_id=p, data={"title": "t"}))["task"]
+    for op, kw in (("update_task", {"item_id": task["id"], "data": {"title": "x"}}),
+                   ("move_task", {"item_id": task["id"], "data": {"parent_id": None}}),
+                   ("delete_task", {"item_id": task["id"]}), ("create_task", {"project_id": p, "data": {"title": "y"}})):
+        r = await client.post("/api/agent/pms", headers=work, json={"operation": op, **kw})
+        assert r.status_code == 404 and "task" not in r.text and "ancestors" not in r.text
 
 
 async def test_list_tasks_filters_respect_project_and_work_scope(client, auth, make_dir):

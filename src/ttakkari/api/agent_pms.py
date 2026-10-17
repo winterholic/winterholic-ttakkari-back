@@ -13,6 +13,7 @@ from ttakkari.api import pms
 from ttakkari.api.agent import _session
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
+from ttakkari.oplog.limits import clamp_chars, fit
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.pms import PmsOperation
 from ttakkari.pms import service as svc
@@ -49,6 +50,7 @@ class TaskQuery(BaseModel):
     compact: bool = True
     limit: int | None = Field(default=None, ge=1, le=svc.COMPACT_LIMIT_MAX)  # 기본 compact 50 / 전체 25
     offset: int = Field(default=0, ge=0)
+    max_chars: int | None = Field(default=None, ge=500, le=16000)  # 응답 크기 상한. 기본 6000
 
 
 class DashboardQuery(BaseModel):
@@ -67,6 +69,37 @@ def _data(model: type[BaseModel], value: dict[str, Any]) -> Any:
         return model.model_validate(value)
     except ValidationError as exc:
         raise HTTPException(422, json.loads(exc.json())) from exc
+
+
+def _fit_page(page: dict[str, Any], max_chars: int | None) -> dict[str, Any]:
+    """응답이 상한을 넘으면 뒤쪽 작업을 덜고 next_offset 을 맞춰, 같은 호출로 이어 읽게 한다."""
+    limit = clamp_chars(max_chars)
+    tasks = page["tasks"]
+    sizes = [len(json.dumps(t, ensure_ascii=False)) + 1 for t in tasks]
+    base = len(json.dumps({**page, "tasks": [], "truncated": True, "hint": "x" * 120}, ensure_ascii=False))
+    kept, used = 0, base
+    for size in sizes:
+        if kept and used + size > limit:
+            break
+        kept, used = kept + 1, used + size
+    if kept < len(tasks):
+        end = page["offset"] + kept
+        page = {**page, "tasks": tasks[:kept], "returned": kept, "has_more": True, "next_offset": end,
+                "truncated": True,
+                "hint": "응답이 상한(max_chars)을 넘어 줄였습니다. next_offset 으로 이어 읽거나 parent_id·q 로 좁히세요."}
+    return fit(page, limit)  # 작업 1건이 상한을 넘는 경우(긴 description)는 문자열을 줄인다
+
+
+async def _write_result(db: Any, op: str, item_id: uuid.UUID, project_id: uuid.UUID, old_parent: uuid.UUID | None,
+                        result: dict[str, Any]) -> dict[str, Any]:
+    """작업 쓰기 응답을 요약으로 바꾼다. REST 가 돌려주는 전체 트리는 에이전트에게 주지 않는다."""
+    ordered, nodes = await svc.tree(db, project_id)
+    deleted = op == "delete_task"
+    summary = svc.write_summary(ordered, nodes, None if deleted else item_id,
+                                [old_parent] if op in ("move_task", "delete_task") else [], project_id)
+    if deleted:
+        summary = {"removed": result.get("removed"), "deleted_id": str(item_id), **summary}
+    return summary
 
 
 def _required(value: uuid.UUID | None, name: str) -> uuid.UUID:
@@ -123,9 +156,10 @@ async def manage(body: PmsIn, sid: AgentSession, db: Db, request: Request) -> An
         if not query.compact and limit > svc.FULL_LIMIT_MAX:
             raise HTTPException(422, {"code": "limit_too_large", "message":
                                       f"compact=false 에서는 limit 을 {svc.FULL_LIMIT_MAX} 이하로 쓰세요. parent_id·q 로 좁히거나 offset 으로 나눠 읽으세요."})
-        return await svc.tasks_page(db, project_id, parent_id=query.parent_id, depth=query.depth, max_depth=query.max_depth,
+        page = await svc.tasks_page(db, project_id, parent_id=query.parent_id, depth=query.depth, max_depth=query.max_depth,
                                     status_=query.status, q=query.q, compact=query.compact, limit=limit,
                                     offset=query.offset)
+        return _fit_page(page, query.max_chars)
     if op == "list_milestones":
         _data(EmptyData, data)
         return await pms.list_milestones(project_id, **common)
@@ -153,12 +187,20 @@ async def manage(body: PmsIn, sid: AgentSession, db: Db, request: Request) -> An
             raise HTTPException(403, "회사 프로젝트를 개인 범위로 옮길 수 없습니다.")
         record(db, actor="agent", action=f"pms.agent.{op}", target_type="pms_project", target_id=project_id,
                detail={"session_id": str(sid), "item_id": str(item_id) if item_id else None, "fields": list(data)})
-        return await fn(ident, body=model, **common)
+        old_parent = (await pms._task(db, item_id)).parent_id if op == "move_task" else None
+        result = await fn(ident, body=model, **common)
+        if op in ("create_task", "update_task", "move_task"):
+            task_id = uuid.UUID(result["task"]["id"])
+            return await _write_result(db, op, task_id, project_id, old_parent, result)
+        return result
     _data(EmptyData, data)
     if op == "delete_project":
         await pms.delete_project(project_id, **common, request=request)
         return {"deleted": True}
     record(db, actor="agent", action=f"pms.agent.{op}", target_type="pms_project", target_id=project_id,
            detail={"session_id": str(sid), "item_id": str(item_id)})
+    old_parent = (await pms._task(db, item_id)).parent_id if op == "delete_task" else None
     result = await deletes[op](item_id, **common)
+    if op == "delete_task":
+        return await _write_result(db, op, item_id, project_id, old_parent, result)
     return result if result is not None else {"deleted": True}

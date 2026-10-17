@@ -64,6 +64,14 @@ class MuseAdapter:
 
     def parse_line(self, obj: dict[str, Any], state: ParseState, cwd: Path) -> list[Normalized]:
         method, p = obj.get('method'), obj.get('params') or {}
+        if method in {'usage/changed', 'muse/quota'}:
+            from ttakkari.runs.usage import muse_usage_from_probe
+            observation = muse_usage_from_probe({'account': {'state': 'accountLogin'}, 'usage': {'usage': p}})
+            if observation.windows and (not state.account_usage or
+                    observation.updated_at > (state.account_usage.get('updated_at') or 0)):
+                state.account_usage = observation.as_dict()
+                return [Normalized('account.usage', state.account_usage)]
+            return []
         if method == 'muse/sessionReady':
             session_id = p.get('sessionId')
             if state.engine_session_id and state.engine_session_id != session_id:

@@ -65,6 +65,12 @@ try{
   }
   emit('muse/sessionReady',{sessionId,modelId:opened.session.modelId});
   host.connection.onNotification(frame=>{
+    // Subscription quota is account-wide: it has no sessionId. Do not filter
+    // it with the session-scoped transcript frames below.
+    if(frame.method==='usage/changed'){
+      emit(frame.method,frame.params);
+      return;
+    }
     if(!active||frame.params?.sessionId!==sessionId)return;
     emit(frame.method,frame.params);
     if(frame.method==='view/gap'){

@@ -87,3 +87,33 @@ async def test_disabled_muse_run_fails_without_mock_success(client, auth, new_se
     assert done['status'] == 'failed'
     assert 'disabled' in done['error']
     assert done['result_text'] is None
+
+
+async def test_muse_observation_survives_empty_read_and_database_reload(client, auth, monkeypatch):
+    import time
+    from uuid import UUID
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.runs import usage, usage_store
+
+    async def empty(_config_dir):
+        return usage.Usage(login='ok', error='새 관측값 없음')
+
+    monkeypatch.setattr(usage, '_fetch_muse', empty)
+    created = await client.post('/api/accounts', headers=auth, json={'name': 'Quota Muse', 'engine': 'muse'})
+    aid = UUID(created.json()['id'])
+    observed_at = time.time() - 600
+    data = usage.Usage(windows=[usage.Window('five_hour', '5시간', 35, int(time.time()+3600))],
+                       source='muse_cli', updated_at=observed_at, plan='Power Usage', login='ok')
+    usage_store.install()
+    usage.remember_observation(aid, data.as_dict())
+    await usage_store.flush()
+    usage.clear_cache()
+    async with sessionmaker()() as db:
+        await usage_store.load_latest(db)
+    rows = (await client.get('/api/accounts/usage?refresh=true', headers=auth)).json()
+    row = next(row for row in rows if row['id'] == str(aid))
+    assert row['windows'][0]['percent'] == 35
+    assert abs(row['updated_at'] - observed_at) < .001
+    assert row['source'] == 'muse_cli' and row['plan'] == 'Power Usage'
+    assert row['error'] == '새 관측값 없음'

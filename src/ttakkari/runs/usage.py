@@ -27,7 +27,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -232,6 +232,18 @@ def remember_stream(account_id: uuid.UUID, windows: list[Window]) -> None:
     if windows:
         _stream[account_id] = Usage(windows=windows, source="stream", updated_at=time.time())
         _emit(account_id, _stream[account_id])
+
+
+def remember_observation(account_id: uuid.UUID, body: dict[str, Any]) -> None:
+    """Retain the provider's measurement time; replays never refresh old quota."""
+    if body.get('source') != 'muse_cli' or not body.get('windows') or not body.get('updated_at'):
+        return
+    u = Usage(**{**body, 'windows': [Window(**w) for w in body['windows']]})
+    prior = cached(account_id)
+    if prior and (prior.updated_at or 0) >= u.updated_at:
+        return
+    _stream[account_id] = u
+    _emit(account_id, u)
 
 
 # ---- Claude: 구독 사용량 API
@@ -472,8 +484,15 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     ttl = max(TTL, get_settings().usage_poll_seconds)
     if hit and not refresh and time.time() - hit[0] < ttl:
         return hit[1]
+    observed_now = True
     if engine == "muse":
         u = await _fetch_muse(config_dir)
+        prior = cached(account_id)
+        if u.login == 'missing':
+            _stream.pop(account_id, None)
+        elif not u.windows and u.login == 'ok' and prior and prior.source == 'muse_cli' and prior.windows:
+            u = replace(prior, login=u.login, error=u.error or 'Muse 새 사용량 미관측 · 마지막 관측값')
+            observed_now = False
     elif engine == "antigravity":
         u = await _fetch_antigravity(config_dir) if config_dir else await _fetch_antigravity()
         _agy_cache_roots[account_id] = config_dir
@@ -486,7 +505,7 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     else:
         u = await _fetch_codex(config_dir) or await asyncio.to_thread(codex_usage, config_dir)
     _cache[account_id] = (time.time(), u)
-    if u.source in ("api", "antigravity_cli", "muse_cli"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
+    if observed_now and u.source in ("api", "antigravity_cli", "muse_cli"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
         _emit(account_id, u)
     return u
 
@@ -496,10 +515,14 @@ def muse_usage_from_probe(body: dict[str, Any]) -> Usage:
     account_state = (body.get("account") or {}).get("state")
     login = "ok" if account_state == "accountLogin" else "missing" if account_state == "loggedOut" else "unknown"
     snapshot = (body.get("usage") or {}).get("usage") or {}
+    if not isinstance(snapshot, dict):
+        return Usage(error="Muse 사용량 응답 형식 오류", login=login)
     observed = snapshot.get("observedAtMs")
     windows = []
     for window_name, key in (("window", "five_hour"), ("weekly", "seven_day")):
         window = snapshot.get(window_name) or {}
+        if not isinstance(window, dict):
+            return Usage(error="Muse 사용량 창 형식 오류", login=login)
         percent, resets = window.get("usedPercent"), window.get("resetsAtMs")
         if (not isinstance(percent, int) or isinstance(percent, bool) or percent < 0
                 or not isinstance(resets, int) or isinstance(resets, bool) or resets <= 0):
@@ -528,9 +551,40 @@ async def _fetch_muse(config_dir: str | None) -> Usage:
         body = json.loads(stdout)
         if not isinstance(body, dict):
             return Usage(error="Muse 조회 응답 형식 오류")
-        return muse_usage_from_probe(body)
+        result = muse_usage_from_probe(body)
+        if result.login == 'ok' and not result.windows:
+            native = await _fetch_muse_native(settings.muse_bin, env)
+            refreshed = muse_usage_from_probe(native)
+            if refreshed.windows:
+                return refreshed
+            result.plan = native.get('plan')
+            status = native.get('quota_status', 'unknown')
+            result.error = ('Muse 로그인 확인 · /usage 구독 사용량 미관측: ' + status)
+        return result
     except (OSError, ValueError, TimeoutError) as error:
         return Usage(error=f"Muse 조회 실패({type(error).__name__})")
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), 4)
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+
+
+async def _fetch_muse_native(muse_bin: str, env: dict[str, str]) -> dict[str, Any]:
+    """A fresh single-threaded helper owns the native terminal and its child."""
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(sys.executable, str(Path(__file__).with_name('muse_usage.py')),
+            muse_bin, env=env, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, _stderr = await asyncio.wait_for(proc.communicate(), 23)
+        if proc.returncode != 0:
+            return {'usage': {}, 'quota_status': f'helper_exit_{proc.returncode}'}
+        body = json.loads(stdout)
+        return body if isinstance(body, dict) else {'usage': {}, 'quota_status': 'invalid_response'}
     finally:
         if proc is not None and proc.returncode is None:
             proc.terminate()
@@ -562,6 +616,7 @@ def cached(account_id: uuid.UUID) -> Usage | None:
 
 def forget(account_id: uuid.UUID) -> None:
     _cache.pop(account_id, None)
+    _stream.pop(account_id, None)
 
 
 def clear_cache() -> None:

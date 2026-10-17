@@ -65,6 +65,25 @@ class MuseAdapterTests(unittest.TestCase):
         self.assertEqual(self.state.context_window, 100)
         self.assertIsNone(self.state.cost_usd)
 
+    def test_subscription_observation_is_not_discarded(self):
+        quota = {'tier': 'power', 'observedAtMs': 1792216800000,
+                 'window': {'usedPercent': 12, 'resetsAtMs': 1792226800000},
+                 'weekly': {'usedPercent': 30, 'resetsAtMs': 1792656800000}}
+        events = self.event('usage/changed', quota)
+        self.assertEqual(events[0].type, 'account.usage')
+        self.assertEqual(events[0].payload['windows'][0]['percent'], 12)
+        self.assertEqual(events[0].payload['updated_at'], 1792216800)
+        self.assertEqual(self.state.account_usage['plan'], 'power')
+        # The final explicit read uses the same account-wide event contract.
+        self.event('muse/quota', {**quota, 'observedAtMs': 1792216801000})
+        self.assertEqual(self.state.account_usage['updated_at'], 1792216801)
+        self.event('usage/changed', quota)  # delayed/replayed older report
+        self.assertEqual(self.state.account_usage['updated_at'], 1792216801)
+
+    def test_invalid_subscription_observation_does_not_replace_valid_one(self):
+        self.assertEqual(self.event('usage/changed', {'window': None}), [])
+        self.assertIsNone(self.state.account_usage)
+
     def test_error_frame_is_not_silent(self):
         events = self.event('muse/error', {'message': 'Missing auth', 'kind': 'authRequired'})
         self.assertTrue(self.state.is_error)

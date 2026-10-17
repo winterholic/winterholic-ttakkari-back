@@ -1014,6 +1014,7 @@ class RunManager:
                     account_id: uuid.UUID | None = None, spec: LaunchSpec | None = None) -> None:
         assert proc.stdout is not None
         seen_limits = None
+        seen_account_usage = None
         while True:
             line = await proc.stdout.readline()
             if not line:
@@ -1047,6 +1048,10 @@ class RunManager:
                 # 실행 중 엔진이 알려 준 사용량을 바로 반영해 수집 주기 사이에도 값이 신선하게 한다.
                 seen_limits = state.rate_limits
                 usage_mod.remember_stream(account_id, usage_mod.windows_from_stream(seen_limits or {}))
+            if account_id is not None and state.account_usage is not seen_account_usage:
+                seen_account_usage = state.account_usage
+                if seen_account_usage:
+                    usage_mod.remember_observation(account_id, seen_account_usage)
             if not produced:
                 continue
             for n in produced:

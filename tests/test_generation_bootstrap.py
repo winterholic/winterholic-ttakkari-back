@@ -274,11 +274,20 @@ async def test_bootstrap_reports_its_verified_outcome_to_the_waiting_user(tmp_pa
     assert controller.store.get(job["id"])["bootstrap_notification"]["sent"] == 1
 
 
-async def test_supervisor_plist_and_crash_redirect_use_the_frozen_release(tmp_path, monkeypatch):
+async def test_supervisor_plist_and_crash_redirect_use_the_frozen_release(tmp_path, monkeypatch, make_git_dir):
     import plistlib
+
+    from conftest import git
 
     from ttakkari import deployment
     from ttakkari.generation_bootstrap import Services
+    # pin은 유효한 프로젝트 저장소를 요구한다. 릴리스 아카이브 안에서 돌 때도 마찬가지다.
+    source = make_git_dir()
+    (source / "deploy").mkdir()
+    (source / "deploy/generation-contract.json").write_text("{}")
+    git(source, "add", "-A")
+    git(source, "commit", "-qm", "contract")
+    monkeypatch.setattr(get_settings(), "deploy_source_root", source)
     controller = Controller(tmp_path / "state")
     host = Services(controller)
     host.launch_agents = tmp_path / "LaunchAgents"

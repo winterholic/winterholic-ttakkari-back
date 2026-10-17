@@ -27,7 +27,11 @@ def test_resolve_source_root_rejects_a_release_like_path(tmp_path, monkeypatch):
 
 def test_resolve_source_root_returns_the_repo_top_by_default(monkeypatch):
     monkeypatch.setattr(get_settings(), "deploy_source_root", None)
-    assert resolve_source_root().resolve() == Path(__file__).resolve().parents[1]
+    try:
+        result = resolve_source_root()
+    except RuntimeError:
+        pytest.skip("release archive has no git checkout")
+    assert result.resolve() == Path(__file__).resolve().parents[1]
 
 
 def test_release_archive_rejects_a_non_git_source(tmp_path):

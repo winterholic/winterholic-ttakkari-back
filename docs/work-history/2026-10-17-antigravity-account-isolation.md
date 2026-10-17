@@ -21,3 +21,7 @@ ParaGravity의 pinned source `python3 -m unittest discover -s tests -v`는 fake 
 ## 최신 통합 검증
 
 첫 원격 main push는 다른 세션의 Muse 변경이 먼저 반영돼 non-fast-forward로 거부됐다. force push 없이 fetch했고 Muse adapter·account·profiles·usage의 변경을 확인한 뒤 98433719addf6e2a8c7913ce3a3fa7c75c93dd22 위로 충돌 없이 rebase했다. 기존 diff가 우리 의도한 3개 구현 표면에만 남아 있음을 확인했다. 위 테스트 명령에 tests/test_muse_api.py, unit_tests/test_muse_registration.py, unit_tests/test_muse_usage.py를 추가한 최종 결과는 172 passed in 31.20s다. Ruff와 diff check도 다시 통과했다. 최종 /usage 재조회도 기존 HOME에서 SUCCESS/exit0으로 유지됐으며 모델 응답·재개·MCP·두 identity는 검증하지 않았다. configured MCP browser와 임시 localhost 보고서 서버 모두 종료했다. 검증된 선행 수정만 clean SHA로 push하고 generation 배포를 예약한다. 예약 수락을 운영 성공으로 보고하지 않는다.
+
+## 배포 예약 거절 (운영 미반영)
+
+요청 SHA `2cecd7a67b209224822726ef295709dc1fb821fc`는 원격 main과 일치·전용 worktree clean 확인 후 request_backend_deploy에 전달했으나 backend가 409 conflict `예약한 커밋과 작업 트리가 다릅니다. 변경을 커밋하고 다시 배포하세요.`를 반환했다. 예약 ID는 없고 미접수다. 확인한 canonical back은 HEAD9843371에 다른 작업의 untracked `unit_tests/test_qwen_local_contract.py`가 있었다. tracked 부분만 원격 main으로 fast-forward해 SHA를 맞췄고 해당 파일은 보존했다. deploy.ensure_revision은 untracked도 dirty로 거부하므로 동일 요청을 재시도하거나 source root·clean guard를 우회하지 않았다. 사용자 승인 질문 없이 안전한 원격 코드/보고서 전달까지 진행했다. 이 실패는 배포 예약 단계의 작업 트리 조건이며 Antigravity 엔진의 운영 실패가 아니다. 운영 기능·실계정 검증·배포는 미완료다. 후속 배포는 그 Qwen 작업의 파일이 정리된 canonical clean 상태에서 검증한 SHA로 재예약해야 한다.

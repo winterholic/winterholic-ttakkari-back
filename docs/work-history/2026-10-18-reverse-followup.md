@@ -66,5 +66,14 @@ task_type general(Sonnet 우선, 정책표 그대로). 실행은 worker 계정�
 
 ## 배포
 
-- 백엔드 main 푸시 후 `request_backend_deploy` 전체 SHA 예약(예약 ID 아래).
-- 프론트 main 직접 반영(기존 방식).
+- 백엔드 main `d142b15` 푸시 후 `request_backend_deploy` 전체 SHA 예약.
+  예약 ID `45e8855b-b1bf-40fa-af20-ba3cd13b19c0`, 상태 requested(컨트롤러가
+  테스트 포함 검증 후 전환, acceptance가 성공은 아님).
+- 프론트 main 직접 반영(기존 방식): `d179e8f`.
+- 운영 경로 실측: 둘 다 불가로 기록한다. (1) 이 실행 환경: Postgres 접속 불가
+  (loopback TCP·유닉스 소켓 connect EPERM)로 실제 `_pipeline` 실행 불가.
+  테스트용 바꿔치기는 과제에서 금지. (2) 배포 후 운영 API: 터널
+  (https://ttakkari.winterholic.net)은 SPA만 서빙하고 `/api/*`가 없어 외부에서
+  API 호출 불가. 소유자·에이전트 인증 수단도 이 세션에 없다.
+  운영 측정은 사용자가 앱(/reverse 화면 또는 대화에서 "morluto/rea 분석해줘")으로
+  작업을 시작한 뒤 단계 기록의 엔진/모델/계정을 확인하는 방식으로 해야 한다.

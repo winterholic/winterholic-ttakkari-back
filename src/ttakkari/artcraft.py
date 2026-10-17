@@ -85,6 +85,16 @@ def _binary() -> Path:
     return path
 
 
+def binary_path() -> Path:
+    """작업 세션이 MCP 서버·CLI 로 부르는 진입점. 실행할 수 없으면 ArtcraftError."""
+    return _binary()
+
+
+def binary_ok() -> bool:
+    path = root() / "bin" / "artcraft"
+    return path.is_file() and os.access(path, os.X_OK)
+
+
 def registry() -> dict[str, dict[str, Any]]:
     """registry.json 의 앱 정의. 앱 이름 형식이 틀린 항목은 버린다."""
     try:

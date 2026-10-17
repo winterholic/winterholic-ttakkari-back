@@ -164,8 +164,33 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig) -> str | None:
     return None
 
 
+def check_mcp_paths(tool_input: object, cwd: Path, cfg: GuardConfig, depth: int = 0) -> str | None:
+    """ArtCraft MCP 도구 인자의 절대 경로가 보호 영역·민감 파일이면 막는다. 경로를 가두는 옵션이 없는 앱의 보험이다."""
+    if depth > 6:
+        return None
+    if isinstance(tool_input, str):
+        if "\x00" in tool_input or not (tool_input.startswith(("/", "~/")) and len(tool_input) < 4096):
+            return None
+        p = _resolve(tool_input, cwd)
+        if _protected(p, cfg):
+            return f"ttakkari 보호 영역 접근 차단: {tool_input}"
+        if is_sensitive(p):
+            return f"민감 파일 접근 차단: {tool_input}"
+    elif isinstance(tool_input, dict):
+        for value in tool_input.values():
+            if reason := check_mcp_paths(value, cwd, cfg, depth + 1):
+                return reason
+    elif isinstance(tool_input, list):
+        for value in tool_input[:200]:
+            if reason := check_mcp_paths(value, cwd, cfg, depth + 1):
+                return reason
+    return None
+
+
 def evaluate(tool: str, tool_input: dict, cwd: str | None, cfg: GuardConfig) -> str | None:
     base = Path(cwd or os.getcwd())
+    if tool.startswith("mcp__artcraft_"):
+        return check_mcp_paths(tool_input, base, cfg)
     if tool == "Bash":
         return check_bash(str(tool_input.get("command", "")), base, cfg)
     if tool in WRITE_TOOLS or tool in READ_TOOLS:

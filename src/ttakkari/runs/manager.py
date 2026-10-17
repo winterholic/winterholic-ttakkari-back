@@ -18,7 +18,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari import generation
+from ttakkari import artcraft_tasks, generation
 from ttakkari.agents.antigravity import AntigravityAdapter
 from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
 from ttakkari.agents.claude import ClaudeAdapter
@@ -711,7 +711,9 @@ class RunManager:
         # 업로드 폴더는 guard 보호 영역(~/.ttakkari) 안이라 에이전트가 첨부를 읽으려면 허용 목록에 있어야 한다.
         write_roots = [root, outbox, s.uploads_root, s.inbox_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
 
-        base_prompt = await _compose_prompt(db, run)
+        # ArtCraft 작업(ADR 0039)은 첨부를 작업 폴더로 복사해 안내하고 앱 MCP 서버를 붙인다. 일반 세션은 plan 이 None.
+        art_plan = await _artcraft_plan(db, sess, run, outbox)
+        base_prompt = art_plan.prompt if art_plan else await _compose_prompt(db, run)
         context_handoff = (run.usage or {}).get("context_handoff") or {}
         base_prompt = context_handoff.get("text", "") + base_prompt
         if (run.usage or {}).get("context_routing", {}).get("action") == "review":
@@ -723,6 +725,8 @@ class RunManager:
             ctx = await context_usage.latest(db, sess)
             base_prompt = f"[내 대화 컨텍스트 사용률: {context_usage.describe(ctx)}]\n" + base_prompt
         system_note = await _system_note(db, outbox, sess, scope="work" if sess.pool == "work" else "all")
+        if art_plan:
+            system_note += "\n\n" + art_plan.note
         h = self._handles.get(run.id)
         state = ParseState()
         rc: int | None = None
@@ -743,7 +747,8 @@ class RunManager:
                                             resumed_model=resumed_model) + prompt
             prompt = attempt_handoff + prompt
             mcp_servers = {} if prof.engine == "qwen-local" else {
-                MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")
+                MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent"),
+                **(art_plan.mcp_servers if art_plan else {}),
             }
             run.engine, run.profile = prof.engine, prof.name
             if is_meeting:
@@ -888,6 +893,8 @@ class RunManager:
             if diff:
                 for f in diff["files"] + [{"path": p} for p in diff["new_files"]]:
                     state.touched_files.add(str(root / f["path"]))
+        if art_plan:
+            await asyncio.to_thread(artcraft_tasks.sweep_outputs, art_plan, run, outbox)
         await self._collect_artifacts(db, run, ws, outbox, state)
         if diff:
             events.append(db, run, "run.diff", diff)
@@ -1410,6 +1417,15 @@ async def _drain_stderr(proc: asyncio.subprocess.Process, h: _Handle | None) -> 
             h.stderr_tail.append(line.decode("utf-8", errors="replace"))
             if len(h.stderr_tail) > 200:
                 del h.stderr_tail[:100]
+
+
+async def _artcraft_plan(db: AsyncSession, sess: ChatSession, run: Run, outbox: Path):
+    """ArtCraft 작업 세션이면 실행 계획, 아니면 None. 준비가 실패해도 Run 은 계속한다(안내만 줄어든다)."""
+    try:
+        return await artcraft_tasks.prepare_run(db, sess, run, outbox)
+    except Exception as exc:  # noqa: BLE001
+        events.append(db, run, "log", {"stream": "system", "text": f"ArtCraft 작업 준비 실패: {exc}"})
+        return None
 
 
 async def _compose_prompt(db: AsyncSession, run: Run) -> str:

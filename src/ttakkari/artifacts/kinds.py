@@ -19,13 +19,25 @@ EXTRA_MIME = {
     ".yml": "text/yaml",
     ".toml": "text/x-toml",
     ".webp": "image/webp",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".aif": "audio/aiff",
+    ".aiff": "audio/aiff",
+    ".ogg": "audio/ogg",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".mov": "video/quicktime",
+    # mimetypes 가 image/* 로 추측하지만 브라우저가 그리지 못하는 형식은 다운로드 안내(other)로 보낸다.
+    ".dxf": "application/dxf",
+    ".psd": "application/vnd.adobe.photoshop",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 
 # kind 는 프론트 뷰어 선택 키다. 값이 바뀌면 프론트 계약도 같이 바뀐다.
-KINDS = ("markdown", "html", "pdf", "pptx", "docx", "sheet", "image", "code", "other")
+KINDS = ("markdown", "html", "pdf", "pptx", "docx", "sheet", "image", "audio", "video", "code", "other")
 
 
 def detect(path: Path) -> tuple[str, str]:
@@ -47,6 +59,10 @@ def detect(path: Path) -> tuple[str, str]:
         kind = "sheet"
     elif mime.startswith("image/"):
         kind = "image"
+    elif mime.startswith("audio/"):
+        kind = "audio"
+    elif mime.startswith("video/"):
+        kind = "video"
     elif ext in CODE_EXTS or name in ("dockerfile", "makefile") or mime.startswith("text/"):
         kind = "code"
     else:

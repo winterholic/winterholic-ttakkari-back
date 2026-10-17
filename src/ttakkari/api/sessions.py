@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -19,6 +19,7 @@ from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
+    ArtcraftTask,
     ChatSession,
     Run,
     RunEvent,
@@ -87,6 +88,8 @@ async def list_sessions(_: User, db: Db, workspace_id: uuid.UUID | None = None, 
     """parent_id 를 주면 그 오케스트레이터의 작업 세션, 안 주면 사이드바 목록(작업 세션 제외)."""
     q = select(ChatSession).order_by(ChatSession.updated_at.desc()).limit(limit)
     q = q.where(ChatSession.parent_id == parent_id) if parent_id else q.where(ChatSession.parent_id.is_(None))
+    # ArtCraft 작업 세션은 ArtCraft 화면에서 다룬다(ADR 0039). 대화·작업 공간 목록에는 섞지 않는다.
+    q = q.where(~exists().where(ArtcraftTask.session_id == ChatSession.id))
     if pool:
         q = q.where(ChatSession.pool == pool)
     if workspace_id:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """claude -p ... --output-format stream-json 을 흉내내는 가짜 엔진. 테스트 전용.
 
-프롬프트 키워드로 시나리오를 고른다: SLEEP, FAIL, GARBAGE, SENSITIVE, DOCX, MODIFY, CTX<n>.
+프롬프트 키워드로 시나리오를 고른다: SLEEP, FAIL, GARBAGE, SENSITIVE, DOCX, MODIFY, CTX<n>, ART_OUT(ArtCraft out/ 에 결과 저장).
 받은 argv 는 $FAKE_AGENT_LOG(JSONL) 에 기록한다. (매니저가 TTAKKARI_* env 를 지우므로 접두사를 달리 썼다.)
 """
 import json
@@ -179,6 +179,12 @@ def main():
             write_tool(Path(outbox) / ".env", "SECRET=1\n")
         if "DOCX" in prompt:
             write_tool(Path(outbox) / "a.docx", b"not really a docx")
+    if "ART_OUT" in prompt:
+        # ArtCraft 작업(ADR 0039): 안내받은 "최종 결과 저장 위치" 에 결과를 쓴다. 라운드 번호는 머리말에서 읽는다.
+        out = re.search(r"최종 결과 저장 위치: (\S+)", prompt)
+        rnd = re.search(r"라운드 (\d+)", prompt)
+        if out:
+            write_tool(Path(out.group(1)) / f"art-result-{rnd.group(1) if rnd else 0}.txt", "art result\n")
     if "MODIFY" in prompt:
         readme = Path(os.getcwd()) / "README.md"
         write_tool(readme, readme.read_text() + "modified by fake agent\n")

@@ -247,6 +247,8 @@ class Settings(BaseSettings):
     # ArtCraft 관제(artcraft.py). 고정 저장소의 bin/artcraft 만 실행한다. 최신 릴리스는 6시간 캐시로 GitHub 에서 가져온다.
     artcraft_root: Path = HOME / "development/projects/artcraft"
     artcraft_auto_remote_check: bool = True
+    # ArtCraft 작업 세션의 워크스페이스(ADR 0039). git 저장소가 아니어야 작업마다 개발 저장소에 체크포인트가 생기지 않는다.
+    artcraft_workspace_root: Path = HOME / "development/projects/artcraft-workspace"
     # 접수 상주화(runs/desk_pool): 계정마다 엔진 프로세스를 하나 미리 띄워 기동 시간을 뺀다. 끄면 매번 CLI 를 새로 띄운다.
     desk_warm_pool: bool = True
     # 오래 띄워 둔 프로세스는 새로 띄운다(CLI 업데이트·인증 갱신을 늦게 반영하지 않게).

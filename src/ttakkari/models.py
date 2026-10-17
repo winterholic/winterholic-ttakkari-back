@@ -1017,3 +1017,20 @@ class ReverseJob(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+
+
+class ArtcraftTask(Base):
+    """ArtCraft 작업(ADR 0039). 작업 세션 1개에 범주·연결 앱·옵션을 붙인 것이고 라운드는 그 세션의 Run 이다."""
+
+    __tablename__ = "artcraft_tasks"
+    __table_args__ = (Index("ix_artcraft_tasks_category_updated", "category", "updated_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), unique=True)
+    category: Mapped[str] = mapped_column(String(20))
+    apps: Mapped[list[Any]] = mapped_column(default=list)
+    title: Mapped[str] = mapped_column(String(200))
+    template_id: Mapped[str | None] = mapped_column(String(40))
+    options: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    archived_at: Mapped[datetime | None]

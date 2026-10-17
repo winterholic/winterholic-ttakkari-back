@@ -490,6 +490,22 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 | PUT | `/api/artcraft/bugs/{id}` | `{status, note?(≤500), url?(https://github.com/... 만, ≤300)}`. 상태: `candidate`(미검토)→`selected`(기여 선택)→`in_progress`→`reported`(보고됨·PR 올림)→`resolved`, 또는 `deferred`·`excluded`. 어느 상태로든 옮길 수 있고 변경은 `history`에 남는다. 예전 값 `unreported`는 읽을 때만 `candidate`로 본다. 없는 ID 404. **외부 GitHub로 올리는 기능은 없다** |
 | GET | `/api/artcraft/agent-config` | 앱별 MCP 설정 `snippets{json,claude,codex}`와 전체 JSON |
 
+### ArtCraft 작업 플랫폼(ADR 0039, 관제와 같은 `/api/artcraft`)
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/api/artcraft/catalog` | `{sections[{id,title,categories[]}], categories[{id,section,title,tagline,icon,maturity{level(ready\|limited\|experimental),label,summary},apps[{app,title,role,installed}],can[],cannot[],accepts[],outputs[],templates[{id,title,prompt,example,min_files,apps[],options[{id,label,default,choices[]}]}]}], available, unavailable_reason, workspace_id, workspace_error, limits{files,prompt}}`. 느린 호출 없음. `workspace_id`는 파일 업로드(`POST /api/uploads`)에 쓰는 ArtCraft 작업 워크스페이스 |
+| POST | `/api/artcraft/tasks` | `{category, prompt(1-8000), template_id?, input_artifact_ids[≤10], apps?, options?{옵션ID:값}, speed?(fast\|normal\|careful)}` → 201 `TaskDetail`. 세션을 만들고 첫 Run을 대기열에 넣는다. 오류: 404 `unknown_category`, 422 `unknown_app`·`bad_input`(받지 않는 확장자, 파일 부족, 옵션 값, 없는 파일, 민감 파일), 503 `workspace_unavailable` |
+| GET | `/api/artcraft/tasks?category=&state=active\|all&session_id=&limit=` | 작업 요약 `{id,session_id,category,title,apps,template_id,state(queued\|running\|done\|failed\|cancelled\|interrupted),round_count,output_count,last_run_id,error,progress,waiting_reason,created_at,updated_at,archived_at}`. 보관한 작업은 `session_id` 조회에만 나온다 |
+| GET | `/api/artcraft/tasks/{id}` | 요약 + `options` + `rounds[{id,index,status,state,prompt,result_text,error,options,use_previous,inputs[ArtifactOut],outputs[ArtifactOut],progress,waiting_reason,created_at,started_at,finished_at}]`. 결과는 그 세션의 `source=agent_output` Artifact |
+| POST | `/api/artcraft/tasks/{id}/runs` | `{prompt, input_artifact_ids[], use_previous(기본 true: 직전 결과가 있는 라운드의 결과를 prev/ 로 복사), options?, speed?}` → 202 `TaskDetail`. 실행 중이면 세션 대기열에 쌓인다. 보관한 작업은 409 `archived` |
+| PATCH | `/api/artcraft/tasks/{id}` | `{title?, archived?}` → `TaskDetail` |
+| GET | `/api/artcraft/outputs?category=&kind=&q=&limit=&offset=` | 작업물 갤러리 `{items[{artifact, task_id, task_title, category, run_id}], has_more}` |
+
+취소는 `POST /api/runs/{id}/cancel`, 업로드는 `POST /api/uploads`(workspace_id = catalog.workspace_id), 이벤트는 `/api/runs/{id}/events`를 그대로 쓴다. Artifact 종류에 `audio`, `video`가 추가됐다. ArtCraft 작업 세션은 `GET /api/sessions` 목록에서 제외된다.
+
+설정: `TTAKKARI_ARTCRAFT_WORKSPACE_ROOT`(기본 `~/development/projects/artcraft-workspace`, 작업 폴더 루트. `allowed_roots` 안이어야 한다).
+
 설정: `TTAKKARI_ARTCRAFT_ROOT`(기본 `~/development/projects/artcraft`), `TTAKKARI_ARTCRAFT_AUTO_REMOTE_CHECK`(기본 true, 최신 릴리스가 6시간 넘게 오래되면 조회 시 백그라운드로 갱신).
 
 ### Muse Code 구독 사용량

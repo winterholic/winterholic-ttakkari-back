@@ -26,23 +26,27 @@ def _model(call: dict) -> tuple[str | None, str | None]:
 
 
 async def test_orchestrator_always_runs_on_its_allowed_model(client, auth, make_dir):
-    # 세션에 다른 모델이 저장돼 있어도 메인은 Opus medium 으로 뜬다.
+    # 세션에 다른 모델이 저장돼 있어도 메인은 설정의 엔진별 고정 모델로 뜬다(단일 원천).
+    from ttakkari.config import get_settings
     orch = await _session(client, auth, make_dir, kind="orchestrator", engine="claude", model="sonnet", effort="low")
     before = len(agent_calls())
     await run_to_end(client, auth, orch["id"], "hi")
-    assert _model(agent_calls()[before]) == ("opus", "medium")
+    fallback = get_settings().orchestrator_fallback_models["claude"]
+    assert _model(agent_calls()[before]) == (fallback["model"], fallback["effort"])
 
 
 async def test_worker_defaults_to_general_task_policy_and_pinned_engine_defaults(client, auth, make_dir):
+    from ttakkari.config import get_settings
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
     auto = (await client.post("/api/orchestrator/workers", json={"title": "a", "prompt": "go"}, headers=h)).json()
     # The default route is Antigravity, whose model encodes effort in its ID;
     # sending a separate effort value is unsupported by its CLI.
-    assert (auto["engine"], auto["model"], auto["effort"]) == ("auto", "claude-sonnet-5-5-high", None)
+    defaults = get_settings().worker_default_models
+    assert (auto["engine"], auto["model"], auto["effort"]) == ("auto", defaults["antigravity"]["model"], None)
     claude = (await client.post("/api/orchestrator/workers", json={"title": "c", "prompt": "go", "engine": "claude"},
                                 headers=h)).json()
-    assert (claude["model"], claude["effort"]) == ("sonnet", "high")
+    assert (claude["model"], claude["effort"]) == (defaults["claude"]["model"], defaults["claude"]["effort"])
     # Without an Antigravity account, general tasks balance native Sonnet/Luna candidates.
     wrun = (await client.get(f"/api/sessions/{auto['worker_id']}/runs", headers=auth)).json()[0]
     actual = await wait_run(client, auth, wrun["id"])

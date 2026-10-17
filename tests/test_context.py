@@ -167,7 +167,12 @@ async def test_agent_share_file_and_sessions(client, auth, make_dir, outside_dir
 
 
 async def test_tools_listing_matches_mcp_server(client, auth):
-    from test_orchestrator import AGENT_TOOLS, WORKER_TOOLS
+    # 단일 원천: 손으로 적은 상수가 아니라 실제 MCP 서버의 도구 목록을 기준으로 삼는다.
+    # 벤치마크 도구는 비서 UI 목록에 노출하지 않는다.
+    import asyncio
+
+    from test_orchestrator import BENCHMARK_TOOLS, _mcp_tools
 
     listed = {t["name"] for t in (await client.get("/api/assistant/tools", headers=auth)).json()["tools"]}
-    assert listed == AGENT_TOOLS | WORKER_TOOLS
+    orch, _ = await asyncio.to_thread(_mcp_tools, "orchestrator")
+    assert listed == orch - BENCHMARK_TOOLS

@@ -142,6 +142,11 @@ def _next_work_priority(rows: list[EngineAccount]) -> int:
 
 def _out(a: EngineAccount) -> AccountOut:
     login, label = profiles.identity(a.engine, a.config_dir)
+    if a.engine == "muse":
+        # Authentication is observed even when usage/read has no quota snapshot.
+        observed = usage_mod.cached(a.id)
+        if observed is not None and observed.login:
+            login = observed.login
     managed_status = {}
     if a.engine == 'antigravity' and a.config_dir:
         from ttakkari import antigravity_accounts as managed
@@ -174,7 +179,12 @@ async def _commit(db: Db) -> None:
 
 @router.get("", response_model=list[AccountOut])
 async def list_accounts(_: User, db: Db) -> list[AccountOut]:
-    return [_out(a) for a in await profiles.accounts(db)]
+    rows = await profiles.accounts(db)
+    # Reuse the usage collector's official account/read observation and TTL.
+    # This also covers opening Settings before the first collector pass.
+    await asyncio.gather(*(usage_mod.usage_for(a.id, a.engine, a.config_dir)
+                           for a in rows if a.engine == "muse"))
+    return [_out(a) for a in rows]
 
 
 @router.get("/qwen-flash-usage")
@@ -345,6 +355,7 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
 async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: Db, request: Request) -> AccountOut:
     a = await _get(db, account_id)
     data = body.model_dump(exclude_unset=True)
+    muse_profile_changed = a.engine == "muse" and "config_dir" in data and data["config_dir"] != a.config_dir
     if a.engine == "antigravity" and "config_dir" in data and data['config_dir'] != a.config_dir:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Antigravity managed profile paths cannot be reassigned or cleared.")
@@ -367,6 +378,8 @@ async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: 
         profiles.clear_cooldown(a.id)
     record(db, action="account.update", target_type="account", target_id=a.id, detail=data, ip=client_ip(request))
     await _commit(db)
+    if muse_profile_changed:
+        usage_mod.forget(a.id)
     if revived:
         await manager.release_waiting()
     return _out(a)

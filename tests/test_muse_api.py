@@ -2,6 +2,64 @@
 from helpers import run_to_end
 
 
+async def test_muse_account_list_checks_login_without_usage_windows(client, auth, monkeypatch):
+    from ttakkari.runs import usage
+
+    async def authenticated(_config_dir):
+        return usage.muse_usage_from_probe({'account': {'state': 'accountLogin'}, 'usage': {}})
+
+    monkeypatch.setattr(usage, '_fetch_muse', authenticated)
+    created = await client.post('/api/accounts', headers=auth,
+        json={'name': 'Logged in Muse', 'engine': 'muse'})
+    account_id = created.json()['id']
+    rows = (await client.get('/api/accounts', headers=auth)).json()
+    row = next(row for row in rows if row['id'] == account_id)
+    assert row['login'] == 'ok'
+    assert row['login_command'] is None
+    # No quota snapshot is needed to establish authentication.
+    quota = (await client.get('/api/accounts/usage', headers=auth)).json()
+    quota_row = next(row for row in quota if row['id'] == account_id)
+    assert quota_row['login'] == 'ok'
+    assert quota_row['windows'] == []
+    assert quota_row['updated_at'] is None
+
+
+async def test_muse_account_list_preserves_logged_out_state(client, auth, monkeypatch):
+    from ttakkari.runs import usage
+
+    async def logged_out(_config_dir):
+        return usage.muse_usage_from_probe({'account': {'state': 'loggedOut'}, 'usage': {}})
+
+    monkeypatch.setattr(usage, '_fetch_muse', logged_out)
+    created = await client.post('/api/accounts', headers=auth,
+        json={'name': 'Logged out Muse', 'engine': 'muse'})
+    rows = (await client.get('/api/accounts', headers=auth)).json()
+    row = next(row for row in rows if row['id'] == created.json()['id'])
+    assert row['login'] == 'missing'
+    assert row['login_command']
+
+
+async def test_muse_profile_change_discards_previous_login(client, auth, monkeypatch, make_dir):
+    from ttakkari.runs import usage
+
+    async def lookup(config_dir):
+        return usage.muse_usage_from_probe({
+            'account': {'state': 'loggedOut' if config_dir else 'accountLogin'}, 'usage': {}})
+
+    monkeypatch.setattr(usage, '_fetch_muse', lookup)
+    created = await client.post('/api/accounts', headers=auth,
+        json={'name': 'Changed Muse', 'engine': 'muse'})
+    account_id = created.json()['id']
+    await client.get('/api/accounts', headers=auth)
+    changed = await client.patch(f'/api/accounts/{account_id}', headers=auth,
+        json={'config_dir': str(make_dir())})
+    assert changed.json()['login'] != 'ok'
+    rows = (await client.get('/api/accounts', headers=auth)).json()
+    row = next(row for row in rows if row['id'] == account_id)
+    assert row['login'] == 'missing'
+    assert row['login_command']
+
+
 async def test_muse_account_usage_reports_execution_disabled(client, auth, make_dir):
     profile = make_dir()
     created = await client.post('/api/accounts', headers=auth,

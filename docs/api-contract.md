@@ -453,3 +453,5 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 ### Muse Code 구독 사용량
 
 `GET /api/accounts/usage`는 `engine=muse`를 지원한다. `login`은 공식 SDK account/read에서 관측한 상태를 사용하고 `execution_enabled`는 개발 작업의 활성화 여부다. 사용량 조회는 실행 활성화·sandbox 준비와 독립적인 읽기 전용 명령이며 모델·세션·도구를 실행하지 않는다. 공식 usage/read 응답이 빈 경우 windows=[]·updated_at=null·설명 문구를 반환하고 0% 또는 무제한으로 바꾸지 않는다. 유효한 공급자 관측값만 source=muse_cli로 기록한다. 등록 모델 목록과 실제 구독 모델 호출 권한은 별개다.
+
+`GET /api/accounts`도 Muse의 공식 로그인 관측값을 사용한다. 첫 수집 전에는 동일한 읽기 전용 조회로 상태를 확인하며 이후에는 수집기 TTL 캐시를 재사용한다. 사용량 창이 비어 있어도 `accountLogin`이면 `login=ok`, `login_command=null`이다. Muse의 `config_dir` 변경 시 이전 프로필의 관측 캐시는 폐기한다. 로그인 여부와 사용량 수치 제공 여부를 혼동하지 않는다.

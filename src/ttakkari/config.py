@@ -174,6 +174,9 @@ class Settings(BaseSettings):
     desk_timeout_seconds: float = 25.0
     # 접수 1순위는 로컬 Qwen3.5-4B(llama.cpp 서버, runs/desk_qwen). 서버 장애·시간 초과·잘못된 출력이면 위 엔진 순서(Luna→Haiku)로 넘어간다.
     desk_qwen_enabled: bool = True
+    # Read-only monitoring of the separate qwen-local-harness server. Never starts it.
+    qwen_flash_monitor_port: int = Field(default=18987, ge=1, le=65535)
+    qwen_flash_monitor_model: str = "qwen-flash-next-q2k"
     # 비우면 백엔드(세대) 프로세스가 llama-server 자식 프로세스를 직접 띄우고 끝낸다(runs/desk_qwen_service, OS 서비스 등록 없음).
     # 이미 떠 있는 서버를 쓰려면 주소를 지정한다: 이때는 health 만 확인하고 띄우지도 죽이지도 않는다.
     desk_qwen_base_url: str = ""

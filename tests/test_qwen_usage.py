@@ -210,3 +210,20 @@ async def _insert_run(db, run_id):
     db.add(Run(id=run_id, session_id=sess.id, workspace_id=ws.id, prompt="opaque", engine="qwen",
                model="local", effort=None, status="succeeded", origin="user", usage={}))
     await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_flash_usage_endpoint_is_authenticated_and_independent(client, auth, monkeypatch):
+    from ttakkari.runs import qwen_flash_monitor
+
+    async def snapshot():
+        return {"scope": "server_lifetime", "input_tokens": 42}
+
+    monkeypatch.setattr(qwen_flash_monitor, "snapshot", snapshot)
+    assert (await client.get("/api/accounts/qwen-flash-usage")).status_code == 401
+    response = await client.get("/api/accounts/qwen-flash-usage", headers=auth)
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json()["input_tokens"] == 42
+    intake = await client.get("/api/accounts/qwen-usage", headers=auth)
+    assert intake.json()["today"]["input_tokens"] == 0

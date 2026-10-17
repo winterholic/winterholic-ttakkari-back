@@ -219,6 +219,7 @@ payload 는 `{title, body, url, tag}`:
 | GET/PUT/DELETE | `/api/accounts/override?pool=` | 임시 순서. 개인·회사 모드마다 따로 하나씩. PUT `{ids, until}`(`pool=work` 는 회사에 들어온 계정만 허용). 끝나면 그 모드만 기본 순서로 돌아간다 |
 | GET | `/api/accounts/usage` | 개인 모드의 지금 적용 순서(임시 순서 반영). `max_used_percent`, 신선할 때만 `remaining_to_limit_percent`, `stale` 포함. `rank`·`enabled` 는 개인 모드, `work_rank`(회사 모드 순서 번호, 회사에 안 들어온 계정은 null)·`work_enabled` 는 회사 모드 값, `pool` 로 회사 표시 |
 | GET | `/api/accounts/qwen-usage` | 로컬 Qwen 접수의 실제 llama.cpp HTTP 호출 토큰. `{model, timezone: Asia/Seoul, collection_started_at, server, today, week}`. 기간별 입력·출력·합계 토큰, 전체/계측/usage 누락/실패 호출 수, 마지막 사용 시각을 반환한다. 오늘은 KST 00:00부터, 주간은 월요일 KST 00:00부터 현재까지. 평가는 제외하며 서버 응답 `usage.prompt_tokens`, `completion_tokens`, `total_tokens`가 모두 있고 합이 맞는 호출만 계측한다. 누락·실패 토큰은 null로 보존하며 프롬프트·응답 본문은 저장하지 않는다. |
+| GET | `/api/accounts/qwen-flash-usage` | 별도 로컬 Qwen3.8-Flash-Next 서버의 읽기 전용 계측. `{model, scope: server_lifetime, observed_at, server: {status, detail}, metrics_status, input_tokens, cached_input_tokens, output_tokens, requests_processing, requests_deferred}`. `/props` 모델 alias를 확인한 뒤 `/metrics`만 GET한다. 입력은 캐시 제외 처리 토큰, 캐시 재사용은 별도 값. 현재 서버의 모든 클라이언트를 포함하는 실행 누적값이며 재시작 시 초기화된다. 접수용 일간·주간 집계와 합산하지 않는다. 중지/기동/모델 불일치/계측 누락은 상태와 null로 반환하며 0으로 꾸미지 않는다. 인증 필요, Cache-Control: no-store. |
 | POST | `/api/accounts/{id}/cooldown/clear` | 한도 대기 해제 |
 
 ## 메모·캘린더(ADR 0008)

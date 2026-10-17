@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -150,6 +150,14 @@ async def _commit(db: Db) -> None:
 @router.get("", response_model=list[AccountOut])
 async def list_accounts(_: User, db: Db) -> list[AccountOut]:
     return [_out(a) for a in await profiles.accounts(db)]
+
+
+@router.get("/qwen-flash-usage")
+async def qwen_flash_usage(_: User, response: Response) -> dict:
+    """Standalone Flash Next server counters, independent of intake usage."""
+    from ttakkari.runs import qwen_flash_monitor
+    response.headers["Cache-Control"] = "no-store"
+    return await qwen_flash_monitor.snapshot()
 
 
 @router.get("/qwen-usage")

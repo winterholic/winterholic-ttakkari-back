@@ -36,16 +36,26 @@ def test_application_generation_contract_matches_its_migration_head():
 
 
 def test_qwen_usage_and_resource_history_migrations_are_allowed_online():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
     from ttakkari.generation_deployment import Releases
     source = Path(__file__).resolve().parents[1]
+    config = Config(str(source / "alembic.ini"))
+    config.set_main_option("script_location", str(source / "alembic"))
+    directory = ScriptDirectory.from_config(config)
+    head = directory.get_current_head()
     contract = Releases.contract(source)
-    assert contract["schema_revision"] == "0040_ops_event_receipts"
-    assert "0039_ops_log_issues" in contract["online_migration_from"]
-    assert "0038_qwen_flash_usage" in contract["online_migration_from"]
-    assert "0034_knowledge_ledger" in contract["online_migration_from"]
-    assert "0036_system_resource_samples" in contract["online_migration_from"]
-    assert "0035_qwen_token_usage" in contract["online_migration_from"]
-    assert "0037_worker_routing" in contract["online_migration_from"]
+    # head 값은 하드코딩하지 않고 도출한다. 온라인 허용 목록은 체인으로 검증해
+    # 다음 마이그레이션의 online_migration_from 누락을 잡는다.
+    assert contract["schema_revision"] == head
+    floor = "0032_weather_briefings"
+    current, chain = head, []
+    while current != floor:
+        down = directory.get_revision(current).down_revision
+        current = down[0] if isinstance(down, tuple) else down
+        chain.append(current)
+    assert chain and set(chain) <= set(contract["online_migration_from"])
 
 
 def test_release_archive_does_not_follow_later_checkout_changes(tmp_path, make_git_dir):

@@ -365,10 +365,10 @@ async def test_supervisor_upgrade_works_while_the_deploy_lock_is_held(tmp_path, 
     assert record["supervisor_upgrade_attempted_for"] == active_revision
     attempts = record["supervisor_upgrade_attempts"]
     assert len(attempts) == 1 and attempts[0]["ok"] is True
-    assert record["supervisor_upgrade_next_retry_at"] is None
+    assert "supervisor_upgrade_next_retry_at" not in record
 
 
-async def test_failed_supervisor_upgrade_is_persisted_with_backoff(tmp_path, monkeypatch):
+async def test_failed_supervisor_upgrade_stops_without_retry(tmp_path, monkeypatch):
     from ttakkari import generation
     from ttakkari import generation_deployment as gd
     monkeypatch.setattr(generation, "PORTS", (8791, 8792))
@@ -404,10 +404,55 @@ async def test_failed_supervisor_upgrade_is_persisted_with_backoff(tmp_path, mon
     assert record["status"] == "supervisor_upgrade_required"
     assert len(record["supervisor_upgrade_attempts"]) == 1
     assert record["supervisor_upgrade_attempts"][0]["error"] == "kickstart refused"
-    assert record["supervisor_upgrade_next_retry_at"]
-    # 백오프 중에는 다시 시도하지 않는다.
+    assert "supervisor_upgrade_next_retry_at" not in record
+    # 같은 revision에는 다시 시도하지 않는다.
     await control.process(store.get(job["id"]))
     assert calls == [active_revision]
+
+
+async def test_new_job_reattempts_upgrade_for_a_new_active_revision(tmp_path, monkeypatch):
+    # 수동 개입 후 활성 revision이 바뀌면 새 작업에서 재평가가 막히지 않는다.
+    from ttakkari import generation
+    from ttakkari import generation_deployment as gd
+    monkeypatch.setattr(generation, "PORTS", (8791, 8792))
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    monkeypatch.setattr(gd, "contract_for_revision", _three_slot_demanding_contract)
+    store = JobStore(tmp_path)
+    old_revision, new_revision = "c" * 40, "d" * 40
+    for revision in (old_revision, new_revision):
+        release = tmp_path / "releases" / revision
+        (release / "deploy").mkdir(parents=True)
+        (release / "deploy/generation-contract.json").write_text(json.dumps(
+            {"protocol": 1, "schema_revision": "x", "online_migration_from": [],
+             "supervisor": {"protocol": 1, "slots": 3}}))
+        receipt = store.request(revision)
+        store.update(receipt["id"], status="draining", release_path=str(release))
+    first = store.request("a" * 40)
+    control = gd.GenerationController(store, slots=FakeSlots())
+    active_id = uuid.uuid4()
+    current = {"revision": old_revision}
+    monkeypatch.setattr(control, "active", lambda: asyncio.sleep(0, result=active_id))
+
+    async def info(gid):
+        return {"id": gid, "revision": current["revision"], "api_url": "http://127.0.0.1:8791"}
+
+    monkeypatch.setattr(control, "generation_info", info)
+    calls = []
+
+    async def boom(controller, revision):
+        calls.append(revision)
+        raise RuntimeError("kickstart refused")
+
+    monkeypatch.setattr(gd, "upgrade_supervisor", boom)
+    await control.process(first)
+    assert calls == [old_revision]
+    assert store.get(first["id"])["status"] == "supervisor_upgrade_required"
+    # 사용자가 손을 댄 뒤 활성 revision이 바뀌면 새 작업은 재시도한다.
+    current["revision"] = new_revision
+    second = store.request("b" * 40)
+    await control.process(second)
+    assert calls == [old_revision, new_revision]
+    assert store.get(second["id"])["supervisor_upgrade_attempted_for"] == new_revision
 
 
 async def test_command_timeout_kills_grandchildren_too(tmp_path):

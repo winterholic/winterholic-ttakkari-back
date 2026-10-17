@@ -37,8 +37,6 @@ _LOG_TAIL_CHARS = 4000
 STAGE_TIMEOUTS = {"uv sync": 600, "npm ci": 600, "pytest": 1800, "migrate": 600,
                   "command": 600}
 PREPARE_TOTAL_TIMEOUT = 3600
-# 같은 감독 갱신 대상의 재시도 간격(초). 패스마다 kickstart하지 않는다.
-SUPERVISOR_UPGRADE_RETRY_SECONDS = 600
 # job id -> 실행 중인 준비 태스크. 감독 패스 사이에서 유지된다.
 _PREPARE_TASKS: dict[str, asyncio.Task] = {}
 
@@ -716,13 +714,14 @@ class GenerationController:
         except Exception:
             log.exception("supervisor capability check could not read the active generation")
             return False
-        from datetime import UTC, datetime, timedelta
+        from datetime import UTC, datetime
         revision = info["revision"]
+        # 정책: 같은 revision에는 1회만 시도한다. 실패해도 지우지 않아 패스마다
+        # 다시 시도하지 않고 supervisor_upgrade_required로 멈춘다. 재평가는
+        # 새 작업·새 활성 revision에서만 일어난다.
         if job.get("supervisor_upgrade_attempted_for") == revision:
             return False
         now = datetime.now(UTC).isoformat()
-        if job.get("supervisor_upgrade_next_retry_at") and now < job["supervisor_upgrade_next_retry_at"]:
-            return False
         release = self.releases.root / "releases" / revision
         try:
             candidate_contract = Releases.contract(release)
@@ -749,14 +748,11 @@ class GenerationController:
             await upgrade_supervisor(self, revision)
         except Exception as exc:
             attempt["error"] = str(exc)[:500]
-            self.phase(job, job["status"], supervisor_upgrade_attempts=[*attempts, attempt],
-                       supervisor_upgrade_next_retry_at=(
-                           datetime.now(UTC) + timedelta(seconds=SUPERVISOR_UPGRADE_RETRY_SECONDS)).isoformat())
+            self.phase(job, job["status"], supervisor_upgrade_attempts=[*attempts, attempt])
             log.exception("automatic supervisor upgrade failed; reporting instead")
             return False
         attempt["ok"] = True
-        self.phase(job, job["status"], supervisor_upgrade_attempts=[*attempts, attempt],
-                   supervisor_upgrade_next_retry_at=None)
+        self.phase(job, job["status"], supervisor_upgrade_attempts=[*attempts, attempt])
         return True
 
     async def process(self, job):

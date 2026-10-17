@@ -64,3 +64,11 @@ def make_router(prefix: str, access) -> APIRouter:
 
 router = make_router("/api/design-systems", user_access)
 agent_router = make_router("/api/agent/design-systems", agent_access)
+
+
+@router.get("/{system}/preview", dependencies=[Depends(user_access)])
+def preview(system: str, item: str | None = Query(default=None, max_length=500),
+            theme: Literal["light", "dark"] = "light",
+            revision: str | None = Query(default=None, pattern=r"^[0-9a-f]{40}$")) -> dict:
+    """Owner-only visual payload; separate from the 16k MCP text contract."""
+    return _read(browser().preview, system, item=item, theme=theme, revision=revision)

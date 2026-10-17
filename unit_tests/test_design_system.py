@@ -122,3 +122,114 @@ def test_large_document_title_cannot_stall_search_cursor(repo):
     assert len(result["items"]) == 1
     assert len(result["items"][0]["title"]) <= 200
     assert len(json.dumps(result, ensure_ascii=False)) < 16000
+
+
+@pytest.fixture
+def preview_repo(repo):
+    files = {
+        'ttakkari/dist/tokens.css': ':root { --sample: #123456; }',
+        'ttakkari/examples/examples.css': '.hero { background: url(../assets/brand/mark.svg?v=1); }',
+        'ttakkari/examples/icons.js': 'window.previewReady = true;',
+        'ttakkari/assets/brand/mark.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>',
+        'ttakkari/examples/preview.html': '''<!doctype html><html><head>
+        <link rel="stylesheet" href="../dist/tokens.css"><link rel="stylesheet" href="examples.css">
+        <script src="icons.js" defer></script></head><body><h2 id="color">색상</h2>
+        <img src="../assets/brand/mark.svg?v=1"><a href="#color">색</a>
+        <a href="https://evil.invalid">외부</a><iframe src="https://evil.invalid"></iframe>
+        <script>document.body.dataset.ready = 'yes';</script></body></html>''',
+    }
+    for path, content in files.items():
+        p = repo / path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-qm', 'preview fixture')
+    return repo
+
+
+def test_preview_bundles_committed_resources_and_sections(preview_repo):
+    b = browser(preview_repo)
+    revision = b.catalog()['revision']
+    (preview_repo / 'ttakkari/dist/tokens.css').write_text('dirty')
+    result = b.preview('ttakkari', revision=revision, theme='dark')
+    assert result['revision'] == revision
+    assert 'data:text/css;base64,' in result['html']
+    assert 'data:image/svg+xml;base64,' in result['html']
+    assert 'data:text/javascript;base64,' in result['html']
+    assert 'dataset.ready' in result['html']
+    assert 'data-theme="dark"' in result['html']
+    assert result['sections'] == [{'id': 'color', 'title': '색상'}]
+    assert result['warnings'] == []
+    import html
+    assert "connect-src 'none'" in html.unescape(result['html'])
+    assert "base-uri 'none'" in html.unescape(result['html'])
+    assert '<iframe' not in result['html']
+    assert 'href="https://evil.invalid"' not in result['html']
+    assert 'href="#color"' in result['html']
+
+
+@pytest.mark.parametrize('href', ['../../secret.env', '%2e%2e/%2e%2e/secret.env', '../assets/brand/link.svg', '../missing.css'])
+def test_preview_never_reads_outside_allowlist_or_symlinks(preview_repo, href):
+    (preview_repo / 'ttakkari/assets/brand/link.svg').symlink_to('/etc/passwd')
+    (preview_repo / 'ttakkari/examples/preview.html').write_text(f'<html><head><link rel="stylesheet" href="{href}"></head><body><img src="{href}"></body></html>')
+    git(preview_repo, 'add', '.')
+    git(preview_repo, 'commit', '-qm', 'unsafe paths')
+    result = browser(preview_repo).preview('ttakkari')
+    assert 'SECRET=never' not in result['html']
+    assert 'root:' not in result['html']
+    assert result['warnings']
+
+
+def test_preview_requires_an_example_and_checks_theme(preview_repo):
+    from ttakkari.design_system import NotFound
+    b = browser(preview_repo)
+    with pytest.raises(NotFound):
+        b.preview('ttakkari', item='file:ttakkari/docs/00-guide.md')
+    with pytest.raises(ValueError):
+        b.preview('ttakkari', theme='bad')
+
+
+def test_preview_assets_use_pinned_revision(preview_repo):
+    import base64
+    b = browser(preview_repo)
+    old = b.catalog()['revision']
+    (preview_repo / 'ttakkari/dist/tokens.css').write_text('NEW-CSS')
+    git(preview_repo, 'add', '.')
+    git(preview_repo, 'commit', '-qm', 'new css')
+    assert base64.b64encode(b'NEW-CSS').decode() not in b.preview('ttakkari', revision=old)['html']
+    assert base64.b64encode(b'NEW-CSS').decode() in b.preview('ttakkari')['html']
+
+
+def test_token_search_carries_visual_values(repo):
+    row = browser(repo).search('ttakkari', kind='token', query='color.action')['items'][0]
+    assert row['values'] == {'light': '#123456', 'dark': '#abcdef'}
+
+
+def test_example_titles_come_from_html_title(preview_repo):
+    (preview_repo / 'ttakkari/examples/preview.html').write_text('<html><head><title>색상 &amp; 컴포넌트 미리보기</title></head><body>견본</body></html>')
+    git(preview_repo, 'add', '.')
+    git(preview_repo, 'commit', '-qm', 'html title')
+    rows = browser(preview_repo).search('ttakkari', kind='example')['items']
+    assert next(r for r in rows if r['source'].endswith('preview.html'))['title'] == '색상 & 컴포넌트 미리보기'
+
+
+def test_preview_asset_limits_are_explicit(preview_repo, monkeypatch):
+    import ttakkari.design_preview as module
+    from ttakkari.design_system import Unavailable
+    monkeypatch.setattr(module, 'MAX_FILE', 1)
+    with pytest.raises(Unavailable, match='한도'):
+        browser(preview_repo).preview('ttakkari')
+
+
+def test_preview_css_cycles_are_reported(preview_repo):
+    (preview_repo / 'ttakkari/dist/tokens.css').write_text('@import "../examples/examples.css";')
+    (preview_repo / 'ttakkari/examples/examples.css').write_text('@import "../dist/tokens.css";')
+    git(preview_repo, 'add', '.')
+    git(preview_repo, 'commit', '-qm', 'css cycle')
+    assert browser(preview_repo).preview('ttakkari')['warnings']
+
+
+def test_preview_restores_selected_theme_after_original_initializers(preview_repo):
+    result = browser(preview_repo).preview('ttakkari', theme='dark')
+    assert "addEventListener('load'" in result['html']
+    assert 'document.documentElement.dataset.theme="dark"' in result['html']

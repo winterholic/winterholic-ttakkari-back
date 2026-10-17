@@ -501,3 +501,10 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 실행 중 account-wide `usage/changed`와 종료 후 `muse/quota`도 Run의 토큰 합계와 분리해 같은 저장소에 기록한다. 관측값은 source=muse_cli이며 원래 관측 시각·플랜을 유지한다. 이후 인증된 조회가 비면 마지막 관측값과 오류를 함께 반환하고 수집 성공이나 새 측정으로 취급하지 않는다. 로그아웃·프로필 경로 변경은 캐시를 폐기한다. 등록 모델 목록과 실제 구독 모델 호출 권한은 별개다.
 
 `GET /api/accounts`도 Muse의 공식 로그인 관측값을 사용한다. 첫 수집 전에는 동일한 읽기 전용 조회로 상태를 확인하며 이후에는 수집기 TTL 캐시를 재사용한다. 사용량 창이 비어 있어도 `accountLogin`이면 `login=ok`, `login_command=null`이다. Muse의 `config_dir` 변경 시 이전 프로필의 관측 캐시는 폐기한다. 로그인 여부와 사용량 수치 제공 여부를 혼동하지 않는다.
+
+
+### 디자인시스템 조회와 시각 미리보기 (ADR 0034)
+
+소유자 JWT: `GET /api/design-systems`, `/{system}/items`, `/{system}/item`. MCP는 같은 계약의 `/api/agent/design-systems` 아래 개인 세션에서만 허용하며 회사 세션은 403이다. 검색·상세는 원본 전체 40자리 `revision` SHA로 고정한다. 검색 kind는 token/document/component/example이며 토큰 요약에 `values:{light,dark}`가 포함된다.
+
+시각 미리보기는 owner-only `GET /api/design-systems/{system}/preview?item=&theme=light|dark&revision=`. 기본 item은 `file:{system}/examples/preview.html`이며 example만 허용한다. 응답 `{revision,system,source,html,sections:[{id,title}],warnings:string[]}`. html은 같은 커밋의 허용 CSS·JS·이미지를 data URL로 묶은 문서이며 프론트는 opaque sandbox iframe에만 넣는다. 별도 대용량 계약(최대 20 MiB)으로 MCP의 16k 텍스트 도구에는 실리지 않는다. 누락 404, 잘못된 조건 422, 저장소/크기 오류 503.

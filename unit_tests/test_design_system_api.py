@@ -69,3 +69,14 @@ async def test_mcp_routes_queries_and_has_read_only_annotations(monkeypatch):
         assert name in READ_ONLY_TOOLS
     tools = {t.name: t for t in await m.server.list_tools()}
     assert tools['design_system_item'].annotations.read_only_hint is True
+
+
+async def test_preview_owner_auth_and_validation(api):
+    app, module = api
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as c:
+        assert (await c.get('/api/design-systems/ttakkari/preview')).status_code == 401
+        app.dependency_overrides[module.user_access] = lambda: None
+        r = await c.get('/api/design-systems/ttakkari/preview', params={'item': 'file:ttakkari/examples/button.html'})
+        assert r.status_code == 200 and 'html' in r.json()
+        assert (await c.get('/api/design-systems/ttakkari/preview?theme=bad')).status_code == 422
+        assert (await c.get('/api/design-systems/ttakkari/preview?item=file:/etc/passwd')).status_code == 404

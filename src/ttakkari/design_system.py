@@ -5,6 +5,7 @@ from regular Git blobs under an allowlist, including during concurrent DS edits.
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 import subprocess
@@ -170,6 +171,10 @@ def _snapshot(root: Path, revision: str) -> dict:
                 if path.startswith(system + "/") and file["kind"] in KINDS:
                     text = file["content"]
                     title = next((s.lstrip("# ").strip() for s in text.splitlines() if s.startswith("# ")), PurePosixPath(path).name)[:200]
+                    if file["kind"] == "example":
+                        title_match = re.search(r"<title[^>]*>(.*?)</title>", text, re.IGNORECASE | re.DOTALL)
+                        if title_match:
+                            title = html.unescape(re.sub(r"<[^>]+>", "", title_match[1])).strip()[:200]
                     entries["file:" + path] = {"id": "file:" + path, "kind": file["kind"], "title": title,
                                                "source": path, "content": text}
             counts = Counter(e["kind"] for e in entries.values())
@@ -220,7 +225,8 @@ class Browser:
             at = max(0, content.casefold().find(terms[0]) - 70) if terms else 0
             summary["excerpt"] = content[at:at + 240]
             if entry["kind"] == "token":
-                summary.update(type=entry["type"], css_variable=entry["css_variable"])
+                summary.update(type=entry["type"], css_variable=entry["css_variable"],
+                               values={t: entry[t]["resolved"] if entry[t] else None for t in ("light", "dark")})
             out["items"].append(summary)
             if len(json.dumps(out, ensure_ascii=False)) > 13000:
                 out["items"].pop()
@@ -244,3 +250,13 @@ class Browser:
         if len(json.dumps(out, ensure_ascii=False)) > MAX_RESPONSE:
             raise Unavailable("항목이 응답 한도를 넘었습니다. 본문 length를 줄여 조회하세요.")
         return out
+
+    def preview(self, system: str, item: str | None = None, theme: str = "light", revision: str | None = None) -> dict:
+        from ttakkari.design_preview import build_preview
+        if theme not in ("light", "dark"):
+            raise ValueError("테마는 light 또는 dark여야 합니다.")
+        snap, ds = self._system(system, revision)
+        entry = ds["entries"].get(item or f"file:{system}/examples/preview.html")
+        if entry is None or entry["kind"] != "example":
+            raise NotFound("미리보기 가능한 예제가 없습니다.")
+        return build_preview(self.root, snap["revision"], system, entry["source"], theme)

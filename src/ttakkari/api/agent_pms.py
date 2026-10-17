@@ -15,6 +15,7 @@ from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.pms import PmsOperation
+from ttakkari.pms import service as svc
 
 router = APIRouter(prefix="/api/agent/pms", tags=["agent"])
 
@@ -36,6 +37,18 @@ class ProjectQuery(BaseModel):
 class NoteQuery(BaseModel):
     status: Literal["open", "resolved", "all"] = "all"
     kind: pms.NoteKind | None = None
+
+
+class TaskQuery(BaseModel):
+    """list_tasks 선택 필터와 페이지. 모두 생략하면 compact 50개."""
+    parent_id: uuid.UUID | None = None  # 직계 자식만. 비우면 필터 없음(최상위만은 depth=0)
+    depth: int | None = Field(default=None, ge=0, lt=svc.MAX_DEPTH)
+    max_depth: int | None = Field(default=None, ge=0, lt=svc.MAX_DEPTH)
+    status: pms.TaskStatus | None = None
+    q: str | None = Field(default=None, max_length=200)
+    compact: bool = True
+    limit: int | None = Field(default=None, ge=1, le=svc.COMPACT_LIMIT_MAX)  # 기본 compact 50 / 전체 25
+    offset: int = Field(default=0, ge=0)
 
 
 class DashboardQuery(BaseModel):
@@ -105,8 +118,14 @@ async def manage(body: PmsIn, sid: AgentSession, db: Db, request: Request) -> An
     if op == "dashboard":
         return await pms.project_dashboard(project_id, **common, today=_data(DashboardQuery, data).today)
     if op == "list_tasks":
-        _data(EmptyData, data)
-        return await pms.list_tasks(project_id, **common)
+        query = _data(TaskQuery, data)
+        limit = query.limit or (svc.DEFAULT_LIMIT if query.compact else svc.FULL_LIMIT_MAX)
+        if not query.compact and limit > svc.FULL_LIMIT_MAX:
+            raise HTTPException(422, {"code": "limit_too_large", "message":
+                                      f"compact=false 에서는 limit 을 {svc.FULL_LIMIT_MAX} 이하로 쓰세요. parent_id·q 로 좁히거나 offset 으로 나눠 읽으세요."})
+        return await svc.tasks_page(db, project_id, parent_id=query.parent_id, depth=query.depth, max_depth=query.max_depth,
+                                    status_=query.status, q=query.q, compact=query.compact, limit=limit,
+                                    offset=query.offset)
     if op == "list_milestones":
         _data(EmptyData, data)
         return await pms.list_milestones(project_id, **common)

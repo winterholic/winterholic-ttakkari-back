@@ -147,6 +147,48 @@ async def tasks_out(db: AsyncSession, project_id: uuid.UUID, today: date | None 
     return [task_out(n, today) for n in ordered]
 
 
+COMPACT_LIMIT_MAX = 200
+FULL_LIMIT_MAX = 25  # 전체 필드에는 최대 20,000자 description 이 있어 한 쪽을 작게 묶는다
+DEFAULT_LIMIT = 50
+
+
+def task_compact(n: Node) -> dict[str, Any]:
+    """에이전트가 트리를 훑는 최소 필드. 본문·날짜·선행관계는 compact=false 나 parent_id 로 좁혀 읽는다."""
+    t = n.task
+    return {"id": str(t.id), "wbs": n.wbs, "title": t.title, "status": n.status, "progress": n.progress,
+            "parent_id": str(t.parent_id) if t.parent_id else None, "child_count": len(n.children)}
+
+
+async def tasks_page(db: AsyncSession, project_id: uuid.UUID, *, parent_id: uuid.UUID | None = None,
+                     depth: int | None = None, max_depth: int | None = None, status_: str | None = None,
+                     q: str | None = None, compact: bool = True, limit: int = DEFAULT_LIMIT, offset: int = 0,
+                     today: date | None = None) -> dict[str, Any]:
+    """트리 순서(번호순)로 편 작업에 필터를 걸고 offset/limit 으로 자른다.
+
+    집계 상태·깊이는 전체 트리에서 계산한 뒤 거르므로 필터가 번호·집계 값을 바꾸지 않는다.
+    """
+    today = today or today_kst()
+    ordered, nodes = await tree(db, project_id)
+    if parent_id is not None and parent_id not in nodes:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "상위 작업을 찾을 수 없어요."})
+    needle = q.strip().casefold() if q else ""
+    picked = [
+        n for n in ordered
+        if (parent_id is None or n.task.parent_id == parent_id)
+        and (depth is None or n.depth == depth)
+        and (max_depth is None or n.depth <= max_depth)
+        and (status_ is None or n.status == status_)
+        and (not needle or needle in n.task.title.casefold())
+    ]
+    page = picked[offset:offset + limit]
+    end = offset + len(page)
+    more = end < len(picked)
+    return {"tasks": [task_compact(n) if compact else task_out(n, today) for n in page],
+            "compact": compact, "total": len(picked), "project_total": len(ordered),
+            "offset": offset, "limit": limit, "returned": len(page), "has_more": more,
+            "next_offset": end if more else None}
+
+
 # ---- 상태·진행률 동기화(말단 작업)
 
 def set_status(t: PmsTask, new: str) -> None:

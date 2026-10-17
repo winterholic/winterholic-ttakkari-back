@@ -356,7 +356,15 @@ payload 는 `{title, body, url, tag}`:
 마일스톤 `list_milestones/create_milestone/update_milestone/delete_milestone`,
 이슈 `list_notes/create_note/update_note/delete_note`를 지원한다.
 프로젝트 소속 작업에는 `project_id`, 기존 작업·마일스톤·이슈 수정/이동/삭제에는 `item_id`를 쓴다.
-`data` 필드는 아래 사용자 API의 해당 요청 스키마와 같다. 생략은 보존, nullable 필드의 null은 해제이며 알 수 없는 필드는 422다.
+`list_tasks`만 사용자 API와 다르다. 큰 프로젝트에서 응답이 에이전트 도구 결과 한도를 넘지 않게
+기본이 compact·페이지 응답이다. `data`(모두 선택): `parent_id`(직계 자식만, 다른 프로젝트의 작업이면 404),
+`depth`(정확히 그 깊이, 0=최상위), `max_depth`(그 깊이 이하), `status`(집계된 상태), `q`(제목 부분 일치, 대소문자 무시),
+`limit`(기본 50, 최대 200. `compact=false`면 기본·최대 25, 넘으면 422 `limit_too_large`), `offset`(기본 0),
+`compact`(기본 true). compact 항목은 `{id, wbs, title, status, progress, parent_id, child_count}`뿐이고,
+`compact=false`는 사용자 API와 같은 전체 필드(description 포함)다. 필터는 전체 트리에서 번호·집계를 계산한 뒤 걸러서
+번호와 상태가 필터에 따라 달라지지 않는다. 응답 `{tasks, compact, total, project_total, offset, limit, returned, has_more, next_offset}`:
+`total`은 필터 후 개수, `next_offset`은 마지막 쪽이면 null이다. 이전에는 `data: {}`가 전체 트리를 돌려줬다.
+나머지 `data` 필드는 아래 사용자 API의 해당 요청 스키마와 같다. 생략은 보존, nullable 필드의 null은 해제이며 알 수 없는 필드는 422다.
 회사 세션은 회사 프로젝트만 관리한다. MCP의 `manage_pms`가 이 경로를 호출하며 PMS 변경은 사용자 위임에 따라 추가 승인 없이 실행된다.
 계획을 등록하는 것은 해당 계획의 실제 개발 승인이 아니다. 읽기와 쓰기의 도구 annotation은 구분한다.
 

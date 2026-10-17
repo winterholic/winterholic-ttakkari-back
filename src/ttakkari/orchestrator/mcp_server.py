@@ -427,13 +427,19 @@ async def manage_pms(operation: PmsOperation, project_id: str | None = None, ite
     Project operations use project_id; update/move/delete task/milestone/note use item_id (real UUIDs).
     list_projects data: scope=all|personal|work, q, status=planning|active|on_hold|done.
     create/update_project data: name, description, scope, status, start_date/end_date, members; create also phases.
-    list_tasks returns the full numbered tree. create/update_task data: title, description, priority,
+    list_tasks reads the numbered WBS tree in pages and is compact by default: id, wbs, title, status, progress,
+    parent_id, child_count; 50 per page. Optional data: parent_id (direct children only), depth, max_depth (0=top
+    level), status=todo|doing|review|done, q (title substring), limit (<=200; <=25 when compact=false), offset,
+    compact=false (adds description, priority, assignee, dates, predecessors; use only on a narrowed set).
+    Response: tasks, total (after filters), project_total, has_more, next_offset; call again with
+    data.offset=next_offset until has_more is false. Browse top-down: max_depth=1 first, then parent_id per branch.
+    create/update_task data: title, description, priority,
     assignee, dates, status=todo|doing|review|done, progress=0..100, predecessors=[UUIDs]. Create also parent_id/after_id.
     move_task data: parent_id=null to outdent, index to reorder. Parent progress/status roll up from children.
     create/update_milestone data: title, due_date (required on create, YYYY-MM-DD), done.
     list_notes data: status=open|resolved|all, kind=issue|risk|note. create/update_note data: title, body,
     kind, severity=low|medium|high, owner, task_id; update also status=open|resolved.
-    get_project/dashboard/list_tasks/list_milestones and delete operations need no data (dashboard accepts today).
+    get_project/list_milestones and delete operations need no data; dashboard accepts today.
     Null in update data clears nullable fields; omitted fields stay unchanged. Delete project/task removes
     descendants, so first read the target and act within the user's task scope. Unknown fields are rejected."""
     return await _agent("POST", "/pms", {"operation": operation, "project_id": project_id,

@@ -95,11 +95,11 @@ class MuseAdapterTests(unittest.TestCase):
         self.assertTrue(self.state.limit_hit)
         self.assertEqual(self.state.limit_resets_at, 1792656800)
 
-    def test_explicit_execution_is_enabled_by_default_but_auto_routing_stays_locked(self):
-        # d0148cf opened explicit Muse runs by default; auto routing needs separate acceptance.
+    def test_verified_execution_and_auto_routing_are_enabled_by_default(self):
+        # Deployed coding, MCP and resume checks have now passed independent verification.
         defaults = Settings(_env_file=None)
         self.assertTrue(defaults.muse_enabled)
-        self.assertFalse(defaults.muse_auto_routing)
+        self.assertTrue(defaults.muse_auto_routing)
 
     def test_execution_refused_when_explicitly_disabled(self):
         spec = LaunchSpec(self.cwd, 'task', None, None, None, self.cwd, [self.cwd], 'note')

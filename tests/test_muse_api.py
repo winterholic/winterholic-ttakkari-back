@@ -76,13 +76,22 @@ async def test_muse_account_usage_reports_execution_disabled_when_explicitly_dis
     assert row['error']
 
 
-def test_muse_execution_is_enabled_by_default_without_enabling_auto_routing():
+def test_verified_muse_execution_and_auto_routing_are_enabled_by_default():
     from ttakkari.config import Settings
     from ttakkari.runs import worker_routing
 
     assert Settings(_env_file=None).muse_enabled is True
-    assert Settings(_env_file=None).muse_auto_routing is False
-    assert worker_routing.MUSE_AUTO_ROUTING_ACCEPTED is False
+    assert Settings(_env_file=None).muse_auto_routing is True
+    assert worker_routing.MUSE_AUTO_ROUTING_ACCEPTED is True
+
+
+def test_muse_auto_routing_environment_opt_out(monkeypatch):
+    from ttakkari.config import Settings
+
+    monkeypatch.setenv("TTAKKARI_MUSE_AUTO_ROUTING", "false")
+    settings = Settings(_env_file=None)
+    assert settings.muse_enabled is True
+    assert settings.muse_auto_routing is False
 
 
 async def test_muse_account_usage_reports_execution_enabled_by_default(client, auth):

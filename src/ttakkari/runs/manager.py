@@ -1589,7 +1589,7 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
         )
     if run.status == RunStatus.succeeded and usage_info.get("verification_required"):
         body.append(
-            "독립 검증 필요: 이 작업은 Gemini 3.8 Flash 계열이 수행했습니다. "
+            f"독립 검증 필요: 이 작업은 {run.engine}/{run.model or sess.model or 'unknown'} 모델이 수행했습니다. "
             "최종 완료로 판단하기 전에 다른 공급자(task_type='verification', GPT-6 Luna 또는 Claude Sonnet)로 "
             "독립 검증하고, 결과를 message_worker(verification_outcome='passed'|'failed')로 기록하세요."
         )

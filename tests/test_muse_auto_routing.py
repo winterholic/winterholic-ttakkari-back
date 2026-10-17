@@ -18,7 +18,7 @@ from test_worker_routing import (  # noqa: F401  (fixtures imported for pytest)
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.models import EngineAccount
+from ttakkari.models import ChatSession, EngineAccount
 from ttakkari.orchestrator.runtime import issue_token, model_routing_note
 from ttakkari.runs import usage
 from ttakkari.runs import worker_routing as routing
@@ -61,20 +61,25 @@ def engines(policy, task):
     return {entry["engine"] for stage in policy[task] for entry in stage}
 
 
-def test_default_policy_and_acceptance_exclude_muse():
-    assert not routing.muse_auto_enabled()
-    assert "muse" not in {e for task in routing.policy() for e in engines(routing.policy(), task)}
-    assert not routing.accepts_model("general", MUSE_MODEL)
-    assert '"engine": "muse"' not in model_routing_note()
+def test_default_policy_and_acceptance_include_verified_muse():
+    assert routing.muse_auto_enabled()
+    assert "muse" in engines(routing.policy(), "general")
+    assert "muse" in engines(routing.policy(), "routine")
+    assert routing.accepts_model("general", MUSE_MODEL)
+    assert '"engine": "muse"' in model_routing_note()
 
 
 def test_both_flags_are_required(monkeypatch):
     settings = get_settings()
+    monkeypatch.setattr(settings, "muse_enabled", False)
     monkeypatch.setattr(settings, "muse_auto_routing", True)
     assert not routing.muse_auto_enabled(), "auto routing alone must not enable a disabled engine"
     monkeypatch.setattr(settings, "muse_enabled", True)
     monkeypatch.setattr(settings, "muse_auto_routing", False)
     assert not routing.muse_auto_enabled()
+    assert all("muse" not in engines(routing.policy(), task) for task in routing.ROUTES)
+    assert not routing.accepts_model("general", MUSE_MODEL)
+    assert '"engine": "muse"' not in model_routing_note()
 
 
 def test_enabled_policy_places_muse_only_in_general_and_routine_first_stage(muse_gate):
@@ -113,8 +118,9 @@ def test_pinned_stages_follow_the_gate_and_do_not_offer_a_second_muse_model(monk
     def flat(stages):
         return {pair for stage in stages for pair in stage}
 
-    assert ("muse", MUSE_MODEL) not in flat(routing.pinned_stages("claude", task_type="general"))
     settings = get_settings()
+    monkeypatch.setattr(settings, "muse_auto_routing", False)
+    assert ("muse", MUSE_MODEL) not in flat(routing.pinned_stages("claude", task_type="general"))
     monkeypatch.setattr(settings, "muse_enabled", True)
     monkeypatch.setattr(settings, "muse_auto_routing", True)
     monkeypatch.setattr(routing, "MUSE_AUTO_ROUTING_ACCEPTED", True)
@@ -123,14 +129,15 @@ def test_pinned_stages_follow_the_gate_and_do_not_offer_a_second_muse_model(monk
     assert [pair for pair in flat(muse_pinned) if pair[0] == "muse"] == [("muse", MUSE_MODEL)]
 
 
-async def test_gate_off_keeps_sonnet_even_with_idle_muse_account(client, auth, make_dir, muse):
+async def test_gate_off_keeps_sonnet_even_with_idle_muse_account(client, auth, make_dir, muse, monkeypatch):
+    monkeypatch.setattr(get_settings(), "muse_auto_routing", False)
     muse_usage(muse, used=0)
     response, _ = await spawn(client, auth, make_dir, task_type="general")
     run = await result(client, auth, response)
     assert (run["engine"], run["model"]) == ("antigravity", SONNET), run
 
 
-async def test_general_prefers_muse_when_its_measured_headroom_is_larger(client, auth, make_dir, muse, muse_gate):
+async def test_general_prefers_muse_when_its_measured_headroom_is_larger(client, auth, make_dir, muse):
     muse_usage(muse, used=0)
     response, h = await spawn(client, auth, make_dir, task_type="general")
     run = await result(client, auth, response)
@@ -141,6 +148,14 @@ async def test_general_prefers_muse_when_its_measured_headroom_is_larger(client,
     assert detail["routing"]["verification_required"] is True
     assert detail["routing"]["recommended_verifier"]["excluded_family"] == "muse"
     assert run["usage"]["verification_required"] is True
+
+    async with sessionmaker()() as db:
+        worker = await db.get(ChatSession, uuid.UUID(wid))
+        parent_id = worker.parent_id
+    orch = await client.get(f"/api/sessions/{parent_id}/runs", headers=auth)
+    report = next(r for r in orch.json() if "[작업 보고]" in r["prompt"])
+    assert f"muse/{MUSE_MODEL}" in report["prompt"]
+    assert "Gemini 3.8 Flash 계열이 수행" not in report["prompt"]
 
 
 async def test_routine_can_use_muse_spark_when_it_has_more_room_than_flash(client, auth, make_dir, muse, muse_gate, accounts):

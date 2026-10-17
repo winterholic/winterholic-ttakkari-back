@@ -193,7 +193,11 @@ async def test_account_usage_publishes_one_task_policy_and_per_model_headroom(cl
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
     body = (await client.get("/api/orchestrator/accounts/usage", headers=h)).json()
-    assert body["worker_routing"]["general"][0] == [{"engine":"antigravity", "model":SONNET}]
+    assert body["muse_auto_routing"] is True
+    assert body["worker_routing"]["general"][0] == [
+        {"engine":"antigravity", "model":SONNET},
+        {"engine":"muse", "model":"muse-spark-1.3"},
+    ]
     assert "native auto" not in body["note"]
     agy = next(a for a in body["accounts"] if a["engine"]=="antigravity")
     assert agy["model_capacity"][SONNET]["remaining_to_limit_percent"] == 80
@@ -607,6 +611,7 @@ async def test_flash_implementation_marks_independent_verification_and_records_f
     orch_runs = (await client.get(f"/api/sessions/{orch['id']}/runs", headers=auth)).json()
     report_run = next(r for r in orch_runs if "[작업 보고]" in r["prompt"])
     assert "독립 검증 필요" in report_run["prompt"]
+    assert f"antigravity/{FLASH}" in report_run["prompt"]
 
     verify = await client.post(
         f"/api/orchestrator/workers/{wid}/messages",

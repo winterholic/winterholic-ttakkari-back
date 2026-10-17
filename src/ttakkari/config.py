@@ -170,11 +170,11 @@ class Settings(BaseSettings):
     antigravity_bin: str = "/opt/homebrew/bin/agy"
     # Ask each account's own CLI which models it can run (`agy models`); off in tests.
     antigravity_model_probe: bool = True
-    # Explicit Muse runs are available by default; auto-routing still requires separate acceptance.
+    # Muse coding, MCP and resume passed on deployed 6d5f580 (2026-10-18).
     muse_enabled: bool = True
     # Joins Muse to auto worker routing (general/routine). Also requires the code acceptance latch;
-    # keep off until coding, MCP-tool and resume checks pass on the deployed runtime.
-    muse_auto_routing: bool = False
+    # TTAKKARI_MUSE_AUTO_ROUTING=false remains an explicit opt-out.
+    muse_auto_routing: bool = True
     muse_bin: str = str(HOME / "development/tooling/muse/bin/muse")
     muse_node_bin: str = "node"
     muse_runtime_root: Path = HOME / "development/projects/winterholic-ttakkari/back/.muse-runtime"

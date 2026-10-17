@@ -1001,3 +1001,19 @@ class OpsIngestCursor(Base):
     inode: Mapped[int | None] = mapped_column(BigInteger)
     position: Mapped[int] = mapped_column(BigInteger, default=0)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class ReverseJob(Base):
+    """리버스 엔지니어링 작업. 단계별 근거와 최종 정리 결과를 JSONB에 둔다(ADR 0038)."""
+
+    __tablename__ = "reverse_jobs"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    target: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(16))  # git_url | local_path
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|running|done|failed
+    revision: Mapped[str | None] = mapped_column(String(64))
+    stages: Mapped[list[Any]] = mapped_column(default=list)
+    result: Mapped[dict[str, Any] | None]
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)

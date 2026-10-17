@@ -86,6 +86,31 @@ async def design_system_item(system: str, item: str, offset: int = 0, length: in
     from urllib.parse import quote
     return await _design_system(f"/{quote(system, safe='')}/item", item=item, offset=offset, length=length, revision=revision)
 
+
+@server.tool()
+async def reverse_start(target: str) -> str:
+    """Start a reverse-engineering job for a GitHub URL (owner/repo or full https URL) or a local directory.
+    The target is shallow-cloned and read without executing its code; secret files are never read.
+    Poll reverse_get for staged progress and the final summary. Personal sessions only."""
+    from ttakkari.oplog.limits import cap_text
+    return cap_text(await _agent("POST", "/reverse/start", {"target": target}))
+
+
+@query_tool
+async def reverse_list() -> str:
+    """List reverse-engineering jobs newest first with status, current stage and short overview.
+    Use reverse_get for stages and the full result. Personal sessions only."""
+    return await _agent("GET", "/reverse")
+
+
+@query_tool
+async def reverse_get(job_id: str) -> str:
+    """Read one reverse-engineering job: staged timeline with evidence per stage plus the final summary
+    (overview, architecture, key modules, flows, borrowable ideas, limitations). Target code is
+    never executed; unknown runtime behavior stays marked as needing confirmation."""
+    from urllib.parse import quote
+    return await _agent("GET", f"/reverse/{quote(job_id, safe='')}")
+
 async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
     return await _call(method, path, body, prefix="/api/agent", params=params)
 

@@ -8,7 +8,11 @@ READ_ONLY_TOOLS = frozenset({
     "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log",
     "design_system_catalog", "design_system_search", "design_system_item", "execution_capabilities",
     "luna_common30_v2_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
+    "reverse_list", "reverse_get",
 })
+# 리버스 엔지니어링 시작은 상태를 바꾸므로 읽기 전용으로 표시하지 않는다.
+# 사용자 지시로 요청하는 작업이라 무인 실행 승인 목록에는 둔다.
+REVERSE_TOOLS = frozenset({"reverse_start"})
 
 # 2026-10-14 사용자 결정: PMS/WBS는 에이전트가 전체 관리하며 변경 시 승인을 다시 요구하지 않는다.
 # 쓰기를 READ_ONLY_TOOLS에 넣어 readOnlyHint로 위장하지 않는다.
@@ -33,4 +37,4 @@ HOST_ENV_TOOLS = frozenset({"report_execution_environment", "host_gpu_start", "h
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
-                       | ASSISTANT_WRITE_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS)
+                       | ASSISTANT_WRITE_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS)

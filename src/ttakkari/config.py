@@ -310,6 +310,10 @@ class Settings(BaseSettings):
         return self.data_dir / "outbox"
 
     @property
+    def reverse_root(self) -> Path:
+        return self.data_dir / "reverse"
+
+    @property
     def guard_log(self) -> Path:
         return self.data_dir / "guard.log"
 

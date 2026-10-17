@@ -6,6 +6,7 @@ either side effect; each subsequent pass reconciles observable state.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import io
 import json
 import logging
@@ -32,6 +33,32 @@ from ttakkari.models import RuntimeControl, RuntimeGeneration, RuntimeLease
 log = logging.getLogger(__name__)
 _LOG_TAIL_LINES = 12
 _LOG_TAIL_CHARS = 4000
+# 준비 단계별 상한(초). 감독 루프를 묶어 두었던 장시간 빌드·검사를 fencing한다.
+STAGE_TIMEOUTS = {"uv sync": 600, "npm ci": 600, "pytest": 1800, "migrate": 600,
+                  "command": 600}
+PREPARE_TOTAL_TIMEOUT = 3600
+# job id -> 실행 중인 준비 태스크. 감독 패스 사이에서 유지된다.
+_PREPARE_TASKS: dict[str, asyncio.Task] = {}
+
+
+def _utcnow() -> str:
+    from datetime import UTC, datetime
+    return datetime.now(UTC).isoformat()
+
+
+class StageError(RuntimeError):
+    """단계·명령·종료코드를 보존한 배포 실패. 로그 문자열 추측 대신 이것을 기록한다."""
+
+    def __init__(self, stage: str, command: tuple | list | None, exit_code: int | None,
+                 summary: str):
+        self.stage = stage
+        self.command = " ".join(command) if command else None
+        self.exit_code = exit_code
+        self.summary = summary
+        # 기존 "release stage {stage} failed (exit N)" 접두를 유지한다. oplog
+        # 그룹핑이 이 형식에 의존한다.
+        tail = f" (exit {exit_code})" if exit_code is not None else ""
+        super().__init__(f"release stage {stage} failed{tail}; {summary}")
 
 
 def test_environment(revision: str, test_url: str) -> dict:
@@ -86,6 +113,15 @@ class Releases:
 
     def archive(self, revision: str) -> Path:
         revision = _sha(revision)
+        # git archive exit 128 대신 원인을 명시한다. 릴리스 경로 오지정이면 여기서 거부.
+        try:
+            subprocess.check_output(["git", "rev-parse", "--show-toplevel"],
+                cwd=self.source, stderr=subprocess.DEVNULL, text=True)
+        except (subprocess.CalledProcessError, OSError) as exc:
+            raise RuntimeError(
+                "배포 소스가 유효한 Git 작업 트리가 아닙니다: "
+                f"{self.source}. TTAKKARI_DEPLOY_SOURCE_ROOT를 원본 레포 경로로 지정하세요."
+            ) from exc
         target = self.root / "releases" / revision
         if target.exists():
             if json.loads((target / ".release.json").read_text())["revision"] != revision:
@@ -109,11 +145,42 @@ class Releases:
     @staticmethod
     def contract(path: Path) -> dict:
         value = json.loads((path / "deploy/generation-contract.json").read_text())
-        if value.get("protocol") != PROTOCOL or not value.get("schema_revision"):
-            raise ValueError("unsupported generation/schema contract; idle bootstrap required")
-        if not isinstance(value.get("online_migration_from"), list):
-            raise TypeError("online migration policy must be explicit")
-        return value
+        return validate_contract(value)
+
+
+def validate_contract(value: dict) -> dict:
+    if value.get("protocol") != PROTOCOL or not value.get("schema_revision"):
+        raise ValueError("unsupported generation/schema contract; idle bootstrap required")
+    if not isinstance(value.get("online_migration_from"), list):
+        raise TypeError("online migration policy must be explicit")
+    supervisor = value.get("supervisor")
+    if supervisor is not None and (
+        not isinstance(supervisor, dict)
+        or not isinstance(supervisor.get("protocol"), int)
+        or not isinstance(supervisor.get("slots"), int)
+    ):
+        raise TypeError("supervisor requirement must declare integer protocol/slots")
+    return value
+
+
+def contract_for_revision(source: Path, revision: str) -> dict:
+    """작업 트리를 건드리지 않고 특정 커밋의 계약을 읽는다."""
+    raw = subprocess.check_output(["git", "show", f"{_sha(revision)}:deploy/generation-contract.json"],
+                                  cwd=source, stderr=subprocess.DEVNULL)
+    return validate_contract(json.loads(raw))
+
+
+def required_supervisor_capabilities(contract: dict) -> dict:
+    """릴리스가 요구하는 감독 기능. 키가 없는 옛 계약은 2슬롯 감독을 가정한다."""
+    required = contract.get("supervisor") or {}
+    return {"protocol": required.get("protocol", 1), "slots": required.get("slots", 2)}
+
+
+def supervisor_satisfies(contract: dict) -> bool:
+    from ttakkari import generation
+    current = generation.supervisor_capabilities()
+    required = required_supervisor_capabilities(contract)
+    return current["protocol"] == required["protocol"] and current["slots"] >= required["slots"]
 
 
 def proxy_config(slot: int) -> dict:
@@ -336,21 +403,48 @@ class GenerationController:
         if await self.slots.current_slot() != slot or self.slots.persisted_slot() != slot:
             await self.slots.switch(slot)
 
-    async def command(self, job, release, *args, stage="command", env=None):
+    def record_failure(self, job, status: str, exc: BaseException, *,
+                       stage: str | None = None, command=None, exit_code: int | None = None) -> None:
+        """배포 레코드에 단계·명령·종료코드·요약을 구조화해 남긴다.
+
+        StageError면 그 안의 값을 우선한다. error(문자열)는 하위호환용으로 유지해
+        backend_deploy_status·ops 조회가 그대로 읽는다.
+        """
+        if isinstance(exc, StageError):
+            stage = stage or exc.stage
+            command = command or exc.command
+            exit_code = exit_code if exit_code is not None else exc.exit_code
+            summary = exc.summary
+        else:
+            summary = str(exc)
+        self.phase(job, status, error=str(exc), error_stage=stage,
+                   error_command=command, error_exit=exit_code,
+                   error_summary=(f"{stage}: {summary}" if stage else summary)[:2000])
+
+    async def command(self, job, release, *args, stage="command", env=None, timeout=None):
         log_path = self.store.jobs / f"{job['id']}.log"
+        limit = timeout if timeout is not None else STAGE_TIMEOUTS.get(stage, 600)
+        # 단계 진입을 기록한다. 감독 루프는 이 heartbeat로 진척을 본다.
+        self.phase(job, job["status"], prepare_stage=stage, prepare_heartbeat=_utcnow())
         with log_path.open("ab") as output:
             try:
                 proc = await asyncio.create_subprocess_exec(*args, cwd=release, env=env,
                     stdout=output, stderr=output)
             except OSError as exc:
-                raise RuntimeError(f"release stage {stage} could not start ({type(exc).__name__})") from exc
-            returncode = await proc.wait()
+                raise StageError(stage, args, None,
+                                 f"could not start ({type(exc).__name__}): {exc}") from exc
+            try:
+                returncode = await asyncio.wait_for(proc.wait(), limit)
+            except TimeoutError:
+                with contextlib.suppress(Exception):
+                    proc.kill()
+                await proc.wait()
+                raise StageError(stage, args, None,
+                                 f"timed out after {limit}s; existing generation was preserved") from None
         if returncode:
             tail = _safe_log_tail(log_path, env if env is not None else os.environ)
-            raise RuntimeError(
-                f"release stage {stage} failed (exit {returncode}); "
-                f"last {_LOG_TAIL_LINES} log lines:\n{tail}"
-            )
+            raise StageError(stage, args, returncode,
+                             f"last {_LOG_TAIL_LINES} log lines:\n{tail}")
 
     async def environment(self, job, release):
         if not (release / ".environment-built").exists():
@@ -360,6 +454,67 @@ class GenerationController:
             await self.command(job, release, "npm", "ci", "--prefix", ".browser-runtime",
                                "--ignore-scripts", "--no-audit", "--no-fund", stage="npm ci")
             (release / ".browser-built").touch()
+
+    @staticmethod
+    def contract_fingerprint(contract: dict) -> str:
+        import hashlib
+        return hashlib.sha1(json.dumps(contract, sort_keys=True).encode()).hexdigest()
+
+    def verify_test_binding(self, job, release: Path) -> None:
+        """검사 결과가 이 배포 SHA의 것인지 확인한다. 어긋나면 재검사를 요구한다."""
+        try:
+            marker = json.loads((release / ".release.json").read_text()).get("revision")
+        except OSError as exc:
+            raise StageError("verify", None, None, f"release marker unreadable: {exc}") from exc
+        if marker != job["revision"]:
+            raise StageError("verify", None, None,
+                             f"release {str(marker)[:7]} != job {job['revision'][:7]}; re-preparation required")
+        if job.get("tested_revision") and job["tested_revision"] != job["revision"]:
+            raise StageError("verify", None, None,
+                             f"tested {job['tested_revision'][:7]} != job {job['revision'][:7]}; retest required")
+        if job.get("tested_contract"):
+            current = self.contract_fingerprint(self.releases.contract(release))
+            if current != job["tested_contract"]:
+                raise StageError("verify", None, None,
+                                 "release contract changed after testing; retest required")
+
+    async def prepare_tracked(self, job):
+        """준비 파이프라인을 백그라운드 태스크로 돌린다. 진행 중이면 None.
+
+        빠른 준비(스텁·캐시 적중)는 한 패스에 끝낸다. 느린 준비는 heartbeat만
+        남기고 None을 반환해 감독 루프가 drain·회복 주기를 계속 돌게 한다.
+        """
+        task = _PREPARE_TASKS.get(job["id"])
+        if task is None:
+            self.phase(job, job["status"], prepare_stage="queued", prepare_heartbeat=_utcnow())
+            task = asyncio.create_task(self._prepare_supervised(self.store.get(job["id"])))
+            _PREPARE_TASKS[job["id"]] = task
+            await asyncio.sleep(0)
+        if not task.done():
+            self.phase(job, job["status"], prepare_heartbeat=_utcnow())
+            return None
+        del _PREPARE_TASKS[job["id"]]
+        release = task.result()
+        job.update(self.store.get(job["id"]))
+        return release
+
+    async def _prepare_supervised(self, job):
+        try:
+            return await asyncio.wait_for(self.prepare(job), PREPARE_TOTAL_TIMEOUT)
+        except TimeoutError as exc:
+            raise StageError("prepare", None, None,
+                             f"prepare exceeded {PREPARE_TOTAL_TIMEOUT}s; "
+                             "existing generation was preserved") from exc
+
+    @staticmethod
+    @contextlib.asynccontextmanager
+    async def _operation(stage: str):
+        try:
+            yield
+        except StageError:
+            raise
+        except Exception as exc:
+            raise StageError(stage, None, None, str(exc)) from exc
 
     async def prepare(self, job):
         self.phase(job, "building")
@@ -396,7 +551,9 @@ class GenerationController:
                 job, release, str(release / ".venv/bin/python"), "-m", "ttakkari.cli", "migrate",
                 stage="migrate", env=env,
             )
-        self.phase(job, "prepared", release_path=str(release))
+        self.phase(job, "prepared", release_path=str(release),
+                   tested_revision=job["revision"],
+                   tested_contract=self.contract_fingerprint(contract))
         return release
 
     async def rollback(self, job):
@@ -449,21 +606,92 @@ class GenerationController:
             await self.slots.stop(job["previous_slot"])
             self.succeed(job)
 
+    async def ensure_supervisor_capable(self, job) -> bool:
+        """릴리스 요구조건과 실행 중 감독을 비교한다. 진행 가능하면 True.
+
+        불일치면 현재 활성 릴리스 코드로의 안전한 감독 갱신을 한 번 시도하고,
+        여의치 않으면 supervisor_upgrade_required 로 보고한다. drain·복구
+        경로는 이 검사를 거치지 않는다.
+        """
+        from ttakkari import generation
+        try:
+            contract = await asyncio.to_thread(
+                contract_for_revision, self.releases.source, job["revision"])
+        except (subprocess.CalledProcessError, ValueError, OSError) as exc:
+            # 계약을 못 읽으면 게이트를 건너뛴다. prepare의 아카이브 검증이
+            # 명확한 오류로 거부한다.
+            log.warning("supervisor capability check skipped: %s", exc)
+            return True
+        if supervisor_satisfies(contract):
+            return True
+        required = required_supervisor_capabilities(contract)
+        current = generation.supervisor_capabilities()
+        detail = (f"release {job['revision'][:7]} requires supervisor {required}, "
+                  f"running supervisor provides {current}")
+        if await self.maybe_upgrade_supervisor(job, required):
+            return False
+        self.phase(job, "supervisor_upgrade_required", error_stage="supervisor",
+                   error_summary="supervisor_upgrade_required: " + detail, error=detail)
+        return False
+
+    async def maybe_upgrade_supervisor(self, job, required) -> bool:
+        """현재 활성 릴리스 코드로 감독을 갱신한다. 갱신을 걸었으면 True.
+
+        같은 활성 리비전에 이미 시도했거나 영수증(receipts)이 없으면 False.
+        갱신 후에는 이 프로세스가 옛 코드이므로 이번 패스에서는 진행하지 않는다.
+        """
+        try:
+            active = await self.active()
+            if active is None:
+                return False
+            info = await self.generation_info(active)
+        except Exception:
+            log.exception("supervisor capability check could not read the active generation")
+            return False
+        revision = info["revision"]
+        if job.get("supervisor_upgrade_attempted_for") == revision:
+            return False
+        release = self.releases.root / "releases" / revision
+        try:
+            candidate_contract = Releases.contract(release)
+        except (OSError, ValueError, TypeError):
+            return False
+        candidate = required_supervisor_capabilities(candidate_contract)
+        if candidate["protocol"] != required["protocol"] or candidate["slots"] < required["slots"]:
+            return False
+        receipts = [j for j in self.store.all() if j["revision"] == revision
+                    and j["status"] in {"draining", "succeeded"} and not j.get("skip_tests", True)
+                    and j.get("strategy") == "generations" and j.get("release_path") == str(release)]
+        if not receipts:
+            return False
+        try:
+            await upgrade_supervisor(self, revision)
+        except Exception:
+            log.exception("automatic supervisor upgrade failed; reporting instead")
+            return False
+        self.phase(job, job["status"], supervisor_upgrade_attempted_for=revision,
+                   error_stage="supervisor",
+                   error_summary=f"supervisor upgrade to {revision[:7]} requested; retrying")
+        return True
+
     async def process(self, job):
         if job["status"] == "recovery_pending":
             return
         if job["status"] in {"draining", "retiring"}:
             try:
-                await self.retire(job)
+                async with self._operation("drain"):
+                    await self.retire(job)
             except Exception as exc:
                 log.exception("generation retirement needs recovery: %s", job["id"])
-                self.phase(job, "recovery_pending", error=str(exc))
+                self.record_failure(job, "recovery_pending", exc, stage="drain")
             return
         try:
             if job["status"] == "rolling_back":
                 await self.rollback(job)
                 return
             if "candidate_slot" not in job:
+                if not await self.ensure_supervisor_capable(job):
+                    return
                 snapshots = [await self.slots.snapshot(slot) for slot in range(len(PORTS))]
                 active = await self.active()
                 old_slot = next((i for i, row in enumerate(snapshots) if row and uuid.UUID(row["generation"]) == active), None)
@@ -473,13 +701,29 @@ class GenerationController:
                 if free is None:
                     self.phase(job, "waiting_slot")
                     return
-                release = Path(job["release_path"]) if job.get("release_path") else await self.prepare(job)
+                release = None
+                if job.get("release_path"):
+                    release = Path(job["release_path"])
+                    try:
+                        self.verify_test_binding(job, release)
+                    except StageError as exc:
+                        # 기록된 릴리스가 검사본과 어긋나면 실패가 아니라 재준비다.
+                        log.warning("stale release binding; re-preparing: %s", exc)
+                        self.phase(job, job["status"], release_path=None,
+                                   tested_revision=None, tested_contract=None)
+                        job.update(self.store.get(job["id"]))
+                        release = None
+                if release is None:
+                    release = await self.prepare_tracked(job)
+                    if release is None:
+                        return
                 self.phase(job, "starting", candidate_slot=free, previous_slot=old_slot,
                     previous_generation=str(active), previous_revision=snapshots[old_slot]["revision"],
                     release_path=str(release))
-            candidate = await self.slots.snapshot(job["candidate_slot"])
-            if candidate is None:
-                candidate = await self.slots.start(job["candidate_slot"], Path(job["release_path"]), job["revision"])
+            async with self._operation("launch"):
+                candidate = await self.slots.snapshot(job["candidate_slot"])
+                if candidate is None:
+                    candidate = await self.slots.start(job["candidate_slot"], Path(job["release_path"]), job["revision"])
             if candidate["revision"] != job["revision"] or candidate.get("protocol") != PROTOCOL:
                 raise RuntimeError("candidate identity mismatch")
             cid = uuid.UUID(candidate["generation"])
@@ -490,19 +734,23 @@ class GenerationController:
                 self.phase(job, "switching", candidate_generation=str(cid))
             current = await self.active()
             if current != cid:
-                await self.activate(cid, expected=uuid.UUID(job["previous_generation"]))
+                async with self._operation("activate"):
+                    await self.activate(cid, expected=uuid.UUID(job["previous_generation"]))
             if job["status"] != "draining":
-                await self.slots.switch(job["candidate_slot"])
-                await self.slots.verify(job["revision"])
+                async with self._operation("cutover"):
+                    await self.slots.switch(job["candidate_slot"])
+                async with self._operation("readiness"):
+                    await self.slots.verify(job["revision"])
                 self.record_active(job)
                 self.phase(job, "draining", activated_revision=job["revision"])
-            await self.retire(job)
+            async with self._operation("drain"):
+                await self.retire(job)
         except Exception as exc:
             log.exception("generation deployment failed: %s", job["id"])
             if job["status"] in {"draining", "retiring"}:
-                self.phase(job, "recovery_pending", error=str(exc))
+                self.record_failure(job, "recovery_pending", exc)
                 return
-            self.phase(job, "rolling_back" if job.get("candidate_generation") else "failed", error=str(exc))
+            self.record_failure(job, "rolling_back" if job.get("candidate_generation") else "failed", exc)
             if job.get("candidate_generation"):
                 try:
                     await self.rollback(job)

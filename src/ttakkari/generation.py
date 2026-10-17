@@ -41,6 +41,11 @@ PORTS = (8791, 8792, 8793)
 CHANNEL = "ttakkari_runtime"
 
 
+def supervisor_capabilities() -> dict:
+    """실행 중인 감독이 제공하는 기능. 릴리스 요구조건과 비교하는 단일 원천."""
+    return {"protocol": PROTOCOL, "slots": len(PORTS)}
+
+
 class OwnershipLost(RuntimeError):
     """A stale attempt must roll back all its pending DB writes."""
 

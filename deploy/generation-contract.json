@@ -1,5 +1,6 @@
 {
   "protocol": 1,
+  "supervisor": {"protocol": 1, "slots": 3},
   "schema_revision": "0040_ops_event_receipts",
   "online_migration_from": [
     "0032_weather_briefings",

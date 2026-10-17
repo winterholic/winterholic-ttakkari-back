@@ -52,8 +52,27 @@ def revision() -> str:
     ).strip()
 
 
+def resolve_source_root() -> Path:
+    """배포 원본 레포 경로. `.git` 없는 실행 릴리스 경로로의 덮어쓰기를 막는다.
+
+    유효한 Git 작업 트리가 아니면 supervisor.json 저장 전에 거부한다.
+    """
+    source = Path(get_settings().deploy_source_root or BACK)
+    try:
+        top = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=source, stderr=subprocess.DEVNULL, text=True,
+        ).strip()
+    except (subprocess.CalledProcessError, OSError) as exc:
+        raise RuntimeError(
+            "배포 소스 경로가 유효한 Git 작업 트리가 아닙니다: "
+            f"{source}. TTAKKARI_DEPLOY_SOURCE_ROOT를 원본 레포 경로로 지정하세요."
+        ) from exc
+    return Path(top)
+
+
 def ensure_revision(expected: str) -> None:
-    source = get_settings().deploy_source_root or BACK
+    source = resolve_source_root()
     dirty = subprocess.check_output(
         ["git", "status", "--porcelain"], cwd=source, text=True
     ).strip()

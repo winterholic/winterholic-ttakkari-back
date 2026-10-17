@@ -165,8 +165,10 @@ class Services:
             await self.generation.activate(candidate, expected=None)
 
     async def pin_supervisor(self, release, revision):
-        from ttakkari.deployment import BACK, LABEL
-        source = get_settings().deploy_source_root or BACK
+        # 소스 검증이 모든 쓰기보다 먼저다. 무효한 경로면 기존 supervisor.json을
+        # 그대로 두고 거부한다(릴리스 경로 덮어쓰기 재발 방지).
+        from ttakkari.deployment import LABEL, resolve_source_root
+        source = resolve_source_root()
         path = self.launch_agents / f"{LABEL}.plist"
         original = plistlib.loads(path.read_bytes())
         backup = self.root / "services/legacy-deployer.plist"

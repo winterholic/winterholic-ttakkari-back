@@ -129,6 +129,7 @@ class SessionOut(ORM):
     last_result: str | None = None
     waiting_limit: bool = False
     waiting_reason: str | None = None
+    last_progress: str | None = None
     is_stuck: bool = False
 
 

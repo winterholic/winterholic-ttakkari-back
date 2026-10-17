@@ -26,7 +26,6 @@ from ttakkari.models import (
     RunOrigin,
     RunStatus,
     SessionKind,
-    utcnow,
 )
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
@@ -150,35 +149,21 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
                     active_run_id=active.id if active else None,
                     context=context_usage.describe(ctx), context_usage=ctx)
     if active:
-        from ttakkari.runs.manager import manager
-        now = utcnow()
-        is_future_wait = bool(active.resume_after and active.resume_after > now)
-        is_mem_wait = manager.is_waiting(active.id)
-        if active.status == RunStatus.queued and (is_future_wait or is_mem_wait):
-            out.waiting_limit = True
-            wait_ev = await db.scalar(select(RunEvent).where(RunEvent.run_id == active.id, RunEvent.type == "run.waiting")
-                                     .order_by(RunEvent.seq.desc()).limit(1))
-            if wait_ev and wait_ev.payload:
-                accs = wait_ev.payload.get("accounts") or []
-                until_str = wait_ev.payload.get("until") or (active.resume_after.isoformat() if active.resume_after else "")
-                acc_names = ", ".join(a.get("name", "") for a in accs if isinstance(a, dict))
-                out.waiting_reason = f"{acc_names} 한도 대기 ({until_str[:16]})" if acc_names else f"한도 대기 ({until_str[:16]})"
-            elif active.resume_after:
-                out.waiting_reason = f"한도 대기 ({active.resume_after.isoformat()[:16]})"
+        from ttakkari.api.desk_feedback import progress_label, quota_wait_reason
+        if active.status == RunStatus.queued:
+            latest_event = await db.scalar(select(RunEvent).where(RunEvent.run_id == active.id)
+                                           .order_by(RunEvent.seq.desc()).limit(1))
+            out.waiting_reason = quota_wait_reason(active, latest_event)
+            out.waiting_limit = out.waiting_reason is not None
         elif active.status == RunStatus.running:
+            from ttakkari.runs.manager import manager
             out.is_stuck = bool(active.pid is None and active.id not in manager._handles)
 
         prog_ev = await db.scalar(select(RunEvent).where(
             RunEvent.run_id == active.id,
             RunEvent.type.in_(("tool.result", "tool.call", "message", "run.diff", "checkpoint"))
         ).order_by(RunEvent.seq.desc()).limit(1))
-        if prog_ev and prog_ev.payload:
-            payload = prog_ev.payload
-            detail_val = payload.get("output") or payload.get("text") or payload.get("ref")
-            if prog_ev.type == "tool.call":
-                detail_val = f"{payload.get('name')} {payload.get('input')}"
-            if detail_val:
-                out.last_progress = " ".join(str(detail_val).split())[:200]
+        out.last_progress = progress_label(prog_ev)
     if runs:
         out.routing = await db.scalar(select(RunEvent.payload).where(
             RunEvent.run_id == runs[0].id, RunEvent.type == "worker.routing").order_by(RunEvent.seq.desc()).limit(1))

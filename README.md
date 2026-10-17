@@ -41,6 +41,7 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_CONTEXT_EMBEDDING_CPU_THREADS`, `TTAKKARI_CONTEXT_EMBEDDING_TIMEOUT_SECONDS` | E5 자식의 CPU 스레드(기본 2), 요청 제한시간(기본 300초) |
 | `TTAKKARI_LOCAL_STT_ENABLED`, `TTAKKARI_LOCAL_STT_PYTHON`, `TTAKKARI_LOCAL_STT_MODEL_PATH`, `TTAKKARI_LOCAL_STT_PROFILE` | 기본 전사 엔진 로컬 Whisper(ADR 0025·0026). 기본 켜짐·robust(VAD·독립 25초 창·문맥 차단·온도 fallback·반복 재처리), 로컬 가중치 경로는 별도 지정. 구 baseline/improved 설정도 robust로 승격한다. 요청마다 자식 프로세스에서 로드·추론 후 종료한다. [설치·API·측정 안내](docs/stt/README.md). 미준비 시 사유를 알리며 외부 엔진으로 자동 전환하지 않는다 |
 | `TTAKKARI_CONTEXT_SOURCE_ROOTS` | 비서 관리 > 지식에 등록할 수 있는 상위 폴더 JSON 배열. 기본 홈 |
+| `TTAKKARI_ARTCRAFT_ROOT`, `TTAKKARI_ARTCRAFT_AUTO_REMOTE_CHECK` | 더보기 > ArtCraft 관제(ADR 0035)가 호출하는 고정 저장소(기본 `~/development/projects/artcraft`)와 최신 릴리스 6시간 자동 확인. 디자인시스템과 별개 도메인이다 |
 | `TTAKKARI_CORS_ORIGINS` | 프론트 origin JSON 배열 |
 | `TTAKKARI_ENV` | `prod` 면 refresh 쿠키가 `SameSite=None; Secure`, `/docs` 비활성 |
 | `TTAKKARI_TRUST_PROXY_IP_HEADER` | Cloudflare Tunnel 뒤면 `CF-Connecting-IP` |

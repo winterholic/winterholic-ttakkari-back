@@ -229,6 +229,9 @@ class Settings(BaseSettings):
     ops_log_sync_seconds: int = Field(default=60, ge=0)
     # Fixed repository; API callers cannot supply paths or trigger builds/fetches.
     design_system_root: Path = HOME / "development/projects/winterholic-design-system"
+    # ArtCraft 관제(artcraft.py). 고정 저장소의 bin/artcraft 만 실행한다. 최신 릴리스는 6시간 캐시로 GitHub 에서 가져온다.
+    artcraft_root: Path = HOME / "development/projects/artcraft"
+    artcraft_auto_remote_check: bool = True
     # 접수 상주화(runs/desk_pool): 계정마다 엔진 프로세스를 하나 미리 띄워 기동 시간을 뺀다. 끄면 매번 CLI 를 새로 띄운다.
     desk_warm_pool: bool = True
     # 오래 띄워 둔 프로세스는 새로 띄운다(CLI 업데이트·인증 갱신을 늦게 반영하지 않게).

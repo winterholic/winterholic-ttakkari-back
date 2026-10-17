@@ -475,6 +475,23 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 - `0038_qwen_flash_usage`(`down_revision = "0037_worker_routing"`)은 Flash Next 로컬 모델의 일일·주간 토큰 영속 집계를 위한 `qwen_flash_usage` 테이블을 추가하는 additive migration이다. generation protocol 1을 유지하며 이전 리비전들에서 온라인 업그레이드할 수 있다.
 
 
+### ArtCraft 관제 (ADR 0035)
+
+소유자 로그인 전용이며 디자인시스템 API와 무관하다. 오류 형식은 공통 `{code, message}`.
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/api/artcraft/apps?refresh=` | `{generated_at, stale, error, apps[], remote{checked_at,attempted_at,error,checking}, jobs[]}`. 앱: `installed{release,cli_ok,cli_version,source_build}`, `latest{tag,update_available,checked_at}`, `smoke{passed,total,failed[],mcp,gui,ts,source}`, `mcp{ok,tool_count}`, `gui{running,listening,port,transport}`, `auth{mode,label,protected}`, `known_bugs[]`. 15초 캐시, `refresh=true`면 다시 읽는다. 조회 실패 시 이전 값과 `stale=true`, 처음부터 실패면 502 |
+| POST | `/api/artcraft/remote-check` | GitHub 최신 릴리스 확인 Job(202). 이미 도는 중이면 그 Job, 120초 안 재요청은 429 |
+| POST | `/api/artcraft/smoke` | `{apps?: string[], mode: "cli"\|"full", confirm?}` → 202 Job. `full`은 `confirm=true` 필요(428), 실행 중 앱이 있으면 409 `app_running`. 다른 스모크·GUI 작업이 돌면 409 `busy`. 모르는 앱은 404 |
+| POST | `/api/artcraft/apps/{app}/gui` | `{action: "start"\|"stop", confirm?}` → 202 Job. `stop`은 `confirm=true` 필요(428). 이미 실행 중 409 `already_running`/`port_in_use`, 실행 중 아님 409 `not_running` |
+| GET | `/api/artcraft/jobs`, `/jobs/{id}` | Job `{id,kind,action,apps,mode,state(queued\|running\|succeeded\|failed\|timeout),summary,output}`. `output`은 마지막 3000자이며 token/key 모양 값은 가린다 |
+| GET | `/api/artcraft/bugs` | BUGS.md 기반 `{counts, bugs[{id,apps,severity,summary,title,body,status,note,updated_at}]}` |
+| PUT | `/api/artcraft/bugs/{id}` | `{status: "unreported"\|"reported"\|"resolved", note?(≤500)}`. 없는 ID 404 |
+| GET | `/api/artcraft/agent-config` | 앱별 MCP 설정 `snippets{json,claude,codex}`와 전체 JSON |
+
+설정: `TTAKKARI_ARTCRAFT_ROOT`(기본 `~/development/projects/artcraft`), `TTAKKARI_ARTCRAFT_AUTO_REMOTE_CHECK`(기본 true, 최신 릴리스가 6시간 넘게 오래되면 조회 시 백그라운드로 갱신).
+
 ### Muse Code 구독 사용량
 
 `GET /api/accounts/usage`는 `engine=muse`를 지원한다. `login`은 공식 SDK account/read에서 관측한 상태를 사용하고 `execution_enabled`는 개발 작업의 활성화 여부다. 사용량 조회는 개발 실행 활성화와 독립적이며 모델 프롬프트·개발 도구를 실행하지 않는다. MSP usage/read는 호스트의 마지막 관측값이다. 인증된 호스트의 응답이 비면 별도 단일 스레드 helper가 공식 대화형 CLI의 `/usage`를 호출한다. 임시 빈 작업공간·PTY에서 `/usage`와 `/exit`만 보내고, 인증·결제·권한 질문에는 답하지 않는다. API 키·인증 파일·브라우저 쿠키를 추출하지 않는다.

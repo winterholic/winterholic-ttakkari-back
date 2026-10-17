@@ -6,6 +6,7 @@ READ_ONLY_TOOLS = frozenset({
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
     "backend_deploy_status", "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
     "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log",
+    "design_system_catalog", "design_system_search", "design_system_item",
     "luna_common30_v2_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
 })
 

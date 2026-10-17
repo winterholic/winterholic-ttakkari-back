@@ -110,6 +110,12 @@ alembic/        마이그레이션
 배포 job 로그, Run 실패·엔진 폴백, API 500, `~/.ttakkari/logs/*.log`의 ERROR/Traceback을 백엔드가 읽어 비밀값을 가리고 fingerprint로 이슈를 묶는다. 에이전트는 보호 영역을 건드리지 않고 MCP 도구로 읽는다: `ops_list_issues` → `ops_get_issue`, `ops_deploy_log(job="latest_failed")`, `ops_search_logs`, `ops_list_deploys`, `ops_update_issue`.
 응답은 요약 우선이고 항상 16,000자 이하다. 프론트는 부가 기능 > 로그·이슈. 주기 인입은 `TTAKKARI_OPS_LOG_SYNC_SECONDS`(기본 60, 0이면 끔)이고 조회 직전에도 20초 넘게 지났으면 한 번 돌린다. 보존·삭제 정책은 아직 없다.
 
+## 디자인시스템 조회
+
+디자인시스템 조회는 부가 기능 > 디자인시스템에서 프로젝트별 토큰·테마·참조·문서·컴포넌트 CSS·예제 원문을 읽는다.
+MCP는 `design_system_catalog` → `design_system_search` → `design_system_item` 순서다. 개인 세션만 허용하며 커밋된 원본만 읽는다.
+설정은 `TTAKKARI_DESIGN_SYSTEM_ROOT`(기본 `~/development/projects/winterholic-design-system`), 계약과 범위는 [ADR 0034](docs/adr/0034-design-system-browser.md)를 따른다.
+
 ## 테스트
 
 ```bash

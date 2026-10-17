@@ -12,11 +12,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, select
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.models import OpsEvent, OpsIngestCursor, Run, RunEvent
+from ttakkari.models import OpsEvent, OpsEventReceipt, OpsIngestCursor, Run, RunEvent
 from ttakkari.oplog import deploy_logs
 from ttakkari.oplog.normalize import (
     exception_fingerprint,
@@ -24,6 +24,7 @@ from ttakkari.oplog.normalize import (
     normalize_message,
     parse_traceback,
 )
+from ttakkari.oplog.scrub import scrub
 from ttakkari.oplog.store import EventIn, advisory_lock, record
 
 log = logging.getLogger("ttakkari.oplog")
@@ -100,6 +101,7 @@ async def _save_cursor(db, key: str, position: int, inode: int | None = None) ->
 async def sync_deploy_jobs(db) -> int:
     n = 0
     seen = set(await db.scalars(select(OpsEvent.dedupe_key).where(OpsEvent.dedupe_key.like("deploy:%"))))
+    seen.update(await db.scalars(select(OpsEventReceipt.dedupe_key).where(OpsEventReceipt.dedupe_key.like("deploy:%"))))
     jobs = deploy_logs.list_jobs()
     for job in jobs:
         if job.get("status") not in deploy_logs.FAILED_STATUSES:
@@ -138,7 +140,7 @@ def _crumb(ev: RunEvent) -> dict[str, Any]:
         keep = {k: p[k] for k in ("status", "reason", "account", "engine", "model", "to", "to_engine", "to_model", "detail", "waiting", "ref")
                 if k in p and p[k] not in (None, "")}
         text = f"{ev.type} {keep}"
-    return {"ts": ev.created_at.isoformat() if ev.created_at else None, "message": text[:200]}
+    return {"ts": ev.created_at.isoformat() if ev.created_at else None, "message": text}
 
 
 async def _run_breadcrumbs(db, run_id) -> list[dict[str, Any]]:
@@ -154,20 +156,30 @@ def _run_signature(error: str) -> str:
     return lines[0] if len(lines[0]) >= 25 or len(lines) == 1 else f"{lines[0]} | {lines[1]}"
 
 
+def _unseen(key):
+    # 기존 세대에서 저장한 상세와 새 세대의 영수증 모두 처리된 원본으로 취급한다.
+    return (
+        ~select(OpsEvent.id).where(OpsEvent.dedupe_key == key).exists(),
+        ~select(OpsEventReceipt.dedupe_key).where(OpsEventReceipt.dedupe_key == key).exists(),
+    )
+
+
 async def sync_runs(db) -> int:
     n = 0
     jobs = deploy_logs.list_jobs()
-    since_default = int((datetime.now(UTC) - timedelta(days=BACKFILL_DAYS)).timestamp() * 1000)
-    cur = await _cursor(db, "runs:failed")
-    since = datetime.fromtimestamp((cur.position if cur else since_default) / 1000, UTC)
-    runs = list(await db.scalars(select(Run).where(Run.status == "failed", Run.finished_at > since).order_by(Run.finished_at).limit(200)))
+    since = datetime.now(UTC) - timedelta(days=BACKFILL_DAYS)
+    # 시각·sequence ID는 commit 순서를 보장하지 않는다. 백필 기간의 미처리 ID를 고른다.
+    run_key = "run:" + cast(Run.id, String)
+    runs = list(await db.scalars(select(Run).where(
+        Run.status == "failed", Run.finished_at >= since, *_unseen(run_key),
+    ).order_by(Run.finished_at, Run.id).limit(200)))
     last = since
     for run in runs:
         when = run.finished_at if run.finished_at.tzinfo else run.finished_at.replace(tzinfo=UTC)
         last = max(last, when)
         error = run.error or "(no error text)"
         result = await record(db, EventIn(
-            source="run", level="error", message=error, title=f"{run.engine}: {error.splitlines()[0][:160]}",
+            source="run", level="error", message=error, title=f"{run.engine}: {scrub(error).splitlines()[0]}",
             fingerprint=fingerprint("run", run.engine, _run_signature(error)), culprit=f"run:{run.engine}",
             occurred_at=when, release=release_at(jobs, when),
             tags={"engine": run.engine, "model": run.model, "profile": run.profile, "effort": run.effort,
@@ -177,10 +189,11 @@ async def sync_runs(db) -> int:
         n += bool(result)
     if runs:
         await _save_cursor(db, "runs:failed", int(last.timestamp() * 1000))
-    ev_cur = await _cursor(db, "runs:events")
-    query = select(RunEvent).where(RunEvent.type.in_(("engine.fallback", "account.limited"))).order_by(RunEvent.id).limit(300)
-    query = (query.where(RunEvent.id > ev_cur.position) if ev_cur
-             else query.where(RunEvent.created_at > datetime.now(UTC) - timedelta(days=BACKFILL_DAYS)))
+    event_key = "runevent:" + cast(RunEvent.id, String)
+    query = select(RunEvent).where(
+        RunEvent.type.in_(("engine.fallback", "account.limited")), RunEvent.created_at >= since,
+        *_unseen(event_key),
+    ).order_by(RunEvent.id).limit(300)
     events = list(await db.scalars(query))
     for ev in events:
         p = ev.payload or {}
@@ -193,7 +206,7 @@ async def sync_runs(db) -> int:
             message = f"account limited ({p.get('engine')}/{p.get('model')}): {p.get('detail') or ''}".strip()
             fp = fingerprint("limited", str(p.get("engine")), normalize_message(p.get("detail") or ""))
         result = await record(db, EventIn(
-            source="worker", level="warning", message=message, title=message[:160], fingerprint=fp,
+            source="worker", level="warning", message=message, title=message, fingerprint=fp,
             culprit=ev.type, occurred_at=when, release=release_at(jobs, when),
             tags={"event": ev.type, "run_id": str(ev.run_id), "reason": p.get("reason"), "release_inferred": True},
             ref=f"run:{ev.run_id}", dedupe_key=f"runevent:{ev.id}"))
@@ -276,7 +289,7 @@ def _block_event(name: str, inode: int, offset: int, block: list[str], mtime: da
         message = re.sub(r"^(?:\d{4}-\d\d-\d\d[ T][\d:.,]+\s+)?(?:[A-Z]+:?\s+)", "", header).strip() or header
         fp, culprit, stack = fingerprint("proc", stem, normalize_message(message)), f"log:{name}", None
     return EventIn(
-        source="process", level=level, message=message, title=message[:200], fingerprint=fp, culprit=culprit,
+        source="process", level=level, message=message, title=message, fingerprint=fp, culprit=culprit,
         occurred_at=when, release=release_at(jobs, when),
         tags={"file": name, "time_estimated": parsed_ts is None, "release_inferred": True},
         stack=stack, excerpt=text if not trace else None, ref=f"file:{name}", dedupe_key=f"file:{name}:{inode}:{offset}")
@@ -333,12 +346,10 @@ async def sync_all(*, force: bool = False) -> dict[str, int] | None:
             return None
         for name, step in (("deploy", sync_deploy_jobs), ("runs", sync_runs), ("process", sync_process_logs)):
             try:
-                result[name] = await step(db)
+                async with db.begin_nested():
+                    result[name] = await step(db)
             except Exception:
                 log.warning("ops-log sync step %s failed", name, exc_info=True)
-                await db.rollback()
-                if not await advisory_lock(db, "sync"):
-                    return result
         await db.commit()
     _last_sync = time.monotonic()
     return result
@@ -378,7 +389,7 @@ async def capture_exception(exc: BaseException, *, source: str = "code", level: 
             fp, message, culprit = fingerprint("exc", type(exc).__name__, normalize_message(str(exc))), f"{type(exc).__name__}: {exc}", None
         async with sessionmaker()() as db:
             res = await record(db, EventIn(
-                source=source, level=level, message=message, title=message[:200], fingerprint=fp, culprit=culprit,
+                source=source, level=level, message=message, title=message, fingerprint=fp, culprit=culprit,
                 occurred_at=datetime.now(UTC), release=current_release(), tags=tags or {}, breadcrumbs=breadcrumbs or [], stack=text))
             await db.commit()
         return res.issue_id if res else None

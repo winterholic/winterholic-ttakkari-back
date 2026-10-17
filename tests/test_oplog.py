@@ -167,7 +167,7 @@ async def test_duplicate_dedupe_key_is_ignored():
 async def _dump_all_tables() -> str:
     async with sessionmaker()() as db:
         rows = []
-        for table in ("ops_issues", "ops_events", "ops_issue_stats", "ops_ingest_cursors"):
+        for table in ("ops_issues", "ops_events", "ops_issue_stats", "ops_ingest_cursors", "ops_event_receipts"):
             rows += [str(tuple(r)) for r in (await db.execute(text(f"select * from {table}"))).all()]
     return "\n".join(rows)
 
@@ -531,3 +531,143 @@ def test_mcp_tool_responses_are_capped_by_the_server_guard(monkeypatch):
     monkeypatch.setattr(mcp_server, "_call", fake_call)
     out = asyncio.run(mcp_server.ops_list_issues())
     assert len(out) <= 16000 and json.loads(out)["truncated"] is True
+
+
+async def test_sampled_out_event_is_counted_once_even_after_retries():
+    when = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    for i in range(EVENTS_PER_ISSUE_PER_HOUR):
+        await _rec(_event(when=when, dedupe_key=f'flood:{i}'))
+    event = _event('not retained', when=when, dedupe_key='flood:sampled')
+    result = await _rec(event)
+    assert result is not None and not result.stored
+    assert await _rec(event) is None
+    async with sessionmaker()() as db:
+        assert (await db.scalar(select(OpsIssue))).event_count == EVENTS_PER_ISSUE_PER_HOUR + 1
+        assert await db.scalar(select(OpsIssueStat.count)) == EVENTS_PER_ISSUE_PER_HOUR + 1
+
+
+async def test_regression_keeps_diagnostic_evidence_after_sample_budget_exhausted():
+    when = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
+    for i in range(EVENTS_PER_ISSUE_PER_HOUR):
+        first = await _rec(_event(when=when, dedupe_key=f'fill:{i}'))
+    async with sessionmaker()() as db:
+        issue = await db.get(OpsIssue, first.issue_id)
+        issue.status, issue.resolved_at = 'resolved', when
+        await db.commit()
+    result = await _rec(_event('regression evidence', when=when + timedelta(seconds=1), release=SHA2))
+    assert result.regressed and result.stored
+    async with sessionmaker()() as db:
+        assert await db.scalar(select(OpsEvent.id).where(OpsEvent.message == 'regression evidence')) is not None
+
+
+async def test_size_limited_pagination_never_skips_unreturned_rows():
+    from ttakkari.oplog import views
+    await _seed_many(18)
+    for query in (views.list_issues, views.search_events):
+        got, cursor = [], 0
+        async with sessionmaker()() as db:
+            for _ in range(20):
+                page = await query(db, limit=10, cursor=cursor, max_chars=1400)
+                assert page['items'], page
+                got.extend(row.get('id', row.get('event_id')) for row in page['items'])
+                if page['next_cursor'] is None:
+                    break
+                assert page['next_cursor'] == cursor + len(page['items'])
+                cursor = page['next_cursor']
+        assert len(got) == len(set(got)) == 18
+
+
+async def test_runs_with_the_same_finish_time_are_not_lost_at_the_batch_boundary(new_session):
+    ws, sess = await new_session()
+    when = (datetime.now(UTC) - timedelta(minutes=1)).replace(microsecond=0)
+    async with sessionmaker()() as db:
+        for i in range(205):
+            db.add(Run(session_id=uuid.UUID(sess['id']), workspace_id=uuid.UUID(ws['id']), prompt='x', engine='codex',
+                       status='failed', finished_at=when, last_seq=0, error='shared failure'))
+        await db.commit()
+    for _ in range(3):
+        await ingest.sync_all(force=True)
+    async with sessionmaker()() as db:
+        assert (await db.scalar(select(OpsIssue).where(OpsIssue.source == 'run'))).event_count == 205
+
+
+async def test_late_committed_run_event_below_the_id_cursor_is_still_ingested(new_session):
+    ws, sess = await new_session()
+    async with sessionmaker()() as db:
+        run = Run(session_id=uuid.UUID(sess['id']), workspace_id=uuid.UUID(ws['id']), prompt='x', engine='codex', status='completed', last_seq=0)
+        db.add(run)
+        await db.flush()
+        run_id = run.id
+        db.add(RunEvent(id=20, run_id=run_id, seq=2, type='engine.fallback', payload={'reason': 'usage_limit'}))
+        await db.commit()
+    await ingest.sync_all(force=True)
+    async with sessionmaker()() as db:
+        db.add(RunEvent(id=10, run_id=run_id, seq=1, type='engine.fallback', payload={'reason': 'usage_limit'}))
+        await db.commit()
+    await ingest.sync_all(force=True)
+    async with sessionmaker()() as db:
+        assert (await db.scalar(select(OpsIssue))).event_count == 2
+
+
+async def test_integrity_failures_are_visible_and_retryable_not_silently_discarded():
+    from sqlalchemy.exc import IntegrityError
+    async with sessionmaker()() as db:
+        event = _event('invalid database value')
+        event.fingerprint = None
+        with pytest.raises(IntegrityError):
+            await record(db, event)
+        await db.rollback()
+
+
+async def test_concurrent_retries_increment_the_issue_once():
+    import asyncio
+    event = _event('concurrent', dedupe_key='one-source-event')
+    results = await asyncio.gather(*(_rec(event) for _ in range(6)))
+    assert sum(result is not None for result in results) == 1
+    async with sessionmaker()() as db:
+        assert (await db.scalar(select(OpsIssue))).event_count == 1
+
+
+async def test_failed_transaction_does_not_leave_a_processed_receipt():
+    from sqlalchemy.exc import IntegrityError
+    event = _event(dedupe_key='retry-after-error')
+    event.fingerprint = None
+    async with sessionmaker()() as db:
+        with pytest.raises(IntegrityError):
+            await record(db, event)
+        await db.rollback()
+    assert await _rec(_event(dedupe_key='retry-after-error')) is not None
+    assert await _rec(_event(dedupe_key='retry-after-error')) is None
+
+
+async def test_sync_step_failure_rolls_back_only_that_source(monkeypatch):
+    async def deploy(db):
+        return int(await record(db, _event('deploy', fp='deploy', dedupe_key='test-deploy')) is not None)
+
+    async def runs(db):
+        await record(db, _event('failed step', fp='rollback', dedupe_key='test-failed'))
+        raise RuntimeError('synthetic source failure')
+
+    async def process(db):
+        return int(await record(db, _event('process', fp='process', dedupe_key='test-process')) is not None)
+
+    monkeypatch.setattr(ingest, 'sync_deploy_jobs', deploy)
+    monkeypatch.setattr(ingest, 'sync_runs', runs)
+    monkeypatch.setattr(ingest, 'sync_process_logs', process)
+    assert await ingest.sync_all(force=True) == {'deploy': 1, 'process': 1}
+    async with sessionmaker()() as db:
+        assert set(await db.scalars(select(OpsIssue.title))) == {'deploy', 'process'}
+    assert await ingest.sync_all(force=True) == {'deploy': 0, 'process': 0}
+
+
+async def test_titles_and_breadcrumbs_are_scrubbed_before_they_are_clipped():
+    # 토큰 형식/환경값이 아닌 평문 비밀: 닫는 따옴표가 잘리면 문자열 마스킹도 실패한다.
+    secret = 'ordinary-private-fragment-' * 20
+    block = ['2026-10-17 10:00:00,000 ERROR error', 'Traceback (most recent call last):',
+             '  File "/x/src/handler.py", line 3, in run', f'RuntimeError: password="{secret}"']
+    event = ingest._block_event('backend.log', 1, 0, block, datetime.now(UTC), False, [])
+    crumb = ingest._crumb(RunEvent(type='log', payload={'stream': 'stderr', 'text': f'password="{secret}"'}, created_at=datetime.now(UTC)))
+    event.breadcrumbs = [crumb]
+    await _rec(event)
+    dump = await _dump_all_tables()
+    assert 'ordinary-private-fragment' not in dump

@@ -72,6 +72,17 @@ def _out(payload: dict[str, Any], max_chars: int | None, hint: str = "") -> dict
     return fit(scrub_value(payload), max_chars, hint=hint)
 
 
+def _out_page(items: list[dict], total: int, offset: int, max_chars: int | None, hint: str) -> dict:
+    # 상한 적용 뒤 실제 반환한 행 수로 커서를 계산해야 덜어 낸 행을 건너뛰지 않는다.
+    payload = {"total": total, "items": items, "next_cursor": offset + len(items) if offset + len(items) < total else None}
+    while True:
+        out = _out(payload, max_chars, hint)
+        if "items" not in out or len(out["items"]) == len(payload["items"]):
+            return out
+        out["next_cursor"] = offset + len(out["items"])
+        payload = out
+
+
 async def list_issues(db: AsyncSession, *, status: str | None = "unresolved", source: str | None = None, level: str | None = None,
                       query: str | None = None, release: str | None = None, tag: str | None = None, since_hours: int | None = None,
                       sort: str = "last_seen", limit: int | None = 10, cursor: int | None = 0, max_chars: int | None = None) -> dict:
@@ -98,9 +109,8 @@ async def list_issues(db: AsyncSession, *, status: str | None = "unresolved", so
     where = and_(*cond) if cond else True
     total = await db.scalar(select(func.count()).select_from(OpsIssue).where(where))
     rows = list(await db.scalars(select(OpsIssue).where(where).order_by(SORTS[sort].desc(), OpsIssue.id.desc()).offset(offset).limit(limit)))
-    nxt = offset + limit if offset + limit < total else None
-    return _out({"total": total, "items": [issue_row(r) for r in rows], "next_cursor": nxt}, max_chars,
-                "cursor=next_cursor 로 다음 쪽을 읽거나 status·source·since_hours 로 좁히세요.")
+    return _out_page([issue_row(r) for r in rows], total, offset, max_chars,
+                     "cursor=next_cursor 로 다음 쪽을 읽거나 status·source·since_hours 로 좁히세요.")
 
 
 def _event_full(e: OpsEvent, *, stack_chars: int = 2500, excerpt_chars: int = 2000) -> dict[str, Any]:
@@ -184,9 +194,8 @@ async def search_events(db: AsyncSession, *, query: str | None = None, since_hou
         body = e.message if (not query or query.lower() in e.message.lower()) else (e.excerpt or e.stack or e.message)
         items.append({"event_id": e.id, "issue": f"LOG-{e.issue_id}", "at": _iso(e.occurred_at), "level": e.level, "source": e.source,
                       "release": _short(e.release), "text": _snippet(body, query), "ref": e.ref})
-    nxt = offset + limit if offset + limit < total else None
-    return _out({"total": total, "items": items, "next_cursor": nxt}, max_chars,
-                "cursor=next_cursor 로 다음 쪽을, ops_get_issue 로 이슈 상세를 읽으세요.")
+    return _out_page(items, total, offset, max_chars,
+                     "cursor=next_cursor 로 다음 쪽을, ops_get_issue 로 이슈 상세를 읽으세요.")
 
 
 async def trend(db: AsyncSession, *, hours: int = 168, unit: str = "hour", issue: str | int | None = None) -> dict:

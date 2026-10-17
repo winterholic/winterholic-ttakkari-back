@@ -49,3 +49,14 @@ def test_chained_exceptions_use_the_final_one():
             "Traceback (most recent call last):\n  File \"/x/src/b.py\", line 2, in g\n    y\nRuntimeError: boom\n")
     t = parse_traceback(text)
     assert (t.exc_type, t.exc_message, t.frames) == ("RuntimeError", "boom", ["b.py:g"])
+
+
+def test_different_root_causes_do_not_merge_under_the_same_wrapper():
+    root = 'Traceback (most recent call last):\n  File "/x/src/db.py", line 12, in connect\n    x()\n{kind}: details 123\n\nThe above exception was the direct cause of the following exception:\n\n'
+    wrapper = 'Traceback (most recent call last):\n  File "/x/src/job.py", line 3, in run\n    x()\nRuntimeError: job failed\n'
+    a = parse_traceback(root.format(kind='ConnectionError') + wrapper)
+    b = parse_traceback(root.format(kind='PermissionError') + wrapper)
+    assert a.exc_type == b.exc_type == 'RuntimeError'
+    assert exception_fingerprint(a) != exception_fingerprint(b)
+    moved = parse_traceback((root.format(kind='ConnectionError') + wrapper).replace('line 12', 'line 99').replace('123', '789'))
+    assert exception_fingerprint(a) == exception_fingerprint(moved)

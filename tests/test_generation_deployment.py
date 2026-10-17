@@ -39,7 +39,8 @@ def test_qwen_usage_and_resource_history_migrations_are_allowed_online():
     from ttakkari.generation_deployment import Releases
     source = Path(__file__).resolve().parents[1]
     contract = Releases.contract(source)
-    assert contract["schema_revision"] == "0039_ops_log_issues"
+    assert contract["schema_revision"] == "0040_ops_event_receipts"
+    assert "0039_ops_log_issues" in contract["online_migration_from"]
     assert "0038_qwen_flash_usage" in contract["online_migration_from"]
     assert "0034_knowledge_ledger" in contract["online_migration_from"]
     assert "0036_system_resource_samples" in contract["online_migration_from"]

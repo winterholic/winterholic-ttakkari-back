@@ -8,10 +8,9 @@ from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.models import OpsEvent, OpsIssue, OpsIssueStat
+from ttakkari.models import OpsEvent, OpsEventReceipt, OpsIssue, OpsIssueStat
 from ttakkari.oplog.normalize import level_rank
 from ttakkari.oplog.scrub import scrub, scrub_value
 
@@ -96,52 +95,54 @@ async def record(db: AsyncSession, ev: EventIn) -> Recorded | None:
     first_line = ev.message.strip().splitlines()[0] if ev.message.strip() else "(empty)"
     title = _clip(ev.title or first_line, MAX_TITLE)
     tags = clean_tags(ev.tags)
-    try:
-        async with db.begin_nested():
-            created = False
+    async with db.begin_nested():
+        if ev.dedupe_key:
+            claimed = await db.scalar(insert(OpsEventReceipt).values(dedupe_key=ev.dedupe_key)
+                                      .on_conflict_do_nothing().returning(OpsEventReceipt.dedupe_key))
+            if claimed is None:
+                return None
+        created = False
+        issue = await db.scalar(select(OpsIssue).where(OpsIssue.fingerprint == ev.fingerprint).with_for_update())
+        if issue is None:
+            inserted = await db.scalar(insert(OpsIssue).values(
+                fingerprint=ev.fingerprint, title=title, culprit=_clip(ev.culprit, 200), source=ev.source,
+                level=level, status="unresolved", first_seen=when, last_seen=when, event_count=0,
+                first_release=ev.release, last_release=ev.release, regressed_count=0, notes=[], tags={},
+            ).on_conflict_do_nothing(index_elements=["fingerprint"]).returning(OpsIssue.id))
             issue = await db.scalar(select(OpsIssue).where(OpsIssue.fingerprint == ev.fingerprint).with_for_update())
-            if issue is None:
-                await db.execute(insert(OpsIssue).values(
-                    fingerprint=ev.fingerprint, title=title, culprit=_clip(ev.culprit, 200), source=ev.source,
-                    level=level, status="unresolved", first_seen=when, last_seen=when, event_count=0,
-                    first_release=ev.release, last_release=ev.release, regressed_count=0, notes=[], tags={},
-                ).on_conflict_do_nothing(index_elements=["fingerprint"]))
-                issue = await db.scalar(select(OpsIssue).where(OpsIssue.fingerprint == ev.fingerprint).with_for_update())
-                created = True
-            regressed = False
-            if issue.status == "resolved" and issue.resolved_at is not None and when > issue.resolved_at:
-                issue.status = "unresolved"
-                issue.regressed_count += 1
-                issue.last_regressed_at = when
-                tags["regression"] = True
-                regressed = True
-            issue.event_count += 1
-            if when < _utc(issue.first_seen):
-                issue.first_seen = when
-                issue.first_release = ev.release or issue.first_release
-            if when >= _utc(issue.last_seen):
-                issue.last_seen = when
-                issue.last_release = ev.release or issue.last_release
-                issue.tags = tags
-            if issue.first_release is None:
-                issue.first_release = ev.release
-            if level_rank(level) > level_rank(issue.level):
-                issue.level = level
-            bucket = when.replace(minute=0, second=0, microsecond=0)
-            count = await db.scalar(
-                insert(OpsIssueStat).values(issue_id=issue.id, bucket=bucket, count=1)
-                .on_conflict_do_update(index_elements=["issue_id", "bucket"], set_={"count": OpsIssueStat.count + 1})
-                .returning(OpsIssueStat.count))
-            stored = count <= EVENTS_PER_ISSUE_PER_HOUR
-            if stored:
-                db.add(OpsEvent(
-                    issue_id=issue.id, occurred_at=when, source=ev.source, level=level, message=message,
-                    release=ev.release, tags=tags, breadcrumbs=clean_breadcrumbs(ev.breadcrumbs),
-                    stack=_clip(ev.stack, MAX_STACK), excerpt=_clip(ev.excerpt, MAX_EXCERPT), ref=_clip(ev.ref, 200),
-                    dedupe_key=ev.dedupe_key))
-            await db.flush()
-    except IntegrityError:
-        return None
+            created = inserted is not None
+        regressed = False
+        if issue.status == "resolved" and issue.resolved_at is not None and when > issue.resolved_at:
+            issue.status = "unresolved"
+            issue.regressed_count += 1
+            issue.last_regressed_at = when
+            tags["regression"] = True
+            regressed = True
+        issue.event_count += 1
+        if when < _utc(issue.first_seen):
+            issue.first_seen = when
+            issue.first_release = ev.release or issue.first_release
+        if when >= _utc(issue.last_seen):
+            issue.last_seen = when
+            issue.last_release = ev.release or issue.last_release
+            issue.tags = tags
+        if issue.first_release is None:
+            issue.first_release = ev.release
+        if level_rank(level) > level_rank(issue.level):
+            issue.level = level
+        bucket = when.replace(minute=0, second=0, microsecond=0)
+        count = await db.scalar(
+            insert(OpsIssueStat).values(issue_id=issue.id, bucket=bucket, count=1)
+            .on_conflict_do_update(index_elements=["issue_id", "bucket"], set_={"count": OpsIssueStat.count + 1})
+            .returning(OpsIssueStat.count))
+        stored = count <= EVENTS_PER_ISSUE_PER_HOUR or regressed
+        if stored:
+            db.add(OpsEvent(
+                issue_id=issue.id, occurred_at=when, source=ev.source, level=level, message=message,
+                release=ev.release, tags=tags, breadcrumbs=clean_breadcrumbs(ev.breadcrumbs),
+                stack=_clip(ev.stack, MAX_STACK), excerpt=_clip(ev.excerpt, MAX_EXCERPT), ref=_clip(ev.ref, 200),
+                dedupe_key=ev.dedupe_key))
+        await db.flush()
     return Recorded(issue_id=issue.id, stored=stored, regressed=regressed, created=created)
 
 

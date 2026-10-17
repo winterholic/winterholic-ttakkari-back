@@ -975,6 +975,14 @@ class OpsEvent(Base):
     dedupe_key: Mapped[str | None] = mapped_column(String(120))
 
 
+class OpsEventReceipt(Base):
+    """처리한 원본 ID. 상세 샘플링과 독립하여 재시도 시 중복 집계를 막는다."""
+
+    __tablename__ = "ops_event_receipts"
+    dedupe_key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+
+
 class OpsIssueStat(Base):
     """이슈별 시간 단위 발생 수. 저장 이벤트가 샘플링으로 줄어도 추이는 정확하다."""
 

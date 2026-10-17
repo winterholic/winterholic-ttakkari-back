@@ -81,3 +81,15 @@ def test_scrub_is_fast_on_pathological_long_inputs(blob):
     t = time.perf_counter()
     scrub(blob)
     assert time.perf_counter() - t < 1.5
+
+
+@pytest.mark.parametrize('value', [{'value': 'nested-plain-secret'}, ['nested-plain-secret'], False])
+def test_sensitive_key_masks_the_entire_value_regardless_of_type(value):
+    assert scrub_value({'password': value, 'credentials': value, 'safe': 'kept'}) == {'password': MASK, 'credentials': MASK, 'safe': 'kept'}
+
+
+def test_escaped_quotes_do_not_terminate_secret_redaction():
+    raw = '{"password": "part-one\\\"private-tail", "safe": "kept"}'
+    out = scrub(raw)
+    assert 'part-one' not in out and 'private-tail' not in out
+    assert 'kept' in out

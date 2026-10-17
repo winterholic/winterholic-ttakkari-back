@@ -38,3 +38,34 @@ async def test_ops_log_migration_matches_models_and_round_trips():
             assert await db.scalar(text("select to_regclass(:t)"), {"t": table}) is None
         await conn.run_sync(run, migration.upgrade)
         await db.rollback()
+
+
+async def test_event_receipts_migration_backfills_existing_ids_and_round_trips():
+    from datetime import UTC, datetime
+
+    from ttakkari.models import OpsEventReceipt
+    from ttakkari.oplog.store import EventIn, record
+
+    spec = importlib.util.spec_from_file_location('receipt_migration', 'alembic/versions/0040_ops_event_receipts.py')
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.down_revision == '0039_ops_log_issues'
+    async with sessionmaker()() as db:
+        await record(db, EventIn(source='code', level='error', message='old event', fingerprint='e' * 40,
+                                occurred_at=datetime.now(UTC), dedupe_key='legacy-event'))
+        await db.flush()
+        conn = await db.connection()
+
+        def run(sync, fn):
+            with Operations.context(MigrationContext.configure(sync)):
+                fn()
+
+        await conn.run_sync(run, migration.downgrade)
+        assert await db.scalar(text("select to_regclass('ops_event_receipts')")) is None
+        await conn.run_sync(run, migration.upgrade)
+        assert await db.scalar(text("select dedupe_key from ops_event_receipts")) == 'legacy-event'
+        cols = {r[0] for r in await db.execute(text("select column_name from information_schema.columns where table_name='ops_event_receipts'"))}
+        assert cols == {c.name for c in OpsEventReceipt.__table__.columns}
+        await conn.run_sync(run, migration.downgrade)
+        await conn.run_sync(run, migration.upgrade)
+        await db.rollback()

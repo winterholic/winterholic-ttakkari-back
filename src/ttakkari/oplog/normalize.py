@@ -43,6 +43,8 @@ class ParsedTrace:
     exc_message: str = ""
     frames: list[str] = field(default_factory=list)  # "module/path.py:function", 줄 번호 제외
 
+    causes: list[ParsedTrace] = field(default_factory=list)
+
     @property
     def app_frames(self) -> list[str]:
         own = [f for f in self.frames if not _SITE.search(f)]
@@ -50,7 +52,7 @@ class ParsedTrace:
 
 
 def parse_traceback(text: str) -> ParsedTrace | None:
-    """파이썬 Traceback 블록에서 예외 타입·메시지·프레임을 뽑는다. 체인 예외는 마지막(최종) 예외를 쓴다."""
+    """최종 예외를 표시하되 명시적 cause/context 체인은 그룹핑에도 보존한다."""
     lines = _ANSI.sub("", text).splitlines()
     if not any(l.startswith("Traceback (most recent call last)") for l in lines):
         return None
@@ -70,10 +72,23 @@ def parse_traceback(text: str) -> ParsedTrace | None:
             elif trace.exc_type is None:
                 trace.exc_type = line.split(":", 1)[0].strip()[:80]
                 trace.exc_message = line.partition(":")[2].strip()
-    return trace if trace.exc_type else None
+    if trace.exc_type is None:
+        return None
+    if start:
+        prefix = "\n".join(lines[:start]).rstrip()
+        if prefix.endswith(("During handling of the above exception, another exception occurred:",
+                            "The above exception was the direct cause of the following exception:")):
+            cause = parse_traceback(prefix)
+            if cause is not None:
+                trace.causes = [cause]
+    return trace
 
 
 def exception_fingerprint(trace: ParsedTrace) -> str:
+    if trace.causes:
+        # 단일 예외 fingerprint는 그대로 유지한다. 체인만 버전 있는 키로 분리한다.
+        single = ParsedTrace(trace.exc_type, trace.exc_message, trace.frames)
+        return fingerprint("exc-chain-v1", *(exception_fingerprint(c) for c in trace.causes), exception_fingerprint(single))
     frames = trace.app_frames
     if frames:
         return fingerprint("exc", trace.exc_type or "", *frames)

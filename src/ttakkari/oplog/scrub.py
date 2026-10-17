@@ -27,7 +27,7 @@ _CLI_FLAG = re.compile(
     r"(?i)(--?(?:token|password|passwd|secret|api[-_]?key|access[-_]?key|auth|cookie)[\w\-]*)([ =])(?!-)[^\s]+"
 )
 # 키는 토큰 시작에서만 시도한다(lookbehind). 안 그러면 긴 단어열에서 시작 위치마다 끝까지 훑어 2차 시간이 된다.
-_KV_QUOTED = re.compile(rf"""(?i)(?<![\w.\-])(?P<k>["']?{_KEY}["']?)(?P<sep>\s*[:=]\s*)(?P<q>["'])(?P<v>.*?)(?P=q)""")
+_KV_QUOTED = re.compile(rf"""(?i)(?<![\w.\-])(?P<k>["']?{_KEY}["']?)(?P<sep>\s*[:=]\s*)(?P<q>["'])(?P<v>(?:\\.|(?!(?P=q))[^\\])*)(?:(?P=q)|\Z)""")
 _KV_BARE = re.compile(rf"""(?i)(?<![\w.\-])(?P<k>["']?{_KEY}["']?)(?P<sep>\s*[:=]\s*)(?P<v>[^\s,;&"'}}\])]+)""")
 _TOKEN_FORMATS = [
     re.compile(p)
@@ -92,7 +92,7 @@ def scrub_value(value: Any, extra: Iterable[str] = ()) -> Any:
     if isinstance(value, dict):
         out = {}
         for k, v in value.items():
-            if isinstance(v, str | int | float) and _is_secret_name(str(k)):
+            if _is_secret_name(str(k)):
                 out[k] = MASK
             else:
                 out[k] = scrub_value(v, extra)

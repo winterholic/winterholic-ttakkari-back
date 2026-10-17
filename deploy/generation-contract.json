@@ -1,6 +1,6 @@
 {
   "protocol": 1,
-  "schema_revision": "0039_ops_log_issues",
+  "schema_revision": "0040_ops_event_receipts",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -8,6 +8,7 @@
     "0035_qwen_token_usage",
     "0036_system_resource_samples",
     "0037_worker_routing",
-    "0038_qwen_flash_usage"
+    "0038_qwen_flash_usage",
+    "0039_ops_log_issues"
   ]
 }

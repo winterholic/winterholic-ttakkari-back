@@ -45,7 +45,8 @@ class MuseReadOnlyUsageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.login, 'ok')
         self.assertEqual(result.windows, [])
         self.assertIsNone(result.updated_at)
-        self.assertIn('미제공', result.error)
+        self.assertIn('미관측', result.error)
+        self.assertIn('/usage', result.error)
 
     async def test_logged_out_account_remains_distinct_from_unobserved_usage(self):
         result = muse_usage_from_probe({'account': {'state': 'loggedOut'}, 'usage': {}})

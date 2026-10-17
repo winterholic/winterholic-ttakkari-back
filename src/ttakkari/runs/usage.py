@@ -485,7 +485,7 @@ def muse_usage_from_probe(body: dict[str, Any]) -> Usage:
         percent, resets = window.get("usedPercent"), window.get("resetsAtMs")
         if (not isinstance(percent, int) or isinstance(percent, bool) or percent < 0
                 or not isinstance(resets, int) or isinstance(resets, bool) or resets <= 0):
-            error = "Muse 구독 로그인이 필요해요" if login == "missing" else "Muse 로그인 확인 · 공식 CLI에서 구독 사용량 미제공" if login == "ok" else "Muse 구독 사용량 미관측"
+            error = "Muse 구독 로그인이 필요해요" if login == "missing" else "Muse 로그인 확인 · SDK 구독 사용량 미관측. Muse 터미널의 /usage에서 확인할 수 있어요." if login == "ok" else "Muse 구독 사용량 미관측"
             return Usage(error=error, login=login)
         windows.append(Window(key, label_of(key), percent, resets // 1000))
     if not isinstance(observed, int) or isinstance(observed, bool) or observed <= 0:

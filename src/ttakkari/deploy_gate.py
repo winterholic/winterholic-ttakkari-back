@@ -16,13 +16,29 @@ from uuid import UUID
 log = logging.getLogger(__name__)
 
 
+class _ReentrantLock:
+    """같은 프로세스가 이미 쥔 잠금에 대한 재진입 토큰. flock을 건드리지 않는다."""
+
+    def __init__(self, key: str):
+        self.key = key
+
+
 class RestartGate:
+    # 프로세스 내 재진입 계수. 감독 루프는 backend-restart.lock을 쥔 채
+    # process() -> upgrade_supervisor로 들어오므로, 같은 프로세스의 중첩
+    # 획득은 허용하고 프로세스 간 배타성은 flock이 그대로 지킨다.
+    _HELD: dict[str, int] = {}
+
     def __init__(self, lock_path: Path, *, poll_seconds: float = 30, max_wait_seconds: float = 6 * 60 * 60):
         self.lock_path = lock_path
         self.poll_seconds = poll_seconds
         self.max_wait_seconds = max_wait_seconds
 
     def _acquire(self):
+        key = str(self.lock_path)
+        if RestartGate._HELD.get(key, 0) > 0:
+            RestartGate._HELD[key] += 1
+            return _ReentrantLock(key)
         try:
             # flock은 파일 내용을 바꾸지 않는다. 기존 잠금에는 쓰기 권한을 요구하지 않는다.
             lock = self.lock_path.open("r")
@@ -34,12 +50,21 @@ class RestartGate:
         except BlockingIOError:
             lock.close()
             return None
+        RestartGate._HELD[key] = 1
         return lock
 
     @staticmethod
     def _release(lock) -> None:
+        if isinstance(lock, _ReentrantLock):
+            RestartGate._HELD[lock.key] -= 1
+            return
         fcntl.flock(lock, fcntl.LOCK_UN)
         lock.close()
+        key = str(getattr(lock, "name", ""))
+        if RestartGate._HELD.get(key, 0) > 0:
+            RestartGate._HELD[key] -= 1
+            if RestartGate._HELD[key] <= 0:
+                del RestartGate._HELD[key]
 
     async def restart_backend(
         self,

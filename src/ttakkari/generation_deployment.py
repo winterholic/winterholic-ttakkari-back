@@ -37,6 +37,8 @@ _LOG_TAIL_CHARS = 4000
 STAGE_TIMEOUTS = {"uv sync": 600, "npm ci": 600, "pytest": 1800, "migrate": 600,
                   "command": 600}
 PREPARE_TOTAL_TIMEOUT = 3600
+# 같은 감독 갱신 대상의 재시도 간격(초). 패스마다 kickstart하지 않는다.
+SUPERVISOR_UPGRADE_RETRY_SECONDS = 600
 # job id -> 실행 중인 준비 태스크. 감독 패스 사이에서 유지된다.
 _PREPARE_TASKS: dict[str, asyncio.Task] = {}
 
@@ -44,6 +46,21 @@ _PREPARE_TASKS: dict[str, asyncio.Task] = {}
 def _utcnow() -> str:
     from datetime import UTC, datetime
     return datetime.now(UTC).isoformat()
+
+
+async def _terminate_group(proc, *, grace_seconds: float = 5) -> None:
+    """프로세스 그룹 전체를 TERM 후 KILL한다. 직접 자식만 죽이면 손자가 남는다."""
+    import signal
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+        os.killpg(proc.pid, signal.SIGTERM)
+    try:
+        await asyncio.wait_for(proc.wait(), grace_seconds)
+        return
+    except TimeoutError:
+        pass
+    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    await proc.wait()
 
 
 class StageError(RuntimeError):
@@ -403,23 +420,45 @@ class GenerationController:
         if await self.slots.current_slot() != slot or self.slots.persisted_slot() != slot:
             await self.slots.switch(slot)
 
+    # error_command·error_exit 미지정 표식. 명시적 null(해당 없음)과 구분한다.
+    _UNSET: object = object()
+
     def record_failure(self, job, status: str, exc: BaseException, *,
-                       stage: str | None = None, command=None, exit_code: int | None = None) -> None:
+                       stage: str | None = None, command=_UNSET, exit_code=_UNSET) -> None:
         """배포 레코드에 단계·명령·종료코드·요약을 구조화해 남긴다.
 
-        StageError면 그 안의 값을 우선한다. error(문자열)는 하위호환용으로 유지해
-        backend_deploy_status·ops 조회가 그대로 읽는다.
+        stage는 반드시 채운다(명시 → StageError → 작업 heartbeat → 기본값).
+        command·exit code는 해당할 때만 채우고, 아니면 null과 이유를 남긴다.
+        error(문자열)는 하위호환용으로 유지해 backend_deploy_status·ops 조회가
+        그대로 읽는다.
         """
+        reasons: list[str] = []
         if isinstance(exc, StageError):
             stage = stage or exc.stage
-            command = command or exc.command
-            exit_code = exit_code if exit_code is not None else exc.exit_code
+            if command is self._UNSET:
+                command = exc.command
+            if exit_code is self._UNSET:
+                exit_code = exc.exit_code
             summary = exc.summary
         else:
             summary = str(exc)
+        if stage is None:
+            stage = job.get("prepare_stage") or "prepare"
+            reasons.append("stage defaulted from job context")
+        if command is self._UNSET:
+            command = None
+        if exit_code is self._UNSET:
+            exit_code = None
+        if command is None:
+            reasons.append("command is null: no command ran for this failure")
+        if exit_code is None:
+            reasons.append("exit code is null: no process exit was observed")
+        detail = f"{stage}: {summary}"
+        if reasons:
+            detail += " [" + "; ".join(reasons) + "]"
         self.phase(job, status, error=str(exc), error_stage=stage,
                    error_command=command, error_exit=exit_code,
-                   error_summary=(f"{stage}: {summary}" if stage else summary)[:2000])
+                   error_summary=detail[:2000])
 
     async def command(self, job, release, *args, stage="command", env=None, timeout=None):
         log_path = self.store.jobs / f"{job['id']}.log"
@@ -428,17 +467,16 @@ class GenerationController:
         self.phase(job, job["status"], prepare_stage=stage, prepare_heartbeat=_utcnow())
         with log_path.open("ab") as output:
             try:
+                # 새 세션(프로세스 그룹)으로 띄운다. 타임아웃 때 손자까지 함께 정리한다.
                 proc = await asyncio.create_subprocess_exec(*args, cwd=release, env=env,
-                    stdout=output, stderr=output)
+                    stdout=output, stderr=output, start_new_session=True)
             except OSError as exc:
                 raise StageError(stage, args, None,
                                  f"could not start ({type(exc).__name__}): {exc}") from exc
             try:
                 returncode = await asyncio.wait_for(proc.wait(), limit)
             except TimeoutError:
-                with contextlib.suppress(Exception):
-                    proc.kill()
-                await proc.wait()
+                await _terminate_group(proc, grace_seconds=5)
                 raise StageError(stage, args, None,
                                  f"timed out after {limit}s; existing generation was preserved") from None
         if returncode:
@@ -518,13 +556,15 @@ class GenerationController:
 
     async def prepare(self, job):
         self.phase(job, "building")
-        release = await asyncio.to_thread(self.releases.archive, job["revision"])
+        async with self._operation("fetch"):
+            release = await asyncio.to_thread(self.releases.archive, job["revision"])
         await self.environment(job, release)
         if not job["skip_tests"]:
             self.phase(job, "testing")
             name = "ttakkari_gen_" + uuid.UUID(job["id"]).hex
             url = make_url(get_settings().database_url).set(drivername="postgresql")
-            admin = await asyncpg.connect(url.set(database="postgres").render_as_string(hide_password=False))
+            async with self._operation("test-db"):
+                admin = await asyncpg.connect(url.set(database="postgres").render_as_string(hide_password=False))
             try:
                 await admin.execute(f'CREATE DATABASE "{name}"')
                 try:
@@ -539,7 +579,8 @@ class GenerationController:
                     await admin.execute(f'DROP DATABASE "{name}"')
             finally:
                 await admin.close()
-        contract = self.releases.contract(release)
+        async with self._operation("verify"):
+            contract = self.releases.contract(release)
         async with sessionmaker()() as db:
             schema = await db.scalar(text("SELECT version_num FROM alembic_version"))
         if schema != contract["schema_revision"]:
@@ -560,12 +601,16 @@ class GenerationController:
         old_slot, new_slot = job["previous_slot"], job["candidate_slot"]
         old = await self.slots.snapshot(old_slot)
         if old is None or old["generation"] != job["previous_generation"]:
-            self.phase(job, "recovery_pending", error="previous generation unavailable; refusing speculative rollback")
+            self.record_failure(job, "recovery_pending",
+                RuntimeError("previous generation unavailable; refusing speculative rollback"),
+                stage="rollback")
             return
         old_id = uuid.UUID(old["generation"])
         active = await self.active()
         if active not in {old_id, uuid.UUID(job["candidate_generation"])}:
-            self.phase(job, "recovery_pending", error="newer generation is active; refusing stale rollback")
+            self.record_failure(job, "recovery_pending",
+                RuntimeError("newer generation is active; refusing stale rollback"),
+                stage="rollback")
             return
         if active != old_id:
             await self.activate(old_id, expected=active)
@@ -648,8 +693,12 @@ class GenerationController:
         except Exception:
             log.exception("supervisor capability check could not read the active generation")
             return False
+        from datetime import UTC, datetime, timedelta
         revision = info["revision"]
         if job.get("supervisor_upgrade_attempted_for") == revision:
+            return False
+        now = datetime.now(UTC).isoformat()
+        if job.get("supervisor_upgrade_next_retry_at") and now < job["supervisor_upgrade_next_retry_at"]:
             return False
         release = self.releases.root / "releases" / revision
         try:
@@ -664,12 +713,21 @@ class GenerationController:
                     and j.get("strategy") == "generations" and j.get("release_path") == str(release)]
         if not receipts:
             return False
+        attempts = list(job.get("supervisor_upgrade_attempts") or [])
+        attempt = {"revision": revision, "at": now, "ok": False, "error": None}
         try:
             await upgrade_supervisor(self, revision)
-        except Exception:
+        except Exception as exc:
+            attempt["error"] = str(exc)[:500]
+            self.phase(job, job["status"], supervisor_upgrade_attempts=[*attempts, attempt],
+                       supervisor_upgrade_next_retry_at=(
+                           datetime.now(UTC) + timedelta(seconds=SUPERVISOR_UPGRADE_RETRY_SECONDS)).isoformat())
             log.exception("automatic supervisor upgrade failed; reporting instead")
             return False
+        attempt["ok"] = True
         self.phase(job, job["status"], supervisor_upgrade_attempted_for=revision,
+                   supervisor_upgrade_attempts=[*attempts, attempt],
+                   supervisor_upgrade_next_retry_at=None,
                    error_stage="supervisor",
                    error_summary=f"supervisor upgrade to {revision[:7]} requested; retrying")
         return True
@@ -692,11 +750,13 @@ class GenerationController:
             if "candidate_slot" not in job:
                 if not await self.ensure_supervisor_capable(job):
                     return
-                snapshots = [await self.slots.snapshot(slot) for slot in range(len(PORTS))]
-                active = await self.active()
+                async with self._operation("prepare"):
+                    snapshots = [await self.slots.snapshot(slot) for slot in range(len(PORTS))]
+                    active = await self.active()
                 old_slot = next((i for i, row in enumerate(snapshots) if row and uuid.UUID(row["generation"]) == active), None)
                 if old_slot is None:
-                    raise RuntimeError("generation bootstrap required; active slot is missing")
+                    raise StageError("prepare", None, None,
+                                     "generation bootstrap required; active slot is missing")
                 free = next((i for i, row in enumerate(snapshots) if row is None), None)
                 if free is None:
                     self.phase(job, "waiting_slot")
@@ -724,12 +784,13 @@ class GenerationController:
                 candidate = await self.slots.snapshot(job["candidate_slot"])
                 if candidate is None:
                     candidate = await self.slots.start(job["candidate_slot"], Path(job["release_path"]), job["revision"])
-            if candidate["revision"] != job["revision"] or candidate.get("protocol") != PROTOCOL:
-                raise RuntimeError("candidate identity mismatch")
-            cid = uuid.UUID(candidate["generation"])
-            recorded = job.get("candidate_generation")
-            if recorded and recorded != str(cid):
-                raise RuntimeError("candidate restarted; reconcile ownership before activation")
+                if candidate["revision"] != job["revision"] or candidate.get("protocol") != PROTOCOL:
+                    raise StageError("launch", None, None, "candidate identity mismatch")
+                cid = uuid.UUID(candidate["generation"])
+                recorded = job.get("candidate_generation")
+                if recorded and recorded != str(cid):
+                    raise StageError("launch", None, None,
+                                     "candidate restarted; reconcile ownership before activation")
             if not recorded:
                 self.phase(job, "switching", candidate_generation=str(cid))
             current = await self.active()
@@ -755,7 +816,9 @@ class GenerationController:
                 try:
                     await self.rollback(job)
                 except Exception:  # noqa: BLE001 -- persist failure; never discard it
-                    self.phase(job, "recovery_pending", error="automatic reconciliation failed; inspect deployment journal")
+                    self.record_failure(job, "recovery_pending",
+                        RuntimeError("automatic reconciliation failed; inspect deployment journal"),
+                        stage="rollback")
 
 
 async def upgrade_supervisor(controller, revision: str) -> dict:

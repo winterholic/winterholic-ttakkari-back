@@ -57,7 +57,14 @@ from ttakkari.orchestrator.runtime import (
     mcp_server_spec,
 )
 from ttakkari.push.service import PushKind, notify, notify_run_finished
-from ttakkari.runs import agy_models, context_usage, desk, events, worker_routing
+from ttakkari.runs import (
+    agy_models,
+    capabilities,
+    context_usage,
+    desk,
+    events,
+    worker_routing,
+)
 from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
@@ -1422,7 +1429,7 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
 
 async def _system_note(db: AsyncSession, outbox: Path, sess: ChatSession, scope: str = "all") -> str:
     """기본 안내 + 도구 안내 + 비서 지침(~/.ttakkari/harness, 공통 + 역할) + 고정 기억. 매 Run 에 들어가므로 짧게 유지한다(ADR 0007, 0020)."""
-    parts = [SYSTEM_NOTE.format(outbox=outbox), AGENT_NOTE]
+    parts = [SYSTEM_NOTE.format(outbox=outbox), AGENT_NOTE, capabilities.prompt_note()]
     role: instructions_mod.Role | None = None
     if sess.kind == SessionKind.orchestrator:
         # 접수가 만든 기획 세션은 사용자와 직접 대화하지 않는다. 옛 메인 오케스트레이터(부모 없음)는 그대로.

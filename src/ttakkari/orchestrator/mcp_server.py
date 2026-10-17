@@ -191,6 +191,63 @@ async def server_resources() -> str:
     return await _agent("GET", "/system/resources")
 
 
+@query_tool
+async def execution_capabilities() -> str:
+    """What each engine's execution environment allows (GPU/Metal, ps, sysctl, network, writable paths), as measured by
+    the probe with measurement time and source; unmeasured items are unknown. A blocked item holds only for that
+    engine's sandbox, never for the host. Includes `probe_script` for measuring your own environment."""
+    return await _agent("GET", "/execution-capabilities")
+
+
+@server.tool()
+async def report_execution_environment(report: dict[str, Any]) -> str:
+    """Record your own environment's capabilities. Run `python3 <probe_script> --json` (path in your instructions or
+    execution_capabilities) in your shell and pass the printed JSON object unchanged. The backend files it under the
+    engine of your actual Run. Do not hand-write or edit values: only probe output is accepted."""
+    return await _agent("POST", "/execution-capabilities/report", {"report": report})
+
+
+@server.tool()
+async def host_gpu_start(model: str, gpu_layers: int = 999, cpu_moe: bool = False, n_cpu_moe: int | None = None,
+                         ctx_size: int = 8192, threads: int = 6, batch_size: int | None = None,
+                         ubatch_size: int | None = None, flash_attn: Literal["on", "off", "auto"] | None = None,
+                         device: Literal["default", "none"] = "default", max_seconds: int | None = None) -> str:
+    """Start the single host-side llama-server test instance (works from any engine, outside its sandbox, so
+    Metal/GPU is available). `model` is an allowlisted alias (an error lists them). Only the listed flags exist; no
+    commands. One instance at a time; it stops itself at the max runtime or when host swap grows by 1 GB, and it never
+    touches the production Qwen servers (ports 18987, 57170). Returns at once with phase=starting; poll
+    host_gpu_status until ready is true, then host_gpu_bench, and always host_gpu_stop when done."""
+    body: dict[str, Any] = {"model": model, "gpu_layers": gpu_layers, "cpu_moe": cpu_moe, "ctx_size": ctx_size,
+                            "threads": threads, "device": device}
+    for key, value in (("n_cpu_moe", n_cpu_moe), ("batch_size", batch_size), ("ubatch_size", ubatch_size),
+                       ("flash_attn", flash_attn), ("max_seconds", max_seconds)):
+        if value is not None:
+            body[key] = value
+    return await _agent("POST", "/host-gpu/start", body)
+
+
+@server.tool()
+async def host_gpu_status() -> str:
+    """State of the host GPU test instance: phase, ready, request settings, remaining time, swap growth against the
+    guard, stop reason (swap_guard, max_runtime, requested, ...) and llama-server log lines showing which device the
+    layers went to. Also cleans up a test instance whose supervisor was lost."""
+    return await _agent("GET", "/host-gpu/status")
+
+
+@server.tool()
+async def host_gpu_bench(prompt: str, n_predict: int = 128, runs: int = 3) -> str:
+    """Run a benchmark prompt (up to 8000 chars, 1-512 tokens, 1-5 runs) on the ready test instance and return prompt
+    and generation tokens/second per run plus medians. The result is marked measured_on=host_gpu_path; quote it as
+    measured on the host GPU path with the request settings, not as an engine-sandbox measurement."""
+    return await _agent("POST", "/host-gpu/bench", {"prompt": prompt, "n_predict": n_predict, "runs": runs})
+
+
+@server.tool()
+async def host_gpu_stop() -> str:
+    """Stop the host GPU test instance (only the instance started through host_gpu_start)."""
+    return await _agent("POST", "/host-gpu/stop")
+
+
 # ---- 메모·캘린더(ADR 0008). 시각은 모두 Asia/Seoul 이다.
 
 @query_tool

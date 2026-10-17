@@ -408,7 +408,9 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "knowledge_start_extraction", "knowledge_next_batch", "knowledge_submit_batch", "knowledge_review_assertion",
                "list_pms_projects", "create_pms_task", "manage_pms",
                "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log", "ops_update_issue",
-               "design_system_catalog", "design_system_search", "design_system_item"}
+               "design_system_catalog", "design_system_search", "design_system_item",
+               "execution_capabilities", "report_execution_environment", "host_gpu_start", "host_gpu_status",
+               "host_gpu_bench", "host_gpu_stop"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
                 "my_context", "reset_my_context"}
 BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}
@@ -447,7 +449,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
             "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
             "luna_common30_v2_status",
         "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log",
-        "design_system_catalog", "design_system_search", "design_system_item",
+        "design_system_catalog", "design_system_search", "design_system_item", "execution_capabilities",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

@@ -209,6 +209,21 @@ class Settings(BaseSettings):
     # 모델 크기의 1.5배와 이 값 중 큰 쪽보다 가용 메모리가 적으면 띄우지 않는다(접수는 CLI 로 간다).
     desk_qwen_min_free_memory_gb: float = 6.0
     desk_qwen_model: str = "qwen3.5-4b-q4_k_m"
+    # 엔진과 무관한 호스트 GPU 시험 경로(host_gpu.py, ADR 0037). 허용 목록의 모델만 띄우고 한 번에 하나만 둔다.
+    host_gpu_enabled: bool = True
+    host_gpu_server_path: str = "~/private-resources/service-data/ttakkari-qwen/llama/llama-b11655/llama-server"
+    host_gpu_models: dict[str, str] = {
+        "qwen3.8-flash-next-q2k":
+            "~/private-resources/models/qwen38-flash-next-q2k/Qwen3.8-Flash-Next-Q2_K-00001-of-00002.gguf",
+        "qwen3.5-4b-q4_k_m": "~/private-resources/service-data/ttakkari-qwen/model/Qwen3.5-4B-Q4_K_M.gguf",
+    }
+    host_gpu_max_runtime_seconds: int = Field(default=1800, ge=60, le=7200)
+    host_gpu_start_timeout_seconds: int = Field(default=600, ge=10, le=1800)
+    host_gpu_swap_growth_gb: float = Field(default=1.0, gt=0, le=8)
+    host_gpu_port_min: int = Field(default=19300, ge=1024, le=65000)
+    host_gpu_port_max: int = Field(default=19399, ge=1024, le=65535)
+    # 운영 Qwen 서버 포트. 시험 인스턴스는 이 포트를 쓰지도 건드리지도 않는다.
+    host_gpu_reserved_ports: list[int] = [18987, 57170]
     desk_qwen_timeout_seconds: float = 20.0
     desk_qwen_connect_timeout_seconds: float = 1.0
     desk_qwen_cooldown_seconds: float = 60.0

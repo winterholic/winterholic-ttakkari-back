@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
-from ttakkari.runs import profiles, usage_store, worker_routing
+from ttakkari.runs import capabilities, profiles, usage_store, worker_routing
 from ttakkari.runs import usage as usage_mod
 
 KST = ZoneInfo("Asia/Seoul")
@@ -124,6 +124,8 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
         "priority_override_until": override["until"] if override else None,
         "worker_routing": worker_routing.policy(),
         "muse_auto_routing": worker_routing.muse_auto_enabled(),
+        # 엔진(실행 경로)별 프로브 실측 능력(ADR 0037). 기존 필드 의미는 그대로, 필드만 더한다.
+        "execution_capabilities": capabilities.snapshot(now),
         "note": "usage is collected by the app every ~5 min (~1.5 min while the account runs a Run or is below 20% left) "
                 f"and is not refreshed by this tool (null = never observed, stale = older than {s.usage_stale_seconds // 60} min). "
                 "burn_percent_per_hour is the recent rise in used percent per hour (null = not enough history); "

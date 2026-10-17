@@ -6,7 +6,7 @@ READ_ONLY_TOOLS = frozenset({
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",
     "backend_deploy_status", "account_usage", "list_pms_projects", "my_context", "list_workers", "get_worker",
     "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log",
-    "design_system_catalog", "design_system_search", "design_system_item",
+    "design_system_catalog", "design_system_search", "design_system_item", "execution_capabilities",
     "luna_common30_v2_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
 })
 
@@ -27,7 +27,10 @@ ASSISTANT_WRITE_TOOLS = frozenset({
 })
 # 운영 로그 이슈의 해결·메모. 조회는 READ_ONLY_TOOLS, 개인 세션 한정은 API가 검사한다(ADR 0033).
 OPS_LOG_TOOLS = frozenset({"ops_update_issue"})
+# 엔진 무관 실행 환경 보고와 호스트 GPU 시험 경로(ADR 0037). 상태 조회도 고아 정리를 하므로 읽기 전용으로 표시하지 않는다.
+HOST_ENV_TOOLS = frozenset({"report_execution_environment", "host_gpu_start", "host_gpu_status", "host_gpu_bench",
+                            "host_gpu_stop"})
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
-                       | ASSISTANT_WRITE_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS)
+                       | ASSISTANT_WRITE_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS)

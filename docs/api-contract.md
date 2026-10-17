@@ -445,3 +445,8 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 - 로컬 작업자는 Ttakkari MCP와 계정 인증 환경을 받지 않는다. `worker.routing`/`run.usage.routing_request`에는 요청 엔진·작업 유형·실제 provider engine/model 또는 blocked 상태, 개인/회사 계정 scope와 workspace를 기록한다. 로컬 엔진의 `quota`는 null이며 cloud 계정 사용량으로 집계하지 않는다. 기존 `/api/accounts` 계정 엔진 목록에는 포함하지 않는다.
 - `0037_worker_routing`(`down_revision = "0036_system_resource_samples"`)은 `sessions.worker_task_type`(nullable)과 `sessions.strict_engine`(`server_default=false`)만 추가하는 additive migration이며 `0034`·`0035`·`0036_system_resource_samples`에서 온라인 업그레이드할 수 있다. GPU 이력의 0036 뒤에 직렬 연결하며 generation protocol/소유권·readiness·drain 계약은 유지한다.
 - `0038_qwen_flash_usage`(`down_revision = "0037_worker_routing"`)은 Flash Next 로컬 모델의 일일·주간 토큰 영속 집계를 위한 `qwen_flash_usage` 테이블을 추가하는 additive migration이다. generation protocol 1을 유지하며 이전 리비전들에서 온라인 업그레이드할 수 있다.
+
+
+### Muse Code 구독 사용량
+
+`GET /api/accounts/usage`는 `engine=muse`를 지원한다. `login`은 공식 SDK account/read에서 관측한 상태를 사용하고 `execution_enabled`는 개발 작업의 활성화 여부다. 사용량 조회는 실행 활성화·sandbox 준비와 독립적인 읽기 전용 명령이며 모델·세션·도구를 실행하지 않는다. 공식 usage/read 응답이 빈 경우 windows=[]·updated_at=null·설명 문구를 반환하고 0% 또는 무제한으로 바꾸지 않는다. 유효한 공급자 관측값만 source=muse_cli로 기록한다. 등록 모델 목록과 실제 구독 모델 호출 권한은 별개다.

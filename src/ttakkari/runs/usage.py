@@ -70,6 +70,7 @@ class Usage:
     plan: str | None = None
     error: str | None = None
     updated_at: float | None = None
+    login: str | None = None  # official read-only account state, when supplied by the provider
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -470,6 +471,8 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
 
 def muse_usage_from_probe(body: dict[str, Any]) -> Usage:
     """Only provider-observed subscription windows; absence never means zero."""
+    account_state = (body.get("account") or {}).get("state")
+    login = "ok" if account_state == "accountLogin" else "missing" if account_state == "loggedOut" else "unknown"
     snapshot = (body.get("usage") or {}).get("usage") or {}
     observed = snapshot.get("observedAtMs")
     windows = []
@@ -478,18 +481,16 @@ def muse_usage_from_probe(body: dict[str, Any]) -> Usage:
         percent, resets = window.get("usedPercent"), window.get("resetsAtMs")
         if (not isinstance(percent, int) or isinstance(percent, bool) or percent < 0
                 or not isinstance(resets, int) or isinstance(resets, bool) or resets <= 0):
-            error = "Muse 구독 로그인이 필요해요" if (body.get("account") or {}).get("state") == "loggedOut" else "Muse 구독 사용량 미관측"
-            return Usage(error=error)
+            error = "Muse 구독 로그인이 필요해요" if login == "missing" else "Muse 로그인 확인 · 공식 CLI에서 구독 사용량 미제공" if login == "ok" else "Muse 구독 사용량 미관측"
+            return Usage(error=error, login=login)
         windows.append(Window(key, label_of(key), percent, resets // 1000))
     if not isinstance(observed, int) or isinstance(observed, bool) or observed <= 0:
-        return Usage(error="Muse 사용량 관측 시각이 없어요")
-    return Usage(windows=windows, source="muse_cli", plan=snapshot.get("tier"), updated_at=observed / 1000)
+        return Usage(error="Muse 사용량 관측 시각이 없어요", login=login)
+    return Usage(windows=windows, source="muse_cli", plan=snapshot.get("tier"), updated_at=observed / 1000, login=login)
 
 
 async def _fetch_muse(config_dir: str | None) -> Usage:
     settings = get_settings()
-    if not settings.muse_enabled:
-        return Usage(error="Muse 실행은 운영 검증 전까지 비활성 상태예요")
     from ttakkari.runs.profiles import Profile
     env = os.environ.copy()
     env.update(Profile(uuid.uuid4(), "", "muse", Path(config_dir) if config_dir else None).env())
@@ -497,7 +498,7 @@ async def _fetch_muse(config_dir: str | None) -> Usage:
     proc = None
     try:
         proc = await asyncio.create_subprocess_exec(settings.muse_node_bin, str(probe), settings.muse_bin,
-            "backend_usage_collector", str(settings.muse_runtime_root), env=env,
+            "backend_usage_collector", str(settings.muse_runtime_root), "--usage-only", env=env,
             stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, _stderr = await asyncio.wait_for(proc.communicate(), 25)
         if proc.returncode not in (0, 2):

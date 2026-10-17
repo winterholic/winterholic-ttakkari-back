@@ -5,6 +5,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import { assertReady } from './contract.mjs';
 
 const museBin = process.argv[2];
+const usageOnly = process.argv[5] === "--usage-only";
 const runtimeRoot=process.argv[4]??dirname(fileURLToPath(import.meta.url));
 const requireRuntime=createRequire(join(runtimeRoot,'package.json'));
 const {spawnMspConnection}=await import(pathToFileURL(requireRuntime.resolve('@muse-code/sdk')).href);
@@ -21,7 +22,7 @@ const handshake = spawnMspConnection({
 });
 process.once('SIGTERM',()=>void handshake.close().finally(()=>process.exit(143)));
 process.once('SIGINT',()=>void handshake.close().finally(()=>process.exit(130)));
-const report = {scope:process.argv[3] ?? 'unspecified', model_call_executed:false,model_access_verified:false};
+const report = {mode:usageOnly ? 'usage_only' : 'readiness', scope:process.argv[3] ?? 'unspecified', model_call_executed:false,model_access_verified:false};
 try {
   const host = await Promise.race([
     handshake.initialize({clientInfo:{name:'ttakkari_readiness',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:false,requestedCapabilities:['sessionMcp']}}),
@@ -31,10 +32,13 @@ try {
   report.initialize = initializeResult;
   report.fingerprint_warning = host.fingerprintWarning ?? null;
   report.account = await connection.request('account/read', {});
-  report.catalog = await connection.request('model/list', {});
+  if (!usageOnly) report.catalog = await connection.request('model/list', {});
   report.usage = await connection.request('usage/read', {});
-  try { assertReady(initializeResult,report.account,true); report.ready_for_validation=true; }
-  catch(error) {report.ready_for_validation=false; report.blocker=error.message;}
+  if (!usageOnly) {
+    try { assertReady(initializeResult,report.account,true); report.ready_for_validation=true; }
+    catch(error) {report.ready_for_validation=false; report.blocker=error.message;}
+  }
+  report.read_only_lookup_succeeded = true;
   await host.close();
   report.exit=await host.child.exit;
 } catch(error) {
@@ -45,4 +49,4 @@ try {
   await handshake.close();
 }
 console.log(JSON.stringify(report,null,2));
-process.exitCode=report.ready_for_validation ? 0 : 2;
+process.exitCode=(usageOnly ? report.read_only_lookup_succeeded : report.ready_for_validation) ? 0 : 2;

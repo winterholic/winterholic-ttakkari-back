@@ -302,7 +302,7 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
         return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,
                                max_used_percent=a.max_used_percent, remaining_to_limit_percent=headroom,
                                stale=stale,
-                               work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=login,
+                               work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=u.login or login,
                                cooldown_seconds=profiles.cooldown_remaining(a.id),
                                windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
                                reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,

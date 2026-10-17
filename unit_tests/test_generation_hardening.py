@@ -438,6 +438,233 @@ async def test_command_timeout_kills_grandchildren_too(tmp_path):
         pytest.fail("grandchild survived the group kill")
 
 
+async def test_command_timeout_kills_a_term_ignoring_grandchild(tmp_path):
+    import re
+
+    from ttakkari.generation_deployment import GenerationController, StageError
+    store = JobStore(tmp_path)
+    control = GenerationController(store, slots=FakeSlots())
+    job = store.request("a" * 40)
+    grandchild_code = ("import signal, time; "
+                       "signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)")
+    script = ("import subprocess, sys, time; "
+              f"p = subprocess.Popen([sys.executable, '-c', {grandchild_code!r}]); "
+              "print(f'GRANDCHILD {p.pid}', flush=True); time.sleep(60)")
+    with pytest.raises(StageError):
+        await control.command(job, tmp_path, sys.executable, "-c", script,
+                              stage="pytest", timeout=2)
+    match = re.search(r"GRANDCHILD (\d+)", (store.jobs / f"{job['id']}.log").read_text())
+    assert match, "grandchild pid must be visible in the job log"
+    grandchild = int(match.group(1))
+    import os
+    for _ in range(100):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.1)
+    else:
+        pytest.fail("TERM-ignoring grandchild survived the group kill")
+
+
+async def test_db_create_schema_record_failures_carry_their_stage(tmp_path, monkeypatch):
+    from ttakkari import generation_deployment as gd
+    from ttakkari.generation_deployment import GenerationController, StageError
+
+    async def run_prepare(fail_at):
+        store = JobStore(tmp_path / f"prep-{fail_at}")
+        control = GenerationController(store, slots=FakeSlots())
+        release = tmp_path / f"release-{fail_at}"
+        (release / "deploy").mkdir(parents=True)
+        (release / "deploy/generation-contract.json").write_text(json.dumps(
+            {"protocol": 1, "schema_revision": "x-new", "online_migration_from": []}))
+        (release / ".environment-built").touch()
+
+        def archive(revision):
+            return release
+
+        monkeypatch.setattr(control.releases, "archive", archive)
+        if fail_at == "db_create":
+            import asyncpg
+
+            class FakeAdmin:
+                async def execute(self, sql):
+                    if sql.startswith("CREATE DATABASE"):
+                        raise OSError("disk full")
+
+                async def close(self):
+                    pass
+
+            async def connect(*args, **kwargs):
+                return FakeAdmin()
+
+            monkeypatch.setattr(asyncpg, "connect", connect)
+            job = store.request("a" * 40)
+        else:
+            class FakeDB:
+                async def scalar(self, query):
+                    return "x-old"
+
+            class FakeSession:
+                async def __aenter__(self):
+                    return FakeDB()
+
+                async def __aexit__(self, *args):
+                    return False
+
+            monkeypatch.setattr(gd, "sessionmaker", lambda: FakeSession())
+            job = store.request("a" * 40, skip_tests=True)
+        with pytest.raises(StageError) as excinfo:
+            await control.prepare(job)
+        return excinfo.value.stage
+
+    assert await run_prepare("db_create") == "db_create"
+    assert await run_prepare("schema_contract") == "schema_contract"
+
+
+async def test_post_activation_active_failure_is_an_activate_stage_error(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    store = JobStore(tmp_path)
+    slots = FakeSlots()
+    old = await slots.start(0, Path("unused"), "0" * 40)
+    holder = {"active": uuid.UUID(old["generation"])}
+    calls = {"n": 0}
+    control = GenerationController(store, slots=slots)
+
+    async def active():
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("db flap")
+        return holder["active"]
+
+    async def activate(gid, *, expected):
+        holder["active"] = gid
+
+    async def prepare(_job):
+        return Path("candidate")
+
+    monkeypatch.setattr(control, "active", active)
+    monkeypatch.setattr(control, "activate", activate)
+    monkeypatch.setattr(control, "prepare", prepare)
+    job = store.request("b" * 40)
+    await control.process(job)
+    record = store.get(job["id"])
+    assert record["status"] == "rolling_back"
+    assert record["error_stage"] == "activate"
+
+
+async def test_record_active_failure_is_a_record_stage_error(tmp_path, monkeypatch):
+    from ttakkari.generation_deployment import GenerationController
+    store = JobStore(tmp_path)
+    slots = FakeSlots()
+    old = await slots.start(0, Path("unused"), "0" * 40)
+    holder = {"active": uuid.UUID(old["generation"])}
+    control = GenerationController(store, slots=slots)
+    monkeypatch.setattr(control, "active", lambda: asyncio.sleep(0, result=holder["active"]))
+
+    async def activate(gid, *, expected):
+        holder["active"] = gid
+
+    async def prepare(_job):
+        return Path("candidate")
+
+    def record_active(job):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(control, "activate", activate)
+    monkeypatch.setattr(control, "prepare", prepare)
+    monkeypatch.setattr(control, "record_active", record_active)
+    job = store.request("b" * 40)
+    await control.process(job)
+    record = store.get(job["id"])
+    assert record["status"] == "rolling_back"
+    assert record["error_stage"] == "record"
+
+
+def test_failure_without_any_stage_context_is_recorded_unknown(tmp_path):
+    from ttakkari.generation_deployment import GenerationController
+    store = JobStore(tmp_path)
+    control = GenerationController(store, slots=FakeSlots())
+    job = store.request("a" * 40)
+    control.record_failure(job, "failed", RuntimeError("boom"))
+    record = store.get(job["id"])
+    assert record["error_stage"] == "unknown"
+    assert "stage unknown" in record["error_summary"]
+    assert record["error_command"] is None and record["error_exit"] is None
+
+
+async def test_upgrade_attempt_is_persisted_before_kickstart(tmp_path, monkeypatch):
+    from ttakkari import generation
+    from ttakkari import generation_deployment as gd
+    monkeypatch.setattr(generation, "PORTS", (8791, 8792))
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    monkeypatch.setattr(gd, "contract_for_revision", _three_slot_demanding_contract)
+    store = JobStore(tmp_path)
+    active_revision = "c" * 40
+    release = tmp_path / "releases" / active_revision
+    (release / "deploy").mkdir(parents=True)
+    (release / "deploy/generation-contract.json").write_text(json.dumps(
+        {"protocol": 1, "schema_revision": "x", "online_migration_from": [],
+         "supervisor": {"protocol": 1, "slots": 3}}))
+    receipt = store.request(active_revision)
+    store.update(receipt["id"], status="draining", release_path=str(release))
+    job = store.request("a" * 40)
+    control = gd.GenerationController(store, slots=FakeSlots())
+    active_id = uuid.uuid4()
+    monkeypatch.setattr(control, "active", lambda: asyncio.sleep(0, result=active_id))
+
+    async def info(gid):
+        return {"id": gid, "revision": active_revision, "api_url": "http://127.0.0.1:8791"}
+
+    monkeypatch.setattr(control, "generation_info", info)
+    seen = {}
+
+    async def dying_upgrade(controller, revision):
+        # kickstart가 이 프로세스를 죽이는 순간 디스크에 남아 있는 기록.
+        seen.update(controller.store.get(job["id"]))
+        raise RuntimeError("SIGTERM during kickstart")
+
+    monkeypatch.setattr(gd, "upgrade_supervisor", dying_upgrade)
+    await control.process(job)
+    assert seen["supervisor_upgrade_attempted_for"] == active_revision
+    assert len(seen["supervisor_upgrade_attempts"]) == 1
+    assert seen["supervisor_upgrade_attempts"][0]["ok"] is False
+    record = store.get(job["id"])
+    assert "SIGTERM during kickstart" in record["supervisor_upgrade_attempts"][0]["error"]
+
+
+async def test_no_retry_after_restart_with_insufficient_capability(tmp_path, monkeypatch):
+    # 갱신 후 다시 떴는데도 부족하면 같은 대상을 다시 시도하지 않는다.
+    from ttakkari import generation
+    from ttakkari import generation_deployment as gd
+    monkeypatch.setattr(generation, "PORTS", (8791, 8792))
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    monkeypatch.setattr(gd, "contract_for_revision", _three_slot_demanding_contract)
+    store = JobStore(tmp_path)
+    job = store.request("a" * 40)
+    store.update(job["id"], supervisor_upgrade_attempted_for="c" * 40,
+                 supervisor_upgrade_attempts=[
+                     {"revision": "c" * 40, "at": "2026-10-18T00:00:00+00:00",
+                      "ok": True, "error": None}])
+    control = gd.GenerationController(store, slots=FakeSlots())
+    active_id = uuid.uuid4()
+    monkeypatch.setattr(control, "active", lambda: asyncio.sleep(0, result=active_id))
+
+    async def info(gid):
+        return {"id": gid, "revision": "c" * 40, "api_url": "http://127.0.0.1:8791"}
+
+    monkeypatch.setattr(control, "generation_info", info)
+    calls = []
+
+    async def upgrade(controller, revision):
+        calls.append(revision)
+
+    monkeypatch.setattr(gd, "upgrade_supervisor", upgrade)
+    await control.process(store.get(job["id"]))
+    assert calls == []
+    assert store.get(job["id"])["status"] == "supervisor_upgrade_required"
+
+
 async def test_activate_cutover_readiness_drain_failures_carry_their_stage(tmp_path, monkeypatch):
     from ttakkari.generation_deployment import GenerationController
 

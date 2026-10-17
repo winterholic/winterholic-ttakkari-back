@@ -48,18 +48,37 @@ def _utcnow() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _group_alive(pgid: int) -> bool:
+    """killpg(pgid, 0)은 아무것도 보내지 않고 존재만 확인한다."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 async def _terminate_group(proc, *, grace_seconds: float = 5) -> None:
-    """프로세스 그룹 전체를 TERM 후 KILL한다. 직접 자식만 죽이면 손자가 남는다."""
+    """프로세스 그룹 전체를 TERM 후 KILL한다.
+
+    자식이 먼저 죽어도 손자가 그룹에 남을 수 있어, 유예 뒤에는 그룹 존재를
+    직접 확인하고 남아 있으면 무조건 KILL한다. 한계: 손자가 setsid/setpgid로
+    그룹을 빠져나갔으면 닿지 않는다. 그런 탈주는 허용하지 않는 명령만 쓴다.
+    """
     import signal
+    pgid = proc.pid
     with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-        os.killpg(proc.pid, signal.SIGTERM)
+        os.killpg(pgid, signal.SIGTERM)
     try:
         await asyncio.wait_for(proc.wait(), grace_seconds)
-        return
     except TimeoutError:
         pass
-    with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-        os.killpg(proc.pid, signal.SIGKILL)
+    if _group_alive(pgid):
+        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+            os.killpg(pgid, signal.SIGKILL)
     await proc.wait()
 
 
@@ -427,10 +446,10 @@ class GenerationController:
                        stage: str | None = None, command=_UNSET, exit_code=_UNSET) -> None:
         """배포 레코드에 단계·명령·종료코드·요약을 구조화해 남긴다.
 
-        stage는 반드시 채운다(명시 → StageError → 작업 heartbeat → 기본값).
-        command·exit code는 해당할 때만 채우고, 아니면 null과 이유를 남긴다.
-        error(문자열)는 하위호환용으로 유지해 backend_deploy_status·ops 조회가
-        그대로 읽는다.
+        stage는 반드시 채운다(명시 → StageError → unknown). 마지막 준비 단계로
+        추측하지 않는다. command·exit code는 해당할 때만 채우고, 아니면 null과
+        이유를 남긴다. error(문자열)는 하위호환용으로 유지해
+        backend_deploy_status·ops 조회가 그대로 읽는다.
         """
         reasons: list[str] = []
         if isinstance(exc, StageError):
@@ -443,8 +462,8 @@ class GenerationController:
         else:
             summary = str(exc)
         if stage is None:
-            stage = job.get("prepare_stage") or "prepare"
-            reasons.append("stage defaulted from job context")
+            stage = "unknown"
+            reasons.append("stage unknown: no stage context recorded this failure")
         if command is self._UNSET:
             command = None
         if exit_code is self._UNSET:
@@ -566,7 +585,8 @@ class GenerationController:
             async with self._operation("test-db"):
                 admin = await asyncpg.connect(url.set(database="postgres").render_as_string(hide_password=False))
             try:
-                await admin.execute(f'CREATE DATABASE "{name}"')
+                async with self._operation("db_create"):
+                    await admin.execute(f'CREATE DATABASE "{name}"')
                 try:
                     test_url = url.set(drivername="postgresql+asyncpg", database=name).render_as_string(hide_password=False)
                     # Archives have no .git; use the candidate, not the supervisor's revision.
@@ -579,13 +599,14 @@ class GenerationController:
                     await admin.execute(f'DROP DATABASE "{name}"')
             finally:
                 await admin.close()
-        async with self._operation("verify"):
+        async with self._operation("schema_contract"):
             contract = self.releases.contract(release)
-        async with sessionmaker()() as db:
-            schema = await db.scalar(text("SELECT version_num FROM alembic_version"))
-        if schema != contract["schema_revision"]:
-            if schema not in contract["online_migration_from"]:
+            async with sessionmaker()() as db:
+                schema = await db.scalar(text("SELECT version_num FROM alembic_version"))
+            if schema != contract["schema_revision"] and schema not in contract["online_migration_from"]:
                 raise RuntimeError("schema contract requires an idle migration/bootstrap; active work preserved")
+            needs_migration = schema != contract["schema_revision"]
+        if needs_migration:
             self.phase(job, "migrating")
             env = os.environ | {"TTAKKARI_MIGRATION_ONLINE": "true"}
             await self.command(
@@ -598,28 +619,30 @@ class GenerationController:
         return release
 
     async def rollback(self, job):
-        old_slot, new_slot = job["previous_slot"], job["candidate_slot"]
-        old = await self.slots.snapshot(old_slot)
-        if old is None or old["generation"] != job["previous_generation"]:
-            self.record_failure(job, "recovery_pending",
-                RuntimeError("previous generation unavailable; refusing speculative rollback"),
-                stage="rollback")
-            return
-        old_id = uuid.UUID(old["generation"])
-        active = await self.active()
-        if active not in {old_id, uuid.UUID(job["candidate_generation"])}:
-            self.record_failure(job, "recovery_pending",
-                RuntimeError("newer generation is active; refusing stale rollback"),
-                stage="rollback")
-            return
-        if active != old_id:
-            await self.activate(old_id, expected=active)
-        await self.slots.switch(old_slot)
-        self.phase(job, "rolling_back")
-        candidate = await self.slots.snapshot(new_slot)
-        if candidate and candidate.get("drain_ready"):
-            await self.slots.stop(new_slot)
-            self.phase(job, "failed")
+        # 거부 분기는 자체 기록하고, 그 밖의 예외는 rollback 단계로 묶는다.
+        async with self._operation("rollback"):
+            old_slot, new_slot = job["previous_slot"], job["candidate_slot"]
+            old = await self.slots.snapshot(old_slot)
+            if old is None or old["generation"] != job["previous_generation"]:
+                self.record_failure(job, "recovery_pending",
+                    RuntimeError("previous generation unavailable; refusing speculative rollback"),
+                    stage="rollback")
+                return
+            old_id = uuid.UUID(old["generation"])
+            active = await self.active()
+            if active not in {old_id, uuid.UUID(job["candidate_generation"])}:
+                self.record_failure(job, "recovery_pending",
+                    RuntimeError("newer generation is active; refusing stale rollback"),
+                    stage="rollback")
+                return
+            if active != old_id:
+                await self.activate(old_id, expected=active)
+            await self.slots.switch(old_slot)
+            self.phase(job, "rolling_back")
+            candidate = await self.slots.snapshot(new_slot)
+            if candidate and candidate.get("drain_ready"):
+                await self.slots.stop(new_slot)
+                self.phase(job, "failed")
 
     def record_active(self, job):
         for name, value in (("previous", job["previous_revision"]), ("current", job["revision"])):
@@ -715,6 +738,13 @@ class GenerationController:
             return False
         attempts = list(job.get("supervisor_upgrade_attempts") or [])
         attempt = {"revision": revision, "at": now, "ok": False, "error": None}
+        # kickstart가 이 프로세스를 죽여도 기록이 남도록 시도부터 영속화한다.
+        # 갱신 후 다시 떴는데도 capability가 부족하면 같은 대상을 다시 시도하지
+        # 않고 supervisor_upgrade_required로 멈춘다.
+        self.phase(job, job["status"], supervisor_upgrade_attempted_for=revision,
+                   supervisor_upgrade_attempts=[*attempts, attempt],
+                   error_stage="supervisor",
+                   error_summary=f"supervisor upgrade to {revision[:7]} requested; retrying")
         try:
             await upgrade_supervisor(self, revision)
         except Exception as exc:
@@ -725,11 +755,8 @@ class GenerationController:
             log.exception("automatic supervisor upgrade failed; reporting instead")
             return False
         attempt["ok"] = True
-        self.phase(job, job["status"], supervisor_upgrade_attempted_for=revision,
-                   supervisor_upgrade_attempts=[*attempts, attempt],
-                   supervisor_upgrade_next_retry_at=None,
-                   error_stage="supervisor",
-                   error_summary=f"supervisor upgrade to {revision[:7]} requested; retrying")
+        self.phase(job, job["status"], supervisor_upgrade_attempts=[*attempts, attempt],
+                   supervisor_upgrade_next_retry_at=None)
         return True
 
     async def process(self, job):
@@ -793,16 +820,17 @@ class GenerationController:
                                      "candidate restarted; reconcile ownership before activation")
             if not recorded:
                 self.phase(job, "switching", candidate_generation=str(cid))
-            current = await self.active()
-            if current != cid:
-                async with self._operation("activate"):
+            async with self._operation("activate"):
+                current = await self.active()
+                if current != cid:
                     await self.activate(cid, expected=uuid.UUID(job["previous_generation"]))
             if job["status"] != "draining":
                 async with self._operation("cutover"):
                     await self.slots.switch(job["candidate_slot"])
                 async with self._operation("readiness"):
                     await self.slots.verify(job["revision"])
-                self.record_active(job)
+                async with self._operation("record"):
+                    self.record_active(job)
                 self.phase(job, "draining", activated_revision=job["revision"])
             async with self._operation("drain"):
                 await self.retire(job)

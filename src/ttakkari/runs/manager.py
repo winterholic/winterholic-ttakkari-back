@@ -1428,8 +1428,8 @@ async def _system_note(db: AsyncSession, outbox: Path, sess: ChatSession, scope:
     if brief:
         parts.append("[Pinned facts about the user — use recall for more]\n" + brief)
     if sess.kind == SessionKind.orchestrator:
-        from ttakkari.orchestrator.runtime import MODEL_ROUTING_NOTE
-        parts.append(MODEL_ROUTING_NOTE)
+        from ttakkari.orchestrator.runtime import model_routing_note
+        parts.append(model_routing_note())
     return "\n\n".join(parts)
 
 

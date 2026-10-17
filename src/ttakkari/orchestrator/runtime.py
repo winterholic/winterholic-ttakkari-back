@@ -71,7 +71,7 @@ observable history, not a verified semantic summary or proof of completed work."
 ORCHESTRATOR_NOTE = ORCHESTRATOR_INTRO + ORCHESTRATOR_BODY
 LEAD_NOTE = LEAD_INTRO + ORCHESTRATOR_BODY
 
-MODEL_ROUTING_NOTE = """\
+_ROUTING_NOTE_HEAD = """\
 [Antigravity routing policy (2026-10-16)]
 This backend-enforced task policy supersedes conflicting native-only, explicit-Antigravity-only,
 Luna-first-for-everything and Claude-for-everything instructions in older role files and memories.
@@ -89,8 +89,14 @@ Luna-first-for-everything and Claude-for-everything instructions in older role f
   treat its output as requiring independent cross-provider verification (task_type="verification", GPT or Claude)
   before final completion, and record the outcome via message_worker(verification_outcome="passed"|"failed").
   Avoid assigning long unattended multi-stage shell/file-cleanup loops or direct computer/UI manipulation to Flash.
+- Muse (engine "muse", personal accounts only) appears in the stage table below only while the backend has
+  muse_auto_routing on. It then shares the first general/routine stage with Sonnet/Flash, so measured headroom per
+  Run decides; unknown or stale Muse quota never outranks a measured alternative. It is never used for design,
+  verification or reasoning. Its general/routine results require independent GPT/Claude verification like Flash.
+  If the table lists no muse entry, do not assign Muse through auto; an explicit engine="muse" stays a manual choice.
 - The authoritative ordered model stages (equal-stage candidates balance by load) are generated from code:
-""" + json.dumps(policy(), ensure_ascii=False) + """
+"""
+_ROUTING_NOTE_TAIL = """
 - Check account_usage before assignments, including model_capacity and worker_routing. The backend respects
   scope, configured model IDs, enable flags, model-group cooldowns and stale exhaustion. Unknown capacity is
   unknown; measured alternatives precede unknown candidates, then task-stage priority, then headroom per Run.
@@ -107,6 +113,13 @@ Luna-first-for-everything and Claude-for-everything instructions in older role f
 - Model listing and quota availability do not verify MCP, persistence or resume. Preserve the evidence scope
   of actual capability checks. Do not retry a known sandbox failure unchanged or bypass the sandbox.
 """
+
+
+def model_routing_note() -> str:
+    return _ROUTING_NOTE_HEAD + json.dumps(policy(), ensure_ascii=False) + _ROUTING_NOTE_TAIL
+
+
+MODEL_ROUTING_NOTE = model_routing_note()
 
 
 AGENT_NOTE = """\

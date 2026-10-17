@@ -118,6 +118,7 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
         "measured_at": _iso(now),
         "priority_override_until": override["until"] if override else None,
         "worker_routing": worker_routing.policy(),
+        "muse_auto_routing": worker_routing.muse_auto_enabled(),
         "note": "usage is collected by the app every ~5 min (~1.5 min while the account runs a Run or is below 20% left) "
                 f"and is not refreshed by this tool (null = never observed, stale = older than {s.usage_stale_seconds // 60} min). "
                 "burn_percent_per_hour is the recent rise in used percent per hour (null = not enough history); "
@@ -137,6 +138,8 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 "when all enabled accounts of the pinned engine hit usage limits (set strict_engine=True to wait instead); "
                 "reroute an idle worker with message_worker(reroute=True). "
                 "Flash (gemini-3.8-flash-*) is excluded from verification; when Flash completes a general/routine worker Run, "
-                "independent cross-provider verification (task_type='verification') is required before final completion.",
+                "independent cross-provider verification (task_type='verification') is required before final completion. "
+                "Muse (muse-*) is a general/routine auto candidate only while muse_auto_routing is true (personal accounts only); "
+                "its general/routine results require the same independent verification and Muse never verifies.",
         "accounts": out,
     }

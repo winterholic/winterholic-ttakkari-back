@@ -36,35 +36,57 @@ def _qwen_local_model() -> str:
 
 
 QWEN_LOCAL = ("qwen-local", "Qwen3.8-Flash-Next-Q2_K")
+# Muse has one account-wide 5h/weekly pool (keys five_hour/seven_day), so headroom compares like native engines.
+MUSE_FULL = ("muse", "muse-wonder-full-1.0")
+MUSE_SPARK = ("muse", "muse-spark-1.3")
 # Each stage has equally suitable models; profiles.choose balances accounts within it.
 # Flash is excluded from verification so cross-provider review uses GPT first, then Claude.
+# Muse shares the first general/routine stage; it is only a candidate while muse_auto_routing is on (see
+# muse_auto_enabled), joins no design/verification/reasoning stage, and its output needs independent verification.
 ROUTES = {
-    "general": ((SONNET,), (FLASH,), (NATIVE_SONNET, LUNA), (QWEN_LOCAL,)),
-    "routine": ((FLASH,), (LUNA,), (SONNET,), (NATIVE_SONNET,), (QWEN_LOCAL,)),
+    "general": ((SONNET, MUSE_FULL), (FLASH,), (NATIVE_SONNET, LUNA), (QWEN_LOCAL,)),
+    "routine": ((FLASH, MUSE_SPARK), (LUNA,), (SONNET,), (NATIVE_SONNET,), (QWEN_LOCAL,)),
     "design": ((SONNET,), (NATIVE_SONNET,)),
     "verification": ((LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "reasoning": ((ARGON,), (AGY_OPUS,), (SOL, NATIVE_OPUS)),
 }
 
 
+def muse_auto_enabled() -> bool:
+    """Muse joins auto routing only after execution is enabled and auto routing is switched on explicitly."""
+    settings = get_settings()
+    return settings.muse_enabled and settings.muse_auto_routing
+
+
+def _routable(engine: str) -> bool:
+    return engine != "muse" or muse_auto_enabled()
+
+
 def is_flash_model(model: str | None) -> bool:
     return bool(model and (model.startswith("gemini-3.8-flash") or "qwen" in model.lower()))
 
 
+def is_muse_model(model: str | None) -> bool:
+    return bool(model and model.startswith("muse-"))
+
+
 def needs_independent_verification(task_type: str | None, model: str | None) -> bool:
-    """Flash and local Qwen implementation/routine runs require independent cross-provider verification before final completion."""
-    return is_flash_model(model) and (task_type or "general") in {"general", "routine"}
+    """Flash, local Qwen and Muse implementation/routine runs require independent cross-provider verification before final completion.
+
+    Muse has no measured quality baseline against the other workers yet, so its results are treated like Flash's.
+    """
+    return (is_flash_model(model) or is_muse_model(model)) and (task_type or "general") in {"general", "routine"}
 
 
-def verifier_recommendation() -> dict:
+def verifier_recommendation(model: str | None = None) -> dict:
     return {
         "task_type": "verification",
         "preferred_routes": [
-            {"engine": engine, "model": model}
+            {"engine": engine, "model": model_id}
             for stage in ROUTES["verification"]
-            for engine, model in stage
+            for engine, model_id in stage
         ],
-        "excluded_family": "gemini-3.8-flash",
+        "excluded_family": "muse" if is_muse_model(model) else "gemini-3.8-flash",
     }
 
 
@@ -75,15 +97,18 @@ def infer_task_type(model: str | None) -> TaskType:
 
 
 def policy() -> dict:
-    return {task: [[{"engine": engine, "model": model} for engine, model in stage] for stage in stages]
-            for task, stages in ROUTES.items()}
+    stages_by_task = {
+        task: [[{"engine": engine, "model": model} for engine, model in stage if _routable(engine)] for stage in stages]
+        for task, stages in ROUTES.items()
+    }
+    return {task: [stage for stage in stages if stage] for task, stages in stages_by_task.items()}
 
 
 def accepts_model(task_type: str, model: str) -> bool:
     engine = profiles.model_engine(model)
     family = model.rsplit("-", 1)[0] if engine == "antigravity" else model
     return any((engine, family) == (e, m.rsplit("-", 1)[0] if e == "antigravity" else m)
-               for stage in ROUTES[task_type] for e, m in stage)
+               for stage in ROUTES[task_type] for e, m in stage if _routable(e))
 
 
 def primary_target(session_engine: str, requested_model: str | None = None) -> tuple[str, str]:
@@ -129,6 +154,7 @@ def pinned_stages(session_engine: str, requested_model: str | None = None,
         filtered = tuple(
             (se, sm) for se, sm in stage
             if (se, sm.rsplit("-", 1)[0] if se == "antigravity" else sm) not in seen
+            and _routable(se) and not (se == "muse" and eng == "muse")
         )
         if filtered:
             stages.append(filtered)
@@ -143,6 +169,8 @@ async def availability(db: AsyncSession, task_type: str, pool: str, *, model: st
     free, blocked = [], []
     for stage in ROUTES[task_type]:
         for engine, default_model in stage:
+            if not _routable(engine):
+                continue
             # A requested model tunes the same family, never turns a routine task into a peer-model task.
             selected = default_model
             if model and profiles.model_engine(model) == engine:
@@ -278,7 +306,7 @@ def receipt(task_type, selected, candidates, blocked, counts, *, trigger, fallba
            "blocked": [{"account": p.name, **capacity(p, counts.get(p.id, 0)), "limited_until": until}
                        for p, until in blocked],
            "verification_required": verify,
-           "recommended_verifier": verifier_recommendation() if verify else None,
+           "recommended_verifier": verifier_recommendation(selected.model) if verify else None,
            "reason": "task_fit_then_known_quota_then_stage_then_headroom_per_run"}
     if fallback_from is not None:
         out["fallback_from"] = fallback_from

@@ -341,6 +341,9 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     When a general/routine worker runs on Gemini 3.8 Flash, verification_required=True is returned: run an
     independent cross-provider verification (task_type="verification") before final completion and record
     message_worker(verification_outcome="passed"|"failed").
+    Muse joins general/routine auto routing (shared first stage with Sonnet/Flash, personal accounts only) only when
+    account_usage.muse_auto_routing is true; its results also return verification_required=True and Muse never
+    verifies. Explicit engine="muse" remains a manual choice either way.
     Explicit engine="qwen-local" selects the local Qwen harness only when its feature gate and fixed readiness contract pass.
     It has no cloud account/quota and never falls back to another provider. It is not part of auto routing.
     Explicit engine="claude"/"codex"/"antigravity" uses that engine first and, when all its enabled accounts hit

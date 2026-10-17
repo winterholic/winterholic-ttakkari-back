@@ -87,7 +87,7 @@ def set_sink(fn: Callable[[uuid.UUID, Usage], None] | None) -> None:
 
 
 def _emit(account_id: uuid.UUID, u: Usage) -> None:
-    if _sink is not None and u.windows and u.source in ("api", "stream", "antigravity_cli"):
+    if _sink is not None and u.windows and u.source in ("api", "stream", "antigravity_cli", "muse_cli"):
         with contextlib.suppress(Exception):
             _sink(account_id, u)
 
@@ -450,7 +450,9 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     ttl = max(TTL, get_settings().usage_poll_seconds)
     if hit and not refresh and time.time() - hit[0] < ttl:
         return hit[1]
-    if engine == "antigravity":
+    if engine == "muse":
+        u = await _fetch_muse(config_dir)
+    elif engine == "antigravity":
         u = await _fetch_antigravity()
     elif engine == "claude":
         u = await _fetch_claude(config_dir)
@@ -461,9 +463,59 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     else:
         u = await _fetch_codex(config_dir) or await asyncio.to_thread(codex_usage, config_dir)
     _cache[account_id] = (time.time(), u)
-    if u.source in ("api", "antigravity_cli"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
+    if u.source in ("api", "antigravity_cli", "muse_cli"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
         _emit(account_id, u)
     return u
+
+
+def muse_usage_from_probe(body: dict[str, Any]) -> Usage:
+    """Only provider-observed subscription windows; absence never means zero."""
+    snapshot = (body.get("usage") or {}).get("usage") or {}
+    observed = snapshot.get("observedAtMs")
+    windows = []
+    for window_name, key in (("window", "five_hour"), ("weekly", "seven_day")):
+        window = snapshot.get(window_name) or {}
+        percent, resets = window.get("usedPercent"), window.get("resetsAtMs")
+        if (not isinstance(percent, int) or isinstance(percent, bool) or percent < 0
+                or not isinstance(resets, int) or isinstance(resets, bool) or resets <= 0):
+            error = "Muse 구독 로그인이 필요해요" if (body.get("account") or {}).get("state") == "loggedOut" else "Muse 구독 사용량 미관측"
+            return Usage(error=error)
+        windows.append(Window(key, label_of(key), percent, resets // 1000))
+    if not isinstance(observed, int) or isinstance(observed, bool) or observed <= 0:
+        return Usage(error="Muse 사용량 관측 시각이 없어요")
+    return Usage(windows=windows, source="muse_cli", plan=snapshot.get("tier"), updated_at=observed / 1000)
+
+
+async def _fetch_muse(config_dir: str | None) -> Usage:
+    settings = get_settings()
+    if not settings.muse_enabled:
+        return Usage(error="Muse 실행은 운영 검증 전까지 비활성 상태예요")
+    from ttakkari.runs.profiles import Profile
+    env = os.environ.copy()
+    env.update(Profile(uuid.uuid4(), "", "muse", Path(config_dir) if config_dir else None).env())
+    probe = Path(__file__).resolve().parents[3] / ".muse-runtime/probe.mjs"
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(settings.muse_node_bin, str(probe), settings.muse_bin,
+            "backend_usage_collector", str(settings.muse_runtime_root), env=env,
+            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, _stderr = await asyncio.wait_for(proc.communicate(), 25)
+        if proc.returncode not in (0, 2):
+            return Usage(error=f"Muse SDK 조회 프로세스 종료({proc.returncode})")
+        body = json.loads(stdout)
+        if not isinstance(body, dict):
+            return Usage(error="Muse 조회 응답 형식 오류")
+        return muse_usage_from_probe(body)
+    except (OSError, ValueError, TimeoutError) as error:
+        return Usage(error=f"Muse 조회 실패({type(error).__name__})")
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), 4)
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
 
 
 def cached(account_id: uuid.UUID) -> Usage | None:

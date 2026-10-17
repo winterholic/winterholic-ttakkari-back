@@ -27,7 +27,7 @@ from ttakkari.models import AppSetting, ChatSession, EngineAccount, utcnow
 
 log = logging.getLogger(__name__)
 
-ENGINES = {"claude", "codex", "antigravity"}
+ENGINES = {"claude", "codex", "antigravity", "muse"}
 # 엔진이 사용량·속도 한도로 거절할 때의 문구. 문구가 바뀌면 폴백 없이 그냥 실패한다(ADR 0006 한계).
 # Claude: "You've hit your session|weekly|usage limit · resets 7:20pm (Asia/Seoul)", "Claude AI usage limit reached|<epoch>".
 # Codex: "You've hit your usage limit. ... try again at Oct 12th, 2026 12:16 AM."
@@ -68,6 +68,10 @@ class Profile:
         return str(self.id)
 
     def env(self) -> dict[str, str]:
+        if self.engine == "muse":
+            settings = get_settings()
+            root = self.config_dir or settings.muse_profile_root or settings.home / "accounts/muse-default"
+            return {f"XDG_{kind.upper()}_HOME": str(root / kind) for kind in ("config", "data", "cache")}
         if self.config_dir is None:
             return {}
         if self.engine == "antigravity":
@@ -168,8 +172,8 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
         ):
             continue
         p = _profile(a)
-        if p.engine == "antigravity":
-            p = replace(p, model=model or get_settings().worker_default_models["antigravity"]["model"])
+        if p.engine in {"antigravity", "muse"}:
+            p = replace(p, model=model or get_settings().worker_default_models[p.engine]["model"])
         until = profile_limited_until(p)
         if until:
             blocked.append((p, until))
@@ -507,6 +511,9 @@ def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:
     if engine == "antigravity":
         # The official CLI exposes no read-only login-status API. Do not inspect its credentials.
         return "unknown", None
+    if engine == "muse":
+        # SDK account/read supplies the actual lane; do not inspect auth.json.
+        return "unknown", None
     if engine == "claude":
         f = (base / ".claude.json") if base else HOME / ".claude.json"
         try:
@@ -530,6 +537,8 @@ def model_engine(model: str | None) -> str | None:
     m = model.lower()
     if m in ANTIGRAVITY_MODELS:
         return "antigravity"
+    if m.startswith(("muse-wonder-", "muse-spark-")):
+        return "muse"
     if m in CLAUDE_MODELS or m.startswith("claude"):
         return "claude"
     if m.startswith("gpt-oss-"):

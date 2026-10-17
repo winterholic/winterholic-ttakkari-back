@@ -1,6 +1,6 @@
 # Muse Code 통합 조사 및 진행 기록 — 2026-10-17
 
-상태: **초기 구현, 정식 통합 미완료. 운영 미배포.**
+상태: **백엔드·프론트 연동 코드 후보 작성. 실제 구독 인증·코딩·운영 검증 미완료. 운영 미배포.**
 
 ## 요청과 완료 기준
 
@@ -10,15 +10,15 @@
 
 - 백엔드 조사 시작 커밋: `41e007dd815ec1427d4430ec2ae13e3035ef7485`. `git pull --ff-only` 결과 Already up to date.
 - 운영 `/api/version`: `c1d706274cb4d3fc2d25f138280184ba1653dfb0`, PID 89425. `/api/health`: `{"ok":true}`. 운영 버전과 개발 체크아웃은 다르다.
-- 원 프론트 체크아웃에는 다른 작업의 미커밋 변경이 있어 수정하지 않았다. `back-muse-code`, `front-muse-code` Worktree / `feature/muse-code` 브랜치를 생성했다. 프론트 신규 구현은 아직 없다.
+- 원 프론트 체크아웃에는 다른 작업의 미커밋 변경이 있어 수정하지 않았다. `back-muse-code`, `front-muse-code` Worktree / `feature/muse-code` 브랜치를 생성했다. 초기에는 프론트 코드가 없었고, 2차 구현에서 엔진 선택·타입·배지·사용량·검증 대기 상태를 확장했다.
 - 조사 시작 당시 `command -v muse`는 exit 1. `~/.local/bin/muse`, `/opt/homebrew/bin/muse`, `~/.config/muse`도 없었다. 다른 머신이나 사용자의 구독 유무에 대한 증거가 아니다.
 - 공식 설치 스크립트를 읽은 후 `MUSE_INSTALL_DIR=~/development/tooling/muse/bin MUSE_NO_MODIFY_PATH=1 MUSE_LOGIN=0`으로 설치했다. PATH·셸 설정을 수정하지 않았다. `muse --version`: **Muse Code 1.4.10 (1.4.10-R6427.1)**.
-- 실행 프로필은 `~/development/tooling/muse/runtime/{config,data,cache}`에 둔다. `XDG_CONFIG_HOME` 아래 `muse/settings.json`이 사용자 설정이다. `HOME`은 바꾸지 않았고 인증 파일·키체인을 직접 읽거나 복사하지 않았다.
+- 초기 미인증 진단 프로필은 `~/development/tooling/muse/runtime/{config,data,cache}`에 뒀다. 제품 기본값은 아래 운영 절차의 보호된 계정 영역이다. `XDG_CONFIG_HOME` 아래 `muse/settings.json`이 사용자 설정이다. `HOME`은 바꾸지 않았고 인증 파일·키체인을 직접 읽거나 복사하지 않았다.
 - 중첩 Codex worker sandbox에서 `muse exec --json --model muse-wonder-full-1.0 --contributor-mode off --max-model-steps 1 …`는 **exit 1, missing meta credentials**. 모델 응답·구독 권한 거절에 도달한 결과가 아니다.
 - 동일 환경의 `muse serve`는 MSP initialize 성공, `sessionMcp` grant, durable session 지원을 반환했다. `sandboxAvailability`는 **unavailable**이었다. 이유 필드는 없었다. sandbox를 끄거나 다른 실행 경로로 우회해 재시도하지 않았다. 운영 백엔드에서의 Muse sandbox 상태는 미검증이다.
 - `account/read`는 experimentalApi가 필요했다. 해당 capability를 협상한 읽기 결과는 `{"state":"loggedOut","credentialRequired":true}`였다.
 - `model/list`: `source=bundledCatalog`, `models=[]`. `usage/read`: `{}`. 사용량 0%, 무제한, 모델 접근 거절의 의미가 아니다.
-- 공식 MSP `account/loginStart(type=deviceCode)`로 기기 인증을 시작했다. 브라우저를 직접 실행하지 않았다. 인증 링크·코드는 현재 대화와 알림에만 전달했다. 로그인 완료는 아직 확인하지 않았다. 결제 흐름은 시작하지 않았다.
+- 공식 MSP `account/loginStart(type=deviceCode)`로 기기 인증을 시작했다. 브라우저를 직접 실행하지 않았다. 인증 링크·코드는 현재 대화와 알림에만 전달했다. 해당 요청은 이후 `expired`로 종료됐고 최종 account/read는 loggedOut이었다. 전달했던 코드는 만료되어 재사용할 수 없다. 결제 흐름은 시작하지 않았다.
 - `exec --provider echo`의 실행은 **프로토콜 관찰 전용**이었다. 실제 모델 또는 코딩 성공으로 계산하지 않는다. foreign skills 61개와 catalog 압축 경고가 관찰됐으나 전체 스킬 호환성을 검증한 결과가 아니다.
 
 ## 공식 규격 조사
@@ -61,7 +61,7 @@ Muse Code 구독의 기본 Contributor 모드는 향후 학습에 콘텐츠 활�
 확인한 코드 범위는 agents/base.py, claude.py, codex.py, antigravity.py 일부, runs/manager.py, profiles.py, worker_routing.py, context_usage.py, config.py, models.py, schemas.py, api/accounts.py, 관련 ADR 0002·0029, 프론트의 엔진·계정 선언이다. 전체 프로젝트 감사가 끝난 것은 아니다.
 
 - `AgentAdapter.build_command/parse_line`이 공통 계약이며 RunManager가 timeout, process, stderr, events, artifact, checkpoint, 결과·재시작 처리를 소유한다.
-- 엔진 enum·API Literal·MCP spawn_worker·프로필 라우팅·프론트 타입과 표시가 현재 Claude/Codex/Antigravity를 열거한다. 공급자를 등록하는 것만으로 사용량과 재개가 보장되지 않는다.
+- 조사 시작 시 엔진 enum·API Literal·MCP spawn_worker·프로필 라우팅·프론트 타입과 표시는 Claude/Codex/Antigravity를 열거했다. 2차 구현에서는 Muse를 추가했다. 공급자를 등록하는 것만으로 사용량과 재개가 보장되지 않는다.
 - 세션 키에 계정·모델을 반영하고 재개 ID와 workspace가 달라지면 실패해야 한다.
 - 계정 quota 미관측은 unknown으로 남기고 기존 자동 라우팅에 무조건 여유 계정으로 넣지 않는다.
 - 훅 환경은 Muse가 정리하므로 기존 Claude hook을 그대로 복사하면 TTAKKARI_GUARD_* 변수가 전달되지 않을 수 있다. managed hook의 명시적 환경 정책과 payload mapping을 검증해야 한다.
@@ -75,20 +75,20 @@ Muse Code 구독의 기본 Contributor 모드는 향후 학습에 콘텐츠 활�
 
 1. SDK bridge가 initialize, account lane, sandbox, sessionMcp, durable sessions를 확인한다. API key lane과 미관측 sandbox는 거절한다. accountLogin만으로 유효한 구독 플랜·모델 권한이 검증된 것은 아니다.
 2. 세션 생성·재개, MCP construction config, 추가 workspace roots, 명령 UUIDv7 및 서버 ACK를 공식 SDK로 처리한다. ACK는 실행 완료가 아니다.
-3. item/started·completed를 도구 호출·결과로 정규화하고 messagePhase와 turn terminal을 구분한다. contextUsage와 tokenUsage를 분리한다. unknown 이벤트는 기록하고 transport EOF를 성공으로 처리하지 않는다.
+3. item/started·completed를 도구 호출·결과로 정규화하고 messagePhase와 turn terminal을 구분한다. contextUsage와 tokenUsage를 분리한다. SDK 이벤트를 bridge stdout으로 전달하고 알려진 이벤트를 공통 이벤트로 정규화한다. 미정의 이벤트의 공통 저장은 후속 검토 사항이며 transport EOF를 성공으로 처리하지 않는다.
 4. native sandbox를 유지한다. Muse 전용 PreToolUse guard의 도구명·인자 mapping, 보호 경로, Hook failure 시 동작을 실제 검증한 뒤 작업 실행을 연다. hook 설치만으로 차단 효과를 주장하지 않는다.
 5. 전체 오케스트레이션은 따까리가 맡는다. Muse 내부 delegation은 명시된 작은 범위·횟수 안에서만 허용하고 outer spawn_worker 재귀를 막는다. 구체 제한 필드·실제 적용은 추가 확인이 필요하다.
 6. 기존 개인/회사 범위·동시성·취소·배포 generation 규칙을 유지한다. 최초에는 명시 엔진 선택으로 검증하고 실제 성능 근거 없이 auto 정책의 선호 순서를 바꾸지 않는다.
 7. 계정·엔진·모델 선택 UI와 상태·로그·취소·결과 UI를 기존 공통 컴포넌트에 확장한다. 인증·구독 접근·usage 미관측을 서로 다른 상태로 표시한다.
 
-## 현재 작성한 코드와 검증 범위
+## 1차 커밋에서 작성한 코드와 검증 범위
 
 - `.muse-runtime/package*.json`: 공식 TS SDK 1.4.10 고정 설치.
 - `.muse-runtime/probe.mjs`: SDK를 통해 실제 CLI initialize/account/catalog/usage를 조회. 모델 호출을 수행하지 않으며 준비 미충족 시 exit 2.
 - `.muse-runtime/contract.mjs`와 테스트: API credential 거절, sandbox 미관측 거절, sessionMcp grant, 재개 identity/workspace/model, MCP stdio 설정·추가 roots의 계약 검사. **제품 런타임에 연결되지는 않았다.**
-- `src/ttakkari/agents/muse_protocol.py`: 인증 조사에 쓴 독립 transport spike. 정식 제품 어댑터가 아니며 최종 실행기는 공식 SDK를 사용할 예정이다. `unit_tests/test_muse_protocol.py`는 요청/알림 분리, 동시 요청 ID, UUIDv7, 오류, EOF, malformed frame, timeout의 deterministic 검사다.
+- `src/ttakkari/agents/muse_protocol.py`: 인증 조사에 쓴 독립 transport spike. 정식 제품 어댑터가 아니며 2차 실행기는 공식 SDK를 사용한다. `unit_tests/test_muse_protocol.py`는 요청/알림 분리, 동시 요청 ID, UUIDv7, 오류, EOF, malformed frame, timeout의 deterministic 검사다.
 
-단위·계약 테스트는 실제 개발·운영 검증을 대체하지 않는다. 이 변경은 아직 메인 코드 경로에 연결하지 않았다.
+1차 커밋의 단위·계약 테스트는 실제 개발·운영 검증을 대체하지 않는다. 2차 구현에서는 Worktree의 공통 RunManager에 Muse를 연결했으나, 원 main 및 운영에는 적용하지 않았다.
 
 ## 운영 및 벤치마크 미검증 목록
 
@@ -103,7 +103,7 @@ Muse Code 구독의 기본 Contributor 모드는 향후 학습에 콘텐츠 활�
 | 인증 만료·사용량 제한 | 미실행; 현재 로그인 누락은 만료 재현이 아님 |
 | 동시 작업·기존 엔진 병렬 | 미실행 |
 | 서비스 재시작 이후 동작 | 미실행 |
-| 기존 Claude/Codex 회귀 | 미실행 |
+| 기존 Claude/Codex 회귀 | 격리 DB 및 가짜 기존 엔진을 이용한 회귀 검사 통과. 실제 운영 모델 smoke test는 미실행 |
 | 운영 runtime의 Muse sandbox 및 MCP 도구 실행 | 미실행; 중첩 worker 결과와 구분 |
 | Claude/Codex/Muse 비교 benchmark | 미실행: Muse 실제 모델 접근 미확인 |
 
@@ -113,4 +113,31 @@ Muse Code 구독의 기본 Contributor 모드는 향후 학습에 콘텐츠 활�
 
 기기 인증이 완료되면 먼저 `account/read`에서 accountLogin lane을 확인하고 live catalog·구독 tier를 조회한다. Wonder Full 실제 요청, 별도 coding fixture, MCP 도구·세션 재개를 서로 다른 증거로 남긴다. 중첩 sandbox의 unavailable은 그대로 미검증으로 유지하고, 정식 운영 runtime의 검증은 실제 어댑터 경로에서 별도로 해야 한다. sandbox 해제, 인증 파일 복사, 과금 API 전환, 결제는 하지 않는다.
 
-작업은 설치·접속 조사까지 진행됐지만 정식 엔진·UI·배포·운영 검증·벤치마크는 완료되지 않았다. 인증만 끝나면 모두 된다는 뜻도 아니다. 운영 안전 검사와 전체 요청의 완료 기준을 각각 통과해야 한다.
+작업은 엔진·관리 UI 코드 후보와 회귀 검증까지 진행됐지만 실제 인증·코딩·배포·운영 검증·벤치마크는 완료되지 않았다. 인증만 끝나면 모두 된다는 뜻도 아니다. 운영 안전 검사와 전체 요청의 완료 기준을 각각 통과해야 한다.
+
+
+## 2차 구현 후보와 실행 증거
+
+- `agents/muse.py`를 공통 ADAPTERS에 등록했다. 엔진 enum, 세션/API/MCP Literal, 계정·모델 정책, XDG 프로필, 로그인 명령, 사용량 출처, 프론트 표시를 확장했다. 기존 auto 라우팅의 선호 순서는 바꾸지 않았다.
+- `.muse-runtime/bridge.mjs`는 공식 SDK로 `muse serve`를 띄운다. API credential lane과 sandbox 미관측을 거절하고 Contributor를 끈다. MCP construction config, 다중 workspace roots, resume identity/workspace/model 확인, turn terminal·오류·quota·토큰·context 이벤트와 취소·EOF 종료 코드를 처리한다. 실제 모델 성공은 아직 없다.
+- `security/muse_hook.py`는 별도 private policy 파일로 guard를 받는다. Muse가 지우는 환경변수에 의존하지 않는다. 정책 파일·MCP 설정은 0600으로 두고 정상·실패 종료 때 정리한다. 기존 managed hook이 있으면 덮어쓰지 않고 실행을 거절한다. 미확인 native tool과 중첩 위임은 차단하며, native subagent 활용은 이 단계에서 미완료다.
+- `TTAKKARI_MUSE_ENABLED=false`가 기본이다. 활성화와 설치 유무를 구분하고 사용량 UI는 `execution_enabled=false`를 검증 대기로 표시한다. 이 플래그는 운영 검증을 통과했다는 인증서가 아니다.
+- 실제 설치 CLI를 **MuseAdapter → 공식 SDK bridge**로 실행한 실패 경로 검사 결과는 exit 1, `muse/error`, `normalized_is_error=true`였다. 이유는 구독 로그인 누락이었다. 이를 실제 모델 응답·코딩 성공으로 계산하지 않는다.
+- 모델 목록에 없다는 이유만으로 Wonder Full을 사용할 수 없다고 단정하지 않는다. 공식 모델 allowlist·명시적 선택 표면을 사용하며, 권한은 실제 호출로 별도 확인한다. SAM·전사·이미지 모델 등은 세션 생성 또는 실행 큐 이전에 거절한다.
+- 새 테스트: Python 단위·계약 32건, Node 계약 5건, Muse API 3건. API 검사는 인증·모델을 사용하지 않는 격리 DB 검사이며 비활성 엔진이 실패로 끝나는 실패 경로 검사를 포함한다.
+- 기존 회귀 185건 통과 후 사용량 수집·Muse API를 포함한 최종 회귀는 **201 passed in 49.04s**였다. 원문은 outbox/backend-regression.txt다. 테스트 DB는 ttakkari_muse_test_20261017이며 운영 DB와 분리했다. 기존 엔진 실행은 테스트용 엔진을 사용하므로 운영 모델 smoke test를 대체하지 않는다.
+- 프론트 관련 4개 파일 테스트는 Muse 검증 대기를 추가한 뒤 32건 통과했다. TypeScript·Vite build 및 lint 통과. 실제 브라우저 앱 조작과 운영 UI는 미검증이다.
+- 원 backend main에는 다른 작업의 미커밋 변경(Qwen adapter 및 공통 파일)이 확인됐다. front main에도 다른 변경이 있다. 이 변경들을 임의로 커밋하거나 덮어쓰지 않았으며, 독립 브랜치의 코드와 운영 main 반영을 구분한다. 배포 예약은 하지 않았다.
+
+프로덕션 기본 Muse 프로필은 기존 계정 보호 영역인 `~/.ttakkari/accounts/muse-default`로 지정했다. 앞서 사용한 `~/development/tooling/muse/runtime`는 로그인하지 않은 진단 프로필이다. 해당 device-code 흐름은 expired로 종료됐고 account/read는 loggedOut이었다. 인증 정보를 작업 저장소나 outbox로 복사하지 않는다.
+
+현재 호스트 선택은 기존 따까리와 동일한 Mac Studio native CLI/SDK 실행이다. 별도 컨테이너를 도입하지 않는다. Linux의 bubblewrap과 컨테이너 인증·파일 접근은 실제 검증하지 않았으므로 지원 완료로 표시하지 않는다.
+
+### 운영 활성화 전 필수 절차
+
+1. 고정 SDK를 운영 의존성 경로에 `npm ci --prefix .muse-runtime --ignore-scripts`로 설치한다. 배포 코드의 bridge는 설정된 runtime root에서 SDK를 읽는다. 요청 시 패키지를 다운로드하지 않는다.
+2. 계정 소유자가 공식 device-code 또는 안내된 CLI로 구독 로그인한다. auth.json·키체인을 직접 복사하지 않는다.
+3. 운영 경로의 sandbox available과 필수 managed guard 설치·실제 차단을 확인하고, API lane은 계속 거절한다. 외부 유료 API로 전환하지 않는다.
+4. 실제 Full 응답, 다중 파일 수정·테스트·MCP·재개·취소·동시 실행·서비스 재시작을 개별 실행한다. 현재 중첩 샌드박스의 unavailable을 우회하지 않는다.
+5. 동시 작업 변경과 통합해 clean source를 만든 뒤 generation 배포를 예약한다. 공유 source의 미커밋 상태는 active Run 유무와 다른 배포 조건이다. 예약 수락과 배포 성공을 구분한다.
+6. 동일 조건 실제 프로젝트 벤치마크를 실행하고 원시 결과와 구독 사용량 관측을 제출한다.

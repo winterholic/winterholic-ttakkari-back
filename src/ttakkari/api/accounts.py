@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shlex
 import time
 import uuid
 from datetime import UTC, datetime
@@ -48,7 +49,7 @@ Pool = Literal["personal", "work"]
 
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    engine: Literal["claude", "codex", "antigravity"]
+    engine: Literal["claude", "codex", "antigravity", "muse"]
     pool: Pool = "personal"
     config_dir: str | None = Field(default=None, max_length=1024)
     enabled: bool = True
@@ -118,6 +119,12 @@ def login_command(engine: str, config_dir: str | None) -> str:
         return f"CLAUDE_CONFIG_DIR={config_dir} claude" if config_dir else "claude"
     if engine == "antigravity":
         return "agy"
+    if engine == "muse":
+        from ttakkari.runs.profiles import Profile
+        env = Profile(uuid.uuid4(), "", "muse", Path(config_dir) if config_dir else None).env()
+        return shlex.join(["env", "-u", "META_API_KEY", "-u", "MUSE_AUTH_PATH", "-u", "MUSE_TRANSPORT_TRACE",
+                           *[f"{key}={value}" for key, value in env.items()],
+                           get_settings().muse_bin, "login"])
     return f"CODEX_HOME={config_dir} codex login" if config_dir else "codex login"
 
 
@@ -275,6 +282,7 @@ class AccountUsageOut(BaseModel):
     plan: str | None
     error: str | None
     updated_at: float | None
+    execution_enabled: bool = True
 
 
 @router.get("/usage", response_model=list[AccountUsageOut])
@@ -299,7 +307,8 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
                                windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
                                reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
                                credits_balance=u.credits_balance, credits_error=u.credits_error,
-                               error=u.error, updated_at=u.updated_at)
+                               error=u.error, updated_at=u.updated_at,
+                               execution_enabled=a.engine != "muse" or get_settings().muse_enabled)
 
     return list(await asyncio.gather(*(one(i, a) for i, a in ordered)))
 

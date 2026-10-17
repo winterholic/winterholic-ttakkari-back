@@ -41,7 +41,7 @@ MAX_ACTIVE_WORKERS = 20
 class WorkerIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     prompt: str = Field(min_length=1, max_length=100_000)
-    engine: Literal["auto", "claude", "codex", "antigravity"] = "auto"
+    engine: Literal["auto", "claude", "codex", "antigravity", "muse"] = "auto"
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     task_type: worker_routing.TaskType | None = None
@@ -59,6 +59,9 @@ class WorkerIn(BaseModel):
             selected = self.model or get_settings().worker_default_models["antigravity"]["model"]
             if self.effort and self.effort != thinking_level(selected):
                 raise ValueError("Antigravity effort must match the selected model's thinking level.")
+        elif self.engine == "muse" and self.model is not None:
+            if self.model not in get_settings().engine_models.get("muse", []):
+                raise ValueError("Choose a documented Muse Code coding model; model access requires separate verification.")
         elif self.engine == "auto" and self.model is not None:
             if self.model not in {m for models in get_settings().engine_models.values() for m in models}:
                 raise ValueError("Choose an available worker model from account_usage.")

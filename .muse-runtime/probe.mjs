@@ -1,11 +1,17 @@
 // Read-only readiness probe through Meta's pinned official SDK. No model call.
-import { spawnMspConnection } from '@muse-code/sdk';
+import {createRequire} from 'node:module';
+import {dirname,join} from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import { assertReady } from './contract.mjs';
 
 const museBin = process.argv[2];
+const runtimeRoot=process.argv[4]??dirname(fileURLToPath(import.meta.url));
+const requireRuntime=createRequire(join(runtimeRoot,'package.json'));
+const {spawnMspConnection}=await import(pathToFileURL(requireRuntime.resolve('@muse-code/sdk')).href);
 if (!museBin) throw new Error('Usage: node .muse-runtime/probe.mjs /absolute/path/to/muse');
 const env = {...process.env, MUSE_NO_AUTO_UPDATE:'1', MUSE_LOGIN:'0'};
 delete env.META_API_KEY; // Never substitute a metered environment key.
+delete env.MUSE_AUTH_PATH; // Never inherit an authentication-store override.
 delete env.MUSE_TRANSPORT_TRACE;
 const stderr = [];
 const handshake = spawnMspConnection({
@@ -13,6 +19,8 @@ const handshake = spawnMspConnection({
   args:['serve','--contributor-mode','off','--disable-request-user-input'],
   env, onStderr:chunk => stderr.push(chunk), shutdownTimeoutMs:1000,
 });
+process.once('SIGTERM',()=>void handshake.close().finally(()=>process.exit(143)));
+process.once('SIGINT',()=>void handshake.close().finally(()=>process.exit(130)));
 const report = {scope:process.argv[3] ?? 'unspecified', model_call_executed:false,model_access_verified:false};
 try {
   const host = await Promise.race([

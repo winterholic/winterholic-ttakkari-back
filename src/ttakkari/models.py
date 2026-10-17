@@ -39,6 +39,7 @@ class Engine(enum.StrEnum):
     claude = "claude"
     codex = "codex"
     antigravity = "antigravity"
+    muse = "muse"
 
 
 class SessionKind(enum.StrEnum):

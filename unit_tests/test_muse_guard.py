@@ -1,0 +1,34 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from ttakkari.security.muse_hook import decision
+
+
+class MuseGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(tempfile.gettempdir()).resolve() / 'muse-workspace'
+        self.policy = {'cwd': str(self.root), 'write_roots': [str(self.root)],
+                       'protected': ['/private/protected'], 'private_root': '/private/muse-policy',
+                       'mcp_servers': ['ttakkari']}
+
+    def test_workspace_write_allowed_and_external_write_denied(self):
+        self.assertIsNone(decision({'tool_name': 'write_file', 'tool_input': {'path': 'a.py'}}, self.policy))
+        self.assertIsNotNone(decision({'tool_name': 'write_file', 'tool_input': {'path': '/etc/a.py'}}, self.policy))
+
+    def test_unknown_or_unreadable_tool_payload_is_denied(self):
+        self.assertIsNotNone(decision({'tool_name': 'unknown', 'tool_input': {}}, self.policy))
+        self.assertIsNotNone(decision({'tool_name': 'exec_command', 'tool_input': {}}, self.policy))
+
+    def test_force_push_and_recursive_delegation_are_denied(self):
+        self.assertIsNotNone(decision({'tool_name': 'exec_command', 'tool_input': {'cmd': 'git push --force origin main'}}, self.policy))
+        self.assertIsNotNone(decision({'tool_name': 'spawn_agent', 'tool_input': {}}, self.policy))
+        self.assertIsNotNone(decision({'tool_name': 'mcp__ttakkari__spawn_worker', 'tool_input': {}}, self.policy))
+
+    def test_patch_paths_are_all_checked(self):
+        patch = '*** Begin Patch\n*** Add File: a.py\n+x\n*** Add File: /etc/b.py\n+y\n*** End Patch'
+        self.assertIsNotNone(decision({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}}, self.policy))
+
+    def test_private_launch_spec_is_denied_even_with_temp_write_root(self):
+        self.policy['write_roots'].append('/private')
+        self.assertIsNotNone(decision({'tool_name': 'read_file', 'tool_input': {'path': '/private/muse-policy/spec.json'}}, self.policy))

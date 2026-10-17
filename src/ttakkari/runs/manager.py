@@ -23,6 +23,7 @@ from ttakkari.agents.antigravity import AntigravityAdapter
 from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.agents.codex import CodexAdapter
+from ttakkari.agents.muse import MuseAdapter
 from ttakkari.artifacts import preview
 from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import register_file
@@ -64,6 +65,7 @@ log = logging.getLogger(__name__)
 
 ADAPTERS: dict[str, AgentAdapter] = {
     "claude": ClaudeAdapter(), "codex": CodexAdapter(), "antigravity": AntigravityAdapter(),
+    "muse": MuseAdapter(),
 }
 MAX_TOUCHED_ARTIFACTS = 50
 MAX_OUTBOX_FILES = 200
@@ -562,7 +564,7 @@ class RunManager:
         def conversation_key(profile):
             if is_meeting:
                 return meeting_routing.conversation_key(profile)
-            if task_type or profile.engine == "antigravity" or (pinned_fallback and profile.engine != sess.engine):
+            if task_type or profile.engine in {"antigravity", "muse"} or (pinned_fallback and profile.engine != sess.engine):
                 return worker_routing.conversation_key(profile)
             return profile.key
 
@@ -573,7 +575,7 @@ class RunManager:
             # Legacy account-only IDs identify the original model. They cannot be
             # reused for another model sharing the same provider account.
             if profile.engine == sess.engine and (
-                profile.engine != "antigravity"
+                profile.engine not in {"antigravity", "muse"}
                 or profile.model == worker_routing.primary_target(sess.engine, requested_model)[1]
             ):
                 return es.get(profile.key)
@@ -772,7 +774,7 @@ class RunManager:
         run.cost_usd = state.cost_usd
         selected_model = model or run.model or (
             prof.model or worker_routing.primary_target(prof.engine, sess.model)[1]
-            if prof.engine in {"claude", "codex", "antigravity"} else None
+            if prof.engine in profiles_mod.ENGINES else None
         )
         verify_needed = worker_routing.needs_independent_verification(effective_task_type, selected_model)
         routing_usage: dict[str, object] = {
@@ -844,11 +846,11 @@ class RunManager:
         """엔진 프로세스 한 번. (상태, 종료 코드, 시간 초과, 실행 파일 없음)."""
         s = get_settings()
         state = ParseState()
-        if adapter.engine == "antigravity":
+        if adapter.engine == "antigravity" or getattr(adapter, "validates_resume_identity", False):
             state.engine_session_id = spec.engine_session_id
-        cmd = adapter.build_command(spec, env)
-        working_directory = getattr(adapter, "working_directory", lambda _spec: root)(spec)
         try:
+            cmd = adapter.build_command(spec, env)
+            working_directory = getattr(adapter, "working_directory", lambda _spec: root)(spec)
             proc = await asyncio.create_subprocess_exec(
                 *cmd, cwd=str(working_directory), env=env, stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
@@ -898,9 +900,9 @@ class RunManager:
                     # agy loads/reconnects MCP after init. Retain the private config
                     # through the attempt, but remove it even if termination fails.
                     # A signal failure still propagates; it is not proof of shutdown.
-                    cleanup = getattr(adapter, "cleanup", None)
-                    if cleanup:
-                        cleanup(spec)
+                cleanup = getattr(adapter, "cleanup", None)
+                if cleanup:
+                    cleanup(spec)
         rc = proc.returncode
         finalize_process = getattr(adapter, "finalize_process", None)
         if finalize_process:
@@ -931,7 +933,7 @@ class RunManager:
             if not isinstance(obj, dict):
                 continue
             produced = adapter.parse_line(obj, state, cwd)
-            if adapter.engine == "antigravity" and state.resume_mismatch:
+            if state.resume_mismatch:
                 for n in produced:
                     events.append(db, run, n.type, n.payload)
                 await self._commit(db, run)
@@ -1234,7 +1236,7 @@ def _looks_like_agent(pid: int) -> bool:
                              check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return False
-    return any(name in out for name in ("claude", "codex", "/agy ", "antigravity"))
+    return any(name in out for name in ("claude", "codex", "/agy ", "antigravity", "/muse ", "muse-runtime/bridge.mjs"))
 
 def _tmp_dirs() -> list[Path]:
     dirs = {Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve()}
@@ -1311,6 +1313,8 @@ def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first
     메인 오케스트레이터는 엔진마다 허용된 한 쌍(설정 orchestrator_fallback_models)으로만 띄운다.
     작업 세션이 다른 엔진으로 넘어가면 같은 급의 상대 모델(model_counterparts)로 바꾼다."""
     s = get_settings()
+    if prof.engine == "muse" and sess.kind != SessionKind.orchestrator:
+        return prof.model or run.model or s.worker_default_models["muse"]["model"], run.effort or "high"
     if prof.engine == "antigravity" and sess.kind != SessionKind.orchestrator:
         from ttakkari.model_catalog import thinking_level
         model = prof.model or run.model

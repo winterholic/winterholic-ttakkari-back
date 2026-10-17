@@ -79,6 +79,7 @@ class Settings(BaseSettings):
         "claude": {"model": "sonnet", "effort": "high"},
         "codex": {"model": "gpt-6-luna", "effort": "high"},
         "antigravity": {"model": ANTIGRAVITY_DEFAULT, "effort": "high"},
+        "muse": {"model": "muse-wonder-full-1.0", "effort": "high"},
         "auto": {"model": "gpt-6-luna", "effort": "high"},
     }
     # 오케스트레이터와 같은 급이라 작업 세션에 쓰려면 승격 사유가 필요한 모델.
@@ -98,6 +99,8 @@ class Settings(BaseSettings):
         "claude": ["opus", "sonnet", "haiku"],
         "codex": ["gpt-6-luna", "gpt-6.1-sol"],
         "antigravity": ANTIGRAVITY_MODELS,
+        # Published coding models; entries do not assert this account's entitlement.
+        "muse": ["muse-wonder-full-1.0", "muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.2"],
     }
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).
@@ -159,6 +162,12 @@ class Settings(BaseSettings):
     claude_bin: str = "claude"
     codex_bin: str = "codex"
     antigravity_bin: str = "/opt/homebrew/bin/agy"
+    # Activation stays explicit until real coding, guard and operating-runtime checks pass.
+    muse_enabled: bool = False
+    muse_bin: str = str(HOME / "development/tooling/muse/bin/muse")
+    muse_node_bin: str = "node"
+    muse_runtime_root: Path = HOME / "development/projects/winterholic-ttakkari/back/.muse-runtime"
+    muse_profile_root: Path | None = None  # defaults to <configured home>/accounts/muse-default
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
     claude_setting_sources: str | None = None
     # 동시 실행 자리는 역할별로 따로 센다(ADR 0013). 접수는 짧고 가벼워서 따로, 기획이 작업 세션 자리를 막지 않게 따로.

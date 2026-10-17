@@ -324,7 +324,7 @@ def orchestrator_tool(fn):
 
 
 @orchestrator_tool
-async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity"] = "auto",
+async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None,

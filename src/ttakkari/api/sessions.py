@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from typing import Annotated
 
@@ -193,7 +194,8 @@ async def create_run(session_id: uuid.UUID, body: RunIn, _: User, db: Db, reques
 
 async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: RunOrigin = RunOrigin.user,
                     context_artifact_ids: list[uuid.UUID] | None = None, model: str | None = None,
-                    effort: str | None = None, ip: str | None = None, request_key: str | None = None) -> Run:
+                    effort: str | None = None, ip: str | None = None, request_key: str | None = None,
+                    on_queued: Callable[[Run], None] | None = None) -> Run:
     """세션 대기열에 Run 을 넣고 차례가 되면 시작한다. 실행 중이어도 받는다(manager.dispatch 가 순서대로 돌린다)."""
     selected_model = model or s.model
     if s.engine == "muse" and selected_model and selected_model not in get_settings().engine_models.get("muse", []):
@@ -215,6 +217,8 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
         s.title = prompt.strip().splitlines()[0][:60] or s.title
     s.updated_at = utcnow()
     await db.flush()
+    if on_queued is not None:
+        on_queued(run)
     events.append(db, run, "run.status", {"status": RunStatus.queued, "ahead": ahead or 0})
     record(db, actor="user" if origin == RunOrigin.user else "agent", action="run.create", target_type="run",
            target_id=run.id, ip=ip, detail={"engine": run.engine, "origin": origin})

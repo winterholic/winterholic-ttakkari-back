@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from pathlib import Path
 
@@ -530,6 +531,27 @@ async def test_release_build_pins_browser_mcp_runtime_without_install_scripts(tm
     calls.clear()
     await controller.environment(job, release)
     assert calls == []  # Never mutate an already prepared, potentially live venv/runtime.
+
+
+async def test_release_command_failure_includes_safe_stage_and_log_tail(tmp_path):
+    from ttakkari.generation_deployment import GenerationController
+
+    store = JobStore(tmp_path / "deploy")
+    job = store.request("a" * 40)
+    controller = GenerationController(store)
+    command = "import sys; print('last diagnostic'); print('token=secret-value'); sys.exit(7)"
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await controller.command(
+            job, tmp_path, sys.executable, "-c", command,
+            stage="pytest", env={"TTAKKARI_API_TOKEN": "secret-value"},
+        )
+
+    message = str(exc_info.value)
+    assert "pytest" in message
+    assert "last diagnostic" in message
+    assert "secret-value" not in message
+    assert "REDACTED" in message
 
 
 def test_archive_test_environment_uses_candidate_revision_without_requiring_git(monkeypatch):

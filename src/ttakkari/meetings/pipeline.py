@@ -330,12 +330,13 @@ async def start_analysis(db: AsyncSession, m: Meeting) -> Run:
                        model=s.meeting_analysis_model, effort=s.meeting_analysis_effort, pool=m.scope, archived_at=utcnow())
     db.add(sess)
     await db.flush()
-    run = await queue_run(db, sess, prompt)
-    m.analysis_run_id, m.analysis_session_id, m.analysis_context = run.id, sess.id, refs
-    transition(m, S.analyzing)
-    record(db, action="meeting.analyze", target_type="meeting", target_id=m.id,
-           detail={"run": str(run.id), "transcript_chars": len(m.transcript or ""), "candidates": len(refs)})
-    await db.commit()
+    def link_analysis_run(run: Run) -> None:
+        m.analysis_run_id, m.analysis_session_id, m.analysis_context = run.id, sess.id, refs
+        transition(m, S.analyzing)
+        record(db, action="meeting.analyze", target_type="meeting", target_id=m.id,
+               detail={"run": str(run.id), "transcript_chars": len(m.transcript or ""), "candidates": len(refs)})
+
+    run = await queue_run(db, sess, prompt, on_queued=link_analysis_run)
     _spawn(_wait_for_analysis(m.id))
     return run
 

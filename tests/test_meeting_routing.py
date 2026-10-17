@@ -11,7 +11,7 @@ from sqlalchemy import select
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.db import sessionmaker
 from ttakkari.meetings import routing
-from ttakkari.models import ChatSession, Run, RunEvent
+from ttakkari.models import ChatSession, Meeting, Run, RunEvent
 from ttakkari.runs import usage
 
 MODELS = [model for _, model in routing.STAGES]
@@ -22,6 +22,31 @@ async def setup_accounts(client, auth):
     accounts = (await client.get("/api/accounts", headers=auth)).json()
     agy = (await client.post("/api/accounts", json={"name": "agy", "engine": "antigravity"}, headers=auth)).json()
     return accounts + [agy]
+
+
+async def test_meeting_run_is_linked_before_dispatch(client, auth, monkeypatch):
+    from test_meetings import TRANSCRIPT, _create
+
+    dispatched = []
+
+    def discard_background(coro):
+        coro.close()
+
+    async def inspect_link(session_id):
+        async with sessionmaker()() as db:
+            linked = await db.scalar(select(Meeting.id).where(
+                Meeting.analysis_session_id == session_id,
+                Meeting.analysis_run_id.is_not(None),
+            ))
+        dispatched.append(linked is not None)
+
+    monkeypatch.setattr("ttakkari.meetings.pipeline.manager.dispatch", inspect_link)
+    monkeypatch.setattr("ttakkari.meetings.pipeline._spawn", discard_background)
+    meeting = await _create(client, auth, scope="work", transcript=TRANSCRIPT)
+    response = await client.post(f"/api/meetings/{meeting['id']}/analyze", headers=auth)
+
+    assert response.status_code == 202
+    assert dispatched == [True]
 
 
 @pytest.mark.parametrize("limited_count", [0, 1, 2, 3])
@@ -94,6 +119,7 @@ async def test_antigravity_quota_groups_are_independent_even_with_zero_credits(
 
 async def test_all_capped_models_wait_for_reset_instead_of_using_company_accounts(client, auth, monkeypatch):
     from test_meetings import TRANSCRIPT, _create
+    usage.clear_cache()
     accounts = await setup_accounts(client, auth)
     now = time.time()
     for account in accounts:

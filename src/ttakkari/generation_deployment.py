@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import tarfile
@@ -29,6 +30,8 @@ from ttakkari.generation import PORTS, PROTOCOL, _lock, activate
 from ttakkari.models import RuntimeControl, RuntimeGeneration, RuntimeLease
 
 log = logging.getLogger(__name__)
+_LOG_TAIL_LINES = 12
+_LOG_TAIL_CHARS = 4000
 
 
 def test_environment(revision: str, test_url: str) -> dict:
@@ -37,6 +40,26 @@ def test_environment(revision: str, test_url: str) -> dict:
                 "TTAKKARI_DEPLOY_SOURCE_ROOT", "TTAKKARI_BACKEND_DEPLOY_LOCK_HELD"):
         env.pop(key, None)
     return env
+
+
+def _safe_log_tail(path: Path, env: dict[str, str] | None) -> str:
+    try:
+        tail = "\n".join(path.read_text(errors="replace").splitlines()[-_LOG_TAIL_LINES:])
+    except OSError:
+        return "(log tail unavailable)"
+    secrets = {
+        value for key, value in (env or {}).items()
+        if value and any(part in key.upper() for part in ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "AUTH", "COOKIE"))
+    }
+    for secret in sorted(secrets, key=len, reverse=True):
+        tail = tail.replace(secret, "[REDACTED]")
+    tail = re.sub(r"(?i)(://[^:/\s@]+:)[^@\s]+@", r"\1[REDACTED]@", tail)
+    tail = re.sub(
+        r"(?i)\b(password|token|secret|api[_-]?key|authorization|cookie)(\s*[:=]\s*)([^\s,;]+)",
+        r"\1\2[REDACTED]", tail,
+    )
+    tail = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [REDACTED]", tail)
+    return tail[-_LOG_TAIL_CHARS:] or "(no output)"
 
 
 def _sha(value: str) -> str:
@@ -313,20 +336,29 @@ class GenerationController:
         if await self.slots.current_slot() != slot or self.slots.persisted_slot() != slot:
             await self.slots.switch(slot)
 
-    async def command(self, job, release, *args, env=None):
-        with (self.store.jobs / f"{job['id']}.log").open("ab") as output:
-            proc = await asyncio.create_subprocess_exec(*args, cwd=release, env=env,
-                stdout=output, stderr=output)
-            if await proc.wait():
-                raise RuntimeError(f"release command failed; see {job['id']}.log")
+    async def command(self, job, release, *args, stage="command", env=None):
+        log_path = self.store.jobs / f"{job['id']}.log"
+        with log_path.open("ab") as output:
+            try:
+                proc = await asyncio.create_subprocess_exec(*args, cwd=release, env=env,
+                    stdout=output, stderr=output)
+            except OSError as exc:
+                raise RuntimeError(f"release stage {stage} could not start ({type(exc).__name__})") from exc
+            returncode = await proc.wait()
+        if returncode:
+            tail = _safe_log_tail(log_path, env if env is not None else os.environ)
+            raise RuntimeError(
+                f"release stage {stage} failed (exit {returncode}); "
+                f"last {_LOG_TAIL_LINES} log lines:\n{tail}"
+            )
 
     async def environment(self, job, release):
         if not (release / ".environment-built").exists():
-            await self.command(job, release, "uv", "sync", "--frozen", "--quiet")
+            await self.command(job, release, "uv", "sync", "--frozen", "--quiet", stage="uv sync")
             (release / ".environment-built").touch()
         if (release / ".browser-runtime/package-lock.json").is_file() and not (release / ".browser-built").exists():
             await self.command(job, release, "npm", "ci", "--prefix", ".browser-runtime",
-                               "--ignore-scripts", "--no-audit", "--no-fund")
+                               "--ignore-scripts", "--no-audit", "--no-fund", stage="npm ci")
             (release / ".browser-built").touch()
 
     async def prepare(self, job):
@@ -344,7 +376,10 @@ class GenerationController:
                     test_url = url.set(drivername="postgresql+asyncpg", database=name).render_as_string(hide_password=False)
                     # Archives have no .git; use the candidate, not the supervisor's revision.
                     env = test_environment(job["revision"], test_url)
-                    await self.command(job, release, str(release / ".venv/bin/python"), "-m", "pytest", "-q", "-x", env=env)
+                    await self.command(
+                        job, release, str(release / ".venv/bin/python"), "-m", "pytest", "-q", "-x",
+                        "--timeout=120", stage="pytest", env=env,
+                    )
                 finally:
                     await admin.execute(f'DROP DATABASE "{name}"')
             finally:
@@ -357,7 +392,10 @@ class GenerationController:
                 raise RuntimeError("schema contract requires an idle migration/bootstrap; active work preserved")
             self.phase(job, "migrating")
             env = os.environ | {"TTAKKARI_MIGRATION_ONLINE": "true"}
-            await self.command(job, release, str(release / ".venv/bin/python"), "-m", "ttakkari.cli", "migrate", env=env)
+            await self.command(
+                job, release, str(release / ".venv/bin/python"), "-m", "ttakkari.cli", "migrate",
+                stage="migrate", env=env,
+            )
         self.phase(job, "prepared", release_path=str(release))
         return release
 

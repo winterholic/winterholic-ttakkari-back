@@ -244,11 +244,36 @@ def test_runtime_auth_failure_revokes_only_selected_account(tmp_path):
     q = accounts.allocate(tmp_path, uuid4())
     for item in (p, q):
         accounts.record_probe(item.home, success=True)
-    accounts.record_run(p.home, success=False, error='authentication failed or timed out')
+    accounts.record_run(p.home, success=False, error='invalid credentials: session expired')
     assert accounts.status(p.home)['auth_state'] == 'auth_expired'
     assert accounts.status(q.home)['auth_state'] == 'ready'
     accounts.record_run(q.home, success=False, error='network connection timeout')
     assert accounts.status(q.home)['auth_state'] == 'ready'
+
+
+def test_ambiguous_authentication_or_timeout_does_not_expire_account(tmp_path):
+    p = accounts.allocate(tmp_path, uuid4())
+    accounts.record_probe(p.home, success=True)
+    accounts.record_run(p.home, success=False, error='authentication failed or timed out')
+    assert accounts.status(p.home)['auth_state'] == 'ready'
+
+
+def test_usage_probe_ambiguous_authentication_or_timeout_is_not_auth_failure(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    p = accounts.allocate(tmp_path, uuid4())
+    monkeypatch.setattr(accounts, 'execution_env', lambda home, env, **kw: {'HOME': str(home)})
+    outputs = [
+        SimpleNamespace(returncode=0, stdout='agy 1.4.0', stderr=''),
+        SimpleNamespace(returncode=1, stdout=json.dumps({
+            'status': 'ERROR', 'response': 'authentication failed or timed out'
+        }), stderr=''),
+    ]
+    monkeypatch.setattr(accounts.subprocess, 'run', lambda *a, **kw: outputs.pop(0))
+    with pytest.raises(accounts.ProfileError, match='network_error'):
+        accounts.check(p.home)
+    assert accounts.status(p.home)['auth_state'] != 'auth_required'
 
 
 def test_reprovision_can_recover_after_keychain_creation_failure(tmp_path, monkeypatch):

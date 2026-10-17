@@ -284,6 +284,10 @@ def _probe_cli(home: Path | str, env: dict) -> tuple[str, dict]:
     if result.returncode or body.get('status') != 'SUCCESS':
         # Never persist or echo the CLI response: OAuth codes may appear there.
         message = str(body.get('response', '')).lower()
+        # The CLI uses this combined message for either auth trouble or a
+        # transport timeout; it cannot safely revoke account readiness.
+        if 'authentication failed' in message and ('timed out' in message or 'timeout' in message):
+            raise ProfileError('network_error')
         if any(t in message for t in ('not logged in','login required','not authenticated','authentication failed','sign in')):
             raise ProfileError('auth_required')
         raise ProfileError('cli_error')
@@ -370,6 +374,10 @@ def record_run(home: Path | str, *, success: bool, error: str | None = None):
         _write(p, data)
         return
     text = (error or '').lower()
+    # `agy` reports an ambiguous auth-or-timeout message for both classes.
+    # Preserve readiness until an explicit auth signal is observed.
+    if 'authentication failed' in text and ('timed out' in text or 'timeout' in text):
+        return
     if any(t in text for t in _AUTH_FAILURE):
         record_probe(p.home, success=False, error_code='auth_expired')
 

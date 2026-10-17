@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import signal
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -648,7 +649,13 @@ def _line_relevant(claim: str, path: str, lineno: int,
 
 def _collect_evidence(raw_evidence: Any, claim: str, known: set[str],
                       line_counts: dict[str, int],
-                      line_texts: dict[str, dict[int, str]]) -> list[str]:
+                      line_texts: dict[str, dict[int, str]],
+                      require_line: bool = False) -> list[str]:
+    """근거를 모아 정규화한다. known은 발췌를 보낸 파일 집합이다.
+
+    줄 인용은 줄 내용과 대조하고, 줄 없는 근거는 경로 토큰과 대조한다.
+    핵심 주장(require_line)은 줄 인용이 하나도 없으면 빈 목록을 돌려준다.
+    """
     out: list[str] = []
     items = raw_evidence if isinstance(raw_evidence, list) else []
     for raw in items:
@@ -656,10 +663,16 @@ def _collect_evidence(raw_evidence: Any, claim: str, known: set[str],
         if norm is None or norm in out:
             continue
         path, _, lineno = norm.partition(":")
-        if lineno and not _line_relevant(claim, path, int(lineno.split("-")[0]), line_texts):
+        if lineno:
+            if not _line_relevant(claim, path, int(lineno.split("-")[0]), line_texts):
+                continue
+        elif not (_tokens(claim) & _tokens(path)):
             continue
         out.append(norm)
-    return out[:8]
+    out = out[:8]
+    if require_line and not any(":" in item for item in out):
+        return []
+    return out
 
 
 def _validate_synthesis(data: dict[str, Any], known: set[str],
@@ -675,7 +688,8 @@ def _validate_synthesis(data: dict[str, Any], known: set[str],
     texts = line_texts or {}
 
     def _claim_list(items: Any, kinds: tuple[str, ...],
-                    path_key: str | None = None) -> list[dict[str, Any]]:
+                    path_key: str | None = None,
+                    require_line: bool = False) -> list[dict[str, Any]]:
         nonlocal dropped
         out: list[dict[str, Any]] = []
         if not isinstance(items, list):
@@ -692,7 +706,8 @@ def _validate_synthesis(data: dict[str, Any], known: set[str],
                 dropped += 1
                 continue
             claim = " ".join(body.values())
-            ev_norm = _collect_evidence(entry.get("evidence"), claim, known, line_counts, texts)
+            ev_norm = _collect_evidence(entry.get("evidence"), claim, known, line_counts, texts,
+                                        require_line=require_line)
             if not ev_norm:
                 dropped += 1
                 continue
@@ -725,7 +740,7 @@ def _validate_synthesis(data: dict[str, Any], known: set[str],
     if isinstance(overview_raw, dict):
         overview_text = overview_raw.get("text") if isinstance(overview_raw.get("text"), str) else ""
         overview_ev = _collect_evidence(overview_raw.get("evidence"), overview_text or "",
-                                        known, line_counts, texts)
+                                        known, line_counts, texts, require_line=True)
     elif isinstance(overview_raw, str):
         overview_text, overview_ev = overview_raw, []
     else:
@@ -734,9 +749,10 @@ def _validate_synthesis(data: dict[str, Any], known: set[str],
     synth = {
         "overview": overview,
         "architecture": _claim_list(data.get("architecture"), ("title", "body")),
-        "modules": _claim_list(data.get("modules"), ("path", "role"), path_key="path"),
+        "modules": _claim_list(data.get("modules"), ("path", "role"), path_key="path",
+                               require_line=True),
         "flows": _flow_list(data.get("flows")),
-        "ideas": _claim_list(data.get("ideas"), ("title", "body")),
+        "ideas": _claim_list(data.get("ideas"), ("title", "body"), require_line=True),
         "limitations": [str(x).strip() for x in (data.get("limitations") or [])
                         if isinstance(x, str) and x.strip()][:12],
     }
@@ -757,11 +773,12 @@ def _synth_usable(synth: dict[str, Any] | None) -> bool:
 class _QuotaExhausted(ReverseError):
     """실행 가능 계정은 있으나 모두 한도 소진. job은 모델 대기로 둔다."""
 
-    def __init__(self, resets: list[str]):
+    def __init__(self, resets: list[str], blocked_info: list[dict[str, Any]] | None = None):
         detail = ("계정 쿼터가 소진됐습니다. 다음 초기화에 재시도하세요: " + "; ".join(resets[:4])) if resets else \
             "계정 쿼터가 소진됐습니다. 초기화 후 재시도하세요."
         super().__init__(503, "quota_exhausted", "모델 호출을 못 했습니다. " + detail)
         self.resets = resets
+        self.blocked_info = blocked_info or []
 
 
 # 작업 세션이 쓰는 계정풀 실행을 지원하는 엔진. 그 외 엔진 계정은 건너뛰고 기록한다.
@@ -792,6 +809,33 @@ async def _ask_desk(profile: Any, system: str, prompt: str) -> tuple[str | None,
                               cfg_override={"model": profile.model} if profile.model else None,
                               timeout_seconds=MODEL_TIMEOUT_SECONDS)
     return attempt.text, attempt.error
+
+
+def _parse_agy_envelope(stdout: str) -> tuple[str | None, str | None]:
+    """agy `--output-format json` 봉투를 읽는다. (모델 출력, 실패 사유)를 돌려준다.
+
+    `status: SUCCESS`여도 response가 비었거나 denied_actions가 있으면 실패다.
+    봉투 JSON 자체를 모델 출력으로 쓰지 않는다.
+    """
+    try:
+        obj = json.loads((stdout or "").strip())
+    except ValueError:
+        return None, "JSON이 아닌 출력"
+    if not isinstance(obj, dict):
+        return None, "JSON이 아닌 출력"
+    status = obj.get("status")
+    if isinstance(status, str) and status and status != "SUCCESS":
+        detail = obj.get("status_text") or obj.get("error") or status
+        return None, f"status {status}: {detail}"[:300]
+    denied = obj.get("denied_actions") or []
+    if isinstance(denied, list) and denied:
+        names = ", ".join(str(d.get("action") if isinstance(d, dict) else d) for d in denied[:4])
+        return None, f"denied: {names}"[:300]
+    for key in ("response", "result", "text", "content"):
+        value = obj.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip(), None
+    return None, "빈 응답"
 
 
 async def _ask_antigravity(profile: Any, system: str, prompt: str) -> tuple[str | None, str | None]:
@@ -833,24 +877,15 @@ async def _ask_antigravity(profile: Any, system: str, prompt: str) -> tuple[str 
         shutil.rmtree(workdir, ignore_errors=True)
         return None, f"시간 초과({MODEL_TIMEOUT_SECONDS:g}초)"
     stdout, stderr = out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
-    text: str | None = None
-    try:
-        obj = json.loads(stdout.strip())
-        if isinstance(obj, dict):
-            for key in ("result", "text", "response", "content"):
-                value = obj.get(key)
-                if isinstance(value, str) and value.strip():
-                    text = value.strip()
-                    break
-    except ValueError:
+    text, envelope_error = _parse_agy_envelope(stdout)
+    from ttakkari.runs import profiles as profiles_mod
+    raw_output = f"{stdout}\n{stderr}"
+    if profiles_mod.is_usage_limit(raw_output):
         text = None
-    if text is None:
-        try:
-            text = _parse_model_json(stdout)
-            text = json.dumps(text, ensure_ascii=False)
-        except ReverseError:
-            text = None
-    detail = f"{profile.engine} 실패: " + (stderr.strip()[-300:] or f"exit code {proc.returncode}")
+        if not envelope_error or envelope_error in ("빈 응답", "JSON이 아닌 출력"):
+            envelope_error = raw_output.strip()[:300]
+    detail_parts = [p for p in (envelope_error, stderr.strip()[-300:]) if p]
+    detail = f"{profile.engine} 실패: " + (" — ".join(detail_parts) or f"exit code {proc.returncode}")
     if profile.config_dir:
         with contextlib.suppress(Exception):
             from ttakkari import antigravity_accounts as managed_agy
@@ -873,6 +908,11 @@ async def _run_model(system: str, prompt: str) -> tuple[str, dict[str, Any]]:
         return await MODEL_REVIEW(system, prompt), {"engine": "fake", "model": "fake",
                                                     "account": "fake", "via": "test double"}
     staged, blocked = await _select_candidates()
+    blocked_info: list[dict[str, Any]] = [
+        {"engine": p.engine, "model": p.model or "?", "account": p.name,
+         "reset_text": _reset_label(p, until), "reset_at": until}
+        for p, until in blocked
+    ]
     runnable = [p for p in staged if p.engine in RUNNABLE_ENGINES]
     skipped = [f"{p.engine}/{p.model or '?'}({p.name})" for p in staged if p.engine not in RUNNABLE_ENGINES]
     fallbacks: list[str] = []
@@ -882,12 +922,16 @@ async def _run_model(system: str, prompt: str) -> tuple[str, dict[str, Any]]:
     if not runnable:
         if blocked:
             resets = [_reset_label(p, until) for p, until in blocked[:6]]
-            raise _QuotaExhausted(resets)
+            raise _QuotaExhausted(resets, blocked_info=blocked_info)
         raise ReverseError(503, "no_account", "실행 가능한 모델 계정이 없습니다.")
     for profile in runnable:
         label = f"{profile.engine}/{profile.model or '?'}({profile.name})"
-        if profiles_mod.profile_limited_until(profile):
+        if until := profiles_mod.profile_limited_until(profile):
             limited.append(label)
+            blocked_info.append({
+                "engine": profile.engine, "model": profile.model or "?", "account": profile.name,
+                "reset_text": _reset_label(profile, until), "reset_at": until,
+            })
             continue
         if profile.engine == "antigravity":
             text, error = await _ask_antigravity(profile, system, prompt)
@@ -895,10 +939,16 @@ async def _run_model(system: str, prompt: str) -> tuple[str, dict[str, Any]]:
             text, error = await _ask_desk(profile, system, prompt)
         blob = " ".join(t for t in (text, error) if t)
         if profiles_mod.is_usage_limit(blob):
-            profiles_mod.cool_down(profile.limit_key,
-                                   profiles_mod.reset_seconds_from(blob))
-            limited.append(label + "(한도 감지)")
-            fallbacks.append(f"한도 소진, 다음 후보로: {label}")
+            sec = profiles_mod.reset_seconds_from(blob)
+            profiles_mod.cool_down(profile.limit_key, sec)
+            reset_txt = profiles_mod.reset_text_from(blob) or _reset_label(profile, time.time() + (sec or 300))
+            reset_at = time.time() + (sec or 300)
+            blocked_info.append({
+                "engine": profile.engine, "model": profile.model or "?", "account": profile.name,
+                "reset_text": reset_txt, "reset_at": reset_at,
+            })
+            limited.append(f"{label}(한도 감지: {reset_txt})")
+            fallbacks.append(f"한도 소진, 다음 후보로: {label} — {reset_txt}")
             continue
         if text is None:
             fallbacks.append(f"호출 실패, 다음 후보로: {label} — {(error or '')[:120]}")
@@ -909,8 +959,8 @@ async def _run_model(system: str, prompt: str) -> tuple[str, dict[str, Any]]:
                  "fallbacks": fallbacks, "limited_skipped": limited}
         return text, route
     if limited or blocked:
-        resets = [_reset_label(p, until) for p, until in blocked[:6]]
-        raise _QuotaExhausted(resets)
+        resets = [f"{b['account']} {b['reset_text']}" for b in blocked_info]
+        raise _QuotaExhausted(resets, blocked_info=blocked_info)
     raise ReverseError(503, "model_failed",
                        "모델 호출이 실패했습니다: " + "; ".join(fallbacks[:3])[:300])
 
@@ -1157,9 +1207,10 @@ async def _clone(url: str, dest: Path) -> None:
 
 
 def _dir_bytes(path: Path) -> int:
+    """디렉터리의 실제 디스크 사용량을 바이트로 센다(.git 포함). 심볼릭 링크는 따라가지 않는다."""
     total = 0
     for current, dirnames, filenames in os.walk(path, followlinks=False):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not Path(current, d).is_symlink()]
+        dirnames[:] = [d for d in dirnames if not Path(current, d).is_symlink()]
         for name in filenames:
             p = Path(current, name)
             if p.is_symlink():
@@ -1252,27 +1303,69 @@ async def recover_reverse_jobs() -> int:
         return len(rows)
 
 
+def _can_reuse_stages(stages: list[dict[str, Any]] | None, root_ok: bool) -> bool:
+    if not stages or not root_ok:
+        return False
+    done_keys = {s["key"] for s in stages if s.get("status") == DONE}
+    return {"collect", "inventory", "structure", "flows"}.issubset(done_keys)
+
+
+def _prepare_retry_stages(stages: list[dict[str, Any]] | None, root_ok: bool) -> list[dict[str, Any]]:
+    if not _can_reuse_stages(stages, root_ok):
+        return _fresh_stages()
+    reused: list[dict[str, Any]] = []
+    for s in stages:
+        s_copy = dict(s)
+        if s_copy["key"] in ("survey", "synthesize", "summarize"):
+            s_copy["status"] = "pending"
+            s_copy["started_at"] = None
+            s_copy["finished_at"] = None
+            s_copy["evidence"] = []
+            s_copy["notes"] = []
+        reused.append(s_copy)
+    return reused
+
+
 def _target_from_job(job: Any) -> dict[str, str]:
-    if job.kind == "git_url":
-        return {"kind": "git_url", "url": job.target, "label": job.target}
-    return {"kind": "local_path", "path": job.target, "label": Path(job.target).name}
+    return normalize_target(job.target)
 
 
 async def resume_waiting_reverse_jobs() -> int:
-    """모델 대기 작업을 다시 큐에 넣고 파이프라인을 다시 돌린다. 기동·쿼터 회복용."""
+    """모델 대기 작업을 다시 큐에 넣고 파이프라인을 다시 돌린다. 기동·쿼터 회복용.
+
+    기동 재개는 쿼터 초기화 시각 전에는 돌리지 않는다.
+    모든 대상은 normalize_target을 다시 통과해야 한다.
+    """
     from sqlalchemy import select
 
     from ttakkari import db as dbmod
     from ttakkari.models import ReverseJob
+    from ttakkari.runs import profiles as profiles_mod
+    from ttakkari.runs import worker_routing
     async with dbmod.sessionmaker()() as session:
+        await profiles_mod.load_cooldowns(session)
+        free, _blocked = await worker_routing.availability(session, "general", "personal")
+        runnable_free = [p for p in free if p.engine in RUNNABLE_ENGINES]
+        if not runnable_free:
+            # 쿼터 초기화 시각 전에는 돌리지 않는다.
+            return 0
         rows = (await session.execute(
             select(ReverseJob).where(ReverseJob.status == WAITING)
         )).scalars().all()
-        targets = [(job.id, _target_from_job(job)) for job in rows]
+        targets: list[tuple[uuid.UUID, dict[str, str]]] = []
         for job in rows:
+            try:
+                target = normalize_target(job.target)
+            except ReverseError as exc:
+                job.status, job.error = FAILED, f"재개 대상 검증 실패: {exc.message}"
+                job.updated_at = utcnow()
+                continue
+            dest = _job_dir(job.id)
+            root_ok = (dest.exists() and (dest / ".git").exists()) if job.kind == "git_url" else Path(target["path"]).exists()
+            job.stages = _prepare_retry_stages(job.stages, root_ok)
             job.status, job.error = QUEUED, None
-            job.stages = _fresh_stages()
             job.updated_at = utcnow()
+            targets.append((job.id, target))
         await session.commit()
     for job_id, target in targets:
         task = asyncio.get_running_loop().create_task(_pipeline(job_id, target))
@@ -1282,7 +1375,12 @@ async def resume_waiting_reverse_jobs() -> int:
 
 
 async def retry_job(job_id: str, db: Any) -> dict[str, Any]:
-    """대기·부분·실패 작업을 처음부터 다시 돌린다. 끝난 작업은 덮지 않게 잠그고 전이한다."""
+    """대기·부분·실패 작업을 다시 돌린다. 끝난 작업은 덮지 않게 잠그고 전이한다.
+
+    대상은 normalize_target을 다시 통과해야 한다.
+    이미 끝난 collect부터 flows까지 단계와 clone을 재사용하고 막힌 단계부터 재개한다.
+    clone이 없으면 다시 받는다.
+    """
     from sqlalchemy import select
 
     from ttakkari.models import ReverseJob
@@ -1296,9 +1394,11 @@ async def retry_job(job_id: str, db: Any) -> dict[str, Any]:
         raise ReverseError(404, "unknown_job", "리버스 엔지니어링 작업을 찾을 수 없습니다.")
     if row.status not in RETRYABLE:
         raise ReverseError(409, "job_not_retryable", "대기·부분·실패 상태의 작업만 다시 시작할 수 있습니다.")
-    target = _target_from_job(row)
+    target = normalize_target(row.target)
+    dest = _job_dir(uid)
+    root_ok = (dest.exists() and (dest / ".git").exists()) if row.kind == "git_url" else Path(target["path"]).exists()
+    row.stages = _prepare_retry_stages(row.stages, root_ok)
     row.status, row.error, row.result = QUEUED, None, None
-    row.stages = _fresh_stages()
     row.updated_at = utcnow()
     await db.commit()
     task = asyncio.get_running_loop().create_task(_pipeline(uid, target))
@@ -1474,10 +1574,12 @@ async def _pipeline(job_id: uuid.UUID, target: dict[str, str]) -> None:
         current["key"] = key
         await _mark(job_id, key, status, **kwargs)
 
-    async def _wait(stage: str, message: str) -> None:
+    async def _wait(stage: str, message: str, evidence: list[str] | None = None,
+                    notes: list[str] | None = None) -> None:
         await _locked_finish(job_id, stage, result=None, error=message,
                              job_status=WAITING, stage_status=WAITING,
-                             notes=[message, "쿼터 초기화 후 재시도하세요."])
+                             evidence=evidence or [],
+                             notes=notes or [message, "쿼터 초기화 후 재시도하세요."])
 
     async def _partial(inv: Any, struct: Any, flow: Any, revision: str,
                        model_meta: dict[str, Any], failed_stage: str, message: str) -> None:
@@ -1494,40 +1596,57 @@ async def _pipeline(job_id: uuid.UUID, target: dict[str, str]) -> None:
 
     try:
         async with _sem:
-            await _step("request", DONE, evidence=[f"대상: {target['label']}({target['kind']})"],
-                        job_status=RUNNING)
-            await _step("collect", RUNNING)
-            if target["kind"] == "git_url":
-                dest = _job_dir(job_id)
-                await _clone(target["url"], dest)
-                revision = (await _git("-C", str(dest), "rev-parse", "HEAD")).strip()
-                size = await asyncio.to_thread(_dir_bytes, dest)
-                if size > CLONE_BYTES_CAP:
-                    shutil.rmtree(dest, ignore_errors=True)
-                    raise ReverseError(503, "clone_too_big",
-                                       f"수집 결과가 상한({CLONE_BYTES_CAP // 1024 // 1024} MiB)을 넘겼습니다.")
-                await asyncio.to_thread(_enforce_disk_cap, work_root())
+            job_record = await _load(job_id)
+            dest = _job_dir(job_id) if target["kind"] == "git_url" else Path(target["path"])
+            root_ok = (dest.exists() and (dest / ".git").exists()) if target["kind"] == "git_url" else dest.exists()
+            can_reuse = _can_reuse_stages(job_record.stages, root_ok)
+            if can_reuse:
                 root = dest
-                collect_ev = [f"shallow clone 완료, revision {revision[:12]}, {size // 1024} KiB"]
+                revision = job_record.revision or ""
+                if not revision and (dest / ".git").exists():
+                    try:
+                        revision = (await _git("-C", str(dest), "rev-parse", "HEAD")).strip()
+                    except ReverseError:
+                        revision = ""
+                inv = await asyncio.to_thread(inventory, root)
+                struct = await asyncio.to_thread(structure, root, inv)
+                flow = await asyncio.to_thread(analyze_flows, root, inv, struct)
+                await _mark(job_id, "request", DONE, job_status=RUNNING)
             else:
-                root = Path(target["path"])
-                try:
-                    revision = (await _git("-C", str(root), "rev-parse", "HEAD")).strip()
-                except ReverseError:
-                    revision = ""
-                collect_ev = [f"로컬 디렉터리 사용: {root}"]
-                if not revision:
-                    collect_ev.append("확인 필요: Git 저장소가 아니라 revision 없음")
-            await _step("collect", DONE, evidence=collect_ev, revision=revision or None)
-            await _step("inventory", RUNNING)
-            inv = await asyncio.to_thread(inventory, root)
-            await _step("inventory", DONE, evidence=inv["evidence"])
-            await _step("structure", RUNNING)
-            struct = await asyncio.to_thread(structure, root, inv)
-            await _step("structure", DONE, evidence=struct["evidence"], notes=struct["notes"])
-            await _step("flows", RUNNING)
-            flow = await asyncio.to_thread(analyze_flows, root, inv, struct)
-            await _step("flows", DONE, evidence=flow["evidence"], notes=flow["notes"])
+                await _step("request", DONE, evidence=[f"대상: {target['label']}({target['kind']})"],
+                            job_status=RUNNING)
+                await _step("collect", RUNNING)
+                if target["kind"] == "git_url":
+                    dest = _job_dir(job_id)
+                    await _clone(target["url"], dest)
+                    revision = (await _git("-C", str(dest), "rev-parse", "HEAD")).strip()
+                    size = await asyncio.to_thread(_dir_bytes, dest)
+                    if size > CLONE_BYTES_CAP:
+                        shutil.rmtree(dest, ignore_errors=True)
+                        raise ReverseError(503, "clone_too_big",
+                                           f"수집 결과가 상한({CLONE_BYTES_CAP // 1024 // 1024} MiB)을 넘겼습니다.")
+                    await asyncio.to_thread(_enforce_disk_cap, work_root())
+                    root = dest
+                    collect_ev = [f"shallow clone 완료, revision {revision[:12]}, {size // 1024} KiB"]
+                else:
+                    root = Path(target["path"])
+                    try:
+                        revision = (await _git("-C", str(root), "rev-parse", "HEAD")).strip()
+                    except ReverseError:
+                        revision = ""
+                    collect_ev = [f"로컬 디렉터리 사용: {root}"]
+                    if not revision:
+                        collect_ev.append("확인 필요: Git 저장소가 아니라 revision 없음")
+                await _step("collect", DONE, evidence=collect_ev, revision=revision or None)
+                await _step("inventory", RUNNING)
+                inv = await asyncio.to_thread(inventory, root)
+                await _step("inventory", DONE, evidence=inv["evidence"])
+                await _step("structure", RUNNING)
+                struct = await asyncio.to_thread(structure, root, inv)
+                await _step("structure", DONE, evidence=struct["evidence"], notes=struct["notes"])
+                await _step("flows", RUNNING)
+                flow = await asyncio.to_thread(analyze_flows, root, inv, struct)
+                await _step("flows", DONE, evidence=flow["evidence"], notes=flow["notes"])
             token = uuid.uuid4().hex[:8]
             model_meta: dict[str, Any] = {}
             await _step("survey", RUNNING)
@@ -1535,7 +1654,20 @@ async def _pipeline(job_id: uuid.UUID, target: dict[str, str]) -> None:
                 survey, line_counts, line_texts, route = await _survey_stage(
                     root, target, revision or None, inv, struct, flow)
             except _QuotaExhausted as exc:
-                await _wait("survey", exc.message)
+                evidence = []
+                notes = []
+                for info in getattr(exc, "blocked_info", []):
+                    line = f"쿼터 소진: {info['engine']}/{info['model']}({info['account']}) — {info['reset_text']}"
+                    if line not in evidence:
+                        evidence.append(line)
+                    n_line = f"{info['engine']}/{info['model']}({info['account']}) 쿼터 소진({info['reset_text']})"
+                    if n_line not in notes:
+                        notes.append(n_line)
+                if not evidence and exc.resets:
+                    evidence = [f"쿼터 대기: {r}" for r in exc.resets]
+                    notes = list(exc.resets)
+                notes.append("쿼터 초기화 후 재시도하세요.")
+                await _wait("survey", exc.message, evidence=evidence, notes=notes)
                 return
             except Exception as exc:  # noqa: BLE001 - 모델 구간 비정상도 부분 완료로
                 message = exc.message if isinstance(exc, ReverseError) else f"조사 실패: {exc!r}"[:300]
@@ -1552,11 +1684,25 @@ async def _pipeline(job_id: uuid.UUID, target: dict[str, str]) -> None:
             await _step("survey", DONE, evidence=survey_ev, notes=survey["notes"])
             await _step("synthesize", RUNNING)
             try:
-                known = {f["path"] for f in inv["files"]}
+                # 근거는 발췌를 보낸 파일 집합 안에서만 인정한다. 읽지 않은 파일 인용은 버린다.
+                read_set = set(survey["reads"])
                 synth, dropped = await _synthesize_stage(
-                    survey, line_counts, line_texts, known, token)
+                    survey, line_counts, line_texts, read_set, token)
             except _QuotaExhausted as exc:
-                await _wait("synthesize", exc.message)
+                evidence = []
+                notes = []
+                for info in getattr(exc, "blocked_info", []):
+                    line = f"쿼터 소진: {info['engine']}/{info['model']}({info['account']}) — {info['reset_text']}"
+                    if line not in evidence:
+                        evidence.append(line)
+                    n_line = f"{info['engine']}/{info['model']}({info['account']}) 쿼터 소진({info['reset_text']})"
+                    if n_line not in notes:
+                        notes.append(n_line)
+                if not evidence and exc.resets:
+                    evidence = [f"쿼터 대기: {r}" for r in exc.resets]
+                    notes = list(exc.resets)
+                notes.append("쿼터 초기화 후 재시도하세요.")
+                await _wait("synthesize", exc.message, evidence=evidence, notes=notes)
                 return
             except Exception as exc:  # noqa: BLE001 - 모델 구간 비정상도 부분 완료로
                 message = exc.message if isinstance(exc, ReverseError) else f"합성 실패: {exc!r}"[:300]

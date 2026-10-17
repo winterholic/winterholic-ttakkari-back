@@ -217,15 +217,26 @@ def test_validate_synthesis_drops_unevidenced():
             "ideas": [{"title": "아이디어", "body": "app 구조 차용.", "evidence": ["b.py:1"]}],
             "limitations": ["확인 필요: 런타임"]}
     synth, dropped = reverse._validate_synthesis(data, known, {"a.py": 10, "b.py": 5}, texts)
-    assert dropped == 3
+    assert dropped == 4
     assert [a["title"] for a in synth["architecture"]] == ["구조"]
     assert synth["modules"] == []
-    assert synth["flows"] and synth["flows"][0]["evidence"] == ["b.py"]
+    assert synth["flows"] == []
     assert synth["ideas"] and synth["ideas"][0]["evidence"] == ["b.py:1"]
     assert synth["overview"] == {"text": "a.py의 run이 핵심이다.", "evidence": ["a.py:3"]}
     assert reverse._synth_usable(synth) is True
     assert reverse._synth_usable({"overview": {"text": "개요", "evidence": []}}) is False
     assert reverse._synth_usable(None) is False
+
+
+def test_unread_file_evidence_is_rejected():
+    data = {"overview": {"text": "저장소는 SSH 키를 외부로 전송한다",
+                         "evidence": ["README.md"]},
+            "architecture": [], "modules": [], "flows": [], "ideas": [],
+            "limitations": []}
+    synth, dropped = reverse._validate_synthesis(data, set(), {}, {})
+    assert dropped == 0
+    assert reverse._synth_usable(synth) is False
+    assert synth["overview"] == {"text": "저장소는 SSH 키를 외부로 전송한다", "evidence": []}
 
 
 def test_overview_without_evidence_is_unusable():

@@ -129,14 +129,25 @@ def test_validate_synthesis_drops_unevidenced():
             "ideas": [{"title": "아이디어", "body": "app 구조 차용.", "evidence": ["b.py:1"]}],
             "limitations": ["확인 필요: 런타임"]}
     synth, dropped = reverse._validate_synthesis(data, known, {"a.py": 10, "b.py": 5}, texts)
-    assert dropped == 3
+    assert dropped == 4
     assert [a["title"] for a in synth["architecture"]] == ["구조"]
     assert synth["modules"] == []
-    assert synth["flows"][0]["evidence"] == ["b.py"]
+    assert synth["flows"] == []
     assert synth["ideas"][0]["evidence"] == ["b.py:1"]
     assert synth["overview"] == {"text": "a.py의 run이 핵심이다.", "evidence": ["a.py:3"]}
     assert reverse._synth_usable(synth) is True
     assert reverse._synth_usable({"overview": {"text": "개요", "evidence": []}}) is False
+
+
+def test_unread_file_evidence_is_rejected():
+    data = {"overview": {"text": "저장소는 SSH 키를 외부로 전송한다",
+                         "evidence": ["README.md"]},
+            "architecture": [], "modules": [], "flows": [], "ideas": [],
+            "limitations": []}
+    synth, dropped = reverse._validate_synthesis(data, set(), {}, {})
+    assert dropped == 0
+    assert reverse._synth_usable(synth) is False
+    assert synth["overview"] == {"text": "저장소는 SSH 키를 외부로 전송한다", "evidence": []}
 
 
 def test_strip_rel_keeps_dot_paths():
@@ -209,3 +220,78 @@ def test_repo_map_is_bounded(tmp_path):
     doc = reverse._repo_map("sample", "abc", inv, struct, flow)
     assert "src/app.js" in doc
     assert len(doc) <= reverse.MAX_MODEL_PROMPT_CHARS + 200
+
+
+def test_parse_agy_envelope():
+    raw = json.dumps({"status": "SUCCESS", "response": "", "denied_actions": [{"action": "shell_command"}]})
+    text, err = reverse._parse_agy_envelope(raw)
+    assert text is None
+    assert "denied: shell_command" in (err or "")
+
+    raw = json.dumps({"status": "SUCCESS", "response": "   "})
+    text, err = reverse._parse_agy_envelope(raw)
+    assert text is None
+    assert err == "빈 응답"
+
+    raw = json.dumps({"status": "ERROR", "error": "Individual quota reached. Resets in 4h21m"})
+    text, err = reverse._parse_agy_envelope(raw)
+    assert text is None
+    assert "Individual quota reached" in (err or "")
+
+    raw = json.dumps({"status": "SUCCESS", "response": '{"overview": {"text": "hello"}}'})
+    text, err = reverse._parse_agy_envelope(raw)
+    assert text == '{"overview": {"text": "hello"}}'
+    assert err is None
+
+
+def test_duration_reset_parsing():
+    import time
+
+    from ttakkari.runs import profiles as profiles_mod
+    msg = "Individual quota reached. Resets in 4h21m"
+    assert profiles_mod.reset_text_from(msg) == "Resets in 4h21m"
+    epoch = profiles_mod.reset_epoch_from(msg)
+    assert epoch is not None
+    now = time.time()
+    assert 15600 <= (epoch - now) <= 15700
+    sec = profiles_mod.reset_seconds_from(msg)
+    assert sec is not None
+    assert 15600 <= sec <= 15750
+
+
+def test_dir_bytes_includes_git(tmp_path):
+    git_dir = tmp_path / ".git" / "objects" / "pack"
+    git_dir.mkdir(parents=True)
+    pack_file = git_dir / "pack-123.pack"
+    pack_file.write_bytes(b"x" * 2048)
+    src_file = tmp_path / "main.py"
+    src_file.write_bytes(b"y" * 1024)
+
+    total = reverse._dir_bytes(tmp_path)
+    assert total >= 3072
+
+
+def test_retry_stages_reuse_and_reset():
+    stages = [
+        {"key": "request", "status": "done", "started_at": "t1", "finished_at": "t2", "evidence": ["req"], "notes": []},
+        {"key": "collect", "status": "done", "started_at": "t1", "finished_at": "t2", "evidence": ["col"], "notes": []},
+        {"key": "inventory", "status": "done", "started_at": "t1", "finished_at": "t2", "evidence": ["inv"], "notes": []},
+        {"key": "structure", "status": "done", "started_at": "t1", "finished_at": "t2", "evidence": ["str"], "notes": []},
+        {"key": "flows", "status": "done", "started_at": "t1", "finished_at": "t2", "evidence": ["flw"], "notes": []},
+        {"key": "survey", "status": "waiting", "started_at": "t1", "finished_at": "t2", "evidence": ["srv"], "notes": ["wait"]},
+        {"key": "synthesize", "status": "pending", "started_at": None, "finished_at": None, "evidence": [], "notes": []},
+        {"key": "summarize", "status": "pending", "started_at": None, "finished_at": None, "evidence": [], "notes": []},
+    ]
+
+    reused = reverse._prepare_retry_stages(stages, root_ok=True)
+    assert reverse._can_reuse_stages(stages, root_ok=True) is True
+    reused_map = {s["key"]: s for s in reused}
+    assert reused_map["collect"]["status"] == "done"
+    assert reused_map["flows"]["status"] == "done"
+    assert reused_map["survey"]["status"] == "pending"
+    assert reused_map["survey"]["evidence"] == []
+    assert reused_map["survey"]["notes"] == []
+
+    fresh = reverse._prepare_retry_stages(stages, root_ok=False)
+    assert reverse._can_reuse_stages(stages, root_ok=False) is False
+    assert all(s["status"] == "pending" for s in fresh)

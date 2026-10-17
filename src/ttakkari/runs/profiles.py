@@ -358,6 +358,11 @@ SESSION_RESET_RE = re.compile(
     re.IGNORECASE,
 )
 RESET_AT_RE = re.compile(r"try again at ([A-Z][a-z]{2,8}) (\d{1,2})(?:st|nd|rd|th)?,? (\d{4}) (\d{1,2}):(\d{2}) ?([AP]M)", re.IGNORECASE)
+# Antigravity/기타: "Resets in 4h21m", "resets in 45m", "resets in 2 hours"
+DURATION_RESET_RE = re.compile(
+    r"resets?\s+in\s+(?:(?P<h>\d+)\s*h(?:ours?)?)?\s*(?:(?P<m>\d+)\s*m(?:in(?:ute)?s?)?)?\s*(?:(?P<s>\d+)\s*s(?:ec(?:ond)?s?)?)?",
+    re.IGNORECASE,
+)
 # 옛 Claude CLI: "Claude AI usage limit reached|1760000000"
 EPOCH_RESET_RE = re.compile(r"limit reached\|(\d{9,11})")
 MAX_RESET_SECONDS = 8 * 86400
@@ -397,6 +402,13 @@ def reset_epoch_from(*texts: str | None) -> float | None:
         found: float | None = None
         if m := EPOCH_RESET_RE.search(t):
             found = float(m[1])
+        elif m := DURATION_RESET_RE.search(t):
+            h = int(m.group("h") or 0)
+            mn = int(m.group("m") or 0)
+            s = int(m.group("s") or 0)
+            dur = h * 3600 + mn * 60 + s
+            if dur > 0:
+                found = now + dur
         elif m := SESSION_RESET_RE.search(t):
             found = _clock_reset(m)
         elif m := RESET_AT_RE.search(t):
@@ -408,6 +420,22 @@ def reset_epoch_from(*texts: str | None) -> float | None:
                 found = None
         if found is not None and 0 < found - now < MAX_RESET_SECONDS:
             return found
+    return None
+
+
+def reset_text_from(*texts: str | None) -> str | None:
+    """한도 메시지에서 CLI가 알려준 초기화 문구(예: 'Resets in 4h21m')를 뽑는다."""
+    for t in texts:
+        if not t:
+            continue
+        if m := DURATION_RESET_RE.search(t):
+            matched = m.group(0).strip()
+            if matched:
+                return matched
+        if m := SESSION_RESET_RE.search(t):
+            return m.group(0).strip()
+        if m := RESET_AT_RE.search(t):
+            return m.group(0).strip()
     return None
 
 

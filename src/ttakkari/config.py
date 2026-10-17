@@ -223,6 +223,8 @@ class Settings(BaseSettings):
     # after_hours 넘게 지난 것을 작업 세션과 함께 보관한다. scan_seconds 는 훑는 주기, 0 이면 끈다(테스트는 직접 부른다).
     lead_archive_after_hours: float = 24
     lead_archive_scan_seconds: int = 600
+    # 운영 로그·오류 이슈 인입 주기(ADR 0033). 0이면 주기 인입을 끄고 조회 직전 갱신만 한다.
+    ops_log_sync_seconds: int = Field(default=60, ge=0)
     # 접수 상주화(runs/desk_pool): 계정마다 엔진 프로세스를 하나 미리 띄워 기동 시간을 뺀다. 끄면 매번 CLI 를 새로 띄운다.
     desk_warm_pool: bool = True
     # 오래 띄워 둔 프로세스는 새로 띄운다(CLI 업데이트·인증 갱신을 늦게 반영하지 않게).

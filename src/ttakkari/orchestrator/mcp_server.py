@@ -315,6 +315,76 @@ async def backend_deploy_status(job_id: str) -> str:
     return await _agent("GET", f"/deploy/{job_id}")
 
 
+# ---- 운영 로그·오류 이슈(ADR 0033). 응답은 서버가 요약·마스킹·크기 제한하고, 여기서 한 번 더 16,000자로 막는다.
+
+async def _ops(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
+    from ttakkari.oplog.limits import cap_text
+    return cap_text(await _call(method, path, body, prefix="/api/agent/ops-logs", params=params))
+
+
+@query_tool
+async def ops_list_issues(status: Literal["unresolved", "resolved", "ignored", "all"] = "unresolved",
+                          source: Literal["deploy", "run", "api", "process", "worker", "code"] | None = None,
+                          level: Literal["warning", "error", "fatal"] | None = None, query: str | None = None,
+                          release: str | None = None, tag: str | None = None, since_hours: int | None = None,
+                          sort: Literal["last_seen", "first_seen", "count"] = "last_seen", limit: int = 10,
+                          cursor: int = 0, max_chars: int | None = None) -> str:
+    """Start here when diagnosing a Ttakkari server problem. Lists grouped operational error issues (deploy failures,
+    failed Runs, engine fallbacks, API 500s, process-log errors) newest first with id (LOG-n), count, first/last seen
+    and the deploy SHA prefix. Compact: use `next_cursor` to page, `since_hours`/`source`/`release`/`query`
+    ("tag" is key:value) to narrow. `max_chars` (500-16000, default 6000) caps the response. Secrets are masked."""
+    return await _ops("GET", "/issues", status=status, source=source, level=level, q=query, release=release, tag=tag,
+                      since_hours=since_hours, sort=sort, limit=limit, cursor=cursor, max_chars=max_chars)
+
+
+@query_tool
+async def ops_get_issue(issue: str, events: int = 3, max_chars: int | None = None) -> str:
+    """One issue (LOG-n or n): status, count, releases it appeared in, notes, hourly trend and the latest event with
+    representative stack, masked log excerpt and breadcrumbs (what happened just before). `events` (0-10) adds
+    older event summaries. Capped by `max_chars`; secrets are masked."""
+    return await _ops("GET", f"/issues/{issue}", events=events, max_chars=max_chars)
+
+
+@query_tool
+async def ops_search_logs(query: str | None = None, since_hours: int | None = 72, until_hours: int | None = None,
+                          level: Literal["warning", "error", "fatal"] | None = None,
+                          source: Literal["deploy", "run", "api", "process", "worker", "code"] | None = None,
+                          release: str | None = None, issue: str | None = None, tag: str | None = None,
+                          limit: int = 10, cursor: int = 0, max_chars: int | None = None) -> str:
+    """Search stored error/log events by period, keyword (message, excerpt, stack), level, source, release SHA prefix,
+    issue or tag (key:value). Returns short snippets around the match; use ops_get_issue for detail. Pageable via
+    `cursor`, capped by `max_chars`; secrets are masked."""
+    return await _ops("GET", "/events", q=query, since_hours=since_hours, until_hours=until_hours, level=level,
+                      source=source, release=release, issue=issue, tag=tag, limit=limit, cursor=cursor, max_chars=max_chars)
+
+
+@query_tool
+async def ops_list_deploys(limit: int = 10, status: str | None = None, max_chars: int | None = None) -> str:
+    """Recent backend deploy jobs newest first: id, SHA prefix, status, strategy, times and, for failures, the failing
+    stage, a one-line cause and the linked issue. Read the log with ops_deploy_log."""
+    return await _ops("GET", "/deploys", limit=limit, status=status, max_chars=max_chars)
+
+
+@query_tool
+async def ops_deploy_log(job: str = "latest_failed", mode: Literal["summary", "errors", "tail", "range"] = "summary",
+                         lines: int = 60, offset: int | None = None, max_chars: int | None = None) -> str:
+    """Read a deploy job log through the backend (no file access needed). `job` is a job id (prefix ok), a commit SHA
+    prefix (7+), `latest` or `latest_failed`. mode: summary = status, failing stage, one-line cause and the error
+    sections (start here); errors = more sections; tail = last `lines`; range = `lines` from line `offset`
+    (response gives next_offset). Lines are numbered, long lines clipped, secrets masked, response capped."""
+    return await _ops("GET", f"/deploys/{job}/log", mode=mode, lines=lines, offset=offset, max_chars=max_chars)
+
+
+@server.tool()
+async def ops_update_issue(issue: str, status: Literal["unresolved", "resolved", "ignored"] | None = None,
+                           note: str | None = None, release: str | None = None) -> str:
+    """Resolve/ignore/reopen an operational issue and/or add a short note (what the cause was, what fixed it).
+    Marking resolved records the fix release (default: the running SHA); if the issue occurs again afterwards it
+    reopens automatically as a regression."""
+    body = {k: v for k, v in {"status": status, "note": note, "release": release}.items() if v is not None}
+    return await _ops("PATCH", f"/issues/{issue}", body)
+
+
 # ---- 오케스트레이터 전용
 
 def orchestrator_tool(fn):

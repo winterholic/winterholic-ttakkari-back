@@ -177,6 +177,9 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         jobs.append(("resource-history", collect_once, s.resource_sample_seconds))
     if s.lead_archive_scan_seconds > 0:
         jobs.append(("archive", lead_archive.archive_idle_leads, s.lead_archive_scan_seconds))
+    if s.ops_log_sync_seconds > 0:
+        from ttakkari.oplog.ingest import sync_all
+        jobs.append(("ops-logs", sync_all, s.ops_log_sync_seconds))
     return jobs
 
 

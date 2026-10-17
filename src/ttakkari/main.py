@@ -25,6 +25,7 @@ from ttakkari.api import (
     library_insight,
     meetings,
     notifications,
+    oplogs,
     orchestrator,
     planner,
     pms,
@@ -173,9 +174,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                           if s.resource_sample_seconds > 0 else None)
     lead_sweeper = (asyncio.create_task(_lead_archive_loop(s.lead_archive_scan_seconds))
                     if s.lead_archive_scan_seconds > 0 else None)
+    from ttakkari.oplog import ingest as ops_ingest
+    ops_sync = asyncio.create_task(ops_ingest.sync_loop(s.ops_log_sync_seconds)) if s.ops_log_sync_seconds > 0 else None
     try:
         yield
     finally:
+        if ops_sync:
+            ops_sync.cancel()
         retention.cancel()
         if collector:
             collector.cancel()
@@ -222,6 +227,14 @@ def create_app() -> FastAPI:
         body.update(transfer_diagnostics.fields(request))
         return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
 
+    @app.exception_handler(Exception)
+    async def _unhandled_exc(request: Request, exc: Exception) -> JSONResponse:
+        # 운영 오류 이슈로 남긴다(ADR 0033). 기록 실패는 응답을 막지 않는다.
+        from ttakkari.oplog import ingest as ops_ingest
+        await ops_ingest.capture_exception(exc, source="api", tags={
+            "method": request.method, "path": ops_ingest.safe_path(request.url.path)})
+        return JSONResponse({"code": "internal", "message": "서버 오류가 발생했습니다."}, status_code=500)
+
     @app.exception_handler(RequestValidationError)
     async def _validation_exc(request: Request, exc: RequestValidationError) -> JSONResponse:
         errors = [{"loc": list(e.get("loc", [])), "msg": e.get("msg", "")} for e in exc.errors()]
@@ -231,7 +244,8 @@ def create_app() -> FastAPI:
 
     for r in (auth.router, workspaces.router, sessions.router, artifacts.router, system.router, push.router,
               orchestrator.router, accounts.router, transfers.router, transfers.tokens, agent.router, assistant.router, library_insight.router, planner.router,
-              meetings.router, meetings.agent_router, pms.router, agent_pms.router, tasks.router, desk_feedback.router, deployments.router):
+              meetings.router, meetings.agent_router, pms.router, agent_pms.router, tasks.router, desk_feedback.router, deployments.router,
+              oplogs.router, oplogs.agent_router):
         app.include_router(r)
     app.include_router(shares.router)
     app.include_router(shares.exports_router)

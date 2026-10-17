@@ -415,6 +415,19 @@ payload 는 `{title, body, url, tag}`:
 - **운영 제한:** ADR 0029의 이전 CLI 1.2.10 파일 작성·workspace 밖 차단 실측은 유지한다. 2026-10-15 CLI 1.3.5는 MCP dispatcher `call_mcp_tool`과 workspace 설정을 인식했지만 안전 fixture의 `server/discover` 미지원으로 연결 성공은 확인하지 못했다. Ttakkari MCP 서버 2.3.0의 직접 stdio discovery·tools/list는 성공했으나 실제 API 호출은 실패하도록 격리한 fixture였다. 설치 스크립트는 launchd에서 backend를 직접 실행하며 OS sandbox wrapper가 없지만, 이것은 운영 agy의 앱 상태 저장 권한을 증명하지 않는다. 이 세션에는 인증된 기존 backend Run 호출 경로가 없어 운영 agy 실행·재개·MCP는 미검증이고, 도구 sandbox에서 본 EPERM을 backend 실패로 일반화하지 않는다. `--help`에 `--log-file`만 로그 경로 override로 있으며, project flag는 ID/name이다. 공식 문서상 settings/session cache는 `~/.gemini/antigravity-cli` 아래에 고정돼 있고, 공개 저장소 [AGY_HOME 요청 #155](https://github.com/google-antigravity/antigravity-cli/issues/155)는 열린 기능 요청이다. 따라서 현재 실행 경계 안에서 정식 저장 위치 대체 경로를 확인하지 못했다. CLI가 결과 stdout 없이 exit 0을 반환하는 경우 Run은 실패로 처리하며 stderr 진단을 보존한다. 첫 단발 worker→보고는 매니저가 직접 연결하므로 재개/MCP 호출이 구조상 필수는 아니지만, 현재 API에 재개 비활성 capability는 없고 MCP 의존 작업·후속 Run은 별도 검증 대상이다. 상세 증거·경계는 [ADR 0029](adr/0029-antigravity-cli-engine.md)의 배포 조건을 따른다.
 - **통합 상태:** Antigravity 변경은 back `main`에 통합됐고 기준 커밋 `f89709a93c008a447d19c9410a7ee155ab182073`의 Qwen feedback export는 보존했다. 다른 세션의 미커밋 변경은 통합 커밋에 포함하지 않았다. API/worker 계약 구현과 단위 검증은 포함하지만, 실제 backend smoke와 디자인 worker 실행은 미완료다. 상세 범위는 [ADR 0029](adr/0029-antigravity-cli-engine.md)를 따른다.
 
+## 운영 로그·오류 이슈 (ADR 0033)
+
+사용자 UI는 `/api/ops-logs`, 세션 토큰을 쓰는 MCP는 `/api/agent/ops-logs`를 쓴다. 두 경로의 응답은 같고, 에이전트 경로는 회사(`pool=work`) 세션에 403이다. 모든 응답은 비밀값을 `[REDACTED]`로 가리고 `max_chars`(500~16000, 기본 6000)를 넘지 않는다. 넘으면 `truncated: true`와 `hint`가 붙는다.
+
+- `GET /issues?status=unresolved|resolved|ignored|all&source=&level=&q=&release=&tag=key:value&since_hours=&sort=last_seen|first_seen|count&limit=(1~50)&cursor=` → `{total, items[{id:"LOG-n", title, source, level, status, count, first_seen, last_seen, release(8자), culprit, regressed?}], next_cursor}`
+- `GET /issues/{LOG-n|n}?events=(0~10)` → `{issue, latest_event{message, stack, excerpt, breadcrumbs, tags}, earlier_events, releases, recent_hours}`
+- `PATCH /issues/{id}` `{status?, note?, release?}` → 해결 시 `resolved_at`·`resolved_release`를 기록한다. 해결 뒤 새 이벤트가 오면 자동으로 `unresolved`로 돌아가고 `regressed`가 올라간다.
+- `GET /events?q=&since_hours=72&until_hours=&level=&source=&release=&issue=&tag=&limit=&cursor=` → 일치 구간 주변 발췌 목록
+- `GET /trend?hours=(1~720)&unit=hour|day&issue=` → 시간별 집계(샘플링과 무관)
+- `GET /deploys?limit=&status=` → 최근 배포 job과 실패 단계·원인 한 줄·연결 이슈
+- `GET /deploys/{job id(접두사 8자 이상)|SHA 접두사(7자 이상)|latest|latest_failed}/log?mode=summary|errors|tail|range&lines=(1~200)&offset=` → 배포 로그를 줄 번호와 함께 요약·구간으로. 경로는 입력으로 받지 않는다.
+- `POST /sync` 증분 인입을 즉시 한 번 돌린다(사용자 경로).
+
 ## 회의록 외부 공유와 내보내기 (ADR 0030)
 
 상태(2026-10-16): 문서형 전사·선택 내보내기·공유 관리·별도 공개 UI를 연결했다. `public_sharing_enabled` 코드 기본값은 `true`로 전환하며 기존 회의가 자동 공개되지는 않는다. 운영자는 명시적 `false` 설정으로 익명 전달을 차단할 수 있다. 꺼져 있으면 익명 조회·다운로드는 404이며 소유자 개인 export는 계속 동작한다. 운영 배포 결과는 작업기록을 따른다. 현재 지원 형식은 TXT/MD/JSON/CSV이며 SRT/VTT/DOCX/PDF와 PMS/WBS/Artifact는 사용할 수 없다.

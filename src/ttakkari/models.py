@@ -923,3 +923,73 @@ class PublicShare(Base):
 
 # Register ledger tables in the shared metadata used by tests and Alembic.
 from ttakkari import knowledge_models as _knowledge_models  # noqa: F401
+
+
+class OpsIssue(Base):
+    """운영 오류 그룹(ADR 0033). fingerprint 가 같은 이벤트가 한 이슈로 모인다. 이슈 단위로 지울 수 있게 이벤트는 CASCADE 다."""
+
+    __tablename__ = "ops_issues"
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_ops_issues_fingerprint"),
+        Index("ix_ops_issues_status_last_seen", "status", "last_seen"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    fingerprint: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(Text)
+    culprit: Mapped[str | None] = mapped_column(String(200))
+    source: Mapped[str] = mapped_column(String(24), index=True)  # deploy | run | api | process | worker | code
+    level: Mapped[str] = mapped_column(String(10))  # warning | error | fatal
+    status: Mapped[str] = mapped_column(String(12), default="unresolved")  # unresolved | resolved | ignored
+    first_seen: Mapped[datetime]
+    last_seen: Mapped[datetime] = mapped_column(index=True)
+    event_count: Mapped[int] = mapped_column(BigInteger, default=0)
+    first_release: Mapped[str | None] = mapped_column(String(40))
+    last_release: Mapped[str | None] = mapped_column(String(40))
+    resolved_at: Mapped[datetime | None]
+    resolved_release: Mapped[str | None] = mapped_column(String(40))
+    regressed_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_regressed_at: Mapped[datetime | None]
+    notes: Mapped[list[Any]] = mapped_column(default=list)  # [{at, by, text}]
+    tags: Mapped[dict[str, Any]] = mapped_column(default=dict)  # 가장 최근 이벤트의 태그
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class OpsEvent(Base):
+    __tablename__ = "ops_events"
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_ops_events_dedupe_key"),
+        Index("ix_ops_events_issue_occurred", "issue_id", "occurred_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    issue_id: Mapped[int] = mapped_column(ForeignKey("ops_issues.id", ondelete="CASCADE"))
+    occurred_at: Mapped[datetime] = mapped_column(index=True)
+    source: Mapped[str] = mapped_column(String(24))
+    level: Mapped[str] = mapped_column(String(10))
+    message: Mapped[str] = mapped_column(Text)
+    release: Mapped[str | None] = mapped_column(String(40), index=True)
+    tags: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    breadcrumbs: Mapped[list[Any]] = mapped_column(default=list)
+    stack: Mapped[str | None] = mapped_column(Text)
+    excerpt: Mapped[str | None] = mapped_column(Text)
+    ref: Mapped[str | None] = mapped_column(String(200), index=True)  # deploy_job:<id> · run:<id> · file:<name>
+    dedupe_key: Mapped[str | None] = mapped_column(String(120))
+
+
+class OpsIssueStat(Base):
+    """이슈별 시간 단위 발생 수. 저장 이벤트가 샘플링으로 줄어도 추이는 정확하다."""
+
+    __tablename__ = "ops_issue_stats"
+    issue_id: Mapped[int] = mapped_column(ForeignKey("ops_issues.id", ondelete="CASCADE"), primary_key=True)
+    bucket: Mapped[datetime] = mapped_column(primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+    __table_args__ = (Index("ix_ops_issue_stats_bucket", "bucket"),)
+
+
+class OpsIngestCursor(Base):
+    """파일·DB 인입 진행 위치. 여러 세대가 동시에 돌아도 한 번에 하나만 읽도록 advisory lock 과 함께 쓴다."""
+
+    __tablename__ = "ops_ingest_cursors"
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    inode: Mapped[int | None] = mapped_column(BigInteger)
+    position: Mapped[int] = mapped_column(BigInteger, default=0)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow)

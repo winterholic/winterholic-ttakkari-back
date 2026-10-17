@@ -276,7 +276,9 @@ def test_start_status_bench_stop_through_a_detached_supervisor(env):
     stopped = env.gpu.stop()
     assert stopped["stopped_now"] is True and stopped["running"] is False
     assert stopped["phase"] == "stopped" and stopped["stop_reason"] == "requested"
-    assert not psutil.pid_exists(sup_pid) or psutil.Process(sup_pid).status() == psutil.STATUS_ZOMBIE
+    # stop()은 상태 파일이 stopped가 되면 돌아오고 감독자 프로세스 종료는 그 뒤라 잠깐 기다린다.
+    _wait(lambda: not psutil.pid_exists(sup_pid) or psutil.Process(sup_pid).status() == psutil.STATUS_ZOMBIE,
+          what="supervisor exit")
     with pytest.raises(Busy, match="no ready"):
         env.gpu.bench("hello")
     assert env.gpu.stop()["stopped_now"] is False

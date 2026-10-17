@@ -60,6 +60,7 @@ class ParseState:
     context_model: str | None = None
     pending_tool_calls: set[str] = field(default_factory=set)
     adapter_data: dict[str, Any] = field(default_factory=dict)
+    protocol_final_seen: bool = False
 
 
 class AgentAdapter(Protocol):

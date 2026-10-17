@@ -81,6 +81,7 @@ class Settings(BaseSettings):
         "antigravity": {"model": ANTIGRAVITY_DEFAULT, "effort": "high"},
         "muse": {"model": "muse-wonder-full-1.0", "effort": "high"},
         "auto": {"model": "gpt-6-luna", "effort": "high"},
+        "qwen-local": {"model": "Qwen3.8-Flash-Next-Q2_K", "effort": "high"},
     }
     # 오케스트레이터와 같은 급이라 작업 세션에 쓰려면 승격 사유가 필요한 모델.
     peer_models: list[str] = ["opus", "fable", "gpt-6.1-sol", *[
@@ -101,7 +102,11 @@ class Settings(BaseSettings):
         "antigravity": ANTIGRAVITY_MODELS,
         # Published coding models; entries do not assert this account's entitlement.
         "muse": ["muse-wonder-full-1.0", "muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.2"],
+        # This local engine is explicitly selectable; it is never an auto-routing candidate.
+        "qwen-local": ["Qwen3.8-Flash-Next-Q2_K"],
     }
+    qwen_local_enabled: bool = False
+    qwen_local_worker_path: Path = HOME / "development/projects/qwen-local-harness/bin/qwen-worker"
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).
     usage_poll_seconds: int = 300

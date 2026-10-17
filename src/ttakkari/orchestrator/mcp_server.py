@@ -324,7 +324,7 @@ def orchestrator_tool(fn):
 
 
 @orchestrator_tool
-async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse"] = "auto",
+async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None,
@@ -341,6 +341,8 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     When a general/routine worker runs on Gemini 3.8 Flash, verification_required=True is returned: run an
     independent cross-provider verification (task_type="verification") before final completion and record
     message_worker(verification_outcome="passed"|"failed").
+    Explicit engine="qwen-local" selects the local Qwen harness only when its feature gate and fixed readiness contract pass.
+    It has no cloud account/quota and never falls back to another provider. It is not part of auto routing.
     Explicit engine="claude"/"codex"/"antigravity" uses that engine first and, when all its enabled accounts hit
     usage limits, falls back to same-family then task-fit routes before waiting; set strict_engine=True to
     strictly lock the engine and wait for quota reset instead.

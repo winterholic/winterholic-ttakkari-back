@@ -99,6 +99,10 @@ async def test_auto_worker_uses_task_policy_and_reports_actual_model(task_type, 
     detail = (await client.get(f"/api/orchestrator/workers/{wid}", headers=h)).json()
     assert detail["task_type"] == task_type
     assert detail["routing"]["selected"]["model"] == expected_model
+    if task_type == "general":
+        assert detail["routing"]["scope"]["account_scope"] == "personal"
+        assert run["usage"]["routing_request"]["engine"] == "auto"
+        assert run["usage"]["routing_request"]["account_scope"] == "personal"
     async with sessionmaker()() as db:
         sess = await db.get(ChatSession, uuid.UUID(wid))
         assert sess.worker_task_type == task_type and sess.engine == "auto"

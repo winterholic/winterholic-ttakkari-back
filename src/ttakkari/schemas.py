@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 EngineName = Literal["claude", "codex", "antigravity", "muse"]
 # 세션 엔진. auto 는 엔진 프로필을 우선순위대로 쓰고 사용량 한도면 다음으로 넘어간다(ADR 0006).
-SessionEngine = Literal["claude", "codex", "antigravity", "muse", "auto"]
+SessionEngine = Literal["claude", "codex", "antigravity", "muse", "qwen-local", "auto"]
 SessionKindName = Literal["chat", "orchestrator", "desk"]
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 

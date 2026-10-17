@@ -24,6 +24,8 @@ from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.agents.codex import CodexAdapter
 from ttakkari.agents.muse import MuseAdapter
+from ttakkari.agents.qwen_local import MODEL as QWEN_LOCAL_MODEL
+from ttakkari.agents.qwen_local import QwenLocalAdapter
 from ttakkari.artifacts import preview
 from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import register_file
@@ -67,6 +69,8 @@ ADAPTERS: dict[str, AgentAdapter] = {
     "claude": ClaudeAdapter(), "codex": CodexAdapter(), "antigravity": AntigravityAdapter(),
     "muse": MuseAdapter(),
 }
+QWEN_LOCAL_ADAPTER = QwenLocalAdapter(worker_path=get_settings().qwen_local_worker_path,
+                                      enabled=get_settings().qwen_local_enabled)
 MAX_TOUCHED_ARTIFACTS = 50
 MAX_OUTBOX_FILES = 200
 MAX_CHECKPOINT_UNTRACKED = 500
@@ -118,6 +122,7 @@ class RunManager:
         self._wakers: dict[uuid.UUID, asyncio.Task[None]] = {}
         # 실행 중에 새 대화로 바꾸라고 한 세션. 실행이 끝날 때 적용해야 그 Run 이 엔진 대화 id 를 다시 덮어쓰지 않는다.
         self._reset_requests: set[uuid.UUID] = set()
+        self._qwen_local_slot = asyncio.Semaphore(1)
 
     def sem(self, lane: str) -> asyncio.Semaphore:
         if lane not in self._sems:
@@ -502,6 +507,12 @@ class RunManager:
             or sess.worker_task_type
             or (worker_routing.infer_task_type(requested_model) if (pinned_fallback or sess.kind == SessionKind.worker) else None)
         )
+        if sess.kind == SessionKind.worker:
+            run.usage = {**(run.usage or {}), "routing_request": {
+                "engine": sess.engine, "model": requested_model,
+                "task_type": sess.worker_task_type or effective_task_type or "general",
+                "account_scope": sess.pool,
+            }}
 
         async def available_profiles():
             return await _available_profiles(db, sess, run, is_meeting)
@@ -510,6 +521,19 @@ class RunManager:
         if not profiles:
             if blocked:
                 await self._wait_for_reset(db, run, sess, blocked)
+                return
+            if sess.engine == "qwen-local":
+                ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+                events.append(db, run, "worker.routing", {
+                    "policy": worker_routing.POLICY_VERSION,
+                    "task_type": effective_task_type or "general", "trigger": "initial",
+                    "selected": None, "requested_engine": "qwen-local", "requested_model": QWEN_LOCAL_MODEL,
+                    "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
+                              "workspace_id": str(sess.workspace_id)},
+                    "quota": None, "readiness": reason, "fallback": False,
+                })
+                await self._finish(db, run, RunStatus.failed,
+                                   error=f"Qwen local blocked: {reason if not ready else 'no local worker profile'}")
                 return
             what = "엔진" if sess.engine == "auto" else sess.engine
             where = "회사" if sess.pool == "work" and not is_meeting else "개인"
@@ -545,6 +569,12 @@ class RunManager:
                 own = profiles_mod._in_use.get(run_id)
                 if own in counts:
                     counts[own] = max(0, counts[own] - 1)
+            elif any(p.engine == "qwen-local" for p in candidates):
+                all_candidates = candidates
+                counts = await profiles_mod.running_counts_async()
+                own = profiles_mod._in_use.get(run_id)
+                if own in counts:
+                    counts[own] = max(0, counts[own] - 1)
             selected = await choose_account(candidates, run_id, **kwargs)
             is_pinned_switched = bool(
                 pinned_fallback and primary_pair and (
@@ -552,13 +582,22 @@ class RunManager:
                     or (selected.engine == "antigravity" and selected.model != primary_pair[1])
                 )
             )
-            if task_type or is_pinned_switched:
+            if task_type or is_pinned_switched or selected.engine == "qwen-local":
                 _, currently_blocked = await available_profiles()
-                events.append(db, run, "worker.routing", worker_routing.receipt(
+                receipt = worker_routing.receipt(
                     effective_task_type or "general", selected, all_candidates, currently_blocked, counts,
                     trigger="initial" if not run.started_at else "fallback_or_resume",
                     fallback_from={"engine": primary_pair[0], "model": primary_pair[1]} if is_pinned_switched and primary_pair else None,
-                ))
+                )
+                if selected.engine == "qwen-local":
+                    receipt["scope"] = {"account_scope": sess.pool, "runtime_scope": "local-machine",
+                                        "workspace_id": str(sess.workspace_id)}
+                    receipt["quota"] = None
+                    receipt["readiness"] = "passed"
+                else:
+                    receipt["scope"] = {"account_scope": sess.pool, "runtime_scope": "provider-account",
+                                        "workspace_id": str(sess.workspace_id)}
+                events.append(db, run, "worker.routing", receipt)
             return selected
 
         def conversation_key(profile):
@@ -585,7 +624,10 @@ class RunManager:
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
-        routing_request = {"model": requested_model}
+        routing_request = {"model": requested_model, "engine": sess.engine}
+        if sess.kind == SessionKind.worker:
+            routing_request.update({"task_type": sess.worker_task_type or effective_task_type or "general",
+                                    "account_scope": sess.pool})
         run.usage = {**(run.usage or {}), "routing_request": routing_request}
         resume_handoff = run.resume_handoff or (await _waiting_handoff(db, run) if resumed else "")
         self._disarm(run.id)
@@ -655,7 +697,6 @@ class RunManager:
             ctx = await context_usage.latest(db, sess)
             base_prompt = f"[내 대화 컨텍스트 사용률: {context_usage.describe(ctx)}]\n" + base_prompt
         system_note = await _system_note(db, outbox, sess, scope="work" if sess.pool == "work" else "all")
-        mcp_servers = {MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")}
         h = self._handles.get(run.id)
         state = ParseState()
         rc: int | None = None
@@ -675,6 +716,9 @@ class RunManager:
             prompt = await _handoff_context(db, run, resumed_profile=prof.name if resume_id else None,
                                             resumed_model=resumed_model) + prompt
             prompt = attempt_handoff + prompt
+            mcp_servers = {} if prof.engine == "qwen-local" else {
+                MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent")
+            }
             run.engine, run.profile = prof.engine, prof.name
             if is_meeting:
                 model, effort = prof.model, run.effort
@@ -690,8 +734,10 @@ class RunManager:
                 outbox=outbox, write_roots=write_roots, system_note=system_note,
                 codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers, session_id=str(sess.id),
             )
-            env = _child_env(run.id, write_roots, s.home, s.guard_log) | prof.env()
-            adapter = ADAPTERS[prof.engine]
+            adapter = QWEN_LOCAL_ADAPTER if prof.engine == "qwen-local" else ADAPTERS[prof.engine]
+            env = adapter.child_env() if prof.engine == "qwen-local" else (
+                _child_env(run.id, write_roots, s.home, s.guard_log) | prof.env()
+            )
             await self._commit(db, run)
             attempt_start_seq = run.last_seq
             state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h, prof.id)
@@ -707,7 +753,8 @@ class RunManager:
             stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
             texts = (state.error, tail, None if rc == 0 else state.result_text, state.limit_text)
-            limited = failed and (state.limit_hit or profiles_mod.is_usage_limit(*texts))
+            limited = (failed and prof.engine != "qwen-local"
+                       and (state.limit_hit or profiles_mod.is_usage_limit(*texts)))
             reset_at: float | None = None
             if limited and not stopped:
                 # 마지막 계정이어도 쉬게 해야 다음 지시가 한도 걸린 계정부터 다시 두드리지 않는다.
@@ -848,7 +895,12 @@ class RunManager:
         state = ParseState()
         if adapter.engine == "antigravity" or getattr(adapter, "validates_resume_identity", False):
             state.engine_session_id = spec.engine_session_id
+        qwen_slot = adapter.engine == "qwen-local"
+        qwen_slot_acquired = False
         try:
+            if qwen_slot:
+                await self._qwen_local_slot.acquire()
+                qwen_slot_acquired = True
             cmd = adapter.build_command(spec, env)
             working_directory = getattr(adapter, "working_directory", lambda _spec: root)(spec)
             proc = await asyncio.create_subprocess_exec(
@@ -860,11 +912,22 @@ class RunManager:
             cleanup = getattr(adapter, "cleanup", None)
             if cleanup:
                 cleanup(spec)
+            if qwen_slot_acquired:
+                self._qwen_local_slot.release()
             return state, None, False, True
         except OSError:
             cleanup = getattr(adapter, "cleanup", None)
             if cleanup:
                 cleanup(spec)
+            if qwen_slot_acquired:
+                self._qwen_local_slot.release()
+            raise
+        except BaseException:
+            cleanup = getattr(adapter, "cleanup", None)
+            if cleanup:
+                cleanup(spec)
+            if qwen_slot_acquired:
+                self._qwen_local_slot.release()
             raise
         if h:
             h.proc = proc
@@ -894,6 +957,10 @@ class RunManager:
             finally:
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(stderr_task, 5)
+                if adapter.engine == "qwen-local" and h and h.stderr_tail:
+                    events.append(db, run, "log", {"stream": "stderr",
+                                                    "text": "".join(h.stderr_tail)[-STDERR_TAIL:]})
+                    await self._commit(db, run)
                 if adapter.engine == "antigravity":
                     with contextlib.suppress(OSError):
                         (Path("/private/tmp") / f"ttakkari-agy-{run.id}.log").unlink()
@@ -901,8 +968,12 @@ class RunManager:
                     # through the attempt, but remove it even if termination fails.
                     # A signal failure still propagates; it is not proof of shutdown.
                 cleanup = getattr(adapter, "cleanup", None)
-                if cleanup:
-                    cleanup(spec)
+                try:
+                    if cleanup:
+                        cleanup(spec)
+                finally:
+                    if qwen_slot_acquired:
+                        self._qwen_local_slot.release()
         rc = proc.returncode
         finalize_process = getattr(adapter, "finalize_process", None)
         if finalize_process:
@@ -923,6 +994,14 @@ class RunManager:
                 break
             text = line.decode("utf-8", errors="replace").strip()
             if not text:
+                continue
+            parse_stdout = getattr(adapter, "parse_stdout_line", None)
+            if parse_stdout:
+                produced = parse_stdout(text, state, cwd)
+                for n in produced:
+                    events.append(db, run, n.type, n.payload)
+                if produced:
+                    await self._commit(db, run)
                 continue
             try:
                 obj = json.loads(text)
@@ -1186,6 +1265,13 @@ async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_
     task, pinned, requested = _routing_policy(sess, run, is_meeting)
     if is_meeting:
         return await meeting_routing.availability(db)
+    if sess.engine == "qwen-local":
+        ready, _reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+        if not ready or sess.kind != SessionKind.worker:
+            return [], []
+        profile_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{sess.pool}")
+        return [profiles_mod.Profile(id=profile_id, name=f"Qwen local ({sess.pool})", engine="qwen-local",
+                                     model=QWEN_LOCAL_MODEL)], []
     if task:
         return await worker_routing.availability(db, task, sess.pool, model=requested)
     if pinned:

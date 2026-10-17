@@ -79,7 +79,7 @@ class Settings(BaseSettings):
         "claude": {"model": "sonnet", "effort": "high"},
         "codex": {"model": "gpt-6-luna", "effort": "high"},
         "antigravity": {"model": ANTIGRAVITY_DEFAULT, "effort": "high"},
-        "muse": {"model": "muse-wonder-full-1.0", "effort": "high"},
+        "muse": {"model": "muse-spark-1.3", "effort": "high"},
         "auto": {"model": "gpt-6-luna", "effort": "high"},
         "qwen-local": {"model": "Qwen3.8-Flash-Next-Q2_K", "effort": "high"},
     }
@@ -100,8 +100,8 @@ class Settings(BaseSettings):
         "claude": ["opus", "sonnet", "haiku"],
         "codex": ["gpt-6-luna", "gpt-6.1-sol"],
         "antigravity": ANTIGRAVITY_MODELS,
-        # Published coding models; entries do not assert this account's entitlement.
-        "muse": ["muse-wonder-full-1.0", "muse-wonder-1.0", "muse-spark-1.3", "muse-spark-1.2"],
+        # Only the subscriber model with a successful response on this account is admitted.
+        "muse": ["muse-spark-1.3"],
         # This local engine is explicitly selectable; it is never an auto-routing candidate.
         "qwen-local": ["Qwen3.8-Flash-Next-Q2_K"],
     }

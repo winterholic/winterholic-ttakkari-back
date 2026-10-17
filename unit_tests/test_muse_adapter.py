@@ -38,7 +38,7 @@ class MuseAdapterTests(unittest.TestCase):
         self.assertTrue(events[1].payload['is_error'])
 
     def test_child_session_does_not_replace_parent_identity(self):
-        self.event('muse/sessionReady', {'sessionId': 'parent', 'modelId': 'muse-wonder-full-1.0'})
+        self.event('muse/sessionReady', {'sessionId': 'parent', 'modelId': 'muse-spark-1.3'})
         self.event('session/started', {'session': {'sessionId': 'child'}})
         self.assertEqual(self.state.engine_session_id, 'parent')
 
@@ -129,6 +129,6 @@ class MuseAdapterTests(unittest.TestCase):
             self.assertNotIn('TEST_FIXTURE', ' '.join(cmd))
             self.assertNotIn('META_API_KEY', env)
             self.assertEqual(os.stat(private_file).st_mode & 0o777, 0o600)
-            self.assertEqual(json.loads(private_file.read_text())['model'], 'muse-wonder-full-1.0')
+            self.assertEqual(json.loads(private_file.read_text())['model'], 'muse-spark-1.3')
             self.adapter.cleanup(spec)
             self.assertFalse(private_file.parent.exists())

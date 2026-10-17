@@ -25,8 +25,7 @@ from ttakkari.runs import worker_routing as routing
 
 SONNET = "claude-sonnet-5-5-high"
 FLASH = "gemini-3.8-flash-high"
-MUSE_FULL = "muse-wonder-full-1.0"
-MUSE_SPARK = "muse-spark-1.3"
+MUSE_MODEL = "muse-spark-1.3"
 
 
 @pytest.fixture
@@ -65,7 +64,7 @@ def engines(policy, task):
 def test_default_policy_and_acceptance_exclude_muse():
     assert not routing.muse_auto_enabled()
     assert "muse" not in {e for task in routing.policy() for e in engines(routing.policy(), task)}
-    assert not routing.accepts_model("general", MUSE_FULL)
+    assert not routing.accepts_model("general", MUSE_MODEL)
     assert '"engine": "muse"' not in model_routing_note()
 
 
@@ -80,12 +79,12 @@ def test_both_flags_are_required(monkeypatch):
 
 def test_enabled_policy_places_muse_only_in_general_and_routine_first_stage(muse_gate):
     policy = routing.policy()
-    assert policy["general"][0] == [{"engine": "antigravity", "model": SONNET}, {"engine": "muse", "model": MUSE_FULL}]
-    assert policy["routine"][0] == [{"engine": "antigravity", "model": FLASH}, {"engine": "muse", "model": MUSE_SPARK}]
+    assert policy["general"][0] == [{"engine": "antigravity", "model": SONNET}, {"engine": "muse", "model": MUSE_MODEL}]
+    assert policy["routine"][0] == [{"engine": "antigravity", "model": FLASH}, {"engine": "muse", "model": MUSE_MODEL}]
     for task in ("design", "verification", "reasoning"):
         assert "muse" not in engines(policy, task)
-    assert routing.accepts_model("general", MUSE_FULL) and routing.accepts_model("routine", MUSE_SPARK)
-    assert not routing.accepts_model("verification", MUSE_FULL)
+    assert routing.accepts_model("general", MUSE_MODEL) and routing.accepts_model("routine", MUSE_MODEL)
+    assert not routing.accepts_model("verification", MUSE_MODEL)
     assert '"engine": "muse"' in model_routing_note()
     # The default model of an auto session stays the first stage's first entry, never Muse.
     assert routing.ROUTES["general"][0][0][1] == SONNET
@@ -103,10 +102,9 @@ def test_environment_flags_cannot_bypass_unverified_muse_acceptance_latch(monkey
 
 def test_muse_results_need_independent_verification_but_design_does_not():
     for task in ("general", "routine"):
-        assert routing.needs_independent_verification(task, MUSE_FULL)
-        assert routing.needs_independent_verification(task, MUSE_SPARK)
-    assert not routing.needs_independent_verification("design", MUSE_FULL)
-    assert routing.verifier_recommendation(MUSE_FULL)["excluded_family"] == "muse"
+        assert routing.needs_independent_verification(task, MUSE_MODEL)
+    assert not routing.needs_independent_verification("design", MUSE_MODEL)
+    assert routing.verifier_recommendation(MUSE_MODEL)["excluded_family"] == "muse"
     assert routing.verifier_recommendation()["excluded_family"] == "gemini-3.8-flash"
     assert all(engine != "muse" for stage in routing.ROUTES["verification"] for engine, _ in stage)
 
@@ -115,14 +113,14 @@ def test_pinned_stages_follow_the_gate_and_do_not_offer_a_second_muse_model(monk
     def flat(stages):
         return {pair for stage in stages for pair in stage}
 
-    assert ("muse", MUSE_FULL) not in flat(routing.pinned_stages("claude", task_type="general"))
+    assert ("muse", MUSE_MODEL) not in flat(routing.pinned_stages("claude", task_type="general"))
     settings = get_settings()
     monkeypatch.setattr(settings, "muse_enabled", True)
     monkeypatch.setattr(settings, "muse_auto_routing", True)
     monkeypatch.setattr(routing, "MUSE_AUTO_ROUTING_ACCEPTED", True)
-    assert ("muse", MUSE_FULL) in flat(routing.pinned_stages("claude", task_type="general"))
+    assert ("muse", MUSE_MODEL) in flat(routing.pinned_stages("claude", task_type="general"))
     muse_pinned = routing.pinned_stages("muse", task_type="routine")
-    assert [pair for pair in flat(muse_pinned) if pair[0] == "muse"] == [("muse", MUSE_FULL)]
+    assert [pair for pair in flat(muse_pinned) if pair[0] == "muse"] == [("muse", MUSE_MODEL)]
 
 
 async def test_gate_off_keeps_sonnet_even_with_idle_muse_account(client, auth, make_dir, muse):
@@ -136,7 +134,7 @@ async def test_general_prefers_muse_when_its_measured_headroom_is_larger(client,
     muse_usage(muse, used=0)
     response, h = await spawn(client, auth, make_dir, task_type="general")
     run = await result(client, auth, response)
-    assert (run["status"], run["engine"], run["model"]) == ("succeeded", "muse", MUSE_FULL), run
+    assert (run["status"], run["engine"], run["model"]) == ("succeeded", "muse", MUSE_MODEL), run
     wid = response.json()["worker_id"]
     detail = (await client.get(f"/api/orchestrator/workers/{wid}", headers=h)).json()
     assert detail["verification_required"] is True and detail["verification_status"] == "pending"
@@ -150,7 +148,7 @@ async def test_routine_can_use_muse_spark_when_it_has_more_room_than_flash(clien
     quota(agy_id(accounts), gemini=40)
     response, _ = await spawn(client, auth, make_dir, task_type="routine")
     run = await result(client, auth, response)
-    assert (run["engine"], run["model"]) == ("muse", MUSE_SPARK), run
+    assert (run["engine"], run["model"]) == ("muse", MUSE_MODEL), run
 
 
 async def test_busy_muse_account_yields_to_better_headroom(client, auth, make_dir, muse, muse_gate, accounts):
@@ -181,7 +179,7 @@ async def test_muse_absorbs_general_when_sonnet_pool_is_exhausted_before_flash(c
     muse_usage(muse, used=10)
     response, _ = await spawn(client, auth, make_dir, task_type="general")
     run = await result(client, auth, response)
-    assert (run["engine"], run["model"]) == ("muse", MUSE_FULL), run
+    assert (run["engine"], run["model"]) == ("muse", MUSE_MODEL), run
 
 
 async def test_unknown_muse_with_exhausted_sonnet_uses_the_existing_flash_fallback(client, auth, make_dir, muse, muse_gate, accounts):
@@ -210,5 +208,5 @@ async def test_account_usage_reports_the_gate_and_muse_policy(client, auth, make
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     body = (await client.get("/api/orchestrator/accounts/usage", headers=_orch(issue_token(orch["id"])))).json()
     assert body["muse_auto_routing"] is True
-    assert {"engine": "muse", "model": MUSE_FULL} in body["worker_routing"]["general"][0]
+    assert {"engine": "muse", "model": MUSE_MODEL} in body["worker_routing"]["general"][0]
     assert "Muse never verifies" in body["note"]

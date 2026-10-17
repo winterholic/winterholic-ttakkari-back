@@ -45,6 +45,7 @@ os.environ.update({
     "TTAKKARI_JWT_SECRET": "test-secret-test-secret-test-secret-0123456789",
     "TTAKKARI_CLAUDE_BIN": str(FAKES / "fake_claude.py"),
     "TTAKKARI_CODEX_BIN": str(FAKES / "fake_codex.py"),
+    "TTAKKARI_ANTIGRAVITY_MODEL_PROBE": "false",
     "TTAKKARI_RUN_TIMEOUT_SECONDS": "30",
     "TTAKKARI_CANCEL_GRACE_SECONDS": "1",
     "TTAKKARI_CORS_ORIGINS": '["http://localhost:5173"]',

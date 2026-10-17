@@ -194,6 +194,12 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
             continue
         if p.engine in {"antigravity", "muse"}:
             p = replace(p, model=model or get_settings().worker_default_models[p.engine]["model"])
+        if p.engine == "antigravity":
+            from ttakkari.runs import agy_models
+            await agy_models.ensure_known(p)
+            if reason := agy_models.unsupported_reason(p):
+                agy_models.note_excluded(p, reason)
+                continue
         until = profile_limited_until(p)
         if until:
             blocked.append((p, until))

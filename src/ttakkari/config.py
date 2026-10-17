@@ -168,6 +168,8 @@ class Settings(BaseSettings):
     claude_bin: str = "claude"
     codex_bin: str = "codex"
     antigravity_bin: str = "/opt/homebrew/bin/agy"
+    # Ask each account's own CLI which models it can run (`agy models`); off in tests.
+    antigravity_model_probe: bool = True
     # Explicit Muse runs are available by default; auto-routing still requires separate acceptance.
     muse_enabled: bool = True
     # Joins Muse to auto worker routing (general/routine). Also requires the code acceptance latch;

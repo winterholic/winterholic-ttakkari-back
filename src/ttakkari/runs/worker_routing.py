@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
 from ttakkari.model_catalog import quota_group, supports_effort
-from ttakkari.runs import profiles, usage
+from ttakkari.runs import agy_models, profiles, usage
 
 TaskType = Literal["general", "routine", "design", "verification", "reasoning"]
 POLICY_VERSION = "worker-routing-v2"
@@ -314,4 +314,6 @@ def receipt(task_type, selected, candidates, blocked, counts, *, trigger, fallba
            "reason": "task_fit_then_known_quota_then_stage_then_headroom_per_run"}
     if fallback_from is not None:
         out["fallback_from"] = fallback_from
+    if excluded := agy_models.exclusions():
+        out["excluded"] = excluded
     return out

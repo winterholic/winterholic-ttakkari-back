@@ -57,7 +57,7 @@ from ttakkari.orchestrator.runtime import (
     mcp_server_spec,
 )
 from ttakkari.push.service import PushKind, notify, notify_run_finished
-from ttakkari.runs import context_usage, desk, events, worker_routing
+from ttakkari.runs import agy_models, context_usage, desk, events, worker_routing
 from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
@@ -790,6 +790,16 @@ class RunManager:
                     "account": prof.name, "engine": prof.engine, "model": model, "reset_at": _iso(reset_at),
                     "detail": (state.error or tail or "")[:300],
                 })
+            # 계정이 모르는 모델이라 CLI 가 거절했다. 같은 계정·모델을 다시 고르지 않고 다음 후보로 넘어간다.
+            invalid_model = (failed and not stopped and prof.engine == "antigravity"
+                             and agy_models.is_invalid_model(*texts))
+            if invalid_model:
+                agy_models.reject(prof.id, prof.model, account=prof.name, detail=(state.error or tail or ""))
+                remaining = [p for p in remaining if (p.id, p.model) != (prof.id, prof.model)]
+                events.append(db, run, "account.model_unsupported", {
+                    "account": prof.name, "engine": prof.engine, "model": prof.model,
+                    "detail": (state.error or tail or "")[:300],
+                })
             # 이 Run 이 도는 동안 다른 Run 이 한도에 걸린 계정은 넘어갈 후보에서 뺀다.
             remaining = [p for p in remaining if not profiles_mod.profile_limited_until(p)]
             if missing and task_type:
@@ -798,7 +808,7 @@ class RunManager:
                 remaining = [p for p in remaining if p.engine != prof.engine]
             elif missing and pinned_fallback:
                 remaining = []
-            if stopped or not failed or not (missing or limited) or not remaining:
+            if stopped or not failed or not (missing or limited or invalid_model) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
                     return
@@ -821,7 +831,7 @@ class RunManager:
             last_fallback = {
                 "from": prof.name, "from_engine": prof.engine, "from_model": from_model,
                 "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
-                "reason": "missing" if missing else "usage_limit",
+                "reason": "missing" if missing else "invalid_model" if invalid_model else "usage_limit",
                 "fallback_tier": tier,
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
                 # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄

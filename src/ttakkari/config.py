@@ -168,8 +168,8 @@ class Settings(BaseSettings):
     claude_bin: str = "claude"
     codex_bin: str = "codex"
     antigravity_bin: str = "/opt/homebrew/bin/agy"
-    # Activation stays explicit until real coding, guard and operating-runtime checks pass.
-    muse_enabled: bool = False
+    # Explicit Muse runs are available by default; auto-routing still requires separate acceptance.
+    muse_enabled: bool = True
     # Joins Muse to auto worker routing (general/routine). Also requires the code acceptance latch;
     # keep off until coding, MCP-tool and resume checks pass on the deployed runtime.
     muse_auto_routing: bool = False

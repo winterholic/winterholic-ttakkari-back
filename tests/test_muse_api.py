@@ -60,7 +60,10 @@ async def test_muse_profile_change_discards_previous_login(client, auth, monkeyp
     assert row['login_command']
 
 
-async def test_muse_account_usage_reports_execution_disabled(client, auth, make_dir):
+async def test_muse_account_usage_reports_execution_disabled_when_explicitly_disabled(client, auth, make_dir, monkeypatch):
+    from ttakkari.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "muse_enabled", False)
     profile = make_dir()
     created = await client.post('/api/accounts', headers=auth,
         json={'name': 'Muse fixture', 'engine': 'muse', 'config_dir': str(profile)})
@@ -73,6 +76,22 @@ async def test_muse_account_usage_reports_execution_disabled(client, auth, make_
     assert row['error']
 
 
+def test_muse_execution_is_enabled_by_default_without_enabling_auto_routing():
+    from ttakkari.config import Settings
+    from ttakkari.runs import worker_routing
+
+    assert Settings(_env_file=None).muse_enabled is True
+    assert Settings(_env_file=None).muse_auto_routing is False
+    assert worker_routing.MUSE_AUTO_ROUTING_ACCEPTED is False
+
+
+async def test_muse_account_usage_reports_execution_enabled_by_default(client, auth):
+    created = await client.post('/api/accounts', headers=auth, json={'name': 'Muse fixture', 'engine': 'muse'})
+    rows = (await client.get('/api/accounts/usage', headers=auth)).json()
+    row = next(row for row in rows if row['id'] == created.json()['id'])
+    assert row['execution_enabled'] is True
+
+
 async def test_non_coding_model_is_rejected_before_session_creation(client, auth, new_session):
     ws, _sess = await new_session()
     response = await client.post('/api/sessions', headers=auth,
@@ -80,7 +99,10 @@ async def test_non_coding_model_is_rejected_before_session_creation(client, auth
     assert response.status_code == 422
 
 
-async def test_disabled_muse_run_fails_without_mock_success(client, auth, new_session):
+async def test_explicitly_disabled_muse_run_fails_without_mock_success(client, auth, new_session, monkeypatch):
+    from ttakkari.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "muse_enabled", False)
     await client.post('/api/accounts', headers=auth, json={'name': 'Muse fixture', 'engine': 'muse'})
     _ws, sess = await new_session(engine='muse')
     done = await run_to_end(client, auth, sess['id'], 'Do not execute a model.')

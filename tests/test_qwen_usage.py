@@ -225,5 +225,68 @@ async def test_flash_usage_endpoint_is_authenticated_and_independent(client, aut
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert response.json()["input_tokens"] == 42
+    assert "today" in response.json()
+    assert "week" in response.json()
     intake = await client.get("/api/accounts/qwen-usage", headers=auth)
     assert intake.json()["today"]["input_tokens"] == 0
+
+
+@pytest.mark.asyncio
+async def test_flash_usage_records_deltas_and_survives_restarts():
+    from ttakkari.runs import qwen_flash_monitor
+
+    now = datetime.now(UTC)
+
+    # 1. First observation on a fresh database
+    obs1 = {
+        "model": "Qwen3.8-Flash-Next Q2_K",
+        "server": {"status": "running"},
+        "metrics_status": "available",
+        "input_tokens": 100,
+        "cached_input_tokens": 20,
+        "output_tokens": 10,
+    }
+    async with sessionmaker()() as db:
+        await qwen_flash_monitor.record_observation(db, obs1, recorded_at=now)
+        summ1 = await qwen_flash_monitor.summary(db, now=now, live=obs1)
+    assert summ1["today"]["input_tokens"] == 100
+    assert summ1["today"]["cached_input_tokens"] == 20
+    assert summ1["today"]["output_tokens"] == 10
+    assert summ1["today"]["total_tokens"] == 110
+
+    # 2. Second observation after simulated backend restart (new DB session, monotonic increase)
+    obs2 = {
+        "model": "Qwen3.8-Flash-Next Q2_K",
+        "server": {"status": "running"},
+        "metrics_status": "available",
+        "input_tokens": 150,
+        "cached_input_tokens": 25,
+        "output_tokens": 15,
+    }
+    async with sessionmaker()() as db:
+        await qwen_flash_monitor.record_observation(db, obs2, recorded_at=now)
+        summ2 = await qwen_flash_monitor.summary(db, now=now, live=obs2)
+    # Delta was 50 input, 5 cached, 5 output; cumulative is 150 input, 25 cached, 15 output
+    assert summ2["today"]["input_tokens"] == 150
+    assert summ2["today"]["cached_input_tokens"] == 25
+    assert summ2["today"]["output_tokens"] == 15
+    assert summ2["today"]["total_tokens"] == 165
+
+    # 3. Third observation after simulated llama.cpp server restart (counter reset to lower value)
+    obs3 = {
+        "model": "Qwen3.8-Flash-Next Q2_K",
+        "server": {"status": "running"},
+        "metrics_status": "available",
+        "input_tokens": 30,
+        "cached_input_tokens": 10,
+        "output_tokens": 5,
+    }
+    async with sessionmaker()() as db:
+        await qwen_flash_monitor.record_observation(db, obs3, recorded_at=now)
+        summ3 = await qwen_flash_monitor.summary(db, now=now, live=obs3)
+    # Server restarted so 30, 10, 5 is added as a fresh delta on top of existing 150, 25, 15
+    assert summ3["today"]["input_tokens"] == 180
+    assert summ3["today"]["cached_input_tokens"] == 35
+    assert summ3["today"]["output_tokens"] == 20
+    assert summ3["today"]["total_tokens"] == 200
+    assert summ3["week"]["total_tokens"] == 200

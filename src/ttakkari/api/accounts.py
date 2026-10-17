@@ -153,11 +153,11 @@ async def list_accounts(_: User, db: Db) -> list[AccountOut]:
 
 
 @router.get("/qwen-flash-usage")
-async def qwen_flash_usage(_: User, response: Response) -> dict:
-    """Standalone Flash Next server counters, independent of intake usage."""
+async def qwen_flash_usage(_: User, db: Db, response: Response) -> dict:
+    """Standalone Flash Next server counters, with persisted daily/weekly windows."""
     from ttakkari.runs import qwen_flash_monitor
     response.headers["Cache-Control"] = "no-store"
-    return await qwen_flash_monitor.snapshot()
+    return await qwen_flash_monitor.snapshot_with_history(db)
 
 
 @router.get("/qwen-usage")

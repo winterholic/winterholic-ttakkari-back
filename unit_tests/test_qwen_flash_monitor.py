@@ -93,3 +93,16 @@ async def test_loading_and_metrics_disabled_are_distinct():
         assert result['server']['status'] == expected
         assert result['output_tokens'] is None
         assert result['metrics_status'] == 'unavailable'
+
+
+def test_flash_period_bounds_use_kst_today_and_monday_start():
+    from datetime import UTC, datetime
+    # Sunday 23:59:59 -> following Monday 00:00 KST crosses both day and week.
+    before = datetime(2026, 10, 18, 14, 59, 59, tzinfo=UTC)
+    after = datetime(2026, 10, 18, 15, 0, 0, tzinfo=UTC)
+    bounds_before = monitor.period_bounds(before)
+    bounds_after = monitor.period_bounds(after)
+    assert bounds_before["today"][0] == datetime(2026, 10, 17, 15, tzinfo=UTC)
+    assert bounds_before["week"][0] == datetime(2026, 10, 11, 15, tzinfo=UTC)
+    assert bounds_after["today"][0] == datetime(2026, 10, 18, 15, tzinfo=UTC)
+    assert bounds_after["week"][0] == datetime(2026, 10, 18, 15, tzinfo=UTC)

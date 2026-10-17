@@ -306,6 +306,24 @@ class QwenTokenUsage(Base):
     recorded_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class QwenFlashUsage(Base):
+    """Persisted usage increments and observation samples for standalone Qwen Flash Next."""
+
+    __tablename__ = "qwen_flash_usage"
+    __table_args__ = (
+        Index("ix_qwen_flash_usage_recorded_at", "recorded_at"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    raw_prompt_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    raw_cached_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    raw_output_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+
 class RuntimeGeneration(Base):
     __tablename__ = "runtime_generations"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)

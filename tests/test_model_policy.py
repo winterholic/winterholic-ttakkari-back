@@ -37,7 +37,9 @@ async def test_worker_defaults_to_general_task_policy_and_pinned_engine_defaults
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
     auto = (await client.post("/api/orchestrator/workers", json={"title": "a", "prompt": "go"}, headers=h)).json()
-    assert (auto["engine"], auto["model"], auto["effort"]) == ("auto", "claude-sonnet-5-5-high", "high")
+    # The default route is Antigravity, whose model encodes effort in its ID;
+    # sending a separate effort value is unsupported by its CLI.
+    assert (auto["engine"], auto["model"], auto["effort"]) == ("auto", "claude-sonnet-5-5-high", None)
     claude = (await client.post("/api/orchestrator/workers", json={"title": "c", "prompt": "go", "engine": "claude"},
                                 headers=h)).json()
     assert (claude["model"], claude["effort"]) == ("sonnet", "high")

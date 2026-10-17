@@ -95,10 +95,16 @@ class MuseAdapterTests(unittest.TestCase):
         self.assertTrue(self.state.limit_hit)
         self.assertEqual(self.state.limit_resets_at, 1792656800)
 
-    def test_execution_disabled_by_default(self):
+    def test_explicit_execution_is_enabled_by_default_but_auto_routing_stays_locked(self):
+        # d0148cf opened explicit Muse runs by default; auto routing needs separate acceptance.
+        defaults = Settings(_env_file=None)
+        self.assertTrue(defaults.muse_enabled)
+        self.assertFalse(defaults.muse_auto_routing)
+
+    def test_execution_refused_when_explicitly_disabled(self):
         spec = LaunchSpec(self.cwd, 'task', None, None, None, self.cwd, [self.cwd], 'note')
         with (
-            patch('ttakkari.agents.muse.get_settings', return_value=Settings(_env_file=None)),
+            patch('ttakkari.agents.muse.get_settings', return_value=Settings(_env_file=None, muse_enabled=False)),
             self.assertRaisesRegex(RuntimeError, 'disabled'),
         ):
             self.adapter.build_command(spec, {})

@@ -20,7 +20,7 @@ READY_CONTRACT = "qwen-local-readiness-v1"
 class QwenLocalAdapter:
     engine = "qwen-local"
 
-    def __init__(self, *, worker_path: Path, enabled: bool = False, turns: int = 6):
+    def __init__(self, *, worker_path: Path, enabled: bool = False, turns: int = 20):
         self.worker_path = Path(worker_path).expanduser()
         self.enabled = enabled
         if not 1 <= turns <= 60:

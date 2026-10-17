@@ -106,6 +106,7 @@ class Settings(BaseSettings):
         "qwen-local": ["Qwen3.8-Flash-Next-Q2_K"],
     }
     qwen_local_enabled: bool = False
+    qwen_local_turns: int = Field(default=20, ge=1, le=60)
     qwen_local_worker_path: Path = HOME / "development/projects/qwen-local-harness/bin/qwen-worker"
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).

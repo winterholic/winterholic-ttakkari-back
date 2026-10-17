@@ -172,6 +172,8 @@ legacy 빌드는 기존 체크아웃을 사용하므로 예약 이후 변경했�
 
 `spawn_worker(engine="qwen-local", task_type="general")`은 로컬 `qwen-worker run` 어댑터를 명시 선택한다. `engine="auto"`의 기존 작업자 정책에는 Qwen을 넣지 않는다. Qwen 경로에는 Ttakkari MCP 서버·계정 인증 환경을 전달하지 않으며, 로컬 작업에는 cloud quota/account 사용량을 매기지 않는다. 라우팅 기록은 `qwen-local` 실제 엔진·Qwen3.8 Q2_K 모델·개인/회사 pool scope·workspace를 기록한다. 접수용 Qwen3.5-4B와는 독립이다.
 
+작업 턴 기본값은 standalone과 같은 20회다. `TTAKKARI_QWEN_LOCAL_TURNS`로 1~60회 안에서 조정한다.
+
 기본값 `TTAKKARI_QWEN_LOCAL_ENABLED=false`는 fail-closed다. 켜져 있어도 고정 `qwen-worker doctor`가 JSON으로 `contract: qwen-local-readiness-v1`과 `checks.seatbelt`, `checks.hostmon`, `checks.fixture` 전부 `true`를 반환하지 않으면 작업을 시작하지 않는다. 현재 standalone 하네스 doctor는 이 readiness 계약을 제공하지 않으며, command sandbox에서 sandbox/sysctl 검사가 EPERM으로 막힌 상태다. 따라서 현재 adapter는 운영 ready가 아니다. 자동 cloud fallback도 없다.
 
 ## macOS Codex 브라우저 검증

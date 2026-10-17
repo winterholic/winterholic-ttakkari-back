@@ -18,7 +18,7 @@ def test_command_is_fixed_and_task_is_out_of_band(tmp_path: Path):
     s = spec(tmp_path, resume="qwen-session")
     argv = adapter.build_command(s, {})
     assert argv == [str(tmp_path / "bin/qwen-worker"), "run", "--workspace", str(tmp_path),
-                    "--task-file", argv[argv.index("--task-file") + 1], "--turns", "6",
+                    "--task-file", argv[argv.index("--task-file") + 1], "--turns", "20",
                     "--effort", "high", "--resume", "qwen-session"]
     task_path = Path(argv[argv.index("--task-file") + 1])
     assert task_path.parent == s.outbox

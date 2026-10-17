@@ -70,7 +70,8 @@ ADAPTERS: dict[str, AgentAdapter] = {
     "muse": MuseAdapter(),
 }
 QWEN_LOCAL_ADAPTER = QwenLocalAdapter(worker_path=get_settings().qwen_local_worker_path,
-                                      enabled=get_settings().qwen_local_enabled)
+                                      enabled=get_settings().qwen_local_enabled,
+                                      turns=get_settings().qwen_local_turns)
 MAX_TOUCHED_ARTIFACTS = 50
 MAX_OUTBOX_FILES = 200
 MAX_CHECKPOINT_UNTRACKED = 500

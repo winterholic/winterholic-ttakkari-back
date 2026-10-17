@@ -1,6 +1,9 @@
 """엔진 계정 관리(ADR 0006): 이름·켜기·우선순위가 실제 실행 순서를 바꾼다."""
 from __future__ import annotations
 
+import time
+import uuid
+
 from conftest import HOME, agent_calls
 from helpers import run_to_end, start_run, wait_event
 
@@ -545,3 +548,87 @@ async def test_antigravity_check_endpoint_confirms_only_with_user_supplied_ident
     host = next(a for a in await _accounts(client, auth) if a["engine"] == "antigravity" and a["config_dir"] is None)
     refused = await client.post(f"/api/accounts/{host['id']}/antigravity/check", json={}, headers=auth)
     assert refused.status_code == 422
+
+
+async def test_usage_cached_endpoint_never_reads_provider(client, auth, monkeypatch):
+    from ttakkari.runs import usage
+
+    async def boom(*_a, **_k):
+        raise AssertionError("cached 엔드포인트는 공급자를 읽으면 안 된다")
+    monkeypatch.setattr(usage, "usage_for", boom)
+    usage.clear_cache()
+    accs = await _accounts(client, auth)
+    rows = (await client.get("/api/accounts/usage/cached", headers=auth)).json()
+    assert [r["id"] for r in rows] == [a["id"] for a in accs]
+    assert all(r["windows"] == [] and r["updated_at"] is None and r["stale"] is True and r["refreshing"] is False for r in rows)
+
+
+async def test_usage_single_account_endpoint(client, auth, monkeypatch):
+    from ttakkari.runs import usage
+
+    async def fake(account_id, engine, config_dir, *, refresh=False):
+        return usage.Usage(windows=[usage.Window("five_hour", "5시간", 11, None)], source="api", updated_at=time.time())
+    monkeypatch.setattr(usage, "usage_for", fake)
+    accs = await _accounts(client, auth)
+    row = (await client.get(f"/api/accounts/{accs[1]['id']}/usage", headers=auth)).json()
+    assert row["id"] == accs[1]["id"] and row["rank"] == 2 and row["windows"][0]["percent"] == 11 and row["stale"] is False
+    assert (await client.get(f"/api/accounts/{uuid.uuid4()}/usage", headers=auth)).status_code == 404
+
+
+async def test_usage_slow_account_does_not_hold_the_others(client, auth, monkeypatch):
+    import asyncio
+
+    from ttakkari.api import accounts as accounts_api
+    from ttakkari.runs import usage
+
+    accs = await _accounts(client, auth)
+    slow_id = uuid.UUID(accs[0]["id"])
+    release = asyncio.Event()
+    finished: list[uuid.UUID] = []
+
+    async def fake(account_id, engine, config_dir, *, refresh=False):
+        if account_id == slow_id:
+            await release.wait()
+        finished.append(account_id)
+        return usage.Usage(windows=[usage.Window("five_hour", "5시간", 7, None)], source="api", updated_at=time.time())
+    monkeypatch.setattr(usage, "usage_for", fake)
+    monkeypatch.setattr(accounts_api, "USAGE_REQUEST_TIMEOUT", 0.2)
+    rows = {r["id"]: r for r in (await client.get("/api/accounts/usage", headers=auth)).json()}
+    assert rows[accs[0]["id"]]["windows"] == [] and rows[accs[0]["id"]]["error"]
+    assert all(r["windows"][0]["percent"] == 7 for k, r in rows.items() if k != accs[0]["id"])
+    assert slow_id not in finished
+    release.set()
+
+
+async def test_usage_for_shares_one_fetch_between_concurrent_callers(monkeypatch):
+    import asyncio
+
+    from ttakkari.runs import usage
+
+    usage.clear_cache()
+    calls = 0
+    gate = asyncio.Event()
+
+    async def fake_codex(_d):
+        nonlocal calls
+        calls += 1
+        await gate.wait()
+        return usage.Usage(windows=[usage.Window("five_hour", "5시간", 3, None)], source="api", updated_at=time.time())
+    monkeypatch.setattr(usage, "_fetch_codex", fake_codex)
+    aid = uuid.uuid4()
+    first = asyncio.ensure_future(usage.usage_for(aid, "codex", None, refresh=True))
+    second = asyncio.ensure_future(usage.usage_for(aid, "codex", None, refresh=True))
+    await asyncio.sleep(0.05)
+    assert usage.fetching(aid)
+    gate.set()
+    a, b = await asyncio.gather(first, second)
+    assert calls == 1 and a is b and not usage.fetching(aid)
+    # 요청이 취소돼도 조회는 이어져 캐시를 채운다.
+    usage.clear_cache()
+    gate.clear()
+    waiter = asyncio.ensure_future(usage.usage_for(aid, "codex", None, refresh=True))
+    await asyncio.sleep(0.05)
+    waiter.cancel()
+    gate.set()
+    await asyncio.sleep(0.05)
+    assert usage.cached(aid) is not None and not usage.fetching(aid)

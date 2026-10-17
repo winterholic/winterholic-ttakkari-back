@@ -466,7 +466,17 @@ def codex_usage(config_dir: str | None) -> Usage:
 _agy_cache_roots: dict[uuid.UUID, str | None] = {}
 
 
-async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, *, refresh: bool = False) -> Usage:
+# 같은 계정을 동시에 읽는 호출(수집기·화면·재시도)은 조회 하나를 같이 기다린다. 요청이 먼저 끝나도(시간 초과·탭 닫힘) 조회는 이어져 캐시를 채운다.
+_inflight: dict[tuple[uuid.UUID, str, str | None], asyncio.Task[Usage]] = {}
+
+
+def fetching(account_id: uuid.UUID) -> bool:
+    """이 계정의 실제 조회가 지금 진행 중인가."""
+    return any(k[0] == account_id for k in _inflight)
+
+
+def _ready_value(account_id: uuid.UUID, engine: str, config_dir: str | None, refresh: bool) -> Usage | None:
+    """네트워크 없이 바로 답할 수 있으면 그 값(격리 오류 또는 TTL 안의 캐시), 아니면 None."""
     # A non-default account must never inherit the host's quota, including a
     # cached value measured before its account path was changed.
     if engine == "antigravity" and config_dir:
@@ -484,6 +494,30 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     ttl = max(TTL, get_settings().usage_poll_seconds)
     if hit and not refresh and time.time() - hit[0] < ttl:
         return hit[1]
+    return None
+
+
+async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, *, refresh: bool = False) -> Usage:
+    ready = _ready_value(account_id, engine, config_dir, refresh)
+    if ready is not None:
+        return ready
+    key = (account_id, engine, config_dir)
+    task = _inflight.get(key)
+    if task is None:
+        task = asyncio.ensure_future(_fetch_live(account_id, engine, config_dir))
+        _inflight[key] = task
+
+        def _done(t: asyncio.Task[Usage]) -> None:
+            if _inflight.get(key) is t:
+                del _inflight[key]
+            if not t.cancelled() and t.exception():
+                log.warning("usage fetch crashed: %s", type(t.exception()).__name__)
+
+        task.add_done_callback(_done)
+    return await asyncio.shield(task)
+
+
+async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None) -> Usage:
     observed_now = True
     if engine == "muse":
         u = await _fetch_muse(config_dir)
@@ -532,6 +566,8 @@ def muse_usage_from_probe(body: dict[str, Any]) -> Usage:
     if not isinstance(observed, int) or isinstance(observed, bool) or observed <= 0:
         return Usage(error="Muse 사용량 관측 시각이 없어요", login=login)
     return Usage(windows=windows, source="muse_cli", plan=snapshot.get("tier"), updated_at=observed / 1000, login=login)
+
+
 
 
 async def _fetch_muse(config_dir: str | None) -> Usage:

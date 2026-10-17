@@ -320,35 +320,77 @@ class AccountUsageOut(BaseModel):
     error: str | None
     updated_at: float | None
     execution_enabled: bool = True
+    # 새 값을 읽는 조회가 아직 진행 중(요청 시간 초과로 마지막 값을 대신 준 경우 포함).
+    refreshing: bool = False
+
+
+# 느린 공급자(Muse·Antigravity 하위 프로세스) 하나가 응답 전체를 붙잡지 않게 요청당 기다리는 한도.
+# 넘으면 마지막으로 본 값을 refreshing=True 로 돌려주고, 조회는 뒤에서 이어져 캐시를 채운다.
+USAGE_REQUEST_TIMEOUT = 25.0
+
+
+def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usage_mod.Usage, *, refreshing: bool = False,
+               error: str | None = None) -> AccountUsageOut:
+    login, _label = profiles.identity(a.engine, a.config_dir)
+    now = time.time()
+    stale = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
+    headroom = None if stale else min((max(0, a.max_used_percent - w.percent) for w in u.windows
+                                       if w.key in ("five_hour", "seven_day")
+                                       and not (w.resets_at and w.resets_at <= now)), default=None)
+    return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,
+                           max_used_percent=a.max_used_percent, remaining_to_limit_percent=headroom,
+                           stale=stale,
+                           work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=u.login or login,
+                           cooldown_seconds=profiles.cooldown_remaining(a.id),
+                           windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
+                           reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
+                           credits_balance=u.credits_balance, credits_error=u.credits_error,
+                           error=u.error or error, updated_at=u.updated_at, refreshing=refreshing,
+                           execution_enabled=profiles.execution_ready(profiles._profile(a)) and
+                                             (a.engine != "muse" or get_settings().muse_enabled))
+
+
+async def _ordered_usage_accounts(db: Db) -> tuple[list[tuple[int, EngineAccount]], dict[uuid.UUID, int]]:
+    ordered = list(enumerate(await profiles.effective_order(db)))
+    work_rank = {a.id: i + 1 for i, a in enumerate(await profiles.effective_order(db, "work"))}
+    return ordered, work_rank
+
+
+async def _live_usage(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], refresh: bool) -> AccountUsageOut:
+    try:
+        u = await asyncio.wait_for(usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=refresh), USAGE_REQUEST_TIMEOUT)
+    except TimeoutError:
+        last = usage_mod.cached(a.id) or usage_mod.Usage()
+        return _usage_out(i, a, work_rank, last, refreshing=True, error="새 사용량을 읽는 중이에요 · 마지막 관측값")
+    return _usage_out(i, a, work_rank, u, refreshing=usage_mod.fetching(a.id))
 
 
 @router.get("/usage", response_model=list[AccountUsageOut])
 async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]:
-    """계정별 사용량. 개인 모드의 지금 적용되는 순서(임시 순서 반영), rank 는 그 순서의 번호, work_rank 는 회사 모드 순서의 번호. 계정마다 2분 캐시, refresh 면 새로."""
-    ordered = list(enumerate(await profiles.effective_order(db)))
-    work_rank = {a.id: i + 1 for i, a in enumerate(await profiles.effective_order(db, "work"))}
+    """계정별 사용량. 개인 모드의 지금 적용되는 순서(임시 순서 반영), rank 는 그 순서의 번호, work_rank 는 회사 모드 순서의 번호. 계정마다 2분 캐시, refresh 면 새로.
 
-    async def one(i: int, a: EngineAccount) -> AccountUsageOut:
-        login, _label = profiles.identity(a.engine, a.config_dir)
-        u = await usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=refresh)
-        now = time.time()
-        stale = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
-        headroom = None if stale else min((max(0, a.max_used_percent - w.percent) for w in u.windows
-                                           if w.key in ("five_hour", "seven_day")
-                                           and not (w.resets_at and w.resets_at <= now)), default=None)
-        return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,
-                               max_used_percent=a.max_used_percent, remaining_to_limit_percent=headroom,
-                               stale=stale,
-                               work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=u.login or login,
-                               cooldown_seconds=profiles.cooldown_remaining(a.id),
-                               windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
-                               reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
-                               credits_balance=u.credits_balance, credits_error=u.credits_error,
-                               error=u.error, updated_at=u.updated_at,
-                               execution_enabled=profiles.execution_ready(profiles._profile(a)) and
-                                                 (a.engine != "muse" or get_settings().muse_enabled))
+    계정은 병렬로 읽고, 한 계정이 USAGE_REQUEST_TIMEOUT 을 넘기면 그 계정만 마지막 값으로 대신한다."""
+    ordered, work_rank = await _ordered_usage_accounts(db)
+    return list(await asyncio.gather(*(_live_usage(i, a, work_rank, refresh) for i, a in ordered)))
 
-    return list(await asyncio.gather(*(one(i, a) for i, a in ordered)))
+
+@router.get("/usage/cached", response_model=list[AccountUsageOut])
+async def usage_cached(_: User, db: Db) -> list[AccountUsageOut]:
+    """네트워크 없이 마지막으로 본 값만. 계정 목록·순서·켜기·쿨다운은 지금 값이고 사용량은 캐시 값(없으면 windows 가 비고 updated_at 이 null)이다.
+    화면이 카드를 바로 그린 뒤 계정마다 /{id}/usage 로 새로 읽는다."""
+    ordered, work_rank = await _ordered_usage_accounts(db)
+    return [_usage_out(i, a, work_rank, usage_mod.cached(a.id) or usage_mod.Usage(), refreshing=usage_mod.fetching(a.id))
+            for i, a in ordered]
+
+
+@router.get("/{account_id}/usage", response_model=AccountUsageOut)
+async def account_usage(account_id: uuid.UUID, _: User, db: Db, refresh: bool = False) -> AccountUsageOut:
+    """계정 하나의 사용량. /usage 의 한 줄과 같은 모양이라 카드마다 따로 불러 준비된 것부터 보여 줄 수 있다."""
+    ordered, work_rank = await _ordered_usage_accounts(db)
+    for i, a in ordered:
+        if a.id == account_id:
+            return await _live_usage(i, a, work_rank, refresh)
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "계정을 찾을 수 없어요.")
 
 
 @router.patch("/{account_id}", response_model=AccountOut)

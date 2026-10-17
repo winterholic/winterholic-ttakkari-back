@@ -30,8 +30,9 @@ class GuiIn(BaseModel):
 
 
 class BugIn(BaseModel):
-    status: Literal["unreported", "reported", "resolved"]
+    status: Literal["candidate", "selected", "in_progress", "reported", "resolved", "deferred", "excluded"]
     note: str | None = Field(default=None, max_length=artcraft.NOTE_LIMIT)
+    url: str | None = Field(default=None, max_length=artcraft.URL_LIMIT)
 
 
 @router.get("/apps")
@@ -100,7 +101,7 @@ async def bugs(_: User) -> dict:
 @router.put("/bugs/{bug_id}")
 async def put_bug(bug_id: str, body: BugIn, _: User) -> dict:
     try:
-        return artcraft.set_bug(bug_id, body.status, body.note)
+        return artcraft.set_bug(bug_id, body.status, body.note, body.url)
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
 

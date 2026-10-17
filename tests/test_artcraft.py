@@ -71,20 +71,83 @@ FAKE = textwrap.dedent('''\
 BUGS = textwrap.dedent('''\
     # BUGS.md
 
-    | ID | App(s) | Sev | One line | Verified |
+    | ID | App(s) | Sev | Kind | One line |
     |---|---|---|---|---|
-    | BUG-001 | alpha | S1 | font scan stalls | yes |
-    | BUG-002 | beta, gamma | S2 (security) | no auth | yes |
+    | BUG-001 | alpha | S1 | pr | alpha scans fonts |
 
     ---
 
     ## BUG-001: alpha scans fonts
 
-    **Impact.** slow.
+    - **Repos:** storytold/alpha
+    - **Apps:** alpha
+    - **Severity:** S1
+    - **Kind:** pr
+    - **Difficulty:** medium
+    - **Upstream:** related: checked 2026-10-18, similar alpha#12
+    - **Found:** 2026-10-18
+    - **Verified:** yes, release 1.0.0
+
+    ### Summary
+
+    Font scan stalls every open.
+
+    ### Repro
+
+    ```sh
+    time alpha-cli info in.png
+    ```
+
+    ### Evidence
+
+    ```
+    1:36.66 total
+    ```
+
+    ### Suggestion
+
+    Scan lazily.
 
     ## BUG-002: control channel is open
 
-    Repro text.
+    - **Repos:** storytold/beta, storytold/gamma
+    - **Apps:** all
+    - **Severity:** S2
+    - **Kind:** security
+    - **Difficulty:** hard
+    - **Upstream:** unchecked
+    - **Found:** 2026-10-18
+    - **Verified:** yes
+
+    ### Summary
+
+    No auth on the control port.
+
+    ### Repro
+
+    nc to the port.
+
+    ### Evidence
+
+    ok:true
+
+    ## BUG-003: sloppy entry
+
+    - **Repos:** alpha
+    - **Apps:** alpha
+    - **Severity:** S9
+    - **Difficulty:** easy
+    - **Upstream:** maybe
+    - **Found:** yesterday
+    - **Verified:** no
+
+    ### Summary
+
+    Something.
+
+    ### Notes
+
+    unknown subsection.
 
     ---
 
@@ -105,17 +168,6 @@ def _registry():
     }}
 
 
-STATUS_MD = textwrap.dedent('''\
-    ### Alpha (image editor)
-
-    - **Known bugs:** BUG-001 (font scan), BUG-005
-
-    ### Beta (x)
-
-    - **Known bugs:** -
-    ''')
-
-
 @pytest.fixture
 def fake(tmp_path, monkeypatch):
     base = tmp_path / "artcraft"
@@ -125,7 +177,6 @@ def fake(tmp_path, monkeypatch):
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     (base / "registry.json").write_text(json.dumps(_registry()))
     (base / "BUGS.md").write_text(BUGS)
-    (base / "STATUS.md").write_text(STATUS_MD)
     results = base / "smoke" / "results"
     results.mkdir(parents=True)
     original = {"ts": "2026-10-18T01:14:10+0900", "apps": {
@@ -188,7 +239,7 @@ async def test_overview_shape_and_no_secret_leak(client, auth, fake):
     assert gamma["gui"]["transport"] == "file" and gamma["gui"]["port"] is None
     assert delta["auth"]["mode"] == "key"
     assert alpha["smoke"]["passed"] == 1 and alpha["smoke"]["source"] == "artcraft"
-    assert alpha["known_bugs"] == ["BUG-001", "BUG-005"] and beta["known_bugs"] == []
+    assert alpha["known_bugs"] == ["BUG-001", "BUG-002", "BUG-003"] and beta["known_bugs"] == ["BUG-002"]
     assert alpha["latest"]["tag"] is None
     assert "Cache-Control" in r.headers and r.headers["Cache-Control"] == "no-store"
     # registry 의 key_file·control_file 경로는 어떤 응답에도 나오지 않는다
@@ -381,27 +432,74 @@ async def test_stop_refuses_listening_but_unmanaged_app(client, auth, fake):
     assert r.status_code == 409 and "관제가 켠 앱이 아니" in r.json()["message"]
 
 
-async def test_bugs_list_status_and_persistence(client, auth, fake):
+async def test_bug_details_are_parsed_from_bugs_md(client, auth, fake):
     body = (await client.get("/api/artcraft/bugs", headers=auth)).json()
-    assert [b["id"] for b in body["bugs"]] == ["BUG-001", "BUG-002"]
-    first = body["bugs"][0]
-    assert first["severity"] == "S1" and first["title"] == "alpha scans fonts" and "slow" in first["body"]
-    assert body["bugs"][1]["severity"] == "S2" and body["bugs"][1]["apps"] == "beta, gamma"
-    assert body["counts"] == {"unreported": 2, "reported": 0, "resolved": 0}
-    r = await client.put("/api/artcraft/bugs/BUG-001", json={"status": "reported", "note": " upstream#12\x00 "}, headers=auth)
-    assert r.status_code == 200 and r.json()["status"] == "reported" and r.json()["note"] == "upstream#12"
+    assert [b["id"] for b in body["bugs"]] == ["BUG-001", "BUG-002", "BUG-003"]
+    assert body["apps"] == ["alpha", "beta", "delta", "gamma"]  # all 은 registry 전체로 풀린다
+    one, two, three = body["bugs"]
+    assert one["title"] == "alpha scans fonts" and one["apps"] == ["alpha"] and one["repos"] == ["storytold/alpha"]
+    assert (one["severity"], one["kind"], one["difficulty"]) == ("S1", "pr", "medium")
+    assert one["upstream"] == {"state": "related", "note": "checked 2026-10-18, similar alpha#12"}
+    assert one["found"] == "2026-10-18" and one["verified"].startswith("yes")
+    assert "time alpha-cli info in.png" in one["sections"]["repro"] and one["sections"]["evidence"].strip("`\n") == "1:36.66 total"
+    assert one["sections"]["suggestion"] == "Scan lazily." and one["problems"] == []
+    assert two["kind"] == "security" and two["apps"] == ["alpha", "beta", "delta", "gamma"]
+    # 형식이 어긋난 항목도 숨기지 않고 사유를 보여 준다
+    assert three["severity"] is None and three["kind"] is None and three["upstream"]["state"] == "unchecked"
+    joined = " ".join(three["problems"])
+    for needle in ("Kind", "Severity", "Upstream", "Found", "storytold/<이름>", "### Notes", "### Repro", "### Evidence"):
+        assert needle in joined, needle
+    assert body["problems"] == 1 and body["counts"]["candidate"] == 3
+
+
+async def test_bug_status_flow_history_and_persistence(client, auth, fake):
+    put = lambda body, bug="BUG-001": client.put(f"/api/artcraft/bugs/{bug}", json=body, headers=auth)
+    r = await put({"status": "selected", "note": " 먼저 볼 것\x00 "})
+    assert r.status_code == 200
+    bug = r.json()
+    assert bug["status"] == "selected" and bug["note"] == "먼저 볼 것" and bug["updated_at"]
+    assert [h["status"] for h in bug["history"]] == ["selected"]
+    for status in ("in_progress", "reported"):
+        assert (await put({"status": status})).json()["status"] == status
+    done = (await put({"status": "reported", "url": "https://github.com/storytold/alpha/issues/99"})).json()
+    assert done["url"].endswith("/issues/99") and [h["status"] for h in done["history"]] == ["selected", "in_progress", "reported"]
     artcraft.reset_caches()  # 재시작 후에도 파일에서 읽는다
     again = (await client.get("/api/artcraft/bugs", headers=auth)).json()
-    assert again["counts"]["reported"] == 1 and again["bugs"][0]["updated_at"]
-    assert (await client.put("/api/artcraft/bugs/BUG-002", json={"status": "resolved"}, headers=auth)).status_code == 200
-    back = await client.put("/api/artcraft/bugs/BUG-001", json={"status": "unreported"}, headers=auth)
-    assert back.json()["status"] == "unreported" and back.json()["updated_at"] is None
+    assert again["counts"]["reported"] == 1 and again["counts"]["candidate"] == 2
+    assert again["bugs"][0]["status"] == "reported" and again["bugs"][0]["url"].endswith("/issues/99")
+    for status in ("resolved", "deferred", "excluded", "candidate"):
+        assert (await put({"status": status}, "BUG-002")).json()["status"] == status
+    # 해결·제외·보류로 정리한 항목은 앱 카드의 BUG 칩에서 빠진다
+    await put({"status": "excluded"}, "BUG-002")
+    apps = {a["app"]: a for a in (await client.get("/api/artcraft/apps", headers=auth)).json()["apps"]}
+    assert apps["beta"]["known_bugs"] == [] and apps["alpha"]["known_bugs"] == ["BUG-001", "BUG-003"]
+
+
+async def test_legacy_unreported_state_reads_as_candidate(client, auth, fake):
+    artcraft.update_state(lambda s: s.setdefault("bugs", {}).update({"BUG-001": {"status": "unreported", "note": "예전"}}))
+    bug = (await client.get("/api/artcraft/bugs", headers=auth)).json()["bugs"][0]
+    assert bug["status"] == "candidate" and bug["note"] == "예전"
+
+
+async def test_handoff_text_per_kind_never_authorizes_posting(client, auth, fake):
+    bugs = {b["id"]: b for b in (await client.get("/api/artcraft/bugs", headers=auth)).json()["bugs"]}
+    pr, sec = bugs["BUG-001"]["handoff"], bugs["BUG-002"]["handoff"]
+    for text, bug_id in ((pr, "BUG-001"), (sec, "BUG-002")):
+        assert bug_id in text and "storytold/" in text and "BUGS.md" in text
+        assert "내가 초안을 확인하고 올리라고 말한 뒤에만" in text and "아무것도 외부로 보내지 마" in text
+    assert "alpha" in pr and "재현 요약: time alpha-cli info in.png" in pr and "PR 설명 초안" in pr
+    assert "SECURITY.md" in sec and "공개 이슈" in sec and "PR 설명 초안" not in sec
+    assert "similar alpha#12" in pr
 
 
 async def test_bug_validation(client, auth, fake):
-    assert (await client.put("/api/artcraft/bugs/BUG-099", json={"status": "resolved"}, headers=auth)).status_code == 404
-    assert (await client.put("/api/artcraft/bugs/BUG-001", json={"status": "fixed"}, headers=auth)).status_code == 422
-    assert (await client.put("/api/artcraft/bugs/BUG-001", json={"status": "reported", "note": "x" * 501}, headers=auth)).status_code == 422
+    put = lambda body, bug="BUG-001": client.put(f"/api/artcraft/bugs/{bug}", json=body, headers=auth)
+    assert (await put({"status": "resolved"}, "BUG-099")).status_code == 404
+    assert (await put({"status": "fixed"})).status_code == 422
+    assert (await put({"status": "unreported"})).status_code == 422  # 예전 값은 읽기만 호환한다
+    assert (await put({"status": "reported", "note": "x" * 501})).status_code == 422
+    for bad in ("http://github.com/a/b", "https://evil.example/a/b", "javascript:alert(1)", "https://github.com/a", "https://github.com/a/b c"):
+        assert (await put({"status": "reported", "url": bad})).status_code == 422, bad
     assert (await client.put("/api/artcraft/bugs/..", json={"status": "reported"}, headers=auth)).status_code in (404, 405)
 
 

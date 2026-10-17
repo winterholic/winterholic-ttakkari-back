@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from ttakkari import artcraft_bugs
 from ttakkari.config import get_settings
 
 STATUS_TTL = 15.0
@@ -39,10 +40,10 @@ SMOKE_FULL_TIMEOUT = 1500.0
 OUTPUT_LIMIT = 1_000_000
 TAIL_CHARS = 3000
 JOB_KEEP = 40
-BUG_BODY_LIMIT = 12_000
 NOTE_LIMIT = 500
 
-BUG_STATUSES = ("unreported", "reported", "resolved")
+URL_LIMIT = 300
+HISTORY_KEEP = 20
 SMOKE_MODES = ("cli", "full")
 GUI_ACTIONS = ("start", "stop")
 
@@ -59,6 +60,8 @@ _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 _SECRETISH = re.compile(r"(?i)\b(token|secret|password|api[_-]?key|key)\b(\s*[:=]\s*)\S+")
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _BUG_ID = re.compile(r"^BUG-\d{3}$")
+_REPORT_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(/[A-Za-z0-9_./#?=&%-]*)?$")
+_OPEN_STATUSES = ("candidate", "selected", "in_progress", "reported")
 
 
 class ArtcraftError(Exception):
@@ -308,18 +311,18 @@ def _smoke_file() -> dict[str, dict[str, Any]]:
 
 
 def _known_bugs() -> dict[str, list[str]]:
-    """STATUS.md 의 앱별 `**Known bugs:**` 줄에서 BUG ID 를 뽑는다. 문서 형식이 바뀌면 빈 값이다."""
+    """앱 카드의 BUG 칩. BUGS.md 의 Apps 목록 기준이고, 해결·보류·제외로 정리한 항목은 뺀다."""
     try:
-        text = (root() / "STATUS.md").read_text("utf-8")
-    except OSError:
+        bugs, _ = _read_bugs()
+    except ArtcraftError:
         return {}
+    saved = load_state().get("bugs") or {}
     found: dict[str, list[str]] = {}
-    title = None
-    for line in text.splitlines():
-        if line.startswith("### "):
-            title = re.sub(r"\s*\(.*$", "", line[4:]).strip().lower()
-        elif title and line.startswith("- **Known bugs:**"):
-            found[title] = list(dict.fromkeys(re.findall(r"BUG-\d{3}", line)))
+    for bug in bugs:
+        if _status_of(saved.get(bug["id"])) not in _OPEN_STATUSES:
+            continue
+        for app in bug["apps"]:
+            found.setdefault(app, []).append(bug["id"])
     return found
 
 
@@ -353,7 +356,7 @@ def _app_view(raw: dict[str, Any], reg: dict[str, Any], remote: dict[str, Any], 
                 "transport": "tcp" if isinstance(port, int) else "file" if auth_key == "control-file" else "none"},
         "auth": {"mode": mode, "label": label, "protected": protected},
         "healthy": bool(raw.get("healthy")),
-        "known_bugs": bugs.get(title.lower(), []),
+        "known_bugs": bugs.get(name, []),
     }
 
 
@@ -636,27 +639,6 @@ async def start_gui(app: str, action: str, confirm: bool) -> Job:
 
 # ---------------------------------------------------------------- 버그 후보
 
-def _bug_rows(text: str) -> list[dict[str, Any]]:
-    rows: dict[str, dict[str, Any]] = {}
-    for line in text.splitlines():
-        if not line.startswith("| BUG-"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 5 or not _BUG_ID.match(cells[0]):
-            continue
-        severity = re.match(r"S[1-3]", cells[2])
-        rows[cells[0]] = {"id": cells[0], "apps": cells[1], "severity": severity.group(0) if severity else None,
-                          "severity_text": cells[2], "summary": " | ".join(cells[3:-1]), "verified": cells[-1]}
-    bodies: dict[str, tuple[str, str]] = {}
-    for m in re.finditer(r"^## (BUG-\d{3}): (.+?)\n(.*?)(?=^## |^---$|\Z)", text, re.MULTILINE | re.DOTALL):
-        bodies[m.group(1)] = (m.group(2).strip(), m.group(3).strip())
-    out = []
-    for bug_id, row in rows.items():
-        title, body = bodies.get(bug_id, (row["summary"], ""))
-        out.append({**row, "title": title, "body": body[:BUG_BODY_LIMIT], "truncated": len(body) > BUG_BODY_LIMIT})
-    return out
-
-
 def _read_bugs() -> tuple[list[dict[str, Any]], str | None]:
     path = root() / "BUGS.md"
     try:
@@ -664,35 +646,60 @@ def _read_bugs() -> tuple[list[dict[str, Any]], str | None]:
         modified = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(timespec="seconds")
     except OSError as exc:
         raise ArtcraftError(503, "artcraft_unavailable", "BUGS.md 를 읽을 수 없습니다.") from exc
-    return _bug_rows(text), modified
+    try:
+        names = set(registry())
+    except ArtcraftError:
+        names = set()
+    return artcraft_bugs.parse_bugs(text, names), modified
+
+
+def _status_of(saved: Any) -> str:
+    """저장된 상태. 예전 값(unreported)은 candidate 로 읽는다."""
+    value = (saved or {}).get("status") if isinstance(saved, dict) else None
+    value = "candidate" if value == "unreported" else value
+    return value if value in artcraft_bugs.STATUSES else "candidate"
+
+
+def _bug_view(bug: dict[str, Any], saved: Any) -> dict[str, Any]:
+    mine = saved if isinstance(saved, dict) else {}
+    out = {**bug, "status": _status_of(mine), "note": mine.get("note") or "", "url": mine.get("url") or "",
+           "updated_at": mine.get("updated_at"), "history": list(mine.get("history") or [])[-HISTORY_KEEP:]}
+    out["handoff"] = artcraft_bugs.handoff(bug)
+    return out
 
 
 def list_bugs() -> dict[str, Any]:
     bugs, modified = _read_bugs()
     saved = load_state().get("bugs") or {}
-    for bug in bugs:
-        mine = saved.get(bug["id"]) or {}
-        bug["status"] = mine.get("status") if mine.get("status") in BUG_STATUSES else "unreported"
-        bug["note"] = mine.get("note") or ""
-        bug["updated_at"] = mine.get("updated_at")
-    counts = {s: sum(1 for b in bugs if b["status"] == s) for s in BUG_STATUSES}
-    return {"source_modified_at": modified, "counts": counts, "bugs": bugs}
+    views = [_bug_view(b, saved.get(b["id"])) for b in bugs]
+    return {
+        "source_modified_at": modified,
+        "counts": {s: sum(1 for b in views if b["status"] == s) for s in artcraft_bugs.STATUSES},
+        "apps": sorted({a for b in views for a in b["apps"]}),
+        "problems": sum(1 for b in views if b["problems"]),
+        "bugs": views,
+    }
 
 
-def set_bug(bug_id: str, status: str, note: str | None) -> dict[str, Any]:
-    if status not in BUG_STATUSES:
-        raise ArtcraftError(422, "validation", "상태는 unreported, reported, resolved 중 하나입니다.")
+def set_bug(bug_id: str, status: str, note: str | None, url: str | None = None) -> dict[str, Any]:
+    if status not in artcraft_bugs.STATUSES:
+        raise ArtcraftError(422, "validation", "알 수 없는 상태입니다.")
     bugs, _ = _read_bugs()
     if bug_id not in {b["id"] for b in bugs}:
         raise ArtcraftError(404, "unknown_bug", "BUGS.md 에 없는 항목입니다.")
     clean_note = _CONTROL.sub("", note or "").strip()[:NOTE_LIMIT]
+    clean_url = (url or "").strip()
+    if clean_url and (len(clean_url) > URL_LIMIT or not _REPORT_URL.match(clean_url)):
+        raise ArtcraftError(422, "validation", "링크는 https://github.com/ 주소만 저장할 수 있습니다.")
 
     def mutate(state: dict[str, Any]) -> None:
         store = state.setdefault("bugs", {})
-        if status == "unreported" and not clean_note:
-            store.pop(bug_id, None)
-        else:
-            store[bug_id] = {"status": status, "note": clean_note, "updated_at": _now()}
+        old = store.get(bug_id) if isinstance(store.get(bug_id), dict) else {}
+        history = list(old.get("history") or [])
+        if _status_of(old) != status or not history:
+            history.append({"status": status, "at": _now()})
+        store[bug_id] = {"status": status, "note": clean_note, "url": clean_url, "updated_at": _now(),
+                         "history": history[-HISTORY_KEEP:]}
 
     update_state(mutate)
     return next(b for b in list_bugs()["bugs"] if b["id"] == bug_id)

@@ -486,8 +486,8 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 | POST | `/api/artcraft/smoke` | `{apps?: string[], mode: "cli"\|"full", confirm?}` → 202 Job. `full`은 `confirm=true` 필요(428), 실행 중 앱이 있으면 409 `app_running`. 다른 스모크·GUI 작업이 돌면 409 `busy`. 모르는 앱은 404 |
 | POST | `/api/artcraft/apps/{app}/gui` | `{action: "start"\|"stop", confirm?}` → 202 Job. `stop`은 `confirm=true` 필요(428). 이미 실행 중 409 `already_running`/`port_in_use`, 실행 중 아님 409 `not_running` |
 | GET | `/api/artcraft/jobs`, `/jobs/{id}` | Job `{id,kind,action,apps,mode,state(queued\|running\|succeeded\|failed\|timeout),summary,output}`. `output`은 마지막 3000자이며 token/key 모양 값은 가린다 |
-| GET | `/api/artcraft/bugs` | BUGS.md 기반 `{counts, bugs[{id,apps,severity,summary,title,body,status,note,updated_at}]}` |
-| PUT | `/api/artcraft/bugs/{id}` | `{status: "unreported"\|"reported"\|"resolved", note?(≤500)}`. 없는 ID 404 |
+| GET | `/api/artcraft/bugs` | BUGS.md의 `## BUG-nnn` 절(고정 형식, ADR 0035)을 매 요청 읽는다. `{source_modified_at, counts{상태별}, apps[], problems, bugs[]}`. 항목: `id,title,repos[],apps[],severity(S1-3),kind(issue\|pr\|security),difficulty(easy\|medium\|hard),upstream{state(unchecked\|none\|related\|duplicate),note},found,verified,sections{summary,impact,repro,evidence,suggestion,unverified},truncated[],problems[]`(형식 오류는 숨기지 않고 사유를 싣는다) + 따까리가 저장한 `status,note,url,updated_at,history[]` + `handoff`(에이전트에게 넘길 요청 문구) |
+| PUT | `/api/artcraft/bugs/{id}` | `{status, note?(≤500), url?(https://github.com/... 만, ≤300)}`. 상태: `candidate`(미검토)→`selected`(기여 선택)→`in_progress`→`reported`(보고됨·PR 올림)→`resolved`, 또는 `deferred`·`excluded`. 어느 상태로든 옮길 수 있고 변경은 `history`에 남는다. 예전 값 `unreported`는 읽을 때만 `candidate`로 본다. 없는 ID 404. **외부 GitHub로 올리는 기능은 없다** |
 | GET | `/api/artcraft/agent-config` | 앱별 MCP 설정 `snippets{json,claude,codex}`와 전체 JSON |
 
 설정: `TTAKKARI_ARTCRAFT_ROOT`(기본 `~/development/projects/artcraft`), `TTAKKARI_ARTCRAFT_AUTO_REMOTE_CHECK`(기본 true, 최신 릴리스가 6시간 넘게 오래되면 조회 시 백그라운드로 갱신).

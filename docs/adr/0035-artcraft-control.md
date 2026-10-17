@@ -15,7 +15,14 @@ Mac Studio에는 ArtCraft 앱 13개(PhotoCraft 등)가 `~/development/projects/a
 - `smoke`는 `smoke/results/latest.json` 전체를 덮어쓴다. 부분 실행이 13앱 기준 기록을 지우지 않도록 실행 후 새 결과는 따까리 상태 파일로 옮기고 원래 파일 내용을 되돌린다. 화면의 스모크 값은 앱별로 두 기록 중 더 새것이다.
 - 확인 단계: 앱 종료(저장 안 한 문서가 사라질 수 있음)와 GUI 포함 스모크(창을 열고 닫음)는 요청에 `confirm=true`가 없으면 428이다. GUI 포함 스모크는 이미 실행 중인 앱이 하나라도 있으면 시작하지 않는다(스모크가 그 창을 닫아 버리므로). 앱 종료는 `artcraft gui start`로 켠 pid만 대상이다.
 - 설치·업데이트는 실행하지 않는다. 최신 릴리스와 비교해 "업데이트 가능"만 표시하고 STATUS.md §6의 수동 절차를 보여 준다(자동 업데이터가 아직 없고 dist/ 교체는 설치 상태를 망가뜨릴 수 있다).
-- 버그 후보는 `BUGS.md` 표와 `## BUG-nnn` 절을 읽기 전용으로 파싱한다. 미보고/보고됨/해결 상태와 메모는 `<data_dir>/artcraft/state.json`(0700 디렉터리, 파일 락 + 원자적 교체)에 둔다. DB 마이그레이션이 없다.
+- 버그 후보는 `BUGS.md`의 `## BUG-nnn` 절을 읽기 전용으로 파싱한다(아래 "버그 후보 흐름"). 상태·링크·메모·이력은 `<data_dir>/artcraft/state.json`(0700 디렉터리, 파일 락 + 원자적 교체)에 둔다. DB 마이그레이션이 없다.
+
+## 버그 후보 흐름(2026-10-18 보강)
+- 에이전트는 `BUGS.md`에 **기록만** 한다. 업스트림 이슈·PR은 사용자가 페이지에서 후보를 고른 뒤 요청한 것만 진행하며, 따까리에는 GitHub에 자동으로 올리는 기능을 두지 않는다. artcraft 저장소는 로컬 커밋만 하고 push하지 않는다(`AGENTS.md` "Bug candidate recording rules").
+- `BUGS.md` 형식을 고정했다. 각 `## BUG-nnn: 제목` 절 바로 아래에 `- **Repos|Apps|Severity|Kind|Difficulty|Upstream|Found|Verified:** 값` 목록, 이어서 `### Summary`·`### Repro`·`### Evidence`(필수), `### Impact`·`### Suggestion`·`### Unverified`(선택). 파서는 이 절들만 읽고 위쪽 표는 사람용 색인이다. 형식이 어긋난 항목은 숨기지 않고 `problems`에 사유를 담아 보여 주며, `scripts/check_bugs.py`(artcraft 저장소)가 같은 규칙으로 커밋 전에 검사한다. 새 항목은 파일에 추가하는 즉시 페이지에 나타난다(캐시 없음).
+- Kind는 `issue`(이슈만), `pr`(PR 가능), `security`(공개 이슈 금지, 저장소 SECURITY.md의 비공개 채널). 난이도는 기록한 에이전트의 추정이다.
+- 상태는 따까리 상태 파일에만 둔다: `candidate`→`selected`→`in_progress`→`reported`→`resolved`, 옆길로 `deferred`·`excluded`. 보고 링크(`https://github.com/`만)·메모·변경 이력을 함께 저장한다. 해결·보류·제외한 항목은 앱 카드의 BUG 칩에서 빠진다.
+- `handoff`: 후보마다 서버가 만든 요청 문구(ID·앱·저장소·심각도·종류·중복 확인·재현 요약·BUGS.md 위치)이고, "내가 초안을 확인하고 올리라고 말하기 전에는 외부로 아무것도 보내지 말 것"을 명시한다. 보안 후보는 비공개 신고 초안만 요청한다.
 
 ## 결과
 - 새 테이블·마이그레이션 없음. generation protocol 변경 없음.

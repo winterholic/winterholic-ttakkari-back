@@ -409,8 +409,8 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "list_pms_projects", "create_pms_task", "manage_pms",
                "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log", "ops_update_issue",
                "design_system_catalog", "design_system_search", "design_system_item",
-               "execution_capabilities", "report_execution_environment", "host_gpu_start", "host_gpu_status",
-               "host_gpu_bench", "host_gpu_stop",
+               "execution_capabilities", "begin_environment_probe", "report_execution_environment", "host_gpu_start",
+               "host_gpu_status", "host_gpu_bench", "host_gpu_stop",
                "reverse_start", "reverse_list", "reverse_get", "reverse_retry"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
                 "my_context", "reset_my_context"}

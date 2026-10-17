@@ -59,21 +59,35 @@ async def execution_capabilities(sid: AgentSession, db: Db) -> dict:
     return {"engines": capabilities.snapshot(), "probe_script": str(capabilities.probe_script())}
 
 
-@router.post("/execution-capabilities/report")
-async def report_execution_capabilities(body: ReportIn, sid: AgentSession, db: Db) -> dict:
-    """세션이 자기 환경에서 돌린 프로브 결과를 받는다. 엔진은 보고 내용이 아니라 이 세션의 최근 Run 으로 정한다."""
-    await _session(db, sid)
-    row = (await db.execute(select(Run.id, Run.engine).where(Run.session_id == sid)
-                            .order_by(Run.created_at.desc()).limit(1))).first()
+async def _latest_run(sid, db: Db):
+    return (await db.execute(select(Run.id, Run.engine).where(Run.session_id == sid)
+                             .order_by(Run.created_at.desc()).limit(1))).first()
+
+
+@router.post("/execution-capabilities/challenge")
+async def begin_environment_probe(sid: AgentSession, db: Db) -> dict:
+    """세션의 현재 Run 에 귀속된 일회용 challenge 를 준다. 프로브를 이 값과 함께 돌린 결과만 보고로 받는다."""
+    await _personal(sid, db)
+    row = await _latest_run(sid, db)
     if row is None:
         raise HTTPException(409, "이 세션에는 아직 Run 이 없어 엔진을 알 수 없습니다.")
     run_id, engine = row
     try:
-        view = capabilities.record(engine, body.report, source="session_probe", session_id=str(sid), run_id=str(run_id))
+        return capabilities.issue_challenge(engine, str(sid), str(run_id))
+    except capabilities.ReportError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/execution-capabilities/report")
+async def report_execution_capabilities(body: ReportIn, sid: AgentSession, db: Db) -> dict:
+    """세션이 자기 환경에서 돌린 프로브 결과를 받는다. challenge·서명이 맞는 결과만 받고, 엔진은 challenge 에 묶인 Run 의 엔진이다."""
+    await _personal(sid, db)
+    try:
+        view = capabilities.record_session_report(str(sid), body.report)
     except capabilities.ReportError as exc:
         raise HTTPException(422, str(exc)) from exc
     record(db, actor="agent", action="execution_capabilities.report",
-           detail={"session_id": str(sid), "engine": engine})
+           detail={"session_id": str(sid), "engine": view["engine"]})
     await db.commit()
     return view
 

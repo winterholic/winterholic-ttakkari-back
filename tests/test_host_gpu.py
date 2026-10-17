@@ -363,6 +363,80 @@ def test_state_file_is_private_and_holds_no_secrets(env):
         env.gpu.stop()
 
 
+# ---- 감독자가 SIGKILL 로 죽는 경우(finally 정리가 돌지 않는다)
+
+def _gone(pid: int) -> bool:
+    return not psutil.pid_exists(pid) or psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
+
+
+def test_sigkilled_supervisor_leaves_no_unguarded_server(env):
+    import signal
+    env.gpu.start(StartRequest(model="tiny", gpu_layers=0, device="none", threads=2, ctx_size=1024))
+    state = _wait(lambda: env.gpu.status()["ready"] and host_gpu._read_state(env.dir), what="ready")
+    sup_pid, server_pid, port = state["supervisor_pid"], state["server_pid"], state["port"]
+    assert psutil.pid_exists(state["watchdog_pid"]) and "ttakkari.host_gpu_guard" in " ".join(psutil.Process(state["watchdog_pid"]).cmdline())
+    # 같은 별칭·포트를 argv 에 달고 있어도 실행 파일이 다른 프로세스, 관계없는 프로세스는 신호를 받으면 안 된다.
+    lookalike = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)", "--alias", ALIAS, "--port", str(port)],
+                                 start_new_session=True)
+    bystander = subprocess.Popen(["sleep", "120"], start_new_session=True)
+    try:
+        t0 = time.monotonic()
+        os.kill(sup_pid, signal.SIGKILL)  # 정리 코드가 실행될 수 없는 종료
+        _wait(lambda: _gone(server_pid), 15, "watchdog stops the orphaned test server")
+        assert time.monotonic() - t0 < 10  # 짧은 시간 안에
+        assert lookalike.poll() is None and bystander.poll() is None
+        status = env.gpu.status()  # 잠금이 풀렸으므로 다음 조회는 사라진 감독자로 정리 처리한다
+        assert status["running"] is False and status["stop_reason"] == "supervisor_lost"
+        _wait(lambda: _gone(state["watchdog_pid"]), 10, "watchdog exits after cleaning up")
+        # 정리 뒤에는 새 인스턴스를 다시 시작할 수 있다.
+        again = env.gpu.start(StartRequest(model="tiny", gpu_layers=0, device="none"))
+        assert again["running"] is True
+        env.gpu.stop()
+    finally:
+        for p in (lookalike, bystander):
+            p.kill()
+            p.wait()
+
+
+def test_watchdog_exits_quietly_when_the_supervisor_stops_normally(env):
+    env.gpu.start(StartRequest(model="tiny", gpu_layers=0, device="none"))
+    state = _wait(lambda: env.gpu.status()["ready"] and host_gpu._read_state(env.dir), what="ready")
+    env.gpu.stop()
+    _wait(lambda: _gone(state["watchdog_pid"]), 10, "watchdog exit")
+    assert _gone(state["server_pid"])
+
+
+def test_watchdog_only_matches_our_server_by_path_alias_port_and_start_time(env):
+    port = 19588
+    ours = subprocess.Popen([str(env.server), "--port", str(port), "--alias", ALIAS, "--model", "x"], start_new_session=True)
+    other_port = subprocess.Popen([str(env.server), "--port", "19589", "--alias", ALIAS, "--model", "x"],
+                                  start_new_session=True)
+    other_bin = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--alias", ALIAS, "--port", str(port)])
+    try:
+        time.sleep(0.5)
+        found = host_gpu.guard.find_our_servers(str(env.server), port, since=time.time() - 60)
+        assert found == [ours.pid]
+        assert host_gpu.guard.find_our_servers(str(env.server), port, since=time.time() + 600) == []  # 감독자보다 먼저 뜬 것
+        # 같은 pid 라도 시작 시각이 다르면(재사용된 pid) 건드리지 않는다.
+        assert host_gpu.guard.kill_our_server(ours.pid, 1.0, port) is False and ours.poll() is None
+        assert host_gpu.guard.kill_our_server(ours.pid, host_gpu._proc_start(ours.pid), port, grace=3) is True
+        _wait(lambda: ours.poll() is not None, 10, "ours stopped")
+        assert other_port.poll() is None and other_bin.poll() is None
+    finally:
+        for p in (ours, other_port, other_bin):
+            p.kill()
+            p.wait()
+
+
+def test_supervisor_refuses_to_run_the_server_without_a_working_watchdog(env, monkeypatch):
+    monkeypatch.setattr(host_gpu, "WATCHDOG_READY_SECONDS", 1.0)
+    monkeypatch.setattr(host_gpu, "sys", SimpleNamespace(executable="/usr/bin/false"))  # 즉시 죽는 watchdog
+    assert Supervisor(_spec(env), poll=0.1).run() == 0
+    final = host_gpu._read_state(env.dir)
+    assert final["phase"] == "stopped" and final["stop_reason"].startswith("start_failed: watchdog did not start")
+    assert "server_pid" not in final  # 감시 없이는 서버를 띄우지 않는다
+
+
 # ---- API
 
 async def test_host_gpu_api_validates_requests_and_reports_idle(client, auth, make_dir, monkeypatch, tmp_path):

@@ -5,6 +5,7 @@
 - 인스턴스는 세대(백엔드 프로세스)와 무관한 분리된 감독자(`python -m ttakkari.host_gpu supervise`)가 소유한다.
   감독자가 flock 으로 한 번에 하나만 보장하고, 최대 실행 시간·스왑 증가 가드를 직접 집행한다(백엔드 세대가 내려가도 유지).
 - 운영 Qwen 서버(예약 포트)와 포트를 공유하지 않고, 상태 파일에 기록한 우리 프로세스(pid+시작 시각 일치)만 신호를 보낸다.
+- 감독자가 SIGKILL 로 죽어도 서버가 남지 않도록, 서버보다 먼저 경량 watchdog(host_gpu_guard)을 띄워 감독자 생사를 지켜보게 한다.
 """
 from __future__ import annotations
 
@@ -31,11 +32,14 @@ import httpx
 import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-ALIAS = "ttakkari-gpu-test"
+from ttakkari import host_gpu_guard as guard
+from ttakkari.host_gpu_guard import ALIAS
+
 MEASURED_ON = "host_gpu_path"
 MEASURED_NOTE = ("Measured on the host GPU path: a llama-server child run by the backend outside any engine sandbox, "
                  "started through the host_gpu tools. Report it as such, with the request settings below.")
 EXIT_BUSY = 3
+WATCHDOG_READY_SECONDS = 10.0
 GIB = 1024 ** 3
 _PHASES_LIVE = ("starting", "ready")
 _BENCH_LOCK = threading.Lock()
@@ -132,25 +136,11 @@ def _write_state(directory: Path, state: dict[str, Any]) -> None:
         raise
 
 
-def _proc_start(pid: int | None) -> float | None:
-    if not pid:
-        return None
-    try:
-        return psutil.Process(pid).create_time()
-    except (psutil.Error, OSError):
-        return None
-
-
-def _same_process(pid: int | None, start: float | None) -> bool:
-    current = _proc_start(pid)
-    return current is not None and start is not None and abs(current - start) < 1.5
-
-
-def _cmdline(pid: int) -> list[str]:
-    try:
-        return psutil.Process(pid).cmdline()
-    except (psutil.Error, OSError):
-        return []
+_proc_start = guard.proc_start
+_same_process = guard.same_process
+_cmdline = guard.cmdline
+_zombie = guard.zombie
+_terminate_group = guard.terminate_group
 
 
 def _lock_held(directory: Path) -> bool:
@@ -167,24 +157,6 @@ def _lock_held(directory: Path) -> bool:
 
 def swap_used_bytes() -> int:
     return int(psutil.swap_memory().used)
-
-
-def _terminate_group(pid: int, grace: float = 15.0) -> None:
-    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 3.0)):
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(pid, sig)
-        deadline = time.monotonic() + wait
-        while time.monotonic() < deadline:
-            if not psutil.pid_exists(pid) or _zombie(pid):
-                return
-            time.sleep(0.1)
-
-
-def _zombie(pid: int) -> bool:
-    try:
-        return psutil.Process(pid).status() == psutil.STATUS_ZOMBIE
-    except psutil.Error:
-        return True
 
 
 def _min_env() -> dict[str, str]:
@@ -274,6 +246,7 @@ class Supervisor:
         if lock is None:
             return EXIT_BUSY
         server: subprocess.Popen | None = None
+        watchdog: subprocess.Popen | None = None
         state: dict[str, Any] = {}
         limit = int(self.spec["swap_limit_bytes"])
         try:
@@ -282,6 +255,8 @@ class Supervisor:
             command = build_args(Path(self.spec["server_path"]), Path(self.spec["model_path"]), port, self.req)
             baseline = self.swap_reader()
             started = time.time()
+            # 서버보다 먼저 띄운다: 감독자가 서버 직후 SIGKILL 을 맞아도 watchdog 이 이미 지켜보고 있어야 한다.
+            watchdog = self._start_watchdog(command[0], port)
             log = open(self.dir / "server.log", "wb")  # noqa: SIM115
             server = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                       start_new_session=True, env=_min_env())
@@ -289,7 +264,7 @@ class Supervisor:
             state = {
                 "launch_id": self.spec["launch_id"], "phase": "starting",
                 "supervisor_pid": os.getpid(), "supervisor_start": _proc_start(os.getpid()),
-                "server_pid": server.pid, "server_start": _proc_start(server.pid),
+                "watchdog_pid": watchdog.pid, "server_pid": server.pid, "server_start": _proc_start(server.pid),
                 "port": port, "model": self.req.model, "request": self.req.model_dump(),
                 "command": command, "started_at": started, "deadline_epoch": started + self.max_seconds,
                 "baseline_swap_bytes": baseline, "swap_limit_bytes": limit, "peak_swap_growth_bytes": 0,
@@ -310,6 +285,28 @@ class Supervisor:
             _write_state(self.dir, final)
             lock.close()
         return 0
+
+    def _start_watchdog(self, server_path: str, port: int) -> subprocess.Popen:
+        """감시 실패는 fail-closed: watchdog 이 준비되지 않으면 서버를 띄우지 않는다."""
+        ready = self.dir / f"watchdog-{self.spec['launch_id']}.ready"
+        ready.unlink(missing_ok=True)
+        child = subprocess.Popen(
+            [sys.executable, "-m", "ttakkari.host_gpu_guard", "--supervisor-pid", str(os.getpid()),
+             "--supervisor-start", repr(_proc_start(os.getpid())), "--server-path", server_path, "--port", str(port),
+             "--ready-file", str(ready)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
+            start_new_session=True, env=_min_env())
+        threading.Thread(target=child.wait, daemon=True).start()
+        deadline = time.monotonic() + WATCHDOG_READY_SECONDS
+        while time.monotonic() < deadline:
+            if ready.exists():
+                ready.unlink(missing_ok=True)
+                return child
+            if child.poll() is not None:
+                break
+            time.sleep(0.05)
+        guard.terminate_group(child.pid, grace=2.0)
+        raise GpuError("watchdog did not start; refusing to run an unguarded server")
 
     def _watch(self, server: subprocess.Popen, state: dict[str, Any], baseline: int, limit: int, t0: float) -> None:
         failures = 0
@@ -372,10 +369,8 @@ class HostGpu:
     def _reap_lost(self, state: dict[str, Any]) -> dict[str, Any]:
         """감독자가 사라졌는데 상태가 살아 있으면 정리한다. 상태 파일에 적힌 우리 서버 프로세스만 건드린다."""
         server_pid = state.get("server_pid")
-        if _same_process(server_pid, state.get("server_start")):
-            cmd = _cmdline(int(server_pid))
-            if ALIAS in cmd and str(state.get("port")) in cmd:
-                _terminate_group(int(server_pid))
+        if server_pid:
+            guard.kill_our_server(int(server_pid), state.get("server_start"), state.get("port"))
         state = {**state, "phase": "stopped", "stop_reason": "supervisor_lost", "stopped_at": time.time()}
         _write_state(self.dir, state)
         return state

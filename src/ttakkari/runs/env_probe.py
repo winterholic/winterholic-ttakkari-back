@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import ctypes
 import errno
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -20,7 +22,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-PROBE_VERSION = 1
+PROBE_VERSION = 2
 ITEMS = ("gpu_metal", "llama_list_devices", "process_list", "sysctl_read", "spawn_process",
          "network_loopback", "network_outbound", "writable_paths")
 DEFAULT_LLAMA_SERVER = "~/private-resources/service-data/ttakkari-qwen/llama/llama-b11655/llama-server"
@@ -29,7 +31,16 @@ _UNREACHABLE = {errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN, errno.ECO
 
 
 def _item(status: str, detail: str = "", **extra) -> dict:
-    return {"status": status, "detail": detail[:200], **extra}
+    # 항목마다 측정 시각을 둔다. 시도한 시점이 곧 그 항목의 신선도다.
+    return {"status": status, "detail": detail[:200], "measured_epoch": time.time(), **extra}
+
+
+def attest(payload: dict, challenge: str) -> str:
+    """백엔드가 이 Run 에 발급한 일회용 challenge 로 보고 전체에 서명한다(digest 필드는 제외).
+    값을 손으로 쓰거나 고치면 서명이 어긋나므로 실제로 이 프로브를 challenge 와 함께 돌린 결과만 통과한다."""
+    body = {k: v for k, v in payload.items() if k != "digest"}
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hmac.new(challenge.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _run(argv: list[str], timeout: float = 5.0) -> subprocess.CompletedProcess[str]:
@@ -78,8 +89,12 @@ def probe_llama_list_devices(server: str | None) -> dict:
 def probe_process_list() -> dict:
     try:
         done = _run(["ps", "-axo", "pid="])
-    except (OSError, subprocess.TimeoutExpired) as exc:
+    except subprocess.TimeoutExpired as exc:
         return _item("unknown", f"ps did not run: {exc}")
+    except OSError as exc:
+        # 샌드박스가 ps 실행 자체를 거부하는 경우(EPERM/EACCES)는 막힌 것이다. 파일 없음 등은 시도 못 한 것이다.
+        status = "blocked" if exc.errno in _DENIED else "unknown"
+        return _item(status, f"ps did not run: {exc}")
     if done.returncode != 0:
         return _item("blocked", _failed(done))
     return _item("available", f"{len(done.stdout.split())} processes visible")
@@ -154,7 +169,7 @@ def probe_writable_paths(paths: list[str]) -> dict:
     return _item(status, f"{len(writable)}/{len(seen)} candidate directories writable", paths=seen)
 
 
-def run_probe(paths: list[str] | None = None, llama_server: str | None = None) -> dict:
+def run_probe(paths: list[str] | None = None, llama_server: str | None = None, challenge: str | None = None) -> dict:
     items = {
         "gpu_metal": probe_gpu_metal(),
         "llama_list_devices": probe_llama_list_devices(llama_server),
@@ -165,8 +180,12 @@ def run_probe(paths: list[str] | None = None, llama_server: str | None = None) -
         "network_outbound": probe_network_outbound(),
         "writable_paths": probe_writable_paths(paths or []),
     }
-    return {"probe_version": PROBE_VERSION, "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
-            "measured_epoch": time.time(), "platform": sys.platform, "items": items}
+    report = {"probe_version": PROBE_VERSION, "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
+              "measured_epoch": time.time(), "platform": sys.platform, "items": items}
+    if challenge:
+        report["challenge"] = challenge
+        report["digest"] = attest(report, challenge)
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -174,8 +193,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="print one JSON object (default)")
     parser.add_argument("--path", action="append", default=[], help="extra directory to test for writability")
     parser.add_argument("--llama-server", default=None)
+    parser.add_argument("--challenge", default=None, help="one-time value from begin_environment_probe; needed to report")
     args = parser.parse_args(argv)
-    print(json.dumps(run_probe(args.path, args.llama_server), ensure_ascii=False))
+    print(json.dumps(run_probe(args.path, args.llama_server, args.challenge), ensure_ascii=False))
     return 0
 
 

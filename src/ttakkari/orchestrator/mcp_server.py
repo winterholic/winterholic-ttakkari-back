@@ -235,10 +235,18 @@ async def execution_capabilities() -> str:
 
 
 @server.tool()
+async def begin_environment_probe() -> str:
+    """Start measuring your own environment (personal sessions). Returns a one-time challenge bound to your session and
+    current Run (15 min) and the exact shell `command` to run; pass that command's JSON output to
+    report_execution_environment."""
+    return await _agent("POST", "/execution-capabilities/challenge")
+
+
+@server.tool()
 async def report_execution_environment(report: dict[str, Any]) -> str:
-    """Record your own environment's capabilities. Run `python3 <probe_script> --json` (path in your instructions or
-    execution_capabilities) in your shell and pass the printed JSON object unchanged. The backend files it under the
-    engine of your actual Run. Do not hand-write or edit values: only probe output is accepted."""
+    """Record your environment's capabilities: pass the JSON printed by the command from begin_environment_probe,
+    unmodified. Only unmodified probe output with that challenge and its signature is accepted (hand-written or edited
+    reports are rejected). It is filed under the engine of the Run the challenge was issued for."""
     return await _agent("POST", "/execution-capabilities/report", {"report": report})
 
 

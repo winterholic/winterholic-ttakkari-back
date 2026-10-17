@@ -121,7 +121,7 @@ Account Manager는 account_id → {isolation_mode, state_root, expected_principa
 
 ## 실행 증거와 미검증
 
-- 코드 회귀: 전용 PostgreSQL DB `ttakkari_agy_accounts_20261017`, 143 passed in 28.21s. 기존 accounts/Antigravity adapter·usage·run·model routing·worker routing과 새 격리 검사 포함. 인증/모델 실계정 테스트가 아니다.
+- 코드 회귀: 전용 PostgreSQL DB `ttakkari_agy_accounts_20261017`, 최초 143 passed in 28.21s. f98075a 위 rebase 후 Qwen adapter/run도 포함한 최종 160 passed in 31.03s. 기존 accounts/Antigravity adapter·usage·run·model routing·worker routing과 새 격리 검사 포함. 인증/모델 실계정 테스트가 아니다.
 - TDD: 새 단위 검사 3건 실패(경로 무시·기본 quota 호출·기본 캐시 재사용) 후 수정. 새 API 검사 2건 실패(직렬/동시 생성 둘 다 201) 후 수정. 첫 green 검사에서는 제품의 {code,message} 응답 계약 대신 detail을 검사한 테스트 오류 1건을 고쳤다.
 - 실제 CLI: 1.4.0 /usage 기본 HOME SUCCESS/exit 0, 빈 HOME ERROR/exit 1. 후자는 authentication failed or timed out. 이 결과를 운영 backend의 장애로 일반화하지 않는다.
 - macOS 메타데이터: default-keychain 기본 HOME에서 기존 login keychain, 빈 HOME에서는 default keychain 부재. 읽기만 했으며 Keychain 생성/기본값 변경/비밀 조회를 하지 않았다.

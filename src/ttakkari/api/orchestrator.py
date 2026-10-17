@@ -251,14 +251,19 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     if body.engine == "auto" and body.model and not worker_routing.accepts_model(task_type, body.model):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Model is outside the task_type policy; choose an explicit engine to pin it.")
     model = body.model or (worker_routing.ROUTES[task_type][0][0][1] if body.engine == "auto" else default.get("model"))
-    effort = body.effort or (thinking_level(model) if model in ANTIGRAVITY_MODELS
-                            else default.get("effort"))
     engine = body.engine
+    model_engine = profiles_mod.model_engine(model)
+    effective_engine = model_engine or engine
+    effort = worker_routing.effort(
+        profiles_mod.Profile(uuid.uuid4(), "routing", effective_engine, model=model),
+        body.effort or default.get("effort"),
+    )
     if engine != "auto" and model and profiles_mod.model_engine(model) not in (None, engine):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{model} 은(는) {engine} 엔진 모델이 아닙니다.")
     if engine == "qwen-local" and model != "Qwen3.8-Flash-Next-Q2_K":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "qwen-local은 로컬 Qwen3.8 Q2_K 모델만 지원합니다.")
-    if engine == "antigravity" and (model not in s.engine_models.get(engine, []) or effort not in {"low", "medium", "high"}):
+    if engine == "antigravity" and (model not in s.engine_models.get(engine, []) or
+                                    (effort is not None and effort not in {"low", "medium", "high"})):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "account_usage에 표시된 Antigravity 모델과 low/medium/high effort를 선택하세요.")
     peer = task_type == "reasoning" or (model or "").lower() in {m.lower() for m in s.peer_models}
     if body.task_type and task_type != "reasoning" and model in s.peer_models:
@@ -315,7 +320,11 @@ async def message_worker(worker_id: uuid.UUID, body: MessageIn, sid: Orchestrato
                 saved.setdefault(f"{account.id}:{old_model}", old)
         w.engine_sessions = saved
         w.engine, w.worker_task_type = "auto", task_type
-        w.model, w.effort = worker_routing.ROUTES[task_type][0][0][1], "high"
+        route_engine, route_model = worker_routing.ROUTES[task_type][0][0]
+        w.model = route_model
+        w.effort = worker_routing.effort(
+            profiles_mod.Profile(uuid.uuid4(), "routing", route_engine, model=route_model), "high",
+        )
         record(db, actor="agent", action="orchestrator.reroute", target_type="session", target_id=w.id,
                detail={"task_type": task_type, "reason": (body.escalation_reason or "")[:500]})
     if body.fresh_context:

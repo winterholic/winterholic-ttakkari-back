@@ -15,7 +15,7 @@ from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
-from ttakkari.model_catalog import quota_group, thinking_level
+from ttakkari.model_catalog import quota_group, supports_effort
 from ttakkari.runs import profiles, usage
 
 TaskType = Literal["general", "routine", "design", "verification", "reasoning"]
@@ -266,10 +266,12 @@ def conversation_key(profile: profiles.Profile) -> str:
     return f"{profile.key}:{profile.model}"
 
 
-def effort(profile: profiles.Profile, requested: str | None) -> str:
+def effort(profile: profiles.Profile, requested: str | None) -> str | None:
     if profile.model in {"opus", "gpt-6.1-sol"}:
         return "medium" if profile.model == "opus" else "high"
-    return thinking_level(profile.model) if profile.engine == "antigravity" else (requested or "high")
+    if not supports_effort(profile.engine, profile.model):
+        return None
+    return requested or "high"
 
 
 def capacity(profile: profiles.Profile, running: int) -> dict:

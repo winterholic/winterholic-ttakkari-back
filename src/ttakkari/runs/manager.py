@@ -57,7 +57,7 @@ from ttakkari.orchestrator.runtime import (
     mcp_server_spec,
 )
 from ttakkari.push.service import PushKind, notify, notify_run_finished
-from ttakkari.runs import context_usage, desk, events
+from ttakkari.runs import context_usage, desk, events, worker_routing
 from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
@@ -1446,9 +1446,8 @@ def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first
     if prof.engine == "muse" and sess.kind != SessionKind.orchestrator:
         return prof.model or run.model or s.worker_default_models["muse"]["model"], run.effort or "high"
     if prof.engine == "antigravity" and sess.kind != SessionKind.orchestrator:
-        from ttakkari.model_catalog import thinking_level
         model = prof.model or run.model
-        return model, run.effort or (thinking_level(model) if model else None)
+        return model, worker_routing.effort(prof, run.effort)
     if sess.kind == SessionKind.orchestrator:
         fb = s.orchestrator_fallback_models.get(prof.engine) or {}
         return fb.get("model"), fb.get("effort") or run.effort

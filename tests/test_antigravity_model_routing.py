@@ -151,7 +151,7 @@ async def test_worker_api_launches_the_selected_cli_model_and_level(client, auth
         #!/usr/bin/env python3
         import json, sys
         args=sys.argv
-        output={"model":args[args.index('--model')+1], "effort":args[args.index('--effort')+1]}
+        output={"model":args[args.index('--model')+1], "effort":args[args.index('--effort')+1] if '--effort' in args else None}
         print(json.dumps({"event":"init", "conversation_id":"fixture-model-selection"}), flush=True)
         print(json.dumps({"event":"result", "result":{"status":"SUCCESS", "response":json.dumps(output)}}), flush=True)
     '''))
@@ -175,7 +175,8 @@ async def test_worker_api_launches_the_selected_cli_model_and_level(client, auth
     runs = (await client.get(f"/api/sessions/{response.json()['worker_id']}/runs", headers=auth)).json()
     run = await wait_run(client, auth, runs[0]['id'])
     assert run['status'] == 'succeeded', run
-    assert json.loads(run['result_text']) == {'model':model or 'claude-sonnet-5-5-high', 'effort':level}
+    assert run['effort'] is None
+    assert json.loads(run['result_text']) == {'model':model or 'claude-sonnet-5-5-high', 'effort':None}
 
 
 def test_auto_accepts_an_antigravity_model_for_task_aware_routing():

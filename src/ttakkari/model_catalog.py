@@ -18,6 +18,13 @@ def thinking_level(model: str) -> str:
     return model.rsplit("-", 1)[-1]
 
 
+def supports_effort(engine: str, model: str | None) -> bool:
+    """Whether effort is a separate CLI option for this engine/model pair."""
+    # Antigravity model IDs already encode their thinking level. The CLI rejects
+    # --effort for these IDs, even when the value matches the suffix.
+    return not (engine == "antigravity" and model in ANTIGRAVITY_MODELS)
+
+
 def quota_group(model: str | None) -> str | None:
     if model not in ANTIGRAVITY_MODELS:
         return None

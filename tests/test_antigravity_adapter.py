@@ -37,6 +37,18 @@ def test_launch_uses_explicit_conversation_id_and_no_global_continue(monkeypatch
     assert "--dangerously-skip-permissions" in argv
 
 
+def test_launch_omits_effort_when_model_id_encodes_antigravity_thinking_level(monkeypatch):
+    monkeypatch.setattr("ttakkari.agents.antigravity.get_settings",
+                        lambda: type("Settings", (), {
+                            "antigravity_bin": "/opt/homebrew/bin/agy",
+                            "run_timeout_seconds": 120,
+                        })())
+    argv = AntigravityAdapter().build_command(spec(model="claude-sonnet-5-5-high", effort="high"), {})
+
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-5-5-high"
+    assert "--effort" not in argv
+
+
 def test_stream_parser_normalizes_session_text_tools_errors_and_usage():
     adapter = AntigravityAdapter()
     state = ParseState()

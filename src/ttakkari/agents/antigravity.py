@@ -8,6 +8,7 @@ from typing import Any
 
 from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, truncate
 from ttakkari.config import get_settings
+from ttakkari.model_catalog import supports_effort
 
 FILE_WRITE_TOOLS = {"write_to_file", "replace_file_content", "multi_replace_file_content", "notebook_edit"}
 
@@ -42,7 +43,7 @@ class AntigravityAdapter:
             cmd += ["--conversation", spec.engine_session_id]
         if spec.model:
             cmd += ["--model", spec.model]
-        if spec.effort:
+        if spec.effort and supports_effort(self.engine, spec.model):
             cmd += ["--effort", spec.effort]
         for path in dict.fromkeys([*spec.write_roots, spec.outbox]):
             if path.resolve() != spec.cwd.resolve():

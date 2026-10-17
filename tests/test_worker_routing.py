@@ -95,6 +95,8 @@ async def test_auto_worker_uses_task_policy_and_reports_actual_model(task_type, 
     run = await result(client, auth, response)
     assert run["status"] == "succeeded", run
     assert (run["engine"], run["model"]) == (expected_engine, expected_model)
+    if expected_engine == "antigravity":
+        assert run["effort"] is None
     wid = response.json()["worker_id"]
     detail = (await client.get(f"/api/orchestrator/workers/{wid}", headers=h)).json()
     assert detail["task_type"] == task_type
@@ -112,6 +114,9 @@ async def test_default_auto_worker_uses_antigravity_for_normal_work(client, auth
     response, _ = await spawn(client, auth, make_dir)
     run = await result(client, auth, response)
     assert (run["engine"], run["model"]) == ("antigravity", SONNET)
+    assert run["effort"] is None
+    agy_calls = [c for c in agent_calls() if "--model" in c["argv"] and c["argv"][c["argv"].index("--model")+1] == SONNET]
+    assert agy_calls and all("--effort" not in c["argv"] for c in agy_calls)
 
 
 @pytest.mark.parametrize("task_type,empty,expected", [
@@ -143,6 +148,7 @@ async def test_runtime_limit_switches_groups_on_same_account_and_keeps_conversat
     assert selected == [SONNET, FLASH]
     calls = [c for c in agent_calls() if "--model" in c["argv"] and c["argv"][c["argv"].index("--model")+1] in (SONNET, FLASH)]
     assert len(calls)==2 and "--resume" not in calls[1]["argv"]
+    assert all("--effort" not in c["argv"] for c in calls)
     wid = response.json()["worker_id"]
     async with sessionmaker()() as db:
         sess = await db.get(ChatSession, uuid.UUID(wid))
@@ -342,6 +348,13 @@ def test_reasoning_fallback_uses_native_peer_effort_instead_of_carrying_argon_le
     assert routing.effort(native, "high") == "medium"
 
 
+@pytest.mark.parametrize("model", [SONNET, FLASH, "claude-opus-5-5-medium", "gemini-4-argon-high"])
+def test_antigravity_model_embedded_thinking_level_is_not_cli_effort(model):
+    from ttakkari.runs import worker_routing as routing
+    antigravity = profiles.Profile(uuid.uuid4(), "agy", "antigravity", model=model)
+    assert routing.effort(antigravity, "high") is None
+
+
 async def test_generation_backend_runs_task_policy_and_group_fallback_with_owned_lease(
     client, auth, make_dir, accounts, synthetic, monkeypatch, tmp_path,
 ):
@@ -389,6 +402,7 @@ async def test_resuming_sonnet_receives_flash_progress_from_the_same_account(cli
     calls = [c for c in agent_calls() if "--model" in c["argv"] and c["argv"][c["argv"].index("--model")+1] == SONNET]
     argv = calls[-1]["argv"]
     assert "--resume" in argv
+    assert all("--effort" not in c["argv"] for c in calls)
     assert "flash-progress-marker" in argv[argv.index("-p")+1]
 
 
@@ -563,7 +577,7 @@ async def test_verification_excludes_flash_and_routine_supports_low_medium_flash
     )
     low_run = await result(client, auth, low_resp)
     assert (low_run["engine"], low_run["model"], low_run["effort"]) == (
-        "antigravity", "gemini-3.8-flash-low", "low",
+        "antigravity", "gemini-3.8-flash-low", None,
     )
 
 

@@ -50,6 +50,8 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
     by_key = {w.key: w for w in u.windows}
     age = None if u.updated_at is None else max(0, round(now - u.updated_at))
     left = [100 - w.percent for w in u.windows if w.key in ("five_hour", "seven_day") and not (w.resets_at and w.resets_at <= now)]
+    if u.source == 'muse_cli' and not usage_mod.muse_quota_current(u, now):
+        left = []
     return {
         "source": u.source, "plan": u.plan, "measured_at": _iso(u.updated_at), "age_seconds": age,
         "stale": age is None or age > get_settings().usage_stale_seconds,
@@ -71,6 +73,9 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
 
 def _cap_remaining(account_id, cap: int, usage: dict[str, Any] | None) -> int | None:
     if not usage or usage["stale"]:
+        return None
+    observed = usage_mod.cached(account_id)
+    if observed and observed.source == 'muse_cli' and not usage_mod.muse_quota_current(observed, time.time()):
         return None
     remaining = [max(0, cap - window["used_percent"]) for window in (usage["five_hour"], usage["weekly"])
                  if window and window["remaining_percent"] is not None]

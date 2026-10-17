@@ -23,9 +23,13 @@ def _clock(text: str, day: datetime) -> datetime:
 
 
 def parse_usage_card(text: str, now: datetime) -> dict | None:
-    plan = re.search(r'Subscription\s*·\s*([^│\n]+)', text)
-    if not plan:
+    plans = list(re.finditer(r'Subscription\s*·\s*([^│\n]+)', text))
+    if not plans:
         return None
+    # Repeated /usage cards remain in the terminal. Never combine an earlier
+    # unavailable card (or earlier numbers) with the latest refresh.
+    plan = plans[-1]
+    text = text[plan.start():]
     base = {'account': {'state': 'accountLogin'}, 'plan': plan[1].strip(),
             'usage': {}, 'quota_status': 'unavailable'}
     if 'Currently unavailable' in text or 'Usage currently unavailable' in text:
@@ -98,7 +102,8 @@ def read_usage_card(muse_bin: str, env: dict[str, str], *, timeout: float = 18, 
                 except pexpect.TIMEOUT:
                     chunk = ''
                 except pexpect.EOF:
-                    result = {'usage': {}, 'quota_status': 'exited'}
+                    if result['quota_status'] == 'timeout':
+                        result = {'usage': {}, 'quota_status': 'exited'}
                     break
                 stream.feed(chunk)
                 # Harmless terminal protocol answers; never approval answers.
@@ -114,7 +119,10 @@ def read_usage_card(muse_bin: str, env: dict[str, str], *, timeout: float = 18, 
                     parsed = parse_usage_card(text, datetime.now(UTC))
                     if parsed is not None:
                         result = parsed
-                        break
+                        # The first paint may precede the asynchronous quota
+                        # refresh. Keep the bounded read alive for its result.
+                        if parsed['quota_status'] == 'observed':
+                            break
                 # Muse paints the composer before loading its account. A card
                 # containing session tokens alone is not subscription data.
                 # Retry the read-only builtin at most three times while this

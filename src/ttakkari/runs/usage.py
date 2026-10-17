@@ -76,6 +76,16 @@ class Usage:
         return asdict(self)
 
 
+def muse_quota_current(u: Usage, now: float) -> bool:
+    """Both subscription windows must still be observed after a successful read.
+
+    Historical windows remain visible and can still block exhausted accounts;
+    a failed refresh or a reset without a new observation proves no spare quota.
+    """
+    current = {w.key for w in u.windows if w.resets_at and w.resets_at > now}
+    return not u.error and {'five_hour', 'seven_day'} <= current
+
+
 _cache: dict[uuid.UUID, tuple[float, Usage]] = {}
 _stream: dict[uuid.UUID, Usage] = {}
 # 새 측정값이 생길 때마다 부른다(runs/usage_store.py 가 DB 에 남긴다). 정하지 않으면 메모리에만 둔다.

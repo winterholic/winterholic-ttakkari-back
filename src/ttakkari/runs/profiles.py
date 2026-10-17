@@ -282,6 +282,8 @@ def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[float, 
     u = usage_mod.cached(profile.id)
     if u is None or not u.windows or u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds:
         return None
+    if profile.engine == 'muse' and not usage_mod.muse_quota_current(u, now):
+        return None
     group = quota_group(profile.model) if profile.engine == "antigravity" else None
     keys = {f"{group}_5h", f"{group}_weekly"} if group else {"five_hour", "seven_day"}
     current = [w for w in u.windows if w.key in keys

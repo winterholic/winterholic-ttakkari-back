@@ -74,3 +74,51 @@ def test_auth_prompt_is_never_answered(tmp_path):
     assert result['child_reaped'] is True
     if commands.exists():
         assert not commands.read_text()
+
+
+def test_only_latest_subscription_card_is_read():
+    earlier = 'Subscription · Power\nCurrently unavailable\n'
+    newest = '''Subscription · Power
+Current 6% used · Resets at 7:00 PM
+Weekly 9% used · Resets Oct 19 at 9:00 AM
+as of 4:55 PM'''
+    result = parse_usage_card(earlier + newest, datetime(2026, 10, 17, 16, 55, tzinfo=UTC))
+    assert result['quota_status'] == 'observed'
+    assert result['usage']['usage']['window']['usedPercent'] == 6
+    # An unavailable new card must not inherit the earlier percentages.
+    assert parse_usage_card(newest + '\n' + earlier, datetime.now(UTC))['quota_status'] == 'unavailable'
+
+
+def test_native_reader_waits_for_pending_refresh_instead_of_accepting_unavailable(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    from ttakkari.runs import muse_usage
+
+    fake = tmp_path / 'refreshing-cli'
+    fake.write_text(f'''#!{sys.executable}
+import sys, time
+from datetime import datetime, UTC, timedelta
+print('Muse Code\\n❯',flush=True)
+for line in sys.stdin:
+    if line.strip() == '/usage':
+        print('Subscription · Power\\nCurrently unavailable',flush=True)
+        time.sleep(.2)
+        now=datetime.now(UTC)
+        reset=now+timedelta(hours=2)
+        weekly=now+timedelta(days=2)
+        print('\\x1b[2J\\x1b[HSubscription · Power',flush=True)
+        print('Current 6% used · Resets at '+reset.strftime('%I:%M %p'),flush=True)
+        print('Weekly 9% used · Resets '+weekly.strftime('%b %d at %I:%M %p'),flush=True)
+        print('as of '+now.strftime('%I:%M %p')+'\\n❯',flush=True)
+    elif line.strip() == '/exit':
+        break
+''', encoding='utf-8')
+    fake.chmod(0o700)
+    proc = subprocess.run([sys.executable, muse_usage.__file__, str(fake), '--timeout', '5'],
+                          capture_output=True, text=True, timeout=10, check=True)
+    result = json.loads(proc.stdout)
+    assert result['quota_status'] == 'observed'
+    assert result['usage']['usage']['weekly']['usedPercent'] == 9
+    assert result['child_reaped'] is True

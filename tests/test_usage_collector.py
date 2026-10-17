@@ -1,6 +1,7 @@
 """계정 사용량 주기 수집·저장·추세(runs/usage_collector.py, usage_store.py)와 account_usage 의 새 필드."""
 from __future__ import annotations
 
+import asyncio
 import random
 import time
 import uuid
@@ -14,7 +15,7 @@ from test_orchestrator import _orch, _session
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.models import AccountUsageSample
+from ttakkari.models import AccountUsageSample, ChatSession, Run, RunStatus, utcnow
 from ttakkari.orchestrator.runtime import issue_token
 from ttakkari.runs import profiles, usage_store
 from ttakkari.runs import usage as usage_mod
@@ -156,6 +157,59 @@ async def test_tick_refetches_right_after_known_reset_time(client, auth, make_di
                                                            source="api", updated_at=t0 + 50))
     await c.tick(t0 + 150)
     assert n_calls["n"] == 2
+
+
+async def test_successful_usage_sample_reconsiders_and_dispatches_persisted_quota_wait(
+    client, auth, make_dir, monkeypatch,
+):
+    """Concurrent successful samples feed the real reconsideration transaction and wake a queued Run once."""
+    from datetime import timedelta
+
+    from ttakkari.runs import manager as manager_mod
+    from ttakkari.runs.events import append
+
+    ids = await _accounts(client, auth, make_dir)
+    sess = await _session(client, auth, make_dir)
+    until = utcnow() + timedelta(hours=1)
+    async with sessionmaker()() as db:
+        session_id = uuid.UUID(sess["id"])
+        row = await db.get(ChatSession, session_id)
+        run = Run(session_id=session_id, workspace_id=row.workspace_id, prompt="resume after usage refresh",
+                  engine="antigravity", model="gemini-3.8-flash-high", status=RunStatus.queued,
+                  resume_after=until)
+        db.add(run)
+        await db.flush()
+        append(db, run, "run.waiting", {"until": until.isoformat(), "handoff": "keep progress"})
+        await db.commit()
+        run_id = run.id
+
+    async def available(*_args, **_kwargs):
+        return [profiles.Profile(ids["claude"], "claude", "claude", model="sonnet")], []
+
+    dispatches = []
+
+    async def dispatch(session_id):
+        dispatches.append(session_id)
+
+    monkeypatch.setattr(manager_mod, "_available_profiles", available)
+    monkeypatch.setattr(manager_mod.manager, "dispatch", dispatch)
+    monkeypatch.setattr(col, "GAP_SECONDS", (0, 0))
+
+    async def fetch(*_args):
+        return _u(_w("five_hour", 30), _w("seven_day", 20))
+
+    collector = col.Collector(fetch)
+    t0 = time.time()
+    await collector.tick(t0)
+    sampled = await collector.tick(t0 + 60)
+    assert sampled
+    await asyncio.sleep(0.1)
+
+    async with sessionmaker()() as db:
+        updated = await db.get(Run, run_id)
+        assert updated.status == RunStatus.queued
+        assert updated.resume_after is None
+    assert dispatches == [session_id]
 
 
 # ---- 저장

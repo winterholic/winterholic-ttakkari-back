@@ -4,7 +4,7 @@
 
 ## 결론
 
-Muse를 `general`·`routine` 첫 단계에 후보로 넣는 코드와 테스트를 만들었다. **기본값은 꺼짐**이다. `TTAKKARI_MUSE_ENABLED=true`와 `TTAKKARI_MUSE_AUTO_ROUTING=true`를 모두 켜야 단계표에 나타난다. 요청 완료 기준의 "Muse 실동작 3항목"을 운영 런타임에서 실행하지 못했기 때문이다. 검증되지 않은 상태로 auto에 올리지 않는다는 요청의 조건을 지켰다.
+Muse를 `general`·`routine` 첫 단계에 후보로 넣는 코드와 테스트를 만들었다. **현재 auto 편입은 보류**다. 세 실동작 검증 전까지 닫힌 코드 수락 래치가 있어 `TTAKKARI_MUSE_ENABLED`·`TTAKKARI_MUSE_AUTO_ROUTING` 환경변수만으로 단계표에 나타나지 않는다. 요청 완료 기준의 코딩·MCP·재개 Run을 운영 런타임에서 실행하지 못했기 때문이다.
 
 ## 실동작 검증 결과 (각각 별개 체크)
 
@@ -50,14 +50,16 @@ Muse를 `general`·`routine` 첫 단계에 후보로 넣는 코드와 테스트�
 
 1. 운영에서 `TTAKKARI_MUSE_ENABLED=true`로 켜고 기획 세션에서 `spawn_worker(engine="muse", model="muse-wonder-full-1.0")`로 다음을 각각 별개 Run으로 확인한다: ① 작은 코드 수정과 테스트 실행 ② `ttakkari` MCP 도구 1회 호출(예: `recall`) ③ `message_worker`로 같은 세션 재개 후 표식 회수.
 2. Wonder Full이 거부되면 `muse-spark-1.3`으로 같은 확인을 하고, `MUSE_FULL` 모델을 조정한다.
-3. 통과한 뒤 `TTAKKARI_MUSE_AUTO_ROUTING=true`를 켜고 백엔드를 배포 절차로 재시작한다(Run 안에서 launchctl 금지).
+3. 세 항목을 모두 통과한 뒤 별도 코드 변경으로 `MUSE_AUTO_ROUTING_ACCEPTED = True`를 열고 두 설정을 켜서 배포 예약한다(Run 안에서 launchctl 금지).
 4. 켠 뒤 `account_usage.muse_auto_routing=true`와 영수증의 `selected.engine`을 확인한다.
 
 ## 후속 확인 (2026-10-17 22:18 KST)
 
 - `GET http://127.0.0.1:8787/api/version` 응답은 `revision=06096488e032274253732bf7e3e130850f6f17c5`, `pid=71193`이었다. 확인 시점의 배포 런타임은 Muse 라우팅 후보 커밋 전이었다.
 - 이번 Run의 명령 셸에서 `command -v muse`는 경로를 출력하지 않았고 `muse --version`은 `zsh: command not found: muse`로 끝났다. 이는 이 셸의 PATH 관측이다. 코드의 배포 실행은 `TTAKKARI_MUSE_BIN` 기본 절대경로와 `.muse-runtime` Node SDK bridge를 사용하므로 이 결과로 백엔드의 CLI/SDK 부재를 결론내리지 않는다. 배포 백엔드의 실제 설정 경로·패키지 가용성은 미확인이다.
-- `tests/test_muse_auto_routing.py`는 18 passed. 이는 격리된 pytest/가짜 계정 사용량의 라우팅 계약이며 실제 Muse coding·MCP·resume 수행 증거가 아니다.
+- `tests/test_muse_auto_routing.py`는 19 passed. 이는 격리된 pytest/가짜 계정 사용량의 라우팅 계약이며 실제 Muse coding·MCP·resume 수행 증거가 아니다.
 - 운영 `/api/orchestrator/workers`를 호출할 실행 도구와 유효한 orchestrator session/MCP 컨텍스트가 이 Run에 노출되지 않았다. 세 가지 실동작 Run은 시작하지 않았다. sandbox 가용성 거부를 같은 환경에서 재시도하거나 우회하지 않았고, 인증 파일·키체인·`.env`도 읽지 않았다.
 - `muse_enabled`와 `muse_auto_routing` 코드 기본값은 둘 다 false다. 배포 환경의 override 상태는 확인되지 않아 account_usage의 유효 `muse_auto_routing` 값도 미확인이다. 검증 완료 전에는 두 값을 변경하거나 활성화하지 않는다.
+- `worker_routing.MUSE_AUTO_ROUTING_ACCEPTED`는 false로 닫혀 있다. 후보 경로 테스트에서만 true로 열어 quota/headroom/verification/fallback 계약을 검사한다. 실제 세 검증 완료 후 별도 코드 변경으로만 열 수 있다.
+- 환경 override가 미확인인 점을 보완하기 위해 두 번째 후속 수정에서 코드 수락 래치를 추가했다. 앞선 후보 구현의 두 환경 설정만으로 auto Muse가 켜질 수 있던 상태를 닫아, 최종 예약 SHA에서는 승인 코드 변경 전까지 auto 단계표에 Muse가 노출되지 않는다.
 - 계정 행에 대한 최신 근거는 이 문서 앞부분에 기록한 21:56 KST 조회다. 이번 후속 확인에서 DB/계정 API를 다시 조회하지 않았다. 그러므로 `muse 1` enabled, `내 Muse` disabled라는 값은 이전 관측으로만 보고하고 현재 상태로 단정하지 않는다.

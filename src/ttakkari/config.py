@@ -170,8 +170,8 @@ class Settings(BaseSettings):
     antigravity_bin: str = "/opt/homebrew/bin/agy"
     # Activation stays explicit until real coding, guard and operating-runtime checks pass.
     muse_enabled: bool = False
-    # Joins Muse to auto worker routing (general/routine). Needs muse_enabled too; keep off until the
-    # coding, MCP-tool and resume checks pass on the deployed runtime (docs/work-history/2026-10-17-muse-auto-routing.md).
+    # Joins Muse to auto worker routing (general/routine). Also requires the code acceptance latch;
+    # keep off until coding, MCP-tool and resume checks pass on the deployed runtime.
     muse_auto_routing: bool = False
     muse_bin: str = str(HOME / "development/tooling/muse/bin/muse")
     muse_node_bin: str = "node"

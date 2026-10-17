@@ -34,6 +34,7 @@ def muse_gate(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "muse_enabled", True)
     monkeypatch.setattr(settings, "muse_auto_routing", True)
+    monkeypatch.setattr(routing, "MUSE_AUTO_ROUTING_ACCEPTED", True)
 
 
 @pytest.fixture
@@ -90,6 +91,16 @@ def test_enabled_policy_places_muse_only_in_general_and_routine_first_stage(muse
     assert routing.ROUTES["general"][0][0][1] == SONNET
 
 
+def test_environment_flags_cannot_bypass_unverified_muse_acceptance_latch(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "muse_enabled", True)
+    monkeypatch.setattr(settings, "muse_auto_routing", True)
+    monkeypatch.setattr(routing, "MUSE_AUTO_ROUTING_ACCEPTED", False)
+
+    assert not routing.muse_auto_enabled()
+    assert all("muse" not in engines(routing.policy(), task) for task in routing.ROUTES)
+
+
 def test_muse_results_need_independent_verification_but_design_does_not():
     for task in ("general", "routine"):
         assert routing.needs_independent_verification(task, MUSE_FULL)
@@ -108,6 +119,7 @@ def test_pinned_stages_follow_the_gate_and_do_not_offer_a_second_muse_model(monk
     settings = get_settings()
     monkeypatch.setattr(settings, "muse_enabled", True)
     monkeypatch.setattr(settings, "muse_auto_routing", True)
+    monkeypatch.setattr(routing, "MUSE_AUTO_ROUTING_ACCEPTED", True)
     assert ("muse", MUSE_FULL) in flat(routing.pinned_stages("claude", task_type="general"))
     muse_pinned = routing.pinned_stages("muse", task_type="routine")
     assert [pair for pair in flat(muse_pinned) if pair[0] == "muse"] == [("muse", MUSE_FULL)]

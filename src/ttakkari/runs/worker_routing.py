@@ -39,6 +39,8 @@ QWEN_LOCAL = ("qwen-local", "Qwen3.8-Flash-Next-Q2_K")
 # Muse has one account-wide 5h/weekly pool (keys five_hour/seven_day), so headroom compares like native engines.
 MUSE_FULL = ("muse", "muse-wonder-full-1.0")
 MUSE_SPARK = ("muse", "muse-spark-1.3")
+# Open in a later code change only after coding, MCP and resume each pass on the deployed runtime.
+MUSE_AUTO_ROUTING_ACCEPTED = False
 # Each stage has equally suitable models; profiles.choose balances accounts within it.
 # Flash is excluded from verification so cross-provider review uses GPT first, then Claude.
 # Muse shares the first general/routine stage; it is only a candidate while muse_auto_routing is on (see
@@ -53,9 +55,9 @@ ROUTES = {
 
 
 def muse_auto_enabled() -> bool:
-    """Muse joins auto routing only after execution is enabled and auto routing is switched on explicitly."""
+    """Keep unverified Muse out of auto routing, regardless of environment overrides."""
     settings = get_settings()
-    return settings.muse_enabled and settings.muse_auto_routing
+    return MUSE_AUTO_ROUTING_ACCEPTED and settings.muse_enabled and settings.muse_auto_routing
 
 
 def _routable(engine: str) -> bool:

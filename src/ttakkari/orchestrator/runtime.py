@@ -90,7 +90,8 @@ Luna-first-for-everything and Claude-for-everything instructions in older role f
   before final completion, and record the outcome via message_worker(verification_outcome="passed"|"failed").
   Avoid assigning long unattended multi-stage shell/file-cleanup loops or direct computer/UI manipulation to Flash.
 - Muse (engine "muse", personal accounts only) appears in the stage table below only while the backend has
-  muse_auto_routing on. It then shares the first general/routine stage with Sonnet/Flash, so measured headroom per
+  muse_auto_routing on and its code acceptance latch is open after deployed coding, MCP and resume checks.
+  Until then it stays out of auto regardless of environment flags. Once accepted, it shares the first general/routine stage with Sonnet/Flash, so measured headroom per
   Run decides; unknown or stale Muse quota never outranks a measured alternative. It is never used for design,
   verification or reasoning. Its general/routine results require independent GPT/Claude verification like Flash.
   If the table lists no muse entry, do not assign Muse through auto; an explicit engine="muse" stays a manual choice.

@@ -56,6 +56,26 @@ async def test_native_auto_paths_keep_excluding_antigravity_accounts(client, aut
     assert any(str(p.id) == agy_id and p.engine == "antigravity" for p in explicit)
 
 
+async def test_qwen_local_worker_is_explicit_and_fails_closed_when_disabled(client, auth, make_dir):
+    orch = await _session(client, auth, make_dir, kind="orchestrator")
+    response = await client.post("/api/orchestrator/workers", headers=_orch(issue_token(orch["id"])), json={
+        "title": "Qwen blocked fixture", "prompt": "do not start a model", "engine": "qwen-local",
+        "task_type": "general",
+    })
+    assert response.status_code == 201, response.text
+    worker = response.json()
+    run = await wait_run(client, auth, worker["active_run_id"])
+    assert run["status"] == "failed"
+    assert run["engine"] == "qwen-local"
+    assert "Qwen local blocked: disabled" in run["error"]
+    assert run["exit_code"] is None
+    assert run["usage"]["routing_request"]["task_type"] == "general"
+    assert run["usage"]["routing_request"]["account_scope"] == "personal"
+    route = next(e for e in await run_events(client, auth, run["id"]) if e["type"] == "worker.routing")
+    assert route["payload"]["readiness"] == "disabled"
+    assert route["payload"]["scope"]["account_scope"] == "personal"
+
+
 async def test_orchestrator_can_record_deferred_design_in_pms(client, auth, make_dir):
     project = (await client.post("/api/pms/projects", json={"name": "디자인 대기", "scope": "personal", "status": "active"}, headers=auth)).json()
     orch = await _session(client, auth, make_dir, kind="orchestrator")

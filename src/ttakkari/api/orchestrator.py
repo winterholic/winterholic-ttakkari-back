@@ -41,7 +41,7 @@ MAX_ACTIVE_WORKERS = 20
 class WorkerIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     prompt: str = Field(min_length=1, max_length=100_000)
-    engine: Literal["auto", "claude", "codex", "antigravity"] = "auto"
+    engine: Literal["auto", "claude", "codex", "antigravity", "qwen-local"] = "auto"
     model: str | None = Field(default=None, max_length=100)
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     task_type: worker_routing.TaskType | None = None
@@ -232,6 +232,8 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     engine = body.engine
     if engine != "auto" and model and profiles_mod.model_engine(model) not in (None, engine):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{model} 은(는) {engine} 엔진 모델이 아닙니다.")
+    if engine == "qwen-local" and model != "Qwen3.8-Flash-Next-Q2_K":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "qwen-local은 로컬 Qwen3.8 Q2_K 모델만 지원합니다.")
     if engine == "antigravity" and (model not in s.engine_models.get(engine, []) or effort not in {"low", "medium", "high"}):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "account_usage에 표시된 Antigravity 모델과 low/medium/high effort를 선택하세요.")
     peer = task_type == "reasoning" or (model or "").lower() in {m.lower() for m in s.peer_models}

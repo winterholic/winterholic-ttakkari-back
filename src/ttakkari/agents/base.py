@@ -59,6 +59,7 @@ class ParseState:
     context_window: int | None = None
     context_model: str | None = None
     pending_tool_calls: set[str] = field(default_factory=set)
+    protocol_final_seen: bool = False
 
 
 class AgentAdapter(Protocol):

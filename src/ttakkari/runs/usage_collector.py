@@ -107,6 +107,9 @@ class Collector:
             st.next_due = now + interval_for(s, running=counts.get(aid, 0), remaining=lowest_remaining(usage_mod.cached(aid), now),
                                              failures=st.failures)
             done.append(aid)
+            if ok:
+                from ttakkari.runs.manager import _reconsider_quota_waits
+                asyncio.create_task(_reconsider_quota_waits())
         if now - self._last_prune >= PRUNE_EVERY:
             self._last_prune = now
             try:

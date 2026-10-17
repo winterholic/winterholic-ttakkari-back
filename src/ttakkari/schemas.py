@@ -127,6 +127,9 @@ class SessionOut(ORM):
     last_run_started_at: datetime | None = None
     # 마지막으로 끝난 Run 의 결과(없으면 오류) 앞 200자. 오케스트레이터 화면의 작업 세션 탭에 쓴다.
     last_result: str | None = None
+    waiting_limit: bool = False
+    waiting_reason: str | None = None
+    is_stuck: bool = False
 
 
 # ---- runs
@@ -157,6 +160,12 @@ class RunOut(ORM):
     origin: str
     profile: str | None
     last_seq: int
+    resume_after: datetime | None = None
+    resume_handoff: str | None = None
+    waiting_limit: bool = False
+    waiting_reason: str | None = None
+    last_progress: str | None = None
+    is_stuck: bool = False
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None

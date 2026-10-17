@@ -574,4 +574,6 @@ def model_engine(model: str | None) -> str | None:
         return "codex"
     if m.startswith("gemini-"):
         return "antigravity"
+    if m.startswith("qwen"):
+        return "qwen-local"
     return None

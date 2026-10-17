@@ -56,6 +56,13 @@ async def _session_out(db: Db, s: ChatSession) -> SessionOut:
         if last.status in ACTIVE:
             out.active_run_id = last.id
             out.last_run_started_at = last.started_at
+            now = utcnow()
+            from ttakkari.runs.manager import manager
+            if last.status == RunStatus.queued and (bool(last.resume_after and last.resume_after > now) or manager.is_waiting(last.id)):
+                out.waiting_limit = True
+                out.waiting_reason = f"한도 대기 ({last.resume_after.isoformat()[:16]})" if last.resume_after else "한도 대기"
+            elif last.status == RunStatus.running:
+                out.is_stuck = bool(last.pid is None and last.id not in manager._handles)
         # 오케스트레이터 화면 오른쪽 탭의 한 줄 요약
         done = last if last.status not in ACTIVE else await db.scalar(
             select(Run).where(Run.session_id == s.id, Run.status.not_in(ACTIVE)).order_by(Run.created_at.desc()).limit(1))

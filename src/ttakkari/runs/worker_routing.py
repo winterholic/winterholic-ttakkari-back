@@ -8,6 +8,7 @@ enabled account of the pinned engine is usage-limited.
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import replace
 from typing import Literal
 
@@ -27,11 +28,19 @@ ARGON = ("antigravity", "gemini-4-argon-high")
 AGY_OPUS = ("antigravity", "claude-opus-5-5-medium")
 SOL = ("codex", "gpt-6.1-sol")
 NATIVE_OPUS = ("claude", "opus")
+
+
+def _qwen_local_model() -> str:
+    from ttakkari.config import get_settings
+    return get_settings().worker_default_models.get("qwen-local", {}).get("model") or "Qwen3.8-Flash-Next-Q2_K"
+
+
+QWEN_LOCAL = ("qwen-local", "Qwen3.8-Flash-Next-Q2_K")
 # Each stage has equally suitable models; profiles.choose balances accounts within it.
 # Flash is excluded from verification so cross-provider review uses GPT first, then Claude.
 ROUTES = {
-    "general": ((SONNET,), (FLASH,), (NATIVE_SONNET, LUNA)),
-    "routine": ((FLASH,), (LUNA,), (SONNET,), (NATIVE_SONNET,)),
+    "general": ((SONNET,), (FLASH,), (NATIVE_SONNET, LUNA), (QWEN_LOCAL,)),
+    "routine": ((FLASH,), (LUNA,), (SONNET,), (NATIVE_SONNET,), (QWEN_LOCAL,)),
     "design": ((SONNET,), (NATIVE_SONNET,)),
     "verification": ((LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "reasoning": ((ARGON,), (AGY_OPUS,), (SOL, NATIVE_OPUS)),
@@ -39,11 +48,11 @@ ROUTES = {
 
 
 def is_flash_model(model: str | None) -> bool:
-    return bool(model and model.startswith("gemini-3.8-flash"))
+    return bool(model and (model.startswith("gemini-3.8-flash") or "qwen" in model.lower()))
 
 
 def needs_independent_verification(task_type: str | None, model: str | None) -> bool:
-    """Flash implementation/routine runs require independent cross-provider verification before final completion."""
+    """Flash and local Qwen implementation/routine runs require independent cross-provider verification before final completion."""
     return is_flash_model(model) and (task_type or "general") in {"general", "routine"}
 
 
@@ -142,6 +151,15 @@ async def availability(db: AsyncSession, task_type: str, pool: str, *, model: st
                     selected = model
             if selected not in settings.engine_models.get(engine, []):
                 continue
+            if engine == "qwen-local":
+                import asyncio
+
+                from ttakkari.runs.manager import QWEN_LOCAL_ADAPTER
+                ready, _reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+                if ready:
+                    profile_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{pool}")
+                    free.append(profiles.Profile(id=profile_id, name=f"Qwen local ({pool})", engine="qwen-local", model=selected))
+                continue
             ready, waiting = await profiles.availability(db, engine, pool, model=selected)
             free.extend(replace(p, model=selected) for p in ready)
             blocked.extend((replace(p, model=selected), until) for p, until in waiting)
@@ -167,6 +185,15 @@ async def pinned_availability(db: AsyncSession, session_engine: str, pool: str, 
     for stage in stages[1:]:
         for engine, fallback_model in stage:
             if fallback_model not in settings.engine_models.get(engine, []):
+                continue
+            if engine == "qwen-local":
+                import asyncio
+
+                from ttakkari.runs.manager import QWEN_LOCAL_ADAPTER
+                ready, _reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+                if ready:
+                    profile_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{pool}")
+                    free.append(profiles.Profile(id=profile_id, name=f"Qwen local ({pool})", engine="qwen-local", model=fallback_model))
                 continue
             ready, waiting = await profiles.availability(db, engine, pool, model=fallback_model)
             free.extend(replace(p, model=fallback_model) for p in ready)
@@ -218,6 +245,15 @@ def effort(profile: profiles.Profile, requested: str | None) -> str:
 
 
 def capacity(profile: profiles.Profile, running: int) -> dict:
+    if profile.engine == "qwen-local":
+        return {
+            "engine": profile.engine, "model": profile.model, "quota_group": None,
+            "remaining_to_limit_percent": 100.0,
+            "headroom_per_run_percent": 100.0 / (running + 1),
+            "quota_known": True, "reset_at": None,
+            "limited_until": None, "usage_measured_at": None,
+            "usage_age_seconds": None, "quota_windows": [],
+        }
     room = profiles._usage_headroom(profile)
     until = profiles.profile_limited_until(profile)
     snapshot = usage.cached(profile.id)

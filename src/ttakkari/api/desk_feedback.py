@@ -21,6 +21,7 @@ from ttakkari.models import (
     Run,
     RunEvent,
     RunOrigin,
+    RunStatus,
     SessionKind,
     utcnow,
 )
@@ -47,14 +48,63 @@ def brief(fb: DeskFeedback) -> DeskFeedbackBrief:
 
 
 async def runs_out(db: AsyncSession, runs: list[Run]) -> list[RunOut]:
-    """RunOut 에 그 Run 의 판정을 붙인다. 판정은 접수 Run 에만 생기므로 run_id 로 한 번에 찾는다."""
+    """RunOut 에 그 Run 의 판정과 대기/진행 상태를 붙인다. 판정은 접수 Run 에만 생기므로 run_id 로 한 번에 찾는다."""
+    if not runs:
+        return []
+    run_ids = [r.id for r in runs]
     found = {fb.run_id: fb for fb in await db.scalars(
-        select(DeskFeedback).where(DeskFeedback.run_id.in_([r.id for r in runs])))} if runs else {}
+        select(DeskFeedback).where(DeskFeedback.run_id.in_(run_ids)))}
+
+    events = list(await db.scalars(
+        select(RunEvent).where(
+            RunEvent.run_id.in_(run_ids),
+            RunEvent.type.in_(("run.waiting", "tool.result", "tool.call", "message", "run.diff", "checkpoint"))
+        ).order_by(RunEvent.seq.desc())
+    ))
+    waiting_by_run: dict[uuid.UUID, RunEvent] = {}
+    progress_by_run: dict[uuid.UUID, RunEvent] = {}
+    for ev in events:
+        if ev.type == "run.waiting" and ev.run_id not in waiting_by_run:
+            waiting_by_run[ev.run_id] = ev
+        elif ev.type != "run.waiting" and ev.run_id not in progress_by_run:
+            progress_by_run[ev.run_id] = ev
+
+    now = utcnow()
+    from ttakkari.runs.manager import manager
     out = []
     for r in runs:
         o = RunOut.model_validate(r)
         if r.id in found:
             o.desk_feedback = brief(found[r.id])
+
+        # waiting_limit and waiting_reason
+        wait_ev = waiting_by_run.get(r.id)
+        is_future_wait = bool(r.resume_after and r.resume_after > now)
+        is_mem_wait = manager.is_waiting(r.id)
+        if r.status == RunStatus.queued and (is_future_wait or is_mem_wait or wait_ev is not None):
+            o.waiting_limit = True
+            if wait_ev and wait_ev.payload:
+                accs = wait_ev.payload.get("accounts") or []
+                until_str = wait_ev.payload.get("until") or (r.resume_after.isoformat() if r.resume_after else "")
+                acc_names = ", ".join(a.get("name", "") for a in accs if isinstance(a, dict))
+                o.waiting_reason = f"{acc_names} 한도 대기 ({until_str[:16]})" if acc_names else f"한도 대기 ({until_str[:16]})"
+            elif r.resume_after:
+                o.waiting_reason = f"한도 대기 ({r.resume_after.isoformat()[:16]})"
+
+        # last_progress
+        prog_ev = progress_by_run.get(r.id)
+        if prog_ev and prog_ev.payload:
+            payload = prog_ev.payload
+            detail = payload.get("output") or payload.get("text") or payload.get("ref")
+            if prog_ev.type == "tool.call":
+                detail = f"{payload.get('name')} {payload.get('input')}"
+            if detail:
+                o.last_progress = " ".join(str(detail).split())[:200]
+
+        # is_stuck check
+        if r.status == RunStatus.running:
+            o.is_stuck = bool(r.pid is None and r.id not in manager._handles)
+
         out.append(o)
     return out
 

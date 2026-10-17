@@ -263,9 +263,16 @@ class RunManager:
                 await db.rollback()
                 return None
             nxt = rows[0] if rows else None
-            if nxt is not None and self._waiting.get(nxt.id, (0.0, nxt.id))[0] > time.time():
-                await db.rollback()
-                return None
+            now_ts = time.time()
+            now_dt = utcnow()
+            if nxt is not None:
+                is_armed = self._waiting.get(nxt.id, (0.0, nxt.id))[0] > now_ts
+                is_future = bool(nxt.resume_after and nxt.resume_after > now_dt)
+                if is_armed or is_future:
+                    await db.rollback()
+                    return None
+                if nxt.resume_after and nxt.resume_after <= now_dt:
+                    nxt.resume_after = None
             started = nxt is not None and self.start(nxt.id)
             await db.commit()
             return nxt.id if started else None
@@ -299,6 +306,9 @@ class RunManager:
         if waker is not None and waker is not asyncio.current_task():
             waker.cancel()
 
+    def is_waiting(self, run_id: uuid.UUID) -> bool:
+        return self._waiting.get(run_id, (0.0, run_id))[0] > time.time()
+
     async def _wake(self, run_id: uuid.UUID, session_id: uuid.UUID, until: float) -> None:
         while (left := until - time.time()) > 0:
             await asyncio.sleep(min(left, 60))
@@ -313,8 +323,9 @@ class RunManager:
         계정을 계속 두드리지 않는다. 사용자에게 한 번 알리고(재시작 뒤 다시 대기해도 중복 알림 없음), 한도가 계속 반복되면
         max_limit_waits 번째에 실패로 끝낸다. handoff 는 중간에 멈춘 Run 의 진행·미완료 내용으로, 재개 때 새 계정에 실린다."""
         until = min(u for _, u in blocked)
-        if self.runtime:
-            run.resume_after = datetime.fromtimestamp(until, UTC)
+        run.resume_after = datetime.fromtimestamp(until, UTC)
+        if handoff:
+            run.resume_handoff = handoff
         prev = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.type == "run.waiting")
                                .order_by(RunEvent.seq.desc()).limit(1))
         repeat = prev is not None and prev.seq == run.last_seq and abs(
@@ -349,11 +360,17 @@ class RunManager:
                 await db.execute(update(Run).where(Run.status == RunStatus.queued).values(resume_after=None))
                 await generation.wake(db)
                 await db.commit()
+            await _reconsider_quota_waits()
             return
         """한도 대기를 풀고 바로 다시 시도한다(사용자가 계정 한도 상태를 풀거나 계정을 켰을 때). 여전히 못 쓰면 다시 대기한다."""
         pending = list(self._waiting.items())
         for rid, _ in pending:
             self._disarm(rid)
+        from sqlalchemy import update
+        async with sessionmaker()() as db:
+            await db.execute(update(Run).where(Run.status == RunStatus.queued).values(resume_after=None))
+            await db.commit()
+        await _reconsider_quota_waits()
         for sid in {sid for _, (_, sid) in pending}:
             await self.dispatch(sid)
 
@@ -429,6 +446,7 @@ class RunManager:
                     sid = await db.scalar(select(Run.session_id).where(Run.id == run_id))
                 if sid is not None:
                     _spawn(self.dispatch(sid))
+                _spawn(_reconsider_quota_waits())
 
     async def _execute_desk(self, run_id: uuid.UUID) -> None:
         """접수 Run. 세션 대기열·엔진 대화 없이 한 번 고르고 끝난다. 실패해도 사용자 메시지를 기획으로 넘겨 멈추지 않게 한다."""
@@ -1227,9 +1245,14 @@ async def resume_queued() -> int:
     await _reconsider_quota_waits()
     async with sessionmaker()() as db:
         rows = list(await db.scalars(select(Run).where(Run.status == RunStatus.queued).order_by(Run.created_at)))
+    now = utcnow()
     for run in rows:
-        if run.resume_attempts and run.resume_after and run.resume_after > utcnow():
-            manager._arm(run.id, run.session_id, run.resume_after.timestamp())
+        if run.resume_after:
+            if run.resume_after > now:
+                manager._arm(run.id, run.session_id, run.resume_after.timestamp())
+            else:
+                run.resume_after = None
+                manager._disarm(run.id)
     for sid in {run.session_id for run in rows}:
         await manager.dispatch(sid)
     return len({run.session_id for run in rows})
@@ -1296,6 +1319,7 @@ async def _reconsider_quota_waits() -> None:
     lease, changes cancellation/backoff, or launches an engine while holding locks.
     """
     from ttakkari.models import RuntimeLease
+    awoken_sessions: set[uuid.UUID] = set()
     async with sessionmaker()() as db:
         if manager.runtime:
             from ttakkari.generation import _control
@@ -1303,9 +1327,10 @@ async def _reconsider_quota_waits() -> None:
             if control.active_generation != manager.runtime.id:
                 return
         rows = list(await db.scalars(select(Run).where(
-            Run.status == RunStatus.queued, Run.resume_after > utcnow(),
+            Run.status == RunStatus.queued, Run.resume_after.is_not(None),
             ~select(RuntimeLease.run_id).where(RuntimeLease.run_id == Run.id).exists(),
         ).with_for_update(skip_locked=True)))
+        now = utcnow()
         for run in rows:
             latest = await db.scalar(select(RunEvent).where(RunEvent.run_id == run.id)
                                      .order_by(RunEvent.seq.desc()).limit(1))
@@ -1314,12 +1339,18 @@ async def _reconsider_quota_waits() -> None:
             sess = await db.get(ChatSession, run.session_id)
             is_meeting = await db.scalar(select(Meeting.id).where(Meeting.analysis_run_id == run.id)) is not None
             ready, _ = await _available_profiles(db, sess, run, is_meeting)
-            if ready:
+            if ready or (run.resume_after and run.resume_after <= now):
                 # _waiting_handoff retains the previous provider progress even for a
                 # legacy wait that predates persisted resume_handoff.
                 run.resume_after = None
                 manager._disarm(run.id)
+                awoken_sessions.add(run.session_id)
+        if awoken_sessions and manager.runtime:
+            from ttakkari import generation
+            await generation.wake(db)
         await db.commit()
+    for sid in awoken_sessions:
+        await manager.dispatch(sid)
 
 def _looks_like_agent(pid: int) -> bool:
     """재부팅 뒤에는 PID 가 재사용될 수 있다. 엉뚱한 프로세스 그룹을 죽이지 않게 이름을 확인한다."""
@@ -1496,7 +1527,8 @@ async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: Pars
              f"Account {profile} stopped on a usage limit: {(state.error or stderr or 'engine unavailable')[:500]}",
              ("This request is not finished. The original request follows below; continue from where the progress "
               "below stops, without repeating completed steps."),
-             "Inspect existing work and worker sessions before creating or repeating work.",
+             "Inspect existing work, modified files, checkpoints, and completed tool results before repeating work.",
+             "Avoid re-executing non-idempotent operations or creating duplicate files, branches, or runs.",
              "Search recall for relevant memories and indexed work-history; verify the current state first."]
     rows = list(await db.scalars(
         select(RunEvent).where(RunEvent.run_id == run.id, RunEvent.seq > since_seq,

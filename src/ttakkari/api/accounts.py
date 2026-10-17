@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import shlex
+import sys
 import time
 import uuid
 from datetime import UTC, datetime
@@ -107,6 +108,10 @@ class AccountOut(BaseModel):
     cooldown_seconds: int
     # 처음 한 번 Mac Studio 터미널에서 실행할 로그인 명령(브라우저 인증). 이미 로그인됐으면 None.
     login_command: str | None = None
+    auth_state: str | None = None
+    auth_error: str | None = None
+    isolation_mode: str | None = None
+    execution_enabled: bool = True
 
 
 def accounts_dir() -> Path:
@@ -118,6 +123,9 @@ def login_command(engine: str, config_dir: str | None) -> str:
         # 초기 프롬프트로 /login 을 넘기는 동작은 버전마다 다를 수 있어(확인 필요) claude 를 띄우고 /login 을 입력하게 안내한다.
         return f"CLAUDE_CONFIG_DIR={config_dir} claude" if config_dir else "claude"
     if engine == "antigravity":
+        if config_dir:
+            return shlex.join(["env", f"PYTHONPATH={Path(__file__).resolve().parents[2]}", sys.executable,
+                               "-m", "ttakkari.antigravity_accounts", "login", config_dir])
         return "agy"
     if engine == "muse":
         from ttakkari.runs.profiles import Profile
@@ -134,9 +142,19 @@ def _next_work_priority(rows: list[EngineAccount]) -> int:
 
 def _out(a: EngineAccount) -> AccountOut:
     login, label = profiles.identity(a.engine, a.config_dir)
+    managed_status = {}
+    if a.engine == 'antigravity' and a.config_dir:
+        from ttakkari import antigravity_accounts as managed
+        try:
+            managed_status = managed.status(a.config_dir)
+        except (ValueError, OSError):
+            managed_status = {'auth_state': 'invalid_profile', 'last_error': 'invalid_profile'}
     return AccountOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, config_dir=a.config_dir, enabled=a.enabled,
                       priority=a.priority, max_used_percent=a.max_used_percent, work_enabled=a.work_enabled, work_priority=a.work_priority, login=login, login_label=label, cooldown_seconds=profiles.cooldown_remaining(a.id),
-                      login_command=None if login == "ok" else login_command(a.engine, a.config_dir))
+                      login_command=None if login == "ok" else login_command(a.engine, a.config_dir),
+                      auth_state=managed_status.get('auth_state'), auth_error=managed_status.get('last_error'),
+                      isolation_mode='managed_home_keychain' if managed_status else None,
+                      execution_enabled=profiles.execution_ready(profiles._profile(a)))
 
 
 async def _get(db: Db, account_id: uuid.UUID) -> EngineAccount:
@@ -183,11 +201,6 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
         # generated config_dir does not isolate the official CLI's credentials.
         await db.execute(select(func.pg_advisory_xact_lock(0x54544B, 3)))
         rows = await profiles.accounts(db)
-        if any(r.engine == "antigravity" for r in rows):
-            raise HTTPException(status.HTTP_409_CONFLICT, {
-                "code": "antigravity_isolation_unsupported",
-                "message": "Antigravity 계정별 인증 격리가 검증되지 않아 추가 계정을 등록할 수 없습니다. 기존 계정은 유지됩니다.",
-            })
     if len(rows) >= MAX_ACCOUNTS:
         raise HTTPException(status.HTTP_409_CONFLICT, f"계정은 {MAX_ACCOUNTS}개까지입니다.")
     top = await db.scalar(select(func.max(EngineAccount.priority)))
@@ -199,8 +212,12 @@ async def create_account(body: AccountIn, _: User, db: Db, request: Request) -> 
         # 같은 엔진의 기본 계정(~/.claude·~/.codex)이 이미 있으면, 새 계정의 로그인 보관 폴더는 따까리가 만든다.
         # 사용자는 폴더를 몰라도 된다. 작업공간과는 무관하고 로그인 정보만 따로 둔다.
         d = accounts_dir() / str(a.id)
-        d.mkdir(parents=True, exist_ok=True, mode=0o700)
-        a.config_dir = str(d)
+        if a.engine == 'antigravity':
+            from ttakkari import antigravity_accounts as managed
+            a.config_dir = str(managed.allocate(accounts_dir().resolve(), a.id).home)
+        else:
+            d.mkdir(parents=True, exist_ok=True, mode=0o700)
+            a.config_dir = str(d)
     db.add(a)
     record(db, action="account.create", target_type="account", detail={"name": a.name, "engine": a.engine},
            ip=client_ip(request))
@@ -318,7 +335,8 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
                                reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
                                credits_balance=u.credits_balance, credits_error=u.credits_error,
                                error=u.error, updated_at=u.updated_at,
-                               execution_enabled=a.engine != "muse" or get_settings().muse_enabled)
+                               execution_enabled=profiles.execution_ready(profiles._profile(a)) and
+                                                 (a.engine != "muse" or get_settings().muse_enabled))
 
     return list(await asyncio.gather(*(one(i, a) for i, a in ordered)))
 
@@ -327,9 +345,9 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
 async def patch_account(account_id: uuid.UUID, body: AccountPatch, _: User, db: Db, request: Request) -> AccountOut:
     a = await _get(db, account_id)
     data = body.model_dump(exclude_unset=True)
-    if a.engine == "antigravity" and data.get("config_dir"):
+    if a.engine == "antigravity" and "config_dir" in data and data['config_dir'] != a.config_dir:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            "Antigravity uses one logged-in agy profile; config_dir is not supported.")
+                            "Antigravity managed profile paths cannot be reassigned or cleared.")
     if "name" in data and data["name"] is not None:
         data["name"] = data["name"].strip()
     for k in ("pool", "enabled", "work_enabled", "max_used_percent"):
@@ -420,5 +438,39 @@ async def clear(account_id: uuid.UUID, _: User, db: Db) -> AccountOut:
     a = await _get(db, account_id)
     profiles.clear_cooldown(a.id)
     # 한도 대기 중이던 Run 이 있으면 바로 다시 시도한다. 여전히 못 쓰면 다시 대기한다.
+    await manager.release_waiting()
+    return _out(a)
+
+
+class AntigravityConfirmIn(BaseModel):
+    # 사용자가 방금 전용 HOME 으로 로그인한 Google 계정. 따까리는 이 값을 토큰에서 읽지 않고 사용자 확인으로만 받는다.
+    principal: str | None = Field(default=None, max_length=254)
+    confirm: bool = False
+
+
+@router.post("/{account_id}/antigravity/check", response_model=AccountOut)
+async def antigravity_check(account_id: uuid.UUID, body: AntigravityConfirmIn, _: User, db: Db,
+                            request: Request) -> AccountOut:
+    """전용 HOME 으로 agy /usage 를 한 번 호출해 로그인 여부를 확인한다. confirm=true 면 사용자가 로그인 계정을 확인한 것으로 기록한다."""
+    from ttakkari import antigravity_accounts as managed
+    a = await _get(db, account_id)
+    if a.engine != "antigravity" or not a.config_dir:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "전용 HOME 을 쓰는 Antigravity 추가 계정만 확인할 수 있습니다.")
+    principal = (body.principal or "").strip() or None
+    if body.confirm and not principal:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "로그인한 Google 계정을 입력해야 확인할 수 있습니다.")
+    try:
+        if managed.load(a.config_dir).account_id != a.id:
+            raise managed.ProfileError("account_mismatch")
+        await asyncio.to_thread(managed.check, a.config_dir, principal=principal, confirm_isolated_login=body.confirm)
+    except (managed.ProfileError, OSError) as exc:
+        code = str(exc) if isinstance(exc, managed.ProfileError) else "cli_error"
+        record(db, action="account.antigravity_check", target_type="account", target_id=a.id,
+               detail={"ok": False, "code": code}, ip=client_ip(request))
+        await _commit(db)
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": code, "message": f"Antigravity 확인 실패: {code}"}) from exc
+    record(db, action="account.antigravity_check", target_type="account", target_id=a.id,
+           detail={"ok": True, "confirmed": body.confirm}, ip=client_ip(request))
+    await _commit(db)
     await manager.release_waiting()
     return _out(a)

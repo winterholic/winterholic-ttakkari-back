@@ -168,12 +168,17 @@ def credits_from_antigravity(body: dict[str, Any]) -> int | None:
     return int(value)
 
 
-async def _agy_command(command: str) -> dict[str, Any]:
+async def _agy_command(command: str, config_dir: str | None = None) -> dict[str, Any]:
     env = os.environ.copy()
     env["AGY_CLI_DISABLE_AUTO_UPDATE"] = "true"
+    cwd = None
+    if config_dir:
+        from ttakkari import antigravity_accounts as managed
+        env = await asyncio.to_thread(managed.execution_env, config_dir, env)
+        cwd = str(managed.probe_directory(config_dir))
     proc = await asyncio.create_subprocess_exec(
-        "agy", "--print", f"/{command}", "--output-format", "json", "--log-file", os.devnull,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
+        get_settings().antigravity_bin, "--print", f"/{command}", "--output-format", "json", "--log-file", os.devnull,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, cwd=cwd,
     )
     try:
         stdout, _stderr = await asyncio.wait_for(proc.communicate(), AGY_TIMEOUT)
@@ -192,9 +197,10 @@ async def _agy_command(command: str) -> dict[str, Any]:
     return body
 
 
-async def _fetch_antigravity() -> Usage:
+async def _fetch_antigravity(config_dir: str | None = None) -> Usage:
     try:
-        usage_body, credits_body = await asyncio.gather(_agy_command("usage"), _agy_command("credits"), return_exceptions=True)
+        commands = [_agy_command(cmd, config_dir) if config_dir else _agy_command(cmd) for cmd in ("usage", "credits")]
+        usage_body, credits_body = await asyncio.gather(*commands, return_exceptions=True)
         if isinstance(usage_body, BaseException):
             return Usage(error=f"Antigravity quota 조회 실패({type(usage_body).__name__})")
         windows = windows_from_antigravity(usage_body)
@@ -445,12 +451,23 @@ def codex_usage(config_dir: str | None) -> Usage:
 
 # ---- 묶기
 
+_agy_cache_roots: dict[uuid.UUID, str | None] = {}
+
+
 async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, *, refresh: bool = False) -> Usage:
     # A non-default account must never inherit the host's quota, including a
     # cached value measured before its account path was changed.
     if engine == "antigravity" and config_dir:
-        return Usage(error="Antigravity account isolation is unsupported; default quota was not queried")
+        from ttakkari import antigravity_accounts as managed
+        try:
+            p = managed.load(config_dir)
+            if p.account_id != account_id or not managed.is_ready(config_dir):
+                raise ValueError("not ready")
+        except (ValueError, OSError):
+            return Usage(error="Antigravity isolation: profile is not ready; default quota was not queried")
     hit = _cache.get(account_id)
+    if engine == "antigravity" and _agy_cache_roots.get(account_id) != config_dir:
+        hit = None
     # 수집기가 주기마다 새로 읽어 두므로(runs/usage_collector.py) 화면이 그보다 자주 API 를 두드리지 않게 한다.
     ttl = max(TTL, get_settings().usage_poll_seconds)
     if hit and not refresh and time.time() - hit[0] < ttl:
@@ -458,7 +475,8 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     if engine == "muse":
         u = await _fetch_muse(config_dir)
     elif engine == "antigravity":
-        u = await _fetch_antigravity()
+        u = await _fetch_antigravity(config_dir) if config_dir else await _fetch_antigravity()
+        _agy_cache_roots[account_id] = config_dir
     elif engine == "claude":
         u = await _fetch_claude(config_dir)
         if not u.windows and account_id in _stream:

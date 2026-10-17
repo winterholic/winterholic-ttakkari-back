@@ -737,7 +737,7 @@ class RunManager:
             )
             adapter = QWEN_LOCAL_ADAPTER if prof.engine == "qwen-local" else ADAPTERS[prof.engine]
             env = adapter.child_env() if prof.engine == "qwen-local" else (
-                _child_env(run.id, write_roots, s.home, s.guard_log) | prof.env()
+                await asyncio.to_thread(prof.env, _child_env(run.id, write_roots, s.home, s.guard_log))
             )
             await self._commit(db, run)
             attempt_start_seq = run.last_seq
@@ -754,6 +754,13 @@ class RunManager:
             stopped = timed_out or self._shutting_down or (h is not None and h.cancel_requested)
             tail = "".join(h.stderr_tail)[-STDERR_TAIL:] if h else ""
             texts = (state.error, tail, None if rc == 0 else state.result_text, state.limit_text)
+            if prof.engine == "antigravity" and prof.config_dir and not stopped:
+                # Only this account loses readiness; the host account and other managed homes are untouched.
+                from ttakkari import antigravity_accounts as managed_agy
+                with contextlib.suppress(ValueError, OSError):
+                    await asyncio.to_thread(
+                        managed_agy.record_run, prof.config_dir, success=not failed,
+                        error=" ".join(t for t in texts if t)[:2000] if failed else None)
             limited = (failed and prof.engine != "qwen-local"
                        and (state.limit_hit or profiles_mod.is_usage_limit(*texts)))
             reset_at: float | None = None

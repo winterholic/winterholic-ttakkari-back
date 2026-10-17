@@ -67,16 +67,34 @@ class Profile:
         """sessions.engine_sessions 의 키. 이름을 바꿔도 대화가 이어지게 id 를 쓴다."""
         return str(self.id)
 
-    def env(self) -> dict[str, str]:
+    def env(self, base_env: dict[str, str] | None = None) -> dict[str, str]:
+        base_env = base_env or {}
         if self.engine == "muse":
             settings = get_settings()
             root = self.config_dir or settings.muse_profile_root or settings.home / "accounts/muse-default"
-            return {f"XDG_{kind.upper()}_HOME": str(root / kind) for kind in ("config", "data", "cache")}
+            return base_env | {f"XDG_{kind.upper()}_HOME": str(root / kind) for kind in ("config", "data", "cache")}
         if self.config_dir is None:
-            return {}
+            return base_env.copy()
         if self.engine == "antigravity":
-            raise ValueError("Antigravity account isolation is not supported by config_dir; refusing default authentication")
-        return {"CLAUDE_CONFIG_DIR" if self.engine == "claude" else "CODEX_HOME": str(self.config_dir)}
+            from ttakkari import antigravity_accounts as managed
+            try:
+                p = managed.load(self.config_dir)
+            except ValueError as exc:
+                raise ValueError("Antigravity isolation: invalid_profile") from exc
+            if p.account_id != self.id:
+                raise ValueError("Antigravity isolation: account_mismatch")
+            return managed.execution_env(p.home, base_env)
+        return base_env | {"CLAUDE_CONFIG_DIR" if self.engine == "claude" else "CODEX_HOME": str(self.config_dir)}
+
+
+def execution_ready(profile: Profile) -> bool:
+    if profile.engine != "antigravity" or profile.config_dir is None:
+        return True
+    from ttakkari import antigravity_accounts as managed
+    try:
+        return managed.load(profile.config_dir).account_id == profile.id and managed.is_ready(profile.config_dir)
+    except (OSError, ValueError):
+        return False
 
 
 def _profile(a: EngineAccount) -> Profile:
@@ -172,6 +190,8 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
         ):
             continue
         p = _profile(a)
+        if not execution_ready(p):
+            continue
         if p.engine in {"antigravity", "muse"}:
             p = replace(p, model=model or get_settings().worker_default_models[p.engine]["model"])
         until = profile_limited_until(p)
@@ -509,6 +529,13 @@ def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:
     """
     base = Path(config_dir).expanduser() if config_dir else None
     if engine == "antigravity":
+        if base:
+            from ttakkari import antigravity_accounts as managed
+            try:
+                state = managed.status(base)
+                return ("ok" if state["auth_state"] == "ready" else "missing"), state.get("principal")
+            except (ValueError, OSError):
+                return "missing", None
         # The official CLI exposes no read-only login-status API. Do not inspect its credentials.
         return "unknown", None
     if engine == "muse":

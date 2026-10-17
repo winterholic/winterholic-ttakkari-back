@@ -500,9 +500,13 @@ async def test_antigravity_second_account_cannot_alias_host_login(client, auth):
     first = await client.post('/api/accounts', json={'name': 'agy-a', 'engine': 'antigravity'}, headers=auth)
     assert first.status_code == 201, first.text
     second = await client.post('/api/accounts', json={'name': 'agy-b', 'engine': 'antigravity'}, headers=auth)
-    assert second.status_code == 409, second.text
-    assert second.json()['code'] == 'antigravity_isolation_unsupported'
-    assert [a['name'] for a in await _accounts(client, auth) if a['engine'] == 'antigravity'] == ['agy-a']
+    assert second.status_code == 201, second.text
+    row = second.json()
+    assert first.json()['config_dir'] is None
+    assert row['config_dir'].endswith(row['id'] + '/antigravity-home')
+    assert row['auth_state'] == 'setup_required' and row['login'] == 'missing'
+    assert 'ttakkari.antigravity_accounts' in row['login_command']
+    assert not row['execution_enabled']
 
 
 async def test_concurrent_antigravity_creation_cannot_alias_host_login(client, auth):
@@ -512,5 +516,32 @@ async def test_concurrent_antigravity_creation_cannot_alias_host_login(client, a
         client.post('/api/accounts', json={'name': f'agy-{i}', 'engine': 'antigravity'}, headers=auth)
         for i in range(2)
     ))
-    assert sorted(r.status_code for r in responses) == [201, 409]
-    assert len([a for a in await _accounts(client, auth) if a['engine'] == 'antigravity']) == 1
+    assert sorted(r.status_code for r in responses) == [201, 201]
+    rows = [a for a in await _accounts(client, auth) if a['engine'] == 'antigravity']
+    assert len(rows) == 2
+    assert sum(a['config_dir'] is None for a in rows) == 1
+    assert len({a['config_dir'] for a in rows}) == 2
+
+
+async def test_antigravity_check_endpoint_confirms_only_with_user_supplied_identity(client, auth, monkeypatch):
+    from ttakkari import antigravity_accounts as managed
+    await client.post('/api/accounts', json={'name': 'agy-a', 'engine': 'antigravity'}, headers=auth)
+    second = (await client.post('/api/accounts', json={'name': 'agy-b', 'engine': 'antigravity'}, headers=auth)).json()
+    calls = []
+
+    def fake_check(home, *, principal=None, confirm_isolated_login=False):
+        calls.append((principal, confirm_isolated_login))
+        managed.record_probe(home, success=True)
+
+    monkeypatch.setattr(managed, 'check', fake_check)
+    no_identity = await client.post(f"/api/accounts/{second['id']}/antigravity/check",
+                                    json={'confirm': True}, headers=auth)
+    assert no_identity.status_code == 422 and not calls
+    ok = await client.post(f"/api/accounts/{second['id']}/antigravity/check",
+                           json={'principal': 'b@example.test', 'confirm': True}, headers=auth)
+    assert ok.status_code == 200, ok.text
+    assert calls == [('b@example.test', True)]
+    assert ok.json()['auth_state'] == 'ready' and ok.json()['execution_enabled'] is True
+    host = next(a for a in await _accounts(client, auth) if a["engine"] == "antigravity" and a["config_dir"] is None)
+    refused = await client.post(f"/api/accounts/{host['id']}/antigravity/check", json={}, headers=auth)
+    assert refused.status_code == 422

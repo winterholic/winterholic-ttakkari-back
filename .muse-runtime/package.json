@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@muse-code/sdk": "1.4.10"
+  }
+}

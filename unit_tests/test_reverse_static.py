@@ -16,8 +16,10 @@ from ttakkari.config import get_settings
 def allowed_root(tmp_path, monkeypatch):
     root = tmp_path / "allowed"
     root.mkdir()
+    (tmp_path / "corp").mkdir()
     monkeypatch.setenv("TTAKKARI_NO_ENV_FILE", "1")
-    monkeypatch.setenv("TTAKKARI_ALLOWED_ROOTS", json.dumps([str(root)]))
+    monkeypatch.setenv("TTAKKARI_ALLOWED_ROOTS", json.dumps([str(root), str(tmp_path / "corp")]))
+    monkeypatch.setenv("TTAKKARI_COMPANY_ROOTS", json.dumps([str(tmp_path / "corp")]))
     get_settings.cache_clear()
     yield root
     get_settings.cache_clear()
@@ -47,10 +49,31 @@ def test_normalize_rejects_unsafe(allowed_root):
                 "https://127.0.0.1/x/y.git", "https://localhost/x/y.git",
                 "https://10.0.0.1/x/y.git", "https://169.254.169.254/x/y.git",
                 "https://gitlab.com/x/y.git", "https://github.com.evil.com/x/y.git",
+                "https://github.com:8443/morluto/rea.git",
+                "morluto/re\x00a", "morluto/rea\n",
                 "/", "~", str(Path.home() / ".ssh"), "/etc", "/nonexistent-dir-xyz"]:
         with pytest.raises(reverse.ReverseError):
             reverse.normalize_target(bad)
     assert reverse.normalize_target(str(allowed_root))["kind"] == "local_path"
+    assert reverse.normalize_target("https://github.com:443/morluto/rea.git")["kind"] == "git_url"
+
+
+def test_company_path_refused(tmp_path, monkeypatch):
+    root = tmp_path / "allowed"
+    corp = tmp_path / "corp"
+    root.mkdir()
+    corp.mkdir()
+    monkeypatch.setenv("TTAKKARI_NO_ENV_FILE", "1")
+    monkeypatch.setenv("TTAKKARI_ALLOWED_ROOTS", json.dumps([str(root), str(corp)]))
+    monkeypatch.setenv("TTAKKARI_COMPANY_ROOTS", json.dumps([str(corp)]))
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(reverse.ReverseError) as exc:
+            reverse.normalize_target(str(corp))
+        assert exc.value.code == "company_path"
+        assert reverse.normalize_target(str(root))["kind"] == "local_path"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_secrets_never_read(tmp_path):
@@ -96,19 +119,45 @@ def test_structure_entries_and_symlinks(tmp_path):
 
 def test_validate_synthesis_drops_unevidenced():
     known = {"a.py", "b.py"}
-    data = {"overview": "개요다.",
-            "architecture": [{"title": "구조", "body": "설명.", "evidence": ["a.py:3"]},
+    texts = {"a.py": {3: "def run(): helper()"}, "b.py": {1: "import app"}}
+    data = {"overview": {"text": "a.py의 run이 핵심이다.", "evidence": ["a.py:3"]},
+            "architecture": [{"title": "구조", "body": "run 설명.", "evidence": ["a.py:3"]},
                              {"title": "허위", "body": "근거 없음.", "evidence": []}],
-            "modules": [{"path": "a.py", "role": "역할.", "evidence": ["ghost.py:1"]}],
+            "modules": [{"path": "a.py", "role": "run 역할.", "evidence": ["ghost.py:1"]},
+                        {"path": "ghost.py", "role": "없는 경로.", "evidence": ["a.py:3"]}],
             "flows": [{"title": "흐름", "steps": ["a.py"], "evidence": ["b.py:99"]}],
-            "ideas": [{"title": "아이디어", "body": "내용.", "evidence": ["a.py"]}],
+            "ideas": [{"title": "아이디어", "body": "app 구조 차용.", "evidence": ["b.py:1"]}],
             "limitations": ["확인 필요: 런타임"]}
-    synth, dropped = reverse._validate_synthesis(data, known, {"a.py": 10, "b.py": 5})
-    assert dropped == 2
+    synth, dropped = reverse._validate_synthesis(data, known, {"a.py": 10, "b.py": 5}, texts)
+    assert dropped == 3
     assert [a["title"] for a in synth["architecture"]] == ["구조"]
     assert synth["modules"] == []
     assert synth["flows"][0]["evidence"] == ["b.py"]
-    assert synth["ideas"][0]["evidence"] == ["a.py"]
+    assert synth["ideas"][0]["evidence"] == ["b.py:1"]
+    assert synth["overview"] == {"text": "a.py의 run이 핵심이다.", "evidence": ["a.py:3"]}
+    assert reverse._synth_usable(synth) is True
+    assert reverse._synth_usable({"overview": {"text": "개요", "evidence": []}}) is False
+
+
+def test_strip_rel_keeps_dot_paths():
+    assert reverse._strip_rel("./a.py") == "a.py"
+    assert reverse._strip_rel(".agents/skills/x.md") == ".agents/skills/x.md"
+    assert reverse._normalize_evidence(".agents/x.md:1", {".agents/x.md"}, {}) == ".agents/x.md:1"
+
+
+def test_excerpt_masks_secrets(tmp_path):
+    (tmp_path / "cfg.py").write_text('api_key = "[REDACTED]"\npassword: hunter2\nok = 1\n')
+    text, _count, masked = reverse._excerpt(tmp_path, "cfg.py")
+    assert masked == 2
+    assert "[REDACTED]" not in text and "hunter2" not in text
+    assert "***" in text
+
+
+def test_quote_relevance_check():
+    line = {1: "export class EvidenceMcpServer extends McpServer {"}
+    assert reverse._line_relevant("도구 등록의 중심 허브", "src/server/EvidenceMcpServer.ts",
+                                  1, {"src/server/EvidenceMcpServer.ts": line}) is True
+    assert reverse._line_relevant("완전히 다른 이야기 짓기", "a.py", 1, {"a.py": line}) is False
 
 
 def test_parse_model_json_tolerates_fence():
@@ -122,8 +171,8 @@ def test_excerpt_never_reads_secrets(tmp_path):
     (tmp_path / ".env").write_text("KEY=x\n")
     assert reverse._excerpt(tmp_path, ".env") is None
     (tmp_path / "a.py").write_text("x = 1\ny = 2\n")
-    text, count = reverse._excerpt(tmp_path, "a.py")
-    assert count == 2 and text.startswith("1: x = 1")
+    text, count, masked = reverse._excerpt(tmp_path, "a.py")
+    assert count == 2 and masked == 0 and text.startswith("1: x = 1")
 
 
 def test_stale_and_fail_stages():

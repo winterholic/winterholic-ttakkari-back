@@ -142,10 +142,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if n:
         log.warning("marked %d runs as interrupted after restart", n)
     try:
-        from ttakkari.reverse import recover_reverse_jobs
+        from ttakkari.reverse import recover_reverse_jobs, resume_waiting_reverse_jobs
         rn = await recover_reverse_jobs()
         if rn:
             log.warning("marked %d reverse jobs as failed after restart", rn)
+        wn = await resume_waiting_reverse_jobs()
+        if wn:
+            log.warning("requeued %d waiting reverse jobs after restart", wn)
     except Exception as e:  # noqa: BLE001 - 리버스 복구 실패가 기동을 막지 않게
         log.warning("reverse recovery failed: %s", e)
     # 한도 상태를 되살린 뒤에 대기열을 돌려야 초기화 전 계정을 다시 두드리지 않는다.

@@ -75,6 +75,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "reverse_start", "group": "맥락", "who": "개인 실행", "desc": "GitHub URL·로컬 경로의 리버스 엔지니어링 시작(읽기만, 비밀 제외)"},
     {"name": "reverse_list", "group": "맥락", "who": "개인 실행", "desc": "리버스 엔지니어링 작업 목록과 현재 단계"},
     {"name": "reverse_get", "group": "맥락", "who": "개인 실행", "desc": "작업의 단계별 근거 타임라인과 최종 정리 결과 조회"},
+    {"name": "reverse_retry", "group": "맥락", "who": "개인 실행", "desc": "대기·부분·실패한 리버스 엔지니어링 작업을 처음부터 다시 시작"},
     {"name": "server_resources", "group": "서버", "who": "모든 실행", "desc": "이 맥의 CPU·메모리·디스크·네트워크와 상위 프로세스"},
     {"name": "execution_capabilities", "group": "서버", "who": "모든 실행", "desc": "엔진별 실행 환경 능력(GPU/Metal·ps·sysctl·네트워크·쓰기 경로)을 프로브 실측 시각과 함께 조회한다. 샌드박스 제한은 그 엔진 한정이다"},
     {"name": "report_execution_environment", "group": "서버", "who": "개인 실행", "desc": "세션이 자기 환경에서 돌린 프로브 결과를 실제 엔진 이름으로 기록한다"},

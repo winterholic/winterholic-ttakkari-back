@@ -111,6 +111,16 @@ async def reverse_get(job_id: str) -> str:
     from urllib.parse import quote
     return await _agent("GET", f"/reverse/{quote(job_id, safe='')}")
 
+
+@server.tool()
+async def reverse_retry(job_id: str) -> str:
+    """Restart a waiting, partial or failed reverse-engineering job from scratch.
+    Use it after quota resets or a transient model failure. Personal sessions only."""
+    from urllib.parse import quote
+
+    from ttakkari.oplog.limits import cap_text
+    return cap_text(await _agent("POST", f"/reverse/{quote(job_id, safe='')}/retry", None))
+
 async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
     return await _call(method, path, body, prefix="/api/agent", params=params)
 

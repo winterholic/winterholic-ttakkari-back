@@ -56,6 +56,17 @@ def make_router(prefix: str, access, *, start_path: str, actor: str) -> APIRoute
         except reverse.ReverseError as exc:
             raise _http(exc) from exc
 
+    @router.post("/{job_id}/retry", status_code=202)
+    async def retry(job_id: str, request: Request, db: Db) -> dict:
+        try:
+            job = await reverse.retry_job(job_id, db)
+        except reverse.ReverseError as exc:
+            raise _http(exc) from exc
+        record(db, action="reverse.retry", actor=actor, target_type="reverse_job", target_id=job["id"],
+               ip=client_ip(request))
+        await db.commit()
+        return job
+
     return router
 
 

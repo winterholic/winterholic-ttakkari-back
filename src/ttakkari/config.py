@@ -313,6 +313,8 @@ class Settings(BaseSettings):
 
     # 리버스 엔지니어링 원격 수집 허용 호스트(기본 github.com). https 전용이다.
     reverse_allowed_hosts: list[str] = []
+    # 리버스 엔지니어링에서 개인 계정 모델로 보내지 않는 회사 범위(간단히 거부한다).
+    company_roots: list[Path] = [Path.home() / "development" / "hyperez"]
 
     @property
     def reverse_root(self) -> Path:

@@ -3,7 +3,9 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {dirname,join} from 'node:path';
 import {createRequire} from 'node:module';
 import {pathToFileURL} from 'node:url';
+import {homedir} from 'node:os';
 import {assertReady,sessionParams,verifySession} from './contract.mjs';
+import {prepareHookSettings} from './hook-settings.mjs';
 
 const spec=JSON.parse(await readFile(process.argv[2],'utf8'));
 const requireRuntime=createRequire(join(spec.runtime_root,'package.json'));
@@ -16,9 +18,10 @@ const hookCommand=[spec.hook_python,spec.hook_script,'--policy',spec.policy_file
 await writeFile(hooksFile,JSON.stringify({hooks:{PreToolUse:[{hooks:[{type:'command',command:hookCommand,timeout:10}]}]}}),{mode:0o600});
 const env={...process.env,MUSE_NO_AUTO_UPDATE:'1',MUSE_LOGIN:'0'};
 for(const key of ['META_API_KEY','MUSE_AUTH_PATH','MUSE_TRANSPORT_TRACE'])delete env[key];
+env.XDG_CONFIG_HOME=await prepareHookSettings(env.XDG_CONFIG_HOME??join(homedir(),'.config'),dirname(process.argv[2]),hooksFile);
 const handshake=spawnMspConnection({command:spec.muse_bin,
   args:['serve','--provider','meta','--contributor-mode','off','--trust-workspace','--disable-request-user-input',
-        '-c',`managed_hooks_path=${JSON.stringify(hooksFile)}`,'-c','run.workflow_trigger_mode="off"'],
+        '-c','run.workflow_trigger_mode="off"'],
   cwd:spec.cwd,env,onStderr:chunk=>process.stderr.write(chunk),shutdownTimeoutMs:1000});
 let host,sessionId,turnId,active=false,terminalResolve;
 const terminals=new Map();

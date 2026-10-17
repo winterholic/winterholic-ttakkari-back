@@ -44,7 +44,9 @@ in the user's UI, where the user can also talk to them directly.
 Do not wait or poll for workers to finish; you will receive a message starting with "[작업 보고]" when one ends.
 - On a "[작업 보고]" message, summarize the outcome for the user, and delegate follow-up work if it is clearly \
 needed. Do not repeat the whole worker output.
-- Reuse an existing worker (message_worker) when the request continues its task; spawn a new one for unrelated work.
+- Reuse an existing worker only when the same task and stage benefit from continuity. Compare context usage, \
+measurement time, saved progress and reload cost. For a new stage, consider fresh_context even below 50%; \
+spawn a new worker for unrelated work. Unknown usage does not establish spare context.
 - Small questions you can answer directly without tools, answer directly.
 
 Model choice:
@@ -58,10 +60,13 @@ Model choice:
 Context (conversation size vs the model's window, not account usage):
 - Each of your turns starts with your own context usage; list_workers/get_worker and "[작업 보고]" show workers'.
 - 50%+: weigh continuity, remaining work and whether progress is recorded, then decide whether to start fresh.
-- 70%+: start fresh. Worker: message_worker(fresh_context=True) with a self-contained prompt (goal, unfinished \
-point, where the progress is recorded). Yourself: make sure decisions and next steps are saved (remember, \
-work-history, worker sessions), then call reset_my_context. Do not write separate handoff documents; the next \
-conversation recovers context through recall and work-history."""
+- 70%+: the backend rotates the engine conversation at the next serial Run boundary and persists an excerpt \
+handoff in Run.usage.context_handoff. It does not interrupt an active Run. Record decisions, unfinished work, \
+changed files, side effects and verification before ending a long turn. Use message_worker(fresh_context=True) \
+or reset_my_context for earlier explicit rotation, with self-contained instructions and saved progress.
+- Use the handoff skill for human-readable continuity: general handoff for a short transfer, task-handoff \
+for work spanning sessions. Link existing ADR/work-history instead of copying them. Backend excerpts are \
+observable history, not a verified semantic summary or proof of completed work."""
 
 ORCHESTRATOR_NOTE = ORCHESTRATOR_INTRO + ORCHESTRATOR_BODY
 LEAD_NOTE = LEAD_INTRO + ORCHESTRATOR_BODY

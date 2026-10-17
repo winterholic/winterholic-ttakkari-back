@@ -107,6 +107,7 @@ class WorkerOut(BaseModel):
     false_completion: bool | None = None
     status: str
     context: str = ""
+    context_usage: dict | None = None
     active_run_id: uuid.UUID | None = None
     last_result: str | None = None
     last_error: str | None = None
@@ -133,11 +134,12 @@ async def _out(db: Db, w: ChatSession, detail: bool = False) -> WorkerOut:
                                  .execution_options(populate_existing=True)))
     active = next((r for r in runs if r.status in ACTIVE), None)
     done = next((r for r in runs if r.status not in ACTIVE), None)
+    ctx = await context_usage.latest(db, w)
     out = WorkerOut(worker_id=w.id, title=w.title, engine=w.engine, model=w.model, effort=w.effort,
                     task_type=w.worker_task_type, strict_engine=w.strict_engine,
                     status=active.status if active else (done.status if done else "idle"),
                     active_run_id=active.id if active else None,
-                    context=context_usage.describe(await context_usage.latest(db, w)))
+                    context=context_usage.describe(ctx), context_usage=ctx)
     if runs:
         out.routing = await db.scalar(select(RunEvent.payload).where(
             RunEvent.run_id == runs[0].id, RunEvent.type == "worker.routing").order_by(RunEvent.seq.desc()).limit(1))

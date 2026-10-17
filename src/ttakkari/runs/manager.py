@@ -515,6 +515,8 @@ class RunManager:
                                error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
             return
 
+        await context_usage.prepare(db, sess, run)
+
         # 모든 역할과 고정 엔진 세션도 신선한 사용량을 비교한다(ADR 0006).
         # 모델·엔진 범위는 지키고, 계정 전환 시 저장된 엔진 대화와 _handoff_context로 이어 받는다.
         prefer = profiles_mod.model_engine(run.model)
@@ -640,6 +642,12 @@ class RunManager:
         write_roots = [root, outbox, s.uploads_root, s.inbox_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
 
         base_prompt = await _compose_prompt(db, run)
+        context_handoff = (run.usage or {}).get("context_handoff") or {}
+        base_prompt = context_handoff.get("text", "") + base_prompt
+        if (run.usage or {}).get("context_routing", {}).get("action") == "review":
+            base_prompt += ("\n[컨텍스트 검토] 같은 작업의 연속성·남은 분량·기록·재로딩 비용을 비교한다. "
+                            "새 단계라면 기록 후 fresh_context/reset_my_context를 사용한다. "
+                            "장기 작업은 handoff 스킬의 task-handoff, 단기 교대는 일반 handoff를 활용한다.\n")
         if is_orch:
             # 시스템 프롬프트가 아니라 지시 앞에 붙인다. 매 턴 바뀌는 값이 시스템 프롬프트에 있으면 프롬프트 캐시가 깨진다.
             ctx = await context_usage.latest(db, sess)
@@ -778,7 +786,7 @@ class RunManager:
         }
         if last_fallback is not None:
             routing_usage["fallback"] = last_fallback
-        run.usage = {**state.usage, **context_usage.measure(state, prof.engine, prof.config_dir), **routing_usage}
+        run.usage = {**(run.usage or {}), **state.usage, **context_usage.measure(state, prof.engine, prof.config_dir), **routing_usage}
         run.result_text = state.result_text or state.last_message
 
         diff = None
@@ -1360,7 +1368,7 @@ async def _handoff_context(db: AsyncSession, run: Run, resumed_profile: str | No
     resumed_model까지 일치하는 마지막 Run 뒤의 대화를 넘겨 같은 계정의 다른 모델 진행도 보존한다."""
     stmt = select(Run).where(Run.session_id == run.session_id, Run.id != run.id, Run.status.in_(TERMINAL_RUN_STATUSES))
     if (since := context_usage.reset_at(await db.get(ChatSession, run.session_id))) is not None:
-        stmt = stmt.where(Run.created_at > since)
+        stmt = stmt.where(Run.started_at >= since)
     rows = list(await db.scalars(stmt.order_by(Run.created_at.desc()).limit(HANDOFF_TURNS)))
     if resumed_profile:
         missed = []

@@ -41,7 +41,7 @@ from ttakkari.models import (
     SessionKind,
     utcnow,
 )
-from ttakkari.runs import desk_qwen, events
+from ttakkari.runs import context_usage, desk_qwen, events
 from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 
@@ -182,6 +182,14 @@ async def _lead_line(db: AsyncSession, lead: ChatSession) -> str:
         busy = len(set(await db.scalars(select(Run.session_id).where(
             Run.session_id.in_(workers), Run.status.in_([RunStatus.queued, RunStatus.running])))))
     line = f"- lead_id={lead.id} 「{lead.title}」 상태: {state} · 작업 세션 {len(workers)}개(실행 중 {busy})"
+    ctx = await context_usage.latest(db, lead)
+    if ctx:
+        pct = ctx["context_percent"]
+        policy = ("다음 실행은 새 문맥" if pct >= get_settings().context_replace_percent
+                  else "연속성·새 단계 검토" if pct >= get_settings().context_review_percent else "재사용 가능")
+        line += f" · 문맥 {pct}% {ctx['measured_at']} {ctx['measured_engine']}/{ctx['measured_model']}({ctx['measurement_status']}; {policy})"
+    else:
+        line += " · 문맥 unknown(여유 미확인)"
     if done and (done.result_text or done.error):
         line += " · 최근 결과: " + " ".join((done.result_text or done.error or "").split())[:300]
     return line

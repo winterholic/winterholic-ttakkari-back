@@ -195,6 +195,16 @@ payload 는 `{title, body, url, tag}`:
 
 `WorkerOut`: `{worker_id, title, engine, status(queued|running|succeeded|failed|cancelled|interrupted|idle), active_run_id, last_result, last_error, artifacts}`.
 
+### 컨텍스트 수명 관리 (2026-10-17)
+
+- `GET /api/orchestrator/context`와 `WorkerOut.context_usage`는 마지막 완료 Run의 `{context_tokens, context_window, context_percent, measured_at, measured_run_id, measured_engine, measured_model, measurement_status: fresh|stale}`를 제공한다. 미측정 작업자는 `context_usage=null`이며 더 오래된 낮은 값을 찾아 여유로 간주하지 않는다. `context` 문자열도 유지한다.
+- 측정은 해당 Run의 엔진·모델에 한정된다. 24시간을 넘거나 완료 시각이 없으면 `stale`이다. 실시간 값·계정 quota와 다르다. 오래된 높은 값도 대화가 비워졌다는 증거가 아니므로 70% 교대 대상이다. reset 이후는 **실행 시작 시각**으로 구분해 미리 대기 중이던 Run도 반영한다.
+- Qwen·CLI 공통 접수 작업판에 후보별 사용률·시각·엔진/모델·fresh/stale·교대 정책을 넣는다. 50% 이상은 연속성·새 단계·기록·재로딩 비용 검토, 새 단계는 낮은 사용률에서도 명시 교대를 고려한다. task/step key를 추론해 저장하는 기능은 없다.
+- 직렬 실행 소유권을 얻은 기획/작업 Run은 엔진 시작 전에 임계치를 검사한다. `context.routing` 이벤트와 `Run.usage.context_routing`에 `{action: unknown|reuse|review|fresh, measurement, reason, reset_at?}`를 저장한다. 기본 50% 이상은 검토 지시, 70% 이상은 엔진 대화 ID를 비운다. unknown은 0%가 아니다. 사용자 직접 요청·접수·작업 보고·작업자 메시지·미리 대기 중인 요청 모두 같은 경계를 거친다. 일반 채팅·접수 자체는 자동 교대 대상이 아니다.
+- 자동 교대는 `Run.usage.context_handoff`에 `{source_run_ids, original_request, created_at, text}`를 reset과 같은 트랜잭션으로 저장한다. 최초 목표, 최근 완료 4턴의 요청·결과·오류, 체크포인트·outbox·기존 작업자 포인터를 원문으로 전달한다. 긴 필드는 중간 절단 대신 전체 생략과 원본 Run 포인터를 남긴다(본문 필드 예산 16,000자). 원문 발췌는 의미 요약·전체 도구 부작용 목록·검증 완료 보증이 아니다. 기존 기록·현재 코드·작업자를 확인하고 이미 한 일을 반복하지 않는다.
+- 같은 Run의 한도 전환·복구에서는 저장한 인계를 사용하며 재교대하지 않는다. 활성 Run 취소·작업 복제·lease 변경은 없다. 긴 단일 Run 도중의 감시·자동 중단은 구현하지 않는다. 교대 뒤에도 화면의 세션·작업자 ID를 유지한다.
+- 명시 `fresh_context`·`reset_my_context`는 기존 계약대로 사전 작성한 지시·기록을 사용한다. 자동 원문 인계는 임계치 교대에만 붙는다. 사람용 파일은 에이전트가 handoff 스킬로 작성하며 자동 파일 생성을 보장하지 않는다.
+
 ## 엔진 계정(ADR 0006)
 
 계정은 모두 개인 목록에 있고, 계정 추가·삭제도 개인 목록에서만 한다. 그중 회사 모드에도 쓸 계정을 고르면 `pool=work` 가 된다(회사에 들어온 계정). **개인 모드와 회사 모드는 켜기·기본 순서·임시 순서를 각자 따로 가진다.** 같은 계정을 개인 모드에선 끄고 회사 모드에선 켤 수 있다. 개인 대화·워커(`sessions.pool=personal`)는 모든 계정을 개인 순서(`priority`)·켜기(`enabled`)로 고르고 한도 폴백도 그 순서다. 회사 업무 대화(`sessions.pool=work`)는 회사에 들어온 계정만 회사 순서(`work_priority`)·켜기(`work_enabled`)로 고르고 폴백한다. 모드별 값은 `?pool=personal|work`(기본 personal)로 가른다.

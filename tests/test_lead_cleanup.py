@@ -63,6 +63,60 @@ async def test_same_title_after_window_makes_new_lead(client, auth, make_dir, mo
         await _wait(lambda lead=lead: _all_done(client, auth, lead["id"]), what="기획 턴")
 
 
+async def _delegated_first_lead(client, auth, make_dir, prompt: str = "DESK_TITLE:같은_일") -> tuple[dict, dict]:
+    desk = await _desk(client, auth, make_dir)
+    await wait_run(client, auth, (await start_run(client, auth, desk["id"], prompt))["id"])
+    lead = (await _leads(client, auth, desk["id"]))[0]
+    await _wait(lambda: _all_done(client, auth, lead["id"]), what="첫 기획 턴")
+    return desk, lead
+
+
+async def test_new_session_signal_ignores_picked_lead(client, auth, make_dir):
+    # 모델이 기존 lead_id 를 고르면서도 새 세션을 명시하면 하네스가 무시하고 새로 만든다.
+    desk, lead = await _delegated_first_lead(client, auth, make_dir)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "DESK_NEWSESSION DESK_TITLE:같은_일"))["id"])
+    leads = await _leads(client, auth, desk["id"])
+    assert len(leads) == 2, [x["title"] for x in leads]
+    assert {x["id"] for x in leads} != {lead["id"]}
+    payload = await _delegated(client, auth, run["id"])
+    assert payload.get("new_session") is True and not payload.get("dedup")
+    assert payload["lead_id"] != lead["id"]
+    for ld in leads:
+        await _wait(lambda ld=ld: _all_done(client, auth, ld["id"]), what="기획 턴")
+
+
+async def test_user_new_session_words_skip_title_dedup(client, auth, make_dir):
+    # 사용자가 새 세션을 말하면 제목이 같아도 병합하지 않는다. 모델 신호가 없어도 된다.
+    desk, lead = await _delegated_first_lead(client, auth, make_dir)
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "새 세션으로 시작해줘 DESK_TITLE:같은_일"))["id"])
+    leads = await _leads(client, auth, desk["id"])
+    assert len(leads) == 2, [x["title"] for x in leads]
+    payload = await _delegated(client, auth, run["id"])
+    assert payload.get("new_session") is True and not payload.get("dedup")
+    assert payload["lead_id"] != lead["id"]
+    for ld in leads:
+        await _wait(lambda ld=ld: _all_done(client, auth, ld["id"]), what="기획 턴")
+
+
+async def test_archived_lead_is_never_reopened(client, auth, make_dir):
+    # 보관된 기획은 작업판에 없어 모델이 고를 수 없고, 하네스도 다시 살리지 않는다.
+    desk, lead = await _delegated_first_lead(client, auth, make_dir)
+    async with sessionmaker()() as db:
+        row = await db.get(ChatSession, lead["id"])
+        row.archived_at = utcnow()
+        await db.commit()
+    assert await _leads(client, auth, desk["id"]) == []
+    run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "그거 이어서 DESK_CONTINUE"))["id"])
+    leads = await _leads(client, auth, desk["id"])
+    assert len(leads) == 1 and leads[0]["id"] != lead["id"]
+    assert await _archived(lead["id"])
+    old_runs = (await client.get(f"/api/sessions/{lead['id']}/runs", headers=auth)).json()
+    assert len(old_runs) == 1
+    payload = await _delegated(client, auth, run["id"])
+    assert payload["lead_id"] == leads[0]["id"]
+    await _wait(lambda: _all_done(client, auth, leads[0]["id"]), what="기획 턴")
+
+
 # ---- 끝난 기획 자동 보관
 
 async def _lead_with_worker(client, auth, make_dir, worker_prompt: str = "write") -> tuple[dict, dict, dict]:

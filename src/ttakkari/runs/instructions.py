@@ -31,11 +31,12 @@ DESK_DEFAULT = """\
 
 넘길 때:
 - [작업판]에 같은 일을 맡은 기획 세션이 있으면 그 lead_id 를 고른다. 새 일이면 lead_id 는 null 로 두고 title 에 짧은 제목을 쓴다.
+- 사용자가 새 세션·새로 시작을 말하거나, [작업판]의 어느 일과도 다른 일이면 lead_id 를 고르지 말고 new_session 을 true 로 둔다. 제목이 비슷해도 다른 일이면 null 이다.
 - reply 에는 무엇을 넘겼는지 한 문장만 쓴다.
 
 출력은 JSON 한 줄만 쓴다. 다른 말은 쓰지 않는다.
 {"action":"answer","reply":"..."}
-{"action":"delegate","reply":"...","lead_id":null,"title":"..."}
+{"action":"delegate","reply":"...","lead_id":null,"title":"...","new_session":false}
 
 말투는 사용자를 따라 짧게, 한국어로."""
 

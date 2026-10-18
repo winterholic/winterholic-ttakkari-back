@@ -31,6 +31,13 @@ def desk_reply(prompt, engine):
     if "DESK_CONTINUE" in msg:
         m = re.search(r"lead_id=([0-9a-f-]{36})", prompt)
         return json.dumps({"action": "delegate", "reply": "이어서 넘겼어요", "lead_id": m.group(1) if m else None})
+    if "DESK_NEWSESSION" in msg:
+        # 작업판 첫 기획을 고르면서도 새 세션을 명시한다. 하네스가 기존 선택을 무시하는지 본다.
+        m = re.search(r"lead_id=([0-9a-f-]{36})", prompt)
+        t = re.search(r"DESK_TITLE:(\S+)", msg)
+        return json.dumps({"action": "delegate", "reply": "새로 넘겼어요", "lead_id": m.group(1) if m else None,
+                           "title": t.group(1).replace("_", " ") if t else "새 일", "new_session": True},
+                          ensure_ascii=False)
     m = re.search(r"DESK_TITLE:(\S+)", msg)
     if m:
         # 제목을 정해 새 기획으로 넘긴다. 밑줄은 공백으로 바꾼다(중복 기획 판단 테스트).

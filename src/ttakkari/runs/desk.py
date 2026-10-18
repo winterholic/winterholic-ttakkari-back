@@ -63,6 +63,8 @@ class Decision:
     reply: str
     lead_id: str | None = None
     title: str | None = None
+    # 모델이 새 기획을 명시한 경우. _delegate 가 기존 세션 선택과 제목 병합을 모두 건너뛴다.
+    new_session: bool = False
 
 
 @dataclass
@@ -124,6 +126,8 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         payload: dict[str, object] = {"lead_id": str(lead.id), "title": lead.title}
         if dedup:
             payload |= {"dedup": True, "requested_title": _new_title(run, decision)}
+        if decision.new_session or _wants_new_session(run.prompt):
+            payload |= {"new_session": True}
         events.append(db, run, "desk.delegated", payload)
     run.result_text = reply
     events.append(db, run, "message", {"text": reply})
@@ -285,6 +289,17 @@ async def _history(db: AsyncSession, sess: ChatSession, run: Run, turns: int) ->
     return lines
 
 
+_NEW_SESSION_RE = re.compile(
+    r"새\s*세션|새로운\s*세션|새\s*기획|새\s*작업|새\s*창|"
+    r"새로\s*(만들어|시작|열어)|처음부터\s*새"
+)
+
+
+def _wants_new_session(prompt: str) -> bool:
+    """사용자가 새 세션을 명시했는지. 모호한 말(새로 해줘·새로고침 등)은 해당하지 않는다."""
+    return _NEW_SESSION_RE.search(prompt) is not None
+
+
 async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Decision) -> tuple[ChatSession, bool]:
     """넘길 기획 세션과, 같은 일로 보고 방금 만든 기획에 이어 넣었는지(dedup)를 돌려준다."""
     from ttakkari.api.sessions import queue_run
@@ -292,11 +307,13 @@ async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Dec
     # 접수 행을 잠그고 기획 목록을 다시 읽는다. 작업판은 엔진을 부르기 전 상태라, 동시에 넘긴 다른 접수 Run 이 그사이 만든
     # 기획을 못 본다. 자동 보관(runs/lead_archive)도 같은 행을 잠가 순서가 맞는다. 잠금은 queue_run 의 commit 에서 풀린다.
     await db.scalar(select(ChatSession.id).where(ChatSession.id == sess.id).with_for_update())
-    lead = await _open_lead(db, sess, decision.lead_id)
+    force_new = decision.new_session or _wants_new_session(run.prompt)
+    lead = None if force_new else await _open_lead(db, sess, decision.lead_id)
     dedup = False
     if lead is None:
         title = _new_title(run, decision)
-        lead = await _same_recent_lead(db, sess, title)
+        # 새 세션 요청은 제목이 같아도 병합하지 않는다. 모델이 새 세션을 골라도 하네스가 합치던 경로다.
+        lead = None if force_new else await _same_recent_lead(db, sess, title)
         dedup = lead is not None
         if lead is None:
             lead = ChatSession(workspace_id=sess.workspace_id, title=title, engine="auto",
@@ -365,7 +382,8 @@ def _parse(text: str) -> Decision | None:
         return None
     lead_id = obj.get("lead_id") if isinstance(obj.get("lead_id"), str) else None
     title = obj.get("title").strip()[:60] if isinstance(obj.get("title"), str) and obj.get("title").strip() else None
-    return Decision(action, reply or "기획 세션에 넘겼어요.", lead_id, title)
+    new_session = obj.get("new_session") is True
+    return Decision(action, reply or "기획 세션에 넘겼어요.", lead_id, title, new_session)
 
 
 # ---- 엔진 호출

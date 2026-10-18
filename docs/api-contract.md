@@ -524,3 +524,8 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 소유자 JWT: `GET /api/design-systems`, `/{system}/items`, `/{system}/item`. MCP는 같은 계약의 `/api/agent/design-systems` 아래 개인 세션에서만 허용하며 회사 세션은 403이다. 검색·상세는 원본 전체 40자리 `revision` SHA로 고정한다. 검색 kind는 token/document/component/example이며 토큰 요약에 `values:{light,dark}`가 포함된다.
 
 시각 미리보기는 owner-only `GET /api/design-systems/{system}/preview?item=&theme=light|dark&revision=`. 기본 item은 `file:{system}/examples/preview.html`이며 example만 허용한다. 응답 `{revision,system,source,html,sections:[{id,title}],warnings:string[]}`. html은 같은 커밋의 허용 CSS·JS·이미지를 data URL로 묶은 문서이며 프론트는 opaque sandbox iframe에만 넣는다. 별도 대용량 계약(최대 20 MiB)으로 MCP의 16k 텍스트 도구에는 실리지 않는다. 누락 404, 잘못된 조건 422, 저장소/크기 오류 503.
+
+
+### GitHub 탐색 (ADR 0042, 소유자 전용·읽기 전용)
+
+`/api/github/*` 전부 GET이며 소유자 JWT가 필요하다(에이전트/MCP 라우터 없음). `account=<gh login>` 쿼리가 필수이고(누락은 422), 계정 목록은 `GET /api/github/accounts`, 입력 해석은 `GET /api/github/resolve?q=&account=`. 공통 봉투 `{data,page,rate,fetched_at,cached,stale,account}`와 엔드포인트·오류 코드 표는 `tests/fixtures/github/README.md`, 타입 정본은 `src/ttakkari/github/schemas.py`. 상류 401은 앱 로그아웃을 막으려고 502 `gh_auth_expired`로 바꾼다. 토큰은 응답·로그에 없다.

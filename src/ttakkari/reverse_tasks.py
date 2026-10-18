@@ -46,7 +46,7 @@ def clean_description(raw: str) -> str:
     text = raw.strip()
     if not text or len(text) > 40_000:
         raise ReverseError(422, "bad_description", "분석할 대상과 재현하고 싶은 동작을 40,000자 이내로 설명해 주세요.")
-    if re.fullmatch(r"(?:https?://\S+|[\w.-]+/[\w.-]+|[/~][^\s]+)", text):
+    if re.fullmatch(r"(?:https?://\S+|git@[\w.-]+:\S+|[\w.-]+/[\w.-]+|[/~][^\s]+)", text):
         raise ReverseError(422, "description_required", "주소만 적지 말고, 어떤 대상의 어떤 동작을 소스로 재현할지 설명해 주세요. 참고 주소는 설명에 함께 적을 수 있어요.")
     if any(ord(c) < 32 and c not in "\n\r\t" for c in text):
         raise ReverseError(422, "bad_description", "설명에 제어문자를 넣을 수 없습니다.")

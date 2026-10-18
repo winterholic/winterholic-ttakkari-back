@@ -4,7 +4,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
 
 from ttakkari import reverse
 from ttakkari.api.deps import Db
@@ -14,9 +13,21 @@ from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.security.auth import User, client_ip
 
 
+from pydantic import BaseModel, Field, model_validator
+
+
 class StartIn(BaseModel):
-    description: str = Field(min_length=1, max_length=40_000)
+    description: str = Field(default="", max_length=40_000)
+    target: str | None = Field(default=None, max_length=40_000)
     workspace_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def resolve_description(self) -> StartIn:
+        desc = (self.description or "").strip() or (self.target or "").strip()
+        if not desc:
+            raise ValueError("분석할 대상과 재현하고 싶은 동작을 설명해 주세요.")
+        self.description = desc
+        return self
 
 
 class MessageIn(BaseModel):

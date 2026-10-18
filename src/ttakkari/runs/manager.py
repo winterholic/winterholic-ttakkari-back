@@ -580,7 +580,14 @@ class RunManager:
                 candidates = meeting_routing.first_stage(candidates)
             elif task_type:
                 all_candidates = candidates
-                candidates = worker_routing.first_stage(candidates, task_type)
+                # Muse 탐색은 단계 선택에 들어간 뒤 DB 에서 예약한다. 져서 빠지면 그 후보 없이 단계를 다시 고른다.
+                maybe = frozenset(p.id for p in candidates if profiles_mod.muse_probe_eligible(p))
+                candidates = worker_routing.first_stage(candidates, task_type, maybe)
+                if maybe:
+                    won = await profiles_mod.claim_muse_probe([p for p in candidates if p.id in maybe])
+                    if maybe - won:
+                        candidates = worker_routing.first_stage(all_candidates, task_type, won)
+                    kwargs = {**kwargs, "probe_ids": won}
                 counts = await profiles_mod.running_counts_async()
                 # Selection excludes this Run's own claim; receipts use the same denominator.
                 own = profiles_mod._in_use.get(run_id)
@@ -591,6 +598,8 @@ class RunManager:
                 candidates = worker_routing.pinned_first_stage(
                     candidates, sess.engine, requested_model, sess.worker_task_type,
                 )
+                if kwargs.get("balance_usage") and any(p.engine == "muse" for p in candidates):
+                    kwargs = {**kwargs, "probe_ids": await profiles_mod.claim_muse_probe(candidates)}
                 counts = await profiles_mod.running_counts_async()
                 own = profiles_mod._in_use.get(run_id)
                 if own in counts:

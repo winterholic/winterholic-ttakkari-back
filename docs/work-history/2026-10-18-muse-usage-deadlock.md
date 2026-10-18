@@ -18,14 +18,14 @@
 선택: **알 수 없는 Muse에 한해 비율 제한된 탐색 배정 + 새 관측 시 수집 백오프 해제**.
 
 1. `profiles.muse_probe_eligible`: 확정 잔여량이 없는 Muse(관측 없음, 낡음, 초기화 뒤 미관측, 갱신 실패)가 30분(`MUSE_PROBE_INTERVAL`)마다 한 번 실제 작업을 받을 수 있게 한다. 알려진 한도 소진(`usage_limit_until`), 쿨다운, 로그인 없음, 직전 탐색 뒤 간격 미경과는 제외한다. 확정 잔여량이 있으면 탐색이 아니라 평소 headroom 순위로 간다.
-2. `worker_routing.first_stage`는 탐색 후보를 `usable`에 포함하고, `profiles.choose`는 `balance_usage`일 때 탐색 후보를 먼저 뽑으며 그때 시각을 기록한다(await 없이 선택과 기록이 한 번에 일어나므로 동시 Run이 같은 탐색을 중복으로 가져가지 않는다).
+2. 예약은 DB가 정한다(독립 검증 반례 반영, 2차 수정). `profiles.claim_muse_probe`가 `app_settings` 한 줄(키 `muse_probe:<account_id>`, 값 `{"at": 시각}`)에 조건부 UPSERT(`ON CONFLICT DO UPDATE … WHERE at <= now-30분 RETURNING`) 한 문장을 실행한다. 이 문장은 간격당 한 번만 성공하므로 세대·프로세스가 여럿이어도, 재시작해도 한 계정은 30분에 한 번만 탐색된다. 스키마 변경이 없고(기존 `app_settings`, 키 60자 이내) 이전 세대는 이 키를 무시한다. 메모리의 `_probe_last`는 참고 사본이며 졌을 때 DB 시각을 받아 적는다. DB 오류면 탐색하지 않는다. 후보 Muse가 여럿이면 하나만 예약한다. 매니저는 단계 선택 뒤 예약하고, 지면 그 후보 없이 단계를 다시 골라 Muse가 단독 단계 후보로 비율 제한을 우회하지 못하게 한다. `first_stage`와 `choose`는 예약된 `probe_ids`만 탐색으로 취급한다.
 3. `usage_collector`: Muse에서 실패 백오프 중에 스트림이 더 새로운 관측을 남기면(`cached.updated_at > last_fetch`, `MIN_REFETCH` 경과) 바로 한 번 다시 조회한다.
 4. API: 초기화된 5시간 창은 기존대로 `unavailable`(퍼센트 0은 자리표시자)이고, 오류 문구에 "5시간 창이 초기화된 뒤 쓰지 않아 값이 없어요. Muse 를 쓰면 갱신돼요"를 덧붙인다. `account_usage`의 `model_capacity`에 `exploration_eligible`과 안내문을 더했다. 프론트는 바꾸지 않았다(작업 중인 다른 세션의 변경과 겹치지 않게, 기존 state 문구로 충분).
 
 이유와 버린 대안
 - "초기화 뒤 unavailable이면 0%·미사용으로 간주": 공급자 값 없이 수치를 만들어 내는 것이라 기존 불변 조건과 충돌한다. 쓰지 않았다.
 - 주기적 재조회만 늘리기: 유휴 창을 공급자가 주지 않으면 몇 번을 조회해도 같다. 조회를 위한 모델 호출은 이 프로젝트가 금지해 둔 방식이다(2026-10-18-muse-usage-unavailable).
-- 탐색은 실제 사용자 작업을 맡기는 방식이다. Muse 결과는 이미 독립 검증 대상(`needs_independent_verification`)이므로 안전망이 있다. 탐색은 계정·프로세스당 30분에 한 번이라 검증 부담이 늘어도 상한이 있다. 세 세대(generation)가 동시에 돌면 프로세스별 기록이라 최대 세 번까지 탐색할 수 있다(상한은 유지).
+- 탐색은 실제 사용자 작업을 맡기는 방식이다. Muse 결과는 이미 독립 검증 대상(`needs_independent_verification`)이므로 안전망이 있다. 탐색은 계정·프로세스당 30분에 한 번이라 검증 부담이 늘어도 상한이 있다. 1차 수정(a30cffc)은 시각을 프로세스 메모리에만 두어 세대마다 한 번씩 탐색할 수 있었다(독립 검증이 지적). 위 2번으로 고쳤다.
 - 탐색 Run이 429로 실패하면 기존 쿨다운이 걸려 탐색 후보에서 빠진다.
 - 이 경우 한 번 배정된 Muse 작업이 실패하면 기존 폴백 흐름(다른 후보로 재배정)을 그대로 따른다.
 

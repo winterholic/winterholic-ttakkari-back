@@ -231,12 +231,13 @@ async def pinned_availability(db: AsyncSession, session_engine: str, pool: str, 
     return free, blocked
 
 
-def first_stage(candidates: list[profiles.Profile], task_type: str) -> list[profiles.Profile]:
+def first_stage(candidates: list[profiles.Profile], task_type: str,
+                probe_ids: frozenset[uuid.UUID] | set[uuid.UUID] = frozenset()) -> list[profiles.Profile]:
     # Do not treat unknown capacity as confirmed spare capacity ahead of measured alternatives.
-    # The one exception is a rate-limited Muse exploration (profiles.muse_probe_eligible): without it an
-    # unobserved Muse is never chosen, so no stream observation can ever end the unknown state.
+    # The one exception is a Muse exploration the caller already reserved in the DB (profiles.claim_muse_probe):
+    # without it an unobserved Muse is never chosen, so no stream observation can ever end the unknown state.
     measured = [p for p in candidates
-                if profiles._usage_headroom(p) is not None or profiles.muse_probe_eligible(p)]
+                if profiles._usage_headroom(p) is not None or (p.engine == "muse" and p.id in probe_ids)]
     usable = measured or candidates
     for stage in ROUTES[task_type]:
         engines_and_families = {(engine, model.rsplit("-", 1)[0] if engine == "antigravity" else model)

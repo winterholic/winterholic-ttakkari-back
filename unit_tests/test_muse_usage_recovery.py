@@ -297,29 +297,26 @@ def _codex(percent=10):
     return p
 
 
-def test_exploration_is_rate_limited_per_account_and_reopens_after_the_interval():
+def test_choose_gives_an_exploration_reservation_to_the_unconfirmed_muse_only():
     aid = uuid4()
     seed(aid, age=3600)
     pool = [_codex(), muse_profile(aid)]
-    assert profiles.choose(pool, uuid4(), balance_usage=True).engine == "muse", "unconfirmed Muse gets the exploration slot"
-    assert profiles.choose(pool, uuid4(), balance_usage=True).engine == "codex", "no second exploration inside the interval"
-    profiles._probe_last[aid] -= profiles.MUSE_PROBE_INTERVAL + 1
-    assert profiles.choose(pool, uuid4(), balance_usage=True).engine == "muse"
+    # Without a DB reservation (probe_ids) an unconfirmed Muse keeps ranking behind measured accounts.
+    assert profiles.choose(pool, uuid4(), balance_usage=True).engine == "codex"
+    assert profiles.choose(pool, uuid4(), balance_usage=True, probe_ids={aid}).engine == "muse"
 
 
-def test_exploration_is_not_used_without_usage_balancing():
+def test_reservation_is_ignored_without_usage_balancing():
     aid = uuid4()
     seed(aid, age=3600)
-    assert profiles.choose([_codex(), muse_profile(aid)], uuid4()).engine == "codex"
-    assert aid not in profiles._probe_last
+    assert profiles.choose([_codex(), muse_profile(aid)], uuid4(), probe_ids={aid}).engine == "codex"
 
 
 def test_confirmed_muse_competes_on_headroom_not_exploration():
     aid = uuid4()
     seed(aid, five=70, age=10)  # 30 left < codex 90 left
     pool = [_codex(10), muse_profile(aid)]
-    assert profiles.choose(pool, uuid4(), balance_usage=True).engine == "codex"
-    assert aid not in profiles._probe_last
+    assert profiles.choose(pool, uuid4(), balance_usage=True, probe_ids={aid}).engine == "codex"
 
 
 def test_stale_observation_is_never_reported_as_spare_capacity():
@@ -331,7 +328,7 @@ def test_stale_observation_is_never_reported_as_spare_capacity():
     assert account_status._cap_remaining(aid, 100, view, engine="muse") is None
 
 
-def test_first_stage_keeps_unconfirmed_muse_only_while_exploration_is_open():
+def test_first_stage_keeps_unconfirmed_muse_only_while_it_holds_a_reservation():
     aid, agy_id = uuid4(), uuid4()
     seed(aid, age=3600)
     agy = profiles.Profile(agy_id, "agy", "antigravity", model="claude-sonnet-5-5-high")
@@ -339,8 +336,7 @@ def test_first_stage_keeps_unconfirmed_muse_only_while_exploration_is_open():
         windows=[usage.Window(f"agy_claude_and_gpt_models_{s}", "g", 20, int(time.time() + 3600), 80.0) for s in ("5h", "weekly")],
         source="antigravity_cli", updated_at=time.time()), refresh=True)
     pool = [agy, muse_profile(aid)]
-    assert {p.engine for p in worker_routing.first_stage(pool, "general")} == {"antigravity", "muse"}
-    profiles._probe_last[aid] = time.time()
+    assert {p.engine for p in worker_routing.first_stage(pool, "general", {aid})} == {"antigravity", "muse"}
     assert {p.engine for p in worker_routing.first_stage(pool, "general")} == {"antigravity"}
 
 

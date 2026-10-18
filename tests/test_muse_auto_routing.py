@@ -9,6 +9,7 @@ from test_orchestrator import _orch, _session
 
 pytest_plugins = ["test_worker_routing"]
 
+from test_muse_exploration_claim import reopen_probe
 from test_worker_routing import (  # noqa: F401  (fixtures imported for pytest)
     quota,
     result,
@@ -184,9 +185,26 @@ async def test_unknown_muse_quota_is_explored_once_then_yields_to_measured_sonne
     second = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
     assert (second["engine"], second["model"]) == ("antigravity", SONNET), second
     # After the interval the unobserved Muse is explored again.
-    profiles._probe_last[muse] = time.time() - profiles.MUSE_PROBE_INTERVAL - 1
+    await reopen_probe(muse)
     third = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
     assert (third["engine"], third["model"]) == ("muse", MUSE_MODEL), third
+
+
+async def test_lost_reservation_cannot_make_muse_the_only_stage_match(client, auth, make_dir, muse, muse_gate, accounts):
+    # Antigravity unmeasured, native engines measured, Muse unconfirmed: Muse would be the sole stage-1 match.
+    # Another process already holds this interval's reservation, so this process must fall through to native routes.
+    usage.forget(agy_id(accounts))  # seed() never replaces a fresher value with an older one
+    quota(agy_id(accounts), age=3600)
+    muse_usage(muse, used=0, age=3600)
+    held = profiles.Profile(muse, "muse test", "muse", model=MUSE_MODEL)
+    assert await profiles.claim_muse_probe([held]) == {muse}  # "the other process"
+    profiles.reset_probes()  # this process has not seen it
+    run = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert run["engine"] in {"claude", "codex"}, run
+    assert profiles._probe_last[muse] > 0, "the lost claim adopted the stored time"
+    await reopen_probe(muse)
+    again = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (again["engine"], again["model"]) == ("muse", MUSE_MODEL), again
 
 
 async def test_muse_idle_after_five_hour_reset_with_stale_exhaustion_is_explored(client, auth, make_dir, muse, muse_gate):

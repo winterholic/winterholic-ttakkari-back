@@ -1,0 +1,19 @@
+{
+  "login": "octo",
+  "id": 1,
+  "type": "User",
+  "name": "Octo Cat",
+  "bio": "hello",
+  "description": null,
+  "company": "@acme",
+  "location": "Seoul",
+  "blog": "https://octo.example",
+  "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+  "html_url": "https://github.com/octo",
+  "public_repos": 12,
+  "total_private_repos": 3,
+  "followers": 5,
+  "following": 2,
+  "created_at": "2020-01-01T00:00:00Z",
+  "is_viewer": true
+}

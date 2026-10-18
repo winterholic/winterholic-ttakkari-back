@@ -1,0 +1,57 @@
+[
+  {
+    "filename": "src/ui/Login.tsx",
+    "previous_filename": null,
+    "status": "modified",
+    "additions": 10,
+    "deletions": 2,
+    "changes": 12,
+    "patch": "@@ -1,3 +1,4 @@\n a\n-b\n+c\n+d",
+    "patch_state": "ok",
+    "blob_url": "https://github.com/acme/widget/blob/b/src/ui/Login.tsx"
+  },
+  {
+    "filename": "docs/new-name.md",
+    "previous_filename": "docs/old-name.md",
+    "status": "renamed",
+    "additions": 0,
+    "deletions": 0,
+    "changes": 0,
+    "patch": null,
+    "patch_state": "empty",
+    "blob_url": null
+  },
+  {
+    "filename": "assets/logo.png",
+    "previous_filename": null,
+    "status": "added",
+    "additions": 0,
+    "deletions": 0,
+    "changes": 0,
+    "patch": null,
+    "patch_state": "unavailable",
+    "blob_url": null
+  },
+  {
+    "filename": "gen/huge.json",
+    "previous_filename": null,
+    "status": "modified",
+    "additions": 9000,
+    "deletions": 10,
+    "changes": 9010,
+    "patch": null,
+    "patch_state": "unavailable",
+    "blob_url": null
+  },
+  {
+    "filename": "src/long.ts",
+    "previous_filename": null,
+    "status": "added",
+    "additions": 1,
+    "deletions": 0,
+    "changes": 1,
+    "patch": "@@ -0,0 +1 @@\n+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
+    "patch_state": "truncated",
+    "blob_url": null
+  }
+]

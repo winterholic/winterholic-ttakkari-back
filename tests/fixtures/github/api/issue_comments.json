@@ -1,0 +1,27 @@
+[
+  {
+    "id": 301,
+    "user": {
+      "login": "rev",
+      "type": "User",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+      "html_url": "https://github.com/rev"
+    },
+    "body": "me too",
+    "body_truncated": false,
+    "author_association": "MEMBER",
+    "created_at": "2026-10-02T00:00:00Z",
+    "updated_at": "2026-10-02T00:00:00Z",
+    "html_url": "https://github.com/acme/widget/issues/3#issuecomment-301"
+  },
+  {
+    "id": 302,
+    "user": null,
+    "body": null,
+    "body_truncated": false,
+    "author_association": null,
+    "created_at": "2026-10-03T00:00:00Z",
+    "updated_at": "2026-10-03T00:00:00Z",
+    "html_url": null
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "kind": "file",
+  "path": "src/main.py",
+  "ref": "main",
+  "entries": null,
+  "entries_limit_hit": false,
+  "file": {
+    "name": "main.py",
+    "path": "src/main.py",
+    "sha": "1111111111111111111111111111111111111111",
+    "size": 25,
+    "html_url": "https://github.com/acme/widget/blob/main/src/main.py",
+    "binary": false,
+    "too_large": false,
+    "truncated": false,
+    "text": "print('안녕')\nprint(2)\n",
+    "line_count": 2
+  },
+  "symlink_target": null,
+  "submodule": null
+}

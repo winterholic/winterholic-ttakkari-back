@@ -1,0 +1,21 @@
+{
+  "kind": "file",
+  "path": "logo.png",
+  "ref": null,
+  "entries": null,
+  "entries_limit_hit": false,
+  "file": {
+    "name": "logo.png",
+    "path": "logo.png",
+    "sha": "1111111111111111111111111111111111111111",
+    "size": 16,
+    "html_url": "https://github.com/acme/widget/blob/main/logo.png",
+    "binary": true,
+    "too_large": false,
+    "truncated": false,
+    "text": null,
+    "line_count": null
+  },
+  "symlink_target": null,
+  "submodule": null
+}

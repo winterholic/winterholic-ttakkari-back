@@ -1,0 +1,14 @@
+[
+  {
+    "name": "main",
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "protected": true,
+    "is_default": true
+  },
+  {
+    "name": "feature/login-ui",
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "protected": false,
+    "is_default": false
+  }
+]

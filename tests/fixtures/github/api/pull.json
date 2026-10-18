@@ -1,0 +1,58 @@
+{
+  "number": 7,
+  "title": "Add login UI",
+  "state": "open",
+  "draft": false,
+  "merged": false,
+  "user": {
+    "login": "octo",
+    "type": "User",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "html_url": "https://github.com/octo"
+  },
+  "created_at": "2026-10-01T00:00:00Z",
+  "updated_at": "2026-10-02T00:00:00Z",
+  "closed_at": null,
+  "merged_at": null,
+  "head": {
+    "ref": "feature/login-ui",
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "repo_full_name": "acme/widget"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repo_full_name": "acme/widget"
+  },
+  "labels": [
+    {
+      "name": "bug",
+      "color": "d73a4a"
+    },
+    {
+      "name": "ui",
+      "color": "0075ca"
+    }
+  ],
+  "html_url": "https://github.com/acme/widget/pull/7",
+  "body": "## Summary\nDoes things",
+  "body_truncated": false,
+  "mergeable": null,
+  "mergeable_computing": true,
+  "mergeable_state": "unknown",
+  "additions": 120,
+  "deletions": 30,
+  "changed_files": 4,
+  "commits": 3,
+  "comments": 2,
+  "review_comments": 1,
+  "requested_reviewers": [
+    {
+      "login": "rev",
+      "type": "User",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+      "html_url": "https://github.com/rev"
+    }
+  ],
+  "assignees": []
+}

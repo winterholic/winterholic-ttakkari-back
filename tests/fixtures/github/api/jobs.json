@@ -1,0 +1,61 @@
+[
+  {
+    "id": 900,
+    "run_id": 500,
+    "run_attempt": 2,
+    "name": "build",
+    "status": "completed",
+    "conclusion": "failure",
+    "started_at": "2026-10-17T00:00:06Z",
+    "completed_at": "2026-10-17T00:09:00Z",
+    "runner_name": "GitHub Actions 5",
+    "labels": [
+      "ubuntu-latest"
+    ],
+    "steps": [
+      {
+        "number": 1,
+        "name": "Set up job",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "s",
+        "completed_at": "c"
+      },
+      {
+        "number": 2,
+        "name": "Run tests",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "s",
+        "completed_at": "c"
+      },
+      {
+        "number": 3,
+        "name": "Post",
+        "status": "completed",
+        "conclusion": "skipped",
+        "started_at": null,
+        "completed_at": null
+      }
+    ],
+    "first_failed_step": 2,
+    "html_url": "https://github.com/acme/widget/actions/runs/500/job/900"
+  },
+  {
+    "id": 901,
+    "run_id": 500,
+    "run_attempt": 2,
+    "name": "lint",
+    "status": "completed",
+    "conclusion": "success",
+    "started_at": "2026-10-17T00:00:06Z",
+    "completed_at": "2026-10-17T00:09:00Z",
+    "runner_name": "GitHub Actions 5",
+    "labels": [
+      "ubuntu-latest"
+    ],
+    "steps": [],
+    "first_failed_step": null,
+    "html_url": "https://github.com/acme/widget/actions/runs/500/job/900"
+  }
+]

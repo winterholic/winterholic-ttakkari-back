@@ -1,0 +1,19 @@
+{
+  "login": "acme",
+  "id": 1,
+  "type": "Organization",
+  "name": "Acme Inc",
+  "bio": null,
+  "description": "We make things",
+  "company": null,
+  "location": null,
+  "blog": null,
+  "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+  "html_url": "https://github.com/acme",
+  "public_repos": 40,
+  "total_private_repos": null,
+  "followers": 9,
+  "following": 0,
+  "created_at": "2019-05-05T00:00:00Z",
+  "is_viewer": false
+}

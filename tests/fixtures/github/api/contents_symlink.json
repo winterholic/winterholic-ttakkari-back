@@ -1,0 +1,10 @@
+{
+  "kind": "symlink",
+  "path": "src/link",
+  "ref": null,
+  "entries": null,
+  "entries_limit_hit": false,
+  "file": null,
+  "symlink_target": "../README.md",
+  "submodule": null
+}

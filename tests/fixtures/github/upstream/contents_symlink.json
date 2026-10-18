@@ -1,0 +1,10 @@
+{
+  "type": "symlink",
+  "target": "../README.md",
+  "size": 12,
+  "name": "link",
+  "path": "src/link",
+  "sha": "2222222222222222222222222222222222222222",
+  "url": "u",
+  "html_url": "h"
+}

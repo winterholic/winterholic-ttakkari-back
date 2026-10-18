@@ -1,7 +1,7 @@
 """`tree|blob/<ref>/<path>` 의 ref 를 실제 저장소 기준으로 푼다(ADR 0042 §7, GH03). 입력은 fetch 하지 않고 검증된 조각만 고정 경로에 끼운다.
 
 순서: HEAD(기본 브랜치) → 브랜치·태그 → 약식 SHA(7~39자, 커밋 조회로 확인). 40자 SHA 는 호출 없이 인정한다(순서 앞에서 처리).
-브랜치·태그는 `git/matching-refs/<heads|tags>/<첫 마디>`(쪽당 100개)를 Link next 로 최대 MAX_LIST_PAGES 쪽까지 읽고, 일치가 나오거나 목록이 끝나면 멈춘다.
+브랜치·태그는 `git/matching-refs/<heads|tags>/<첫 마디>`(per_page=100 요청. 실측으로는 쪽매김 없이 전체가 오기도 한다, ADR 0042 §13-1)를 Link next 로 최대 MAX_LIST_PAGES 쪽까지 읽고, 일치가 나오거나 목록이 끝나면 멈춘다.
 그래도 목록이 남았으면(dependabot/… 수백 개) 일부만 본 것이므로 "없음"을 결론내지 않고 `git/ref/<heads|tags>/<후보>` 정확 조회로 확인한다.
 같은 이름공간에서는 ref 하나가 다른 ref 의 접두 경로일 수 없으므로(git 은 `a` 와 `a/b` 를 함께 둘 수 없다) 짧은 후보부터 조회해 처음 맞는 것이 유일한 답이다.
 정확 조회가 확인할 수 있는 마디 수에는 상한(MAX_PROBE_SEGMENTS)이 있고, 넘겨서 확인하지 못했을 때는 ref_not_found 가 아니라 한계 오류로 알린다.

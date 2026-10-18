@@ -603,7 +603,7 @@ class RunManager:
                                    error=f"Qwen local blocked: {reason if not ready else 'no local worker profile'}")
                 return
             what = "엔진" if sess.engine == "auto" else sess.engine
-            where = "회사" if sess.pool == "work" and not is_meeting else "개인"
+            where = "회사/개인" if is_meeting else ("회사" if sess.pool == "work" else "개인")
             await self._finish(db, run, RunStatus.failed,
                                error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
             return
@@ -809,8 +809,8 @@ class RunManager:
             }
             run.engine, run.profile = prof.engine, prof.name
             if is_meeting:
-                model, effort = prof.model, run.effort
-                run.model = model
+                model, effort = prof.model, meeting_routing.effort(prof)
+                run.model, run.effort = model, effort
             elif task_type or pinned_fallback:
                 model, effort = prof.model, worker_routing.effort(prof, run.effort or sess.effort)
                 run.model, run.effort = model, effort

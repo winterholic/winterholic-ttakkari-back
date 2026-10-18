@@ -55,6 +55,7 @@ class Profile:
     config_dir: Path | None = None
     max_used_percent: int = 100
     model: str | None = None
+    pool: str = "personal"
 
     @property
     def limit_key(self) -> uuid.UUID:
@@ -99,7 +100,7 @@ def execution_ready(profile: Profile) -> bool:
 
 def _profile(a: EngineAccount) -> Profile:
     return Profile(id=a.id, name=a.name, engine=a.engine, config_dir=Path(a.config_dir).expanduser() if a.config_dir else None,
-                   max_used_percent=a.max_used_percent)
+                   max_used_percent=a.max_used_percent, pool=a.pool)
 
 
 async def ensure_seeded(db: AsyncSession) -> None:

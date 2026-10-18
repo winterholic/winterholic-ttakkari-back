@@ -12,7 +12,7 @@
 |---|---|
 | 녹음 파일 보관 | 기존 `POST /api/uploads` → Artifact(`source=upload`, 보관함 files). 회의는 `audio_artifact_id` 만 가진다. |
 | LLM 분석 | 기존 Run·엔진 체계. 분석 전용 작업 세션(`kind=worker`, 부모 없음, 보관 처리)을 만들고 `queue_run` 으로 돌린다. |
-| 계정 범위 | 2026-10-16 사용자 결정: 회의 `scope`/세션 `pool`은 데이터·MCP 조회 범위를 유지한다. 분석은 켜진 개인 계정(`pool=personal`, `enabled=true`)에서 Luna → Antigravity Flash → Antigravity Sonnet → native Sonnet 순서로 선택한다. 회사 계정은 분석 후보에서 제외한다. |
+| 계정 범위 | 2026-10-18 사용자 결정(10/16 개인 계정 전용 정책 대체): 회의 `scope`/세션 `pool`은 데이터·MCP 조회 범위를 유지한다. 분석은 회사 모드에서 켜진 계정(`pool=work`, `work_enabled=true`)을 먼저 사용하고, 쓸 수 없으면 켜진 개인 계정(`pool=personal`, `enabled=true`)으로 넘어간다. 각 범위 안에서는 Gemini Flash high → GPT Luna medium → Antigravity Sonnet medium → native Sonnet medium 순서로 선택한다. 계정별 모델 지원·한도·cooldown을 적용하며 회사 모드에서 끈 계정을 개인 모드 토글로 다시 후보에 넣지 않는다. |
 | 맥락 반영 | `ctx_memories`(kind=decision), 프로젝트 `ctx_entities`. 새 엔터티·출처·색인 경로는 만들지 않는다. |
 | 알림 | `push.notify`. 분석이 끝나면 한 번 보낸다. |
 | 에이전트 읽기 | 공통 MCP 서버에 읽기 도구 3개(`list_meetings`, `get_meeting`, `search_meeting_items`). |

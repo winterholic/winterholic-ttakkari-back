@@ -36,7 +36,7 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_PROFILE_COOLDOWN_SECONDS` | 한도에 걸린 프로필을 쉬게 하는 시간. 기본 1800 |
 | `TTAKKARI_INTERNAL_API_URL` | 오케스트레이터 MCP 서버가 부르는 백엔드 주소. 기본 `http://127.0.0.1:8787` |
 | `TTAKKARI_TRANSFER_INBOX` | 폰에서 보낸 파일 기본 폴더. 비우면 `~/.ttakkari/inbox`(에이전트가 읽고 쓸 수 있는 ~/.ttakkari 안 유일한 곳) |
-| `TTAKKARI_MEETING_TRANSCRIPT_MAX_CHARS`, `TTAKKARI_MEETING_ANALYSIS_MODEL`, `TTAKKARI_MEETING_ANALYSIS_EFFORT` | 회의록(ADR 0010): 전사 한 건 최대 글자(기본 12만), 분석 Run 의 모델·생각 수준(기본 세션 기본 모델·high) |
+| `TTAKKARI_MEETING_TRANSCRIPT_MAX_CHARS`, `TTAKKARI_MEETING_ANALYSIS_MODEL`, `TTAKKARI_MEETING_ANALYSIS_EFFORT` | 회의록(ADR 0010): 전사 한 건 최대 글자(기본 12만), 분석 세션의 모델·생각 수준 초기 힌트. 실제 분석은 회사 계정 우선 → 개인 계정, 각 범위에서 Gemini Flash high → Luna medium → Antigravity Sonnet medium → native Sonnet medium 고정 순서가 우선한다 |
 | `TTAKKARI_CONTEXT_EMBEDDER` | 회의록 벡터 저장: `e5`(기본, 로컬 multilingual-e5-large) · `hash`(테스트) · `off`. E5도 요청별 자식 프로세스에서 로드·종료한다. 가중치는 사전 설치하며 요청 중 다운로드하지 않는다 |
 | `TTAKKARI_CONTEXT_EMBEDDING_CPU_THREADS`, `TTAKKARI_CONTEXT_EMBEDDING_TIMEOUT_SECONDS` | E5 자식의 CPU 스레드(기본 2), 요청 제한시간(기본 300초) |
 | `TTAKKARI_LOCAL_STT_ENABLED`, `TTAKKARI_LOCAL_STT_PYTHON`, `TTAKKARI_LOCAL_STT_MODEL_PATH`, `TTAKKARI_LOCAL_STT_PROFILE` | 기본 전사 엔진 로컬 Whisper(ADR 0025·0026). 기본 켜짐·robust(VAD·독립 25초 창·문맥 차단·온도 fallback·반복 재처리), 로컬 가중치 경로는 별도 지정. 구 baseline/improved 설정도 robust로 승격한다. 요청마다 자식 프로세스에서 로드·추론 후 종료한다. [설치·API·측정 안내](docs/stt/README.md). 미준비 시 사유를 알리며 외부 엔진으로 자동 전환하지 않는다 |

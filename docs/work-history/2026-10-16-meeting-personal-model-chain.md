@@ -1,5 +1,7 @@
 # 회의 분석 개인 계정·모델 순서 (2026-10-16)
 
+> 2026-10-18 회사 계정 우선·Gemini 우선 정책으로 대체됨. 아래는 당시 구현과 검증의 이력이다. 현재 기준은 [ADR 0010](../adr/0010-meeting-minutes.md)과 [10/18 기록](2026-10-18-meeting-company-first.md)을 따른다.
+
 사용자가 회사 회의 분석 실패 화면(켜진 회사 엔진 계정 없음)을 보내며 회사 계정 필수 조건을 없애고 기본 개인 계정의 Luna → Antigravity Flash → Antigravity Sonnet → native Sonnet 순서를 요청했다. 전체 오케스트레이터/작업자 정책은 변경하지 않는다.
 
 - 기존 `test_project_scope_rules_and_work_pool`을 바꿔 개인 Claude만 켜진 회사 회의에서 기존 오류를 재현했다(1 failed, 기대 원인: 켜진 회사 엔진 계정 없음).

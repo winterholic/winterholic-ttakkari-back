@@ -229,10 +229,13 @@ async def test_project_scope_rules_and_work_pool(client, auth, make_dir):
         assert sess.pool == "work" and sess.kind == "worker" and sess.archived_at is not None
     assert w["status"] in ("review", "analyzed"), w.get("error")
     assert w["scope"] == "work" and agent_calls()[-1]["account_dir"] == str(d)
-    # 회사 전용으로 바꾸면 분석 후보에서 빠진다. work_enabled로 우회하지 않는다.
+    # 회사 전용 계정도 회사 모드에서 켜져 있으면 회의 분석에 쓸 수 있다.
     await client.patch(f"/api/accounts/{acc['id']}", json={"pool": "work"}, headers=auth)
     w = await _analyze(client, auth, w["id"])
-    assert w["status"] == "failed" and "개인" in w["error"]
+    assert w["status"] in ("review", "analyzed"), w.get("error")
+    await client.patch(f"/api/accounts/{acc['id']}", json={"work_enabled": False}, headers=auth)
+    w = await _analyze(client, auth, w["id"])
+    assert w["status"] == "failed"
 
 
 # ---- 입력: 녹음·Provider

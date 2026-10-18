@@ -186,7 +186,9 @@ legacy 빌드는 기존 체크아웃을 사용하므로 예약 이후 변경했�
 
 작업 턴 기본값은 standalone과 같은 20회다. `TTAKKARI_QWEN_LOCAL_TURNS`로 1~60회 안에서 조정한다.
 
-기본값 `TTAKKARI_QWEN_LOCAL_ENABLED=false`는 fail-closed다. 켜져 있어도 고정 `qwen-worker doctor`가 JSON으로 `contract: qwen-local-readiness-v1`과 `checks.seatbelt`, `checks.hostmon`, `checks.fixture` 전부 `true`를 반환하지 않으면 작업을 시작하지 않는다. 현재 standalone 하네스 doctor는 이 readiness 계약을 제공하지 않으며, command sandbox에서 sandbox/sysctl 검사가 EPERM으로 막힌 상태다. 따라서 현재 adapter는 운영 ready가 아니다. 자동 cloud fallback도 없다.
+기본값은 꺼짐이다. `TTAKKARI_QWEN_LOCAL_ENABLED`를 **생략한** 운영 환경에서는 로그인한 소유자가 설정 > 로컬 Qwen 작업자에서 켤 수 있다. 명시한 환경 설정 true/false가 있으면 운영 정책으로 고정하고 앱 스위치는 잠근다. 앱의 활성화는 `app_settings`에 저장해 새 시도에서 읽으며, 설정 파일 수정이나 재시작은 하지 않는다. 에이전트 토큰에는 활성화 권한이 없다.
+
+활성화와 실행 준비 검사는 별개다. 앱에서 켜기 전과 실제 배정 때 고정 `qwen-worker doctor`가 `contract: qwen-local-readiness-v1`과 `checks.seatbelt`, `checks.hostmon`, `checks.fixture` 전부 true를 반환해야 한다. 준비 검사 통과는 실제 모델 실행·파일 수정·재개 검증을 대신하지 않는다. 샌드박스에서 관측한 EPERM을 호스트 런타임의 실패로 일반화하지 않는다. 명시 Qwen 작업 실패 시 다른 제공자로 자동 대체하지 않는다.
 
 ## macOS Codex 브라우저 검증
 

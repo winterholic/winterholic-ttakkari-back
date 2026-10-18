@@ -324,7 +324,7 @@ class RunManager:
         await self.dispatch(session_id)
 
     async def _emergency_qwen(self, sess: ChatSession,
-                              task_type: str | None) -> tuple[profiles_mod.Profile | None, str]:
+                              task_type: str | None, db: AsyncSession | None = None) -> tuple[profiles_mod.Profile | None, str]:
         """모든 개인 클라우드 계정이 한도일 때만 로컬 Qwen으로 이어받는다.
 
         (프로필, "ready") 또는 (None, 이유). readiness는 그때그때 확인하고
@@ -339,7 +339,8 @@ class RunManager:
             return None, "ineligible"
         if worker_routing.qwen_local_model() not in get_settings().engine_models.get("qwen-local", []):
             return None, "qwen_model_gated"
-        ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+        adapter = await _qwen_adapter(db) if db is not None else QWEN_LOCAL_ADAPTER
+        ready, reason = await asyncio.to_thread(adapter.readiness)
         if not ready:
             return None, reason
         return worker_routing.emergency_qwen_profile(sess.pool), "ready"
@@ -647,7 +648,7 @@ class RunManager:
         profiles, blocked = await available_profiles()
         if not profiles:
             if blocked:
-                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type)
+                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type, db)
                 if emergency is None:
                     await self._wait_for_reset(db, run, sess, blocked, qwen_state=qwen_state)
                     return
@@ -674,7 +675,8 @@ class RunManager:
             # 분기로 떨어지지 않는다. 작업·기획(degraded) 모두 같은 분기를 돈다.
             if not profiles:
                 if sess.engine == "qwen-local":
-                    ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+                    qwen_adapter = await _qwen_adapter(db)
+                    ready, reason = await asyncio.to_thread(qwen_adapter.readiness)
                     events.append(db, run, "worker.routing", {
                         "policy": worker_routing.POLICY_VERSION,
                         "task_type": effective_task_type or "general", "trigger": "initial",
@@ -928,7 +930,7 @@ class RunManager:
                 outbox=outbox, write_roots=write_roots, system_note=note_for_spec,
                 codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers, session_id=str(sess.id),
             )
-            adapter = QWEN_LOCAL_ADAPTER if prof.engine == "qwen-local" else ADAPTERS[prof.engine]
+            adapter = await _qwen_adapter(db) if prof.engine == "qwen-local" else ADAPTERS[prof.engine]
             env = adapter.child_env() if prof.engine == "qwen-local" else (
                 await asyncio.to_thread(prof.env, _child_env(run.id, write_roots, s.home, s.guard_log))
             )
@@ -988,7 +990,7 @@ class RunManager:
             if limited and not stopped and not remaining:
                 # Mid-run exhaustion: no usable cloud candidate left. The existing
                 # fallback event below records the switch with saved progress.
-                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type)
+                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type, db)
                 if emergency is not None:
                     remaining = [emergency]
             if (not stopped and failed and prof.engine == "qwen-local"
@@ -1549,6 +1551,11 @@ def _routing_policy(sess: ChatSession, run: Run, is_meeting: bool):
     return task, pinned, requested
 
 
+async def _qwen_adapter(db: AsyncSession) -> QwenLocalAdapter:
+    from ttakkari.runs import qwen_activation
+    return await qwen_activation.adapter_for(db, QWEN_LOCAL_ADAPTER)
+
+
 async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_meeting: bool):
     from ttakkari.meetings import routing as meeting_routing
     from ttakkari.runs import worker_routing
@@ -1563,7 +1570,8 @@ async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_
             return [], []
         if _wr.qwen_local_model() not in get_settings().engine_models.get("qwen-local", []):
             return [], []
-        ready, _reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+        qwen_adapter = await _qwen_adapter(db)
+        ready, _reason = await asyncio.to_thread(qwen_adapter.readiness)
         if not ready or sess.kind != SessionKind.worker:
             return [], []
         profile_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{sess.pool}")

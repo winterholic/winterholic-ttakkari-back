@@ -10,6 +10,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, ConfigDict, StrictBool
 from sqlalchemy import select, text
 
 from ttakkari import sysinfo
@@ -17,12 +18,49 @@ from ttakkari.api.deps import Db, get_workspace
 from ttakkari.artifacts.preview import soffice_path
 from ttakkari.audit import record
 from ttakkari.config import get_settings
-from ttakkari.models import Run, RunStatus, SystemResourceSample
+from ttakkari.models import AppSetting, Run, RunStatus, SystemResourceSample, utcnow
 from ttakkari.runs.manager import manager
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api", tags=["system"])
 DIFF_LIMIT = 400_000
+
+
+class QwenWorkerActivation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+
+
+@router.get("/system/qwen-worker")
+async def qwen_worker_status(_: User, db: Db, response: Response) -> dict:
+    from ttakkari.runs import qwen_activation
+    response.headers["Cache-Control"] = "no-store"
+    return await qwen_activation.status(db)
+
+
+@router.put("/system/qwen-worker")
+async def set_qwen_worker(body: QwenWorkerActivation, _: User, db: Db, request: Request) -> dict:
+    from ttakkari.agents.qwen_local import QwenLocalAdapter
+    from ttakkari.runs import qwen_activation
+    if qwen_activation.config_locked():
+        raise HTTPException(409, detail={"code": "qwen_config_locked",
+                                        "message": "운영 설정에 고정되어 있어 앱에서 변경할 수 없습니다."})
+    if body.enabled:
+        settings = get_settings()
+        candidate = QwenLocalAdapter(worker_path=settings.qwen_local_worker_path, enabled=True,
+                                     turns=settings.qwen_local_turns)
+        ready, reason = await asyncio.to_thread(candidate.readiness)
+        if not ready:
+            raise HTTPException(409, detail={"code": "qwen_not_ready",
+                                            "message": f"Qwen 준비 검사를 통과하지 못했습니다. ({reason})"})
+    from sqlalchemy.dialects.postgresql import insert
+    statement = insert(AppSetting).values(key=qwen_activation.KEY, value={"enabled": body.enabled})
+    await db.execute(statement.on_conflict_do_update(
+        index_elements=[AppSetting.key], set_={"value": statement.excluded.value, "updated_at": utcnow()}))
+    record(db, action="qwen_worker.activation", detail={"enabled": body.enabled}, ip=client_ip(request))
+    await db.commit()
+    return {"enabled": body.enabled, "config_locked": False,
+            "ready": body.enabled, "reason": "ready" if body.enabled else "disabled"}
 
 
 @router.get("/bootstrap-ready")

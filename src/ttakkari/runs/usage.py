@@ -83,7 +83,7 @@ def muse_quota_current(u: Usage, now: float) -> bool:
     a failed refresh or a reset without a new observation proves no spare quota.
     """
     current = {w.key for w in u.windows if w.resets_at and w.resets_at > now}
-    return not u.error and {'five_hour', 'seven_day'} <= current
+    return u.source == "muse_cli" and u.updated_at is not None and not u.error and {'five_hour', 'seven_day'} <= current
 
 
 _cache: dict[uuid.UUID, tuple[float, Usage]] = {}
@@ -667,7 +667,12 @@ def cached(account_id: uuid.UUID) -> Usage | None:
 
     TTL 이 지난 값도 준다(낡았는지는 updated_at 으로 알린다). 한 번도 못 봤으면 None."""
     hit = _cache.get(account_id)
-    fresh = [u for u in (hit[1] if hit else None, _stream.get(account_id)) if u is not None and u.windows]
+    stream = _stream.get(account_id)
+    # A completed failed refresh is newer evidence than an old stream snapshot. In
+    # particular, do not resurrect expired Muse windows after _fetch_live clears them.
+    if hit and not hit[1].windows and (not stream or hit[0] >= (stream.updated_at or 0)):
+        return hit[1]
+    fresh = [u for u in (hit[1] if hit else None, stream) if u is not None and u.windows]
     if fresh:
         best = max(fresh, key=lambda u: u.updated_at or 0)
         if best.source == "stream" and hit and hit[1].windows:

@@ -333,20 +333,26 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
                error: str | None = None) -> AccountUsageOut:
     login, _label = profiles.identity(a.engine, a.config_dir)
     now = time.time()
-    # 비API 출처(fallback/세션로그)에서 초기화 시각이 지났는데 100%로 남은 창은 stale 100% 고착을 방지하기 위해 제외한다.
+    is_muse = a.engine == "muse"
+    # 비API 출처(fallback/세션로그), Muse 계정은 초기화 시각이 지났는데 한도까지 쓴 창을 제외한다.
     has_expired_exhausted = any(
         w.resets_at and w.resets_at <= now and w.percent >= a.max_used_percent
         for w in u.windows
-    ) if u.source != "api" else False
-    stale = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds or has_expired_exhausted
+    ) if is_muse or u.source != "api" else False
+    muse_current = not is_muse or usage_mod.muse_quota_current(u, now)
+    stale = (u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
+             or has_expired_exhausted or not muse_current)
     valid_windows = [
         w for w in u.windows
-        if not (u.source != "api" and w.resets_at and w.resets_at <= now and w.percent >= a.max_used_percent)
+        if not ((is_muse or u.source != "api") and w.resets_at and w.resets_at <= now
+                and w.percent >= a.max_used_percent)
     ]
-    headroom = None if stale else min((max(0, a.max_used_percent - w.percent) for w in valid_windows
+    headroom = None if stale or not muse_current else min((max(0, a.max_used_percent - w.percent) for w in valid_windows
                                        if w.key in ("five_hour", "seven_day")
                                        and not (w.resets_at and w.resets_at <= now)), default=None)
     err = u.error or error
+    if is_muse and not muse_current and not err:
+        err = "Muse 최신 사용량 미확인 · 5시간·주간 창 모두 확인되지 않음"
     if not valid_windows and u.windows and not err:
         err = f"{a.engine.capitalize()} 초기화 시각 경과 · 새 사용량 미관측"
     return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,

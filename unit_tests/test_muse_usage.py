@@ -158,3 +158,28 @@ class MuseReadOnlyUsageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.windows, [])
         self.assertIn('초기화 시각 경과', result.error)
         usage.forget(aid)
+
+    async def test_cached_does_not_resurrect_expired_stream_after_failed_refresh(self):
+        import time
+        from unittest.mock import AsyncMock, patch
+        from uuid import uuid4
+
+        from ttakkari.runs import usage
+
+        aid = uuid4()
+        now = time.time()
+        observation = usage.Usage(
+            windows=[usage.Window('five_hour', '5시간', 100, int(now - 60)),
+                     usage.Window('seven_day', '주간', 100, int(now - 60))],
+            source='muse_cli', plan='power', updated_at=now - 120, login='ok',
+        )
+        usage.remember_observation(aid, observation.as_dict())
+        try:
+            failed = usage.Usage(login='ok', error='Muse /usage unavailable')
+            with patch.object(usage, '_fetch_muse', AsyncMock(return_value=failed)):
+                result = await usage.usage_for(aid, 'muse', None, refresh=True)
+
+            self.assertEqual(result.windows, [])
+            self.assertEqual(usage.cached(aid).windows, [])
+        finally:
+            usage.forget(aid)

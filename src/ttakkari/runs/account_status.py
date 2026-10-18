@@ -43,7 +43,8 @@ def _window(w: usage_mod.Window | None, now: float, points: list[usage_store.Poi
     return out
 
 
-def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] | None = None) -> dict[str, Any] | None:
+def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] | None = None,
+           *, engine: str | None = None) -> dict[str, Any] | None:
     u = usage_mod.cached(account_id)
     if u is None:
         return None
@@ -51,12 +52,13 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
     by_key = {w.key: w for w in u.windows}
     age = None if u.updated_at is None else max(0, round(now - u.updated_at))
     left = [100 - w.percent for w in u.windows if w.key in ("five_hour", "seven_day") and not (w.resets_at and w.resets_at <= now)]
-    if u.source == 'muse_cli' and not usage_mod.muse_quota_current(u, now):
+    muse_current = not (engine == "muse" or u.source == 'muse_cli') or usage_mod.muse_quota_current(u, now)
+    if not muse_current:
         left = []
     has_expired_window = any(w.resets_at and w.resets_at <= now for w in u.windows)
     return {
         "source": u.source, "plan": u.plan, "measured_at": _iso(u.updated_at), "age_seconds": age,
-        "stale": age is None or age > get_settings().usage_stale_seconds or has_expired_window,
+        "stale": age is None or age > get_settings().usage_stale_seconds or has_expired_window or not muse_current,
         # 5시간·주간 중 더 빡빡한 쪽의 잔여. 새로 시작된 창은 뺀다.
         "min_remaining_percent": min(left) if left else None,
         "five_hour": _window(by_key.get("five_hour"), now, history.get("five_hour")),
@@ -73,11 +75,12 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
     }
 
 
-def _cap_remaining(account_id, cap: int, usage: dict[str, Any] | None) -> int | None:
+def _cap_remaining(account_id, cap: int, usage: dict[str, Any] | None,
+                   *, engine: str | None = None) -> int | None:
     if not usage or usage["stale"]:
         return None
     observed = usage_mod.cached(account_id)
-    if observed and observed.source == 'muse_cli' and not usage_mod.muse_quota_current(observed, time.time()):
+    if observed and (engine == "muse" or observed.source == 'muse_cli') and not usage_mod.muse_quota_current(observed, time.time()):
         return None
     remaining = [max(0, cap - window["used_percent"]) for window in (usage["five_hour"], usage["weekly"])
                  if window and window["remaining_percent"] is not None and window["used_percent"] is not None]
@@ -99,11 +102,11 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
         if until:
             reason = "cooldown" if profiles.cooldown_until(a.id) else "usage_window"
         orch = s.orchestrator_fallback_models.get(a.engine)
-        usage = _usage(a.id, now, hist.get(a.id))
+        usage = _usage(a.id, now, hist.get(a.id), engine=a.engine)
         if profiles.usage_limit_until(profiles.Profile(a.id, a.name, a.engine,
                                                        max_used_percent=a.max_used_percent), now):
             reason = "usage_cap"
-        remaining = _cap_remaining(a.id, a.max_used_percent, usage)
+        remaining = _cap_remaining(a.id, a.max_used_percent, usage, engine=a.engine)
         running = counts.get(a.id, 0)
         model_capacity = {model: worker_routing.capacity(
             profiles.Profile(a.id, a.name, a.engine, max_used_percent=a.max_used_percent, model=model), running)

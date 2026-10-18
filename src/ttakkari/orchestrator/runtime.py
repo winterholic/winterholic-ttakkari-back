@@ -117,6 +117,8 @@ _ROUTING_NOTE_TAIL = """
   or coordination that needs spawning/messaging workers. When every usable personal cloud account is
   usage-limited, the backend itself continues general/routine workers on Qwen (trigger "emergency" in the
   worker.routing receipt) after saving progress; an unready Qwen keeps the run waiting with its reason.
+  Orchestrator sessions join the same emergency degraded (mode "orchestrator-degraded"): plan and do narrow
+  file work directly, queue delegation intents (spawn-queue/*.json) for replay as worker sessions.
   Check receipts for the actual engine, readiness evidence and fallback reason.
   For a legacy/pinned worker needing a policy change, inspect progress and side effects first, then finish or
   cancel its active Run and use message_worker(reroute=True, task_type=...) on the idle worker.

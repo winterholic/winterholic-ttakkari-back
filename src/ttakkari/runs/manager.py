@@ -340,6 +340,79 @@ class RunManager:
             return None, reason
         return worker_routing.emergency_qwen_profile(sess.pool), "ready"
 
+    async def _replay_spawn_queue(self, db: AsyncSession, sess: ChatSession,
+                                    run: Run, outbox: Path) -> None:
+        """degraded Qwen 기획자가 남긴 위임 intent를 작업 세션으로 띄운다.
+
+        큐: <outbox>/spawn-queue/*.json. 한 파일에 지시 하나. 검증 실패분은
+        실행하지 않고 invalid/ 로 옮긴다(fail closed). 처리분은 done/ 으로
+        옮겨 재시작·재개 때 중복 실행되지 않는다. 띄운 작업은 일반 경로로
+        돌므로 클라우드 한도가 그대로 적용된다(당장 못 돌면 대기한다).
+        """
+        from ttakkari.runs import worker_routing
+        qdir = outbox / worker_routing.QWEN_SPAWN_QUEUE_DIR
+        files = sorted(qdir.glob("*.json")) if qdir.is_dir() else []
+        if not files:
+            return
+        done = qdir / "done"
+        invalid = qdir / "invalid"
+        done.mkdir(parents=True, exist_ok=True)
+        invalid.mkdir(parents=True, exist_ok=True)
+        s = get_settings()
+        created: list[str] = []
+        rejected: list[dict[str, object]] = []
+        processed = 0
+        for path in files:
+            if processed >= worker_routing.QWEN_SPAWN_QUEUE_MAX_PER_RUN:
+                break
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                path.rename(invalid / path.name)
+                rejected.append({"file": path.name, "reason": "unreadable"})
+                continue
+            intent, reason = worker_routing.parse_qwen_spawn_intent(data)
+            if intent is None:
+                path.rename(invalid / path.name)
+                rejected.append({"file": path.name, "reason": reason})
+                continue
+            active = await db.scalar(
+                select(func.count(func.distinct(ChatSession.id)))
+                .join(Run, Run.session_id == ChatSession.id)
+                .where(ChatSession.parent_id == sess.id,
+                       Run.status.in_([RunStatus.queued, RunStatus.running])))
+            if (active or 0) >= 20:  # api/orchestrator.MAX_ACTIVE_WORKERS 와 맞춘다.
+                break
+            engine = intent["engine"]
+            task_type = intent["task_type"]
+            default = s.worker_default_models.get(engine) or {}
+            model = intent["model"] or (worker_routing.ROUTES[task_type][0][0][1]
+                                        if engine == "auto" else default.get("model"))
+            w = ChatSession(workspace_id=sess.workspace_id, title=intent["title"], engine=engine,
+                            model=model, effort=intent["effort"] or default.get("effort"),
+                            kind=SessionKind.worker, parent_id=sess.id, pool=sess.pool,
+                            worker_task_type=task_type, strict_engine=intent["strict_engine"])
+            db.add(w)
+            await db.flush()
+            child = Run(session_id=w.id, workspace_id=w.workspace_id, prompt=intent["prompt"],
+                        origin=RunOrigin.orchestrator, engine=w.engine, model=w.model, effort=w.effort)
+            db.add(child)
+            await db.flush()
+            events.append(db, child, "run.status", {"status": RunStatus.queued, "ahead": 0})
+            record(db, actor="agent", action="orchestrator.replay_spawn_queue",
+                   target_type="session", target_id=w.id,
+                   detail={"parent_run": str(run.id), "file": path.name,
+                           "engine": engine, "task_type": task_type})
+            path.rename(done / path.name)
+            created.append(str(w.id))
+            processed += 1
+        events.append(db, run, "orchestrator.spawn_replayed",
+                      {"created": created, "rejected": rejected,
+                       "pending": max(0, len(files) - processed - len(rejected))})
+        await self._commit(db, run)
+        for wid in created:
+            await self.dispatch(uuid.UUID(wid))
+
     async def _wait_for_reset(self, db: AsyncSession, run: Run, sess: ChatSession,
                               blocked: list[tuple[profiles_mod.Profile, float]], handoff: str | None = None,
                               qwen_state: str | None = None) -> None:
@@ -575,6 +648,7 @@ class RunManager:
                 events.append(db, run, "worker.routing", {
                     "policy": worker_routing.POLICY_VERSION,
                     "task_type": effective_task_type or "general", "trigger": "emergency",
+                    "mode": "orchestrator-degraded" if is_orch else "worker-handoff",
                     "selected": None,
                     "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
                               "workspace_id": str(sess.workspace_id)},
@@ -670,6 +744,7 @@ class RunManager:
                                         "workspace_id": str(sess.workspace_id)}
                     receipt["quota"] = None
                     receipt["readiness"] = "passed"
+                    receipt["mode"] = "orchestrator-degraded" if is_orch else "worker-handoff"
                 else:
                     receipt["scope"] = {"account_scope": sess.pool, "runtime_scope": "provider-account",
                                         "workspace_id": str(sess.workspace_id)}
@@ -803,6 +878,11 @@ class RunManager:
             prompt = await _handoff_context(db, run, resumed_profile=prof.name if resume_id else None,
                                             resumed_model=resumed_model) + prompt
             prompt = attempt_handoff + prompt
+            if prof.engine == "qwen-local" and is_orch:
+                # MCP 도구 없는 degraded 기획: 위임 대신 직접 계획·좁은 작업 +
+                # spawn-queue intent. 초기 선택·실행 중 전환 모두 같은 루프를 돈다.
+                prompt = (worker_routing.qwen_orchestrator_degraded_note(
+                    str(outbox / worker_routing.QWEN_SPAWN_QUEUE_DIR)) + "\n" + prompt)
             mcp_servers = {} if prof.engine == "qwen-local" else {
                 MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent"),
                 **(art_plan.mcp_servers if art_plan else {}),
@@ -829,6 +909,8 @@ class RunManager:
             await self._commit(db, run)
             attempt_start_seq = run.last_seq
             state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h, prof.id)
+            if prof.engine == "qwen-local" and is_orch:
+                await self._replay_spawn_queue(db, sess, run, outbox)
             if state.rate_limits:
                 usage_mod.remember_stream(prof.id, usage_mod.windows_from_stream(state.rate_limits))
             if state.engine_session_id:

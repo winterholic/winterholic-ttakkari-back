@@ -36,9 +36,18 @@ class EmergencyEligibilityTests(unittest.TestCase):
             self.assertFalse(worker_routing.qwen_emergency_eligible(
                 pool="personal", task_type=task, strict_engine=False, session_kind="worker"))
 
-    def test_orchestrator_session_itself_is_excluded(self):
+    def test_orchestrator_joins_degraded_without_task_gate(self):
+        # The planner must stay alive or nothing can spawn: orchestrator skips
+        # the worker task gate and runs degraded (plan + direct work + intents).
+        for task in ("general", "routine", "design", "verification", "reasoning", None):
+            self.assertTrue(worker_routing.qwen_emergency_eligible(
+                pool="personal", task_type=task, strict_engine=False, session_kind="orchestrator"))
+
+    def test_orchestrator_still_gated_on_pool_and_lock(self):
         self.assertFalse(worker_routing.qwen_emergency_eligible(
-            pool="personal", task_type="general", strict_engine=False, session_kind="orchestrator"))
+            pool="work", task_type=None, strict_engine=False, session_kind="orchestrator"))
+        self.assertFalse(worker_routing.qwen_emergency_eligible(
+            pool="personal", task_type=None, strict_engine=True, session_kind="orchestrator"))
 
     def test_unknown_task_type_does_not_trigger(self):
         self.assertFalse(worker_routing.qwen_emergency_eligible(
@@ -124,6 +133,54 @@ class TaskContractTests(unittest.TestCase):
         body = QwenLocalAdapter.build_task_contract(
             system_note="S", prompt="P", workspace="/w", turns=20, lineage="resume:abc")
         self.assertIn("lineage: resume:abc", body)
+
+
+class SpawnIntentTests(unittest.TestCase):
+    def test_valid_intent_with_defaults(self):
+        intent, reason = worker_routing.parse_qwen_spawn_intent(
+            {"title": "작은 수정", "prompt": "파일을 고치고 테스트를 돌린다."})
+        self.assertEqual(reason, "")
+        self.assertEqual(intent["engine"], "auto")
+        self.assertEqual(intent["task_type"], "general")
+        self.assertFalse(intent["strict_engine"])
+        self.assertEqual(intent["title"], "작은 수정")
+
+    def test_valid_intent_explicit_fields(self):
+        intent, _ = worker_routing.parse_qwen_spawn_intent(
+            {"title": "T", "prompt": "P", "engine": "qwen-local", "task_type": "routine",
+             "effort": "low", "strict_engine": True, "model": "m"})
+        self.assertEqual((intent["engine"], intent["task_type"], intent["effort"]), ("qwen-local", "routine", "low"))
+        self.assertTrue(intent["strict_engine"])
+
+    def test_fail_closed(self):
+        bad = [
+            ("not a dict", "not_an_object"),
+            ({"prompt": "P"}, "missing_title"),
+            ({"title": "T"}, "missing_prompt"),
+            ({"title": "  ", "prompt": "P"}, "missing_title"),
+            ({"title": "T", "prompt": "P", "bogus": 1}, "unknown_keys:bogus"),
+            ({"title": "T", "prompt": "P", "engine": "nope"}, "bad_engine"),
+            ({"title": "T", "prompt": "P", "task_type": "nap"}, "bad_task_type"),
+            ({"title": "T", "prompt": "P", "effort": "ultra"}, "bad_effort"),
+            ({"title": "T", "prompt": "P", "strict_engine": "yes"}, "bad_strict_engine"),
+            ({"title": "x" * 121, "prompt": "P"}, "title_too_long"),
+            ({"title": "T", "prompt": "x" * 20001}, "prompt_too_long"),
+        ]
+        for data, reason in bad:
+            with self.subTest(reason=reason):
+                intent, got = worker_routing.parse_qwen_spawn_intent(data)
+                self.assertIsNone(intent)
+                self.assertTrue(got.startswith(reason))
+
+
+class DegradedNoteTests(unittest.TestCase):
+    def test_note_names_queue_schema_and_cap(self):
+        note = worker_routing.qwen_orchestrator_degraded_note("/outbox/spawn-queue")
+        self.assertIn("/outbox/spawn-queue", note)
+        self.assertIn("title", note)
+        self.assertIn("self-contained", note)
+        self.assertIn(str(worker_routing.QWEN_SPAWN_QUEUE_MAX_PER_RUN), note)
+        self.assertIn("spawn_worker", note)
 
 
 class ResumeGuardTests(unittest.TestCase):

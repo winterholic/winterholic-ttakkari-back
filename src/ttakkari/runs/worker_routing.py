@@ -41,11 +41,20 @@ QWEN_LOCAL = ("qwen-local", "Qwen3.8-Flash-Next-Q2_K")
 # measured quality baseline, so it only continues general/routine worker runs in
 # the personal scope. design/verification/reasoning keep waiting for quota reset
 # (see tests/test_worker_quota_recovery.py::test_qwen_local_routing_contract_and_boundary).
-# Orchestrator sessions are excluded: without MCP tools an orchestrator run on
-# Qwen cannot spawn/message workers or notify, so the orchestrator itself waits
-# while its general/routine workers (kind="worker") may continue on Qwen.
+# Orchestrator sessions join in degraded mode: without MCP tools an orchestrator
+# run on Qwen cannot spawn/message workers or notify, so it plans, does narrow
+# file work directly, and queues delegation intents (spawn-queue/*.json) that the
+# backend replays as worker sessions when cloud capacity returns. A dead planner
+# would otherwise make the worker fallback unreachable, since nothing can spawn.
 QWEN_EMERGENCY_TASKS = ("general", "routine")
-QWEN_EMERGENCY_KINDS = ("worker",)
+QWEN_EMERGENCY_KINDS = ("worker", "orchestrator")
+# Delegation intents a degraded Qwen orchestrator may queue (see manager replay).
+QWEN_SPAWN_QUEUE_DIR = "spawn-queue"
+QWEN_SPAWN_QUEUE_MAX_PER_RUN = 10
+QWEN_SPAWN_INTENT_MAX_TITLE = 120
+QWEN_SPAWN_INTENT_MAX_PROMPT = 20000
+QWEN_SPAWN_INTENT_ENGINES = ("auto", "claude", "codex", "antigravity", "muse", "qwen-local")
+QWEN_SPAWN_INTENT_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Muse has one account-wide 5h/weekly pool (keys five_hour/seven_day), so headroom compares like native engines.
 MUSE_SPARK = ("muse", "muse-spark-1.3")
 # Coding, MCP and same-session resume passed on deployed 6d5f580, independently verified by GPT.
@@ -245,13 +254,81 @@ def qwen_emergency_eligible(*, pool: str | None, task_type: str | None,
                             strict_engine: bool = False, session_kind: str | None = None) -> bool:
     """Whether a run may continue on local Qwen after all cloud accounts are limited.
 
-    All four gates must hold: personal scope (company scope never leaks into the
-    personal local model), a general/routine task, no strict engine lock, and a
-    worker session. A caller that only saw generic errors, network failures or
-    unknown quota (no limited accounts) must not call this an exhaustion.
+    Workers: personal scope (company scope never leaks into the personal local
+    model), a general/routine task, no strict engine lock. Orchestrator sessions
+    carry no worker task type, so they skip the task gate and run degraded
+    (plan + direct narrow work + queued delegation intents). A caller that only
+    saw generic errors, network failures or unknown quota (no limited accounts)
+    must not call this an exhaustion.
     """
+    if (session_kind or "worker") == "orchestrator":
+        return pool == "personal" and not strict_engine
     return (pool == "personal" and (task_type or "general") in QWEN_EMERGENCY_TASKS
             and not strict_engine and (session_kind or "worker") in QWEN_EMERGENCY_KINDS)
+
+
+def parse_qwen_spawn_intent(data: object) -> tuple[dict | None, str]:
+    """Validate one delegation intent queued by a degraded Qwen orchestrator.
+
+    Returns (intent, "") or (None, reason). Fail closed: unknown keys, missing
+    title/prompt, out-of-policy values and oversized bodies are rejected and
+    never spawn. Replay uses the normal routing path, so cloud quota still
+    applies when the queued worker actually runs.
+    """
+    if not isinstance(data, dict):
+        return None, "not_an_object"
+    allowed = {"title", "prompt", "engine", "model", "effort", "task_type", "strict_engine"}
+    unknown = sorted(k for k in data if k not in allowed)
+    if unknown:
+        return None, f"unknown_keys:{','.join(unknown)}"
+    title = data.get("title")
+    prompt = data.get("prompt")
+    if not isinstance(title, str) or not title.strip():
+        return None, "missing_title"
+    if not isinstance(prompt, str) or not prompt.strip():
+        return None, "missing_prompt"
+    if len(title) > QWEN_SPAWN_INTENT_MAX_TITLE:
+        return None, "title_too_long"
+    if len(prompt) > QWEN_SPAWN_INTENT_MAX_PROMPT:
+        return None, "prompt_too_long"
+    engine = data.get("engine", "auto")
+    if engine not in QWEN_SPAWN_INTENT_ENGINES:
+        return None, "bad_engine"
+    task_type = data.get("task_type", "general")
+    if task_type not in ROUTES:
+        return None, "bad_task_type"
+    model = data.get("model")
+    if model is not None and not isinstance(model, str):
+        return None, "bad_model"
+    effort = data.get("effort")
+    if effort is not None and effort not in QWEN_SPAWN_INTENT_EFFORTS:
+        return None, "bad_effort"
+    strict = data.get("strict_engine", False)
+    if not isinstance(strict, bool):
+        return None, "bad_strict_engine"
+    return ({"title": title.strip(), "prompt": prompt, "engine": engine, "model": model,
+             "effort": effort, "task_type": task_type, "strict_engine": strict}, "")
+
+
+def qwen_orchestrator_degraded_note(queue_dir: str) -> str:
+    """Short instruction prefix for an orchestrator run on emergency Qwen.
+
+    Pure text: no tools are granted here, the manager only prepends it to the
+    prompt. Keeps the intent schema, caps and self-containment rule in one
+    place so tests pin them.
+    """
+    return (
+        "[비상 degraded 모드: 클라우드 한도로 로컬 Qwen에서 돈다. "
+        "spawn_worker·message_worker·notify 같은 위임 도구가 없다. "
+        "직접 할 수 있는 일: 계획 수립, 좁은 파일 읽기·수정·테스트 실행. "
+        "남에게 시킬 일은 작업 지시 JSON으로 남긴다: "
+        f"{queue_dir}/NN-제목.json 한 파일에 하나씩, 키는 title·prompt 필수, "
+        "engine·model·effort·task_type·strict_engine 선택(task_type 기본 general). "
+        "예: {\"title\": \"...\", \"prompt\": \"...\", \"engine\": \"auto\", \"task_type\": \"general\"}. "
+        "백엔드가 클라우드 회복 뒤 순서대로 작업 세션으로 띄우므로 프롬프트는 "
+        "혼자 읽어도 되게 self-contained 로 쓰고, 같은 일을 두 파일에 나누지 않는다. "
+        f"한 Run에 최대 {QWEN_SPAWN_QUEUE_MAX_PER_RUN}개까지만 띄워진다.]"
+    )
 
 
 def emergency_qwen_profile(pool: str) -> profiles.Profile:

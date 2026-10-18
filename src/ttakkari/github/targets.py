@@ -14,6 +14,7 @@ OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 POSITIVE_RE = re.compile(r"^[1-9][0-9]{0,18}$")
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+SHORT_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,39}$")  # GitHub 주소에 흔한 약식 SHA(7자 이상). 실제 커밋인지는 상류로 확인한다
 MAX_NUMBER = 2**31 - 1
 MAX_BIG_ID = 2**53
 MAX_PATH = 1024
@@ -203,23 +204,32 @@ def parse(q: str) -> ResolveOut:
     return _out("repo", owner=own, repo=rep)
 
 
-def split_ref_path(ref_path: str, refs: list[str]) -> tuple[str, str] | None:
+def match_ref(ref_path: str, refs: list[str]) -> tuple[str, str] | None:
     """`feature/login-ui/src/a.py` 를 실제 브랜치·태그 이름으로 가른다. 가장 긴 일치가 이긴다(세그먼트 경계만)."""
     best = ""
     for name in refs:
         if (ref_path == name or ref_path.startswith(name + "/")) and len(name) > len(best):
             best = name
-    if best:
-        return best, ref_path[len(best) + 1:]
+    return (best, ref_path[len(best) + 1:]) if best else None
+
+
+def split_ref_path(ref_path: str, refs: list[str]) -> tuple[str, str] | None:
+    """match_ref + 첫 마디가 전체 SHA(40자)이면 호출 없이 SHA 로 인정한다."""
+    found = match_ref(ref_path, refs)
+    if found:
+        return found
     first, _, rest = ref_path.partition("/")
     if SHA_RE.fullmatch(first):
         return first, rest
     return None
 
 
+def with_ref_at(out: ResolveOut, ref_name: str, sub: str) -> ResolveOut:
+    return out.model_copy(update={"ref": ref_name, "path": sub, "needs_ref_resolution": False, "ref_path": None})
+
+
 def with_ref(out: ResolveOut, refs: list[str]) -> ResolveOut:
     found = split_ref_path(out.ref_path or "", refs)
     if found is None:
         raise GithubError("ref_not_found")
-    ref_name, sub = found
-    return out.model_copy(update={"ref": ref_name, "path": sub, "needs_ref_resolution": False, "ref_path": None})
+    return with_ref_at(out, *found)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import httpx
@@ -364,7 +365,8 @@ async def test_stale_flag_on_envelope(world):
     assert r1.json()["stale"] is False
     # 상류가 죽은 뒤 만료된 캐시 → stale
     svc = world[3].dependency_overrides[svc_mod.get_service]()
-    svc.client._cache._clock = lambda: 10**9  # 모든 항목 만료
+    # 모든 항목 만료(TTL 60초 경과)지만 stale 최대 나이(STALE_MAX_AGE)는 넘지 않는 시각. 이전의 10**9 는 새 최대 나이 계약에서 stale 불가가 맞다.
+    svc.client._cache._clock = lambda: time.monotonic() + 120
     u.routes.clear()
     u.set("/repos/acme/widget", {}, status=500)
     svc.client._backoff = (0.0, 0.0)

@@ -56,7 +56,7 @@
 3. **요청별 계정 선택.** 모든 엔드포인트가 `account`(login)를 필수로 받는다. 값은 gh 목록(state=success)에 있는 login만 허용(정규식 + 목록 일치, TTL 60초). 누락은 422(기본 계정을 서버가 추정하지 않는다). 동시 요청은 서로 다른 토큰을 쓰며 공유 상태가 없다.
 4. **호스트는 상수.** `https://api.github.com`만 호출한다. 사용자 입력 URL은 절대 fetch하지 않고 고정 템플릿의 경로 조각으로 매핑한다. 리다이렉트 자동 추적 금지. 로그 302만 수동으로 따르되 `Authorization` 없이, `https`·443·허용 접미사 호스트일 때만(H4로 고정, 확인 전에는 로그 기능 비활성).
 5. **읽기 전용.** 클라이언트는 `get()`만 노출한다. 허용 경로는 템플릿 목록에 있는 것만이다.
-6. **캐시 격리.** 키 = (host, login, 경로 종류, 정규화 경로·쿼리, Accept). 계정 간 공유 없음. 메모리 LRU만 사용하고 항목 500개·합계 32MB 상한. TTL: 목록 30초, 상세 60초, 40자 SHA로 고정된 내용 10분. TTL 후 ETag 재검증(304는 한도 미소모). 계정이 gh 목록에서 사라지면 그 login의 캐시를 비운다.
+6. **캐시 격리.** 키 = (host, login, 경로 종류, 정규화 경로·쿼리, Accept). 계정 간 공유 없음. 메모리 LRU만 사용하고 항목 500개·합계 32MB 상한. TTL: 목록 30초, 상세 60초, 40자 SHA로 고정된 내용 10분. TTL 후 ETag 재검증(304는 한도 미소모). 계정이 gh 목록에서 사라지면 그 login의 캐시를 비운다. stale 제공은 마지막 확인 후 10분까지이고, 접근 상실 응답(401·403·404·410·451)을 본 키는 즉시 폐기한다(§13-2).
 7. **응답은 화이트리스트 필드로 좁혀 반환**한다(상류 JSON을 통째로 전달하지 않는다). 상류 스키마가 어긋나면 `gh_schema_changed`(내 오류와 구분).
 8. 프론트는 **GitHub 본문 HTML을 렌더하지 않고**(AppMarkdown), 외부 링크는 https github.com만 새 탭(`noopener noreferrer`)으로 연다.
 9. 상류 401을 401로 전달하지 않는다(앱 세션 로그아웃 방지). `gh_auth_expired`는 502.
@@ -68,7 +68,7 @@
 | 항목 | 값 |
 |---|---|
 | 한도 | 5,000/h 기본, 보조 동시 100·900점/분. 클라이언트 스로틀로 한도의 80% 아래 운용(로그인당 동시 4, 전체 8). |
-| 타임아웃 | 연결 3s·읽기 10s·전체 15s(로그 다운로드 20s). 예외 없음. |
+| 타임아웃 | 연결 3s·읽기 10s·전체 15s(로그 20s). **전체는 호출 하나가 아니라 라우트(요청) 하나의 마감**이다(§13-3). 예외 없음. |
 | 재시도 | GET만, 5xx·전송 오류만 최대 2회(1s·2s, ±50% 지터). 4xx는 재시도하지 않는다. 429·한도 소진 403은 `retry-after`/`x-ratelimit-reset`을 존중하고 재시도하지 않고 `gh_rate_limited`(+reset)로 반환. |
 | 응답 상한 | JSON 2MiB(`pulls/files`는 4MiB), 파일 본문 1MiB(초과는 메타만+`too_large`), 로그 다운로드 8MiB(초과는 `gh_too_large`), 로그 창 2,000줄·256KiB. 스트림으로 읽으며 바이트 카운트로 중단. |
 | 페이지네이션 | 쿼리는 `page`(1~200)·`per_page`(≤50). 상류 `Link`의 `rel=next` 존재 여부로 `has_more`를 만들고 상류 URL은 전달하지 않는다. 이슈는 PR을 걸러내 페이지당 개수가 줄 수 있으므로 개수가 아닌 `has_more`로 더보기를 판단. |
@@ -215,3 +215,22 @@ frontend 소유권:
 - H3(일부): 두 계정의 비공개 저장소를 서로의 계정으로 조회하면 `gh_not_found`(404)였다. 조직 6개(winterholic)의 `/users`·`/orgs`·`/orgs/<org>/repos`는 모두 200이었다. SAML SSO 조직 사례는 만나지 못했다(미검증).
 - H4: 공개 저장소(cli/cli)의 job 로그 302 `Location` 호스트는 `productionresultssa3.blob.core.windows.net`이었고 허용 목록에 맞았으며 내려받기는 200 `text/plain`이었다. 다른 호스트가 나올 수 있어 허용 목록은 계속 가정으로 둔다.
 - 실제 GitHub 응답으로 views 매핑이 깨지지 않음을 공개 저장소에서 확인했다(저장소·브랜치·contents·README·PR 목록/상세/files·이슈·댓글·run·job). 슬래시가 든 실제 브랜치 3개로 resolve→contents 200을 확인했다.
+
+## 13. 독립 검증 반영 (2026-10-18, 검증 Run e614387a의 결함 수정)
+
+독립 검증자가 baseline(fa32775)에서 재현한 결함을 근본 원인부터 고쳤다. 검증자의 반례 테스트는 증거로만 썼고 회귀 테스트는 `unit_tests/test_github_hardening.py`에 구현 선택에 맞게 다시 썼다. 실제 GitHub 호출로 확인한 것은 없다(전부 mock·fake gh, 아래 미검증 항목 참고).
+
+1. **ref 해석 100개 상한(V01, P2).** 원인: `matching-refs/<heads|tags>/<첫 마디>`를 첫 페이지(100개)만 읽고 목록에 없으면 `ref_not_found`로 결론냈다. 접두사 일치가 100개를 넘으면(dependabot/…) 실제 브랜치 주소가 "없음"이 된다. 수정(`github/refs.py`): matching-refs를 Link `next`로 최대 3쪽(300개)까지 따라 읽고 일치가 나오면 멈춘다(같은 이름공간에서 `a`와 `a/b`는 함께 ref일 수 없어 일치는 하나뿐). 3쪽을 넘겨도 `next`가 남았거나 Link를 못 읽었는데 한 쪽이 꽉 찼으면 일부만 본 것이므로 목록으로 "없음"을 결론내지 않고 `git/ref/<heads|tags>/<후보>` 정확 조회로 확인한다(짧은 후보부터). 정확 조회는 마디 6개까지이고, 넘겨서 확인하지 못하면 `ref_not_found`가 아니라 422 `gh_unprocessable`(`reason: ref_resolution_limit`)로 알린다. 정확 조회가 접두사 배열을 주는 경우도 정확히 같은 이름만 인정한다.
+2. **권한 철회 뒤 stale 부활(V02, P2)과 stale 최대 나이(V03, P3).** 원인: 만료 항목을 ETag 재검증·stale-if-error용으로 계속 들고 있어, 200 → TTL 초과 → 권한 404 → 상류 5xx 순서에서 비공개 응답이 `stale:true`로 다시 나왔다. 수정: 401(재시도 후에도)·403(한도 아님)·404·410·451을 관측한 키의 캐시를 폐기하고, `repo` 종류를 잃었으면 같은 계정의 그 저장소 아래 캐시도 함께 폐기한다. 키에 login이 들어 있어 다른 계정에는 영향이 없다. 한도·5xx·타임아웃은 폐기 대상이 아니다. stale 최대 나이는 **600초**(STALE_MAX_AGE)이고 경계는 포함(나이 ≤ 600초면 제공, 600.001초면 오류)이다. 나이는 상류에서 받았거나 304로 다시 확인한 시각부터 센다. 600초를 고른 이유: 일시 장애와 짧은 한도 소진은 넘기되, 권한 철회가 가려지는 시간이 전체 SHA 고정 TTL(10분)보다 길지 않게 하려는 것이다(측정값이 아닌 정책값).
+3. **라우트 전체 단일 예산(V04, P2).** 원인: 15초가 `client.get` 호출마다 새로 시작해 branches(repo+branches)·README 404(readme+repo)·큰 파일(contents+raw)은 약 30초, resolve는 호출 수에 따라 45~60초가 될 수 있었다(이전 수정은 호출 하나만 덮었다). 수정: `routes_common.get_gh`(async 의존성)가 요청 시작에 마감(`client.current_deadline`, loop.time 기준 절대 시각)을 열고 끝에 되돌린다. `client.get`은 마감이 있으면 새 예산을 시작하지 않고 그 마감까지만 기다린다(계정 확인·큐 대기·토큰 획득·모든 시도·백오프 포함). 계정 확인(`ident`·`/accounts`·로그의 `registry.require`)도 같은 마감에 건다. 앞선 호출이 마감을 다 썼으면 대기 없이 504 `gh_timeout`이다(만료 캐시가 있고 최대 나이 안이면 stale). 로그 라우트는 `get_gh_logs`로 마감이 20초이며 302 호출+내려받기가 그 한 마감을 쓴다. 마감이 없는 직접 호출은 호출마다 자기 예산을 갖는다.
+4. **깊은 JSON(V05, P3).** `json.loads`가 2MB 안의 깊은 중첩에서 던지는 `RecursionError`를 `gh_schema_changed`(502)로 바꾼다. 오류 본문 분류와 `gh auth status` 출력 파싱에서도 500이 되지 않는다.
+5. **`/me/orgs` 스키마(V06, P3).** 목록이 아닌 본문(dict·문자열·숫자·null)을 빈 목록 200으로 위장하지 않고 502 `gh_schema_changed`. 정상 빈 목록은 그대로 200.
+6. **`gh auth status` 일시 실패(V09f, P3).** 원인: 종료코드≠0을 "계정 0개"로 처리해 토큰·캐시를 폐기했다. 수정: 종료코드가 아니라 **출력이 정상 JSON으로 읽히는지**로 판단한다. 정상 JSON이면(빈 목록이어도, 계정 하나가 만료여도) 그 목록을 쓰고 사라진 계정은 기존처럼 즉시 폐기한다(실측: 로그아웃 상태에서 gh 2.101.0은 종료코드 0과 `{"hosts":{}}`). 읽을 수 없는 출력·타임아웃은 일시 실패로 보고 캐시·토큰을 지우지 않으며, 마지막으로 정상 확인한 목록을 **300초**(STATUS_GRACE, 토큰 보관과 같음)까지만 쓴다. 지나면 503 `no_account`에 `reason: gh_status_failed`와 "gh 계정 상태를 확인하지 못했습니다" 문구로 알린다(로그아웃과 구분). 실패 뒤에는 gap(5초) 안에 gh를 다시 띄우지 않는다.
+7. **로그 비밀 마스킹(V11d/e, P3).** `oplog.scrub`가 놓치는 Azure SAS `sig=`, Stripe `sk_live_`·`rk_live_`·`sk_test_` 키, `PGP PRIVATE KEY BLOCK`(BEGIN~END 블록)을 `github/logs.py`에서 추가로 가린다. 개인키 블록은 기존처럼 로그 전체에 먼저 적용해 창 경계에 걸쳐도 새지 않고, 줄 단위 패턴은 창 경계와 무관하다(경계 테스트 포함).
+8. **`HEAD`·약식 SHA 주소(V14, P3).** `tree|blob/HEAD/…`는 저장소 기본 브랜치로 푼다(`ref`는 기본 브랜치 이름). 7~39자 16진수 첫 마디는 먼저 실제 브랜치·태그와 대조하고(SHA처럼 생긴 브랜치가 우선), 없으면 `GET commits/<짧은 SHA>`(`Accept: application/vnd.github.sha`)로 실제 커밋인지 확인해 전체 SHA로 넓힌다. 없거나 모호하면 `ref_not_found`, 상류 응답이 입력으로 시작하지 않으면 `gh_schema_changed`. 임의의 16진수는 받지 않는다. 40자 SHA는 §12대로 호출 없이 인정한다(전체 SHA는 확장할 것이 없고, 틀리면 이후 contents에서 404).
+
+범위 밖·의도 유지: gzip 폭탄과 EMU는 이번 범위가 아니다. 검증자의 V08 `o/r/../../x`(기대된 입력 거부 동작)와 A07 `Cache-Control`(비결함)은 동작을 바꾸지 않았다.
+
+프론트 영향(계약 필드 변경 없음, 새 값만): ① `no_account`에 `reason: gh_status_failed`가 생길 수 있다. 현재 `describeGhError`는 이 코드를 항상 "연결된 GitHub 계정이 없어요"로 보여 주므로 일시 실패에는 부정확하다(reason 분기 권장). ② `resolve`가 `gh_unprocessable`+`reason: ref_resolution_limit`을 낼 수 있다. 현재 문구("내용이 너무 크거나…")는 부정확하므로 reason 분기 권장. ③ `resolve`의 `HEAD`·약식 SHA 성공은 같은 `ResolveOut` 모양이다. ④ `stale:true` 빈도는 줄고(10분 상한) 접근 상실 직후에는 오류가 난다. 프론트는 이번 Run에서 건드리지 않았다.
+
+미검증: 실제 GitHub의 `git/ref/<heads|tags>/<이름>`(정확 조회) 응답 모양(단일 객체·404 가정, 접두사 배열이면 정확 일치만 인정)과 `commits/<짧은 SHA>` + `application/vnd.github.sha`의 실제 동작(존재하지 않는 짧은 SHA의 상태코드가 404인지 422인지, 모호한 SHA)은 문서 기억과 mock으로만 확인했다. 두 경우 모두 404·422를 `ref_not_found`로 처리한다. 운영 LaunchAgent 환경·실기기 검증은 §12 그대로 미검증이다.

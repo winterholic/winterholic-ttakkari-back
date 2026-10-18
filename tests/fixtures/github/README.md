@@ -45,7 +45,7 @@
 
 | 경로 | 쿼리 | data |
 |---|---|---|
-| GET `/accounts` | `probe=true`(선택) | 봉투 없음: `{"accounts":[AccountOut], "fetched_at"}` — `account` 불필요 |
+| GET `/accounts` | `probe=true`(선택) | 봉투 없음: `{"accounts":[AccountOut], "gh_available":bool, "fetched_at"}` — `account` 불필요. gh를 못 찾으면 `accounts:[]`+`gh_available:false`(500 아님) |
 | GET `/resolve` | `q`, `account`(선택) | 봉투 없음: `ResolveOut`. tree/blob URL의 ref에 `/`가 있으면 account가 있어야 실제 브랜치로 해석, 없으면 `needs_ref_resolution:true` |
 | GET `/me` | | `api/me.json` |
 | GET `/me/orgs` | page, per_page | `api/orgs.json` |

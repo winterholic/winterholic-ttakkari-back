@@ -63,6 +63,7 @@ class Decision:
     reply: str
     lead_id: str | None = None
     title: str | None = None
+    session_mode: str | None = None
 
 
 @dataclass
@@ -117,6 +118,7 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
         decision = Decision("delegate", FALLBACK_REPLY)
         events.append(db, run, "desk.route", {"action": "delegate", "account": None, "engine": None, "fallback": True})
 
+    decision = _apply_explicit_new(run.prompt, decision)
     reply = decision.reply
     if decision.action == "delegate":
         lead, dedup = await _delegate(db, run, sess, decision)
@@ -285,6 +287,28 @@ async def _history(db: AsyncSession, sess: ChatSession, run: Run, turns: int) ->
     return lines
 
 
+def _wants_new_session(message: str) -> bool:
+    """사용자가 새 세션을 명시했는지. 띄어쓰기 없는 표기(새세션)도 잡는다."""
+    compact = re.sub(r"\s+", "", message)
+    if "새세션" in compact or "새로운세션" in compact:
+        return True
+    return "별도" in message and ("세션" in message or "기획" in message)
+
+
+def _force_new(decision: Decision, message: str) -> bool:
+    """모델의 재사용 선택·제목 중복 병합을 건너뛰고 새로 만들어야 하는지."""
+    return _wants_new_session(message) or decision.session_mode == "new"
+
+
+def _apply_explicit_new(message: str, decision: Decision) -> Decision:
+    """명시적 새-세션 요청은 모델의 답을 덮는다. 재사용 선택은 버리고, 직접 답변도 위임으로 바꾼다."""
+    if not _wants_new_session(message):
+        return decision
+    if decision.action == "delegate":
+        return Decision(decision.action, decision.reply, None, decision.title, decision.session_mode)
+    return Decision("delegate", decision.reply or "기획 세션에 넘겼어요.", None, None, decision.session_mode)
+
+
 async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Decision) -> tuple[ChatSession, bool]:
     """넘길 기획 세션과, 같은 일로 보고 방금 만든 기획에 이어 넣었는지(dedup)를 돌려준다."""
     from ttakkari.api.sessions import queue_run
@@ -292,12 +316,14 @@ async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Dec
     # 접수 행을 잠그고 기획 목록을 다시 읽는다. 작업판은 엔진을 부르기 전 상태라, 동시에 넘긴 다른 접수 Run 이 그사이 만든
     # 기획을 못 본다. 자동 보관(runs/lead_archive)도 같은 행을 잠가 순서가 맞는다. 잠금은 queue_run 의 commit 에서 풀린다.
     await db.scalar(select(ChatSession.id).where(ChatSession.id == sess.id).with_for_update())
-    lead = await _open_lead(db, sess, decision.lead_id)
+    force_new = _force_new(decision, run.prompt)
+    lead = None if force_new else await _open_lead(db, sess, decision.lead_id)
     dedup = False
     if lead is None:
         title = _new_title(run, decision)
-        lead = await _same_recent_lead(db, sess, title)
-        dedup = lead is not None
+        if not force_new:
+            lead = await _same_recent_lead(db, sess, title)
+            dedup = lead is not None
         if lead is None:
             lead = ChatSession(workspace_id=sess.workspace_id, title=title, engine="auto",
                                kind=SessionKind.orchestrator, parent_id=sess.id, pool=sess.pool)
@@ -365,7 +391,9 @@ def _parse(text: str) -> Decision | None:
         return None
     lead_id = obj.get("lead_id") if isinstance(obj.get("lead_id"), str) else None
     title = obj.get("title").strip()[:60] if isinstance(obj.get("title"), str) and obj.get("title").strip() else None
-    return Decision(action, reply or "기획 세션에 넘겼어요.", lead_id, title)
+    mode = obj.get("session_mode")
+    session_mode = mode if mode in ("new", "continue") else None
+    return Decision(action, reply or "기획 세션에 넘겼어요.", lead_id, title, session_mode)
 
 
 # ---- 엔진 호출

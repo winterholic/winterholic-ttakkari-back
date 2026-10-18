@@ -94,6 +94,10 @@ class Collector:
             # 그 창이 매번 재조회를 부르지 않게 백오프를 따른다.
             due = now >= st.next_due or ((engine != "antigravity" or st.failures == 0)
                                          and reset_passed(cached, now) and now - st.last_fetch >= MIN_REFETCH)
+            # Muse 는 유휴 창을 생략해 실패가 쌓이면 주기가 최대 30분까지 늘어난다. 실행 스트림이 새 관측을 남기면
+            # 공급자가 값을 다시 주는 때이므로 백오프를 기다리지 않고 바로 확인한다.
+            due = due or (engine == "muse" and st.failures > 0 and now - st.last_fetch >= MIN_REFETCH
+                          and cached is not None and (cached.updated_at or 0) > st.last_fetch)
             if not due:
                 continue
             if done:

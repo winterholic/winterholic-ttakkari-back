@@ -402,6 +402,9 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
     err = u.error or error
     if is_muse and not muse_current and not err:
         err = "Muse 최신 사용량 미확인 · 5시간·주간 창 모두 확인되지 않음"
+    if is_muse and not muse_current and err and any(w.key == "five_hour" and w.resets_at and w.resets_at <= now for w in u.windows):
+        # 초기화 뒤 쓰지 않은 창은 공급자가 생략한다. 0% 로 읽히지 않게 이유와 갱신 조건을 알린다.
+        err += " · 5시간 창이 초기화된 뒤 쓰지 않아 값이 없어요. Muse 를 쓰면 갱신돼요"
     if (not valid_windows or (is_agy and len(agy_expired) == len(u.windows))) and u.windows and not err:
         err = f"{a.engine.capitalize()} 초기화 시각 경과 · 새 사용량 미관측"
     return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,

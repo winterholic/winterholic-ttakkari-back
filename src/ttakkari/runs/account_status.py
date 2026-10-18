@@ -157,6 +157,9 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 "Flash (gemini-3.8-flash-*) is excluded from verification; when Flash completes a general/routine worker Run, "
                 "independent cross-provider verification (task_type='verification') is required before final completion. "
                 "Muse (muse-*) is a general/routine auto candidate only while muse_auto_routing is true (personal accounts only); "
-                "its general/routine results require the same independent verification and Muse never verifies.",
+                "its general/routine results require the same independent verification and Muse never verifies. "
+                "An enabled Muse whose quota is unconfirmed (stale or /usage unavailable, e.g. after the 5-hour window reset while idle) "
+                "is not treated as spare capacity, but model_capacity.exploration_eligible=true means routing may give it one real "
+                f"task per {int(profiles.MUSE_PROBE_INTERVAL // 60)} min so a stream observation can end the unknown state.",
         "accounts": out,
     }

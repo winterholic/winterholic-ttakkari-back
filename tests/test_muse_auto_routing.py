@@ -20,7 +20,7 @@ from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import ChatSession, EngineAccount
 from ttakkari.orchestrator.runtime import issue_token, model_routing_note
-from ttakkari.runs import usage
+from ttakkari.runs import profiles, usage
 from ttakkari.runs import worker_routing as routing
 
 SONNET = "claude-sonnet-5-5-high"
@@ -173,10 +173,45 @@ async def test_busy_muse_account_yields_to_better_headroom(client, auth, make_di
     assert (run["engine"], run["model"]) == ("antigravity", SONNET), run
 
 
-async def test_unknown_muse_quota_never_outranks_measured_sonnet(client, auth, make_dir, muse, muse_gate):
-    muse_usage(muse, used=0, age=3600)  # stale means unknown capacity, not spare capacity
-    response, _ = await spawn(client, auth, make_dir, task_type="general")
-    run = await result(client, auth, response)
+async def test_unknown_muse_quota_is_explored_once_then_yields_to_measured_sonnet(client, auth, make_dir, muse, muse_gate):
+    # Stale means unknown capacity, never spare capacity. An unknown Muse still gets one rate-limited real task
+    # so a stream observation can end the unknown state; otherwise it could never be chosen again.
+    muse_usage(muse, used=0, age=3600)
+    first = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (first["engine"], first["model"]) == ("muse", MUSE_MODEL), first
+    receipt = next(e["payload"] for e in await run_events(client, auth, first["id"]) if e["type"] == "worker.routing")
+    assert receipt["selected"]["quota_known"] is False
+    second = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (second["engine"], second["model"]) == ("antigravity", SONNET), second
+    # After the interval the unobserved Muse is explored again.
+    profiles._probe_last[muse] = time.time() - profiles.MUSE_PROBE_INTERVAL - 1
+    third = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (third["engine"], third["model"]) == ("muse", MUSE_MODEL), third
+
+
+async def test_muse_idle_after_five_hour_reset_with_stale_exhaustion_is_explored(client, auth, make_dir, muse, muse_gate):
+    # 2026-10-18 incident: 5h window observed at 100% before its reset, weekly 33%, nothing observed since.
+    now = time.time()
+    usage.seed(muse, usage.Usage(windows=[usage.Window("five_hour", "5h", 100, int(now - 3600)),
+                                          usage.Window("seven_day", "7d", 33, int(now + 86400))],
+                                 updated_at=now - 36000, source="muse_cli", login="ok", error="/usage unavailable"),
+               refresh=True)
+    assert profiles.usage_limit_until(profiles.Profile(muse, "m", "muse", model=MUSE_MODEL)) is None
+    run = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (run["engine"], run["model"]) == ("muse", MUSE_MODEL), run
+
+
+async def test_unknown_muse_without_login_is_never_explored(client, auth, make_dir, muse, muse_gate):
+    now = time.time()
+    usage.seed(muse, usage.Usage(login="missing", error="Muse 구독 로그인이 필요해요", updated_at=now), refresh=True)
+    run = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (run["engine"], run["model"]) == ("antigravity", SONNET), run
+
+
+async def test_unknown_muse_in_cooldown_is_not_explored(client, auth, make_dir, muse, muse_gate):
+    muse_usage(muse, used=0, age=3600)
+    profiles.cool_down(muse, 600)
+    run = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
     assert (run["engine"], run["model"]) == ("antigravity", SONNET), run
 
 
@@ -197,11 +232,27 @@ async def test_muse_absorbs_general_when_sonnet_pool_is_exhausted_before_flash(c
     assert (run["engine"], run["model"]) == ("muse", MUSE_MODEL), run
 
 
-async def test_unknown_muse_with_exhausted_sonnet_uses_the_existing_flash_fallback(client, auth, make_dir, muse, muse_gate, accounts):
+async def test_unknown_muse_with_exhausted_sonnet_is_explored_then_uses_the_flash_fallback(client, auth, make_dir, muse, muse_gate, accounts):
     quota(agy_id(accounts), claude=0)
-    response, _ = await spawn(client, auth, make_dir, task_type="general")
+    first = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (first["engine"], first["model"]) == ("muse", MUSE_MODEL), first
+    second = await result(client, auth, (await spawn(client, auth, make_dir, task_type="general"))[0])
+    assert (second["engine"], second["model"]) == ("antigravity", FLASH), second
+
+
+async def test_muse_engine_without_model_defaults_to_spark_1_3_and_auto_never_defaults_to_muse(client, auth, make_dir, muse, muse_gate):
+    muse_usage(muse, used=0)
+    response, _ = await spawn(client, auth, make_dir, engine="muse")
+    assert response.status_code == 201, response.text
     run = await result(client, auth, response)
-    assert (run["engine"], run["model"]) == ("antigravity", FLASH), run
+    assert (run["engine"], run["model"]) == ("muse", MUSE_MODEL), run
+    assert get_settings().worker_default_models["muse"]["model"] == MUSE_MODEL
+    assert get_settings().engine_models["muse"] == [MUSE_MODEL]
+    assert routing.primary_target("muse") == ("muse", MUSE_MODEL)
+    # An unsupported or older Muse model is not a silent default: unknown ids fall back to 1.3 in the pinned route.
+    assert routing.primary_target("muse", "muse-spark-1.2") == ("muse", MUSE_MODEL)
+    auto, _ = await spawn(client, auth, make_dir, engine="auto")
+    assert auto.status_code == 201 and (await result(client, auth, auto))["model"] != "muse-spark-1.2"
 
 
 @pytest.mark.parametrize("task", ["design", "verification", "reasoning"])

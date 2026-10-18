@@ -338,3 +338,81 @@ async def test_stale_threshold_follows_setting(client, auth, make_dir, monkeypat
     monkeypatch.setattr(get_settings(), "usage_stale_seconds", 100)
     body = (await client.get("/api/orchestrator/accounts/usage", headers=h)).json()
     assert next(a for a in body["accounts"] if a["name"] == "claude")["usage"]["stale"] is True
+
+
+# ---- Muse: 유휴 창 생략으로 쌓인 백오프는 새 스트림 관측이 끊는다
+
+async def _muse_collector(client, auth, make_dir, fail):
+    ids = await _accounts(client, auth, make_dir)
+    for n in ("claude", "claude-2", "codex"):
+        await client.patch(f"/api/accounts/{ids[n]}", json={"enabled": False}, headers=auth)
+    muse = uuid.UUID((await client.post("/api/accounts", headers=auth, json={"name": "Backoff Muse", "engine": "muse"})).json()["id"])
+    calls = []
+
+    async def fetch(aid, engine, cdir):
+        calls.append(aid)
+        return usage_mod.Usage(login="ok", error="Muse /usage unavailable") if fail["v"] else _u(
+            _w("five_hour", 0), _w("seven_day", 30), source="muse_cli")
+
+    return muse, calls, col.Collector(fetch)
+
+
+def _stream_observation(aid, *, at=None, age=0):
+    usage_mod.remember_observation(aid, usage_mod.Usage(
+        windows=[_w("five_hour", 0, 17000), _w("seven_day", 30, 86400)], source="muse_cli",
+        updated_at=at if at is not None else time.time() - age, login="ok").as_dict())
+
+
+async def test_muse_backoff_is_cut_short_by_a_new_stream_observation(client, auth, make_dir, monkeypatch):
+    monkeypatch.setattr(col, "GAP_SECONDS", (0, 0))
+    monkeypatch.setattr(get_settings(), "usage_poll_jitter", 0.0)
+    fail = {"v": True}
+    muse, calls, c = await _muse_collector(client, auth, make_dir, fail)
+    t0 = time.time()
+    await c.tick(t0 - 10)
+    await c.tick(t0 + 5)  # first scheduled poll fails
+    n = calls.count(muse)
+    st = c._state[muse]
+    assert st.failures >= 1 and st.next_due - st.last_fetch >= 500, "backed off for ~10 min"
+    assert muse not in await c.tick(st.last_fetch + 10), "nothing new: stay in backoff"
+    _stream_observation(muse, at=st.last_fetch + 1)  # a Muse run reported the new window
+    assert muse not in await c.tick(st.last_fetch + col.MIN_REFETCH - 1), "no back-to-back refetch"
+    fail["v"] = False
+    assert muse in await c.tick(st.last_fetch + col.MIN_REFETCH + 1)
+    assert calls.count(muse) == n + 1
+    assert c._state[muse].failures == 0
+    await usage_store.flush()
+
+
+async def test_muse_backoff_ignores_observations_older_than_the_last_poll(client, auth, make_dir, monkeypatch):
+    monkeypatch.setattr(col, "GAP_SECONDS", (0, 0))
+    monkeypatch.setattr(get_settings(), "usage_poll_jitter", 0.0)
+    muse, _calls, c = await _muse_collector(client, auth, make_dir, {"v": True})
+    t0 = time.time()
+    await c.tick(t0 - 10)
+    await c.tick(t0 + 5)
+    st = c._state[muse]
+    _stream_observation(muse, age=3600)  # replayed history, not news
+    assert muse not in await c.tick(st.last_fetch + 120)
+    await usage_store.flush()
+
+
+async def test_other_engines_keep_plain_backoff_on_new_stream_values(client, auth, make_dir, monkeypatch):
+    ids = await _accounts(client, auth, make_dir)
+    for n in ("claude-2", "codex"):
+        await client.patch(f"/api/accounts/{ids[n]}", json={"enabled": False}, headers=auth)
+    monkeypatch.setattr(col, "GAP_SECONDS", (0, 0))
+    monkeypatch.setattr(get_settings(), "usage_poll_jitter", 0.0)
+
+    async def fetch(aid, engine, cdir):
+        return usage_mod.Usage(error="사용량 API 429")
+
+    c = col.Collector(fetch)
+    t0 = time.time()
+    await c.tick(t0 - 10)
+    await c.tick(t0 + 5)
+    st = c._state[ids["claude"]]
+    assert st.failures == 1
+    usage_mod.remember_stream(ids["claude"], [_w("five_hour", 5)])
+    assert ids["claude"] not in await c.tick(st.last_fetch + 120)
+    await usage_store.flush()

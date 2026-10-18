@@ -303,11 +303,40 @@ def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[float, 
     return minimum, reset
 
 
+# Muse 는 5시간 창이 초기화된 뒤 쓰지 않으면 공급자가 /usage 창을 생략한다(unavailable). 확정 잔여량이 없는
+# 후보는 배정에서 밀리므로, 호출이 없으면 새 관측도 없는 교착이 생긴다. 낡은 값을 잔여량으로 쓰지 않는 대신
+# 알 수 없는 Muse 에 한해 이 간격마다 한 번만 실제 작업을 맡겨 스트림 관측이 생기게 한다(탐색 배정).
+MUSE_PROBE_INTERVAL = 30 * 60.0
+_probe_last: dict[uuid.UUID, float] = {}
+
+
+def reset_probes() -> None:
+    _probe_last.clear()
+
+
+def muse_probe_eligible(profile: Profile, now: float | None = None) -> bool:
+    """확정 잔여량을 모르는 Muse 가 탐색 배정을 받을 수 있나.
+
+    알려진 한도 소진(usage_limit_until)·쿨다운·로그인 없음·직전 탐색 이후 간격 미경과는 제외한다. 이미 확정 잔여량이
+    있으면 탐색이 아니라 평소 순위로 고른다."""
+    from ttakkari.runs import usage as usage_mod
+
+    if profile.engine != "muse":
+        return False
+    now = time.time() if now is None else now
+    if _usage_headroom(profile, now) is not None or profile_limited_until(profile):
+        return False
+    u = usage_mod.cached(profile.id)
+    if u is not None and u.login == "missing":
+        return False
+    return now - _probe_last.get(profile.id, 0.0) >= MUSE_PROBE_INTERVAL
+
+
 def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, prefer_engine: str | None = None,
            balance_usage: bool = False, counts_override: dict[uuid.UUID, int] | None = None) -> Profile:
     """pool(우선순위 순, 비어 있지 않음)에서 이 Run 이 쓸 계정을 고르고 바로 쓰는 중으로 적는다.
 
-    balance_usage이면 신선한 측정이 있는 후보 > Run 당 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 우선순위.
+    balance_usage이면 (확정 잔여량이 없는 Muse 의 탐색 배정, MUSE_PROBE_INTERVAL 마다 한 번) > 신선한 측정이 있는 후보 > Run 당 상한 여유 > 초기화 시각 > 모델의 엔진 선호 > 유휴 > 우선순위.
     Run 당 여유 = 상한 여유 / (다른 실행 수 + 1). 실제 소모량 예측이 아닌 배정 점수다.
     stale/null 후보끼리는 모델·유휴·우선순위로 고른다. 고정 엔진·회사 범위는 호출자가 pool로 제한한다.
     고르는 일과 적는 일 사이에 await 가 없다."""
@@ -318,10 +347,13 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
     if counts_override is not None:
         counts = counts_override
     headroom = {(p.id, p.model): _usage_headroom(p) for p in pool} if balance_usage else {}
+    now = time.time()
+    probes = {(p.id, p.model) for p in pool if balance_usage and muse_probe_eligible(p, now)}
     def rank(ip: tuple[int, Profile]) -> tuple:
         index, profile = ip
         room = headroom.get((profile.id, profile.model))
         return (
+            (profile.id, profile.model) not in probes,
             balance_usage and room is None,
             -room[0] / (counts.get(profile.id, 0) + 1) if room is not None else 0,
             room[1] if room is not None else 0,
@@ -333,6 +365,10 @@ def choose(pool: list[Profile], run_id: uuid.UUID, *, idle_first: bool = True, p
     ranked = sorted(enumerate(pool), key=rank)
     prof = ranked[0][1]
     room = headroom.get((prof.id, prof.model))
+    if (prof.id, prof.model) in probes:
+        _probe_last[prof.id] = now
+        log.info("run %s muse exploration assignment: account=%s (quota unconfirmed; next in %ds)",
+                 run_id, prof.name, MUSE_PROBE_INTERVAL)
     log.info("run %s account selection: account=%s balance_usage=%s usage_ranked=%s headroom=%s "
              "other_running=%s headroom_per_run=%s",
              run_id, prof.name, balance_usage, room is not None, room, counts.get(prof.id, 0),
@@ -472,6 +508,7 @@ def clear_cooldown(account_id: uuid.UUID) -> None:
 
 
 def reset_cooldowns() -> None:
+    _probe_last.clear()
     _cooldown.clear()
     _cooldown_changes.clear()
 

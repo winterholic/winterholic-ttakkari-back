@@ -233,7 +233,10 @@ async def pinned_availability(db: AsyncSession, session_engine: str, pool: str, 
 
 def first_stage(candidates: list[profiles.Profile], task_type: str) -> list[profiles.Profile]:
     # Do not treat unknown capacity as confirmed spare capacity ahead of measured alternatives.
-    measured = [p for p in candidates if profiles._usage_headroom(p) is not None]
+    # The one exception is a rate-limited Muse exploration (profiles.muse_probe_eligible): without it an
+    # unobserved Muse is never chosen, so no stream observation can ever end the unknown state.
+    measured = [p for p in candidates
+                if profiles._usage_headroom(p) is not None or profiles.muse_probe_eligible(p)]
     usable = measured or candidates
     for stage in ROUTES[task_type]:
         engines_and_families = {(engine, model.rsplit("-", 1)[0] if engine == "antigravity" else model)
@@ -282,7 +285,7 @@ def capacity(profile: profiles.Profile, running: int) -> dict:
             "engine": profile.engine, "model": profile.model, "quota_group": None,
             "remaining_to_limit_percent": 100.0,
             "headroom_per_run_percent": 100.0 / (running + 1),
-            "quota_known": True, "reset_at": None,
+            "quota_known": True, "exploration_eligible": False, "reset_at": None,
             "limited_until": None, "usage_measured_at": None,
             "usage_age_seconds": None, "quota_windows": [],
         }
@@ -294,7 +297,8 @@ def capacity(profile: profiles.Profile, running: int) -> dict:
     return {"engine": profile.engine, "model": profile.model, "quota_group": quota_group(profile.model),
             "remaining_to_limit_percent": room[0] if room else None,
             "headroom_per_run_percent": room[0] / (running + 1) if room else None,
-            "quota_known": room is not None, "reset_at": room[1] if room and room[1] != float("inf") else None,
+            "quota_known": room is not None, "exploration_eligible": profiles.muse_probe_eligible(profile),
+            "reset_at": room[1] if room and room[1] != float("inf") else None,
             "limited_until": until, "usage_measured_at": snapshot.updated_at if snapshot else None,
             "usage_age_seconds": max(0, round(time.time() - snapshot.updated_at)) if snapshot and snapshot.updated_at else None,
             "quota_windows": [{"key": w.key, "used_percent": w.percent,

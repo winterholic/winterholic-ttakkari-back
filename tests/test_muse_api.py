@@ -148,3 +148,97 @@ async def test_muse_observation_survives_empty_read_and_database_reload(client, 
     assert abs(row['updated_at'] - observed_at) < .001
     assert row['source'] == 'muse_cli' and row['plan'] == 'Power Usage'
     assert row['error'] == '새 관측값 없음'
+
+
+async def _cached_row(client, auth, name, observed):
+    """Seed the account's cache with `observed` (a Usage) and read it back through the API."""
+    from uuid import UUID
+
+    from ttakkari.runs import usage
+
+    created = await client.post('/api/accounts', headers=auth, json={'name': name, 'engine': 'muse'})
+    aid = UUID(created.json()['id'])
+    if observed is not None:
+        usage.seed(aid, observed, refresh=True)
+    rows = (await client.get('/api/accounts/usage/cached', headers=auth)).json()
+    return next(row for row in rows if row['id'] == str(aid))
+
+
+def _states(row):
+    return {w['key']: w['state'] for w in row['windows']}
+
+
+async def test_muse_window_states_for_current_failed_reset_and_partial_observations(client, auth):
+    import time
+
+    from ttakkari.runs import usage
+
+    now = time.time()
+
+    def obs(five=(10, 3600), week=(20, 86400), age=30, error=None):
+        windows = [usage.Window(k, usage.label_of(k), p, int(now + r))
+                   for k, (p, r) in (('five_hour', five), ('seven_day', week)) if p is not None]
+        return usage.Usage(windows=windows, source='muse_cli', updated_at=now - age, login='ok', error=error)
+
+    current = await _cached_row(client, auth, 'M current', obs())
+    assert _states(current) == {'five_hour': 'current', 'seven_day': 'current'}
+    assert current['stale'] is False and current['remaining_to_limit_percent'] == 80
+
+    failed = await _cached_row(client, auth, 'M failed refresh', obs(error='Muse /usage unavailable'))
+    assert _states(failed) == {'five_hour': 'stale', 'seven_day': 'stale'}
+    assert failed['stale'] is True and failed['remaining_to_limit_percent'] is None
+
+    reset = await _cached_row(client, auth, 'M idle after reset', obs(five=(100, -3600), week=(33, 86400), age=36000,
+                                                                    error='Muse /usage unavailable'))
+    assert _states(reset) == {'five_hour': 'unavailable', 'seven_day': 'stale'}
+    five = next(w for w in reset['windows'] if w['key'] == 'five_hour')
+    assert five['percent'] == 0 and five['resets_at'] is not None, 'a placeholder, not a measurement of 0%'
+    assert reset['remaining_to_limit_percent'] is None
+    assert '5시간 창이 초기화된 뒤' in reset['error']
+
+    partial = await _cached_row(client, auth, 'M partial', obs(week=(None, 0)))
+    assert _states(partial) == {'five_hour': 'stale', 'seven_day': 'unavailable'}
+    assert partial['remaining_to_limit_percent'] is None
+
+    never = await _cached_row(client, auth, 'M never observed', None)
+    assert _states(never) == {'five_hour': 'unavailable', 'seven_day': 'unavailable'}
+    assert never['updated_at'] is None and never['remaining_to_limit_percent'] is None
+
+
+async def test_muse_both_windows_reset_without_new_observation_are_both_unavailable(client, auth):
+    import time
+
+    from ttakkari.runs import usage
+
+    now = time.time()
+    both = usage.Usage(windows=[usage.Window('five_hour', '5시간', 100, int(now - 60)),
+                                usage.Window('seven_day', '주간', 100, int(now - 30))],
+                       source='muse_cli', updated_at=now - 90000, login='ok', error='Muse /usage unavailable')
+    row = await _cached_row(client, auth, 'M all reset', both)
+    assert _states(row) == {'five_hour': 'unavailable', 'seven_day': 'unavailable'}
+    assert row['remaining_to_limit_percent'] is None and row['stale'] is True
+
+
+async def test_account_usage_tool_reports_exploration_eligibility_for_idle_muse(client, auth, make_dir):
+    import time
+    from uuid import UUID
+
+    from test_orchestrator import _orch, _session
+
+    from ttakkari.orchestrator.runtime import issue_token
+    from ttakkari.runs import usage
+
+    created = await client.post('/api/accounts', headers=auth, json={'name': 'Idle Muse', 'engine': 'muse'})
+    aid = UUID(created.json()['id'])
+    now = time.time()
+    usage.seed(aid, usage.Usage(windows=[usage.Window('five_hour', '5h', 100, int(now - 60)),
+                                         usage.Window('seven_day', '7d', 33, int(now + 86400))],
+                                source='muse_cli', updated_at=now - 36000, login='ok', error='Muse /usage unavailable'),
+               refresh=True)
+    orch = await _session(client, auth, make_dir, kind='orchestrator')
+    body = (await client.get('/api/orchestrator/accounts/usage', headers=_orch(issue_token(orch['id'])))).json()
+    row = next(a for a in body['accounts'] if a['name'] == 'Idle Muse')
+    capacity = row['model_capacity']['muse-spark-1.3']
+    assert capacity['quota_known'] is False and capacity['exploration_eligible'] is True
+    assert row['remaining_to_limit_percent'] is None and row['usage']['stale'] is True
+    assert 'exploration_eligible' in body['note']

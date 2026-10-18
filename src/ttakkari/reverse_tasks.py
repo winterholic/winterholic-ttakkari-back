@@ -97,14 +97,16 @@ def validate_report(root: Path, data: Any) -> dict[str, Any]:
     if not isinstance(checks, list) or not 1 <= len(checks) <= 100:
         checks = []
     valid_checks = [c for c in checks if isinstance(c, dict) and isinstance(c.get("command"), str)
-                    and c["command"].strip() and type(c.get("exit_code")) is int and c["exit_code"] == 0 and _file(root, c.get("log"))]
-    if not checks or len(checks) != len(valid_checks):
+                    and c["command"].strip() and type(c.get("exit_code")) is int and _file(root, c.get("log"))]
+    verdict = data.get("verdict") if data.get("verdict") in ("passed", "failed", "needs_input") else None
+    has_success = any(c.get("exit_code") == 0 for c in valid_checks)
+    if not checks or len(checks) != len(valid_checks) or (verdict != "failed" and not has_success):
         problems.append("재현 코드의 실행 명령·성공 종료 코드·실제 로그가 필요합니다.")
     limits = data.get("limitations")
     return {"ready": not problems, "summary": str(data.get("summary", ""))[:4000], "source_files": valid_sources,
             "observations": observations, "checks": valid_checks, "limitations":
             [str(v)[:1000] for v in limits[:50]] if isinstance(limits, list) else [], "problems": problems,
-            "verdict": data.get("verdict") if data.get("verdict") in ("passed", "failed", "needs_input") else None}
+            "verdict": verdict}
 
 
 def read_report(root: Path, run_id: str) -> dict[str, Any]:

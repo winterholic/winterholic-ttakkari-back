@@ -158,3 +158,60 @@ else:
     assert Path(data['output_path'], 'src/main.py').is_file()
     assert any(a['filename'] == 'reconstruction-source.zip' for a in data['outputs'])
     assert data['reconstruction']['verification'] == 'passed'
+
+
+def test_validate_report_checks_tolerance(tmp_path):
+    (tmp_path / 'src').mkdir()
+    (tmp_path / 'src/main.py').write_text('print(1)\n')
+    (tmp_path / 'ok.log').write_text('passed\n')
+    (tmp_path / 'fail.log').write_text('failed\n')
+
+    base = {
+        'summary': '테스트',
+        'source_files': ['src/main.py'],
+        'observations': [{'finding': '관찰', 'evidence': '근거'}],
+        'limitations': [],
+    }
+
+    # 성공 1개 + 실패 1개 로그가 함께 있는 검증 보고서 (verdict=passed)
+    report_mixed = {
+        **base,
+        'checks': [
+            {'command': 'pytest ok', 'exit_code': 0, 'log': 'ok.log'},
+            {'command': 'pytest fail', 'exit_code': 1, 'log': 'fail.log'},
+        ],
+        'verdict': 'passed',
+    }
+    validated = reverse_tasks.validate_report(tmp_path, report_mixed)
+    assert validated['ready'] is True
+    assert len(validated['checks']) == 2
+    assert validated['problems'] == []
+
+    # 실패 로그만 있지만 verdict=failed인 경우 유효
+    report_failed = {
+        **base,
+        'checks': [{'command': 'pytest fail', 'exit_code': 1, 'log': 'fail.log'}],
+        'verdict': 'failed',
+    }
+    validated = reverse_tasks.validate_report(tmp_path, report_failed)
+    assert validated['ready'] is True
+
+    # 실패 로그만 있는데 verdict=passed인 경우 거부
+    report_unearned_pass = {
+        **base,
+        'checks': [{'command': 'pytest fail', 'exit_code': 1, 'log': 'fail.log'}],
+        'verdict': 'passed',
+    }
+    validated = reverse_tasks.validate_report(tmp_path, report_unearned_pass)
+    assert validated['ready'] is False
+    assert '성공 종료 코드' in validated['problems'][0]
+
+    # 로그 파일이 존재하지 않는 경우 거부
+    report_missing_file = {
+        **base,
+        'checks': [{'command': 'pytest ok', 'exit_code': 0, 'log': 'nonexistent.log'}],
+        'verdict': 'passed',
+    }
+    validated = reverse_tasks.validate_report(tmp_path, report_missing_file)
+    assert validated['ready'] is False
+

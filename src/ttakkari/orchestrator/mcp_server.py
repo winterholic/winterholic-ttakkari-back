@@ -260,14 +260,19 @@ async def report_execution_environment(report: dict[str, Any]) -> str:
 async def host_gpu_start(model: str, gpu_layers: int = 999, cpu_moe: bool = False, n_cpu_moe: int | None = None,
                          ctx_size: int = 8192, threads: int = 6, batch_size: int | None = None,
                          ubatch_size: int | None = None, flash_attn: Literal["on", "off", "auto"] | None = None,
-                         device: Literal["default", "none"] = "default", max_seconds: int | None = None) -> str:
+                         device: Literal["default", "none"] = "default",
+                         spec_type: Literal["none", "ngram-mod"] = "none",
+                         parallel: Literal[1, 2] = 1,
+                         max_seconds: int | None = None) -> str:
     """Start the single host-side llama-server test instance (works from any engine, outside its sandbox, so
     Metal/GPU is available). `model` is an allowlisted alias (an error lists them). Only the listed flags exist; no
     commands. One instance at a time; it stops itself at the max runtime or when host swap grows by 1 GB, and it never
-    touches the production Qwen servers (ports 18987, 57170). Returns at once with phase=starting; poll
-    host_gpu_status until ready is true, then host_gpu_bench, and always host_gpu_stop when done."""
+    touches the production Qwen servers (ports 18987, 57170).
+    - spec_type: speculative decoding ('none' | 'ngram-mod', default 'none').
+    - parallel: server slots (1 | 2, default 1). Note that llama-server allocates total ctx_size across slots, so each slot gets ctx_size // parallel (e.g. ctx_size=4096 with parallel=2 gives 2048 per slot).
+    Returns at once with phase=starting; poll host_gpu_status until ready is true, then host_gpu_bench, and always host_gpu_stop when done."""
     body: dict[str, Any] = {"model": model, "gpu_layers": gpu_layers, "cpu_moe": cpu_moe, "ctx_size": ctx_size,
-                            "threads": threads, "device": device}
+                            "threads": threads, "device": device, "spec_type": spec_type, "parallel": parallel}
     for key, value in (("n_cpu_moe", n_cpu_moe), ("batch_size", batch_size), ("ubatch_size", ubatch_size),
                        ("flash_attn", flash_attn), ("max_seconds", max_seconds)):
         if value is not None:

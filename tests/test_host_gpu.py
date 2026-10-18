@@ -105,11 +105,15 @@ def _phase(env):
 
 def test_start_request_rejects_unknown_fields_and_out_of_range_values():
     assert StartRequest(model="m").gpu_layers == 999
+    assert StartRequest(model="m").spec_type == "none"
+    assert StartRequest(model="m").parallel == 1
     for bad in ({"model": "m", "extra_args": "--api-key x"}, {"model": "m", "gpu_layers": 1000},
                 {"model": "m", "gpu_layers": -1}, {"model": "m", "ctx_size": 100}, {"model": "m", "ctx_size": 10**7},
                 {"model": "m", "threads": 0}, {"model": "m", "n_cpu_moe": 999}, {"model": "m", "flash_attn": "yes"},
                 {"model": "m", "device": "MTL0"}, {"model": "m", "max_seconds": 5}, {"model": "m", "gpu_layers": "1;rm"},
-                {"model": ""}, {"model": "m", "threads": 10**6}):
+                {"model": ""}, {"model": "m", "threads": 10**6},
+                {"model": "m", "spec_type": "invalid"}, {"model": "m", "spec_type": "ngram-simple"},
+                {"model": "m", "parallel": 0}, {"model": "m", "parallel": 3}, {"model": "m", "parallel": -1}):
         with pytest.raises(ValidationError):
             StartRequest(**bad)
 
@@ -132,9 +136,22 @@ def test_build_args_maps_only_allowlisted_flags():
                         ("--threads-batch", "4"), ("--ubatch-size", "256"), ("--batch-size", "1024"),
                         ("--flash-attn", "on"), ("--port", "19501"), ("--parallel", "1")):
         assert argv[argv.index(flag) + 1] == value, flag
-    assert "--cpu-moe" not in argv and "--device" not in argv and "--api-key" not in argv
+    assert "--cpu-moe" not in argv and "--device" not in argv and "--api-key" not in argv and "--spec-type" not in argv
     cpu = build_args(Path("s"), Path("m"), 19501, StartRequest(model="m", cpu_moe=True, device="none", gpu_layers=0))
     assert "--cpu-moe" in cpu and cpu[cpu.index("--device") + 1] == "none"
+
+
+def test_build_args_maps_spec_type_and_parallel():
+    req = StartRequest(model="m", spec_type="ngram-mod", parallel=2, ctx_size=4096)
+    argv = build_args(Path("/srv/llama-server"), Path("/m/model.gguf"), 19501, req)
+    assert argv[argv.index("--parallel") + 1] == "2"
+    assert argv[argv.index("--spec-type") + 1] == "ngram-mod"
+    assert argv[argv.index("--ctx-size") + 1] == "4096"
+    # spec_type=none일 때는 --spec-type 인자가 전달되지 않는다
+    none_req = StartRequest(model="m", spec_type="none", parallel=1)
+    none_argv = build_args(Path("/srv/llama-server"), Path("/m/model.gguf"), 19501, none_req)
+    assert none_argv[none_argv.index("--parallel") + 1] == "1"
+    assert "--spec-type" not in none_argv
 
 
 def test_start_checks_the_model_allowlist_and_files(env):
@@ -259,6 +276,9 @@ def test_start_status_bench_stop_through_a_detached_supervisor(env):
     assert started["execution_path"] == "host_gpu" and started["measured_on"] == "host_gpu_path"
     ready = _wait(lambda: (s := env.gpu.status())["ready"] and s, what="ready")
     assert ready["request"]["threads"] == 2 and ready["port"] not in (18987, 57170)
+    assert ready["request"]["spec_type"] == "none" and ready["request"]["parallel"] == 1
+    assert ready["slot_ctx_size"] == 1024
+    assert ready["context"] == {"total": 1024, "per_slot": 1024, "parallel_slots": 1}
     assert ready["remaining_seconds"] <= 300 and ready["swap"]["limit_bytes"] == GIB
     assert any("offloaded 41/41 layers" in line for line in ready["device_evidence"])
     sup_pid = host_gpu._read_state(env.dir)["supervisor_pid"]
@@ -285,6 +305,24 @@ def test_start_status_bench_stop_through_a_detached_supervisor(env):
     again = env.gpu.start(StartRequest(model="tiny", gpu_layers=0, device="none"))  # 끝난 뒤에는 다시 시작 가능
     assert again["running"] is True
     env.gpu.stop()
+
+
+def test_status_reveals_total_and_per_slot_context(env):
+    env.gpu.start(StartRequest(model="tiny", gpu_layers=0, device="none", threads=2, ctx_size=4096,
+                               spec_type="ngram-mod", parallel=2))
+    ready = _wait(lambda: (s := env.gpu.status())["ready"] and s, what="ready")
+    try:
+        assert ready["request"]["spec_type"] == "ngram-mod"
+        assert ready["request"]["parallel"] == 2
+        assert ready["request"]["ctx_size"] == 4096
+        assert ready["slot_ctx_size"] == 2048
+        assert ready["context"] == {"total": 4096, "per_slot": 2048, "parallel_slots": 2}
+        server_pid = host_gpu._read_state(env.dir)["server_pid"]
+        cmd = psutil.Process(server_pid).cmdline()
+        assert "--parallel" in cmd and cmd[cmd.index("--parallel") + 1] == "2"
+        assert "--spec-type" in cmd and cmd[cmd.index("--spec-type") + 1] == "ngram-mod"
+    finally:
+        env.gpu.stop()
 
 
 def test_bench_requires_a_ready_instance(env):
@@ -455,6 +493,10 @@ async def test_host_gpu_api_validates_requests_and_reports_idle(client, auth, ma
                               headers=h)).status_code == 422
     assert (await client.post("/api/agent/host-gpu/start", json={"model": "other"}, headers=h)).status_code == 422
     assert (await client.post("/api/agent/host-gpu/start", json={"model": "tiny"}, headers=h)).status_code == 422
+    assert (await client.post("/api/agent/host-gpu/start", json={"model": "tiny", "spec_type": "invalid"},
+                              headers=h)).status_code == 422
+    assert (await client.post("/api/agent/host-gpu/start", json={"model": "tiny", "parallel": 4},
+                              headers=h)).status_code == 422
     assert (await client.post("/api/agent/host-gpu/bench", json={"prompt": "x"}, headers=h)).status_code == 409
     assert (await client.post("/api/agent/host-gpu/bench", json={"prompt": "x", "n_predict": 9999}, headers=h)).status_code == 422
     assert (await client.get("/api/agent/host-gpu/status")).status_code == 401

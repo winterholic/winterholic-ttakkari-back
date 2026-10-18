@@ -69,12 +69,15 @@ class StartRequest(BaseModel):
     gpu_layers: int = Field(default=999, ge=0, le=999, description="--gpu-layers (999 = all layers)")
     cpu_moe: bool = Field(default=False, description="--cpu-moe: keep all MoE expert weights on the CPU")
     n_cpu_moe: int | None = Field(default=None, ge=0, le=256, description="--n-cpu-moe N")
-    ctx_size: int = Field(default=8192, ge=512, le=131072, description="--ctx-size")
+    ctx_size: int = Field(default=8192, ge=512, le=131072,
+                            description="--ctx-size: total context size allocated across all slots (each slot receives ctx_size // parallel)")
     threads: int = Field(default=6, ge=1, le=64, description="--threads and --threads-batch")
     batch_size: int | None = Field(default=None, ge=32, le=8192, description="--batch-size")
     ubatch_size: int | None = Field(default=None, ge=32, le=4096, description="--ubatch-size")
     flash_attn: Literal["on", "off", "auto"] | None = Field(default=None, description="--flash-attn")
     device: Literal["default", "none"] = Field(default="default", description="none = --device none (CPU only)")
+    spec_type: Literal["none", "ngram-mod"] = Field(default="none", description="--spec-type (none or ngram-mod)")
+    parallel: Literal[1, 2] = Field(default=1, description="--parallel: number of server slots (1 or 2)")
     max_seconds: int | None = Field(default=None, ge=60, le=7200,
                                     description="shorter run limit; capped by host_gpu_max_runtime_seconds")
 
@@ -92,7 +95,7 @@ class StartRequest(BaseModel):
 def build_args(server: Path, model: Path, port: int, req: StartRequest) -> list[str]:
     """argv 는 이 함수만 만든다. 값은 검증된 정수·열거형뿐이라 요청 문자열이 셸이나 플래그로 해석될 길이 없다."""
     args = [str(server), "--model", str(model), "--alias", ALIAS, "--host", "127.0.0.1", "--port", str(port),
-            "--parallel", "1", "--no-webui", "--metrics",
+            "--parallel", str(req.parallel), "--no-webui", "--metrics",
             "--ctx-size", str(req.ctx_size), "--threads", str(req.threads), "--threads-batch", str(req.threads)]
     if req.device == "none":
         args += ["--device", "none"]
@@ -107,6 +110,8 @@ def build_args(server: Path, model: Path, port: int, req: StartRequest) -> list[
         args += ["--ubatch-size", str(req.ubatch_size)]
     if req.flash_attn is not None:
         args += ["--flash-attn", req.flash_attn]
+    if req.spec_type != "none":
+        args += ["--spec-type", req.spec_type]
     return args
 
 
@@ -432,6 +437,17 @@ class HostGpu:
                "request": state.get("request"), "port": state.get("port"), "stop_reason": state.get("stop_reason"),
                "started_at": state.get("started_at"), "stopped_at": state.get("stopped_at"),
                "server_exit_code": state.get("server_exit_code")}
+        if state.get("request"):
+            req_data = state["request"]
+            total_ctx = req_data.get("ctx_size")
+            par = req_data.get("parallel", 1) or 1
+            if total_ctx is not None:
+                out["slot_ctx_size"] = total_ctx // par
+                out["context"] = {
+                    "total": total_ctx,
+                    "per_slot": total_ctx // par,
+                    "parallel_slots": par,
+                }
         if state.get("started_at"):
             end = now if running else state.get("stopped_at") or now
             out["elapsed_seconds"] = round(end - state["started_at"], 1)

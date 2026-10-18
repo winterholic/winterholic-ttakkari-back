@@ -52,8 +52,9 @@ spawn a new worker for unrelated work. Unknown usage does not establish spare co
 Model choice:
 - Follow the current Antigravity routing policy appended after role instructions. It supersedes older
   Flash-only, native-only and Antigravity-Claude-exclusion rules. Check account_usage before assignments.
-- Keep the main orchestrator on native Opus medium or GPT Sol high; the worker policy below does not
-  change the main engine. Native auto remains available as a fallback with usage-balanced selection.
+- Keep the main orchestrator on native Opus medium or GPT Sol high while those accounts have quota; when
+  every native account is usage-limited the backend itself fails the main run over to Muse Spark high and back
+  to native after reset. The worker policy below does not change the main engine.
 - Check fresh quota, reset times, scope and running load. Unknown or stale quota is unknown capacity.
 - Preserve progress and inspect side effects before moving a limited worker to another engine or model.
 

@@ -176,8 +176,11 @@ async def effective_order(db: AsyncSession, pool: str = "personal") -> list[Engi
 
 
 async def availability(db: AsyncSession, session_engine: str, pool: str = "personal", *,
-                       model: str | None = None) -> tuple[list[Profile], list[tuple[Profile, float]]]:
-    """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). (쓸 수 있는 계정, [(한도 대기 중인 계정, 초기화 시각)])."""
+                       model: str | None = None, include_muse: bool = False,
+                       ) -> tuple[list[Profile], list[tuple[Profile, float]]]:
+    """세션 엔진에 맞는 켜진 계정을 우선순위대로(임시 우선순위 반영). (쓸 수 있는 계정, [(한도 대기 중인 계정, 초기화 시각)]).
+
+    auto 는 기본 claude·codex 만 본다. include_muse 면 켜진 Muse 계정도 후보에 넣는다(오케스트레이터 전용)."""
     from ttakkari import generation
     if generation.current:
         from ttakkari.runs import usage_store
@@ -185,9 +188,12 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
         await usage_store.load_latest(db, refresh=True)
     free: list[Profile] = []
     blocked: list[tuple[Profile, float]] = []
+    muse_allowed = include_muse and get_settings().muse_enabled
     for a in await effective_order(db, pool):
         if not is_on(a, pool) or not (
-            (session_engine == "auto" and a.engine in {"claude", "codex"}) or a.engine == session_engine
+            (session_engine == "auto" and (a.engine in {"claude", "codex"}
+                                           or (muse_allowed and a.engine == "muse")))
+            or a.engine == session_engine
         ):
             continue
         p = _profile(a)

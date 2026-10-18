@@ -43,6 +43,9 @@ from ttakkari.api import (
     workspaces,
 )
 from ttakkari.api import (
+    github as github_api,
+)
+from ttakkari.api import (
     weather as weather_api,
 )
 from ttakkari.artifacts import preview
@@ -269,6 +272,8 @@ def create_app() -> FastAPI:
     app.include_router(checklists.agent_router)
     app.include_router(notifications.router)
     app.include_router(weather_api.router)
+    app.include_router(github_api.router)
+    github_api.install(app)  # reason·reset·retry_after 를 살리는 GithubError 전용 핸들러(ADR 0042)
     from ttakkari.api import knowledge
     app.include_router(knowledge.router)
     app.include_router(knowledge.agent_router)

@@ -52,6 +52,9 @@ ttakkari_toss_guard_20261018에서 실행했고 운영 DB는 사용하지 않았
   위 91개 묶음에 tests/test_muse_exploration_claim.py, tests/test_muse_auto_routing.py,
   unit_tests/test_muse_usage_recovery.py를 더해 재실행 → **157 passed, 4 warnings in 19.32s**.
   다른 세션 변경은 수정하지 않았으며, 이 결과도 전체 회귀 통과를 뜻하지 않는다.
+- 원본 back 작업 트리에서 동시에 진행된 MCP 예상 목록 보완을 비교해
+  tests/test_orchestrator.py의 tossinvest_status 등록·읽기 전용 예상값을 함께 반영했다.
+  `python -m pytest -q tests/test_orchestrator.py -k mcp` → **5 passed, 34 deselected in 4.04s**.
 
 ## 전체 회귀 검사와 한계
 

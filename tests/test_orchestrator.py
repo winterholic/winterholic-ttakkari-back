@@ -401,7 +401,7 @@ async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, 
 
 AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item", "delete_checklist_item",
                "list_checklist_templates", "create_checklist_template", "update_checklist_template", "delete_checklist_template","request_backend_deploy", "backend_deploy_status", "library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
-               "set_artifact_area", "server_resources", "notify_user", "list_sessions", "read_session",
+               "set_artifact_area", "server_resources", "tossinvest_status", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
                "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items",
                "search_meetings", "knowledge_extraction_status", "knowledge_retry_extraction", "knowledge_sources", "knowledge_recall", "knowledge_assertion",
@@ -451,7 +451,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
             "luna_common30_v2_status",
         "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log",
         "design_system_catalog", "design_system_search", "design_system_item", "execution_capabilities",
-        "reverse_list", "reverse_get",
+        "reverse_list", "reverse_get", "tossinvest_status",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

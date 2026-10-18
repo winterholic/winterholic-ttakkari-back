@@ -566,3 +566,15 @@ async def test_signed_log_url_and_tokens_never_reach_logs(world, caplog):
     log_world(world, "x", "https://evil.com/steal?sig=SIGNEDSECRET", job=10)
     await http.get("/api/github/repos/acme/widget/actions/jobs/10/logs", params=A)
     assert "SIGNEDSECRET" not in caplog.text and fake_token("alice") not in caplog.text and "sig=" not in caplog.text
+
+
+async def test_logs_private_key_block_spanning_windows_is_masked_in_every_window(world):
+    http, _, _, _ = world
+    body = [f"MIIEowIBAAKCAQEA{i:04d}secretsecretsecret" for i in range(1500)]
+    text = "\n".join(["start", "-----BEGIN PRIVATE KEY-----", *body, "-----END PRIVATE KEY-----", "after"]) + "\n"
+    log_world(world, text)
+    d = (await http.get("/api/github/repos/acme/widget/actions/jobs/9/logs", params=A | {"from_line": 700, "lines": 500})).json()["data"]
+    assert d["from_line"] == 700 and len(d["lines"]) == 500
+    assert "secretsecret" not in "\n".join(d["lines"]) and all(line == "[REDACTED]" for line in d["lines"])
+    tail = (await http.get("/api/github/repos/acme/widget/actions/jobs/9/logs", params=A | {"from_line": 1500, "lines": 10})).json()["data"]
+    assert tail["lines"][-1] == "after" and "secretsecret" not in "\n".join(tail["lines"])

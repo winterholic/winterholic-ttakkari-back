@@ -22,7 +22,9 @@ def test_command_is_fixed_and_task_is_out_of_band(tmp_path: Path):
                     "--effort", "high", "--resume", "qwen-session"]
     task_path = Path(argv[argv.index("--task-file") + 1])
     assert task_path.parent == s.outbox
-    assert task_path.read_text() == "private note\n\ndo the bounded task"
+    assert task_path.read_text() == adapter.build_task_contract(
+        system_note="private note", prompt="do the bounded task",
+        workspace=str(tmp_path), turns=20, lineage="resume:qwen-session")
     adapter.cleanup(s)
     assert not task_path.exists()
 

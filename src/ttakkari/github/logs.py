@@ -72,8 +72,8 @@ def split_lines(data: bytes) -> list[str]:
     return lines
 
 
-def mask_lines(lines: list[str]) -> list[str]:
-    """줄 번호를 유지한 채 비밀을 가린다. 여러 줄 개인키 블록은 줄마다 가리고, 나머지는 창 단위로 한 번에 scrub 한다."""
+def mask_private_keys(lines: list[str]) -> list[str]:
+    """개인키 블록(BEGIN~END)을 줄마다 가린다. 창으로 나누기 전에 로그 전체에 적용해야 창 경계에 걸친 블록도 새지 않는다."""
     out: list[str] = []
     inside = False
     for line in lines:
@@ -82,6 +82,12 @@ def mask_lines(lines: list[str]) -> list[str]:
             inside = not _PEM_END.search(line)
         else:
             out.append(line)
+    return out
+
+
+def mask_lines(lines: list[str]) -> list[str]:
+    """줄 번호를 유지한 채 비밀을 가린다. 개인키 블록은 로그 전체 단위(mask_private_keys)로 이미 가렸고, 나머지는 창 단위로 한 번에 scrub 한다."""
+    out = mask_private_keys(lines)
     masked = scrub("\n".join(out)).split("\n")
     if len(masked) == len(out):
         return masked
@@ -152,7 +158,7 @@ class LogFetcher:
             body = await self._download(location, remaining)
         else:
             body = up.body
-        lines = split_lines(body)
+        lines = mask_private_keys(split_lines(body))
         self._cache.put(key, lines, size=len(body) + 256, ttl=LOG_TTL, login=info.login)
         return info.login, lines
 

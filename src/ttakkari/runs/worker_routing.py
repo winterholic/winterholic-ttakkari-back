@@ -36,6 +36,16 @@ def _qwen_local_model() -> str:
 
 
 QWEN_LOCAL = ("qwen-local", "Qwen3.8-Flash-Next-Q2_K")
+# Emergency engine when every usable personal cloud account/model group is
+# usage-limited. Narrow on purpose: Qwen has no cloud quota, no MCP tools and no
+# measured quality baseline, so it only continues general/routine worker runs in
+# the personal scope. design/verification/reasoning keep waiting for quota reset
+# (see tests/test_worker_quota_recovery.py::test_qwen_local_routing_contract_and_boundary).
+# Orchestrator sessions are excluded: without MCP tools an orchestrator run on
+# Qwen cannot spawn/message workers or notify, so the orchestrator itself waits
+# while its general/routine workers (kind="worker") may continue on Qwen.
+QWEN_EMERGENCY_TASKS = ("general", "routine")
+QWEN_EMERGENCY_KINDS = ("worker",)
 # Muse has one account-wide 5h/weekly pool (keys five_hour/seven_day), so headroom compares like native engines.
 MUSE_SPARK = ("muse", "muse-spark-1.3")
 # Coding, MCP and same-session resume passed on deployed 6d5f580, independently verified by GPT.
@@ -229,6 +239,25 @@ async def pinned_availability(db: AsyncSession, session_engine: str, pool: str, 
             free.extend(replace(p, model=fallback_model) for p in ready)
             blocked.extend((replace(p, model=fallback_model), until) for p, until in waiting)
     return free, blocked
+
+
+def qwen_emergency_eligible(*, pool: str | None, task_type: str | None,
+                            strict_engine: bool = False, session_kind: str | None = None) -> bool:
+    """Whether a run may continue on local Qwen after all cloud accounts are limited.
+
+    All four gates must hold: personal scope (company scope never leaks into the
+    personal local model), a general/routine task, no strict engine lock, and a
+    worker session. A caller that only saw generic errors, network failures or
+    unknown quota (no limited accounts) must not call this an exhaustion.
+    """
+    return (pool == "personal" and (task_type or "general") in QWEN_EMERGENCY_TASKS
+            and not strict_engine and (session_kind or "worker") in QWEN_EMERGENCY_KINDS)
+
+
+def emergency_qwen_profile(pool: str) -> profiles.Profile:
+    """Deterministic local-Qwen candidate for the emergency path (same scheme as routing)."""
+    return profiles.Profile(id=uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{pool}"),
+                            name=f"Qwen local ({pool})", engine="qwen-local", model=QWEN_LOCAL[1])
 
 
 def first_stage(candidates: list[profiles.Profile], task_type: str,

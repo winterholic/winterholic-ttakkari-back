@@ -107,6 +107,16 @@ _ROUTING_NOTE_TAIL = """
   usage limits, the backend falls back to (1) same model family on another route, then (2) task-fit same-tier
   models on other routes before waiting, recording engine.fallback and preserving progress via _attempt_handoff.
   Pass strict_engine=True only when the session must wait on that exact engine without cross-route fallback.
+- Local Qwen (engine "qwen-local", Flash Next Q2_K, personal scope only): use it explicitly for narrow,
+  self-contained work only — file search/extraction, a small edit plus its test run, tightly scoped fixes.
+  It has no MCP tools (only the harness's read/edit/test commands), no cloud quota, and its feature gate plus
+  fixed readiness contract must pass or the run fails with the reason instead of starting. Like Flash, its
+  general/routine results return verification_required=True: verify independently (task_type="verification",
+  GPT or Claude) before final completion. Never assign design/verification/reasoning, company-scope work,
+  or coordination that needs spawning/messaging workers. When every usable personal cloud account is
+  usage-limited, the backend itself continues general/routine workers on Qwen (trigger "emergency" in the
+  worker.routing receipt) after saving progress; an unready Qwen keeps the run waiting with its reason.
+  Check receipts for the actual engine, readiness evidence and fallback reason.
   For a legacy/pinned worker needing a policy change, inspect progress and side effects first, then finish or
   cancel its active Run and use message_worker(reroute=True, task_type=...) on the idle worker.
 - Main orchestrator and desk keep their existing native policy; worker auto is a separate path. Review

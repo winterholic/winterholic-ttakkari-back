@@ -15,6 +15,7 @@ from ttakkari.agents.base import LaunchSpec, Normalized, ParseState
 
 MODEL = "Qwen3.8-Flash-Next-Q2_K"
 READY_CONTRACT = "qwen-local-readiness-v1"
+TASK_CONTRACT_VERSION = "qwen-task-contract-v1"
 
 
 class QwenLocalAdapter:
@@ -56,15 +57,53 @@ class QwenLocalAdapter:
             return False, "readiness_contract_unverified"
         return True, "ready"
 
+    @staticmethod
+    def should_resume(engine_session_id: str | None, previous_engine: str | None) -> bool:
+        """New conversation per independent task; continue only within Qwen itself.
+
+        A provider conversation id must never be reused as a Qwen resume id: on an
+        engine switch the previous engine differs, so resume is refused and the
+        caller must carry progress as handoff text instead. A fresh Qwen server
+        session and its prefix/KV cache state are the harness's concern; this side
+        only guarantees it never asks for a cross-engine resume.
+        """
+        if not engine_session_id:
+            return False
+        return previous_engine in (None, "qwen-local")
+
+    @staticmethod
+    def build_task_contract(*, system_note: str, prompt: str, workspace: str,
+                            turns: int, lineage: str) -> str:
+        """Short machine-built contract: fixed header plus the caller's text verbatim.
+
+        The backend never trims or rewrites the task itself; it only stamps the
+        lineage (new vs resumed Qwen conversation), the turn budget and the
+        workspace root so every handoff carries the same minimal envelope.
+        """
+        return (
+            f"# {TASK_CONTRACT_VERSION}\n"
+            f"lineage: {lineage}\n"
+            f"turns: {turns}\n"
+            f"model: {MODEL}\n"
+            f"workspace: {workspace}\n"
+            "## TASK\n"
+            f"{prompt}\n"
+            "## SYSTEM\n"
+            f"{system_note}\n"
+        )
+
     def build_command(self, spec: LaunchSpec, extra_env: dict[str, str]) -> list[str]:
         if not self.enabled:
             raise RuntimeError("qwen-local is disabled")
         spec.outbox.mkdir(parents=True, exist_ok=True)
         fd, raw_path = tempfile.mkstemp(prefix=".qwen-task-", suffix=".txt", dir=spec.outbox)
         path = Path(raw_path)
+        lineage = f"resume:{spec.engine_session_id}" if spec.engine_session_id else "new"
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as task_file:
-                task_file.write(spec.system_note + "\n\n" + spec.prompt)
+                task_file.write(self.build_task_contract(
+                    system_note=spec.system_note, prompt=spec.prompt,
+                    workspace=str(spec.cwd), turns=self.turns, lineage=lineage))
             self._task_files[str(spec.session_id or spec.outbox)] = path
         except BaseException:
             path.unlink(missing_ok=True)

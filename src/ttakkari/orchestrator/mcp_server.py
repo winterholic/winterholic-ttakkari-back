@@ -577,7 +577,10 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     account_usage.muse_auto_routing is true; its results also return verification_required=True and Muse never
     verifies. Explicit engine="muse" remains a manual choice either way.
     Explicit engine="qwen-local" selects the local Qwen harness only when its feature gate and fixed readiness contract pass.
-    It has no cloud account/quota and never falls back to another provider. It is not part of auto routing.
+    It has no cloud account/quota and never falls back to another provider. It is not a normal auto stage, but the
+    backend may route general/routine workers to it as a last resort when every usable personal cloud account is
+    usage-limited and readiness passes (receipt trigger "emergency"). Suitable only for narrow file
+    search/extraction/small edit plus test runs; results need independent verification like Flash.
     Explicit engine="claude"/"codex"/"antigravity" uses that engine first and, when all its enabled accounts hit
     usage limits, falls back to same-family then task-fit routes before waiting; set strict_engine=True to
     strictly lock the engine and wait for quota reset instead.

@@ -323,8 +323,26 @@ class RunManager:
         self._wakers.pop(run_id, None)
         await self.dispatch(session_id)
 
+    async def _emergency_qwen(self, sess: ChatSession,
+                              task_type: str | None) -> tuple[profiles_mod.Profile | None, str]:
+        """모든 개인 클라우드 계정이 한도일 때만 로컬 Qwen으로 이어받는다.
+
+        (프로필, "ready") 또는 (None, 이유). readiness는 그때그때 확인하고
+        허위로 통과시키지 않는다. 준비되지 않은 Qwen은 대기 사유에만 남는다.
+        """
+        from ttakkari.runs import worker_routing
+        if not worker_routing.qwen_emergency_eligible(
+                pool=sess.pool, task_type=task_type or sess.worker_task_type,
+                strict_engine=sess.strict_engine, session_kind=sess.kind):
+            return None, "ineligible"
+        ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+        if not ready:
+            return None, reason
+        return worker_routing.emergency_qwen_profile(sess.pool), "ready"
+
     async def _wait_for_reset(self, db: AsyncSession, run: Run, sess: ChatSession,
-                              blocked: list[tuple[profiles_mod.Profile, float]], handoff: str | None = None) -> None:
+                              blocked: list[tuple[profiles_mod.Profile, float]], handoff: str | None = None,
+                              qwen_state: str | None = None) -> None:
         """쓸 수 있는 계정이 없다. Run 을 queued 로 두고 가장 이른 초기화 시각에 같은 Run 을 다시 돌린다.
 
         계정을 계속 두드리지 않는다. 사용자에게 한 번 알리고(재시작 뒤 다시 대기해도 중복 알림 없음), 한도가 계속 반복되면
@@ -350,12 +368,15 @@ class RunManager:
                 events.append(db, run, "run.status", {"status": RunStatus.queued, "waiting": True})
             if handoff is None and prev is not None:
                 handoff = str((prev.payload or {}).get("handoff") or "")
-            events.append(db, run, "run.waiting", {
+            waiting_payload: dict[str, object] = {
                 "until": _iso(until),
                 "accounts": [{"name": p.name, "engine": p.engine, "resets_at": _iso(u)}
                              for p, u in sorted(blocked, key=lambda b: b[1])],
                 "handoff": (handoff or "")[:WAIT_HANDOFF_CHARS],
-            })
+            }
+            if qwen_state is not None:
+                waiting_payload["qwen_local"] = {"ready": False, "reason": qwen_state}
+            events.append(db, run, "run.waiting", waiting_payload)
             await self._commit(db, run)
             _spawn(_notify_waiting(run, sess.title, until))
         self._arm(run.id, sess.id, until)
@@ -546,8 +567,28 @@ class RunManager:
         profiles, blocked = await available_profiles()
         if not profiles:
             if blocked:
-                await self._wait_for_reset(db, run, sess, blocked)
-                return
+                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type)
+                if emergency is None:
+                    await self._wait_for_reset(db, run, sess, blocked, qwen_state=qwen_state)
+                    return
+                profiles = [emergency]
+                events.append(db, run, "worker.routing", {
+                    "policy": worker_routing.POLICY_VERSION,
+                    "task_type": effective_task_type or "general", "trigger": "emergency",
+                    "selected": None,
+                    "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
+                              "workspace_id": str(sess.workspace_id)},
+                    "quota": None, "readiness": qwen_state,
+                    "emergency_from": [{"account": p.name, "engine": p.engine, "resets_at": _iso(u)}
+                                       for p, u in sorted(blocked, key=lambda b: b[1])],
+                })
+                events.append(db, run, "engine.fallback", {
+                    "from": "all personal cloud accounts", "from_engine": "cloud",
+                    "from_model": None, "to": emergency.name, "to_engine": "qwen-local",
+                    "to_model": emergency.model, "reason": "usage_limit_all_cloud_limited",
+                    "mode": "handoff",
+                    "detail": "개인 클라우드 계정이 모두 한도라 로컬 Qwen으로 이어서 실행",
+                })
             if sess.engine == "qwen-local":
                 ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
                 events.append(db, run, "worker.routing", {
@@ -635,6 +676,8 @@ class RunManager:
                 events.append(db, run, "worker.routing", receipt)
             return selected
 
+        prev_engine: str | None = None
+
         def conversation_key(profile):
             if is_meeting:
                 return meeting_routing.conversation_key(profile)
@@ -644,6 +687,10 @@ class RunManager:
 
         def lookup_resume_id(profile):
             es = sess.engine_sessions or {}
+            if profile.engine == "qwen-local" and prev_engine not in (None, "qwen-local"):
+                # Engine switch: never reuse a provider conversation id as a Qwen
+                # resume id. Progress travels as handoff text instead.
+                return None
             if saved := es.get(conversation_key(profile)):
                 return saved
             # Legacy account-only IDs identify the original model. They cannot be
@@ -742,6 +789,7 @@ class RunManager:
         timed_out = False
         attempt_handoff = resume_handoff
         paused_handoff: str | None = None
+        qwen_state: str | None = None
         while True:
             remaining.remove(prof)
             resume_id = lookup_resume_id(prof)
@@ -829,6 +877,12 @@ class RunManager:
                 remaining = [p for p in remaining if p.engine != prof.engine]
             elif missing and pinned_fallback:
                 remaining = []
+            if limited and not stopped and not remaining:
+                # Mid-run exhaustion: no usable cloud candidate left. The existing
+                # fallback event below records the switch with saved progress.
+                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type)
+                if emergency is not None:
+                    remaining = [emergency]
             if stopped or not failed or not (missing or limited or invalid_model) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
@@ -862,12 +916,14 @@ class RunManager:
             attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
             if h:
                 h.stderr_tail.clear()
+            prev_engine = prof.engine
             prof = nxt
         profiles_mod.release(run.id)
         if paused_handoff is not None:
             _, blocked = await available_profiles()
             if blocked:
-                await self._wait_for_reset(db, run, sess, blocked, handoff=paused_handoff)
+                await self._wait_for_reset(db, run, sess, blocked, handoff=paused_handoff,
+                                           qwen_state=qwen_state)
                 return
         run.exit_code = rc
 

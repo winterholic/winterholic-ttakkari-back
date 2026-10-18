@@ -38,6 +38,7 @@ from ttakkari.api import (
     reverse,
     sessions,
     shares,
+    stocks,
     system,
     tasks,
     transfers,
@@ -273,6 +274,8 @@ def create_app() -> FastAPI:
     app.include_router(checklists.agent_router)
     app.include_router(notifications.router)
     app.include_router(weather_api.router)
+    app.include_router(stocks.router)
+    app.include_router(stocks.agent_router)
     app.include_router(github_api.router)
     app.include_router(remote_desktop.router)
     github_api.install(app)  # reason·reset·retry_after 를 살리는 GithubError 전용 핸들러(ADR 0042)

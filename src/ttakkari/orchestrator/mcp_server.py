@@ -226,6 +226,13 @@ async def read_session(session_id: str, last: int = 10) -> str:
 
 
 @query_tool
+async def tossinvest_status() -> str:
+    """Toss Securities link status: stored-login validity, last check time, last error and recent sync runs.
+    Read-only; holdings/amounts are never stored or returned. Manual re-checks stay in the UI."""
+    return await _agent("GET", "/stocks/tossinvest/status")
+
+
+@query_tool
 async def server_resources() -> str:
     """Current load of the Mac running Ttakkari: CPU, memory, disk, network and top processes (names only).
     Check it before starting heavy work."""

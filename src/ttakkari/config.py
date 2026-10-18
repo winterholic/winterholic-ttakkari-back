@@ -258,6 +258,20 @@ class Settings(BaseSettings):
     run_timeout_seconds: int = 2 * 60 * 60
     cancel_grace_seconds: float = 5.0
 
+    # 주식 투자·토스증권 읽기 전용 브라우저 어댑터(ADR 0044). 주문·이체 등 계정 상태를 바꾸는 경로는 두지 않는다.
+    # 자동 새로고침·스케줄이 없고, 수동 트리거만 check_interval_seconds 간격으로 받는다(사람 수준 저빈도).
+    tossinvest_enabled: bool = True
+    tossinvest_profile: Path | None = None  # 비우면 <home>/tossinvest-chrome (테스트의 임시 HOME 을 따라간다)
+    tossinvest_chrome_bin: str | None = None  # 비우면 설치된 Google Chrome 을 자동 탐색한다
+    tossinvest_check_interval_seconds: int = Field(default=300, ge=0)
+    tossinvest_page_timeout_seconds: int = Field(default=45, ge=5, le=300)
+
+    @property
+    def tossinvest_profile_dir(self) -> Path:
+        if self.tossinvest_profile is not None:
+            return Path(self.tossinvest_profile).expanduser().resolve()
+        return self.home / "tossinvest-chrome"
+
     copy_max_bytes: int = 200 * 1024 * 1024
     upload_max_bytes: int = 200 * 1024 * 1024
     # 폰 → 컴퓨터 파일 보내기(조각 업로드). 동영상 때문에 크게 잡는다.

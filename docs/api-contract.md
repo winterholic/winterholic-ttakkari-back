@@ -526,6 +526,15 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 시각 미리보기는 owner-only `GET /api/design-systems/{system}/preview?item=&theme=light|dark&revision=`. 기본 item은 `file:{system}/examples/preview.html`이며 example만 허용한다. 응답 `{revision,system,source,html,sections:[{id,title}],warnings:string[]}`. html은 같은 커밋의 허용 CSS·JS·이미지를 data URL로 묶은 문서이며 프론트는 opaque sandbox iframe에만 넣는다. 별도 대용량 계약(최대 20 MiB)으로 MCP의 16k 텍스트 도구에는 실리지 않는다. 누락 404, 잘못된 조건 422, 저장소/크기 오류 503.
 
 
+### 주식 투자·토스증권 연결 (ADR 0044, 소유자 전용·읽기 전용)
+
+`GET /api/stocks/overview` → `[{id, name, state, checked_at, detail}]` (지금은 토스증권 하나).
+`GET /api/stocks/tossinvest/status` → `{state, message, logged_in, checked_at, browser_available, profile_exists, check_interval_seconds, last_run}`. 브라우저를 띄우지 않고 마지막 기록만 본다. `state`: `never_checked | ready | login_required | login_window | unknown | disabled | error`.
+`GET /api/stocks/tossinvest/runs?limit=`(1~100) → `RunOut[]` (최신순). `RunOut = {id, kind: check|sync, status, message, logged_in, page_title, api_paths: string[], duration_ms, request_source, created_at, updated_at}`.
+`GET /api/stocks/tossinvest/login-help` → `{profile_dir, profile_exists, cookie_hosts(호스트 이름만), steps, open_command, note}`. 비밀값 없음.
+`POST /api/stocks/tossinvest/check`·`/sync` → 202 `RunOut`. headless Chrome으로 홈을 읽기만 한다. 마지막 기록 후 `tossinvest_check_interval_seconds`(기본 300초) 안이면 429 `rate_limited` + `Retry-After`. 금액·수량·쿠키는 저장·반환하지 않는다.
+에이전트 읽기: `GET /api/agent/stocks/tossinvest/status|runs|login-help`, MCP `tossinvest_status`(READ_ONLY).
+
 ### GitHub 탐색 (ADR 0042, 소유자 전용·읽기 전용)
 
 `/api/github/*` 전부 GET이며 소유자 JWT가 필요하다(에이전트/MCP 라우터 없음). `account=<gh login>` 쿼리가 필수이고(누락은 422), 계정 목록은 `GET /api/github/accounts`, 입력 해석은 `GET /api/github/resolve?q=&account=`. 공통 봉투 `{data,page,rate,fetched_at,cached,stale,account}`와 엔드포인트·오류 코드 표는 `tests/fixtures/github/README.md`, 타입 정본은 `src/ttakkari/github/schemas.py`. 상류 401은 앱 로그아웃을 막으려고 502 `gh_auth_expired`로 바꾼다. 토큰은 응답·로그에 없다. 요청 하나의 전체 시간 예산(15초, 로그 20초)은 계정 확인·모든 중첩 상류 호출·재시도를 합친 한 마감이고(초과 504 `gh_timeout`), `stale:true`는 마지막 확인 후 10분까지만 나온다. `/resolve`는 `HEAD`·7~39자 약식 SHA를 지원하고, 같은 접두사 ref가 매우 많아 확인하지 못하면 422 `gh_unprocessable`(`reason: ref_resolution_limit`)이며 `ref_not_found`로 가리지 않는다. gh 상태 조회 일시 실패는 503 `no_account`(`reason: gh_status_failed`)로 로그아웃과 구분한다(ADR 0042 §13).

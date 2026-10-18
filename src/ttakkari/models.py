@@ -1023,6 +1023,23 @@ class ReverseJob(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
 
 
+class TossInvestSyncRun(Base):
+    """토스증권 연결 확인·동기화 1회 기록(ADR 0044). 금액·수량·쿠키는 저장하지 않는다."""
+
+    __tablename__ = "tossinvest_sync_runs"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(10))  # check | sync
+    status: Mapped[str] = mapped_column(String(20), index=True)  # running | ready | login_required | login_window | unknown | disabled | error | failed
+    message: Mapped[str | None] = mapped_column(Text)
+    logged_in: Mapped[bool | None]
+    page_title: Mapped[str | None] = mapped_column(String(200))
+    api_paths: Mapped[list[Any]] = mapped_column(default=list)
+    duration_ms: Mapped[int | None]
+    request_source: Mapped[str] = mapped_column(String(12), default="manual")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class ArtcraftTask(Base):
     """ArtCraft 작업(ADR 0039). 작업 세션 1개에 범주·연결 앱·옵션을 붙인 것이고 라운드는 그 세션의 Run 이다."""
 

@@ -638,11 +638,12 @@ async def start_gui(app: str, action: str, confirm: bool) -> Job:
 
     async def run(job: Job) -> None:
         result = await _exec(["gui", action, app], timeout)
+        # 작업 상태를 확정하기 전에 캐시를 새로 고친다. 순서가 반대면 succeeded 를 본 클라이언트가 옛 목록을 읽는다.
+        await raw_status(force=True)
         label = "실행" if action == "start" else "종료"
         _finish(job, result, f"{label}했습니다.", f"{label}하지 못했습니다.", timeout)
         if action == "start" and job.state == "failed":
             job.summary = "창을 띄웠지만 제어 포트가 응답하지 않았습니다(화면 잠금이면 풀고 다시 시도)."
-        await raw_status(force=True)  # 목록이 바로 새 상태를 보게 한다
 
     return _start("gui", f"gui-{action}", [app], None, run)
 

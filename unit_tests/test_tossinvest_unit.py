@@ -218,3 +218,79 @@ def test_mcp_tool_is_read_only():
     from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
 
     assert "tossinvest_status" in READ_ONLY_TOOLS
+
+
+def _fake_login_window(monkeypatch, state="waiting", message="열렸습니다."):
+    calls: list[None] = []
+
+    def _open():
+        calls.append(None)
+        return ad.LoginState(state=state, message=message)
+
+    monkeypatch.setattr(ad, "login_chrome_pids", list)
+    monkeypatch.setattr(ad, "headless_check_running", lambda: False)
+    monkeypatch.setattr(ad, "open_login_window", _open)
+    return calls
+
+
+async def test_login_window_opens_with_fixed_args(world, monkeypatch):
+    http, _, _ = world
+    calls = _fake_login_window(monkeypatch)
+    r = await http.post("/api/stocks/tossinvest/login-window")
+    assert r.status_code == 202, r.text
+    assert r.json() == {"state": "waiting", "message": "열렸습니다."}
+    assert calls == [None]
+
+
+async def test_login_window_ignores_external_input(world, monkeypatch):
+    http, _, _ = world
+    calls = _fake_login_window(monkeypatch)
+    r = await http.post(
+        "/api/stocks/tossinvest/login-window",
+        json={"url": "https://evil.example.com/", "profile": "/tmp/evil"},
+    )
+    assert r.status_code == 202, r.text
+    assert calls == [None]
+
+
+async def test_login_window_conflicts_when_window_open(world, monkeypatch):
+    http, _, _ = world
+    monkeypatch.setattr(ad, "login_chrome_pids", lambda: [1234])
+    monkeypatch.setattr(ad, "headless_check_running", lambda: False)
+    r = await http.post("/api/stocks/tossinvest/login-window")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "login_window_open"
+
+
+async def test_login_window_conflicts_when_check_running(world, monkeypatch):
+    http, _, _ = world
+    monkeypatch.setattr(ad, "login_chrome_pids", list)
+    monkeypatch.setattr(ad, "headless_check_running", lambda: True)
+    r = await http.post("/api/stocks/tossinvest/login-window")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "check_running"
+
+
+async def test_login_window_failure_is_500(world, monkeypatch):
+    http, _, _ = world
+    monkeypatch.setattr(ad, "login_chrome_pids", list)
+    monkeypatch.setattr(ad, "headless_check_running", lambda: False)
+    monkeypatch.setattr(
+        ad,
+        "open_login_window",
+        lambda: ad.LoginState(state="failed", message="Chrome 없음"),
+    )
+    r = await http.post("/api/stocks/tossinvest/login-window")
+    assert r.status_code == 500, r.text
+
+
+async def test_login_window_requires_auth(world, monkeypatch):
+    http, _, app = world
+    _fake_login_window(monkeypatch)
+    app.dependency_overrides.pop(require_user)
+    try:
+        assert (
+            await http.post("/api/stocks/tossinvest/login-window")
+        ).status_code in (401, 403)
+    finally:
+        app.dependency_overrides[require_user] = lambda: "owner"

@@ -61,7 +61,8 @@
 ## 5. API·MCP·화면
 
 - REST(소유자 JWT): `GET /api/stocks/overview`, `GET /tossinvest/status`(브라우저를 띄우지 않음),
-  `GET /tossinvest/runs`, `GET /tossinvest/login-help`, `POST /tossinvest/check|sync`.
+  `GET /tossinvest/runs`, `GET /tossinvest/login-help`, `POST /tossinvest/check|sync`,
+  `POST /tossinvest/login-window`(고정 인자로 일반 Chrome을 열어 사람이 로그인; 로그인 창·headless 확인 실행 중이면 409).
 - 에이전트: `GET /api/agent/stocks/tossinvest/*` 읽기 3개. MCP 읽기 도구 1개
   `tossinvest_status`(READ_ONLY_TOOLS). 보유·값 조회 도구는 실제 세션 관측 후 다음 단계.
 - 프론트: 부가 기능 `주식 투자`(/stocks, 자리표시+연결 카드), 하위 `/stocks/tossinvest`

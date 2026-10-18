@@ -312,6 +312,29 @@ def login_chrome_pids() -> list[int]:
     return found
 
 
+def headless_chrome_pids() -> list[int]:
+    """같은 프로필로 headless 확인을 실행 중인 Chrome(자동화 통로 있는 것)."""
+    needle = f"--user-data-dir={_profile_dir()}"
+    found: list[int] = []
+    for p in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmd = p.info.get("cmdline") or []
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        if (
+            any("Chrome" in (c or "") for c in cmd[:1])
+            and any(needle in (c or "") for c in cmd)
+            and any("remote-debugging" in (c or "") for c in cmd)
+        ):
+            found.append(p.info["pid"])
+    return found
+
+
+def headless_check_running() -> bool:
+    """같은 프로필로 headless 확인이 실행 중이면 True. 같은 프로세스의 lock과 타 프로세스를 함께 본다."""
+    return _browser_lock.locked() or bool(headless_chrome_pids())
+
+
 class _Cdp:
     """Browser websocket에서 page session을 분리하고 Fetch를 탐색 전에 건다."""
 

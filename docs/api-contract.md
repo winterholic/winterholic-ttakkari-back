@@ -532,6 +532,7 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 `GET /api/stocks/tossinvest/status` → `{state, message, logged_in, checked_at, browser_available, profile_exists, check_interval_seconds, last_run}`. 브라우저를 띄우지 않고 마지막 기록만 본다. `state`: `never_checked | running | ready | login_required | login_window | unknown | disabled | error | failed`.
 `GET /api/stocks/tossinvest/runs?limit=`(1~100) → `RunOut[]` (최신순). `RunOut = {id, kind: check|sync, status, message, logged_in, page_title, api_paths: string[], duration_ms, request_source, created_at, updated_at}`.
 `GET /api/stocks/tossinvest/login-help` → `{profile_dir, profile_exists, cookie_hosts(호스트 이름만), steps, open_command, note}`. 비밀값 없음.
+`POST /api/stocks/tossinvest/login-window` → 202 `{state, message}`. 고정 인자로 일반 Chrome을 열어 사람이 로그인하게 한다. 요청 본문을 받지 않으며, 같은 프로필로 로그인 창이나 headless 확인이 실행 중이면 409(`login_window_open`·`check_running`)로 거절한다.
 `POST /api/stocks/tossinvest/check`·`/sync` → 202 `RunOut`. DB advisory transaction lock 안에서 마지막 기록을 검사하고 `running` 행을 먼저 커밋한 뒤 Chrome을 연다. 마지막 시작/갱신 후 `tossinvest_check_interval_seconds`(기본·최소 300초) 안이면 동시 요청·재시작 후 요청도 429 `rate_limited` + `Retry-After`. 실행은 180초로 제한하고, 중단으로 `running`만 남은 경우 간격이 지난 후 재시도할 수 있다. 탐색 전 CDP Fetch로 허용된 HTTPS GET만 계속하며 나머지 페이지 요청은 차단한다. 금액·수량·쿠키는 저장·반환하지 않는다. 실제 로그인 연결과 Chrome 전체의 백그라운드 트래픽 통제는 미검증이다.
 에이전트 읽기: `GET /api/agent/stocks/tossinvest/status|runs|login-help`, MCP `tossinvest_status`(READ_ONLY).
 

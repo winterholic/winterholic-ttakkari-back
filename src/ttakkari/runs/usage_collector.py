@@ -90,7 +90,10 @@ class Collector:
                 # 시작 직후에 몰리지 않게 계정마다 몇 초씩 엇갈려 첫 수집을 한다.
                 self._state[aid] = st = _State(next_due=now + 1 + i * 3 + random.uniform(0, 2))
             cached = usage_mod.cached(aid)
-            due = now >= st.next_due or (reset_passed(cached, now) and now - st.last_fetch >= MIN_REFETCH)
+            # Antigravity 는 실패 뒤 마지막 관측값을 유지해 초기화 시각이 지난 창이 남는다. 실패가 이어지는 동안엔
+            # 그 창이 매번 재조회를 부르지 않게 백오프를 따른다.
+            due = now >= st.next_due or ((engine != "antigravity" or st.failures == 0)
+                                         and reset_passed(cached, now) and now - st.last_fetch >= MIN_REFETCH)
             if not due:
                 continue
             if done:

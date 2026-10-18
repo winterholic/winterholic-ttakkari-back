@@ -56,9 +56,11 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
     if not muse_current:
         left = []
     has_expired_window = any(w.resets_at and w.resets_at <= now for w in u.windows)
+    # Antigravity 는 조회 실패 뒤 마지막 관측값을 유지한다. 오류가 붙은 값은 현재 측정이 아니다.
+    agy_failed = (engine == "antigravity" or u.source == "antigravity_cli") and bool(u.error)
     return {
         "source": u.source, "plan": u.plan, "measured_at": _iso(u.updated_at), "age_seconds": age,
-        "stale": age is None or age > get_settings().usage_stale_seconds or has_expired_window or not muse_current,
+        "stale": age is None or age > get_settings().usage_stale_seconds or has_expired_window or not muse_current or agy_failed,
         # 5시간·주간 중 더 빡빡한 쪽의 잔여. 새로 시작된 창은 뺀다.
         "min_remaining_percent": min(left) if left else None,
         "five_hour": _window(by_key.get("five_hour"), now, history.get("five_hour")),
@@ -67,7 +69,10 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
                          for w in u.windows if w.key.startswith("seven_day_")},
         # Antigravity reports shared group quotas, not per-account headroom. Preserve every
         # observed bucket and its exact source percentage without feeding routing caps.
-        "model_quotas": [{"key": w.key, "label": w.label, **_window(w, now, history.get(w.key))}
+        # state: 초기화가 지난 창은 unavailable, 조회 실패·지연 뒤의 값은 stale, 아니면 current.
+        "model_quotas": [{"key": w.key, "label": w.label, **_window(w, now, history.get(w.key)),
+                          "state": "unavailable" if w.resets_at and w.resets_at <= now
+                          else "stale" if agy_failed or (age is None or age > get_settings().usage_stale_seconds) else "current"}
                          for w in u.windows if w.key.startswith("agy_")],
         "credits_balance": u.credits_balance,
         "credits_error": u.credits_error,

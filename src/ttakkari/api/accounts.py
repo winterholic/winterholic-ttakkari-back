@@ -352,6 +352,23 @@ def _muse_windows(u: usage_mod.Usage, now: float, current: bool) -> list[UsageWi
     return out
 
 
+def _agy_windows(u: usage_mod.Usage, now: float, current: bool) -> list[UsageWindowOut]:
+    """Antigravity 는 그룹·창마다 따로 초기화된다. 창을 숨기지 않고 창별 state 로 알린다.
+
+    초기화 시각이 지난 창의 낡은 값은 현재 잔여량이 아니므로 값을 버리고 unavailable 로 둔다.
+    아직 지나지 않은 창은 최신 조회 성공이면 current, 조회 실패·지연이면 stale 이다.
+    reset_time 이 없는 창(공급자가 주지 않음)은 지났는지 알 수 없으니 관측값 그대로 둔다."""
+    state = "current" if current else "stale"
+    out = []
+    for w in u.windows:
+        if w.resets_at and w.resets_at <= now:
+            out.append(UsageWindowOut(key=w.key, label=w.label, percent=0, resets_at=w.resets_at, remaining_percent=None,
+                                      state="unavailable"))
+        else:
+            out.append(UsageWindowOut(**w.__dict__, state=state))
+    return out
+
+
 def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usage_mod.Usage, *, refreshing: bool = False,
                error: str | None = None) -> AccountUsageOut:
     login, _label = profiles.identity(a.engine, a.config_dir)
@@ -363,8 +380,10 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
         for w in u.windows
     ) if is_muse or u.source != "api" else False
     muse_current = not is_muse or usage_mod.muse_quota_current(u, now)
-    stale = (u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
-             or has_expired_exhausted or not muse_current)
+    is_agy = a.engine == "antigravity"
+    aged = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
+    agy_expired = [w for w in u.windows if w.resets_at and w.resets_at <= now] if is_agy else []
+    stale = aged or has_expired_exhausted or not muse_current or bool(agy_expired) or (is_agy and bool(u.error))
     valid_windows = [
         w for w in u.windows
         if not ((is_muse or u.source != "api") and w.resets_at and w.resets_at <= now
@@ -373,11 +392,17 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
     headroom = None if stale or not muse_current else min((max(0, a.max_used_percent - w.percent) for w in valid_windows
                                        if w.key in ("five_hour", "seven_day")
                                        and not (w.resets_at and w.resets_at <= now)), default=None)
-    windows_out = _muse_windows(u, now, muse_current) if is_muse else [UsageWindowOut(**w.__dict__) for w in valid_windows]
+    if is_muse:
+        windows_out = _muse_windows(u, now, muse_current)
+    elif is_agy:
+        # 창별 state 는 그 창의 초기화 경과 여부와 조회 신선도만 본다(다른 창이 지났다고 이 창이 낡은 값이 되지 않는다).
+        windows_out = _agy_windows(u, now, not aged and not u.error)
+    else:
+        windows_out = [UsageWindowOut(**w.__dict__) for w in valid_windows]
     err = u.error or error
     if is_muse and not muse_current and not err:
         err = "Muse 최신 사용량 미확인 · 5시간·주간 창 모두 확인되지 않음"
-    if not valid_windows and u.windows and not err:
+    if (not valid_windows or (is_agy and len(agy_expired) == len(u.windows))) and u.windows and not err:
         err = f"{a.engine.capitalize()} 초기화 시각 경과 · 새 사용량 미관측"
     return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,
                            max_used_percent=a.max_used_percent, remaining_to_limit_percent=headroom,

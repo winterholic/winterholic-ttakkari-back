@@ -158,11 +158,17 @@ def windows_from_antigravity(body: dict[str, Any]) -> list[Window]:
                 continue
             window = bucket.get("window")
             fraction = bucket.get("remaining_fraction")
+            # 주간 한도가 찬 그룹의 5시간 버킷은 `disabled: true`, remaining_fraction 1, reset_time 없음으로 온다
+            # (2026-10-18 실측). 한도가 적용되지 않는다는 뜻이라 "5시간 0% 사용"으로 보이면 안 된다.
+            if bucket.get("disabled") is True:
+                continue
             if window not in ("5h", "weekly") or not isinstance(fraction, (int, float)) or isinstance(fraction, bool) or not 0 <= fraction <= 1:
                 continue
             remaining = float(fraction) * 100
             label = f"{group_name} · {'5시간' if window == '5h' else '주간'}"
-            out.append(Window(f"agy_{slug}_{window}", label, round(100 - remaining), _ts(bucket.get("reset_time")), remaining))
+            # 남은 양이 조금이라도 있으면 사용률을 100 으로 올림하지 않는다(한도 도달·차단 표시와 구분).
+            percent = 100 if remaining <= 0 else min(99, round(100 - remaining))
+            out.append(Window(f"agy_{slug}_{window}", label, percent, _ts(bucket.get("reset_time")), remaining))
     rank = {"5h": 0, "weekly": 1}
     return sorted(out, key=lambda w: rank.get(w.key.rsplit("_", 1)[-1], 2))
 
@@ -176,6 +182,23 @@ def credits_from_antigravity(body: dict[str, Any]) -> int | None:
     if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
         return None
     return int(value)
+
+
+class AgyCommandError(RuntimeError):
+    """agy 명령이 0이 아닌 코드로 끝났다. detail 은 CLI 가 JSON 으로 준 오류 문구(짧게 자른 것)."""
+
+    def __init__(self, message: str, detail: str = "") -> None:
+        super().__init__(message)
+        self.detail = detail
+
+
+def _agy_error_detail(stdout: bytes) -> str:
+    try:
+        body = json.loads(stdout)
+    except (UnicodeDecodeError, ValueError):
+        return ""
+    value = body.get("error") if isinstance(body, dict) else None
+    return value[:200] if isinstance(value, str) else ""
 
 
 async def _agy_command(command: str, config_dir: str | None = None) -> dict[str, Any]:
@@ -197,7 +220,7 @@ async def _agy_command(command: str, config_dir: str | None = None) -> dict[str,
         await proc.wait()
         raise TimeoutError("agy usage command timed out")
     if proc.returncode != 0:
-        raise RuntimeError(f"agy {command} exited {proc.returncode}")
+        raise AgyCommandError(f"agy {command} exited {proc.returncode}", _agy_error_detail(stdout))
     try:
         body = json.loads(stdout)
     except (UnicodeDecodeError, ValueError) as e:
@@ -220,8 +243,13 @@ async def _fetch_antigravity(config_dir: str | None = None) -> Usage:
                 return Usage(error="Antigravity CLI 로그인 상태를 확인하지 못했어요")
             return Usage(error="Antigravity CLI quota 응답을 읽지 못했어요")
         credits = None if isinstance(credits_body, BaseException) else credits_from_antigravity(credits_body)
+        credits_error = None
+        if credits is None:
+            # `no credits info found` 는 이 계정 플랜에 크레딧 정보가 없다는 공급자 답이다(2026-10-18 실측). 조회 실패와 다르다.
+            no_info = isinstance(credits_body, AgyCommandError) and "no credits info" in credits_body.detail.lower()
+            credits_error = "이 계정에는 Antigravity AI 크레딧 정보가 없어요" if no_info else "Antigravity 크레딧 조회 실패"
         return Usage(windows=windows, source="antigravity_cli", credits_balance=credits,
-                     credits_error=("Antigravity 크레딧 조회 실패" if credits is None else None), updated_at=time.time())
+                     credits_error=credits_error, updated_at=time.time())
     except (OSError, RuntimeError, TimeoutError, TypeError, ValueError) as e:
         return Usage(error=f"Antigravity 조회 실패({type(e).__name__})")
 
@@ -515,6 +543,11 @@ def _ready_value(account_id: uuid.UUID, engine: str, config_dir: str | None, ref
         # 모든 창이 초기화 시각이 지난 경우 캐시 만료로 보고 새로 조회한다.
         if cached_u.windows and all(w.resets_at and w.resets_at <= now for w in cached_u.windows):
             return None
+        # Antigravity 는 창마다 따로 초기화된다. 한 창이라도 지났으면 성공한 측정에 한해 새로 읽는다
+        # (실패 뒤 유지한 값은 TTL 을 따른다. 아니면 공급자 장애 중에 화면마다 하위 프로세스를 띄운다).
+        if (engine == "antigravity" and not cached_u.error
+                and any(w.resets_at and w.resets_at <= now for w in cached_u.windows)):
+            return None
         return cached_u
     return None
 
@@ -559,8 +592,15 @@ async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None
                 u = replace(u, plan=prior.plan, error=reset_msg)
             observed_now = False
     elif engine == "antigravity":
+        # 재시작 직후 DB 에서 채운 값은 계정 id 로 저장돼 있어 root 기록이 없어도 쓴다. 폴더가 바뀐 계정의 값은 쓰지 않는다.
+        prior = cached(account_id) if _agy_cache_roots.get(account_id, config_dir) == config_dir else None
         u = await _fetch_antigravity(config_dir) if config_dir else await _fetch_antigravity()
         _agy_cache_roots[account_id] = config_dir
+        if not u.windows and prior and prior.source == "antigravity_cli" and prior.windows:
+            # 조회 실패가 마지막 관측값을 지우면 안 된다: 화면이 창을 잃고, 한도가 찬 그룹의 차단도 풀린다.
+            # 값은 그대로 두되 오류를 붙여 낡은 값으로 표시한다. updated_at 은 실제 관측 시각을 유지한다.
+            u = replace(prior, error=f"{u.error} · 마지막 관측값" if u.error else "Antigravity 새 사용량 미관측 · 마지막 관측값")
+            observed_now = False
     elif engine == "claude":
         u = await _fetch_claude(config_dir)
         if not u.windows and account_id in _stream:

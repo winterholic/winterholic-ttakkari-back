@@ -284,6 +284,9 @@ def _usage_headroom(profile: Profile, now: float | None = None) -> tuple[float, 
         return None
     if profile.engine == 'muse' and not usage_mod.muse_quota_current(u, now):
         return None
+    # 조회 실패 뒤 유지한 마지막 관측값은 현재 잔여량이 아니다(차단 판단은 usage_limit_until 이 따로 유지한다).
+    if profile.engine == "antigravity" and u.error:
+        return None
     group = quota_group(profile.model) if profile.engine == "antigravity" else None
     keys = {f"{group}_5h", f"{group}_weekly"} if group else {"five_hour", "seven_day"}
     current = [w for w in u.windows if w.key in keys

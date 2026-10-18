@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import threading
 import uuid
 from datetime import UTC, datetime
 
@@ -200,7 +202,10 @@ async def test_login_help_has_no_keep_logged_in_mandate(world):
     http, _, _ = world
     r = await http.get("/api/stocks/tossinvest/login-help")
     assert r.status_code == 200, r.text
-    assert "로그인 상태 유지" not in json.dumps(r.json(), ensure_ascii=False)
+    help_text = json.dumps(r.json(), ensure_ascii=False)
+    assert "약 1주일" in help_text
+    assert "만료되면 다시 로그인" in help_text
+    assert "창을 닫습니다" in help_text
 
 
 async def test_limit_validation(world):
@@ -250,6 +255,51 @@ async def test_login_window_opens_with_fixed_args(world, monkeypatch):
     assert calls == [None]
 
 
+async def test_login_window_message_explains_session_duration(world, monkeypatch):
+    http, _, _ = world
+    _fake_login_window(monkeypatch)
+    monkeypatch.setattr(
+        ad,
+        "open_login_window",
+        lambda: ad.LoginState(
+            state="waiting",
+            message="로그인 후 창을 닫아 주세요. 로그인은 약 1주일 유지되며, 만료되면 다시 로그인해 주세요.",
+        ),
+    )
+    r = await http.post("/api/stocks/tossinvest/login-window")
+    assert r.status_code == 202, r.text
+    assert "로그인 후 창을 닫" in r.json()["message"]
+    assert "약 1주일" in r.json()["message"]
+    assert "만료되면 다시 로그인" in r.json()["message"]
+
+
+async def test_login_window_rejects_competing_open_while_first_is_launching(
+    world, monkeypatch
+):
+    http, _, _ = world
+    entered = threading.Event()
+    release = threading.Event()
+    monkeypatch.setattr(ad, "login_chrome_pids", list)
+    monkeypatch.setattr(ad, "headless_check_running", lambda: False)
+
+    def _open():
+        entered.set()
+        assert release.wait(timeout=3)
+        return ad.LoginState(state="waiting", message="열렸습니다.")
+
+    monkeypatch.setattr(ad, "open_login_window", _open)
+    first = asyncio.create_task(http.post("/api/stocks/tossinvest/login-window"))
+    try:
+        assert await asyncio.to_thread(entered.wait, timeout=2)
+        second = await http.post("/api/stocks/tossinvest/login-window")
+        assert second.status_code == 409, second.text
+        assert second.json()["detail"]["code"] == "login_window_open"
+    finally:
+        release.set()
+    first_response = await first
+    assert first_response.status_code == 202, first_response.text
+
+
 async def test_login_window_ignores_external_input(world, monkeypatch):
     http, _, _ = world
     calls = _fake_login_window(monkeypatch)
@@ -297,8 +347,9 @@ async def test_login_window_requires_auth(world, monkeypatch):
     _fake_login_window(monkeypatch)
     app.dependency_overrides.pop(require_user)
     try:
-        assert (
-            await http.post("/api/stocks/tossinvest/login-window")
-        ).status_code in (401, 403)
+        assert (await http.post("/api/stocks/tossinvest/login-window")).status_code in (
+            401,
+            403,
+        )
     finally:
         app.dependency_overrides[require_user] = lambda: "owner"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from datetime import UTC, datetime
 from uuid import UUID
@@ -16,6 +17,8 @@ from ttakkari.models import TossInvestSyncRun
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.security.auth import User
 from ttakkari.stocks import tossinvest as svc
+
+_LOGIN_WINDOW_LOCK = threading.Lock()
 
 
 async def user_access(_: User) -> None:
@@ -251,29 +254,40 @@ async def tossinvest_login_help() -> dict:
 )
 async def tossinvest_login_window() -> LoginWindowOut:
     """일반 Chrome으로 로그인 창을 연다. URL·경로 등 외부 입력을 받지 않고 고정 인자만 쓴다."""
-    if await asyncio.to_thread(svc.login_chrome_pids):
+    if not _LOGIN_WINDOW_LOCK.acquire(blocking=False):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             {
                 "code": "login_window_open",
-                "message": "로그인 창이 이미 열려 있습니다. 로그인하고 창을 닫은 뒤 연결 확인을 눌러 주세요.",
+                "message": "로그인 창을 여는 중입니다. 로그인 후 창을 닫고 연결 확인을 눌러 주세요.",
             },
         )
-    if await asyncio.to_thread(svc.headless_check_running):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            {
-                "code": "check_running",
-                "message": "연결 확인이 실행 중입니다. 끝난 뒤에 다시 시도해 주세요.",
-            },
-        )
-    st = await asyncio.to_thread(svc.open_login_window)
-    if st.state == "failed":
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            st.message or "로그인 창을 열지 못했습니다.",
-        )
-    return LoginWindowOut(state=st.state, message=st.message or "")
+    try:
+        if await asyncio.to_thread(svc.login_chrome_pids):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                {
+                    "code": "login_window_open",
+                    "message": "로그인 창이 이미 열려 있습니다. 로그인 후 창을 닫고 연결 확인을 눌러 주세요.",
+                },
+            )
+        if await asyncio.to_thread(svc.headless_check_running):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                {
+                    "code": "check_running",
+                    "message": "연결 확인이 실행 중입니다. 끝난 뒤에 다시 시도해 주세요.",
+                },
+            )
+        st = await asyncio.to_thread(svc.open_login_window)
+        if st.state == "failed":
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                st.message or "로그인 창을 열지 못했습니다.",
+            )
+        return LoginWindowOut(state=st.state, message=st.message or "")
+    finally:
+        _LOGIN_WINDOW_LOCK.release()
 
 
 @router.post(

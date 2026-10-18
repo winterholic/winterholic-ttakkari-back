@@ -126,6 +126,12 @@ def test_start_request_rejects_contradictory_combinations():
     assert StartRequest(model="m", device="none", gpu_layers=0).device == "none"
 
 
+@pytest.mark.parametrize("parallel", [True, False])
+def test_start_request_rejects_boolean_parallel(parallel):
+    with pytest.raises(ValidationError):
+        StartRequest(model="m", parallel=parallel)
+
+
 def test_build_args_maps_only_allowlisted_flags():
     req = StartRequest(model="m", gpu_layers=40, n_cpu_moe=12, ctx_size=4096, threads=4, ubatch_size=256,
                        batch_size=1024, flash_attn="on")
@@ -478,6 +484,35 @@ def test_supervisor_refuses_to_run_the_server_without_a_working_watchdog(env, mo
 
 
 # ---- API
+
+async def test_host_gpu_api_rejects_boolean_parallel_before_start(client, auth, make_dir, monkeypatch):
+    from test_orchestrator import _orch, _session
+
+    from ttakkari.orchestrator.runtime import issue_token
+
+    starts = []
+
+    def fake_start(self, request):
+        starts.append(request.parallel)
+        return {"parallel": request.parallel}
+
+    monkeypatch.setattr(HostGpu, "start", fake_start)
+    session = await _session(client, auth, make_dir)
+    headers = _orch(issue_token(session["id"]))
+    for parallel in (True, False):
+        response = await client.post("/api/agent/host-gpu/start", json={"model": "tiny", "parallel": parallel},
+                                     headers=headers)
+        assert response.status_code == 422
+        assert response.json()["code"] == "validation"
+        assert any(error["loc"] == ["body", "parallel"] for error in response.json()["errors"])
+    assert starts == []
+    for parallel in (1, 2):
+        response = await client.post("/api/agent/host-gpu/start", json={"model": "tiny", "parallel": parallel},
+                                     headers=headers)
+        assert response.status_code == 202
+        assert response.json()["parallel"] == parallel
+    assert starts == [1, 2]
+
 
 async def test_host_gpu_api_validates_requests_and_reports_idle(client, auth, make_dir, monkeypatch, tmp_path):
     from test_orchestrator import _orch, _session

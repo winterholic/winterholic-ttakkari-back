@@ -30,7 +30,7 @@ from typing import Any, Literal
 
 import httpx
 import psutil
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ttakkari import host_gpu_guard as guard
 from ttakkari.host_gpu_guard import ALIAS
@@ -80,6 +80,13 @@ class StartRequest(BaseModel):
     parallel: Literal[1, 2] = Field(default=1, description="--parallel: number of server slots (1 or 2)")
     max_seconds: int | None = Field(default=None, ge=60, le=7200,
                                     description="shorter run limit; capped by host_gpu_max_runtime_seconds")
+
+    @field_validator("parallel", mode="before")
+    @classmethod
+    def _parallel_not_bool(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            raise ValueError("parallel must be 1 or 2, not a boolean")  # noqa: TRY004 -- Pydantic requires ValueError for 422
+        return value
 
     @model_validator(mode="after")
     def _consistent(self) -> StartRequest:

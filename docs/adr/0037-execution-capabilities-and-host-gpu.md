@@ -20,7 +20,7 @@
 - 안전장치: 한 번에 하나만(flock 감독자 `python -m ttakkari.host_gpu supervise`, 백엔드 세대가 내려가도 유지), 스왑 증가 가드(시작값보다 1GB 이상이면 자동 종료), 최대 실행 시간, 운영 Qwen 서버(포트 18987·57170)와 포트·프로세스 분리(상태 파일의 pid+시작 시각 일치와 `--alias ttakkari-gpu-test` 확인 후에만 신호), 임의 명령 금지(허용 모델 별칭과 `StartRequest` 고정 필드만 argv로 변환).
 - qwen-local-harness와 qwen-local 어댑터·hostmon은 재사용하지 않았다. 하네스는 접수 프롬프트용, 어댑터는 운영 서버 고정 인자용이라 시험 인스턴스의 허용 목록·가드 모델과 맞지 않았다.
 - 이 도구로 잰 결과는 `measured_on: host_gpu_path`로 표시하고 "호스트 GPU 경로에서 측정"으로 말한다. 회사 세션(pool=work)에서는 막는다.
-- 긴 컨텍스트 실험은 ctx_size 최대 1,010,000과 cache_type_k/v의 f16·q8_0·q4_0 고정 선택을 허용한다. 262,144 초과는 rope_scaling=yarn을 명시해야 하며 scale=4, original context=262144로 고정한다. 기존 기본 ctx8192·KV 타입 미지정·rope 미지정은 유지한다. 이는 허용 모델의 확장 실험 설정이며 1M 품질·처리 시간 보증이 아니다. 기존 단일 실행·소유권·1GB 스왑 가드·시간 상한은 유지한다.
+- 긴 컨텍스트 실험은 ctx_size 최대 1,010,000과 cache_type_k/v의 f16·q8_0·q4_0 고정 선택을 허용한다. 슬롯당 컨텍스트 262,144 초과는 rope_scaling=yarn을 명시해야 하며 scale=4, original context=262144로 고정한다. 기존 기본 ctx8192·KV 타입 미지정·rope 미지정은 유지한다. 이는 허용 모델의 확장 실험 설정이며 1M 품질·처리 시간 보증이 아니다. 기존 단일 실행·소유권·1GB 스왑 가드·시간 상한은 유지한다.
 
 ## 검증
 

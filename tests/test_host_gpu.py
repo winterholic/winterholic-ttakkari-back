@@ -176,6 +176,9 @@ def test_long_context_options_are_bounded_and_map_to_fixed_flags():
     argv = build_args(Path("server"), Path("model"), 19300, default)
     assert "--cache-type-k" not in argv and "--cache-type-v" not in argv and "--rope-scaling" not in argv
     assert StartRequest(model="m", ctx_size=262144).ctx_size == 262144
+    assert StartRequest(model="m", ctx_size=524288, parallel=2).ctx_size == 524288
+    with pytest.raises(ValidationError):
+        StartRequest(model="m", ctx_size=524289, parallel=2)
 
 
 async def test_mcp_forwards_long_context_options(monkeypatch):

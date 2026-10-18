@@ -93,8 +93,8 @@ class StartRequest(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> StartRequest:
-        if self.ctx_size > 262144 and self.rope_scaling != "yarn":
-            raise ValueError("contexts above 262144 require rope_scaling=yarn")
+        if self.ctx_size > 262144 * self.parallel and self.rope_scaling != "yarn":
+            raise ValueError("per-slot contexts above 262144 require rope_scaling=yarn")
         if self.cpu_moe and self.n_cpu_moe is not None:
             raise ValueError("cpu_moe and n_cpu_moe are mutually exclusive")
         if self.device == "none" and self.gpu_layers > 0:

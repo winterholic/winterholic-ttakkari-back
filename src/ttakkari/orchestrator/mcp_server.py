@@ -88,12 +88,13 @@ async def design_system_item(system: str, item: str, offset: int = 0, length: in
 
 
 @server.tool()
-async def reverse_start(target: str) -> str:
-    """Start a reverse-engineering job for a GitHub URL (owner/repo or full https URL) or a local directory.
-    The target is shallow-cloned and read without executing its code; secret files are never read.
-    Poll reverse_get for staged progress and the final summary. Personal sessions only."""
+async def reverse_start(description: str, workspace_id: str | None = None) -> str:
+    """Describe a target's observable behavior in natural language and reconstruct it as working source code.
+    Include what to reproduce, known inputs/outputs, target access details and optional reference links.
+    A GitHub URL is not required. Sources/tests/evidence are saved in the chosen workspace.
+    Uses tool-capable worker routing plus independent verification. Personal sessions only."""
     from ttakkari.oplog.limits import cap_text
-    return cap_text(await _agent("POST", "/reverse/start", {"target": target}))
+    return cap_text(await _agent("POST", "/reverse/start", {"description": description, "workspace_id": workspace_id}))
 
 
 @query_tool
@@ -105,22 +106,26 @@ async def reverse_list() -> str:
 
 @query_tool
 async def reverse_get(job_id: str) -> str:
-    """Read one reverse-engineering job: staged timeline with evidence per stage plus the final summary
-    (overview, architecture, key modules, flows, borrowable ideas, limitations). Target code is
-    never executed; unknown runtime behavior stays marked as needing confirmation."""
+    """Read a reconstruction task: target description, observations, working sources, execution evidence,
+    independent verification, worker activity and follow-up rounds. Legacy analysis records are readable."""
     from urllib.parse import quote
     return await _agent("GET", f"/reverse/{quote(job_id, safe='')}")
 
 
 @server.tool()
 async def reverse_retry(job_id: str) -> str:
-    """Retry a waiting, partial or failed reverse-engineering job.
-    Reuses collection stages if the source checkout is still available.
-    Use it after quota resets or a transient model failure. Personal sessions only."""
+    """Resume a stopped reconstruction in the same workspace with its source and execution history."""
     from urllib.parse import quote
 
     from ttakkari.oplog.limits import cap_text
     return cap_text(await _agent("POST", f"/reverse/{quote(job_id, safe='')}/retry", None))
+
+
+@server.tool()
+async def reverse_message(job_id: str, prompt: str) -> str:
+    """Add target details or request source changes on an existing stopped reconstruction task."""
+    from urllib.parse import quote
+    return await _agent("POST", f"/reverse/{quote(job_id, safe='')}/messages", {"prompt": prompt})
 
 async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
     return await _call(method, path, body, prefix="/api/agent", params=params)

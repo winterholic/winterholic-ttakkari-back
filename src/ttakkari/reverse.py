@@ -1265,7 +1265,7 @@ def _public(job: Any, detail: bool = False) -> dict[str, Any]:
 
 
 def _stale(job: Any) -> bool:
-    return job.status in (QUEUED, RUNNING) and (utcnow() - job.updated_at).total_seconds() > STALE_MINUTES * 60
+    return getattr(job, "kind", None) != "reconstruction" and job.status in (QUEUED, RUNNING) and (utcnow() - job.updated_at).total_seconds() > STALE_MINUTES * 60
 
 
 TERMINAL = (DONE, FAILED, PARTIAL)
@@ -1293,7 +1293,7 @@ async def recover_reverse_jobs() -> int:
     from ttakkari.models import ReverseJob
     async with dbmod.sessionmaker()() as session:
         rows = (await session.execute(
-            select(ReverseJob).where(ReverseJob.status.in_((QUEUED, RUNNING)))
+            select(ReverseJob).where(ReverseJob.status.in_((QUEUED, RUNNING)), ReverseJob.kind != "reconstruction")
         )).scalars().all()
         for job in rows:
             job.status, job.error = FAILED, "서버 재시작 등으로 중단되었습니다. 다시 시작하세요."
@@ -1350,7 +1350,7 @@ async def resume_waiting_reverse_jobs() -> int:
             # 쿼터 초기화 시각 전에는 돌리지 않는다.
             return 0
         rows = (await session.execute(
-            select(ReverseJob).where(ReverseJob.status == WAITING)
+            select(ReverseJob).where(ReverseJob.status == WAITING, ReverseJob.kind != "reconstruction")
         )).scalars().all()
         targets: list[tuple[uuid.UUID, dict[str, str]]] = []
         for job in rows:
@@ -1392,6 +1392,9 @@ async def retry_job(job_id: str, db: Any) -> dict[str, Any]:
            ).scalar_one_or_none()
     if row is None:
         raise ReverseError(404, "unknown_job", "리버스 엔지니어링 작업을 찾을 수 없습니다.")
+    if row.kind == "reconstruction":
+        from ttakkari.reverse_tasks import follow_up
+        return await follow_up(db, row, "이전 대상 설명과 진행 기록을 이어서 확인하고 미완료 구현·검증을 마쳐 주세요.")
     if row.status not in RETRYABLE:
         raise ReverseError(409, "job_not_retryable", "대기·부분·실패 상태의 작업만 다시 시작할 수 있습니다.")
     target = normalize_target(row.target)
@@ -1754,7 +1757,7 @@ async def _pipeline(job_id: uuid.UUID, target: dict[str, str]) -> None:
                              error="예기치 않은 오류로 실패했습니다.", job_status=FAILED)
 
 
-async def start_analysis(raw_target: str, db: Any) -> dict[str, Any]:
+async def start_repository_analysis(raw_target: str, db: Any) -> dict[str, Any]:
     from ttakkari.models import ReverseJob
     target = normalize_target(raw_target)
     job = ReverseJob(target=target.get("url", target.get("path", raw_target)), kind=target["kind"],
@@ -1773,6 +1776,11 @@ async def start_analysis(raw_target: str, db: Any) -> dict[str, Any]:
             "status": QUEUED, "stage": "request"}
 
 
+async def start_analysis(description: str, db: Any, workspace_id: uuid.UUID | None = None) -> dict[str, Any]:
+    from ttakkari.reverse_tasks import start
+    return await start(description, db, workspace_id)
+
+
 async def list_jobs(db: Any) -> dict[str, Any]:
     from sqlalchemy import select
 
@@ -1787,14 +1795,22 @@ async def list_jobs(db: Any) -> dict[str, Any]:
             touched = True
     if touched:
         await db.commit()
-    return {"items": [_public(job) for job in rows]}
+    from ttakkari.reverse_tasks import public
+    return {"items": [await public(db, job) if job.kind == "reconstruction" else _public(job) for job in rows]}
 
 
 async def job_detail(job_id: str, db: Any) -> dict[str, Any]:
+    from ttakkari.models import ReverseJob
     try:
         uid = uuid.UUID(job_id)
     except ValueError:
         raise ReverseError(404, "unknown_job", "리버스 엔지니어링 작업을 찾을 수 없습니다.") from None
+    job = await db.get(ReverseJob, uid)
+    if job is None:
+        raise ReverseError(404, "unknown_job", "작업을 찾을 수 없습니다.")
+    if job.kind == "reconstruction":
+        from ttakkari.reverse_tasks import public
+        return await public(db, job, detail=True)
     job = await _load(uid)
     return _public(job, detail=True)
 
@@ -1808,7 +1824,11 @@ async def remove_job(job_id: str, db: Any) -> dict[str, Any]:
     job = await db.get(ReverseJob, uid)
     if job is None:
         raise ReverseError(404, "unknown_job", "리버스 엔지니어링 작업을 찾을 수 없습니다.")
-    if job.status in (QUEUED, RUNNING):
+    if job.kind == "reconstruction":
+        from ttakkari.reverse_tasks import public
+        if (await public(db, job))["status"] in (QUEUED, RUNNING, WAITING):
+            raise ReverseError(409, "job_running", "진행 중인 작업은 끝난 뒤 지울 수 있습니다.")
+    elif job.status in (QUEUED, RUNNING):
         raise ReverseError(409, "job_running", "진행 중인 작업은 끝난 뒤 지울 수 있습니다.")
     await db.delete(job)
     await db.commit()

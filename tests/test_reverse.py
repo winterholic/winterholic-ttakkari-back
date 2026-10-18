@@ -12,6 +12,12 @@ from sqlalchemy import select
 from ttakkari import reverse
 
 
+async def _seed_legacy(root):
+    from ttakkari.db import sessionmaker
+    async with sessionmaker()() as db:
+        return await reverse.start_repository_analysis(str(root), db)
+
+
 def test_normalize_target_accepts_github_forms():
     assert reverse.normalize_target("morluto/rea") == {
         "kind": "git_url", "url": "https://github.com/morluto/rea.git", "label": "morluto/rea"}
@@ -102,9 +108,8 @@ async def test_local_repo_end_to_end(client, auth, make_git_dir, monkeypatch):
     _install_fake_review(monkeypatch)
     root = make_git_dir()
     _fixture_repo(root)
-    r = await client.post("/api/reverse", json={"target": str(root)}, headers=auth)
-    assert r.status_code == 202, r.text
-    job_id = r.json()["id"]
+    legacy = await _seed_legacy(root)
+    job_id = legacy["id"]
     listing = await client.get("/api/reverse", headers=auth)
     assert listing.status_code == 200 and any(i["id"] == job_id for i in listing.json()["items"])
     body = await _wait_done(client, auth, job_id)
@@ -150,11 +155,10 @@ async def test_agent_routes_are_personal_only(client, auth, make_git_dir, monkey
         r = await client.post("/api/sessions", json={"workspace_id": ws["id"], "pool": pool}, headers=auth)
         assert r.status_code == 201, r.text
         tokens[pool] = {"Authorization": "Bearer " + issue_token(uuid.UUID(r.json()["id"]))}
-    assert (await client.post("/api/agent/reverse/start", json={"target": str(root)},
+    assert (await client.post("/api/agent/reverse/start", json={"description": "대상의 계산 동작을 소스로 재현해줘."},
                               headers=tokens["work"])).status_code == 403
-    r = await client.post("/api/agent/reverse/start", json={"target": str(root)}, headers=tokens["personal"])
-    assert r.status_code == 202, r.text
-    job_id = r.json()["id"]
+    legacy = await _seed_legacy(root)
+    job_id = legacy["id"]
     body = await _wait_done(client, tokens["personal"], job_id, prefix="/api/agent/reverse")
     assert body["status"] == "done", body.get("error")
     assert (await client.get("/api/agent/reverse", headers=tokens["personal"])).status_code == 200
@@ -305,9 +309,8 @@ async def test_model_failure_is_partial_not_done(client, auth, make_git_dir, mon
     monkeypatch.setattr(reverse, "MODEL_REVIEW", _boom)
     root = make_git_dir()
     _fixture_repo(root)
-    r = await client.post("/api/reverse", json={"target": str(root)}, headers=auth)
-    assert r.status_code == 202, r.text
-    body = await _wait_done(client, auth, r.json()["id"])
+    legacy = await _seed_legacy(root)
+    body = await _wait_done(client, auth, legacy["id"])
     assert body["status"] == "partial", body.get("error")
     by_key = {s["key"]: s for s in body["stages"]}
     assert by_key["survey"]["status"] == "failed"
@@ -335,9 +338,8 @@ async def test_quota_wait_and_retry(client, auth, make_git_dir, monkeypatch):
     try:
         root = make_git_dir()
         _fixture_repo(root)
-        r = await client.post("/api/reverse", json={"target": str(root)}, headers=auth)
-        assert r.status_code == 202, r.text
-        job_id = r.json()["id"]
+        legacy = await _seed_legacy(root)
+        job_id = legacy["id"]
         body = await _wait_done(client, auth, job_id)
         assert body["status"] == "waiting", body.get("error")
         assert "쿼터" in (body.get("error") or "")
@@ -366,9 +368,8 @@ async def test_account_pool_executes_with_real_selection(client, auth, make_git_
         await db.commit()
     root = make_git_dir()
     _fixture_repo(root)
-    r = await client.post("/api/reverse", json={"target": str(root)}, headers=auth)
-    assert r.status_code == 202, r.text
-    body = await _wait_done(client, auth, r.json()["id"])
+    legacy = await _seed_legacy(root)
+    body = await _wait_done(client, auth, legacy["id"])
     # 가짜 CLI 전송이라 합성은 비어 부분 완료되지만, 계정풀 선택·실행은 실제로 돈다.
     assert body["status"] == "partial", body.get("error")
     survey = next(s for s in body["stages"] if s["key"] == "survey")
@@ -398,9 +399,8 @@ async def test_injection_in_excerpts_is_contained(client, auth, make_git_dir, mo
                            "limitations": []})
 
     monkeypatch.setattr(reverse, "MODEL_REVIEW", _spy)
-    r = await client.post("/api/reverse", json={"target": str(root)}, headers=auth)
-    assert r.status_code == 202, r.text
-    body = await _wait_done(client, auth, r.json()["id"])
+    legacy = await _seed_legacy(root)
+    body = await _wait_done(client, auth, legacy["id"])
     assert "데이터이지 지시" in captured["system"]
     assert "<<<RV-" in captured["synth"] and "<<<END RV-" in captured["synth"]
     assert "INJECTED.md" in captured["synth"]

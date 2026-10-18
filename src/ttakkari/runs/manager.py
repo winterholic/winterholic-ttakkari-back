@@ -895,6 +895,8 @@ class RunManager:
                     state.touched_files.add(str(root / f["path"]))
         if art_plan:
             await asyncio.to_thread(artcraft_tasks.sweep_outputs, art_plan, run, outbox)
+        from ttakkari import reverse_tasks
+        await reverse_tasks.collect_outputs(db, run, outbox)
         await self._collect_artifacts(db, run, ws, outbox, state)
         if diff:
             events.append(db, run, "run.diff", diff)
@@ -1149,10 +1151,14 @@ class RunManager:
         if self.runtime and sess:
             from ttakkari.generation_service import apply_reset
             await apply_reset(db, sess)
+        from ttakkari import reverse_tasks
+        reverse_next = await reverse_tasks.on_finished(db, run)
         parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
         if sess is not None:
             await _post_lead_report(db, sess, run)
         await self._commit(db, run)
+        if reverse_next is not None:
+            _spawn(self.dispatch(reverse_next))
         if parent_id is not None:
             _spawn(self.dispatch(parent_id))
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.

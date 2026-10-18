@@ -1,6 +1,8 @@
 """리버스 엔지니어링 API. 소유자 화면과 개인 세션 MCP가 같은 작업 기록을 쓴다."""
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
@@ -13,7 +15,12 @@ from ttakkari.security.auth import User, client_ip
 
 
 class StartIn(BaseModel):
-    target: str = Field(max_length=500)
+    description: str = Field(min_length=1, max_length=40_000)
+    workspace_id: uuid.UUID | None = None
+
+
+class MessageIn(BaseModel):
+    prompt: str = Field(min_length=1, max_length=40_000)
 
 
 def _http(exc: reverse.ReverseError) -> HTTPException:
@@ -36,7 +43,7 @@ def make_router(prefix: str, access, *, start_path: str, actor: str) -> APIRoute
     @router.post(start_path, status_code=202)
     async def start(body: StartIn, request: Request, db: Db) -> dict:
         try:
-            job = await reverse.start_analysis(body.target, db)
+            job = await reverse.start_analysis(body.description, db, body.workspace_id)
         except reverse.ReverseError as exc:
             raise _http(exc) from exc
         record(db, action="reverse.start", actor=actor, target_type="reverse_job", target_id=job["id"],
@@ -66,6 +73,22 @@ def make_router(prefix: str, access, *, start_path: str, actor: str) -> APIRoute
                ip=client_ip(request))
         await db.commit()
         return job
+
+    @router.post("/{job_id}/messages", status_code=202)
+    async def message(job_id: uuid.UUID, body: MessageIn, request: Request, db: Db) -> dict:
+        from ttakkari.models import ReverseJob
+        from ttakkari.reverse_tasks import follow_up
+        job = await db.get(ReverseJob, job_id)
+        if job is None:
+            raise HTTPException(404, "작업을 찾을 수 없습니다.")
+        try:
+            out = await follow_up(db, job, body.prompt)
+        except reverse.ReverseError as exc:
+            raise _http(exc) from exc
+        record(db, action="reverse.message", actor=actor, target_type="reverse_job", target_id=job_id,
+               ip=client_ip(request))
+        await db.commit()
+        return out
 
     return router
 

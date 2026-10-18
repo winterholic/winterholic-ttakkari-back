@@ -12,7 +12,7 @@ READ_ONLY_TOOLS = frozenset({
 })
 # 리버스 엔지니어링 시작은 상태를 바꾸므로 읽기 전용으로 표시하지 않는다.
 # 사용자 지시로 요청하는 작업이라 무인 실행 승인 목록에는 둔다.
-REVERSE_TOOLS = frozenset({"reverse_start", "reverse_retry"})
+REVERSE_TOOLS = frozenset({"reverse_start", "reverse_retry", "reverse_message"})
 
 # 2026-10-14 사용자 결정: PMS/WBS는 에이전트가 전체 관리하며 변경 시 승인을 다시 요구하지 않는다.
 # 쓰기를 READ_ONLY_TOOLS에 넣어 readOnlyHint로 위장하지 않는다.

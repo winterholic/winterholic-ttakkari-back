@@ -1009,7 +1009,11 @@ class ReverseJob(Base):
     __tablename__ = "reverse_jobs"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     target: Mapped[str] = mapped_column(Text)
-    kind: Mapped[str] = mapped_column(String(16))  # git_url | local_path
+    kind: Mapped[str] = mapped_column(String(16))  # reconstruction | git_url/local_path(이전 기록)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id", ondelete="SET NULL"))
+    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"), index=True)
+    verifier_session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"))
+    output_path: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|running|done|failed
     revision: Mapped[str | None] = mapped_column(String(64))
     stages: Mapped[list[Any]] = mapped_column(default=list)

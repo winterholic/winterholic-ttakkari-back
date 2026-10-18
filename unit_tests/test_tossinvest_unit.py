@@ -195,6 +195,14 @@ async def test_login_help_has_no_secrets(world):
     assert "nid_aut" not in dumped and "token" not in dumped
 
 
+async def test_login_help_has_no_keep_logged_in_mandate(world):
+    # 실제 화면에 유지 옵션이 없다(2026-10-18 사용자 보고). 필수로 안내하지 않는다.
+    http, _, _ = world
+    r = await http.get("/api/stocks/tossinvest/login-help")
+    assert r.status_code == 200, r.text
+    assert "로그인 상태 유지" not in json.dumps(r.json(), ensure_ascii=False)
+
+
 async def test_limit_validation(world):
     http, _, _ = world
     assert (await http.get("/api/stocks/tossinvest/runs?limit=0")).status_code == 422

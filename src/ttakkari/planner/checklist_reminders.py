@@ -1,4 +1,4 @@
-"""KST 07:30 정리 알림, 12·16·20·22시 미완료 알림. 시간대별 영속 차지로 최대 1회 전송."""
+"""KST 07:30 정리 알림, 12·16·20·22·22:30 미완료 알림. 시간대별 영속 차지로 최대 1회 전송."""
 import logging
 from datetime import datetime, time, timedelta
 
@@ -11,7 +11,7 @@ from ttakkari.planner.service import KST
 from ttakkari.push.service import PushKind, notify
 
 log = logging.getLogger(__name__)
-SLOTS = ("07:30", "12:00", "16:00", "20:00", "22:00")
+SLOTS = ("07:30", "12:00", "16:00", "20:00", "22:00", "22:30")
 
 
 async def send_due(now: datetime | None = None) -> int:

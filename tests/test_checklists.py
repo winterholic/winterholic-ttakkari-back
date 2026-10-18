@@ -70,7 +70,10 @@ async def test_reminder_slots_skip_completed_and_deduplicate(client, auth, monke
     assert await reminders.send_due(at(20)) == 0
     await client.patch("/api/checklists/items/" + item["id"], headers=auth, json={"checked": False})
     assert await reminders.send_due(at(22)) == 1
-    assert sent.await_count == 3
+    assert await reminders.send_due(at(22, 29)) == 0
+    assert await reminders.send_due(at(22, 30)) == 1
+    assert await reminders.send_due(at(22, 31)) == 0
+    assert sent.await_count == 4
     assert sent.call_args.kwargs["url"].startswith("/checklists")
 
 

@@ -87,6 +87,8 @@ def test_ws_origin_invalid_and_replayed_ticket_rejected_without_dial(world, monk
 
 def test_closed_mac_reports_setup_error_and_consumes_ticket(world, monkeypatch):
     app, _ = world
+    audits = []
+    monkeypatch.setattr(api, 'record', lambda db, **kw: audits.append(kw))
     async def refused(*args, **kwargs):
         raise ConnectionRefusedError()
     monkeypatch.setattr(api.asyncio, 'open_connection', refused)
@@ -100,6 +102,8 @@ def test_closed_mac_reports_setup_error_and_consumes_ticket(world, monkeypatch):
                     ws.receive_text()
                 assert exc.value.code == expected
     assert api.pending == 0
+    assert [a['action'] for a in audits] == ['remote_desktop.bridge']
+    assert audits[0]['outcome'] == 'refused' and audits[0]['target_id'] == 'mac-studio'
 
 
 def test_binary_ws_bridge_and_explicit_disconnect(world, monkeypatch):

@@ -155,7 +155,12 @@ async def socket(ws: WebSocket):
             return
         try:
             reader, writer = await asyncio.wait_for(asyncio.open_connection(device.host, device.port), 4)
-        except (OSError, TimeoutError):
+        except (OSError, TimeoutError) as e:
+            # 감사 기록 실패가 접속 종료 코드를 바꾸지 않게 한다.
+            with contextlib.suppress(Exception):
+                async with sessionmaker()() as db:
+                    record(db, action='remote_desktop.bridge', outcome='refused', target_id=device_id, detail={'reason': type(e).__name__})
+                    await db.commit()
             await ws.close(code=1013, reason='Mac 화면 공유에 연결할 수 없습니다. 잠자기·화면 공유·네트워크를 확인해 주세요.')
             return
         active[grant] = ws

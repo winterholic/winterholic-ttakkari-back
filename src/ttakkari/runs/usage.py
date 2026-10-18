@@ -459,14 +459,21 @@ def codex_usage(config_dir: str | None) -> Usage:
                         last = rl
         if last:
             ws = []
+            now = time.time()
             for part in ("primary", "secondary"):
                 w = last.get(part)
                 if not isinstance(w, dict) or not isinstance(w.get("used_percent"), (int, float)):
                     continue
+                resets_at = _ts(w.get("resets_at"))
+                if resets_at and resets_at <= now and round(w["used_percent"]) >= 100:
+                    continue
                 minutes = w.get("window_minutes") or 0
                 key = "five_hour" if minutes and minutes <= 600 else "seven_day"
-                ws.append(Window(key, label_of(key), round(w["used_percent"]), _ts(w.get("resets_at"))))
-            return Usage(windows=_ordered(ws), source="session_log", plan=last.get("plan_type"),
+                ws.append(Window(key, label_of(key), round(w["used_percent"]), resets_at))
+            if ws:
+                return Usage(windows=_ordered(ws), source="session_log", plan=last.get("plan_type"),
+                             updated_at=f.stat().st_mtime)
+            return Usage(error="Codex 초기화 시각 경과 · 세션 로그 기준 사용량 만료", plan=last.get("plan_type"),
                          updated_at=f.stat().st_mtime)
     return Usage(error="아직 따까리에서 쓴 기록이 없어요")
 
@@ -503,7 +510,12 @@ def _ready_value(account_id: uuid.UUID, engine: str, config_dir: str | None, ref
     # 수집기가 주기마다 새로 읽어 두므로(runs/usage_collector.py) 화면이 그보다 자주 API 를 두드리지 않게 한다.
     ttl = max(TTL, get_settings().usage_poll_seconds)
     if hit and not refresh and time.time() - hit[0] < ttl:
-        return hit[1]
+        cached_u = hit[1]
+        now = time.time()
+        # 모든 창이 초기화 시각이 지난 경우 캐시 만료로 보고 새로 조회한다.
+        if cached_u.windows and all(w.resets_at and w.resets_at <= now for w in cached_u.windows):
+            return None
+        return cached_u
     return None
 
 
@@ -535,7 +547,16 @@ async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None
         if u.login == 'missing':
             _stream.pop(account_id, None)
         elif not u.windows and u.login == 'ok' and prior and prior.source == 'muse_cli' and prior.windows:
-            u = replace(prior, login=u.login, error=u.error or 'Muse 새 사용량 미관측 · 마지막 관측값')
+            now = time.time()
+            valid = [w for w in prior.windows if not (w.resets_at and w.resets_at <= now and w.percent >= 100)]
+            if valid and len(valid) == len(prior.windows):
+                u = replace(prior, login=u.login, error=u.error or 'Muse 새 사용량 미관측 · 마지막 관측값')
+            elif valid:
+                reset_msg = f"{u.error} · 초기화 시각 경과" if u.error else "Muse 초기화 시각 경과 · 새 사용량 미관측"
+                u = replace(prior, windows=valid, login=u.login, error=reset_msg)
+            else:
+                reset_msg = f"{u.error} · 초기화 시각 경과" if u.error else "Muse 초기화 시각 경과 · 새 사용량 미관측"
+                u = replace(u, plan=prior.plan, error=reset_msg)
             observed_now = False
     elif engine == "antigravity":
         u = await _fetch_antigravity(config_dir) if config_dir else await _fetch_antigravity()

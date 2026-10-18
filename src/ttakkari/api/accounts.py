@@ -333,19 +333,31 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
                error: str | None = None) -> AccountUsageOut:
     login, _label = profiles.identity(a.engine, a.config_dir)
     now = time.time()
-    stale = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds
-    headroom = None if stale else min((max(0, a.max_used_percent - w.percent) for w in u.windows
+    # 비API 출처(fallback/세션로그)에서 초기화 시각이 지났는데 100%로 남은 창은 stale 100% 고착을 방지하기 위해 제외한다.
+    has_expired_exhausted = any(
+        w.resets_at and w.resets_at <= now and w.percent >= a.max_used_percent
+        for w in u.windows
+    ) if u.source != "api" else False
+    stale = u.updated_at is None or now - u.updated_at > get_settings().usage_stale_seconds or has_expired_exhausted
+    valid_windows = [
+        w for w in u.windows
+        if not (u.source != "api" and w.resets_at and w.resets_at <= now and w.percent >= a.max_used_percent)
+    ]
+    headroom = None if stale else min((max(0, a.max_used_percent - w.percent) for w in valid_windows
                                        if w.key in ("five_hour", "seven_day")
                                        and not (w.resets_at and w.resets_at <= now)), default=None)
+    err = u.error or error
+    if not valid_windows and u.windows and not err:
+        err = f"{a.engine.capitalize()} 초기화 시각 경과 · 새 사용량 미관측"
     return AccountUsageOut(id=a.id, name=a.name, engine=a.engine, pool=a.pool, enabled=a.enabled, rank=i + 1,
                            max_used_percent=a.max_used_percent, remaining_to_limit_percent=headroom,
                            stale=stale,
                            work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=u.login or login,
                            cooldown_seconds=profiles.cooldown_remaining(a.id),
-                           windows=[UsageWindowOut(**w.__dict__) for w in u.windows], source=u.source, plan=u.plan,
+                           windows=[UsageWindowOut(**w.__dict__) for w in valid_windows], source=u.source, plan=u.plan,
                            reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
                            credits_balance=u.credits_balance, credits_error=u.credits_error,
-                           error=u.error or error, updated_at=u.updated_at, refreshing=refreshing,
+                           error=err, updated_at=u.updated_at, refreshing=refreshing,
                            execution_enabled=profiles.execution_ready(profiles._profile(a)) and
                                              (a.engine != "muse" or get_settings().muse_enabled))
 

@@ -107,3 +107,54 @@ class MuseReadOnlyUsageTests(unittest.IsolatedAsyncioTestCase):
         result = muse_usage_from_probe({'account': {'state': 'loggedOut'}, 'usage': {}})
         self.assertEqual(result.login, 'missing')
         self.assertIn('로그인', result.error)
+
+    async def test_expired_exhausted_muse_quota_is_not_retained_on_failed_refresh(self):
+        import time
+        from unittest.mock import AsyncMock, patch
+        from uuid import uuid4
+
+        from ttakkari.runs import usage
+
+        aid = uuid4()
+        now = time.time()
+        # 5시간 창은 이미 과거에 리셋된 100% 소진 창이고, 주간 창은 미래
+        observation = usage.Usage(
+            windows=[
+                usage.Window('five_hour', '5시간', 100, int(now - 120)),
+                usage.Window('seven_day', '주간', 30, int(now + 86400)),
+            ],
+            source='muse_cli', plan='power', updated_at=now - 300, login='ok'
+        )
+        usage.remember_observation(aid, observation.as_dict())
+        with patch.object(usage, '_fetch_muse', AsyncMock(return_value=usage.Usage(login='ok', error='Muse /usage unavailable'))):
+            result = await usage.usage_for(aid, 'muse', None, refresh=True)
+        # 만료된 100% 창은 제외되고 유효한 주간 창만 남는다.
+        self.assertEqual(len(result.windows), 1)
+        self.assertEqual(result.windows[0].key, 'seven_day')
+        self.assertIn('초기화 시각 경과', result.error)
+        usage.forget(aid)
+
+    async def test_all_expired_exhausted_muse_quota_clears_windows_to_prevent_stale_100(self):
+        import time
+        from unittest.mock import AsyncMock, patch
+        from uuid import uuid4
+
+        from ttakkari.runs import usage
+
+        aid = uuid4()
+        now = time.time()
+        # 모든 창이 과거에 리셋된 100% 소진 창
+        observation = usage.Usage(
+            windows=[
+                usage.Window('five_hour', '5시간', 100, int(now - 3600)),
+                usage.Window('seven_day', '주간', 100, int(now - 60)),
+            ],
+            source='muse_cli', plan='power', updated_at=now - 7200, login='ok'
+        )
+        usage.remember_observation(aid, observation.as_dict())
+        with patch.object(usage, '_fetch_muse', AsyncMock(return_value=usage.Usage(login='ok', error='Muse /usage unavailable'))):
+            result = await usage.usage_for(aid, 'muse', None, refresh=True)
+        # 낡은 100% 창들이 모두 제거되어 windows가 비어야 한다.
+        self.assertEqual(result.windows, [])
+        self.assertIn('초기화 시각 경과', result.error)
+        usage.forget(aid)

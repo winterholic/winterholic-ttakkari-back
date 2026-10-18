@@ -27,10 +27,11 @@ def _iso(epoch: float | None) -> str | None:
 def _window(w: usage_mod.Window | None, now: float, points: list[usage_store.Point] | None = None) -> dict[str, Any] | None:
     if w is None:
         return None
-    # 초기화 시각이 측정 뒤에 지났으면 그 사이 한도가 새로 시작됐다. 지난 퍼센트로 잔여를 말하지 않는다.
+    # 초기화 시각이 측정 뒤에 지났으면 그 사이 한도가 새로 시작됐다. 지난 퍼센트로 잔여나 사용량을 말하지 않는다.
     passed = bool(w.resets_at and w.resets_at <= now)
     remaining = None if passed else (w.remaining_percent if w.remaining_percent is not None else max(0, 100 - w.percent))
-    out: dict[str, Any] = {"used_percent": w.percent, "remaining_percent": remaining,
+    used = None if passed else w.percent
+    out: dict[str, Any] = {"used_percent": used, "remaining_percent": remaining,
                            "resets_at": _iso(w.resets_at), "reset_since_measured": passed,
                            "resets_in_seconds": None if not w.resets_at else max(0, round(w.resets_at - now))}
     burn = None if passed or not points else usage_store.burn_rate(points, w.key, w, now)
@@ -52,9 +53,10 @@ def _usage(account_id, now: float, history: dict[str, list[usage_store.Point]] |
     left = [100 - w.percent for w in u.windows if w.key in ("five_hour", "seven_day") and not (w.resets_at and w.resets_at <= now)]
     if u.source == 'muse_cli' and not usage_mod.muse_quota_current(u, now):
         left = []
+    has_expired_window = any(w.resets_at and w.resets_at <= now for w in u.windows)
     return {
         "source": u.source, "plan": u.plan, "measured_at": _iso(u.updated_at), "age_seconds": age,
-        "stale": age is None or age > get_settings().usage_stale_seconds,
+        "stale": age is None or age > get_settings().usage_stale_seconds or has_expired_window,
         # 5시간·주간 중 더 빡빡한 쪽의 잔여. 새로 시작된 창은 뺀다.
         "min_remaining_percent": min(left) if left else None,
         "five_hour": _window(by_key.get("five_hour"), now, history.get("five_hour")),
@@ -78,7 +80,7 @@ def _cap_remaining(account_id, cap: int, usage: dict[str, Any] | None) -> int | 
     if observed and observed.source == 'muse_cli' and not usage_mod.muse_quota_current(observed, time.time()):
         return None
     remaining = [max(0, cap - window["used_percent"]) for window in (usage["five_hour"], usage["weekly"])
-                 if window and window["remaining_percent"] is not None]
+                 if window and window["remaining_percent"] is not None and window["used_percent"] is not None]
     return min(remaining) if remaining else None
 
 

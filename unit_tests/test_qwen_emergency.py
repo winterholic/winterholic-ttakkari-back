@@ -61,43 +61,70 @@ class EmergencyProfileTests(unittest.TestCase):
 
     def test_engine_and_model(self):
         prof = _qwen_profile()
-        self.assertEqual((prof.engine, prof.model), worker_routing.QWEN_LOCAL)
+        self.assertEqual(prof.engine, "qwen-local")
+        self.assertTrue(prof.model)
 
 
 class RoutingBoundaryTests(unittest.TestCase):
-    def test_qwen_only_in_general_and_routine_last_stage(self):
+    def test_qwen_is_absent_from_every_auto_route_single_emergency_path(self):
+        # RED (반례 2): 평시 auto 경로(ROUTES)에 Qwen이 있으면 초기 비상 분기가
+        # 도달 불가하고 영수증 trigger가 initial로 찍힌다. 유일한 진입로는
+        # _emergency_qwen → emergency_qwen_profile이다.
+        for task, stages in worker_routing.ROUTES.items():
+            self.assertNotIn("qwen-local", [engine for stage in stages for engine, _ in stage],
+                             f"qwen-local must not be an auto stage of {task}")
         for task in ("general", "routine"):
-            stages = worker_routing.ROUTES[task]
-            self.assertIn(worker_routing.QWEN_LOCAL, stages[-1])
-            self.assertNotIn(worker_routing.QWEN_LOCAL,
-                             [m for stage in stages[:-1] for m in stage])
-        for task in ("design", "verification", "reasoning"):
-            self.assertNotIn(worker_routing.QWEN_LOCAL,
-                             [m for stage in worker_routing.ROUTES[task] for m in stage])
+            staged = [entry for stage in worker_routing.policy()[task] for entry in stage]
+            self.assertNotIn("qwen-local", [entry["engine"] for entry in staged])
+
+    def test_first_stage_rejects_qwen_only_candidates(self):
+        # Qwen 후보만으로는 단계 선택이 불가하다(비상 단일 경로를 우회하지 못한다).
+        with self.assertRaises(ValueError):
+            worker_routing.first_stage([_qwen_profile()], "routine")
+
+    def test_emergency_profile_uses_the_configured_model(self):
+        # RED (반례 3의 전제): 비상 프로필 모델이 engine_models 게이트 값과
+        # 같아야 게이트 준수가 가능하다.
+        from ttakkari.config import get_settings
+        expected = get_settings().worker_default_models.get("qwen-local", {}).get("model")
+        prof = _qwen_profile()
+        self.assertEqual(prof.engine, "qwen-local")
+        self.assertEqual(prof.model, expected)
+
+    def test_desk_sessions_are_never_emergency_eligible(self):
+        # 접수(desk)는 별도 _execute_desk → desk.handle 경로이며 desk_qwen을
+        # 쓰므로 작업/기획 비상 대상이 아니다.
+        for pool in ("personal", "work"):
+            for task in ("general", "routine", "design", None):
+                self.assertFalse(worker_routing.qwen_emergency_eligible(
+                    pool=pool, task_type=task, strict_engine=False, session_kind="desk"))
 
 
 class MeasuredCloudBeatsUnknownTests(unittest.TestCase):
     def test_stage_priority_then_measured_then_recovery(self):
-        flash, qwen = _flash_profile(), _qwen_profile()
-        # Nobody measured: earlier stage wins among unknowns (Flash stage 0 beats Qwen last stage).
-        self.assertEqual(worker_routing.first_stage([flash, qwen], "routine"), [flash])
+        # 한도 회복 후 클라우드 복귀: 측정된 클라우드가 미측정 후보를 이긴다.
+        # Qwen은 ROUTES에 없어 first_stage 대상이 아니다(단일 비상 경로).
+        flash = _flash_profile()
+        from ttakkari.runs.worker_routing import NATIVE_SONNET
+        native = profiles.Profile(uuid.uuid4(), "native", NATIVE_SONNET[0], model=NATIVE_SONNET[1])
+        # Nobody measured: earlier stage wins among unknowns (Flash stage 0 beats native stage 3).
+        self.assertEqual(worker_routing.first_stage([flash, native], "routine"), [flash])
         now = time.time()
-        # A measured Qwen beats unknown cloud capacity.
-        usage.seed(qwen.id, usage.Usage(
+        # A measured later-stage cloud beats unknown earlier-stage capacity.
+        usage.seed(native.id, usage.Usage(
             windows=[usage.Window("five_hour", "5h", 10, int(now + 1000)),
                      usage.Window("seven_day", "weekly", 10, int(now + 1000))],
             updated_at=now), refresh=True)
-        self.assertEqual(worker_routing.first_stage([flash, qwen], "routine"), [qwen])
-        # After a fresh measured cloud observation, the cloud stage is first again:
-        # recovery returns to cloud without any manual switch.
+        self.assertEqual(worker_routing.first_stage([flash, native], "routine"), [native])
+        # After a fresh measured earlier-stage observation, the earlier stage wins again.
         usage.seed(flash.id, usage.Usage(
             windows=[usage.Window("agy_gemini_models_5h", "agy_gemini_models", 10, int(now + 1000), 90)],
             updated_at=now), refresh=True)
         try:
-            self.assertEqual(worker_routing.first_stage([flash, qwen], "routine"), [flash])
+            self.assertEqual(worker_routing.first_stage([flash, native], "routine"), [flash])
         finally:
             usage.seed(flash.id, usage.Usage(windows=[], updated_at=now), refresh=True)
-            usage.seed(qwen.id, usage.Usage(windows=[], updated_at=now), refresh=True)
+            usage.seed(native.id, usage.Usage(windows=[], updated_at=now), refresh=True)
 
 
 class LimitSignalTests(unittest.TestCase):
@@ -183,6 +210,20 @@ class DegradedNoteTests(unittest.TestCase):
         self.assertIn("spawn_worker", note)
 
 
+class ShortSystemNoteTests(unittest.TestCase):
+    def test_qwen_task_uses_a_short_contract_note_not_the_cloud_note(self):
+        # RED (반례 7): 클라우드용 시스템 노트(5.6KB)가 Qwen 작업 파일에
+        # 그대로 들어가 6,397자가 된다. Qwen용 짧은 계약만 전달해야 한다.
+        long_cloud_note = "CLOUD-NOTE:" + "x" * 5600
+        short = QwenLocalAdapter.build_short_system_note(
+            outbox="/w/outbox", write_roots=["/w", "/w/outbox"], kind="worker")
+        self.assertLess(len(short), 1000, f"short note must stay small, got {len(short)}")
+        body = QwenLocalAdapter.build_task_contract(
+            system_note=short, prompt="Do the thing.", workspace="/w", turns=20, lineage="new")
+        self.assertLess(len(body), len(long_cloud_note))
+        self.assertIn("Do the thing.", body)
+
+
 class ResumeGuardTests(unittest.TestCase):
     def test_engine_switch_refuses_cross_engine_resume(self):
         self.assertFalse(QwenLocalAdapter.should_resume("provider-conv-1", "antigravity"))
@@ -195,6 +236,24 @@ class ResumeGuardTests(unittest.TestCase):
     def test_missing_id_never_resumes(self):
         self.assertFalse(QwenLocalAdapter.should_resume(None, "qwen-local"))
         self.assertFalse(QwenLocalAdapter.should_resume("", None))
+
+
+class QwenResumeIdWiringTests(unittest.TestCase):
+    """반례 5: should_resume 호출처 없는 죽은 코드 → qwen_resume_id가 호출한다."""
+
+    def test_wiring_calls_should_resume(self):
+        from ttakkari.runs.manager import qwen_resume_id
+        # 엔진 전환이면 저장된 id가 있어도 재사용하지 않는다.
+        self.assertIsNone(qwen_resume_id({"k": "s1"}, "k", "antigravity"))
+        self.assertIsNone(qwen_resume_id({"k": "s1"}, "k", "claude"))
+        # 같은 Qwen 안이면 이어쓴다.
+        self.assertEqual(qwen_resume_id({"k": "s1"}, "k", "qwen-local"), "s1")
+        self.assertEqual(qwen_resume_id({"k": "s1"}, "k", None), "s1")
+        # 없으면 None, legacy 키는 명시 지정 세션의 옛 키를 잇는다.
+        self.assertIsNone(qwen_resume_id({}, "k", None))
+        self.assertEqual(qwen_resume_id({"legacy": "s9"}, "k", None, legacy_key="legacy"), "s9")
+        # 전환이면 legacy도 잇지 않는다.
+        self.assertIsNone(qwen_resume_id({"legacy": "s9"}, "k", "antigravity", legacy_key="legacy"))
 
 
 if __name__ == "__main__":

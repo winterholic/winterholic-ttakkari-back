@@ -30,12 +30,16 @@ SOL = ("codex", "gpt-6.1-sol")
 NATIVE_OPUS = ("claude", "opus")
 
 
-def _qwen_local_model() -> str:
+QWEN_LOCAL_ENGINE = "qwen-local"
+
+
+def qwen_local_model() -> str:
+    """The single configured Qwen model identity (adapter MODEL, engine_models gate, profile)."""
+    from ttakkari.agents.qwen_local import MODEL
     from ttakkari.config import get_settings
-    return get_settings().worker_default_models.get("qwen-local", {}).get("model") or "Qwen3.8-Flash-Next-Q2_K"
+    return get_settings().worker_default_models.get("qwen-local", {}).get("model") or MODEL
 
 
-QWEN_LOCAL = ("qwen-local", "Qwen3.8-Flash-Next-Q2_K")
 # Emergency engine when every usable personal cloud account/model group is
 # usage-limited. Narrow on purpose: Qwen has no cloud quota, no MCP tools and no
 # measured quality baseline, so it only continues general/routine worker runs in
@@ -65,8 +69,12 @@ MUSE_AUTO_ROUTING_ACCEPTED = True
 # Muse shares the first general/routine stage; it is only a candidate while muse_auto_routing is on (see
 # muse_auto_enabled), joins no design/verification/reasoning stage, and its output needs independent verification.
 ROUTES = {
-    "general": ((SONNET, MUSE_SPARK), (FLASH,), (NATIVE_SONNET, LUNA), (QWEN_LOCAL,)),
-    "routine": ((FLASH, MUSE_SPARK), (LUNA,), (SONNET,), (NATIVE_SONNET,), (QWEN_LOCAL,)),
+    # Qwen has no auto stage on purpose: 평시 auto에서는 명시 지정만 Qwen을
+    # 쓰고, 한도 비상은 _emergency_qwen → emergency_qwen_profile 단일 경로로만
+    # 진입한다(trigger "emergency"). ROUTES에 있으면 초기 비상 분기가 도달
+    # 불가하고 영수증 trigger가 initial로 찍힌다(반례 2).
+    "general": ((SONNET, MUSE_SPARK), (FLASH,), (NATIVE_SONNET, LUNA)),
+    "routine": ((FLASH, MUSE_SPARK), (LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "design": ((SONNET,), (NATIVE_SONNET,)),
     "verification": ((LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "reasoning": ((ARGON,), (AGY_OPUS,), (SOL, NATIVE_OPUS)),
@@ -200,15 +208,6 @@ async def availability(db: AsyncSession, task_type: str, pool: str, *, model: st
                     selected = model
             if selected not in settings.engine_models.get(engine, []):
                 continue
-            if engine == "qwen-local":
-                import asyncio
-
-                from ttakkari.runs.manager import QWEN_LOCAL_ADAPTER
-                ready, _reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
-                if ready:
-                    profile_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{pool}")
-                    free.append(profiles.Profile(id=profile_id, name=f"Qwen local ({pool})", engine="qwen-local", model=selected))
-                continue
             ready, waiting = await profiles.availability(db, engine, pool, model=selected)
             free.extend(replace(p, model=selected) for p in ready)
             blocked.extend((replace(p, model=selected), until) for p, until in waiting)
@@ -234,15 +233,6 @@ async def pinned_availability(db: AsyncSession, session_engine: str, pool: str, 
     for stage in stages[1:]:
         for engine, fallback_model in stage:
             if fallback_model not in settings.engine_models.get(engine, []):
-                continue
-            if engine == "qwen-local":
-                import asyncio
-
-                from ttakkari.runs.manager import QWEN_LOCAL_ADAPTER
-                ready, _reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
-                if ready:
-                    profile_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{pool}")
-                    free.append(profiles.Profile(id=profile_id, name=f"Qwen local ({pool})", engine="qwen-local", model=fallback_model))
                 continue
             ready, waiting = await profiles.availability(db, engine, pool, model=fallback_model)
             free.extend(replace(p, model=fallback_model) for p in ready)
@@ -332,9 +322,14 @@ def qwen_orchestrator_degraded_note(queue_dir: str) -> str:
 
 
 def emergency_qwen_profile(pool: str) -> profiles.Profile:
-    """Deterministic local-Qwen candidate for the emergency path (same scheme as routing)."""
+    """Deterministic local-Qwen candidate for the emergency path (same scheme as routing).
+
+    The model is the configured one so the engine_models gate in _emergency_qwen
+    can actually pass (반례 3).
+    """
     return profiles.Profile(id=uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{pool}"),
-                            name=f"Qwen local ({pool})", engine="qwen-local", model=QWEN_LOCAL[1])
+                            name=f"Qwen local ({pool})", engine=QWEN_LOCAL_ENGINE,
+                            model=qwen_local_model())
 
 
 def first_stage(candidates: list[profiles.Profile], task_type: str,

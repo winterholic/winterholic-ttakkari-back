@@ -328,13 +328,17 @@ class RunManager:
         """모든 개인 클라우드 계정이 한도일 때만 로컬 Qwen으로 이어받는다.
 
         (프로필, "ready") 또는 (None, 이유). readiness는 그때그때 확인하고
-        허위로 통과시키지 않는다. 준비되지 않은 Qwen은 대기 사유에만 남는다.
+        허위로 통과시키지 않는다. engine_models 게이트를 준수한다(반례 3):
+        운영자가 qwen-local 모델을 빼면 비상은 발동하지 않고 대기한다.
+        자격 미달(ineligible)은 대기 사유에 Qwen 항목을 남기지 않는다(반례 5).
         """
         from ttakkari.runs import worker_routing
         if not worker_routing.qwen_emergency_eligible(
                 pool=sess.pool, task_type=task_type or sess.worker_task_type,
                 strict_engine=sess.strict_engine, session_kind=sess.kind):
             return None, "ineligible"
+        if worker_routing.qwen_local_model() not in get_settings().engine_models.get("qwen-local", []):
+            return None, "qwen_model_gated"
         ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
         if not ready:
             return None, reason
@@ -447,7 +451,10 @@ class RunManager:
                              for p, u in sorted(blocked, key=lambda b: b[1])],
                 "handoff": (handoff or "")[:WAIT_HANDOFF_CHARS],
             }
-            if qwen_state is not None:
+            # 반례 5: 자격 미달(ineligible)인데도 qwen_local ready:false가 대기
+            # 사유에 찍히지 않게 한다. 비상 자격이 있어 readiness·게이트에서
+            # 막힌 경우만 정확한 사유와 함께 남긴다.
+            if qwen_state is not None and qwen_state != "ineligible":
                 waiting_payload["qwen_local"] = {"ready": False, "reason": qwen_state}
             events.append(db, run, "run.waiting", waiting_payload)
             await self._commit(db, run)
@@ -663,24 +670,27 @@ class RunManager:
                     "mode": "handoff",
                     "detail": "개인 클라우드 계정이 모두 한도라 로컬 Qwen으로 이어서 실행",
                 })
-            if sess.engine == "qwen-local":
-                ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
-                events.append(db, run, "worker.routing", {
-                    "policy": worker_routing.POLICY_VERSION,
-                    "task_type": effective_task_type or "general", "trigger": "initial",
-                    "selected": None, "requested_engine": "qwen-local", "requested_model": QWEN_LOCAL_MODEL,
-                    "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
-                              "workspace_id": str(sess.workspace_id)},
-                    "quota": None, "readiness": reason, "fallback": False,
-                })
+            # 반례 1: 비상 프로필을 잡았으면(profiles 비어 있지 않음) 아래 실패
+            # 분기로 떨어지지 않는다. 작업·기획(degraded) 모두 같은 분기를 돈다.
+            if not profiles:
+                if sess.engine == "qwen-local":
+                    ready, reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
+                    events.append(db, run, "worker.routing", {
+                        "policy": worker_routing.POLICY_VERSION,
+                        "task_type": effective_task_type or "general", "trigger": "initial",
+                        "selected": None, "requested_engine": "qwen-local", "requested_model": QWEN_LOCAL_MODEL,
+                        "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
+                                  "workspace_id": str(sess.workspace_id)},
+                        "quota": None, "readiness": reason, "fallback": False,
+                    })
+                    await self._finish(db, run, RunStatus.failed,
+                                       error=f"Qwen local blocked: {reason if not ready else 'no local worker profile'}")
+                    return
+                what = "엔진" if sess.engine == "auto" else sess.engine
+                where = "회사/개인" if is_meeting else ("회사" if sess.pool == "work" else "개인")
                 await self._finish(db, run, RunStatus.failed,
-                                   error=f"Qwen local blocked: {reason if not ready else 'no local worker profile'}")
+                                   error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
                 return
-            what = "엔진" if sess.engine == "auto" else sess.engine
-            where = "회사/개인" if is_meeting else ("회사" if sess.pool == "work" else "개인")
-            await self._finish(db, run, RunStatus.failed,
-                               error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
-            return
 
         await context_usage.prepare(db, sess, run)
 
@@ -697,7 +707,11 @@ class RunManager:
                 all_candidates = candidates
                 # Muse 탐색은 단계 선택에 들어간 뒤 DB 에서 예약한다. 져서 빠지면 그 후보 없이 단계를 다시 고른다.
                 maybe = frozenset(p.id for p in candidates if profiles_mod.muse_probe_eligible(p))
-                candidates = worker_routing.first_stage(candidates, task_type, maybe)
+                # 비상 단일 경로: 후보가 전부 Qwen이면 ROUTES 단계 선택을 거치지
+                # 않는다(Qwen은 auto 단계가 없다, 반례 2). maybe는 muse만 해당이라
+                # 전부-Qwen이면 비어 있어 아래 probe 분기도 돌지 않는다.
+                if not all(p.engine == "qwen-local" for p in candidates):
+                    candidates = worker_routing.first_stage(candidates, task_type, maybe)
                 if maybe:
                     won = await profiles_mod.claim_muse_probe([p for p in candidates if p.id in maybe])
                     if maybe - won:
@@ -734,9 +748,14 @@ class RunManager:
             )
             if task_type or is_pinned_switched or selected.engine == "qwen-local":
                 _, currently_blocked = await available_profiles()
+                # 비상 Qwen 선택은 명시 지정(sess.engine == "qwen-local")이 아닐 때만
+                # 일어나며, 그때 영수증 trigger는 "emergency"다(반례 2). 명시 지정
+                # Qwen의 첫 선택은 그대로 "initial"이다.
+                trigger = ("emergency" if selected.engine == "qwen-local" and sess.engine != "qwen-local"
+                           else "initial" if not run.started_at else "fallback_or_resume")
                 receipt = worker_routing.receipt(
                     effective_task_type or "general", selected, all_candidates, currently_blocked, counts,
-                    trigger="initial" if not run.started_at else "fallback_or_resume",
+                    trigger=trigger,
                     fallback_from={"engine": primary_pair[0], "model": primary_pair[1]} if is_pinned_switched and primary_pair else None,
                 )
                 if selected.engine == "qwen-local":
@@ -762,10 +781,11 @@ class RunManager:
 
         def lookup_resume_id(profile):
             es = sess.engine_sessions or {}
-            if profile.engine == "qwen-local" and prev_engine not in (None, "qwen-local"):
+            if profile.engine == "qwen-local":
                 # Engine switch: never reuse a provider conversation id as a Qwen
                 # resume id. Progress travels as handoff text instead.
-                return None
+                return qwen_resume_id(es, conversation_key(profile), prev_engine,
+                                      legacy_key=profile.key if profile.engine == sess.engine else None)
             if saved := es.get(conversation_key(profile)):
                 return saved
             # Legacy account-only IDs identify the original model. They cannot be
@@ -896,10 +916,16 @@ class RunManager:
                 run.model, run.effort = model, effort
             else:
                 model, effort = _launch_model(sess, run, prof, profiles[0])
+            # 반례 7: Qwen 작업 파일에는 클라우드용 시스템 노트(5.6KB) 대신 짧은
+            # 계약만 전달한다. 작업 지시(prompt)는 그대로 둔다.
+            note_for_spec = (QWEN_LOCAL_ADAPTER.build_short_system_note(
+                outbox=str(outbox), write_roots=[str(p) for p in write_roots],
+                kind=str(sess.kind))
+                if prof.engine == "qwen-local" else system_note)
             spec = LaunchSpec(
                 cwd=root, prompt=prompt, engine_session_id=resume_id,
                 model=model, effort=effort,
-                outbox=outbox, write_roots=write_roots, system_note=system_note,
+                outbox=outbox, write_roots=write_roots, system_note=note_for_spec,
                 codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers, session_id=str(sess.id),
             )
             adapter = QWEN_LOCAL_ADAPTER if prof.engine == "qwen-local" else ADAPTERS[prof.engine]
@@ -965,6 +991,36 @@ class RunManager:
                 emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type)
                 if emergency is not None:
                     remaining = [emergency]
+            if (not stopped and failed and prof.engine == "qwen-local"
+                    and sess.engine != "qwen-local"
+                    and not (missing or invalid_model)):
+                # 반례 5: 비상 Qwen 자체가 실패하면 바로 failed로 끝내지 않는다.
+                # 회복된 클라우드가 있으면 그리로 이어서 돌고, 전 클라우드 쿨다운이면
+                # 아래 break 뒤 클라우드 초기화 대기로 돌아간다. 명시 지정 Qwen
+                # (sess.engine == "qwen-local")은 기존대로 클라우드로 넘어가지 않는다.
+                free_now, blocked_now = await available_profiles()
+                cloud_free = [p for p in free_now if p.engine != "qwen-local"]
+                if cloud_free:
+                    nxt = await choose(cloud_free, run.id, prefer_engine=prefer, balance_usage=True)
+                    events.append(db, run, "engine.fallback", {
+                        "from": prof.name, "from_engine": "qwen-local", "from_model": model,
+                        "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
+                        "reason": "qwen_failed", "fallback_tier": None,
+                        "detail": (state.error or tail or "")[:500], "reset_at": None,
+                        "mode": "resume" if lookup_resume_id(nxt) else "handoff",
+                    })
+                    attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
+                    if h:
+                        h.stderr_tail.clear()
+                    prev_engine = prof.engine
+                    prof = nxt
+                    remaining = list(cloud_free)
+                    continue
+                if blocked_now:
+                    paused_handoff = await _attempt_handoff(db, run, prof.name, state, tail, 0, waiting=True)
+                    # 대기 사유에는 Qwen 실패를 정확히 남긴다(선택 당시 "ready"가 아님).
+                    qwen_state = "qwen_attempt_failed"
+                    break
             if stopped or not failed or not (missing or limited or invalid_model) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
@@ -1324,6 +1380,27 @@ class RunManager:
 _background: set[asyncio.Task] = set()
 
 
+def qwen_resume_id(engine_sessions: dict | None, key: str, prev_engine: str | None,
+                   legacy_key: str | None = None) -> str | None:
+    """Qwen 대화 이어쓰기 판정. QwenLocalAdapter.should_resume을 호출한다(반례 5: 죽은 코드 연결).
+
+    엔진 전환이면 provider 대화 id를 Qwen resume id로 재사용하지 않고 None을
+    돌려주며, 호출자는 진행 상황을 handoff 텍스트로 실어야 한다. 같은 Qwen
+    안의 연속이면 저장된 대화 id를, 명시 지정 세션의 옛 계정 키는 legacy로 잇는다.
+    key는 호출자의 conversation_key(profile) 그대로 받는다(명시 지정 Qwen은
+    계정 키를 쓰므로 worker_routing 키로 바꾸지 않는다).
+    """
+    saved = (engine_sessions or {}).get(key)
+    if saved:
+        return saved if QwenLocalAdapter.should_resume(saved, prev_engine) else None
+    if legacy_key:
+        legacy = (engine_sessions or {}).get(legacy_key)
+        if legacy and not QwenLocalAdapter.should_resume(legacy, prev_engine):
+            return None
+        return legacy
+    return None
+
+
 def _spawn(coro) -> None:
     # 참조를 잡아 두지 않으면 태스크가 끝나기 전에 GC 될 수 있다.
     task = asyncio.create_task(coro)
@@ -1479,6 +1556,13 @@ async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_
     if is_meeting:
         return await meeting_routing.availability(db)
     if sess.engine == "qwen-local":
+        from ttakkari.runs import worker_routing as _wr
+        # Qwen은 personal scope 전용이다(반례 4: 회사 pool 누설 금지). 명시
+        # 지정도 engine_models 게이트를 따른다(반례 3).
+        if sess.pool != "personal":
+            return [], []
+        if _wr.qwen_local_model() not in get_settings().engine_models.get("qwen-local", []):
+            return [], []
         ready, _reason = await asyncio.to_thread(QWEN_LOCAL_ADAPTER.readiness)
         if not ready or sess.kind != SessionKind.worker:
             return [], []

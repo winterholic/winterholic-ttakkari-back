@@ -72,6 +72,23 @@ class QwenLocalAdapter:
         return previous_engine in (None, "qwen-local")
 
     @staticmethod
+    def build_short_system_note(*, outbox: str, write_roots: list[str], kind: str) -> str:
+        """Qwen용 짧은 계약 (반례 7).
+
+        클라우드용 시스템 노트(비서 지침·도구 안내·고정 기억 5.6KB)를 Qwen 작업
+        파일에 그대로 얹지 않는다. Qwen 하네스는 MCP 없이 좁은 파일 작업만
+        하므로 결과물 위치·허용 쓰기 범위·역할만 전달한다. 작업 지시(prompt)는
+        그대로 둔다.
+        """
+        roots = ", ".join(write_roots)
+        return (
+            "[Qwen local 계약: MCP 없이 좁은 파일 작업만 한다. "
+            f"역할={kind}. 결과물은 outbox에 쓴다: {outbox}. "
+            f"쓸 수 있는 곳: {roots}. "
+            "바깥 쓰기·비밀 읽기·외부망은 OS 샌드박스가 막는다.]"
+        )
+
+    @staticmethod
     def build_task_contract(*, system_note: str, prompt: str, workspace: str,
                             turns: int, lineage: str) -> str:
         """Short machine-built contract: fixed header plus the caller's text verbatim.

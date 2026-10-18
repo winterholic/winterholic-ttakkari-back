@@ -89,16 +89,18 @@ def synthetic(monkeypatch):
 
 
 async def test_qwen_local_routing_contract_and_boundary():
-    """Verify that qwen-local is connected to routine/general fallback while maintaining quality boundaries."""
-    # 1. Routing presence
-    assert any(engine == "qwen-local" for stage in worker_routing.ROUTES["routine"] for engine, _ in stage)
-    assert any(engine == "qwen-local" for stage in worker_routing.ROUTES["general"] for engine, _ in stage)
-
-    # 2. Boundaries: excluded from verification, design, reasoning
-    for high_task in ("verification", "design", "reasoning"):
-        assert not any(engine == "qwen-local" for stage in worker_routing.ROUTES[high_task] for engine, _ in stage), (
-            f"qwen-local must not be routed to {high_task}"
+    """Qwen has no auto stage: the only entry is the emergency path (trigger emergency)."""
+    # 1. Absent from every auto route (반례 2: 평시 auto에서 명시 지정만).
+    for task, stages in worker_routing.ROUTES.items():
+        assert not any(engine == "qwen-local" for stage in stages for engine, _ in stage), (
+            f"qwen-local must not be an auto stage of {task}"
         )
+
+    # 2. Emergency profile carries the configured model (반례 3의 전제).
+    settings = get_settings()
+    assert worker_routing.qwen_local_model() == settings.worker_default_models["qwen-local"]["model"]
+    prof = worker_routing.emergency_qwen_profile("personal")
+    assert (prof.engine, prof.model) == ("qwen-local", worker_routing.qwen_local_model())
 
     # 3. Model engine recognition
     assert profiles.model_engine("Qwen3.8-Flash-Next-Q2_K") == "qwen-local"
@@ -109,35 +111,52 @@ async def test_qwen_local_routing_contract_and_boundary():
     assert worker_routing.needs_independent_verification("general", "Qwen3.8-Flash-Next-Q2_K") is True
 
     # 5. Capacity formatting
-    prof = profiles.Profile(uuid.uuid4(), "qwen", "qwen-local", model="Qwen3.8-Flash-Next-Q2_K")
     cap = worker_routing.capacity(prof, running=0)
     assert cap["engine"] == "qwen-local"
     assert cap["quota_known"] is True
     assert cap["remaining_to_limit_percent"] == 100.0
 
 
-async def test_qwen_local_readiness_guards_availability(monkeypatch):
-    """When Qwen readiness fails (unverified), it must not be added as a candidate."""
+async def test_qwen_local_availability_never_lists_qwen_for_any_pool(monkeypatch):
+    """availability() is cloud-only; Qwen enters only via _emergency_qwen (반례 2·4)."""
+    from types import SimpleNamespace
+
+    from ttakkari.runs import manager as run_manager
+
     async with sessionmaker()() as db:
-        # 1. Mock unverified readiness
-        monkeypatch.setattr(QWEN_LOCAL_ADAPTER, "readiness", lambda: (False, "readiness_contract_unverified"))
-        free, _blocked = await worker_routing.availability(db, "routine", "personal")
-        assert not any(p.engine == "qwen-local" for p in free)
-
-        # 2. Mock ready readiness
+        # Ready Qwen still does not appear in auto availability, personal or work.
         monkeypatch.setattr(QWEN_LOCAL_ADAPTER, "readiness", lambda: (True, "ready"))
-        free, _blocked = await worker_routing.availability(db, "routine", "personal")
-        qwen_candidates = [p for p in free if p.engine == "qwen-local"]
-        assert len(qwen_candidates) == 1
-        assert qwen_candidates[0].model == "Qwen3.8-Flash-Next-Q2_K"
-        selected = worker_routing.first_stage(qwen_candidates, "routine")
-        assert [(p.engine, p.model) for p in selected] == [("qwen-local", "Qwen3.8-Flash-Next-Q2_K")]
+        for pool in ("personal", "work"):
+            free, _blocked = await worker_routing.availability(db, "routine", pool)
+            assert not any(p.engine == "qwen-local" for p in free), pool
 
+        def sess(**kw):
+            base = {"pool": "personal", "worker_task_type": "routine",
+                    "strict_engine": False, "kind": "worker"}
+            base.update(kw)
+            return SimpleNamespace(**base)
+
+        # Emergency fires for personal routine workers when ready and gated in.
+        emergency, state = await run_manager.manager._emergency_qwen(sess(), "routine")
+        assert state == "ready" and emergency is not None
+        assert (emergency.engine, emergency.model) == ("qwen-local", worker_routing.qwen_local_model())
+
+        # Work pool never leaks to the personal local model (반례 4).
+        emergency, state = await run_manager.manager._emergency_qwen(sess(pool="work"), "routine")
+        assert (emergency, state) == (None, "ineligible")
+
+        # engine_models gate is honored (반례 3).
         settings = get_settings()
-        allowed_models = settings.engine_models
-        monkeypatch.setattr(settings, "engine_models", {**allowed_models, "qwen-local": []})
-        gated, _blocked = await worker_routing.availability(db, "routine", "personal")
-        assert not any(p.engine == "qwen-local" for p in gated)
+        monkeypatch.setattr(settings, "engine_models", {**settings.engine_models, "qwen-local": []})
+        emergency, state = await run_manager.manager._emergency_qwen(sess(), "routine")
+        assert (emergency, state) == (None, "qwen_model_gated")
+
+        # Unready Qwen reports its reason instead of a profile.
+        monkeypatch.setattr(QWEN_LOCAL_ADAPTER, "readiness", lambda: (False, "readiness_contract_unverified"))
+        monkeypatch.setattr(settings, "engine_models", {**settings.engine_models,
+                                                        "qwen-local": [worker_routing.qwen_local_model()]})
+        emergency, state = await run_manager.manager._emergency_qwen(sess(), "routine")
+        assert (emergency, state) == (None, "readiness_contract_unverified")
 
 
 async def test_quota_wait_saves_handoff_and_frees_slot_and_dispatches_when_recovered(

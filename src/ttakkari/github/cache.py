@@ -18,6 +18,7 @@ class Entry:
     size: int
     expires: float
     login: str
+    validated: float  # 상류에서 받았거나 304 로 다시 확인된 시각(clock). stale 최대 나이의 기준
 
 
 class TTLCache:
@@ -48,7 +49,8 @@ class TTLCache:
         if size > self._max_bytes:
             return
         self._drop(key)
-        self._data[key] = Entry(payload, size, self._clock() + ttl, login)
+        now = self._clock()
+        self._data[key] = Entry(payload, size, now + ttl, login, now)
         self._bytes += size
         while len(self._data) > self._max_entries or self._bytes > self._max_bytes:
             self._drop(next(iter(self._data)))
@@ -56,7 +58,18 @@ class TTLCache:
     def touch(self, key: tuple, ttl: float) -> None:
         entry = self._data.get(key)
         if entry is not None:
-            entry.expires = self._clock() + ttl
+            now = self._clock()
+            entry.expires, entry.validated = now + ttl, now
+
+    def age(self, entry: Entry) -> float:
+        return self._clock() - entry.validated
+
+    def drop(self, key: tuple) -> None:
+        self._drop(key)
+
+    def drop_where(self, match: Callable[[tuple], bool]) -> None:
+        for key in [k for k in self._data if match(k)]:
+            self._drop(key)
 
     def clear(self) -> None:
         self._data.clear()

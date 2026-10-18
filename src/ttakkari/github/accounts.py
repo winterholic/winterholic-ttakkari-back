@@ -4,6 +4,9 @@
 - 허용 gh 호출은 둘뿐이다: `auth status --json hosts`(메타데이터), `auth token --hostname github.com --user <login>`.
   셸 없이 배열로 실행하고, 인자 형태를 실행 직전에 다시 검사한다.
 - 토큰은 `Secret`으로만 다룬다(repr 마스킹, pickle 거부). 메모리에서만 300초 보관한다.
+- `auth status` 의 일시 실패(타임아웃·읽을 수 없는 출력)는 "계정이 모두 사라짐"이 아니다. 실패한 동안은 마지막으로 확인한 목록을
+  STATUS_GRACE 안에서만 쓰고 캐시·토큰은 비우지 않는다. 지나면 `no_account`(reason `gh_status_failed`)로 알린다.
+  목록을 정상으로 읽었는데 비어 있으면(예: 모두 로그아웃) 그때는 기존대로 즉시 폐기한다.
 """
 from __future__ import annotations
 
@@ -21,6 +24,8 @@ from ttakkari.github.errors import GithubError
 
 GH_HOST = "github.com"
 GH_TIMEOUT = 5.0
+# 마지막으로 정상 확인한 계정 목록을 gh 상태 조회 실패 중에도 쓰는 최대 시간. 토큰 보관(300초)과 같게 둔다.
+STATUS_GRACE = 300.0
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-.]{8,512}$")
 _STRIP_ENV = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST")
 _GH_CANDIDATES = ("/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh")
@@ -116,6 +121,8 @@ class AccountRegistry:
         self._gap = min_refresh_gap
         self._accounts: list[AccountInfo] = []
         self._listed_at: float | None = None
+        self._verified_at: float | None = None  # 마지막으로 목록을 정상으로 읽은 시각
+        self._status_failed = False
         self._lock = asyncio.Lock()
         self._tokens: dict[str, tuple[Secret, float]] = {}
         self._removed: list[Callable[[str], None]] = []
@@ -131,14 +138,19 @@ class AccountRegistry:
         return gh
 
     @staticmethod
-    def _parse(out: bytes) -> list[AccountInfo]:
+    def _parse(out: bytes) -> list[AccountInfo] | None:
+        """정상 출력이면 목록(빈 목록 포함), 읽을 수 없는 출력이면 None(일시 실패와 "계정 없음"을 구분한다)."""
         try:
-            hosts = json.loads(out.decode("utf-8", "replace")).get("hosts", {})
-            rows = hosts.get(GH_HOST, []) if isinstance(hosts, dict) else []
-        except (ValueError, AttributeError):
-            return []
+            hosts = json.loads(out.decode("utf-8", "replace")).get("hosts")
+        except (ValueError, AttributeError, RecursionError):
+            return None
+        if not isinstance(hosts, dict):
+            return None
+        rows = hosts.get(GH_HOST, [])
+        if not isinstance(rows, list):
+            return None
         found: dict[str, AccountInfo] = {}
-        for row in rows if isinstance(rows, list) else []:
+        for row in rows:
             if not isinstance(row, dict):
                 continue
             login = row.get("login")
@@ -151,15 +163,26 @@ class AccountRegistry:
                 state="success" if row.get("state") == "success" else "error")
         return list(found.values())
 
+    def _usable(self, now: float) -> list[AccountInfo]:
+        if self._status_failed and (self._verified_at is None or now - self._verified_at > STATUS_GRACE):
+            raise GithubError(
+                "no_account", "gh 계정 상태를 확인하지 못했습니다(gh auth status 실패). 잠시 뒤 다시 시도하거나 Mac Studio의 gh를 확인하세요.",
+                reason="gh_status_failed")
+        return list(self._accounts)
+
     async def list_accounts(self, *, force: bool = False) -> list[AccountInfo]:
         async with self._lock:
             now = self._clock()
             if not force and self._listed_at is not None and now - self._listed_at < self._list_ttl:
-                return list(self._accounts)
-            code, out = await self._runner([self._bin(), "auth", "status", "--json", "hosts"])
-            fresh = self._parse(out) if code == 0 else []
+                return self._usable(now)
+            _, out = await self._runner([self._bin(), "auth", "status", "--json", "hosts"])
+            fresh = self._parse(out)  # 종료코드가 아니라 출력이 읽히는지로 판단한다(계정 하나가 만료여도 목록은 나온다)
+            if fresh is None:
+                self._status_failed = True
+                self._listed_at = now - self._list_ttl + self._gap  # 실패 뒤에는 gap 초 안에 다시 읽지 않는다
+                return self._usable(now)
             gone = {a.login for a in self._accounts} - {a.login for a in fresh}
-            self._accounts, self._listed_at = fresh, now
+            self._accounts, self._listed_at, self._verified_at, self._status_failed = fresh, now, now, False
             for login in gone:
                 self._tokens.pop(login, None)
                 for cb in self._removed:

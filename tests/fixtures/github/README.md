@@ -17,14 +17,14 @@
 ```
 
 - `page`는 목록 응답에만 있다. `has_more`로 "더 보기"를 판단한다(개수로 판단하지 말 것: 이슈는 PR을 걸러내 페이지당 개수가 줄 수 있다). 다음 페이지는 `page+1`.
-- `stale:true` = 상류 실패(한도·타임아웃·5xx) 때문에 만료된 캐시를 대신 낸 것. 화면에 "오래된 데이터" 표시.
+- `stale:true` = 상류 실패(한도·타임아웃·5xx) 때문에 만료된 캐시를 대신 낸 것. 화면에 "오래된 데이터" 표시. 마지막으로 상류에서 받았거나 304로 다시 확인한 지 **10분**(STALE_MAX_AGE)이 지난 항목은 내지 않고 오류를 낸다. 401·403(한도 아님)·404·410·451을 본 항목은 stale로도 다시 나오지 않는다.
 - `rate.low` = 남은 호출 100 이하.
 
 오류 본문(앱 공통 `{code,message}` + 추가 필드). **상류 401은 절대 401로 오지 않는다**(`gh_auth_expired`=502).
 
 | code | HTTP | 추가 필드 | UI |
 |---|---|---|---|
-| `no_account` | 503 | | gh 로그인 안내 |
+| `no_account` | 503 | `gh_status_failed`(선택) | gh 로그인 안내. `reason: gh_status_failed`면 로그인 문제가 아니라 gh 계정 상태 조회가 일시 실패한 것(마지막 확인 목록은 5분까지 계속 쓰고, 그 뒤에야 이 오류) |
 | `account_unavailable` | 404 | | 계정 선택 화면 |
 | `invalid_target` / `unsupported_host` | 422 | | 입력 오류 |
 | `ref_not_found` | 404 | | 브랜치/태그/커밋 없음 |
@@ -34,7 +34,7 @@
 | `gh_auth_expired` | 502 | | 만료: Mac Studio 재로그인 |
 | `gh_rate_limited` | 429 + `Retry-After` | `reset`(epoch 초), `retry_after`(초) | 한도 카운트다운 |
 | `gh_gone` / `gh_unavailable_legal` | 410 / 451 | | |
-| `gh_unprocessable` | 422 | | GitHub에서 열기 |
+| `gh_unprocessable` | 422 | `ref_resolution_limit`(resolve 한정, 선택) | GitHub에서 열기. `resolve`에서 reason이 `ref_resolution_limit`이면 같은 접두사 브랜치·태그가 너무 많고 이름이 깊어 확인하지 못한 것(없다는 뜻이 아님) |
 | `gh_empty_repository` | 409 | | 빈 저장소 |
 | `gh_too_large` | 413 | | GitHub에서 열기 |
 | `gh_timeout` / `gh_upstream_error` / `gh_schema_changed` | 504 / 502 / 502 | | 오류+재시도 |
@@ -46,7 +46,7 @@
 | 경로 | 쿼리 | data |
 |---|---|---|
 | GET `/accounts` | `probe=true`(선택) | 봉투 없음: `{"accounts":[AccountOut], "gh_available":bool, "fetched_at"}` — `account` 불필요. gh를 못 찾으면 `accounts:[]`+`gh_available:false`(500 아님) |
-| GET `/resolve` | `q`, `account`(선택) | 봉투 없음: `ResolveOut`. tree/blob URL의 ref에 `/`가 있으면 account가 있어야 실제 브랜치로 해석, 없으면 `needs_ref_resolution:true` |
+| GET `/resolve` | `q`, `account`(선택) | 봉투 없음: `ResolveOut`. tree/blob URL의 ref에 `/`가 있으면 account가 있어야 실제 브랜치로 해석, 없으면 `needs_ref_resolution:true`. account가 있으면 `HEAD`(→기본 브랜치 이름), 실제 브랜치·태그, 7~39자 약식 SHA(→커밋 조회로 확인한 전체 SHA)를 지원하고 존재하지 않는 SHA는 `ref_not_found`. 40자 SHA는 호출 없이 인정 |
 | GET `/me` | | `api/me.json` |
 | GET `/me/orgs` | page, per_page | `api/orgs.json` |
 | GET `/me/repos` | sort(updated\|created\|pushed\|full_name), page, per_page | `api/repos.json` |

@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from typing import Annotated, Literal
-from urllib.parse import quote
 
 from fastapi import APIRouter, Query
 
-from ttakkari.github import targets, views
+from ttakkari.github import refs, targets, views
+from ttakkari.github.client import under_deadline
 from ttakkari.github.errors import GithubError
 from ttakkari.github.routes_common import (
     Account,
@@ -36,7 +36,7 @@ RepoSort = Annotated[Literal["created", "updated", "pushed", "full_name"], Query
 async def accounts(svc: Gh, probe: bool = False) -> dict:
     """gh 계정 메타데이터. probe=true 는 토큰을 받을 수 있는지만 확인한다(값은 어디에도 없다)."""
     try:
-        rows = await svc.registry.list_accounts()
+        rows = await under_deadline(svc.registry.list_accounts())
         available = True
     except GithubError as e:
         if e.code != "no_account":
@@ -44,7 +44,7 @@ async def accounts(svc: Gh, probe: bool = False) -> dict:
         rows, available = [], False
     out = []
     for a in rows:
-        token_ok = await svc.registry.probe(a.login) if probe and a.state == "success" else None
+        token_ok = await under_deadline(svc.registry.probe(a.login)) if probe and a.state == "success" else None
         out.append(AccountOut(login=a.login, host=a.host, active=a.active, scopes=a.scopes, state=a.state,
                               token_available=token_ok, rate=svc.client.rate_of(a.login)))
     return {"accounts": out, "gh_available": available, "fetched_at": now_iso()}
@@ -56,25 +56,8 @@ async def resolve(svc: Gh, q: Annotated[str, Query(max_length=4096)], account: O
     if not out.needs_ref_resolution or account is None:
         return out
     login = await ident(svc, account)
-    assert out.repo is not None and out.ref_path is not None
-    first = out.ref_path.split("/", 1)[0]
-    refs: list[str] = []
-    if not targets.SHA_RE.fullmatch(first):
-        targets.ref(first)
-        for kind in ("heads", "tags"):
-            path = f"/repos/{out.owner}/{out.repo}/git/matching-refs/{kind}/{quote(first, safe='')}"
-            try:
-                up = await svc.client.get(login, "matching_refs", path, params={"per_page": 100}, ttl=60)
-            except GithubError as e:
-                if e.code == "gh_not_found":
-                    continue  # 접두사에 맞는 ref 가 없을 때 404 를 주는 경우
-                raise
-            prefix = f"refs/{kind}/"
-            data = up.json()
-            refs += [r["ref"][len(prefix):] for r in data if isinstance(r, dict) and isinstance(r.get("ref"), str)
-                     and r["ref"].startswith(prefix)] if isinstance(data, list) else []
     try:
-        return targets.with_ref(out, refs)
+        return await refs.resolve_ref(svc, login, out)
     except GithubError as e:
         if e.code == "ref_not_found":
             # 저장소 자체가 안 보이면 ref 오류가 아니라 권한/없음 오류가 맞다.
@@ -96,8 +79,9 @@ async def my_orgs(svc: Gh, account: Account, page: PageQ = 1, per_page: PerPageQ
     login = await ident(svc, account)
     up = await svc.client.get(login, "user_orgs", "/user/orgs", params={"page": page, "per_page": per_page}, ttl=60)
     data = up.json()
-    return envelope(up, [views.view_org_ref(o) for o in data] if isinstance(data, list) else [], login,
-                    page=page_meta(up, page, per_page))
+    if not isinstance(data, list):  # 빈 목록으로 위장하지 않는다(조직이 없는 것과 상류 형식 변경은 다르다)
+        raise GithubError("gh_schema_changed")
+    return envelope(up, [views.view_org_ref(o) for o in data], login, page=page_meta(up, page, per_page))
 
 
 def _repos(up_json) -> list[RepoSummary]:

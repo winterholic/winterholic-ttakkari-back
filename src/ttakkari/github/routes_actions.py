@@ -11,6 +11,7 @@ from ttakkari.github.logs import view_log_window
 from ttakkari.github.routes_common import (
     Account,
     Gh,
+    GhLogs,
     PageQ,
     PerPageQ,
     envelope,
@@ -71,7 +72,7 @@ async def jobs(owner: str, repo: str, run_id: str, svc: Gh, account: Account, fi
 
 
 @router.get("/repos/{owner}/{repo}/actions/jobs/{job_id}/logs", response_model=Envelope[LogWindow])
-async def job_logs(owner: str, repo: str, job_id: str, svc: Gh, account: Account,
+async def job_logs(owner: str, repo: str, job_id: str, svc: GhLogs, account: Account,
                    from_line: Annotated[int, Query(ge=1, le=10_000_000)] = 1,
                    lines: Annotated[int, Query(ge=1, le=2000)] = 500) -> dict:
     o, r, jid = targets.owner(owner), targets.repo(repo), targets.big_id(job_id)

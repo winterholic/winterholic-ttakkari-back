@@ -16,7 +16,12 @@ from urllib.parse import urlsplit
 import httpx
 
 from ttakkari.github.cache import TTLCache
-from ttakkari.github.client import USER_AGENT, GithubClient
+from ttakkari.github.client import (
+    USER_AGENT,
+    GithubClient,
+    current_deadline,
+    under_deadline,
+)
 from ttakkari.github.errors import GithubError
 from ttakkari.github.schemas import LogWindow
 from ttakkari.oplog.scrub import MASK, scrub
@@ -30,8 +35,11 @@ MAX_LINE = 20_000
 LOG_TTL = 120.0
 _HOST_SUFFIX = ".githubusercontent.com"
 _AZURE_RESULTS = re.compile(r"^productionresultssa[0-9]+\.blob\.core\.windows\.net$")
-_PEM_BEGIN = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
-_PEM_END = re.compile(r"-----END [A-Z ]*PRIVATE KEY-----")
+_PEM_BEGIN = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----")  # PGP 는 "PRIVATE KEY BLOCK"
+_PEM_END = re.compile(r"-----END [A-Z ]*PRIVATE KEY(?: BLOCK)?-----")
+# oplog.scrub 가 놓치는 형식(검증 V11d): Azure SAS 서명(`sig=`, GitHub 로그 다운로드 URL 이 이 형태)과 Stripe 비밀 키.
+_SAS_SIG = re.compile(r"(?<![A-Za-z0-9_])(sig=)[^&\s\"'<>]+")
+_STRIPE = re.compile(r"\b[sr]k_(?:live|test)_[0-9A-Za-z]{10,}")
 
 
 class _RedactQuery(logging.Filter):
@@ -87,7 +95,7 @@ def mask_private_keys(lines: list[str]) -> list[str]:
 
 def mask_lines(lines: list[str]) -> list[str]:
     """줄 번호를 유지한 채 비밀을 가린다. 개인키 블록은 로그 전체 단위(mask_private_keys)로 이미 가렸고, 나머지는 창 단위로 한 번에 scrub 한다."""
-    out = mask_private_keys(lines)
+    out = [_STRIPE.sub(MASK, _SAS_SIG.sub(rf"\1{MASK}", line)) for line in mask_private_keys(lines)]
     masked = scrub("\n".join(out)).split("\n")
     if len(masked) == len(out):
         return masked
@@ -132,19 +140,24 @@ class LogFetcher:
                 timeout=httpx.Timeout(connect=3.0, read=10.0, write=5.0, pool=3.0))
         return self._dl
 
+    @property
+    def budget(self) -> float:
+        return self._budget
+
     async def aclose(self) -> None:
         if self._dl is not None:
             await self._dl.aclose()
             self._dl = None
 
     async def lines(self, login: str, owner: str, repo: str, job_id: int) -> tuple[str, list[str]]:
-        info = await self._client.registry.require(login)
+        loop = asyncio.get_running_loop()
+        scoped = current_deadline.get()  # 라우트 마감이 있으면 그것을, 없으면(직접 호출) 이 호출의 예산을 쓴다
+        deadline = scoped if scoped is not None else loop.time() + self._budget
+        info = await under_deadline(self._client.registry.require(login))
         key = (info.login, owner, repo, job_id)
         entry, fresh = self._cache.get(key)
         if entry is not None and fresh:
             return info.login, entry.payload
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self._budget
         up = await self._client.get(info.login, "job_logs", f"/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
                                     statuses=(302,), budget=self._budget, max_bytes=MAX_LOG_BYTES, ttl=0)
         if up.status == 302:

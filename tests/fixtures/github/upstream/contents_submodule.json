@@ -1,0 +1,10 @@
+{
+  "type": "submodule",
+  "submodule_git_url": "https://github.com/acme/vendor-lib.git",
+  "size": 0,
+  "name": "vendor",
+  "path": "src/vendor",
+  "sha": "3333333333333333333333333333333333333333",
+  "url": "u",
+  "html_url": "h"
+}

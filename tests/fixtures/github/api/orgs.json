@@ -1,0 +1,14 @@
+[
+  {
+    "login": "acme",
+    "id": 2,
+    "description": "We make things",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4"
+  },
+  {
+    "login": "zeta",
+    "id": 3,
+    "description": null,
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4"
+  }
+]

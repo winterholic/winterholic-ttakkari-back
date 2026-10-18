@@ -1,0 +1,26 @@
+[
+  {
+    "ref": "refs/heads/feature/login-ui",
+    "node_id": "x",
+    "url": "u",
+    "object": {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "type": "commit",
+      "url": "u"
+    }
+  },
+  {
+    "ref": "refs/heads/feature",
+    "object": {
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "type": "commit"
+    }
+  },
+  {
+    "ref": "refs/heads/feature-x",
+    "object": {
+      "sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "type": "commit"
+    }
+  }
+]

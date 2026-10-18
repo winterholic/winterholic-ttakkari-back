@@ -1,0 +1,39 @@
+{
+  "id": 10,
+  "name": "widget",
+  "full_name": "acme/widget",
+  "owner": {
+    "login": "acme",
+    "type": "Organization",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "html_url": "https://github.com/acme"
+  },
+  "private": true,
+  "visibility": "private",
+  "description": "A widget",
+  "fork": false,
+  "archived": false,
+  "disabled": false,
+  "is_template": false,
+  "language": "Python",
+  "stargazers_count": 7,
+  "forks_count": 1,
+  "open_issues_count": 4,
+  "default_branch": "main",
+  "pushed_at": "2026-10-17T00:00:00Z",
+  "updated_at": "2026-10-17T01:00:00Z",
+  "html_url": "https://github.com/acme/widget",
+  "homepage": null,
+  "topics": [
+    "cli",
+    "python"
+  ],
+  "license": "MIT License",
+  "size_kb": 1234,
+  "has_issues": true,
+  "permissions": {
+    "admin": false,
+    "push": true,
+    "pull": true
+  }
+}

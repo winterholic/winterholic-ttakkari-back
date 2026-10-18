@@ -1,0 +1,54 @@
+{
+  "id": 10,
+  "node_id": "R_1",
+  "name": "widget",
+  "full_name": "acme/widget",
+  "private": true,
+  "owner": {
+    "login": "acme",
+    "id": 1,
+    "node_id": "MDQ6VXNlcjE=",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "url": "https://api.github.com/users/acme",
+    "html_url": "https://github.com/acme",
+    "type": "Organization",
+    "site_admin": false,
+    "followers_url": "x"
+  },
+  "html_url": "https://github.com/acme/widget",
+  "description": "A widget",
+  "fork": false,
+  "url": "https://api.github.com/repos/acme/widget",
+  "archived": false,
+  "disabled": false,
+  "is_template": false,
+  "visibility": "private",
+  "language": "Python",
+  "stargazers_count": 7,
+  "forks_count": 1,
+  "open_issues_count": 4,
+  "default_branch": "main",
+  "pushed_at": "2026-10-17T00:00:00Z",
+  "updated_at": "2026-10-17T01:00:00Z",
+  "homepage": "",
+  "topics": [
+    "cli",
+    "python"
+  ],
+  "license": {
+    "key": "mit",
+    "name": "MIT License",
+    "spdx_id": "MIT"
+  },
+  "size": 1234,
+  "has_issues": true,
+  "permissions": {
+    "admin": false,
+    "maintain": false,
+    "push": true,
+    "triage": true,
+    "pull": true
+  },
+  "clone_url": "https://github.com/acme/widget.git",
+  "temp_clone_token": "MUST_NOT_LEAK_TOKEN_VALUE"
+}

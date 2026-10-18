@@ -1,0 +1,81 @@
+{
+  "type": "dir",
+  "size": 0,
+  "name": "src",
+  "path": "src",
+  "sha": "ffffffffffffffffffffffffffffffffffffffff",
+  "url": "u",
+  "html_url": "h",
+  "entries": [
+    {
+      "type": "file",
+      "size": 10,
+      "name": "zeta.py",
+      "path": "src/zeta.py",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "url": "u",
+      "git_url": "u",
+      "html_url": "https://github.com/acme/widget/blob/main/src/zeta.py",
+      "download_url": "https://raw.githubusercontent.com/acme/widget/main/src/zeta.py",
+      "_links": {
+        "self": "u"
+      }
+    },
+    {
+      "type": "dir",
+      "size": 0,
+      "name": "Util",
+      "path": "src/Util",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "url": "u",
+      "git_url": "u",
+      "html_url": "https://github.com/acme/widget/blob/main/src/Util",
+      "download_url": null,
+      "_links": {
+        "self": "u"
+      }
+    },
+    {
+      "type": "file",
+      "size": 20,
+      "name": "alpha.py",
+      "path": "src/alpha.py",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "url": "u",
+      "git_url": "u",
+      "html_url": "https://github.com/acme/widget/blob/main/src/alpha.py",
+      "download_url": "https://raw.githubusercontent.com/acme/widget/main/src/alpha.py",
+      "_links": {
+        "self": "u"
+      }
+    },
+    {
+      "type": "symlink",
+      "size": 5,
+      "name": "link",
+      "path": "src/link",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "url": "u",
+      "git_url": "u",
+      "html_url": "https://github.com/acme/widget/blob/main/src/link",
+      "download_url": "https://raw.githubusercontent.com/acme/widget/main/src/link",
+      "_links": {
+        "self": "u"
+      }
+    },
+    {
+      "type": "submodule",
+      "size": 0,
+      "name": "vendor",
+      "path": "src/vendor",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "url": "u",
+      "git_url": "u",
+      "html_url": "https://github.com/acme/widget/blob/main/src/vendor",
+      "download_url": "https://raw.githubusercontent.com/acme/widget/main/src/vendor",
+      "_links": {
+        "self": "u"
+      }
+    }
+  ]
+}

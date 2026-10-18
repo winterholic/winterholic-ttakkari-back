@@ -1,0 +1,17 @@
+[
+  {
+    "login": "acme",
+    "id": 2,
+    "node_id": "x",
+    "url": "u",
+    "repos_url": "u",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "description": "We make things"
+  },
+  {
+    "login": "zeta",
+    "id": 3,
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "description": null
+  }
+]

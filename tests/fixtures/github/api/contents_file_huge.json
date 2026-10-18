@@ -1,0 +1,21 @@
+{
+  "kind": "file",
+  "path": "big.log",
+  "ref": null,
+  "entries": null,
+  "entries_limit_hit": false,
+  "file": {
+    "name": "big.log",
+    "path": "big.log",
+    "sha": "1111111111111111111111111111111111111111",
+    "size": 5242880,
+    "html_url": "https://github.com/acme/widget/blob/main/big.log",
+    "binary": false,
+    "too_large": true,
+    "truncated": false,
+    "text": null,
+    "line_count": null
+  },
+  "symlink_target": null,
+  "submodule": null
+}

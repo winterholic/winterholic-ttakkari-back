@@ -1,0 +1,16 @@
+{
+  "type": "file",
+  "encoding": "base64",
+  "size": 16,
+  "name": "logo.png",
+  "path": "logo.png",
+  "content": "iVBORw0KGgoAAAANSUhEUg==\n",
+  "sha": "1111111111111111111111111111111111111111",
+  "url": "u",
+  "git_url": "u",
+  "html_url": "https://github.com/acme/widget/blob/main/logo.png",
+  "download_url": "d",
+  "_links": {
+    "self": "u"
+  }
+}

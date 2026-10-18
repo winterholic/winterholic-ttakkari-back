@@ -1,0 +1,31 @@
+{
+  "id": 500,
+  "name": "CI",
+  "display_title": "Merge pull request #7",
+  "run_number": 42,
+  "run_attempt": 2,
+  "event": "push",
+  "status": "completed",
+  "conclusion": "failure",
+  "head_branch": "main",
+  "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "workflow_id": 9,
+  "path": ".github/workflows/ci.yml@refs/heads/main",
+  "actor": {
+    "login": "octo",
+    "type": "User",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "html_url": "https://github.com/octo"
+  },
+  "created_at": "2026-10-17T00:00:00Z",
+  "run_started_at": "2026-10-17T00:00:05Z",
+  "updated_at": "2026-10-17T00:10:00Z",
+  "html_url": "https://github.com/acme/widget/actions/runs/500",
+  "triggering_actor": {
+    "login": "rev",
+    "type": "User",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "html_url": "https://github.com/rev"
+  },
+  "head_commit_message": "Merge pull request #7"
+}

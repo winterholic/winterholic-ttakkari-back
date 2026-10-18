@@ -1,0 +1,21 @@
+{
+  "kind": "file",
+  "path": "README.md",
+  "ref": null,
+  "entries": null,
+  "entries_limit_hit": false,
+  "file": {
+    "name": "README.md",
+    "path": "README.md",
+    "sha": "1111111111111111111111111111111111111111",
+    "size": 8,
+    "html_url": "https://github.com/acme/widget/blob/main/README.md",
+    "binary": false,
+    "too_large": false,
+    "truncated": false,
+    "text": "# Hello\n",
+    "line_count": 1
+  },
+  "symlink_target": null,
+  "submodule": null
+}

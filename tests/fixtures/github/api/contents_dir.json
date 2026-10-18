@@ -1,0 +1,51 @@
+{
+  "kind": "dir",
+  "path": "src",
+  "ref": "main",
+  "entries": [
+    {
+      "name": "Util",
+      "path": "src/Util",
+      "type": "dir",
+      "size": 0,
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "html_url": "https://github.com/acme/widget/blob/main/src/Util"
+    },
+    {
+      "name": "alpha.py",
+      "path": "src/alpha.py",
+      "type": "file",
+      "size": 20,
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "html_url": "https://github.com/acme/widget/blob/main/src/alpha.py"
+    },
+    {
+      "name": "link",
+      "path": "src/link",
+      "type": "symlink",
+      "size": 5,
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "html_url": "https://github.com/acme/widget/blob/main/src/link"
+    },
+    {
+      "name": "vendor",
+      "path": "src/vendor",
+      "type": "submodule",
+      "size": 0,
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "html_url": "https://github.com/acme/widget/blob/main/src/vendor"
+    },
+    {
+      "name": "zeta.py",
+      "path": "src/zeta.py",
+      "type": "file",
+      "size": 10,
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "html_url": "https://github.com/acme/widget/blob/main/src/zeta.py"
+    }
+  ],
+  "entries_limit_hit": false,
+  "file": null,
+  "symlink_target": null,
+  "submodule": null
+}

@@ -1,0 +1,97 @@
+{
+  "url": "u",
+  "id": 100,
+  "node_id": "x",
+  "html_url": "https://github.com/acme/widget/pull/7",
+  "number": 7,
+  "state": "open",
+  "locked": false,
+  "title": "Add login UI",
+  "user": {
+    "login": "octo",
+    "id": 1,
+    "node_id": "MDQ6VXNlcjE=",
+    "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+    "url": "https://api.github.com/users/octo",
+    "html_url": "https://github.com/octo",
+    "type": "User",
+    "site_admin": false,
+    "followers_url": "x"
+  },
+  "body": "## Summary\nDoes things",
+  "created_at": "2026-10-01T00:00:00Z",
+  "updated_at": "2026-10-02T00:00:00Z",
+  "closed_at": null,
+  "merged_at": null,
+  "labels": [
+    {
+      "id": 1,
+      "name": "bug",
+      "color": "d73a4a",
+      "default": true,
+      "description": "d"
+    },
+    {
+      "id": 2,
+      "name": "ui",
+      "color": "0075ca"
+    }
+  ],
+  "draft": false,
+  "head": {
+    "label": "acme:feature/login-ui",
+    "ref": "feature/login-ui",
+    "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "user": {
+      "login": "acme",
+      "id": 1,
+      "node_id": "MDQ6VXNlcjE=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+      "url": "https://api.github.com/users/acme",
+      "html_url": "https://github.com/acme",
+      "type": "User",
+      "site_admin": false,
+      "followers_url": "x"
+    },
+    "repo": {
+      "full_name": "acme/widget",
+      "clone_url": "c"
+    }
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repo": {
+      "full_name": "acme/widget"
+    }
+  },
+  "merged": false,
+  "mergeable": null,
+  "mergeable_state": "unknown",
+  "merged_by": null,
+  "comments": 2,
+  "review_comments": 1,
+  "commits": 3,
+  "additions": 120,
+  "deletions": 30,
+  "changed_files": 4,
+  "requested_reviewers": [
+    {
+      "login": "rev",
+      "id": 1,
+      "node_id": "MDQ6VXNlcjE=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+      "url": "https://api.github.com/users/rev",
+      "html_url": "https://github.com/rev",
+      "type": "User",
+      "site_admin": false,
+      "followers_url": "x"
+    }
+  ],
+  "assignees": [],
+  "_links": {
+    "self": "u"
+  },
+  "auto_merge": null
+}

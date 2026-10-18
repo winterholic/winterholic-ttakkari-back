@@ -89,3 +89,28 @@ def test_phase_notes_cannot_self_approve_independent_verification(tmp_path):
     stages = tasks.progress_stages(tmp_path)
     assert next(s for s in stages if s['key'] == 'observe')['status'] == 'done'
     assert next(s for s in stages if s['key'] == 'verify')['status'] == 'pending'
+
+
+def test_required_failure_cannot_be_hidden_by_an_unrelated_success(tmp_path):
+    data = report(tmp_path)
+    (tmp_path / 'failed.log').write_text('regression failed\n')
+    data['verdict'] = 'passed'
+    data['checks'].append({'command': 'pytest regression', 'exit_code': 1, 'log': 'failed.log'})
+    assert tasks.validate_report(tmp_path, data)['ready'] is False
+
+
+def test_optional_unavailable_check_requires_explicit_reason(tmp_path):
+    data = report(tmp_path)
+    (tmp_path / 'unavailable.log').write_text('No module named pytest\n')
+    diagnostic = {'command': 'python -m pytest', 'exit_code': 1, 'log': 'unavailable.log', 'required': False}
+    data['checks'].append(diagnostic)
+    assert tasks.validate_report(tmp_path, data)['ready'] is False
+    diagnostic['reason'] = '기본 Python에는 pytest가 없어 설치된 venv에서 전체 검사를 별도로 실행했다.'
+    assert tasks.validate_report(tmp_path, data)['ready'] is True
+
+
+def test_observed_error_cases_declare_expected_exit_status(tmp_path):
+    data = report(tmp_path)
+    (tmp_path / 'error.log').write_text('usage: basename string [suffix]\n')
+    data['checks'].append({'command': 'python src/main.py', 'exit_code': 1, 'expected_exit_code': 1, 'log': 'error.log'})
+    assert tasks.validate_report(tmp_path, data)['ready'] is True

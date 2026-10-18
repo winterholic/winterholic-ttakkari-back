@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field, model_validator
 
 from ttakkari import reverse
 from ttakkari.api.deps import Db
@@ -11,9 +12,6 @@ from ttakkari.audit import record
 from ttakkari.models import ChatSession
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.security.auth import User, client_ip
-
-
-from pydantic import BaseModel, Field, model_validator
 
 
 class StartIn(BaseModel):

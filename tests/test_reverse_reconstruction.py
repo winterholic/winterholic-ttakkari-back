@@ -77,6 +77,16 @@ async def test_completion_requires_files_then_queues_independent_verification(cl
         (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed'}))
         await reverse_tasks.on_finished(db, review)
         assert job.status == 'done'
+        # 정상 검사 하나가 있어도 실패한 필수 회귀 검사는 완료 판정을 막는다.
+        failed = {**report, 'verdict': 'passed', 'checks': [*report['checks'],
+                  {'command': 'pytest failing_regression', 'exit_code': 1, 'log': 'test.log'}]}
+        (root / '.reverse' / f'{review.id}.json').write_text(json.dumps(failed))
+        await reverse_tasks.on_finished(db, review)
+        assert job.status == 'partial'
+        assert job.result['verification'] != 'passed'
+        (root / '.reverse' / f'{review.id}.json').write_text(json.dumps({**report, 'verdict': 'passed'}))
+        await reverse_tasks.on_finished(db, review)
+        assert job.status == 'done'
         await db.commit()
     data = (await client.get('/api/reverse/' + res.json()['id'], headers=auth)).json()
     assert data['reconstruction']['source_files'] == ['src/main.py']
@@ -173,12 +183,13 @@ def test_validate_report_checks_tolerance(tmp_path):
         'limitations': [],
     }
 
-    # 성공 1개 + 실패 1개 로그가 함께 있는 검증 보고서 (verdict=passed)
+    # 필수 검사 성공 + 사유를 명시한 선택적 환경 진단 실패는 함께 보존한다.
     report_mixed = {
         **base,
         'checks': [
             {'command': 'pytest ok', 'exit_code': 0, 'log': 'ok.log'},
-            {'command': 'pytest fail', 'exit_code': 1, 'log': 'fail.log'},
+            {'command': 'python -m pytest', 'exit_code': 1, 'log': 'fail.log', 'required': False,
+             'reason': '기본 Python에 pytest가 없어 설치된 환경에서 필수 전체 검사를 실행했다.'},
         ],
         'verdict': 'passed',
     }

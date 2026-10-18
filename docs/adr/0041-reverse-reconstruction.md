@@ -27,6 +27,10 @@
 - 구현 기록이 유효하면 종료 트랜잭션에서 독립 auto/verification 세션을 한 번 큐에 넣는다.
   검증자는 원래 설명과 추가 지시, 실제 소스, 입력·출력과 경계·오류 사례를 실행 대조한다.
   별도 Run의 유효한 검사 기록과 passed 판정이 있어야 done이다.
+  필수 검사는 모두 expected_exit_code(기본 0)에 맞아야 하며 성공 검사도 최소 하나 있어야 한다.
+  기대된 오류 입력의 비정상 종료는 expected_exit_code로 표시한다. 선택적인 환경 진단 실패는
+  required=false와 구체적인 reason을 함께 남길 때만 제외한다. 다른 검사 하나의 성공으로
+  실패한 필수 검사를 덮지 않는다. verdict=failed의 실제 실패 로그도 보존하고 부분 완료로 처리한다.
   Flash/Muse 구현도 verification의 GPT/Claude 경로를 거치며 원래 Run의 verification_status에 결과를 기록한다.
 - 대상 접근이나 정보가 부족하면 needs_input, 소스/검사 누락 또는 검증 불합격은 partial,
   실행 실패는 failed다. 쿼터 대기는 기존 Run 상태에서 waiting으로 표시한다.

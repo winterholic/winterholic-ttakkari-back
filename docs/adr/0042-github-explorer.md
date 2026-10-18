@@ -195,3 +195,23 @@ frontend 소유권:
 - 큰 PR diff의 정확한 상류 상태코드, `/rate_limit`이 한도에 세지는지.
 - gh가 keyring 접근에 macOS 프롬프트를 띄우는지(LaunchAgent 환경).
 - 모바일 실기기 렌더링·성능(코드 400줄 렌더, 큰 diff).
+
+## 12. 구현 보충 (2026-10-18, 백엔드 구현 후 갱신)
+
+백엔드는 `back/src/ttakkari/github/`(accounts·targets·cache·client·views·logs·schemas·errors·service·routes_*)와 `api/github.py`, `main.py` 3줄로 구현했다. 응답 계약 정본은 `src/ttakkari/github/schemas.py`, 엔드포인트별 예시는 `tests/fixtures/github/README.md`와 `api/*.json`이다(골든 테스트가 일치를 강제). 설계 대비 확정·변경:
+
+- **오류 본문**: 앱 기본 HTTPException 핸들러가 `code`·`message`만 남기므로 `GithubError` 전용 핸들러를 `api/github.py`의 `install(app)`로 등록했다(main.py에서 호출). 추가 필드 `reason`·`reset`·`retry_after`·`sso_url`과 `Retry-After` 헤더가 나간다.
+- **계정 상태 구분**: gh 목록에 없으면 `account_unavailable`(404), 목록에는 있으나 만료 상태면 `gh_auth_expired`(502). `account` 형식 오류는 `invalid_target`(422), 누락은 `validation`(422).
+- **`/accounts`**: 봉투 없이 `{accounts, gh_available, fetched_at}`. gh 미설치는 500이 아니라 `gh_available:false`. `probe=true`는 토큰 취득 가능 여부(불리언)만 낸다.
+- **`/resolve`**: `account`가 있으면 tree/blob URL의 ref 접두사를 `git/matching-refs/heads|tags/<첫 마디>`로 조회해 실제 브랜치·태그 중 가장 긴 것으로 ref/path를 가른다(없으면 `ref_not_found`, 저장소가 안 보이면 `gh_not_found`). 40자리 SHA는 호출 없이 인정한다. `account`가 없으면 `needs_ref_resolution:true`.
+- **contents**: `Accept: application/vnd.github.object+json`. 표시 상한(1MiB)을 넘는 파일(≤100MiB)은 raw로 앞 1MiB만 받아 `too_large:true, truncated:true`로 표시하고, raw가 실패하면 본문 없이 `too_large`만 남긴다. NUL 포함·UTF-8 아님은 `binary:true`. 디렉터리 1,000개는 `entries_limit_hit`. 심링크·서브모듈은 `kind`와 대상 필드로 낸다. 빈 저장소는 `gh_empty_repository`(409).
+- **README 없음**: `readme_not_found`(404)로 저장소 권한 오류(`gh_not_found`)와 구분한다(저장소 요약을 한 번 더 조회해 판별).
+- **로그**: 한 예산(기본 20초)에 302 호출과 내려받기를 함께 넣는다. 서명 URL은 응답·로그에 남기지 않고(httpx INFO 로그의 쿼리도 지운다), 내려받기 요청에는 Authorization이 없다. 허용 호스트 밖이면 `gh_logs_unavailable`(`reason: redirect_host_not_allowed`)이고 내려받지 않는다.
+- **캐시 TTL 실제값**: 목록 30초, 저장소·프로필 60초, PR 상세·Actions 15초(mergeable 비동기 계산·진행 중 run을 짧게 반영), 전체 SHA 고정 내용 10분. 상류 실패(한도·타임아웃·5xx) 시 만료 항목을 `stale:true`로 대신 낸다.
+- **보류**: 서킷브레이커(§6 트리거 유지), PR 리뷰 코멘트·체크런, 에이전트/MCP 노출, 디스크 캐시.
+
+검증 상태(이 시점): mock 단위·API 테스트(`unit_tests/test_github_*.py`)와 실계정 관측을 구분한다. 실계정 관측은 이 Mac Studio의 개발 셸에서 백엔드 코드를 직접 실행한 것이며 운영 LaunchAgent 런타임에서의 실행은 아직 확인하지 않았다.
+- H1: `winterholic`·`daeseon-dev` 모두 `gh auth token --user`로 토큰을 받아 각자 `GET /user`가 자기 login을 돌려줬고, 호출 뒤에도 gh 전역 active는 `winterholic` 그대로였다.
+- H3(일부): 두 계정의 비공개 저장소를 서로의 계정으로 조회하면 `gh_not_found`(404)였다. 조직 6개(winterholic)의 `/users`·`/orgs`·`/orgs/<org>/repos`는 모두 200이었다. SAML SSO 조직 사례는 만나지 못했다(미검증).
+- H4: 공개 저장소(cli/cli)의 job 로그 302 `Location` 호스트는 `productionresultssa3.blob.core.windows.net`이었고 허용 목록에 맞았으며 내려받기는 200 `text/plain`이었다. 다른 호스트가 나올 수 있어 허용 목록은 계속 가정으로 둔다.
+- 실제 GitHub 응답으로 views 매핑이 깨지지 않음을 공개 저장소에서 확인했다(저장소·브랜치·contents·README·PR 목록/상세/files·이슈·댓글·run·job). 슬래시가 든 실제 브랜치 3개로 resolve→contents 200을 확인했다.

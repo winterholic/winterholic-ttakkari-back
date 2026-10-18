@@ -263,6 +263,9 @@ async def host_gpu_start(model: str, gpu_layers: int = 999, cpu_moe: bool = Fals
                          device: Literal["default", "none"] = "default",
                          spec_type: Literal["none", "ngram-mod"] = "none",
                          parallel: Literal[1, 2] = 1,
+                         cache_type_k: Literal["f16", "q8_0", "q4_0"] | None = None,
+                         cache_type_v: Literal["f16", "q8_0", "q4_0"] | None = None,
+                         rope_scaling: Literal["none", "yarn"] = "none",
                          max_seconds: int | None = None) -> str:
     """Start the single host-side llama-server test instance (works from any engine, outside its sandbox, so
     Metal/GPU is available). `model` is an allowlisted alias (an error lists them). Only the listed flags exist; no
@@ -270,11 +273,15 @@ async def host_gpu_start(model: str, gpu_layers: int = 999, cpu_moe: bool = Fals
     touches the production Qwen servers (ports 18987, 57170).
     - spec_type: speculative decoding ('none' | 'ngram-mod', default 'none').
     - parallel: server slots (1 | 2, default 1). Note that llama-server allocates total ctx_size across slots, so each slot gets ctx_size // parallel (e.g. ctx_size=4096 with parallel=2 gives 2048 per slot).
+    - ctx_size: 512..1010000. Above 262144 requires rope_scaling='yarn' (fixed scale=4, original context=262144).
+    - cache_type_k/cache_type_v: optional f16/q8_0/q4_0 KV cache storage types; existing defaults are preserved.
     Returns at once with phase=starting; poll host_gpu_status until ready is true, then host_gpu_bench, and always host_gpu_stop when done."""
     body: dict[str, Any] = {"model": model, "gpu_layers": gpu_layers, "cpu_moe": cpu_moe, "ctx_size": ctx_size,
-                            "threads": threads, "device": device, "spec_type": spec_type, "parallel": parallel}
+                            "threads": threads, "device": device, "spec_type": spec_type, "parallel": parallel,
+                            "rope_scaling": rope_scaling}
     for key, value in (("n_cpu_moe", n_cpu_moe), ("batch_size", batch_size), ("ubatch_size", ubatch_size),
-                       ("flash_attn", flash_attn), ("max_seconds", max_seconds)):
+                       ("flash_attn", flash_attn), ("max_seconds", max_seconds),
+                       ("cache_type_k", cache_type_k), ("cache_type_v", cache_type_v)):
         if value is not None:
             body[key] = value
     return await _agent("POST", "/host-gpu/start", body)

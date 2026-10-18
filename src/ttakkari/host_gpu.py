@@ -69,7 +69,7 @@ class StartRequest(BaseModel):
     gpu_layers: int = Field(default=999, ge=0, le=999, description="--gpu-layers (999 = all layers)")
     cpu_moe: bool = Field(default=False, description="--cpu-moe: keep all MoE expert weights on the CPU")
     n_cpu_moe: int | None = Field(default=None, ge=0, le=256, description="--n-cpu-moe N")
-    ctx_size: int = Field(default=8192, ge=512, le=131072,
+    ctx_size: int = Field(default=8192, ge=512, le=1010000,
                             description="--ctx-size: total context size allocated across all slots (each slot receives ctx_size // parallel)")
     threads: int = Field(default=6, ge=1, le=64, description="--threads and --threads-batch")
     batch_size: int | None = Field(default=None, ge=32, le=8192, description="--batch-size")
@@ -78,6 +78,9 @@ class StartRequest(BaseModel):
     device: Literal["default", "none"] = Field(default="default", description="none = --device none (CPU only)")
     spec_type: Literal["none", "ngram-mod"] = Field(default="none", description="--spec-type (none or ngram-mod)")
     parallel: Literal[1, 2] = Field(default=1, description="--parallel: number of server slots (1 or 2)")
+    cache_type_k: Literal["f16", "q8_0", "q4_0"] | None = Field(default=None, description="--cache-type-k")
+    cache_type_v: Literal["f16", "q8_0", "q4_0"] | None = Field(default=None, description="--cache-type-v")
+    rope_scaling: Literal["none", "yarn"] = Field(default="none", description="yarn uses scale=4 and original context=262144")
     max_seconds: int | None = Field(default=None, ge=60, le=7200,
                                     description="shorter run limit; capped by host_gpu_max_runtime_seconds")
 
@@ -90,6 +93,8 @@ class StartRequest(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> StartRequest:
+        if self.ctx_size > 262144 and self.rope_scaling != "yarn":
+            raise ValueError("contexts above 262144 require rope_scaling=yarn")
         if self.cpu_moe and self.n_cpu_moe is not None:
             raise ValueError("cpu_moe and n_cpu_moe are mutually exclusive")
         if self.device == "none" and self.gpu_layers > 0:
@@ -119,6 +124,11 @@ def build_args(server: Path, model: Path, port: int, req: StartRequest) -> list[
         args += ["--flash-attn", req.flash_attn]
     if req.spec_type != "none":
         args += ["--spec-type", req.spec_type]
+    for flag, value in (("--cache-type-k", req.cache_type_k), ("--cache-type-v", req.cache_type_v)):
+        if value is not None:
+            args += [flag, value]
+    if req.rope_scaling == "yarn":
+        args += ["--rope-scaling", "yarn", "--rope-scale", "4", "--yarn-orig-ctx", "262144"]
     return args
 
 

@@ -160,6 +160,40 @@ def test_build_args_maps_spec_type_and_parallel():
     assert "--spec-type" not in none_argv
 
 
+def test_long_context_options_are_bounded_and_map_to_fixed_flags():
+    req = StartRequest(model="qwen3.5-4b-q4_k_m", ctx_size=1010000, cache_type_k="q8_0", cache_type_v="q8_0",
+                       rope_scaling="yarn")
+    argv = build_args(Path("server"), Path("model"), 19300, req)
+    for flag, value in (("--ctx-size", "1010000"), ("--cache-type-k", "q8_0"), ("--cache-type-v", "q8_0"),
+                        ("--rope-scaling", "yarn"), ("--rope-scale", "4"), ("--yarn-orig-ctx", "262144")):
+        assert argv[argv.index(flag) + 1] == value
+    for bad in ({"ctx_size": 1010001}, {"ctx_size": 1010000}, {"cache_type_k": "injected"},
+                {"cache_type_v": "injected"}, {"rope_scaling": "dynamic"}):
+        with pytest.raises(ValidationError):
+            StartRequest(model="m", **bad)
+    default = StartRequest(model="m")
+    assert default.ctx_size == 8192
+    argv = build_args(Path("server"), Path("model"), 19300, default)
+    assert "--cache-type-k" not in argv and "--cache-type-v" not in argv and "--rope-scaling" not in argv
+    assert StartRequest(model="m", ctx_size=262144).ctx_size == 262144
+
+
+async def test_mcp_forwards_long_context_options(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from ttakkari.orchestrator import mcp_server
+
+    agent = AsyncMock(return_value="ok")
+    monkeypatch.setattr(mcp_server, "_agent", agent)
+    await mcp_server.host_gpu_start(model="qwen3.5-4b-q4_k_m", ctx_size=1010000, cache_type_k="q8_0",
+                                    cache_type_v="q8_0", rope_scaling="yarn")
+    method, route, payload = agent.await_args.args
+    assert method == "POST" and route == "/host-gpu/start"
+    req = StartRequest.model_validate(payload)
+    assert req.ctx_size == 1010000 and req.cache_type_k == req.cache_type_v == "q8_0"
+    assert req.rope_scaling == "yarn"
+
+
 def test_start_checks_the_model_allowlist_and_files(env):
     with pytest.raises(Invalid, match="allowlisted"):
         env.gpu.start(StartRequest(model="/etc/passwd"))
@@ -493,8 +527,8 @@ async def test_host_gpu_api_rejects_boolean_parallel_before_start(client, auth, 
     starts = []
 
     def fake_start(self, request):
-        starts.append(request.parallel)
-        return {"parallel": request.parallel}
+        starts.append(request.model_dump())
+        return request.model_dump()
 
     monkeypatch.setattr(HostGpu, "start", fake_start)
     session = await _session(client, auth, make_dir)
@@ -511,7 +545,13 @@ async def test_host_gpu_api_rejects_boolean_parallel_before_start(client, auth, 
                                      headers=headers)
         assert response.status_code == 202
         assert response.json()["parallel"] == parallel
-    assert starts == [1, 2]
+    assert [item["parallel"] for item in starts] == [1, 2]
+    long_request = {"model": "tiny", "ctx_size": 1010000, "cache_type_k": "q8_0", "cache_type_v": "q8_0", "rope_scaling": "yarn"}
+    response = await client.post("/api/agent/host-gpu/start", json=long_request, headers=headers)
+    assert response.status_code == 202
+    assert all(response.json()[key] == value for key, value in long_request.items())
+    invalid = await client.post("/api/agent/host-gpu/start", json={**long_request, "ctx_size": 1010001}, headers=headers)
+    assert invalid.status_code == 422 and len(starts) == 3
 
 
 async def test_host_gpu_api_validates_requests_and_reports_idle(client, auth, make_dir, monkeypatch, tmp_path):

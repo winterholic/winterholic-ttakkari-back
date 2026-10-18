@@ -308,3 +308,59 @@ def test_codex_session_log_expired_100_is_removed_but_live_api_is_preserved(
     )
     assert live_api.stale is False
     assert live_api.remaining_to_limit_percent == 65
+
+
+def _muse_out(monkeypatch, observed):
+    from ttakkari.api import accounts as api_accounts
+    from ttakkari.models import EngineAccount
+
+    account = EngineAccount(
+        id=uuid4(), name="Muse test", engine="muse", pool="personal",
+        enabled=True, work_enabled=True, max_used_percent=95,
+    )
+    monkeypatch.setattr(api_accounts.profiles, "identity", lambda *_: ("ok", None))
+    monkeypatch.setattr(api_accounts.profiles, "cooldown_remaining", lambda *_: 0)
+    monkeypatch.setattr(api_accounts.profiles, "execution_ready", lambda *_: True)
+    return api_accounts._usage_out(0, account, {}, observed)
+
+
+def test_muse_expired_five_hour_window_stays_as_unavailable_not_removed(monkeypatch):
+    now = time.time()
+    observed = usage.Usage(
+        windows=[
+            usage.Window("five_hour", "5h", 100, int(now - 60)),
+            usage.Window("seven_day", "week", 33, int(now + 86400)),
+        ],
+        source="muse_cli", updated_at=now - 3600, error="Muse 로그인 확인 · /usage 구독 사용량 미관측: unavailable",
+    )
+
+    out = _muse_out(monkeypatch, observed)
+
+    by_key = {w.key: w for w in out.windows}
+    assert list(by_key) == ["five_hour", "seven_day"]
+    assert by_key["five_hour"].state == "unavailable"
+    assert by_key["five_hour"].percent == 0 and by_key["five_hour"].resets_at == int(now - 60)
+    # 낡은 주간 값은 관측 시각과 함께 stale 로만 보이고 잔여량으로 쓰이지 않는다.
+    assert by_key["seven_day"].state == "stale" and by_key["seven_day"].percent == 33
+    assert out.updated_at == now - 3600
+    assert out.stale is True and out.remaining_to_limit_percent is None
+
+
+def test_muse_never_observed_account_exposes_both_windows_as_unavailable(monkeypatch):
+    out = _muse_out(monkeypatch, usage.Usage(error="Muse 구독 사용량 미관측"))
+
+    assert [(w.key, w.state) for w in out.windows] == [("five_hour", "unavailable"), ("seven_day", "unavailable")]
+    assert out.remaining_to_limit_percent is None and out.stale is True
+
+
+def test_muse_complete_current_quota_is_marked_current(monkeypatch):
+    now = time.time()
+    observed = usage.Usage(
+        windows=[usage.Window("five_hour", "5h", 20, int(now + 3600)), usage.Window("seven_day", "week", 30, int(now + 86400))],
+        source="muse_cli", updated_at=now,
+    )
+
+    out = _muse_out(monkeypatch, observed)
+
+    assert {w.state for w in out.windows} == {"current"}
+    assert out.remaining_to_limit_percent == 65

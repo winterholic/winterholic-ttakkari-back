@@ -289,6 +289,8 @@ class UsageWindowOut(BaseModel):
     percent: int
     resets_at: int | None
     remaining_percent: float | None = None
+    # Muse 만 current/stale/unavailable 을 구분한다. unavailable 은 자리표시자라 percent 는 의미가 없다.
+    state: Literal["current", "stale", "unavailable"] = "current"
 
 
 class ResetCreditsOut(BaseModel):
@@ -329,6 +331,27 @@ class AccountUsageOut(BaseModel):
 USAGE_REQUEST_TIMEOUT = 25.0
 
 
+def _muse_windows(u: usage_mod.Usage, now: float, current: bool) -> list[UsageWindowOut]:
+    """Muse 는 5시간·주간 창을 항상 내보낸다. 창을 없애면 사용량이 0이라는 뜻으로 읽히기 때문이다.
+
+    초기화 시각이 지난 창의 낡은 퍼센트는 현재 잔여량이 아니므로 값을 버리고 unavailable 로 둔다.
+    아직 지나지 않은 창은 마지막 관측값을 current(최신 조회 성공) 또는 stale(조회 실패·불완전)로 표시한다."""
+    state = "current" if current else "stale"
+    seen = {w.key: w for w in u.windows}
+    out = []
+    for key in ("five_hour", "seven_day"):
+        w = seen.get(key)
+        if w is None:
+            out.append(UsageWindowOut(key=key, label=usage_mod.label_of(key), percent=0, resets_at=None, state="unavailable"))
+        elif w.resets_at and w.resets_at <= now:
+            out.append(UsageWindowOut(key=key, label=w.label, percent=0, resets_at=w.resets_at, state="unavailable"))
+        else:
+            out.append(UsageWindowOut(**w.__dict__, state=state))
+    out.extend(UsageWindowOut(**w.__dict__, state=state) for w in u.windows
+               if w.key not in ("five_hour", "seven_day") and not (w.resets_at and w.resets_at <= now))
+    return out
+
+
 def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usage_mod.Usage, *, refreshing: bool = False,
                error: str | None = None) -> AccountUsageOut:
     login, _label = profiles.identity(a.engine, a.config_dir)
@@ -350,6 +373,7 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
     headroom = None if stale or not muse_current else min((max(0, a.max_used_percent - w.percent) for w in valid_windows
                                        if w.key in ("five_hour", "seven_day")
                                        and not (w.resets_at and w.resets_at <= now)), default=None)
+    windows_out = _muse_windows(u, now, muse_current) if is_muse else [UsageWindowOut(**w.__dict__) for w in valid_windows]
     err = u.error or error
     if is_muse and not muse_current and not err:
         err = "Muse 최신 사용량 미확인 · 5시간·주간 창 모두 확인되지 않음"
@@ -360,7 +384,7 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
                            stale=stale,
                            work_enabled=a.work_enabled, work_rank=work_rank.get(a.id), login=u.login or login,
                            cooldown_seconds=profiles.cooldown_remaining(a.id),
-                           windows=[UsageWindowOut(**w.__dict__) for w in valid_windows], source=u.source, plan=u.plan,
+                           windows=windows_out, source=u.source, plan=u.plan,
                            reset_credits=ResetCreditsOut(**u.reset_credits.__dict__) if u.reset_credits else None,
                            credits_balance=u.credits_balance, credits_error=u.credits_error,
                            error=err, updated_at=u.updated_at, refreshing=refreshing,

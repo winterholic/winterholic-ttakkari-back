@@ -20,7 +20,7 @@ async def test_muse_account_list_checks_login_without_usage_windows(client, auth
     quota = (await client.get('/api/accounts/usage', headers=auth)).json()
     quota_row = next(row for row in quota if row['id'] == account_id)
     assert quota_row['login'] == 'ok'
-    assert quota_row['windows'] == []
+    assert {w['state'] for w in quota_row['windows']} == {'unavailable'}
     assert quota_row['updated_at'] is None
 
 
@@ -72,7 +72,7 @@ async def test_muse_account_usage_reports_execution_disabled_when_explicitly_dis
     rows = (await client.get('/api/accounts/usage', headers=auth)).json()
     row = next(row for row in rows if row['engine'] == 'muse')
     assert row['execution_enabled'] is False
-    assert row['windows'] == [] and row['updated_at'] is None
+    assert {w['state'] for w in row['windows']} == {'unavailable'} and row['updated_at'] is None
     assert row['error']
 
 

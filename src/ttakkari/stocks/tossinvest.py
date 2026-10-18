@@ -7,10 +7,13 @@
 CDP(websockets·psutil·httpx는 이미 앱 의존성)로 한다.
 
 읽기 전용 강제:
-- HTTP 재호출은 GET만, 호스트는 www/api.tossinvest.com·corp 문서 API만.
+- 탐색 전 Fetch 가로채기를 걸어 허용 호스트의 HTTPS GET만 통과시킨다.
+- 공개 HTML에서 확인한 정적 호스트는 스크립트·스타일·폰트·이미지 GET만 허용한다.
 - 주문·매수·매도·이체·출금·입금·설정·인증 변경 냄새가 나는 경로는 거부한다.
 - CDP Runtime.evaluate는 아래 고정 스니펫만 실행한다(문자열 합성·클릭·입력 없음).
 - 자동 새로고침·스케줄이 없다. 수동 트리거 + 서버 최소 간격이 사람 수준 빈도를 강제한다.
+
+실제 Chrome의 시작 시점 백그라운드 통신까지 통제되는지는 호스트 검증이 필요하다.
 
 쿠키·세션 값은 어디에도 기록·반환하지 않는다. 상태·스냅샷에는 불리언·개수·제목만 둔다.
 """
@@ -30,7 +33,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import psutil
 
@@ -47,6 +50,9 @@ ALLOWED_HOSTS = frozenset(
         "docs-api.tossinvest.com",
     }
 )
+# 공개 홈 HTML의 script/link에서 직접 확인한 호스트(2026-10-18).
+STATIC_HOSTS = frozenset({"static.toss.im", "static.tossinvest.com"})
+STATIC_TYPES = frozenset({"Script", "Stylesheet", "Font", "Image"})
 # 계정 상태를 바꿀 수 있는 경로 힌트. 하나라도 들어간 URL은 읽기라도 호출하지 않는다.
 BLOCKED_PATH_HINTS = frozenset(
     {
@@ -159,17 +165,37 @@ LOGIN_SNIFF_JS = (
 )
 
 
-def assert_read_only(method: str, url: str) -> None:
+def assert_read_only(
+    method: str, url: str, *, resource_type: str | None = None
+) -> None:
     """외부 호출 직전 검사. GET이 아니거나 허용 밖이면 호출하지 않는다."""
     try:
-        host = urlparse(url).hostname or ""
+        parts = urlparse(url)
+        host = parts.hostname or ""
+        if (
+            parts.scheme != "https"
+            or parts.port not in (None, 443)
+            or parts.username is not None
+            or parts.password is not None
+        ):
+            raise TossError("HTTPS 기본 포트의 토스증권 주소만 읽습니다.")
     except ValueError as e:
         raise TossError(f"읽을 수 없는 주소입니다: {e}") from e
     if method.upper() != "GET":
         raise TossError(f"읽기 전용이라 {method.upper()} 요청을 보내지 않습니다.")
-    if host not in ALLOWED_HOSTS:
+    is_static = host in STATIC_HOSTS and resource_type in STATIC_TYPES
+    if host not in ALLOWED_HOSTS and not is_static:
         raise TossError(f"허용한 토스증권 주소가 아니라 열지 않습니다: {host}")
+    if is_static:
+        return
     lowered = url.lower()
+    for _ in range(5):
+        decoded = unquote(lowered)
+        if decoded == lowered:
+            break
+        lowered = decoded
+    if "%" in lowered:
+        raise TossError("중첩 인코딩된 주소는 열지 않습니다.")
     for hint in BLOCKED_PATH_HINTS:
         if hint in lowered:
             raise TossError(f"계정 상태를 바꿀 수 있는 경로는 열지 않습니다: {hint}")
@@ -287,98 +313,213 @@ def login_chrome_pids() -> list[int]:
 
 
 class _Cdp:
-    """읽기 전용 탐색에 필요한 최소 CDP 클라이언트. Page·Runtime·Network만 쓴다."""
+    """Browser websocket에서 page session을 분리하고 Fetch를 탐색 전에 건다."""
 
     def __init__(self, ws_url: str) -> None:
         self._ws_url = ws_url
         self._ws: Any = None
         self._next_id = 0
+        self._pending: dict[int, asyncio.Future] = {}
+        self._reader: asyncio.Task | None = None
+        self._handlers: set[asyncio.Task] = set()
+        self._loaded = asyncio.Event()
+        self._error: TossError | None = None
+        self._session: str | None = None
+        self._seen: list[dict[str, Any]] = []
+        self._seen_keys: set[str] = set()
 
     async def open(self) -> None:
         import websockets
 
         self._ws = await websockets.connect(self._ws_url, max_size=8 * 1024 * 1024)
+        self._reader = asyncio.create_task(self._read_loop())
 
     async def close(self) -> None:
+        for task in list(self._handlers):
+            task.cancel()
+        if self._handlers:
+            await asyncio.gather(*self._handlers, return_exceptions=True)
+        if self._reader is not None:
+            self._reader.cancel()
+            await asyncio.gather(self._reader, return_exceptions=True)
         if self._ws is not None:
             with contextlib.suppress(Exception):
                 await self._ws.close()
             self._ws = None
 
-    async def _next(self, timeout: float) -> dict[str, Any]:
-        assert self._ws is not None
-        raw = await asyncio.wait_for(self._ws.recv(), timeout)
+    def _spawn(self, coroutine) -> None:
+        task = asyncio.create_task(coroutine)
+        self._handlers.add(task)
+        task.add_done_callback(self._handlers.discard)
+
+    def _fail(self) -> None:
+        # 브라우저 응답/URL/쿠키 원문을 오류에 싣지 않는다.
+        self._error = TossError(
+            "브라우저 읽기 전용 통제를 유지하지 못해 확인을 중단했습니다."
+        )
+        self._loaded.set()
+        for future in self._pending.values():
+            if not future.done():
+                future.set_exception(self._error)
+
+    async def _read_loop(self) -> None:
         try:
-            msg = json.loads(raw)
-        except ValueError:
-            return {}
-        return msg if isinstance(msg, dict) else {}
+            while True:
+                msg = json.loads(await self._ws.recv())
+                if not isinstance(msg, dict):
+                    continue
+                if "id" in msg:
+                    future = self._pending.get(msg["id"])
+                    if future is not None and not future.done():
+                        future.set_result(msg)
+                elif msg.get("method") == "Fetch.requestPaused":
+                    self._spawn(self._intercept(msg))
+                elif msg.get("method") == "Target.attachedToTarget":
+                    params = msg.get("params", {})
+                    if params.get("waitingForDebugger"):
+                        self._spawn(self._configure_child(params["sessionId"]))
+                elif (
+                    msg.get("method") == "Page.loadEventFired"
+                    and msg.get("sessionId") == self._session
+                ):
+                    self._loaded.set()
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- 통제 실패는 원문을 노출하지 않고 중단한다.
+            self._fail()
 
     async def send(
-        self, method: str, params: dict[str, Any] | None = None, timeout: float = 30
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        timeout: float = 30,
+        *,
+        session: str | None = None,
     ) -> dict[str, Any]:
-        """요청을 보내고 같은 id의 응답이 올 때까지 읽는다. 중간 이벤트는 버린다."""
         assert self._ws is not None
+        if self._error:
+            raise self._error
         self._next_id += 1
         call_id = self._next_id
-        await self._ws.send(
-            json.dumps({"id": call_id, "method": method, "params": params or {}})
+        future = asyncio.get_running_loop().create_future()
+        self._pending[call_id] = future
+        msg: dict[str, Any] = {"id": call_id, "method": method, "params": params or {}}
+        if session:
+            msg["sessionId"] = session
+        try:
+            await self._ws.send(json.dumps(msg))
+            reply = await asyncio.wait_for(future, timeout)
+            if "error" in reply:
+                raise TossError(f"브라우저 명령이 실패했습니다: {method}")
+            return reply.get("result", {})
+        finally:
+            self._pending.pop(call_id, None)
+
+    async def _intercept(self, msg: dict[str, Any]) -> None:
+        try:
+            params = msg["params"]
+            req = params["request"]
+            args = {"requestId": params["requestId"]}
+            try:
+                assert_read_only(
+                    req.get("method", ""),
+                    req.get("url", ""),
+                    resource_type=params.get("resourceType"),
+                )
+            except TossError:
+                args["errorReason"] = "BlockedByClient"
+                method = "Fetch.failRequest"
+            else:
+                method = "Fetch.continueRequest"
+                parts = urlparse(req["url"])
+                key = f"{parts.hostname}{parts.path}"
+                if (
+                    parts.hostname in ALLOWED_HOSTS
+                    and key not in self._seen_keys
+                    and len(self._seen) < 50
+                ):
+                    self._seen_keys.add(key)
+                    self._seen.append(
+                        {"host": parts.hostname, "path": parts.path or "/"}
+                    )
+            await self.send(method, args, session=msg.get("sessionId"))
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- 통제 실패는 원문을 노출하지 않고 중단한다.
+            self._fail()
+
+    async def _configure(self, session: str) -> None:
+        await self.send(
+            "Fetch.enable",
+            {"patterns": [{"urlPattern": "*", "requestStage": "Request"}]},
+            session=session,
         )
-        deadline = time.monotonic() + timeout
-        while True:
-            msg = await self._next(max(0.1, deadline - time.monotonic()))
-            if msg.get("id") == call_id:
-                if "error" in msg:
-                    raise TossError(f"브라우저 명령이 실패했습니다: {method}")
-                return msg.get("result", {})
-            if time.monotonic() > deadline:
-                raise TossError(f"브라우저 응답이 늦습니다: {method}")
+        await self.send("Network.enable", session=session)
+        await self.send(
+            "Network.setBypassServiceWorker", {"bypass": True}, session=session
+        )
+        await self.send(
+            "Network.setBlockedURLs", {"urls": ["ws://*", "wss://*"]}, session=session
+        )
+        await self.send(
+            "Target.setAutoAttach",
+            {"autoAttach": True, "waitForDebuggerOnStart": True, "flatten": True},
+            session=session,
+        )
+
+    async def _configure_child(self, session: str) -> None:
+        try:
+            await self._configure(session)
+            await self.send("Runtime.runIfWaitingForDebugger", session=session)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- 통제 실패는 원문을 노출하지 않고 중단한다.
+            self._fail()  # 통제 설정에 실패한 자식은 재개하지 않는다.
 
     async def navigate_and_sniff(
         self, url: str, timeout: float
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """읽기 전용 이동. 로드 이벤트까지 관측된 외부 요청(경로만)을 함께 모은다."""
         assert_read_only("GET", url)
-        await self.send("Page.enable")
-        await self.send("Runtime.enable")
-        await self.send("Network.enable")
-        await self.send("Page.navigate", {"url": url})
-        seen: list[dict[str, Any]] = []
-        seen_keys: set[str] = set()
-        deadline = time.monotonic() + timeout
-        loaded = False
-        while time.monotonic() < deadline and not loaded:
-            try:
-                msg = await self._next(1.0)
-            except TimeoutError:
-                continue
-            if msg.get("method") == "Page.loadEventFired":
-                loaded = True
-            if msg.get("method") == "Network.requestWillBeSent":
-                req = msg.get("params", {}).get("request", {})
-                rurl = req.get("url", "")
-                rmethod = req.get("method", "GET")
-                # 페이지가 스스로 보내는 요청은 관찰만 한다. 재생은 GET·허용 주소만, 아래에서 따로 검사한다.
-                try:
-                    parts = urlparse(rurl)
-                except ValueError:
-                    continue
-                if parts.hostname in ALLOWED_HOSTS and rmethod.upper() == "GET":
-                    key = f"{parts.hostname}{parts.path}"
-                    if key not in seen_keys:
-                        seen_keys.add(key)
-                        seen.append({"host": parts.hostname, "path": parts.path or "/"})
+        targets = await self.send("Target.getTargets")
+        page = next(
+            (
+                t
+                for t in targets.get("targetInfos", [])
+                if t.get("type") == "page" and t.get("url") == "about:blank"
+            ),
+            None,
+        )
+        if page is None:
+            raise TossError("안전한 빈 브라우저 탭을 찾지 못했습니다.")
+        attached = await self.send(
+            "Target.attachToTarget", {"targetId": page["targetId"], "flatten": True}
+        )
+        self._session = attached["sessionId"]
+        await self._configure(self._session)
+        await self.send("Page.enable", session=self._session)
+        await self.send("Runtime.enable", session=self._session)
+        self._loaded.clear()
+        await self.send("Page.navigate", {"url": url}, session=self._session)
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(self._loaded.wait(), timeout)
+        if self._error:
+            raise self._error
         result = await self.send(
             "Runtime.evaluate",
             {"expression": LOGIN_SNIFF_JS, "returnByValue": True},
             timeout=15,
+            session=self._session,
         )
+        if self._handlers:
+            await asyncio.gather(*list(self._handlers))
+        if self._error:
+            raise self._error
         value = (result.get("result") or {}).get("value") or "{}"
         try:
             sniff = json.loads(value)
         except ValueError:
             sniff = {}
-        return sniff if isinstance(sniff, dict) else {}, seen
+        return sniff if isinstance(sniff, dict) else {}, self._seen
 
 
 _browser_lock = asyncio.Lock()
@@ -397,12 +538,15 @@ async def _launch_headless(chrome: Path, profile: Path) -> tuple[subprocess.Pope
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-sync",
+            "--disable-component-update",
             "--mute-audio",
             "--hide-scrollbars",
             "--window-size=1280,900",
             f"--user-data-dir={profile}",
             "--remote-debugging-port=0",
-            "--remote-allow-origins=*",
+            "--remote-debugging-address=127.0.0.1",
             "about:blank",
         ],
         stdout=subprocess.DEVNULL,
@@ -419,13 +563,14 @@ async def _launch_headless(chrome: Path, profile: Path) -> tuple[subprocess.Pope
                 return line.removeprefix("DevTools listening on ")
         return ""
 
-    ws_url = await asyncio.to_thread(_read)
-    if not ws_url:
-        with contextlib.suppress(Exception):
-            proc.terminate()
-        raise TossError(
-            "headless Chrome이 뜨지 않았습니다. 다른 Chrome이 프로필을 쓰고 있는지 확인해 주세요."
-        )
+    try:
+        ws_url = await asyncio.wait_for(asyncio.to_thread(_read), 15)
+        parts = urlparse(ws_url)
+        if parts.scheme != "ws" or parts.hostname not in {"127.0.0.1", "::1"}:
+            raise TossError("Chrome의 로컬 제어 주소를 확인하지 못했습니다.")
+    except BaseException:
+        await _stop(proc)
+        raise
     return proc, ws_url
 
 
@@ -437,6 +582,10 @@ async def _stop(proc: subprocess.Popen) -> None:
     except Exception:  # noqa: BLE001 -- 종료 대기가 길어지면 강제 종료한다
         with contextlib.suppress(Exception):
             proc.kill()
+            await asyncio.to_thread(proc.wait, 10)
+    finally:
+        if proc.stderr is not None:
+            proc.stderr.close()
 
 
 def _decide_state(sniff: dict[str, Any]) -> tuple[str, bool | None, str]:

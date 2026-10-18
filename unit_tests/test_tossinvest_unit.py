@@ -1,4 +1,5 @@
 """토스증권 읽기 전용 어댑터·API 단위 검사. 브라우저·DB 없이 메모리 가짜로 돌린다."""
+
 from __future__ import annotations
 
 import json
@@ -36,6 +37,9 @@ class FakeDb:
     async def scalars(self, _q=None):
         return list(reversed(self.rows))
 
+    async def execute(self, _q):
+        pass  # 실제 프로세스 간 lock은 DB 통합 테스트에서 검증한다.
+
     def add(self, row: TossInvestSyncRun) -> None:
         if not row.id:
             row.id = uuid.uuid4()
@@ -62,15 +66,23 @@ def world(tmp_path, monkeypatch):
     app.include_router(api.router)
     app.dependency_overrides[require_user] = lambda: "owner"
     app.dependency_overrides[get_db] = lambda: db
-    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
+    http = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://t"
+    )
     return http, db, app
 
 
 def _fake_obs(monkeypatch, state="login_required", logged_in=False):
     obs = ad.PageObservation(
-        url=ad.TOSS_HOME, title="토스증권", logged_in=logged_in,
-        has_login_cta=True, state=state, state_message="로그인이 필요합니다.",
-        api_calls=[], load_ms=120)
+        url=ad.TOSS_HOME,
+        title="토스증권",
+        logged_in=logged_in,
+        has_login_cta=True,
+        state=state,
+        state_message="로그인이 필요합니다.",
+        api_calls=[],
+        load_ms=120,
+    )
 
     async def _obs():
         return obs
@@ -83,30 +95,36 @@ def test_read_only_allows_public_get():
     ad.assert_read_only("get", "https://api.tossinvest.com/v1/summary")
 
 
-@pytest.mark.parametrize("method,url", [
-    ("POST", "https://www.tossinvest.com/"),
-    ("PUT", "https://api.tossinvest.com/v1/watchlist"),
-    ("DELETE", "https://api.tossinvest.com/v1/order/1"),
-    ("GET", "https://evil.example.com/"),
-    ("GET", "https://www.tossinvest.com/order/new"),
-    ("GET", "https://api.tossinvest.com/v1/trade/history"),
-    ("GET", "https://api.tossinvest.com/v1/transfer"),
-    ("GET", "https://api.tossinvest.com/v1/withdraw"),
-    ("GET", "https://api.tossinvest.com/v1/settings/alert"),
-    ("GET", "https://www.tossinvest.com/매수/12345"),
-])
+@pytest.mark.parametrize(
+    "method,url",
+    [
+        ("POST", "https://www.tossinvest.com/"),
+        ("PUT", "https://api.tossinvest.com/v1/watchlist"),
+        ("DELETE", "https://api.tossinvest.com/v1/order/1"),
+        ("GET", "https://evil.example.com/"),
+        ("GET", "https://www.tossinvest.com/order/new"),
+        ("GET", "https://api.tossinvest.com/v1/trade/history"),
+        ("GET", "https://api.tossinvest.com/v1/transfer"),
+        ("GET", "https://api.tossinvest.com/v1/withdraw"),
+        ("GET", "https://api.tossinvest.com/v1/settings/alert"),
+        ("GET", "https://www.tossinvest.com/매수/12345"),
+    ],
+)
 def test_read_only_blocks_writes_and_state_changing_paths(method, url):
     with pytest.raises(ad.TossError):
         ad.assert_read_only(method, url)
 
 
-@pytest.mark.parametrize("sniff,state,logged_in", [
-    ({"hasLogin": False, "hasAccount": True}, "ready", True),
-    ({"hasLogin": True, "hasAccount": False}, "login_required", False),
-    ({"hasLogin": False, "hasAccount": False}, "unknown", None),
-    ({"hasLogin": True, "hasAccount": True}, "unknown", None),
-    ({}, "unknown", None),
-])
+@pytest.mark.parametrize(
+    "sniff,state,logged_in",
+    [
+        ({"hasLogin": False, "hasAccount": True}, "ready", True),
+        ({"hasLogin": True, "hasAccount": False}, "login_required", False),
+        ({"hasLogin": False, "hasAccount": False}, "unknown", None),
+        ({"hasLogin": True, "hasAccount": True}, "unknown", None),
+        ({}, "unknown", None),
+    ],
+)
 def test_decide_state(sniff, state, logged_in):
     got, ok, message = ad._decide_state(sniff)
     assert got == state
@@ -143,6 +161,7 @@ async def test_status_then_check_then_runs(world, monkeypatch):
 
 async def test_rate_limit_guards_manual_trigger(world, monkeypatch):
     from ttakkari.config import get_settings
+
     if get_settings().tossinvest_check_interval_seconds <= 0:
         pytest.skip("간격 제한이 꺼져 있다")
     http, _, _ = world
@@ -187,11 +206,15 @@ async def test_unauthenticated_is_rejected(world):
     app.dependency_overrides.pop(require_user)
     try:
         assert (await http.get("/api/stocks/overview")).status_code in (401, 403)
-        assert (await http.post("/api/stocks/tossinvest/check")).status_code in (401, 403)
+        assert (await http.post("/api/stocks/tossinvest/check")).status_code in (
+            401,
+            403,
+        )
     finally:
         app.dependency_overrides[require_user] = lambda: "owner"
 
 
 def test_mcp_tool_is_read_only():
     from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
+
     assert "tossinvest_status" in READ_ONLY_TOOLS

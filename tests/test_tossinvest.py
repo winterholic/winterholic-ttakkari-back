@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
@@ -161,3 +162,81 @@ def test_mcp_tool_is_read_only():
     from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
 
     assert "tossinvest_status" in READ_ONLY_TOOLS
+
+
+async def test_inflight_reservation_is_visible_to_other_db_sessions(
+    client, auth, monkeypatch
+):
+    from sqlalchemy import select
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import TossInvestSyncRun
+
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def observation():
+        entered.set()
+        await release.wait()
+        return ad.PageObservation(state="unknown", state_message="test")
+
+    monkeypatch.setattr(ad, "observe_home", observation)
+    first = asyncio.create_task(
+        client.post("/api/stocks/tossinvest/check", headers=auth)
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        async with sessionmaker()() as db:
+            row = await db.scalar(select(TossInvestSyncRun))
+            assert row is not None and row.status == "running"
+        second = await asyncio.wait_for(
+            client.post("/api/stocks/tossinvest/sync", headers=auth), 2
+        )
+        assert second.status_code == 429
+        assert int(second.headers["Retry-After"]) > 0
+    finally:
+        release.set()
+        await first
+
+
+async def test_parallel_triggers_only_one_browser_call(client, auth, monkeypatch):
+    calls = 0
+
+    async def observation():
+        nonlocal calls
+        calls += 1
+        await asyncio.sleep(0.15)
+        return ad.PageObservation(state="unknown", state_message="test")
+
+    monkeypatch.setattr(ad, "observe_home", observation)
+    responses = await asyncio.gather(
+        *[
+            client.post(
+                "/api/stocks/tossinvest/" + ("check" if i % 2 else "sync"), headers=auth
+            )
+            for i in range(8)
+        ]
+    )
+    assert sorted(r.status_code for r in responses) == [202] + [429] * 7
+    assert calls == 1
+
+
+async def test_interrupted_run_reservation_survives_request_cancellation(
+    client, auth, monkeypatch
+):
+    entered = asyncio.Event()
+
+    async def observation():
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(ad, "observe_home", observation)
+    first = asyncio.create_task(
+        client.post("/api/stocks/tossinvest/check", headers=auth)
+    )
+    await asyncio.wait_for(entered.wait(), 5)
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    # 새 요청은 별도 DB 세션을 쓴다. 원래 처리가 없어도 예약은 남는다.
+    second = await client.post("/api/stocks/tossinvest/sync", headers=auth)
+    assert second.status_code == 429

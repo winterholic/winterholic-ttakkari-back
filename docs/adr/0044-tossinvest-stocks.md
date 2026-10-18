@@ -32,7 +32,7 @@
   상태·작업 로그 DB 기록, 읽기 MCP 도구.
 - 개선: Playwright 의존성을 되살리지 않는다(ADR 0027 "별도 브라우저 검사 도구를 앱 의존성으로
   남기지 않는다" 유지). 설치된 Chrome + 최소 CDP 클라이언트(websockets·psutil·httpx는
-  기존 의존성)로 Page·Runtime·Network만 쓴다. Runtime.evaluate는 고정 읽기 스니펫만.
+  기존 의존성)로 Target·Page·Runtime·Network·Fetch를 쓴다. Runtime.evaluate는 고정 읽기 스니펫만.
 - 잘 안 됐던 이유와 대책: 네이버는 자동화 Chrome 로그인을 봇으로 보고 보호를 걸었다 →
   처음부터 일반 Chrome 창 로그인만 지원. Playwright 가짜 키체인이 실제 키체인 쿠키를
   지운 사고 → Chrome을 직접 띄워 실제 키체인을 그대로 쓴다. 기본 프로필 사용 불가
@@ -42,10 +42,21 @@
 
 - `assert_read_only`: GET이 아니면 거부, 호스트는
   www/api/corp/docs-api.tossinvest.com만, 주문·매수·매도·이체·출금·설정·인증 힌트 경로 거부.
+- 2026-10-18 독립 검증 후 보완: browser websocket에서 빈 page target에 session을 붙이고,
+  탐색 전에 Fetch Request 단계의 가로채기를 설정한다. GET·HTTPS 기본 포트·호스트·인코딩을
+  검사해 허용 요청만 continue, 나머지는 failRequest. 응답 대기 중 이벤트도 별도 reader가 처리한다.
+  공개 HTML에서 확인한 static.toss.im·static.tossinvest.com은 Script/Stylesheet/Font/Image GET만
+  별도 허용한다. 자식 target은 시작을 일시정지한 뒤 같은 통제를 설정하고 재개하며, 실패하면
+  전체 확인을 중단한다. 서비스워커 우회와 WebSocket 차단도 탐색 전에 설정한다.
+- 위 제어는 모의 CDP 통신으로 검증했다. Chrome 전체의 시작 시점 백그라운드 트래픽과
+  실제 자식 target·서비스워커 동작, 포트 바인딩, 프로세스 종료는 호스트에서 미측정이다.
+  브라우저 전체의 모든 통신이 읽기 전용이라고 보증하지 않는다.
 - 관측된 페이지 자체 요청은 재생하지 않으며, 경로(쿼리 제거)만 최대 50개 기록한다.
 - `tossinvest_sync_runs`에는 상태·메시지·페이지 제목·경로 목록·소요 시간만 둔다.
   금액·수량·쿠키·세션 값은 저장·반환·로그 어디에도 없다.
-- 수동 트리거만: `POST /check`·`/sync`는 마지막 기록 후 300초 안에 오면 429 + Retry-After.
+- 수동 트리거만: DB advisory transaction lock으로 간격 검사와 running 예약 저장을 직렬화하고
+  브라우저 실행 전에 커밋한다. 마지막 시작/갱신 후 최소 300초 안에 오면 429 + Retry-After.
+  실행 중 재시작·취소에도 예약이 남는다. 설정은 300 미만을 거부하고 실행은 180초 제한이다.
 
 ## 5. API·MCP·화면
 
@@ -75,3 +86,15 @@
 1. 사용자가 일반 Chrome 창으로 전용 프로필에 로그인 → UI에서 연결 확인.
 2. 로그인 상태에서 관측된 읽기 API 경로를 매핑해 보유·관심 요약 추출(값 표시는 그때 설계).
 3. 값 조회 MCP 도구 추가 여부 판단. 주문·이체 경로는 계속 만들지 않는다.
+
+## 8. 독립 검증 및 배포 검사 보완 (2026-10-18)
+
+- 원 구현 269b8c6: Codex 검증에서 페이지 POST 미차단과 조회형 간격 가드의 동시성 문제를 발견했다.
+  실제 DB에서 동시 요청 8개가 모두 202였고, 보완 후에는 1개 202 + 7개 429, 관측 호출 1회였다.
+  작업 도중 별도 DB 세션에서 running 예약이 보이고 요청 취소 후에도 429가 유지됨을 검사했다.
+- 최초 배포 예약 84091e54-04d1-423c-83bb-118463f2c35b는 failed.
+  릴리스 pytest 수집에서 tests/test_tossinvest.py와 unit_tests/test_tossinvest.py의 이름이 충돌했다.
+  단위 파일을 test_tossinvest_unit.py로 바꾸고 전체 테스트 동시 수집을 검사했다.
+- 단위와 통합을 따로 실행한 기존 결과만으로 배포 검사 통과를 보증하지 않는다.
+  실제 로그인 연결은 여전히 미검증이며, Codex 명령 샌드박스의 Chrome IPC 차단을 호스트 불가로
+  일반화하지 않는다. 후속 검사 결과는 docs/work-history/2026-10-18-tossinvest-guardrails.md에 기록한다.

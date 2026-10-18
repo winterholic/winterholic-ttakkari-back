@@ -78,6 +78,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "reverse_message", "group": "맥락", "who": "개인 실행", "desc": "역분석 작업에 대상 설명을 보충하거나 소스 수정을 이어서 지시"},
     {"name": "reverse_retry", "group": "맥락", "who": "개인 실행", "desc": "중단한 역분석 작업을 같은 소스 폴더·실행 기록에서 재개"},
     {"name": "server_resources", "group": "서버", "who": "모든 실행", "desc": "이 맥의 CPU·메모리·디스크·네트워크와 상위 프로세스"},
+    {"name": "tossinvest_status", "group": "주식 투자", "who": "모든 실행", "desc": "토스증권의 마지막 연결 상태와 확인·동기화 기록을 조회한다. 브라우저를 열거나 주문하지 않는다"},
     {"name": "execution_capabilities", "group": "서버", "who": "모든 실행", "desc": "엔진별 실행 환경 능력(GPU/Metal·ps·sysctl·네트워크·쓰기 경로)을 프로브 실측 시각과 함께 조회한다. 샌드박스 제한은 그 엔진 한정이다"},
     {"name": "begin_environment_probe", "group": "서버", "who": "개인 실행", "desc": "자기 환경을 잴 일회용 challenge와 프로브 실행 명령을 받는다(현재 Run에 귀속, 15분)"},
     {"name": "report_execution_environment", "group": "서버", "who": "개인 실행", "desc": "challenge로 서명된 프로브 출력을 그대로 보고해 Run의 실제 엔진 이름으로 기록한다(손으로 쓴 보고는 거부)"},

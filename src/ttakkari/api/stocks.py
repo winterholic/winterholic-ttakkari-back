@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ttakkari.api.deps import Db
 from ttakkari.models import TossInvestSyncRun
@@ -118,12 +119,13 @@ async def _guard_interval(db: Db) -> None:
     from ttakkari.config import get_settings
 
     interval = get_settings().tossinvest_check_interval_seconds
-    if interval <= 0:
-        return
     last = await _latest(db)
     if last is None:
         return
-    wait = interval - (datetime.now(UTC) - last.created_at).total_seconds()
+    wait = (
+        interval
+        - (datetime.now(UTC) - max(last.created_at, last.updated_at)).total_seconds()
+    )
     if wait > 0:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -135,19 +137,18 @@ async def _guard_interval(db: Db) -> None:
         )
 
 
-async def _record(
-    db: Db, kind: str, st: svc.Status, summary: dict | None, duration_ms: int
-) -> TossInvestSyncRun:
+async def _reserve(db: Db, kind: str) -> TossInvestSyncRun:
+    # 같은 DB의 다른 프로세스·세대도 예약 확인과 저장을 직렬화한다.
+    await db.execute(select(func.pg_advisory_xact_lock(0x54544B, 44)))
+    await _guard_interval(db)
     row = TossInvestSyncRun(
         kind=kind,
-        status=st.state,
-        message=st.message,
-        logged_in=st.logged_in,
-        page_title=st.observation.title
-        if st.observation and st.observation.title
-        else None,
-        api_paths=(summary or {}).get("api_paths", []),
-        duration_ms=duration_ms,
+        status="running",
+        message="연결을 확인하고 있습니다.",
+        logged_in=None,
+        page_title=None,
+        api_paths=[],
+        duration_ms=None,
         request_source="manual",
     )
     db.add(row)
@@ -157,32 +158,38 @@ async def _record(
 
 
 async def _run_kind(db: Db, kind: str) -> RunOut:
+    row = await _reserve(
+        db, kind
+    )  # 브라우저를 열기 전에 영속화; 재시작해도 간격이 남는다.
     started = time.monotonic()
     try:
-        if kind == "sync":
-            st, summary = await svc.sync_snapshot()
-        else:
-            st = await svc.check_status()
-            summary = None
+        # 실행 시간을 최소 재시도 간격보다 짧게 제한한다. 예약만 남은 중단 작업도
+        # 300초 뒤 재시도할 수 있으며, 정상 실행이 그때까지 이어지지 않는다.
+        async with asyncio.timeout(180):
+            if kind == "sync":
+                st, summary = await svc.sync_snapshot()
+            else:
+                st = await svc.check_status()
+                summary = None
     except Exception as e:
         # 예상 밖 실패도 기록하고 500으로 알린다.
-        row = TossInvestSyncRun(
-            kind=kind,
-            status="failed",
-            message=f"확인하지 못했습니다: {type(e).__name__}",
-            logged_in=None,
-            page_title=None,
-            api_paths=[],
-            duration_ms=int((time.monotonic() - started) * 1000),
-            request_source="manual",
-        )
-        db.add(row)
+        row.status = "failed"
+        row.message = f"확인하지 못했습니다: {type(e).__name__}"
+        row.duration_ms = int((time.monotonic() - started) * 1000)
         await db.commit()
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             "토스증권 연결을 확인하지 못했습니다.",
         ) from e
-    row = await _record(db, kind, st, summary, int((time.monotonic() - started) * 1000))
+    row.status = st.state
+    row.message = st.message
+    row.logged_in = st.logged_in
+    row.page_title = (st.observation.title or "")[:200] if st.observation else None
+    row.api_paths = (summary or {}).get("api_paths", [])
+    row.duration_ms = int((time.monotonic() - started) * 1000)
+    row.updated_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(row)
     return _run_out(row)
 
 
@@ -237,7 +244,6 @@ async def tossinvest_login_help() -> dict:
 )
 async def tossinvest_check(db: Db) -> RunOut:
     """연결 확인 1회. 사람 수준 빈도 간격을 지킨다."""
-    await _guard_interval(db)
     return await _run_kind(db, "check")
 
 
@@ -246,7 +252,6 @@ async def tossinvest_check(db: Db) -> RunOut:
 )
 async def tossinvest_sync(db: Db) -> RunOut:
     """동기화 1회. 읽기만 하며 금액·수량은 저장하지 않는다."""
-    await _guard_interval(db)
     return await _run_kind(db, "sync")
 
 

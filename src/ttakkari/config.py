@@ -263,7 +263,7 @@ class Settings(BaseSettings):
     tossinvest_enabled: bool = True
     tossinvest_profile: Path | None = None  # 비우면 <home>/tossinvest-chrome (테스트의 임시 HOME 을 따라간다)
     tossinvest_chrome_bin: str | None = None  # 비우면 설치된 Google Chrome 을 자동 탐색한다
-    tossinvest_check_interval_seconds: int = Field(default=300, ge=0)
+    tossinvest_check_interval_seconds: int = Field(default=300, ge=300)
     tossinvest_page_timeout_seconds: int = Field(default=45, ge=5, le=300)
 
     @property

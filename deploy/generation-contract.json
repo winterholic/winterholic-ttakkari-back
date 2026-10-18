@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "supervisor": {"protocol": 1, "slots": 3},
-  "schema_revision": "0044_reverse_reconstruction",
+  "schema_revision": "0045_tossinvest_runs",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -14,6 +14,7 @@
     "0040_ops_event_receipts",
     "0041_reverse_jobs",
     "0042_artcraft_tasks",
-    "0043_reverse_jobs_jsonb"
+    "0043_reverse_jobs_jsonb",
+    "0044_reverse_reconstruction"
   ]
 }

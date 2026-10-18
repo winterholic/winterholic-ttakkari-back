@@ -25,6 +25,24 @@ class MuseGuardTests(unittest.TestCase):
         self.assertIsNotNone(decision({'tool_name': 'spawn_agent', 'tool_input': {}}, self.policy))
         self.assertIsNotNone(decision({'tool_name': 'mcp__ttakkari__spawn_worker', 'tool_input': {}}, self.policy))
 
+    def test_worker_delegation_needs_orchestrator_role(self):
+        spawn = {'tool_name': 'mcp__ttakkari__spawn_worker', 'tool_input': {}}
+        msg = {'tool_name': 'mcp__ttakkari__message_worker', 'tool_input': {}}
+        self.assertIsNotNone(decision(spawn, self.policy))
+        self.assertIsNotNone(decision(msg, self.policy))
+        orch = {**self.policy, 'role': 'orchestrator'}
+        self.assertIsNone(decision(spawn, orch))
+        self.assertIsNone(decision(msg, orch))
+        agent = {**self.policy, 'role': 'agent'}
+        self.assertIsNotNone(decision(spawn, agent))
+        self.assertIsNotNone(decision(msg, agent))
+
+    def test_search_checks_each_path_like_grep(self):
+        ok = {'tool_name': 'search', 'tool_input': {'pattern': 'foo', 'paths': ['a.py']}}
+        self.assertIsNone(decision(ok, self.policy))
+        bad = {'tool_name': 'search', 'tool_input': {'pattern': 'foo', 'paths': ['/private/muse-policy/spec.json']}}
+        self.assertIsNotNone(decision(bad, self.policy))
+
     def test_patch_paths_are_all_checked(self):
         patch = '*** Begin Patch\n*** Add File: a.py\n+x\n*** Add File: /etc/b.py\n+y\n*** End Patch'
         self.assertIsNotNone(decision({'tool_name': 'apply_patch', 'tool_input': {'patch': patch}}, self.policy))

@@ -39,9 +39,16 @@ class MuseAdapter:
         for key in ('META_API_KEY', 'MUSE_AUTH_PATH', 'MUSE_TRANSPORT_TRACE'):
             extra_env.pop(key, None)
         extra_env.update(MUSE_NO_AUTO_UPDATE='1', MUSE_LOGIN='0')
+        role = 'agent'
+        for srv in (spec.mcp_servers or {}).values():
+            env = srv.get('env') if isinstance(srv, dict) else None
+            if isinstance(env, dict) and env.get('TTK_ROLE') == 'orchestrator':
+                role = 'orchestrator'
+                break
         policy = {'write_roots': [str(p) for p in spec.write_roots],
                   'protected': [str(settings.home)], 'private_root': str(private),
-                  'cwd': str(spec.cwd), 'mcp_servers': list(spec.mcp_servers)}
+                  'cwd': str(spec.cwd), 'mcp_servers': list(spec.mcp_servers),
+                  'role': role}
         data = {'cwd': str(spec.cwd), 'prompt': spec.prompt, 'system_note': spec.system_note,
                 'engine_session_id': spec.engine_session_id, 'model': spec.model or settings.worker_default_models['muse']['model'],
                 'effort': spec.effort or 'high', 'write_roots': policy['write_roots'],

@@ -30,8 +30,9 @@ from ttakkari.config import get_settings
 BUILD_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
 PROXY_SCRIPT = Path(__file__).with_name("egress_proxy.js")
 PROXY_ALIAS = "registry-proxy"
-# 복사하지 않는 이름. .git 은 훅 심기, .env* 는 비밀, node_modules/dist 는 컨테이너 안에서 새로 만든다.
-SKIP_DIRS = frozenset({".git", "node_modules", "dist"})
+# 복사하지 않는 이름. .git 은 훅 심기, .env* 는 비밀, node_modules/dist 는 컨테이너 안에서 새로 만들고,
+# .ttakkari-feedback 은 worker 가 열어 보는 스크린샷 사본이라 빌드에 필요 없다.
+SKIP_DIRS = frozenset({".git", "node_modules", "dist", ".ttakkari-feedback"})
 ENV_SAFE_NAMES = frozenset({".env.example", ".env.sample", ".env.template"})
 LOG_TAIL_BYTES = 200 * 1024
 # docker CLI 자체가 쓰는 환경만 넘긴다. TTAKKARI_* 와 비밀 변수는 CLI 프로세스에도 주지 않는다.

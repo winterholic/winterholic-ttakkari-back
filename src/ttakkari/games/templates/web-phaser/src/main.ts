@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { installBridge } from './bridge';
+import { installBridge, publishState } from './bridge';
 
 class MainScene extends Phaser.Scene {
   constructor() {
@@ -9,6 +9,7 @@ class MainScene extends Phaser.Scene {
   create(): void {
     const { width, height } = this.scale;
     this.add.text(width / 2, height / 2, 'Ttakkari Phaser Game', { color: '#ffffff', fontSize: '28px' }).setOrigin(0.5);
+    publishState({ scene: 'main', ready: true }); // 부모 관제탑·자동화가 읽는 계측 값(점수·위치 등을 여기에 게시한다)
   }
 }
 
@@ -21,4 +22,8 @@ const game = new Phaser.Game({
   render: { preserveDrawingBuffer: true }, // 부모의 캡처 요청이 WebGL 에서도 빈 이미지가 되지 않게 한다
 });
 
-installBridge(() => game.canvas);
+installBridge(() => game.canvas, {
+  pause: () => game.pause(),
+  resume: () => game.resume(),
+  isPaused: () => game.isPaused,
+});

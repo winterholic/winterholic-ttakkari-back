@@ -24,6 +24,7 @@ from ttakkari.db import sessionmaker
 from ttakkari.games import builds as game_builds
 from ttakkari.games import origin as game_origin
 from ttakkari.games import worker as game_worker
+from ttakkari.games.feedback import FeedbackIn
 from ttakkari.games.adapter import resolve_project_path
 from ttakkari.games.contract import (
     GameContractError,
@@ -112,7 +113,8 @@ class RequestIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["develop", "modify", "verify"] = "modify"
     instruction: str = Field(min_length=1, max_length=game_worker.MAX_INSTRUCTION_CHARS)
-    build_id: uuid.UUID | None = None  # 비우면 가장 최근 성공 빌드
+    build_id: uuid.UUID | None = None  # 비우면 가장 최근 성공 빌드(feedback 이 있으면 feedback.build_id)
+    feedback: FeedbackIn | None = None  # 스크린샷 Artifact 참조(원본·주석본)·정규화 영역·캡처 빌드. worker prompt 에 열 수 있는 파일 경로로 전달된다
 
 
 class RequestOut(BaseModel):
@@ -145,6 +147,7 @@ class GameOut(BaseModel):
     slug: str
     name: str
     engine_id: str
+    genre: str = ""  # 저장소 매니페스트의 장르. 매니페스트를 읽을 수 없으면 빈 문자열
     workspace_id: uuid.UUID
     pms_project_id: uuid.UUID | None
     locked_revision: int
@@ -166,14 +169,16 @@ async def _game(db: Db, game_id: uuid.UUID) -> GameProject:
 def _game_out(game: GameProject, last: GameBuild | None) -> GameOut:
     decisions: list[str] = []
     matches: bool | None = None
+    genre = ""
     try:
         manifest, _ = read_manifest(game_dir(game.slug))
         decisions = list(manifest.locked_decisions)
+        genre = manifest.genre
         matches = verify_lock(game, manifest)
     except GameContractError:
         pass
     return GameOut(
-        id=game.id, slug=game.slug, name=game.name, engine_id=game.engine_id, workspace_id=game.workspace_id,
+        id=game.id, slug=game.slug, name=game.name, engine_id=game.engine_id, genre=genre, workspace_id=game.workspace_id,
         pms_project_id=game.pms_project_id, locked_revision=game.locked_revision, active_build_id=game.active_build_id,
         lock_approved=game.locked_decisions_sha256 is not None, lock_matches_repo=matches, locked_decisions=decisions,
         created_at=game.created_at, last_build=BuildOut.model_validate(last) if last else None)
@@ -313,7 +318,7 @@ async def request_work(game_id: uuid.UUID, body: RequestIn, _: User, db: Db, req
     game = await _game(db, game_id)
     try:
         _sess, run = await game_worker.start_request(db, game, kind=body.kind, instruction=body.instruction, build_id=body.build_id,
-                                                     ip=client_ip(request))
+                                                     feedback=body.feedback, ip=client_ip(request))
     except GameContractError as e:
         raise _http(e) from e
     await db.refresh(run)

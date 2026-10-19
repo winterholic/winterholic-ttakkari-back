@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.games.adapter import resolve_project_path
+from ttakkari.games.feedback import FEEDBACK_DIR, FeedbackIn, StagedFeedback, describe_annotation, stage_feedback
 from ttakkari.games.contract import (
     MANIFEST_FILE,
     GameContractError,
@@ -93,7 +94,26 @@ def _lock_section(ctx: GameRequestContext) -> str:
     return f"경고: {MANIFEST_FILE} 를 읽을 수 없다. 잠금 결정을 확인할 수 없으니 먼저 파일을 복구하고 결과에 보고하라."
 
 
-def compose_prompt(ctx: GameRequestContext, kind: RequestKind, instruction: str) -> str:
+def _feedback_section(fb: StagedFeedback) -> str:
+    lines = ["[시각 피드백] 사용자가 게임 화면을 캡처해 표시한 수정 요청이다. 아래 이미지 파일을 직접 열어(이미지를 읽을 수 있는 도구 사용) 확인한 뒤 작업한다."]
+    if fb.original:
+        lines.append(f"- 원본 스크린샷: {fb.original}")
+    if fb.annotated:
+        lines.append(f"- 주석을 그린 스크린샷: {fb.annotated}")
+    if fb.width and fb.height:
+        lines.append(f"- 이미지 크기: {fb.width}x{fb.height}px")
+    lines.append(f"- 캡처한 빌드 id: {fb.build_id}")
+    if fb.annotations:
+        lines.append("- 표시한 영역(좌표는 이미지 왼쪽 위 (0,0), 오른쪽 아래 (1,1)인 0~1 비율):")
+        lines += [f"  {describe_annotation(i, a)}" for i, a in enumerate(fb.annotations, 1)]
+    else:
+        lines.append("- 표시한 영역 없음(화면 전체에 대한 요청).")
+    lines.append(f"- 같은 내용의 JSON: {fb.meta}")
+    lines.append(f"- {FEEDBACK_DIR}/ 는 git 에서 제외된 임시 폴더다. 커밋하지 않고 수정하지도 않는다.")
+    return "\n".join(lines)
+
+
+def compose_prompt(ctx: GameRequestContext, kind: RequestKind, instruction: str, feedback: StagedFeedback | None = None) -> str:
     g, ws = ctx.game, ctx.workspace
     build = ("아직 성공한 빌드가 없다." if ctx.build is None else
              f"대상 빌드 v{ctx.build.seq} (id={ctx.build.id}, 상태={ctx.build.status}, source_commit={ctx.build.source_commit or '없음'}, "
@@ -117,31 +137,44 @@ def compose_prompt(ctx: GameRequestContext, kind: RequestKind, instruction: str)
         task = "아래 요청대로 게임을 개발한다. 동작하는 소스를 저장소에 직접 작성하고 의미 있는 단위로 git commit 한다. 설계 문서만 쓰고 끝내지 않는다."
     else:
         task = "아래 요청대로 기존 게임을 수정한다. 변경은 요청 범위로 한정하고 의미 있는 단위로 git commit 한다. 기존 동작을 깨지 않았는지 소스와 빌드 기록으로 확인한다."
-    return "\n\n".join([*common, "[작업 지침]\n" + task + "\n" + "\n".join(f"- {r}" for r in rules),
-                        "[사용자 요청]\n" + instruction.strip()]) + "\n"
+    sections = [*common, "[작업 지침]\n" + task + "\n" + "\n".join(f"- {r}" for r in rules)]
+    if feedback is not None:
+        sections.append(_feedback_section(feedback))
+    return "\n\n".join([*sections, "[사용자 요청]\n" + instruction.strip()]) + "\n"
 
 
-def run_tag(ctx: GameRequestContext, kind: RequestKind) -> dict:
-    return {"game_id": str(ctx.game.id), "kind": kind, "build_id": str(ctx.build.id) if ctx.build else None, "lock": ctx.lock}
+def run_tag(ctx: GameRequestContext, kind: RequestKind, feedback: StagedFeedback | None = None) -> dict:
+    tag = {"game_id": str(ctx.game.id), "kind": kind, "build_id": str(ctx.build.id) if ctx.build else None, "lock": ctx.lock}
+    if feedback is not None:
+        tag["feedback"] = {"dir": feedback.dir.name, "artifact_id": str(feedback.artifact_id) if feedback.artifact_id else None,
+                           "annotated_artifact_id": str(feedback.annotated_artifact_id) if feedback.annotated_artifact_id else None,
+                           "annotations": len(feedback.annotations)}
+    return tag
 
 
 async def start_request(db: AsyncSession, game: GameProject, *, kind: RequestKind, instruction: str, build_id: uuid.UUID | None = None,
-                        ip: str | None = None, origin: RunOrigin = RunOrigin.user) -> tuple[ChatSession, Run]:
+                        feedback: FeedbackIn | None = None, ip: str | None = None, origin: RunOrigin = RunOrigin.user) -> tuple[ChatSession, Run]:
     """게임 workspace 에 worker 세션을 만들어 기존 queue_run 으로 접수한다. 세션 engine 은 auto 이고 모델·계정은 worker routing 이 고른다."""
     from ttakkari.api.sessions import queue_run
 
     instruction = instruction.strip()
     if not instruction or len(instruction) > MAX_INSTRUCTION_CHARS:
         raise GameContractError(f"요청은 1~{MAX_INSTRUCTION_CHARS}자여야 합니다.", "bad_request")
+    if feedback is not None:
+        if build_id is not None and build_id != feedback.build_id:
+            raise GameContractError("피드백을 캡처한 빌드와 요청의 대상 빌드가 다릅니다.", "bad_request")
+        build_id = feedback.build_id
     ctx = await load_context(db, game, build_id)
+    staged = (await stage_feedback(db, game, resolve_project_path(Path(ctx.workspace.root_path)), feedback, instruction=instruction)
+              if feedback is not None else None)
     sess = ChatSession(workspace_id=ctx.workspace.id, title=f"[{game.slug}] {instruction.splitlines()[0]}"[:80], engine="auto",
                        kind=SessionKind.worker, pool="personal", worker_task_type=TASK_TYPE[kind])
     db.add(sess)
     await db.flush()
-    prompt = compose_prompt(ctx, kind, instruction)
+    prompt = compose_prompt(ctx, kind, instruction, staged)
 
     def tag(run: Run) -> None:
-        run.usage = {**(run.usage or {}), USAGE_KEY: run_tag(ctx, kind)}
+        run.usage = {**(run.usage or {}), USAGE_KEY: run_tag(ctx, kind, staged)}
 
     run = await queue_run(db, sess, prompt, origin=origin, on_queued=tag, ip=ip)
     return sess, run

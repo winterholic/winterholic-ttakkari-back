@@ -25,6 +25,14 @@ const cases = {
   array: acceptParentMessage({ ...ok, data: [] }, parent, 'https://pwa.example'),
   string: acceptParentMessage({ ...ok, data: 'ttakkari:capture' }, parent, 'https://pwa.example'),
   null_data: acceptParentMessage({ ...ok, data: null }, parent, 'https://pwa.example'),
+  pause: acceptParentMessage({ ...ok, data: { type: 'ttakkari:pause', id: 'p1' } }, parent, 'https://pwa.example'),
+  resume: acceptParentMessage({ ...ok, data: { type: 'ttakkari:resume', id: 'p2' } }, parent, 'https://pwa.example'),
+  state: acceptParentMessage({ ...ok, data: { type: 'ttakkari:state', id: 's1' } }, parent, 'https://pwa.example'),
+  pause_wrong_origin: acceptParentMessage({ origin: 'https://evil.example', source: parent, data: { type: 'ttakkari:pause', id: 'p1' } }, parent, 'https://pwa.example'),
+  pause_wrong_source: acceptParentMessage({ origin: 'https://pwa.example', source: other, data: { type: 'ttakkari:pause', id: 'p1' } }, parent, 'https://pwa.example'),
+  import_ok: acceptParentMessage({ ...ok, data: { type: 'ttakkari:save-import', id: 'i1', data: '{"a":1}' } }, parent, 'https://pwa.example'),
+  import_no_data: acceptParentMessage({ ...ok, data: { type: 'ttakkari:save-import', id: 'i1' } }, parent, 'https://pwa.example'),
+  import_huge: acceptParentMessage({ ...ok, data: { type: 'ttakkari:save-import', id: 'i1', data: 'x'.repeat(65 * 1024) } }, parent, 'https://pwa.example'),
   hash_ok: parentOriginFromHash('#ttk-parent=' + encodeURIComponent('https://pwa.example')),
   hash_port: parentOriginFromHash('#ttk-parent=' + encodeURIComponent('http://localhost:5173')),
   hash_path: parentOriginFromHash('#ttk-parent=' + encodeURIComponent('https://pwa.example/x')),
@@ -42,6 +50,11 @@ def test_bridge_accepts_only_the_declared_parent_and_known_messages():
     got = json.loads(out.stdout.strip().splitlines()[-1])
     assert got["ok"] == {"type": "ttakkari:capture", "id": "abc"}
     for rejected in ("wrong_origin", "wrong_source", "no_parent_hint", "bad_type", "no_id", "long_id", "array", "string", "null_data"):
+        assert got[rejected] is None, rejected
+    assert got["pause"] == {"type": "ttakkari:pause", "id": "p1"} and got["resume"] == {"type": "ttakkari:resume", "id": "p2"}
+    assert got["state"] == {"type": "ttakkari:state", "id": "s1"}
+    assert got["import_ok"] == {"type": "ttakkari:save-import", "id": "i1", "data": '{"a":1}'}
+    for rejected in ("pause_wrong_origin", "pause_wrong_source", "import_no_data", "import_huge"):
         assert got[rejected] is None, rejected
     assert got["hash_ok"] == "https://pwa.example" and got["hash_port"] == "http://localhost:5173"
     assert got["hash_path"] is None and got["hash_js"] is None and got["hash_none"] is None

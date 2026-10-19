@@ -265,3 +265,28 @@ async def test_a_hung_provider_fetch_ends_with_an_error_and_frees_the_inflight_s
     assert "0초 안에 끝나지 않았어요(claude)" in first.error and not first.windows
     assert not usage.fetching(aid)
     assert usage.cached(aid).error == first.error
+
+
+async def test_flush_does_not_spin_on_a_finished_task_whose_discard_callback_never_ran():
+    """닫힌 루프의 끝난 Task 가 목록에 남으면 예전 flush 는 끝난 작업만 gather 하며 영영 끝나지 않았다."""
+    import asyncio
+
+    from ttakkari.runs import usage_store
+
+    async def one():
+        return 1
+
+    def finished_task_of_a_closed_loop():
+        loop = asyncio.new_event_loop()
+        task = loop.create_task(one())
+        loop.run_until_complete(task)
+        loop.close()
+        return task
+
+    stale = await asyncio.to_thread(finished_task_of_a_closed_loop)  # 돌고 있는 루프 안에서는 다른 루프를 못 돌린다
+    usage_store._tasks.add(stale)
+    try:
+        await asyncio.wait_for(usage_store.flush(), 5)
+        assert stale not in usage_store._tasks
+    finally:
+        usage_store._tasks.discard(stale)

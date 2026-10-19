@@ -85,8 +85,15 @@ async def _safe_record(account_id: uuid.UUID, u: usage_mod.Usage) -> None:
 
 
 async def flush() -> None:
-    """남기는 중인 저장을 기다린다(테스트·종료용)."""
-    while _tasks:
+    """남기는 중인 저장을 기다린다(테스트·종료용).
+
+    끝났는데 완료 콜백(_tasks.discard)이 돌지 못해 남은 작업(이미 닫힌 루프의 작업 등)은 목록에서 직접 뺀다.
+    빼지 않으면 끝난 작업만 gather 하는 이 루프가 영영 끝나지 않는다(2026-10-19 배포 pytest 의 120초 타임아웃)."""
+    while True:
+        for task in [t for t in _tasks if t.done()]:
+            _tasks.discard(task)
+        if not _tasks:
+            return
         await asyncio.gather(*list(_tasks), return_exceptions=True)
 
 

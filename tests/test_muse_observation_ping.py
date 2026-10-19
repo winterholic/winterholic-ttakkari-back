@@ -43,6 +43,8 @@ def _isolate(monkeypatch):
         return usage.Usage(error=NO_USAGE, login="ok")
 
     monkeypatch.setattr(usage, "MUSE_PING", True)
+    # 성공한 관측은 DB 저장 작업(usage_store)을 띄운다. 이 시험은 저장을 보지 않으니 끄고, 끝난 시험이 저장 작업을 남기지 않게 한다.
+    monkeypatch.setattr(usage, "_sink", None)
     monkeypatch.setattr(usage, "_fetch_muse", idle_probe)
     monkeypatch.setattr(usage, "_login_refresh_at", {})
     return calls

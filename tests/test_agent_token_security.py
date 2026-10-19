@@ -148,9 +148,10 @@ def test_muse_argv_hides_token_value(tmp_path):
 # ---- AGT-01 대조군: 파일로 전달된 토큰으로 MCP 와 같은 bearer 호출이 성공한다 ----
 
 @pytest.mark.asyncio
-async def test_delivered_token_authenticates_like_mcp_server(client, tmp_path):
-    sid = uuid.uuid4()
-    token = issue_token(sid)
+async def test_delivered_token_authenticates_like_mcp_server(client, tmp_path, session_and_run):
+    # /api/agent/* 는 토큰의 세션 행이 DB 에 있어야 하므로 임의 UUID 대신 실제 세션을 쓴다.
+    sess, _ = session_and_run
+    token = issue_token(sess.id)
     spec = _spec(tmp_path, mcp_servers={"ttakkari": {"command": "python", "args": ["-m", "mcp"],
                                                     "env": {"TTK_ORCH_TOKEN": token}}})
     adapter = ClaudeAdapter()

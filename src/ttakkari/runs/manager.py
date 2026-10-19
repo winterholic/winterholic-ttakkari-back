@@ -70,6 +70,7 @@ from ttakkari.runs import instructions as instructions_mod
 from ttakkari.runs import profiles as profiles_mod
 from ttakkari.runs import usage as usage_mod
 from ttakkari.schemas import ArtifactOut
+from ttakkari.security import seatbelt
 
 log = logging.getLogger(__name__)
 
@@ -1163,7 +1164,11 @@ class RunManager:
             if qwen_slot:
                 await self._qwen_local_slot.acquire()
                 qwen_slot_acquired = True
-            cmd = adapter.build_command(spec, env)
+            cmd = seatbelt.maybe_wrap(
+                adapter.engine, adapter.build_command(spec, env), enabled_engines=s.engine_seatbelt,
+                home=Path.home(), ttakkari_home=s.home, outbox=spec.outbox, write_roots=spec.write_roots,
+                env=env, deny_keychain=s.engine_seatbelt_deny_keychain, workspace=spec.cwd,
+            )
             working_directory = getattr(adapter, "working_directory", lambda _spec: root)(spec)
             proc = await asyncio.create_subprocess_exec(
                 *cmd, cwd=str(working_directory), env=env, stdin=asyncio.subprocess.DEVNULL,

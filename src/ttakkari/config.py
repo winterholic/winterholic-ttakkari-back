@@ -259,6 +259,11 @@ class Settings(BaseSettings):
     muse_profile_root: Path | None = None  # defaults to <configured home>/accounts/muse-default
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
     claude_setting_sources: str | None = None
+    # 엔진 프로세스를 sandbox-exec 로 감싸 DB 포트·소켓과 비밀 경로를 커널에서 막는다. 단계 적용용으로 기본은 비어 있다.
+    # 지금은 claude 만 가능. 자체 샌드박스를 거는 엔진을 넣으면 Run 이 샌드박스 없이 뜨지 않고 실패한다.
+    # (docs/security/adr-engine-seatbelt.md) 예: TTAKKARI_ENGINE_SEATBELT='["claude"]'
+    engine_seatbelt: list[str] = Field(default_factory=list)
+    engine_seatbelt_deny_keychain: bool = False
     # 동시 실행 자리는 역할별로 따로 센다(ADR 0013). 접수는 짧고 가벼워서 따로, 기획이 작업 세션 자리를 막지 않게 따로.
     max_concurrent_desk: int = 16
     max_concurrent_leads: int = 16

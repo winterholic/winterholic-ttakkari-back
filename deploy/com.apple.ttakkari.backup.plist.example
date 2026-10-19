@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- SEC2-OPS-01: 따까리 DB 일일 백업 스케줄 예시.
+  설치: 경로의 BACKUP_USER를 실제 사용자명으로 바꾼 뒤
+    cp deploy/com.apple.ttakkari.backup.plist.example ~/Library/LaunchAgents/com.apple.ttakkari.backup.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.apple.ttakkari.backup.plist
+  해제: launchctl bootout gui/$(id -u)/com.apple.ttakkari.backup
+  로그: /tmp/ttakkari-backup.out, /tmp/ttakkari-backup.err -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.apple.ttakkari.backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/BACKUP_USER/development/projects/winterholic-ttakkari/back/scripts/backup_db.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>17</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/ttakkari-backup.out</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ttakkari-backup.err</string>
+</dict>
+</plist>

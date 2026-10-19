@@ -25,7 +25,7 @@
 | 항목 | `jacob-bd/notebooklm-mcp-cli` | `PleasePrompto/notebooklm-mcp` | `teng-lin/notebooklm-py` |
 | :--- | :--- | :--- | :--- |
 | **통신 방식** | **하이브리드 (API 우선)**: 1회성 브라우저 CDP로 쿠키 획득 후, 내부 `batchexecute` RPC 직접 호출 | **순수 브라우저 자동화**: Patchright(Playwright 포크)로 상시 Chrome 창을 띄워 DOM 조작 | **RPC 클라이언트**: `batchexecute` RPC 비동기 HTTP 호출 |
-| **Google 인증 방식** | CDP 로그인 도구가 브라우저에서 쿠키를 추출한다 (`Network.getAllCookies` 사용). | Patchright persistent Chrome 프로필에 인증 상태를 둔다. README상 암호화 자격증명 저장소는 없다. | 기본은 브라우저 기반 로그인, 추가로 브라우저 쿠키 추출(`rookie-cookies` optional extra)과 별도 headless master-token 경로가 있다. 이번 요구에서는 우회성·자동 인증 경로를 사용하지 않는다. |
+| **Google 인증 방식** | CDP 로그인 도구가 브라우저에서 쿠키를 추출한다 (`Network.getAllCookies` 사용). | Patchright persistent Chrome 프로필에 인증 상태를 둔다. README상 암호화 자격증명 저장소는 없다. | 기본은 브라우저 기반 로그인, 추가로 브라우저 쿠키 추출(`rookie-cookies` optional extra), headless master-token 경로, 선택형 curl_cffi JA3 impersonation transport가 있다. 이번 요구에서는 headless/impersonation 경로를 설치·활성화하지 않는다. |
 | **토큰 갱신 구조** | 저장된 쿠키로 `https://notebooklm.google.com/`에 경량 HTTP GET 1회 호출 → HTML에서 CSRF 토큰(`SNlM0e`), 세션 ID(`FdrFJe`), 빌드 라벨(`cfb2h`)을 정규표현식으로 자동 추출 | 브라우저 페이지 탐색을 유지하며 웹 세션에 의존 | 세션 재연결 시 홈페이지 재조회 |
 | **세션 만료 처리** | 홈페이지 리다이렉트 감지와 HTTP 갱신 외에 브라우저 기반 복구 경로도 있다. 쿠키 나이/Google 측 보호 정책에 따라 자동 복구가 실패할 수 있다. | 브라우저 페이지에서 인증을 확인한다. | 토큰 갱신 조정기와 복구 경로가 현재 HEAD에 있다. 지원 계정/환경을 실제 로그인 없이 확정하지 않는다. |
 | **비공식 API 변경 취약성** | `NOTEBOOKLM_RPC_OVERRIDES`로 알려진 RPC ID를 런타임 덮어쓰기할 수 있다. 페이로드·응답 스키마 변경은 해결하지 못한다. | 웹 UI DOM/CSS 변경에 취약하며, 상류 저장소가 archived 상태다. | 공개 클라이언트 API를 통해 RPC 변경을 흡수하는 후보. 버전 고정 시 상류 릴리스 전까지 변경 대응 지연은 남는다. |
@@ -53,7 +53,7 @@
 | **리서치 (Web/Drive Search)** | Fast Research(`Ljjv0c`), Deep Research(`QA9ei`) 지원 | 미지원 | Fast/Deep Research API 있음 |
 
 #### 지원하지 않는 기능 및 기술적 제약:
-1. **인증 방식은 요구 범위로 제한**: 비교 저장소에는 브라우저 기반 로그인 외에 master-token 등 자동 인증 경로도 있다. 이것이 계정 보호·정책과 양립하는지 확인하지 않았으며 이번 요구에서 사용하지 않는다. ID/비밀번호 자동 로그인의 허용 여부도 이 분석으로 단정하지 않는다. 요구 경로는 사용자가 전용 브라우저 창에서 직접 로그인하는 방식이며, CAPTCHA·2FA·접근 제한을 우회하지 않고 보호 신호가 나오면 중지한다.
+1. **인증 방식은 요구 범위로 제한**: `notebooklm-py`에는 브라우저 외에 master-token 자동 인증과 선택형 TLS JA3 impersonation extra도 있다. 정책 적합성을 확인하지 않았고 이번 요구에서는 `headless`/`impersonate` extra 및 관련 transport 설정을 사용하지 않는다. ID/비밀번호 자동 로그인의 허용 여부도 이 분석으로 단정하지 않는다. 요구 경로는 사용자가 전용 브라우저 창에서 직접 로그인하는 방식이며, CAPTCHA·2FA·접근 제한을 우회하지 않고 보호 신호가 나오면 중지한다.
 2. **오디오 오버뷰 음성/화자 커스텀**: 비교 저장소의 기능 목록만으로 NotebookLM 제품 계정/버전별 설정 가능성을 확정하지 못했다. 지원 여부 미검증으로 남기며 설계에서 커스텀 음성을 제공하지 않는다.
 3. **Google Drive 연동 제약**: 사용자가 해당 Google 계정에 이미 Drive 접근 권한이 있어야 연동 소스를 읽을 수 있다.
 

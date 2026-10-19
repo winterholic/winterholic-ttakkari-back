@@ -33,13 +33,14 @@ class PushKind(enum.StrEnum):
     meeting = "push.meeting"  # 회의록 분석 완료·실패(meetings/pipeline.py)
     deployment = "push.deployment"  # 사용자가 기다리는 최초 무중단 배포 전환 결과
     weather = "push.weather"  # 매일 날씨 브리핑
+    notebooklm = "push.notebooklm"  # NotebookLM 로그인 만료(재로그인 필요) 1회 알림
 
 
 INBOX_CATEGORY = {
     PushKind.run_waiting: "tasks", PushKind.run_failed: "tasks", PushKind.agent: "assistant",
     PushKind.calendar_reminder: "planner", PushKind.checklist_reminder: "planner",
     PushKind.meeting: "meetings", PushKind.deployment: "system", PushKind.test: "system",
-    PushKind.weather: "weather",
+    PushKind.weather: "weather", PushKind.notebooklm: "system",
 }
 
 

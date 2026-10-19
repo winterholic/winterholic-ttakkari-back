@@ -1040,6 +1040,64 @@ class TossInvestSyncRun(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class NotebookLMAccount(Base):
+    """NotebookLM 연동 계정 상태(ADR 0045). 지금은 계정 1개(`primary`)만 쓰지만 모든 키에 account_id 를 둔다.
+    쿠키·토큰은 DB 에 두지 않는다(세션 파일은 ~/.ttakkari/notebooklm 아래 소유자 전용)."""
+
+    __tablename__ = "notebooklm_accounts"
+    account_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    state: Mapped[str] = mapped_column(String(20), default="login_required")  # login_required|session_saved|ready|reauth_required|cooldown|blocked
+    message: Mapped[str | None] = mapped_column(Text)
+    cooldown_until: Mapped[datetime | None]
+    last_error_code: Mapped[str | None] = mapped_column(String(40))
+    last_ok_at: Mapped[datetime | None]
+    last_checked_at: Mapped[datetime | None]
+    reauth_notified_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class NotebookLMSource(Base):
+    """소스 중복 등록 방지 원장. (계정, 노트북, 정규화 URL/콘텐츠 해시) 한 건당 한 행이다.
+    reserved=등록 요청 진행 중, added=등록됨, unknown=요청은 나갔으나 결과를 모름(재전송 금지)."""
+
+    __tablename__ = "notebooklm_sources"
+    __table_args__ = (UniqueConstraint("account_id", "notebook_id", "dedupe_key", name="uq_notebooklm_sources_key"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[str] = mapped_column(String(32), index=True)
+    notebook_id: Mapped[str] = mapped_column(String(100))
+    dedupe_key: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(10))  # url | youtube | text | file
+    remote_source_id: Mapped[str | None] = mapped_column(String(100))
+    title: Mapped[str | None] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(10), default="reserved")
+    job_id: Mapped[uuid.UUID | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class NotebookLMJob(Base):
+    """NotebookLM 장시간 작업(소스 추가 후 처리 대기). 본문·쿠키는 두지 않고 요약만 둔다."""
+
+    __tablename__ = "notebooklm_jobs"
+    __table_args__ = (Index("ix_notebooklm_jobs_account_status", "account_id", "status"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[str] = mapped_column(String(32))
+    kind: Mapped[str] = mapped_column(String(24))  # source_add_url | source_add_text | source_add_file
+    notebook_id: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(12), default="queued")  # queued|running|succeeded|failed|cancelled|unknown
+    params: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    result: Mapped[dict[str, Any] | None]
+    error_code: Mapped[str | None] = mapped_column(String(40))
+    error: Mapped[str | None] = mapped_column(Text)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    started_at: Mapped[datetime | None]
+    finished_at: Mapped[datetime | None]
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+
+
 class ArtcraftTask(Base):
     """ArtCraft 작업(ADR 0039). 작업 세션 1개에 범주·연결 앱·옵션을 붙인 것이고 라운드는 그 세션의 Run 이다."""
 

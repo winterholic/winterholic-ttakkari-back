@@ -274,6 +274,36 @@ class Settings(BaseSettings):
             return Path(self.tossinvest_profile).expanduser().resolve()
         return self.home / "tossinvest-chrome"
 
+    # NotebookLM 연동(ADR 0045). 기존 Google 계정의 NotebookLM 권한·할당량만 쓰고 유료 API 키 경로는 없다.
+    # 세션은 <home>/notebooklm/accounts/<account_id>/ 에 소유자 전용 권한으로 둔다.
+    notebooklm_enabled: bool = True
+    notebooklm_profile: Path | None = None  # 비우면 <home>/notebooklm-chrome (로그인용 전용 Chrome 프로필)
+    notebooklm_chrome_bin: str | None = None  # 비우면 설치된 Google Chrome 을 자동 탐색한다
+    notebooklm_login_timeout_seconds: int = Field(default=600, ge=60, le=1800)
+    # 계정당 동시 실행 수(프로세스 안). 무중단 배포 중 두 세대가 겹쳐도 합쳐서 이 값의 2배를 넘지 않는다.
+    notebooklm_concurrency: int = Field(default=2, ge=1, le=8)
+    notebooklm_request_timeout_seconds: int = Field(default=30, ge=5, le=120)
+    notebooklm_query_timeout_seconds: int = Field(default=120, ge=10, le=600)
+    notebooklm_source_wait_seconds: int = Field(default=180, ge=10, le=900)
+    notebooklm_read_retry_max: int = Field(default=3, ge=0, le=3)
+    notebooklm_read_retry_base_seconds: float = Field(default=1.0, ge=0.0, le=10.0)
+    notebooklm_read_retry_cap_seconds: float = Field(default=8.0, ge=0.0, le=60.0)
+    # 429 에 Retry-After 가 없을 때 쿨다운. 이 시간 동안 Google 에 요청을 보내지 않는다.
+    notebooklm_default_cooldown_seconds: int = Field(default=900, ge=60, le=86400)
+    notebooklm_verify_interval_seconds: int = Field(default=30, ge=5)
+    notebooklm_job_stale_seconds: int = Field(default=120, ge=30)
+    notebooklm_upload_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1024)
+
+    @property
+    def notebooklm_dir(self) -> Path:
+        return self.home / "notebooklm"
+
+    @property
+    def notebooklm_profile_dir(self) -> Path:
+        if self.notebooklm_profile is not None:
+            return Path(self.notebooklm_profile).expanduser().resolve()
+        return self.home / "notebooklm-chrome"
+
     copy_max_bytes: int = 200 * 1024 * 1024
     upload_max_bytes: int = 200 * 1024 * 1024
     # 폰 → 컴퓨터 파일 보내기(조각 업로드). 동영상 때문에 크게 잡는다.

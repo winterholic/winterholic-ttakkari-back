@@ -47,7 +47,7 @@
 | A5 | 에이전트 세션 토큰 | MCP 서버 env `TTK_ORCH_TOKEN`(`orchestrator/runtime.py:211-220`) | Run 시간+10분 동안 해당 세션 범위 API |
 | A6 | 다운로드·업로드 토큰 | `/api/dl/{token}` 5분 JWT, 업로드 토큰 `ttk_` 접두사(`api/transfers.py:228-241`) | 파일 열람·inbox 쓰기 |
 | A7 | 외부 AI 계정 자격증명 | `~/.ttakkari/accounts/*`, Antigravity 키체인(`security/antigravity_keychain.py`), `~/.claude`, `~/.codex/auth.json` | 유료 계정 탈취·사용량 소진 |
-| A8 | 금융·Google 세션 | `<home>/tossinvest-chrome`, `<home>/notebooklm-chrome`, `<home>/notebooklm/accounts`(`config.py:266-305`) | 증권 계좌 열람, Google 계정 |
+| A8 | 금융·Google 세션 | `<home>/tossinvest-chrome`, `<home>/google-accounts`(세션·계정별 Chrome 프로필, ADR 0051), 이전 위치 `<home>/notebooklm-chrome`·`<home>/notebooklm/accounts`(심볼릭 링크로 남음) | 증권 계좌 열람, Google 계정 |
 | A9 | 개인 기억·지식 원장 | `CtxMemory`, `CtxEntity`, 지식 assertion | 개인정보·건강·경력 |
 | A10 | 메모·일정 | `Memo`, `CalendarEvent`(scope 필드 없음) | 개인 일정 노출 |
 | A11 | 대화·Run 이벤트 | `ChatSession`, `RunEvent`(저장 전 마스킹 `runs/events.py`) | 업무·개인 대화 |

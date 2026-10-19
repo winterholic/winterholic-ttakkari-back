@@ -3,6 +3,7 @@
 - 상태: 채택 (2026-10-19)
 - 결정자: 에이전트 제안 (1단계 분석·설계·실측 기반)
 - 대상: `winterholic-ttakkari` 백엔드, 프론트엔드, MCP 도구, 지식 원장
+- 후속(2026-10-19): 로그인 창·세션 파일·재인증 알림은 Google 계정 공통 모듈로 분리됐다(ADR 0051, `ttakkari/google_account/`). 이 문서의 `notebooklm/login.py`·`session.py`·`redact.py`·`errors.py` 와 `~/.ttakkari/notebooklm/accounts/` 는 지금 `google_account/` 와 `~/.ttakkari/google-accounts/` 에 있다. 보안 불변 조건은 그대로다.
 
 ---
 

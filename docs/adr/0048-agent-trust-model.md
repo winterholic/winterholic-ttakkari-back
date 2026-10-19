@@ -65,7 +65,7 @@ guard가 놓친 변수 은닉·`python3 -c` 경로를 seatbelt는 막는다. 다
 | A7 | `~/.codex/auth.json` | 파일 없음. 계정별 `CODEX_HOME`(ADR 0006, `~/.ttakkari/accounts` 아래로 추정)에 있을 가능성 **확인 필요** | stat |
 | A7 | `~/.gemini/antigravity-cli/antigravity-oauth-token` | `-rw------- winterholic:staff`. 상위 디렉터리는 0755 | ls |
 | A7 | Antigravity 프로필 키체인 잠금 해제 비밀 | login keychain, 서비스 `net.winterholic.ttakkari.antigravity.unlock.v1` (`security/antigravity_keychain.py:18`) | 코드 |
-| A8 금융·Google 세션 | `~/.ttakkari/tossinvest-chrome`, `~/.ttakkari/notebooklm-chrome`, `~/.ttakkari/notebooklm/accounts` (`config.py` `tossinvest_profile_dir`·`notebooklm_profile_dir`·`notebooklm_dir`) | 미확인 | 코드 |
+| A8 금융·Google 세션 | `~/.ttakkari/tossinvest-chrome`, `~/.ttakkari/google-accounts`(ADR 0051), 이전 위치 `~/.ttakkari/notebooklm-chrome`·`~/.ttakkari/notebooklm/accounts` (`config.py` `tossinvest_profile_dir`·`google_accounts_dir`·`notebooklm_dir`) | 미확인 | 코드 |
 | A8 | 사용자 Chrome 프로필 `~/Library/Application Support/Google/Chrome` | `drwx------ winterholic:staff` | ls |
 | DB 접속 | `postgresql+asyncpg://localhost/ttakkari` 기본값(`config.py` `database_url`), 운영값은 config.env | `pg_hba.conf`(0600 winterholic): **local·127.0.0.1·::1 모두 `trust`** | pg_hba 인증 방식 행만 확인 |
 | 하네스 | `~/.claude`, `~/.codex` | 둘 다 `drwxr-xr-x winterholic:staff`. 쓰기 허용 루트에 포함(`config.py` `allowed_roots`·`default_writable_roots`, 사용자 결정 10-11) | stat |

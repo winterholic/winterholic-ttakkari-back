@@ -538,7 +538,23 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 `POST /api/stocks/tossinvest/check`·`/sync` → 202 `RunOut`. DB advisory transaction lock 안에서 마지막 기록을 검사하고 `running` 행을 먼저 커밋한 뒤 Chrome을 연다. 마지막 시작/갱신 후 `tossinvest_check_interval_seconds`(기본·최소 300초) 안이면 동시 요청·재시작 후 요청도 429 `rate_limited` + `Retry-After`. 실행은 180초로 제한하고, 중단으로 `running`만 남은 경우 간격이 지난 후 재시도할 수 있다. 탐색 전 CDP Fetch로 허용된 HTTPS GET만 계속하며 나머지 페이지 요청은 차단한다. 금액·수량·쿠키는 저장·반환하지 않는다. 실제 로그인 연결과 Chrome 전체의 백그라운드 트래픽 통제는 미검증이다.
 에이전트 읽기: `GET /api/agent/stocks/tossinvest/status|runs|login-help`, MCP `tossinvest_status`(READ_ONLY).
 
-### NotebookLM 연동 (ADR 0045, 소유자 전용)
+### Google 계정 (ADR 0051, 소유자 전용)
+
+Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위다. 한 번 로그인한 계정의 세션을 등록된 모든 기능이 공유한다. 계정 키 `account_id`(`^[a-z0-9][a-z0-9_-]{0,31}$`)는 지금 `primary` 하나다. 응답에 쿠키·토큰은 없고 쿠키 이름만 있다. 오류 형식은 NotebookLM 절과 같다(`{code, message[, retry_after]}`).
+
+- `GET /api/google-accounts` → `{accounts: [Account]}`. `GET /api/google-accounts/{account_id}` → `Account`. 브라우저·Google 요청 없이 마지막으로 알려진 상태만 본다.
+  `Account` = `{account_id, label, state, message, logged_in, reauth_required, last_login_at, last_ok_at, last_checked_at, last_error_code, session{stored, cookie_names, permissions_ok, encrypted:false, protection}, login{state, message, active, feature, started_at, finished_at}, browser_available, features[Feature], metrics}`.
+  `state`(계정 수준): `login_required | session_saved | ready | reauth_required | disabled`. 쿨다운·blocked 는 계정 상태가 아니다.
+  `Feature` = `{id, label, description, path, enabled, covered, can_verify, can_resume, state, message, cooldown_until, retry_after, last_ok_at, ...}`. 기능 자신이 정한 상태다(`state` 는 계정 상태가 막으면 그 값, 아니면 기능 값: `ready | session_saved | cooldown | blocked | ...`). `covered` 는 저장된 세션에 이 기능의 쿠키 도메인이 있는가(세션이 없으면 `null`). false 이면 그 기능의 화면에서 로그인을 한 번 더 한다.
+- `POST /api/google-accounts/{id}/login {feature?}` → 202 `login`. Mac 화면에 그 계정 전용 프로필 Chrome 창을 연다(원격 디버깅·자동화 플래그 없음). `feature` 가 연 앱 화면이 로그인 완료 판정 기준이다(비우면 첫 등록 기능). `login.state`: `starting|waiting|protection|saving|done|timeout|cancelled|failed`. 같은 계정에 창이 열려 있으면 409 `busy`, 꺼진 기능이면 503 `disabled`, 모르는 기능이면 422 `invalid`.
+- `POST /api/google-accounts/{id}/login/complete` → `login`(창을 닫고 2단계로 쿠키 수집·저장) · `POST /login/cancel` → `login`.
+- `DELETE /api/google-accounts/{id}/session` → `Account`. 저장된 세션 파일을 지운다(Google 로그아웃 아님, Chrome 프로필은 둔다).
+- `POST /api/google-accounts/{id}/features/{feature}/verify` → 그 기능의 상태. 기능이 정한 확인 1회(Google 요청, 기능별 간격 제한). 지원하지 않으면 501 `unsupported`.
+- `POST /api/google-accounts/{id}/features/{feature}/resume` → 그 기능의 상태. 그 기능의 `blocked` 를 사람이 확인한 뒤 푼다. 다른 기능에는 영향이 없다.
+- 세션 만료는 어느 기능이 감지하든 계정 `reauth_required` 가 되고 알림(`push.google_account`, 링크 `/settings#google-accounts`)은 계정당 한 번이다. 다시 로그인하면 풀린다.
+- 에이전트(개인 세션 전용, 업무 세션은 403): `GET /api/agent/google-accounts[/{account_id}]` 와 MCP `google_account_status`(READ_ONLY)뿐이다. 로그인 창·세션 삭제·재개·확인은 노출하지 않는다.
+
+### NotebookLM 연동 (ADR 0045, 0051, 소유자 전용)
 
 기존 Google 계정의 NotebookLM 권한·할당량만 쓴다(유료 API 키 경로 없음). 지금은 계정 `primary` 하나이며 DB 행·잠금·job은 모두 `account_id`를 키로 가진다. 상류 `notebooklm-py==0.8.5` 공개 API를 `NotebookLMBackend` Protocol 뒤에 둔다. 응답에 쿠키·토큰·상류 응답 원문은 없다.
 
@@ -553,6 +569,7 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 | 502 / 503 / 504 | `upstream_error`·`upstream_rejected` / `transient` / `timeout` | `outcome_unknown: true`이면 쓰기가 Google에 닿았는지 모른다. 같은 쓰기를 다시 보내지 말고 목록을 먼저 확인 |
 
 **인증·상태**
+- 아래 `/auth/*` 는 Google 계정 공통 모듈(위 절)로 위임하는 호환 경로다. 경로와 응답 키는 그대로이고 `account{id, state}` 가 추가됐다. 로그인 창은 NotebookLM 앱 화면 기준으로 열린다. 로그인·재인증은 계정 상태이고 `cooldown`·`blocked` 만 NotebookLM 고유 상태다.
 - `GET /api/notebooklm/auth/status` → `{account_id, state, message, logged_in, reauth_required, cooldown_until, retry_after, last_ok_at, last_checked_at, last_error_code, session{stored, cookie_names(이름만), permissions_ok, encrypted:false, protection}, login{state, message, active, started_at, finished_at}, browser_available, backend, capabilities[{name, available, reason}], limits, metrics}`. Google 요청·브라우저 실행 없음. `state`: `login_required | session_saved | ready | reauth_required | cooldown | blocked | disabled`. `capabilities`에서 `available:false`인 항목(audio_overview, video_overview, research, drive_sources, sharing)은 지원하지 않는 기능이다.
 - `POST /auth/login-window` → 202 `login`. Mac 화면에 전용 프로필 Chrome 창을 연다(원격 디버깅·자동화 플래그 없음). 사람이 그 창에서 Google 로그인을 한 번 한다. `login.state`: `starting|waiting|protection|saving|done|timeout|cancelled|failed`. 같은 계정에 창이 열려 있거나 이전 창이 남아 있으면 409 `busy`. 화면은 `GET /auth/status`의 `login`을 폴링한다.
 - `POST /auth/login-window/complete` → `login`. 로그인 창을 닫고 2단계로 headless Chrome을 잠깐 띄워 세션 쿠키를 수집·저장한다.

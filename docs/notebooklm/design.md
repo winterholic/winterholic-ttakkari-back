@@ -2,7 +2,8 @@
 
 작성일자: 2026-10-19  
 작성자: 따까리(winterholic-ttakkari) 분석·설계 에이전트  
-문서 상태: 승인 대기 / 1단계 산출물
+문서 상태: 승인 대기 / 1단계 산출물  
+후속: 로그인·세션 관리는 공통 Google 계정 모듈로 분리됐다(`docs/adr/0051-google-account-common-module.md`, 새 기능 붙이기는 `docs/google-account/README.md`). 아래 설계의 `login`·`session` 은 지금 `ttakkari/google_account/` 에 있다.
 
 ---
 

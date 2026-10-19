@@ -55,8 +55,7 @@ def _private_dir(path: Path) -> None:
     for d in (path, *path.parents):
         if d == root.parent:
             break
-        with contextlib.suppress(OSError):
-            d.chmod(0o700)
+        d.chmod(0o700)
         if d == root:
             break
 

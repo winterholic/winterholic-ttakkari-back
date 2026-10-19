@@ -99,6 +99,22 @@ def test_session_permissions_and_atomic_replace(home):
     assert not session.mode_ok("primary")
 
 
+def test_session_save_fails_if_private_directory_permissions_cannot_be_set(home, monkeypatch):
+    account_dir = session.account_dir("primary")
+    account_dir.mkdir(parents=True)
+    original_chmod = session.Path.chmod
+
+    def fail_for_account_dir(path, mode, *args, **kwargs):
+        if path == account_dir:
+            raise PermissionError("permission denied")
+        return original_chmod(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(session.Path, "chmod", fail_for_account_dir)
+    with pytest.raises(PermissionError):
+        session.save_cookies("primary", _cookies())
+    assert not session.exists("primary")
+
+
 def test_session_requires_login_cookies_and_valid_account(home):
     with pytest.raises(errors.AuthRequired):
         session.save_cookies("primary", [c for c in _cookies() if c["name"] != "__Secure-1PSIDTS"])
@@ -408,3 +424,25 @@ def test_launch_args_bind_loopback_and_use_dedicated_profile(home, monkeypatch):
     assert not any("headless" in a or "enable-automation" in a for a in argv)  # 일반 보이는 창, 자동화 플래그 없음
     assert ws.startswith("ws://127.0.0.1:")
     assert stat.S_IMODE(get_settings().notebooklm_profile_dir.stat().st_mode) == 0o700
+
+
+def test_login_does_not_launch_when_profile_permissions_cannot_be_set(home, monkeypatch):
+    profile = get_settings().notebooklm_profile_dir
+    original_chmod = login.Path.chmod
+    launched = False
+
+    def fail_for_profile(path, mode, *args, **kwargs):
+        if path == profile:
+            raise PermissionError("permission denied")
+        return original_chmod(path, mode, *args, **kwargs)
+
+    def fake_popen(*args, **kwargs):
+        nonlocal launched
+        launched = True
+        raise AssertionError("Chrome must not launch with an unprotected profile")
+
+    monkeypatch.setattr(login.Path, "chmod", fail_for_profile)
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    with pytest.raises(PermissionError):
+        asyncio.run(login._launch(login.Path("/chrome"), profile))
+    assert not launched

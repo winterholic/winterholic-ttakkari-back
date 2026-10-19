@@ -162,8 +162,7 @@ class _Browser:
 async def _launch(chrome: Path, profile: Path) -> tuple[subprocess.Popen, str]:
     """보이는 Chrome 창을 전용 프로필로 띄우고 루프백 CDP 주소를 읽는다."""
     profile.mkdir(parents=True, exist_ok=True)
-    with contextlib.suppress(OSError):
-        profile.chmod(0o700)
+    profile.chmod(0o700)
     proc = await asyncio.to_thread(
         subprocess.Popen,
         [

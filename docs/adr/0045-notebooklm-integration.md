@@ -47,10 +47,10 @@ RPC와 페이로드 파서를 복사해 소유하지 않는다. `notebooklm-py`�
 ## 3. 핵심 설계 결정
 
 ### 3.1 통신 및 세션 아키텍처 (API 우선 원칙)
-- **1회성 인증 (CDP)**:
+- **1회성 인증 (2단계 분리)**:
   - 전용 Chrome 프로필 디렉터리(`~/.ttakkari/notebooklm-chrome`)를 사용한다 (기본 프로필은 macOS TCC 및 Chrome 136+ 차단으로 사용 불가).
-  - 사용자가 일반 Chrome 창에서 1회 수동 로그인 (`POST /api/notebooklm/auth/login-window` 호출 시 브라우저 창 팝업).
-  - 백엔드는 디버깅 포트의 WebSocket CDP를 통해 세션 쿠키를 메모리로 추출한다. 영속 저장 형식·키 관리·파일 권한은 확정 전이다. “암호화된 파일”을 전제로 구현하지 않는다.
+  - 1단계(로그인): 원격 디버깅, 자동화 플래그 없이 일반 Chrome 창을 띄워 사용자가 1회 직접 로그인한다 (`POST /api/notebooklm/auth/login-window`). Google이 원격 디버깅 중인 브라우저를 자동화 도구로 차단(`accounts.google.com/v3/signin/rejected`)하는 문제를 방지한다.
+  - 2단계(쿠키 추출): 사용자가 창을 닫거나 완료 버튼(`POST /api/notebooklm/auth/login-window/complete`)을 누르면 1단계 창을 종료한 후, 같은 프로필로 headless Chrome을 `--remote-debugging-port`와 루프백 주소(`127.0.0.1`)로 잠깐 띄워 WebSocket CDP(`Storage.getCookies`)로 세션 쿠키를 추출하고 즉시 종료한다. 쿠키 DB 직접 복호화나 키체인 열람은 하지 않는다.
 - **일상 통신 (상류 라이브러리)**:
   - 요청별 브라우저 비상주를 목표로 한다. 장기 세션 복구 과정에서 브라우저가 필요한지와 리소스 영향은 spike 및 호스트 실측 전까지 미확정이다.
   - NotebookLM의 계정 토큰과 내부 RPC 세부는 상류 라이브러리가 소유하고, 따까리 서비스는 안정된 공개 API만 호출한다. 내부 RPC가 Google의 지원 API이거나 정책상 허용된다는 근거는 확인하지 못했다.

@@ -668,7 +668,7 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
     key = (account_id, engine, config_dir)
     task = _inflight.get(key)
     if task is None:
-        task = asyncio.ensure_future(_fetch_live(account_id, engine, config_dir))
+        task = asyncio.ensure_future(_fetch_live_bounded(account_id, engine, config_dir))
         _inflight[key] = task
 
         def _done(t: asyncio.Task[Usage]) -> None:
@@ -679,6 +679,22 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
 
         task.add_done_callback(_done)
     return await asyncio.shield(task)
+
+
+# 조회 하나가 영영 끝나지 않으면 _inflight 에 남아 그 계정의 이후 모든 조회(수집기·화면·새로고침)가 같은 작업을 기다린다.
+# 엔진마다 하위 단계 시간 제한의 합보다 조금 길게 잡은 상한이다(Claude: 갱신 호출 60초 + 조회, Muse: SDK 25초 + TUI 23초).
+FETCH_DEADLINE = {"claude": 100.0, "muse": 70.0, "antigravity": 50.0, "codex": 45.0}
+
+
+async def _fetch_live_bounded(account_id: uuid.UUID, engine: str, config_dir: str | None) -> Usage:
+    limit = FETCH_DEADLINE.get(engine, 60.0)
+    try:
+        return await asyncio.wait_for(_fetch_live(account_id, engine, config_dir), limit)
+    except TimeoutError:
+        # 실패도 캐시에 남겨 화면이 낡은 값을 현재 값처럼 보이지 않게 한다(_fetch_live 의 실패 경로와 같은 모양).
+        failed = Usage(error=f"사용량 조회가 {limit:.0f}초 안에 끝나지 않았어요({engine})")
+        _cache[account_id] = (time.time(), failed)
+        return failed
 
 
 async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None) -> Usage:

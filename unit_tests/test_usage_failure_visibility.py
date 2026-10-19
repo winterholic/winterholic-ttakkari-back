@@ -245,3 +245,23 @@ async def test_collector_retries_at_once_when_a_run_leaves_a_newer_observation(m
 
     assert bool(fetched) is expected
     usage.clear_cache()
+
+
+async def test_a_hung_provider_fetch_ends_with_an_error_and_frees_the_inflight_slot(monkeypatch):
+    """조회가 영영 끝나지 않으면 이후 모든 조회가 같은 작업을 기다려 화면이 '읽는 중'에서 멈춘다."""
+    import asyncio
+
+    aid = uuid4()
+    usage.clear_cache()
+    monkeypatch.setitem(usage.FETCH_DEADLINE, "claude", 0.05)
+
+    async def hang(_config_dir):
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(usage, "_fetch_claude", hang)
+
+    first = await usage.usage_for(aid, "claude", "/x", refresh=True)
+
+    assert "0초 안에 끝나지 않았어요(claude)" in first.error and not first.windows
+    assert not usage.fetching(aid)
+    assert usage.cached(aid).error == first.error

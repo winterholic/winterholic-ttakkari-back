@@ -216,11 +216,18 @@ class NotebookLMService:
         st = await login.manager.start(account_id, on_done=self._on_login_done)
         return st.to_dict()
 
+    async def complete_login(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
+        st = await login.manager.complete(account_id)
+        return st.to_dict()
+
     async def cancel_login(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
         return (await login.manager.cancel(account_id)).to_dict()
 
     async def _on_login_done(self, st: login.LoginState) -> None:
         if st.state != "done":
+            if not session.exists(st.account_id):
+                await self._set_state(st.account_id, "login_required", st.message or "로그인이 완료되지 않았습니다.",
+                                      reauth_notified_at=None, cooldown_until=None)
             return
         await self.invalidate(st.account_id)
         await self._set_state(st.account_id, "session_saved", "로그인 세션을 저장했습니다. 접속을 확인하는 중입니다.",

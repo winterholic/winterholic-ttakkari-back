@@ -102,6 +102,11 @@ def _routes(r: APIRouter, *, agent: bool) -> None:
         async def login_cancel() -> dict[str, Any]:
             return await service.cancel_login(DEFAULT_ACCOUNT)
 
+        @r.post("/auth/login-window/complete")
+        async def login_complete_action() -> dict[str, Any]:
+            """Mac 화면의 로그인 창을 닫고 2단계로 세션 쿠키를 수집·저장한다."""
+            return await service.complete_login(DEFAULT_ACCOUNT)
+
         @r.post("/auth/resume")
         async def auth_resume() -> dict[str, Any]:
             """보호 신호로 멈춘 상태(blocked)를 사람이 직접 확인한 뒤 풀어 준다."""

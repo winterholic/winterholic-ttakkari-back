@@ -554,7 +554,8 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 
 **인증·상태**
 - `GET /api/notebooklm/auth/status` → `{account_id, state, message, logged_in, reauth_required, cooldown_until, retry_after, last_ok_at, last_checked_at, last_error_code, session{stored, cookie_names(이름만), permissions_ok, encrypted:false, protection}, login{state, message, active, started_at, finished_at}, browser_available, backend, capabilities[{name, available, reason}], limits, metrics}`. Google 요청·브라우저 실행 없음. `state`: `login_required | session_saved | ready | reauth_required | cooldown | blocked | disabled`. `capabilities`에서 `available:false`인 항목(audio_overview, video_overview, research, drive_sources, sharing)은 지원하지 않는 기능이다.
-- `POST /auth/login-window` → 202 `login`. Mac 화면에 전용 프로필 Chrome 창을 연다(루프백 CDP). 사람이 그 창에서 Google 로그인을 한 번 하면 세션을 저장하고 창을 닫는다. `login.state`: `starting|waiting|protection|saving|done|timeout|cancelled|failed`. 같은 계정에 창이 열려 있거나 이전 창이 남아 있으면 409 `busy`. 화면은 `GET /auth/status`의 `login`을 폴링한다.
+- `POST /auth/login-window` → 202 `login`. Mac 화면에 전용 프로필 Chrome 창을 연다(원격 디버깅·자동화 플래그 없음). 사람이 그 창에서 Google 로그인을 한 번 한다. `login.state`: `starting|waiting|protection|saving|done|timeout|cancelled|failed`. 같은 계정에 창이 열려 있거나 이전 창이 남아 있으면 409 `busy`. 화면은 `GET /auth/status`의 `login`을 폴링한다.
+- `POST /auth/login-window/complete` → `login`. 로그인 창을 닫고 2단계로 headless Chrome을 잠깐 띄워 세션 쿠키를 수집·저장한다.
 - `POST /auth/login-window/cancel` → `login`. 창을 닫고 취소한다.
 - `POST /auth/verify` → status. 저장된 세션으로 NotebookLM에 접속해 본다(Google 요청 1회, 30초 간격 제한 → 429).
 - `POST /auth/resume` → status. `blocked`를 사람이 확인한 뒤 푼다(blocked가 아니면 409).

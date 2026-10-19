@@ -92,7 +92,7 @@ def resolve_project_path(project_path: Path) -> Path:
     return raw
 
 
-async def _git(cwd: Path, *args: str) -> str:
+async def run_git(cwd: Path, *args: str) -> str:
     """게임 저장소 git 호출. 훅을 끄고 사용자·시스템 설정을 읽지 않아 저장소 안 코드가 실행되지 않게 한다."""
     env = {k: os.environ[k] for k in GIT_ENV_KEYS if k in os.environ}
     env |= {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_TERMINAL_PROMPT": "0"}
@@ -154,9 +154,9 @@ class PhaserAdapter(GameEngineAdapter):
             (root / MANIFEST_FILE).write_text(json.dumps(manifest.to_json(), ensure_ascii=False, indent=2) + "\n")
 
         await asyncio.to_thread(_copy)
-        await _git(root, "init", "-q", "-b", "main")
-        await _git(root, "add", "-A")
-        await _git(root, "commit", "-q", "-m", f"scaffold {self.ENGINE_ID} project")
+        await run_git(root, "init", "-q", "-b", "main")
+        await run_git(root, "add", "-A")
+        await run_git(root, "commit", "-q", "-m", f"scaffold {self.ENGINE_ID} project")
 
     async def build(self, project_path: Path, build_id: str) -> BuildResult:
         if not BUILD_ID_RE.fullmatch(build_id):

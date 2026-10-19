@@ -420,7 +420,7 @@ flowchart TD
 2. **TASK-G02: 기존 모델 연결 및 최소 schema/API 계약 (1.5h)** [완료 2026-10-19, ADR 0047] — PMS project, workspace, session, Run, Artifact의 소유권 표와 필요 최소 필드 결정; 전용 큐/버전 테이블 배제 사유 기록. `uv run pytest -q tests/test_game_contract.py`
 3. **TASK-G05: 최소 Alembic migration 또는 no-migration 결정 (1.5h)** [완료 2026-10-19, 0047_game_studio] — G02 계약의 필요한 필드만 반영한다. 완료: migration 적용 또는 no-migration 근거 기록; migration이 있으면 `uv run ttakkari migrate` 및 테스트 DB upgrade/downgrade 확인. 검증: `uv run pytest -q tests/test_game_migration.py`
 4. **TASK-G03: Phaser 프로젝트 scaffold·격리 build adapter (2h)** [완료 2026-10-19] — 잠금 결정 manifest를 읽고 테스트 프로젝트 빌드; arbitrary paths 거부. `uv run pytest -q tests/test_game_adapter.py`
-5. **TASK-G04: 불변 빌드 스냅샷·Artifact 등록 (1.5h)** — 성공/실패 빌드 ID, source commit, 번들 위치/해시, Run/Artifact 연결; 재빌드가 이전 산출물을 변경하지 않음. `uv run pytest -q tests/test_game_build_snapshots.py`
+5. **TASK-G04: 불변 빌드 스냅샷·Artifact 등록 (1.5h)** [완료 2026-10-19] — 성공/실패 빌드 ID, source commit, 번들 위치/해시, Run/Artifact 연결; 재빌드가 이전 산출물을 변경하지 않음. `uv run pytest -q tests/test_game_build_snapshots.py`
 6. **TASK-G06: 프로젝트·빌드 API (1.5h)** — 인증된 사용자만 기존 project/workspace에 새 게임 연결, 상태·빌드 목록 조회; 권한 없는 ID와 잘못된 경로 거부. `uv run pytest -q tests/test_api_games.py`
 7. **TASK-G07: 별도 게임 origin 정적 서빙 경계 (2h)** — 세션 bearer와 쿠키 없이 빌드 제공, CSP/sandbox/cookie/CORS·path traversal 검증. 같은 origin에서 PWA 토큰/API에 접근 못함. `uv run pytest -q tests/test_game_serving_security.py`
 8. **TASK-G08: worker 개발·검증 연결 (2h)** — MCP `spawn_worker`에 project/build/locked decisions/작업 prompt 전달, 반환 session/Run 상태를 기존 도구로 읽고 보고. 중복 queue 없음. `uv run pytest -q tests/test_game_worker_flow.py`

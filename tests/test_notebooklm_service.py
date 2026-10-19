@@ -234,6 +234,16 @@ async def test_login_window_endpoints_use_manager(client, auth, fake, monkeypatc
     r = await client.post("/api/notebooklm/auth/login-window", headers=auth)
     assert r.status_code == 409 and r.json()["code"] == "busy"
 
+    completed = {}
+
+    async def fake_complete(account_id):
+        completed["id"] = account_id
+        return login.LoginState(account_id=account_id, state="done", message="로그인이 끝났습니다.")
+
+    monkeypatch.setattr(login.manager, "complete", fake_complete)
+    rc = await client.post("/api/notebooklm/auth/login-window/complete", headers=auth)
+    assert rc.status_code == 200 and rc.json()["state"] == "done" and completed["id"] == "primary"
+
 
 async def test_session_expiry_marks_reauth_and_notifies_once(client, auth, fake):
     fake.plan["list_notebooks"] = [errors.AuthRequired("expired")]
@@ -742,6 +752,7 @@ async def test_agent_routes_are_personal_only_and_hide_login_actions(client, fak
     assert (await client.get("/api/agent/notebooklm/notebooks", headers=p)).status_code == 200
     # 로그인 창·세션 삭제·재개·업로드는 에이전트에 열지 않는다
     assert (await client.post("/api/agent/notebooklm/auth/login-window", headers=p)).status_code in (404, 405)
+    assert (await client.post("/api/agent/notebooklm/auth/login-window/complete", headers=p)).status_code in (404, 405)
     assert (await client.delete("/api/agent/notebooklm/auth/session", headers=p)).status_code in (404, 405)
     assert (await client.post("/api/agent/notebooklm/auth/resume", headers=p)).status_code in (404, 405)
     assert (await client.post("/api/agent/notebooklm/notebooks/nb1/sources/upload", headers=p,

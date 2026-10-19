@@ -327,11 +327,16 @@ class _FakeBrowser:
 @pytest.fixture
 def fake_login(home, monkeypatch):
     proc = _FakeProc()
+    headless_proc = _FakeProc()
 
     async def fake_launch(chrome, profile):
-        return proc, "ws://127.0.0.1:9/devtools/browser/x"
+        return proc
+
+    async def fake_launch_headless(chrome, profile):
+        return headless_proc, "ws://127.0.0.1:9/devtools/browser/x"
 
     monkeypatch.setattr(login, "_launch", fake_launch)
+    monkeypatch.setattr(login, "_launch_headless", fake_launch_headless)
     monkeypatch.setattr(login, "find_chrome", lambda: login.Path("/bin/true"))
     monkeypatch.setattr(login, "profile_chrome_pids", list)
     monkeypatch.setattr(login, "_Browser", _FakeBrowser)
@@ -351,8 +356,7 @@ async def _wait_login(mgr, account="primary", seconds=5.0):
 
 async def test_login_flow_saves_session_and_closes_window(fake_login):
     app = "https://notebooklm.google.com/"
-    _FakeBrowser.script = [(["https://accounts.google.com/v3/signin"], []), (["https://accounts.google.com/v3/signin"], []),
-                           ([app], _cookies()), ([app], _cookies()), ([app], _cookies())]
+    _FakeBrowser.script = [([app], _cookies())]
     done = []
 
     async def on_done(st):
@@ -360,41 +364,71 @@ async def test_login_flow_saves_session_and_closes_window(fake_login):
 
     st = await login.manager.start("primary", on_done=on_done)
     assert st.active
+    # 사용자가 창을 닫음 -> 2단계 headless 쿠키 수집 진행
+    fake_login.code = 0
     final = await _wait_login(login.manager)
     assert final.state == "done" and done == ["done"]
     assert session.exists("primary") and "SID" in final.cookie_names
-    assert _FakeBrowser.closed  # 창을 닫았다
+    assert _FakeBrowser.closed  # 2단계 브라우저를 닫았다
     assert COOKIE_SID not in json.dumps(final.to_dict())
 
 
-async def test_login_protection_signal_stops_extraction_and_times_out(fake_login, monkeypatch):
-    monkeypatch.setattr(get_settings(), "notebooklm_login_timeout_seconds", 1)  # 보호 화면이 계속 뜨다 1초 뒤 시간 초과
-    _FakeBrowser.script = [(["https://accounts.google.com/signin/v2/challenge/recaptcha"], _cookies())]
+async def test_login_complete_button_triggers_two_phase_flow(fake_login):
+    app = "https://notebooklm.google.com/"
+    _FakeBrowser.script = [([app], _cookies())]
+
     st = await login.manager.start("primary")
-    final = await _wait_login(login.manager)
-    assert final.state == "timeout"
-    assert _FakeBrowser.cookie_reads == 0  # 보호 신호 화면에서는 쿠키를 읽지도 저장하지도 않는다
-    assert not session.exists("primary") and _FakeBrowser.closed
-    assert st.account_id == "primary"
+    assert st.active
+    # 화면의 '로그인 완료' 버튼을 누름 -> 1단계 창을 닫고 2단계 headless 쿠키 수집 진행
+    completed = await login.manager.complete("primary")
+    assert completed.state == "done"
+    assert session.exists("primary") and "SID" in completed.cookie_names
+    assert fake_login.terminated  # 1단계 창이 정상 종료됨
 
 
-async def test_login_cancel_and_duplicate_lock(fake_login):
+async def test_login_user_closing_window_not_logged_in_ends_flow(fake_login):
+    # 사용자가 로그인을 마치지 않고 창을 닫았을 때: 2단계에서 미로그인 판정 후 cancelled
     _FakeBrowser.script = [(["https://accounts.google.com/v3/signin"], [])]
     await login.manager.start("primary")
-    with pytest.raises(errors.Busy):
-        await login.manager.start("primary")  # 같은 계정의 두 번째 창은 거절
-    await asyncio.sleep(0.05)
-    cancelled = await login.manager.cancel("primary")
-    assert cancelled.state == "cancelled" and _FakeBrowser.closed and not session.exists("primary")
-
-
-async def test_login_user_closing_window_ends_flow(fake_login):
-    _FakeBrowser.script = [(["https://accounts.google.com/v3/signin"], [])]
-    await login.manager.start("primary")
-    await asyncio.sleep(0.05)
+    await asyncio.sleep(0.02)
     fake_login.code = 0  # 사용자가 창을 닫음
     final = await _wait_login(login.manager)
     assert final.state == "cancelled"
+    assert not session.exists("primary")
+
+
+async def test_login_protection_signal_stops_and_fails(fake_login):
+    # 2단계에서 Google 보안 확인 화면이 감지된 경우
+    _FakeBrowser.script = [(["https://accounts.google.com/signin/v2/challenge/recaptcha"], _cookies())]
+    await login.manager.start("primary")
+    fake_login.code = 0
+    final = await _wait_login(login.manager)
+    assert final.state == "failed"
+    assert "보안 확인" in final.message
+    assert not session.exists("primary")
+
+
+async def test_login_cancel_skips_extraction(fake_login):
+    _FakeBrowser.script = [(["https://notebooklm.google.com/"], _cookies())]
+    await login.manager.start("primary")
+    with pytest.raises(errors.Busy):
+        await login.manager.start("primary")  # 같은 계정의 두 번째 창은 거절
+    await asyncio.sleep(0.02)
+    cancelled = await login.manager.cancel("primary")
+    assert cancelled.state == "cancelled" and not session.exists("primary")
+    assert _FakeBrowser.cookie_reads == 0  # 취소 시 2단계 쿠키 추출을 시도하지 않는다
+    assert fake_login.terminated
+
+
+async def test_login_timeout_skips_extraction(fake_login, monkeypatch):
+    monkeypatch.setattr(get_settings(), "notebooklm_login_timeout_seconds", 0.05)
+    _FakeBrowser.script = [(["https://notebooklm.google.com/"], _cookies())]
+    await login.manager.start("primary")
+    final = await _wait_login(login.manager)
+    assert final.state == "timeout"
+    assert _FakeBrowser.cookie_reads == 0  # 타임아웃 시 2단계 쿠키 추출을 시도하지 않는다
+    assert not session.exists("primary")
+    assert fake_login.terminated
 
 
 async def test_login_refuses_when_leftover_window_exists(fake_login, monkeypatch):
@@ -403,7 +437,28 @@ async def test_login_refuses_when_leftover_window_exists(fake_login, monkeypatch
         await login.manager.start("primary")
 
 
-def test_launch_args_bind_loopback_and_use_dedicated_profile(home, monkeypatch):
+def test_launch_args_have_no_remote_debugging_flag(home, monkeypatch):
+    seen = {}
+
+    class P:
+        def poll(self):
+            return None
+
+    def fake_popen(argv, **kw):
+        seen["argv"] = argv
+        return P()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    _proc = asyncio.run(login._launch(login.Path("/chrome"), get_settings().notebooklm_profile_dir))
+    argv = seen["argv"]
+    # 1단계 로그인 창: 원격 디버깅, 자동화 플래그가 절대 없어야 한다 (Google 로그인 거부 방지)
+    assert not any("remote-debugging" in a for a in argv)
+    assert not any("headless" in a or "automation" in a for a in argv)
+    assert f"--user-data-dir={get_settings().notebooklm_profile_dir}" in argv
+    assert stat.S_IMODE(get_settings().notebooklm_profile_dir.stat().st_mode) == 0o700
+
+
+def test_launch_headless_args_bind_loopback_and_use_dedicated_profile(home, monkeypatch):
     seen = {}
 
     class P:
@@ -417,11 +472,12 @@ def test_launch_args_bind_loopback_and_use_dedicated_profile(home, monkeypatch):
         return P()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    _proc, ws = asyncio.run(login._launch(login.Path("/chrome"), get_settings().notebooklm_profile_dir))
+    _proc, ws = asyncio.run(login._launch_headless(login.Path("/chrome"), get_settings().notebooklm_profile_dir))
     argv = seen["argv"]
+    # 2단계 쿠키 추출: headless, 루프백 CDP 포트 사용
+    assert "--headless=new" in argv
     assert "--remote-debugging-address=127.0.0.1" in argv and "--remote-debugging-port=0" in argv
     assert f"--user-data-dir={get_settings().notebooklm_profile_dir}" in argv
-    assert not any("headless" in a or "enable-automation" in a for a in argv)  # 일반 보이는 창, 자동화 플래그 없음
     assert ws.startswith("ws://127.0.0.1:")
     assert stat.S_IMODE(get_settings().notebooklm_profile_dir.stat().st_mode) == 0o700
 

@@ -259,6 +259,30 @@ async def test_session_expiry_marks_reauth_and_notifies_once(client, auth, fake)
     assert (await client.get("/api/notebooklm/notebooks", headers=auth)).status_code == 200
 
 
+async def test_concurrent_session_expiry_sends_one_notification(fake, monkeypatch):
+    import ttakkari.push.service as push_service
+
+    original_row = service._row
+    barrier = asyncio.Barrier(2)
+    calls = 0
+
+    async def synchronized_row(db, account_id):
+        row = await original_row(db, account_id)
+        await barrier.wait()
+        return row
+
+    async def fake_notify(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {"sent": 0, "removed": 0, "failed": 0}
+
+    monkeypatch.setattr(service, "_row", synchronized_row)
+    monkeypatch.setattr(push_service, "notify", fake_notify)
+    await asyncio.gather(service._mark_reauth("primary", "expired"),
+                         service._mark_reauth("primary", "expired"))
+    assert calls == 1
+
+
 # ------------------------------------------------------------------ 재시도 정책
 
 async def test_reads_retry_with_backoff_up_to_three_times(client, auth, fake):
@@ -320,6 +344,66 @@ async def test_rate_limit_starts_cooldown_and_stops_requests(client, auth, fake)
         row.cooldown_until = datetime.now(UTC) - timedelta(seconds=1)
         await db.commit()
     assert (await client.get("/api/notebooklm/notebooks", headers=auth)).status_code == 200
+
+
+async def test_waiting_request_rechecks_cooldown_before_sending(client, auth, fake, monkeypatch):
+    monkeypatch.setattr(get_settings(), "notebooklm_concurrency", 1)
+    service._sems.clear()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+
+    async def rate_limited():
+        first_entered.set()
+        await release_first.wait()
+        raise errors.RateLimited("limit", retry_after=60)
+
+    fake.plan["list_notebooks"] = [rate_limited]
+    first = asyncio.create_task(service.list_notebooks())
+    await first_entered.wait()
+    waiting = asyncio.create_task(service.list_notebooks())
+    await asyncio.sleep(0.05)
+    assert not waiting.done()
+
+    release_first.set()
+    with pytest.raises(errors.RateLimited):
+        await first
+    with pytest.raises(errors.Cooldown):
+        await waiting
+    assert fake.count("list_notebooks") == 1
+
+
+@pytest.mark.parametrize(
+    ("signal", "blocked_error"),
+    [
+        (errors.RateLimited("limit", retry_after=60), errors.Cooldown),
+        (errors.ProtectionSignal("protection"), errors.ProtectionSignal),
+    ],
+)
+async def test_late_success_does_not_clear_account_block(client, auth, fake, monkeypatch, signal, blocked_error):
+    monkeypatch.setattr(get_settings(), "notebooklm_concurrency", 2)
+    service._sems.clear()
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+
+    async def late_success():
+        first_entered.set()
+        await release_first.wait()
+
+    async def block_account():
+        raise signal
+
+    fake.plan["list_notebooks"] = [late_success, block_account]
+    first = asyncio.create_task(service.list_notebooks())
+    await first_entered.wait()
+    second = asyncio.create_task(service.list_notebooks())
+    with pytest.raises(type(signal)):
+        await second
+
+    release_first.set()
+    await first
+    with pytest.raises(blocked_error):
+        await service.list_notebooks()
+    assert fake.count("list_notebooks") == 2
 
 
 async def test_rate_limit_without_retry_after_uses_default_cooldown(client, auth, fake):

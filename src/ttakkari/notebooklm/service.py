@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
@@ -308,13 +308,20 @@ class NotebookLMService:
                 await db.commit()
 
     async def _mark_reauth(self, account_id: str, message: str) -> None:
-        notify_now = False
         async with sessionmaker()() as db:
-            row = await self._row(db, account_id)
-            row.state, row.message, row.last_error_code = "reauth_required", message, "auth_required"
-            if row.reauth_notified_at is None:  # 알림은 상태가 바뀐 첫 순간 한 번만
-                row.reauth_notified_at = _now()
-                notify_now = True
+            await self._row(db, account_id)
+            now = _now()
+            # 여러 요청이 동시에 만료를 감지해도 DB에서 한 요청만 알림 발송권을 얻는다.
+            claimed = await db.execute(update(NotebookLMAccount).where(
+                NotebookLMAccount.account_id == account_id,
+                NotebookLMAccount.reauth_notified_at.is_(None),
+            ).values(state="reauth_required", message=message, last_error_code="auth_required",
+                     reauth_notified_at=now, updated_at=now))
+            notify_now = claimed.rowcount == 1
+            if not notify_now:
+                await db.execute(update(NotebookLMAccount).where(
+                    NotebookLMAccount.account_id == account_id,
+                ).values(state="reauth_required", message=message, last_error_code="auth_required", updated_at=now))
             await db.commit()
         metrics.incr("reauth_required")
         if notify_now:
@@ -327,12 +334,17 @@ class NotebookLMService:
 
     async def _on_success(self, account_id: str) -> None:
         async with sessionmaker()() as db:
-            row = await self._row(db, account_id)
-            fresh = row.last_ok_at is not None and (_now() - row.last_ok_at).total_seconds() < 60
-            if row.state == "ready" and fresh and not row.cooldown_until:
-                return
-            row.state, row.message, row.last_error_code = "ready", None, None
-            row.cooldown_until, row.reauth_notified_at, row.last_ok_at = None, None, _now()
+            await self._row(db, account_id)
+            now = _now()
+            # A slower concurrent success must not overwrite a 429/protection/auth
+            # failure committed by another request while this call was in flight.
+            await db.execute(update(NotebookLMAccount).where(
+                NotebookLMAccount.account_id == account_id,
+                NotebookLMAccount.state.notin_(("blocked", "reauth_required")),
+                or_(NotebookLMAccount.state != "cooldown", NotebookLMAccount.cooldown_until.is_(None),
+                    NotebookLMAccount.cooldown_until <= now),
+            ).values(state="ready", message=None, last_error_code=None, cooldown_until=None,
+                     reauth_notified_at=None, last_ok_at=now, updated_at=now))
             await db.commit()
 
     # ------------------------------------------------------------------ 호출 정책
@@ -350,6 +362,9 @@ class NotebookLMService:
             metrics.incr("busy_rejected")
             raise errors.Busy("NotebookLM 요청이 몰려 있습니다. 잠시 뒤 다시 시도해 주세요.", retry_after=5) from None
         try:
+            # Semaphore wait 동안 다른 요청이 429/보호 신호를 기록했을 수 있다.
+            # 계정 상태를 전송 직전에 다시 읽어 쿨다운·blocked 진입 후의 대기 요청을 막는다.
+            await self._admit(account_id)
             attempt = 0
             max_retry = 0 if (write or not retry) else s.notebooklm_read_retry_max
             while True:

@@ -94,10 +94,15 @@ async def _schema_and_app():
 
 
 @pytest.fixture(autouse=True)
-def _no_muse_ping(monkeypatch):
+def _no_muse_ping():
     # Muse 관측 핑은 실제 Muse 를 띄운다. 시험은 켜진 계정이 있어도 핑하지 않는다(tests/test_muse_observation_ping.py 만 켠다).
+    # NOTE: autouse 에서 monkeypatch 를 받으면 monkeypatch 가 다른 autouse 픽스처(예: settings fields_set 복원)보다 먼저
+    # 만들어져 늦게 정리되므로 그 복원을 되돌린다. 그래서 값을 직접 저장·복원한다.
     from ttakkari.runs import usage
-    monkeypatch.setattr(usage, "MUSE_PING", False)
+    before = usage.MUSE_PING
+    usage.MUSE_PING = False
+    yield
+    usage.MUSE_PING = before
 
 
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")

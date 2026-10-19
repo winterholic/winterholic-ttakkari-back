@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -18,7 +19,8 @@ SENSITIVE_NAME_GLOBS = (
     ".env.*",
     "*.env",
     ".envrc",
-    "*.pem",
+    # NOTE: "*.pem"은 이름만으로 막지 않는다. 인증서 .pem 읽기까지 막히는
+    # 과차단(S-2·S-7) 때문에 내용 판정(_pem_holds_private_key)으로 분리했다.
     "*.key",
     "*.p12",
     "*.pfx",
@@ -39,7 +41,17 @@ SENSITIVE_NAME_GLOBS = (
     "credentials.json",
     "*credentials*.json",
     "service-account*.json",
-    "*secret*",
+    # NOTE: 과거 "*secret*" 부분일치는 정상 소스(secret-v2-bridge.ts 등)까지 막아
+    # 실제 비밀 파일명으로 좁혔다 (S-6b·S-6c).
+    "secret.json",
+    "secrets.json",
+    "secrets.yaml",
+    "secrets.yml",
+    "secrets.toml",
+    "secrets.env",
+    "secrets.txt",
+    ".secrets",
+    "secrets",
     "*.tfstate",
     "*.tfvars",
 )
@@ -74,6 +86,51 @@ def is_within(path: Path, root: Path) -> bool:
 SAFE_NAMES = (".env.example", ".env.sample", ".env.template", ".env.dist", ".env.defaults")
 
 
+# .pem은 인증서와 개인키가 같은 확장자를 쓴다. 이름이 아니라 내용으로 가린다:
+# 개인키 표식이 있거나, 인증서 표식조차 없으면(판독 불가·DER 등 포함) 민감으로 본다.
+# 순수 인증서 .pem만 비민감이다.
+_PRIVATE_KEY_MARKER = "PRIVATE KEY"
+_CERTIFICATE_MARKER = "CERTIFICATE"
+
+
+def _pem_holds_private_key(path: Path) -> bool:
+    # NOTE: 앞 8KiB만 읽으면 인증서 뒤에 붙은 개인키를 놓친다. 파일 전체를
+    # 청크 순회로 검사한다(개인키 표식을 찾으면 즉시 중단. 메모리 상한 유지).
+    try:
+        if not path.is_file():
+            return True
+        found_cert = False
+        tail = ""
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                text = tail + chunk.decode("utf-8", errors="ignore").upper()
+                if _PRIVATE_KEY_MARKER in text:
+                    return True
+                if _CERTIFICATE_MARKER in text:
+                    found_cert = True
+                tail = text[-32:]
+    except OSError:
+        return True
+    return not found_cert
+
+
+# my-secrets.json·prod-secrets.yml 같은 실제 비밀 파일명 변형용.
+# 데이터 확장자 + secret/secrets가 구분자(-_.)로 떨어진 단어일 때만 민감으로 본다.
+# secret-v2-bridge.ts(.ts)·my-secret-notes.md(.md) 같은 일반 파일은 계속 허용된다.
+_SECRET_VARIANT_EXTS = frozenset({".json", ".yaml", ".yml", ".toml", ".env", ".txt"})
+_SECRET_WORD_RE = re.compile(r"(?<![a-z0-9])secrets?(?![a-z0-9])")
+
+
+def _looks_like_secret_variant(name: str) -> bool:
+    stem, dot, ext = name.rpartition(".")
+    if not dot or not stem or stem.strip("._-") == "":
+        return False
+    return ("." + ext) in _SECRET_VARIANT_EXTS and _SECRET_WORD_RE.search(stem) is not None
+
+
 def is_sensitive(path: Path) -> bool:
     if path.name.lower() in SAFE_NAMES:
         return False
@@ -84,6 +141,10 @@ def is_sensitive(path: Path) -> bool:
             if parts[i : i + len(seg)] == seg:
                 return True
     name = parts[-1] if parts else ""
+    if name.endswith(".pem"):
+        return _pem_holds_private_key(path)
+    if _looks_like_secret_variant(name):
+        return True
     return any(fnmatch.fnmatchcase(name, g) for g in SENSITIVE_NAME_GLOBS)
 
 

@@ -175,3 +175,116 @@ def test_harness_edit_allowed_but_codex_token_read_blocked(tmp_path: Path) -> No
     cfg = GuardConfig(write_roots=[tmp_path])
     assert check_bash(f"cat {harness}/config.toml", tmp_path, cfg) is None
     assert check_bash(f"cat {harness}/auth.json", tmp_path, cfg) is not None
+
+
+# S-2·S-3·S-5·S-8: DROP DATABASE/SCHEMA 문자열은 DB 클라이언트 실행과 붙을 때만 차단한다.
+@pytest.mark.parametrize(
+    "command",
+    [
+        'mysql -e "DROP DATABASE app"',
+        'psql -c "DROP SCHEMA public"',
+        'docker exec db mysql -e "DROP DATABASE app"',
+        "echo 'DROP DATABASE app' | mysql",
+    ],
+)
+def test_bash_blocks_drop_with_db_client_execution(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, GuardConfig(write_roots=[tmp_path])) is not None
+
+
+def test_bash_blocks_dropdb_verb(tmp_path: Path) -> None:
+    assert check_bash("dropdb app", tmp_path, GuardConfig(write_roots=[tmp_path])) is not None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cat > fix.sql <<'EOF'\nDROP DATABASE app;\nEOF",
+        "python3 <<'EOF'\nprint('DROP DATABASE app')\nEOF",
+        'grep -rn "DROP DATABASE" src/',
+        "psql -f migrate.sql",
+    ],
+)
+def test_bash_allows_drop_string_without_client_execution(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, GuardConfig(write_roots=[tmp_path])) is None
+
+
+# S-2·S-4: 백틱 식별자·${...} 인자는 예전부터 허용이다. 회귀로 잠근다.
+def test_bash_allows_backtick_identifiers_and_brace_expansion(tmp_path: Path) -> None:
+    cfg = GuardConfig(write_roots=[tmp_path])
+    assert check_bash("mysql -e \"SELECT `id` FROM t\"", tmp_path, cfg) is None
+    assert check_bash("echo ${HOME}/app", tmp_path, cfg) is None
+
+
+# S-1: 명령 이름 자체를 변수·치환으로 구성하면 내용은 알 수 없어 계속 차단한다 (M3 우회 분류).
+@pytest.mark.parametrize("command", ["${CMD} --help", "$x echo irreversible", "`echo hi`"])
+def test_bash_still_blocks_variable_constructed_command_name(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, GuardConfig(write_roots=[tmp_path])) is not None
+
+
+# S-2·S-7: .pem은 내용으로 가린다. 순수 인증서는 허용, 개인키는 차단.
+def test_bash_allows_cert_pem_but_blocks_key_pem(tmp_path: Path) -> None:
+    cert = tmp_path / "server-cert.pem"
+    cert.write_text("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n")
+    key = tmp_path / "server-key.pem"
+    key.write_text("-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----\n")
+    cfg = GuardConfig(write_roots=[tmp_path])
+    assert check_bash(f"cat {cert}", tmp_path, cfg) is None
+    assert check_bash(f"cat {key}", tmp_path, cfg) is not None
+    assert check_bash("cat missing.pem", tmp_path, cfg) is not None
+
+
+# S-6b·S-6c: 파일명에 secret이 든 일반 소스 읽기는 허용, 실제 비밀 파일은 차단.
+def test_bash_allows_source_file_with_secret_in_name(tmp_path: Path) -> None:
+    cfg = GuardConfig(write_roots=[tmp_path])
+    assert check_bash("cat src/secret-v2-bridge.ts", tmp_path, cfg) is None
+    assert check_bash("cat secrets.json", tmp_path, cfg) is not None
+
+
+# 우회 1: 변수에 담은 DROP을 DB 클라이언트 인자로 넘기면 차단한다.
+@pytest.mark.parametrize(
+    "command",
+    [
+        'SQL=\'DROP DATABASE app\'; mysql -e "$SQL"',
+        'SQL="DROP DATABASE app"; mysql -e "${SQL}"',
+        'export SQL=\'DROP SCHEMA public\'; psql -c "$SQL"',
+    ],
+)
+def test_bash_blocks_drop_via_variable_indirection(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, GuardConfig(write_roots=[tmp_path])) is not None
+
+
+# 우회 2: 파이프 뒤 env·command 래퍼(| env mysql)도 차단한다. 직접·기본 파이프는 유지.
+@pytest.mark.parametrize(
+    "command",
+    [
+        "printf 'DROP DATABASE app' | env mysql",
+        "echo 'DROP DATABASE app' | command mysql",
+        "echo 'DROP DATABASE app' | FOO=1 mysql",
+    ],
+)
+def test_bash_blocks_pipe_to_db_client_behind_wrapper(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, GuardConfig(write_roots=[tmp_path])) is not None
+
+
+# 우회 3: 앞 8KiB 뒤에 개인키가 붙은 PEM 번들은 차단한다.
+def test_bash_blocks_pem_with_private_key_past_8kib(tmp_path: Path) -> None:
+    cert = "-----BEGIN CERTIFICATE-----\n" + "A" * 64 + "\n-----END CERTIFICATE-----\n"
+    key = "-----BEGIN RSA PRIVATE KEY-----\n" + "B" * 64 + "\n-----END RSA PRIVATE KEY-----\n"
+    bundle = tmp_path / "chain.pem"
+    bundle.write_text(cert + "#" * (8192 - len(cert) + 128) + key)
+    raw = bundle.read_bytes()
+    assert len(raw) > 8192
+    assert raw.find(b"PRIVATE KEY") > 8192
+    assert check_bash(f"cat {bundle}", tmp_path, GuardConfig(write_roots=[tmp_path])) is not None
+
+
+# 우회 4: 실제 비밀 파일명 변형은 차단하되 일반 소스는 계속 허용한다.
+@pytest.mark.parametrize(
+    "name",
+    ["my-secrets.json", "prod-secrets.yml", "application-secrets.yaml"],
+)
+def test_bash_blocks_secret_filename_variants(tmp_path: Path, name: str) -> None:
+    (tmp_path / name).write_text("{}")
+    cfg = GuardConfig(write_roots=[tmp_path])
+    assert check_bash(f"cat {tmp_path / name}", tmp_path, cfg) is not None
+    assert check_bash("cat src/secret-v2-bridge.ts", tmp_path, cfg) is None

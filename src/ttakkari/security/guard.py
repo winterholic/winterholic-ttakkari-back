@@ -43,7 +43,9 @@ CATASTROPHIC = [
     (r"\bkillall\b", "프로세스 일괄 종료"),
     (r"\bpkill\b[^;&|]*(ttakkari|uvicorn|postgres|claude|codex)", "ttakkari 런타임 종료"),
     (r"\bbrew\s+services\s+(stop|kill)\s+postgres", "DB 서버 중지"),
-    (r"\bdropdb\b|\bdrop\s+(database|schema)\b", "DB 통째 삭제"),
+    # NOTE: "DROP DATABASE/SCHEMA" 전역 정규식은 heredoc·스크립트 본문·grep까지
+    # 막는 과차단(S-2·S-3·S-5·S-8)이라 삭제했다. 실제 실행은 아래 DB_CLIENT_VERBS
+    # 검사(_check_sql_drop)가 맡는다. dropdb 명령어는 BLOCKED_VERBS에서 계속 차단.
     (r"\bfind\s+(/|~|\$HOME)(\s|$)[^;&|]*(-delete|-exec\s+rm)", "광역 find 삭제"),
     (r"\bchmod\s+-R\s+\S+\s+(/|~|\$HOME)(\s|$)", "광역 권한 변경"),
     (r"\bchown\s+-R\b[^;&|]*\s(/|~|\$HOME)(\s|$)", "광역 소유자 변경"),
@@ -55,6 +57,75 @@ BLOCKED_VERBS = {"sudo", "doas", "su", "shutdown", "reboot", "halt", "poweroff",
                  "systemsetup", "dropdb"}
 
 _ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+# SQL을 직접 실행하는 DB 클라이언트. DROP 검사는 이들 동사가 명령에 실제로
+# 쓰일 때만 차단한다. 파일 내용(-f 스크립트 등)은 셸 문자열에서 안 보이므로
+# 검사 범위 밖이다 (가드는 휴리스틱, 샌드박스가 아님).
+DB_CLIENT_VERBS = frozenset({
+    "mysql", "mariadb", "psql", "sqlite3", "duckdb", "clickhouse",
+    "mongosh", "mongo", "redis-cli", "sqlcmd", "isql",
+})
+_DROP_DB_RE = re.compile(r"\bdrop\s+(database|schema)\b", re.IGNORECASE)
+# 파이프 뒤 env·command 같은 래퍼(| env mysql 우회)를 허용한다. 직접·기본 파이프는 그대로 막힌다.
+_PIPE_PREFIX_RE = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+|sudo\s+|env\s+|command\s+|exec\s+|nohup\s+|time\s+)*"
+_PIPE_TO_CLIENT_RE = re.compile(
+    r"\|\s*" + _PIPE_PREFIX_RE + r"(" + "|".join(sorted(DB_CLIENT_VERBS)) + r")\b",
+    re.IGNORECASE,
+)
+# SQL='DROP DATABASE ...'; mysql -e "$SQL" 같은 변수 경유 우회용.
+# 대입이 속한 셸 조각에 DROP이 있으면 그 변수명을 기록한다 (휴리스틱).
+_ASSIGN_NAME_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\+?=")
+
+
+def _strip_prefix(argv: list[str]) -> list[str]:
+    while len(argv) > 1 and _ASSIGN_RE.match(argv[0]):
+        argv = argv[1:]
+    verb = Path(argv[0]).name
+    if verb in ("env", "command", "exec", "nohup", "time"):
+        argv = argv[1:] or argv
+    return argv
+
+
+def _vars_assigned_with_drop(command: str) -> set[str]:
+    """값 조각에 DROP이 든 대입의 변수명 모음. 개행·;&|()까지를 한 조각으로 본다."""
+    names: set[str] = set()
+    for m in _ASSIGN_NAME_RE.finditer(command):
+        end = len(command)
+        for i in range(m.end(), len(command)):
+            if command[i] in ";&|()\n":
+                end = i
+                break
+        if _DROP_DB_RE.search(command[m.start() : end]):
+            names.add(m.group(1))
+    return names
+
+
+def _refers_to_var(text: str, name: str) -> bool:
+    return bool(
+        re.search(r"\$" + re.escape(name) + r"(?![A-Za-z0-9_])" + r"|\$\{" + re.escape(name) + r"(?![A-Za-z0-9_])", text)
+    )
+
+
+def _check_sql_drop(command: str) -> str | None:
+    """DROP DATABASE/SCHEMA 문자열이 DB 클라이언트 실행과 붙을 때만 막는다.
+
+    허용: heredoc·스크립트 본문, grep/log 검색, -f 파일 지정(내용 미확인).
+    차단: mysql -e "..." 직접 실행, 파이프로 클라이언트에 먹이기, dropdb는 별도,
+    변수에 담은 DROP을 클라이언트 인자로 넘기기("$SQL" 경유).
+    """
+    if not _DROP_DB_RE.search(command):
+        return None
+    split = [_strip_prefix(argv) for argv in _split_commands(command)]
+    for argv in split:
+        if _DROP_DB_RE.search(" ".join(argv)) and {Path(w).name for w in argv} & DB_CLIENT_VERBS:
+            return "고위험 명령 차단(DB 통째 삭제)"
+    for name in _vars_assigned_with_drop(command):
+        for argv in split:
+            if {Path(w).name for w in argv} & DB_CLIENT_VERBS and _refers_to_var(" ".join(argv), name):
+                return "고위험 명령 차단(DB 통째 삭제)"
+    if _PIPE_TO_CLIENT_RE.search(command):
+        return "고위험 명령 차단(DB 통째 삭제)"
+    return None
 
 READ_VERBS = {"cat", "less", "more", "head", "tail", "bat", "strings", "base64", "xxd", "od", "hexdump", "cp", "scp",
               "rsync", "curl", "wget", "nc", "tar", "zip", "open", "grep", "rg", "awk", "sed", "source", "."}
@@ -138,13 +209,11 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig) -> str | None:
     for rx, why in _CATASTROPHIC_RE:
         if rx.search(command):
             return f"고위험 명령 차단({why})"
+    if reason := _check_sql_drop(command):
+        return reason
     for argv in _split_commands(command):
-        while len(argv) > 1 and _ASSIGN_RE.match(argv[0]):
-            argv = argv[1:]
+        argv = _strip_prefix(argv)
         verb = Path(argv[0]).name
-        if verb == "env" or verb == "command" or verb == "exec" or verb == "nohup" or verb == "time":
-            argv = argv[1:] or argv
-            verb = Path(argv[0]).name
         if verb in BLOCKED_VERBS or verb.startswith("mkfs"):
             return f"고위험 명령 차단({verb})"
         if argv[0].startswith("$") or "`" in argv[0]:

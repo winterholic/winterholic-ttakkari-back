@@ -13,6 +13,23 @@ from ttakkari.orchestrator.runtime import issue_token
 from ttakkari.runs.manager import QwenLocalAdapter
 
 
+@pytest.fixture(params=[False, True], ids=["legacy", "generation"])
+async def qwen_generation(request, tmp_path, monkeypatch):
+    if not request.param:
+        yield
+        return
+    from ttakkari import generation
+
+    runtime = generation.GenerationRuntime(tmp_path, revision="a" * 40, api_url="http://127.0.0.1:18791")
+    await runtime.register()
+    await generation.activate(runtime.id, expected=None)
+    monkeypatch.setattr(generation, "current", runtime)
+    try:
+        yield
+    finally:
+        await runtime.close()
+
+
 def _write_worker(tmp_path: Path, *, run_result: str | None = None, exit_code: int = 0,
                   hang: bool = False) -> tuple[Path, Path]:
     worker = tmp_path / "bin/qwen-worker"
@@ -40,7 +57,9 @@ def _write_worker(tmp_path: Path, *, run_result: str | None = None, exit_code: i
 
 
 @pytest.mark.asyncio
-async def test_explicit_qwen_run_records_local_scope_streams_result_and_resumes(client, auth, make_dir, tmp_path, monkeypatch):
+async def test_explicit_qwen_run_records_local_scope_streams_result_and_resumes(
+    client, auth, make_dir, tmp_path, monkeypatch, qwen_generation,
+):
     from ttakkari.runs import manager as run_manager
 
     worker_path, capture = _write_worker(tmp_path)

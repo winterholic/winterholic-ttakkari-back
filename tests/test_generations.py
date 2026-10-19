@@ -271,6 +271,32 @@ async def test_account_selection_counts_draining_owners(tmp_path, new_session):
         assert chosen.id != other.id
 
 
+async def test_local_qwen_selection_preserves_lease_without_cloud_account(tmp_path, new_session):
+    from ttakkari.runs import profiles
+    from ttakkari.runs.worker_routing import emergency_qwen_profile
+
+    run = await queued(new_session)
+    local = emergency_qwen_profile("personal")
+    async with sessionmaker()() as db:
+        cloud_pool = await profiles.candidates(db, "auto")
+    async with generations(tmp_path) as (a, b):
+        await activate(a.id, expected=None)
+        token = await a.claim(run.id, "workers", 1)
+        try:
+            for pool in ([local], cloud_pool, [local]):
+                selected = await a.choose_profile(pool, run.id)
+                async with sessionmaker()() as db:
+                    lease = await db.get(RuntimeLease, run.id)
+                    assert lease.account_id == (None if selected.engine == "qwen-local" else selected.id)
+                    assert (lease.generation_id, lease.token, lease.lane) == (a.id, token, "workers")
+                    await a.fence(db, run.id, token)
+            with pytest.raises(OwnershipLost):
+                await b.choose_profile([local], run.id)
+        finally:
+            await a.release(run.id, token)
+            profiles.release(run.id)
+
+
 async def test_standby_does_not_reset_stt_or_preview_jobs(tmp_path, monkeypatch):
     from ttakkari import generation
     from ttakkari.artifacts import preview

@@ -216,7 +216,9 @@ class GenerationRuntime:
                 .where(RuntimeLease.account_id.is_not(None), RuntimeLease.run_id != run_id)
                 .group_by(RuntimeLease.account_id))).all())
             prof = profiles.choose(pool, run_id, counts_override=counts, **kwargs)
-            lease.account_id = prof.id
+            # Local Qwen has a synthetic routing identity, not an engine_accounts
+            # row. Keep its ownership/lane lease without claiming a cloud account.
+            lease.account_id = None if prof.engine == "qwen-local" else prof.id
             await db.commit()
             return prof
 

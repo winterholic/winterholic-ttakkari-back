@@ -15,10 +15,13 @@ class GoogleAccountError(Exception):
     # 읽기 요청에 한해 같은 요청을 다시 보내도 안전한 오류인가(재시도 정책이 본다).
     retryable = False
 
-    def __init__(self, message: str, *, retry_after: int | None = None, outcome_unknown: bool = False) -> None:
+    def __init__(self, message: str, *, retry_after: int | None = None, outcome_unknown: bool = False,
+                 detail: str | None = None) -> None:
         super().__init__(message)
         self.message = message
         self.retry_after = retry_after
+        # 원인 요약 한 줄(예외 클래스 + 마스킹한 메시지). 쿠키·토큰·응답 원문은 담지 않는다. 화면에 보여 줘도 된다.
+        self.detail = detail
         # 쓰기 요청이 Google 에 도달했는지 알 수 없는 상태. 이 경우 같은 쓰기를 다시 보내지 않는다.
         self.outcome_unknown = outcome_unknown
 
@@ -40,6 +43,13 @@ class RateLimited(GoogleAccountError):
 
     status = 429
     code = "rate_limited"
+
+
+class TooSoon(GoogleAccountError):
+    """우리 쪽 최소 간격 제한(예: 접속 확인 연타 방지). Google 사용 제한이 아니고 Google 에 요청하지도 않았다."""
+
+    status = 429
+    code = "too_soon"
 
 
 class Cooldown(RateLimited):
@@ -102,3 +112,10 @@ class UpstreamRejected(Upstream):
 
     code = "upstream_rejected"
     retryable = False
+
+
+class IntegrationError(GoogleAccountError):
+    """따까리 연동 코드·설정의 결함(Google/상류가 낸 오류가 아님). 같은 요청을 다시 보내도 같은 결과다."""
+
+    status = 500
+    code = "integration_error"

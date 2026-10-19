@@ -210,7 +210,7 @@ async def test_verify_marks_ready_and_is_rate_limited(client, auth, fake):
     r = await client.post("/api/notebooklm/auth/verify", headers=auth)
     assert r.status_code == 200 and r.json()["state"] == "ready" and fake.count("verify") == 1
     again = await client.post("/api/notebooklm/auth/verify", headers=auth)
-    assert again.status_code == 429 and again.json()["code"] == "rate_limited" and "Retry-After" in again.headers
+    assert again.status_code == 429 and again.json()["code"] == "too_soon" and "Retry-After" in again.headers
     assert fake.count("verify") == 1
 
 

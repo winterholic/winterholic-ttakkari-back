@@ -79,6 +79,8 @@ def _handler(request: Request, exc: errors.NotebookLMError) -> JSONResponse:
         headers["Retry-After"] = str(exc.retry_after)
     if exc.outcome_unknown:
         body["outcome_unknown"] = True
+    if exc.detail:
+        body["detail"] = redact.mask(exc.detail)
     return JSONResponse(body, status_code=exc.status, headers=headers)
 
 

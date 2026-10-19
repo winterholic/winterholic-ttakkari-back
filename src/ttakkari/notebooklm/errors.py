@@ -11,11 +11,13 @@ from ttakkari.google_account.errors import (
     Cooldown,
     Disabled,
     GoogleAccountError,
+    IntegrationError,
     Invalid,
     NotFound,
     ProtectionSignal,
     RateLimited,
     Timeout,
+    TooSoon,
     Transient,
     Unsupported,
     Upstream,
@@ -31,7 +33,7 @@ class Duplicate(NotebookLMError):
 
 
 __all__ = [
-    "AuthRequired", "Busy", "Cooldown", "Disabled", "Duplicate", "GoogleAccountError", "Invalid", "NotFound",
-    "NotebookLMError", "ProtectionSignal", "RateLimited", "Timeout", "Transient", "Unsupported", "Upstream",
+    "AuthRequired", "Busy", "Cooldown", "Disabled", "Duplicate", "GoogleAccountError", "IntegrationError", "Invalid", "NotFound",
+    "NotebookLMError", "ProtectionSignal", "RateLimited", "Timeout", "TooSoon", "Transient", "Unsupported", "Upstream",
     "UpstreamRejected",
 ]

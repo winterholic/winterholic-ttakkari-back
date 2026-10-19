@@ -46,6 +46,8 @@ def error_response(request: Request, exc: errors.GoogleAccountError) -> JSONResp
         headers["Retry-After"] = str(exc.retry_after)
     if exc.outcome_unknown:
         body["outcome_unknown"] = True
+    if exc.detail:
+        body["detail"] = redact.mask(exc.detail)
     return JSONResponse(body, status_code=exc.status, headers=headers)
 
 

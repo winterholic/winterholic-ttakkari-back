@@ -104,6 +104,7 @@ class NotebookLMService:
         self._sems: dict[str, asyncio.Semaphore] = {}
         self._tasks: dict[uuid.UUID, asyncio.Task] = {}
         self._last_verify: dict[str, float] = {}
+        self._last_error: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------ 구성
 
@@ -238,6 +239,7 @@ class NotebookLMService:
                     "request_timeout_seconds": s.notebooklm_request_timeout_seconds,
                     "query_timeout_seconds": s.notebooklm_query_timeout_seconds,
                 },
+                "last_error": self._last_error.get(account_id),
                 "metrics": metrics.snapshot(),
             }
 
@@ -285,7 +287,7 @@ class NotebookLMService:
         s = get_settings()
         last = self._last_verify.get(account_id)
         if last is not None and time.monotonic() - last < s.notebooklm_verify_interval_seconds:
-            raise errors.RateLimited(
+            raise errors.TooSoon(
                 f"확인은 {s.notebooklm_verify_interval_seconds}초에 한 번만 할 수 있습니다.",
                 retry_after=int(s.notebooklm_verify_interval_seconds - (time.monotonic() - last)) + 1)
         self._last_verify[account_id] = time.monotonic()
@@ -317,6 +319,10 @@ class NotebookLMService:
                                   retry_after=wait)
 
     async def _on_error(self, account_id: str, e: errors.NotebookLMError) -> None:
+        # 마지막 실패의 사람용 요약. DB 에 두지 않고 프로세스에만 둔다(상태 화면이 "왜 실패했는지"를 보여 주는 용도).
+        self._last_error[account_id] = {
+            "code": e.code, "message": redact.mask(e.message),
+            "detail": redact.mask(e.detail) if e.detail else None, "at": _now().isoformat()}
         if isinstance(e, errors.AuthRequired):
             await self.invalidate(account_id)
             await accounts.mark_reauth(account_id, e.message, feature=FEATURE_ID)
@@ -339,6 +345,7 @@ class NotebookLMService:
                 await db.commit()
 
     async def _on_success(self, account_id: str) -> None:
+        self._last_error.pop(account_id, None)
         async with sessionmaker()() as db:
             await self._row(db, account_id)
             now = _now()

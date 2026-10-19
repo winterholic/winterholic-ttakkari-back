@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import re
 from contextlib import AsyncExitStack
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from typing import Any
 
 import httpx
 
+from ttakkari.google_account import redact
 from ttakkari.notebooklm import errors, session
 from ttakkari.notebooklm.ports import (
     Capability,
@@ -31,8 +33,32 @@ from ttakkari.notebooklm.ports import (
     Span,
 )
 
+log = logging.getLogger(__name__)
+
 PIN = "0.8.5"
 _PROTECTION = re.compile(r"(?i)captcha|recaptcha|unusual traffic|/sorry/|verify it.?s you|automated queries")
+
+
+def build_client_config(timeout: float, chat_timeout: float):
+    """상류 ClientConfig 하나에 모든 조정값을 담는다.
+
+    from_storage 는 config= 와 낱개 조정 인자(timeout·chat_timeout 등)를 함께 받으면 비기본값이 하나라도 있을 때
+    네트워크에 나가기 전에 TypeError 를 낸다(0.8.5). 그래서 낱개 인자는 쓰지 않고 전부 config 로 넘긴다.
+    """
+    from notebooklm.options import (
+        ClientConfig,
+        FeatureOptions,
+        RetryOptions,
+        WebBackendConfig,
+        WebTransportOptions,
+    )
+
+    return ClientConfig(
+        backend=WebBackendConfig(transport=WebTransportOptions(
+            read_timeout=timeout, write_timeout=timeout, pool_timeout=timeout)),
+        retry=RetryOptions(rate_limit_max_retries=0, server_error_max_retries=0),
+        features=FeatureOptions(chat_timeout=chat_timeout),
+    )
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -141,9 +167,15 @@ def map_exception(exc: BaseException, *, write: bool = False) -> errors.Notebook
         return errors.Upstream("NotebookLM 서버 오류입니다.", outcome_unknown=write)
     if isinstance(exc, up.ClientError):
         return errors.UpstreamRejected("NotebookLM이 요청을 거절했습니다.")
+    detail = redact.safe_error(exc)
     if isinstance(exc, up.NotebookLMError):
-        return errors.Upstream(f"NotebookLM 처리 중 오류가 발생했습니다({type(exc).__name__}).", outcome_unknown=write)
-    return errors.Upstream(f"예상하지 못한 오류가 발생했습니다({type(exc).__name__}).", outcome_unknown=write)
+        log.warning("notebooklm upstream error: %s", detail)
+        return errors.Upstream(f"NotebookLM 처리 중 오류가 발생했습니다({type(exc).__name__}).",
+                               outcome_unknown=write, detail=detail)
+    # 상류·전송 계층 예외가 아니면 Google 쪽 문제가 아니라 우리 연동 코드나 설정의 결함이다. 원인이 묻히지 않게 남긴다.
+    log.error("notebooklm integration error: %s", detail, exc_info=exc)
+    return errors.IntegrationError(f"따까리의 NotebookLM 연동 코드 오류입니다({type(exc).__name__}). Google 요청은 보내지 않았거나 "
+                                   "결과를 알 수 없습니다.", outcome_unknown=write, detail=detail)
 
 
 class NotebookLMPyBackend:
@@ -167,14 +199,12 @@ class NotebookLMPyBackend:
                 raise errors.AuthRequired("NotebookLM 로그인 세션이 없습니다. 로그인 창에서 먼저 로그인해 주세요.")
             session.load_secrets(self.account_id)
             from notebooklm import NotebookLMClient
-            from notebooklm.options import ClientConfig, RetryOptions
 
-            cfg = ClientConfig(retry=RetryOptions(rate_limit_max_retries=0, server_error_max_retries=0))
             stack = AsyncExitStack()
             try:
                 client = await stack.enter_async_context(NotebookLMClient.from_storage(
-                    path=str(session.storage_path(self.account_id)), timeout=self._timeout,
-                    chat_timeout=self._chat_timeout, config=cfg))
+                    path=str(session.storage_path(self.account_id)),
+                    config=build_client_config(self._timeout, self._chat_timeout)))
             except BaseException as e:  # noqa: BLE001 -- 열기 실패는 도메인 오류로 바꾸되 취소는 그대로 전파한다
                 with contextlib.suppress(Exception):
                     await stack.aclose()

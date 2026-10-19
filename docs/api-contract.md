@@ -558,11 +558,13 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 
 기존 Google 계정의 NotebookLM 권한·할당량만 쓴다(유료 API 키 경로 없음). 지금은 계정 `primary` 하나이며 DB 행·잠금·job은 모두 `account_id`를 키로 가진다. 상류 `notebooklm-py==0.8.5` 공개 API를 `NotebookLMBackend` Protocol 뒤에 둔다. 응답에 쿠키·토큰·상류 응답 원문은 없다.
 
-**오류 형식** `{code, message[, retry_after, outcome_unknown]}`. `Retry-After` 헤더는 `retry_after`가 있을 때 같이 간다.
+**오류 형식** `{code, message[, retry_after, outcome_unknown, detail]}`. `detail`은 원인 요약 한 줄(예외 종류 + 마스킹된 메시지)이다. `Retry-After` 헤더는 `retry_after`가 있을 때 같이 간다.
 | status | code | 의미 |
 |---|---|---|
 | 409 | `auth_required` | 로그인 없음/만료. 로그인 창에서 다시 로그인 |
-| 429 | `rate_limited` · `cooldown` | Google 사용 제한(429). `retry_after`초 동안 Google에 요청하지 않는다. 확인 간격 제한에도 쓴다 |
+| 429 | `rate_limited` · `cooldown` | Google 사용 제한(429). `retry_after`초 동안 Google에 요청하지 않는다 |
+| 429 | `too_soon` | 우리 쪽 최소 간격 제한(접속 확인 연타 방지). Google 사용 제한이 아니고 Google에 요청하지 않았다 |
+| 500 | `integration_error` | 따까리 연동 코드·설정 결함(상류·Google 오류 아님). `detail`에 원인 |
 | 423 | `protection_signal` | CAPTCHA·보안 확인 신호. 사람이 확인하고 `POST /auth/resume` 할 때까지 요청하지 않는다 |
 | 409 | `busy` · `duplicate` | 로그인 창/작업 중복 · 같은 소스 중복 또는 결과 불명 |
 | 404 / 422 / 501 | `not_found` / `invalid` / `unsupported` | |

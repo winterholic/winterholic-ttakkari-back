@@ -399,9 +399,13 @@ async def test_unhandled_api_exception_is_captured_with_masked_message(client):
     async def boom():
         raise RuntimeError(f"db password={PW} failed")
 
+    before = len(app.router.routes)
     app.add_api_route("/api/_ops_boom/{token}", boom, methods=["GET"])
-    with pytest.raises(RuntimeError):
-        await client.get("/api/_ops_boom/" + "a" * 40)
+    try:
+        with pytest.raises(RuntimeError):
+            await client.get("/api/_ops_boom/" + "a" * 40)
+    finally:
+        del app.router.routes[before:]  # 전역 앱에 남으면 뒤에 도는 test_route_inventory 가 분류 없는 라우트로 실패한다
     async with sessionmaker()() as db:
         issue = await db.scalar(select(OpsIssue).where(OpsIssue.source == "api"))
         ev = await db.scalar(select(OpsEvent).where(OpsEvent.issue_id == issue.id))

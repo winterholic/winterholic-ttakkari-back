@@ -16,8 +16,12 @@
 # 성공 시 manifest 경로를 stdout 마지막 줄에 출력한다.
 # 최근 성공 시각 조회: ls -t "$BACKUP_DIR"/*.manifest.json | head -1
 set -euo pipefail
+umask 077
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON="$SCRIPT_DIR/../.venv/bin/python"
+[[ -x "$PYTHON" ]] || { echo "프로젝트 Python 환경 없음: $PYTHON" >&2; exit 3; }
 
-DB_URL="${TTAKKARI_DATABASE_URL:-postgresql://localhost/ttakkari}"
+DB_URL="${TTAKKARI_DATABASE_URL:-}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/.ttakkari-backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-14}"
 while [[ $# -gt 0 ]]; do
@@ -28,57 +32,84 @@ while [[ $# -gt 0 ]]; do
     *) echo "사용법: $0 [--db-url URL] [--dir DIR] [--retention-days N]" >&2; exit 2 ;;
   esac
 done
+[[ "$RETENTION_DAYS" =~ ^[0-9]+$ ]] || { echo "보존 기간은 0 이상의 정수여야 한다." >&2; exit 2; }
+
+if [[ -z "$DB_URL" ]]; then
+  DB_URL="$(PYTHONPATH="$SCRIPT_DIR/../src${PYTHONPATH:+:$PYTHONPATH}" \
+    "$PYTHON" -c 'from ttakkari.config import Settings; print(Settings().database_url)')"
+fi
 
 # SQLAlchemy식 URL(+asyncpg 등)은 libpq 도구가 못 읽으므로 driver 부분을 걷어낸다.
-LIBPQ_URL="$(printf '%s' "$DB_URL" | sed -E 's#^([a-zA-Z][a-zA-Z0-9+.-]*)(\+[a-zA-Z0-9_.-]+)?://#\1://#')"
+LIBPQ_URL="$(printf '%s' "$DB_URL" | sed -E 's#^([a-zA-Z][a-zA-Z0-9.-]*)(\+[a-zA-Z0-9_.-]+)?://#\1://#')"
 
 command -v pg_dump >/dev/null || { echo "pg_dump 없음. PostgreSQL 클라이언트를 설치한다." >&2; exit 3; }
 command -v psql >/dev/null || { echo "psql 없음. PostgreSQL 클라이언트를 설치한다." >&2; exit 3; }
-command -v python3 >/dev/null || { echo "python3 없음." >&2; exit 3; }
 
 mkdir -p "$BACKUP_DIR"
-TS="$(date +%Y%m%d-%H%M%S)"
+chmod 700 "$BACKUP_DIR"
+TS="$(date +%Y%m%d-%H%M%S)-$$"
 DUMP="$BACKUP_DIR/ttakkari-$TS.dump"
 MANIFEST="$BACKUP_DIR/ttakkari-$TS.manifest.json"
+DUMP_TMP="$DUMP.partial.$$"
+MANIFEST_TMP="$MANIFEST.partial.$$"
+[[ ! -e "$DUMP" && ! -e "$MANIFEST" ]] || { echo "동일한 백업 이름이 이미 있다." >&2; exit 1; }
+cleanup_partial() { rm -f "$DUMP_TMP" "$MANIFEST_TMP"; }
+trap cleanup_partial EXIT
 
-pg_dump -Fc -f "$DUMP" "$LIBPQ_URL"
+"$PYTHON" - "$LIBPQ_URL" "$DUMP_TMP" "$DUMP" "$MANIFEST_TMP" "$TS" <<'EOF'
+import asyncio
+import hashlib
+import json
+import subprocess
+import sys
 
-TABLES="$(psql -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1;" "$LIBPQ_URL")"
-export MANIFEST_TABLES="$TABLES"
-export MANIFEST_PATH="$MANIFEST" MANIFEST_DUMP="$DUMP" MANIFEST_TS="$TS" MANIFEST_DB="$LIBPQ_URL"
-python3 - "$LIBPQ_URL" <<'EOF'
-import json, os, subprocess, sys
+import asyncpg
 
-db_url = sys.argv[1]
-tables = [t for t in os.environ["MANIFEST_TABLES"].splitlines() if t.strip()]
-counts = {}
-for t in tables:
-    r = subprocess.run(
-        ["psql", "-tAc", f'SELECT count(*) FROM "{t}";', db_url],
-        capture_output=True, text=True)
-    if r.returncode != 0:
-        sys.stderr.write(f"행 수 조회 실패: {t}: {r.stderr.strip()}\n")
-        sys.exit(4)
-    counts[t] = int(r.stdout.strip())
+db_url, dump_tmp, dump_path, manifest_tmp, timestamp = sys.argv[1:]
 
-dump = os.environ["MANIFEST_DUMP"]
-h = subprocess.run(["shasum", "-a", "256", dump], capture_output=True, text=True)
-if h.returncode != 0:
-    sys.stderr.write("sha256 계산 실패\n")
-    sys.exit(4)
 
-manifest = {
-    "created_at": os.environ["MANIFEST_TS"],
-    "db": os.environ["MANIFEST_DB"],
-    "dump_file": dump,
-    "sha256": h.stdout.split()[0],
-    "tables": counts,
-}
-with open(os.environ["MANIFEST_PATH"], "w") as f:
-    json.dump(manifest, f, indent=2, sort_keys=True)
+async def backup():
+    conn = await asyncpg.connect(dsn=db_url)
+    try:
+        async with conn.transaction(isolation="repeatable_read", readonly=True):
+            snapshot = await conn.fetchval("SELECT pg_export_snapshot()")
+            names = await conn.fetch(
+                "SELECT tablename FROM pg_tables "
+                "WHERE schemaname='public' ORDER BY 1"
+            )
+            counts = {}
+            for row in names:
+                table = row["tablename"]
+                quoted = '"' + table.replace('"', '""') + '"'
+                counts[table] = await conn.fetchval(
+                    f"SELECT count(*) FROM public.{quoted}"
+                )
+            result = subprocess.run(
+                ["pg_dump", "-Fc", "--snapshot", snapshot, "-f", dump_tmp, db_url],
+                capture_output=True, text=True,
+            )
+            if result.returncode:
+                sys.stderr.write(result.stderr)
+                raise SystemExit(result.returncode)
+        return counts
+    finally:
+        await conn.close()
+
+
+counts = asyncio.run(backup())
+with open(dump_tmp, "rb") as f:
+    digest = hashlib.file_digest(f, "sha256").hexdigest()
+with open(manifest_tmp, "w", encoding="utf-8") as f:
+    json.dump(
+        {"created_at": timestamp, "dump_file": dump_path,
+         "sha256": digest, "tables": counts},
+        f, indent=2, sort_keys=True,
+    )
     f.write("\n")
 print(f"테이블 {len(counts)}개, 총 {sum(counts.values())}행 기록")
 EOF
+mv "$DUMP_TMP" "$DUMP"
+mv "$MANIFEST_TMP" "$MANIFEST"
 
 # 보존 기간이 지난 백업을 정리한다.
 find "$BACKUP_DIR" -maxdepth 1 -name 'ttakkari-*.dump' -mtime +"$RETENTION_DAYS" -delete

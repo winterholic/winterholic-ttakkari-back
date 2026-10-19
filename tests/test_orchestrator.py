@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import tomllib
 from uuid import UUID
 
 import pytest
@@ -267,31 +268,39 @@ async def test_non_limit_failure_does_not_fall_back(client, auth, make_dir):
 async def test_orchestrator_run_gets_mcp_server_and_role_note(client, auth, make_dir):
     sess = await _session(client, auth, make_dir, kind="orchestrator")
     await run_to_end(client, auth, sess["id"], "hi")
-    argv = agent_calls()[-1]["argv"]
-    cfg = json.loads(argv[argv.index("--mcp-config") + 1])
-    srv = cfg["mcpServers"]["ttakkari"]
-    assert srv["args"] == ["-m", "ttakkari.orchestrator.mcp_server"] and srv["env"]["TTK_ORCH_TOKEN"]
-    assert srv["env"]["TTK_ROLE"] == "orchestrator"
+    call = agent_calls()[-1]
+    argv = call["argv"]
+    # SEC2-AGT-01: 토큰은 argv 가 아닌 0600 파일로 전달된다. 값은 파일에도 로그에도 남기지 않는다.
+    assert not any("TTK_ORCH_TOKEN" in a for a in argv)
+    meta = call["mcp_config"]
+    assert meta["mode"] == "file" and meta["file_mode"] == "0o600"
+    assert meta["servers"]["ttakkari"] == ["TTK_API_URL", "TTK_ORCH_TOKEN", "TTK_ROLE"]
     assert "main orchestrator" in argv[argv.index("--append-system-prompt") + 1]
 
 
 async def test_chat_session_gets_agent_tools_but_not_worker_tools(client, auth, make_dir):
     sess = await _session(client, auth, make_dir)
     await run_to_end(client, auth, sess["id"], "hi")
-    argv = agent_calls()[-1]["argv"]
-    srv = json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]["ttakkari"]
-    assert srv["env"]["TTK_ROLE"] == "agent"
+    call = agent_calls()[-1]
+    argv = call["argv"]
+    assert not any("TTK_ORCH_TOKEN" in a for a in argv)
+    assert call["mcp_config"]["servers"]["ttakkari"] == ["TTK_API_URL", "TTK_ORCH_TOKEN", "TTK_ROLE"]
     note = argv[argv.index("--append-system-prompt") + 1]
     assert "recall" in note and "main orchestrator" not in note
 
 
-async def test_codex_orchestrator_gets_mcp_server_via_config_flags(client, auth, make_dir):
+async def test_codex_orchestrator_gets_mcp_server_via_profile_file(client, auth, make_dir):
     sess = await _session(client, auth, make_dir, kind="orchestrator")
     await run_to_end(client, auth, sess["id"], "CLAUDE_LIMIT")
-    argv = next(c for c in agent_calls() if c["engine"] == "codex")["argv"]
-    flags = [argv[i + 1] for i, a in enumerate(argv) if a == "-c"]
-    assert any(f.startswith("mcp_servers.ttakkari.command=") for f in flags)
-    assert any(f.startswith("mcp_servers.ttakkari.env={TTK_ORCH_TOKEN=") for f in flags)
+    call = next(c for c in agent_calls() if c["engine"] == "codex")
+    argv = call["argv"]
+    # SEC2-AGT-01: 서버 env 는 -c 플래그가 아닌 프로파일 파일로 전달된다.
+    assert not any("TTK_ORCH_TOKEN" in a for a in argv)
+    assert not any(a == "-c" and "mcp_servers" in argv[i + 1] for i, a in enumerate(argv[:-1]))
+    meta = call["mcp_profile"]
+    assert meta["mode"] == "profile" and meta["exists"] is True and meta["file_mode"] == "0o600"
+    assert "ttakkari" in meta["servers"]
+    assert meta["env_keys"]["ttakkari"] == ["TTK_API_URL", "TTK_ORCH_TOKEN", "TTK_ROLE"]
 
 
 # ---- 도구 API + 결과 보고
@@ -468,7 +477,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
 
 
 @pytest.mark.parametrize("engine_session_id", [None, "existing-thread"])
-def test_codex_auto_approves_all_delegated_ttakkari_tools(make_dir, engine_session_id):
+def test_codex_auto_approves_all_delegated_ttakkari_tools(make_dir, engine_session_id, tmp_path):
     from ttakkari.agents.base import LaunchSpec
     from ttakkari.agents.codex import CodexAdapter
 
@@ -477,20 +486,29 @@ def test_codex_auto_approves_all_delegated_ttakkari_tools(make_dir, engine_sessi
                       model=None, effort=None, outbox=root, write_roots=[root], system_note="",
                       mcp_servers={"ttakkari": {"command": "python", "args": [], "env": {}},
                                    "other": {"command": "python", "args": [], "env": {}}})
-    argv = CodexAdapter().build_command(spec, {})
-    flags = [argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == "-c"]
-    approvals = {flag.split("=", 1)[0]: flag.split("=", 1)[1] for flag in flags if ".approval_mode=" in flag}
-    assert approvals['mcp_servers.ttakkari.tools.list_sessions.approval_mode'] == '"approve"'
-    assert approvals['mcp_servers.ttakkari.tools.read_session.approval_mode'] == '"approve"'
-    assert approvals['mcp_servers.ttakkari.tools.recall.approval_mode'] == '"approve"'
-    assert approvals['mcp_servers.ttakkari.tools.request_backend_deploy.approval_mode'] == '"approve"'
-    assert approvals['mcp_servers.ttakkari.tools.backend_deploy_status.approval_mode'] == '"approve"'
-    assert not any(key.startswith("mcp_servers.other.") for key in approvals)
-    for name in AGENT_TOOLS | WORKER_TOOLS | BENCHMARK_TOOLS:
-        assert approvals.get(f"mcp_servers.ttakkari.tools.{name}.approval_mode") == '"approve"', name
-    assert "mcp_servers.ttakkari.tools.unknown_tool.approval_mode" not in approvals
-    assert 'approval_policy="never"' in flags
-    assert 'sandbox_mode="workspace-write"' in flags
+    # SEC2-AGT-01: 승인 설정도 argv(-c)가 아닌 프로파일 파일에 적힌다.
+    adapter = CodexAdapter()
+    try:
+        argv = adapter.build_command(spec, {"CODEX_HOME": str(tmp_path), "TTAKKARI_RUN_ID": "approvals"})
+        flags = [argv[i + 1] for i, arg in enumerate(argv[:-1]) if arg == "-c"]
+        assert not any("mcp_servers" in flag for flag in flags)
+        profile = tmp_path / f"{argv[argv.index('-p') + 1]}.config.toml"
+        cfg = tomllib.loads(profile.read_text(encoding="utf-8"))
+        tools = cfg["mcp_servers"]["ttakkari"]["tools"]
+        approvals = {name: section["approval_mode"] for name, section in tools.items()}
+        assert approvals['list_sessions'] == "approve"
+        assert approvals['read_session'] == "approve"
+        assert approvals['recall'] == "approve"
+        assert approvals['request_backend_deploy'] == "approve"
+        assert approvals['backend_deploy_status'] == "approve"
+        assert "tools" not in cfg["mcp_servers"]["other"]
+        for name in AGENT_TOOLS | WORKER_TOOLS | BENCHMARK_TOOLS:
+            assert approvals.get(name) == "approve", name
+        assert "unknown_tool" not in approvals
+        assert 'approval_policy="never"' in flags
+        assert 'sandbox_mode="workspace-write"' in flags
+    finally:
+        adapter.cleanup(spec)
 
 
 def test_auto_approval_policy_covers_registered_tools():

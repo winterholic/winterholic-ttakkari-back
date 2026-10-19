@@ -15,6 +15,62 @@ def emit(obj):
     print(json.dumps(obj, ensure_ascii=False), flush=True)
 
 
+def _toml_str(line):
+    line = line.strip()
+    if len(line) >= 2 and line[0] == '"' and line[-1] == '"':
+        try:
+            return json.loads(line)
+        except ValueError:
+            return None
+    return None
+
+
+def mcp_profile_meta(argv):
+    """-p 프로파일 전달 형태를 비밀값 없이 기록한다(SEC2-AGT-01 회귀용)."""
+    if "-p" not in argv:
+        inline = [a for a in argv if a == "-c"]
+        return {"mode": "none" if not inline else "config-flags",
+                "inline_env_keys": sorted({a.split("mcp_servers.", 1)[1].split(".env=", 1)[0]
+                                           for a in argv if ".env=" in a and "mcp_servers." in a})}
+    name = argv[argv.index("-p") + 1]
+    home = os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex"))
+    path = os.path.join(home, f"{name}.config.toml")
+    if not os.path.exists(path):
+        return {"mode": "profile", "profile": name, "exists": False}
+    servers, env_keys, approvals = [], {}, {}
+    current, in_env = None, False
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if line.startswith("[") and line.endswith("]"):
+                    current, in_env = None, False
+                    inner = line[1:-1].strip()
+                    if inner.startswith("mcp_servers."):
+                        rest = inner[len("mcp_servers."):]
+                        # 서버명은 항상 TOML 인용 문자열로 적는다. 점(.)이 이름 안에 없음을 전제한다.
+                        first, _, tail = rest.partition(".")
+                        current = _toml_str(first) or first.strip('"')
+                        if current not in servers:
+                            servers.append(current)
+                        in_env = tail.strip() == "env"
+                    continue
+                if "=" not in line or current is None:
+                    continue
+                key = line.split("=", 1)[0].strip()
+                if key == "approval_mode":
+                    approvals.setdefault(current, []).append(True)
+                elif in_env:
+                    name = _toml_str(key) or key.strip('"')
+                    env_keys.setdefault(current, []).append(name)
+        return {"mode": "profile", "profile": name, "exists": True,
+                "file_mode": oct(os.stat(path).st_mode & 0o777),
+                "servers": servers, "env_keys": env_keys,
+                "approval_counts": {k: len(v) for k, v in approvals.items()}}
+    except OSError:
+        return {"mode": "profile", "profile": name, "exists": True, "unparsable": True}
+
+
 def desk_reply(prompt, engine):
     """접수 호출(ADR 0013)의 가짜 답. 사용자 메시지 부분의 키워드로 고른다(작업판·대화에 같은 말이 있어도 무시)."""
     msg = prompt.split("[사용자 메시지]")[-1]
@@ -98,7 +154,8 @@ def main():
         with open(log, "a") as f:
             f.write(json.dumps({"engine": "codex", "argv": argv, "pid": os.getpid(), "cwd": os.getcwd(),
                                 "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
-                                "account_dir": os.environ.get("CODEX_HOME")}) + "\n")
+                                "account_dir": os.environ.get("CODEX_HOME"),
+                                "mcp_profile": mcp_profile_meta(argv)}) + "\n")
 
     emit({"type": "thread.started", "thread_id": thread})
     if "--ephemeral" in argv:

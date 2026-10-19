@@ -21,6 +21,42 @@ def opt(argv, name):
     return argv[argv.index(name) + 1] if name in argv else None
 
 
+def _redacted_servers(cfg):
+    """서버 명세에서 env 값만 키 목록으로 바꾼다. 값(토큰)은 절대 기록하지 않는다."""
+    out = {}
+    for name, srv in (cfg.get("mcpServers") or {}).items():
+        redacted = {k: v for k, v in srv.items() if k != "env"}
+        redacted["env"] = sorted((srv.get("env") or {}).keys())
+        out[name] = redacted
+    return out
+
+
+def mcp_config_meta(argv):
+    """--mcp-config 전달 형태를 비밀값 없이 기록한다(SEC2-AGT-01 회귀용)."""
+    value = opt(argv, "--mcp-config")
+    if value is None:
+        return {"mode": "absent"}
+    if os.path.exists(value):
+        try:
+            with open(value, encoding="utf-8") as f:
+                cfg = json.load(f)
+            servers = _redacted_servers(cfg)
+            return {"mode": "file", "exists": True,
+                    "file_mode": oct(os.stat(value).st_mode & 0o777),
+                    "servers": {name: spec["env"] for name, spec in servers.items()},
+                    "details": servers}
+        except (ValueError, OSError):
+            return {"mode": "file", "exists": True, "unparsable": True}
+    try:
+        cfg = json.loads(value)
+        servers = _redacted_servers(cfg)
+        return {"mode": "inline",
+                "servers": {name: spec["env"] for name, spec in servers.items()},
+                "details": servers}
+    except ValueError:
+        return {"mode": "unknown"}
+
+
 def desk_reply(prompt, engine):
     """접수 호출(ADR 0013)의 가짜 답. 사용자 메시지 부분의 키워드로 고른다(작업판·대화에 같은 말이 있어도 무시)."""
     msg = prompt.split("[사용자 메시지]")[-1]
@@ -99,7 +135,8 @@ def main():
         with open(log, "a") as f:
             f.write(json.dumps({"engine": "claude", "argv": argv, "pid": os.getpid(), "cwd": os.getcwd(),
                                 "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
-                                "account_dir": os.environ.get("CLAUDE_CONFIG_DIR")}) + "\n")
+                                "account_dir": os.environ.get("CLAUDE_CONFIG_DIR"),
+                                "mcp_config": mcp_config_meta(argv)}) + "\n")
 
     if "--system-prompt" in argv and opt(argv, "--input-format") == "stream-json":
         return desk_stream(argv, log, sid)

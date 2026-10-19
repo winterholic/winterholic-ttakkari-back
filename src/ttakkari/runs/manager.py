@@ -906,7 +906,8 @@ class RunManager:
                 prompt = (worker_routing.qwen_orchestrator_degraded_note(
                     str(outbox / worker_routing.QWEN_SPAWN_QUEUE_DIR)) + "\n" + prompt)
             mcp_servers = {} if prof.engine == "qwen-local" else {
-                MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent"),
+                # SEC2-AGT-02: 에이전트 토큰을 이 Run 에 묶는다. Run 종료 후에는 즉시 거부된다.
+                MCP_SERVER_NAME: mcp_server_spec(sess.id, "orchestrator" if is_orch else "agent", run_id=run.id),
                 **(art_plan.mcp_servers if art_plan else {}),
             }
             run.engine, run.profile = prof.engine, prof.name

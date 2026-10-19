@@ -95,9 +95,19 @@ def test_codex_pms_management_is_preapproved_without_mislabeling_writes(make_dir
     spec = LaunchSpec(cwd=root, prompt="PMS 관리", engine_session_id=None, model=None, effort=None,
                       outbox=root, write_roots=[root], system_note="",
                       mcp_servers={"ttakkari": {"command": "python", "args": [], "env": {}}})
-    argv = CodexAdapter().build_command(spec, {})
-    for name in ("manage_pms", "create_pms_task", "list_pms_projects"):
-        assert f'mcp_servers.ttakkari.tools.{name}.approval_mode="approve"' in argv
+    import tomllib
+
+    adapter = CodexAdapter()
+    home = make_dir()
+    try:
+        argv = adapter.build_command(spec, {"CODEX_HOME": str(home), "TTAKKARI_RUN_ID": "pms"})
+        assert not any("TTK_ORCH_TOKEN" in a for a in argv)
+        cfg = tomllib.loads((home / f"{argv[argv.index('-p') + 1]}.config.toml").read_text())
+        tools = cfg["mcp_servers"]["ttakkari"]["tools"]
+        for name in ("manage_pms", "create_pms_task", "list_pms_projects"):
+            assert tools[name]["approval_mode"] == "approve", name
+    finally:
+        adapter.cleanup(spec)
     assert "manage_pms" not in READ_ONLY_TOOLS and "create_pms_task" not in READ_ONLY_TOOLS
 
 

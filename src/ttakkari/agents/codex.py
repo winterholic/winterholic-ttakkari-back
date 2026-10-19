@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +44,58 @@ def read_context(codex_home: Path, thread_id: str) -> tuple[int, int] | None:
 
 class CodexAdapter:
     engine = "codex"
+
+    def __init__(self) -> None:
+        self._resources: dict[int, Path] = {}
+
+    def _write_profile(self, spec: LaunchSpec, extra_env: dict[str, str],
+                       servers: dict[str, dict[str, Any]]) -> str:
+        """MCP 서버 명세(세션 토큰 포함)를 $CODEX_HOME 프로파일 TOML(0600)로 쓰고 프로파일명을 돌려준다.
+
+        SEC2-AGT-01: `-c mcp_servers.*.env=...` argv 전달을 파일 전달로 바꿨다.
+        `-c` 값은 TOML 로 파싱되므로 같은 스키마를 파일에 적는다.
+        """
+        self.cleanup(spec)
+        run_id = extra_env.get("TTAKKARI_RUN_ID") or spec.session_id or uuid.uuid4().hex
+        name = f"ttakkari-run-{run_id}"
+        codex_home = Path(extra_env.get("CODEX_HOME", Path.home() / ".codex"))
+        codex_home.mkdir(parents=True, exist_ok=True)
+        path = codex_home / f"{name}.config.toml"
+        lines = []
+        for srv_name, srv in servers.items():
+            q = json.dumps(srv_name)
+            lines.append(f"[mcp_servers.{q}]")
+            lines.append(f"command = {json.dumps(srv['command'])}")
+            lines.append(f"args = {json.dumps(list(srv.get('args', [])))}")
+            if srv.get("cwd") is not None:
+                lines.append(f"cwd = {json.dumps(srv['cwd'])}")
+            if srv.get("enabled_tools") is not None:
+                lines.append(f"enabled_tools = {json.dumps(list(srv['enabled_tools'] or []))}")
+            env = srv.get("env") or {}
+            if env:
+                lines.append(f"[mcp_servers.{q}.env]")
+                for key in sorted(env):
+                    lines.append(f"{json.dumps(key)} = {json.dumps(env[key])}")
+            for tool in sorted(srv.get("approvals") or ()):
+                lines.append(f"[mcp_servers.{q}.tools.{json.dumps(tool)}]")
+                lines.append("approval_mode = \"approve\"")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write("\n".join(lines) + "\n")
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        self._resources[id(spec)] = path
+        return name
+
+    def cleanup(self, spec: LaunchSpec) -> None:
+        path = self._resources.pop(id(spec), None)
+        if path is not None:
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
     def build_command(self, spec: LaunchSpec, extra_env: dict[str, str]) -> list[str]:
         s = get_settings()
@@ -83,23 +137,24 @@ class CodexAdapter:
             "-c", f"sandbox_workspace_write.writable_roots={json.dumps(writable)}",
             "-c", f"developer_instructions={json.dumps(note)}",
         ]
+        profile_servers: dict[str, dict[str, Any]] = {}
         for name, srv in servers.items():
-            env = ", ".join(f"{k}={json.dumps(v)}" for k, v in srv.get("env", {}).items())
-            opts += [
-                "-c", f"mcp_servers.{name}.command={json.dumps(srv['command'])}",
-                "-c", f"mcp_servers.{name}.args={json.dumps(srv.get('args', []))}",
-                "-c", f"mcp_servers.{name}.env={{{env}}}",
-            ]
+            entry = {"command": srv["command"], "args": list(srv.get("args", [])),
+                     "env": dict(srv.get("env", {}))}
+            approvals: set[str] = set()
             # 무인 실행의 never 는 승인 요청을 자동 허용하지 않고 거절한다.
             # 사용자 지시를 실행하는 자체 앱 도구를 명시적으로 허용한다. 쓰기의 readOnlyHint는 바꾸지 않는다.
             if name == "ttakkari":
-                for tool in sorted(AUTO_APPROVED_TOOLS):
-                    opts += ["-c", f'mcp_servers.{name}.tools.{tool}.approval_mode="approve"']
+                approvals |= set(AUTO_APPROVED_TOOLS)
             if name == SERVER_NAME and browser is not None:
-                opts += ["-c", f"mcp_servers.{name}.cwd={json.dumps(srv['cwd'])}",
-                         "-c", f"mcp_servers.{name}.enabled_tools={json.dumps(sorted(BROWSER_TOOLS))}"]
-                for tool in sorted(BROWSER_TOOLS):
-                    opts += ["-c", f'mcp_servers.{name}.tools.{tool}.approval_mode="approve"']
+                entry["cwd"] = srv["cwd"]
+                entry["enabled_tools"] = sorted(BROWSER_TOOLS)
+                approvals |= set(BROWSER_TOOLS)
+            entry["approvals"] = approvals
+            profile_servers[name] = entry
+        if profile_servers:
+            # SEC2-AGT-01: 서버 env(세션 토큰)는 argv 가 아닌 프로파일 파일로 전달한다.
+            opts += ["-p", self._write_profile(spec, extra_env, profile_servers)]
         if spec.model:
             opts += ["-m", spec.model]
         if spec.effort:

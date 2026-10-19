@@ -62,6 +62,10 @@ async def _finish(client, auth, task: dict) -> dict:
 
 
 def _mcp(call: dict) -> dict:
+    # SEC2-AGT-01: 파일 전달이므로 가짜 엔진이 실행 중에 기록한 redacted 상세를 쓴다(env 는 키 목록).
+    meta = call.get("mcp_config") or {}
+    if meta.get("mode") in ("file", "inline"):
+        return meta["details"]
     argv = call["argv"]
     return json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]
 

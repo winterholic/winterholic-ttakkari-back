@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +24,29 @@ FILE_WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 class ClaudeAdapter:
     engine = "claude"
 
+    def __init__(self) -> None:
+        self._resources: dict[int, Path] = {}
+
+    def _write_mcp_config(self, spec: LaunchSpec) -> Path:
+        """MCP 서버 명세(세션 토큰 포함)를 0600 파일로 쓰고 경로를 돌려준다.
+
+        SEC2-AGT-01: 토큰이 argv(ps)에 노출되지 않게 JSON 문자열 전달을 파일 전달로 바꿨다.
+        """
+        self.cleanup(spec)
+        private = Path(tempfile.mkdtemp(prefix="ttakkari-claude-"))
+        self._resources[id(spec)] = private
+        servers = {name: {"type": "stdio", **srv} for name, srv in spec.mcp_servers.items()}
+        path = private / "mcp_config.json"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump({"mcpServers": servers}, stream)
+        return path
+
+    def cleanup(self, spec: LaunchSpec) -> None:
+        private = self._resources.pop(id(spec), None)
+        if private is not None:
+            shutil.rmtree(private, ignore_errors=True)
+
     def build_command(self, spec: LaunchSpec, extra_env: dict[str, str]) -> list[str]:
         s = get_settings()
         hook_cmd = f"{sys.executable} -m ttakkari.security.claude_hook"
@@ -35,8 +61,7 @@ class ClaudeAdapter:
             "--add-dir", str(spec.outbox),
         ]
         if spec.mcp_servers:
-            servers = {name: {"type": "stdio", **srv} for name, srv in spec.mcp_servers.items()}
-            cmd += ["--mcp-config", json.dumps({"mcpServers": servers})]
+            cmd += ["--mcp-config", str(self._write_mcp_config(spec))]
         if s.claude_setting_sources:
             cmd += ["--setting-sources", s.claude_setting_sources]
         if spec.engine_session_id:

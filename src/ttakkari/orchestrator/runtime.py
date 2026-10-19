@@ -11,8 +11,11 @@ from typing import Annotated, Any
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
+from ttakkari.db import get_db
+from ttakkari.models import Run, RunStatus
 from ttakkari.runs.worker_routing import policy
 from ttakkari.security.auth import ALGO, ISSUER, decode
 
@@ -183,38 +186,59 @@ when you are blocked and need their input or approval).
 - `list_sessions`/`read_session` show the user's other conversations when context from them is needed."""
 
 
-def issue_token(session_id: uuid.UUID) -> str:
+def issue_token(session_id: uuid.UUID, run_id: uuid.UUID | None = None) -> str:
     s = get_settings()
     now = datetime.now(UTC)
     # Run 시간 제한보다 조금 길게. Run 이 끝나면 프로세스와 함께 버려진다.
     exp = now + timedelta(seconds=s.run_timeout_seconds + 600)
     payload = {"iss": ISSUER, "aud": AUDIENCE, "sub": "orchestrator", "sid": str(session_id), "iat": now, "exp": exp,
                "jti": uuid.uuid4().hex}
+    if run_id is not None:
+        # SEC2-AGT-02: 토큰을 Run 에 묶는다. Run 종료 후에는 require_orchestrator 가 거부한다.
+        payload["rid"] = str(run_id)
     return jwt.encode(payload, s.jwt_secret, algorithm=ALGO)
 
 
 async def require_orchestrator(
     creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> uuid.UUID:
     if creds is None or creds.scheme.lower() != "bearer":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "인증이 필요합니다.")
     try:
         claims = decode(creds.credentials, AUDIENCE)
-        return uuid.UUID(claims["sid"])
+        sid = uuid.UUID(claims["sid"])
     except (jwt.PyJWTError, KeyError, ValueError) as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "유효하지 않은 오케스트레이터 토큰입니다.") from e
+    run_id = claims.get("rid")
+    if run_id is None:
+        # 레거시 토큰(rid 없음): 기존 테스트·배포 세대 전환 중 draining Run 과 호환을 위해 그대로 인정한다.
+        return sid
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except (ValueError, AttributeError, TypeError) as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "유효하지 않은 오케스트레이터 토큰입니다.") from e
+    run = await db.get(Run, run_uuid)
+    # SEC2-AGT-02: 종료된 Run(succeeded/failed/cancelled/interrupted)의 토큰은 즉시 거부한다.
+    # 캐시를 두지 않는다. 단일 사용자 규모에서 PK 조회 1회는 무시할 수준이고, 캐시 TTL 만큼 폐기가 늦어진다.
+    if run is None or run.status != RunStatus.running:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "종료된 Run 의 토큰입니다.")
+    return sid
 
 
 OrchestratorSession = Annotated[uuid.UUID, Depends(require_orchestrator)]
 
 
-def mcp_server_spec(session_id: uuid.UUID, role: str = "agent") -> dict[str, Any]:
+def mcp_server_spec(session_id: uuid.UUID, role: str = "agent",
+                    run_id: uuid.UUID | None = None) -> dict[str, Any]:
     """엔진에 넘길 stdio MCP 서버 명세. TTAKKARI_* 는 자식 env 에서 지워지므로 접두사를 달리 쓴다.
 
-    role: agent(공통 도구) | orchestrator(공통 + 작업 세션 도구)."""
+    role: agent(공통 도구) | orchestrator(공통 + 작업 세션 도구).
+    run_id 를 주면 Run 에 묶인 토큰을 발급한다(SEC2-AGT-02)."""
     s = get_settings()
     return {
         "command": sys.executable,
         "args": ["-m", "ttakkari.orchestrator.mcp_server"],
-        "env": {"TTK_ORCH_TOKEN": issue_token(session_id), "TTK_API_URL": s.internal_api_url, "TTK_ROLE": role},
+        "env": {"TTK_ORCH_TOKEN": issue_token(session_id, run_id), "TTK_API_URL": s.internal_api_url,
+                "TTK_ROLE": role},
     }

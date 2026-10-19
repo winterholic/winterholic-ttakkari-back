@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "supervisor": {"protocol": 1, "slots": 3},
-  "schema_revision": "0049_google_accounts",
+  "schema_revision": "0050_login_throttle_shadow",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -19,6 +19,7 @@
     "0045_tossinvest_runs",
     "0046_notebooklm",
     "0047_game_studio",
-    "0048_game_active_build"
+    "0048_game_active_build",
+    "0049_google_accounts"
   ]
 }

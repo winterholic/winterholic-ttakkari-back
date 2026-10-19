@@ -59,9 +59,9 @@ async function clearRoom(s, { timeoutMs = 60000 } = {}) {
   return st;
 }
 
-async function enterDoor(s) {
+async function enterDoor(s, { timeoutMs = 15000 } = {}) {
   let st = await s.state();
-  const end = Date.now() + 15000;
+  const end = Date.now() + timeoutMs;
   const room = st.room;
   while (Date.now() < end && st.scene === 'play' && st.room === room) {
     st = await steer(s, (c) => c.door, { stop: 10, timeoutMs: 2000 });
@@ -119,7 +119,8 @@ try {
   const e0 = before.enemies.length;
   let after = before;
   const t0 = Date.now();
-  while (Date.now() - t0 < 40000 && after.scene === 'play' && after.kills === before.kills) {
+  // clear_first: 방1 을 일부러 완전히 비워 간헐 실패 경로(처치 단계가 방을 비운 경우)를 결정적으로 재현한다.
+  while (Date.now() - t0 < 40000 && after.scene === 'play' && (cfg.clear_first ? after.enemies.length > 0 : after.kills === before.kills)) {
     const e = nearest(after);
     after = await steer(s, () => e && { x: e.x, y: e.y }, { stop: 30, timeoutMs: 1500 });
     for (let i = 0; i < 3 && after.scene === 'play'; i += 1) {
@@ -137,6 +138,15 @@ try {
   R.shots.afterKill = await s.capture(out('03-after-kill'));
 
   // 게임오버: 가만히 서서 적에게 맞는다. 체력이 줄다가 0 이 되면 gameover.
+  // 방1 의 적은 2마리뿐이고 한 번 휘두르면 둘 다 반경 안에 들 수 있다(스폰 위치는 무작위, 적이 모이는 속도는 봇의 반응 속도에 따라 달라진다).
+  // 처치 단계가 방을 비워 버리면 맞을 적이 없어 60초를 기다리다 실패했다(배포 게이트 808a5496 의 실패 원인). 그때는 열린 문으로 방2 에 들어가
+  // 적이 있는 방에서 기다린다. 적은 항상 플레이어에게 직진하므로 이 경로는 시간에 따라 결과가 갈리지 않는다.
+  if (after.scene === 'play' && after.enemies.length === 0) {
+    R.notes.push('처치 단계에서 방1 이 비어 방2 로 이동해 게임오버를 기다린다');
+    R.roomClearedInKillPhase = true;
+    if (after.doorOpen) after = await enterDoor(s, { timeoutMs: 45000 });
+    R.checks.moved_on_after_clear = after.scene === 'play' && after.room === 2 && after.enemies.length > 0;
+  }
   let hpSeen = [after.hp];
   const go = await (async () => {
     const end = Date.now() + 60000;

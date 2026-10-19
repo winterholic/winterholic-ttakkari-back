@@ -89,13 +89,13 @@ async def test_game_studio_flow_with_recorded_worker_output(client, auth, monkey
     monkeypatch.setattr(s, "game_origin_url", f"http://127.0.0.1:{game_port}")
     monkeypatch.setattr(s, "game_frame_ancestors", [host_origin])
 
-    async def play_rules(tag: str, build_id: str | None, *, quick: bool = False) -> dict:
+    async def play_rules(tag: str, build_id: str | None, *, quick: bool = False, clear_first: bool = False) -> dict:
         play = await client.post(f"/api/games/{gid}/play", json={"build_id": build_id} if build_id else {}, headers={**auth, "Origin": host_origin})
         assert play.status_code == 200, play.text
         pl = play.json()
         assert "allow-same-origin" not in pl["sandbox"]
         res = run_scenario("e2e_roguelike.mjs", {"play_url": pl["url"], "sandbox": pl["sandbox"], "host_port": host_port, "out_dir": str(out), "tag": tag,
-                                                 "quick": quick}, timeout=300)
+                                                 "quick": quick, "clear_first": clear_first}, timeout=300)
         assert res.get("error") is None, res.get("error")
         assert res["console"]["consoleErrors"] == [] and res["console"]["pageErrors"] == [], res["console"]  # 콘솔 에러 0
         failed = [k for k in CORE_RULES if not res["checks"].get(k)]
@@ -139,7 +139,11 @@ async def test_game_studio_flow_with_recorded_worker_output(client, auth, monkey
         assert restored["bundle_sha256"] == b1["bundle_sha256"]  # 소스 트리가 v1 과 같아 번들도 같다
         assert git(root, "diff", "--stat", v1_commit, "HEAD") == ""
         assert (await client.get(f"/api/games/{gid}", headers=auth)).json()["active_build_id"] == restored["id"]  # 복구 빌드가 활성이 된다
-        r3 = await play_rules("v3-restored", None, quick=True)  # 기본 대상은 활성 빌드(복구 빌드)
+        # 기본 대상은 활성 빌드(복구 빌드). 방1 을 먼저 비우려는 변형으로, 처치 단계가 방을 비우면 게임오버를 못 기다리던 간헐 실패 경로를 지난다.
+        # 비우는 도중 봇이 맞아 죽을 수도 있어(그 경우 게임오버는 이미 확인된 것이다) 경로를 지났는지는 단정하지 않고 결과 파일에만 남긴다.
+        r3 = await play_rules("v3-restored", None, quick=True, clear_first=True)
+        if r3.get("roomClearedInKillPhase"):
+            assert r3["checks"].get("moved_on_after_clear"), {k: r3.get(k) for k in ("notes", "hpSeen", "gameover", "checks")}
         builds = (await client.get(f"/api/games/{gid}/builds", headers=auth)).json()
         assert len(builds) == 3 and {b["status"] for b in builds} == {"succeeded"}  # 원래·수정·복구 빌드가 모두 남았다
 

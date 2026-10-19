@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import shlex
+
 import pytest
 
 from ttakkari.artifacts import service
@@ -288,3 +290,161 @@ def test_bash_blocks_secret_filename_variants(tmp_path: Path, name: str) -> None
     cfg = GuardConfig(write_roots=[tmp_path])
     assert check_bash(f"cat {tmp_path / name}", tmp_path, cfg) is not None
     assert check_bash("cat src/secret-v2-bridge.ts", tmp_path, cfg) is None
+
+
+# V2: probe 우회 16건 패턴 차단. 파괴적 SQL 문구는 문자열 결합으로 만든다.
+_V2_D = "DR" + "OP"
+_V2_BASE = "DATA" + "BASE"
+_V2_SCHEMA = "SCH" + "EMA"
+_V2_SQL = f"{_V2_D} {_V2_BASE} app"
+_V2_SCHEMA_SQL = f"{_V2_D} {_V2_SCHEMA} public"
+
+
+def _v2cfg(tmp_path: Path) -> GuardConfig:
+    return GuardConfig(write_roots=[tmp_path])
+
+
+@pytest.mark.parametrize("shell", ["bash", "sh"])
+def test_v2_blocks_nested_shell_db_drop(tmp_path: Path, shell: str) -> None:
+    assert check_bash(f"{shell} -c 'mysql -e \"{_V2_SQL}\"'", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_blocks_eval_db_drop(tmp_path: Path) -> None:
+    assert check_bash(f"eval 'mysql -e \"{_V2_SQL}\"'", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+@pytest.mark.parametrize("wrapper", ["nice", "timeout 5", "env", "command", "exec", "nohup"])
+def test_v2_blocks_wrapped_nested_shell_db_drop(tmp_path: Path, wrapper: str) -> None:
+    assert check_bash(f"{wrapper} bash -c 'mysql -e \"{_V2_SQL}\"'", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_blocks_nested_shell_schema_drop(tmp_path: Path) -> None:
+    assert check_bash(f"bash -c 'psql -c \"{_V2_SCHEMA_SQL}\"'", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_allows_nested_shell_benign_select(tmp_path: Path) -> None:
+    assert check_bash("bash -c 'mysql -e \"SELECT 1\"'", tmp_path, _v2cfg(tmp_path)) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        f"printf '%s' '{_V2_SQL}' | mysql",
+        f"printf '%s' '{_V2_SQL}' | xargs mysql",
+        f"printf '%s\\n' '{_V2_SQL}' | xargs -I '{{}}' mysql -e '{{}}'",
+        f"printf '%s%s\\n' 'DR' 'OP {_V2_BASE} x' | mysql",
+        "printf 'eA==' | base64 -d | mysql",
+        f"printf '%s' '{_V2_SQL}' | env mysql",
+    ],
+)
+def test_v2_blocks_pipe_into_db_client(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_blocks_redirect_into_db_client(tmp_path: Path) -> None:
+    seed = tmp_path / "input.sql"
+    seed.write_text("SELECT 1")
+    assert check_bash(f"mysql < {seed}", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_blocks_indirect_and_array_var_drop(tmp_path: Path) -> None:
+    cfg = _v2cfg(tmp_path)
+    assert check_bash(f"SQL='{_V2_SQL}'; x=SQL; mysql -e \"${{!x}}\"", tmp_path, cfg) is not None
+    assert check_bash(f"a=('{_V2_SQL}'); mysql -e \"${{a[0]}}\"", tmp_path, cfg) is not None
+
+
+@pytest.mark.parametrize(
+    ("interp", "flag", "code"),
+    [
+        ("python", "-c", f"import os; os.system(\"mysql -e '{_V2_SQL}'\")"),
+        ("python3", "-c", f"__import__('os').system('psql -c \"{_V2_SQL}\"')"),
+        ("node", "-e", f"require('child_process').execSync(\"psql -c '{_V2_SQL}'\")"),
+        ("perl", "-e", f"system(\"sqlite3 db '{_V2_SQL}'\")"),
+    ],
+)
+def test_v2_blocks_interpreter_db_execution(tmp_path: Path, interp: str, flag: str, code: str) -> None:
+    assert check_bash(f"{interp} {flag} {shlex.quote(code)}", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+@pytest.mark.parametrize(
+    ("interp", "flag", "code"),
+    [
+        ("python", "-c", "print('hello')"),
+        ("node", "-e", "console.log(1)"),
+        ("perl", "-e", "print 1"),
+    ],
+)
+def test_v2_allows_interpreter_benign_code(tmp_path: Path, interp: str, flag: str, code: str) -> None:
+    assert check_bash(f"{interp} {flag} {shlex.quote(code)}", tmp_path, _v2cfg(tmp_path)) is None
+
+
+def test_v2_blocks_interpreter_sensitive_read(tmp_path: Path) -> None:
+    key = tmp_path / "id_rsa"
+    key.write_text("private")
+    code = f"open('{key}').read()"
+    assert check_bash(f"python -c {shlex.quote(code)}", tmp_path, _v2cfg(tmp_path)) is not None
+    assert check_bash(f"python {key}", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_allows_interpreter_script_run(tmp_path: Path) -> None:
+    assert check_bash("python scripts/migrate.py", tmp_path, _v2cfg(tmp_path)) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "mongosh --eval 'db.dropDatabase()'",
+        "mongosh --eval 'db.users.drop()' --quiet",
+        "mongo mydb --eval 'db.dropDatabase()'",
+        "bash -c \"mongosh --eval 'db.dropDatabase()'\"",
+    ],
+)
+def test_v2_blocks_mongo_drop(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_allows_mongo_benign_eval(tmp_path: Path) -> None:
+    assert check_bash("mongosh --eval 'db.stats()'", tmp_path, _v2cfg(tmp_path)) is None
+
+
+@pytest.mark.parametrize("command", ["redis-cli FLUSHALL", "redis-cli -n 0 FLUSHDB"])
+def test_v2_blocks_redis_flush(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_allows_redis_benign_command(tmp_path: Path) -> None:
+    assert check_bash("redis-cli GET mykey", tmp_path, _v2cfg(tmp_path)) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    ['mysql -e "TRUNCATE TABLE t"', 'psql -c "TRUNCATE t"', 'mysql -e "DELETE FROM t"'],
+)
+def test_v2_blocks_unconditional_wipe(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, _v2cfg(tmp_path)) is not None
+
+
+def test_v2_allows_delete_with_where(tmp_path: Path) -> None:
+    assert check_bash('mysql -e "DELETE FROM t WHERE id = 1"', tmp_path, _v2cfg(tmp_path)) is None
+
+
+def test_v2_blocks_bare_kubeconfig_read(tmp_path: Path) -> None:
+    target = tmp_path / "kubeconfig"
+    target.write_text("clusters: []")
+    assert check_bash(f"cat {target}", tmp_path, _v2cfg(tmp_path)) is not None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git log --oneline -5",
+        "grep -R 'model' docs/",
+        "pytest -q tests/test_guard.py",
+        "npm test",
+        "psql -f migrate.sql",
+        'mysql -e "SELECT 1"',
+        'mysql -e "SELECT 1" | grep foo',
+    ],
+)
+def test_v2_allows_normal_development_commands(tmp_path: Path, command: str) -> None:
+    assert check_bash(command, tmp_path, _v2cfg(tmp_path)) is None

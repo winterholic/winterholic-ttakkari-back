@@ -54,6 +54,9 @@ SENSITIVE_NAME_GLOBS = (
     "secrets",
     "*.tfstate",
     "*.tfvars",
+    # kubeconfig는 .kube 밖 일반 경로에 놓여도 자격증명이다.
+    "kubeconfig",
+    "kubeconfig.*",
 )
 # 경로 조각 연속 일치. ".codex/auth.json" 처럼 파일까지 적으면 그 파일만 막는다(하네스 폴더를 권한 폴더로 열어도 로그인 토큰은 못 읽게).
 SENSITIVE_DIR_NAMES = (".ssh", ".aws", ".gnupg", ".kube", ".docker", ".azure", ".gcloud", ".config/gcloud", ".git",
@@ -131,7 +134,11 @@ def _looks_like_secret_variant(name: str) -> bool:
     return ("." + ext) in _SECRET_VARIANT_EXTS and _SECRET_WORD_RE.search(stem) is not None
 
 
-def is_sensitive(path: Path) -> bool:
+def is_sensitive_name(path: Path) -> bool:
+    """파일 I/O 없는 이름 전용 판정. 셸·코드 문자열 속 경로 후보용이다.
+
+    .pem은 내용 판정이 필요해 여기서는 모름(False)으로 둔다.
+    """
     if path.name.lower() in SAFE_NAMES:
         return False
     parts = [p.lower() for p in path.parts]
@@ -142,10 +149,20 @@ def is_sensitive(path: Path) -> bool:
                 return True
     name = parts[-1] if parts else ""
     if name.endswith(".pem"):
-        return _pem_holds_private_key(path)
+        return False
     if _looks_like_secret_variant(name):
         return True
     return any(fnmatch.fnmatchcase(name, g) for g in SENSITIVE_NAME_GLOBS)
+
+
+def is_sensitive(path: Path) -> bool:
+    if is_sensitive_name(path):
+        return True
+    if path.name.lower() in SAFE_NAMES:
+        return False
+    if path.name.lower().endswith(".pem"):
+        return _pem_holds_private_key(path)
+    return False
 
 
 def _validate_rel(rel: str) -> PurePosixPath:

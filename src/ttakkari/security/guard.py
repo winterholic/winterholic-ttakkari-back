@@ -13,7 +13,7 @@ import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ttakkari.broker.policy import is_sensitive, is_within
+from ttakkari.broker.policy import is_sensitive, is_sensitive_name, is_within
 
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 READ_TOOLS = {"Read", "Grep", "Glob", "LS"}
@@ -75,6 +75,29 @@ _PIPE_TO_CLIENT_RE = re.compile(
 # SQL='DROP DATABASE ...'; mysql -e "$SQL" 같은 변수 경유 우회용.
 # 대입이 속한 셸 조각에 DROP이 있으면 그 변수명을 기록한다 (휴리스틱).
 _ASSIGN_NAME_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\+?=")
+# ${!x} 간접 참조·${a[0]} 배열 확장의 목적지는 정적 분석으로 알 수 없다.
+# DROP을 담은 변수가 있고 클라이언트 인자에 이런 확장이 있으면 보수적으로 막는다.
+_INDIRECT_REF_RE = re.compile(r"\$\{![A-Za-z_][A-Za-z0-9_]*\}|\$![A-Za-z_][A-Za-z0-9_]*")
+_ARRAY_REF_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*\[|\$\{[A-Za-z_][A-Za-z0-9_]*\[")
+# x=SQL 같은 별칭 대입. 값이 DROP 변수명과 같으면 별칭도 DROP 변수로 본다.
+_ALIAS_ASSIGN_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)")
+
+# MongoDB·Redis·전체 삭제. SQL DROP과 별도 정책이다.
+_MONGO_CLIENTS = frozenset({"mongosh", "mongo"})
+_MONGO_DROP_RE = re.compile(r"\.\s*(drop|dropDatabase|dropCollection)\s*\(", re.IGNORECASE)
+_REDIS_FLUSH_RE = re.compile(r"\bFLUSH(ALL|DB)\b", re.IGNORECASE)
+_TRUNCATE_RE = re.compile(r"\btruncate\s+(table\s+)?[^\s;]+", re.IGNORECASE)
+_DELETE_FROM_RE = re.compile(r"\bdelete\s+from\s+[^\s;]+", re.IGNORECASE)
+_WHERE_RE = re.compile(r"\bwhere\b", re.IGNORECASE)
+
+# 중첩 실행 추적용. 래퍼를 벗긴 뒤 실제 동사를 보고 -c·-e·--eval 문자열을 재귀 검사한다.
+_WRAPPER_VERBS = frozenset({"sudo", "doas", "su", "nice", "timeout", "env", "command", "exec", "nohup", "time"})
+_NESTED_SHELL_VERBS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
+_INTERPRETER_VERBS = frozenset({"python", "python3", "node", "nodejs", "perl"})
+_CONTAINER_VERBS = frozenset({"docker", "podman", "kubectl", "nerdctl"})
+_MAX_NESTING = 4
+_CLIENT_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.\-]*")
+_QUOTED_LIT_RE = re.compile(r"""["']([^"'\\]{1,512})["']""")
 
 
 def _strip_prefix(argv: list[str]) -> list[str]:
@@ -86,13 +109,236 @@ def _strip_prefix(argv: list[str]) -> list[str]:
     return argv
 
 
+def _unwrap_for_analysis(argv: list[str]) -> list[str]:
+    """중첩·파이프 분석용으로만 래퍼를 벗긴다. 허용·차단 판정에는 쓰지 않는다.
+
+    sudo를 벗겨도 바깥 check_bash의 catastrophic 검사는 원문 기준으로 먼저 돌았으므로
+    sudo 자체 차단은 유지된다.
+    """
+    a = list(argv)
+    while len(a) > 1:
+        if _ASSIGN_RE.match(a[0]):
+            a = a[1:]
+            continue
+        verb = Path(a[0]).name
+        if verb not in _WRAPPER_VERBS:
+            break
+        a = a[1:]
+        while len(a) > 1 and a[0].startswith("-") and a[0] != "-":
+            if a[0] in ("-u", "--user", "-g", "--group") and len(a) > 2:
+                a = a[2:]
+            else:
+                a = a[1:]
+        if verb == "timeout":
+            while len(a) > 1 and re.fullmatch(r"\d+[smhd]?", a[0]):
+                a = a[1:]
+    return a
+
+
+def _split_stages(command: str) -> list[str]:
+    """인용부호 안의 | 를 건드리지 않고 파이프 단계별 원문으로 나눈다."""
+    stages: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for ch in command:
+        if escaped:
+            buf.append(ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            buf.append(ch)
+            escaped = True
+            continue
+        if quote is not None:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            buf.append(ch)
+            quote = ch
+            continue
+        if ch == "|":
+            stages.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    stages.append("".join(buf))
+    return stages
+
+
+def _lex_stage(stage: str) -> list[str]:
+    try:
+        return shlex.split(stage, posix=True)
+    except ValueError:
+        return stage.split()
+
+
+def _stage_invokes_client(argv: list[str]) -> bool:
+    """이 단계가 DB 클라이언트를 직접 실행하는지. xargs·컨테이너 경유 포함."""
+    a = _unwrap_for_analysis(argv)
+    if not a:
+        return False
+    verb = Path(a[0]).name.lower()
+    if verb in DB_CLIENT_VERBS:
+        return True
+    if verb == "xargs" or verb in _CONTAINER_VERBS:
+        return any(Path(w).name.lower() in DB_CLIENT_VERBS for w in a[1:])
+    return False
+
+
+def _command_verbs(split: list[list[str]]) -> set[str]:
+    verbs: set[str] = set()
+    for argv in split:
+        a = _unwrap_for_analysis(argv)
+        if not a:
+            continue
+        verbs.add(Path(a[0]).name.lower())
+        if Path(a[0]).name.lower() == "xargs" or Path(a[0]).name.lower() in _CONTAINER_VERBS:
+            verbs.update(Path(w).name.lower() for w in a[1:])
+    return verbs
+
+
+def _mentioned_clients(text: str) -> set[str]:
+    words = {w.lower() for w in _CLIENT_WORD_RE.findall(text)}
+    return {c for c in DB_CLIENT_VERBS if c.lower() in words}
+
+
+def _nested_payloads(argv: list[str]) -> list[str]:
+    """bash -c·sh -c·eval이 실행하는 문자열. 래퍼 뒤에서 찾는다."""
+    a = _unwrap_for_analysis(argv)
+    if not a:
+        return []
+    verb = Path(a[0]).name
+    if verb in _NESTED_SHELL_VERBS:
+        if "-c" in a[1:]:
+            i = a.index("-c")
+            if i + 1 < len(a):
+                return [a[i + 1]]
+        return []
+    if verb == "eval":
+        return [" ".join(a[1:])] if len(a) > 1 else []
+    return []
+
+
+def _code_payloads(argv: list[str]) -> list[str]:
+    """python/node/perl -c·-e·--eval 코드 문자열."""
+    a = _unwrap_for_analysis(argv)
+    if not a or Path(a[0]).name not in _INTERPRETER_VERBS:
+        return []
+    for flag in ("-c", "-e", "--eval"):
+        if flag in a[1:]:
+            i = a.index(flag)
+            if i + 1 < len(a):
+                return [a[i + 1]]
+    return []
+
+
+def _payload_refs_sensitive(payload: str, cwd: Path) -> str | None:
+    """인터프리터 코드 안의 인용 문자열이 민감 파일을 가리키면 막는다."""
+    for lit in _QUOTED_LIT_RE.findall(payload):
+        if is_sensitive_name(Path(lit)):
+            return f"민감 파일 읽기·반출 차단: {lit}"
+        p = _resolve(lit, cwd)
+        try:
+            exists = p.is_file()
+        except OSError:
+            exists = False
+        if exists and is_sensitive(p):
+            return f"민감 파일 읽기·반출 차단: {lit}"
+    return None
+
+
+def _check_text_destruction(text: str, clients: set[str]) -> str | None:
+    """단어 기준 파괴적 실행 판정. 인터프리터 코드처럼 셸 분해가 안 되는 텍스트용."""
+    if not clients:
+        return None
+    if _DROP_DB_RE.search(text):
+        return "고위험 명령 차단(DB 통째 삭제)"
+    if (clients & _MONGO_CLIENTS) and _MONGO_DROP_RE.search(text):
+        return "고위험 명령 차단(MongoDB 통째 삭제)"
+    if "redis-cli" in clients and _REDIS_FLUSH_RE.search(text):
+        return "고위험 명령 차단(Redis 전체 삭제)"
+    if _TRUNCATE_RE.search(text):
+        return "고위험 명령 차단(전체 테이블 삭제)"
+    if _DELETE_FROM_RE.search(text) and not _WHERE_RE.search(text):
+        return "고위험 명령 차단(조건 없는 전체 삭제)"
+    return None
+
+
+def _check_code_payload(payload: str, cwd: Path) -> str | None:
+    if reason := _check_text_destruction(payload, _mentioned_clients(payload)):
+        return reason
+    return _payload_refs_sensitive(payload, cwd)
+
+
+def _check_nosql_destructive(command: str, verbs: set[str]) -> str | None:
+    if (verbs & _MONGO_CLIENTS) and _MONGO_DROP_RE.search(command):
+        return "고위험 명령 차단(MongoDB 통째 삭제)"
+    if "redis-cli" in verbs and _REDIS_FLUSH_RE.search(command):
+        return "고위험 명령 차단(Redis 전체 삭제)"
+    if verbs & DB_CLIENT_VERBS:
+        if _TRUNCATE_RE.search(command):
+            return "고위험 명령 차단(전체 테이블 삭제)"
+        if _DELETE_FROM_RE.search(command) and not _WHERE_RE.search(command):
+            return "고위험 명령 차단(조건 없는 전체 삭제)"
+    return None
+
+
+def _stage_has_input_redirect(argv: list[str]) -> bool:
+    for tok in argv[1:]:
+        if tok == "<" or (tok.startswith("<") and not tok.startswith("<<")):
+            return True
+    if argv and re.search(r"<(?!<)", Path(argv[0]).name):
+        return True
+    return False
+
+
+def _check_client_stdin(command: str) -> str | None:
+    """DB 클라이언트로 들어가는 파이프·입력 리다이렉션은 내용과 무관하게 막는다.
+
+    파이프·파일 입력의 실제 SQL은 셸 문자열에서 안 보인다. printf 조각 조립·base64
+    디코드·xargs 경유 같은 런타임 생성은 모양으로만 막고, 디코딩 내용까지는
+    들여다보지 않는다(구조적 한계).
+    """
+    stages = [s for s in _split_stages(command) if s.strip()]
+    for stage in stages:
+        argv = _lex_stage(stage)
+        a = _unwrap_for_analysis(argv)
+        if a and Path(a[0]).name.lower() in DB_CLIENT_VERBS and _stage_has_input_redirect(argv):
+            return "고위험 명령 차단(DB 클라이언트로 파일 입력 전달)"
+        if a and Path(a[0]).name.lower() in _CONTAINER_VERBS and _stage_has_input_redirect(argv):
+            if any(Path(w).name.lower() in DB_CLIENT_VERBS for w in a[1:]):
+                return "고위험 명령 차단(DB 클라이언트로 파일 입력 전달)"
+    if len(stages) > 1:
+        for stage in stages[1:]:
+            if _stage_invokes_client(_lex_stage(stage)):
+                return "고위험 명령 차단(DB 클라이언트로 파이프 입력 전달)"
+    if _DROP_DB_RE.search(command):
+        for stage in stages[1:]:
+            a = _unwrap_for_analysis(_lex_stage(stage))
+            if a and Path(a[0]).name.lower() == "xargs":
+                return "고위험 명령 차단(DB 통째 삭제)"
+    return None
+
+
 def _vars_assigned_with_drop(command: str) -> set[str]:
-    """값 조각에 DROP이 든 대입의 변수명 모음. 개행·;&|()까지를 한 조각으로 본다."""
+    """값 조각에 DROP이 든 대입의 변수명 모음. 배열 대입 a=(...)은 닫는 괄호까지가 값이다."""
     names: set[str] = set()
     for m in _ASSIGN_NAME_RE.finditer(command):
         end = len(command)
+        depth = 0
         for i in range(m.end(), len(command)):
-            if command[i] in ";&|()\n":
+            ch = command[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                if depth == 0:
+                    end = i
+                    break
+                depth -= 1
+            elif depth == 0 and ch in ";&|\n":
                 end = i
                 break
         if _DROP_DB_RE.search(command[m.start() : end]):
@@ -119,9 +365,20 @@ def _check_sql_drop(command: str) -> str | None:
     for argv in split:
         if _DROP_DB_RE.search(" ".join(argv)) and {Path(w).name for w in argv} & DB_CLIENT_VERBS:
             return "고위험 명령 차단(DB 통째 삭제)"
-    for name in _vars_assigned_with_drop(command):
+    drop_names = _vars_assigned_with_drop(command)
+    if drop_names:
+        aliases = {m.group(1) for m in _ALIAS_ASSIGN_RE.finditer(command) if m.group(2) in drop_names}
+        targets = drop_names | aliases
         for argv in split:
-            if {Path(w).name for w in argv} & DB_CLIENT_VERBS and _refers_to_var(" ".join(argv), name):
+            if not {Path(w).name for w in argv} & DB_CLIENT_VERBS:
+                continue
+            text = " ".join(argv)
+            if any(_refers_to_var(text, name) for name in targets):
+                return "고위험 명령 차단(DB 통째 삭제)"
+            # ${!x}·${a[0]}의 실제 목적지는 알 수 없으니 DROP 변수와 함께면 막는다.
+            if _INDIRECT_REF_RE.search(text) or _ARRAY_REF_RE.search(text):
+                return "고위험 명령 차단(DB 통째 삭제)"
+            if any(re.search(r"\$\{!" + re.escape(name) + r"\}", text) for name in aliases):
                 return "고위험 명령 차단(DB 통째 삭제)"
     if _PIPE_TO_CLIENT_RE.search(command):
         return "고위험 명령 차단(DB 통째 삭제)"
@@ -205,13 +462,28 @@ def _check_rm(argv: list[str], cwd: Path, cfg: GuardConfig) -> str | None:
     return None
 
 
-def check_bash(command: str, cwd: Path, cfg: GuardConfig) -> str | None:
+def check_bash(command: str, cwd: Path, cfg: GuardConfig, _depth: int = 0) -> str | None:
     for rx, why in _CATASTROPHIC_RE:
         if rx.search(command):
             return f"고위험 명령 차단({why})"
     if reason := _check_sql_drop(command):
         return reason
-    for argv in _split_commands(command):
+    split = _split_commands(command)
+    if reason := _check_nosql_destructive(command, _command_verbs(split)):
+        return reason
+    if reason := _check_client_stdin(command):
+        return reason
+    if _depth < _MAX_NESTING:
+        for argv in split:
+            for payload in _nested_payloads(argv):
+                if reason := check_bash(payload, cwd, cfg, _depth + 1):
+                    return reason
+            for payload in _code_payloads(argv):
+                if reason := _check_code_payload(payload, cwd):
+                    return reason
+                if reason := check_bash(payload, cwd, cfg, _depth + 1):
+                    return reason
+    for argv in split:
         argv = _strip_prefix(argv)
         verb = Path(argv[0]).name
         if verb in BLOCKED_VERBS or verb.startswith("mkfs"):
@@ -228,7 +500,7 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig) -> str | None:
             p = _resolve(tok.split("=", 1)[-1], cwd)
             if _protected(p, cfg):
                 return f"ttakkari 보호 영역 접근 차단: {tok}"
-            if verb in READ_VERBS and is_sensitive(p):
+            if (verb in READ_VERBS or verb in _INTERPRETER_VERBS) and is_sensitive(p):
                 return f"민감 파일 읽기·반출 차단: {tok}"
     return None
 

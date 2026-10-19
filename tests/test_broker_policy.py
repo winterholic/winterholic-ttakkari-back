@@ -5,6 +5,7 @@ import pytest
 from ttakkari.broker.policy import (
     BrokerError,
     is_sensitive,
+    is_sensitive_name,
     resolve_in_root,
     validate_absolute_in_roots,
     validate_workspace_root,
@@ -149,6 +150,27 @@ def test_is_sensitive_recognizes_secret_filename_variants(path: str) -> None:
 )
 def test_is_sensitive_allows_ordinary_names_with_secret_word(path: str) -> None:
     assert not is_sensitive(Path(path))
+
+
+# V2: kubeconfig는 .kube 밖 일반 경로에서도 민감하다.
+@pytest.mark.parametrize(
+    "path",
+    ["kubeconfig", "deploy/kubeconfig", "kubeconfig.yaml", ".kube/kubeconfig", "KUBECONFIG"],
+)
+def test_is_sensitive_recognizes_kubeconfig_anywhere(path: str) -> None:
+    assert is_sensitive(Path(path))
+
+
+# V2: 이름 전용 판정은 파일 없이 동작한다. .pem은 내용이 필요해 모름으로 둔다.
+def test_is_sensitive_name_needs_no_filesystem() -> None:
+    assert is_sensitive_name(Path("my-secrets.json"))
+    assert is_sensitive_name(Path("/tmp/anywhere/id_rsa"))
+    assert is_sensitive_name(Path("deploy/kubeconfig"))
+    assert is_sensitive_name(Path(".kube/kubeconfig"))
+    assert not is_sensitive_name(Path("src/secret-v2-bridge.ts"))
+    assert not is_sensitive_name(Path("my-secret-notes.md"))
+    assert not is_sensitive_name(Path(".env.example"))
+    assert not is_sensitive_name(Path("server-cert.pem"))
 
 
 # S-2·S-7: .pem은 내용으로 가린다. 순수 인증서만 비민감.

@@ -1,6 +1,6 @@
 # ADR 0060: 플레이 녹화 구간 피드백 — 프레임 시퀀스 녹화와 구간 프레임 전송 (Phase 3, TASK-G30·G31)
 
-- **상태**: 설계 결정(2026-10-20). 게임 쪽 녹화 bridge(`record.ts`, `bridge.ts` 의 record-start/stop)는 구현·실제 브라우저 검증을 마쳤다(tests/test_game_record.py 8개: node 순수 로직 6, 실제 Phaser 게임·Chromium 데스크톱/390x844 2). 관제탑(front) 녹화 UI·구간 선택(G30 나머지)과 back 구간 전송(G31)은 미구현이다.
+- **상태**: 설계 결정(2026-10-20). 게임 쪽 녹화 bridge(`record.ts`, `bridge.ts` 의 record-start/stop)는 구현·실제 브라우저 검증을 마쳤다(tests/test_game_record.py 8개: node 순수 로직 6, 실제 Phaser 게임·Chromium 데스크톱/390x844 2). 관제탑 녹화 패널(녹화·구간 슬라이더·대표 화면 미리보기)은 vitest 로 확인했고 실브라우저 390x844 UI 확인은 아직이다. back 의 `FeedbackIn.clip` 검증·배치·prompt(G31)는 구현과 거부 테스트를 마쳤다(tests/test_game_feedback_clip.py 4개). 미구현·미검증: front 의 "이 구간을 수정 요청에 담기"(확인 후 업로드), 실제 worker 가 프레임을 읽는지 확인.
 - **관련**: 설계서 §5.1 "3) 플레이 영상 녹화 및 타임라인 구간 피드백", ADR 0049·0052(bridge·피드백 계약), ADR 0059(선택 결과 연결 방식)
 
 ## 설계서와 다르게 정한 것과 이유

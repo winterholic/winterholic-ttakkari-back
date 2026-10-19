@@ -459,8 +459,64 @@ async def account_usage(account_id: uuid.UUID, _: User, db: Db, refresh: bool = 
     ordered, work_rank = await _ordered_usage_accounts(db)
     for i, a in ordered:
         if a.id == account_id:
-            return await _live_usage(i, a, work_rank, refresh)
+            out = await _live_usage(i, a, work_rank, refresh)
+            if refresh and not out.error:
+                prof = profiles._profile(a)
+                if not profiles.usage_limit_until(prof):
+                    profiles.clear_cooldown(a.id)
+                    await manager.release_waiting()
+            return out
     raise HTTPException(status.HTTP_404_NOT_FOUND, "계정을 찾을 수 없어요.")
+
+
+@router.post("/{account_id}/usage/refresh", response_model=AccountUsageOut)
+async def refresh_account_usage(account_id: uuid.UUID, _: User, db: Db, request: Request) -> AccountUsageOut:
+    """계정 하나를 즉시 다시 측정하고, 측정 성공 시 한도 대기(쿨다운·한도 대기 Run)를 갱신·해제한다."""
+    ordered, work_rank = await _ordered_usage_accounts(db)
+    target = None
+    for i, a in ordered:
+        if a.id == account_id:
+            target = (i, a)
+            break
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "계정을 찾을 수 없어요.")
+
+    i, a = target
+    try:
+        u = await asyncio.wait_for(
+            usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=True),
+            USAGE_REQUEST_TIMEOUT,
+        )
+    except TimeoutError:
+        record(db, action="account.usage_refresh", target_type="account", target_id=a.id,
+               outcome="error", detail={"error": "timeout"}, ip=client_ip(request))
+        await _commit(db)
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "사용량 측정 시간 초과: 응답을 받지 못했습니다.")
+    except Exception as e:  # noqa: BLE001
+        log.warning("usage refresh failed for account %s: %s", a.id, type(e).__name__)
+        record(db, action="account.usage_refresh", target_type="account", target_id=a.id,
+               outcome="error", detail={"error": type(e).__name__}, ip=client_ip(request))
+        await _commit(db)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"사용량 측정 실패: {type(e).__name__}")
+
+    out = _usage_out(i, a, work_rank, u, refreshing=False)
+
+    # 측정 성공 시(에러가 없거나, 만료 창이 정상 해제된 경우) 한도 상태 점검
+    prof = profiles._profile(a)
+    if not u.error and bool(u.windows):
+        if not profiles.usage_limit_until(prof):
+            profiles.clear_cooldown(a.id)
+            await manager.release_waiting()
+    elif a.engine == "muse" and u.login == "ok" and not profiles.usage_limit_until(prof):
+        profiles.clear_cooldown(a.id)
+        await manager.release_waiting()
+
+    record(db, action="account.usage_refresh", target_type="account", target_id=a.id,
+           outcome="error" if u.error else "ok",
+           detail={"error": u.error} if u.error else {"source": u.source, "plan": u.plan},
+           ip=client_ip(request))
+    await _commit(db)
+    return out
 
 
 @router.patch("/{account_id}", response_model=AccountOut)

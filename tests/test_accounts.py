@@ -575,6 +575,47 @@ async def test_usage_single_account_endpoint(client, auth, monkeypatch):
     assert (await client.get(f"/api/accounts/{uuid.uuid4()}/usage", headers=auth)).status_code == 404
 
 
+async def test_usage_single_account_refresh_endpoint(client, auth, monkeypatch):
+    from ttakkari.runs import profiles, usage
+
+    called_refresh = []
+
+    async def fake(account_id, engine, config_dir, *, refresh=False):
+        called_refresh.append(refresh)
+        return usage.Usage(windows=[usage.Window("five_hour", "5시간", 15, None)], source="api", updated_at=time.time())
+
+    monkeypatch.setattr(usage, "usage_for", fake)
+    accs = await _accounts(client, auth)
+    target_id = uuid.UUID(accs[1]["id"])
+    profiles.cool_down(target_id, 300)
+    assert profiles.cooldown_remaining(target_id) > 0
+
+    res = await client.post(f"/api/accounts/{target_id}/usage/refresh", headers=auth)
+    assert res.status_code == 200, res.text
+    row = res.json()
+    assert row["id"] == str(target_id)
+    assert row["windows"][0]["percent"] == 15
+    assert called_refresh == [True]
+    # 사용량 측정 성공 및 한도 여유 확인 시 쿨다운이 해제되어야 한다
+    assert profiles.cooldown_remaining(target_id) == 0
+    assert profiles.cooldown_until(target_id) is None
+
+    # 실패 시 에러가 그대로 반환되고 가짜 여유 처리가 되지 않아야 함
+    async def fake_fail(account_id, engine, config_dir, *, refresh=False):
+        return usage.Usage(error="Provider timeout", source="api")
+
+    monkeypatch.setattr(usage, "usage_for", fake_fail)
+    fail_res = await client.post(f"/api/accounts/{target_id}/usage/refresh", headers=auth)
+    assert fail_res.status_code == 200
+    fail_row = fail_res.json()
+    assert "Provider timeout" in fail_row["error"]
+    assert fail_row["windows"] == []
+
+    # 404 확인
+    assert (await client.post(f"/api/accounts/{uuid.uuid4()}/usage/refresh", headers=auth)).status_code == 404
+
+
+
 async def test_usage_slow_account_does_not_hold_the_others(client, auth, monkeypatch):
     import asyncio
 

@@ -543,6 +543,9 @@ def _ready_value(account_id: uuid.UUID, engine: str, config_dir: str | None, ref
         # 모든 창이 초기화 시각이 지난 경우 캐시 만료로 보고 새로 조회한다.
         if cached_u.windows and all(w.resets_at and w.resets_at <= now for w in cached_u.windows):
             return None
+        # 한도에 닿았던 창(100% 이상)의 초기화 시각이 지난 경우 캐시 만료로 보고 새로 조회한다.
+        if cached_u.windows and any(w.resets_at and w.resets_at <= now and w.percent >= 100 for w in cached_u.windows):
+            return None
         # Antigravity 는 창마다 따로 초기화된다. 한 창이라도 지났으면 성공한 측정에 한해 새로 읽는다
         # (실패 뒤 유지한 값은 TTL 을 따른다. 아니면 공급자 장애 중에 화면마다 하위 프로세스를 띄운다).
         if (engine == "antigravity" and not cached_u.error
@@ -590,6 +593,14 @@ async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None
             else:
                 reset_msg = f"{u.error} · 초기화 시각 경과" if u.error else "Muse 초기화 시각 경과 · 새 사용량 미관측"
                 u = replace(u, plan=prior.plan, error=reset_msg)
+            if account_id in _stream:
+                s_valid = [w for w in _stream[account_id].windows if not (w.resets_at and w.resets_at <= now and w.percent >= 100)]
+                if s_valid:
+                    _stream[account_id] = replace(_stream[account_id], windows=s_valid)
+                else:
+                    _stream.pop(account_id, None)
+            if len(valid) != len(prior.windows):
+                _emit(account_id, u)
             observed_now = False
     elif engine == "antigravity":
         # 재시작 직후 DB 에서 채운 값은 계정 id 로 저장돼 있어 root 기록이 없어도 쓴다. 폴더가 바뀐 계정의 값은 쓰지 않는다.
@@ -711,6 +722,13 @@ def cached(account_id: uuid.UUID) -> Usage | None:
     # A completed failed refresh is newer evidence than an old stream snapshot. In
     # particular, do not resurrect expired Muse windows after _fetch_live clears them.
     if hit and not hit[1].windows and (not stream or hit[0] >= (stream.updated_at or 0)):
+        return hit[1]
+    if hit and stream and hit[0] >= (stream.updated_at or 0):
+        have = {w.key for w in hit[1].windows}
+        extra = [w for w in stream.windows if w.key not in have and not (w.resets_at and w.resets_at <= time.time())]
+        if extra:
+            return Usage(windows=_ordered(hit[1].windows + extra), source=hit[1].source, plan=hit[1].plan or stream.plan,
+                         updated_at=hit[1].updated_at)
         return hit[1]
     fresh = [u for u in (hit[1] if hit else None, stream) if u is not None and u.windows]
     if fresh:

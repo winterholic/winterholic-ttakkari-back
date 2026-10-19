@@ -88,6 +88,13 @@ def resolve_source_root() -> Path:
 
 def ensure_revision(expected: str) -> None:
     source = resolve_source_root()
+    if strategy() == "generations":
+        # NOTE: 세대 배포는 `git archive <sha>`로 릴리스를 만든다. 공유 작업 트리의 미커밋 변경이나 다른 세션이 올린 HEAD 는
+        # 배포 내용과 무관하므로, 커밋이 존재하고 현재 브랜치 이력에 있는지만 본다(409 병목 방지).
+        if subprocess.run(["git", "merge-base", "--is-ancestor", expected, "HEAD"],
+                          cwd=source, capture_output=True).returncode:
+            raise ValueError("예약한 커밋이 없거나 현재 브랜치 이력에 없습니다. 커밋을 확인하세요.")
+        return
     dirty = subprocess.check_output(
         ["git", "status", "--porcelain"], cwd=source, text=True
     ).strip()

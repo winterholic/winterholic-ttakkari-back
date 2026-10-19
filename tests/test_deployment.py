@@ -357,3 +357,29 @@ async def test_controller_process_death_releases_admission(tmp_path):
     lease = gate.acquire()
     assert lease is not None
     lease.close()
+
+
+def test_generations_reservation_ignores_dirty_tree_and_moved_head(monkeypatch, tmp_path):
+    import subprocess
+
+    m = deployment()
+    git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=tmp_path, check=True,
+                                    capture_output=True, text=True).stdout.strip()
+    git("init", "-q")
+    (tmp_path / "f").write_text("1")
+    git("add", "f")
+    git("commit", "-qm", "one")
+    first = git("rev-parse", "HEAD")
+    (tmp_path / "f").write_text("2")
+    git("commit", "-qam", "two")  # 다른 세션이 HEAD 를 앞으로 옮긴 상황
+    (tmp_path / "dirty").write_text("x")  # 다른 세션의 미커밋 파일
+    monkeypatch.setattr(m, "resolve_source_root", lambda: tmp_path)
+
+    monkeypatch.setattr(m, "strategy", lambda: "generations")
+    m.ensure_revision(first)  # 409 가 나지 않는다
+    with pytest.raises(ValueError):
+        m.ensure_revision("0" * 40)
+
+    monkeypatch.setattr(m, "strategy", lambda: "legacy")
+    with pytest.raises(ValueError):
+        m.ensure_revision(first)

@@ -232,6 +232,104 @@ async def tossinvest_status() -> str:
     return await _agent("GET", "/stocks/tossinvest/status")
 
 
+# ---- NotebookLM(ADR 0045). 기존 Google 계정의 NotebookLM 권한·할당량만 쓴다. 개인 세션 전용, 로그인 창은 사용자가 UI 에서 연다.
+
+async def _nlm(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
+    from ttakkari.oplog.limits import cap_text
+    return cap_text(await _agent(method, f"/notebooklm{path}", body, **params))
+
+
+@query_tool
+async def notebooklm_status() -> str:
+    """NotebookLM link status: login/reauth/cooldown/blocked state, retry_after, session presence (cookie names only),
+    supported vs unavailable features and request counters. Makes no Google request. Logging in is a one-time user action in the UI."""
+    return await _nlm("GET", "/auth/status")
+
+
+@query_tool
+async def notebooklm_list() -> str:
+    """List the user's NotebookLM notebooks (id, title, source count)."""
+    return await _nlm("GET", "/notebooks")
+
+
+@query_tool
+async def notebooklm_get(notebook_id: str) -> str:
+    """Read one notebook with its source list (id, title, kind, url, processing status)."""
+    from urllib.parse import quote
+    return await _nlm("GET", f"/notebooks/{quote(notebook_id, safe='')}")
+
+
+@server.tool()
+async def notebooklm_create(title: str) -> str:
+    """Create a NotebookLM notebook. Not retried automatically; if the result is unknown, list notebooks before retrying."""
+    return await _nlm("POST", "/notebooks", {"title": title})
+
+
+@server.tool()
+async def notebooklm_rename(notebook_id: str, title: str) -> str:
+    """Rename a NotebookLM notebook."""
+    from urllib.parse import quote
+    return await _nlm("PATCH", f"/notebooks/{quote(notebook_id, safe='')}", {"title": title})
+
+
+@server.tool()
+async def notebooklm_delete(notebook_id: str, confirm: bool = False) -> str:
+    """Permanently delete a NotebookLM notebook and all its sources. Requires confirm=true after the user has asked for it."""
+    from urllib.parse import quote
+    if not confirm:
+        return json.dumps({"error": 400, "code": "confirm_required", "message": "삭제하려면 confirm=true 가 필요합니다."})
+    return await _nlm("DELETE", f"/notebooks/{quote(notebook_id, safe='')}")
+
+
+@server.tool()
+async def notebooklm_add_source(notebook_id: str, source_type: Literal["url", "youtube", "text"], url: str | None = None,
+                                text: str | None = None, title: str | None = None, force: bool = False) -> str:
+    """Add a web page / YouTube URL or pasted text as a source. Runs as a job: returns {job} (or {duplicate: true, source}
+    when the same normalized URL/content is already registered); poll notebooklm_job until succeeded. Text needs a title.
+    Never resend after an 'unknown' job without checking notebooklm_get; force=true only when the source is confirmed absent.
+    File upload is a UI-only action."""
+    from urllib.parse import quote
+    base = f"/notebooks/{quote(notebook_id, safe='')}/sources"
+    if source_type == "text":
+        return await _nlm("POST", f"{base}/text", {"title": title or "", "text": text or "", "force": force})
+    return await _nlm("POST", f"{base}/url", {"url": url or "", "title": title, "force": force})
+
+
+@server.tool()
+async def notebooklm_delete_source(notebook_id: str, source_id: str, confirm: bool = False) -> str:
+    """Delete one source from a notebook. Requires confirm=true after the user has asked for it."""
+    from urllib.parse import quote
+    if not confirm:
+        return json.dumps({"error": 400, "code": "confirm_required", "message": "삭제하려면 confirm=true 가 필요합니다."})
+    return await _nlm("DELETE", f"/notebooks/{quote(notebook_id, safe='')}/sources/{quote(source_id, safe='')}")
+
+
+@server.tool()
+async def notebooklm_query(notebook_id: str, question: str, conversation_id: str | None = None,
+                           export_for_ledger: bool = False) -> str:
+    """Ask a source-grounded question. Returns answer (NotebookLM's analysis), citations (source id, quoted source text,
+    source span, answer span) and sources, kept separate. export_for_ledger=true adds a knowledge-ledger shaped export
+    (source excerpts / analysis / citations split, no assertions, nothing auto-promoted). Uses the user's NotebookLM quota;
+    a 429 puts the link on cooldown (see retry_after) and must not be retried around. Not retried automatically."""
+    from urllib.parse import quote
+    return await _nlm("POST", f"/notebooks/{quote(notebook_id, safe='')}/query",
+                      {"question": question, "conversation_id": conversation_id, "export_for_ledger": export_for_ledger})
+
+
+@query_tool
+async def notebooklm_job(job_id: str) -> str:
+    """Read a NotebookLM job (source registration): status queued|running|succeeded|failed|cancelled|unknown, result or error."""
+    from urllib.parse import quote
+    return await _nlm("GET", f"/jobs/{quote(job_id, safe='')}")
+
+
+@server.tool()
+async def notebooklm_job_cancel(job_id: str) -> str:
+    """Cancel a queued or running NotebookLM job. A cancel during the registration request may leave the outcome unknown."""
+    from urllib.parse import quote
+    return await _nlm("POST", f"/jobs/{quote(job_id, safe='')}/cancel")
+
+
 @query_tool
 async def server_resources() -> str:
     """Current load of the Mac running Ttakkari: CPU, memory, disk, network and top processes (names only).

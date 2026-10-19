@@ -411,7 +411,10 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "design_system_catalog", "design_system_search", "design_system_item",
                "execution_capabilities", "begin_environment_probe", "report_execution_environment", "host_gpu_start",
                "host_gpu_status", "host_gpu_bench", "host_gpu_stop",
-               "reverse_start", "reverse_list", "reverse_get", "reverse_retry", "reverse_message"}
+               "reverse_start", "reverse_list", "reverse_get", "reverse_retry", "reverse_message",
+               "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_create", "notebooklm_rename",
+               "notebooklm_delete", "notebooklm_add_source", "notebooklm_delete_source", "notebooklm_query",
+               "notebooklm_job", "notebooklm_job_cancel"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
                 "my_context", "reset_my_context"}
 BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}
@@ -452,6 +455,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
         "ops_list_issues", "ops_get_issue", "ops_search_logs", "ops_list_deploys", "ops_deploy_log",
         "design_system_catalog", "design_system_search", "design_system_item", "execution_capabilities",
         "reverse_list", "reverse_get", "tossinvest_status",
+        "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

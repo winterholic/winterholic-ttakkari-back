@@ -9,6 +9,7 @@ READ_ONLY_TOOLS = frozenset({
     "design_system_catalog", "design_system_search", "design_system_item", "execution_capabilities",
     "luna_common30_v2_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
     "reverse_list", "reverse_get", "tossinvest_status",
+    "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job",
 })
 # 리버스 엔지니어링 시작은 상태를 바꾸므로 읽기 전용으로 표시하지 않는다.
 # 사용자 지시로 요청하는 작업이라 무인 실행 승인 목록에는 둔다.
@@ -31,10 +32,14 @@ ASSISTANT_WRITE_TOOLS = frozenset({
 })
 # 운영 로그 이슈의 해결·메모. 조회는 READ_ONLY_TOOLS, 개인 세션 한정은 API가 검사한다(ADR 0033).
 OPS_LOG_TOOLS = frozenset({"ops_update_issue"})
+# NotebookLM 쓰기·질의(ADR 0045). 사용자 지시로 쓰는 도구라 승인 프롬프트를 만들지 않고, 삭제는 confirm=true 를 요구한다.
+# 개인 세션 한정과 계정 상태·쿨다운 검사는 API 가 한다. 쓰기를 readOnlyHint 로 위장하지 않는다.
+NOTEBOOKLM_TOOLS = frozenset({"notebooklm_create", "notebooklm_rename", "notebooklm_delete", "notebooklm_add_source",
+                              "notebooklm_delete_source", "notebooklm_query", "notebooklm_job_cancel"})
 # 엔진 무관 실행 환경 보고와 호스트 GPU 시험 경로(ADR 0037). 상태 조회도 고아 정리를 하므로 읽기 전용으로 표시하지 않는다.
 HOST_ENV_TOOLS = frozenset({"begin_environment_probe", "report_execution_environment", "host_gpu_start",
                             "host_gpu_status", "host_gpu_bench", "host_gpu_stop"})
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
-                       | ASSISTANT_WRITE_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS)
+                       | ASSISTANT_WRITE_TOOLS | NOTEBOOKLM_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS)

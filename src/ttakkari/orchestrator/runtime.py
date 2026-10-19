@@ -110,6 +110,11 @@ _ROUTING_NOTE_TAIL = """
   Pass strict_engine=True only when the session must wait on that exact engine without cross-route fallback.
 - Local Qwen (engine "qwen-local", Flash Next Q2_K, personal scope only): use it explicitly for narrow,
   self-contained work only — file search/extraction, a small edit plus its test run, tightly scoped fixes.
+  Keep at most one outstanding Qwen job on this Mac (queued or running). Before spawning a Qwen worker or
+  sending it a follow-up/resume, check worker status and actual routing receipts, including workers that
+  entered Qwen through emergency fallback. Submit the next Qwen job only after the previous job's completion,
+  failure or confirmed cancellation report; do not overlap Qwen jobs across orchestrators or start extra model
+  servers. An idle Qwen conversation does not occupy the slot. Cloud workers may run alongside that one Qwen job.
   It has no MCP tools (only the harness's read/edit/test commands), no cloud quota, and its feature gate plus
   fixed readiness contract must pass or the run fails with the reason instead of starting. Like Flash, its
   general/routine results return verification_required=True: verify independently (task_type="verification",

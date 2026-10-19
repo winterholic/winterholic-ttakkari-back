@@ -1,6 +1,6 @@
 # ADR 0050: 게임 worker 연결, 잠금 결정 강제, 활성 빌드와 롤백 (TASK-G08, G12 백엔드)
 
-- **상태**: G08 구현됨, G12 백엔드(롤백 API) 구현됨. G12 프론트(비교·롤백 UI)는 미구현 (2026-10-19)
+- **상태**: G08 구현됨, G12 백엔드(롤백 API) 구현됨. G12 프론트(비교·롤백 UI)는 구현됨(front 9ce17a1·34501c2, 로컬 실측) (2026-10-19)
 - **설계 정본**: [`docs/design/game-studio.md`](../design/game-studio.md) §5.1, §6.1
 - **관련**: ADR 0047(데이터 계약), ADR 0049(게임 origin)
 
@@ -58,4 +58,4 @@
 
 - 활성 포인터 이동과 git 복구는 한 트랜잭션이 아니다. 복구 커밋 이후 빌드 행 생성이 실패하면 소스만 복구된 채 오류가 나간다(다시 호출하면 소스가 이미 같은 경우로 처리된다).
 - 에이전트가 승인 없이 바꾼 잠금 결정이 이미 커밋된 상태에서는 작업 트리가 깨끗하므로 `restore_source`가 승인된 빌드의 소스(매니페스트 포함)로 복구하는 경로가 된다(`test_committed_tampering_is_repaired_by_restoring_an_approved_build`).
-- 프론트의 전후 비교·롤백 확인 UI는 이 ADR 범위가 아니다.
+- 프론트의 전후 비교·롤백 확인 UI는 이 ADR 범위가 아니다(front `src/features/games/BuildHistory.tsx`). 실측으로 알게 된 점: 복구 빌드는 성공해야 활성이 되므로 UI가 빌드 종료 시 게임 정보를 다시 읽어야 한다. `GameOut`에는 장르(`genre`)가 없어 UI 장르 칩이 비어 있고, `RequestIn`은 Artifact 참조를 받지 않아 시각 피드백 스크린샷은 요청 문장에 Artifact ID로만 실린다(G11 후속 후보).

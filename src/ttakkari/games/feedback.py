@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.artifacts.service import content_path
@@ -27,6 +28,7 @@ FEEDBACK_DIR = ".ttakkari-feedback"
 KEEP_LAST = 20
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 MAX_ANNOTATIONS = 20
+MAX_PICKED = 10
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 COORDINATE_SPACE = "normalized-0-1-top-left"
 EPS = 1e-6
@@ -61,6 +63,45 @@ class FreehandIn(BaseModel):
 AnnotationIn = Annotated[BoxIn | ArrowIn | FreehandIn, Field(discriminator="type")]
 
 
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]+")
+
+
+class PickBoundsIn(BaseModel):
+    """선택한 오브젝트의 화면 경계. 캔버스 대비 0~1 비율이지만 일부가 화면 밖으로 나간 오브젝트도 있어 범위를 넉넉히 둔다."""
+
+    model_config = ConfigDict(extra="forbid")
+    x: Annotated[float, Field(ge=-2.0, le=3.0)]
+    y: Annotated[float, Field(ge=-2.0, le=3.0)]
+    width: Annotated[float, Field(gt=0.0, le=5.0)]
+    height: Annotated[float, Field(gt=0.0, le=5.0)]
+
+
+class PickedObjectIn(BaseModel):
+    """관제탑의 오브젝트 선택(ADR 0059) 결과 1건. 게임이 bridge 로 알려 준 값이라 믿지 않는다: 길이를 제한하고 제어 문자를 없앤다."""
+
+    model_config = ConfigDict(extra="forbid")
+    scene: str = Field(default="", max_length=80)
+    name: str = Field(default="", max_length=80)
+    type: str = Field(min_length=1, max_length=40)
+    texture: str | None = Field(default=None, max_length=80)
+    frame: str | None = Field(default=None, max_length=80)
+    text: str | None = Field(default=None, max_length=60)
+    container: str | None = Field(default=None, max_length=80)
+    depth: float = Field(default=0.0, ge=-1e6, le=1e6)
+    bounds: PickBoundsIn
+
+    @field_validator("scene", "name", "type", "texture", "frame", "text", "container")
+    @classmethod
+    def _no_control_chars(cls, v: str | None) -> str | None:
+        return None if v is None else _CONTROL_RE.sub(" ", v).strip()
+
+
+class PickPointIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    x: Unit
+    y: Unit
+
+
 class FeedbackIn(BaseModel):
     """요청에 붙는 시각 피드백. 스크린샷은 Artifact 참조로만 받고 좌표는 이미지 왼쪽 위 (0,0) 기준 0~1 비율이다."""
 
@@ -72,6 +113,8 @@ class FeedbackIn(BaseModel):
     height: int | None = Field(default=None, ge=1, le=8192)
     coordinate_space: Literal["normalized-0-1-top-left"] = COORDINATE_SPACE
     annotations: list[AnnotationIn] = Field(default_factory=list, max_length=MAX_ANNOTATIONS)
+    picked: list[PickedObjectIn] = Field(default_factory=list, max_length=MAX_PICKED)  # 사용자가 화면에서 고른 오브젝트(위에 그려진 것부터)
+    pick_point: PickPointIn | None = None  # 고른 위치(게임 화면 0~1 비율)
 
 
 @dataclass(frozen=True)
@@ -86,6 +129,8 @@ class StagedFeedback:
     build_id: uuid.UUID
     artifact_id: uuid.UUID | None
     annotated_artifact_id: uuid.UUID | None
+    picked: list[dict]
+    pick_point: dict | None
 
 
 def validate_annotations(items: list) -> list[dict]:
@@ -106,6 +151,13 @@ def describe_annotation(i: int, a: dict) -> str:
     pts = a["points"]
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     return f"{i}. 자유 곡선 {len(pts)}점: 외곽 x {min(xs):.3f}~{max(xs):.3f}, y {min(ys):.3f}~{max(ys):.3f}"
+
+
+def describe_picked(i: int, p: dict) -> str:
+    """worker prompt 한 줄. 게임이 낸 문자열은 JSON 으로 감싸 prompt 구조를 깨거나 지시처럼 읽히지 않게 한다."""
+    fields = {k: p[k] for k in ("name", "type", "texture", "frame", "text", "container", "scene") if p.get(k)}
+    b = p["bounds"]
+    return f"{i}. {json.dumps(fields, ensure_ascii=False)} 화면 경계 x {b['x']:.3f}, y {b['y']:.3f}, 너비 {b['width']:.3f}, 높이 {b['height']:.3f}"
 
 
 def _read_artifact(art: Artifact | None, game: GameProject, label: str) -> bytes:
@@ -144,12 +196,14 @@ def _prune(base: Path) -> None:
 
 async def stage_feedback(db: AsyncSession, game: GameProject, root: Path, feedback: FeedbackIn, *, instruction: str) -> StagedFeedback:
     """검증한 스크린샷을 저장소 안으로 복사하고 feedback.json 을 남긴다. 어느 하나라도 검증에 실패하면 아무것도 쓰지 않는다."""
-    if feedback.artifact_id is None and feedback.annotated_artifact_id is None and not feedback.annotations:
-        raise GameContractError("시각 피드백에는 스크린샷 또는 영역 주석이 있어야 합니다.", "bad_request")
+    if feedback.artifact_id is None and feedback.annotated_artifact_id is None and not feedback.annotations and not feedback.picked:
+        raise GameContractError("시각 피드백에는 스크린샷, 영역 주석, 고른 오브젝트 중 하나가 있어야 합니다.", "bad_request")
     original = _read_artifact(await db.get(Artifact, feedback.artifact_id), game, "원본 스크린샷") if feedback.artifact_id else None
     annotated = (_read_artifact(await db.get(Artifact, feedback.annotated_artifact_id), game, "주석 스크린샷")
                  if feedback.annotated_artifact_id else None)
     annotations = validate_annotations(feedback.annotations)
+    picked = [p.model_dump() for p in feedback.picked]
+    pick_point = feedback.pick_point.model_dump() if feedback.pick_point else None
 
     base = root / FEEDBACK_DIR
     base.mkdir(exist_ok=True, mode=0o700)
@@ -165,10 +219,11 @@ async def stage_feedback(db: AsyncSession, game: GameProject, root: Path, feedba
     meta.write_text(json.dumps({
         "version": 1, "game_id": str(game.id), "build_id": str(feedback.build_id), "coordinate_space": COORDINATE_SPACE,
         "image_size": [feedback.width, feedback.height], "screenshot": "screenshot.png" if original else None,
-        "annotated": "screenshot-annotated.png" if annotated else None, "annotations": annotations, "instruction": instruction,
+        "annotated": "screenshot-annotated.png" if annotated else None, "annotations": annotations, "picked": picked, "pick_point": pick_point,
+        "instruction": instruction,
     }, ensure_ascii=False, indent=2) + "\n")
     meta.chmod(0o600)
     _exclude_from_git(root)
     _prune(base)
     return StagedFeedback(d, paths["original"], paths["annotated"], meta, annotations, feedback.width, feedback.height, feedback.build_id,
-                          feedback.artifact_id, feedback.annotated_artifact_id)
+                          feedback.artifact_id, feedback.annotated_artifact_id, picked, pick_point)

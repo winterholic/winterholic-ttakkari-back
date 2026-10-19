@@ -1,18 +1,94 @@
 from __future__ import annotations
 
+import logging
 import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ttakkari.model_catalog import ANTIGRAVITY_DEFAULT, ANTIGRAVITY_MODELS, MUSE_EFFORT
 
+log = logging.getLogger(__name__)
+
+# SEC2-AUTH-02: env가 prod가 아닐 때 자동으로 들어가는 공개 개발 상수.
+DEV_INSECURE_JWT_SECRET = "dev-insecure-secret-change-me-dev-insecure"
+# HS256 서명키 최소 길이(바이트). 문자 수가 아니라 UTF-8 바이트로 잰다.
+MIN_PROD_JWT_SECRET_BYTES = 32
+
 HOME = Path.home()
 DEFAULT_HOME = HOME / ".ttakkari"
 STT_RUNTIME_ROOT = HOME / "development/projects/winterholic-ttakkari/back/.stt-runtime"
+
+
+def _host(origin: str) -> str:
+    try:
+        return (urlsplit(origin).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _is_local_host(host: str) -> bool:
+    return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(
+        (".localhost", ".local", ".test", ".example", ".invalid")
+    )
+
+
+def validate_operational_settings(s: Settings) -> None:
+    """SEC2-AUTH-02 기동 시 검사. 결과는 로그로만 남기고 /api/health 등 응답에는 노출하지 않는다.
+
+    실패(RuntimeError: 기동 중단)는 prod 서명키 결함처럼 모호하지 않은 경우에만 쓴다.
+    env != prod + 프로덕션 origin 조합은 실패가 아니라 강한 경고로 남긴다. 근거: public_share_origin
+    기본값 자체가 프로덕션 도메인이라 실패로 하면 dev·테스트의 정상 조합까지 기동이 막히고,
+    env 값만으로는 인터넷 노출을 단정할 수 없기 때문이다.
+    """
+    if s.is_prod:
+        if not s.jwt_secret:
+            raise RuntimeError(
+                "TTAKKARI_JWT_SECRET 가 비어 있습니다. ~/.ttakkari/config.env 에 설정하세요."
+            )
+        if s.jwt_secret == DEV_INSECURE_JWT_SECRET:
+            raise RuntimeError(
+                "운영(env=prod)에서는 개발용 기본 서명키를 쓸 수 없습니다. "
+                "TTAKKARI_JWT_SECRET 에 32바이트 이상의 무작위 값을 설정하세요."
+            )
+        secret_len = len(s.jwt_secret.encode("utf-8"))
+        if secret_len < MIN_PROD_JWT_SECRET_BYTES:
+            raise RuntimeError(
+                f"운영(env=prod) 서명키가 {secret_len}바이트로 짧습니다. "
+                f"TTAKKARI_JWT_SECRET 은 {MIN_PROD_JWT_SECRET_BYTES}바이트 이상이어야 합니다."
+            )
+    elif _host(s.public_share_origin) and not _is_local_host(
+        _host(s.public_share_origin)
+    ):
+        # dev에서는 서명키가 공개 상수 + 쿠키 Secure 미적용(api/auth.py)이라 공개 origin이면 위험하다.
+        log.warning(
+            "env가 %r인데 public_share_origin이 공개 도메인(%s)입니다. "
+            "개발용 서명키와 Secure 미적용 쿠키로 동작 중이니, 운영 트래픽을 받으면 "
+            "TTAKKARI_ENV=prod와 32바이트 이상 서명키를 설정하세요.",
+            s.env,
+            s.public_share_origin,
+        )
+    if s.cors_origins and all(_is_local_host(_host(o)) for o in s.cors_origins):
+        log.warning(
+            "cors_origins가 localhost/loopback 전용(%s)입니다. "
+            "운영 프론트(별도 사이트)가 있으면 브라우저 호출이 막히니 구성을 확인하세요.",
+            ",".join(s.cors_origins),
+        )
+    # 운영은 Cloudflare Tunnel 뒤에서 CF-Connecting-IP를 믿는다(설정 주석·client_ip 참조).
+    # 그 조합은 검증된 구성이니 조용히 통과하고, 다른 헤더는 터널 전제를 확인하라고 경고한다.
+    header = (s.trust_proxy_ip_header or "").strip()
+    if header and header.lower() != "cf-connecting-ip":
+        # security/auth.py client_ip는 loopback 피어의 헤더만 믿지만, 설정 자체가 터널 전제를 깬다.
+        log.warning(
+            "trust_proxy_ip_header(%s)가 설정되어 클라이언트 IP를 프록시 헤더에서 읽습니다. "
+            "Cloudflare Tunnel 뒤가 아니면 IP 위조(로그인 레이트리밋 우회)가 가능하니, "
+            "직접 노출 환경이면 비우세요.",
+            s.trust_proxy_ip_header,
+        )
 
 
 class Settings(BaseSettings):
@@ -397,6 +473,12 @@ class Settings(BaseSettings):
     def is_prod(self) -> bool:
         return self.env == "prod"
 
+    @model_validator(mode="after")
+    def _fail_fast_on_unsafe_operational_settings(self) -> Settings:
+        # 모든 기동 경로(API·CLI·워커)가 get_settings/Settings 생성을 거치므로 여기서 fail-fast 한다.
+        validate_operational_settings(self)
+        return self
+
     def ensure_dirs(self) -> None:
         for d in (self.home, self.data_dir, self.artifact_store, self.outbox_root, self.uploads_root, self.inbox_root):
             d.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -409,5 +491,5 @@ def get_settings() -> Settings:
     if not s.jwt_secret:
         if s.is_prod:
             raise RuntimeError("TTAKKARI_JWT_SECRET 가 비어 있습니다. ~/.ttakkari/config.env 에 설정하세요.")
-        s.jwt_secret = "dev-insecure-secret-change-me-dev-insecure"
+        s.jwt_secret = DEV_INSECURE_JWT_SECRET
     return s

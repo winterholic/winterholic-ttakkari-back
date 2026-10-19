@@ -16,7 +16,7 @@ atexit.register(shutil.rmtree, _BASE, ignore_errors=True)
 HOME = _BASE / "home"
 ALLOWED = _BASE / "allowed"
 OUTSIDE = _BASE / "outside"
-for _d in (HOME, ALLOWED, OUTSIDE, ALLOWED / "default-root", ALLOWED / "default-docs"):
+for _d in (HOME, ALLOWED, OUTSIDE, ALLOWED / "default-root", ALLOWED / "default-docs", ALLOWED / "games"):
     _d.mkdir()
 FAKES = Path(__file__).parent / "fake_agents"
 AGENT_LOG = _BASE / "agent-log.jsonl"
@@ -31,6 +31,7 @@ os.environ.update({
     "TTAKKARI_HOME": str(HOME),
     "TTAKKARI_ALLOWED_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WORKSPACE_ROOT": str(ALLOWED / "default-root"),
+    "TTAKKARI_GAMES_ROOT": str(ALLOWED / "games"),
     "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
     "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
     "TTAKKARI_USAGE_POLL_SECONDS": "0",

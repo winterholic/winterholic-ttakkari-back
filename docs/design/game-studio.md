@@ -233,6 +233,8 @@ class GameEngineAdapter(ABC):
 - 빌드/테스트: Run 결과·Artifact를 재사용하되, 불변 build ID·소스 commit·상태 연결이 불가능한 부분만 최소 확장
 - 시각 피드백: Artifact 스크린샷 + 구조화 payload + 이를 처리한 worker Run 참조. 별도 큐/작업 시스템은 만들지 않는다.
 
+확정된 최소 계약(소유권 표, 새 표 3개와 사유, 게임 저장소 위치)은 [ADR 0047](../adr/0047-game-project-data-contract.md)에 있다.
+
 신규 테이블 필요성은 구현 전 각 필드가 기존 `Workspace`, `PmsProject`/`PmsTask`, `Run`, `Artifact` 또는 project 문서로 보존되지 않는 사례를 보여 검증한다. Alembic migration은 `uv run ttakkari migrate` 경로로 적용한다. REST router는 `src/ttakkari/main.py`의 `include_router` 목록, MCP 도구는 `src/ttakkari/orchestrator/mcp_server.py`의 `@server.tool()` 등록 방식에 추가한다.
 
 ### 4.1 요구 데이터와 피드백 연결 (구현 전 검증 대상)
@@ -414,9 +416,9 @@ flowchart TD
 아래 시간은 구현 견적이 아니라 한 작업 세션의 제한이다. 각 작업은 끝나면 명시된 완료 기준을 확인한다. `Game*` 테스트 경로는 해당 작업이 테스트를 추가한 뒤 실행하는 검증 명령이며, 존재하지 않는 테스트를 지금 실행한 결과가 아니다. 작업 단계는 백엔드 Alembic 및 `main.py` router 등록, 프론트 `BrowserRouter`와 Vitest, MCP `@orchestrator_tool` 래퍼의 tool 등록 방식을 따른다.
 
 ### [트랙 A: 백엔드 코어 & 어댑터]
-1. **TASK-G01: 격리 빌드 경계 spike (2h)** — 구현 후보(무권한/container/VM)에서 탈출·비밀·네트워크 음성 사례를 확인. 미통과 시 후속 빌드 작업 보류. `uv run pytest -q tests/test_game_build_isolation.py`
-2. **TASK-G02: 기존 모델 연결 및 최소 schema/API 계약 (1.5h)** — PMS project, workspace, session, Run, Artifact의 소유권 표와 필요 최소 필드 결정; 전용 큐/버전 테이블 배제 사유 기록. `uv run pytest -q tests/test_game_contract.py`
-3. **TASK-G05: 최소 Alembic migration 또는 no-migration 결정 (1.5h)** — G02 계약의 필요한 필드만 반영한다. 완료: migration 적용 또는 no-migration 근거 기록; migration이 있으면 `uv run ttakkari migrate` 및 테스트 DB upgrade/downgrade 확인. 검증: `uv run pytest -q tests/test_game_migration.py`
+1. **TASK-G01: 격리 빌드 경계 spike (2h)** [완료 2026-10-19, 6f5979c] — 구현 후보(무권한/container/VM)에서 탈출·비밀·네트워크 음성 사례를 확인. 미통과 시 후속 빌드 작업 보류. `uv run pytest -q tests/test_game_build_isolation.py`
+2. **TASK-G02: 기존 모델 연결 및 최소 schema/API 계약 (1.5h)** [완료 2026-10-19, ADR 0047] — PMS project, workspace, session, Run, Artifact의 소유권 표와 필요 최소 필드 결정; 전용 큐/버전 테이블 배제 사유 기록. `uv run pytest -q tests/test_game_contract.py`
+3. **TASK-G05: 최소 Alembic migration 또는 no-migration 결정 (1.5h)** [완료 2026-10-19, 0047_game_studio] — G02 계약의 필요한 필드만 반영한다. 완료: migration 적용 또는 no-migration 근거 기록; migration이 있으면 `uv run ttakkari migrate` 및 테스트 DB upgrade/downgrade 확인. 검증: `uv run pytest -q tests/test_game_migration.py`
 4. **TASK-G03: Phaser 프로젝트 scaffold·격리 build adapter (2h)** — 잠금 결정 manifest를 읽고 테스트 프로젝트 빌드; arbitrary paths 거부. `uv run pytest -q tests/test_game_adapter.py`
 5. **TASK-G04: 불변 빌드 스냅샷·Artifact 등록 (1.5h)** — 성공/실패 빌드 ID, source commit, 번들 위치/해시, Run/Artifact 연결; 재빌드가 이전 산출물을 변경하지 않음. `uv run pytest -q tests/test_game_build_snapshots.py`
 6. **TASK-G06: 프로젝트·빌드 API (1.5h)** — 인증된 사용자만 기존 project/workspace에 새 게임 연결, 상태·빌드 목록 조회; 권한 없는 ID와 잘못된 경로 거부. `uv run pytest -q tests/test_api_games.py`

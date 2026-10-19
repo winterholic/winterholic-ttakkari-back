@@ -1113,3 +1113,62 @@ class ArtcraftTask(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     archived_at: Mapped[datetime | None]
+
+
+# ---- 게임 스튜디오 (ADR 0046, docs/design/game-studio.md §4). 큐·버전관리는 두지 않는다: 소스는 게임 저장소 git,
+# 작업은 기존 세션/Run, 파일은 Artifact 를 쓰고 아래 표는 그것들을 묶는 최소 연결·빌드 기록만 가진다.
+class GameProject(Base):
+    """게임 1개 = Workspace(게임 저장소 루트) 1개 + 선택적 PmsProject 1개. 엔진 식별과 잠금 결정 승인 해시만 여기에 둔다."""
+
+    __tablename__ = "game_projects"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(40), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    engine_id: Mapped[str] = mapped_column(String(40))  # web-phaser 등. 어댑터 선택 키
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="RESTRICT"), unique=True)
+    pms_project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_projects.id", ondelete="SET NULL"), index=True)
+    # 사용자가 승인한 ttakkari-game.json 의 sha256. 저장소 파일은 에이전트가 고칠 수 있으므로 승인본은 DB 에 해시로 고정한다.
+    locked_decisions_sha256: Mapped[str | None] = mapped_column(String(64))
+    locked_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    archived_at: Mapped[datetime | None]
+
+
+class GameBuild(Base):
+    """불변 빌드 스냅샷 기록. 성공 빌드의 번들은 data_dir/game-builds/<game_id>/<id>/bundle 에 읽기 전용으로 보관한다."""
+
+    __tablename__ = "game_builds"
+    __table_args__ = (UniqueConstraint("game_id", "seq", name="uq_game_builds_game_seq"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)  # str(id) 가 빌드 ID
+    game_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("game_projects.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(Integer)  # 게임별 순번(v1, v2 ...)
+    status: Mapped[str] = mapped_column(String(10), default="building")  # building | succeeded | failed
+    source_commit: Mapped[str | None] = mapped_column(String(40))
+    source_dirty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    manifest_sha256: Mapped[str | None] = mapped_column(String(64))
+    lock_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    bundle_rel_path: Mapped[str | None] = mapped_column(Text)  # data_dir/game-builds 기준 상대 경로
+    bundle_sha256: Mapped[str | None] = mapped_column(String(64))
+    bundle_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    bundle_files: Mapped[int | None] = mapped_column(Integer)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), index=True)
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
+    log_tail: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None]
+
+
+class GameFeedback(Base):
+    """시각 피드백 1건: 스크린샷 Artifact + 구조화 payload + 이를 처리한 worker Run. 별도 큐가 아니다."""
+
+    __tablename__ = "game_feedbacks"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    game_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("game_projects.id", ondelete="CASCADE"), index=True)
+    build_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("game_builds.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(20))  # annotation | object | video | compare
+    comment: Mapped[str] = mapped_column(Text, default="", server_default="")
+    payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    screenshot_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -128,6 +129,13 @@ def _feedback_section(fb: StagedFeedback) -> str:
                      "소스 위치는 알려져 있지 않으니, 이름(setName)·텍스처 키·텍스트로 저장소를 검색해 해당 코드를 찾아라. "
                      "찾지 못하거나 후보가 여럿이면 추측으로 고치지 말고 후보와 근거를 보고하라:")
         lines += [f"  {describe_picked(i, p)}" for i, p in enumerate(fb.picked, 1)]
+    if fb.clip:
+        c = fb.clip
+        lines.append(f"- 사용자가 녹화에서 문제가 보인다고 고른 구간의 프레임이다({c['start_ms'] / 1000:.1f}초 ~ {c['end_ms'] / 1000:.1f}초). "
+                     "프레임 사이의 움직임은 보이지 않는다. 시각 순서대로 한 장씩 열어 비교해 무엇이 어떻게 변하는지 확인하라:")
+        lines += [f"  {i}. {fb.dir / f['file']} ({f['t_ms'] / 1000:.2f}초)" for i, f in enumerate(c["frames"], 1)]
+        if c.get("note"):
+            lines.append(f"  사용자가 이 구간에 대해 한 말(JSON): {json.dumps(c['note'], ensure_ascii=False)}")
     lines.append(f"- 같은 내용의 JSON: {fb.meta}")
     lines.append(f"- {FEEDBACK_DIR}/ 는 git 에서 제외된 임시 폴더다. 커밋하지 않고 수정하지도 않는다.")
     return "\n".join(lines)
@@ -180,7 +188,8 @@ def run_tag(ctx: GameRequestContext, kind: RequestKind, feedback: StagedFeedback
     if feedback is not None:
         tag["feedback"] = {"dir": feedback.dir.name, "artifact_id": str(feedback.artifact_id) if feedback.artifact_id else None,
                            "annotated_artifact_id": str(feedback.annotated_artifact_id) if feedback.annotated_artifact_id else None,
-                           "annotations": len(feedback.annotations), "picked": len(feedback.picked)}
+                           "annotations": len(feedback.annotations), "picked": len(feedback.picked),
+                           "clip_frames": len(feedback.clip["frames"]) if feedback.clip else 0}
     return tag
 
 

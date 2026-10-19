@@ -13,6 +13,7 @@ import re
 import shutil
 import uuid
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -29,6 +30,10 @@ KEEP_LAST = 20
 MAX_IMAGE_BYTES = 16 * 1024 * 1024
 MAX_ANNOTATIONS = 20
 MAX_PICKED = 10
+MAX_CLIP_FRAMES = 8
+MAX_CLIP_MS = 15_000
+MAX_CLIP_FRAME_BYTES = 1024 * 1024
+MAX_CLIP_TOTAL_BYTES = 6 * 1024 * 1024
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 COORDINATE_SPACE = "normalized-0-1-top-left"
 EPS = 1e-6
@@ -102,6 +107,27 @@ class PickPointIn(BaseModel):
     y: Unit
 
 
+class ClipFrameIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    artifact_id: uuid.UUID  # 사용자가 확인한 구간 프레임을 /api/uploads 로 올린 Artifact(JPEG)
+    t_ms: int = Field(ge=0, le=3_600_000)
+
+
+class ClipIn(BaseModel):
+    """사용자가 녹화에서 고른 구간(ADR 0060). 영상 파일이 아니라 구간의 대표 프레임이다. 전체 녹화는 받지 않는다."""
+
+    model_config = ConfigDict(extra="forbid")
+    start_ms: int = Field(ge=0, le=3_600_000)
+    end_ms: int = Field(ge=0, le=3_600_000)
+    frames: list[ClipFrameIn] = Field(min_length=1, max_length=MAX_CLIP_FRAMES)
+    note: str = Field(default="", max_length=200)  # 사용자가 이 구간에서 문제라고 한 것
+
+    @field_validator("note")
+    @classmethod
+    def _note_clean(cls, v: str) -> str:
+        return _CONTROL_RE.sub(" ", v).strip()
+
+
 class FeedbackIn(BaseModel):
     """요청에 붙는 시각 피드백. 스크린샷은 Artifact 참조로만 받고 좌표는 이미지 왼쪽 위 (0,0) 기준 0~1 비율이다."""
 
@@ -115,6 +141,7 @@ class FeedbackIn(BaseModel):
     annotations: list[AnnotationIn] = Field(default_factory=list, max_length=MAX_ANNOTATIONS)
     picked: list[PickedObjectIn] = Field(default_factory=list, max_length=MAX_PICKED)  # 사용자가 화면에서 고른 오브젝트(위에 그려진 것부터)
     pick_point: PickPointIn | None = None  # 고른 위치(게임 화면 0~1 비율)
+    clip: ClipIn | None = None  # 사용자가 고른 녹화 구간의 프레임(ADR 0060)
 
 
 @dataclass(frozen=True)
@@ -131,6 +158,8 @@ class StagedFeedback:
     annotated_artifact_id: uuid.UUID | None
     picked: list[dict]
     pick_point: dict | None
+    clip: dict | None = None  # {start_ms, end_ms, note, frames: [{file, t_ms, artifact_id}]}
+    clip_files: tuple[Path, ...] = ()
 
 
 def validate_annotations(items: list) -> list[dict]:
@@ -178,6 +207,42 @@ def _read_artifact(art: Artifact | None, game: GameProject, label: str) -> bytes
     return data
 
 
+JPEG_SOI = b"\xff\xd8"
+JPEG_EOI = b"\xff\xd9"
+
+
+def _read_clip_frame(art: Artifact | None, game: GameProject, i: int) -> bytes:
+    label = f"구간 프레임 {i}"
+    if art is None or art.workspace_id != game.workspace_id:
+        raise GameContractError(f"{label} Artifact 를 이 게임에서 찾을 수 없습니다.", "bad_request")
+    if art.mime_type != "image/jpeg":
+        raise GameContractError(f"{label} 는 JPEG 이미지여야 합니다.", "bad_request")
+    if art.size_bytes > MAX_CLIP_FRAME_BYTES:
+        raise GameContractError(f"{label} 가 너무 큽니다(최대 {MAX_CLIP_FRAME_BYTES // 1024}KB).", "bad_request")
+    try:
+        data = content_path(art).read_bytes()
+    except (BrokerError, OSError) as e:
+        raise GameContractError(f"{label} 파일을 읽을 수 없습니다.", "bad_request") from e
+    if len(data) > MAX_CLIP_FRAME_BYTES or not (data.startswith(JPEG_SOI) and data.endswith(JPEG_EOI)):
+        raise GameContractError(f"{label} 가 JPEG 형식이 아닙니다.", "bad_request")
+    if hashlib.sha256(data).hexdigest() != art.sha256:
+        raise GameContractError(f"{label} 의 내용이 기록된 해시와 다릅니다.", "bad_request")
+    return data
+
+
+def validate_clip(clip: ClipIn) -> None:
+    """구간·프레임 시각의 일관성. 길이·장수 상한은 모델이, 여기서는 순서와 구간 포함 관계를 본다."""
+    if clip.end_ms <= clip.start_ms:
+        raise GameContractError("구간의 끝은 시작보다 뒤여야 합니다.", "bad_request")
+    if clip.end_ms - clip.start_ms > MAX_CLIP_MS:
+        raise GameContractError(f"구간이 너무 깁니다(최대 {MAX_CLIP_MS // 1000}초).", "bad_request")
+    times = [f.t_ms for f in clip.frames]
+    if any(not (clip.start_ms <= t <= clip.end_ms) for t in times):
+        raise GameContractError("프레임 시각이 선택한 구간 밖에 있습니다.", "bad_request")
+    if any(b <= a for a, b in pairwise(times)):
+        raise GameContractError("프레임은 시각 순서대로 중복 없이 보내야 합니다.", "bad_request")
+
+
 def _exclude_from_git(root: Path) -> None:
     info = root / ".git" / "info"
     if not info.is_dir():
@@ -196,14 +261,25 @@ def _prune(base: Path) -> None:
 
 async def stage_feedback(db: AsyncSession, game: GameProject, root: Path, feedback: FeedbackIn, *, instruction: str) -> StagedFeedback:
     """검증한 스크린샷을 저장소 안으로 복사하고 feedback.json 을 남긴다. 어느 하나라도 검증에 실패하면 아무것도 쓰지 않는다."""
-    if feedback.artifact_id is None and feedback.annotated_artifact_id is None and not feedback.annotations and not feedback.picked:
-        raise GameContractError("시각 피드백에는 스크린샷, 영역 주석, 고른 오브젝트 중 하나가 있어야 합니다.", "bad_request")
+    if (feedback.artifact_id is None and feedback.annotated_artifact_id is None and not feedback.annotations and not feedback.picked
+            and feedback.clip is None):
+        raise GameContractError("시각 피드백에는 스크린샷, 영역 주석, 고른 오브젝트, 녹화 구간 중 하나가 있어야 합니다.", "bad_request")
     original = _read_artifact(await db.get(Artifact, feedback.artifact_id), game, "원본 스크린샷") if feedback.artifact_id else None
     annotated = (_read_artifact(await db.get(Artifact, feedback.annotated_artifact_id), game, "주석 스크린샷")
                  if feedback.annotated_artifact_id else None)
     annotations = validate_annotations(feedback.annotations)
     picked = [p.model_dump() for p in feedback.picked]
     pick_point = feedback.pick_point.model_dump() if feedback.pick_point else None
+    clip_frames: list[tuple[ClipFrameIn, bytes]] = []
+    if feedback.clip is not None:
+        validate_clip(feedback.clip)
+        total = 0
+        for i, f in enumerate(feedback.clip.frames, 1):
+            data = _read_clip_frame(await db.get(Artifact, f.artifact_id), game, i)
+            total += len(data)
+            if total > MAX_CLIP_TOTAL_BYTES:
+                raise GameContractError(f"구간 프레임의 합계가 너무 큽니다(최대 {MAX_CLIP_TOTAL_BYTES // (1024 * 1024)}MB).", "bad_request")
+            clip_frames.append((f, data))
 
     base = root / FEEDBACK_DIR
     base.mkdir(exist_ok=True, mode=0o700)
@@ -215,15 +291,26 @@ async def stage_feedback(db: AsyncSession, game: GameProject, root: Path, feedba
             (d / name).write_bytes(data)
             (d / name).chmod(0o600)
             paths[key] = d / name
+    clip_files: list[Path] = []
+    clip_meta: dict | None = None
+    if feedback.clip is not None:
+        entries = []
+        for i, (f, data) in enumerate(clip_frames, 1):
+            name = f"clip-{i:02d}.jpg"
+            (d / name).write_bytes(data)
+            (d / name).chmod(0o600)
+            clip_files.append(d / name)
+            entries.append({"file": name, "t_ms": f.t_ms, "artifact_id": str(f.artifact_id)})
+        clip_meta = {"start_ms": feedback.clip.start_ms, "end_ms": feedback.clip.end_ms, "note": feedback.clip.note, "frames": entries}
     meta = d / "feedback.json"
     meta.write_text(json.dumps({
         "version": 1, "game_id": str(game.id), "build_id": str(feedback.build_id), "coordinate_space": COORDINATE_SPACE,
         "image_size": [feedback.width, feedback.height], "screenshot": "screenshot.png" if original else None,
         "annotated": "screenshot-annotated.png" if annotated else None, "annotations": annotations, "picked": picked, "pick_point": pick_point,
-        "instruction": instruction,
+        "clip": clip_meta, "instruction": instruction,
     }, ensure_ascii=False, indent=2) + "\n")
     meta.chmod(0o600)
     _exclude_from_git(root)
     _prune(base)
     return StagedFeedback(d, paths["original"], paths["annotated"], meta, annotations, feedback.width, feedback.height, feedback.build_id,
-                          feedback.artifact_id, feedback.annotated_artifact_id, picked, pick_point)
+                          feedback.artifact_id, feedback.annotated_artifact_id, picked, pick_point, clip_meta, tuple(clip_files))

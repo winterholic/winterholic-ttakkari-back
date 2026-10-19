@@ -465,7 +465,7 @@ async def account_usage(account_id: uuid.UUID, _: User, db: Db, refresh: bool = 
                 if not profiles.usage_limit_until(prof):
                     profiles.clear_cooldown(a.id)
                     await manager.release_waiting()
-            return out
+            return out.model_copy(update={"cooldown_seconds": profiles.cooldown_remaining(a.id)})
     raise HTTPException(status.HTTP_404_NOT_FOUND, "계정을 찾을 수 없어요.")
 
 

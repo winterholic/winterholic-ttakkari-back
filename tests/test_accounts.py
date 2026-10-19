@@ -601,6 +601,11 @@ async def test_usage_single_account_refresh_endpoint(client, auth, monkeypatch):
     assert profiles.cooldown_remaining(target_id) == 0
     assert profiles.cooldown_until(target_id) is None
 
+    profiles.cool_down(target_id, 300)
+    get_res = await client.get(f"/api/accounts/{target_id}/usage?refresh=true", headers=auth)
+    assert get_res.status_code == 200
+    assert get_res.json()["cooldown_seconds"] == 0
+
     # 실패 시 에러가 그대로 반환되고 가짜 여유 처리가 되지 않아야 함
     async def fake_fail(account_id, engine, config_dir, *, refresh=False):
         return usage.Usage(error="Provider timeout", source="api")

@@ -807,7 +807,7 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 | SEC2-NAC-04 | P1 | 6 (2×3) | 네트워크 경계 | Tailscale Serve 병행 도입과 공개 경로 목록 확정, 배포 검증 URL 의존 정리 | 미검증 | NAC-01, NAC-03 | general | 필요 |
 | SEC2-NAC-05 | P1 | 6 (2×3) | 네트워크 경계 | SPA same-origin 서빙과 PWA origin 이전(재설치·푸시 재구독) | 미검증 | NAC-04 | general | 필요 |
 | SEC2-NAC-06 | P1 | 6 (2×3) | 네트워크 경계 | 공개 터널 허용목록(cloudflared ingress) 전환과 롤백 리허설 | 미검증 | NAC-05 | verification | 필요(시점) |
-| SEC2-LGN-01 | P1 | 6 (2×3) | 로그인 제한 | DB 영속 스키마와 원자 예약·환불 상태 기계(출처·기기 단계 잠금, 계정 속도 제한), off/shadow 모드 | 확인됨(현황) | - | general | 정책값 필요 |
+| SEC2-LGN-01 | P1 | 6 (2×3) | 로그인 제한 | DB 영속 스키마와 원자 예약·환불 상태 기계(출처·기기 단계 잠금, 계정 속도 제한), off/shadow 모드 (**S1 shadow 구현 완료 614cc08**, enforce 미구현) | S1 구현됨 | - | general | 정책값 필요 |
 | SEC2-LGN-02 | P1 | 6 (2×3) | 로그인 제한 | login·원격제어 재인증 연결, 신뢰 기기 레인(쿠키 예외 분리), 잠금·429 감사와 알림, 더미 검증 | 확인됨(현황) | LGN-01 | general | 신뢰 기기 쿠키 필요 |
 | SEC2-LGN-03 | P1 | 2 (1×2) | 로그인 제한 | Mac 로컬 해제 CLI(login-status·login-unlock)와 set-password 연동 | 확인됨(현황) | LGN-01 | general | 불필요 |
 | SEC2-LGN-04 | P1 | 4 (2×2) | 로그인 제한 | 병렬·재시작·잠금 악용 반례·Run 무영향 통합 시험과 shadow→enforce_source→enforce 전환 | 미검증 | LGN-02, LGN-03 | verification | S2·S3 전환 승인 |
@@ -890,6 +890,7 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 - 검증 방법: 시간 주입 단위·DB 테스트(보고서 5.9의 1~7, 10~12, 17, 21).
 - 완료 기준: RED→GREEN, 마이그레이션 up/down, 병렬 시험(정답 1 + 오답 19 셔플 100회) 통과, shadow에서 실제 기록 수집 시작.
 - 불변 조건: shadow에서는 어떤 로그인도 거절하지 않는다. 잠금 중 요청은 상태를 바꾸지 않는다.
+- **S1 shadow 구현 완료**(커밋 `614cc08`, 2026-10-19): 모드 off/shadow(기본 off, enforce 계열은 off로 취급), 마이그레이션 `0050_login_throttle_shadow`, `security/login_throttle.py`, CLI `login-throttle-mode`, 시험 `tests/test_login_throttle_shadow.py` 40개. enforce 전환은 하지 않았고 개정 3 보완(LGN-05 등) 전 금지.
 - S1 shadow 범위(개정 3, 구현 대상): 표 3개(`login_throttle`, `login_bucket`, `login_attempts`), 모드 `off|shadow`(기본 off, 그 외는 off로 취급), 레인 U 예약·확정·환불, 차단 카운터 DB flush, 고아 정리. 신뢰 기기·등록 코드·호스트 Argon2 슬롯은 후속.
 - 작업 분할: 1) 마이그레이션·모델 표(2h) 2) 예약·확정·환불 상태 기계(2h) 3) 버킷·정리·고아 예약·카운터 flush(2h) 4) 병렬·재시작 시험(2h)
 

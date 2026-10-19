@@ -126,6 +126,14 @@ async def resources(_: User) -> dict:
     return await sysinfo.snapshot()
 
 
+@router.get("/system/backup-status")
+async def backup_status(_: User, response: Response) -> dict:
+    """SEC2-OPS-01: 마지막 백업·스냅샷 성공 시각(비밀 없음. 개수·해시만)."""
+    from ttakkari import backup_status as status_reader
+    response.headers["Cache-Control"] = "no-store"
+    return status_reader.backup_status()
+
+
 @router.get("/system/resources/history")
 async def resource_history(
     _: User,

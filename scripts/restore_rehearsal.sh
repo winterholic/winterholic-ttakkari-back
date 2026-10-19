@@ -12,7 +12,12 @@
 #
 # 사용법:
 #   scripts/restore_rehearsal.sh --manifest MANIFEST [--target-db NAME] [--db-url URL] [--keep]
+#                                [--passphrase-file FILE]
 # 환경 변수: TTAKKARI_DATABASE_URL(연결 기준 URL. 대상 DB명만 바꿔 접속한다)
+#   BACKUP_PASSPHRASE_FILE(암호화 산출물 복호화용. 0600 암호 파일)
+#
+# 암호화 manifest면 같은 암호 파일로 임시 위치에 복호화한 뒤 대조하고,
+# 끝나면 복호화 파일을 지운다(--keep이어도 복호화 파일은 남기지 않는다).
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="$SCRIPT_DIR/../.venv/bin/python"
@@ -21,14 +26,16 @@ PYTHON="$SCRIPT_DIR/../.venv/bin/python"
 MANIFEST=""
 TARGET_DB="ttakkari_restore_rehearsal"
 DB_URL="${TTAKKARI_DATABASE_URL:-}"
+PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-}"
 KEEP=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --manifest) MANIFEST="$2"; shift 2 ;;
     --target-db) TARGET_DB="$2"; shift 2 ;;
     --db-url) DB_URL="$2"; shift 2 ;;
+    --passphrase-file) PASSPHRASE_FILE="$2"; shift 2 ;;
     --keep) KEEP=1; shift ;;
-    *) echo "사용법: $0 --manifest MANIFEST [--target-db NAME] [--db-url URL] [--keep]" >&2; exit 2 ;;
+    *) echo "사용법: $0 --manifest MANIFEST [--target-db NAME] [--db-url URL] [--keep] [--passphrase-file FILE]" >&2; exit 2 ;;
   esac
 done
 [[ -n "$MANIFEST" ]] || { echo "오류: --manifest 필요" >&2; exit 2; }
@@ -82,18 +89,38 @@ EOF
 )"
 
 read_manifest() {
-  # $1: 보고 싶은 항목(dump_file|sha256|tables|count:TABLE)
+  # $1: 보고 싶은 항목(dump_file|sha256|tables|encrypted|count:TABLE)
   "$PYTHON" - "$MANIFEST" "$1" <<'EOF'
 import json, sys
 m = json.load(open(sys.argv[1]))
 want = sys.argv[2]
 if want == "tables":
     print("\n".join(sorted(m["tables"])))
+elif want == "encrypted":
+    print("true" if m.get("encrypted") else "false")
 elif want.startswith("count:"):
     print(m["tables"][want[len("count:"):]])
 else:
-    print(m[want])
+    print(m.get(want, ""))
 EOF
+}
+
+# 암호 파일은 소유자만 읽을 수 있어야 한다.
+check_passphrase_file() {
+  [[ -f "$1" ]] || { echo "오류: 복호화 암호 파일 없음: $1" >&2; exit 2; }
+  local mode
+  if mode="$(stat -f %Lp "$1" 2>/dev/null)"; then :;
+  elif mode="$(stat -c %a "$1" 2>/dev/null)"; then :;
+  else echo "오류: 암호 파일 권한을 확인할 수 없음: $1" >&2; exit 2; fi
+  if (( (8#$mode & 077) != 0 )); then
+    echo "오류: 암호 파일은 소유자만 읽을 수 있어야 한다(0600): $1" >&2; exit 2;
+  fi
+}
+
+secure_delete() {
+  if command -v shred >/dev/null 2>&1; then shred -u -- "$1";
+  elif rm -P "$1" 2>/dev/null; then :;
+  else rm -f -- "$1"; fi
 }
 
 DUMP="$(read_manifest dump_file)"
@@ -104,10 +131,30 @@ WANT="$(read_manifest sha256)"
 GOT="$(shasum -a 256 "$DUMP" | awk '{print $1}')"
 [[ "$WANT" == "$GOT" ]] || { echo "오류: 덤프 sha256 불일치" >&2; exit 1; }
 
+# 암호화 산출물이면 복호화한 뒤 평문 해시를 대조한다.
+DECRYPT_TMP=""
+if [[ "$(read_manifest encrypted)" == "true" ]]; then
+  [[ -n "$PASSPHRASE_FILE" ]] || { echo "오류: 암호화 백업이므로 복호화 암호가 필요하다(--passphrase-file)." >&2; exit 2; }
+  check_passphrase_file "$PASSPHRASE_FILE"
+  command -v openssl >/dev/null || { echo "openssl 없음. 암호화 백업을 복원할 수 없다." >&2; exit 3; }
+  DECRYPT_TMP="$(mktemp "${TMPDIR:-/tmp}/rehearse-decrypt-XXXXXX")"
+  chmod 600 "$DECRYPT_TMP"
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+    -in "$DUMP" -out "$DECRYPT_TMP" -pass "file:$PASSPHRASE_FILE" \
+    || { echo "오류: 복호화 실패(암호가 틀렸거나 산출물이 손상됨)" >&2; exit 1; }
+  WANT_PLAIN="$(read_manifest plaintext_sha256)"
+  GOT_PLAIN="$(shasum -a 256 "$DECRYPT_TMP" | awk '{print $1}')"
+  [[ "$WANT_PLAIN" == "$GOT_PLAIN" ]] || { echo "오류: 복호화 평문 sha256 불일치" >&2; exit 1; }
+  DUMP="$DECRYPT_TMP"
+fi
+
 DB_CREATED=0
 cleanup_rehearsal_db() {
   local rc=$?
   trap - EXIT
+  if [[ -n "$DECRYPT_TMP" ]]; then
+    secure_delete "$DECRYPT_TMP"
+  fi
   if [[ "$DB_CREATED" -eq 1 && "$KEEP" -eq 0 ]]; then
     if dropdb --maintenance-db="$ADMIN_URL" "$TARGET_DB" >/dev/null; then
       echo "리허설 DB 삭제: $TARGET_DB"

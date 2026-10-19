@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- SEC2-OPS-01: 따까리 DB 일일 백업 스케줄 예시.
-  설치: 경로의 BACKUP_USER를 실제 사용자명으로 바꾼 뒤
+  설치: 경로의 BACKUP_USER를 실제 사용자명으로 바꾸고, 암호 파일 경로의
+  BACKUP_USER도 함께 바꾼 뒤(Mac Studio 본체에서, runbook 참고)
+    openssl rand -base64 32 > ~/.ttakkari-backup.key && chmod 600 ~/.ttakkari-backup.key
     cp deploy/com.apple.ttakkari.backup.plist.example ~/Library/LaunchAgents/com.apple.ttakkari.backup.plist
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.apple.ttakkari.backup.plist
+    launchctl print gui/$(id -u)/com.apple.ttakkari.backup | grep -E 'state|last exit'
   해제: launchctl bootout gui/$(id -u)/com.apple.ttakkari.backup
+  암호 파일은 저장소에 커밋하지 않는다. 분실하면 기존 암호화 백업을 복원할 수 없다.
   로그: /tmp/ttakkari-backup.out, /tmp/ttakkari-backup.err -->
 <plist version="1.0">
 <dict>
@@ -19,6 +23,8 @@
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>BACKUP_PASSPHRASE_FILE</key>
+    <string>/Users/BACKUP_USER/.ttakkari-backup.key</string>
   </dict>
   <key>StartCalendarInterval</key>
   <dict>

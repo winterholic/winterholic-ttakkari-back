@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- SEC2-OPS-01: 따까리 데이터 디렉터리 주간 스냅샷 스케줄 예시.
+  설치: 경로와 --source의 BACKUP_USER·원본 경로를 실제 값으로 바꾸고
+  DB 백업과 같은 암호 파일(~/.ttakkari-backup.key, 0600)을 쓴 뒤
+  (Mac Studio 본체에서, runbook 참고)
+    cp deploy/com.apple.ttakkari.data-snapshot.plist.example ~/Library/LaunchAgents/com.apple.ttakkari.data-snapshot.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.apple.ttakkari.data-snapshot.plist
+    launchctl print gui/$(id -u)/com.apple.ttakkari.data-snapshot | grep -E 'state|last exit'
+  해제: launchctl bootout gui/$(id -u)/com.apple.ttakkari.data-snapshot
+  운영 데이터 원본은 스케줄에 넣기 전에 runbook의 격리 검증 절차를 먼저 돌린다.
+  로그: /tmp/ttakkari-data-snapshot.out, /tmp/ttakkari-data-snapshot.err -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.apple.ttakkari.data-snapshot</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/BACKUP_USER/development/projects/winterholic-ttakkari/back/scripts/snapshot_data.sh</string>
+    <string>--source</string>
+    <string>/Users/BACKUP_USER/.ttakkari/data</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>BACKUP_PASSPHRASE_FILE</key>
+    <string>/Users/BACKUP_USER/.ttakkari-backup.key</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>47</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/ttakkari-data-snapshot.out</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ttakkari-data-snapshot.err</string>
+</dict>
+</plist>

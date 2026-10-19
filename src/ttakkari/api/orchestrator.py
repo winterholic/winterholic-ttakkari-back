@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
 
 from ttakkari.api.deps import Db
-from ttakkari.api.pms import TaskIn, _project, _task_response
+from ttakkari.api.pms import TaskIn, _project, _task_response, check_project_scope
 from ttakkari.api.sessions import ACTIVE, queue_run
 from ttakkari.audit import record
 from ttakkari.config import get_settings
@@ -511,8 +511,9 @@ async def cancel_luna_benchmark(job_id: uuid.UUID, sid: OrchestratorSession, db:
 @router.get("/pms/projects")
 async def pms_projects(sid: OrchestratorSession, db: Db, q: str | None = None) -> dict:
     """Claude 한도 대기 작업을 WBS 에 기록할 PMS 프로젝트를 찾는다."""
-    await _orchestrator(db, sid)
-    stmt = select(PmsProject).where(PmsProject.scope == "personal").order_by(PmsProject.updated_at.desc())
+    orch = await _orchestrator(db, sid)
+    scope = "work" if orch.pool == "work" else "personal"
+    stmt = select(PmsProject).where(PmsProject.scope == scope).order_by(PmsProject.updated_at.desc())
     if q:
         stmt = stmt.where(PmsProject.name.ilike(f"%{q.strip()}%"))
     rows = list(await db.scalars(stmt.limit(50)))
@@ -522,8 +523,9 @@ async def pms_projects(sid: OrchestratorSession, db: Db, q: str | None = None) -
 @router.post("/pms/projects/{pid}/tasks", status_code=201)
 async def create_pms_task(pid: uuid.UUID, body: TaskIn, sid: OrchestratorSession, db: Db) -> dict:
     """작업자를 배정하지 않고 Claude 초기화 후 처리할 일을 PMS WBS 에 등록한다."""
-    await _orchestrator(db, sid)
+    orch = await _orchestrator(db, sid)
     project = await _project(db, pid)
+    check_project_scope(project, orch.pool)
     tasks = await pms_svc.load_tasks(db, pid)
     if len(tasks) >= pms_svc.MAX_TASKS:
         raise pms_svc.bad(f"작업은 프로젝트당 {pms_svc.MAX_TASKS}개까지예요.", "too_many")

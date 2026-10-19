@@ -27,7 +27,6 @@ SEC2-AUTHZ-01 수정 예정이므로 ``xfail(strict=True)`` 로 표시해 숨기
 from __future__ import annotations
 
 import pytest
-
 from authz03_canary import (
     AUTHZ03_P,
     AUTHZ03_W,
@@ -37,14 +36,17 @@ from authz03_canary import (
     PERSONAL_ENTITY_TOPIC,
     PERSONAL_TAG,
     WORK_ENTITY_TOPIC,
-    WORK_TAG,
     Authz03Env,
     ensure_authz03,
     leaks_personal,
 )
+
 from ttakkari.db import sessionmaker
 from ttakkari.models import CalendarEvent, CtxEntity, CtxMemory, Memo
 from ttakkari.orchestrator.runtime import issue_token
+
+pytestmark = [pytest.mark.security]
+
 
 
 @pytest.fixture
@@ -150,10 +152,9 @@ async def test_work_link_personal_entities_rejected(client, env):
     assert ok.status_code == 200
 
 
-# ---- 메모 (scope 필드 없음 → RED는 xfail)
+# ---- 메모
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: Memo에 scope 없음. work 토큰이 개인 메모 목록을 읽는다")
 async def test_work_memo_list_excludes_personal(client, env):
     resp = await client.get("/api/agent/memos", headers=_work(env), params={"limit": 100})
     assert resp.status_code == 200
@@ -161,14 +162,12 @@ async def test_work_memo_list_excludes_personal(client, env):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: Memo에 scope 없음. work 토큰이 개인 메모 단건을 읽는다")
 async def test_work_memo_get_personal_not_found(client, env):
     resp = await client.get(f"/api/agent/memos/{env.personal_agent_memo_id}", headers=_work(env))
     assert resp.status_code in (403, 404)
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: 태그 집계에 scope 없음. 개인 메모 태그가 work 토큰에 노출된다")
 async def test_work_memo_tags_exclude_personal(client, env):
     resp = await client.get("/api/agent/memos/tags", headers=_work(env))
     assert resp.status_code == 200
@@ -192,7 +191,6 @@ async def test_work_memo_create_allowed_control(client, env):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: pool 검사 없음. work 토큰이 개인 메모를 고친다")
 async def test_work_memo_patch_personal_forbidden(client, env):
     resp = await client.patch(f"/api/agent/memos/{env.personal_agent_memo_id}", headers=_work(env),
                               json={"append": "work가 덧붙임"})
@@ -200,7 +198,6 @@ async def test_work_memo_patch_personal_forbidden(client, env):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: pool 검사 없음. work 토큰이 개인 메모를 보관 삭제한다")
 async def test_work_memo_delete_personal_forbidden(client, env):
     resp = await client.delete(f"/api/agent/memos/{env.personal_agent_memo_id}", headers=_work(env))
     assert resp.status_code in (403, 404)
@@ -228,10 +225,9 @@ async def test_personal_memo_crud_control(client, env):
         assert (await db.get(Memo, mid)).deleted_at is not None
 
 
-# ---- 일정 (scope 필드 없음 → RED는 xfail)
+# ---- 일정
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: CalendarEvent에 scope 없음. work 토큰이 개인 일정을 읽는다")
 async def test_work_event_list_excludes_personal(client, env):
     resp = await client.get("/api/agent/events", headers=_work(env),
                             params={"from": EVENT_FROM, "to": EVENT_TO})
@@ -248,7 +244,6 @@ async def test_work_event_create_allowed_control(client, env):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: pool 검사 없음. work 토큰이 개인 일정을 고친다")
 async def test_work_event_patch_personal_forbidden(client, env):
     resp = await client.patch(f"/api/agent/events/{env.personal_agent_event_id}", headers=_work(env),
                               json={"title": "work가 고친 제목"})
@@ -256,7 +251,6 @@ async def test_work_event_patch_personal_forbidden(client, env):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-01: pool 검사 없음. work 토큰이 개인 일정을 지운다")
 async def test_work_event_delete_personal_forbidden(client, env):
     resp = await client.delete(f"/api/agent/events/{env.personal_agent_event_id}", headers=_work(env))
     assert resp.status_code in (403, 404)

@@ -559,6 +559,7 @@ class Memo(Base):
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("memo_categories.id", ondelete="SET NULL"), index=True)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
+    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
     rev: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
@@ -584,6 +585,7 @@ class CalendarEvent(Base):
     remind_at: Mapped[datetime | None] = mapped_column(index=True)
     reminded_at: Mapped[datetime | None]
     source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
+    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     deleted_at: Mapped[datetime | None]

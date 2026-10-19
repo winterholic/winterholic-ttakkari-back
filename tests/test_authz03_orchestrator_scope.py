@@ -36,8 +36,6 @@ import uuid
 from dataclasses import dataclass
 
 import pytest
-from sqlalchemy import select
-
 from authz03_canary import (
     AUTHZ03_P,
     AUTHZ03_W,
@@ -45,6 +43,8 @@ from authz03_canary import (
     ensure_authz03,
     leaks_personal,
 )
+from sqlalchemy import select
+
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     ChatSession,
@@ -55,6 +55,9 @@ from ttakkari.models import (
     SessionKind,
 )
 from ttakkari.orchestrator.runtime import issue_token
+
+pytestmark = [pytest.mark.security]
+
 
 PROBE_MODEL = f"{AUTHZ03_P}-probe"
 
@@ -281,10 +284,9 @@ async def test_luna_job_lookup_unknown_404(client, oenv):
                                headers=_personal(oenv))).status_code == 404
 
 
-# ---- PMS (scope 검사 없음 → RED는 xfail, SEC2-AUTHZ-02 수정 예정)
+# ---- PMS
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="orchestrator.pms_projects가 personal 고정 필터라 work 토큰에 개인 프로젝트가 보인다")
 async def test_work_pms_projects_excludes_personal(client, oenv):
     resp = await client.get("/api/orchestrator/pms/projects", headers=_work(oenv))
     assert resp.status_code == 200
@@ -292,7 +294,6 @@ async def test_work_pms_projects_excludes_personal(client, oenv):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="SEC2-AUTHZ-02: orchestrator.create_pms_task에 scope 검사가 없어 work 토큰이 개인 프로젝트에 작업을 만든다")
 async def test_work_create_pms_task_on_personal_project_forbidden(client, oenv):
     resp = await client.post(f"/api/orchestrator/pms/projects/{oenv.personal_pms_id}/tasks",
                              headers=_work(oenv), json={"title": f"{AUTHZ03_W} 침범 작업"})

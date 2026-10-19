@@ -93,9 +93,9 @@ class EventPatch(BaseModel):
     reminder: Reminder | None = None
 
 
-def new_event(body: EventIn, source: str) -> CalendarEvent:
+def new_event(body: EventIn, source: str, scope: str = "personal") -> CalendarEvent:
     ev = CalendarEvent(title=body.title.strip(), description=body.description, location=body.location,
-                       all_day=body.all_day, source=source)
+                       all_day=body.all_day, source=source, scope=scope)
     # 끝을 생략하면 종일은 하루, 시간 일정은 한 시간으로 본다.
     ev.start_at, ev.end_at = svc.to_range(body.start, body.end or body.start, body.all_day)
     if body.end is None and not body.all_day:

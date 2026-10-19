@@ -47,6 +47,7 @@ def clean_tags(tags: Iterable[str]) -> list[str]:
 def memo_out(m: Memo, *, body: bool = True) -> dict[str, Any]:
     text = m.body or ""
     d: dict[str, Any] = {"id": str(m.id), "title": m.title, "tags": m.tags, "pinned": m.pinned, "source": m.source,
+                         "scope": getattr(m, "scope", "personal"),
                          "category_id": str(m.category_id) if m.category_id else None,
                          "rev": m.rev, "excerpt": re.sub(r"\s+", " ", text[:EXCERPT * 2]).strip()[:EXCERPT],
                          "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat()}
@@ -56,9 +57,12 @@ def memo_out(m: Memo, *, body: bool = True) -> dict[str, Any]:
 
 
 def memo_query(q: str | None = None, tags: Iterable[str] | str | None = None, pinned: bool | None = None,
-               category: Any = None):
-    """tags 는 모두 가진 메모만(AND). category 는 카테고리 id, NONE 이면 미분류, None 이면 전체."""
+               category: Any = None, scope: str | None = None):
+    """tags 는 모두 가진 메모만(AND). category 는 카테고리 id, NONE 이면 미분류, None 이면 전체.
+    scope 는 personal | work, None 이면 전체."""
     stmt = select(Memo).where(Memo.deleted_at.is_(None))
+    if scope is not None:
+        stmt = stmt.where(Memo.scope == scope)
     for t in [tags] if isinstance(tags, str) else tags or ():
         if t:
             stmt = stmt.where(Memo.tags.contains([t]))
@@ -234,6 +238,7 @@ def event_out(ev: CalendarEvent, occ: tuple[datetime, datetime] | None = None) -
     return {"id": str(ev.id), "title": ev.title, "description": ev.description, "location": ev.location,
             "all_day": ev.all_day, "start": fmt_local(s, ev.all_day), "end": fmt_local(end_shown, ev.all_day),
             "rrule": ev.rrule, "recurring": bool(ev.rrule), "source": ev.source, "reminder": ev.reminder,
+            "scope": getattr(ev, "scope", "personal"),
             "remind_at": fmt_local(ev.remind_at, False) if ev.remind_at else None,
             "reminder_sent": bool(ev.reminder and ev.reminded_at),
             "created_at": ev.created_at.isoformat(), "updated_at": ev.updated_at.isoformat()}
@@ -247,9 +252,12 @@ def window(frm: date, to: date) -> tuple[datetime, datetime]:
     return (datetime.combine(frm, time.min, tzinfo=KST), datetime.combine(to + timedelta(days=1), time.min, tzinfo=KST))
 
 
-async def list_events(db: AsyncSession, frm: date, to: date, q: str | None = None) -> list[dict[str, Any]]:
+async def list_events(db: AsyncSession, frm: date, to: date, q: str | None = None,
+                      scope: str | None = None) -> list[dict[str, Any]]:
     lo, hi = window(frm, to)
     stmt = select(CalendarEvent).where(CalendarEvent.deleted_at.is_(None), CalendarEvent.start_at < hi)
+    if scope is not None:
+        stmt = stmt.where(CalendarEvent.scope == scope)
     # 반복 일정은 시작이 구간 앞이어도 구간 안에서 생길 수 있어 끝 조건을 걸지 않는다.
     stmt = stmt.where(or_(CalendarEvent.rrule.is_not(None), CalendarEvent.end_at > lo))
     if q:

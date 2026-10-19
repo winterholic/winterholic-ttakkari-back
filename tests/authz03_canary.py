@@ -168,20 +168,21 @@ async def ensure_authz03(db, make_dir) -> Authz03Env:
     personal_user_memo = Memo(title=f"{AUTHZ03_P} 사용자 메모", body=f"{AUTHZ03_P} 사용자 메모 본문",
                               tags=[], source="user")
     work_memo = Memo(title=f"{AUTHZ03_W} 회사 메모", body=f"{AUTHZ03_W} 회사 메모 본문",
-                     tags=[WORK_TAG], source="agent")
+                     tags=[WORK_TAG], source="agent", scope="work")
     db.add_all([personal_agent_memo, personal_user_memo, work_memo])
     await db.flush()
 
-    def _event(title: str, source: str) -> CalendarEvent:
+    def _event(title: str, source: str, scope: str = "personal") -> CalendarEvent:
         return CalendarEvent(
             title=title, description=f"{title} 설명", location="",
             all_day=False, start_at=datetime(2026, 11, 3, 10, 0, tzinfo=UTC),
             end_at=datetime(2026, 11, 3, 11, 0, tzinfo=UTC), source=source,
+            scope=scope,
         )
 
     personal_agent_event = _event(f"{AUTHZ03_P} 개인 일정", "agent")
     personal_user_event = _event(f"{AUTHZ03_P} 사용자 일정", "user")
-    work_event = _event(f"{AUTHZ03_W} 회사 일정", "agent")
+    work_event = _event(f"{AUTHZ03_W} 회사 일정", "agent", scope="work")
     db.add_all([personal_agent_event, personal_user_event, work_event])
     await db.flush()
 

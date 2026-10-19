@@ -141,8 +141,7 @@ async def manage(body: PmsIn, sid: AgentSession, db: Db, request: Request) -> An
     else:
         project_id = _required(body.project_id, "project_id")
     project = await pms._project(db, project_id)
-    if work_only and project.scope != "work":
-        raise pms._nf("프로젝트")
+    pms.check_project_scope(project, session.pool)
 
     common = {"_": "agent", "db": db}
     if op == "get_project":

@@ -91,3 +91,23 @@
 - 결함 1건 수정: 로그인 중 `needs_rehash`가 참이면 ORM 대입이 `Credential.updated_at`(onupdate)을 올려, 다른 기기의 정상 refresh 세션까지 "비밀번호 변경"으로 폐기됐다. 재해시는 `updated_at`을 유지하는 UPDATE로 바꾸고 회귀 테스트를 추가했다.
 - 유지한 정책(사용자 결정 필요): 같은 IP에서 연속 5회 실패하면 올바른 비밀번호도 15분간 429다(기준선 설정 그대로). 지속적인 분산 공격 중에는 로그인만 429가 날 수 있고 refresh와 에이전트 API는 영향이 없다.
 - 전체 테스트 2278 passed, 변경 파일 ruff 통과. 저장소 전체 ruff 75건은 기준선에 있던 다른 파일의 것이다.
+
+## 독립 재검증 후속 (2026-10-19)
+
+- 기준점: 시작 시 `git pull --ff-only` 결과 `Already up to date`; `main`/`origin/main`은 `d9c8eb7`(efcd1ab 이후 NotebookLM 문서 커밋). 처음에는 변경 없음이었고 이 세션은 `.env`, 운영 DB/설정, 실제 사용자 자료를 열지 않았다. 서비스/launchctl/운영 공격 시험도 하지 않았다.
+- 배포 상태는 앞선 확인 영수증 `4e5dcb2c-7345-4b94-9a64-935019f25e16` 기준 `draining`, activated revision `efcd1ab`: 신규 요청 전환은 됐지만 구세대 퇴역 완료로 해석하지 않는다.
+- 새 범위 결함 3건을 모두 합성 fixture로 재현해 최소 수정했다.
+  1. `GET /api/agent/artifacts`가 work 호출자의 세션을 확인한 뒤 전체 활성 Artifact를 반환했다. 동일 PostgreSQL 앱 라우트 실행에서 개인 연결/다른 workspace/소유 불명 orphan 산출물이 work 결과에 섞이는 것을 확인했다. work는 현재 workspace의 work-session Artifact와 사용자가 명시적으로 등록/업로드한 공용 파일만 보며, `PATCH`도 같은 조건을 적용한다. personal 호출 동작은 그대로 둔다.
+  2. `/api/agent/forget`이 전역 UUID로 CtxMemory를 찾아 scope 없이 아카이브했다. work 토큰으로 합성 personal 기억이 `200 {"forgotten": true}`가 되는 것을 확인했다. 이제 work scope가 아닌 ID는 `404`; work 기억 삭제는 계속 가능하고 personal 기억은 보존된다.
+  3. `POST /api/agent/entities`만 `entity_detail`에 기본 `all` 범위를 사용했다. API를 통해 만들 수 있는 합성 cross-scope relation에서 work 응답이 personal 엔터티명을 반환했다. POST 응답도 work scope로 제한했고 GET과 같은 동작을 한다.
+- 격리 테스트 DB: `ttk_security_audit_20261019_01` (기존 `ttakkari_test`와 운영 DB를 사용하지 않음). 수정 전 RED 결과: artifacts는 personal+타 workspace 행 노출, forget은 personal 합성 기억 아카이브, entities는 personal target/note 반환. 정상 대조군: work 산출물·사용자 명시 공용 파일 표시/이동 가능, work 기억 삭제 가능, personal 세션 artifact 목록은 기존 범위 유지.
+- 재현·검증 명령과 결과:
+  - `TTAKKARI_TEST_DB=postgresql+asyncpg://localhost/ttk_security_audit_20261019_01 .venv/bin/pytest -q tests/test_agent_scope_auth.py tests/test_csrf_defense.py tests/test_runs_events_masking.py tests/test_claude_hook_fail_closed.py tests/test_api_auth.py tests/test_api_artifacts.py tests/test_guard.py` → `99 passed, 2 xfailed in 14.94s`.
+  - `.venv/bin/ruff check src/ttakkari/api/agent.py tests/test_agent_scope_auth.py` → `All checks passed!`; `git diff --check` 통과.
+  - `TTAKKARI_TEST_DB=postgresql+asyncpg://localhost/ttk_security_audit_20261019_01 .venv/bin/pytest -q tests/test_password_session_revocation.py` → `10 passed in 4.66s`.
+  - `tests/test_guard.py` strict xfail 2건은 변수 확장 민감 경로 읽기 및 일반 Bash 외부 쓰기다. 함수 수준 한계로 기록하며 OS 샌드박스 우회 입증으로 승격하지 않는다.
+  - 운영 설정 없이 합성 키로 앱 모듈을 import하고 `app.openapi()`의 `/api/agent` 경로를 집계: `agent_http_operations=75 operations_without_openapi_security=0`, unguarded `[]`. 이는 라우트의 인증 선언 확인이지 scope 인가, 실제 HTTP 공격, WebSocket 보호의 완전성 검증은 아니다. OpenAPI 생성 중 public-share duplicate operation ID 경고 2건도 관측했다.
+  - SQLi는 합성 query `%' OR 1=1 --`가 artifact 필터에서 빈 결과임을 실제 라우트/DB로 확인. 추가로 `api/system.py` raw query는 bucket 크기 60/600초 서버 고정값과 `:cutoff` 바인딩을 코드에서 확인했다. 전 SQL 전체를 검증했다고 주장하지 않는다.
+- 남은 범위·기록: `Memo`, `CalendarEvent`는 모델에 personal/work scope가 없어 에이전트 API가 현재 공통 자산처럼 조회/생성/수정한다. 범위 소유권 필드와 기존 데이터 분류가 없으므로 기능 전체를 막지 않고 SEC-01/02 공유 자산 정책 미해결로 남긴다. parent/worker/보관 Artifact 전수 변형도 미검증이다. SEC-03/08/10/11은 실제 엔진·MCP·변환기·호스트 경로, SEC-04는 hook 외 OS 실행 경계, SEC-05는 모든 stdout/error/일반 로그, SEC-06은 access/agent 토큰 만료·원격 WS 허가 폐기, SEC-07 dependency advisory 도달성/갱신, SEC-09 전체 소유자 CSP, SEC-12 자동 게이트, SEC-13 사고대응, SEC-14 전체 독립 종결은 계속 미완이다. WBS SEC-01~14 완료 표시는 바꾸지 않는다.
+- 정상 사용 영향: 개인 에이전트의 전역 Artifact 목록은 변경하지 않는다. work 세션은 자기 workspace의 회사 산출물과 명시적으로 업로드/등록한 파일을 계속 보고 분류 이동할 수 있다. 다른 workspace 및 scope 불명 agent artifact는 숨긴다. work memory의 정상 삭제 및 이름 조회는 유지한다.
+- 이전 worker의 `2278 passed`는 그쪽 보고로 남기며 이번 직접 실행과 합산하지 않는다.

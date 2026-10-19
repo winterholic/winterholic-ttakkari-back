@@ -8,10 +8,10 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 
 from ttakkari import sysinfo
-from ttakkari.api.deps import Db, broker_http, get_artifact
+from ttakkari.api.deps import Db, broker_http
 from ttakkari.api.planner import (
     EventIn,
     EventPatch,
@@ -91,6 +91,23 @@ async def _session(db: Db, sid: uuid.UUID) -> ChatSession:
     return s
 
 
+def _artifact_scope(session: ChatSession):
+    """Work agents see user-shared files and work-session artifacts in their workspace."""
+    if session.pool != "work":
+        return ()
+    work_sessions = select(ChatSession.id).where(
+        ChatSession.pool == "work",
+        ChatSession.workspace_id == session.workspace_id,
+    )
+    return (
+        Artifact.workspace_id == session.workspace_id,
+        or_(
+            and_(Artifact.session_id.is_(None), Artifact.source.in_(("upload", "user_registered"))),
+            Artifact.session_id.in_(work_sessions),
+        ),
+    )
+
+
 def _err(e: store.ContextError) -> HTTPException:
     return HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_input", "message": str(e)})
 
@@ -131,12 +148,14 @@ async def remember(body: RememberIn, sid: AgentSession, db: Db) -> dict[str, Any
 
 @router.post("/forget")
 async def forget(body: dict[str, str], sid: AgentSession, db: Db) -> dict[str, Any]:
-    await _session(db, sid)
+    session = await _session(db, sid)
     try:
         mid = uuid.UUID(body.get("id", ""))
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "id 가 올바르지 않습니다.") from e
     m = await db.get(CtxMemory, mid)
+    if m is not None and session.pool == "work" and m.scope != "work":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "기억을 찾을 수 없습니다.")
     # 사용자가 직접 넣은 기억, 사용자가 승인해 만든 회의 결정(source=meeting)은 에이전트가 지우지 못한다.
     if m is not None and m.source in ("manual", "meeting"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "사용자가 넣거나 승인한 기억은 비서 관리에서만 지울 수 있어요.")
@@ -153,7 +172,7 @@ async def upsert_entity(body: EntityIn, sid: AgentSession, db: Db) -> dict[str, 
     except store.ContextError as e2:
         raise _err(e2) from e2
     await db.commit()
-    return await store.entity_detail(db, e)
+    return await store.entity_detail(db, e, scope="work" if session.pool == "work" else "all")
 
 
 @router.get("/entities/{name}")
@@ -183,8 +202,8 @@ async def link(body: LinkIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 @router.get("/artifacts")
 async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str | None = None, limit: int = 20,
                     area: Literal["files", "agent"] | None = None) -> dict[str, Any]:
-    await _session(db, sid)
-    stmt = select(Artifact).where(Artifact.deleted_at.is_(None))
+    session = await _session(db, sid)
+    stmt = select(Artifact).where(Artifact.deleted_at.is_(None), *_artifact_scope(session))
     if kind:
         stmt = stmt.where(Artifact.kind == kind)
     if area:
@@ -201,8 +220,14 @@ async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str |
 @router.patch("/artifacts/{art_id}")
 async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     """보관함 분류를 옮긴다(파일 ↔ 에이전트 파일). 되돌릴 수 있다. 사용자가 올리거나 등록한 파일은 사용자만 옮긴다."""
-    await _session(db, sid)
-    art = await get_artifact(db, art_id)
+    session = await _session(db, sid)
+    art = await db.scalar(select(Artifact).where(
+        Artifact.id == art_id,
+        Artifact.deleted_at.is_(None),
+        *_artifact_scope(session),
+    ))
+    if art is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact 가 없습니다.")
     if art.source in ("upload", "user_registered"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
                             "사용자가 올린 파일의 분류는 앱에서만 바꿀 수 있어요."})

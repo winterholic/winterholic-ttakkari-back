@@ -34,8 +34,8 @@ log = logging.getLogger(__name__)
 _LOG_TAIL_LINES = 12
 _LOG_TAIL_CHARS = 4000
 # 준비 단계별 상한(초). 감독 루프를 묶어 두었던 장시간 빌드·검사를 fencing한다.
-STAGE_TIMEOUTS = {"uv sync": 600, "npm ci": 600, "pytest": 1800, "migrate": 600,
-                  "command": 600}
+STAGE_TIMEOUTS = {"uv sync": 600, "npm ci": 600, "pytest": 1800, "security_gate": 300,
+                  "migrate": 600, "command": 600}
 PREPARE_TOTAL_TIMEOUT = 3600
 # job id -> 실행 중인 준비 태스크. 감독 패스 사이에서 유지된다.
 _PREPARE_TASKS: dict[str, asyncio.Task] = {}
@@ -515,6 +515,23 @@ class GenerationController:
                 log_file.write(b"\n== pytest failed; rerunning only the failed tests once (--lf) ==\n")
             await self.command(job, release, *pytest, "--lf", stage="pytest", env=env)
 
+    async def run_security_gate(self, job, release, env):
+        """SEC2-GATE-01: 보안 회귀 묶음을 배포 게이트에서 필수 실행한다."""
+        from ttakkari.security.gate import build_security_gate_command
+
+        python_bin = release / ".venv/bin/python"
+        cmd = build_security_gate_command(python_bin, timeout=120)
+        try:
+            await self.command(job, release, *cmd, stage="security_gate", env=env)
+        except StageError as exc:
+            if exc.exit_code != 1:
+                raise
+            with (self.store.jobs / f"{job['id']}.log").open("ab") as log_file:
+                log_file.write(b"\n== security gate failed; rerunning only the failed tests once (--lf) ==\n")
+            retry_cmd = build_security_gate_command(python_bin, timeout=120, last_failed=True)
+            await self.command(job, release, *retry_cmd, stage="security_gate", env=env)
+
+
     async def environment(self, job, release):
         if not (release / ".environment-built").exists():
             await self.command(job, release, "uv", "sync", "--frozen", "--quiet", stage="uv sync")
@@ -590,24 +607,27 @@ class GenerationController:
         async with self._operation("fetch"):
             release = await asyncio.to_thread(self.releases.archive, job["revision"])
         await self.environment(job, release)
-        if not job["skip_tests"]:
-            self.phase(job, "testing")
-            name = "ttakkari_gen_" + uuid.UUID(job["id"]).hex
-            url = make_url(get_settings().database_url).set(drivername="postgresql")
-            async with self._operation("test-db"):
-                admin = await asyncpg.connect(url.set(database="postgres").render_as_string(hide_password=False))
+        name = "ttakkari_gen_" + uuid.UUID(job["id"]).hex
+        url = make_url(get_settings().database_url).set(drivername="postgresql")
+        async with self._operation("test-db"):
+            admin = await asyncpg.connect(url.set(database="postgres").render_as_string(hide_password=False))
+        try:
+            async with self._operation("db_create"):
+                await admin.execute(f'CREATE DATABASE "{name}"')
             try:
-                async with self._operation("db_create"):
-                    await admin.execute(f'CREATE DATABASE "{name}"')
-                try:
-                    test_url = url.set(drivername="postgresql+asyncpg", database=name).render_as_string(hide_password=False)
-                    # Archives have no .git; use the candidate, not the supervisor's revision.
-                    env = test_environment(job["revision"], test_url)
+                test_url = url.set(drivername="postgresql+asyncpg", database=name).render_as_string(hide_password=False)
+                # Archives have no .git; use the candidate, not the supervisor's revision.
+                env = test_environment(job["revision"], test_url)
+                # SEC2-GATE-01: 보안 회귀 테스트 묶음을 배포 게이트에 연결. 실패 시 후보 실패 처리.
+                self.phase(job, "security_gate")
+                await self.run_security_gate(job, release, env)
+                if not job["skip_tests"]:
+                    self.phase(job, "testing")
                     await self.run_pytest(job, release, env)
-                finally:
-                    await admin.execute(f'DROP DATABASE "{name}"')
             finally:
-                await admin.close()
+                await admin.execute(f'DROP DATABASE "{name}"')
+        finally:
+            await admin.close()
         async with self._operation("schema_contract"):
             contract = self.releases.contract(release)
             async with sessionmaker()() as db:

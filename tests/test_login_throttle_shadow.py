@@ -27,6 +27,9 @@ from ttakkari.models import (
 from ttakkari.security import login_throttle as lt
 from ttakkari.security.auth import limiter
 
+pytestmark = [pytest.mark.security]
+
+
 PASSWORD = "correct-horse-battery"
 T0 = datetime(2026, 10, 19, 12, 0, 0, tzinfo=UTC)
 SRC = "src:198.51.100.7"

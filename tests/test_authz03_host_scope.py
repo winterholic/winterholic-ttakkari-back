@@ -40,6 +40,9 @@ from authz03_canary import (
 from ttakkari.db import sessionmaker
 from ttakkari.orchestrator.runtime import issue_token
 
+pytestmark = [pytest.mark.security]
+
+
 
 @pytest.fixture
 async def env(make_dir) -> Authz03Env:

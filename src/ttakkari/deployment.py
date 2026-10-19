@@ -230,30 +230,32 @@ class Controller:
         ensure_revision(job["revision"])
         self.phase(job, "building")
         await self.command(job, "uv", "sync", "--frozen", "--quiet")
-        if not job["skip_tests"]:
-            self.phase(job, "testing")
-            # 배포별 DB를 써서 다른 세션의 pytest와 운영 데이터에 영향을 주지 않는다.
-            name = "ttakkari_deploy_" + uuid.UUID(job["id"]).hex
-            url = make_url(get_settings().database_url).set(drivername="postgresql")
-            admin = await asyncpg.connect(
-                url.set(database="postgres").render_as_string(hide_password=False)
-            )
-            created = False
-            try:
-                await admin.execute(f'CREATE DATABASE "{name}"')
-                created = True
-                test_url = url.set(
-                    drivername="postgresql+asyncpg", database=name
-                ).render_as_string(hide_password=False)
-                env = os.environ | {"TTAKKARI_TEST_DB": test_url}
-                env.pop("TTAKKARI_BACKEND_DEPLOY_LOCK_HELD", None)
+        # 배포별 DB를 써서 다른 세션의 pytest와 운영 데이터에 영향을 주지 않는다.
+        name = "ttakkari_deploy_" + uuid.UUID(job["id"]).hex
+        url = make_url(get_settings().database_url).set(drivername="postgresql")
+        admin = await asyncpg.connect(
+            url.set(database="postgres").render_as_string(hide_password=False)
+        )
+        created = False
+        try:
+            await admin.execute(f'CREATE DATABASE "{name}"')
+            created = True
+            test_url = url.set(
+                drivername="postgresql+asyncpg", database=name
+            ).render_as_string(hide_password=False)
+            env = os.environ | {"TTAKKARI_TEST_DB": test_url}
+            env.pop("TTAKKARI_BACKEND_DEPLOY_LOCK_HELD", None)
+            self.phase(job, "security_gate")
+            await self.command(job, "uv", "run", "pytest", "-q", "-m", "security", "-o", "xfail_strict=false", env=env)
+            if not job["skip_tests"]:
+                self.phase(job, "testing")
                 await self.command(job, "uv", "run", "pytest", "-q", "-x", env=env)
+        finally:
+            try:
+                if created:
+                    await admin.execute(f'DROP DATABASE "{name}"')
             finally:
-                try:
-                    if created:
-                        await admin.execute(f'DROP DATABASE "{name}"')
-                finally:
-                    await admin.close()
+                await admin.close()
         ensure_revision(job["revision"])
         self.phase(job, "waiting", active_runs=None)
 

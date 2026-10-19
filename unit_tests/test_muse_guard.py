@@ -2,7 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
 from ttakkari.security.muse_hook import decision
+
+pytestmark = [pytest.mark.security]
+
 
 
 class MuseGuardTests(unittest.TestCase):

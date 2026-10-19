@@ -13,6 +13,9 @@ from ttakkari.models import RefreshToken
 from ttakkari.security.auth import limiter
 from ttakkari.security.passwords import hash_password
 
+pytestmark = [pytest.mark.security]
+
+
 OLD_PASSWORD = "correct-horse-battery"
 NEW_PASSWORD = "brand-new-secure-password-456"
 

@@ -1,13 +1,15 @@
+import shlex
 from pathlib import Path
 from types import SimpleNamespace
-
-import shlex
 
 import pytest
 
 from ttakkari.artifacts import service
 from ttakkari.broker.policy import BrokerError
 from ttakkari.security.guard import GuardConfig, check_bash, evaluate
+
+pytestmark = [pytest.mark.security]
+
 
 
 def test_write_tool_blocks_path_outside_write_roots(tmp_path: Path) -> None:

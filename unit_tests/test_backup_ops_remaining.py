@@ -11,6 +11,9 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = [pytest.mark.security]
+
+
 REPO = Path(__file__).resolve().parents[1]
 BACKUP_SH = REPO / "scripts" / "backup_db.sh"
 REHEARSE_SH = REPO / "scripts" / "restore_rehearsal.sh"

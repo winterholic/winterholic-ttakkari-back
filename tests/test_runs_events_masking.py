@@ -9,6 +9,9 @@ from ttakkari.db import sessionmaker
 from ttakkari.models import Run, RunStatus
 from ttakkari.runs.events import append
 
+pytestmark = [pytest.mark.security]
+
+
 
 def test_append_masks_sensitive_keys_and_values():
     db = MagicMock()

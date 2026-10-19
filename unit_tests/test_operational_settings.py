@@ -12,6 +12,9 @@ import pytest
 
 from ttakkari.config import DEV_INSECURE_JWT_SECRET, Settings, get_settings
 
+pytestmark = [pytest.mark.security]
+
+
 GOOD_PROD_SECRET = "0123456789abcdef0123456789abcdef"  # 32 ASCII 문자 = 32바이트
 LOGGER = "ttakkari.config"
 

@@ -5,6 +5,9 @@ from httpx import AsyncClient
 
 from ttakkari.api.auth import COOKIE
 
+pytestmark = [pytest.mark.security]
+
+
 PASSWORD = "correct-horse-battery"
 VALID_ORIGIN = "http://localhost:5173"
 EVIL_ORIGIN = "https://malicious-attacker.com"

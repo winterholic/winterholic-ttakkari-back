@@ -7,6 +7,9 @@ import pytest
 
 from ttakkari.runs import profiles, usage
 
+pytestmark = [pytest.mark.security]
+
+
 
 def test_unsupported_account_path_never_silently_uses_default_auth():
     profile = profiles.Profile(uuid4(), 'other', 'antigravity', config_dir=Path('/tmp/other'))

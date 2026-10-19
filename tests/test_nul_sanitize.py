@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from helpers import run_events, run_to_end
 
 from ttakkari.db import sessionmaker
 from ttakkari.models import ChatSession, Run, RunEvent, RunStatus
 from ttakkari.textsafe import strip_nul
+
+pytestmark = [pytest.mark.security]
+
 
 
 def test_strip_nul_cleans_nested_values():

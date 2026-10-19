@@ -17,6 +17,9 @@ from ttakkari.models import (
 from ttakkari.orchestrator.runtime import issue_token
 from ttakkari.security.auth import issue_access_token
 
+pytestmark = [pytest.mark.security]
+
+
 
 @pytest.fixture
 async def setup_sessions(make_dir):

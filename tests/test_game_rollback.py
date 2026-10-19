@@ -22,6 +22,9 @@ from ttakkari.games.builds import bundle_path, verify_snapshot
 from ttakkari.games.contract import game_dir
 from ttakkari.models import Artifact, GameBuild
 
+pytestmark = [pytest.mark.security]
+
+
 FILES_V1 = {"index.html": "<!doctype html><title>v1</title>", "assets/app.js": "console.log('v1')"}
 FILES_V2 = {"index.html": "<!doctype html><title>v2</title>", "assets/app.js": "console.log('v2')"}
 

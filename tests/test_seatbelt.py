@@ -21,6 +21,8 @@ from ttakkari.security.seatbelt import (
     render_profile,
 )
 
+pytestmark = [pytest.mark.security]
+
 
 def _policy(tmp_path: Path, **kw) -> SeatbeltPolicy:
     ttk = tmp_path / ".ttakkari"
@@ -98,6 +100,7 @@ def test_engines_with_own_seatbelt_fail_closed(tmp_path, engine):
 
 PROBE = r"""
 import json, os, socket, sys
+
 def op(f):
     try:
         f(); return "ok"

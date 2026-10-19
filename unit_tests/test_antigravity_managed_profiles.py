@@ -6,6 +6,9 @@ import pytest
 
 from ttakkari import antigravity_accounts as accounts
 
+pytestmark = [pytest.mark.security]
+
+
 
 class Vault:
     def __init__(self):

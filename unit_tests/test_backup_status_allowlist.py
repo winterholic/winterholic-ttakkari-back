@@ -5,6 +5,11 @@
 """
 import json
 from pathlib import Path
+
+import pytest
+
+pytestmark = [pytest.mark.security]
+
 FAKE_SECRETS = {
     "database_url": "postgresql://owner:s3cr3t-pw1234@db.internal:5432/ttakkari",
     "password": "s3cr3t-pw1234",

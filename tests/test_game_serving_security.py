@@ -13,16 +13,23 @@ import httpx
 import jwt
 import pytest
 from test_api_games import fake_adapter, make_repo, register, wait_build  # noqa: F401
-from test_game_build_snapshots import _cleanup_snapshots, manifest, requires_runtime  # noqa: F401
+from test_game_build_snapshots import (  # noqa: F401
+    _cleanup_snapshots,
+    manifest,
+    requires_runtime,
+)
 
 from ttakkari.config import get_settings
 from ttakkari.games import builds, origin
 from ttakkari.games.adapter import PhaserAdapter
-from ttakkari.games.contract import game_dir
 from ttakkari.games.builds import bundle_path
+from ttakkari.games.contract import game_dir
 from ttakkari.main import create_app
 from ttakkari.models import GameBuild
 from ttakkari.security.auth import issue_access_token
+
+pytestmark = [pytest.mark.security]
+
 
 GAME_HOST = "play.games.test"
 PWA = "http://localhost:5173"

@@ -30,6 +30,9 @@ from ttakkari.github.errors import GithubError
 from ttakkari.github.logs import LogFetcher
 from ttakkari.security.auth import require_user
 
+pytestmark = [pytest.mark.security]
+
+
 FIX = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "github" / "upstream"
 
 

@@ -4,7 +4,12 @@ import io
 import json
 from unittest.mock import patch
 
+import pytest
+
 from ttakkari.security import claude_hook
+
+pytestmark = [pytest.mark.security]
+
 
 
 def run_hook_with_input(stdin_content: str) -> tuple[int, dict | None]:

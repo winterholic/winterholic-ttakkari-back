@@ -5,6 +5,9 @@ import pytest
 
 from ttakkari.oplog.scrub import MASK, scrub, scrub_value
 
+pytestmark = [pytest.mark.security]
+
+
 SECRETS = [
     "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUv",
     "sk-proj1234567890abcdefghij",

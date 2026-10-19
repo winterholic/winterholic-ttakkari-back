@@ -26,6 +26,9 @@ from ttakkari.db import sessionmaker
 from ttakkari.models import ChatSession, Run, Workspace
 from ttakkari.orchestrator.runtime import issue_token, mcp_server_spec
 
+pytestmark = [pytest.mark.security]
+
+
 FAKE_TOKEN_ENV = {"TTK_ORCH_TOKEN": "FAKE-TOKEN-f8e2 TEST", "TTK_API_URL": "http://127.0.0.1:8787",
                   "TTK_ROLE": "agent"}
 

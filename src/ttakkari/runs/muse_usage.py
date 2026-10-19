@@ -45,8 +45,12 @@ def parse_usage_card(text: str, now: datetime) -> dict | None:
         if stamp > now:
             stamp -= timedelta(days=1)
         reset = _clock(current[2], stamp)
-        if reset <= stamp:
+        # Only an imminent reset can belong to tomorrow. A card painted at or
+        # just after reset still refers to the expired window, not a 24h cap.
+        if reset < stamp and reset + timedelta(days=1) <= stamp + timedelta(hours=5):
             reset += timedelta(days=1)
+        if reset > stamp + timedelta(hours=5):
+            return None
         day = datetime.strptime(weekly[2] + ' 2000', '%b %d %Y').replace(tzinfo=UTC)
         candidates = []
         for year in (stamp.year-1, stamp.year, stamp.year+1):

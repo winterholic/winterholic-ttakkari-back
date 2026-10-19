@@ -53,13 +53,30 @@ def seed(aid, *, five=0, week=20, five_reset=3600, week_reset=86400, age=60, err
 
 # ---- parsing: reset/time boundaries (collector pins TZ=UTC for the CLI)
 
-def test_reset_just_after_observation_stays_same_day_and_just_before_rolls_to_next_day():
+def test_reset_at_observation_minute_is_expired_instead_of_tomorrow():
     now = datetime(2026, 10, 18, 14, 0, 20, tzinfo=UTC)
     after = muse_usage.parse_usage_card(card(reset="2:01 PM", asof="2:00 PM"), now)
     assert after['usage']['usage']['window']['resetsAtMs'] == ms(datetime(2026, 10, 18, 14, 1, tzinfo=UTC))
-    # A reset equal to or earlier than the observation minute can only be tomorrow's.
+    # At the boundary the CLI may still paint the exhausted window for this minute.
     same = muse_usage.parse_usage_card(card(reset="2:00 PM", asof="2:00 PM"), now)
-    assert same['usage']['usage']['window']['resetsAtMs'] == ms(datetime(2026, 10, 19, 14, 0, tzinfo=UTC))
+    assert same['usage']['usage']['window']['resetsAtMs'] == ms(datetime(2026, 10, 18, 14, 0, tzinfo=UTC))
+
+
+def test_five_hour_reset_never_turns_a_recently_expired_window_into_24_hour_exhaustion():
+    now = datetime(2026, 10, 18, 14, 1, 20, tzinfo=UTC)
+    body = muse_usage.parse_usage_card(card(cur=100, reset="2:00 PM", asof="2:01 PM"), now)
+    assert body['usage']['usage']['window']['resetsAtMs'] == ms(datetime(2026, 10, 18, 14, 0, tzinfo=UTC))
+
+
+def test_persisted_impossible_muse_reset_does_not_block_after_restart():
+    aid = uuid4()
+    now = time.time()
+    seed(aid, five=100, five_reset=3600, week=82, week_reset=-3600, age=23 * 3600)
+    restored = usage.cached(aid)
+    assert not any(w.key == "five_hour" for w in restored.windows)
+    assert profiles.usage_limit_until(muse_profile(aid), now) is None
+    assert profiles._usage_headroom(muse_profile(aid), now) is None
+    assert restored.error
 
 
 def test_observation_and_reset_across_midnight():
@@ -263,7 +280,7 @@ async def test_429_exhaustion_recovers_after_reset_when_provider_reports_new_win
 
 def test_exhaustion_before_reset_keeps_blocking_even_when_observation_is_old():
     aid = uuid4()
-    seed(aid, five=100, five_reset=1800, age=5 * 3600, error="/usage unavailable")
+    seed(aid, five=100, five_reset=1800, age=4 * 3600, error="/usage unavailable")
     assert profiles.usage_limit_until(muse_profile(aid)) > time.time()
     assert not profiles.muse_probe_eligible(muse_profile(aid)), "exploration must not bypass a known exhaustion"
 

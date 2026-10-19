@@ -4,6 +4,7 @@ from __future__ import annotations
 import time
 import uuid
 
+import pytest
 from conftest import HOME, agent_calls
 from helpers import run_to_end, start_run, wait_event
 
@@ -702,3 +703,45 @@ async def test_usage_for_shares_one_fetch_between_concurrent_callers(monkeypatch
     gate.set()
     await asyncio.sleep(0.05)
     assert usage.cached(aid) is not None and not usage.fetching(aid)
+
+
+@pytest.mark.parametrize(('method', 'suffix'), [
+    ('GET', '/usage'), ('GET', '/{id}/usage'), ('POST', '/{id}/usage/refresh'),
+])
+async def test_usage_releases_database_connection_before_provider_lookup(client, auth, monkeypatch, method, suffix):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from ttakkari.config import get_settings
+    from ttakkari.db import get_db
+    from ttakkari.main import app
+    from ttakkari.runs import usage
+
+    rows = await _accounts(client, auth)
+    engine = create_async_engine(get_settings().database_url, pool_size=1, max_overflow=0, pool_timeout=.5)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def one_connection_db():
+        async with sessions() as db:
+            yield db
+
+    calls = 0
+
+    async def read_provider(*args, **kwargs):
+        nonlocal calls
+        if calls == 0:
+            assert engine.pool.checkedout() == 0, 'provider lookup must not retain a DB connection'
+        calls += 1
+        # A concurrent reader must be able to acquire the sole connection.
+        async with sessions() as db:
+            assert await db.scalar(text('SELECT 1')) == 1
+        return usage.Usage(windows=[usage.Window('five_hour', '5시간', 15, None)], source='api', updated_at=time.time())
+
+    monkeypatch.setattr(usage, 'usage_for', read_provider)
+    app.dependency_overrides[get_db] = one_connection_db
+    try:
+        response = await client.request(method, '/api/accounts' + suffix.format(id=rows[0]['id']), headers=auth)
+        assert response.status_code == 200, response.text
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        await engine.dispose()

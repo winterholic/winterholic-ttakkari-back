@@ -103,8 +103,23 @@ def _emit(account_id: uuid.UUID, u: Usage) -> None:
             _sink(account_id, u)
 
 
+def _validate_muse_window(u: Usage) -> Usage:
+    if u.source != "muse_cli" or u.updated_at is None:
+        return u
+    valid = [w for w in u.windows if not (
+        w.key == "five_hour" and w.resets_at and w.resets_at - u.updated_at > 5 * 3600 + 60
+    )]
+    if len(valid) == len(u.windows):
+        return u
+    # Older TUI parsing could move the reset minute forward by a whole day.
+    # Preserve history, but never restore that impossible window as a live cap.
+    log.warning("discarded Muse five-hour window beyond its observation horizon")
+    return replace(u, windows=valid, error="Muse 5시간 초기화 시각 오류 · 새 사용량 확인 필요")
+
+
 def seed(account_id: uuid.UUID, u: Usage, *, refresh: bool = False) -> None:
     """재시작 직후 DB 의 마지막 측정값으로 캐시를 채운다. 이미 값이 있으면 건드리지 않는다."""
+    u = _validate_muse_window(u)
     prior = _cache.get(account_id)
     newer = refresh and prior is not None and (u.updated_at or 0) > (prior[1].updated_at or 0)
     if u.updated_at and (prior is None or newer):
@@ -276,7 +291,7 @@ def remember_observation(account_id: uuid.UUID, body: dict[str, Any]) -> None:
     """Retain the provider's measurement time; replays never refresh old quota."""
     if body.get('source') != 'muse_cli' or not body.get('windows') or not body.get('updated_at'):
         return
-    u = Usage(**{**body, 'windows': [Window(**w) for w in body['windows']]})
+    u = _validate_muse_window(Usage(**{**body, 'windows': [Window(**w) for w in body['windows']]}))
     prior = cached(account_id)
     if prior and (prior.updated_at or 0) >= u.updated_at:
         return
@@ -647,7 +662,7 @@ def muse_usage_from_probe(body: dict[str, Any]) -> Usage:
         windows.append(Window(key, label_of(key), percent, resets // 1000))
     if not isinstance(observed, int) or isinstance(observed, bool) or observed <= 0:
         return Usage(error="Muse 사용량 관측 시각이 없어요", login=login)
-    return Usage(windows=windows, source="muse_cli", plan=snapshot.get("tier"), updated_at=observed / 1000, login=login)
+    return _validate_muse_window(Usage(windows=windows, source="muse_cli", plan=snapshot.get("tier"), updated_at=observed / 1000, login=login))
 
 
 

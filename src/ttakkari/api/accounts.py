@@ -180,6 +180,7 @@ async def _commit(db: Db) -> None:
 @router.get("", response_model=list[AccountOut])
 async def list_accounts(_: User, db: Db) -> list[AccountOut]:
     rows = await profiles.accounts(db)
+    await db.commit()
     # Reuse the usage collector's official account/read observation and TTL.
     # This also covers opening Settings before the first collector pass.
     await asyncio.gather(*(usage_mod.usage_for(a.id, a.engine, a.config_dir)
@@ -441,6 +442,9 @@ async def usage(_: User, db: Db, refresh: bool = False) -> list[AccountUsageOut]
 
     계정은 병렬로 읽고, 한 계정이 USAGE_REQUEST_TIMEOUT 을 넘기면 그 계정만 마지막 값으로 대신한다."""
     ordered, work_rank = await _ordered_usage_accounts(db)
+    # Provider calls may take seconds. Return the connection before waiting;
+    # refresh completion can itself need another connection to wake queued Runs.
+    await db.commit()
     return list(await asyncio.gather(*(_live_usage(i, a, work_rank, refresh) for i, a in ordered)))
 
 
@@ -457,6 +461,7 @@ async def usage_cached(_: User, db: Db) -> list[AccountUsageOut]:
 async def account_usage(account_id: uuid.UUID, _: User, db: Db, refresh: bool = False) -> AccountUsageOut:
     """계정 하나의 사용량. /usage 의 한 줄과 같은 모양이라 카드마다 따로 불러 준비된 것부터 보여 줄 수 있다."""
     ordered, work_rank = await _ordered_usage_accounts(db)
+    await db.commit()
     for i, a in ordered:
         if a.id == account_id:
             out = await _live_usage(i, a, work_rank, refresh)
@@ -482,6 +487,7 @@ async def refresh_account_usage(account_id: uuid.UUID, _: User, db: Db, request:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "계정을 찾을 수 없어요.")
 
     i, a = target
+    await db.commit()
     try:
         u = await asyncio.wait_for(
             usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=True),

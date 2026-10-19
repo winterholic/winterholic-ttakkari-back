@@ -121,7 +121,10 @@ def seed(account_id: uuid.UUID, u: Usage, *, refresh: bool = False) -> None:
     """재시작 직후 DB 의 마지막 측정값으로 캐시를 채운다. 이미 값이 있으면 건드리지 않는다."""
     u = _validate_muse_window(u)
     prior = _cache.get(account_id)
-    newer = refresh and prior is not None and (u.updated_at or 0) > (prior[1].updated_at or 0)
+    # 캐시 항목의 시각(prior[0])은 마지막으로 캐시를 쓴 때다. 실패한 조회도 그 시각을 갖는데 값의 updated_at 은 None 이라,
+    # 값의 시각으로 비교하면 active 세대의 coordinator(load_latest(refresh=True))가 실패 결과를 며칠 전 DB 샘플로 되돌린다
+    # (2026-10-19 x3: 401 이 이어지는데 화면은 20시간 전 "api 0%"를 오류 없이 보여 줬다).
+    newer = refresh and prior is not None and (u.updated_at or 0) > prior[0]
     if u.updated_at and (prior is None or newer):
         _cache[account_id] = (u.updated_at, u)
 
@@ -339,15 +342,20 @@ def keychain_service(config_dir: str | None) -> str:
     return f"{KEYCHAIN}-{hashlib.sha256(config_dir.encode()).hexdigest()[:8]}"
 
 
-async def _claude_token(config_dir: str | None) -> str | None:
+async def _claude_oauth(config_dir: str | None) -> dict[str, Any] | None:
+    """Claude Code 가 둔 claudeAiOauth 항목. 토큰 값은 이 모듈 밖으로 내보내지 않는다."""
     raw: str | None = None
     if sys.platform == "darwin":
         proc = await asyncio.create_subprocess_exec(
             "/usr/bin/security", "find-generic-password", "-s", keychain_service(config_dir), "-a", getpass.getuser(), "-w",
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL)
-        with contextlib.suppress(TimeoutError):
+        try:
             out, _ = await asyncio.wait_for(proc.communicate(), TIMEOUT)
             raw = out.decode().strip() or None
+        except TimeoutError:
+            # 키체인이 허용 창을 띄우고 기다리는 경우다. 프로세스를 남기면 조회마다 하나씩 쌓인다.
+            proc.kill()
+            await proc.wait()
     if raw is None:
         f = (Path(config_dir) if config_dir else HOME / ".claude") / ".credentials.json"
         with contextlib.suppress(OSError):
@@ -355,25 +363,113 @@ async def _claude_token(config_dir: str | None) -> str | None:
     if not raw:
         return None
     try:
-        tok = (json.loads(raw).get("claudeAiOauth") or {}).get("accessToken")
+        oauth = json.loads(raw).get("claudeAiOauth")
     except ValueError:
         return None
-    return tok if isinstance(tok, str) and tok else None
+    tok = oauth.get("accessToken") if isinstance(oauth, dict) else None
+    return oauth if isinstance(tok, str) and tok else None
+
+
+async def _claude_token(config_dir: str | None) -> str | None:
+    oauth = await _claude_oauth(config_dir)
+    return oauth["accessToken"] if oauth else None
+
+
+def _expires_in(oauth: dict[str, Any], now: float | None = None) -> float | None:
+    """access token 만료까지 남은 초(지났으면 음수). 만료 시각을 모르면 None."""
+    exp = oauth.get("expiresAt")
+    if isinstance(exp, bool) or not isinstance(exp, (int, float)) or exp <= 0:
+        return None
+    return exp / 1000 - (time.time() if now is None else now)
+
+
+def _ago_text(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    return f"{seconds // 3600}시간 전" if seconds >= 3600 else f"{max(1, seconds // 60)}분 전"
+
+
+# 사용량 API 는 access token(약 8시간)으로만 읽는다. 갱신은 Claude Code 가 그 계정으로 실행될 때 한다. 오래 쓰지 않은 계정은
+# 토큰이 만료돼 401 이 이어지고, 따까리가 Run 을 보내지 않아 영영 낡은 값이 남았다(2026-10-19 x3, 약 20시간).
+# 만료·401 이면 그 계정으로 아주 작은 claude 호출을 한 번 보내 CLI 가 스스로 토큰을 갱신하게 한다(우리가 refresh token 을 쓰거나
+# 키체인에 쓰지 않는다). 거절·로그아웃 계정에 되풀이하지 않게 계정별 간격을 둔다.
+LOGIN_REFRESH_GAP = 30 * 60.0
+LOGIN_REFRESH_TIMEOUT = 60.0
+_login_refresh_at: dict[str | None, float] = {}
+
+
+async def _refresh_claude_login(config_dir: str | None) -> str | None:
+    """CLI 로 토큰 갱신을 유도한다. 실제로 호출했으면 None, 건너뛰었거나 실패했으면 사유(짧은 문구)."""
+    now = time.time()
+    if now - _login_refresh_at.get(config_dir, 0.0) < LOGIN_REFRESH_GAP:
+        return "최근에 갱신을 시도함"
+    _login_refresh_at[config_dir] = now
+    from ttakkari.runs.profiles import Profile
+    env = Profile(uuid.uuid4(), "", "claude", Path(config_dir) if config_dir else None).env(os.environ.copy())
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            get_settings().claude_bin, "-p", "ok", "--model", "haiku", "--max-turns", "1", "--output-format", "json",
+            "--no-session-persistence", "--disable-slash-commands", "--tools", "",
+            cwd=os.path.realpath("/tmp"), env=env, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await asyncio.wait_for(proc.communicate(), LOGIN_REFRESH_TIMEOUT)
+        return None if proc.returncode == 0 else f"claude 종료 코드 {proc.returncode}"
+    except (OSError, TimeoutError) as e:
+        return f"claude 실행 실패({type(e).__name__})"
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+
+
+def _api_error_text(r: httpx.Response) -> str:
+    """사용량 API 오류 원문(공급자가 준 문구, 짧게)."""
+    detail = ""
+    with contextlib.suppress(ValueError, AttributeError, TypeError):
+        body = r.json()
+        err = body.get("error") if isinstance(body, dict) else None
+        detail = (err.get("message") if isinstance(err, dict) else err) or ""
+    text = f"사용량 API {r.status_code}" + (f": {str(detail)[:160]}" if detail else "")
+    retry = r.headers.get("retry-after")
+    return text + (f" · {retry}초 뒤 재시도 가능" if retry and retry.isdigit() else "")
 
 
 async def _fetch_claude(config_dir: str | None) -> Usage:
-    token = await _claude_token(config_dir)
-    if not token:
+    oauth = await _claude_oauth(config_dir)
+    if not oauth:
         return Usage(error="로그인 토큰을 찾지 못했어요")
+    note = ""
+    left = _expires_in(oauth)
+    if left is not None and left < 60:
+        # 만료됐거나 곧 만료된다. 요청 전에 갱신해 401 을 한 번 덜 맞는다.
+        why = await _refresh_claude_login(config_dir)
+        fresh = await _claude_oauth(config_dir)
+        if fresh:
+            oauth = fresh
+        left = _expires_in(oauth)
+        if left is not None and left < 0:
+            note = f" · 로그인 토큰이 {_ago_text(-left)} 만료됐고 갱신하지 못했어요" + (f"({why})" if why else "")
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as c:
-            r = await c.get(USAGE_URL, headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20",
-                                                "User-Agent": "ttakkari/0.1"})
+            r = await c.get(USAGE_URL, headers={"Authorization": f"Bearer {oauth['accessToken']}",
+                                                "anthropic-beta": "oauth-2025-04-20", "User-Agent": "ttakkari/0.1"})
+            if r.status_code == 401 and not note:
+                # 만료 시각이 아직 남았어도 서버가 거절했다(다른 곳에서 로그아웃·재로그인). 한 번 갱신을 유도하고 다시 읽는다.
+                why = await _refresh_claude_login(config_dir)
+                fresh = await _claude_oauth(config_dir)
+                if fresh and fresh["accessToken"] != oauth["accessToken"]:
+                    r = await c.get(USAGE_URL, headers={"Authorization": f"Bearer {fresh['accessToken']}",
+                                                        "anthropic-beta": "oauth-2025-04-20", "User-Agent": "ttakkari/0.1"})
+                elif why:
+                    note = f" · 토큰 갱신을 건너뜀({why})"
         if r.status_code != 200:
-            return Usage(error=f"사용량 API {r.status_code}")
-        return Usage(windows=windows_from_api(r.json()), source="api", updated_at=time.time())
+            return Usage(error=_api_error_text(r) + note)
+        windows = windows_from_api(r.json())
+        if not windows:
+            return Usage(error="사용량 API 응답에 5시간·주간 값이 없어요")
+        return Usage(windows=windows, source="api", updated_at=time.time())
     except (httpx.HTTPError, ValueError) as e:
-        return Usage(error=f"사용량 API 실패({type(e).__name__})")
+        return Usage(error=f"사용량 API 실패({type(e).__name__})" + note)
 
 
 # ---- Codex: ChatGPT 백엔드(사용량·재설정 크레딧)

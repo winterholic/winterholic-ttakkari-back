@@ -94,9 +94,9 @@ class Collector:
             # 그 창이 매번 재조회를 부르지 않게 백오프를 따른다.
             due = now >= st.next_due or ((engine != "antigravity" or st.failures == 0)
                                          and reset_passed(cached, now) and now - st.last_fetch >= MIN_REFETCH)
-            # Muse 는 유휴 창을 생략해 실패가 쌓이면 주기가 최대 30분까지 늘어난다. 실행 스트림이 새 관측을 남기면
-            # 공급자가 값을 다시 주는 때이므로 백오프를 기다리지 않고 바로 확인한다.
-            due = due or (engine == "muse" and st.failures > 0 and now - st.last_fetch >= MIN_REFETCH
+            # Muse 는 유휴 창을 생략하고, Claude 는 안 쓴 계정의 토큰이 만료돼 실패가 쌓이면 주기가 최대 30분까지 늘어난다.
+            # 실행 스트림이 새 관측을 남기면 공급자가 값을 다시 주고 토큰도 갱신됐을 때이므로 백오프를 기다리지 않고 바로 확인한다.
+            due = due or (engine in ("muse", "claude") and st.failures > 0 and now - st.last_fetch >= MIN_REFETCH
                           and cached is not None and (cached.updated_at or 0) > st.last_fetch)
             if not due:
                 continue
@@ -110,6 +110,9 @@ class Collector:
             # 실패 판단: API 로 못 읽었다(스트림·세션 로그 대용이거나 값이 없음).
             ok = u.source in ("api", "antigravity_cli", "muse_cli") and bool(u.windows) and not u.error
             is_muse_reset_idle = engine == "muse" and u.login == "ok" and bool(u.error and "초기화 시각 경과" in u.error)
+            if not ok and u.error:
+                # 실패 사유가 로그에 남아야 운영에서 왜 낡았는지 본다(토큰·응답 본문은 담지 않은 문구다).
+                log.warning("usage fetch failed (%s, failures=%d): %s", engine, st.failures + 1, u.error[:200])
             if ok:
                 st.failures = 0
             elif is_muse_reset_idle:

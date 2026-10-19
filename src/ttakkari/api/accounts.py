@@ -330,6 +330,9 @@ class AccountUsageOut(BaseModel):
 # 느린 공급자(Muse·Antigravity 하위 프로세스) 하나가 응답 전체를 붙잡지 않게 요청당 기다리는 한도.
 # 넘으면 마지막으로 본 값을 refreshing=True 로 돌려주고, 조회는 뒤에서 이어져 캐시를 채운다.
 USAGE_REQUEST_TIMEOUT = 25.0
+# 계정 하나를 직접 다시 재는 요청은 느린 경로까지 끝까지 기다린다: Muse(SDK 25초 + TUI 23초), 토큰이 만료된 Claude(갱신 호출 60초 + 조회).
+# 이보다 길면 504 로 끝내 화면이 무한히 기다리지 않게 한다.
+REFRESH_TIMEOUT = {"muse": 60.0, "claude": 80.0}
 
 
 def _muse_windows(u: usage_mod.Usage, now: float, current: bool) -> list[UsageWindowOut]:
@@ -370,6 +373,13 @@ def _agy_windows(u: usage_mod.Usage, now: float, current: bool) -> list[UsageWin
     return out
 
 
+def _age_text(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    if seconds >= 86400:
+        return f"{seconds // 86400}일 {seconds % 86400 // 3600}시간 전"
+    return f"{seconds // 3600}시간 {seconds % 3600 // 60}분 전" if seconds >= 3600 else f"{max(1, seconds // 60)}분 전"
+
+
 def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usage_mod.Usage, *, refreshing: bool = False,
                error: str | None = None) -> AccountUsageOut:
     login, _label = profiles.identity(a.engine, a.config_dir)
@@ -399,8 +409,13 @@ def _usage_out(i: int, a: EngineAccount, work_rank: dict[uuid.UUID, int], u: usa
         # 창별 state 는 그 창의 초기화 경과 여부와 조회 신선도만 본다(다른 창이 지났다고 이 창이 낡은 값이 되지 않는다).
         windows_out = _agy_windows(u, now, not aged and not u.error)
     else:
-        windows_out = [UsageWindowOut(**w.__dict__) for w in valid_windows]
+        # Claude·Codex: 최신 조회 성공이 아니거나(오래됨·오류) 초기화 시각이 지난 창은 현재 값이 아니다. 화면이 0% 나 낡은
+        # 퍼센트를 현재 사용량으로 읽지 않게 창마다 상태를 알린다.
+        windows_out = [UsageWindowOut(**w.__dict__, state="unavailable" if w.resets_at and w.resets_at <= now
+                                      else "stale" if stale or u.error else "current") for w in valid_windows]
     err = u.error or error
+    if aged and not err and u.windows and not is_muse:
+        err = f"새 사용량을 읽지 못했어요 · 마지막 측정 {_age_text(now - u.updated_at) if u.updated_at else '시각 불명'}"
     if is_muse and not muse_current and not err:
         err = "Muse 최신 사용량 미확인 · 5시간·주간 창 모두 확인되지 않음"
     if is_muse and not muse_current and err and any(w.key == "five_hour" and w.resets_at and w.resets_at <= now for w in u.windows):
@@ -491,13 +506,14 @@ async def refresh_account_usage(account_id: uuid.UUID, _: User, db: Db, request:
     try:
         u = await asyncio.wait_for(
             usage_mod.usage_for(a.id, a.engine, a.config_dir, refresh=True),
-            USAGE_REQUEST_TIMEOUT,
+            REFRESH_TIMEOUT.get(a.engine, 35.0),
         )
     except TimeoutError:
         record(db, action="account.usage_refresh", target_type="account", target_id=a.id,
                outcome="error", detail={"error": "timeout"}, ip=client_ip(request))
         await _commit(db)
-        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT, "사용량 측정 시간 초과: 응답을 받지 못했습니다.")
+        raise HTTPException(status.HTTP_504_GATEWAY_TIMEOUT,
+                            f"사용량 측정 시간 초과({a.engine}): {REFRESH_TIMEOUT.get(a.engine, 35.0):.0f}초 안에 공급자 응답을 받지 못했어요.")
     except Exception as e:  # noqa: BLE001
         log.warning("usage refresh failed for account %s: %s", a.id, type(e).__name__)
         record(db, action="account.usage_refresh", target_type="account", target_id=a.id,

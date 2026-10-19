@@ -31,8 +31,8 @@
 | **비공식 API 변경 취약성** | `NOTEBOOKLM_RPC_OVERRIDES`로 알려진 RPC ID를 런타임 덮어쓰기할 수 있다. 페이로드·응답 스키마 변경은 해결하지 못한다. | 웹 UI DOM/CSS 변경에 취약하며, 상류 저장소가 archived 상태다. | 공개 클라이언트 API를 통해 RPC 변경을 흡수하는 후보. 버전 고정 시 상류 릴리스 전까지 변경 대응 지연은 남는다. |
 
 #### 핵심 분석 결론 (인증 및 통신):
-- Google NotebookLM은 공식 외부 API를 제공하지 않으며, 내부 프론트엔드가 사용하는 `/_/LabsTailwindUi/data/batchexecute` RPC 엔드포인트를 호출한다.
-- 인증에는 Google의 다중 세션 쿠키(`SID`, `HSID`, `SSID`, `APISID`, `SAPISID`, `__Secure-1PSID`, `__Secure-1PSIDTS` 등)와 함께, 홈페이지 렌더링 시 주입되는 CSRF 토큰(`SNlM0e`) 및 세션 ID(`FdrFJe`)가 필요하다.
+- 비교한 프로젝트는 스스로 비공식 도구/클라이언트라고 명시하며, 클론된 코드에서 `batchexecute` 등 내부 웹 프로토콜 사용을 확인했다. Google 공식 문서 전체를 조사해 공개 API 부재를 독립 확정한 것은 아니다.
+- 인증은 프로필의 Google 세션 쿠키와 홈페이지에서 추출하는 CSRF 토큰(`SNlM0e`)을 사용한다. 세션 ID(`FdrFJe`)와 빌드 라벨(`cfb2h`)은 구현에서 선택적으로 추출·갱신된다. 필요한 쿠키의 정확한 집합은 계정·환경에 따라 달라질 수 있다.
 - `PleasePrompto` 저장소는 실제 archived 상태이며, README는 Patchright 기반의 persistent Chrome/DOM 자동화를 기술한다. 봇 탐지·CAPTCHA 발생 확률은 저장소 코드만으로 계량할 수 없어 단정하지 않는다.
 - `jacob-bd`는 HTTP RPC가 기본이지만 CDP 로그인·인증 복구 경로도 포함하고, 실험적 CDP RPC transport도 존재한다. 그러므로 “로그인 때만 브라우저 1회”라고 일반화할 수 없다. HTTP 경로도 비공식 RPC이며 Google의 정책 허용이나 보호장치 비우회를 입증하지 않는다.
 

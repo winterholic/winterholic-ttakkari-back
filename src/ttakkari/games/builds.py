@@ -15,6 +15,7 @@ import os
 import shutil
 import uuid
 import zipfile
+from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
@@ -134,11 +135,20 @@ async def _next_build(db: AsyncSession, game: GameProject, run: Run | None) -> G
     return build
 
 
-async def build_game(
-    db: AsyncSession, game: GameProject, *, adapter: GameEngineAdapter | None = None, runner: IsolatedBuildRunner | None = None,
-    run_id: uuid.UUID | None = None,
-) -> GameBuild:
-    """게임 저장소를 격리 빌드하고 불변 스냅샷으로 기록한다. 실패해도 failed 빌드 행이 남는다."""
+@dataclass
+class BuildPlan:
+    """검증을 마치고 building 행까지 만든 빌드. execute_build 가 실제 빌드·스냅샷을 수행한다."""
+
+    game_id: uuid.UUID
+    build_id: uuid.UUID
+    root: Path
+    workspace_id: uuid.UUID
+    engine_id: str
+    manifest_sha: str
+
+
+async def prepare_build(db: AsyncSession, game: GameProject, *, run_id: uuid.UUID | None = None) -> tuple[GameBuild, BuildPlan]:
+    """경로·매니페스트·Run 을 검증하고 순번을 매긴 building 행을 만든다. 검증에 실패하면 빌드 행을 만들지 않는다."""
     ws = await db.get(Workspace, game.workspace_id)
     if ws is None:
         raise GameContractError("게임의 workspace 를 찾을 수 없습니다.", "no_workspace")
@@ -153,16 +163,32 @@ async def build_game(
     manifest, manifest_sha = read_manifest(root)
     if manifest.id != game.slug or manifest.engine != game.engine_id:
         raise GameContractError("매니페스트가 등록된 게임(slug/engine)과 다릅니다.", "bad_manifest")
-    adapter = adapter or get_adapter(game.engine_id, **({"runner": runner} if runner else {}))
-
     build = await _next_build(db, game, run)
-    build_id = build.id
-    work = adapter.work_dir if hasattr(adapter, "work_dir") else get_settings().game_builds_dir / "_adapter"
+    return build, BuildPlan(game.id, build.id, root, ws.id, game.engine_id, manifest_sha)
+
+
+async def execute_build(
+    db: AsyncSession, plan: BuildPlan, *, adapter: GameEngineAdapter | None = None, runner: IsolatedBuildRunner | None = None,
+) -> GameBuild:
+    """prepare_build 가 만든 building 행을 격리 빌드하고 불변 스냅샷으로 완료한다. 실패해도 failed 행으로 남는다.
+
+    db 세션은 prepare_build 의 것과 달라도 된다(백그라운드 실행).
+    """
+    build = await db.get(GameBuild, plan.build_id)
+    game = await db.get(GameProject, plan.game_id)
+    ws = await db.get(Workspace, plan.workspace_id)
+    if build is None or game is None or ws is None or build.status != "building":
+        raise GameContractError("실행할 빌드를 찾을 수 없습니다.", "no_build")
+    run = await db.get(Run, build.run_id) if build.run_id else None
+    adapter = adapter or get_adapter(plan.engine_id, **({"runner": runner} if runner else {}))
+    work = getattr(adapter, "work_dir", get_settings().game_builds_dir / "_adapter")
+    root = plan.root
     try:
+        manifest, manifest_sha = read_manifest(root)
         head, dirty, fp_before = await git_state(root)
         build.source_commit, build.source_dirty = head, dirty
         build.manifest_sha256, build.lock_verified = manifest_sha, verify_lock(game, manifest)
-        res = await adapter.build(root, str(build_id))
+        res = await adapter.build(root, str(plan.build_id))
         build.log_tail = res.log[-LOG_TAIL_CHARS:]
         _, _, fp_after = await git_state(root)
         if fp_after != fp_before:
@@ -176,9 +202,18 @@ async def build_game(
         raise
     finally:
         build.finished_at = utcnow()
-        await asyncio.to_thread(shutil.rmtree, work / str(build_id), True)
+        await asyncio.to_thread(shutil.rmtree, work / str(plan.build_id), True)
         await db.commit()
     return build
+
+
+async def build_game(
+    db: AsyncSession, game: GameProject, *, adapter: GameEngineAdapter | None = None, runner: IsolatedBuildRunner | None = None,
+    run_id: uuid.UUID | None = None,
+) -> GameBuild:
+    """게임 저장소를 격리 빌드하고 불변 스냅샷으로 기록한다(prepare_build + execute_build)."""
+    _, plan = await prepare_build(db, game, run_id=run_id)
+    return await execute_build(db, plan, adapter=adapter, runner=runner)
 
 
 async def _snapshot(db: AsyncSession, game: GameProject, build: GameBuild, out: Path, run: Run | None, ws: Workspace) -> None:

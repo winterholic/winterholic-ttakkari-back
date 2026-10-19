@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import stat
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -131,8 +132,12 @@ def verify_lock(game: GameProject, manifest: ProjectManifest) -> bool:
     return game.locked_decisions_sha256 is not None and game.locked_decisions_sha256 == decisions_sha256(manifest.locked_decisions)
 
 
-async def register_game_project(db: AsyncSession, manifest: ProjectManifest, *, create_pms: bool = True) -> GameProject:
-    """게임 저장소(game_dir(manifest.id)) 를 따까리 Workspace + PMS 프로젝트에 연결한다. 이미 연결된 저장소는 거부한다."""
+async def register_game_project(
+    db: AsyncSession, manifest: ProjectManifest, *, create_pms: bool = True, pms_project_id: uuid.UUID | None = None,
+) -> GameProject:
+    """게임 저장소(game_dir(manifest.id)) 를 따까리 Workspace + PMS 프로젝트에 연결한다. 이미 연결된 저장소는 거부한다.
+
+    pms_project_id 를 주면 새 PMS 프로젝트를 만들지 않고 그 기존 프로젝트에 연결한다."""
     s = get_settings()
     path = game_dir(manifest.id)
     try:
@@ -149,7 +154,11 @@ async def register_game_project(db: AsyncSession, manifest: ProjectManifest, *, 
         db.add(ws)
         await db.flush()
     pms_id = None
-    if create_pms:
+    if pms_project_id is not None:
+        if await db.get(PmsProject, pms_project_id) is None:
+            raise GameContractError("PMS 프로젝트를 찾을 수 없습니다.", "no_pms_project")
+        pms_id = pms_project_id
+    elif create_pms:
         pms = PmsProject(name=manifest.name, description=f"게임 스튜디오 프로젝트 ({manifest.engine}). 저장소: {manifest.id}", status="active")
         db.add(pms)
         await db.flush()

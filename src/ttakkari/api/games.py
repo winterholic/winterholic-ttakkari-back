@@ -1,0 +1,211 @@
+"""게임 프로젝트·빌드 API (TASK-G06, docs/design/game-studio.md §9, ADR 0047).
+
+인증된 사용자만 쓴다. 게임은 games_root/<slug> 의 기존 저장소를 따까리 Workspace 에 연결하는 것이고(임의 경로 입력 없음),
+빌드는 격리 러너가 백그라운드로 수행하며 이 API 는 building 행을 만들어 202 로 돌려준다.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from datetime import datetime
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+
+from ttakkari.api.deps import Db
+from ttakkari.audit import record
+from ttakkari.db import sessionmaker
+from ttakkari.games import builds as game_builds
+from ttakkari.games.contract import (
+    GameContractError,
+    approve_lock,
+    decisions_sha256,
+    game_dir,
+    read_manifest,
+    register_game_project,
+    verify_lock,
+)
+from ttakkari.models import GameBuild, GameProject
+from ttakkari.runs.manager import _background
+from ttakkari.security.auth import User, client_ip
+
+log = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/games", tags=["games"])
+
+CODE_STATUS = {
+    "not_found": 404, "no_manifest": 404, "no_pms_project": 404, "no_run": 404, "no_build": 404, "no_workspace": 404,
+    "exists": 409, "build_in_progress": 409, "snapshot_exists": 409,
+    "outside_root": 403, "bad_slug": 422, "bad_manifest": 422, "wrong_engine": 422, "unsupported_engine": 422,
+}
+
+
+def _http(e: GameContractError) -> HTTPException:
+    return HTTPException(CODE_STATUS.get(e.code, 400), {"code": e.code, "message": str(e)})
+
+
+class GameRegisterIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    slug: str = Field(min_length=3, max_length=40)
+    pms_project_id: uuid.UUID | None = None
+    create_pms: bool = True
+
+
+class BuildStartIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    run_id: uuid.UUID | None = None
+
+
+class BuildOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    game_id: uuid.UUID
+    seq: int
+    status: Literal["building", "succeeded", "failed"]
+    source_commit: str | None
+    source_dirty: bool
+    manifest_sha256: str | None
+    lock_verified: bool
+    bundle_sha256: str | None
+    bundle_bytes: int | None
+    bundle_files: int | None
+    run_id: uuid.UUID | None
+    artifact_id: uuid.UUID | None
+    error: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class BuildDetailOut(BuildOut):
+    log_tail: str | None
+    snapshot_verified: bool | None = None  # verify=true 로 요청했을 때만 채운다
+
+
+class GameOut(BaseModel):
+    id: uuid.UUID
+    slug: str
+    name: str
+    engine_id: str
+    workspace_id: uuid.UUID
+    pms_project_id: uuid.UUID | None
+    locked_revision: int
+    lock_approved: bool
+    lock_matches_repo: bool | None  # 승인본과 저장소 매니페스트의 잠금 결정이 같은지. 매니페스트를 읽을 수 없으면 None
+    locked_decisions: list[str]  # 저장소 매니페스트의 현재 값(승인본이 아닐 수 있다)
+    created_at: datetime
+    last_build: BuildOut | None = None
+
+
+async def _game(db: Db, game_id: uuid.UUID) -> GameProject:
+    game = await db.get(GameProject, game_id)
+    if game is None or game.archived_at is not None:
+        raise HTTPException(404, {"code": "not_found", "message": "게임이 없습니다."})
+    return game
+
+
+def _game_out(game: GameProject, last: GameBuild | None) -> GameOut:
+    decisions: list[str] = []
+    matches: bool | None = None
+    try:
+        manifest, _ = read_manifest(game_dir(game.slug))
+        decisions = list(manifest.locked_decisions)
+        matches = verify_lock(game, manifest)
+    except GameContractError:
+        pass
+    return GameOut(
+        id=game.id, slug=game.slug, name=game.name, engine_id=game.engine_id, workspace_id=game.workspace_id,
+        pms_project_id=game.pms_project_id, locked_revision=game.locked_revision,
+        lock_approved=game.locked_decisions_sha256 is not None, lock_matches_repo=matches, locked_decisions=decisions,
+        created_at=game.created_at, last_build=BuildOut.model_validate(last) if last else None)
+
+
+async def _last_build(db: Db, game_id: uuid.UUID) -> GameBuild | None:
+    return await db.scalar(select(GameBuild).where(GameBuild.game_id == game_id).order_by(GameBuild.seq.desc()).limit(1))
+
+
+@router.get("", response_model=list[GameOut])
+async def list_games(_: User, db: Db) -> list[GameOut]:
+    games = (await db.scalars(select(GameProject).where(GameProject.archived_at.is_(None)).order_by(GameProject.created_at.desc()))).all()
+    return [_game_out(g, await _last_build(db, g.id)) for g in games]
+
+
+@router.post("", response_model=GameOut, status_code=201)
+async def register_game(body: GameRegisterIn, _: User, db: Db, request: Request) -> GameOut:
+    try:
+        manifest, _sha = read_manifest(game_dir(body.slug))
+        if manifest.id != body.slug:
+            raise GameContractError("매니페스트 id 가 slug 와 다릅니다.", "bad_manifest")
+        game = await register_game_project(db, manifest, create_pms=body.create_pms, pms_project_id=body.pms_project_id)
+    except GameContractError as e:
+        record(db, action="game.register", outcome="denied", target_type="game", detail={"slug": body.slug, "code": e.code}, ip=client_ip(request))
+        await db.commit()
+        raise _http(e) from e
+    record(db, action="game.register", target_type="game", target_id=game.id, detail={"slug": game.slug}, ip=client_ip(request))
+    await db.commit()
+    return _game_out(game, None)
+
+
+@router.get("/{game_id}", response_model=GameOut)
+async def get_game(game_id: uuid.UUID, _: User, db: Db) -> GameOut:
+    game = await _game(db, game_id)
+    return _game_out(game, await _last_build(db, game.id))
+
+
+@router.post("/{game_id}/lock/approve", response_model=GameOut)
+async def approve_game_lock(game_id: uuid.UUID, _: User, db: Db, request: Request) -> GameOut:
+    """저장소 매니페스트의 현재 잠금 결정을 사용자가 승인해 DB 에 해시로 고정한다."""
+    game = await _game(db, game_id)
+    try:
+        manifest, _sha = read_manifest(game_dir(game.slug))
+        await approve_lock(db, game, manifest)
+    except GameContractError as e:
+        raise _http(e) from e
+    record(db, action="game.lock.approve", target_type="game", target_id=game.id, ip=client_ip(request),
+           detail={"revision": game.locked_revision, "sha256": decisions_sha256(manifest.locked_decisions)})
+    await db.commit()
+    return _game_out(game, await _last_build(db, game.id))
+
+
+@router.get("/{game_id}/builds", response_model=list[BuildOut])
+async def list_builds(game_id: uuid.UUID, _: User, db: Db, limit: int = Query(50, ge=1, le=200)) -> list[GameBuild]:
+    game = await _game(db, game_id)
+    return list(await db.scalars(select(GameBuild).where(GameBuild.game_id == game.id).order_by(GameBuild.seq.desc()).limit(limit)))
+
+
+@router.get("/{game_id}/builds/{build_id}", response_model=BuildDetailOut)
+async def get_build(game_id: uuid.UUID, build_id: uuid.UUID, _: User, db: Db, verify: bool = False) -> BuildDetailOut:
+    game = await _game(db, game_id)
+    build = await db.get(GameBuild, build_id)
+    if build is None or build.game_id != game.id:
+        raise HTTPException(404, {"code": "no_build", "message": "빌드가 없습니다."})
+    out = BuildDetailOut.model_validate(build)
+    if verify:
+        out.snapshot_verified = await asyncio.to_thread(game_builds.verify_snapshot, build)
+    return out
+
+
+async def _run_build(plan: game_builds.BuildPlan) -> None:
+    try:
+        async with sessionmaker()() as db:
+            await game_builds.execute_build(db, plan)
+    except Exception:
+        log.exception("game build %s failed unexpectedly", plan.build_id)  # 빌드 행은 execute_build 가 failed 로 닫았다
+
+
+@router.post("/{game_id}/builds", response_model=BuildOut, status_code=202)
+async def start_build(game_id: uuid.UUID, body: BuildStartIn, _: User, db: Db, request: Request) -> GameBuild:
+    game = await _game(db, game_id)
+    try:
+        build, plan = await game_builds.prepare_build(db, game, run_id=body.run_id)
+    except GameContractError as e:
+        raise _http(e) from e
+    record(db, action="game.build.start", target_type="game_build", target_id=build.id, ip=client_ip(request),
+           detail={"game": game.slug, "seq": build.seq})
+    await db.commit()
+    task = asyncio.create_task(_run_build(plan))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    return build

@@ -24,6 +24,7 @@ from ttakkari.api import (
     deployments,
     design_system,
     desk_feedback,
+    games,
     host_env,
     library_insight,
     meetings,
@@ -286,6 +287,7 @@ def create_app() -> FastAPI:
     app.include_router(weather_api.router)
     app.include_router(stocks.router)
     app.include_router(stocks.agent_router)
+    app.include_router(games.router)
     app.include_router(notebooklm.router)
     app.include_router(notebooklm.agent_router)
     notebooklm.install(app)  # code·retry_after·outcome_unknown 을 살리는 NotebookLM 오류 핸들러(ADR 0045)

@@ -32,7 +32,8 @@ def ms(dt):
 
 
 @pytest.fixture(autouse=True)
-def _isolated():
+def _isolated(monkeypatch):
+    monkeypatch.setattr(usage, "MUSE_PING", False)  # 관측 핑은 실제 Muse 와 DB 를 쓴다
     profiles.reset_cooldowns()
     yield
     profiles.reset_cooldowns()

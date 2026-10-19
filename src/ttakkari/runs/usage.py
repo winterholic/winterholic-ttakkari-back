@@ -683,7 +683,7 @@ async def usage_for(account_id: uuid.UUID, engine: str, config_dir: str | None, 
 
 # 조회 하나가 영영 끝나지 않으면 _inflight 에 남아 그 계정의 이후 모든 조회(수집기·화면·새로고침)가 같은 작업을 기다린다.
 # 엔진마다 하위 단계 시간 제한의 합보다 조금 길게 잡은 상한이다(Claude: 갱신 호출 60초 + 조회, Muse: SDK 25초 + TUI 23초).
-FETCH_DEADLINE = {"claude": 100.0, "muse": 70.0, "antigravity": 50.0, "codex": 45.0}
+FETCH_DEADLINE = {"claude": 100.0, "muse": 110.0, "antigravity": 50.0, "codex": 45.0}
 
 
 async def _fetch_live_bounded(account_id: uuid.UUID, engine: str, config_dir: str | None) -> Usage:
@@ -701,6 +701,13 @@ async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None
     observed_now = True
     if engine == "muse":
         u = await _fetch_muse(config_dir)
+        if MUSE_PING and not u.windows and u.login == "ok":
+            # 공급자는 Muse 를 쓴 뒤에야 사용량을 준다. 안 쓰면 조회만으로는 값이 없고 그 계정이 계속 배제된다.
+            pinged = await _muse_observation_ping(account_id, config_dir)
+            if isinstance(pinged, Usage):
+                u = pinged
+            else:
+                u = replace(u, error=f"{u.error} · {pinged}" if u.error else pinged)
         prior = cached(account_id)
         if u.login == 'missing':
             _stream.pop(account_id, None)
@@ -811,6 +818,116 @@ async def _fetch_muse(config_dir: str | None) -> Usage:
             except TimeoutError:
                 proc.kill()
                 await proc.wait()
+
+
+# ---- Muse: 관측이 없을 때 짧은 핑 한 번으로 스트림 관측을 유도한다
+
+MUSE_PING = True  # 시험은 공급자·DB 를 건드리지 않게 끈다(tests/conftest.py). 핑 시험만 켠다.
+MUSE_PING_TIMEOUT = 45.0
+MUSE_PING_PROMPT = "hi"
+MUSE_PING_NOTE = "Reply with the single word ok. Do not use any tools."
+
+
+def _muse_ping_wait_text(account_id: uuid.UUID) -> str:
+    from ttakkari.runs import profiles
+    last = profiles._probe_last.get(account_id)
+    left = max(1, round((profiles.MUSE_PROBE_INTERVAL - (time.time() - last)) / 60)) if last else None
+    return "핑은 계정당 30분에 한 번만 보내요" + (f"(다음 시도 약 {left}분 뒤)" if left else "")
+
+
+async def _muse_observation_ping(account_id: uuid.UUID, config_dir: str | None) -> Usage | str:
+    """사용량 관측이 없는 켜진 Muse 계정에 'hi' 한 번을 보내 공급자가 사용량을 내게 한다.
+
+    성공하면 관측한 Usage, 건너뛰었거나 실패했으면 화면에 그대로 붙일 사유 문장을 돌려준다(실패를 여유 있음으로 읽지 않는다).
+    계정당 30분에 한 번(탐색 배정과 같은 DB 예약을 공유해 세대가 여럿이어도 한 번)이고, 꺼진 계정·Run 이 쓰는 계정·알려진 한도는 제외한다."""
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import EngineAccount
+    from ttakkari.runs import profiles
+    async with sessionmaker()() as db:
+        row = await db.get(EngineAccount, account_id)
+    if row is None or not (row.enabled or (row.pool == "work" and row.work_enabled)):
+        return "꺼진 계정이라 핑을 보내지 않아요"
+    if (await profiles.running_counts_async()).get(account_id, 0) > 0:
+        return "이 계정으로 실행 중인 Run 이 있어 핑을 보내지 않아요(Run 이 끝나면 관측돼요)"
+    profile = profiles.Profile(account_id, row.name, "muse", Path(config_dir) if config_dir else None,
+                               max_used_percent=row.max_used_percent, model=get_settings().worker_default_models["muse"]["model"])
+    if not profiles.muse_probe_unconfirmed(profile):
+        return "이미 알려진 한도나 로그인 상태 때문에 핑을 보내지 않아요"
+    if not await profiles.claim_muse_probe([profile]):
+        return _muse_ping_wait_text(account_id)
+    try:
+        pinged = await _run_muse_ping(profile)
+    except Exception as e:  # noqa: BLE001
+        log.warning("muse observation ping failed: %s", type(e).__name__)
+        return f"Muse 핑 실패({type(e).__name__}: {str(e)[:160]})"
+    if isinstance(pinged, Usage) and pinged.windows:
+        return pinged
+    # 핑이 전달됐으면 공급자의 사용량 조회가 값을 줄 수 있다. 스트림에 관측이 없었어도 한 번 더 읽어 본다.
+    reread = await _fetch_muse(config_dir)
+    if reread.windows:
+        return reread
+    return pinged if isinstance(pinged, str) else "핑은 전달됐지만 공급자가 아직 구독 사용량을 주지 않았어요"
+
+
+async def _run_muse_ping(profile: Any) -> Usage | str:
+    """Run 과 같은 어댑터·보안 정책(도구 호출 가드 포함)으로 도구 없는 짧은 한 턴을 보낸다.
+
+    스트림에서 사용량 관측을 받으면 그 Usage, 응답은 왔는데 관측이 없으면 창이 빈 Usage, 실패하면 사유 문장.
+    답이 도착(turn/foregroundCompleted)하면 모델 호출은 끝난 것이라 남은 백그라운드 정리(수십 초)를 기다리지 않고 종료한다."""
+    import shutil
+    import tempfile
+
+    from ttakkari.agents.base import LaunchSpec, ParseState
+    from ttakkari.agents.muse import MuseAdapter
+    cwd = Path(os.path.realpath(tempfile.mkdtemp(prefix="ttakkari-muse-ping-")))
+    adapter = MuseAdapter()
+    spec = LaunchSpec(cwd=cwd, prompt=MUSE_PING_PROMPT, engine_session_id=None, model=profile.model, effort=None,
+                      outbox=cwd, write_roots=[], system_note=MUSE_PING_NOTE)
+    proc = None
+    state = ParseState()
+    delivered = False
+
+    async def pump(stream: asyncio.StreamReader) -> None:
+        nonlocal delivered
+        while line := await stream.readline():
+            with contextlib.suppress(ValueError):
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    adapter.parse_line(obj, state, cwd)
+                    if obj.get("method") in ("turn/foregroundCompleted", "turn/completed"):
+                        delivered = True
+                        if state.account_usage or obj.get("method") == "turn/completed":
+                            return
+                        # 정리 단계가 시작됐다. 사용량 알림이 곧 오는지 잠깐만 더 본다.
+                        await asyncio.sleep(0.5)
+                        return
+
+    try:
+        env = profile.env(os.environ.copy())
+        cmd = adapter.build_command(spec, env)
+        proc = await asyncio.create_subprocess_exec(*cmd, cwd=cwd, env=env, stdin=asyncio.subprocess.DEVNULL,
+                                                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            await asyncio.wait_for(pump(proc.stdout), MUSE_PING_TIMEOUT)
+        except TimeoutError:
+            if not delivered:
+                return f"Muse 핑이 {MUSE_PING_TIMEOUT:.0f}초 안에 답하지 않았어요"
+        body = state.account_usage
+        if body and body.get("windows") and body.get("updated_at"):
+            return _validate_muse_window(Usage(**{**body, "windows": [Window(**w) for w in body["windows"]]}))
+        if state.is_error or not delivered:
+            return f"Muse 핑 실패({(state.error or '응답 없이 종료')[:160]})"
+        return Usage(login="ok")
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.terminate()
+            try:
+                await asyncio.wait_for(proc.wait(), 4)
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+        adapter.cleanup(spec)
+        shutil.rmtree(cwd, ignore_errors=True)
 
 
 async def _fetch_muse_native(muse_bin: str, env: dict[str, str]) -> dict[str, Any]:

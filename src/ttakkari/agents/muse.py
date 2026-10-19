@@ -11,6 +11,7 @@ from typing import Any
 
 from ttakkari.agents.base import LaunchSpec, Normalized, ParseState, abs_path, truncate
 from ttakkari.config import get_settings
+from ttakkari.model_catalog import MUSE_EFFORT
 
 
 class MuseAdapter:
@@ -51,7 +52,7 @@ class MuseAdapter:
                   'role': role}
         data = {'cwd': str(spec.cwd), 'prompt': spec.prompt, 'system_note': spec.system_note,
                 'engine_session_id': spec.engine_session_id, 'model': spec.model or settings.worker_default_models['muse']['model'],
-                'effort': spec.effort or 'high', 'write_roots': policy['write_roots'],
+                'effort': MUSE_EFFORT, 'write_roots': policy['write_roots'],
                 'mcp_servers': spec.mcp_servers, 'muse_bin': settings.muse_bin,
                 'runtime_root': str(settings.muse_runtime_root),
                 'policy_file': str(private / 'policy.json'),

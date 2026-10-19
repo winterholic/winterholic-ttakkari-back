@@ -3,7 +3,7 @@ from dataclasses import replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.model_catalog import supports_effort
+from ttakkari.model_catalog import MUSE_EFFORT, supports_effort
 from ttakkari.runs import profiles
 
 STAGES = (
@@ -40,5 +40,7 @@ def conversation_key(profile: profiles.Profile) -> str:
 
 
 def effort(profile: profiles.Profile) -> str | None:
-    # Antigravity thinking is encoded in its model ID. Native fallbacks use medium.
+    # Antigravity thinking is encoded in its model ID. Native fallbacks use medium. Muse is pinned to max.
+    if profile.engine == "muse":
+        return MUSE_EFFORT
     return "medium" if supports_effort(profile.engine, profile.model) else None

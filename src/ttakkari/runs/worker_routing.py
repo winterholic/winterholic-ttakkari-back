@@ -15,7 +15,7 @@ from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
-from ttakkari.model_catalog import quota_group, supports_effort
+from ttakkari.model_catalog import MUSE_EFFORT, quota_group, supports_effort
 from ttakkari.runs import agy_models, capabilities, profiles, usage
 
 TaskType = Literal["general", "routine", "design", "verification", "reasoning"]
@@ -374,6 +374,8 @@ def conversation_key(profile: profiles.Profile) -> str:
 
 
 def effort(profile: profiles.Profile, requested: str | None) -> str | None:
+    if profile.engine == "muse":
+        return MUSE_EFFORT  # 요청·세션 값과 무관하게 고정
     if profile.model in {"opus", "gpt-6.1-sol"}:
         return "medium" if profile.model == "opus" else "high"
     if not supports_effort(profile.engine, profile.model):

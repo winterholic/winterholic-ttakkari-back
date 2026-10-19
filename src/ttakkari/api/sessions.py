@@ -17,6 +17,7 @@ from ttakkari.api.deps import Db, get_session, get_workspace
 from ttakkari.audit import record
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
+from ttakkari.model_catalog import MUSE_EFFORT
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     ArtcraftTask,
@@ -109,7 +110,7 @@ async def create_session(body: SessionIn, _: User, db: Db) -> SessionOut:
     if engine == "muse" and body.model and body.model not in get_settings().engine_models.get("muse", []):
         raise HTTPException(422, "Muse Code에서 지원하는 코딩 모델을 선택하세요.")
     s = ChatSession(workspace_id=ws.id, title=body.title or "새 작업", engine=engine,
-                    model=body.model, effort=body.effort, strict_engine=body.strict_engine,
+                    model=body.model, effort=MUSE_EFFORT if engine == "muse" else body.effort, strict_engine=body.strict_engine,
                     kind=body.kind, pool=body.pool)
     db.add(s)
     await db.commit()
@@ -201,6 +202,8 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
                     on_queued: Callable[[Run], None] | None = None) -> Run:
     """세션 대기열에 Run 을 넣고 차례가 되면 시작한다. 실행 중이어도 받는다(manager.dispatch 가 순서대로 돌린다)."""
     selected_model = model or s.model
+    if s.engine == "muse":
+        effort = MUSE_EFFORT  # Muse 는 요청이 다른 값을 줘도 max 로 고정한다
     if s.engine == "muse" and selected_model and selected_model not in get_settings().engine_models.get("muse", []):
         raise HTTPException(422, "Muse Code에서 지원하는 코딩 모델을 선택하세요.")
     if request_key:

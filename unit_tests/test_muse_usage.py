@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from ttakkari.runs.usage import muse_usage_from_probe
 
@@ -28,6 +29,12 @@ class MuseUsageTests(unittest.TestCase):
 
 
 class MuseReadOnlyUsageTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        from ttakkari.runs import usage
+        patcher = patch.object(usage, "MUSE_PING", False)  # 관측 핑은 실제 Muse 와 DB 를 쓴다
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     async def test_empty_probe_preserves_observation_without_making_it_fresh(self):
         from unittest.mock import AsyncMock, patch
         from uuid import uuid4

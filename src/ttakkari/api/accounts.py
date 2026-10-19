@@ -330,9 +330,9 @@ class AccountUsageOut(BaseModel):
 # 느린 공급자(Muse·Antigravity 하위 프로세스) 하나가 응답 전체를 붙잡지 않게 요청당 기다리는 한도.
 # 넘으면 마지막으로 본 값을 refreshing=True 로 돌려주고, 조회는 뒤에서 이어져 캐시를 채운다.
 USAGE_REQUEST_TIMEOUT = 25.0
-# 계정 하나를 직접 다시 재는 요청은 느린 경로까지 끝까지 기다린다: Muse(SDK 25초 + TUI 23초), 토큰이 만료된 Claude(갱신 호출 60초 + 조회).
+# 계정 하나를 직접 다시 재는 요청은 느린 경로까지 끝까지 기다린다: Muse(SDK 25초 + TUI 23초 + 관측 핑 45초), 토큰이 만료된 Claude(갱신 호출 60초 + 조회).
 # 이보다 길면 504 로 끝내 화면이 무한히 기다리지 않게 한다.
-REFRESH_TIMEOUT = {"muse": 60.0, "claude": 80.0}
+REFRESH_TIMEOUT = {"muse": 100.0, "claude": 80.0}
 
 
 def _muse_windows(u: usage_mod.Usage, now: float, current: bool) -> list[UsageWindowOut]:

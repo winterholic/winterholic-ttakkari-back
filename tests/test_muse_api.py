@@ -188,7 +188,8 @@ async def test_muse_window_states_for_current_failed_reset_and_partial_observati
     assert _states(failed) == {'five_hour': 'stale', 'seven_day': 'stale'}
     assert failed['stale'] is True and failed['remaining_to_limit_percent'] is None
 
-    reset = await _cached_row(client, auth, 'M idle after reset', obs(five=(100, -3600), week=(33, 86400), age=36000,
+    reset = await _cached_row(client, auth, 'M idle after reset', obs(five=(100, -3600), week=(33, 86400), age=20000,  # 5시간 창은 관측 시각 + 5시간 안에 끝난다(그 밖이면 폐기)
+                                                                   
                                                                     error='Muse /usage unavailable'))
     assert _states(reset) == {'five_hour': 'unavailable', 'seven_day': 'stale'}
     five = next(w for w in reset['windows'] if w['key'] == 'five_hour')

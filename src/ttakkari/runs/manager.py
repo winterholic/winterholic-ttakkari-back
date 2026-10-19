@@ -35,6 +35,7 @@ from ttakkari.config import get_settings
 from ttakkari.context.store import pinned_brief, recall
 from ttakkari.db import sessionmaker
 from ttakkari.deployment import Admission
+from ttakkari.model_catalog import MUSE_EFFORT
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     Artifact,
@@ -919,6 +920,9 @@ class RunManager:
                 run.model, run.effort = model, effort
             else:
                 model, effort = _launch_model(sess, run, prof, profiles[0])
+            if prof.engine == "muse":
+                # 세션·Run 에 저장된 값이 다르거나 어느 경로로 왔든 Muse 는 max 로만 띄운다(저장값도 맞춘다).
+                effort = run.effort = MUSE_EFFORT
             # 반례 7: Qwen 작업 파일에는 클라우드용 시스템 노트(5.6KB) 대신 짧은
             # 계약만 전달한다. 작업 지시(prompt)는 그대로 둔다.
             note_for_spec = (QWEN_LOCAL_ADAPTER.build_short_system_note(
@@ -1725,7 +1729,7 @@ def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first
     작업 세션이 다른 엔진으로 넘어가면 같은 급의 상대 모델(model_counterparts)로 바꾼다."""
     s = get_settings()
     if prof.engine == "muse" and sess.kind != SessionKind.orchestrator:
-        return prof.model or run.model or s.worker_default_models["muse"]["model"], run.effort or "high"
+        return prof.model or run.model or s.worker_default_models["muse"]["model"], MUSE_EFFORT
     if prof.engine == "antigravity" and sess.kind != SessionKind.orchestrator:
         model = prof.model or run.model
         return model, worker_routing.effort(prof, run.effort)

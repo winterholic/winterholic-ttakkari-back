@@ -14,6 +14,10 @@ ANTIGRAVITY_DEFAULT = "claude-sonnet-5-5-high"
 ANTIGRAVITY_QUOTA_GROUPS = ("agy_claude_and_gpt_models", "agy_gemini_models", "agy_gemini_4_argon")
 
 
+# Muse 는 생각 수준을 max 로 고정한다(사용자 결정 2026-10-19). 세션·Run·API 요청이 다른 값을 줘도 실행 직전에 이 값으로 바꾼다.
+MUSE_EFFORT = "max"
+
+
 def thinking_level(model: str) -> str:
     return model.rsplit("-", 1)[-1]
 

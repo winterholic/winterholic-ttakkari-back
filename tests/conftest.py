@@ -93,6 +93,13 @@ async def _schema_and_app():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_muse_ping(monkeypatch):
+    # Muse 관측 핑은 실제 Muse 를 띄운다. 시험은 켜진 계정이 있어도 핑하지 않는다(tests/test_muse_observation_ping.py 만 켠다).
+    from ttakkari.runs import usage
+    monkeypatch.setattr(usage, "MUSE_PING", False)
+
+
 @pytest_asyncio.fixture(autouse=True, loop_scope="session")
 async def _clean(_schema_and_app):
     await profiles.flush_persist()

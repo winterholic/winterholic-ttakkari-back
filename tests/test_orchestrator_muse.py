@@ -17,7 +17,7 @@ def test_orchestrator_launch_pair_for_muse():
     sess = ChatSession(kind=SessionKind.orchestrator, engine="auto")
     run = Run(prompt="fixture")
     prof = profiles.Profile(id=uuid.uuid4(), name="muse", engine="muse", model="muse-spark-1.3")
-    assert _launch_model(sess, run, prof, prof) == ("muse-spark-1.3", "high")
+    assert _launch_model(sess, run, prof, prof) == ("muse-spark-1.3", "max")
     assert get_settings().orchestrator_fallback_models["muse"]["model"] == "muse-spark-1.3"
 
 
@@ -72,4 +72,4 @@ async def test_orchestrator_run_fails_over_to_muse_when_natives_limited(client, 
     assert launched, "가짜 에이전트 호출이 기록되지 않음"
     argv = launched[-1]["argv"]
     assert argv[argv.index("--model") + 1] == "muse-spark-1.3"
-    assert argv[argv.index("--effort") + 1] == "high"
+    assert argv[argv.index("--effort") + 1] == "max"

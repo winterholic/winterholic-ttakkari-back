@@ -232,7 +232,7 @@ async def test_usage_from_stream_and_codex_session_log(client, auth, make_dir, m
 
     async def no_token(_d):
         return None
-    monkeypatch.setattr(usage, "_claude_token", no_token)
+    monkeypatch.setattr(usage, "_claude_oauth", no_token)
     # 기본 계정(~/.codex)이 실제 홈의 로그를 읽지 않게 한다.
     monkeypatch.setattr(usage, "HOME", HOME / "fake-home")
     usage.clear_cache()

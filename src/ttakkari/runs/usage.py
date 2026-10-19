@@ -370,11 +370,6 @@ async def _claude_oauth(config_dir: str | None) -> dict[str, Any] | None:
     return oauth if isinstance(tok, str) and tok else None
 
 
-async def _claude_token(config_dir: str | None) -> str | None:
-    oauth = await _claude_oauth(config_dir)
-    return oauth["accessToken"] if oauth else None
-
-
 def _expires_in(oauth: dict[str, Any], now: float | None = None) -> float | None:
     """access token 만료까지 남은 초(지났으면 음수). 만료 시각을 모르면 None."""
     exp = oauth.get("expiresAt")

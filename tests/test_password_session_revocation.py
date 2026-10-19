@@ -334,3 +334,27 @@ async def test_trusted_proxy_ip_boundary_and_spoof_resistance(
     )
     assert r_legit.status_code == 200
     assert verify_calls == 6
+
+
+@pytest.mark.asyncio
+async def test_login_rehash_keeps_other_device_refresh_session(client: AsyncClient, monkeypatch: pytest.MonkeyPatch):
+    from ttakkari.api import auth as auth_api
+    from ttakkari.models import Credential
+
+    limiter.reset()
+    first = await client.post("/api/auth/login", json={"password": OLD_PASSWORD})
+    other_device_cookie = first.cookies.get(COOKIE)
+    async with sessionmaker()() as db:
+        before = await db.get(Credential, 1)
+        old_hash, old_updated_at = before.password_hash, before.updated_at
+
+    monkeypatch.setattr(auth_api, "needs_rehash", lambda _h: True)
+    second = await client.post("/api/auth/login", json={"password": OLD_PASSWORD})
+    assert second.status_code == 200
+
+    async with sessionmaker()() as db:
+        after = await db.get(Credential, 1)
+        assert after.password_hash != old_hash
+        assert after.updated_at == old_updated_at
+    kept = await client.post("/api/auth/refresh", headers={"Cookie": f"{COOKIE}={other_device_cookie}"})
+    assert kept.status_code == 200

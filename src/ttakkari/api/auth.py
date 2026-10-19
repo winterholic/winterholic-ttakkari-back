@@ -92,7 +92,12 @@ async def login(body: LoginIn, request: Request, response: Response, db: Db) -> 
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 올바르지 않습니다.")
         limiter.success(ip)
         if needs_rehash(cred.password_hash):
-            cred.password_hash = await asyncio.to_thread(hash_password, body.password)
+            # updated_at 은 비밀번호 변경 시각이라 재해시로 올리면 다른 기기의 refresh 세션이 모두 무효화된다.
+            new_hash = await asyncio.to_thread(hash_password, body.password)
+            await db.execute(
+                update(Credential).where(Credential.id == 1)
+                .values(password_hash=new_hash, updated_at=Credential.updated_at)
+            )
         out = await _issue(db, request, response)
         record(db, action="auth.login", ip=ip, user_agent=request.headers.get("user-agent"))
         await db.commit()

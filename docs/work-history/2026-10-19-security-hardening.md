@@ -85,3 +85,9 @@
   - 그러나 이미 발급된 무상태(stateless) 사용자 access JWT는 만료 시각(기본 설정 15분, 운영 override 미열람)까지 유효하며, 에이전트 Run 토큰(`aud="ttakkari-agent"`)은 진행 중인 Run이 중단되지 않도록 해당 Run 만료(`run_timeout_seconds + 600`)까지 유효하다.
   - 원격제어(`remote_desktop`)의 일회성 WS 티켓(30초), 재인증 grant(10분), 이미 연결된 WebSocket 세션(최대 2시간)을 비밀번호 변경 시 즉시 회수하는 연동은 이번 범위에 포함하지 않았으며 실제 브라우저·WebSocket·실제 엔진 Run·운영 DB/설정은 건드리지 않았다.
 - **배포 보류**: 이번 단계는 출고 후보 커밋 및 원격 `main` push까지만 수행하며, 운영 배포(`request_backend_deploy`)는 별도 독립 검증 작업자의 최종 확인 후 진행한다.
+
+## 5. 7cf7c45 독립 검증 결과 (2026-10-19)
+
+- 결함 1건 수정: 로그인 중 `needs_rehash`가 참이면 ORM 대입이 `Credential.updated_at`(onupdate)을 올려, 다른 기기의 정상 refresh 세션까지 "비밀번호 변경"으로 폐기됐다. 재해시는 `updated_at`을 유지하는 UPDATE로 바꾸고 회귀 테스트를 추가했다.
+- 유지한 정책(사용자 결정 필요): 같은 IP에서 연속 5회 실패하면 올바른 비밀번호도 15분간 429다(기준선 설정 그대로). 지속적인 분산 공격 중에는 로그인만 429가 날 수 있고 refresh와 에이전트 API는 영향이 없다.
+- 전체 테스트 2278 passed, 변경 파일 ruff 통과. 저장소 전체 ruff 75건은 기준선에 있던 다른 파일의 것이다.

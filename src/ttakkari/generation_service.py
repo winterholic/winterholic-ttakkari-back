@@ -132,6 +132,13 @@ async def _reminders() -> None:
     await checklist_reminders.send_due()
 
 
+async def _notebooklm_jobs() -> None:
+    from ttakkari.config import get_settings
+    from ttakkari.notebooklm.service import service
+    # 이전 세대가 아직 돌리는 job 을 건드리지 않도록 하트비트가 오래된 것만 정리한다.
+    await service.recover_jobs(stale_seconds=get_settings().notebooklm_job_stale_seconds)
+
+
 async def _weather() -> None:
     from ttakkari.weather import service
     await service.scan()
@@ -167,7 +174,8 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
 
     jobs: list[tuple[str, object, float]] = [
-        ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds)]
+        ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds),
+        ("notebooklm-jobs", _notebooklm_jobs, 60)]
     if s.reminder_scan_seconds > 0:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:
@@ -221,6 +229,8 @@ async def lifespan(app):
         await jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
+        from ttakkari.notebooklm.service import service as notebooklm_service
+        await notebooklm_service.shutdown()
         await manager.shutdown()
         await desk_pool.shutdown()
         await qwen_service.stop()

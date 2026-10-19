@@ -27,6 +27,7 @@ from ttakkari.api import (
     host_env,
     library_insight,
     meetings,
+    notebooklm,
     notifications,
     oplogs,
     orchestrator,
@@ -156,6 +157,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             log.warning("requeued %d waiting reverse jobs after restart", wn)
     except Exception as e:  # noqa: BLE001 - 리버스 복구 실패가 기동을 막지 않게
         log.warning("reverse recovery failed: %s", e)
+    try:
+        from ttakkari.notebooklm.service import service as notebooklm_service
+        nn = await notebooklm_service.recover_jobs()
+        if nn:
+            log.warning("marked %d notebooklm jobs as interrupted after restart", nn)
+    except Exception as e:  # noqa: BLE001 - NotebookLM 복구 실패가 기동을 막지 않게
+        log.warning("notebooklm recovery failed: %s", e)
     # 한도 상태를 되살린 뒤에 대기열을 돌려야 초기화 전 계정을 다시 두드리지 않는다.
     with contextlib.suppress(Exception):
         async with sessionmaker()() as db:
@@ -213,6 +221,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await local_stt_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
+        from ttakkari.notebooklm.service import service as notebooklm_service
+        await notebooklm_service.shutdown()
         await manager.shutdown()
         await desk_pool.shutdown()
         await qwen_service.stop()
@@ -276,6 +286,9 @@ def create_app() -> FastAPI:
     app.include_router(weather_api.router)
     app.include_router(stocks.router)
     app.include_router(stocks.agent_router)
+    app.include_router(notebooklm.router)
+    app.include_router(notebooklm.agent_router)
+    notebooklm.install(app)  # code·retry_after·outcome_unknown 을 살리는 NotebookLM 오류 핸들러(ADR 0045)
     app.include_router(github_api.router)
     app.include_router(remote_desktop.router)
     github_api.install(app)  # reason·reset·retry_after 를 살리는 GithubError 전용 핸들러(ADR 0042)

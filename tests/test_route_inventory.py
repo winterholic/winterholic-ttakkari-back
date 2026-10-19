@@ -11,11 +11,20 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+from fastapi import Depends, HTTPException, Request
 from fastapi.routing import APIRoute, APIWebSocketRoute
 
+from ttakkari.api.transfers import _simple_auth
 from ttakkari.main import app
+from ttakkari.orchestrator.runtime import require_orchestrator
+from ttakkari.security.auth import require_user
 
-_AUTH_MARKERS = ("require_user", "require_orchestrator", "_simple_auth")
+_AUTH_CALLS = {
+    "require_user": require_user,
+    "require_orchestrator": require_orchestrator,
+    "_simple_auth": _simple_auth,
+}
 _SCOPE_MARKERS = ("agent_access", "user_access")
 
 ROUTE_LABELS = frozenset(
@@ -59,13 +68,13 @@ def _markers(route) -> set[str]:
     def walk(dep) -> None:
         for sub in getattr(dep, "dependencies", []) or []:
             name = getattr(getattr(sub, "call", None), "__name__", None)
-            if name in _AUTH_MARKERS or name in _SCOPE_MARKERS:
+            if (name in _AUTH_CALLS and sub.call is _AUTH_CALLS[name]) or name in _SCOPE_MARKERS:
                 found.add(name)
             if id(sub) not in seen:
                 seen.add(id(sub))
                 walk(sub)
 
-    walk(route.dependant)
+    walk(getattr(route, "dependant", route))
     return found
 
 
@@ -85,6 +94,13 @@ def _label(markers: set[str]) -> str:
 
 def _unfolded():
     for r in app.routes:
+        # FastAPI's lazy _IncludedRouter resolves nested includes with the
+        # effective path and merged dependencies. A one-level original_router
+        # walk drops routes from routers included inside another router.
+        effective = getattr(r, "effective_route_contexts", None)
+        if callable(effective):
+            yield from effective()
+            continue
         inner = getattr(getattr(r, "original_router", None), "routes", None)
         if inner is not None:
             yield from inner
@@ -97,17 +113,21 @@ def collect_routes() -> dict[tuple[str, str], str]:
     out: dict[tuple[str, str], str] = {}
     dupes: list[str] = []
     for r in _unfolded():
-        if isinstance(r, APIWebSocketRoute):
-            key = ("WS", r.path)
+        original = getattr(r, "original_route", r)
+        if isinstance(original, APIWebSocketRoute):
+            path = getattr(getattr(r, "starlette_route", None), "path", None) or original.path
+            key = ("WS", path)
             if key in out:
-                dupes.append(f"WS {r.path}")
+                dupes.append(f"WS {path}")
             out[key] = "ws-ticket"
-        elif isinstance(r, APIRoute):
-            for m in sorted(r.methods):
-                k = (m, r.path)
+        elif isinstance(original, APIRoute):
+            path = getattr(r, "path_format", None) or original.path
+            methods = getattr(r, "methods", None) or original.methods
+            for m in sorted(methods):
+                k = (m, path)
                 if k in out:
-                    dupes.append(f"{m} {r.path}")
-                out[k] = _label(_markers(r))
+                    dupes.append(f"{m} {path}")
+                out[k] = _label(_markers(r if hasattr(r, "dependant") else original))
     assert not dupes, f"중복 라우트(먼저 선언된 쪽만 동작): {dupes}"
     return out
 
@@ -147,9 +167,39 @@ def test_route_inventory_matches_manifest():
     assert not changed, f"인증·범위 선언이 바뀐 라우트: {changed}"
 
 
+def test_nested_included_router_routes_are_collected():
+    live = collect_routes()
+    github_routes = {key for key in live if key[1].startswith("/api/github/")}
+    assert len(github_routes) == 21
+    assert ("GET", "/api/github/accounts") in github_routes
+
+
 def test_route_scope_labels_valid():
     bad = {k: v for k, v in ROUTE_SCOPE.items() if v not in ROUTE_LABELS}
     assert not bad, f"허용되지 않은 범위 분류: {bad}"
+
+
+def test_auth_classification_rejects_same_named_noop_dependency():
+    async def require_user():
+        return None
+
+    route = APIRoute("/fake", lambda: None, methods=["GET"], dependencies=[Depends(require_user)])
+    assert _label(_markers(route)) == "public"
+
+
+async def test_authentication_markers_reject_missing_credentials():
+    with pytest.raises(HTTPException) as owner_error:
+        await require_user(None)
+    assert owner_error.value.status_code == 401
+
+    with pytest.raises(HTTPException) as agent_error:
+        await require_orchestrator(None, None)
+    assert agent_error.value.status_code == 401
+
+    request = Request({"type": "http", "method": "POST", "path": "/api/transfers/simple", "headers": []})
+    with pytest.raises(HTTPException) as transfer_error:
+        await _simple_auth(None, request, None)
+    assert transfer_error.value.status_code == 401
 
 
 async def test_mcp_inventory_matches_manifest():
@@ -319,6 +369,27 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/games/{game_id}"): "owner-plain",
     ("GET", "/api/games/{game_id}/builds"): "owner-plain",
     ("GET", "/api/games/{game_id}/builds/{build_id}"): "owner-plain",
+    ("GET", "/api/github/accounts"): "owner-plain",
+    ("GET", "/api/github/me"): "owner-plain",
+    ("GET", "/api/github/me/orgs"): "owner-plain",
+    ("GET", "/api/github/me/repos"): "owner-plain",
+    ("GET", "/api/github/owners/{owner}"): "owner-plain",
+    ("GET", "/api/github/owners/{owner}/repos"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/actions/runs"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/branches"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/contents"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/issues"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/issues/{number}"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/issues/{number}/comments"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/pulls"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/pulls/{number}"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/pulls/{number}/files"): "owner-plain",
+    ("GET", "/api/github/repos/{owner}/{repo}/readme"): "owner-plain",
+    ("GET", "/api/github/resolve"): "owner-plain",
     ("GET", "/api/health"): "public",
     ("GET", "/api/meetings"): "owner-plain",
     ("GET", "/api/meetings/providers"): "owner-plain",

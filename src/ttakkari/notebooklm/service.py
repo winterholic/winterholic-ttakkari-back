@@ -4,7 +4,8 @@
 - 계정당 동시 실행 수 제한(기본 2). 대기하다 시간이 지나면 Busy.
 - 읽기만 지수 백오프로 재시도(최대 3회, 대기 상한). 쓰기·질의는 한 번만 보내고 결과가 불명이면 outcome_unknown 으로 알린다.
 - 429 는 Retry-After(없으면 기본값)만큼 쿨다운으로 기록하고 그동안 Google 에 요청하지 않는다. 우회·재시도 없음.
-- 로그인 만료는 '재인증 필요'로 바꾸고 알림을 한 번 보낸다. 보호 신호는 blocked 로 멈추고 사람이 resume 할 때까지 요청하지 않는다.
+- 로그인·세션·재인증은 Google 계정 공통 모듈(google_account)이 맡는다(ADR 0051). 만료를 감지하면 계정 상태를 올리고 알림은 계정당 한 번이다.
+- 보호 신호는 이 기능만 blocked 로 멈추고 사람이 resume 할 때까지 요청하지 않는다. 쿨다운·blocked 는 다른 기능에 번지지 않는다.
 - 소스 추가는 중복 원장에 먼저 예약하고, 장시간 처리 대기는 DB job 으로 돌린다.
 """
 
@@ -28,8 +29,15 @@ from sqlalchemy.exc import IntegrityError
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
-from ttakkari.models import NotebookLMAccount, NotebookLMJob, NotebookLMSource
-from ttakkari.notebooklm import dedupe, errors, login, metrics, redact, session
+from ttakkari.google_account import login
+from ttakkari.google_account.service import service as accounts
+from ttakkari.models import (
+    GoogleAccount,
+    NotebookLMAccount,
+    NotebookLMJob,
+    NotebookLMSource,
+)
+from ttakkari.notebooklm import dedupe, errors, metrics, redact, session
 from ttakkari.notebooklm.export import build_ledger_export
 from ttakkari.notebooklm.ports import (
     NotebookDetail,
@@ -42,6 +50,7 @@ from ttakkari.notebooklm.ports import (
 log = logging.getLogger(__name__)
 
 DEFAULT_ACCOUNT = session.DEFAULT_ACCOUNT
+FEATURE_ID = "notebooklm"  # google_account.registry 에 등록되는 기능 ID
 TERMINAL = frozenset({"succeeded", "failed", "cancelled", "unknown"})
 HEARTBEAT_SECONDS = 5.0
 MAX_TITLE = 200
@@ -129,7 +138,7 @@ class NotebookLMService:
             await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         for account_id in list(self._backends):
             await self.invalidate(account_id)
-        await login.manager.shutdown()
+        await accounts.shutdown()
 
     # ------------------------------------------------------------------ 계정 상태
 
@@ -153,45 +162,65 @@ class NotebookLMService:
                 setattr(row, k, v)
             await db.commit()
 
-    def _effective(self, row: NotebookLMAccount) -> tuple[str, str | None]:
-        """저장된 상태 + 세션 파일 + 쿨다운 만료를 합친 현재 상태."""
+    def _effective(self, row: NotebookLMAccount, acct: tuple[str, str | None]) -> tuple[str, str | None]:
+        """계정 상태(로그인·재인증) + 이 기능의 저장 상태 + 쿨다운 만료를 합친 현재 상태."""
         if not get_settings().notebooklm_enabled:
             return "disabled", "NotebookLM 연결이 꺼져 있습니다."
-        if not session.exists(row.account_id):
-            return "login_required", "로그인한 적이 없습니다. 로그인 창을 열어 한 번 로그인해 주세요."
+        if acct[0] in {"disabled", "login_required", "reauth_required"}:
+            return acct  # 세션 수준 상태는 계정이 정하고 모든 기능이 같이 본다
         if row.state == "blocked":
             return "blocked", row.message
-        if row.state == "reauth_required":
-            return "reauth_required", row.message
         if row.cooldown_until and row.cooldown_until > _now():
             return "cooldown", row.message
         if row.state == "cooldown":  # 쿨다운이 끝났다. 이전에 성공한 적이 있으면 바로 쓸 수 있다.
             return ("ready", None) if row.last_ok_at else ("session_saved", "쿨다운이 끝났습니다.")
-        if row.state == "login_required":
+        if row.state in {"login_required", "reauth_required", "session_saved"}:
+            # 앞의 둘은 계정 상태가 따로 있기 전(단독 시절)의 값이다. 세션이 있으니 접속 확인 전 상태로 본다.
             return "session_saved", "세션은 저장됐지만 아직 NotebookLM 접속을 확인하지 않았습니다."
         return row.state, row.message
+
+    async def _state_now(self, db, row: NotebookLMAccount) -> tuple[str, str | None]:
+        acct = accounts.state_of(await db.get(GoogleAccount, row.account_id), row.account_id)
+        return self._effective(row, acct)
+
+    @staticmethod
+    def _summary(row: NotebookLMAccount, state: str, message: str | None) -> dict[str, Any]:
+        cooldown_left = None
+        if state == "cooldown" and row.cooldown_until:
+            cooldown_left = max(1, int((row.cooldown_until - _now()).total_seconds()))
+        return {
+            "state": state,
+            "message": message,
+            "cooldown_until": row.cooldown_until.isoformat() if state == "cooldown" and row.cooldown_until else None,
+            "retry_after": cooldown_left,
+            "last_ok_at": row.last_ok_at.isoformat() if row.last_ok_at else None,
+            "last_checked_at": row.last_checked_at.isoformat() if row.last_checked_at else None,
+            "last_error_code": row.last_error_code,
+        }
+
+    async def feature_state(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
+        """계정 화면에 싣는 이 기능의 상태 요약. 행을 만들지 않고 읽기만 한다."""
+        session.check_account(account_id)
+        async with sessionmaker()() as db:
+            row = await db.get(NotebookLMAccount, account_id) or NotebookLMAccount(
+                account_id=account_id, state="login_required")
+            state, message = await self._state_now(db, row)
+            return self._summary(row, state, message)
 
     async def status(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
         """브라우저·Google 요청 없이 마지막으로 알려진 상태만 본다."""
         s = get_settings()
         async with sessionmaker()() as db:
             row = await self._row(db, account_id)
-            state, message = self._effective(row)
-            cooldown_left = None
-            if state == "cooldown" and row.cooldown_until:
-                cooldown_left = max(1, int((row.cooldown_until - _now()).total_seconds()))
+            state, message = await self._state_now(db, row)
+            acct_state = accounts.state_of(await db.get(GoogleAccount, account_id), account_id)[0]
             backend = self._backend(account_id)
             return {
                 "account_id": account_id,
-                "state": state,
-                "message": message,
+                "account": {"id": account_id, "state": acct_state},
+                **self._summary(row, state, message),
                 "logged_in": None if state in {"session_saved", "disabled"} else state in {"ready", "cooldown"},
                 "reauth_required": state == "reauth_required",
-                "cooldown_until": row.cooldown_until.isoformat() if state == "cooldown" and row.cooldown_until else None,
-                "retry_after": cooldown_left,
-                "last_ok_at": row.last_ok_at.isoformat() if row.last_ok_at else None,
-                "last_checked_at": row.last_checked_at.isoformat() if row.last_checked_at else None,
-                "last_error_code": row.last_error_code,
                 "session": {
                     "stored": session.exists(account_id),
                     "cookie_names": session.cookie_names(account_id),  # 이름만. 값은 어디에도 없다.
@@ -213,37 +242,32 @@ class NotebookLMService:
             }
 
     async def start_login(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
-        st = await login.manager.start(account_id, on_done=self._on_login_done)
-        return st.to_dict()
+        return await accounts.start_login(account_id, feature=FEATURE_ID)
 
     async def complete_login(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
-        st = await login.manager.complete(account_id)
-        return st.to_dict()
+        return await accounts.complete_login(account_id)
 
     async def cancel_login(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
-        return (await login.manager.cancel(account_id)).to_dict()
+        return await accounts.cancel_login(account_id)
 
-    async def _on_login_done(self, st: login.LoginState) -> None:
-        if st.state != "done":
-            if not session.exists(st.account_id):
-                await self._set_state(st.account_id, "login_required", st.message or "로그인이 완료되지 않았습니다.",
-                                      reauth_notified_at=None, cooldown_until=None)
-            return
-        await self.invalidate(st.account_id)
-        await self._set_state(st.account_id, "session_saved", "로그인 세션을 저장했습니다. 접속을 확인하는 중입니다.",
-                              reauth_notified_at=None, cooldown_until=None, last_error_code=None)
-        self._last_verify.pop(st.account_id, None)
+    async def on_session_saved(self, account_id: str) -> None:
+        """계정 로그인으로 세션이 새로 저장됐다. 열린 클라이언트를 닫고 이 기능 상태를 초기화한 뒤 접속을 확인한다."""
+        await self.invalidate(account_id)
+        await self._set_state(account_id, "session_saved", "로그인 세션을 저장했습니다. 접속을 확인하는 중입니다.",
+                              cooldown_until=None, last_error_code=None)
+        self._last_verify.pop(account_id, None)
         try:
-            await self.verify(st.account_id)
+            await self.verify(account_id)
         except errors.NotebookLMError as e:
             log.info("notebooklm post-login verify: %s", e.code)
 
+    async def on_session_removed(self, account_id: str) -> None:
+        await self.invalidate(account_id)
+        await self._set_state(account_id, "login_required", "저장된 세션을 삭제했습니다.", cooldown_until=None)
+
     async def delete_session(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
         """저장된 세션 파일을 지우고 로그인 필요 상태로 돌린다(Google 쪽 로그아웃은 아님)."""
-        await self.invalidate(account_id)
-        session.delete(account_id)
-        await self._set_state(account_id, "login_required", "저장된 세션을 삭제했습니다.",
-                              reauth_notified_at=None, cooldown_until=None)
+        await accounts.delete_session(account_id)
         return await self.status(account_id)
 
     async def resume(self, account_id: str = DEFAULT_ACCOUNT) -> dict[str, Any]:
@@ -278,7 +302,7 @@ class NotebookLMService:
             raise errors.Disabled("NotebookLM 연결이 꺼져 있습니다.")
         async with sessionmaker()() as db:
             row = await self._row(db, account_id)
-            state, message = self._effective(row)
+            state, message = await self._state_now(db, row)
             cooldown_until = row.cooldown_until
         if state == "login_required":
             raise errors.AuthRequired(message or "로그인이 필요합니다.")
@@ -295,7 +319,7 @@ class NotebookLMService:
     async def _on_error(self, account_id: str, e: errors.NotebookLMError) -> None:
         if isinstance(e, errors.AuthRequired):
             await self.invalidate(account_id)
-            await self._mark_reauth(account_id, e.message)
+            await accounts.mark_reauth(account_id, e.message, feature=FEATURE_ID)
         elif isinstance(e, errors.Cooldown):
             return
         elif isinstance(e, errors.RateLimited):
@@ -314,31 +338,6 @@ class NotebookLMService:
                 row.last_error_code = e.code
                 await db.commit()
 
-    async def _mark_reauth(self, account_id: str, message: str) -> None:
-        async with sessionmaker()() as db:
-            await self._row(db, account_id)
-            now = _now()
-            # 여러 요청이 동시에 만료를 감지해도 DB에서 한 요청만 알림 발송권을 얻는다.
-            claimed = await db.execute(update(NotebookLMAccount).where(
-                NotebookLMAccount.account_id == account_id,
-                NotebookLMAccount.reauth_notified_at.is_(None),
-            ).values(state="reauth_required", message=message, last_error_code="auth_required",
-                     reauth_notified_at=now, updated_at=now))
-            notify_now = claimed.rowcount == 1
-            if not notify_now:
-                await db.execute(update(NotebookLMAccount).where(
-                    NotebookLMAccount.account_id == account_id,
-                ).values(state="reauth_required", message=message, last_error_code="auth_required", updated_at=now))
-            await db.commit()
-        metrics.incr("reauth_required")
-        if notify_now:
-            with contextlib.suppress(Exception):
-                from ttakkari.push.service import PushKind, notify
-
-                await notify(PushKind.notebooklm, "NotebookLM 다시 로그인해 주세요",
-                             "로그인 세션이 만료됐습니다. NotebookLM 화면에서 로그인 창을 열어 주세요.",
-                             url="/notebooklm", dedupe_key=f"notebooklm:reauth:{account_id}:{int(time.time() // 60)}")
-
     async def _on_success(self, account_id: str) -> None:
         async with sessionmaker()() as db:
             await self._row(db, account_id)
@@ -351,8 +350,9 @@ class NotebookLMService:
                 or_(NotebookLMAccount.state != "cooldown", NotebookLMAccount.cooldown_until.is_(None),
                     NotebookLMAccount.cooldown_until <= now),
             ).values(state="ready", message=None, last_error_code=None, cooldown_until=None,
-                     reauth_notified_at=None, last_ok_at=now, updated_at=now))
+                     last_ok_at=now, updated_at=now))
             await db.commit()
+        await accounts.mark_ok(account_id)  # 이 계정 세션이 유효하다는 증거라 계정 상태도 ready 로 올린다
 
     # ------------------------------------------------------------------ 호출 정책
 

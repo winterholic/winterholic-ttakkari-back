@@ -12,15 +12,18 @@ from sqlalchemy import select
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
+from ttakkari.google_account import login
+from ttakkari.google_account.service import service as accounts
 from ttakkari.models import (
     ChatSession,
+    GoogleAccount,
     NotebookLMAccount,
     NotebookLMJob,
     NotebookLMSource,
     Notification,
     Workspace,
 )
-from ttakkari.notebooklm import errors, login, metrics, redact, session
+from ttakkari.notebooklm import errors, metrics, redact, session
 from ttakkari.notebooklm.ports import (
     Capability,
     Citation,
@@ -163,6 +166,11 @@ async def _state(account="primary") -> NotebookLMAccount | None:
         return await db.get(NotebookLMAccount, account)
 
 
+async def _account(account="primary") -> GoogleAccount | None:
+    async with sessionmaker()() as db:
+        return await db.get(GoogleAccount, account)
+
+
 async def _wait_job(client, auth, job_id, until=("succeeded", "failed", "cancelled", "unknown"), seconds=5.0):
     for _ in range(int(seconds / 0.02)):
         job = (await client.get(f"/api/notebooklm/jobs/{job_id}", headers=auth)).json()
@@ -220,7 +228,7 @@ async def test_login_required_blocks_calls_before_google(client, auth):
 async def test_login_window_endpoints_use_manager(client, auth, fake, monkeypatch):
     started = {}
 
-    async def fake_start(account_id, on_done=None):
+    async def fake_start(account_id, on_done=None, feature=None):
         started["id"] = account_id
         return login.LoginState(account_id=account_id, state="waiting", message="창이 열렸습니다.")
 
@@ -249,7 +257,7 @@ async def test_session_expiry_marks_reauth_and_notifies_once(client, auth, fake)
     fake.plan["list_notebooks"] = [errors.AuthRequired("expired")]
     r = await client.get("/api/notebooklm/notebooks", headers=auth)
     assert r.status_code == 409 and r.json()["code"] == "auth_required"
-    row = await _state()
+    row = await _account()  # 재인증 필요는 계정 수준 상태다
     assert row.state == "reauth_required" and row.reauth_notified_at is not None
     assert ("aclose", ()) in fake.calls  # 만료된 클라이언트를 닫았다
     before = fake.count("list_notebooks")
@@ -258,13 +266,14 @@ async def test_session_expiry_marks_reauth_and_notifies_once(client, auth, fake)
         assert again.status_code == 409
     assert fake.count("list_notebooks") == before
     async with sessionmaker()() as db:
-        rows = list(await db.scalars(select(Notification).where(Notification.kind == "push.notebooklm")))
+        rows = list(await db.scalars(select(Notification).where(Notification.kind == "push.google_account")))
     assert len(rows) == 1 and "로그인" in rows[0].title
     status = (await client.get("/api/notebooklm/auth/status", headers=auth)).json()
     assert status["state"] == "reauth_required" and status["reauth_required"] is True
 
     # 다시 로그인하면 해제되고 접속 확인으로 ready 가 된다
-    await service._on_login_done(login.LoginState(account_id="primary", state="done"))
+    await accounts._on_login_done(login.LoginState(account_id="primary", state="done"))
+    assert (await _account()).state == "ready" and (await _account()).reauth_notified_at is None
     assert (await _state()).state == "ready"
     assert (await client.get("/api/notebooklm/notebooks", headers=auth)).status_code == 200
 
@@ -272,7 +281,7 @@ async def test_session_expiry_marks_reauth_and_notifies_once(client, auth, fake)
 async def test_concurrent_session_expiry_sends_one_notification(fake, monkeypatch):
     import ttakkari.push.service as push_service
 
-    original_row = service._row
+    original_row = accounts._row
     barrier = asyncio.Barrier(2)
     calls = 0
 
@@ -286,10 +295,10 @@ async def test_concurrent_session_expiry_sends_one_notification(fake, monkeypatc
         calls += 1
         return {"sent": 0, "removed": 0, "failed": 0}
 
-    monkeypatch.setattr(service, "_row", synchronized_row)
+    monkeypatch.setattr(accounts, "_row", synchronized_row)
     monkeypatch.setattr(push_service, "notify", fake_notify)
-    await asyncio.gather(service._mark_reauth("primary", "expired"),
-                         service._mark_reauth("primary", "expired"))
+    await asyncio.gather(accounts.mark_reauth("primary", "expired", feature="notebooklm"),
+                         accounts.mark_reauth("primary", "expired", feature="notebooklm"))
     assert calls == 1
 
 

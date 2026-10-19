@@ -1,4 +1,4 @@
-"""NotebookLM 1회 로그인 창(ADR 0045). 설치된 Chrome + 전용 프로필 + 2단계 단기 루프백 CDP.
+"""Google 계정 1회 로그인 창(ADR 0045, 0051). 설치된 Chrome + 계정 전용 프로필 + 2단계 단기 루프백 CDP.
 
 1단계(로그인): 사람이 보이는 Chrome 창에서 Google 로그인을 직접 한 번 한다. 원격 디버깅, 자동화 플래그, CDP 접속을 모두 쓰지 않는다.
 따까리는 창 안에서 아무것도 클릭·입력하지 않는다.
@@ -6,6 +6,8 @@
 2단계(쿠키 추출): 사용자가 창을 닫거나 '로그인 완료'를 누르면 1단계 창을 닫고, 같은 프로필로 headless Chrome을
 --remote-debugging-port 와 루프백 주소(127.0.0.1)로 잠깐 띄워 Storage.getCookies 로 쿠키를 읽은 뒤 즉시 종료한다.
 보호 신호(CAPTCHA·보안 확인 등)가 감지되거나 로그인이 완료되지 않았으면 세션을 저장하지 않고 안내한다.
+
+로그인 창이 여는 주소와 완료 판정 호스트는 로그인을 시작한 기능(consumer)이 정한다. 같은 계정의 세션은 모든 기능이 공유한다.
 """
 
 from __future__ import annotations
@@ -25,12 +27,10 @@ from urllib.parse import urlparse
 import psutil
 
 from ttakkari.config import get_settings
-from ttakkari.notebooklm import errors, metrics, redact, session
+from ttakkari.google_account import errors, metrics, redact, registry, session
 
 log = logging.getLogger(__name__)
 
-LOGIN_URL = "https://notebooklm.google.com/"
-APP_HOSTS = ("notebooklm.google.com", "notebook.google.com")
 POLL_SECONDS = 2.0
 STABLE_POLLS = 2  # 로그인 조건이 연속으로 이 횟수만큼 맞아야 저장한다(쿠키가 자리 잡을 시간)
 _PROTECTION_HINTS = (
@@ -49,6 +49,7 @@ class LoginState:
     message: str = ""
     started_at: float | None = None
     finished_at: float | None = None
+    feature: str | None = None  # 로그인을 시작한 기능(없으면 계정 관리 화면)
     cookie_names: list[str] = field(default_factory=list)
 
     @property
@@ -60,6 +61,7 @@ class LoginState:
             "state": self.state,
             "message": self.message,
             "active": self.active,
+            "feature": self.feature,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
         }
@@ -67,8 +69,8 @@ class LoginState:
 
 def find_chrome() -> Path | None:
     s = get_settings()
-    if s.notebooklm_chrome_bin:
-        p = Path(s.notebooklm_chrome_bin).expanduser()
+    if s.google_chrome_bin:
+        p = Path(s.google_chrome_bin).expanduser()
         return p if p.exists() else None
     mac = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
     if mac.exists():
@@ -80,16 +82,20 @@ def find_chrome() -> Path | None:
     return None
 
 
-def profile_chrome_pids() -> list[int]:
-    """전용 프로필을 쓰는 Chrome 프로세스(이전 실행이 남긴 창 포함)."""
-    needle = f"--user-data-dir={get_settings().notebooklm_profile_dir}"
+def profile_chrome_pids(account_id: str = session.DEFAULT_ACCOUNT) -> list[int]:
+    """그 계정의 전용 프로필을 쓰는 Chrome 프로세스(이전 실행이 남긴 창 포함). 옛 NotebookLM 경로로 뜬 창도 센다."""
+    paths = {str(session.profile_dir(account_id))}
+    legacy = session.legacy_profile_path()
+    if legacy is not None and account_id == session.DEFAULT_ACCOUNT:
+        paths.add(str(legacy))
+    needles = {f"--user-data-dir={p}" for p in paths}
     found: list[int] = []
     for p in psutil.process_iter(["pid", "cmdline"]):
         try:
             cmd = p.info.get("cmdline") or []
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
-        if cmd and "chrom" in (cmd[0] or "").lower() and any(needle in (c or "") for c in cmd):
+        if cmd and "chrom" in (cmd[0] or "").lower() and any(n in (c or "") for n in needles for c in cmd):
             found.append(p.info["pid"])
     return found
 
@@ -108,12 +114,16 @@ def protection_signal(urls: list[str]) -> bool:
     return False
 
 
-def login_complete(urls: list[str], cookies: list[dict[str, Any]]) -> bool:
-    """NotebookLM 앱 화면에 도착했고(Google 로그인·확인 화면이 아님) 필수 세션 쿠키가 있으면 로그인 완료."""
-    on_app = any((urlparse(u).hostname or "") in APP_HOSTS for u in urls)
+def login_complete(urls: list[str], cookies: list[dict[str, Any]], target: registry.LoginTarget | None = None) -> bool:
+    """대상 앱 화면에 도착했고(Google 로그인·확인 화면이 아님) 필수 세션 쿠키가 있으면 로그인 완료.
+
+    target 이 없으면 등록된 어느 기능의 앱 화면이든 도착한 것으로 본다."""
+    hosts = target.hosts if target is not None else registry.all_app_hosts()
+    required = (*session.REQUIRED_COOKIES, *(target.required_cookies if target is not None else ()))
+    on_app = any((urlparse(u).hostname or "") in hosts for u in urls)
     on_accounts = any((urlparse(u).hostname or "") == "accounts.google.com" for u in urls)
     names = {c.get("name") for c in cookies if session.is_google(c.get("domain", ""))}
-    return on_app and not on_accounts and all(n in names for n in session.REQUIRED_COOKIES)
+    return on_app and not on_accounts and all(n in names for n in required)
 
 
 class _Browser:
@@ -158,7 +168,7 @@ class _Browser:
         return (await self.send("Storage.getCookies")).get("cookies", [])
 
 
-async def _launch(chrome: Path, profile: Path) -> subprocess.Popen:
+async def _launch(chrome: Path, profile: Path, url: str) -> subprocess.Popen:
     """보이는 일반 Chrome 창을 전용 프로필로 띄운다(원격 디버깅·자동화 플래그 없음)."""
     profile.mkdir(parents=True, exist_ok=True)
     profile.chmod(0o700)
@@ -169,16 +179,17 @@ async def _launch(chrome: Path, profile: Path) -> subprocess.Popen:
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--no-default-browser-check",
-            LOGIN_URL,
+            url,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     metrics.incr("browser_launches")
+    metrics.incr("browser_launches.visible")
     return proc
 
 
-async def _launch_headless(chrome: Path, profile: Path) -> tuple[subprocess.Popen, str]:
+async def _launch_headless(chrome: Path, profile: Path, url: str) -> tuple[subprocess.Popen, str]:
     """쿠키 추출용 headless Chrome을 루프백 CDP로 잠깐 띄우고 주소를 읽는다."""
     profile.mkdir(parents=True, exist_ok=True)
     profile.chmod(0o700)
@@ -193,13 +204,14 @@ async def _launch_headless(chrome: Path, profile: Path) -> tuple[subprocess.Pope
             "--disable-gpu",
             "--no-first-run",
             "--no-default-browser-check",
-            LOGIN_URL,
+            url,
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.PIPE,
         text=True,
     )
     metrics.incr("browser_launches")
+    metrics.incr("browser_launches.headless")
     assert proc.stderr is not None
 
     def read() -> str:
@@ -219,12 +231,14 @@ async def _launch_headless(chrome: Path, profile: Path) -> tuple[subprocess.Pope
     return proc, ws_url
 
 
-async def _extract_session(chrome: Path, profile: Path) -> tuple[list[str], list[dict[str, Any]]]:
+async def _extract_session(
+    chrome: Path, profile: Path, target: registry.LoginTarget,
+) -> tuple[list[str], list[dict[str, Any]]]:
     """1단계 창이 종료된 뒤 headless Chrome을 잠깐 띄워 URL과 쿠키를 수집한다."""
     proc: subprocess.Popen | None = None
     browser: _Browser | None = None
     try:
-        proc, ws_url = await _launch_headless(chrome, profile)
+        proc, ws_url = await _launch_headless(chrome, profile, target.url)
         browser = _Browser(ws_url)
         await browser.open()
         deadline = time.monotonic() + 5.0
@@ -233,7 +247,7 @@ async def _extract_session(chrome: Path, profile: Path) -> tuple[list[str], list
         while time.monotonic() < deadline:
             urls = await browser.page_urls()
             cookies = await browser.cookies()
-            if login_complete(urls, cookies) or protection_signal(urls):
+            if login_complete(urls, cookies, target) or protection_signal(urls):
                 break
             await asyncio.sleep(0.5)
         return urls, cookies
@@ -272,7 +286,7 @@ async def _close_gracefully(browser: _Browser | None, proc: subprocess.Popen | N
 
 
 class LoginManager:
-    """계정별 로그인 창 수명주기. 같은 계정에 창은 하나만 연다(중복 실행 잠금)."""
+    """계정별 로그인 창 수명주기. 같은 계정에 창은 하나만 연다(중복 실행 잠금). 계정이 다르면 동시에 열 수 있다."""
 
     def __init__(self) -> None:
         self._states: dict[str, LoginState] = {}
@@ -283,23 +297,30 @@ class LoginManager:
     def state(self, account_id: str) -> LoginState:
         return self._states.get(account_id) or LoginState(account_id=account_id)
 
-    async def start(self, account_id: str, on_done=None) -> LoginState:
+    async def start(self, account_id: str, on_done=None, feature: str | None = None) -> LoginState:
         session.check_account(account_id)
         s = get_settings()
-        if not s.notebooklm_enabled:
-            raise errors.Disabled("NotebookLM 연결이 꺼져 있습니다.")
+        if not s.google_accounts_enabled:
+            raise errors.Disabled("Google 계정 연결이 꺼져 있습니다.")
+        target = registry.login_target(feature)
+        if target.feature is not None and not registry.get(target.feature).enabled():
+            raise errors.Disabled(f"{target.label} 연결이 꺼져 있습니다.")
         if self.state(account_id).active:
             raise errors.Busy("로그인 창이 이미 열려 있습니다. 그 창에서 로그인을 마치거나 취소해 주세요.")
-        if await asyncio.to_thread(profile_chrome_pids):
-            raise errors.Busy("이전 NotebookLM 로그인 창이 남아 있습니다. 창을 닫거나 로그인 취소를 눌러 주세요.")
+        in_use = bool(await asyncio.to_thread(profile_chrome_pids, account_id))
+        if in_use:
+            raise errors.Busy("이전 Google 로그인 창이 남아 있습니다. 창을 닫거나 로그인 취소를 눌러 주세요.")
+        await asyncio.to_thread(session.adopt_legacy_profile, account_id, in_use=False)
         chrome = await asyncio.to_thread(find_chrome)
         if chrome is None:
             raise errors.Upstream("설치된 Google Chrome을 찾지 못했습니다.")
-        st = LoginState(account_id=account_id, state="starting", message="로그인 창을 여는 중입니다.", started_at=time.time())
+        st = LoginState(account_id=account_id, state="starting", message="로그인 창을 여는 중입니다.",
+                        started_at=time.time(), feature=target.feature)
         self._states[account_id] = st
         self._cancel[account_id] = asyncio.Event()
         self._complete[account_id] = asyncio.Event()
-        task = asyncio.create_task(self._run(st, chrome, on_done))
+        metrics.incr("logins.started")
+        task = asyncio.create_task(self._run(st, chrome, target, on_done))
         self._tasks[account_id] = task
         return st
 
@@ -326,8 +347,8 @@ class LoginManager:
                 with contextlib.suppress(Exception):
                     await asyncio.wait_for(asyncio.shield(task), 20)
             return self.state(account_id)
-        # 이전 프로세스가 남긴 창: 전용 프로필을 쓰는 Chrome 만 종료한다.
-        pids = await asyncio.to_thread(profile_chrome_pids)
+        # 이전 프로세스가 남긴 창: 그 계정의 전용 프로필을 쓰는 Chrome 만 종료한다.
+        pids = await asyncio.to_thread(profile_chrome_pids, account_id)
         for pid in pids:
             with contextlib.suppress(psutil.Error):
                 psutil.Process(pid).terminate()
@@ -344,20 +365,19 @@ class LoginManager:
         if tasks:
             await asyncio.wait(tasks, timeout=20)
 
-    async def _run(self, st: LoginState, chrome: Path, on_done) -> None:
+    async def _run(self, st: LoginState, chrome: Path, target: registry.LoginTarget, on_done) -> None:
         s = get_settings()
         cancel = self._cancel[st.account_id]
         complete = self._complete[st.account_id]
-        deadline = time.monotonic() + s.notebooklm_login_timeout_seconds
+        deadline = time.monotonic() + s.google_login_timeout
+        profile = session.profile_dir(st.account_id)
         proc: subprocess.Popen | None = None
         try:
             # 1단계: 보이는 일반 Chrome 창 띄우기 (원격 디버깅 없음)
-            proc = await _launch(chrome, s.notebooklm_profile_dir)
-            st.state, st.message = (
-                "waiting",
-                "열린 Chrome 창에서 Google 로그인을 한 번 해 주세요. "
-                "마친 뒤 창을 닫거나 화면의 '로그인 완료'를 눌러 주세요.",
-            )
+            proc = await _launch(chrome, profile, target.url)
+            st.state = "waiting"
+            st.message = ("열린 Chrome 창에서 Google 로그인을 한 번 해 주세요. "
+                          "마친 뒤 창을 닫거나 화면의 '로그인 완료'를 눌러 주세요.")
             while True:
                 if cancel.is_set():
                     st.state, st.message = "cancelled", "로그인을 취소하고 창을 닫았습니다."
@@ -378,7 +398,7 @@ class LoginManager:
                     await asyncio.to_thread(proc.wait, 5)
 
             # 잔여 프로세스가 프로필 락을 쥐고 있지 않도록 확인
-            pids = await asyncio.to_thread(profile_chrome_pids)
+            pids = await asyncio.to_thread(profile_chrome_pids, st.account_id)
             for pid in pids:
                 with contextlib.suppress(psutil.Error):
                     psutil.Process(pid).terminate()
@@ -387,8 +407,8 @@ class LoginManager:
 
             # 2단계: headless Chrome으로 쿠키 추출
             st.state, st.message = "saving", "로그인 확인 후 세션을 저장하는 중입니다."
-            urls, cookies = await _extract_session(chrome, s.notebooklm_profile_dir)
-            if login_complete(urls, cookies):
+            urls, cookies = await _extract_session(chrome, profile, target)
+            if login_complete(urls, cookies, target):
                 st.cookie_names = await asyncio.to_thread(session.save_cookies, st.account_id, cookies)
                 st.state, st.message = "done", "로그인이 끝났습니다. 세션을 저장했습니다."
             elif protection_signal(urls):
@@ -401,16 +421,18 @@ class LoginManager:
         except asyncio.CancelledError:
             st.state, st.message = "cancelled", "로그인을 중단했습니다."
             raise
-        except errors.NotebookLMError as e:
+        except errors.GoogleAccountError as e:
             st.state, st.message = "failed", redact.mask(e.message)
         except Exception as e:  # noqa: BLE001 -- 원문 대신 클래스 이름만 남긴다
             st.state, st.message = "failed", f"로그인 창 처리에 실패했습니다({type(e).__name__})."
-            log.warning("notebooklm login failed: %s", redact.safe_error(e))
+            log.warning("google account login failed: %s", redact.safe_error(e))
         finally:
             if proc is not None and proc.poll() is None:
                 await _stop(proc)
             st.finished_at = time.time()
-            metrics.event("login_finished", state=st.state, seconds=int(st.finished_at - (st.started_at or st.finished_at)))
+            metrics.incr(f"logins.{st.state}")
+            metrics.event("login_finished", state=st.state, feature=st.feature,
+                          seconds=int(st.finished_at - (st.started_at or st.finished_at)))
             if on_done is not None:
                 with contextlib.suppress(Exception):
                     await on_done(st)

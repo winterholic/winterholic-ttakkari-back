@@ -15,7 +15,8 @@ os.environ.setdefault("TTAKKARI_NO_ENV_FILE", "1")
 import pytest
 
 from ttakkari.config import get_settings
-from ttakkari.notebooklm import dedupe, errors, login, redact, session
+from ttakkari.google_account import login
+from ttakkari.notebooklm import dedupe, errors, redact, session
 from ttakkari.notebooklm.adapters import notebooklm_py as adapter
 from ttakkari.notebooklm.export import build_ledger_export
 from ttakkari.notebooklm.ports import (
@@ -329,16 +330,16 @@ def fake_login(home, monkeypatch):
     proc = _FakeProc()
     headless_proc = _FakeProc()
 
-    async def fake_launch(chrome, profile):
+    async def fake_launch(chrome, profile, url):
         return proc
 
-    async def fake_launch_headless(chrome, profile):
+    async def fake_launch_headless(chrome, profile, url):
         return headless_proc, "ws://127.0.0.1:9/devtools/browser/x"
 
     monkeypatch.setattr(login, "_launch", fake_launch)
     monkeypatch.setattr(login, "_launch_headless", fake_launch_headless)
     monkeypatch.setattr(login, "find_chrome", lambda: login.Path("/bin/true"))
-    monkeypatch.setattr(login, "profile_chrome_pids", list)
+    monkeypatch.setattr(login, "profile_chrome_pids", lambda account_id="primary": [])
     monkeypatch.setattr(login, "_Browser", _FakeBrowser)
     monkeypatch.setattr(login, "POLL_SECONDS", 0.01)
     _FakeBrowser.closed, _FakeBrowser.cookie_reads = False, 0
@@ -432,7 +433,7 @@ async def test_login_timeout_skips_extraction(fake_login, monkeypatch):
 
 
 async def test_login_refuses_when_leftover_window_exists(fake_login, monkeypatch):
-    monkeypatch.setattr(login, "profile_chrome_pids", lambda: [123])
+    monkeypatch.setattr(login, "profile_chrome_pids", lambda account_id="primary": [123])
     with pytest.raises(errors.Busy):
         await login.manager.start("primary")
 
@@ -449,13 +450,13 @@ def test_launch_args_have_no_remote_debugging_flag(home, monkeypatch):
         return P()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    _proc = asyncio.run(login._launch(login.Path("/chrome"), get_settings().notebooklm_profile_dir))
+    _proc = asyncio.run(login._launch(login.Path("/chrome"), session.profile_dir("primary"), "https://notebooklm.google.com/"))
     argv = seen["argv"]
     # 1단계 로그인 창: 원격 디버깅, 자동화 플래그가 절대 없어야 한다 (Google 로그인 거부 방지)
     assert not any("remote-debugging" in a for a in argv)
     assert not any("headless" in a or "automation" in a for a in argv)
-    assert f"--user-data-dir={get_settings().notebooklm_profile_dir}" in argv
-    assert stat.S_IMODE(get_settings().notebooklm_profile_dir.stat().st_mode) == 0o700
+    assert f"--user-data-dir={session.profile_dir("primary")}" in argv
+    assert stat.S_IMODE(session.profile_dir("primary").stat().st_mode) == 0o700
 
 
 def test_launch_headless_args_bind_loopback_and_use_dedicated_profile(home, monkeypatch):
@@ -472,18 +473,18 @@ def test_launch_headless_args_bind_loopback_and_use_dedicated_profile(home, monk
         return P()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    _proc, ws = asyncio.run(login._launch_headless(login.Path("/chrome"), get_settings().notebooklm_profile_dir))
+    _proc, ws = asyncio.run(login._launch_headless(login.Path("/chrome"), session.profile_dir("primary"), "https://notebooklm.google.com/"))
     argv = seen["argv"]
     # 2단계 쿠키 추출: headless, 루프백 CDP 포트 사용
     assert "--headless=new" in argv
     assert "--remote-debugging-address=127.0.0.1" in argv and "--remote-debugging-port=0" in argv
-    assert f"--user-data-dir={get_settings().notebooklm_profile_dir}" in argv
+    assert f"--user-data-dir={session.profile_dir("primary")}" in argv
     assert ws.startswith("ws://127.0.0.1:")
-    assert stat.S_IMODE(get_settings().notebooklm_profile_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(session.profile_dir("primary").stat().st_mode) == 0o700
 
 
 def test_login_does_not_launch_when_profile_permissions_cannot_be_set(home, monkeypatch):
-    profile = get_settings().notebooklm_profile_dir
+    profile = session.profile_dir("primary")
     original_chmod = login.Path.chmod
     launched = False
 
@@ -500,5 +501,5 @@ def test_login_does_not_launch_when_profile_permissions_cannot_be_set(home, monk
     monkeypatch.setattr(login.Path, "chmod", fail_for_profile)
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
     with pytest.raises(PermissionError):
-        asyncio.run(login._launch(login.Path("/chrome"), profile))
+        asyncio.run(login._launch(login.Path("/chrome"), profile, "https://notebooklm.google.com/"))
     assert not launched

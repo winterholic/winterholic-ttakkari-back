@@ -1040,9 +1040,30 @@ class TossInvestSyncRun(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class GoogleAccount(Base):
+    """Google 계정 공통 상태(ADR 0051). 로그인 세션은 계정 단위이고 NotebookLM 같은 기능들이 공유한다.
+    지금은 계정 1개(`primary`)만 쓰지만 모든 키에 account_id 를 둔다.
+    쿠키·토큰은 DB 에 두지 않는다(세션 파일은 ~/.ttakkari/google-accounts 아래 소유자 전용).
+    기능별 쿨다운·보호 신호(blocked) 같은 상태는 이 표가 아니라 각 기능의 표에 둔다."""
+
+    __tablename__ = "google_accounts"
+    account_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    label: Mapped[str | None] = mapped_column(String(80))
+    state: Mapped[str] = mapped_column(String(20), default="login_required")  # login_required|session_saved|ready|reauth_required
+    message: Mapped[str | None] = mapped_column(Text)
+    last_error_code: Mapped[str | None] = mapped_column(String(40))
+    last_login_at: Mapped[datetime | None]
+    last_ok_at: Mapped[datetime | None]
+    last_checked_at: Mapped[datetime | None]
+    reauth_notified_at: Mapped[datetime | None]
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class NotebookLMAccount(Base):
-    """NotebookLM 연동 계정 상태(ADR 0045). 지금은 계정 1개(`primary`)만 쓰지만 모든 키에 account_id 를 둔다.
-    쿠키·토큰은 DB 에 두지 않는다(세션 파일은 ~/.ttakkari/notebooklm 아래 소유자 전용)."""
+    """NotebookLM 기능 상태(ADR 0045, 0051). 계정 키는 Google 계정 ID(`primary`)와 같다.
+    로그인·재인증은 google_accounts 가 맡고, 여기에는 이 기능만의 쿨다운·보호 신호(blocked)·접속 확인 이력을 둔다.
+    reauth_notified_at 은 공통 표로 옮겼지만 무중단 배포 중 이전 세대가 읽으므로 컬럼은 남긴다."""
 
     __tablename__ = "notebooklm_accounts"
     account_id: Mapped[str] = mapped_column(String(32), primary_key=True)

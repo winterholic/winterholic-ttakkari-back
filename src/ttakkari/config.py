@@ -380,6 +380,25 @@ class Settings(BaseSettings):
             return Path(self.notebooklm_profile).expanduser().resolve()
         return self.home / "notebooklm-chrome"
 
+    # Google 계정 공통 모듈(ADR 0051). 로그인·세션은 NotebookLM 같은 개별 기능이 아니라 Google 계정 단위로 둔다.
+    # 세션·전용 Chrome 프로필은 <home>/google-accounts/<account_id>/ 에 소유자 전용 권한으로 둔다.
+    # 아래 둘을 비우면 기존 notebooklm_* 값을 이어서 쓴다(이미 설정해 둔 환경을 바꾸지 않기 위해).
+    google_accounts_enabled: bool = True
+    google_account_chrome_bin: str | None = None
+    google_account_login_timeout_seconds: int | None = Field(default=None, ge=60, le=1800)
+
+    @property
+    def google_accounts_dir(self) -> Path:
+        return self.home / "google-accounts"
+
+    @property
+    def google_chrome_bin(self) -> str | None:
+        return self.google_account_chrome_bin or self.notebooklm_chrome_bin
+
+    @property
+    def google_login_timeout(self) -> int:
+        return self.google_account_login_timeout_seconds or self.notebooklm_login_timeout_seconds
+
     # 게임 스튜디오(ADR 0046, docs/design/game-studio.md). 게임 프로젝트는 각자 git 저장소이며 이 아래 <game_slug>/ 에 둔다.
     # allowed_roots(~/development) 안이어야 워크스페이스로 등록된다. 빌드 스테이징·불변 스냅샷은 에이전트가 쓸 수 없는 data_dir 에 둔다.
     games_root: Path = HOME / "development/projects/games"

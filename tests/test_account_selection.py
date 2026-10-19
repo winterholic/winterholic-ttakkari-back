@@ -320,7 +320,8 @@ async def test_orchestrator_balances_usage_on_next_turn_and_resumes_saved_conver
     third = await run_to_end(client, auth, sess["id"], "continue alpha")
     assert third["profile"] == mine["name"]
     call = agent_calls()[-1]
-    assert call["argv"][1] == "resume"
+    argv = call["argv"]
+    assert argv[0] == "exec" and argv.index("-p") < argv.index("resume")
     assert "remember bravo" in call["argv"][-1]
 
 async def test_workers_spread_over_idle_accounts(client, auth, make_dir):

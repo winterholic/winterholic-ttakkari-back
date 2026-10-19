@@ -540,7 +540,7 @@ async def test_codex_engine_new_then_resume(client, auth, new_session):
     assert r2["status"] == "succeeded"
     a1, a2 = [c["argv"] for c in agent_calls()]
     assert a1[0] == "exec" and "resume" not in a1[:2] and "-C" in a1
-    assert a2[:2] == ["exec", "resume"] and a2[a2.index("--") - 1] == thread
+    assert a2[0] == "exec" and "resume" in a2 and a2[a2.index("--") - 1] == thread
     assert a2[-1] == "again"
     async with sessionmaker()() as db:
         assert (await db.scalar(select(ChatSession.engine_session_id))) == thread

@@ -152,16 +152,18 @@ class CodexAdapter:
                 approvals |= set(BROWSER_TOOLS)
             entry["approvals"] = approvals
             profile_servers[name] = entry
+        command = [s.codex_bin, "exec"]
         if profile_servers:
             # SEC2-AGT-01: 서버 env(세션 토큰)는 argv 가 아닌 프로파일 파일로 전달한다.
-            opts += ["-p", self._write_profile(spec, extra_env, profile_servers)]
+            # resume 은 -p 를 받지 않으므로 부모 exec 에서 프로파일을 읽게 한다.
+            command += ["-p", self._write_profile(spec, extra_env, profile_servers)]
         if spec.model:
             opts += ["-m", spec.model]
         if spec.effort:
             opts += ["-c", f'model_reasoning_effort="{spec.effort}"']
         if spec.engine_session_id:
-            return [s.codex_bin, "exec", "resume", *opts, spec.engine_session_id, "--", spec.prompt]
-        return [s.codex_bin, "exec", *opts, "-C", str(spec.cwd), "--", spec.prompt]
+            return [*command, "resume", *opts, spec.engine_session_id, "--", spec.prompt]
+        return [*command, *opts, "-C", str(spec.cwd), "--", spec.prompt]
 
     def parse_line(self, obj: dict[str, Any], state: ParseState, cwd: Path) -> list[Normalized]:
         t = obj.get("type")

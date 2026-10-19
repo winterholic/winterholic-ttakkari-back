@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """codex exec --json 을 흉내내는 가짜 엔진. 테스트 전용.
 
-호출 형태: codex exec [resume] <opts...> [thread_id] -- <prompt>
+호출 형태: codex exec [-p profile] [resume] <opts...> [thread_id] -- <prompt>
 """
 import json
 import os
@@ -146,7 +146,10 @@ def main():
         return app_server(argv)
     dash = argv.index("--")
     prompt = " ".join(argv[dash + 1:])
-    resume = len(argv) > 1 and argv[1] == "resume"
+    resume = "resume" in argv[:dash]
+    if resume and "-p" in argv and argv.index("-p") > argv.index("resume"):
+        print("error: unexpected argument '-p' found", file=sys.stderr)
+        return 2
     thread = argv[dash - 1] if resume else str(uuid.uuid4())
 
     log = os.environ.get("FAKE_AGENT_LOG")

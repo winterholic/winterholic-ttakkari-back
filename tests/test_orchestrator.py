@@ -161,7 +161,8 @@ async def test_auto_engine_falls_back_to_codex_on_usage_limit_and_keeps_using_it
     assert second["status"] == "succeeded" and second["profile"] == "codex"
     calls = agent_calls()[before:]
     assert [c["engine"] for c in calls] == ["codex"]
-    assert calls[0]["argv"][1] == "resume"
+    argv = calls[0]["argv"]
+    assert argv[0] == "exec" and argv.index("-p") < argv.index("resume")
 
 
 async def test_real_claude_session_limit_falls_back_to_codex_with_handoff(client, auth, make_dir):

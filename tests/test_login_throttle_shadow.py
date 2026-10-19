@@ -540,3 +540,88 @@ async def test_shadow_survives_restart_between_attempts(client):
     s = await row("src:127.0.0.1")
     assert s.budget == lt.BUDGET - 5 + 0 and s.budget == 0 and s.level == 1  # 재시작 전후 5건이 한 예산에 누적
     assert len(await attempts()) == 5
+
+
+# ------------------------------------------------------------ shadow 가 로그인 지연을 만들지 않는다(풀 포화·느린 DB)
+
+async def timed_wrong_logins(client, n: int) -> list[float]:
+    import time
+    limiter.reset()
+    out = []
+    for i in range(n):
+        t = time.perf_counter()
+        r = await post_login(client, f"wrong-latency-{i}x")
+        out.append(time.perf_counter() - t)
+        assert r.status_code == 401
+    return out
+
+
+async def test_slow_shadow_store_is_bounded_dropped_and_never_delays_login(client, monkeypatch):
+    calls = {"now": 0, "max": 0}
+
+    async def stuck_reserve(*a, **k):
+        calls["now"] += 1
+        calls["max"] = max(calls["max"], calls["now"])
+        try:
+            await asyncio.sleep(30)  # 포화된 DB 를 흉내: 예약이 끝나지 않는다
+        finally:
+            calls["now"] -= 1
+
+    monkeypatch.setattr(lt, "reserve", stuck_reserve)
+    monkeypatch.setattr(lt, "SHADOW_TIMEOUT_SECONDS", 0.3)
+    await set_mode("shadow")
+    base = await timed_wrong_logins(client, 5)  # shadow 가 막힌 상태에서의 로그인 지연
+    await set_mode("off")
+    off = await timed_wrong_logins(client, 5)
+    await set_mode("shadow")
+    # 로그인은 shadow 시간 상한(0.3초)을 기다리지 않는다: 가장 느린 로그인이 상한보다 충분히 빠르다
+    assert max(base) < 0.25, base
+    assert abs(sorted(base)[2] - sorted(off)[2]) < 0.1, (base, off)
+    await lt.drain(timeout=3)
+    st = lt.stats()
+    assert st["timeouts"] >= 5 and st["pending"] == 0  # 시간 상한을 넘긴 작업은 버려졌다
+    assert calls["max"] <= lt.SHADOW_CONCURRENCY  # 동시 실행 상한
+    assert await table_counts() == (0, 0, 0)  # 버려진 기록은 DB 를 건드리지 않았다
+
+
+async def test_shadow_queue_cap_drops_instead_of_growing(client, monkeypatch):
+    async def stuck_reserve(*a, **k):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(lt, "reserve", stuck_reserve)
+    monkeypatch.setattr(lt, "SHADOW_TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr(lt, "SHADOW_QUEUE_MAX", 10)
+    await set_mode("shadow")
+    handles = [lt.begin(f"203.0.113.{i}") for i in range(30)]
+    assert sum(h is not None for h in handles) <= 10 and lt.stats()["dropped"] >= 20
+    await lt.drain(timeout=3)
+    assert lt.stats()["pending"] == 0
+
+
+async def test_logins_stay_fast_when_pool_is_nearly_saturated_by_other_work(client):
+    from ttakkari.config import get_settings
+    s = get_settings()
+    total = s.database_pool_size + s.database_pool_overflow
+    held = []
+    try:
+        # 풀을 (총량 - 1)개 붙잡아 shadow 가 연결을 못 얻는 상황을 만든다. 마지막 1개는 로그인이 쓴다.
+        for _ in range(total - 1):
+            sess = sessionmaker()()
+            await sess.execute(text("SELECT 1"))
+            held.append(sess)
+        lt_timeout = lt.SHADOW_TIMEOUT_SECONDS
+        lt.SHADOW_TIMEOUT_SECONDS = 0.3
+        try:
+            # set_mode 는 풀을 써야 하므로 캐시에 직접 넣는다(모드 읽기 자체는 요청 경로에서 DB 를 쓰지 않는다)
+            lt._mode_cache = (lt.time.monotonic(), "shadow")
+            times = await timed_wrong_logins(client, 5)
+        finally:
+            lt.SHADOW_TIMEOUT_SECONDS = lt_timeout
+        assert max(times) < 0.3, times  # shadow 가 연결을 기다리는 동안에도 로그인은 늦어지지 않는다
+    finally:
+        for sess in held:
+            await sess.close()
+    await lt.drain(timeout=3)
+    st = lt.stats()
+    # 5건 모두 기록됐거나(연결이 나는 즉시) 시간 상한으로 버려졌다. 어느 쪽이든 대기 작업은 남지 않는다.
+    assert len(await attempts()) + st["timeouts"] + st["errors"] >= 5 and st["pending"] == 0

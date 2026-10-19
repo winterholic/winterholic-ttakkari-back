@@ -22,7 +22,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ttakkari.db import sessionmaker
@@ -50,6 +50,11 @@ FLUSH_SECONDS = 30.0
 SWEEP_SECONDS = 600.0
 SHADOW_CONCURRENCY = 2
 SHADOW_QUEUE_MAX = 256
+# shadow 작업은 로그인과 같은 DB 엔진·풀을 쓴다. 풀이 차거나 잠금 대기가 길어져도 로그인이 늦어지지 않게
+# (1) 동시 실행 2개, (2) 대기열 포함 전체 시간 상한, (3) 트랜잭션 안 잠금·문장 시간 상한을 둔다. 넘으면 기록만 버린다.
+SHADOW_TIMEOUT_SECONDS = 1.5
+SHADOW_LOCK_TIMEOUT_MS = 500
+SHADOW_STATEMENT_TIMEOUT_MS = 1000
 
 
 def _now() -> datetime:
@@ -136,6 +141,12 @@ def current_mode() -> str:
 
 # ---------------------------------------------------------------- 상태 기계
 
+async def _bound_transaction(db) -> None:
+    """이 트랜잭션 안에서만 잠금·문장 대기 시간을 제한한다(SET LOCAL). 로그인 경로의 다른 연결에는 영향이 없다."""
+    await db.execute(text(f"SET LOCAL lock_timeout = '{int(SHADOW_LOCK_TIMEOUT_MS)}ms'"))
+    await db.execute(text(f"SET LOCAL statement_timeout = '{int(SHADOW_STATEMENT_TIMEOUT_MS)}ms'"))
+
+
 async def _lock_bucket(db, key: str, now: datetime) -> LoginBucket:
     await db.execute(pg_insert(LoginBucket).values(key=key, tokens=BUCKET_CAP, refilled_at=now, blocked_count=0)
                      .on_conflict_do_nothing(index_elements=[LoginBucket.key]))
@@ -179,6 +190,7 @@ async def reserve(src_key: str, *, attempt_id: uuid.UUID | None = None, now: dat
     would: str | None = None
     charged_src = charged_acct = False
     async with sessionmaker()() as db, db.begin():
+        await _bound_transaction(db)
         bucket = await _lock_bucket(db, ACCT_KEY, now)
         if bucket.tokens < 1.0:
             would = "acct_bucket_empty"
@@ -220,6 +232,7 @@ async def finish_attempt(res: Reservation, ok: bool | None, *, now: datetime | N
     """
     now = now or _now()
     async with sessionmaker()() as db, db.begin():
+        await _bound_transaction(db)
         if res.charged_acct or res.charged_src:
             bucket = await _lock_bucket(db, ACCT_KEY, now) if res.charged_acct else None
             row = (await db.execute(select(LoginThrottle).where(LoginThrottle.key == res.src_key).with_for_update())
@@ -309,7 +322,23 @@ async def sweep(now: datetime | None = None) -> dict[str, int]:
 _pending: set[asyncio.Task] = set()
 _sem: asyncio.Semaphore | None = None
 _maintenance: asyncio.Task | None = None
-_dropped = 0
+_dropped = 0  # 대기열이 가득 차 시작하지 못한 시도
+_timeouts = 0  # 시간 상한을 넘겨 버려진 예약·확정
+_errors = 0  # DB 오류로 버려진 예약·확정
+_last_warn = 0.0
+
+
+def stats() -> dict[str, int]:
+    """S1 운영 지표: dropped·timeouts·errors 가 늘면 shadow 가 DB 를 못 따라가는 것이다(5.8.2)."""
+    return {"dropped": _dropped, "timeouts": _timeouts, "errors": _errors, "pending": len(_pending)}
+
+
+def _warn_limited(msg: str) -> None:
+    global _last_warn
+    now = time.monotonic()
+    if now - _last_warn >= 60:
+        _last_warn = now
+        log.warning(msg)
 
 
 def _spawn(coro) -> asyncio.Task:
@@ -335,23 +364,34 @@ class Handle:
 
 
 async def _do_reserve(h: Handle) -> None:
+    global _timeouts, _errors
     try:
-        async with _get_sem():
+        async with asyncio.timeout(SHADOW_TIMEOUT_SECONDS), _get_sem():  # 대기열 시간 포함
             h.result = await reserve(h.src_key, attempt_id=h.id)
+    except TimeoutError:
+        _timeouts += 1
+        _warn_limited("login_throttle shadow 예약이 시간 상한을 넘어 기록만 버렸습니다(로그인에는 영향 없음)")
     except Exception:  # noqa: BLE001 -- shadow 는 로그인을 절대 막지 않는다
-        log.warning("login_throttle shadow 예약 실패(로그인에는 영향 없음)")
+        _errors += 1
+        _warn_limited("login_throttle shadow 예약 실패(로그인에는 영향 없음)")
 
 
 async def _do_finish(h: Handle, ok: bool | None) -> None:
+    global _timeouts, _errors
     try:
-        if h.task is not None:
-            await asyncio.shield(h.task)
-        if h.result is None:
-            return
-        async with _get_sem():
-            await finish_attempt(h.result, ok)
+        async with asyncio.timeout(SHADOW_TIMEOUT_SECONDS):
+            if h.task is not None:
+                await asyncio.shield(h.task)
+            if h.result is None:
+                return
+            async with _get_sem():
+                await finish_attempt(h.result, ok)
+    except TimeoutError:
+        _timeouts += 1  # 확정이 버려지면 예약은 pending 으로 남고 sweep 이 2분 뒤 abandoned 로 바꾼다(보수적)
+        _warn_limited("login_throttle shadow 확정이 시간 상한을 넘어 버렸습니다(로그인에는 영향 없음)")
     except Exception:  # noqa: BLE001
-        log.warning("login_throttle shadow 확정 실패(로그인에는 영향 없음)")
+        _errors += 1
+        _warn_limited("login_throttle shadow 확정 실패(로그인에는 영향 없음)")
 
 
 async def _maintenance_loop() -> None:
@@ -425,10 +465,11 @@ async def reset_decision_state() -> dict[str, int]:
 
 def reset_state() -> None:
     """프로세스 안 캐시·카운터만 비운다(시험용). DB 는 건드리지 않는다."""
-    global _mode_cache, _mode_refreshing, _sem, _dropped
+    global _mode_cache, _mode_refreshing, _sem, _dropped, _timeouts, _errors, _last_warn
     _mode_cache = None
     _mode_refreshing = False
     _sem = None
-    _dropped = 0
+    _dropped = _timeouts = _errors = 0
+    _last_warn = 0.0
     _blocked.clear()
     _warned_modes.clear()

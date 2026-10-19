@@ -345,23 +345,30 @@ FastAPI 라우터 경로: `/api/notebooklm` (인증: Bearer 소유자 JWT)
 
 ## 10. 다음 단계(구현) 작업 분해 (WBS 세부 태스크)
 
+### 2단계 구현 상태 (2026-10-19) — 다음 작업자용
+
+- 백엔드는 REST 계약(`docs/api-contract.md` "NotebookLM 연동")까지 끝났다. **프론트(Phase 4)는 아직 없다.** 화면은 `GET /api/notebooklm/auth/status`의 `state`(`login_required|session_saved|ready|reauth_required|cooldown|blocked|disabled`)와 `login.state`를 폴링해 "로그인 창 열기"(`POST /auth/login-window`)·취소·재개·확인(`POST /auth/verify`) 버튼을 만들면 된다. 소스 추가는 202 `job` 또는 200 `duplicate`를 구분해야 하고 `job`은 `GET /jobs/{id}`를 폴링한다. `unknown` job과 `outcome_unknown` 오류는 "목록을 확인하세요" 안내가 필요하다. 지원하지 않는 기능은 `capabilities[].available=false`로 숨기거나 비활성 표시한다.
+- 실계정 검증(Phase 6, 21.17·21.18)은 사용자가 로그인 창에서 1회 로그인한 뒤에만 가능하다. 첫 확인 순서 제안: `auth/verify` → `GET /notebooks` → (원하면) 테스트 노트북 생성·URL 소스·질의 1회. 상류 파싱이 실제 응답과 맞는지, 로그인 완료 판정(호스트 `notebook.google.com`/`notebooklm.google.com`)이 맞는지는 그때 처음 검증된다.
+- 알려진 한계: 세션 파일은 암호화되지 않음(권한 0600/0700만), 동시성 한도는 프로세스 안, 질의는 쓰기로 취급해 재시도하지 않음, 장시간 분석 job·audio/video/research/Drive는 미구현(unavailable).
+
+
 다음 구현자가 착수할 작업 트리를 6개 세부 단계로 분해한다:
 
 ### Phase 1: 상류 의존성과 인증 호환성 검증
-- [ ] 21.1: `notebooklm-py` 공개 API의 배포 버전과 고정 정책 확정
-- [ ] 21.2: 임의 세션 입력/수동 CDP 로그인 호환성 spike. Google 계정 요청은 승인·보호 정책 게이트 이후 수행
-- [ ] 21.3: `NotebookLMBackend` Protocol과 상류 오류/DTO 매핑 설계
-- [ ] 21.4: 세션 저장·로그 마스킹·권한·계정 격리 결정 기록
+- [x] 21.1: `notebooklm-py` 공개 API의 배포 버전과 고정 정책 확정 — `==0.8.5` 고정, 우회 성격 extra 미설치 (4b80b77, ADR 0045 §5.1)
+- [x] 21.2: 임의 세션 입력/수동 CDP 로그인 호환성 spike — storage_state 주입 가능(가짜 쿠키·모의 전송, 실계정 요청 없음). 로그인 창은 호스트에서 기동·취소까지 확인 (ADR 0045 §5.1·§5.4)
+- [x] 21.3: `NotebookLMBackend` Protocol과 상류 오류/DTO 매핑 (8cb3795: `notebooklm/ports.py`, `errors.py`, `adapters/notebooklm_py.py`)
+- [x] 21.4: 세션 저장·로그 마스킹·권한·계정 격리 (8cb3795: `session.py`, `redact.py`; ADR 0045 §5.3 — 암호화 없음, 파일 권한만)
 
 ### Phase 2: 백엔드 도메인 서비스 및 REST API
-- [ ] 21.5: `service.py` (`NotebookLMService`) 구현: 확정된 상류 지원 범위의 노트북·소스·Q&A
-- [ ] 21.6: 영속 job 필요 여부, idempotency, 계정 범위 동시성·유한 재시도 정책 구현
-- [ ] 21.7: `src/ttakkari/api/notebooklm.py` REST 라우터 구현 및 FastAPI 앱에 등록
-- [ ] 21.8: 단위 테스트 작성 (`tests/test_notebooklm_unit.py`)
+- [x] 21.5: `service.py` (`NotebookLMService`) 구현 (8cb3795)
+- [x] 21.6: 영속 job(`notebooklm_jobs`), 중복 원장(`notebooklm_sources`), 계정별 동시성 2, 읽기 한정 재시도, 429 쿨다운, 재인증 상태 (8cb3795, alembic 0046)
+- [x] 21.7: `src/ttakkari/api/notebooklm.py` REST 라우터 구현 및 앱 등록 (7b0e65a, 계약은 docs/api-contract.md)
+- [x] 21.8: 테스트 — `unit_tests/test_notebooklm_unit.py`(DB 없음), `tests/test_notebooklm_service.py`(테스트 DB, 가짜 백엔드)
 
 ### Phase 3: ttakkari MCP 도구 어댑터 등록
-- [ ] 21.9: `src/ttakkari/orchestrator/mcp_server.py`에 범위 확정된 `notebooklm_*` MCP 도구 등록
-- [ ] 21.10: `src/ttakkari/api/assistant.py`의 `TOOLS` 목록에 등록 및 동기화 테스트 통과
+- [x] 21.9: `mcp_server.py`에 `notebooklm_*` 11개 등록 (2b6d404)
+- [x] 21.10: `assistant.py` `TOOLS`·`tool_policy`·`tests/test_orchestrator.py` 동기화 (2b6d404)
 
 ### Phase 4: 프론트엔드 'NotebookLM 플랫폼' 페이지 개발
 - [ ] 21.11: `front/src/shell/features.ts` 및 `App.tsx` 라우트 등록
@@ -370,7 +377,7 @@ FastAPI 라우터 경로: `/api/notebooklm` (인증: Bearer 소유자 JWT)
 - [ ] 21.14: `ChatPanel.tsx` 및 `CitationViewer.tsx` (스트리밍 Q&A 및 인용 칩 클릭 원문 하이라이트)
 
 ### Phase 5: 지식 원장(Knowledge Ledger) 파이프라인 연계
-- [ ] 21.15: 원문·NotebookLM 분석·인용·검토 대기 Assertion을 구분해 지식 원장 모델에 매핑
+- [~] 21.15: 내보내기 구조 `notebooklm/export.py::build_ledger_export` 완료(원문 발췌/분석/인용/빈 assertions, 자동 승격 없음). 원장 모델 매핑·적재는 P0 게이트(PMS 5.4.7.3.6) 이후
 - [ ] 21.16: UI에서 '지식 원장으로 보내기' 액션 구현 및 DB 장부 적재 검증
 
 ### Phase 6: 실환경 E2E 검증 및 성능 기준선 측정

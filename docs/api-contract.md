@@ -538,6 +538,39 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 `POST /api/stocks/tossinvest/check`·`/sync` → 202 `RunOut`. DB advisory transaction lock 안에서 마지막 기록을 검사하고 `running` 행을 먼저 커밋한 뒤 Chrome을 연다. 마지막 시작/갱신 후 `tossinvest_check_interval_seconds`(기본·최소 300초) 안이면 동시 요청·재시작 후 요청도 429 `rate_limited` + `Retry-After`. 실행은 180초로 제한하고, 중단으로 `running`만 남은 경우 간격이 지난 후 재시도할 수 있다. 탐색 전 CDP Fetch로 허용된 HTTPS GET만 계속하며 나머지 페이지 요청은 차단한다. 금액·수량·쿠키는 저장·반환하지 않는다. 실제 로그인 연결과 Chrome 전체의 백그라운드 트래픽 통제는 미검증이다.
 에이전트 읽기: `GET /api/agent/stocks/tossinvest/status|runs|login-help`, MCP `tossinvest_status`(READ_ONLY).
 
+### NotebookLM 연동 (ADR 0045, 소유자 전용)
+
+기존 Google 계정의 NotebookLM 권한·할당량만 쓴다(유료 API 키 경로 없음). 지금은 계정 `primary` 하나이며 DB 행·잠금·job은 모두 `account_id`를 키로 가진다. 상류 `notebooklm-py==0.8.5` 공개 API를 `NotebookLMBackend` Protocol 뒤에 둔다. 응답에 쿠키·토큰·상류 응답 원문은 없다.
+
+**오류 형식** `{code, message[, retry_after, outcome_unknown]}`. `Retry-After` 헤더는 `retry_after`가 있을 때 같이 간다.
+| status | code | 의미 |
+|---|---|---|
+| 409 | `auth_required` | 로그인 없음/만료. 로그인 창에서 다시 로그인 |
+| 429 | `rate_limited` · `cooldown` | Google 사용 제한(429). `retry_after`초 동안 Google에 요청하지 않는다. 확인 간격 제한에도 쓴다 |
+| 423 | `protection_signal` | CAPTCHA·보안 확인 신호. 사람이 확인하고 `POST /auth/resume` 할 때까지 요청하지 않는다 |
+| 409 | `busy` · `duplicate` | 로그인 창/작업 중복 · 같은 소스 중복 또는 결과 불명 |
+| 404 / 422 / 501 | `not_found` / `invalid` / `unsupported` | |
+| 502 / 503 / 504 | `upstream_error`·`upstream_rejected` / `transient` / `timeout` | `outcome_unknown: true`이면 쓰기가 Google에 닿았는지 모른다. 같은 쓰기를 다시 보내지 말고 목록을 먼저 확인 |
+
+**인증·상태**
+- `GET /api/notebooklm/auth/status` → `{account_id, state, message, logged_in, reauth_required, cooldown_until, retry_after, last_ok_at, last_checked_at, last_error_code, session{stored, cookie_names(이름만), permissions_ok, encrypted:false, protection}, login{state, message, active, started_at, finished_at}, browser_available, backend, capabilities[{name, available, reason}], limits, metrics}`. Google 요청·브라우저 실행 없음. `state`: `login_required | session_saved | ready | reauth_required | cooldown | blocked | disabled`. `capabilities`에서 `available:false`인 항목(audio_overview, video_overview, research, drive_sources, sharing)은 지원하지 않는 기능이다.
+- `POST /auth/login-window` → 202 `login`. Mac 화면에 전용 프로필 Chrome 창을 연다(루프백 CDP). 사람이 그 창에서 Google 로그인을 한 번 하면 세션을 저장하고 창을 닫는다. `login.state`: `starting|waiting|protection|saving|done|timeout|cancelled|failed`. 같은 계정에 창이 열려 있거나 이전 창이 남아 있으면 409 `busy`. 화면은 `GET /auth/status`의 `login`을 폴링한다.
+- `POST /auth/login-window/cancel` → `login`. 창을 닫고 취소한다.
+- `POST /auth/verify` → status. 저장된 세션으로 NotebookLM에 접속해 본다(Google 요청 1회, 30초 간격 제한 → 429).
+- `POST /auth/resume` → status. `blocked`를 사람이 확인한 뒤 푼다(blocked가 아니면 409).
+- `DELETE /auth/session` → status. 저장된 세션 파일을 지운다(Google 로그아웃 아님).
+
+**노트북·소스**
+- `GET /notebooks` → `[{id, title, source_count, created_at, updated_at, is_owner}]` · `POST /notebooks {title}` → 201 · `GET /notebooks/{id}` → 위 필드 + `sources[{id, title, kind, url, status, created_at, word_count}]` · `PATCH /notebooks/{id} {title}` · `DELETE /notebooks/{id}` → 204.
+- `GET /notebooks/{id}/sources` → `SourceInfo[]`. `kind`: `web_page|youtube|pasted_text|pdf|document|media|other`, `status`: `processing|ready|error|unknown`.
+- `POST /notebooks/{id}/sources/url {url, title?, force?}` · `.../sources/text {title, text, force?}` · `.../sources/upload`(multipart `file`, `title?`, `force?`; 상한 `notebooklm_upload_max_bytes`, 초과 413) → **202 `{duplicate:false, job, source:null}`**, 이미 등록된 소스면 **200 `{duplicate:true, job:null, source}`**. 중복 키는 (계정, 노트북, 정규화 URL | 텍스트 해시 | 파일 해시). 같은 소스가 등록 중이면 409 `duplicate`. 이전 등록 결과가 불명(`unknown`)이면 URL은 원격 목록과 대조해 확정하고, 못 찾으면 409 `duplicate` → 목록 확인 후에만 `force:true`.
+- `DELETE /notebooks/{id}/sources/{sourceId}` → 204.
+- `POST /notebooks/{id}/query {question, conversation_id?, source_ids?, export_for_ledger?}` → `{notebook_id, query, answer, conversation_id, turn_number, citations[{number, source_id, quoted_text, source_span{start,end}, answer_span{start,end}, chunk_id, score}], sources[{id, title, url, kind, citation_numbers}], created_at[, ledger_export]}`. `answer`는 NotebookLM이 만든 분석, `citations`는 연결, `sources`는 출처다. `source_span`은 원문 문서 좌표(상류 문서화 기준 UTF-16 code unit), `answer_span`은 답변에서 그 인용이 받치는 범위(상류 좌표, 단위 미검증). 값이 없으면 `null`이며 꾸며내지 않는다. `ledger_export`는 지식 원장용 구조(`source_units`·`analysis`·`citations`·`assertions: []`, `promotion.auto_promoted:false`)이고 적재는 하지 않는다.
+
+**작업(job)**: `GET /jobs?limit=` · `GET /jobs/{id}` → `{id, kind, notebook_id, status, params, result, error_code, error, cancel_requested, created_at, started_at, finished_at}` · `POST /jobs/{id}/cancel`(끝난 작업은 409). `status`: `queued|running|succeeded|failed|cancelled|unknown`. 소스 등록 job의 `result`는 `{source, ready}`(처리 대기 시간이 지나면 `ready:false` + `note`). 등록 요청 중 취소·재시작은 `unknown`/`cancelled` + `result.outcome_unknown`. 서버가 재시작되면 실행 중이던 job은 `unknown`, 시작 전이던 job은 `failed`(`error_code: shutdown`)가 된다.
+
+**에이전트(개인 세션 전용, 업무 세션은 403)**: `/api/agent/notebooklm/*` — 위 경로 중 `auth/status`·`auth/verify`, 노트북·소스(upload 제외)·query·jobs. 로그인 창·취소·resume·세션 삭제·업로드는 노출하지 않는다. MCP 도구: `notebooklm_status|list|get|create|rename|delete|add_source|delete_source|query|job|job_cancel` (삭제는 `confirm=true` 필요, 읽기 4개만 readOnly).
+
 ### GitHub 탐색 (ADR 0042, 소유자 전용·읽기 전용)
 
 `/api/github/*` 전부 GET이며 소유자 JWT가 필요하다(에이전트/MCP 라우터 없음). `account=<gh login>` 쿼리가 필수이고(누락은 422), 계정 목록은 `GET /api/github/accounts`, 입력 해석은 `GET /api/github/resolve?q=&account=`. 공통 봉투 `{data,page,rate,fetched_at,cached,stale,account}`와 엔드포인트·오류 코드 표는 `tests/fixtures/github/README.md`, 타입 정본은 `src/ttakkari/github/schemas.py`. 상류 401은 앱 로그아웃을 막으려고 502 `gh_auth_expired`로 바꾼다. 토큰은 응답·로그에 없다. 요청 하나의 전체 시간 예산(15초, 로그 20초)은 계정 확인·모든 중첩 상류 호출·재시도를 합친 한 마감이고(초과 504 `gh_timeout`), `stale:true`는 마지막 확인 후 10분까지만 나온다. `/resolve`는 `HEAD`·7~39자 약식 SHA를 지원하고, 같은 접두사 ref가 매우 많아 확인하지 못하면 422 `gh_unprocessable`(`reason: ref_resolution_limit`)이며 `ref_not_found`로 가리지 않는다. gh 상태 조회 일시 실패는 503 `no_account`(`reason: gh_status_failed`)로 로그아웃과 구분한다(ADR 0042 §13).

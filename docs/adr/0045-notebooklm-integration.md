@@ -112,3 +112,59 @@ NotebookLM은 단순한 채팅 도구가 아니라 따까리의 '지식 수집 �
 - 첫 1회는 사용자가 Mac Studio 화면(또는 원격 데스크톱)에서 브라우저 로그인을 직접 수행해야 함.
 - 비공식 API이므로 Google의 대규모 인터페이스 개편 시 상류 의존성 갱신과 호환성 검증이 필요함. RPC ID 핫패치만으로 페이로드/응답 변경을 복구할 수 있다고 전제하지 않는다.
 - MIT 구성요소를 실제로 채택할 경우 해당 라이선스와 저작권 고지를 보존한다.
+
+---
+
+## 5. 2단계 구현 결정 (2026-10-19, 백엔드 엔진·REST·MCP)
+
+설계서 §9 미결정 사항에 대한 구현 시점의 결정과 근거다. 실제 Google 계정 요청은 하지 않았다(로그인 세션 없음). 아래 "검증"은 가짜 구현·모의 전송으로 한 것이다.
+
+### 5.1 상류 의존과 spike
+- `notebooklm-py==0.8.5`(PyPI 최신 안정, 2026-10-13) 정확한 버전 고정. 새로 설치된 패키지는 이 패키지와 `rich`·`markdown-it-py`·`mdurl` 뿐이다(click·filelock·httpx·idna는 기존 또는 공통). `headless`(master-token)·`impersonate`(TLS 위장)·`cookies` extra는 설치하지 않았고 코드에서도 쓰지 않는다(단위 테스트가 어댑터 소스에서 해당 이름을 막는다). 라이선스 고지는 `docs/notebooklm/THIRD_PARTY_NOTICES.md`.
+- spike(가짜 쿠키 + 가짜 HTTP 전송으로 네트워크 차단, 프록시를 죽은 포트로 지정): 공개 API `NotebookLMClient.from_storage(path=...)`가 우리가 쓴 Playwright 호환 `storage_state.json`을 읽고 쿠키를 요청에 싣는 것, `ClientConfig(retry=RetryOptions(0, 0))`로 상류의 자동 재시도(429·5xx)를 끌 수 있는 것, 429의 `Retry-After`가 `RateLimitError.retry_after`로 전달되는 것을 확인했다. 따라서 "외부에서 얻은 쿠키 주입"은 공개 API로 가능하고 별도 최소 어댑터는 필요 없다. private 모듈(`_*`)은 import하지 않는다.
+- 상류 기본 호스트는 `notebook.google.com`(구 `notebooklm.google.com`)이다. 로그인 창 URL은 `https://notebooklm.google.com/`이며 리다이렉트는 실제 호스트에서 미확인이다. 로그인 완료 판정은 두 호스트를 모두 인정한다.
+- 상류는 쿠키 회전 결과를 같은 세션 파일에 되쓴다(자체 파일 락). 파일 소유와 위치는 우리가 정하고, 그 디렉터리(`0700`)에서만 일어난다. 상류의 `allow_headless` 브라우저 복구는 켜지 않았다.
+
+### 5.2 계약과 교체 가능성
+`NotebookLMBackend`(Protocol, `runtime_checkable`)와 DTO는 `notebooklm/ports.py`. 서비스·REST·MCP는 이 모듈만 안다. 상류 예외는 어댑터에서 `errors.py` 도메인 오류로 바꾸고 상류 메시지는 밖으로 내지 않는다. 테스트에 다른 이름·다른 `capabilities()`를 가진 두 번째 구현을 끼워 상위 코드가 무변경으로 동작함을 확인했다. 지원하지 않는 기능(audio/video overview, research, Drive 소스, sharing)은 `capabilities()`와 `auth/status`에 `available:false` + 이유로 노출한다. 파일 소스는 상류 지원이라 REST 업로드로 제공하고 MCP에는 노출하지 않는다(경로 권한 문제).
+
+### 5.3 세션 저장 (정직한 보호 수준)
+- 위치: `~/.ttakkari/notebooklm/accounts/<account_id>/storage_state.json`. 디렉터리 `0700`, 파일 `0600`, 임시 파일 작성 후 `fsync`·`os.replace` 원자적 교체. 구글 도메인 쿠키만 저장하고 `SID`·`__Secure-1PSIDTS`가 없으면 로그인 완료로 보지 않는다.
+- **암호화하지 않는다.** 따까리에 쿠키를 감쌀 키 체계가 없다(기존 키체인 코드는 Antigravity 전용이고 비밀 저장소 열람 금지 대상이라 쓰지 않았다). 같은 macOS 사용자의 다른 프로세스는 파일을 읽을 수 있다. 보호는 파일 권한뿐이며 `auth/status`가 `encrypted:false`와 권한 일치 여부를 그대로 알린다. 전용 Chrome 프로필의 쿠키 DB는 Chrome 자체 방식(Keychain의 Chrome Safe Storage)이다.
+- 마스킹: 저장·로드 때 쿠키 실제 값을 마스킹 목록에 등록해 문자열 그대로 치환하고, 값을 모르는 경우를 위해 `Cookie:`·`Authorization:`·`name=value`·JSON 필드·URL 토큰·40자 이상 토큰 패턴을 치환한다(`redact.py`). 오류 메시지·job 오류·REST 오류 응답은 모두 `mask()`를 거치며, 테스트가 응답·로그·metrics·DB 메시지에 쿠키 값이 없음을 확인한다. 상태 API는 쿠키 이름만 보여 준다.
+
+### 5.4 로그인 창
+- 설치된 Chrome(`/Applications/Google Chrome.app`)을 전용 프로필(`~/.ttakkari/notebooklm-chrome`, `0700`)로 **보이는 일반 창**으로 띄운다. `--remote-debugging-port=0 --remote-debugging-address=127.0.0.1`, 자동화 플래그(`--enable-automation`·headless) 없음. Chrome이 알려 준 CDP 주소가 루프백이 아니면 중단한다.
+- CDP는 브라우저 수준 websocket으로 열린 탭 URL(`Target.getTargets`)과 쿠키(`Storage.getCookies`)만 읽는다. 페이지에 붙지 않고 스크립트 실행·클릭·입력을 하지 않는다.
+- 완료 판정: NotebookLM 앱 호스트에 있고 `accounts.google.com`이 아니며 필수 쿠키가 2회 연속(약 4초) 있을 때. 그러면 세션을 저장하고 창을 닫는다(`Browser.close`, 실패하면 terminate/kill). 기본 10분(`notebooklm_login_timeout_seconds`) 타임아웃, 취소 API, 사용자가 창을 닫으면 종료, 같은 계정 중복 실행 잠금(프로세스 메모리 + 같은 프로필을 쓰는 Chrome 프로세스 검사), 서버 종료 시 정리.
+- **보호 신호(fail closed)**: 로그인 중 URL에 보안 확인(`/signin/v2/challenge`·`/sorry/`·captcha 등)이 보이면 상태를 `protection`으로 바꾸고 쿠키를 읽지도 저장하지도 않는다. 따까리는 그 화면에서 아무것도 하지 않는다. 사람이 창에서 직접 마치면 이어서 진행하고, 못 마치면 타임아웃으로 끝난다. API 사용 중 보호 신호(CAPTCHA·`/sorry/`·unusual traffic 문구)가 오면 계정을 `blocked`로 두고 사람이 `POST /auth/resume` 할 때까지 Google에 요청하지 않는다.
+- 호스트 확인(2026-10-19 Mac Studio): 이 로그인 흐름을 임시 프로필로 실행해 0.5초 안에 `waiting` 상태(루프백 CDP 연결, Chrome 프로세스 9개)가 됐고 취소로 모든 프로세스가 종료됨을 확인했다. 로그인 입력은 하지 않았다. 창이 화면에 실제로 보이는지는 시각 확인하지 못했다(프로세스·CDP 연결만 확인). 배포된 백엔드 서비스 프로세스 안에서의 창 표시는 미검증.
+- 토스증권 어댑터(ADR 0044)와의 공통화는 하지 않았다. 그쪽은 읽기 전용 Fetch 통제와 얽혀 있고 다른 세션이 다루는 코드라 회귀 위험이 커서, 같은 선례(전용 프로필·일반 창·직접 실행한 Chrome·psutil 중복 검사·websockets)를 따라 `notebooklm/login.py`에 별도로 두었다. 후속 정리에서 `find_chrome`·종료 로직을 공통 모듈로 옮길 수 있다.
+
+### 5.5 작업 모델
+- 동기(요청별 타임아웃): 노트북 목록/상세/생성/이름변경/삭제, 소스 목록/삭제, 질의(기본 120초). DB job: 소스 추가(등록 요청 + 처리 완료 대기, 기본 180초). 장시간 분석 job은 이번 범위에 없다.
+- 기존 따까리의 `reverse_jobs`·`artcraft_tasks`는 세션/Run에 결속되어 재사용할 수 없어 전용 `notebooklm_jobs` 한 테이블만 추가했다. 상태 `queued/running/succeeded/failed/cancelled/unknown`, 하트비트(5초), `cancel_requested`. 별도 큐·서비스·컨테이너 없음(프로세스 안 `asyncio` 태스크 + DB).
+- 재시작 복구: 기동 시(단일 프로세스) `running→unknown`, `queued→failed`. 무중단 배포(generation) 모드에서는 이전 세대가 아직 돌리는 job을 건드리지 않도록 주기 작업(60초)이 하트비트가 120초 넘게 오래된 job만 같은 규칙으로 정리한다. 소스 원장도 같이 맞춘다(전송 중이던 건 `unknown`, 시작 전이던 건 해제).
+- 마이그레이션 `0046_notebooklm`: `notebooklm_accounts`, `notebooklm_sources`(중복 원장), `notebooklm_jobs`. 모든 테이블이 `account_id`를 가지며 지금은 `primary` 하나만 쓴다. `upgrade → downgrade → upgrade`를 새 DB에서 확인했다.
+
+### 5.6 동시성·재시도·쿨다운·재인증
+- 계정당 동시 실행 기본 2(`notebooklm_concurrency`, 프로세스 안 세마포어). 무중단 배포 중 두 세대가 겹치면 합쳐 최대 4까지 갈 수 있다. 이 한도는 Google 사용 한도를 보장하지 않는다.
+- 상류 자동 재시도를 끄고(`RetryOptions(0,0)`) 서비스가 정책을 소유한다. **읽기만** 일시 오류(연결·시간 초과·5xx)에 지수 백오프(기본 1/2/4초, 상한 8초, 지터)로 최대 3회 재시도한다. 쓰기(생성·이름변경·삭제·소스 추가)와 **질의**는 1회만 보낸다. 질의는 서버 대화 기록과 할당량을 쓰므로 쓰기로 취급한다. 소스 처리 대기도 재시도하지 않는다(이미 긴 대기).
+- 쓰기가 시간 초과·연결 오류로 끝나면 `outcome_unknown`으로 표시하고 소스 원장을 `unknown`으로 둔다. 같은 소스를 다시 요청하면 원격 목록과 URL을 대조해 있으면 확정하고, 없으면 사람이 확인한 뒤 `force:true`로만 재등록한다.
+- 중복 방지 키 `(account, notebook, 정규화 URL | 텍스트 해시 | 파일 해시)`는 DB 유니크 제약이며 예약을 먼저 커밋한 뒤 전송한다. URL은 대소문자·기본 포트·fragment·추적 파라미터·쿼리 순서·YouTube 주소 변형(`youtu.be`·shorts·embed)을 정규화하고 http(s)가 아닌 주소와 사설·루프백 주소를 거절한다.
+- 429/`RESOURCE_EXHAUSTED`: `Retry-After`(없으면 기본 900초)를 `cooldown_until`로 DB에 기록하고 상태 API에 `cooldown`과 `retry_after`로 노출한다. 쿨다운 동안 모든 호출은 Google에 닿지 않고 429 `cooldown`을 즉시 반환한다. 우회·재시도 없음.
+- 인증 만료(상류 `AuthError`)는 상태를 `reauth_required`로 바꾸고 열린 클라이언트를 닫고 기존 푸시 체계(`PushKind.notebooklm`, 알림함 `system`)로 **한 번** 알린다(`reauth_notified_at`로 중복 방지). 이후 호출은 Google에 닿지 않고 409 `auth_required`. 다시 로그인에 성공하면 해제된다.
+- `auth/verify`는 Google 요청 1회이며 30초 간격으로 제한한다. `auth/status`는 요청을 보내지 않는다.
+
+### 5.7 REST·MCP
+REST는 `/api/notebooklm`(소유자 JWT)과 `/api/agent/notebooklm`(개인 세션 전용). 에이전트 경로에는 로그인 창·취소·resume·세션 삭제·업로드를 두지 않는다. MCP는 기존 `ttakkari` 서버에 `notebooklm_*` 11개(읽기 4개 `readOnlyHint`, 쓰기·질의 7개는 자동 승인 목록)를 등록했고 `api/assistant.py` `TOOLS`와 `tool_policy`, `tests/test_orchestrator.py`의 도구 집합 검사를 맞췄다. 삭제 도구는 `confirm=true`가 없으면 API를 호출하지 않는다. 계약은 `docs/api-contract.md`.
+
+### 5.8 질의 구조와 원장 내보내기
+질의 결과는 `answer`(NotebookLM 분석)·`citations`(번호, `source_id`, 원문 인용 텍스트, 원문 좌표 `source_span`, 답변 좌표 `answer_span`)·`sources`(인용된 출처의 제목·URL)로 분리한다. 상류가 폐기 예정으로 표시한 `answer_start_char`는 쓰지 않고 `start_char/end_char`(원문, UTF-16 code unit)와 `answer_anchor_*`(답변)를 쓴다. 값이 없으면 `null`이다. `build_ledger_export()`는 원문 발췌(`source_units`)·분석(`analysis`, `review_status: unreviewed`, `promoted: false`)·인용 연결(`citations`)·`assertions: []`로 나눠 돌려주며 자동 추출·승격·적재를 하지 않는다. 원장 실제 적재는 P0 게이트(PMS 5.4.7.3.6) 이후다.
+
+### 5.9 계측
+프로세스 안 카운터와 JSON 구조화 로그(`notebooklm {"event": ...}`): 요청 수(op별), 오류 코드별 횟수, 재시도 수, 지연(평균·최대), 브라우저 실행 횟수, 쿨다운·재인증·보호 신호·중복 차단 횟수. `auth/status.metrics`로도 보인다. P50/P95와 메모리는 측정하지 않았다(로그인 후 단계).
+
+### 5.10 검증·미검증
+- 검증(가짜 백엔드·모의 전송·실제 테스트 DB): 마스킹, 세션 파일 권한·원자 교체, 중복 소스 방지(동시 2건 포함), 읽기/쓰기 재시도 구분, 429 쿨다운과 쿨다운 만료, 세션 만료 감지와 1회 알림, 보호 신호 중단·재개, 동시성 한도 2, job 상태 전이·취소·재시작 복구(세대 겹침 포함), Protocol 교체, MCP 도구 호출(REST 경유), 개인/업무 세션 범위, 업로드 상한, 로그인 창 흐름(가짜 Chrome)과 실제 호스트 창 기동.
+- 미검증: 실제 Google 로그인과 NotebookLM 응답(상류 파싱이 실제 응답과 맞는지 포함), 로그인 완료 판정이 실제 리다이렉트(`notebook.google.com`/`notebooklm.google.com`)와 맞는지, 사용 한도·약관·계정 보호 정책, 배포 서비스 프로세스에서의 창 표시, 장시간 운영·성능·메모리, 상류 쿠키 회전이 세션 파일에 되써지는 실제 동작.

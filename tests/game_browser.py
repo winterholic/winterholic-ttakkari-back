@@ -3,6 +3,8 @@
 브라우저 자동화는 node Playwright 로 한다. 이 저장소의 `.browser-runtime`(@playwright/mcp 의존)에 설치된 playwright 를 쓰고,
 다른 위치는 `TTAKKARI_PLAYWRIGHT_DIR`(node_modules 를 가진 디렉터리)로 지정한다. 없으면 호출하는 테스트가 사유와 함께 skip 한다.
 `TTAKKARI_REQUIRE_GAME_BROWSER=1` 이면 skip 대신 실패시켜 이 Mac 에서 몰래 건너뛰는 일을 막는다.
+playwright 모듈이 있어도 실행 파일(버전 불일치·미설치)이 없거나 샌드박스에서 브라우저 프로세스가 뜨지 않으면
+실제 실행과 같은 경로(ttk_driver.launchBrowser)로 띄워 보고 실패하면 사유와 함께 skip 한다.
 """
 
 from __future__ import annotations
@@ -31,7 +33,41 @@ def browser_problem() -> str | None:
         return "node 가 없다"
     if not (PLAYWRIGHT_DIR / "node_modules" / "playwright").is_dir():
         return f"playwright(node) 가 {PLAYWRIGHT_DIR}/node_modules 에 없다(TTAKKARI_PLAYWRIGHT_DIR 로 지정)"
-    return None
+    return _launch_probe_problem()
+
+
+_LAUNCH_PROBE: str | None | bool = None  # None=미실행, True=실행됨, str=실패 사유. 프로세스당 1회만 실제 브라우저를 띄운다.
+_LAUNCH_PROBE_SCRIPT = """
+import { loadPlaywright, launchBrowser } from %s;
+const { chromium } = loadPlaywright(%s);
+const browser = await launchBrowser(chromium);
+await browser.close();
+console.log('BROWSER_OK');
+"""
+
+
+def _launch_probe_problem() -> str | None:
+    global _LAUNCH_PROBE
+    if _LAUNCH_PROBE is not None:
+        return None if _LAUNCH_PROBE is True else _LAUNCH_PROBE
+    script = _LAUNCH_PROBE_SCRIPT % (
+        json.dumps((SCENARIOS / "ttk_driver.mjs").as_uri()), json.dumps(str(PLAYWRIGHT_DIR)))
+    last_error = "알 수 없는 오류"
+    for _ in range(2):  # 한 번의 간헐 실패로 skip 하지 않게 1회만 재시도한다
+        try:
+            proc = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True,
+                                  timeout=45, check=False)
+        except subprocess.TimeoutExpired:
+            last_error = "브라우저 실행 probe 가 45초 안에 끝나지 않았다"
+            continue
+        if proc.returncode == 0 and "BROWSER_OK" in proc.stdout:
+            _LAUNCH_PROBE = True
+            return None
+        lines = proc.stderr.strip().splitlines() or proc.stdout.strip().splitlines() or ["브라우저를 실행할 수 없다"]
+        last_error = next((ln for ln in lines if ln.startswith("Error")), lines[0])[:300]
+    _LAUNCH_PROBE = (f"브라우저를 실제로 띄울 수 없다: {last_error} "
+                     f"(playwright 모듈은 {PLAYWRIGHT_DIR}/node_modules 에 있다. 실행 파일 버전·TTAKKARI_BROWSER_EXECUTABLE·샌드박스 확인)")
+    return _LAUNCH_PROBE
 
 
 def require_browser() -> None:

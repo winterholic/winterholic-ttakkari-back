@@ -25,6 +25,7 @@ from ttakkari.api import (
     design_system,
     desk_feedback,
     games,
+    google_accounts,
     host_env,
     library_insight,
     meetings,
@@ -299,6 +300,9 @@ def create_app() -> FastAPI:
     app.include_router(notebooklm.router)
     app.include_router(notebooklm.agent_router)
     notebooklm.install(app)  # code·retry_after·outcome_unknown 을 살리는 NotebookLM 오류 핸들러(ADR 0045)
+    app.include_router(google_accounts.router)
+    app.include_router(google_accounts.agent_router)
+    google_accounts.install(app)  # Google 계정 공통 오류 핸들러(ADR 0051)
     app.include_router(github_api.router)
     app.include_router(remote_desktop.router)
     github_api.install(app)  # reason·reset·retry_after 를 살리는 GithubError 전용 핸들러(ADR 0042)

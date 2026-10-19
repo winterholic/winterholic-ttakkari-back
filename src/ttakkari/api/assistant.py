@@ -80,6 +80,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "server_resources", "group": "서버", "who": "모든 실행", "desc": "이 맥의 CPU·메모리·디스크·네트워크와 상위 프로세스"},
     {"name": "tossinvest_status", "group": "주식 투자", "who": "모든 실행", "desc": "토스증권의 마지막 연결 상태와 확인·동기화 기록을 조회한다. 브라우저를 열거나 주문하지 않는다"},
     {"name": "notebooklm_status", "group": "NotebookLM", "who": "개인 실행", "desc": "NotebookLM 연결 상태(로그인·재인증·쿨다운·보호 신호)와 지원/미지원 기능. Google 요청을 보내지 않는다"},
+    {"name": "google_account_status", "group": "Google 계정", "who": "개인 실행", "desc": "Google 계정별 로그인·재인증 상태와 이 계정을 쓰는 기능(NotebookLM 등)의 쿨다운·보호 신호 상태. Google 요청을 보내지 않고 로그인 창·세션 삭제는 화면에서만 한다"},
     {"name": "notebooklm_list", "group": "NotebookLM", "who": "개인 실행", "desc": "노트북 목록(ID·제목·소스 수)"},
     {"name": "notebooklm_get", "group": "NotebookLM", "who": "개인 실행", "desc": "노트북 상세와 소스 목록·처리 상태"},
     {"name": "notebooklm_create", "group": "NotebookLM", "who": "개인 실행", "desc": "노트북을 만든다(자동 재시도 없음)"},

@@ -83,6 +83,7 @@ def _handler(request: Request, exc: errors.NotebookLMError) -> JSONResponse:
 
 
 def install(app: FastAPI) -> None:
+    # NotebookLMError 는 공통 GoogleAccountError 의 별칭이라 같은 핸들러가 모든 계정 오류를 처리한다.
     app.add_exception_handler(errors.NotebookLMError, _handler)  # type: ignore[arg-type]
 
 

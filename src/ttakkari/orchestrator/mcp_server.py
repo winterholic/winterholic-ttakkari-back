@@ -247,6 +247,15 @@ async def notebooklm_status() -> str:
 
 
 @query_tool
+async def google_account_status() -> str:
+    """Google account link status shared by features such as NotebookLM: per-account login/reauth state, session presence
+    (cookie names only), and each feature's own state (cooldown/blocked). Makes no Google request. Opening the login
+    window or deleting the session is a user action in the UI."""
+    from ttakkari.oplog.limits import cap_text
+    return cap_text(await _agent("GET", "/google-accounts"))
+
+
+@query_tool
 async def notebooklm_list() -> str:
     """List the user's NotebookLM notebooks (id, title, source count)."""
     return await _nlm("GET", "/notebooks")

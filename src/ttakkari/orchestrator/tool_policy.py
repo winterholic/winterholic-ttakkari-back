@@ -9,7 +9,7 @@ READ_ONLY_TOOLS = frozenset({
     "design_system_catalog", "design_system_search", "design_system_item", "execution_capabilities",
     "luna_common30_v2_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
     "reverse_list", "reverse_get", "tossinvest_status",
-    "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job",
+    "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job", "google_account_status",
 })
 # 리버스 엔지니어링 시작은 상태를 바꾸므로 읽기 전용으로 표시하지 않는다.
 # 사용자 지시로 요청하는 작업이라 무인 실행 승인 목록에는 둔다.

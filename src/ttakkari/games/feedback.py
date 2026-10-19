@@ -1,4 +1,4 @@
-"""시각 피드백(스크린샷 Artifact + 정규화 영역)을 worker 가 실제로 열 수 있는 파일로 내놓는다 (TASK-G11 후속, ADR 0051).
+"""시각 피드백(스크린샷 Artifact + 정규화 영역)을 worker 가 실제로 열 수 있는 파일로 내놓는다 (TASK-G11 후속, ADR 0052).
 
 Artifact 는 data_dir 의 관리 영역에 있어 게임 workspace 안에서 돌아가는 worker 가 열 수 없다. 그래서 요청마다 검증한 PNG 를
 게임 저장소 안 `.ttakkari-feedback/<id>/` 에 복사하고 절대 경로를 prompt 에 싣는다. 이 디렉터리는 `.git/info/exclude` 로 git 추적에서

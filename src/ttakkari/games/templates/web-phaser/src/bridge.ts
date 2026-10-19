@@ -52,7 +52,7 @@ export function acceptParentMessage(
 }
 
 // 게임이 부모에게 내보이는 값. sandbox(opaque origin)라 localStorage/IndexedDB 를 쓸 수 없으므로 저장은 메모리 + export/import 뿐이다
-// (docs/adr/0051 의 결정). 직렬화 가능한 값만 둔다.
+// (docs/adr/0052 의 결정). 직렬화 가능한 값만 둔다.
 let published: unknown = {};
 let saveStore: Record<string, unknown> = {};
 

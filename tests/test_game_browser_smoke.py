@@ -85,7 +85,7 @@ async def test_real_browser_plays_isolated_build_with_keys_touch_and_bridge_stat
     p = d["pause"]
     assert p["supported"] is True and p["reply"] is True and p["resumeReply"] is False
     assert p["framesPaused"][0] == p["framesPaused"][1] and p["framesResumed"] > p["framesPaused"][1]  # 멈췄다가 다시 돈다
-    assert d["save"]["importOk"] is True and '"slot1"' in d["save"]["exported"]  # 메모리 세이브 export/import (ADR 0051)
+    assert d["save"]["importOk"] is True and '"slot1"' in d["save"]["exported"]  # 메모리 세이브 export/import (ADR 0052)
 
     m = res["mobile"]
     assert m["touch"]["viewport"][0] <= 390

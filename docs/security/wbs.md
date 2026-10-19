@@ -5,7 +5,7 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 
 ## 1. 요약
 
-- 항목 45개: P0 8, P1 17, P2 18, P3 2.
+- 항목 49개: P0 8, P1 21, P2 18, P3 2. 2026-10-19 프롬프트 인젝션 집중 감사([prompt-injection-audit.md](prompt-injection-audit.md))로 SEC2-PI-03~06을 추가하고 SEC2-PI-01·02를 갱신했다.
 - 심각도 = 가능성(L, 1~3) × 영향(I, 1~3). 우선순위는 심각도와 함께 '정상 사용을 바꾸지 않고 바로 줄일 수 있는가'를 반영했다.
 - 작업 분할 단위는 작업자 1명이 2시간 안에 끝낼 크기다. 이전 작업자가 2시간 제한으로 끊긴 일이 있었다.
 - 모든 수정 항목의 완료 기준은 같다. 재현 테스트가 수정 전 실패하고 수정 후 통과하며, 정상 사용 대조군이 함께 통과해야 한다.
@@ -42,7 +42,7 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 | 파일 변환기(soffice·HEIC·STT) | 손대지 않음 | - | 추론 → SEC2-FILE-01 |
 | SSRF·외부 호출 | 손대지 않음 | - | 미검증 → SEC2-NET-01 |
 | 네트워크 노출·포트 | 손대지 않음 | - | 확인됨(lsof) → SEC2-EXPO-01 |
-| 프롬프트 인젝션·기억 오염 | 손대지 않음 | - | 추론 → SEC2-PI-01/02 |
+| 프롬프트 인젝션·기억 오염 | 손대지 않음 | - | 추론 → SEC2-PI-01/02. 집중 감사에서 R1·R2·R3 재현(확인됨) → SEC2-PI-02~06 |
 | 의존성·공급망·CI | 손대지 않음(SEC-07 미완) | - | 미검증, CI 부재 확인 → SEC2-SUP-01, GATE-01 |
 | SPA 보안 헤더(CSP·frame-ancestors) | 손대지 않음(SEC-09 미완) | - | 부재 확인 → SEC2-WEB-01 |
 | Antigravity 로그 파일 권한 | 손대지 않음 | - | 확인됨(0644) → SEC2-SECRET-01 |
@@ -72,14 +72,14 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 
 범위 결함 수정, 토큰 즉시 폐기, 엔진 guard 동등성, 인젝션 평가셋, 호스트 도구·배포·의존성·로그.
 
-- 항목: SEC2-AUTHZ-01, SEC2-AUTHZ-02, SEC2-AUTH-01, SEC2-AUTH-04, SEC2-EXEC-03, SEC2-EXEC-04, SEC2-PI-01, SEC2-HOST-03, SEC2-HOST-04, SEC2-DEP-01, SEC2-FILE-02, SEC2-RD-01, SEC2-WEB-02, SEC2-SUP-01, SEC2-FILE-01, SEC2-SECRET-01, SEC2-GATE-01
+- 항목: SEC2-AUTHZ-01, SEC2-AUTHZ-02, SEC2-AUTH-01, SEC2-AUTH-04, SEC2-EXEC-03, SEC2-EXEC-04, SEC2-PI-01, SEC2-PI-02, SEC2-PI-03, SEC2-PI-04, SEC2-PI-06, SEC2-HOST-03, SEC2-HOST-04, SEC2-DEP-01, SEC2-FILE-02, SEC2-RD-01, SEC2-WEB-02, SEC2-SUP-01, SEC2-FILE-01, SEC2-SECRET-01, SEC2-GATE-01
 - 종료 검증: 독립 검증: 항목별 RED/GREEN, 정상 사용 대조군, 실제 브라우저(WebKit) 원격제어·XSS 확인.
 
 ### Phase 3 · P2
 
 헤더·SSRF·노출·공유·DoS·주입·호스트 도구 세부 검증.
 
-- 항목: SEC2-AUTH-03, SEC2-AUTH-05, SEC2-WEB-01, SEC2-NET-01, SEC2-EXPO-01, SEC2-SHARE-01, SEC2-DOS-01, SEC2-INJ-01, SEC2-INJ-02, SEC2-EXEC-02, SEC2-HOST-01, SEC2-HOST-02, SEC2-HOST-05, SEC2-FILE-03, SEC2-SECRET-02, SEC2-PI-02, SEC2-OPS-02, SEC2-AUTHZ-04
+- 항목: SEC2-AUTH-03, SEC2-AUTH-05, SEC2-WEB-01, SEC2-NET-01, SEC2-EXPO-01, SEC2-SHARE-01, SEC2-DOS-01, SEC2-INJ-01, SEC2-INJ-02, SEC2-EXEC-02, SEC2-HOST-01, SEC2-HOST-02, SEC2-HOST-05, SEC2-FILE-03, SEC2-SECRET-02, SEC2-PI-05, SEC2-OPS-02, SEC2-AUTHZ-04
 - 종료 검증: 독립 검증: 검증 로그 표본 재실행.
 
 ### Phase 4 · P3·종결
@@ -89,7 +89,7 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 - 항목: SEC2-EXPO-02, SEC2-GATE-02
 - 종료 검증: 종결 감사 자체가 검증 지점.
 
-의존 순서: GATE-00 → (AGT-01 → AGT-02), (EXEC-01 → DEC-01 → EXEC-03·EXEC-04·EXEC-02), (AUTHZ-03 → AUTHZ-01·AUTHZ-02), AUTH-01 → RD-01·OPS-02.
+의존 순서: GATE-00 → (AGT-01 → AGT-02), (EXEC-01 → DEC-01 → EXEC-03·EXEC-04·EXEC-02), (AUTHZ-03 → AUTHZ-01·AUTHZ-02), AUTH-01 → RD-01·OPS-02, PI-01 → (PI-02, PI-03 → PI-04 → PI-05, PI-06).
 OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 이후 수정 작업이 데이터를 바꾸기 전에 복구 지점을 확보하기 위해서다.
 
 ## 4. 항목 표
@@ -110,7 +110,11 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 | SEC2-AUTH-04 | P1 | 4 (2×2) | 인증 | 업로드 전용 토큰(ttk_) 권한·경로·폐기 검증 | 미검증 | - | verification | 2 |
 | SEC2-EXEC-03 | P1 | 4 (2×2) | 실행 경계 | 엔진별 guard 동등성 확인(Antigravity hook 부재) | 확인됨(코드) | SEC2-EXEC-01 | verification | 2 |
 | SEC2-EXEC-04 | P1 | 3 (1×3) | 실행 경계 | 하네스(~/.claude·~/.codex) 변경을 통한 지속성 대응 | 추론 | SEC2-DEC-01 | design | 2 |
-| SEC2-PI-01 | P1 | 6 (2×3) | 프롬프트 인젝션 | 외부 콘텐츠→고위험 도구 경로 인벤토리와 인젝션 평가셋 | 추론 | SEC2-GATE-00 | design | 2 |
+| SEC2-PI-01 | P1 | 6 (2×3) | 프롬프트 인젝션 | 외부 콘텐츠→고위험 도구 경로 인벤토리와 인젝션 평가셋 | 부분 확인 | SEC2-GATE-00 | design | 2 |
+| SEC2-PI-02 | P1 | 6 (2×3) | 프롬프트 인젝션 | 기억·엔터티 오염의 지속 주입(고정 항목 소유자 전용) | 확인됨(재현 R1) | SEC2-PI-01 | general | 2 |
+| SEC2-PI-03 | P1 | 4 (2×2) | 프롬프트 인젝션 | 에이전트 간 메시지·인계 출처 envelope(작업 보고·handoff·접수 이력) | 확인됨(재현 R2) | SEC2-PI-01 | general | 2 |
+| SEC2-PI-04 | P1 | 4 (2×2) | 프롬프트 인젝션 | 기억 출처 스키마와 사용자 결정 승격 금지(remember·메모·지식) | 확인됨(재현 R3) | SEC2-PI-03 | general | 2 |
+| SEC2-PI-06 | P1 | 6 (2×3) | 프롬프트 인젝션 | egress canary 회귀 하네스와 소유 제어 지점 탐지 | 추론 | SEC2-PI-01 | general | 2 |
 | SEC2-HOST-03 | P1 | 4 (2×2) | 호스트 도구 | NotebookLM: 로컬 파일 반출·세션 보관·범위 검증 | 미검증 | - | general | 2 |
 | SEC2-HOST-04 | P1 | 3 (1×3) | 호스트 도구 | 토스증권 어댑터 읽기 전용·프로필 보호 검증 | 미검증 | - | verification | 2 |
 | SEC2-DEP-01 | P1 | 6 (2×3) | 배포 | 배포 예약의 리비전 출처·게이트 검증 | 부분 확인 | SEC2-GATE-00 | verification | 2 |
@@ -136,7 +140,7 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 | SEC2-HOST-05 | P2 | 2 (1×2) | 호스트 도구 | ArtCraft MCP·게임 빌드 컨테이너 격리 확인 | 미검증 | - | verification | 3 |
 | SEC2-FILE-03 | P2 | 2 (1×2) | 파일 | 작업공간·지식 출처 등록 경로 경계 | 부분 확인 | SEC2-FILE-02 | verification | 3 |
 | SEC2-SECRET-02 | P2 | 1 (1×1) | 비밀 노출 | 오류 응답의 내부 정보 노출 | 미검증 | - | verification | 3 |
-| SEC2-PI-02 | P2 | 2 (1×2) | 프롬프트 인젝션 | 기억·엔터티 오염의 지속 주입 | 추론 | SEC2-PI-01 | verification | 3 |
+| SEC2-PI-05 | P2 | 3 (1×3) | 프롬프트 인젝션 | Run taint와 고위험 sink 강등, 외부 콘텐츠 Run 도구 프로필 축소 | 확인됨(코드) | SEC2-PI-04 | design | 3 |
 | SEC2-OPS-02 | P2 | 2 (1×2) | 사고 대응 | 사고 대응 runbook(키·토큰·계정 회전) | 확인됨(부재) | SEC2-AUTH-01 | design | 3 |
 | SEC2-AUTHZ-04 | P2 | 3 (1×3) | 인가·범위 | 토큰 용도(aud) 교차 매트릭스 | 부분 확인 | SEC2-GATE-00 | verification | 3 |
 | SEC2-EXPO-02 | P3 | 1 (1×1) | 네트워크 노출 | 무인증 상태 엔드포인트 정보 최소화 | 확인됨(관측) | - | general | 4 |
@@ -331,6 +335,7 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 - 우선순위 P1, 심각도 6 (가능성 2 × 영향 3), 상태 **추론**, 영역 프롬프트 인젝션, Phase 2, 권장 task_type `design`
 - 자산: A12, A14
 - 위협 시나리오: 회수 문서·웹·GitHub 이슈·회의록·NotebookLM 응답·업로드 파일의 지시가 배포·삭제·알림·외부 업로드를 유발한다.
+- 2026-10-19 갱신: 상태 추론 → **부분 확인**. 작업 분할 1)(sink·source 인벤토리)은 [prompt-injection-audit.md](prompt-injection-audit.md) 1~2장으로 완료했다. 진입점 15개 중 이메일, 백엔드 PDF 파서, GitHub→에이전트 경로는 미구현이다. 완화 1차는 SEC2-PI-03·05로 구체화했다. 남은 범위는 2) 실제 엔진 평가셋(T-S2·T-S3, 유도율 기준선)이다.
 - 현재 통제와 근거: 일부 도구 설명에 'source data, not instructions' 문구. 기술적 출처 표시·제한 없음.
 - 검증 방법: 합성 인젝션 문서를 recall·회의록·GitHub mock에 심고 실제 엔진 Run이 notify_user/forget/request_backend_deploy/notebooklm_add_source를 호출하는지 기록(격리 백엔드, 도구는 mock).
 - 수정 방향: 고위험 sink 목록화, 도구 결과에 출처 태그, 배포는 커밋 작성 세션·origin/main 포함 확인, 외부 반출 도구는 민감 경로 차단. 승인 프롬프트는 추가하지 않는다.
@@ -338,6 +343,58 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 - 완료 기준: 평가셋 N건(확인 필요)과 엔진별 유도율 기준선, 완화 후 재측정.
 - 불변 조건(정상 사용): 정상 사용자 지시에 의한 같은 도구 호출은 그대로 성공.
 - 작업 분할: 1) sink·source 인벤토리(design, 2h) 2) 평가셋+하네스(2h) 3) 완화 1차(2h)
+
+### SEC2-PI-03 에이전트 간 메시지·인계 출처 envelope
+
+- 우선순위 P1, 심각도 4 (가능성 2 × 영향 2), 상태 **확인됨(재현 R2)**, 영역 프롬프트 인젝션, Phase 2, 권장 task_type `general`
+- 자산: A11, A14
+- 위협 시나리오: 외부 문서에 오염된 작업자가 결과 본문에 `[작업 보고]`·`[접수에서 넘긴 사용자 요청]`을 써서, 기획 세션이 위조된 사용자 요청에 따라 작업자 생성·배포 예약을 한다. 계정 전환 인계가 작업 보고를 `사용자:`로 표기해 출처가 사용자로 바뀐다.
+- 현재 통제와 근거: 서버 머리말 문자열뿐(`runs/manager.py:1849-1889`, `1781-1807`, `runs/desk.py:303-329`, `runs/context_usage.py:104-160`). `read_session`은 `origin`을 노출한다(좋은 선례, `api/agent.py:299-311`).
+- 검증 방법: T-S6a·T-S6b·T-S6c·T-S7b(prompt-injection-audit.md 4.2). 격리 DB, fake 엔진 `PI_FORGE`.
+- 수정 방향: 공통 envelope 함수(서버 nonce, 줄 인용, origin·run·worker 속성)를 작업 보고, 기획 보고, 접수 이력, 계정·한도·중단 인계, context_handoff, 자동 recall 삽입, 회의 전사 구분자에 적용한다. `_handoff_context`는 `Run.origin`별로 표기한다. `spawn_worker`/`message_worker`에 선택 `inputs` 인자와 서버 `derived_from` 기록을 더한다. Qwen spawn-queue 작업자에는 `qwen_degraded_intent`를 표기한다. 승인 단계는 추가하지 않는다.
+- 의존: SEC2-PI-01
+- 완료 기준: 위조 줄이 인용 안에만 남는 테스트, origin별 인계 표기 테스트, 정상 보고·인계 대조군.
+- 불변 조건(정상 사용): 기획이 받는 보고 내용, 알림, 접수 중계 동작 불변. 보고당 토큰 증가량은 `확인 필요`.
+- 작업 분할: 1) envelope 함수 + 작업 보고·인계(2h) 2) 접수 이력·context_handoff·자동 recall·회의 전사(2h) 3) spawn `inputs`·`derived_from`·Qwen 표기(2h)
+
+### SEC2-PI-04 기억 출처 스키마와 사용자 결정 승격 금지
+
+- 우선순위 P1, 심각도 4 (가능성 2 × 영향 2), 상태 **확인됨(재현 R3, 코드)**, 영역 프롬프트 인젝션, Phase 2, 권장 task_type `general`
+- 자산: A9, A10
+- 위협 시나리오: 외부 문장이 `remember(kind=decision|preference|instruction)`로 저장되어 이후 사용자 결정처럼 쓰인다. 에이전트가 사용자 메모에 덧붙인 문장이 `source=user`로 남는다. 에이전트가 지식 원장 추출물을 `source_reviewed`로 스스로 승격한다.
+- 현재 통제와 근거: `remember`에 `source=agent`·`source_ref`가 남고 회수 결과에 노출된다(대조군 확인). 지식 원장은 증거 span 일치와 에이전트 `user_confirmed` 금지가 있다(`knowledge/store.py:287-289`, `api/knowledge.py:413-414`). 메모 덧붙임은 출처 구분이 없다(`api/agent.py:387-415`).
+- 검증 방법: T-S8a·T-S8b·T-S8c·T-S5.
+- 수정 방향: `CtxMemory.speaker`(user|agent|document|external)와 `derived_from`을 둔다. `remember`에 선택 `user_quote`를 받아, 세션 사슬의 user·desk Run 프롬프트 부분 문자열이면 `speaker=user`, 아니면 결정류를 `speaker=agent, kind=note`로 강등하고 이유를 돌려준다(차단 아님). 메모 덧붙임에는 서버 경계 줄과 `agent_appended`를 붙인다. 지식 원장은 사용자 주어의 decision·preference 승격에 증거 단위 `speaker=user`를 요구한다. 회수 결과에 `speaker`·`author`를 싣는다.
+- 의존: SEC2-PI-03(provenance 체인 재사용)
+- 완료 기준: 강등·경계 테스트와 사용자 인용 저장 대조군.
+- 불변 조건(정상 사용): 사용자가 말한 사실·선호 저장, 회수 순위, 메모 덧붙임 기능 유지.
+- 작업 분할: 1) 스키마 + `remember` 규칙(2h) 2) 메모 경계·회수 표시(2h) 3) 지식 승격 규칙(1h)
+
+### SEC2-PI-05 Run taint와 고위험 sink 강등, 외부 콘텐츠 Run 도구 프로필 축소
+
+- 우선순위 P2, 심각도 3 (가능성 1 × 영향 3), 상태 **확인됨(코드)**, 영역 프롬프트 인젝션, Phase 3, 권장 task_type `design`
+- 자산: A9, A12, A14
+- 위협 시나리오: 회의 전사·리버스 대상·웹 문서·NotebookLM 답변을 읽은 Run이 배포 예약, 고정 기억 변경, 임의 URL의 NotebookLM 등록을 한다. 회의 분석 Run은 쓰기 도구가 필요 없는데 MCP 전체 도구를 받는다(`meetings/pipeline.py:318-341`, `runs/manager.py:907-913`).
+- 현재 통제와 근거: 서버측 범위·kind 검사(work/personal)는 확인됨. 같은 범위 안의 sink 선택은 모델 판단뿐이다.
+- 검증 방법: T-S7a·T-S7c와 정상 `clean` Run 대조군.
+- 수정 방향: 1단계로 MCP `TTK_ROLE=reader` 프로필을 회의 분석·날씨 Run에 적용한다(쓰기 도구 미등록). 2단계로 `Run.usage.taint`(clean|derived|external|compromised)를 Run 종류·도구 이벤트·provenance로 판정하고, `external` Run의 고위험 sink를 강등한다. 결정류 기억은 PI-04 규칙, 고정 항목은 제안 저장, 배포는 SEC2-DEP-01의 리비전 출처 조건 재사용, `notebooklm_add_source(url)`는 사용자 프롬프트에 나온 URL만 허용한다. 승인 단계는 추가하지 않는다. Dual-LLM 격리는 장기 연구로 둔다.
+- 의존: SEC2-PI-04, SEC2-DEP-01(배포 조건 공유)
+- 완료 기준: 강등 테스트, `clean` Run 동일 호출 성공 대조군, taint 판정 표.
+- 불변 조건(정상 사용): 사용자 지시 배포·기억·NotebookLM 등록은 추가 확인 없이 성공. 회의 분석 결과 품질 불변.
+- 작업 분할: 1) reader 프로필(2h) 2) taint 판정(2h) 3) sink 강등(2h)
+
+### SEC2-PI-06 egress canary 회귀 하네스와 소유 제어 지점 탐지
+
+- 우선순위 P1, 심각도 6 (가능성 2 × 영향 3), 상태 **추론**, 영역 프롬프트 인젝션, Phase 2, 권장 task_type `general`
+- 자산: A2, A5, A7, A9
+- 위협 시나리오: 인젝션된 Run이 비밀·개인 기억을 MCP 인자(NotebookLM 텍스트·URL 쿼리, 리버스 설명, 작업자 프롬프트), 브라우저 MCP 탐색 URL, git push, 셸 `curl`로 내보낸다.
+- 현재 통제와 근거: egress 탐지 없음. 셸 네트워크 개방(`agents/codex.py:136`). RunEvent 마스킹은 저장 경로만 다룬다(`runs/events.py`).
+- 검증 방법: T-S4a·T-S4b. 테스트별 `CANARY-PI-<uuid>`, `127.0.0.1:0` mock sink, NotebookLM 가짜 어댑터, 외부 호스트 호출 시 실패하는 전송 가드.
+- 수정 방향: 1) 회귀 하네스(fixture, fake 엔진 `PI_EXFIL`) 2) 백엔드 소유 지점(MCP 쓰기 인자, 브라우저 MCP 래퍼, 작업공간 pre-push)에서 canary 일치 시 해당 호출만 거절하고 `security.canary_hit` 감사·알림. 실제 비밀 패턴은 탐지 기록만 3) 운영 미끼(canary 파일·기억) 배치는 사용자 결정 후. 셸 로컬 프록시 관측은 시험 후 판단. 1순위 방어는 SEC2-DEC-01의 읽기 거부다.
+- 의존: SEC2-PI-01. SEC2-EXEC-01(canary 읽기 실측)·SEC2-SECRET-01(로그 canary)과 대상이 달라 중복이 아니다.
+- 완료 기준: canary 반출 RED/GREEN, 정상 URL·텍스트 등록 대조군, 외부 호출 0 확인.
+- 불변 조건(정상 사용): 정상 외부 조사·NotebookLM 등록·git push 불변. 오탐은 canary 일치에 한정.
+- 작업 분할: 1) 하네스(2h) 2) MCP 인자 탐지(2h) 3) 브라우저·pre-push(2h)
 
 ### SEC2-HOST-03 NotebookLM: 로컬 파일 반출·세션 보관·범위 검증
 
@@ -664,9 +721,10 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 - 불변 조건(정상 사용): 사용자 오류 메시지 유용성 유지.
 - 작업 분할: 1) 검증(1h)
 
-### SEC2-PI-02 기억·엔터티 오염의 지속 주입
+### SEC2-PI-02 기억·엔터티 오염의 지속 주입(고정 항목 소유자 전용)
 
-- 우선순위 P2, 심각도 2 (가능성 1 × 영향 2), 상태 **추론**, 영역 프롬프트 인젝션, Phase 3, 권장 task_type `verification`
+- 2026-10-19 갱신: P2 → **P1**, 상태 추론 → **확인됨(재현 R1)**, Phase 3 → 2, task_type `general`. 에이전트 `describe_entity`가 기존 고정 엔터티의 `pinned`를 유지한 채 `summary`를 바꾸고(`context/store.py:44-70`, `api/agent.py:167-175`), 그 요약이 모든 Run 시스템 노트에 들어간다(`runs/manager.py:1712-1714`). 수정 방향: 에이전트는 고정 엔터티·고정 기억의 요약·별칭을 바꾸지 못하고 `proposed_summary`로 저장하며, 반영은 앱에서 사용자가 한다. 재현 T-S1(prompt-injection-audit.md 4.2). 작업 분할: 1) 불변식 + T-S1 RED/GREEN(2h). 아래는 원래 기록이다.
+- 우선순위 P2(원래), 심각도 2 (가능성 1 × 영향 2), 상태 **추론**(원래), 영역 프롬프트 인젝션, Phase 3, 권장 task_type `verification`
 - 자산: A9
 - 위협 시나리오: 인젝션된 에이전트가 remember·describe_entity로 저장한 지시가 이후 recall·고정 요약(context/store.py:135-147)으로 다른 Run에 주입된다.
 - 현재 통제와 근거: 에이전트 remember는 scope=session.pool, pinned 미지정(api/agent.py:137-147). describe_entity 고정 여부 확인 필요.

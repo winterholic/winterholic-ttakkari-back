@@ -244,6 +244,14 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(transfer_diagnostics.TransferDiagnosticsMiddleware)
     app.add_middleware(ShareSecurityMiddleware)
+    if s.game_origin_host:
+        # 가장 바깥에 둬서 게임 host 요청이 인증·CORS·API 라우트에 닿지 않게 한다(ADR 0049).
+        from ttakkari.games.origin import (
+            GameOriginMiddleware,
+            install_access_log_filter,
+        )
+        install_access_log_filter()
+        app.add_middleware(GameOriginMiddleware, host=s.game_origin_host)
 
     @app.exception_handler(HTTPException)
     async def _http_exc(request: Request, exc: HTTPException) -> JSONResponse:

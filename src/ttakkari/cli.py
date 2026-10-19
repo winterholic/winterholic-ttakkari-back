@@ -21,6 +21,17 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serve_games(args: argparse.Namespace) -> int:
+    """별도 게임 origin 만 띄운다(API·DB 라우트 없음). 로컬 검증이나 별도 포트/터널 운영용이다."""
+    import uvicorn
+
+    from ttakkari.games.origin import install_access_log_filter
+
+    install_access_log_filter()
+    uvicorn.run("ttakkari.games.origin:app", host=args.host, port=args.port)
+    return 0
+
+
 def _cmd_migrate(_: argparse.Namespace) -> int:
     from alembic.config import Config
 
@@ -214,6 +225,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--port", type=int, default=8787)
     p.add_argument("--reload", action="store_true")
     p.set_defaults(func=_cmd_serve)
+
+    p = sub.add_parser("serve-games", help="별도 게임 origin(정적 빌드 서빙, 자격증명 없음)만 실행")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8795)
+    p.set_defaults(func=_cmd_serve_games)
 
     sub.add_parser("migrate", help="DB 마이그레이션을 head 까지 적용").set_defaults(func=_cmd_migrate)
     sub.add_parser("set-password", help="로그인 비밀번호 설정").set_defaults(func=_cmd_set_password)

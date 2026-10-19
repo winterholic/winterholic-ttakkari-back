@@ -393,6 +393,13 @@ class Settings(BaseSettings):
     game_build_max_source_mb: int = Field(default=200, ge=1, le=4096)
     game_build_max_output_mb: int = Field(default=200, ge=1, le=4096)
     game_registry_hosts: list[str] = ["registry.npmjs.org"]
+    # 별도 게임 origin(games/origin.py, ADR 0049). host 가 비어 있으면 API 프로세스는 게임을 어떤 origin 으로도 서빙하지 않는다.
+    # host 는 따까리 API 와 다른 hostname(가능하면 다른 registrable domain)이어야 하고, url 은 PWA 가 iframe 에 넣을 공개 기준 주소다.
+    game_origin_host: str = ""
+    game_origin_url: str = ""
+    game_play_token_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
+    # iframe 으로 게임을 끼울 수 있는 PWA origin. 비우면 cors_origins 를 쓴다.
+    game_frame_ancestors: list[str] = []
 
     @property
     def game_builds_dir(self) -> Path:

@@ -18,8 +18,10 @@ from sqlalchemy import select
 
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
+from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.games import builds as game_builds
+from ttakkari.games import origin as game_origin
 from ttakkari.games.contract import (
     GameContractError,
     approve_lock,
@@ -38,7 +40,8 @@ router = APIRouter(prefix="/api/games", tags=["games"])
 
 CODE_STATUS = {
     "not_found": 404, "no_manifest": 404, "no_pms_project": 404, "no_run": 404, "no_build": 404, "no_workspace": 404,
-    "exists": 409, "build_in_progress": 409, "snapshot_exists": 409,
+    "exists": 409, "build_in_progress": 409, "snapshot_exists": 409, "snapshot_tampered": 409, "not_playable": 409,
+    "origin_unconfigured": 503,
     "outside_root": 403, "bad_slug": 422, "bad_manifest": 422, "wrong_engine": 422, "unsupported_engine": 422,
 }
 
@@ -82,6 +85,22 @@ class BuildOut(BaseModel):
 class BuildDetailOut(BuildOut):
     log_tail: str | None
     snapshot_verified: bool | None = None  # verify=true 로 요청했을 때만 채운다
+
+
+class PlayIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    build_id: uuid.UUID | None = None  # 비우면 가장 최근 성공 빌드
+
+
+class PlayOut(BaseModel):
+    url: str  # iframe src. 별도 origin 의 서명 토큰 경로이며 따까리 자격증명은 들어 있지 않다
+    origin: str  # postMessage 의 event.origin 으로 비교할 게임 origin
+    expires_at: datetime
+    build_id: uuid.UUID
+    build_seq: int
+    bundle_sha256: str
+    frame_ancestors: list[str]
+    sandbox: str  # iframe sandbox 속성으로 쓸 값. allow-same-origin 은 일부러 없다
 
 
 class GameOut(BaseModel):
@@ -209,3 +228,37 @@ async def start_build(game_id: uuid.UUID, body: BuildStartIn, _: User, db: Db, r
     _background.add(task)
     task.add_done_callback(_background.discard)
     return build
+
+
+@router.post("/{game_id}/play", response_model=PlayOut)
+async def play_game(game_id: uuid.UUID, body: PlayIn, _: User, db: Db, request: Request) -> PlayOut:
+    """성공한 빌드를 별도 게임 origin 에서 열 단기 URL 을 발급한다. 번들 해시를 다시 확인한 빌드만 내준다."""
+    problem = game_origin.origin_problem()
+    if problem:
+        raise HTTPException(503, {"code": "origin_unconfigured", "message": problem})
+    game = await _game(db, game_id)
+    if body.build_id is not None:
+        build = await db.get(GameBuild, body.build_id)
+        if build is None or build.game_id != game.id:
+            raise HTTPException(404, {"code": "no_build", "message": "빌드가 없습니다."})
+    else:
+        build = await db.scalar(select(GameBuild).where(GameBuild.game_id == game.id, GameBuild.status == "succeeded")
+                                .order_by(GameBuild.seq.desc()).limit(1))
+        if build is None:
+            raise HTTPException(409, {"code": "not_playable", "message": "플레이할 성공 빌드가 아직 없습니다."})
+    if build.status != "succeeded" or not build.bundle_rel_path:
+        raise HTTPException(409, {"code": "not_playable", "message": "성공한 빌드만 플레이할 수 있습니다."})
+    if not await asyncio.to_thread(game_builds.verify_snapshot, build):
+        record(db, action="game.play", outcome="denied", target_type="game_build", target_id=build.id, ip=client_ip(request),
+               detail={"code": "snapshot_tampered"})
+        await db.commit()
+        raise HTTPException(409, {"code": "snapshot_tampered", "message": "빌드 스냅샷이 기록된 해시와 달라 열 수 없습니다."})
+    ancestors = game_origin.frame_ancestors()
+    caller = (request.headers.get("origin") or "").rstrip("/")
+    token, exp = game_origin.issue_play_token(game.id, build.id, build.bundle_rel_path)
+    record(db, action="game.play", target_type="game_build", target_id=build.id, ip=client_ip(request), detail={"game": game.slug, "seq": build.seq})
+    await db.commit()
+    return PlayOut(
+        url=game_origin.play_url(token, caller if caller in ancestors else None), origin=get_settings().game_origin_url.rstrip("/"),
+        expires_at=exp, build_id=build.id, build_seq=build.seq, bundle_sha256=build.bundle_sha256 or "", frame_ancestors=ancestors,
+        sandbox=game_origin.SANDBOX_TOKENS)

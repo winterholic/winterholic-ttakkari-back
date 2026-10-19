@@ -124,7 +124,7 @@ async def test_real_manager_dispatches_implementation_and_verification(client, a
 import json, re, subprocess, sys, uuid
 from pathlib import Path
 args=sys.argv[1:]
-is_claude='-p' in args
+is_claude='exec' not in args  # codex 는 -p <프로파일> 도 쓴다(SEC2-AGT-01)
 prompt=args[args.index('-p')+1] if is_claude else ' '.join(args[args.index('--')+1:])
 root=Path(re.search(r'^작업 폴더: (.+)$',prompt,re.M).group(1))
 report_path=Path(re.search(r'최종 기록은 (.+?\\.json)',prompt).group(1))

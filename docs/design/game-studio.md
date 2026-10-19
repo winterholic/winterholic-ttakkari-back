@@ -3,7 +3,7 @@
 - **문서 위치**: `back/docs/design/game-studio.md`
 - **작성일**: 2026-10-19
 - **단계**: Phase 1 (조사·설계·WBS)
-- **목표**: 코드와 게임 엔진을 모르는 사용자가 '게임 디렉터'로서 아이디어만 주면, 따까리 AI 에이전트들이 기획 → 기술 선정 → 개발 → 에셋 → 빌드 → 실행 → 플레이 테스트 → 피드백 → 수정 → 재검증을 무인/자율적으로 수행하는 게임 화면 중심 제작 스튜디오 구축.
+- **목표**: 코드와 게임 엔진을 모르는 사용자가 모바일 PWA에서 '게임 디렉터'로 아이디어를 제시하고 직접 플레이·시각 피드백을 주면, 기존 따까리 에이전트가 구현·빌드·검증·수정하는 게임 화면 중심 제작 스튜디오를 단계적으로 검증한다.
 
 ---
 
@@ -17,20 +17,20 @@
 1. **특정 엔진·장르 비종속 (Engine-Agnostic Adapter Architecture)**:
    - 특정 게임 엔진(Phaser, Godot, Unity 등)에 종속되지 않는 공통 추상 어댑터 인터페이스(`GameEngineAdapter`)를 둔다.
    - 엔진별 지원 기능, 제약, 대체 수단을 기능 매트릭스로 명시한다.
-2. **기존 따까리 인프라 및 오케스트레이터 최대 재사용 (Zero Duplicate Systems)**:
-   - 오케스트레이터, 작업 분배(worker routing), 계정 한도 폴백, 세션/Run 수명주기, Git 체크포인트, PMS/WBS, 맥락 도서관을 100% 재사용한다.
-   - 중복 데이터베이스 테이블이나 별도 큐 서버를 추가하지 않는다.
+2. **기존 따까리 인프라 재사용**:
+   - 오케스트레이션·worker routing·Run 수명주기·PMS/WBS·Artifact·Git 작업 체크포인트를 우선 재사용한다. 실제 경로와 권한을 확인하지 않은 채 재사용률을 보장하지 않는다.
+   - 새 작업 큐·버전 관리·빌드 보관 시스템은 만들지 않는다. 기존 모델로 표현할 수 없는 최소한의 게임별 상태만 코드 작성 전 설계·마이그레이션 필요성을 검증한다.
 3. **사용자 확정 방향 잠금 (Locked Decisions Ledger)**:
-   - 사용자가 승인한 핵심 콘셉트(예: "2D 도트 픽셀 그래픽", "탑다운 뷰", "그리드 기반 턴제")는 데이터 모델 상 `locked_decisions`로 영속화하여, 에이전트가 후속 작업 중 임의로 변경하지 못하도록 잠금한다.
+   - 사용자가 승인한 핵심 콘셉트(예: "2D 도트 픽셀 그래픽", "탑다운 뷰", "그리드 기반 턴제")는 선택한 영속 저장소에 `locked_decisions`로 기록하고 worker prompt에 포함한다. 저장·revision·변경 승인 경로는 구현 전 확인하며, 이 guard는 아직 구현된 기능이 아니다.
 4. **에셋 출처 및 라이선스 엄격 관리 (Asset Provenance & License Tracking)**:
-   - 생성되거나 임포트된 모든 에셋(이미지, 사운드, 3D 모델)에 출처, 라이선스(CC0, MIT, 상업적 허용 여부), 생성 프롬프트, 모델 버전을 필수로 기록한다.
+   - 생성되거나 임포트된 에셋에 확인된 출처·라이선스 근거, 생성 모델/프롬프트(알려진 경우)를 연결해 추적성을 확보한다. 기록만으로 라이선스 적합성이 보장되지는 않는다.
 5. **Git 기반 버전 관리·빌드 보존·회귀 테스트 (Deterministic Versioning & Rollback)**:
    - 모든 수정 단계는 Git 커밋 및 빌드 스냅샷으로 보존된다.
-   - 플레이 테스트 실패 또는 사용자 요청 시 이전 정상 버전으로 원클릭 롤백이 가능해야 한다.
+   - 플레이 테스트 실패 또는 사용자 요청 시 기존 버전을 보존하면서 이전 정상 상태로 복원하는 기능을 제공한다. 복원 절차와 승인 확인은 Phase 2에서 검증한다.
 6. **실제 실행 및 플레이 검증 의무 (Verification Over Formality)**:
    - "코드를 작성했다"는 완료가 아니다. 실제 빌드 성공, 게임 실행, Playwright/엔진 테스트 러너를 통한 플레이 검증 증거(스크린샷, 콘솔 로그, FPS 측정값)가 수반되어야 완료로 인정한다.
 7. **빌드 및 임의 코드 실행 보안 격리 (Isolated Build & Execution Boundary)**:
-   - 게임 프로젝트 빌드 스크립트의 악성 코드 주입이나 탈출 위험에 대비하여, 샌드박스 정책 및 CSP(Content Security Policy) sandbox를 적용한다.
+   - CSP와 iframe sandbox는 브라우저 렌더링 경계다. 호스트에서 실행되는 `npm install` 수명주기 스크립트·빌드 스크립트를 격리하지 않는다. 빌드 프로세스는 비밀이 없는 별도 OS/가상화 경계, 최소 권한, 네트워크 제한, CPU·메모리·시간 제한으로 실행하는 방안을 별도 검증한다. 그 경계가 입증되기 전에는 신뢰하지 않는 프로젝트의 설치·빌드를 자동 실행하지 않는다.
 
 ---
 
@@ -38,54 +38,56 @@
 
 ### 2.1 오케스트레이터 및 작업 분배 (Worker Routing)
 - **근거 파일**:
-  - `back/src/ttakkari/runs/worker_routing.py:21-81`
-  - `back/src/ttakkari/runs/manager.py:34-120`
-  - `back/src/ttakkari/orchestrator/runtime.py:12-95`
+  - `back/src/ttakkari/runs/worker_routing.py:21-80`
+  - `back/src/ttakkari/runs/manager.py:248-360` (Run 접수·dispatch 경로)
+  - `back/src/ttakkari/orchestrator/mcp_server.py:558-600` (worker 세션 도구 등록)
 - **조사 내용**:
-  - 따까리는 태스크 성격에 따라 5개 `TaskType`(`general`, `routine`, `design`, `verification`, `reasoning`)으로 모델을 자동 라우팅한다.
-  - 기획 및 시스템 설계 단계: `design` 라우트(`SONNET` = Claude Sonnet 5.5 High) 또는 `reasoning`(`ARGON`, `AGY_OPUS`, `SOL`).
-  - 게임 로직 구현: `general` 라우트(`SONNET`, `FLASH`, `NATIVE_SONNET`, `LUNA`).
-  - 에셋 메타데이터 가공 및 단순 스크립팅: `routine` 라우트(`FLASH`, `LUNA`).
-  - 회귀 검증 및 자동 플레이 테스트: `verification` 라우트(`LUNA` = Codex GPT-6 Luna, `SONNET` 교차 검증). 글로벌 규칙에 따라 구현한 컨텍스트와 독립된 신선한 컨텍스트에서 검증을 수행한다.
-  - 계정 사용량 한도 발생 시 `profiles.choose`(`back/src/ttakkari/runs/profiles.py`)가 5시간/주간 잔여량과 실행 중인 Run 수를 계산하여 최적 계정으로 무중단 폴백한다.
+  - `TaskType`은 `general`, `routine`, `design`, `verification`, `reasoning` 다섯 가지이며 실제 후보 순서는 `worker_routing.py:71-80`의 `ROUTES`가 정본이다. 게임 작업에는 이 기존 분류만 사용하고 모델 이름·순서를 새로 가정하지 않는다.
+  - 구현 뒤 검증 worker를 별도로 요청할 수 있지만, 라우팅만으로 독립된 컨텍스트·자동 플레이·회귀 테스트가 보장되지는 않는다. Phase 2는 worker 생성부터 결과 수신까지 실제 연결을 명시적으로 구현·검증한다.
+  - 사용량 제한 시 프로필 선택과 대기는 기존 `profiles`/`RunManager` 경로를 재사용한다. 이는 항상 즉시 또는 무중단 폴백을 보장하는 계약이 아니다.
 
 ### 2.2 브라우저 및 GUI 자동화, 멀티미디어 도구
 - **근거 파일**:
   - `back/README.md:15` ("macOS Codex 화면 검증: Node.js 18+·설치된 Google Chrome·Playwright MCP 런타임")
   - `back/docs/adr/0043-remote-desktop.md:21-28` (noVNC 기반 원격 화면 스트리밍)
 - **조사 내용**:
-  - 기존 인프라에 Playwright 기반 화면 검증 규격이 정의되어 있으나, 시스템 전역 PATH 및 캐시에는 현재 Playwright CLI가 설치되어 있지 않음(§2.7 실측 참조).
-  - 웹 기반 게임 구동 시 Playwright를 프로젝트 로컬 `devDependencies`로 설치하거나 프로젝트 러너로 구동하여 브라우저 콘솔 로그 수집, 키보드/마우스 이벤트 주입, 캔버스 스크린샷 캡처를 완전 자동화할 수 있다.
+  - README는 Node.js·Chrome·Playwright MCP 런타임을 일반 화면 검증 전제로 적는다. 이는 게임 프로젝트의 Playwright 패키지/API나 자동 테스트 러너가 이미 구현되어 있다는 뜻이 아니다.
+  - 이 검토 실행 환경에서는 Playwright CLI는 PATH에 없지만 `~/Library/Caches/ms-playwright`에 Chromium·WebKit 브라우저 디렉터리가 있다. 설치된 브라우저 캐시만으로 게임 자동화 기능의 가용성을 보증할 수 없다.
 
 ### 2.3 프로젝트 디렉터리, 장시간 프로세스, iframe 서빙 및 보안 경계
 - **근거 파일**:
-  - `back/README.md:32-34` (`TTAKKARI_ALLOWED_ROOTS`, 기본 `~/development` 하위 격리)
-  - `back/src/ttakkari/api/artifacts.py:65-71` (아티팩트 서빙 시 `CSP: sandbox; default-src 'none'` 적용)
-  - `back/src/ttakkari/broker/policy.py:35-85` (루트 탈출 차단, 심링크 방어)
-  - `back/src/ttakkari/runs/desk_qwen.py:466-548` (자식 프로세스 관리 및 쿨다운)
+  - `back/README.md:32-34` (`TTAKKARI_ALLOWED_ROOTS`와 기본 workspace 설정; 이 설정은 프로세스 샌드박스가 아님)
+  - `back/src/ttakkari/api/artifacts.py:65-71,312-330` (Artifact CSP 및 bearer 인증)
+  - `back/src/ttakkari/broker/policy.py:102-164` (파일 경로를 허용 루트에 제한; 임의 subprocess의 OS 접근을 격리하지 않음)
+  - `back/docs/adr/0004-auth.md:8-11`, `back/src/ttakkari/api/auth.py:33-39` (메모리 access token, HttpOnly refresh cookie)
+  - `back/src/ttakkari/main.py:229-232` (credential 포함 CORS; 런타임 allowlist 값은 설정 확인 필요)
+  - `back/docs/design/generation-deployment.md:7,91` (기존 Cloudflare Tunnel → loopback Caddy/backend 진입점)
 - **조사 내용**:
-  - 게임 프로젝트 작업 디렉터리는 `~/development/projects/games/<game_id>/`에 위치하여 기존 `TTAKKARI_ALLOWED_ROOTS` 범위 내에 안전하게 보관된다.
+  - 게임 프로젝트 디렉터리 후보 `~/development/projects/games/<game_id>/`는 `~/development` 허용 상위 경로 아래에 둘 수 있다. 실제 Workspace 등록·경로 검증과 OS 프로세스 격리는 별개다.
   - 현재 따까리 아티팩트 서빙(`/api/artifacts/{id}/content`)은 보안 강화를 위해 `sandbox; default-src 'none'` CSP가 적용되어 자바스크립트 실행이 차단된다.
-  - **핵심 요구사항 해결**: 웹 게임을 관제탑 iframe에서 실행하려면 `allow-scripts`, `allow-same-origin`, WebGL, WebAudio가 허용되어야 한다. 이를 위해 별도의 게임 라이브 서빙 엔드포인트(`/api/games/{project_id}/live/{build_id}/...`)를 신설하고, 따까리 본체 PWA(토큰, 쿠키)와 분리된 전용 CSP 및 CORS 정책을 적용해야 한다.
-  - 장시간 프로세스(dev 서버) 상시 구동 대신, **빌드 번들(`dist/`) 정적 서빙 방식**을 기본으로 채택하여 서버 자원 낭비와 프로세스 크래시 위험을 방지한다.
+  - 기존 `/api/artifacts/{id}/content`는 `User` bearer 인증을 요구하며 `Content-Security-Policy: sandbox; default-src 'none'`로 실행을 막는다. 다운로드 링크는 짧은 수명 토큰으로 보호된다. 기존 경로를 iframe 게임 실행 용도로 재사용하면 안 된다.
+  - 별도 게임 origin/서빙 계약은 아직 미설계·미구현이다. 기존 Cloudflare Tunnel은 loopback Caddy/backend 진입점으로 문서화되어 있어 같은 API origin의 경로만 나눠서는 origin 격리가 생기지 않는다. 새 게임 hostname/tunnel route는 운영 설정에서 확인하지 않았다.
+  - access token은 프론트 메모리에, refresh token은 운영에서 HttpOnly/Secure/SameSite=None cookie로 API 도메인에 발급된다. credential CORS는 설정 allowlist 기반이나 운영 값은 확인하지 않았다. 게임 origin에는 cookie를 공유하지 말고 API 호출·credential 전달·CORS를 거부하는 별도 site origin을 tunnel/Caddy·쿠키 범위와 함께 보안 검증해야 한다.
+  - 같은 origin에서 `allow-scripts`와 `allow-same-origin`을 함께 허용하면 게임 스크립트가 sandbox 해제를 시도할 수 있다. PWA와 분리된 origin, 세션 쿠키/토큰 미전달, 좁은 CSP, 명시적 `postMessage` origin/source/schema 검증을 우선 설계한다. CSP는 OS 빌드 프로세스의 격리 수단이 아니다.
+  - 정적 빌드 산출물 서빙을 우선 검토하되, 경로 검증·빌드 스냅샷 권한·보관·삭제 정책과 서빙 origin을 Phase 2 보안 설계에서 확정한다.
 
 ### 2.4 실행 화면 스트리밍 비교 분석
 - **비교**:
   1. **브라우저 게임 iframe 서빙 (Web Canvas)**:
-     - 지연시간: **0ms (클라이언트 직접 렌더링)**
-     - 모바일 조작: 터치 이벤트가 캔버스에 직접 1:1 매핑되어 액션/아케이드 반응성 완벽.
-     - 시각적 주석/오브젝트 선택: `canvas.toDataURL()`로 스튜디오에서 픽셀 단위 캡처 즉시 가능. 게임 내부 postMessage 통신으로 씬 오브젝트 ID/좌표 추출 가능.
-     - 자원 소모: 서버 CPU/GPU 사용량 0 (정적 파일 서빙만 수행).
+     - 지연시간: 게임 렌더링은 클라이언트에서 수행되지만 다운로드·네트워크·브라우저 렌더링 지연은 남는다. 지연 실측 전 수치 보장은 하지 않는다.
+     - 모바일 조작: Pointer Events 기반 입력을 구현할 수 있으나 지원 장치·전체 화면·회전·터치 상호작용 검증이 필요하다.
+     - 시각 피드백: 부모는 cross-origin iframe canvas/DOM을 직접 읽을 수 없다. 캡처는 게임 origin 내부에서 만들고 `postMessage` 이미지 payload를 보내는 등 별도 계약이 필요하다. 부모는 허용된 `origin`·`source`·schema·크기만 검증한 뒤 표시하고, 메시지를 HTML로 실행하지 않는다.
+     - 서버는 파일을 전달할 뿐 렌더링을 맡지 않는다. 정적 파일 전달 비용과 빌드 CPU/메모리는 별도다.
   2. **네이티브 창 캡처 스트림 (noVNC / WebRTC)**:
-     - 지연시간: 네트워크 대역폭 및 비디오 인코딩에 따라 100~300ms 이상 발생 (LTE/원격 접속 시 조작감 저하).
-     - 상호작용: 가상 마우스/키보드 오버레이 필요 (`archetypes/remote.html`).
+     - 지연시간: 네트워크 및 캡처·인코딩 구현에 따라 달라진다. 이 프로젝트에서 측정한 비교값은 없다.
+     - 상호작용: 가상 마우스/키보드 오버레이 필요 (`examples/archetypes/remote.html`).
      - 오브젝트 선택: 단순 영상 스트림이므로 씬 내부 게임 오브젝트 직접 픽킹 불가 (화면 픽셀 좌표 역추정 필요).
      - 자원 소모: 서버 측 GPU 캡처 및 비디오 압축 부하 발생.
-- **판단**: Phase 2 구현 및 모바일 PWA 환경에서의 원활한 검증을 위해 **웹 게임 스택(iframe 임베딩)**이 압도적으로 유리하다.
+- **판단**: 기존 브라우저와 Node/npm 환경을 활용할 수 있어 웹 2D를 첫 실험 대상으로 택할 근거는 있다. 모바일 조작감·피드백·보안 적합성은 Phase 2에서 실측 후 유지 여부를 결정한다.
 
 ### 2.5 기존 WBS/PMS 구조 및 맥락 도서관 연동
 - **근거 파일**:
-  - `back/src/ttakkari/api/pms.py:1-120` (PmsProject, PmsTask 모델 및 WBS 계층 트리)
+  - `back/src/ttakkari/api/pms.py:20-27,43-77` (PMS API 모델; DB 모델은 `back/src/ttakkari/models.py:798-840`)
   - `back/docs/adr/0008-context-library.md:1-25` (임베딩 없는 PostgreSQL 키워드/온톨로지 검색)
   - `back/README.md:57-81` (맥락 도서관 지침 및 중복 저장 금지 원칙)
 - **조사 내용**:
@@ -95,46 +97,39 @@
 ### 2.6 결과물 버전 관리 및 에셋 라이선스/대용량 관리
 - **근거 파일**:
   - `back/README.md:101-105` (`refs/ttakkari/runs/<run_id>` 체크포인트 메커니즘)
-  - `back/src/ttakkari/models.py:Artifact` (아티팩트 메타데이터)
+  - `back/src/ttakkari/models.py:143` (`Workspace`), `:387` (`Artifact`), `:798` (`PmsProject`), `:815` (`PmsTask`)
 - **조사 내용**:
-  - 소스코드와 타일맵/스크립트는 표준 Git으로 관리하며, 빌드 성공 시 태그(`build/v{major}.{minor}.{patch}`)를 생성한다.
-  - 대용량 바이너리(BGM 오디오, 거대 스프라이트 시트): Phase 2 웹 게임 범위에서는 50MB 미만 에셋을 Git에 직접 추적하되, 추후 고화질 에셋 확장을 위해 SHA-256 기반 Content-Addressable Storage(CAS) 저장 구조를 에셋 메타데이터에 도입한다.
-  - 롤백 메커니즘: Git 체크포인트 기반으로 이전 태그/커밋을 체크아웃하여 즉시 재빌드하는 무손실 복구 파이프라인을 설계한다.
+  - README의 `refs/ttakkari/runs/<run_id>`는 Run 시작 시점 파일 복구 체크포인트다. 제품의 빌드 버전 목록·불변 빌드 아카이브·원클릭 롤백 API는 아니다.
+  - 기존 Artifact는 파일 등록·미리보기·다운로드 메타데이터다. 성공한 게임 빌드의 불변 스냅샷과 선택적 Git 커밋을 별도 식별자로 연결하고, UI 노출·보존·검증을 하는 작업이 Phase 2에 필요하다.
+  - 롤백은 기존 Run ref를 직접 checkout하는 것으로 처리하지 않는다. 선택한 정상 소스 상태에서 새 복구 커밋/빌드를 만들고 원본 빌드도 남기는 API 계약을 설계한다. 빌드 스냅샷 저장 방식은 구현 전 검증한다.
 
-### 2.7 Mac Studio 로컬 환경 실측 결과 (2026-10-19 18:09 KST 실측)
-실제 쉘 명령을 통해 이 Mac Studio의 도구 설치 상태를 실측했다:
+### 2.7 이 실행 세션에서 재확인한 도구 상태 (2026-10-19 18:22 KST)
+아래는 문서 검토 세션에서 직접 실행한 결과다. Codex 실행 환경의 제한을 호스트 설치 상태로 일반화하지 않았다.
 - **Node.js**: 설치됨 (`/opt/homebrew/bin/node`, version `v26.9.0`)
 - **npm**: 설치됨 (`/opt/homebrew/bin/npm`, version `11.19.1`)
-- **Python**: 설치됨 (`Python 3.14.7`)
-- **uv**: 설치됨 (`uv 0.12.18`)
-- **git**: 설치됨 (`git version 2.55.0`)
-- **Godot**: **미설치** (`godot not found`, `/Applications/*Godot*` 없음)
-- **Unity**: **미설치** (`Unity not found`, `/Applications/*Unity*` 없음)
-- **Unreal Engine**: **미설치** (`UnrealEditor not found`, `/Applications/*Unreal*` 없음)
-- **ffmpeg**: **미설치** (`/opt/homebrew/bin/ffmpeg` 없음)
-- **Playwright 브라우저 캐시**: **미설치** (`~/Library/Caches/ms-playwright` 없음)
-- **Host GPU/Metal**: 사용 가능 (Apple M5 Max, 53,084 MiB VRAM 정상 인식, MCP `execution_capabilities` 실측)
+- **Godot / Unity / Unreal**: `command -v godot godot4 Unity UnrealEditor`에서 실행 파일 없음, `/Applications` 최상위 이름 검색 결과 없음(해당 검색 범위에서 미발견).
+- **ffmpeg**: PATH 및 `/opt/homebrew/bin/ffmpeg`에 없음.
+- **Playwright**: CLI는 PATH에 없으나 브라우저 캐시에 Chromium 1248·WebKit 2359/2370, Playwright ffmpeg 캐시가 있다. 게임 테스트 패키지·러너 설치와 동작은 미검증.
+- **GPU/Metal**: 이 Codex 실행 세션의 `env_probe.py`에서 `gpu_metal`은 `MTLCreateSystemDefaultDevice returned nil`, `llama_list_devices`는 Metal 장치를 열거하지 못했다. 이 결과는 현재 실행 환경에 한정되며 호스트 GPU 사용 가능 여부를 판정하지 않는다.
 
 > [!IMPORTANT]
-> 로컬 실측 결과, Node.js v26과 npm v11이 완벽히 준비되어 있어 웹 기반 게임 스택(HTML5/Vite/TypeScript)은 즉시 개발 및 빌드가 가능하다. 반면 Godot, Unity, Unreal은 미설치 상태이므로 이들을 구동하려면 추가 설치가 선행되어야 한다. 따라서 1차 어댑터로 웹 스택을 선정하는 실측 근거가 확고하다.
+Node/npm 버전이 확인됐다는 사실은 Phaser/Vite 의존성 설치 및 빌드가 검증됐다는 뜻이 아니다. 확인 명령은 `node --version`, `npm --version`, `command -v godot godot4 Unity UnrealEditor ffmpeg`, `/Applications` 이름 검색, Playwright 캐시 목록 조회였다.
 
 ### 2.8 외부 오픈소스 및 자동화 기술 조사
 1. **웹 게임 프레임워크 비교**:
-   - **Phaser 3**: 2D 풀 프레임워크. Arcade/Matter 물리, 애니메이션, 씬 관리, 오디오, 타일맵이 내장되어 있어 AI 에이전트의 코드 생성 성공률이 가장 높음(방대한 훈련 데이터). MIT 라이선스.
-   - **PixiJS (v8)**: 초고속 2D 렌더러이나 물리/사운드 엔진이 없어 AI가 매번 별도 라이브러리(Matter.js 등)를 조합해야 하므로 코드 결함 발생 확률 증가. MIT 라이선스.
-   - **Three.js / React Three Fiber**: 3D 렌더링 표준. 3D 수학/좌표계 및 물리 연산 결함으로 인해 AI 에이전트의 단독 자율 수정 성공률이 2D에 비해 낮음. MIT 라이선스.
-   - **Kaboom / KAPLAY**: 매우 간결한 문법을 제공하나 생태계와 LLM 학습 데이터 풀이 Phaser 대비 작음. MIT 라이선스.
+   - **Phaser 3**: 2D 게임 프레임워크 후보. 공식 프로젝트는 [MIT License](https://phaser.io/download/license)를 안내한다. 실제 도입 버전과 포함 패키지·플러그인 라이선스는 별도로 보존·확인한다. AI 생성 성공률 비교 자료는 수집하지 않아 상대 성공률 주장은 보류한다.
+   - **PixiJS, Three.js / React Three Fiber, KAPLAY**: 기능·엔진 범위 후보. 코드 결함률, 학습 데이터 규모, 자동 수정 성공률을 비교 측정하지 않았다.
 2. **Godot 4 헤드리스 및 웹 Export**:
-   - `godot --headless --path <project> --export-release "Web" <output/index.html>` CLI 지원.
-   - Web Export Templates 및 `export_presets.cfg` 사전 설정 필요. SharedArrayBuffer/COOP/COEP 헤더 설정 필수. MIT 라이선스.
-3. **Unity / Unreal CLI 빌드·테스트**:
-   - Unity: `-batchmode -nographics -buildTarget WebGL -executeMethod ...` 지원되나 계정 라이선스 활성화 및 20GB+ 설치 필요. 독점 라이선스.
-   - Unreal Engine: `RunUAT.sh BuildCookRun` 지원되나 수십~수백 GB 설치 및 C++ 컴파일 필요, Mac 빌드 오버헤드 큼. 독점/소스 공개 라이선스.
+   - 웹 Export와 CLI 사용을 후보로 둔다. 정확한 Godot 버전·템플릿·헤드리스 명령은 구현 시 공식 문서와 설치 환경에서 재검증한다.
+   - SharedArrayBuffer를 사용하는 웹 빌드는 cross-origin isolation 헤더가 필요할 수 있다. 프로젝트·브라우저별 요구 헤더와 iOS 동작은 별도 실측한다. 엔진 라이선스와 포함하는 타사 플러그인은 선택 버전별로 확인한다.
+3. **Unity / Unreal 빌드·테스트 후보**:
+   - Unity Web 빌드의 모바일 지원·기능 제한은 현재 버전과 대상 브라우저에 따라 검증한다. 설치 용량과 라이선스 활성화 요구를 고정 수치로 단정하지 않는다.
+   - Unreal 자동 빌드, Web/원격 실행 경로, 용량·라이선스는 선택 버전·플랫폼별 spike가 필요하다. 현재 비교 근거가 없어 Phase 2 지원 약속으로 취급하지 않는다.
 4. **AI 자동 플레이 및 에셋 생성 오픈소스**:
-   - **자동 플레이/테스트**: Playwright(브라우저 이벤트 주입, 캔버스 스크린샷 캡처, `window.__GAME_STATE__` 내부 변수 검증).
-   - **2D 픽셀 에셋**: Kenney.nl 에셋 팩(CC0 무제한 상업/개인 무료, 40,000+ 게임 에셋), 오픈소스 절차적 픽셀아트 생성기, Aseprite CLI 스크립트.
-   - **절차적 사운드**: jsfxr / sfxr (8-bit 레트로 사운드 파라미터 생성 알고리즘, 순수 JS 라이브러리, 외부 API 결제 없음).
-   - **AI 로컬 이미지 생성**: Mac Studio M5 Max GPU를 활용한 Stable Diffusion WebUI / ComfyUI (호스트 경로).
+   - **자동 플레이/테스트**: Playwright는 후보 도구다. 설치된 브라우저 캐시만으로 자동 실행이나 캔버스 내부 상태 검사 가능성을 보증하지 않는다. `window.__GAME_STATE__`는 게임이 별도로 제공해야 하는 계측 인터페이스다.
+   - **2D 픽셀 에셋**: [Kenney는 에셋 페이지의 게임 자산을 CC0로 안내](https://kenney.nl/support)하지만, 사용할 각 파일과 타사 에셋은 포함된 license/source를 함께 보존한다. 절차적 이미지·Aseprite 도구는 도입 시 라이선스와 실행 경계를 확인한다.
+   - **절차적 사운드**: jsfxr / sfxr는 후보 라이브러리다. 실제 패키지, 라이선스, 산출물 권리는 도입 시 확인한다.
+   - **AI 로컬 이미지 생성**: 선택 사항이며 사용 가능한 호스트 GPU·모델·메모리·라이선스를 이번 실행에서 확인하지 않았다.
 
 ---
 
@@ -214,115 +209,39 @@ class GameEngineAdapter(ABC):
 
 ### 3.2 엔진별 기능 지원 매트릭스 및 제약 대응
 
-| 기능 축 | Web - Phaser 3 (1차 지원) | Godot 4 (2차 확장) | Web - Three.js (3차 확장) | Unity / Unreal (장기) |
+| 기능 축 | Web - Phaser 3 (Phase 2 첫 후보) | Godot 4 (후속 후보) | Web - Three.js (후속 후보) | Unity / Unreal (장기 검토 후보) |
 |---|---|---|---|---|
-| **렌더링 방식** | HTML5 2D Canvas / WebGL | WebGL 2.0 (WASM) / 네이티브 창 | WebGL / WebGPU | WebGL (WASM) / 네이티브 창 |
-| **관제탑 서빙** | 정적 iframe 서빙 (0ms 지연) | 정적 iframe (WASM) or VNC | 정적 iframe 서빙 | 정적 iframe (대용량) or VNC |
-| **모바일 터치 조작** | 완벽 지원 (PointerEvent) | WASM 캔버스 터치 지원 | 터치 카메라/제어 지원 | 가상 컨트롤러 오버레이 필요 |
-| **오브젝트 선택/추적** | `postMessage` 씬 그래프 픽킹 | Debug protocol / AST 파싱 | Raycasting 씬 픽킹 | 원격 RPC 디버거 필요 |
-| **빌드 도구/속도** | Vite / esbuild (수 초 이내) | Godot headless CLI (10~30초) | Vite / esbuild (수 초) | 엔진 CLI (수 분~수십 분) |
-| **Mac Studio 의존성** | Node.js v26 (설치됨) | Godot 4 바이너리 (추가 설치) | Node.js v26 (설치됨) | 수십 GB 설치/라이선스 필요 |
-| **결함 시 대체 방법** | 단일 HTML 스크립트 모드로 전환 | 헤드리스 실패 시 Web 빌드 대행 | 2D Canvas 폴백 | 클라우드 빌드 러너 위임 |
+| **렌더링 방식** | HTML5 2D Canvas / WebGL 후보 | Web export 또는 네이티브 창; 버전별 확인 | WebGL / WebGPU 후보; 브라우저별 확인 | Web export 또는 원격 렌더링 여부 확인 필요 |
+| **관제탑 서빙** | 별도 보안 origin의 정적 iframe 후보; 미구현·지연 미측정 | Web export 또는 별도 원격 화면; 미검증 | 정적 iframe 후보; 미검증 | 대용량/원격 화면 선택 필요 |
+| **모바일 터치 조작** | Pointer Events 처리 후보; 기기 실측 필요 | Web export 지원 확인 필요 | 게임별 제어 구현 필요 | 입력 UI·플랫폼별 확인 필요 |
+| **오브젝트 선택/추적** | 게임별 계측·검증된 메시지 브리지 필요 | adapter/debug API 조사 필요 | Raycasting 구현 후보 | 엔진별 조사 필요 |
+| **빌드 도구/속도** | Vite 후보; 설치·빌드 미실행 | CLI/export template 필요 | Vite 후보; 설치·빌드 미실행 | 설치·라이선스·시간 확인 필요 |
+| **Mac Studio 의존성** | Node.js v26 (설치됨; 게임 빌드 미검증) | Godot 설치·템플릿 및 모바일 export 검증 필요 | Node.js v26 (설치됨; 게임 빌드 미검증) | 설치 용량·라이선스·실행 경로 확인 필요 |
+| **제약 시 대체 방법** | 검증된 단순 2D scaffold로 범위 축소 | 지원 버전·템플릿 확인 후 플랫폼 대안 제시 | Phaser 2D 또는 검증된 Web 렌더러 후보 | 별도 환경·비용 검증 뒤 지원 여부 결정 |
+
+이 표는 후보와 검증 항목을 구분하는 계획표다. Phase 2를 통과하기 전에는 엔진별 기능·기기 지원을 제공 기능으로 보장하지 않는다.
 
 ---
 
-## 4. 게임 프로젝트 데이터 모델
+## 4. 기존 모델 재사용 및 게임별 데이터
 
-기존 PostgreSQL 및 SQLAlchemy 모델 체계(`back/src/ttakkari/models.py`)에 정합하는 논리적 데이터 모델을 정의한다.
+현재 PMS 프로젝트/WBS, Workspace, ChatSession/Run, Artifact, Git Run 체크포인트가 있다. 게임 프로젝트는 이 정본들을 우선 연결한다. 아래 필드는 제품 요구사항이며 별도 SQLAlchemy 모델이 이미 존재한다는 뜻은 아니다.
 
-```mermaid
-erDiagram
-    PmsProject ||--o{ GameProject : "extends"
-    GameProject ||--o{ GameLockedDecision : "has"
-    GameProject ||--o{ GameAsset : "manages"
-    GameProject ||--o{ GameBuild : "produces"
-    GameBuild ||--o{ GameTestRun : "validates"
-    GameBuild ||--o{ GameVisualFeedback : "receives"
-    GameVisualFeedback ||--o{ GameFeedbackAction : "triggers"
+- 게임 콘셉트/엔진 식별: PMS 프로젝트 설명 또는 project-scoped 설계 문서
+- 사용자 확정 방향 잠금과 변경 승인 이력: 명시적 revision이 필요할 때에만 최소 도메인 저장소 추가
+- 에셋: Workspace 파일 + Artifact 등록에 출처·라이선스 근거 연결
+- 빌드/테스트: Run 결과·Artifact를 재사용하되, 불변 build ID·소스 commit·상태 연결이 불가능한 부분만 최소 확장
+- 시각 피드백: Artifact 스크린샷 + 구조화 payload + 이를 처리한 worker Run 참조. 별도 큐/작업 시스템은 만들지 않는다.
 
-    GameProject {
-        uuid id PK
-        uuid pms_project_id FK
-        string slug UK
-        string title
-        string genre
-        string engine_adapter
-        string current_build_id
-        jsonb tech_stack
-        jsonb design_concept
-        timestamp created_at
-    }
+신규 테이블 필요성은 구현 전 각 필드가 기존 `Workspace`, `PmsProject`/`PmsTask`, `Run`, `Artifact` 또는 project 문서로 보존되지 않는 사례를 보여 검증한다. Alembic migration은 `uv run ttakkari migrate` 경로로 적용한다. REST router는 `src/ttakkari/main.py`의 `include_router` 목록, MCP 도구는 `src/ttakkari/orchestrator/mcp_server.py`의 `@server.tool()` 등록 방식에 추가한다.
 
-    GameLockedDecision {
-        uuid id PK
-        uuid game_project_id FK
-        string category "genre | art_style | mechanic | platform"
-        string statement "예: 16-bit 도트 픽셀 그래픽 고정"
-        string reason "사용자 최초 기획 지시"
-        boolean is_locked "true: 승인 없이 변경 금지"
-        timestamp locked_at
-    }
-
-    GameAsset {
-        uuid id PK
-        uuid game_project_id FK
-        string asset_type "sprite | audio | tilemap | font"
-        string file_path
-        string file_hash_sha256
-        string source "procedural | kenney_cc0 | ai_generated"
-        string license "CC0 | MIT | Custom"
-        jsonb generation_metadata "prompt, seed, model"
-        timestamp created_at
-    }
-
-    GameBuild {
-        uuid id PK
-        uuid game_project_id FK
-        string build_number "v0.1.0"
-        string git_commit_sha
-        string status "success | failed | building"
-        string bundle_path
-        jsonb build_metrics "bundle_size_kb, build_time_ms"
-        timestamp created_at
-    }
-
-    GameTestRun {
-        uuid id PK
-        uuid game_build_id FK
-        boolean passed
-        float fps_avg
-        jsonb console_logs
-        jsonb screenshot_artifacts
-        timestamp executed_at
-    }
-
-    GameVisualFeedback {
-        uuid id PK
-        uuid game_build_id FK
-        string feedback_type "screen_draw | object_select | video_clip | diff_compare"
-        string user_comment
-        jsonb visual_payload "coordinates, bbox, arrow, selected_entity, timeline_range"
-        string screenshot_artifact_id
-        timestamp created_at
-    }
-
-    GameFeedbackAction {
-        uuid id PK
-        uuid visual_feedback_id FK
-        uuid run_id FK
-        string target_source_file
-        string resolution_status "applied | rejected | verified"
-        timestamp resolved_at
-    }
-```
-
-### 4.1 핵심 필드 명세
-1. **`GameLockedDecision`**:
+### 4.1 요구 데이터와 피드백 연결 (구현 전 검증 대상)
+1. **잠금된 결정**:
    - `statement`: 확정된 의사결정 내용.
-   - 에이전트 프롬프트에 자동으로 주입되어 "사용자 확정 방향은 승인 없이 바꾸지 못한다"는 시스템 가드를 제공.
-2. **`GameAsset`**:
-   - `source` & `license`: 에셋의 저작권 투명성을 보장. CC0, MIT, 공용 도메인 또는 오픈소스 절차적 생성 알고리즘 여부를 명시.
-3. **`GameVisualFeedback`**:
+  - 구현 시 worker prompt에 포함한다. 기술적 강제와 사용자 변경 승인 이력은 별도 구현·검증 대상이다.
+2. **에셋 출처**:
+  - `source` & `license`: 출처와 근거를 기록한다. 이것만으로 저작권·라이선스 적합성이 보장되지는 않는다.
+3. **시각 피드백**:
    - `feedback_type`: 4대 피드백 방식 구분.
    - `visual_payload`: 캔버스 상의 상대 좌표(`x: 0.42, y: 0.65`), 바운딩 박스(`[x1, y1, x2, y2]`), 선택된 게임 오브젝트 키(`player_sprite_01`), 타임라인 구간(`start_ms: 1200, end_ms: 3400`)을 구조화하여 저장.
 
@@ -354,7 +273,7 @@ flowchart TD
     RollbackDecide -->|롤백 요청| GitRevert["Git checkout / revert 실행 후 재빌드"]
     RollbackDecide -->|수정 요청| CodeLocator
 
-    CodeLocator --> PromptGen["AI 수정 지시 프롬프트 조합 (근거 줄, 씬 파일, 좌표)"]
+    CodeLocator --> PromptGen["AI 수정 지시 조합 (증거와 사용자 설명; 자동 코드 위치 식별은 검증 대상)"]
     PromptGen --> Orchestrator["따까리 오케스트레이터: 작업 세션 스폰 (Worker)"]
     Orchestrator --> CodeModify["코드 수정 -> 자동 빌드 -> Playwright 재검증"]
     CodeModify --> NewBuild["새 빌드 생성 및 관제탑 화면 자동 갱신"]
@@ -365,71 +284,59 @@ flowchart TD
 #### 1) 화면 표시 (스크린샷 주석 피드백)
 - **동작**: 관제탑 뷰포트에서 '캡처' 버튼 클릭 → 현재 캔버스 프레임 캡처 → 사각형 영역 선택, 화살표 그리기, 텍스트 코멘트 입력.
 - **추적 방법**:
-  - 캔버스의 클릭 좌표 $(x_c, y_c)$는 0.0~1.0의 상대 비율로 저장.
+  - iframe bridge가 지원되면 클릭 좌표 $(x_c, y_c)$는 0.0~1.0의 상대 비율로 저장한다.
   - 게임 런타임 헬퍼(`TtakkariBridge`)가 현재 씬의 카메라 위치 $(cam_x, cam_y)$ 및 줌 배율을 합산하여 월드 좌표 $(w_x, w_y)$로 변환.
-  - 소스코드 내 씬 파일(`src/scenes/*.ts`)의 `add.image(w_x, w_y, ...)` 또는 타일맵 레이어 배치 좌표와 매핑.
+  - 게임 런타임이 명시적 엔티티 ID·좌표를 보고하도록 계측한 경우에만 런타임 대상과 연결할 수 있다. 해당 ID를 소스 파일·줄 번호로 역추적하는 기능은 현재 존재하지 않으며 별도 구현·정확도 검증이 필요하다.
 
 #### 2) 게임 오브젝트 선택 (Entity Picking)
 - **동작**: '오브젝트 선택' 모드 활성화 → 게임 화면 내 캐릭터/몬스터/UI 터치 → 해당 엔티티에 하이라이트 박스 표시 및 속성 팝오버 노출.
 - **추적 방법**:
   - `Phaser.GameObjects.GameObject`에 등록된 `name`, `type`, `texture.key`, 바운딩 박스를 `TtakkariBridge.pickObjectAt(x, y)`로 질의.
-  - 결과 페이로드: `{"entity_name": "player", "texture": "hero_run", "scene": "MainGameScene", "source_hint": "src/scenes/MainGameScene.ts:45"}`.
-  - AI 수정 프롬프트에 `[대상 오브젝트: player (MainGameScene.ts:45)]`로 직접 전달되어 탐색 오버헤드를 0으로 축소.
+  - 결과 페이로드 예시의 `entity_name`, `texture`, `scene`은 게임이 bridge에 제공하도록 만들 후보 값이다. `source_hint`는 현재 제공되지 않는 가상 정보다.
+  - AI에 화면 좌표와 관측 정보를 전달해 소스 후보를 조사하도록 한다. 코드 위치를 직접 식별하거나 탐색 시간을 0으로 보장하지 않는다.
 
 #### 3) 플레이 영상 녹화 및 타임라인 구간 피드백
 - **동작**: 사용자가 게임 플레이 중 '녹화' 버튼을 누르면 브라우저 `MediaRecorder` API로 캔버스 스트림을 WebM 형식으로 메모리 버퍼링.
 - **구간 지정**: 녹화 완료 후 타임라인 슬라이더에서 문제 발생 구간(예: 00:03 ~ 00:05 "점프 시 벽에 끼임") 지정.
 - **데이터 경량화**:
-  - 전체 영상을 서버로 전송하지 않고, 시작/중간/종료 키프레임 3장(JPEG)과 해당 구간의 브라우저 콘솔 오류 로그, 게임 이벤트 로그(`[Collision: Wall, PlayerVelocity: {x: 10, y: 0}]`)만 추출하여 백엔드로 전송.
-  - 네트워크 대역폭 절약 및 LLM 토큰 효율 극대화.
+  - 구간 추출 시 선택 구간 클립 또는 대표 프레임/로그 중 실제 구현 가능한 형식과 개인정보·용량 제한을 검증한다. 3개 프레임만으로 문제 구간이 충분하다는 검증은 없다.
+  - 전체 녹화 업로드를 기본으로 가정하지 않는다. Phase 3에서 필요한 구간만 추출하고 사용자가 전송 내용을 확인할 수 있게 한다.
 
 #### 4) 전후 비교 및 정상 버전 롤백
-- **동작**: 관제탑 하단 갤러리/비교 탭(`archetypes/gallery.html`)에서 이전 정상 빌드(Build A)와 방금 수정한 빌드(Build B)를 스플릿 슬라이더로 비교.
-- **롤백**: "이전 버전으로 복구" 버튼 클릭 시, 해당 빌드의 Git 커밋 태그로 `git checkout <tag> -- .` 수행 후 재빌드. 변경 사항은 새로운 복구 커밋으로 안전하게 보존.
+- **동작**: 관제탑 하단 갤러리/비교 탭(`examples/archetypes/gallery.html`)에서 이전 정상 빌드(Build A)와 방금 수정한 빌드(Build B)를 비교.
+- **롤백**: Phase 2 필수 범위. 선택한 정상 빌드의 소스 commit과 불변 빌드 artifact를 기준으로 복구 요청 API가 새 복구 변경/빌드를 만들고, 원래 버전과 실패한 변경 이력을 모두 보존하는 계약을 구현·검증한다. 공유 워크트리에 `git checkout <tag> -- .`를 직접 실행하는 구현은 동시 작업물을 덮을 수 있으므로 사용하지 않는다.
 
 ---
 
 ## 6. 오케스트레이터 연동 및 빌드 보안 격리
 
 ### 6.1 오케스트레이터 연동 및 모델 분배 흐름
-1. **접수 및 라우팅 (`back/src/ttakkari/runs/desk.py`)**:
-   - 사용자가 "벽돌깨기 게임 만들어줘", "주인공 점프 높여줘"라고 입력하면 `kind="work"`로 분류.
-   - 해당 게임 프로젝트의 전담 기획 세션(`lead_id`)으로 라우팅.
-2. **기획 세션 (Lead Orchestrator)**:
-   - 모델: `claude-opus-5-5-medium` / `gpt-6.1-sol`.
-   - 역할: 아이디어 구체화, 장르/뷰포트 확정, `locked_decisions` 기록, Phase별 WBS 작업 분할.
-   - MCP 도구 `spawn_worker`를 호출하여 전문 작업자에게 하위 태스크 위임.
-3. **작업 세션 (Workers)**:
-   - **엔진/코드 작업자**: `general` 라우트(`SONNET` / `LUNA`). Phaser 3 로직 작성, `npm run build` 실행.
-   - **에셋/사운드 작업자**: `routine` 라우트(`FLASH` / `LUNA`). Kenney CC0 에셋 색인 또는 jsfxr 파라미터 생성.
-   - **플레이 검증 작업자**: `verification` 라우트(`LUNA` / `SONNET`). Playwright 헤드리스 브라우저로 게임 기동, 30초 무인 플레이, FPS/콘솔 로그 측정, 스크린샷 수집.
+1. 기존 `/chat`·`/work`의 어떤 접수 경로가 개인 게임 프로젝트 세션으로 이어질지 아직 미구현이다. 게임 전용 세션을 따로 만들기 전에 기존 `ChatSession`, workspace와 PMS 프로젝트의 연결 방법을 정한다.
+2. 기존 MCP `spawn_worker(title, prompt, ..., task_type=...)`는 `orchestrator/mcp_server.py:558-600`에서 제공된다. 게임 피드백 기능은 여기에 별도 큐를 덧붙이지 말고 프로젝트·빌드 ID·스크린샷 주석·잠금 결정·테스트 기준을 self-contained prompt로 전달하고, 반환된 worker/session/Run을 기존 메시지 도구와 상태 표시로 이어야 한다.
+3. 라우트 유형은 작업에 따라 `design`, `general`, `routine`, `verification` 중 선택한다. 엔진 코드 수정·빌드·Playwright 검증이 현재 자동 연결돼 있다고 간주하지 않는다. 먼저 빌드 보안 격리를 통과한 경로에서만 명령을 실행한다.
 
 ### 6.2 빌드 보안 격리 및 안전장치 (Security Boundary)
 - **임의 코드 실행 위험**: 사용자가 제공한 스크립트나 AI가 작성한 `package.json`의 `postinstall` 또는 빌드 스크립트가 호스트 시스템을 침해할 위험.
-- **안전장치 3중 방어**:
-  1. **파일 시스템 격리**: 워크스페이스는 `~/development/projects/games/<id>`로 제한되며, 따까리 File Broker 정책(`back/src/ttakkari/broker/policy.py`)이 상위 디렉터리(`..`), 심링크 탈출, `.env` 및 민감 파일 접근을 원천 차단.
-  2. **빌드 명령 제한**: 에이전트 실행 환경(Codex/Claude)의 PreToolUse Guard hook 및 OS 샌드박스를 통해 시스템 바이너리 변조, 외부 임의 네트워크 아웃바운드 차단.
-  3. **브라우저 iframe 런타임 격리**:
-     - 게임을 서빙하는 iframe에 `sandbox="allow-scripts allow-same-origin allow-pointer-lock"` 설정.
-     - `allow-top-navigation`, `allow-modals`, `allow-popups`는 엄격히 금지하여 게임 스크립트가 부모 따까리 PWA 화면을 조작하거나 리다이렉트하지 못하도록 방어.
-     - 서빙 응답에 전용 CSP 헤더 적용:
-       `Content-Security-Policy: frame-ancestors 'self' https://ttakkari.winterholic.net; default-src 'self' data: blob: 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src blob:;`
+- 기존 File Broker는 파일 API 경로를 검증할 뿐 임의 자식 프로세스의 읽기·쓰기 권한을 통제하지 않는다. workspace 루트 제한을 npm lifecycle/build 프로세스 격리로 표현하지 않는다.
+- Codex OS sandbox는 해당 실행 형태에 적용될 수 있으나 engine별 동작 차이가 있으며 Claude hook은 독립적인 OS 격리 경계가 아니다. 외부 네트워크 차단도 호스트 프로세스에서 확인되지 않았다.
+- **빌드 실행 관문**: 사용자 비밀·하네스 파일이 없는 임시 작업 복사본에서 무권한 계정/컨테이너/VM 중 실제 지원되는 경계를 검증한다. 읽기 전용 base, 제한된 쓰기 산출물, 네트워크 기본 차단(필요 시 정확한 registry만 허용), CPU/메모리/시간·디스크 한도, 종료 후 정리와 탈출 음성 테스트가 필요하다. Phase 2 시작 시 이 경계가 준비되지 않으면 `npm install`/build 실행을 막고 security spike에 머문다.
+- **브라우저 실행 관문**: 기존 Artifact endpoint는 CSP sandbox이며 bearer 보호를 쓴다. 이를 실행 가능한 게임 응답으로 바꾸지 않는다. 게임은 PWA와 다른 registrable domain에서 제공해 API 쿠키의 same-site 전송 경로를 분리하고, 게임 요청에는 Ttakkari bearer/cookie를 붙이지 않는다. 프레임 CSP는 최소 권한(`default-src` 제한, `connect-src 'none'`, `form-action 'none'`, `base-uri 'none'`, 정확한 PWA `frame-ancestors`)으로 시작해 실제 엔진이 요구하는 자원만 허용한다. `allow-scripts`/`allow-same-origin` 사용은 별도 사이트 경계와 sandbox 설정을 함께 검토하고, top navigation·폼·팝업을 허용하지 않는다. 브리지 메시지는 `origin`, `source`, schema, 크기와 속도를 검증하고, 캡처 이미지/데이터를 HTML로 해석하지 않는다. iframe의 canvas/DOM을 부모가 직접 읽을 수 없으므로 캡처는 게임 측 bridge가 전달하는 흐름으로 설계한다. CSP만으로 호스트 빌드는 격리되지 않는다.
 
 ---
 
 ## 7. 관제탑 UX 설계 (모바일 PWA 우선)
 
-디자인 시스템(`winterholic-design-system/ttakkari`)의 가이드 및 페이지 아키타입(`docs/21-page-archetypes.md`)을 100% 준수하여 설계한다.
+디자인 시스템(`winterholic-design-system/ttakkari`)의 `H 창작 작업대` 아키타입을 기준으로 하고 비교는 `J 결과 갤러리` 패턴을 참조한다. 실제 구현 시 예제를 복사하고 디자인 시스템 규칙을 따른다.
 
 ### 7.1 화면 레이아웃 (H 창작 작업대 + J 결과 갤러리 변형)
-- **기반 아키타입**: `archetypes/creative.html`(창작 작업대)을 뼈대로 하고, `archetypes/gallery.html`(결과 비교) 및 `archetypes/pull-request.html`(활동/승인)을 결합.
+- **기반 아키타입**: `examples/archetypes/creative.html`(창작 작업대)을 기준으로 하고, `examples/archetypes/gallery.html`(결과 비교) 및 `examples/archetypes/pull-request.html`(활동/승인)에서 필요한 패턴을 참조한다.
 - **모바일 뷰포트 (320px · 390px)**:
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │ [헤더] ← 게임 스튜디오 / Flappy Dot (v0.1.2) [더보기]  │
 ├────────────────────────────────────────────────────────┤
-│ [메타 칩 바] [장르: 아케이드] [엔진: Phaser 3] [FPS: 60]│
+│ [메타 칩 바] [장르: 아케이드] [엔진: Phaser 3] [상태]│
 ├────────────────────────────────────────────────────────┤
 │                                                        │
 │               [ 게임 캔버스 뷰포트 ]                   │
@@ -469,31 +376,29 @@ flowchart TD
 
 ## 8. 단계별 개발 범위 (Phase 1 ~ Phase 4)
 
-### Phase 1: 조사·설계·WBS (현재 단계 - 완료 목표)
-- Mac Studio 로컬 환경 및 도구 실측 완료.
+### Phase 1: 조사·설계·WBS (검증 반영)
+- Node/npm 버전과 CLI/브라우저 검색을 재실행하고 Codex sandbox 결과를 호스트 실측과 분리했다.
 - 아키텍처 및 엔진 어댑터 명세 수립.
 - 게임 데이터 모델 및 피드백 파이프라인 설계.
 - 관제탑 PWA UX 설계.
-- ADR 0044 작성 (첫 엔진 어댑터 선정).
-- PMS 프로젝트 및 세부 WBS 등록.
+- ADR 0046 작성 (Phase 2 실험용 첫 어댑터 선정; 번호 충돌 해결).
+- PMS 프로젝트를 확인·보정했고 Phase 2의 14개 작업에 각각 시간 상한·검증 조건·선행 관계를 기록했다.
 
 ### Phase 2: 최소 기능 구현 및 E2E 검증 (차기 단계)
 - 백엔드:
-  - `GameEngineAdapter` 베이스 및 `WebPhaserAdapter` 구현.
-  - 게임 프로젝트 CRUD 및 빌드 번들 정적 서빙 API (`/api/games/*`).
-  - Playwright 무인 플레이 테스트 러너 구현.
+  - 프로세스 격리 spike 통과 후, 기존 PMS/Workspace/Session/Run/Artifact/Git 체계에 연결한 최소 데이터·Phaser adapter·불변 빌드 스냅샷 구현.
+  - 사용자 인증 경로와 분리된 게임 origin 서빙, 실제 worker 개발 요청/상태 연결, Playwright 빌드 검증.
 - 프론트엔드:
   - 관제탑 기본 PWA 화면 (`/games/:id`) 구현.
   - 게임 iframe 임베딩 및 HUD (재생/일시정지/캡처).
   - 화면 스크린샷 캡처 및 주석(영역 박스, 코멘트) 입력 폼.
   - AI 수정 요청 트리거 및 빌드 갱신 반영.
 - E2E 검증:
-  - "Flappy Bird" 또는 "2D 도트 러너" 1종을 대상으로 [아이디어 입력 → 프로젝트 생성 → 빌드·실행 → 관제탑 직접 플레이 → 주석 피드백 → AI 코드 수정 → 재빌드·검증] 완주.
+  - 아래 12단계 시나리오와 정상 버전 복구를 1종의 실제 게임에서 끝까지 실측한다. 모의 응답/fixture만으로 Phase 2 완료를 인정하지 않는다.
 
 ### Phase 3: 피드백 파이프라인 고도화 및 멀티 에셋 확장
-- 오브젝트 픽킹(Entity Picking) postMessage 브리지 연동.
-- 플레이 영상 녹화 및 타임라인 키프레임 추출 피드백 구현.
-- 전후 빌드 스플릿 뷰 비교 및 원클릭 롤백 구현.
+- 게임별 오브젝트 픽킹 bridge와 소스 위치 상관관계 고도화.
+- 플레이 영상 녹화 및 선택 구간 피드백 추출.
 - 에셋 파이프라인: Kenney CC0 팩 자동 검색 및 jsfxr 절차적 사운드 생성기 연결.
 
 ### Phase 4: 다중 엔진 어댑터 확장 및 운영 안정화
@@ -504,64 +409,57 @@ flowchart TD
 
 ---
 
-## 9. Phase 2 상세 작업 단위 목록 (각 2시간 이하)
+## 9. Phase 2 WBS 초안 (시간 상한 2시간, 초과하면 재분할)
 
-모든 작업은 2시간 이하로 완결될 수 있도록 분할되었으며, 각 작업마다 명확한 완료 기준과 검증 명령을 포함한다.
+아래 시간은 구현 견적이 아니라 한 작업 세션의 제한이다. 각 작업은 끝나면 명시된 완료 기준을 확인한다. `Game*` 테스트 경로는 해당 작업이 테스트를 추가한 뒤 실행하는 검증 명령이며, 존재하지 않는 테스트를 지금 실행한 결과가 아니다. 작업 단계는 백엔드 Alembic 및 `main.py` router 등록, 프론트 `BrowserRouter`와 Vitest, MCP `@server.tool()` 방식을 따른다.
 
 ### [트랙 A: 백엔드 코어 & 어댑터]
-1. **TASK-G01: Game 데이터 모델 및 Alembic 마이그레이션 (1.5시간)**
-   - 내용: `GameProject`, `GameLockedDecision`, `GameAsset`, `GameBuild`, `GameTestRun`, `GameVisualFeedback` 테이블 추가.
-   - 완료 기준: 마이그레이션 정상 적용, 모델 단위 테스트 통과.
-   - 검증 명령: `uv run pytest tests/test_game_models.py`
-2. **TASK-G02: GameEngineAdapter 인터페이스 및 WebPhaserAdapter 구현 (2.0시간)**
-   - 내용: 보일러플레이트 스캐폴딩(Vite+TS+Phaser3), `npm run build` 서브프로세스 빌더, 정적 경로 반환.
-   - 완료 기준: 임의 프로젝트 디렉터리 스캐폴딩 후 빌드 성공, `dist/index.html` 생성.
-   - 검증 명령: `uv run pytest tests/test_game_phaser_adapter.py`
-3. **TASK-G03: 게임 프로젝트 관리 API 및 라이브 서빙 라우터 구현 (1.5시간)**
-   - 내용: `POST /api/games`, `GET /api/games/{id}`, `GET /api/games/{id}/live/{build_id}/{path:path}` CSP 격리 서빙.
-   - 완료 기준: FastAPI 테스트 클라이언트로 프로젝트 생성 및 빌드 파일 서빙 HTTP 200 확인.
-   - 검증 명령: `uv run pytest tests/test_api_games.py`
-4. **TASK-G04: Playwright 기반 무인 플레이 테스트 러너 구현 (1.5시간)**
-   - 내용: 헤드리스 Chromium으로 게임 서빙 URL 접속, 15초간 키보드 입력 주입, 콘솔 에러 수집, 캔버스 스크린샷 저장.
-   - 완료 기준: 테스트 러너 실행 시 스크린샷 1장 이상 및 FPS 리포트 생성.
-   - 검증 명령: `uv run pytest tests/test_game_automated_play.py`
+1. **TASK-G01: 격리 빌드 경계 spike (2h)** — 구현 후보(무권한/container/VM)에서 탈출·비밀·네트워크 음성 사례를 확인. 미통과 시 후속 빌드 작업 보류. `uv run pytest -q tests/test_game_build_isolation.py`
+2. **TASK-G02: 기존 모델 연결 및 최소 schema/API 계약 (1.5h)** — PMS project, workspace, session, Run, Artifact의 소유권 표와 필요 최소 필드 결정; 전용 큐/버전 테이블 배제 사유 기록. `uv run pytest -q tests/test_game_contract.py`
+3. **TASK-G05: 최소 Alembic migration 또는 no-migration 결정 (1.5h)** — G02 계약의 필요한 필드만 반영한다. 완료: migration 적용 또는 no-migration 근거 기록; migration이 있으면 `uv run ttakkari migrate` 및 테스트 DB upgrade/downgrade 확인. 검증: `uv run pytest -q tests/test_game_migration.py`
+4. **TASK-G03: Phaser 프로젝트 scaffold·격리 build adapter (2h)** — 잠금 결정 manifest를 읽고 테스트 프로젝트 빌드; arbitrary paths 거부. `uv run pytest -q tests/test_game_adapter.py`
+5. **TASK-G04: 불변 빌드 스냅샷·Artifact 등록 (1.5h)** — 성공/실패 빌드 ID, source commit, 번들 위치/해시, Run/Artifact 연결; 재빌드가 이전 산출물을 변경하지 않음. `uv run pytest -q tests/test_game_build_snapshots.py`
+6. **TASK-G06: 프로젝트·빌드 API (1.5h)** — 인증된 사용자만 기존 project/workspace에 새 게임 연결, 상태·빌드 목록 조회; 권한 없는 ID와 잘못된 경로 거부. `uv run pytest -q tests/test_api_games.py`
+7. **TASK-G07: 별도 게임 origin 정적 서빙 경계 (2h)** — 세션 bearer와 쿠키 없이 빌드 제공, CSP/sandbox/cookie/CORS·path traversal 검증. 같은 origin에서 PWA 토큰/API에 접근 못함. `uv run pytest -q tests/test_game_serving_security.py`
+8. **TASK-G08: worker 개발·검증 연결 (2h)** — MCP `spawn_worker`에 project/build/locked decisions/작업 prompt 전달, 반환 session/Run 상태를 기존 도구로 읽고 보고. 중복 queue 없음. `uv run pytest -q tests/test_game_worker_flow.py`
 
 ### [트랙 B: 프론트엔드 관제탑 UX]
-5. **TASK-G05: 게임 스튜디오 관제탑 셸 및 게임 뷰포트 컴포넌트 (1.5시간)**
-   - 내용: React 라우터 `/games/:id`, 16:9 반응형 iframe 컨테이너, 재생/일시정지/전체화면 HUD.
-   - 완료 기준: 샘플 Phaser 게임 iframe 임베딩 및 모바일 390px 가로 넘침 0 확인.
-   - 검증 명령: `pnpm test --run GameCockpit`
-6. **TASK-G06: 스크린샷 주석 피드백 캔버스 오버레이 구현 (2.0시간)**
-   - 내용: 캔버스 프레임 캡처, 사각형 드래그 선택, 화살표 드로잉, 피드백 입력 폼.
-   - 완료 기준: 영역 선택 후 주석 데이터가 구조화된 JSON으로 생성됨.
-   - 검증 명령: `pnpm test --run VisualFeedbackOverlay`
-7. **TASK-G07: 시각 피드백 제출 및 AI 수정 파이프라인 연동 (1.5시간)**
-   - 내용: `POST /api/games/{id}/feedback`, 오케스트레이터 세션에 주석 및 수정 요구 전달.
-   - 완료 기준: 백엔드로 피드백 전송 및 세션 Run 트리거 확인.
-   - 검증 명령: `pnpm test --run FeedbackSubmission`
-8. **TASK-G08: 전후 빌드 스냅샷 비교 및 롤백 UI 구현 (1.5시간)**
-   - 내용: 이전 빌드와 현재 빌드의 2분할 뷰, "정상 버전으로 롤백" 확인 모달.
-   - 완료 기준: 롤백 클릭 시 백엔드 롤백 API 호출 및 빌드 갱신 확인.
-   - 검증 명령: `pnpm test --run GameRollback`
+9. **TASK-G09: 프론트 라우트·게임 플레이어 (1.5h)** — 기존 `BrowserRouter` `../front/src/App.tsx`에 `/games/:id`, 앱 인증 셸, 별도 origin sandbox iframe. `cd ../front && pnpm exec vitest run src/features/games/GameCockpit.test.tsx`
+10. **TASK-G10: 캡처·영역·화살표·주석 (1.5h)** — 캡처 출처/빌드 ID와 정규화 좌표를 payload에 저장. `cd ../front && pnpm exec vitest run src/features/games/VisualFeedback.test.tsx`
+11. **TASK-G11: 피드백 저장·worker 시작·상태 연결 (1.5h)** — 사용자 코멘트와 screenshot Artifact, project/build ID를 worker prompt에 포함하고 Run 카드로 상태/완료를 표시. `cd ../front && pnpm exec vitest run src/features/games/FeedbackSubmission.test.tsx`
+12. **TASK-G13: 실제 브라우저 플레이 smoke (1.5h)** — 격리 환경에서 1게임 실행, 터치/키 입력, 콘솔 에러와 스크린샷 확보. 임의 FPS 목표를 강제하지 않음. `uv run pytest -q tests/test_game_browser_smoke.py`
+13. **TASK-G12: 재빌드 전후 확인·정상 버전 롤백 API/UI (2h)** — 이전 빌드와 새 빌드 확인, 명시적 롤백 API가 기존 빌드 보존 및 새 복구 commit/build 생성. `cd ../front && pnpm exec vitest run src/features/games/GameRollback.test.tsx` 및 `uv run pytest -q tests/test_game_rollback.py`
 
 ### [트랙 C: E2E 통합 검증]
-9. **TASK-G09: 2D 아케이드 게임 생성 E2E 실측 검증 (2.0시간)**
-   - 내용: 실제 에이전트를 통해 "2D 도트 회피 게임" 생성 → 빌드 → 관제탑 플레이 → 주석 피드백("속도 2배 빠르게") → AI 수정 → 재빌드 → 비교 → 롤백 전과정 실측.
-   - 완료 기준: E2E 시나리오 전 과정 통과 및 증거 보고서(`outbox/`) 작성.
-   - 검증 명령: `uv run pytest tests/test_e2e_game_studio.py`
+14. **TASK-G14: 12단계 실제 에이전트 E2E (2h, 초과하면 시나리오 준비와 실행/증거 검토로 분리)** — 실제 worker가 코드를 쓰고 빌드/브라우저가 실행되는 흐름, 스크린샷 수정, 재빌드, 전후 확인, 정상 버전 복원을 증거로 남김. mock만으로 성공 판정 금지. `uv run pytest -q tests/test_e2e_game_studio.py`
 
 ---
 
 ## 10. 필수 E2E 시나리오 실측 방안
 
-Phase 2 완료 인정을 위한 필수 10단계 시나리오 실측 절차:
-1. **아이디어 입력**: 사용자가 "스페이스 인베이더 스타일의 2D 도트 슈팅 게임을 만들어줘" 입력.
-2. **스택 선정**: 기획 세션이 `Web-Phaser 3` 어댑터 선택 및 16-bit 픽셀아트 콘셉트 확정.
-3. **결정 잠금**: `locked_decisions`에 `genre=Shooter`, `art_style=PixelArt_16bit`, `perspective=TopDown` 영속화.
-4. **프로젝트 생성 & 개발**: 작업 세션이 보일러플레이트 스캐폴딩, 플레이어 우주선 및 적기 로직 작성.
-5. **빌드 & 정적 서빙**: `npm run build` 실행, `dist/` 생성, `/api/games/{id}/live/{build_01}/` 서빙 개시.
-6. **무인 테스트 러너**: Playwright가 15초간 좌우 이동 및 발사 테스트 수행, FPS 60 확인, 스크린샷 캡처.
-7. **관제탑 확인 & 직접 플레이**: 사용자가 모바일 PWA 관제탑에서 직접 터치 조작으로 우주선 이동 및 격추 플레이.
-8. **스크린샷 주석 피드백**: 우주선 총알 영역에 빨간 사각형을 치고 "총알 발사 속도가 너무 느림. 2배로 늘려줘" 전송.
-9. **AI 수정 & 재빌드 & 재검증**: 작업자가 `bullet.ts`의 발사 속도 상수 수정 후 재빌드(`build_02`), 무인 테스트 통과.
-10. **전후 비교 및 롤백 검증**: 관제탑에서 `build_01`과 `build_02`의 차이를 확인한 후, 의도적으로 `build_01`로 롤백 버튼을 눌러 정상 복원됨을 실측.
+Phase 2의 필수 시나리오이며 실제 게임 화면·worker 변경·빌드에서 각 단계의 증거를 확인한다.
+1. 아이디어 입력 및 사용자와 장르/플랫폼/제약 정리.
+2. 스택·엔진 선택과 지원/제약/대체 방법 설명.
+3. 게임 프로젝트·PMS/WBS와 전용 작업 컨텍스트 생성.
+4. 잠금 결정 및 출처·라이선스 정책 기록.
+5. 기존 오케스트레이터가 실제 개발 worker를 시작하고 소스/에셋을 생성.
+6. 격리 빌드, immutable build snapshot 및 test 결과 보존.
+7. 게임 origin의 관제탑 화면에서 빌드를 열고 사용자가 직접 플레이.
+8. 스크린샷 캡처, 영역/화살표/주석을 넣어 선택 빌드와 함께 제출.
+9. worker가 피드백과 잠금 결정을 읽고 실제 소스 수정.
+10. 격리 재빌드·회귀 테스트 후 새 빌드와 증거를 보존.
+11. 전후 빌드 화면/로그를 비교해 사용자가 수정 결과를 확인.
+12. 이전 정상 버전 복원 API를 실행해 새 복구 빌드를 만들고 원래·수정·복구 빌드가 모두 남았음을 확인.
+
+---
+
+## 11. 검증 노트 (2026-10-19 독립 대조)
+
+- **작업 라우팅**: `worker_routing.py:21,71-80`에는 다섯 `TaskType`과 후보 route가 있다. `manager.py:248-360`은 기존 Run 접수·dispatch 수명주기다. `mcp_server.py:558-600`에는 `spawn_worker`가 있지만 게임 프로젝트·피드백·빌드 연결은 없다. 자동 게임 worker 파이프라인을 이미 지원한다고 쓴 내용을 요구사항/Phase 2 작업으로 수정했다.
+- **Artifact·보안**: `api/artifacts.py:65-71,312-330`은 bearer 인증과 `sandbox; default-src 'none'` CSP를 적용한다. `broker/policy.py:102-164`는 파일 경로를 검사하며 빌드 subprocess 격리가 아니다. iframe 실행과 npm lifecycle/build 프로세스를 분리하고, 별도 게임 origin 및 별도 OS 격리 경계를 검증 선행조건으로 기록했다.
+- **인증·Cloudflare**: `adr/0004-auth.md:8-11`, `api/auth.py:33-39`, `main.py:229-232`는 메모리 access token, HttpOnly/Secure/SameSite=None refresh cookie, 설정 기반 credential CORS를 보여 준다. `design/generation-deployment.md:7,91`은 기존 tunnel이 loopback Caddy/backend의 8787 진입점임을 기록한다. 운영 CORS allowlist와 새 게임 hostname/tunnel route 설정은 확인하지 않아 별도 origin 분리를 배포된 경계로 표현하지 않았다.
+- **기존 정본 재사용**: `models.py:143,158,243,387,798,815`는 Workspace, ChatSession, Run, Artifact, PMS project/task다. `README.md:101-105`의 `refs/ttakkari/runs/<run_id>`는 Run 복구용 체크포인트이지 제품 빌드 목록·불변 스냅샷·롤백 API가 아니다. 기존 모델·Artifact를 먼저 활용하고 별도 버전/작업 큐와 불필요한 6개 도메인 테이블 제안을 제거했다. 빌드 스냅샷·복구 API는 Phase 2 필수 작업으로 추가했다.
+- **구현 경로**: Alembic 적용은 `uv run ttakkari migrate` (`src/ttakkari/cli.py:24-32`), API router 등록은 `src/ttakkari/main.py:264-285`, MCP worker tool은 `mcp_server.py:552-600`의 `@orchestrator_tool`/`server.tool()` 경로다. 프론트는 `../front/src/main.tsx:9`, `../front/src/App.tsx:47-105`의 `BrowserRouter/Routes`; 실제 Vitest 스크립트·명령을 기준으로 경로를 고쳤다. 디자인 시스템 `docs/21-page-archetypes.md`는 `examples/archetypes/` 아래 예제를 참조한다.
+- **도구 실측**: `node --version` → `v26.9.0`, `npm --version` → `11.19.1`; Godot/Unity/Unreal/ffmpeg 실행 파일은 PATH에서 못 찾았고 `/Applications` 최상위 이름 검색에서도 미발견했다. Playwright CLI는 없지만 Chromium·WebKit·ffmpeg 캐시 디렉터리가 존재했다. Phaser/Vite 설치·빌드·게임 실행은 미실행. 상세는 §2.7.
+- **외부 기술 근거**: [Phaser 공식 라이선스](https://phaser.io/download/license)는 MIT, [Kenney 지원 안내](https://kenney.nl/support)는 에셋 페이지의 게임 자산을 CC0로 안내한다. [Unity 6 시스템 요구사항](https://docs.unity3d.com/6000.0/Documentation/Manual/system-requirements.html)은 iOS Safari 15+ 등 브라우저 지원 조건을 제시하지만 특정 게임의 모바일 성능을 보장하지 않는다. [Unreal Pixel Streaming 문서](https://dev.epicgames.com/documentation/en-us/unreal-engine/pixel-streaming-in-unreal-engine)는 원격 앱·WebRTC 서비스 구성을 설명한다. 설치 용량·빌드 시간·AI 성공률 비교 수치는 근거가 없어 제거했다.
+- **주장 축소**: `0ms`, `100% 자동화`, “AI 환각/수정 오류가 현저히 낮다”, FPS 60 강제, 1~3초 빌드 및 측정되지 않은 후보 우위 표현을 제거하거나 확인 필요로 바꿨다. Phase 2 WBS는 9개 포괄 작업을 14개 최대 2시간 작업으로 나누고 worker 연결, immutable build 보존, rollback API, 브라우저 smoke와 12단계 E2E를 분리했다.

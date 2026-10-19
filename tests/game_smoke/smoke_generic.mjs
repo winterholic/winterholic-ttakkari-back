@@ -10,6 +10,7 @@ const out = (n) => path.join(cfg.out_dir, n);
 
 const KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'Space', 'Enter', 'KeyD', 'KeyA', 'KeyW', 'KeyS'];
 const TAPS = [[0.5, 0.5], [0.2, 0.8], [0.8, 0.8], [0.5, 0.2]];
+const BLANK_SETTLE_MS = 8000; // 부팅 직후 단색 캡처를 "빈 화면"으로 확정하기 전에 기다리는 시간
 const LIMITS = [
   '승리·종료 화면까지의 완주는 시도하지 않는다(규칙을 모르는 입력 탐색이라 도달 여부를 판정하지 않는다).',
   '화면이 계속 움직이는 게임은 화면 비교로 입력 반응을 판정할 수 없어 계측 상태(publishState)가 없으면 inconclusive 다.',
@@ -71,8 +72,23 @@ async function run(mobile) {
     r.boot = { bridge: first !== null };
     if (!first) { r.console = s.collected; await s.close(); return r; }
     r.boot.capture = { bytes: first.bytes, width: first.width, height: first.height };
-    r.renders = await pixelStats(s, first.dataUrl);
-    r.renders.blank = r.renders.dominantFraction > 0.995 || r.renders.buckets < 2;
+    // bridge 는 게임의 첫 프레임보다 먼저 응답할 수 있다(실제 worker 가 만든 게임에서 3회 중 2회 부팅 직후 단색 캡처를 확인).
+    // 그 순간의 단색을 곧바로 "빈 화면"으로 판정하면 정상 게임이 간헐 실패하므로, 화면이 그려질 때까지 기다린 뒤에도 단색이면 실패로 본다.
+    const isBlank = (st) => st.dominantFraction > 0.995 || st.buckets < 2;
+    const firstStats = await pixelStats(s, first.dataUrl);
+    r.renders = firstStats;
+    r.renders.blank = isBlank(firstStats);
+    r.renders.firstCaptureBlank = r.renders.blank;
+    const settleStart = Date.now();
+    while (r.renders.blank && Date.now() - settleStart < BLANK_SETTLE_MS) {
+      await s.page.waitForTimeout(300);
+      try {
+        const again = await snapshot(s);
+        r.renders = { ...(await pixelStats(s, again.dataUrl)), firstCaptureBlank: true };
+        r.renders.blank = isBlank(r.renders);
+        r.renders.settledMs = Date.now() - settleStart;
+      } catch { /* 다음 반복에서 다시 시도한다 */ }
+    }
     await s.page.waitForTimeout(800);
     const state0 = await safeState(s);
     r.boot.published = state0 !== null && typeof state0 === 'object' && Object.keys(state0).length > 0;

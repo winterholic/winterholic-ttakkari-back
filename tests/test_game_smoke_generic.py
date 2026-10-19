@@ -53,13 +53,14 @@ def _apply_dot_dungeon(root: Path) -> None:
 
 
 async def build_game(client, auth, slug: str, source: str) -> dict:
-    """source: 'coin' | 'dungeon' | 'static' | 'crash'. 모두 같은 scaffold 위에 게임 소스만 바꾼다."""
+    """source: 'coin' | 'dungeon' | 'static' | 'crash' | 'late'. 모두 같은 scaffold 위에 게임 소스만 바꾼다."""
     root = fresh_dir(game_dir(slug))
     await PhaserAdapter().scaffold_project(root, manifest(slug))
     if source == "dungeon":
         _apply_dot_dungeon(root)
     else:
-        (root / "src" / "main.ts").write_text((SCENARIOS / {"coin": "smoke_game_main.ts", "static": "smoke_game_static.ts", "crash": "smoke_game_crash.ts"}[source]).read_text())
+        (root / "src" / "main.ts").write_text((SCENARIOS / {"coin": "smoke_game_main.ts", "static": "smoke_game_static.ts", "crash": "smoke_game_crash.ts",
+                                                   "late": "smoke_game_late.ts"}[source]).read_text())
     git(root, "add", "-A")
     git(root, "commit", "-q", "-m", f"generic smoke game: {source}")
     game = (await register(client, auth, slug)).json()
@@ -90,7 +91,7 @@ async def smoke(client, auth, monkeypatch, game: dict, out: Path) -> dict:
 async def test_generic_smoke_passes_working_games_and_flags_broken_ones(client, auth, monkeypatch, evidence):
     require_browser()
     results = {}
-    for source in ("coin", "dungeon", "static", "crash"):
+    for source in ("coin", "dungeon", "static", "crash", "late"):
         game = await build_game(client, auth, f"gsmoke-{source}", source)
         results[source] = await smoke(client, auth, monkeypatch, game, evidence)
 
@@ -105,6 +106,14 @@ async def test_generic_smoke_passes_working_games_and_flags_broken_ones(client, 
             assert r["pause"]["supported"] is True and r["save"]["exportOk"] is True, (source, mode)
         assert res["ok"] is True
         assert res["limits"] and any("완주" in x for x in res["limits"])  # 하지 않은 일을 결과에 명시한다
+
+    # 첫 프레임이 늦는 정상 게임: 부팅 직후 캡처는 단색이지만 기다리면 그려지므로 "빈 화면"으로 오판하지 않는다(실제 worker 게임에서 간헐 실패했던 경우)
+    late = results["late"]
+    for mode in ("desktop", "mobile"):
+        r = late[mode]
+        assert r["verdict"]["ok"], (mode, r["verdict"], r.get("error"), r["console"])
+        assert r["renders"]["firstCaptureBlank"] is True and r["renders"]["blank"] is False and r["renders"]["buckets"] >= 3, (mode, r["renders"])
+    assert late["ok"] is True
 
     # 입력에 반응하지 않는 게임: 부팅은 되지만 입력 반응이 없어 실패
     static = results["static"]

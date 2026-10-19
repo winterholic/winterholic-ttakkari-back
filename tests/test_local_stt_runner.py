@@ -20,7 +20,7 @@ async def test_queued_legacy_profile_is_upgraded_without_mutating_saved_params(
     assert params == {"profile": "baseline"}
 
 
-def settings(tmp_path, source):
+def settings(tmp_path, source, timeout=20):
     python = tmp_path / "fake-worker"
     python.write_text("#!/usr/bin/env python3\n" + source, encoding="utf-8")
     python.chmod(0o755)
@@ -28,7 +28,7 @@ def settings(tmp_path, source):
         home=tmp_path,
         local_stt_python=python,
         local_stt_model_path=tmp_path,
-        local_stt_timeout_seconds=1,
+        local_stt_timeout_seconds=timeout,
         local_stt_max_audio_seconds=60,
         local_stt_cpu_threads=2,
     )
@@ -51,6 +51,7 @@ async def test_timeout_kills_and_reaps_child(tmp_path):
         tmp_path,
         f"import os,time\nfrom pathlib import Path\nPath({str(pid_file)!r}).write_text(str(os.getpid()))\ntime.sleep(30)\n",
     )
+    s.local_stt_timeout_seconds = 1  # 부하가 큰 기계에서 spawn 이 늦어도 안 흔들리게 다른 시험은 넉넉히 둔다
     with pytest.raises(TimeoutError):
         await runner.run_worker(tmp_path / "a.wav", {}, s)
     with pytest.raises(ProcessLookupError):

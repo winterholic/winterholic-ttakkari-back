@@ -501,6 +501,20 @@ class GenerationController:
             raise StageError(stage, args, returncode,
                              f"last {_LOG_TAIL_LINES} log lines:\n{tail}")
 
+    async def run_pytest(self, job, release, env):
+        pytest = (str(release / ".venv/bin/python"), "-m", "pytest", "-q", "--timeout=120")
+        try:
+            await self.command(job, release, *pytest, "-x", stage="pytest", env=env)
+        except StageError as exc:
+            # NOTE: 여러 세션이 한 Mac 에서 동시에 돌아 부하가 높으면 시간에 민감한 시험 한 건이 배포 전체를 막았다
+            # (2026-10-19 연속 3회). 실패한 시험만 한 번 더 돌려, 진짜 결함은 다시 실패하고 일시적 흔들림은 통과시킨다.
+            # 시험 실패(exit 1)만 재시도하고 수집 오류·타임아웃은 그대로 실패시킨다.
+            if exc.exit_code != 1:
+                raise
+            with (self.store.jobs / f"{job['id']}.log").open("ab") as log_file:
+                log_file.write(b"\n== pytest failed; rerunning only the failed tests once (--lf) ==\n")
+            await self.command(job, release, *pytest, "--lf", stage="pytest", env=env)
+
     async def environment(self, job, release):
         if not (release / ".environment-built").exists():
             await self.command(job, release, "uv", "sync", "--frozen", "--quiet", stage="uv sync")
@@ -589,10 +603,7 @@ class GenerationController:
                     test_url = url.set(drivername="postgresql+asyncpg", database=name).render_as_string(hide_password=False)
                     # Archives have no .git; use the candidate, not the supervisor's revision.
                     env = test_environment(job["revision"], test_url)
-                    await self.command(
-                        job, release, str(release / ".venv/bin/python"), "-m", "pytest", "-q", "-x",
-                        "--timeout=120", stage="pytest", env=env,
-                    )
+                    await self.run_pytest(job, release, env)
                 finally:
                     await admin.execute(f'DROP DATABASE "{name}"')
             finally:

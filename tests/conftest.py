@@ -11,6 +11,8 @@ import tempfile
 import uuid
 from pathlib import Path
 
+from sqlalchemy.engine import make_url
+
 _BASE = Path(tempfile.mkdtemp(prefix="ttk-it-")).resolve()
 atexit.register(shutil.rmtree, _BASE, ignore_errors=True)
 HOME = _BASE / "home"
@@ -22,7 +24,15 @@ FAKES = Path(__file__).parent / "fake_agents"
 AGENT_LOG = _BASE / "agent-log.jsonl"
 # 동시에 여러 작업이 pytest 를 돌릴 수 있어 DB 이름을 바꿀 수 있게 한다. 운영 DB(ttakkari)는 막는다.
 TEST_DB = os.environ.get("TTAKKARI_TEST_DB", "postgresql+asyncpg://localhost/ttakkari_test")
-assert not TEST_DB.endswith("/ttakkari"), "운영 DB 로 테스트하지 않는다"
+
+
+def assert_test_db_isolated(database_url: str) -> None:
+    """Reject the production database regardless of URL query parameters."""
+    if make_url(database_url).database == "ttakkari":
+        raise AssertionError("운영 DB 로 테스트하지 않는다")
+
+
+assert_test_db_isolated(TEST_DB)
 
 os.environ.update({
     "TTAKKARI_NO_ENV_FILE": "1",

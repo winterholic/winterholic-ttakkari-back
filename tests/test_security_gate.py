@@ -34,13 +34,89 @@ def test_build_security_gate_command_structure():
     assert "--lf" in retry_cmd
 
 
+@pytest.mark.asyncio
+async def test_security_gate_retry_shares_one_300_second_budget(tmp_path, monkeypatch):
+    """Failed-test retry consumes the original gate deadline instead of getting a fresh 300s."""
+    from ttakkari import generation_deployment
+
+    store = JobStore(tmp_path / "deploy")
+    controller = GenerationController(store)
+    now = [10.0]
+    monkeypatch.setattr(generation_deployment.time, "monotonic", lambda: now[0])
+    calls = []
+
+    async def command(job, release, *args, stage="command", env=None, timeout=None):
+        calls.append((args, timeout))
+        if len(calls) == 1:
+            now[0] += 200
+            raise StageError("security_gate", args, 1, "one failed test")
+
+    monkeypatch.setattr(controller, "command", command)
+    await controller.run_security_gate({"id": "job"}, tmp_path, {})
+
+    assert calls[0][1] == 300
+    assert calls[1][1] == 100
+    assert "--lf" in calls[1][0]
+
+
+@pytest.mark.asyncio
+async def test_legacy_security_gate_uses_same_bounded_test_command(tmp_path, monkeypatch):
+    from ttakkari.deployment import Controller
+
+    controller = Controller(tmp_path)
+    calls = []
+
+    async def capture(job, *args, env=None, timeout=None):
+        calls.append((args, timeout))
+
+    monkeypatch.setattr(controller, "command", capture)
+    await controller.run_security_gate({"id": "legacy-job"}, {})
+
+    args, timeout = calls[0]
+    assert "--timeout=120" in args
+    assert "-o" in args and "xfail_strict=false" in args
+    assert timeout == 300
+
+
+@pytest.mark.asyncio
+async def test_legacy_command_timeout_terminates_its_process_group(tmp_path, monkeypatch):
+    from ttakkari import generation_deployment
+    from ttakkari.deployment import Controller
+
+    controller = Controller(tmp_path)
+    terminated = []
+
+    class SlowProcess:
+        pid = 12345
+
+        async def wait(self):
+            await asyncio.sleep(1)
+
+    async def terminate(proc):
+        terminated.append(proc.pid)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", lambda *a, **k: asyncio.sleep(0, result=SlowProcess()))
+    monkeypatch.setattr(generation_deployment, "_terminate_group", terminate)
+    with pytest.raises(RuntimeError, match="시간 초과"):
+        await controller.command({"id": "legacy-timeout"}, "slow-command", timeout=0.001)
+    assert terminated == [12345]
+
+
 def test_production_db_is_rejected_by_conftest():
     """운영 DB 이름(ttakkari)으로 테스트가 실행되는 것을 차단하는지 확인."""
     import conftest
 
     assert hasattr(conftest, "TEST_DB")
-    # conftest에 있는 불변조건: assert not TEST_DB.endswith("/ttakkari")
-    assert not conftest.TEST_DB.endswith("/ttakkari"), "운영 DB로 테스트해서는 안 된다"
+    conftest.assert_test_db_isolated(conftest.TEST_DB)
+
+
+def test_production_db_with_query_parameters_is_still_rejected():
+    import conftest
+
+    with pytest.raises(AssertionError, match="운영 DB"):
+        conftest.assert_test_db_isolated(
+            "postgresql+asyncpg://localhost/ttakkari?sslmode=require"
+        )
 
 
 @pytest.mark.asyncio
@@ -68,9 +144,11 @@ async def test_security_gate_rejects_failing_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(controller, "command", failing_command)
 
     # test-db 생성도 모킹
+    executed_sql = []
+
     class DummyAdmin:
         async def execute(self, q):
-            pass
+            executed_sql.append(q)
         async def close(self):
             pass
 
@@ -83,6 +161,8 @@ async def test_security_gate_rejects_failing_candidate(tmp_path, monkeypatch):
 
     assert exc_info.value.stage == "security_gate"
     assert "security regression tests failed" in str(exc_info.value)
+    expected_db = "ttakkari_gen_" + uuid.UUID(job["id"]).hex
+    assert executed_sql == [f'CREATE DATABASE "{expected_db}"', f'DROP DATABASE "{expected_db}"']
 
     # process() 흐름에서 record_failure에 의해 job status가 failed로 변경되는지 검증
     active_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -111,6 +191,8 @@ async def test_security_gate_rejects_failing_candidate(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_security_gate_allows_passing_candidate(tmp_path, monkeypatch):
     """보안 게이트를 통과한 후보는 prepared로 진행된다."""
+    import uuid
+
     store = JobStore(tmp_path / "deploy")
     job = store.request("b" * 40, skip_tests=True)
     controller = GenerationController(store)
@@ -129,13 +211,15 @@ async def test_security_gate_allows_passing_candidate(tmp_path, monkeypatch):
     commands_run = []
 
     async def passing_command(job, release, *args, stage="command", env=None, timeout=None):
-        commands_run.append((stage, args))
+        commands_run.append((stage, args, env))
 
     monkeypatch.setattr(controller, "command", passing_command)
 
+    executed_sql = []
+
     class DummyAdmin:
         async def execute(self, q):
-            pass
+            executed_sql.append(q)
         async def close(self):
             pass
 
@@ -149,8 +233,13 @@ async def test_security_gate_allows_passing_candidate(tmp_path, monkeypatch):
     result = await controller.prepare(job)
     assert result == release_dir
 
-    stages = [s for s, _ in commands_run]
+    stages = [s for s, _, _ in commands_run]
     assert "security_gate" in stages
+    expected_db = "ttakkari_gen_" + uuid.UUID(job["id"]).hex
+    gate_env = next(env for stage, _, env in commands_run if stage == "security_gate")
+    assert gate_env["TTAKKARI_TEST_DB"].endswith("/" + expected_db)
+    assert not gate_env["TTAKKARI_TEST_DB"].endswith("/ttakkari")
+    assert executed_sql == [f'CREATE DATABASE "{expected_db}"', f'DROP DATABASE "{expected_db}"']
 
     updated = store.get(job["id"])
     assert updated["status"] == "prepared"

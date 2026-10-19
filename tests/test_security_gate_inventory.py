@@ -85,4 +85,16 @@ def test_no_security_tests_omitted_from_inventory():
         if any(pat in name for pat in security_patterns) and rel not in SECURITY_TEST_FILES:
             missing.append(rel)
 
-    assert not missing, f"보안 테스트가 SECURITY_TEST_FILES 에 등록되지 않았습니다: {missing}"
+        tree = ast.parse(test_path.read_text(encoding="utf-8"), filename=str(test_path))
+        has_security_marker = any(
+            (isinstance(node, ast.Assign)
+             and any(isinstance(target, ast.Name) and target.id == "pytestmark" for target in node.targets)
+             and "security" in ast.unparse(node.value))
+            or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and any("mark.security" in ast.unparse(decorator) for decorator in node.decorator_list))
+            for node in tree.body
+        )
+        if has_security_marker and rel not in SECURITY_TEST_FILES:
+            missing.append(rel)
+
+    assert not missing, f"보안 테스트가 SECURITY_TEST_FILES 에 등록되지 않았습니다: {sorted(set(missing))}"

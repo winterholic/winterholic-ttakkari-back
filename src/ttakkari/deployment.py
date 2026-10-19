@@ -92,7 +92,7 @@ def ensure_revision(expected: str) -> None:
         # NOTE: 세대 배포는 `git archive <sha>`로 릴리스를 만든다. 공유 작업 트리의 미커밋 변경이나 다른 세션이 올린 HEAD 는
         # 배포 내용과 무관하므로, 커밋이 존재하고 현재 브랜치 이력에 있는지만 본다(409 병목 방지).
         if subprocess.run(["git", "merge-base", "--is-ancestor", expected, "HEAD"],
-                          cwd=source, capture_output=True).returncode:
+                          cwd=source, capture_output=True, check=False).returncode:
             raise ValueError("예약한 커밋이 없거나 현재 브랜치 이력에 없습니다. 커밋을 확인하세요.")
         return
     dirty = subprocess.check_output(
@@ -214,17 +214,37 @@ class Controller:
         job.update(self.store.update(job["id"], status=status, **fields))
         log.info("deployment %s: %s", job["id"], status)
 
-    async def command(self, job: dict, *args: str, env: dict | None = None) -> None:
+    async def command(self, job: dict, *args: str, env: dict | None = None,
+                      timeout: float | None = None) -> None:
         with (self.store.jobs / f"{job['id']}.log").open("a") as output:
             output.write(f"\n$ {' '.join(args)}\n")
             output.flush()
             proc = await asyncio.create_subprocess_exec(
-                *args, cwd=BACK, env=env, stdout=output, stderr=output
+                *args, cwd=BACK, env=env, stdout=output, stderr=output,
+                start_new_session=timeout is not None,
             )
-            if await proc.wait():
+            try:
+                code = (
+                    await asyncio.wait_for(proc.wait(), timeout)
+                    if timeout is not None
+                    else await proc.wait()
+                )
+            except TimeoutError:
+                from ttakkari.generation_deployment import _terminate_group
+
+                await _terminate_group(proc)
+                raise RuntimeError(f"명령 시간 초과 ({timeout}s): {' '.join(args)}") from None
+            if code:
                 raise RuntimeError(
                     f"명령 실패: {' '.join(args)}. 로그: {job['id']}.log"
                 )
+
+    async def run_security_gate(self, job: dict, env: dict[str, str]) -> None:
+        """Legacy idle/bootstrap path: bounded security gate before any restart."""
+        from ttakkari.security.gate import build_security_gate_command
+
+        command = build_security_gate_command(BACK / ".venv/bin/python", timeout=120)
+        await self.command(job, *command, env=env, timeout=300)
 
     async def prepare(self, job: dict) -> None:
         ensure_revision(job["revision"])
@@ -246,7 +266,7 @@ class Controller:
             env = os.environ | {"TTAKKARI_TEST_DB": test_url}
             env.pop("TTAKKARI_BACKEND_DEPLOY_LOCK_HELD", None)
             self.phase(job, "security_gate")
-            await self.command(job, "uv", "run", "pytest", "-q", "-m", "security", "-o", "xfail_strict=false", env=env)
+            await self.run_security_gate(job, env)
             if not job["skip_tests"]:
                 self.phase(job, "testing")
                 await self.command(job, "uv", "run", "pytest", "-q", "-x", env=env)

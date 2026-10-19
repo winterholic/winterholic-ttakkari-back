@@ -14,6 +14,9 @@ from pathlib import Path
 SECURITY_TEST_FILES: frozenset[str] = frozenset({
     # 라우트·도구 인벤토리 (SEC2-GATE-00)
     "tests/test_route_inventory.py",
+    # 게이트 자체와 인벤토리 역누락 검사
+    "tests/test_security_gate.py",
+    "tests/test_security_gate_inventory.py",
     # 에이전트 토큰 보안·프로세스 argv 노출 방지 (SEC2-AGT-01/02)
     "tests/test_agent_token_security.py",
     # 격리 범위 매트릭스 (SEC2-AUTHZ-03)

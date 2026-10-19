@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -519,17 +520,25 @@ class GenerationController:
         """SEC2-GATE-01: 보안 회귀 묶음을 배포 게이트에서 필수 실행한다."""
         from ttakkari.security.gate import build_security_gate_command
 
+        budget = STAGE_TIMEOUTS["security_gate"]
+        deadline = time.monotonic() + budget
         python_bin = release / ".venv/bin/python"
         cmd = build_security_gate_command(python_bin, timeout=120)
         try:
-            await self.command(job, release, *cmd, stage="security_gate", env=env)
+            await self.command(job, release, *cmd, stage="security_gate", env=env,
+                               timeout=max(0.001, deadline - time.monotonic()))
         except StageError as exc:
             if exc.exit_code != 1:
                 raise
             with (self.store.jobs / f"{job['id']}.log").open("ab") as log_file:
                 log_file.write(b"\n== security gate failed; rerunning only the failed tests once (--lf) ==\n")
             retry_cmd = build_security_gate_command(python_bin, timeout=120, last_failed=True)
-            await self.command(job, release, *retry_cmd, stage="security_gate", env=env)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise StageError("security_gate", retry_cmd, None,
+                                 f"timed out after {budget}s; existing generation was preserved") from exc
+            await self.command(job, release, *retry_cmd, stage="security_gate", env=env,
+                               timeout=remaining)
 
 
     async def environment(self, job, release):

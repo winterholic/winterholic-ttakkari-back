@@ -543,8 +543,12 @@ async def test_db_create_schema_record_failures_carry_their_stage(tmp_path, monk
             async def connect(*args, **kwargs):
                 return FakeAdmin()
 
-            monkeypatch.setattr(asyncpg, "connect", connect)
             job = store.request("a" * 40)
+            with monkeypatch.context() as patch:
+                patch.setattr(asyncpg, "connect", connect)
+                with pytest.raises(StageError) as excinfo:
+                    await control.prepare(job)
+            return excinfo.value.stage
         else:
             class FakeDB:
                 async def scalar(self, query):
@@ -558,10 +562,11 @@ async def test_db_create_schema_record_failures_carry_their_stage(tmp_path, monk
                     return False
 
             monkeypatch.setattr(gd, "sessionmaker", lambda: FakeSession())
+            monkeypatch.setattr(control, "run_security_gate", lambda *args: asyncio.sleep(0))
             job = store.request("a" * 40, skip_tests=True)
-        with pytest.raises(StageError) as excinfo:
-            await control.prepare(job)
-        return excinfo.value.stage
+            with pytest.raises(StageError) as excinfo:
+                await control.prepare(job)
+            return excinfo.value.stage
 
     assert await run_prepare("db_create") == "db_create"
     assert await run_prepare("schema_contract") == "schema_contract"

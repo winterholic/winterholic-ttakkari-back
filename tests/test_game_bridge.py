@@ -1,0 +1,52 @@
+"""게임 템플릿 bridge 의 부모 origin·source·스키마 검증 (docs/adr/0049 postMessage 계약). 순수 함수를 node 로 직접 실행한다."""
+
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+BRIDGE = Path(__file__).parent.parent / "src/ttakkari/games/templates/web-phaser/src/bridge.ts"
+requires_node = pytest.mark.skipif(shutil.which("node") is None, reason="node 필요")
+
+SCRIPT = """
+import { acceptParentMessage, parentOriginFromHash } from %s;
+const parent = {}; const other = {};
+const ok = { origin: 'https://pwa.example', source: parent, data: { type: 'ttakkari:capture', id: 'abc' } };
+const cases = {
+  ok: acceptParentMessage(ok, parent, 'https://pwa.example'),
+  wrong_origin: acceptParentMessage({ ...ok, origin: 'https://evil.example' }, parent, 'https://pwa.example'),
+  wrong_source: acceptParentMessage({ ...ok, source: other }, parent, 'https://pwa.example'),
+  no_parent_hint: acceptParentMessage(ok, parent, null),
+  bad_type: acceptParentMessage({ ...ok, data: { type: 'eval', id: 'abc' } }, parent, 'https://pwa.example'),
+  no_id: acceptParentMessage({ ...ok, data: { type: 'ttakkari:capture' } }, parent, 'https://pwa.example'),
+  long_id: acceptParentMessage({ ...ok, data: { type: 'ttakkari:capture', id: 'x'.repeat(65) } }, parent, 'https://pwa.example'),
+  array: acceptParentMessage({ ...ok, data: [] }, parent, 'https://pwa.example'),
+  string: acceptParentMessage({ ...ok, data: 'ttakkari:capture' }, parent, 'https://pwa.example'),
+  null_data: acceptParentMessage({ ...ok, data: null }, parent, 'https://pwa.example'),
+  hash_ok: parentOriginFromHash('#ttk-parent=' + encodeURIComponent('https://pwa.example')),
+  hash_port: parentOriginFromHash('#ttk-parent=' + encodeURIComponent('http://localhost:5173')),
+  hash_path: parentOriginFromHash('#ttk-parent=' + encodeURIComponent('https://pwa.example/x')),
+  hash_js: parentOriginFromHash('#ttk-parent=' + encodeURIComponent('javascript:alert(1)')),
+  hash_none: parentOriginFromHash(''),
+};
+console.log(JSON.stringify(cases));
+"""
+
+
+@requires_node
+def test_bridge_accepts_only_the_declared_parent_and_known_messages():
+    out = subprocess.run(["node", "--input-type=module", "-e", SCRIPT % json.dumps(BRIDGE.as_uri())], capture_output=True, text=True, timeout=60, check=False)
+    assert out.returncode == 0, out.stderr[-800:]
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    assert got["ok"] == {"type": "ttakkari:capture", "id": "abc"}
+    for rejected in ("wrong_origin", "wrong_source", "no_parent_hint", "bad_type", "no_id", "long_id", "array", "string", "null_data"):
+        assert got[rejected] is None, rejected
+    assert got["hash_ok"] == "https://pwa.example" and got["hash_port"] == "http://localhost:5173"
+    assert got["hash_path"] is None and got["hash_js"] is None and got["hash_none"] is None
+
+
+def test_bridge_never_posts_to_a_wildcard_origin():
+    text = BRIDGE.read_text()
+    assert "postMessage" in text and "'*'" not in text and '"*"' not in text

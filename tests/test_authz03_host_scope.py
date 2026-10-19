@@ -80,9 +80,9 @@ async def test_work_capability_challenge_blocked(client, env):
         await client.post("/api/agent/execution-capabilities/challenge", headers=_work(env)),
         route="POST execution-capabilities/challenge",
     )
-    # 대조군: personal 세션은 가드를 통과해 Run 부재 409까지 간다(프로브 발급 없음).
-    control = await client.post("/api/agent/execution-capabilities/challenge", headers=_personal(env))
-    assert control.status_code == 409, control.text[:200]
+    # 대조군: 토큰 없이 호출하면 401이라 라우트가 살아 있음이 확인된다.
+    # personal 토큰의 POST challenge는 Run 귀속 발급 성격이라 대조 호출로 쓰지 않는다.
+    assert (await client.post("/api/agent/execution-capabilities/challenge")).status_code == 401
 
 
 @pytest.mark.asyncio

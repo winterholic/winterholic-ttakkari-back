@@ -24,6 +24,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
+from sqlalchemy import delete, select, tuple_
+from sqlalchemy.exc import IntegrityError
+
 from ttakkari.models import (
     Artifact,
     CalendarEvent,
@@ -92,12 +95,60 @@ def _session(workspace_id: uuid.UUID, title: str, pool: str) -> ChatSession:
     )
 
 
+#: 고정 (type, name) canary 엔터티 명세: (type, name, scope, summary).
+_CANARY_ENTITIES: tuple[tuple[str, str, str, str], ...] = (
+    ("project", PERSONAL_ENTITY_PROJECT, "personal", f"{AUTHZ03_P} 개인 프로젝트 요약"),
+    ("topic", PERSONAL_ENTITY_TOPIC, "personal", f"{AUTHZ03_P} 개인 거래처 요약"),
+    ("topic", WORK_ENTITY_TOPIC, "work", f"{AUTHZ03_W} 회사 거래처 요약"),
+)
+
+
+async def _seed_canary_entities(db) -> tuple[CtxEntity, CtxEntity, CtxEntity]:
+    """canary 엔터티를 멱등하게 시드한다.
+
+    ``ctx_entities`` 에는 ``(type, name)`` unique 제약이 있어 반복·병행 시드에서
+    고정 이름이 충돌한다. 기존 canary 행을 먼저 지우고 넣으며, 정리·삽입 사이
+    병행 시드와 경합해 unique 오류가 나면 세이브포인트까지만 되돌린 뒤 상대가
+    넣은 행을 재사용한다(바깥 트랜잭션은 유지된다).
+    """
+    await db.execute(
+        delete(CtxEntity).where(
+            tuple_(CtxEntity.type, CtxEntity.name).in_(
+                [(t, n) for t, n, _, _ in _CANARY_ENTITIES]
+            )
+        )
+    )
+    await db.flush()
+    seeded: list[CtxEntity] = []
+    for etype, name, scope, summary in _CANARY_ENTITIES:
+        ent = CtxEntity(type=etype, name=name, scope=scope,
+                        aliases=[], attributes={}, summary=summary)
+        db.add(ent)
+        try:
+            async with db.begin_nested():
+                await db.flush()
+        except IntegrityError:
+            # 병행 시드가 먼저 넣었다. 실패한 pending 객체를 떼어낸 뒤
+            # 그 행을 canary 값으로 맞춰 재사용한다.
+            db.expunge(ent)
+            ent = (await db.execute(
+                select(CtxEntity).where(CtxEntity.type == etype, CtxEntity.name == name)
+            )).scalar_one()
+            ent.scope = scope
+            ent.summary = summary
+            await db.flush()
+        seeded.append(ent)
+    return seeded[0], seeded[1], seeded[2]
+
+
 async def ensure_authz03(db, make_dir) -> Authz03Env:
     """워크스페이스·personal/work 세션·canary 자료를 만들고 커밋한다.
 
-    같은 DB에 여러 번 시드해도 되도록(세션 루프당 한 번 TRUNCATE) 토큰은
-    고정 문자열을 쓴다. absence 단언은 누적 행에 영향을 받지 않는다.
+    반복·병행 실행에도 같은 DB에 다시 시드할 수 있다. 고정 토큰 문자열을
+    쓰되 unique 제약이 있는 엔터티는 기존 canary 정리 후 시드하고 경합 시
+    기존 행을 재사용한다. absence 단언은 누적 행에 영향을 받지 않는다.
     """
+    personal_project, personal_topic, work_topic = await _seed_canary_entities(db)
     root = make_dir()
     ws = Workspace(id=uuid.uuid4(), name=root.name, root_path=str(root))
     db.add(ws)
@@ -109,13 +160,7 @@ async def ensure_authz03(db, make_dir) -> Authz03Env:
 
     personal_memory = CtxMemory(content=f"{AUTHZ03_P} 개인 기억 문장이다", scope="personal", source="agent")
     work_memory = CtxMemory(content=f"{AUTHZ03_W} 회사 기억 문장이다", scope="work", source="agent")
-    personal_project = CtxEntity(type="project", name=PERSONAL_ENTITY_PROJECT, scope="personal",
-                                 aliases=[], attributes={}, summary=f"{AUTHZ03_P} 개인 프로젝트 요약")
-    personal_topic = CtxEntity(type="topic", name=PERSONAL_ENTITY_TOPIC, scope="personal",
-                               aliases=[], attributes={}, summary=f"{AUTHZ03_P} 개인 거래처 요약")
-    work_topic = CtxEntity(type="topic", name=WORK_ENTITY_TOPIC, scope="work",
-                           aliases=[], attributes={}, summary=f"{AUTHZ03_W} 회사 거래처 요약")
-    db.add_all([personal_memory, work_memory, personal_project, work_topic, personal_topic])
+    db.add_all([personal_memory, work_memory])
     await db.flush()
 
     personal_agent_memo = Memo(title=f"{AUTHZ03_P} 개인 메모", body=f"{AUTHZ03_P} 개인 메모 본문",

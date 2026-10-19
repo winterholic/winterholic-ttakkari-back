@@ -11,10 +11,10 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy import select
 
 from ttakkari.api.deps import Db
@@ -22,6 +22,7 @@ from ttakkari.audit import record
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.games import builds as game_builds
+from ttakkari.games import create as game_create
 from ttakkari.games import origin as game_origin
 from ttakkari.games import worker as game_worker
 from ttakkari.games.adapter import resolve_project_path
@@ -59,6 +60,21 @@ class GameRegisterIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     slug: str = Field(min_length=3, max_length=40)
     pms_project_id: uuid.UUID | None = None
+    create_pms: bool = True
+
+
+Decision = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
+class GameCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idea: str = Field(min_length=1, max_length=2000)  # 사용자의 한 줄 아이디어. 첫 개발 요청의 본문이 된다
+    name: str | None = Field(default=None, max_length=game_create.MAX_NAME_CHARS)  # 비우면 아이디어 첫 줄
+    slug: str | None = Field(default=None, max_length=40)  # 비우면 이름에서 만든다(한글뿐이면 game-<무작위>)
+    genre: str = Field(default="", max_length=60)
+    engine: Literal["web-phaser"] = "web-phaser"
+    locked_decisions: list[Decision] = Field(default_factory=list, max_length=20)  # 사용자가 직접 적은 결정. 생성과 함께 승인 해시로 고정된다
+    start_development: bool = True  # true 면 같은 호출에서 기존 worker 경로로 첫 개발 요청을 접수한다
     create_pms: bool = True
 
 
@@ -159,6 +175,12 @@ class GameOut(BaseModel):
     last_build: BuildOut | None = None
 
 
+class GameCreateOut(BaseModel):
+    game: GameOut
+    request: RequestOut | None = None  # 첫 개발 요청. start_development=false 거나 접수에 실패하면 None
+    request_error: dict | None = None  # 게임은 만들어졌지만 첫 요청 접수가 실패했을 때 {code, message}
+
+
 async def _game(db: Db, game_id: uuid.UUID) -> GameProject:
     game = await db.get(GameProject, game_id)
     if game is None or game.archived_at is not None:
@@ -208,6 +230,47 @@ async def register_game(body: GameRegisterIn, _: User, db: Db, request: Request)
     record(db, action="game.register", target_type="game", target_id=game.id, detail={"slug": game.slug}, ip=client_ip(request))
     await db.commit()
     return _game_out(game, None)
+
+
+@router.post("/create", response_model=GameCreateOut, status_code=201)
+async def create_game(body: GameCreateIn, _: User, db: Db, request: Request) -> GameCreateOut:
+    """아이디어 한 줄에서 게임 저장소를 scaffold·등록하고 첫 개발 요청을 접수한다. 사용자 인증이 필요하고 잠금 결정은 이 호출로 승인된다."""
+    ip = client_ip(request)
+    try:
+        game, approved = await game_create.create_game(
+            db, idea=body.idea, name=body.name, slug=body.slug, genre=body.genre, decisions=list(body.locked_decisions),
+            engine_id=body.engine, create_pms=body.create_pms)
+    except GameContractError as e:
+        await db.rollback()
+        record(db, action="game.create", outcome="denied", target_type="game", detail={"code": e.code}, ip=ip)
+        await db.commit()
+        raise _http(e) from e
+    except Exception:
+        await db.rollback()
+        raise
+    record(db, action="game.create", target_type="game", target_id=game.id, ip=ip,
+           detail={"slug": game.slug, "engine": game.engine_id, "decisions": len(body.locked_decisions)})
+    if approved:
+        record(db, action="game.lock.approve", target_type="game", target_id=game.id, ip=ip,
+               detail={"revision": game.locked_revision, "via": "create"})
+    await db.commit()
+    out = GameCreateOut(game=_game_out(game, None))
+    if body.start_development:
+        try:
+            _sess, run = await game_worker.start_request(
+                db, game, kind="develop", ip=ip, instruction=game_create.develop_instruction(body.idea, game.name, list(body.locked_decisions)))
+            await db.refresh(run)
+            record(db, action="game.request", target_type="run", target_id=run.id, ip=ip, detail={"game": game.slug, "kind": "develop"})
+            await db.commit()
+            out.request = _request_out(run)
+        except GameContractError as e:
+            await db.rollback()
+            out.request_error = {"code": e.code, "message": str(e)}
+        except Exception as e:  # 게임은 이미 만들어졌다. 첫 요청만 실패로 알리고 관제탑에서 다시 요청할 수 있게 한다
+            log.exception("game %s: first develop request failed", game.slug)
+            await db.rollback()
+            out.request_error = {"code": "request_failed", "message": f"첫 개발 요청을 접수하지 못했습니다: {type(e).__name__}"}
+    return out
 
 
 @router.get("/{game_id}", response_model=GameOut)

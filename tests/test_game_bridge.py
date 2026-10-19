@@ -63,3 +63,37 @@ def test_bridge_accepts_only_the_declared_parent_and_known_messages():
 def test_bridge_never_posts_to_a_wildcard_origin():
     text = BRIDGE.read_text()
     assert "postMessage" in text and "'*'" not in text and '"*"' not in text
+
+
+READY_SCRIPT = """
+import { installBridge, save } from %s;
+const sent = [];
+const listeners = [];
+const parent = { postMessage: (msg, origin) => sent.push({ msg, origin }) };
+globalThis.window = { location: { hash: '#ttk-parent=' + encodeURIComponent('https://pwa.example') }, parent,
+  addEventListener: (type, fn) => { if (type === 'message') listeners.push(fn); } };
+installBridge(() => null, {});
+const readyMessages = sent.filter((s) => s.msg.type === 'ttakkari:ready');
+const state = (p) => Promise.race([p.then(() => 'resolved'), new Promise((r) => setTimeout(() => r('pending'), 30))]);
+const before = await state(save.loaded);
+// 부모가 아닌 창이 보낸 import 는 save.loaded 를 풀지 못한다
+listeners[0]({ origin: 'https://evil.example', source: parent, data: { type: 'ttakkari:save-import', id: 'i0', data: '{"a":1}' } });
+const afterForged = await state(save.loaded);
+const forgedValue = save.get('a');
+listeners[0]({ origin: 'https://pwa.example', source: parent, data: { type: 'ttakkari:save-import', id: 'i1', data: '{"level":4}' } });
+const after = await state(save.loaded);
+const replies = sent.filter((s) => s.msg.type === 'ttakkari:save-import:result');
+console.log(JSON.stringify({ readyMessages, before, afterForged, forgedValue: forgedValue ?? null, after, level: save.get('level'), replies }));
+process.exit(0);
+"""
+
+
+@requires_node
+def test_bridge_announces_ready_and_resolves_save_loaded_only_from_the_parent():
+    out = subprocess.run(["node", "--input-type=module", "-e", READY_SCRIPT % json.dumps(BRIDGE.as_uri())], capture_output=True, text=True, timeout=60, check=False)
+    assert out.returncode == 0, out.stderr[-800:]
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    assert got["readyMessages"] == [{"msg": {"type": "ttakkari:ready"}, "origin": "https://pwa.example"}]  # 부모 origin 으로만 알린다
+    assert got["before"] == "pending" and got["afterForged"] == "pending" and got["forgedValue"] is None
+    assert got["after"] == "resolved" and got["level"] == 4
+    assert got["replies"] == [{"msg": {"type": "ttakkari:save-import:result", "ok": True, "id": "i1"}, "origin": "https://pwa.example"}]

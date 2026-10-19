@@ -4,6 +4,7 @@
 //
 // 부모→게임 요청(모두 {type, id}): capture · pause · resume · state · save-export · save-import(+data)
 // 게임→부모 응답(모두 부모 origin 으로만): capture:result · paused · state:result · save-export:result · save-import:result
+// 게임→부모 알림(id 없음, 부모 origin 으로만): ready — 부팅을 마쳤다는 신호. 부모는 이때 이 기기에 보관한 세이브를 save-import 로 넣어 준다(ADR 0057).
 
 export type ParentRequestType = 'capture' | 'pause' | 'resume' | 'state' | 'save-export' | 'save-import';
 
@@ -61,7 +62,17 @@ export function publishState(state: unknown): void {
   published = state;
 }
 
+const SAVE_LOAD_TIMEOUT_MS = 3000;
+let resolveLoaded: () => void = () => undefined;
+// 부모가 보관한 세이브가 들어오면(또는 3초가 지나도 안 오면) 풀린다. 진행 저장이 필요한 게임은 save.loaded 를 기다린 뒤 save.get 으로 읽는다.
+// 부모가 없거나 저장된 세이브가 없는 경우에도 3초 뒤 풀리므로 영원히 기다리지 않는다.
+const loaded = new Promise<void>((resolve) => {
+  resolveLoaded = resolve;
+  setTimeout(resolve, SAVE_LOAD_TIMEOUT_MS);
+});
+
 export const save = {
+  loaded,
   get: (key: string): unknown => saveStore[key],
   set: (key: string, value: unknown): void => {
     saveStore[key] = value;
@@ -79,6 +90,7 @@ export interface BridgeControls {
 
 export function installBridge(canvasProvider: () => HTMLCanvasElement | null, controls: BridgeControls = {}): void {
   const parentOrigin = parentOriginFromHash(window.location.hash);
+  if (parentOrigin !== null && window.parent !== window) window.parent.postMessage({ type: 'ttakkari:ready' }, parentOrigin);
   window.addEventListener('message', (event) => {
     const request = acceptParentMessage(event, window.parent, parentOrigin);
     if (request === null || parentOrigin === null) return;
@@ -114,6 +126,7 @@ export function installBridge(canvasProvider: () => HTMLCanvasElement | null, co
           if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
             saveStore = parsed as Record<string, unknown>;
             ok = true;
+            resolveLoaded();
           }
         } catch {
           ok = false;

@@ -6,6 +6,7 @@ import signal
 import subprocess
 import time
 import uuid
+from datetime import timedelta
 
 from conftest import FAKES, agent_calls
 from helpers import run_events, run_to_end, sse_events, start_run, wait_run, wait_status
@@ -257,13 +258,16 @@ def _spawn_agent_like() -> subprocess.Popen:
 
 
 async def _insert_runs(ws, sess, pid: int | None):
+    # created_at 을 명시해 간격을 둔다. 기본값(utcnow)은 마이크로초 해상도라 한 flush 안의 Run 들이 같은 값을 받을 수 있고,
+    # 같은 값이면 dispatch 의 ORDER BY created_at 이 물리 순서에 따라 갈려 재개한 Run 보다 대기 Run 이 먼저 돌았다(간헐 실패의 원인, TASK-G18).
+    base = utcnow()
     async with sessionmaker()() as db:
         running = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="r",
-                      engine="claude", status="running", pid=pid, last_seq=2)
+                      engine="claude", status="running", pid=pid, last_seq=2, created_at=base - timedelta(seconds=3))
         queued = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="q",
-                     engine="claude", status="queued")
+                     engine="claude", status="queued", created_at=base - timedelta(seconds=2))
         done = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="d",
-                   engine="claude", status="succeeded")
+                   engine="claude", status="succeeded", created_at=base - timedelta(seconds=1))
         db.add_all([running, queued, done])
         await db.commit()
         return running.id, queued.id, done.id
@@ -370,7 +374,6 @@ async def test_interrupted_resume_stops_after_max_attempts(client, auth, new_ses
 
 
 async def test_queued_restart_resume_restores_backoff_after_process_restart(client, auth, new_session):
-    from datetime import timedelta
 
     from ttakkari.runs.manager import resume_queued
 

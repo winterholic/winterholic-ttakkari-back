@@ -81,6 +81,8 @@ def develop_instruction(idea: str, name: str, decisions: list[str]) -> str:
         ("- 저장소는 scaffold 직후 상태다(src/main.ts 의 빈 MainScene, src/bridge.ts). bridge.ts 와 main.ts 의 installBridge 호출·"
          "render.preserveDrawingBuffer 설정은 관제탑의 캡처·일시정지·계측이 쓰므로 유지한다."),
         "- 점수·체력·위치·게임 상태 같은 규칙 값은 publishState() 로 게시해 자동 검증이 읽을 수 있게 한다.",
+        ("- 새로고침 뒤에도 이어야 하는 진행(최고 점수·레벨 등)은 bridge 의 save.set()/save.get() 으로 저장한다. localStorage 는 쓰지 않는다. "
+         "시작할 때 await save.loaded 뒤에 읽어야 이 기기에 보관된 값이 들어온다."),
         ("- 모바일 세로 화면에서 터치로 플레이할 수 있어야 하고 데스크톱에서는 키보드로도 된다. "
          "시작→플레이→종료/재시작 흐름이 끝까지 돌아야 한다."),
         "- 에셋은 외부 파일을 받지 말고 코드로 그리거나 합성한다(출처 불명 파일 금지).",

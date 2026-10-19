@@ -1130,6 +1130,9 @@ class GameProject(Base):
     # 사용자가 승인한 ttakkari-game.json 의 sha256. 저장소 파일은 에이전트가 고칠 수 있으므로 승인본은 DB 에 해시로 고정한다.
     locked_decisions_sha256: Mapped[str | None] = mapped_column(String(64))
     locked_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # 관제탑이 여는 빌드. 비어 있으면 가장 최근 성공 빌드다. 새 성공 빌드는 따라가고, 사용자가 롤백으로 고정하면 고정을 유지한다(ADR 0050).
+    # game_builds 와 순환 참조라 FK 를 걸지 않는다(오래된 테스트 DB 의 drop_all 이 ALTER 로 깨지는 것을 피한다). 읽을 때 존재·상태를 확인한다.
+    active_build_id: Mapped[uuid.UUID | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     archived_at: Mapped[datetime | None]
 
@@ -1155,6 +1158,8 @@ class GameBuild(Base):
     artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
     log_tail: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
+    # 롤백으로 소스를 복구해 만든 빌드이면 복구 대상이던 이전 빌드. 원래 빌드는 그대로 남는다.
+    restored_from_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("game_builds.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     finished_at: Mapped[datetime | None]
 

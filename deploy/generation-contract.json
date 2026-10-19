@@ -1,7 +1,7 @@
 {
   "protocol": 1,
   "supervisor": {"protocol": 1, "slots": 3},
-  "schema_revision": "0047_game_studio",
+  "schema_revision": "0048_game_active_build",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -17,6 +17,7 @@
     "0043_reverse_jobs_jsonb",
     "0044_reverse_reconstruction",
     "0045_tossinvest_runs",
-    "0046_notebooklm"
+    "0046_notebooklm",
+    "0047_game_studio"
   ]
 }

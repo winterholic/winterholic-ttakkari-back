@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import re
 import shutil
 import uuid
 import zipfile
@@ -32,8 +33,10 @@ from ttakkari.games.adapter import (
     run_git,
 )
 from ttakkari.games.contract import (
+    MANIFEST_FILE,
     GameContractError,
     ProjectManifest,
+    parse_manifest,
     read_manifest,
     verify_lock,
 )
@@ -130,7 +133,7 @@ def require_lock_intact(game: GameProject, manifest: ProjectManifest) -> None:
             "lock_violation")
 
 
-async def _next_build(db: AsyncSession, game: GameProject, run: Run | None) -> GameBuild:
+async def _next_build(db: AsyncSession, game: GameProject, run: Run | None, restored_from: uuid.UUID | None = None) -> GameBuild:
     """게임 행을 잠가 순번을 매기고 building 행을 만든다. 진행 중인 빌드가 있으면 거부하고, 중단된 오래된 빌드는 실패로 닫는다."""
     s = get_settings()
     await db.execute(select(GameProject.id).where(GameProject.id == game.id).with_for_update())
@@ -142,7 +145,7 @@ async def _next_build(db: AsyncSession, game: GameProject, run: Run | None) -> G
             await db.rollback()
             raise GameContractError("이 게임의 다른 빌드가 진행 중입니다.", "build_in_progress")
     seq = (await db.scalar(select(func.coalesce(func.max(GameBuild.seq), 0)).where(GameBuild.game_id == game.id))) + 1
-    build = GameBuild(game_id=game.id, seq=seq, status="building", run_id=run.id if run else None)
+    build = GameBuild(game_id=game.id, seq=seq, status="building", run_id=run.id if run else None, restored_from_id=restored_from)
     db.add(build)
     await db.commit()
     return build
@@ -160,7 +163,9 @@ class BuildPlan:
     manifest_sha: str
 
 
-async def prepare_build(db: AsyncSession, game: GameProject, *, run_id: uuid.UUID | None = None) -> tuple[GameBuild, BuildPlan]:
+async def prepare_build(
+    db: AsyncSession, game: GameProject, *, run_id: uuid.UUID | None = None, restored_from: uuid.UUID | None = None,
+) -> tuple[GameBuild, BuildPlan]:
     """경로·매니페스트·Run 을 검증하고 순번을 매긴 building 행을 만든다. 검증에 실패하면 빌드 행을 만들지 않는다."""
     ws = await db.get(Workspace, game.workspace_id)
     if ws is None:
@@ -177,7 +182,7 @@ async def prepare_build(db: AsyncSession, game: GameProject, *, run_id: uuid.UUI
     if manifest.id != game.slug or manifest.engine != game.engine_id:
         raise GameContractError("매니페스트가 등록된 게임(slug/engine)과 다릅니다.", "bad_manifest")
     require_lock_intact(game, manifest)
-    build = await _next_build(db, game, run)
+    build = await _next_build(db, game, run, restored_from)
     return build, BuildPlan(game.id, build.id, root, ws.id, game.engine_id, manifest_sha)
 
 
@@ -250,6 +255,85 @@ async def _snapshot(db: AsyncSession, game: GameProject, build: GameBuild, out: 
     build.bundle_sha256, build.bundle_bytes, build.bundle_files = sha, total, files
     build.artifact_id = art.id
     build.status = "succeeded"
+    await _follow_or_pin(db, game, build)
+
+
+async def _follow_or_pin(db: AsyncSession, game: GameProject, build: GameBuild) -> None:
+    """새 성공 빌드를 활성 빌드로 만들지 정한다. 활성이 없거나 직전 최신 빌드를 따라가던 중이면 새 빌드로 옮기고,
+    사용자가 롤백으로 오래된 빌드에 고정해 두었으면 그 고정을 유지한다. 롤백으로 복구한 빌드는 항상 활성이 된다."""
+    previous = await db.scalar(select(GameBuild.id).where(GameBuild.game_id == game.id, GameBuild.status == "succeeded", GameBuild.seq < build.seq)
+                               .order_by(GameBuild.seq.desc()).limit(1))
+    if build.restored_from_id is not None or game.active_build_id is None or game.active_build_id == previous:
+        game.active_build_id = build.id
+
+
+async def effective_active_build(db: AsyncSession, game: GameProject) -> GameBuild | None:
+    """관제탑이 여는 빌드: 지정된 활성 빌드, 없으면 가장 최근 성공 빌드."""
+    if game.active_build_id is not None:
+        active = await db.get(GameBuild, game.active_build_id)
+        if active is not None and active.status == "succeeded":
+            return active
+    return await db.scalar(select(GameBuild).where(GameBuild.game_id == game.id, GameBuild.status == "succeeded")
+                           .order_by(GameBuild.seq.desc()).limit(1))
+
+
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+async def manifest_at_commit(root: Path, commit: str) -> ProjectManifest:
+    """해당 commit 시점의 ttakkari-game.json. 작업 트리가 아니라 git 객체를 읽으므로 에이전트가 파일을 고쳐도 영향이 없다."""
+    if not COMMIT_RE.fullmatch(commit):
+        raise GameContractError("source commit 형식이 올바르지 않습니다.", "bad_commit")
+    return parse_manifest((await run_git(root, "show", f"{commit}:{MANIFEST_FILE}")).encode())
+
+
+async def check_activatable(db: AsyncSession, game: GameProject, build: GameBuild) -> None:
+    """빌드를 활성으로 삼아도 되는지(성공·번들 해시 일치·승인된 잠금 결정과 일치). 아니면 GameContractError.
+
+    잠금 결정은 빌드의 source commit 시점 매니페스트로 다시 판정한다. 사용자가 그 뒤 결정을 새로 승인했다면 옛 빌드는 거부된다.
+    commit 이 없거나 작업 트리가 더러운 빌드는 매니페스트를 재현할 수 없어 빌드 당시의 lock_verified 만 믿는다."""
+    if build.game_id != game.id or build.status != "succeeded":
+        raise GameContractError("성공한 이 게임의 빌드만 활성으로 삼을 수 있습니다.", "not_playable")
+    if not await asyncio.to_thread(verify_snapshot, build):
+        raise GameContractError("빌드 스냅샷이 기록된 해시와 달라 활성으로 삼을 수 없습니다.", "snapshot_tampered")
+    if game.locked_decisions_sha256 is None:
+        return
+    if build.source_commit and not build.source_dirty:
+        ws = await db.get(Workspace, game.workspace_id)
+        manifest = await manifest_at_commit(resolve_project_path(Path(ws.root_path)), build.source_commit)
+        require_lock_intact(game, manifest)
+    elif not build.lock_verified:
+        raise GameContractError("이 빌드는 승인된 잠금 결정과 일치하는지 확인되지 않아 활성으로 삼을 수 없습니다.", "lock_violation")
+
+
+async def assert_no_build_in_progress(db: AsyncSession, game: GameProject) -> None:
+    s = get_settings()
+    stale_before = (utcnow() - timedelta(seconds=s.game_build_install_timeout_seconds + s.game_build_timeout_seconds + STALE_SLACK_SECONDS)).replace(tzinfo=None)
+    for b in (await db.scalars(select(GameBuild).where(GameBuild.game_id == game.id, GameBuild.status == "building"))).all():
+        if b.created_at.replace(tzinfo=None) >= stale_before:
+            raise GameContractError("이 게임의 다른 빌드가 진행 중입니다.", "build_in_progress")
+
+
+async def restore_source(root: Path, build: GameBuild) -> str:
+    """작업 트리를 건드리지 않는 정책의 소스 복구: 대상 commit 의 트리를 부모 HEAD 로 하는 새 복구 커밋을 만들고 fast-forward 로만 반영한다.
+
+    작업 트리가 깨끗해야 하며(동시 작업물을 덮지 않는다) 기존 커밋·브랜치 이력은 지우지 않는다. 새 커밋 SHA 를 돌려준다."""
+    if not build.source_commit or build.source_dirty:
+        raise GameContractError("커밋되지 않은 변경으로 만든 빌드는 소스를 복구할 수 없습니다.", "not_restorable")
+    if not COMMIT_RE.fullmatch(build.source_commit):
+        raise GameContractError("source commit 형식이 올바르지 않습니다.", "bad_commit")
+    head, dirty, _ = await git_state(root)
+    if head is None:
+        raise GameContractError("저장소에 커밋이 없어 복구할 수 없습니다.", "not_restorable")
+    if dirty:
+        raise GameContractError("저장소에 커밋되지 않은 변경이 있습니다. 변경을 커밋하거나 정리한 뒤 다시 시도하세요.", "dirty_worktree")
+    await run_git(root, "cat-file", "-e", f"{build.source_commit}^{{commit}}")
+    tree = await run_git(root, "rev-parse", f"{build.source_commit}^{{tree}}")
+    if tree == await run_git(root, "rev-parse", "HEAD^{tree}"):
+        return head  # 소스가 이미 같다. 새 커밋 없이 이 commit 을 다시 빌드한다.
+    new = await run_git(root, "commit-tree", tree, "-p", head, "-m", f"Restore source of build v{build.seq} ({build.source_commit[:10]}) via Ttakkari rollback")
+    await run_git(root, "merge", "--ff-only", "--quiet", new)
+    return new
 
 
 def delete_snapshot_files(dest: Path) -> None:

@@ -45,6 +45,10 @@ config.games_root(기본 ~/development/projects/games) 아래 slug 디렉터리.
 - workspace_id는 ON DELETE RESTRICT로 게임이 있는 workspace의 삭제를 막고, 빌드·피드백은 게임 삭제 시 CASCADE, Run/Artifact 연결은 SET NULL이다.
 - downgrade는 표 3개만 지우며 0046의 표 목록으로 정확히 돌아가는지 테스트한다. 게임 데이터가 있는 상태의 downgrade는 데이터 삭제를 뜻하므로 운영에서는 쓰지 않는다.
 
+## 후속 변경
+
+- 0048_game_active_build: `game_projects.active_build_id`(활성 빌드)와 `game_builds.restored_from_id`(복구 출처) 두 NULL 허용 컬럼을 추가했다. 근거와 규칙은 [ADR 0050](0050-game-worker-flow-and-rollback.md).
+
 ## 미확인
 
 - 운영 DB에 대한 migrate 실행은 이 Run에서 하지 않았다(배포 절차에서 적용). 테스트 DB 기준 upgrade/downgrade만 확인했다.

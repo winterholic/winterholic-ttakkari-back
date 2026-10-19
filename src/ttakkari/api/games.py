@@ -10,6 +10,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -23,6 +24,7 @@ from ttakkari.db import sessionmaker
 from ttakkari.games import builds as game_builds
 from ttakkari.games import origin as game_origin
 from ttakkari.games import worker as game_worker
+from ttakkari.games.adapter import resolve_project_path
 from ttakkari.games.contract import (
     GameContractError,
     approve_lock,
@@ -32,7 +34,7 @@ from ttakkari.games.contract import (
     register_game_project,
     verify_lock,
 )
-from ttakkari.models import GameBuild, GameProject, Run
+from ttakkari.models import GameBuild, GameProject, Run, Workspace
 from ttakkari.runs.manager import _background
 from ttakkari.security.auth import User, client_ip
 
@@ -42,7 +44,8 @@ router = APIRouter(prefix="/api/games", tags=["games"])
 CODE_STATUS = {
     "not_found": 404, "no_manifest": 404, "no_pms_project": 404, "no_run": 404, "no_build": 404, "no_workspace": 404,
     "exists": 409, "build_in_progress": 409, "lock_violation": 409, "snapshot_exists": 409, "snapshot_tampered": 409, "not_playable": 409,
-    "origin_unconfigured": 503, "bad_request": 422, "bad_path": 422,
+    "origin_unconfigured": 503, "bad_request": 422, "bad_path": 422, "dirty_worktree": 409, "not_restorable": 409, "already_active": 409,
+    "bad_commit": 422, "git_failed": 500,
     "outside_root": 403, "bad_slug": 422, "bad_manifest": 422, "wrong_engine": 422, "unsupported_engine": 422,
 }
 
@@ -78,6 +81,7 @@ class BuildOut(BaseModel):
     bundle_files: int | None
     run_id: uuid.UUID | None
     artifact_id: uuid.UUID | None
+    restored_from_id: uuid.UUID | None  # 롤백으로 소스를 복구해 만든 빌드이면 복구 대상이던 이전 빌드
     error: str | None
     created_at: datetime
     finished_at: datetime | None
@@ -90,7 +94,7 @@ class BuildDetailOut(BuildOut):
 
 class PlayIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    build_id: uuid.UUID | None = None  # 비우면 가장 최근 성공 빌드
+    build_id: uuid.UUID | None = None  # 비우면 활성 빌드
 
 
 class PlayOut(BaseModel):
@@ -121,6 +125,21 @@ class RequestOut(BaseModel):
     created_at: datetime
 
 
+class RollbackIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    build_id: uuid.UUID  # 활성으로 삼을 성공 빌드. 이전 빌드로 되돌리는 것이 주 용도다
+    restore_source: bool = False  # true 면 소스도 그 빌드의 commit 상태로 복구 커밋을 만들고 복구 빌드를 새로 만든다
+    confirm: Literal[True]  # 되돌리기 어려운 동작이라 명시 확인(UI 의 최종 확인 대화상자)을 요구한다
+
+
+class RollbackOut(BaseModel):
+    game_id: uuid.UUID
+    active_build_id: uuid.UUID
+    previous_active_build_id: uuid.UUID | None
+    restore_commit: str | None  # restore_source 일 때 소스가 놓인 commit(새 복구 커밋이거나 이미 같았다면 기존 HEAD)
+    restore_build: BuildOut | None  # restore_source 일 때 백그라운드로 시작한 복구 빌드(202 처럼 building 상태)
+
+
 class GameOut(BaseModel):
     id: uuid.UUID
     slug: str
@@ -129,6 +148,7 @@ class GameOut(BaseModel):
     workspace_id: uuid.UUID
     pms_project_id: uuid.UUID | None
     locked_revision: int
+    active_build_id: uuid.UUID | None  # 관제탑이 여는 빌드(지정이 없으면 최근 성공 빌드)
     lock_approved: bool
     lock_matches_repo: bool | None  # 승인본과 저장소 매니페스트의 잠금 결정이 같은지. 매니페스트를 읽을 수 없으면 None
     locked_decisions: list[str]  # 저장소 매니페스트의 현재 값(승인본이 아닐 수 있다)
@@ -154,7 +174,7 @@ def _game_out(game: GameProject, last: GameBuild | None) -> GameOut:
         pass
     return GameOut(
         id=game.id, slug=game.slug, name=game.name, engine_id=game.engine_id, workspace_id=game.workspace_id,
-        pms_project_id=game.pms_project_id, locked_revision=game.locked_revision,
+        pms_project_id=game.pms_project_id, locked_revision=game.locked_revision, active_build_id=game.active_build_id,
         lock_approved=game.locked_decisions_sha256 is not None, lock_matches_repo=matches, locked_decisions=decisions,
         created_at=game.created_at, last_build=BuildOut.model_validate(last) if last else None)
 
@@ -260,8 +280,7 @@ async def play_game(game_id: uuid.UUID, body: PlayIn, _: User, db: Db, request: 
         if build is None or build.game_id != game.id:
             raise HTTPException(404, {"code": "no_build", "message": "빌드가 없습니다."})
     else:
-        build = await db.scalar(select(GameBuild).where(GameBuild.game_id == game.id, GameBuild.status == "succeeded")
-                                .order_by(GameBuild.seq.desc()).limit(1))
+        build = await game_builds.effective_active_build(db, game)
         if build is None:
             raise HTTPException(409, {"code": "not_playable", "message": "플레이할 성공 빌드가 아직 없습니다."})
     if build.status != "succeeded" or not build.bundle_rel_path:
@@ -310,3 +329,49 @@ async def list_requests(game_id: uuid.UUID, _: User, db: Db, limit: int = Query(
         select(Run).where(Run.workspace_id == game.workspace_id, Run.usage["game"]["game_id"].astext == str(game.id))
         .order_by(Run.created_at.desc()).limit(limit))
     return [_request_out(r) for r in rows]
+
+
+@router.post("/{game_id}/rollback", response_model=RollbackOut)
+async def rollback_game(game_id: uuid.UUID, body: RollbackIn, _: User, db: Db, request: Request) -> RollbackOut:
+    """활성 빌드를 선택한 성공 빌드로 바꾼다. 어떤 빌드 산출물도 수정·삭제하지 않고, 활성 포인터만 옮긴다.
+
+    restore_source=true 면 저장소를 그 빌드의 commit 트리로 되돌리는 새 복구 커밋(fast-forward, 깨끗한 작업 트리에서만)을 만들고
+    그 소스로 복구 빌드를 새로 시작한다. 승인된 잠금 결정과 다른 빌드는 어느 쪽이든 거부한다."""
+    game = await _game(db, game_id)
+    await db.execute(select(GameProject.id).where(GameProject.id == game.id).with_for_update())  # 동시 롤백·빌드 순번과 직렬화
+    await db.refresh(game)
+    target = await db.get(GameBuild, body.build_id)
+    previous = game.active_build_id
+    try:
+        if target is None or target.game_id != game.id:
+            raise GameContractError("이 게임의 빌드가 아닙니다.", "no_build")
+        if body.restore_source is False and (await game_builds.effective_active_build(db, game) or target).id == target.id:
+            raise GameContractError("이미 활성인 빌드입니다.", "already_active")
+        await game_builds.check_activatable(db, game, target)
+        restore_commit, new_build, plan = None, None, None
+        if body.restore_source:
+            await game_builds.assert_no_build_in_progress(db, game)
+            ws = await db.get(Workspace, game.workspace_id)
+            if ws is None:
+                raise GameContractError("게임의 workspace 를 찾을 수 없습니다.", "no_workspace")
+            restore_commit = await game_builds.restore_source(resolve_project_path(Path(ws.root_path)), target)
+            game.active_build_id = target.id  # 소스를 되돌린 뒤 포인터를 옮기고, prepare_build 의 commit 에 함께 기록된다
+            new_build, plan = await game_builds.prepare_build(db, game, restored_from=target.id)
+        else:
+            game.active_build_id = target.id
+    except GameContractError as e:
+        await db.rollback()
+        record(db, action="game.rollback", outcome="denied", target_type="game_build", target_id=body.build_id, ip=client_ip(request),
+               detail={"code": e.code, "restore_source": body.restore_source})
+        await db.commit()
+        raise _http(e) from e
+    record(db, action="game.rollback", target_type="game", target_id=game.id, ip=client_ip(request),
+           detail={"from": str(previous) if previous else None, "to": str(target.id), "seq": target.seq, "restore_source": body.restore_source,
+                   "restore_commit": restore_commit, "restore_build": str(new_build.id) if new_build else None})
+    await db.commit()
+    if plan is not None:
+        task = asyncio.create_task(_run_build(plan))
+        _background.add(task)
+        task.add_done_callback(_background.discard)
+    return RollbackOut(game_id=game.id, active_build_id=target.id, previous_active_build_id=previous, restore_commit=restore_commit,
+                       restore_build=BuildOut.model_validate(new_build) if new_build else None)

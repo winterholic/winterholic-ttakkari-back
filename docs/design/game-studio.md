@@ -430,7 +430,7 @@ flowchart TD
 10. **TASK-G10: 캡처·영역·화살표·주석 (1.5h)** — 캡처 출처/빌드 ID와 정규화 좌표를 payload에 저장. `cd ../front && pnpm exec vitest run src/features/games/VisualFeedback.test.tsx`
 11. **TASK-G11: 피드백 저장·worker 시작·상태 연결 (1.5h)** — 사용자 코멘트와 screenshot Artifact, project/build ID를 worker prompt에 포함하고 Run 카드로 상태/완료를 표시. `cd ../front && pnpm exec vitest run src/features/games/FeedbackSubmission.test.tsx`
 12. **TASK-G13: 실제 브라우저 플레이 smoke (1.5h)** — 격리 환경에서 1게임 실행, 터치/키 입력, 콘솔 에러와 스크린샷 확보. 임의 FPS 목표를 강제하지 않음. `uv run pytest -q tests/test_game_browser_smoke.py`
-13. **TASK-G12: 재빌드 전후 확인·정상 버전 롤백 API/UI (2h)** — 이전 빌드와 새 빌드 확인, 명시적 롤백 API가 기존 빌드 보존 및 새 복구 commit/build 생성. `cd ../front && pnpm exec vitest run src/features/games/GameRollback.test.tsx` 및 `uv run pytest -q tests/test_game_rollback.py`
+13. **TASK-G12: 재빌드 전후 확인·정상 버전 롤백 API/UI (2h)** [백엔드 롤백 API 완료 2026-10-19, ADR 0050 / 프론트 UI·GameRollback.test.tsx 미구현] — 이전 빌드와 새 빌드 확인, 명시적 롤백 API가 기존 빌드 보존 및 새 복구 commit/build 생성. `cd ../front && pnpm exec vitest run src/features/games/GameRollback.test.tsx` 및 `uv run pytest -q tests/test_game_rollback.py`
 
 ### [트랙 C: E2E 통합 검증]
 14. **TASK-G14: 12단계 실제 에이전트 E2E (2h, 초과하면 시나리오 준비와 실행/증거 검토로 분리)** — 실제 worker가 코드를 쓰고 빌드/브라우저가 실행되는 흐름, 스크린샷 수정, 재빌드, 전후 확인, 정상 버전 복원을 증거로 남김. mock만으로 성공 판정 금지. `uv run pytest -q tests/test_e2e_game_studio.py`

@@ -31,7 +31,12 @@ from ttakkari.games.adapter import (
     resolve_project_path,
     run_git,
 )
-from ttakkari.games.contract import GameContractError, read_manifest, verify_lock
+from ttakkari.games.contract import (
+    GameContractError,
+    ProjectManifest,
+    read_manifest,
+    verify_lock,
+)
 from ttakkari.games.isolation import IsolatedBuildRunner
 from ttakkari.models import Artifact, GameBuild, GameProject, Run, Workspace, utcnow
 
@@ -117,6 +122,14 @@ async def git_state(root: Path) -> tuple[str | None, bool, str]:
     return head, bool(status), fp
 
 
+def require_lock_intact(game: GameProject, manifest: ProjectManifest) -> None:
+    """사용자가 승인한 잠금 결정과 저장소 매니페스트가 다르면 빌드·적용을 거부한다. 아직 승인한 적이 없으면 막을 대상이 없다."""
+    if game.locked_decisions_sha256 is not None and not verify_lock(game, manifest):
+        raise GameContractError(
+            "저장소의 잠금 결정이 사용자가 승인한 내용과 다릅니다. ttakkari-game.json 의 locked_decisions 를 승인본으로 되돌리거나 사용자가 새로 승인해야 합니다.",
+            "lock_violation")
+
+
 async def _next_build(db: AsyncSession, game: GameProject, run: Run | None) -> GameBuild:
     """게임 행을 잠가 순번을 매기고 building 행을 만든다. 진행 중인 빌드가 있으면 거부하고, 중단된 오래된 빌드는 실패로 닫는다."""
     s = get_settings()
@@ -163,6 +176,7 @@ async def prepare_build(db: AsyncSession, game: GameProject, *, run_id: uuid.UUI
     manifest, manifest_sha = read_manifest(root)
     if manifest.id != game.slug or manifest.engine != game.engine_id:
         raise GameContractError("매니페스트가 등록된 게임(slug/engine)과 다릅니다.", "bad_manifest")
+    require_lock_intact(game, manifest)
     build = await _next_build(db, game, run)
     return build, BuildPlan(game.id, build.id, root, ws.id, game.engine_id, manifest_sha)
 
@@ -185,6 +199,7 @@ async def execute_build(
     root = plan.root
     try:
         manifest, manifest_sha = read_manifest(root)
+        require_lock_intact(game, manifest)  # prepare_build 이후 실행 전에 바뀐 경우까지 막는다
         head, dirty, fp_before = await git_state(root)
         build.source_commit, build.source_dirty = head, dirty
         build.manifest_sha256, build.lock_verified = manifest_sha, verify_lock(game, manifest)

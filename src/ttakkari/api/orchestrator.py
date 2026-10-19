@@ -47,6 +47,9 @@ class WorkerIn(BaseModel):
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     task_type: worker_routing.TaskType | None = None
     strict_engine: bool = False
+    # 게임 스튜디오 프로젝트에 대한 작업이면 게임 ID 를 준다. 작업 세션은 그 게임 저장소 workspace 에서 돌고 prompt 에 게임·빌드·잠금 결정이 붙는다.
+    game_id: uuid.UUID | None = None
+    game_build_id: uuid.UUID | None = None
     # 오케스트레이터와 같은 급(peer_models)을 작업 세션에 쓸 때만 필요하다.
     escalation_reason: str | None = Field(default=None, max_length=1000)
 
@@ -237,6 +240,27 @@ async def _record_verification(
     return target
 
 
+async def _game_worker_context(db: Db, orch: ChatSession, body: WorkerIn, task_type: str):
+    """게임 작업이면 worker 를 게임 저장소 workspace 에서 돌리고 prompt 에 게임·빌드·잠금 결정을 붙인다(TASK-G08). 별도 큐는 없다."""
+    from ttakkari.games import worker as game_worker
+    from ttakkari.games.contract import GameContractError
+    from ttakkari.models import GameProject
+    if orch.pool != "personal":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "게임 스튜디오 프로젝트는 개인 모드 오케스트레이터만 다룰 수 있습니다.")
+    game = await db.get(GameProject, body.game_id)
+    if game is None or game.archived_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "게임 프로젝트를 찾을 수 없습니다.")
+    try:
+        ctx = await game_worker.load_context(db, game, body.game_build_id)
+    except GameContractError as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND if e.code in {"no_build", "no_workspace"} else status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
+    kind = "verify" if task_type == "verification" else "modify"
+
+    def tag(run: Run) -> None:
+        run.usage = {**(run.usage or {}), game_worker.USAGE_KEY: game_worker.run_tag(ctx, kind)}
+    return ctx.workspace.id, game_worker.compose_prompt(ctx, kind, body.prompt), tag
+
+
 @router.post("/workers", response_model=WorkerOut, status_code=201)
 async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> WorkerOut:
     orch = await _orchestrator(db, sid)
@@ -273,7 +297,10 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"{model} 은(는) 오케스트레이터와 같은 급이라 작업 세션에는 escalation_reason 이 필요합니다. "
                             "중요한 설계 결정·어려운 추론·새로운 발상이 필요한 부분만 맡기고, 아니면 sonnet 이나 gpt-6-luna 를 쓰세요.")
-    w = ChatSession(workspace_id=orch.workspace_id, title=body.title, engine=engine, model=model,
+    workspace_id, prompt, on_queued = orch.workspace_id, body.prompt, None
+    if body.game_id is not None:
+        workspace_id, prompt, on_queued = await _game_worker_context(db, orch, body, task_type)
+    w = ChatSession(workspace_id=workspace_id, title=body.title, engine=engine, model=model,
                     effort=effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool,
                     worker_task_type=task_type, strict_engine=body.strict_engine)
     db.add(w)
@@ -281,7 +308,7 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     if peer:
         record(db, actor="agent", action="orchestrator.escalate", target_type="session", target_id=w.id,
                detail={"model": model, "effort": effort, "reason": reason[:500]})
-    await queue_run(db, w, body.prompt, origin=RunOrigin.orchestrator)
+    await queue_run(db, w, prompt, origin=RunOrigin.orchestrator, on_queued=on_queued)
     return await _out(db, w)
 
 

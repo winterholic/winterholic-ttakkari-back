@@ -219,7 +219,10 @@ async def test_unapproved_lock_is_flagged_and_changed_decisions_fail_verificatio
         assert (await build_game(db, game, adapter=FakeAdapter(tmp_path / "w"))).lock_verified is True
         m = manifest("snap-lock", locked_decisions=("전부 3D",))  # 에이전트가 저장소 파일의 잠금 결정을 바꿈
         (root / "ttakkari-game.json").write_text(__import__("json").dumps(m.to_json(), ensure_ascii=False))
-        assert (await build_game(db, game, adapter=FakeAdapter(tmp_path / "w"))).lock_verified is False
+        with pytest.raises(GameContractError) as err:  # 승인본과 다른 잠금 결정은 빌드 자체가 거부된다(G08)
+            await build_game(db, game, adapter=FakeAdapter(tmp_path / "w"))
+        assert err.value.code == "lock_violation"
+        assert len((await db.scalars(select(GameBuild).where(GameBuild.game_id == game_id))).all()) == 2  # 빌드 행도 만들지 않았다
 
 
 async def test_failed_build_is_recorded_without_snapshot(tmp_path: Path):

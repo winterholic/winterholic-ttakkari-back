@@ -659,7 +659,7 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None,
                        task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None,
-                       strict_engine: bool = False) -> str:
+                       strict_engine: bool = False, game_id: str | None = None, game_build_id: str | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     `prompt` must be self-contained: the worker does not see this conversation.
     Use engine="auto" and task_type; the backend enforces the policy returned by account_usage.worker_routing.
@@ -685,8 +685,17 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     Explicit engine="claude"/"codex"/"antigravity" uses that engine first and, when all its enabled accounts hit
     usage limits, falls back to same-family then task-fit routes before waiting; set strict_engine=True to
     strictly lock the engine and wait for quota reset instead.
+    For a game studio project pass `game_id` (and optionally `game_build_id`, default the latest successful build): the
+    worker then runs in that game's repository workspace and the backend prepends the project, build and the user-approved
+    locked decisions to `prompt`, so write only the task itself. task_type="verification" makes it an independent review that
+    does not edit source. The worker must not change locked decisions; builds and activation are rejected if they differ.
+    Read its state with get_worker as usual.
     Returns worker_id, task_type, verification_required and the latest routing receipt when available."""
     body: dict[str, Any] = {"title": title, "prompt": prompt, "engine": engine, "strict_engine": strict_engine}
+    if game_id:
+        body["game_id"] = game_id
+    if game_build_id:
+        body["game_build_id"] = game_build_id
     if model:
         body["model"] = model
     if effort:

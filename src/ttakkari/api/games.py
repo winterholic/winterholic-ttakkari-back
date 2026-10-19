@@ -22,6 +22,7 @@ from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.games import builds as game_builds
 from ttakkari.games import origin as game_origin
+from ttakkari.games import worker as game_worker
 from ttakkari.games.contract import (
     GameContractError,
     approve_lock,
@@ -31,7 +32,7 @@ from ttakkari.games.contract import (
     register_game_project,
     verify_lock,
 )
-from ttakkari.models import GameBuild, GameProject
+from ttakkari.models import GameBuild, GameProject, Run
 from ttakkari.runs.manager import _background
 from ttakkari.security.auth import User, client_ip
 
@@ -40,8 +41,8 @@ router = APIRouter(prefix="/api/games", tags=["games"])
 
 CODE_STATUS = {
     "not_found": 404, "no_manifest": 404, "no_pms_project": 404, "no_run": 404, "no_build": 404, "no_workspace": 404,
-    "exists": 409, "build_in_progress": 409, "snapshot_exists": 409, "snapshot_tampered": 409, "not_playable": 409,
-    "origin_unconfigured": 503,
+    "exists": 409, "build_in_progress": 409, "lock_violation": 409, "snapshot_exists": 409, "snapshot_tampered": 409, "not_playable": 409,
+    "origin_unconfigured": 503, "bad_request": 422, "bad_path": 422,
     "outside_root": 403, "bad_slug": 422, "bad_manifest": 422, "wrong_engine": 422, "unsupported_engine": 422,
 }
 
@@ -101,6 +102,23 @@ class PlayOut(BaseModel):
     bundle_sha256: str
     frame_ancestors: list[str]
     sandbox: str  # iframe sandbox 속성으로 쓸 값. allow-same-origin 은 일부러 없다
+
+
+class RequestIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["develop", "modify", "verify"] = "modify"
+    instruction: str = Field(min_length=1, max_length=game_worker.MAX_INSTRUCTION_CHARS)
+    build_id: uuid.UUID | None = None  # 비우면 가장 최근 성공 빌드
+
+
+class RequestOut(BaseModel):
+    session_id: uuid.UUID  # 상태는 GET /api/sessions/{id}, GET /api/runs/{run_id} 와 MCP get_worker 로 읽는다
+    run_id: uuid.UUID
+    status: str
+    kind: str
+    build_id: uuid.UUID | None
+    lock: str  # verified | tampered | unapproved | unreadable — 요청 시점의 잠금 결정 상태
+    created_at: datetime
 
 
 class GameOut(BaseModel):
@@ -262,3 +280,33 @@ async def play_game(game_id: uuid.UUID, body: PlayIn, _: User, db: Db, request: 
         url=game_origin.play_url(token, caller if caller in ancestors else None), origin=get_settings().game_origin_url.rstrip("/"),
         expires_at=exp, build_id=build.id, build_seq=build.seq, bundle_sha256=build.bundle_sha256 or "", frame_ancestors=ancestors,
         sandbox=game_origin.SANDBOX_TOKENS)
+
+
+def _request_out(run: Run) -> RequestOut:
+    tag = (run.usage or {}).get(game_worker.USAGE_KEY) or {}
+    return RequestOut(session_id=run.session_id, run_id=run.id, status=str(run.status), kind=tag.get("kind", ""),
+                      build_id=tag.get("build_id"), lock=tag.get("lock", ""), created_at=run.created_at)
+
+
+@router.post("/{game_id}/requests", response_model=RequestOut, status_code=202)
+async def request_work(game_id: uuid.UUID, body: RequestIn, _: User, db: Db, request: Request) -> RequestOut:
+    """게임 개발·수정·검증 요청을 기존 worker 세션·Run 으로 넘긴다. 전용 큐는 없고 모델·계정은 worker routing 이 고른다."""
+    game = await _game(db, game_id)
+    try:
+        _sess, run = await game_worker.start_request(db, game, kind=body.kind, instruction=body.instruction, build_id=body.build_id,
+                                                     ip=client_ip(request))
+    except GameContractError as e:
+        raise _http(e) from e
+    await db.refresh(run)
+    record(db, action="game.request", target_type="run", target_id=run.id, ip=client_ip(request), detail={"game": game.slug, "kind": body.kind})
+    await db.commit()
+    return _request_out(run)
+
+
+@router.get("/{game_id}/requests", response_model=list[RequestOut])
+async def list_requests(game_id: uuid.UUID, _: User, db: Db, limit: int = Query(30, ge=1, le=100)) -> list[RequestOut]:
+    game = await _game(db, game_id)
+    rows = await db.scalars(
+        select(Run).where(Run.workspace_id == game.workspace_id, Run.usage["game"]["game_id"].astext == str(game.id))
+        .order_by(Run.created_at.desc()).limit(limit))
+    return [_request_out(r) for r in rows]

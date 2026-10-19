@@ -88,18 +88,28 @@ export class GameSession {
     this.collected = collected;
   }
 
-  static async open({ pw, hostPort, playUrl, sandbox, mobile = false, viewport = { width: 390, height: 844 } }) {
+  static async open({ pw, hostPort, playUrl, sandbox, mobile = false, viewport = { width: 390, height: 844 }, hostOrigin = null }) {
     const browser = await launchBrowser(pw.chromium);
     const ctx = await browser.newContext({ viewport, hasTouch: mobile, isMobile: mobile, deviceScaleFactor: 1 });
     const page = await ctx.newPage();
     const collected = { consoleErrors: [], pageErrors: [], failedRequests: [], badResponses: [] };
     // 게임은 sandbox iframe 이라 frame 의 콘솔도 page 이벤트로 올라온다.
-    page.on('console', (m) => { if (m.type() === 'error') collected.consoleErrors.push(m.text()); });
-    page.on('pageerror', (e) => collected.pageErrors.push(String(e)));
+    // 부모(front) 페이지가 스스로 내는 오류(service worker 등록 등)는 게임 검증 대상이 아니라 제외한다.
+    page.on('console', (m) => { if (m.type() === 'error' && !(hostOrigin && (m.location().url.startsWith(hostOrigin) || /unsupported MIME type|status of 401/.test(m.text())))) collected.consoleErrors.push(m.text()); });
+    page.on('pageerror', (e) => { if (!(hostOrigin && String(e).includes(hostOrigin))) collected.pageErrors.push(String(e)); });
     page.on('requestfailed', (r) => collected.failedRequests.push(r.method() + ' ' + r.url() + ' ' + (r.failure() ? r.failure().errorText : '')));
-    page.on('response', (r) => { if (r.status() >= 400) collected.badResponses.push(r.status() + ' ' + r.url()); });
-    const host = await startHost(hostPort, playUrl, sandbox);
-    await page.goto('http://127.0.0.1:' + hostPort + '/', { waitUntil: 'load' });
+    page.on('response', (r) => { if (r.status() >= 400 && !(hostOrigin && (r.url().startsWith(hostOrigin) || r.url().includes('/api/auth/')))) collected.badResponses.push(r.status() + ' ' + r.url()); });
+    let host = null;
+    if (hostOrigin) {
+      // 이미 떠 있는 서버(예: 격리 front)의 origin 을 부모 origin 으로 쓴다: 그 주소의 한 경로만 가로채 부모 페이지를 내준다.
+      // (route 로 가로챈 응답은 Chrome 의 로컬 네트워크 접근 검사에서 공개 주소 취급이라 막히므로, 실제 loopback 응답 문서를 열고 내용만 바꾼다.)
+      await page.goto(hostOrigin + '/favicon.svg', { waitUntil: 'load' }).catch(() => {});
+      await page.evaluate((html) => { document.open(); document.write(html); document.close(); }, hostHtml(playUrl, sandbox, 'ttakkari host'));
+      await page.waitForLoadState('load');
+    } else {
+      host = await startHost(hostPort, playUrl, sandbox);
+      await page.goto('http://127.0.0.1:' + hostPort + '/', { waitUntil: 'load' });
+    }
     const s = new GameSession(page, await page.$('#game'), collected);
     s.browser = browser;
     s.host = host;
@@ -123,6 +133,22 @@ export class GameSession {
   async focusGame() { const b = await this.box(); await this.page.mouse.click(b.x + b.width / 2, b.y + b.height - 4); }
   async tap(fx, fy) { const b = await this.box(); await this.page.touchscreen.tap(b.x + b.width * fx, b.y + b.height * fy); }
 
+  /** 손가락을 누른 채 유지한다(CDP 터치 이벤트). tap 은 즉시 떼므로 '누르고 있는 방향으로 이동' 입력에는 이것을 쓴다. */
+  async touchDown(fx, fy, id = 1) {
+    const b = await this.box();
+    this.cdp = this.cdp ?? (await this.page.context().newCDPSession(this.page));
+    await this.cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + b.width * fx, y: b.y + b.height * fy, id }] });
+  }
+
+  async touchMove(fx, fy, id = 1) {
+    const b = await this.box();
+    await this.cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x + b.width * fx, y: b.y + b.height * fy, id }] });
+  }
+
+  async touchUp() {
+    if (this.cdp) await this.cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  }
+
   /** bridge 캡처(게임이 직접 만든 canvas PNG)를 파일로 저장하고 {path, bytes, sha256, width, height} 를 돌려준다. */
   async capture(file) {
     const r = await this.request('capture');
@@ -135,7 +161,7 @@ export class GameSession {
   /** 페이지 화면 전체 스크린샷(부모 페이지 + iframe). */
   async pageShot(file) { fs.mkdirSync(path.dirname(file), { recursive: true }); await this.page.screenshot({ path: file }); return file; }
 
-  async close() { await this.browser.close(); await new Promise((r) => this.host.close(r)); }
+  async close() { await this.browser.close(); if (this.host) await new Promise((r) => this.host.close(r)); }
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

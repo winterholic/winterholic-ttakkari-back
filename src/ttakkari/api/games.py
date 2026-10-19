@@ -24,7 +24,6 @@ from ttakkari.db import sessionmaker
 from ttakkari.games import builds as game_builds
 from ttakkari.games import origin as game_origin
 from ttakkari.games import worker as game_worker
-from ttakkari.games.feedback import FeedbackIn
 from ttakkari.games.adapter import resolve_project_path
 from ttakkari.games.contract import (
     GameContractError,
@@ -35,6 +34,7 @@ from ttakkari.games.contract import (
     register_game_project,
     verify_lock,
 )
+from ttakkari.games.feedback import FeedbackIn
 from ttakkari.models import GameBuild, GameProject, Run, Workspace
 from ttakkari.runs.manager import _background
 from ttakkari.security.auth import User, client_ip

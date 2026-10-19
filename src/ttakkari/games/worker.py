@@ -16,13 +16,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.games.adapter import resolve_project_path
-from ttakkari.games.feedback import FEEDBACK_DIR, FeedbackIn, StagedFeedback, describe_annotation, stage_feedback
 from ttakkari.games.contract import (
     MANIFEST_FILE,
     GameContractError,
     ProjectManifest,
     read_manifest,
     verify_lock,
+)
+from ttakkari.games.feedback import (
+    FEEDBACK_DIR,
+    FeedbackIn,
+    StagedFeedback,
+    describe_annotation,
+    stage_feedback,
 )
 from ttakkari.models import (
     ChatSession,

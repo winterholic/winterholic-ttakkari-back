@@ -3,14 +3,13 @@
 import hashlib
 import json
 import struct
-import subprocess
 import uuid
 import zlib
 from pathlib import Path
 
 from sqlalchemy import func, select
 from test_api_games import fake_adapter  # noqa: F401
-from test_game_build_snapshots import _cleanup_snapshots  # noqa: F401
+from test_game_build_snapshots import _cleanup_snapshots, git  # noqa: F401
 from test_game_worker_flow import new_game
 
 from ttakkari.db import sessionmaker
@@ -62,7 +61,7 @@ async def test_feedback_artifacts_become_openable_files_in_the_game_repo(client,
     assert meta["build_id"] == build_id and meta["annotations"][0]["type"] == "box" and meta["coordinate_space"] == "normalized-0-1-top-left"
     assert run["usage"]["game"]["feedback"]["annotations"] == 2
     # 저장소 파일을 건드리지 않는다: git 상태가 깨끗하고 추적 대상도 아니다
-    assert subprocess.run(["git", "status", "--porcelain"], cwd=root, capture_output=True, text=True, check=True).stdout == ""
+    assert git(root, "status", "--porcelain") == ""
     assert FEEDBACK_DIR in (root / ".git/info/exclude").read_text()
 
 

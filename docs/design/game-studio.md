@@ -426,14 +426,14 @@ flowchart TD
 8. **TASK-G08: worker 개발·검증 연결 (2h)** [완료 2026-10-19, ADR 0050] — MCP `spawn_worker`에 project/build/locked decisions/작업 prompt 전달, 반환 session/Run 상태를 기존 도구로 읽고 보고. 중복 queue 없음. `uv run pytest -q tests/test_game_worker_flow.py`
 
 ### [트랙 B: 프론트엔드 관제탑 UX]
-9. **TASK-G09: 프론트 라우트·게임 플레이어 (1.5h)** [완료 2026-10-19, 프론트 9ce17a1·34501c2. `/games`, `/games/:id`, 별도 origin sandbox iframe을 Chrome 390px에서 실제 Phaser 빌드·`serve-games`로 실측(canvas 표시, 터치 입력, play 503 안내 화면). 미검증: iOS Safari, 운영 hostname, 일시정지(bridge에 메시지가 없어 버튼 비활성)] — 기존 `BrowserRouter` `../front/src/App.tsx`에 `/games/:id`, 앱 인증 셸, 별도 origin sandbox iframe. `cd ../front && pnpm exec vitest run src/features/games/GameCockpit.test.tsx`
+9. **TASK-G09: 프론트 라우트·게임 플레이어 (1.5h)** [완료 2026-10-19, 프론트 9ce17a1·34501c2. `/games`, `/games/:id`, 별도 origin sandbox iframe을 Chrome 390px에서 실제 Phaser 빌드·`serve-games`로 실측(canvas 표시, 터치 입력, play 503 안내 화면). 미검증: iOS Safari, 운영 hostname. 일시정지는 ADR 0052 로 bridge pause/resume 을 추가해 활성화] — 기존 `BrowserRouter` `../front/src/App.tsx`에 `/games/:id`, 앱 인증 셸, 별도 origin sandbox iframe. `cd ../front && pnpm exec vitest run src/features/games/GameCockpit.test.tsx`
 10. **TASK-G10: 캡처·영역·화살표·주석 (1.5h)** [완료 2026-10-19, 프론트 9ce17a1. 실제 iframe 캡처 왕복 실측(sandbox 문서의 event.origin은 "null"이라 source 일치 조건부로 허용), 박스·화살표·자유 주석 정규화 좌표 실측. 미검증: 터치 실기기] — 캡처 출처/빌드 ID와 정규화 좌표를 payload에 저장. `cd ../front && pnpm exec vitest run src/features/games/VisualFeedback.test.tsx`
-11. **TASK-G11: 피드백 저장·worker 시작·상태 연결 (1.5h)** [프론트 완료 2026-10-19, 9ce17a1. 스크린샷 Artifact 업로드(201)와 요청 payload 생성은 실측, 상태는 기존 TaskTreeCard 재사용. 미완: 실제 worker 실행 연결은 요청을 가로채 payload만 확인(G14), `RequestIn`이 Artifact 참조를 받지 않아 문장에 Artifact ID만 실음, GameFeedback 저장 API 없음] — 사용자 코멘트와 screenshot Artifact, project/build ID를 worker prompt에 포함하고 Run 카드로 상태/완료를 표시. `cd ../front && pnpm exec vitest run src/features/games/FeedbackSubmission.test.tsx`
-12. **TASK-G13: 실제 브라우저 플레이 smoke (1.5h)** — 격리 환경에서 1게임 실행, 터치/키 입력, 콘솔 에러와 스크린샷 확보. 임의 FPS 목표를 강제하지 않음. `uv run pytest -q tests/test_game_browser_smoke.py`
+11. **TASK-G11: 피드백 저장·worker 시작·상태 연결 (1.5h)** [프론트 완료 2026-10-19, 9ce17a1. 스크린샷 Artifact 업로드(201)와 요청 payload 생성은 실측, 상태는 기존 TaskTreeCard 재사용. 실제 worker 연결은 G14 에서 실측. 이후 `RequestIn.feedback` 구조화 필드와 worker 가 열 수 있는 파일 경로 전달을 구현(ADR 0052). 별도 GameFeedback 저장 API 는 없다(Run.usage.game.feedback 과 저장소의 git 제외 폴더로 충분하다고 판단)] — 사용자 코멘트와 screenshot Artifact, project/build ID를 worker prompt에 포함하고 Run 카드로 상태/완료를 표시. `cd ../front && pnpm exec vitest run src/features/games/FeedbackSubmission.test.tsx`
+12. **TASK-G13: 실제 브라우저 플레이 smoke (1.5h)** [완료 2026-10-19. 격리 빌드한 실제 Phaser 게임을 별도 프로세스 게임 origin 으로 서빙하고 다른 origin 의 부모 페이지 sandbox iframe 으로 열어 Chromium(Playwright)으로 키보드 4방향·터치 이동·코인 점수·일시정지/재개·세이브 export/import·bridge 캡처를 확인, 콘솔 에러·실패 요청 0. 브라우저/컨테이너가 없으면 사유와 함께 skip. 미검증: iOS Safari·WebKit, 실기기 터치(터치 에뮬레이션만), FPS 목표 없음] — `uv run pytest -q tests/test_game_browser_smoke.py`
 13. **TASK-G12: 재빌드 전후 확인·정상 버전 롤백 API/UI (2h)** [완료 2026-10-19, 백엔드 롤백 API ADR 0050 / 프론트 UI 9ce17a1·34501c2. 빌드 목록, 이전·최신 캡처 비교, 롤백 확인 대화상자, 소스 복구 롤백(복구 빌드 생성 뒤 활성 갱신)을 실제 백엔드로 실측. 미검증: 운영 DB, 실제 worker가 만든 빌드] — 이전 빌드와 새 빌드 확인, 명시적 롤백 API가 기존 빌드 보존 및 새 복구 commit/build 생성. `cd ../front && pnpm exec vitest run src/features/games/GameRollback.test.tsx` 및 `uv run pytest -q tests/test_game_rollback.py`
 
 ### [트랙 C: E2E 통합 검증]
-14. **TASK-G14: 12단계 실제 에이전트 E2E (2h, 초과하면 시나리오 준비와 실행/증거 검토로 분리)** — 실제 worker가 코드를 쓰고 빌드/브라우저가 실행되는 흐름, 스크린샷 수정, 재빌드, 전후 확인, 정상 버전 복원을 증거로 남김. mock만으로 성공 판정 금지. `uv run pytest -q tests/test_e2e_game_studio.py`
+14. **TASK-G14: 12단계 실제 에이전트 E2E (2h)** [완료 2026-10-19. 로컬 격리 따까리(별도 DB·TTAKKARI_HOME, API 18790, 게임 origin 18795, front 5410)에서 실제 worker(Claude sonnet, `/api/games/{id}/requests` → 기존 Run 경로)가 게임을 개발하고 스크린샷 주석 요청으로 수정했다. 12단계 결과와 증거, 대체·미검증 항목은 §12] — `uv run pytest -q tests/test_e2e_game_studio.py`(기록된 worker 소스를 재생하는 재현 가능한 부분)
 
 ---
 
@@ -465,3 +465,45 @@ Phase 2의 필수 시나리오이며 실제 게임 화면·worker 변경·빌드
 - **도구 실측**: `node --version` → `v26.9.0`, `npm --version` → `11.19.1`; Godot/Unity/Unreal/ffmpeg 실행 파일은 PATH에서 못 찾았고 `/Applications` 최상위 이름 검색에서도 미발견했다. Playwright CLI는 없지만 Chromium·WebKit·ffmpeg 캐시 디렉터리가 존재했다. Phaser/Vite 설치·빌드·게임 실행은 미실행. 상세는 §2.7.
 - **외부 기술 근거**: [Phaser 공식 라이선스](https://phaser.io/download/license)는 MIT, [Kenney 지원 안내](https://kenney.nl/support)는 에셋 페이지의 게임 자산을 CC0로 안내한다. [Unity 6 시스템 요구사항](https://docs.unity3d.com/6000.0/Documentation/Manual/system-requirements.html)은 iOS Safari 15+ 등 브라우저 지원 조건을 제시하지만 특정 게임의 모바일 성능을 보장하지 않는다. [Unreal Pixel Streaming 문서](https://dev.epicgames.com/documentation/en-us/unreal-engine/pixel-streaming-in-unreal-engine)는 원격 앱·WebRTC 서비스 구성을 설명한다. 설치 용량·빌드 시간·AI 성공률 비교 수치는 근거가 없어 제거했다.
 - **주장 축소**: `0ms`, `100% 자동화`, “AI 환각/수정 오류가 현저히 낮다”, FPS 60 강제, 1~3초 빌드 및 측정되지 않은 후보 우위 표현을 제거하거나 확인 필요로 바꿨다. Phase 2 WBS는 9개 포괄 작업을 14개 최대 2시간 작업으로 나누고 worker 연결, immutable build 보존, rollback API, 브라우저 smoke와 12단계 E2E를 분리했다.
+
+---
+
+## 12. TASK-G13·G14 실측 결과 (2026-10-19, 로컬 격리 환경)
+
+환경: 별도 DB(`ttakkari_e2e_gs`), 별도 `TTAKKARI_HOME`, API 18790, 게임 origin 18795(`ttakkari serve-games`), front 5410(vite dev), `TTAKKARI_NO_ENV_FILE=1`. 운영 설정·`.env`·운영 DB·운영 hostname은 쓰지 않았다. 브라우저는 Playwright 로 구동한 Chromium(Chrome 155 계열, 헤드리스)이며 iOS Safari 는 실행하지 않았다.
+
+### 연결 공백 보완 (ADR 0052)
+
+| 항목 | 결과 |
+|---|---|
+| a. 스크린샷 Artifact 참조 | `RequestIn.feedback`(원본·주석본 Artifact, 정규화 좌표, 캡처 빌드)을 구조화해 받고, 검증한 PNG 를 게임 저장소의 git 제외 폴더로 복사해 prompt 에 절대 경로로 전달. 실제 worker Run 의 이벤트에 그 주석 이미지를 `Read` 한 `tool.call` 이 남았다(seq 7). |
+| b. `GameOut.genre` | 매니페스트의 장르. 관제탑 칩에 "장르 로그라이크" 표시 확인. |
+| c. 일시정지 | bridge `ttakkari:pause/resume`. 관제탑 버튼이 같은 창·origin·id 의 응답으로만 상태 전환, 실제 UI 에서 일시정지→계속 확인. |
+| d. 게임 내 세이브 | sandbox 때문에 localStorage 불가. 메모리 저장 + bridge export/import 로 결정, 영구 저장은 Phase 3(ADR 0052 §3). 새로고침 후 유지는 미지원. |
+
+### 12단계 결과표
+
+| # | 단계 | 판정 | 증거 |
+|---|---|---|---|
+| 1 | 아이디어 입력 | 통과 | "2D 로그라이크 한 판짜리: 방 이동, 적, 공격, 체력, 게임오버/재시작". 사용자 역할은 이 실행이 맡았다(대화형 정리는 하지 않음) |
+| 2 | 스택 선정 | 통과(기록) | Phaser 선정, 근거 3개와 기각 사유를 증거 JSON `2_stack` 에 기록. 현재 어댑터가 Phaser 하나뿐이라 비교 선정은 아니다 |
+| 3 | 프로젝트 생성·잠금 승인 | 통과 | 게임 `03843364-13ce-495f-af5c-e64459c2c08d`, scaffold 커밋 `6935a9e`, 잠금 3건(도트 스타일 등) 승인 1회. scaffold 는 API 가 아니라 어댑터를 직접 호출(생성 API 없음). PMS 항목 연결은 하지 않았다 |
+| 4 | 실제 worker 개발 | 통과 | Run `85267b2c-ef22-446b-80ee-fd817a6c3e41`(세션 `753954df-8968-42f4-b983-aad2b7b2acd7`), engine claude / model sonnet, 약 3분, 커밋 `eacbc41`·`09aa3c6`. 따까리 `/requests`(develop) 경로이고 대체 경로를 쓰지 않았다 |
+| 5 | 격리 빌드·실행 | 통과 | 빌드 v1 `d338c5bb-e88d-4a4e-b64e-70278206a202`, commit `09aa3c6`, bundle sha256 `254580ed…`, 잠금 검증 통과, 컨테이너 빌드 약 10초 |
+| 6 | 관제탑 화면 확인 | 통과 | front 5410 에서 로그인 후 `/games/:id` 를 390x844 로 열어 칩(장르·엔진·빌드)·게임 iframe·일시정지 전환 확인. `v1-cockpit.png` |
+| 7 | 실제 조작으로 규칙 확인 | 통과(데스크톱·터치) | 이동·공격·처치·체력 3→0·게임오버·R 재시작(방1·체력3·처치0)·문 열림·방1→방2 이동. 터치는 누르는 방향 이동·공격 버튼·화면 탭 재시작. 콘솔 에러 0. 승리 화면까지는 도달하지 못했다(자동 조종 봇이 방2에서 사망) |
+| 8 | 스크린샷 주석 수정 요청 | 통과 | 관제탑 UI 로 캡처 → 박스 표시 → "캐릭터가 배경에 묻혀 보여. 더 선명하게 하고 공격 이펙트 추가" 제출. 요청 본문에 구조화 `feedback`(원본·주석본 Artifact, 좌표, build_id) |
+| 9 | 실제 worker 수정 | 통과 | Run `f31f5833-1c25-400b-8f16-49005569168c`, 커밋 `6be3ad8`(main.ts·sprites.ts). 주석 이미지를 `Read` 했고 매니페스트는 건드리지 않았다 |
+| 10 | 재빌드·회귀 | 통과 | 빌드 v2 `edb74513-0268-4a8b-85b1-58273b54aaaf`, bundle `394c052d…`. 같은 규칙 시나리오 데스크톱·터치 통과. 단, 첫 시도에서 재시작 키 입력(90ms 유지)이 유실돼 실패한 적이 있어 120ms 유지·재시도 3회로 바꿨다(게임 결함이 아니라 입력 타이밍으로 판단: v1·v2 모두 별도 재현 스크립트에서 재시작됨) |
+| 11 | 전후 캡처 비교 | 통과 | `compare-player-zoom.png`(플레이어 주변: v1 도트 캐릭터 → v2 청록 후광·그림자·주황 머리), `compare-attack-effect.png`(v1 기본 원 → v2 휘두르는 호). 플레이어 주변 64x64 평균 절대차 v1↔v2 60.61 |
+| 12 | 이전 버전 롤백 | 통과 | 소스 복구 롤백(`restore_source`)으로 복구 빌드 v3 `d5c4f1d8-7ac9-4575-8276-0535d085d10b`, 번들 sha256 이 v1 과 같음(`254580ed…`), 소스 트리 diff 0, v3 에서 규칙 시나리오 통과, 플레이어 주변 픽셀 차이 v1↔v3 0.0. v1·v2·v3 빌드가 모두 남음 |
+| - | 잠금 결정 위반 거부 | 통과(대체) | 매니페스트 locked_decisions 를 바꿔 커밋하자 빌드가 409 `lock_violation`, 빌드 행 미생성, 요청은 `lock=tampered` 경고와 함께 접수. 승인 빌드로 소스 복구 롤백하면 정상화. 변조 커밋은 실제 worker 가 아니라 직접 만든 시뮬레이션이다 |
+
+증거 JSON 과 스크린샷은 작업 보고서의 outbox(`g14/`, `g13-smoke/`)에 있다.
+
+### 대체·미검증·한계
+
+- **대체**: 잠금 결정 위반은 시뮬레이션(위). 격리 인스턴스에서 실제 엔진 실행이 가능했으므로 4·9단계는 대체하지 않았다.
+- **재생 테스트**: `tests/test_e2e_game_studio.py` 는 실제 worker 가 쓴 소스(`tests/fixtures/e2e_dot_dungeon/`)를 저장소에 커밋하는 방식으로 재현한다. worker 실행은 자동화되지 않는다.
+- **미검증**: iOS Safari·WebKit, 실기기 터치와 멀티터치, 운영 hostname·터널을 거친 실행, 게임 시작부터 승리 화면까지의 완주, 영구 세이브, 관제탑 전후 비교 화면의 실제 사용자 조작(버전 탭 화면만 확인), 시각 품질의 사람 평가(전후 이미지 차이로 갈음).
+- **실행 중 발견**: Chrome 은 `page.route` 로 가로챈 부모 응답을 공개 주소로 보아 loopback 게임 iframe 을 막는다(`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`). 실제 loopback 문서를 열고 내용을 바꾸는 방식으로 우회했다. 운영 hostname 에서는 해당 없다.

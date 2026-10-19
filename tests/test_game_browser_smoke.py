@@ -12,10 +12,21 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
-from game_browser import SCENARIOS, free_port, require_browser, run_scenario, serve_games
+from game_browser import (
+    SCENARIOS,
+    free_port,
+    require_browser,
+    run_scenario,
+    serve_games,
+)
 from helpers import fresh_dir
-from test_api_games import register, wait_build  # noqa: F401
-from test_game_build_snapshots import _cleanup_snapshots, git, manifest, requires_runtime  # noqa: F401
+from test_api_games import register, wait_build
+from test_game_build_snapshots import (  # noqa: F401
+    _cleanup_snapshots,
+    git,
+    manifest,
+    requires_runtime,
+)
 
 from ttakkari.config import get_settings
 from ttakkari.games.adapter import PhaserAdapter
@@ -89,5 +100,5 @@ async def test_real_browser_plays_isolated_build_with_keys_touch_and_bridge_stat
 
     m = res["mobile"]
     assert m["touch"]["viewport"][0] <= 390
-    (fx, fy), (x0, y0), (x1, y1) = m["touch"]["tapFraction"], m["touch"]["from"], m["touch"]["to"]
+    (x0, y0), (x1, y1) = m["touch"]["from"], m["touch"]["to"]
     assert abs(x1 - x0) + abs(y1 - y0) > 15  # 터치: 탭한 쪽으로 이동 시작

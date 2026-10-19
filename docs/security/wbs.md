@@ -5,7 +5,7 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 
 ## 1. 요약
 
-- 항목 66개: P0 9, P1 33, P2 22, P3 2. 2026-10-19 네트워크·로그인·세션 감사([network-login-session-audit.md](network-login-session-audit.md))로 6절의 NAC·LGN·SES 17개를 추가했다(독립 검증 반영으로 LGN-05 추가, 개정 2. 재검증 반영으로 LGN-05를 P1 필수로 승격, 개정 3). 프롬프트 인젝션 집중 감사([prompt-injection-audit.md](prompt-injection-audit.md))로 SEC2-PI-03~06을 추가하고 SEC2-PI-01·02를 갱신했다.
+- 항목 67개: P0 9, P1 34, P2 22, P3 2. 2026-10-19 네트워크·로그인·세션 감사([network-login-session-audit.md](network-login-session-audit.md))로 6절의 NAC·LGN·SES 17개를 추가했다(독립 검증 반영으로 LGN-05 추가, 개정 2. 재검증 반영으로 LGN-05를 P1 필수로 승격, 개정 3. S1 검증 반영으로 LGN-06 추가, 개정 4). 프롬프트 인젝션 집중 감사([prompt-injection-audit.md](prompt-injection-audit.md))로 SEC2-PI-03~06을 추가하고 SEC2-PI-01·02를 갱신했다.
 - 심각도 = 가능성(L, 1~3) × 영향(I, 1~3). 우선순위는 심각도와 함께 '정상 사용을 바꾸지 않고 바로 줄일 수 있는가'를 반영했다.
 - 작업 분할 단위는 작업자 1명이 2시간 안에 끝낼 크기다. 이전 작업자가 2시간 제한으로 끊긴 일이 있었다.
 - 모든 수정 항목의 완료 기준은 같다. 재현 테스트가 수정 전 실패하고 수정 후 통과하며, 정상 사용 대조군이 함께 통과해야 한다.
@@ -72,7 +72,7 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 
 범위 결함 수정, 토큰 즉시 폐기, 엔진 guard 동등성, 인젝션 평가셋, 호스트 도구·배포·의존성·로그.
 
-- 항목: SEC2-NAC-02~06, SEC2-LGN-01~04, SEC2-LGN-05, SEC2-SES-01~02(6절 추가분), SEC2-AUTHZ-01, SEC2-AUTHZ-02, SEC2-AUTH-01, SEC2-AUTH-04, SEC2-EXEC-03, SEC2-EXEC-04, SEC2-PI-01, SEC2-PI-02, SEC2-PI-03, SEC2-PI-04, SEC2-PI-06, SEC2-HOST-03, SEC2-HOST-04, SEC2-DEP-01, SEC2-FILE-02, SEC2-RD-01, SEC2-WEB-02, SEC2-SUP-01, SEC2-FILE-01, SEC2-SECRET-01, SEC2-GATE-01
+- 항목: SEC2-NAC-02~06, SEC2-LGN-01~06, SEC2-SES-01~02(6절 추가분), SEC2-AUTHZ-01, SEC2-AUTHZ-02, SEC2-AUTH-01, SEC2-AUTH-04, SEC2-EXEC-03, SEC2-EXEC-04, SEC2-PI-01, SEC2-PI-02, SEC2-PI-03, SEC2-PI-04, SEC2-PI-06, SEC2-HOST-03, SEC2-HOST-04, SEC2-DEP-01, SEC2-FILE-02, SEC2-RD-01, SEC2-WEB-02, SEC2-SUP-01, SEC2-FILE-01, SEC2-SECRET-01, SEC2-GATE-01
 - 종료 검증: 독립 검증: 항목별 RED/GREEN, 정상 사용 대조군, 실제 브라우저(WebKit) 원격제어·XSS 확인.
 
 ### Phase 3 · P2
@@ -794,7 +794,8 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 근거와 설계는 [network-login-session-audit.md](network-login-session-audit.md)에 있다. 기존 항목은 복제하지 않고 확장·대체만 했다.
 매핑: NAC-01~06은 SEC2-EXPO-01의 실행안, NAC-03은 SEC2-AUTH-03 흡수, LGN-01~05는 SEC2-AUTH-03 대체, SES-02는 SEC2-AUTH-01 확장, SES-04는 SEC2-RD-01 연계, SES-05는 SEC2-WEB-01·02 의존.
 개정 2(2026-10-19): 독립 검증(failed)을 반영했다. 수치 정정(라우트 HTTP 422 + WS 1, 소유자 301, 재산정 기준은 보고서 2.2절), 로그인 제한 설계 재작성(레인 분리, 계정 속도 제한, 원자 예약, shadow→enforce), refresh 재사용 원인 확인 계획, 공개 URL 직접 호출 소비자(bootstrap 포함) 반영.
-개정 3(2026-10-19): 개정판 `13b2691` 재검증 반영. 새 기기 구제 경로(기존 세션이 발급하는 1회용 등록 코드, LGN-05 필수 승격), `src:overflow` 공용 키 폐지, 차단 집계 DB flush, 신뢰 기기 쿠키 정의, 호스트 전체 Argon2 슬롯, 시간차 수치, S1→S2 상태 초기화, 설정 캐시·롤백 확인 기준, 시험 38개. S1 shadow 구현 착수 허용(shadow는 어떤 경우에도 로그인을 거절·지연하지 않음, 개정 전 `enforce_source`·`enforce` 전환 금지).
+개정 3(2026-10-19): 개정판 `13b2691` 재검증 반영. 새 기기 구제 경로(기존 세션이 발급하는 1회용 등록 코드, LGN-05 필수 승격), `src:overflow` 공용 키 폐지, 차단 집계 DB flush, 신뢰 기기 쿠키 정의, 호스트 전체 Argon2 슬롯, 시간차 수치, S1→S2 상태 초기화, 설정 캐시·롤백 확인 기준, 시험 47개. S1 shadow 구현 착수 허용(shadow는 어떤 경우에도 로그인을 거절·지연하지 않음, 개정 전 `enforce_source`·`enforce` 전환 금지).
+개정 4(2026-10-19): S1 shadow·5절 보완 검증 반영. 등록 코드 발급 상한(동시 1개, 세션당 시간당 3회, 계정 24시간 10회)과 감사·예산 계산(5.3.2), 초기화 조건을 구현과 같은 한 문장으로 통일(5.5), shadow 지연 방지 구현(동시 2개·1.5초 상한·잠금 500ms)과 S1 운영 조건·즉시 off 기준(5.8.3), 잠금 종료 요약 감사는 S1 범위 밖으로 명시하고 LGN-06을 S2 전 필수 항목으로 추가.
 공통 불변 조건: 에이전트 Run 실행·승인 흐름, CLI·파일·개발 작업은 바뀌지 않는다. 사용자 명령 실행에 승인·재인증 단계를 추가하지 않는다. 모든 항목의 시작은 사용자 승인 후다.
 
 ### 6.1 항목 표
@@ -811,7 +812,8 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 | SEC2-LGN-02 | P1 | 6 (2×3) | 로그인 제한 | login·원격제어 재인증 연결, 신뢰 기기 레인(쿠키 예외 분리), 잠금·429 감사와 알림, 더미 검증 | 확인됨(현황) | LGN-01 | general | 신뢰 기기 쿠키 필요 |
 | SEC2-LGN-03 | P1 | 2 (1×2) | 로그인 제한 | Mac 로컬 해제 CLI(login-status·login-unlock)와 set-password 연동 | 확인됨(현황) | LGN-01 | general | 불필요 |
 | SEC2-LGN-04 | P1 | 4 (2×2) | 로그인 제한 | 병렬·재시작·잠금 악용 반례·Run 무영향 통합 시험과 shadow→enforce_source→enforce 전환 | 미검증 | LGN-02, LGN-03 | verification | S2·S3 전환 승인 |
-| SEC2-LGN-05 | P1 | 4 (2×2) | 로그인 제한 | 새 기기 구제 경로: 기존 세션이 발급하는 1회용 등록 코드(R1)와 Mac CLI 코드(R3), **S3 전환 필수** | 미검증 | LGN-02, LGN-03 | general | 필요(UX 추가) |
+| SEC2-LGN-05 | P1 | 4 (2×2) | 로그인 제한 | 새 기기 구제 경로: 기존 세션이 발급하는 1회용 등록 코드(R1, 발급 상한·감사 포함)와 Mac CLI 코드(R3), **S3 전환 필수** | 미검증 | LGN-02, LGN-03 | general | 필요(UX 추가) |
+| SEC2-LGN-06 | P1 | 2 (1×2) | 로그인 제한 | 잠금 종료 요약 감사(`auth.login_lock_summary`)·알림, `summarized_at` 멱등 처리, **S2 진입 전 필수**(S1 범위 밖) | 미검증 | LGN-01 | general | 불필요 |
 | SEC2-SES-01 | P1 | 4 (2×2) | 세션 | refresh 재사용 계열 폐기 13건의 원인 확정 계측과 동시 갱신 잠금·유예창 | 확인됨(DB), 원인 추론 | - | general | 불필요 |
 | SEC2-SES-02 | P1 | 2 (1×2) | 세션 | access에 `sid` 클레임, 서버 폐기 확인, 기기별 세션 목록·폐기 (AUTH-01 확장) | 확인됨(코드) | SEC2-AUTH-01 | general | 불필요 |
 | SEC2-SES-03 | P2 | 2 (1×2) | 세션 | refresh 계열 절대 수명 상한과 만료·폐기 행 정리 | 확인됨 | SES-02 | general | 상한 값 필요 |
@@ -886,18 +888,18 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 
 - 우선순위 P1, 심각도 6 (2×3), 상태 **확인됨(현황)**, task_type `general`
 - 위협 시나리오: 메모리·IP 단위 제한이 배포·재시작마다 초기화되고 분산 추측을 계정 단위로 막지 못한다(`security/auth.py:99-223`). 초판 설계(계정 키 잠금, 성공 시 키 초기화)는 잠금 지속·예산 누락 결함이 있어 독립 검증에서 failed였다.
-- 수정 방향(보고서 5.2~5.6): 불변식 5개. `login_throttle`·`login_bucket`·`login_attempts`·`login_devices` 표, `security/login_throttle.py`. 출처·기기·원격 재인증 키는 5회 후 1분, 해제 후 1회 탐침으로 5/15/60분 단계 잠금. **계정 단위는 잠금 없이 `acct:u` 토큰 버킷**(크기 6, 10분당 1개). 검증 전 행 잠금 아래 원자 예약, 정답은 자기 예약만 환불, 전체 초기화는 다른 `pending`·`fail`이 없을 때만. 모드 `off|shadow|enforce_source|enforce`를 `app_settings`에 둔다.
+- 수정 방향(보고서 5.2~5.6): 불변식 5개. `login_throttle`·`login_bucket`·`login_attempts`·`login_devices` 표, `security/login_throttle.py`. 출처·기기·원격 재인증 키는 5회 후 1분, 해제 후 1회 탐침으로 5/15/60분 단계 잠금. **계정 단위는 잠금 없이 `acct:u` 토큰 버킷**(크기 6, 10분당 1개). 검증 전 행 잠금 아래 원자 예약, 정답은 자기 예약만 환불, 전체 초기화는 **자기 말고 `pending`인 예약이 없고 자기보다 늦게 예약된 시도가 없을 때만**(구현 `finish_attempt`와 보고서 5.5가 같은 규칙, 두 안의 안전성 비교는 5.5). 모드 `off|shadow|enforce_source|enforce`를 `app_settings`에 둔다.
 - 검증 방법: 시간 주입 단위·DB 테스트(보고서 5.9의 1~7, 10~12, 17, 21).
 - 완료 기준: RED→GREEN, 마이그레이션 up/down, 병렬 시험(정답 1 + 오답 19 셔플 100회) 통과, shadow에서 실제 기록 수집 시작.
 - 불변 조건: shadow에서는 어떤 로그인도 거절하지 않는다. 잠금 중 요청은 상태를 바꾸지 않는다.
-- **S1 shadow 구현 완료**(커밋 `614cc08`, 2026-10-19): 모드 off/shadow(기본 off, enforce 계열은 off로 취급), 마이그레이션 `0050_login_throttle_shadow`, `security/login_throttle.py`, CLI `login-throttle-mode`, 시험 `tests/test_login_throttle_shadow.py` 40개. enforce 전환은 하지 않았고 개정 3 보완(LGN-05 등) 전 금지.
+- **S1 shadow 구현 완료**(커밋 `614cc08`, 2026-10-19, 지연 방지 보강은 개정 4 커밋: shadow 동시 2개·대기열 포함 1.5초 상한·트랜잭션 `lock_timeout` 500ms·`statement_timeout` 1초, 풀 포화 시험 2개 추가): 모드 off/shadow(기본 off, enforce 계열은 off로 취급), 마이그레이션 `0050_login_throttle_shadow`, `security/login_throttle.py`, CLI `login-throttle-mode`, 시험 `tests/test_login_throttle_shadow.py` 40개. enforce 전환은 하지 않았고 개정 3 보완(LGN-05 등) 전 금지.
 - S1 shadow 범위(개정 3, 구현 대상): 표 3개(`login_throttle`, `login_bucket`, `login_attempts`), 모드 `off|shadow`(기본 off, 그 외는 off로 취급), 레인 U 예약·확정·환불, 차단 카운터 DB flush, 고아 정리. 신뢰 기기·등록 코드·호스트 Argon2 슬롯은 후속.
 - 작업 분할: 1) 마이그레이션·모델 표(2h) 2) 예약·확정·환불 상태 기계(2h) 3) 버킷·정리·고아 예약·카운터 flush(2h) 4) 병렬·재시작 시험(2h)
 
 #### SEC2-LGN-02 login·원격제어 재인증 연결, 신뢰 기기 레인, 감사
 
 - 우선순위 P1, 심각도 6 (2×3), 상태 **확인됨(현황)**, task_type `general`
-- 수정 방향(보고서 5.4, 5.6): `api/auth.py` login 예약→검증→확정, `ttk_dev` 발급(login·refresh), 레인 D는 계정 버킷·출처 잠금 면제 + `dev` 키 + T 전용 CPU 버킷, CPU 동시성 상한은 면제 없음. `rd:owner` 키로 `api/remote_desktop.py` reauthenticate 교체. 잠금 시작·종료 요약·버킷 에피소드만 감사(1000건 차단 → 3행 이하), 단계 2 이상은 푸시. 더미 검증, 잠금 응답 통일. 구 `LoginLimiter`는 CPU 보호로 축소.
+- 수정 방향(보고서 5.4, 5.6): `api/auth.py` login 예약→검증→확정, `ttk_dev` 발급(login·refresh), 레인 D는 계정 버킷·출처 잠금 면제 + `dev` 키 + T 전용 CPU 버킷, CPU 동시성 상한은 면제 없음. `rd:owner` 키로 `api/remote_desktop.py` reauthenticate 교체. 잠금 시작·버킷 에피소드만 감사(1000건 차단 → 3행 이하), 단계 2 이상은 푸시. **잠금 종료 요약 감사는 LGN-06으로 분리**. 더미 검증, 잠금 응답 통일. 구 `LoginLimiter`는 CPU 보호로 축소.
 - 추가(개정 3): 신뢰 기기 쿠키 정의(5.4.1: 비활성 180일·절대 365일, 비회전, 일반 로그아웃은 폐기하지 않음, 8개 상한), 호스트 전체 Argon2 동시 검증 상한(advisory lock 슬롯 K개, 5.4.2), 시간차 허용치(중앙값 5ms·p95 10ms, 실측 후 확정).
 - 검증 방법: 보고서 5.9의 8~10, 13~16, 18, 28~32.
 - 완료 기준: RED→GREEN, 정상 로그인·자동 로그인·refresh 대조군, 기존 limiter 테스트 갱신, 쿠키 위조·폐기·비밀번호 변경 반례 통과.
@@ -927,9 +929,19 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 - 배경: 분산 공격자가 `acct:u` 토큰을 refill마다 소비하면 쿠키·세션이 없는 새 기기는 공격 중 계속 429(재검증 지적). 사용자는 휴대폰 원격 사용이라 막힌 새 기기에서는 앱도 에이전트도 못 쓴다.
 - 대안 비교(보고서 5.3.1): R1 기존 세션이 발급하는 1회용 등록 코드(채택, 필수), R2 tailnet 레인(NAC 의존, 주 경로), R3 Mac 로컬 CLI 코드(최후 수단), R4 푸시 승인(후속), R5·R6 기각.
 - 수정 방향: `POST /api/auth/device-invites`(소유자 access JWT 필요, 128비트 난수, 해시 저장, 10분, 코드당 3회, 1회 사용)와 `ttakkari login-invite`(R3). 코드를 가진 요청은 레인 I(`inv:<id>`)로 `acct:u`를 소비하지 않는다. 잠금 해제 API가 아니라 별도 예산의 진입 증표다. 로그인 정상 시에는 코드를 요구하지 않는다(공격 경보 중에만 요구하도록 제한 가능). 라우트 인벤토리에 `owner-plain`으로 등록.
+- **발급 제한(개정 4, 보고서 5.3.2)**: 동시 활성 코드 1개(새 발급이 기존 폐기), 세션(`sid`)당 시간당 3회, 계정 24시간 10회, 코드당 시도 3회·10분. 탈취된 access JWT로 반복 발급해도 코드 레인의 총 추측은 하루 30회 이하(10 × 3)이고 `acct:u`(하루 약 144회 + 초기 6회)보다 작다. 합산 최악은 약 180회/일. 발급·사용·소진·상한 초과를 감사(`auth.device_invite_*`)하고 발급·소진은 푸시한다. 선택 강화인 발급 시 비밀번호 재인증은 미채택(사용자 결정).
 - 가용성 기준(5.4.3): 신뢰 쿠키 로그인과 R1 새 기기 추가는 공격 중에도 100% 성공.
-- 완료 기준: 보고서 5.9의 20, 22~27 통과. 사용자 승인 필요(로그인 UX 추가). S3 전환의 필수 선행.
+- 완료 기준: 보고서 5.9의 20, 22~27, 39~45 통과. 사용자 승인 필요(로그인 UX 추가). S3 전환의 필수 선행.
 - 작업 분할: 1) 발급 API+레인 I(2h) 2) CLI R3와 리허설(1h) 3) 프런트 코드 발급·입력 화면(2h)
+
+#### SEC2-LGN-06 잠금 종료 요약 감사·알림(S2 전 필수)
+
+- 우선순위 P1, 심각도 2 (1×2), 상태 **미검증**, task_type `general`
+- 범위 구분(개정 4): S1 shadow는 `login_throttle.summarized_at`·`blocked_count` 컬럼과 차단 카운터 DB flush까지만 구현했다. **잠금 종료 뒤 요약 감사 행과 푸시는 S1 범위 밖**이다.
+- 수정 방향(보고서 5.6): 정리 작업이 "잠금이 끝났고 `blocked_count > 0`이며 `summarized_at`이 비어 있는" 행을 찾아 `auth.login_lock_summary` 1행을 쓰고 `summarized_at`을 채우고 `blocked_count`를 0으로 돌린다. 재시작 후에도 같은 행을 처리한다(멱등). 단계 2 이상이면 푸시 1회(30분 중복 억제).
+- 검증 방법: 보고서 5.9의 33~34.
+- 완료 기준: 요약이 정확히 1행, 재시작·정리 재실행에도 중복 없음. **S2(`enforce_source`) 전환의 선행 조건**.
+- 작업 분할: 1) 정리 작업에 요약 단계 추가(2h) 2) 멱등·재시작 시험(1h)
 
 #### SEC2-SES-01 refresh 재사용 계열 폐기 원인 확정 계측과 동시 갱신 잠금·유예창
 

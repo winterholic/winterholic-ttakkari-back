@@ -1971,6 +1971,22 @@ wheels = [
 ]
 
 [[package]]
+name = "notebooklm-py"
+version = "0.8.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "filelock" },
+    { name = "httpx" },
+    { name = "idna" },
+    { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/5a/74ed63c67e5478401aef13a678af73c351c5fec820d8006eb637119a5eef/notebooklm_py-0.8.5.tar.gz", hash = "sha256:965e0ad77dfd3f93714b6a304f5c66f70248c88979d5dfbfd9d73a0270b7a46a", size = 8982064, upload-time = "2026-10-13T00:11:08.799Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/86/056e0fb28f2aaefa43c867dd73f5ed36a7d5de8d7db0876e8bc9a37568cc/notebooklm_py-0.8.5-py3-none-any.whl", hash = "sha256:18c96d31ad0ea538c1811f177dcfe86cc9c5319c8bdc4c99e5298c520b86d011", size = 2090188, upload-time = "2026-10-13T00:11:05.694Z" },
+]
+
+[[package]]
 name = "numpy"
 version = "2.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -3923,6 +3939,7 @@ dependencies = [
     { name = "holidays" },
     { name = "httpx" },
     { name = "mcp" },
+    { name = "notebooklm-py" },
     { name = "pexpect" },
     { name = "pgvector" },
     { name = "pillow" },
@@ -3981,6 +3998,7 @@ requires-dist = [
     { name = "holidays", specifier = ">=0.106" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=2.3.0" },
+    { name = "notebooklm-py", specifier = "==0.8.5" },
     { name = "pexpect", specifier = ">=4.9,<5" },
     { name = "pgvector", specifier = ">=0.5.1" },
     { name = "pillow", specifier = ">=12.3.0" },

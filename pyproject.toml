@@ -13,6 +13,7 @@ dependencies = [
     "holidays>=0.106",
     "httpx>=0.28.1",
     "mcp>=2.3.0",
+    "notebooklm-py==0.8.5",
     "pexpect>=4.9,<5",
     "pgvector>=0.5.1",
     "pillow>=12.3.0",

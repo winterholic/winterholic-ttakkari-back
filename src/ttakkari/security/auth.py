@@ -96,9 +96,6 @@ class LoginLimiter:
         self._fails[ip] = fails
         if len(fails) >= s.login_max_failures:
             return int(s.login_lock_seconds - (now - fails[0])) + 1
-        self._global = self._prune(self._global, 60, now)
-        if len(self._global) >= s.login_max_failures * 4:
-            return 60
         return None
 
     def fail(self, ip: str) -> None:

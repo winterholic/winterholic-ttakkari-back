@@ -43,6 +43,7 @@ _TOKEN_FORMATS = [
         r"\bnpm_[A-Za-z0-9]{30,}",
         r"\bglpat-[A-Za-z0-9_\-]{16,}",
         r"\bpypi-[A-Za-z0-9_\-]{20,}",
+        r"\bttk_[A-Za-z0-9_\-]{16,}",
     )
 ]
 

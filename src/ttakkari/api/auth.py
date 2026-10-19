@@ -57,6 +57,15 @@ async def _issue(db: AsyncSession, request: Request, resp: Response, family: uui
     return TokenOut(access_token=token, expires_in=ttl)
 
 
+def _check_csrf(request: Request) -> None:
+    origin = request.headers.get("origin")
+    if origin and origin not in get_settings().cors_origins:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "허용되지 않은 요청 출처입니다.")
+    sec_fetch_site = request.headers.get("sec-fetch-site")
+    if sec_fetch_site == "cross-site":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "교차 사이트 요청은 허용되지 않습니다.")
+
+
 @router.post("/login", response_model=TokenOut)
 async def login(body: LoginIn, request: Request, response: Response, db: Db) -> TokenOut:
     ip = client_ip(request) or "unknown"
@@ -86,6 +95,7 @@ async def login(body: LoginIn, request: Request, response: Response, db: Db) -> 
 @router.post("/refresh", response_model=TokenOut)
 async def refresh(request: Request, response: Response, db: Db,
                   ttk_refresh: Annotated[str | None, Cookie()] = None) -> TokenOut:
+    _check_csrf(request)
     if not ttk_refresh:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 없습니다.")
     rt = await db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_refresh(ttk_refresh)))
@@ -93,6 +103,12 @@ async def refresh(request: Request, response: Response, db: Db,
     if rt is None or rt.expires_at < now:
         _clear_cookie(response)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 만료되었습니다.")
+    cred = await db.get(Credential, 1)
+    if cred is not None and cred.updated_at and rt.created_at < cred.updated_at:
+        rt.revoked_at = now
+        await db.commit()
+        _clear_cookie(response)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 변경되어 세션이 무효화되었습니다. 다시 로그인하세요.")
     if rt.revoked_at is not None:
         # 이미 교체된 토큰이 다시 쓰였다 = 탈취 가능성. 같은 계열 전부 폐기한다.
         await db.execute(update(RefreshToken).where(RefreshToken.family_id == rt.family_id, RefreshToken.revoked_at.is_(None))
@@ -108,7 +124,8 @@ async def refresh(request: Request, response: Response, db: Db,
 
 
 @router.post("/logout", status_code=204)
-async def logout(response: Response, db: Db, ttk_refresh: Annotated[str | None, Cookie()] = None) -> None:
+async def logout(request: Request, response: Response, db: Db, ttk_refresh: Annotated[str | None, Cookie()] = None) -> None:
+    _check_csrf(request)
     if ttk_refresh:
         rt = await db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_refresh(ttk_refresh)))
         if rt is not None:

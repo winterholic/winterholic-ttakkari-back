@@ -263,19 +263,23 @@ async def notify(body: NotifyIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 
 @router.get("/sessions")
 async def sessions(sid: AgentSession, db: Db, limit: int = 20) -> dict[str, Any]:
-    await _session(db, sid)
-    rows = await db.scalars(select(ChatSession).where(ChatSession.archived_at.is_(None))
-                            .order_by(ChatSession.updated_at.desc()).limit(min(limit, 100)))
+    curr = await _session(db, sid)
+    stmt = select(ChatSession).where(ChatSession.archived_at.is_(None))
+    if curr.pool == "work":
+        stmt = stmt.where(ChatSession.pool == "work")
+    rows = await db.scalars(stmt.order_by(ChatSession.updated_at.desc()).limit(min(limit, 100)))
     return {"sessions": [{"id": str(s.id), "title": s.title, "kind": s.kind, "updated_at": s.updated_at.isoformat()}
                          for s in rows]}
 
 
 @router.get("/sessions/{session_id}")
 async def read_session(session_id: uuid.UUID, sid: AgentSession, db: Db, last: int = 10) -> dict[str, Any]:
-    await _session(db, sid)
+    curr = await _session(db, sid)
     s = await db.get(ChatSession, session_id)
     if s is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "세션이 없습니다.")
+    if curr.pool == "work" and s.pool != "work":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "회사 세션에서는 개인 세션을 열람할 수 없습니다.")
     runs = list(await db.scalars(select(Run).where(Run.session_id == session_id).order_by(Run.created_at.desc())
                                  .limit(min(last, 50))))
     return {"title": s.title, "kind": s.kind, "turns": [

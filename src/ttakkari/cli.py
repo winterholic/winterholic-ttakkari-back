@@ -33,10 +33,11 @@ def _cmd_migrate(_: argparse.Namespace) -> int:
 
 
 async def _upsert_password(password_hash: str) -> None:
+    from sqlalchemy import update
     from sqlalchemy.dialects.postgresql import insert
 
     from ttakkari import db
-    from ttakkari.models import Credential, utcnow
+    from ttakkari.models import Credential, RefreshToken, utcnow
 
     db.init_engine()
     try:
@@ -47,6 +48,9 @@ async def _upsert_password(password_hash: str) -> None:
                 set_={"password_hash": stmt.excluded.password_hash, "updated_at": stmt.excluded.updated_at},
             )
             await session.execute(stmt)
+            await session.execute(
+                update(RefreshToken).where(RefreshToken.revoked_at.is_(None)).values(revoked_at=utcnow())
+            )
             await session.commit()
     finally:
         await db.dispose_engine()

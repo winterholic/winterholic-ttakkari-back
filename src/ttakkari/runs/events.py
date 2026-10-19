@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.models import Run, RunEvent
+from ttakkari.oplog.scrub import scrub_value
 
 _signals: dict[uuid.UUID, asyncio.Event] = {}
 
@@ -28,6 +29,7 @@ def notify(run_id: uuid.UUID) -> None:
 def append(db: AsyncSession, run: Run, type_: str, payload: dict[str, Any] | None = None) -> RunEvent:
     # Run 하나의 이벤트는 그 Run 을 실행하는 태스크 하나만 쓴다. 그래서 seq 증가에 잠금이 필요 없다.
     run.last_seq += 1
-    ev = RunEvent(run_id=run.id, seq=run.last_seq, type=type_, payload=payload or {})
+    safe_payload = scrub_value(payload) if payload else {}
+    ev = RunEvent(run_id=run.id, seq=run.last_seq, type=type_, payload=safe_payload)
     db.add(ev)
     return ev

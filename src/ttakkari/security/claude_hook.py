@@ -1,7 +1,7 @@
 """Claude Code PreToolUse hook. ttakkari 가 띄운 claude 프로세스에만 --settings 로 주입된다.
 
-bypassPermissions 에서도 hook 의 deny 는 적용된다. 이 스크립트가 죽으면 도구 호출이 그냥 통과하므로
-예외는 잡아서 차단 쪽으로 기울이지 않는다(가용성 우선). 대신 guard.log 에 남긴다.
+bypassPermissions 에서도 hook 의 deny 는 적용된다.
+가드 훅 실행 중 오류나 비정상 입력이 발생하면 안전을 위해 차단(fail-closed)한다.
 """
 
 from __future__ import annotations
@@ -34,6 +34,14 @@ def main() -> int:
         reason = evaluate(tool, data.get("tool_input") or {}, data.get("cwd"), GuardConfig.from_env())
     except Exception as e:  # noqa: BLE001
         _log({"at": time.time(), "run_id": os.environ.get("TTAKKARI_RUN_ID"), "error": repr(e)})
+        out = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": f"{MARKER} 가드 훅 실행 중 오류가 발생하여 안전을 위해 차단합니다: {type(e).__name__}",
+            }
+        }
+        sys.stdout.write(json.dumps(out, ensure_ascii=False))
         return 0
     if reason is None:
         return 0

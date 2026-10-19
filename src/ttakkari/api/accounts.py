@@ -499,15 +499,9 @@ async def refresh_account_usage(account_id: uuid.UUID, _: User, db: Db, request:
         await _commit(db)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"사용량 측정 실패: {type(e).__name__}")
 
-    out = _usage_out(i, a, work_rank, u, refreshing=False)
-
-    # 측정 성공 시(에러가 없거나, 만료 창이 정상 해제된 경우) 한도 상태 점검
+    # 조회 실패와 미관측은 쿨다운 해제의 근거가 아니다.
     prof = profiles._profile(a)
-    if not u.error and bool(u.windows):
-        if not profiles.usage_limit_until(prof):
-            profiles.clear_cooldown(a.id)
-            await manager.release_waiting()
-    elif a.engine == "muse" and u.login == "ok" and not profiles.usage_limit_until(prof):
+    if not u.error and u.windows and not profiles.usage_limit_until(prof):
         profiles.clear_cooldown(a.id)
         await manager.release_waiting()
 
@@ -516,7 +510,7 @@ async def refresh_account_usage(account_id: uuid.UUID, _: User, db: Db, request:
            detail={"error": u.error} if u.error else {"source": u.source, "plan": u.plan},
            ip=client_ip(request))
     await _commit(db)
-    return out
+    return _usage_out(i, a, work_rank, u, refreshing=False)
 
 
 @router.patch("/{account_id}", response_model=AccountOut)

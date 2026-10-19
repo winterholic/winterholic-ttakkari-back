@@ -595,6 +595,7 @@ async def test_usage_single_account_refresh_endpoint(client, auth, monkeypatch):
     row = res.json()
     assert row["id"] == str(target_id)
     assert row["windows"][0]["percent"] == 15
+    assert row["cooldown_seconds"] == 0
     assert called_refresh == [True]
     # 사용량 측정 성공 및 한도 여유 확인 시 쿨다운이 해제되어야 한다
     assert profiles.cooldown_remaining(target_id) == 0
@@ -613,6 +614,29 @@ async def test_usage_single_account_refresh_endpoint(client, auth, monkeypatch):
 
     # 404 확인
     assert (await client.post(f"/api/accounts/{uuid.uuid4()}/usage/refresh", headers=auth)).status_code == 404
+
+
+async def test_muse_refresh_failure_preserves_cooldown(client, auth, monkeypatch):
+    from ttakkari.db import sessionmaker
+    from ttakkari.models import EngineAccount
+    from ttakkari.runs import profiles, usage
+
+    accounts = await _accounts(client, auth)
+    target_id = uuid.UUID(accounts[0]["id"])
+    async with sessionmaker()() as db:
+        account = await db.get(EngineAccount, target_id)
+        account.engine = "muse"
+        await db.commit()
+
+    async def failed(*args, **kwargs):
+        return usage.Usage(error="Provider timeout", source="muse_cli", login="ok")
+
+    monkeypatch.setattr(usage, "usage_for", failed)
+    profiles.cool_down(target_id, 300)
+    response = await client.post(f"/api/accounts/{target_id}/usage/refresh", headers=auth)
+    assert response.status_code == 200
+    assert "Provider timeout" in response.json()["error"]
+    assert profiles.cooldown_remaining(target_id) > 0
 
 
 

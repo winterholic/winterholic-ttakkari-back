@@ -411,7 +411,7 @@ flowchart TD
 
 ## 9. Phase 2 WBS 초안 (시간 상한 2시간, 초과하면 재분할)
 
-아래 시간은 구현 견적이 아니라 한 작업 세션의 제한이다. 각 작업은 끝나면 명시된 완료 기준을 확인한다. `Game*` 테스트 경로는 해당 작업이 테스트를 추가한 뒤 실행하는 검증 명령이며, 존재하지 않는 테스트를 지금 실행한 결과가 아니다. 작업 단계는 백엔드 Alembic 및 `main.py` router 등록, 프론트 `BrowserRouter`와 Vitest, MCP `@server.tool()` 방식을 따른다.
+아래 시간은 구현 견적이 아니라 한 작업 세션의 제한이다. 각 작업은 끝나면 명시된 완료 기준을 확인한다. `Game*` 테스트 경로는 해당 작업이 테스트를 추가한 뒤 실행하는 검증 명령이며, 존재하지 않는 테스트를 지금 실행한 결과가 아니다. 작업 단계는 백엔드 Alembic 및 `main.py` router 등록, 프론트 `BrowserRouter`와 Vitest, MCP `@orchestrator_tool` 래퍼의 tool 등록 방식을 따른다.
 
 ### [트랙 A: 백엔드 코어 & 어댑터]
 1. **TASK-G01: 격리 빌드 경계 spike (2h)** — 구현 후보(무권한/container/VM)에서 탈출·비밀·네트워크 음성 사례를 확인. 미통과 시 후속 빌드 작업 보류. `uv run pytest -q tests/test_game_build_isolation.py`

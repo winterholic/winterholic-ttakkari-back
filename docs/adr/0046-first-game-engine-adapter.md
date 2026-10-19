@@ -31,5 +31,5 @@
 - 기존 코드 확인: worker 분류는 `src/ttakkari/runs/worker_routing.py:21,71-80`, Run dispatch는 `src/ttakkari/runs/manager.py:248-360`, worker 생성 MCP는 `src/ttakkari/orchestrator/mcp_server.py:558-600`이다. 게임별 요청에서 worker를 시작해 피드백·게임 소스·빌드까지 연결하는 기능은 현재 구현됐다고 볼 수 없다.
 - 기존 `/api/artifacts/{id}/content`는 `src/ttakkari/api/artifacts.py:65-71,312-330`에 정의되고, 다운로드용 토큰 경로도 별도다. 일반 Artifact path/CSP를 게임 실행 경계로 재사용하지 않는다.
 - File Broker `src/ttakkari/broker/policy.py:102-164`는 파일 경로 검증기다. `npm install`/빌드 프로세스의 호스트 접근을 격리하지 않는다.
-- 구현 순서는 Alembic CLI `uv run ttakkari migrate` → router 등록 `src/ttakkari/main.py` → 프론트 `BrowserRouter` route(`front/src/App.tsx`) → worker tool `@server.tool()` 등록(`mcp_server.py`) 경계를 따른다.
+- 구현 순서는 Alembic CLI `uv run ttakkari migrate` → router 등록 `src/ttakkari/main.py` → 프론트 `BrowserRouter` route(`front/src/App.tsx`) → worker tool `@orchestrator_tool`/`server.tool()` 등록(`mcp_server.py`) 경계를 따른다.
 - 지연시간 `0ms`, 100% 자동화, AI 환각·수정 오류의 후보 대비 우위는 측정 자료가 없어 근거 있는 주장으로 취급하지 않는다.

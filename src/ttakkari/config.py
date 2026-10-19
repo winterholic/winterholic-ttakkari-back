@@ -304,6 +304,24 @@ class Settings(BaseSettings):
             return Path(self.notebooklm_profile).expanduser().resolve()
         return self.home / "notebooklm-chrome"
 
+    # 게임 스튜디오(ADR 0046, docs/design/game-studio.md). 게임 프로젝트는 각자 git 저장소이며 이 아래 <game_slug>/ 에 둔다.
+    # allowed_roots(~/development) 안이어야 워크스페이스로 등록된다. 빌드 스테이징·불변 스냅샷은 에이전트가 쓸 수 없는 data_dir 에 둔다.
+    games_root: Path = HOME / "development/projects/games"
+    game_build_runtime: str = "docker"  # OrbStack 이 제공하는 docker CLI
+    game_build_image: str = "node:20-alpine"  # vite 7 은 Node ^20.19 필요(20.20.2 확인)
+    game_build_memory_mb: int = Field(default=2048, ge=256, le=16384)
+    game_build_cpus: float = Field(default=2.0, gt=0, le=16)
+    game_build_pids: int = Field(default=512, ge=32, le=8192)
+    game_build_install_timeout_seconds: int = Field(default=300, ge=10, le=1800)
+    game_build_timeout_seconds: int = Field(default=300, ge=10, le=1800)
+    game_build_max_source_mb: int = Field(default=200, ge=1, le=4096)
+    game_build_max_output_mb: int = Field(default=200, ge=1, le=4096)
+    game_registry_hosts: list[str] = ["registry.npmjs.org"]
+
+    @property
+    def game_builds_dir(self) -> Path:
+        return self.data_dir / "game-builds"
+
     copy_max_bytes: int = 200 * 1024 * 1024
     upload_max_bytes: int = 200 * 1024 * 1024
     # 폰 → 컴퓨터 파일 보내기(조각 업로드). 동영상 때문에 크게 잡는다.

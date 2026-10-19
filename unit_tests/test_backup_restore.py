@@ -162,6 +162,21 @@ def test_invalid_retention_does_not_publish_backup(tmp_path: Path, stubs) -> Non
     assert not out.exists()
 
 
+def test_retention_cleanup_failure_does_not_misreport_completed_backup(tmp_path: Path, stubs) -> None:
+    env, _ = stubs
+    stub_dir = Path(env["PATH"].split(os.pathsep)[0])
+    find = stub_dir / "find"
+    find.write_text("#!/bin/bash\nexit 1\n")
+    find.chmod(find.stat().st_mode | stat.S_IXUSR)
+    out = tmp_path / "retention-cleanup-failure"
+    r = run([str(BACKUP_SH), "--dir", str(out),
+             "--db-url", "postgresql://localhost/ttakkari"], env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "보존 기간 정리 실패" in r.stderr
+    assert len(list(out.glob("*.dump"))) == 1
+    assert len(list(out.glob("*.manifest.json"))) == 1
+
+
 def test_rehearsal_rejects_remote_database_url_before_database_tools(tmp_path: Path, stubs) -> None:
     env, log = stubs
     manifest = tmp_path / "m.manifest.json"

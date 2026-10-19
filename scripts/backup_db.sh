@@ -112,7 +112,11 @@ mv "$DUMP_TMP" "$DUMP"
 mv "$MANIFEST_TMP" "$MANIFEST"
 
 # 보존 기간이 지난 백업을 정리한다.
-find "$BACKUP_DIR" -maxdepth 1 -name 'ttakkari-*.dump' -mtime +"$RETENTION_DAYS" -delete
-find "$BACKUP_DIR" -maxdepth 1 -name 'ttakkari-*.manifest.json' -mtime +"$RETENTION_DAYS" -delete
+if ! find "$BACKUP_DIR" -maxdepth 1 -name 'ttakkari-*.dump' -mtime +"$RETENTION_DAYS" -delete; then
+  echo "경고: 덤프 보존 기간 정리 실패" >&2
+fi
+if ! find "$BACKUP_DIR" -maxdepth 1 -name 'ttakkari-*.manifest.json' -mtime +"$RETENTION_DAYS" -delete; then
+  echo "경고: manifest 보존 기간 정리 실패" >&2
+fi
 
 echo "백업 완료: $MANIFEST"

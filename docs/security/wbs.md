@@ -5,7 +5,7 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 
 ## 1. 요약
 
-- 항목 49개: P0 8, P1 21, P2 18, P3 2. 2026-10-19 프롬프트 인젝션 집중 감사([prompt-injection-audit.md](prompt-injection-audit.md))로 SEC2-PI-03~06을 추가하고 SEC2-PI-01·02를 갱신했다.
+- 항목 65개: P0 9, P1 32, P2 22, P3 2. 2026-10-19 네트워크·로그인·세션 감사([network-login-session-audit.md](network-login-session-audit.md))로 6절의 NAC·LGN·SES 16개를 추가했다. 프롬프트 인젝션 집중 감사([prompt-injection-audit.md](prompt-injection-audit.md))로 SEC2-PI-03~06을 추가하고 SEC2-PI-01·02를 갱신했다.
 - 심각도 = 가능성(L, 1~3) × 영향(I, 1~3). 우선순위는 심각도와 함께 '정상 사용을 바꾸지 않고 바로 줄일 수 있는가'를 반영했다.
 - 작업 분할 단위는 작업자 1명이 2시간 안에 끝낼 크기다. 이전 작업자가 2시간 제한으로 끊긴 일이 있었다.
 - 모든 수정 항목의 완료 기준은 같다. 재현 테스트가 수정 전 실패하고 수정 후 통과하며, 정상 사용 대조군이 함께 통과해야 한다.
@@ -58,7 +58,7 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 
 인벤토리 스냅샷 테스트와 신뢰 모델 결정 초안. 이후 모든 항목의 검증 기반.
 
-- 항목: SEC2-DEC-01, SEC2-GATE-00
+- 항목: SEC2-DEC-01, SEC2-GATE-00, SEC2-NAC-01(6절 추가분)
 - 종료 검증: 독립 검증: 인벤토리 테스트가 의도적으로 추가한 미분류 라우트를 잡는지 다른 모델이 재현.
 
 ### Phase 1 · P0
@@ -72,14 +72,14 @@ ID는 이전 감사의 `SEC-01~14`와 섞이지 않게 `SEC2-` 접두사를 쓴�
 
 범위 결함 수정, 토큰 즉시 폐기, 엔진 guard 동등성, 인젝션 평가셋, 호스트 도구·배포·의존성·로그.
 
-- 항목: SEC2-AUTHZ-01, SEC2-AUTHZ-02, SEC2-AUTH-01, SEC2-AUTH-04, SEC2-EXEC-03, SEC2-EXEC-04, SEC2-PI-01, SEC2-PI-02, SEC2-PI-03, SEC2-PI-04, SEC2-PI-06, SEC2-HOST-03, SEC2-HOST-04, SEC2-DEP-01, SEC2-FILE-02, SEC2-RD-01, SEC2-WEB-02, SEC2-SUP-01, SEC2-FILE-01, SEC2-SECRET-01, SEC2-GATE-01
+- 항목: SEC2-NAC-02~06, SEC2-LGN-01~04, SEC2-SES-01~02(6절 추가분), SEC2-AUTHZ-01, SEC2-AUTHZ-02, SEC2-AUTH-01, SEC2-AUTH-04, SEC2-EXEC-03, SEC2-EXEC-04, SEC2-PI-01, SEC2-PI-02, SEC2-PI-03, SEC2-PI-04, SEC2-PI-06, SEC2-HOST-03, SEC2-HOST-04, SEC2-DEP-01, SEC2-FILE-02, SEC2-RD-01, SEC2-WEB-02, SEC2-SUP-01, SEC2-FILE-01, SEC2-SECRET-01, SEC2-GATE-01
 - 종료 검증: 독립 검증: 항목별 RED/GREEN, 정상 사용 대조군, 실제 브라우저(WebKit) 원격제어·XSS 확인.
 
 ### Phase 3 · P2
 
 헤더·SSRF·노출·공유·DoS·주입·호스트 도구 세부 검증.
 
-- 항목: SEC2-AUTH-03, SEC2-AUTH-05, SEC2-WEB-01, SEC2-NET-01, SEC2-EXPO-01, SEC2-SHARE-01, SEC2-DOS-01, SEC2-INJ-01, SEC2-INJ-02, SEC2-EXEC-02, SEC2-HOST-01, SEC2-HOST-02, SEC2-HOST-05, SEC2-FILE-03, SEC2-SECRET-02, SEC2-PI-05, SEC2-OPS-02, SEC2-AUTHZ-04
+- 항목: SEC2-SES-03~06(6절 추가분), SEC2-AUTH-03(6절로 대체), SEC2-AUTH-05, SEC2-WEB-01, SEC2-NET-01, SEC2-EXPO-01, SEC2-SHARE-01, SEC2-DOS-01, SEC2-INJ-01, SEC2-INJ-02, SEC2-EXEC-02, SEC2-HOST-01, SEC2-HOST-02, SEC2-HOST-05, SEC2-FILE-03, SEC2-SECRET-02, SEC2-PI-05, SEC2-OPS-02, SEC2-AUTHZ-04
 - 종료 검증: 독립 검증: 검증 로그 표본 재실행.
 
 ### Phase 4 · P3·종결
@@ -106,7 +106,7 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 | SEC2-OPS-01 | P0 | 6 (2×3) | 백업·복구 | DB·데이터 백업 복구 지점 확보와 복원 리허설 | 확인됨 | - | general | 1 |
 | SEC2-AUTHZ-01 | P1 | 4 (2×2) | 인가·범위 | Memo·CalendarEvent에 scope 도입 | 확인됨(코드) | SEC2-AUTHZ-03 | general | 2 |
 | SEC2-AUTHZ-02 | P1 | 2 (2×1) | 인가·범위 | create_pms_task 범위 검사 누락 수정 | 확인됨(코드) | SEC2-AUTHZ-03 | general | 2 |
-| SEC2-AUTH-01 | P1 | 2 (1×2) | 인증 | access JWT·원격제어 grant 즉시 폐기(자격 epoch) | 확인됨(코드) | - | general | 2 |
+| SEC2-AUTH-01 | P1 | 2 (1×2) | 인증 | access JWT·원격제어 grant 즉시 폐기(자격 epoch). **SEC2-SES-02가 `sid` 클레임으로 확장** | 확인됨(코드) | - | general | 2 |
 | SEC2-AUTH-04 | P1 | 4 (2×2) | 인증 | 업로드 전용 토큰(ttk_) 권한·경로·폐기 검증 | 미검증 | - | verification | 2 |
 | SEC2-EXEC-03 | P1 | 4 (2×2) | 실행 경계 | 엔진별 guard 동등성 확인(Antigravity hook 부재) | 확인됨(코드) | SEC2-EXEC-01 | verification | 2 |
 | SEC2-EXEC-04 | P1 | 3 (1×3) | 실행 경계 | 하네스(~/.claude·~/.codex) 변경을 통한 지속성 대응 | 추론 | SEC2-DEC-01 | design | 2 |
@@ -125,7 +125,7 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 | SEC2-FILE-01 | P1 | 3 (1×3) | 파일 | 문서·미디어 변환기 격리(soffice, HEIC, STT) | 추론 | - | general | 2 |
 | SEC2-SECRET-01 | P1 | 4 (2×2) | 비밀 노출 | RunEvent 밖 로그의 비밀·개인정보 노출 | 부분 확인 | - | general | 2 |
 | SEC2-GATE-01 | P1 | 4 (2×2) | 검증 기반 | 보안 회귀 묶음을 배포 게이트에 연결 | 확인됨(부재) | SEC2-GATE-00 | general | 2 |
-| SEC2-AUTH-03 | P2 | 1 (1×1) | 인증 | 로그인 제한 정책 결정·루프백 IP 위조 | 추론 | - | general | 3 |
+| SEC2-AUTH-03 | P2 | 1 (1×1) | 인증 | 로그인 제한 정책 결정·루프백 IP 위조 (**6절 SEC2-LGN-01~04, NAC-03으로 대체**) | 추론 | - | general | 3 |
 | SEC2-AUTH-05 | P2 | 2 (1×2) | 인증 | CSRF·CORS 전수 확인 | 부분 확인 | - | verification | 3 |
 | SEC2-WEB-01 | P2 | 2 (1×2) | 웹 프런트 | SPA·API 보안 헤더(CSP, frame-ancestors, HSTS) | 확인됨(부재) | SEC2-WEB-02 | general | 3 |
 | SEC2-NET-01 | P2 | 2 (1×2) | 외부 호출 | SSRF·외부 호출 목적지 검증 | 미검증 | - | verification | 3 |
@@ -528,6 +528,8 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 
 ### SEC2-AUTH-03 로그인 제한 정책 결정·루프백 IP 위조
 
+> 2026-10-19 갱신: 로그인 제한은 SEC2-LGN-01~04, 루프백 IP 위조는 SEC2-NAC-03으로 세분화해 대체했다. 이 항목은 두 항목이 완료되면 닫는다.
+
 - 우선순위 P2, 심각도 1 (가능성 1 × 영향 1), 상태 **추론**, 영역 인증, Phase 3, 권장 task_type `general`
 - 자산: A1
 - 위협 시나리오: 루프백 피어가 신뢰 프록시라 로컬 프로세스가 CF-Connecting-IP를 위조해 IP별 제한·감사 IP를 우회한다. 5회 실패 15분 잠금은 사용자 결정 대기.
@@ -787,3 +789,175 @@ OPS-01(백업)은 의존이 없으니 Phase 1에서 가장 먼저 시작한다. 
 - 불변 조건(정상 사용): 감사는 읽기·격리 실행만.
 - 작업 분할: 1) P0 재실행(2h) 2) P1 재실행(2h)
 
+## 6. 네트워크 접근 통제·로그인 제한·세션 보안 트랙 (2026-10-19 추가)
+
+근거와 설계는 [network-login-session-audit.md](network-login-session-audit.md)에 있다. 기존 항목은 복제하지 않고 확장·대체만 했다.
+매핑: NAC-01~06은 SEC2-EXPO-01의 실행안, NAC-03은 SEC2-AUTH-03 흡수, LGN-01~04는 SEC2-AUTH-03 대체, SES-02는 SEC2-AUTH-01 확장, SES-04는 SEC2-RD-01 연계, SES-05는 SEC2-WEB-01·02 의존.
+공통 불변 조건: 에이전트 Run 실행·승인 흐름, CLI·파일·개발 작업은 바뀌지 않는다. 사용자 명령 실행에 승인·재인증 단계를 추가하지 않는다. 모든 항목의 시작은 사용자 승인 후다.
+
+### 6.1 항목 표
+
+| ID | P | 심각도(L×I) | 영역 | 제목 | 상태 | 의존 | task_type | 사용자 승인 |
+|---|---|---|---|---|---|---|---|---|
+| SEC2-NAC-01 | P0 | 6 (2×3) | 네트워크 경계 | 공개 터널 노출면 축소·Tailscale 경계 방식 결정(ADR) | 확인됨 | SEC2-EXPO-01 | design | 필요 |
+| SEC2-NAC-02 | P1 | 4 (2×2) | 네트워크 경계 | tailnet Grants·Mac 노출 포트·방화벽 점검 | 확인됨(관측), ACL 미확인 | SEC2-NAC-01 | verification | 필요(콘솔·따까리 밖) |
+| SEC2-NAC-03 | P1 | 2 (2×1) | 네트워크 경계 | 프록시 이중 리스너와 신뢰 IP 헤더 경로 분리 (AUTH-03 흡수) | 추론(코드 확인됨) | - | general | 불필요 |
+| SEC2-NAC-04 | P1 | 6 (2×3) | 네트워크 경계 | Tailscale Serve 병행 도입과 공개 경로 목록 확정, 배포 검증 URL 의존 정리 | 미검증 | NAC-01, NAC-03 | general | 필요 |
+| SEC2-NAC-05 | P1 | 6 (2×3) | 네트워크 경계 | SPA same-origin 서빙과 PWA origin 이전(재설치·푸시 재구독) | 미검증 | NAC-04 | general | 필요 |
+| SEC2-NAC-06 | P1 | 6 (2×3) | 네트워크 경계 | 공개 터널 허용목록(cloudflared ingress) 전환과 롤백 리허설 | 미검증 | NAC-05 | verification | 필요(시점) |
+| SEC2-LGN-01 | P1 | 6 (2×3) | 로그인 제한 | DB 영속 단계 지연 스키마·상태 기계(shadow 모드) | 확인됨(현황) | - | general | 정책값 필요 |
+| SEC2-LGN-02 | P1 | 6 (2×3) | 로그인 제한 | login·원격제어 재인증 연결, 신뢰 기기 쿠키, 계정 경보, 더미 검증 | 확인됨(현황) | LGN-01 | general | 신뢰 기기 쿠키 필요 |
+| SEC2-LGN-03 | P1 | 2 (1×2) | 로그인 제한 | Mac 로컬 해제 CLI(login-status·login-unlock)와 set-password 연동 | 확인됨(현황) | LGN-01 | general | 불필요 |
+| SEC2-LGN-04 | P1 | 4 (2×2) | 로그인 제한 | 레이스·재시작·Run 무영향·부하 통합 시험과 shadow→enforce 전환 | 미검증 | LGN-02, LGN-03 | verification | enforce 전환 승인 |
+| SEC2-SES-01 | P1 | 4 (2×2) | 세션 | refresh 재사용 오탐 계측·동시 갱신 잠금·유예창 | 확인됨(DB), 원인 추론 | - | general | 불필요 |
+| SEC2-SES-02 | P1 | 2 (1×2) | 세션 | access에 `sid` 클레임, 서버 폐기 확인, 기기별 세션 목록·폐기 (AUTH-01 확장) | 확인됨(코드) | SEC2-AUTH-01 | general | 불필요 |
+| SEC2-SES-03 | P2 | 2 (1×2) | 세션 | refresh 계열 절대 수명 상한과 만료·폐기 행 정리 | 확인됨 | SES-02 | general | 상한 값 필요 |
+| SEC2-SES-04 | P2 | 2 (1×2) | 세션 | SSE·원격 데스크톱 연결 주기 재검증 | 확인됨(코드) | SES-02, SEC2-RD-01 | general | 불필요 |
+| SEC2-SES-05 | P2 | 2 (1×2) | 세션 | refresh 쿠키 SameSite=Strict·`__Secure-` 전환(iOS PWA 실측) | 확인됨(운영 응답) | NAC-05, SEC2-WEB-02 | verification | 불필요 |
+| SEC2-SES-06 | P2 | 2 (1×2) | 세션 | 새 기기 로그인·잠금·재사용 알림과 429 감사 | 확인됨(코드) | LGN-02 | general | 불필요 |
+
+### 6.2 항목 상세
+
+#### SEC2-NAC-01 공개 터널 노출면 축소·Tailscale 경계 방식 결정(ADR)
+
+- 우선순위 P0, 심각도 6 (2×3), 상태 **확인됨**, 영역 네트워크 경계, 권장 task_type `design`
+- 자산: A1~A4, A14, 호스트 명령 실행 전체
+- 위협 시나리오: 공개 도메인이 소유자 API 408개 전체를 노출하고 방어선이 비밀번호 1개뿐이다. 비밀번호가 맞으면 에이전트 실행으로 이어진다.
+- 현재 통제와 근거: 우회 접근은 확인되지 않음(공개 GET·헤더 위조 시험, 보고서 3절). 터널 ingress에 경로 필터 없음(`~/.cloudflared/ttakkari.yml`). Tailscale 설치·실행 중, Serve·Funnel 설정 없음.
+- 검증 방법: ADR 초안에 선택지 A(Serve)·B·C·D·E·F 비교, A1·A2·A3 origin 방식 비교, 실기기 쿠키 시험 계획.
+- 수정 방향: Serve 병행 → same-origin PWA → 공개 경로 허용목록. 경계는 네트워크에서 강제, Tailscale 헤더는 신뢰하지 않는다.
+- 완료 기준: ADR 1건(Proposed)과 사용자 결정 기록. 결정에 따른 NAC-02~06 범위 확정.
+- 불변 조건: 에이전트 실행·MCP 루프백 경로, 공개 공유 링크, 세대 배포 검증은 유지한다.
+- 작업 분할: 1) ADR 초안(2h)
+
+#### SEC2-NAC-02 tailnet Grants·Mac 노출 포트·방화벽 점검
+
+- 우선순위 P1, 심각도 4 (2×2), 상태 **확인됨(관측), ACL 미확인**, task_type `verification`
+- 위협 시나리오: Mac 방화벽이 꺼져 있고 `mariadbd *:3306`, AirPlay `*:5000`·`*:7000`, `rapportd`가 LAN에 열려 있다. tailnet의 다른 노드(윈도우 5, ubuntu 서버 1)가 닿을 수 있다(ACL 내용 확인 필요).
+- 검증 방법: 사용자가 내보낸 ACL을 읽어 Mac Studio 대상 규칙 목록화. 노드별 필요 접근 확인. 외부 노드에서 3306 연결 거절 확인(변경 후).
+- 수정 방향: Grants 최소화(예시는 보고서 4.3), 3306 루프백 바인딩(따까리 밖, 사용자 결정), 앱 방화벽 활성, Mac Studio 키 만료 해제.
+- 의존: SEC2-NAC-01. 중복 방지: EXPO-01의 관측을 입력으로만 사용.
+- 완료 기준: 변경 전후 `lsof`·ACL 비교표.
+- 불변 조건: 기존 노드의 필요한 접근(예: 서버↔Mac)이 깨지지 않는다(사전 확인).
+- 작업 분할: 1) ACL 판독·영향표(2h) 2) 적용·검증(1h)
+
+#### SEC2-NAC-03 프록시 이중 리스너와 신뢰 IP 헤더 경로 분리
+
+- 우선순위 P1, 심각도 2 (2×1), 상태 **추론(코드 확인됨)**, task_type `general`
+- 위협 시나리오: 루프백 피어가 보내는 `CF-Connecting-IP`를 무조건 신뢰(`security/auth.py:79-88`)해서, Serve 도입 후 tailnet 클라이언트가 IP 키와 감사 IP를 위조할 수 있다.
+- 검증 방법: 격리 Caddy로 8788 경로의 헤더 제거 시험, 8787 경로는 유지.
+- 수정 방향: `generation_deployment.py:220-226`의 `proxy_config`에 8788 리스너(헤더 제거) 추가. 앱은 8788 경로의 출처를 피어로 판단.
+- 완료 기준: 위조 헤더 무시 테스트, Cloudflare 경유 정상 IP 대조군, 배포 감독 검증 통과.
+- 불변 조건: 세대 전환·`stream_close_delay`·`/api/ready` 404 규칙 유지. 배포 시스템 변경이므로 격리 시험 후 배포.
+- 작업 분할: 1) proxy_config+테스트(2h)
+
+#### SEC2-NAC-04 Tailscale Serve 병행 도입과 공개 경로 목록 확정
+
+- 우선순위 P1, 심각도 6 (2×3), 상태 **미검증**, task_type `general`
+- 수정 방향: P0 사전(HTTPS 인증서, ACL 백업) 후 `tailscale serve`를 병행 추가. 공개 경로 목록(`/api/health`, `/api/version`, `/api/public/shares/*`)과 `/api/qwen-status`·`/api/dl`·`/api/view`·단축어 업로드의 소비처를 확정. 부트스트랩 스모크의 하드코딩 공개 URL(`generation_bootstrap.py:143`)을 설정값으로.
+- 검증 방법: iPhone 셀룰러+Tailscale에서 health·로그인·SSE·푸시. 공개 터널은 그대로 두고 비교.
+- 완료 기준: 실기기 결과표, 롤백(`tailscale serve reset`) 리허설 로그.
+- 불변 조건: 병행 기간에 공개 경로 동작 변화 없음.
+- 작업 분할: 1) 사전·Serve 병행(2h) 2) 실기기 검증(2h)
+
+#### SEC2-NAC-05 SPA same-origin 서빙과 PWA origin 이전
+
+- 우선순위 P1, 심각도 6 (2×3), 상태 **미검증**, task_type `general`
+- 위협·배경: API가 `*.ts.net`으로 가면 Vercel SPA와 cross-site라 iOS에서 refresh 쿠키가 막힐 수 있다.
+- 수정 방향: Serve 뒤에서 SPA 정적 파일 제공(같은 origin). 빌드 배포 경로, PWA 재설치, 푸시 재구독, localStorage 초기화 안내. `/share/*`는 Vercel 유지.
+- 검증 방법: 실기기에서 앱 재실행 시 재로그인 없이 복구, 푸시 수신, 원격 데스크톱 연결.
+- 완료 기준: 7일 병행 사용 기록과 문제 없음 확인.
+- 불변 조건: 병행 기간에 기존 Vercel PWA로 복귀 가능.
+- 작업 분할: 1) 정적 서빙 경로(2h) 2) 프런트 빌드 설정·재구독(2h) 3) 실기기 시험(2h)
+
+#### SEC2-NAC-06 공개 터널 허용목록 전환과 롤백 리허설
+
+- 우선순위 P1, 심각도 6 (2×3), 상태 **미검증**, task_type `verification`
+- 수정 방향: `ttakkari.yml` ingress에 `path` 정규식(보고서 4.4 P4)을 적용하고 터널을 재시작. 격리 터널로 `path` 매칭 동작을 먼저 확인.
+- 검증 방법: 공개 도메인에서 `/api/workspaces`·`/api/auth/login` 404, health·version·공유 링크 정상, 세대 배포 검증 통과.
+- 완료 기준: 롤백(백업 yml 복원+터널 재시작) 리허설 로그. NAC-05 완료 전에는 시작하지 않는다.
+- 불변 조건: 소유자는 tailnet 경로로 계속 사용, 비상 경로는 Mac 로컬·노트북(tailnet).
+- 작업 분할: 1) 격리 시험(1h) 2) 적용·검증(1h)
+
+#### SEC2-LGN-01 DB 영속 단계 지연 스키마·상태 기계
+
+- 우선순위 P1, 심각도 6 (2×3), 상태 **확인됨(현황)**, task_type `general`
+- 위협 시나리오: 메모리·IP 단위 제한이 배포·재시작마다 초기화되고 분산 추측을 계정 단위로 막지 못한다(`security/auth.py:99-223`).
+- 수정 방향: `login_throttle`·`login_devices` 표, `security/login_throttle.py`, 예약 방식 상태 기계, `login_throttle_mode=shadow`. 단계값(60·300·900·3600초)과 예산(5, 계정 20)은 설정.
+- 검증 방법: 시간 주입 단위·DB 테스트(보고서 5.5의 1 내지 3, 5, 6, 12).
+- 완료 기준: RED→GREEN, 마이그레이션 up/down, shadow에서 실제 기록 수집 시작.
+- 불변 조건: shadow에서는 어떤 로그인도 거절하지 않는다.
+- 작업 분할: 1) 마이그레이션·모델(1h) 2) 상태 기계+테스트(2h)
+
+#### SEC2-LGN-02 login·원격제어 재인증 연결, 신뢰 기기 쿠키, 계정 경보
+
+- 우선순위 P1, 심각도 6 (2×3), 상태 **확인됨(현황)**, task_type `general`
+- 수정 방향: `api/auth.py` login 예약→검증→결과, `ttk_dev` 발급(login·refresh), 신뢰 기기는 계정 키·전역 버킷에서 제외, 더미 검증, `api/remote_desktop.py` reauthenticate 교체. 구 `LoginLimiter`는 CPU 보호로 축소.
+- 검증 방법: 보고서 5.5의 4, 6, 7, 8, 11.
+- 완료 기준: RED→GREEN, 정상 로그인·자동 로그인·refresh 대조군, 기존 limiter 테스트 갱신.
+- 불변 조건: 정상 로그인 경로와 기존 12개 세션 유지(다음 refresh에서 쿠키 발급).
+- 작업 분할: 1) login 연결+쿠키(2h) 2) 원격제어·계정 경보(2h)
+
+#### SEC2-LGN-03 Mac 로컬 해제 CLI
+
+- 우선순위 P1, 심각도 2 (1×2), 상태 **확인됨(현황)**, task_type `general`
+- 수정 방향: `ttakkari login-status`, `login-unlock [--source IP|--all]`, `set-password`가 잠금·신뢰 기기 초기화(`cli.py:67-80` 패턴). HTTP 라우트 없음.
+- 검증 방법: CLI 테스트, 라우트 인벤토리 테스트로 해제 라우트 부재 고정.
+- 완료 기준: RED→GREEN.
+- 불변 조건: 해제 기능이 일반 API에 노출되지 않는다.
+- 작업 분할: 1) CLI+테스트(1h)
+
+#### SEC2-LGN-04 통합 시험과 shadow→enforce 전환
+
+- 우선순위 P1, 심각도 4 (2×2), 상태 **미검증**, task_type `verification`
+- 검증 방법: 20 병렬 오답 시 검증 정확히 5회, 재시작·두 세대 지속, 에이전트·SSE·refresh 무영향, 출처 200개 부하, shadow 3 내지 7일 기록 검토.
+- 수정 방향: enforce 전환은 사용자 승인 후 설정값 변경. 롤백은 `shadow`로 되돌림.
+- 완료 기준: 시험 로그와 shadow 기록 요약, 정상 소유자 오차단 0건.
+- 작업 분할: 1) 통합 시험(2h) 2) shadow 검토·전환(1h)
+
+#### SEC2-SES-01 refresh 재사용 오탐 계측·동시 갱신 잠금·유예창
+
+- 우선순위 P1, 심각도 4 (2×2), 상태 **확인됨(DB), 원인 추론**, task_type `general`
+- 위협·현상: `auth.refresh_reuse` 13건(10-13부터), 같은 기간 로그인 19건. 유예 없이 계열 전체 폐기(`api/auth.py:133-140`)라 소유자가 반복 강제 로그아웃된다.
+- 수정 방향: 1) 재사용 감사에 UA·경과 시간·`replaced_by` 기록(`replaced_by` 현재 미사용). 2) 프런트 Web Locks로 탭 간 refresh 직렬화(`front/src/api/client.ts:111-125`). 3) 서버 20 내지 30초 유예(새 쿠키 재발급, `auth.refresh_grace` 기록).
+- 검증 방법: 동시 refresh 2개 테스트(유예 안·밖), 진짜 재사용(유예 밖) 계열 폐기 대조군.
+- 완료 기준: 유예 안 재사용은 로그아웃되지 않고, 유예 밖 재사용은 폐기. 배포 후 재사용 이벤트 감소 확인.
+- 불변 조건: 탈취 재사용 탐지는 유지.
+- 작업 분할: 1) 계측(1h) 2) 프런트 잠금(1h) 3) 서버 유예(2h)
+
+#### SEC2-SES-02 `sid` 클레임·서버 폐기 확인·세션 목록 API
+
+- 우선순위 P1, 심각도 2 (1×2), 상태 **확인됨(코드)**, task_type `general`
+- 수정 방향: access에 `sid`=계열 ID와 credential 세대 클레임(AUTH-01의 epoch와 동시 설계), `require_user`가 짧은 TTL(5초) 캐시로 계열 활성 확인. `GET /api/auth/sessions`, `DELETE /api/auth/sessions/{family}`. 로그인 시 같은 기기 쿠키의 이전 계열 폐기. `sid` 없는 토큰은 시스템 토큰(`generation_bootstrap.py:137` 스모크)으로 15분 허용.
+- 검증 방법: 폐기 후 5초 안에 access 401, 요청당 DB 조회 증가 측정, 배포 스모크 대조군.
+- 완료 기준: RED→GREEN과 기존 refresh 회전 대조군.
+- 불변 조건: 평상시 강제 재로그인 없음.
+- 작업 분할: 1) 클레임·검사(2h) 2) 세션 API·프런트 목록(2h)
+
+#### SEC2-SES-03 refresh 계열 절대 수명 상한과 정리
+
+- 우선순위 P2, 심각도 2 (1×2), 상태 **확인됨**
+- 수정 방향: 계열 시작 시점 기준 절대 상한(권고 180일, 90일 대안, 사용자 결정), 만료·폐기 후 30일 지난 행과 감사 오래된 행 정리를 기존 retention 루프에 추가. 짧은 만료로 바꾸지 않는다.
+- 완료 기준: 상한 테스트와 정리 테스트.
+- 작업 분할: 1) 상한+정리(2h)
+
+#### SEC2-SES-04 SSE·원격 데스크톱 연결 주기 재검증
+
+- 우선순위 P2, 심각도 2 (1×2), 상태 **확인됨(코드)**
+- 수정 방향: SSE(`api/sessions.py:283-324`)와 원격 데스크톱 릴레이(`remote_desktop.py:105`)가 60초마다 `sid`·credential 세대를 확인하고 폐기 시 종료. SSE는 Last-Event-ID로 재연결하므로 정상 흐름에 영향 없음.
+- 완료 기준: 로그아웃·비밀번호 변경 후 60초 안에 연결 종료 테스트.
+- 작업 분할: 1) SSE(1h) 2) 원격 데스크톱(1h)
+
+#### SEC2-SES-05 refresh 쿠키 SameSite=Strict·`__Secure-` 전환
+
+- 우선순위 P2, 심각도 2 (1×2), 상태 **확인됨(운영 응답: SameSite=none)**
+- 수정 방향: PWA와 API가 같은 사이트이거나 same-origin이 되면 Strict로 전환. iOS 홈 화면 PWA 실기기 시험 후 적용. NAC-05 결과에 의존.
+- 완료 기준: 실기기에서 재로그인 없이 복구, CSRF 테스트 유지.
+- 작업 분할: 1) 실기기 시험·적용(2h)
+
+#### SEC2-SES-06 새 기기 로그인·잠금·재사용 알림과 429 감사
+
+- 우선순위 P2, 심각도 2 (1×2), 상태 **확인됨(코드)**
+- 수정 방향: 새 계열 생성, 잠금 level 2 이상, 계정 경보, refresh_reuse를 푸시(중복 억제). 429·잠금 전이를 감사에 남기되 요청마다 쓰지 않는다(감사 테이블 보호).
+- 완료 기준: 알림 발송·중복 억제 테스트.
+- 작업 분할: 1) 알림·감사(2h)

@@ -229,6 +229,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await desk_pool.shutdown()
         await qwen_service.stop()
         await preview.stop_worker()
+        from ttakkari.security import login_throttle
+        await login_throttle.shutdown()
         await dispose_engine()
 
 

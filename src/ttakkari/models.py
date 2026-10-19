@@ -140,6 +140,52 @@ class RefreshToken(Base):
     ip: Mapped[str | None] = mapped_column(String(64))
 
 
+class LoginThrottle(Base):
+    """로그인 출처·기기 키별 단계 잠금 상태(SEC2-LGN-01, docs/security/network-login-session-audit.md 5.5).
+
+    S1 은 shadow 관측만 한다. 행은 acct:u 토큰이 있을 때만 만들어져 행 수가 refill 속도에 묶인다.
+    """
+
+    __tablename__ = "login_throttle"
+    __table_args__ = (Index("ix_login_throttle_updated_at", "updated_at"),)
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(8))  # src | dev | inv | rd
+    budget: Mapped[int] = mapped_column(Integer)
+    level: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None]
+    stage_started_at: Mapped[datetime]
+    last_failure_at: Mapped[datetime | None]
+    lock_trigger: Mapped[uuid.UUID | None]
+    blocked_count: Mapped[int] = mapped_column(Integer, default=0)
+    summarized_at: Mapped[datetime | None]
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class LoginBucket(Base):
+    """시간 기반 토큰 버킷. 잠금 상태가 없어 공격자의 요청 수가 해제를 늦출 수 없다."""
+
+    __tablename__ = "login_bucket"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)  # acct:u | cpu:u | cpu:t
+    tokens: Mapped[float] = mapped_column(Float)
+    refilled_at: Mapped[datetime]
+    blocked_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class LoginAttempt(Base):
+    """예약 ID와 소비 기록. 정답이 자기 예약분만 환불하게 하려고 둔다(24시간 보관)."""
+
+    __tablename__ = "login_attempts"
+    __table_args__ = (Index("ix_login_attempts_reserved_at", "reserved_at"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    lane: Mapped[str] = mapped_column(String(4))
+    src_key: Mapped[str | None] = mapped_column(String(100))
+    reserved_at: Mapped[datetime]
+    would_block: Mapped[str | None] = mapped_column(String(24))  # shadow 에서 enforce 였다면 거절됐을 사유
+    charged_src: Mapped[bool] = mapped_column(Boolean, default=False)
+    charged_acct: Mapped[bool] = mapped_column(Boolean, default=False)
+    outcome: Mapped[str] = mapped_column(String(10), default="pending")  # pending | ok | fail | abandoned
+
+
 class Workspace(Base):
     __tablename__ = "workspaces"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

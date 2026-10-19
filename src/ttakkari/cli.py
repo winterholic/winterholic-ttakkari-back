@@ -87,6 +87,38 @@ def _cmd_set_password(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_login_throttle_mode(args: argparse.Namespace) -> int:
+    """로그인 제한 모드(off|shadow)를 읽거나 바꾼다. enforce 계열은 구현 전이라 거부한다(SEC2-LGN-01 S1)."""
+    from ttakkari import db
+    from ttakkari.models import AppSetting, utcnow
+    from ttakkari.security.login_throttle import IMPLEMENTED_MODES, MODE_KEY
+
+    if args.mode is not None and args.mode not in IMPLEMENTED_MODES:
+        print(f"'{args.mode}' 는 구현되지 않았습니다. 가능한 값: {', '.join(sorted(IMPLEMENTED_MODES))}", file=sys.stderr)
+        return 2
+
+    async def run() -> int:
+        from sqlalchemy.dialects.postgresql import insert
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                if args.mode is None:
+                    row = await session.get(AppSetting, MODE_KEY)
+                    print((row.value or {}).get("mode", "off") if row else "off")
+                    return 0
+                stmt = insert(AppSetting).values(key=MODE_KEY, value={"mode": args.mode}, updated_at=utcnow())
+                stmt = stmt.on_conflict_do_update(index_elements=[AppSetting.key],
+                                                  set_={"value": stmt.excluded.value, "updated_at": stmt.excluded.updated_at})
+                await session.execute(stmt)
+                await session.commit()
+                print(f"login_throttle_mode = {args.mode} (프로세스마다 5초 안에 반영)")
+                return 0
+        finally:
+            await db.dispose_engine()
+
+    return asyncio.run(run())
+
+
 def _cmd_init_config(_: argparse.Namespace) -> int:
     home = Path(os.environ.get("TTAKKARI_HOME") or DEFAULT_HOME).expanduser()
     path = home / "config.env"
@@ -234,6 +266,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("migrate", help="DB 마이그레이션을 head 까지 적용").set_defaults(func=_cmd_migrate)
     sub.add_parser("set-password", help="로그인 비밀번호 설정").set_defaults(func=_cmd_set_password)
     sub.add_parser("init-config", help="~/.ttakkari/config.env 생성").set_defaults(func=_cmd_init_config)
+    p = sub.add_parser("login-throttle-mode", help="로그인 제한 모드 조회·변경(off|shadow, 기본 off)")
+    p.add_argument("mode", nargs="?", default=None, help="off 또는 shadow. 생략하면 현재 값을 출력")
+    p.set_defaults(func=_cmd_login_throttle_mode)
 
     sub.add_parser("gen-vapid", help="Web Push VAPID 키 생성(~/.ttakkari/vapid.json)").set_defaults(func=_cmd_gen_vapid)
     p = sub.add_parser("context-import", help="출처가 명시된 프로젝트 목록을 맥락 도서관에 등록·색인")

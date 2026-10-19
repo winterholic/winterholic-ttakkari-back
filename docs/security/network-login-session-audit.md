@@ -475,7 +475,7 @@ CREATE TABLE login_devices (                -- 신뢰 기기(해시만, S1에서
 **확정(검증 후).**
 
 - **실패**: 행의 `outcome='fail'`, 소비한 `src` 행의 `last_failure_at=now`. 카운터는 이미 예약 때 소비됐으므로 더 건드리지 않는다.
-- **성공**: `outcome='ok'`. 이 예약이 소비한 것만 환불한다(`budget = min(budget+1, 5)`, `acct:u` 토큰 +1, 상한 6). `lock_trigger`가 자기 자신이면 그 잠금을 풀고 `level -= 1`. **전체 초기화(`level=0`, `budget=5`)는 이 키에 `stage_started_at` 이후 다른 `pending`·`fail` 행이 하나도 없을 때만** 한다. 있으면 자기 몫 환불만 한다. 계정 버킷은 초기화 없이 자기 토큰만 환불한다.
+- **성공**: `outcome='ok'`. 이 예약이 소비한 것만 환불한다(`budget = min(budget+1, 5)`, `acct:u` 토큰 +1, 상한 6). `lock_trigger`가 자기 자신이면 그 잠금을 풀고 `level -= 1`. **전체 초기화(`level=0`, `budget=5`)는 이 키에서 자기 말고 `pending`인 예약이 없고, 자기보다 늦게 예약된 시도도 없을 때만** 한다(S1 구현 기준). 자기보다 먼저 예약돼 이미 끝난 실패는 "오타 몇 번 뒤 성공"이라는 순차 이력이므로 지운다. 이렇게 하면 동시에 진행 중이거나 나중에 도착한 공격 요청의 소비는 지워지지 않는다. 그렇지 않으면 자기 몫 환불만 한다. 초안의 "`stage_started_at` 이후 다른 `pending`·`fail`이 없을 때"는 정상 소유자의 오타 기록이 24시간 남는 부작용이 있어 위 규칙으로 바꿨다. 계정 버킷은 초기화 없이 자기 토큰만 환불한다.
 - **고아 예약**: 연결이 끊겨 2분 넘게 `pending`인 행은 정리 작업이 `fail`로 바꾼다(보수적).
 - **shadow에서의 `would_block` 예약**: 거절 대신 진행을 허용하고 행에 `would_block` 사유만 기록한다. 이 행은 소비가 없으므로(`charged_*=false`) 확정은 `outcome`만 갱신하고 카운터·토큰을 건드리지 않는다.
 
@@ -506,7 +506,7 @@ CREATE TABLE login_devices (                -- 신뢰 기기(해시만, S1에서
 | `src/ttakkari/api/auth.py` | `login`을 예약 → 검증 → 확정으로(S1에서는 shadow 관측 호출만 추가, 응답·지연·거절 불변), `ttk_dev` 발급(login·refresh), 더미 검증, 잠금 응답 통일 |
 | `src/ttakkari/api/remote_desktop.py` | `reauthenticate`를 `rd:owner` 예약으로 교체 |
 | `src/ttakkari/models.py`, `alembic/versions/` | 위 표들(구현 시점 head 다음 번호) |
-| `src/ttakkari/config.py` | 단계 길이, 예산(5), 버킷 크기·refill, 레인 상한, 고아 시간, 호스트 슬롯 수. **모드는 DB `app_settings`**(재배포 없이 전환) |
+| `src/ttakkari/config.py` | enforce 단계(S2 이후)에서 단계 길이, 예산, 버킷, 레인 상한, 호스트 슬롯 수를 설정으로 옮긴다. **S1은 값을 `login_throttle.py` 모듈 상수로 둔다**(설정 파일 변경 없음). **모드는 DB `app_settings`**(재배포 없이 전환) |
 | `src/ttakkari/cli.py` | `login-throttle-mode`, `login-status`, `login-unlock`, `login-invite`, `set-password` 초기화 |
 | 기존 retention 루프 | 유휴 행·오래된 시도 행 정리, 고아 예약 정리, 요약 감사 |
 
@@ -536,7 +536,7 @@ S1이 쌓은 `login_throttle`·`login_bucket` **상태(budget, level, locked_unt
 
 ### 5.9 테스트 계획
 
-`tests/test_login_throttle.py`(시간 주입 단위·DB 테스트, 격리 DB `ttakkari_test`)와 `tests/test_login_throttle_concurrency.py`. 모든 테스트는 수정 전 RED, 수정 후 GREEN. ★은 개정 3에서 추가한 케이스다. S1에서 구현·시험하는 것은 1~7, 10~12, 17, 21, 그리고 35~38이며, 나머지는 해당 단계 구현과 함께 한다.
+`tests/test_login_throttle.py`(시간 주입 단위·DB 테스트, 격리 DB `ttakkari_test`)와 `tests/test_login_throttle_concurrency.py`. 모든 테스트는 수정 전 RED, 수정 후 GREEN. ★은 개정 3에서 추가한 케이스다. S1에서 구현·시험하는 것은 1~7, 10~12, 17, 21, 그리고 33(카운터 flush 부분), 35~38이며, 나머지는 해당 단계 구현과 함께 한다. S1 구현 시험은 `tests/test_login_throttle_shadow.py`(40개)이고 21의 마이그레이션 up/down은 시험 DB에서 stamp → upgrade → downgrade → upgrade로 확인했다.
 
 단계와 상태:
 1. 5회 실패 후 6번째 거절(shadow에서는 `would_block` 기록, 응답 불변). 61초 뒤 탐침 1회, 실패하면 300, 900, 3600, 이후 3600 유지. 24시간 무실패면 초기화.

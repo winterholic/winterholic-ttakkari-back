@@ -14,6 +14,7 @@ from ttakkari.config import get_settings
 from ttakkari.db import get_db
 from ttakkari.models import Credential, RefreshToken, utcnow
 from ttakkari.schemas import LoginIn, MeOut, TokenOut
+from ttakkari.security import login_throttle
 from ttakkari.security.auth import (
     User,
     client_ip,
@@ -77,9 +78,12 @@ def _check_csrf(request: Request) -> None:
 async def login(body: LoginIn, request: Request, response: Response, db: Db) -> TokenOut:
     ip = client_ip(request) or "unknown"
     async with limiter.admission(ip):
+        # SEC2-LGN-01 S1: 새 제한 설계를 같은 시도에 가상 적용해 DB 에 남긴다. 비차단·예외 비전파라 판정·응답·지연이 달라지지 않는다.
+        shadow = login_throttle.begin(ip)
         cred = await db.get(Credential, 1)
         if cred is None:
             limiter.refund()
+            login_throttle.finish(shadow, None)
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "비밀번호가 설정되지 않았습니다. 서버에서 `ttakkari set-password` 를 실행하세요.",
@@ -87,10 +91,12 @@ async def login(body: LoginIn, request: Request, response: Response, db: Db) -> 
         verified = await asyncio.to_thread(verify_password, cred.password_hash, body.password)
         if not verified:
             limiter.fail(ip)
+            login_throttle.finish(shadow, False)
             record(db, action="auth.login", outcome="denied", ip=ip, user_agent=request.headers.get("user-agent"))
             await db.commit()
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 올바르지 않습니다.")
         limiter.success(ip)
+        login_throttle.finish(shadow, True)
         if needs_rehash(cred.password_hash):
             # updated_at 은 비밀번호 변경 시각이라 재해시로 올리면 다른 기기의 refresh 세션이 모두 무효화된다.
             new_hash = await asyncio.to_thread(hash_password, body.password)

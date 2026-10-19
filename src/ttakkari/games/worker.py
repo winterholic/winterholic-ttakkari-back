@@ -15,6 +15,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari.config import get_settings
 from ttakkari.games.adapter import resolve_project_path
 from ttakkari.games.contract import (
     MANIFEST_FILE,
@@ -149,8 +150,10 @@ def compose_prompt(ctx: GameRequestContext, kind: RequestKind, instruction: str,
     return "\n\n".join([*sections, "[사용자 요청]\n" + instruction.strip()]) + "\n"
 
 
-def run_tag(ctx: GameRequestContext, kind: RequestKind, feedback: StagedFeedback | None = None) -> dict:
+def run_tag(ctx: GameRequestContext, kind: RequestKind, feedback: StagedFeedback | None = None, auto_build: bool = False) -> dict:
     tag = {"game_id": str(ctx.game.id), "kind": kind, "build_id": str(ctx.build.id) if ctx.build else None, "lock": ctx.lock}
+    if auto_build and kind != "verify" and get_settings().game_auto_build:
+        tag["auto_build"] = True  # 성공하면 games.autobuild 가 같은 게임을 빌드한다(소스가 바뀐 경우만)
     if feedback is not None:
         tag["feedback"] = {"dir": feedback.dir.name, "artifact_id": str(feedback.artifact_id) if feedback.artifact_id else None,
                            "annotated_artifact_id": str(feedback.annotated_artifact_id) if feedback.annotated_artifact_id else None,
@@ -159,7 +162,8 @@ def run_tag(ctx: GameRequestContext, kind: RequestKind, feedback: StagedFeedback
 
 
 async def start_request(db: AsyncSession, game: GameProject, *, kind: RequestKind, instruction: str, build_id: uuid.UUID | None = None,
-                        feedback: FeedbackIn | None = None, ip: str | None = None, origin: RunOrigin = RunOrigin.user) -> tuple[ChatSession, Run]:
+                        feedback: FeedbackIn | None = None, ip: str | None = None, origin: RunOrigin = RunOrigin.user,
+                        auto_build: bool = False) -> tuple[ChatSession, Run]:
     """게임 workspace 에 worker 세션을 만들어 기존 queue_run 으로 접수한다. 세션 engine 은 auto 이고 모델·계정은 worker routing 이 고른다."""
     from ttakkari.api.sessions import queue_run
 
@@ -180,7 +184,7 @@ async def start_request(db: AsyncSession, game: GameProject, *, kind: RequestKin
     prompt = compose_prompt(ctx, kind, instruction, staged)
 
     def tag(run: Run) -> None:
-        run.usage = {**(run.usage or {}), USAGE_KEY: run_tag(ctx, kind, staged)}
+        run.usage = {**(run.usage or {}), USAGE_KEY: run_tag(ctx, kind, staged, auto_build)}
 
     run = await queue_run(db, sess, prompt, origin=origin, on_queued=tag, ip=ip)
     return sess, run

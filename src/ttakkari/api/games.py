@@ -130,6 +130,7 @@ class RequestIn(BaseModel):
     kind: Literal["develop", "modify", "verify"] = "modify"
     instruction: str = Field(min_length=1, max_length=game_worker.MAX_INSTRUCTION_CHARS)
     build_id: uuid.UUID | None = None  # 비우면 가장 최근 성공 빌드(feedback 이 있으면 feedback.build_id)
+    auto_build: bool = True  # develop·modify 가 성공하면 소스가 바뀐 경우 자동으로 빌드한다(ADR 0054). verify 는 항상 빌드하지 않는다
     feedback: FeedbackIn | None = None  # 스크린샷 Artifact 참조(원본·주석본)·정규화 영역·캡처 빌드. worker prompt 에 열 수 있는 파일 경로로 전달된다
 
 
@@ -258,7 +259,7 @@ async def create_game(body: GameCreateIn, _: User, db: Db, request: Request) -> 
     if body.start_development:
         try:
             _sess, run = await game_worker.start_request(
-                db, game, kind="develop", ip=ip, instruction=game_create.develop_instruction(body.idea, game.name, list(body.locked_decisions)))
+                db, game, kind="develop", ip=ip, auto_build=True, instruction=game_create.develop_instruction(body.idea, game.name, list(body.locked_decisions)))
             await db.refresh(run)
             record(db, action="game.request", target_type="run", target_id=run.id, ip=ip, detail={"game": game.slug, "kind": "develop"})
             await db.commit()
@@ -381,7 +382,7 @@ async def request_work(game_id: uuid.UUID, body: RequestIn, _: User, db: Db, req
     game = await _game(db, game_id)
     try:
         _sess, run = await game_worker.start_request(db, game, kind=body.kind, instruction=body.instruction, build_id=body.build_id,
-                                                     feedback=body.feedback, ip=client_ip(request))
+                                                     feedback=body.feedback, ip=client_ip(request), auto_build=body.auto_build)
     except GameContractError as e:
         raise _http(e) from e
     await db.refresh(run)

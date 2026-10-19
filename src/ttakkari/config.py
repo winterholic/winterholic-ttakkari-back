@@ -407,6 +407,7 @@ class Settings(BaseSettings):
     # 게임 스튜디오(ADR 0046, docs/design/game-studio.md). 게임 프로젝트는 각자 git 저장소이며 이 아래 <game_slug>/ 에 둔다.
     # allowed_roots(~/development) 안이어야 워크스페이스로 등록된다. 빌드 스테이징·불변 스냅샷은 에이전트가 쓸 수 없는 data_dir 에 둔다.
     games_root: Path = HOME / "development/projects/games"
+    game_auto_build: bool = True  # 개발·수정 요청 Run 이 성공하면 자동 빌드(ADR 0054). 요청마다 auto_build=false 로 끌 수 있다
     game_build_runtime: str = "docker"  # OrbStack 이 제공하는 docker CLI
     game_build_image: str = "node:20-alpine"  # vite 7 은 Node ^20.19 필요(20.20.2 확인)
     game_build_memory_mb: int = Field(default=2048, ge=256, le=16384)

@@ -32,6 +32,7 @@ os.environ.update({
     "TTAKKARI_ALLOWED_ROOTS": json.dumps([str(ALLOWED)]),
     "TTAKKARI_DEFAULT_WORKSPACE_ROOT": str(ALLOWED / "default-root"),
     "TTAKKARI_GAMES_ROOT": str(ALLOWED / "games"),
+    "TTAKKARI_GAME_AUTO_BUILD": "false",  # 게임 요청 테스트가 격리 빌드를 몰래 띄우지 않게 한다. 자동 빌드 테스트만 켠다
     "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
     "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
     "TTAKKARI_USAGE_POLL_SECONDS": "0",

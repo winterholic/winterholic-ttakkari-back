@@ -1378,6 +1378,9 @@ class RunManager:
             _spawn(self.dispatch(parent_id))
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
         _spawn(_notify(run, sess.title if sess else None))
+        if ((run.usage or {}).get("game") or {}).get("auto_build"):
+            from ttakkari.games import autobuild
+            _spawn(autobuild.after_run(run.id))
 
     async def _commit(self, db: AsyncSession, run: Run) -> None:
         h = self._handles.get(run.id)

@@ -2,9 +2,27 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import time
+from pathlib import Path
 
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
+
+
+def fresh_dir(path: Path) -> Path:
+    """공유 games_root 위에 테스트용 디렉터리를 깨끗이 준비한다.
+
+    게임 테스트는 한 pytest 프로세스가 공유하는 games_root 아래에 고정된
+    이름으로 디렉터리를 만든다. bare mkdir()은 다른 파일이 먼저 같은 이름을
+    만들었거나 같은 테스트가 반복 실행되면 FileExistsError를 낸다. 남은
+    디렉터리·파일·심링크를 먼저 치우고 빈 디렉터리를 만든다.
+    """
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
+    return path
 
 
 async def wait_run(client, auth, run_id: str, timeout: float = 20.0) -> dict:

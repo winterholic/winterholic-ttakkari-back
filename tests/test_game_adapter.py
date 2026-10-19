@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from helpers import fresh_dir
 
 from ttakkari.config import get_settings
 from ttakkari.games.adapter import PhaserAdapter, get_adapter, resolve_project_path
@@ -73,7 +74,7 @@ def test_resolve_project_path_rejects_symlinked_game_dir(games_root: Path, tmp_p
 
 async def test_scaffold_writes_manifest_template_and_git_repo(adapter: PhaserAdapter, games_root: Path):
     m = manifest("scaffold-one")
-    root = games_root / "scaffold-one"
+    root = fresh_dir(games_root / "scaffold-one")  # 빈 디렉터리에는 scaffold 할 수 있다
     await adapter.scaffold_project(root, m)
     read, sha = read_manifest(root)
     assert read == m and len(sha) == 64
@@ -103,19 +104,16 @@ async def test_scaffold_rejects_bad_inputs(adapter: PhaserAdapter, games_root: P
 
 
 async def test_build_rejects_wrong_engine_missing_manifest_and_bad_ids(adapter: PhaserAdapter, games_root: Path):
-    root = games_root / "no-manifest"
-    root.mkdir()
+    root = fresh_dir(games_root / "no-manifest")
     with pytest.raises(GameContractError) as e:
         await adapter.build(root, "b1")
     assert e.value.code == "no_manifest"
-    godot = games_root / "godot-demo"
-    godot.mkdir()
+    godot = fresh_dir(games_root / "godot-demo")
     (godot / MANIFEST_FILE).write_text(json.dumps(manifest("godot-demo", engine="godot-4").to_json()))
     with pytest.raises(GameContractError) as e:
         await adapter.build(godot, "b1")
     assert e.value.code == "wrong_engine"
-    mismatch = games_root / "dir-mismatch"
-    mismatch.mkdir()
+    mismatch = fresh_dir(games_root / "dir-mismatch")
     (mismatch / MANIFEST_FILE).write_text(json.dumps(manifest("other-name").to_json()))
     with pytest.raises(GameContractError) as e:
         await adapter.build(mismatch, "b1")
@@ -128,8 +126,7 @@ async def test_build_rejects_wrong_engine_missing_manifest_and_bad_ids(adapter: 
 
 
 async def test_manifest_symlink_is_rejected(adapter: PhaserAdapter, games_root: Path, tmp_path: Path):
-    root = games_root / "manifest-link"
-    root.mkdir()
+    root = fresh_dir(games_root / "manifest-link")
     secret = tmp_path / "other.json"
     secret.write_text(json.dumps(manifest("manifest-link").to_json()))
     (root / MANIFEST_FILE).symlink_to(secret)

@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from helpers import fresh_dir
 from sqlalchemy import select
 from test_game_build_snapshots import (  # noqa: F401
     RUNTIME,
@@ -39,8 +40,7 @@ def fake_adapter(monkeypatch, tmp_path: Path):
 
 
 def make_repo(slug: str) -> Path:
-    root = game_dir(slug)
-    root.mkdir(parents=True)
+    root = fresh_dir(game_dir(slug))
     (root / "ttakkari-game.json").write_text(json.dumps(manifest(slug).to_json(), ensure_ascii=False))
     (root / "a.txt").write_text("v1")
     git(root, "init", "-q", "-b", "main")
@@ -108,7 +108,7 @@ async def test_register_attaches_to_existing_pms_project_and_rejects_unknown_one
 
 async def test_register_rejects_bad_paths_slugs_and_unknown_fields(client, auth, tmp_path: Path):
     assert (await register(client, auth, "no-such-game")).status_code == 404  # 저장소 없음
-    game_dir("no-manifest").mkdir()
+    fresh_dir(game_dir("no-manifest"))
     assert (await register(client, auth, "no-manifest")).json()["code"] == "no_manifest"
     for bad in ("../escape", "a/b", "UPPER-CASE", "-bad-slug", "x" * 41, "..", "/etc"):
         r = await register(client, auth, bad)

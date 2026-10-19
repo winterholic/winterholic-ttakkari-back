@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from helpers import fresh_dir
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -137,9 +138,10 @@ async def test_register_rejects_missing_dir_and_symlinked_dir(tmp_path: Path):
         with pytest.raises(GameContractError) as e:
             await register_game_project(db, manifest)
         assert e.value.code == "not_found"
-    target = get_settings().allowed_roots[0] / "real-elsewhere"
-    target.mkdir()
+    target = fresh_dir(get_settings().allowed_roots[0] / "real-elsewhere")
     link = game_dir("linked-game")
+    if link.is_symlink() or link.is_file():
+        link.unlink()  # 이전 실행이 남긴 심링크를 치운다
     link.symlink_to(target)
     async with sessionmaker()() as db:
         with pytest.raises(GameContractError) as e:

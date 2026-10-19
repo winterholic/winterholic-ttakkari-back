@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from helpers import fresh_dir
 from sqlalchemy import select
 
 from ttakkari.config import get_settings
@@ -106,11 +107,10 @@ def _cleanup_snapshots():
 
 async def make_game(slug: str, *, approve: bool = True, real: bool = False) -> tuple[uuid.UUID, Path]:
     m = manifest(slug)
-    root = game_dir(slug)
+    root = fresh_dir(game_dir(slug))  # 빈 디렉터리에는 scaffold 할 수 있다
     if real:
         await PhaserAdapter().scaffold_project(root, m)
     else:
-        root.mkdir(parents=True)
         (root / "ttakkari-game.json").write_text(__import__("json").dumps(m.to_json(), ensure_ascii=False))
         (root / "a.txt").write_text("v1")
         git(root, "init", "-q", "-b", "main")

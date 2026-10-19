@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { installBridge, publishState } from './bridge';
+import { phaserPickAt } from './pick';
 
 class MainScene extends Phaser.Scene {
   constructor() {
@@ -26,4 +27,5 @@ installBridge(() => game.canvas, {
   pause: () => game.pause(),
   resume: () => game.resume(),
   isPaused: () => game.isPaused,
+  pickAt: (x, y) => phaserPickAt(game, x, y), // 관제탑의 오브젝트 선택. 오브젝트에 setName() 을 붙이면 선택 결과의 name 으로 보인다
 });

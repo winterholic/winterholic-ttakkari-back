@@ -2,16 +2,44 @@
 // 부모는 이 canvas 를 직접 읽을 수 없고, 캡처는 게임이 직접 만들어 부모 origin 으로만 보낸다.
 // 부모 origin 은 play URL 의 #ttk-parent=<origin> 힌트로 받고, 메시지는 event.source 와 event.origin 을 모두 확인한다.
 //
-// 부모→게임 요청(모두 {type, id}): capture · pause · resume · state · save-export · save-import(+data)
-// 게임→부모 응답(모두 부모 origin 으로만): capture:result · paused · state:result · save-export:result · save-import:result
+// 부모→게임 요청(모두 {type, id}): capture · pause · resume · state · save-export · save-import(+data) · pick(+x, y: 캔버스 0~1 비율)
+// 게임→부모 응답(모두 부모 origin 으로만): capture:result · paused · state:result · save-export:result · save-import:result · pick:result
 // 게임→부모 알림(id 없음, 부모 origin 으로만): ready — 부팅을 마쳤다는 신호. 부모는 이때 이 기기에 보관한 세이브를 save-import 로 넣어 준다(ADR 0057).
 
-export type ParentRequestType = 'capture' | 'pause' | 'resume' | 'state' | 'save-export' | 'save-import';
+export type ParentRequestType = 'capture' | 'pause' | 'resume' | 'state' | 'save-export' | 'save-import' | 'pick';
 
 export interface ParentRequest {
   type: `ttakkari:${ParentRequestType}`;
   id: string;
   data?: string;
+  x?: number;
+  y?: number;
+}
+
+// pick 응답의 모양(엔진 중립). bounds 는 캔버스 대비 0~1 비율이다. 채우는 쪽은 엔진별 구현(web-phaser 는 pick.ts)이다.
+export interface PickBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface PickHit {
+  scene: string;
+  name: string;
+  type: string;
+  texture: string | null;
+  frame: string | null;
+  text: string | null;
+  container: string | null;
+  depth: number;
+  bounds: PickBounds;
+}
+
+export interface PickResult {
+  scenes: string[];
+  hits: PickHit[];
+  truncated: boolean;
 }
 
 // 하위 호환: 이전 이름. 캡처 요청도 ParentRequest 의 한 종류다.
@@ -20,7 +48,7 @@ export type CaptureRequest = ParentRequest;
 const MAX_ID_CHARS = 64;
 const MAX_SAVE_CHARS = 64 * 1024;
 const MAX_STATE_CHARS = 16 * 1024;
-const KNOWN: ReadonlySet<string> = new Set<string>(['capture', 'pause', 'resume', 'state', 'save-export', 'save-import'].map((t) => `ttakkari:${t}`));
+const KNOWN: ReadonlySet<string> = new Set<string>(['capture', 'pause', 'resume', 'state', 'save-export', 'save-import', 'pick'].map((t) => `ttakkari:${t}`));
 
 export function parentOriginFromHash(hash: string): string | null {
   const raw = new URLSearchParams(hash.replace(/^#/, '')).get('ttk-parent');
@@ -48,6 +76,11 @@ export function acceptParentMessage(
   if (type === 'ttakkari:save-import') {
     if (typeof data.data !== 'string' || data.data.length > MAX_SAVE_CHARS) return null;
     return { type, id: data.id, data: data.data };
+  }
+  if (type === 'ttakkari:pick') {
+    const { x, y } = data;
+    const inUnit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1;
+    return inUnit(x) && inUnit(y) ? { type, id: data.id, x, y } : null;
   }
   return { type, id: data.id };
 }
@@ -86,6 +119,8 @@ export interface BridgeControls {
   pause?: () => void;
   resume?: () => void;
   isPaused?: () => boolean;
+  // 오브젝트 선택. x, y 는 캔버스 0~1 비율이다. 연결하지 않은 게임은 pick 에 supported:false 로 답한다.
+  pickAt?: (x: number, y: number) => PickResult;
 }
 
 export function installBridge(canvasProvider: () => HTMLCanvasElement | null, controls: BridgeControls = {}): void {
@@ -112,6 +147,21 @@ export function installBridge(canvasProvider: () => HTMLCanvasElement | null, co
         let json = JSON.stringify(published ?? null);
         if (json.length > MAX_STATE_CHARS) json = 'null';
         reply({ type: 'ttakkari:state:result', state: JSON.parse(json) });
+        return;
+      }
+      case 'ttakkari:pick': {
+        const canvas = canvasProvider();
+        if (controls.pickAt === undefined || canvas === null || request.x === undefined || request.y === undefined) {
+          reply({ type: 'ttakkari:pick:result', supported: false, reason: 'pickAt 이 연결되지 않은 게임입니다(installBridge 의 controls.pickAt).', hits: [] });
+          return;
+        }
+        try {
+          let json = JSON.stringify(controls.pickAt(request.x, request.y));
+          if (json.length > MAX_STATE_CHARS) json = JSON.stringify({ scenes: [], hits: [], truncated: true });
+          reply({ type: 'ttakkari:pick:result', supported: true, point: { x: request.x, y: request.y }, canvas: { width: canvas.width, height: canvas.height }, ...JSON.parse(json) });
+        } catch {
+          reply({ type: 'ttakkari:pick:result', supported: false, reason: 'pick 처리 중 오류가 났습니다.', hits: [] });
+        }
         return;
       }
       case 'ttakkari:save-export': {

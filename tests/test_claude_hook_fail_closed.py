@@ -22,6 +22,18 @@ def test_hook_allows_normal_tool():
     assert output is None  # No denial output means tool proceeds normally
 
 
+def test_hook_allows_normal_bash_edit_and_pytest():
+    cases = [
+        {"tool_name": "Bash", "tool_input": {"command": "pytest -q tests/test_guard.py"}},
+        {"tool_name": "Edit", "tool_input": {"file_path": "README.md", "old_string": "a", "new_string": "b"}},
+        {"tool_name": "Bash", "tool_input": {"command": "git status --short"}},
+    ]
+    for payload in cases:
+        code, output = run_hook_with_input(json.dumps(payload))
+        assert code == 0
+        assert output is None
+
+
 def test_hook_denies_catastrophic_command():
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "sudo rm -rf /"}})
     code, output = run_hook_with_input(payload)

@@ -288,6 +288,11 @@ class Settings(BaseSettings):
 
     login_max_failures: int = 5
     login_lock_seconds: int = 15 * 60
+    login_verify_concurrency: int = Field(default=1, ge=1, le=8)
+    login_max_inflight: int = Field(default=4, ge=1, le=32)
+    login_verify_burst: int = Field(default=8, ge=1, le=64)
+    login_verify_rate_per_second: float = Field(default=1.0, gt=0.0, le=50.0)
+    login_queue_timeout_seconds: float = Field(default=1.0, gt=0.0, le=10.0)
 
     @field_validator("allowed_roots", "default_writable_roots", mode="after")
     @classmethod

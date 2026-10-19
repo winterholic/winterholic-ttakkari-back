@@ -8,6 +8,7 @@ import pytest
 from ttakkari.db import sessionmaker
 from ttakkari.models import ChatSession, Workspace
 from ttakkari.orchestrator.runtime import issue_token
+from ttakkari.security.auth import issue_access_token
 
 
 @pytest.fixture
@@ -60,6 +61,26 @@ async def test_agent_sessions_list_isolation(client, setup_sessions):
     w_titles = [s["title"] for s in resp.json()["sessions"]]
     assert "Work Session" in w_titles
     assert "Personal Session" not in w_titles
+
+
+@pytest.mark.asyncio
+async def test_agent_endpoint_rejects_missing_garbage_and_wrong_audience_tokens(client, setup_sessions):
+    personal_session, _ = setup_sessions
+    user_token, _ = issue_access_token()
+    invalid_headers = [
+        {},
+        {"Authorization": "Bearer not.a.signed.token"},
+        {"Authorization": f"Bearer {user_token}"},
+    ]
+    for headers in invalid_headers:
+        response = await client.get("/api/agent/sessions", headers=headers)
+        assert response.status_code == 401
+
+    valid = await client.get(
+        "/api/agent/sessions",
+        headers={"Authorization": f"Bearer {issue_token(personal_session.id)}"},
+    )
+    assert valid.status_code == 200
 
 
 @pytest.mark.asyncio

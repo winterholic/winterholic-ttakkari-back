@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import timedelta
 from typing import Annotated
@@ -43,6 +44,12 @@ def _clear_cookie(resp: Response) -> None:
     resp.delete_cookie(COOKIE, path=COOKIE_PATH, httponly=True, secure=s.is_prod, samesite="none" if s.is_prod else "lax")
 
 
+def _clear_cookie_header() -> str:
+    response = Response()
+    _clear_cookie(response)
+    return response.headers["set-cookie"]
+
+
 async def _issue(db: AsyncSession, request: Request, resp: Response, family: uuid.UUID | None = None) -> TokenOut:
     s = get_settings()
     raw, h = new_refresh_token()
@@ -62,34 +69,34 @@ def _check_csrf(request: Request) -> None:
     if origin and origin not in get_settings().cors_origins:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "허용되지 않은 요청 출처입니다.")
     sec_fetch_site = request.headers.get("sec-fetch-site")
-    if sec_fetch_site == "cross-site":
+    if sec_fetch_site == "cross-site" and not origin:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "교차 사이트 요청은 허용되지 않습니다.")
 
 
 @router.post("/login", response_model=TokenOut)
 async def login(body: LoginIn, request: Request, response: Response, db: Db) -> TokenOut:
     ip = client_ip(request) or "unknown"
-    wait = limiter.check(ip)
-    if wait:
-        record(db, action="auth.login", outcome="denied", detail={"reason": "locked"}, ip=ip)
+    async with limiter.admission(ip):
+        cred = await db.get(Credential, 1)
+        if cred is None:
+            limiter.refund()
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "비밀번호가 설정되지 않았습니다. 서버에서 `ttakkari set-password` 를 실행하세요.",
+            )
+        verified = await asyncio.to_thread(verify_password, cred.password_hash, body.password)
+        if not verified:
+            limiter.fail(ip)
+            record(db, action="auth.login", outcome="denied", ip=ip, user_agent=request.headers.get("user-agent"))
+            await db.commit()
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 올바르지 않습니다.")
+        limiter.success(ip)
+        if needs_rehash(cred.password_hash):
+            cred.password_hash = await asyncio.to_thread(hash_password, body.password)
+        out = await _issue(db, request, response)
+        record(db, action="auth.login", ip=ip, user_agent=request.headers.get("user-agent"))
         await db.commit()
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"로그인 시도가 너무 많습니다. {wait}초 후 다시 시도하세요.",
-                            headers={"Retry-After": str(wait)})
-    cred = await db.get(Credential, 1)
-    if cred is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "비밀번호가 설정되지 않았습니다. 서버에서 `ttakkari set-password` 를 실행하세요.")
-    if not verify_password(cred.password_hash, body.password):
-        limiter.fail(ip)
-        record(db, action="auth.login", outcome="denied", ip=ip, user_agent=request.headers.get("user-agent"))
-        await db.commit()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 올바르지 않습니다.")
-    limiter.success(ip)
-    if needs_rehash(cred.password_hash):
-        cred.password_hash = hash_password(body.password)
-    out = await _issue(db, request, response)
-    record(db, action="auth.login", ip=ip, user_agent=request.headers.get("user-agent"))
-    await db.commit()
-    return out
+        return out
 
 
 @router.post("/refresh", response_model=TokenOut)
@@ -98,25 +105,34 @@ async def refresh(request: Request, response: Response, db: Db,
     _check_csrf(request)
     if not ttk_refresh:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 없습니다.")
-    rt = await db.scalar(select(RefreshToken).where(RefreshToken.token_hash == hash_refresh(ttk_refresh)))
+    token_hash = hash_refresh(ttk_refresh)
+    rt = await db.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
     now = utcnow()
     if rt is None or rt.expires_at < now:
-        _clear_cookie(response)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 만료되었습니다.")
-    cred = await db.get(Credential, 1)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 만료되었습니다.",
+                            headers={"Set-Cookie": _clear_cookie_header()})
+    # Serialize refresh against both the same-token rotation and password changes.
+    cred = await db.scalar(select(Credential).where(Credential.id == 1).with_for_update())
+    rt = await db.scalar(
+        select(RefreshToken).where(RefreshToken.token_hash == token_hash).with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if rt is None or rt.expires_at < utcnow():
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 만료되었습니다.",
+                            headers={"Set-Cookie": _clear_cookie_header()})
     if cred is not None and cred.updated_at and rt.created_at < cred.updated_at:
         rt.revoked_at = now
         await db.commit()
-        _clear_cookie(response)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 변경되어 세션이 무효화되었습니다. 다시 로그인하세요.")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "비밀번호가 변경되어 세션이 무효화되었습니다. 다시 로그인하세요.",
+                            headers={"Set-Cookie": _clear_cookie_header()})
     if rt.revoked_at is not None:
         # 이미 교체된 토큰이 다시 쓰였다 = 탈취 가능성. 같은 계열 전부 폐기한다.
         await db.execute(update(RefreshToken).where(RefreshToken.family_id == rt.family_id, RefreshToken.revoked_at.is_(None))
                          .values(revoked_at=now))
         record(db, action="auth.refresh_reuse", outcome="denied", ip=client_ip(request), target_id=rt.family_id)
         await db.commit()
-        _clear_cookie(response)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 무효화되었습니다. 다시 로그인하세요.")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "세션이 무효화되었습니다. 다시 로그인하세요.",
+                            headers={"Set-Cookie": _clear_cookie_header()})
     rt.revoked_at = now
     out = await _issue(db, request, response, family=rt.family_id)
     await db.commit()

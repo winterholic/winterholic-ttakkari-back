@@ -331,3 +331,94 @@ console.log('PIDS ' + started + ' ' + failed); setTimeout(() => process.exit(0),
     await small.run_stage(stage, ["sh", "-c", "dd if=/dev/zero of=/work/big bs=1M count=64 2>&1; echo EXIT=$?"],
                                 stage="fsize", build_id="limits4", network="none", timeout=60)
     assert (stage / "big").stat().st_size <= 8 * 1024 * 1024
+
+
+# ---- 빌드 전 타입 검사(ADR 0058) ------------------------------------------------------------------
+
+TSC_DIAGNOSTICS = (
+    "src/game.ts(12,7): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+    "  Type detail line that continues the message\n"
+    "src/main.ts(3,1): error TS2304: Cannot find name 'foo'.\n"
+    "error TS5083: Cannot read file '/work/tsconfig.json'.\n"
+)
+
+
+def test_tsc_diagnostics_and_error_text_keep_only_error_lines():
+    assert isolation.tsc_diagnostics(TSC_DIAGNOSTICS) == [
+        "src/game.ts(12,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+        "src/main.ts(3,1): error TS2304: Cannot find name 'foo'.",
+        "error TS5083: Cannot read file '/work/tsconfig.json'.",
+    ]
+    msg = isolation.typecheck_error(2, False, TSC_DIAGNOSTICS)
+    assert msg.startswith(f"{isolation.TYPECHECK_FAILED}(tsc exit 2): 오류 3건\n")
+    assert "src/game.ts(12,7): error TS2322" in msg and "continues the message" not in msg
+    many = "\n".join(f"src/a.ts({i},1): error TS1005: x" for i in range(1, 31))
+    capped = isolation.typecheck_error(2, False, many)
+    assert "오류 30건" in capped and capped.count("error TS1005") == isolation.MAX_DIAGNOSTICS and capped.endswith("... 외 10건")
+    assert isolation.typecheck_error(None, True, "") == f"{isolation.TYPECHECK_FAILED}: 시간 초과"
+    assert "segfault" in isolation.typecheck_error(139, False, "segfault in tsc")  # 오류 줄이 없으면 로그 끝을 보여 준다
+
+
+FAKE_TSC = ("#!/usr/bin/env node\nconst fs=require('fs');\n"
+            "if(fs.existsSync('src/broken.ts')){console.log(\"src/broken.ts(1,1): error TS2322: bad\");process.exit(2)}\n"
+            "console.log('ok');\n")
+
+
+def fake_typescript_project(root: Path, *, broken: bool, with_typescript: bool = True) -> Path:
+    files = {
+        "package.json": json.dumps({"name": "g", "version": "0.0.0", "private": True, "scripts": {"build": "node build.js"},
+                                    **({"devDependencies": {"typescript": "file:./fake-ts"}} if with_typescript else {})}),
+        "tsconfig.json": "{}",
+        "build.js": "const fs=require('fs');fs.mkdirSync('dist');fs.writeFileSync('dist/index.html','<title>x</title>');",
+    }
+    if with_typescript:
+        files |= {"fake-ts/package.json": json.dumps({"name": "typescript", "version": "5.0.0", "bin": {"tsc": "tsc.js"}}), "fake-ts/tsc.js": FAKE_TSC}
+    if broken:
+        files["src/broken.ts"] = "export const x: number = 'a';"
+    return write_project(root, files)
+
+
+@requires_runtime
+async def test_typecheck_stage_runs_before_build_and_blocks_it_on_failure(runner, work, tmp_path):
+    ok = await runner.build_project(fake_typescript_project(tmp_path / "ok", broken=False), work, "tc-ok1")
+    assert ok.success, ok.log
+    assert [s.stage for s in ok.stages] == ["install", "check", "build"]
+    bad = await runner.build_project(fake_typescript_project(tmp_path / "bad", broken=True), work, "tc-bad1")
+    assert not bad.success and bad.output_dir is None
+    assert [s.stage for s in bad.stages] == ["install", "check"]  # 검사가 실패하면 빌드 스크립트는 돌지 않는다
+    assert bad.error.startswith(isolation.TYPECHECK_FAILED) and "src/broken.ts(1,1): error TS2322: bad" in bad.error
+    assert containers("tc-bad1") == ""
+    off = await runner.build_project(fake_typescript_project(tmp_path / "off", broken=True), work, "tc-off1", typecheck=False)
+    assert off.success and [s.stage for s in off.stages] == ["install", "build"]  # 설정으로 끌 수 있다
+
+
+@requires_runtime
+async def test_typecheck_is_skipped_visibly_without_typescript_or_tsconfig(runner, work, tmp_path):
+    no_ts = await runner.build_project(fake_typescript_project(tmp_path / "nots", broken=False, with_typescript=False), work, "tc-nots1")
+    assert no_ts.success, no_ts.log
+    check = next(s for s in no_ts.stages if s.stage == "check")
+    assert "타입 검사를 건너뜁니다" in check.log  # 조용히 건너뛰지 않고 로그에 남긴다
+    plain = write_project(tmp_path / "plain", {"package.json": package_json("node build.js"),
+                                               "build.js": "const fs=require('fs');fs.mkdirSync('dist');fs.writeFileSync('dist/index.html','x');"})
+    res = await runner.build_project(plain, work, "tc-plain1")
+    assert res.success and [s.stage for s in res.stages] == ["install", "build"]  # tsconfig.json 이 없으면 검사 단계 자체가 없다
+
+
+@requires_runtime
+async def test_real_template_with_type_error_fails_check_not_vite(runner, work, tmp_path):
+    """실제 typescript(템플릿 고정 버전)로 확인한다. 레지스트리 접근이 필요하다."""
+    from shutil import copytree
+
+    from ttakkari.games.adapter import PhaserAdapter
+
+    project = tmp_path / "tpl"
+    copytree(PhaserAdapter.TEMPLATE, project, ignore=lambda *_: {"node_modules", "dist"})
+    runner.limits = IsolationLimits(install_timeout=240, build_timeout=120)
+    good = await runner.build_project(project, work, "tpl-ok1")
+    assert good.success, good.log
+    assert [s.stage for s in good.stages] == ["install", "check", "build"]
+    main = project / "src" / "main.ts"
+    main.write_text(main.read_text() + "\nexport const typeError: number = 'not a number';\n")
+    bad = await runner.build_project(project, work, "tpl-bad1")
+    assert not bad.success and [s.stage for s in bad.stages] == ["install", "check"]
+    assert bad.error.startswith(isolation.TYPECHECK_FAILED) and "src/main.ts" in bad.error and "TS2322" in bad.error

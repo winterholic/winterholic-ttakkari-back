@@ -28,6 +28,8 @@ class LaunchSpec:
     # 붙일 stdio MCP 서버 {name: {command, args, env}}. 오케스트레이터 Run 에만 쓴다(ADR 0006).
     mcp_servers: dict[str, dict[str, Any]] = field(default_factory=dict)
     session_id: str | None = None
+    # 이 Run 만 claude 설정 출처를 좁힌다(예: "project,local"). 비우면 전역 설정 claude_setting_sources 를 따른다.
+    setting_sources: str | None = None
 
 
 @dataclass

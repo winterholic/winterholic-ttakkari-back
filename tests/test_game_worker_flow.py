@@ -1,6 +1,7 @@
 """게임 개발·수정 요청이 기존 세션·Run·worker routing 으로 넘어가고, 잠금 결정 위반은 빌드가 거부되는지 (TASK-G08)."""
 
 import json
+import os
 import uuid
 from pathlib import Path
 
@@ -214,3 +215,45 @@ def test_mcp_spawn_worker_exposes_game_arguments():
     sig = re.search(r"async def spawn_worker\((.*?)\) -> str:", text, re.DOTALL).group(1)
     assert "game_id: str | None = None" in sig and "game_build_id: str | None = None" in sig
     assert inspect.isfunction(test_mcp_spawn_worker_exposes_game_arguments)
+
+
+# ---- 저장소 밖 기록 쓰기 차단 (ADR 0058) -----------------------------------------------------------------
+
+
+def _split(value: str | None) -> list[str]:
+    return [p for p in (value or "").split(os.pathsep) if p]
+
+
+async def test_game_worker_run_ignores_user_level_hooks_and_protects_work_history(client, auth, fake_adapter, monkeypatch):  # noqa: F811
+    """전역 Stop 훅이 작업 기록을 강제해 worker 가 실제 ~/work-history 에 쓴 사고(설계서 §14)의 재발 방지."""
+    from ttakkari.config import get_settings
+    from ttakkari.security.guard import GuardConfig, evaluate
+
+    monkeypatch.setattr(get_settings(), "game_worker_protected_paths", ["/wh-test/work-history", "~/wh-test-home-only"])
+    game = await new_game(client, auth, "wk-nowrite", build=True)
+    req = (await ask(client, auth, game["id"], kind="modify")).json()
+    assert "게임 저장소 밖의 파일은 쓰지 않는다" in (await client.get(f"/api/runs/{req['run_id']}", headers=auth)).json()["prompt"]
+    await wait_run(client, auth, req["run_id"])
+    call = next(c for c in agent_calls() if any("wk-nowrite" in a for a in c["argv"]))
+    assert call["argv"][call["argv"].index("--setting-sources") + 1] == "project,local"  # 사용자 전역 Stop 훅·CLAUDE.md 를 읽지 않는다
+    protected = _split(call["guard_protected"])
+    assert "/wh-test/work-history" in protected and str(Path("~/wh-test-home-only").expanduser()) in protected
+    assert str(get_settings().home) in protected  # 기존 보호 영역은 유지
+    cfg = GuardConfig(write_roots=[Path(p) for p in _split(call["guard_write_roots"])], protected=[Path(p) for p in protected])
+    root = game_dir("wk-nowrite")
+    for tool, inp in (("Write", {"file_path": "/wh-test/work-history/2026-10-20.md", "content": "x"}),
+                      ("Bash", {"command": "cat >> /wh-test/work-history/2026-10-20.md <<'EOF'\nx\nEOF"}),
+                      ("Read", {"file_path": "/wh-test/work-history/2026-10-20.md"})):
+        assert evaluate(tool, inp, str(root), cfg) is not None, tool  # 게임 Run 이 쓸 수 있는 경로가 아니다
+    assert evaluate("Write", {"file_path": str(root / "src/main.ts"), "content": "x"}, str(root), cfg) is None  # 게임 저장소는 그대로 쓴다
+
+
+async def test_normal_session_run_keeps_user_settings(new_session, client, auth):
+    """게임 요청이 아닌 Run 은 그대로다: 설정 출처를 좁히지 않고 work-history 를 보호하지 않는다."""
+    from helpers import run_to_end
+
+    _, sess = await new_session()
+    await run_to_end(client, auth, sess["id"], "plain-run-marker")
+    call = next(c for c in agent_calls() if any("plain-run-marker" in a for a in c["argv"]))
+    assert "--setting-sources" not in call["argv"]
+    assert not any("work-history" in p for p in _split(call["guard_protected"]))

@@ -407,6 +407,11 @@ class Settings(BaseSettings):
     # 게임 스튜디오(ADR 0046, docs/design/game-studio.md). 게임 프로젝트는 각자 git 저장소이며 이 아래 <game_slug>/ 에 둔다.
     # allowed_roots(~/development) 안이어야 워크스페이스로 등록된다. 빌드 스테이징·불변 스냅샷은 에이전트가 쓸 수 없는 data_dir 에 둔다.
     games_root: Path = HOME / "development/projects/games"
+    # 게임 worker Run 은 게임 저장소 밖 기록(작업 기록 등)을 쓰지 않는다(ADR 0058). 이 경로는 guard 보호 영역에 더한다.
+    game_worker_protected_paths: list[str] = Field(default_factory=lambda: [
+        "~/work-history", "~/development/context-work-history", "~/development/share-work-history"])
+    # 게임 worker 의 claude 는 사용자 전역 설정(Stop 훅·CLAUDE.md)을 읽지 않는다. 전역 Stop 훅이 작업 기록을 강제해 저장소 밖에 쓰게 만들기 때문이다.
+    game_worker_claude_setting_sources: str = "project,local"
     game_auto_build: bool = True  # 개발·수정 요청 Run 이 성공하면 자동 빌드(ADR 0054). 요청마다 auto_build=false 로 끌 수 있다
     game_build_runtime: str = "docker"  # OrbStack 이 제공하는 docker CLI
     game_build_image: str = "node:20-alpine"  # vite 7 은 Node ^20.19 필요(20.20.2 확인)
@@ -414,6 +419,9 @@ class Settings(BaseSettings):
     game_build_cpus: float = Field(default=2.0, gt=0, le=16)
     game_build_pids: int = Field(default=512, ge=32, le=8192)
     game_build_install_timeout_seconds: int = Field(default=300, ge=10, le=1800)
+    # 자동 빌드가 타입 검사에서 실패하면 오류를 담아 같은 게임에 수리 요청을 이 횟수까지 자동으로 보낸다(0 이면 끔, ADR 0058)
+    game_auto_repair_attempts: int = Field(default=1, ge=0, le=3)
+    game_build_typecheck: bool = True  # 빌드 전에 격리 러너에서 tsc --noEmit 을 돌린다(ADR 0058). tsconfig.json 이 있는 게임만
     game_build_timeout_seconds: int = Field(default=300, ge=10, le=1800)
     game_build_max_source_mb: int = Field(default=200, ge=1, le=4096)
     game_build_max_output_mb: int = Field(default=200, ge=1, le=4096)

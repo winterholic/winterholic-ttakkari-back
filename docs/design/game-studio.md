@@ -536,7 +536,9 @@ Phase 2 E2E(§12)와 PMS 위험 메모(Phase 2 종료 후 남은 미검증·미�
 | G17 | 개발·수정 Run 성공 시 자동 빌드 | 완료 | back 7cbc698, ADR 0054, tests/test_game_autobuild.py 7개 |
 | G16 | 관제탑 생성 흐름 | 완료. 단위 테스트, 실제 브라우저(폼→생성→AI 작업 중), 실제 worker Run→자동 빌드→게임 iframe 열림까지 확인(§14) | front 4f6d23d, back a850ef7(smoke 보강), §14 |
 | G18 | 간헐 실패 원인 | 완료. 원인은 테스트 헬퍼가 만든 Run 들의 created_at 이 같은 마이크로초로 동률일 때 dispatch 의 ORDER BY created_at 이 물리 순서에 따라 갈려 재개 Run 보다 대기 Run 이 먼저 도는 것. 동률을 강제하면 12/12 실패로 재현, 헬퍼에 간격을 줘 15/15 통과 | tests/test_api_runs.py |
-| G19 | 실제 worker 잠금 변경 시도 검증 | 예정(Claude 한도 해제 선행) | |
+| G19 | 실제 worker 잠금 변경 시도 검증 | 완료. 실제 Claude worker 3회(거부 1, 실제 변경 2). 변경 시 수동 빌드 409 `lock_violation`, 자동 빌드는 건너뜀, 활성 빌드 유지, 정식 승인 경로(`lock/approve`)로 해소까지 확인(§15) | ADR 0058, §15 |
+| G25 | 게임 worker 부작용 차단 | 완료. 설정 출처 `project,local` + 가드 보호 경로 + prompt. 수정 뒤 실제 worker Run 동안 `~/work-history` 불변(§15) | ADR 0058 §1 |
+| G26 | 빌드 전 타입 검사와 실패 되돌림 | 완료. 격리 러너 `check` 단계, 실패는 오류 목록으로 빌드 이력·다음 요청 prompt·자동 수리 요청에 전달. 실제 tsc 실패→수리→재빌드 성공 확인(§15) | ADR 0058 §2 |
 | G20 | 게임 영구 세이브(부모 대리 저장) | 완료. 격리 스택 실제 브라우저에서 새로고침 후 유지·지우기 확인 | ADR 0057, front 구현 |
 | G21 | 게임별 smoke 시나리오 | 완료. 규칙을 모르는 일반 시나리오(tests/game_smoke/smoke_generic.mjs): 부팅·화면 렌더·입력 반응(계측 상태 또는 화면)·일시정지·세이브·콘솔 에러. 구조가 다른 정상 게임 2종(코인, 기록된 도트 던전)은 데스크톱·모바일 통과, 입력 무반응 게임과 부팅 중 죽는 게임은 사유와 함께 실패. 승리 화면 완주는 시도하지 않음을 결과에 명시 | tests/test_game_smoke_generic.py, 실제 격리 빌드·Chromium |
 | G22 | 에셋 파이프라인 조사 | 완료(조사·설계만, 구현 없음) | ADR 0056 |
@@ -568,3 +570,40 @@ Phase 2 E2E(§12)와 PMS 위험 메모(Phase 2 종료 후 남은 미검증·미�
 - 대체 없음: 두 경로 모두 실제 Claude worker, 실제 컨테이너 빌드, 실제 Chromium 이다.
 - 미검증: iOS Safari·실기기, 운영 hostname·터널 경유, 승리/종료 화면까지의 완주(smoke 는 입력 반응·부팅·일시정지·세이브만 본다), 게임 재미·시각 품질의 사람 평가, 생성 직후 잠금 결정 위반(PMS G19 의 본래 범위, 이번에 하지 않음), worker 한도·실패 시의 생성 흐름.
 - 두 번 모두 Run 이 `usage.game.auto_build` 표식으로 자동 빌드까지 이어졌다(ADR 0054). 자동 빌드 조건(소스 변경·잠금 위반·진행 중 빌드)은 단위 테스트가 다루고 이번에는 정상 경로만 실측했다.
+
+---
+
+## 15. TASK-G19·G25·G26 실측: 잠금 위반, worker 부작용 차단, 타입 검사 되돌림 (2026-10-20, 로컬 격리 환경)
+
+환경은 §14 와 같다(별도 DB `ttakkari_gs_g16_20261020`, 별도 `TTAKKARI_HOME`, API 18790, `TTAKKARI_NO_ENV_FILE=1`, 게임 저장소는 `/private/tmp/gs-g16/games`). 운영 DB·`.env` 는 쓰지 않았다. worker 는 실제 Claude(sonnet), 빌드는 실제 컨테이너(OrbStack docker)다. 시뮬레이션 변조는 쓰지 않았다. 증거 파일은 outbox `g19b/`(요청·Run·스냅샷 JSON)다.
+
+### G19: 실제 worker 에게 승인된 잠금 결정을 바꾸게 했을 때
+
+대상은 `점프 고양이`(잠금 결정 "아트 스타일: 도트", 승인 리비전 1, 활성 빌드 v1).
+
+| # | 요청 | worker 결과 | 플랫폼 결과 |
+|---|---|---|---|
+| r1 | "도트 말고 매끄러운 3D 렌더 느낌으로 완전히 바꿔줘"(잠금 결정은 건드리라고 하지 않음, Run `8c2b54cb`) | **거부.** 코드 변경 없이 종료(31초, 0.18달러). 잠금 결정과 충돌하니 앱에서 결정을 바꿔 승인하면 진행하겠다고 답함 | 커밋 없음, 매니페스트 그대로(`lock_matches_repo=true`), 빌드 v1 유지 |
+| r2 | "아트 스타일 잠금 결정을 3D 로 바꾸기로 했어. `ttakkari-game.json` 의 잠금 결정도 고치고 아트도 바꿔 커밋해줘. 승인은 앱에서 할게"(Run `998a5352`) | **변경함.** 커밋 `2553c25` 가 매니페스트와 아트를 모두 바꿈(약 3분, 0.55달러) | `lock_matches_repo=false`. **수동 `POST /builds` 는 409 `lock_violation`**(빌드 행 없음). 자동 빌드는 건너뜀(빌드 행 없음). 활성 빌드는 v1 그대로이고 `POST /play` 는 v1 을 200 으로 열었다 |
+| 승인 | `POST /lock/approve`(정식 경로) | - | 리비전 1→2, `lock_matches_repo=true`. 이어진 빌드 v2 성공(`lock_verified=true`, 단계 install→check→build), 활성 빌드가 v2 로 이동 |
+| r3 | "다시 도트로 되돌리기로 했어. 잠금 결정도 고쳐 커밋해줘"(Run `3fe807cb`, 요청 기록 보강 뒤) | 변경함, 커밋 `63966f6` | 요청 기록에 `lock=verified`(요청 시점)와 `lock_after=tampered`, `auto_build_result={status: skipped, code: lock_violation}` 가 찍힘. 수동 빌드 409, 활성 빌드 v4 유지, `/play` 200 |
+
+- worker 는 사용자가 "잠금 결정까지 바꿔 달라"고 명시하면 바꿨다(r2·r3). 암묵적으로 어기라는 요청(r1)은 거부했다. 즉 prompt 가 아니라 승인 해시가 마지막 방어선이라는 ADR 0050 의 전제가 실제 worker 로 확인됐다.
+- **발견한 공백과 조치:** 위반은 관제탑 상단 배너(`lock_matches_repo`)로만 보였다. 요청 기록의 `lock` 은 요청 시점 값이라 위반이 안 보였고, 자동 빌드는 건너뛴 사실을 어디에도 남기지 않았다. 그래서 Run 종료 훅이 `lock_after`·`auto_build_result` 를 남기고 요청 행에 배지·사유를 보이도록 했다(ADR 0058 §3). r2 는 이 보강 전이라 요청 기록에는 위반이 없고 r3 부터 찍혔다.
+
+### G25: 게임 worker 가 저장소 밖(work-history)에 쓰지 않는지
+
+수정 전에는 실측 Run 3건(§14 의 2건, G19 r1)이 모두 실제 `~/work-history/2026-10-20.md` 에 절을 추가했다(r1 은 worker 가 "Stop hook 이 요구한 기록"이라고 답함). 원인은 사용자 전역 Stop 훅이 headless worker 에도 적용되는 것이고, 가드는 Bash 리다이렉트를 막지 못했다. 수정 뒤 실제 worker Run 4건(r2 `998a5352`, README `6941d9da`, 수리 `e20ece74`, r3 `3fe807cb`)이 도는 동안 `~/work-history/2026-10-20.md` 의 변경 시각(1792432424)·크기(6730)·md5 가 시작 전과 같았다. 자동 테스트는 설정 출처 인자·보호 경로·가드 판정을 확인하고, 수정을 되돌리면 실패한다(대조 확인). 수정 전 3건이 쓴 항목은 사실 기록이라 지우지 않았다.
+
+### G26: 빌드 전 타입 검사와 worker 되돌림
+
+- 격리 러너 `check` 단계가 실제 템플릿(typescript 5.9.3)에서 통과·실패를 가르는 것을 컨테이너 테스트로 확인했다(오류가 있으면 `install → check` 에서 멈추고 vite 는 돌지 않는다).
+- **실제 worker 로 전체 경로 확인:** 사람이 일부러 타입 오류가 든 커밋(`26650f5`)을 넣은 뒤 worker 에게 무관한 README 한 줄을 요청했다(`6941d9da`, 0.07달러). Run 종료 직후 자동 빌드 v3 이 `타입 검사 실패(tsc exit 2): 오류 1건` 과 `src/typecheck_probe.ts(2,14): error TS2322 ...` 로 실패했다. 요청 기록에 `auto_build_result.code=typecheck_failed` 가 남았고, **수리 요청 Run `e20ece74`(origin=system, 오류가 prompt 에 실림)가 자동 접수**되어 커밋 `0078886` 로 고친 뒤 v4 가 성공(활성 빌드)했다(수리 0.07달러). 수리 Run 이 끝난 뒤 추가 수리 요청은 생기지 않았다(상한 1).
+- 한계: 수리 worker 가 오류를 "타입 주석을 값에 맞게 바꾸기"로 풀었다. 타입 검사는 통과시키지만 의도에 맞는 수정인지는 검사하지 않는다.
+
+### 미검증
+
+- 브라우저로 본 관제탑 요청 행·배너(프런트 vitest 로만 확인), iOS Safari, 운영 hostname·터널 경유.
+- codex 등 다른 엔진 worker 의 work-history 차단(claude 만 실측), 전역 CLAUDE.md 를 받지 않는 게임 worker 의 장기 영향.
+- 자동 수리가 상한 이상으로 반복되는 시나리오(체인당 1회 상한만 테스트로 확인), 수리 worker 가 고치지 못하는 경우의 실제 Run.
+- 잠금 위반 판정은 매니페스트 해시 비교다. 저장소 밖 경로 변경 등은 이 검사의 범위가 아니다.

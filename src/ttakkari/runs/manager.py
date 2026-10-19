@@ -11,6 +11,7 @@ import signal
 import tempfile
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -930,15 +931,19 @@ class RunManager:
                 outbox=str(outbox), write_roots=[str(p) for p in write_roots],
                 kind=str(sess.kind))
                 if prof.engine == "qwen-local" else system_note)
+            is_game = bool((run.usage or {}).get("game"))  # 게임 worker 는 저장소 밖 기록을 쓰지 않는다(ADR 0058)
             spec = LaunchSpec(
                 cwd=root, prompt=prompt, engine_session_id=resume_id,
                 model=model, effort=effort,
                 outbox=outbox, write_roots=write_roots, system_note=note_for_spec,
                 codex_sandbox=ws.codex_sandbox, mcp_servers=mcp_servers, session_id=str(sess.id),
+                setting_sources=s.game_worker_claude_setting_sources if is_game else None,
             )
             adapter = await _qwen_adapter(db) if prof.engine == "qwen-local" else ADAPTERS[prof.engine]
             env = adapter.child_env() if prof.engine == "qwen-local" else (
-                await asyncio.to_thread(prof.env, _child_env(run.id, write_roots, s.home, s.guard_log))
+                await asyncio.to_thread(prof.env, _child_env(
+                    run.id, write_roots, s.home, s.guard_log,
+                    extra_protected=[Path(p).expanduser() for p in s.game_worker_protected_paths] if is_game else ()))
             )
             await self._commit(db, run)
             attempt_start_seq = run.last_seq
@@ -1378,7 +1383,7 @@ class RunManager:
             _spawn(self.dispatch(parent_id))
         # 푸시 서버가 느려도 Run 슬롯을 붙잡지 않게 따로 띄운다.
         _spawn(_notify(run, sess.title if sess else None))
-        if ((run.usage or {}).get("game") or {}).get("auto_build"):
+        if (run.usage or {}).get("game"):  # 자동 빌드 여부와 무관하게 종료 시점의 잠금 상태를 요청 기록에 남긴다
             from ttakkari.games import autobuild
             _spawn(autobuild.after_run(run.id))
 
@@ -1657,12 +1662,13 @@ def _tmp_dirs() -> list[Path]:
     return sorted(dirs)
 
 
-def _child_env(run_id: uuid.UUID, write_roots: list[Path], home: Path, guard_log: Path) -> dict[str, str]:
+def _child_env(run_id: uuid.UUID, write_roots: list[Path], home: Path, guard_log: Path,
+               extra_protected: Iterable[Path] = ()) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(STRIP_ENV_PREFIXES) and k not in STRIP_ENV_KEYS}
     env["TTAKKARI_RUN_ID"] = str(run_id)
     env["TTAKKARI_GUARD_WRITE_ROOTS"] = os.pathsep.join(str(p) for p in write_roots)
-    env["TTAKKARI_GUARD_PROTECTED"] = str(home)
+    env["TTAKKARI_GUARD_PROTECTED"] = os.pathsep.join(str(p) for p in (home, *extra_protected))
     env["TTAKKARI_GUARD_LOG"] = str(guard_log)
     return env
 

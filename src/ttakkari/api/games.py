@@ -141,6 +141,8 @@ class RequestOut(BaseModel):
     kind: str
     build_id: uuid.UUID | None
     lock: str  # verified | tampered | unapproved | unreadable — 요청 시점의 잠금 결정 상태
+    lock_after: str | None = None  # 같은 값 집합. Run 이 끝난 시점의 상태라 worker 가 승인된 잠금 결정을 바꿨으면 tampered. 끝나기 전이면 None
+    auto_build_result: dict | None = None  # {status: succeeded|failed|skipped, code?, build_id?, seq?, message?}. 자동 빌드를 건너뛴 사유(lock_violation 등)와 타입 검사 실패
     created_at: datetime
 
 
@@ -373,7 +375,8 @@ async def play_game(game_id: uuid.UUID, body: PlayIn, _: User, db: Db, request: 
 def _request_out(run: Run) -> RequestOut:
     tag = (run.usage or {}).get(game_worker.USAGE_KEY) or {}
     return RequestOut(session_id=run.session_id, run_id=run.id, status=str(run.status), kind=tag.get("kind", ""),
-                      build_id=tag.get("build_id"), lock=tag.get("lock", ""), created_at=run.created_at)
+                      build_id=tag.get("build_id"), lock=tag.get("lock", ""), lock_after=tag.get("lock_after"),
+                      auto_build_result=tag.get("auto_build_result"), created_at=run.created_at)
 
 
 @router.post("/{game_id}/requests", response_model=RequestOut, status_code=202)

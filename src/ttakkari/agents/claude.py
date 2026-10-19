@@ -62,8 +62,9 @@ class ClaudeAdapter:
         ]
         if spec.mcp_servers:
             cmd += ["--mcp-config", str(self._write_mcp_config(spec))]
-        if s.claude_setting_sources:
-            cmd += ["--setting-sources", s.claude_setting_sources]
+        sources = spec.setting_sources or s.claude_setting_sources
+        if sources:
+            cmd += ["--setting-sources", sources]
         if spec.engine_session_id:
             cmd += ["--resume", spec.engine_session_id]
         if spec.model:

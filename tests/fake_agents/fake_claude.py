@@ -135,6 +135,8 @@ def main():
         with open(log, "a") as f:
             f.write(json.dumps({"engine": "claude", "argv": argv, "pid": os.getpid(), "cwd": os.getcwd(),
                                 "ttk_env": sorted(k for k in os.environ if k.startswith("TTAKKARI_")),
+                                "guard_protected": os.environ.get("TTAKKARI_GUARD_PROTECTED"),
+                                "guard_write_roots": os.environ.get("TTAKKARI_GUARD_WRITE_ROOTS"),
                                 "account_dir": os.environ.get("CLAUDE_CONFIG_DIR"),
                                 "mcp_config": mcp_config_meta(argv)}) + "\n")
 

@@ -8,6 +8,8 @@
 - 비root(호스트 uid:gid), 읽기 전용 루트, 전 capability drop, no-new-privileges, 메모리·CPU·pid·파일 크기·시간 제한.
 - 설치 단계: `npm ci --ignore-scripts`(프로젝트 코드는 실행하지 않는다). 컨테이너는 internal 네트워크에만 붙고
   허용 호스트 CONNECT 만 중계하는 프록시를 통해서만 나간다. 호스트(host.docker.internal)·LAN·임의 인터넷은 막힌다.
+- 검사 단계: tsconfig.json 이 있으면 `tsc --noEmit` 을 `--network none` 에서 돈다(ADR 0058). 빌드 스크립트 내용과 무관하게 돌아서
+  worker 가 호스트에서 못 하는 타입 검사를 대신하고, 실패는 vite 빌드 오류와 구분되는 오류 목록으로 돌려준다.
 - 빌드 단계: `--network none`. 프로젝트 코드는 이 단계에서만 실행된다.
 """
 
@@ -39,6 +41,30 @@ LOG_TAIL_BYTES = 200 * 1024
 CLI_ENV_KEYS = ("PATH", "HOME", "USER", "DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CONTEXT", "TMPDIR")
 
 Network = Literal["none", "egress"]
+
+# 타입 검사 실패 오류 문구의 머리말. autobuild 가 worker 에게 되돌릴 실패를 가려내는 표식으로 쓴다.
+TYPECHECK_FAILED = "타입 검사 실패"
+MAX_DIAGNOSTICS = 20
+_TSC_DIAGNOSTIC_RE = re.compile(r"error TS\d+:")
+# typescript 가 설치돼 있지 않으면 검사할 수 없으니 건너뛰고 로그에 남긴다(빌드 자체는 계속한다).
+_TYPECHECK_SCRIPT = ("if [ -x node_modules/.bin/tsc ]; then node_modules/.bin/tsc --noEmit --pretty false; "
+                     "else echo '[check] typescript 가 설치되어 있지 않아 타입 검사를 건너뜁니다.'; fi")
+TYPECHECK_COMMAND = ["sh", "-c", _TYPECHECK_SCRIPT]
+
+
+def tsc_diagnostics(log: str) -> list[str]:
+    """tsc --pretty false 출력에서 오류 줄만 뽑는다(src/a.ts(3,5): error TS2322: ...). 이어지는 들여쓴 설명 줄은 버린다."""
+    return [ln.strip() for ln in log.splitlines() if _TSC_DIAGNOSTIC_RE.search(ln)]
+
+
+def typecheck_error(exit_code: int | None, timed_out: bool, log: str) -> str:
+    if timed_out:
+        return f"{TYPECHECK_FAILED}: 시간 초과"
+    diags = tsc_diagnostics(log)
+    head = f"{TYPECHECK_FAILED}(tsc exit {exit_code}): 오류 {len(diags)}건" if diags else f"{TYPECHECK_FAILED}(tsc exit {exit_code})"
+    shown = diags[:MAX_DIAGNOSTICS]
+    more = f"\n... 외 {len(diags) - len(shown)}건" if len(diags) > len(shown) else ""
+    return head + ("\n" + "\n".join(shown) + more if shown else "\n" + log.strip()[-1500:])
 
 
 class IsolationError(Exception):
@@ -376,12 +402,14 @@ class IsolatedBuildRunner:
         return StageResult(stage, code, timed_out, time.monotonic() - started, log)
 
     async def build_project(self, source_dir: Path, work_dir: Path, build_id: str, *, build_script: str = "build",
-                            keep_stage: bool = False) -> IsolatedBuildResult:
-        """source_dir 를 스테이징 복사 → 설치(egress·스크립트 없음) → 빌드(네트워크 없음) → dist 검증·복사.
+                            keep_stage: bool = False, typecheck: bool | None = None) -> IsolatedBuildResult:
+        """source_dir 를 스테이징 복사 → 설치(egress·스크립트 없음) → 타입 검사(네트워크 없음) → 빌드(네트워크 없음) → dist 검증·복사.
 
         work_dir/<build_id>/out 에 산출물이 남는다. 이미 있는 build_id 는 거부해 이전 산출물을 덮어쓰지 않는다.
         """
         _check_build_id(build_id)
+        if typecheck is None:
+            typecheck = get_settings().game_build_typecheck
         if not re.fullmatch(r"[A-Za-z0-9:_-]{1,40}", build_script):
             raise IsolationError("빌드 스크립트 이름이 올바르지 않습니다.", "bad_script")
         result = IsolatedBuildResult(success=False, build_id=build_id)
@@ -404,6 +432,13 @@ class IsolatedBuildRunner:
             if not inst.ok:
                 result.error = "의존성 설치 시간 초과" if inst.timed_out else f"의존성 설치 실패(exit {inst.exit_code})"
                 return result
+            if typecheck and (stage_dir / "tsconfig.json").is_file():
+                checked = await self.run_stage(stage_dir, TYPECHECK_COMMAND, stage="check", build_id=build_id, network="none",
+                                               timeout=self.limits.build_timeout)
+                result.stages.append(checked)
+                if not checked.ok:
+                    result.error = typecheck_error(checked.exit_code, checked.timed_out, checked.log)
+                    return result
             built = await self.run_stage(stage_dir, ["npm", "run", build_script], stage="build", build_id=build_id,
                                          network="none", timeout=self.limits.build_timeout)
             result.stages.append(built)

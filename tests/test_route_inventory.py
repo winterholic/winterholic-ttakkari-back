@@ -449,6 +449,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/stocks/tossinvest/login-help"): "owner-scoped",
     ("GET", "/api/stocks/tossinvest/runs"): "owner-scoped",
     ("GET", "/api/stocks/tossinvest/status"): "owner-scoped",
+    ("GET", "/api/system/backup-status"): "owner-plain",
     ("GET", "/api/system/info"): "owner-plain",
     ("GET", "/api/system/qwen-worker"): "owner-plain",
     ("GET", "/api/system/resources"): "owner-plain",

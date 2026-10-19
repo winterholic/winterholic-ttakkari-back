@@ -2,7 +2,8 @@
 
 백업 스크립트가 성공할 때마다 BACKUP_DIR/latest.json(DB)과
 latest-data.json(데이터 스냅샷)을 원자적으로 갱신한다.
-여기에는 비밀·토큰이 없다. 개수·해시·경로만 있다.
+API 응답은 허용 목록 필드(개수·해시·시각)만 내보낸다.
+상태 파일에 임의 필드·전체 경로가 섞여 있어도 절대 반환하지 않는다.
 """
 from __future__ import annotations
 
@@ -12,6 +13,25 @@ from pathlib import Path
 
 DB_STATUS_FILE = "latest.json"
 DATA_STATUS_FILE = "latest-data.json"
+
+# API로 내보내도 안전한 필드만 둔다. 경로(manifest·dump_file·archive)와
+# 그 외 임의 필드는 여기에 없어서 응답에 나갈 수 없다.
+_COMMON_FIELDS: dict[str, type] = {
+    "kind": str,
+    "created_at": str,
+    "sha256": str,
+    "encrypted": bool,
+}
+_DB_FIELDS: dict[str, type] = {
+    **_COMMON_FIELDS,
+    "tables": int,
+    "rows": int,
+}
+_DATA_FIELDS: dict[str, type] = {
+    **_COMMON_FIELDS,
+    "file_count": int,
+    "total_bytes": int,
+}
 
 
 def backup_dir() -> Path:
@@ -31,9 +51,24 @@ def read_status_file(path: Path) -> dict | None:
     return body
 
 
+def sanitize(section: str, body: dict | None) -> dict | None:
+    """허용 목록 필드만 type 검사와 함께 추린다. 경로·임의 필드는 버린다."""
+    if not isinstance(body, dict):
+        return None
+    allow = _DB_FIELDS if section == "db" else _DATA_FIELDS
+    clean: dict = {}
+    for key, want in allow.items():
+        value = body.get(key)
+        if isinstance(value, want):
+            clean[key] = value
+    if not clean.get("created_at"):
+        return None
+    return clean
+
+
 def backup_status(root: Path | str | None = None) -> dict:
     base = Path(root) if root else backup_dir()
     return {
-        "db": read_status_file(base / DB_STATUS_FILE),
-        "data": read_status_file(base / DATA_STATUS_FILE),
+        "db": sanitize("db", read_status_file(base / DB_STATUS_FILE)),
+        "data": sanitize("data", read_status_file(base / DATA_STATUS_FILE)),
     }

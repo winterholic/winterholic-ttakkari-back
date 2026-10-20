@@ -1,10 +1,11 @@
-# 로컬 TTS 설계: 별도 생성 페이지와 채팅 음성 재생 (개정 3판)
+# 로컬 TTS 설계: 별도 생성 페이지와 채팅 음성 재생 (개정 4판)
 
-- 상태: 설계. 검증대기 (2026-10-20 3차 독립 검증 지적 5건 반영 개정). 이 단계에서는 기능 코드를 변경하지 않는다.
+- 상태: 설계. 검증대기 (2026-10-20 4차 독립 검증 지적 2건 반영 개정). 이 단계에서는 기능 코드를 변경하지 않는다.
 - 날짜: 2026-10-20.
 - 관련: [ADR 0025](../adr/0025-on-demand-local-stt.md), [ADR 0026](../adr/0026-local-first-meetings.md), [ADR 0027](../adr/0027-retire-clovanote.md), [ADR 0028](../adr/0028-stt-quality-and-speaker-utterances.md), [STT 안내](../stt/README.md), [API 계약](../api-contract.md), ADR [0062](../adr/0062-local-tts.md).
 - **엔진 상태 (2026-10-20 기준)**: Kokoro-82M은 한국어 음성이 없어 한국어 품질 미달로 확인되었고(사용자 전달 사항. 벤치 보고 원문은 이번 개정에서 읽지 않았다), 대체 모델은 사용자가 결정한다. 이 설계는 `TtsProvider` 추상화(§4.1)로 엔진 중립을 유지한다. 본문에서 Kokoro를 전제로 둔 수치(TTFA 목표, 스레드 수, 청크 길이, 모델 경로 등)는 모두 **[엔진 결정 후 재측정]** 으로 표기하며 확정값이 아니다. 엔진 결정 전에는 구현(WBS 5 이후)에 착수하지 않는다.
 - 3차 검증 지적 반영 위치: 원문 수명 §8.2, 취소 경합·terminal 상태 확정 §8.3.2, drain/claim §8.3.3·§8.3.4, 소유자 생존 §8.3.5, GET 응답 §7.2.
+- 4차 검증 지적 반영 위치: draining 정리와 세대 퇴역의 순서 보장 §8.3.3(퇴역 차단 guard), 사망 확인의 읽기 시점 규칙 §8.3.5, Bearer 근거 경로 정정 §7.2.
 
 ## 1. 사용자 결정 (확정)
 
@@ -134,16 +135,16 @@ HTTP 오류 본문은 전역 핸들러가 `{code, message}`로 고정한다(`mai
 
 | 상황 | HTTP | 본문 | 근거 |
 |---|---|---|---|
-| Bearer 없음·무효·만료 | 401 | `{code:"unauthorized"}` | 인증 실패는 `api/auth.py:118-145` 계열과 같은 401. job 조회 전에 판정 |
+| Bearer 없음·무효·만료 | 401 | `{code:"unauthorized"}` | 핸들러가 `_: User`(`security.auth.User` = `Depends(require_user)`, 기존 사용례 `api/meetings.py:35, 109`)를 받으면 `security/auth.py:58-72`가 헤더 없음·Bearer 아님(`:62`), 만료(`:68`), 무효(`:70`)를 `WWW-Authenticate: Bearer`와 함께 401로 낸다. job 조회 전에 판정된다. (`api/auth.py`는 로그인·refresh 쿠키 엔드포인트이며 Bearer 검증 근거가 아니다) |
 | `id`가 UUID 형식이 아님 | 404 | `{code:"not_found"}` | 경로 인자를 `str`로 받아 직접 파싱한다. `uuid.UUID` 타입 인자로 두면 전역 검증 핸들러가 422를 내므로(`main.py:279-284`) 쓰지 않는다 |
 | 존재하지 않는 job | 404 | `{code:"not_found"}` | |
-| 접근 권한이 없는(타 소유자) job | 404 | `{code:"not_found"}` | 존재 여부를 노출하지 않으려고 미존재와 같은 응답. 현재 단일 소유자 시스템(`Credential id=1`, `api/auth.py:126`)이라 이 분기는 실제로 발생하지 않으며, 다중 소유자가 생기면 job에 소유 식별자 컬럼을 추가해 같은 404로 처리한다 |
+| 접근 권한이 없는(타 소유자) job | 404 | `{code:"not_found"}` | 존재 여부를 노출하지 않으려고 미존재와 같은 응답. 현재 단일 소유자 시스템(토큰 `sub`가 `owner`가 아니면 거부, `security/auth.py:32, 65`)이라 이 분기는 실제로 발생하지 않으며, 다중 소유자가 생기면 job에 소유 식별자 컬럼을 추가해 같은 404로 처리한다 |
 | 접근 가능한 job | 200 | `{status: queued|running|succeeded|failed|cancelled, ...}` | `failed`·`cancelled`도 HTTP 200이다. 410은 쓰지 않는다 |
 | DB·세대 전환 보류 | 503 | `{code:"deploying"}` 등 | `generation_service.py:252-258`의 기존 동작 |
 
 - 200 본문 규칙: `status="failed"`면 `error_code`와 `retryable`(재요청으로 해결 가능한지)을 둔다. `status="cancelled"`는 `error_code` 없음. `succeeded`는 `chunks`와 `audio_full_url`을 둔다. 이전 판의 "인증·404까지 모두 200" 해석은 철회한다. 200으로 일원화되는 범위는 접근 가능한 job의 상태 구분뿐이다.
-- `error_code` 목록(§8.3 전이표와 1:1): `input_ttl_expired`, `generation_draining`, `owner_shutdown`, `owner_process_terminated`, `server_restarted`(세대 미사용 모드), `worker_failed`, `worker_timeout`, `input_missing`. `retryable`은 앞의 여섯 개와 `worker_timeout`이 true, `worker_failed`는 false다(입력 문제일 수 있어 같은 입력 재시도가 무의미할 수 있음).
-- 이전 판의 `drained_without_completion`, `server_restarted_input_purged`는 폐기한다. 전자는 §8.3.3의 `generation_draining`이 대체하고, 후자는 사망 확인 규칙(§8.3.5) 하의 `owner_process_terminated`가 대체한다.
+- `error_code` 목록(§8.3 전이표와 1:1): `input_ttl_expired`, `generation_draining`, `owner_shutdown`, `owner_gone`, `server_restarted`(세대 미사용 모드), `worker_failed`, `worker_timeout`, `input_missing`. `retryable`은 앞의 여섯 개와 `worker_timeout`이 true, `worker_failed`는 false다(입력 문제일 수 있어 같은 입력 재시도가 무의미할 수 있음).
+- 이전 판의 `drained_without_completion`, `server_restarted_input_purged`는 폐기한다. 전자는 §8.3.3의 `generation_draining`이 대체하고, 후자는 사망 확인 규칙(§8.3.5) 하의 `owner_gone`가 대체한다.
 
 ## 8. 데이터·저장·원문 인메모리 수명 및 Generation 정책
 
@@ -208,16 +209,37 @@ terminal 상태는 `succeeded`, `failed`, `cancelled`이며 **terminal에서 나
 - **취소 감지**: DELETE를 받은 세대가 소유 세대와 다를 수 있다. 소유 세대는 (1) 실행 중 `runtime_poll_seconds`(기본 5초, `config.py:109`)보다 짧은 주기로 자기 running job의 `status`를 읽어 `cancelled`면 워커 태스크를 취소한다(취소 시 `run_json_worker`의 `finally`가 kill 후 `wait`한다, `model_process.py:81-84`), (2) claim 직전에는 claim UPDATE 자체가 0행이 되어 실행되지 않으며, (3) 성공 확정 직전에도 UPDATE 조건이 막는다. 감지 주기 값은 구현 시 정한다(확인 필요).
 - 같은 세대가 DELETE를 받은 경우에는 같은 UPDATE 후 즉시 로컬 태스크 취소와 원문 해제를 수행한다.
 
-#### 8.3.3 drain: 하나로 확정
+#### 8.3.3 drain: 하나로 확정 (정리와 퇴역의 순서 보장 포함)
 
-**결정: draining 세대는 이미 `running`인 job만 끝낸다. 아직 claim되지 않은 `queued` job은 구 세대가 계속 처리하지 않고, draining 진입을 감지하는 즉시 자기 소유 queued job을 `failed(generation_draining, retryable)`로 확정하고 원문을 비운다. 클라이언트는 이 코드를 받으면 브라우저에 남은 텍스트로 재요청한다.**
+**결정: draining 세대는 이미 `running`인 job만 끝낸다. 아직 claim되지 않은 `queued` job은 구 세대가 계속 처리하지 않고 자기 소유 queued를 `failed(generation_draining, retryable)`로 확정하고 원문을 비운다. 이 정리가 끝나기 전에는 세대가 퇴역하지 못하도록 TTS가 기존 퇴역 차단 장치에 "queued guard 태스크"를 등록한다. 공유 세대 코드(`work`·`can_retire`·`ready`)는 변경하지 않는다.**
 
-- 이유 1: "구 세대가 drain 동안 queued까지 계속 처리"하려면 draining에서도 `work()`가 True를 주도록 `generation.py`를 바꾸거나 `can_retire()`에 `_pending_texts`를 넣어야 한다. 두 곳은 STT·벡터 등 모든 세대 큐가 공유하므로 TTS 때문에 바꾸지 않는다.
-- 이유 2: queued 원문은 구 세대 메모리에만 있다. 새 세대는 가질 수 없으므로 인수가 불가능하다. 가만두면 `can_retire()`가 참이 되는 순간 소리 없이 사라진다. 그래서 퇴역 전에 명시적으로 실패를 확정해야 한다.
-- 구현: TTS consumer는 `generation_service.consume()`을 그대로 쓰지 않는다. `consume`은 `work()`가 False이면 `next_job`을 부르지 않아(`generation_service.py:105-107`) draining 분기를 넣을 수 없고, 이를 바꾸면 STT에 영향이 간다. 그래서 `tts/jobs.py`가 같은 `generation.work("tts")` 프리미티브로 자체 루프를 둔다. 루프는 매 틱 `runtime.state`를 보고 `draining`(또는 active가 아닌 상태)이면 `UPDATE tts_jobs SET status='failed', error_code='generation_draining' WHERE status='queued' AND owner_id=:me`를 실행하고 `_pending_texts`를 비운다. running job은 건드리지 않으며 `work()` 블록 안의 실행이 끝나면 `can_retire()`가 참이 된다.
-- `POST /api/tts/jobs`는 세대가 active가 아니면 접수하지 않고 503을 돌려준다(§7). 판정과 `activate()` 사이의 경합으로 접수된 job은 위 틱이 계속 반복되므로 다음 틱에 정리된다.
-- 정상 종료(lifespan 종료 시, `generation_service.py:229`의 `jobs.stop()` 옆에 TTS 정지 추가 필요): 소유한 queued·running을 `failed(owner_shutdown)`으로 확정하고 워커를 취소·회수한 뒤 원문을 비운다. SIGKILL이면 이 경로가 없으므로 §8.3.5가 처리한다.
-- 미측정 항목: drain 진행 중 구 세대의 장시간 running job이 새 세대 TTS를 지연시키는 시간은 [엔진 결정 후 재측정].
+**4차 검증이 지적한 결함**: 이전 판은 TTS 루프가 draining을 감지해 queued를 실패시키되, 그 정리 완료를 세대 퇴역 판정이 알지 못했다. `can_retire()`는 `_pending_texts`를 보지 않으므로(`generation.py:289-291`) 정리 전에 퇴역하면 DB에는 `queued`가 남고 원문만 사라질 수 있었다.
+
+**퇴역이 실제로 결정되는 경로(코드 확인)**:
+- 외부 deployer가 `/api/ready`를 호출한다(`generation_deployment.py:239-249`, 라우트 `api/system.py:73-82`).
+- `/api/ready`의 `drain_ready`는 `runtime.can_retire() and not (manager._handles or pending)`이다(`generation_service.py:158-168`, 즉 `:166`). `pending`은 미완료 태스크 수이며 `runs.manager._background`, assistant 인덱싱 태스크, `usage_store._tasks`, 벡터 `_pending`을 센다(`generation_service.py:159-165`). **`_background`는 모듈 수준 `set[asyncio.Task]`이며 이 목록에 태스크가 있는 동안 `drain_ready`는 False다**(`runs/manager.py:1681`, 등록·제거 방식 `:1705-1709`).
+- deployer는 이전 세대의 `drain_ready`가 참일 때만 퇴역시키고(`generation_deployment.py:710-713`), `stop()`도 `drain_ready`가 아니면 거부한다(`generation_deployment.py:294-297`). 퇴역은 `launchctl bootout`이다(`:301`).
+- `bootout`이 보내는 종료 신호 뒤에는 lifespan 정리가 돈다(`generation_service.py:229`의 `jobs.stop()` 등). 그러나 이 정리가 끝까지 실행된다는 보장(종료 유예 시간)은 저장소에서 설정을 찾지 못했다(확인 필요). 그래서 정상 경로의 순서 보장을 정리 루틴에 기대지 않는다.
+
+**확정한 설계 (우선 검토 대안 중 (b)에 해당: 이미 있는 퇴역 차단 장치 사용)**:
+1. **불변식 G**: "이 프로세스가 소유한 `queued` TTS job이 하나라도 있는 동안, `runs.manager._background`에 미완료 `tts-queued-guard` 태스크가 반드시 존재한다." 따라서 `drain_ready`는 소유 queued가 모두 claim되거나(`running`이 되면 `work("tts")`가 `_work`에 있어 `can_retire()`가 False, `generation.py:291`) terminal이 될 때까지 False다. 공유 코드는 건드리지 않고 `generation_service.ready()`가 이미 읽는 집합에 태스크를 넣을 뿐이다(`ready()`가 `_background`를 import하는 방식과 같음, `generation_service.py:159-163`).
+2. **guard 생성 시점**: `POST /api/tts/jobs` 핸들러가 DB에 job을 커밋하기 **전에** `ensure_guard()`를 호출한다(이미 살아 있으면 재사용, `asyncio.Lock`으로 생성·종료 판정을 직렬화). 핸들러가 실행되는 동안은 `http_inflight`도 올라가 있어(`InflightMiddleware`, `generation_service.py:259-267`, `/api/ready`·`/api/health`·`/api/version`만 제외) `can_retire()`가 False이므로, "queued는 있는데 guard가 없는" 순간은 없다.
+3. **guard 본문**: 주기(`runtime_poll_seconds`, 기본 5초, `config.py:109`)마다 `runtime.refresh()`로 상태를 읽는다. 상태가 active가 아니면 `UPDATE tts_jobs SET status='failed', error_code='generation_draining' WHERE status='queued' AND owner_id=:me`(§8.3.2의 CAS)를 실행하고 해당 `_pending_texts`를 비운다. 소유 queued가 DB에 0건이고 `_pending_texts`에 queued 키가 없을 때(락 안에서 재확인) 종료한다. 종료하면 `_background`에서 사라져(`runs/manager.py:1709`과 같은 done 콜백) `drain_ready`가 참이 될 수 있다. active 상태에서는 정리하지 않고 queued가 claim으로 소진될 때 종료한다.
+4. **running job**: consumer는 `generation.work("tts")` 블록 안에서 claim부터 `execute` 종료까지 실행하므로 `_work`에 `tts`가 있고(`generation.py:261-277`) `can_retire()`가 False다(`:291`). 즉 running은 기존 장치만으로 퇴역을 막고, 이번 guard는 그 앞단(미claim queued)만 메운다.
+5. **세대 미사용 모드**(`generation.current is None`): 퇴역이 없으므로 guard를 만들지 않는다.
+6. **퇴역 신호 이후의 정상 정리**: `drain_ready` 참 → bootout → lifespan 종료 시 `tts` 정지가 남은 소유 job(이 시점에는 없어야 함)을 `failed(owner_shutdown)`으로 확정하고 guard 태스크를 취소한다. `_background`는 종료 시 취소되지 않으므로(`runs/manager.py`에 해당 처리가 없음) TTS가 자기 guard를 직접 취소한다.
+7. **비정상 종료(SIGKILL·크래시·강제 종료)**: guard도 정리도 실행되지 않는다. 이 경우는 §8.3.5의 사망 증거 규칙(읽기 시점 규칙과 새 세대 정리)이 `failed(owner_gone, retryable)`로 수렴시킨다. 이 경로는 정상 드레인의 순서 보장이 아니라 비정상 종료의 수렴 보장이다.
+
+**기각한 대안**:
+- **(c) `can_retire()`/`ready()` 확장**: `generation.py:289-291`과 `generation_service.py:158-168`은 Run 세대 전환의 핵심이며 STT·벡터 등 모든 큐와 deployer 판정이 공유한다. TTS 전용 조건을 넣으면 모든 배포의 퇴역 조건이 바뀐다. 이미 있는 `_background` 집합으로 같은 효과를 낼 수 있어 채택하지 않는다. 필요해지면 STT 영향(`work("stt")` 경로는 `_work`로 이미 차단되어 변화 없음)과 `tests/`의 세대 관련 테스트 영향을 먼저 확인한다.
+- **(a) 단독(읽기 시점 규칙 + 새 세대 정리만)**: 정상 퇴역에서도 job이 잠시 `queued`로 보이고 원문은 사라진 상태가 생기며, 소유자가 이미 종료된 뒤에야 사용자가 실패를 본다. 비정상 종료의 안전망으로는 필요하지만 정상 드레인의 순서 보장으로는 부족하다. 그래서 (b)를 주 경로로, (a)를 비정상 종료의 보조 규칙으로 둔다.
+
+- 이유 1(계속 처리안 배제): "구 세대가 drain 동안 queued까지 계속 처리"하려면 draining에서도 `work()`가 True를 주도록 `generation.py`를 바꾸거나 `can_retire()`에 `_pending_texts`를 넣어야 한다. 모든 세대 큐가 공유하는 코드라 TTS 때문에 바꾸지 않는다.
+- 이유 2(인수 불가): queued 원문은 구 세대 메모리에만 있어 새 세대가 인수할 수 없다. 그래서 퇴역 전에 명시적으로 실패를 확정해야 하고, 위 guard가 그 순서를 강제한다.
+- 소비 루프: TTS consumer는 `generation_service.consume()`을 쓰지 않고 같은 `generation.work("tts")` 프리미티브로 자체 루프를 둔다. `consume`은 `work()`가 False이면 `next_job`을 부르지 않기 때문이다(`generation_service.py:105-107`). draining 정리는 consumer가 아니라 위 guard가 맡는다.
+- `POST /api/tts/jobs`는 세대가 active가 아니면 접수하지 않고 503을 돌려준다(§7). 판정과 `activate()` 사이에 접수된 job은 2번의 순서(guard 먼저, 커밋 나중)와 `http_inflight` 때문에 guard가 살아 있는 상태로 queued가 되고 3번이 정리한다.
+- 정상 종료 시 소유 job은 `failed(owner_shutdown)`(위 6번).
+- 미측정 항목: drain 중 구 세대의 장시간 running job이 새 세대 TTS를 지연시키는 시간은 [엔진 결정 후 재측정]. guard 주기(5초)가 드레인 완료 시각에 더하는 지연은 최대 한 주기다.
 
 #### 8.3.4 세대별 원자적 claim 조건
 
@@ -243,7 +265,8 @@ RETURNING id
 - **사망 증거(허용 목록)**: (1) `<home>/runtime/<owner_id>.lock`의 `flock(LOCK_EX|LOCK_NB)`이 성공함. OS가 프로세스 종료 시 해제하며, 세대 등록이 같은 방식을 쓴다(`generation.py:112-136`). (2) `runtime_generations.state='offline'`(`close()`의 정상 종료 `:310-317`, 또는 등록 시 잠금 획득 성공으로 표시한 경우 `:128-136`).
 - **사망 증거가 아닌 것**: `heartbeat_at` 경과, HTTP·DB 타임아웃, PID 단독 비교(재사용 가능). 코드 머리말이 이를 금지한다(`generation.py:1-4`). `_notebooklm_jobs`가 하트비트 경과로 정리하는 것(`generation_service.py:135-139`)은 다른 도메인 정책이며 TTS는 따르지 않는다.
 - **규칙**: 위 증거를 확인하기 전에는 다른 세대의 job을 `failed`로 만들거나 인수하지 않는다. 증거가 없으면(잠금을 얻지 못함, `runtime_generations`에 행이 없음 포함) 아무것도 하지 않고 운영 지표에만 남긴다. 정리를 서두르다 살아 있는 구 세대의 job을 실패시키는 것이 더 나쁘다.
-- **정리 절차**: active 세대의 TTS consumer가 틱마다 `owner_id != :me`인 non-terminal 행의 소유자를 검사한다. 잠금을 얻을 수 있어 사망이 확인되면 `UPDATE ... SET status='failed', error_code='owner_process_terminated' WHERE status IN ('queued','running') AND owner_id=:dead`(§8.3.2의 CAS)를 실행한다. `running` 행은 부모 감시가 1초 폴링이므로(`model_process.py:88`) 확인 후 유예 시간(값은 구현 시 측정, 확인 필요)을 두고 정리하며, 그동안 §8.3.4의 `NOT EXISTS running`이 새 claim을 막는다.
+- **읽기 시점 규칙**: `GET`·`DELETE`가 non-terminal job을 읽고 `owner_id != :me`이면, 응답 전에 위 사망 증거를 확인한다. 증거가 확인되면 그 자리에서 CAS(`WHERE status IN ('queued','running') AND owner_id=:dead`)로 `failed(owner_gone, retryable)`을 확정하고 그 결과를 200으로 돌려준다. 증거가 없으면 실제 상태(`queued`·`running`)를 그대로 돌려준다. 이 규칙도 heartbeat를 보지 않는다. 쓰기 없이 "실패로 간주"만 하지 않고 CAS로 확정하는 이유는 같은 job이 이후 응답에서 다른 상태로 보이는 것을 막기 위해서다.
+- **정리 절차**: active 세대의 TTS consumer가 기동 시 한 번, 그 뒤 틱마다 `owner_id != :me`인 non-terminal 행의 소유자를 검사한다. 잠금을 얻을 수 있어 사망이 확인되면 `UPDATE ... SET status='failed', error_code='owner_gone' WHERE status IN ('queued','running') AND owner_id=:dead`(§8.3.2의 CAS)를 실행한다. `running` 행은 부모 감시가 1초 폴링이므로(`model_process.py:88`) 확인 후 유예 시간(값은 구현 시 측정, 확인 필요)을 두고 정리하며, 그동안 §8.3.4의 `NOT EXISTS running`이 새 claim을 막는다.
 - **세대 미사용 모드**: 단일 프로세스를 가정하고 시작 시 non-terminal 행을 `failed(server_restarted)`로 확정한다. STT의 `start()`가 running을 queued로 되돌리는 것과 같은 가정이다(`jobs.py:312-317`). 세대 모드로 전환 배포할 때 소유자가 `runtime_generations`에 없는 잔존 행은 자동 인수하지 않고 운영자가 확인한다.
 - [미검증] 위 흐름의 경합(사망 확인 직후 같은 id의 세대가 재등록하는 경우 등)은 세대 id가 프로세스마다 새 `uuid4`(`generation.py:100`)이므로 같은 `owner_id`가 부활하지 않는다는 점에 기댄다. 구현 시 테스트로 확인한다.
 
@@ -316,7 +339,8 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
   - 상태 전이(§8.3.2): terminal에서 나가는 전이가 영향 행 0인지, **DELETE 후 worker의 succeeded UPDATE가 0행이어서 `cancelled`가 유지되는지**, 반대 순서(succeeded 후 DELETE는 현재 상태를 돌려줌), owner가 다른 세대의 UPDATE는 0행인지.
   - claim(§8.3.4): 다른 `owner_id`의 queued를 claim하지 않음, running 행이 있으면 claim 0행, `FOR UPDATE SKIP LOCKED`로 두 consumer가 같은 행을 잡지 않음.
 - **원문 수명 검증**: 취소·실패·TTL·drain에서 `_pending_texts`가 비워지는지, 실행 중에는 감독기 계약상 부모가 원문을 보유함을 테스트 주석으로 명시(**"stdin 직후 해제"를 단정하는 테스트는 만들지 않는다**), `result_metadata`에 원문이 없는지.
-- **세대·사망 확인 검증**: draining 전환 시 자기 소유 queued가 `failed(generation_draining)`이 되고 running은 끝까지 가는지, `heartbeat_at`만 오래된 소유자의 job은 건드리지 않는지, `<owner_id>.lock`을 얻을 수 있을 때만 `owner_process_terminated`로 정리하는지, 사망한 소유자의 running 행이 정리될 때까지 새 claim이 막히는지.
+- **퇴역 순서 검증(4차)**: 소유 queued가 있는 동안 `ready()`(`generation_service.py:158-168`)의 `drain_ready`가 False이고 `finalizers`에 guard가 잡히는지, draining 전환 뒤 guard가 queued를 `failed(generation_draining)`으로 확정하고 원문을 비운 **다음에만** `drain_ready`가 True가 되는지, running job이 있는 동안은 `_work` 때문에 False인지, POST가 처리 중이면 `http_inflight`로 False인지, guard 종료 판정과 새 POST의 경합(락)이 queued를 guard 없이 남기지 않는지, 세대 미사용 모드에서는 guard가 만들어지지 않는지.
+- **세대·사망 확인 검증**: draining 전환 시 자기 소유 queued가 `failed(generation_draining)`이 되고 running은 끝까지 가는지, `heartbeat_at`만 오래된 소유자의 job은 건드리지 않는지, `<owner_id>.lock`을 얻을 수 있을 때만 `owner_gone`로 정리하는지, 사망한 소유자의 running 행이 정리될 때까지 새 claim이 막히는지.
 - **동시성 및 간섭 검증 [엔진 결정 후 재측정]**: STT(4스레드)와 TTS(엔진 결정 후 확정) 동시 실행 시 상호 RTF 저하율 실측.
 - **모바일 실기기 검증**: iOS 17+ Safari/PWA 실기기 체크리스트 검증.
 
@@ -377,7 +401,8 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 7. 프론트엔드 작업 전 front 저장소 분기(`ahead 3, behind 73`) 및 작업 트리 정리.
 8. Alembic 다음 번호 (구현 시점 최신 head 기준 확정).
 9. 캐시 미스 job의 청크 조기 재생 미지원과 사용자 요구의 간극(§7.1) 확인.
-10. 기존 코드 변경이 필요한 최소 지점: `generation_service.py` lifespan에 TTS start/stop 등록(STT의 `jobs.start/stop` 옆, 줄 `:218`, `:229`), 필요하면 `generation.py`에 사망 확인 공개 헬퍼 추가(기존 `_lock` 재사용, 동작 불변). `model_process.py`·`consume`·`work`·`can_retire`는 변경하지 않는다.
+10. 기존 코드 변경이 필요한 최소 지점: `generation_service.py` lifespan에 TTS start/stop 등록(STT의 `jobs.start/stop` 옆, 줄 `:218`, `:229`), 필요하면 `generation.py`에 사망 확인 공개 헬퍼 추가(기존 `_lock` 재사용, 동작 불변). `model_process.py`·`consume`·`work`·`can_retire`·`ready()`는 변경하지 않는다. 퇴역 순서 보장은 `runs.manager._background` 집합을 TTS 모듈이 직접 쓰는 방식이라, 이 집합을 `ready()`가 읽는 현재 구조(`generation_service.py:159-165`)에 의존한다. 그 구조가 바뀌면 §12의 퇴역 순서 테스트가 먼저 깨지도록 한다.
+11. guard 주기(5초)와 사망 확인 유예·취소 감지 주기의 실제 값은 구현 시 측정(확인 필요). launchd의 종료 유예 설정은 저장소에서 찾지 못했다.
 
 ## 부록 A. 작업 로그
 
@@ -385,3 +410,4 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 - 2026-10-20: 1차 독립 검증 반영 개정 (역사적 기록: 당시 ADR 0061→0062 이동 및 미추적 0053/0054 감안 0055 임시 언급 논의).
 - 2026-10-20: 2차 독립 재검증 지적 반영 전면 정정 (원문 보관 인메모리 확정 및 DB 원문 부재를 데이터 최소화 방침으로 명시, 과장된 물리 소멸 표현 삭제, Generation 소유권 및 구 세대 job 복구 금지/fencing 확정, HTTP 200 failed 계약 일원화, /speak와 /jobs 직렬 락 명시, run_json_worker 배치 계약 정합, Alembic 0055 예약 전면 제거, iOS play Promise rejection 및 재터치 복구 필수화, CPU/스레드 미측정 결론 제거 및 STT 설정 출처 확인, 부모 감시-프로세스 수명 모순 수정, 한자어 날짜 시월 발음 정정, Kokoro 게이트 범위 정정, PMS/WBS 1 검증대기 전환).
 - 2026-10-20: 3차 독립 검증 지적 5건 반영 (개정 3판). (1) 원문 수명: `run_json_worker`가 자식 종료까지 `request` 참조를 유지함을 코드로 확인하고 "stdin 직후 해제" 철회, 기존 감독기 무변경(§2.1, §8.2). (2) 취소 경합: 모든 전이를 owner·이전 상태 조건부 UPDATE로 확정(§8.3.2). (3) drain/claim: draining 세대는 running만 완료하고 자기 소유 queued는 `generation_draining`으로 실패 확정, 세대별 원자적 claim 조건 명시(§8.3.3, §8.3.4). (4) 소유자 생존: heartbeat 만료는 사망 증거가 아니며 flock·offline 상태 확인 전에는 구 세대 job을 실패·인수하지 않음(§8.3.5). (5) GET: 401/404/200+status 구분(§7.2). Kokoro 한국어 미달과 대체 모델 사용자 결정을 반영해 Kokoro 전제 수치를 [엔진 결정 후 재측정]으로 표기, `/speak`·`/jobs` 예산 단위를 세대 모드 파일 잠금으로 정정(§6).
+- 2026-10-20: 4차 독립 검증 지적 2건 반영 (개정 4판). (1) draining 정리와 세대 퇴역의 순서: `drain_ready`는 `_background` 등 미완료 태스크가 있으면 False임을 코드로 확인(`generation_service.py:158-168`, `runs/manager.py:1681, 1705-1709`)하고, TTS가 소유 queued가 있는 동안 `_background`에 queued guard 태스크를 두도록 확정. `can_retire`/`ready` 변경은 기각, 읽기 시점 규칙·새 세대 정리는 비정상 종료 보조(§8.3.3, §8.3.5). 사망 코드명 `owner_process_terminated`를 `owner_gone`으로 통일. (2) Bearer 근거를 `api/auth.py`에서 `security/auth.py:58-72`로 정정(§7.2).

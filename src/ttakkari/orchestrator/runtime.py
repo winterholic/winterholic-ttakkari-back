@@ -205,10 +205,8 @@ def issue_token(session_id: uuid.UUID, run_id: uuid.UUID | None = None) -> str:
     return jwt.encode(payload, s.jwt_secret, algorithm=ALGO)
 
 
-async def require_orchestrator(
-    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> uuid.UUID:
+async def _authenticate(creds: HTTPAuthorizationCredentials | None, db: AsyncSession) -> tuple[uuid.UUID, uuid.UUID | None]:
+    """토큰을 검증해 (세션 ID, Run ID)를 돌려준다. 레거시 토큰은 Run ID 가 None 이다."""
     if creds is None or creds.scheme.lower() != "bearer":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "인증이 필요합니다.")
     try:
@@ -219,7 +217,7 @@ async def require_orchestrator(
     run_id = claims.get("rid")
     if run_id is None:
         # 레거시 토큰(rid 없음): 기존 테스트·배포 세대 전환 중 draining Run 과 호환을 위해 그대로 인정한다.
-        return sid
+        return sid, None
     try:
         run_uuid = uuid.UUID(run_id)
     except (ValueError, AttributeError, TypeError) as e:
@@ -229,10 +227,26 @@ async def require_orchestrator(
     # 캐시를 두지 않는다. 단일 사용자 규모에서 PK 조회 1회는 무시할 수준이고, 캐시 TTL 만큼 폐기가 늦어진다.
     if run is None or run.status != RunStatus.running:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "종료된 Run 의 토큰입니다.")
-    return sid
+    return sid, run_uuid
+
+
+async def require_orchestrator(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> uuid.UUID:
+    return (await _authenticate(creds, db))[0]
+
+
+async def require_orchestrator_run(
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> tuple[uuid.UUID, uuid.UUID | None]:
+    """세션과 토큰에 묶인 Run 을 함께 돌려준다. 산출물을 호출한 Run 에 연결해야 하는 엔드포인트용이다."""
+    return await _authenticate(creds, db)
 
 
 OrchestratorSession = Annotated[uuid.UUID, Depends(require_orchestrator)]
+OrchestratorRun = Annotated[tuple[uuid.UUID, uuid.UUID | None], Depends(require_orchestrator_run)]
 
 
 def mcp_server_spec(session_id: uuid.UUID, role: str = "agent",

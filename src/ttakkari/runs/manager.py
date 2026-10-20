@@ -1603,8 +1603,10 @@ class RunManager:
         for resolved, source, rel in found:
             if source == "agent_output":
                 # 실행 중 share_file 로 이미 올린 파일은 여기서 중복 등록하지 않는다(같은 파일이 두 탭에 쌓이지 않게).
+                # share 는 호출한 Run 이 아닌 행에 붙을 수 있으므로 Run 이 아니라 (세션, 원본 경로)로 판별한다.
+                # 다른 세션이 같은 경로를 등록한 행은 그 세션의 보관함 항목이라 이 세션의 수집을 막지 않는다.
                 dup = await db.scalar(select(Artifact.id).where(
-                    Artifact.deleted_at.is_(None), Artifact.run_id == run.id,
+                    Artifact.deleted_at.is_(None), Artifact.session_id == run.session_id,
                     Artifact.original_path == str(resolved.path)).limit(1))
                 if dup is not None:
                     continue

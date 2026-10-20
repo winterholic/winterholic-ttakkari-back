@@ -671,10 +671,13 @@ async def test_account_resuming_own_conversation_gets_turns_it_missed(client, au
 
 def test_limit_wording_and_reset_time_variants():
     from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
 
+    # 월·일을 고정 문자열로 두면 그 날 오후 3시가 지난 뒤에는 다음 해로 넘어가 None 이 되므로 현재 기준으로 만든다.
+    tomorrow = datetime.now(ZoneInfo("Asia/Seoul")) + timedelta(days=1)
     msgs = [
         "You've hit your weekly limit · resets 3pm (Asia/Seoul)",
-        "You've hit your limit · resets Oct 20, 3pm (Asia/Seoul)",
+        f"You've hit your limit · resets {tomorrow:%b} {tomorrow.day}, 3pm (Asia/Seoul)",
         "Weekly limit reached ∙ resets Mon 3pm (Asia/Seoul)",
         "You're out of extra usage · resets 7:20pm",
     ]

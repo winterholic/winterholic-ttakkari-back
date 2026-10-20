@@ -37,9 +37,11 @@ from ttakkari.models import (
     Memo,
     PreviewStatus,
     Run,
+    RunStatus,
     Workspace,
     utcnow,
 )
+from ttakkari.orchestrator.runtime import OrchestratorRun
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.planner import kr_holidays
 from ttakkari.planner import service as planner
@@ -241,8 +243,9 @@ async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSessi
 
 
 @router.post("/share")
-async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
+async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any]:
     """에이전트가 만든(또는 찾은) 파일을 사용자 보관함(파일)에 올린다. 공유는 사용자에게 넘기겠다는 명시 신호다. 실행 위치·권한 폴더·inbox 안의 파일만."""
+    sid, token_run_id = caller
     sess = await _session(db, sid)
     ws = await db.get(Workspace, sess.workspace_id)
     assert ws is not None
@@ -259,7 +262,10 @@ async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
                                                         "message": "실행 위치·권한 폴더 안의 일반 파일만 공유할 수 있어요."})
     # 수집·공유 사이의 조회-후-생성 경합을 막으려고 세션 행을 잠근다(dispatch 와 같은 순서: 세션 먼저).
     await db.execute(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
-    run_id = await db.scalar(select(Run.id).where(Run.session_id == sid).order_by(Run.created_at.desc()).limit(1))
+    # 세션의 최신 Run 은 대기 중인 다음 Run 일 수 있어 호출한 Run 이 아니다. 토큰에 묶인 Run 을 쓰고,
+    # Run 에 묶이지 않은 레거시 토큰만 실행 중인 가장 최근 Run 으로 대신한다.
+    run_id = token_run_id or await db.scalar(select(Run.id).where(
+        Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
     # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않고 파일로 옮긴다. 같은 파일이 두 탭에 쌓이지 않게.
     existing = await db.scalar(select(Artifact).where(
         Artifact.deleted_at.is_(None), Artifact.session_id == sid,

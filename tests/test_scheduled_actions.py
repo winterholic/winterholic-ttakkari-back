@@ -373,3 +373,121 @@ async def test_quota_wait_persists_resume_after_across_restart(new_session):
     # resume_after 가 있으므로 manager._waiting 에 다시 re-arm 되었는지 확인
     assert run.id in manager._waiting
     assert abs(manager._waiting[run.id][0] - saved_ts) < 1.0
+
+
+async def _insert(**kw) -> uuid.UUID:
+    from ttakkari.models import ScheduledAction
+    async with sessionmaker()() as db:
+        row = ScheduledAction(**{"payload": {}, "status": "pending", **kw})
+        db.add(row)
+        await db.commit()
+        return row.id
+
+
+async def test_unknown_action_type_is_left_for_newer_generation():
+    """구세대(draining)가 모르는 신규 액션 타입을 집어 실패로 소진시키면 신세대가 실행할 기회를 잃는다."""
+    sid = await _insert(action_type="future_action_type", due_at=utcnow() - timedelta(seconds=5))
+    for _ in range(4):
+        await process_due_schedules(owner_id="old-gen")
+    async with sessionmaker()() as db:
+        row = await get_schedule(db, sid)
+        assert (row.status, row.attempts) == ("pending", 0)
+
+
+async def test_create_rejects_unsupported_action_type():
+    async with sessionmaker()() as db:
+        with pytest.raises(ValueError, match="unsupported"):
+            await create_schedule(db, action_type="no_such_action", due_at="+5m")
+
+
+async def test_expired_lease_reacquire_does_not_duplicate_send_message(new_session):
+    """리스가 만료돼 다른 폴러가 재획득해도 send_message 는 Run 을 한 번만 만든다."""
+    _ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    async with sessionmaker()() as db:
+        item = await create_schedule(db, action_type="send_message", due_at="-10s",
+                                     payload={"session_id": str(sid), "message": "한 번만"})
+    now = utcnow()
+    async with sessionmaker()() as db:
+        first = await acquire_due_schedules(db, owner_id="gen-a", lease_duration_seconds=60, now=now)
+        await db.commit()
+        assert [s.id for s in first] == [item.id]
+    async with sessionmaker()() as db:
+        second = await acquire_due_schedules(db, owner_id="gen-b", now=now + timedelta(seconds=120))
+        await db.commit()
+        assert [s.id for s in second] == [item.id]
+    await execute_action(first[0])
+    await execute_action(second[0])
+    async with sessionmaker()() as db:
+        from sqlalchemy import func, select
+        n = await db.scalar(select(func.count()).select_from(Run).where(Run.session_id == sid, Run.prompt == "한 번만"))
+        assert n == 1
+
+
+async def test_stale_owner_cannot_overwrite_newer_lease_or_cancel():
+    from ttakkari.schedules import complete_schedule
+    async with sessionmaker()() as db:
+        item = await create_schedule(db, action_type="stop_all", due_at="-10s")
+    now = utcnow()
+    async with sessionmaker()() as db:
+        a = (await acquire_due_schedules(db, owner_id="gen-a", now=now))[0]
+        attempt_a = a.attempts
+        await db.commit()
+    async with sessionmaker()() as db:
+        b = (await acquire_due_schedules(db, owner_id="gen-b", now=now + timedelta(seconds=120)))[0]
+        await db.commit()
+        assert b.attempts == attempt_a + 1
+    async with sessionmaker()() as db:  # 늦게 끝난 A 의 완료 기록은 무시돼야 한다
+        await complete_schedule(db, item.id, result={"x": 1}, owner_id="gen-a", attempt=attempt_a)
+        await db.commit()
+        row = await get_schedule(db, item.id)
+        assert (row.status, row.owner_id) == ("leased", "gen-b")
+
+
+async def test_cancel_during_execution_is_not_overwritten(monkeypatch):
+    from ttakkari.schedules import service
+    async with sessionmaker()() as db:
+        item = await create_schedule(db, action_type="stop_all", due_at="-10s")
+
+    async def fake_execute(schedule, now=None):
+        async with sessionmaker()() as db:
+            assert await cancel_schedule(db, schedule.id)
+        return {"ok": 1}
+
+    monkeypatch.setattr(service, "execute_action", fake_execute)
+    await process_due_schedules(owner_id="gen-a")
+    async with sessionmaker()() as db:
+        assert (await get_schedule(db, item.id)).status == "cancelled"
+
+
+async def test_exhausted_lease_is_marked_failed_not_stuck():
+    sid = await _insert(action_type="stop_all", due_at=utcnow() - timedelta(minutes=5), status="leased",
+                        owner_id="dead-gen", leased_until=utcnow() - timedelta(minutes=1), attempts=3, max_attempts=3)
+    await process_due_schedules(owner_id="gen-a")
+    async with sessionmaker()() as db:
+        row = await get_schedule(db, sid)
+        assert row.status == "failed"
+        assert "lease" in (row.last_error or "")
+
+
+async def test_lease_is_renewed_while_action_runs(monkeypatch):
+    """실행이 리스 시간보다 길어도 다른 폴러가 같은 작업을 다시 집지 못한다."""
+    from ttakkari.schedules import service
+    async with sessionmaker()() as db:
+        item = await create_schedule(db, action_type="stop_all", due_at="-10s")
+    calls = []
+
+    async def slow_execute(schedule, now=None):
+        calls.append(schedule.id)
+        await asyncio.sleep(1.6)
+        return {"ok": 1}
+
+    monkeypatch.setattr(service, "execute_action", slow_execute)
+    task = asyncio.create_task(process_due_schedules(owner_id="gen-a", lease_seconds=0.9))
+    await asyncio.sleep(1.3)
+    async with sessionmaker()() as db:
+        stolen = await acquire_due_schedules(db, owner_id="gen-b")
+        await db.commit()
+    await task
+    assert stolen == []
+    assert calls == [item.id]

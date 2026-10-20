@@ -75,7 +75,10 @@ async def coordinate(runtime, manager) -> None:
                     await usage_store.load_latest(db, refresh=True)
                 await resume_queued()
                 from ttakkari.schedules import process_due_schedules
-                await process_due_schedules(owner_id=f"gen-{runtime.id}")
+                # work 잠금으로 감싸 주기 작업(schedules)과 겹치지 않게 하고, 실행 중에는 세대가 퇴역하지 않게 한다.
+                async with generation.work("schedules") as acquired:
+                    if acquired:
+                        await process_due_schedules(owner_id=f"gen-{runtime.id}")
         except asyncio.CancelledError:
             raise
         except Exception:

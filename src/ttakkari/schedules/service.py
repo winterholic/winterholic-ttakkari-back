@@ -5,13 +5,15 @@ SELECT FOR UPDATE SKIP LOCKED 로 복수 세대/프로세스 환경에서 중복
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari import generation
@@ -28,6 +30,7 @@ from ttakkari.models import (
 log = logging.getLogger(__name__)
 
 SUPPORTED_ACTIONS = frozenset({"stop_all", "cancel_run", "send_message"})
+LEASE_SECONDS = 60.0
 
 
 def parse_due_at(val: str | datetime | float, base: datetime | None = None) -> datetime:
@@ -64,6 +67,8 @@ async def create_schedule(
     max_attempts: int = 3,
 ) -> ScheduledAction:
     """영속 예약 작업을 등록하고 DB에 커밋한다. 활성 세대에 NOTIFY wake를 전송한다."""
+    if action_type not in SUPPORTED_ACTIONS:
+        raise ValueError(f"unsupported scheduled action type: {action_type}")
     parsed_due = parse_due_at(due_at)
     action_payload = dict(payload or {})
 
@@ -126,15 +131,32 @@ async def acquire_due_schedules(
     db: AsyncSession,
     owner_id: str,
     limit: int = 10,
-    lease_duration_seconds: float = 60.0,
+    lease_duration_seconds: float = LEASE_SECONDS,
     now: datetime | None = None,
 ) -> list[ScheduledAction]:
-    """도래한 예약 작업을 FOR UPDATE SKIP LOCKED 로 중복 없이 차지한다."""
+    """도래한 예약 작업을 FOR UPDATE SKIP LOCKED 로 중복 없이 차지한다.
+
+    이 세대가 모르는 action_type 은 건드리지 않는다. 배포 중 구세대가 신규 타입을 집어 실패로
+    소진시키면 신세대가 실행할 기회를 잃는다.
+    """
     now = now or utcnow()
     leased_until = now + timedelta(seconds=lease_duration_seconds)
+    # 실행 중 프로세스가 죽어 리스가 만료됐고 시도 횟수도 바닥난 작업은 영원히 leased 로 남지 않게 닫는다.
+    await db.execute(
+        update(ScheduledAction)
+        .where(
+            ScheduledAction.status == "leased",
+            ScheduledAction.leased_until < now,
+            ScheduledAction.attempts >= ScheduledAction.max_attempts,
+            ScheduledAction.action_type.in_(SUPPORTED_ACTIONS),
+        )
+        .values(status="failed", last_error="lease expired after max attempts", updated_at=now)
+        .execution_options(synchronize_session=False)
+    )
     stmt = (
         select(ScheduledAction)
         .where(
+            ScheduledAction.action_type.in_(SUPPORTED_ACTIONS),
             or_(
                 ScheduledAction.status == "pending",
                 and_(
@@ -201,38 +223,58 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
             sess = await db.get(ChatSession, session_id)
             if sess is None:
                 raise ValueError(f"ChatSession {session_id} not found")
-            run = await queue_run(db, sess, prompt, origin=RunOrigin.orchestrator)
+            # 리스 만료 뒤 재실행돼도 Run 이 중복 생성되지 않도록 예약 id 를 멱등 키로 쓴다.
+            run = await queue_run(db, sess, prompt, origin=RunOrigin.orchestrator,
+                                  request_key=f"schedule:{schedule.id}")
         log.info("scheduled send_message executed for session %s: run %s queued", session_id, run.id)
         return {"queued_run_id": str(run.id), "session_id": str(session_id)}
 
     raise ValueError(f"unsupported scheduled action type: {action}")
 
 
+async def _own_lease(db: AsyncSession, schedule_id: uuid.UUID, owner_id: str | None,
+                     attempt: int | None) -> ScheduledAction | None:
+    """아직 내가 쥔 리스인 행만 돌려준다. 취소됐거나 리스가 다른 폴러로 넘어갔으면 None."""
+    item = await db.get(ScheduledAction, schedule_id, with_for_update=True, populate_existing=True)
+    if item is None or item.status != "leased":
+        return None
+    if owner_id is not None and (item.owner_id != owner_id or item.attempts != attempt):
+        return None
+    return item
+
+
 async def complete_schedule(
     db: AsyncSession,
     schedule_id: uuid.UUID,
     result: dict[str, Any] | None = None,
-) -> None:
-    """예약 작업의 정상 완료 또는 만료를 기록한다."""
-    item = await db.get(ScheduledAction, schedule_id)
+    *,
+    owner_id: str | None = None,
+    attempt: int | None = None,
+) -> bool:
+    """예약 작업의 정상 완료 또는 만료를 기록한다. 리스를 잃었거나 취소됐으면 기록하지 않고 False."""
+    item = await _own_lease(db, schedule_id, owner_id, attempt)
     if item is None:
-        return
+        return False
     is_expired = result and result.get("status") == "expired"
     item.status = "expired" if is_expired else "completed"
     item.executed_at = utcnow()
     item.result = result
     item.updated_at = utcnow()
+    return True
 
 
 async def fail_schedule(
     db: AsyncSession,
     schedule_id: uuid.UUID,
     error: str,
-) -> None:
+    *,
+    owner_id: str | None = None,
+    attempt: int | None = None,
+) -> bool:
     """예약 작업의 실패를 기록하고, 최대 시도 횟수 미만이면 재시도 가능하게 돌린다."""
-    item = await db.get(ScheduledAction, schedule_id)
+    item = await _own_lease(db, schedule_id, owner_id, attempt)
     if item is None:
-        return
+        return False
     item.last_error = error[:2000]
     item.updated_at = utcnow()
     if item.attempts >= item.max_attempts:
@@ -240,35 +282,63 @@ async def fail_schedule(
     else:
         item.status = "pending"
         item.leased_until = None
+    return True
+
+
+async def _renew_lease(schedule_id: uuid.UUID, owner_id: str, attempt: int, lease_seconds: float) -> None:
+    """실행이 리스보다 길어져도 다른 폴러가 같은 작업을 다시 집지 못하게 리스를 연장한다."""
+    while True:
+        await asyncio.sleep(lease_seconds / 3)
+        try:
+            async with sessionmaker()() as db:
+                item = await _own_lease(db, schedule_id, owner_id, attempt)
+                if item is None:
+                    return
+                item.leased_until = utcnow() + timedelta(seconds=lease_seconds)
+                await db.commit()
+        except Exception:
+            log.warning("scheduled action %s lease renewal failed", schedule_id, exc_info=True)
+
+
+async def _run_leased(item: ScheduledAction, owner: str, now: datetime | None, lease_seconds: float) -> None:
+    schedule_id, attempt = item.id, item.attempts
+    async with sessionmaker()() as db:
+        # 차지한 뒤 실행 직전에 취소됐으면 실행하지 않는다.
+        if await _own_lease(db, schedule_id, owner, attempt) is None:
+            return
+    renewer = asyncio.create_task(_renew_lease(schedule_id, owner, attempt, lease_seconds))
+    try:
+        try:
+            res = await execute_action(item, now=now)
+            error = None
+        except Exception as exc:
+            log.exception("scheduled action %s failed", schedule_id)
+            res, error = None, str(exc)
+    finally:
+        renewer.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await renewer
+    async with sessionmaker()() as db:
+        if error is None:
+            recorded = await complete_schedule(db, schedule_id, result=res, owner_id=owner, attempt=attempt)
+        else:
+            recorded = await fail_schedule(db, schedule_id, error=error, owner_id=owner, attempt=attempt)
+        await db.commit()
+    if not recorded:
+        log.warning("scheduled action %s finished but its lease was cancelled or taken over", schedule_id)
 
 
 async def process_due_schedules(
     owner_id: str | None = None,
     limit: int = 10,
     now: datetime | None = None,
+    lease_seconds: float = LEASE_SECONDS,
 ) -> int:
-    """도래한 예약 작업을 차지하고 실행 후 결과를 저장한다. 실행된 작업 수를 반환한다."""
+    """도래한 예약 작업을 차지하고 실행 후 결과를 저장한다. 처리한 작업 수를 반환한다."""
     owner = owner_id or f"runner-{uuid.uuid4().hex[:8]}"
     async with sessionmaker()() as db:
-        items = await acquire_due_schedules(db, owner_id=owner, limit=limit, now=now)
+        items = await acquire_due_schedules(db, owner_id=owner, limit=limit, lease_duration_seconds=lease_seconds, now=now)
         await db.commit()
-
-    if not items:
-        return 0
-
-    processed = 0
     for item in items:
-        try:
-            res = await execute_action(item, now=now)
-            async with sessionmaker()() as db:
-                await complete_schedule(db, item.id, result=res)
-                await db.commit()
-            processed += 1
-        except Exception as exc:
-            log.exception("scheduled action %s failed", item.id)
-            async with sessionmaker()() as db:
-                await fail_schedule(db, item.id, error=str(exc))
-                await db.commit()
-            processed += 1
-
-    return processed
+        await _run_leased(item, owner, now, lease_seconds)
+    return len(items)

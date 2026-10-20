@@ -24,6 +24,7 @@ from ttakkari.db import sessionmaker
 from ttakkari.games import builds as game_builds
 from ttakkari.games import create as game_create
 from ttakkari.games import origin as game_origin
+from ttakkari.games import versions as game_versions
 from ttakkari.games import worker as game_worker
 from ttakkari.games.adapter import resolve_project_path
 from ttakkari.games.contract import (
@@ -107,6 +108,62 @@ class BuildOut(BaseModel):
 class BuildDetailOut(BuildOut):
     log_tail: str | None
     snapshot_verified: bool | None = None  # verify=true 로 요청했을 때만 채운다
+
+
+class FeedbackSummaryOut(BaseModel):
+    annotations: int = 0  # 화면 표시(영역·화살표·그림) 개수
+    picked: int = 0  # 선택한 오브젝트 개수
+    clip_frames: int = 0  # 플레이 영상에서 고른 화면 개수
+    has_screenshot: bool = False
+
+
+class VersionRequestOut(BaseModel):
+    """이 버전(또는 이 버전을 기준으로 한 요청)의 worker 요청. Run.usage.game 표식과 prompt 에서 읽는다."""
+    run_id: uuid.UUID
+    session_id: uuid.UUID
+    kind: str
+    status: str
+    instruction: str  # 사용자가 적은 요청 본문(공백을 접고 200자로 자름). prompt 에서 읽지 못하면 빈 문자열
+    base_build_id: uuid.UUID | None  # 요청 시점에 기준으로 삼은 빌드
+    base_build_seq: int | None
+    feedback: FeedbackSummaryOut | None
+    repair_attempt: int
+    lock_after: str | None
+    created_at: datetime
+
+
+class VersionOut(BuildOut):
+    is_active: bool
+    produced_by: VersionRequestOut | None  # 이 빌드를 만든 요청(자동 빌드). 수동 빌드·복구 빌드는 None
+    requests_on: int  # 이 버전을 기준으로 접수된 요청 수
+    feedback_requests_on: int  # 그중 시각 피드백이 붙은 요청 수
+
+
+class SourceFileOut(BaseModel):
+    path: str
+    added: int | None  # 바이너리는 None
+    deleted: int | None
+
+
+class SourceCommitOut(BaseModel):
+    sha: str
+    subject: str
+
+
+class SourceDiffOut(BaseModel):
+    base_build_id: uuid.UUID
+    head_build_id: uuid.UUID
+    available: bool
+    reason: str = ""  # available=False 일 때 사람이 읽을 사유
+    same_commit: bool = False
+    base_dirty: bool = False  # 저장 전 변경이 포함된 빌드라 git 비교가 실제 소스와 다를 수 있다
+    head_dirty: bool = False
+    files_total: int = 0
+    insertions: int = 0
+    deletions: int = 0
+    files: list[SourceFileOut] = Field(default_factory=list)
+    commits: list[SourceCommitOut] = Field(default_factory=list)
+    commits_truncated: bool = False
 
 
 class PlayIn(BaseModel):
@@ -313,6 +370,48 @@ async def get_build(game_id: uuid.UUID, build_id: uuid.UUID, _: User, db: Db, ve
     if verify:
         out.snapshot_verified = await asyncio.to_thread(game_builds.verify_snapshot, build)
     return out
+
+
+def _version_out(v: game_versions.VersionRow) -> VersionOut:
+    produced = None
+    if v.produced_by is not None:
+        r = v.produced_by
+        fb = r.feedback
+        produced = VersionRequestOut(
+            run_id=r.run_id, session_id=r.session_id, kind=r.kind, status=r.status, instruction=r.instruction, base_build_id=r.base_build_id,
+            base_build_seq=v.base_seq, repair_attempt=r.repair_attempt, lock_after=r.lock_after, created_at=r.created_at,
+            feedback=FeedbackSummaryOut(annotations=int(fb.get("annotations") or 0), picked=int(fb.get("picked") or 0), clip_frames=int(fb.get("clip_frames") or 0),
+                                        has_screenshot=bool(fb.get("artifact_id") or fb.get("annotated_artifact_id"))) if fb else None)
+    return VersionOut(**BuildOut.model_validate(v.build).model_dump(), is_active=v.is_active, produced_by=produced,
+                      requests_on=v.requests_on, feedback_requests_on=v.feedback_requests_on)
+
+
+@router.get("/{game_id}/versions", response_model=list[VersionOut])
+async def list_versions(game_id: uuid.UUID, _: User, db: Db, limit: int = Query(100, ge=1, le=200)) -> list[VersionOut]:
+    """버전 이력 탐색용: 빌드마다 만든 요청(요청문·피드백 종류·기준 버전)과 이 버전에 걸린 요청 수를 붙인다. 읽기 전용이다."""
+    game = await _game(db, game_id)
+    active = await game_builds.effective_active_build(db, game)
+    return [_version_out(v) for v in await game_versions.list_versions(db, game, active.id if active else None, limit)]
+
+
+@router.get("/{game_id}/compare", response_model=SourceDiffOut)
+async def compare_versions(game_id: uuid.UUID, base: uuid.UUID, head: uuid.UUID, _: User, db: Db) -> SourceDiffOut:
+    """두 빌드의 소스 변경(파일별 증감·커밋 제목)을 게임 저장소 git 객체에서 읽어 돌려준다. 저장소·빌드는 바꾸지 않는다."""
+    game = await _game(db, game_id)
+    a, b = await db.get(GameBuild, base), await db.get(GameBuild, head)
+    if a is None or b is None or a.game_id != game.id or b.game_id != game.id:
+        raise HTTPException(404, {"code": "no_build", "message": "이 게임의 빌드가 아닙니다."})
+    ws = await db.get(Workspace, game.workspace_id)
+    if ws is None:
+        raise HTTPException(404, {"code": "no_workspace", "message": "게임의 workspace 를 찾을 수 없습니다."})
+    try:
+        diff = await game_versions.source_diff(resolve_project_path(Path(ws.root_path)), a.source_commit, b.source_commit)
+    except GameContractError as e:
+        raise _http(e) from e
+    return SourceDiffOut(
+        base_build_id=a.id, head_build_id=b.id, available=diff.available, reason=diff.reason, same_commit=diff.same_commit,
+        base_dirty=a.source_dirty, head_dirty=b.source_dirty, files_total=diff.files_total, insertions=diff.insertions, deletions=diff.deletions,
+        files=[SourceFileOut(**f) for f in diff.files], commits=[SourceCommitOut(**c) for c in diff.commits], commits_truncated=diff.commits_truncated)
 
 
 async def _run_build(plan: game_builds.BuildPlan) -> None:

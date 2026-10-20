@@ -257,6 +257,19 @@ async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "outside_root",
                                                         "message": "실행 위치·권한 폴더 안의 일반 파일만 공유할 수 있어요."})
     run_id = await db.scalar(select(Run.id).where(Run.session_id == sid).order_by(Run.created_at.desc()).limit(1))
+    # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않고 파일로 옮긴다. 같은 파일이 두 탭에 쌓이지 않게.
+    existing = await db.scalar(select(Artifact).where(
+        Artifact.deleted_at.is_(None), Artifact.session_id == sid,
+        Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))
+    if existing is not None:
+        if existing.area != ArtifactArea.files:
+            record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=existing.id,
+                   detail={"from": existing.area, "to": ArtifactArea.files, "via": "share", "session": str(sid)})
+            existing.area = ArtifactArea.files
+            await db.commit()
+        if needs_server_preview(existing.kind):
+            preview.enqueue(existing.id)
+        return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
     try:
         art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.files,
                                   workspace_id=ws.id, session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),

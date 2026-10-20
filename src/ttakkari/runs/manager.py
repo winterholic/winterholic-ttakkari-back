@@ -40,7 +40,6 @@ from ttakkari.model_catalog import MUSE_EFFORT
 from ttakkari.models import (
     TERMINAL_RUN_STATUSES,
     Artifact,
-    ArtifactArea,
     ChatSession,
     Meeting,
     Run,
@@ -102,7 +101,8 @@ SYSTEM_NOTE = """\
 You are running unattended via Winterholic Ttakkari on the user's Mac Studio. The user is remote, usually on a phone, \
 and sees your messages and the files you produce in a web app.
 - Save every deliverable file meant for the user (documents, reports, exports, images, archives) into this outbox \
-directory: {outbox}. Files there are registered automatically and the user can preview and download them.
+directory: {outbox}. Files there are collected automatically into the agent area, so call `share_file` on each \
+deliverable you want the user to see in Files; the user can preview and download shared files.
 - Editing code inside the workspace is fine as usual; changed files are tracked separately.
 - There is no TTY and nobody can answer interactive prompts. Never wait for confirmation.
 - A safety guard blocks a small set of irreversible operations (writes outside the workspace, force pushes, \
@@ -1309,10 +1309,10 @@ class RunManager:
 
     async def _collect_artifacts(self, db: AsyncSession, run: Run, ws: Workspace, outbox: Path, state: ParseState) -> None:
         root = Path(ws.root_path).resolve()
-        # 오케스트레이터에 맡겨진 작업 세션의 outbox 는 보고용 중간 산출물이라 에이전트 파일로 둔다.
-        # 사용자에게 넘길 것은 오케스트레이터가 share_file 로 올리고, 사용자와 직접 대화하는 세션의 outbox 는 그대로 결과물이다.
-        sess = await db.get(ChatSession, run.session_id)
-        outbox_area = ArtifactArea.agent if sess is not None and sess.kind == SessionKind.worker else ArtifactArea.files
+        # outbox 자동 수집은 전부 에이전트 파일이다. 에이전트가 outbox 를 작업 공간처럼 써서
+        # 로그·증거 JSON·브라우저 캡처 같은 중간 산출물을 함께 두기 때문이다(경로만으로는
+        # 사용자가 요청한 결과물인지 판별할 수 없다). 사용자에게 넘길 것은 에이전트가
+        # share_file 로 명시적으로 올린 것만 파일이 된다.
         found: list[tuple[ResolvedPath, str, str | None]] = []
         to_preview: list[uuid.UUID] = []
         n = 0
@@ -1333,9 +1333,16 @@ class RunManager:
                 continue
             found.append((ResolvedPath(root=root, path=real), "agent_modified", None))
         for resolved, source, rel in found:
+            if source == "agent_output":
+                # 실행 중 share_file 로 이미 올린 파일은 여기서 중복 등록하지 않는다(같은 파일이 두 탭에 쌓이지 않게).
+                dup = await db.scalar(select(Artifact.id).where(
+                    Artifact.deleted_at.is_(None), Artifact.run_id == run.id,
+                    Artifact.original_path == str(resolved.path)).limit(1))
+                if dup is not None:
+                    continue
             try:
                 art = await register_file(
-                    db, resolved, source=source, area=outbox_area if source == "agent_output" else None, workspace_id=ws.id, session_id=run.session_id, run_id=run.id,
+                    db, resolved, source=source, workspace_id=ws.id, session_id=run.session_id, run_id=run.id,
                     rel_path=rel, export_allowed=ws.export_allowed,
                 )
             except (BrokerError, OSError) as e:

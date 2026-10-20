@@ -92,7 +92,7 @@
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/artifacts?workspace_id=&session_id=&run_id=&kind=&area=&changed=&q=&limit=&offset=` | Library 목록(최신순). `area=files` 는 사용자 업로드·직접 등록·넘겨받은 결과물(사용자와 직접 대화한 세션의 outbox, share_file), `area=agent` 는 작업 세션 outbox·작업이 고친 파일 같은 에이전트 중간 산출물이다. 보관함은 두 탭으로 나눠 부르고 세션 화면은 생략한다. `changed=true` 는 작업이 워크스페이스에서 바꾼 파일(`agent_modified`)만, `false` 는 그것을 뺀 결과물·업로드·등록 파일만, 생략하면 모두. 보관함 기본 목록은 `false`, 세션 화면은 생략 |
+| GET | `/api/artifacts?workspace_id=&session_id=&run_id=&kind=&area=&changed=&q=&limit=&offset=` | Library 목록(최신순). `area=files` 는 사용자 업로드·직접 등록·share_file 로 넘겨받은 결과물, `area=agent` 는 outbox 자동 수집·작업이 고친 파일 같은 에이전트 중간 산출물이다. outbox 에 두기만 해서는 파일 탭에 가지 않는다. 보관함은 두 탭으로 나눠 부르고 세션 화면은 생략한다. `changed=true` 는 작업이 워크스페이스에서 바꾼 파일(`agent_modified`)만, `false` 는 그것을 뺀 결과물·업로드·등록 파일만, 생략하면 모두. 보관함 기본 목록은 `false`, 세션 화면은 생략 |
 | POST | `/api/artifacts` | `{workspace_id, rel_path, session_id?}` 워크스페이스 파일을 결과물로 등록 |
 | POST | `/api/uploads` | multipart `file`, `workspace_id`, `session_id?` → 201 `ArtifactOut`(`source: upload`). 기본 200MB 초과 413 `too_large`. 결과 ID 를 다음 Run 의 `context_artifact_ids` 에 넣으면 에이전트가 파일 경로를 받는다 |
 | GET | `/api/artifacts/{id}` | `ArtifactOut` |

@@ -170,7 +170,8 @@ Do not ask the user for things memory can answer.
 (e.g. user —works_on→ project). Never store secrets or credentials.
 - Meeting minutes the user analyzed are readable with `list_meetings`, `get_meeting`, `search_meeting_items` \
 (decisions, open action items). They are read-only; the user approves what enters memory in the app.
-- To hand a file to the user that is not in the outbox, use `share_file`. Finished runs do not notify the \
+- Outbox files are collected into the agent area automatically. To hand a deliverable to the user, call \
+`share_file` on it so it appears in Files. Finished runs do not notify the \
 user, so call `notify_user` yourself, and only for things they must see now (a result they are waiting for, or \
 when you are blocked and need their input or approval).
 - For personal Ttakkari development, the user's standing policy is to deploy verified changes proactively:

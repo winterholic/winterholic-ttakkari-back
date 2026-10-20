@@ -579,16 +579,16 @@ async def test_agent_artifact_area_filter_and_move(client, auth, make_dir):
     assert up.status_code == 201
     h = _orch(issue_token(sess["id"]))
     everything = (await client.get("/api/agent/artifacts", headers=h)).json()["artifacts"]
-    assert {a["filename"]: a["area"] for a in everything} == {"report.md": "files", "up.md": "files"}
-    # 채팅 세션의 outbox 결과물은 사용자에게 건넨 것이라 files. 에이전트 파일은 수정된 워크스페이스 파일 등이다.
-    assert {a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "agent"}, headers=h)).json()["artifacts"]} == set()
+    assert {a["filename"]: a["area"] for a in everything} == {"report.md": "agent", "up.md": "files"}
+    # outbox 자동 수집은 에이전트 파일. share_file·분류 이동으로 넘긴 것만 파일이다.
+    assert {a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "agent"}, headers=h)).json()["artifacts"]} == {"report.md"}
     report = next(a for a in everything if a["filename"] == "report.md")
-    moved = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "agent"}, headers=h)
-    assert moved.status_code == 200 and moved.json()["area"] == "agent"
-    assert [a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "agent"}, headers=h)).json()["artifacts"]] == ["report.md"]
-    assert (await client.get(f"/api/artifacts/{report['id']}", headers=auth)).json()["area"] == "agent"
-    back = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "files"}, headers=h)
-    assert back.json()["area"] == "files"
+    moved = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "files"}, headers=h)
+    assert moved.status_code == 200 and moved.json()["area"] == "files"
+    assert [a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "files"}, headers=h)).json()["artifacts"]] == ["report.md"]
+    assert (await client.get(f"/api/artifacts/{report['id']}", headers=auth)).json()["area"] == "files"
+    back = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "agent"}, headers=h)
+    assert back.json()["area"] == "agent"
     # 사용자가 올린 파일은 에이전트가 옮기지 못한다. 잘못된 값·없는 파일도 거절.
     mine = next(a for a in everything if a["filename"] == "up.md")
     assert (await client.patch(f"/api/agent/artifacts/{mine['id']}", json={"area": "agent"}, headers=h)).status_code == 403

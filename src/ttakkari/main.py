@@ -126,6 +126,16 @@ async def _lead_archive_loop(interval: int) -> None:
         await asyncio.sleep(interval)
 
 
+async def _schedules_loop(interval: float = 5.0) -> None:
+    while True:
+        try:
+            from ttakkari.schedules import process_due_schedules
+            await process_due_schedules()
+        except Exception as e:  # noqa: BLE001
+            log.warning("schedules scan failed: %s", e)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     s = get_settings()
@@ -209,11 +219,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     if s.lead_archive_scan_seconds > 0 else None)
     from ttakkari.oplog import ingest as ops_ingest
     ops_sync = asyncio.create_task(ops_ingest.sync_loop(s.ops_log_sync_seconds)) if s.ops_log_sync_seconds > 0 else None
+    from ttakkari.schedules import process_due_schedules
+    with contextlib.suppress(Exception):
+        await process_due_schedules()
+    schedules_sync = asyncio.create_task(_schedules_loop(s.runtime_poll_seconds))
     try:
         yield
     finally:
         creative_worker.cancel()
         await asyncio.gather(creative_worker, return_exceptions=True)
+        schedules_sync.cancel()
         if ops_sync:
             ops_sync.cancel()
         retention.cancel()

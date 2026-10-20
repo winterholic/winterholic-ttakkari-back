@@ -10,6 +10,7 @@ READ_ONLY_TOOLS = frozenset({
     "luna_common30_v2_status", "knowledge_extraction_status", "knowledge_sources", "knowledge_recall", "knowledge_assertion", "knowledge_next_batch",
     "reverse_list", "reverse_get", "tossinvest_status",
     "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job", "google_account_status",
+    "list_scheduled_actions",
 })
 # 리버스 엔지니어링 시작은 상태를 바꾸므로 읽기 전용으로 표시하지 않는다.
 # 사용자 지시로 요청하는 작업이라 무인 실행 승인 목록에는 둔다.
@@ -41,5 +42,9 @@ HOST_ENV_TOOLS = frozenset({"begin_environment_probe", "report_execution_environ
                             "host_gpu_status", "host_gpu_bench", "host_gpu_stop"})
 WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
+# Research Lab: 연구 지식·실험·재개 관리(ADR 0056)
+RESEARCH_TOOLS = frozenset({"manage_research"})
+SCHEDULE_TOOLS = frozenset({"schedule_action", "cancel_scheduled_action"})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
-                       | ASSISTANT_WRITE_TOOLS | NOTEBOOKLM_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS | BENCHMARK_TOOLS | REVERSE_TOOLS)
+                       | ASSISTANT_WRITE_TOOLS | NOTEBOOKLM_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS
+                       | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS)

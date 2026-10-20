@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
@@ -137,6 +137,14 @@ class WorkerOut(BaseModel):
     last_result: str | None = None
     last_error: str | None = None
     artifacts: list[str] = Field(default_factory=list)
+
+
+class ScheduleCreateIn(BaseModel):
+    action_type: str
+    due_at: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    description: str | None = None
+    max_attempts: int = 3
 
 
 async def _orchestrator(db: Db, sid: uuid.UUID) -> ChatSession:
@@ -577,3 +585,62 @@ async def create_pms_task(pid: uuid.UUID, body: TaskIn, sid: OrchestratorSession
     await db.flush()
     await db.commit()
     return {"project": {"id": project.id, "name": project.name}, **await _task_response(db, task)}
+
+
+def _schedule_out(s: Any) -> dict[str, Any]:
+    return {
+        "id": str(s.id),
+        "action_type": s.action_type,
+        "payload": s.payload,
+        "due_at": s.due_at.isoformat(),
+        "status": s.status,
+        "owner_id": s.owner_id,
+        "leased_until": s.leased_until.isoformat() if s.leased_until else None,
+        "attempts": s.attempts,
+        "max_attempts": s.max_attempts,
+        "description": s.description,
+        "last_error": s.last_error,
+        "result": s.result,
+        "created_at": s.created_at.isoformat(),
+        "updated_at": s.updated_at.isoformat(),
+        "executed_at": s.executed_at.isoformat() if s.executed_at else None,
+    }
+
+
+@router.post("/schedules", status_code=status.HTTP_201_CREATED)
+async def create_schedule_route(body: ScheduleCreateIn, sid: OrchestratorSession, db: Db) -> dict:
+    from ttakkari.schedules import create_schedule
+    await _orchestrator(db, sid)
+    try:
+        item = await create_schedule(
+            db,
+            action_type=body.action_type,
+            due_at=body.due_at,
+            payload=body.payload,
+            description=body.description,
+            max_attempts=body.max_attempts,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return _schedule_out(item)
+
+
+@router.get("/schedules")
+async def list_schedules_route(sid: OrchestratorSession, db: Db,
+                               status: str | None = None,
+                               limit: int = Query(50, ge=1, le=100)) -> dict:
+    from ttakkari.schedules import list_schedules
+    await _orchestrator(db, sid)
+    items = await list_schedules(db, status=status, limit=limit)
+    return {"schedules": [_schedule_out(s) for s in items]}
+
+
+@router.delete("/schedules/{schedule_id}")
+async def cancel_schedule_route(schedule_id: uuid.UUID, sid: OrchestratorSession, db: Db) -> dict:
+    from ttakkari.schedules import cancel_schedule
+    await _orchestrator(db, sid)
+    cancelled = await cancel_schedule(db, schedule_id)
+    if not cancelled:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "예약 작업을 찾을 수 없거나 이미 완료/취소되었습니다.")
+    return {"cancelled": True, "id": str(schedule_id)}
+

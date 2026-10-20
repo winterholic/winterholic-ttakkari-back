@@ -1017,5 +1017,43 @@ async def knowledge_retry_extraction(job_id: str) -> str:
     return await _agent('POST', f'/knowledge/extractions/{job_id}/retry', {})
 
 
+@server.tool()
+async def schedule_action(
+    action_type: Literal["stop_all", "cancel_run", "send_message"],
+    due_at: str,
+    payload: dict[str, Any] | None = None,
+    description: str | None = None,
+) -> str:
+    """특정 시각에 실행할 작업을 영속 예약한다(재배포·세대 전환·재시작 뒤에도 유지).
+
+    Args:
+        action_type: 작업 종류 ("stop_all": 모든 활성/대기 에이전트 중지, "cancel_run": 특정 Run 중지, "send_message": 세션에 메시지 전송).
+        due_at: 실행 예정 시각 (ISO 8601 문자열 "2026-10-21T04:30:00+09:00" 또는 상대 시각 "+10m", "+300s", "+1h").
+        payload: 작업 인자 (cancel_run: {"run_id": "..."}, send_message: {"session_id": "...", "message": "..."}).
+        description: 예약 메모/설명.
+    """
+    return await _call("POST", "/schedules", {
+        "action_type": action_type,
+        "due_at": due_at,
+        "payload": payload or {},
+        "description": description,
+    })
+
+
+@query_tool
+async def list_scheduled_actions(
+    status: Literal["pending", "leased", "completed", "failed", "cancelled", "all"] = "pending",
+    limit: int = 20,
+) -> str:
+    """영속 예약 작업 목록을 조회한다."""
+    return await _call("GET", "/schedules", params={"status": status, "limit": limit})
+
+
+@server.tool()
+async def cancel_scheduled_action(action_id: str) -> str:
+    """예약된 작업을 취소한다."""
+    return await _call("DELETE", f"/schedules/{action_id}")
+
+
 if __name__ == "__main__":
     server.run("stdio")

@@ -74,6 +74,8 @@ async def coordinate(runtime, manager) -> None:
                     await profiles.load_cooldowns(db)
                     await usage_store.load_latest(db, refresh=True)
                 await resume_queued()
+                from ttakkari.schedules import process_due_schedules
+                await process_due_schedules(owner_id=f"gen-{runtime.id}")
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -155,6 +157,12 @@ async def _vectors() -> None:
         await reindex(mid)
 
 
+async def _schedules() -> None:
+    from ttakkari.schedules import process_due_schedules
+    owner = f"gen-{generation.current.id if generation.current else 'single'}"
+    await process_due_schedules(owner_id=owner)
+
+
 async def ready(runtime) -> dict:
     from ttakkari.api.assistant import _tasks as indexing
     from ttakkari.meetings.vectors import _pending
@@ -170,13 +178,14 @@ async def ready(runtime) -> dict:
 
 def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     """주기 작업 목록. 운영은 이 경로로만 도니 새 주기 작업(날씨 scan 등)은 여기에 등록한다."""
+    from ttakkari.creative.render import scan as creative_scan
     from ttakkari.runs import lead_archive
     from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
-    from ttakkari.creative.render import scan as creative_scan
 
     jobs: list[tuple[str, object, float]] = [
         ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds),
-        ("notebooklm-jobs", _notebooklm_jobs, 60), ("creative-render", creative_scan, 2)]
+        ("notebooklm-jobs", _notebooklm_jobs, 60), ("creative-render", creative_scan, 2),
+        ("schedules", _schedules, s.runtime_poll_seconds)]
     if s.reminder_scan_seconds > 0:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:

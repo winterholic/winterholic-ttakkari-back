@@ -165,8 +165,9 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 "is not treated as spare capacity, but model_capacity.exploration_eligible=true means routing may give it one real "
                 f"task per {int(profiles.MUSE_PROBE_INTERVAL // 60)} min so a stream observation can end the unknown state. "
                 "qwen_local shows the single local-Qwen slot (busy, current run, queue, wait estimate, recent "
-                "verification/handoff counts). Declare qwen_fit (needs_mcp/narrow_scope/verifiable) on spawn_worker "
-                "for narrow file work; the backend routes one parallel-fit general/routine worker to Qwen while idle "
+                "verification/handoff counts). For routine workers in personal scope with parallel siblings, the backend "
+                "defaults to Qwen-fit without declaration; general tasks still require declaring qwen_fit "
+                "(needs_mcp/narrow_scope/verifiable). The backend routes one parallel-fit worker to Qwen while idle "
                 "(receipt trigger parallel) and sends the rest to cloud. Orchestrators never take the parallel path; "
                 "they reach Qwen only via the usage-limit emergency.",
         "accounts": out,

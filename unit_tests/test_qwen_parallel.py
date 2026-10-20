@@ -43,6 +43,26 @@ class FitAssessmentTests(unittest.TestCase):
                 self.assertFalse(got["fit"], got)
                 self.assertIn(reason, got["reasons"])
 
+    def test_routine_defaults_to_fit_without_declarations(self):
+        got = _assess(task_type="routine", needs_mcp=None, narrow_scope=None, verifiable=None)
+        self.assertTrue(got["fit"])
+        self.assertEqual(got["basis"], "default_routine_fit")
+        self.assertEqual(got["reasons"], [])
+
+    def test_routine_explicit_false_declarations_respected(self):
+        cases = [
+            ({"needs_mcp": True}, "mcp_required_or_unknown"),
+            ({"narrow_scope": False}, "scope_not_narrow"),
+            ({"verifiable": False}, "not_verifiable"),
+        ]
+        for hints, reason in cases:
+            with self.subTest(hints=hints):
+                over = {"task_type": "routine", "needs_mcp": None, "narrow_scope": None, "verifiable": None}
+                over.update(hints)
+                got = _assess(**over)
+                self.assertFalse(got["fit"], got)
+                self.assertIn(reason, got["reasons"])
+
     def test_company_scope_is_excluded(self):
         got = _assess(pool="work")
         self.assertFalse(got["fit"])
@@ -198,7 +218,13 @@ class DecisionSimulationTests(unittest.TestCase):
             # (설명, 입력, 기대 fit, 기대 사유 부분집합)
             ("병렬+선언 완료", {}, True, []),
             ("형제 3명도 병렬", {"parallel_siblings": 3}, True, []),
-            ("routine 병렬", {"task_type": "routine"}, True, []),
+            ("routine 병렬(선언 완료)", {"task_type": "routine"}, True, []),
+            ("routine 힌트 없음(기본 적합)", {"task_type": "routine", "needs_mcp": None, "narrow_scope": None, "verifiable": None}, True, []),
+            ("routine MCP 명시 필요(탈락)", {"task_type": "routine", "needs_mcp": True, "narrow_scope": None, "verifiable": None}, False, ["mcp_required_or_unknown"]),
+            ("routine 범위 넓음 명시(탈락)", {"task_type": "routine", "narrow_scope": False}, False, ["scope_not_narrow"]),
+            ("routine 검증 불가 명시(탈락)", {"task_type": "routine", "verifiable": False}, False, ["not_verifiable"]),
+            ("routine 단일 작업(탈락)", {"task_type": "routine", "parallel_siblings": 0, "needs_mcp": None, "narrow_scope": None, "verifiable": None}, False, ["single_run"]),
+            ("routine 회사 범위(탈락)", {"task_type": "routine", "pool": "work", "needs_mcp": None, "narrow_scope": None, "verifiable": None}, False, ["company_scope_excluded"]),
             ("단일 작업", {"parallel_siblings": 0}, False, ["single_run"]),
             ("힌트 없음", {"needs_mcp": None, "narrow_scope": None, "verifiable": None},
              False, ["mcp_required_or_unknown", "scope_not_narrow", "not_verifiable"]),

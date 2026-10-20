@@ -131,14 +131,14 @@ async def test_lone_fit_worker_stays_on_cloud_with_single_run_reason(
 
 
 @pytest.mark.asyncio
-async def test_undeclared_fit_never_routes_to_qwen(client, auth, make_dir, tmp_path, monkeypatch):
-    """병렬이어도 fit 미선언이면 Qwen 후보가 아니다(fail closed)."""
+async def test_undeclared_general_never_routes_to_qwen(client, auth, make_dir, tmp_path, monkeypatch):
+    """general 작업은 fit 미선언이면 Qwen 후보가 아니다(fail closed)."""
     _ready_qwen(monkeypatch, _write_qwen_worker(tmp_path))
     _, orch_auth = await _orchestrator(client, auth, make_dir)
     first = await _spawn(client, orch_auth, prompt="SLEEP")
     await wait_status(client, auth, first["active_run_id"], "running", timeout=30.0)
     try:
-        second = await _spawn(client, orch_auth, task_type="routine")
+        second = await _spawn(client, orch_auth, task_type="general")
         run = await wait_run(client, auth, second["active_run_id"], timeout=30.0)
         assert run["status"] == "succeeded", run
         assert run["engine"] != "qwen-local", run
@@ -147,6 +147,56 @@ async def test_undeclared_fit_never_routes_to_qwen(client, auth, make_dir, tmp_p
         assert full, receipts
         reasons = full[0]["qwen"]["reasons"]
         assert "mcp_required_or_unknown" in reasons, reasons
+    finally:
+        await client.post(f"/api/orchestrator/workers/{first['worker_id']}/stop", headers=orch_auth)
+
+
+@pytest.mark.asyncio
+async def test_undeclared_routine_defaults_to_qwen_parallel_fit(client, auth, make_dir, tmp_path, monkeypatch):
+    """개인 범위 + routine + 병렬 형제가 있으면 미선언 시 기본적으로 Qwen에 배정된다."""
+    _ready_qwen(monkeypatch, _write_qwen_worker(tmp_path))
+    _, orch_auth = await _orchestrator(client, auth, make_dir)
+    first = await _spawn(client, orch_auth, prompt="SLEEP")
+    await wait_status(client, auth, first["active_run_id"], "running", timeout=30.0)
+    try:
+        second = await _spawn(client, orch_auth, task_type="routine")
+        run = await wait_run(client, auth, second["active_run_id"], timeout=30.0)
+        assert run["status"] == "succeeded", run
+        assert run["engine"] == "qwen-local", run
+        receipts = _routing_receipts(await run_events(client, auth, run["id"]))
+        full = [r for r in receipts if r.get("selected") is not None]
+        assert full, receipts
+        assert full[0]["trigger"] == "parallel"
+        assert full[0]["reason"] == "default_routine_fit"
+        qwen = full[0]["qwen"]
+        assert qwen["decision"] == "selected" and qwen["fit"] is True
+        assert qwen["basis"] == "default_routine_fit"
+        assert "default_routine_fit" in qwen["reasons"]
+    finally:
+        await client.post(f"/api/orchestrator/workers/{first['worker_id']}/stop", headers=orch_auth)
+
+
+@pytest.mark.asyncio
+async def test_routine_explicit_rejections_respected(client, auth, make_dir, tmp_path, monkeypatch):
+    """routine 작업이라도 needs_mcp=True, narrow_scope=False 등 명시 선언이 부적합이면 클라우드로 간다."""
+    _ready_qwen(monkeypatch, _write_qwen_worker(tmp_path))
+    _, orch_auth = await _orchestrator(client, auth, make_dir)
+    first = await _spawn(client, orch_auth, prompt="SLEEP")
+    await wait_status(client, auth, first["active_run_id"], "running", timeout=30.0)
+    try:
+        mcp_worker = await _spawn(client, orch_auth, task_type="routine", qwen_fit={"needs_mcp": True})
+        run_mcp = await wait_run(client, auth, mcp_worker["active_run_id"], timeout=30.0)
+        assert run_mcp["engine"] != "qwen-local"
+        receipts = _routing_receipts(await run_events(client, auth, run_mcp["id"]))
+        full = [r for r in receipts if r.get("selected") is not None]
+        assert "mcp_required_or_unknown" in full[0]["qwen"]["reasons"]
+
+        scope_worker = await _spawn(client, orch_auth, task_type="routine", qwen_fit={"narrow_scope": False})
+        run_scope = await wait_run(client, auth, scope_worker["active_run_id"], timeout=30.0)
+        assert run_scope["engine"] != "qwen-local"
+        receipts_scope = _routing_receipts(await run_events(client, auth, run_scope["id"]))
+        full_scope = [r for r in receipts_scope if r.get("selected") is not None]
+        assert "scope_not_narrow" in full_scope[0]["qwen"]["reasons"]
     finally:
         await client.post(f"/api/orchestrator/workers/{first['worker_id']}/stop", headers=orch_auth)
 

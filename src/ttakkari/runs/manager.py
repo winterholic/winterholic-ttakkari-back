@@ -196,16 +196,15 @@ class RunManager:
     async def cancel(self, run_id: uuid.UUID) -> bool:
         h = self._handles.get(run_id)
         if h is None:
-            if self.runtime:
-                if await self.is_owned(run_id):
-                    await self.runtime.command("cancel", run_id=run_id)
+            if self.runtime and await self.is_owned(run_id):
+                await self.runtime.command("cancel", run_id=run_id)
+                return True
+            async with sessionmaker()() as db:
+                run = await db.get(Run, run_id)
+                if run and run.status == RunStatus.queued:
+                    await self.cancel_queued(db, run)
+                    await db.commit()
                     return True
-                async with sessionmaker()() as db:
-                    run = await db.get(Run, run_id)
-                    if run and run.status == RunStatus.queued:
-                        await self.cancel_queued(db, run)
-                        await db.commit()
-                        return True
             return False
         if self.runtime and h.owner is None:
             async with sessionmaker()() as db:
@@ -380,6 +379,7 @@ class RunManager:
             parallel_siblings=siblings, needs_mcp=hints.get("needs_mcp"),
             narrow_scope=hints.get("narrow_scope"), verifiable=hints.get("verifiable"))
         block: dict[str, object] = {"fit": assessment["fit"], "reasons": list(assessment["reasons"]),
+                                    "basis": assessment.get("basis"),
                                     "parallel_siblings": assessment["parallel_siblings"],
                                     "decision": "cloud", "trigger": None,
                                     "busy": None, "queue_length": None, "estimated_wait_s": None}
@@ -408,7 +408,9 @@ class RunManager:
             return None, block
         block["decision"] = "selected"
         block["trigger"] = worker_routing.QWEN_PARALLEL_TRIGGER
-        log.info("run %s parallel-qwen selected (siblings=%d)", run.id, siblings)
+        if assessment.get("basis") == "default_routine_fit":
+            block["reasons"] = ["default_routine_fit"]
+        log.info("run %s parallel-qwen selected (siblings=%d, basis=%s)", run.id, siblings, assessment.get("basis"))
         return worker_routing.emergency_qwen_profile(sess.pool), block
 
     async def _queue_for_qwen_slot(self, db: AsyncSession, run: Run, sess: ChatSession, slot: dict) -> None:
@@ -440,8 +442,10 @@ class RunManager:
         })
         events.append(db, run, "qwen.queued", {"position": position, "queue_length": slot["queue_length"],
                                               "estimated_wait_s": wait_s, "current": slot["current"]})
+        until = time.time() + get_settings().qwen_queue_retry_seconds
+        run.resume_after = datetime.fromtimestamp(until, UTC)
         await self._commit(db, run)
-        self._arm(run.id, sess.id, time.time() + get_settings().qwen_queue_retry_seconds)
+        self._arm(run.id, sess.id, until)
         log.info("run %s queued for qwen slot (position=%d, wait_s=%s)", run.id, position, wait_s)
 
     async def _wake_qwen_waiters(self) -> None:
@@ -455,6 +459,9 @@ class RunManager:
             sessions = {w.session_id for w in waiters}
             for w in waiters:
                 self._disarm(w.id)
+                w.resume_after = None
+            if waiters:
+                await db.commit()
         for sid in sessions:
             await self.dispatch(sid)
 
@@ -571,6 +578,7 @@ class RunManager:
             if qwen_state is not None and qwen_state != "ineligible":
                 waiting_payload["qwen_local"] = {"ready": False, "reason": qwen_state}
             events.append(db, run, "run.waiting", waiting_payload)
+            run.resume_after = datetime.fromtimestamp(until, UTC)
             await self._commit(db, run)
             _spawn(_notify_waiting(run, sess.title, until))
         self._arm(run.id, sess.id, until)
@@ -778,6 +786,7 @@ class RunManager:
                 "trigger": worker_routing.QWEN_PARALLEL_TRIGGER,
                 "mode": worker_routing.QWEN_PARALLEL_MODE,
                 "selected": None,
+                "reason": qwen_block.get("basis") or "task_fit_then_known_quota_then_stage_then_headroom_per_run",
                 "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
                           "workspace_id": str(sess.workspace_id)},
                 "quota": None, "readiness": "ready",
@@ -921,6 +930,8 @@ class RunManager:
                     qwen=receipt_qwen,
                 )
                 if selected.engine == "qwen-local":
+                    if parallel_initial and receipt_qwen and receipt_qwen.get("basis") == "default_routine_fit":
+                        receipt["reason"] = "default_routine_fit"
                     receipt["scope"] = {"account_scope": sess.pool, "runtime_scope": "local-machine",
                                         "workspace_id": str(sess.workspace_id)}
                     receipt["quota"] = None

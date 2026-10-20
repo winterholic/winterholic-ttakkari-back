@@ -239,6 +239,7 @@ async def public_status(db: AsyncSession, pool: str) -> dict:
         "policy": {"tasks": list(worker_routing.QWEN_PARALLEL_TASKS), "kinds": ["worker"],
                    "requires_parallel_siblings": 1,
                    "requires_fit": ["needs_mcp=false", "narrow_scope=true", "verifiable=true"],
+                   "routine_default_fit": True,
                    "orchestrator": "emergency_only_lowest_priority"},
         "recent": await recent_stats(db),
         # doctor readiness is checked at routing time, not by this status read.

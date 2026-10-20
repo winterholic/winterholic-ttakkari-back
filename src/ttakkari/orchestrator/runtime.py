@@ -125,8 +125,10 @@ _ROUTING_NOTE_TAIL = """
   general/routine results return verification_required=True: verify independently (task_type="verification",
   GPT or Claude) before final completion. Never assign design/verification/reasoning, company-scope work,
   or coordination that needs spawning/messaging workers. When sibling workers run alongside, the backend
-  itself may route one parallel-fit auto worker to idle Qwen (declare qwen_fit needs_mcp/narrow_scope/
-  verifiable on spawn; receipt trigger "parallel"); a lone task stays on cloud even when declared fit.
+  itself may route one parallel-fit auto worker to idle Qwen: task_type="routine" in personal scope defaults to
+  Qwen-fit without qwen_fit declarations (needs_mcp=True explicitly excludes it); task_type="general" still
+  requires declaring qwen_fit (needs_mcp=False, narrow_scope=True, verifiable=True). A lone task stays on cloud
+  even when declared fit (receipt trigger "parallel").
   When every usable personal cloud account is usage-limited, the backend itself continues general/routine
   workers on Qwen (trigger "emergency" in the worker.routing receipt) after saving progress; an unready
   Qwen keeps the run waiting with its reason. Orchestrator sessions join only that emergency, degraded

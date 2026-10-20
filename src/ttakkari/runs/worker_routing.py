@@ -346,13 +346,12 @@ def qwen_fit_assessment(*, pool: str | None, task_type: str | None, session_kind
                        narrow_scope: bool | None = None, verifiable: bool | None = None) -> dict:
     """평시 auto 작업자를 Qwen에 붙일지 가른다. 이름이 아니라 선언된 작업 속성을 본다.
 
-    판정 기준(제목·프롬프트 문구가 아니다):
-    - 필요 도구: MCP 불필요(needs_mcp False) + 파일 기반 하네스 가정. 모르면 탈락.
-    - 작업 범위: 좁고 자기완결(narrow_scope True). 아니면 탈락.
-    - 검증 방법: 정해진 검사·테스트로 확인 가능(verifiable True). 아니면 탈락.
-    - 병렬 문맥: 살아 있는 형제 작업자가 1개 이상. 단일 작업은 Qwen 효율이 작아 클라우드로.
-    제외(확정 조건): 회사 범위, design/verification/reasoning, strict 엔진 잠금,
-    고정 엔진(auto가 아님, 명시 지정은 별도 경로), 기획·접수·대화 세션.
+    판정 기준:
+    - 기본 routine 적합: 개인 범위 + task_type="routine" + 병렬 형제 있음(parallel_siblings >= 1)이면,
+      선언이 없을 때 기본적으로 적합으로 본다(needs_mcp는 명시 True일 때만 탈락, narrow_scope·verifiable 명시 False 탈락).
+    - general: 세 속성(needs_mcp=False, narrow_scope=True, verifiable=True)을 모두 명시 선언해야 적합.
+    - 제외(확정 조건): 회사 범위, design/verification/reasoning, strict 엔진 잠금,
+      고정 엔진(auto가 아님, 명시 지정은 별도 경로), 기획·접수·대화 세션, 단일 작업(형제 0개).
     기획 세션은 평시 경로에서 원천 제외되어 비상 경로(trigger "emergency")로만
     Qwen에 간다. 즉 기획의 Qwen 배정은 백엔드 기본 동작상 최하위다.
     """
@@ -364,7 +363,8 @@ def qwen_fit_assessment(*, pool: str | None, task_type: str | None, session_kind
         reasons.append("orchestrator_lowest_priority")
     elif kind != "worker":
         reasons.append("kind_excluded")
-    if (task_type or "general") not in QWEN_PARALLEL_TASKS:
+    effective_task = task_type or "general"
+    if effective_task not in QWEN_PARALLEL_TASKS:
         reasons.append("task_excluded")
     if strict_engine:
         reasons.append("strict_engine_excluded")
@@ -372,13 +372,33 @@ def qwen_fit_assessment(*, pool: str | None, task_type: str | None, session_kind
         reasons.append("explicit_engine_separate_path")
     if parallel_siblings < 1:
         reasons.append("single_run")
-    if needs_mcp is not False:
-        reasons.append("mcp_required_or_unknown")
-    if narrow_scope is not True:
-        reasons.append("scope_not_narrow")
-    if verifiable is not True:
-        reasons.append("not_verifiable")
-    return {"fit": not reasons, "reasons": reasons,
+
+    is_routine = (effective_task == "routine")
+    is_routine_default = False
+    if is_routine:
+        # routine: 선언이 없을 때 기본 적합으로 본다. 명시 False(needs_mcp는 명시 True)는 존중.
+        if needs_mcp is True:
+            reasons.append("mcp_required_or_unknown")
+        if narrow_scope is False:
+            reasons.append("scope_not_narrow")
+        if verifiable is False:
+            reasons.append("not_verifiable")
+        if needs_mcp is None or narrow_scope is None or verifiable is None:
+            is_routine_default = True
+    else:
+        # general 등은 여전히 명시 선언 시에만
+        if needs_mcp is not False:
+            reasons.append("mcp_required_or_unknown")
+        if narrow_scope is not True:
+            reasons.append("scope_not_narrow")
+        if verifiable is not True:
+            reasons.append("not_verifiable")
+
+    fit = not reasons
+    basis = None
+    if fit:
+        basis = "default_routine_fit" if is_routine_default else "declared_fit"
+    return {"fit": fit, "reasons": reasons, "basis": basis,
             "parallel_siblings": max(0, parallel_siblings)}
 
 

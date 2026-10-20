@@ -706,13 +706,13 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     Explicit engine="qwen-local" selects the local Qwen harness only when its feature gate and fixed readiness contract pass.
     It has no cloud account/quota and never falls back to another provider. When its single Mac-wide slot is busy,
     an explicit Qwen worker waits in a queue (event "qwen.queued" with position and wait estimate) instead of failing.
-    It is not a normal auto stage, but the backend also routes one parallel-fit general/routine auto worker to it
-    while the slot is idle (receipt trigger "parallel"): declare qwen_needs_mcp=False, qwen_narrow_scope=True and
-    qwen_verifiable=True for narrow file search/extraction/small edit plus test runs, and only when sibling workers
-    run alongside (a lone task stays on cloud). Undeclared or unknown fit never routes to Qwen. Check
-    account_usage.qwen_local for slot busy state, queue and recent verification/handoff counts. As a last resort the
-    backend routes general/routine workers to it when every usable personal cloud account is usage-limited and
-    readiness passes (receipt trigger "emergency"). Orchestrator sessions join only that emergency, degraded
+    It is not a normal auto stage, but the backend also routes one parallel-fit auto worker to it
+    while the slot is idle (receipt trigger "parallel"): for task_type="routine" in personal scope with sibling workers
+    alongside, the backend defaults to Qwen-fit without declarations (qwen_needs_mcp=True explicitly excludes it);
+    for task_type="general", declare qwen_needs_mcp=False, qwen_narrow_scope=True and qwen_verifiable=True for narrow
+    file search/extraction/small edit plus test runs. A lone task stays on cloud. Check account_usage.qwen_local for slot
+    busy state, queue and recent verification/handoff counts. As a last resort the backend routes general/routine workers to it
+    when every usable personal cloud account is usage-limited and readiness passes (receipt trigger "emergency"). Orchestrator sessions join only that emergency, degraded
     (receipt mode "orchestrator-degraded"): no spawn/message/notify tools, so they plan and do narrow file work
     directly and queue delegation intents (spawn-queue/*.json) that the backend replays as worker sessions.
     Qwen results need independent verification like Flash.

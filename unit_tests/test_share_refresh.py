@@ -101,3 +101,12 @@ def test_refresh_rejects_store_outside_managed_area(tmp_path, monkeypatch):
     orig.write_bytes(b"# v2\n")
     with pytest.raises(BrokerError):
         asyncio.run(service.refresh_from_original(art, orig))
+
+
+def test_refresh_rejects_store_outside_managed_area_even_when_unchanged(tmp_path, monkeypatch):
+    """해시·크기가 같아도 관리 영역 밖 보관 경로는 조기 반환 전에 거부한다."""
+    _store(monkeypatch, tmp_path)
+    orig, art = _art(tmp_path)
+    art.stored_path = str(tmp_path / "elsewhere" / "report.md")
+    with pytest.raises(BrokerError):
+        asyncio.run(service.refresh_from_original(art, orig))

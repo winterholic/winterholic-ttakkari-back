@@ -120,14 +120,17 @@ async def refresh_from_original(art: Artifact, real: Path) -> bool:
     sha·크기가 같으면 손대지 않고 False 를 돌려준다(미리보기 상태 유지).
     """
     st = ensure_regular_file(real)
-    sha = await asyncio.to_thread(_sha256, real)
-    if sha == art.sha256 and st.st_size == art.size_bytes:
-        return False
+    # 해시가 같아 일찍 돌아오는 경우에도 보관 위치가 관리 영역 안인지 먼저 확인한다.
+    dest: Path | None = None
     if art.storage_mode == "copy":
         store = get_settings().artifact_store.resolve()
         dest = Path(art.stored_path).resolve(strict=False)
         if store not in dest.parents:
             raise BrokerError("관리 영역 밖의 파일입니다.", "outside_root")
+    sha = await asyncio.to_thread(_sha256, real)
+    if sha == art.sha256 and st.st_size == art.size_bytes:
+        return False
+    if dest is not None:
         dest.parent.mkdir(parents=True, exist_ok=True)
         await asyncio.to_thread(shutil.copy2, real, dest)
     mime, kind = detect(real)

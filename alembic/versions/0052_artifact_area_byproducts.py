@@ -1,9 +1,15 @@
 """보관함 재분류: 파일 탭에 쌓인 에이전트 부산물을 에이전트 파일로 옮긴다.
 
 outbox 자동 수집이 세션 종류와 무관하게 에이전트 파일이 되면서, 이미 파일 탭에
-들어간 부산물(로그·증거 JSON 등)도 같은 기준으로 옮긴다. 보고서·이미지·압축 같은
-결과물 성격의 파일은 건드리지 않는다(앱·MCP 에서 되돌릴 수 있음).
-영향 행은 artifact_area_backup_0052 에 보관하고 downgrade 에서 되돌린다.
+들어간 부산물도 같은 기준으로 옮긴다. 원칙은 애매하면 옮기지 않는 것이다. 사용자 결과물이
+에이전트 파일에 묻히는 쪽이 탭이 지저분한 쪽보다 나쁘기 때문이다. 그래서 이름만으로는
+정상 산출물일 수 있는 snapshot-*.json, cleanup-*.json, final-*.json, check-*.py 같은 파일은
+옮기지 않고, 기계 부산물이 확실한 것만 옮긴다.
+- 로그(*.log), 증거 캡처 폴더(outbox/<run>/evidence/), 브라우저 캡처(outbox/<run>/browser/page-*),
+  워커 증거 JSON(*-worker-evidence.json).
+- 폴더 기준 규칙은 자동 수집 행(원본 경로가 outbox/<run>/<rel_path>)에만 적용한다. share 로 올린
+  행은 rel_path 앞에 run 폴더가 붙어 여기서 제외되므로, 사용자에게 넘기려고 공유한 파일은 건드리지 않는다.
+영향 행은 artifact_area_backup_0052 에 보관하고 downgrade 에서 되돌린다(앱·MCP 에서도 되돌릴 수 있음).
 """
 
 from alembic import op
@@ -16,19 +22,18 @@ depends_on = None
 _BYPRODUCTS = """
     area = 'files'
     AND deleted_at IS NULL
-    AND source IN ('agent_output', 'agent_modified')
     AND (
-        filename LIKE '%.log'
-        OR filename LIKE '%evidence%.json'
-        -- snapshot/cleanup/bindings 는 기계 부산물 확장자로 한정한다.
-        -- cleanup-plan.md, snapshot-analysis.md 같은 정상 문서는 건드리지 않는다.
-        OR (filename LIKE '%snapshot%' AND (filename LIKE '%.json' OR filename LIKE '%.py' OR filename LIKE '%.xml'))
-        OR (filename LIKE '%cleanup%' AND (filename LIKE '%.json' OR filename LIKE '%.xml'))
-        OR filename LIKE '%bindings%.json'
-        OR filename LIKE 'final-%.json'
-        OR filename LIKE 'check-%.py'
-        OR original_path LIKE '%/outbox/%/browser/page-%'
-        OR original_path LIKE '%/outbox/%/evidence/%'
+        (source = 'agent_modified' AND filename LIKE '%.log')
+        OR (
+            source = 'agent_output'
+            AND original_path LIKE ('%/outbox/%/' || rel_path)
+            AND (
+                filename LIKE '%.log'
+                OR filename LIKE '%-worker-evidence.json'
+                OR rel_path LIKE 'evidence/%'
+                OR rel_path LIKE 'browser/page-%'
+            )
+        )
     )
 """
 

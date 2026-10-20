@@ -22,8 +22,8 @@ from ttakkari.artifacts.service import content_path
 from ttakkari.broker.policy import BrokerError, validate_workspace_root
 from ttakkari.config import get_settings
 from ttakkari.models import (
-    Artifact,
     ArtcraftTask,
+    Artifact,
     ChatSession,
     ExportPolicy,
     Run,

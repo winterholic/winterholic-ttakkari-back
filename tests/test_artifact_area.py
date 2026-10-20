@@ -137,6 +137,70 @@ async def test_collect_skips_already_registered_outbox_files(client, auth, new_s
     assert await _areas(client, auth, session_id=sess["id"]) == {"report.md": "files"}
 
 
+async def test_share_links_token_run_not_latest_session_run(client, auth, new_session):
+    """대기 중인 다음 Run 이 있어도 share 는 호출한 Run 에 연결하고, 그 Run 의 수집은 같은 경로를 다시 등록하지 않는다."""
+    from ttakkari.agents.base import ParseState
+    from ttakkari.models import Run, Workspace
+    from ttakkari.runs.manager import RunManager
+
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    async with sessionmaker()() as db:
+        running = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="a", engine="claude", status="running")
+        db.add(running)
+        await db.flush()
+        queued = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="b", engine="claude", status="queued")
+        db.add(queued)
+        await db.commit()
+        running_id, queued_id = running.id, queued.id
+    assert queued_id != running_id
+    outbox = get_settings().outbox_root / str(running_id)
+    outbox.mkdir(parents=True)
+    (outbox / "report.md").write_text("# report\n")
+    h = _orch(issue_token(sid, running_id))
+    r = await client.post("/api/agent/share", json={"path": str(outbox / "report.md")}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["artifact"]["run_id"] == str(running_id)
+
+    async with sessionmaker()() as db:
+        run = await db.get(Run, running_id)
+        await RunManager()._collect_artifacts(db, run, await db.get(Workspace, run.workspace_id), outbox, ParseState())
+    rows = (await client.get("/api/artifacts", params={"session_id": str(sid)}, headers=auth)).json()
+    assert [(a["filename"], a["area"]) for a in rows] == [("report.md", "files")]
+
+
+async def test_collect_dedup_is_per_session_not_global(client, auth, new_session):
+    """같은 경로를 다른 세션이 공유했더라도 이 세션의 수집은 자기 에이전트 파일 행을 만든다."""
+    from ttakkari.agents.base import ParseState
+    from ttakkari.models import Run, Workspace
+    from ttakkari.runs.manager import RunManager
+
+    ws, owner = await new_session()
+    _, other = await new_session()
+    async with sessionmaker()() as db:
+        run = Run(session_id=uuid.UUID(owner["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="a", engine="claude",
+                  status="running")
+        db.add(run)
+        await db.commit()
+        run_id = run.id
+    outbox = get_settings().outbox_root / str(run_id)
+    outbox.mkdir(parents=True)
+    (outbox / "shared.md").write_text("# s\n")
+    # 다른 세션(오케스트레이터 같은)이 먼저 이 경로를 자기 보관함에 올렸다.
+    other_ws = (await client.get(f"/api/sessions/{other['id']}", headers=auth)).json()["workspace_id"]
+    assert other_ws != ws["id"]
+    h = _orch(issue_token(uuid.UUID(other["id"])))
+    r = await client.post("/api/agent/share", json={"path": str(outbox / "shared.md")}, headers=h)
+    assert r.status_code == 200, r.text
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        await RunManager()._collect_artifacts(db, run, await db.get(Workspace, run.workspace_id), outbox, ParseState())
+    mine = (await client.get("/api/artifacts", params={"session_id": owner["id"]}, headers=auth)).json()
+    assert [(a["filename"], a["area"]) for a in mine] == [("shared.md", "agent")]
+    theirs = (await client.get("/api/artifacts", params={"session_id": other["id"]}, headers=auth)).json()
+    assert [(a["filename"], a["area"]) for a in theirs] == [("shared.md", "files")]
+
+
 async def test_concurrent_share_same_path_single_row(client, auth, new_session):
     """같은 세션·원본 경로로 동시에 공유해도 활성 행은 하나다. 각 요청은 별도 DB 세션으로 돈다."""
     ws, sess = await new_session()
@@ -234,37 +298,42 @@ async def test_migration_0052_moves_byproducts_only():
 
     outbox = get_settings().outbox_root
 
-    def art(source, name, original="/x", area="files", deleted=False):
+    def art(source, name, rel=None, area="files", deleted=False, original=None):
+        # 자동 수집 행은 원본 경로가 outbox/<run>/<rel_path> 이다.
+        if original is None:
+            original = str(outbox / "run1" / rel) if rel else "/x"
         return Artifact(workspace_id=None, session_id=None, filename=name, mime_type="text/plain", kind="other",
-                        source=source, area=area, original_path=original, storage_mode="copy", stored_path="/x",
-                        size_bytes=1, sha256="0" * 64, deleted_at=utcnow() if deleted else None)
+                        source=source, area=area, original_path=original, rel_path=rel, storage_mode="copy",
+                        stored_path="/x", size_bytes=1, sha256="0" * 64, deleted_at=utcnow() if deleted else None)
 
-    move = [  # files → agent 로 옮겨야 한다
-        art("agent_output", "m52-watch.log"),
-        art("agent_output", "m52-a1b2-worker-evidence.json"),
-        art("agent_output", "m52-pms-final-snapshot.json"),
-        art("agent_output", "m52-resource-cleanup.json"),
-        art("agent_output", "m52-membership-bindings.json"),
-        art("agent_output", "final-m52-main-ci.json"),
-        art("agent_output", "check-m52-mutations.py"),
-        art("agent_output", "m52-page-2026-10-19.png",
-            str(outbox / "run1" / "browser" / "page-2026-10-19.png")),
+    move = [  # files → agent 로 옮겨야 한다(확실한 부산물만)
+        art("agent_output", "m52-watch.log", "m52-watch.log"),
+        art("agent_output", "m52-a1b2-worker-evidence.json", "m52-a1b2-worker-evidence.json"),
+        art("agent_output", "m52-page-2026-10-19.png", "browser/page-2026-10-19.png"),
+        art("agent_output", "m52-keychain-selection.txt", "evidence/m52-keychain-selection.txt"),
         art("agent_modified", "m52-build.log"),
-        art("agent_output", "m52-replay-routing-snapshot.py"),
-        art("agent_output", "m52-cleanup-red.xml"),
-        art("agent_output", "m52-keychain-selection.txt",
-            str(outbox / "run1" / "evidence" / "m52-keychain-selection.txt")),
     ]
     stay = [  # 그대로 files (또는 agent)
-        art("agent_output", "m52-report.md"),
-        art("agent_output", "m52-saas-1280-compare.png"),
-        art("agent_output", "m52-aip-wbs-evidence-20261015.zip"),  # 압축은 결과물일 수 있어 둔다
-        art("agent_output", "m52-cleanup-plan.md"),  # 단어가 겹쳐도 정상 문서는 둔다
-        art("agent_output", "m52-snapshot-analysis.md"),
+        art("agent_output", "m52-report.md", "m52-report.md"),
+        art("agent_output", "m52-saas-1280-compare.png", "m52-saas-1280-compare.png"),
+        art("agent_output", "m52-aip-wbs-evidence-20261015.zip", "m52-aip-wbs-evidence-20261015.zip"),
+        art("agent_output", "m52-cleanup-plan.md", "m52-cleanup-plan.md"),
+        art("agent_output", "m52-snapshot-analysis.md", "m52-snapshot-analysis.md"),
+        # 이름이 부산물처럼 보여도 정상 산출물일 수 있어 옮기지 않는다(애매하면 유지).
+        art("agent_output", "m52-snapshot-analysis.json", "m52-snapshot-analysis.json"),
+        art("agent_output", "m52-cleanup-plan.json", "m52-cleanup-plan.json"),
+        art("agent_output", "m52-final-report.json", "m52-final-report.json"),
+        art("agent_output", "m52-check-results.py", "m52-check-results.py"),
+        art("agent_output", "m52-membership-bindings.json", "m52-membership-bindings.json"),
+        art("agent_output", "m52-worker-evidence-summary.json", "m52-worker-evidence-summary.json"),
+        # 폴더 규칙은 outbox 바로 아래 폴더만. 더 깊은 경로나 share 로 올린 행(rel_path 앞에 run 폴더)은 유지한다.
+        art("agent_output", "m52-nested.txt", "docs/evidence/m52-nested.txt"),
+        art("agent_output", "m52-shared.log", "run1/m52-shared.log", original=str(outbox / "run1" / "m52-shared.log")),
+        art("agent_output", "m52-ws-shared.log", "m52-ws-shared.log", original="/ws/m52-ws-shared.log"),
         art("upload", "m52-up.log"),
         art("user_registered", "m52-reg.log"),
-        art("agent_output", "m52-old.log", area="agent"),
-        art("agent_output", "m52-gone.log", deleted=True),
+        art("agent_output", "m52-old.log", "m52-old.log", area="agent"),
+        art("agent_output", "m52-gone.log", "m52-gone.log", deleted=True),
     ]
 
     class FakeOp:
@@ -295,7 +364,7 @@ async def test_migration_0052_moves_byproducts_only():
         got = {r.filename: r.area for r in
                (await db.execute(select(Artifact).where(Artifact.id.in_(ids)))).scalars()}
         assert [got[r.filename] for r in move] == ["agent"] * len(move)
-        assert [got[r.filename] for r in stay] == ["files"] * 7 + ["agent", "files"]
+        assert [got[r.filename] for r in stay] == ["files"] * (len(stay) - 2) + ["agent", "files"]
         # 백업 표에 영향 행의 원래 분류가 남고 downgrade 로 되돌릴 수 있다.
         n_backup = (await db.execute(text("SELECT COUNT(*) FROM artifact_area_backup_0052"))).scalar()
         assert n_backup == len(move)

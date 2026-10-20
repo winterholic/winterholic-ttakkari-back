@@ -1,49 +1,62 @@
-# G31 남은 종단 검증 시도: 실제 worker 프레임 E2E (미실행, 도구 추가)
+# G31 실제 worker 종단 검증: 구간 프레임 열람·수정·자동 빌드 (실행 완료, 작은 표본)
 
-목표는 실제 worker 가 `.ttakkari-feedback/<id>/clip-NN.jpg` 프레임을 열어 보고 수정하고 자동 빌드까지 성공하는지 확인하는 것이었다.
-이 실행(muse 엔진 샌드박스)에서는 소켓이 전부 막혀 격리 스택을 띄울 수 없어 **미실행**으로 남긴다. 대신 E2E 도구 4종을 추가하고 오프라인으로 검증했다.
-G31 전체 완료로 표시하지 않는다. 서버 코드 변경은 없어 배포 예약 대상이 아니다.
+2026-10-20 호스트 엔진(claude)에서 격리 스택을 띄워 실제 worker 로 E2E 를 실행했다. 앞선 muse 작업자의 도구를 독립 검토해 거짓 통과 구멍 5개를 고친 뒤 두 픽스처를 다시 돌렸다.
+서버 코드는 바꾸지 않았다(배포 예약 대상 아님). 전체 G31 완료가 아니라 "worker 가 프레임을 열어 수정하고 자동 빌드까지 성공하는 경로가 작동한다"는 표본 확인이다.
 
-## 차단 근거(실행 환경 한정, 제품 결함 아님)
+## 실행 환경과 사전 확인
 
-- 프로브 측정(muse, 2026-10-20 13:19 UTC): `network_loopback`·`network_outbound`·`process_list`·`gpu_metal` blocked.
-  직접 확인: loopback bind·connect, `/tmp/.s.PGSQL.5432`·OrbStack docker.sock 연결이 전부 `PermissionError [Errno 1] Operation not permitted`.
-- 격리 스택(API bind·postgres·docker 컨테이너 빌드·Chromium·worker 네트워크)이 모두 소켓을 필요로 해서 이 샌드박스에서는 실행 불가.
-- `require_escalated` 1회 시도 → 즉시 거부: `tool denied: unsandboxed execution requires human approval, but approval prompts are disabled`.
-  우회가 아니라 정해진 승인 경로가 없는 것이므로 재시도하지 않았다.
-- outbound https 는 프록시 경유로 되어 git fetch·push 는 된다. 이 결론을 호스트·운영 상태로 일반화하지 않는다.
+- 호스트 엔진 Run 에서 `socket.bind(("127.0.0.1",0))` → `bind ok ('127.0.0.1', 56670)`, `docker ps` 응답, `pg_isready -h 127.0.0.1` → `접속을 받아드리는 중`. 앞선 muse 샌드박스의 차단은 그 환경에 한정된 것이었다.
+- `/private/tmp/gs-g31/run.sh` 는 있었으나 `env.sh` 가 없었고 ROOT 가 다른 작업자(G32)의 worktree 였다. `env.sh` 를 다시 만들고(DB `ttakkari_gs_g31_20261020`, HOME·게임 루트 `/private/tmp/gs-g31`, API 18790, 게임 origin 18795), run.sh 의 ROOT 를 최신 origin/main 의 clean worktree(`back-g31-e2e`)로 바꿨다.
+- 운영 DB·.env·운영 게임은 쓰지 않았다. worker 는 실제 Claude(engine claude, model sonnet), 빌드는 실제 OrbStack 컨테이너, 녹화는 실제 Chromium bridge 다. 대체 경로·mock 없음.
 
-## 추가한 도구(커밋 포함, `tests/game_smoke/`)
+## 독립 검토에서 고친 구멍(clip_bench.py)
 
-- `clip_bench.py`: 수동 E2E 드라이버(pytest 가 수집하지 않음). G29b `pick_bench.py` 와 같은 격리 스택(API 18790·게임 origin·분리 DB/HOME)을 전제로 한다.
-  사례마다 게임 생성 → 픽스처 기록·커밋 → 격리 빌드 → 실제 bridge record 녹화(Chromium) → JPEG 전체 픽셀 스캔 → 결함 2장+정상 2장 선별 →
-  `/api/uploads` 업로드 → `FeedbackIn.clip` 수정 요청(`auto_build=true`) → Run 대기 → events 에서 clip 파일 열람 근거 수집 →
-  git diff·마커 확인 → 자동 빌드 대기 → 수정 빌드 재녹화 픽셀 판정. 비용·시간을 결과에 남긴다. 결함이 녹화에 안 보이면 worker 를 부르지 않는다.
-- `clip_bench_collect.mjs`: record-start(2fps·6초)/stop 후 프레임 전체를 JPG 로 저장하는 수집 스크립트(`record_scenario.mjs` 변형).
-- `clip_bench_color.ts`: 빨간 공이 10초에 걸쳐 화면을 가로지른다. `bx > 0.6` 부터 파란색으로 바뀌는 결함. 지시문은 바뀌는 사실과 "처음 색 그대로"만 말한다.
-- `clip_bench_missing.ts`: 빨강·초록·파랑 공 세 개가 함께 이동한다. `bx > 0.5` 부터 초록이 사라지는 결함. 지시문은 어느 공인지 말하지 않아 프레임을 봐야 안다.
-- 판정: `pass` = clip 파일 1장 이상 열람 흔적(tool.call 입력에 `clip-NN.jpg`) + 재녹화 전 프레임 정상 픽셀 + 자동 빌드 성공(소스 커밋 일치) + Run 성공.
+1. 녹화 6초는 `color` 결함 시작(약 6.2초)을 거의 못 덮었고, 수정 뒤 재녹화도 결함 구간을 겨우 스쳐서 임계값을 뒤로 밀기만 해도 "수정됨"으로 통과했다. 녹화를 11초로 늘리고 공 중심 x 로 전 구간(첫 프레임 ≤0.25, 마지막 ≥0.8)을 덮었는지를 판정 조건에 넣었다. 사전 녹화도 같은 조건이다.
+2. 열람 판정이 tool.call 입력에 `clip-` 문자열만 있으면 인정했다(`ls`·`cat | wc` 도 열람). 이미지를 보는 도구(Read 등)가 `clip-NN.jpg` 를 경로로 불렀고 성공 tool.result 가 있는 것만 센다.
+3. 열람이 첫 편집보다 먼저인지, 결함 프레임을 하나 이상 열었는지를 추가했다. worker 가 Bash(python)로 소스를 고치므로 Bash 편집(`sed -i`·`.replace(`·`git commit` 등)도 편집으로 본다. 정규식 휴리스틱이라 완전하지 않다.
+4. 격리 가드: `TTAKKARI_NO_ENV_FILE=1`, loopback API, 임시 경로 게임 루트, DB 이름 표식(gs)이 아니면 아무것도 만들지 않고 멈춘다.
+5. `missing` 공 반경 22 는 스캔 면적(약 243px)이 임계 200 에 겨우 닿아 JPEG 가장자리에서 흔들릴 수 있어 30(약 440px)으로 바꿨다. 비용·시간에 요청→자동 빌드 구간을 추가했다.
 
-## 오프라인 검증(소켓 없이 한 것)
+판정 함수는 소켓 없이 `tests/test_game_clip_bench.py`(8개)로 고정했다. 관련 pytest 17개 통과.
+첫 실행에서 새 coverage 검사가 `color` 에서 오탐했다(공이 파랗게 변한 뒤 빨간 픽셀 중심이 없음). 색 무관 중심으로 고쳤다. 이 오탐 때문에 worker 를 부르지 않은 실행은 비용 0이다.
 
-- `py_compile clip_bench.py` → PY-OK, `node --check clip_bench_collect.mjs` → MJS-OK, import → `IMPORT-OK ['color' 'missing']`.
-- 픽스처 2종을 스텁(phaser·bridge) + front tsc `--strict` 로 검사 → TSC-OK. Phaser API 이름은 통과한 in-repo 픽스처와 대조했다.
-  실제 tsc·vite 는 격리 컨테이너 빌드가 유일한 확인 수단이라 E2E 실행 시 판정된다.
-- 스캔 임계값(빨강 R≥150·G,B≤130, 파랑 B≥150·R≤130·G≤150, 초록 G≥150·R,B≤150, 존재 기준 200px)을 bridge 와 같은 품질 60 JPEG 합성 이미지로 확인:
-  각 색 468~483px, 교차 검출 0.
-- 서버 `FeedbackIn.clip` → 저장소 배치(`clip-NN.jpg`) → worker prompt(시각순 열람 지시) 경로는 코드·기존 테스트로만 재확인했다.
+## 결과(최종 도구, 사례당 1회)
 
-## 재실행 절차(다음 작업자용, 소켓 되는 환경에서)
+| | color(공 색이 중간에 파랑으로) | missing(세 공 중 초록이 중간에 사라짐) |
+|---|---|---|
+| Run | 80c98ad3 (claude/sonnet, succeeded) | da1817e1 (claude/sonnet, succeeded) |
+| 올린 프레임 | 4장(정상 2·결함 2), 480x360 JPEG | 4장(정상 2·결함 2) |
+| clip 열람 근거 | Read 4회 seq 9·11·13·15, 모두 성공 result, 결함 프레임(clip-03·04) 포함 | Read 4회 seq 7·9·11·13, 결함 프레임 포함 |
+| 열람 vs 첫 편집 | 편집 seq 20, 열람이 먼저 | 편집 seq 23, 열람이 먼저 |
+| 수정 | `tint` 계산·`setFillStyle` 삭제, 색 상수 고정(3+, 4-줄) | `green.setVisible(bx <= 0.5)` 삭제(1+, 2-줄) |
+| 자동 빌드 | v3 succeeded, source_commit 이 worker 커밋과 일치 | v4 succeeded, 일치 |
+| 수정 빌드 재녹화(11초·23프레임) | 전 프레임 빨강 공만, 공 x 0.16→0.92 로 전 구간 | 전 프레임 세 공, x 0.15→0.92 |
+| 비용 | 0.1018달러 | 0.0974달러 |
+| 시간 | Run 25초, 요청→자동 빌드 35초 | Run 21초, 요청→자동 빌드 31초 |
+| 판정 | pass | pass |
 
-1. `/private/tmp/gs-g31/env.sh` 를 읽어 격리 env 를 쓴다(DB `ttakkari_gs_g31_20261020`, HOME·게임 루트 분리, 운영과 무관).
-   `TTAKKARI_PLAYWRIGHT_DIR` 은 playwright node 가 설치된 쪽으로 지정한다(당시 canonical back `.browser-runtime`).
-2. `/private/tmp/gs-g31/run.sh [color|missing|all]`: createdb → init-config → migrate → API 18790·serve-games 18795 기동 → clip_bench.py → 서버 종료.
-   결과는 `/private/tmp/gs-g31/out/<사례>/{pre,clip,post,request,run,events,prompt_clip,result}.json` 과 `results.json`.
-3. 브라우저·컨테이너 이미지는 호스트 캐시를 쓴다. worker 비용은 G29b 기준 건당 약 0.07~0.10달러였다.
-4. 성공하면 ADR 0060 상태·game-studio.md G31 행을 갱신하고, 서버 코드 변경이 있을 때만 관련 pytest 통과 후 clean SHA 로 배포 예약한다.
+도구 호출 8개씩, guard.blocked 0. 결과는 `/private/tmp/gs-g31/out/<사례>/`(임시 경로, 증거는 이 문서에 요약).
+검토 도중 이전 판정 코드로 돌린 `missing` 1회(Run 34e1b4dd, 0.0981달러, 17초/37초)도 같은 방식으로 성공했고 새 기준으로 재판정해도 열람·순서·전 구간 픽셀이 성립했다. worker 비용 합계 3건 0.2973달러.
+비용은 Claude CLI 가 보고한 `cost_usd` 이며 구독 청구액과 같다고 확인하지 않았다(확인 필요).
+
+## 이 결과가 말하지 않는 것
+
+- 표본은 사례 2종(missing 은 2회)이다. 일반 성공률이 아니다.
+- 두 결함 모두 소스가 짧아 프레임 없이 소스만 읽어도 고칠 수 있다. 이 E2E 는 "worker 가 프레임을 실제로 열고, 그 뒤 고치고, 빌드가 성공한다"를 증명하지 "프레임이 있어야만 고칠 수 있다"는 증명하지 못한다. 후자는 소스에 단서가 없는 결함(예: 에셋·타이밍 결함)과 프레임 없는 대조군이 필요한 다음 단위다.
+- Read 도구 결과 본문은 이미지라 이벤트에 비어 있다. 열람 증거는 호출·성공 result·순서이고, worker 의 결과 글이 클립 메타의 시각(0.00·5.01·5.51·11.01초)과 공 위치·색을 정확히 인용한 것은 프레임을 봤다는 정황 근거(추론)다.
+- worker 는 빌드·실행을 하지 않았고(격리 정책) 자동 빌드와 재녹화가 유일한 검증이다. Chromium 헤드리스만이며 iOS Safari·실기기는 범위 밖이다.
+
+## 재실행 절차(다음 작업자용)
+
+1. `/private/tmp/gs-g31/env.sh`(위 환경)를 두고 `/private/tmp/gs-g31/run.sh [color|missing|all]` 을 실행한다. ROOT 는 clean worktree 여야 한다. 격리 가드가 환경을 확인한다.
+2. createdb → init-config → migrate → API 18790·serve-games 18795 → clip_bench.py → 서버 종료. 결과는 `out/<사례>/{pre,clip,post,request,run,events,prompt_clip,result}` 와 `results.json`.
+3. `TTAKKARI_PLAYWRIGHT_DIR` 은 canonical back 의 `.browser-runtime`. 컨테이너 이미지는 호스트 캐시(node:20-alpine).
+4. 실패 시 `result.json` 의 `clip_evidence`(열람·순서), `pre_covers_traverse`, `fixed_pixels`, `auto_build` 부터 본다.
 
 ## 불변 조건 준수
 
-운영·사용자 게임 저장소를 건드리지 않았다(격리 DB·HOME·게임 루트만 설계하고 실행도 못 했다).
-canonical back 의 다른 세션 미커밋 변경과 back-games-p3 의 다른 작업자 미커밋 변경(G32 추정: `M api/games.py`, `versions.py` 등)을 건드리지 않고,
-origin/main 기준 clean worktree 에서 내 파일만 커밋했다. launchctl·백엔드 재시작은 실행하지 않았다. 실기기 iOS Safari 는 범위 밖.
+운영·사용자 게임 저장소를 건드리지 않았다(격리 DB·HOME·게임 루트만). canonical back 의 다른 세션 미커밋 변경과 back-games-p3(G32)를 건드리지 않고 origin/main 기준 clean worktree 에서 작업했다. launchctl·백엔드 재시작·배포 예약은 하지 않았다(서버 코드 변경 없음).
+
+## 앞선 muse 시도 기록(보존)
+
+앞선 실행(muse 엔진 샌드박스)은 소켓 차단(`network_loopback`·`network_outbound` blocked, loopback·pg·docker.sock 이 `PermissionError [Errno 1]`)과 승인 비활성으로 E2E 를 못 돌려 도구 4종만 추가했다. 이 차단은 그 환경 한정이며 호스트 엔진에서는 위 사전 확인대로 막히지 않았다.

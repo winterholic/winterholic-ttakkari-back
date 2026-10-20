@@ -1,0 +1,123 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "timezone": {
+      "const": "Asia/Seoul"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "day": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "calls": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "usd": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "tokens",
+        "calls",
+        "usd"
+      ],
+      "additionalProperties": false
+    },
+    "job": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "calls": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "usd": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "tokens",
+        "calls",
+        "usd"
+      ],
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "properties": {
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "output_and_reasoning_tokens": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "input_tokens",
+        "output_and_reasoning_tokens"
+      ],
+      "additionalProperties": false
+    },
+    "sampling": {
+      "type": "object",
+      "properties": {
+        "daily_absolute_documents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "strategy": {
+          "const": "stratified_reservoir"
+        }
+      },
+      "required": [
+        "daily_absolute_documents",
+        "strategy"
+      ],
+      "additionalProperties": false
+    },
+    "unknown_usage_policy": {
+      "const": "keep_full_reservation"
+    },
+    "unbounded_engine_policy": {
+      "const": "disabled"
+    },
+    "cache_scope": {
+      "const": "tenant_scope_hash_model_prompt_policy_query"
+    },
+    "retries_charge_budget": {
+      "const": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "timezone",
+    "enabled",
+    "day",
+    "job",
+    "request",
+    "sampling",
+    "unknown_usage_policy",
+    "unbounded_engine_policy",
+    "cache_scope",
+    "retries_charge_budget"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ttakkari:collector:budget-policy:1.0.0"
+}

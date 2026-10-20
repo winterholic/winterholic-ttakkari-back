@@ -1,0 +1,17 @@
+{
+  "valid-hold.json": "accept",
+  "valid-accept.json": "accept",
+  "valid-error.json": "accept",
+  "invalid-version.json": "reject",
+  "invalid-unknown-setting.json": "reject",
+  "invalid-bad-hash.json": "reject",
+  "invalid-tampered-text.json": "reject",
+  "invalid-naive-time.json": "reject",
+  "invalid-scope.json": "reject",
+  "invalid-uncalibrated-probability.json": "reject",
+  "invalid-relevance-without-query.json": "reject",
+  "invalid-denied-accept.json": "reject",
+  "invalid-empty-error.json": "reject",
+  "invalid-fact-without-evidence.json": "reject",
+  "invalid-inverted-valid-time.json": "reject"
+}

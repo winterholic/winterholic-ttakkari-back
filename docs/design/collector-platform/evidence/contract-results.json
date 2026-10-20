@@ -1,0 +1,180 @@
+[
+  {
+    "file": "valid-hold.json",
+    "expected": "accept",
+    "actual": "accept",
+    "reason": null
+  },
+  {
+    "file": "valid-accept.json",
+    "expected": "accept",
+    "actual": "accept",
+    "reason": null
+  },
+  {
+    "file": "valid-error.json",
+    "expected": "accept",
+    "actual": "accept",
+    "reason": null
+  },
+  {
+    "file": "invalid-version.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "'1.0.0' was expected"
+  },
+  {
+    "file": "invalid-unknown-setting.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "Additional properties are not allowed ('ignore_budget' was unexpected)"
+  },
+  {
+    "file": "invalid-bad-hash.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "{'text': '합성 계약 예시입니다. Synthetic contract fixture.', 'sha256': 'bad', 'language': 'ko-en', 'parser_version': 'fixture-v1', 'normalizer_version': 'identity-v1', 'chunker_version': 'none', 'raw_alignment_handle': None, 'truncated': False} is not valid under any of the given schemas"
+  },
+  {
+    "file": "invalid-tampered-text.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "normalized.sha256 text mismatch"
+  },
+  {
+    "file": "invalid-naive-time.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "timezone missing"
+  },
+  {
+    "file": "invalid-scope.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "'public' is not one of ['personal', 'work', 'shared']"
+  },
+  {
+    "file": "invalid-uncalibrated-probability.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "None is not of type 'string'"
+  },
+  {
+    "file": "invalid-relevance-without-query.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "quality.relevance measured scale/query missing"
+  },
+  {
+    "file": "invalid-denied-accept.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "'allowed' was expected"
+  },
+  {
+    "file": "invalid-empty-error.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "[] should be non-empty"
+  },
+  {
+    "file": "invalid-fact-without-evidence.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "factuality evidence missing"
+  },
+  {
+    "file": "invalid-inverted-valid-time.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "source.valid_to must be later"
+  },
+  {
+    "file": "budget-invalid-cross-limit.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "job.tokens exceeds day"
+  },
+  {
+    "file": "budget-invalid-unknown-setting.json",
+    "expected": "reject",
+    "actual": "reject",
+    "reason": "Additional properties are not allowed ('cost_per_million' was unexpected)"
+  },
+  {
+    "file": "budget-valid.json",
+    "expected": "accept",
+    "actual": "accept",
+    "reason": null
+  },
+  {
+    "file": "intake/intake-valid-bound.json",
+    "expected": "created",
+    "actual": "created",
+    "reason": "단일 제출: envelope access가 인증 주체 산출값과 일치",
+    "negative": false
+  },
+  {
+    "file": "intake/intake-invalid-tenant-tamper.json",
+    "expected": "reject:scope_binding_mismatch",
+    "actual": "reject:scope_binding_mismatch",
+    "reason": "envelope tenant_id를 임의 값으로 변조",
+    "negative": true
+  },
+  {
+    "file": "intake/intake-invalid-principal-tamper.json",
+    "expected": "reject:scope_binding_mismatch",
+    "actual": "reject:scope_binding_mismatch",
+    "reason": "principal_ids를 다른 주체로 변조",
+    "negative": true
+  },
+  {
+    "file": "intake/intake-invalid-principal-escalation.json",
+    "expected": "reject:scope_binding_mismatch",
+    "actual": "reject:scope_binding_mismatch",
+    "reason": "자기 주체에 다른 주체를 덧붙여 공유 범위 확대",
+    "negative": true
+  },
+  {
+    "file": "intake/intake-invalid-scope-tamper.json",
+    "expected": "reject:scope_binding_mismatch",
+    "actual": "reject:scope_binding_mismatch",
+    "reason": "personal 세션이 work scope로 제출",
+    "negative": true
+  },
+  {
+    "file": "intake/intake-replay-key-order.json",
+    "expected": "created|replay",
+    "actual": "created|replay",
+    "reason": "같은 키 재전송, 모든 객체의 key 순서만 반대",
+    "negative": false
+  },
+  {
+    "file": "intake/intake-replay-recorded-at.json",
+    "expected": "created|replay",
+    "actual": "created|replay",
+    "reason": "같은 키 재전송, 전송 메타데이터 recorded_at만 변경",
+    "negative": false
+  },
+  {
+    "file": "intake/intake-conflict-semantic.json",
+    "expected": "created|conflict:409",
+    "actual": "created|conflict:409",
+    "reason": "같은 키로 decision 의미 필드 변경",
+    "negative": true
+  },
+  {
+    "file": "intake/intake-conflict-envelope-id.json",
+    "expected": "created|conflict:409",
+    "actual": "created|conflict:409",
+    "reason": "같은 키로 envelope_id만 새로 발급",
+    "negative": true
+  },
+  {
+    "file": "intake/intake-conflict-cross-scope-replay.json",
+    "expected": "created|reject:scope_binding_mismatch",
+    "actual": "created|reject:scope_binding_mismatch",
+    "reason": "같은 키·payload를 다른 scope 세션이 재전송해도 기존 job을 돌려주지 않음",
+    "negative": true
+  }
+]

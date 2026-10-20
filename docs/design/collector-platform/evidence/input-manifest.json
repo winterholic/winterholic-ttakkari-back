@@ -1,0 +1,44 @@
+[
+  {
+    "path": "/Users/winterholic/.ttakkari/data/outbox/9bc2a53b-7baf-4272-bd9c-4a9714732616/01-system-analysis.md",
+    "sha256": "20f2ca992ce6a5564099919d8f993ec8c3085d408f3138d5f79ae7f6855626f1",
+    "bytes": 42925,
+    "mtime": "2026-10-20T13:32:44.609375+00:00"
+  },
+  {
+    "path": "/Users/winterholic/.ttakkari/data/outbox/77e354b1-ba18-4d91-8f68-1bfcc12dde68/01-system-analysis-verification.md",
+    "sha256": "15af662bc0bc480d71629e3a03bea98fd9c2ecc3991ac8980ededf9732fa46d8",
+    "bytes": 13105,
+    "mtime": "2026-10-20T13:37:50.933823+00:00"
+  },
+  {
+    "path": "/Users/winterholic/development/scratch/collector-research/02-public-models-datasets-report.md",
+    "sha256": "bb983c57a0d3b9d1b1c36a51057ffc357a34a156d174bde4566ad80e07cd418e",
+    "bytes": 18659,
+    "mtime": "2026-10-20T13:36:34.077233+00:00"
+  },
+  {
+    "path": "/Users/winterholic/.ttakkari/data/outbox/afbe02f3-1c2e-4e68-a5f0-29373da8286c/02-report-verification.md",
+    "sha256": "df4a2a0de2a123ee4b5edab5c034b9265bae61aa807d125b92cec7966bc8e635",
+    "bytes": 14667,
+    "mtime": "2026-10-20T13:40:38.916173+00:00"
+  },
+  {
+    "path": "/tmp/collector-verify-run02.log",
+    "sha256": "08fd71846295050cca1ab2305c53eb003e9ec35cd9f12155061847508e5b8f2d",
+    "bytes": 1811,
+    "mtime": "2026-10-20T13:39:06.320654+00:00"
+  },
+  {
+    "path": "/tmp/collector-verify-run03.log",
+    "sha256": "744d1cc824d33d8856219d88628fe2afd6243371208967da0ac196449774afd6",
+    "bytes": 5263,
+    "mtime": "2026-10-20T13:39:07.062010+00:00"
+  },
+  {
+    "path": "/tmp/collector-verify-memory.log",
+    "sha256": "03b625c70993cb7377c09a375b86d05acb5c228c74eed3471d9e9cfab288a2f3",
+    "bytes": 174,
+    "mtime": "2026-10-20T13:39:17.457659+00:00"
+  }
+]

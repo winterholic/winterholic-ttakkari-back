@@ -1,0 +1,37 @@
+{
+  "intake-valid-bound.json": [
+    "created"
+  ],
+  "intake-invalid-tenant-tamper.json": [
+    "reject:scope_binding_mismatch"
+  ],
+  "intake-invalid-principal-tamper.json": [
+    "reject:scope_binding_mismatch"
+  ],
+  "intake-invalid-principal-escalation.json": [
+    "reject:scope_binding_mismatch"
+  ],
+  "intake-invalid-scope-tamper.json": [
+    "reject:scope_binding_mismatch"
+  ],
+  "intake-replay-key-order.json": [
+    "created",
+    "replay"
+  ],
+  "intake-replay-recorded-at.json": [
+    "created",
+    "replay"
+  ],
+  "intake-conflict-semantic.json": [
+    "created",
+    "conflict:409"
+  ],
+  "intake-conflict-envelope-id.json": [
+    "created",
+    "conflict:409"
+  ],
+  "intake-conflict-cross-scope-replay.json": [
+    "created",
+    "reject:scope_binding_mismatch"
+  ]
+}

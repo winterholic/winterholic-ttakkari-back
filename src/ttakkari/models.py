@@ -970,6 +970,7 @@ class PublicShare(Base):
     expires_at: Mapped[datetime]
 
 # Register ledger and knowledge-library tables in the shared metadata used by tests and Alembic.
+from ttakkari import collector_models as _collector_models  # noqa: F401
 from ttakkari import kb_models as _kb_models  # noqa: F401
 from ttakkari import knowledge_models as _knowledge_models  # noqa: F401
 from ttakkari.research import models as _research_models  # noqa: F401

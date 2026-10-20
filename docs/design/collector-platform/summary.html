@@ -1,0 +1,1718 @@
+<!doctype html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>따까리 범용 수집 플랫폼 실행 설계</title>
+<meta name="description" content="3단계 실행 설계 · 표준 계약 · 실제 PMS 등록">
+<!-- ROUTING: type=design shell=doc skin=blueprint 근거: 시스템 경계·3단계 실행 흐름을 본인이 휴대폰에서 찾아보는 설계 납품 요약 -->
+<script>
+/* 테마를 첫 페인트 전에 결정 — 다크 사용자의 라이트 플래시(FOUC)와
+   mermaid 초기 테마 오판을 방지.
+   ⚠ 다크 정본 스킨(terminal-quant · ink-impact · blueprint)을 골랐다면
+      아래 prefers-color-scheme 분기를 t = 'dark'; 로 교체할 것.
+   localStorage 접근 불가 환경 대비 try/catch. */
+(function(){
+  try{
+    var t = localStorage.getItem('html-report-theme');
+    if (t !== 'dark' && t !== 'light') t = 'dark';
+    document.documentElement.dataset.theme = t;
+  }catch(e){}
+})();
+</script>
+<style>
+/* Offline system font fallback. */
+
+/* ============================================
+   1. DESIGN TOKENS (Light)
+   ============================================ */
+:root{
+  /* Light — 흰 도면지 + 청록 잉크 */
+  --color-primary:#0E6FA8;
+  --color-primary-hover:#0A5583;
+  --color-primary-pressed:#074061;
+  --color-primary-soft:#E4F1F9;
+  --color-primary-fg:#FFFFFF;
+
+  --color-bg:#F7FAFC;
+  --color-bg-2:#EFF4F8;
+  --color-surface:#E6EEF4;
+  --color-surface-2:#D6E2EB;
+  --color-border:#C3D3E0;
+  --color-border-strong:#8FA8BC;
+  /* 구조선 — 의미를 나르는 선(표 격자 외곽·도형 외곽·축). WCAG 1.4.11 3:1 실측 보장 */
+  --color-rule:#738B9F;
+  --color-ink:#0C1C28;
+  --color-ink-2:#17303F;
+  --color-ink-3:#31505F;
+  --color-muted:#556F80;
+  --color-muted-2:#8FA8BC;
+
+  --color-success:#12796A;
+  --color-success-fg:#0B5147;
+  --color-success-soft:#DDF0EC;
+  --color-warn:#9A6510;
+  --color-warn-fg:#6B460A;
+  --color-warn-soft:#F7EEDC;
+  --color-danger:#B9312F;
+  --color-danger-fg:#82211F;
+  --color-danger-soft:#F8E3E2;
+  --color-info:var(--color-primary);
+  --color-info-fg:var(--color-primary-hover);
+  --color-info-soft:var(--color-primary-soft);
+
+  --font-sans:'Pretendard Variable',Pretendard,-apple-system,system-ui,'Apple SD Gothic Neo',sans-serif;
+  --font-mono:'JetBrains Mono','SF Mono',Menlo,Consolas,'D2Coding',monospace;
+  --fz-caption:12px;   /* 한글 라벨 하한 */
+  --fz-small:13px;
+  --fz-base:15px;
+  --fz-lg:18px;
+  --fz-xl:22px;
+  --fz-2xl:28px;
+  --fz-3xl:36px;
+  --fz-4xl:48px;
+  --fz-display:64px;
+  --lh-tight:1.15;
+  --lh-snug:1.3;
+  --lh-base:1.65;
+
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px;
+  --s-5:24px; --s-6:32px; --s-7:48px; --s-8:64px; --s-9:96px;
+
+  --r-xs:2px; --r-sm:3px; --r-md:4px; --r-lg:6px; --r-full:999px;
+
+  --w-content:1000px;      /* 다이어그램이 본체 — 넓게 */
+  --w-toc:230px;
+
+  --shadow-overlay:0 10px 30px rgba(12,28,40,.14);
+  --ease-out:cubic-bezier(0.22,1,0.36,1);
+  --dur-fast:150ms;
+  --dur-base:300ms;
+
+  --code-bg:#0C1C28;
+  --code-fg:#D3E4EF;
+  --code-comment:#5F7A8B;
+  --code-keyword:#6FC3F0;
+  --code-string:#7FD9C4;
+  --code-number:#F0C46F;
+
+  --grid-fine:rgba(15,80,120,.07);    /* 미세 격자 */
+  --grid-coarse:rgba(15,80,120,.13);  /* 굵은 격자 (5칸마다) */
+  --node-line:#0E6FA8;                /* 도형 외곽선 */
+}
+
+[data-theme=dark]{
+  --color-primary:#5EC8F5;
+  --color-primary-hover:#8FDBFA;
+  --color-primary-pressed:#B8E9FC;
+  --color-primary-soft:var(--color-surface);
+  --color-primary-fg:#06121C;
+
+  --color-bg:#0A1622;
+  --color-bg-2:#0D1B29;
+  --color-surface:#122334;
+  --color-surface-2:#1A3145;
+  --color-border:#1F3A50;
+  --color-border-strong:#33566F;
+  --color-rule:#4C6F8A;
+  --color-ink:#E8F2F9;
+  --color-ink-2:#CFE1EE;
+  --color-ink-3:#AEC7D8;
+  --color-muted:#7C9AAF;
+  --color-muted-2:#54728A;
+
+  --color-success:oklch(76% 0.12 175);
+  --color-success-fg:oklch(87% 0.08 175);
+  --color-success-soft:var(--color-surface);
+  --color-warn:oklch(79% 0.12 80);
+  --color-warn-fg:oklch(88% 0.08 80);
+  --color-warn-soft:var(--color-surface);
+  --color-danger:oklch(71% 0.15 22);
+  --color-danger-fg:oklch(84% 0.10 22);
+  --color-danger-soft:var(--color-surface);
+
+  --code-bg:#122334;
+  --shadow-overlay:0 10px 30px rgba(0,0,0,.55);
+
+  --grid-fine:rgba(120,190,230,.055);
+  --grid-coarse:rgba(120,190,230,.11);
+  --node-line:#5EC8F5;
+}
+
+/* ⚠️ **스킨 교체 대상 밖**에 둔다 — 위 블록은 스킨이 통째로 갈아끼우므로 여기 넣으면
+   스킨 적용 순간 사라지고, `var(--sm-6)` 이 미정의가 되어 gap 이 0 으로 무너진다
+   (실측: 헤더 메타의 라벨과 값이 "작성자확인 필요" 처럼 붙어 나왔다).
+   마이크로 스케일 — 알약형(배지·칩·인라인 코드)과 헤어라인 보정용.
+   본 스케일(--s-1..--s-9)의 4px 은 이 용도엔 너무 커서 실무적으로 1~6px 리터럴이 계속
+   쓰였고, 그 결과 **토큰을 선언해 놓고 안 지키는** 상태가 됐다(8문서 실측).
+   지어낸 값이 아니라 **이미 쓰이고 있던 값에 이름을 붙인 것**이다. */
+:root{
+  --sm-1:1px; --sm-2:2px; --sm-3:3px; --sm-5:5px; --sm-6:6px; --sm-10:10px;
+}
+
+/* ============================================
+   3. BASE
+   ============================================ */
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{
+  margin:0;
+  font-family:var(--font-sans);
+  font-size:var(--fz-base);
+  line-height:var(--lh-base);
+  color:var(--color-ink-2);
+  background:var(--color-bg);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  font-feature-settings:"tnum","ss01";
+  font-variant-numeric:tabular-nums;
+  /* 한글은 어절(단어) 단위로 끊는다. 이게 없으면 '데이터센터'가 '데이터센 / 터' 로
+     단어 중간에서 쪼개진다 — 제목이 클수록 눈에 띄고, 자동 검사로는 안 잡힌다.
+     keep-all 만 쓰면 긴 URL·식별자가 화면을 뚫으므로 break-word 를 짝으로 둔다. */
+  word-break:keep-all;
+  overflow-wrap:break-word;
+}
+img,svg{max-width:100%;display:block}
+hr{border:0;border-top:1px solid var(--color-border);margin:var(--s-7) 0}
+::selection{background:var(--color-primary-soft);color:var(--color-ink)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{transition-duration:0!important;animation-duration:0!important}
+}
+
+/* ============================================
+   4. LAYOUT
+   ============================================ */
+.page{
+  display:grid;
+  grid-template-columns:var(--w-toc) minmax(0,var(--w-content)) 1fr;
+  gap:var(--s-7);
+  max-width:1280px;
+  margin:0 auto;
+  padding:var(--s-7) var(--s-5);
+}
+.toc{
+  position:sticky;
+  top:var(--s-5);
+  align-self:start;
+  font-size:var(--fz-small);
+  max-height:calc(100vh - var(--s-7));
+  overflow-y:auto;
+  padding-right:var(--s-3);
+}
+.toc h4{
+  font-size:var(--fz-caption);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--color-muted);
+  margin:0 0 var(--s-3);
+  font-weight:600;
+}
+.toc ol{list-style:none;padding:0;margin:0}
+.toc li{margin:var(--s-1) 0}
+.toc a{
+  color:var(--color-ink-3);
+  text-decoration:none;
+  display:block;
+  padding:var(--sm-6) var(--s-3);
+  border-radius:var(--r-sm);
+  border-left:2px solid transparent;
+  line-height:1.45;
+  transition:background var(--dur-fast) var(--ease-out),color var(--dur-fast) var(--ease-out);
+}
+.toc a:hover{background:var(--color-surface);color:var(--color-ink)}
+.toc a.active{
+  color:var(--color-primary);
+  border-left-color:var(--color-primary);
+  background:var(--color-primary-soft);
+  font-weight:600;
+}
+.toc ol ol{margin-left:var(--s-3);border-left:1px solid var(--color-border);padding-left:var(--s-2)}
+.content{min-width:0}
+@media(max-width:980px){
+  .page{grid-template-columns:1fr}
+  /* ⚠️ 이전 판은 사이드 TOC 를 그대로 세로로 쌓기만 했다. 항목이 7개만 돼도
+     **첫 화면을 목차가 통째로 먹어 제목이 스크롤 아래로 밀린다**(실측: 360px 뷰포트).
+     → 가로 스크롤 칩 줄로 접는다. 한 줄만 차지하고 목차 기능은 그대로 남는다. */
+  .toc{
+    position:static; max-height:none; padding:0 0 var(--s-3);
+    border-bottom:1px solid var(--color-border);
+    overflow-x:auto; overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+  }
+  .toc::-webkit-scrollbar{display:none}
+  .toc h4{margin-bottom:var(--s-2)}
+  .toc ol{display:flex; gap:var(--s-2); white-space:nowrap; width:max-content}
+  .toc ol ol{display:none}          /* 2단계는 모바일에서 접는다 */
+  .toc li{margin:0}
+  .toc a{
+    border:1px solid var(--color-border); border-left-width:1px;
+    border-radius:var(--r-full); padding:var(--s-1) var(--s-3);
+  }
+  .toc a.active{border-color:var(--color-primary)}
+}
+
+/* --------------------------------------------
+   FOCUS — 키보드 접근성
+   ⚠️ 이전 판은 `:hover` 규칙이 9개인데 `:focus` 는 **0개**였다.
+      마우스 사용자에게만 상태를 보여주고 키보드 사용자는 자기가 어디 있는지 알 수 없었다.
+      hover 를 주는 요소에는 반드시 focus 도 준다 — 짝으로 관리한다.
+      `:focus-visible` 을 쓰므로 마우스 클릭 시에는 링이 뜨지 않는다.
+   -------------------------------------------- */
+:where(a, button, [role=button], summary, input, select, textarea, [tabindex]):focus-visible{
+  outline:2px solid var(--color-primary);
+  outline-offset:2px;
+  border-radius:var(--r-sm);
+}
+.toc a:focus-visible{background:var(--color-surface);color:var(--color-ink)}
+.zoom-toolbar button:focus-visible,
+.zoom-close:focus-visible,
+.theme-toggle:focus-visible{background:var(--color-surface)}
+/* 대비가 낮은 배경 위에서도 링이 보이도록 이중 링 */
+@supports(outline-offset:2px){
+  :where(a,button,[role=button],summary):focus-visible{
+    box-shadow:0 0 0 4px var(--color-primary-soft);
+  }
+}
+
+/* ============================================
+   5. TYPOGRAPHY
+   ============================================ */
+h1,h2,h3,h4{color:var(--color-ink);font-weight:700;line-height:var(--lh-tight)}
+h1{font-size:var(--fz-4xl);margin:0 0 var(--s-3);letter-spacing:-0.025em}
+h2{font-size:var(--fz-3xl);margin:var(--s-8) 0 var(--s-4);letter-spacing:-0.02em;line-height:var(--lh-snug)}
+h3{font-size:var(--fz-2xl);margin:var(--s-7) 0 var(--s-3);letter-spacing:-0.015em;line-height:var(--lh-snug)}
+h4{font-size:var(--fz-xl);margin:var(--s-5) 0 var(--s-2);line-height:var(--lh-snug)}
+p{margin:0 0 var(--s-4)}
+a{
+  color:var(--color-primary);
+  text-decoration:none;
+  border-bottom:1px solid transparent;
+  transition:border-color var(--dur-fast) var(--ease-out);
+}
+a:hover{border-bottom-color:var(--color-primary)}
+strong{color:var(--color-ink);font-weight:600}
+em{color:var(--color-ink-2);font-style:normal;font-weight:500} /* 한글에 italic 금지 — weight로 대체 */
+code{
+  font-family:var(--font-mono);
+  font-size:max(13px,.88em);   /* 한글 본문 하한 13px — .88em 만 쓰면 13px 문맥에서 11.44px 로 뭉갠다 */
+  background:var(--color-surface);
+  color:var(--color-ink-2);
+  padding:var(--sm-2) var(--sm-6);
+  border-radius:var(--r-xs);
+  border:1px solid var(--color-border);
+}
+ul,ol{margin:0 0 var(--s-4);padding-left:var(--s-5)}
+li{margin:var(--s-2) 0}
+li>p{margin:0}
+blockquote{
+  margin:var(--s-5) 0;
+  padding:var(--s-3) var(--s-5);
+  border-left:3px solid var(--color-border-strong);
+  color:var(--color-muted);
+  background:var(--color-bg-2);
+}
+
+/* ============================================
+   6. REPORT HEADER
+   ============================================ */
+.report-header{
+  border-bottom:1px solid var(--color-border);
+  padding-bottom:var(--s-6);
+  margin-bottom:var(--s-7);
+}
+.report-header .kicker{
+  display:inline-block;
+  font-size:var(--fz-caption);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--color-primary);
+  background:var(--color-primary-soft);
+  padding:var(--sm-5) var(--s-3);
+  border-radius:var(--r-full);
+  font-weight:700;
+  margin-bottom:var(--s-3);
+}
+.report-header h1{margin-bottom:var(--s-3)}
+.report-header .subtitle{
+  font-size:var(--fz-lg);
+  color:var(--color-muted);
+  margin-bottom:var(--s-5);
+  font-weight:400;
+  line-height:1.5;
+}
+.report-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:var(--s-5);
+  font-size:var(--fz-small);
+  color:var(--color-muted);
+}
+.report-meta .item{display:inline-flex;align-items:center;gap:var(--sm-6)}
+.report-meta .label{color:var(--color-muted-2)}
+.report-meta strong{color:var(--color-ink-2);font-weight:600}
+
+/* ============================================
+   7. BADGE
+   ============================================ */
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-size:var(--fz-caption);
+  font-weight:700;
+  padding:var(--sm-3) var(--sm-10);
+  border-radius:var(--r-full);
+  background:var(--color-surface);
+  color:var(--color-ink-3);
+  border:1px solid var(--color-border);
+  line-height:1.4;
+  letter-spacing:.01em;
+}
+.badge.primary{background:var(--color-primary-soft);color:var(--color-primary);border-color:transparent}
+.badge.success{background:var(--color-success-soft);color:var(--color-success-fg);border-color:transparent}
+.badge.warn{background:var(--color-warn-soft);color:var(--color-warn-fg);border-color:transparent}
+.badge.danger{background:var(--color-danger-soft);color:var(--color-danger-fg);border-color:transparent}
+.badge.info{background:var(--color-info-soft);color:var(--color-info-fg);border-color:transparent}
+.badge.muted{background:var(--color-surface);color:var(--color-muted);border-color:transparent}
+/* 다크 — badge 도 hue tint 배경 제거. 무채색 surface + hue text/border 로 의미 전달 */
+[data-theme=dark] .badge.primary,
+[data-theme=dark] .badge.success,
+[data-theme=dark] .badge.warn,
+[data-theme=dark] .badge.danger,
+[data-theme=dark] .badge.info{
+  background:var(--color-surface-2);
+  border:1px solid var(--color-border-strong);
+}
+[data-theme=dark] .badge.primary{color:var(--color-primary)}
+[data-theme=dark] .badge.success{color:var(--color-success)}
+[data-theme=dark] .badge.warn{color:var(--color-warn)}
+[data-theme=dark] .badge.danger{color:var(--color-danger)}
+[data-theme=dark] .badge.info{color:var(--color-info)}
+
+/* ============================================
+   8. CALLOUT (with SVG icon)
+   ============================================ */
+.callout{
+  display:grid;
+  /* minmax(0,…) 필수 — 안에 <pre>·긴 토큰이 오면 1fr 이 min-content 로 부풀어 페이지를 뚫는다(실측) */
+  grid-template-columns:24px minmax(0,1fr);
+  gap:var(--s-3);
+  padding:var(--s-4) var(--s-5);
+  border-radius:var(--r-sm);
+  border:1px solid var(--color-border);
+  background:var(--color-surface);
+  margin:var(--s-5) 0;
+  align-items:start;
+}
+/* 아이콘을 생략하고 <div class="callout warn"><p>…</p></div> 로 써도 깨지지 않게.
+   그냥 두면 <p> 가 24px 아이콘 칸(1열)에 들어가 글자 폭이 24px 로 찌그러진다.
+   실사용 테스트에서 실제로 밟은 지뢰 — 자연스러운 마크업이 정답이 되게 만든다. */
+.callout > *:not(.callout-icon){grid-column:2}
+.callout:not(:has(.callout-icon)){grid-template-columns:0 1fr;gap:0}
+
+.callout .callout-icon{
+  width:22px;
+  height:22px;
+  flex-shrink:0;
+  margin-top:var(--sm-1);
+  color:var(--color-muted);
+}
+.callout .body{font-size:var(--fz-base);color:var(--color-ink-3);min-width:0}
+.callout .body>:first-child{margin-top:0}
+.callout .body>:last-child{margin-bottom:0}
+.callout .title{
+  font-weight:700;
+  color:var(--color-ink);
+  margin-bottom:var(--s-1);
+  display:block;
+  font-size:var(--fz-base);
+}
+.callout.note{background:var(--color-surface);border-color:var(--color-border)}
+.callout.note .callout-icon{color:var(--color-muted)}
+.callout.info{background:var(--color-info-soft);border-color:transparent}
+.callout.info .callout-icon{color:var(--color-info)}
+.callout.info .title{color:var(--color-info-fg)}
+.callout.success{background:var(--color-success-soft);border-color:transparent}
+.callout.success .callout-icon{color:var(--color-success)}
+.callout.success .title{color:var(--color-success-fg)}
+.callout.warn{background:var(--color-warn-soft);border-color:transparent}
+.callout.warn .callout-icon{color:var(--color-warn)}
+.callout.warn .title{color:var(--color-warn-fg)}
+.callout.danger{background:var(--color-danger-soft);border-color:transparent}
+.callout.danger .callout-icon{color:var(--color-danger)}
+.callout.danger .title{color:var(--color-danger-fg)}
+/* 다크에선 title도 무채색 — hue는 배경 tint + 아이콘에만. light vivid hue text가 다크에서 형광 떠보이는 것 방지 */
+[data-theme=dark] .callout.info .title,
+[data-theme=dark] .callout.success .title,
+[data-theme=dark] .callout.warn .title,
+[data-theme=dark] .callout.danger .title{color:var(--color-ink)}
+/* 다크 — soft hue tint 배경 완전 제거. surface 단색 + 좌측 4px accent bar 로 의미 전달 */
+[data-theme=dark] .callout.info,
+[data-theme=dark] .callout.success,
+[data-theme=dark] .callout.warn,
+[data-theme=dark] .callout.danger{
+  background:var(--color-surface);
+  border-left:4px solid var(--color-border);
+}
+[data-theme=dark] .callout.info{border-left-color:var(--color-info)}
+[data-theme=dark] .callout.success{border-left-color:var(--color-success)}
+[data-theme=dark] .callout.warn{border-left-color:var(--color-warn)}
+[data-theme=dark] .callout.danger{border-left-color:var(--color-danger)}
+
+/* ============================================
+   9. TL;DR (좌측 4px primary bar + surface)
+   ============================================ */
+.tldr{
+  position:relative;
+  background:var(--color-surface);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-md);
+  padding:var(--s-5) var(--s-6);
+  margin:0 0 var(--s-7);
+  overflow:hidden;
+}
+.tldr::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:0;
+  bottom:0;
+  width:4px;
+  background:var(--color-primary);
+}
+.tldr .label{
+  font-size:var(--fz-caption);
+  text-transform:uppercase;
+  letter-spacing:.12em;
+  color:var(--color-primary);
+  font-weight:700;
+  margin-bottom:var(--s-3);
+  display:block;
+}
+.tldr p{
+  font-size:var(--fz-xl);
+  color:var(--color-ink);
+  margin:0;
+  line-height:1.5;
+  font-weight:500;
+  letter-spacing:-0.01em;
+}
+.tldr ul{margin:var(--s-2) 0 0;padding-left:var(--s-5);font-size:var(--fz-lg);color:var(--color-ink-2);line-height:1.55}
+.tldr ul li{margin:var(--s-2) 0}
+
+/* ============================================
+   10. GRID & CARD
+   ============================================ */
+.grid{display:grid;gap:var(--s-4);margin:var(--s-5) 0}
+.grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.grid.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grid.cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:720px){.grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}}
+
+.card{
+  background:var(--color-surface);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-md);
+  padding:var(--s-5);
+}
+.card .card-kicker{
+  font-size:var(--fz-caption);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--color-primary);
+  font-weight:700;
+  margin-bottom:var(--s-2);
+  display:block;
+}
+.card h4{margin:0 0 var(--s-2);font-size:var(--fz-lg)}
+.card p{color:var(--color-ink-3);margin-bottom:var(--s-3)}
+.card p:last-child{margin-bottom:0}
+.card.outline{background:var(--color-bg);border-color:var(--color-border-strong)}
+.card.highlight{background:var(--color-primary-soft);border-color:transparent}
+.card.highlight .card-kicker{color:var(--color-primary-hover)}
+
+/* ============================================
+   11. STAT / KPI (sans bold, mono 폐기)
+   ============================================ */
+.stat{
+  background:var(--color-surface);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-md);
+  padding:var(--s-5) var(--s-6);
+  text-align:left;
+}
+.stat .label{
+  font-size:var(--fz-caption);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:var(--color-muted);
+  font-weight:700;
+  margin-bottom:var(--s-3);
+  display:block;
+}
+.stat .value{
+  font-family:var(--font-sans);
+  font-size:var(--fz-display);
+  font-weight:800;
+  color:var(--color-ink);
+  line-height:1.05;
+  letter-spacing:-0.03em;
+  display:block;
+}
+.stat .delta{
+  font-size:var(--fz-small);
+  margin-top:var(--s-2);
+  display:inline-block;
+  font-weight:600;
+}
+.stat .delta.up{color:var(--color-danger)}
+.stat .delta.down{color:var(--color-primary)}
+.stat .note{
+  font-size:var(--fz-small);
+  color:var(--color-muted);
+  margin-top:var(--s-2);
+  line-height:1.5;
+}
+
+/* ============================================
+   12. PROSCONS (중립화 기본, 명시 클래스로 색 옵트인)
+   ============================================ */
+.proscons{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--s-4);margin:var(--s-5) 0}
+.proscons>div{
+  padding:var(--s-5);
+  border-radius:var(--r-md);
+  border:1px solid var(--color-border);
+  background:var(--color-surface);
+}
+.proscons h4{margin:0 0 var(--s-3);display:flex;align-items:center;gap:var(--s-2);font-size:var(--fz-lg)}
+.proscons ul{margin:0;padding-left:var(--s-5)}
+.proscons li{color:var(--color-ink-3)}
+/* 명시적 의미 — 사용 시 .pros / .cons 클래스 추가. light는 h4 hue, dark는 h4도 무채색 */
+.proscons .pros{background:var(--color-success-soft);border-color:transparent}
+.proscons .pros h4{color:var(--color-success-fg)}
+.proscons .cons{background:var(--color-danger-soft);border-color:transparent}
+.proscons .cons h4{color:var(--color-danger-fg)}
+[data-theme=dark] .proscons .pros h4,
+[data-theme=dark] .proscons .cons h4{color:var(--color-ink)}
+/* 다크 — soft hue tint 제거 */
+[data-theme=dark] .proscons .pros,
+[data-theme=dark] .proscons .cons{
+  background:var(--color-surface);
+  border-left:4px solid var(--color-border);
+}
+[data-theme=dark] .proscons .pros{border-left-color:var(--color-success)}
+[data-theme=dark] .proscons .cons{border-left-color:var(--color-danger)}
+@media(max-width:720px){.proscons{grid-template-columns:1fr}}
+
+/* ============================================
+   13. TABLE
+   ============================================ */
+.table-wrap{
+  overflow-x:auto;
+  margin:var(--s-5) 0;
+  border-radius:var(--r-sm);
+  border:1px solid var(--color-border);
+  background:var(--color-bg);
+}
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:var(--fz-small);
+}
+thead{background:var(--color-surface)}
+th,td{
+  text-align:left;
+  padding:var(--s-3) var(--s-4);
+  border-bottom:1px solid var(--color-border);
+  vertical-align:top;
+  color:var(--color-ink-3);
+}
+th{
+  font-weight:700;
+  font-size:var(--fz-caption);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--color-muted);
+}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--color-bg-2)}
+td.num,th.num{font-family:var(--font-mono);text-align:right;font-variant-numeric:tabular-nums}
+td.center,th.center{text-align:center}
+
+table.decision td.score{
+  font-family:var(--font-mono);
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  text-align:center;
+  color:var(--color-ink);
+}
+table.decision tr.winner{background:var(--color-success-soft)}
+table.decision tr.winner:hover{background:var(--color-success-soft)}
+table.decision tr.winner td{color:var(--color-success-fg);font-weight:600}
+/* 다크 — winner hue tint 제거. 강조는 surface-2 + ink */
+[data-theme=dark] table.decision tr.winner,
+[data-theme=dark] table.decision tr.winner:hover{background:var(--color-surface-2)}
+[data-theme=dark] table.decision tr.winner td{color:var(--color-ink);font-weight:700}
+
+/* ============================================
+   14. TIMELINE
+   ============================================ */
+.timeline{position:relative;margin:var(--s-5) 0;padding-left:var(--s-6);list-style:none}
+.timeline::before{
+  content:"";
+  position:absolute;
+  left:7px;
+  top:8px;
+  bottom:8px;
+  width:2px;
+  background:var(--color-border-strong);
+}
+.timeline .item{position:relative;padding-bottom:var(--s-5)}
+.timeline .item::before{
+  content:"";
+  position:absolute;
+  left:calc(-1 * var(--s-6) + 1px);
+  top:6px;
+  width:14px;
+  height:14px;
+  border-radius:var(--r-dot,50%);
+  background:var(--color-bg);
+  border:2px solid var(--color-border-strong);
+  box-sizing:border-box;
+}
+.timeline .item.done::before{background:var(--color-primary);border-color:var(--color-primary)}
+.timeline .item.active::before{background:var(--color-bg);border-color:var(--color-primary);box-shadow:0 0 0 4px var(--color-primary-soft)}
+.timeline .item.warn::before{background:var(--color-warn);border-color:var(--color-warn)}
+.timeline .item.danger::before{background:var(--color-danger);border-color:var(--color-danger)}
+.timeline .when{
+  font-size:var(--fz-caption);
+  color:var(--color-muted);
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.timeline .title{font-weight:700;color:var(--color-ink);margin:var(--s-1) 0;font-size:var(--fz-base)}
+.timeline .desc{color:var(--color-ink-3);font-size:var(--fz-small);line-height:1.55}
+
+/* ============================================
+   15. STEPS (grid 2칸 32px+1fr, title·desc는 grid-column:2 고정, absolute 폐기)
+   ============================================ */
+.steps{list-style:none;padding:0;margin:var(--s-5) 0;counter-reset:step}
+.steps>li{
+  counter-increment:step;
+  display:grid;
+  /* minmax(0,…) 필수 — 안에 <pre>·긴 토큰이 오면 1fr 이 min-content 로 부풀어 페이지를 뚫는다(실측) */
+  grid-template-columns:32px minmax(0,1fr);
+  gap:var(--s-4);
+  padding:var(--s-4) var(--s-5);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-sm);
+  margin:var(--s-3) 0;
+  background:var(--color-surface);
+  align-items:start;
+}
+.steps>li::before{
+  content:counter(step);
+  width:28px;
+  height:28px;
+  border-radius:var(--r-dot,50%);
+  background:var(--color-primary);
+  color:var(--color-primary-fg);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:700;
+  font-size:var(--fz-small);
+  font-family:var(--font-sans);
+  letter-spacing:-0.02em;
+  flex-shrink:0;
+}
+/* callout 과 같은 지뢰 방지 — <li>본문</li> 처럼 .title/.desc 없이 써도
+   32px 번호 칸에 갇혀 세로로 붕괴하지 않게 모든 자식을 2열로 보낸다.
+   (실사용 테스트에서 <li><strong>단계</strong> — 설명</li> 로 쓰다가 붕괴) */
+.steps>li > *{grid-column:2}
+.steps>li .title{grid-column:2;font-weight:700;color:var(--color-ink);font-size:var(--fz-base);display:block;margin-bottom:2px}
+.steps>li .desc{grid-column:2;color:var(--color-muted);font-size:var(--fz-small);line-height:1.55}
+
+/* ============================================
+   16. COMPARE (AS-IS / TO-BE) — 중립화
+   ============================================ */
+.compare{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+  gap:var(--s-4);
+  align-items:stretch;
+  margin:var(--s-5) 0;
+}
+.compare .side{
+  padding:var(--s-5);
+  border-radius:var(--r-md);
+  border:1px solid var(--color-border);
+  background:var(--color-surface);
+}
+.compare .side h4{margin:0 0 var(--s-3);font-size:var(--fz-lg);display:flex;align-items:center;gap:var(--s-2)}
+.compare .side ul{margin:0;padding-left:var(--s-5)}
+.compare .side li{color:var(--color-ink-3)}
+.compare .side .side-label{
+  display:inline-block;
+  font-size:var(--fz-caption);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  font-weight:700;
+  color:var(--color-muted);
+  margin-bottom:var(--s-2);
+}
+/* 명시적 의미 — .danger / .success / .primary 추가 클래스로 옵트인 */
+.compare .side.danger{background:var(--color-danger-soft);border-color:transparent}
+.compare .side.danger h4,.compare .side.danger .side-label{color:var(--color-danger-fg)}
+.compare .side.success{background:var(--color-success-soft);border-color:transparent}
+.compare .side.success h4,.compare .side.success .side-label{color:var(--color-success-fg)}
+.compare .side.primary{background:var(--color-primary-soft);border-color:transparent}
+.compare .side.primary h4,.compare .side.primary .side-label{color:var(--color-primary-hover)}
+/* 다크에서 모든 .compare side 의 h4·side-label 도 무채색 — 형광 hue 떠보임 방지 */
+[data-theme=dark] .compare .side.danger h4,
+[data-theme=dark] .compare .side.danger .side-label,
+[data-theme=dark] .compare .side.success h4,
+[data-theme=dark] .compare .side.success .side-label,
+[data-theme=dark] .compare .side.primary h4,
+[data-theme=dark] .compare .side.primary .side-label{color:var(--color-ink)}
+/* 다크 — soft hue tint 제거 */
+[data-theme=dark] .compare .side.danger,
+[data-theme=dark] .compare .side.success,
+[data-theme=dark] .compare .side.primary{
+  background:var(--color-surface);
+  border-left:4px solid var(--color-border);
+}
+[data-theme=dark] .compare .side.danger{border-left-color:var(--color-danger)}
+[data-theme=dark] .compare .side.success{border-left-color:var(--color-success)}
+[data-theme=dark] .compare .side.primary{border-left-color:var(--color-primary)}
+.compare .arrow{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--color-muted-2);
+  font-size:var(--fz-2xl);
+  font-weight:300;
+  width:32px;
+}
+@media(max-width:720px){
+  .compare{grid-template-columns:1fr}
+  .compare .arrow{display:none}
+}
+
+/* ============================================
+   17. CODE BLOCK
+   ============================================ */
+pre{
+  background:var(--code-bg);
+  color:var(--code-fg);
+  padding:var(--s-4) var(--s-5);
+  border-radius:var(--r-sm);
+  overflow-x:auto;
+  font-family:var(--font-mono);
+  font-size:13px;
+  line-height:1.65;
+  margin:var(--s-5) 0;
+  border:1px solid transparent;
+}
+pre code{background:transparent;color:inherit;padding:0;border:0;font-size:inherit}
+pre .c-comment{color:var(--code-comment);font-style:normal;opacity:.85}
+pre .c-keyword{color:var(--code-keyword)}
+pre .c-string{color:var(--code-string)}
+pre .c-number{color:var(--code-number)}
+pre > .label{
+  display:inline-block;
+  font-size:var(--fz-caption);   /* 한글 라벨 하한 12px — 11px 고정이면 한글이 뭉갠다 */
+  color:var(--color-muted-2);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  margin-bottom:var(--s-2);
+  font-weight:700;
+}
+
+/* ============================================
+   18. PROGRESS
+   ============================================ */
+.progress{
+  background:var(--color-surface-2);
+  border-radius:var(--r-full);
+  height:8px;
+  overflow:hidden;
+  margin:var(--s-2) 0;
+}
+.progress>.bar{
+  height:100%;
+  background:var(--color-primary);
+  border-radius:var(--r-full);
+  transition:width var(--dur-base) var(--ease-out);
+}
+.progress.success>.bar{background:var(--color-success)}
+.progress.warn>.bar{background:var(--color-warn)}
+.progress.danger>.bar{background:var(--color-danger)}
+
+/* ============================================
+   19. CHECKLIST
+   ============================================ */
+.checklist{list-style:none;padding:0;margin:var(--s-4) 0}
+.checklist li{
+  display:flex;
+  align-items:flex-start;
+  gap:var(--s-3);
+  padding:var(--s-3) 0;
+  border-bottom:1px solid var(--color-border);
+}
+.checklist li:last-child{border-bottom:0}
+.checklist input[type=checkbox]{
+  margin-top:var(--sm-3);
+  width:18px;
+  height:18px;
+  accent-color:var(--color-primary);
+  cursor:pointer;
+  flex-shrink:0;
+}
+.checklist li.done>span{text-decoration:line-through;color:var(--color-muted)}
+
+/* ============================================
+   20. RISK HEATMAP
+   ============================================ */
+.risk-grid{
+  display:grid;
+  grid-template-columns:80px repeat(3,minmax(0,1fr));
+  grid-template-rows:auto repeat(3,minmax(96px,1fr));
+  gap:var(--sm-2);
+  background:var(--color-border);
+  margin:var(--s-5) 0;
+  border:1px solid var(--color-border);
+  border-radius:var(--r-sm);
+  overflow:hidden;
+}
+/* 80px 고정 + 3열은 390px 화면에서 397px 이 되어 뷰포트를 뚫는다(실측).
+   좁은 화면에선 축 라벨 칸을 줄이고 셀 여백·글자를 낮춰 안으로 들인다. */
+@media(max-width:720px){
+  .risk-grid{grid-template-columns:44px repeat(3,minmax(0,1fr));font-size:var(--fz-caption)}
+  .risk-grid .cell{padding:var(--s-2)}
+  .risk-grid .axis{font-size:11px;writing-mode:vertical-rl;transform:rotate(180deg)}
+}
+.risk-grid>div{background:var(--color-bg);padding:var(--s-3)}
+.risk-grid>.axis{
+  background:var(--color-surface);
+  font-size:var(--fz-caption);
+  font-weight:700;
+  color:var(--color-muted);
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+}
+.risk-grid>.cell.low{background:var(--color-success-soft)}
+.risk-grid>.cell.mid{background:var(--color-warn-soft)}
+.risk-grid>.cell.high{background:var(--color-danger-soft)}
+.risk-grid .item{
+  display:block;
+  padding:var(--sm-6) var(--sm-10);
+  background:var(--color-surface);
+  border-radius:var(--r-xs);
+  margin:var(--sm-3) 0;
+  font-size:var(--fz-small);
+  color:var(--color-ink-2);
+  border-left:3px solid var(--color-muted);
+  line-height:1.45;
+}
+/* cell hue 따라 border 색 변경 — 카드와 cell 톤이 같은 가족으로 연결됨 */
+.risk-grid .cell.low .item{border-left-color:var(--color-success)}
+.risk-grid .cell.mid .item{border-left-color:var(--color-warn)}
+.risk-grid .cell.high .item{border-left-color:var(--color-danger)}
+/* 다크 — risk-grid cell hue tint 제거. 위험도 의미는 axis 위치 + item border-left 색으로만 전달 */
+[data-theme=dark] .risk-grid .cell.low,
+[data-theme=dark] .risk-grid .cell.mid,
+[data-theme=dark] .risk-grid .cell.high{background:var(--color-bg)}
+[data-theme=dark] .risk-grid .item{background:var(--color-surface)}
+
+/* ============================================
+   21. Q&A TOGGLE
+   ============================================ */
+details.qa{
+  border:1px solid var(--color-border);
+  border-radius:var(--r-sm);
+  margin:var(--s-3) 0;
+  background:var(--color-surface);
+  transition:background var(--dur-fast) var(--ease-out);
+}
+details.qa[open]{background:var(--color-bg)}
+details.qa summary{
+  padding:var(--s-4) var(--s-5);
+  cursor:pointer;
+  font-weight:600;
+  color:var(--color-ink);
+  list-style:none;
+  position:relative;
+  padding-right:var(--s-7);
+  font-size:var(--fz-base);
+}
+details.qa summary::-webkit-details-marker{display:none}
+details.qa summary::after{
+  content:"";
+  position:absolute;
+  right:var(--s-5);
+  top:50%;
+  width:10px;
+  height:10px;
+  border-right:2px solid var(--color-muted);
+  border-bottom:2px solid var(--color-muted);
+  transform:translateY(-70%) rotate(45deg);
+  transition:transform var(--dur-base) var(--ease-out);
+}
+details.qa[open] summary::after{transform:translateY(-30%) rotate(-135deg)}
+details.qa>div{padding:0 var(--s-5) var(--s-5);color:var(--color-ink-3)}
+details.qa>div>:first-child{margin-top:0}
+
+/* ============================================
+   21.5 독자 보조 레이어 (TERM / PRIMER / GLOSSARY)
+   본문은 간결하게 두고, 독자 이해도가 낮을 수 있는 용어·개념을
+   별도 레이어로 분리한다. 전문가는 본문만, 초보는 펼쳐서 깊이 확보.
+   ============================================ */
+/* 인라인 용어 힌트 — 본문 흐름 유지, 점선 밑줄 + title 툴팁(정본은 하단 glossary) */
+.term{
+  border-bottom:1px dotted var(--color-muted);
+  cursor:help;
+  text-underline-offset:2px;
+}
+/* 접이식 배경지식 박스 — details.qa 변형 + 좌측 primary accent bar */
+details.primer{
+  border:1px solid var(--color-border);
+  border-left:3px solid var(--color-primary);
+  border-radius:var(--r-sm);
+  margin:var(--s-4) 0;
+  background:var(--color-surface);
+  transition:background var(--dur-fast) var(--ease-out);
+}
+details.primer[open]{background:var(--color-bg)}
+details.primer summary{
+  padding:var(--s-3) var(--s-5);
+  cursor:pointer;
+  font-weight:600;
+  color:var(--color-ink-2);
+  font-size:var(--fz-small);
+  list-style:none;
+  position:relative;
+  padding-right:var(--s-7);
+}
+details.primer summary::-webkit-details-marker{display:none}
+details.primer summary::before{
+  content:"배경지식";
+  display:inline-block;
+  margin-right:var(--s-3);
+  padding:var(--sm-1) var(--s-2);
+  border-radius:var(--r-full);
+  background:var(--color-primary-soft);
+  color:var(--color-primary);
+  font-size:var(--fz-caption);
+  font-weight:700;
+  letter-spacing:.04em;
+  vertical-align:middle;
+}
+details.primer summary::after{
+  content:"";
+  position:absolute;
+  right:var(--s-5);
+  top:50%;
+  width:9px;height:9px;
+  border-right:2px solid var(--color-muted);
+  border-bottom:2px solid var(--color-muted);
+  transform:translateY(-70%) rotate(45deg);
+  transition:transform var(--dur-base) var(--ease-out);
+}
+details.primer[open] summary::after{transform:translateY(-30%) rotate(-135deg)}
+details.primer>div{padding:0 var(--s-5) var(--s-4);color:var(--color-ink-3);font-size:var(--fz-base)}
+details.primer>div>:first-child{margin-top:0}
+/* 하단 용어집 — 도메인 용어 정본 정의 목록 (인쇄·정독 대비) */
+dl.glossary{
+  display:grid;
+  grid-template-columns:minmax(120px,200px) 1fr;
+  gap:0 var(--s-5);
+  margin:var(--s-4) 0;
+}
+dl.glossary dt{
+  font-weight:600;
+  color:var(--color-ink);
+  font-size:var(--fz-base);
+  padding:var(--s-3) 0;
+}
+dl.glossary dd{
+  margin:0;
+  color:var(--color-ink-3);
+  font-size:var(--fz-small);
+  line-height:1.6;
+  padding:var(--s-3) 0;
+}
+dl.glossary dt:not(:first-child),
+dl.glossary dd:not(:nth-of-type(1)){
+  border-top:1px solid var(--color-border);
+}
+@media (max-width:720px){
+  dl.glossary{grid-template-columns:1fr;gap:0}
+  dl.glossary dt{padding-bottom:0}
+  dl.glossary dd{padding-top:var(--s-1);border-top:none}
+  dl.glossary dd:not(:nth-of-type(1)){border-top:none}
+  dl.glossary dt:not(:first-child){border-top:1px solid var(--color-border)}
+}
+
+/* ============================================
+   21.7 FORMULA & WORKED EXAMPLE (해설·방법론 문서용)
+   수식은 외부 렌더러(KaTeX 등) 없이 mono 선형 표기 +
+   <sub>/<sup> 로 쓴다. 변수 뜻은 .formula-where 로 병기.
+   ============================================ */
+.formula{
+  font-family:var(--font-mono);
+  font-size:var(--fz-base);
+  line-height:1.9;
+  background:var(--color-bg-2);
+  border:1px solid var(--color-border);
+  border-left:3px solid var(--color-primary);
+  border-radius:var(--r-sm);
+  padding:var(--s-4) var(--s-5);
+  margin:var(--s-4) 0;
+  overflow-x:auto;
+  white-space:pre-wrap;
+  color:var(--color-ink);
+}
+.formula sub,.formula sup{font-size:.72em}
+.formula .fx-comment{color:var(--color-muted);font-size:var(--fz-small)}
+.formula .fx-hl{color:var(--color-primary);font-weight:600}
+/* 변수 뜻풀이 legend — 수식 블록 바로 아래 붙여 쓴다 */
+dl.formula-where{
+  display:grid;
+  /* max-content 만 쓰면 dt 가 길 때 열이 컨테이너보다 커져 페이지 밖으로 나간다.
+     (실측: 796px 컨테이너에서 첫 열이 830px 로 잡혀 dd 가 뷰포트를 뚫음)
+     minmax(0, …) 으로 상한을 걸고 dd 도 줄바꿈되게 한다. */
+  grid-template-columns:minmax(0,max-content) minmax(0,1fr);
+  gap:var(--s-1) var(--s-4);
+  margin:calc(-1 * var(--s-2)) 0 var(--s-4);
+  padding:0 var(--s-5);
+  font-size:var(--fz-small);
+}
+dl.formula-where dt{
+  font-family:var(--font-mono);
+  color:var(--color-ink-2);
+  font-weight:600;
+}
+dl.formula-where dd{min-width:0;overflow-wrap:break-word;margin:0;color:var(--color-muted)}
+
+/* 숫자 예시(worked example) — 개념·수식을 실제 숫자로 한 번 굴려 보여주는 박스 */
+.example{
+  background:var(--color-surface);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-md);
+  padding:var(--s-4) var(--s-5);
+  margin:var(--s-4) 0;
+}
+.example>.label{
+  display:inline-block;
+  font-size:var(--fz-caption);
+  font-weight:700;
+  letter-spacing:.06em;
+  color:var(--color-primary);
+  margin-bottom:var(--s-2);
+}
+.example>:nth-child(2){margin-top:0}
+.example>:last-child{margin-bottom:0}
+.example .formula{background:var(--color-bg);margin:var(--s-3) 0}
+
+/* ============================================
+   22. MERMAID WRAP
+   ============================================ */
+.mermaid-wrap{
+  position:relative;
+  background:var(--color-bg-2);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-md);
+  padding:var(--s-6) var(--s-5);
+  margin:var(--s-5) 0;
+  text-align:center;
+  overflow-x:auto;
+}
+.mermaid-wrap .mermaid{display:inline-block}
+.mermaid-wrap .caption{
+  font-size:var(--fz-caption);
+  color:var(--color-muted);
+  margin-top:var(--s-3);
+  text-align:center;
+  letter-spacing:.02em;
+}
+
+/* ============================================
+   22.5 DIAGRAM ZOOM (클릭 확대 라이트박스)
+   다이어그램·도표가 작아 안 보일 때 클릭 → 전체화면 확대.
+   휠 줌 · 드래그 팬 · 더블클릭 리셋 지원.
+   대상: .mermaid-wrap(자동) 또는 .zoomable 클래스를 붙인 요소(img·표 등).
+   ============================================ */
+.mermaid-wrap.zoomable,.zoomable{cursor:zoom-in}
+.zoom-hint{
+  position:absolute;
+  top:var(--s-3);
+  right:var(--s-3);
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-size:var(--fz-caption);
+  font-weight:600;
+  color:var(--color-muted);
+  background:var(--color-bg);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-full);
+  padding:var(--sm-3) var(--sm-10);
+  opacity:0;
+  transition:opacity var(--dur-fast) var(--ease-out);
+  pointer-events:none;
+}
+.mermaid-wrap:hover .zoom-hint,.zoomable:hover .zoom-hint{opacity:1}
+
+.zoom-overlay{
+  position:fixed;
+  inset:0;
+  z-index:200;
+  display:none;
+  background:rgba(9,9,11,.82);
+  -webkit-backdrop-filter:blur(2px);
+  backdrop-filter:blur(2px);
+}
+.zoom-overlay.open{display:block}
+.zoom-stage{
+  position:absolute;
+  inset:0;
+  overflow:hidden;
+  cursor:grab;
+  touch-action:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.zoom-stage.dragging{cursor:grabbing}
+.zoom-canvas{
+  transform-origin:center center;
+  will-change:transform;
+}
+.zoom-canvas svg,.zoom-canvas img{max-width:none!important;height:auto;display:block}
+.zoom-toolbar{
+  position:fixed;
+  bottom:var(--s-5);
+  left:50%;
+  transform:translateX(-50%);
+  z-index:201;
+  display:flex;
+  align-items:center;
+  gap:var(--s-1);
+  background:var(--color-bg);
+  border:1px solid var(--color-border);
+  border-radius:var(--r-full);
+  padding:var(--sm-6);
+  box-shadow:var(--shadow-overlay);
+}
+.zoom-toolbar button{
+  width:36px;
+  height:36px;
+  border:0;
+  border-radius:var(--r-full);
+  background:transparent;
+  color:var(--color-ink-2);
+  cursor:pointer;
+  font-size:18px;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:background var(--dur-fast) var(--ease-out);
+}
+.zoom-toolbar button:hover{background:var(--color-surface)}
+.zoom-toolbar .zoom-level{
+  min-width:52px;
+  text-align:center;
+  font-size:var(--fz-small);
+  color:var(--color-muted);
+  font-variant-numeric:tabular-nums;
+}
+.zoom-close{
+  position:fixed;
+  top:var(--s-5);
+  right:var(--s-5);
+  z-index:201;
+  width:40px;
+  height:40px;
+  border-radius:var(--r-full);
+  border:1px solid var(--color-border);
+  background:var(--color-bg);
+  color:var(--color-ink-2);
+  cursor:pointer;
+  font-size:20px;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.zoom-close:hover{background:var(--color-surface)}
+@media print{.zoom-overlay,.zoom-hint{display:none!important}}
+
+/* ============================================
+   23. FOOTER
+   ============================================ */
+.report-footer{
+  margin-top:var(--s-9);
+  padding-top:var(--s-5);
+  border-top:1px solid var(--color-border);
+  font-size:var(--fz-small);
+  color:var(--color-muted);
+  display:flex;
+  flex-wrap:wrap;
+  gap:var(--s-4);
+  justify-content:space-between;
+}
+
+/* ============================================
+   24. THEME TOGGLE
+   ============================================ */
+.theme-toggle{
+  position:fixed;
+  top:var(--s-4);
+  right:var(--s-5);
+  z-index:100;
+  width:40px;
+  height:40px;
+  border-radius:var(--r-full);
+  border:1px solid var(--color-border);
+  background:var(--color-bg);
+  color:var(--color-ink-2);
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:18px;
+  transition:transform var(--dur-fast) var(--ease-out),background var(--dur-fast) var(--ease-out);
+}
+.theme-toggle:hover{transform:scale(1.05);background:var(--color-surface)}
+.theme-toggle .sun{display:none}
+.theme-toggle .moon{display:block}
+[data-theme=dark] .theme-toggle .sun{display:block}
+[data-theme=dark] .theme-toggle .moon{display:none}
+
+/* ============================================
+   25. UTILITIES
+   ============================================ */
+.u-mono{font-family:var(--font-mono)}
+.u-muted{color:var(--color-muted)}
+.u-small{font-size:var(--fz-small)}
+.u-center{text-align:center}
+.u-right{text-align:right}
+.u-tnum{font-variant-numeric:tabular-nums}
+.u-nowrap{white-space:nowrap}
+.u-mt-0{margin-top:0}
+.u-mb-0{margin-bottom:0}
+
+/* ============================================
+   26. PRINT
+   ============================================ */
+@media print{
+  @page{size:A4;margin:18mm 14mm}
+  /* 다크 모드 상태로 인쇄해도 흰 종이 위에서 읽히도록 토큰을 라이트 값으로 강제 */
+  /* 인쇄 시 라이트 강제는 CSS 하드코딩이 아니라 아래 beforeprint 스크립트가 한다.
+     (예전엔 여기에 calm-pro hex 를 박아둬서, 다크로 보다가 인쇄하면 어떤 스킨이든
+      calm-pro 로 회귀하고 --color-rule 은 흰 종이에 흰 선으로 남았다. 실사용 테스트에서 검출) */
+  body{background:#fff;color:#000;font-size:11pt}
+  .page{display:block;max-width:none;padding:0}
+  .toc,.theme-toggle{display:none}
+  .content{max-width:none}
+  h2{page-break-after:avoid}
+  pre,.card,.compare,.timeline,table,.callout,.stat,.tldr{page-break-inside:avoid}
+  a{color:#000;text-decoration:underline}
+  a[href^="http"]::after{content:" (" attr(href) ")";font-size:9pt;color:#555}
+  .callout,.tldr,.stat,.card{box-shadow:none}
+}
+/* ===== SKIN: blueprint ===== */
+
+/* 도면 격자 배경 — 이 스킨의 정체성. 이미지 0, gradient 만 */
+body{
+  background-image:
+    linear-gradient(var(--grid-coarse) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-coarse) 1px, transparent 1px),
+    linear-gradient(var(--grid-fine) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-fine) 1px, transparent 1px);
+  background-size:120px 120px,120px 120px,24px 24px,24px 24px;
+}
+/* 본문 판은 격자 위에 불투명하게 얹어 글이 격자에 묻히지 않게.
+   ⚠ deck 셸에서는 .content 가 뷰포트 전체라 이걸 덮으면 격자가 통째로 사라진다.
+      그래서 .content 는 doc/paper 한정으로 좁히고, deck 은 슬라이드 안쪽 판만 덮는다. */
+.content:not(.deck), .slide > .inner, .card, .callout, table, .mermaid-wrap{
+  background:color-mix(in srgb, var(--color-bg) 92%, transparent);
+  backdrop-filter:blur(2px);
+}
+
+/* 라벨 — mono + 도면 부호 느낌 */
+.kicker,.badge,.stat .label,figcaption,.report-meta,th{
+  font-family:var(--font-mono); font-size:var(--fz-caption);
+  letter-spacing:.08em; text-transform:uppercase; color:var(--color-muted);
+}
+/* 도면 부호식 캡션: [FIG-01] 같은 접두 */
+figcaption::before{ content:'[' attr(data-fig) '] '; color:var(--color-primary); }
+
+/* 카드 = 도형. 면을 채우지 않고 얇은 외곽선 + 모서리 마커 */
+.card{ background:transparent; border:1px solid var(--node-line); position:relative; }
+.card::before,.card::after{ content:''; position:absolute; width:8px; height:8px;
+  border:1px solid var(--node-line); }
+.card::before{ top:-1px; left:-1px; border-right:0; border-bottom:0; }
+.card::after{ bottom:-1px; right:-1px; border-left:0; border-top:0; }
+
+/* 계층 표현 — 겹 구조(L-A~L-D 같은)를 들여쓴 띠로 */
+.layer{ border-left:2px solid var(--node-line); padding:var(--s-4) var(--s-5);
+  margin-left:calc(var(--depth,0) * var(--s-5)); background:var(--color-surface); }
+.layer > .layer-label{ font-family:var(--font-mono); font-size:var(--fz-caption);
+  letter-spacing:.1em; color:var(--color-primary); }
+
+/* 다이어그램이 주인공 — 크게, 여백 넉넉히, 테두리는 도면 프레임 */
+.mermaid-wrap{ border:1px solid var(--color-border-strong); padding:var(--s-6);
+  margin-block:var(--s-7); }
+.mermaid-wrap .fig-title{ font-family:var(--font-mono); font-size:var(--fz-caption);
+  letter-spacing:.1em; text-transform:uppercase; color:var(--color-muted);
+  border-bottom:1px solid var(--color-border); padding-bottom:var(--s-2);
+  margin-bottom:var(--s-4); }
+
+/* 치수선 느낌의 구분자 */
+hr{ border-top:1px dashed var(--color-border-strong); }
+@media print{body{background-image:none}}
+.flow-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s-4)}.flow-grid .card{padding:var(--s-4)}.flow-grid .wide{grid-column:1/-1} @media(max-width:600px){.flow-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ============================================
+     SVG icon sprite — callout 등에서 <use href="#i-xxx"/> 로 참조
+     ============================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9"/>
+      <path d="m18 2 4 4-10 10H8v-4Z"/>
+    </symbol>
+    <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 11v5"/>
+      <circle cx="12" cy="8" r=".5" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="m8 12 3 3 5-6"/>
+    </symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+      <path d="M12 9v4"/>
+      <circle cx="12" cy="17" r=".5" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="m15 9-6 6"/>
+      <path d="m9 9 6 6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- 다크/라이트 토글 버튼 -->
+<button class="theme-toggle" id="themeToggle" aria-label="테마 전환" title="라이트/다크 전환">
+  <span class="sun" aria-hidden="true">☀</span><span class="moon" aria-hidden="true">☾</span>
+</button>
+
+<div class="page">
+
+  <!-- 좌측 sticky TOC. 섹션이 적으면 통째로 삭제 가능. -->
+  <aside class="toc" id="toc">
+    <h4>Contents</h4>
+    <ol id="tocList">
+      <!-- JS 가 h2/h3 를 스캔해서 자동 채움 -->
+    </ol>
+  </aside>
+
+  <main class="content"><header class="report-header"><span class="kicker">Collector Platform · Design v1</span><h1>수집은 범용으로,<br>판정은 근거와 예산 안에서</h1><p class="subtitle">기존 실행 기반 위에 독립 수집 플랫폼과 ML 품질 평가를 쌓는 3단계 실행 설계</p><div class="report-meta"><span>2026-10-20 · 설계/PMS 납품</span><span>제품 구현·학습·배포 미실행</span></div></header><section id="tldr"><h2>핵심 결정</h2><div class="tldr"><p>수집 플랫폼은 지식 도서관과 독립된 모듈로 둡니다. 표준 envelope로 교환하고, 기존 PostgreSQL·generation 실행기·PMS·저장소를 재사용합니다.</p></div><p>별도 서버나 새 큐 제품을 추가하지 않습니다. 독립 관리 화면은 <code>/collect</code>, 지식 저장/검색은 선택적 adapter를 통해 연결합니다.</p></section>
+<section id="architecture"><h2>1. 무엇을 만들 것인가</h2><div class="flow-grid"><div class="card"><h3>01 · 탐색과 획득</h3><p>API/feed/공식 문서/파일 → 출처별 robots·권리·증분 cursor → 안전 fetch</p></div><div class="card"><h3>02 · 표준화와 품질</h3><p>원본 SHA·본문·전처리 버전 → 중복 후보 → 규칙·로컬 ML → 고정 예산 teacher</p></div><div class="card"><h3>03 · 결과와 소비</h3><p>IngestionEnvelope 1.0.0 → delivery receipt → export / knowledge adapter</p></div><div class="card wide"><h3>공통 기반</h3><p>generation periodic/consume/work + PostgreSQL durable job / 원자 예산 예약 / scope / audit / 회수 가능한 보류</p></div></div><p>Run 전용 lease는 수집 job ID에 직접 쓰지 않습니다. 기존 generation 작업 lock을 쓰면서 job 행에 owner generation과 attempt token을 두고 stale commit을 막습니다.</p></section>
+<section id="budget"><h2>2. 수집량과 LLM 비용을 분리</h2><div class="table-wrap"><table><thead><tr><th>단위</th><th>제안 절대 한도</th><th>강제 방식</th></tr></thead><tbody><tr><td>일별 공용</td><td>60,000 tokens · 20 calls · USD 1</td><td>모든 job·teacher·judge·합성·retry 합산</td></tr><tr><td>job별</td><td>12,000 tokens · 4 calls · USD .20</td><td>일별 bucket과 함께 DB 원자 선예약</td></tr><tr><td>표본</td><td>일 최대 12문서</td><td>고정 reservoir + 남은 예산 안에서 선택</td></tr></tbody></table></div><p>상한은 운영 확정값이 아닌 초기 제안입니다. 사용량 미확정은 예약을 유지하고, reasoning/output 상한을 강제할 수 없는 엔진은 teacher 경로를 끕니다. 내용 hash·모델·전처리·정책·질의별 캐시로 재판정을 줄입니다.</p></section>
+<section id="quality"><h2>3. 점수 하나로 모든 것을 확정하지 않기</h2><p>교육가치·실용성·스팸·사실성·관련성은 별개입니다. 검색 nDCG/Recall은 질의·코퍼스 수준의 별도 평가입니다. 낮은 점수 문서는 보류하고 표본 감사로 놓친 고품질 문서를 회수합니다.</p><div class="callout warn"><div class="body"><span class="title">이전 조사에서 바로잡은 점</span><p>27건은 편의표본이며 독립 gold가 아닙니다. PlusPlus는 후보로 유지합니다. mfwedu raw logit을 유지하고 sigmoid를 보정된 품질 확률로 쓰지 않습니다. 과거 검색/원장 수치는 당시 스냅샷입니다.</p></div></div><p>실제/합성·teacher/독립 AI/사람 라벨을 구분합니다. 사람 확인이 없으면 자동 reference baseline으로 보고하고 human validation은 미실행으로 남깁니다. 출처·원전·번역·합성 family와 시점별 누출을 막은 split에서 calibration·ablation·false-negative·CPU/RSS·절대 비용을 함께 평가합니다.</p><p>BEIR/MS MARCO는 검색 관련성 비교에 사용합니다. 사실성은 원출처·시점·버전별 주장 근거로 별도 검증합니다. <a href="https://github.com/beir-cellar/beir">BEIR 공식 자료</a> · <a href="https://microsoft.github.io/msmarco/">MS MARCO 공식 자료</a></p></section>
+<section id="stages"><h2>4. 세 단계와 실제 PMS</h2><ol class="steps"><li><strong>S1 · 증거와 실행 설계 — 3건</strong><p>조사 정정 → schema·아키텍처·평가·WBS/PMS. 이번 worker 범위.</p></li><li><strong>S2 · 수집 플랫폼 — 11건</strong><p>소유권/환경 → 계약·멱등 → generation/cursor → safe fetch·정규화·예산 → 관리 UI/API → adapter → 복구·파일럿.</p></li><li><strong>S3 · ML·검증·개선 — 11건</strong><p>라벨/split → 기준선·공개 모델 → teacher/student → calibration·ablation → 독립 holdout·검색 → shadow/rollback·재학습.</p></li></ol><p>프로젝트 <code>e99a75de-7ccf-48e6-a5d1-46e455eb79b8</code>의 기존 EXT-C/V 아래 25개 하위 실행 패키지를 등록했습니다. EXT-K/Y·5.4.7은 중복 구현 없이 연결합니다. 역할만 지정했으며 개인 실행자·일정은 미배정입니다.</p><div class="table-wrap"><table><thead><tr><th>작업</th><th>UUID</th><th>상태</th></tr></thead><tbody><tr><td>[CP-S1-01] 현황 정정·Stock-gosu 비교 추적</td><td><code>773eb5fd-8911-46f9-aa6a-5745ea300a94</code></td><td>done</td></tr><tr><td>[CP-S2-00] 최신 revision·runtime·DB·변경 소유권 인벤토리</td><td><code>fd87eb4c-29df-47d1-ad3a-346a8c6260ba</code></td><td>todo</td></tr><tr><td>[CP-S2-03] 출처별 robots·권리·보존·이용 정책</td><td><code>0b55c254-6b57-4845-9ead-ac91a7650ab3</code></td><td>todo</td></tr><tr><td>[CP-S1-03] 아키텍처·ADR·schema·평가·PMS 설계 납품</td><td><code>3078ab3a-6ab8-470f-88f6-efd0a8a2790a</code></td><td>done</td></tr><tr><td>[CP-S2-01] 첫 slice: strict 계약·멱등 등록</td><td><code>48d0a2b4-09f5-47ab-a6ac-d86a92c249a5</code></td><td>todo</td></tr><tr><td>[CP-S2-02] generation 주기·claim·cursor·복구</td><td><code>7a90615c-2871-47ed-b0cb-75f74c73a132</code></td><td>todo</td></tr><tr><td>[CP-S2-05] 전역 day/job 절대 예산·정산·캐시</td><td><code>985da575-0c06-44e8-b73a-fa5848715600</code></td><td>todo</td></tr><tr><td>[CP-S2-06] 정규화·lineage·중복·회수 보존</td><td><code>a87930c5-7842-4170-9d0d-bf34649df0c6</code></td><td>todo</td></tr><tr><td>[CP-S2-04] 안전 HTTP fetch·feed·본문 추출</td><td><code>41405531-dbf8-4615-97e9-3e906eb9e60b</code></td><td>todo</td></tr><tr><td>[CP-S2-07] 독립 /collect API·모바일 관리 화면</td><td><code>e83100c9-c48a-4cab-9ac3-e50bed63f550</code></td><td>todo</td></tr><tr><td>[CP-S2-08] export sink·선택적 knowledge adapter</td><td><code>b80d960e-c589-4755-9469-dab2c6f9e8ef</code></td><td>todo</td></tr><tr><td>[CP-S2-09] 복구·scope·SSRF·절대 비용 통합 시험</td><td><code>bec59aeb-8876-4c3b-91fd-fc7febaa9a58</code></td><td>todo</td></tr><tr><td>[CP-S2-10] teacher off 파일럿·runbook·제한 운영</td><td><code>92c8ac3a-766d-4f4c-9e4a-c0907b1dba29</code></td><td>todo</td></tr><tr><td>[CP-S3-01] 라벨 rubric·누출 방지 split·권리 manifest</td><td><code>74ffa831-2e15-4542-a642-a2e3a33955c7</code></td><td>todo</td></tr><tr><td>[CP-S3-02] blind 독립 라벨·이견·human 상태 기록</td><td><code>2d851fcd-1cf5-4c2e-a662-a7746b3fe876</code></td><td>todo</td></tr><tr><td>[CP-S1-02] 공개 모델 스모크 정정 반영</td><td><code>6e323afb-1d67-4e9b-b564-98e0623f76e8</code></td><td>done</td></tr><tr><td>[CP-S3-04] 공개 후보 재현·장문 window·환경 비교</td><td><code>f95b3ea0-b6a3-4f51-9936-707892577424</code></td><td>todo</td></tr><tr><td>[CP-S3-08] 단계별 ablation·false-negative·비용 비교</td><td><code>a337b642-1746-4069-a565-cfddcecb0ae7</code></td><td>todo</td></tr><tr><td>[CP-S3-07] calibration·정책 임계·모델 registry</td><td><code>f9335524-11f7-4d8b-9baa-41302fc425af</code></td><td>todo</td></tr><tr><td>[CP-S3-03] 규칙·TF-IDF 고전 ML 기준선</td><td><code>0f13ec9e-7a6d-4829-9682-466af0bad523</code></td><td>todo</td></tr><tr><td>[CP-S3-06] 저비용 student 학습·재현 manifest</td><td><code>9076a6bf-f006-4080-8a26-18c52244ea0d</code></td><td>todo</td></tr><tr><td>[CP-S3-05] bounded teacher·합성 hard case 생성</td><td><code>cac5bd73-35bf-4150-986f-f9977fe484a7</code></td><td>todo</td></tr><tr><td>[CP-S3-09] frozen holdout·공격·사실성 분리 감사</td><td><code>46a079c2-f28e-4cc6-925a-f093376144d2</code></td><td>todo</td></tr><tr><td>[CP-S3-10] knowledge 검색 control/challenger 연계 평가</td><td><code>484b198b-344e-428e-a80d-a4d0e06121b9</code></td><td>todo</td></tr><tr><td>[CP-S3-11] shadow·canary·rollback·드리프트 개선</td><td><code>f64b608f-4384-4c6f-8159-0f930e97c0c9</code></td><td>todo</td></tr></tbody></table></div></section>
+<section id="next"><h2>5. 첫 구현 패키지</h2><p><strong>CP-S2-01 · strict 계약 검증과 멱등 등록</strong><br><code>48d0a2b4-09f5-47ab-a6ac-d86a92c249a5</code></p><p>동일한 요청 10개를 병렬 제출해도 job은 1행이어야 합니다. 다른 payload는 409, scope 교차와 text hash 변조는 거부합니다. 첫 패키지는 네트워크·LLM·knowledge write 없이 끝냅니다.</p><p>예정 파일은 <code>collector/contracts.py</code>, <code>collector/intake.py</code>, 전용 모델·additive migration과 계약/등록 테스트입니다. 기존 dirty 파일과 미추적 kb 파일은 다른 작업 소유이므로 변경하지 않습니다.</p><p><strong>독립 검증 보완(10/20):</strong> envelope의 tenant·scope·principal 값은 믿지 않고 인증 주체에서 산출해 다르면 403으로 거부합니다. 멱등 비교는 RFC 8785 JCS에서 <code>recorded_at</code>만 빼고 SHA-256으로 합니다. intake/migration은 CP-S2-00 확인 뒤 진행합니다. 현재 PMS 상태는 doing 10%입니다. 상세는 <code>intake-binding.md</code>.</p></section>
+<section id="limits"><h2>6. 검증과 남은 경계</h2><div class="callout success"><div class="body"><span class="title">이번 실행 증거</span><p>JSON Schema 2종 meta-validation · fixture 18건: 양성 4 / 음성 14. PMS 25건의 ID·소유 역할·의존 UUID readback 대조. 전체 receipt는 패키지에 포함합니다.</p></div></div><details class="qa"><summary>아직 실행하지 않은 것</summary><div><p>제품 코드·DB migration 적용·실제 LLM 예산/SSRF/lease 동작·모델 학습·human gold·현재 배포 runtime/DB 동일성·운영 성능·배포는 미실행입니다. 문서 fixture 통과는 운영 보장이 아닙니다.</p></div></details><details class="qa"><summary>블로커는 어느 작업에 영향을 주는가</summary><div><p>back 소유권/migration graph 확인은 구현 착수 전 필요합니다. front 발산은 UI 단계, kb ACL/visibility/parser 계약과 legacy P0 gate는 knowledge sink만 막습니다. collector와 export는 독립적으로 진행할 수 있습니다. bounded teacher가 없으면 LLM off 경로를 유지합니다.</p></div></details><p>상세 정본: architecture.md · evaluation.md · corrections.md · first-slice.md · integration-map.md · wbs.csv · contracts/ · evidence/</p></section><footer class="report-footer"><span>범용 수집 플랫폼 + ML 품질 평가 · v1</span><span>설계/PMS · 2026-10-20</span></footer></main>
+</div>
+
+<!-- 다이어그램 확대 라이트박스 (클릭 시 열림. 다이어그램·이미지 없으면 통째로 삭제 가능) -->
+<div class="zoom-overlay" id="zoomOverlay" aria-hidden="true" role="dialog" aria-label="다이어그램 확대 보기">
+  <div class="zoom-stage" id="zoomStage">
+    <div class="zoom-canvas" id="zoomCanvas"></div>
+  </div>
+  <button class="zoom-close" id="zoomClose" aria-label="닫기">✕</button>
+  <div class="zoom-toolbar">
+    <button id="zoomOut" aria-label="축소" title="축소">−</button>
+    <span class="zoom-level" id="zoomLevel">100%</span>
+    <button id="zoomIn" aria-label="확대" title="확대">+</button>
+    <button id="zoomReset" aria-label="원래대로" title="원래대로">⟲</button>
+  </div>
+</div>
+
+<!-- Mermaid (다이어그램이 있는 보고서에서만 활성화. 없으면 이 두 줄 삭제) -->
+
+<script>
+// ===== Mermaid 렌더 관리 =====
+// 원본 소스를 "렌더 전에" dataset.src 로 보존해야 테마 전환 시 재렌더가 가능하다.
+// (렌더 후의 .mermaid 내용은 SVG 로 교체돼 원본이 사라지므로, 그 시점의
+//  textContent 를 소스로 쓰면 모든 다이어그램이 Syntax error 로 깨진다.)
+// innerHTML 주입 금지 — '<' 를 포함한 소스가 HTML 로 파싱돼 손상된다.
+(function(){
+  if (!window.mermaid) return;
+  // 다이어그램 색을 "현재 스킨의 CSS 토큰"에서 런타임으로 읽어온다.
+  // theme:'base' 여야 themeVariables 가 먹는다 ('default'/'dark' 는 커스터마이즈 불가).
+  // 이 구조 덕분에 스킨을 바꾸면 다이어그램도 자동으로 따라온다 — 스킨별 추가 작업 0.
+  var tok = function(name, fallback){
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  };
+  var buildCfg = function(){
+    var dark = document.documentElement.dataset.theme === 'dark';
+    return {
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        darkMode: dark,
+        fontFamily: tok('--font-sans', "'Pretendard Variable', sans-serif"),
+        fontSize: '14px',
+        background:          tok('--color-bg', '#fff'),
+        primaryColor:        tok('--color-surface', '#f4f4f5'),   // 노드 면 = 카드 표면
+        primaryTextColor:    tok('--color-ink', '#18181b'),
+        primaryBorderColor:  tok('--color-rule', '#8d8d91'),
+        secondaryColor:      tok('--color-surface-2', '#e4e4e7'),
+        secondaryTextColor:  tok('--color-ink', '#18181b'),
+        secondaryBorderColor:tok('--color-rule', '#8d8d91'),
+        tertiaryColor:       tok('--color-bg-2', '#fafafa'),
+        tertiaryTextColor:   tok('--color-ink-2', '#27272a'),
+        tertiaryBorderColor: tok('--color-border', '#e4e4e7'),
+        mainBkg:             tok('--color-surface', '#f4f4f5'),
+        nodeBorder:          tok('--color-rule', '#8d8d91'),
+        nodeTextColor:       tok('--color-ink', '#18181b'),
+        lineColor:           tok('--color-rule', '#8d8d91'),
+        defaultLinkColor:    tok('--color-rule', '#8d8d91'),
+        textColor:           tok('--color-ink-2', '#27272a'),
+        titleColor:          tok('--color-ink', '#18181b'),
+        clusterBkg:          tok('--color-bg-2', '#fafafa'),
+        clusterBorder:       tok('--color-rule', '#8d8d91'),
+        edgeLabelBackground: tok('--color-bg', '#fff')
+      },
+      flowchart: { curve: 'basis', useMaxWidth: true }
+    };
+  };
+  window.renderMermaid = function(){
+    document.querySelectorAll('.mermaid').forEach(function(el){
+      if (el.dataset.src == null) el.dataset.src = el.textContent; // 최초 1회, 렌더 전 원본 보존
+      el.removeAttribute('data-processed');
+      el.textContent = el.dataset.src;
+    });
+    var MCFG = buildCfg();
+    mermaid.initialize(MCFG);
+    mermaid.run().catch(function(e){ console.warn('mermaid render:', e); });
+  };
+  renderMermaid();
+  // 접힌 <details> 안에서 렌더된 다이어그램은 크기가 0 — 펼칠 때 재렌더
+  document.addEventListener('toggle', function(e){
+    if (e.target.matches && e.target.matches('details') && e.target.open && e.target.querySelector('.mermaid')) renderMermaid();
+  }, true);
+})();
+</script>
+
+<script>
+// ===== Theme Toggle ===== (초기 테마는 <head> 인라인 스크립트가 첫 페인트 전에 결정)
+(function(){
+  const KEY = 'html-report-theme';
+  const root = document.documentElement;
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  // 인쇄는 항상 라이트로 — 스킨이 무엇이든 토큰 전체가 :root 값으로 돌아간다.
+  var printSaved = null;
+  window.addEventListener('beforeprint', function(){
+    printSaved = root.dataset.theme;
+    root.dataset.theme = 'light';
+    if (window.renderMermaid) window.renderMermaid();
+  });
+  window.addEventListener('afterprint', function(){
+    if (printSaved) root.dataset.theme = printSaved;
+    if (window.renderMermaid) window.renderMermaid();
+    printSaved = null;
+  });
+  btn.addEventListener('click', () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try { localStorage.setItem(KEY, next); } catch(e) {}
+    if (window.renderMermaid) renderMermaid();
+  });
+})();
+
+// ===== Auto TOC =====
+(function(){
+  const list = document.getElementById('tocList');
+  if (!list) return;
+  const headings = document.querySelectorAll('main.content h2, main.content h3');
+  let lastH2 = null;
+  headings.forEach((h, i) => {
+    if (!h.id) h.id = 'sec-' + i;
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = h.textContent;
+    li.appendChild(a);
+    if (h.tagName === 'H2') {
+      list.appendChild(li);
+      lastH2 = li;
+    } else if (h.tagName === 'H3' && lastH2) {
+      let sub = lastH2.querySelector('ol');
+      if (!sub) { sub = document.createElement('ol'); lastH2.appendChild(sub); }
+      sub.appendChild(li);
+    } else {
+      list.appendChild(li);
+    }
+  });
+
+  const links = list.querySelectorAll('a');
+  const linkByHash = {};
+  links.forEach(a => linkByHash[a.getAttribute('href')] = a);
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      const a = linkByHash['#' + e.target.id];
+      if (!a) return;
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  headings.forEach(h => io.observe(h));
+})();
+
+// ===== Checklist 클릭 시 .done 토글 =====
+document.addEventListener('change', (e) => {
+  if (e.target.matches('.checklist input[type=checkbox]')) {
+    e.target.closest('li').classList.toggle('done', e.target.checked);
+  }
+});
+
+// ===== Diagram Zoom (클릭하면 전체화면 확대 · 휠 줌 · 드래그 팬) =====
+(function(){
+  const overlay = document.getElementById('zoomOverlay');
+  const stage   = document.getElementById('zoomStage');
+  const canvas  = document.getElementById('zoomCanvas');
+  const levelEl = document.getElementById('zoomLevel');
+  if (!overlay || !stage || !canvas) return;
+
+  let baseScale = 1, scale = 1, tx = 0, ty = 0;
+  let dragging = false, startX = 0, startY = 0;
+  const MIN = 0.5, MAX = 8; // baseScale 배수 기준
+
+  function apply(){
+    canvas.style.transform =
+      `translate(${tx}px,${ty}px) scale(${scale})`;
+    levelEl.textContent = Math.round(scale / baseScale * 100) + '%';
+  }
+
+  // cx/cy(뷰포트 좌표)를 주면 그 지점을 기준으로 줌, 없으면 화면 중심
+  function zoomTo(next, cx, cy){
+    next = Math.min(Math.max(next, baseScale * MIN), baseScale * MAX);
+    if (cx != null){
+      const rect = stage.getBoundingClientRect();
+      const ox = cx - rect.left - rect.width / 2;
+      const oy = cy - rect.top  - rect.height / 2;
+      const k = next / scale;
+      tx = ox - (ox - tx) * k;
+      ty = oy - (oy - ty) * k;
+    }
+    scale = next;
+    apply();
+  }
+
+  function open(wrap){
+    const node = wrap.querySelector('svg, img');
+    if (!node) return;
+    canvas.innerHTML = '';
+    const clone = node.cloneNode(true);
+    clone.removeAttribute('style');
+    canvas.appendChild(clone);
+
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+
+    // 자연 크기 측정(scale=1) 후 화면에 맞춰 fit → 그 크기를 100% 기준으로
+    scale = 1; tx = 0; ty = 0;
+    canvas.style.transform = 'translate(0px,0px) scale(1)';
+    const r = clone.getBoundingClientRect();
+    const vw = window.innerWidth  * 0.92;
+    const vh = window.innerHeight * 0.84;
+    baseScale = (r.width && r.height) ? Math.min(vw / r.width, vh / r.height) : 1;
+    scale = baseScale;
+    apply();
+  }
+
+  function close(){
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    canvas.innerHTML = '';
+  }
+
+  // 다이어그램·이미지 클릭 → 열기 (mermaid 는 비동기 렌더라 이벤트 위임)
+  document.addEventListener('click', (e) => {
+    if (overlay.classList.contains('open')) return;
+    if (e.target.closest('a, button, input, details summary')) return; // 링크·버튼 클릭은 확대로 가로채지 않음
+    const wrap = e.target.closest('.mermaid-wrap, .zoomable');
+    if (!wrap || !wrap.querySelector('svg, img')) return;
+    open(wrap);
+  });
+
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomTo(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY);
+  }, { passive: false });
+
+  stage.addEventListener('pointerdown', (e) => {
+    dragging = true; stage.classList.add('dragging');
+    startX = e.clientX - tx; startY = e.clientY - ty;
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    tx = e.clientX - startX; ty = e.clientY - startY;
+    apply();
+  });
+  function endDrag(){ dragging = false; stage.classList.remove('dragging'); }
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+  stage.addEventListener('dblclick', () => { scale = baseScale; tx = 0; ty = 0; apply(); });
+
+  document.getElementById('zoomIn').addEventListener('click', () => zoomTo(scale * 1.25));
+  document.getElementById('zoomOut').addEventListener('click', () => zoomTo(scale / 1.25));
+  document.getElementById('zoomReset').addEventListener('click', () => { scale = baseScale; tx = 0; ty = 0; apply(); });
+  document.getElementById('zoomClose').addEventListener('click', close);
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay || e.target === stage) close(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && overlay.classList.contains('open')) close(); });
+
+  // 렌더 끝난 다이어그램에 확대 힌트 배지 부착 (mermaid 비동기 대응)
+  function markZoomable(){
+    document.querySelectorAll('.mermaid-wrap').forEach((w) => {
+      if (w.querySelector('svg, img') && !w.querySelector('.zoom-hint')){
+        w.classList.add('zoomable');
+        const hint = document.createElement('span');
+        hint.className = 'zoom-hint';
+        hint.textContent = '⤢ 클릭하여 확대';
+        w.appendChild(hint);
+      }
+    });
+  }
+  new MutationObserver(markZoomable).observe(document.body, { childList: true, subtree: true });
+  markZoomable();
+})();
+</script>
+
+</body>
+</html>

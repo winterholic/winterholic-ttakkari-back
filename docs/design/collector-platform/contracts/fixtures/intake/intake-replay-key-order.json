@@ -1,0 +1,328 @@
+{
+  "description": "같은 키 재전송, 모든 객체의 key 순서만 반대",
+  "auth": {
+    "kind": "session",
+    "principal_id": "fixture-owner",
+    "tenant_id": "fixture-tenant",
+    "session_pool": "personal"
+  },
+  "request_key": "fixture-req-001",
+  "submissions": [
+    {
+      "schema_version": "1.0.0",
+      "envelope_id": "49e4cb8d-3eb9-4f7f-8b66-e0b9cadb3470",
+      "producer": {
+        "id": "contract-fixture",
+        "version": "1"
+      },
+      "recorded_at": "2026-10-20T14:00:00Z",
+      "source": {
+        "key": "fixture:synthetic-001",
+        "kind": "fixture",
+        "url": "https://example.com/fixture",
+        "collected_at": "2026-10-20T13:59:59Z",
+        "published_at": null,
+        "valid_from": null,
+        "valid_to": null
+      },
+      "access": {
+        "tenant_id": "fixture-tenant",
+        "scope": "personal",
+        "principal_ids": [
+          "fixture-owner"
+        ],
+        "sensitivity": "normal"
+      },
+      "rights": {
+        "license_id": "CC0-1.0",
+        "policy_version": "fixture-v1",
+        "policy_url": null,
+        "checked_at": "2026-10-20T13:59:58Z",
+        "permission": "allowed",
+        "purposes": [
+          "store",
+          "export"
+        ],
+        "robots": "not_applicable",
+        "basis": "직접 생성한 합성 fixture; 원 사이트의 권리/수집 허용을 나타내지 않음",
+        "retain_until": null
+      },
+      "raw": {
+        "sha256": "99e1b0533d42dd36a80e633d0b057a1ed02a305a2e329fcaad7758521f687012",
+        "byte_size": 58,
+        "media_type": "text/plain",
+        "blob_handle": "fixture:raw-001"
+      },
+      "normalized": {
+        "text": "합성 계약 예시입니다. Synthetic contract fixture.",
+        "sha256": "99e1b0533d42dd36a80e633d0b057a1ed02a305a2e329fcaad7758521f687012",
+        "language": "ko-en",
+        "parser_version": "fixture-v1",
+        "normalizer_version": "identity-v1",
+        "chunker_version": "none",
+        "raw_alignment_handle": null,
+        "truncated": false
+      },
+      "quality": {
+        "education": {
+          "status": "unmeasured",
+          "value": null,
+          "scale": "none",
+          "model_id": null,
+          "model_revision": null,
+          "preprocess_version": "fixture-v1",
+          "calibration_id": null,
+          "calibration_gold_hash": null,
+          "calibrated_probability": null,
+          "query_id": null,
+          "evidence": []
+        },
+        "utility": {
+          "status": "unmeasured",
+          "value": null,
+          "scale": "none",
+          "model_id": null,
+          "model_revision": null,
+          "preprocess_version": "fixture-v1",
+          "calibration_id": null,
+          "calibration_gold_hash": null,
+          "calibrated_probability": null,
+          "query_id": null,
+          "evidence": []
+        },
+        "spam": {
+          "status": "unmeasured",
+          "value": null,
+          "scale": "none",
+          "model_id": null,
+          "model_revision": null,
+          "preprocess_version": "fixture-v1",
+          "calibration_id": null,
+          "calibration_gold_hash": null,
+          "calibrated_probability": null,
+          "query_id": null,
+          "evidence": []
+        },
+        "novelty": {
+          "status": "unmeasured",
+          "value": null,
+          "scale": "none",
+          "model_id": null,
+          "model_revision": null,
+          "preprocess_version": "fixture-v1",
+          "calibration_id": null,
+          "calibration_gold_hash": null,
+          "calibrated_probability": null,
+          "query_id": null,
+          "evidence": []
+        },
+        "factuality": {
+          "status": "unmeasured",
+          "value": null,
+          "scale": "none",
+          "model_id": null,
+          "model_revision": null,
+          "preprocess_version": "fixture-v1",
+          "calibration_id": null,
+          "calibration_gold_hash": null,
+          "calibrated_probability": null,
+          "query_id": null,
+          "evidence": []
+        },
+        "relevance": {
+          "status": "unmeasured",
+          "value": null,
+          "scale": "none",
+          "model_id": null,
+          "model_revision": null,
+          "preprocess_version": "fixture-v1",
+          "calibration_id": null,
+          "calibration_gold_hash": null,
+          "calibrated_probability": null,
+          "query_id": null,
+          "evidence": []
+        }
+      },
+      "fact_check_status": "unknown",
+      "dedupe": {
+        "exact_of": null,
+        "cluster_id": null,
+        "canonical_candidate": null,
+        "canonical_status": "unreviewed",
+        "algorithm_version": "exact-sha256-v1"
+      },
+      "decision": {
+        "state": "accept",
+        "reason_codes": [
+          "fixture_manual_accept"
+        ],
+        "policy_version": "fixture-v1"
+      },
+      "errors": [],
+      "lineage": [],
+      "extensions": {
+        "fixture:raw_text": "합성 계약 예시입니다. Synthetic contract fixture."
+      }
+    },
+    {
+      "extensions": {
+        "fixture:raw_text": "합성 계약 예시입니다. Synthetic contract fixture."
+      },
+      "lineage": [],
+      "errors": [],
+      "decision": {
+        "policy_version": "fixture-v1",
+        "reason_codes": [
+          "fixture_manual_accept"
+        ],
+        "state": "accept"
+      },
+      "dedupe": {
+        "algorithm_version": "exact-sha256-v1",
+        "canonical_status": "unreviewed",
+        "canonical_candidate": null,
+        "cluster_id": null,
+        "exact_of": null
+      },
+      "fact_check_status": "unknown",
+      "quality": {
+        "relevance": {
+          "evidence": [],
+          "query_id": null,
+          "calibrated_probability": null,
+          "calibration_gold_hash": null,
+          "calibration_id": null,
+          "preprocess_version": "fixture-v1",
+          "model_revision": null,
+          "model_id": null,
+          "scale": "none",
+          "value": null,
+          "status": "unmeasured"
+        },
+        "factuality": {
+          "evidence": [],
+          "query_id": null,
+          "calibrated_probability": null,
+          "calibration_gold_hash": null,
+          "calibration_id": null,
+          "preprocess_version": "fixture-v1",
+          "model_revision": null,
+          "model_id": null,
+          "scale": "none",
+          "value": null,
+          "status": "unmeasured"
+        },
+        "novelty": {
+          "evidence": [],
+          "query_id": null,
+          "calibrated_probability": null,
+          "calibration_gold_hash": null,
+          "calibration_id": null,
+          "preprocess_version": "fixture-v1",
+          "model_revision": null,
+          "model_id": null,
+          "scale": "none",
+          "value": null,
+          "status": "unmeasured"
+        },
+        "spam": {
+          "evidence": [],
+          "query_id": null,
+          "calibrated_probability": null,
+          "calibration_gold_hash": null,
+          "calibration_id": null,
+          "preprocess_version": "fixture-v1",
+          "model_revision": null,
+          "model_id": null,
+          "scale": "none",
+          "value": null,
+          "status": "unmeasured"
+        },
+        "utility": {
+          "evidence": [],
+          "query_id": null,
+          "calibrated_probability": null,
+          "calibration_gold_hash": null,
+          "calibration_id": null,
+          "preprocess_version": "fixture-v1",
+          "model_revision": null,
+          "model_id": null,
+          "scale": "none",
+          "value": null,
+          "status": "unmeasured"
+        },
+        "education": {
+          "evidence": [],
+          "query_id": null,
+          "calibrated_probability": null,
+          "calibration_gold_hash": null,
+          "calibration_id": null,
+          "preprocess_version": "fixture-v1",
+          "model_revision": null,
+          "model_id": null,
+          "scale": "none",
+          "value": null,
+          "status": "unmeasured"
+        }
+      },
+      "normalized": {
+        "truncated": false,
+        "raw_alignment_handle": null,
+        "chunker_version": "none",
+        "normalizer_version": "identity-v1",
+        "parser_version": "fixture-v1",
+        "language": "ko-en",
+        "sha256": "99e1b0533d42dd36a80e633d0b057a1ed02a305a2e329fcaad7758521f687012",
+        "text": "합성 계약 예시입니다. Synthetic contract fixture."
+      },
+      "raw": {
+        "blob_handle": "fixture:raw-001",
+        "media_type": "text/plain",
+        "byte_size": 58,
+        "sha256": "99e1b0533d42dd36a80e633d0b057a1ed02a305a2e329fcaad7758521f687012"
+      },
+      "rights": {
+        "retain_until": null,
+        "basis": "직접 생성한 합성 fixture; 원 사이트의 권리/수집 허용을 나타내지 않음",
+        "robots": "not_applicable",
+        "purposes": [
+          "store",
+          "export"
+        ],
+        "permission": "allowed",
+        "checked_at": "2026-10-20T13:59:58Z",
+        "policy_url": null,
+        "policy_version": "fixture-v1",
+        "license_id": "CC0-1.0"
+      },
+      "access": {
+        "sensitivity": "normal",
+        "principal_ids": [
+          "fixture-owner"
+        ],
+        "scope": "personal",
+        "tenant_id": "fixture-tenant"
+      },
+      "source": {
+        "valid_to": null,
+        "valid_from": null,
+        "published_at": null,
+        "collected_at": "2026-10-20T13:59:59Z",
+        "url": "https://example.com/fixture",
+        "kind": "fixture",
+        "key": "fixture:synthetic-001"
+      },
+      "recorded_at": "2026-10-20T14:00:00Z",
+      "producer": {
+        "version": "1",
+        "id": "contract-fixture"
+      },
+      "envelope_id": "49e4cb8d-3eb9-4f7f-8b66-e0b9cadb3470",
+      "schema_version": "1.0.0"
+    }
+  ],
+  "expect": [
+    "created",
+    "replay"
+  ]
+}

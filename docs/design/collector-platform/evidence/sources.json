@@ -1,0 +1,86 @@
+[
+  {
+    "url": "https://huggingface.co/epfml/FineWeb2-HQ-PlusPlus-Classifier",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "raw mfwedu, mdclm prose/code mismatch; candidate only"
+  },
+  {
+    "url": "https://huggingface.co/HuggingFaceFW/fineweb-edu-classifier",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "English education; OOD limits"
+  },
+  {
+    "url": "https://huggingface.co/nvidia/quality-classifier-deberta",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "auxiliary candidate; no local execution"
+  },
+  {
+    "url": "https://huggingface.co/datasets/HAERAE-HUB/KOREAN-WEBTEXT",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "Korean filtered corpus, not page gold"
+  },
+  {
+    "url": "https://huggingface.co/datasets/HAERAE-HUB/Korean-Human-Judgements",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "instruction response human judgement, adjacent task"
+  },
+  {
+    "url": "https://www.aihub.or.kr/aihubdata/data/view.do?aihubDataSe=extrldata&currMenu=120&dataSetSn=71983&topMenu=100",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "synthetic mobile smishing/phishing kill-chain, adjacent task"
+  },
+  {
+    "url": "https://github.com/beir-cellar/beir",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "information retrieval benchmark; subset rights gate"
+  },
+  {
+    "url": "https://microsoft.github.io/msmarco/",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "retrieval relevance task; purpose-specific license verification pending"
+  },
+  {
+    "url": "https://www.rfc-editor.org/rfc/rfc9309.html",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "robots standard; stricter source policy chosen"
+  },
+  {
+    "url": "https://www.python-httpx.org/advanced/transports/",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "custom transport seam; not proof of DNS pinning"
+  },
+  {
+    "url": "https://www.postgresql.org/docs/current/sql-select.html",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "locking queue design; no live DB test"
+  },
+  {
+    "url": "https://json-schema.org/draft/2020-12/json-schema-core",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "schema 2020-12"
+  },
+  {
+    "url": "https://github.com/adbar/trafilatura",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "candidate pure parser, not production pinned"
+  },
+  {
+    "url": "https://github.com/huggingface/datatrove",
+    "checked_date": "2026-10-20",
+    "mode": "web open primary source",
+    "use": "offline processing candidate, not production scheduler"
+  }
+]

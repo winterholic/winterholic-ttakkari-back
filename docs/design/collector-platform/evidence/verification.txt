@@ -1,0 +1,52 @@
+2026-10-20 KST · 설계 단계 실행 receipt
+
+환경: Codex worker command sandbox. 작업 위치: /Users/winterholic/development/projects/winterholic-ttakkari/back.
+제품 런타임/현재 배포 full SHA/API/DB identity: 이번 단계 미검증.
+
+실행: .venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py
+schema meta-validation: 2 PASS; fixture expectations: 18 PASS
+positive=4 negative=14; hash/calibration/query/time/scope/unknown-setting controls checked
+runtime budget/SSRF/DB/lease enforcement: NOT EXECUTED (design only)
+환경 확인: back SciPy 1.18.1, jsonschema 4.26.0.
+
+입력 evidence manifest: 4 보고서+3 재실행 로그의 SHA/mtime/bytes 기록. 과거 모델 benchmark를 이번에 다시 실행하지 않았다.
+현황/모델 검증자의 결론만 옮기지 않고 /tmp/collector-verify-{run02,run03,memory}.log 원출력을 열람했다.
+재실행 로그의 CPU 지연 162.15/237.87/.23ms, 단독 RSS 458/502/2918MB 확인. host GPU 측정 아님.
+
+PMS: list_tasks q=[CP-, compact=false, 5/page로 25건 readback.
+ID/assignee/predecessor UUID는 등록 요청과 대조. 모든 S2/S3는 todo/0%.
+최종 설계 상태 재조회는 pms-readback.json과 package-validation.txt 참조.
+
+보고서 브라우저: configured ttakkari_browser browser_navigate(http://127.0.0.1:18798/summary.html), 390x844 및 1440x1000 viewport screenshot/snapshot 열람.
+모바일 snapshot: 문서 폭390, main x24/width342. 첫 viewport의 가로 넘침 없이 제목/요약 표시 관찰.
+전체 문서/모든 테마/print/제품 UI 전수 검증 아님. 콘솔 1건은 /favicon.ico 404, 제품 기능 실패 아님.
+스크린샷: 이 Run outbox/browser/page-2026-10-20T13-58-29-674Z.png 및 page-2026-10-20T13-59-00-604Z.png.
+브라우저 close 결과: No open tabs.
+
+패키지 첫 검사에서 아직 생성 전이던 evidence/verification.txt 링크를 missing으로 잡았다. receipt 생성 후 재검사한다. 이 실패를 통과로 보고하지 않는다.
+
+미실행: 제품 구현/DB migration 적용/모델 학습/실제 예산·lease·SSRF·LLM 응답·conversation resume·제품 MCP·human gold/운영 성능·배포.
+제품 소스/기존 dirty 파일 편집·staging·commit/push 없음. 신규 설계 문서·schema fixture·문서 검사기만 작성.
+
+최종 PMS 재조회: 25건, S1 done=3, S2/S3 todo=22. UUID/역할/의존·설계 파일 링크·dependency DAG 재검사 PASS. 상세 package-validation.txt.
+문서 검증기 negative control: dependency cycle와 missing required file을 의도적으로 넣은 별도 임시 복제본에서 거부 확인. 원본에는 결함을 주입하지 않음.
+
+마감 동시 변경 보완: KB 커밋63cf7e02·HEAD c12eff6e에서 ADR0063/0055/Collector Protocol 재대조. generation.py/generation_service.py diff 없음. 초기 ADR 충돌은 정정됨; ACL/visibility·parser port·운영 활성은 미검증. contract-compatibility.md 참조.
+
+## 2026-10-20 독립 설계 검증 보완 (R01 scope 결속, R02 JCS 멱등, R03 S2-00 gate/WBS 동기화)
+검증 보고서 원문 경로는 이 Run에서 ttakkari-guard가 읽기를 차단했다. 지적 내용은 검증 세션 aa419aff-c4fe-457d-8320-34f3f065a552의 결과 요약과 이 Run의 지시문에서 확인했다.
+[cmd] .venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py
+schema meta-validation: 2 PASS; fixture expectations: 18 PASS
+positive=4 negative=14; hash/calibration/query/time/scope/unknown-setting controls checked
+intake binding/idempotency: 10 PASS (negative=7: tenant/principal/scope tamper, cross-scope replay, 409 conflicts; replay=key-order+recorded_at); JCS vectors=11 PASS
+runtime budget/SSRF/DB/lease enforcement: NOT EXECUTED (design only)
+[cmd] python3 docs/design/collector-platform/check_delivery.py --closed
+design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1
+fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2-01 live=doing 10% gated by S2-00; local document links=PASS; implementation/ML/deploy=NOT EXECUTED
+변이 검사(임시 사본, 원본 미변경):
+- envelope access를 신뢰하도록 변경: AssertionError intake-invalid-tenant-tamper.json expected reject:scope_binding_mismatch, got created
+- /recorded_at 제외 제거: AssertionError intake-replay-recorded-at.json expected created,replay, got created,conflict:409
+- JCS 대신 순서 보존 json.dumps: AssertionError intake-replay-key-order.json expected created,replay, got created,conflict:409
+- wbs.csv CP-S2-01을 todo 0으로 되돌림: AssertionError CP-S2-01 stale status
+PMS 변경: CP-S2-01/CP-S2-00 description 갱신(gate·계약 경로), 메모 af8f2a63-da93-4843-8ef2-18cda6ac347d(issue/high, task CP-S2-01, 수신 worker 85f10519-989e-4ef3-8f5b-66114e91a448). CP-S2-01 status/progress/assignee는 구현 worker 소유라 바꾸지 않았다.
+미실행: DB UNIQUE 경합, 실제 인증 경로, HTTP 403/409, rfc8785 런타임 라이브러리(현재 back venv 미설치).

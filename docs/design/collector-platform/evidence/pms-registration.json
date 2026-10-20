@@ -1,0 +1,482 @@
+{
+  "project_id": "e99a75de-7ccf-48e6-a5d1-46e455eb79b8",
+  "registered_at": "2026-10-20",
+  "tasks": [
+    {
+      "code": "CP-S1-01",
+      "id": "773eb5fd-8911-46f9-aa6a-5745ea300a94",
+      "parent": "C01",
+      "wbs": "11.1.1.1",
+      "status": "done",
+      "progress": 100,
+      "predecessors": [],
+      "title": "[CP-S1-01] 현황 정정·Stock-gosu 비교 추적",
+      "description": "단계: S1; 전용 실행 패키지 CP-S1-01\n책임 소유 역할: 설계 담당 (개인 실행자·일정 미배정)\n완료기준: 두 현황 보고서와 현재 코드·최근 work-history 대조, 과거 수치 시점 한정. 운영 동일성은 S2-00으로 남김.\n검증 명령/절차: 현재 evidence/repository.txt·input-manifest.json 및 corrections.md의 A01~A07 대조\n산출물: docs/design/collector-platform/corrections.md\n선행 UUID: 없음\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 설계 담당 (실행자 미배정)",
+      "criterion": "두 현황 보고서와 현재 코드·최근 work-history 대조, 과거 수치 시점 한정. 운영 동일성은 S2-00으로 남김.",
+      "command": "현재 evidence/repository.txt·input-manifest.json 및 corrections.md의 A01~A07 대조",
+      "path": "docs/design/collector-platform/corrections.md"
+    },
+    {
+      "code": "CP-S1-02",
+      "id": "6e323afb-1d67-4e9b-b564-98e0623f76e8",
+      "parent": "V02",
+      "wbs": "11.3.2.1",
+      "status": "done",
+      "progress": 100,
+      "predecessors": [
+        "773eb5fd-8911-46f9-aa6a-5745ea300a94"
+      ],
+      "title": "[CP-S1-02] 공개 모델 스모크 정정 반영",
+      "description": "단계: S1; 전용 실행 패키지 CP-S1-02\n책임 소유 역할: ML 평가 담당 (개인 실행자·일정 미배정)\n완료기준: 27건 expected를 gold로 쓰지 않음. raw logit/모순/지연·RSS/한국어 인접 자산을 정정표로 연결.\n검증 명령/절차: /tmp/collector-verify-*.log 원출력 열람 및 corrections.md M01~M10 대조\n산출물: docs/design/collector-platform/evaluation.md\n선행 UUID: 773eb5fd-8911-46f9-aa6a-5745ea300a94\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 평가 담당 (실행자 미배정)",
+      "criterion": "27건 expected를 gold로 쓰지 않음. raw logit/모순/지연·RSS/한국어 인접 자산을 정정표로 연결.",
+      "command": "/tmp/collector-verify-*.log 원출력 열람 및 corrections.md M01~M10 대조",
+      "path": "docs/design/collector-platform/evaluation.md"
+    },
+    {
+      "code": "CP-S1-03",
+      "id": "3078ab3a-6ab8-470f-88f6-efd0a8a2790a",
+      "parent": "C03",
+      "wbs": "11.1.3.1",
+      "status": "done",
+      "progress": 100,
+      "predecessors": [
+        "773eb5fd-8911-46f9-aa6a-5745ea300a94",
+        "6e323afb-1d67-4e9b-b564-98e0623f76e8"
+      ],
+      "title": "[CP-S1-03] 아키텍처·ADR·schema·평가·PMS 설계 납품",
+      "description": "단계: S1; 전용 실행 패키지 CP-S1-03\n책임 소유 역할: 설계 담당 (개인 실행자·일정 미배정)\n완료기준: 설계·표준 예시·양성/음성 fixture 검증·3단계 WBS 실제 UUID readback·첫 slice 준비. 제품 구현 완료와 구분.\n검증 명령/절차: .venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py; PMS list_tasks q=CP- readback\n산출물: docs/design/collector-platform/architecture.md; docs/design/collector-platform/wbs.csv; docs/design/collector-platform/evidence/pms-readback.json\n선행 UUID: 773eb5fd-8911-46f9-aa6a-5745ea300a94, 6e323afb-1d67-4e9b-b564-98e0623f76e8\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 설계 담당 (실행자 미배정)",
+      "criterion": "설계·표준 예시·양성/음성 fixture 검증·3단계 WBS 실제 UUID readback·첫 slice 준비. 제품 구현 완료와 구분.",
+      "command": ".venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py; PMS list_tasks q=CP- readback",
+      "path": "docs/design/collector-platform/architecture.md; docs/design/collector-platform/wbs.csv; docs/design/collector-platform/evidence/pms-readback.json"
+    },
+    {
+      "code": "CP-S2-00",
+      "id": "fd87eb4c-29df-47d1-ad3a-346a8c6260ba",
+      "parent": "C01",
+      "wbs": "11.1.1.2",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "3078ab3a-6ab8-470f-88f6-efd0a8a2790a"
+      ],
+      "title": "[CP-S2-00] 최신 revision·runtime·DB·변경 소유권 인벤토리",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-00\n책임 소유 역할: 통합 담당 (개인 실행자·일정 미배정)\n완료기준: 코드 HEAD/dirty·배포 full SHA/runtime path·schema head·DB identity·활성 스케줄을 읽기 전용 증거로 구분. 다른 작업 파일 staging 금지.\n검증 명령/절차: git status --short --branch; git rev-parse HEAD; uv run alembic heads; 실제 버전/ready API와 DB identity 기록(운영 실행 필요)\n산출물: reports/collector/s2-00/inventory.json\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 통합 담당 (실행자 미배정)",
+      "criterion": "코드 HEAD/dirty·배포 full SHA/runtime path·schema head·DB identity·활성 스케줄을 읽기 전용 증거로 구분. 다른 작업 파일 staging 금지.",
+      "command": "git status --short --branch; git rev-parse HEAD; uv run alembic heads; 실제 버전/ready API와 DB identity 기록(운영 실행 필요)",
+      "path": "reports/collector/s2-00/inventory.json"
+    },
+    {
+      "code": "CP-S2-01",
+      "id": "48d0a2b4-09f5-47ab-a6ac-d86a92c249a5",
+      "parent": "C03",
+      "wbs": "11.1.3.2",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "3078ab3a-6ab8-470f-88f6-efd0a8a2790a",
+        "fd87eb4c-29df-47d1-ad3a-346a8c6260ba"
+      ],
+      "title": "[CP-S2-01] 첫 slice: strict 계약·멱등 등록",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-01\n책임 소유 역할: 백엔드 담당 (개인 실행자·일정 미배정)\n완료기준: contracts.py/intake.py 및 별도 모델·additive migration. 동일키 10개 병렬 요청 job 1행, payload 충돌 409, scope 누출/실패 잔여0. network/LLM/sink write 0.\n검증 명령/절차: uv run pytest -q unit_tests/test_collector_contracts.py tests/test_collector_intake.py; uv run ruff check src/ttakkari/collector src/ttakkari/collector_models.py\n산출물: reports/collector/s2-01/verification.txt; docs/design/collector-platform/first-slice.md\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a, fd87eb4c-29df-47d1-ad3a-346a8c6260ba\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 백엔드 담당 (실행자 미배정)",
+      "criterion": "contracts.py/intake.py 및 별도 모델·additive migration. 동일키 10개 병렬 요청 job 1행, payload 충돌 409, scope 누출/실패 잔여0. network/LLM/sink write 0.",
+      "command": "uv run pytest -q unit_tests/test_collector_contracts.py tests/test_collector_intake.py; uv run ruff check src/ttakkari/collector src/ttakkari/collector_models.py",
+      "path": "reports/collector/s2-01/verification.txt; docs/design/collector-platform/first-slice.md"
+    },
+    {
+      "code": "CP-S2-02",
+      "id": "7a90615c-2871-47ed-b0cb-75f74c73a132",
+      "parent": "C03",
+      "wbs": "11.1.3.3",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "48d0a2b4-09f5-47ab-a6ac-d86a92c249a5"
+      ],
+      "title": "[CP-S2-02] generation 주기·claim·cursor·복구",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-02\n책임 소유 역할: 백엔드 실행 담당 (개인 실행자·일정 미배정)\n완료기준: periodic/consume/work 재사용, DB owner/token fence·page commit+cursor/outbox 원자성·취소. heartbeat만 탈취 X; drain 중 새 claim0.\n검증 명령/절차: uv run pytest -q tests/test_collector_jobs.py tests/test_collector_generation.py\n산출물: reports/collector/s2-02/recovery.json\n선행 UUID: 48d0a2b4-09f5-47ab-a6ac-d86a92c249a5\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 백엔드 실행 담당 (실행자 미배정)",
+      "criterion": "periodic/consume/work 재사용, DB owner/token fence·page commit+cursor/outbox 원자성·취소. heartbeat만 탈취 X; drain 중 새 claim0.",
+      "command": "uv run pytest -q tests/test_collector_jobs.py tests/test_collector_generation.py",
+      "path": "reports/collector/s2-02/recovery.json"
+    },
+    {
+      "code": "CP-S2-03",
+      "id": "0b55c254-6b57-4845-9ead-ac91a7650ab3",
+      "parent": "C02",
+      "wbs": "11.1.2.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "3078ab3a-6ab8-470f-88f6-efd0a8a2790a",
+        "fd87eb4c-29df-47d1-ad3a-346a8c6260ba"
+      ],
+      "title": "[CP-S2-03] 출처별 robots·권리·보존·이용 정책",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-03\n책임 소유 역할: 수집 정책 담당 (개인 실행자·일정 미배정)\n완료기준: 공식 정책 URL/시각/license와 store/train/export/knowledge 용도 분리. unknown deny, robots는 권한 아님. sample source 5 domain×2 languages 제안 inventory.\n검증 명령/절차: uv run pytest -q unit_tests/test_collector_policy.py; source-policy.csv의 URL/확인시각/권리/scope 전수 검사\n산출물: reports/collector/s2-03/source-policy.csv\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a, fd87eb4c-29df-47d1-ad3a-346a8c6260ba\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 수집 정책 담당 (실행자 미배정)",
+      "criterion": "공식 정책 URL/시각/license와 store/train/export/knowledge 용도 분리. unknown deny, robots는 권한 아님. sample source 5 domain×2 languages 제안 inventory.",
+      "command": "uv run pytest -q unit_tests/test_collector_policy.py; source-policy.csv의 URL/확인시각/권리/scope 전수 검사",
+      "path": "reports/collector/s2-03/source-policy.csv"
+    },
+    {
+      "code": "CP-S2-04",
+      "id": "41405531-dbf8-4615-97e9-3e906eb9e60b",
+      "parent": "C08",
+      "wbs": "11.1.8.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "7a90615c-2871-47ed-b0cb-75f74c73a132",
+        "0b55c254-6b57-4845-9ead-ac91a7650ab3"
+      ],
+      "title": "[CP-S2-04] 안전 HTTP fetch·feed·본문 추출",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-04\n책임 소유 역할: 백엔드 수집 담당 (개인 실행자·일정 미배정)\n완료기준: DNS pin/IPv4-v6/redirect/proxy SSRF 방어·robots·429 durable cooldown·최대 bytes/time·빈200 명시 실패. HTML parser와 transport 분리, 브라우저 없음.\n검증 명령/절차: uv run pytest -q tests/test_collector_fetch.py unit_tests/test_collector_parser.py\n산출물: reports/collector/s2-04/fetch-negative.json\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 백엔드 수집 담당 (실행자 미배정)",
+      "criterion": "DNS pin/IPv4-v6/redirect/proxy SSRF 방어·robots·429 durable cooldown·최대 bytes/time·빈200 명시 실패. HTML parser와 transport 분리, 브라우저 없음.",
+      "command": "uv run pytest -q tests/test_collector_fetch.py unit_tests/test_collector_parser.py",
+      "path": "reports/collector/s2-04/fetch-negative.json"
+    },
+    {
+      "code": "CP-S2-05",
+      "id": "985da575-0c06-44e8-b73a-fa5848715600",
+      "parent": "C05",
+      "wbs": "11.1.5.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "48d0a2b4-09f5-47ab-a6ac-d86a92c249a5",
+        "0b55c254-6b57-4845-9ead-ac91a7650ab3"
+      ],
+      "title": "[CP-S2-05] 전역 day/job 절대 예산·정산·캐시",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-05\n책임 소유 역할: 백엔드 비용 담당 (개인 실행자·일정 미배정)\n완료기준: 원자 선예약으로 병렬/retry/unknown/자정 경계 초과0. teacher/judge/synthetic 공용 bucket. bound 미지원 엔진 off. 캐시 scope/model/prompt/query 격리.\n검증 명령/절차: uv run pytest -q tests/test_collector_budget.py tests/test_collector_cache.py\n산출물: reports/collector/s2-05/budget-replay.json\n선행 UUID: 48d0a2b4-09f5-47ab-a6ac-d86a92c249a5, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 백엔드 비용 담당 (실행자 미배정)",
+      "criterion": "원자 선예약으로 병렬/retry/unknown/자정 경계 초과0. teacher/judge/synthetic 공용 bucket. bound 미지원 엔진 off. 캐시 scope/model/prompt/query 격리.",
+      "command": "uv run pytest -q tests/test_collector_budget.py tests/test_collector_cache.py",
+      "path": "reports/collector/s2-05/budget-replay.json"
+    },
+    {
+      "code": "CP-S2-06",
+      "id": "a87930c5-7842-4170-9d0d-bf34649df0c6",
+      "parent": "C06",
+      "wbs": "11.1.6.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "41405531-dbf8-4615-97e9-3e906eb9e60b"
+      ],
+      "title": "[CP-S2-06] 정규화·lineage·중복·회수 보존",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-06\n책임 소유 역할: 백엔드 데이터 담당 (개인 실행자·일정 미배정)\n완료기준: raw/text SHA·변환 map·전처리 버전·품질 미측정·정확 occurrence 보존. near duplicate는 후보, 짧은 문서/낮은 점수 hold·샘플 회수 가능.\n검증 명령/절차: uv run pytest -q tests/test_collector_normalize.py tests/test_collector_dedupe.py\n산출물: reports/collector/s2-06/lineage.json\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 백엔드 데이터 담당 (실행자 미배정)",
+      "criterion": "raw/text SHA·변환 map·전처리 버전·품질 미측정·정확 occurrence 보존. near duplicate는 후보, 짧은 문서/낮은 점수 hold·샘플 회수 가능.",
+      "command": "uv run pytest -q tests/test_collector_normalize.py tests/test_collector_dedupe.py",
+      "path": "reports/collector/s2-06/lineage.json"
+    },
+    {
+      "code": "CP-S2-07",
+      "id": "e83100c9-c48a-4cab-9ac3-e50bed63f550",
+      "parent": "C08",
+      "wbs": "11.1.8.2",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "7a90615c-2871-47ed-b0cb-75f74c73a132",
+        "985da575-0c06-44e8-b73a-fa5848715600",
+        "a87930c5-7842-4170-9d0d-bf34649df0c6"
+      ],
+      "title": "[CP-S2-07] 독립 /collect API·모바일 관리 화면",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-07\n책임 소유 역할: 프론트·API 통합 담당 (개인 실행자·일정 미배정)\n완료기준: back API auth/scope/idempotency; front clean checkout·라우트/feature 단일 통합 담당. sources/runs/review/quality 탭과 loading/empty/error/partial/budget_wait.\n검증 명령/절차: back: uv run pytest -q tests/test_collector_api.py; front: TTAKKARI_NO_ENV_FILE=1 pnpm test --run src/features/collector; pnpm lint; pnpm build; ttakkari_browser 320/390/768/1440 검사\n산출물: reports/collector/s2-07/ui/\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 985da575-0c06-44e8-b73a-fa5848715600, a87930c5-7842-4170-9d0d-bf34649df0c6\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 프론트·API 통합 담당 (실행자 미배정)",
+      "criterion": "back API auth/scope/idempotency; front clean checkout·라우트/feature 단일 통합 담당. sources/runs/review/quality 탭과 loading/empty/error/partial/budget_wait.",
+      "command": "back: uv run pytest -q tests/test_collector_api.py; front: TTAKKARI_NO_ENV_FILE=1 pnpm test --run src/features/collector; pnpm lint; pnpm build; ttakkari_browser 320/390/768/1440 검사",
+      "path": "reports/collector/s2-07/ui/"
+    },
+    {
+      "code": "CP-S2-08",
+      "id": "b80d960e-c589-4755-9469-dab2c6f9e8ef",
+      "parent": "C08",
+      "wbs": "11.1.8.3",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "a87930c5-7842-4170-9d0d-bf34649df0c6",
+        "985da575-0c06-44e8-b73a-fa5848715600"
+      ],
+      "title": "[CP-S2-08] export sink·선택적 knowledge adapter",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-08\n책임 소유 역할: 백엔드 어댑터 담당 (개인 실행자·일정 미배정)\n완료기준: envelope+delivery receipt·outbox 재시도/unknown reconcile. export 먼저. kb/artifact blob port 소유권 합의·scope/parser contract 시험 후 knowledge import. collector가 knowledge 직접 import X.\n검증 명령/절차: uv run pytest -q tests/test_collector_delivery.py tests/test_collector_knowledge_adapter.py\n산출물: reports/collector/s2-08/receipts.json\n선행 UUID: a87930c5-7842-4170-9d0d-bf34649df0c6, 985da575-0c06-44e8-b73a-fa5848715600\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md\n마감 재대조: 기존 docs/kb/design-v1.md discover/fetch/parse Protocol 확장. contract-compatibility.md 기준 KB extension(strict title/authors/section offset/hash/visibility) 검증·blob ref ownership·동일 raw parser 재처리 계약 정합화. ADR0063/0055는 커밋됨, 초기 ADR 충돌 해결 확인. legacy knowledge gate와 kb-only import는 구분.",
+      "assignee": "역할: 백엔드 어댑터 담당 (실행자 미배정)",
+      "criterion": "envelope+delivery receipt·outbox 재시도/unknown reconcile. export 먼저. kb/artifact blob port 소유권 합의·scope/parser contract 시험 후 knowledge import. collector가 knowledge 직접 import X.",
+      "command": "uv run pytest -q tests/test_collector_delivery.py tests/test_collector_knowledge_adapter.py",
+      "path": "reports/collector/s2-08/receipts.json"
+    },
+    {
+      "code": "CP-S2-09",
+      "id": "bec59aeb-8876-4c3b-91fd-fc7febaa9a58",
+      "parent": "C09",
+      "wbs": "11.1.9.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "41405531-dbf8-4615-97e9-3e906eb9e60b",
+        "985da575-0c06-44e8-b73a-fa5848715600",
+        "e83100c9-c48a-4cab-9ac3-e50bed63f550",
+        "b80d960e-c589-4755-9469-dab2c6f9e8ef"
+      ],
+      "title": "[CP-S2-09] 복구·scope·SSRF·절대 비용 통합 시험",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-09\n책임 소유 역할: 검증 담당 (개인 실행자·일정 미배정)\n완료기준: generation switch·crash 단계별 재개·중복0·stale commit0·scope 누출0·N→10N 절대 호출상한 동일. 사용량 조회/실응답/resume/MCP 분리 검사.\n검증 명령/절차: uv run pytest -q tests/test_collector_integration.py tests/test_collector_generation.py; fixture replay N/10N\n산출물: reports/collector/s2-09/integration.json\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b, 985da575-0c06-44e8-b73a-fa5848715600, e83100c9-c48a-4cab-9ac3-e50bed63f550, b80d960e-c589-4755-9469-dab2c6f9e8ef\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 검증 담당 (실행자 미배정)",
+      "criterion": "generation switch·crash 단계별 재개·중복0·stale commit0·scope 누출0·N→10N 절대 호출상한 동일. 사용량 조회/실응답/resume/MCP 분리 검사.",
+      "command": "uv run pytest -q tests/test_collector_integration.py tests/test_collector_generation.py; fixture replay N/10N",
+      "path": "reports/collector/s2-09/integration.json"
+    },
+    {
+      "code": "CP-S2-10",
+      "id": "92c8ac3a-766d-4f4c-9e4a-c0907b1dba29",
+      "parent": "C10",
+      "wbs": "11.1.10.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "bec59aeb-8876-4c3b-91fd-fc7febaa9a58"
+      ],
+      "title": "[CP-S2-10] teacher off 파일럿·runbook·제한 운영",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-10\n책임 소유 역할: 운영 통합 담당 (개인 실행자·일정 미배정)\n완료기준: 소스별 flag·한도·중지/재개·DB accounting·실제 runtime/DB 동일성·drain 증거. clean relevant checks→commit/push→generation deploy reservation, 수락과 성공 구분.\n검증 명령/절차: 관련 back tests 전체·front lint/build; 배포 reservation full SHA와 runtime ready/canary는 별도 실행\n산출물: reports/collector/s2-10/runbook.md\n선행 UUID: bec59aeb-8876-4c3b-91fd-fc7febaa9a58\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 운영 통합 담당 (실행자 미배정)",
+      "criterion": "소스별 flag·한도·중지/재개·DB accounting·실제 runtime/DB 동일성·drain 증거. clean relevant checks→commit/push→generation deploy reservation, 수락과 성공 구분.",
+      "command": "관련 back tests 전체·front lint/build; 배포 reservation full SHA와 runtime ready/canary는 별도 실행",
+      "path": "reports/collector/s2-10/runbook.md"
+    },
+    {
+      "code": "CP-S3-01",
+      "id": "74ffa831-2e15-4542-a642-a2e3a33955c7",
+      "parent": "V01",
+      "wbs": "11.3.1.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "3078ab3a-6ab8-470f-88f6-efd0a8a2790a",
+        "0b55c254-6b57-4845-9ead-ac91a7650ab3"
+      ],
+      "title": "[CP-S3-01] 라벨 rubric·누출 방지 split·권리 manifest",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-01\n책임 소유 역할: ML 데이터 담당 (개인 실행자·일정 미배정)\n완료기준: 5 domain×ko/en·출처/시기/장르/길이 층화. 원전·번역·합성 parent cluster 교차0. real/synthetic/teacher/AI/human 구분.\n검증 명령/절차: 연구 venv: python check_splits.py --manifest experiments/collector/dataset-manifest.json\n산출물: experiments/collector/dataset-manifest.json\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 데이터 담당 (실행자 미배정)",
+      "criterion": "5 domain×ko/en·출처/시기/장르/길이 층화. 원전·번역·합성 parent cluster 교차0. real/synthetic/teacher/AI/human 구분.",
+      "command": "연구 venv: python check_splits.py --manifest experiments/collector/dataset-manifest.json",
+      "path": "experiments/collector/dataset-manifest.json"
+    },
+    {
+      "code": "CP-S3-02",
+      "id": "2d851fcd-1cf5-4c2e-a662-a7746b3fe876",
+      "parent": "V01",
+      "wbs": "11.3.1.2",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "74ffa831-2e15-4542-a642-a2e3a33955c7",
+        "a87930c5-7842-4170-9d0d-bf34649df0c6"
+      ],
+      "title": "[CP-S3-02] blind 독립 라벨·이견·human 상태 기록",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-02\n책임 소유 역할: ML 평가 담당 (개인 실행자·일정 미배정)\n완료기준: teacher 점수 숨긴 independent AI reference. human 2인+adjudication은 실제 event/담당 확보 시만 human gold. 사람 없으면 human validation 미실행 표시·자동 baseline으로 제한.\n검증 명령/절차: 연구 venv: python audit_labels.py --manifest experiments/collector/labels.jsonl\n산출물: experiments/collector/labels.jsonl; reports/collector/s3-02/agreement.json\n선행 UUID: 74ffa831-2e15-4542-a642-a2e3a33955c7, a87930c5-7842-4170-9d0d-bf34649df0c6\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 평가 담당 (실행자 미배정)",
+      "criterion": "teacher 점수 숨긴 independent AI reference. human 2인+adjudication은 실제 event/담당 확보 시만 human gold. 사람 없으면 human validation 미실행 표시·자동 baseline으로 제한.",
+      "command": "연구 venv: python audit_labels.py --manifest experiments/collector/labels.jsonl",
+      "path": "experiments/collector/labels.jsonl; reports/collector/s3-02/agreement.json"
+    },
+    {
+      "code": "CP-S3-03",
+      "id": "0f13ec9e-7a6d-4829-9682-466af0bad523",
+      "parent": "V04",
+      "wbs": "11.3.4.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "2d851fcd-1cf5-4c2e-a662-a7746b3fe876",
+        "985da575-0c06-44e8-b73a-fa5848715600"
+      ],
+      "title": "[CP-S3-03] 규칙·TF-IDF 고전 ML 기준선",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-03\n책임 소유 역할: ML 구현 담당 (개인 실행자·일정 미배정)\n완료기준: rules vs char/word TF-IDF+logistic/SVM 동일 split. scope/label leak 없이 seed/code/env/data hash·raw predictions/RSS/latency.\n검증 명령/절차: 연구 venv: python train_baselines.py --config experiments/collector/baseline.json\n산출물: reports/collector/s3-03/manifest.json\n선행 UUID: 2d851fcd-1cf5-4c2e-a662-a7746b3fe876, 985da575-0c06-44e8-b73a-fa5848715600\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 구현 담당 (실행자 미배정)",
+      "criterion": "rules vs char/word TF-IDF+logistic/SVM 동일 split. scope/label leak 없이 seed/code/env/data hash·raw predictions/RSS/latency.",
+      "command": "연구 venv: python train_baselines.py --config experiments/collector/baseline.json",
+      "path": "reports/collector/s3-03/manifest.json"
+    },
+    {
+      "code": "CP-S3-04",
+      "id": "f95b3ea0-b6a3-4f51-9936-707892577424",
+      "parent": "V02",
+      "wbs": "11.3.2.2",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "2d851fcd-1cf5-4c2e-a662-a7746b3fe876"
+      ],
+      "title": "[CP-S3-04] 공개 후보 재현·장문 window·환경 비교",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-04\n책임 소유 역할: ML 실험 담당 (개인 실행자·일정 미배정)\n완료기준: fwedu/PlusPlus/DCLM+NVIDIA auxiliary license/revision pin. raw logit·단독 RSS/cold-warm CPU와 host GPU 결과 분리. long-tail/window coverage 측정.\n검증 명령/절차: 연구 venv: python benchmark_models.py --config experiments/collector/public-models.json; GPU는 host_gpu MCP 별도 evidence\n산출물: reports/collector/s3-04/predictions.jsonl\n선행 UUID: 2d851fcd-1cf5-4c2e-a662-a7746b3fe876\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 실험 담당 (실행자 미배정)",
+      "criterion": "fwedu/PlusPlus/DCLM+NVIDIA auxiliary license/revision pin. raw logit·단독 RSS/cold-warm CPU와 host GPU 결과 분리. long-tail/window coverage 측정.",
+      "command": "연구 venv: python benchmark_models.py --config experiments/collector/public-models.json; GPU는 host_gpu MCP 별도 evidence",
+      "path": "reports/collector/s3-04/predictions.jsonl"
+    },
+    {
+      "code": "CP-S3-05",
+      "id": "cac5bd73-35bf-4150-986f-f9977fe484a7",
+      "parent": "V06",
+      "wbs": "11.3.6.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "985da575-0c06-44e8-b73a-fa5848715600",
+        "2d851fcd-1cf5-4c2e-a662-a7746b3fe876",
+        "0f13ec9e-7a6d-4829-9682-466af0bad523"
+      ],
+      "title": "[CP-S3-05] bounded teacher·합성 hard case 생성",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-05\n책임 소유 역할: ML 비용 담당 (개인 실행자·일정 미배정)\n완료기준: teacher port의 실제 token/output/reasoning cap/usage 강제 확인 전 off. independent judge·retry 포함 전역 예산. test 기반 합성0·synthetic parent split/권리/출처 유지.\n검증 명령/절차: uv run pytest -q tests/test_collector_teacher_budget.py; 연구 venv: python generate_labels.py --budget-policy <validated-policy>\n산출물: reports/collector/s3-05/usage-ledger.jsonl\n선행 UUID: 985da575-0c06-44e8-b73a-fa5848715600, 2d851fcd-1cf5-4c2e-a662-a7746b3fe876, 0f13ec9e-7a6d-4829-9682-466af0bad523\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 비용 담당 (실행자 미배정)",
+      "criterion": "teacher port의 실제 token/output/reasoning cap/usage 강제 확인 전 off. independent judge·retry 포함 전역 예산. test 기반 합성0·synthetic parent split/권리/출처 유지.",
+      "command": "uv run pytest -q tests/test_collector_teacher_budget.py; 연구 venv: python generate_labels.py --budget-policy <validated-policy>",
+      "path": "reports/collector/s3-05/usage-ledger.jsonl"
+    },
+    {
+      "code": "CP-S3-06",
+      "id": "9076a6bf-f006-4080-8a26-18c52244ea0d",
+      "parent": "V04",
+      "wbs": "11.3.4.2",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "0f13ec9e-7a6d-4829-9682-466af0bad523",
+        "f95b3ea0-b6a3-4f51-9936-707892577424",
+        "cac5bd73-35bf-4150-986f-f9977fe484a7"
+      ],
+      "title": "[CP-S3-06] 저비용 student 학습·재현 manifest",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-06\n책임 소유 역할: ML 학습 담당 (개인 실행자·일정 미배정)\n완료기준: real-only vs real+synthetic student, seed/lock/weights/artifact hash. source-heldout에서 teacher 스타일 암기 검사·CPU fallback. 이득 없으면 단순 baseline 유지.\n검증 명령/절차: 연구 venv: python train_student.py --config experiments/collector/student.json --seed 42\n산출물: reports/collector/s3-06/manifest.json\n선행 UUID: 0f13ec9e-7a6d-4829-9682-466af0bad523, f95b3ea0-b6a3-4f51-9936-707892577424, cac5bd73-35bf-4150-986f-f9977fe484a7\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 학습 담당 (실행자 미배정)",
+      "criterion": "real-only vs real+synthetic student, seed/lock/weights/artifact hash. source-heldout에서 teacher 스타일 암기 검사·CPU fallback. 이득 없으면 단순 baseline 유지.",
+      "command": "연구 venv: python train_student.py --config experiments/collector/student.json --seed 42",
+      "path": "reports/collector/s3-06/manifest.json"
+    },
+    {
+      "code": "CP-S3-07",
+      "id": "f9335524-11f7-4d8b-9baa-41302fc425af",
+      "parent": "V03",
+      "wbs": "11.3.3.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "9076a6bf-f006-4080-8a26-18c52244ea0d"
+      ],
+      "title": "[CP-S3-07] calibration·정책 임계·모델 registry",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-07\n책임 소유 역할: ML 정책 담당 (개인 실행자·일정 미배정)\n완료기준: calibration split만 사용, raw와 calibrated probability+artifact/gold hash 분리. candidate/shadow/champion/rollback 포인터·cohort 부족시 미보정/hold.\n검증 명령/절차: 연구 venv: python calibrate.py --config experiments/collector/calibration.json; uv run pytest -q tests/test_collector_registry.py\n산출물: reports/collector/s3-07/calibration.json\n선행 UUID: 9076a6bf-f006-4080-8a26-18c52244ea0d\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 정책 담당 (실행자 미배정)",
+      "criterion": "calibration split만 사용, raw와 calibrated probability+artifact/gold hash 분리. candidate/shadow/champion/rollback 포인터·cohort 부족시 미보정/hold.",
+      "command": "연구 venv: python calibrate.py --config experiments/collector/calibration.json; uv run pytest -q tests/test_collector_registry.py",
+      "path": "reports/collector/s3-07/calibration.json"
+    },
+    {
+      "code": "CP-S3-08",
+      "id": "a337b642-1746-4069-a565-cfddcecb0ae7",
+      "parent": "V02",
+      "wbs": "11.3.2.3",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "f9335524-11f7-4d8b-9baa-41302fc425af"
+      ],
+      "title": "[CP-S3-08] 단계별 ablation·false-negative·비용 비교",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-08\n책임 소유 역할: ML 평가 담당 (개인 실행자·일정 미배정)\n완료기준: 동일 frozen manifest에서 규칙/중복/public/student/teacher/synthetic/calibration 각각 증분. domain·language·genre·length별 n/CI·hold/복구·latency/RSS·LLM 절대 비용.\n검증 명령/절차: 연구 venv: python evaluate_ablation.py --config experiments/collector/ablation.json\n산출물: reports/collector/s3-08/metrics.json\n선행 UUID: f9335524-11f7-4d8b-9baa-41302fc425af\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: ML 평가 담당 (실행자 미배정)",
+      "criterion": "동일 frozen manifest에서 규칙/중복/public/student/teacher/synthetic/calibration 각각 증분. domain·language·genre·length별 n/CI·hold/복구·latency/RSS·LLM 절대 비용.",
+      "command": "연구 venv: python evaluate_ablation.py --config experiments/collector/ablation.json",
+      "path": "reports/collector/s3-08/metrics.json"
+    },
+    {
+      "code": "CP-S3-09",
+      "id": "46a079c2-f28e-4cc6-925a-f093376144d2",
+      "parent": "V08",
+      "wbs": "11.3.8.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "a337b642-1746-4069-a565-cfddcecb0ae7",
+        "bec59aeb-8876-4c3b-91fd-fc7febaa9a58"
+      ],
+      "title": "[CP-S3-09] frozen holdout·공격·사실성 분리 감사",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-09\n책임 소유 역할: 독립 검증 담당 (개인 실행자·일정 미배정)\n완료기준: FN recall/CI·spam precision/recall·ECE/Brier·사실근거·provenance/canonical·scope·injection 측정. sample smoke/automatic reference/human gold 운영 증거 분리.\n검증 명령/절차: 연구 venv: python evaluate_holdout.py --manifest experiments/collector/frozen-test.json; uv run pytest -q tests/test_collector_quality_security.py\n산출물: reports/collector/s3-09/holdout.json\n선행 UUID: a337b642-1746-4069-a565-cfddcecb0ae7, bec59aeb-8876-4c3b-91fd-fc7febaa9a58\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 독립 검증 담당 (실행자 미배정)",
+      "criterion": "FN recall/CI·spam precision/recall·ECE/Brier·사실근거·provenance/canonical·scope·injection 측정. sample smoke/automatic reference/human gold 운영 증거 분리.",
+      "command": "연구 venv: python evaluate_holdout.py --manifest experiments/collector/frozen-test.json; uv run pytest -q tests/test_collector_quality_security.py",
+      "path": "reports/collector/s3-09/holdout.json"
+    },
+    {
+      "code": "CP-S3-10",
+      "id": "484b198b-344e-428e-a80d-a4d0e06121b9",
+      "parent": "V09",
+      "wbs": "11.3.9.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "46a079c2-f28e-4cc6-925a-f093376144d2",
+        "b80d960e-c589-4755-9469-dab2c6f9e8ef",
+        "87f921eb-7797-43cc-95e7-45139a4dc2f2"
+      ],
+      "title": "[CP-S3-10] knowledge 검색 control/challenger 연계 평가",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-10\n책임 소유 역할: 검색·원장 통합 담당 (개인 실행자·일정 미배정)\n완료기준: 동일 corpus에서 lexical/e5/필요 rerank 비교. Recall/nDCG/MRR와 citation·canonical/정정 보존 분리. BEIR/MSMARCO relevance≠factuality. 첫 의미 추출 P0 gate 필요.\n검증 명령/절차: uv run pytest -q tests/test_collector_knowledge_adapter.py; 연구 venv: python evaluate_retrieval.py --manifest experiments/collector/retrieval-test.json\n산출물: reports/collector/s3-10/retrieval.json\n선행 UUID: 46a079c2-f28e-4cc6-925a-f093376144d2, b80d960e-c589-4755-9469-dab2c6f9e8ef, 87f921eb-7797-43cc-95e7-45139a4dc2f2\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 검색·원장 통합 담당 (실행자 미배정)",
+      "criterion": "동일 corpus에서 lexical/e5/필요 rerank 비교. Recall/nDCG/MRR와 citation·canonical/정정 보존 분리. BEIR/MSMARCO relevance≠factuality. 첫 의미 추출 P0 gate 필요.",
+      "command": "uv run pytest -q tests/test_collector_knowledge_adapter.py; 연구 venv: python evaluate_retrieval.py --manifest experiments/collector/retrieval-test.json",
+      "path": "reports/collector/s3-10/retrieval.json"
+    },
+    {
+      "code": "CP-S3-11",
+      "id": "f64b608f-4384-4c6f-8159-0f930e97c0c9",
+      "parent": "V10",
+      "wbs": "11.3.10.1",
+      "status": "todo",
+      "progress": 0,
+      "predecessors": [
+        "46a079c2-f28e-4cc6-925a-f093376144d2",
+        "484b198b-344e-428e-a80d-a4d0e06121b9",
+        "92c8ac3a-766d-4f4c-9e4a-c0907b1dba29"
+      ],
+      "title": "[CP-S3-11] shadow·canary·rollback·드리프트 개선",
+      "description": "단계: S3; 전용 실행 패키지 CP-S3-11\n책임 소유 역할: 운영·ML 담당 (개인 실행자·일정 미배정)\n완료기준: registry 이전 champion 복원·source mix/score/hold/FN 표본 감사. human/CI 미확정이면 shadow. 오류→추가 라벨→예산 내 재학습→동일 gate 재검증.\n검증 명령/절차: uv run pytest -q tests/test_collector_rollout.py; 실제 canary/rollback rehearsal·runtime SHA/DB identity·usage readback 별도\n산출물: reports/collector/s3-11/rollout.json\n선행 UUID: 46a079c2-f28e-4cc6-925a-f093376144d2, 484b198b-344e-428e-a80d-a4d0e06121b9, 92c8ac3a-766d-4f4c-9e4a-c0907b1dba29\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "assignee": "역할: 운영·ML 담당 (실행자 미배정)",
+      "criterion": "registry 이전 champion 복원·source mix/score/hold/FN 표본 감사. human/CI 미확정이면 shadow. 오류→추가 라벨→예산 내 재학습→동일 gate 재검증.",
+      "command": "uv run pytest -q tests/test_collector_rollout.py; 실제 canary/rollback rehearsal·runtime SHA/DB identity·usage readback 별도",
+      "path": "reports/collector/s3-11/rollout.json"
+    }
+  ],
+  "notes": [
+    {
+      "id": "6eb7f1b5-8980-4ac8-9d80-08fa444e0758",
+      "project_id": "e99a75de-7ccf-48e6-a5d1-46e455eb79b8",
+      "task_id": "b80d960e-c589-4755-9469-dab2c6f9e8ef",
+      "kind": "risk",
+      "title": "collector knowledge sink 연결: KB 계약/ACL·parser 정합화 (마감 보완)",
+      "body": "초기 미추적 KB 관찰 후 다른 세션이 KB1/KB2를 63cf7e02f052d3c4ebbfd9cc820257a8c40ea649로 커밋했다. ADR0063 참조 정정·0055 불변 보강 확인. 기존 docs/kb/design-v1.md Collector discover/fetch/parse Protocol을 envelope로 확장하고, 공통 큐·robots·blob 저장 책임을 중복 구현하지 않는다. 상세: back/docs/design/collector-platform/contract-compatibility.md. scope/visibility·동일 raw 새 parser 재처리·blob ref ownership은 S2-08 구현에서 검증. 운영 배포는 미검증. legacy knowledge 첫 의미 추출 P0=87f921eb-7797-43cc-95e7-45139a4dc2f2와 kb-only 원본/패시지 import를 구분한다. collector/export는 독립 진행.",
+      "severity": "medium",
+      "status": "open",
+      "owner": null,
+      "created_at": "2026-10-20T13:55:18.283020+00:00",
+      "updated_at": "2026-10-20T14:05:06.310601+00:00",
+      "resolved_at": null
+    },
+    {
+      "id": "4b9902e0-d7e2-4233-8390-4deb1b4ded8b",
+      "project_id": "e99a75de-7ccf-48e6-a5d1-46e455eb79b8",
+      "task_id": "3078ab3a-6ab8-470f-88f6-efd0a8a2790a",
+      "kind": "note",
+      "title": "범용 수집 플랫폼 3단계 실행 WBS 정본·중복 경계 (2026-10-20)",
+      "body": "기존 EXT-C/V 하위 CP 작업 25건(S1 3/S2 11/S3 11)을 실제 등록. 별도 프로젝트 생성·기존 WBS 이동/삭제 없음. C는 platform, V는 ML/evaluation 실행 정본이며 EXT-K/Y는 소비 adapter/도메인 연결만 유지. 상세 UUID/의존/역할/완료기준/미래 검증명령/산출물: back/docs/design/collector-platform/wbs.csv. 담당자는 역할만이며 개인·일정 미배정. 원본 조사 오류는 corrections.md로 보존. 코드/학습/배포 미실행.",
+      "severity": "low",
+      "status": "open",
+      "owner": null,
+      "created_at": "2026-10-20T13:55:18.270656+00:00",
+      "updated_at": "2026-10-20T13:55:18.270658+00:00",
+      "resolved_at": null
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "timezone": "Asia/Seoul",
+  "enabled": false,
+  "day": {
+    "tokens": 60000,
+    "calls": 20,
+    "usd": 1.0
+  },
+  "job": {
+    "tokens": 12000,
+    "calls": 4,
+    "usd": 0.2
+  },
+  "request": {
+    "input_tokens": 2000,
+    "output_and_reasoning_tokens": 1000
+  },
+  "sampling": {
+    "daily_absolute_documents": 12,
+    "strategy": "stratified_reservoir"
+  },
+  "unknown_usage_policy": "keep_full_reservation",
+  "unbounded_engine_policy": "disabled",
+  "cache_scope": "tenant_scope_hash_model_prompt_policy_query",
+  "retries_charge_budget": true,
+  "cost_per_million": 0
+}

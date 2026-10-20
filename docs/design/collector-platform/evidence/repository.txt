@@ -1,0 +1,106 @@
+/Users/winterholic/development/projects/winterholic-ttakkari/back
+$ git rev-parse HEAD
+04e44c90b4b10a84f6d80983ed722e1fe046b8f4
+
+
+$ git status --short --branch
+## main...origin/main [ahead 2, behind 1]
+ M docs/design/blog-ops-center.md
+?? docs/adr/collector-platform-20261020.md
+?? docs/design/collector-platform/
+
+
+/Users/winterholic/development/projects/winterholic-ttakkari/front
+$ git rev-parse HEAD
+630040b1b7007a219a93c9d3d4491fab714c555d
+
+
+$ git status --short --branch
+## main...origin/main [ahead 3, behind 74]
+ M docs/work-history/2026-10-17-design-system-1-2.md
+ M docs/work-history/2026-10-17-mascot-logo-art.md
+ M scripts/ui-sweep/fixtures-library.json
+ M scripts/ui-sweep/run.sh
+ M scripts/ui-sweep/stub.mjs
+ M scripts/ui-sweep/webkit-shots.mjs
+ M src/api/types.ts
+ M src/features/accounts/AccountsSection.test.tsx
+ M src/features/accounts/AccountsSection.tsx
+ M src/features/chat/Composer.tsx
+ M src/features/chat/composer.css
+ M src/features/meetings/NewMeetingForm.tsx
+ M src/features/meetings/TranscriptField.tsx
+ M src/features/pms/Board.tsx
+ M src/features/pms/pms.css
+ M src/features/pms/pms.test.tsx
+ M src/pages/AssistantPage.tsx
+ M src/pages/ChecklistsPage.tsx
+ M src/pages/ContextLibraryPage.tsx
+ M src/pages/LibraryPage.tsx
+ M src/pages/NotificationsPage.tsx
+ M src/pages/library.css
+ M src/pages/notifications.css
+ M src/pages/planner.css
+ M src/shell/PageHeader.tsx
+ M src/shell/notification-link.css
+ M src/ui/EngineBadge.tsx
+ M src/ui/engineBadge.css
+ M src/vendor/ttakkari/VERSION
+ M src/vendor/ttakkari/components.css
+?? docs/work-history/2026-10-17-ios-webkit-ui-fixes.md
+?? docs/work-history/2026-10-17-ui-design-flaw-diagnosis.md
+?? src/shell/PageHeader.test.tsx
+?? src/ui/FileButton.test.tsx
+?? src/ui/FileButton.tsx
+?? src/ui/fileButton.css
+?? src/ui/useScrollFade.ts
+
+
+/Users/winterholic/development/projects/stock-gosu/stock-gosu/collector
+$ git rev-parse HEAD
+ae88f72154bee0a95a1edfed0a3cba39a91c9797
+
+
+$ git status --short --branch
+## main...origin/main
+ M .env.example
+ M .github/workflows/main.yml
+ M alembic/versions/0011_dividend_info.py
+ M alembic/versions/0012_option_board_snapshot.py
+ M alembic/versions/0013_search_trend.py
+ M clients/dart/client.py
+ M clients/ecos/client.py
+ M clients/gdelt/client.py
+ M clients/naver_datalab/client.py
+ M collectors/base.py
+ M collectors/finnhub_collectors.py
+ M collectors/kr_daily_ohlcv.py
+ M collectors/kr_futures_investor.py
+ M collectors/kr_option_board.py
+ M collectors/kr_sector_index.py
+ M collectors/naver_trend.py
+ M collectors/news_sentiment.py
+ M collectors/social_news.py
+ M collectors/toss_candles.py
+ M config.py
+ M main.py
+ M scheduler.py
+ M tests/test_toss_candles.py
+ M utils/retry.py
+
+
+/Users/winterholic/development/projects/stock-gosu/stock-gosu/movers
+$ git rev-parse HEAD
+445d691fbab40e05209fb6a68807c982c2c53e70
+
+
+$ git status --short --branch
+## main...origin/main
+
+
+src/ttakkari/generation.py sha256=446952e76c7e7eccb38e97ccef878c37cc2055819790ddbef2576cf44833e511
+src/ttakkari/generation_service.py sha256=7d8bcd3239aa25868de3edd538447ab197b077b0a7a722f67bca7144188be9a3
+src/ttakkari/knowledge/store.py sha256=9aca4279ad6f97399fe9237576b1f4e759c30f7700e11d1afccafaa7d94ab9e0
+src/ttakkari/kb_models.py sha256=5096bed5ed0346c916b1adc0507d18499ec64c31e4ad1b0b5c21d57fe8f72484
+src/ttakkari/kb_store.py sha256=3100827f8bb16d84d827b0d5a30ca21eeafcf3f337e50ba04da281033666a904
+Final packaging HEAD=e1d6adcd8f8d3e27b83c74759d20be5949181a28; source tree may contain concurrent changes; no production identity check.

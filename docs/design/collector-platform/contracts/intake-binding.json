@@ -1,0 +1,29 @@
+{
+  "contract": "collector-intake-binding",
+  "version": "1.0.0",
+  "scope_binding": {
+    "trust_envelope_access": false,
+    "derive_from": "authenticated principal: chat session (session.pool) or agent principal token; never request body",
+    "derived_fields": ["tenant_id", "scope", "principal_ids"],
+    "rules": {
+      "tenant_id": "envelope.access.tenant_id == derived.tenant_id",
+      "scope": "envelope.access.scope == derived.scope",
+      "principal_ids": "set(envelope.access.principal_ids) == set(derived.principal_ids)"
+    },
+    "on_mismatch": {"http_status": 403, "error_code": "scope_binding_mismatch", "side_effects": "none: no job, no outbox, no dedupe lookup across scopes"},
+    "persist": "store derived values; envelope.access is kept only as an audited copy that already equals derived"
+  },
+  "idempotency": {
+    "key": ["derived.tenant_id", "derived.scope", "envelope.source.key", "Idempotency-Key header (request_key)"],
+    "canonicalization": "RFC 8785 JSON Canonicalization Scheme (JCS)",
+    "payload_hash": "sha256 hex of UTF-8 JCS bytes of the envelope after removing excluded paths",
+    "excluded_paths": ["/recorded_at"],
+    "included": "every other field, including envelope_id, producer, access (already bound), source, rights, raw, normalized, quality, fact_check_status, dedupe, decision, errors, lineage, extensions",
+    "outcomes": {
+      "new_key": {"http_status": 202, "result": "created"},
+      "same_key_same_hash": {"http_status": 202, "result": "replay", "body": "existing job id, no new rows"},
+      "same_key_different_hash": {"http_status": 409, "result": "conflict", "side_effects": "none"}
+    },
+    "validation_order": ["schema", "semantic", "scope_binding", "payload_hash", "idempotency_lookup"]
+  }
+}

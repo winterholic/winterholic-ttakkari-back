@@ -1,0 +1,85 @@
+{
+  "inventory_version": "2.1.0",
+  "recorded_at": "2026-10-21T00:55:00+09:00",
+  "task": "CP-S2-00",
+  "supersedes": "2.0.0 (head 0058_collector_intake, HEAD f086be1). 0058 번호를 다른 세션의 KB 마이그레이션이 먼저 차지해 collector는 0059가 됐다",
+  "gate_for": "CP-S2-01",
+  "method": "read-only commands run in /Users/winterholic/development/projects/winterholic-ttakkari/back during the CP-S2-01 rework; outputs copied verbatim",
+  "git": {
+    "branch": "main",
+    "head": "1e70f33cac28e29c9cd8e52181772c6edcd3b2ca",
+    "head_subject": "fix(kb): KB1·KB2 2차 독립 검증 결함 조치 (Alembic 0058)",
+    "origin_main": "1e70f33cac28e29c9cd8e52181772c6edcd3b2ca",
+    "status_header": "## main...origin/main",
+    "commands": [
+      "git status --short --branch",
+      "git rev-parse HEAD",
+      "git rev-parse origin/main"
+    ]
+  },
+  "alembic": {
+    "command": "TTAKKARI_NO_ENV_FILE=1 uv run --offline alembic heads",
+    "output": "0059_collector_intake (head)",
+    "committed_head_at_HEAD": "0058_kb_immutability_truncate (커밋 1e70f33cac28e29c9cd8e52181772c6edcd3b2ca)",
+    "assigned_revision": "0059_collector_intake",
+    "down_revision": "0058_kb_immutability_truncate",
+    "commit_ordering": "KB 0058이 HEAD에 커밋된 것을 git ls-tree로 확인한 뒤 collector 0059를 커밋한다.",
+    "migration_type": "online_safe_additive",
+    "new_tables": [
+      "collector_jobs",
+      "collector_outbox"
+    ],
+    "kb_revision": "0058_kb_immutability_truncate: KB 세션 소유, HEAD에 커밋됨. down_revision=0057_scheduled_actions"
+  },
+  "dirty_files_at_record_time": {
+    "command": "git status --short --branch",
+    "collector_owned": [
+      "?? alembic/versions/0059_collector_intake.py",
+      "?? docs/adr/collector-platform-20261020.md",
+      "?? docs/design/collector-platform/",
+      "?? reports/collector/",
+      "?? src/ttakkari/collector/",
+      "?? src/ttakkari/collector_models.py",
+      "?? tests/test_collector_intake.py",
+      "?? tests/test_collector_migration.py",
+      "?? unit_tests/test_collector_contracts.py",
+      " M src/ttakkari/models.py (collector_models import 1행만, 본 작업)",
+      " M deploy/generation-contract.json (schema_revision=0059_collector_intake, online_migration_from += 0058_kb_immutability_truncate, 본 작업)"
+    ],
+    "foreign_dirty_do_not_touch": [
+      " M tests/conftest.py",
+      "?? tests/pg_sandbox.py",
+      " M tests/test_route_inventory.py",
+      " M src/ttakkari/creative/catalog.py",
+      " M unit_tests/test_creative_catalog.py",
+      " M docs/adr/0065-creative-studio-catalog-and-longform.md",
+      "?? docs/adr/0066-ai-native-delivery-pipeline.md",
+      "?? docs/design/ai-native-pipeline/"
+    ],
+    "policy": "남의 dirty 파일은 reset/stash/staging/수정 금지. 본 작업은 커밋하지 않는다."
+  },
+  "shared_component_contacts": {
+    "models_py": "src/ttakkari/models.py 하단 등록 블록(kb_models/knowledge_models/research와 같은 방식)에 import 1행만 추가. Alembic env.py와 tests/conftest.py의 create_all/TRUNCATE가 모두 Base.metadata를 쓰므로 등록이 필요하다.",
+    "main_py": "수정하지 않음. HTTP 라우트는 CP-S2-02로 이동",
+    "generation_service_py": "수정하지 않음. worker 소비는 CP-S2-02",
+    "deploy_generation_contract_json": "collector는 0057 값(f086be1)을 바꾸지 않았다. KB 0058 커밋(1e70f33)이 schema_revision을 0058로 올렸고, collector가 0059_collector_intake로 올리며 online_migration_from에 0058_kb_immutability_truncate를 추가했다. tests/test_generation_deployment.py 28 passed"
+  },
+  "test_db_identity": {
+    "mechanism": "tests/conftest.py(KB 세션 미커밋 변경)는 /tmp/ttakkari-test-<pid>-<난수>/ 아래 임시 PostgreSQL 클러스터를 띄워 쓰고 끝나면 폴더째 지운다. 공유 PG에 DB를 만들지 않는다. 사용자 지시: 테스트 자원은 /tmp 임시 클러스터에서만",
+    "production_guard": "assert_test_db_isolated: database == 'ttakkari' 이면 AssertionError",
+    "sqlite": "사용하지 않음. 이전 판의 sqlite+aiosqlite 전략은 폐기",
+    "previous_runs_note": "이전 판(2.0.0)의 ttakkari_test_24344_2b49fb80은 공유 PG에서 conftest가 만들고 세션 끝에 지운 DB다. 현재 기록 방식은 임시 클러스터다"
+  },
+  "not_measured": [
+    "배포된 active full SHA와 runtime path (이전 판의 b1a3d162… 값은 근거가 없어 삭제)",
+    "실제 version/ready API 응답",
+    "활성 스케줄(scheduled_actions) 목록",
+    "운영 DB identity (운영 접속 금지 조건이므로 측정하지 않음)"
+  ],
+  "gate_clearance": {
+    "minimum_output_recorded": true,
+    "minimum_output_scope": "collector 파일 소유권, 현재 alembic head와 새 revision 배정, 테스트 DB identity",
+    "full_completion_criterion_met": false,
+    "reason": "배포 full SHA·runtime path·ready API·활성 스케줄·운영 DB identity가 미측정이라 PMS CP-S2-00은 review"
+  }
+}

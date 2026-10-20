@@ -1,0 +1,56 @@
+CP-S2-01 verification receipt (0059 기준 재기록) - 2026-10-21T00:50:53+0900
+repo: /Users/winterholic/development/projects/winterholic-ttakkari/back  HEAD: 1e70f33cac28e29c9cd8e52181772c6edcd3b2ca  (collector 변경은 미커밋)
+test DB: /tmp 임시 PostgreSQL 클러스터 /tmp/cps201-pg-27555 (127.0.0.1:64729), 공유 PG(/tmp:5432)에는 아무것도 만들지 않았다.
+TTAKKARI_TEST_DB=postgresql+asyncpg://127.0.0.1:64729/ttakkari_test
+git: 1 = HEAD에 있는 0058 마이그레이션 수 (0이면 KB 0058이 미커밋)
+
+$ uv run --offline alembic heads
+0059_collector_intake (head)
+deploy/generation-contract.json: "schema_revision":"0059_collector_intake", ; online_migration_from 끝 2개: "0057_scheduled_actions","0058_kb_immutability_truncate"
+0059 online 안전성: upgrade는 create_table 2개(collector_jobs, collector_outbox)와 create_index 5개뿐. 기존 테이블 ALTER/데이터 변경 없음, FK는 신규 collector_jobs만 참조. downgrade는 신규 객체만 drop.
+
+$ uv run --offline python -m pytest unit_tests/test_collector_contracts.py tests/test_collector_intake.py tests/test_collector_migration.py -q -p no:cacheprovider
+.........................................                                [100%]
+50 passed, 4887 subtests passed in 7.60s
+
+$ uv run --offline python -m pytest tests/test_generation_deployment.py -q -p no:cacheprovider
+............................                                             [100%]
+28 passed in 3.85s
+
+$ uv run --offline ruff check src/ttakkari/collector src/ttakkari/collector_models.py unit_tests/test_collector_contracts.py tests/test_collector_intake.py tests/test_collector_migration.py alembic/versions/0059_collector_intake.py
+All checks passed!
+
+$ .venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py
+positive=4 negative=14; hash/calibration/query/time/scope/unknown-setting controls checked
+intake binding/idempotency: 10 PASS (negative=7: tenant/principal/scope tamper, cross-scope replay, 409 conflicts; replay=key-order+recorded_at); JCS vectors=11 PASS
+runtime budget/SSRF/DB/lease enforcement: NOT EXECUTED (design only)
+
+$ .venv/bin/python docs/design/collector-platform/check_delivery.py --closed
+design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1
+fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2-00 live=review 80%, S2-01 live=review 90% (HTTP route moved to S2-02); local document links=PASS; S2-01 implementation=reworked, awaiting independent verification; ML/deploy=NOT EXECUTED
+
+== alembic on temp cluster DB cps201_alembic
+
+$ uv run --offline alembic upgrade head
+INFO  [alembic.runtime.migration] Running upgrade 0058_kb_immutability_truncate -> 0059_collector_intake, 수집 플랫폼 1단계: 영속 수집 작업(collector_jobs) 및 전송 아웃박스(collector_outbox) 추가.
+
+$ uv run --offline alembic downgrade 0058_kb_immutability_truncate
+INFO  [alembic.runtime.migration] Running downgrade 0059_collector_intake -> 0058_kb_immutability_truncate, 수집 플랫폼 1단계: 영속 수집 작업(collector_jobs) 및 전송 아웃박스(collector_outbox) 추가.
+
+$ uv run --offline alembic upgrade head
+INFO  [alembic.runtime.migration] Running upgrade 0058_kb_immutability_truncate -> 0059_collector_intake, 수집 플랫폼 1단계: 영속 수집 작업(collector_jobs) 및 전송 아웃박스(collector_outbox) 추가.
+
+$ uv run --offline alembic current
+0059_collector_intake (head)
+
+$ alembic check -> exit=255 (0이 아니면 collector 무관 기존 드리프트 때문)
+collector mentions in alembic check output: 0
+drifted tables: 'ctx_chunks' 'ctx_entities' 'ctx_memories' 'meeting_chunks' 'tossinvest_sync_runs' 'weather_briefings' 
+
+$ pytest unit_tests -q  (기준 885 passed 1 skipped)
+904 passed, 1 skipped, 6 warnings, 4946 subtests passed in 46.37s
+
+== 임시 클러스터 정리 확인
+pg_ctl stop 후 폴더 삭제: /tmp/cps201-pg-27555 -> 삭제됨
+postmaster 프로세스(해당 데이터 디렉터리): 0
+공유 PG(/tmp:5432, 읽기 전용 조회)에 남은 cps201 DB: ttakkari_cps201_32294

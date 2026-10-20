@@ -1,0 +1,22 @@
+$ .venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back/docs/design/collector-platform/contracts/verify_contracts.py
+schema meta-validation: 2 PASS; fixture expectations: 18 PASS
+positive=4 negative=14; hash/calibration/query/time/scope/unknown-setting controls checked
+runtime budget/SSRF/DB/lease enforcement: NOT EXECUTED (design only)
+
+
+$ python3 /Users/winterholic/development/projects/winterholic-ttakkari/back/docs/design/collector-platform/check_delivery.py --closed
+design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1
+fixture evidence=18 (4 positive/14 negative); local document links=PASS; implementation/ML/deploy=NOT EXECUTED
+
+
+negative checker control: dependency cycle rejected and named
+negative checker control: missing package file rejected
+
+After concurrent KB commit/contract compatibility update:
+$ .venv/bin/python /Users/winterholic/development/projects/winterholic-ttakkari/back/docs/design/collector-platform/contracts/verify_contracts.py
+schema meta-validation: 2 PASS; fixture expectations: 18 PASS
+positive=4 negative=14; hash/calibration/query/time/scope/unknown-setting controls checked
+runtime budget/SSRF/DB/lease enforcement: NOT EXECUTED (design only)
+$ python3 /Users/winterholic/development/projects/winterholic-ttakkari/back/docs/design/collector-platform/check_delivery.py --closed
+design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1
+fixture evidence=18 (4 positive/14 negative); local document links=PASS; implementation/ML/deploy=NOT EXECUTED

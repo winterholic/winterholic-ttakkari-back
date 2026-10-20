@@ -19,7 +19,14 @@ down_revision = "0051_scope_memo_event"
 branch_labels = None
 depends_on = None
 
-_BYPRODUCTS = """
+# 폴더 규칙에 걸려도 기계 산출물 확장자만 옮긴다. 운영 DB 실측(2026-10-20, files 탭 자동 수집 행):
+# evidence/ 는 json·txt·html·xml, browser/page-* 는 yml(접근성 스냅샷)·png 였다.
+# 문서·납품물(md, txt, pdf, docx, zip 등)이 이 폴더에 있으면 사용자 결과물일 수 있어 유지한다.
+_MACHINE_EXT = " OR ".join(
+    f"lower(filename) LIKE '%.{ext}'" for ext in ("json", "log", "png", "jpg", "jpeg", "webp", "html", "xml", "yml", "yaml")
+)
+
+_BYPRODUCTS = f"""
     area = 'files'
     AND deleted_at IS NULL
     AND (
@@ -30,8 +37,10 @@ _BYPRODUCTS = """
             AND (
                 filename LIKE '%.log'
                 OR filename LIKE '%-worker-evidence.json'
-                OR rel_path LIKE 'evidence/%'
-                OR rel_path LIKE 'browser/page-%'
+                OR (
+                    (rel_path LIKE 'evidence/%' OR rel_path LIKE 'browser/page-%')
+                    AND ({_MACHINE_EXT})
+                )
             )
         )
     )

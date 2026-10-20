@@ -267,6 +267,7 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
     run_id = token_run_id or await db.scalar(select(Run.id).where(
         Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
     # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않고 파일로 옮긴다. 같은 파일이 두 탭에 쌓이지 않게.
+    # 기존 행의 run_id 는 파일을 만든 Run 의 출처 기록이라 공유한 Run 으로 바꾸지 않는다(분류만 승격).
     existing = await db.scalar(select(Artifact).where(
         Artifact.deleted_at.is_(None), Artifact.session_id == sid,
         Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))

@@ -169,6 +169,35 @@ async def test_share_links_token_run_not_latest_session_run(client, auth, new_se
     assert [(a["filename"], a["area"]) for a in rows] == [("report.md", "files")]
 
 
+async def test_share_existing_row_keeps_creating_run(client, auth, new_session):
+    """이미 수집된 행을 다른 Run 이 공유해도 run_id 는 만든 Run 으로 남고 분류만 files 로 승격된다."""
+    from ttakkari.agents.base import ParseState
+    from ttakkari.models import Run, Workspace
+    from ttakkari.runs.manager import RunManager
+
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    async with sessionmaker()() as db:
+        creator = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="a", engine="claude", status="succeeded")
+        sharer = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="b", engine="claude", status="running")
+        db.add_all([creator, sharer])
+        await db.commit()
+        creator_id, sharer_id = creator.id, sharer.id
+    outbox = get_settings().outbox_root / str(creator_id)
+    outbox.mkdir(parents=True)
+    (outbox / "out.md").write_text("# out\n")
+    async with sessionmaker()() as db:
+        run = await db.get(Run, creator_id)
+        await RunManager()._collect_artifacts(db, run, await db.get(Workspace, run.workspace_id), outbox, ParseState())
+    r = await client.post("/api/agent/share", json={"path": str(outbox / "out.md")},
+                          headers=_orch(issue_token(sid, sharer_id)))
+    assert r.status_code == 200, r.text
+    art = r.json()["artifact"]
+    assert art["area"] == "files" and art["run_id"] == str(creator_id)
+    rows = (await client.get("/api/artifacts", params={"session_id": str(sid)}, headers=auth)).json()
+    assert [(a["filename"], a["area"]) for a in rows] == [("out.md", "files")]
+
+
 async def test_collect_dedup_is_per_session_not_global(client, auth, new_session):
     """같은 경로를 다른 세션이 공유했더라도 이 세션의 수집은 자기 에이전트 파일 행을 만든다."""
     from ttakkari.agents.base import ParseState
@@ -310,7 +339,8 @@ async def test_migration_0052_moves_byproducts_only():
         art("agent_output", "m52-watch.log", "m52-watch.log"),
         art("agent_output", "m52-a1b2-worker-evidence.json", "m52-a1b2-worker-evidence.json"),
         art("agent_output", "m52-page-2026-10-19.png", "browser/page-2026-10-19.png"),
-        art("agent_output", "m52-keychain-selection.txt", "evidence/m52-keychain-selection.txt"),
+        art("agent_output", "m52-page-2026-10-19.yml", "browser/page-2026-10-19.yml"),
+        art("agent_output", "m52-keychain-selection.json", "evidence/m52-keychain-selection.json"),
         art("agent_modified", "m52-build.log"),
     ]
     stay = [  # 그대로 files (또는 agent)
@@ -327,6 +357,9 @@ async def test_migration_0052_moves_byproducts_only():
         art("agent_output", "m52-membership-bindings.json", "m52-membership-bindings.json"),
         art("agent_output", "m52-worker-evidence-summary.json", "m52-worker-evidence-summary.json"),
         # 폴더 규칙은 outbox 바로 아래 폴더만. 더 깊은 경로나 share 로 올린 행(rel_path 앞에 run 폴더)은 유지한다.
+        art("agent_output", "m52-summary.md", "evidence/m52-summary.md"),
+        art("agent_output", "m52-page-notes.md", "browser/m52-page-notes.md"),
+        art("agent_output", "m52-keychain-selection.txt", "evidence/m52-keychain-selection.txt"),
         art("agent_output", "m52-nested.txt", "docs/evidence/m52-nested.txt"),
         art("agent_output", "m52-shared.log", "run1/m52-shared.log", original=str(outbox / "run1" / "m52-shared.log")),
         art("agent_output", "m52-ws-shared.log", "m52-ws-shared.log", original="/ws/m52-ws-shared.log"),

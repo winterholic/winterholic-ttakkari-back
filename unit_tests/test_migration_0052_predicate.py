@@ -12,8 +12,12 @@ MOVE = [  # files → agent: 기계 부산물이 확실한 것만
      "edd84bf-worker-evidence.json"),
     ("page-2026-10-19T02-25-08-307Z.png", "/fake/outbox/R/browser/page-2026-10-19T02-25-08-307Z.png",
      "agent_output", "browser/page-2026-10-19T02-25-08-307Z.png"),
-    ("keychain-selection.txt", "/fake/outbox/R/evidence/keychain-selection.txt", "agent_output",
-     "evidence/keychain-selection.txt"),
+    ("keychain-selection.json", "/fake/outbox/R/evidence/keychain-selection.json", "agent_output",
+     "evidence/keychain-selection.json"),
+    ("SHOT.PNG", "/fake/outbox/R/evidence/SHOT.PNG", "agent_output", "evidence/SHOT.PNG"),
+    ("page-2026-10-15T21-56-39-728Z.yml", "/fake/outbox/R/browser/page-2026-10-15T21-56-39-728Z.yml",
+     "agent_output", "browser/page-2026-10-15T21-56-39-728Z.yml"),
+    ("dom.html", "/fake/outbox/R/evidence/dom.html", "agent_output", "evidence/dom.html"),
     ("build.log", "/ws/build.log", "agent_modified", None),
 ]
 # 애매하면 옮기지 않는다. 이름이 부산물처럼 보여도 정상 산출물일 수 있다.
@@ -39,6 +43,15 @@ STAY = [
     ("check-mutations.py", "/fake/outbox/R/check-mutations.py", "agent_output", "check-mutations.py"),
     ("worker-evidence-summary.json", "/fake/outbox/R/worker-evidence-summary.json", "agent_output",
      "worker-evidence-summary.json"),
+    # evidence/·browser/page-* 아래라도 문서·납품물 확장자는 사용자 결과물일 수 있어 유지한다.
+    ("summary.md", "/fake/outbox/R/evidence/summary.md", "agent_output", "evidence/summary.md"),
+    ("page-notes.md", "/fake/outbox/R/browser/page-notes.md", "agent_output", "browser/page-notes.md"),
+    ("keychain-selection.txt", "/fake/outbox/R/evidence/keychain-selection.txt", "agent_output",
+     "evidence/keychain-selection.txt"),
+    ("evidence-report.pdf", "/fake/outbox/R/evidence/evidence-report.pdf", "agent_output", "evidence/evidence-report.pdf"),
+    ("page-capture.docx", "/fake/outbox/R/browser/page-capture.docx", "agent_output", "browser/page-capture.docx"),
+    ("evidence-bundle.zip", "/fake/outbox/R/evidence/evidence-bundle.zip", "agent_output", "evidence/evidence-bundle.zip"),
+    ("no-ext", "/fake/outbox/R/evidence/no-ext", "agent_output", "evidence/no-ext"),
     # 폴더 규칙은 outbox 바로 아래 폴더만 본다. 더 깊은 경로는 사용자 결과물일 수 있다.
     ("nested.txt", "/fake/outbox/R/docs/evidence/nested.txt", "agent_output", "docs/evidence/nested.txt"),
     ("page-notes.md", "/fake/outbox/R/docs/browser/page-notes.md", "agent_output", "docs/browser/page-notes.md"),

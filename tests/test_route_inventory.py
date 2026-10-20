@@ -17,7 +17,7 @@ from fastapi.routing import APIRoute, APIWebSocketRoute
 
 from ttakkari.api.transfers import _simple_auth
 from ttakkari.main import app
-from ttakkari.orchestrator.runtime import require_orchestrator
+from ttakkari.orchestrator.runtime import require_orchestrator, require_orchestrator_run
 from ttakkari.security.auth import require_user
 
 pytestmark = [pytest.mark.security]
@@ -26,6 +26,7 @@ pytestmark = [pytest.mark.security]
 _AUTH_CALLS = {
     "require_user": require_user,
     "require_orchestrator": require_orchestrator,
+    "require_orchestrator_run": require_orchestrator_run,
     "_simple_auth": _simple_auth,
 }
 _SCOPE_MARKERS = ("agent_access", "user_access")
@@ -83,7 +84,7 @@ def _markers(route) -> set[str]:
 
 
 def _label(markers: set[str]) -> str:
-    if "require_orchestrator" in markers:
+    if markers & {"require_orchestrator", "require_orchestrator_run"}:
         auth = "agent"
     elif "require_user" in markers:
         auth = "owner"
@@ -260,6 +261,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
         "/api/notebooklm/notebooks/{notebook_id}/sources/{source_id}",
     ): "owner-scoped",
     ("DELETE", "/api/orchestrator/luna-common30-v2/{job_id}"): "agent-plain",
+    ("DELETE", "/api/orchestrator/schedules/{schedule_id}"): "agent-plain",
     ("DELETE", "/api/pms/milestones/{mid}"): "owner-plain",
     ("DELETE", "/api/pms/notes/{nid}"): "owner-plain",
     ("DELETE", "/api/pms/projects/{pid}"): "owner-plain",
@@ -365,6 +367,10 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/calendar/holidays"): "owner-plain",
     ("GET", "/api/checklists"): "owner-scoped",
     ("GET", "/api/checklists/templates"): "owner-scoped",
+    ("GET", "/api/creative/catalog"): "owner-plain",
+    ("GET", "/api/creative/projects"): "owner-plain",
+    ("GET", "/api/creative/projects/{pid}"): "owner-plain",
+    ("GET", "/api/creative/projects/{pid}/media/{kind}/{ident}"): "public",
     ("GET", "/api/design-systems"): "owner-scoped",
     ("GET", "/api/design-systems/{system}/item"): "owner-scoped",
     ("GET", "/api/design-systems/{system}/items"): "owner-scoped",
@@ -376,7 +382,9 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/games/{game_id}"): "owner-plain",
     ("GET", "/api/games/{game_id}/builds"): "owner-plain",
     ("GET", "/api/games/{game_id}/builds/{build_id}"): "owner-plain",
+    ("GET", "/api/games/{game_id}/compare"): "owner-plain",
     ("GET", "/api/games/{game_id}/requests"): "owner-plain",
+    ("GET", "/api/games/{game_id}/versions"): "owner-plain",
     ("GET", "/api/github/accounts"): "owner-plain",
     ("GET", "/api/github/me"): "owner-plain",
     ("GET", "/api/github/me/orgs"): "owner-plain",
@@ -428,6 +436,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/orchestrator/context"): "agent-plain",
     ("GET", "/api/orchestrator/luna-common30-v2/{job_id}"): "agent-plain",
     ("GET", "/api/orchestrator/pms/projects"): "agent-plain",
+    ("GET", "/api/orchestrator/schedules"): "agent-plain",
     ("GET", "/api/orchestrator/workers"): "agent-plain",
     ("GET", "/api/orchestrator/workers/metrics"): "agent-plain",
     ("GET", "/api/orchestrator/workers/{worker_id}"): "agent-plain",
@@ -443,6 +452,10 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/qwen-status"): "public",
     ("GET", "/api/ready"): "public",
     ("GET", "/api/remote-desktop/devices"): "owner-plain",
+    ("GET", "/api/research/discover"): "owner-plain",
+    ("GET", "/api/research/studies"): "owner-plain",
+    ("GET", "/api/research/studies/{study_id}/compare"): "owner-plain",
+    ("GET", "/api/research/studies/{study_id}/resume"): "owner-plain",
     ("GET", "/api/reverse"): "owner-scoped",
     ("GET", "/api/reverse/{job_id}"): "owner-scoped",
     ("GET", "/api/runs/failed"): "owner-plain",
@@ -498,6 +511,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("PATCH", "/api/calendar/events/{event_id}"): "owner-plain",
     ("PATCH", "/api/checklists/items/{id}"): "owner-scoped",
     ("PATCH", "/api/checklists/templates/{id}"): "owner-scoped",
+    ("PATCH", "/api/creative/projects/{pid}"): "owner-plain",
     ("PATCH", "/api/meetings/{mid}"): "owner-plain",
     ("PATCH", "/api/meetings/{mid}/items/{item_id}"): "owner-plain",
     ("PATCH", "/api/memo-categories/{category_id}"): "owner-plain",
@@ -509,6 +523,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("PATCH", "/api/pms/notes/{nid}"): "owner-plain",
     ("PATCH", "/api/pms/projects/{pid}"): "owner-plain",
     ("PATCH", "/api/pms/tasks/{tid}"): "owner-plain",
+    ("PATCH", "/api/research/studies/{study_id}"): "owner-plain",
     ("PATCH", "/api/sessions/{session_id}"): "owner-plain",
     ("PATCH", "/api/workspaces/{ws_id}"): "owner-plain",
     ("POST", "/api/accounts"): "owner-plain",
@@ -538,6 +553,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/agent/notebooklm/auth/verify"): "agent-scoped",
     ("POST", "/api/agent/notebooklm/jobs/{job_id}/cancel"): "agent-scoped",
     ("POST", "/api/agent/notebooklm/notebooks"): "agent-scoped",
+    ("POST", "/api/agent/notebooklm/notebooks/{notebook_id}/queries"): "agent-scoped",
     ("POST", "/api/agent/notebooklm/notebooks/{notebook_id}/query"): "agent-scoped",
     (
         "POST",
@@ -552,6 +568,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/agent/pms"): "agent-plain",
     ("POST", "/api/agent/recall"): "agent-plain",
     ("POST", "/api/agent/remember"): "agent-plain",
+    ("POST", "/api/agent/research"): "agent-plain",
     ("POST", "/api/agent/reverse/start"): "agent-scoped",
     ("POST", "/api/agent/reverse/{job_id}/messages"): "agent-scoped",
     ("POST", "/api/agent/reverse/{job_id}/retry"): "agent-scoped",
@@ -587,6 +604,13 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/calendar/events"): "owner-plain",
     ("POST", "/api/checklists/items"): "owner-scoped",
     ("POST", "/api/checklists/templates"): "owner-scoped",
+    ("POST", "/api/creative/projects"): "owner-plain",
+    ("POST", "/api/creative/projects/{pid}/assets"): "owner-plain",
+    ("POST", "/api/creative/projects/{pid}/demo"): "owner-plain",
+    ("POST", "/api/creative/projects/{pid}/media-link"): "owner-plain",
+    ("POST", "/api/creative/projects/{pid}/renders"): "owner-plain",
+    ("POST", "/api/creative/projects/{pid}/scenes/{scene_id}/illustration"): "owner-plain",
+    ("POST", "/api/creative/validate"): "owner-plain",
     ("POST", "/api/desk"): "owner-plain",
     ("POST", "/api/exports"): "owner-plain",
     ("POST", "/api/games"): "owner-plain",
@@ -624,6 +648,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/notebooklm/auth/verify"): "owner-scoped",
     ("POST", "/api/notebooklm/jobs/{job_id}/cancel"): "owner-scoped",
     ("POST", "/api/notebooklm/notebooks"): "owner-scoped",
+    ("POST", "/api/notebooklm/notebooks/{notebook_id}/queries"): "owner-scoped",
     ("POST", "/api/notebooklm/notebooks/{notebook_id}/query"): "owner-scoped",
     ("POST", "/api/notebooklm/notebooks/{notebook_id}/sources/text"): "owner-scoped",
     ("POST", "/api/notebooklm/notebooks/{notebook_id}/sources/upload"): "owner-scoped",
@@ -633,6 +658,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/orchestrator/context/reset"): "agent-plain",
     ("POST", "/api/orchestrator/luna-common30-v2"): "agent-plain",
     ("POST", "/api/orchestrator/pms/projects/{pid}/tasks"): "agent-plain",
+    ("POST", "/api/orchestrator/schedules"): "agent-plain",
     ("POST", "/api/orchestrator/workers"): "agent-plain",
     ("POST", "/api/orchestrator/workers/{worker_id}/messages"): "agent-plain",
     ("POST", "/api/orchestrator/workers/{worker_id}/stop"): "agent-plain",
@@ -646,6 +672,15 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/push/test"): "owner-plain",
     ("POST", "/api/remote-desktop/devices/{device_id}/connect"): "owner-plain",
     ("POST", "/api/remote-desktop/disconnect"): "owner-plain",
+    ("POST", "/api/research/experiments/{experiment_id}/control"): "owner-plain",
+    ("POST", "/api/research/experiments/{experiment_id}/execute"): "owner-plain",
+    ("POST", "/api/research/experiments/{experiment_id}/report"): "owner-plain",
+    ("POST", "/api/research/studies"): "owner-plain",
+    ("POST", "/api/research/studies/{study_id}/experiments"): "owner-plain",
+    ("POST", "/api/research/studies/{study_id}/nodes"): "owner-plain",
+    ("POST", "/api/research/studies/{study_id}/relations"): "owner-plain",
+    ("POST", "/api/research/studies/{study_id}/select"): "owner-plain",
+    ("POST", "/api/research/studies/{study_id}/sources"): "owner-plain",
     ("POST", "/api/reverse"): "owner-scoped",
     ("POST", "/api/reverse/{job_id}/messages"): "owner-scoped",
     ("POST", "/api/reverse/{job_id}/retry"): "owner-scoped",
@@ -701,6 +736,7 @@ MCP_SCOPE: dict[str, str] = {
     "account_usage": "orchestration",
     "backend_deploy_status": "ops",
     "begin_environment_probe": "host",
+    "cancel_scheduled_action": "planner",
     "create_checklist_item": "planner",
     "create_checklist_template": "planner",
     "create_event": "planner",
@@ -744,11 +780,13 @@ MCP_SCOPE: dict[str, str] = {
     "list_memo_tags": "planner",
     "list_memos": "planner",
     "list_pms_projects": "pms",
+    "list_scheduled_actions": "planner",
     "list_sessions": "sessions",
     "list_workers": "orchestration",
     "luna_common30_v2_cancel": "orchestration",
     "luna_common30_v2_status": "orchestration",
     "manage_pms": "pms",
+    "manage_research": "knowledge",
     "message_worker": "orchestration",
     "my_context": "context",
     "google_account_status": "google_account",
@@ -781,6 +819,7 @@ MCP_SCOPE: dict[str, str] = {
     "reverse_message": "reverse",
     "reverse_retry": "reverse",
     "reverse_start": "reverse",
+    "schedule_action": "planner",
     "search_meeting_items": "meetings",
     "search_meetings": "meetings",
     "search_memos": "planner",

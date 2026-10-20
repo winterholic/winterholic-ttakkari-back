@@ -15,3 +15,6 @@
 
 - 누적 검사에서 기존 취소 테스트가 `running` DB 상태만 기다리고 실제 ask 진입 전에 취소해 `result=None`을 받는 경합을 관찰했다. 이 경우 queued 취소가 맞으므로 서비스 정책은 바꾸지 않고, 전송 중 취소를 검사하려는 기존 테스트에 ask 진입 이벤트를 추가했다. 아티팩트 관련 50개 검사는 해당 누적 실행에서 통과했다.
 - 취소 테스트 대기 조건 보완 후 `pytest -q tests/test_notebooklm_service.py tests/test_api_artifacts.py tests/test_api_artifact_resolve.py tests/test_artifact_area.py` → **100 passed in 23.79s**. 이는 현재 누적 스냅샷의 검사 결과이며 별도 LOG-124 작업의 원인·해결 또는 전체 배포 게이트 통과를 대신 입증하지 않는다.
+
+- LOG-124 작업의 커밋 `c4a3f9c`가 원본 main에 생긴 것을 확인해, KB 개발 커밋 `04e44c9`는 포함하지 않는 별도 검증 브랜치에 병합했다. 아티팩트·Run 토큰·0052 이관 조건 변경을 GPT에서 직접 검토하고 실행했다: NotebookLM+아티팩트+오케스트레이터 통합 141 passed(38.98s), 전체 단위 858 passed, 1 skipped, 50 subtests passed(46.93s), 관련 변경 파일 Ruff 통과. Muse 작업자의 전체 후속 완료 여부와 별개로 이 커밋 스냅샷을 독립 확인한 것이다.
+- 첫 배포 예약은 409로 거절됐다. `ensure_revision`은 요청 SHA가 배포 원본 HEAD의 조상인지 검사하며, 원본 main에 별도 작업 커밋이 쌓여 요청 SHA와 갈라진 상태였다. 검증한 두 변경을 원격 main에 올리고 원본에는 정상 merge로 이력을 연결한다. 다른 작업자의 미커밋/미추적 파일은 보존하며, 배포 대상 SHA에는 KB 미검증 커밋을 포함하지 않는다. 배포 게이트는 컨트롤러가 따로 실행하며 예약 접수만으로 운영 성공을 주장하지 않는다.

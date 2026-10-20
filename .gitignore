@@ -12,3 +12,6 @@ build/
 .stt-runtime/
 .browser-runtime/node_modules/
 .muse-runtime/node_modules/
+.music-runtime/
+.music-models/
+.creative-test-home/

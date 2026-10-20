@@ -172,10 +172,11 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     """주기 작업 목록. 운영은 이 경로로만 도니 새 주기 작업(날씨 scan 등)은 여기에 등록한다."""
     from ttakkari.runs import lead_archive
     from ttakkari.runs.usage_collector import TICK_SECONDS, Collector
+    from ttakkari.creative.render import scan as creative_scan
 
     jobs: list[tuple[str, object, float]] = [
         ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds),
-        ("notebooklm-jobs", _notebooklm_jobs, 60)]
+        ("notebooklm-jobs", _notebooklm_jobs, 60), ("creative-render", creative_scan, 2)]
     if s.reminder_scan_seconds > 0:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:

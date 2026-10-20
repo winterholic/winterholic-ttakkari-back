@@ -21,6 +21,7 @@ from ttakkari.api import (
     assistant,
     auth,
     checklists,
+    creative,
     deployments,
     design_system,
     desk_feedback,
@@ -196,6 +197,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if n:
             log.info("meeting vectors: %d meetings queued for indexing", n)
     await local_stt_jobs.start()
+    from ttakkari.creative.render import legacy_loop
+    creative_worker = asyncio.create_task(legacy_loop())
     retention = asyncio.create_task(_retention_loop())
     reminder = asyncio.create_task(_reminder_loop(s.reminder_scan_seconds)) if s.reminder_scan_seconds > 0 else None
     collector = asyncio.create_task(Collector().run()) if s.usage_poll_seconds > 0 else None
@@ -209,6 +212,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        creative_worker.cancel()
+        await asyncio.gather(creative_worker, return_exceptions=True)
         if ops_sync:
             ops_sync.cancel()
         retention.cancel()
@@ -300,6 +305,7 @@ def create_app() -> FastAPI:
     app.include_router(stocks.router)
     app.include_router(stocks.agent_router)
     app.include_router(games.router)
+    app.include_router(creative.router)
     app.include_router(notebooklm.router)
     app.include_router(notebooklm.agent_router)
     notebooklm.install(app)  # code·retry_after·outcome_unknown 을 살리는 NotebookLM 오류 핸들러(ADR 0045)

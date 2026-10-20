@@ -28,6 +28,7 @@ from ttakkari.weather.open_meteo import normalize_forecast
 
 log = logging.getLogger("ttakkari.weather")
 KST = ZoneInfo("Asia/Seoul")
+BRIEFING_TIME = time(12, 0)
 # 기본 경로: engine=auto 세션. 가용 계정 여유로 Codex(Luna)·Claude(model_counterparts 의 sonnet)를 매니저가 고른다.
 MODEL = "gpt-6-luna"
 EFFORT = "low"
@@ -475,7 +476,7 @@ async def start_for_day(day: date, source: str) -> WeatherBriefing:
         row = await db.scalar(select(WeatherBriefing).where(WeatherBriefing.day == day).with_for_update())
         if row is None:
             row = WeatherBriefing(day=day, status="collecting", request_source=source,
-                                  scheduled_at=datetime.combine(day, time(6, 30), KST).astimezone(UTC)
+                                  scheduled_at=datetime.combine(day, BRIEFING_TIME, KST).astimezone(UTC)
                                   if source == "scheduled" else None)
             db.add(row)
             try:
@@ -503,7 +504,7 @@ async def start_for_day(day: date, source: str) -> WeatherBriefing:
 
 async def scan() -> None:
     now = datetime.now(KST)
-    if now.time() >= time(6, 30):
+    if now.time() >= BRIEFING_TIME:
         async with sessionmaker()() as db:
             row = await db.scalar(select(WeatherBriefing.id).where(WeatherBriefing.day == now.date()))
         if row is None:

@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
@@ -304,7 +305,7 @@ async def test_stale_codex_locked_run_goes_to_antigravity_when_claude_is_limited
 
 
 async def test_generation_runtime_schedules_the_weather_scan(monkeypatch):
-    """운영은 runtime_generation 모드다. 이 경로의 주기 작업에 날씨 scan 이 없으면 06:30 자동 실행도 폴백도 영원히 안 돈다."""
+    """운영은 runtime_generation 모드다. 이 경로의 주기 작업에 날씨 scan 이 없으면 자동 실행도 폴백도 영원히 안 돈다."""
     from ttakkari import generation_service
     from ttakkari.config import get_settings
 
@@ -319,3 +320,27 @@ async def test_generation_runtime_schedules_the_weather_scan(monkeypatch):
     assert "weather" in jobs
     await jobs["weather"]()
     assert calls == ["scan"]
+
+
+@pytest.mark.parametrize("hour,minute,expected", [(6, 30, 0), (11, 59, 0), (12, 0, 1), (12, 1, 1)])
+async def test_scheduled_scan_starts_at_noon_kst(monkeypatch, hour, minute, expected):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 20, hour, minute, tzinfo=service.KST).astimezone(tz)
+
+    start = AsyncMock()
+    monkeypatch.setattr(service, "datetime", Clock)
+    monkeypatch.setattr(service, "start_for_day", start)
+    await service.scan()
+    assert start.await_count == expected
+    if expected:
+        start.assert_awaited_once_with(date(2026, 10, 20), "scheduled")
+
+
+async def test_scheduled_briefing_records_noon_and_deduplicates(monkeypatch):
+    monkeypatch.setattr(service, "advance", AsyncMock())
+    row = await service.start_for_day(DAY, "scheduled")
+    assert row.scheduled_at == datetime(2026, 10, 16, 3, 0, tzinfo=UTC)
+    again = await service.start_for_day(DAY, "scheduled")
+    assert again.id == row.id

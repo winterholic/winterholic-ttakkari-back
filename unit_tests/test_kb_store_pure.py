@@ -64,7 +64,16 @@ def test_cli_registers_kb_commands(capsys):
     with pytest.raises(SystemExit) as e:
         cli_main(["kb-verify", "--help"])
     assert e.value.code == 0
+    assert "clean-orphans" in capsys.readouterr().out
     with pytest.raises(SystemExit) as e:
         cli_main(["kb-ingest", "--help"])
     assert e.value.code == 0
     assert "source-key" in capsys.readouterr().out
+
+
+def test_normalize_text_nfd_to_nfkc():
+    import unicodedata
+    nfd = unicodedata.normalize("NFD", "가나다\r\n라마바")
+    nfkc = normalize_text(nfd.encode("utf-8"))
+    assert unicodedata.is_normalized("NFKC", nfkc)
+    assert nfkc == "가나다\n라마바"

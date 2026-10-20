@@ -204,3 +204,98 @@ async def test_verify_ok_then_reports_file_problems():
         orphan_report = await verify_integrity(db)
         assert "ORPHAN_FILE" in {p.code for p in orphan_report.problems}
         await db.rollback()
+
+
+async def test_immutable_tables_reject_delete():
+    """검토 지적 1: 원장 행(sources, revisions, passages, evidence)의 DELETE 는 트리거로 거부된다."""
+    async with sessionmaker()() as db:
+        ing, target, ev = await _seed_evidence(db)
+        got_ev = await db.get(KbEvidence, ev.id)
+        await db.delete(got_ev)
+        with pytest.raises(IntegrityError):
+            await db.flush()
+        await db.rollback()
+
+        ing, target, ev = await _seed_evidence(db)
+        passage = await db.get(KbPassage, target.id)
+        await db.delete(passage)
+        with pytest.raises(IntegrityError):
+            await db.flush()
+        await db.rollback()
+
+        ing, target, ev = await _seed_evidence(db)
+        rev = await db.get(KbRevision, ing.revision_id)
+        await db.delete(rev)
+        with pytest.raises(IntegrityError):
+            await db.flush()
+        await db.rollback()
+
+        ing, target, ev = await _seed_evidence(db)
+        src = await db.get(KbSource, ing.source_id)
+        await db.delete(src)
+        with pytest.raises(IntegrityError):
+            await db.flush()
+        await db.rollback()
+
+
+async def test_parent_deletion_blocked_by_restrict():
+    """검토 지적 1: 부모 문서 삭제 시 자식 리비전이 있으면 ON DELETE RESTRICT 로 거부된다."""
+    async with sessionmaker()() as db:
+        ing, _target, _ev = await _seed_evidence(db)
+        doc = await db.get(KbDocument, ing.document_id)
+        await db.delete(doc)
+        with pytest.raises(IntegrityError):
+            await db.flush()
+        await db.rollback()
+
+
+async def test_clean_orphans_cleans_unreferenced_blobs():
+    """검토 지적 8: DB 트랜잭션 롤백 등으로 남은 고아 파일은 clean_orphans=True 로 정리된다."""
+    async with sessionmaker()() as db:
+        ing, _target, _ev = await _seed_evidence(db)
+        path = originals_root() / object_relpath(ing.sha256)
+        assert path.is_file()
+        # DB 트랜잭션을 롤백하여 DB 행은 지우고 파일만 남긴다(고아 파일 생성 시나리오)
+        await db.rollback()
+
+    async with sessionmaker()() as db:
+        # 1. 일반 점검: ORPHAN_FILE 탐지
+        report = await verify_integrity(db)
+        assert report.ok is False
+        assert [p.code for p in report.problems] == ["ORPHAN_FILE"]
+        assert path.is_file()
+
+        # 2. 고아 정리 실행: 파일이 삭제되고 cleaned_orphans 가 1 증가
+        clean_report = await verify_integrity(db, clean_orphans=True)
+        assert clean_report.cleaned_orphans == 1
+        assert not path.is_file()
+
+        # 3. 정리 후 재점검: 정합성 정상
+        after = await verify_integrity(db)
+        assert after.ok is True
+        assert len(after.problems) == 0
+
+
+async def test_nfd_input_normalizes_to_nfkc_and_evidence_span_is_stable():
+    """검토 지적 7: NFD 조합형 한글도 NFKC 로 정규화되어 오프셋과 구간 sha256 이 안정적으로 검증된다."""
+    import unicodedata
+    nfd_text = unicodedata.normalize("NFD", "첫째 문단이다.\n\n둘째 문단 인용.\n")
+    async with sessionmaker()() as db:
+        ing = await ingest_source(db, source_key="file:/tmp/nfd.txt", data=nfd_text.encode("utf-8"),
+                                  locator="/tmp/nfd.txt", media_type="text/plain", title="NFD", lang="ko")
+        rev = await db.get(KbRevision, ing.revision_id)
+        # 본문은 NFKC(완성형)로 정규화되어 있어야 한다
+        assert unicodedata.is_normalized("NFKC", rev.body)
+        passages = await segment_revision(db, ing.revision_id)
+        assert len(passages) == 2
+        p2 = passages[1]
+        target_str = "둘째 문단"
+        start = p2.body.index(target_str)
+        end = start + len(target_str)
+        ev = KbEvidence(passage_id=p2.id, span_start=start, span_end=end,
+                        sha256=span_digest(p2.body, start, end), note="NFD 정규화 검증",
+                        created_at=utcnow())
+        db.add(ev)
+        await db.flush()
+        assert ev.id is not None
+        await db.rollback()

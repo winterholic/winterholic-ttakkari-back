@@ -1,9 +1,11 @@
 """범용 지식 도서관(kb) 원본·문서·리비전·패시지·근거 테이블. 개인 맥락 도서관과 분리된다(ADR 0063).
 
-불변 규칙: kb_sources·kb_revisions·kb_passages·kb_evidence 행은 UPDATE 를 거부한다.
+불변 규칙: kb_sources·kb_revisions·kb_passages·kb_evidence 행은 UPDATE 와 DELETE 를 거부한다.
+외래키 제약조건은 RESTRICT 로 결속되어 부모 삭제로 인한 연쇄 삭제(CASCADE)가 방지된다.
+정규화 및 오프셋 기준: 유니코드 NFKC, LF 줄바꿈('\n'), 0-based Unicode 코드포인트(char) 오프셋 기준.
 리비전의 현재성(active)은 가변 포인터가 아니라 문서별 최대 rev_no 로 정한다.
 kb_evidence 인용 구간은 INSERT 때 kb_passages.body 와 sha256 을 대조한다.
-아래 트리거 DDL 은 Alembic 0054 와 동기화한다(create_all 로 만드는 테스트 DB 용).
+아래 트리거 DDL 은 Alembic 0055 와 동기화한다(create_all 로 만드는 테스트 DB 용).
 """
 
 from __future__ import annotations
@@ -84,7 +86,7 @@ class KbRevision(Base):
         Index("ix_kb_revisions_supersedes_id", "supersedes_id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_documents.id", ondelete="CASCADE"))
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_documents.id", ondelete="RESTRICT"))
     source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_sources.id", ondelete="RESTRICT"))
     rev_no: Mapped[int] = mapped_column(Integer)
     parser_version: Mapped[str] = mapped_column(String(60), default="raw-v1")
@@ -110,7 +112,7 @@ class KbPassage(Base):
         Index("ix_kb_passages_revision_id", "revision_id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_revisions.id", ondelete="CASCADE"))
+    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_revisions.id", ondelete="RESTRICT"))
     ord: Mapped[int] = mapped_column(Integer)
     heading: Mapped[str | None] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
@@ -132,7 +134,7 @@ class KbEvidence(Base):
         Index("ix_kb_evidence_passage_id", "passage_id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    passage_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_passages.id", ondelete="CASCADE"))
+    passage_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("kb_passages.id", ondelete="RESTRICT"))
     span_start: Mapped[int] = mapped_column(Integer)
     span_end: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
@@ -172,7 +174,7 @@ for _table in (
         _table,
         "after_create",
         DDL(
-            f"CREATE TRIGGER {_table.name}_immutable BEFORE UPDATE ON {_table.name} "
+            f"CREATE TRIGGER {_table.name}_immutable BEFORE UPDATE OR DELETE ON {_table.name} "
             "FOR EACH ROW EXECUTE FUNCTION kb_immutable_row()"
         ),
     )

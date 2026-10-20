@@ -1,7 +1,7 @@
 # 따까리 범용 지식 도서관(kb) 설계 v1
 
 - 작성: 2026-10-20, 설계 세션(1~4단계 분석·설계만. 코드 변경 없음)
-- 기준 코드: `winterholic-ttakkari/back` main `f1e4a7c`, 로컬 PostgreSQL `ttakkari`(읽기 전용 트랜잭션으로 조회)
+- 기준 코드: `winterholic-ttakkari/back` main `04e44c90b4b10a84f6d80983ed722e1fe046b8f4` (이전 `f1e4a7c`에서 재대조), 로컬 PostgreSQL `ttakkari`(읽기 전용 트랜잭션으로 조회)
 - 표기: 코드에서 확인한 사실은 `경로:줄`. 측정하지 않은 수치·버전·인과는 `확인 필요`. 경로의 `back/`은 `~/development/projects/winterholic-ttakkari/back/`이다.
 
 ---
@@ -606,3 +606,21 @@ class Collector(Protocol):
 - 감사: `~/testing/ttakkari-knowledge-audit-20261015/retrieval-audit/`, `~/testing/ttakkari-knowledge-audit-20261016-reaudit/`
 - 스킬: `~/.claude/skills/update-winterholic-skill/SKILL.md`, `~/.claude/skills/dev-experts/SKILL.md`, `~/.claude/dev-experts-skills/dev-search/SKILL.md`
 - 실행 관찰(2026-10-20): 로컬 DB 읽기 전용 조회, `terms()` 실행, live MCP `recall` 2회
+
+---
+
+## 6단계. 독립 검토 반영 (2026-10-20)
+
+2026-10-20 독립 검토 보고서의 지적 사항 중 KB1·KB2 범위(지적 1, 7, 8, 9)를 다음과 같이 반영했다.
+
+1. **불변 원장과 패시지의 DELETE 및 부모 변경 차단 (지적 1)**:
+   - `kb_sources`, `kb_revisions`, `kb_passages`, `kb_evidence` 4개 테이블의 트리거를 `BEFORE UPDATE OR DELETE`로 강화해 행 삭제와 수정을 전면 거부한다.
+   - `kb_revisions.document_id`, `kb_passages.revision_id`, `kb_evidence.passage_id`의 FK 제약조건을 `ON DELETE CASCADE`에서 `ON DELETE RESTRICT`로 변경하여 부모 행 삭제로 인한 연쇄 삭제를 차단하고 영구 계보를 보장한다(Alembic 0055).
+2. **정규화 기준과 오프셋 기준 고정 (지적 7)**:
+   - 정규화는 유니코드 NFKC 및 CRLF -> LF 줄바꿈 통일을 강제한다.
+   - 패시지 및 근거(evidence) 오프셋은 정규화 텍스트의 0-based Unicode 코드포인트 단위로 고정한다. 패시지와 리비전이 불변이므로 `(passage_id, span_start, span_end, sha256)` 인용 식별자는 원본 바이트 및 리비전 텍스트와 결정적으로 연결된다.
+3. **DB 원장과 파일 저장소 원자성 순서 및 고아 파일 처리 (지적 8)**:
+   - 원본 파일 쓰기 시 임시 파일 작성 -> `flush` + `os.fsync` -> 원자적 `os.replace` -> DB INSERT -> DB commit 순서를 준수한다.
+   - 파일 쓰기 후 DB 트랜잭션 롤백/실패로 남은 고아 파일은 `verify_integrity(clean_orphans=True)` 및 `ttakkari kb-verify --clean-orphans` CLI로 탐지·정리할 수 있도록 복구 절차를 추가했다. DB 커밋 후 파일 손상/유실은 `ingest_source` 재호출 시 자동 복원(`healed_file`)된다.
+4. **기준 커밋 SHA 동기화 (지적 9)**:
+   - 설계 문서의 기준 커밋 SHA를 현재 main HEAD(`04e44c90b4b10a84f6d80983ed722e1fe046b8f4`)로 갱신했다.

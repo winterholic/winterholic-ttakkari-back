@@ -23,12 +23,15 @@
    - 위치: `data_dir / "kb" / "originals" / ab / cd / <sha256>`. 데이터 스냅샷 백업 대상에 자동 포함된다.
    - 정규화 텍스트, 메타데이터, 패시지 오프셋만 DB에 둔다.
 4. **불변성과 구간 검증**
-   - `kb_sources`, `kb_revisions`, `kb_passages`, `kb_evidence`는 `BEFORE UPDATE` 트리거로 행 수정을 엄격히 거부한다.
+   - `kb_sources`, `kb_revisions`, `kb_passages`, `kb_evidence`는 `BEFORE UPDATE OR DELETE` 트리거로 행 수정과 삭제를 엄격히 거부한다.
+   - `kb_revisions`, `kb_passages`, `kb_evidence`의 외래키는 `ON DELETE RESTRICT`로 결속되어 부모 삭제로 인한 연쇄 삭제(CASCADE)가 차단된다(Alembic 0055).
+   - 정규화는 NFKC 및 LF('\n') 줄바꿈을 강제하며, 오프셋은 정규화 텍스트의 0-based Unicode 코드포인트 단위로 고정된다.
    - `kb_evidence`는 `BEFORE INSERT` 트리거로 패시지 본문 슬라이스의 sha256 다이제스트 일치를 강제한다.
    - 논리 문서(`kb_documents`)만 제목·언어 등 갱신이 가능한 가변 껍데기로 유지한다.
 5. **무결성 점검 및 멱등성**
-   - 동일한 바이트와 소스 키의 재수집은 기존 행을 반환하며 멱등하다. 파일 유실 시 재작성으로 복원한다.
-   - `ttakkari kb-verify` CLI로 DB 행과 원본 저장소 파일의 해시·크기 정합성을 읽기 전용으로 대조한다.
+   - 원본 쓰기는 임시 파일 -> flush + fsync -> 원자적 rename -> DB insert -> DB commit 순서를 준수한다.
+   - 동일한 바이트와 소스 키의 재수집은 기존 행을 반환하며 멱등하다. 파일 유실 시 재작성으로 복원한다(`healed_file`).
+   - `ttakkari kb-verify` CLI로 DB 행과 원본 저장소 파일의 해시·크기 정합성을 대조하고, `--clean-orphans` 옵션으로 DB 트랜잭션 실패로 남은 고아 파일을 안전하게 정리한다.
 
 ## 후속 작업
 

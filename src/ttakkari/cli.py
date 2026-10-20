@@ -281,11 +281,13 @@ def _cmd_kb_verify(args: argparse.Namespace) -> int:
     from ttakkari import db
     from ttakkari.kb_store import verify_integrity
 
+    clean = getattr(args, "clean_orphans", False)
+
     async def run():
         db.init_engine()
         try:
             async with db.sessionmaker()() as session:
-                return await verify_integrity(session)
+                return await verify_integrity(session, clean_orphans=clean)
         finally:
             await db.dispose_engine()
 
@@ -297,6 +299,7 @@ def _cmd_kb_verify(args: argparse.Namespace) -> int:
         "passages": report.passages,
         "evidence": report.evidence,
         "files": report.files,
+        "cleaned_orphans": report.cleaned_orphans,
         "problems": [{"code": p.code, "detail": p.detail} for p in report.problems],
         "truncated": report.truncated,
     }, ensure_ascii=False))
@@ -391,7 +394,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--lang", default=None)
     p.set_defaults(func=_cmd_kb_ingest)
 
-    sub.add_parser("kb-verify", help="지식 도서관 DB·원본 저장소 무결성 점검(읽기 전용)").set_defaults(func=_cmd_kb_verify)
+    p = sub.add_parser("kb-verify", help="지식 도서관 DB·원본 저장소 무결성 점검")
+    p.add_argument("--clean-orphans", action="store_true", help="DB 에 없는 고아 원본 파일을 디스크에서 정리")
+    p.set_defaults(func=_cmd_kb_verify)
 
     p = sub.add_parser("desk-eval", help="접수 판정 모음을 지금 접수 지침·모델로 다시 분류해 정확도를 잰다(계정 사용량을 쓴다)")
     p.add_argument("--limit", type=int, default=None, help="최근 판정 N개만")

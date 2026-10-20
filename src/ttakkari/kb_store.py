@@ -49,11 +49,14 @@ def normalize_text(data: bytes) -> str:
 
 
 def _write_file_atomic(path: Path, data: bytes) -> None:
+    """원자적 파일 쓰기: 임시 파일 작성 -> flush -> fsync -> 원자적 rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".kb-tmp-")
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -231,6 +234,7 @@ class VerifyReport:
     files: int = 0
     problems: list[VerifyProblem] = field(default_factory=list)
     truncated: int = 0
+    cleaned_orphans: int = 0
 
     @property
     def ok(self) -> bool:
@@ -243,8 +247,15 @@ class VerifyReport:
             self.truncated += 1
 
 
-async def verify_integrity(db: AsyncSession, *, root: Path | None = None) -> VerifyReport:
-    """DB 행과 저장소 파일의 정합성을 읽기 전용으로 점검한다. 고치지 않는다."""
+async def verify_integrity(
+    db: AsyncSession, *, root: Path | None = None, clean_orphans: bool = False
+) -> VerifyReport:
+    """DB 행과 저장소 파일의 정합성을 점검한다.
+    
+    clean_orphans 가 True 면 DB 에 없는 고아 파일(ORPHAN_FILE)을 디스크에서 안전하게 제거한다.
+    원자성 순서: 파일 작성(fsync) -> 원자적 rename -> DB insert -> DB commit.
+    파일 작성 후 DB 트랜잭션 롤백/실패로 남은 파일은 이 점검의 고아 정리로 복구된다.
+    """
     base = root or originals_root()
     report = VerifyReport()
     sources = (await db.execute(select(KbSource))).scalars().all()
@@ -273,7 +284,14 @@ async def verify_integrity(db: AsyncSession, *, root: Path | None = None) -> Ver
             if sha256_hex(path.read_bytes()) != digest:
                 report.add("CORRUPT_FILE", str(path.relative_to(base)))
             elif digest not in known:
-                report.add("ORPHAN_FILE", str(path.relative_to(base)))
+                if clean_orphans:
+                    try:
+                        path.unlink()
+                        report.cleaned_orphans += 1
+                    except OSError:
+                        report.add("ORPHAN_FILE", str(path.relative_to(base)))
+                else:
+                    report.add("ORPHAN_FILE", str(path.relative_to(base)))
     revisions = (await db.execute(select(KbRevision))).scalars().all()
     report.revisions = len(revisions)
     bodies: dict[uuid.UUID, str] = {}

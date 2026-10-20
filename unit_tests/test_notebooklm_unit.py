@@ -27,7 +27,7 @@ from ttakkari.notebooklm.ports import (
     SourceRef,
     Span,
 )
-from ttakkari.notebooklm.service import backoff_delay
+from ttakkari.notebooklm.service import backoff_delay, recovery_message
 
 COOKIE_SID = "g.a000fakeSIDvalue-0123456789abcdefghijklmnop"
 COOKIE_TS = "sidts-FAKEVALUE-0123456789abcdefghij"
@@ -503,3 +503,11 @@ def test_login_does_not_launch_when_profile_permissions_cannot_be_set(home, monk
     with pytest.raises(PermissionError):
         asyncio.run(login._launch(login.Path("/chrome"), profile, "https://notebooklm.google.com/"))
     assert not launched
+
+
+def test_recovery_message_is_query_aware():
+    assert "다시 질문" in recovery_message("query", was_running=True)
+    assert "소스 목록" not in recovery_message("query", was_running=True)
+    assert "다시 질문" in recovery_message("query", was_running=False)
+    assert "소스 목록" in recovery_message("source_add_url", was_running=True)
+    assert "다시 요청" in recovery_message("source_add_url", was_running=False)

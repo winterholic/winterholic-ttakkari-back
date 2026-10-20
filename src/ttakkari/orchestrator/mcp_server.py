@@ -327,14 +327,14 @@ async def notebooklm_query(notebook_id: str, question: str, conversation_id: str
 
 @query_tool
 async def notebooklm_job(job_id: str) -> str:
-    """Read a NotebookLM job (source registration): status queued|running|succeeded|failed|cancelled|unknown, result or error."""
+    """Read a NotebookLM job (source registration or query): status queued|running|succeeded|failed|cancelled|unknown, result or error."""
     from urllib.parse import quote
     return await _nlm("GET", f"/jobs/{quote(job_id, safe='')}")
 
 
 @server.tool()
 async def notebooklm_job_cancel(job_id: str) -> str:
-    """Cancel a queued or running NotebookLM job. A cancel during the registration request may leave the outcome unknown."""
+    """Cancel a queued or running NotebookLM job. A cancel during the registration/query request may leave the outcome unknown."""
     from urllib.parse import quote
     return await _nlm("POST", f"/jobs/{quote(job_id, safe='')}/cancel")
 

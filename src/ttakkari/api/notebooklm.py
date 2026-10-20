@@ -206,14 +206,23 @@ def _routes(r: APIRouter, *, agent: bool) -> None:
 
     @r.post("/notebooks/{notebook_id}/query")
     async def notebooks_query(notebook_id: str, body: QueryIn) -> dict[str, Any]:
-        """질의. answer(NotebookLM 분석)·citations(인용)·sources(출처)를 분리해 돌려준다.
-        export_for_ledger=true 면 지식 원장용 구조(원문 발췌/분석/인용 구분, 자동 승격 없음)를 함께 준다."""
+        """동기 질의(MCP·에이전트용). answer(NotebookLM 분석)·citations(인용)·sources(출처)를 분리해 돌려준다.
+        export_for_ledger=true 면 지식 원장용 구조(원문 발췌/분석/인용 구분, 자동 승격 없음)를 함께 준다.
+        웹 화면은 연결이 끊겨도 이어지는 POST .../queries + GET /jobs 조회를 쓴다."""
         result = await service.query(notebook_id, body.question, conversation_id=body.conversation_id,
                                      source_ids=body.source_ids)
         out = result.model_dump()
         if body.export_for_ledger:
             out["ledger_export"] = build_ledger_export(result)
         return out
+
+    @r.post("/notebooks/{notebook_id}/queries", status_code=status.HTTP_202_ACCEPTED)
+    async def notebooks_start_query(notebook_id: str, body: QueryIn) -> dict[str, Any]:
+        """비동기 질의(웹 화면용). 백그라운드 job 으로 시작하고 202 {job} 을 돌려준다.
+        페이지를 벗어나거나 연결이 끊겨도 서버에서 끝까지 진행한다. GET /jobs/{id} 로 조회하면
+        성공 시 result.query 에 동기 질의와 같은 구조, export_for_ledger=true 면 result.ledger_export 가 든다."""
+        return await service.start_query(notebook_id, body.question, conversation_id=body.conversation_id,
+                                         source_ids=body.source_ids, export_for_ledger=body.export_for_ledger)
 
     @r.get("/jobs")
     async def jobs_list(limit: int = 20) -> list[dict[str, Any]]:

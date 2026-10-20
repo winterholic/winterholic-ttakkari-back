@@ -7,6 +7,7 @@
 - 로그인·세션·재인증은 Google 계정 공통 모듈(google_account)이 맡는다(ADR 0051). 만료를 감지하면 계정 상태를 올리고 알림은 계정당 한 번이다.
 - 보호 신호는 이 기능만 blocked 로 멈추고 사람이 resume 할 때까지 요청하지 않는다. 쿨다운·blocked 는 다른 기능에 번지지 않는다.
 - 소스 추가는 중복 원장에 먼저 예약하고, 장시간 처리 대기는 DB job 으로 돌린다.
+- 질의는 요청과 분리된 DB job 으로 돌린다. 연결이 끊겨도 서버에서 끝까지 진행하고 결과는 job.result.query 에 둔다.
 """
 
 from __future__ import annotations
@@ -77,6 +78,15 @@ def backoff_delay(attempt: int, base: float, cap: float, *, jitter: bool = True)
     """읽기 재시도 대기. 지수 증가에 상한을 두고 0~25% 지터를 더한다."""
     delay = min(cap, base * (2 ** attempt))
     return delay + (random.uniform(0, delay * 0.25) if jitter else 0.0)
+
+
+def recovery_message(kind: str, *, was_running: bool) -> str:
+    """재시작 복구로 멈춘 job 에 남기는 문장. 질의는 소스 목록이 아니라 다시 질문을 안내한다."""
+    if not was_running:
+        return ("시작 전에 중단되어 실행되지 않았습니다. 다시 질문해 주세요." if kind == "query"
+                else "시작 전에 중단되어 실행되지 않았습니다. 다시 요청하세요.")
+    return ("서버 재시작 등으로 중단되어 결과를 알 수 없습니다. 다시 질문해 주세요." if kind == "query"
+            else "서버 재시작 등으로 중단되어 결과를 알 수 없습니다. 소스 목록을 확인하세요.")
 
 
 def job_out(row: NotebookLMJob) -> dict[str, Any]:
@@ -751,8 +761,7 @@ class NotebookLMService:
                 was_running = row.status == "running"
                 row.status = "unknown" if was_running else "failed"
                 row.error_code = "interrupted" if was_running else "shutdown"
-                row.error = ("서버 재시작 등으로 중단되어 결과를 알 수 없습니다. 소스 목록을 확인하세요." if was_running
-                             else "시작 전에 중단되어 실행되지 않았습니다. 다시 요청하세요.")
+                row.error = recovery_message(row.kind, was_running=was_running)
                 row.finished_at = _now()
                 src = await db.scalar(select(NotebookLMSource).where(NotebookLMSource.job_id == row.id))
                 if src is not None and src.status == "reserved":
@@ -775,18 +784,15 @@ class NotebookLMService:
 
     # ------------------------------------------------------------------ 질의
 
-    async def query(
-        self, notebook_id: str, question: str, *, account_id: str = DEFAULT_ACCOUNT,
-        conversation_id: str | None = None, source_ids: list[str] | None = None,
-    ) -> QueryResult:
+    @staticmethod
+    def _clean_question(question: str) -> str:
         q = (question or "").strip()
         if not q or len(q) > MAX_QUESTION_CHARS:
             raise errors.Invalid(f"질문은 1~{MAX_QUESTION_CHARS}자여야 합니다.")
-        s = get_settings()
-        result: QueryResult = await self._call(
-            account_id, "query", lambda b: b.ask(notebook_id, q, conversation_id=conversation_id, source_ids=source_ids),
-            write=True, timeout=float(s.notebooklm_query_timeout_seconds))
-        # 인용 출처의 제목·URL 을 채운다. 실패해도 질의 결과는 돌려준다(읽기 1회, 재시도 포함 정책 동일).
+        return q
+
+    async def _enrich_sources(self, notebook_id: str, result: QueryResult, account_id: str) -> None:
+        """인용 출처의 제목·URL 을 채운다. 실패해도 질의 결과는 돌려준다(읽기 1회, 재시도 포함 정책 동일)."""
         if result.sources:
             with contextlib.suppress(errors.NotebookLMError):
                 known = {x.id: x for x in await self.list_sources(notebook_id, account_id)}
@@ -794,7 +800,103 @@ class NotebookLMService:
                     src = known.get(ref.id)
                     if src is not None:
                         ref.title, ref.url, ref.kind = src.title, src.url, src.kind
+
+    async def query(
+        self, notebook_id: str, question: str, *, account_id: str = DEFAULT_ACCOUNT,
+        conversation_id: str | None = None, source_ids: list[str] | None = None,
+    ) -> QueryResult:
+        """동기 질의(MCP·에이전트용). 요청이 끝날 때까지 기다리므로 웹 화면은 start_query + job 조회를 쓴다."""
+        q = self._clean_question(question)
+        s = get_settings()
+        result: QueryResult = await self._call(
+            account_id, "query", lambda b: b.ask(notebook_id, q, conversation_id=conversation_id, source_ids=source_ids),
+            write=True, timeout=float(s.notebooklm_query_timeout_seconds))
+        await self._enrich_sources(notebook_id, result, account_id)
         return result
+
+    async def start_query(
+        self, notebook_id: str, question: str, *, account_id: str = DEFAULT_ACCOUNT,
+        conversation_id: str | None = None, source_ids: list[str] | None = None,
+        export_for_ledger: bool = False,
+    ) -> dict[str, Any]:
+        """질의를 백그라운드 job 으로 시작한다. HTTP 연결이 끊겨도 서버에서 끝까지 진행하고 결과는 job.result.query 에 둔다."""
+        q = self._clean_question(question)
+        session.check_account(account_id)
+        if not get_settings().notebooklm_enabled:
+            raise errors.Disabled("NotebookLM 연결이 꺼져 있습니다.")
+        await self._admit(account_id)  # 막힌 상태면 job 을 만들지 않고 바로 알린다
+        job_id = uuid.uuid4()
+        params: dict[str, Any] = {"question_preview": q[:200]}
+        if conversation_id:
+            params["conversation_id"] = conversation_id
+        if source_ids:
+            params["source_ids"] = list(source_ids)
+        async with sessionmaker()() as db:
+            db.add(NotebookLMJob(id=job_id, account_id=account_id, kind="query", notebook_id=notebook_id,
+                                 status="queued", params=params, heartbeat_at=_now()))
+            await db.commit()
+        spec = {"question": q, "conversation_id": conversation_id, "source_ids": source_ids,
+                "export_for_ledger": export_for_ledger}
+        task = asyncio.create_task(self._run_query_job(job_id, account_id, notebook_id, spec))
+        self._tasks[job_id] = task
+        task.add_done_callback(lambda _t, jid=job_id: self._tasks.pop(jid, None))
+        metrics.incr("jobs.started")
+        return {"job": await self.get_job(job_id)}
+
+    async def _run_query_job(self, job_id: uuid.UUID, account_id: str, notebook_id: str, spec: dict[str, Any]) -> None:
+        s = get_settings()
+        phase = "queued"  # queued: 아직 Google 에 아무것도 보내지 않음 → write: 질의 전송 중 → enrich: 출처 정보 채우기
+        hb = asyncio.create_task(self._heartbeat(job_id, asyncio.current_task()))  # type: ignore[arg-type]
+        try:
+            async def ask(b: NotebookLMBackend) -> QueryResult:
+                nonlocal phase
+                phase = "write"  # 세마포어·상태 검사를 지나 실제로 전송을 시작하는 순간
+                return await b.ask(notebook_id, spec["question"], conversation_id=spec["conversation_id"],
+                                   source_ids=spec["source_ids"])
+
+            await self._job_update(job_id, status="running", started_at=_now(), heartbeat_at=_now())
+            try:
+                result = await self._call(account_id, "query", ask, write=True,
+                                          timeout=float(s.notebooklm_query_timeout_seconds),
+                                          queue_wait=JOB_QUEUE_WAIT_SECONDS)
+            except errors.NotebookLMError as e:
+                if e.outcome_unknown:
+                    await self._finish(job_id, "unknown", error=e.message, code=e.code,
+                                       result={"outcome_unknown": True})
+                else:
+                    await self._finish(job_id, "failed", error=e.message, code=e.code)
+                return
+            phase = "enrich"
+            await self._enrich_sources(notebook_id, result, account_id)
+            payload: dict[str, Any] = {"query": result.model_dump()}
+            if spec["export_for_ledger"]:
+                payload["ledger_export"] = build_ledger_export(result, account_id=account_id)
+            await self._finish(job_id, "succeeded", result=payload)
+        except asyncio.CancelledError:
+            await asyncio.shield(self._on_query_job_cancelled(job_id, phase))
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.warning("notebooklm query job crashed: %s", redact.safe_error(e))
+            with contextlib.suppress(Exception):
+                await self._finish(job_id, "unknown" if phase != "queued" else "failed",
+                                   error="작업 중 예상하지 못한 오류가 났습니다.", code="internal")
+        finally:
+            hb.cancel()
+            await asyncio.gather(hb, return_exceptions=True)
+
+    async def _on_query_job_cancelled(self, job_id: uuid.UUID, phase: str) -> None:
+        """질의 job 취소 정리. 소스 원장이 없어 소스 job 과 달리 원장 손질은 없다."""
+        with contextlib.suppress(Exception):
+            async with sessionmaker()() as db:
+                requested = bool(await db.scalar(select(NotebookLMJob.cancel_requested).where(NotebookLMJob.id == job_id)))
+            result = {"outcome_unknown": True} if phase == "write" else None
+            if requested:
+                await self._finish(job_id, "cancelled", result=result, error="사용자가 취소했습니다.", code="cancelled")
+            elif phase == "queued":
+                await self._finish(job_id, "failed", error="시작 전에 서버가 종료되어 실행되지 않았습니다.", code="shutdown")
+            else:
+                await self._finish(job_id, "unknown", result=result, error="서버 종료 등으로 중단되어 결과를 알 수 없습니다.",
+                                   code="interrupted")
 
     async def query_with_export(self, notebook_id: str, question: str, **kw: Any) -> tuple[QueryResult, dict[str, Any]]:
         result = await self.query(notebook_id, question, **kw)

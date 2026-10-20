@@ -1146,13 +1146,14 @@ class NotebookLMSource(Base):
 
 
 class NotebookLMJob(Base):
-    """NotebookLM 장시간 작업(소스 추가 후 처리 대기). 본문·쿠키는 두지 않고 요약만 둔다."""
+    """NotebookLM 장시간 작업(소스 추가 후 처리 대기·질의). 소스 job 은 요약만 두고, 질의 job 의 result.query 에는
+    답변·인용을 둔다(화면 복구용). 쿠키·토큰은 어떤 job 에도 두지 않는다."""
 
     __tablename__ = "notebooklm_jobs"
     __table_args__ = (Index("ix_notebooklm_jobs_account_status", "account_id", "status"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     account_id: Mapped[str] = mapped_column(String(32))
-    kind: Mapped[str] = mapped_column(String(24))  # source_add_url | source_add_text | source_add_file
+    kind: Mapped[str] = mapped_column(String(24))  # source_add_url | source_add_text | source_add_file | query
     notebook_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(12), default="queued")  # queued|running|succeeded|failed|cancelled|unknown
     params: Mapped[dict[str, Any]] = mapped_column(default=dict)

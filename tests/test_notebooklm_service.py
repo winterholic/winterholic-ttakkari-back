@@ -653,6 +653,102 @@ async def test_query_validation(client, auth, fake):
     assert fake.count("ask") == 0
 
 
+# ------------------------------------------------------------------ 비동기 질의(연결 끊김과 무관한 job)
+
+async def test_async_query_job_completes_with_separated_result(client, auth, fake):
+    fake.sources["nb1"] = [SourceInfo(id="s1", title="문서 제목", kind="web_page", url="https://example.com/doc")]
+    r = await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth,
+                          json={"question": "핵심은?", "export_for_ledger": True})
+    assert r.status_code == 202
+    started = r.json()["job"]
+    assert started["kind"] == "query" and started["status"] in ("queued", "running")
+    assert started["params"]["question_preview"] == "핵심은?"
+    job = await _wait_job(client, auth, started["id"])
+    assert job["status"] == "succeeded" and job["finished_at"]
+    q = job["result"]["query"]
+    assert q["answer"] == "분석 [1]" and q["conversation_id"] == "cv"
+    assert q["citations"][0]["quoted_text"] == "원문 발췌"
+    assert q["sources"][0]["title"] == "문서 제목" and q["sources"][0]["url"] == "https://example.com/doc"
+    assert job["result"]["ledger_export"]["assertions"] == []
+    plain = await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "q2"})
+    done = await _wait_job(client, auth, plain.json()["job"]["id"])
+    assert "ledger_export" not in done["result"]
+    assert fake.count("ask") == 2
+
+
+async def test_async_query_runs_detached_from_request(client, auth, fake):
+    """시작 요청이 끝나도(연결이 끊겨도) 작업은 서버에서 이어진다. ask 를 막아 두면 202 가 먼저 돌아온다."""
+    gate = asyncio.Event()
+
+    async def hold():
+        await gate.wait()
+
+    fake.plan["ask"] = [hold]
+    r = await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "긴 분석"})
+    assert r.status_code == 202  # 작업이 끝나기를 기다리지 않는다
+    jid = r.json()["job"]["id"]
+    running = await _wait_job(client, auth, jid, until=("running",))
+    assert running["status"] == "running"
+    gate.set()  # 시작 요청은 이미 끝났지만 작업은 이어져 끝까지 간다
+    job = await _wait_job(client, auth, jid)
+    assert job["status"] == "succeeded" and job["result"]["query"]["answer"] == "분석 [1]"
+
+
+async def test_async_query_cancel_marks_cancelled_without_ledger(client, auth, fake):
+    gate = asyncio.Event()
+
+    async def hold():
+        await gate.wait()
+
+    fake.plan["ask"] = [hold]
+    jid = (await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "q"})).json()["job"]["id"]
+    await _wait_job(client, auth, jid, until=("running",))
+    c = await client.post(f"/api/notebooklm/jobs/{jid}/cancel", headers=auth)
+    assert c.status_code == 200
+    assert c.json()["status"] == "cancelled" and c.json()["result"]["outcome_unknown"] is True
+    async with sessionmaker()() as db:  # 질의 job 은 소스 원장을 만들지 않는다
+        assert list(await db.scalars(select(NotebookLMSource))) == []
+    assert (await client.post(f"/api/notebooklm/jobs/{jid}/cancel", headers=auth)).status_code == 409  # 끝난 작업
+
+
+async def test_async_query_failure_is_failed_and_unknown_outcome_is_unknown(client, auth, fake):
+    fake.plan["ask"] = [errors.Upstream("boom")]
+    bad = await _wait_job(client, auth, (await client.post(
+        "/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "q"})).json()["job"]["id"])
+    assert bad["status"] == "failed" and bad["error_code"] == "upstream_error"
+    fake.plan["ask"] = [errors.Transient("conn", outcome_unknown=True)]
+    unknown = await _wait_job(client, auth, (await client.post(
+        "/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "q"})).json()["job"]["id"])
+    assert unknown["status"] == "unknown" and unknown["result"]["outcome_unknown"] is True
+
+
+async def test_async_query_validation_and_immediate_errors_make_no_job(client, auth, fake):
+    assert (await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "  "})).status_code == 422
+    fake.plan["ask"] = [errors.RateLimited("limit", retry_after=30)]
+    r = await client.post("/api/notebooklm/notebooks/nb1/query", headers=auth, json={"question": "q"})
+    assert r.status_code == 429  # 먼저 쿨다운을 만든다
+    blocked = await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "q"})
+    assert blocked.status_code == 429 and blocked.json()["code"] == "cooldown"
+    assert (await client.get("/api/notebooklm/jobs", headers=auth)).json() == []  # 막힌 상태면 job 을 만들지 않는다
+
+
+async def test_restart_recovery_marks_query_jobs_with_query_message(client, auth, fake):
+    old = datetime.now(UTC) - timedelta(hours=1)
+    running, queued = uuid.uuid4(), uuid.uuid4()
+    async with sessionmaker()() as db:
+        db.add(NotebookLMJob(id=running, account_id="primary", kind="query", notebook_id="nb1", status="running",
+                             params={"question_preview": "q"}, heartbeat_at=old))
+        db.add(NotebookLMJob(id=queued, account_id="primary", kind="query", notebook_id="nb1", status="queued",
+                             params={"question_preview": "q"}, heartbeat_at=old))
+        await db.commit()
+    assert await service.recover_jobs() == 2
+    got = {j: (await client.get(f"/api/notebooklm/jobs/{j}", headers=auth)).json() for j in (running, queued)}
+    assert got[running]["status"] == "unknown" and got[running]["error_code"] == "interrupted"
+    assert "다시 질문" in got[running]["error"] and "소스 목록" not in got[running]["error"]
+    assert got[queued]["status"] == "failed" and got[queued]["error_code"] == "shutdown"
+    assert "다시 질문" in got[queued]["error"]
+
+
 # ------------------------------------------------------------------ 비밀 마스킹(응답·로그·예외)
 
 async def test_errors_and_logs_never_contain_cookie_values(client, auth, fake, caplog):

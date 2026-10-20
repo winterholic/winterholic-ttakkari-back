@@ -356,7 +356,12 @@ class IsolatedBuildRunner:
         net, proxy = f"ttk-game-{build_id}", f"ttk-game-{build_id}-proxy"
         code, out = await self._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", net)
         if code != 0:
-            raise IsolationError(f"격리 네트워크를 만들지 못했습니다: {out[-200:]}", "network_failed")
+            if "already exists" in out:
+                await self._rm(proxy)
+                await self._docker("network", "rm", net)
+                code, out = await self._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", net)
+            if code != 0:
+                raise IsolationError(f"격리 네트워크를 만들지 못했습니다: {out[-200:]}", "network_failed")
         try:
             argv = self._run_argv(
                 name=proxy, build_id=build_id, network="bridge", workdir=None, detach=True, writable_tmp=False,

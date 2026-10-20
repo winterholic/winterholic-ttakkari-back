@@ -668,7 +668,9 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                        escalation_reason: str | None = None,
                        task_type: Literal["general", "routine", "design", "verification", "reasoning"] | None = None,
-                       strict_engine: bool = False, game_id: str | None = None, game_build_id: str | None = None) -> str:
+                       strict_engine: bool = False, game_id: str | None = None, game_build_id: str | None = None,
+                       qwen_needs_mcp: bool | None = None, qwen_narrow_scope: bool | None = None,
+                       qwen_verifiable: bool | None = None) -> str:
     """Start a new worker session that does a task in parallel. `title` is a short tab label (Korean is fine).
     `prompt` must be self-contained: the worker does not see this conversation.
     Use engine="auto" and task_type; the backend enforces the policy returned by account_usage.worker_routing.
@@ -684,13 +686,18 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
     account_usage.muse_auto_routing is true; its results also return verification_required=True and Muse never
     verifies. Explicit engine="muse" remains a manual choice either way.
     Explicit engine="qwen-local" selects the local Qwen harness only when its feature gate and fixed readiness contract pass.
-    It has no cloud account/quota and never falls back to another provider. It is not a normal auto stage, but the
-    backend may route general/routine workers to it as a last resort when every usable personal cloud account is
-    usage-limited and readiness passes (receipt trigger "emergency"). Orchestrator sessions join the same
-    emergency in degraded mode (receipt mode "orchestrator-degraded"): no spawn/message/notify tools, so they
-    plan and do narrow file work directly and queue delegation intents (spawn-queue/*.json) that the backend
-    replays as worker sessions. Suitable only for narrow file
-    search/extraction/small edit plus test runs; results need independent verification like Flash.
+    It has no cloud account/quota and never falls back to another provider. When its single Mac-wide slot is busy,
+    an explicit Qwen worker waits in a queue (event "qwen.queued" with position and wait estimate) instead of failing.
+    It is not a normal auto stage, but the backend also routes one parallel-fit general/routine auto worker to it
+    while the slot is idle (receipt trigger "parallel"): declare qwen_needs_mcp=False, qwen_narrow_scope=True and
+    qwen_verifiable=True for narrow file search/extraction/small edit plus test runs, and only when sibling workers
+    run alongside (a lone task stays on cloud). Undeclared or unknown fit never routes to Qwen. Check
+    account_usage.qwen_local for slot busy state, queue and recent verification/handoff counts. As a last resort the
+    backend routes general/routine workers to it when every usable personal cloud account is usage-limited and
+    readiness passes (receipt trigger "emergency"). Orchestrator sessions join only that emergency, degraded
+    (receipt mode "orchestrator-degraded"): no spawn/message/notify tools, so they plan and do narrow file work
+    directly and queue delegation intents (spawn-queue/*.json) that the backend replays as worker sessions.
+    Qwen results need independent verification like Flash.
     Explicit engine="claude"/"codex"/"antigravity" uses that engine first and, when all its enabled accounts hit
     usage limits, falls back to same-family then task-fit routes before waiting; set strict_engine=True to
     strictly lock the engine and wait for quota reset instead.
@@ -713,6 +720,10 @@ async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude"
         body["escalation_reason"] = escalation_reason
     if task_type:
         body["task_type"] = task_type
+    fit = {k: v for k, v in (("needs_mcp", qwen_needs_mcp), ("narrow_scope", qwen_narrow_scope),
+                             ("verifiable", qwen_verifiable)) if v is not None}
+    if fit:
+        body["qwen_fit"] = fit
     return await _call("POST", "/workers", body)
 
 

@@ -69,10 +69,11 @@ MUSE_AUTO_ROUTING_ACCEPTED = True
 # Muse shares the first general/routine stage; it is only a candidate while muse_auto_routing is on (see
 # muse_auto_enabled), joins no design/verification/reasoning stage, and its output needs independent verification.
 ROUTES = {
-    # Qwen has no auto stage on purpose: 평시 auto에서는 명시 지정만 Qwen을
-    # 쓰고, 한도 비상은 _emergency_qwen → emergency_qwen_profile 단일 경로로만
-    # 진입한다(trigger "emergency"). ROUTES에 있으면 초기 비상 분기가 도달
-    # 불가하고 영수증 trigger가 initial로 찍힌다(반례 2).
+    # Qwen has no auto stage on purpose: ROUTES 단계 선택(first_stage)으로는
+    # Qwen에 절대 진입하지 않는다. 진입로는 셋뿐이다: 명시 지정(engine=qwen-local),
+    # 한도 비상(_emergency_qwen, trigger "emergency"), 평시 병렬-fit(_parallel_qwen,
+    # trigger "parallel"). ROUTES에 있으면 초기 비상 분기가 도달 불가하고
+    # 영수증 trigger가 initial로 찍힌다(반례 2).
     "general": ((SONNET, MUSE_SPARK), (FLASH,), (NATIVE_SONNET, LUNA)),
     "routine": ((FLASH, MUSE_SPARK), (LUNA,), (SONNET,), (NATIVE_SONNET,)),
     "design": ((SONNET,), (NATIVE_SONNET,)),
@@ -332,6 +333,55 @@ def emergency_qwen_profile(pool: str) -> profiles.Profile:
                             model=qwen_local_model())
 
 
+# 평시 병렬-fit 경로 상수. trigger/mode는 영수증·run.usage에 그대로 남는다.
+QWEN_PARALLEL_TASKS = ("general", "routine")
+QWEN_PARALLEL_TRIGGER = "parallel"
+QWEN_PARALLEL_MODE = "worker-parallel"
+QWEN_SLOTS = 1
+
+
+def qwen_fit_assessment(*, pool: str | None, task_type: str | None, session_kind: str | None,
+                       session_engine: str | None = "auto", strict_engine: bool = False,
+                       parallel_siblings: int = 0, needs_mcp: bool | None = None,
+                       narrow_scope: bool | None = None, verifiable: bool | None = None) -> dict:
+    """평시 auto 작업자를 Qwen에 붙일지 가른다. 이름이 아니라 선언된 작업 속성을 본다.
+
+    판정 기준(제목·프롬프트 문구가 아니다):
+    - 필요 도구: MCP 불필요(needs_mcp False) + 파일 기반 하네스 가정. 모르면 탈락.
+    - 작업 범위: 좁고 자기완결(narrow_scope True). 아니면 탈락.
+    - 검증 방법: 정해진 검사·테스트로 확인 가능(verifiable True). 아니면 탈락.
+    - 병렬 문맥: 살아 있는 형제 작업자가 1개 이상. 단일 작업은 Qwen 효율이 작아 클라우드로.
+    제외(확정 조건): 회사 범위, design/verification/reasoning, strict 엔진 잠금,
+    고정 엔진(auto가 아님, 명시 지정은 별도 경로), 기획·접수·대화 세션.
+    기획 세션은 평시 경로에서 원천 제외되어 비상 경로(trigger "emergency")로만
+    Qwen에 간다. 즉 기획의 Qwen 배정은 백엔드 기본 동작상 최하위다.
+    """
+    reasons: list[str] = []
+    if pool != "personal":
+        reasons.append("company_scope_excluded")
+    kind = session_kind or "worker"
+    if kind == "orchestrator":
+        reasons.append("orchestrator_lowest_priority")
+    elif kind != "worker":
+        reasons.append("kind_excluded")
+    if (task_type or "general") not in QWEN_PARALLEL_TASKS:
+        reasons.append("task_excluded")
+    if strict_engine:
+        reasons.append("strict_engine_excluded")
+    if (session_engine or "auto") != "auto":
+        reasons.append("explicit_engine_separate_path")
+    if parallel_siblings < 1:
+        reasons.append("single_run")
+    if needs_mcp is not False:
+        reasons.append("mcp_required_or_unknown")
+    if narrow_scope is not True:
+        reasons.append("scope_not_narrow")
+    if verifiable is not True:
+        reasons.append("not_verifiable")
+    return {"fit": not reasons, "reasons": reasons,
+            "parallel_siblings": max(0, parallel_siblings)}
+
+
 def first_stage(candidates: list[profiles.Profile], task_type: str,
                 probe_ids: frozenset[uuid.UUID] | set[uuid.UUID] = frozenset()) -> list[profiles.Profile]:
     # Do not treat unknown capacity as confirmed spare capacity ahead of measured alternatives.
@@ -410,7 +460,8 @@ def capacity(profile: profiles.Profile, running: int) -> dict:
                                "reset_at": w.resets_at} for w in snapshot.windows if w.key in keys] if snapshot else []}
 
 
-def receipt(task_type, selected, candidates, blocked, counts, *, trigger, fallback_from: dict | None = None):
+def receipt(task_type, selected, candidates, blocked, counts, *, trigger, fallback_from: dict | None = None,
+            qwen: dict | None = None):
     verify = needs_independent_verification(task_type, selected.model)
     out = {"policy": POLICY_VERSION, "task_type": task_type, "trigger": trigger,
            "selected": {"account": selected.name, **capacity(selected, counts.get(selected.id, 0))},
@@ -423,6 +474,8 @@ def receipt(task_type, selected, candidates, blocked, counts, *, trigger, fallba
            "execution_environment": capabilities.compact(selected.engine)}
     if fallback_from is not None:
         out["fallback_from"] = fallback_from
+    if qwen is not None:
+        out["qwen"] = qwen
     if excluded := agy_models.exclusions():
         out["excluded"] = excluded
     return out

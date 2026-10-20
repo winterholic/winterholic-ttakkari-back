@@ -113,20 +113,25 @@ _ROUTING_NOTE_TAIL = """
   Pass strict_engine=True only when the session must wait on that exact engine without cross-route fallback.
 - Local Qwen (engine "qwen-local", Flash Next Q2_K, personal scope only): use it explicitly for narrow,
   self-contained work only — file search/extraction, a small edit plus its test run, tightly scoped fixes.
-  Keep at most one outstanding Qwen job on this Mac (queued or running). Before spawning a Qwen worker or
-  sending it a follow-up/resume, check worker status and actual routing receipts, including workers that
-  entered Qwen through emergency fallback. Submit the next Qwen job only after the previous job's completion,
-  failure or confirmed cancellation report; do not overlap Qwen jobs across orchestrators or start extra model
-  servers. An idle Qwen conversation does not occupy the slot. Cloud workers may run alongside that one Qwen job.
+  The backend enforces a single Mac-wide Qwen slot: a second Qwen job waits in a queue instead of overlapping,
+  and account_usage.qwen_local shows busy state, the current run, queue length, wait estimate and recent
+  verification/handoff counts. Before spawning a Qwen worker or sending it a follow-up/resume, check that
+  status and actual routing receipts, including workers that entered Qwen through emergency fallback.
+  Submit the next Qwen job only after the previous job's completion, failure or confirmed cancellation
+  report; do not overlap Qwen jobs across orchestrators or start extra model servers. An idle Qwen
+  conversation does not occupy the slot. Cloud workers may run alongside that one Qwen job.
   It has no MCP tools (only the harness's read/edit/test commands), no cloud quota, and its feature gate plus
   fixed readiness contract must pass or the run fails with the reason instead of starting. Like Flash, its
   general/routine results return verification_required=True: verify independently (task_type="verification",
   GPT or Claude) before final completion. Never assign design/verification/reasoning, company-scope work,
-  or coordination that needs spawning/messaging workers. When every usable personal cloud account is
-  usage-limited, the backend itself continues general/routine workers on Qwen (trigger "emergency" in the
-  worker.routing receipt) after saving progress; an unready Qwen keeps the run waiting with its reason.
-  Orchestrator sessions join the same emergency degraded (mode "orchestrator-degraded"): plan and do narrow
-  file work directly, queue delegation intents (spawn-queue/*.json) for replay as worker sessions.
+  or coordination that needs spawning/messaging workers. When sibling workers run alongside, the backend
+  itself may route one parallel-fit auto worker to idle Qwen (declare qwen_fit needs_mcp/narrow_scope/
+  verifiable on spawn; receipt trigger "parallel"); a lone task stays on cloud even when declared fit.
+  When every usable personal cloud account is usage-limited, the backend itself continues general/routine
+  workers on Qwen (trigger "emergency" in the worker.routing receipt) after saving progress; an unready
+  Qwen keeps the run waiting with its reason. Orchestrator sessions join only that emergency, degraded
+  (mode "orchestrator-degraded"): plan and do narrow file work directly, queue delegation intents
+  (spawn-queue/*.json) for replay as worker sessions. The parallel path never takes an orchestrator.
   Check receipts for the actual engine, readiness evidence and fallback reason.
   For a legacy/pinned worker needing a policy change, inspect progress and side effects first, then finish or
   cancel its active Run and use message_worker(reroute=True, task_type=...) on the idle worker.

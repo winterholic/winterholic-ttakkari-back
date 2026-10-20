@@ -180,12 +180,17 @@ class Settings(BaseSettings):
         "antigravity": ANTIGRAVITY_MODELS,
         # Only the subscriber model with a successful response on this account is admitted.
         "muse": ["muse-spark-1.3"],
-        # This local engine is explicitly selectable; it is never an auto-routing candidate.
+        # This local engine is explicitly selectable; it is never a ROUTES auto stage.
+        # Separate single-entry paths (emergency fallback, parallel-fit workers) still pass this gate.
         "qwen-local": ["Qwen3.8-Flash-Next-Q2_K"],
     }
     qwen_local_enabled: bool = False
     qwen_local_turns: int = Field(default=20, ge=1, le=60)
     qwen_local_worker_path: Path = HOME / "development/projects/qwen-local-harness/bin/qwen-worker"
+    # 평시 병렬-fit 작업자의 Qwen 자동 배정(runs/worker_routing 평시 경로). 끄면 명시 지정·비상 경로만 남는다.
+    qwen_parallel_routing: bool = True
+    # 명시 지정 Qwen Run이 슬롯 사용 중일 때 대기열에서 다시 두드리는 간격(초). 슬롯이 비면 종료 시점에 깨운다.
+    qwen_queue_retry_seconds: int = Field(default=30, ge=5, le=600)
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).
     usage_poll_seconds: int = 300

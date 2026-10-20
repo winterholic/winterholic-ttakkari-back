@@ -129,11 +129,13 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
             "orchestrator_model": orch,
             "usage": usage,
         })
+    from ttakkari.runs import qwen_slot
     return {
         "measured_at": _iso(now),
         "priority_override_until": override["until"] if override else None,
         "worker_routing": worker_routing.policy(),
         "muse_auto_routing": worker_routing.muse_auto_enabled(),
+        "qwen_local": await qwen_slot.public_status(db, pool),
         # 엔진(실행 경로)별 프로브 실측 능력(ADR 0037). 기존 필드 의미는 그대로, 필드만 더한다.
         "execution_capabilities": capabilities.snapshot(now),
         "note": "usage is collected by the app every ~5 min (~1.5 min while the account runs a Run or is below 20% left) "
@@ -161,6 +163,11 @@ async def account_status(db: AsyncSession, pool: str) -> dict[str, Any]:
                 "its general/routine results require the same independent verification and Muse never verifies. "
                 "An enabled Muse whose quota is unconfirmed (stale or /usage unavailable, e.g. after the 5-hour window reset while idle) "
                 "is not treated as spare capacity, but model_capacity.exploration_eligible=true means routing may give it one real "
-                f"task per {int(profiles.MUSE_PROBE_INTERVAL // 60)} min so a stream observation can end the unknown state.",
+                f"task per {int(profiles.MUSE_PROBE_INTERVAL // 60)} min so a stream observation can end the unknown state. "
+                "qwen_local shows the single local-Qwen slot (busy, current run, queue, wait estimate, recent "
+                "verification/handoff counts). Declare qwen_fit (needs_mcp/narrow_scope/verifiable) on spawn_worker "
+                "for narrow file work; the backend routes one parallel-fit general/routine worker to Qwen while idle "
+                "(receipt trigger parallel) and sends the rest to cloud. Orchestrators never take the parallel path; "
+                "they reach Qwen only via the usage-limit emergency.",
         "accounts": out,
     }

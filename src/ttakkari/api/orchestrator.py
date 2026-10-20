@@ -39,6 +39,19 @@ RESULT_CHARS = 4000
 MAX_ACTIVE_WORKERS = 20
 
 
+class QwenFitIn(BaseModel):
+    """평시 병렬-fit 판정용 선언. 다 채워야 Qwen 후보가 된다(모르면 탈락, fail closed).
+
+    needs_mcp: MCP 도구(위임·조회)가 필요하면 True. Qwen 하네스에는 MCP가 없어
+    파일 읽기·편집·테스트 명령만으로 끝나야 False다.
+    narrow_scope: 좁고 자기완결적인 작업이면 True.
+    verifiable: 정해진 검사·테스트로 결과를 확인할 수 있으면 True.
+    """
+    needs_mcp: bool | None = None
+    narrow_scope: bool | None = None
+    verifiable: bool | None = None
+
+
 class WorkerIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     prompt: str = Field(min_length=1, max_length=100_000)
@@ -47,6 +60,7 @@ class WorkerIn(BaseModel):
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
     task_type: worker_routing.TaskType | None = None
     strict_engine: bool = False
+    qwen_fit: QwenFitIn | None = None
     # 게임 스튜디오 프로젝트에 대한 작업이면 게임 ID 를 준다. 작업 세션은 그 게임 저장소 workspace 에서 돌고 prompt 에 게임·빌드·잠금 결정이 붙는다.
     game_id: uuid.UUID | None = None
     game_build_id: uuid.UUID | None = None
@@ -308,7 +322,15 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     if peer:
         record(db, actor="agent", action="orchestrator.escalate", target_type="session", target_id=w.id,
                detail={"model": model, "effort": effort, "reason": reason[:500]})
-    await queue_run(db, w, prompt, origin=RunOrigin.orchestrator, on_queued=on_queued)
+    fit = body.qwen_fit
+
+    def _stash_fit(run) -> None:
+        if on_queued is not None:
+            on_queued(run)
+        if fit is not None:
+            run.usage = {**(run.usage or {}), "qwen_fit": fit.model_dump()}
+
+    await queue_run(db, w, prompt, origin=RunOrigin.orchestrator, on_queued=_stash_fit)
     return await _out(db, w)
 
 

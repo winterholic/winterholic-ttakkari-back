@@ -120,6 +120,10 @@ class _Handle:
     token: uuid.UUID | None = None
 
 
+class QwenSlotBusy(RuntimeError):
+    """Another backend process acquired the machine-wide Qwen slot first."""
+
+
 class RunManager:
     def __init__(self, *, runtime: generation.GenerationRuntime | None = None) -> None:
         self._runtime = runtime
@@ -327,26 +331,132 @@ class RunManager:
         await self.dispatch(session_id)
 
     async def _emergency_qwen(self, sess: ChatSession,
-                              task_type: str | None, db: AsyncSession | None = None) -> tuple[profiles_mod.Profile | None, str]:
+                              task_type: str | None, db: AsyncSession | None = None,
+                              *, qwen_attempted: bool = False) -> tuple[profiles_mod.Profile | None, str]:
         """모든 개인 클라우드 계정이 한도일 때만 로컬 Qwen으로 이어받는다.
 
         (프로필, "ready") 또는 (None, 이유). readiness는 그때그때 확인하고
         허위로 통과시키지 않는다. engine_models 게이트를 준수한다(반례 3):
         운영자가 qwen-local 모델을 빼면 비상은 발동하지 않고 대기한다.
         자격 미달(ineligible)은 대기 사유에 Qwen 항목을 남기지 않는다(반례 5).
+        슬롯 사용 중(qwen_busy)이면 비상도 타지 않고 클라우드 대기로 간다.
+        한 Run에서 Qwen을 한 번 썼으면(qwen_attempted) 다시 타지 않는다.
         """
         from ttakkari.runs import worker_routing
         if not worker_routing.qwen_emergency_eligible(
                 pool=sess.pool, task_type=task_type or sess.worker_task_type,
                 strict_engine=sess.strict_engine, session_kind=sess.kind):
             return None, "ineligible"
+        if qwen_attempted:
+            return None, "qwen_already_attempted"
         if worker_routing.qwen_local_model() not in get_settings().engine_models.get("qwen-local", []):
             return None, "qwen_model_gated"
         adapter = await _qwen_adapter(db) if db is not None else QWEN_LOCAL_ADAPTER
         ready, reason = await asyncio.to_thread(adapter.readiness)
         if not ready:
             return None, reason
+        if db is not None:
+            from ttakkari.runs import qwen_slot
+            if (await qwen_slot.slot_status(db))["busy"]:
+                return None, "qwen_busy"
         return worker_routing.emergency_qwen_profile(sess.pool), "ready"
+
+    async def _parallel_qwen(self, db: AsyncSession, sess: ChatSession, run: Run,
+                             task_type: str) -> tuple[profiles_mod.Profile | None, dict]:
+        """평시 병렬-fit 작업자를 Qwen에 붙인다. (프로필, 영수증 qwen 블록).
+
+        적합 판정은 이름이 아니라 선언된 작업 속성(needs_mcp·narrow_scope·
+        verifiable)과 병렬 문맥(살아 있는 형제 작업자 수)으로 한다. 기획 세션은
+        판정에서 원천 제외되므로 평시 경로로 Qwen에 갈 수 없다(비상 경로만).
+        feature gate·engine_models 게이트·readiness·1슬롯을 전부 통과해야
+        선택하고, 하나라도 걸리면 클라우드로 가며 사유를 블록에 남긴다.
+        """
+        from ttakkari.runs import qwen_slot, worker_routing
+        hints = (run.usage or {}).get("qwen_fit") or {}
+        siblings = await qwen_slot.active_sibling_workers(db, sess)
+        assessment = worker_routing.qwen_fit_assessment(
+            pool=sess.pool, task_type=task_type, session_kind=sess.kind,
+            session_engine=sess.engine, strict_engine=sess.strict_engine,
+            parallel_siblings=siblings, needs_mcp=hints.get("needs_mcp"),
+            narrow_scope=hints.get("narrow_scope"), verifiable=hints.get("verifiable"))
+        block: dict[str, object] = {"fit": assessment["fit"], "reasons": list(assessment["reasons"]),
+                                    "parallel_siblings": assessment["parallel_siblings"],
+                                    "decision": "cloud", "trigger": None,
+                                    "busy": None, "queue_length": None, "estimated_wait_s": None}
+        if not get_settings().qwen_parallel_routing:
+            block["reasons"].append("parallel_routing_disabled")
+            return None, block
+        if not assessment["fit"]:
+            return None, block
+        if worker_routing.qwen_local_model() not in get_settings().engine_models.get("qwen-local", []):
+            block["reasons"].append("qwen_model_gated")
+            return None, block
+        adapter = await _qwen_adapter(db)
+        ready, reason = await asyncio.to_thread(adapter.readiness)
+        if not ready:
+            block["reasons"].append(reason)
+            return None, block
+        slot = await qwen_slot.slot_status(db, exclude_run_id=run.id)
+        block["busy"] = slot["busy"]
+        block["queue_length"] = slot["queue_length"]
+        if slot["busy"]:
+            block["reasons"].append("qwen_busy")
+            block["estimated_wait_s"] = await qwen_slot.estimate_wait_s(
+                db, slot, ahead=slot["queue_length"])
+            log.info("run %s parallel-qwen skipped (qwen_busy, siblings=%d, wait_s=%s)",
+                     run.id, siblings, block["estimated_wait_s"])
+            return None, block
+        block["decision"] = "selected"
+        block["trigger"] = worker_routing.QWEN_PARALLEL_TRIGGER
+        log.info("run %s parallel-qwen selected (siblings=%d)", run.id, siblings)
+        return worker_routing.emergency_qwen_profile(sess.pool), block
+
+    async def _queue_for_qwen_slot(self, db: AsyncSession, run: Run, sess: ChatSession, slot: dict) -> None:
+        """명시 지정 Qwen Run을 슬롯 대기열에 둔다. 실패로 끝내지 않고 차례를 기다린다.
+
+        Run은 queued로 남고, 슬롯이 비면 끝난 Qwen Run이 깨우며(_wake_qwen_waiters),
+        그 전에라도 qwen_queue_retry_seconds마다 다시 두드린다.
+        """
+        from ttakkari.runs import qwen_slot, worker_routing
+        position = slot["queue_length"] + 1
+        wait_s = await qwen_slot.estimate_wait_s(db, slot, ahead=slot["queue_length"])
+        task_type = sess.worker_task_type or "general"
+        if run.status == RunStatus.running:
+            # 발사 직전에 막히면 이미 running으로 찍혀 있다. queued로 되돌려야
+            # 다음 차례에 dispatch가 다시 잡는다(그대로 두면 영원히 안 돈다).
+            run.status = RunStatus.queued
+            run.pid = None
+            events.append(db, run, "run.status", {"status": RunStatus.queued, "waiting": True})
+        events.append(db, run, "worker.routing", {
+            "policy": worker_routing.POLICY_VERSION, "task_type": task_type, "trigger": "queued",
+            "selected": None, "requested_engine": "qwen-local", "requested_model": QWEN_LOCAL_MODEL,
+            "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
+                      "workspace_id": str(sess.workspace_id)},
+            "quota": None, "readiness": "ready", "fallback": False,
+            "qwen": {"fit": None, "reasons": ["qwen_busy"], "parallel_siblings": None,
+                     "decision": "queued", "trigger": None, "busy": True,
+                     "queue_length": slot["queue_length"], "queue_position": position,
+                     "estimated_wait_s": wait_s, "current": slot["current"]},
+        })
+        events.append(db, run, "qwen.queued", {"position": position, "queue_length": slot["queue_length"],
+                                              "estimated_wait_s": wait_s, "current": slot["current"]})
+        await self._commit(db, run)
+        self._arm(run.id, sess.id, time.time() + get_settings().qwen_queue_retry_seconds)
+        log.info("run %s queued for qwen slot (position=%d, wait_s=%s)", run.id, position, wait_s)
+
+    async def _wake_qwen_waiters(self) -> None:
+        """끝난 Qwen Run이 슬롯 대기열의 다음 차례를 깨운다. 예약된 재시도보다 먼저 돈다."""
+        async with sessionmaker()() as db:
+            waiters = list(await db.scalars(
+                select(Run).join(ChatSession, ChatSession.id == Run.session_id)
+                .where(Run.status == RunStatus.queued, ChatSession.engine == "qwen-local",
+                       ChatSession.kind == SessionKind.worker)
+                .order_by(Run.created_at).limit(5)))
+            sessions = {w.session_id for w in waiters}
+            for w in waiters:
+                self._disarm(w.id)
+        for sid in sessions:
+            await self.dispatch(sid)
 
     async def _replay_spawn_queue(self, db: AsyncSession, sess: ChatSession,
                                     run: Run, outbox: Path) -> None:
@@ -648,7 +758,33 @@ class RunManager:
         async def available_profiles():
             return await _available_profiles(db, sess, run, is_meeting)
 
-        profiles, blocked = await available_profiles()
+        # 평시 병렬-fit 결정은 클라우드 조회보다 먼저 한다. Qwen이 되면 클라우드를
+        # 두드리지 않고 Qwen 단일 후보로 가며, 안 되면 사유를 영수증에 남기고
+        # 기존 클라우드 경로를 그대로 돈다. 기획 세션은 평시 판정 대상이 아니다.
+        qwen_block: dict | None = None
+        parallel_initial = False
+        routing_state: dict[str, object] = {"initial_trigger": None}
+        parallel_profile = None
+        if task_type and not is_meeting:
+            parallel_profile, qwen_block = await self._parallel_qwen(db, sess, run, task_type)
+        # 기획 세션은 평시 판정 대상이 아니라서 블록을 만들지 않는다. 기획의 Qwen행은
+        # 비상 경로뿐이며, 그 영수증은 아래에서 선택-selected 블록으로 찍힌다.
+        if parallel_profile is not None:
+            profiles, blocked = [parallel_profile], []
+            parallel_initial = True
+            events.append(db, run, "worker.routing", {
+                "policy": worker_routing.POLICY_VERSION,
+                "task_type": effective_task_type or "general",
+                "trigger": worker_routing.QWEN_PARALLEL_TRIGGER,
+                "mode": worker_routing.QWEN_PARALLEL_MODE,
+                "selected": None,
+                "scope": {"account_scope": sess.pool, "runtime_scope": "local-machine",
+                          "workspace_id": str(sess.workspace_id)},
+                "quota": None, "readiness": "ready",
+                "qwen": qwen_block,
+            })
+        else:
+            profiles, blocked = await available_profiles()
         if not profiles:
             if blocked:
                 emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type, db)
@@ -680,6 +816,14 @@ class RunManager:
                 if sess.engine == "qwen-local":
                     qwen_adapter = await _qwen_adapter(db)
                     ready, reason = await asyncio.to_thread(qwen_adapter.readiness)
+                    if ready and sess.kind == SessionKind.worker:
+                        # 준비됐는데 후보가 없으면 슬롯 사용 중이다. 실패가 아니라 대기열이다.
+                        # 작업 세션만 대기열에 둔다(명시 지정도 worker 전용).
+                        from ttakkari.runs import qwen_slot
+                        slot = await qwen_slot.slot_status(db, exclude_run_id=run.id)
+                        if slot["busy"]:
+                            await self._queue_for_qwen_slot(db, run, sess, slot)
+                            return
                     events.append(db, run, "worker.routing", {
                         "policy": worker_routing.POLICY_VERSION,
                         "task_type": effective_task_type or "general", "trigger": "initial",
@@ -755,24 +899,41 @@ class RunManager:
                 _, currently_blocked = await available_profiles()
                 # 비상 Qwen 선택은 명시 지정(sess.engine == "qwen-local")이 아닐 때만
                 # 일어나며, 그때 영수증 trigger는 "emergency"다(반례 2). 명시 지정
-                # Qwen의 첫 선택은 그대로 "initial"이다.
-                trigger = ("emergency" if selected.engine == "qwen-local" and sess.engine != "qwen-local"
-                           else "initial" if not run.started_at else "fallback_or_resume")
+                # Qwen의 첫 선택은 그대로 "initial"이다. 평시 병렬-fit 선택은
+                # 첫 선택에서만 "parallel"이고, 실행 중 한도 소진으로 타는
+                # Qwen은 "emergency"다.
+                if selected.engine == "qwen-local" and sess.engine != "qwen-local":
+                    trigger = worker_routing.QWEN_PARALLEL_TRIGGER if parallel_initial else "emergency"
+                else:
+                    trigger = "initial" if not run.started_at else "fallback_or_resume"
+                receipt_qwen = qwen_block
+                if selected.engine == "qwen-local" and (
+                        receipt_qwen is None or receipt_qwen.get("decision") != "selected"):
+                    # 명시 지정·비상 기획처럼 평시 블록이 없는 선택은 여기서 찍는다.
+                    receipt_qwen = {"fit": None, "reasons": [], "parallel_siblings": None,
+                                    "decision": "selected", "trigger": trigger,
+                                    "explicit": sess.engine == "qwen-local",
+                                    "busy": None, "queue_length": None, "estimated_wait_s": None}
                 receipt = worker_routing.receipt(
                     effective_task_type or "general", selected, all_candidates, currently_blocked, counts,
                     trigger=trigger,
                     fallback_from={"engine": primary_pair[0], "model": primary_pair[1]} if is_pinned_switched and primary_pair else None,
+                    qwen=receipt_qwen,
                 )
                 if selected.engine == "qwen-local":
                     receipt["scope"] = {"account_scope": sess.pool, "runtime_scope": "local-machine",
                                         "workspace_id": str(sess.workspace_id)}
                     receipt["quota"] = None
                     receipt["readiness"] = "passed"
-                    receipt["mode"] = "orchestrator-degraded" if is_orch else "worker-handoff"
+                    receipt["mode"] = ("orchestrator-degraded" if is_orch
+                                       else worker_routing.QWEN_PARALLEL_MODE if trigger == worker_routing.QWEN_PARALLEL_TRIGGER
+                                       else "worker-handoff")
                 else:
                     receipt["scope"] = {"account_scope": sess.pool, "runtime_scope": "provider-account",
                                         "workspace_id": str(sess.workspace_id)}
                 events.append(db, run, "worker.routing", receipt)
+                if routing_state["initial_trigger"] is None:
+                    routing_state["initial_trigger"] = trigger
             return selected
 
         prev_engine: str | None = None
@@ -803,6 +964,8 @@ class RunManager:
             return None
 
         prof = await choose(remaining, run.id, idle_first=not is_orch, prefer_engine=prefer, balance_usage=True)
+        # 첫 선택이 끝났다. 이후 선택의 Qwen trigger는 평시가 아니라 비상이다.
+        parallel_initial = False
 
         # 한도 대기 뒤 이어 받는 Run 은 이미 시작했던 Run 이다. 시작 시각·체크포인트는 처음 것을 지키고 인계 내용을 넘긴다.
         resumed = run.started_at is not None
@@ -890,8 +1053,49 @@ class RunManager:
         attempt_handoff = resume_handoff
         paused_handoff: str | None = None
         qwen_state: str | None = None
+        qwen_attempted = False
+        qwen_cloud_handoff = False
+        attempts_started = 0
         while True:
             remaining.remove(prof)
+            if prof.engine == "qwen-local":
+                # 발사 직전 슬롯 재확인(결정 시점과 발사 사이 다른 Run이 잡았을 수 있다).
+                from ttakkari.runs import qwen_slot
+                preslot = await qwen_slot.slot_status(db, exclude_run_id=run.id)
+                if preslot["busy"]:
+                    events.append(db, run, "qwen.slot_busy", {
+                        "current": preslot["current"],
+                        "queue_length": preslot["queue_length"],
+                        "attempts_started": attempts_started})
+                    log.info("run %s qwen slot busy at launch (attempts=%d)", run.id, attempts_started)
+                    if sess.engine == "qwen-local":
+                        await self._queue_for_qwen_slot(db, run, sess, preslot)
+                        return
+                    free_now, blocked_now = await available_profiles()
+                    cloud_free = [p for p in free_now if p.engine != "qwen-local"]
+                    if qwen_block is not None:
+                        # 앞에서 찍은 intent 이벤트의 블록은 손대지 않고 새로 만든다.
+                        reasons = list(qwen_block.get("reasons") or [])
+                        if "qwen_busy" not in reasons:
+                            reasons.append("qwen_busy")
+                        qwen_block = {**qwen_block, "decision": "cloud", "trigger": None,
+                                      "busy": True, "queue_length": preslot["queue_length"],
+                                      "reasons": reasons,
+                                      "estimated_wait_s": await qwen_slot.estimate_wait_s(
+                                          db, preslot, ahead=preslot["queue_length"])}
+                    if attempts_started == 0 and cloud_free:
+                        prof = await choose(cloud_free, run.id, prefer_engine=prefer, balance_usage=True)
+                        remaining = list(cloud_free)
+                        continue
+                    if blocked_now:
+                        await self._wait_for_reset(db, run, sess, blocked_now,
+                                                   handoff=attempt_handoff or None, qwen_state="qwen_busy")
+                        return
+                    what = "엔진" if sess.engine == "auto" else sess.engine
+                    where = "회사" if sess.pool == "work" else "개인"
+                    await self._finish(db, run, RunStatus.failed,
+                                       error=f"켜진 {where} {what} 계정이 없습니다. 설정 > 계정의 {where} 계정에서 켜 주세요.")
+                    return
             resume_id = lookup_resume_id(prof)
             prompt = base_prompt
             resumed_model = (
@@ -947,7 +1151,43 @@ class RunManager:
             )
             await self._commit(db, run)
             attempt_start_seq = run.last_seq
-            state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h, prof.id)
+            if prof.engine == "qwen-local":
+                qwen_attempted = True
+            try:
+                state, rc, timed_out, missing = await self._attempt(db, run, adapter, spec, env, root, h, prof.id)
+            except QwenSlotBusy:
+                qwen_attempted = False
+                from ttakkari.runs import qwen_slot
+                slot = await qwen_slot.slot_status(db, exclude_run_id=run.id)
+                slot["busy"] = True
+                if sess.engine == "qwen-local" and sess.kind == SessionKind.worker:
+                    await self._queue_for_qwen_slot(db, run, sess, slot)
+                    return
+                events.append(db, run, "qwen.slot_busy", {
+                    "current": slot["current"], "queue_length": slot["queue_length"],
+                    "reason": "process_lock_contended", "attempts_started": attempts_started})
+                free_now, blocked_now = await available_profiles()
+                cloud_free = [p for p in free_now if p.engine != "qwen-local"]
+                if attempts_started == 0 and cloud_free:
+                    if qwen_block is not None:
+                        reasons = list(qwen_block.get("reasons") or [])
+                        if "qwen_busy" not in reasons:
+                            reasons.append("qwen_busy")
+                        qwen_block = {**qwen_block, "decision": "cloud", "trigger": None,
+                                      "busy": True, "queue_length": slot["queue_length"],
+                                      "reasons": reasons,
+                                      "estimated_wait_s": await qwen_slot.estimate_wait_s(
+                                          db, slot, ahead=slot["queue_length"])}
+                    prof = await choose(cloud_free, run.id, prefer_engine=prefer, balance_usage=True)
+                    remaining = list(cloud_free)
+                    continue
+                if blocked_now:
+                    await self._wait_for_reset(db, run, sess, blocked_now,
+                                               handoff=attempt_handoff or None, qwen_state="qwen_busy")
+                else:
+                    await self._finish(db, run, RunStatus.failed, error="Qwen 로컬 슬롯을 확보하지 못했습니다.")
+                return
+            attempts_started += 1
             if prof.engine == "qwen-local" and is_orch:
                 await self._replay_spawn_queue(db, sess, run, outbox)
             if state.rate_limits:
@@ -1001,7 +1241,9 @@ class RunManager:
             if limited and not stopped and not remaining:
                 # Mid-run exhaustion: no usable cloud candidate left. The existing
                 # fallback event below records the switch with saved progress.
-                emergency, qwen_state = await self._emergency_qwen(sess, effective_task_type, db)
+                # 한 Run에서 Qwen을 썼으면 다시 타지 않는다(무한 재시도 방지).
+                emergency, qwen_state = await self._emergency_qwen(
+                    sess, effective_task_type, db, qwen_attempted=qwen_attempted)
                 if emergency is not None:
                     remaining = [emergency]
             if (not stopped and failed and prof.engine == "qwen-local"
@@ -1015,6 +1257,7 @@ class RunManager:
                 cloud_free = [p for p in free_now if p.engine != "qwen-local"]
                 if cloud_free:
                     nxt = await choose(cloud_free, run.id, prefer_engine=prefer, balance_usage=True)
+                    qwen_cloud_handoff = True
                     events.append(db, run, "engine.fallback", {
                         "from": prof.name, "from_engine": "qwen-local", "from_model": model,
                         "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
@@ -1091,8 +1334,11 @@ class RunManager:
         routing_usage: dict[str, object] = {
             "routing_request": routing_request,
             "task_type": effective_task_type,
+            "routing_trigger": routing_state["initial_trigger"],
             "selected_engine": prof.engine,
             "selected_model": selected_model,
+            "qwen_attempted": qwen_attempted,
+            "qwen_cloud_handoff": qwen_cloud_handoff,
             "verification_required": verify_needed,
             "verification_status": "pending" if verify_needed else "not_required",
             "false_completion": None,
@@ -1165,10 +1411,27 @@ class RunManager:
             state.engine_session_id = spec.engine_session_id
         qwen_slot = adapter.engine == "qwen-local"
         qwen_slot_acquired = False
+        process_slot_fd: int | None = None
+
+        def release_qwen_slot() -> None:
+            nonlocal qwen_slot_acquired, process_slot_fd
+            if not qwen_slot_acquired:
+                return
+            if process_slot_fd is not None:
+                from ttakkari.runs import qwen_slot as qwen_slot_mod
+                qwen_slot_mod.release_process_lock(process_slot_fd)
+                process_slot_fd = None
+            self._qwen_local_slot.release()
+            qwen_slot_acquired = False
+
         try:
             if qwen_slot:
                 await self._qwen_local_slot.acquire()
                 qwen_slot_acquired = True
+                from ttakkari.runs import qwen_slot as qwen_slot_mod
+                process_slot_fd = qwen_slot_mod.acquire_process_lock()
+                if process_slot_fd is None:
+                    raise QwenSlotBusy("machine-wide Qwen slot is held by another process")
             cmd = seatbelt.maybe_wrap(
                 adapter.engine, adapter.build_command(spec, env), enabled_engines=s.engine_seatbelt,
                 home=Path.home(), ttakkari_home=s.home, outbox=spec.outbox, write_roots=spec.write_roots,
@@ -1179,27 +1442,31 @@ class RunManager:
                 *cmd, cwd=str(working_directory), env=env, stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                 start_new_session=True, limit=32 * 1024 * 1024,
+                pass_fds=(process_slot_fd,) if process_slot_fd is not None else (),
             )
         except FileNotFoundError:
             cleanup = getattr(adapter, "cleanup", None)
-            if cleanup:
-                cleanup(spec)
-            if qwen_slot_acquired:
-                self._qwen_local_slot.release()
+            try:
+                if cleanup:
+                    cleanup(spec)
+            finally:
+                release_qwen_slot()
             return state, None, False, True
         except OSError:
             cleanup = getattr(adapter, "cleanup", None)
-            if cleanup:
-                cleanup(spec)
-            if qwen_slot_acquired:
-                self._qwen_local_slot.release()
+            try:
+                if cleanup:
+                    cleanup(spec)
+            finally:
+                release_qwen_slot()
             raise
         except BaseException:
             cleanup = getattr(adapter, "cleanup", None)
-            if cleanup:
-                cleanup(spec)
-            if qwen_slot_acquired:
-                self._qwen_local_slot.release()
+            try:
+                if cleanup:
+                    cleanup(spec)
+            finally:
+                release_qwen_slot()
             raise
         if h:
             h.proc = proc
@@ -1244,8 +1511,7 @@ class RunManager:
                     if cleanup:
                         cleanup(spec)
                 finally:
-                    if qwen_slot_acquired:
-                        self._qwen_local_slot.release()
+                    release_qwen_slot()
         rc = proc.returncode
         finalize_process = getattr(adapter, "finalize_process", None)
         if finalize_process:
@@ -1384,6 +1650,10 @@ class RunManager:
         if sess is not None:
             await _post_lead_report(db, sess, run)
         await self._commit(db, run)
+        if run.engine == "qwen-local" or (run.usage or {}).get("qwen_attempted"):
+            # Qwen 슬롯이 비었다(클라우드로 인계돼 끝난 Run 포함). 명시 지정
+            # 대기열을 예약 재시도보다 먼저 깨운다.
+            _spawn(self._wake_qwen_waiters())
         if reverse_next is not None:
             _spawn(self.dispatch(reverse_next))
         if parent_id is not None:
@@ -1598,6 +1868,11 @@ async def _available_profiles(db: AsyncSession, sess: ChatSession, run: Run, is_
         qwen_adapter = await _qwen_adapter(db)
         ready, _reason = await asyncio.to_thread(qwen_adapter.readiness)
         if not ready or sess.kind != SessionKind.worker:
+            return [], []
+        # 전역 1슬롯: 다른 Run이 Qwen을 쓰고 있으면 후보를 내지 않는다.
+        # _run의 명시 지정 분기가 이를 대기열로 둔다(실패가 아니다).
+        from ttakkari.runs import qwen_slot
+        if (await qwen_slot.slot_status(db))["busy"]:
             return [], []
         profile_id = uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari:qwen-local:{sess.pool}")
         return [profiles_mod.Profile(id=profile_id, name=f"Qwen local ({sess.pool})", engine="qwen-local",
@@ -1834,7 +2109,7 @@ async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: Pars
 
     waiting=True 는 한도 초기화를 기다렸다가 이어 받는 경우다. 같은 Run 의 지금까지 진행 전체를 더 길게 싣는다."""
     lines = ["[Previous account handoff]",
-             f"Account {profile} stopped on a usage limit: {(state.error or stderr or 'engine unavailable')[:500]}",
+             f"Account {profile} stopped before finishing: {(state.error or stderr or 'engine unavailable')[:500]}",
              ("This request is not finished. The original request follows below; continue from where the progress "
               "below stops, without repeating completed steps."),
              "Inspect existing work, modified files, checkpoints, and completed tool results before repeating work.",
@@ -1853,6 +2128,11 @@ async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: Pars
             detail = f"{payload.get('name')} {json.dumps(payload.get('input'), ensure_ascii=False)[:300]}"
         if detail:
             lines.append(f"{event.type}: {str(detail)[:500]}")
+    touched = sorted(getattr(state, "touched_files", None) or [])
+    if touched:
+        # Qwen 실패→클라우드 인계 때 바뀐 파일 목록이 없으면 클라우드가 처음부터 뒤진다.
+        lines.append(f"Files changed by the stopped attempt ({len(touched)}):")
+        lines.extend(f"- {path}" for path in touched[:40])
     try:
         sess = await db.get(ChatSession, run.session_id)
         hits = await recall(db, run.prompt[:500], 3, kinds=("memory", "chunk"),

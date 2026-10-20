@@ -1,0 +1,223 @@
+{
+ "runs": [
+  "R1.xml",
+  "R2.xml"
+ ],
+ "tests": 2000,
+ "outcome_counts_per_run": [
+  {
+   "passed": 1990,
+   "failure": 2,
+   "error": 0,
+   "skipped": 8
+  },
+  {
+   "passed": 1990,
+   "failure": 2,
+   "error": 0,
+   "skipped": 8
+  }
+ ],
+ "sum_of_test_seconds_per_run": [
+  671.3,
+  701.1
+ ],
+ "distribution_seconds": {
+  "p50": 0.171,
+  "p90": 0.532,
+  "p99": 2.967,
+  "max": 29.291,
+  "over_1s": 88,
+  "over_5s": 11,
+  "over_30s": 0
+ },
+ "slowest_tests": [
+  [
+   29.29,
+   "tests.test_knowledge_migration::test_knowledge_migration_is_additive_and_guards_evidence"
+  ],
+  [
+   18.75,
+   "tests.test_worker_routing::test_permission_failures_with_quota_words_are_not_provider_limits[MCP authorization failed: quota tool forbidden]"
+  ],
+  [
+   15.93,
+   "tests.test_meeting_lineage_migration::test_lineage_migration_backfills_valid_full_jobs_and_preserves_sources"
+  ],
+  [
+   12.72,
+   "tests.test_google_account::test_migration_copies_notebooklm_account_state_without_touching_the_old_table"
+  ],
+  [
+   10.89,
+   "tests.test_knowledge_migration::test_populated_ledger_cannot_be_destroyed_by_application_rollback"
+  ],
+  [
+   10.84,
+   "tests.test_qwen_parallel_routing::test_explicit_qwen_queues_behind_busy_slot_and_runs_sequentially"
+  ],
+  [
+   6.86,
+   "tests.test_retire_clovanote_migration::test_retirement_preserves_every_source_row_and_meetings_and_downgrades"
+  ],
+  [
+   6.32,
+   "tests.test_desk::test_desk_messages_do_not_queue_behind_each_other"
+  ],
+  [
+   5.32,
+   "tests.test_generation_processes::test_real_three_process_cutovers_keep_both_old_engines_and_proxy"
+  ],
+  [
+   5.3,
+   "tests.test_google_account::test_migration_is_idempotent_on_rerun_of_the_copy"
+  ],
+  [
+   5.04,
+   "tests.test_generation_processes::test_real_two_process_cutover_preserves_old_cli_and_runs_new_work"
+  ],
+  [
+   4.47,
+   "tests.test_muse_exploration_claim::test_separate_processes_cannot_both_explore_the_same_account"
+  ],
+  [
+   4.45,
+   "tests.test_generation_processes::test_caddy_switch_has_no_http_errors_and_sse_replays_from_cursor"
+  ],
+  [
+   3.87,
+   "tests.test_host_gpu::test_sigkilled_supervisor_leaves_no_unguarded_server"
+  ],
+  [
+   3.86,
+   "tests.test_desk_feedback::test_desk_eval_replays_with_fake_engines"
+  ],
+  [
+   3.6,
+   "tests.test_host_gpu::test_start_status_bench_stop_through_a_detached_supervisor"
+  ],
+  [
+   3.38,
+   "tests.test_host_gpu::test_watchdog_exits_quietly_when_the_supervisor_stops_normally"
+  ],
+  [
+   3.29,
+   "tests.test_desk_qwen_service::test_configured_external_server_is_reused_never_owned_or_killed"
+  ],
+  [
+   2.99,
+   "tests.test_desk_qwen_service::test_port_collision_retries_on_another_port"
+  ],
+  [
+   2.97,
+   "tests.test_host_gpu::test_state_file_is_private_and_holds_no_secrets"
+  ],
+  [
+   2.96,
+   "tests.test_host_gpu::test_status_reveals_total_and_per_slot_context"
+  ],
+  [
+   2.96,
+   "tests.test_api_artifacts::test_docx_preview_leaves_pending"
+  ],
+  [
+   2.8,
+   "tests.test_password_session_revocation::test_distributed_ip_concurrent_login_bounds_verification_calls_concurrency_and_recovers"
+  ],
+  [
+   2.51,
+   "tests.test_api_artifacts::test_docx_preview_variant_404_when_unavailable"
+  ],
+  [
+   2.28,
+   "tests.test_orchestrator::test_waiting_run_resumes_same_run_after_reset_with_progress_handoff"
+  ]
+ ],
+ "slowest_modules": [
+  [
+   42.2,
+   "tests.test_worker_routing"
+  ],
+  [
+   40.2,
+   "tests.test_knowledge_migration"
+  ],
+  [
+   31.9,
+   "tests.test_host_gpu"
+  ],
+  [
+   22.1,
+   "tests.test_google_account"
+  ],
+  [
+   21.5,
+   "tests.test_desk_qwen_service"
+  ],
+  [
+   18.1,
+   "tests.test_qwen_parallel_routing"
+  ],
+  [
+   16.5,
+   "tests.test_orchestrator"
+  ],
+  [
+   16.4,
+   "tests.test_desk"
+  ],
+  [
+   16.2,
+   "tests.test_api_artifacts"
+  ],
+  [
+   16.0,
+   "tests.test_meetings"
+  ],
+  [
+   15.9,
+   "tests.test_meeting_lineage_migration"
+  ],
+  [
+   15.7,
+   "tests.test_api_runs"
+  ],
+  [
+   15.0,
+   "tests.test_guard"
+  ],
+  [
+   14.8,
+   "tests.test_generation_processes"
+  ],
+  [
+   12.8,
+   "tests.test_meeting_routing"
+  ],
+  [
+   12.5,
+   "tests.test_account_selection"
+  ],
+  [
+   12.3,
+   "tests.test_login_throttle_shadow"
+  ],
+  [
+   10.5,
+   "tests.test_accounts"
+  ],
+  [
+   10.3,
+   "tests.test_desk_qwen"
+  ],
+  [
+   9.6,
+   "tests.test_artcraft"
+  ]
+ ],
+ "always_failing": [
+  "tests.test_route_inventory::test_mcp_inventory_matches_manifest",
+  "tests.test_route_inventory::test_route_inventory_matches_manifest"
+ ],
+ "flaky_candidates": {}
+}

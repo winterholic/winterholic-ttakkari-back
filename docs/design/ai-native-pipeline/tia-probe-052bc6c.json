@@ -1,0 +1,102 @@
+{
+ "src_modules": 270,
+ "test_modules": 208,
+ "conftest_closure_modules": 250,
+ "median_tests_selected_per_src_module_own_imports": 67,
+ "median_tests_selected_per_src_module_with_conftest": 167,
+ "history": [
+  {
+   "commit": "5cf7d0e",
+   "changed_src": [
+    "ttakkari.api.research",
+    "ttakkari.main",
+    "ttakkari.models",
+    "ttakkari.orchestrator.mcp_server",
+    "ttakkari.research",
+    "ttakkari.research.benchmark",
+    "ttakkari.research.discovery",
+    "ttakkari.research.models",
+    "ttakkari.research.rules",
+    "ttakkari.research.service"
+   ],
+   "failing": "tests/test_context.py",
+   "own_imports": {
+    "selected": 148,
+    "caught": true
+   },
+   "with_conftest": {
+    "selected": 183,
+    "caught": true
+   }
+  },
+  {
+   "commit": "f086be1",
+   "changed_src": [
+    "ttakkari.api.orchestrator",
+    "ttakkari.generation_service",
+    "ttakkari.main",
+    "ttakkari.models",
+    "ttakkari.orchestrator.mcp_server",
+    "ttakkari.orchestrator.tool_policy",
+    "ttakkari.schedules",
+    "ttakkari.schedules.service"
+   ],
+   "failing": "tests/test_context.py",
+   "own_imports": {
+    "selected": 149,
+    "caught": true
+   },
+   "with_conftest": {
+    "selected": 182,
+    "caught": true
+   }
+  },
+  {
+   "commit": "f1e4a7c",
+   "changed_src": [
+    "ttakkari.api.agent",
+    "ttakkari.orchestrator.runtime",
+    "ttakkari.runs.manager"
+   ],
+   "failing": "tests/test_account_selection.py",
+   "own_imports": {
+    "selected": 92,
+    "caught": true
+   },
+   "with_conftest": {
+    "selected": 169,
+    "caught": true
+   }
+  },
+  {
+   "commit": "f1e4a7c",
+   "changed_src": [
+    "ttakkari.api.agent",
+    "ttakkari.orchestrator.runtime",
+    "ttakkari.runs.manager"
+   ],
+   "failing": "tests/test_generation_deployment.py",
+   "own_imports": {
+    "selected": 92,
+    "caught": false
+   },
+   "with_conftest": {
+    "selected": 169,
+    "caught": true
+   }
+  },
+  {
+   "commit": "58aab05",
+   "changed_src": [],
+   "failing": "tests/test_e2e_game_studio.py",
+   "own_imports": {
+    "selected": 3,
+    "caught": false
+   },
+   "with_conftest": {
+    "selected": 3,
+    "caught": false
+   }
+  }
+ ]
+}

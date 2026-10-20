@@ -1,0 +1,220 @@
+{
+ "runs": [
+  "U1.xml",
+  "U2.xml"
+ ],
+ "tests": 904,
+ "outcome_counts_per_run": [
+  {
+   "passed": 902,
+   "failure": 0,
+   "error": 0,
+   "skipped": 2
+  },
+  {
+   "passed": 902,
+   "failure": 0,
+   "error": 0,
+   "skipped": 2
+  }
+ ],
+ "sum_of_test_seconds_per_run": [
+  41.5,
+  37.6
+ ],
+ "distribution_seconds": {
+  "p50": 0.001,
+  "p90": 0.033,
+  "p99": 0.533,
+  "max": 5.05,
+  "over_1s": 6,
+  "over_5s": 1,
+  "over_30s": 0
+ },
+ "slowest_tests": [
+  [
+   5.05,
+   "unit_tests.test_notebooklm_unit::test_login_user_closing_window_not_logged_in_ends_flow"
+  ],
+  [
+   4.22,
+   "unit_tests.test_muse_tui_usage::test_native_reader_waits_for_pending_refresh_instead_of_accepting_unavailable"
+  ],
+  [
+   2.18,
+   "unit_tests.test_creative_studio::test_real_render_cache_and_failed_job_retry"
+  ],
+  [
+   2.11,
+   "unit_tests.test_generation_hardening::test_command_timeout_kills_a_term_ignoring_grandchild"
+  ],
+  [
+   2.01,
+   "unit_tests.test_generation_hardening::test_command_timeout_kills_grandchildren_too"
+  ],
+  [
+   1.71,
+   "unit_tests.test_generation_hardening::test_db_create_schema_record_failures_carry_their_stage"
+  ],
+  [
+   1.0,
+   "unit_tests.test_muse_usage_recovery::test_reader_times_out_when_composer_never_paints"
+  ],
+  [
+   0.95,
+   "unit_tests.test_backup_ops_remaining::test_encrypted_backup_then_rehearsal_row_counts_match"
+  ],
+  [
+   0.63,
+   "unit_tests.test_qwen_parallel.ParallelBoundaryTests::test_lock_remains_held_if_backend_releases_after_child_launch"
+  ],
+  [
+   0.53,
+   "unit_tests.test_muse_tui_usage::test_auth_prompt_is_never_answered"
+  ],
+  [
+   0.53,
+   "unit_tests.test_backup_restore::test_rehearsal_detects_row_count_mismatch"
+  ],
+  [
+   0.52,
+   "unit_tests.test_github_main::test_router_registered_read_only_and_error_handler_installed"
+  ],
+  [
+   0.52,
+   "unit_tests.test_github_hardening::test_V04_log_route_keeps_one_log_budget_for_registry_302_and_download"
+  ],
+  [
+   0.52,
+   "unit_tests.test_backup_restore::test_backup_then_rehearsal_row_counts_match"
+  ],
+  [
+   0.51,
+   "unit_tests.test_github_hardening::test_V04_resolve_with_heads_tags_repo_calls_shares_one_budget"
+  ],
+  [
+   0.51,
+   "unit_tests.test_github_hardening::test_V04_readme_404_then_repo_check_shares_one_budget"
+  ],
+  [
+   0.51,
+   "unit_tests.test_github_hardening::test_V04_large_file_contents_plus_raw_share_one_budget"
+  ],
+  [
+   0.51,
+   "unit_tests.test_github_hardening::test_V04_branches_route_shares_one_budget_across_repo_and_branches_calls"
+  ],
+  [
+   0.47,
+   "unit_tests.test_muse_usage_recovery::test_reader_reports_permission_denied_screen"
+  ],
+  [
+   0.43,
+   "unit_tests.test_muse_usage_recovery::test_reader_reports_cli_exit_before_composer"
+  ],
+  [
+   0.43,
+   "unit_tests.test_knowledge_mcp::test_stdio_entrypoint_registers_knowledge_tools"
+  ],
+  [
+   0.41,
+   "unit_tests.test_qwen_parallel.ParallelBoundaryTests::test_process_slot_lock_excludes_another_process"
+  ],
+  [
+   0.41,
+   "unit_tests.test_github_hardening::test_V04_registry_wait_counts_toward_route_budget"
+  ],
+  [
+   0.41,
+   "unit_tests.test_github_api::test_logs_download_shares_one_budget_and_times_out"
+  ],
+  [
+   0.4,
+   "unit_tests.test_github_client::test_total_budget_includes_retries_and_backoff"
+  ]
+ ],
+ "slowest_modules": [
+  [
+   6.5,
+   "unit_tests.test_generation_hardening"
+  ],
+  [
+   5.3,
+   "unit_tests.test_notebooklm_unit"
+  ],
+  [
+   4.7,
+   "unit_tests.test_muse_tui_usage"
+  ],
+  [
+   4.5,
+   "unit_tests.test_design_system"
+  ],
+  [
+   3.3,
+   "unit_tests.test_github_hardening"
+  ],
+  [
+   2.5,
+   "unit_tests.test_backup_ops_remaining"
+  ],
+  [
+   2.4,
+   "unit_tests.test_creative_studio"
+  ],
+  [
+   1.9,
+   "unit_tests.test_muse_usage_recovery"
+  ],
+  [
+   1.6,
+   "unit_tests.test_backup_restore"
+  ],
+  [
+   1.2,
+   "unit_tests.test_knowledge_inventory"
+  ],
+  [
+   1.0,
+   "unit_tests.test_qwen_parallel"
+  ],
+  [
+   1.0,
+   "unit_tests.test_github_client"
+  ],
+  [
+   0.9,
+   "unit_tests.test_github_api"
+  ],
+  [
+   0.5,
+   "unit_tests.test_github_main"
+  ],
+  [
+   0.5,
+   "unit_tests.test_design_system_api"
+  ],
+  [
+   0.4,
+   "unit_tests.test_remote_desktop_api"
+  ],
+  [
+   0.4,
+   "unit_tests.test_knowledge_mcp"
+  ],
+  [
+   0.2,
+   "unit_tests.test_muse_protocol"
+  ],
+  [
+   0.1,
+   "unit_tests.test_usage_failure_visibility"
+  ],
+  [
+   0.1,
+   "unit_tests.test_tossinvest_unit"
+  ]
+ ],
+ "always_failing": [],
+ "flaky_candidates": {}
+}

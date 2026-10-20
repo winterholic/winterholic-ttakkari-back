@@ -266,7 +266,7 @@ async def test_clean_orphans_cleans_unreferenced_blobs():
         assert path.is_file()
 
         # 2. 고아 정리 실행: 파일이 삭제되고 cleaned_orphans 가 1 증가
-        clean_report = await verify_integrity(db, clean_orphans=True)
+        clean_report = await verify_integrity(db, clean_orphans=True, orphan_grace_seconds=0)
         assert clean_report.cleaned_orphans == 1
         assert not path.is_file()
 

@@ -619,8 +619,26 @@ class Collector(Protocol):
 2. **정규화 기준과 오프셋 기준 고정 (지적 7)**:
    - 정규화는 유니코드 NFKC 및 CRLF -> LF 줄바꿈 통일을 강제한다.
    - 패시지 및 근거(evidence) 오프셋은 정규화 텍스트의 0-based Unicode 코드포인트 단위로 고정한다. 패시지와 리비전이 불변이므로 `(passage_id, span_start, span_end, sha256)` 인용 식별자는 원본 바이트 및 리비전 텍스트와 결정적으로 연결된다.
+   - **미해결 항목 및 판단 근거 (NFKC 정규화 후 원본 바이트/오프셋 역매핑)**:
+     - *현상과 한계*: 원본 바이트(UTF-8)에서 NFKC 변환 시 호환 문자 분해(예: `ﬃ` 1코드포인트 -> `ffi` 3코드포인트)와 CRLF -> LF 변환으로 인해 정규화 본문의 오프셋과 원본 파일의 오프셋 간 차이가 발생한다.
+     - *현 계약*: 모든 passage 및 evidence span은 정규화 텍스트(`kb_revisions.body`) 기준 0-based 코드포인트로 일관되게 저장·검증된다. 앱의 검색, 인용 표시, LLM 근거 제시는 정규화 본문을 소비하므로 내부 정합성은 완벽하다.
+     - *향후 매핑 방식*: 원본 파일을 직접 바이트 단위로 열어 하이라이트하는 뷰어가 필요한 경우, 리비전 수집 시 diff piecewise 매핑 테이블(`[(norm_start, norm_len, raw_byte_start, raw_byte_len), ...]`)을 계산하여 보조 테이블에 저장하는 방식을 채택한다.
+     - *이번 릴리스에서 미해결로 남기는 이유*: 현 KB1·KB2 범위에는 원본 파일 직접 하이라이트 뷰어가 없고, 모든 인용 열람은 정규화 본문에서 이뤄진다. 모든 리비전에 풀 오프셋 맵을 저장하는 것은 저장량 및 수집 지연 오버헤드를 유발하므로, 원문 직접 뷰어 요구가 발생하는 시점(KB5 이후)으로 미룬다.
+
 3. **DB 원장과 파일 저장소 원자성 순서 및 고아 파일 처리 (지적 8)**:
    - 원본 파일 쓰기 시 임시 파일 작성 -> `flush` + `os.fsync` -> 원자적 `os.replace` -> DB INSERT -> DB commit 순서를 준수한다.
    - 파일 쓰기 후 DB 트랜잭션 롤백/실패로 남은 고아 파일은 `verify_integrity(clean_orphans=True)` 및 `ttakkari kb-verify --clean-orphans` CLI로 탐지·정리할 수 있도록 복구 절차를 추가했다. DB 커밋 후 파일 손상/유실은 `ingest_source` 재호출 시 자동 복원(`healed_file`)된다.
 4. **기준 커밋 SHA 동기화 (지적 9)**:
    - 설계 문서의 기준 커밋 SHA를 현재 main HEAD(`04e44c90b4b10a84f6d80983ed722e1fe046b8f4`)로 갱신했다.
+
+## 7단계. 2차 독립 검증 결함 조치 (커밋 63cf7e0 기준, Alembic 0058)
+
+기존 마이그레이션 0053~0055는 고치지 않고 0058 로만 보완했다. 재현 테스트는 `tests/test_kb_defects_reproduce.py`.
+
+1. **P1 고아 정리 경쟁**: 수집은 파일을 쓰기 전에 `pg_advisory_xact_lock_shared`를 잡고 커밋/롤백까지 쥔다. `verify_integrity(clean_orphans=True)`는 `pg_try_advisory_xact_lock`(배타)을 잡았을 때만 파일을 지운다. 못 잡으면 지우지 않고 `clean_skipped`에 이유를 남긴다. 락 밖 쓰기 경로에 대비해 mtime 유예(기본 60초, CLI `--orphan-grace-seconds`)를 이중으로 둔다. 정리기가 락을 쥔 동안 시작한 수집은 대기한다. 락은 트랜잭션 범위라 호출자가 커밋하거나 롤백할 때까지 유지된다.
+2. **P2 TRUNCATE**: `kb_sources`·`kb_documents`·`kb_revisions`·`kb_passages`·`kb_evidence` 모두에 BEFORE TRUNCATE 트리거를 건다. `TRUNCATE kb_documents CASCADE`도 하위 테이블 트리거에서 막힌다. `session_replication_role = replica`나 트리거 비활성화는 슈퍼유저 권한이 필요한 우회로이며 이 계층의 방어 범위 밖이다. 테스트 `_clean` 픽스처만 이 우회를 쓴다.
+3. **P2 복구**: 재수집은 blob 의 해시·크기를 확인해 손상됐으면 교체한다(`healed_file`). 유예가 지난 `.kb-tmp-*`는 `ABANDONED_TMP_FILE`로 보고하고 `--clean-orphans`에서 지운다. 유예 안의 임시 파일은 쓰는 중으로 보고 건드리지 않는다.
+4. **P3 원본 대조**: `kb_revisions` INSERT 는 `text_sha256`·`char_count`가 본문과 같아야 하고, `kb_passages` INSERT 는 본문이 revision 의 `[char_start, char_end)` 슬라이스·`sha256`과 같아야 한다(DB 트리거). verify 는 원본 바이트가 온전하고 `parser_version=raw-v1`인 revision 을 원본의 정규화 결과와 다시 대조해 `REVISION_BODY_MISMATCH`로 보고한다. DB 는 파일을 읽을 수 없으므로 원본↔revision 대조는 verify 의 몫이다.
+5. **P3 기타**: NUL 바이트(데이터·키·제목·locator·origin_meta)와 컬럼 길이 초과 입력은 파일을 쓰기 전에 `KbInputError`(ValueError)로 거부한다. downgrade: 0058 은 트리거만 걷어내지만, 이 리비전을 지나야 0053~0055 downgrade(원장 DROP)에 닿으므로 여기서 원장 5개 표에 행이 있으면 거부한다. `ALLOW_KB_DESTRUCTIVE_DOWNGRADE=1`을 명시해야 진행한다.
+
+남은 한계: 수집이 롤백된 뒤 정리 전까지 고아 파일이 남을 수 있다(정리로 회수). 슈퍼유저의 트리거 우회와 파일 시스템 직접 변조는 막지 못하고 verify 로만 탐지한다.

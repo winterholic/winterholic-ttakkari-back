@@ -231,7 +231,7 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
     import json
 
     from ttakkari import db
-    from ttakkari.kb_store import ingest_source
+    from ttakkari.kb_store import KbInputError, ingest_source
 
     path = Path(args.file).expanduser()
     try:
@@ -262,7 +262,11 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
         finally:
             await db.dispose_engine()
 
-    result = asyncio.run(run())
+    try:
+        result = asyncio.run(run())
+    except KbInputError as e:
+        print(f"수집할 수 없는 입력입니다: {e}", file=sys.stderr)
+        return 2
     print(json.dumps({
         "source_id": str(result.source_id),
         "document_id": str(result.document_id),
@@ -282,12 +286,14 @@ def _cmd_kb_verify(args: argparse.Namespace) -> int:
     from ttakkari.kb_store import verify_integrity
 
     clean = getattr(args, "clean_orphans", False)
+    grace = getattr(args, "orphan_grace_seconds", None)
+    options = {} if grace is None else {"orphan_grace_seconds": grace, "tmp_grace_seconds": grace}
 
     async def run():
         db.init_engine()
         try:
             async with db.sessionmaker()() as session:
-                return await verify_integrity(session, clean_orphans=clean)
+                return await verify_integrity(session, clean_orphans=clean, **options)
         finally:
             await db.dispose_engine()
 
@@ -300,6 +306,7 @@ def _cmd_kb_verify(args: argparse.Namespace) -> int:
         "evidence": report.evidence,
         "files": report.files,
         "cleaned_orphans": report.cleaned_orphans,
+        "clean_skipped": report.clean_skipped,
         "problems": [{"code": p.code, "detail": p.detail} for p in report.problems],
         "truncated": report.truncated,
     }, ensure_ascii=False))
@@ -395,7 +402,9 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(func=_cmd_kb_ingest)
 
     p = sub.add_parser("kb-verify", help="지식 도서관 DB·원본 저장소 무결성 점검")
-    p.add_argument("--clean-orphans", action="store_true", help="DB 에 없는 고아 원본 파일을 디스크에서 정리")
+    p.add_argument("--clean-orphans", action="store_true", help="DB 에 없는 고아 원본 파일과 방치된 임시 파일을 디스크에서 정리")
+    p.add_argument("--orphan-grace-seconds", type=float, default=None,
+                   help="이보다 어린 파일은 정리하지 않는다(기본 60초, 0 이면 즉시 정리)")
     p.set_defaults(func=_cmd_kb_verify)
 
     p = sub.add_parser("desk-eval", help="접수 판정 모음을 지금 접수 지침·모델로 다시 분류해 정확도를 잰다(계정 사용량을 쓴다)")

@@ -190,7 +190,10 @@ async def _clean(_schema_and_app):
     usage_store.reset()
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     async with sessionmaker()() as db:
+        # kb_* 원장은 BEFORE TRUNCATE 트리거로 TRUNCATE 가 막혀 있다(Alembic 0058). 시험 초기화만 트리거를 건너뛴다.
+        await db.execute(text("SET session_replication_role = 'replica'"))
         await db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+        await db.execute(text("SET session_replication_role = 'origin'"))
         db.add(Credential(id=1, password_hash=hash_password(PASSWORD)))
         await db.commit()
     limiter.reset()

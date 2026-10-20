@@ -149,6 +149,47 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql
 """
+TRUNCATE_FUNCTION = """
+CREATE OR REPLACE FUNCTION kb_truncate_deny() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'kb tables cannot be truncated' USING ERRCODE='23514';
+END;
+$$ LANGUAGE plpgsql
+"""
+REVISION_VALIDATE_FUNCTION = """
+CREATE OR REPLACE FUNCTION kb_validate_revision() RETURNS trigger AS $$
+BEGIN
+  IF encode(sha256(convert_to(NEW.body, 'UTF8')), 'hex') <> NEW.text_sha256 THEN
+    RAISE EXCEPTION 'kb revision text_sha256 mismatch' USING ERRCODE='23514';
+  END IF;
+  IF char_length(NEW.body) <> NEW.char_count THEN
+    RAISE EXCEPTION 'kb revision char_count mismatch' USING ERRCODE='23514';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
+PASSAGE_VALIDATE_FUNCTION = """
+CREATE OR REPLACE FUNCTION kb_validate_passage() RETURNS trigger AS $$
+DECLARE rev_body text;
+BEGIN
+  SELECT body INTO rev_body FROM kb_revisions WHERE id = NEW.revision_id;
+  IF rev_body IS NULL THEN
+    RAISE EXCEPTION 'kb revision not found' USING ERRCODE='23514';
+  END IF;
+  IF NEW.char_start < 0 OR NEW.char_end <= NEW.char_start OR NEW.char_end > char_length(rev_body) THEN
+    RAISE EXCEPTION 'kb passage span out of revision bounds' USING ERRCODE='23514';
+  END IF;
+  IF substring(rev_body FROM NEW.char_start + 1 FOR NEW.char_end - NEW.char_start) <> NEW.body THEN
+    RAISE EXCEPTION 'kb passage body mismatch with revision span' USING ERRCODE='23514';
+  END IF;
+  IF encode(sha256(convert_to(NEW.body, 'UTF8')), 'hex') <> NEW.sha256 THEN
+    RAISE EXCEPTION 'kb passage sha256 mismatch' USING ERRCODE='23514';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+"""
 SPAN_FUNCTION = """
 CREATE OR REPLACE FUNCTION kb_validate_evidence_span() RETURNS trigger AS $$
 DECLARE original text;
@@ -163,6 +204,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql
 """
+
+# 불변 테이블 UPDATE/DELETE 차단
 for _table in (
     KbSource.__table__,
     KbRevision.__table__,
@@ -178,6 +221,48 @@ for _table in (
             "FOR EACH ROW EXECUTE FUNCTION kb_immutable_row()"
         ),
     )
+
+# 원장 및 부모 문서 테이블 TRUNCATE 차단
+for _table in (
+    KbSource.__table__,
+    KbDocument.__table__,
+    KbRevision.__table__,
+    KbPassage.__table__,
+    KbEvidence.__table__,
+):
+    event.listen(_table, "after_create", DDL(TRUNCATE_FUNCTION))
+    event.listen(
+        _table,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER {_table.name}_truncate BEFORE TRUNCATE ON {_table.name} "
+            "FOR EACH STATEMENT EXECUTE FUNCTION kb_truncate_deny()"
+        ),
+    )
+
+# Revision 삽입 시 해시 및 길이 검증
+event.listen(KbRevision.__table__, "after_create", DDL(REVISION_VALIDATE_FUNCTION))
+event.listen(
+    KbRevision.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER kb_revisions_validate BEFORE INSERT ON kb_revisions "
+        "FOR EACH ROW EXECUTE FUNCTION kb_validate_revision()"
+    ),
+)
+
+# Passage 삽입 시 revision 슬라이스 본문 및 해시 검증
+event.listen(KbPassage.__table__, "after_create", DDL(PASSAGE_VALIDATE_FUNCTION))
+event.listen(
+    KbPassage.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER kb_passages_validate BEFORE INSERT ON kb_passages "
+        "FOR EACH ROW EXECUTE FUNCTION kb_validate_passage()"
+    ),
+)
+
+# Evidence 삽입 시 passage 구간 인용 및 해시 검증
 event.listen(KbEvidence.__table__, "after_create", DDL(SPAN_FUNCTION))
 event.listen(
     KbEvidence.__table__,

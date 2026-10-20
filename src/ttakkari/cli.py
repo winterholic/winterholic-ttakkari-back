@@ -227,6 +227,82 @@ def _cmd_context_inventory(args: argparse.Namespace) -> int:
     return 0 if report['status'] == 'complete' else 2
 
 
+def _cmd_kb_ingest(args: argparse.Namespace) -> int:
+    import json
+
+    from ttakkari import db
+    from ttakkari.kb_store import ingest_source
+
+    path = Path(args.file).expanduser()
+    try:
+        data = path.read_bytes()
+    except OSError as e:
+        print(f"읽지 못했습니다: {path} ({e.strerror or e})", file=sys.stderr)
+        return 1
+    if len(data) > 64 * 1024 * 1024:
+        print("64MB 이하의 파일만 수집합니다.", file=sys.stderr)
+        return 2
+
+    async def run():
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                result = await ingest_source(
+                    session,
+                    source_key=args.source_key,
+                    data=data,
+                    kind=args.kind,
+                    locator=args.locator or str(path),
+                    media_type=args.media_type,
+                    title=args.title,
+                    lang=args.lang,
+                )
+                await session.commit()
+                return result
+        finally:
+            await db.dispose_engine()
+
+    result = asyncio.run(run())
+    print(json.dumps({
+        "source_id": str(result.source_id),
+        "document_id": str(result.document_id),
+        "revision_id": str(result.revision_id),
+        "rev_no": result.rev_no,
+        "sha256": result.sha256,
+        "created": result.created,
+        "healed_file": result.healed_file,
+    }, ensure_ascii=False))
+    return 0
+
+
+def _cmd_kb_verify(args: argparse.Namespace) -> int:
+    import json
+
+    from ttakkari import db
+    from ttakkari.kb_store import verify_integrity
+
+    async def run():
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                return await verify_integrity(session)
+        finally:
+            await db.dispose_engine()
+
+    report = asyncio.run(run())
+    print(json.dumps({
+        "ok": report.ok,
+        "sources": report.sources,
+        "revisions": report.revisions,
+        "passages": report.passages,
+        "evidence": report.evidence,
+        "files": report.files,
+        "problems": [{"code": p.code, "detail": p.detail} for p in report.problems],
+        "truncated": report.truncated,
+    }, ensure_ascii=False))
+    return 0 if report.ok else 1
+
+
 def _cmd_desk_eval(args: argparse.Namespace) -> int:
     from ttakkari import db
     from ttakkari.runs import desk_eval
@@ -304,6 +380,18 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument('--timeout',type=float,default=120)
     p.add_argument('--output',required=True,help='새 JSON 결과 파일(덮어쓰기 금지)')
     p.set_defaults(func=knowledge_command)
+
+    p = sub.add_parser("kb-ingest", help="원본 파일을 지식 도서관에 수집(같은 바이트 재수집은 멱등)")
+    p.add_argument("file", help="수집할 파일 경로(64MB 이하)")
+    p.add_argument("--source-key", required=True, help="원본의 안정 식별자(예: url:<정규 URL>, file:<경로>)")
+    p.add_argument("--kind", default="file", help="원본 종류(기본 file)")
+    p.add_argument("--locator", default=None, help="원본 위치 표시(기본: 파일 경로)")
+    p.add_argument("--media-type", default=None)
+    p.add_argument("--title", default=None)
+    p.add_argument("--lang", default=None)
+    p.set_defaults(func=_cmd_kb_ingest)
+
+    sub.add_parser("kb-verify", help="지식 도서관 DB·원본 저장소 무결성 점검(읽기 전용)").set_defaults(func=_cmd_kb_verify)
 
     p = sub.add_parser("desk-eval", help="접수 판정 모음을 지금 접수 지침·모델로 다시 분류해 정확도를 잰다(계정 사용량을 쓴다)")
     p.add_argument("--limit", type=int, default=None, help="최근 판정 N개만")

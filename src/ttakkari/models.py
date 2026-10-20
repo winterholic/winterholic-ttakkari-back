@@ -969,7 +969,8 @@ class PublicShare(Base):
     published_at: Mapped[datetime] = mapped_column(default=utcnow)
     expires_at: Mapped[datetime]
 
-# Register ledger tables in the shared metadata used by tests and Alembic.
+# Register ledger and knowledge-library tables in the shared metadata used by tests and Alembic.
+from ttakkari import kb_models as _kb_models  # noqa: F401
 from ttakkari import knowledge_models as _knowledge_models  # noqa: F401
 
 

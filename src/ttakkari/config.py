@@ -511,6 +511,11 @@ class Settings(BaseSettings):
         return self.data_dir / "reverse"
 
     @property
+    def kb_originals_dir(self) -> Path:
+        # 지식 도서관 원본의 해시 기반 저장소. data_dir 안에 두어 데이터 스냅샷에 포함된다.
+        return self.data_dir / "kb" / "originals"
+
+    @property
     def guard_log(self) -> Path:
         return self.data_dir / "guard.log"
 

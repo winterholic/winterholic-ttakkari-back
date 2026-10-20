@@ -696,13 +696,16 @@ async def test_async_query_runs_detached_from_request(client, auth, fake):
 
 async def test_async_query_cancel_marks_cancelled_without_ledger(client, auth, fake):
     gate = asyncio.Event()
+    entered = asyncio.Event()
 
     async def hold():
+        entered.set()
         await gate.wait()
 
     fake.plan["ask"] = [hold]
     jid = (await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth, json={"question": "q"})).json()["job"]["id"]
     await _wait_job(client, auth, jid, until=("running",))
+    await asyncio.wait_for(entered.wait(), 3)  # running 상태 저장만으로 실제 ask 전송 시작을 보장하지 않는다
     c = await client.post(f"/api/notebooklm/jobs/{jid}/cancel", headers=auth)
     assert c.status_code == 200
     assert c.json()["status"] == "cancelled" and c.json()["result"]["outcome_unknown"] is True

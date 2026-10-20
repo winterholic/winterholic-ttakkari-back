@@ -20,9 +20,11 @@ _BYPRODUCTS = """
     AND (
         filename LIKE '%.log'
         OR filename LIKE '%evidence%.json'
-        OR filename LIKE '%snapshot%'
-        OR filename LIKE '%cleanup%'
-        OR filename LIKE '%bindings%'
+        -- snapshot/cleanup/bindings 는 기계 부산물 확장자로 한정한다.
+        -- cleanup-plan.md, snapshot-analysis.md 같은 정상 문서는 건드리지 않는다.
+        OR (filename LIKE '%snapshot%' AND (filename LIKE '%.json' OR filename LIKE '%.py' OR filename LIKE '%.xml'))
+        OR (filename LIKE '%cleanup%' AND (filename LIKE '%.json' OR filename LIKE '%.xml'))
+        OR filename LIKE '%bindings%.json'
         OR filename LIKE 'final-%.json'
         OR filename LIKE 'check-%.py'
         OR original_path LIKE '%/outbox/%/browser/page-%'

@@ -1574,6 +1574,8 @@ class RunManager:
             await self._commit(db, run)
 
     async def _collect_artifacts(self, db: AsyncSession, run: Run, ws: Workspace, outbox: Path, state: ParseState) -> None:
+        # share 와의 조회-후-생성 경합을 막으려고 세션 행을 잠근다. 같은 세션의 수집·공유는 직렬화된다.
+        await db.execute(select(ChatSession.id).where(ChatSession.id == run.session_id).with_for_update())
         root = Path(ws.root_path).resolve()
         # outbox 자동 수집은 전부 에이전트 파일이다. 에이전트가 outbox 를 작업 공간처럼 써서
         # 로그·증거 JSON·브라우저 캡처 같은 중간 산출물을 함께 두기 때문이다(경로만으로는

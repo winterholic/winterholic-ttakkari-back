@@ -113,6 +113,34 @@ async def register_file(
     return art
 
 
+async def refresh_from_original(art: Artifact, real: Path) -> bool:
+    """이미 등록된 행의 원본이 바뀌었으면 보관 사본·메타데이터를 갱신한다.
+
+    수집 뒤 원본을 고치고 share 로 넘기면 다운로드가 옛날 사본을 내보낸다.
+    sha·크기가 같으면 손대지 않고 False 를 돌려준다(미리보기 상태 유지).
+    """
+    st = ensure_regular_file(real)
+    sha = await asyncio.to_thread(_sha256, real)
+    if sha == art.sha256 and st.st_size == art.size_bytes:
+        return False
+    if art.storage_mode == "copy":
+        store = get_settings().artifact_store.resolve()
+        dest = Path(art.stored_path).resolve(strict=False)
+        if store not in dest.parents:
+            raise BrokerError("관리 영역 밖의 파일입니다.", "outside_root")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(shutil.copy2, real, dest)
+    mime, kind = detect(real)
+    art.size_bytes = st.st_size
+    art.sha256 = sha
+    art.mime_type = mime
+    art.kind = kind
+    art.preview_status = PreviewStatus.pending if needs_server_preview(kind) else PreviewStatus.not_required
+    art.preview_path = None
+    art.preview_error = None
+    return True
+
+
 _LINE_SUFFIX = re.compile(r"(?::\d+(?:-\d+)?){1,2}$")
 _LINE_FRAGMENT = re.compile(r"#L?\d+(?:[-:]L?\d+)*$")
 

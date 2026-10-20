@@ -1,6 +1,7 @@
 """보관함 분류: 파일(files)과 에이전트 파일(agent)."""
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import uuid
 from pathlib import Path
@@ -64,6 +65,30 @@ async def test_direct_chat_outbox_is_agent_until_shared(client, auth, new_sessio
     assert r2.json()["artifact"]["id"] == before_id
 
 
+async def test_share_refreshes_modified_original_before_download(client, auth, new_session, make_git_dir):
+    """수집 후 원본을 고치고 공유하면 다운로드가 최신 내용이다. 재공유도 같은 행이다."""
+    _ws, sess = await new_session(make_git_dir())
+    await run_to_end(client, auth, sess["id"], "write report")
+    run_id = (await client.get(f"/api/sessions/{sess['id']}/runs", headers=auth)).json()[0]["id"]
+    target = get_settings().outbox_root / run_id / "report.md"
+    h = _orch(issue_token(sess["id"]))
+    old = (await client.get("/api/artifacts", params={"session_id": sess["id"]}, headers=auth)).json()[0]
+    assert old["storage_mode"] == "copy"
+    new_bytes = b"# report v2 with more bytes\n"
+    target.write_bytes(new_bytes)
+    r = await client.post("/api/agent/share", json={"path": str(target)}, headers=h)
+    assert r.status_code == 200 and r.json()["artifact"]["area"] == "files"
+    art = (await client.get(f"/api/artifacts/{old['id']}", headers=auth)).json()
+    assert art["id"] == old["id"]
+    assert art["size_bytes"] == len(new_bytes) and art["sha256"] != old["sha256"]
+    body = await client.get(f"/api/artifacts/{old['id']}/content", headers=auth)
+    assert body.status_code == 200 and body.content == new_bytes
+    r2 = await client.post("/api/agent/share", json={"path": str(target)}, headers=h)
+    assert r2.json()["artifact"]["id"] == old["id"]
+    body2 = await client.get(f"/api/artifacts/{old['id']}/content", headers=auth)
+    assert body2.content == new_bytes
+
+
 async def test_worker_outbox_is_agent_until_shared_by_orchestrator(client, auth, make_dir):
     orch = await _session(client, auth, make_dir, kind="orchestrator")
     h = _orch(issue_token(orch["id"]))
@@ -100,6 +125,32 @@ async def test_collect_skips_already_registered_outbox_files(client, auth, new_s
         await RunManager()._collect_artifacts(db, run, ws, get_settings().outbox_root / run_id, ParseState())
     n1 = len((await client.get("/api/artifacts", params={"session_id": sess["id"]}, headers=auth)).json())
     assert n1 == n0
+    # 공유로 files가 된 뒤 다시 수집해도 files 그대로, 행도 늘지 않는다.
+    h = _orch(issue_token(sess["id"]))
+    outbox = get_settings().outbox_root / run_id
+    r = await client.post("/api/agent/share", json={"path": str(outbox / "report.md")}, headers=h)
+    assert r.json()["artifact"]["area"] == "files"
+    async with sessionmaker()() as db:
+        run = await db.get(Run, uuid.UUID(run_id))
+        ws = await db.get(Workspace, run.workspace_id)
+        await RunManager()._collect_artifacts(db, run, ws, get_settings().outbox_root / run_id, ParseState())
+    assert await _areas(client, auth, session_id=sess["id"]) == {"report.md": "files"}
+
+
+async def test_concurrent_share_same_path_single_row(client, auth, new_session):
+    """같은 세션·원본 경로로 동시에 공유해도 활성 행은 하나다. 각 요청은 별도 DB 세션으로 돈다."""
+    ws, sess = await new_session()
+    root = Path((await client.get(f"/api/workspaces/{ws['id']}", headers=auth)).json()["root_path"])
+    (root / "race.md").write_text("# race\n")
+    h = _orch(issue_token(sess["id"]))
+    resps = await asyncio.gather(*[
+        client.post("/api/agent/share", json={"path": str(root / "race.md")}, headers=h)
+        for _ in range(5)
+    ])
+    assert [r.status_code for r in resps] == [200] * 5
+    assert len({r.json()["artifact"]["id"] for r in resps}) == 1
+    rows = (await client.get("/api/artifacts", params={"session_id": sess["id"]}, headers=auth)).json()
+    assert [(a["filename"], a["area"]) for a in rows] == [("race.md", "files")]
 
 
 async def test_move_between_areas(client, auth, new_session):
@@ -208,6 +259,8 @@ async def test_migration_0052_moves_byproducts_only():
         art("agent_output", "m52-report.md"),
         art("agent_output", "m52-saas-1280-compare.png"),
         art("agent_output", "m52-aip-wbs-evidence-20261015.zip"),  # 압축은 결과물일 수 있어 둔다
+        art("agent_output", "m52-cleanup-plan.md"),  # 단어가 겹쳐도 정상 문서는 둔다
+        art("agent_output", "m52-snapshot-analysis.md"),
         art("upload", "m52-up.log"),
         art("user_registered", "m52-reg.log"),
         art("agent_output", "m52-old.log", area="agent"),
@@ -237,10 +290,12 @@ async def test_migration_0052_moves_byproducts_only():
         for s in stmts:
             await db.execute(text(s))
         await db.commit()
+        # 세션은 expire_on_commit=False라 raw SQL 결과를 ORM이 모른다. 만료 후 실제 DB 상태를 읽는다.
+        db.expire_all()
         got = {r.filename: r.area for r in
                (await db.execute(select(Artifact).where(Artifact.id.in_(ids)))).scalars()}
         assert [got[r.filename] for r in move] == ["agent"] * len(move)
-        assert [got[r.filename] for r in stay] == ["files", "files", "files", "files", "files", "agent", "files"]
+        assert [got[r.filename] for r in stay] == ["files"] * 7 + ["agent", "files"]
         # 백업 표에 영향 행의 원래 분류가 남고 downgrade 로 되돌릴 수 있다.
         n_backup = (await db.execute(text("SELECT COUNT(*) FROM artifact_area_backup_0052"))).scalar()
         assert n_backup == len(move)
@@ -250,6 +305,7 @@ async def test_migration_0052_moves_byproducts_only():
         for s in down:
             await db.execute(text(s))
         await db.commit()
+        db.expire_all()
         back = {r.filename: r.area for r in
                 (await db.execute(select(Artifact).where(Artifact.id.in_(ids)))).scalars()}
         assert back["m52-watch.log"] == "files" and back["m52-a1b2-worker-evidence.json"] == "files"

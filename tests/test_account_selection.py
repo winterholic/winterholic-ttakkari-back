@@ -585,7 +585,8 @@ async def test_agent_artifact_area_filter_and_move(client, auth, make_dir):
     report = next(a for a in everything if a["filename"] == "report.md")
     moved = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "files"}, headers=h)
     assert moved.status_code == 200 and moved.json()["area"] == "files"
-    assert [a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "files"}, headers=h)).json()["artifacts"]] == ["report.md"]
+    assert {a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "files"}, headers=h)).json()["artifacts"]} == {"up.md", "report.md"}
+    assert (await client.get("/api/agent/artifacts", params={"area": "agent"}, headers=h)).json()["artifacts"] == []
     assert (await client.get(f"/api/artifacts/{report['id']}", headers=auth)).json()["area"] == "files"
     back = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "agent"}, headers=h)
     assert back.json()["area"] == "agent"

@@ -23,7 +23,7 @@ from ttakkari.api.planner import (
 )
 from ttakkari.artifacts import preview
 from ttakkari.artifacts.kinds import needs_server_preview
-from ttakkari.artifacts.service import register_file
+from ttakkari.artifacts.service import refresh_from_original, register_file
 from ttakkari.audit import record
 from ttakkari.broker.policy import BrokerError, ResolvedPath, is_sensitive, is_within
 from ttakkari.config import get_settings
@@ -35,6 +35,7 @@ from ttakkari.models import (
     ChatSession,
     CtxMemory,
     Memo,
+    PreviewStatus,
     Run,
     Workspace,
     utcnow,
@@ -256,18 +257,27 @@ async def share(body: ShareIn, sid: AgentSession, db: Db) -> dict[str, Any]:
     if root is None or is_sensitive(real) or not real.is_file():
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "outside_root",
                                                         "message": "실행 위치·권한 폴더 안의 일반 파일만 공유할 수 있어요."})
+    # 수집·공유 사이의 조회-후-생성 경합을 막으려고 세션 행을 잠근다(dispatch 와 같은 순서: 세션 먼저).
+    await db.execute(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
     run_id = await db.scalar(select(Run.id).where(Run.session_id == sid).order_by(Run.created_at.desc()).limit(1))
     # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않고 파일로 옮긴다. 같은 파일이 두 탭에 쌓이지 않게.
     existing = await db.scalar(select(Artifact).where(
         Artifact.deleted_at.is_(None), Artifact.session_id == sid,
         Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))
     if existing is not None:
-        if existing.area != ArtifactArea.files:
+        try:
+            changed = await refresh_from_original(existing, real)
+        except BrokerError as e:
+            raise broker_http(e) from e
+        moved = existing.area != ArtifactArea.files
+        if moved:
             record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=existing.id,
                    detail={"from": existing.area, "to": ArtifactArea.files, "via": "share", "session": str(sid)})
             existing.area = ArtifactArea.files
+        if moved or changed:
             await db.commit()
-        if needs_server_preview(existing.kind):
+        if needs_server_preview(existing.kind) and (
+                changed or existing.preview_status not in (PreviewStatus.ready, PreviewStatus.processing)):
             preview.enqueue(existing.id)
         return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
     try:

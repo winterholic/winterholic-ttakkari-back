@@ -25,7 +25,10 @@ async def search_arxiv(query: str) -> dict:
             or b"<!ENTITY" in r.content
         ):
             raise ValueError("untrusted_xml_limit")
-    root = ElementTree.fromstring(r.content)
+    try:
+        root = ElementTree.fromstring(r.content)
+    except ElementTree.ParseError as exc:
+        raise ValueError("invalid_provider_xml") from exc
     ns = {"a": "http://www.w3.org/2005/Atom"}
     return {
         "provider": "arxiv",

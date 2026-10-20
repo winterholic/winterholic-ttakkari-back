@@ -22,6 +22,37 @@ async def test_auth_required(client):
     assert (await client.get("/api/research/studies")).status_code == 401
 
 
+async def test_methods_are_reusable_across_same_scope_research(client, auth):
+    a, b = await study(client, auth), await study(client, auth)
+    m = (
+        await client.post(
+            f"/api/research/studies/{a}/nodes",
+            headers=auth,
+            json={
+                "kind": "method",
+                "title": "Reusable novel method",
+                "conditions": {"backend": ["metal"]},
+                "details": {"cost_seconds": 10},
+            },
+        )
+    ).json()
+    choice = await client.post(
+        f"/api/research/studies/{b}/select", headers=auth, json={}
+    )
+    assert choice.status_code == 200 and choice.json()["candidates"][0]["id"] == m["id"]
+    exp = await client.post(
+        f"/api/research/studies/{b}/experiments",
+        headers=auth,
+        json={
+            "title": "Reuse from earlier study",
+            "hypothesis": "Same conditions may help",
+            "rationale": "Selected earlier method",
+            "method_ids": [m["id"]],
+        },
+    )
+    assert exp.status_code == 201, exp.text
+
+
 async def test_source_claim_contradiction_and_resume(client, auth):
     sid = await study(client, auth)
     source = await client.post(
@@ -303,26 +334,85 @@ async def test_agent_scope_and_new_session_resume(client, auth, make_dir):
     from ttakkari.orchestrator.runtime import issue_token
 
     async def agent(pool):
-        w = (await client.post('/api/workspaces', headers=auth, json={'name': 'research', 'root_path': str(make_dir())})).json()
-        s = (await client.post('/api/sessions', headers=auth, json={'workspace_id': w['id'], 'pool': pool})).json()
-        return {'Authorization': 'Bearer ' + issue_token(uuid.UUID(s['id']))}
+        w = (
+            await client.post(
+                "/api/workspaces",
+                headers=auth,
+                json={"name": "research", "root_path": str(make_dir())},
+            )
+        ).json()
+        s = (
+            await client.post(
+                "/api/sessions",
+                headers=auth,
+                json={"workspace_id": w["id"], "pool": pool},
+            )
+        ).json()
+        return {"Authorization": "Bearer " + issue_token(uuid.UUID(s["id"]))}
 
-    first, second, work = await agent('personal'), await agent('personal'), await agent('work')
-    r = await client.post('/api/agent/research', headers=first, json={'operation': 'create', 'data': {'title': 'Resume test', 'goal': 'Restore across sessions'}})
+    first, second, work = (
+        await agent("personal"),
+        await agent("personal"),
+        await agent("work"),
+    )
+    r = await client.post(
+        "/api/agent/research",
+        headers=first,
+        json={
+            "operation": "create",
+            "data": {"title": "Resume test", "goal": "Restore across sessions"},
+        },
+    )
     assert r.status_code == 200, r.text
-    sid = r.json()['id']
-    r = await client.post('/api/agent/research', headers=second, json={'operation': 'resume', 'study_id': sid})
-    assert r.status_code == 200 and r.json()['study']['goal'] == 'Restore across sessions'
-    assert (await client.post('/api/agent/research', headers=work, json={'operation': 'resume', 'study_id': sid})).status_code == 404
-    for body in [{'operation': 'update', 'study_id': sid, 'data': {'expected_version': 1, 'unknown': True}},
-                 {'operation': 'execute'}, {'operation': 'node', 'study_id': sid, 'data': {}}]:
-        assert (await client.post('/api/agent/research', headers=second, json=body)).status_code == 422
+    sid = r.json()["id"]
+    r = await client.post(
+        "/api/agent/research",
+        headers=second,
+        json={"operation": "resume", "study_id": sid},
+    )
+    assert (
+        r.status_code == 200 and r.json()["study"]["goal"] == "Restore across sessions"
+    )
+    assert (
+        await client.post(
+            "/api/agent/research",
+            headers=work,
+            json={"operation": "resume", "study_id": sid},
+        )
+    ).status_code == 404
+    for body in [
+        {
+            "operation": "update",
+            "study_id": sid,
+            "data": {"expected_version": 1, "unknown": True},
+        },
+        {"operation": "execute"},
+        {"operation": "node", "study_id": sid, "data": {}},
+    ]:
+        assert (
+            await client.post("/api/agent/research", headers=second, json=body)
+        ).status_code == 422
 
 
 async def test_exact_source_whitespace_is_preserved(client, auth):
+    from ttakkari.config import get_settings
+    from ttakkari.kb_store import object_relpath
+
     sid = await study(client, auth)
-    body = '  leading and trailing source whitespace\n\n'
-    r = await client.post(f'/api/research/studies/{sid}/sources', headers=auth,
-                          json={'title': 'Exact', 'source_key': 'exact-space', 'locator': 'https://example.org', 'body': body})
+    body = "  leading and trailing source whitespace\n\n"
+    r = await client.post(
+        f"/api/research/studies/{sid}/sources",
+        headers=auth,
+        json={
+            "title": "Exact",
+            "source_key": "exact-space",
+            "locator": "https://example.org",
+            "body": body,
+        },
+    )
     assert r.status_code == 201, r.text
-    assert r.json()['units'][0]['body'] == body
+    digest = r.json()["revision"]["sha256"]
+    assert (
+        get_settings().kb_originals_dir / object_relpath(digest)
+    ).read_bytes() == body.encode("utf-8")
+    assert r.json()["units"][0]["body"] == body.strip()

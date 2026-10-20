@@ -8,6 +8,11 @@ import math
 import re
 import time
 from collections import Counter
+from pathlib import Path
+
+
+def code_digest() -> str:
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 def tokens(text: str) -> list[str]:
@@ -44,6 +49,7 @@ def evaluate(config: dict, seconds: int = 30) -> dict:
         not isinstance(q.get("query"), str)
         or not isinstance(q.get("relevant"), list)
         or not q["relevant"]
+        or any(not isinstance(x, str) for x in q["relevant"])
         or not set(q["relevant"]) <= set(ids)
         for q in queries
     ):

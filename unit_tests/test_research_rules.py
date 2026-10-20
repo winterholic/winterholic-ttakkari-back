@@ -27,9 +27,28 @@ def test_missing_or_different_comparison_conditions_cannot_be_fair():
         "dataset_revision": "v1",
         "metric": "recall",
         "protocol": "p1",
+        "hardware": "Mac Studio",
+        "software_revision": "abc",
     }
     assert comparable(a, a)["comparable"]
     assert not comparable(a, {**a, "dataset_revision": "v2"})["comparable"]
+
+
+def test_controlled_treatment_is_not_an_uncontrolled_difference():
+    a = {
+        "model": "qwen",
+        "model_revision": "a",
+        "dataset": "eval",
+        "dataset_revision": "v1",
+        "metric": "throughput",
+        "protocol": "p1",
+        "hardware": "m5",
+        "software_revision": "s1",
+        "cache": "f16",
+    }
+    b = {**a, "cache": "q8"}
+    assert not comparable(a, b)["comparable"]
+    assert comparable(a, b, vary=["cache"])["comparable"]
 
 
 def test_novel_method_and_unknown_cost_are_visible_without_automatic_preference():

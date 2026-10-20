@@ -1,7 +1,10 @@
 {
   "protocol": 1,
-  "supervisor": {"protocol": 1, "slots": 3},
-  "schema_revision": "0051_scope_memo_event",
+  "supervisor": {
+    "protocol": 1,
+    "slots": 3
+  },
+  "schema_revision": "0056_research_lab",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -21,6 +24,11 @@
     "0047_game_studio",
     "0048_game_active_build",
     "0049_google_accounts",
-    "0050_login_throttle_shadow"
+    "0050_login_throttle_shadow",
+    "0051_scope_memo_event",
+    "0052_artifact_area_byproducts",
+    "0053_kb_core",
+    "0054_kb_evidence",
+    "0055_kb_immutability_hardening"
   ]
 }

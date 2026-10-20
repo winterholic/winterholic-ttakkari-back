@@ -43,7 +43,7 @@ class Node(Base):
     details: Mapped[dict[str, Any]] = mapped_column(default=dict)
     epistemic_status: Mapped[str] = mapped_column(String(40))
     evidence_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("knowledge_evidence.id"), index=True
+        ForeignKey("kb_evidence.id"), index=True
     )
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("research_nodes.id")
@@ -132,9 +132,10 @@ BEGIN
     RAISE EXCEPTION 'source evidence required' USING ERRCODE='23514';
   END IF;
   IF NEW.evidence_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM knowledge_evidence e JOIN knowledge_units u ON u.id=e.unit_id
-    JOIN knowledge_revisions r ON r.id=u.revision_id JOIN research_studies s ON s.id=NEW.study_id
-    WHERE e.id=NEW.evidence_id AND r.scope=s.scope) THEN
+    SELECT 1 FROM kb_evidence e JOIN kb_passages u ON u.id=e.passage_id
+    JOIN kb_revisions r ON r.id=u.revision_id JOIN kb_sources source ON source.id=r.source_id
+    JOIN research_studies s ON s.id=NEW.study_id
+    WHERE e.id=NEW.evidence_id AND source.origin_meta->>'research_scope'=s.scope) THEN
     RAISE EXCEPTION 'research evidence scope mismatch' USING ERRCODE='23514';
   END IF;
   IF NEW.supersedes_id IS NOT NULL AND NOT EXISTS (

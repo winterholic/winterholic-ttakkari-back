@@ -1,9 +1,9 @@
-"""Independent Research Lab aggregates; additive, history-preserving schema."""
+"""Independent Research Lab, reusing Knowledge Library KB1/KB2. Additive schema."""
 
 from alembic import op
 
-revision = "0053_research_lab"
-down_revision = "0052_artifact_area_byproducts"
+revision = "0056_research_lab"
+down_revision = "0055_kb_immutability_hardening"
 branch_labels = None
 depends_on = None
 
@@ -14,7 +14,7 @@ def upgrade():
     )
     op.execute("CREATE INDEX ix_research_studies_scope ON research_studies (scope)")
     op.execute(
-        "\nCREATE TABLE research_nodes (\n\tid UUID NOT NULL, \n\tstudy_id UUID NOT NULL, \n\tkind VARCHAR(100) NOT NULL, \n\ttitle VARCHAR(240) NOT NULL, \n\tsummary TEXT NOT NULL, \n\tconditions JSONB NOT NULL, \n\tdetails JSONB NOT NULL, \n\tepistemic_status VARCHAR(40) NOT NULL, \n\tevidence_id UUID, \n\tsupersedes_id UUID, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(study_id) REFERENCES research_studies (id), \n\tFOREIGN KEY(evidence_id) REFERENCES knowledge_evidence (id), \n\tFOREIGN KEY(supersedes_id) REFERENCES research_nodes (id)\n)\n\n"
+        "\nCREATE TABLE research_nodes (\n\tid UUID NOT NULL, \n\tstudy_id UUID NOT NULL, \n\tkind VARCHAR(100) NOT NULL, \n\ttitle VARCHAR(240) NOT NULL, \n\tsummary TEXT NOT NULL, \n\tconditions JSONB NOT NULL, \n\tdetails JSONB NOT NULL, \n\tepistemic_status VARCHAR(40) NOT NULL, \n\tevidence_id UUID, \n\tsupersedes_id UUID, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(study_id) REFERENCES research_studies (id), \n\tFOREIGN KEY(evidence_id) REFERENCES kb_evidence (id), \n\tFOREIGN KEY(supersedes_id) REFERENCES research_nodes (id)\n)\n\n"
     )
     op.execute(
         "CREATE INDEX ix_research_nodes_evidence_id ON research_nodes (evidence_id)"
@@ -51,7 +51,7 @@ def upgrade():
         "\nCREATE OR REPLACE FUNCTION research_validate_relation() RETURNS trigger AS $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM research_nodes WHERE id=NEW.from_id AND study_id=NEW.study_id)\n    OR NOT EXISTS (SELECT 1 FROM research_nodes WHERE id=NEW.to_id AND study_id=NEW.study_id) THEN\n    RAISE EXCEPTION 'research relation study mismatch' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql\n"
     )
     op.execute(
-        "\nCREATE OR REPLACE FUNCTION research_validate_node() RETURNS trigger AS $$\nBEGIN\n  IF NEW.kind IN ('claim','finding') AND NEW.evidence_id IS NULL THEN\n    RAISE EXCEPTION 'source evidence required' USING ERRCODE='23514';\n  END IF;\n  IF NEW.evidence_id IS NOT NULL AND NOT EXISTS (\n    SELECT 1 FROM knowledge_evidence e JOIN knowledge_units u ON u.id=e.unit_id\n    JOIN knowledge_revisions r ON r.id=u.revision_id JOIN research_studies s ON s.id=NEW.study_id\n    WHERE e.id=NEW.evidence_id AND r.scope=s.scope) THEN\n    RAISE EXCEPTION 'research evidence scope mismatch' USING ERRCODE='23514';\n  END IF;\n  IF NEW.supersedes_id IS NOT NULL AND NOT EXISTS (\n    SELECT 1 FROM research_nodes WHERE id=NEW.supersedes_id AND study_id=NEW.study_id) THEN\n    RAISE EXCEPTION 'research correction study mismatch' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql\n"
+        "\nCREATE OR REPLACE FUNCTION research_validate_node() RETURNS trigger AS $$\nBEGIN\n  IF NEW.kind IN ('claim','finding') AND NEW.evidence_id IS NULL THEN\n    RAISE EXCEPTION 'source evidence required' USING ERRCODE='23514';\n  END IF;\n  IF NEW.evidence_id IS NOT NULL AND NOT EXISTS (\n    SELECT 1 FROM kb_evidence e JOIN kb_passages u ON u.id=e.passage_id\n    JOIN kb_revisions r ON r.id=u.revision_id JOIN kb_sources source ON source.id=r.source_id\n    JOIN research_studies s ON s.id=NEW.study_id\n    WHERE e.id=NEW.evidence_id AND source.origin_meta->>'research_scope'=s.scope) THEN\n    RAISE EXCEPTION 'research evidence scope mismatch' USING ERRCODE='23514';\n  END IF;\n  IF NEW.supersedes_id IS NOT NULL AND NOT EXISTS (\n    SELECT 1 FROM research_nodes WHERE id=NEW.supersedes_id AND study_id=NEW.study_id) THEN\n    RAISE EXCEPTION 'research correction study mismatch' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql\n"
     )
     op.execute(
         "CREATE TRIGGER research_nodes_immutable BEFORE UPDATE OR DELETE ON research_nodes FOR EACH ROW EXECUTE FUNCTION research_immutable_row()"

@@ -40,7 +40,7 @@ def applicability(conditions: dict, environment: dict) -> dict:
     }
 
 
-def comparable(a: dict, b: dict) -> dict:
+def comparable(a: dict, b: dict, vary: list[str] | None = None) -> dict:
     required = (
         "model",
         "model_revision",
@@ -48,13 +48,23 @@ def comparable(a: dict, b: dict) -> dict:
         "dataset_revision",
         "metric",
         "protocol",
+        "hardware",
+        "software_revision",
     )
     missing = [k for k in required if a.get(k) is None or b.get(k) is None]
     differences = [k for k in set(a) | set(b) if a.get(k) != b.get(k)]
+    controlled = set(vary or [])
+    invalid_vary = sorted(
+        controlled & {"dataset", "dataset_revision", "metric", "protocol"}
+    )
+    uncontrolled = sorted(set(differences) - controlled)
     return {
-        "comparable": not missing and not differences,
+        "comparable": not missing and not uncontrolled and not invalid_vary,
         "missing": missing,
         "differences": sorted(differences),
+        "controlled_variables": sorted(controlled),
+        "uncontrolled_differences": uncontrolled,
+        "invalid_vary": invalid_vary,
     }
 
 

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import platform
 import uuid
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -15,8 +16,6 @@ from sqlalchemy import func, select, text
 
 from ttakkari.api.agent import _session
 from ttakkari.api.deps import Db
-from ttakkari.knowledge import store
-from ttakkari.knowledge_models import KnowledgeUnit
 from ttakkari.models import utcnow
 from ttakkari.orchestrator.runtime import OrchestratorSession as AgentSession
 from ttakkari.research import benchmark
@@ -37,6 +36,7 @@ class Strict(BaseModel):
         serialized = json.dumps(
             self.model_dump(mode="json"), ensure_ascii=False, allow_nan=False
         )
+        serialized.encode("utf-8")
         if len(serialized) > 300_000 or "\\u0000" in serialized or "\0" in serialized:
             raise ValueError("research_payload_limit_or_nul")
         return self
@@ -58,7 +58,7 @@ class StudyPatch(Strict):
 
 
 class SourceIn(Strict):
-    source_key: str = Field(min_length=1, max_length=500)
+    source_key: str = Field(min_length=1, max_length=460)
     title: str = Field(min_length=1, max_length=240)
     locator: str = Field(min_length=1, max_length=2000)
     body: str = Field(min_length=1, max_length=200_000)
@@ -165,39 +165,9 @@ async def resume(study_id: uuid.UUID, _: User, db: Db):
 @router.post("/studies/{study_id}/sources", status_code=201)
 async def add_source(study_id: uuid.UUID, body: SourceIn, _: User, db: Db):
     study = await svc.get_study(db, study_id)
-    try:
-        revision = await store.import_text(
-            db,
-            source_key=body.source_key,
-            locator=body.locator,
-            body=body.body,
-            scope=study.scope,
-            origin="research",
-        )
-    except store.KnowledgeError as exc:
-        raise HTTPException(exc.status, exc.code) from exc
-    units = (
-        await db.scalars(
-            select(KnowledgeUnit).where(KnowledgeUnit.revision_id == revision.id)
-        )
-    ).all()
-    svc.event(
-        db,
-        study.id,
-        "source_imported",
-        str(_),
-        revision_id=str(revision.id),
-        title=body.title,
-        locator=body.locator,
-        extraction="pending_review",
-    )
+    result = await svc.import_source(db, study, body, str(_))
     await db.commit()
-    return {
-        "revision": store.revision_out(revision),
-        "units": [store.unit_out(u, revision) for u in units],
-        "extraction": "pending_review",
-        "note": "Source imported; no claims have been verified.",
-    }
+    return result
 
 
 @router.post("/studies/{study_id}/nodes", status_code=201)
@@ -271,7 +241,17 @@ async def select_methods(study_id: uuid.UUID, body: SelectionIn, _: User, db: Db
 async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     study = await svc.get_study(db, study_id)
     for ident in body.method_ids:
-        await svc.get_node(db, study, ident)
+        method = (
+            await db.scalars(
+                select(Node)
+                .join(Study)
+                .where(
+                    Node.id == ident, Study.scope == study.scope, Node.kind == "method"
+                )
+            )
+        ).one_or_none()
+        if method is None:
+            raise HTTPException(404, "research_method_not_found_in_scope")
     row = Experiment(study_id=study.id, **body.model_dump(mode="json"))
     db.add(row)
     await db.flush()
@@ -324,9 +304,10 @@ async def execute(experiment_id: uuid.UUID, _: User, db: Db):
             "adapter_version": "retrieval-eval-v1",
             "started_at": started.isoformat(),
             "finished_at": utcnow().isoformat(),
-            "input_sha256": store.digest(
-                json.dumps(row.config, sort_keys=True, ensure_ascii=False)
-            ),
+            "input_sha256": hashlib.sha256(
+                json.dumps(row.config, sort_keys=True, ensure_ascii=False).encode()
+            ).hexdigest(),
+            "adapter_sha256": benchmark.code_digest(),
             "runtime": {
                 "python": platform.python_version(),
                 "platform": platform.platform(),
@@ -413,13 +394,20 @@ async def control(experiment_id: uuid.UUID, body: ControlIn, _: User, db: Db):
 
 
 @router.get("/studies/{study_id}/compare")
-async def compare(study_id: uuid.UUID, a: uuid.UUID, b: uuid.UUID, _: User, db: Db):
+async def compare(
+    study_id: uuid.UUID,
+    a: uuid.UUID,
+    b: uuid.UUID,
+    _: User,
+    db: Db,
+    vary: Annotated[list[str] | None, Query(max_length=20)] = None,
+):
     await svc.get_study(db, study_id)
     left, right = await db.get(Experiment, a), await db.get(Experiment, b)
     if not left or not right or left.study_id != study_id or right.study_id != study_id:
         raise HTTPException(404, "research_experiment_not_found")
     return {
-        **comparable(left.environment, right.environment),
+        **comparable(left.environment, right.environment, vary=vary or []),
         "a": svc.out(left),
         "b": svc.out(right),
     }

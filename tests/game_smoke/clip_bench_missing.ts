@@ -17,9 +17,9 @@ class PlayScene extends Phaser.Scene {
 
   create(): void {
     const { width, height } = this.scale;
-    this.red = this.add.circle(width * 0.08, height * 0.35, 22, 0xff4444);
-    this.green = this.add.circle(width * 0.08, height * 0.5, 22, 0x33dd66);
-    this.blue = this.add.circle(width * 0.08, height * 0.65, 22, 0x3366ff);
+    this.red = this.add.circle(width * 0.08, height * 0.35, 30, 0xff4444);
+    this.green = this.add.circle(width * 0.08, height * 0.5, 30, 0x33dd66);
+    this.blue = this.add.circle(width * 0.08, height * 0.65, 30, 0x3366ff);
     this.born = this.time.now;
   }
 

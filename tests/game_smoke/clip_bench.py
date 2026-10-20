@@ -28,6 +28,8 @@ GAMES_ROOT = Path(os.environ.get("TTAKKARI_GAMES_ROOT", "/private/tmp/gs-g16/gam
 HERE = Path(__file__).parent
 BACK = HERE.parent.parent
 BLOB = 200  # 이 개수 이상이면 그 색 공이 프레임에 있다고 본다(스캔 폭 320 기준)
+REC_MS = 11000  # 픽스처의 공은 10초에 걸쳐 가로지른다. 시작 지연을 넘겨 전 구간(결함 임계 이후 포함)이 한 녹화에 들어가야 한다
+EDGE_L, EDGE_R = 0.25, 0.8  # 녹화 첫 프레임 공(색 무관)이 이 값보다 왼쪽, 마지막 프레임이 오른쪽이어야 전 구간을 덮은 것으로 본다
 
 CASES = {
     "color": {
@@ -85,6 +87,7 @@ def scan(path: Path) -> dict:
     img = img.resize((320, round(img.height * 320 / img.width)))
     px = img.load()
     red = blue = green = 0
+    ball_x = ball_n = 0
     for y in range(img.height):
         for x in range(img.width):
             r, g, b = px[x, y]
@@ -94,7 +97,11 @@ def scan(path: Path) -> dict:
                 blue += 1
             elif g >= 150 and r <= 130 and b <= 150:
                 green += 1
-    return {"red": red, "blue": blue, "green": green}
+            else:
+                continue
+            ball_x += x
+            ball_n += 1
+    return {"red": red, "blue": blue, "green": green, "ball_cx": round(ball_x / ball_n / img.width, 3) if ball_n else None}
 
 
 def collect(game_id: str, build_id: str, out: Path, tag: str) -> dict:
@@ -104,9 +111,9 @@ def collect(game_id: str, build_id: str, out: Path, tag: str) -> dict:
     play = httpx.post(f"{API}/api/games/{game_id}/play", json={"build_id": build_id},
                       headers={**headers(), "Origin": host_origin}, timeout=30).json()
     cfg = {"playwright_dir": pw_dir, "host_port": HOST_PORT, "play_url": play["url"],
-           "sandbox": play["sandbox"], "out_dir": str(out), "fps": 2, "ms": 6000, "tag": tag}
+           "sandbox": play["sandbox"], "out_dir": str(out), "fps": 2, "ms": REC_MS, "tag": tag}
     proc = subprocess.run(["node", str(HERE / "clip_bench_collect.mjs"), json.dumps(cfg)],
-                          capture_output=True, text=True, timeout=240, check=False)
+                          capture_output=True, text=True, timeout=300, check=False)
     line = next((ln for ln in proc.stdout.splitlines() if ln.startswith("@@RESULT@@")), None)
     if line is None:
         raise SystemExit(f"수집 실패: {proc.returncode} {proc.stdout[-500:]} {proc.stderr[-500:]}")
@@ -123,8 +130,8 @@ def collect(game_id: str, build_id: str, out: Path, tag: str) -> dict:
     return {"collect": res, "scans": scans}
 
 
-def pick_frames(case: str, scans: list[dict]) -> list[int]:
-    """결함이 보이는 프레임 2장 + 정상 2장의 인덱스(시각순). 못 고르면 빈 목록."""
+def pick_frames(case: str, scans: list[dict]) -> tuple[list[int], set[int]]:
+    """결함이 보이는 프레임 2장 + 정상 2장의 인덱스(시각순)와 그중 결함 프레임 인덱스. 못 고르면 빈 목록."""
     if case == "color":
         ok = [i for i, s in enumerate(scans) if s["red"] >= BLOB and s["blue"] < BLOB]
         bad = [i for i, s in enumerate(scans) if s["blue"] >= BLOB and s["red"] < BLOB]
@@ -132,14 +139,78 @@ def pick_frames(case: str, scans: list[dict]) -> list[int]:
         ok = [i for i, s in enumerate(scans) if s["red"] >= BLOB and s["green"] >= BLOB and s["blue"] >= BLOB]
         bad = [i for i, s in enumerate(scans) if s["red"] >= BLOB and s["green"] < BLOB and s["blue"] >= BLOB]
     if len(ok) < 2 or len(bad) < 2 or ok[-1] > bad[0]:
-        return []
-    return sorted({ok[0], ok[-1], bad[0], bad[-1]})
+        return [], set()
+    chosen = sorted({ok[0], ok[-1], bad[0], bad[-1]})
+    return chosen, {bad[0], bad[-1]}
+
+
+def covers_traverse(scans: list[dict]) -> bool:
+    """녹화가 공의 이동 전 구간을 덮었나. 결함 임계를 뒤로 밀어 구간 밖으로 숨기는 가짜 수정을 막는다."""
+    xs = [s["ball_cx"] for s in scans if s["ball_cx"] is not None]
+    return bool(xs) and xs[0] <= EDGE_L and xs[-1] >= EDGE_R
 
 
 def post_fixed(case: str, scans: list[dict]) -> bool:
+    if not covers_traverse(scans):
+        return False
     if case == "color":
         return all(s["red"] >= BLOB and s["blue"] < BLOB for s in scans)
     return all(s["red"] >= BLOB and s["green"] >= BLOB and s["blue"] >= BLOB for s in scans)
+
+
+READ_TOOLS = {"read", "view_image", "read_file", "view"}  # 이미지를 실제로 보는 도구. ls·grep·git 은 열람이 아니다
+WRITE_TOOLS = {"write", "edit", "multiedit", "notebookedit", "write_to_file", "replace_file_content", "multi_replace_file_content", "file_change"}
+
+
+# Bash 로 파일을 고치는 worker 도 있다(실측: sonnet 이 python 으로 치환). 편집 시점을 놓치면 열람 순서 판정이 빈다
+BASH_EDIT = re.compile(r"sed\s+-i|\btee\b|[^>=<!-]>\s*[\w./'\"]|\.write\(|\.replace\(|git\s+(commit|apply|checkout\s+--)|\bperl\s+-pi")
+
+
+def clip_evidence(events: list[dict], bad_names: set[str]) -> dict:
+    """tool.call 중 이미지 열람 도구가 clip-NN.jpg 를 입력 경로로 부르고 성공 tool.result 가 돌아온 것만 열람으로 센다."""
+    results = {e["payload"].get("call_id"): e for e in events if e.get("type") == "tool.result"}
+    opened: dict[str, int] = {}
+    mentioned: set[str] = set()
+    first_write = None
+    for e in events:
+        if e.get("type") != "tool.call":
+            continue
+        pl = e.get("payload", {})
+        name = str(pl.get("name", "")).lower()
+        text = json.dumps(pl.get("input", {}), ensure_ascii=False)
+        names = set(re.findall(r"clip-\d+\.jpg", text))
+        is_edit = name in WRITE_TOOLS or (name in ("bash", "shell") and BASH_EDIT.search(str(pl.get("input", {}).get("command", ""))))
+        if is_edit and first_write is None:
+            first_write = e["seq"]
+        if not names:
+            continue
+        mentioned |= names
+        res = results.get(pl.get("call_id"))
+        inp = pl.get("input", {})
+        path = str(inp.get("file_path") or inp.get("path") or inp.get("AbsolutePath") or "")
+        if name in READ_TOOLS and re.search(r"clip-\d+\.jpg$", path) and res and not res["payload"].get("is_error"):
+            opened.setdefault(re.search(r"clip-\d+\.jpg$", path).group(0), e["seq"])
+    first_read = min(opened.values()) if opened else None
+    return {"opened": sorted(opened), "opened_seqs": opened, "mentioned_only": sorted(mentioned - set(opened)),
+            "opened_bad_frame": bool(set(opened) & bad_names),
+            "read_before_first_edit": first_read is not None and (first_write is None or first_read < first_write),
+            "first_edit_seq": first_write}
+
+
+def guard_isolation() -> None:
+    """운영 DB·게임 저장소를 쓰지 않는지 시작 전에 확인한다. 어긋나면 아무것도 만들지 않고 멈춘다."""
+    problems = []
+    if os.environ.get("TTAKKARI_NO_ENV_FILE") != "1":
+        problems.append("TTAKKARI_NO_ENV_FILE=1 이 아니다")
+    if not API.startswith(("http://127.0.0.1:", "http://localhost:")):
+        problems.append(f"API 가 loopback 이 아니다: {API}")
+    root = GAMES_ROOT.resolve()
+    if not str(root).startswith(("/private/tmp/", "/tmp/")):
+        problems.append(f"게임 루트가 임시 경로가 아니다: {root}")
+    if "gs" not in os.environ.get("TTAKKARI_DATABASE_URL", "").rsplit("/", 1)[-1]:
+        problems.append("DB 이름에 격리 표식(gs)이 없다")
+    if problems:
+        raise SystemExit("격리 가드 실패: " + "; ".join(problems))
 
 
 def run_case(case: str, out: Path) -> dict:
@@ -169,13 +240,17 @@ def run_case(case: str, out: Path) -> dict:
     print(f"[{case}] build v{build['seq']} ok", flush=True)
 
     pre = collect(game["id"], build["id"], out / case / "pre", "pre")
-    picks = pick_frames(case, pre["scans"])
+    picks, bad_idx = pick_frames(case, pre["scans"])
     row["pre_frames"] = len(pre["scans"])
-    if len(picks) != 4:
+    row["pre_covers_traverse"] = covers_traverse(pre["scans"])
+    if len(picks) != 4 or not row["pre_covers_traverse"]:
         row["verdict"] = "defect-not-visible"
-        print(f"[{case}] 결함이 녹화에 안 보인다. worker 를 부르지 않는다", flush=True)
+        print(f"[{case}] 결함이 녹화에 안 보이거나 전 구간을 못 덮었다. worker 를 부르지 않는다", flush=True)
+        (out / case / "result.json").write_text(json.dumps(row, ensure_ascii=False, indent=1, default=str))
         return row
     picked = [pre["scans"][i] for i in picks]
+    bad_names = {f"clip-{n:02d}.jpg" for n, i in enumerate(picks, 1) if i in bad_idx}  # 서버가 시각순으로 clip-01 부터 붙인다
+    row["bad_clip_files"] = sorted(bad_names)
     (out / case / "clip").mkdir(parents=True, exist_ok=True)
     arts = []
     for p in picked:
@@ -216,10 +291,9 @@ def run_case(case: str, out: Path) -> dict:
 
     events = httpx.get(f"{API}/api/runs/{req_json['run_id']}/events", headers=headers(), timeout=60).json()
     (out / case / "events.json").write_text(json.dumps(events, ensure_ascii=False, indent=1))
-    reads = [e for e in events if e.get("type") == "tool.call" and "clip-" in json.dumps(e.get("payload", {}), ensure_ascii=False)]
-    opened = sorted({m for e in reads for m in re.findall(r"clip-\d+\.jpg", json.dumps(e.get("payload", {}), ensure_ascii=False))})
-    row["clip_read_seqs"] = [e["seq"] for e in reads]
-    row["clip_tool_names"] = sorted({str(e.get("payload", {}).get("name", "?")) for e in reads})
+    ev = clip_evidence(events, bad_names)
+    opened = ev["opened"]
+    row["clip_evidence"] = ev
     row["clip_files_opened"] = opened
     row["tool_calls"] = sum(1 for e in events if e.get("type") == "tool.call")
     row["guard_blocked"] = sum(1 for e in events if e.get("type") == "guard.blocked")
@@ -239,6 +313,7 @@ def run_case(case: str, out: Path) -> dict:
         else:
             row["auto_build"] = {"seq": auto.get("seq"), "status": auto.get("status"),
                                  "source_commit": (auto.get("source_commit") or "")[:12], "error": (auto.get("error") or "")[:300]}
+            row["seconds_request_to_build"] = round(time.time() - t0)
             print(f"[{case}] auto build v{auto.get('seq')} {auto.get('status')}", flush=True)
             try:
                 reqs = httpx.get(f"{API}/api/games/{game['id']}/requests", headers=headers(), timeout=30).json()
@@ -255,7 +330,7 @@ def run_case(case: str, out: Path) -> dict:
                 else:
                     row["post_frames"] = len(post["scans"])
                     row["fixed_pixels"] = post_fixed(case, post["scans"])
-    opened_ok = len(opened) >= 1
+    opened_ok = len(opened) >= 1 and ev["opened_bad_frame"] and ev["read_before_first_edit"]
     fixed_ok = row.get("fixed_pixels") is True
     build_ok = auto.get("status") == "succeeded" and (auto.get("source_commit") or "")[:12] == head[:12]
     row["verdict"] = "pass" if (opened_ok and fixed_ok and build_ok and run.get("status") == "succeeded") else "fail"
@@ -265,6 +340,7 @@ def run_case(case: str, out: Path) -> dict:
 
 
 def main() -> None:
+    guard_isolation()
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
     arg = sys.argv[2] if len(sys.argv) > 2 else "all"

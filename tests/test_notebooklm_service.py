@@ -939,3 +939,39 @@ async def test_account_id_is_part_of_every_key(client, auth, fake):
         assert (await db.get(NotebookLMAccount, "primary")) is not None
     with pytest.raises(errors.Invalid):
         await service.status("../etc")
+
+
+@pytest.mark.parametrize("user_cancel", [True, False])
+async def test_query_answer_survives_cancellation_during_enrichment(client, auth, fake, user_cancel):
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    async def hold_sources():
+        entered.set()
+        await gate.wait()
+
+    fake.plan["list_sources"] = [hold_sources]
+    jid = (await client.post("/api/notebooklm/notebooks/nb1/queries", headers=auth,
+                             json={"question": "q", "export_for_ledger": True})).json()["job"]["id"]
+    await asyncio.wait_for(entered.wait(), 3)
+    if user_cancel:
+        await client.post(f"/api/notebooklm/jobs/{jid}/cancel", headers=auth)
+    else:
+        service._tasks[uuid.UUID(jid)].cancel()  # 서버 drain/shutdown과 같은 task 취소
+    job = await _wait_job(client, auth, jid)
+    assert job["status"] == "succeeded"
+    assert job["result"]["query"]["answer"] == "분석 [1]"
+    assert job["result"]["query"]["citations"][0]["quoted_text"] == "원문 발췌"
+    assert job["result"]["ledger_export"]["assertions"] == []
+
+
+async def test_query_job_detail_enforces_google_account_scope(client, auth, fake):
+    jid = uuid.uuid4()
+    async with sessionmaker()() as db:
+        db.add(NotebookLMJob(id=jid, account_id="another", kind="query", notebook_id="nb1",
+                             status="succeeded", params={}, result={"query": {"answer": "private"}}))
+        await db.commit()
+    response = await client.get(f"/api/notebooklm/jobs/{jid}", headers=auth)
+    assert response.status_code == 404
+    assert "private" not in response.text
+    assert not any(row["id"] == str(jid) for row in (await client.get("/api/notebooklm/jobs", headers=auth)).json())

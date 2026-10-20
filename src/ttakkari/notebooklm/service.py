@@ -845,6 +845,7 @@ class NotebookLMService:
 
     async def _run_query_job(self, job_id: uuid.UUID, account_id: str, notebook_id: str, spec: dict[str, Any]) -> None:
         s = get_settings()
+        result: QueryResult | None = None
         phase = "queued"  # queued: 아직 Google 에 아무것도 보내지 않음 → write: 질의 전송 중 → enrich: 출처 정보 채우기
         hb = asyncio.create_task(self._heartbeat(job_id, asyncio.current_task()))  # type: ignore[arg-type]
         try:
@@ -873,7 +874,14 @@ class NotebookLMService:
                 payload["ledger_export"] = build_ledger_export(result, account_id=account_id)
             await self._finish(job_id, "succeeded", result=payload)
         except asyncio.CancelledError:
-            await asyncio.shield(self._on_query_job_cancelled(job_id, phase))
+            if result is not None:
+                # 답변은 이미 확정됐다. 선택적 출처 보강이나 저장 중 취소가 답변을 지우지 않게 한다.
+                payload = {"query": result.model_dump()}
+                if spec["export_for_ledger"]:
+                    payload["ledger_export"] = build_ledger_export(result, account_id=account_id)
+                await asyncio.shield(self._finish(job_id, "succeeded", result=payload))
+            else:
+                await asyncio.shield(self._on_query_job_cancelled(job_id, phase))
             raise
         except Exception as e:  # noqa: BLE001
             log.warning("notebooklm query job crashed: %s", redact.safe_error(e))

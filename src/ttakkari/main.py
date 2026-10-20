@@ -38,6 +38,7 @@ from ttakkari.api import (
     public_shares,
     push,
     remote_desktop,
+    research,
     reverse,
     sessions,
     shares,
@@ -311,6 +312,8 @@ def create_app() -> FastAPI:
     from ttakkari.api import knowledge
     app.include_router(knowledge.router)
     app.include_router(knowledge.agent_router)
+    app.include_router(research.router)
+    app.include_router(research.agent_router)
     return app
 
 

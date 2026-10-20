@@ -972,6 +972,7 @@ class PublicShare(Base):
 # Register ledger and knowledge-library tables in the shared metadata used by tests and Alembic.
 from ttakkari import kb_models as _kb_models  # noqa: F401
 from ttakkari import knowledge_models as _knowledge_models  # noqa: F401
+from ttakkari.research import models as _research_models  # noqa: F401
 
 
 class OpsIssue(Base):

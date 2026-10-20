@@ -68,14 +68,115 @@ def dimensions(aspect: str):
     return {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}[aspect]
 
 
-def caption_image(path: Path, caption: str, width: int, height: int):
+def caption_image(
+    path: Path, caption: str, width: int, height: int, style: str = "bottom_card"
+):
     im = Image.new("RGBA", (width, height))
-    if caption:
-        font_path = Path("/System/Library/Fonts/AppleSDGothicNeo.ttc")
-        if not font_path.is_file():
-            raise ValueError("한국어 자막 글꼴(AppleSDGothicNeo)이 없습니다.")
-        font = ImageFont.truetype(str(font_path), round(width * 0.032))
-        d = ImageDraw.Draw(im)
+    if not caption:
+        im.save(path)
+        return
+
+    font_path = Path("/System/Library/Fonts/AppleSDGothicNeo.ttc")
+    if not font_path.is_file():
+        raise ValueError("한국어 자막 글꼴(AppleSDGothicNeo)이 없습니다.")
+
+    d = ImageDraw.Draw(im)
+
+    if style == "center_highlight":
+        font_size = round(width * 0.052)
+        font = ImageFont.truetype(str(font_path), font_size)
+        lines, line = [], ""
+        for char in caption.replace("\r", ""):
+            if char == "\n" or d.textlength(line + char, font=font) > width * 0.85:
+                lines.append(line)
+                line = "" if char == "\n" else char
+            else:
+                line += char
+        lines.append(line)
+        if len(lines) > 3:
+            lines = lines[:3]
+        line_height = round(width * 0.070)
+        total_h = len(lines) * line_height
+        base = (height - total_h) / 2
+        d.rounded_rectangle(
+            (width * 0.06, base - 20, width * 0.94, base + total_h + 16),
+            18,
+            fill=(10, 15, 28, 220),
+            outline=(255, 215, 0, 180),
+            width=2,
+        )
+        for i, text in enumerate(lines):
+            d.text(
+                (width / 2, base + i * line_height),
+                text,
+                font=font,
+                fill=(255, 235, 120, 255),
+                anchor="mt",
+            )
+    elif style == "title_card":
+        font_size = round(width * 0.046)
+        font = ImageFont.truetype(str(font_path), font_size)
+        lines, line = [], ""
+        for char in caption.replace("\r", ""):
+            if char == "\n" or d.textlength(line + char, font=font) > width * 0.82:
+                lines.append(line)
+                line = "" if char == "\n" else char
+            else:
+                line += char
+        lines.append(line)
+        if len(lines) > 2:
+            lines = lines[:2]
+        line_height = round(width * 0.065)
+        total_h = len(lines) * line_height
+        base = (height - total_h) / 2
+        d.rounded_rectangle(
+            (width * 0.08, base - 24, width * 0.92, base + total_h + 20),
+            16,
+            fill=(6, 10, 20, 235),
+            outline=(100, 160, 255, 140),
+            width=2,
+        )
+        for i, text in enumerate(lines):
+            d.text(
+                (width / 2, base + i * line_height),
+                text,
+                font=font,
+                fill="white",
+                anchor="mt",
+            )
+    elif style == "code_overlay":
+        font_size = round(width * 0.028)
+        font = ImageFont.truetype(str(font_path), font_size)
+        lines, line = [], ""
+        for char in caption.replace("\r", ""):
+            if char == "\n" or d.textlength(line + char, font=font) > width * 0.84:
+                lines.append(line)
+                line = "" if char == "\n" else char
+            else:
+                line += char
+        lines.append(line)
+        if len(lines) > 4:
+            lines = lines[:4]
+        line_height = round(width * 0.040)
+        base = round(height * 0.10)
+        d.rounded_rectangle(
+            (width * 0.05, base - 10, width * 0.95, base + len(lines) * line_height + 12),
+            12,
+            fill=(15, 23, 42, 225),
+            outline=(56, 189, 248, 120),
+            width=1,
+        )
+        for i, text in enumerate(lines):
+            d.text(
+                (width * 0.08, base + i * line_height),
+                text,
+                font=font,
+                fill=(226, 232, 240, 255),
+                anchor="lt",
+            )
+    else:  # bottom_card
+        font_size = round(width * 0.032)
+        font = ImageFont.truetype(str(font_path), font_size)
         lines, line = [], ""
         for char in caption.replace("\r", ""):
             if char == "\n" or d.textlength(line + char, font=font) > width * 0.84:
@@ -202,7 +303,7 @@ async def render(studio: Studio, job: dict, lock_fd: int):
                     "scene": scene,
                     "asset": asset["sha256"],
                     "aspect": p["aspect"],
-                    "renderer": 1,
+                    "renderer": 2,
                 }
             )
             clip = folder / "cache" / f"{key}.mp4"
@@ -211,7 +312,13 @@ async def render(studio: Studio, job: dict, lock_fd: int):
                 cached += 1
             else:
                 subtitle = folder / "cache" / f"{key}.png"
-                caption_image(subtitle, scene["caption"], width, height)
+                caption_image(
+                    subtitle,
+                    scene["caption"],
+                    width,
+                    height,
+                    style=scene.get("caption_style", "bottom_card"),
+                )
                 inputs = (
                     ["-loop", "1", "-framerate", str(FPS)]
                     if asset["kind"] == "image"
@@ -234,18 +341,33 @@ async def render(studio: Studio, job: dict, lock_fd: int):
                 ]
                 frames = max(1, round(duration * FPS))
                 base = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1"
-                if scene["animation"] != "still" and asset["kind"] == "image":
-                    zoom = {
-                        "zoom_in": f"1+0.10*on/{frames}",
-                        "zoom_out": f"1.10-0.10*on/{frames}",
-                        "pan": "1.1",
-                    }[scene["animation"]]
-                    x = (
-                        f"(iw-iw/zoom)*on/{frames}"
-                        if scene["animation"] == "pan"
-                        else "(iw-iw/zoom)/2"
-                    )
-                    base += f",zoompan=z='{zoom}':x='{x}':y='(ih-ih/zoom)/2':d=1:s={width}x{height}:fps={FPS}"
+                anim = scene.get("animation", "still")
+                if anim != "still" and asset["kind"] == "image":
+                    if anim == "zoom_in":
+                        zoom = f"1+0.10*on/{frames}"
+                        x = "(iw-iw/zoom)/2"
+                        y = "(ih-ih/zoom)/2"
+                    elif anim == "zoom_out":
+                        zoom = f"1.10-0.10*on/{frames}"
+                        x = "(iw-iw/zoom)/2"
+                        y = "(ih-ih/zoom)/2"
+                    elif anim == "pan":
+                        zoom = "1.10"
+                        x = f"(iw-iw/zoom)*on/{frames}"
+                        y = "(ih-ih/zoom)/2"
+                    elif anim == "pan_down":
+                        zoom = "1.12"
+                        x = "(iw-iw/zoom)/2"
+                        y = f"(ih-ih/zoom)*on/{frames}"
+                    elif anim == "pulse":
+                        zoom = f"1+0.04*sin(2*PI*on/{round(FPS * 1.5)})"
+                        x = "(iw-iw/zoom)/2"
+                        y = "(ih-ih/zoom)/2"
+                    else:
+                        zoom = "1.0"
+                        x = "(iw-iw/zoom)/2"
+                        y = "(ih-ih/zoom)/2"
+                    base += f",zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={width}x{height}:fps={FPS}"
                 filters = f"[0:v]{base},fps={FPS},format=yuv420p[v];[v][1:v]overlay=0:0:shortest=1"
                 if scene["transition"] == "fade":
                     filters += f",fade=t=in:d=0.25,fade=t=out:st={max(0, duration - 0.25):.6f}:d=0.25"

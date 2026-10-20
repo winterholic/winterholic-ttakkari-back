@@ -15,11 +15,23 @@ from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import Field
 
+from ttakkari.creative.catalog import get_catalog, validate_project_spec
 from ttakkari.creative.render import inspect_media
 from ttakkari.creative.service import ProjectInput, Scene, Strict, default_studio
 from ttakkari.security.auth import User, decode, issue_download_token
 
 router = APIRouter(prefix="/api/creative", tags=["creative-studio"])
+
+
+@router.get("/catalog")
+async def catalog(_: User):
+    return get_catalog()
+
+
+@router.post("/validate")
+async def validate_spec(body: dict, _: User):
+    errors = validate_project_spec(body)
+    return {"valid": len(errors) == 0, "errors": errors}
 
 
 class Edit(Strict):

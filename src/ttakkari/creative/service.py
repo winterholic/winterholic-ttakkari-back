@@ -14,6 +14,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from ttakkari.creative.catalog import (
+    FORMATS,
+    SCENE_TEMPLATES,
+    validate_project_spec,
+)
+
 
 def now() -> str:
     return datetime.now(UTC).isoformat()
@@ -37,10 +43,12 @@ def timeline(data: dict) -> dict:
             {
                 "scene_id": scene["id"],
                 "asset_id": scene["asset_id"],
+                "template_id": scene.get("template_id"),
                 "start": cursor,
                 "end": end,
                 "animation": scene["animation"],
                 "transition": scene["transition"],
+                "caption_style": scene.get("caption_style", "bottom_card"),
             }
         )
         if scene["caption"]:
@@ -48,6 +56,7 @@ def timeline(data: dict) -> dict:
                 {
                     "scene_id": scene["id"],
                     "text": scene["caption"],
+                    "style": scene.get("caption_style", "bottom_card"),
                     "start": cursor,
                     "end": end,
                 }
@@ -73,14 +82,17 @@ class Scene(Strict):
     prompt: str = Field(default="", max_length=3000)
     caption: str = Field(default="", max_length=160)
     asset_id: str | None = None
-    animation: Literal["still", "zoom_in", "zoom_out", "pan"] = "zoom_in"
+    template_id: str | None = None
+    animation: Literal["still", "zoom_in", "zoom_out", "pan", "pan_down", "pulse"] = "zoom_in"
     transition: Literal["fade", "cut"] = "fade"
+    caption_style: Literal["bottom_card", "center_highlight", "title_card", "code_overlay"] = "bottom_card"
 
 
 class ProjectInput(Strict):
     name: str = Field(min_length=1, max_length=120)
     brief: str = Field(default="", max_length=6000)
     content_type: str = Field(default="music_video", max_length=80)
+    format_id: str | None = None
     style: str = Field(default="cinematic", max_length=1000)
     duration: float = Field(default=30, ge=3, le=240)
     aspect: Literal["16:9", "9:16", "1:1"] = "16:9"
@@ -155,6 +167,16 @@ class Studio:
 
     def create(self, body: ProjectInput) -> dict:
         data = body.model_dump()
+        use_template_generation = False
+        if body.format_id:
+            data["content_type"] = body.format_id
+            use_template_generation = True
+        fmt_id = data["content_type"]
+        fmt = FORMATS.get(fmt_id)
+
+        if fmt and use_template_generation and body.aspect not in fmt.allowed_aspects:
+            data["aspect"] = fmt.default_aspect
+
         data.update(
             id=uid(),
             revision=1,
@@ -165,13 +187,48 @@ class Studio:
             generation_jobs=[],
             render_jobs=[],
         )
-        count = max(3, math.ceil(body.duration / 10))
-        data["scenes"] = [
-            Scene(
-                duration=body.duration / count, prompt=f"{body.brief} · 장면 {i + 1}"
-            ).model_dump()
-            for i in range(count)
-        ]
+
+        if use_template_generation and fmt and fmt.default_scene_templates:
+            scenes = []
+            target_dur = body.duration if body.duration >= fmt.min_duration else fmt.default_duration
+            base_dur_sum = sum(
+                SCENE_TEMPLATES[tid].default_duration
+                for tid in fmt.default_scene_templates
+                if tid in SCENE_TEMPLATES
+            ) or 1.0
+            scale = target_dur / base_dur_sum
+
+            for i, tid in enumerate(fmt.default_scene_templates):
+                tmpl = SCENE_TEMPLATES.get(tid)
+                if not tmpl:
+                    continue
+                scaled_dur = max(
+                    tmpl.min_duration,
+                    min(tmpl.max_duration, round(tmpl.default_duration * scale, 1)),
+                )
+                scenes.append(
+                    Scene(
+                        duration=scaled_dur,
+                        prompt=f"{body.brief or body.name} · {tmpl.name}",
+                        template_id=tmpl.id,
+                        animation=tmpl.default_animation,
+                        transition=tmpl.default_transition,
+                        caption_style=tmpl.default_caption_style,
+                    ).model_dump()
+                )
+            data["scenes"] = scenes
+            data["duration"] = sum(s["duration"] for s in scenes)
+        else:
+            count = max(3, math.ceil(body.duration / 10))
+            data["scenes"] = [
+                Scene(
+                    duration=round(body.duration / count, 1),
+                    prompt=f"{body.brief} · 장면 {i + 1}",
+                ).model_dump()
+                for i in range(count)
+            ]
+            data["duration"] = sum(s["duration"] for s in data["scenes"])
+
         folder = self.path(data["id"])
         folder.mkdir()
         (folder / "assets").mkdir()
@@ -211,6 +268,13 @@ class Studio:
                 not in {a["id"] for a in data["assets"] if a["kind"] == "audio"}
             ):
                 raise ValueError("이 프로젝트의 음악 자산을 선택해 주세요.")
+
+            candidate = copy.deepcopy(data)
+            candidate.update(changes)
+            errors = validate_project_spec(candidate)
+            if errors:
+                raise ValueError("규격 검증 오류:\n" + "\n".join(errors))
+
             data.update(changes)
             data["revision"] += 1
         return data
@@ -265,6 +329,9 @@ class Studio:
                 not s["asset_id"] for s in data["scenes"]
             ):
                 raise ValueError("음악과 모든 장면의 자산을 먼저 선택해 주세요.")
+            errors = validate_project_spec(data)
+            if errors:
+                raise ValueError("규격 검증 오류:\n" + "\n".join(errors))
             snapshot = {
                 k: copy.deepcopy(data[k])
                 for k in (
@@ -293,7 +360,7 @@ class Studio:
                         for a in snapshot["assets"]
                         if a["id"] in used
                     ],
-                    "renderer": 1,
+                    "renderer": 2,
                 }
             )
             matches = [j for j in data["render_jobs"] if j["cache_key"] == key]

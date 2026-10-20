@@ -12,49 +12,63 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
+from ttakkari.creative.render import dimensions
 from ttakkari.creative.service import now, uid
 
 
-def illustration(path: Path, prompt: str, variant: int = 0):
+def illustration(
+    path: Path,
+    prompt: str,
+    variant: int = 0,
+    width: int = 1280,
+    height: int = 720,
+):
     rng = random.Random(hashlib.sha256(f"{prompt}:{variant}".encode()).hexdigest())
     palettes = [
         ("#111d3a", "#334877", "#72c5c3"),
         ("#17384b", "#46707a", "#97e2cf"),
         ("#66576e", "#c69587", "#f5d299"),
+        ("#1e1b4b", "#3730a3", "#a5b4fc"),
+        ("#0f172a", "#1e293b", "#38bdf8"),
     ]
-    bg, building, glow = palettes[variant % 3]
-    im = Image.new("RGB", (1280, 720), bg)
+    bg, building, glow = palettes[variant % len(palettes)]
+    im = Image.new("RGB", (width, height), bg)
     d = ImageDraw.Draw(im)
-    for _ in range(100):
-        x, y = rng.randrange(1280), rng.randrange(400)
+    for _ in range(120):
+        x, y = rng.randrange(width), rng.randrange(round(height * 0.6))
         d.ellipse((x, y, x + 2, y + 2), fill=glow)
-    d.ellipse((780, 72, 910, 202), fill=glow)
-    for x in range(-20, 1300, 64):
-        y = rng.randrange(330, 580)
-        d.rounded_rectangle((x, y, x + 56, 720), 4, fill=building)
-        for yy in range(y + 14, 690, 24):
-            for xx in range(x + 10, x + 48, 16):
+    moon_x, moon_y = round(width * 0.7), round(height * 0.15)
+    moon_r = round(min(width, height) * 0.08)
+    d.ellipse((moon_x - moon_r, moon_y - moon_r, moon_x + moon_r, moon_y + moon_r), fill=glow)
+    b_step = max(30, round(width / 16))
+    for x in range(-20, width + 40, b_step):
+        y = rng.randrange(round(height * 0.45), round(height * 0.8))
+        d.rounded_rectangle((x, y, x + b_step - 8, height), 4, fill=building)
+        for yy in range(y + 14, height - 20, 24):
+            for xx in range(x + 8, x + b_step - 16, 16):
                 if rng.random() > 0.45:
                     d.rectangle((xx, yy, xx + 5, yy + 9), fill=glow)
-    # Identical original robot geometry across distinct sets.
-    x = [850, 580, 330][variant % 3]
-    d.rectangle((0, 657, 1280, 720), fill="#13202e")
-    for radius in (110, 160, 210):
+    # Identical original robot geometry scaled to canvas.
+    x_pos = [round(width * 0.7), round(width * 0.5), round(width * 0.3)][variant % 3]
+    ground_y = round(height * 0.9)
+    d.rectangle((0, ground_y, width, height), fill="#13202e")
+    scale_fac = min(width, height) / 720.0
+    for radius in (round(110 * scale_fac), round(160 * scale_fac), round(210 * scale_fac)):
         d.arc(
-            (x - radius, 365 - radius, x + radius, 365 + radius),
+            (x_pos - radius, round(365 * scale_fac) - radius, x_pos + radius, round(365 * scale_fac) + radius),
             210,
             330,
             fill=glow,
-            width=3,
+            width=max(2, round(3 * scale_fac)),
         )
-    d.rounded_rectangle((x - 42, 525, x + 42, 630), 22, fill="#a9ded2")
-    d.rounded_rectangle((x - 57, 433, x + 57, 535), 34, fill="#c8eee3")
-    d.rounded_rectangle((x - 39, 458, x + 39, 503), 20, fill="#152b3b")
-    d.ellipse((x - 13, 468, x + 13, 494), fill="#ffd68a")
-    d.line((x, 433, x, 409), fill="#c8eee3", width=6)
-    d.ellipse((x - 6, 401, x + 6, 413), fill="#ffd68a")
-    for delta in (-27, 27):
-        d.rounded_rectangle((x + delta - 9, 621, x + delta + 9, 656), 7, fill="#a9ded2")
+    body_y = round(height * 0.72)
+    d.rounded_rectangle((x_pos - round(42 * scale_fac), body_y, x_pos + round(42 * scale_fac), body_y + round(105 * scale_fac)), round(22 * scale_fac), fill="#a9ded2")
+    head_y = body_y - round(92 * scale_fac)
+    d.rounded_rectangle((x_pos - round(57 * scale_fac), head_y, x_pos + round(57 * scale_fac), body_y + round(10 * scale_fac)), round(34 * scale_fac), fill="#c8eee3")
+    d.rounded_rectangle((x_pos - round(39 * scale_fac), head_y + round(25 * scale_fac), x_pos + round(39 * scale_fac), head_y + round(70 * scale_fac)), round(20 * scale_fac), fill="#152b3b")
+    d.ellipse((x_pos - round(13 * scale_fac), head_y + round(35 * scale_fac), x_pos + round(13 * scale_fac), head_y + round(61 * scale_fac)), fill="#ffd68a")
+    d.line((x_pos, head_y, x_pos, head_y - round(24 * scale_fac)), fill="#c8eee3", width=max(3, round(6 * scale_fac)))
+    d.ellipse((x_pos - round(6 * scale_fac), head_y - round(32 * scale_fac), x_pos + round(6 * scale_fac), head_y - round(20 * scale_fac)), fill="#ffd68a")
     im.save(path)
 
 
@@ -116,9 +130,16 @@ def generate_illustration(studio, project_id, scene_id):
         raise FileNotFoundError("장면이 없습니다.")
     job_id, start = uid(), time.monotonic()
     scene = p["scenes"][index]
+    width, height = dimensions(p.get("aspect", "16:9"))
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "illustration.png"
-        illustration(path, scene["prompt"], index + len(p["generation_jobs"]))
+        illustration(
+            path,
+            scene["prompt"],
+            index + len(p["generation_jobs"]),
+            width=width,
+            height=height,
+        )
         asset = studio.add_asset(
             project_id,
             path,
@@ -187,13 +208,44 @@ def make_demo(studio, project_id):
             }
         )
         data["music_asset_id"] = audio["id"]
+        fmt_id = data.get("content_type", "music_video")
+        captions_map = {
+            "shorts_9_16": [
+                "3초 만에 끝내는 영상 조립",
+                "포맷과 템플릿 부품 결합",
+                "규격 위반은 코드가 원천 차단",
+                "2분 이상 장편도 분할 렌더",
+                "따까리 AI Studio 지금 확인",
+            ],
+            "tech_explainer": [
+                "Creative Studio 아키텍처\n3층 정형화와 분할 렌더 파이프라인",
+                "Format: 화면비·길이·시퀀스 규칙 강제",
+                "Template & Tool: 재사용 장면과 렌더 프리미티브",
+                "장면 단위 분할 캐시로 OOM 및 렌더 병목 해소",
+                "ADR 0065에 설계 영속화",
+            ],
+            "narration_story": [
+                "새벽의 스튜디오, 작은 신호의 시작",
+                "수많은 모듈이 서로의 언어로 연결되고",
+                "분할된 장면들이 차례로 렌더 큐를 통과한다",
+                "무거운 모델을 매번 다시 돌리지 않고",
+                "캐시된 프레임들이 퍼즐처럼 이어붙는다",
+                "단 하나의 수정은 오직 그 장면만을 다시 그린다",
+                "시간과 메모리의 한계를 넘어선 파이프라인",
+                "장편의 호흡으로 완성되는 따까리의 콘텐츠",
+                "지속 가능한 로컬 스튜디오의 미래",
+            ],
+            "music_video": [
+                "작은 신호가 밤을 깨우면",
+                "낯선 도시도 리듬이 되고",
+                "우리는 함께 새벽으로",
+                "별빛 너머로 번지는 멜로디",
+            ],
+        }
+        presets = captions_map.get(fmt_id, captions_map["music_video"])
         for i, scene in enumerate(data["scenes"]):
             if not scene["caption"]:
-                scene["caption"] = [
-                    "작은 신호가 밤을 깨우면",
-                    "낯선 도시도 리듬이 되고",
-                    "우리는 함께 새벽으로",
-                ][i % 3]
+                scene["caption"] = presets[i % len(presets)]
         data["revision"] += 1
     for scene in p["scenes"]:
         if not scene["asset_id"]:

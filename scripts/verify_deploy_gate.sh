@@ -25,6 +25,7 @@
 #   ./scripts/verify_deploy_gate.sh --fast            # 기본과 같다(예전 옵션 이름 호환)
 #   ./scripts/verify_deploy_gate.sh --install-hook    # git pre-push 훅 설치
 #   ./scripts/verify_deploy_gate.sh --uninstall-hook  # 훅 제거
+#   ./scripts/verify_deploy_gate.sh --preflight       # 읽기 전용 실행환경 점검(uv, initdb, SysV 공유메모리 여유). 아무것도 만들거나 지우지 않는다
 # 환경변수: TTK_SKIP_GATE=1 훅 건너뜀, TTK_GATE_ALL_REFS=1 main 외 브랜치 push 도 검사, TTK_GATE_KEEP=1 임시 디렉터리 보존
 
 set -uo pipefail
@@ -51,7 +52,8 @@ while [ $# -gt 0 ]; do
         --pre-push) PRE_PUSH=1 ;;
         --install-hook) ACTION=install ;;
         --uninstall-hook) ACTION=uninstall ;;
-        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+        --preflight) ACTION=preflight ;;
+        -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
         *)
             # pre-push 훅은 <remote> <url> 위치 인자를 넘긴다.
             if [ "$PRE_PUSH" -eq 0 ]; then die "알 수 없는 옵션: $1"; fi ;;
@@ -87,6 +89,34 @@ if [ "$ACTION" = uninstall ]; then
     HOOK="$(hook_path)"
     if [ -e "$HOOK" ] && grep -q "verify_deploy_gate.sh" "$HOOK"; then rm "$HOOK"; echo "제거됨: $HOOK"; else echo "제거할 따까리 훅이 없습니다."; fi
     exit 0
+fi
+
+if [ "$ACTION" = preflight ]; then
+    # DB 의존 시험은 tests/pg_sandbox.py 의 세션 전용 클러스터(initdb)를 쓴다. 호스트의 SysV 공유메모리
+    # 세그먼트가 소진되면 initdb 가 shmget 으로 죽는데 원인이 불투명하므로 시작 전에 읽기 전용으로 확인한다.
+    # 다른 세션의 IPC 자원은 건드리지 않는다. 커널 한도 상향은 호스트 소유자 몫이다.
+    PRE_FAIL=0
+    if command -v uv >/dev/null 2>&1; then echo "ok   uv: $(command -v uv)"; else echo "FAIL uv 없음(공식 gate 의 archive 의존성 준비에 필요)"; PRE_FAIL=1; fi
+    PG_BIN=
+    for d in "${TTAKKARI_TEST_PG_BIN:-}" /opt/homebrew/opt/postgresql@17/bin /opt/homebrew/opt/postgresql@16/bin /usr/local/opt/postgresql@17/bin; do
+        if [ -n "$d" ] && [ -x "$d/initdb" ] && [ -x "$d/pg_ctl" ]; then PG_BIN="$d"; break; fi
+    done
+    if [ -n "$PG_BIN" ]; then echo "ok   initdb/pg_ctl: $PG_BIN"; else echo "FAIL initdb/pg_ctl 없음(TTAKKARI_TEST_PG_BIN 으로 지정)"; PRE_FAIL=1; fi
+    if [ "$(uname -s)" = Darwin ]; then
+        SHM_MAX="$(sysctl -n kern.sysv.shmmni 2>/dev/null || echo)"
+        SHM_USED="$(ipcs -m 2>/dev/null | awk '$1 == "m" {n++} END {print n + 0}')"
+        if [ -z "$SHM_MAX" ]; then
+            echo "unverified SysV 공유메모리 한도를 읽지 못함(sysctl 차단 환경일 수 있다)"
+        elif [ $((SHM_MAX - SHM_USED)) -ge 2 ]; then
+            echo "ok   SysV 공유메모리 세그먼트: 사용 $SHM_USED / 한도 $SHM_MAX"
+        else
+            echo "FAIL SysV 공유메모리 세그먼트 소진: 사용 $SHM_USED / 한도 $SHM_MAX. 세션 전용 PG initdb 가 shmget 으로 실패한다. 다른 세션의 자원은 지우지 말고 종료를 기다리거나 호스트 소유자가 한도를 올린다."
+            PRE_FAIL=1
+        fi
+    fi
+    if [ -n "${TTAKKARI_TEST_DB:-}" ]; then echo "info TTAKKARI_TEST_DB 지정됨: 소유자가 관리하는 시험 전용 DB일 때만 쓴다(운영 DB 'ttakkari'는 conftest 가 거부)."; fi
+    [ "$PRE_FAIL" -eq 0 ] && echo "preflight 통과" || echo "preflight 실패"
+    exit "$PRE_FAIL"
 fi
 
 ZERO=0000000000000000000000000000000000000000

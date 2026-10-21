@@ -155,3 +155,47 @@ def test_changed_test_selection_runs_inside_shared_slot(tmp_path):
     assert len(changed_calls) == 1
     assert all(not call["migration_test_present"] for call in calls_seen)
 
+
+
+def preflight_env(tmp_path: Path, *, shmmni: int, segments: int) -> dict[str, str]:
+    bindir = tmp_path / "pf-bin"
+    bindir.mkdir()
+    pgbin = tmp_path / "pg-bin"
+    pgbin.mkdir()
+    for path, body in {
+        bindir / "uv": "#!/bin/sh\nexit 0\n",
+        bindir / "sysctl": f"#!/bin/sh\necho {shmmni}\n",
+        bindir / "ipcs": "#!/bin/sh\necho 'Shared Memory:'\n" + "".join(
+            f"echo 'm {i} 0x0 --rw------- u g'\n" for i in range(segments)),
+        pgbin / "initdb": "#!/bin/sh\nexit 0\n",
+        pgbin / "pg_ctl": "#!/bin/sh\nexit 0\n",
+    }.items():
+        path.write_text(body)
+        path.chmod(0o755)
+    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "TTAKKARI_TEST_PG_BIN": str(pgbin)}
+
+
+def run_preflight(tmp_path: Path, **kw: int) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([str(GATE), "--preflight"], text=True, capture_output=True,
+                          env=preflight_env(tmp_path, **kw), timeout=30)
+
+
+def test_preflight_fails_when_sysv_shared_memory_is_exhausted(tmp_path):
+    if os.uname().sysname != "Darwin":
+        return
+    result = run_preflight(tmp_path, shmmni=32, segments=32)
+
+    assert result.returncode == 1
+    assert "소진: 사용 32 / 한도 32" in result.stdout
+    assert "preflight 실패" in result.stdout
+
+
+def test_preflight_passes_with_headroom_and_creates_nothing(tmp_path):
+    if os.uname().sysname != "Darwin":
+        return
+    before = set(Path(os.environ.get("TMPDIR", "/tmp")).glob("ttk-gate-*"))
+    result = run_preflight(tmp_path, shmmni=32, segments=10)
+
+    assert result.returncode == 0, result.stdout
+    assert "사용 10 / 한도 32" in result.stdout
+    assert set(Path(os.environ.get("TMPDIR", "/tmp")).glob("ttk-gate-*")) == before

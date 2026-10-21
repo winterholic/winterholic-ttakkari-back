@@ -262,7 +262,9 @@ class RunManager:
             return None
         async with sessionmaker()() as db:
             from ttakkari.runs.agent_control import (
+                drop_suppressed_reports,
                 fence_keys,
+                has_unlinked_legacy_cancel_report,
                 lock_fences,
                 run_fence_is_current,
             )
@@ -281,7 +283,8 @@ class RunManager:
                 # 접수는 대화를 이어 쓰지 않는다. 메시지마다 따로, 바로 돈다(바쁜 접수 뒤에 줄 서지 않는다).
                 queued = list(await db.scalars(select(Run).where(Run.session_id == session_id,
                                                                 Run.status == RunStatus.queued)))
-                stale = [r for r in queued if not run_fence_is_current(r.stop_fence_epochs, epochs)]
+                stale = [r for r in queued if not run_fence_is_current(r.stop_fence_epochs, epochs)
+                         and not (r.origin == RunOrigin.report and has_unlinked_legacy_cancel_report(r.prompt))]
                 for run in stale:
                     run.status = RunStatus.cancelled
                     run.finished_at = utcnow()
@@ -297,7 +300,8 @@ class RunManager:
                 select(Run).where(Run.session_id == session_id, Run.status.in_([RunStatus.queued, RunStatus.running]))
                 .order_by(Run.created_at)))
             stale = [r for r in rows if r.status == RunStatus.queued
-                     and not run_fence_is_current(r.stop_fence_epochs, epochs)]
+                     and not run_fence_is_current(r.stop_fence_epochs, epochs)
+                     and not (r.origin == RunOrigin.report and has_unlinked_legacy_cancel_report(r.prompt))]
             for run in stale:
                 run.status = RunStatus.cancelled
                 run.finished_at = utcnow()
@@ -310,9 +314,12 @@ class RunManager:
             if any(r.status == RunStatus.running or r.id in self._handles for r in rows):
                 await db.rollback()
                 return None
-            # 전역 중지로 취소된 작업의 보고를 표식을 모르는 구세대가 만들었다면 시작 전에 버린다.
-            from ttakkari.runs.agent_control import drop_suppressed_reports
+            # 원본 Run ID가 없는 구세대 취소 보고는 출처를 입증할 수 없어 보존·보류한다.
             rows = await drop_suppressed_reports(db, rows)
+            held = [row for row in rows if has_unlinked_legacy_cancel_report(row.prompt)]
+            for row in held:
+                log.info("holding ambiguous legacy cancellation report %s for explicit review", row.id)
+            rows = [row for row in rows if row not in held]
             nxt = rows[0] if rows else None
             now_ts = time.time()
             now_dt = utcnow()
@@ -2249,7 +2256,10 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     """작업 세션 Run 이 끝나면 오케스트레이터에게 결과 보고 Run 을 넣는다. 시작 전 보고가 있으면 거기에 덧붙인다."""
     if sess.kind != SessionKind.worker or sess.parent_id is None:
         return None
-    from ttakkari.runs.agent_control import should_suppress_report
+    from ttakkari.runs.agent_control import (
+        has_unlinked_legacy_cancel_report,
+        should_suppress_report,
+    )
     if await should_suppress_report(db, run):
         return None
     parent = await db.get(ChatSession, sess.parent_id)
@@ -2280,7 +2290,8 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     pending = await db.scalar(
         select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)
         .order_by(Run.created_at.desc()).limit(1))
-    if pending is not None and manager.runtime is None and not await manager.is_owned(pending.id):
+    if (pending is not None and not has_unlinked_legacy_cancel_report(pending.prompt)
+            and manager.runtime is None and not await manager.is_owned(pending.id)):
         pending.prompt = pending.prompt + "\n\n" + text
         return parent.id
     report = Run(session_id=parent.id, workspace_id=parent.workspace_id, prompt=text, engine=parent.engine,

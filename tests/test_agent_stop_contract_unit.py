@@ -8,9 +8,12 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+from ttakkari.models import RunOrigin, RunStatus
 from ttakkari.runs import agent_control
 from ttakkari.runs.agent_control import (
+    _record_target_outcome,
     _terminate_identified_run,
+    drop_suppressed_reports,
     fence_keys,
     run_fence_is_current,
 )
@@ -95,3 +98,44 @@ def test_pid_reuse_birth_time_mismatch_does_not_signal_fake_child():
                 await child.wait()
 
     asyncio.run(scenario())
+
+
+def test_legacy_cancel_reports_are_not_attributed_by_worker_time_window(monkeypatch):
+    """An old worker marker cannot identify which source-less cancellation report it belongs to."""
+    worker_id = uuid.uuid4()
+    now = agent_control.utcnow()
+    reports = [
+        SimpleNamespace(id=uuid.uuid4(), status=RunStatus.queued, origin=RunOrigin.report,
+                        prompt=f"[작업 보고] 작업 세션 'w' (worker_id={worker_id}) 취소.",
+                        created_at=now),
+        SimpleNamespace(id=uuid.uuid4(), status=RunStatus.queued, origin=RunOrigin.report,
+                        prompt=f"[작업 보고] 작업 세션 'w' (worker_id={worker_id}) 취소.",
+                        created_at=now),
+    ]
+
+    class MarkerExists:
+        async def scalar(self, _statement):
+            return uuid.uuid4()
+
+    monkeypatch.setattr(agent_control.events, "append", lambda *_args, **_kwargs: None)
+
+    async def scenario():
+        kept = await drop_suppressed_reports(MarkerExists(), reports)
+        assert kept == reports
+        assert all(report.status == RunStatus.queued for report in reports)
+
+    asyncio.run(scenario())
+
+
+def test_preserved_legacy_report_is_remaining_not_stopped():
+    run_id = uuid.uuid4()
+    session_id = uuid.uuid4()
+    result = {"stopped": [], "remaining": [], "unstopped": []}
+    report = {"run_id": str(run_id), "session_id": str(session_id), "reason": "source unknown"}
+    result["unstopped"].append(report)
+
+    _record_target_outcome(result, run_id, session_id, {run_id}, {str(run_id)})
+
+    assert result["stopped"] == []
+    assert result["remaining"] == [str(run_id)]
+    assert result["unstopped"] == [report]

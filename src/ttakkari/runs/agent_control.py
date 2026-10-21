@@ -8,8 +8,8 @@
 - 취소된 작업자가 부모 오케스트레이터에게 새 보고 Run 을 만들어 작업을 되살리는 경로는 두 겹으로 막는다.
   1) Run 단위 억제 표식(RuntimeCommand kind=suppress_report, 어느 세대도 소비하지 않는 영속 표식)을
      취소 전에 남기고 `_enqueue_report` 가 이를 확인한다.
-  2) 표식을 모르는 구세대가 보고 Run 을 이미 만들었다면 신세대의 dispatch 가 그 보고를 버리고,
-     중지 마지막에도 범위 안의 대기 보고 Run 을 한 번 더 쓸어 취소한다.
+  2) 원본 ID가 있는 보고만 그 Run 의 표식과 정확히 매칭해 제거한다. 원본 ID가 없는 구세대 취소 보고는
+     보존하고 자동 dispatch 를 보류하며, 중지 결과에도 미완료로 드러낸다.
 - 회사(work)는 같은 워크스페이스, 개인(personal)은 개인 풀로 범위를 제한한다.
 """
 from __future__ import annotations
@@ -23,7 +23,6 @@ import signal
 import subprocess
 import time
 import uuid
-from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import and_, or_, select
@@ -52,6 +51,7 @@ SUPPRESS_KIND = "suppress_report"
 RESTART_INTERRUPTION = "서버 종료로 중단"
 _REPORT_CANCELLED = re.compile(r"\(worker_id=([0-9a-fA-F-]{36})\) 취소\.")
 _REPORT_SOURCE = re.compile(r"stop_source_run_id=([0-9a-fA-F-]{36})")
+_REPORT_START = re.compile(r"(?m)(?=^\[작업 보고\])")
 
 
 def fence_keys(pool: str, workspace_id: uuid.UUID | None, session_id: uuid.UUID | None = None) -> list[str]:
@@ -192,41 +192,63 @@ async def should_suppress_report(db: AsyncSession, run: Run) -> bool:
     ) is not None
 
 
+def report_chunks(prompt: str | None) -> list[str]:
+    """Split concatenated queued reports without splitting their content paragraphs."""
+    text = prompt or ""
+    chunks = [chunk for chunk in _REPORT_START.split(text) if chunk.strip()]
+    return chunks or ([text] if text else [])
+
+
+def has_unlinked_legacy_cancel_report(prompt: str | None) -> bool:
+    """Legacy cancellation reports without source IDs are ambiguous and must not auto-dispatch."""
+    return any(_REPORT_CANCELLED.search(chunk) and not _REPORT_SOURCE.search(chunk)
+               for chunk in report_chunks(prompt))
+
+
+def _record_target_outcome(result: dict[str, Any], run_id: uuid.UUID, session_id: uuid.UUID,
+                           active: set[uuid.UUID], reported: set[str]) -> None:
+    """Do not report a preserved queued Run as stopped just because it has no process."""
+    rid = str(run_id)
+    if run_id not in active:
+        result["stopped"].append(rid)
+        return
+    result["remaining"].append(rid)
+    if rid not in reported:
+        result["unstopped"].append({"run_id": rid, "session_id": str(session_id),
+                                    "reason": "종료를 확인하지 못해 Run이 아직 활성 상태입니다."})
+
+
 async def drop_suppressed_reports(db: AsyncSession, rows: list[Run]) -> list[Run]:
-    """구세대가 표식을 모르고 만든 '취소 보고' Run 을 시작 전에 버린다. 남은 Run 을 돌려준다."""
+    """Remove only report chunks proven to refer to stopped Run IDs; preserve unknown legacy reports."""
     kept: list[Run] = []
     for run in rows:
         if run.status != RunStatus.queued or run.origin != RunOrigin.report:
             kept.append(run)
             continue
-        source = _REPORT_SOURCE.search(run.prompt or "")
-        marker = None
-        if source:
-            try:
-                source_run_id = uuid.UUID(source.group(1))
-            except ValueError:
-                source_run_id = None
-            if source_run_id is not None:
-                marker = await db.scalar(select(RuntimeCommand.id).where(
-                    RuntimeCommand.key == _suppress_key(source_run_id)).limit(1))
-        else:
-            # Compatibility boundary: only older generations omit stop_source_run_id.
-            # Their report format has no original Run ID, so the bounded worker/time
-            # association is retained for queued reports created before the current code.
-            legacy = _REPORT_CANCELLED.search(run.prompt or "")
-            if legacy:
+        surviving: list[str] = []
+        removed = False
+        for chunk in report_chunks(run.prompt):
+            source = _REPORT_SOURCE.search(chunk)
+            marker = None
+            if source:
                 try:
-                    worker_id = uuid.UUID(legacy.group(1))
+                    source_run_id = uuid.UUID(source.group(1))
                 except ValueError:
-                    worker_id = None
-                if worker_id is not None:
+                    source_run_id = None
+                if source_run_id is not None:
                     marker = await db.scalar(select(RuntimeCommand.id).where(
-                        RuntimeCommand.kind == SUPPRESS_KIND,
-                        RuntimeCommand.session_id == worker_id,
-                        RuntimeCommand.created_at <= run.created_at,
-                        RuntimeCommand.created_at >= run.created_at - timedelta(seconds=3600),
-                    ).limit(1))
-        if marker is None:
+                        RuntimeCommand.key == _suppress_key(source_run_id)).limit(1))
+            if marker is None:
+                # Old generations persist no source Run ID or report/source relation.
+                # Worker/time proximity cannot prove which cancellation this is.
+                surviving.append(chunk)
+                continue
+            removed = True
+        if not removed:
+            kept.append(run)
+            continue
+        if surviving:
+            run.prompt = "\n\n".join(surviving)
             kept.append(run)
             continue
         _cancel_in_place(db, run, "전역 중지로 취소된 작업의 보고라 버렸습니다.")
@@ -344,6 +366,10 @@ async def _stop_all_agents_impl(
     for run, _ in rows:
         if owned[run.id] or run.status == RunStatus.running:
             continue
+        if run.origin == RunOrigin.report and has_unlinked_legacy_cancel_report(run.prompt):
+            result["unstopped"].append({"run_id": str(run.id), "session_id": str(run.session_id),
+                                        "reason": "원본 Run ID가 없는 구세대 취소 보고라 보존하며 자동 dispatch를 보류합니다."})
+            continue
         run.error = reason
         run.resume_after = None  # 한도 대기 타이머가 취소된 Run 을 다시 깨우지 못하게 한다
         if run.status == RunStatus.interrupted:
@@ -380,23 +406,20 @@ async def _stop_all_agents_impl(
     ids = [r.id for r, _ in rows]
     active = await _wait_inactive(ids, wait_timeout)
 
-    # 구세대가 표식 없이 만들었을 수 있는 대기 보고 Run 을 쓸어 취소한다.
+    # 신세대가 집행하지 못한 구세대 보고 중 식별 가능한 대기 보고를 쓸어 취소한다.
     swept = await _sweep_reports(pool, workspace_id, session_id, reason)
 
     reported = {u["run_id"] for u in result["unstopped"]}
     for run, _ in rows:
         rid = str(run.id)
-        if run.id not in active:
-            result["stopped"].append(rid)
-            continue
-        result["remaining"].append(rid)
-        if rid in reported:
-            continue
-        gen = leases.get(run.id)
-        why = (f"세대 {gen} 에 cancel 명령을 전달했고 소유 세대의 집행을 기다리는 중입니다. 해당 세대가 종료하면 취소로 마감됩니다."
-               if gen and not _is_local(manager, run.id) else
-               "종료 신호를 보냈지만 제한 시간 안에 프로세스가 끝나지 않았습니다.")
-        result["unstopped"].append({"run_id": rid, "session_id": str(run.session_id), "reason": why})
+        _record_target_outcome(result, run.id, run.session_id, active, reported)
+        if run.id in active and rid not in reported:
+            gen = leases.get(run.id)
+            result["unstopped"][-1]["reason"] = (
+                f"세대 {gen} 에 cancel 명령을 전달했고 소유 세대의 집행을 기다리는 중입니다. 해당 세대가 종료하면 취소로 마감됩니다."
+                if gen and not _is_local(manager, run.id) else
+                "종료 신호를 보냈지만 제한 시간 안에 프로세스가 끝나지 않았습니다."
+            )
     result["swept_reports"] = swept
     result["elapsed_seconds"] = round(time.monotonic() - started, 2)
     result["status"] = "partial" if result["remaining"] or result["unstopped"] else "stopped"
@@ -471,7 +494,7 @@ async def _wait_inactive(ids: list[uuid.UUID], timeout: float) -> set[uuid.UUID]
 
 async def _sweep_reports(pool: str, workspace_id: uuid.UUID | None, session_id: uuid.UUID | None,
                          reason: str) -> int:
-    """중지 중에 생긴 대기 보고 Run(부모 오케스트레이터를 깨워 새 작업을 만드는 경로)을 취소한다."""
+    """중지 중 생긴 식별 가능한 대기 보고를 취소한다; 출처 불명 legacy 취소 보고는 보존한다."""
     async with sessionmaker()() as db:
         stmt = (
             select(Run)
@@ -483,7 +506,8 @@ async def _sweep_reports(pool: str, workspace_id: uuid.UUID | None, session_id: 
         )
         if session_id is not None:
             stmt = stmt.where(or_(Run.session_id == session_id, ChatSession.parent_id == session_id))
-        reports = list(await db.scalars(stmt))
+        reports = [run for run in await db.scalars(stmt)
+                   if not has_unlinked_legacy_cancel_report(run.prompt)]
         for run in reports:
             _cancel_in_place(db, run, f"전역 중지로 보고 취소: {reason}")
         await db.commit()

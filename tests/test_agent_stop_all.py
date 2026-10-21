@@ -276,8 +276,8 @@ async def test_interrupted_restart_resume_candidate_is_cancelled(client, auth, m
         assert row.status == RunStatus.cancelled
 
 
-async def test_report_from_unaware_generation_is_dropped_at_dispatch(client, auth, make_dir):
-    """표식을 모르는 구세대가 만든 '취소 보고'는 신세대 dispatch 가 시작 전에 버린다. 정상 보고는 남긴다."""
+async def test_report_from_unaware_generation_is_held_at_dispatch(client, auth, make_dir):
+    """원본이 불명인 구세대 취소 보고를 보존하고 자동 dispatch 에서 보류한다."""
     from ttakkari.runs.agent_control import (
         drop_suppressed_reports,
         mark_report_suppressed,
@@ -299,8 +299,12 @@ async def test_report_from_unaware_generation_is_dropped_at_dispatch(client, aut
         rows = [await db.get(Run, stale.id), await db.get(Run, legit.id)]
         kept = await drop_suppressed_reports(db, rows)
         await db.commit()
-        assert [r.id for r in kept] == [legit.id]
-        assert rows[0].status == RunStatus.cancelled
+        assert {r.id for r in kept} == {stale.id, legit.id}
+        assert rows[0].status == rows[1].status == RunStatus.queued
+    assert await manager.dispatch(uuid.UUID(orch["id"])) is None
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, stale.id)).status == RunStatus.queued
+        assert (await db.get(Run, legit.id)).status == RunStatus.queued
 
 
 async def test_stop_all_sweeps_reports_created_by_old_generation(client, auth, make_dir):
@@ -462,15 +466,115 @@ async def test_new_report_is_not_suppressed_by_an_old_worker_stop_marker(client,
     orch, _ = await create_session(client, auth, make_dir)
     worker, _ = await create_session(client, auth, make_dir, kind="worker", parent=orch["id"])
     old = await create_run(worker, status=RunStatus.cancelled)
+    fresh_source = await create_run(worker, status=RunStatus.cancelled)
     async with sessionmaker()() as db:
         await mark_report_suppressed(db, await db.get(Run, old.id))
         await db.commit()
     fresh = await create_run(orch, origin=RunOrigin.report,
-                             prompt=f"[작업 보고] 취소 원본 Run ID={uuid.uuid4()} worker_id={worker['id']} 취소.")
+                             prompt=(f"[작업 보고] 작업 세션 'w' (worker_id={worker['id']}) 취소.\n"
+                                     f"stop_source_run_id={fresh_source.id}"))
 
     async with sessionmaker()() as db:
         kept = await drop_suppressed_reports(db, [await db.get(Run, fresh.id)])
         assert [row.id for row in kept] == [fresh.id]
+
+
+async def test_delayed_legacy_stop_report_is_preserved_without_auto_dispatch(client, auth, make_dir):
+    """A: 구세대의 늦은 stop 취소 보고는 남지만 부모 orchestrator 를 자동 재기동하지 않는다."""
+    orch, orch_headers = await create_session(client, auth, make_dir)
+    worker, _ = await create_session(client, auth, make_dir, kind="worker", parent=orch["id"])
+    stopped = await create_run(worker)
+    already_queued_legacy = await create_run(
+        orch, origin=RunOrigin.report,
+        prompt=f"[작업 보고] 작업 세션 'w' (worker_id={worker['id']}) 취소.",
+    )
+    stop = await client.post("/api/orchestrator/stop-all", headers=orch_headers)
+    assert stop.status_code == 200, stop.text
+    assert str(stopped.id) in stop.json()["stopped"]
+    assert stop.json()["status"] == "partial"
+    assert str(already_queued_legacy.id) in stop.json()["remaining"]
+    assert str(already_queued_legacy.id) not in stop.json()["stopped"]
+    assert any(item["run_id"] == str(already_queued_legacy.id) for item in stop.json()["unstopped"])
+    legacy_report = await create_run(orch, origin=RunOrigin.report,
+                                     prompt=f"[작업 보고] 작업 세션 'w' (worker_id={worker['id']}) 취소.")
+
+    assert await manager.dispatch(uuid.UUID(orch["id"])) is None
+    async with sessionmaker()() as db:
+        saved = await db.get(Run, legacy_report.id)
+        queued_before = await db.get(Run, already_queued_legacy.id)
+        assert saved.status == RunStatus.queued
+        assert queued_before.status == RunStatus.queued
+        assert saved.prompt.endswith("취소.")
+    resumed = await client.post(f"/api/sessions/{orch['id']}/runs", headers=auth,
+                                json={"prompt": "explicit user resume"})
+    assert resumed.status_code == 202, resumed.text
+    resumed_id = uuid.UUID(resumed.json()["id"])
+    for _ in range(100):
+        async with sessionmaker()() as db:
+            resumed_row = await db.get(Run, resumed_id)
+            legacy_row = await db.get(Run, legacy_report.id)
+            queued_before_row = await db.get(Run, already_queued_legacy.id)
+            if resumed_row.status not in (RunStatus.queued, RunStatus.running):
+                break
+        await asyncio.sleep(0.05)
+    assert resumed_row.status == RunStatus.succeeded
+    assert legacy_row.status == RunStatus.queued
+    assert queued_before_row.status == RunStatus.queued
+    assert legacy_report.id not in manager._handles
+
+
+async def test_later_legacy_cancel_report_is_not_suppressed_by_old_stop_marker(client, auth, make_dir):
+    """B: 같은 worker 의 이후 별개 일반 취소 보고는 과거 marker 로 삭제되지 않는다."""
+    orch, orch_headers = await create_session(client, auth, make_dir)
+    worker, _ = await create_session(client, auth, make_dir, kind="worker", parent=orch["id"])
+    stopped = await create_run(worker)
+    stop = await client.post("/api/orchestrator/stop-all", headers=orch_headers)
+    assert stop.status_code == 200, stop.text
+    assert str(stopped.id) in stop.json()["stopped"]
+    ordinary_cancel = await create_run(worker, status=RunStatus.cancelled)
+    legacy_report = await create_run(orch, origin=RunOrigin.report,
+                                     prompt=f"[작업 보고] 작업 세션 'w' (worker_id={worker['id']}) 취소.")
+
+    from ttakkari.runs.agent_control import drop_suppressed_reports
+    async with sessionmaker()() as db:
+        kept = await drop_suppressed_reports(db, [await db.get(Run, legacy_report.id)])
+        await db.commit()
+        assert [row.id for row in kept] == [legacy_report.id]
+        assert (await db.get(Run, legacy_report.id)).status == RunStatus.queued
+        assert (await db.get(Run, ordinary_cancel.id)).status == RunStatus.cancelled
+
+
+async def test_merged_report_keeps_unstopped_source_when_another_source_was_stopped(client, auth, make_dir):
+    """합쳐진 보고에서 exact ID marker 에 해당하는 항목만 제거하고 다른 보고는 보존한다."""
+    from ttakkari.runs.agent_control import (
+        drop_suppressed_reports,
+        mark_report_suppressed,
+    )
+
+    orch, _ = await create_session(client, auth, make_dir)
+    worker, _ = await create_session(client, auth, make_dir, kind="worker", parent=orch["id"])
+    stopped = await create_run(worker, status=RunStatus.cancelled)
+    live = await create_run(worker, status=RunStatus.succeeded)
+    async with sessionmaker()() as db:
+        await mark_report_suppressed(db, await db.get(Run, stopped.id))
+        await db.commit()
+    merged = await create_run(
+        orch,
+        origin=RunOrigin.report,
+        prompt=(f"[작업 보고] 작업 세션 'w' (worker_id={worker['id']}) 취소.\n"
+                f"stop_source_run_id={stopped.id}\n\n"
+                f"[작업 보고] 작업 세션 'w' (worker_id={worker['id']}) 완료.\n"
+                f"stop_source_run_id={live.id}"),
+    )
+
+    async with sessionmaker()() as db:
+        kept = await drop_suppressed_reports(db, [await db.get(Run, merged.id)])
+        await db.commit()
+        assert [row.id for row in kept] == [merged.id]
+        saved = await db.get(Run, merged.id)
+        assert str(stopped.id) not in saved.prompt
+        assert str(live.id) in saved.prompt
+        assert "완료." in saved.prompt
 
 
 async def test_caller_stop_receipt_is_retrievable_after_caller_run_stopped(client, auth, make_dir, monkeypatch):

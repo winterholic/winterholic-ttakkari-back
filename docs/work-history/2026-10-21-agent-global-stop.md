@@ -9,10 +9,10 @@
 - 취소된 작업자의 보고 Run 이 부모 오케스트레이터를 깨워 새 작업을 만드는 경로가 있었다(이전 중단 시도에서 발견한 것을 재현·차단).
 
 ## 변경
-- `runs/agent_control.py` 신규: `stop_all_agents`, 범위 필터, 보고 억제 표식, 구세대 보고 폐기, 보고 스윕.
+- `runs/agent_control.py` 신규: `stop_all_agents`, 범위 필터, 보고 억제 표식, 식별 가능한 보고 스윕.
 - `POST /api/orchestrator/stop-all`, `POST /api/orchestrator/agents/{session_id}/stop`, MCP `stop_agents`. 일반 `stop_worker` 제한은 유지.
 - `/api/system/stop-all`, 예약 `stop_all` 이 같은 서비스를 사용. 예약 payload 범위는 예약한 오케스트레이터 풀로 고정.
-- `manager.dispatch` 에 구세대가 만든 취소 보고 폐기 가드.
+- `manager.dispatch` 에 원본을 입증할 수 없는 구세대 취소 보고 보존·자동 실행 보류 가드.
 - `resume_interrupted` 가 미집행 cancel 명령을 회수하고 재개 대신 취소로 마감(`_consume_pending_cancel`). 소유 세대 사망 후 부활 경로 차단.
 - 스키마 변경 없음. alembic head `0059_collector_intake`, `deploy/generation-contract.json` 불변.
 
@@ -32,7 +32,7 @@
 - lease 부재만으로 running 을 취소하지 않는다. 새 `pid_started_at` 과 PID/시작 시각/pgid/엔진 명령 확인이 모두 가능할 때만 프로세스 그룹에 신호를 보내며, 확인 불가·생존은 remaining/unstopped 로 둔다. 마이그레이션 `0062_agent_stop_fences` 로 시작 시각 컬럼을 추가했다.
 - `AgentStopFence` scope row lock과 epoch snapshot을 queue, dispatch, stop에서 공유한다. stopping 동안 enqueue를 막고, finally dispatch와 `resume_interrupted` 도 fence를 확인한다. 오래된/epoch 미상 queued Run 은 이후 명시 재개 뒤에도 실행하지 않는다. 사용자의 직접 새 Run 제출만 stopping 종료 후 해당 scope를 다시 연다.
 - orchestrator stop은 `AgentStopReceipt` 를 먼저 claiming 가능한 durable row로 쓰고 별도 DB session/task에서 집행한다. 호출 child 종료·HTTP disconnect 뒤 owner-auth receipt 목록/단건 API로 상태·결과를 다시 조회한다.
-- 새 보고에는 원본 `stop_source_run_id` 를 실어 정확한 억제 marker ID를 조회한다. 원본 ID가 없는 구세대 보고에 한해서 worker+1h 호환 fallback을 남긴다.
+- 새 보고에는 원본 `stop_source_run_id` 를 실어 정확한 억제 marker ID를 조회한다. 원본 ID가 없는 구세대 취소 보고는 worker/time 근접성으로 삭제하지 않고 보존·자동 dispatch 보류 대상으로 둔다.
 - partial 결과는 response `status=partial`, Korean message, `remaining`/`unstopped` 사유 및 감사 로그로 드러낸다. 예약 action도 `ScheduledAction.status=partial` 로 저장하고 remaining 수를 로그로 남긴다.
 
 ### 검증 실행 및 제한
@@ -53,3 +53,13 @@
 - current merge SHA를 원격 main에 push하려 한 명령 `git push origin HEAD:refs/heads/main`은 pre-push `scripts/verify_deploy_gate.sh --pre-push`의 `uv sync` 단계에서 실패했다. Codex 명령 도구 sandbox가 `/Users/winterholic/.cache/uv` 아래 `sdists-v9/.git` 열기를 `Operation not permitted (os error 1)`로 거부했고 gate는 `임시 디렉터리의 uv sync 실패(의존성 설치)`를 반환했다. 이는 해당 sandbox 실행 실패만 입증한다. `--no-verify`/skip 없이 실행할 수 있도록 임시 cache 경로로 재시도할지는 다른 배포 testing 종료 뒤 판단한다.
 - DB 통합 반례 5개와 기존 교차세대 실집행·pool/workspace·worker token·catch-up·중복방지의 수정 SHA 동적 결과는 계속 미검증이다. 같은 `initdb` shmget 실패 조건을 재시도하지 않았고 실제 운영 DB/전체 중지/취소된 05:00 예약을 건드리지 않았다. 전역 중지 실행 보증은 하지 않는다.
 - 현재 merge SHA의 main push와 deploy reservation은 아직 미완료다. feature branch push 성공은 main 반영이나 배포 성공을 뜻하지 않는다.
+
+### Legacy report 후속 수정 (2026-10-21)
+- 사용자 지정 고정 SHA `a2a16624b07661a64221a077331dbd74ef953b31` 및 `origin/fix/agent-global-stop-audit-followup-20261021`를 대조한 뒤 그 feature worktree에서만 수정 중이다. 원본 main과 collector/W1 작업은 건드리지 않았다.
+- legacy report 원본 추적: 구세대 `_enqueue_report`의 취소 prompt에는 worker ID/status만 있고 report row의 원본 Run FK/key도 없다. `RuntimeCommand` suppression marker는 취소 원본 Run을 가리키지만, 어떤 source-less report가 그것에서 파생됐는지는 연결하지 않는다. worker+시간 추정 fallback을 제거하고 출처 불명 report는 보존 및 자동 dispatch 보류 대상으로 처리했다. 신세대 `stop_source_run_id` exact-ID는 chunk별 marker 확인을 유지한다. `_enqueue_report`는 보류 report와 새 report를 합치지 않는다.
+- TDD 증거: source-less report fallback 테스트는 코드 변경 전에 이전 구현에서 `kept=[]`와 두 row의 `cancelled`를 확인한 실패였다. 추가한 partial 집계 단위 테스트는 `_record_target_outcome`가 없는 상태에서 import 실패(RED) 후 helper를 추가했다. helper는 프로세스가 없어도 아직 queued/active인 보존 Run을 `remaining`에 두고 `stopped`에 넣지 않는다. A/B, exact-ID merged chunk, queue merge의 DB 통합은 아직 실행되지 않았다.
+- DB fixture를 포함한 명령 `PYTHONPATH=src .../back/.venv/bin/python -m pytest -q tests/test_agent_stop_contract_unit.py`는 pytest conftest의 임시 클러스터 초기화 단계에서 실패했다. 관측된 자식 명령은 `/opt/homebrew/opt/postgresql@17/bin/initdb -D /tmp/ttakkari-test-20028-720e8f7c/data -A trust -E UTF8 --locale=en_US.UTF-8 --no-sync`, exit 1이다. pytest traceback에는 자식 stderr가 출력되지 않아 원인 문구를 확인하지 못했다. 이전 `shmget: No space left on device`와 같은 원인이라고 추정하거나 같은 initdb를 재실행하지 않았다.
+- DB 없이 별도 확인: `PYTHONPATH=src .../back/.venv/bin/python -m pytest --noconftest -q tests/test_agent_stop_contract_unit.py` → `6 passed in 0.30s`; Ruff는 import 정렬 수정 후 재실행 대기, compileall 및 `git diff --check` 통과.
+- 실패 배포 `d767a2cc-abcc-4f87-8309-6f0de67e4167` 원시 log는 `a042f509`에서 `tests/test_orchestrator.py::test_reports_queued_behind_busy_orchestrator_are_merged`가 report 2개를 관측해 1개 기대값에 실패한 것으로 확인했다(1 failed, 1765 passed, 6 skipped, 2 xfailed, 846.21초). 이 코드는 agent-stop 변경 전 revision이므로 선행 실패라는 판단은 추론이며, 수정 SHA에서 해당 node를 재실행해야 한다.
+- 최신 read-only 조회 시 generation gate `512181be-6876-46f9-8a5c-082b661a7b74` (`fe0386a2`)가 `testing`이었다. server_resources에서 테스트성 python/Postgres 부하가 관측되어 DB 통합은 시작하지 않았다. 활성 gate가 끝난 뒤 자원과 테스트 고유 cluster 경로를 재확인하고 허용된 좁은 검증부터 순차 수행한다. IPC segment 수는 Codex 명령 환경에서 관측 가능한 승인 경로를 찾지 못해 미확인이다.
+- 현재 독립 판정은 부분 검증이다. 0062 upgrade/downgrade, 기존 행 보존, generation online compatibility; lease/process, fence/dispatch/restart, receipt, partial schedule, pool/workspace/worker token, 교차세대 lease, catch-up/중복방지는 새 SHA에서 미검증이다. 운영 중지와 활성 Run 취소, 취소된 05:00 예약 접근은 하지 않았다.

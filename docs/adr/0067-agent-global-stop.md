@@ -18,17 +18,24 @@
 5. 자동·시스템 입력은 fence 를 풀지 않는다. 중지가 끝난 뒤 사용자가 직접 새 Run 을 제출하면 요청된 개인 풀 또는 work 워크스페이스 범위의 fence 를 올려 해제하고 그 Run 을 현재 epoch 에 결합한다. 중지 집행 중에는 사용자 입력도 409 로 거절한다. 특정 세션 중지는 그 세션 fence만 세우며 형제 세션을 막지 않는다.
 6. 다른 세대 소유 running Run 은 기존 `cancel` RuntimeCommand 를 lease 의 generation_id 로 보낸다. lease 가 없으면 `Run.pid`, 저장한 PID 시작 시각, 프로세스 그룹 ID, 엔진 명령을 모두 대조한다. 식별 조회가 막히거나 하나라도 일치하지 않으면 신호를 보내지 않고 Run 을 running/remaining 으로 남긴다. 종료 신호 뒤 프로세스 그룹 소멸도 확인하기 전에는 DB terminal 처리하지 않는다. `pid_started_at` 은 0062 migration 으로 추가하며 구세대 레코드는 식별 정보가 없어 안전 종료 대상이 아니다.
 7. 오케스트레이터 호출자도 중지 대상이다. 요청 ID를 primary key로 한 `AgentStopReceipt` 를 요청 경계에서 먼저 기록하고, 별도 DB 세션의 task가 중지를 집행한다. 호출 HTTP 요청이 caller child 종료로 끊겨도 task는 이어진다. owner 인증 `GET /api/system/stop-receipts` 및 `GET /api/system/stop-receipts/{receipt_id}` 로 이후 결과를 확인한다. receipt 에는 running/claiming/partial/stopped/failed 상태와 전체 결과를 둔다.
-8. 신세대가 만든 작업 보고는 `stop_source_run_id` 를 포함하고 그 원본 Run ID의 억제 표식과만 매칭한다. 구세대 보고에는 원본 ID가 없으므로 구세대 호환 구간에서만 기존 worker+1시간 연결을 쓴다. 구세대는 draining 동안 새 Run 을 dispatch 하지 않으며, 신규 generation dispatch 및 중지 sweep 가 남긴 대기 보고를 처리한다.
+8. 신세대 보고는 `stop_source_run_id` 와 그 원본 Run ID의 억제 표식만 정확히 연결한다. 구세대에는 원본 ID나 report/source FK가 없으므로 worker/time 근접성으로 취소 보고를 억제하지 않는다. 출처를 입증할 수 없는 구세대 취소 보고는 보존하고 자동 dispatch 를 보류하며 stop 결과에 remaining/unstopped 로 드러낸다. 중지 fence 이전/이후 dispatch와 merge도 이 경계를 지킨다.
 9. 중지 결과는 `status=stopped|partial`, `stopped`, `remaining`, `unstopped[{run_id, session_id, reason}]`, `total`, `swept_reports` 를 반환한다. partial 메시지와 감사 로그에 남은 수·사유를 기록한다. 예약 action은 액션 집행을 마쳐도 대상이 남으면 `ScheduledAction.status=partial` 로 노출한다. `completed` 는 전부 중지 성공과 같은 뜻으로 쓰지 않는다.
 
 ## 3. 취소 보고의 재작업 경로 차단
 - 취소 전에 Run 단위 억제 표식을 남긴다. `RuntimeCommand(kind="suppress_report", key="suppress-report:<run_id>", generation_id=NULL)` 이며 어느 세대도 명령으로 읽지 않는 영속 표식이다. `_enqueue_report` 가 이를 보고 보고 Run 을 만들지 않는다. `Run.usage` 플래그는 소유 세대 태스크가 `usage` 를 통째로 덮어써 사라질 수 있어 쓰지 않았다.
-- 구세대가 이 표식을 모르면: 취소 보고에 원본 ID가 빠진다. 신세대는 이 구세대 형식에만 worker+1시간 표식 연결을 적용한다. 신세대가 만든 보고는 항상 원본 ID를 붙여 시간 창 오탐과 분리한다.
+- 구세대가 이 표식을 모르면 취소 보고에 원본 ID가 빠진다. DB 스키마와 구세대 `_enqueue_report`를 대조했으나 report row에는 원본 Run FK/key가 없고 RuntimeCommand marker는 취소 원본 Run만 가리킨다. 따라서 구세대 취소 보고를 특정 원본 Run에 입증할 수 없다. 이 보고는 marker로 삭제하지 않고 queued 상태로 보존하며 자동 dispatch를 보류한다. stop 중 발견하면 partial/remaining/unstopped로 결과에 포함한다. 신세대의 정확한 source ID chunk만 marker와 매칭한다.
 - 한계: 구세대가 제한 시간(기본 3초) 안에 끝내지 못한 Run 은 `remaining` 으로 보인다. lease 가 없고 process identity 를 확인할 수 없는 Run 도 안전을 우선해 `remaining` 으로 둔다.
 
 ## 4. 남은 위험
 - 소유 세대가 cancel 명령 집행 전에 죽어 Run 이 interrupted 로 남은 경우: 신세대 `resume_interrupted` 가 미집행 cancel 명령을 회수하고(`_consume_pending_cancel`) 재개하지 않고 취소로 마감한다. 이 경우는 세대가 죽은 뒤 새 코드가 뜰 때만 생긴다(살아 있는 구세대는 cancel 명령을 직접 집행한다). 롤백으로 구코드가 다시 뜨면 가드 없이 재개할 수 있다.
 - `ScheduledAction` 목록 조회는 풀 구분이 없다(기존 동작, 이번 범위 밖).
+
+### Legacy 보고 연결 경계 보강 (2026-10-21)
+- 독립 재검증 SHA `a2a16624b07661a64221a077331dbd74ef953b31`에서 worker+1시간 fallback 오탐 반례를 확인했다. 수정은 `fix/agent-global-stop-audit-followup-20261021`에 먼저 보존하고 DB 통합 재검증 예정.
+- 코드/모델 추적: 구세대 `manager._enqueue_report`는 worker ID·상태만 prompt에 기록한다. `Run`에는 report source FK/key가 없고, `RuntimeCommand` suppression marker는 취소 원본 Run ID만 저장한다. 시간/worker로는 지연된 구세대 취소 보고의 원본을 입증할 수 없다.
+- 계약: 신세대 source ID가 있는 merged report는 각 보고 chunk를 분리해 marker가 일치하는 chunk만 제거하고 나머지는 유지한다. source ID가 없는 구세대 취소 보고는 DB에서 보존한다. stop 대상 조회/마지막 sweep는 이를 취소하지 않고 `remaining`/`unstopped` partial로 표시한다. 이후 dispatch는 해당 queued row를 자동 실행하지 않고 보류하며, 다른 정상 queued 작업은 진행할 수 있다. `_enqueue_report`는 보류 대상과 새 보고를 합치지 않는다.
+- 테스트: DB 비의존 반례에서 현재 fallback이 같은 worker의 두 source-less cancel report를 모두 삭제함을 먼저 관측했고(실패), fallback 제거 후 보존을 확인했다(통과). A(stop 후 지연 보고 유지/자동 실행 보류), B(이후 별개 취소 보고 유지), merged exact-source chunk, 기존 queue-merge gate 실패 node를 DB 통합으로 재검증해야 한다.
+- `d767a2cc-abcc-4f87-8309-6f0de67e4167` (`a042f509`) 전체 gate는 `test_reports_queued_behind_busy_orchestrator_are_merged`에서 report 2개가 남아 실패했다. 해당 revision에는 이번 전역 stop source-ID/fence 구현이 없고 merge 조건도 동일했으므로 선행/무관 실패로 분류한다. 수정 SHA에서 해당 node를 별도로 실행해 회귀 여부를 확인한다.
 
 ## 5. 재작업 독립 검증 상태
 - 감사 보고서 `agent-global-stop-audit-9afe3b2.md` 의 5개 반례를 수용 기준으로 고정했다. 기준 SHA `9afe3b2701383f2d606ec868e8f25ddad3c3bc87` 의 구현 경로 검토와 실제 실행 결과를 구분한다.

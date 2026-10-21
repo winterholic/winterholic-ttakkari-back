@@ -451,11 +451,20 @@ class RunManager:
     async def _wake_qwen_waiters(self) -> None:
         """끝난 Qwen Run이 슬롯 대기열의 다음 차례를 깨운다. 예약된 재시도보다 먼저 돈다."""
         async with sessionmaker()() as db:
-            waiters = list(await db.scalars(
+            candidates = list(await db.scalars(
                 select(Run).join(ChatSession, ChatSession.id == Run.session_id)
                 .where(Run.status == RunStatus.queued, ChatSession.engine == "qwen-local",
                        ChatSession.kind == SessionKind.worker)
-                .order_by(Run.created_at).limit(5)))
+                .order_by(Run.created_at)))
+            waiters = []
+            for candidate in candidates:
+                latest_event = await db.scalar(
+                    select(RunEvent).where(RunEvent.run_id == candidate.id)
+                    .order_by(RunEvent.seq.desc()).limit(1))
+                if latest_event is not None and latest_event.type == "qwen.queued":
+                    waiters.append(candidate)
+                    if len(waiters) == 5:
+                        break
             sessions = {w.session_id for w in waiters}
             for w in waiters:
                 self._disarm(w.id)

@@ -32,7 +32,7 @@ from ttakkari.runs.manager import RunManager
 
 
 def migration():
-    spec = importlib.util.spec_from_file_location("executor_migration", "alembic/versions/0060_run_executor.py")
+    spec = importlib.util.spec_from_file_location("executor_migration", "alembic/versions/0063_run_executor.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

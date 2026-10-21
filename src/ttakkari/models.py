@@ -390,7 +390,8 @@ class RuntimeControl(Base):
     __tablename__ = "runtime_control"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     active_generation: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"))
-    executor_generation: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"))
+    executor_generation: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runtime_generations.id", name="fk_runtime_control_executor"))
     epoch: Mapped[int] = mapped_column(Integer, default=0)
 
 

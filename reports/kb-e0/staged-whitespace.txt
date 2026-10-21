@@ -1,0 +1,164 @@
+$ git diff --cached --check
+docs/design/kb-v2/reviews/evidence/xling.py.txt:10: trailing whitespace.
++def rerank(q, docs): 
+reports/kb-e0/red-boundaries.txt:32: trailing whitespace.
++E         
+reports/kb-e0/red-boundaries.txt:52: trailing whitespace.
++E         
+reports/kb-e0/red-compare-invalid.txt:15: trailing whitespace.
++E         
+reports/kb-e0/red-instrumentation.txt:9: trailing whitespace.
++unit_tests/kb_eval/test_instrumentation.py:7: 
+reports/kb-e0/red-instrumentation.txt:10: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-instrumentation.txt:27: trailing whitespace.
++unit_tests/kb_eval/test_instrumentation.py:23: 
+reports/kb-e0/red-instrumentation.txt:28: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-instrumentation.txt:47: trailing whitespace.
++unit_tests/kb_eval/test_instrumentation.py:48: 
+reports/kb-e0/red-instrumentation.txt:48: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-instrumentation.txt:64: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:232: 
+reports/kb-e0/red-instrumentation.txt:65: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-instrumentation.txt:80: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:241: 
+reports/kb-e0/red-instrumentation.txt:81: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-instrumentation.txt:99: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:249: 
+reports/kb-e0/red-instrumentation.txt:100: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-instrumentation.txt:126: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:160: 
+reports/kb-e0/red-instrumentation.txt:127: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-integrity-final.txt:11: trailing whitespace.
++E         
+reports/kb-e0/red-oracles.txt:9: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:44: 
+reports/kb-e0/red-oracles.txt:10: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:29: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:64: 
+reports/kb-e0/red-oracles.txt:30: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:47: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:90: 
+reports/kb-e0/red-oracles.txt:48: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:66: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:101: 
+reports/kb-e0/red-oracles.txt:67: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:85: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:111: 
+reports/kb-e0/red-oracles.txt:86: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:102: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:119: 
+reports/kb-e0/red-oracles.txt:103: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:120: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:129: 
+reports/kb-e0/red-oracles.txt:121: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:137: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:135: 
+reports/kb-e0/red-oracles.txt:138: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:153: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:140: 
+reports/kb-e0/red-oracles.txt:154: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:170: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:161: 
+reports/kb-e0/red-oracles.txt:171: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:187: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:169: 
+reports/kb-e0/red-oracles.txt:188: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:208: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:185: 
+reports/kb-e0/red-oracles.txt:209: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:229: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:185: 
+reports/kb-e0/red-oracles.txt:230: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:250: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:185: 
+reports/kb-e0/red-oracles.txt:251: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:271: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:185: 
+reports/kb-e0/red-oracles.txt:272: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:290: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:192: 
+reports/kb-e0/red-oracles.txt:291: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:310: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:209: 
+reports/kb-e0/red-oracles.txt:311: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-oracles.txt:330: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:218: 
+reports/kb-e0/red-oracles.txt:331: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-power-design.txt:21: trailing whitespace.
++unit_tests/kb_eval/test_oracles.py:506: 
+reports/kb-e0/red-power-design.txt:22: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-power-design.txt:25: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-review-api.txt:13: trailing whitespace.
++unit_tests/kb_eval/test_review_api.py:15: 
+reports/kb-e0/red-review-api.txt:14: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:11: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:56: 
+reports/kb-e0/red-runner.txt:12: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:40: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:76: 
+reports/kb-e0/red-runner.txt:41: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:69: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:76: 
+reports/kb-e0/red-runner.txt:70: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:99: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:76: 
+reports/kb-e0/red-runner.txt:100: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:128: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:76: 
+reports/kb-e0/red-runner.txt:129: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:157: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:76: 
+reports/kb-e0/red-runner.txt:158: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:176: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:80: 
+reports/kb-e0/red-runner.txt:177: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:196: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:107: 
+reports/kb-e0/red-runner.txt:197: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:217: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:118: 
+reports/kb-e0/red-runner.txt:218: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+reports/kb-e0/red-runner.txt:238: trailing whitespace.
++E         
+reports/kb-e0/red-runner.txt:251: trailing whitespace.
++unit_tests/kb_eval/test_runner.py:143: 
+reports/kb-e0/red-runner.txt:252: trailing whitespace.
++_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+exit=2

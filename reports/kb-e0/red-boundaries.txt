@@ -1,0 +1,62 @@
+.........................FF.............F.F                              [100%]
+=================================== FAILURES ===================================
+_________ test_metrics_abstain_intervals_and_language_pair_accounting __________
+
+    def test_metrics_abstain_intervals_and_language_pair_accounting():
+        r = e.metrics(cases(), predictions(), k=3)
+        assert r["false_strong"]["denominator"] == 2
+>       assert r["abstain_intervals"]["false_strong"]["binomial_one_sided"][1] > .5
+               ^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'abstain_intervals'
+
+unit_tests/kb_eval/test_oracles.py:260: KeyError
+______ test_stage_failure_classification_never_invents_missing_telemetry _______
+
+    def test_stage_failure_classification_never_invents_missing_telemetry():
+        c = cases()[0]
+>       assert e.classify_failure(c, {"ranked": [], "candidates": []}) == "trace_unverified"
+               ^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'ttakkari.kb_eval.core' has no attribute 'classify_failure'
+
+unit_tests/kb_eval/test_oracles.py:267: AttributeError
+______ test_invalid_required_anchor_blocks_gate_instead_of_scoring_subset ______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2675/test_invalid_required_anchor_b0')
+
+    def test_invalid_required_anchor_blocks_gate_instead_of_scoring_subset(tmp_path):
+        value = fixture_bundle()
+        value["cases"][0]["anchors"][0]["quote_sha256"] = "f"*64
+        result = e.run(e.load_bundle(write_bundle(tmp_path, value)), tmp_path/"invalid")
+>       assert result["quality_gate"]["status"] == "input_invalid"
+E       AssertionError: assert 'inconclusive' == 'input_invalid'
+E         
+E         - input_invalid
+E         + inconclusive
+
+unit_tests/kb_eval/test_runner.py:186: AssertionError
+____________________ test_cli_comparison_and_schema_export _____________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2675/test_cli_comparison_and_schema0')
+
+    def test_cli_comparison_and_schema_export(tmp_path):
+        path = write_bundle(tmp_path)
+        bundle = e.load_bundle(path)
+        e.run(bundle, tmp_path/"a")
+        e.run(bundle, tmp_path/"b")
+        command = [sys.executable, "-m", "ttakkari.kb_eval", "compare", str(tmp_path/"a"),
+                   str(tmp_path/"b"), "--out", str(tmp_path/"comparison.json")]
+        response = subprocess.run(command, capture_output=True, text=True, check=False)
+>       assert response.returncode == 0, response.stderr
+E       AssertionError: usage: __main__.py [-h] {run,schema,review-state} ...
+E         __main__.py: error: argument command: invalid choice: 'compare' (choose from 'run', 'schema', 'review-state')
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python', '-m', 'ttakkari.kb_ev... ...\n__main__.py: error: argument command: invalid choice: 'compare' (choose from 'run', 'schema', 'review-state')\n").returncode
+
+unit_tests/kb_eval/test_runner.py:212: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_oracles.py::test_metrics_abstain_intervals_and_language_pair_accounting
+FAILED unit_tests/kb_eval/test_oracles.py::test_stage_failure_classification_never_invents_missing_telemetry
+FAILED unit_tests/kb_eval/test_runner.py::test_invalid_required_anchor_blocks_gate_instead_of_scoring_subset
+FAILED unit_tests/kb_eval/test_runner.py::test_cli_comparison_and_schema_export
+4 failed, 39 passed in 0.56s

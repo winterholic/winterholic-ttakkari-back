@@ -1,0 +1,32 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_____________ test_current_status_matches_conditional_e0_approval ______________
+
+    def test_current_status_matches_conditional_e0_approval():
+        paths = [ROOT/"docs/design/kb-v2/knowledge-library-design-v2.md",
+                 ROOT/"docs/adr/0063-knowledge-library.md", ROOT/"docs/design/knowledge-library.md",
+                 ROOT/"docs/kb/design-v1.md", REVIEW/"v2-review-response.md"]
+        for path in paths:
+>           assert "KB-E0 착수 조건부 승인, 제품검색 미승인" in path.read_text()[:2000], str(path)
+E           AssertionError: /Users/winterholic/development/kb-e0-harness-a28c55e0/docs/design/kb-v2/knowledge-library-design-v2.md
+E           assert 'KB-E0 착수 조건부 승인, 제품검색 미승인' in '# 따까리 범용 지식 도서관(kb) 설계 v2\n\n> **상태: v2 독립 검토 반영안 — 반영 여부 독립 확인 대기, 제품 구현 금지.** 활성 설계 정본은 이 파일이다. 검토 대상은 `8e3dc2c11f2...tivy 채택을 철회한다.** `LexicalIndex` 포트 뒤에서 PG 단독(필터+BM25), Tantivy, 가능하면 pg_search를 KB-E0.5에서 동일 정책·실자료·gold로 비교한 뒤 선택한다(§'
+
+unit_tests/kb_eval/test_design_status.py:15: AssertionError
+_ test_delivery_checker_rejects_missing_current_state_even_if_history_mentions_approval _
+
+    def test_delivery_checker_rejects_missing_current_state_even_if_history_mentions_approval():
+        spec = importlib.util.spec_from_file_location("delivery", REVIEW/"check_design_delivery.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        design = (REVIEW.parent/"knowledge-library-design-v2.md").read_text()
+        response = (REVIEW/"v2-review-response.md").read_text()
+        module.inventory(design, response)
+>       with pytest.raises(AssertionError, match="current E0 scope"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE AssertionError
+
+unit_tests/kb_eval/test_design_status.py:25: Failed
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_design_status.py::test_current_status_matches_conditional_e0_approval
+FAILED unit_tests/kb_eval/test_design_status.py::test_delivery_checker_rejects_missing_current_state_even_if_history_mentions_approval
+2 failed in 0.02s

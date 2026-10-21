@@ -1,0 +1,6 @@
+tantivy index s 0.9 MB 20.5
+tantivy_bm25                       n=213 p50 0.42ms p95 0.81ms  recall@20 0.856 recall@100 0.946
+pg_tsrankcd_or                     n=213 p50 19.29ms p95 208.24ms recall@20 0.422 recall@100 0.755
+pg_dffilter1pct_limit2000_appbm25  n=213 p50 6.49ms p95 39.24ms recall@20 0.845 recall@100 0.931 cand_p50 456
+pg_dffilter1pct_limit2000_noorder  n=213 p50 1.73ms p95 28.42ms recall@20 0.556 recall@100 0.923 cand_p50 456
+or_match_fraction_of_corpus median 0.0448 p90 0.2329 ; queries 213

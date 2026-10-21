@@ -1,0 +1,46 @@
+......F...........................................FF                     [100%]
+=================================== FAILURES ===================================
+__________ test_unsupported_null_gpu_collector_never_becomes_measured __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2690/test_unsupported_null_gpu_coll0')
+
+    def test_unsupported_null_gpu_collector_never_becomes_measured(tmp_path):
+        result = e.resources(tmp_path, gpu_collector=lambda: None)
+>       assert result['gpu_bytes']['status'] == 'unverified'
+E       AssertionError: assert 'measured' == 'unverified'
+E         
+E         - unverified
+E         + measured
+
+unit_tests/kb_eval/test_instrumentation.py:67: AssertionError
+______ test_first_metrics_completion_records_baseline_then_exact_replays _______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2690/test_first_metrics_completion_0')
+
+    def test_first_metrics_completion_records_baseline_then_exact_replays(tmp_path):
+        bundle = e.load_bundle(write_bundle(tmp_path))
+        out = tmp_path/'replay'
+        first = e.run(bundle, out)
+>       assert first['replay']['metrics'] == 'baseline_recorded'
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'metrics'
+
+unit_tests/kb_eval/test_runner.py:316: KeyError
+__________________ test_duplicate_json_config_key_is_rejected __________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2690/test_duplicate_json_config_key0')
+
+    def test_duplicate_json_config_key_is_rejected(tmp_path):
+        data = json.dumps(fixture_bundle()).replace('"N": 40', '"N": 20, "N": 40')
+        path = tmp_path/'duplicate.json'
+        path.write_text(data)
+>       with pytest.raises(ValueError, match='duplicate_json_key:N'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_runner.py:329: Failed
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_instrumentation.py::test_unsupported_null_gpu_collector_never_becomes_measured
+FAILED unit_tests/kb_eval/test_runner.py::test_first_metrics_completion_records_baseline_then_exact_replays
+FAILED unit_tests/kb_eval/test_runner.py::test_duplicate_json_config_key_is_rejected
+3 failed, 49 passed in 0.74s

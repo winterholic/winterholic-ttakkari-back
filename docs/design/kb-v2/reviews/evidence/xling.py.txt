@@ -1,0 +1,63 @@
+import json, sys, glob, os, urllib.request, numpy as np, statistics, random
+sys.path.insert(0, "."); from items import ITEMS
+def post(url, body):
+    r = urllib.request.urlopen(urllib.request.Request(url, json.dumps(body).encode(), {"Content-Type": "application/json"}), timeout=900); return json.load(r)
+def emb(xs):
+    out = []
+    for i in range(0, len(xs), 16):
+        out += [d["embedding"] for d in post("http://127.0.0.1:29411/v1/embeddings", {"input": xs[i:i + 16]})["data"]]
+    X = np.array(out, dtype=np.float32); return X / np.linalg.norm(X, axis=1, keepdims=True)
+def rerank(q, docs): 
+    res = post("http://127.0.0.1:29412/v1/rerank", {"query": q, "documents": docs})["results"]
+    sc = [0.0] * len(docs)
+    for r in res: sc[r["index"]] = r["relevance_score"]
+    return sc
+gold = [i[2] for i in ITEMS]; near = [i[3] for i in ITEMS]
+fill = []
+for p in glob.glob(os.path.expanduser("~/development/projects/winterholic-ttakkari/back/docs/**/*.md"), recursive=True):
+    for b in open(p, encoding="utf-8", errors="ignore").read().split("\n\n"):
+        b = b.strip()
+        if 200 <= len(b) <= 700 and sum(c.isascii() for c in b) / len(b) > 0.97 and "```" not in b: fill.append(b)
+random.seed(5); random.shuffle(fill); fill = fill[:300]
+pool = gold + near + fill; P = emb(pool)
+out = {"pool": len(pool)}
+def dense_eval(qs, name):
+    Q = emb(qs); S = Q @ P.T; top1 = 0; mrr = []; margin = []; r20 = 0
+    for i in range(len(qs)):
+        order = list(np.argsort(-S[i])); rk = order.index(i) + 1; mrr.append(1 / rk); top1 += rk == 1; r20 += rk <= 20
+        margin.append(S[i][i] - S[i][len(gold) + i])
+    out[name] = {"top1": f"{top1}/{len(qs)}", "mrr": round(statistics.mean(mrr), 3), "recall@20": f"{r20}/{len(qs)}", "gold_minus_nearmiss_cos_min": round(min(margin), 3), "gold_cos_min": round(float(min(S[i][i] for i in range(len(qs)))), 3), "gold_cos_mean": round(float(statistics.mean(S[i][i] for i in range(len(qs)))), 3)}
+    return Q, S
+Qko, Sko = dense_eval([i[0] for i in ITEMS], "dense_ko_to_en_answerable")
+Qen, Sen = dense_eval([i[1] for i in ITEMS], "dense_en_to_en_answerable")
+Qun = emb([i[4] for i in ITEMS]); Sun = Qun @ P.T
+out["dense_unanswerable_top1_cos"] = {"min": round(float(Sun.max(1).min()), 3), "mean": round(float(Sun.max(1).mean()), 3), "max": round(float(Sun.max(1).max()), 3)}
+out["dense_answerable_ko_top1_cos"] = {"min": round(float(Sko.max(1).min()), 3), "mean": round(float(Sko.max(1).mean()), 3), "max": round(float(Sko.max(1).max()), 3)}
+def top_s1(q, S):
+    cand = list(np.argsort(-S)[:20]); sc = rerank(q, [pool[j] for j in cand]); return float(max(sc)), dict(zip(cand, sc))
+ans_ko = []; ans_en = []; una = []; gold_vs_near = []
+for i, it in enumerate(ITEMS):
+    a, d = top_s1(it[0], Sko[i]); ans_ko.append(a)
+    gold_vs_near.append((d.get(i, None), d.get(len(gold) + i, None)))
+    ans_en.append(top_s1(it[1], Sen[i])[0]); una.append(top_s1(it[4], Sun[i])[0])
+def auc(pos, neg): return sum((p > n) + 0.5 * (p == n) for p in pos for n in neg) / (len(pos) * len(neg))
+def best_thr(pos, neg):
+    best = (0, None)
+    for t in sorted(pos + neg):
+        acc = (sum(p >= t for p in pos) + sum(n < t for n in neg)) / (len(pos) + len(neg))
+        if acc > best[0]: best = (acc, t)
+    return best
+f = lambda a: {"min": round(min(a), 2), "median": round(statistics.median(a), 2), "max": round(max(a), 2)}
+out["rerank_top_score"] = {"answerable_ko": f(ans_ko), "answerable_en": f(ans_en), "unanswerable_ko": f(una)}
+out["auc_answerable_vs_unanswerable"] = {"ko_only": round(auc(ans_ko, una), 3), "ko_en_mixed_answerable": round(auc(ans_ko + ans_en, una), 3)}
+acc, thr = best_thr(ans_ko + ans_en, una + una)  # unanswerable are ko; answerable pooled ko+en
+out["best_single_threshold_pooled"] = {"acc": round(acc, 3), "thr": round(thr, 2)}
+acc2, thr2 = best_thr(ans_ko, una); acc3, thr3 = best_thr(ans_en, una)
+out["best_threshold_ko_only"] = {"acc": round(acc2, 3), "thr": round(thr2, 2)}
+out["answerable_en_below_ko_thr"] = sum(a < thr2 for a in ans_en)
+out["answerable_ko_below_enbest_thr"] = sum(a < thr3 for a in ans_ko)
+out["unanswerable_above_min_answerable"] = sum(u >= min(ans_ko) for u in una)
+out["gold_vs_nearmiss_rerank_gold_wins"] = f"{sum(g is not None and n is not None and g > n for g, n in gold_vs_near)}/{len(ITEMS)}"
+out["nearmiss_in_top20_rerank"] = sum(n is not None for _, n in gold_vs_near)
+print(json.dumps(out, indent=1, ensure_ascii=False, default=float))
+json.dump({"ans_ko": ans_ko, "ans_en": ans_en, "una": una}, open("scores.json", "w"))

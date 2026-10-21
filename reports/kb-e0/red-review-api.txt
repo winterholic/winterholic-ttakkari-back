@@ -1,0 +1,48 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_mobile_api_skeleton_resume_and_human_route_remains_blocked ________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2681/test_mobile_api_skeleton_resum0')
+
+    def test_mobile_api_skeleton_resume_and_human_route_remains_blocked(tmp_path):
+        bundle = e.load_bundle(write_bundle(tmp_path))
+        app = FastAPI()
+>       app.include_router(review_api.create_router(bundle, tmp_path/"review.json"))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_review_api.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'schema_version': 'kb-e0-v1', 'kind': 'fixture', 'corpus_id': 'oracle-10', 'corpus_version': '1', ...}, PosixPath('/...rs/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2681/test_mobile_api_skeleton_resum0/review.json'))
+kwargs = {}
+
+    def create_router(*args, **kwargs):
+>       raise NotImplementedError("E0 review API contract")
+E       NotImplementedError: E0 review API contract
+
+src/ttakkari/kb_eval/review_api.py:5: NotImplementedError
+____________________ test_review_version_conflict_is_atomic ____________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2681/test_review_version_conflict_i0')
+
+    def test_review_version_conflict_is_atomic(tmp_path):
+        event = {'id': 'q1', 'label_version': 0, 'decision': 'approve', 'actor_kind': 'agent',
+                 'actor': 'test-agent', 'at': '2026-10-22T00:00:00Z'}
+        def update(_):
+            try:
+                e.review_update(tmp_path/'state.json', event)
+                return 'saved'
+            except ValueError as exc:
+                return str(exc)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            outcomes = list(pool.map(update, range(8)))
+>       assert outcomes.count('saved') == 1
+E       AssertionError: assert 4 == 1
+E        +  where 4 = <built-in method count of list object at 0x107334ec0>('saved')
+E        +    where <built-in method count of list object at 0x107334ec0> = ['saved', 'saved', 'saved', 'saved', 'label_version_conflict', 'label_version_conflict', ...].count
+
+unit_tests/kb_eval/test_review_api.py:45: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_api.py::test_mobile_api_skeleton_resume_and_human_route_remains_blocked
+FAILED unit_tests/kb_eval/test_review_api.py::test_review_version_conflict_is_atomic
+2 failed in 0.23s

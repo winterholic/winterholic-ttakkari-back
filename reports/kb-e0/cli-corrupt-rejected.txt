@@ -1,0 +1,4 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python -m ttakkari.kb_eval run kb-eval/fixtures/oracle.json --out /Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-corrupt
+{"failure": {"category": "integrity", "error_type": "ValueError", "reason": "cache_corrupt"}, "final_quality": "not_authorized", "state": "failed"}
+
+exit=2

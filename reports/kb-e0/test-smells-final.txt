@@ -1,0 +1,4 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python /Users/winterholic/.claude/dev-experts-skills/dev-testing/scripts/test_smells.py unit_tests/kb_eval
+total: 0 finding(s)
+
+exit=0

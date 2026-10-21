@@ -1,0 +1,17 @@
+import json, urllib.request, numpy as np, concurrent.futures as cf, glob, os, random
+def emb(xs):
+    r = urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:29411/v1/embeddings", json.dumps({"input": xs}).encode(), {"Content-Type": "application/json"}), timeout=900)
+    return np.array([d["embedding"] for d in json.load(r)["data"]], dtype=np.float32)
+texts = []
+for l in open("/tmp/kbv2r/real/pas.tsv", encoding="utf-8"):
+    texts.append(l.split("\t")[1][:1200])
+    if len(texts) >= 64: break
+A = np.concatenate([emb([t]) for t in texts])          # 단건
+B = np.concatenate([emb(texts[i:i+32]) for i in range(0, 64, 32)])  # 배치 32
+with cf.ThreadPoolExecutor(4) as ex: C = np.concatenate(list(ex.map(emb, [texts[i:i+8] for i in range(0, 64, 8)])))  # 동시 4 x 8
+A2 = np.concatenate([emb([t]) for t in texts])         # 단건 재실행
+n = lambda X: X / np.linalg.norm(X, axis=1, keepdims=True)
+A, B, C, A2 = map(n, (A, B, C, A2))
+for name, X in (("single_vs_batch32", B), ("single_vs_conc4x8", C), ("single_vs_single_rerun", A2)):
+    cos = (A * X).sum(1); flips = ((A > 0) != (X > 0)).sum(1)
+    print(name, "min_cos", round(float(cos.min()), 6), "identical_vectors", int((np.abs(A - X).max(1) == 0).sum()), "/64", "mean_sign_flips_of_1024", round(float(flips.mean()), 2), "max", int(flips.max()))

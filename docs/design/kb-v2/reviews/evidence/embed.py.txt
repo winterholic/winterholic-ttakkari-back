@@ -1,0 +1,26 @@
+import json, sys, time, urllib.request, concurrent.futures as cf, numpy as np, itertools
+URL = "http://127.0.0.1:29411/v1/embeddings"
+def emb(xs):
+    for attempt in range(3):
+        try:
+            r = urllib.request.urlopen(urllib.request.Request(URL, json.dumps({"input": xs}).encode(), {"Content-Type": "application/json"}), timeout=900)
+            return np.array([d["embedding"] for d in json.load(r)["data"]], dtype=np.float32)
+        except Exception as e:
+            err = e; time.sleep(2)
+    raise err
+Q = json.load(open("queries.json"))
+qv = emb(Q["qtext"]); np.save("qv.npy", qv / np.linalg.norm(qv, axis=1, keepdims=True))
+rows = [l.rstrip("\n").split("\t") for l in open("pas.tsv", encoding="utf-8")]
+ids = [r[0] for r in rows]; texts = [r[1][:1200] for r in rows]
+json.dump(ids, open("ids.json", "w"))
+t = time.perf_counter(); B = 32
+batches = [texts[i:i + B] for i in range(0, len(texts), B)]
+out = []
+with cf.ThreadPoolExecutor(4) as ex:
+    for k, v in enumerate(ex.map(emb, batches)):
+        out.append(v)
+        if k % 200 == 0: print(k * B, round(time.perf_counter() - t), "s", flush=True)
+X = np.concatenate(out); X /= np.linalg.norm(X, axis=1, keepdims=True)
+np.save("X.npy", X.astype(np.float32))
+el = time.perf_counter() - t
+print(json.dumps({"n": len(X), "seconds": round(el), "passages_per_s": round(len(X) / el, 1), "avg_chars": sum(map(len, texts)) / len(texts)}))

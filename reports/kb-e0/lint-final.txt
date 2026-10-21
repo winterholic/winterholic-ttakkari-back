@@ -1,0 +1,4 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/ruff check src/ttakkari/kb_eval unit_tests/kb_eval docs/design/kb-v2/reviews/check_design_delivery.py
+All checks passed!
+
+exit=0

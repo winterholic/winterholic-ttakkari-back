@@ -1,0 +1,8 @@
+pool 77 (20 gold + 20 near-miss + 37 filler?) -> see xling.py (300 filler requested, pool printed 77 because filler filter kept 37)
+dense_ko_to_en_answerable: top1 18/20 mrr 0.95 recall@20 20/20 gold_minus_nearmiss_cos_min -0.081 gold_cos_min 0.422 mean 0.64
+dense_en_to_en_answerable: top1 19/20 mrr 0.975 gold_minus_nearmiss_cos_min -0.075
+dense_unanswerable_top1_cos min 0.375 mean 0.504 max 0.704 ; dense_answerable_ko_top1_cos min 0.422 mean 0.645 max 0.76
+rerank top score: answerable_ko min -4.29 median 2.25 max 8.6 | answerable_en min -0.94 median 4.39 max 8.25 | unanswerable_ko min -9.72 median -5.33 max 1.66
+AUC ko_only 0.94 ; ko+en answerable 0.964 ; best single threshold pooled acc 0.90 thr -2.29
+answerable_ko below -2.29: 3 (items 4,11,16: 기준금리/환율, 광합성 산소, 삼권분립) ; unanswerable above -2.29: 3 (GNI/GNP 1.66, 에베레스트 끓는점 -1.19, 아르곤 -0.52)
+gold beats near-miss in rerank 19/20

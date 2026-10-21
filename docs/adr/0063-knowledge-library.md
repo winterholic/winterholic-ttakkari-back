@@ -1,8 +1,10 @@
 # ADR 0063. 범용 지식 도서관(Knowledge Library)과 2층 아키텍처
 
-- 상태: 채택 (KB1+KB2 구현, 2026-10-20)
-- 설계 문서: [설계 v1](../kb/design-v1.md), [설계서](../design/knowledge-library.md)
+- 상태: KB1+KB2 구현 사실 채택(2026-10-20). 후속 설계 정본은 v2. KB-E0 착수 조건부 승인, 제품검색 미승인. E0 하네스 독립 검증·실제 DB·최종 품질 gate는 별도.
+- 활성 후속 설계: [v2](../design/kb-v2/knowledge-library-design-v2.md), [검토 대응표](../design/kb-v2/reviews/v2-review-response.md). [v1](../kb/design-v1.md)·[v1 사본](../design/knowledge-library.md)은 역사 기록.
 - 선행: ADR 0007·0009(맥락 도서관), ADR 0031(근거 중심 원장)
+
+> 아래 저장 경로·NFKC·불변 트리거·동일 바이트 멱등성은 KB1·KB2 **현재 구현 사실**이다. v2는 envelope NFC/collector 소유 pin·관측 ledger·인가 tombstone 예외를 설계하며 아직 구현되지 않았다. 기존 스키마가 이미 바뀌었다는 뜻이 아니다.
 
 ## 배경
 
@@ -35,6 +37,4 @@
 
 ## 후속 작업
 
-- KB3: 형태소 분석기(Kiwi) 기반 정규화·색인 분석기 및 골든 테스트.
-- KB4~KB6: 수집기 어댑터, 패시지 분할 및 BM25 어휘 검색 엔진.
-- KB7~KB14: 정답 평가 세트, MCP 도구 등록, claim 및 정본 모델, UI 지식 탭.
+v2 §9/§12의 E0 선행·단위별 독립 검증을 따른다. 기존 단계번호와 PG/Tantivy 선택은 구현 승인으로 쓰지 않는다. 수집은 독립 collector 플랫폼, kb는 표준 envelope 소비·원장/검색/정본 소유다. 엔진·삭제 경로·생산자 계약 변경은 v2 반영 확인 및 각 단위 실제 DB 검증 전 활성화하지 않는다.

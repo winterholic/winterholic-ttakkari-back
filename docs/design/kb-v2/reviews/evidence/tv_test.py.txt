@@ -1,0 +1,17 @@
+import tantivy, os, shutil, subprocess, sys, json, time
+p = "/tmp/kbv2r/x/tvt"; shutil.rmtree(p, ignore_errors=True); os.makedirs(p)
+sb = tantivy.SchemaBuilder(); sb.add_text_field("pid", stored=True, tokenizer_name="raw"); sb.add_text_field("body", stored=False, tokenizer_name="whitespace"); sch = sb.build()
+idx = tantivy.Index(sch, path=p); w = idx.writer()
+print("writer methods:", [m for m in dir(w) if not m.startswith("_")])
+print("index methods:", [m for m in dir(idx) if not m.startswith("_")])
+w.add_document(tantivy.Document(pid="a", body="hello world")); w.commit(); idx.reload()
+# T1 second writer
+try:
+    w2 = idx.writer(); print("T1 second writer: OK (no lock error)")
+except Exception as e: print("T1 second writer error:", type(e).__name__, str(e)[:120])
+# T3 duplicate add without delete
+w.add_document(tantivy.Document(pid="a", body="hello world")); w.commit(); idx.reload()
+print("T3 count after re-add same pid:", idx.searcher().num_docs)
+# delete-then-add idempotent
+w.delete_documents("pid", "a"); w.add_document(tantivy.Document(pid="a", body="hello world")); w.commit(); idx.reload()
+print("T3b count after delete+add:", idx.searcher().num_docs)

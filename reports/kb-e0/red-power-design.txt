@@ -1,0 +1,44 @@
+.......................FF                                                [100%]
+=================================== FAILURES ===================================
+_____ test_dev_power_design_and_holdout_groups_must_match_without_overlap ______
+
+    def test_dev_power_design_and_holdout_groups_must_match_without_overlap():
+        values = {"recall": [.01, -.01, .02], "ndcg": [.01, -.01, .02]}
+        r = e.quality_family(values, ["h1", "h2", "h3"], seed=12,
+                             dev_deltas={"recall": [.01, -.01], "ndcg": [.01, -.01]},
+                             dev_groups=["d1", "d2"])
+        assert r["status"] == "inconclusive"
+>       assert "power_design_mismatch" in r["reasons"]
+E       AssertionError: assert 'power_design_mismatch' in ['power_not_established']
+
+unit_tests/kb_eval/test_oracles.py:498: AssertionError
+________ test_power_residual_bootstrap_handles_asymmetric_bounded_pilot ________
+
+    def test_power_residual_bootstrap_handles_asymmetric_bounded_pilot():
+>       r = e.simulate_power({"recall": [1., 1., -1.], "ndcg": [1., 1., -1.]},
+                             ["a", "b", "c"], seed=12, trials=10, replicates=100)
+
+unit_tests/kb_eval/test_oracles.py:506: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/kb_eval/statistics.py:116: in simulate_power
+    _, passed, _ = _family(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = {'ndcg': [0.6666666666666667, 0.6666666666666667, -1.3333333333333333], 'recall': [0.6666666666666667, 0.6666666666666667, -1.3333333333333333]}
+groups = ['0', '1', '2'], seed = 13, replicates = 100, margin = 0.05
+alpha = 0.05
+
+    def _family(values, groups, *, seed, replicates, margin=0.05, alpha=0.05):
+        if set(values) != {"recall", "ndcg"} or margin != 0.05 or alpha != 0.05:
+            raise ValueError("unregistered_primary_family")
+        keys = sorted(values)
+        a, sums, sizes = _matrix(np.array([values[k] for k in keys]).T, groups)
+        if (abs(a) > 1).any():
+>           raise ValueError("metric_delta_out_of_range")
+E           ValueError: metric_delta_out_of_range
+
+src/ttakkari/kb_eval/statistics.py:68: ValueError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_oracles.py::test_dev_power_design_and_holdout_groups_must_match_without_overlap
+FAILED unit_tests/kb_eval/test_oracles.py::test_power_residual_bootstrap_handles_asymmetric_bounded_pilot
+2 failed, 23 passed in 0.43s

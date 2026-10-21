@@ -1,0 +1,7 @@
+{
+  "full_staged_check": "exit2: immutable raw logs/evidence contain trailing spaces",
+  "raw_issue_count": 81,
+  "all_issues_in_preserved_raw": true,
+  "source_scoped_check_exit": 0,
+  "no_git_whitespace_setting_changed": true
+}

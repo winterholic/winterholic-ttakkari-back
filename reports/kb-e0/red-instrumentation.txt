@@ -1,0 +1,145 @@
+FF.F..................FFF...........F.                                   [100%]
+=================================== FAILURES ===================================
+______ test_balanced_random_blocks_and_timers_do_not_sum_parallel_stages _______
+
+    def test_balanced_random_blocks_and_timers_do_not_sum_parallel_stages():
+>       orders = e.balanced_orders(6, seed=12)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_instrumentation.py:7: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (6,), kwargs = {'seed': 12}
+
+    def balanced_orders(*args, **kwargs):
+>       raise NotImplementedError("E0 AB scheduling")
+E       NotImplementedError: E0 AB scheduling
+
+src/ttakkari/kb_eval/core.py:30: NotImplementedError
+_________ test_resource_unsupported_is_unverified_and_zero_is_measured _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2667/test_resource_unsupported_is_u0')
+
+    def test_resource_unsupported_is_unverified_and_zero_is_measured(tmp_path):
+>       result = e.resources(tmp_path, gpu_collector=lambda: 0)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_instrumentation.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2667/test_resource_unsupported_is_u0'),)
+kwargs = {'gpu_collector': <function test_resource_unsupported_is_unverified_and_zero_is_measured.<locals>.<lambda> at 0x10a3dc040>}
+
+    def resources(*args, **kwargs):
+>       raise NotImplementedError("E0 resource interface")
+E       NotImplementedError: E0 resource interface
+
+src/ttakkari/kb_eval/core.py:38: NotImplementedError
+____________ test_external_stage_timer_failure_keeps_e2e_and_error _____________
+
+    def test_external_stage_timer_failure_keeps_e2e_and_error():
+        ticks = iter([0., .010, .030, .040])
+        def broken():
+            raise ValueError("fixture adapter down")
+>       output, timing = e.timed_call(broken, clock=lambda: next(ticks))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_instrumentation.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (<function test_external_stage_timer_failure_keeps_e2e_and_error.<locals>.broken at 0x1092f89a0>,)
+kwargs = {'clock': <function test_external_stage_timer_failure_keeps_e2e_and_error.<locals>.<lambda> at 0x10a4919e0>}
+
+    def timed_call(*args, **kwargs):
+>       raise NotImplementedError("E0 timers")
+E       NotImplementedError: E0 timers
+
+src/ttakkari/kb_eval/core.py:34: NotImplementedError
+_____________ test_zero_of_forty_cannot_certify_five_percent_error _____________
+
+    def test_zero_of_forty_cannot_certify_five_percent_error():
+>       result = e.binomial_interval(0, 40, alpha=.05)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (0, 40), kwargs = {'alpha': 0.05}
+
+    def binomial_interval(*args, **kwargs):
+>       raise NotImplementedError("E0 binomial interval")
+E       NotImplementedError: E0 binomial interval
+
+src/ttakkari/kb_eval/core.py:18: NotImplementedError
+_________________ test_answer_level_counts_boundary_cover_once _________________
+
+    def test_answer_level_counts_boundary_cover_once():
+>       result = e.answer_recall({"a1": [["p1", "p2"]], "a2": [["p3"], ["p4"]]}, ["p1", "p2", "p4"], k=3)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:241: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'a1': [['p1', 'p2']], 'a2': [['p3'], ['p4']]}, ['p1', 'p2', 'p4'])
+kwargs = {'k': 3}
+
+    def answer_recall(*args, **kwargs):
+>       raise NotImplementedError("E0 answer recall")
+E       NotImplementedError: E0 answer recall
+
+src/ttakkari/kb_eval/core.py:22: NotImplementedError
+_____________ test_live_tolerance_fixture_near_tie_and_stable_core _____________
+
+    def test_live_tolerance_fixture_near_tie_and_stable_core():
+        baseline = [("a", 1.), ("b", .5), ("c", .499)]
+        near = [("a", 1.), ("c", .4995), ("b", .4994)]
+>       result = e.live_tolerance(baseline, near, k=2, epsilon=.001)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:249: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([('a', 1.0), ('b', 0.5), ('c', 0.499)], [('a', 1.0), ('c', 0.4995), ('b', 0.4994)])
+kwargs = {'k': 2, 'epsilon': 0.001}
+
+    def live_tolerance(*args, **kwargs):
+>       raise NotImplementedError("E0 tolerance fixture")
+E       NotImplementedError: E0 tolerance fixture
+
+src/ttakkari/kb_eval/core.py:26: NotImplementedError
+_______ test_comparison_requires_frozen_inputs_and_registered_treatment ________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2667/test_comparison_requires_froze0')
+
+    def test_comparison_requires_frozen_inputs_and_registered_treatment(tmp_path):
+        first = e.load_bundle(write_bundle(tmp_path))
+        left = tmp_path/"left"
+        right = tmp_path/"right"
+        e.run(first, left)
+        value = fixture_bundle()
+        value["manifest"]["build_id"] = "fixture-2"
+        value["predictions"]["q1"]["ranked"] = ["d1", "d2"]
+        e.run(e.load_bundle(write_bundle(tmp_path, value)), right)
+        with pytest.raises(ValueError, match="unregistered_treatment"):
+>           e.compare_runs(left, right, treatments=[])
+
+unit_tests/kb_eval/test_runner.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2667/test_comparison.../folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2667/test_comparison_requires_froze0/right'))
+kwargs = {'treatments': []}
+
+    def compare_runs(*args, **kwargs):
+>       raise NotImplementedError("E0 comparison")
+E       NotImplementedError: E0 comparison
+
+src/ttakkari/kb_eval/core.py:42: NotImplementedError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_instrumentation.py::test_balanced_random_blocks_and_timers_do_not_sum_parallel_stages
+FAILED unit_tests/kb_eval/test_instrumentation.py::test_resource_unsupported_is_unverified_and_zero_is_measured
+FAILED unit_tests/kb_eval/test_instrumentation.py::test_external_stage_timer_failure_keeps_e2e_and_error
+FAILED unit_tests/kb_eval/test_oracles.py::test_zero_of_forty_cannot_certify_five_percent_error
+FAILED unit_tests/kb_eval/test_oracles.py::test_answer_level_counts_boundary_cover_once
+FAILED unit_tests/kb_eval/test_oracles.py::test_live_tolerance_fixture_near_tie_and_stable_core
+FAILED unit_tests/kb_eval/test_runner.py::test_comparison_requires_frozen_inputs_and_registered_treatment
+7 failed, 31 passed in 0.45s

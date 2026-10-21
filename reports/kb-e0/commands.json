@@ -1,0 +1,251 @@
+[
+  {
+    "name": "lint-final",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/ruff",
+      "check",
+      "src/ttakkari/kb_eval",
+      "unit_tests/kb_eval",
+      "docs/design/kb-v2/reviews/check_design_delivery.py"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:20.891288+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/lint-final.txt"
+  },
+  {
+    "name": "format-final",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/ruff",
+      "format",
+      "--check",
+      "src/ttakkari/kb_eval",
+      "unit_tests/kb_eval"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:20.916375+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/format-final.txt"
+  },
+  {
+    "name": "tests-final",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "pytest",
+      "unit_tests/kb_eval",
+      "unit_tests/test_knowledge_evaluation.py",
+      "unit_tests/test_kb_store_pure.py",
+      "unit_tests/test_collector_contracts.py",
+      "--cov=ttakkari.kb_eval",
+      "--cov-report=term-missing",
+      "--cov-report=json:reports/kb-e0/coverage.json",
+      "-q"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:20.940539+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/tests-final.txt"
+  },
+  {
+    "name": "test-smells-final",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "/Users/winterholic/.claude/dev-experts-skills/dev-testing/scripts/test_smells.py",
+      "unit_tests/kb_eval"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:28.511865+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/test-smells-final.txt"
+  },
+  {
+    "name": "design-final",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "docs/design/kb-v2/reviews/check_design_delivery.py"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:28.533805+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/design-final.txt"
+  },
+  {
+    "name": "schema-cli",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "ttakkari.kb_eval",
+      "schema",
+      "--out",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/input-schema.json"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:28.555125+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/schema-cli.txt"
+  },
+  {
+    "name": "cli-interrupt",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "ttakkari.kb_eval",
+      "run",
+      "kb-eval/fixtures/oracle.json",
+      "--out",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-replay",
+      "--limit",
+      "1"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:28.641760+00:00",
+    "returncode": 3,
+    "expected_returncode": 3,
+    "raw_output": "reports/kb-e0/cli-interrupt.txt"
+  },
+  {
+    "name": "cli-resume",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "ttakkari.kb_eval",
+      "run",
+      "kb-eval/fixtures/oracle.json",
+      "--out",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-replay"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:28.725870+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/cli-resume.txt"
+  },
+  {
+    "name": "cli-replay-exact",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "ttakkari.kb_eval",
+      "run",
+      "kb-eval/fixtures/oracle.json",
+      "--out",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-replay"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:28.818633+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/cli-replay-exact.txt"
+  },
+  {
+    "name": "cli-compare",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "ttakkari.kb_eval",
+      "compare",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-replay",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-replay",
+      "--out",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/comparison.json"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:28.913123+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/cli-compare.txt"
+  },
+  {
+    "name": "cli-rights-denied",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "ttakkari.kb_eval",
+      "run",
+      "kb-eval/fixtures/rights-denied.json",
+      "--out",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-rights-denied"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:29.004435+00:00",
+    "returncode": 2,
+    "expected_returncode": 2,
+    "raw_output": "reports/kb-e0/cli-rights-denied.txt"
+  },
+  {
+    "name": "cli-corrupt-rejected",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-m",
+      "ttakkari.kb_eval",
+      "run",
+      "kb-eval/fixtures/oracle.json",
+      "--out",
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-corrupt"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:29.091901+00:00",
+    "returncode": 2,
+    "expected_returncode": 2,
+    "raw_output": "reports/kb-e0/cli-corrupt-rejected.txt"
+  },
+  {
+    "name": "statistics-oracles",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-c",
+      "import json\nfrom ttakkari.kb_eval.core import quality_family, cluster_interval, binomial_interval, holm\nr={\"unequal\":cluster_interval([1.]*9+[-1.],[\"big\"]*9+[\"small\"],seed=4),\n   \"holm\":holm({\"a\":.01,\"b\":.04,\"c\":.03}), \"zero_of_forty\":binomial_interval(0,40),\n   \"underpowered\":quality_family({\"recall\":[.02]*3,\"ndcg\":[.03]*3},[\"a\",\"b\",\"c\"],seed=2)}\nprint(json.dumps(r,sort_keys=True))"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:29.178038+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/statistics-oracles.txt"
+  },
+  {
+    "name": "latency-oracles",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-c",
+      "import json,sys\nfrom pathlib import Path\nsys.path.insert(0,str(Path(\"unit_tests/kb_eval\").resolve()))\nfrom test_oracles import blocks\nfrom ttakkari.kb_eval.core import latency_report\nr={\"both_slow\":latency_report(blocks(),seed=7),\"load_biased\":latency_report(blocks(biased=True),seed=7),\"candidate_regression\":latency_report(blocks(650.,500.),seed=7)}\nprint(json.dumps({\"scope\":\"synthetic_timer_arithmetic_only\",\"cases\":r},sort_keys=True))"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:29.268737+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/latency-oracles.txt"
+  },
+  {
+    "name": "review-contract-export",
+    "argv": [
+      "/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python",
+      "-c",
+      "from fastapi import FastAPI\nfrom ttakkari.kb_eval.loader import load_bundle\nfrom ttakkari.kb_eval.review_api import create_router\nfrom ttakkari.kb_eval.state import atomic_json\napp=FastAPI()\napp.include_router(create_router(load_bundle(\"kb-eval/fixtures/oracle.json\"),\"/tmp/kbe0-openapi-state-not-written.json\"))\natomic_json(\"reports/kb-e0/review-openapi.json\",app.openapi())\nprint(\"Unmounted review OpenAPI exported; no browser/UI/auth claim\")"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:29.420705+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/review-contract-export.txt"
+  },
+  {
+    "name": "diff-whitespace",
+    "argv": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "cwd": "/Users/winterholic/development/kb-e0-harness-a28c55e0",
+    "started_at": "2026-10-21T15:10:29.554038+00:00",
+    "returncode": 0,
+    "expected_returncode": 0,
+    "raw_output": "reports/kb-e0/diff-whitespace.txt"
+  }
+]

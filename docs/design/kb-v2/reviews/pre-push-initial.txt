@@ -1,0 +1,11 @@
+==> [pre-push] 사전 검증: e7b7799bd307 (건너뛰려면 TTK_SKIP_GATE=1 또는 --no-verify)
+========================================================
+ 따까리 백엔드 사전 검증 (배포 게이트의 전체 실행·-x 를 대신하지 않음)
+ 대상 커밋: e7b7799bd307 docs(kb): v2 독립 검토 P1–13 설계 보완과 원본 증거 보존
+ 변경 기준: ba71814167d2  (작업 트리의 미커밋 변경은 검사하지 않음)
+ 모드: impacted
+========================================================
+error: Failed to initialize cache at `/Users/winterholic/.cache/uv`
+  cause: failed to open file `/Users/winterholic/.cache/uv/sdists-v9/.git`: Operation not permitted (os error 1)
+오류: 임시 디렉터리의 uv sync 실패(의존성 설치). 비상이면 --no-verify 로 우회하세요.
+error: failed to push some refs to 'https://github.com/winterholic/winterholic-ttakkari-back'

@@ -1,0 +1,93 @@
+PLC0206 Extracting value from dictionary without calling `.items()`
+  --> src/ttakkari/kb_eval/comparison.py:42:13
+   |
+40 |             excluded.append({"id": r["id"], "control_failure": b["failure"], "candidate_failure": r["failure"], "answerable": r["answe…
+41 |             continue
+42 |         for metric in deltas:
+   |             ^^^^^^^^^^^^^^^^
+43 |             deltas[metric].append(r[metric]-b[metric])
+   |             --------------
+44 |         groups.append(r["group"])
+45 |     quality = quality_family(deltas, groups, seed=cm["identity"]["seed"]) if groups else {"status": "inconclusive", "reasons": ["no_va…
+   |
+help: Use `for metric, value in deltas.items()` instead
+
+PLC0206 Extracting value from dictionary without calling `.items()`
+  --> src/ttakkari/kb_eval/reproducibility.py:26:9
+   |
+24 |         reasons.append("outside_boundary_near_tie")
+25 |     bp, cp = {key: i for i, (key, _) in enumerate(baseline)}, {key: i for i, (key, _) in enumerate(candidate)}
+26 |     for a in b:
+   |         ^^^^^^
+27 |         for z in b:
+28 |             if b[a]-b[z] > 2*epsilon and (bp[a] > bp[z] or cp[a] > cp[z]):
+   |                ----
+29 |                 reasons.append("strict_order_changed")
+30 |     return {"status": "tolerance_fail" if reasons else "fixture_tolerance_match", "reasons": sorted(set(reasons)),
+   |
+help: Use `for a, value in b.items()` instead
+
+PLC0206 Extracting value from dictionary without calling `.items()`
+  --> src/ttakkari/kb_eval/reproducibility.py:27:13
+   |
+25 |     bp, cp = {key: i for i, (key, _) in enumerate(baseline)}, {key: i for i, (key, _) in enumerate(candidate)}
+26 |     for a in b:
+27 |         for z in b:
+   |             ^^^^^^
+28 |             if b[a]-b[z] > 2*epsilon and (bp[a] > bp[z] or cp[a] > cp[z]):
+   |                     ----
+29 |                 reasons.append("strict_order_changed")
+30 |     return {"status": "tolerance_fail" if reasons else "fixture_tolerance_match", "reasons": sorted(set(reasons)),
+   |
+help: Use `for z, value in b.items()` instead
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+  --> src/ttakkari/kb_eval/schema.py:19:9
+   |
+17 |       @classmethod
+18 |       def time_zone(cls, value, info):
+19 | /         if info.field_name in {"observed_at", "event_at", "received_at", "checked_at", "at"}:
+20 | |             if datetime.fromisoformat(value).tzinfo is None:
+   | |____________________________________________________________^
+21 |                   raise ValueError("timezone_required")
+22 |           return value
+   |
+help: Combine `if` statements using `and`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+   --> unit_tests/kb_eval/test_runner.py:124:13
+    |
+122 |     path = write_bundle(tmp_path)
+123 |     args = [sys.executable, "-m", "ttakkari.kb_eval", "run", str(path), "--out", str(tmp_path/"cli")]
+124 |     first = subprocess.run(args+["--limit", "1"], capture_output=True, text=True)
+    |             ^^^^^^^^^^^^^^
+125 |     assert first.returncode == 3, first.stderr
+126 |     assert json.loads(first.stdout)["state"] == "interrupted"
+    |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+   --> unit_tests/kb_eval/test_runner.py:127:15
+    |
+125 |     assert first.returncode == 3, first.stderr
+126 |     assert json.loads(first.stdout)["state"] == "interrupted"
+127 |     resumed = subprocess.run(args, capture_output=True, text=True)
+    |               ^^^^^^^^^^^^^^
+128 |     assert resumed.returncode == 0, resumed.stderr
+129 |     assert json.loads(resumed.stdout)["final_quality"] == "not_authorized"
+    |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+   --> unit_tests/kb_eval/test_runner.py:133:15
+    |
+131 |     data["rights"][0]["storage_allowed"] = False
+132 |     write_bundle(tmp_path, data)
+133 |     failure = subprocess.run(args, capture_output=True, text=True)
+    |               ^^^^^^^^^^^^^^
+134 |     assert failure.returncode == 2
+135 |     assert json.loads(failure.stdout)["failure"]["category"] == "rights"
+    |
+help: Add explicit `check=False`
+
+Found 18 errors (11 fixed, 7 remaining).

@@ -1,0 +1,64 @@
+import asyncio, asyncpg, json, re, time, math, os, shutil, csv, statistics, sys
+csv.field_size_limit(10**9)
+import tantivy
+Q = json.load(open("queries.json"))
+N = 1000000
+tok = lambda s: sorted({t for t in s.split() if re.fullmatch(r"\w+", t)})
+qs = []
+for qid, qa in zip(Q["qids"], Q["qan"]):
+    t = tok(qa)
+    if t: qs.append((qid, t))
+# tantivy
+path = "/tmp/kbv2r/real1m/tv"; shutil.rmtree(path, ignore_errors=True); os.makedirs(path)
+sb = tantivy.SchemaBuilder(); sb.add_text_field("pid", stored=True, tokenizer_name="raw"); sb.add_text_field("body", stored=False, tokenizer_name="whitespace")
+idx = tantivy.Index(sb.build(), path=path); w = idx.writer(heap_size=512_000_000, num_threads=4)
+t0 = time.perf_counter()
+for l in open("pas.tsv", encoding="utf-8"):
+    p = l.rstrip("\n").split("\t"); w.add_document(tantivy.Document(pid=p[0], body=p[2]))
+w.commit(); w.wait_merging_threads(); idx.reload()
+print("tantivy index s", round(time.perf_counter() - t0, 1), "MB", round(sum(os.path.getsize(os.path.join(path, x)) for x in os.listdir(path)) / 1e6, 1))
+s = idx.searcher()
+def pct(a, p): a = sorted(a); return round(a[min(len(a) - 1, int(len(a) * p))], 2)
+def rec(rel, got, k): return len(set(rel) & set(got[:k])) / len(rel)
+async def main():
+    c = await asyncpg.connect(host="/tmp/kbv2r", port=55433, user="kb", database="kbm1")
+    df = {r["term"]: r["df"] for r in await c.fetch("select term, df from mp_terms")}
+    res = {}
+    for name in ("tantivy_bm25", "pg_tsrankcd_or", "pg_dffilter1pct_limit2000_appbm25", "pg_dffilter1pct_limit2000_noorder_raw"):
+        lat = []; r100 = []; r20 = []; allmatch = 0; ncand = []
+        for qid, t in qs:
+            rel = Q["rel"][qid]; t1 = time.perf_counter()
+            if name == "tantivy_bm25":
+                q = idx.parse_query(" OR ".join(t), ["body"]); hits = s.search(q, 200).hits
+                got = [s.doc(a).get_first("pid") for _, a in hits]
+            elif name == "pg_tsrankcd_or":
+                rows = await c.fetch("select id from mp, to_tsquery('simple',$1) q where tsv @@ q order by ts_rank_cd(tsv,q) desc limit 200", " | ".join(t))
+                got = [r["id"] for r in rows]
+            else:
+                keep = [x for x in t if df.get(x, 0) / N <= 0.01] or sorted(t, key=lambda x: df.get(x, 0))[:1]
+                rows = await c.fetch("select id, analyzed from mp where tsv @@ to_tsquery('simple',$1) limit 2000", " | ".join(keep))
+                ncand.append(len(rows))
+                if name.endswith("appbm25"):
+                    qset = set(t); sc = []
+                    for r in rows:
+                        toks = r["analyzed"].split(); L = len(toks); tf = {}
+                        for x in toks:
+                            if x in qset: tf[x] = tf.get(x, 0) + 1
+                        v = 0.0
+                        for x, f in tf.items():
+                            d = df.get(x, 1); v += math.log(1 + (N - d + .5) / (d + .5)) * f * 2.2 / (f + 1.2 * (.25 + .75 * L / 40))
+                        sc.append((v, r["id"]))
+                    sc.sort(reverse=True); got = [i for _, i in sc[:200]]
+                else:
+                    got = [r["id"] for r in rows]
+            lat.append((time.perf_counter() - t1) * 1000); r100.append(rec(rel, got, 100)); r20.append(rec(rel, got, 20))
+        res[name] = {"n": len(lat), "p50_ms": pct(lat, .5), "p95_ms": pct(lat, .95), "recall@20": round(statistics.mean(r20), 3), "recall@100": round(statistics.mean(r100), 3)}
+        if ncand: res[name]["cand_p50"] = sorted(ncand)[len(ncand) // 2]
+    cnt = []
+    for qid, t in qs[:100]:
+        cnt.append((await c.fetchval("select count(*) from mp where tsv @@ to_tsquery('simple',$1)", " | ".join(t))))
+    res["or_match_fraction_of_corpus_median"] = statistics.median(cnt) / N
+    res["or_match_fraction_p90"] = sorted(cnt)[90] / N
+    res["queries"] = len(qs)
+    print(json.dumps(res, ensure_ascii=False, indent=1))
+asyncio.run(main())

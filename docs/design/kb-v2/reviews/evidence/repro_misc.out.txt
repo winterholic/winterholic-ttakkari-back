@@ -1,0 +1,7 @@
+smoke_xling.py   : {"top1": "8/8", "pos_min": 0.545, "pos_mean": 0.673, "neg_max": 0.46, "neg_mean": 0.307}   (doc와 동일)
+bq_recall.py     : {"n": 1815, "overlap@10_C40": 0.931, "overlap@10_C100": 0.989, "overlap@10_C200": 0.998}   (doc와 동일)
+bench_emb.py     : passages 1815, 78.1/s, 17982 tok/s, query p50 73.2ms p95 103.9ms  (doc: 130/s, 11.0/14.8ms; 부하 load 12-22 + 병행 HNSW 빌드)
+bench_rr.py      : n20 300ms, n50 715ms, n100 1309ms (doc: 206/484/965), smoke top1 8/8
+det.py           : single vs batch32 min_cos 0.999994, identical vectors 15/64, mean sign flips 0.39/1024 (max 5); single vs single rerun identical 16/64, flips 0.27 (max 3)
+tv_test.py       : second writer -> LockBusy ; re-add same pid without delete -> count 2 ; delete+add -> 1 ; tantivy-py writer has no commit payload API
+Kiwi single-thread on MIRACL ko (100k set): 81,855 chars/s (first 3000, judged-heavy) / 101,321 chars/s (random 3000) ; RSS 539MB ; repo docs bench_tv.py: 358,116 chars/s

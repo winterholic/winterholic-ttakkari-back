@@ -1,0 +1,85 @@
+import json, time, statistics, numpy as np, asyncio, asyncpg, os, re, tantivy
+X = np.load("X.npy"); qv = np.load("qv.npy"); ids = json.load(open("ids.json")); Q = json.load(open("queries.json"))
+idpos = {d: i for i, d in enumerate(ids)}; N = len(ids)
+rel = [[idpos[d] for d in Q["rel"][q] if d in idpos] for q in Q["qids"]]
+rec = lambda r, g, k: len(set(r) & set(g[:k])) / len(r)
+S = qv @ X.T
+exact = np.argsort(-S, axis=1)[:, :200]
+out = {"N": N, "queries": len(qv)}
+out["exact_dense"] = {f"recall@{k}": round(statistics.mean(rec(r, list(e), k) for r, e in zip(rel, exact)), 3) for k in (10, 20, 100)}
+# BQ exact-hamming candidates + halfvec-like rescoring (numpy, no ANN)
+B = X > 0
+for C in (100, 200, 400):
+    ov10 = []; ov100 = []; rr = []
+    for qi in range(len(qv)):
+        ham = (B != (qv[qi] > 0)).sum(1); cand = np.argpartition(ham, C)[:C]
+        resc = cand[np.argsort(-(X[cand] @ qv[qi]))]
+        ov10.append(len(set(exact[qi][:10]) & set(resc[:10])) / 10); ov100.append(len(set(exact[qi][:100]) & set(resc[:100])) / min(100, C))
+        rr.append(rec(rel[qi], list(resc), 100) if rel[qi] else 0)
+    out[f"BQ_exacthamming_query2doc_C{C}"] = {"overlap@10": round(statistics.mean(ov10), 3), "overlap@100": round(statistics.mean(ov100), 3), "qrels_recall@100": round(statistics.mean(rr), 3)}
+# doc2doc (the design's M10 method)
+rng = np.random.default_rng(1); qi = rng.choice(N, 200, replace=False)
+for C in (40, 100, 200):
+    hits = []
+    for i in qi:
+        q = X[i]; ex = np.argsort(-(X @ q))[1:11]
+        ham = (B != B[i]).sum(1); cand = np.argsort(ham)[:C + 1]; cand = cand[cand != i]
+        resc = cand[np.argsort(-(X[cand] @ q))][:10]; hits.append(len(set(ex) & set(resc)) / 10)
+    out[f"BQ_doc2doc_C{C}_overlap@10"] = round(statistics.mean(hits), 3)
+# hybrid with tantivy BM25 (RRF) on same corpus
+idx = tantivy.Index.open("/tmp/kbv2r/real/tv"); idx.reload(); s = idx.searcher()
+def lex(t):
+    toks = sorted({x for x in t.split() if re.fullmatch(r"\w+", x)})
+    if not toks: return []
+    return [idpos[s.doc(a).get_first("pid")] for _, a in s.search(idx.parse_query(" OR ".join(toks), ["body"]), 200).hits]
+def rrf(lists, k=60):
+    sc = {}
+    for l in lists:
+        for r, d in enumerate(l): sc[d] = sc.get(d, 0) + 1 / (k + r + 1)
+    return [d for d, _ in sorted(sc.items(), key=lambda x: -x[1])]
+lx = [lex(a) for a in Q["qan"]]
+out["bm25_only"] = {f"recall@{k}": round(statistics.mean(rec(r, l, k) for r, l in zip(rel, lx)), 3) for k in (20, 100)}
+hy = [rrf([l, list(e)]) for l, e in zip(lx, exact)]
+out["rrf_bm25_dense"] = {f"recall@{k}": round(statistics.mean(rec(r, l, k) for r, l in zip(rel, hy)), 3) for k in (20, 40, 100)}
+out["bm25_only_recall@40"] = round(statistics.mean(rec(r, l, 40) for r, l in zip(rel, lx)), 3)
+out["dense_only_recall@40"] = round(statistics.mean(rec(r, list(e), 40) for r, e in zip(rel, exact)), 3)
+print(json.dumps(out, indent=1))
+# real pgvector HNSW on BQ
+async def pg():
+    c = await asyncpg.connect(host="/tmp/kbv2r", port=55433, user="kb", database="kbm")
+    await c.execute("drop table if exists vec")
+    await c.execute("create table vec(passage_id text primary key, v halfvec(1024))")
+    t = time.perf_counter()
+    recs = [(ids[i], "[" + ",".join(f"{x:.6f}" for x in X[i]) + "]") for i in range(N)]
+    await c.copy_records_to_table("vec", records=[(a, b) for a, b in recs], columns=["passage_id", "v"]) if False else None
+    for i in range(0, N, 2000):
+        await c.executemany("insert into vec values ($1,$2::halfvec)", recs[i:i + 2000])
+    print("insert s", round(time.perf_counter() - t, 1))
+    await c.execute("set maintenance_work_mem='4GB'")
+    t = time.perf_counter()
+    await c.execute("create index vec_bq on vec using hnsw ((binary_quantize(v)::bit(1024)) bit_hamming_ops) with (m=16, ef_construction=64)")
+    print("bq hnsw build s", round(time.perf_counter() - t, 1), "size", await c.fetchval("select pg_size_pretty(pg_relation_size('vec_bq'))"))
+    t = time.perf_counter()
+    await c.execute("create index vec_full on vec using hnsw (v halfvec_cosine_ops) with (m=16, ef_construction=64)")
+    print("full hnsw build s", round(time.perf_counter() - t, 1), "size", await c.fetchval("select pg_size_pretty(pg_relation_size('vec_full'))"))
+    qtxt = ["[" + ",".join(f"{x:.6f}" for x in v) + "]" for v in qv]
+    res = {}
+    for C in (100, 200, 400):
+        await c.execute(f"set hnsw.ef_search={max(C, 40)}")
+        sql = f"""with c as (select passage_id, v from vec order by binary_quantize(v)::bit(1024) <~> binary_quantize($1::halfvec)::bit(1024) limit {C})
+                  select passage_id from c order by v <=> $1::halfvec limit 200"""
+        lat = []; ov10 = []; ov100 = []; rr = []
+        for qi_, q in enumerate(qtxt):
+            t = time.perf_counter(); rows = await c.fetch(sql, q); lat.append((time.perf_counter() - t) * 1000)
+            got = [idpos[r["passage_id"]] for r in rows]
+            ov10.append(len(set(exact[qi_][:10]) & set(got[:10])) / 10); ov100.append(len(set(exact[qi_][:100]) & set(got[:100])) / 100)
+            rr.append(rec(rel[qi_], got, 100) if rel[qi_] else 0)
+        lat.sort(); res[f"pg_bq_hnsw_C{C}"] = {"p50_ms": round(lat[len(lat) // 2], 1), "p95_ms": round(lat[int(len(lat) * .95)], 1), "overlap@10": round(statistics.mean(ov10), 3), "overlap@100": round(statistics.mean(ov100), 3), "qrels_recall@100": round(statistics.mean(rr), 3)}
+    await c.execute("set hnsw.ef_search=100")
+    lat = []; ov10 = []
+    for qi_, q in enumerate(qtxt):
+        t = time.perf_counter(); rows = await c.fetch("select passage_id from vec order by v <=> $1::halfvec limit 100", q); lat.append((time.perf_counter() - t) * 1000)
+        got = [idpos[r["passage_id"]] for r in rows]; ov10.append(len(set(exact[qi_][:10]) & set(got[:10])) / 10)
+    lat.sort(); res["pg_full_hnsw_ef100"] = {"p50_ms": round(lat[len(lat) // 2], 1), "p95_ms": round(lat[int(len(lat) * .95)], 1), "overlap@10": round(statistics.mean(ov10), 3)}
+    print(json.dumps(res, indent=1))
+asyncio.run(pg())

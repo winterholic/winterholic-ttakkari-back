@@ -1,0 +1,4 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/ruff format --check src/ttakkari/kb_eval unit_tests/kb_eval
+19 files already formatted
+
+exit=0

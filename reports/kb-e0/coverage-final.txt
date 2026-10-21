@@ -1,0 +1,24 @@
+....................................................                     [100%]
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.13.15-final-0 _______________
+
+Name                                      Stmts   Miss  Cover   Missing
+-----------------------------------------------------------------------
+src/ttakkari/kb_eval/__init__.py              0      0   100%
+src/ttakkari/kb_eval/__main__.py             47     47     0%   3-73
+src/ttakkari/kb_eval/comparison.py           41      3    93%   24, 32, 42
+src/ttakkari/kb_eval/core.py                 10      0   100%
+src/ttakkari/kb_eval/integrity.py            88      5    94%   30, 70, 96, 112, 118
+src/ttakkari/kb_eval/latency.py              72     13    82%   8, 10, 24, 26, 36, 42, 44, 61, 105, 126-128, 131
+src/ttakkari/kb_eval/loader.py               73     13    82%   27, 33, 37, 49, 60, 62, 64, 66, 72, 74, 77, 79, 81
+src/ttakkari/kb_eval/metrics.py              97     13    87%   17, 21, 28, 51, 56, 58, 191, 208, 212, 214, 216, 225, 227
+src/ttakkari/kb_eval/reproducibility.py      26      3    88%   8, 11, 13
+src/ttakkari/kb_eval/review_api.py           37      3    92%   38, 51, 53
+src/ttakkari/kb_eval/runner.py               95      4    96%   75, 105, 140-141
+src/ttakkari/kb_eval/schema.py              127      1    99%   24
+src/ttakkari/kb_eval/state.py                84      5    94%   40, 61, 128, 153-154
+src/ttakkari/kb_eval/statistics.py          115     11    90%   15, 24, 53, 66, 70, 109, 113, 184, 190, 227, 229
+-----------------------------------------------------------------------
+TOTAL                                       912    121    87%
+Coverage JSON written to file reports/kb-e0/coverage.json
+52 passed in 1.00s

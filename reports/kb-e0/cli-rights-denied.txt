@@ -1,0 +1,4 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python -m ttakkari.kb_eval run kb-eval/fixtures/rights-denied.json --out /Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/cli-rights-denied
+{"failure": {"category": "rights", "error_type": "ValueError", "reason": "rights_unverified:qrels"}, "final_quality": "not_authorized", "state": "failed"}
+
+exit=2

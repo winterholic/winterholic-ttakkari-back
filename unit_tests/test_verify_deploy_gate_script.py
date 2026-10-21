@@ -118,19 +118,25 @@ def test_pre_push_rejects_when_any_eligible_ref_fails(tmp_path):
 def test_installed_hook_invokes_gate_automatically_and_preserves_existing_hook(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True, text=True)
-    git_dir = repo / ".git"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True, text=True)
     scripts = repo / "scripts"
     scripts.mkdir()
     marker = tmp_path / "hook-invoked"
     gate = scripts / "verify_deploy_gate.sh"
-    gate.write_text(f"#!/bin/sh\nprintf 'invoked:%s\\n' \"$1\" >> '{marker}'\n")
-    gate.chmod(0o755)
-    env = {**os.environ, "GIT_DIR": str(git_dir)}
+    real_gate = GATE.read_bytes()
+    # 게이트는 시작할 때 GIT_DIR 을 지우고 자기 위치의 저장소를 쓰므로, 실제 스크립트를 임시 저장소 안에서 설치한다.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
-    installed = subprocess.run([str(GATE), "--install-hook"], capture_output=True, text=True, env=env, check=False)
+    def install() -> subprocess.CompletedProcess[str]:
+        gate.write_bytes(real_gate)
+        gate.chmod(0o755)
+        return subprocess.run([str(gate), "--install-hook"], cwd=repo, capture_output=True, text=True,
+                              env=env, check=False)
+
+    installed = install()
     assert installed.returncode == 0, installed.stdout + installed.stderr
-    hook = git_dir / "hooks" / "pre-push"
+    hook = repo / ".git" / "hooks" / "pre-push"
+    gate.write_text(f"#!/bin/sh\nprintf 'invoked:%s\\n' \"$1\" >> '{marker}'\n")
     invoked = subprocess.run([str(hook), "origin", "unused"], cwd=repo, input="", text=True,
                              capture_output=True, env=env, check=False)
     assert invoked.returncode == 0, invoked.stdout + invoked.stderr
@@ -138,7 +144,7 @@ def test_installed_hook_invokes_gate_automatically_and_preserves_existing_hook(t
 
     hook.write_text("#!/bin/sh\necho user-hook\n")
     hook.chmod(0o755)
-    rejected = subprocess.run([str(GATE), "--install-hook"], capture_output=True, text=True, env=env, check=False)
+    rejected = install()
     assert rejected.returncode != 0
     assert hook.read_text() == "#!/bin/sh\necho user-hook\n"
 

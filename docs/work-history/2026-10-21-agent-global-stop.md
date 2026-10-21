@@ -45,7 +45,7 @@
 - 코드 변경 커밋은 원격 main `1bf9097` 위에 rebase 완료했고, rebase 뒤 단위 검사·lint·compile·migration head 검사를 재실행했다. 이 기록 갱신 뒤 푸시 및 수정 SHA gate 예약을 진행한다. DB 통합 재검증 전 판정을 통과로 올리지 않는다.
 
 ### 후속 상태 정정 (2026-10-21, 수정 SHA 독립 확인 계속)
-- 별도 worktree의 현재 HEAD는 `32dce03e7ec186d60da2211cb4aeafcb7bd6e42f`이며 feature 브랜치 `fix/agent-global-stop-audit-followup-20261021`까지 원격 push 완료했다. `fe0386a2f0bada633ce9f6b34f8b9421c7c6eac8` 현재 원격 main 변경(collector/TTS/test harness)을 병합했으며 이 변경을 다시 구현하거나 원본 main에 덮어쓰지 않았다.
+- 별도 worktree의 코드 병합 커밋은 `32dce03e7ec186d60da2211cb4aeafcb7bd6e42f`이며 feature 브랜치 `fix/agent-global-stop-audit-followup-20261021`에 코드와 기록 변경을 원격 push 완료했다. `fe0386a2f0bada633ce9f6b34f8b9421c7c6eac8` 현재 원격 main 변경(collector/TTS/test harness)을 병합했으며 이 변경을 다시 구현하거나 원본 main에 덮어쓰지 않았다.
 - 원본 worktree는 여전히 staged agent-control/ADR/test 삭제와 collector/W1 변경이 섞여 있고 `main...origin/main [behind 1]`이다. 이후에도 원본 worktree는 수정하지 않았다.
 - 수정 SHA의 새 DB 비의존 재실행: 같은 격리 URL 인자와 `pytest --noconftest -q tests/test_agent_stop_contract_unit.py` → `4 passed in 0.42s`. Ruff는 기존 원본 저장소 `.venv/bin/ruff`로 변경 대상 파일을 확인해 `All checks passed!`; `compileall`, `git diff --check`도 통과했다. Alembic 조회 결과 `migration_heads=['0062_agent_stop_fences']`, `current_head=0062_agent_stop_fences`.
 - 이번 worktree에는 `.venv`가 없어 최초 `.venv/bin/ruff` 호출은 `no such file or directory`로 lint를 실행하지 못했다. 이어서 기존 원본 저장소 venv의 ruff로 같은 변경 파일을 검사해 통과했으며 의존성 설치나 가상환경 변경은 하지 않았다.

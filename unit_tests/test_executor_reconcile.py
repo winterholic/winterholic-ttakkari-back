@@ -66,6 +66,9 @@ async def test_reconcile_stale_snapshot_never_signals_process_group(monkeypatch,
         async def __aexit__(self, *_args):
             return False
 
+        async def execute(self, _statement):
+            return None
+
         async def scalar(self, query):
             if query.model is reconcile.RuntimeLease:
                 return lease
@@ -117,6 +120,61 @@ async def test_reconcile_dry_run_does_not_call_apply_or_change_rows(monkeypatch)
     assert result["mode"] == "dry-run"
     assert result["reconciled"] == 0
     assert state == {"lease_deleted": False, "group_deleted": False, "signals": 0}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sqlstate", ["55P03", "57014"])
+async def test_reconcile_lock_timeout_rolls_back_and_reports_retryable(monkeypatch, sqlstate):
+    import uuid
+
+    from sqlalchemy.exc import DBAPIError
+
+    from ttakkari import executor_reconcile as reconcile
+
+    entry = {"run_id": str(uuid.uuid4()), "owner_id": str(uuid.uuid4()),
+             "disposition": "process_group_live",
+             "groups": [], "_group_rows": [], "_lease_token": "token-1"}
+    state = {"local_settings": [], "rollback": 0, "signals": 0}
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def execute(self, statement):
+            state["local_settings"].append(str(statement))
+
+        async def rollback(self):
+            state["rollback"] += 1
+
+    class PgTimeout(Exception):
+        def __init__(self):
+            self.sqlstate = sqlstate
+
+    async def lock_control(_db):
+        raise DBAPIError("SELECT ... FOR UPDATE", {}, PgTimeout(), False)
+
+    async def forbidden_signal(_group):
+        state["signals"] += 1
+        return True
+
+    monkeypatch.setattr(reconcile, "sessionmaker", lambda: (lambda: FakeSession()))
+    monkeypatch.setattr(reconcile, "_read_orphans", lambda: _entries([entry]))
+    monkeypatch.setattr(reconcile, "_control", lock_control)
+    monkeypatch.setattr(reconcile, "_stop_verified_group", forbidden_signal)
+
+    result = await reconcile.reconcile_orphans(apply=True)
+
+    assert result["reconciled"] == 0
+    assert result["leases"][0]["reconciled"] is False
+    assert result["leases"][0]["action"] == "retryable_lock_timeout"
+    assert "timeout" in result["leases"][0]["reason"].lower()
+    assert state["rollback"] == 1
+    assert state["signals"] == 0
+    assert any("SET LOCAL lock_timeout" in sql for sql in state["local_settings"])
+    assert any("SET LOCAL statement_timeout" in sql for sql in state["local_settings"])
 
 
 async def _entries(values):

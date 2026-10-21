@@ -10,6 +10,8 @@ import pytest
 from ttakkari.config import get_settings
 from ttakkari.deployment import JobStore
 
+pytestmark = pytest.mark.contract
+
 
 def test_generation_queue_accepts_new_revision_and_deduplicates(tmp_path, monkeypatch):
     monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,16 @@ requires_runtime = pytest.mark.skipif(not RUNTIME.available, reason=f"컨테이�
 
 SYNTHETIC = "ttk-synthetic-secret-7f3a9c"
 BUILD_HTML = "<!doctype html><title>g</title>"
+
+
+# 도커 네트워크·컨테이너 이름(ttk-game-<build_id>-*)은 호스트 전역이다. 고정 ID 를 쓰면 배포 게이트나 다른 worktree 의
+# 같은 테스트와 이름이 겹쳐 실패하므로(LOG-126/137) 프로세스마다 고유한 접미사를 붙인다.
+# 같은 이름은 한 프로세스 안에서 같은 ID 를 돌려줘, 테스트가 의도한 재사용(build_exists)은 유지된다.
+_RUN_TOKEN = uuid.uuid4().hex[:8]
+
+
+def uid(name: str) -> str:
+    return f"{name}-{_RUN_TOKEN}"
 
 
 def write_project(root: Path, files: dict[str, str]) -> Path:
@@ -193,12 +204,100 @@ def probe_project(root: Path, host_secret_dir: Path) -> Path:
     return root
 
 
+def stale_network_runner(creates: list[tuple[int, str]], labels: dict[str, str] | None = None,
+                        ) -> tuple[IsolatedBuildRunner, list[tuple[str, ...]]]:
+    """docker CLI 를 흉내 낸다. `network create` 결과는 순서대로, `inspect` 는 labels 딕셔너리에서 돌려준다."""
+    runner = IsolatedBuildRunner()
+    calls: list[tuple[str, ...]] = []
+    pending = list(creates)
+    labels = labels or {}
+
+    async def fake_docker(*args: str, timeout: float = 30) -> tuple[int, str]:
+        calls.append(args)
+        if args[:2] == ("network", "create"):
+            return pending.pop(0)
+        if args[1] == "inspect":
+            name = args[-1]
+            return (0, labels[name]) if name in labels else (1, "No such object")
+        if args[0] == "logs":
+            return 0, "READY"
+        return 0, ""
+
+    runner._docker = fake_docker  # type: ignore[method-assign]
+    return runner, calls
+
+
+async def test_egress_removes_own_leftover_network_and_retries_once():
+    # 자기 라벨 잔재(LOG-126/137)는 프록시와 네트워크를 지운 뒤 한 번 다시 만든다.
+    runner, calls = stale_network_runner(
+        [(1, "Error response from daemon: network with name ttk-game-r1 already exists"), (0, "id")],
+        {"ttk-game-r1": "r1", "ttk-game-r1-proxy": "r1"},
+    )
+    async with runner._egress("r1") as eg:
+        assert eg["network"] == "ttk-game-r1"
+    kinds = [c[:2] if c[0] in ("network", "container") else c[:1] for c in calls]
+    assert kinds[:5] == [("network", "create"), ("network", "inspect"), ("container", "inspect"), ("rm",), ("network", "rm")]
+    assert ("rm", "-f", "ttk-game-r1-proxy") in calls and ("network", "rm", "ttk-game-r1") in calls
+    assert sum(1 for c in calls if c[:2] == ("network", "create")) == 2
+
+
+async def test_egress_never_removes_foreign_network():
+    # 남의 실행 라벨이면 지우지 않고 바로 실패한다(ADR 0066 D3a). rm 계열 호출이 없어야 한다.
+    runner, calls = stale_network_runner(
+        [(1, "Error response from daemon: network with name ttk-game-r9 already exists")],
+        {"ttk-game-r9": "other-run", "ttk-game-r9-proxy": "other-run"},
+    )
+    with pytest.raises(IsolationError) as e:
+        async with runner._egress("r9"):
+            pytest.fail("남의 네트워크가 있으면 본문이 실행되면 안 된다")
+    assert e.value.code == "network_conflict"
+    assert "남의 실행 자원이라 지우지 않았습니다" in str(e.value)
+    assert [c for c in calls if c[:1] == ("rm",) or c[:2] == ("network", "rm")] == []
+    assert sum(1 for c in calls if c[:2] == ("network", "create")) == 1  # 재시도도 없다
+
+
+async def test_egress_gives_up_when_retry_still_fails_and_does_not_retry_other_errors():
+    runner, calls = stale_network_runner(
+        [(1, "network ttk-game-r2 already exists"), (1, "network ttk-game-r2 already exists")],
+        {"ttk-game-r2": "r2"},
+    )
+    with pytest.raises(IsolationError) as e:
+        async with runner._egress("r2"):
+            pytest.fail("네트워크가 없으면 본문이 실행되면 안 된다")
+    assert e.value.code == "network_failed"
+    assert sum(1 for c in calls if c[:2] == ("network", "create")) == 2  # 재시도는 한 번뿐
+
+    runner, calls = stale_network_runner([(1, "Cannot connect to the Docker daemon")])
+    with pytest.raises(IsolationError) as e:
+        async with runner._egress("r3"):
+            pytest.fail("네트워크가 없으면 본문이 실행되면 안 된다")
+    assert e.value.code == "network_failed"
+    assert [c[:2] for c in calls] == [("network", "create")]  # 다른 오류는 정리·재시도 없이 바로 실패한다
+
+
+@requires_runtime
+async def test_egress_stage_recovers_from_real_leftover_network(runner, work, tmp_path):
+    build_id = uid("leftover1")
+    leftover = f"ttk-game-{build_id}"
+    # 자기 라벨 잔재(이전 단계가 죽고 남긴 것)만 정리 후 재시도한다. 라벨 없는 남의 자원은 건드리지 않는다.
+    code, out = await runner._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", leftover)
+    assert code == 0, out
+    try:
+        stage = write_project(tmp_path / "stage", {"x": "1"})
+        res = await runner.run_stage(stage, ["node", "-e", "console.log('alive')"], stage="probe", build_id=build_id, network="egress", timeout=90)
+        assert res.ok and "alive" in res.log, res.log
+        _, nets = await runner._docker("network", "ls", "--filter", f"name={leftover}", "--format", "{{.Name}}")
+        assert nets.strip() == ""  # 재시도로 만든 네트워크도 끝나면 지워진다
+    finally:
+        await runner._docker("network", "rm", leftover)
+
+
 @requires_runtime
 async def test_hostile_build_cannot_escape_read_secrets_or_use_network(runner, work, tmp_path, monkeypatch):
     monkeypatch.setenv("TTK_SYNTHETIC_SECRET", SYNTHETIC)
     monkeypatch.setenv("TTAKKARI_JWT_SECRET", SYNTHETIC)
     project = probe_project(tmp_path / "proj", tmp_path / "host-secret")
-    res = await runner.build_project(project, work, "probe1")
+    res = await runner.build_project(project, work, uid("probe1"))
     assert res.success, res.log
     report = json.loads((res.output_dir / "report.json").read_text())
 
@@ -233,14 +332,14 @@ async def test_build_does_not_modify_original_project_or_leave_containers(runner
         ".git/HEAD": "ref: refs/heads/main",
     })
     before = (project / "package.json").read_text()
-    res = await runner.build_project(project, work, "orig1")
+    res = await runner.build_project(project, work, uid("orig1"))
     assert res.success, res.log
     assert (project / "package.json").read_text() == before
     assert not (project / "planted.txt").exists() and not (project / "node_modules").exists() and not (project / "dist").exists()
-    assert not (work / "orig1" / "src").exists()  # 스테이징 정리
-    assert containers("orig1") == ""
+    assert not (work / uid("orig1") / "src").exists()  # 스테이징 정리
+    assert containers(uid("orig1")) == ""
     with pytest.raises(IsolationError) as e:  # 같은 빌드 ID 로 이전 산출물을 덮어쓰지 못한다.
-        await runner.build_project(project, work, "orig1")
+        await runner.build_project(project, work, uid("orig1"))
     assert e.value.code == "build_exists"
 
 
@@ -255,21 +354,21 @@ async def test_install_scripts_never_run_and_failed_build_is_reported(runner, wo
         "build.js": "const fs=require('fs');fs.mkdirSync('dist');"
                     "fs.writeFileSync('dist/index.html',fs.existsSync('POSTINSTALL_RAN')?'RAN':'CLEAN');",
     })
-    res = await runner.build_project(project, work, "scripts1")
+    res = await runner.build_project(project, work, uid("scripts1"))
     assert res.success, res.log
     assert (res.output_dir / "index.html").read_text() == "CLEAN"
 
     failing = write_project(tmp_path / "bad", {"package.json": package_json("node -e \"process.exit(3)\"")})
-    res = await runner.build_project(failing, work, "failing1")
+    res = await runner.build_project(failing, work, uid("failing1"))
     assert not res.success and res.output_dir is None
     assert "빌드 실패(exit 3)" in res.error
-    assert not (work / "failing1" / "out").exists()
+    assert not (work / uid("failing1") / "out").exists()
 
     linky = write_project(tmp_path / "linky", {
         "package.json": package_json("node build.js"),
         "build.js": "const fs=require('fs');fs.mkdirSync('dist');fs.writeFileSync('dist/index.html','x');fs.symlinkSync('/etc/hostname','dist/leak');",
     })
-    res = await runner.build_project(linky, work, "linky1")
+    res = await runner.build_project(linky, work, uid("linky1"))
     assert not res.success and "심볼릭 링크" in res.error
 
 
@@ -293,7 +392,7 @@ const connect = (target) => new Promise((res) => { const s = net.connect({host: 
   }));
 })();
 """})
-    res = await runner.run_stage(stage, ["node", "probe.js"], stage="probe", build_id="egress1", network="egress", timeout=90)
+    res = await runner.run_stage(stage, ["node", "probe.js"], stage="probe", build_id=uid("egress1"), network="egress", timeout=90)
     assert res.ok, res.log
     got = json.loads(res.log.split("RESULT ", 1)[1].strip().splitlines()[0])
     assert got["direct_host"] is False and got["direct_internet"] is False
@@ -302,8 +401,8 @@ const connect = (target) => new Promise((res) => { const s = net.connect({host: 
     if " 502 " in got["proxy_registry"]:
         pytest.skip("npm 레지스트리에 연결할 수 없는 환경(허용 경로 양성 대조 불가)")
     assert " 200 " in got["proxy_registry"], got["proxy_registry"]
-    assert containers("egress1") == ""  # 프록시 컨테이너와 네트워크 정리
-    _, nets = await runner._docker("network", "ls", "--filter", "name=ttk-game-egress1", "--format", "{{.Name}}")
+    assert containers(uid("egress1")) == ""  # 프록시 컨테이너와 네트워크 정리
+    _, nets = await runner._docker("network", "ls", "--filter", f"name=ttk-game-{uid('egress1')}", "--format", "{{.Name}}")
     assert nets.strip() == ""
 
 
@@ -312,24 +411,24 @@ async def test_timeout_memory_pids_and_file_size_limits(work, tmp_path):
     stage = write_project(tmp_path / "stage", {"x": "1"})
     small = IsolatedBuildRunner(limits=IsolationLimits(memory_mb=128, pids=32, file_size_mb=8, tmp_mb=32))
 
-    res = await small.run_stage(stage, ["sleep", "60"], stage="hang", build_id="limits1", network="none", timeout=3)
+    res = await small.run_stage(stage, ["sleep", "60"], stage="hang", build_id=uid("limits1"), network="none", timeout=3)
     assert res.timed_out and not res.ok
-    assert containers("limits1") == ""  # 시간 초과 컨테이너는 제거된다
+    assert containers(uid("limits1")) == ""  # 시간 초과 컨테이너는 제거된다
 
     mem = await small.run_stage(stage, ["node", "-e", "const a=[];for(;;)a.push(Buffer.alloc(16*1024*1024,1))"],
-                                stage="mem", build_id="limits2", network="none", timeout=60)
+                                stage="mem", build_id=uid("limits2"), network="none", timeout=60)
     assert mem.exit_code not in (0, None), mem.log  # OOM kill(137) 또는 V8 힙 오류
 
     pids = await small.run_stage(stage, ["node", "-e", """
 const cp = require('child_process'); let failed = 0, started = 0;
 for (let i = 0; i < 100; i++) { const c = cp.spawn('sleep', ['5']); c.on('error', () => {}); if (c.pid) started++; else failed++; }
 console.log('PIDS ' + started + ' ' + failed); setTimeout(() => process.exit(0), 200);"""],
-                             stage="pids", build_id="limits3", network="none", timeout=60)
+                             stage="pids", build_id=uid("limits3"), network="none", timeout=60)
     started, failed = map(int, pids.log.split("PIDS ", 1)[1].split()[:2])
     assert failed > 0 and started < 100, pids.log
 
     await small.run_stage(stage, ["sh", "-c", "dd if=/dev/zero of=/work/big bs=1M count=64 2>&1; echo EXIT=$?"],
-                                stage="fsize", build_id="limits4", network="none", timeout=60)
+                                stage="fsize", build_id=uid("limits4"), network="none", timeout=60)
     assert (stage / "big").stat().st_size <= 8 * 1024 * 1024
 
 
@@ -380,27 +479,27 @@ def fake_typescript_project(root: Path, *, broken: bool, with_typescript: bool =
 
 @requires_runtime
 async def test_typecheck_stage_runs_before_build_and_blocks_it_on_failure(runner, work, tmp_path):
-    ok = await runner.build_project(fake_typescript_project(tmp_path / "ok", broken=False), work, "tc-ok1")
+    ok = await runner.build_project(fake_typescript_project(tmp_path / "ok", broken=False), work, uid("tc-ok1"))
     assert ok.success, ok.log
     assert [s.stage for s in ok.stages] == ["install", "check", "build"]
-    bad = await runner.build_project(fake_typescript_project(tmp_path / "bad", broken=True), work, "tc-bad1")
+    bad = await runner.build_project(fake_typescript_project(tmp_path / "bad", broken=True), work, uid("tc-bad1"))
     assert not bad.success and bad.output_dir is None
     assert [s.stage for s in bad.stages] == ["install", "check"]  # 검사가 실패하면 빌드 스크립트는 돌지 않는다
     assert bad.error.startswith(isolation.TYPECHECK_FAILED) and "src/broken.ts(1,1): error TS2322: bad" in bad.error
-    assert containers("tc-bad1") == ""
-    off = await runner.build_project(fake_typescript_project(tmp_path / "off", broken=True), work, "tc-off1", typecheck=False)
+    assert containers(uid("tc-bad1")) == ""
+    off = await runner.build_project(fake_typescript_project(tmp_path / "off", broken=True), work, uid("tc-off1"), typecheck=False)
     assert off.success and [s.stage for s in off.stages] == ["install", "build"]  # 설정으로 끌 수 있다
 
 
 @requires_runtime
 async def test_typecheck_is_skipped_visibly_without_typescript_or_tsconfig(runner, work, tmp_path):
-    no_ts = await runner.build_project(fake_typescript_project(tmp_path / "nots", broken=False, with_typescript=False), work, "tc-nots1")
+    no_ts = await runner.build_project(fake_typescript_project(tmp_path / "nots", broken=False, with_typescript=False), work, uid("tc-nots1"))
     assert no_ts.success, no_ts.log
     check = next(s for s in no_ts.stages if s.stage == "check")
     assert "타입 검사를 건너뜁니다" in check.log  # 조용히 건너뛰지 않고 로그에 남긴다
     plain = write_project(tmp_path / "plain", {"package.json": package_json("node build.js"),
                                                "build.js": "const fs=require('fs');fs.mkdirSync('dist');fs.writeFileSync('dist/index.html','x');"})
-    res = await runner.build_project(plain, work, "tc-plain1")
+    res = await runner.build_project(plain, work, uid("tc-plain1"))
     assert res.success and [s.stage for s in res.stages] == ["install", "build"]  # tsconfig.json 이 없으면 검사 단계 자체가 없다
 
 
@@ -414,11 +513,11 @@ async def test_real_template_with_type_error_fails_check_not_vite(runner, work, 
     project = tmp_path / "tpl"
     copytree(PhaserAdapter.TEMPLATE, project, ignore=lambda *_: {"node_modules", "dist"})
     runner.limits = IsolationLimits(install_timeout=240, build_timeout=120)
-    good = await runner.build_project(project, work, "tpl-ok1")
+    good = await runner.build_project(project, work, uid("tpl-ok1"))
     assert good.success, good.log
     assert [s.stage for s in good.stages] == ["install", "check", "build"]
     main = project / "src" / "main.ts"
     main.write_text(main.read_text() + "\nexport const typeError: number = 'not a number';\n")
-    bad = await runner.build_project(project, work, "tpl-bad1")
+    bad = await runner.build_project(project, work, uid("tpl-bad1"))
     assert not bad.success and [s.stage for s in bad.stages] == ["install", "check"]
     assert bad.error.startswith(isolation.TYPECHECK_FAILED) and "src/main.ts" in bad.error and "TS2322" in bad.error

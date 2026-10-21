@@ -17,7 +17,7 @@ from ttakkari.deployment import JobStore
 from ttakkari.generation_deployment import GenerationController, StageError
 from ttakkari.security.gate import build_security_gate_command
 
-pytestmark = [pytest.mark.security]
+pytestmark = [pytest.mark.security, pytest.mark.contract]
 
 
 def test_build_security_gate_command_structure():

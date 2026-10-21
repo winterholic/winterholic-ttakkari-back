@@ -12,7 +12,7 @@ import pytest
 
 from ttakkari.security.gate import SECURITY_TEST_FILES
 
-pytestmark = [pytest.mark.security]
+pytestmark = [pytest.mark.security, pytest.mark.contract]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

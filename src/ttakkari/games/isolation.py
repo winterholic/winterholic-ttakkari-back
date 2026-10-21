@@ -350,6 +350,11 @@ class IsolatedBuildRunner:
         pump_task.cancel()
         return (None if timed_out else proc.returncode), timed_out, buf.text()
 
+    async def _resource_owned_by(self, kind: str, name: str, build_id: str) -> bool:
+        """docker 자원(network|container)의 ttakkari.game-build 라벨이 이 실행의 build_id 인지 확인한다."""
+        code, out = await self._docker(kind, "inspect", "--format", '{{index .Labels "ttakkari.game-build"}}', name)
+        return code == 0 and out.strip() == build_id
+
     # ---- 설치 단계 egress 프록시
     @contextlib.asynccontextmanager
     async def _egress(self, build_id: str) -> AsyncIterator[dict[str, str]]:
@@ -357,7 +362,14 @@ class IsolatedBuildRunner:
         code, out = await self._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", net)
         if code != 0:
             if "already exists" in out:
-                await self._rm(proxy)
+                # 같은 이름 자원이 있어도 남의 실행 것은 지우지 않는다(ADR 0066 D3a). 자기 라벨 잔재만 정리 후 재시도.
+                if not await self._resource_owned_by("network", net, build_id):
+                    raise IsolationError(
+                        f"격리 네트워크 이름이 다른 실행과 겹쳤습니다: {net}. 남의 실행 자원이라 지우지 않았습니다.",
+                        "network_conflict",
+                    )
+                if await self._resource_owned_by("container", proxy, build_id):
+                    await self._rm(proxy)
                 await self._docker("network", "rm", net)
                 code, out = await self._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", net)
             if code != 0:

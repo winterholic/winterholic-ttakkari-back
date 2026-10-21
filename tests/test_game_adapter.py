@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -166,9 +167,10 @@ async def test_real_phaser_template_builds_in_isolation(games_root: Path, tmp_pa
     root = games_root / "real-phaser"
     await adapter.scaffold_project(root, m)
     before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob("*") if p.is_file() and ".git" not in p.parts}
-    res = await adapter.build(root, "real-1")
+    build_id = f"real-{uuid.uuid4().hex[:10]}"  # 호스트 전역 도커 이름이라 고정 ID 는 다른 실행과 충돌한다(LOG-126/137)
+    res = await adapter.build(root, build_id)
     assert res.success, f"{res.error}\n{res.log[-2000:]}"
-    out = adapter.get_runtime_serve_path(root, "real-1")
+    out = adapter.get_runtime_serve_path(root, build_id)
     index = out / "index.html"
     assert index.is_file() and "<script" in index.read_text()
     assert any(f.endswith(".js") for f in res.bundle_files)

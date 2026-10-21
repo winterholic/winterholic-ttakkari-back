@@ -20,7 +20,7 @@ from ttakkari.main import app
 from ttakkari.orchestrator.runtime import require_orchestrator, require_orchestrator_run
 from ttakkari.security.auth import require_user
 
-pytestmark = [pytest.mark.security]
+pytestmark = [pytest.mark.security, pytest.mark.contract]
 
 
 _AUTH_CALLS = {

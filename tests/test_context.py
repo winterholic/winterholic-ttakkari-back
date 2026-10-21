@@ -1,11 +1,14 @@
 """ADR 0007: 비서 맥락(온톨로지 + RAG), 에이전트 도구 API, 비서 관리 API, 시스템 프롬프트 주입."""
 from __future__ import annotations
 
+import pytest
 from conftest import ALLOWED, HOME, agent_calls
 from helpers import run_to_end
 
 from ttakkari.context.indexer import chunk_markdown
 from ttakkari.orchestrator.runtime import issue_token
+
+pytestmark = pytest.mark.contract
 
 
 async def _session(client, auth, make_dir, **body) -> dict:

@@ -126,6 +126,27 @@ uv run pytest -q
 
 테스트는 가짜 엔진 스크립트(`tests/fake_agents/`)를 쓴다. 실제 CLI 를 부르지 않는다.
 
+## push 전 사전 검증(필수, ADR 0066 D3a)
+
+main 에 push 하기 전에 계약 묶음(`pytest -m contract`: 도구 카탈로그·라우트/MCP 분류표·세대 계약·
+보안 게이트 목록·단일 마이그레이션 head)과 바뀐 테스트 파일을 커밋 트리에서 돌린다.
+한 번 설치하면 main push 때마다 자동으로 돈다. 계약 테스트를 고치면 `contract` 마크를 유지하고,
+`tests/test_contract_marker.py` 가 누락을 검사한다.
+
+```bash
+./scripts/verify_deploy_gate.sh --install-hook   # pre-push 훅 설치(따까리 저장소)
+./scripts/verify_deploy_gate.sh                  # 수동 실행(기본 HEAD 검사)
+```
+
+비상 우회: `git push --no-verify` 또는 `TTK_SKIP_GATE=1 git push`. 우회해도 배포 게이트는 같은 실패로 멈춘다.
+
+무거운 실행(전체 pytest·Docker·브라우저 테스트)은 공용 슬롯 안에서 돌려 동시 실행 수를 제한한다
+(기본 2개, `TTK_PYTEST_SLOTS` 로 조정). 계약 묶음과 배포 게이트는 제한 밖이다.
+
+```bash
+./scripts/pytest_slots.py -- uv run pytest -q   # 전체 실행 예시
+```
+
 ## 비서 맥락(ADR 0007)
 
 PostgreSQL 에 pgvector 가 필요하다(`brew install pgvector`). 마이그레이션 0006 이 `vector`·`pg_trgm` 확장을 만든다.

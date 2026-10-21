@@ -29,4 +29,5 @@
 
 - Keep collector consume disabled by default. Do not re-enable the scheduled full stop or 05:00 stop.
 - Backend deployment is intentionally held for the main session's independent review. This record is not a deploy request or a claim of production readiness.
-- Commit and branch-push details are recorded in the final verification receipt after source commit.
+- Source commit: `53628168ec8573e8945d7c204a0819a1aa224e03`, tree `aff2339fe25ab3ed155dfba3d0029e651010fbd6`.
+- Push succeeded to `origin/collector/s2-03-resume-20261021`; remote `ls-remote` returned the same SHA. The shared local `main` checkout was not switched or cleaned.

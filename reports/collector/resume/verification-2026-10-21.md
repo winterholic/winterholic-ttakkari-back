@@ -81,4 +81,7 @@ The actual initdb stderr was not retained by pytest/fixture cleanup; root cause 
 - DB identity: none; fixture failed before database creation. No shared PostgreSQL or production DB was used.
 - Collector consume remains default-off. No schedules/stops were changed.
 - Deployment was not requested and remains held for independent review by the main session.
-- Commit SHA/tree and push result will be appended after commit.
+- Source commit: `53628168ec8573e8945d7c204a0819a1aa224e03`.
+- Source tree: `aff2339fe25ab3ed155dfba3d0029e651010fbd6`.
+- Push: `git push -u origin collector/s2-03-resume-20261021` returned rc=0; remote `ls-remote` confirmed the same SHA at `refs/heads/collector/s2-03-resume-20261021`.
+- The source commit is based on the fetched `origin/main` and preserves its concurrent delivery migration. The shared original `main` working tree was not switched, reset, stashed, or cleaned.

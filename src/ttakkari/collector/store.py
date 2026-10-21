@@ -226,7 +226,7 @@ def add_bands(db: AsyncSession, item_id: uuid.UUID, tenant_id: str, scope: str, 
 
 
 async def blob_bytes_used(db: AsyncSession) -> int:
-    """Distinct preserved raw bytes across all tenants (identical bytes are stored once)."""
+    """Distinct DB-referenced raw bytes; this is accounting, not physical blob-root usage."""
     sub = (
         select(CollectorItem.raw_sha256, func.max(CollectorItem.raw_size).label("size"))
         .where(CollectorItem.raw_handle.like("cblob:%"))

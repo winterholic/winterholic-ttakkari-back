@@ -27,7 +27,7 @@ from typing import Any
 
 from ttakkari.collector import parse, quality, store, textproc
 from ttakkari.collector import profiles as profiles_module
-from ttakkari.collector.blobs import BlobStore, default_blob_store
+from ttakkari.collector.blobs import BlobQuotaExceeded, BlobStore, default_blob_store
 from ttakkari.collector.contracts import (
     CollectorContractError,
     compute_payload_hash,
@@ -232,7 +232,18 @@ async def _prepare(
     if cache is not None and cache.last_item_id is not None:
         p.signals["revision_of"] = str(cache.last_item_id)
     if spec.store_raw:
-        p.raw_handle = await asyncio.to_thread(deps.blobs.put, body)
+        p.raw_handle = await asyncio.to_thread(
+            deps.blobs.put,
+            body,
+            lineage={
+                "item_id": str(p.item_id),
+                "job_id": str(job.id),
+                "tenant_id": job.tenant_id,
+                "scope": job.scope,
+                "source_key": str((job.envelope.get("source") or {}).get("key", "")),
+                "url": raw_url,
+            },
+        )
     else:
         p.raw_unpreserved = True
     detected = parse.detect_kind(body, res.media_type)
@@ -595,8 +606,11 @@ async def _finalize_page(
 
 async def _storage_full() -> bool:
     cap = get_settings().collector_blob_cap_bytes
-    async with sessionmaker()() as db:
-        return await store.blob_bytes_used(db) >= cap
+    used_bytes = await asyncio.to_thread(get_deps().blobs.usage_bytes)
+    if used_bytes >= cap:
+        log.warning("collector storage cap reached used_bytes=%d cap_bytes=%d", used_bytes, cap)
+        return True
+    return False
 
 
 def _summary(cursor: dict[str, Any]) -> dict[str, Any]:
@@ -628,7 +642,19 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
         page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"])]
         prepared: list[Prepared] = []
         for entry in page:
-            p = await _prepare(entry, job, spec, req, deps)
+            try:
+                p = await _prepare(entry, job, spec, req, deps)
+            except BlobQuotaExceeded as exc:
+                log.warning(
+                    "collector job paused at raw blob quota job_id=%s used_bytes=%d requested_bytes=%d cap_bytes=%d",
+                    job.id, exc.used_bytes, exc.requested_bytes, exc.cap_bytes,
+                )
+                return HandlerResult(
+                    "retry_wait",
+                    {"code": "storage_cap_reached", **_summary(cursor), "used_bytes": exc.used_bytes,
+                     "requested_bytes": exc.requested_bytes, "cap_bytes": exc.cap_bytes},
+                    retry_after=3600,
+                )
             if p.retry is not None and p.retry[1] != "host_cooldown" and entry["t"] + 1 >= MAX_URL_TRIES:
                 p.errors.append(_err("fetch", "retries_exhausted", f"{MAX_URL_TRIES} attempts: {p.retry[1]}"))
                 p.status, p.stage, p.reasons, p.retry = "failed", "fetch", ["retries_exhausted", p.retry[1]], None

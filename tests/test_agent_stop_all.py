@@ -219,7 +219,9 @@ async def test_scheduled_stop_all_action(client, auth, make_dir):
     run = await create_run(orch)
 
     async with sessionmaker()() as db:
-        item = await create_schedule(db, action_type="stop_all", due_at="+0s", payload={"scope_pool": "all"})
+        # NOTE: 앱의 _schedules_loop(5초 주기)가 도래한 예약을 같이 집어 stop_all 을 배경에서 돌리면, 다음 테스트의 TRUNCATE 와
+        # stop_all 의 폴링(_wait_inactive)이 서로를 기다려 교착한다. 이 테스트는 execute_action 을 직접 부르므로 도래하지 않게 둔다.
+        item = await create_schedule(db, action_type="stop_all", due_at="+3600s", payload={"scope_pool": "all"})
 
     res = await execute_action(item)
     assert str(run.id) in res["stopped"]
@@ -619,7 +621,9 @@ async def test_schedule_partial_stop_has_partial_status(client, auth, make_dir):
     orch, _ = await create_session(client, auth, make_dir)
     await create_run(orch, status=RunStatus.running, pid=os.getpid(), started_at=utcnow())
     async with sessionmaker()() as db:
-        item = await create_schedule(db, action_type="stop_all", due_at="+0s", payload={"scope_pool": "personal"})
+        # NOTE: 앱의 _schedules_loop(5초 주기)가 도래한 예약을 같이 집어 stop_all 을 배경에서 돌리면, 다음 테스트의 TRUNCATE 와
+        # stop_all 의 폴링(_wait_inactive)이 서로를 기다려 교착한다. 이 테스트는 execute_action 을 직접 부르므로 도래하지 않게 둔다.
+        item = await create_schedule(db, action_type="stop_all", due_at="+3600s", payload={"scope_pool": "personal"})
 
     result = await execute_action(item)
 

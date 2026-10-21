@@ -897,6 +897,17 @@ async def stop_worker(worker_id: str) -> str:
     return await _call("POST", f"/workers/{worker_id}/stop")
 
 
+@orchestrator_tool
+async def stop_agents(session_id: str | None = None, reason: str = "") -> str:
+    """On user instruction, stop all agents or a specific session across ownership trees and generations.
+    Omit session_id to stop ALL queued, running and quota-waiting agents.
+    Work orchestrators are restricted to their workspace.
+    Returns stopped runs, remaining runs, and reasons for unstopped runs."""
+    if session_id:
+        return await _call("POST", f"/agents/{session_id}/stop", {"reason": reason})
+    return await _call("POST", "/stop-all", {"reason": reason})
+
+
 @query_tool
 async def list_checklist(day: str | None = None) -> str:
     """List a day's checklist and completion counts. day is YYYY-MM-DD, defaults to today (Asia/Seoul)."""

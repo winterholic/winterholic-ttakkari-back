@@ -166,6 +166,11 @@ async def _schedules() -> None:
     await process_due_schedules(owner_id=owner)
 
 
+async def _collector_consume() -> None:
+    from ttakkari.collector.runner import consume_once
+    await consume_once()
+
+
 async def ready(runtime) -> dict:
     from ttakkari.api.assistant import _tasks as indexing
     from ttakkari.meetings.vectors import _pending
@@ -189,6 +194,8 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds),
         ("notebooklm-jobs", _notebooklm_jobs, 60), ("creative-render", creative_scan, 2),
         ("schedules", _schedules, s.runtime_poll_seconds)]
+    if s.collector_consume_enabled:
+        jobs.append(("collector-consume", _collector_consume, s.runtime_poll_seconds))
     if s.reminder_scan_seconds > 0:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:

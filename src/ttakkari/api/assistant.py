@@ -138,6 +138,7 @@ TOOLS: list[dict[str, str]] = [
     {"name": "list_workers", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션 목록"},
     {"name": "get_worker", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션 상세"},
     {"name": "stop_worker", "group": "작업 세션", "who": "오케스트레이터", "desc": "작업 세션 멈추기"},
+    {"name": "stop_agents", "group": "작업 세션", "who": "오케스트레이터", "desc": "사용자 지시에 따라 세션 소유권과 배포 세대를 넘어 활성·대기 에이전트를 전역 중지한다"},
     {"name": "my_context", "group": "작업 세션", "who": "오케스트레이터", "desc": "내 대화의 컨텍스트 사용률"},
     {"name": "reset_my_context", "group": "작업 세션", "who": "오케스트레이터", "desc": "다음 턴부터 내 대화를 새로 시작"},
 ]

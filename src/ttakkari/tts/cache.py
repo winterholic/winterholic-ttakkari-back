@@ -1,6 +1,6 @@
 """청크 단위 내용 주소 캐시(설계 §8.4). 키·조회·저장·정리는 부모 프로세스에서만 한다.
 
-키: blake2b("tts1" ‖ engine ‖ model_revision ‖ voice ‖ speed ‖ lang ‖ normalize(chunk_text)).
+키: blake2b("tts2" ‖ engine ‖ model_revision ‖ voice ‖ speed.hex() ‖ lang ‖ normalize(chunk_text)).
 설계 키에 lang 을 더했다. 같은 문장이라도 언어 태그가 다르면 다른 소리이기 때문이다.
 오디오는 <home>/tts-cache/<shard2>/<key>.wav, 작업 중인 임시 파일은 <home>/tts-cache/tmp/ 에 둔다.
 """
@@ -24,7 +24,7 @@ from ttakkari.config import get_settings
 from ttakkari.models import utcnow
 from ttakkari.tts_models import TtsCache
 
-KEY_VERSION = "tts1"
+KEY_VERSION = "tts2"
 STAGING_STALE_SECONDS = 3600
 
 
@@ -60,7 +60,7 @@ def text_hash(text: str) -> str:
 
 def chunk_key(*, engine: str, model_revision: str, voice: str, speed: float, lang: str, text: str) -> str:
     """NUL 로 필드를 구분해 필드 경계가 달라도 같은 이어붙임이 되는 충돌을 막는다. text 는 정규화를 마친 청크다."""
-    material = "\0".join((KEY_VERSION, engine, model_revision, voice, f"{speed:.3f}", lang, text))
+    material = "\0".join((KEY_VERSION, engine, model_revision, voice, float(speed).hex(), lang, text))
     return hashlib.blake2b(material.encode("utf-8"), digest_size=16).hexdigest()
 
 

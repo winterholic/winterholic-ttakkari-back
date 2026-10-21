@@ -1,9 +1,8 @@
 """로컬 TTS 표(tts_jobs, tts_cache). 신규 표만 추가한다(online-safe). 원문 컬럼은 두지 않는다(ADR 0062)."""
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0061_local_tts"
 down_revision = "0060_collector_job_runtime"

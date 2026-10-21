@@ -499,6 +499,61 @@ async def stop_worker(worker_id: uuid.UUID, sid: OrchestratorSession, db: Db) ->
     return await _out(db, w)
 
 
+class StopAllIn(BaseModel):
+    reason: str = Field(default="오케스트레이터 전역 중지", max_length=1000)
+
+
+@router.post("/stop-all")
+async def orchestrator_stop_all(
+    sid: OrchestratorSession,
+    db: Db,
+    body: StopAllIn | None = None,
+) -> dict[str, Any]:
+    """사용자 지시를 받은 오케스트레이터가 소유 세션과 무관하게 활성 에이전트를 전역 중지한다.
+
+    개인 풀은 개인 풀 전체, 회사 풀은 해당 워크스페이스로 권한이 제한된다.
+    """
+    from ttakkari.runs.agent_control import stop_all_agents
+
+    orch = await _orchestrator(db, sid)
+    reason = body.reason if body else "오케스트레이터 전역 중지"
+    return await stop_all_agents(
+        db,
+        pool=orch.pool,
+        workspace_id=orch.workspace_id,
+        reason=reason,
+        actor_id=str(sid),
+    )
+
+
+@router.post("/agents/{session_id}/stop")
+async def orchestrator_stop_session(
+    session_id: uuid.UUID,
+    sid: OrchestratorSession,
+    db: Db,
+    body: StopAllIn | None = None,
+) -> dict[str, Any]:
+    """특정 세션(다른 오케스트레이터 소유 워커나 기획 세션 포함)을 소유권 제한 없이 중지한다."""
+    from ttakkari.runs.agent_control import stop_all_agents
+
+    orch = await _orchestrator(db, sid)
+    target = await db.get(ChatSession, session_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "대상을 찾을 수 없습니다.")
+    # 범위 밖 대상은 조용히 0건으로 끝내지 않고 거부한다.
+    if target.pool != orch.pool or (orch.pool == "work" and target.workspace_id != orch.workspace_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "다른 풀 또는 워크스페이스의 세션은 중지할 수 없습니다.")
+    reason = body.reason if body else f"세션 {session_id} 중지"
+    return await stop_all_agents(
+        db,
+        pool=orch.pool,
+        workspace_id=orch.workspace_id,
+        session_id=session_id,
+        reason=reason,
+        actor_id=str(sid),
+    )
+
+
 @router.get("/accounts/usage")
 async def accounts_usage(sid: OrchestratorSession, db: Db) -> dict:
     """계정별 배정 판단 정보. 회사 업무 오케스트레이터는 회사 그룹 계정만 본다."""
@@ -610,13 +665,28 @@ def _schedule_out(s: Any) -> dict[str, Any]:
 @router.post("/schedules", status_code=status.HTTP_201_CREATED)
 async def create_schedule_route(body: ScheduleCreateIn, sid: OrchestratorSession, db: Db) -> dict:
     from ttakkari.schedules import create_schedule
-    await _orchestrator(db, sid)
+    orch = await _orchestrator(db, sid)
+    payload = dict(body.payload)
+    if body.action_type == "stop_all":
+        # 예약 중지는 예약한 오케스트레이터의 풀·워크스페이스를 넘지 못한다. 페이로드로 범위를 넓힐 수 없다.
+        payload["scope_pool"] = orch.pool
+        payload.pop("workspace_id", None)
+        if orch.pool == "work":
+            payload["workspace_id"] = str(orch.workspace_id)
+        if payload.get("session_id"):
+            try:
+                target = await db.get(ChatSession, uuid.UUID(str(payload["session_id"])))
+            except ValueError as exc:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "session_id 형식이 올바르지 않습니다.") from exc
+            if target is None or target.pool != orch.pool or (
+                    orch.pool == "work" and target.workspace_id != orch.workspace_id):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "다른 풀 또는 워크스페이스의 세션은 예약 중지할 수 없습니다.")
     try:
         item = await create_schedule(
             db,
             action_type=body.action_type,
             due_at=body.due_at,
-            payload=body.payload,
+            payload=payload,
             description=body.description,
             max_attempts=body.max_attempts,
         )

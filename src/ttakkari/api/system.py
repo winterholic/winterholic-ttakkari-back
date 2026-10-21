@@ -18,8 +18,7 @@ from ttakkari.api.deps import Db, get_workspace
 from ttakkari.artifacts.preview import soffice_path
 from ttakkari.audit import record
 from ttakkari.config import get_settings
-from ttakkari.models import AppSetting, Run, RunStatus, SystemResourceSample, utcnow
-from ttakkari.runs.manager import manager
+from ttakkari.models import AppSetting, Run, SystemResourceSample, utcnow
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -197,11 +196,11 @@ async def resource_history(
 @router.post("/system/stop-all")
 async def stop_all(_: User, db: Db, request: Request) -> dict:
     """비상 정지. 실행 중인 모든 에이전트 프로세스를 끝낸다."""
-    rows = list(await db.scalars(select(Run.id).where(Run.status.in_([RunStatus.queued, RunStatus.running]))))
-    stopped = [str(r) for r in rows if await manager.cancel(r)]
-    record(db, action="system.stop_all", detail={"stopped": stopped}, ip=client_ip(request))
-    await db.commit()
-    return {"stopped": stopped}
+    from ttakkari.runs.agent_control import stop_all_agents
+
+    res = await stop_all_agents(db, pool="all", reason="시스템 비상 정지")
+    record(db, action="system.stop_all", detail=res, ip=client_ip(request))
+    return res
 
 
 @router.get("/runs/{run_id}/diff", response_class=PlainTextResponse)

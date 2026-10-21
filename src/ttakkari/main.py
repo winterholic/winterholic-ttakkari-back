@@ -340,6 +340,10 @@ def create_app() -> FastAPI:
     app.include_router(research.agent_router)
     from ttakkari.api import tts as tts_api
     app.include_router(tts_api.router)
+    from ttakkari.api import collect
+    app.include_router(collect.router)
+    app.include_router(collect.agent_router)
+    collect.install(app)  # CollectorError 의 http_status/error_code(403·409·422·404)를 {code, message} 로 내린다(CP-S2-02)
     return app
 
 

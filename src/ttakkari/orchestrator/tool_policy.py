@@ -40,7 +40,7 @@ NOTEBOOKLM_TOOLS = frozenset({"notebooklm_create", "notebooklm_rename", "noteboo
 # 엔진 무관 실행 환경 보고와 호스트 GPU 시험 경로(ADR 0037). 상태 조회도 고아 정리를 하므로 읽기 전용으로 표시하지 않는다.
 HOST_ENV_TOOLS = frozenset({"begin_environment_probe", "report_execution_environment", "host_gpu_start",
                             "host_gpu_status", "host_gpu_bench", "host_gpu_stop"})
-WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "reset_my_context"})
+WORKER_MANAGEMENT_TOOLS = frozenset({"spawn_worker", "message_worker", "stop_worker", "stop_agents", "reset_my_context"})
 BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"})
 # Research Lab: 연구 지식·실험·재개 관리(ADR 0056)
 RESEARCH_TOOLS = frozenset({"manage_research"})

@@ -275,6 +275,9 @@ class RunManager:
             if any(r.status == RunStatus.running or r.id in self._handles for r in rows):
                 await db.rollback()
                 return None
+            # 전역 중지로 취소된 작업의 보고를 표식을 모르는 구세대가 만들었다면 시작 전에 버린다.
+            from ttakkari.runs.agent_control import drop_suppressed_reports
+            rows = await drop_suppressed_reports(db, rows)
             nxt = rows[0] if rows else None
             now_ts = time.time()
             now_dt = utcnow()
@@ -1789,6 +1792,19 @@ async def recover_interrupted() -> int:
         return len(rows)
 
 
+async def _consume_pending_cancel(db: AsyncSession, run_id: uuid.UUID) -> bool:
+    """전역 중지가 남긴 미집행 cancel 명령이 있으면 회수하고 True. 죽은 세대를 향한 명령이라 여기서 마감한다."""
+    from ttakkari.models import RuntimeCommand
+    cmd = await db.scalar(
+        select(RuntimeCommand).where(RuntimeCommand.run_id == run_id, RuntimeCommand.kind == "cancel",
+                                     RuntimeCommand.acknowledged_at.is_(None)).limit(1)
+    )
+    if cmd is None:
+        return False
+    cmd.acknowledged_at = utcnow()
+    return True
+
+
 async def resume_interrupted() -> int:
     """Queue only server-shutdown interruptions, with persisted bounded exponential backoff."""
     async with sessionmaker()() as db:
@@ -1800,6 +1816,10 @@ async def resume_interrupted() -> int:
         waiting: list[tuple[uuid.UUID, uuid.UUID, float]] = []
         now = time.time()
         for run in rows:
+            if await _consume_pending_cancel(db, run.id):
+                # 소유 세대 집행 전에 세대가 죽어 interrupted 로 남은 Run. 재개하지 않고 취소로 마감한다.
+                await manager._finish(db, run, RunStatus.cancelled, error="전역 중지 요청 후 세대 종료로 취소 마감")
+                continue
             if not run.resume_handoff:
                 run.resume_handoff = await _interrupted_handoff(db, run)
             run.resume_attempts += 1
@@ -2174,6 +2194,9 @@ async def _attempt_handoff(db: AsyncSession, run: Run, profile: str, state: Pars
 async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:
     """작업 세션 Run 이 끝나면 오케스트레이터에게 결과 보고 Run 을 넣는다. 시작 전 보고가 있으면 거기에 덧붙인다."""
     if sess.kind != SessionKind.worker or sess.parent_id is None:
+        return None
+    from ttakkari.runs.agent_control import should_suppress_report
+    if await should_suppress_report(db, run):
         return None
     parent = await db.get(ChatSession, sess.parent_id)
     if parent is None or parent.archived_at is not None:

@@ -8,9 +8,8 @@
 """
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision = "0060_collector_job_runtime"
 down_revision = "0059_collector_intake"

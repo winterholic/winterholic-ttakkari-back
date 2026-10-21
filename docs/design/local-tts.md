@@ -89,7 +89,7 @@ class TtsProvider(Protocol):
 4. 캐시 히트 시에는 자식 프로세스를 아예 띄우지 않고 파일로 응답한다.
 
 **실측 기반 판단**:
-단문 TTFA 중앙값이 0.71초(중문 0.70초, 장문 1.03초)로 목표 상한선(8초)보다 월등히 빠르므로, 복잡하고 자원을 점유하는 유휴 타임아웃 상주 프로세스 도입 필요성이 없으며 일회용 프로세스 모델이 최적임을 실측으로 검증했다.
+워커 내부 TTFA 중앙값은 단문 0.71초(중문 0.70초, 장문 1.03초)다. 이 값은 전체 작업 완료나 브라우저 재생 시점보다 앞선 지표이므로 사용자 지연 목표 충족을 뜻하지 않는다. 일회용 모델은 모델 상주를 피하고 배포 때의 워커 풀 관리를 줄이려는 설계 선택이며, 상주 모델과 성능·자원 비교를 하지 않아 최적성은 검증하지 않았다.
 
 ## 6. 동시성: STT·E5와의 경합 제어
 
@@ -100,11 +100,11 @@ class TtsProvider(Protocol):
   - **세대 미사용 모드**(`runtime_generation=false`, `config.py:107`, `main.py:144-148`): 단일 프로세스이므로 프로세스 내 `asyncio.Lock`(`_tts_execution_lock`)이 예산이다.
   - `work()`는 상태가 active가 아니면 잠금을 잡지 않고 False를 준다(`generation.py:264-266`). 따라서 draining 세대의 `/speak`는 새 합성을 시작하지 않고 503을 돌려준다(§8.3.3).
 - **단문 동기(/speak)와 장문 비동기(/jobs)의 직렬 실행 예산 준수**: `/jobs` 워커가 실행 중일 때 `/speak`가 들어오면 같은 예산을 최대 15초 대기하고, 초과 시 503(busy)을 반환한다.
-- **STT와 TTS의 동시 실행 및 간섭 (2026-10-21 실측 검증 완료)**:
+- **STT와 TTS의 동시 시행 (2026-10-21, 부모 작업 구간만 확인)**:
   - STT는 4스레드(`local_stt_cpu_threads`), TTS도 4스레드(`local_tts_cpu_threads`)를 사용한다.
-  - 동시 실행 실측(5회 전회 겹침 구간 5.66~7.89초 증명) 결과: TTS 벽시계 저하율 +11.69%, STT 벽시계 저하율 +3.55%.
-  - 피크 메모리 합산은 약 4.38GB(TTS 0.58GB + STT 3.79GB)로 안전한 공존이 가능함을 확인.
-  - 따라서 `LOCAL_TTS_CONCURRENCY_POLICY`의 기본값은 `allow_concurrent`(STT와 TTS 독립 병렬 실행)로 최종 확정한다.
+  - 5회 시행의 부모 작업 epoch 겹침은 5.66~7.89초였다. 부모 벽시계 중앙값 변화는 TTS +11.69%, STT +3.55%였지만, 자식 추론 구간의 실제 동시 실행과 CPU 경합 원인은 입증되지 않았다.
+  - 개별 자식 프로세스 피크 RSS를 더한 값은 같은 시점의 호스트 메모리 사용량이 아니다. 호스트 전체 메모리·swap 및 동시점 피크는 측정하지 않아 안전한 공존 여부는 미입증이다.
+  - `LOCAL_TTS_CONCURRENCY_POLICY`의 현재 기본값은 `allow_concurrent`다. 이 벤치는 해당 설정의 자원 안전성이나 최적성을 입증하지 않는다.
 
 ## 7. API 설계
 
@@ -277,7 +277,7 @@ RETURNING id
 ### 8.4 청크 단위 캐시 키 통일
 
 ```text
-chunk_cache_key = blake2b("tts1" ‖ engine ‖ model_revision ‖ voice ‖ speed ‖ normalize(chunk_text))
+chunk_cache_key = blake2b("tts2" ‖ engine ‖ model_revision ‖ voice ‖ speed.hex() ‖ lang ‖ normalize(chunk_text))
 ```
 
 - 파일 위치: `<home>/tts-cache/<shard2>/<chunk_cache_key>.wav` (2단계 샤딩).
@@ -341,7 +341,7 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 - **원문 수명 검증**: 취소·실패·TTL·drain에서 `_pending_texts`가 비워지는지, 실행 중에는 감독기 계약상 부모가 원문을 보유함을 테스트 주석으로 명시(**"stdin 직후 해제"를 단정하는 테스트는 만들지 않는다**), `result_metadata`에 원문이 없는지.
 - **퇴역 순서 검증(4차)**: 소유 queued가 있는 동안 `ready()`(`generation_service.py:158-168`)의 `drain_ready`가 False이고 `finalizers`에 guard가 잡히는지, draining 전환 뒤 guard가 queued를 `failed(generation_draining)`으로 확정하고 원문을 비운 **다음에만** `drain_ready`가 True가 되는지, running job이 있는 동안은 `_work` 때문에 False인지, POST가 처리 중이면 `http_inflight`로 False인지, guard 종료 판정과 새 POST의 경합(락)이 queued를 guard 없이 남기지 않는지, 세대 미사용 모드에서는 guard가 만들어지지 않는지.
 - **세대·사망 확인 검증**: draining 전환 시 자기 소유 queued가 `failed(generation_draining)`이 되고 running은 끝까지 가는지, `heartbeat_at`만 오래된 소유자의 job은 건드리지 않는지, `<owner_id>.lock`을 얻을 수 있을 때만 `owner_gone`로 정리하는지, 사망한 소유자의 running 행이 정리될 때까지 새 claim이 막히는지.
-- **동시성 및 간섭 검증 완료**: STT(4스레드)와 TTS(4스레드) 동시 실행 시 상호 RTF 저하율 실측 완료 (TTS +11.69%, STT +3.55%, `docs/tts/benchmark-2026-10-21.md` 참조).
+- **벤치 증거 범위**: `docs/tts/benchmark-2026-10-21.md`의 +11.69%/+3.55%는 보존된 raw 중앙값의 산술 재현값이다. raw epoch는 부모 작업 구간만 기록하며 자식 추론 동시성이나 호스트 자원 안전성을 보이지 않는다.
 - **모바일 실기기 검증**: iOS 17+ Safari/PWA 실기기 체크리스트 검증.
 - **DB 0060→0061 테이블 생성 및 schema 이미 0060일 때 migration skip 방지 회귀 케이스**:
   - `0060_collector_job_runtime` → `0061_local_tts` 업그레이드 시 `tts_jobs`, `tts_cache` 테이블 정상 생성 검증.
@@ -349,20 +349,13 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 
 ## 13. 측정 항목 및 2026-10-21 실측치 (`docs/tts/benchmark-2026-10-21.md`)
 
-- **TTFA (Time To First Audio)**:
-  - 단문: 중앙값 0.71초 (로드 0.33초 포함)
-  - 중문: 중앙값 0.70초
-  - 장문: 중앙값 1.03초
-  - 목표 상한선(8초) 대비 7배 이상 빨라 빠른 청크 청취 가능.
+- **워커 내부 TTFA** (부모 작업 결과·브라우저 재생 전의 지표):
+  - 단문 p50 0.71초 (범위 0.67~2.24초), 중문 p50 0.70초 (0.67~0.74초), 장문 p50 1.03초 (0.95~5.09초).
+  - API 접수부터 사용자가 듣기까지의 지연과 8초 조건은 미검증이다.
 - **RTF (Real-Time Factor)**:
   - 단문: 0.19, 중문: 0.17, 장문: 0.17 (실시간 대비 약 5.3~5.9배 빠름)
-- **메모리 점유**:
-  - 워커 피크 RSS: 549MB (단문) ~ 607MB (장문). 일회용 프로세스 종료 시 전량 OS 회수.
-- **STT 동시 실행 저하율**:
-  - 단독 vs 동시 실행 (양쪽 겹침 구간 중앙값 6.14초 증명):
-  - TTS 벽시계: 5.50초 → 6.15초 (+11.69%)
-  - STT 벽시계: 25.28초 → 26.18초 (+3.55%)
-  - 합산 RSS: 약 4.38GB (안전 범위 내)
+- **메모리 점유**: 워커 자식별 피크 RSS 중앙값은 단문 549MB, 장문 607MB다. raw는 호스트 전체 메모리·swap을 측정하지 않았고, 두 프로세스별 피크 합은 동시점 피크가 아니다.
+- **동시 시행 raw 산술**: TTS 부모 wall p50 5.50초 → 6.15초(+11.69%), STT 25.28초 → 26.18초(+3.55%). 부모 epoch 겹침 p50 6.14초이며, 자식 추론 구간의 동시성이나 CPU 경합 원인은 입증되지 않았다. 안전한 공존 또는 `allow_concurrent`의 최적성 증거로 사용하지 않는다.
 - **캐시 지표**:
   - 캐시 히트 시 워커 실행 없이 파일 응답 (지연 < 10ms).
 
@@ -385,7 +378,7 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 | `LOCAL_TTS_CACHE_MAX_GB` | 2.0 | 캐시 용량 상한 |
 | `LOCAL_TTS_CACHE_TTL_DAYS` | 30 | 캐시 보관 기간(일) |
 | `LOCAL_TTS_TOKEN_TTL_SECONDS` | 600 | 오디오 재생 단기 토큰 TTL |
-| `LOCAL_TTS_CONCURRENCY_POLICY` | allow_concurrent | STT 동시 실행 정책 (실측 저하율 경미로 병렬 허용 확정) |
+| `LOCAL_TTS_CONCURRENCY_POLICY` | allow_concurrent | 현재 STT 동시 실행 설정. 호스트 메모리 안전성은 검증되지 않음 |
 
 ## 15. 마이그레이션·배포·운영
 
@@ -407,9 +400,9 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 
 ## 17. 실측 완료 및 잔여 항목
 
-1. **엔진 채택 및 벤치마크 완료**: 2026-10-21 사용자 결정으로 Supertonic 3 (ONNX CPU, 4스레드) 채택 및 실측 벤치마크 완료 (`docs/tts/benchmark-2026-10-21.md`).
-2. **TTFA 및 자원 실측**: 단문 TTFA 0.71초, RTF 0.17~0.19, 피크 RSS 550~610MB로 목표 달성. 일회용 프로세스 아키텍처 타당성 검증.
-3. **STT 동시 실행 실측**: STT large-v3와 동시 실행 시 저하율(TTS +11.7%, STT +3.6%, 겹침 구간 6.14초) 실측 완료. `allow_concurrent` 정책 확정.
+1. **엔진 결정**: 2026-10-21 사용자 결정으로 Supertonic 3 (ONNX CPU, 4스레드)를 선택했다. raw 기반 성능 요약과 한계는 `docs/tts/benchmark-2026-10-21.md`에 있다.
+2. **워커 지표**: 워커 내부 TTFA, 부모 작업 벽시계, RTF 및 자식 피크 RSS가 기록돼 있다. 사용자 재생 지연, 실기기 성능, 호스트 전체 자원 안전성은 미검증이다.
+3. **동시 시행**: +11.69%/+3.55%는 해당 조건 raw 중앙값의 산술 재현값이다. 부모 작업 epoch 겹침은 자식 추론 동시 실행을 증명하지 않으며, 정책의 안전성·최적성을 확정하지 않는다.
 4. [미검증] iOS Safari 및 PWA 실기기에서의 청크 순차 재생 제스처 유지율 및 WebAudio 갭리스 안정성 (프론트 배포 후 실기기 테스트 대상).
 5. [확인 완료] 프론트엔드 완료 및 main 푸시 (Vercel 배포 성공 확인). 다운로드 브라우저 직접 저장 연동 및 localStorage 최근 생성 목록 연동 확인.
 

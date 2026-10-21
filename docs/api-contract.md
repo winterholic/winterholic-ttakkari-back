@@ -595,3 +595,46 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 ### GitHub 탐색 (ADR 0042, 소유자 전용·읽기 전용)
 
 `/api/github/*` 전부 GET이며 소유자 JWT가 필요하다(에이전트/MCP 라우터 없음). `account=<gh login>` 쿼리가 필수이고(누락은 422), 계정 목록은 `GET /api/github/accounts`, 입력 해석은 `GET /api/github/resolve?q=&account=`. 공통 봉투 `{data,page,rate,fetched_at,cached,stale,account}`와 엔드포인트·오류 코드 표는 `tests/fixtures/github/README.md`, 타입 정본은 `src/ttakkari/github/schemas.py`. 상류 401은 앱 로그아웃을 막으려고 502 `gh_auth_expired`로 바꾼다. 토큰은 응답·로그에 없다. 요청 하나의 전체 시간 예산(15초, 로그 20초)은 계정 확인·모든 중첩 상류 호출·재시도를 합친 한 마감이고(초과 504 `gh_timeout`), `stale:true`는 마지막 확인 후 10분까지만 나온다. `/resolve`는 `HEAD`·7~39자 약식 SHA를 지원하고, 같은 접두사 ref가 매우 많아 확인하지 못하면 422 `gh_unprocessable`(`reason: ref_resolution_limit`)이며 `ref_not_found`로 가리지 않는다. gh 상태 조회 일시 실패는 503 `no_account`(`reason: gh_status_failed`)로 로그아웃과 구분한다(ADR 0042 §13).
+
+## 로컬 TTS (ADR 0062)
+
+로컬 Supertonic 기반 음성 합성 API다. 모든 엔드포인트는 Bearer 토큰(소유자) 인증을 요구하며, 재생/다운로드 링크(`/api/tts/audio/{token}`)만 서명 토큰을 허용한다.
+
+### 1. 상태 및 음색 조회
+- `GET /api/tts/status`
+  - 응답: `{ enabled: boolean, ready: boolean, reason: string | null, engine: string, model: string, voice_count: number, default_voice: string, default_speed: number, speed_range: [number, number], sample_rate: number, output_format: string, max_text_chars: number, speak_max_chars: number, accepting: boolean }`
+  - `max_text_chars`: 장문 비동기 Job 생성 허용 상한 (기본 5,000자)
+  - `speak_max_chars`: 단문 동기 `/speak` 합성 허용 상한 (기본 500자)
+  - `ready`: 모델 가중치 및 엔진 런타임 준비 완료 여부 (boolean)
+  - `accepting`: 현재 런타임 세대가 새 합성을 수락할 수 있는지 여부 (boolean)
+- `GET /api/tts/voices`
+  - 응답: `{ default: string, voices: TtsVoice[] }`
+  - `TtsVoice`: `{ id: string, name: string, lang: string[], gender: string, sample_url: string | null }`
+  - `lang`: 언어 코드 배열 (`string[]`, 예: `["ko"]`)
+
+### 2. 음성 합성 및 작업
+- `POST /api/tts/speak`
+  - 본문: `{ text: string, voice?: string, speed?: number }`. `text`는 1~100,000자 형식 제한과 동적 `speak_max_chars` 제한(기본 500자)을 모두 적용한다. 속도는 0.5~2.0 범위의 임의 숫자다.
+  - 단문 동기 합성. 캐시에 모든 청크가 있으면 즉시 반환하고, 미싱 청크는 직렬 실행 예산 내에서 합성.
+  - 응답: `audio/wav` 바이너리 직접 스트리밍 (`FileResponse`)
+  - 응답 헤더: `X-TTS-Chunks`, `X-TTS-Cached-Chunks`, `X-TTS-Duration`, `X-TTS-Engine`, `Content-Disposition: inline; filename="speech.wav"`
+  - 오류: 422 `text_too_long`·`invalid_speed`·`unknown_voice`·`empty_text` 또는 body validation 오류, 503 `tts_unavailable`·`generation_not_active`·`busy`, 504 `worker_timeout`, 502 `worker_failed`. 오류 본문은 `{code, message}`다.
+- `POST /api/tts/jobs`
+  - 본문: `{ text: string, voice?: string, speed?: number }`. `text`는 1~100,000자 형식 제한과 동적 `max_text_chars` 제한(기본 5,000자)을 모두 적용한다. 속도는 0.5~2.0 범위의 임의 숫자다.
+  - 장문 비동기 합성 작업 등록.
+  - 응답: `202 Accepted` -> `{ job_id: string, status: "queued" | "succeeded", chunks: number, cached_chunks: number }` (전 청크 캐시 적중 시 `succeeded`)
+  - 오류: 입력·voice·speed 오류는 422, `tts_unavailable`·`generation_not_active`는 503. 오류 본문은 `{code, message}`다.
+- `GET /api/tts/jobs/{job_id}`
+  - 응답: `{ id, status, voice, speed, progress: {done, total}, chunks: [{index, text_hash, audio_url?, duration?}], created_at, started_at, finished_at, audio_full_url?, duration?, error_code?, retryable?, cached_chunks?, synthesized_chunks?, metrics? }`
+  - `status`: `queued | running | succeeded | failed | cancelled`
+  - 존재하지 않거나 UUID 형식이 아닌 ID는 404 `not_found`다. `error_code`, `retryable`은 failed 상태에서만 포함된다.
+- `DELETE /api/tts/jobs/{job_id}`
+  - 작업 취소 요청 및 현재 Job 상태 반환. 잘못된 형식·없는 ID는 404 `not_found`다.
+- `GET /api/tts/audio/{token}?download=false`
+  - 서명된 토큰(JWT sub: `chunk:<key>` 또는 `job:<job_id>`) 기반 오디오 스트리밍.
+  - `download=true` 시 `Content-Disposition: attachment; filename="speech.wav"` 제공, 기본값은 `inline`.
+  - 유효하지 않거나 만료된 서명은 403 `link_expired`, 존재하지 않는 작업·청크는 404 `not_found` 또는 `audio_expired`다. 오디오 응답은 `audio/wav`이며 `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`를 보낸다.
+
+### 3. 캐시 관리
+- `GET /api/tts/cache/stats`: `{ entries, bytes, hits, misses, counters_since, max_bytes }` 반환.
+- `POST /api/tts/cache/prune`: `{ removed, freed_bytes }` 반환. 만료/용량 초과 캐시 청크를 정리한다.

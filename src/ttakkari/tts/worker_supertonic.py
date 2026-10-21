@@ -37,7 +37,7 @@ _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 
 def _chunk_seed(text: str, voice: str, speed: float) -> int:
-    digest = hashlib.blake2b(f"{voice}\0{speed:.3f}\0{text}".encode(), digest_size=8).digest()
+    digest = hashlib.blake2b(f"{voice}\0{speed.hex()}\0{text}".encode(), digest_size=8).digest()
     return int.from_bytes(digest, "big") % (2**32)
 
 

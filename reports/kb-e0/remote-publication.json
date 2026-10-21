@@ -1,0 +1,16 @@
+{
+  "code_commit": "43a84275a9a391502c851c86ab6e4e403bca0c4b",
+  "observed_remote_commit": "43a84275a9a391502c851c86ab6e4e403bca0c4b",
+  "branch": "feat/kb-e0-harness",
+  "origin_main": "ba71814167d281d1d1ff31ba405692eb12f87a23",
+  "normal_push_exit": 0,
+  "hook_path": ".git/hooks/pre-push",
+  "hook_sha256": "b22c7a6cc93ec176c797e6b6ad14c6815544d37e9d264c50a357ae2db807fc9b",
+  "skip_gate_used": false,
+  "no_verify_used": false,
+  "main_contract_status": "unexecuted",
+  "main_contract_reason": "normal pre-push applies main contract only to main/master by project policy; manual DB contract would retry user-prohibited known initdb shmget denial",
+  "main_push_attempted": false,
+  "deployment_requested": false,
+  "independent_review": "pending"
+}

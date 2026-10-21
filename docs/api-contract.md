@@ -602,7 +602,7 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 
 ### 1. 상태 및 음색 조회
 - `GET /api/tts/status`
-  - 응답: `{ enabled, ready, reason, engine, model, voice_count, default_voice, default_speed, speed_range, sample_rate, output_format, max_text_chars, speak_max_chars, accepting }`
+  - 응답: `{ enabled: boolean, ready: boolean, reason: string | null, engine: string, model: string, voice_count: number, default_voice: string, default_speed: number, speed_range: [number, number], sample_rate: number, output_format: string, max_text_chars: number, speak_max_chars: number, accepting: boolean }`
   - `max_text_chars`: 장문 비동기 Job 생성 허용 상한 (기본 5,000자)
   - `speak_max_chars`: 단문 동기 `/speak` 합성 허용 상한 (기본 500자)
   - `ready`: 모델 가중치 및 엔진 런타임 준비 완료 여부 (boolean)
@@ -614,23 +614,27 @@ Google 로그인·세션은 NotebookLM 같은 기능이 아니라 계정 단위�
 
 ### 2. 음성 합성 및 작업
 - `POST /api/tts/speak`
-  - 본문: `{ text: string, voice?: string, speed?: number }` (길이 상한 `speak_max_chars`)
+  - 본문: `{ text: string, voice?: string, speed?: number }`. `text`는 1~100,000자 형식 제한과 동적 `speak_max_chars` 제한(기본 500자)을 모두 적용한다. 속도는 0.5~2.0 범위의 임의 숫자다.
   - 단문 동기 합성. 캐시에 모든 청크가 있으면 즉시 반환하고, 미싱 청크는 직렬 실행 예산 내에서 합성.
   - 응답: `audio/wav` 바이너리 직접 스트리밍 (`FileResponse`)
   - 응답 헤더: `X-TTS-Chunks`, `X-TTS-Cached-Chunks`, `X-TTS-Duration`, `X-TTS-Engine`, `Content-Disposition: inline; filename="speech.wav"`
+  - 오류: 422 `text_too_long`·`invalid_speed`·`unknown_voice`·`empty_text` 또는 body validation 오류, 503 `tts_unavailable`·`generation_not_active`·`busy`, 504 `worker_timeout`, 502 `worker_failed`. 오류 본문은 `{code, message}`다.
 - `POST /api/tts/jobs`
-  - 본문: `{ text: string, voice?: string, speed?: number }` (길이 상한 `max_text_chars`)
+  - 본문: `{ text: string, voice?: string, speed?: number }`. `text`는 1~100,000자 형식 제한과 동적 `max_text_chars` 제한(기본 5,000자)을 모두 적용한다. 속도는 0.5~2.0 범위의 임의 숫자다.
   - 장문 비동기 합성 작업 등록.
-  - 응답: `202 Accepted` -> `{ job_id: string, chunks: number, cached_chunks: number }`
+  - 응답: `202 Accepted` -> `{ job_id: string, status: "queued" | "succeeded", chunks: number, cached_chunks: number }` (전 청크 캐시 적중 시 `succeeded`)
+  - 오류: 입력·voice·speed 오류는 422, `tts_unavailable`·`generation_not_active`는 503. 오류 본문은 `{code, message}`다.
 - `GET /api/tts/jobs/{job_id}`
-  - 응답: `{ id, status, progress, chunks, audio_full_url, error_code, retryable, created_at, started_at, finished_at }`
+  - 응답: `{ id, status, voice, speed, progress: {done, total}, chunks: [{index, text_hash, audio_url?, duration?}], created_at, started_at, finished_at, audio_full_url?, duration?, error_code?, retryable?, cached_chunks?, synthesized_chunks?, metrics? }`
   - `status`: `queued | running | succeeded | failed | cancelled`
+  - 존재하지 않거나 UUID 형식이 아닌 ID는 404 `not_found`다. `error_code`, `retryable`은 failed 상태에서만 포함된다.
 - `DELETE /api/tts/jobs/{job_id}`
-  - 작업 취소 요청 및 취소된 Job 상태 반환.
+  - 작업 취소 요청 및 현재 Job 상태 반환. 잘못된 형식·없는 ID는 404 `not_found`다.
 - `GET /api/tts/audio/{token}?download=false`
   - 서명된 토큰(JWT sub: `chunk:<key>` 또는 `job:<job_id>`) 기반 오디오 스트리밍.
   - `download=true` 시 `Content-Disposition: attachment; filename="speech.wav"` 제공, 기본값은 `inline`.
+  - 유효하지 않거나 만료된 서명은 403 `link_expired`, 존재하지 않는 작업·청크는 404 `not_found` 또는 `audio_expired`다. 오디오 응답은 `audio/wav`이며 `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`를 보낸다.
 
 ### 3. 캐시 관리
-- `GET /api/tts/cache/stats`: 캐시 통계 반환.
-- `POST /api/tts/cache/prune`: 만료/초과 캐시 청크 정리.
+- `GET /api/tts/cache/stats`: `{ entries, bytes, hits, misses, counters_since, max_bytes }` 반환.
+- `POST /api/tts/cache/prune`: `{ removed, freed_bytes }` 반환. 만료/용량 초과 캐시 청크를 정리한다.

@@ -33,6 +33,10 @@
 
 구현 tree: `dc6a21835f517492731334c7151df231ada1464b`
 
+Quota-limited prefix 진행 후속 구현 commit: `fd233cdf931ba441ae95cbf24041be0cee3b7782`
+
+후속 구현 tree: `5fead0a6fb25f606f76c9d74166ef0ff4726ebb6`
+
 ## 이번 Run 실행 증거
 
 명령:
@@ -43,7 +47,7 @@ PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back
 
 ```text
 rc=0
-55 passed, 68 subtests passed in 0.94s
+56 passed, 68 subtests passed in 0.86s
 ```
 
 포함한 직접 관측: put 후 synthetic DB rollback exception에서도 blob+lineage 보존, final rename failure 후 reopen/stage promote, subprocess `os._exit(73)` 직후 reopen 및 kernel lock 회수, 서로 다른 동시 cross-process writer 중 한 건만 cap 내 저장, 동일 SHA dedupe, 같은 크기 손상 복구, repair 원자 교체, stale partial stage, cap 경계, root symlink 거부, DB row 없이 orphan이 `_storage_full()`에 반영됨, quota pause 시 성공 prefix만 진행되고 거절 entry/tail은 frontier에 유지됨.

@@ -1,0 +1,10 @@
+exact_replay 0 complete_fixture  exact_match exact_match
+fake_public_rights 2 failed rights_review_authentication_required: public None None
+interrupt 3 interrupted  pending pending
+partial_cache 2 failed Expecting property name enclosed in double qu None None
+partial_seed 0 complete_fixture  exact_match baseline_recorded
+resume 0 complete_fixture  exact_match baseline_recorded
+rights_denied 2 failed rights_unverified:qrels None None
+split_leak 2 failed gold_document_mismatch:q1:d3 None None
+stale_interrupt 3 interrupted  pending pending
+stale_manifest 2 failed resume_manifest_mismatch None None

@@ -1,0 +1,27 @@
+SURVIVED comparison.py 59 no_valid_pairs | 112 passed in 5.48s
+SURVIVED comparison.py 62 invalid_required_gold | 112 passed in 5.15s
+SURVIVED comparison.py 64 execution_failures_present | 112 passed in 5.19s
+SURVIVED latency.py 32 no_observations | 112 passed in 5.18s
+SURVIVED latency.py 60 order_imbalance | 112 passed in 5.25s
+SURVIVED latency.py 62 profile_mismatch | 112 passed in 5.38s
+SURVIVED latency.py 64 insufficient_observation | 112 passed in 5.40s
+SURVIVED latency.py 69 load_imbalance | 112 passed in 5.47s
+KILLED   latency.py 74 order_load_imbalance | 1 failed, 4 passed in 0.16s
+KILLED   latency.py 81 bootstrap_replicates_below_registered_minimum | 1 failed, 36 passed in 4.51s
+KILLED   latency.py 96 degenerate_ratio_ci | 1 failed, 89 passed in 4.54s
+SURVIVED metrics.py 246 power_not_established | 112 passed in 5.47s
+SURVIVED reproducibility.py 20 score_epsilon_exceeded | 112 passed in 9.13s
+SURVIVED reproducibility.py 22 stable_core_changed | 112 passed in 8.12s
+SURVIVED reproducibility.py 24 outside_boundary_near_tie | 112 passed in 5.55s
+SURVIVED reproducibility.py 32 strict_order_changed | 112 passed in 5.47s
+SURVIVED runner.py 161 public_regression_only | 112 passed in 5.51s
+SURVIVED runner.py 186 power_not_established | 112 passed in 5.48s
+SURVIVED runner.py 186 fixture_only | 112 passed in 5.43s
+SURVIVED runner.py 198 invalid_required_gold | 112 passed in 5.37s
+KILLED   statistics.py 219 power_design_mismatch | 1 failed, 30 passed in 0.25s
+KILLED   statistics.py 221 dev_evaluation_group_overlap | 1 failed, 30 passed in 0.24s
+SURVIVED statistics.py 227 bootstrap_replicates_below_registered_minimum | 112 passed in 5.39s
+KILLED   statistics.py 229 degenerate_bootstrap_interval | 1 failed, 91 passed in 4.88s
+KILLED   statistics.py 231 power_not_established | 1 failed, 15 passed in 0.17s
+KILLED   statistics.py 233 insufficient_clusters | 1 failed, 15 passed in 0.17s
+mutants=26 killed=8 survived=18; sources restored

@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from .schema import LatencyBlock
-from .validation import BOOTSTRAP_POLICY, integer, number
+from .validation import BOOTSTRAP_POLICY, DEGENERACY, degenerate_width, integer, number
 
 
 def latency_report(blocks, *, seed, replicates=10000, mode="full"):
@@ -77,6 +77,8 @@ def _latency_report(blocks, *, seed, replicates, mode):
     )
     if (times[:, 1] <= 0).any():
         raise ValueError("zero_control_latency")
+    if (times.std(axis=0) < DEGENERACY["latency_resolution_ms"]).any():
+        reasons.append("degenerate_arm_variance")
     if replicates < BOOTSTRAP_POLICY["minimum_replicates"]:
         reasons.append("bootstrap_replicates_below_registered_minimum")
         low = high = None
@@ -90,9 +92,9 @@ def _latency_report(blocks, *, seed, replicates, mode):
             p95 = np.quantile(times[idx], 0.95, axis=1)
             ratios.extend((p95[:, 0] / p95[:, 1]).tolist())
         low, high = map(float, np.quantile(ratios, [0.025, 0.975]))
-        if low == high:
-            # Zero resampling spread means the trace carries no uncertainty
-            # information; it cannot support a non-inferiority claim.
+        # A CI narrower than the registered timer resolution carries no
+        # resolvable uncertainty; float noise must not read as information.
+        if degenerate_width(low, high, DEGENERACY["latency_ratio_ci_min_width"]):
             reasons.append("degenerate_ratio_ci")
     relative = (
         "relative_unverified"
@@ -107,7 +109,11 @@ def _latency_report(blocks, *, seed, replicates, mode):
     return {
         "relative": relative,
         "ratio_ci": [low, high] if low is not None else None,
-        "ci_degenerate": low == high if low is not None else None,
+        "ci_degenerate": degenerate_width(
+            low, high, DEGENERACY["latency_ratio_ci_min_width"]
+        )
+        if low is not None
+        else None,
         "bootstrap_policy": dict(BOOTSTRAP_POLICY),
         "ci_scope": "observed_block_distribution_only; constant traces do not establish runtime variability",
         "ratio": float(np.quantile(times[:, 0], 0.95) / np.quantile(times[:, 1], 0.95)),

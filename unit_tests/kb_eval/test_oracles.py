@@ -285,10 +285,11 @@ def test_control_also_exceeds_slo_relative_is_separate():
 
 
 def test_ab_load_bias_and_candidate_only_regression():
-    assert (
-        e.latency_report(blocks(biased=True), seed=7)["relative"]
-        == "relative_unverified"
-    )
+    # Varied input: load_imbalance must be the only reason, not masked by
+    # degenerate_ratio_ci from a constant trace.
+    biased = e.latency_report(varied(blocks(biased=True)), seed=7)
+    assert biased["relative"] == "relative_unverified"
+    assert biased["reasons"] == ["load_imbalance"]
     r = e.latency_report(varied(blocks(650.0, 500.0)), seed=7)
     assert r["relative"] == "relative_fail"
     assert r["candidate_absolute"] == "absolute_pass"

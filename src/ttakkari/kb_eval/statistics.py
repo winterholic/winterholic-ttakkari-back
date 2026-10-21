@@ -6,7 +6,14 @@ null-boundary recentered bootstrap and Holm. Neither assumes independent queries
 
 import numpy as np
 
-from .validation import BOOTSTRAP_POLICY, integer, number, probability
+from .validation import (
+    BOOTSTRAP_POLICY,
+    DEGENERACY,
+    degenerate_width,
+    integer,
+    number,
+    probability,
+)
 
 
 def _matrix(values, groups):
@@ -50,6 +57,7 @@ def cluster_interval(values, groups, *, seed, replicates=10000, alpha=0.05):
         raise ValueError("metric_delta_out_of_range")
     samples = _bootstrap(sums, sizes, np.random.default_rng(seed), replicates)[:, 0]
     low, high = np.quantile(samples, [alpha, 1 - alpha])
+    degenerate = degenerate_width(low, high, DEGENERACY["quality_ci_min_width"])
     return {
         "delta": float(a.mean()),
         "low": float(low),
@@ -59,11 +67,11 @@ def cluster_interval(values, groups, *, seed, replicates=10000, alpha=0.05):
         "cluster_sizes": sizes.tolist(),
         "effective_clusters": float(sizes.sum() ** 2 / (sizes @ sizes)),
         "estimand": "question_weighted",
-        "ci_degenerate": bool(low == high),
+        "ci_degenerate": degenerate,
         "sampling_status": "unverified_single_cluster"
         if len(sizes) < 2
         else "unverified_degenerate_interval"
-        if low == high
+        if degenerate
         else "diagnostic_only_low_replicates"
         if replicates < BOOTSTRAP_POLICY["minimum_replicates"]
         else "empirical_cluster_interval",
@@ -184,12 +192,13 @@ def simulate_power(dev_deltas, groups, *, seed, trials=200, replicates=10000):
         and replicates >= 10000
         and len(sizes) >= 20
         and float(sizes.sum() ** 2 / (sizes @ sizes)) >= 20
-        and (a.std(axis=0, ddof=1) > 0).all()
+        and (a.std(axis=0, ddof=1) >= DEGENERACY["quality_dev_min_std"]).all()
         and cis[0][0] >= 0.8
         and cis[1][1] <= 0.05
     )
     return {
         "status": "established" if sufficient else "insufficient",
+        "dev_min_std": DEGENERACY["quality_dev_min_std"],
         "seed": seed,
         "trials": trials,
         "replicates": replicates,
@@ -225,7 +234,10 @@ def quality_family(
             )
     if replicates < BOOTSTRAP_POLICY["minimum_replicates"]:
         reasons.append("bootstrap_replicates_below_registered_minimum")
-    if any(d["low"] == d["high"] for d in details.values()):
+    if any(
+        degenerate_width(d["low"], d["high"], DEGENERACY["quality_ci_min_width"])
+        for d in details.values()
+    ):
         reasons.append("degenerate_bootstrap_interval")
     if power is None or power["status"] != "established":
         reasons.append("power_not_established")

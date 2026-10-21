@@ -35,7 +35,7 @@ manifest는 source revision/raw·body·quote SHA-256/URI/observed time, corpus/g
 
 ## 계측·재현·재개
 
-AB/BA 순서는 고정 seed로 균형 무작위화한다. `timed_call`은 admission wait, service, serialize/transport, e2e를 나누고 model queue/tokenize/prefill/inference/DB pool/execute 미관측은 null+사유다. 병렬 stage p95를 더하지 않는다. `latency_report`는 paired block bootstrap p95 ratio CI와 full800/fast200ms 절대 SLO를 따로 낸다. 높은 부하에서도 절대 실패를 유지한다. 입력 block은 strict schema로 검사한다. bool·NaN·inf·음수·0 duration·결측 field·미등록 weight는 판정 전에 거부한다. 순서/부하/profile 불균형·100쌍/10분 미달, 사전등록 최소치(`kb-eval/statistical-policy.json`, 10,000회) 미만 bootstrap, 재표본 spread가 0인 퇴화 CI는 모두 relative_unverified다. 품질 통계도 같은 경계를 쓰며 퇴화 bootstrap 구간은 `inconclusive`다. 10,000회는 Monte Carlo 하한일 뿐 coverage·power 충분성 근거가 아니다. 실제 동시성1/4·warm/cold·워밍업/3회 반복·10분 서버 부하 pilot은 미실행이다.
+AB/BA 순서는 고정 seed로 균형 무작위화한다. `timed_call`은 admission wait, service, serialize/transport, e2e를 나누고 model queue/tokenize/prefill/inference/DB pool/execute 미관측은 null+사유다. 병렬 stage p95를 더하지 않는다. `latency_report`는 paired block bootstrap p95 ratio CI와 full800/fast200ms 절대 SLO를 따로 낸다. 높은 부하에서도 절대 실패를 유지한다. 입력 block은 strict schema로 검사한다. bool·NaN·inf·음수·0 duration·결측 field·미등록 weight는 판정 전에 거부한다. 순서/부하/profile 불균형·100쌍/10분 미달, 사전등록 최소치(`kb-eval/statistical-policy.json`, 10,000회) 미만 bootstrap, 퇴화 trace는 모두 relative_unverified다. 퇴화는 정확한 값 일치가 아니라 사전등록한 해상도로 판정한다. arm별 e2e 표준편차가 timer 해상도 0.1ms 미만이면 `degenerate_arm_variance`, ratio CI 폭이 0.1/200=5e-4 미만이면 `degenerate_ratio_ci`다. 품질 통계도 같은 경계를 쓴다. metric delta CI 폭이 margin .05의 1/50인 1e-3 미만이면 `degenerate_bootstrap_interval`로 `inconclusive`이고, dev delta 표준편차가 1e-3 미만이면 power는 `insufficient`다. 기준값과 근거는 `statistical-policy.json`의 `degeneracy`에 있으며, 실측 pilot 전의 공학적 하한이다. 하한을 넘는 것은 정보 있는 구간의 필요조건일 뿐 충분조건이 아니다. 10,000회는 Monte Carlo 하한일 뿐 coverage·power 충분성 근거가 아니다. 실제 동시성1/4·warm/cold·워밍업/3회 반복·10분 서버 부하 pilot은 미실행이다.
 
 RSS·CPU time·run artifact 디스크는 하네스 프로세스만 측정한다. GPU/index disk/swap-in은 collector가 없으면 `value=null,status=unverified`다. GPU collector 주입 interface에서만 실제 측정을 연결할 수 있다. 이 값들을 검색 서버의 자원이나 host 전체 GPU 측정으로 부르지 않는다.
 
@@ -48,3 +48,8 @@ fsync→atomic rename→directory fsync로 cache/manifest/checkpoint를 남긴�
 `review_api.create_router`는 제품 app에 mount하지 않은 FastAPI 골격이다. GET state, GET item(질문/원문 URI/quote/후보 pool), POST event(승인/수정/폐기, label_version, history/cursor)를 ASGI TestClient로 검증한다. agent/LLM 표시를 분리하고 **human write는 인증 adapter가 없어서 501로 거부**한다. 실제 사람 확인을 생성하지 않는다. `open_holdout`은 인증된 reviewer flow가 없으므로 actor/role 문자열과 무관하게 `reviewer_authentication_required`로 거부하고 파일·디렉터리·audit 상태를 바꾸지 않는다. 거부 호출이 향후 정당한 개봉을 막지 않는다. agent/LLM review event의 actor는 `actor_authentication=unauthenticated_claim`으로 기록한다. 실제 hidden holdout은 제공·개봉하지 않았다.
 
 실제 DB manifest/관측 fixture 실행은 알려진 Codex command sandbox의 initdb `shmget Operation not permitted` 제한으로 미실행이다. 같은 initdb/다른 binary·engine·보안설정 재시도는 하지 않는다. 실제 DB snapshot/export adapter와 DB 검증이 남았다. 320/390px 화면·브라우저 검증은 새 UI를 만들지 않아 미실행이다. 이 두 표면을 포함한 E0 완료조건과 독립 검증이 남아 있으며 다음 KB 단위·엔진 선택·collector 계약 변경·배포는 하지 않는다.
+
+## 남은 위험 (독립 재검증 2회차 낮음 지적, 미수정)
+
+- 로컬 artifact는 서명하지 않는다. cache/manifest/checkpoint의 checksum과 replay key는 우발적 손상과 입력 불일치를 잡는다. 하지만 같은 파일 시스템에 쓸 수 있는 행위자가 checksum까지 다시 계산한 위조는 막지 못한다.
+- 인증된 권리 검토 flow가 없어서 fixture가 아닌 입력은 모두 hold한다. 따라서 E1a(실제 공개 자료)는 권리 검토 flow와 그 독립 검증이 있어야 시작할 수 있다. 그때 runner의 public 결과 제한(`public_regression_only`)도 테스트와 함께 다시 넣어야 한다. 지금은 도달할 수 없는 분기라서 제거했다.

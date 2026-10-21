@@ -9,9 +9,10 @@ NOTE: 수집기(0060) 및 TTS(0061) 작업과 병행 중이므로,
 신규 표만 추가하므로 무중단 배포(online-safe)에 적합하다.
 """
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision = "0062_delivery_change_sets"
 down_revision = "0061_local_tts"

@@ -26,7 +26,7 @@
 2. 실제 opt-in `/workers` API 요청으로 격리 Workspace·`extra_writable_roots`·ChangeSet 생성까지 통합 검증한다. Settings 단위 로딩과 내부 Git hook 테스트는 통과했지만 API 요청 자체는 실행하지 못했다.
 3. W5 설계가 말하는 `submit_change` MCP 노출은 이번 slice에 추가하지 않았다. 제출 함수와 CLI는 있으나 MCP 경로는 미구현이다. 세대와 무관한 상주 integrator, 배치 검증·이분 탐색도 미구현이다.
 4. bounded repair의 실제 `queue_run` DB 기록 후 동일 worker가 새 커밋을 내고 재제출해 상한에서 멈추는 전 경로는 PostgreSQL 검증 대기다.
-5. **통합 충돌 표면:** feature commit `e1d01bceb2e2d59d4be8908193e7437f121bbc5e`의 직접 변경 중 당시 main 계보와 겹치는 파일은 `src/ttakkari/api/orchestrator.py`다. main 계보의 같은 파일에는 ADR 0067 agent-stop 변경이 있어, 통합 때 두 동작을 모두 보존해야 한다. main은 `tests/test_orchestrator.py`도 변경했지만 이 feature는 그 파일을 수정하지 않았다. migration `0062_delivery_change_sets`는 `0061_local_tts`를 parent로 하며 공통 기준 `25b5f9806656067ceb594d6d3217b37fba28d795`에 TTS `0061`이 있다. 후속 수정은 generation contract와 Alembic head 정합성을 별도로 갱신했다. main rebase/merge 및 실제 충돌 해결은 하지 않았다. 부모는 최신 main head를 기준으로 `0062` 번호/`down_revision`, 모델 metadata import, 의존성 lock 및 migration single-head contract를 재확인해야 한다.
+5. **통합 충돌 표면:** main ADR 0067 변경과는 `src/ttakkari/api/orchestrator.py`, `src/ttakkari/config.py`가 겹치므로 두 동작을 보존해야 한다. 독립검증이 확인한 별도 executor commit `95fc0a7`에는 `alembic/versions/0060_run_executor.py`가 있으며 이 feature의 `0060_collector_job_runtime.py → 0061_local_tts.py → 0062_delivery_change_sets.py`와 `0060` revision ID가 충돌한다. 두 migration을 그대로 병합할 수 없다. 양쪽 schema 변경을 보존해 고유 revision과 `down_revision` 순서를 정하고 단일 head를 확인해야 한다. executor 변경과 이 feature는 `README.md`, `deploy/generation-contract.json`, `pyproject.toml`, `src/ttakkari/config.py`, `tests/test_migration_single_head.py`도 함께 수정했다. main rebase/merge 및 실제 충돌 해결은 하지 않았다.
 
 초기 Flash worker 결과의 Antigravity `run_command` sandbox denial은 그 실행 환경에 한정된다. 부모 Codex 환경에서 Git worktree 및 파일 수정은 실제 성공했다. 실패한 환경을 production 제약으로 일반화하지 않는다.
 
@@ -59,3 +59,11 @@ git diff --check
 ```
 
 `--noconftest` delivery 결과에는 SQLite async 및 임시 Git 테스트가 포함되지만 PostgreSQL advisory lock/`SKIP LOCKED`, migration apply, 실제 `/workers` API 실행 증거는 포함되지 않는다. 이 Run에서는 알려진 sandbox `initdb` 실패 경로를 재시도하지 않았다. 격리 호스트에서 실행할 수 있는 전체 Stage 및 migration 명령은 [W4–W6 격리 호스트 검증 manifest](w4-w6-host-validation-manifest.md)에 둔다.
+
+## 독립 검증 `e1d01bc` 및 후속 lint 보정
+
+독립검증 보고서 `/Users/winterholic/.ttakkari/data/outbox/956de499-7456-4935-8061-b2b0eeb9ccbb/delivery-hardening-independent-verification.md`는 **고정 SHA `e1d01bceb2e2d59d4be8908193e7437f121bbc5e`**를 대상으로 했다. delivery 42개와 contract 5개 통과, known-bad ruff validator 거부, target CAS 경합 safe retry를 보고했다. 이 PASS는 e1d01bc의 기능 재현 범위로만 기록한다. `e2b7d81b1e9c1fb84f22694b77d3844b83fa5700`의 candidate `PYTHONPATH` 및 generation contract 수정은 그 SHA 검증 대상이 아니다.
+
+독립검증은 새 변경 Python 경로 lint에서 `alembic/versions/0062_delivery_change_sets.py:12 I001` 한 건도 발견했다. 해당 검사는 migration 파일을 누락했던 기존 범위 lint와 달리 common baseline 이후 변경된 Python 경로를 검사했다. 후속 수정은 migration import만 Ruff 요구 순서로 재배치했다. 이 최신 변경 뒤에는 common baseline `25b5f9806656067ceb594d6d3217b37fba28d795`부터 feature HEAD까지 바뀐 Python 경로 전체를 다시 lint한다. 이 정적 import 순서 변경은 PostgreSQL/API 동작을 새로 검증하지 않는다.
+
+독립검증은 PostgreSQL advisory lock/`SKIP LOCKED` 경쟁, crash recovery, migration 적용, 실제 opt-in `/workers`, 전체 Stage 1/2를 실행하지 않았다. 알려진 sandbox `initdb` 실패를 반복하지 않는다. 승인된 운영과 분리된 테스트 호스트용 격리 명령과 시나리오 완료 기준은 [host validation manifest](w4-w6-host-validation-manifest.md)에 추가했다. 아직 `submit_change` MCP, 상주 integrator, batch/이분 탐색은 미구현이므로 W4–W6 전체를 완료 처리하지 않는다.

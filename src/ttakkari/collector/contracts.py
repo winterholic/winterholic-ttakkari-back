@@ -49,6 +49,25 @@ class EnvelopeIdConflictError(CollectorConflictError):
     error_code = "envelope_id_conflict"
 
 
+class AttemptFencedError(CollectorConflictError):
+    """The attempt token no longer owns the job (cancelled, recovered or finished); the caller must stop (HTTP 409)."""
+
+    error_code = "attempt_fenced"
+
+
+class JobStateError(CollectorConflictError):
+    """The requested transition is not allowed from the job's current status (HTTP 409)."""
+
+    error_code = "invalid_job_state"
+
+
+class JobNotFoundError(CollectorError):
+    """No job with this id in the caller's tenant/scope. Identical for 'absent' and 'other scope' (HTTP 404)."""
+
+    http_status = 404
+    error_code = "job_not_found"
+
+
 @dataclass(frozen=True)
 class AuthContext:
     tenant_id: str

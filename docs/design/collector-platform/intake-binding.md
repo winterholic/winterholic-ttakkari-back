@@ -55,4 +55,4 @@ CP-S2-01 재작업 기준(2026-10-20, 증거는 `reports/collector/s2-01/verific
 
 - 서비스 계층 `submit_envelope`와 일회용 PostgreSQL에서 확인한다: fixture 10건의 결과와 job/outbox 행 수, 동일 키 동시 10요청 job 1행, 키는 다르고 envelope_id가 같은 동시 10요청 1행(나머지 409), 다른 tenant/scope 독립, 롤백 잔여 0, 마이그레이션 왕복과 모델 일치.
 - 예외 계층: `CollectorContractError`(422), `ScopeBindingMismatchError`(403), `CollectorConflictError`/`EnvelopeIdConflictError`(409)는 서로 하위 클래스가 아니다. 각 예외가 `http_status`·`error_code`를 가진다.
-- **미검증(CP-S2-02로 이동)**: HTTP 라우트, 실제 session/agent 인증 경로에서 AuthContext 산출, HTTP 상태 코드 403/409/422 응답.
+- HTTP 경계는 CP-S2-02에서 구현·검증했다(`tests/test_collector_api.py`): owner JWT는 tenant `owner`·scope 쿼리(personal|work), agent 토큰은 `session.pool`에서 AuthContext를 산출하고, fixture 10건을 HTTP로 다시 돌려 403/409/202 결과와 job 행 수가 같음을 확인한다. 다른 scope의 job은 404로 존재 여부를 드러내지 않는다.

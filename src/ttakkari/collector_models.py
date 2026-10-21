@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ttakkari.models import Base, utcnow
@@ -57,6 +59,11 @@ class CollectorJob(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     not_before: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # S2-02(0060): 한 page 의 결과와 같은 트랜잭션으로 전진하는 재개 지점, 취소 요청, 마지막 오류, 소유 세대 heartbeat.
+    cursor: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    last_error: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow

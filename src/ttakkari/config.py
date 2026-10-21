@@ -214,6 +214,10 @@ class Settings(BaseSettings):
     instructions_max_chars: int = 8000
     # 일정 알림을 찾는 주기(초). 0 이면 끈다(테스트는 직접 부른다).
     reminder_scan_seconds: int = 30
+    # 수집 플랫폼 consume 루프(CP-S2-02). 단계 handler 가 등록되기 전(S2-03 이후)에는 켜도 아무 job 도 claim 하지 않는다.
+    collector_consume_enabled: bool = False
+    collector_batch_size: int = Field(default=5, ge=1, le=50)
+    collector_stale_seconds: int = Field(default=300, ge=30)
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더
     context_source_roots: list[Path] = [HOME]
 

@@ -2,6 +2,9 @@
 
 Mutants: `reasons.append("X")` / `blockers.append("X")` become `pass`, and a
 literal `"reasons": ["X", ...]` drops X. Files are restored after every mutant.
+
+NOTE: superseded by kb-eval/mutation/run_mutation.py. This in-place version can
+reuse stale bytecode across same-size mutants (see quality-hardening report).
 """
 
 import hashlib
@@ -30,7 +33,13 @@ def mutants():
                 items = [s.strip() for s in lit.group(1).split(",") if s.strip()]
                 for item in items:
                     rest = ", ".join(i for i in items if i != item)
-                    new = line[: lit.start()] + '"reasons": [' + rest + "]" + line[lit.end() :]
+                    new = (
+                        line[: lit.start()]
+                        + '"reasons": ['
+                        + rest
+                        + "]"
+                        + line[lit.end() :]
+                    )
                     yield path, n, item.strip('"'), new
 
 
@@ -47,10 +56,20 @@ for path, n, reason, replacement in mutants():
     try:
         path.write_text("".join(lines))
         p = subprocess.run(
-            [py, "-m", "pytest", "unit_tests/kb_eval", "-x", "-q", "-p", "no:cacheprovider"],
+            [
+                py,
+                "-m",
+                "pytest",
+                "unit_tests/kb_eval",
+                "-x",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+            ],
             cwd=root,
             capture_output=True,
             text=True,
+            check=False,
         )
     finally:
         path.write_text(original)
@@ -64,11 +83,30 @@ for path, n, reason, replacement in mutants():
             "pytest_tail": tail,
         }
     )
-    print(("KILLED  " if p.returncode else "SURVIVED"), path.name, n + 1, reason, "|", tail, flush=True)
+    print(
+        ("KILLED  " if p.returncode else "SURVIVED"),
+        path.name,
+        n + 1,
+        reason,
+        "|",
+        tail,
+        flush=True,
+    )
 after = {p.name: sha(p) for p in src.glob("*.py")}
 assert before == after, "source not restored"
 survivors = [r for r in results if not r["killed"]]
-summary = {"mutants": len(results), "killed": len(results) - len(survivors), "survivors": survivors, "results": results}
-out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("mutation.json")
+summary = {
+    "mutants": len(results),
+    "killed": len(results) - len(survivors),
+    "survivors": survivors,
+    "results": results,
+}
+out = (
+    Path(sys.argv[1])
+    if len(sys.argv) > 1
+    else Path(__file__).with_name("mutation.json")
+)
 out.write_text(json.dumps(summary, indent=2))
-print(f"mutants={len(results)} killed={len(results) - len(survivors)} survived={len(survivors)}; sources restored")
+print(
+    f"mutants={len(results)} killed={len(results) - len(survivors)} survived={len(survivors)}; sources restored"
+)

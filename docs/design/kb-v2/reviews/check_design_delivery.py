@@ -28,8 +28,14 @@ def inventory(design, response):
         require(f"| F{number} |" in response, f"missing response F{number}")
     require("| F9a |" in response, "missing response F9a")
     require("제품 구현 금지" in design, "missing implementation prohibition")
-    require("KB-E0 착수 조건부 승인, 제품검색 미승인" in design[:2000], "missing current E0 scope")
-    require("KB-E0 착수 조건부 승인, 제품검색 미승인" in response[:2000], "missing current response scope")
+    require(
+        "KB-E0 착수 조건부 승인, 제품검색 미승인" in design[:2000],
+        "missing current E0 scope",
+    )
+    require(
+        "KB-E0 착수 조건부 승인, 제품검색 미승인" in response[:2000],
+        "missing current response scope",
+    )
 
 
 def main():

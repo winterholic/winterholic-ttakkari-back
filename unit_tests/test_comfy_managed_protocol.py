@@ -6,6 +6,7 @@ websocket-client가 backend 환경에 없으면 adapter는 /history 폴링으로
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import socket
 import subprocess
@@ -21,6 +22,7 @@ import pytest
 from ttakkari import managed_comfy
 from ttakkari.host_resource import LeaseBusy, ResourceLeaseManager
 from ttakkari.managed_comfy import PROFILES, ComfyManagedController
+from ttakkari.managed_comfy_receipt import canonical_sha256
 
 pytestmark = pytest.mark.skipif(
     not (managed_comfy.REGISTRY_ROOT / "t2v-wan22-5b").exists() or not managed_comfy.ADAPTER_ROOT.exists(),
@@ -246,6 +248,16 @@ def test_real_adapter_runs_registered_profile_over_http_and_releases_after_runti
     assert files and Path(files[0]["path"]).read_bytes() == b"RIFF-fake-webp"
     assert lease_of(service) is None
     assert job["lease_release_proof"]["evidence"]["server_health_after_stop"] is False
+    receipt = job["receipt"]
+    assert "receipt_error" not in job
+    # stub 이 실제로 받은 graph 와 receipt 가 같은 해시를 말한다(adapter 가 만든 값이 아니라 받은 쪽에서 독립 계산).
+    assert receipt["resolved_graph_sha256"] == canonical_sha256(submitted["prompt"])
+    assert receipt["graph_hash_consistent"] and receipt["seed_consistent"] and receipt["seed"] == 7
+    assert receipt["external_prompt_id"] == submitted["id"]
+    assert receipt["outputs"][0]["sha256"] == hashlib.sha256(b"RIFF-fake-webp").hexdigest()
+    assert receipt["profile_id"] == PROFILE.profile_id and receipt["workflow_revision"] == PROFILE.revision
+    assert receipt["lease"]["owner_task"] == task and receipt["lease"]["runtime_instance"] == job["runtime_instance"]
+    assert [m["name"] for m in receipt["models"]] == list(PROFILE.models)
 
 
 def test_running_cancel_interrupts_only_after_exclusive_lease_and_rejects_foreign_owner(harness):
@@ -270,6 +282,7 @@ def test_running_cancel_interrupts_only_after_exclusive_lease_and_rejects_foreig
     assert not runner.is_alive()
     saved = service.get(task)
     assert saved["status"] == "cancelled"
+    assert "receipt" not in saved
     assert [item["prompt_id"] for item in stub.interrupts] == [stub.entries[0]["id"]]
     assert stub.submit_count == 1 and servers[0].proc is None
     assert lease_of(service) is None
@@ -300,6 +313,8 @@ def test_partial_download_failure_keeps_lease_and_reconcile_collects_without_res
     assert Path(result["result"]["files"][0]["path"]).read_bytes() == b"RIFF-fake-webp"
     assert stub.submit_count == 1
     assert lease_of(service) is None
+    assert "receipt" not in job  # 불완전 수집 상태에서는 receipt 를 만들지 않는다
+    assert result["receipt"]["outputs"][0]["sha256"] == hashlib.sha256(b"RIFF-fake-webp").hexdigest()
 
 
 def test_lost_submit_response_is_reconciled_without_a_second_submit_and_keeps_lease(harness, monkeypatch):

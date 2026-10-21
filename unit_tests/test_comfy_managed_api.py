@@ -36,7 +36,8 @@ def test_managed_comfy_api_exposes_only_registered_profiles_and_starts_owner_job
     response = client.post("/api/comfy/jobs", json={"profile_id": "fixed-profile", "prompt": "fox", "seed": 17})
     assert response.status_code == 202
     assert response.json() == {"task_id": "a" * 32, "profile": "fixed-profile", "status": "starting",
-                               "runner_job_id": None, "error": None, "result": {}}
+                               "runner_job_id": None, "error": None, "receipt": None,
+                                   "receipt_error": None, "result": {}}
     assert service.started == ["a" * 32]
 
 

@@ -378,3 +378,13 @@ def test_owned_runtime_absence_ignores_missing_identity_and_reused_pid_rules(con
     finally:
         child.kill()
         child.wait()
+
+
+def test_receipt_failure_is_recorded_without_changing_a_succeeded_result(controller):
+    service, _servers = controller
+    record = service.prepare("wan22-5b-draft", prompt="A fox", seed=7)
+
+    job = service.execute(record["task_id"])
+
+    assert job["status"] == "succeeded"  # fake runner 의 job 은 resolved graph·출력 파일 근거가 없다
+    assert "receipt" not in job and job["receipt_error"].startswith("ReceiptError")

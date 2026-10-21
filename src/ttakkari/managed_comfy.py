@@ -31,6 +31,7 @@ from ttakkari.host_resource import (
     ResourceLeaseHandle,
     ResourceLeaseManager,
 )
+from ttakkari.managed_comfy_receipt import ReceiptError, build_receipt, safe_rss_gb
 
 LAB_ROOT = Path("/Users/winterholic/development/projects/ttakkari-studio-lab")
 COMFY_ROOT = LAB_ROOT / "comfyui"
@@ -282,6 +283,7 @@ class ComfyManagedController:
                 runner = active["runner_cls"](
                     managed_client, active["registry_cls"](root=REGISTRY_ROOT),
                     jobs_dir=self.data_dir / "managed-comfy" / "jobs",
+                    rss_probe=getattr(server, "rss_gb", None),
                 )
                 active["client"] = managed_client
                 active["runner"] = runner
@@ -317,6 +319,7 @@ class ComfyManagedController:
             if job["status"] == "failed" and (result.get("failure") or {}).get("stage") == "download":
                 job["status"] = "needs_reconcile"
                 job["error"] = "download_incomplete; retry collection through Runner.reconcile"
+            self._attach_receipt(job, active)
             self._save(job)
             if job["status"] == "needs_reconcile":
                 return job
@@ -350,6 +353,20 @@ class ComfyManagedController:
                 job["status"] = "needs_reconcile"
                 job["error"] = active["heartbeat_error"]
                 self._save(job)
+
+    def _attach_receipt(self, job: dict[str, Any], active: dict[str, Any]) -> None:
+        """성공한 실행에만 receipt 를 붙인다. receipt 실패는 job 결과를 바꾸지 않고 사유만 남긴다."""
+        if job.get("status") != "succeeded" or job.get("receipt"):
+            return
+        try:
+            server = active.get("server")
+            job["receipt"] = build_receipt(
+                job=job, adapter_job=job["result"], profile=active["profile"], comfy_root=COMFY_ROOT,
+                jobs_root=self.data_dir / "managed-comfy" / "jobs",
+                rss_at_finish_gb=safe_rss_gb(getattr(server, "rss_gb", None)))
+            job.pop("receipt_error", None)
+        except (ReceiptError, OSError, KeyError, TypeError, ValueError) as exc:
+            job["receipt_error"] = f"{type(exc).__name__}: {exc}"
 
     @staticmethod
     def _interrupted(result: dict[str, Any]) -> bool:
@@ -608,6 +625,7 @@ class ComfyManagedController:
         if job["status"] == "failed" and (result.get("failure") or {}).get("stage") == "download":
             job["status"] = "needs_reconcile"
             job["error"] = "download remains incomplete; lease retained for collection retry"
+        self._attach_receipt(job, active)
         self._save(job)
         if job["status"] in {"succeeded", "failed", "cancelled"}:
             return self._stop_release(task_id, job, active)

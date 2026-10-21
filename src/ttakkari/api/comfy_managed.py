@@ -29,6 +29,7 @@ def _public(job: dict) -> dict:
     return {
         "task_id": job["task_id"], "profile": job["profile"], "status": job["status"],
         "runner_job_id": job.get("runner_job_id"), "error": job.get("error"),
+        "receipt": job.get("receipt"), "receipt_error": job.get("receipt_error"),
         "result": {k: result[k] for k in ("id", "status", "seconds", "failure", "files", "pending_files")
                    if k in result},
     }

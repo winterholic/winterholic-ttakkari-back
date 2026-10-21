@@ -226,7 +226,7 @@ def test_pick_port_skips_reserved_busy_and_other_process_ports(monkeypatch):
 # ---- 감독자: 단일 실행·가드
 
 def test_supervisor_runs_until_stopped_and_cleans_up(env):
-    sup = Supervisor(_spec(env), poll=0.1)
+    sup = Supervisor(_spec(env), poll=0.1, swap_reader=lambda: 0)
     t = _run_supervisor(sup)
     state = _wait(lambda: _phase(env) == "ready" and host_gpu._read_state(env.dir), what="ready")
     pid = state["server_pid"]

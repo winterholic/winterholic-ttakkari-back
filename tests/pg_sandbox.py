@@ -25,6 +25,7 @@ ROOT_DIR = Path(
     "/tmp"
 )  # 소켓 경로가 macOS 의 104자 제한을 넘지 않도록 짧은 고정 경로를 쓴다
 _NAME_RE = re.compile(rf"^{re.escape(PREFIX)}(\d+)-[0-9a-f]+$")
+MARKER_FILE = "cluster.marker"
 _BIN_CANDIDATES = (
     "/opt/homebrew/opt/postgresql@17/bin",
     "/opt/homebrew/opt/postgresql@16/bin",
@@ -32,6 +33,8 @@ _BIN_CANDIDATES = (
 )
 
 _cluster: Cluster | None = None
+_asyncpg_orig_connect = None
+_active_cluster: Cluster | None = None
 
 
 def _pg_bin() -> Path:
@@ -59,34 +62,103 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _write_marker(folder: Path, pid: int, port: int) -> None:
+    """우리가 소유한 유효한 클러스터 디렉터리임을 증명하는 마커 파일을 남긴다."""
+    marker = folder / MARKER_FILE
+    marker.write_text(f"prefix={PREFIX}\npid={pid}\nport={port}\n", encoding="utf-8")
+
+
+def _is_valid_cluster_folder(folder: Path) -> bool:
+    """/tmp/ttakkari-test-<pid>-<hex> 폴더가 우리가 관리하는 안전한 임시 클러스터인지 검증한다."""
+    try:
+        if folder.is_symlink() or not folder.is_dir():
+            return False
+        m = _NAME_RE.match(folder.name)
+        if not m:
+            return False
+        # 루트 디렉터리 경계 탈출 방지
+        resolved_folder = folder.resolve()
+        resolved_root = ROOT_DIR.resolve()
+        if resolved_folder.parent != resolved_root:
+            return False
+        # 마커 파일 검사 (invalid marker 보호)
+        marker = folder / MARKER_FILE
+        if not marker.exists() or marker.is_symlink() or not marker.is_file():
+            return False
+        if marker.resolve().parent != resolved_folder:
+            return False
+        content = marker.read_text(encoding="utf-8")
+        lines = dict(line.split("=", 1) for line in content.splitlines() if "=" in line)
+        if lines.get("prefix") != PREFIX:
+            return False
+        return int(lines.get("pid", -1)) == int(m.group(1))
+    except (OSError, ValueError):
+        return False
+
+
 def _postmaster_pid(folder: Path) -> int | None:
     try:
-        return int((folder / "data" / "postmaster.pid").read_text().splitlines()[0])
+        data = folder / "data"
+        if data.is_symlink():
+            return None
+        pm_file = data / "postmaster.pid"
+        if not pm_file.is_file() or pm_file.is_symlink():
+            return None
+        return int(pm_file.read_text().splitlines()[0])
     except (OSError, ValueError, IndexError):
         return None
 
 
 def _stop_and_remove(folder: Path, pg_bin: Path) -> None:
     """클러스터를 멈추고 폴더를 지운다. 각 단계 실패는 다음 단계로 넘어간다."""
+    try:
+        if folder.is_symlink() or folder.resolve().parent != ROOT_DIR.resolve():
+            return
+        if not _is_valid_cluster_folder(folder):
+            return
+    except OSError:
+        return
+
     data = folder / "data"
-    pm = _postmaster_pid(folder)
-    if (data / "postmaster.pid").exists():
-        subprocess.run(
-            [
-                str(pg_bin / "pg_ctl"),
-                "-D",
-                str(data),
-                "-m",
-                "immediate",
-                "-w",
-                "-t",
-                "20",
-                "stop",
-            ],
-            capture_output=True,
-            check=False,
-        )
+    resolved_folder = folder.resolve()
+
+    # data 가 symlink 인 경우: 외부 디렉터리를 가리킬 위험이 있으므로 pg_ctl 호출 금지!
+    # symlink 만 unlink 하고 외부 서버는 절대 건드리지 않는다.
+    if data.is_symlink():
+        try:
+            data.unlink()
+        except OSError:
+            pass
+    elif data.is_dir():
+        # data 가 실제 디렉터리이고 folder 내부의 직계 data 인 경우만 pg_ctl 실행 허용
+        try:
+            is_safe_data = not data.is_symlink() and data.resolve() == (
+                resolved_folder / "data"
+            )
+        except OSError:
+            is_safe_data = False
+
+        if is_safe_data:
+            pm_file = data / "postmaster.pid"
+            if pm_file.is_file() and not pm_file.is_symlink():
+                subprocess.run(
+                    [
+                        str(pg_bin / "pg_ctl"),
+                        "-D",
+                        str(data),
+                        "-m",
+                        "immediate",
+                        "-w",
+                        "-t",
+                        "20",
+                        "stop",
+                    ],
+                    capture_output=True,
+                    check=False,
+                )
+
     # pg_ctl 이 실패했거나 postmaster 가 남아있는데 우리 폴더의 것이 맞을 때만 직접 끈다(pid 재사용 오인 방지).
+    pm = _postmaster_pid(folder)
     if pm is not None and _pid_alive(pm) and _is_postmaster_of(pm, folder):
         for _ in range(10):
             if not _pid_alive(pm):
@@ -101,17 +173,21 @@ def _stop_and_remove(folder: Path, pg_bin: Path) -> None:
 
 
 def _is_postmaster_of(pid: int, folder: Path) -> bool:
-    out = subprocess.run(
-        ["ps", "-o", "command=", "-p", str(pid)],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    return str(folder) in out
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        return str(folder) in out
+    except OSError:
+        return False
 
 
 def reap_stale() -> list[str]:
-    """소유 pid 가 죽은 /tmp/ttakkari-test-* 폴더를 정리하고 지운 폴더 이름을 돌려준다. 살아 있는 소유자 것은 건드리지 않는다."""
+    """소유 pid 가 죽은 /tmp/ttakkari-test-* 폴더를 정리하고 지운 폴더 이름을 돌려준다.
+    살아 있는 소유자, 마커가 유효하지 않은 폴더, 심볼릭 링크는 건드리지 않는다."""
     reaped: list[str] = []
     try:
         pg_bin = _pg_bin()
@@ -121,6 +197,13 @@ def reap_stale() -> list[str]:
         folder = Path(path)
         m = _NAME_RE.match(folder.name)
         if not m or not folder.is_dir() or folder.is_symlink():
+            continue
+        try:
+            if folder.resolve().parent != ROOT_DIR.resolve():
+                continue
+        except OSError:
+            continue
+        if not _is_valid_cluster_folder(folder):
             continue
         if _pid_alive(int(m.group(1))):
             continue
@@ -135,12 +218,39 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+def _install_signal_handlers(cluster: Cluster) -> None:
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        if sig not in cluster._signal_handlers:
+            cluster._signal_handlers[sig] = signal.getsignal(sig)
+        prev = cluster._signal_handlers[sig]
+
+        def _handler(signum, frame, _prev=prev, _c=cluster):
+            _c.stop()
+            if callable(_prev):
+                _prev(signum, frame)
+            else:
+                signal.signal(signum, signal.SIG_DFL)
+                os.kill(os.getpid(), signum)
+
+        signal.signal(sig, _handler)
+
+
+def _restore_signal_handlers(cluster: Cluster) -> None:
+    for sig, orig in list(cluster._signal_handlers.items()):
+        try:
+            signal.signal(sig, orig)
+        except (OSError, ValueError):
+            pass
+    cluster._signal_handlers.clear()
+
+
 class Cluster:
     def __init__(self, folder: Path, port: int, pg_bin: Path) -> None:
         self.folder = folder
         self.port = port
         self.pg_bin = pg_bin
         self.stopped = False
+        self._signal_handlers: dict[signal.Signals, object] = {}
 
     @property
     def sockdir(self) -> Path:
@@ -161,10 +271,15 @@ class Cluster:
         return f"postgresql+asyncpg://127.0.0.1:{self.port}/{name}"
 
     def stop(self) -> None:
+        global _cluster
         if self.stopped:
             return
         self.stopped = True
+        unpatch_asyncpg()
+        _restore_signal_handlers(self)
         _stop_and_remove(self.folder, self.pg_bin)
+        if _cluster is self:
+            _cluster = None
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -189,20 +304,12 @@ def start_cluster() -> Cluster:
     folder.mkdir(mode=0o700)
     cluster = Cluster(folder, 0, pg_bin)
     _cluster = cluster
+    _write_marker(folder, os.getpid(), 0)
+
     # 어떤 종료 경로에서도 정리한다. SIGKILL 만 못 잡고, 그건 다음 세션의 reap_stale 이 맡는다.
     atexit.register(cluster.stop)
-    for sig in (signal.SIGTERM, signal.SIGHUP):
-        prev = signal.getsignal(sig)
+    _install_signal_handlers(cluster)
 
-        def _handler(signum, frame, _prev=prev):
-            cluster.stop()
-            if callable(_prev):
-                _prev(signum, frame)
-            else:
-                signal.signal(signum, signal.SIG_DFL)
-                os.kill(os.getpid(), signum)
-
-        signal.signal(sig, _handler)
     try:
         (folder / "sock").mkdir(mode=0o700)
         _run(
@@ -249,6 +356,7 @@ def start_cluster() -> Cluster:
                 time.sleep(0.2)
                 continue
             cluster.port = port
+            _write_marker(folder, os.getpid(), port)
             return cluster
         log = (
             (folder / "pg.log").read_text()[-800:]
@@ -280,20 +388,20 @@ def localhost_database_url(database: str) -> str:
     )
 
 
-_asyncpg_orig_connect = None
-
-
 def patch_asyncpg_for_cluster(cluster: Cluster) -> None:
     """asyncpg 직결(host="localhost", 포트 없음)을 임시 클러스터로 돌린다.
 
     마이그레이션 시험들은 asyncpg.connect(database=..., host="localhost") 를 쓰는데 asyncpg 는
     PGPORT 환경 변수를 보지 않으므로 여기서 포트를 주입한다. 명시 포트·dsn·외부 호스트는 건드리지
-    않는다. 시험 세션에서만 쓰고(src 는 항상 dsn·URL 로 접속해 영향 없음) 두 번 부르면 무시한다.
+    않는다. 시험 세션에서만 쓰고(src 는 항상 dsn·URL 로 접속해 영향 없음) 중첩 호출 시 활성 클러스터를 갱신한다.
     """
-    import asyncpg
-
-    global _asyncpg_orig_connect
+    global _asyncpg_orig_connect, _active_cluster
+    _active_cluster = cluster
     if _asyncpg_orig_connect is not None:
+        return
+    try:
+        import asyncpg
+    except ImportError:
         return
     orig = asyncpg.connect
     _asyncpg_orig_connect = orig
@@ -303,12 +411,28 @@ def patch_asyncpg_for_cluster(cluster: Cluster) -> None:
         if (
             dsn is None
             and kwargs.get("port") is None
-            and kwargs.get("host") in (None, "localhost", "127.0.0.1")
+            and kwargs.get("host") in (None, "localhost", "127.0.0.1", "::1")
+            and _active_cluster is not None
+            and not _active_cluster.stopped
         ):
-            kwargs = {**kwargs, "port": cluster.port}
+            kwargs = {**kwargs, "port": _active_cluster.port}
         return await orig(*args, **kwargs)
 
     asyncpg.connect = _connect
+
+
+def unpatch_asyncpg() -> None:
+    """asyncpg 패치를 원래대로 복원한다."""
+    global _asyncpg_orig_connect, _active_cluster
+    _active_cluster = None
+    if _asyncpg_orig_connect is not None:
+        try:
+            import asyncpg
+
+            asyncpg.connect = _asyncpg_orig_connect
+        except ImportError:
+            pass
+        _asyncpg_orig_connect = None
 
 
 if __name__ == "__main__":  # 수동 정리: python tests/pg_sandbox.py

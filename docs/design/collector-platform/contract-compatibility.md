@@ -2,6 +2,8 @@
 
 마감 재대조: 로컬 HEAD `c12eff6e753e9f438f37d1fc74999d5e47ced31a`, KB 커밋 `63cf7e02f052d3c4ebbfd9cc820257a8c40ea649`. 읽은 문서: `docs/adr/0063-knowledge-library.md`, `docs/kb/design-v1.md:497-521`, `docs/design/knowledge-library.md`의 D1/D10, 현재 `kb_store.py:80-170`, `kb_models.py`, `0055_kb_immutability_hardening.py`. 이번 수정은 수집 플랫폼의 새 문서에만 반영하며 다른 세션의 KB 문서를 덮어쓰지 않는다.
 
+> 2026-10-21 경계 정정: 위 SHA/시점의 재대조 이력은 보존한다. 후속 활성 KB 계약은 [v2 §7/§12](../kb-v2/knowledge-library-design-v2.md)이며 [생산자 변경 요청](../kb-v2/reviews/collector-contract-followups.md)은 미구현/협의 대상이다. 아래 v1 Collector Protocol은 역사적 개념 매핑이며 collector가 KB에 종속된다는 뜻이 아니다.
+
 ## 기존 계약을 확장한다
 
 KB 설계의 `Collector(Protocol)`은 `name/version`, `discover(spec,cursor)→DiscoverPage`, `fetch(item)→RawArtifact`, `parse(raw)→NormalizedDoc`를 이미 제안한다. 이것은 함수형 adapter 계약이며 범용 버전 JSON 교환 schema가 아니다. 본 설계는 이 흐름을 그대로 수용하고 ingestion envelope를 출력/소비 경계에 추가한다. KB 문서의 블롭·재시도·robots·수집 job 공통부를 또 하나의 scheduler로 구현하지 않는다. collector 공통부가 이 책임을 맡고 KB adapter는 passage/index/claim/canonical 저장만 맡는 방향으로 다음 구현 소유자와 정합화한다.
@@ -12,7 +14,7 @@ KB 설계의 `Collector(Protocol)`은 `name/version`, `discover(spec,cursor)→D
 | DiscoverPage/cursor | durable CollectionJob/StageItem·checkpoint | cursor는 envelope가 아닌 실행 원장에, page accounting과 원자 commit |
 | RawArtifact bytes/mime/URL/fetched_at | raw.blob_handle/sha256/byte_size/media_type + source.url/collected_at | raw bytes를 mutable normalized 텍스트로 대체하지 않음 |
 | RawArtifact HTTP meta | extensions의 `collector:http_meta` | status/ETag/Last-Modified 등 비민감 allowlist만, 쿠키/인증 헤더 X |
-| NormalizedDoc text/language | normalized.text/sha256/language/parser/normalizer/chunker | 동일 NFKC/LF·Unicode codepoint offset, 원문 raw offset과 혼동 X |
+| NormalizedDoc text/language | normalized.text/sha256/language/parser/normalizer/chunker | 생산자 최종 NFC/LF·최종 text SHA, 저장 본문 Unicode codepoint offset. NFKC는 kb 색인 비교용, raw offset과 혼동 X |
 | 절 구조·제목/저자/버전 힌트 | extensions의 `kb:normalized_doc` | title/authors/sections/target_version_hints를 손실 없이 보존하고 수신측 strict adapter validator가 검증 |
 | 문서 정규키 | source.key + dedupe/canonical_candidate | source identity·content revision·canonical 결정 분리 |
 | 출처 T1~T5/visibility | extensions의 `kb:source_policy` + rights/access | trust tier는 품질 확률이 아님. visibility는 private scope를 자동 public 승격하지 않음 |

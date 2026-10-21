@@ -1,0 +1,153 @@
+{
+  "review_run": "78470bf8-41e6-4721-aa1c-20a853841cb3",
+  "review_target_sha": "8e3dc2c11f25098bc2fd1fee3886b6c235b5651f",
+  "review_time": "2026-10-21 (report; exact measurement timestamps not supplied)",
+  "imported_at": "2026-10-21T14:24:50.924084+00:00",
+  "source_clone_head": "8e3dc2c11f25098bc2fd1fee3886b6c235b5651f",
+  "files": [
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/dense_eval.py",
+      "original_relative_path": "evidence/dense_eval.py",
+      "stored_relative_path": "evidence/dense_eval.py.txt",
+      "sha256": "383655bf83f9f25dfbf8dd21a0e004ad0d4015c330153d2fd4e3b973d358a79b",
+      "bytes": 6012,
+      "source_mtime": "2026-10-21T14:10:47.645216+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/dense_eval_100k.out.txt",
+      "original_relative_path": "evidence/dense_eval_100k.out.txt",
+      "stored_relative_path": "evidence/dense_eval_100k.out.txt",
+      "sha256": "bdf681fcd293534987d2af7f0ef7e11dadd14f030b4af5c5d5800e59c830f9b0",
+      "bytes": 1374,
+      "source_mtime": "2026-10-21T14:10:47.665914+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/det.py",
+      "original_relative_path": "evidence/det.py",
+      "stored_relative_path": "evidence/det.py.txt",
+      "sha256": "1c6467cce6168227881776e93512eecfc20241035a03ccc21131946e42eaf276",
+      "bytes": 1324,
+      "source_mtime": "2026-10-21T14:10:47.657819+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/embed.py",
+      "original_relative_path": "evidence/embed.py",
+      "stored_relative_path": "evidence/embed.py.txt",
+      "sha256": "d05edbd5d75f213472bb473d4be81dccfbade356d1fa791e25f312f3973ffb22",
+      "bytes": 1402,
+      "source_mtime": "2026-10-21T14:10:47.644748+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/gatepower.py",
+      "original_relative_path": "evidence/gatepower.py",
+      "stored_relative_path": "evidence/gatepower.py.txt",
+      "sha256": "50742500b1e961ee14042c9c410e323a33560815e8e875631992ab840119b948",
+      "bytes": 1662,
+      "source_mtime": "2026-10-21T14:10:47.645635+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/items.py",
+      "original_relative_path": "evidence/items.py",
+      "stored_relative_path": "evidence/items.py.txt",
+      "sha256": "79950822fd6bb971d32ac2d94183a089b0db8f4fce00dee0f371b15c0242ae90",
+      "bytes": 7437,
+      "source_mtime": "2026-10-21T14:10:47.656915+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/lexcmp.py",
+      "original_relative_path": "evidence/lexcmp.py",
+      "stored_relative_path": "evidence/lexcmp.py.txt",
+      "sha256": "c73f29430b9835bdd34f83ef48a3800137eba62681ff98d90336414b144e1e1b",
+      "bytes": 3940,
+      "source_mtime": "2026-10-21T14:10:47.644284+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/lexcmp1m.py",
+      "original_relative_path": "evidence/lexcmp1m.py",
+      "stored_relative_path": "evidence/lexcmp1m.py.txt",
+      "sha256": "89f7a9e75a4002a69cbbbc49ca353d468bd223a921d71fa2ca1f0708b35fc4a6",
+      "bytes": 3944,
+      "source_mtime": "2026-10-21T14:10:47.652441+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/lexcmp_100k.out.txt",
+      "original_relative_path": "evidence/lexcmp_100k.out.txt",
+      "stored_relative_path": "evidence/lexcmp_100k.out.txt",
+      "sha256": "620dd6a43e1553ea60225ff8706ea8e9df2a2d5477a3f987c5fc197a640e960d",
+      "bytes": 511,
+      "source_mtime": "2026-10-21T14:10:58.090594+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/lexcmp_1m.out.txt",
+      "original_relative_path": "evidence/lexcmp_1m.out.txt",
+      "stored_relative_path": "evidence/lexcmp_1m.out.txt",
+      "sha256": "8f1fcab4e52fe51240020cec42d1efead2be77b217f238a486590e7811eed885",
+      "bytes": 688,
+      "source_mtime": "2026-10-21T14:10:47.662226+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/load_pg.sql",
+      "original_relative_path": "evidence/load_pg.sql",
+      "stored_relative_path": "evidence/load_pg.sql",
+      "sha256": "4384705005434c554095c58f37a297b4aa3388f739b42f50538572aa957cdb55",
+      "bytes": 651,
+      "source_mtime": "2026-10-21T14:10:47.646198+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/prep.py",
+      "original_relative_path": "evidence/prep.py",
+      "stored_relative_path": "evidence/prep.py.txt",
+      "sha256": "0c8f9aab58ba39006827c63c0a332776c46a2916e8f7c5f11aa083ac1332ee57",
+      "bytes": 2190,
+      "source_mtime": "2026-10-21T14:10:47.643800+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/repro_misc.out.txt",
+      "original_relative_path": "evidence/repro_misc.out.txt",
+      "stored_relative_path": "evidence/repro_misc.out.txt",
+      "sha256": "d50c13b703dbeeff01923e7ee233e2736ab1b6a8c7159c9294393bb66fc04c23",
+      "bytes": 989,
+      "source_mtime": "2026-10-21T14:10:58.096179+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/scores.json",
+      "original_relative_path": "evidence/scores.json",
+      "stored_relative_path": "evidence/scores.json",
+      "sha256": "6c0922d1022587902e6bc592c921dc6d6ff90de5c2b56ad32d442d9db767e723",
+      "bytes": 1212,
+      "source_mtime": "2026-10-21T14:10:47.671959+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/tv_test.py",
+      "original_relative_path": "evidence/tv_test.py",
+      "stored_relative_path": "evidence/tv_test.py.txt",
+      "sha256": "1e787a9c5a2501ef63961f26cb206714983c644b7bddb9c45cf9f7fa92a9623e",
+      "bytes": 1173,
+      "source_mtime": "2026-10-21T14:10:47.658258+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/xling.py",
+      "original_relative_path": "evidence/xling.py",
+      "stored_relative_path": "evidence/xling.py.txt",
+      "sha256": "aea6bf765229df2fb70203dd63a2cf37d1db635873dd276d6f8bfc323a2cf7e9",
+      "bytes": 4521,
+      "source_mtime": "2026-10-21T14:10:47.657391+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/evidence/xling_results.out.txt",
+      "original_relative_path": "evidence/xling_results.out.txt",
+      "stored_relative_path": "evidence/xling_results.out.txt",
+      "sha256": "4065cccc62048136505075c4bde42d996f40d15a9aba1d146540bb1a01528eef",
+      "bytes": 943,
+      "source_mtime": "2026-10-21T14:10:58.094042+00:00"
+    },
+    {
+      "source_path": "/tmp/kbv2-review/docs/design/kb-v2/reviews/v2-design-review.md",
+      "original_relative_path": "v2-design-review.md",
+      "stored_relative_path": "v2-design-review.md",
+      "sha256": "6c0b45c696a21d1a2d57142b116c621a23e5d6bdca3ef60450d082dd7371bbe1",
+      "bytes": 51084,
+      "source_mtime": "2026-10-21T14:16:39.951648+00:00"
+    }
+  ]
+}

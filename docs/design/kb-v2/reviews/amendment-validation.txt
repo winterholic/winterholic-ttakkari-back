@@ -1,0 +1,53 @@
+2026-10-21 / Codex command sandbox, isolated clone /tmp/kbv2-design-amend-6727203a
+Base origin/main: ba71814167d281d1d1ff31ba405692eb12f87a23
+Scope: document integrity, preserved evidence, planning calculations and abstract models only.
+
+$ python3 docs/design/kb-v2/reviews/check_design_delivery.py /tmp/kbv2-review/docs/design/kb-v2/reviews
+evidence: 18/18 exact sha256+size; source byte comparison: True
+coverage: P1-13=13/13, F1-24=24/24 plus F9a; negative controls rejected
+links: 25 local file targets exist (historical original review excluded)
+historical raw: 213 queries; PG BM25 19.71/.878, Tantivy 8.27/.851, ts_rank_cd 3501.07/.391
+planning only: n_eff=353; 0/40 one-sided upper=0.072158; Kiwi=2.3889h; CPU=45.5373h
+Unicode model: 4/4 early-NFC counterexamples; final NFC fixed points; NFKC: {'㈜': '(주)', '…': '...', 'ﬁ': 'fi', 'x²': 'x2', 'µ': 'μ', '℃': '°C'}
+toy seq model: unguarded loss 2/30, lock-before-allocation serialized loss 0/10
+toy observations: A->B->A current A; late event0 unchanged; A->A freshness advances
+UNEXECUTED: actual PostgreSQL/kill/replay, inference/GPU/CPU, million benchmark, product harness, deployment
+exit=0
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check docs/design/kb-v2/reviews/check_design_delivery.py
+All checks passed!
+exit=0
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff format --check docs/design/kb-v2/reviews/check_design_delivery.py
+1 file already formatted
+exit=0
+
+$ git diff --check
+exit=0
+
+$ git merge-base --is-ancestor beac78f HEAD
+exit=0
+
+$ git config --get core.bare
+false
+exit=0
+
+Hook: repository-installed pre-push copied to isolated clone, no bypass flags/environment. Main push must run its contract+changed-file scope. Full deployment suite/reservation excluded (documentation-only request).
+No source/model/dataset binaries, no product/migration changes, no deployment. Source mtime is copy provenance, not exact measurement time.
+
+$ git diff --cached --check
+docs/design/kb-v2/reviews/evidence/xling.py.txt:10: trailing whitespace.
++def rerank(q, docs): [original trailing U+0020]
+exit=2
+Expected preserved-source exception: xling.py.txt:10 has one original trailing space. Exact source checksum verified; raw evidence is intentionally not rewritten.
+
+$ git diff --cached --check -- docs :(exclude)docs/design/kb-v2/reviews/evidence/** :(exclude)docs/design/kb-v2/reviews/v2-design-review.md
+exit=0
+
+Whitespace diagnostic display escapes the original U+0020; preserved xling.py.txt bytes remain unchanged.
+
+First normal pre-push attempt: Codex command sandbox, git push origin HEAD:main. Failed before tests at uv sync: default cache /Users/winterholic/.cache/uv/sdists-v9/.git -> Operation not permitted (os error 1). No remote update. Safe alternative: UV_CACHE_DIR under writable /tmp, same hook, no --no-verify/TTK_SKIP_GATE. This is not evidence about deployed backend capability.
+
+Second main pre-push attempt at b6dc4db713aaeb7737867f655589f78943618c28, Codex command sandbox, UV_CACHE_DIR=/tmp/kbv2-uv-cache-6727203a: dependency sync and changed-Python ruff passed. pytest -m contract failed during conftest start_cluster -> /opt/homebrew/opt/postgresql@17/bin/initdb -D /tmp/ttakkari-test-86838-2ca819ee/data -A trust -E UTF8 --locale=en_US.UTF-8 --no-sync, exit1 (pytest exit4). Captured inner stderr was not emitted; root cause unverified. No contract tests ran; no main update. Do not infer deployed backend unavailability. No repeated initdb attempt or sandbox escape.
+
+Delivery policy: preserve main gate failure, push documentation review branch through installed normal pre-push hook. Existing hook only selects main/master by default, so branch publication is not a contract-pass claim. No --no-verify/TTK_SKIP_GATE; no deployment request. Final branch SHA and remote proof belong to outbox delivery receipt.

@@ -1,0 +1,36 @@
+tantivy index s 16.6 MB 164.4
+{
+ "tantivy_bm25": {
+  "n": 213,
+  "p50_ms": 1.94,
+  "p95_ms": 8.27,
+  "recall@20": 0.661,
+  "recall@100": 0.851
+ },
+ "pg_tsrankcd_or": {
+  "n": 213,
+  "p50_ms": 240.83,
+  "p95_ms": 3501.07,
+  "recall@20": 0.179,
+  "recall@100": 0.391
+ },
+ "pg_dffilter1pct_limit2000_appbm25": {
+  "n": 213,
+  "p50_ms": 14.26,
+  "p95_ms": 19.71,
+  "recall@20": 0.74,
+  "recall@100": 0.878,
+  "cand_p50": 2000
+ },
+ "pg_dffilter1pct_limit2000_noorder_raw": {
+  "n": 213,
+  "p50_ms": 5.29,
+  "p95_ms": 8.25,
+  "recall@20": 0.496,
+  "recall@100": 0.87,
+  "cand_p50": 2000
+ },
+ "or_match_fraction_of_corpus_median": 0.043377,
+ "or_match_fraction_p90": 0.232931,
+ "queries": 213
+}

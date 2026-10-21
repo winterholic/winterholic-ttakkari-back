@@ -1,5 +1,7 @@
 # 따까리 범용 지식 도서관(kb) 설계 v1
 
+> **상태: v1 역사 기록.** KB1·KB2 구현 당시 근거는 보존한다. 후속 검색·관측 현재성·정규화·pin/tombstone·명제 상태·평가 계약의 활성 정본은 [v2 반영안](../design/kb-v2/knowledge-library-design-v2.md)이다(반영 독립 확인 대기, 제품 구현 금지). 아래 D4/D5/D6/D10과 과거 단계번호를 새 구현의 확정 지시로 사용하지 않는다.
+
 - 작성: 2026-10-20, 설계 세션(1~4단계 분석·설계만. 코드 변경 없음)
 - 기준 코드: `winterholic-ttakkari/back` main `04e44c90b4b10a84f6d80983ed722e1fe046b8f4` (이전 `f1e4a7c`에서 재대조), 로컬 PostgreSQL `ttakkari`(읽기 전용 트랜잭션으로 조회)
 - 표기: 코드에서 확인한 사실은 `경로:줄`. 측정하지 않은 수치·버전·인과는 `확인 필요`. 경로의 `back/`은 `~/development/projects/winterholic-ttakkari/back/`이다.

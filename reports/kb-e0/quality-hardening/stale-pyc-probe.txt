@@ -1,0 +1,4 @@
+A power_not_established
+B (expect insufficient_clusters) power_not_established
+B with fresh pycache prefix insufficient_clusters
+same size: True same mtime: True

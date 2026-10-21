@@ -99,6 +99,7 @@ class FakeSlots:
         self.route = None
         self.stopped = []
         self.fail_switch = False
+        self.executor_calls = []
 
     @staticmethod
     def origin(slot):
@@ -122,6 +123,12 @@ class FakeSlots:
 
     async def verify(self, revision):
         assert self.rows[self.route]["revision"] == revision
+
+    async def ensure_executor(self, release, revision):
+        # Mirrors Slots.ensure_executor(release, revision): a release whose contract
+        # does not enable the run_executor reports activation disabled, not an error.
+        self.executor_calls.append((release, revision))
+        return {"ready": False, "activation": "disabled"}
 
     async def stop(self, slot):
         self.stopped.append(slot)
@@ -643,6 +650,7 @@ async def test_supervisor_repairs_proxy_without_restarting_a_live_generation(tmp
     monkeypatch.setattr(slots, "start", forbidden)
     await control.reconcile_services()
     assert slots.route == 1 and not slots.stopped
+    assert [revision for _, revision in slots.executor_calls] == ["a" * 40]
     monkeypatch.setattr(slots, "switch", forbidden)
     await control.reconcile_services()  # No reload/fsync on each supervisor poll.
 
@@ -685,6 +693,7 @@ async def test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity(t
         "protocol": 1, "schema_revision": "0030_runtime_generations", "online_migration_from": []}))
     await control.reconcile_services()
     assert slots.route == target_slot and len(slots.rows) == 1
+    assert [revision for _, revision in slots.executor_calls] == ["a" * 40]
 
 
 async def test_proxy_service_uses_its_own_persisted_config(tmp_path, monkeypatch):

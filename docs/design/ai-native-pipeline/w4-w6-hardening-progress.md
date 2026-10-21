@@ -98,3 +98,18 @@ Mac Studio 호스트에서 PostgreSQL 17.11(Homebrew `/opt/homebrew/opt/postgres
 두 번째 문제: `test_delivery_migration_round_trip_uses_postgres_jsonb`가 세션 공유 DB에서 `change_sets`를 DROP한 뒤 downgrade 상태로 둔다. 이후 `tests/conftest.py`의 `_clean`이 `Base.metadata` 전체를 TRUNCATE하며 `relation "change_sets" does not exist`로 뒤따르는 테스트가 ERROR가 된다. manifest의 gate 명령(`tests/delivery tests/test_migration_single_head.py tests/test_generation_deployment.py::...`)은 `26 passed, 24 errors`였다. 새 PG 모듈을 제외하면 같은 묶음이 `46 passed`다. ruff(base `fe0386a`부터 HEAD까지 변경된 Python)는 `All checks passed!`다.
 
 결론: 후보는 이 상태로 병합 gate를 통과하지 못한다. 수정 대상은 테스트 쪽 두 곳(sessionmaker 호출, migration 테스트의 스키마 복원 또는 별도 DB)이며 이번 Run에서는 수정하지 않았다. TDD red 확인은 base에 delivery 코드가 없어 import 오류뿐이라 생략했다.
+
+## 테스트 코드 수정 후 재실행
+
+위 두 문제를 테스트 쪽에서 고쳤다. `tests/test_orchestrator_delivery_isolation.py`는 `async with sessionmaker()() as db:`로 바꿨다. `tests/delivery/test_merge_queue_postgres.py`의 migration 왕복 테스트는 마지막에 `commit` 대신 `rollback`한다. PostgreSQL DDL이 트랜잭션이라 세션 공유 DB의 `change_sets`가 `create_all`이 만든 상태로 복원되고, 끝에서 `to_regclass('change_sets')`가 남아 있음을 확인한다.
+
+Homebrew `postgresql@17` fixture(`tests/conftest.py`의 프로세스 전용 임시 클러스터, `TTAKKARI_TEST_DB` 미지정)로 gate 묶음을 한 번에 실행한 결과:
+
+```text
+uv run pytest -q --timeout=120 -p no:cacheprovider tests/delivery tests/test_migration_single_head.py \
+  tests/test_generation_deployment.py::test_application_generation_contract_matches_its_migration_head \
+  tests/test_orchestrator_delivery_isolation.py
+52 passed in 16.78s     # 기존 46 + 신규 PG/API 6, error 0
+```
+
+변경 Python ruff(base `fe0386a`부터 HEAD)는 `All checks passed!`, `git diff --check fe0386a`는 exit 0이다. 이 실행은 agent-stop 회귀, 전체 Stage 1/2, 전체 pytest를 포함하지 않는다. `submit_change` MCP, 상주 integrator, 배치·이분 탐색은 여전히 미구현이다.

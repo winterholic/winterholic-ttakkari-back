@@ -185,4 +185,8 @@ async def test_delivery_migration_round_trip_uses_postgres_jsonb(session_factory
         assert columns["signature_attempts"] == "jsonb"
         await conn.run_sync(run, migration.downgrade)
         assert await db.scalar(text("SELECT to_regclass('change_sets')")) is None
-        await db.commit()
+        # 세션 DB 는 모든 테스트가 공유한다. PostgreSQL DDL 은 트랜잭션이므로 되돌려서 create_all 이 만든
+        # change_sets 를 그대로 복원한다. commit 하면 뒤 테스트의 _clean 이 표 없음으로 실패한다.
+        await db.rollback()
+    async with session_factory() as db:
+        assert await db.scalar(text("SELECT to_regclass('change_sets')")) is not None

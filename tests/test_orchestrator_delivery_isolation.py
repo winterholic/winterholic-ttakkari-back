@@ -48,7 +48,7 @@ async def _worker_request(client, auth, root: Path, enabled: bool, monkeypatch, 
 async def test_authenticated_workers_opt_in_isolates_only_writable_git_code_tasks(client, auth, make_dir, monkeypatch):
     root = make_dir()
     workspace, session, worker = await _worker_request(client, auth, root, True, monkeypatch)
-    async with sessionmaker() as db:
+    async with sessionmaker()() as db:
         child = await db.get(ChatSession, uuid.UUID(worker["worker_id"]))
         isolated = await db.get(Workspace, child.workspace_id)
         assert child.parent_id == uuid.UUID(session["id"])
@@ -67,7 +67,7 @@ async def test_authenticated_workers_opt_in_isolates_only_writable_git_code_task
     read_workspace, _, readonly_worker = await _worker_request(
         client, auth, readonly_root, True, monkeypatch, title="Review and inspect the repository"
     )
-    async with sessionmaker() as db:
+    async with sessionmaker()() as db:
         off = await db.get(ChatSession, uuid.UUID(off_worker["worker_id"]))
         readonly = await db.get(ChatSession, uuid.UUID(readonly_worker["worker_id"]))
         assert off.workspace_id == uuid.UUID(base_workspace["id"])
@@ -83,7 +83,7 @@ async def test_repair_dispatch_never_queues_run_past_change_set_limit(client, au
         json={"name": root.name, "root_path": str(root)})).json()
     session = (await client.post("/api/sessions", headers=auth,
         json={"workspace_id": workspace["id"], "kind": "orchestrator", "engine": "claude"})).json()
-    async with sessionmaker() as db:
+    async with sessionmaker()() as db:
         cs = await register_change_set(db, session_id=uuid.UUID(session["id"]), run_id=None,
             repo_path=str(root), branch_name="work/test", worktree_path=str(root), base_sha="0" * 40)
         cs.status = ChangeSetStatus.validating_stage1

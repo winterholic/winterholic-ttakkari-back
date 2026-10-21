@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 AnimationType = Literal["still", "zoom_in", "zoom_out", "pan", "pan_down", "pulse"]
 TransitionType = Literal["fade", "cut"]
@@ -58,6 +58,19 @@ class FormatSpec(BaseModel):
     has_hook: bool
     default_scene_templates: list[str]
     pacing: Literal["fast", "moderate", "dynamic", "slow_moderate", "very_fast"]
+    allowed_animations: list[AnimationType] = Field(
+        default_factory=lambda: ["still", "zoom_in", "zoom_out", "pan", "pan_down"]
+    )
+    allowed_transitions: list[TransitionType] = Field(
+        default_factory=lambda: ["fade", "cut"]
+    )
+    allowed_caption_styles: list[CaptionStyleType] = Field(
+        default_factory=lambda: ["bottom_card", "center_highlight", "title_card"]
+    )
+    min_scene_duration: float = 1.0
+    max_scene_duration: float = 30.0
+    max_caption_lines: int = 3
+    max_caption_chars: int = 100
 
 
 TOOLS: dict[str, ToolSpec] = {
@@ -262,6 +275,13 @@ FORMATS: dict[str, FormatSpec] = {
             "outro",
         ],
         pacing="fast",
+        allowed_animations=["zoom_in", "zoom_out", "pan", "pulse", "still"],
+        allowed_transitions=["cut", "fade"],
+        allowed_caption_styles=["center_highlight", "bottom_card", "title_card"],
+        min_scene_duration=1.0,
+        max_scene_duration=15.0,
+        max_caption_lines=2,
+        max_caption_chars=80,
     ),
     "tech_explainer": FormatSpec(
         id="tech_explainer",
@@ -283,6 +303,13 @@ FORMATS: dict[str, FormatSpec] = {
             "outro",
         ],
         pacing="moderate",
+        allowed_animations=["still", "zoom_in", "zoom_out", "pan", "pan_down"],
+        allowed_transitions=["cut", "fade"],
+        allowed_caption_styles=["code_overlay", "bottom_card", "title_card", "center_highlight"],
+        min_scene_duration=2.0,
+        max_scene_duration=30.0,
+        max_caption_lines=4,
+        max_caption_chars=120,
     ),
     "music_video": FormatSpec(
         id="music_video",
@@ -304,6 +331,13 @@ FORMATS: dict[str, FormatSpec] = {
             "outro",
         ],
         pacing="dynamic",
+        allowed_animations=["zoom_in", "zoom_out", "pan", "still", "pulse"],
+        allowed_transitions=["fade", "cut"],
+        allowed_caption_styles=["bottom_card", "center_highlight", "title_card"],
+        min_scene_duration=1.0,
+        max_scene_duration=30.0,
+        max_caption_lines=3,
+        max_caption_chars=80,
     ),
     "narration_story": FormatSpec(
         id="narration_story",
@@ -327,6 +361,13 @@ FORMATS: dict[str, FormatSpec] = {
             "outro",
         ],
         pacing="slow_moderate",
+        allowed_animations=["zoom_in", "zoom_out", "pan", "pan_down", "still"],
+        allowed_transitions=["fade", "cut"],
+        allowed_caption_styles=["bottom_card", "title_card"],
+        min_scene_duration=2.0,
+        max_scene_duration=30.0,
+        max_caption_lines=3,
+        max_caption_chars=120,
     ),
     "meme_parody": FormatSpec(
         id="meme_parody",
@@ -342,6 +383,13 @@ FORMATS: dict[str, FormatSpec] = {
         has_hook=True,
         default_scene_templates=["intro_hook", "highlight_text", "outro"],
         pacing="very_fast",
+        allowed_animations=["zoom_in", "pulse", "still", "zoom_out", "pan"],
+        allowed_transitions=["cut", "fade"],
+        allowed_caption_styles=["center_highlight", "bottom_card", "title_card"],
+        min_scene_duration=1.0,
+        max_scene_duration=15.0,
+        max_caption_lines=2,
+        max_caption_chars=60,
     ),
     "image_motion": FormatSpec(
         id="image_motion",
@@ -357,6 +405,13 @@ FORMATS: dict[str, FormatSpec] = {
         has_hook=False,
         default_scene_templates=["title_card", "ken_burns", "ken_burns", "outro"],
         pacing="moderate",
+        allowed_animations=["zoom_in", "zoom_out", "pan", "pan_down", "still"],
+        allowed_transitions=["fade", "cut"],
+        allowed_caption_styles=["bottom_card", "title_card"],
+        min_scene_duration=2.0,
+        max_scene_duration=30.0,
+        max_caption_lines=3,
+        max_caption_chars=100,
     ),
 }
 
@@ -415,7 +470,14 @@ def validate_project_spec(project_data: dict[str, Any]) -> list[str]:
         s_num = idx + 1
         dur = float(s.get("duration", 0))
         tmpl_id = s.get("template_id")
-        tmpl = SCENE_TEMPLATES.get(tmpl_id) if tmpl_id else None
+        if tmpl_id:
+            tmpl = SCENE_TEMPLATES.get(tmpl_id)
+            if not tmpl:
+                errors.append(
+                    f"장면 {s_num}의 템플릿 '{tmpl_id}'은(는) 등록되지 않은 템플릿입니다."
+                )
+        else:
+            tmpl = None
 
         if tmpl:
             if dur < tmpl.min_duration - 0.01 or dur > tmpl.max_duration + 0.01:
@@ -453,8 +515,40 @@ def validate_project_spec(project_data: dict[str, Any]) -> list[str]:
                         f"장면 {s_num}({tmpl.name})의 자막 길이({len(caption)}자)가 제한({tmpl.max_caption_chars}자)을 초과했습니다."
                     )
         else:
-            # Fallback checks without template
-            if dur < 1.0 or dur > 60.0:
-                errors.append(f"장면 {s_num}의 길이({dur}초)는 1~60초여야 합니다.")
+            # Fallback checks without template (template_id is None or unregistered)
+            if dur < fmt.min_scene_duration - 0.01 or dur > fmt.max_scene_duration + 0.01:
+                errors.append(
+                    f"장면 {s_num}의 길이({dur}초)가 포맷 허용 범위({fmt.min_scene_duration}~{fmt.max_scene_duration}초)를 벗어났습니다."
+                )
+
+            anim = s.get("animation")
+            if anim and anim not in fmt.allowed_animations:
+                errors.append(
+                    f"장면 {s_num}에서 '{anim}' 애니메이션은 포맷 '{fmt.name}'에서 허용되지 않습니다. (허용: {fmt.allowed_animations})"
+                )
+
+            trans = s.get("transition")
+            if trans and trans not in fmt.allowed_transitions:
+                errors.append(
+                    f"장면 {s_num}에서 '{trans}' 전환은 포맷 '{fmt.name}'에서 허용되지 않습니다. (허용: {fmt.allowed_transitions})"
+                )
+
+            cap_style = s.get("caption_style")
+            if cap_style and cap_style not in fmt.allowed_caption_styles:
+                errors.append(
+                    f"장면 {s_num}에서 '{cap_style}' 자막 스타일은 포맷 '{fmt.name}'에서 허용되지 않습니다. (허용: {fmt.allowed_caption_styles})"
+                )
+
+            caption = s.get("caption", "")
+            if caption:
+                lines = [l for l in caption.split("\n") if l.strip()]
+                if len(lines) > fmt.max_caption_lines:
+                    errors.append(
+                        f"장면 {s_num}의 자막 줄 수({len(lines)}줄)가 포맷 제한({fmt.max_caption_lines}줄)을 초과했습니다."
+                    )
+                if len(caption) > fmt.max_caption_chars:
+                    errors.append(
+                        f"장면 {s_num}의 자막 길이({len(caption)}자)가 포맷 제한({fmt.max_caption_chars}자)을 초과했습니다."
+                    )
 
     return errors

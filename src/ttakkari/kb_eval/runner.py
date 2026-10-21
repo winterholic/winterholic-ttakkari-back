@@ -10,6 +10,7 @@ import pydantic
 
 from .integrity import anchor, digest
 from .metrics import metrics
+from .rights import validate_rights
 from .state import artifact_lock, atomic_json, cache_key, canonical, verify_replay
 
 EXACT_REPLAY_EXCLUDES = ["resources", "timers", "wall_clock", "checkpoint"]
@@ -169,6 +170,7 @@ def _run(bundle, out, *, limit=None):
         },
         "adapter": "fixed_prediction_fixture",
         "product_search": "unverified",
+        "rights_authorization": bundle["rights_authorization"],
         "final_quality": "not_authorized",
         "blockers": blockers,
         "metrics": metrics(rows, predictions) if rows else None,
@@ -224,5 +226,6 @@ def _run(bundle, out, *, limit=None):
 
 
 def run(bundle, out, *, limit=None):
+    bundle = {**bundle, "rights_authorization": validate_rights(bundle)}
     with artifact_lock(Path(out) / ".run.lock", blocking=False):
         return _run(bundle, out, limit=limit)

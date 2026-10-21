@@ -17,11 +17,11 @@ uv sync --frozen
 
 ## 입력 고정과 권리
 
-fixture는 이 단계에서 직접 작성한 3질문·10문서 합성 자료다. 공개 자료를 내려받지 않았다. code/data/qrels/corpus 권리의 원문 위치·버전·확인 시각·저장/변형/재배포 허용은 별개다. 미확인 저장 권리는 loader가 거부한다. public kind도 고정 fixture adapter로만 재생하며 회귀 감시로 제한한다. E1a의 실제 공개 자료 loader/권리 검토를 끝낸 뜻이 아니다.
+fixture는 이 단계에서 직접 작성한 3질문·10문서 합성 자료다. 공개 자료를 내려받지 않았다. code/data/qrels/corpus 권리의 원문 위치·버전·확인 시각·저장/변형/재배포 허용은 별개다. 미확인 저장 권리는 loader가 거부한다. 입력의 `status=verified`, URL 문법·응답, `review_evidence`의 id/version/hash, 확인자 주장은 모두 서술 정보일 뿐 권리 권한을 만들지 않는다. 인증된 권리 검토 flow가 없으므로 `kind`가 fixture가 아닌 입력은 loader와 runner 양쪽에서 `rights_review_authentication_required`로 hold한다. fixture는 네 권리 모두 `provenance_kind=synthetic`, `fixture://` 원문, review evidence 없음일 때만 실행하며 결과에 `rights_authorization.authority=none`을 남긴다. E1a의 실제 공개 자료 loader/권리 검토를 끝낸 뜻이 아니다.
 
 manifest는 source revision/raw·body·quote SHA-256/URI/observed time, corpus/gold/policy/config hash, candidate code SHA, build, model/analyzer hash, quantization, seed, window/role/N을 고정한다. 합성 model hash의 `000…`는 **실제 모델 없음의 fixture 표식**이다. fixture의 candidate code SHA는 기반 revision이며, 실행 하네스는 별도 `runtime.harness_source_sha256`와 Python/NumPy/Pydantic 버전으로 고정한다. 실제 전달 commit은 작업 기록/receipt에서 확인한다. config hash에는 fixture prediction byte의 정규 JSON도 들어간다.
 
-같은 원문 hash는 자동 연결한다. 근사 중복·번역·공통 원전은 명시적 links가 필요하다. 질문의 다중 문서, 선언 group, 모든 link의 연결 component로 split을 검사한다. 미등록 근사 중복이 없다고 증명하지 않는다. `exposure.split_overlap=unverified`는 검사 통과로 승격되지 않는다. 관측 export는 event time/receipt time과 revision을 보존하지만 DB 진위·스냅샷 격리·동시성을 입증하지 않는다.
+같은 원문 hash는 자동 연결한다. 근사 중복·번역·공통 원전은 명시적 links가 필요하다. relevance passage마다 manifest에서 소유 `doc_key`를 resolve한다. positive gold 소유 문서가 선언 `documents`에 없으면 `gold_document_mismatch`로 거부하고, 소유 문서를 split graph에도 넣는다. 질문의 다중 문서, positive gold 소유 문서, 선언 group, 모든 link의 연결 component로 split을 검사한다. 미등록 근사 중복이 없다고 증명하지 않는다. `exposure.split_overlap=unverified`는 검사 통과로 승격되지 않는다. 관측 export는 event time/receipt time과 revision을 보존하지만 DB 진위·스냅샷 격리·동시성을 입증하지 않는다.
 
 ## 지표와 통계의 판정 범위
 
@@ -35,7 +35,7 @@ manifest는 source revision/raw·body·quote SHA-256/URI/observed time, corpus/g
 
 ## 계측·재현·재개
 
-AB/BA 순서는 고정 seed로 균형 무작위화한다. `timed_call`은 admission wait, service, serialize/transport, e2e를 나누고 model queue/tokenize/prefill/inference/DB pool/execute 미관측은 null+사유다. 병렬 stage p95를 더하지 않는다. `latency_report`는 paired block bootstrap p95 ratio CI와 full800/fast200ms 절대 SLO를 따로 낸다. 높은 부하에서도 절대 실패를 유지한다. 순서/부하/profile 불균형·100쌍/10분 미달은 relative_unverified다. 실제 동시성1/4·warm/cold·워밍업/3회 반복·10분 서버 부하 pilot은 미실행이다.
+AB/BA 순서는 고정 seed로 균형 무작위화한다. `timed_call`은 admission wait, service, serialize/transport, e2e를 나누고 model queue/tokenize/prefill/inference/DB pool/execute 미관측은 null+사유다. 병렬 stage p95를 더하지 않는다. `latency_report`는 paired block bootstrap p95 ratio CI와 full800/fast200ms 절대 SLO를 따로 낸다. 높은 부하에서도 절대 실패를 유지한다. 입력 block은 strict schema로 검사한다. bool·NaN·inf·음수·0 duration·결측 field·미등록 weight는 판정 전에 거부한다. 순서/부하/profile 불균형·100쌍/10분 미달, 사전등록 최소치(`kb-eval/statistical-policy.json`, 10,000회) 미만 bootstrap, 재표본 spread가 0인 퇴화 CI는 모두 relative_unverified다. 품질 통계도 같은 경계를 쓰며 퇴화 bootstrap 구간은 `inconclusive`다. 10,000회는 Monte Carlo 하한일 뿐 coverage·power 충분성 근거가 아니다. 실제 동시성1/4·warm/cold·워밍업/3회 반복·10분 서버 부하 pilot은 미실행이다.
 
 RSS·CPU time·run artifact 디스크는 하네스 프로세스만 측정한다. GPU/index disk/swap-in은 collector가 없으면 `value=null,status=unverified`다. GPU collector 주입 interface에서만 실제 측정을 연결할 수 있다. 이 값들을 검색 서버의 자원이나 host 전체 GPU 측정으로 부르지 않는다.
 
@@ -45,6 +45,6 @@ fsync→atomic rename→directory fsync로 cache/manifest/checkpoint를 남긴�
 
 ## 모바일 계약과 미실행 표면
 
-`review_api.create_router`는 제품 app에 mount하지 않은 FastAPI 골격이다. GET state, GET item(질문/원문 URI/quote/후보 pool), POST event(승인/수정/폐기, label_version, history/cursor)를 ASGI TestClient로 검증한다. agent/LLM 표시를 분리하고 **human write는 인증 adapter가 없어서 501로 거부**한다. 실제 사람 확인을 생성하지 않는다. `open_holdout`은 배타 1회 audit 파일을 쓰며, 호출자의 reviewer 역할 인증은 아직 외부 계약이다. 실제 hidden holdout은 제공·개봉하지 않았다.
+`review_api.create_router`는 제품 app에 mount하지 않은 FastAPI 골격이다. GET state, GET item(질문/원문 URI/quote/후보 pool), POST event(승인/수정/폐기, label_version, history/cursor)를 ASGI TestClient로 검증한다. agent/LLM 표시를 분리하고 **human write는 인증 adapter가 없어서 501로 거부**한다. 실제 사람 확인을 생성하지 않는다. `open_holdout`은 인증된 reviewer flow가 없으므로 actor/role 문자열과 무관하게 `reviewer_authentication_required`로 거부하고 파일·디렉터리·audit 상태를 바꾸지 않는다. 거부 호출이 향후 정당한 개봉을 막지 않는다. agent/LLM review event의 actor는 `actor_authentication=unauthenticated_claim`으로 기록한다. 실제 hidden holdout은 제공·개봉하지 않았다.
 
 실제 DB manifest/관측 fixture 실행은 알려진 Codex command sandbox의 initdb `shmget Operation not permitted` 제한으로 미실행이다. 같은 initdb/다른 binary·engine·보안설정 재시도는 하지 않는다. 실제 DB snapshot/export adapter와 DB 검증이 남았다. 320/390px 화면·브라우저 검증은 새 UI를 만들지 않아 미실행이다. 이 두 표면을 포함한 E0 완료조건과 독립 검증이 남아 있으며 다음 KB 단위·엔진 선택·collector 계약 변경·배포는 하지 않는다.

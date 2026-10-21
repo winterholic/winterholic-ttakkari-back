@@ -1,0 +1,7 @@
+{
+  "version": "kb-e0-statistics-v1",
+  "minimum_replicates": 10000,
+  "diagnostic_minimum_replicates": 100,
+  "basis": "P1 fixes 10000 draws; P3 adopts the same conservative engineering minimum before pilot validation",
+  "sufficiency": "Monte Carlo floor only; not evidence of sampling coverage or power"
+}

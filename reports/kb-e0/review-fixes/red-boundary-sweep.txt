@@ -1,0 +1,1367 @@
+FFFFF.F..FFFFFFFFFFFFFFFFFF..F.FFFFFFFFFFF.FF.FF                         [100%]
+=================================== FAILURES ===================================
+____ test_r1_positive_passage_owner_cannot_be_hidden_by_declared_documents _____
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r1_positive_passage_owner0')
+
+    def test_r1_positive_passage_owner_cannot_be_hidden_by_declared_documents(tmp_path):
+>       with pytest.raises(ValueError, match='gold_document_mismatch|split_leakage'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:42: Failed
+_______ test_r2_invalid_bootstrap_or_duration_cannot_return_green[1-6.0] _______
+
+replicates = 1, duration = 6.0
+
+    @pytest.mark.parametrize('replicates,duration', [(1, 6.), (1000, float('nan'))])
+    def test_r2_invalid_bootstrap_or_duration_cannot_return_green(replicates, duration):
+        data = equal_latency()
+        for block in data:
+            block['elapsed_seconds'] = duration
+        try:
+            result = e.latency_report(data, seed=7, replicates=replicates)
+        except ValueError:
+            return
+>       assert result['relative'] != 'relative_pass', result
+E       AssertionError: {'relative': 'relative_pass', 'ratio_ci': [1.0, 1.0], 'ratio': 1.0, 'candidate_absolute': 'absolute_pass', ...}
+E       assert 'relative_pass' != 'relative_pass'
+
+unit_tests/kb_eval/test_review_fixes.py:55: AssertionError
+_____ test_r2_invalid_bootstrap_or_duration_cannot_return_green[1000-nan] ______
+
+replicates = 1000, duration = nan
+
+    @pytest.mark.parametrize('replicates,duration', [(1, 6.), (1000, float('nan'))])
+    def test_r2_invalid_bootstrap_or_duration_cannot_return_green(replicates, duration):
+        data = equal_latency()
+        for block in data:
+            block['elapsed_seconds'] = duration
+        try:
+            result = e.latency_report(data, seed=7, replicates=replicates)
+        except ValueError:
+            return
+>       assert result['relative'] != 'relative_pass', result
+E       AssertionError: {'relative': 'relative_pass', 'ratio_ci': [1.0, 1.0], 'ratio': 1.0, 'candidate_absolute': 'absolute_pass', ...}
+E       assert 'relative_pass' != 'relative_pass'
+
+unit_tests/kb_eval/test_review_fixes.py:55: AssertionError
+______ test_r3_verified_string_and_fake_url_do_not_authorize_public_data _______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r3_verified_string_and_fa0')
+
+    def test_r3_verified_string_and_fake_url_do_not_authorize_public_data(tmp_path):
+>       with pytest.raises(ValueError, match='rights_review_authentication_required'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:59: Failed
+_________ test_r4_untrusted_reviewer_must_not_consume_or_create_audit __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r4_untrusted_reviewer_mus0')
+
+    def test_r4_untrusted_reviewer_must_not_consume_or_create_audit(tmp_path):
+        path = tmp_path/'new'/'audit.json'
+        try:
+            e.open_holdout(path, identity(), actor='user-approved-reviewer',
+                           role='independent_reviewer', at='2026-10-22T00:00:00Z')
+        except ValueError as exc:
+            assert 'reviewer_authentication_required' in str(exc)
+>       assert not path.exists(), 'denied reviewer created consumed audit'
+E       AssertionError: denied reviewer created consumed audit
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r4_untrusted_reviewer_mus0/new/audit.json').exists
+
+unit_tests/kb_eval/test_review_fixes.py:70: AssertionError
+___________ test_r1_passage_names_do_not_stand_in_for_document_names ___________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r1_passage_names_do_not_s0')
+
+    def test_r1_passage_names_do_not_stand_in_for_document_names(tmp_path):
+        data = fixture_bundle()
+        # d3 is now a passage of d1, while document d3 owns a different passage.
+        data['sources'][2]['passages'][0]['id'] = 'd3-own-passage'
+        body = data['sources'][0]['body']
+        data['sources'][0]['passages'].append({'id': 'd3', 'start': 0, 'end': len(body)})
+        data['cases'][0]['relevance']['d3'] = 1
+        loaded = e.load_bundle(write_bundle(tmp_path, data))
+>       assert loaded['passage_owners']['d3'] == 'd1'
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'passage_owners'
+
+unit_tests/kb_eval/test_review_fixes.py:91: KeyError
+_________ test_r1_graph_requires_and_uses_authoritative_passage_owners _________
+
+    def test_r1_graph_requires_and_uses_authoritative_passage_owners():
+        data = leaked_bundle()
+        owners = {p['id']: s['doc_key'] for s in data['sources'] for p in s['passages']}
+        with pytest.raises(ValueError, match='split_leakage'):
+>           e.components(data['cases'], [], passage_owners=owners)
+E           TypeError: components() got an unexpected keyword argument 'passage_owners'
+
+unit_tests/kb_eval/test_review_fixes.py:111: TypeError
+_________ test_r2_invalid_durations_are_not_observation_weights[True] __________
+
+value = True
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), '6', None])
+    def test_r2_invalid_durations_are_not_observation_weights(value):
+        data = equal_latency()
+        data[0]['elapsed_seconds'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:120: Failed
+___________ test_r2_invalid_durations_are_not_observation_weights[0] ___________
+
+value = 0
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), '6', None])
+    def test_r2_invalid_durations_are_not_observation_weights(value):
+        data = equal_latency()
+        data[0]['elapsed_seconds'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:120: Failed
+__________ test_r2_invalid_durations_are_not_observation_weights[-1] ___________
+
+value = -1
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), '6', None])
+    def test_r2_invalid_durations_are_not_observation_weights(value):
+        data = equal_latency()
+        data[0]['elapsed_seconds'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:120: Failed
+__________ test_r2_invalid_durations_are_not_observation_weights[nan] __________
+
+value = nan
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), '6', None])
+    def test_r2_invalid_durations_are_not_observation_weights(value):
+        data = equal_latency()
+        data[0]['elapsed_seconds'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:120: Failed
+__________ test_r2_invalid_durations_are_not_observation_weights[inf] __________
+
+value = inf
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), '6', None])
+    def test_r2_invalid_durations_are_not_observation_weights(value):
+        data = equal_latency()
+        data[0]['elapsed_seconds'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:120: Failed
+___________ test_r2_invalid_durations_are_not_observation_weights[6] ___________
+
+value = '6'
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), '6', None])
+    def test_r2_invalid_durations_are_not_observation_weights(value):
+        data = equal_latency()
+        data[0]['elapsed_seconds'] = value
+        with pytest.raises(ValueError):
+>           e.latency_report(data, seed=7)
+
+unit_tests/kb_eval/test_review_fixes.py:121: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, ...andidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...]
+seed = 7, replicates = 10000, mode = 'full'
+
+    def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+                    raise ValueError("timer_critical_path_inconsistent")
+            arms[arm] = {
+                k: {
+                    "p50": float(np.quantile([b[arm][k] for b in blocks], 0.5)),
+                    "p95": float(np.quantile([b[arm][k] for b in blocks], 0.95)),
+                }
+                for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+            }
+        reasons = []
+        if len({b["block"] for b in blocks}) != len(blocks):
+            raise ValueError("duplicate_latency_block")
+        orders = [b["order"] for b in blocks]
+        if (
+            any(o not in {"AB", "BA"} for o in orders)
+            or abs(orders.count("AB") - orders.count("BA")) > 1
+        ):
+            reasons.append("order_imbalance")
+        if len({b["profile"] for b in blocks}) != 1:
+            reasons.append("profile_mismatch")
+>       if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: unsupported operand type(s) for +: 'int' and 'str'
+
+src/ttakkari/kb_eval/latency.py:45: TypeError
+_________ test_r2_invalid_durations_are_not_observation_weights[None] __________
+
+value = None
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), '6', None])
+    def test_r2_invalid_durations_are_not_observation_weights(value):
+        data = equal_latency()
+        data[0]['elapsed_seconds'] = value
+        with pytest.raises(ValueError):
+>           e.latency_report(data, seed=7)
+
+unit_tests/kb_eval/test_review_fixes.py:121: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, ...andidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...]
+seed = 7, replicates = 10000, mode = 'full'
+
+    def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+                    raise ValueError("timer_critical_path_inconsistent")
+            arms[arm] = {
+                k: {
+                    "p50": float(np.quantile([b[arm][k] for b in blocks], 0.5)),
+                    "p95": float(np.quantile([b[arm][k] for b in blocks], 0.95)),
+                }
+                for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+            }
+        reasons = []
+        if len({b["block"] for b in blocks}) != len(blocks):
+            raise ValueError("duplicate_latency_block")
+        orders = [b["order"] for b in blocks]
+        if (
+            any(o not in {"AB", "BA"} for o in orders)
+            or abs(orders.count("AB") - orders.count("BA")) > 1
+        ):
+            reasons.append("order_imbalance")
+        if len({b["profile"] for b in blocks}) != 1:
+            reasons.append("profile_mismatch")
+>       if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: unsupported operand type(s) for +: 'int' and 'NoneType'
+
+src/ttakkari/kb_eval/latency.py:45: TypeError
+_______________ test_r2_invalid_replicate_types_and_ranges[True] _______________
+
+value = True
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:126: Failed
+______________ test_r2_invalid_replicate_types_and_ranges[False] _______________
+
+value = False
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/kb_eval/latency.py:68: in latency_report
+    low, high = map(float, np.quantile(ratios, [0.025, 0.975]))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4509: in quantile
+    return _quantile_unchecked(
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4523: in _quantile_unchecked
+    return _ureduce(a,
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3893: in _ureduce
+    r = func(a, **kwargs)
+        ^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4682: in _quantile_ureduce_func
+    result = _quantile(arr,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+arr = array([], dtype=float64), quantiles = array([0.025, 0.975]), axis = 0
+method = 'linear', out = None, weights = None, weak_q = False
+
+    def _quantile(
+        arr: "np.typing.ArrayLike",
+        quantiles: np.ndarray,
+        axis: int = -1,
+        method: str = "linear",
+        out: np.ndarray | None = None,
+        weights: "np.typing.ArrayLike | None" = None,
+        weak_q: bool = False,
+    ) -> np.ndarray:
+        """
+        Private function that doesn't support extended axis or keepdims.
+        These methods are extended to this function using _ureduce.
+        See nanpercentile for parameter usage.
+        It computes the quantiles of the array for the given axis.
+        A linear interpolation is performed based on the `method`.
+    
+        By default, the method is "linear" where alpha == beta == 1 which
+        performs the 7th method of Hyndman&Fan.
+        With "median_unbiased" we get alpha == beta == 1/3
+        thus the 8th method of Hyndman&Fan.
+        """
+        # --- Setup
+        arr = np.asanyarray(arr)
+        values_count = arr.shape[axis]
+        # The dimensions of `q` are prepended to the output shape, so we need the
+        # axis being sampled from `arr` to be last.
+        if axis != 0:  # But moveaxis is slow, so only call it if necessary.
+            arr = np.moveaxis(arr, axis, destination=0)
+        supports_nans = (
+            np.issubdtype(arr.dtype, np.inexact) or arr.dtype.kind in 'Mm'
+        )
+    
+        if weights is None:
+            # --- Computation of indexes
+            # Index where to find the value in the sorted array.
+            # Virtual because it is a floating point value, not a valid index.
+            # The nearest neighbours are used for interpolation
+            try:
+                method_props = _QuantileMethods[method]
+            except KeyError:
+                raise ValueError(
+                    f"{method!r} is not a valid method. Use one of: "
+                    f"{_QuantileMethods.keys()}") from None
+            virtual_indexes = method_props["get_virtual_index"](values_count,
+                                                                quantiles)
+            virtual_indexes = np.asanyarray(virtual_indexes)
+    
+            if method_props["fix_gamma"] is None:
+                supports_integers = True
+            else:
+                int_virtual_indices = np.issubdtype(virtual_indexes.dtype,
+                                                    np.integer)
+                supports_integers = method == 'linear' and int_virtual_indices
+    
+            if supports_integers:
+                # No interpolation needed, take the points along axis
+                if supports_nans:
+                    # may contain nan, which would sort to the end
+                    arr.partition(
+                        concatenate((virtual_indexes.ravel(), [-1])), axis=0,
+                    )
+                    slices_having_nans = np.isnan(arr[-1, ...])
+                else:
+                    # cannot contain nan
+                    arr.partition(virtual_indexes.ravel(), axis=0)
+                    slices_having_nans = np.array(False, dtype=bool)
+                result = take(arr, virtual_indexes, axis=0, out=out)
+            else:
+                previous_indexes, next_indexes = _get_indexes(arr,
+                                                              virtual_indexes,
+                                                              values_count)
+                # --- Sorting
+                arr.partition(
+                    np.unique(np.concatenate(([0, -1],
+                                              previous_indexes.ravel(),
+                                              next_indexes.ravel(),
+                                              ))),
+                    axis=0)
+                if supports_nans:
+>                   slices_having_nans = np.isnan(arr[-1, ...])
+                                                  ^^^^^^^^^^^^
+E                   IndexError: index -1 is out of bounds for axis 0 with size 0
+
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4806: IndexError
+________________ test_r2_invalid_replicate_types_and_ranges[0] _________________
+
+value = 0
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/kb_eval/latency.py:68: in latency_report
+    low, high = map(float, np.quantile(ratios, [0.025, 0.975]))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4509: in quantile
+    return _quantile_unchecked(
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4523: in _quantile_unchecked
+    return _ureduce(a,
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3893: in _ureduce
+    r = func(a, **kwargs)
+        ^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4682: in _quantile_ureduce_func
+    result = _quantile(arr,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+arr = array([], dtype=float64), quantiles = array([0.025, 0.975]), axis = 0
+method = 'linear', out = None, weights = None, weak_q = False
+
+    def _quantile(
+        arr: "np.typing.ArrayLike",
+        quantiles: np.ndarray,
+        axis: int = -1,
+        method: str = "linear",
+        out: np.ndarray | None = None,
+        weights: "np.typing.ArrayLike | None" = None,
+        weak_q: bool = False,
+    ) -> np.ndarray:
+        """
+        Private function that doesn't support extended axis or keepdims.
+        These methods are extended to this function using _ureduce.
+        See nanpercentile for parameter usage.
+        It computes the quantiles of the array for the given axis.
+        A linear interpolation is performed based on the `method`.
+    
+        By default, the method is "linear" where alpha == beta == 1 which
+        performs the 7th method of Hyndman&Fan.
+        With "median_unbiased" we get alpha == beta == 1/3
+        thus the 8th method of Hyndman&Fan.
+        """
+        # --- Setup
+        arr = np.asanyarray(arr)
+        values_count = arr.shape[axis]
+        # The dimensions of `q` are prepended to the output shape, so we need the
+        # axis being sampled from `arr` to be last.
+        if axis != 0:  # But moveaxis is slow, so only call it if necessary.
+            arr = np.moveaxis(arr, axis, destination=0)
+        supports_nans = (
+            np.issubdtype(arr.dtype, np.inexact) or arr.dtype.kind in 'Mm'
+        )
+    
+        if weights is None:
+            # --- Computation of indexes
+            # Index where to find the value in the sorted array.
+            # Virtual because it is a floating point value, not a valid index.
+            # The nearest neighbours are used for interpolation
+            try:
+                method_props = _QuantileMethods[method]
+            except KeyError:
+                raise ValueError(
+                    f"{method!r} is not a valid method. Use one of: "
+                    f"{_QuantileMethods.keys()}") from None
+            virtual_indexes = method_props["get_virtual_index"](values_count,
+                                                                quantiles)
+            virtual_indexes = np.asanyarray(virtual_indexes)
+    
+            if method_props["fix_gamma"] is None:
+                supports_integers = True
+            else:
+                int_virtual_indices = np.issubdtype(virtual_indexes.dtype,
+                                                    np.integer)
+                supports_integers = method == 'linear' and int_virtual_indices
+    
+            if supports_integers:
+                # No interpolation needed, take the points along axis
+                if supports_nans:
+                    # may contain nan, which would sort to the end
+                    arr.partition(
+                        concatenate((virtual_indexes.ravel(), [-1])), axis=0,
+                    )
+                    slices_having_nans = np.isnan(arr[-1, ...])
+                else:
+                    # cannot contain nan
+                    arr.partition(virtual_indexes.ravel(), axis=0)
+                    slices_having_nans = np.array(False, dtype=bool)
+                result = take(arr, virtual_indexes, axis=0, out=out)
+            else:
+                previous_indexes, next_indexes = _get_indexes(arr,
+                                                              virtual_indexes,
+                                                              values_count)
+                # --- Sorting
+                arr.partition(
+                    np.unique(np.concatenate(([0, -1],
+                                              previous_indexes.ravel(),
+                                              next_indexes.ravel(),
+                                              ))),
+                    axis=0)
+                if supports_nans:
+>                   slices_having_nans = np.isnan(arr[-1, ...])
+                                                  ^^^^^^^^^^^^
+E                   IndexError: index -1 is out of bounds for axis 0 with size 0
+
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4806: IndexError
+________________ test_r2_invalid_replicate_types_and_ranges[-1] ________________
+
+value = -1
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/kb_eval/latency.py:68: in latency_report
+    low, high = map(float, np.quantile(ratios, [0.025, 0.975]))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4509: in quantile
+    return _quantile_unchecked(
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4523: in _quantile_unchecked
+    return _ureduce(a,
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:3893: in _ureduce
+    r = func(a, **kwargs)
+        ^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4682: in _quantile_ureduce_func
+    result = _quantile(arr,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+arr = array([], dtype=float64), quantiles = array([0.025, 0.975]), axis = 0
+method = 'linear', out = None, weights = None, weak_q = False
+
+    def _quantile(
+        arr: "np.typing.ArrayLike",
+        quantiles: np.ndarray,
+        axis: int = -1,
+        method: str = "linear",
+        out: np.ndarray | None = None,
+        weights: "np.typing.ArrayLike | None" = None,
+        weak_q: bool = False,
+    ) -> np.ndarray:
+        """
+        Private function that doesn't support extended axis or keepdims.
+        These methods are extended to this function using _ureduce.
+        See nanpercentile for parameter usage.
+        It computes the quantiles of the array for the given axis.
+        A linear interpolation is performed based on the `method`.
+    
+        By default, the method is "linear" where alpha == beta == 1 which
+        performs the 7th method of Hyndman&Fan.
+        With "median_unbiased" we get alpha == beta == 1/3
+        thus the 8th method of Hyndman&Fan.
+        """
+        # --- Setup
+        arr = np.asanyarray(arr)
+        values_count = arr.shape[axis]
+        # The dimensions of `q` are prepended to the output shape, so we need the
+        # axis being sampled from `arr` to be last.
+        if axis != 0:  # But moveaxis is slow, so only call it if necessary.
+            arr = np.moveaxis(arr, axis, destination=0)
+        supports_nans = (
+            np.issubdtype(arr.dtype, np.inexact) or arr.dtype.kind in 'Mm'
+        )
+    
+        if weights is None:
+            # --- Computation of indexes
+            # Index where to find the value in the sorted array.
+            # Virtual because it is a floating point value, not a valid index.
+            # The nearest neighbours are used for interpolation
+            try:
+                method_props = _QuantileMethods[method]
+            except KeyError:
+                raise ValueError(
+                    f"{method!r} is not a valid method. Use one of: "
+                    f"{_QuantileMethods.keys()}") from None
+            virtual_indexes = method_props["get_virtual_index"](values_count,
+                                                                quantiles)
+            virtual_indexes = np.asanyarray(virtual_indexes)
+    
+            if method_props["fix_gamma"] is None:
+                supports_integers = True
+            else:
+                int_virtual_indices = np.issubdtype(virtual_indexes.dtype,
+                                                    np.integer)
+                supports_integers = method == 'linear' and int_virtual_indices
+    
+            if supports_integers:
+                # No interpolation needed, take the points along axis
+                if supports_nans:
+                    # may contain nan, which would sort to the end
+                    arr.partition(
+                        concatenate((virtual_indexes.ravel(), [-1])), axis=0,
+                    )
+                    slices_having_nans = np.isnan(arr[-1, ...])
+                else:
+                    # cannot contain nan
+                    arr.partition(virtual_indexes.ravel(), axis=0)
+                    slices_having_nans = np.array(False, dtype=bool)
+                result = take(arr, virtual_indexes, axis=0, out=out)
+            else:
+                previous_indexes, next_indexes = _get_indexes(arr,
+                                                              virtual_indexes,
+                                                              values_count)
+                # --- Sorting
+                arr.partition(
+                    np.unique(np.concatenate(([0, -1],
+                                              previous_indexes.ravel(),
+                                              next_indexes.ravel(),
+                                              ))),
+                    axis=0)
+                if supports_nans:
+>                   slices_having_nans = np.isnan(arr[-1, ...])
+                                                  ^^^^^^^^^^^^
+E                   IndexError: index -1 is out of bounds for axis 0 with size 0
+
+.venv/lib/python3.13/site-packages/numpy/lib/_function_base_impl.py:4806: IndexError
+_______________ test_r2_invalid_replicate_types_and_ranges[1.5] ________________
+
+value = 1.5
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, ...andidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...]
+seed = 7, replicates = 1.5, mode = 'full'
+
+    def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+                    raise ValueError("timer_critical_path_inconsistent")
+            arms[arm] = {
+                k: {
+                    "p50": float(np.quantile([b[arm][k] for b in blocks], 0.5)),
+                    "p95": float(np.quantile([b[arm][k] for b in blocks], 0.95)),
+                }
+                for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+            }
+        reasons = []
+        if len({b["block"] for b in blocks}) != len(blocks):
+            raise ValueError("duplicate_latency_block")
+        orders = [b["order"] for b in blocks]
+        if (
+            any(o not in {"AB", "BA"} for o in orders)
+            or abs(orders.count("AB") - orders.count("BA")) > 1
+        ):
+            reasons.append("order_imbalance")
+        if len({b["profile"] for b in blocks}) != 1:
+            reasons.append("profile_mismatch")
+        if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+            reasons.append("insufficient_observation")
+        loads = np.array(
+            [[b[arm]["load"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if np.mean(np.abs(loads[:, 0] - loads[:, 1])) > 0.2 * max(1.0, loads.mean()):
+            reasons.append("load_imbalance")
+        # Order-dependent drift is visible even if each pair has the same load.
+        if "AB" in orders and "BA" in orders:
+            avgs = [loads[np.array(orders) == order].mean() for order in ("AB", "BA")]
+            if abs(avgs[0] - avgs[1]) > 0.2 * max(1.0, loads.mean()):
+                reasons.append("order_load_imbalance")
+        times = np.array(
+            [[b[arm]["e2e_ms"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if (times[:, 1] <= 0).any():
+            raise ValueError("zero_control_latency")
+        rng = np.random.default_rng(seed)
+        ratios = []
+>       for start in range(0, replicates, 256):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: 'float' object cannot be interpreted as an integer
+
+src/ttakkari/kb_eval/latency.py:64: TypeError
+_______________ test_r2_invalid_replicate_types_and_ranges[nan] ________________
+
+value = nan
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, ...andidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...]
+seed = 7, replicates = nan, mode = 'full'
+
+    def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+                    raise ValueError("timer_critical_path_inconsistent")
+            arms[arm] = {
+                k: {
+                    "p50": float(np.quantile([b[arm][k] for b in blocks], 0.5)),
+                    "p95": float(np.quantile([b[arm][k] for b in blocks], 0.95)),
+                }
+                for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+            }
+        reasons = []
+        if len({b["block"] for b in blocks}) != len(blocks):
+            raise ValueError("duplicate_latency_block")
+        orders = [b["order"] for b in blocks]
+        if (
+            any(o not in {"AB", "BA"} for o in orders)
+            or abs(orders.count("AB") - orders.count("BA")) > 1
+        ):
+            reasons.append("order_imbalance")
+        if len({b["profile"] for b in blocks}) != 1:
+            reasons.append("profile_mismatch")
+        if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+            reasons.append("insufficient_observation")
+        loads = np.array(
+            [[b[arm]["load"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if np.mean(np.abs(loads[:, 0] - loads[:, 1])) > 0.2 * max(1.0, loads.mean()):
+            reasons.append("load_imbalance")
+        # Order-dependent drift is visible even if each pair has the same load.
+        if "AB" in orders and "BA" in orders:
+            avgs = [loads[np.array(orders) == order].mean() for order in ("AB", "BA")]
+            if abs(avgs[0] - avgs[1]) > 0.2 * max(1.0, loads.mean()):
+                reasons.append("order_load_imbalance")
+        times = np.array(
+            [[b[arm]["e2e_ms"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if (times[:, 1] <= 0).any():
+            raise ValueError("zero_control_latency")
+        rng = np.random.default_rng(seed)
+        ratios = []
+>       for start in range(0, replicates, 256):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: 'float' object cannot be interpreted as an integer
+
+src/ttakkari/kb_eval/latency.py:64: TypeError
+_______________ test_r2_invalid_replicate_types_and_ranges[inf] ________________
+
+value = inf
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, ...andidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...]
+seed = 7, replicates = inf, mode = 'full'
+
+    def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+                    raise ValueError("timer_critical_path_inconsistent")
+            arms[arm] = {
+                k: {
+                    "p50": float(np.quantile([b[arm][k] for b in blocks], 0.5)),
+                    "p95": float(np.quantile([b[arm][k] for b in blocks], 0.95)),
+                }
+                for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+            }
+        reasons = []
+        if len({b["block"] for b in blocks}) != len(blocks):
+            raise ValueError("duplicate_latency_block")
+        orders = [b["order"] for b in blocks]
+        if (
+            any(o not in {"AB", "BA"} for o in orders)
+            or abs(orders.count("AB") - orders.count("BA")) > 1
+        ):
+            reasons.append("order_imbalance")
+        if len({b["profile"] for b in blocks}) != 1:
+            reasons.append("profile_mismatch")
+        if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+            reasons.append("insufficient_observation")
+        loads = np.array(
+            [[b[arm]["load"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if np.mean(np.abs(loads[:, 0] - loads[:, 1])) > 0.2 * max(1.0, loads.mean()):
+            reasons.append("load_imbalance")
+        # Order-dependent drift is visible even if each pair has the same load.
+        if "AB" in orders and "BA" in orders:
+            avgs = [loads[np.array(orders) == order].mean() for order in ("AB", "BA")]
+            if abs(avgs[0] - avgs[1]) > 0.2 * max(1.0, loads.mean()):
+                reasons.append("order_load_imbalance")
+        times = np.array(
+            [[b[arm]["e2e_ms"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if (times[:, 1] <= 0).any():
+            raise ValueError("zero_control_latency")
+        rng = np.random.default_rng(seed)
+        ratios = []
+>       for start in range(0, replicates, 256):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: 'float' object cannot be interpreted as an integer
+
+src/ttakkari/kb_eval/latency.py:64: TypeError
+______________ test_r2_invalid_replicate_types_and_ranges[10000] _______________
+
+value = '10000'
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, ...andidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...]
+seed = 7, replicates = '10000', mode = 'full'
+
+    def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+                    raise ValueError("timer_critical_path_inconsistent")
+            arms[arm] = {
+                k: {
+                    "p50": float(np.quantile([b[arm][k] for b in blocks], 0.5)),
+                    "p95": float(np.quantile([b[arm][k] for b in blocks], 0.95)),
+                }
+                for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+            }
+        reasons = []
+        if len({b["block"] for b in blocks}) != len(blocks):
+            raise ValueError("duplicate_latency_block")
+        orders = [b["order"] for b in blocks]
+        if (
+            any(o not in {"AB", "BA"} for o in orders)
+            or abs(orders.count("AB") - orders.count("BA")) > 1
+        ):
+            reasons.append("order_imbalance")
+        if len({b["profile"] for b in blocks}) != 1:
+            reasons.append("profile_mismatch")
+        if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+            reasons.append("insufficient_observation")
+        loads = np.array(
+            [[b[arm]["load"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if np.mean(np.abs(loads[:, 0] - loads[:, 1])) > 0.2 * max(1.0, loads.mean()):
+            reasons.append("load_imbalance")
+        # Order-dependent drift is visible even if each pair has the same load.
+        if "AB" in orders and "BA" in orders:
+            avgs = [loads[np.array(orders) == order].mean() for order in ("AB", "BA")]
+            if abs(avgs[0] - avgs[1]) > 0.2 * max(1.0, loads.mean()):
+                reasons.append("order_load_imbalance")
+        times = np.array(
+            [[b[arm]["e2e_ms"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if (times[:, 1] <= 0).any():
+            raise ValueError("zero_control_latency")
+        rng = np.random.default_rng(seed)
+        ratios = []
+>       for start in range(0, replicates, 256):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: 'str' object cannot be interpreted as an integer
+
+src/ttakkari/kb_eval/latency.py:64: TypeError
+_______________ test_r2_invalid_replicate_types_and_ranges[None] _______________
+
+value = None
+
+    @pytest.mark.parametrize('value', [True, False, 0, -1, 1.5, float('nan'), float('inf'), '10000', None])
+    def test_r2_invalid_replicate_types_and_ranges(value):
+        with pytest.raises(ValueError):
+>           e.latency_report(equal_latency(), seed=7, replicates=value)
+
+unit_tests/kb_eval/test_review_fixes.py:127: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, ...andidate': {'e2e_ms': 500.0, 'queue_ms': 100.0, 'service_ms': 400.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...]
+seed = 7, replicates = None, mode = 'full'
+
+    def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+                    raise ValueError("timer_critical_path_inconsistent")
+            arms[arm] = {
+                k: {
+                    "p50": float(np.quantile([b[arm][k] for b in blocks], 0.5)),
+                    "p95": float(np.quantile([b[arm][k] for b in blocks], 0.95)),
+                }
+                for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+            }
+        reasons = []
+        if len({b["block"] for b in blocks}) != len(blocks):
+            raise ValueError("duplicate_latency_block")
+        orders = [b["order"] for b in blocks]
+        if (
+            any(o not in {"AB", "BA"} for o in orders)
+            or abs(orders.count("AB") - orders.count("BA")) > 1
+        ):
+            reasons.append("order_imbalance")
+        if len({b["profile"] for b in blocks}) != 1:
+            reasons.append("profile_mismatch")
+        if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+            reasons.append("insufficient_observation")
+        loads = np.array(
+            [[b[arm]["load"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if np.mean(np.abs(loads[:, 0] - loads[:, 1])) > 0.2 * max(1.0, loads.mean()):
+            reasons.append("load_imbalance")
+        # Order-dependent drift is visible even if each pair has the same load.
+        if "AB" in orders and "BA" in orders:
+            avgs = [loads[np.array(orders) == order].mean() for order in ("AB", "BA")]
+            if abs(avgs[0] - avgs[1]) > 0.2 * max(1.0, loads.mean()):
+                reasons.append("order_load_imbalance")
+        times = np.array(
+            [[b[arm]["e2e_ms"] for arm in ("candidate", "control")] for b in blocks]
+        )
+        if (times[:, 1] <= 0).any():
+            raise ValueError("zero_control_latency")
+        rng = np.random.default_rng(seed)
+        ratios = []
+>       for start in range(0, replicates, 256):
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: 'NoneType' object cannot be interpreted as an integer
+
+src/ttakkari/kb_eval/latency.py:64: TypeError
+__________ test_r2_invalid_arm_values_fail_before_any_gate[load-True] __________
+
+key = 'load', value = True
+
+    @pytest.mark.parametrize('key,value', [('load',True), ('load',-1), ('load',float('inf')),
+                                          ('service_ms',False), ('e2e_ms',0)])
+    def test_r2_invalid_arm_values_fail_before_any_gate(key, value):
+        data = equal_latency()
+        data[0]['candidate'][key] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:135: Failed
+______ test_r2_invalid_arm_values_fail_before_any_gate[service_ms-False] _______
+
+key = 'service_ms', value = False
+
+    @pytest.mark.parametrize('key,value', [('load',True), ('load',-1), ('load',float('inf')),
+                                          ('service_ms',False), ('e2e_ms',0)])
+    def test_r2_invalid_arm_values_fail_before_any_gate(key, value):
+        data = equal_latency()
+        data[0]['candidate'][key] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:135: Failed
+____ test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[True] ____
+
+value = True
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), 2])
+    def test_r2_unregistered_or_invalid_weights_are_not_silently_ignored(value):
+        data = equal_latency()
+        data[0]['weight'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:143: Failed
+_____ test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[0] ______
+
+value = 0
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), 2])
+    def test_r2_unregistered_or_invalid_weights_are_not_silently_ignored(value):
+        data = equal_latency()
+        data[0]['weight'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:143: Failed
+_____ test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[-1] _____
+
+value = -1
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), 2])
+    def test_r2_unregistered_or_invalid_weights_are_not_silently_ignored(value):
+        data = equal_latency()
+        data[0]['weight'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:143: Failed
+____ test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[nan] _____
+
+value = nan
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), 2])
+    def test_r2_unregistered_or_invalid_weights_are_not_silently_ignored(value):
+        data = equal_latency()
+        data[0]['weight'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:143: Failed
+____ test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[inf] _____
+
+value = inf
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), 2])
+    def test_r2_unregistered_or_invalid_weights_are_not_silently_ignored(value):
+        data = equal_latency()
+        data[0]['weight'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:143: Failed
+_____ test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[2] ______
+
+value = 2
+
+    @pytest.mark.parametrize('value', [True, 0, -1, float('nan'), float('inf'), 2])
+    def test_r2_unregistered_or_invalid_weights_are_not_silently_ignored(value):
+        data = equal_latency()
+        data[0]['weight'] = value
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:143: Failed
+__________ test_r2_missing_fields_and_invalid_stages_fail_explicitly ___________
+
+    def test_r2_missing_fields_and_invalid_stages_fail_explicitly():
+        data = equal_latency()
+        data[0].pop('elapsed_seconds')
+        with pytest.raises(ValueError):
+>           e.latency_report(data, seed=7)
+
+unit_tests/kb_eval/test_review_fixes.py:151: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/kb_eval/latency.py:45: in latency_report
+    if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+.0 = <list_iterator object at 0x10a21ada0>
+
+>   if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+                                ^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'elapsed_seconds'
+
+src/ttakkari/kb_eval/latency.py:45: KeyError
+_ test_r2_known_good_adequate_replicates_and_zero_load_keep_absolute_relative_separate _
+
+    def test_r2_known_good_adequate_replicates_and_zero_load_keep_absolute_relative_separate():
+        data = equal_latency()
+        for block in data:
+            for arm in ('control','candidate'):
+                block[arm]['load'] = 0
+        r = e.latency_report(data, seed=7, replicates=10000)
+        assert r['relative'] == 'relative_pass'
+        assert r['ratio_ci'] == [1., 1.]
+>       assert r['ci_degenerate'] is True
+               ^^^^^^^^^^^^^^^^^^
+E       KeyError: 'ci_degenerate'
+
+unit_tests/kb_eval/test_review_fixes.py:166: KeyError
+_ test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>0] _
+
+call = <function <lambda> at 0x1098f77e0>
+
+    @pytest.mark.parametrize('call', [
+        lambda: e.cluster_interval([True,0.], ['a','b'], seed=7),
+        lambda: e.cluster_interval(['.1','.2'], ['a','b'], seed=7),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=True),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=7, alpha=float('nan')),
+        lambda: e.holm({'a':True}),
+        lambda: e.quality_family({'recall':[True,0.], 'ndcg':[0.,.1]}, ['a','b'], seed=7),
+        lambda: e.simulate_power({'recall':[0.,.1], 'ndcg':[0.,.1]}, ['a','b'], seed=7, trials=1, replicates=True),
+    ])
+    def test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration(call):
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:184: Failed
+_ test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>1] _
+
+call = <function <lambda> at 0x1098f7880>
+
+    @pytest.mark.parametrize('call', [
+        lambda: e.cluster_interval([True,0.], ['a','b'], seed=7),
+        lambda: e.cluster_interval(['.1','.2'], ['a','b'], seed=7),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=True),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=7, alpha=float('nan')),
+        lambda: e.holm({'a':True}),
+        lambda: e.quality_family({'recall':[True,0.], 'ndcg':[0.,.1]}, ['a','b'], seed=7),
+        lambda: e.simulate_power({'recall':[0.,.1], 'ndcg':[0.,.1]}, ['a','b'], seed=7, trials=1, replicates=True),
+    ])
+    def test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration(call):
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:184: Failed
+_ test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>2] _
+
+call = <function <lambda> at 0x1098f7920>
+
+    @pytest.mark.parametrize('call', [
+        lambda: e.cluster_interval([True,0.], ['a','b'], seed=7),
+        lambda: e.cluster_interval(['.1','.2'], ['a','b'], seed=7),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=True),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=7, alpha=float('nan')),
+        lambda: e.holm({'a':True}),
+        lambda: e.quality_family({'recall':[True,0.], 'ndcg':[0.,.1]}, ['a','b'], seed=7),
+        lambda: e.simulate_power({'recall':[0.,.1], 'ndcg':[0.,.1]}, ['a','b'], seed=7, trials=1, replicates=True),
+    ])
+    def test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration(call):
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:184: Failed
+_ test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>4] _
+
+call = <function <lambda> at 0x1098f7a60>
+
+    @pytest.mark.parametrize('call', [
+        lambda: e.cluster_interval([True,0.], ['a','b'], seed=7),
+        lambda: e.cluster_interval(['.1','.2'], ['a','b'], seed=7),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=True),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=7, alpha=float('nan')),
+        lambda: e.holm({'a':True}),
+        lambda: e.quality_family({'recall':[True,0.], 'ndcg':[0.,.1]}, ['a','b'], seed=7),
+        lambda: e.simulate_power({'recall':[0.,.1], 'ndcg':[0.,.1]}, ['a','b'], seed=7, trials=1, replicates=True),
+    ])
+    def test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration(call):
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:184: Failed
+_ test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>5] _
+
+call = <function <lambda> at 0x1098f7b00>
+
+    @pytest.mark.parametrize('call', [
+        lambda: e.cluster_interval([True,0.], ['a','b'], seed=7),
+        lambda: e.cluster_interval(['.1','.2'], ['a','b'], seed=7),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=True),
+        lambda: e.cluster_interval([0.,.1], ['a','b'], seed=7, alpha=float('nan')),
+        lambda: e.holm({'a':True}),
+        lambda: e.quality_family({'recall':[True,0.], 'ndcg':[0.,.1]}, ['a','b'], seed=7),
+        lambda: e.simulate_power({'recall':[0.,.1], 'ndcg':[0.,.1]}, ['a','b'], seed=7, trials=1, replicates=True),
+    ])
+    def test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration(call):
+>       with pytest.raises(ValueError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:184: Failed
+_____ test_r3_only_explicit_synthetic_fixture_rights_can_run_without_auth ______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r3_only_explicit_syntheti0')
+
+    def test_r3_only_explicit_synthetic_fixture_rights_can_run_without_auth(tmp_path):
+        data = fixture_bundle()
+        for r in data['rights']:
+            r['provenance_kind'] = 'synthetic'
+>       loaded = e.load_bundle(write_bundle(tmp_path, data))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_review_fixes.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r3_only_explicit_syntheti0/bundle.json')
+
+    def load_bundle(path):
+        raw = Path(path).read_bytes()
+    
+        def unique_keys(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate_json_key:" + key)
+                result[key] = value
+            return result
+    
+>       bundle = Bundle.model_validate(
+            json.loads(raw, object_pairs_hook=unique_keys)
+        ).model_dump()
+E       pydantic_core._pydantic_core.ValidationError: 4 validation errors for Bundle
+E       rights.0.provenance_kind
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='synthetic', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E       rights.1.provenance_kind
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='synthetic', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E       rights.2.provenance_kind
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='synthetic', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+E       rights.3.provenance_kind
+E         Extra inputs are not permitted [type=extra_forbidden, input_value='synthetic', input_type=str]
+E           For further information visit https://errors.pydantic.dev/2.14/v/extra_forbidden
+
+src/ttakkari/kb_eval/loader.py:22: ValidationError
+_ test_r4_denied_reviewer_preserves_existing_audit_and_does_not_block_future_flow _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2719/test_r4_denied_reviewer_preser0')
+
+    def test_r4_denied_reviewer_preserves_existing_audit_and_does_not_block_future_flow(tmp_path):
+        path = tmp_path/'audit.json'
+        original = b'{"fixture":true,"holdout_peeks":0}'
+        path.write_bytes(original)
+>       with pytest.raises(ValueError, match='reviewer_authentication_required'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'reviewer_authentication_required'
+E         Actual message: 'holdout_consumed'
+
+unit_tests/kb_eval/test_review_fixes.py:203: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r1_positive_passage_owner_cannot_be_hidden_by_declared_documents
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_bootstrap_or_duration_cannot_return_green[1-6.0]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_bootstrap_or_duration_cannot_return_green[1000-nan]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r3_verified_string_and_fake_url_do_not_authorize_public_data
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r4_untrusted_reviewer_must_not_consume_or_create_audit
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r1_passage_names_do_not_stand_in_for_document_names
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r1_graph_requires_and_uses_authoritative_passage_owners
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_durations_are_not_observation_weights[True]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_durations_are_not_observation_weights[0]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_durations_are_not_observation_weights[-1]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_durations_are_not_observation_weights[nan]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_durations_are_not_observation_weights[inf]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_durations_are_not_observation_weights[6]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_durations_are_not_observation_weights[None]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[True]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[False]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[0]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[-1]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[1.5]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[nan]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[inf]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[10000]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_replicate_types_and_ranges[None]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_arm_values_fail_before_any_gate[load-True]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_arm_values_fail_before_any_gate[service_ms-False]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[True]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[0]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[-1]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[nan]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[inf]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[2]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_missing_fields_and_invalid_stages_fail_explicitly
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_known_good_adequate_replicates_and_zero_load_keep_absolute_relative_separate
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>0]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>1]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>2]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>4]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_adjacent_quality_statistics_reject_coercion_and_nonfinite_configuration[<lambda>5]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r3_only_explicit_synthetic_fixture_rights_can_run_without_auth
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r4_denied_reviewer_preserves_existing_audit_and_does_not_block_future_flow
+40 failed, 8 passed in 0.45s

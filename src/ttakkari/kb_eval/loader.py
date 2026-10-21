@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from .integrity import components, digest
+from .rights import validate_rights
 from .schema import Bundle
 from .state import canonical
 
@@ -22,16 +23,9 @@ def load_bundle(path):
     bundle = Bundle.model_validate(
         json.loads(raw, object_pairs_hook=unique_keys)
     ).model_dump()
-    rights = {r["component"]: r for r in bundle["rights"]}
-    if len(rights) != len(bundle["rights"]):
-        raise ValueError("duplicate_rights_component")
-    for component in ("code", "data", "qrels", "corpus"):
-        r = rights.get(component)
-        if not r or r["status"] != "verified" or r["storage_allowed"] is not True:
-            raise ValueError("rights_unverified:" + component)
-        if bundle["links"] and r["transform_allowed"] is not True:
-            raise ValueError("rights_transform_unverified:" + component)
+    bundle["rights_authorization"] = validate_rights(bundle)
     source_ids, passage_ids, revisions = set(), set(), set()
+    passage_owners = {}
     for s in bundle["sources"]:
         if s["doc_key"] in source_ids or s["source_revision_id"] in revisions:
             raise ValueError("duplicate_source_identity")
@@ -48,6 +42,7 @@ def load_bundle(path):
             ):
                 raise ValueError("invalid_or_duplicate_passage")
             passage_ids.add(p["id"])
+            passage_owners[p["id"]] = s["doc_key"]
     for c in bundle["cases"]:
         if c["verification"] == "human_verified":
             raise ValueError(
@@ -58,6 +53,14 @@ def load_bundle(path):
             or not set(c["relevance"]) <= passage_ids
         ):
             raise ValueError("gold_identity_not_in_manifest")
+        positive_sources = {
+            passage_owners[pid] for pid, grade in c["relevance"].items() if grade > 0
+        }
+        missing = positive_sources - set(c["documents"])
+        if missing:
+            raise ValueError(
+                "gold_document_mismatch:" + c["id"] + ":" + ",".join(sorted(missing))
+            )
         if c["answerable"] and not c["anchors"]:
             raise ValueError("missing_gold_anchor")
         if any(a["doc_key"] not in c["documents"] for a in c["anchors"]):
@@ -86,7 +89,10 @@ def load_bundle(path):
         if s["body_sha256"] in by_body:
             links.append([by_body[s["body_sha256"]], s["doc_key"]])
         by_body[s["body_sha256"]] = s["doc_key"]
-    bundle["components"] = components(bundle["cases"], links)
+    bundle["passage_owners"] = passage_owners
+    bundle["components"] = components(
+        bundle["cases"], links, passage_owners=passage_owners
+    )
     manifest = bundle["manifest"]
     bundle["identity"] = {
         "corpus": digest(

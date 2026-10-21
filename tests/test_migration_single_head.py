@@ -22,3 +22,12 @@ def test_alembic_has_exactly_one_head():
     assert len(heads) == 1, (
         f"마이그레이션 head 가 {len(heads)}개다: {sorted(heads)}. 한쪽 down_revision 을 다른 head 뒤로 옮겨 합친다."
     )
+
+
+def test_delivery_models_are_registered_in_alembic_metadata():
+    from ttakkari.delivery_models import ChangeSet
+    from ttakkari.models import Base
+
+    env_source = (ROOT / "alembic/env.py").read_text(encoding="utf-8")
+    assert "import ttakkari.delivery_models" in env_source
+    assert Base.metadata.tables[ChangeSet.__tablename__] is ChangeSet.__table__

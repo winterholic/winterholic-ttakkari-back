@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import uuid
-import pytest
 
 from ttakkari.delivery.repair_policy import (
+    MAX_REPAIRS_PER_SIGNATURE,
     check_repair_budget,
     extract_failure_signature,
     format_repair_prompt,
     record_repair_attempt,
-    MAX_REPAIRS_PER_CHANGE,
-    MAX_REPAIRS_PER_SIGNATURE,
 )
 from ttakkari.delivery_models import ChangeSet
 
@@ -86,6 +84,32 @@ def test_total_change_repair_budget_limit():
     check = check_repair_budget(cs, sig4)
     assert not check.allowed
     assert "ChangeSet 총 자율 수정 상한(3회)을 초과" in check.reason
+
+
+def test_signature_limit_does_not_reset_when_another_failure_intervenes():
+    cs = ChangeSet(
+        id=uuid.uuid4(), session_id=uuid.uuid4(), repo_path="/repo", branch_name="work/1",
+        worktree_path="/wt", base_sha="abc", repair_attempts=0,
+        signature_repair_attempts=0, failure_signature=None,
+    )
+    first = "test_a::AssertionError"
+    other = "test_b::RuntimeError"
+    for signature in (first, first, other):
+        assert check_repair_budget(cs, signature).allowed
+        record_repair_attempt(cs, signature)
+    denied = check_repair_budget(cs, first)
+    assert not denied.allowed
+    assert denied.signature_repair_count == MAX_REPAIRS_PER_SIGNATURE
+
+
+def test_legacy_signature_counter_survives_migration_to_signature_map():
+    signature = "test_legacy::AssertionError"
+    cs = ChangeSet(
+        id=uuid.uuid4(), session_id=uuid.uuid4(), repo_path="/repo", branch_name="work/1",
+        worktree_path="/wt", base_sha="abc", repair_attempts=2,
+        signature_repair_attempts=2, failure_signature=signature, signature_attempts={},
+    )
+    assert not check_repair_budget(cs, signature).allowed
 
 
 def test_format_repair_prompt():

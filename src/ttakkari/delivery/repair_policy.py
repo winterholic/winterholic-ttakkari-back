@@ -8,11 +8,9 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from typing import Any
 
-from ttakkari.delivery_models import ChangeSet, ChangeSetStatus
+from ttakkari.delivery_models import ChangeSet
 
 MAX_REPAIRS_PER_SIGNATURE = 2
 MAX_REPAIRS_PER_CHANGE = 3
@@ -47,14 +45,14 @@ def check_repair_budget(
 ) -> RepairBudgetCheck:
     """현재 ChangeSet의 수리 시도 횟수를 평가하여 추가 수정 가능 여부 판단."""
     current_total = change_set.repair_attempts
-    current_sig = change_set.failure_signature
-    current_sig_count = change_set.signature_repair_attempts
-
-    # 동일한 서명인지 확인
-    if current_sig == new_signature:
-        next_sig_count = current_sig_count + 1
-    else:
-        next_sig_count = 1
+    signature_counts = change_set.signature_attempts or {}
+    legacy_count = (
+        change_set.signature_repair_attempts
+        if change_set.failure_signature == new_signature
+        else 0
+    )
+    current_sig_count = int(signature_counts.get(new_signature, legacy_count))
+    next_sig_count = current_sig_count + 1
 
     next_total = current_total + 1
 
@@ -95,11 +93,11 @@ def record_repair_attempt(
     signature: str,
 ) -> None:
     """수리 시도 카운터와 실패 서명 갱신."""
-    if change_set.failure_signature == signature:
-        change_set.signature_repair_attempts += 1
-    else:
-        change_set.failure_signature = signature
-        change_set.signature_repair_attempts = 1
+    signature_counts = dict(change_set.signature_attempts or {})
+    signature_counts[signature] = int(signature_counts.get(signature, 0)) + 1
+    change_set.signature_attempts = signature_counts
+    change_set.failure_signature = signature
+    change_set.signature_repair_attempts = signature_counts[signature]
 
     change_set.repair_attempts += 1
 
@@ -114,7 +112,7 @@ def format_repair_prompt(
     lines = [
         f"[자동 검증 실패 피드백 - ChangeSet {change_set.id}]",
         f"실패 서명: {signature}",
-        f"수정 시도 횟수: {change_set.repair_attempts + 1}/{MAX_REPAIRS_PER_CHANGE}",
+        f"수정 시도 횟수: {change_set.repair_attempts}/{MAX_REPAIRS_PER_CHANGE}",
     ]
 
     if diff_violations:

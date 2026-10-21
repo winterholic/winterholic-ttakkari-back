@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from ttakkari.delivery.diff_guard import check_forbidden_diff
 
 
@@ -108,6 +106,27 @@ diff --git a/src/worker.py b/src/worker.py
     res2 = check_forbidden_diff(diff_multiline)
     assert not res2.is_valid
     assert any(v.rule == "no_swallowed_exceptions" for v in res2.violations)
+
+
+def test_ast_test_source_guard_blocks_import_alias_skip_addition():
+    previous = "def test_route():\n    assert route() == 200\n"
+    changed = "import pytest as pt\ndef test_route():\n    pt.skip('temporary')\n    assert route() == 200\n"
+    result = check_forbidden_diff(
+        "diff --git a/tests/test_route.py b/tests/test_route.py\n",
+        "Add temporary test setup explanation.",
+        test_source_pairs=[("tests/test_route.py", previous, changed)],
+    )
+    assert not result.is_valid
+    assert any(item.rule == "no_skip_or_xfail" for item in result.violations)
+
+
+def test_ast_test_source_guard_blocks_removed_test_even_if_diff_header_is_malformed():
+    result = check_forbidden_diff(
+        "",
+        test_source_pairs=[("tests/test_route.py", "def test_route():\n    pass\n", "")],
+    )
+    assert not result.is_valid
+    assert any(item.rule == "no_test_deletion" for item in result.violations)
 
 
 def test_unexplained_assertion_change():

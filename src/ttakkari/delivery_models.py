@@ -7,16 +7,15 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     Text,
 )
@@ -59,7 +58,6 @@ class ChangeSet(Base):
     __tablename__ = "change_sets"
     __table_args__ = (
         Index("ix_change_sets_status_submitted_at", "status", "submitted_at"),
-        Index("ix_change_sets_session_id", "session_id"),
         Index("ix_change_sets_failure_sig", "failure_signature"),
     )
 
@@ -73,6 +71,9 @@ class ChangeSet(Base):
     
     base_sha: Mapped[str] = mapped_column(String(40))  # 작업 시작 시점 main SHA
     head_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)  # 제출된 커밋 SHA
+    candidate_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    candidate_worktree_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     target_branch: Mapped[str] = mapped_column(String(100), default="main")
     
     status: Mapped[str] = mapped_column(
@@ -89,6 +90,7 @@ class ChangeSet(Base):
     repair_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # 동일 서명에 대한 수리 시도 횟수 (상한: 2회)
     signature_repair_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    signature_attempts: Mapped[dict[str, int]] = mapped_column(JsonType, default=dict, server_default="{}")
     
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     conflict_files: Mapped[list[str] | None] = mapped_column(JsonType, nullable=True)

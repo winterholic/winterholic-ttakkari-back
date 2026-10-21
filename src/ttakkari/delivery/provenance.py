@@ -9,12 +9,11 @@ from __future__ import annotations
 import re
 import uuid
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.delivery_models import ChangeSet, ChangeSetStatus
 from ttakkari.delivery.worktree import run_git
+from ttakkari.delivery_models import ChangeSet, ChangeSetStatus
 
 TRAILER_SESSION_KEY = "Ttakkari-Session"
 TRAILER_RUN_KEY = "Ttakkari-Run"

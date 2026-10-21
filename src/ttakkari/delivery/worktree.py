@@ -8,19 +8,19 @@ session별 worktree와 work/<session_id> 브랜치를 자동 할당하고 관리
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from ttakkari.delivery_models import ChangeSetStatus
 
 log = logging.getLogger(__name__)
 
 DEFAULT_WORKTREE_ROOT = Path.home() / ".ttakkari" / "worktrees"
+WRITE_INTENT_TERMS = ("구현", "수정", "고쳐", "추가", "리팩터", "개발", "코드", "버그", "implement", "fix", "refactor", "code change")
+READ_ONLY_TERMS = ("리뷰", "검토", "조사", "분석", "읽고", "review", "inspect", "investigate", "analyze", "audit")
 
 
 @dataclass(frozen=True)
@@ -60,9 +60,15 @@ def should_isolate_worker(
     - 검증 작업(is_verification=True)은 detached worktree 별도 처리
     - 게임 스튜디오(ADR 0058)는 자체 workspace 경로를 사용하므로 제외
     """
-    if not is_git or not is_write or is_game or is_verification:
+    return is_git and is_write and not is_game and not is_verification
+
+
+def is_code_change_request(title: str, prompt: str) -> bool:
+    """Conservative opt-in harness signal; review/investigation wording alone stays shared/read-only."""
+    text = f"{title}\n{prompt}".casefold()
+    if any(term.casefold() in text for term in READ_ONLY_TERMS):
         return False
-    return True
+    return any(term.casefold() in text for term in WRITE_INTENT_TERMS)
 
 
 def run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -116,6 +122,11 @@ def create_session_worktree(
 
     # 이미 존재하는 worktree/브랜치인지 점검
     if wt_path.exists():
+        current_branch = run_git(["branch", "--show-current"], wt_path)
+        if current_branch.returncode != 0 or current_branch.stdout.strip() != branch:
+            raise RuntimeError(f"Existing worktree path is not owned by session branch {branch}.")
+        _ensure_same_repository(repo, wt_path)
+        _configure_worktree_provenance(wt_path, session_id)
         # 기존 worktree가 남아 있는 경우 상태 점검
         status = inspect_worktree_status(wt_path)
         if status.is_dirty:
@@ -130,6 +141,7 @@ def create_session_worktree(
 
     # 브랜치가 이미 존재하면 기존 브랜치를 체크아웃하는 worktree 생성, 없으면 새 브랜치 생성
     branch_check = run_git(["show-ref", "--verify", f"refs/heads/{branch}"], repo)
+    branch_created = branch_check.returncode != 0
     if branch_check.returncode == 0:
         add_res = run_git(["worktree", "add", str(wt_path), branch], repo)
     else:
@@ -138,9 +150,13 @@ def create_session_worktree(
     if add_res.returncode != 0:
         raise RuntimeError(f"git worktree add failed: {add_res.stderr.strip()}")
 
-    # worktree 설정: worktreeConfig 활성화 및 Ttakkari 세션 트레일러/식별값 설정
-    run_git(["config", "extensions.worktreeConfig", "true"], wt_path)
-    run_git(["config", "--worktree", "ttakkari.session-id", str(session_id)], wt_path)
+    try:
+        _configure_worktree_provenance(wt_path, session_id)
+    except BaseException:
+        run_git(["worktree", "remove", "--force", str(wt_path)], repo)
+        if branch_created:
+            run_git(["branch", "-D", branch], repo)
+        raise
 
     return SessionWorktree(
         session_id=session_id,
@@ -149,6 +165,53 @@ def create_session_worktree(
         branch_name=branch,
         base_sha=base_sha,
     )
+
+
+def _configure_worktree_provenance(wt_path: Path, session_id: uuid.UUID) -> None:
+    """Configure per-worktree session trailers and an enforced commit-msg hook."""
+    for config in (
+        ["config", "extensions.worktreeConfig", "true"],
+        ["config", "--worktree", "ttakkari.session-id", str(session_id)],
+    ):
+        configured = run_git(config, wt_path)
+        if configured.returncode != 0:
+            raise RuntimeError(f"Failed to configure isolated worktree: {configured.stderr.strip()}")
+    hook_dir_res = run_git(["rev-parse", "--git-path", "ttakkari-hooks"], wt_path)
+    if hook_dir_res.returncode != 0:
+        raise RuntimeError(f"Could not locate worktree hook directory: {hook_dir_res.stderr.strip()}")
+    hook_dir = Path(hook_dir_res.stdout.strip())
+    if not hook_dir.is_absolute():
+        hook_dir = wt_path / hook_dir
+    hook_dir.mkdir(parents=True, exist_ok=True)
+    hook = hook_dir / "commit-msg"
+    hook.write_text(
+        "#!/bin/sh\n"
+        "set -eu\n"
+        "sid=$(git config --worktree --get ttakkari.session-id)\n"
+        "if ! grep -q '^Ttakkari-Session:' \"$1\"; then\n"
+        "  printf '\\nTtakkari-Session: %s\\n' \"$sid\" >> \"$1\"\n"
+        "fi\n",
+        encoding="utf-8",
+    )
+    hook.chmod(0o755)
+    hooked = run_git(["config", "--worktree", "core.hooksPath", str(hook_dir)], wt_path)
+    if hooked.returncode != 0:
+        raise RuntimeError(f"Failed to register provenance hook: {hooked.stderr.strip()}")
+
+
+def _ensure_same_repository(repo: Path, worktree: Path) -> None:
+    common = run_git(["rev-parse", "--git-common-dir"], repo)
+    target = run_git(["rev-parse", "--git-common-dir"], worktree)
+    if common.returncode != 0 or target.returncode != 0:
+        raise RuntimeError("Could not verify existing worktree repository ownership.")
+    common_path = Path(common.stdout.strip())
+    target_path = Path(target.stdout.strip())
+    if not common_path.is_absolute():
+        common_path = repo / common_path
+    if not target_path.is_absolute():
+        target_path = worktree / target_path
+    if common_path.resolve() != target_path.resolve():
+        raise RuntimeError("Existing worktree path belongs to a different Git repository.")
 
 
 def create_detached_worktree(

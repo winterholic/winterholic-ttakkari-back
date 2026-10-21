@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from ttakkari.delivery.provenance import (
     attach_commit_trailers,
     format_commit_trailers,
-    inspect_commit_provenance,
     parse_commit_trailers,
     register_change_set,
     verify_commit_provenance,
@@ -37,7 +36,7 @@ def temp_git_repo(tmp_path: Path) -> Path:
 async def in_memory_db():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[ChangeSet.__table__]))
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         yield session

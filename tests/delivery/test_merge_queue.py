@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import tempfile
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from ttakkari.delivery.merge_queue import (
@@ -19,9 +18,9 @@ from ttakkari.delivery.provenance import register_change_set
 from ttakkari.delivery.worktree import (
     create_session_worktree,
     run_git,
-    SessionWorktree,
 )
 from ttakkari.delivery_models import Base, ChangeSet, ChangeSetStatus
+from ttakkari.models import utcnow
 
 
 @pytest.fixture
@@ -44,7 +43,9 @@ def temp_git_repo(tmp_path: Path) -> Path:
 async def in_memory_db():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # Keep this SQLite unit fixture limited to the registry table. The shared
+        # application metadata installs PostgreSQL-only knowledge triggers.
+        await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=[ChangeSet.__table__]))
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as session:
         yield session
@@ -74,7 +75,7 @@ async def test_clean_change_promoted_and_merged(temp_git_repo: Path, tmp_path: P
     feature_file = wt.worktree_path / "feature.py"
     feature_file.write_text("print('feature ready')\n", encoding="utf-8")
     run_git(["add", "feature.py"], wt.worktree_path)
-    run_git(["commit", "-m", "Implement feature"], wt.worktree_path)
+    run_git(["commit", "-m", f"Implement feature\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
 
     head_sha = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
 
@@ -106,11 +107,252 @@ async def test_clean_change_promoted_and_merged(temp_git_repo: Path, tmp_path: P
 
     # main 저장소에 커밋이 반영되었는지 확인
     main_head = run_git(["rev-parse", "main"], temp_git_repo).stdout.strip()
-    assert main_head == head_sha, "main 브랜치가 worker의 커밋으로 승격되지 않았습니다."
-    assert (temp_git_repo / "feature.py").exists()
+    assert main_head == head_sha
+    assert run_git(["show", "main:feature.py"], temp_git_repo).stdout == "print('feature ready')\n"
 
     # worktree는 안전하게 정리되었는지 확인
     assert not wt.worktree_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_validation_and_promotion_use_immutable_candidate_without_touching_checkout(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    """검증한 통합 후보만 target ref에 승격하고 dirty checkout은 건드리지 않는다."""
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "feature.py").write_text("value = 1\n", encoding="utf-8")
+    run_git(["add", "feature.py"], wt.worktree_path)
+    run_git(["commit", "-m", f"Implement feature\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
+    head_sha = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    await submit_change(in_memory_db, cs.id, head_sha)
+    claimed = await claim_next_change(in_memory_db)
+    target_advance = run_git(["commit-tree", wt.base_sha + "^{tree}", "-p", wt.base_sha, "-m", "independent target advance"], temp_git_repo)
+    assert target_advance.returncode == 0
+    target_sha = target_advance.stdout.strip()
+    assert run_git(["update-ref", "refs/heads/main", target_sha, wt.base_sha], temp_git_repo).returncode == 0
+    (temp_git_repo / "local-only.txt").write_text("leave this untouched\n", encoding="utf-8")
+    original_target = target_sha
+    checked: list[tuple[str, Path, str]] = []
+
+    async def runner(stage: str, candidate: Path, sha: str):
+        assert run_git(["rev-parse", "HEAD"], candidate).stdout.strip() == sha
+        assert run_git(["symbolic-ref", "-q", "HEAD"], candidate).returncode != 0
+        assert (candidate / "feature.py").read_text() == "value = 1\n"
+        checked.append((stage, candidate, sha))
+        return True, "ok", None
+
+    result = await process_single_change(in_memory_db, claimed, temp_git_repo, runner, runner)
+
+    assert result.success
+    assert len(checked) == 2
+    assert checked[0][2] == checked[1][2] == result.rebased_sha
+    assert run_git(["rev-parse", "main^1"], temp_git_repo).stdout.strip() == original_target
+    assert run_git(["rev-parse", "main^2"], temp_git_repo).stdout.strip() == head_sha
+    assert (temp_git_repo / "local-only.txt").read_text() == "leave this untouched\n"
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_dirty_worktree_and_missing_provenance(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    (wt.worktree_path / "uncommitted.py").write_text("unsafe\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="dirty"):
+        await submit_change(in_memory_db, cs.id, run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip())
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_commit_without_session_trailer(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "feature.py").write_text("value = 1\n", encoding="utf-8")
+    run_git(["add", "feature.py"], wt.worktree_path)
+    run_git(["-c", "core.hooksPath=/dev/null", "commit", "-m", "missing provenance"], wt.worktree_path)
+    head = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+
+    with pytest.raises(ValueError, match="provenance"):
+        await submit_change(in_memory_db, cs.id, head)
+
+
+@pytest.mark.asyncio
+async def test_missing_validation_runner_fails_closed(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "feature.py").write_text("value = 1\n", encoding="utf-8")
+    run_git(["add", "feature.py"], wt.worktree_path)
+    run_git(["commit", "-m", f"test commit\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
+    head_sha = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    await submit_change(in_memory_db, cs.id, head_sha)
+    claimed = await claim_next_change(in_memory_db)
+
+    with pytest.raises((TypeError, ValueError), match="validator|validation"):
+        await process_single_change(in_memory_db, claimed, temp_git_repo, None, None)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_submit_is_rejected_and_claim_is_single_use(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "feature.py").write_text("value = 1\n", encoding="utf-8")
+    run_git(["add", "feature.py"], wt.worktree_path)
+    run_git(["commit", "-m", f"Implement feature\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
+    head = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    await submit_change(in_memory_db, cs.id, head)
+    with pytest.raises(RuntimeError, match="제출될 수 없습니다"):
+        await submit_change(in_memory_db, cs.id, head)
+    claimed = await claim_next_change(in_memory_db)
+    assert claimed is not None
+    assert await claim_next_change(in_memory_db) is None
+
+
+@pytest.mark.asyncio
+async def test_expired_claim_is_recoverable_after_integrator_restart(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "feature.py").write_text("value = 1\n", encoding="utf-8")
+    run_git(["add", "feature.py"], wt.worktree_path)
+    run_git(["commit", "-m", f"Implement feature\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
+    head = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    await submit_change(in_memory_db, cs.id, head)
+    first = await claim_next_change(in_memory_db)
+    assert first is not None
+    first.claimed_at = utcnow() - timedelta(hours=1)
+    expired_at = first.claimed_at
+    await in_memory_db.flush()
+
+    recovered = await claim_next_change(in_memory_db)
+
+    assert recovered is not None and recovered.id == cs.id
+    assert recovered.claimed_at > expired_at
+
+
+@pytest.mark.asyncio
+async def test_bounded_repair_dispatches_feedback_to_originating_session(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "feature.py").write_text("value = 1\n", encoding="utf-8")
+    run_git(["add", "feature.py"], wt.worktree_path)
+    run_git(["commit", "-m", f"Implement feature\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
+    head = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    await submit_change(in_memory_db, cs.id, head)
+    claimed = await claim_next_change(in_memory_db)
+    feedback: list[tuple[str, str]] = []
+
+    async def dispatch(db, change_set, prompt):
+        feedback.append((str(change_set.session_id), prompt))
+
+    result = await process_single_change(
+        in_memory_db, claimed, temp_git_repo, dummy_fail_stage1_runner, dummy_pass_runner,
+        repair_dispatcher=dispatch,
+    )
+    assert result.status == ChangeSetStatus.registered
+    assert claimed.repair_attempts == 1
+    assert feedback and feedback[0][0] == str(session_id)
+    assert "AssertionError" in feedback[0][1] and "수정 시도 횟수: 1/3" in feedback[0][1]
+
+
+@pytest.mark.asyncio
+async def test_target_advance_during_validation_causes_safe_retry_not_promotion(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "feature.py").write_text("value = 1\n", encoding="utf-8")
+    run_git(["add", "feature.py"], wt.worktree_path)
+    run_git(["commit", "-m", f"Implement feature\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
+    head = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    await submit_change(in_memory_db, cs.id, head)
+    claimed = await claim_next_change(in_memory_db)
+    original = wt.base_sha
+    advanced = run_git(["commit-tree", wt.base_sha + "^{tree}", "-p", wt.base_sha, "-m", "external target advance"], temp_git_repo).stdout.strip()
+
+    async def advancing_runner(stage: str, candidate: Path, sha: str):
+        if stage == "stage1":
+            assert run_git(["update-ref", "refs/heads/main", advanced, original], temp_git_repo).returncode == 0
+        return True, "tested", None
+
+    result = await process_single_change(in_memory_db, claimed, temp_git_repo, advancing_runner, advancing_runner)
+
+    assert result.status == ChangeSetStatus.submitted
+    assert run_git(["rev-parse", "main"], temp_git_repo).stdout.strip() == advanced
+    assert claimed.candidate_sha is None
+
+
+@pytest.mark.asyncio
+async def test_integration_rejects_alias_imported_pytest_skip_in_real_git_diff(
+    temp_git_repo: Path, tmp_path: Path, in_memory_db: AsyncSession
+):
+    session_id = uuid.uuid4()
+    (temp_git_repo / "tests").mkdir()
+    test_file = temp_git_repo / "tests" / "test_route.py"
+    test_file.write_text("def test_route():\n    assert True\n", encoding="utf-8")
+    run_git(["add", "tests/test_route.py"], temp_git_repo)
+    run_git(["commit", "-m", "Add test"], temp_git_repo)
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    test_file = wt.worktree_path / "tests" / "test_route.py"
+    test_file.write_text("import pytest as pt\ndef test_route():\n    pt.skip('temporary')\n    assert True\n", encoding="utf-8")
+    run_git(["add", "tests/test_route.py"], wt.worktree_path)
+    run_git(["commit", "-m", f"Explain tests\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
+    head = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    cs = await register_change_set(
+        in_memory_db, session_id=session_id, run_id=None, repo_path=str(temp_git_repo),
+        branch_name=wt.branch_name, worktree_path=str(wt.worktree_path), base_sha=wt.base_sha,
+    )
+    await submit_change(in_memory_db, cs.id, head)
+    claimed = await claim_next_change(in_memory_db)
+
+    result = await process_single_change(
+        in_memory_db, claimed, temp_git_repo, dummy_pass_runner, dummy_pass_runner
+    )
+
+    assert result.status == ChangeSetStatus.rejected
+    assert claimed.diff_guard_result["is_valid"] is False
+    assert any("skip/xfail" in item for item in claimed.diff_guard_result["violations"])
 
 
 @pytest.mark.asyncio
@@ -125,7 +367,7 @@ async def test_conflict_does_not_block_subsequent_normal_change(
     wt_a = create_session_worktree(temp_git_repo, session_a, worktrees_root=wt_root)
     (wt_a.worktree_path / "README.md").write_text("# Conflicting Change from A\n", encoding="utf-8")
     run_git(["add", "README.md"], wt_a.worktree_path)
-    run_git(["commit", "-m", "Change README in A"], wt_a.worktree_path)
+    run_git(["commit", "-m", f"Change README in A\n\nTtakkari-Session: {session_a}"], wt_a.worktree_path)
     head_a = run_git(["rev-parse", "HEAD"], wt_a.worktree_path).stdout.strip()
 
     cs_a = await register_change_set(
@@ -150,7 +392,7 @@ async def test_conflict_does_not_block_subsequent_normal_change(
     wt_b = create_session_worktree(temp_git_repo, session_b, worktrees_root=wt_root)
     (wt_b.worktree_path / "service.py").write_text("def run(): pass\n", encoding="utf-8")
     run_git(["add", "service.py"], wt_b.worktree_path)
-    run_git(["commit", "-m", "Add service in B"], wt_b.worktree_path)
+    run_git(["commit", "-m", f"Add service in B\n\nTtakkari-Session: {session_b}"], wt_b.worktree_path)
     head_b = run_git(["rev-parse", "HEAD"], wt_b.worktree_path).stdout.strip()
 
     cs_b = await register_change_set(
@@ -173,7 +415,7 @@ async def test_conflict_does_not_block_subsequent_normal_change(
     assert not res_a.success
     assert res_a.status == ChangeSetStatus.conflict
     assert claimed_a.conflict_files is not None
-    assert "충돌 발생" in (claimed_a.rejection_reason or "")
+    assert "conflict" in (claimed_a.rejection_reason or "")
 
     # 2. 큐에서 B 처리 -> 충돌 없이 정상 승격!
     claimed_b = await claim_next_change(in_memory_db)
@@ -184,7 +426,7 @@ async def test_conflict_does_not_block_subsequent_normal_change(
     )
     assert res_b.success
     assert res_b.status == ChangeSetStatus.merged
-    assert (temp_git_repo / "service.py").exists()
+    assert run_git(["show", "main:service.py"], temp_git_repo).stdout == "def run(): pass\n"
 
 
 @pytest.mark.asyncio
@@ -198,7 +440,7 @@ async def test_stage1_failure_rejected_and_subsequent_runs(
 
     (wt.worktree_path / "bad.py").write_text("# bad\n", encoding="utf-8")
     run_git(["add", "bad.py"], wt.worktree_path)
-    run_git(["commit", "-m", "bad commit"], wt.worktree_path)
+    run_git(["commit", "-m", f"bad commit\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
     head_sha = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
 
     cs = await register_change_set(
@@ -221,7 +463,7 @@ async def test_stage1_failure_rejected_and_subsequent_runs(
     assert res.status == ChangeSetStatus.rejected
     assert claimed.failure_signature == "test_route_inventory::AssertionError"
     assert claimed.repair_attempts == 1
-    assert "Stage 1 검증 실패" in (claimed.rejection_reason or "")
+    assert "Stage 1 validation failed" in (claimed.rejection_reason or "")
 
 
 @pytest.mark.asyncio
@@ -244,7 +486,7 @@ async def test_diff_guard_blocks_and_rejects(
     # worker가 테스트를 삭제함!
     (wt.worktree_path / "tests" / "test_api.py").write_text("# deleted test\n", encoding="utf-8")
     run_git(["add", "tests/test_api.py"], wt.worktree_path)
-    run_git(["commit", "-m", "Delete test"], wt.worktree_path)
+    run_git(["commit", "-m", f"Delete test\n\nTtakkari-Session: {session_id}"], wt.worktree_path)
     head_sha = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
 
     cs = await register_change_set(
@@ -265,5 +507,5 @@ async def test_diff_guard_blocks_and_rejects(
 
     assert not res.success
     assert res.status == ChangeSetStatus.rejected
-    assert "DiffGuard 위반" in (claimed.rejection_reason or "")
+    assert "DiffGuard violation" in (claimed.rejection_reason or "")
     assert claimed.diff_guard_result["is_valid"] is False

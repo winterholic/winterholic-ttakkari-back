@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-import tempfile
 import uuid
 from pathlib import Path
 
 import pytest
 
+from ttakkari.config import Settings
+from ttakkari.delivery.provenance import verify_commit_provenance
 from ttakkari.delivery.worktree import (
     cleanup_session_worktree,
     create_detached_worktree,
     create_session_worktree,
-    inspect_worktree_status,
+    is_code_change_request,
     run_git,
     should_isolate_worker,
     validate_writable_roots,
-    SessionWorktree,
 )
 from ttakkari.delivery_models import ChangeSetStatus
 
@@ -51,6 +49,20 @@ def test_should_isolate_worker():
     assert not should_isolate_worker(is_git=True, is_write=True, is_verification=True)
     # 따까리 관리 git 저장소 쓰기 작업만 격리 대상
     assert should_isolate_worker(is_git=True, is_write=True)
+
+
+def test_opt_in_write_intent_leaves_review_and_read_only_requests_unisolated():
+    assert is_code_change_request("버그 수정", "인증 오류를 고쳐줘")
+    assert is_code_change_request("Implement endpoint", "Add the API route and tests")
+    assert not is_code_change_request("코드 리뷰", "변경을 읽고 문제만 보고해줘")
+    assert not is_code_change_request("Investigate", "Find why this is slow; do not edit files")
+
+
+def test_delivery_feature_flag_loads_from_settings(monkeypatch):
+    monkeypatch.delenv("TTAKKARI_DELIVERY_PIPELINE_ENABLED", raising=False)
+    assert Settings(_env_file=None).delivery_pipeline_enabled is False
+    monkeypatch.setenv("TTAKKARI_DELIVERY_PIPELINE_ENABLED", "true")
+    assert Settings(_env_file=None).delivery_pipeline_enabled is True
 
 
 def test_validate_writable_roots(tmp_path: Path):
@@ -94,6 +106,17 @@ def test_parallel_workers_do_not_contaminate(temp_git_repo: Path, tmp_path: Path
 
     assert file_a.read_text() == "x = 'from worker A'\n"
     assert file_b.read_text() == "x = 'from worker B'\n"
+
+
+def test_opt_in_worktree_hook_adds_session_provenance(temp_git_repo: Path, tmp_path: Path):
+    session_id = uuid.uuid4()
+    wt = create_session_worktree(temp_git_repo, session_id, worktrees_root=tmp_path / "worktrees")
+    (wt.worktree_path / "hooked.txt").write_text("hooked\n", encoding="utf-8")
+    run_git(["add", "hooked.txt"], wt.worktree_path)
+    committed = run_git(["commit", "-m", "No manual trailer needed"], wt.worktree_path)
+    assert committed.returncode == 0, committed.stderr
+    head = run_git(["rev-parse", "HEAD"], wt.worktree_path).stdout.strip()
+    assert verify_commit_provenance(temp_git_repo, head, session_id)
 
 
 def test_dirty_worktree_preservation_on_cleanup(temp_git_repo: Path, tmp_path: Path):

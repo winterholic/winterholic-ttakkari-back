@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -15,6 +16,13 @@ from ttakkari.api.pms import TaskIn, _project, _task_response, check_project_sco
 from ttakkari.api.sessions import ACTIVE, queue_run
 from ttakkari.audit import record
 from ttakkari.config import get_settings
+from ttakkari.delivery.provenance import register_change_set
+from ttakkari.delivery.worktree import (
+    create_session_worktree,
+    is_code_change_request,
+    should_isolate_worker,
+    validate_writable_roots,
+)
 from ttakkari.model_catalog import ANTIGRAVITY_MODELS, thinking_level
 from ttakkari.models import (
     Artifact,
@@ -26,6 +34,7 @@ from ttakkari.models import (
     RunOrigin,
     RunStatus,
     SessionKind,
+    Workspace,
 )
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
@@ -322,11 +331,43 @@ async def spawn_worker(body: WorkerIn, sid: OrchestratorSession, db: Db) -> Work
     workspace_id, prompt, on_queued = orch.workspace_id, body.prompt, None
     if body.game_id is not None:
         workspace_id, prompt, on_queued = await _game_worker_context(db, orch, body, task_type)
-    w = ChatSession(workspace_id=workspace_id, title=body.title, engine=engine, model=model,
+    worker_id = uuid.uuid4()
+    w = ChatSession(id=worker_id, workspace_id=workspace_id, title=body.title, engine=engine, model=model,
                     effort=effort, kind=SessionKind.worker, parent_id=orch.id, pool=orch.pool,
                     worker_task_type=task_type, strict_engine=body.strict_engine)
     db.add(w)
     await db.flush()
+    if s.delivery_pipeline_enabled and body.game_id is None and is_code_change_request(body.title, body.prompt) and task_type != "verification":
+        base_ws = await db.get(Workspace, workspace_id)
+        if base_ws is not None and should_isolate_worker(is_git=base_ws.is_git, is_write=True):
+            worktree_root = s.home / "worktrees"
+            try:
+                worktree = create_session_worktree(Path(base_ws.root_path), w.id, worktrees_root=worktree_root)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise HTTPException(status.HTTP_409_CONFLICT, f"격리 worktree를 만들 수 없어 작업을 시작하지 않았습니다: {exc}") from exc
+            isolated = Workspace(
+                name=f"{base_ws.name} · {w.id}",
+                root_path=str(worktree.worktree_path),
+                is_git=True,
+                default_engine=base_ws.default_engine,
+                codex_sandbox=base_ws.codex_sandbox,
+                extra_writable_roots=[str(p) for p in validate_writable_roots([], worktree.worktree_path)],
+                export_allowed=base_ws.export_allowed,
+            )
+            db.add(isolated)
+            await db.flush()
+            w.workspace_id = isolated.id
+            await register_change_set(
+                db,
+                session_id=w.id,
+                run_id=None,
+                repo_path=str(worktree.repo_path),
+                branch_name=worktree.branch_name,
+                worktree_path=str(worktree.worktree_path),
+                base_sha=worktree.base_sha,
+                target_branch="main",
+            )
+            await db.flush()
     if peer:
         record(db, actor="agent", action="orchestrator.escalate", target_type="session", target_id=w.id,
                detail={"model": model, "effort": effort, "reason": reason[:500]})

@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import ast
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 
@@ -44,6 +46,8 @@ RE_ASSERT_CHANGED = re.compile(r"^[-+]\s*assert\b")
 def check_forbidden_diff(
     diff_text: str,
     commit_message: str = "",
+    *,
+    test_source_pairs: list[tuple[str, str, str]] | None = None,
 ) -> DiffGuardResult:
     """diff_text를 기계적으로 분석하여 ADR 0066 D5 위반 사항을 검출."""
     violations: list[DiffViolation] = []
@@ -117,19 +121,22 @@ def check_forbidden_diff(
                     file_path=current_file,
                 )
             )
-        elif stripped.startswith("+") and "except" in stripped and ":" in stripped:
-            # 다음 라인이 + pass 인지 검사
-            if i + 1 < num_lines:
-                next_line = lines[i + 1].strip()
-                if next_line in ("+ pass", "+pass"):
-                    violations.append(
-                        DiffViolation(
-                            rule="no_swallowed_exceptions",
-                            detail="except ...: pass 블록으로 예외를 무단으로 삼키는 것이 금지되어 있습니다.",
-                            line=stripped + " " + next_line,
-                            file_path=current_file,
-                        )
-                    )
+        elif (
+            stripped.startswith("+")
+            and "except" in stripped
+            and ":" in stripped
+            and i + 1 < num_lines
+            and re.fullmatch(r"\+\s*pass(?:\s*#.*)?", lines[i + 1].strip())
+        ):
+            next_line = lines[i + 1].strip()
+            violations.append(
+                DiffViolation(
+                    rule="no_swallowed_exceptions",
+                    detail="except ...: pass 블록으로 예외를 무단으로 삼키는 것이 금지되어 있습니다.",
+                    line=stripped + " " + next_line,
+                    file_path=current_file,
+                )
+            )
 
         # 5. assert 변경 추적
         if is_test_file and RE_ASSERT_CHANGED.match(stripped):
@@ -153,7 +160,84 @@ def check_forbidden_diff(
                 )
             )
 
+    for file_path, before, after in test_source_pairs or []:
+        if not ("test" in file_path.lower() or file_path.endswith("_test.py")):
+            continue
+        try:
+            before_tree = ast.parse(before, filename=f"{file_path}:base") if before else ast.Module(body=[], type_ignores=[])
+            after_tree = ast.parse(after, filename=f"{file_path}:head") if after else ast.Module(body=[], type_ignores=[])
+        except SyntaxError as exc:
+            violations.append(
+                DiffViolation("test_source_parse", f"변경 테스트 소스를 AST로 검증하지 못했습니다: {exc.msg}", file_path=file_path)
+            )
+            continue
+        before_tests = Counter(
+            node.name
+            for node in ast.walk(before_tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+        )
+        after_tests = Counter(
+            node.name
+            for node in ast.walk(after_tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+        )
+        if before_tests - after_tests:
+            violations.append(
+                DiffViolation("no_test_deletion", f"AST 검사에서 테스트 함수가 삭제되었습니다: {dict(before_tests - after_tests)}", file_path=file_path)
+            )
+        old_skips = _pytest_skip_nodes(before_tree)
+        new_skips = _pytest_skip_nodes(after_tree)
+        if new_skips - old_skips:
+            violations.append(
+                DiffViolation("no_skip_or_xfail", "AST 검사에서 pytest skip/xfail 호출 또는 마커가 추가되었습니다.", file_path=file_path)
+            )
+
     return DiffGuardResult(
         is_valid=len(violations) == 0,
         violations=violations,
     )
+
+
+def _pytest_skip_nodes(tree: ast.Module) -> Counter[str]:
+    pytest_names = {"pytest"}
+    mark_names: set[str] = set()
+    imported_skip_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "pytest":
+                    pytest_names.add(alias.asname or "pytest")
+        elif isinstance(node, ast.ImportFrom) and node.module == "pytest":
+            for alias in node.names:
+                imported = alias.asname or alias.name
+                if alias.name == "mark":
+                    mark_names.add(imported)
+                if alias.name in {"skip", "skipif", "xfail"}:
+                    imported_skip_names.add(imported)
+
+    def names_in_chain(node: ast.AST) -> set[str]:
+        if isinstance(node, ast.Name):
+            return {node.id}
+        if isinstance(node, ast.Attribute):
+            return names_in_chain(node.value)
+        if isinstance(node, ast.Call):
+            return names_in_chain(node.func)
+        return set()
+
+    found: Counter[str] = Counter()
+    for node in ast.walk(tree):
+        candidate: ast.AST | None = None
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in imported_skip_names:
+                candidate = node
+            elif isinstance(node.func, ast.Attribute) and node.func.attr in {"skip", "skipif", "xfail"}:
+                roots = names_in_chain(node.func)
+                if roots & pytest_names or roots & mark_names:
+                    candidate = node
+        elif isinstance(node, ast.Attribute) and node.attr in {"skip", "skipif", "xfail"}:
+            roots = names_in_chain(node)
+            if roots & pytest_names or roots & mark_names:
+                candidate = node
+        if candidate is not None:
+            found[ast.dump(candidate, include_attributes=False)] += 1
+    return found

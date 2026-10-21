@@ -258,6 +258,7 @@ async def deploys(db: AsyncSession, *, limit: int | None = 10, status: str | Non
             item.update({"issue": f"LOG-{hit[0]}", "cause": hit[1][:200], "stage": hit[2].get("stage")})
         elif j.get("error"):
             item["error"] = j["error"][:200]
+        item.update(deploy_logs.wait_state(j))
         items.append(item)
     return _out({"items": items}, max_chars, "limit 을 줄이거나 status 로 거르세요. 로그는 ops_deploy_log 로 읽습니다.")
 

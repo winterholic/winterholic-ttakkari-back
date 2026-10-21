@@ -754,3 +754,265 @@ async def test_gate_reruns_only_failed_tests_once_for_test_failures(tmp_path):
     with pytest.raises(StageError):  # 수집 오류(exit 2)·타임아웃(None)은 재시도하지 않는다
         await controller([2]).run_pytest(job, tmp_path, {})
     assert len(calls) == 1
+
+
+# ---- 스키마 계약: 별칭(이름이 바뀐 옛 리비전)·유휴 대기 -------------------------------------
+
+def test_contract_aliases_must_map_retired_ids_onto_known_revisions():
+    from ttakkari.generation_deployment import validate_contract
+    base = {"protocol": 1, "schema_revision": "0003_c", "online_migration_from": ["0001_a", "0002_b"]}
+    assert validate_contract(base | {"schema_aliases": {"0002_old": "0002_b"}})
+    for bad in ({"0002_old": "9999_unknown"}, {"0002_old": "0002_old"}, ["0002_b"]):
+        with pytest.raises(TypeError):
+            validate_contract(base | {"schema_aliases": bad})
+
+
+def test_committed_contract_aliases_are_not_real_revisions_and_resolve_to_online_range():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    from ttakkari.generation_deployment import Releases
+    source = Path(__file__).resolve().parents[1]
+    config = Config(str(source / "alembic.ini"))
+    config.set_main_option("script_location", str(source / "alembic"))
+    real = {r.revision for r in ScriptDirectory.from_config(config).walk_revisions()}
+    contract = Releases.contract(source)
+    # 실제 리비전을 별칭으로 가리면 alembic 이 알지 못하는 상태만 고쳐 쓴다는 보증이 깨진다.
+    assert not set(contract.get("schema_aliases", {})) & real
+    for old, new in contract["schema_aliases"].items():
+        assert new in contract["online_migration_from"]
+        # 릴리스보다 오래된 감독은 schema_aliases 를 모르고 online_migration_from 만 본다.
+        assert old in contract["online_migration_from"]
+
+
+class _FakeDb:
+    def __init__(self, version):
+        self.version, self.executed = version, []  # executed: 감독이 DB 에 쓴 문장(있으면 안 된다)
+
+    def __call__(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def scalar(self, _stmt):
+        return self.version
+
+
+def _contract(**extra):
+    return {"protocol": 1, "schema_revision": "0003_c", "online_migration_from": ["0001_a", "0002_b"],
+            "schema_aliases": {"0002_old": "0002_b"}} | extra
+
+
+@pytest.mark.parametrize(("stamp", "mode"), [
+    ("0003_c", "current"), ("0002_b", "online"), ("0002_old", "online"), ("0099_unknown", "idle")])
+async def test_schema_plan_classifies_stamp(tmp_path, monkeypatch, stamp, mode):
+    from ttakkari import generation_deployment as gd
+    monkeypatch.setattr(gd, "sessionmaker", lambda: _FakeDb(stamp))
+    control = gd.GenerationController(JobStore(tmp_path))
+    assert await control.schema_plan(_contract()) == (mode, stamp)
+
+
+async def _prepare_with(tmp_path, monkeypatch, stamp):
+    """아카이브·검사·DB 를 대체한 prepare. 스키마 판정 이후의 동작만 본다."""
+    from ttakkari import generation_deployment as gd
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    db = _FakeDb(stamp)
+    monkeypatch.setattr(gd, "sessionmaker", lambda: db)
+    release = tmp_path / "release"
+    (release / "deploy").mkdir(parents=True)
+    (release / "deploy/generation-contract.json").write_text(json.dumps(_contract()))
+
+    class Admin:
+        async def execute(self, *_):
+            pass
+
+        async def close(self):
+            pass
+
+    async def connect(*_):
+        return Admin()
+
+    async def noop(*_, **__):
+        pass
+
+    store = JobStore(tmp_path / "deploy")
+    job = store.request("b" * 40)
+    control = gd.GenerationController(store)
+    migrations = []
+
+    async def migrate(_job, _release, *, online):
+        migrations.append(online)
+
+    monkeypatch.setattr(gd.asyncpg, "connect", connect)
+    monkeypatch.setattr(control.releases, "archive", lambda _sha: release)
+    monkeypatch.setattr(control, "environment", noop)
+    monkeypatch.setattr(control, "run_security_gate", noop)
+    monkeypatch.setattr(control, "run_pytest", noop)
+    monkeypatch.setattr(control, "migrate", migrate)
+    return gd, control, store, job, db, migrations, release
+
+
+async def test_retired_revision_alias_is_migrated_online_by_the_release(tmp_path, monkeypatch):
+    _gd, control, store, job, db, migrations, release = await _prepare_with(tmp_path, monkeypatch, "0002_old")
+    assert await control.prepare(job) == release
+    # 정렬은 릴리스의 alembic/env.py 가 한다. 감독은 DB 를 고쳐 쓰지 않고 online 이행만 맡긴다.
+    assert not db.executed and migrations == [True]
+    assert store.get(job["id"])["status"] == "prepared"
+
+
+async def test_unknown_schema_waits_for_idle_instead_of_failing_and_keeps_tested_release(tmp_path, monkeypatch):
+    gd, control, store, job, db, migrations, release = await _prepare_with(tmp_path, monkeypatch, "0099_unknown")
+    with pytest.raises(gd.IdleRequired):
+        await control.prepare(job)
+    saved = store.get(job["id"])
+    assert saved["status"] == "waiting_idle" and saved["idle_required"] is True
+    assert saved["release_path"] == str(release) and saved["tested_revision"] == "b" * 40
+    assert saved["error_stage"] == "schema_contract" and "0099_unknown" in saved["error_summary"]
+    assert not db.executed and not migrations  # 아무것도 건드리지 않는다
+
+
+async def _idle_deploy(tmp_path, monkeypatch, runs):
+    from ttakkari import deploy_gate, deployment
+    from ttakkari import generation_deployment as gd
+    monkeypatch.setattr(get_settings(), "deploy_strategy", "generations")
+    slots = FakeSlots()
+    old = await slots.start(0, Path("old"), "a" * 40)
+    old.update(state="active", owned_runs=1)
+    slots.route = 0
+    store = JobStore(tmp_path)
+    job = store.request("b" * 40)
+    store.update(job["id"], status="waiting_idle", idle_required=True, release_path="candidate",
+                 tested_revision="b" * 40)
+    job = store.get(job["id"])
+    control = gd.GenerationController(store, slots=slots)
+    active = uuid.UUID(old["generation"])
+    state = {"active": active, "runs": runs, "migrations": [], "lock_free_during_cutover": None}
+
+    async def active_fn():
+        return state["active"]
+
+    async def activate(gid, *, expected):
+        state["active"] = gid
+
+    async def count(_own):
+        return state["runs"]
+
+    async def migrate(_job, _release, *, online):
+        state["migrations"].append(online)
+
+    async def plan(_contract):
+        return "idle", "0099_unknown"
+
+    real_switch = slots.switch
+
+    async def switch(slot):
+        # 컷오버 동안 유휴 잠금이 유지돼 새 Run 접수가 끼어들지 못해야 한다.
+        probe = deployment.Admission(tmp_path).acquire()
+        state["lock_free_during_cutover"] = probe is not None
+        if probe:
+            probe.close()
+        await real_switch(slot)
+
+    monkeypatch.setattr(control, "active", active_fn)
+    monkeypatch.setattr(control, "activate", activate)
+    monkeypatch.setattr(control, "verify_test_binding", lambda *_: None)
+    monkeypatch.setattr(control, "schema_plan", plan)
+    monkeypatch.setattr(control, "migrate", migrate)
+    monkeypatch.setattr(control.releases, "contract", lambda _p: _contract())
+    monkeypatch.setattr(slots, "switch", switch)
+    monkeypatch.setattr(deploy_gate, "_active_run_count", count)
+    return control, store, job, state, tmp_path
+
+
+async def test_waiting_idle_does_not_migrate_or_fail_while_runs_are_active(tmp_path, monkeypatch):
+    control, store, job, state, _ = await _idle_deploy(tmp_path, monkeypatch, runs=2)
+    await control.process(job)
+    saved = store.get(job["id"])
+    assert saved["status"] == "waiting_idle" and saved["active_runs"] == 2
+    assert "2 active Run" in saved["error_summary"] and saved["idle_since"]
+    assert state["migrations"] == [] and "candidate_slot" not in saved
+    await control.process(store.get(job["id"]))  # 같은 대기 상태는 다시 쓰지 않아도 유지된다
+    assert store.get(job["id"])["status"] == "waiting_idle"
+
+
+async def test_waiting_idle_migrates_offline_and_cuts_over_once_runs_finish_then_releases_lock(tmp_path, monkeypatch):
+    from ttakkari import deployment
+    control, store, job, state, root = await _idle_deploy(tmp_path, monkeypatch, runs=1)
+    await control.process(job)
+    assert store.get(job["id"])["status"] == "waiting_idle"
+    state["runs"] = 0
+    await control.process(store.get(job["id"]))
+    saved = store.get(job["id"])
+    assert saved["status"] == "draining" and saved["idle_required"] is False
+    assert saved["error_summary"] is None and saved["active_runs"] is None
+    assert state["migrations"] == [False]  # 온라인 모드가 아닌 일반 마이그레이션
+    assert state["lock_free_during_cutover"] is False
+    lease = deployment.Admission(root).acquire(exclusive=True)
+    assert lease is not None  # 컷오버 뒤에는 접수 잠금을 놓는다
+    lease.close()
+
+
+async def test_idle_migration_failure_is_recorded_as_failed_and_releases_the_lock(tmp_path, monkeypatch):
+    from ttakkari import deployment
+    from ttakkari.generation_deployment import StageError
+    control, store, job, _state, root = await _idle_deploy(tmp_path, monkeypatch, runs=0)
+
+    async def broken(_job, _release, *, online):
+        raise StageError("migrate", None, 1, "Can't locate revision 0099_unknown")
+
+    monkeypatch.setattr(control, "migrate", broken)
+    await control.process(job)
+    saved = store.get(job["id"])
+    assert saved["status"] == "failed" and "0099_unknown" in saved["error"]
+    lease = deployment.Admission(root).acquire(exclusive=True)
+    assert lease is not None
+    lease.close()
+
+
+def test_newer_reservation_supersedes_a_job_waiting_for_idle(tmp_path, make_git_dir, monkeypatch):
+    from conftest import git
+    source = make_git_dir()
+    (source / "deploy").mkdir()
+    (source / "deploy/generation-contract.json").write_text(
+        '{"protocol":1,"schema_revision":"0030_runtime_generations","online_migration_from":[]}')
+    git(source, "add", "-A")
+    git(source, "commit", "-qm", "contract")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "deploy_strategy", "generations")
+    monkeypatch.setattr(settings, "deploy_source_root", source)
+    store = JobStore(tmp_path)
+    waiting = store.request(git(source, "rev-parse", "HEAD"))
+    store.update(waiting["id"], status="waiting_idle")
+    (source / "README.md").write_text("next cumulative change")
+    git(source, "add", "-A")
+    git(source, "commit", "-qm", "next")
+    newer = store.request(git(source, "rev-parse", "HEAD"))
+    assert store.get(waiting["id"])["status"] == "superseded"
+    assert store.get(waiting["id"])["superseded_by"] == newer["id"]
+
+
+def test_realign_rewrites_only_a_known_alias_and_commits():
+    from sqlalchemy import create_engine, text
+
+    from ttakkari.schema_aliases import realign
+    engine = create_engine("sqlite://")
+    aliases = {"0059_kb_immutability_truncate": "0059_collector_intake"}
+    with engine.connect() as conn:
+        assert realign(conn, aliases) is None  # alembic_version 이 아직 없는 새 DB
+        assert not conn.in_transaction()  # alembic 이 외부 트랜잭션으로 오해하지 않도록 닫아 둔다
+        conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(255) NOT NULL)"))
+        conn.execute(text("INSERT INTO alembic_version VALUES ('0059_kb_immutability_truncate')"))
+        conn.commit()
+        assert realign(conn, aliases) == ("0059_kb_immutability_truncate", "0059_collector_intake")
+    with engine.connect() as other:  # 다른 연결에서 보여야 커밋된 것이다
+        assert other.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0059_collector_intake"
+        assert realign(other, aliases) is None  # 이미 정렬됨
+        assert not other.in_transaction()
+        other.execute(text("UPDATE alembic_version SET version_num = '0099_unknown'"))
+        other.commit()
+        assert realign(other, aliases) is None  # 모르는 값은 건드리지 않는다
+        assert other.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0099_unknown"

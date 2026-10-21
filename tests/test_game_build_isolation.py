@@ -319,16 +319,23 @@ async def test_egress_gives_up_when_retry_still_fails_and_does_not_retry_other_e
 @requires_runtime
 async def test_egress_stage_recovers_from_real_leftover_network(runner, work, tmp_path):
     build_id = uid("leftover1")
-    leftover = f"ttk-game-{build_id}"
-    # 자기 라벨 잔재(이전 단계가 죽고 남긴 것)만 정리 후 재시도한다. 라벨 없는 남의 자원은 건드리지 않는다.
-    code, out = await runner._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", leftover)
+    attempt_id = "leftover-attempt"
+    leftover = f"ttk-game-{build_id}-{attempt_id}"
+    # 같은 시도의 자기 라벨 잔재(이전 단계가 죽고 남긴 것)만 정리 후 재시도한다. 라벨 없는 남의 자원은 건드리지 않는다.
+    code, out = await runner._docker(
+        "network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}",
+        "--label", f"ttakkari.game-attempt={attempt_id}", leftover,
+    )
     assert code == 0, out
     try:
         stage = write_project(tmp_path / "stage", {"x": "1"})
-        res = await runner.run_stage(stage, ["node", "-e", "console.log('alive')"], stage="probe", build_id=build_id, network="egress", timeout=90)
+        res = await runner.run_stage(stage, ["node", "-e", "console.log('alive')"], stage="probe", build_id=build_id, network="egress", timeout=90,
+                                    attempt_id=attempt_id)
         assert res.ok and "alive" in res.log, res.log
         _, nets = await runner._docker("network", "ls", "--filter", f"name={leftover}", "--format", "{{.Name}}")
         assert nets.strip() == ""  # 재시도로 만든 네트워크도 끝나면 지워진다
+        _, proxies = await runner._docker("ps", "-a", "--filter", f"name={leftover}-proxy", "--format", "{{.Names}}")
+        assert proxies.strip() == ""  # 프록시 컨테이너도 남지 않는다(container 라벨은 .Config.Labels)
     finally:
         await runner._docker("network", "rm", leftover)
 

@@ -356,7 +356,9 @@ class IsolatedBuildRunner:
 
     async def _resource_owned_by(self, kind: str, name: str, build_id: str, attempt_id: str) -> bool:
         """Docker 자원의 build와 개별 시도 라벨이 모두 일치하는지 확인한다."""
-        fmt = '{{index .Labels "ttakkari.game-build"}}|{{index .Labels "ttakkari.game-attempt"}}'
+        # network inspect 는 .Labels, container inspect 는 .Config.Labels 에 라벨이 있다.
+        labels = ".Config.Labels" if kind == "container" else ".Labels"
+        fmt = f'{{{{index {labels} "ttakkari.game-build"}}}}|{{{{index {labels} "ttakkari.game-attempt"}}}}'
         code, out = await self._docker(kind, "inspect", "--format", fmt, name)
         return code == 0 and out.strip() == f"{build_id}|{attempt_id}"
 

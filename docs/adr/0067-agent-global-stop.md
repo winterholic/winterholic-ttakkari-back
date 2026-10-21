@@ -36,6 +36,9 @@
 - 계약: 신세대 source ID가 있는 merged report는 각 보고 chunk를 분리해 marker가 일치하는 chunk만 제거하고 나머지는 유지한다. source ID가 없는 구세대 취소 보고는 DB에서 보존한다. stop 대상 조회/마지막 sweep는 이를 취소하지 않고 `remaining`/`unstopped` partial로 표시한다. 이후 dispatch는 해당 queued row를 자동 실행하지 않고 보류하며, 다른 정상 queued 작업은 진행할 수 있다. `_enqueue_report`는 보류 대상과 새 보고를 합치지 않는다.
 - 테스트: DB 비의존 반례에서 현재 fallback이 같은 worker의 두 source-less cancel report를 모두 삭제함을 먼저 관측했고(실패), fallback 제거 후 보존을 확인했다(통과). A(stop 후 지연 보고 유지/자동 실행 보류), B(이후 별개 취소 보고 유지), merged exact-source chunk, 기존 queue-merge gate 실패 node를 DB 통합으로 재검증해야 한다.
 - `d767a2cc-abcc-4f87-8309-6f0de67e4167` (`a042f509`) 전체 gate는 `test_reports_queued_behind_busy_orchestrator_are_merged`에서 report 2개가 남아 실패했다. 해당 revision에는 이번 전역 stop source-ID/fence 구현이 없고 merge 조건도 동일했으므로 선행/무관 실패로 분류한다. 수정 SHA에서 해당 node를 별도로 실행해 회귀 여부를 확인한다.
+- 추가 반례: source-less legacy queued report는 프로세스가 없어도 실행 대기 중이므로 stop 결과에서 `stopped`가 아니라 `remaining`/`unstopped`여야 한다. `_record_target_outcome` 단위 회귀가 이를 검사하고, stop API 통합 테스트에서도 양쪽 목록이 겹치지 않는지 단언한다.
+- 커밋 `f4a70911cbc66543b65710dc5c6cdacfe50eacd1`은 feature 원격에 push했다. 최신 DB 비의존 검사 `pytest --noconftest -q tests/test_agent_stop_contract_unit.py`는 `6 passed in 0.30s`, Ruff `All checks passed!`, compileall 및 `git diff --check` 통과.
+- DB fixture 포함 단위 실행은 pytest conftest의 고유 `initdb` 단계에서 exit 1로 실패했으나 traceback에 subprocess stderr가 없어 원인 불명이다. 이전 shmget 오류라고 단정하거나 같은 초기화 명령을 재시도하지 않는다. generation gate `512181be-6876-46f9-8a5c-082b661a7b74`가 여전히 testing이고 host 자원 조회에서 test Python/Postgres 부하가 있어 DB 통합은 대기 중이다.
 
 ## 5. 재작업 독립 검증 상태
 - 감사 보고서 `agent-global-stop-audit-9afe3b2.md` 의 5개 반례를 수용 기준으로 고정했다. 기준 SHA `9afe3b2701383f2d606ec868e8f25ddad3c3bc87` 의 구현 경로 검토와 실제 실행 결과를 구분한다.

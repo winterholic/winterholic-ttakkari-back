@@ -49,3 +49,23 @@ state after succeeded event with missing output file: review_pending
 - 검증: 동일 G0 회귀 명령(`test_creative_director.py`, `test_creative_studio.py`, `test_creative_catalog.py`) 재실행 결과 `37 passed in 2.14s`. 여기에는 기존 32개와 이번 추가 5개가 포함된다. 이번 diff는 cross-process claim 획득 알고리즘을 바꾸지 않았다. 그 항목과 죽은 process 재개 결과는 위 exact-3ec 독립검수 보고서에 있고 이번에는 재실행하지 않았다.
 - 정적 검사: 관련 Ruff check 통과, 4개 관련 Python 파일 format check 통과, `git diff --check` exit 0.
 - 이번 Run에서 PostgreSQL-backed API, GPU/managed runtime, 배포는 미실행. `initdb` denial을 재시도/우회하지 않았다. G1/Lab/PMS 변경 없음.
+
+## 2026-10-22 별도 main 통합 점검
+
+- 별도 checkout `/Users/winterholic/development/projects/winterholic-ttakkari/back-g0-main-integration`에서 원격 `main` `ba71814167d281d1d1ff31ba405692eb12f87a23`을 기준으로 `codex/g0-cpu-control`의 정확 검수 HEAD `2756f8b4dc23cbb546c995775fe95969b1e4dd1d`를 `--ff-only`로 통합했다. 최종 로컬 `main`도 `2756f8b4dc23cbb546c995775fe95969b1e4dd1d`이며, feature와 트리가 같다. G1 `561f6f6`는 조상이 아니다.
+- 통합 checkout에서 `unit_tests/test_creative_director.py`, `unit_tests/test_creative_studio.py`, `unit_tests/test_creative_catalog.py`: `37 passed in 1.95s`. ASGI in-process 경로는 이 회귀 안의 `test_authenticated_router_connects_cpu_service_without_http_or_gpu`에서 실행됐다.
+- API route inventory 함수 단독 실행은 G0 endpoint 5개가 `ROUTE_SCOPE`에 없어 실패했다: GET production, POST production, artifact upload, attempt, attempt cancel. 따라서 API 경계/route gate는 통과로 판정하지 않았다.
+- `tests/test_route_inventory.py`를 pytest로 포함한 시도는 `tests/conftest.py`의 PostgreSQL fixture `initdb -D /tmp/ttakkari-test-58161-fbfa0e9d/data ...`에서 exit 1로 수집이 중단됐다. 출력은 `CalledProcessError`이며 구체 OS 원인은 노출되지 않았다. 이 initdb 명령을 재시도하거나 우회하지 않았다. PostgreSQL-backed `tests/test_creative_api.py`와 배포 서버 게이트는 미실행이다.
+- 정적 검사: Ruff 4개 관련 파일 `All checks passed!`, format `4 files already formatted`, `git diff --check` 통과.
+- 실제 `8791/api/health`와 `/api/version` 응답은 `200`, active runtime revision/path는 `b1a3d162d9c2749d344d6b9a37783c6f456fc02e`, `/Users/winterholic/.ttakkari/deploy/releases/b1a3d162d9c2749d344d6b9a37783c6f456fc02e`. 배포 source 설정은 공유 checkout `/Users/winterholic/development/projects/winterholic-ttakkari/back`이다.
+- 그 공유 checkout은 HEAD `66c8402c2f92d6114a9dcf1df8c6ade80e40db1a`, tracked/index/untracked 변경이 있고 `origin/main`과 분기됐다. G0 후보는 해당 HEAD의 조상이 아니므로 이 checkout을 수정하지 않았다. 원격 `main`은 계속 `ba718141...`이며 push·deploy reservation은 하지 않았다.
+- PMS 검색에서 “CPU 6.1”과 일치하는 항목을 특정하지 못했다. WBS `15.6.1`은 PhotoCraft로 확인돼 잘못된 항목을 수정하지 않았다. CPU/GPU/전체 플랫폼 완료율 변경 없음.
+- 미완료: route manifest의 5개 owner 경계 분류 및 독립 재검수 여부 결정, source checkout ancestry 안전 정렬, PostgreSQL/API와 backend schema/protocol/readiness/ownership/drain 게이트, main push 및 배포 예약.
+
+## 2026-10-22 route manifest 분류 보완과 main 반영
+
+- `tests/test_route_inventory.py`의 `ROUTE_SCOPE`에 G0 production 경로 5개를 `owner-plain`으로 추가했다. 값은 라이브 `collect_routes()`가 보고한 인증 선언과 같고 기존 `/api/creative/*` 경로와도 일치한다. 런타임 코드 변경은 없다.
+- 라이브 라우트와 분류표 대조: missing `[]`, stale `[]`, changed `{}`, bad labels `{}`. 이 대조는 pytest 대신 함수를 직접 호출해 얻었고, pytest 경로는 conftest의 PostgreSQL `initdb` 한계 때문에 다시 실행하지 않았다.
+- 재검증: CPU 37개 `37 passed in 3.22s`, `test_creative_director`+`test_creative_api` 21개 통과, Ruff check 통과. `tests/test_route_inventory.py`는 기존부터 format check 불일치가 있어(이번 5줄과 무관한 기존 긴 줄) 일괄 포맷하지 않았다.
+- 독립 재검수 조건: 이번 변경은 테스트 분류표 5줄이며 G0 로직은 검수된 `2756f8b`와 같다. 추가 G0 로직 변경이 생기면 독립 재검수를 다시 받는다.
+- 배포 차단: 배포 source `back`의 HEAD `66c8402`는 원격에 없는 로컬 전용 커밋이고 tracked/index 변경 50건이 있다. 후보는 이를 포함할 수 없고 ff-only 정렬도 불가능해 수정하지 않았다. `request_backend_deploy`는 같은 409를 반복하지 않으려고 호출하지 않았다.

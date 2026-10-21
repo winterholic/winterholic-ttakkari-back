@@ -84,3 +84,26 @@ db_referenced_bytes=0 (no DB opened); raw_file_count=1; raw_logical_bytes=11; st
 - full repository test suite
 
 teacher/judge/LLM 호출은 하지 않았고 default-off 설정·migration/schema는 변경하지 않았다. PMS `[CP-S2-03]`은 이미 `review`였으며 done으로 승격하지 않았다. sharedmain, merge, 배포 예약, 05:00 stop 예약은 변경하지 않았다.
+
+## 2026-10-22 후속: cap-full replay와 repair stage
+
+독립 재검증에서 남은 두 P2를 같은 고정 branch에서 처리했다.
+
+- `handle_job`은 root usage가 cap 이상이어도 frontier head URL의 첫 replay를 허용한다. 실제 handler → `_prepare` → fetch fixture → `FileBlobStore.put` 경로에서 cap 8, 8-byte orphan 동일 SHA는 DB page 처리까지 진행했다. 같은 cap에서 9-byte 신규 body는 quota refusal로 `retry_wait/storage_cap_reached`가 됐다.
+- 새 bytes 필요로 거절되면 해당 URL의 `t`와 `quota_bytes`를 cursor에 기록한다. prepared prefix가 있으면 fenced `commit_work`, 없으면 fenced `commit_page`로 저장한다. `used + quota_bytes <= cap` 전에는 URL을 다시 fetch하지 않는다. 테스트는 cap-full과 used 8/cap16/request9의 여유 공간 부족 경계에서 재-fetch가 1회로 제한됨을 확인했다.
+- `FileBlobStore.put`은 신규 write와 손상 repair 모두 `used + len(data)`를 검사한다. 손상 raw는 원자 교체까지 보존되므로 cap8의 8-byte 손상 raw repair는 stage 생성 전 거절되고 기존 파일·lineage가 남는다. cap16 fixture에서는 원자 교체 직전, stage가 durable한 때 raw+stage logical 합계 16 bytes를 관측했다. allocated blocks는 판단에 쓰지 않았다.
+- 이전 P1 orphan 집계와 P2 same-size corruption repair 코드는 유지했다. 변경 경로는 `blobs.py`, `pipeline.py`, blob unit fixture, 이 보고서 및 `stage-handler.md`다.
+
+후속 관련 fixture 묶음 실행:
+
+```text
+PYTHONPATH=src /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest -q -p no:cacheprovider --confcutdir=unit_tests unit_tests/test_collector_blob_store.py unit_tests/test_collector_migration_chain.py unit_tests/test_collector_parser.py unit_tests/test_collector_policy.py
+rc=0; 59 passed, 68 subtests passed in 0.83s
+```
+
+```text
+/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/collector/blobs.py src/ttakkari/collector/pipeline.py unit_tests/test_collector_blob_store.py
+rc=0; All checks passed!
+```
+
+이번 결과는 DB-free pure/control fixture다. PostgreSQL cancel/fencing/page atomicity/0063 migration, DB에 내구화된 quota cursor 실증, shared/운영 저장소 및 full suite는 미검증/미실행이다. collector default-off, LLM 호출 0을 유지했으며 DB·운영 root·schedule·migration·shared main을 변경하지 않았다.

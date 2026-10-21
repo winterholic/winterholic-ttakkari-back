@@ -84,22 +84,22 @@ class FileBlobStore:
             if cap < 0:
                 raise ValueError("collector blob cap must be non-negative")
             try:
-                existing = path.lstat()
+                path.lstat()
             except FileNotFoundError:
-                existing_size = 0
                 existing_valid = False
             else:
                 if not path.is_file() or path.is_symlink():
                     raise OSError("collector blob path is not a regular owned file")
-                existing_size = existing.st_size
                 existing_valid = self._matches(path, sha)
             if existing_valid:
                 if lineage is not None:
                     self._write_lineage(sha, lineage)
                 return handle_for(sha)
             used = self._usage_bytes_unlocked()
-            projected = used - existing_size + len(data)
-            if projected > cap and projected > used:
+            # A repair must coexist with the existing (possibly corrupt) raw file until atomic replace.
+            # Count the durable stage reservation as well as every current raw/stage byte.
+            projected = used + len(data)
+            if projected > cap:
                 log.warning(
                     "collector blob quota denied sha256=%s used_bytes=%d requested_bytes=%d cap_bytes=%d",
                     sha, used, len(data), cap,

@@ -604,10 +604,10 @@ async def _finalize_page(
     return new_cursor, outbox
 
 
-async def _storage_full() -> bool:
+async def _storage_full(required_bytes: int = 0) -> bool:
     cap = get_settings().collector_blob_cap_bytes
     used_bytes = await asyncio.to_thread(get_deps().blobs.usage_bytes)
-    if used_bytes >= cap:
+    if used_bytes >= cap or (required_bytes > 0 and used_bytes + required_bytes > cap):
         log.warning("collector storage cap reached used_bytes=%d cap_bytes=%d", used_bytes, cap)
         return True
     return False
@@ -637,7 +637,13 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
     cursor = job.cursor if job.cursor and job.cursor.get("v") == 1 else _new_cursor(req, spec)
 
     while cursor["frontier"] and cursor["processed"] < req.max_pages:
-        if await _storage_full():
+        # At a full cap, allow one bounded replay probe for the head URL: a crash-left orphan may
+        # already contain its SHA, in which case put() can restore the DB reference without bytes.
+        # If it needs new bytes, the quota refusal below persists t=1 and later retries wait without
+        # repeatedly fetching the same URL. URL policy, per-job page limits, and put() remain enforced.
+        head = cursor["frontier"][0]
+        required_bytes = head.get("quota_bytes", 0) if head.get("t", 0) > 0 else 0
+        if await _storage_full(required_bytes) and head.get("t", 0) > 0:
             return HandlerResult("retry_wait", {"code": "storage_cap_reached", **_summary(cursor)}, retry_after=3600)
         page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"])]
         prepared: list[Prepared] = []
@@ -645,6 +651,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
             try:
                 p = await _prepare(entry, job, spec, req, deps)
             except BlobQuotaExceeded as exc:
+                entry["t"] = entry.get("t", 0) + 1
+                entry["quota_bytes"] = exc.requested_bytes
                 log.warning(
                     "collector job paused at raw blob quota job_id=%s used_bytes=%d requested_bytes=%d cap_bytes=%d",
                     job.id, exc.used_bytes, exc.requested_bytes, exc.cap_bytes,
@@ -665,6 +673,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                     if await ctx.commit_work(commit_prefix, stage=STAGE_PROCESS) == "cancelled":
                         return HandlerResult("failed", {"code": "cancelled"})
                     cursor = quota_result["cursor"]
+                elif await ctx.commit_page(cursor, stage=STAGE_PROCESS) == "cancelled":
+                    return HandlerResult("failed", {"code": "cancelled"})
                 return HandlerResult(
                     "retry_wait",
                     {"code": "storage_cap_reached", **_summary(cursor), "used_bytes": exc.used_bytes,

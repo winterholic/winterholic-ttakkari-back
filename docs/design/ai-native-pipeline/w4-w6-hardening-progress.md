@@ -79,3 +79,22 @@ git diff --check
 delivery-only 후보 보강에서 두 모듈을 추가했다. `tests/delivery/test_merge_queue_postgres.py`는 실제 두 PostgreSQL 세션의 `SKIP LOCKED` claim, 같은 repo/target advisory lock 직렬화, Git ref CAS 직후 예외 후 fresh-session recovery, `0062` migration 왕복 및 JSONB column을 검사한다. `tests/test_orchestrator_delivery_isolation.py`는 인증 ASGI 요청의 opt-in on/off/read-only 경계와 실제 DB Workspace/ChangeSet row, 수리 상한에서 실제 CLI repair dispatcher 미호출 및 Run row 불증가를 검사한다. 상세 대상과 실행 명령은 [host validation manifest](w4-w6-host-validation-manifest.md)에 함께 둔다.
 
 이 Run에서는 새 테스트의 `py_compile`, Ruff, `--noconftest --collect-only`만 실행했다. 총 6개 test node가 수집됐지만, 이 단계는 실행 동작을 입증하지 않는다. 프로젝트 `tests/conftest.py` import는 process-owned PostgreSQL cluster 시작을 유발하고, 과거 Codex command sandbox에서 이 fixture의 `initdb`가 실패했다. 알려진 시작 실패를 반복하지 않고 별도 테스트 DB 경로도 제공되지 않아 PG/API 테스트는 **실행 안 됨**으로 남긴다. SQLite/mock 결과로 대체하지 않는다.
+
+## 후보 `f42b96c` 격리 PostgreSQL 실행 결과 (2026-10-21)
+
+Mac Studio 호스트에서 PostgreSQL 17.11(Homebrew `/opt/homebrew/opt/postgresql@17/bin/initdb`)의 `tests/pg_sandbox.py` 임시 클러스터로 실행했다. `TTAKKARI_TEST_DB`는 설정하지 않았고 공유·운영 DB는 쓰지 않았다. 종료 후 `/tmp/ttakkari-test-*` 잔재는 없었다. 위 "실행 안 됨" 기록은 이 결과로 대체된다.
+
+| 테스트 | 단독 실행 | 비고 |
+|---|---|---|
+| `test_postgres_skip_locked_claims_distinct_rows_across_sessions` | PASS | |
+| `test_same_target_integrators_serialize_and_second_reads_advanced_ref` | PASS | |
+| `test_new_session_recovers_after_ref_cas_before_final_database_commit` | PASS | |
+| `test_delivery_migration_round_trip_uses_postgres_jsonb` | PASS | 아래 오염 문제 있음 |
+| `test_authenticated_workers_opt_in_isolates_only_writable_git_code_tasks` | **FAIL** | `TypeError: 'async_sessionmaker' object does not support the asynchronous context manager protocol` |
+| `test_repair_dispatch_never_queues_run_past_change_set_limit` | **FAIL** | 같은 TypeError |
+
+실패 원인(코드로 확인): `tests/test_orchestrator_delivery_isolation.py`가 `async with sessionmaker() as db:`로 쓴다. `ttakkari.db.sessionmaker()`는 `async_sessionmaker`를 반환하는 factory라서 `sessionmaker()()`여야 한다. 해당 줄만 고친 임시 사본으로는 두 테스트가 모두 통과했지만 이는 후보 테스트의 통과 증거가 아니다(사본은 삭제했고 후보 코드는 수정하지 않았다).
+
+두 번째 문제: `test_delivery_migration_round_trip_uses_postgres_jsonb`가 세션 공유 DB에서 `change_sets`를 DROP한 뒤 downgrade 상태로 둔다. 이후 `tests/conftest.py`의 `_clean`이 `Base.metadata` 전체를 TRUNCATE하며 `relation "change_sets" does not exist`로 뒤따르는 테스트가 ERROR가 된다. manifest의 gate 명령(`tests/delivery tests/test_migration_single_head.py tests/test_generation_deployment.py::...`)은 `26 passed, 24 errors`였다. 새 PG 모듈을 제외하면 같은 묶음이 `46 passed`다. ruff(base `fe0386a`부터 HEAD까지 변경된 Python)는 `All checks passed!`다.
+
+결론: 후보는 이 상태로 병합 gate를 통과하지 못한다. 수정 대상은 테스트 쪽 두 곳(sessionmaker 호출, migration 테스트의 스키마 복원 또는 별도 DB)이며 이번 Run에서는 수정하지 않았다. TDD red 확인은 base에 delivery 코드가 없어 import 오류뿐이라 생략했다.

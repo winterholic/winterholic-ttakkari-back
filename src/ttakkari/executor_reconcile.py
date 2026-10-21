@@ -134,10 +134,33 @@ async def _read_orphans() -> list[dict]:
         return result
 
 
-def _postgres_timeout(exc: DBAPIError) -> bool:
+def _sqlstate(exc: DBAPIError) -> str | None:
     original = exc.orig
-    return getattr(original, "sqlstate", None) in {"55P03", "57014"} or getattr(
-        original, "pgcode", None) in {"55P03", "57014"}
+    return getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+
+
+def _timeout_outcome(exc: DBAPIError) -> str | None:
+    """Classify a PostgreSQL error; None means it is not a reconcile timeout.
+
+    lock_timeout is the dedicated SQLSTATE 55P03. statement_timeout shares 57014
+    (query_canceled) with pg_cancel_backend and client cancel, which PostgreSQL
+    distinguishes only by the server message. Match that message, and treat any
+    unrecognized 57014 (including a localized lc_messages text) as a user cancel
+    so it propagates instead of being retried.
+    """
+    sqlstate = _sqlstate(exc)
+    if sqlstate == "55P03":
+        return "retryable_lock_timeout"
+    if sqlstate == "57014" and "due to statement timeout" in str(exc.orig).lower():
+        return "retryable_statement_timeout"
+    return None
+
+
+_RETRYABLE_OUTCOMES = {
+    "retryable_lock_timeout": "PostgreSQL lock_timeout (55P03); transaction rolled back; retry reconcile",
+    "retryable_statement_timeout": "PostgreSQL statement_timeout (57014); transaction rolled back; "
+                                   "retry reconcile after checking DB load",
+}
 
 
 async def _apply_one(entry: dict) -> bool | str:
@@ -158,8 +181,9 @@ async def _apply_one(entry: dict) -> bool | str:
             # PostgreSQL leaves a transaction aborted after these errors. Roll
             # back explicitly so all held row locks are released before return.
             await db.rollback()
-            if _postgres_timeout(exc):
-                return "retryable_lock_timeout"
+            outcome = _timeout_outcome(exc)
+            if outcome is not None:
+                return outcome
             raise
 
 
@@ -220,13 +244,12 @@ async def reconcile_orphans(*, apply: bool = False) -> dict:
     for entry in entries:
         outcome = await _apply_one(entry) if apply else False
         changed = outcome is True
-        retryable_timeout = outcome == "retryable_lock_timeout"
+        retryable_timeout = outcome if outcome in _RETRYABLE_OUTCOMES else None
         results.append({"run_id": entry["run_id"], "owner_id": entry["owner_id"],
             "disposition": entry["disposition"], "groups": entry["groups"], "reconciled": changed,
-            "action": "interrupted_and_released" if changed else ("retryable_lock_timeout" if
-                retryable_timeout else ("would_reconcile" if entry["disposition"] in
+            "action": "interrupted_and_released" if changed else (retryable_timeout or (
+                "would_reconcile" if entry["disposition"] in
                 {"safe_to_release", "process_group_live"} else "blocked")),
-            **({"reason": "PostgreSQL lock/statement timeout; transaction rolled back; retry reconcile"}
-               if retryable_timeout else {})})
+            **({"reason": _RETRYABLE_OUTCOMES[retryable_timeout]} if retryable_timeout else {})})
     return {"mode": "apply" if apply else "dry-run", "leases": results,
             "reconciled": sum(row["reconciled"] for row in results)}

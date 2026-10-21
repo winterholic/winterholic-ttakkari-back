@@ -122,9 +122,7 @@ async def test_reconcile_dry_run_does_not_call_apply_or_change_rows(monkeypatch)
     assert state == {"lease_deleted": False, "group_deleted": False, "signals": 0}
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("sqlstate", ["55P03", "57014"])
-async def test_reconcile_lock_timeout_rolls_back_and_reports_retryable(monkeypatch, sqlstate):
+async def _run_apply_with_pg_error(monkeypatch, sqlstate, message):
     import uuid
 
     from sqlalchemy.exc import DBAPIError
@@ -149,12 +147,15 @@ async def test_reconcile_lock_timeout_rolls_back_and_reports_retryable(monkeypat
         async def rollback(self):
             state["rollback"] += 1
 
-    class PgTimeout(Exception):
+    class PgError(Exception):
         def __init__(self):
+            super().__init__(message)
             self.sqlstate = sqlstate
 
+    original = PgError()
+
     async def lock_control(_db):
-        raise DBAPIError("SELECT ... FOR UPDATE", {}, PgTimeout(), False)
+        raise DBAPIError("SELECT ... FOR UPDATE", {}, original, False)
 
     async def forbidden_signal(_group):
         state["signals"] += 1
@@ -164,17 +165,49 @@ async def test_reconcile_lock_timeout_rolls_back_and_reports_retryable(monkeypat
     monkeypatch.setattr(reconcile, "_read_orphans", lambda: _entries([entry]))
     monkeypatch.setattr(reconcile, "_control", lock_control)
     monkeypatch.setattr(reconcile, "_stop_verified_group", forbidden_signal)
+    return reconcile, state, original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sqlstate,message,action", [
+    ("55P03", "canceling statement due to lock timeout", "retryable_lock_timeout"),
+    ("57014", "canceling statement due to statement timeout", "retryable_statement_timeout"),
+])
+async def test_reconcile_timeout_rolls_back_and_reports_distinct_retryable(
+        monkeypatch, sqlstate, message, action):
+    reconcile, state, _ = await _run_apply_with_pg_error(monkeypatch, sqlstate, message)
 
     result = await reconcile.reconcile_orphans(apply=True)
 
     assert result["reconciled"] == 0
     assert result["leases"][0]["reconciled"] is False
-    assert result["leases"][0]["action"] == "retryable_lock_timeout"
-    assert "timeout" in result["leases"][0]["reason"].lower()
+    assert result["leases"][0]["action"] == action
+    assert sqlstate in result["leases"][0]["reason"]
     assert state["rollback"] == 1
     assert state["signals"] == 0
     assert any("SET LOCAL lock_timeout" in sql for sql in state["local_settings"])
     assert any("SET LOCAL statement_timeout" in sql for sql in state["local_settings"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sqlstate,message", [
+    ("57014", "canceling statement due to user request"),
+    ("57014", "사용자 요청에 의해 문을 취소하는 중"),
+    ("40001", "could not serialize access due to concurrent update"),
+    ("23505", "duplicate key value violates unique constraint"),
+])
+async def test_reconcile_user_cancel_and_other_errors_roll_back_and_propagate(
+        monkeypatch, sqlstate, message):
+    from sqlalchemy.exc import DBAPIError
+
+    reconcile, state, original = await _run_apply_with_pg_error(monkeypatch, sqlstate, message)
+
+    with pytest.raises(DBAPIError) as raised:
+        await reconcile.reconcile_orphans(apply=True)
+
+    assert raised.value.orig is original
+    assert state["rollback"] == 1
+    assert state["signals"] == 0
 
 
 async def _entries(values):

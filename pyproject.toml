@@ -21,6 +21,7 @@ dependencies = [
     "pillow>=12.3.0",
     "pillow-heif>=1.8.0",
     "psutil>=7.2.2",
+    "py3langid>=0.4,<1",
     "pydantic>=2",
     "pydantic-settings>=2.15.0",
     "pyjwt>=2.15.1",
@@ -29,6 +30,7 @@ dependencies = [
     "pywebpush>=2.5.0",
     "sqlalchemy[asyncio]>=2.0",
     "sse-starlette>=3.5.0",
+    "trafilatura>=2.3,<3",
     "uvicorn[standard]>=0.54.0",
 ]
 

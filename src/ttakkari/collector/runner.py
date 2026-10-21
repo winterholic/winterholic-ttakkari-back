@@ -18,6 +18,7 @@ from typing import Any, Literal
 
 import psutil
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari import generation as generation_module
 from ttakkari.collector import jobs
@@ -48,6 +49,24 @@ class JobContext:
         self, cursor: dict[str, Any] | None, *, stage: str | None = None, outbox: Iterable[OutboxItem] = ()
     ) -> Literal["continue", "cancelled"]:
         async with sessionmaker()() as db:
+            outcome = await jobs.commit_page(
+                db, self.job.id, self.job.attempt_token, cursor=cursor, stage=stage, outbox=list(outbox)
+            )
+            await db.commit()
+        return outcome
+
+    async def commit_work(
+        self,
+        work: Callable[[AsyncSession], Awaitable[tuple[dict[str, Any] | None, Iterable[OutboxItem]]]],
+        *,
+        stage: str | None = None,
+    ) -> Literal["continue", "cancelled"]:
+        """Run `work(db)` and commit its writes with the cursor and outbox it returns, in one fenced transaction.
+
+        `work` may add rows to `db` (items, dedupe bands) and returns (next cursor, extra outbox). If the attempt is
+        fenced or an outbox key collides, nothing from `work` is committed either."""
+        async with sessionmaker()() as db:
+            cursor, outbox = await work(db)
             outcome = await jobs.commit_page(
                 db, self.job.id, self.job.attempt_token, cursor=cursor, stage=stage, outbox=list(outbox)
             )

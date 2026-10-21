@@ -167,7 +167,9 @@ async def _schedules() -> None:
 
 
 async def _collector_consume() -> None:
+    from ttakkari.collector import pipeline
     from ttakkari.collector.runner import consume_once
+    pipeline.install()
     await consume_once()
 
 
@@ -216,10 +218,10 @@ async def lifespan(app):
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.meetings.local_stt import jobs
-    from ttakkari.tts import jobs as tts_jobs
     from ttakkari.runs import desk_pool, profiles, usage_store
     from ttakkari.runs.desk_qwen_service import service as qwen_service
     from ttakkari.runs.manager import manager
+    from ttakkari.tts import jobs as tts_jobs
     s = get_settings()
     if s.is_prod and not s.release_revision:
         raise RuntimeError("generation production requires a pinned release revision")

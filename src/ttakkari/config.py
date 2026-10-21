@@ -215,8 +215,12 @@ class Settings(BaseSettings):
     instructions_max_chars: int = 8000
     # 일정 알림을 찾는 주기(초). 0 이면 끈다(테스트는 직접 부른다).
     reminder_scan_seconds: int = 30
-    # 수집 플랫폼 consume 루프(CP-S2-02). 단계 handler 가 등록되기 전(S2-03 이후)에는 켜도 아무 job 도 claim 하지 않는다.
+    # 수집 플랫폼 consume 루프(CP-S2-02). 단계 handler(collector/pipeline.py)는 루프가 처음 돌 때 등록된다. 기본 off.
     collector_consume_enabled: bool = False
+    # fetch User-Agent 에 붙는 연락처(URL 또는 이메일). 운영 웹 수집 전에 설정한다.
+    collector_contact: str = ""
+    # 원본 보존소 총량 상한(제안 20GiB, architecture 7). 도달하면 새 fetch 를 멈춘다.
+    collector_blob_cap_bytes: int = Field(default=20 * 1024**3, ge=0)
     collector_batch_size: int = Field(default=5, ge=1, le=50)
     collector_stale_seconds: int = Field(default=300, ge=30)
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더

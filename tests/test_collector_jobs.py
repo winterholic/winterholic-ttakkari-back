@@ -185,6 +185,41 @@ async def test_cancel_wins_over_retry_wait_at_finish():
     assert await finish(c, status="retry_wait", error={"code": "http_503"}) == "cancelled"
 
 
+@pytest.mark.parametrize(("ending", "stored", "finished_as"), [
+    ("succeeded", "cancelled", "succeeded"), ("partial", "cancelled", "partial"), ("budget_wait", "cancelled", None),
+    ("failed", "failed", None), ("policy_blocked", "policy_blocked", None), ("quarantined", "quarantined", None),
+])
+async def test_cancel_recorded_before_the_attempt_ends_wins_even_if_the_work_finished(ending, stored, finished_as):
+    """S2-02 verification counterexample: cancel_requested set first, then the handler ends 'succeeded'.
+    The caller was told 'cancelling', so the job ends cancelled. Real failures are not rewritten."""
+    job_id = await make_job()
+    (c,) = await claim()
+    async with sessionmaker()() as db:
+        assert await jobs.cancel(db, "fixture-tenant", "personal", job_id) == "cancelling"
+        await db.commit()
+    assert await finish(c, status=ending, error={"code": "x"} if ending in ("failed", "policy_blocked", "quarantined") else None) == stored
+    final = await row(job_id)
+    assert final.status == stored and final.attempt_token is None
+    if stored == "cancelled":
+        assert final.last_error["code"] == "cancelled" and final.last_error.get("finished_as") == finished_as
+
+
+async def test_consume_cancel_after_the_last_page_commit_still_ends_cancelled():
+    job_id = await make_job()
+
+    async def handler(job, ctx):
+        assert await ctx.commit_page({"page": 1}) == "continue"  # last boundary passes: no cancel yet
+        async with sessionmaker()() as db:  # cancel lands after it, before the attempt ends
+            await jobs.cancel(db, job.tenant_id, job.scope, job.id)
+            await db.commit()
+        return runner.HandlerResult("succeeded")
+
+    runner.register_handler(handler)
+    assert await runner.consume_once(limit=1) == 1
+    final = await row(job_id)
+    assert final.status == "cancelled" and final.last_error["finished_as"] == "succeeded"
+
+
 async def test_cancel_other_scope_or_finished_job():
     job_id = await make_job()
     async with sessionmaker()() as db:

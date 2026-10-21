@@ -297,6 +297,33 @@ async def test_egress_resources_are_owned_by_independent_attempt_ids():
     assert removals == names[::-1]
 
 
+@requires_runtime
+async def test_real_egress_attempts_isolate_and_cleanup_only_their_resources():
+    runner = IsolatedBuildRunner()
+    build_id = uid("parallel-attempts")
+    attempt_a, attempt_b = f"attempt-a-{uuid.uuid4().hex[:8]}", f"attempt-b-{uuid.uuid4().hex[:8]}"
+    proxy_a, proxy_b = f"ttk-game-{build_id}-{attempt_a}-proxy", f"ttk-game-{build_id}-{attempt_b}-proxy"
+    network_a, network_b = f"ttk-game-{build_id}-{attempt_a}", f"ttk-game-{build_id}-{attempt_b}"
+
+    async with runner._egress(build_id, attempt_a) as first:
+        async with runner._egress(build_id, attempt_b) as second:
+            assert first["network"] == network_a
+            assert second["network"] == network_b
+            for kind, name, attempt in (
+                ("container", proxy_a, attempt_a), ("container", proxy_b, attempt_b),
+                ("network", network_a, attempt_a), ("network", network_b, attempt_b),
+            ):
+                assert await runner._resource_owned_by(kind, name, build_id, attempt)
+
+        assert await runner._resource_owned_by("container", proxy_a, build_id, attempt_a)
+        assert await runner._resource_owned_by("network", network_a, build_id, attempt_a)
+        assert not await runner._resource_owned_by("container", proxy_b, build_id, attempt_b)
+        assert not await runner._resource_owned_by("network", network_b, build_id, attempt_b)
+
+    assert not await runner._resource_owned_by("container", proxy_a, build_id, attempt_a)
+    assert not await runner._resource_owned_by("network", network_a, build_id, attempt_a)
+
+
 async def test_egress_gives_up_when_retry_still_fails_and_does_not_retry_other_errors():
     runner, calls = stale_network_runner(
         [(1, "network ttk-game-r2-r2 already exists"), (1, "network ttk-game-r2-r2 already exists")],

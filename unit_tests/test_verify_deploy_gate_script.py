@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -71,7 +73,7 @@ def make_repo(tmp_path: Path) -> tuple[Path, str, str]:
 
 
 def run_gate(tmp_path: Path, *args: str, pytest_exit: int, pytest_output: str = "1 passed",
-             stdin: str = "") -> subprocess.CompletedProcess[str]:
+             stdin: str = "", keep_inputs: bool = False) -> subprocess.CompletedProcess[str]:
     """stdin 의 {main}/{master} 는 임시 저장소의 실제 커밋 SHA 로 치환된다."""
     repo, first, second = make_repo(tmp_path)
     fake_root = tmp_path / "fake"
@@ -80,6 +82,8 @@ def run_gate(tmp_path: Path, *args: str, pytest_exit: int, pytest_output: str = 
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "GATE_CALL_LOG": str(calls),
            "GATE_PYTEST_EXIT": str(pytest_exit), "GATE_PYTEST_OUTPUT": pytest_output,
            "TTK_PYTEST_SLOT_DIR": str(tmp_path / "slot-locks")}
+    if keep_inputs:
+        env["TTK_GATE_KEEP"] = "1"
     return subprocess.run([str(repo / "scripts" / "verify_deploy_gate.sh"), *args],
                           input=stdin.format(main=first, master=second), text=True, capture_output=True,
                           cwd=repo, env=env, timeout=30, check=False)
@@ -189,11 +193,53 @@ def test_changed_test_selection_runs_inside_shared_slot(tmp_path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert (tmp_path / "slot-locks" / "slot-0.lock").is_file()
-    assert "체커: revision" in result.stdout and "SHA-256" in result.stdout
+    assert re.search(r"체커 입력: revision [0-9a-f]{40}, gate [0-9a-f]{64}, slots [0-9a-f]{64} \(SHA-256\)",
+                     result.stdout)
     calls_seen = [json.loads(line) for line in calls.read_text().splitlines()]
     changed_calls = [call for call in calls_seen if "unit_tests/test_changed.py" in call["args"]]
     assert len(changed_calls) == 1
     assert all(not call["migration_test_present"] for call in calls_seen)
+
+
+def test_gate_keeps_full_pinned_checker_inputs_when_requested(tmp_path):
+    result = run_gate(tmp_path, "--contracts-only", pytest_exit=0, keep_inputs=True)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    kept = re.search(r"체커 입력 자료 보존: (.+)", result.stdout)
+    assert kept, result.stdout
+    checker_dir = Path(kept.group(1))
+    manifest = (checker_dir / "manifest.txt").read_text()
+    fields = dict(line.split("=", 1) for line in manifest.splitlines())
+
+    assert len(fields["checker_revision"]) == 40
+    assert len(fields["gate_sha256"]) == 64
+    assert len(fields["slots_sha256"]) == 64
+    assert len(fields["candidate_revision"]) == 40
+    assert len(fields["base_revision"]) == 40
+    assert fields["mode"] == "contracts"
+    assert (checker_dir.parent / "scripts" / "verify_deploy_gate.sh").is_file()
+    for name, field in (("verify_deploy_gate.sh", "gate_sha256"), ("pytest_slots.py", "slots_sha256")):
+        checker = checker_dir / "scripts" / name
+        assert checker.is_file()
+        assert hashlib.sha256(checker.read_bytes()).hexdigest() == fields[field]
+
+
+def test_gate_rejects_uncommitted_checker_source(tmp_path):
+    repo, _, _ = make_repo(tmp_path)
+    gate = repo / "scripts" / "verify_deploy_gate.sh"
+    gate.write_text(gate.read_text() + "\n# uncommitted checker change\n")
+    fake_root = tmp_path / "fake"
+    fake_root.mkdir()
+    bindir, calls = fake_uv(fake_root, pytest_exit=0)
+    env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "GATE_CALL_LOG": str(calls),
+           "GATE_PYTEST_EXIT": "0", "GATE_PYTEST_OUTPUT": "1 passed"}
+
+    result = subprocess.run([str(gate), "--contracts-only"], cwd=repo, text=True, capture_output=True,
+                            env=env, timeout=30, check=False)
+
+    assert result.returncode != 0
+    assert "미커밋 수정 거부" in result.stderr
+    assert not calls.exists()
 
 
 

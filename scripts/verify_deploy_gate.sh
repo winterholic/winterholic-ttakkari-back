@@ -14,7 +14,8 @@
 #   3. 바뀐 테스트 파일: 기준(--base)부터 커밋까지 바뀐 테스트 파일을 함께 돌린다(LOG-124).
 #      import 그래프 기반 선택은 측정상 효과가 낮아 W1에서 뺐다.
 #   4. -x 없이 실패를 전부 모아 마지막에 출력한다. 계약 묶음 목표 30초, 전체 목표 2분 안팎이며 넘으면 경고한다.
-#   5. pytest 입력은 archive 테스트 트리만 사용한다. 검사기는 아래 revision/hash를 로그로 고정한다.
+#   5. pytest 입력은 후보 archive만 사용한다. 체커도 현재 committed HEAD에 고정하고 exact source를 함께 archive한다.
+#      체커 파일이 미커밋 상태와 다르면 중단한다. TTK_GATE_KEEP=1이면 후보와 체커 입력·manifest를 보존한다.
 #      슬롯은 협조형 입장 제어이며 직접 실행된 pytest나 배포 gate 우선권을 보장하지 않는다.
 #
 # 사용법:
@@ -171,6 +172,23 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/ttk-gate-XXXXXX")"
 cleanup() { if [ "${TTK_GATE_KEEP:-}" = 1 ]; then echo "임시 디렉터리 보존: $TMP"; else rm -rf "$TMP"; fi; }
 trap cleanup EXIT
 
+# The checker is an input too: pin it to a committed revision and keep its exact
+# source beside the candidate archive when TTK_GATE_KEEP=1.
+CHECKER_REVISION="$(git -C "$BACK" rev-parse --verify 'HEAD^{commit}' 2>/dev/null)" || die "체커 revision을 확인할 수 없습니다. git 저장소에서 실행하세요."
+CHECKER_INPUT="$TMP/checker-input"
+mkdir -p "$CHECKER_INPUT"
+git -C "$BACK" archive "$CHECKER_REVISION" scripts/verify_deploy_gate.sh scripts/pytest_slots.py | tar -x -C "$CHECKER_INPUT" || die "고정된 체커 입력을 추출할 수 없습니다."
+CHECKER_HASH="$(shasum -a 256 "$BACK/scripts/verify_deploy_gate.sh" | awk '{print $1}')"
+SLOTS_HASH="$(shasum -a 256 "$BACK/scripts/pytest_slots.py" | awk '{print $1}')"
+PINNED_CHECKER_HASH="$(shasum -a 256 "$CHECKER_INPUT/scripts/verify_deploy_gate.sh" | awk '{print $1}')"
+PINNED_SLOTS_HASH="$(shasum -a 256 "$CHECKER_INPUT/scripts/pytest_slots.py" | awk '{print $1}')"
+[ "$CHECKER_HASH" = "$PINNED_CHECKER_HASH" ] || die "체커 gate 파일이 revision $CHECKER_REVISION 과 다릅니다(미커밋 수정 거부)."
+[ "$SLOTS_HASH" = "$PINNED_SLOTS_HASH" ] || die "체커 slots 파일이 revision $CHECKER_REVISION 과 다릅니다(미커밋 수정 거부)."
+printf 'format=1\nchecker_revision=%s\ngate_sha256=%s\nslots_sha256=%s\ncandidate_revision=%s\nbase_revision=%s\nmode=%s\n' \
+    "$CHECKER_REVISION" "$CHECKER_HASH" "$SLOTS_HASH" "$SHA" "$BASE" "$MODE" > "$CHECKER_INPUT/manifest.txt"
+if [ "${TTK_GATE_KEEP:-}" = 1 ]; then echo "체커 입력 자료 보존: $CHECKER_INPUT"; fi
+echo "체커 입력: revision $CHECKER_REVISION, gate $CHECKER_HASH, slots $SLOTS_HASH (SHA-256)"
+
 PYTEST_BASE=(-q --timeout=120 -p no:cacheprovider --tb=short -rf)
 FAILED=()
 STAGES=()
@@ -179,10 +197,6 @@ echo "========================================================"
 echo " 따까리 백엔드 사전 검증 (배포 게이트의 전체 실행·-x 를 대신하지 않음)"
 echo " 대상 커밋: ${SHA:0:12} $(git log -1 --format=%s "$SHA" | cut -c1-60)"
 echo " 변경 기준: ${BASE:0:12}  (작업 트리의 미커밋 변경은 검사하지 않음)"
-CHECKER_REVISION="$(git rev-parse --verify HEAD 2>/dev/null || echo unknown)"
-CHECKER_HASH="$(shasum -a 256 "$BACK/scripts/verify_deploy_gate.sh" | awk '{print $1}')"
-SLOTS_HASH="$(shasum -a 256 "$BACK/scripts/pytest_slots.py" | awk '{print $1}')"
-echo " 체커: revision ${CHECKER_REVISION:0:12}, gate ${CHECKER_HASH:0:16}, slots ${SLOTS_HASH:0:16} (SHA-256)"
 echo " 모드: $MODE"
 echo "========================================================"
 
@@ -204,7 +218,7 @@ stage() {  # stage <이름> <명령...>: 실패해도 멈추지 않고 기록한
 }
 
 if [ "$MODE" = full ]; then
-    stage "전체 pytest (-x 없음, 공용 슬롯)" python3 "$BACK/scripts/pytest_slots.py" -- "$PY" -m pytest "${PYTEST_BASE[@]}"
+    stage "전체 pytest (-x 없음, 공용 슬롯)" python3 "$CHECKER_INPUT/scripts/pytest_slots.py" -- "$PY" -m pytest "${PYTEST_BASE[@]}"
 else
     # macOS 기본 bash 3.2 에는 mapfile 이 없다.
     CHANGED=()
@@ -261,7 +275,7 @@ else
             TESTFILES+=(tests/test_account_selection.py::test_agent_artifact_area_filter_and_move)
         fi
         if [ ${#TESTFILES[@]} -gt 0 ]; then
-            stage "바뀐 테스트 파일 (${#TESTFILES[@]}개, 공용 슬롯)" python3 "$BACK/scripts/pytest_slots.py" -- "$PY" -m pytest "${PYTEST_BASE[@]}" "${TESTFILES[@]}"
+            stage "바뀐 테스트 파일 (${#TESTFILES[@]}개, 공용 슬롯)" python3 "$CHECKER_INPUT/scripts/pytest_slots.py" -- "$PY" -m pytest "${PYTEST_BASE[@]}" "${TESTFILES[@]}"
         else
             STAGES+=("건너뜀  바뀐 테스트 파일 (선택된 파일 없음)")
         fi

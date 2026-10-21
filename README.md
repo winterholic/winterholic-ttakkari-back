@@ -139,6 +139,9 @@ main 에 push 하기 전에 계약 묶음(`pytest -m contract`: 도구 카탈로
 ./scripts/verify_deploy_gate.sh                  # 수동 실행(기본 HEAD 검사)
 ```
 
+검사기는 현재 커밋의 gate·slot 파일을 고정해 실행하고, 두 파일이 미커밋 변경과 다르면 중단한다.
+`TTK_GATE_KEEP=1`을 지정하면 후보 archive, 체커 원본, 전체 revision/hash와 후보·기준 SHA가 든 manifest를 보존한다.
+
 비상 우회: `git push --no-verify` 또는 `TTK_SKIP_GATE=1 git push`. 우회해도 배포 게이트는 같은 실패로 멈춘다.
 
 전체 pytest와 바뀐 테스트 묶음은 공용 슬롯을 사용한다(기본 2개,

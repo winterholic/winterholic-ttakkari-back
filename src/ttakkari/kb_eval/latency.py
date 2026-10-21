@@ -1,9 +1,27 @@
 """Block paired latency reporting. Absolute e2e SLO never waived for load."""
 
+import math
+
 import numpy as np
+
+from .schema import LatencyBlock
+from .validation import BOOTSTRAP_POLICY, integer, number
 
 
 def latency_report(blocks, *, seed, replicates=10000, mode="full"):
+    integer(seed, "seed")
+    integer(replicates, "replicates", minimum=1)
+    if type(blocks) is not list:
+        raise ValueError("invalid_latency_blocks")
+    blocks = [LatencyBlock.model_validate(b).model_dump() for b in blocks]
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            return _latency_report(blocks, seed=seed, replicates=replicates, mode=mode)
+    except (FloatingPointError, OverflowError) as exc:
+        raise ValueError("nonfinite_latency_aggregate") from exc
+
+
+def _latency_report(blocks, *, seed, replicates, mode):
     if mode not in {"full", "fast"}:
         raise ValueError("invalid_mode")
     if not blocks:
@@ -42,7 +60,7 @@ def latency_report(blocks, *, seed, replicates=10000, mode="full"):
         reasons.append("order_imbalance")
     if len({b["profile"] for b in blocks}) != 1:
         reasons.append("profile_mismatch")
-    if len(blocks) < 100 or sum(b["elapsed_seconds"] for b in blocks) < 600:
+    if len(blocks) < 100 or math.fsum(b["elapsed_seconds"] for b in blocks) < 600:
         reasons.append("insufficient_observation")
     loads = np.array(
         [[b[arm]["load"] for arm in ("candidate", "control")] for b in blocks]
@@ -59,13 +77,23 @@ def latency_report(blocks, *, seed, replicates=10000, mode="full"):
     )
     if (times[:, 1] <= 0).any():
         raise ValueError("zero_control_latency")
-    rng = np.random.default_rng(seed)
-    ratios = []
-    for start in range(0, replicates, 256):
-        idx = rng.integers(0, len(blocks), (min(256, replicates - start), len(blocks)))
-        p95 = np.quantile(times[idx], 0.95, axis=1)
-        ratios.extend((p95[:, 0] / p95[:, 1]).tolist())
-    low, high = map(float, np.quantile(ratios, [0.025, 0.975]))
+    if replicates < BOOTSTRAP_POLICY["minimum_replicates"]:
+        reasons.append("bootstrap_replicates_below_registered_minimum")
+        low = high = None
+    else:
+        rng = np.random.default_rng(seed)
+        ratios = []
+        for start in range(0, replicates, 256):
+            idx = rng.integers(
+                0, len(blocks), (min(256, replicates - start), len(blocks))
+            )
+            p95 = np.quantile(times[idx], 0.95, axis=1)
+            ratios.extend((p95[:, 0] / p95[:, 1]).tolist())
+        low, high = map(float, np.quantile(ratios, [0.025, 0.975]))
+        if low == high:
+            # Zero resampling spread means the trace carries no uncertainty
+            # information; it cannot support a non-inferiority claim.
+            reasons.append("degenerate_ratio_ci")
     relative = (
         "relative_unverified"
         if reasons
@@ -78,7 +106,10 @@ def latency_report(blocks, *, seed, replicates=10000, mode="full"):
     slo = 800 if mode == "full" else 200
     return {
         "relative": relative,
-        "ratio_ci": [low, high],
+        "ratio_ci": [low, high] if low is not None else None,
+        "ci_degenerate": low == high if low is not None else None,
+        "bootstrap_policy": dict(BOOTSTRAP_POLICY),
+        "ci_scope": "observed_block_distribution_only; constant traces do not establish runtime variability",
         "ratio": float(np.quantile(times[:, 0], 0.95) / np.quantile(times[:, 1], 0.95)),
         **{
             arm + "_absolute": "absolute_pass"
@@ -94,6 +125,10 @@ def latency_report(blocks, *, seed, replicates=10000, mode="full"):
             {"block": b["block"], **{arm: b[arm]["stages_ms"] for arm in arms}}
             for b in blocks
         ],
+        "stage_missing": [
+            {"block": b["block"], **{arm: b[arm]["stages_missing"] for arm in arms}}
+            for b in blocks
+        ],
         "profile": blocks[0]["profile"],
         "seed": seed,
         "replicates": replicates,
@@ -101,7 +136,9 @@ def latency_report(blocks, *, seed, replicates=10000, mode="full"):
 
 
 def balanced_orders(count, *, seed):
-    if count < 2 or count % 2:
+    integer(count, "block_count", minimum=2)
+    integer(seed, "seed")
+    if count % 2:
         raise ValueError("balanced_even_block_count_required")
     orders = ["AB", "BA"] * (count // 2)
     np.random.default_rng(seed).shuffle(orders)
@@ -127,6 +164,8 @@ def timed_call(call, *, admit=lambda: None, serialize=lambda x: x, clock=None):
         entered = serviced = clock()
         output = {"failure": "adapter_error", "reason": str(exc)}
     end = clock()
+    for value in (begin, entered, serviced, end):
+        number(value, "timer_clock")
     if not begin <= entered <= serviced <= end:
         raise ValueError("nonmonotonic_timer")
     missing = {

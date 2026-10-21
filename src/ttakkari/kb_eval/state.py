@@ -84,27 +84,12 @@ def verify_replay(record, expected_key, payload):
 def open_holdout(path, registration, *, actor, role, at):
     if role != "independent_reviewer" or not actor or actor == "developer":
         raise ValueError("independent_reviewer_required")
-    # Exclusive creation protects against simultaneous/repeated openings, even if
-    # registration changes. Caller authorization remains an external trust boundary.
-    result = {
-        "holdout_peeks": 1,
-        "actor": actor,
-        "role": role,
-        "at": at,
-        "registration": registration,
-        "registration_sha256": digest(canonical(registration)),
-        "status": "consumed",
-        "authorization": "external_auth_required",
-    }
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(path, "xb") as stream:
-            stream.write(canonical(result))
-            stream.flush()
-            os.fsync(stream.fileno())
-    except FileExistsError as exc:
-        raise ValueError("holdout_consumed") from exc
-    return result
+    # Actor/role are untrusted caller metadata, never an authenticated principal.
+    # No authenticated reviewer flow exists in E0: refuse before mkdir/open/hash
+    # or any mutation. In particular, a denial cannot consume the future slot.
+    raise ValueError(
+        "reviewer_authentication_required: holdout remains unopened; authenticated review flow unavailable"
+    )
 
 
 def _review_update(path, event):
@@ -132,6 +117,8 @@ def _review_update(path, event):
     label = {
         **event,
         "label_version": event["label_version"] + 1,
+        # Caller-supplied actor text; no server principal backs it in E0.
+        "actor_authentication": "unauthenticated_claim",
         "verification": "agent_verified"
         if event["actor_kind"] == "agent"
         else "llm_judged",

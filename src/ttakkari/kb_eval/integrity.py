@@ -91,7 +91,9 @@ def anchor(gold, source, *, passages=None):
     return result
 
 
-def components(cases, links):
+def components(cases, links, *, passage_owners=None):
+    if passage_owners is None:
+        raise ValueError("passage_owners_required")
     if len({c["id"] for c in cases}) != len(cases):
         raise ValueError("query_id_leakage")
     parent = {}
@@ -118,6 +120,11 @@ def components(cases, links):
             raise ValueError("missing_group_documents")
         for doc in c["documents"]:
             join(node, "doc:" + doc)
+        for passage, grade in c["relevance"].items():
+            if passage not in passage_owners:
+                raise ValueError("gold_identity_not_in_manifest:" + passage)
+            if grade > 0:
+                join(node, "doc:" + passage_owners[passage])
         join(node, "group:" + c["group"])
     result = {c["id"]: root("query:" + c["id"]) for c in cases}
     splits = {}

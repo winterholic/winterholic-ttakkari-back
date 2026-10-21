@@ -1,0 +1,18 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_________ test_r3_runner_cannot_bypass_rights_loader_by_mutating_kind __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2722/test_r3_runner_cannot_bypass_r0')
+
+    def test_r3_runner_cannot_bypass_rights_loader_by_mutating_kind(tmp_path):
+        loaded = e.load_bundle(write_bundle(tmp_path))
+        loaded['kind'] = 'public'
+        loaded['rights_authorization'] = {'status':'authenticated'}
+>       with pytest.raises(ValueError, match='rights_review_authentication_required'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:212: Failed
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r3_runner_cannot_bypass_rights_loader_by_mutating_kind
+1 failed, 48 deselected in 0.09s

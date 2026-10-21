@@ -178,9 +178,17 @@ def test_translation_duplicate_multidoc_transitive_leakage():
     cs = cases()
     cs[1].update(documents=["d7", "d6"], split="holdout")
     with pytest.raises(ValueError, match="split_leakage"):
-        e.components(cs, [["d2", "d4"], ["d4", "d7"]])
+        e.components(
+            cs,
+            [["d2", "d4"], ["d4", "d7"]],
+            passage_owners={f"d{i}": f"d{i}" for i in range(1, 11)},
+        )
     cs[1]["split"] = "dev"
-    result = e.components(cs, [["d2", "d4"], ["d4", "d7"]])
+    result = e.components(
+        cs,
+        [["d2", "d4"], ["d4", "d7"]],
+        passage_owners={f"d{i}": f"d{i}" for i in range(1, 11)},
+    )
     assert result["q1"] == result["q2"]
     assert result["q1"] != result["q3"]
 
@@ -258,12 +266,22 @@ def blocks(candidate=900.0, control=1000.0, biased=False):
     ]
 
 
+def varied(data, spread=0.5):
+    # Distinct per-block jitter, permuted per arm, so p95 resamples vary.
+    for block in data:
+        i = block["block"]
+        for arm, step in (("candidate", i * 37 % 100), ("control", i)):
+            block[arm]["e2e_ms"] += step * spread
+            block[arm]["service_ms"] += step * spread
+    return data
+
+
 def test_control_also_exceeds_slo_relative_is_separate():
-    result = e.latency_report(blocks(), seed=7)
+    result = e.latency_report(varied(blocks()), seed=7)
     assert result["candidate_absolute"] == "absolute_fail"
     assert result["control_absolute"] == "absolute_fail"
     assert result["relative"] == "relative_pass"
-    assert result["ratio_ci"] == pytest.approx([0.9, 0.9])
+    assert 0.85 < result["ratio_ci"][0] < result["ratio_ci"][1] < 0.95
 
 
 def test_ab_load_bias_and_candidate_only_regression():
@@ -271,7 +289,7 @@ def test_ab_load_bias_and_candidate_only_regression():
         e.latency_report(blocks(biased=True), seed=7)["relative"]
         == "relative_unverified"
     )
-    r = e.latency_report(blocks(650.0, 500.0), seed=7)
+    r = e.latency_report(varied(blocks(650.0, 500.0)), seed=7)
     assert r["relative"] == "relative_fail"
     assert r["candidate_absolute"] == "absolute_pass"
     assert e.latency_report(blocks()[:2], seed=7)["relative"] == "relative_unverified"
@@ -332,7 +350,7 @@ def test_cache_replay_compares_score_bytes_and_integrity(tmp_path):
         e.verify_replay(record, key, payload)
 
 
-def test_holdout_one_use_and_developer_open_denied(tmp_path):
+def test_holdout_slot_stays_unconsumed_until_authenticated_flow_exists(tmp_path):
     audit = tmp_path / "holdout.json"
     with pytest.raises(ValueError, match="independent_reviewer_required"):
         e.open_holdout(
@@ -342,22 +360,16 @@ def test_holdout_one_use_and_developer_open_denied(tmp_path):
             role="developer",
             at="2026-10-21T00:00:00Z",
         )
-    result = e.open_holdout(
-        audit,
-        identity(),
-        actor="reviewer-test",
-        role="independent_reviewer",
-        at="2026-10-21T00:00:00Z",
-    )
-    assert result["holdout_peeks"] == 1
-    with pytest.raises(ValueError, match="holdout_consumed"):
-        e.open_holdout(
-            audit,
-            {**identity(), "policy": "changed"},
-            actor="reviewer-test",
-            role="independent_reviewer",
-            at="2026-10-21T00:01:00Z",
-        )
+    for actor in ("reviewer-test", "user-approved-reviewer"):
+        with pytest.raises(ValueError, match="reviewer_authentication_required"):
+            e.open_holdout(
+                audit,
+                identity(),
+                actor=actor,
+                role="independent_reviewer",
+                at="2026-10-21T00:00:00Z",
+            )
+    assert not audit.exists()
 
 
 def test_mobile_review_contract_resume_no_machine_human_promotion(tmp_path):
@@ -536,10 +548,10 @@ def test_primary_family_positive_and_regression_controls_are_statistical_only():
     }
     groups = [f"h{i}" for i in range(40)]
     neutral = e.quality_family(
-        {"recall": [0.0] * 40, "ndcg": [0.0] * 40}, groups, **kwargs
+        {"recall": [0.01, -0.01] * 20, "ndcg": [0.01, -0.01] * 20}, groups, **kwargs
     )
     regression = e.quality_family(
-        {"recall": [-0.10] * 40, "ndcg": [-0.10] * 40}, groups, **kwargs
+        {"recall": [-0.09, -0.11] * 20, "ndcg": [-0.09, -0.11] * 20}, groups, **kwargs
     )
     assert neutral["status"] == "pass"
     assert regression["status"] == "fail"

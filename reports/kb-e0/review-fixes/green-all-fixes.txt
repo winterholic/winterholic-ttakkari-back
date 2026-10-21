@@ -1,0 +1,36 @@
+....................................................F.                   [100%]
+=================================== FAILURES ===================================
+________ test_r2_quality_degenerate_intervals_are_explicitly_diagnostic ________
+
+    def test_r2_quality_degenerate_intervals_are_explicitly_diagnostic():
+        r = e.cluster_interval([0.0, 0.0], ["one", "one"], seed=7)
+        assert r["ci_degenerate"] is True
+        assert r["sampling_status"] == "unverified_single_cluster"
+        with pytest.raises(ValueError, match="invalid_statistical_value"):
+>           e.cluster_interval([10**1000, 0.0], ["a", "b"], seed=7)
+
+unit_tests/kb_eval/test_review_fixes.py:320: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/kb_eval/statistics.py:48: in cluster_interval
+    a, sums, sizes = _matrix(values, groups)
+                     ^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/kb_eval/statistics.py:17: in _matrix
+    number(value, "statistical_value")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = 100000000000000000...0000000000000000000, name = 'statistical_value'
+minimum = None, maximum = None
+
+    def number(value, name, *, minimum=None, maximum=None):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, Real)
+>           or not math.isfinite(value)
+                   ^^^^^^^^^^^^^^^^^^^^
+        ):
+E       OverflowError: int too large to convert to float
+
+src/ttakkari/kb_eval/validation.py:27: OverflowError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_quality_degenerate_intervals_are_explicitly_diagnostic
+1 failed, 53 passed in 0.15s

@@ -346,7 +346,8 @@
       "transform_allowed": true,
       "redistribute_allowed": true,
       "status": "verified",
-      "basis": "locally authored synthetic fixture"
+      "basis": "locally authored synthetic fixture",
+      "provenance_kind": "synthetic"
     },
     {
       "component": "data",
@@ -357,7 +358,8 @@
       "transform_allowed": true,
       "redistribute_allowed": true,
       "status": "verified",
-      "basis": "locally authored synthetic fixture"
+      "basis": "locally authored synthetic fixture",
+      "provenance_kind": "synthetic"
     },
     {
       "component": "qrels",
@@ -368,7 +370,8 @@
       "transform_allowed": true,
       "redistribute_allowed": true,
       "status": "verified",
-      "basis": "locally authored synthetic fixture"
+      "basis": "locally authored synthetic fixture",
+      "provenance_kind": "synthetic"
     },
     {
       "component": "corpus",
@@ -379,7 +382,8 @@
       "transform_allowed": true,
       "redistribute_allowed": true,
       "status": "verified",
-      "basis": "locally authored synthetic fixture"
+      "basis": "locally authored synthetic fixture",
+      "provenance_kind": "synthetic"
     }
   ],
   "manifest": {

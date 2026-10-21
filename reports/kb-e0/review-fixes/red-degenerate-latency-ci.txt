@@ -1,0 +1,4 @@
+constant_trace_10000: relative_pass [1.0, 1.0] True
+inf rejected: 1 validation error for LatencyBlock
+candidate.e2e_ms
+  Input should be a finite 

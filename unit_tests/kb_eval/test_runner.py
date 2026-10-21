@@ -47,6 +47,7 @@ def fixture_bundle():
                 "redistribute_allowed": True,
                 "status": "verified",
                 "basis": "locally authored synthetic fixture",
+                "provenance_kind": "synthetic",
             }
             for part in ("code", "data", "qrels", "corpus")
         ],
@@ -175,9 +176,11 @@ def test_resume_rejects_changed_input_not_just_id(tmp_path):
 def test_public_or_unverified_gold_cannot_be_final_pass(tmp_path):
     data = fixture_bundle()
     data["kind"] = "public"
+    with pytest.raises(ValueError, match="rights_review_authentication_required"):
+        e.load_bundle(write_bundle(tmp_path, data))
+    data["kind"] = "fixture"
     result = e.run(e.load_bundle(write_bundle(tmp_path, data)), tmp_path / "run")
     assert result["final_quality"] == "not_authorized"
-    assert "public_regression_only" in result["blockers"]
     assert all(c["verification"] == "draft" for c in data["cases"])
 
 

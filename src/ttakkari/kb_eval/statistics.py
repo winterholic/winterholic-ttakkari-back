@@ -6,8 +6,17 @@ null-boundary recentered bootstrap and Holm. Neither assumes independent queries
 
 import numpy as np
 
+from .validation import BOOTSTRAP_POLICY, integer, number, probability
+
 
 def _matrix(values, groups):
+    raw = np.asarray(values, dtype=object)
+    if raw.ndim not in (1, 2) or not raw.size:
+        raise ValueError("unpaired_or_nonfinite_results")
+    for value in raw.flat:
+        number(value, "statistical_value")
+    if type(groups) is not list or any(type(g) is not str or not g for g in groups):
+        raise ValueError("invalid_cluster_groups")
     a = np.asarray(values, dtype=float)
     if a.ndim == 1:
         a = a[:, None]
@@ -20,7 +29,8 @@ def _matrix(values, groups):
 
 
 def _bootstrap(sums, sizes, rng, replicates):
-    if replicates < 100:
+    integer(replicates, "replicates", minimum=1)
+    if replicates < BOOTSTRAP_POLICY["diagnostic_minimum_replicates"]:
         raise ValueError("bootstrap_replicates_too_small")
     # Bound peak allocation independently of the number of source clusters.
     batches = []
@@ -31,7 +41,13 @@ def _bootstrap(sums, sizes, rng, replicates):
 
 
 def cluster_interval(values, groups, *, seed, replicates=10000, alpha=0.05):
+    integer(seed, "seed")
+    number(alpha, "alpha")
+    if not 0 < alpha < 0.5:
+        raise ValueError("invalid_alpha")
     a, sums, sizes = _matrix(values, groups)
+    if (abs(a) > 1).any():
+        raise ValueError("metric_delta_out_of_range")
     samples = _bootstrap(sums, sizes, np.random.default_rng(seed), replicates)[:, 0]
     low, high = np.quantile(samples, [alpha, 1 - alpha])
     return {
@@ -43,13 +59,24 @@ def cluster_interval(values, groups, *, seed, replicates=10000, alpha=0.05):
         "cluster_sizes": sizes.tolist(),
         "effective_clusters": float(sizes.sum() ** 2 / (sizes @ sizes)),
         "estimand": "question_weighted",
+        "ci_degenerate": bool(low == high),
+        "sampling_status": "unverified_single_cluster"
+        if len(sizes) < 2
+        else "unverified_degenerate_interval"
+        if low == high
+        else "diagnostic_only_low_replicates"
+        if replicates < BOOTSTRAP_POLICY["minimum_replicates"]
+        else "empirical_cluster_interval",
+        "bootstrap_policy": dict(BOOTSTRAP_POLICY),
         "seed": seed,
         "replicates": replicates,
     }
 
 
 def holm(pvalues):
-    if not pvalues or any(not 0 <= p <= 1 for p in pvalues.values()):
+    for p in pvalues.values():
+        probability(p, "pvalue")
+    if not pvalues:
         raise ValueError("invalid_pvalues")
     ordered = sorted(pvalues, key=lambda k: (pvalues[k], k))
     adjusted, running = {}, 0.0
@@ -64,6 +91,10 @@ def _family(
 ):
     if set(values) != {"recall", "ndcg"} or margin != 0.05 or alpha != 0.05:
         raise ValueError("unregistered_primary_family")
+    integer(seed, "seed")
+    for series in values.values():
+        for value in series:
+            number(value, "statistical_value")
     keys = sorted(values)
     a, sums, sizes = _matrix(np.array([values[k] for k in keys]).T, groups)
     if not simulated and (abs(a) > 1).any():
@@ -103,10 +134,18 @@ def simulate_power(dev_deltas, groups, *, seed, trials=200, replicates=10000):
     Prototype power is conditional on this dev distribution and cluster count.
     A small or constant dev pilot cannot establish population power.
     """
-    if type(trials) is not int or trials < 1:
-        raise ValueError("invalid_power_trials")
+    integer(trials, "power_trials", minimum=1)
+    integer(seed, "seed")
+    integer(
+        replicates,
+        "replicates",
+        minimum=BOOTSTRAP_POLICY["diagnostic_minimum_replicates"],
+    )
     if set(dev_deltas) != {"recall", "ndcg"}:
         raise ValueError("unregistered_primary_family")
+    for series in dev_deltas.values():
+        for value in series:
+            number(value, "statistical_value")
     keys = sorted(dev_deltas)
     a, _, sizes = _matrix(np.array([dev_deltas[k] for k in keys]).T, groups)
     if (abs(a) > 1).any():
@@ -184,6 +223,10 @@ def quality_family(
             power = simulate_power(
                 dev_deltas, dev_groups, seed=seed, replicates=replicates
             )
+    if replicates < BOOTSTRAP_POLICY["minimum_replicates"]:
+        reasons.append("bootstrap_replicates_below_registered_minimum")
+    if any(d["low"] == d["high"] for d in details.values()):
+        reasons.append("degenerate_bootstrap_interval")
     if power is None or power["status"] != "established":
         reasons.append("power_not_established")
     if len(set(groups)) < 2:
@@ -213,6 +256,7 @@ def binomial_interval(errors, n, *, alpha=0.05):
     """Clopper-Pearson one-sided bounds (each tail alpha), not a cluster CI."""
     import math
 
+    number(alpha, "alpha")
     if (
         type(errors) is not int
         or type(n) is not int

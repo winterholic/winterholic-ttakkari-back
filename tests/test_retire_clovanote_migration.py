@@ -26,10 +26,12 @@ async def migration_database():
 
 
 def migrate(revision, database):
+    import pg_sandbox  # 임시 클러스터 포트를 URL 에 넣어 공유 PG 가 아닌 이 세션 클러스터로 간다
+
     env = {
         **os.environ,
         "TTAKKARI_NO_ENV_FILE": "1",
-        "TTAKKARI_DATABASE_URL": f"postgresql+asyncpg://localhost/{database}",
+        "TTAKKARI_DATABASE_URL": pg_sandbox.localhost_database_url(database),
     }
     subprocess.run(
         [str(ROOT / ".venv/bin/alembic"), "upgrade", revision]

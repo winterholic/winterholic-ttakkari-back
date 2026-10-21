@@ -9,9 +9,9 @@ import shutil
 import subprocess
 import tempfile
 import uuid
-import warnings
 from pathlib import Path
 
+import pg_sandbox
 from sqlalchemy.engine import make_url
 
 _BASE = Path(tempfile.mkdtemp(prefix="ttk-it-")).resolve()
@@ -23,13 +23,22 @@ for _d in (HOME, ALLOWED, OUTSIDE, ALLOWED / "default-root", ALLOWED / "default-
     _d.mkdir()
 FAKES = Path(__file__).parent / "fake_agents"
 AGENT_LOG = _BASE / "agent-log.jsonl"
-# 동시에 여러 작업이 pytest 를 돌릴 수 있다. TTAKKARI_TEST_DB 를 지정하지 않으면 세션 픽스처가
-# 프로세스별 고유 DB(ttakkari_test_<pid>_<난수>)를 만들어 쓰고 끝나면 지운다. 같은 기본 DB 를
-# 공유하면 다른 프로세스의 TRUNCATE 와 엇갈려 sessions_workspace_id_fkey 위반·조회 404 같은
-# 부분 실행 깨짐이 난다. 명시 지정은 주인이 관리하는 공유 계약으로 그대로 쓴다. 운영 DB(ttakkari)는 막는다.
+# 동시에 여러 작업이 pytest 를 돌릴 수 있다. TTAKKARI_TEST_DB 를 지정하지 않으면 이 프로세스가
+# /tmp/ttakkari-test-<pid>-<난수>/ 아래에 임시 PostgreSQL 클러스터를 띄워 쓰고 끝나면 폴더째 지운다.
+# 공유 PostgreSQL 에는 DB 를 만들지 않으므로 프로세스가 비정상 종료돼도 공유 서버에 잔재가 없고,
+# 남은 폴더는 다음 세션 시작 때 소유 pid 가 죽은 것만 정리된다(tests/pg_sandbox.py).
+# host="localhost" 직결 마이그레이션 시험은 asyncpg 패치로, alembic 자식은 PGPORT 포함 URL
+# (pg_sandbox.localhost_database_url)로 같은 클러스터로 간다. 명시 지정은 주인이 관리하는 공유
+# 계약으로 그대로 쓴다. 운영 DB(ttakkari)는 막는다. env 는 ttakkari import 전에 정해야 하므로
+# 클러스터는 import 시점에 띄운다.
 TEST_DB_EXPLICIT = "TTAKKARI_TEST_DB" in os.environ
-TEST_DB = os.environ.get("TTAKKARI_TEST_DB", "postgresql+asyncpg://localhost/ttakkari_test")
-_PROCESS_DB_NAME: str | None = None  # 이 프로세스가 만든 고유 테스트 DB. 명시 지정이면 None.
+if TEST_DB_EXPLICIT:
+    TEST_DB = os.environ["TTAKKARI_TEST_DB"]
+else:
+    PG_CLUSTER = pg_sandbox.start_cluster()
+    pg_sandbox.use_cluster_env(PG_CLUSTER)
+    pg_sandbox.patch_asyncpg_for_cluster(PG_CLUSTER)
+    TEST_DB = PG_CLUSTER.create_database("ttakkari_test")
 
 
 def assert_test_db_isolated(database_url: str) -> None:
@@ -74,7 +83,6 @@ os.environ.update({
     "FAKE_AGENT_LOG": str(AGENT_LOG),
 })
 
-import asyncpg
 import httpx
 import pytest
 import pytest_asyncio
@@ -87,7 +95,7 @@ get_settings.cache_clear()
 assert str(get_settings().database_url) == TEST_DB, "테스트 DB 설정이 적용되지 않았다"
 
 from ttakkari.api.assistant import wait_indexing
-from ttakkari.db import dispose_engine, sessionmaker
+from ttakkari.db import sessionmaker
 from ttakkari.main import app
 from ttakkari.models import Base, Credential
 from ttakkari.runs import desk_pool, profiles, usage_store
@@ -98,67 +106,8 @@ from ttakkari.security.passwords import hash_password
 PASSWORD = "correct-horse-battery"
 
 
-def _admin_kwargs() -> dict:
-    """기본 테스트 DB 와 같은 서버의 postgres 관리 DB 접속 정보."""
-    url = make_url(TEST_DB)
-    kw: dict = {"database": "postgres", "host": url.host or "localhost"}
-    if url.port:
-        kw["port"] = url.port
-    if url.username:
-        kw["user"] = url.username
-    if url.password:
-        kw["password"] = url.password
-    return kw
-
-
-async def _use_process_database() -> None:
-    """명시 지정이 아니면 이 프로세스 전용 테스트 DB 를 만들어 TEST_DB·env·settings 에 반영한다.
-
-    엔진은 이 픽스처 이후에 처음 만들어지므로(lazy sessionmaker) 여기서 URL 을 바꿔도 안전하다.
-    만들지 못하면(권한·접속 불가) 기본 DB 로 경고와 함께 진행한다. 접속 자체가 안 되면
-    어차피 모든 DB 테스트가 setup 에서 실패하므로 격리 거짓말을 하지 않는다.
-    """
-    global TEST_DB, _PROCESS_DB_NAME
-    if TEST_DB_EXPLICIT or _PROCESS_DB_NAME is not None:
-        return
-    name = f"ttakkari_test_{os.getpid()}_{uuid.uuid4().hex[:8]}"
-    try:
-        admin = await asyncpg.connect(**_admin_kwargs())
-        try:
-            await admin.execute(f'CREATE DATABASE "{name}"')
-        finally:
-            await admin.close()
-    except Exception as e:  # noqa: BLE001
-        warnings.warn(f"고유 테스트 DB 를 만들지 못해 기본 DB 를 공유한다: {type(e).__name__}: {e}", stacklevel=2)
-        return
-    _PROCESS_DB_NAME = name
-    TEST_DB = str(make_url(TEST_DB).set(database=name))
-    assert_test_db_isolated(TEST_DB)
-    os.environ["TTAKKARI_DATABASE_URL"] = TEST_DB
-    get_settings.cache_clear()
-    assert str(get_settings().database_url) == TEST_DB, "고유 테스트 DB 설정이 적용되지 않았다"
-
-
-async def _drop_process_database() -> None:
-    """_use_process_database 가 만든 DB 를 정리한다. 실패해도 세션 결과를 깨지 않는다."""
-    global _PROCESS_DB_NAME
-    if _PROCESS_DB_NAME is None:
-        return
-    name, _PROCESS_DB_NAME = _PROCESS_DB_NAME, None
-    try:
-        await dispose_engine()
-        admin = await asyncpg.connect(**_admin_kwargs())
-        try:
-            await admin.execute(f'DROP DATABASE "{name}" WITH (FORCE)')
-        finally:
-            await admin.close()
-    except Exception as e:  # noqa: BLE001
-        warnings.warn(f"테스트 DB {name} 정리에 실패했다(수동 삭제 필요): {type(e).__name__}: {e}", stacklevel=2)
-
-
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
 async def _schema_and_app():
-    await _use_process_database()
     eng = create_async_engine(TEST_DB)
     async with eng.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
@@ -168,7 +117,6 @@ async def _schema_and_app():
     await eng.dispose()
     async with app.router.lifespan_context(app):
         yield
-    await _drop_process_database()
 
 
 @pytest.fixture(autouse=True)

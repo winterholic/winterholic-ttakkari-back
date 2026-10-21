@@ -128,10 +128,13 @@ async def test_new_session_recovers_after_ref_cas_before_final_database_commit(
     import ttakkari.delivery.merge_queue as queue
     real_run_git = queue.run_git
     crashed = False
+    cas_calls = 0
 
     def fail_after_cas(args, cwd):
-        nonlocal crashed
+        nonlocal cas_calls, crashed
         result = real_run_git(args, cwd)
+        if args and args[0] == "update-ref":
+            cas_calls += 1
         if args and args[0] == "update-ref" and not crashed:
             crashed = True
             raise RuntimeError("injected crash after Git ref CAS")
@@ -152,6 +155,8 @@ async def test_new_session_recovers_after_ref_cas_before_final_database_commit(
         recovered = await process_single_change(fresh, persisted, delivery_repo, passed, passed)
         assert recovered.success and recovered.status == ChangeSetStatus.merged
         assert recovered.rebased_sha == promoted
+        assert persisted.candidate_worktree_path is None
+        assert cas_calls == 1  # Recovery observes the already-promoted ref; it does not promote twice.
     assert run_git(["rev-parse", "main"], delivery_repo).stdout.strip() == promoted
 
 

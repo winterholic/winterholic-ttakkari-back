@@ -14,12 +14,14 @@
 #   3. 바뀐 테스트 파일: 기준(--base)부터 커밋까지 바뀐 테스트 파일을 함께 돌린다(LOG-124).
 #      import 그래프 기반 선택은 측정상 효과가 낮아 W1에서 뺐다.
 #   4. -x 없이 실패를 전부 모아 마지막에 출력한다. 계약 묶음 목표 30초, 전체 목표 2분 안팎이며 넘으면 경고한다.
+#   5. pytest 입력은 archive 테스트 트리만 사용한다. 검사기는 아래 revision/hash를 로그로 고정한다.
+#      슬롯은 협조형 입장 제어이며 직접 실행된 pytest나 배포 gate 우선권을 보장하지 않는다.
 #
 # 사용법:
 #   ./scripts/verify_deploy_gate.sh                   # 계약 묶음 + 바뀐 테스트 파일 (기본)
 #   ./scripts/verify_deploy_gate.sh --commit REV --base REV
 #   ./scripts/verify_deploy_gate.sh --contracts-only  # 계약 묶음만
-#   ./scripts/verify_deploy_gate.sh --full            # 전체 pytest(-x 없음, 슬롯 제한 안). 10분 이상 걸린다
+#   ./scripts/verify_deploy_gate.sh --full            # 전체 pytest(-x 없음, 공용 슬롯 사용). 10분 이상 걸린다
 #   ./scripts/verify_deploy_gate.sh --fast            # 기본과 같다(예전 옵션 이름 호환)
 #   ./scripts/verify_deploy_gate.sh --install-hook    # git pre-push 훅 설치
 #   ./scripts/verify_deploy_gate.sh --uninstall-hook  # 훅 제거
@@ -91,18 +93,24 @@ ZERO=0000000000000000000000000000000000000000
 
 if [ "$PRE_PUSH" -eq 1 ]; then
     # stdin: <local ref> <local sha> <remote ref> <remote sha>
-    COMMIT=
+    PUSH_FAILED=0
     while read -r _lref lsha rref rsha; do
         [ "$lsha" = "$ZERO" ] && continue
         case "$rref" in
             refs/heads/main|refs/heads/master) ;;
             *) [ "${TTK_GATE_ALL_REFS:-}" = 1 ] || continue ;;
         esac
-        COMMIT="$lsha"
-        if [ "$rsha" != "$ZERO" ] && git cat-file -e "$rsha^{commit}" 2>/dev/null; then BASE="$rsha"; fi
+        REF_BASE=
+        if [ "$rsha" != "$ZERO" ] && git cat-file -e "$rsha^{commit}" 2>/dev/null; then REF_BASE="$rsha"; fi
+        echo "==> [pre-push] 검사 ref $rref: ${lsha:0:12}"
+        if [ -n "$REF_BASE" ]; then
+            "$BACK/scripts/verify_deploy_gate.sh" --commit "$lsha" --base "$REF_BASE" </dev/null || PUSH_FAILED=1
+        else
+            "$BACK/scripts/verify_deploy_gate.sh" --commit "$lsha" </dev/null || PUSH_FAILED=1
+        fi
     done
-    if [ -z "$COMMIT" ]; then exit 0; fi
-    echo "==> [pre-push] 사전 검증: ${COMMIT:0:12} (건너뛰려면 TTK_SKIP_GATE=1 또는 --no-verify)"
+    [ "$PUSH_FAILED" -eq 0 ] || exit 1
+    exit 0
 fi
 
 SHA="$(git rev-parse --verify "$COMMIT^{commit}" 2>/dev/null)" || die "커밋을 찾을 수 없습니다: $COMMIT"
@@ -126,6 +134,10 @@ echo "========================================================"
 echo " 따까리 백엔드 사전 검증 (배포 게이트의 전체 실행·-x 를 대신하지 않음)"
 echo " 대상 커밋: ${SHA:0:12} $(git log -1 --format=%s "$SHA" | cut -c1-60)"
 echo " 변경 기준: ${BASE:0:12}  (작업 트리의 미커밋 변경은 검사하지 않음)"
+CHECKER_REVISION="$(git rev-parse --verify HEAD 2>/dev/null || echo unknown)"
+CHECKER_HASH="$(shasum -a 256 "$BACK/scripts/verify_deploy_gate.sh" | awk '{print $1}')"
+SLOTS_HASH="$(shasum -a 256 "$BACK/scripts/pytest_slots.py" | awk '{print $1}')"
+echo " 체커: revision ${CHECKER_REVISION:0:12}, gate ${CHECKER_HASH:0:16}, slots ${SLOTS_HASH:0:16} (SHA-256)"
 echo " 모드: $MODE"
 echo "========================================================"
 
@@ -136,8 +148,6 @@ export TTAKKARI_RELEASE_REVISION="$SHA"
 export TTAKKARI_DEPLOY_SOURCE_ROOT="$BACK"
 uv sync --frozen --quiet || die "임시 디렉터리의 uv sync 실패(의존성 설치). 비상이면 --no-verify 로 우회하세요."
 PY="$TMP/.venv/bin/python"
-# 검사 도구는 대상 커밋이 아니라 이 체크아웃의 것을 쓴다. 도구가 생기기 전의 옛 커밋도 같은 기준으로 검사할 수 있다.
-[ -f tests/test_migration_single_head.py ] || cp "$BACK/tests/test_migration_single_head.py" tests/
 
 stage() {  # stage <이름> <명령...>: 실패해도 멈추지 않고 기록한다.
     local name="$1"; shift
@@ -145,12 +155,11 @@ stage() {  # stage <이름> <명령...>: 실패해도 멈추지 않고 기록한
     echo "--> $name"
     "$@"
     local rc=$?
-    # pytest exit 5(선택된 테스트 없음)는 실패가 아니다.
-    if [ $rc -eq 0 ] || [ $rc -eq 5 ]; then STAGES+=("통과  $name ($((SECONDS - t0))초)"); else FAILED+=("$name"); STAGES+=("실패  $name ($((SECONDS - t0))초, exit $rc)"); fi
+    if [ $rc -eq 0 ]; then STAGES+=("통과  $name ($((SECONDS - t0))초)"); else FAILED+=("$name"); STAGES+=("실패  $name ($((SECONDS - t0))초, exit $rc)"); fi
 }
 
 if [ "$MODE" = full ]; then
-    stage "전체 pytest (-x 없음, 슬롯 제한 안)" python3 "$BACK/scripts/pytest_slots.py" -- "$PY" -m pytest "${PYTEST_BASE[@]}"
+    stage "전체 pytest (-x 없음, 공용 슬롯)" python3 "$BACK/scripts/pytest_slots.py" -- "$PY" -m pytest "${PYTEST_BASE[@]}"
 else
     # macOS 기본 bash 3.2 에는 mapfile 이 없다.
     CHANGED=()
@@ -194,14 +203,20 @@ else
 
     if [ "$MODE" = impacted ]; then
         TESTFILES=()
+        HAS_ACCOUNT_SELECTION=0
         for f in ${CHANGED[@]+"${CHANGED[@]}"}; do
             case "$f" in
-                tests/test_*.py|unit_tests/test_*.py|benchmark_tests/test_*.py)
+                tests/test_*.py|tests/*/test_*.py|unit_tests/test_*.py|unit_tests/*/test_*.py|benchmark_tests/test_*.py|benchmark_tests/*/test_*.py)
                     [ -f "$f" ] && TESTFILES+=("$f") ;;
             esac
+            [ "$f" = "tests/test_account_selection.py" ] && HAS_ACCOUNT_SELECTION=1
         done
+        # 이전 배포에서 반복 실패한 LOG-124 회귀는 변경 파일 선택과 무관하게 고정 실행한다.
+        if [ -f tests/test_account_selection.py ] && [ "$HAS_ACCOUNT_SELECTION" -eq 0 ]; then
+            TESTFILES+=(tests/test_account_selection.py::test_agent_artifact_area_filter_and_move)
+        fi
         if [ ${#TESTFILES[@]} -gt 0 ]; then
-            stage "바뀐 테스트 파일 (${#TESTFILES[@]}개)" "$PY" -m pytest "${PYTEST_BASE[@]}" "${TESTFILES[@]}"
+            stage "바뀐 테스트 파일 (${#TESTFILES[@]}개, 공용 슬롯)" python3 "$BACK/scripts/pytest_slots.py" -- "$PY" -m pytest "${PYTEST_BASE[@]}" "${TESTFILES[@]}"
         else
             STAGES+=("건너뜀  바뀐 테스트 파일 (선택된 파일 없음)")
         fi

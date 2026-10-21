@@ -215,7 +215,16 @@ def stale_network_runner(creates: list[tuple[int, str]], labels: dict[str, str] 
     async def fake_docker(*args: str, timeout: float = 30) -> tuple[int, str]:
         calls.append(args)
         if args[:2] == ("network", "create"):
-            return pending.pop(0)
+            result = pending.pop(0)
+            if result[0] == 0:
+                values = [arg.split("=", 1)[1] for arg in args if arg.startswith("ttakkari.game-")]
+                labels[args[-1]] = "|".join(values)
+            return result
+        if args[:1] == ("run",):
+            name = args[args.index("--name") + 1]
+            values = [arg.split("=", 1)[1] for arg in args if arg.startswith("ttakkari.game-")]
+            labels[name] = "|".join(values)
+            return 0, "container-id"
         if args[1] == "inspect":
             name = args[-1]
             return (0, labels[name]) if name in labels else (1, "No such object")
@@ -231,24 +240,24 @@ async def test_egress_removes_own_leftover_network_and_retries_once():
     # 자기 라벨 잔재(LOG-126/137)는 프록시와 네트워크를 지운 뒤 한 번 다시 만든다.
     runner, calls = stale_network_runner(
         [(1, "Error response from daemon: network with name ttk-game-r1 already exists"), (0, "id")],
-        {"ttk-game-r1": "r1", "ttk-game-r1-proxy": "r1"},
+        {"ttk-game-r1-r1": "r1|r1", "ttk-game-r1-r1-proxy": "r1|r1"},
     )
-    async with runner._egress("r1") as eg:
-        assert eg["network"] == "ttk-game-r1"
+    async with runner._egress("r1", attempt_id="r1") as eg:
+        assert eg["network"] == "ttk-game-r1-r1"
     kinds = [c[:2] if c[0] in ("network", "container") else c[:1] for c in calls]
     assert kinds[:5] == [("network", "create"), ("network", "inspect"), ("container", "inspect"), ("rm",), ("network", "rm")]
-    assert ("rm", "-f", "ttk-game-r1-proxy") in calls and ("network", "rm", "ttk-game-r1") in calls
+    assert ("rm", "-f", "ttk-game-r1-r1-proxy") in calls and ("network", "rm", "ttk-game-r1-r1") in calls
     assert sum(1 for c in calls if c[:2] == ("network", "create")) == 2
 
 
 async def test_egress_never_removes_foreign_network():
     # 남의 실행 라벨이면 지우지 않고 바로 실패한다(ADR 0066 D3a). rm 계열 호출이 없어야 한다.
     runner, calls = stale_network_runner(
-        [(1, "Error response from daemon: network with name ttk-game-r9 already exists")],
-        {"ttk-game-r9": "other-run", "ttk-game-r9-proxy": "other-run"},
+        [(1, "Error response from daemon: network with name ttk-game-r9-r9 already exists")],
+        {"ttk-game-r9-r9": "other-run|r9", "ttk-game-r9-r9-proxy": "other-run|r9"},
     )
     with pytest.raises(IsolationError) as e:
-        async with runner._egress("r9"):
+        async with runner._egress("r9", attempt_id="r9"):
             pytest.fail("남의 네트워크가 있으면 본문이 실행되면 안 된다")
     assert e.value.code == "network_conflict"
     assert "남의 실행 자원이라 지우지 않았습니다" in str(e.value)
@@ -256,20 +265,50 @@ async def test_egress_never_removes_foreign_network():
     assert sum(1 for c in calls if c[:2] == ("network", "create")) == 1  # 재시도도 없다
 
 
-async def test_egress_gives_up_when_retry_still_fails_and_does_not_retry_other_errors():
+async def test_egress_never_removes_same_build_network_from_another_attempt():
     runner, calls = stale_network_runner(
-        [(1, "network ttk-game-r2 already exists"), (1, "network ttk-game-r2 already exists")],
-        {"ttk-game-r2": "r2"},
+        [(1, "Error response from daemon: network with name ttk-game-r9-attempt-b already exists")],
+        {"ttk-game-r9-attempt-b": "r9|another-attempt"},
     )
     with pytest.raises(IsolationError) as e:
-        async with runner._egress("r2"):
+        async with runner._egress("r9", attempt_id="attempt-b"):
+            pytest.fail("다른 attempt 라벨의 네트워크가 있으면 본문이 실행되면 안 된다")
+    assert e.value.code == "network_conflict"
+    assert [c for c in calls if c[:1] == ("rm",) or c[:2] == ("network", "rm")] == []
+    assert sum(1 for c in calls if c[:2] == ("network", "create")) == 1
+
+
+async def test_egress_resources_are_owned_by_independent_attempt_ids():
+    runner, calls = stale_network_runner([(0, "net-a"), (0, "net-b")])
+
+    async with runner._egress("same-build", attempt_id="attempt-a") as first:
+        async with runner._egress("same-build", attempt_id="attempt-b") as second:
+            assert first["network"] != second["network"]
+
+    creates = [c for c in calls if c[:2] == ("network", "create")]
+    assert len(creates) == 2
+    names = [c[-1] for c in creates]
+    assert names == ["ttk-game-same-build-attempt-a", "ttk-game-same-build-attempt-b"]
+    assert "ttakkari.game-attempt=attempt-a" in creates[0]
+    assert "ttakkari.game-attempt=attempt-b" in creates[1]
+    removals = [c[-1] for c in calls if c[:2] == ("network", "rm")]
+    assert removals == names[::-1]
+
+
+async def test_egress_gives_up_when_retry_still_fails_and_does_not_retry_other_errors():
+    runner, calls = stale_network_runner(
+        [(1, "network ttk-game-r2-r2 already exists"), (1, "network ttk-game-r2-r2 already exists")],
+        {"ttk-game-r2-r2": "r2|r2"},
+    )
+    with pytest.raises(IsolationError) as e:
+        async with runner._egress("r2", attempt_id="r2"):
             pytest.fail("네트워크가 없으면 본문이 실행되면 안 된다")
     assert e.value.code == "network_failed"
     assert sum(1 for c in calls if c[:2] == ("network", "create")) == 2  # 재시도는 한 번뿐
 
     runner, calls = stale_network_runner([(1, "Cannot connect to the Docker daemon")])
     with pytest.raises(IsolationError) as e:
-        async with runner._egress("r3"):
+        async with runner._egress("r3", attempt_id="r3"):
             pytest.fail("네트워크가 없으면 본문이 실행되면 안 된다")
     assert e.value.code == "network_failed"
     assert [c[:2] for c in calls] == [("network", "create")]  # 다른 오류는 정리·재시도 없이 바로 실패한다

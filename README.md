@@ -140,8 +140,10 @@ main 에 push 하기 전에 계약 묶음(`pytest -m contract`: 도구 카탈로
 
 비상 우회: `git push --no-verify` 또는 `TTK_SKIP_GATE=1 git push`. 우회해도 배포 게이트는 같은 실패로 멈춘다.
 
-무거운 실행(전체 pytest·Docker·브라우저 테스트)은 공용 슬롯 안에서 돌려 동시 실행 수를 제한한다
-(기본 2개, `TTK_PYTEST_SLOTS` 로 조정). 계약 묶음과 배포 게이트는 제한 밖이다.
+전체 pytest와 바뀐 테스트 묶음은 공용 슬롯을 사용한다(기본 2개,
+`TTK_PYTEST_SLOTS` 로 조정). 빠른 계약 묶음은 제한 밖에서 돈다. 슬롯은 wrapper를 호출한
+프로세스끼리만 조정하는 협조형 잠금이다. wrapper를 거치지 않고 직접 실행한 pytest·Docker·브라우저
+작업은 제한하지 않으며, 배포 게이트도 별도 우선권이나 실행 중인 작업 선점 기능이 없다.
 
 ```bash
 ./scripts/pytest_slots.py -- uv run pytest -q   # 전체 실행 예시

@@ -103,7 +103,7 @@ def main(argv: list[str]) -> int:
                 )
             print(f"[slots] 슬롯 {slot} 획득(대기 {waited:.0f}초).", flush=True)
         proc = subprocess.run(
-            args.command, check=False
+            args.command, check=False, pass_fds=(fh.fileno(),)
         )  # 호출자가 준 명령을 그대로 실행한다
         return proc.returncode
     finally:

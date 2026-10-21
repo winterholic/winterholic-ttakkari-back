@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import time
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -301,11 +302,12 @@ class IsolatedBuildRunner:
         if code != 0:
             raise IsolationError(f"이미지 {self.image} 를 받지 못했습니다: {out[-300:]}", "image_unavailable")
 
-    def _run_argv(self, *, name: str, build_id: str, network: str, workdir: Path | None, command: list[str],
+    def _run_argv(self, *, name: str, build_id: str, attempt_id: str, network: str, workdir: Path | None, command: list[str],
                   env: dict[str, str], detach: bool = False, writable_tmp: bool = True) -> list[str]:
         lim = self.limits
         argv = [
-            self.runtime, "run", "--rm", "--pull", "never", "--name", name, "--label", f"ttakkari.game-build={build_id}",
+            self.runtime, "run", "--rm", "--pull", "never", "--name", name,
+            "--label", f"ttakkari.game-build={build_id}", "--label", f"ttakkari.game-attempt={attempt_id}",
             "--user", self.user, "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--memory", f"{lim.memory_mb}m", "--memory-swap", f"{lim.memory_mb}m", "--cpus", str(lim.cpus),
             "--pids-limit", str(lim.pids), "--ulimit", "nofile=4096:4096",
@@ -321,7 +323,8 @@ class IsolatedBuildRunner:
             argv += ["-e", f"{k}={v}"]
         return [*argv, self.image, *command]
 
-    async def _exec(self, argv: list[str], name: str, timeout: float) -> tuple[int | None, bool, str]:
+    async def _exec(self, argv: list[str], name: str, build_id: str, attempt_id: str,
+                    timeout: float) -> tuple[int | None, bool, str]:
         proc = await asyncio.create_subprocess_exec(
             *argv, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, env=_cli_env(),
         )
@@ -341,7 +344,8 @@ class IsolatedBuildRunner:
         finally:
             if proc.returncode is None:
                 # 시간 초과·취소: 컨테이너를 먼저 지워야 안의 프로세스가 남지 않는다.
-                await asyncio.shield(self._rm(name))
+                if await asyncio.shield(self._resource_owned_by("container", name, build_id, attempt_id)):
+                    await asyncio.shield(self._rm(name))
                 with contextlib.suppress(ProcessLookupError):
                     proc.kill()
                 await proc.wait()
@@ -350,33 +354,43 @@ class IsolatedBuildRunner:
         pump_task.cancel()
         return (None if timed_out else proc.returncode), timed_out, buf.text()
 
-    async def _resource_owned_by(self, kind: str, name: str, build_id: str) -> bool:
-        """docker 자원(network|container)의 ttakkari.game-build 라벨이 이 실행의 build_id 인지 확인한다."""
-        code, out = await self._docker(kind, "inspect", "--format", '{{index .Labels "ttakkari.game-build"}}', name)
-        return code == 0 and out.strip() == build_id
+    async def _resource_owned_by(self, kind: str, name: str, build_id: str, attempt_id: str) -> bool:
+        """Docker 자원의 build와 개별 시도 라벨이 모두 일치하는지 확인한다."""
+        fmt = '{{index .Labels "ttakkari.game-build"}}|{{index .Labels "ttakkari.game-attempt"}}'
+        code, out = await self._docker(kind, "inspect", "--format", fmt, name)
+        return code == 0 and out.strip() == f"{build_id}|{attempt_id}"
+
+    @staticmethod
+    def _attempt_id(attempt_id: str | None) -> str:
+        value = attempt_id or uuid.uuid4().hex
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", value):
+            raise IsolationError("격리 실행 ID 형식이 잘못되었습니다.", "invalid_attempt_id")
+        return value
 
     # ---- 설치 단계 egress 프록시
     @contextlib.asynccontextmanager
-    async def _egress(self, build_id: str) -> AsyncIterator[dict[str, str]]:
-        net, proxy = f"ttk-game-{build_id}", f"ttk-game-{build_id}-proxy"
-        code, out = await self._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", net)
+    async def _egress(self, build_id: str, attempt_id: str | None = None) -> AsyncIterator[dict[str, str]]:
+        attempt_id = self._attempt_id(attempt_id)
+        net, proxy = f"ttk-game-{build_id}-{attempt_id}", f"ttk-game-{build_id}-{attempt_id}-proxy"
+        labels = ["--label", f"ttakkari.game-build={build_id}", "--label", f"ttakkari.game-attempt={attempt_id}"]
+        code, out = await self._docker("network", "create", "--internal", *labels, net)
         if code != 0:
             if "already exists" in out:
                 # 같은 이름 자원이 있어도 남의 실행 것은 지우지 않는다(ADR 0066 D3a). 자기 라벨 잔재만 정리 후 재시도.
-                if not await self._resource_owned_by("network", net, build_id):
+                if not await self._resource_owned_by("network", net, build_id, attempt_id):
                     raise IsolationError(
                         f"격리 네트워크 이름이 다른 실행과 겹쳤습니다: {net}. 남의 실행 자원이라 지우지 않았습니다.",
                         "network_conflict",
                     )
-                if await self._resource_owned_by("container", proxy, build_id):
+                if await self._resource_owned_by("container", proxy, build_id, attempt_id):
                     await self._rm(proxy)
                 await self._docker("network", "rm", net)
-                code, out = await self._docker("network", "create", "--internal", "--label", f"ttakkari.game-build={build_id}", net)
+                code, out = await self._docker("network", "create", "--internal", *labels, net)
             if code != 0:
                 raise IsolationError(f"격리 네트워크를 만들지 못했습니다: {out[-200:]}", "network_failed")
         try:
             argv = self._run_argv(
-                name=proxy, build_id=build_id, network="bridge", workdir=None, detach=True, writable_tmp=False,
+                name=proxy, build_id=build_id, attempt_id=attempt_id, network="bridge", workdir=None, detach=True, writable_tmp=False,
                 env={"ALLOW_HOSTS": ",".join(self.registry_hosts)}, command=["node", "/proxy.js"],
             )
             # 프록시 스크립트만 읽기 전용으로 마운트한다.
@@ -397,25 +411,29 @@ class IsolatedBuildRunner:
             url = f"http://{PROXY_ALIAS}:3128"
             yield {"network": net, "HTTPS_PROXY": url, "HTTP_PROXY": url, "npm_config_https_proxy": url, "npm_config_proxy": url}
         finally:
-            await self._rm(proxy)
-            await self._docker("network", "rm", net)
+            if await self._resource_owned_by("container", proxy, build_id, attempt_id):
+                await self._rm(proxy)
+            if await self._resource_owned_by("network", net, build_id, attempt_id):
+                await self._docker("network", "rm", net)
 
     # ---- 단계 실행
     async def run_stage(self, workdir: Path, command: list[str], *, stage: str, build_id: str, network: Network,
-                        timeout: float, env: dict[str, str] | None = None) -> StageResult:
+                        timeout: float, env: dict[str, str] | None = None,
+                        attempt_id: str | None = None) -> StageResult:
         _check_build_id(build_id)
+        attempt_id = self._attempt_id(attempt_id)
         base_env = {"HOME": "/tmp", "CI": "true", "npm_config_update_notifier": "false", "npm_config_cache": "/tmp/npm-cache"}
         base_env.update(env or {})
-        name = f"ttk-game-{build_id}-{stage}"
+        name = f"ttk-game-{build_id}-{attempt_id}-{stage}"
         started = time.monotonic()
         if network == "egress":
-            async with self._egress(build_id) as eg:
+            async with self._egress(build_id, attempt_id) as eg:
                 net = eg.pop("network")
-                argv = self._run_argv(name=name, build_id=build_id, network=net, workdir=workdir, command=command, env={**base_env, **eg})
-                code, timed_out, log = await self._exec(argv, name, timeout)
+                argv = self._run_argv(name=name, build_id=build_id, attempt_id=attempt_id, network=net, workdir=workdir, command=command, env={**base_env, **eg})
+                code, timed_out, log = await self._exec(argv, name, build_id, attempt_id, timeout)
         else:
-            argv = self._run_argv(name=name, build_id=build_id, network="none", workdir=workdir, command=command, env=base_env)
-            code, timed_out, log = await self._exec(argv, name, timeout)
+            argv = self._run_argv(name=name, build_id=build_id, attempt_id=attempt_id, network="none", workdir=workdir, command=command, env=base_env)
+            code, timed_out, log = await self._exec(argv, name, build_id, attempt_id, timeout)
         return StageResult(stage, code, timed_out, time.monotonic() - started, log)
 
     async def build_project(self, source_dir: Path, work_dir: Path, build_id: str, *, build_script: str = "build",

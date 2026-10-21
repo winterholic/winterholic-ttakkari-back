@@ -24,7 +24,7 @@ API/감독 wire protocol1을 보존하고 executor 소유권 capability2를 별�
 별도 `ttakkari executor --activate`가 RunManager·엔진 자식을 소유한다. 실행 중 lease를
 이관하지 않으며, 고아가 의심되면 자동 재실행 대신 기동을 거부한다.
 독립 검증·운영 전환·rollback 조건은 [실행기 설계](run-executor/first-slice.md)를 따른다.
-Qwen·preview·STT·TTS 자식의 API 소유와 기존 drain 안전 검사는 보존한다.
+후속 구현은 [서비스 소유권·manifest·미완료 경계](run-executor/followup.md)에 기록한다. remote API는 Preview와 local STT durable consumer 및 maintenance loop를 시작하지 않고 executor가 기존 queue/작업 목록을 맡는다. TTS는 원문이 API 메모리에 남아 worker를 API가 계속 소유한다. request-time Qwen warm server도 세대별 API 소유를 유지한다. local mode와 기존 API drain 검사는 유지한다.
 
 ## 파일별 책임
 

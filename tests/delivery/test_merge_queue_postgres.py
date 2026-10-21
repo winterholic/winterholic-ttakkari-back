@@ -15,6 +15,7 @@ import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
 from ttakkari.db import sessionmaker
 from ttakkari.delivery.merge_queue import claim_next_change, process_single_change
@@ -72,7 +73,13 @@ async def test_postgres_skip_locked_claims_distinct_rows_across_sessions(session
 
     async with session_factory() as first, session_factory() as second:
         a = await claim_next_change(first)
-        b = await claim_next_change(second)
+        # SKIP LOCKED 가 빠지면 두 번째 claim 이 첫 행의 행 잠금에서 기다린다. 짧은 lock_timeout 으로
+        # 120초 hang 대신 몇 초 안에 실패시킨다(SET LOCAL 이라 이 트랜잭션에만 적용).
+        await second.execute(text("SET LOCAL lock_timeout = '1500ms'"))
+        try:
+            b = await claim_next_change(second)
+        except DBAPIError as exc:
+            pytest.fail(f"second claim blocked on the first claimant's row lock (SKIP LOCKED missing?): {exc.orig!r}")
         assert a is not None and b is not None
         assert a.id != b.id
         # Keep the first transaction's row lock held while the second claim executes.
@@ -116,38 +123,55 @@ async def test_same_target_integrators_serialize_and_second_reads_advanced_ref(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("target_advanced", [False, True], ids=["fast_forward", "non_fast_forward_merge_candidate"])
 async def test_new_session_recovers_after_ref_cas_before_final_database_commit(
-    delivery_repo, tmp_path, session_factory, monkeypatch
+    delivery_repo, tmp_path, session_factory, monkeypatch, target_advanced
 ):
-    """A crash immediately after update-ref leaves durable proof for idempotent recovery."""
+    """A crash right after update-ref must be recovered from the stored proof, not by promoting again.
+
+    The non-fast-forward case is reachable only through the recovery branch: without it, the new session
+    would treat the promoted merge commit as the target, build a *second* merge candidate and move the ref again.
+    """
     change, _ = await _change(delivery_repo, tmp_path, "recover")
+    if target_advanced:
+        (delivery_repo / "other.txt").write_text("unrelated target advance\n", encoding="utf-8")
+        assert run_git(["add", "other.txt"], delivery_repo).returncode == 0
+        assert run_git(["commit", "-m", "unrelated"], delivery_repo).returncode == 0
+
+    stage_calls: list[str] = []
 
     async def passed(name, _candidate, sha):
+        stage_calls.append(name)
         return True, f"{name} passed for {sha}", None
 
     import ttakkari.delivery.merge_queue as queue
     real_run_git = queue.run_git
-    crashed = False
-    cas_calls = 0
+    update_refs: list[tuple[str, ...]] = []
+    crash_armed = True
 
     def fail_after_cas(args, cwd):
-        nonlocal cas_calls, crashed
+        nonlocal crash_armed
         result = real_run_git(args, cwd)
         if args and args[0] == "update-ref":
-            cas_calls += 1
-        if args and args[0] == "update-ref" and not crashed:
-            crashed = True
-            raise RuntimeError("injected crash after Git ref CAS")
+            update_refs.append(tuple(args))
+            if crash_armed:
+                crash_armed = False
+                raise RuntimeError("injected crash after Git ref CAS")
         return result
 
+    # 복구 구간까지 patch 를 유지해 복구가 update-ref 를 다시 부르는지 센다.
     monkeypatch.setattr(queue, "run_git", fail_after_cas)
     with pytest.raises(RuntimeError, match="injected crash"):
         async with session_factory() as db:
             row = await db.get(ChangeSet, change.id)
             await process_single_change(db, row, delivery_repo, passed, passed)
-    monkeypatch.setattr(queue, "run_git", real_run_git)
 
-    promoted = run_git(["rev-parse", "main"], delivery_repo).stdout.strip()
+    promoted = real_run_git(["rev-parse", "main"], delivery_repo).stdout.strip()
+    parents = real_run_git(["rev-list", "--parents", "-n", "1", promoted], delivery_repo).stdout.split()[1:]
+    assert len(update_refs) == 1 and update_refs[0][2] == promoted
+    assert (len(parents) == 2) is target_advanced  # merge candidate only when the target had advanced
+    stages_before_recovery = len(stage_calls)
+
     async with session_factory() as fresh:
         persisted = await fresh.scalar(select(ChangeSet).where(ChangeSet.id == change.id))
         assert persisted is not None and persisted.candidate_sha == promoted
@@ -155,9 +179,16 @@ async def test_new_session_recovers_after_ref_cas_before_final_database_commit(
         recovered = await process_single_change(fresh, persisted, delivery_repo, passed, passed)
         assert recovered.success and recovered.status == ChangeSetStatus.merged
         assert recovered.rebased_sha == promoted
+        assert "Recovered" in recovered.reason
         assert persisted.candidate_worktree_path is None
-        assert cas_calls == 1  # Recovery observes the already-promoted ref; it does not promote twice.
-    assert run_git(["rev-parse", "main"], delivery_repo).stdout.strip() == promoted
+        await fresh.commit()
+
+    assert len(update_refs) == 1, f"recovery promoted again: {update_refs}"
+    assert len(stage_calls) == stages_before_recovery, "recovery re-ran validation instead of using bound proof"
+    assert real_run_git(["rev-parse", "main"], delivery_repo).stdout.strip() == promoted
+    async with session_factory() as check:
+        final = await check.scalar(select(ChangeSet).where(ChangeSet.id == change.id))
+        assert final.status == ChangeSetStatus.merged and final.candidate_sha == promoted
 
 
 @pytest.mark.asyncio

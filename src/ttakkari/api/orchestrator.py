@@ -568,6 +568,7 @@ async def orchestrator_stop_all(
         db,
         pool=orch.pool,
         workspace_id=orch.workspace_id,
+        session_id=None,
         reason=reason,
         actor_id=str(sid),
         receipt_id=(body.request_id if body else uuid.uuid4()),

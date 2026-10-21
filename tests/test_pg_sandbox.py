@@ -502,3 +502,12 @@ def test_cluster_recreation_updates_port(tmp_path, monkeypatch):
     assert res2["kwargs"]["port"] == 55432
 
     cluster2.stop()
+
+
+def test_run_failure_exposes_stderr_in_exception_message():
+    """initdb 가 실패해도 원인(stderr)이 예외 메시지에 남는다. 기존 CalledProcessError 처리와는 호환된다."""
+    with pytest.raises(subprocess.CalledProcessError) as exc:
+        pg_sandbox._run(["sh", "-c", "echo 'shmget: No space left on device' >&2; exit 3"])
+
+    assert exc.value.returncode == 3
+    assert "shmget: No space left on device" in str(exc.value)

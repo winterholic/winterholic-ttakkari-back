@@ -251,6 +251,15 @@ class RunManager:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
 
+    async def _record_process_identity(self, run: Run, pid: int) -> None:
+        """전역 중지가 PID 재사용을 배제할 수 있도록 시작 시각을 남긴다. 조회가 막히면 비워 두고(안전 종료 불가로 처리) 진행한다.
+
+        테스트가 가짜 proc 을 쓰는 경로는 이 메서드를 대체해 호스트 프로세스 조회를 끊는다.
+        """
+        from ttakkari.runs.agent_control import _process_identity
+        if identity := await _process_identity(pid):
+            run.pid_started_at = float(identity[0])
+
     async def dispatch(self, session_id: uuid.UUID) -> uuid.UUID | None:
         """세션 대기열의 다음 Run 을 시작한다. 엔진 대화는 순서대로만 이어갈 수 있어 세션당 하나씩만 돌린다.
 
@@ -1536,9 +1545,7 @@ class RunManager:
         if h:
             h.proc = proc
         run.pid = proc.pid
-        from ttakkari.runs.agent_control import _process_identity
-        if process_identity := await _process_identity(proc.pid):
-            run.pid_started_at = float(process_identity[0])
+        await self._record_process_identity(run, proc.pid)
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
         heartbeat_task: asyncio.Task | None = None
         timed_out = False

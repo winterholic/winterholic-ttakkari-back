@@ -55,16 +55,22 @@ _REPORT_START = re.compile(r"(?m)(?=^\[작업 보고\])")
 
 
 def fence_keys(pool: str, workspace_id: uuid.UUID | None, session_id: uuid.UUID | None = None) -> list[str]:
-    """Return stable locks shared by stop, enqueue and dispatch for the same authorization scope."""
+    """Return stable locks shared by stop, enqueue and dispatch for the same authorization scope.
+
+    Lock order contract (deadlock avoidance): a transaction that needs both locks the ChatSession row first
+    and the fence rows (sorted by key) after it. dispatch and queue_run follow it.
+    """
     keys: list[str] = []
     if pool == "all":
         keys.append("pool:all")
+    elif pool == "work":
+        # 회사 풀은 워크스페이스가 경계다. 풀 전체 키(pool:work)를 함께 세우면 한 워크스페이스 중지가
+        # 다른 회사 워크스페이스의 후속 Run 까지 막는다. 풀 전체 정지는 pool:all 만 쓴다.
+        if workspace_id is None:
+            raise ValueError("work scope requires workspace_id")
+        keys.append(f"workspace:{workspace_id}")
     else:
         keys.append(f"pool:{pool}")
-        if pool == "work":
-            if workspace_id is None:
-                raise ValueError("work scope requires workspace_id")
-            keys.append(f"workspace:{workspace_id}")
     if session_id is not None:
         keys.append(f"session:{session_id}")
     return sorted(set(keys))
@@ -98,22 +104,29 @@ async def dispatch_is_fenced(db: AsyncSession, session_id: uuid.UUID) -> bool:
     return any(row.paused for row in rows)
 
 
+def _read_process_identity(pid: int) -> tuple[int, int, str] | None:
+    out = subprocess.run(
+        ["ps", "-o", "lstart=", "-o", "pgid=", "-o", "command=", "-p", str(pid)],
+        capture_output=True, timeout=3, check=False,
+    )
+    if out.returncode != 0:
+        return None
+    fields = out.stdout.decode(errors="replace").strip().split(None, 7)
+    if len(fields) < 8:
+        return None
+    started = time.mktime(time.strptime(" ".join(fields[:6]), "%a %b %d %H:%M:%S %Y"))
+    return int(started), int(fields[6]), fields[7]
+
+
 async def _process_identity(pid: int) -> tuple[int, int, str] | None:
-    """Read only a process identity tuple; command text stays in memory and is never logged."""
+    """Read only a process identity tuple; command text stays in memory and is never logged.
+
+    asyncio 서브프로세스 API 대신 별도 스레드의 subprocess.run 을 쓴다. Run 시작 경로에서 불리므로, 엔진 spawn 을
+    asyncio.create_subprocess_exec 로 가로채는 테스트의 가짜 proc 이 이 조회에 섞이지 않게 한다.
+    """
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "ps", "-o", "lstart=", "-o", "pgid=", "-o", "command=", "-p", str(pid),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=3)
-        if proc.returncode != 0:
-            return None
-        fields = out.decode(errors="replace").strip().split(None, 7)
-        if len(fields) < 8:
-            return None
-        started = time.mktime(time.strptime(" ".join(fields[:6]), "%a %b %d %H:%M:%S %Y"))
-        return int(started), int(fields[6]), fields[7]
-    except (OSError, ValueError, TimeoutError, subprocess.SubprocessError):
+        return await asyncio.to_thread(_read_process_identity, pid)
+    except (OSError, ValueError, subprocess.SubprocessError):
         return None
 
 

@@ -640,3 +640,44 @@ async def test_schedule_partial_stop_has_partial_status(client, auth, make_dir):
         assert await complete_schedule(db, item.id, result=result, owner_id="fixture-owner", attempt=1)
         await db.commit()
         assert (await get_schedule(db, item.id)).status == "partial"
+
+
+async def test_same_session_submit_and_dispatch_lock_session_before_fences(client, auth, make_dir, monkeypatch):
+    """회귀: 같은 세션의 request_key 제출(queue_run)과 dispatch 는 세션 행 → fence 행 순으로 잠가 교착하지 않는다.
+
+    예전에는 queue_run 이 fence 행을 잡고 세션 행을 기다리고, dispatch 는 세션 행을 잡고 fence 행을 기다렸다.
+    queue_run 이 fence 를 잡은 시점에 dispatch 를 끼워 넣어 그 교차를 결정적으로 만든다.
+    """
+    from ttakkari.api.sessions import queue_run
+    from ttakkari.runs import agent_control
+
+    orch, _ = await create_session(client, auth, make_dir)
+    sid = uuid.UUID(orch["id"])
+    queue_holds_fences = asyncio.Event()
+    release_queue = asyncio.Event()
+    queue_task: asyncio.Task | None = None
+    real_lock_fences = agent_control.lock_fences
+
+    async def gated_lock_fences(db, keys):
+        rows = await real_lock_fences(db, keys)
+        if asyncio.current_task() is queue_task and not queue_holds_fences.is_set():
+            queue_holds_fences.set()
+            await release_queue.wait()
+        return rows
+
+    async def submit():
+        async with sessionmaker()() as db:
+            s = await db.get(ChatSession, sid)
+            return await queue_run(db, s, "deadlock probe", request_key="deadlock-probe")
+
+    monkeypatch.setattr(agent_control, "lock_fences", gated_lock_fences)
+    queue_task = asyncio.create_task(submit())
+    await asyncio.wait_for(queue_holds_fences.wait(), 10)
+    dispatch_task = asyncio.create_task(manager.dispatch(sid))
+    await asyncio.sleep(1.5)  # PG deadlock_timeout(1s) 이후에도 교착이 없는지 보려면 이보다 길게 겹쳐야 한다
+    release_queue.set()
+
+    done = await asyncio.wait_for(asyncio.gather(queue_task, dispatch_task, return_exceptions=True), 20)
+    errors = [d for d in done if isinstance(d, BaseException)]
+    assert not errors, f"같은 세션 제출과 dispatch 가 교착했다: {errors!r}"
+    assert done[0].status in (RunStatus.queued, RunStatus.running, RunStatus.succeeded)

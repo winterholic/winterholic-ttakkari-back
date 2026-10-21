@@ -482,6 +482,8 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/system/qwen-worker"): "owner-plain",
     ("GET", "/api/system/resources"): "owner-plain",
     ("GET", "/api/system/resources/history"): "owner-plain",
+    ("GET", "/api/system/stop-receipts"): "owner-plain",
+    ("GET", "/api/system/stop-receipts/{receipt_id}"): "owner-plain",
     ("GET", "/api/tasks/active"): "owner-plain",
     ("GET", "/api/tasks/library"): "owner-plain",
     ("GET", "/api/tasks/search"): "owner-plain",

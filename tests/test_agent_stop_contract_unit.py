@@ -26,10 +26,13 @@ def test_stop_fence_keys_keep_personal_and_workspaces_separate():
     personal = fence_keys("personal", None)
     assert f"workspace:{workspace_a}" in work_a
     assert f"workspace:{workspace_b}" in work_b
-    assert "pool:work" in work_a and "pool:work" in work_b
     assert "pool:personal" in personal
     assert "pool:all" not in work_a + work_b + personal
-    assert set(work_a).isdisjoint(set(work_b) - {"pool:work"})
+    # 한 워크스페이스 중지가 다른 회사 워크스페이스나 개인 풀의 fence 를 공유하면 안 된다.
+    assert "pool:work" not in work_a + work_b
+    assert set(work_a).isdisjoint(work_b)
+    assert set(work_a).isdisjoint(personal) and set(work_b).isdisjoint(personal)
+    assert set(fence_keys("work", workspace_a, uuid.uuid4())) - set(work_a)  # 세션 키만 추가된다
 
 
 def test_only_exact_post_stop_epoch_snapshot_is_dispatchable():

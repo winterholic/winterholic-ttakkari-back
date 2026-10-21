@@ -207,6 +207,9 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
     if s.engine == "muse" and selected_model and selected_model not in get_settings().engine_models.get("muse", []):
         raise HTTPException(422, "Muse Code에서 지원하는 코딩 모델을 선택하세요.")
     from ttakkari.runs.agent_control import fence_keys, lock_fences
+    # 락 순서는 manager.dispatch 와 같다: 세션 행 먼저, 그다음 fence 행. 반대로 잡으면 같은 세션의 동시 제출과
+    # dispatch 가 서로의 락을 기다려 교착한다. 같은 세션 제출을 직렬화하므로 request_key 중복 판정도 이 락 아래에서 한다.
+    await db.execute(select(ChatSession.id).where(ChatSession.id == s.id).with_for_update())
     fences = await lock_fences(db, fence_keys(s.pool, s.workspace_id, s.id) + ["pool:all"])
     if any(fence.stopping for fence in fences):
         raise HTTPException(status.HTTP_409_CONFLICT, "전역 중지가 집행 중입니다. 완료된 뒤 새 작업을 제출하세요.")
@@ -221,7 +224,6 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
             fence.updated_at = utcnow()
     run_fence_epochs = {fence.scope_key: fence.epoch for fence in fences}
     if request_key:
-        await db.scalar(select(ChatSession.id).where(ChatSession.id == s.id).with_for_update())
         existing = await db.scalar(select(Run).where(Run.session_id == s.id, Run.request_key == request_key))
         if existing:
             if (existing.prompt != prompt or existing.context_artifact_ids != [str(a) for a in context_artifact_ids or []]

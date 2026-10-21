@@ -282,15 +282,31 @@ class Cluster:
             _cluster = None
 
 
+class ClusterCommandError(subprocess.CalledProcessError):
+    """initdb/pg_ctl/createdb 실패. 표준 CalledProcessError 문구에는 stderr 가 없어 원인이 가려지므로 함께 드러낸다."""
+
+    def __str__(self) -> str:
+        detail = "\n".join(
+            f"{name}: {text.strip()[-1500:]}"
+            for name, text in (("stderr", self.stderr), ("stdout", self.stdout))
+            if isinstance(text, str) and text.strip()
+        )
+        base = super().__str__()
+        return f"{base}\n{detail}" if detail else base
+
+
 def _run(cmd: list[str]) -> subprocess.CompletedProcess:
     # macOS 에서 postmaster 는 유효한 로케일이 없으면 "became multithreaded during startup" 으로 죽는다.
-    return subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        check=True,
-        env={**os.environ, "LC_ALL": "en_US.UTF-8", "LANG": "en_US.UTF-8"},
-    )
+    try:
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "LC_ALL": "en_US.UTF-8", "LANG": "en_US.UTF-8"},
+        )
+    except subprocess.CalledProcessError as e:
+        raise ClusterCommandError(e.returncode, e.cmd, e.stdout, e.stderr) from e
 
 
 def start_cluster() -> Cluster:

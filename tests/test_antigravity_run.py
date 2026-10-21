@@ -138,6 +138,8 @@ async def test_termination_permission_error_still_removes_temporary_mcp_token_fi
     monkeypatch.setattr(manager, "_commit", no_op)
     monkeypatch.setattr(manager, "_pump", no_op)
     monkeypatch.setattr(manager, "_terminate", denied)
+    # 가짜 pid(12345)는 호스트 프로세스 조회 대상이 아니다. 시작 시각 기록(전역 중지용 PID 식별)은 주입 지점으로 끊는다.
+    monkeypatch.setattr(manager, "_record_process_identity", no_op)
     try:
         with pytest.raises(PermissionError, match="process-group signal denied"):
             await manager._attempt(

@@ -46,7 +46,7 @@ job의 envelope에 `extensions["collector:request"]`가 있다. 없으면 `sourc
 ## 원문 blob 용량·중단 복구 (2026-10-21 재작업)
 
 - `collector_blob_cap_bytes`는 collector 전용 blob root 전체에 적용되는 전역 cap이다(현재 기본 20 GiB). tenant 별 quota가 아니다. cap 단위는 root 안의 실제 raw blob/staging 파일 bytes이며, DB `collector_items`가 참조하는 hash 합계와 다르다. 중복 SHA는 파일 하나만 계산하고 DB에 아직 연결되지 않은 내구 blob도 계산한다. `.lineage` 메타데이터와 lock 파일은 raw-byte cap에서 제외한다.
-- `FileBlobStore.put`과 usage scan은 root 내부 `.quota.lock`의 OS `flock`을 잡는다. 교차 프로세스 writer가 같은 실제 사용량을 보고 직렬로 cap을 검사하며, 프로세스 종료 시 커널이 lock을 해제한다. quota 실패는 `storage_cap_reached` / `retry_wait`와 경고 로그를 남긴다.
+- `FileBlobStore.put`과 usage scan은 root 내부 `.quota.lock`의 OS `flock`을 잡는다. 교차 프로세스 writer가 같은 실제 사용량을 보고 직렬로 cap을 검사하며, 프로세스 종료 시 커널이 lock을 해제한다. quota 실패는 `storage_cap_reached` / `retry_wait`와 경고 로그를 남긴다. 한 page 안에서 이미 준비된 prefix는 먼저 fenced DB transaction으로 commit하고, 용량 거절된 URL과 뒤쪽 frontier는 남겨 retry 때 건너뛰지 않는다.
 - 순서는 provenance manifest fsync → SHA staging file fsync → 같은 디렉터리 원자 replace와 디렉터리 fsync → 이후 `JobContext.commit_work` DB transaction이다. DB/file transaction을 원자화하지 않는다.
 - 중단점: manifest만 남으면 raw가 없으므로 fetch 재시도 대상이다. 불완전 staging은 다음 lock 소유자가 hash 불일치를 확인해 staging만 제거하고, 완전한 staging은 최종 blob으로 승격한다. 최종 blob이 DB commit보다 먼저 남으면 삭제하지 않으며 raw bytes cap에 계속 포함하고 `.lineage`의 tenant/scope/job/item/source/URL/SHA로 재처리 lineage를 조회할 수 있다. 같은 요청 재시도는 동일 SHA 파일을 재사용한다. DB commit 뒤에도 manifest는 감사·복구 자료로 남는다.
 - 저장소는 collector 전용 root만 순회하며 symlink와 비정규 파일을 거부한다. 파일 삭제 기반 orphan sweep은 하지 않는다. `get()`은 매번 SHA를 확인하고, 재 `put`은 크기가 같아도 SHA를 검사해 손상 파일을 완전한 staged 내용으로 원자 교체한다.

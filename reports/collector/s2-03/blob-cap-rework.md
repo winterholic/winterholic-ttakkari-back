@@ -19,7 +19,7 @@
 | staging fsync 뒤, final rename 전 | 재개 시 hash가 맞는 staging을 최종 SHA 경로로 승격한다. bytes와 manifest를 보존한다. |
 | final rename 뒤, DB commit 전/rollback/fence/cancel/crash | 최종 blob과 manifest를 유지한다. 실제 raw bytes cap에 포함한다. retry는 같은 SHA를 재사용한다. |
 | DB commit 뒤 | item 원장은 기존 DB transaction으로 저장되고 manifest는 감사·복구 자료로 남는다. |
-| quota 초과 | 추가 raw 파일을 쓰지 않고 job을 `retry_wait/storage_cap_reached`로 둔다. 원래 frontier는 DB commit하지 않는다. 앞서 준비한 raw가 있으면 manifest와 blob이 남고 cap에 포함된다. |
+| quota 초과 | 추가 raw 파일을 쓰지 않고 job을 `retry_wait/storage_cap_reached`로 둔다. 같은 page에서 이미 준비된 prefix만 DB transaction으로 commit하고, 거절된 entry와 뒤쪽은 frontier에 남긴다. prefix commit 자체가 rollback/fence되면 manifest와 blob으로 복구 근거를 남긴다. |
 
 ## 수정 파일
 
@@ -46,7 +46,7 @@ rc=0
 55 passed, 68 subtests passed in 0.94s
 ```
 
-포함한 직접 관측: put 후 synthetic DB rollback exception에서도 blob+lineage 보존, final rename failure 후 reopen/stage promote, subprocess `os._exit(73)` 직후 reopen 및 kernel lock 회수, 서로 다른 동시 cross-process writer 중 한 건만 cap 내 저장, 동일 SHA dedupe, 같은 크기 손상 복구, repair 원자 교체, stale partial stage, cap 경계, root symlink 거부, DB row 없이 orphan이 `_storage_full()`에 반영됨.
+포함한 직접 관측: put 후 synthetic DB rollback exception에서도 blob+lineage 보존, final rename failure 후 reopen/stage promote, subprocess `os._exit(73)` 직후 reopen 및 kernel lock 회수, 서로 다른 동시 cross-process writer 중 한 건만 cap 내 저장, 동일 SHA dedupe, 같은 크기 손상 복구, repair 원자 교체, stale partial stage, cap 경계, root symlink 거부, DB row 없이 orphan이 `_storage_full()`에 반영됨, quota pause 시 성공 prefix만 진행되고 거절 entry/tail은 frontier에 유지됨.
 
 ```text
 ruff check <변경 collector 경로와 관련 unit tests>

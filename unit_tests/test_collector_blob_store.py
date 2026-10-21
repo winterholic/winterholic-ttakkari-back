@@ -237,3 +237,24 @@ async def test_pipeline_cap_precheck_uses_physical_root_bytes_not_db_rows(tmp_pa
     monkeypatch.setattr(pipeline, "get_deps", lambda: SimpleNamespace(blobs=store))
 
     assert await pipeline._storage_full() is True
+
+
+def test_quota_pause_commits_only_prepared_prefix_and_keeps_rejected_tail():
+    entries = [pipeline._entry(f"https://example.test/{name}", 0) for name in ("first", "denied", "tail")]
+    cursor = {
+        "v": 1,
+        "frontier": entries,
+        "seen": [],
+        "processed": 0,
+        "discovered": 3,
+        "counts": dict.fromkeys(pipeline.COUNT_KEYS, 0),
+    }
+    prefix = entries[:1]
+    prepared = [pipeline.Prepared(prefix[0], uuid.uuid4(), prefix[0]["u"], "a" * 64)]
+    item = SimpleNamespace(kind="document", status="accepted")
+
+    advanced = pipeline._advance(cursor, prefix, prepared, [item], spec=None, req=None)
+
+    assert advanced["frontier"] == entries[1:]
+    assert advanced["processed"] == 1
+    assert advanced["counts"]["accepted"] == 1

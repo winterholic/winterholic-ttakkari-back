@@ -649,6 +649,22 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                     "collector job paused at raw blob quota job_id=%s used_bytes=%d requested_bytes=%d cap_bytes=%d",
                     job.id, exc.used_bytes, exc.requested_bytes, exc.cap_bytes,
                 )
+                if prepared:
+                    # Commit only the fully prepared prefix, leaving the rejected entry and tail in the frontier.
+                    quota_page = page[:len(prepared)]
+                    quota_result: dict[str, Any] = {}
+                    now = deps.clock()
+
+                    async def commit_prefix(
+                        db, _cursor=cursor, _page=quota_page, _prepared=prepared, _now=now, _result=quota_result
+                    ):
+                        return await _finalize_page(
+                            db, job, spec, label, req, _cursor, _page, _prepared, _now, _result
+                        )
+
+                    if await ctx.commit_work(commit_prefix, stage=STAGE_PROCESS) == "cancelled":
+                        return HandlerResult("failed", {"code": "cancelled"})
+                    cursor = quota_result["cursor"]
                 return HandlerResult(
                     "retry_wait",
                     {"code": "storage_cap_reached", **_summary(cursor), "used_bytes": exc.used_bytes,

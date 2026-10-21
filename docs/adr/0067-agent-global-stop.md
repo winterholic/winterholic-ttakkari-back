@@ -1,6 +1,6 @@
 # ADR 0067. 세션 소유권과 배포 세대를 넘는 에이전트 전역 중지
 
-- 상태: 최신 feature SHA `efadf5d58ece5219b098f90add3bca1a4aff4a97`에서 부분 검증. 구세대 report 오탐 및 partial 집계 수정은 feature 원격에 push됨; DB 통합 재검증 대기. main 반영 및 배포 예약은 미완료. 이 문서는 사용자 요청의 설계를 기록하며 별도 사용자 승인 기록을 뜻하지 않는다.
+- 상태: DB 통합 재작업을 반영한 코드 SHA `19936155273127e52adc38c6320f3916dfcd00c4`에서 stop 통합 테스트는 통과했으나 전체 gate는 미통과(§7). main 병합과 배포는 하지 않았고 독립 검증 뒤 기획이 진행한다. 이 문서는 사용자 요청의 설계를 기록하며 별도 사용자 승인 기록을 뜻하지 않는다.
 - 요청: 새벽에 "에이전트 전부 중지"를 시켰을 때 AIP 작업 세션만 "다른 세션이 끼어들 수 없다"며 남았다. 소유 오케스트레이터와 무관하게 모든 활성·대기 Run 을 멈춘다.
 
 ## 1. 원인
@@ -55,3 +55,26 @@
 - 원격 feature branch push 성공. 원격 main push의 pre-push gate는 Codex 명령 sandbox에서 uv cache 경로 접근 `Operation not permitted (os error 1)`로 `uv sync` 단계에서 멈췄다. 테스트 우회는 하지 않았다.
 - 기존 다른 SHA 예약 `d767a2cc-abcc-4f87-8309-6f0de67e4167`가 조회 시 `testing`이어서 통합 DB 테스트나 무거운 게이트를 겹쳐 시작하지 않았다. 수정 SHA 게이트/배포는 예약되지 않았다.
 - 이 수정 SHA의 DB 통합 반례 5건, 교차세대 lease 실제 집행, scope/token, catch-up/중복 방지 동적 회귀는 미확인이다. 운영 전체 중지와 취소된 05:00 예약은 실행/변경하지 않았다. 위 근거 전까지 최종 독립 통과 판정을 내리지 않는다.
+
+## 6. DB 통합 재작업 (2026-10-21, 코드 SHA `1993615`)
+`2cbe1f1` 은 비교 기준 `fe0386a` 에서 통과하던 stop 통합 테스트가 11 failed / 1 error 였다. 원인과 조치:
+
+1. `POST /api/orchestrator/stop-all` 500: `_stop_with_durable_receipt` 의 필수 키워드 `session_id` 를 호출부가 넘기지 않아 TypeError. `session_id=None` 전달.
+2. work 풀 fence 과확장: `fence_keys("work", ws)` 가 `pool:work` 와 `workspace:<id>` 를 함께 반환해 한 워크스페이스 stop 이 모든 회사 워크스페이스의 후속 Run 을 409 로 막았다. work 범위는 `workspace:<id>`(+세션 키)만 쓴다. 풀 전체 정지는 `pool:all` 뿐이다. 단위 테스트가 `pool:work` 를 기대하던 것도 경계 분리 단언으로 바꿨다.
+3. 락 순서 교착: `queue_run` 은 fence 행 → (request_key 가 있으면) 세션 행, `dispatch` 는 세션 행 → fence 행 순으로 잠갔다. 같은 세션에 대한 request_key 제출과 dispatch 가 겹치면 서로를 기다린다. `lock_fences` 호출 지점(queue_run, dispatch, resume_interrupted, stop, `_complete_stop`)과 세션 행 잠금 지점(agent.py share, desk `_delegate`, lead_archive, `_collect_artifacts`)을 코드에서 추적해 "세션 행 먼저, fence 행은 키 정렬 순서" 로 통일했다. queue_run 이 세션 행을 먼저 잠그고, 같은 세션 제출을 직렬화하므로 request_key 중복 판정도 이 락 아래에서 한다. 회귀 테스트 `test_same_session_submit_and_dispatch_lock_session_before_fences` 는 queue_run 이 fence 를 잡은 시점에 dispatch 를 끼워 교차를 결정적으로 만든다. 이전 순서로 되돌리면 `deadlock detected` 로 실패하고 수정 후 통과하는 것을 둘 다 실행해 확인했다.
+4. 새 라우트 `GET /api/system/stop-receipts`, `/{receipt_id}` 를 `ROUTE_SCOPE` 에 `owner-plain` 으로 분류했다(`User` 의존성, 소유자 전용).
+5. Run 시작 경로의 `ps` 조회: antigravity 종료 테스트가 `asyncio.create_subprocess_exec` 를 가짜 spawn 으로 바꿔 둬서 PID 식별용 `ps` 호출이 가짜 proc 을 받는다. 기능 의도(시작 시각 기록)는 유지하되 `_process_identity` 가 별도 스레드의 `subprocess.run` 을 쓰도록 바꿔 asyncio spawn 패치와 분리하고, `RunManager._record_process_identity` 주입 지점을 둬 가짜 pid 를 쓰는 테스트가 명시적으로 끊게 했다.
+6. 테스트 격리: 예약 루프 경합으로 `stop_all` 예약 테스트 2건이 다음 테스트의 TRUNCATE 와 교착하던 문제는 `due_at=+3600s` 로 해결했다(`ccaae83`, 구현 변경 없음).
+7. 진단성: `tests/pg_sandbox._run` 이 `CalledProcessError` 하위 `ClusterCommandError` 로 stderr/stdout 꼬리를 예외 메시지에 싣는다. 기존 `except CalledProcessError` 처리와 호환된다.
+
+범위 밖·미검증: 0062 는 빈 DB 에서 `0061 → 0062 → 0061 → 0062` 왕복만 확인했다(기존 데이터 보존, 세대 공존은 별도 검증 필요). 교차세대 lease 실집행과 운영 중지는 실행하지 않았다.
+
+## 7. 전체 게이트 결과 및 후속 조치 (2026-10-21)
+`scripts/verify_deploy_gate.sh --full` 을 코드 SHA `19936155273127e52adc38c6320f3916dfcd00c4` 에서 실행했다. `/private/tmp/stop-rework-gate-full.log` 기준 `13 failed, 3354 passed, 15 skipped, 2 xfailed, 3 errors, 4952 subtests passed in 3435.87s`. 전체 게이트는 **실패**이며 병합·배포 준비 완료로 판정하지 않는다.
+
+- 실패 13건 중 10건은 Phaser 게임 빌드/격리/서빙 경로에서 120초 pytest timeout 또는 게임 서버 연결 실패였다. 2건은 generation process 테스트에서 readiness 로그가 비어 있었다. 1건은 `unit_tests/test_remote_desktop.py::test_binary_transport_and_socket_cleanup` 에서 `ConnectionResetError` 였다. 공통 원인은 이 로그만으로 확인되지 않았다. 게이트 뒤 호스트 자원 측정에서 OrbStack Helper CPU 101.6%, swap 사용 97.6%였지만 게이트 시각의 측정이 아니므로 원인으로 단정하지 않는다.
+- 오류 3건은 `test_meeting_uses_ordered_models_and_falls_back_on_runtime_limit[3]`, `test_reset_my_context_during_turn_applies_after_it`, `test_reroute_cannot_escalate_without_new_reason` 의 DB setup에서 `_clean` TRUNCATE deadlock이었다. `tests/conftest.py` 에서 이 특정 deadlock만 최대 6회 재시도하는 변경이 작업트리에 추가됐으나, 아래 실행 환경 제약으로 DB 회귀 확인은 못 했다.
+- 재검증 시도 `.venv/bin/python -m pytest -q --timeout=180 tests/test_agent_stop_all.py ...` 는 Codex 명령 샌드박스의 `initdb` 단계에서 `shmget ... Operation not permitted` 로 중단됐다. 이는 해당 샌드박스의 결과이며 호스트 실행 불가를 뜻하지 않는다. 같은 조건으로 반복하거나 샌드박스를 우회하지 않았다.
+- 정적 확인에서 변경 Python 파일 Ruff는 `All checks passed!`, `compileall` 은 성공했다. `--noconftest` 묶음은 `51 passed, 2 errors`; 두 오류는 `tests/conftest.py` 가 제공하는 `make_git_dir` fixture가 의도적으로 제외되어 생긴 실행 방식 한계이며 기능 실패로 세지 않는다. stop DB 통합/API tests와 cleanup retry는 재실행이 필요하다.
+
+다음 검증 단계: cleanup 재시도 변경을 포함한 코드에서 stop DB 통합/API 테스트와 전체 게이트를 허용된 호스트 테스트 환경에서 다시 실행하고, 앞선 13건이 재현되는지 실패별로 확인한다. 전체 게이트가 모두 통과하기 전까지 이 브랜치를 병합·배포 후보로 표시하지 않는다.

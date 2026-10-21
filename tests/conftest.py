@@ -87,6 +87,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from ttakkari.config import get_settings
@@ -137,13 +138,23 @@ async def _clean(_schema_and_app):
     await usage_store.flush()
     usage_store.reset()
     names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
-    async with sessionmaker()() as db:
-        # kb_* 원장은 BEFORE TRUNCATE 트리거로 TRUNCATE 가 막혀 있다(Alembic 0058). 시험 초기화만 트리거를 건너뛴다.
-        await db.execute(text("SET session_replication_role = 'replica'"))
-        await db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
-        await db.execute(text("SET session_replication_role = 'origin'"))
-        db.add(Credential(id=1, password_hash=hash_password(PASSWORD)))
-        await db.commit()
+    # NOTE: 직전 시험에서 새어 나온 백그라운드 dispatch/queue_run 은 세션 행 → fence 행 순으로 잠근다. TRUNCATE 는 목록 앞쪽의
+    # agent_stop_fences 를 먼저 ACCESS EXCLUSIVE 로 잡고 sessions 를 기다리므로 두 트랜잭션이 순환할 수 있다. 운영에는 TRUNCATE 가
+    # 없고, PG 가 한쪽을 희생자로 골라 롤백하므로(백그라운드 쪽은 어차피 시험 사이에 버려진다) 짧게 쉬고 다시 시도한다.
+    for attempt in range(6):
+        try:
+            async with sessionmaker()() as db:
+                # kb_* 원장은 BEFORE TRUNCATE 트리거로 TRUNCATE 가 막혀 있다(Alembic 0058). 시험 초기화만 트리거를 건너뛴다.
+                await db.execute(text("SET session_replication_role = 'replica'"))
+                await db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+                await db.execute(text("SET session_replication_role = 'origin'"))
+                db.add(Credential(id=1, password_hash=hash_password(PASSWORD)))
+                await db.commit()
+            break
+        except DBAPIError as exc:
+            if "deadlock detected" not in str(exc) or attempt == 5:
+                raise
+            await asyncio.sleep(0.3)
     limiter.reset()
     profiles.reset_cooldowns()
     AGENT_LOG.unlink(missing_ok=True)

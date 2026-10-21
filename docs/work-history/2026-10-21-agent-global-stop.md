@@ -65,3 +65,11 @@
 - 해당 gate는 이후 `failed`로 끝났다. `ops_deploy_log` 결과는 `3360 passed, 8 skipped, 2 xfailed, 4952 subtests passed in 1356.95s`였고 test assertion 실패는 로그에 나타나지 않았다. deploy reservation 오류는 `schema contract requires an idle migration/bootstrap; active work preserved`이며 pytest stage로 분류됐다. reservation 종료 후에도 `server_resources`가 별도 python3.13/Postgres 부하를 보여 DB 검증은 시작하지 않았다. 이를 특정 W1/세션으로 귀속하지 않았다.
 - 코드와 테스트가 동일한 feature 수정 SHA `efadf5d58ece5219b098f90add3bca1a4aff4a97`에 generation contract/head 및 migration online allowlist 정적 테스트 3건을 `pytest --noconftest`로 실행해 `3 passed in 0.44s`를 확인했다. 이후 기록 전용 커밋을 추가했으며, 이 결과는 실제 schema migration 또는 온라인 세대 동작 검증을 대신하지 않는다.
 - 현재 독립 판정은 부분 검증이다. 0062 upgrade/downgrade, 기존 행 보존, generation online compatibility; lease/process, fence/dispatch/restart, receipt, partial schedule, pool/workspace/worker token, 교차세대 lease, catch-up/중복방지는 새 SHA에서 미검증이다. 운영 중지와 활성 Run 취소, 취소된 05:00 예약 접근은 하지 않았다.
+
+## ADR 0067 전체 게이트 후속 (2026-10-21)
+- `scripts/verify_deploy_gate.sh --full`, 코드 SHA `19936155273127e52adc38c6320f3916dfcd00c4`: `13 failed, 3354 passed, 15 skipped, 2 xfailed, 3 errors, 4952 subtests passed in 3435.87s`. 원시 로그 `/private/tmp/stop-rework-gate-full.log`.
+- 13 실패: Phaser 게임 빌드·격리·서빙 10건(120초 timeout 또는 게임 서버 연결 실패), generation process readiness 2건(로그 비어 있음), remote desktop socket cleanup 1건(`ConnectionResetError`). 로그에서 공통 원인은 확인하지 못했다. 게이트 뒤 호스트 자원 측정에서 OrbStack Helper CPU 101.6%, swap 97.6%였으나 게이트 당시 측정은 아니라 원인으로 단정하지 않는다.
+- 3 setup 오류는 `_clean` TRUNCATE deadlock이다: `test_meeting_uses_ordered_models_and_falls_back_on_runtime_limit[3]`, `test_reset_my_context_during_turn_applies_after_it`, `test_reroute_cannot_escalate_without_new_reason`. `tests/conftest.py`에 deadlock만 최대 6회 재시도하는 변경이 남아 있다.
+- Codex 명령 샌드박스에서 stop DB tests 재실행 시 `.venv/bin/python -m pytest -q --timeout=180 ...` 가 conftest의 `initdb` 단계에서 `shmget ... Operation not permitted` 로 중단됐다. 이는 해당 샌드박스의 실행 한계이며 호스트에서 불가함을 입증하지 않는다. 동일 조건 재시도나 sandbox 우회는 하지 않았다.
+- 정적 재확인: 변경 Python Ruff `All checks passed!`, `compileall` 성공. `--noconftest` 묶음은 `51 passed, 2 errors`; 두 오류는 conftest를 제외해 `make_git_dir` fixture가 없어 생긴 테스트 실행 방식 오류다. DB cleanup retry, stop DB 통합/API tests 및 전체 게이트는 미검증/재실행 필요.
+- 전체 게이트 판정은 FAIL이며 병합·배포하지 않았다. 다음에는 허용된 호스트 테스트 환경에서 cleanup retry를 포함한 stop DB 묶음과 전체 게이트를 재실행하고, 위 13건을 개별 분류한다.

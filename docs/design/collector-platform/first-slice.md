@@ -6,7 +6,7 @@
 
 - 실제 파일: `src/ttakkari/collector/{contracts,intake}.py`, `src/ttakkari/collector_models.py`, `alembic/versions/0059_collector_intake.py`(0058_kb_immutability_truncate 다음), `unit_tests/test_collector_contracts.py`, `tests/test_collector_intake.py`, `tests/test_collector_migration.py`. 표의 `<new>` revision은 0059다(0058은 KB 세션의 `0058_kb_immutability_truncate`).
 - 테스트는 표준 pytest와 `tests/conftest.py`의 일회용 PostgreSQL DB(`ttakkari_test_<pid>_<hex>`)를 쓴다. SQLite/scratch 러너는 없다.
-- **HTTP 경계는 S2-02로 이동했다.** HTTP 라우트, 인증 주체→`AuthContext`(tenant/scope/principal) 산출, HTTP 403/409/422 상태 코드 테스트는 CP-S2-02가 맡는다. 이유: 코드베이스에 tenant 개념이 없어 인증 주체 매핑을 새로 정해야 하고 `main.py` 공유 접점을 건드린다. S2-01은 서비스 `submit_envelope`와 예외의 `http_status`/`error_code`(422 `invalid_envelope`, 403 `scope_binding_mismatch`, 409 `idempotency_conflict`/`envelope_id_conflict`)까지 제공해 S2-02 라우트가 얇은 어댑터가 되게 한다. PMS·wbs.csv·check_delivery.py가 같은 경계를 쓴다.
+- **HTTP 경계는 S2-02로 이동했고 S2-02에서 구현됐다(`src/ttakkari/api/collect.py`, `tests/test_collector_api.py`).** HTTP 라우트, 인증 주체→`AuthContext`(tenant/scope/principal) 산출, HTTP 403/409/422 상태 코드 테스트는 CP-S2-02가 맡는다. 이유: 코드베이스에 tenant 개념이 없어 인증 주체 매핑을 새로 정해야 하고 `main.py` 공유 접점을 건드린다. S2-01은 서비스 `submit_envelope`와 예외의 `http_status`/`error_code`(422 `invalid_envelope`, 403 `scope_binding_mismatch`, 409 `idempotency_conflict`/`envelope_id_conflict`)까지 제공해 S2-02 라우트가 얇은 어댑터가 되게 한다. PMS·wbs.csv·check_delivery.py가 같은 경계를 쓴다.
 - outbox 유일키는 `(tenant_id, sink, scope, envelope_id)`다. 다른 tenant의 같은 envelope_id는 독립이고, 같은 tenant/scope에서 다른 request key로 같은 envelope_id가 오면 409다.
 - 기록: [intake-binding.md](intake-binding.md) 4절, `reports/collector/s2-01/verification.txt`, `reports/collector/s2-00/inventory.json`(v2.1.0).
 

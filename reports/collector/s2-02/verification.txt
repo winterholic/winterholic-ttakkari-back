@@ -1,0 +1,85 @@
+CP-S2-02 verification receipt - 2026-10-21T18:43:42+0900
+검증 대상: git HEAD 9afe3b2701383f2d606ec868e8f25ddad3c3bc87 를 git archive 한 /tmp/cps202-tree 에 CP-S2-02 변경만 얹은 트리.
+이유: 같은 작업 트리에 다른 세션(TTS 0061 등)의 미커밋 변경이 섞여 있어, 커밋될 내용만 따로 검증한다.
+test DB: /tmp 임시 PostgreSQL 클러스터 /tmp/cps202-pg-52258 (127.0.0.1:49638). 공유 PG에는 아무것도 만들지 않았다.
+TTAKKARI_TEST_DB=postgresql+asyncpg://127.0.0.1:49638/ttakkari_test
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m alembic heads
+0061_local_tts (head)
+deploy/generation-contract.json: "schema_revision":"0061_local_tts",
+0060 online 안전성: collector_jobs 에 add_column 4개(nullable 또는 server_default). 테이블 재작성·기존 컬럼 변경·데이터 이동 없음. tests/test_collector_migration.py::test_runtime_migration_only_adds_columns_to_the_new_table 가 고정한다.
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest tests/test_collector_api.py -q -p no:cacheprovider
+...................................                                      [100%]
+35 passed in 4.03s
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest tests/test_collector_jobs.py tests/test_collector_migration.py tests/test_collector_intake.py unit_tests/test_collector_contracts.py -q -p no:cacheprovider
+......    [100%]
+78 passed, 4887 subtests passed in 10.05s
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest tests/test_route_inventory.py -q -p no:cacheprovider
+.......                                                                  [100%]
+7 passed in 1.54s
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest tests/test_generation_deployment.py -q -p no:cacheprovider
+............................                                             [100%]
+28 passed in 3.72s
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/ruff check src/ttakkari/collector src/ttakkari/collector_models.py src/ttakkari/api/collect.py src/ttakkari/generation_service.py src/ttakkari/config.py src/ttakkari/main.py tests/test_collector_api.py tests/test_collector_jobs.py tests/test_collector_migration.py tests/test_collector_intake.py alembic/versions/0060_collector_job_runtime.py unit_tests/test_collector_contracts.py
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py
+positive=4 negative=14; hash/calibration/query/time/scope/unknown-setting controls checked
+intake binding/idempotency: 10 PASS (negative=7: tenant/principal/scope tamper, cross-scope replay, 409 conflicts; replay=key-order+recorded_at); JCS vectors=11 PASS
+runtime budget/SSRF/DB/lease enforcement: NOT EXECUTED (design only)
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python docs/design/collector-platform/check_delivery.py --closed
+design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1
+fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2-00 live=review 80%, S2-01 live=review 90% S2-02 live=review 85% (HTTP route implemented in S2-02); local document links=PASS; S2-01 implementation=reworked, awaiting independent verification; ML/deploy=NOT EXECUTED
+
+== alembic on temp cluster DB cps202_alembic
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m alembic upgrade head
+INFO  [alembic.runtime.migration] Running upgrade 0060_collector_job_runtime -> 0061_local_tts, 로컬 TTS 표(tts_jobs, tts_cache). 신규 표만 추가한다(online-safe). 원문 컬럼은 두지 않는다(ADR 0062).
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m alembic downgrade 0059_collector_intake
+INFO  [alembic.runtime.migration] Running downgrade 0060_collector_job_runtime -> 0059_collector_intake, 수집 플랫폼 S2-02: collector_jobs 에 claim·cursor·취소·오류 기록 컬럼 추가.
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m alembic downgrade 0058_kb_immutability_truncate
+INFO  [alembic.runtime.migration] Running downgrade 0059_collector_intake -> 0058_kb_immutability_truncate, 수집 플랫폼 1단계: 영속 수집 작업(collector_jobs) 및 전송 아웃박스(collector_outbox) 추가.
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m alembic upgrade head
+INFO  [alembic.runtime.migration] Running upgrade 0060_collector_job_runtime -> 0061_local_tts, 로컬 TTS 표(tts_jobs, tts_cache). 신규 표만 추가한다(online-safe). 원문 컬럼은 두지 않는다(ADR 0062).
+
+$ /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m alembic current
+0061_local_tts (head)
+
+$ alembic check -> exit=255 (0이 아니면 collector 무관 기존 드리프트 때문)
+collector mentions in alembic check output: 0
+drifted tables: 'ctx_chunks' 'ctx_entities' 'ctx_memories' 'meeting_chunks' 'tossinvest_sync_runs' 'weather_briefings' 
+
+$ pytest unit_tests -q  (기준 885 passed 1 skipped)
+967 passed, 1 skipped, 6 warnings, 4946 subtests passed in 40.23s
+
+$ pytest tests -q  (전체, 임시 클러스터)
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [field_name='run_timeout_seconds', input_value=1.5, input_type=float])
+    return self.__pydantic_serializer__.to_python(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+2364 passed, 13 skipped, 2 xfailed, 3 warnings, 6 subtests passed in 749.38s (0:12:29)
+== 종료 18:57:24
+
+== 해석·정리 기록
+- 검증 대상은 HEAD 9afe3b2 에 CP-S2-02 변경만 얹은 임시 트리다. 같은 작업 트리에 다른 세션의 미커밋 변경이 섞여 있어 커밋될 내용만 따로 검증했다.
+  제외한 항목: deploy/generation-contract.json 과 alembic/versions/0060_collector_job_runtime.py 는 다른 세션이 이미 HEAD 에 반영했다
+  (8579221 contract 0061, 184b5c5 0060 복원). 0060 파일은 HEAD 본과 바이트가 같고, contract 는 0060·0059 를 online_migration_from 에 이미 포함한다.
+- ruff `Found 1 error`: src/ttakkari/generation_service.py lifespan 의 `from ttakkari.tts import jobs as tts_jobs` import 정렬(I001)이다.
+  TTS 세션이 HEAD 에 넣은 줄이며 CP-S2-02 가 더한 줄이 아니다. collector 파일(collector/, collector_models, api/collect.py, 테스트, 0060)은 위반 0.
+- alembic check exit=255 는 collector 와 무관한 기존 드리프트(ctx_*, meeting_chunks, tossinvest_sync_runs, weather_briefings) 때문이고 출력에 collector 언급은 0건이다.
+  collector 테이블 한정 드리프트 0 은 tests/test_collector_migration.py 가 고정한다(통과).
+- unit_tests 967 passed 는 HEAD 의 다른 세션 테스트(TTS 등)를 포함한 수치다(기준 885 passed 1 skipped).
+- 임시 클러스터: /tmp/cps202-pg-<pid> 는 pg_ctl stop 후 폴더를 지웠고(위 `[cluster] ... 삭제됨, postmaster procs: 0`), 공유 PG 는 사용하지 않았다.
+- 실행 중 두 차례 먼저 중단한 실행이 있었고, 그때 남은 임시 클러스터 폴더와 postmaster 도 각각 pg_ctl stop + 폴더 삭제로 정리했다.
+

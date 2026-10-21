@@ -1,9 +1,11 @@
-"""0059 collector 마이그레이션이 ORM 모델과 같은 스키마를 만들고 왕복하는지 일회용 테스트 DB 에서 확인한다.
+"""0059·0060 collector 마이그레이션이 ORM 모델과 같은 스키마를 만들고 왕복하는지 일회용 테스트 DB 에서 확인한다.
 
 `alembic check` 전체는 collector 와 무관한 기존 드리프트(ctx_*, weather_briefings 등) 때문에 실패하므로,
 collector 테이블로 한정한 autogenerate diff 가 비어 있음을 여기서 고정한다.
 """
 import importlib.util
+import re
+from pathlib import Path
 
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -35,9 +37,11 @@ def test_collector_tables_are_in_alembic_target_metadata():
     assert set(TABLES) <= set(Base.metadata.tables)
 
 
-async def test_collector_migration_matches_models_and_round_trips():
-    migration = _load("0059_collector_intake")
-    assert migration.down_revision == "0058_kb_immutability_truncate"
+async def test_collector_migrations_match_models_and_round_trip():
+    intake = _load("0059_collector_intake")
+    runtime = _load("0060_collector_job_runtime")
+    assert intake.down_revision == "0058_kb_immutability_truncate"
+    assert runtime.down_revision == "0059_collector_intake"
     async with sessionmaker()() as db:
         for table in reversed(TABLES):
             await db.execute(text(f"DROP TABLE {table} CASCADE"))
@@ -52,16 +56,37 @@ async def test_collector_migration_matches_models_and_round_trips():
                 sync, opts={"compare_type": True, "include_object": _only_collector})
             return [d for d in compare_metadata(context, Base.metadata)]
 
-        await conn.run_sync(run, migration.upgrade)
-        assert await conn.run_sync(drift) == []
+        async def columns() -> set[str]:
+            return {r[0] for r in await db.execute(text(
+                "select column_name from information_schema.columns where table_name = 'collector_jobs'"))}
 
-        await conn.run_sync(run, migration.downgrade)
+        runtime_columns = {"cursor", "cancel_requested", "last_error", "heartbeat_at"}
+        await conn.run_sync(run, intake.upgrade)
+        assert not runtime_columns & await columns()
+        await conn.run_sync(run, runtime.upgrade)
+        assert await conn.run_sync(drift) == []
+        assert runtime_columns <= await columns()
+
+        await conn.run_sync(run, runtime.downgrade)
+        assert not runtime_columns & await columns()
+        await conn.run_sync(run, intake.downgrade)
         for table in TABLES:
             assert await db.scalar(text("select to_regclass(:t)"), {"t": table}) is None
 
-        await conn.run_sync(run, migration.upgrade)
+        await conn.run_sync(run, intake.upgrade)
+        await conn.run_sync(run, runtime.upgrade)
         assert await conn.run_sync(drift) == []
         names = {r[0] for r in await db.execute(text(
             "select conname from pg_constraint where conrelid in ('collector_jobs'::regclass, 'collector_outbox'::regclass)"))}
         assert {"uq_collector_jobs_idempotency", "uq_collector_outbox_tenant_sink_envelope"} <= names
         await db.commit()
+
+
+def test_runtime_migration_only_adds_columns_to_the_new_table():
+    """0060 은 기존 테이블 재작성 없이 collector_jobs 에 nullable/기본값 컬럼만 더한다(online-safe)."""
+    source = Path("alembic/versions/0060_collector_job_runtime.py").read_text(encoding="utf-8")
+    upgrade = source.split("def upgrade")[1].split("def downgrade")[0]
+    assert upgrade.count("op.add_column") == 4
+    assert len(re.findall(r'op\.add_column\(\s*"collector_jobs"', upgrade)) == 4
+    for forbidden in ("drop_", "alter_column", "create_table", "op.execute", "NOT NULL"):
+        assert forbidden not in upgrade

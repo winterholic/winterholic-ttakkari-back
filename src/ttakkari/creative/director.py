@@ -213,6 +213,8 @@ class ReviewReceipt(StrictModel):
 class DirectorStore:
     """One production per private directory; state revisions and events use flock + atomic replace."""
 
+    _ATTEMPT_TERMINAL_STATES = frozenset({"review_pending", "failed", "cancelled"})
+
     def __init__(self, root: Path):
         self.root = Path(root).expanduser()
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -660,6 +662,18 @@ class DirectorStore:
             {k: v for k, v in attempt.items() if k != "content_hash"}
         )
 
+    def _stop_if_attempt_terminal_or_unowned(
+        self, attempt: dict, claim_id: str
+    ) -> bool:
+        claim = attempt.get("execution_claim")
+        owns_claim = bool(claim and claim.get("claim_id") == claim_id)
+        if attempt["state"] not in self._ATTEMPT_TERMINAL_STATES and owns_claim:
+            return False
+        if owns_claim:
+            attempt["execution_claim"] = None
+            self._seal_attempt(attempt)
+        return True
+
     def submit_attempt(
         self, pid: str, shot_id: str, *, input_sha256: str, idempotency_key: str
     ):
@@ -756,25 +770,36 @@ class DirectorStore:
                 current = next(
                     a for a in state["attempts"] if a["attempt_id"] == attempt_id
                 )
-                if current["state"] not in {"cancelled", "review_pending"}:
-                    current.update(
-                        state="collecting",
-                        expected_output_count=len(output_data),
-                        updated_at=_now(),
-                    )
-                    self._seal_attempt(current)
-                    self._event(
-                        state,
-                        "attempt:" + attempt_id + ":collecting",
-                        "attempt.collecting",
-                        attempt_id,
-                    )
+                if self._stop_if_attempt_terminal_or_unowned(
+                    current, claim["claim_id"]
+                ):
+                    return current
+                current.update(
+                    state="collecting",
+                    expected_output_count=len(output_data),
+                    updated_at=_now(),
+                )
+                self._seal_attempt(current)
+                self._event(
+                    state,
+                    "attempt:" + attempt_id + ":collecting",
+                    "attempt.collecting",
+                    attempt_id,
+                )
             outputs = []
             for index, data in enumerate(output_data):
                 if not data:
                     raise EmptyOutputError(
                         "빈 결과 파일은 성공으로 처리할 수 없습니다."
                     )
+                with self._locked_state(pid) as state:
+                    current = next(
+                        a for a in state["attempts"] if a["attempt_id"] == attempt_id
+                    )
+                    if self._stop_if_attempt_terminal_or_unowned(
+                        current, claim["claim_id"]
+                    ):
+                        return current
                 record = self.put_artifact(
                     pid,
                     f"{attempt_id}-{index}.bin",
@@ -786,22 +811,30 @@ class DirectorStore:
                     current = next(
                         a for a in state["attempts"] if a["attempt_id"] == attempt_id
                     )
-                    if current["state"] not in {"cancelled", "review_pending"}:
-                        current["outputs"] = list(outputs)
-                        current["updated_at"] = _now()
-                        self._seal_attempt(current)
-                        self._event(
-                            state,
-                            f"attempt:{attempt_id}:output:{index}",
-                            "attempt.output_collected",
-                            attempt_id,
-                            output_sha256=record["sha256"],
-                        )
+                    if self._stop_if_attempt_terminal_or_unowned(
+                        current, claim["claim_id"]
+                    ):
+                        return current
+                    current["outputs"] = list(outputs)
+                    current["updated_at"] = _now()
+                    self._seal_attempt(current)
+                    self._event(
+                        state,
+                        f"attempt:{attempt_id}:output:{index}",
+                        "attempt.output_collected",
+                        attempt_id,
+                        output_sha256=record["sha256"],
+                    )
             with self._locked_state(pid) as state:
                 current = next(
                     a for a in state["attempts"] if a["attempt_id"] == attempt_id
                 )
-                if current["state"] == "cancelled" or state["cancelled"]:
+                if self._stop_if_attempt_terminal_or_unowned(
+                    current, claim["claim_id"]
+                ):
+                    return current
+                if state["cancelled"]:
+                    current.update(state="cancelled", updated_at=_now())
                     current["execution_claim"] = None
                     self._seal_attempt(current)
                     return current
@@ -840,24 +873,27 @@ class DirectorStore:
                 current = next(
                     a for a in state["attempts"] if a["attempt_id"] == attempt_id
                 )
+                if self._stop_if_attempt_terminal_or_unowned(
+                    current, claim["claim_id"]
+                ):
+                    return current
+                current.update(
+                    state="failed",
+                    error_kind="empty_output"
+                    if isinstance(exc, EmptyOutputError)
+                    else "collect_failed",
+                    updated_at=_now(),
+                )
                 current["execution_claim"] = None
-                if current["state"] not in {"cancelled", "review_pending"}:
-                    current.update(
-                        state="failed",
-                        error_kind="empty_output"
-                        if isinstance(exc, EmptyOutputError)
-                        else "collect_failed",
-                        updated_at=_now(),
-                    )
-                    current["error_details"] = [str(exc)]
-                    self._seal_attempt(current)
-                    self._event(
-                        state,
-                        "attempt:" + attempt_id + ":failed",
-                        "attempt.failed",
-                        attempt_id,
-                        error_kind=current["error_kind"],
-                    )
+                current["error_details"] = [str(exc)]
+                self._seal_attempt(current)
+                self._event(
+                    state,
+                    "attempt:" + attempt_id + ":failed",
+                    "attempt.failed",
+                    attempt_id,
+                    error_kind=current["error_kind"],
+                )
                 return current
 
     def resume_pending(
@@ -948,7 +984,6 @@ class DirectorStore:
                         state="failed",
                         error_kind=errors[0]["kind"],
                         error_details=[error["detail"] for error in errors],
-                        execution_claim=None,
                         updated_at=_now(),
                     )
                     self._event(
@@ -962,12 +997,15 @@ class DirectorStore:
                     attempt.update(
                         state="review_pending",
                         error_details=[],
-                        execution_claim=None,
                         updated_at=_now(),
                     )
             elif state in {"failed", "cancelled"}:
                 attempt.update(state=state, updated_at=_now())
-                attempt["execution_claim"] = None
+                if state == "failed" and not attempt.get("error_kind"):
+                    attempt["error_kind"] = "engine_failed"
+                    attempt["error_details"] = [
+                        f"engine event {event_id} reported failed at sequence {sequence}"
+                    ]
             elif not data["cancelled"]:
                 attempt.update(state=state, updated_at=_now())
             self._seal_attempt(attempt)

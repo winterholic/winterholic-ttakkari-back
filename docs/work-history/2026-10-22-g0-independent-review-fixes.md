@@ -39,3 +39,13 @@ state after succeeded event with missing output file: review_pending
 - 실제 GPU/managed runtime, 배포 검증은 실행하지 않음. G1 자원 lease는 범위 밖.
 
 독립 재검수는 남아 있다. PMS 6.1은 `doing` 유지이며 완료 판정이 아니다.
+
+## 2026-10-22 독립 재검수 후속: in-flight terminal race
+
+- 추가 검수 원문: `outbox/a4b3b8b8-d8c7-453b-ae85-7f9a5f9867bb/g0-cpu-independent-recheck-report.md`. 해당 exact HEAD `3ec1561dc34d5f213ddae11bbe6defea614341af`에서 앞선 세 결함과 cross-process live claim, 죽은 renderer process의 stale claim 재개는 통과했다. 별도 in-flight race는 renderer hold 중 `failed(seq=1)` 기록 뒤 renderer를 풀면 `review_pending`으로 바뀌어 불합격이었다.
+- 직접 코드 대조: renderer 결과 후 `collecting` 전환과 각 `outputs` receipt 기록은 `cancelled/review_pending`만 보호했다. 최종 성공 분기는 `cancelled`만 검사했다. 예외 분기도 `failed`를 terminal로 보지 않아 이미 기록된 engine failure 종류/상세를 `collect_failed`로 덮을 수 있었다.
+- RED: 새 Event 기반 검사 5개 중 4개 실패(성공 반환, renderer 예외, 두 번째 출력 회수 중 failed, succeeded 이벤트 선행 후 receipt 재기록); in-flight cancel 보호 검사는 기존 동작을 확인해 통과했다.
+- GREEN 수정: 하나의 terminal/unowned claim 가드를 renderer 결과, 각 출력 전후, 최종 성공, 예외 처리에 공통 적용했다. renderer가 claim을 소유하는 동안 `ingest_event`의 failed/cancelled/succeeded는 claim을 빼앗지 않고, failed는 `engine_failed`와 event ID/sequence를 first-error 증거로 남긴다. 실행 소유자가 terminal을 확인하면 자기 claim만 비우고 terminal 상태·실패 증거를 유지한다. 회수 중 이미 CAS에 기록된 파일과 앞선 output receipt는 지우지 않는다.
+- 검증: 동일 G0 회귀 명령(`test_creative_director.py`, `test_creative_studio.py`, `test_creative_catalog.py`) 재실행 결과 `37 passed in 2.14s`. 여기에는 기존 32개와 이번 추가 5개가 포함된다. 이번 diff는 cross-process claim 획득 알고리즘을 바꾸지 않았다. 그 항목과 죽은 process 재개 결과는 위 exact-3ec 독립검수 보고서에 있고 이번에는 재실행하지 않았다.
+- 정적 검사: 관련 Ruff check 통과, 4개 관련 Python 파일 format check 통과, `git diff --check` exit 0.
+- 이번 Run에서 PostgreSQL-backed API, GPU/managed runtime, 배포는 미실행. `initdb` denial을 재시도/우회하지 않았다. G1/Lab/PMS 변경 없음.

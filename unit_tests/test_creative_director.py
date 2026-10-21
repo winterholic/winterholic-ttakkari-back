@@ -434,6 +434,206 @@ def test_succeeded_event_requires_every_cas_output_to_exist_and_match_hash(
     assert result["error_details"]
 
 
+@pytest.mark.parametrize("renderer_failure", [False, True])
+def test_inflight_failed_event_is_terminal_for_renderer_result_and_exception(
+    tmp_path, renderer_failure
+):
+    store = _service(tmp_path)
+    pid = _production(store)["manifest"]["production_id"]
+    media = store.put_artifact(
+        pid, "input.bin", b"input", media_type="application/octet-stream"
+    )
+    attempt = store.submit_attempt(
+        pid,
+        "shot-1",
+        input_sha256=media["sha256"],
+        idempotency_key=f"terminal-{renderer_failure}",
+    )
+    renderer_entered = threading.Event()
+    release_renderer = threading.Event()
+
+    def renderer(_data):
+        renderer_entered.set()
+        assert release_renderer.wait(timeout=3)
+        if renderer_failure:
+            raise RuntimeError("later renderer exception")
+        return [b"late output"]
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            store.execute_attempt, pid, attempt["attempt_id"], renderer=renderer
+        )
+        assert renderer_entered.wait(timeout=3)
+        event_failure = store.ingest_event(
+            pid,
+            attempt["attempt_id"],
+            event_id="first-engine-failure",
+            sequence=1,
+            state="failed",
+        )
+        first_error = (event_failure["error_kind"], event_failure["error_details"])
+        release_renderer.set()
+        result = future.result(timeout=3)
+
+    persisted = store.get_production(pid)["attempts"][0]
+    assert result["state"] == persisted["state"] == "failed"
+    assert (persisted["error_kind"], persisted["error_details"]) == first_error
+    assert persisted["error_kind"] == "engine_failed"
+    assert "first-engine-failure" in persisted["error_details"][0]
+    assert persisted["execution_claim"] is None
+
+
+def test_failed_event_during_collection_preserves_terminal_and_recovered_cas(
+    tmp_path, monkeypatch
+):
+    store = _service(tmp_path)
+    pid = _production(store)["manifest"]["production_id"]
+    media = store.put_artifact(
+        pid, "input.bin", b"input", media_type="application/octet-stream"
+    )
+    attempt = store.submit_attempt(
+        pid,
+        "shot-1",
+        input_sha256=media["sha256"],
+        idempotency_key="collection-terminal",
+    )
+    cas_written = threading.Event()
+    release_collection = threading.Event()
+    original_put_artifact = store.put_artifact
+
+    def held_put_artifact(*args, **kwargs):
+        record = original_put_artifact(*args, **kwargs)
+        if args[1] == f"{attempt['attempt_id']}-1.bin":
+            cas_written.set()
+            assert release_collection.wait(timeout=3)
+        return record
+
+    monkeypatch.setattr(store, "put_artifact", held_put_artifact)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            store.execute_attempt,
+            pid,
+            attempt["attempt_id"],
+            renderer=lambda _data: [
+                b"first complete output",
+                b"second complete output",
+            ],
+        )
+        assert cas_written.wait(timeout=3)
+        failure = store.ingest_event(
+            pid,
+            attempt["attempt_id"],
+            event_id="collection-failure",
+            sequence=1,
+            state="failed",
+        )
+        first_error = (failure["error_kind"], failure["error_details"])
+        release_collection.set()
+        result = future.result(timeout=3)
+
+    persisted = store.get_production(pid)["attempts"][0]
+    assert result["state"] == persisted["state"] == "failed"
+    assert (persisted["error_kind"], persisted["error_details"]) == first_error
+    assert len(persisted["outputs"]) == 1
+    first_sha = hashlib.sha256(b"first complete output").hexdigest()
+    second_sha = hashlib.sha256(b"second complete output").hexdigest()
+    assert persisted["outputs"][0]["sha256"] == first_sha
+    assert store.read_artifact(pid, first_sha) == b"first complete output"
+    assert store.read_artifact(pid, second_sha) == b"second complete output"
+    assert persisted["execution_claim"] is None
+
+
+def test_inflight_succeeded_event_is_not_rewritten_by_execute_completion(tmp_path):
+    store = _service(tmp_path)
+    pid = _production(store)["manifest"]["production_id"]
+    media = store.put_artifact(
+        pid, "input.bin", b"input", media_type="application/octet-stream"
+    )
+    attempt = store.submit_attempt(
+        pid, "shot-1", input_sha256=media["sha256"], idempotency_key="success-terminal"
+    )
+    renderer_entered = threading.Event()
+    release_renderer = threading.Event()
+    renderer_output = b"same accepted output"
+    prepared = store.put_artifact(
+        pid,
+        f"{attempt['attempt_id']}-0.bin",
+        renderer_output,
+        media_type="application/octet-stream",
+    )
+
+    def renderer(_data):
+        renderer_entered.set()
+        assert release_renderer.wait(timeout=3)
+        return [renderer_output]
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            store.execute_attempt, pid, attempt["attempt_id"], renderer=renderer
+        )
+        assert renderer_entered.wait(timeout=3)
+        with store._locked_state(pid) as state:
+            receipt = next(
+                row
+                for row in state["attempts"]
+                if row["attempt_id"] == attempt["attempt_id"]
+            )
+            receipt.update(
+                state="collecting", expected_output_count=1, outputs=[prepared]
+            )
+            store._seal_attempt(receipt)
+        succeeded = store.ingest_event(
+            pid,
+            attempt["attempt_id"],
+            event_id="first-engine-success",
+            sequence=1,
+            state="succeeded",
+        )
+        assert succeeded["state"] == "review_pending"
+        succeeded_updated_at = succeeded["updated_at"]
+        succeeded_outputs = succeeded["outputs"]
+        release_renderer.set()
+        result = future.result(timeout=3)
+
+    persisted = store.get_production(pid)["attempts"][0]
+    assert result["state"] == persisted["state"] == "review_pending"
+    assert persisted["updated_at"] == succeeded_updated_at
+    assert persisted["outputs"] == succeeded_outputs
+    assert persisted["execution_claim"] is None
+
+
+def test_cancelled_attempt_stays_terminal_when_held_renderer_returns(tmp_path):
+    store = _service(tmp_path)
+    pid = _production(store)["manifest"]["production_id"]
+    media = store.put_artifact(
+        pid, "input.bin", b"input", media_type="application/octet-stream"
+    )
+    attempt = store.submit_attempt(
+        pid, "shot-1", input_sha256=media["sha256"], idempotency_key="cancel-terminal"
+    )
+    renderer_entered = threading.Event()
+    release_renderer = threading.Event()
+
+    def renderer(_data):
+        renderer_entered.set()
+        assert release_renderer.wait(timeout=3)
+        return [b"must not be collected"]
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            store.execute_attempt, pid, attempt["attempt_id"], renderer=renderer
+        )
+        assert renderer_entered.wait(timeout=3)
+        store.cancel_attempt(pid, attempt["attempt_id"])
+        release_renderer.set()
+        result = future.result(timeout=3)
+
+    persisted = store.get_production(pid)["attempts"][0]
+    assert result["state"] == persisted["state"] == "cancelled"
+    assert persisted["outputs"] == []
+    assert persisted["execution_claim"] is None
+
+
 def test_review_acceptance_requires_a_real_user_approval_event(tmp_path):
     store = _service(tmp_path)
     pid = _production(store)["manifest"]["production_id"]

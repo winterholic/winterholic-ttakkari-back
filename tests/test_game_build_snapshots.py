@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from git_isolation import git_argv, isolated_git_env
 from helpers import fresh_dir
 from sqlalchemy import select
 
@@ -85,9 +86,8 @@ class FakeAdapter(GameEngineAdapter):
 
 
 def git(root: Path, *args: str) -> str:
-    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
-    return subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", *args], capture_output=True, text=True,
-                          check=True, env=env).stdout.strip()
+    env = isolated_git_env() | {"GIT_CONFIG_SYSTEM": "/dev/null"}
+    return subprocess.run(git_argv(root, *args), capture_output=True, text=True, check=True, env=env).stdout.strip()
 
 
 def manifest(slug: str, **over) -> ProjectManifest:

@@ -7,14 +7,31 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 import sys
 import uuid
 from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
+from git_isolation import git_argv, isolated_git_env, scrub_process_env
+
 from ttakkari.config import get_settings
 from ttakkari.deployment import JobStore, resolve_source_root
+
+# 이 파일만 단독으로 도는 pre-push 게이트에서도 훅의 GIT_DIR 이 resolve_source_root 의 git 호출에 새지 않게 한다.
+scrub_process_env()
+
+
+def _init_repo(root: Path, rel: str, text: str = "x") -> None:
+    """임시 저장소를 명시적 -C 와 격리 환경으로 만든다. 호출 환경의 GIT_* 는 받지 않는다."""
+    def run(*args: str) -> None:
+        subprocess.run(git_argv(root, *args), env=isolated_git_env(), check=True, capture_output=True)
+    run("init", "-q")
+    (root / rel).write_text(text)
+    run("add", "-A")
+    run("commit", "-qm", "x")
 
 
 def test_resolve_source_root_rejects_a_release_like_path(tmp_path, monkeypatch):
@@ -852,33 +869,21 @@ async def test_mismatched_recorded_release_is_actually_reprepared(tmp_path, monk
 
 
 def test_resolve_source_root_rejects_an_unrelated_git_repo(tmp_path, monkeypatch):
-    import subprocess
-
     from ttakkari.deployment import resolve_source_root
     other = tmp_path / "other"
     other.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=other, check=True)
-    (other / "file.txt").write_text("x")
-    subprocess.run(["git", "add", "-A"], cwd=other, check=True)
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
-                   cwd=other, check=True)
+    _init_repo(other, "file.txt")
     monkeypatch.setattr(get_settings(), "deploy_source_root", other)
     with pytest.raises(RuntimeError, match="백엔드 저장소"):
         resolve_source_root()
 
 
 def test_resolve_source_root_accepts_a_repo_with_the_identity_file(tmp_path, monkeypatch):
-    import subprocess
-
     from ttakkari.deployment import resolve_source_root
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     (repo / "deploy").mkdir()
-    (repo / "deploy/generation-contract.json").write_text("{}")
-    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
-                   cwd=repo, check=True)
+    _init_repo(repo, "deploy/generation-contract.json", "{}")
     monkeypatch.setattr(get_settings(), "deploy_source_root", repo)
     assert resolve_source_root() == repo
 

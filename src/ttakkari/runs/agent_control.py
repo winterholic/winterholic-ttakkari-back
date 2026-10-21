@@ -4,7 +4,7 @@
   소유 오케스트레이터(AIP 기획 세션 등)와 배포 세대(draining 구세대)를 넘어 queued, running,
   한도 대기(queued + resume_after), 재시작 재개 대기(interrupted)를 모두 멈춘다.
 - 다른 세대가 소유한 running Run 은 기존 `cancel` RuntimeCommand 로 소유 세대에 넘긴다.
-  구세대도 이미 이해하는 명령이라 새 필드나 마이그레이션이 필요 없다.
+  이 명령은 구세대도 이미 이해하므로 교차 세대 전달 자체는 새 프로토콜 필드가 필요 없다.
 - 취소된 작업자가 부모 오케스트레이터에게 새 보고 Run 을 만들어 작업을 되살리는 경로는 두 겹으로 막는다.
   1) Run 단위 억제 표식(RuntimeCommand kind=suppress_report, 어느 세대도 소비하지 않는 영속 표식)을
      취소 전에 남기고 `_enqueue_report` 가 이를 확인한다.
@@ -15,8 +15,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
 import re
+import signal
+import subprocess
 import time
 import uuid
 from datetime import timedelta
@@ -29,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ttakkari.audit import record
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
+    AgentStopFence,
+    AgentStopReceipt,
     ChatSession,
     Run,
     RunOrigin,
@@ -44,9 +50,111 @@ log = logging.getLogger(__name__)
 
 SUPPRESS_KIND = "suppress_report"
 RESTART_INTERRUPTION = "서버 종료로 중단"
-# 구세대가 표식을 모른 채 만든 보고 Run 을 알아보는 창. 이보다 오래된 표식은 무시한다.
-SUPPRESS_WINDOW_SECONDS = 3600
 _REPORT_CANCELLED = re.compile(r"\(worker_id=([0-9a-fA-F-]{36})\) 취소\.")
+_REPORT_SOURCE = re.compile(r"stop_source_run_id=([0-9a-fA-F-]{36})")
+
+
+def fence_keys(pool: str, workspace_id: uuid.UUID | None, session_id: uuid.UUID | None = None) -> list[str]:
+    """Return stable locks shared by stop, enqueue and dispatch for the same authorization scope."""
+    keys: list[str] = []
+    if pool == "all":
+        keys.append("pool:all")
+    else:
+        keys.append(f"pool:{pool}")
+        if pool == "work":
+            if workspace_id is None:
+                raise ValueError("work scope requires workspace_id")
+            keys.append(f"workspace:{workspace_id}")
+    if session_id is not None:
+        keys.append(f"session:{session_id}")
+    return sorted(set(keys))
+
+
+def run_fence_is_current(run_epochs: dict[str, int] | None, current_epochs: dict[str, int]) -> bool:
+    """Legacy rows are valid before any stop; after a stop only exact epoch snapshots may dispatch."""
+    if not any(current_epochs.values()):
+        return True
+    return (run_epochs or {}) == current_epochs
+
+
+async def lock_fences(db: AsyncSession, keys: list[str]) -> list[AgentStopFence]:
+    """Upsert then row-lock all relevant fence rows in stable order inside the caller transaction."""
+    rows = []
+    for key in sorted(set(keys)):
+        statement = insert(AgentStopFence).values(scope_key=key, epoch=0, paused=False, stopping=False,
+                                                   updated_at=utcnow())
+        await db.execute(statement.on_conflict_do_nothing(index_elements=[AgentStopFence.scope_key]))
+        row = await db.scalar(select(AgentStopFence).where(AgentStopFence.scope_key == key).with_for_update())
+        rows.append(row)
+    return rows
+
+
+async def dispatch_is_fenced(db: AsyncSession, session_id: uuid.UUID) -> bool:
+    sess = await db.get(ChatSession, session_id)
+    if sess is None:
+        return True
+    keys = fence_keys(sess.pool, sess.workspace_id, session_id) + ["pool:all"]
+    rows = await lock_fences(db, keys)
+    return any(row.paused for row in rows)
+
+
+async def _process_identity(pid: int) -> tuple[int, int, str] | None:
+    """Read only a process identity tuple; command text stays in memory and is never logged."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ps", "-o", "lstart=", "-o", "pgid=", "-o", "command=", "-p", str(pid),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=3)
+        if proc.returncode != 0:
+            return None
+        fields = out.decode(errors="replace").strip().split(None, 7)
+        if len(fields) < 8:
+            return None
+        started = time.mktime(time.strptime(" ".join(fields[:6]), "%a %b %d %H:%M:%S %Y"))
+        return int(started), int(fields[6]), fields[7]
+    except (OSError, ValueError, TimeoutError, subprocess.SubprocessError):
+        return None
+
+
+async def _terminate_identified_run(run: Run, manager) -> tuple[bool, str]:
+    """Signal only a process group whose PID birth time, group ID and engine command match this Run."""
+    if run.pid is None or run.pid_started_at is None:
+        return False, "lease가 없고 PID 소유·생존 식별 정보가 없습니다."
+    identity = await _process_identity(run.pid)
+    if identity is None:
+        return False, "프로세스 식별 조회가 불가능해 안전하게 종료하지 않았습니다."
+    started, pgid, command = identity
+    if started != int(run.pid_started_at) or pgid != run.pid or not _looks_like_run_engine(run, command):
+        return False, "PID 재사용 또는 소유 불일치를 배제하지 못해 안전하게 종료하지 않았습니다."
+    try:
+        os.killpg(run.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError, OSError) as exc:
+        return False, f"확인된 프로세스 그룹에 종료 신호를 보내지 못했습니다: {exc}"
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        await asyncio.sleep(0.1)
+        current = await _process_identity(run.pid)
+        if current is not None and current[0] == started and current[1] == pgid:
+            continue
+        try:
+            os.killpg(run.pid, 0)
+        except ProcessLookupError:
+            return True, ""
+        except PermissionError:
+            continue
+        except OSError:
+            continue
+    return False, "종료 신호 뒤에도 확인된 프로세스가 살아 있습니다."
+
+
+def _looks_like_run_engine(run: Run, command: str) -> bool:
+    cmd = command.lower()
+    tokens = {
+        "claude": ("claude",), "codex": ("codex",), "antigravity": ("agy", "antigravity"),
+        "muse": ("muse",), "qwen-local": ("qwen",), "auto": ("claude", "codex", "agy", "antigravity", "muse", "qwen"),
+    }.get(run.engine, ())
+    return any(token in cmd for token in tokens)
 
 
 def scope_filters(pool: str, workspace_id: uuid.UUID | None = None) -> tuple:
@@ -91,22 +199,33 @@ async def drop_suppressed_reports(db: AsyncSession, rows: list[Run]) -> list[Run
         if run.status != RunStatus.queued or run.origin != RunOrigin.report:
             kept.append(run)
             continue
-        m = _REPORT_CANCELLED.search(run.prompt or "")
+        source = _REPORT_SOURCE.search(run.prompt or "")
         marker = None
-        if m:
+        if source:
             try:
-                worker_id = uuid.UUID(m.group(1))
+                source_run_id = uuid.UUID(source.group(1))
             except ValueError:
-                worker_id = None
-            if worker_id is not None:
-                marker = await db.scalar(
-                    select(RuntimeCommand.id).where(
+                source_run_id = None
+            if source_run_id is not None:
+                marker = await db.scalar(select(RuntimeCommand.id).where(
+                    RuntimeCommand.key == _suppress_key(source_run_id)).limit(1))
+        else:
+            # Compatibility boundary: only older generations omit stop_source_run_id.
+            # Their report format has no original Run ID, so the bounded worker/time
+            # association is retained for queued reports created before the current code.
+            legacy = _REPORT_CANCELLED.search(run.prompt or "")
+            if legacy:
+                try:
+                    worker_id = uuid.UUID(legacy.group(1))
+                except ValueError:
+                    worker_id = None
+                if worker_id is not None:
+                    marker = await db.scalar(select(RuntimeCommand.id).where(
                         RuntimeCommand.kind == SUPPRESS_KIND,
                         RuntimeCommand.session_id == worker_id,
                         RuntimeCommand.created_at <= run.created_at,
-                        RuntimeCommand.created_at >= run.created_at - timedelta(seconds=SUPPRESS_WINDOW_SECONDS),
-                    ).limit(1)
-                )
+                        RuntimeCommand.created_at >= run.created_at - timedelta(seconds=3600),
+                    ).limit(1))
         if marker is None:
             kept.append(run)
             continue
@@ -139,7 +258,7 @@ async def _targets(db: AsyncSession, pool: str, workspace_id: uuid.UUID | None,
     return [(r, s) for r, s in (await db.execute(stmt)).all()]
 
 
-async def stop_all_agents(
+async def _stop_all_agents_impl(
     db: AsyncSession,
     *,
     pool: str = "personal",
@@ -148,22 +267,64 @@ async def stop_all_agents(
     reason: str = "사용자 전역 중지 지시",
     actor_id: str | None = None,
     wait_timeout: float = 3.0,
+    receipt_id: uuid.UUID | None = None,
+    actor_session_id: uuid.UUID | None = None,
+    claim_existing_receipt: bool = False,
 ) -> dict[str, Any]:
     """범위 안의 활성·대기 Run 을 소유 세션·세대와 무관하게 멈추고, 멈춘 것과 못 멈춘 것을 이유와 함께 돌려준다.
 
     순서가 중요하다. 대기 중인 Run 부터 지워야 실행 중인 Run 이 끝나는 순간 다음 Run 이 시작되지 않는다.
     실행 중인 Run 은 로컬 프로세스면 직접 종료하고, 다른 세대 소유면 그 세대에 cancel 명령을 보내
     소유 세대가 자기 하트비트 주기(runtime_poll_seconds)에 집행한다. 세대가 이미 사라져 lease 도 프로세스도
-    없는 running Run 은 소유자가 없으므로 DB 에서 취소로 마감한다.
+    없는 running Run 도 PID 소유·생존 확인 없이 DB 에서 취소로 마감하지 않는다.
     """
     from ttakkari.runs.manager import manager
 
     reason = reason[:1000]
     started = time.monotonic()
+    keys = [f"session:{session_id}"] if session_id is not None else fence_keys(pool, workspace_id)
+    receipt_id = receipt_id or uuid.uuid4()
+    if actor_session_id is not None:
+        existing = await db.scalar(select(AgentStopReceipt).where(
+            AgentStopReceipt.id == receipt_id).with_for_update())
+        if existing is not None:
+            if existing.actor_session_id != actor_session_id:
+                raise ValueError("stop receipt request ID belongs to another caller")
+            if existing.result is not None:
+                return {**existing.result, "receipt_id": str(receipt_id)}
+            if existing.status == "running" or (existing.status == "claiming" and not claim_existing_receipt):
+                await db.rollback()
+                return {"status": existing.status, "receipt_id": str(receipt_id), "stopped": [],
+                        "remaining": [], "unstopped": [], "total": 0}
+            existing.status = "running"
+            existing.pool = pool
+            existing.workspace_id = workspace_id
+            existing.session_id = session_id
+            existing.updated_at = utcnow()
+        else:
+            db.add(AgentStopReceipt(id=receipt_id, actor_session_id=actor_session_id, pool=pool,
+                                    workspace_id=workspace_id, session_id=session_id, status="running"))
+    fences = await lock_fences(db, keys)
+    for fence in fences:
+        fence.paused = True
+        fence.stopping = True
+        fence.epoch += 1
+        fence.request_id = receipt_id
+        fence.updated_at = utcnow()
+    await db.commit()  # enqueue/dispatch observe this fence before the stop snapshot
+
     rows = await _targets(db, pool, workspace_id, session_id)
-    result: dict[str, Any] = {"stopped": [], "remaining": [], "unstopped": [], "total": len(rows)}
+    result: dict[str, Any] = {"status": "stopping", "stopped": [], "remaining": [], "unstopped": [],
+                              "total": len(rows)}
+    if actor_session_id is not None:
+        result["receipt_id"] = str(receipt_id)
     if not rows:
+        result["status"] = "stopped"
+        result["message"] = "중지 대상 Run이 없습니다."
+        result["swept_reports"] = 0
+        result["elapsed_seconds"] = round(time.monotonic() - started, 2)
         await _audit(db, pool, session_id, actor_id, reason, result)
+        await _complete_stop(db, keys, receipt_id, result, actor_session_id)
         return result
 
     for run, sess in rows:
@@ -196,10 +357,16 @@ async def stop_all_agents(
         if run.status != RunStatus.running and not owned[run.id]:
             continue
         if not owned[run.id]:
-            # lease 도 프로세스도 없는 고아 running Run. 소유자가 없어 누구도 마감하지 않는다.
+            if run.status != RunStatus.running:
+                continue
+            terminated, why = await _terminate_identified_run(run, manager)
             await db.refresh(run)
-            if run.status == RunStatus.running:
-                await manager._finish(db, run, RunStatus.cancelled, error=f"{reason} (소유 프로세스 없음)")
+            if terminated and run.status == RunStatus.running:
+                await manager._finish(db, run, RunStatus.cancelled, error=reason)
+                await db.commit()
+            elif not terminated:
+                result["unstopped"].append({"run_id": str(run.id), "session_id": str(run.session_id),
+                                            "reason": why})
             continue
         try:
             if not await manager.cancel(run.id):
@@ -232,8 +399,59 @@ async def stop_all_agents(
         result["unstopped"].append({"run_id": rid, "session_id": str(run.session_id), "reason": why})
     result["swept_reports"] = swept
     result["elapsed_seconds"] = round(time.monotonic() - started, 2)
+    result["status"] = "partial" if result["remaining"] or result["unstopped"] else "stopped"
+    result["message"] = ("일부 Run이 남아 있습니다. remaining과 unstopped 사유를 확인하세요."
+                         if result["status"] == "partial" else "대상 Run이 모두 중지 상태입니다.")
     await _audit(db, pool, session_id, actor_id, reason, result)
+    await _complete_stop(db, keys, receipt_id, result, actor_session_id)
     return result
+
+
+async def stop_all_agents(
+    db: AsyncSession,
+    *,
+    pool: str = "personal",
+    workspace_id: uuid.UUID | None = None,
+    session_id: uuid.UUID | None = None,
+    reason: str = "사용자 전역 중지 지시",
+    actor_id: str | None = None,
+    wait_timeout: float = 3.0,
+    receipt_id: uuid.UUID | None = None,
+    actor_session_id: uuid.UUID | None = None,
+    claim_existing_receipt: bool = False,
+) -> dict[str, Any]:
+    rid = receipt_id or uuid.uuid4()
+    try:
+        return await _stop_all_agents_impl(
+            db, pool=pool, workspace_id=workspace_id, session_id=session_id, reason=reason,
+            actor_id=actor_id, wait_timeout=wait_timeout, receipt_id=rid,
+            actor_session_id=actor_session_id, claim_existing_receipt=claim_existing_receipt,
+        )
+    except Exception as exc:
+        log.exception("stop-all failed for request %s", rid)
+        with contextlib.suppress(Exception):
+            await db.rollback()
+            keys = [f"session:{session_id}"] if session_id is not None else fence_keys(pool, workspace_id)
+            failure = {"status": "failed", "stopped": [], "remaining": [],
+                       "unstopped": [], "total": 0, "error": str(exc)[:1000]}
+            if actor_session_id is not None:
+                failure["receipt_id"] = str(rid)
+            await _complete_stop(db, keys, rid, failure, actor_session_id)
+        return {"status": "failed", "receipt_id": str(rid), "stopped": [], "remaining": [],
+                "unstopped": [], "total": 0, "error": str(exc)[:1000]}
+
+
+async def _complete_stop(db: AsyncSession, keys: list[str], receipt_id: uuid.UUID,
+                         result: dict[str, Any], actor_session_id: uuid.UUID | None) -> None:
+    for fence in await lock_fences(db, keys):
+        fence.stopping = False
+        fence.updated_at = utcnow()
+    receipt = await db.get(AgentStopReceipt, receipt_id) if actor_session_id is not None else None
+    if receipt is not None and receipt.actor_session_id == actor_session_id:
+        receipt.result = {k: v for k, v in result.items() if k != "receipt_id"}
+        receipt.status = result.get("status", "partial")
+        receipt.updated_at = utcnow()
+    await db.commit()
 
 
 def _is_local(manager, run_id: uuid.UUID) -> bool:
@@ -281,6 +499,7 @@ async def _audit(db: AsyncSession, pool: str, session_id: uuid.UUID | None, acto
         target_type="session" if session_id else "pool",
         target_id=session_id or pool,
         detail={"pool": pool, "actor_session": actor_id, "reason": reason, "total": result["total"],
+                "status": result.get("status"),
                 "stopped": len(result["stopped"]), "remaining": len(result["remaining"]),
                 "unstopped": result["unstopped"][:50]},
     )

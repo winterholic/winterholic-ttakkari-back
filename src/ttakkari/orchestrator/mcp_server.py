@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from typing import Any, Literal
 
 import httpx
@@ -898,14 +899,16 @@ async def stop_worker(worker_id: str) -> str:
 
 
 @orchestrator_tool
-async def stop_agents(session_id: str | None = None, reason: str = "") -> str:
+async def stop_agents(session_id: str | None = None, reason: str = "", request_id: str | None = None) -> str:
     """On user instruction, stop all agents or a specific session across ownership trees and generations.
     Omit session_id to stop ALL queued, running and quota-waiting agents.
     Work orchestrators are restricted to their workspace.
     Returns stopped runs, remaining runs, and reasons for unstopped runs."""
+    request_id = request_id or str(uuid.uuid4())
+    body = {"reason": reason, "request_id": request_id}
     if session_id:
-        return await _call("POST", f"/agents/{session_id}/stop", {"reason": reason})
-    return await _call("POST", "/stop-all", {"reason": reason})
+        return await _call("POST", f"/agents/{session_id}/stop", body)
+    return await _call("POST", "/stop-all", body)
 
 
 @query_tool

@@ -210,7 +210,9 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
                 session_id=target_sid,
                 reason=reason,
             )
-        log.info("scheduled stop_all executed: %d runs stopped", len(res.get("stopped", [])))
+        log.info("scheduled stop_all result=%s stopped=%d remaining=%d unstopped=%d",
+                 res.get("status", "stopped"), len(res.get("stopped", [])),
+                 len(res.get("remaining", [])), len(res.get("unstopped", [])))
         return {**res, "count": len(res.get("stopped", []))}
 
     if action == "cancel_run":
@@ -260,7 +262,7 @@ async def complete_schedule(
     if item is None:
         return False
     is_expired = result and result.get("status") == "expired"
-    item.status = "expired" if is_expired else "completed"
+    item.status = "expired" if is_expired else "partial" if result and result.get("status") == "partial" else "completed"
     item.executed_at = utcnow()
     item.result = result
     item.updated_at = utcnow()

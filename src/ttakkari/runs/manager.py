@@ -261,17 +261,52 @@ class RunManager:
         if self.runtime and await self.runtime.refresh() != "active":
             return None
         async with sessionmaker()() as db:
-            kind = await db.scalar(select(ChatSession.kind).where(ChatSession.id == session_id).with_for_update())
+            from ttakkari.runs.agent_control import (
+                fence_keys,
+                lock_fences,
+                run_fence_is_current,
+            )
+            sess_scope = (await db.execute(select(ChatSession.pool, ChatSession.workspace_id, ChatSession.kind)
+                                           .where(ChatSession.id == session_id).with_for_update())).first()
+            if sess_scope is None:
+                await db.rollback()
+                return None
+            pool, workspace_id, kind = sess_scope
+            fences = await lock_fences(db, fence_keys(pool, workspace_id, session_id) + ["pool:all"])
+            if any(fence.paused for fence in fences):
+                await db.rollback()
+                return None
+            epochs = {fence.scope_key: fence.epoch for fence in fences}
             if kind == SessionKind.desk:
                 # 접수는 대화를 이어 쓰지 않는다. 메시지마다 따로, 바로 돈다(바쁜 접수 뒤에 줄 서지 않는다).
-                queued = list(await db.scalars(select(Run.id).where(Run.session_id == session_id,
-                                                                    Run.status == RunStatus.queued)))
-                started = [rid for rid in queued if self.start(rid, lane="desk")]
+                queued = list(await db.scalars(select(Run).where(Run.session_id == session_id,
+                                                                Run.status == RunStatus.queued)))
+                stale = [r for r in queued if not run_fence_is_current(r.stop_fence_epochs, epochs)]
+                for run in stale:
+                    run.status = RunStatus.cancelled
+                    run.finished_at = utcnow()
+                    run.resume_after = None
+                    run.error = "중지 fence 이전에 접수된 대기 Run이라 명시적 재개 뒤에도 시작하지 않았습니다."
+                    events.append(db, run, "run.finished", {"status": RunStatus.cancelled, "error": run.error})
+                if stale:
+                    await db.commit()
+                started = [r.id for r in queued if r not in stale and self.start(r.id, lane="desk")]
                 await db.commit()
                 return started[0] if started else None
             rows = list(await db.scalars(
                 select(Run).where(Run.session_id == session_id, Run.status.in_([RunStatus.queued, RunStatus.running]))
                 .order_by(Run.created_at)))
+            stale = [r for r in rows if r.status == RunStatus.queued
+                     and not run_fence_is_current(r.stop_fence_epochs, epochs)]
+            for run in stale:
+                run.status = RunStatus.cancelled
+                run.finished_at = utcnow()
+                run.resume_after = None
+                run.error = "중지 fence 이전에 접수된 대기 Run이라 명시적 재개 뒤에도 시작하지 않았습니다."
+                events.append(db, run, "run.finished", {"status": RunStatus.cancelled, "error": run.error})
+            if stale:
+                await db.commit()
+                rows = [r for r in rows if r not in stale]
             if any(r.status == RunStatus.running or r.id in self._handles for r in rows):
                 await db.rollback()
                 return None
@@ -1494,6 +1529,9 @@ class RunManager:
         if h:
             h.proc = proc
         run.pid = proc.pid
+        from ttakkari.runs.agent_control import _process_identity
+        if process_identity := await _process_identity(proc.pid):
+            run.pid_started_at = float(process_identity[0])
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
         heartbeat_task: asyncio.Task | None = None
         timed_out = False
@@ -1816,6 +1854,22 @@ async def resume_interrupted() -> int:
         waiting: list[tuple[uuid.UUID, uuid.UUID, float]] = []
         now = time.time()
         for run in rows:
+            from ttakkari.runs.agent_control import (
+                fence_keys,
+                lock_fences,
+                run_fence_is_current,
+            )
+            sess = await db.get(ChatSession, run.session_id)
+            if sess is None:
+                continue
+            fences = await lock_fences(db, fence_keys(sess.pool, sess.workspace_id, sess.id) + ["pool:all"])
+            epochs = {fence.scope_key: fence.epoch for fence in fences}
+            if any(fence.paused for fence in fences):
+                continue
+            if not run_fence_is_current(run.stop_fence_epochs, epochs):
+                await manager._finish(db, run, RunStatus.cancelled,
+                                      error="중지 fence 이전의 재시작 대기 Run이라 자동 재개하지 않았습니다.")
+                continue
             if await _consume_pending_cancel(db, run.id):
                 # 소유 세대 집행 전에 세대가 죽어 interrupted 로 남은 Run. 재개하지 않고 취소로 마감한다.
                 await manager._finish(db, run, RunStatus.cancelled, error="전역 중지 요청 후 세대 종료로 취소 마감")
@@ -2204,7 +2258,8 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     label = {RunStatus.succeeded: "완료", RunStatus.failed: "실패", RunStatus.cancelled: "취소",
              RunStatus.interrupted: "중단"}.get(RunStatus(run.status), run.status)
     usage_info = run.usage or {}
-    body = [f"[작업 보고] 작업 세션 '{sess.title}' (worker_id={sess.id}) {label}."]
+    body = [f"[작업 보고] 작업 세션 '{sess.title}' (worker_id={sess.id}) {label}.",
+            f"stop_source_run_id={run.id}"]
     if fb := usage_info.get("fallback"):
         body.append(
             f"경로 전환: {fb.get('from_engine')}/{fb.get('from_model')}({fb.get('from')}) → "

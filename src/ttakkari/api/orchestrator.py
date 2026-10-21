@@ -9,14 +9,17 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 
 from ttakkari.api.deps import Db
 from ttakkari.api.pms import TaskIn, _project, _task_response, check_project_scope
 from ttakkari.api.sessions import ACTIVE, queue_run
 from ttakkari.audit import record
 from ttakkari.config import get_settings
+from ttakkari.db import sessionmaker
 from ttakkari.model_catalog import ANTIGRAVITY_MODELS, thinking_level
 from ttakkari.models import (
+    AgentStopReceipt,
     Artifact,
     ChatSession,
     PmsProject,
@@ -26,6 +29,7 @@ from ttakkari.models import (
     RunOrigin,
     RunStatus,
     SessionKind,
+    utcnow,
 )
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
@@ -37,6 +41,7 @@ from ttakkari.runs.manager import manager
 router = APIRouter(prefix="/api/orchestrator", tags=["orchestrator"])
 RESULT_CHARS = 4000
 MAX_ACTIVE_WORKERS = 20
+_stop_receipt_tasks: set[asyncio.Task] = set()
 
 
 class QwenFitIn(BaseModel):
@@ -501,6 +506,50 @@ async def stop_worker(worker_id: uuid.UUID, sid: OrchestratorSession, db: Db) ->
 
 class StopAllIn(BaseModel):
     reason: str = Field(default="오케스트레이터 전역 중지", max_length=1000)
+    request_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+
+
+async def _run_stop_receipt(*, receipt_id: uuid.UUID, actor_session_id: uuid.UUID,
+                            pool: str, workspace_id: uuid.UUID | None, session_id: uuid.UUID | None,
+                            reason: str, actor_id: str) -> dict[str, Any]:
+    from ttakkari.runs.agent_control import stop_all_agents
+
+    async with sessionmaker()() as stop_db:
+        return await stop_all_agents(
+            stop_db, pool=pool, workspace_id=workspace_id, session_id=session_id, reason=reason,
+            actor_id=actor_id, receipt_id=receipt_id, actor_session_id=actor_session_id,
+            claim_existing_receipt=True,
+        )
+
+
+async def _stop_with_durable_receipt(
+    db: Db, *, receipt_id: uuid.UUID, actor_session_id: uuid.UUID, pool: str,
+    workspace_id: uuid.UUID | None, session_id: uuid.UUID | None, reason: str, actor_id: str,
+) -> dict[str, Any]:
+    statement = insert(AgentStopReceipt).values(
+        id=receipt_id, actor_session_id=actor_session_id, pool=pool, workspace_id=workspace_id,
+        session_id=session_id, status="queued",
+    ).on_conflict_do_nothing(index_elements=[AgentStopReceipt.id])
+    await db.execute(statement)
+    receipt = await db.scalar(select(AgentStopReceipt).where(
+        AgentStopReceipt.id == receipt_id).with_for_update())
+    if receipt is None or receipt.actor_session_id != actor_session_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "중지 영수증을 찾을 수 없습니다.")
+    if receipt.result is not None:
+        return {**receipt.result, "receipt_id": str(receipt_id)}
+    if receipt.status != "queued":
+        return {"status": receipt.status, "receipt_id": str(receipt_id), "stopped": [],
+                "remaining": [], "unstopped": [], "total": 0}
+    receipt.status = "claiming"
+    receipt.updated_at = utcnow()
+    await db.commit()
+    task = asyncio.create_task(_run_stop_receipt(
+        receipt_id=receipt_id, actor_session_id=actor_session_id, pool=pool, workspace_id=workspace_id,
+        session_id=session_id, reason=reason, actor_id=actor_id,
+    ), name=f"stop-receipt-{receipt_id}")
+    _stop_receipt_tasks.add(task)
+    task.add_done_callback(_stop_receipt_tasks.discard)
+    return await asyncio.shield(task)
 
 
 @router.post("/stop-all")
@@ -513,16 +562,16 @@ async def orchestrator_stop_all(
 
     개인 풀은 개인 풀 전체, 회사 풀은 해당 워크스페이스로 권한이 제한된다.
     """
-    from ttakkari.runs.agent_control import stop_all_agents
-
     orch = await _orchestrator(db, sid)
     reason = body.reason if body else "오케스트레이터 전역 중지"
-    return await stop_all_agents(
+    return await _stop_with_durable_receipt(
         db,
         pool=orch.pool,
         workspace_id=orch.workspace_id,
         reason=reason,
         actor_id=str(sid),
+        receipt_id=(body.request_id if body else uuid.uuid4()),
+        actor_session_id=uuid.UUID(str(sid)),
     )
 
 
@@ -534,8 +583,6 @@ async def orchestrator_stop_session(
     body: StopAllIn | None = None,
 ) -> dict[str, Any]:
     """특정 세션(다른 오케스트레이터 소유 워커나 기획 세션 포함)을 소유권 제한 없이 중지한다."""
-    from ttakkari.runs.agent_control import stop_all_agents
-
     orch = await _orchestrator(db, sid)
     target = await db.get(ChatSession, session_id)
     if target is None:
@@ -544,13 +591,15 @@ async def orchestrator_stop_session(
     if target.pool != orch.pool or (orch.pool == "work" and target.workspace_id != orch.workspace_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "다른 풀 또는 워크스페이스의 세션은 중지할 수 없습니다.")
     reason = body.reason if body else f"세션 {session_id} 중지"
-    return await stop_all_agents(
+    return await _stop_with_durable_receipt(
         db,
         pool=orch.pool,
         workspace_id=orch.workspace_id,
         session_id=session_id,
         reason=reason,
         actor_id=str(sid),
+        receipt_id=(body.request_id if body else uuid.uuid4()),
+        actor_session_id=uuid.UUID(str(sid)),
     )
 
 

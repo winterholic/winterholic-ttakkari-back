@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import uuid
 from datetime import timedelta
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -196,6 +199,13 @@ async def test_work_pool_scope_isolation(client, auth, make_dir):
     assert str(r_other.id) not in res["stopped"]
     assert str(r_personal.id) not in res["stopped"]
 
+    # fence도 풀/workspace 경계를 넘지 않는다. 다른 work workspace의 자동 후속 Run은 접수된다.
+    from ttakkari.api.sessions import queue_run
+    async with sessionmaker()() as db:
+        other_session = await db.get(ChatSession, uuid.UUID(other_work["id"]))
+        followup = await queue_run(db, other_session, "unrelated workspace follow-up", origin=RunOrigin.system)
+        assert followup.status == RunStatus.queued
+
     # 타 workspace 세션을 명시 지정하여 중지 시도 시 403 차단
     denied = await client.post(f"/api/orchestrator/agents/{other_work['id']}/stop", headers=h_work1)
     assert denied.status_code == 403
@@ -343,3 +353,182 @@ async def test_scheduled_stop_all_scope_is_clamped_to_orchestrator(client, auth,
                                json={"action_type": "stop_all", "due_at": "+3600s",
                                      "payload": {"session_id": other["id"]}})
     assert denied.status_code == 403
+
+
+async def test_lease_missing_live_unidentified_process_remains_running(client, auth, make_dir):
+    """lease 부재와 프로세스 부재를 혼동하지 않고, test worker 프로세스를 보존한다."""
+    orch, h = await create_session(client, auth, make_dir)
+    run = await create_run(orch, status=RunStatus.running, pid=os.getpid(), started_at=utcnow())
+
+    response = await client.post("/api/orchestrator/stop-all", headers=h)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert str(run.id) in body["remaining"]
+    assert any(item["run_id"] == str(run.id) and item["reason"] for item in body["unstopped"])
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run.id)).status == RunStatus.running
+    assert os.kill(os.getpid(), 0) is None
+
+
+async def test_lease_missing_live_fake_child_is_only_signalled_with_verified_identity(client, auth, make_dir):
+    """실제 fake child는 PID·시작 시각·프로세스 그룹·엔진 명령이 맞을 때만 종료한다."""
+    from ttakkari.runs.agent_control import _process_identity
+
+    orch, h = await create_session(client, auth, make_dir)
+    child = await asyncio.create_subprocess_exec(
+        sys.executable, str(Path(__file__).parent / "fake_agents" / "fake_claude_sleep.py"),
+        start_new_session=True,
+    )
+    try:
+        await asyncio.sleep(0.1)
+        identity = await _process_identity(child.pid)
+        run = await create_run(orch, status=RunStatus.running, pid=child.pid,
+                               pid_started_at=float(identity[0]) if identity else None, started_at=utcnow())
+
+        response = await client.post("/api/orchestrator/stop-all", headers=h)
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        if identity:
+            assert str(run.id) in body["stopped"]
+            assert child.returncode is not None
+        else:
+            assert str(run.id) in body["remaining"]
+            assert child.returncode is None
+            async with sessionmaker()() as db:
+                assert (await db.get(Run, run.id)).status == RunStatus.running
+    finally:
+        if child.returncode is None:
+            child.terminate()
+            await child.wait()
+
+
+async def test_stop_enqueue_dispatch_restart_fence_and_explicit_user_resume(client, auth, make_dir, monkeypatch):
+    """stop/enqueue race, finally dispatch, restart 재개를 막고 명시 사용자 입력만 scope를 연다."""
+    from fastapi import HTTPException
+
+    from ttakkari.api.sessions import queue_run
+    from ttakkari.runs import agent_control
+    from ttakkari.runs.manager import resume_interrupted
+
+    orch, h = await create_session(client, auth, make_dir)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original_targets = agent_control._targets
+
+    async def delayed_targets(*args):
+        entered.set()
+        await release.wait()
+        return await original_targets(*args)
+
+    monkeypatch.setattr(agent_control, "_targets", delayed_targets)
+    stop_task = asyncio.create_task(client.post("/api/orchestrator/stop-all", headers=h))
+    await asyncio.wait_for(entered.wait(), 3)
+    async with sessionmaker()() as db:
+        session = await db.get(ChatSession, uuid.UUID(orch["id"]))
+        try:
+            await queue_run(db, session, "automatic follow-up", origin=RunOrigin.report)
+        except HTTPException as exc:
+            assert exc.status_code == 409
+        else:
+            raise AssertionError("automatic enqueue crossed a persisted stop fence")
+    release.set()
+    stopped = await stop_task
+    assert stopped.status_code == 200, stopped.text
+
+    stale_queue = await create_run(orch, status=RunStatus.queued, origin=RunOrigin.report)
+    stale_restart = await create_run(orch, status=RunStatus.interrupted, error="서버 종료로 중단")
+    assert await manager.dispatch(uuid.UUID(orch["id"])) is None
+    await resume_interrupted()
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, stale_queue.id)).status == RunStatus.queued
+        assert (await db.get(Run, stale_restart.id)).status == RunStatus.interrupted
+
+    response = await client.post(f"/api/sessions/{orch['id']}/runs", headers=auth, json={"prompt": "user resumes"})
+    assert response.status_code == 202, response.text
+    await resume_interrupted()
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, stale_queue.id)).status == RunStatus.cancelled
+        assert (await db.get(Run, stale_restart.id)).status == RunStatus.cancelled
+
+
+async def test_new_report_is_not_suppressed_by_an_old_worker_stop_marker(client, auth, make_dir):
+    """같은 worker의 새 정상 취소 보고는 과거 전역 중지 표식에 걸리지 않는다."""
+    from ttakkari.runs.agent_control import (
+        drop_suppressed_reports,
+        mark_report_suppressed,
+    )
+
+    orch, _ = await create_session(client, auth, make_dir)
+    worker, _ = await create_session(client, auth, make_dir, kind="worker", parent=orch["id"])
+    old = await create_run(worker, status=RunStatus.cancelled)
+    async with sessionmaker()() as db:
+        await mark_report_suppressed(db, await db.get(Run, old.id))
+        await db.commit()
+    fresh = await create_run(orch, origin=RunOrigin.report,
+                             prompt=f"[작업 보고] 취소 원본 Run ID={uuid.uuid4()} worker_id={worker['id']} 취소.")
+
+    async with sessionmaker()() as db:
+        kept = await drop_suppressed_reports(db, [await db.get(Run, fresh.id)])
+        assert [row.id for row in kept] == [fresh.id]
+
+
+async def test_caller_stop_receipt_is_retrievable_after_caller_run_stopped(client, auth, make_dir, monkeypatch):
+    """caller 예외 없이 receipt를 영속화하고 종료 뒤 owner API로 다시 조회한다."""
+    orch, h = await create_session(client, auth, make_dir)
+    caller = await create_run(orch, status=RunStatus.running)
+
+    async def owned(_run_id):
+        return True
+
+    async def cancel(_run_id):
+        async with sessionmaker()() as db:
+            row = await db.get(Run, caller.id)
+            row.status = RunStatus.cancelled
+            row.finished_at = utcnow()
+            await db.commit()
+        return True
+
+    monkeypatch.setattr(manager, "is_owned", owned)
+    monkeypatch.setattr(manager, "cancel", cancel)
+
+    response = await client.post("/api/orchestrator/stop-all", headers=h)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert str(caller.id) in body["stopped"]
+    assert body["receipt_id"]
+    receipt = await client.get(f"/api/system/stop-receipts/{body['receipt_id']}", headers=auth)
+    assert receipt.status_code == 200, receipt.text
+    assert receipt.json()["result"]["stopped"] == body["stopped"]
+
+
+async def test_schedule_partial_stop_has_partial_status(client, auth, make_dir):
+    """예약 실행과 대상 중지 결과를 분리해 remaining이 있으면 partial을 기록한다."""
+    from ttakkari.schedules.service import (
+        complete_schedule,
+        create_schedule,
+        execute_action,
+        get_schedule,
+    )
+
+    orch, _ = await create_session(client, auth, make_dir)
+    await create_run(orch, status=RunStatus.running, pid=os.getpid(), started_at=utcnow())
+    async with sessionmaker()() as db:
+        item = await create_schedule(db, action_type="stop_all", due_at="+0s", payload={"scope_pool": "personal"})
+
+    result = await execute_action(item)
+
+    assert result["status"] == "partial"
+    assert result["remaining"]
+    assert result["unstopped"]
+    async with sessionmaker()() as db:
+        item.status = "leased"
+        item.owner_id = "fixture-owner"
+        item.attempts = 1
+        item.leased_until = utcnow() + timedelta(minutes=1)
+        await db.merge(item)
+        await db.commit()
+        assert await complete_schedule(db, item.id, result=result, owner_id="fixture-owner", attempt=1)
+        await db.commit()
+        assert (await get_schedule(db, item.id)).status == "partial"

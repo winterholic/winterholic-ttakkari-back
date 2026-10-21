@@ -19,3 +19,27 @@
 ## 검증
 - `tests/test_agent_stop_all.py` 14건. 수정 전 코드에서 12건 실패, 1건 통과(예약 stop_all). 수정 후 14건 통과(배포 게이트에서 확인).
 - 재현 3종: 다른 오케스트레이터 소유 작업자, 다른 세대 소유 running Run(실제 두 세대 런타임 + cancel 명령 집행), 한도 대기 Run.
+
+## 독립 검증 재작업 (기준 9afe3b2, 수정 구현 검증 대기)
+
+### 시작 상태 대조
+- 원본 `/Users/winterholic/development/projects/winterholic-ttakkari/back` 는 staged agent-control/ADR/test 삭제, unstaged collector 및 W1 작업, `main...origin/main [behind 1]` 이 섞여 있었다. 원본에는 쓰지 않았다.
+- 원격 `origin/main` 은 `1bf9097a8fa2a86631b7e654c27524d066c225f3`; 기준 SHA 다음의 TTS API 문서·migration 포맷 커밋만 확인했다. 수정은 기준 SHA의 새 분리 worktree `/private/tmp/back-stop-rework-20261021` 에서 했다.
+- 기존 `/private/tmp/back-stop-f086` 는 기준 SHA와 같은 전용 브랜치였고, `.muse-runtime/node_modules` 미추적 1건만 있어 재사용하지 않았다. `/.../back-agent-control` 은 별도 미커밋 기능 변경이 있어 건드리지 않았다.
+- `ps -axo ...` 는 Codex 명령 환경에서 `operation not permitted` 로 차단됐다. 호스트 `server_resources` 는 읽기 전용으로 확인했으며 실제 프로세스를 종료하지 않았다. 이전 예약 `2c6afdaa-619a-4a5e-9f74-1910cb69763a` 의 최종 상태는 `failed`, 사유는 `schema contract requires an idle migration/bootstrap; active work preserved` 였다.
+
+### 감사 반례 보완
+- lease 부재만으로 running 을 취소하지 않는다. 새 `pid_started_at` 과 PID/시작 시각/pgid/엔진 명령 확인이 모두 가능할 때만 프로세스 그룹에 신호를 보내며, 확인 불가·생존은 remaining/unstopped 로 둔다. 마이그레이션 `0062_agent_stop_fences` 로 시작 시각 컬럼을 추가했다.
+- `AgentStopFence` scope row lock과 epoch snapshot을 queue, dispatch, stop에서 공유한다. stopping 동안 enqueue를 막고, finally dispatch와 `resume_interrupted` 도 fence를 확인한다. 오래된/epoch 미상 queued Run 은 이후 명시 재개 뒤에도 실행하지 않는다. 사용자의 직접 새 Run 제출만 stopping 종료 후 해당 scope를 다시 연다.
+- orchestrator stop은 `AgentStopReceipt` 를 먼저 claiming 가능한 durable row로 쓰고 별도 DB session/task에서 집행한다. 호출 child 종료·HTTP disconnect 뒤 owner-auth receipt 목록/단건 API로 상태·결과를 다시 조회한다.
+- 새 보고에는 원본 `stop_source_run_id` 를 실어 정확한 억제 marker ID를 조회한다. 원본 ID가 없는 구세대 보고에 한해서 worker+1h 호환 fallback을 남긴다.
+- partial 결과는 response `status=partial`, Korean message, `remaining`/`unstopped` 사유 및 감사 로그로 드러낸다. 예약 action도 `ScheduledAction.status=partial` 로 저장하고 remaining 수를 로그로 남긴다.
+
+### 검증 실행 및 제한
+- 동적 DB 비의존 검사: `PYTHONPATH=src TTAKKARI_NO_ENV_FILE=1 TTAKKARI_ENV=dev TTAKKARI_DATABASE_URL=postgresql+asyncpg://test:test@127.0.0.1:1/isolated_test pytest --noconftest -q tests/test_agent_stop_contract_unit.py` → 1차 `4 passed in 0.30s`, 원격 main `1bf9097` 위 rebase 후 재실행 `4 passed in 0.33s`. 범위 분리, exact epoch 비교, 실제 inert fake child의 식별정보 부재 및 PID birth-time 불일치 시 신호 미전송을 확인했다.
+- 정적 확인: `python3 -m compileall -q src/ttakkari tests/test_agent_stop_all.py tests/test_agent_stop_contract_unit.py alembic/versions/0062_agent_stop_fences_and_receipts.py` 성공. 변경 파일 `ruff check --fix ...` 는 2 import 순서만 정리했고, 이어서 non-fix `ruff check ...` 는 `All checks passed!` 를 반환했다. `git diff --check` 통과.
+- migration graph read-only 확인: 저장소 `.venv` Python 으로 `ScriptDirectory.from_config(Config('alembic.ini'))` 실행 결과 `migration_heads=['0062_agent_stop_fences']`, `current_head=0062_agent_stop_fences`.
+- DB 통합 검사 5개(lease 없는 running child, stop/enqueue 경합·dispatch·restart, caller 이후 receipt 조회, worker 새 report, 예약 partial)는 `tests/test_agent_stop_all.py` 에 추가했으나 미실행이다. 이 Run 환경은 `TTAKKARI_TEST_DB` 미설정이고 `/tmp/ttakkari-test-*` test cluster가 없었다. 이전 fixture의 initdb `shmget: No space left on device`를 같은 조건으로 재시도하지 않았다. 운영 DB도 사용하지 않았다.
+- 교차세대 lease 실집행, pool/workspace·worker token 회귀, schedule catch-up·중복 방지의 현 수정 SHA 동적 결과는 미확인이다. 기존 테스트는 삭제/skip/기대값 완화하지 않았다.
+- 모델 정책은 `engine=auto`, `task_type=general` 그대로 두었다. 전체 운영 중지 및 05:00 취소 예약에는 접근하지 않았다.
+- 코드 변경 커밋은 원격 main `1bf9097` 위에 rebase 완료했고, rebase 뒤 단위 검사·lint·compile·migration head 검사를 재실행했다. 이 기록 갱신 뒤 푸시 및 수정 SHA gate 예약을 진행한다. DB 통합 재검증 전 판정을 통과로 올리지 않는다.

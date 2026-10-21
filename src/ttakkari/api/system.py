@@ -18,7 +18,13 @@ from ttakkari.api.deps import Db, get_workspace
 from ttakkari.artifacts.preview import soffice_path
 from ttakkari.audit import record
 from ttakkari.config import get_settings
-from ttakkari.models import AppSetting, Run, SystemResourceSample, utcnow
+from ttakkari.models import (
+    AgentStopReceipt,
+    AppSetting,
+    Run,
+    SystemResourceSample,
+    utcnow,
+)
 from ttakkari.security.auth import User, client_ip
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -201,6 +207,30 @@ async def stop_all(_: User, db: Db, request: Request) -> dict:
     res = await stop_all_agents(db, pool="all", reason="시스템 비상 정지")
     record(db, action="system.stop_all", detail=res, ip=client_ip(request))
     return res
+
+
+@router.get("/system/stop-receipts")
+async def list_stop_receipts(_: User, db: Db, limit: int = Query(20, ge=1, le=100)) -> list[dict]:
+    """Owner-only recovery path when an orchestrator was stopped before it received the tool result."""
+    rows = list(await db.scalars(select(AgentStopReceipt).order_by(AgentStopReceipt.created_at.desc()).limit(limit)))
+    return [_stop_receipt_out(row) for row in rows]
+
+
+@router.get("/system/stop-receipts/{receipt_id}")
+async def get_stop_receipt(receipt_id: uuid.UUID, _: User, db: Db) -> dict:
+    receipt = await db.get(AgentStopReceipt, receipt_id)
+    if receipt is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "중지 요청 영수증이 없습니다.")
+    return _stop_receipt_out(receipt)
+
+
+def _stop_receipt_out(receipt: AgentStopReceipt) -> dict:
+    return {"receipt_id": str(receipt.id), "status": receipt.status,
+            "actor_session_id": str(receipt.actor_session_id) if receipt.actor_session_id else None,
+            "pool": receipt.pool, "workspace_id": str(receipt.workspace_id) if receipt.workspace_id else None,
+            "session_id": str(receipt.session_id) if receipt.session_id else None,
+            "result": receipt.result, "error": receipt.error,
+            "created_at": receipt.created_at, "updated_at": receipt.updated_at}
 
 
 @router.get("/runs/{run_id}/diff", response_class=PlainTextResponse)

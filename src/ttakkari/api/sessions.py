@@ -206,6 +206,20 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
         effort = MUSE_EFFORT  # Muse 는 요청이 다른 값을 줘도 max 로 고정한다
     if s.engine == "muse" and selected_model and selected_model not in get_settings().engine_models.get("muse", []):
         raise HTTPException(422, "Muse Code에서 지원하는 코딩 모델을 선택하세요.")
+    from ttakkari.runs.agent_control import fence_keys, lock_fences
+    fences = await lock_fences(db, fence_keys(s.pool, s.workspace_id, s.id) + ["pool:all"])
+    if any(fence.stopping for fence in fences):
+        raise HTTPException(status.HTTP_409_CONFLICT, "전역 중지가 집행 중입니다. 완료된 뒤 새 작업을 제출하세요.")
+    paused = [fence for fence in fences if fence.paused]
+    if paused and origin != RunOrigin.user:
+        raise HTTPException(status.HTTP_409_CONFLICT, "중지된 범위입니다. 사용자가 새 작업을 제출하면 다시 시작합니다.")
+    if paused:
+        for fence in paused:
+            fence.paused = False
+            fence.epoch += 1
+            fence.request_id = None
+            fence.updated_at = utcnow()
+    run_fence_epochs = {fence.scope_key: fence.epoch for fence in fences}
     if request_key:
         await db.scalar(select(ChatSession.id).where(ChatSession.id == s.id).with_for_update())
         existing = await db.scalar(select(Run).where(Run.session_id == s.id, Run.request_key == request_key))
@@ -217,7 +231,7 @@ async def queue_run(db: AsyncSession, s: ChatSession, prompt: str, *, origin: Ru
     ahead = await db.scalar(select(func.count()).select_from(Run).where(Run.session_id == s.id, Run.status.in_(ACTIVE)))
     run = Run(session_id=s.id, workspace_id=s.workspace_id, prompt=prompt, origin=origin, request_key=request_key,
               context_artifact_ids=[str(a) for a in context_artifact_ids or []], engine=s.engine,
-              model=model or s.model, effort=effort or s.effort)
+              model=model or s.model, effort=effort or s.effort, stop_fence_epochs=run_fence_epochs)
     db.add(run)
     if s.title == "새 작업":
         s.title = prompt.strip().splitlines()[0][:60] or s.title

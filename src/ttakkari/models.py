@@ -305,6 +305,10 @@ class Run(Base):
     # 실제로 실행한 엔진 프로필(폴백하면 마지막 프로필)
     profile: Mapped[str | None] = mapped_column(String(40))
     pid: Mapped[int | None]
+    # OS process birth time captured at launch. A PID alone is not enough to
+    # authorize signalling after the owning runtime lease has disappeared.
+    pid_started_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_fence_epochs: Mapped[dict[str, int]] = mapped_column(JSONB, default=dict)
     exit_code: Mapped[int | None]
     error: Mapped[str | None] = mapped_column(Text)
     result_text: Mapped[str | None] = mapped_column(Text)
@@ -399,6 +403,36 @@ class RuntimeLease(Base):
     lane: Mapped[str] = mapped_column(String(16), index=True)
     account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("engine_accounts.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class AgentStopFence(Base):
+    """Persistent enqueue/dispatch barrier for one authorized stop scope."""
+
+    __tablename__ = "agent_stop_fences"
+    scope_key: Mapped[str] = mapped_column(String(180), primary_key=True)
+    epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    stopping: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    request_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class AgentStopReceipt(Base):
+    """Owner-readable durable result, written before an orchestrator caller can be stopped."""
+
+    __tablename__ = "agent_stop_receipts"
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    actor_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    pool: Mapped[str] = mapped_column(String(16))
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="running", server_default="running")
+    result: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
 class RuntimeCommand(Base):

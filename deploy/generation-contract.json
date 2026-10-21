@@ -4,7 +4,7 @@
     "protocol": 1,
     "slots": 3
   },
-  "schema_revision": "0061_local_tts",
+  "schema_revision": "0062_agent_stop_fences",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -34,6 +34,7 @@
     "0057_scheduled_actions",
     "0058_kb_immutability_truncate",
     "0059_collector_intake",
-    "0060_collector_job_runtime"
+    "0060_collector_job_runtime",
+    "0061_local_tts"
   ]
 }

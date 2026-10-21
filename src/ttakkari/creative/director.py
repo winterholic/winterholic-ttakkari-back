@@ -187,6 +187,8 @@ class AttemptReceipt(StrictModel):
     last_event_sequence: int = 0
     expected_output_count: int | None = None
     error_kind: str | None = None
+    error_details: list[str] = Field(default_factory=list)
+    execution_claim: dict | None = None
     outputs: list[dict] = Field(default_factory=list)
     created_at: str
     updated_at: str
@@ -246,6 +248,28 @@ class DirectorStore:
                 state = json.loads(state_path.read_text())
                 yield state
                 self._save_state(folder, state)
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
+    @contextmanager
+    def _locked_attempt_execution(self, production_id: str, attempt_id: str):
+        """Serialize one attempt; the kernel releases ownership if its worker exits."""
+        try:
+            canonical_attempt_id = str(uuid.UUID(attempt_id))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("시도 ID가 잘못됐습니다.") from exc
+        folder = self.production_path(production_id)
+        lock_folder = folder / "execution-locks"
+        if lock_folder.is_symlink():
+            raise ValueError("실행 잠금 경로 symlink는 허용되지 않습니다.")
+        lock_folder.mkdir(mode=0o700, exist_ok=True)
+        lock_path = lock_folder / f"{canonical_attempt_id}.lock"
+        if lock_path.is_symlink():
+            raise ValueError("시도 잠금 경로 symlink는 허용되지 않습니다.")
+        with lock_path.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
@@ -693,6 +717,13 @@ class DirectorStore:
     def execute_attempt(
         self, pid: str, attempt_id: str, *, renderer: Callable[[bytes], list[bytes]]
     ):
+        with self._locked_attempt_execution(pid, attempt_id):
+            return self._execute_attempt_owned(pid, attempt_id, renderer=renderer)
+
+    def _execute_attempt_owned(
+        self, pid: str, attempt_id: str, *, renderer: Callable[[bytes], list[bytes]]
+    ):
+        claim = {"claim_id": _id(), "process_id": os.getpid(), "claimed_at": _now()}
         with self._locked_state(pid) as state:
             attempt = next(
                 (a for a in state["attempts"] if a["attempt_id"] == attempt_id), None
@@ -706,6 +737,8 @@ class DirectorStore:
                 self._seal_attempt(attempt)
                 return attempt
             attempt["state"] = "running"
+            attempt["execution_claim"] = claim
+            attempt["error_details"] = []
             attempt["updated_at"] = _now()
             self._seal_attempt(attempt)
             self._event(
@@ -769,10 +802,31 @@ class DirectorStore:
                     a for a in state["attempts"] if a["attempt_id"] == attempt_id
                 )
                 if current["state"] == "cancelled" or state["cancelled"]:
+                    current["execution_claim"] = None
+                    self._seal_attempt(current)
+                    return current
+                errors = self._attempt_output_errors(pid, current)
+                if errors:
+                    current.update(
+                        state="failed",
+                        error_kind=errors[0]["kind"],
+                        error_details=[error["detail"] for error in errors],
+                        execution_claim=None,
+                        updated_at=_now(),
+                    )
+                    self._seal_attempt(current)
+                    self._event(
+                        state,
+                        "attempt:" + attempt_id + ":output-integrity-failed",
+                        "attempt.output_integrity_failed",
+                        attempt_id,
+                        errors=errors,
+                    )
                     return current
                 current.update(
                     state="review_pending", outputs=outputs, updated_at=_now()
                 )
+                current["execution_claim"] = None
                 self._seal_attempt(current)
                 self._event(
                     state,
@@ -786,6 +840,7 @@ class DirectorStore:
                 current = next(
                     a for a in state["attempts"] if a["attempt_id"] == attempt_id
                 )
+                current["execution_claim"] = None
                 if current["state"] not in {"cancelled", "review_pending"}:
                     current.update(
                         state="failed",
@@ -794,6 +849,7 @@ class DirectorStore:
                         else "collect_failed",
                         updated_at=_now(),
                     )
+                    current["error_details"] = [str(exc)]
                     self._seal_attempt(current)
                     self._event(
                         state,
@@ -864,26 +920,96 @@ class DirectorStore:
             if attempt["state"] in {"review_pending", "failed", "cancelled"}:
                 self._seal_attempt(attempt)
                 return attempt
+            current_rank = {"queued": 0, "running": 1, "collecting": 2}[
+                attempt["state"]
+            ]
+            event_rank = {
+                "queued": 0,
+                "running": 1,
+                "collecting": 2,
+                "succeeded": 3,
+            }.get(state)
+            if state not in {"failed", "cancelled"} and event_rank < current_rank:
+                self._event(
+                    data,
+                    event_id + ":invalid-transition",
+                    "engine.invalid_transition_ignored",
+                    attempt_id,
+                    sequence=sequence,
+                    from_state=attempt["state"],
+                    received_state=state,
+                )
+                self._seal_attempt(attempt)
+                return attempt
             if state == "succeeded":
-                if not attempt["outputs"]:
-                    attempt.update(
-                        state="failed", error_kind="empty_output", updated_at=_now()
-                    )
-                elif (
-                    attempt["expected_output_count"] is not None
-                    and len(attempt["outputs"]) != attempt["expected_output_count"]
-                ):
+                errors = self._attempt_output_errors(pid, attempt)
+                if errors:
                     attempt.update(
                         state="failed",
-                        error_kind="incomplete_collection",
+                        error_kind=errors[0]["kind"],
+                        error_details=[error["detail"] for error in errors],
+                        execution_claim=None,
                         updated_at=_now(),
                     )
+                    self._event(
+                        data,
+                        event_id + ":outputs-invalid",
+                        "attempt.output_integrity_failed",
+                        attempt_id,
+                        errors=errors,
+                    )
                 else:
-                    attempt.update(state="review_pending", updated_at=_now())
-            elif state in {"failed", "cancelled"} or not data["cancelled"]:
+                    attempt.update(
+                        state="review_pending",
+                        error_details=[],
+                        execution_claim=None,
+                        updated_at=_now(),
+                    )
+            elif state in {"failed", "cancelled"}:
+                attempt.update(state=state, updated_at=_now())
+                attempt["execution_claim"] = None
+            elif not data["cancelled"]:
                 attempt.update(state=state, updated_at=_now())
             self._seal_attempt(attempt)
             return attempt
+
+    def _attempt_output_errors(self, pid: str, attempt: dict) -> list[dict[str, str]]:
+        outputs = attempt.get("outputs") or []
+        expected = attempt.get("expected_output_count")
+        if not outputs:
+            return [{"kind": "empty_output", "detail": "출력 receipt가 비어 있습니다."}]
+        if expected is not None and len(outputs) != expected:
+            return [
+                {
+                    "kind": "incomplete_collection",
+                    "detail": f"출력 receipt {len(outputs)}개, 기대 {expected}개입니다.",
+                }
+            ]
+        errors = []
+        for index, output in enumerate(outputs):
+            sha = output.get("sha256")
+            try:
+                content = self.read_artifact(pid, sha)
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append(
+                    {
+                        "kind": "missing_output"
+                        if isinstance(exc, FileNotFoundError)
+                        else "output_integrity_failed",
+                        "detail": f"출력 {index} CAS 검증 실패 ({sha}): {exc}",
+                    }
+                )
+                continue
+            if output.get("path") != f"artifacts/{sha}" or output.get("bytes") != len(
+                content
+            ):
+                errors.append(
+                    {
+                        "kind": "output_integrity_failed",
+                        "detail": f"출력 {index} receipt 메타데이터가 CAS와 다릅니다 ({sha}).",
+                    }
+                )
+        return errors
 
     def cancel_attempt(self, pid: str, attempt_id: str):
         with self._locked_state(pid) as state:

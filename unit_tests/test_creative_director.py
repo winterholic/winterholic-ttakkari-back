@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -147,13 +149,22 @@ def test_attempt_is_persisted_before_execute_recovered_after_restart_and_empty_o
         == attempt["attempt_id"]
     )
     with reopened._locked_state(pid) as state:
-        state["attempts"][0].update(state="running", updated_at="crash-boundary")
+        state["attempts"][0].update(
+            state="running",
+            execution_claim={"claim_id": "process-that-crashed"},
+            updated_at="crash-boundary",
+        )
         reopened._seal_attempt(state["attempts"][0])
     resumed = reopened.resume_pending(pid, renderer=lambda _input: [b"rendered-media"])
     assert resumed[0]["state"] == "review_pending"
     assert (
         resumed[0]["outputs"][0]["sha256"]
         == hashlib.sha256(b"rendered-media").hexdigest()
+    )
+    assert resumed[0]["execution_claim"] is None
+    assert (
+        reopened.read_artifact(pid, resumed[0]["outputs"][0]["sha256"])
+        == b"rendered-media"
     )
 
     empty = reopened.submit_attempt(
@@ -303,6 +314,124 @@ def test_duplicate_and_late_events_are_idempotent_and_cancel_blocks_resubmission
         )
     event_ids = [e["event_id"] for e in store.get_production(pid)["events"]]
     assert len(event_ids) == len(set(event_ids))
+
+
+def test_concurrent_execute_has_one_renderer_and_releases_waiting_duplicate(tmp_path):
+    store = _service(tmp_path)
+    pid = _production(store)["manifest"]["production_id"]
+    media = store.put_artifact(
+        pid, "input.bin", b"input", media_type="application/octet-stream"
+    )
+    attempt = store.submit_attempt(
+        pid, "shot-1", input_sha256=media["sha256"], idempotency_key="concurrent"
+    )
+    renderer_entered = threading.Event()
+    second_renderer_entered = threading.Event()
+    release_renderer = threading.Event()
+    second_call_entered = threading.Event()
+    calls = []
+
+    def renderer(data):
+        calls.append(data)
+        if len(calls) == 1:
+            renderer_entered.set()
+        else:
+            second_renderer_entered.set()
+        assert release_renderer.wait(timeout=3)
+        return [b"output"]
+
+    original_execute = store.execute_attempt
+
+    def second_call():
+        second_call_entered.set()
+        return original_execute(pid, attempt["attempt_id"], renderer=renderer)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            original_execute, pid, attempt["attempt_id"], renderer=renderer
+        )
+        assert renderer_entered.wait(timeout=3)
+        second = pool.submit(second_call)
+        assert second_call_entered.wait(timeout=3)
+        assert not second_renderer_entered.wait(timeout=0.1)
+        release_renderer.set()
+        results = [first.result(timeout=3), second.result(timeout=3)]
+
+    assert len(calls) == 1
+    assert [result["state"] for result in results] == ["review_pending"] * 2
+
+
+def test_higher_sequence_regressive_event_does_not_move_state_backwards(tmp_path):
+    store = _service(tmp_path)
+    pid = _production(store)["manifest"]["production_id"]
+    media = store.put_artifact(
+        pid, "input.bin", b"input", media_type="application/octet-stream"
+    )
+    attempt = store.submit_attempt(
+        pid, "shot-1", input_sha256=media["sha256"], idempotency_key="monotonic"
+    )
+    running = store.ingest_event(
+        pid, attempt["attempt_id"], event_id="running-1", sequence=1, state="running"
+    )
+
+    regressive = store.ingest_event(
+        pid, attempt["attempt_id"], event_id="queued-2", sequence=2, state="queued"
+    )
+
+    assert running["state"] == regressive["state"] == "running"
+    assert regressive["last_event_sequence"] == 2
+    events = store.get_production(pid)["events"]
+    assert any(event["kind"] == "engine.invalid_transition_ignored" for event in events)
+
+
+@pytest.mark.parametrize("damage", ["missing", "tampered", "partial"])
+def test_succeeded_event_requires_every_cas_output_to_exist_and_match_hash(
+    tmp_path, damage
+):
+    store = _service(tmp_path)
+    pid = _production(store)["manifest"]["production_id"]
+    media = store.put_artifact(
+        pid, "input.bin", b"input", media_type="application/octet-stream"
+    )
+    attempt = store.submit_attempt(
+        pid, "shot-1", input_sha256=media["sha256"], idempotency_key=f"receipt-{damage}"
+    )
+    output = store.put_artifact(
+        pid, "output.bin", b"collected", media_type="application/octet-stream"
+    )
+    with store._locked_state(pid) as state:
+        receipt = next(
+            row
+            for row in state["attempts"]
+            if row["attempt_id"] == attempt["attempt_id"]
+        )
+        receipt.update(
+            state="collecting",
+            expected_output_count=2 if damage == "partial" else 1,
+            outputs=[output],
+        )
+        store._seal_attempt(receipt)
+    output_path = store.production_path(pid) / output["path"]
+    if damage == "missing":
+        output_path.unlink()
+    elif damage == "tampered":
+        output_path.write_bytes(b"changed")
+
+    result = store.ingest_event(
+        pid,
+        attempt["attempt_id"],
+        event_id=f"succeeded-{damage}",
+        sequence=1,
+        state="succeeded",
+    )
+
+    assert result["state"] == "failed"
+    assert result["error_kind"] in {
+        "missing_output",
+        "output_integrity_failed",
+        "incomplete_collection",
+    }
+    assert result["error_details"]
 
 
 def test_review_acceptance_requires_a_real_user_approval_event(tmp_path):

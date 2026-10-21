@@ -209,6 +209,7 @@ async def lifespan(app):
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.meetings.local_stt import jobs
+    from ttakkari.tts import jobs as tts_jobs
     from ttakkari.runs import desk_pool, profiles, usage_store
     from ttakkari.runs.desk_qwen_service import service as qwen_service
     from ttakkari.runs.manager import manager
@@ -229,6 +230,7 @@ async def lifespan(app):
             await usage_store.load_latest(db)
         await preview.start_worker()
         await jobs.start()
+        await tts_jobs.start()
         # 세대마다 자기 접수 모델 자식 프로세스를 소유한다(자기 loopback 포트). 표준 전환 중에도 서로 죽이지 않는다.
         await qwen_service.start()
         tasks.append(asyncio.create_task(coordinate(runtime, manager)))
@@ -240,6 +242,7 @@ async def lifespan(app):
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await jobs.stop()
+        await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
         from ttakkari.notebooklm.service import service as notebooklm_service

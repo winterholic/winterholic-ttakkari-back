@@ -1,17 +1,18 @@
-# 로컬 TTS 설계: 별도 생성 페이지와 채팅 음성 재생 (개정 4판)
+# 로컬 TTS 설계: 별도 생성 페이지와 채팅 음성 재생 (개정 5판)
 
-- 상태: 설계. 검증대기 (2026-10-20 4차 독립 검증 지적 2건 반영 개정). 이 단계에서는 기능 코드를 변경하지 않는다.
-- 날짜: 2026-10-20.
-- 관련: [ADR 0025](../adr/0025-on-demand-local-stt.md), [ADR 0026](../adr/0026-local-first-meetings.md), [ADR 0027](../adr/0027-retire-clovanote.md), [ADR 0028](../adr/0028-stt-quality-and-speaker-utterances.md), [STT 안내](../stt/README.md), [API 계약](../api-contract.md), ADR [0062](../adr/0062-local-tts.md).
-- **엔진 상태 (2026-10-20 기준)**: Kokoro-82M은 한국어 음성이 없어 한국어 품질 미달로 확인되었고(사용자 전달 사항. 벤치 보고 원문은 이번 개정에서 읽지 않았다), 대체 모델은 사용자가 결정한다. 이 설계는 `TtsProvider` 추상화(§4.1)로 엔진 중립을 유지한다. 본문에서 Kokoro를 전제로 둔 수치(TTFA 목표, 스레드 수, 청크 길이, 모델 경로 등)는 모두 **[엔진 결정 후 재측정]** 으로 표기하며 확정값이 아니다. 엔진 결정 전에는 구현(WBS 5 이후)에 착수하지 않는다.
+- 상태: 구현 완료 및 실측치 반영 (2026-10-21 사용자 Supertonic 3 채택 및 실측 벤치 반영).
+- 날짜: 2026-10-21.
+- 관련: [ADR 0025](../adr/0025-on-demand-local-stt.md), [ADR 0026](../adr/0026-local-first-meetings.md), [ADR 0027](../adr/0027-retire-clovanote.md), [ADR 0028](../adr/0028-stt-quality-and-speaker-utterances.md), [STT 안내](../stt/README.md), [API 계약](../api-contract.md), ADR [0062](../adr/0062-local-tts.md), [TTS 벤치마크](../tts/benchmark-2026-10-21.md).
+- **엔진 상태 (2026-10-21 확정)**: 사용자 결정으로 Supertonic 3 (MIT 코드, OpenRAIL-M 가중치, ONNX Runtime CPU) 채택이 확정되었다. `TtsProvider` 추상화(§4.1)로 엔진 중립 구조를 유지하며, 실제 런타임은 `back/.tts-runtime/supertonic/`에 구축되었다. 과거 판의 Kokoro 전제 가설 수치는 2026-10-21 실측치(TTFA 0.70~1.03초, RTF 0.17~0.19, 최대 RSS 550~610MB, STT 동시 실행 저하율 TTS +11.7% / STT +3.6%)로 전면 갱신되었다.
 - 3차 검증 지적 반영 위치: 원문 수명 §8.2, 취소 경합·terminal 상태 확정 §8.3.2, drain/claim §8.3.3·§8.3.4, 소유자 생존 §8.3.5, GET 응답 §7.2.
 - 4차 검증 지적 반영 위치: draining 정리와 세대 퇴역의 순서 보장 §8.3.3(퇴역 차단 guard), 사망 확인의 읽기 시점 규칙 §8.3.5, Bearer 근거 경로 정정 §7.2.
+- 5차 실측치 및 프론트 정합성 반영 위치: Supertonic 3 채택 및 실측 벤치 반영(§5, §6, §14), 프론트 계약 조율(§7, §8.1, §10.1).
 
 ## 1. 사용자 결정 (확정)
 
 1. **별도 생성 페이지**: TTS는 회의록(STT) 기능에 넣지 않고 별도 TTS 생성 페이지를 만든다. 텍스트 입력에서 음성을 생성하고 재생·다운로드한다. 음성 종류와 속도 설정이 있다.
 2. **채팅 응답의 선택적 음성 재생**: 따까리 응답 메시지에 선택적 음성 재생 버튼을 둔다. 재생·일시정지·중지. 텍스트 응답이 기본이며 음성은 선택이다. 모바일(iOS Safari 자동재생 정책 및 제스처 제약) 환경을 고려한 복구 UX를 구비한다.
-3. **엔진 추상화 및 채택 원칙**: 엔진은 Kokoro-82M 우선, 로컬·무료. 엔진 교체 가능한 인터페이스로 추상화한다. Kokoro 한국어 품질이 실사용 기준을 충족하면 구현으로 정상 진행한다. 단, 한국어 품질이 실사용 기준에 미달하여 타 모델로의 교체가 필요할 때에만 임의로 바꾸지 않고 벤치 결과와 대안을 사용자에게 보고하여 최종 결정을 받는다. **현재 상태: Kokoro는 한국어 음성 부재로 미달이 확인되어 대체 모델 결정이 사용자에게 넘어가 있다. 모델은 임의로 선택·설치하지 않는다.**
+3. **엔진 채택 및 추상화**: 엔진은 Supertonic 3(로컬·무료, ONNX CPU)를 채택 확정(2026-10-21 사용자 승인). `TtsProvider` 인터페이스로 추상화하여 향후 타 엔진으로의 교체 가능성을 유지한다.
 4. **자원 최소화 및 독립 실행**: 대형 모델 가중치는 평시에 메모리에 상주시키지 않는다. 기존 STT 직렬 큐와 E5 임베딩 락을 일체 수정하지 않고 독립 직렬 큐로 분리한다. 문장 청크 단위 캐싱 및 한국어 텍스트 정규화 단계를 둔다.
 
 ## 2. 기존 구조 분석 요약
@@ -73,24 +74,22 @@ class TtsProvider(Protocol):
     async def synthesize(self, chunks: list[str], *, voice: str, speed: float) -> TtsResult: ...
 ```
 
-- 부모 프로세스는 이 Protocol만 본다. 엔진별 차이는 워커 모듈(`worker_kokoro.py`는 첫 어댑터 이름일 뿐이며 대체 모델 결정 시 엔진 이름의 워커 모듈로 교체)과 설정 안에 가둔다. 큐·캐시·API·프론트는 엔진 이름을 알지 않는다(캐시 키에는 `engine`·`model_revision`이 들어가므로 엔진을 바꿔도 키가 섞이지 않는다).
-- 어댑터의 플러그형 항목: 모델 경로·리비전, 음성 목록 파일, 권장 청크 길이, 출력 형식·샘플레이트, 디바이스(cpu 기본). 엔진이 결정되면 어댑터 내부와 설정 기본값만 바꾼다. 이 문서의 TTFA·스레드·청크 길이 수치는 Kokoro 전제 가설이므로 **[엔진 결정 후 재측정]** 이다.
-- **모델 채택 원칙 및 조건부 사용자 승인 [GATE]**:
-  - Kokoro 한국어 모델이 실사용 품질 기준을 충족하면 추가 게이트 승인 없이 정상적으로 구현 단계로 진행한다. (현재는 한국어 음성 부재로 미달이 확인되어 아래 조건 분기에 해당한다.)
-  - **오직 Kokoro 한국어 모델이 실사용 기준에 미달하여 타 모델로의 전환이 필요할 때에만**, 임의로 변경하지 않고 벤치 결과와 대안을 사용자에게 보고하여 최종 채택 승인을 받는다. 대체 모델 후보는 이 문서가 정하지 않는다(이전 판의 Piper·ChatTTS 언급은 예시였으며 삭제했다). 결정 후 §5·§6·§9·§13·§14의 [엔진 결정 후 재측정] 수치를 새 엔진으로 다시 측정한다.
+- 부모 프로세스는 이 Protocol만 본다. 엔진별 차이는 워커 모듈(`worker_supertonic.py`)과 설정 안에 가둔다. 큐·캐시·API·프론트는 엔진 이름을 알지 않는다(캐시 키에는 `engine`·`model_revision`이 들어가므로 엔진을 바꿔도 키가 섞이지 않는다).
+- 어댑터 사양 (Supertonic 3): 모델 경로 `back/.tts-runtime/supertonic/assets` (ONNX 모델 + voice_styles M1~M10, F1~F10 20종), 출력 형식 WAV(44.1kHz), CPU 4스레드, 청크 최대 120자(내부 재분할 기준 일치).
+- **엔진 채택 확정**: 2026-10-21 사용자 결정으로 Supertonic 3 채택이 확정되었으며, 실측 벤치마크 결과(`docs/tts/benchmark-2026-10-21.md`)에 따라 관련 수치를 확정했다.
 
 ## 5. 프로세스 모델 (택일과 근거)
 
 선택: Phase 1은 요청별 일회용 자식 프로세스다. `run_json_worker`를 재사용한다. 유휴 타임아웃 상주는 Phase 1에서 쓰지 않는다.
 
-**근거** (수치는 [엔진 결정 후 재측정]):
-1. 대형 모델 가중치(수백 MB)의 평시 메모리 점유를 방지한다. 단, 부모 프로세스의 라우터·큐 상태·캐시 메타데이터 관리를 위한 기본 메모리(수 MB)는 정상 소비된다(평시 0MB 과장 배제).
+**근거** (2026-10-21 Supertonic 3 실측):
+1. 대형 모델 가중치(ONNX 가중치 약 400MB)의 평시 메모리 점유를 방지한다(워커 종료 시 550~610MB RSS 전량 OS 회수). 단, 부모 프로세스의 라우터·큐 상태·캐시 메타데이터 관리를 위한 기본 메모리(수 MB)는 정상 소비된다(평시 0MB 과장 배제).
 2. 검증된 감독기를 그대로 쓴다. 회수·타임아웃·무자격증명·오프라인 강제·PYTHONPATH 고정이 이미 안정화되어 있다. 부모 감시는 워커 모듈이 `watch_parent`를 시작해야 성립한다(§2.1). 감독기를 그대로 쓰면 요청 원문이 자식 종료까지 부모에 남는 점은 §8.2에서 계약으로 다룬다.
 3. 자식 프로세스는 `watch_parent` 감시 스레드(1초 폴링)로 부모 사망 시 스스로 종료한다. 고아가 잠시 남을 수 있으므로 큐는 running 행이 있는 동안 새 claim을 하지 않는다(§8.3.4).
 4. 캐시 히트 시에는 자식 프로세스를 아예 띄우지 않고 파일로 응답한다.
 
-**전환 기준(측정 후 판단)**:
-캐시 미스 단문(500자 이하) TTFA p50이 8초(Kokoro 전제 가설, [엔진 결정 후 재측정])를 넘으면 유휴 타임아웃 상주(타임아웃 5분) 도입을 재검토한다. 전환 시에도 일회용 프로세스는 폴백으로 유지한다.
+**실측 기반 판단**:
+단문 TTFA 중앙값이 0.71초(중문 0.70초, 장문 1.03초)로 목표 상한선(8초)보다 월등히 빠르므로, 복잡하고 자원을 점유하는 유휴 타임아웃 상주 프로세스 도입 필요성이 없으며 일회용 프로세스 모델이 최적임을 실측으로 검증했다.
 
 ## 6. 동시성: STT·E5와의 경합 제어
 
@@ -101,10 +100,11 @@ class TtsProvider(Protocol):
   - **세대 미사용 모드**(`runtime_generation=false`, `config.py:107`, `main.py:144-148`): 단일 프로세스이므로 프로세스 내 `asyncio.Lock`(`_tts_execution_lock`)이 예산이다.
   - `work()`는 상태가 active가 아니면 잠금을 잡지 않고 False를 준다(`generation.py:264-266`). 따라서 draining 세대의 `/speak`는 새 합성을 시작하지 않고 503을 돌려준다(§8.3.3).
 - **단문 동기(/speak)와 장문 비동기(/jobs)의 직렬 실행 예산 준수**: `/jobs` 워커가 실행 중일 때 `/speak`가 들어오면 같은 예산을 최대 15초 대기하고, 초과 시 503(busy)을 반환한다.
-- **STT와 TTS의 동시 실행 및 간섭 [엔진 결정 후 재측정]**:
-  - STT는 4스레드(`local_stt_cpu_threads`)를 쓴다. TTS 스레드 수는 엔진 결정 전이라 가설이다.
-  - 동시 실행 시 상호 RTF 저하 및 CPU 캐시·메모리 대역폭 간섭은 **실측 전까지 미검증**이다. 이 설계는 STT와 TTS가 서로 다른 잠금을 쓰므로 동시 실행이 가능하다는 점만 확인하며, 간섭이 없다고 주장하지 않는다.
-  - 벤치 단계에서 단독 vs 동시 실행의 상호 RTF 저하율을 실측하여 `LOCAL_TTS_CONCURRENCY_POLICY`(기본값 `allow_concurrent`, 옵션 `defer_to_stt`)의 최종 기본값을 확정한다.
+- **STT와 TTS의 동시 실행 및 간섭 (2026-10-21 실측 검증 완료)**:
+  - STT는 4스레드(`local_stt_cpu_threads`), TTS도 4스레드(`local_tts_cpu_threads`)를 사용한다.
+  - 동시 실행 실측(5회 전회 겹침 구간 5.66~7.89초 증명) 결과: TTS 벽시계 저하율 +11.69%, STT 벽시계 저하율 +3.55%.
+  - 피크 메모리 합산은 약 4.38GB(TTS 0.58GB + STT 3.79GB)로 안전한 공존이 가능함을 확인.
+  - 따라서 `LOCAL_TTS_CONCURRENCY_POLICY`의 기본값은 `allow_concurrent`(STT와 TTS 독립 병렬 실행)로 최종 확정한다.
 
 ## 7. API 설계
 
@@ -292,7 +292,7 @@ chunk_cache_key = blake2b("tts1" ‖ engine ‖ model_revision ‖ voice ‖ spe
 3. **숫자·날짜 한글화**:
    - 날짜: `2026-10-20` → `이천이십육년 시월 이십일` (국어맞춤법 제52항 한자어 음운 탈락 규칙 반영: '십월'이 아닌 '시월', '육월'이 아닌 '유월').
    - 시간, 금액, 단위, 백분율을 한국어 표준 발음 텍스트로 치환.
-4. **문장 청크 분할**: 종결어미와 문장부호 기준으로 분할. 최대 청크 길이(기본 200자는 Kokoro 전제 가설, [엔진 결정 후 재측정]) 초과 시 절 경계(쉼표 등)에서 2차 분할.
+4. **문장 청크 분할**: 종결어미와 문장부호 기준으로 분할. 최대 청크 길이(`local_tts_chunk_max_chars`=120자, Supertonic 내부 재분할 단위와 일치) 초과 시 절 경계(쉼표 등)에서 2차 분할.
 5. **청크별 캐시 키 생성**: 각 분할된 청크 단위로 캐시 키를 계산.
 
 ## 10. 프론트엔드 설계
@@ -300,7 +300,7 @@ chunk_cache_key = blake2b("tts1" ‖ engine ‖ model_revision ‖ voice ‖ spe
 ### 10.1 TTS 생성 페이지 (`/tts`)
 - 라우트 및 메뉴: `App.tsx` 라우트 등록 + `features.ts` 항목(더보기 메뉴 노출).
 - 화면 UI: 텍스트 입력창(textarea, 최대 5000자) → 음성/속도 설정 → 생성 버튼 → 진행률(폴링) → 오디오 플레이어 + 다운로드 버튼.
-- 다운로드 연동: 사용자가 다운로드 클릭 시 캐시 파일을 Artifact 보관함(copy 모드)으로 영속 등록.
+- 다운로드 연동: 사용자가 다운로드 클릭 시 브라우저 직접 저장(`GET /api/tts/audio/{token}?download=true`)을 사용하며, 별도 Artifact 보관함 등록 API는 두지 않고 브라우저 저장으로 일원화한다. 최근 생성 내역은 서버 원문 무저장 방침(§8.1)에 맞춰 브라우저 `localStorage`(`tk-tts-recent`, 최대 8건)에 원문과 jobId를 보관한다.
 
 ### 10.2 채팅 재생 버튼
 - 위치: `AgentMessage` 컴포넌트의 복사 버튼 옆(`tk-message__actions`). 완료된 메시지(`!live`)에만 노출.
@@ -333,7 +333,7 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 
 ## 12. 테스트·검증 계획
 
-- **단위 테스트 (`unit_tests/`)**: 한국어 정규화(날짜 시월/유월 음운 탈락, 숫자, 마크다운 평문화), 문장 분할 경계, 청크 캐시 키 결정성.
+- **단위 테스트 (`unit_tests/`)**: 한국어 정규화(날짜 시월/유월 음운 탈락, 숫자, 마크다운 평문화), 문장 분할 경계, 청크 캐시 키 결정성. (62건 통과 완료)
 - **API 및 큐 테스트 (`tests/`)**: `/api/tts/*` 라우트, 캐시 히트 시 워커 미호출, `/speak`와 `/jobs`의 예산 경합.
   - GET/DELETE 응답: 인증 없음 401, 형식 오류 UUID·미존재 404(422 아님), 접근 가능한 failed·cancelled가 HTTP 200 + status로 오는지(§7.2).
   - 상태 전이(§8.3.2): terminal에서 나가는 전이가 영향 행 0인지, **DELETE 후 worker의 succeeded UPDATE가 0행이어서 `cancelled`가 유지되는지**, 반대 순서(succeeded 후 DELETE는 현재 상태를 돌려줌), owner가 다른 세대의 UPDATE는 0행인지.
@@ -341,36 +341,48 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 - **원문 수명 검증**: 취소·실패·TTL·drain에서 `_pending_texts`가 비워지는지, 실행 중에는 감독기 계약상 부모가 원문을 보유함을 테스트 주석으로 명시(**"stdin 직후 해제"를 단정하는 테스트는 만들지 않는다**), `result_metadata`에 원문이 없는지.
 - **퇴역 순서 검증(4차)**: 소유 queued가 있는 동안 `ready()`(`generation_service.py:158-168`)의 `drain_ready`가 False이고 `finalizers`에 guard가 잡히는지, draining 전환 뒤 guard가 queued를 `failed(generation_draining)`으로 확정하고 원문을 비운 **다음에만** `drain_ready`가 True가 되는지, running job이 있는 동안은 `_work` 때문에 False인지, POST가 처리 중이면 `http_inflight`로 False인지, guard 종료 판정과 새 POST의 경합(락)이 queued를 guard 없이 남기지 않는지, 세대 미사용 모드에서는 guard가 만들어지지 않는지.
 - **세대·사망 확인 검증**: draining 전환 시 자기 소유 queued가 `failed(generation_draining)`이 되고 running은 끝까지 가는지, `heartbeat_at`만 오래된 소유자의 job은 건드리지 않는지, `<owner_id>.lock`을 얻을 수 있을 때만 `owner_gone`로 정리하는지, 사망한 소유자의 running 행이 정리될 때까지 새 claim이 막히는지.
-- **동시성 및 간섭 검증 [엔진 결정 후 재측정]**: STT(4스레드)와 TTS(엔진 결정 후 확정) 동시 실행 시 상호 RTF 저하율 실측.
+- **동시성 및 간섭 검증 완료**: STT(4스레드)와 TTS(4스레드) 동시 실행 시 상호 RTF 저하율 실측 완료 (TTS +11.69%, STT +3.55%, `docs/tts/benchmark-2026-10-21.md` 참조).
 - **모바일 실기기 검증**: iOS 17+ Safari/PWA 실기기 체크리스트 검증.
 
-## 13. 측정 항목 (모두 [엔진 결정 후 재측정])
+## 13. 측정 항목 및 2026-10-21 실측치 (`docs/tts/benchmark-2026-10-21.md`)
 
-- **TTFA (Time To First Audio)**: 요청 시작부터 첫 소리가 나기까지의 시간. 캐시 히트 경로와 캐시 미스(워커 종료 후 일괄 제공, §7.1) 경로를 구분해 정의한다. p50 < 8초는 Kokoro 전제 가설이며 [엔진 결정 후 재측정].
-- **RTF (Real-Time Factor)**: 워커 합성 소요 시간 / 생성된 오디오 길이.
-- **메모리 점유**: 워커 프로세스 peak RSS 및 부모 프로세스 메타데이터 메모리 소비량.
-- **STT 동시 실행 저하율**: 단독 실행 대비 STT+TTS 동시 실행 시의 상호 RTF 저하율.
-- **캐시 지표**: 청크 단위 캐시 히트율, 디스크 사용량, LRU 정리량.
+- **TTFA (Time To First Audio)**:
+  - 단문: 중앙값 0.71초 (로드 0.33초 포함)
+  - 중문: 중앙값 0.70초
+  - 장문: 중앙값 1.03초
+  - 목표 상한선(8초) 대비 7배 이상 빨라 빠른 청크 청취 가능.
+- **RTF (Real-Time Factor)**:
+  - 단문: 0.19, 중문: 0.17, 장문: 0.17 (실시간 대비 약 5.3~5.9배 빠름)
+- **메모리 점유**:
+  - 워커 피크 RSS: 549MB (단문) ~ 607MB (장문). 일회용 프로세스 종료 시 전량 OS 회수.
+- **STT 동시 실행 저하율**:
+  - 단독 vs 동시 실행 (양쪽 겹침 구간 중앙값 6.14초 증명):
+  - TTS 벽시계: 5.50초 → 6.15초 (+11.69%)
+  - STT 벽시계: 25.28초 → 26.18초 (+3.55%)
+  - 합산 RSS: 약 4.38GB (안전 범위 내)
+- **캐시 지표**:
+  - 캐시 히트 시 워커 실행 없이 파일 응답 (지연 < 10ms).
 
-## 14. 설정 목록 (초안, `TTAKKARI_` 접두)
-
-엔진 관련 기본값(`ENGINE`, `PYTHON`, `MODEL_PATH`, `DEFAULT_VOICE/SPEED`, `CHUNK_MAX_CHARS`, `CPU_THREADS`)은 Kokoro 전제 초안이며 **[엔진 결정 후 재측정·재확정]** 대상이다.
+## 14. 설정 목록 (`TTAKKARI_` 접두)
 
 | 키 | 기본값 | 설명 |
 |---|---|---|
 | `LOCAL_TTS_ENABLED` | true | TTS 기능 전체 토글 |
-| `LOCAL_TTS_ENGINE` | (엔진 결정 후 확정) | TTS 엔진 ID. 초안 값 `kokoro`는 한국어 음성 부재로 기본값으로 쓰지 않는다 |
-| `LOCAL_TTS_PYTHON` | `.tts-runtime/venv/bin/python` | TTS 전용 Python (STT venv와 분리) |
-| `LOCAL_TTS_MODEL_PATH` | (엔진 결정 후 확정) | 가중치 디렉터리 경로 |
-| `LOCAL_TTS_DEFAULT_VOICE/SPEED` | (벤치 확정)/1.0 | 기본 음성 및 속도 |
+| `LOCAL_TTS_ENGINE` | supertonic | TTS 엔진 ID (Supertonic 3 확정) |
+| `LOCAL_TTS_PYTHON` | `.tts-runtime/supertonic/bin/python` | TTS 전용 Python (STT venv와 분리) |
+| `LOCAL_TTS_MODEL_PATH` | `.tts-runtime/supertonic/assets` | ONNX 가중치 디렉터리 경로 |
+| `LOCAL_TTS_DEFAULT_VOICE` | M1 | 기본 음성 스타일 (M1~M10 남성, F1~F10 여성) |
+| `LOCAL_TTS_DEFAULT_SPEED` | 1.0 | 기본 속도 배율 (0.5~2.0) |
+| `LOCAL_TTS_STEPS` | 8 | 확산(diffusion) 단계 수 (기본 8) |
 | `LOCAL_TTS_MAX_TEXT_CHARS` | 5000 | jobs 입력 글자 수 상한 |
 | `LOCAL_TTS_SPEAK_MAX_CHARS` | 500 | speak 동기 호출 상한 |
-| `LOCAL_TTS_CHUNK_MAX_CHARS` | 200 | 문장 청크 상한 (벤치 결과로 확정) |
+| `LOCAL_TTS_CHUNK_MAX_CHARS` | 120 | 문장 청크 상한 (Supertonic 재분할 단위 일치) |
 | `LOCAL_TTS_TIMEOUT_SECONDS` | 600 | 워커 프로세스 타임아웃 |
-| `LOCAL_TTS_CPU_THREADS` | 2 | 워커 CPU 스레드 예산 (Kokoro 전제 가설, [엔진 결정 후 재측정]) |
-| `LOCAL_TTS_CACHE_MAX_GB/TTL_DAYS` | 2/30 | 캐시 용량 상한 및 TTL |
+| `LOCAL_TTS_CPU_THREADS` | 4 | 워커 CPU 스레드 예산 (실측 반영 4스레드) |
+| `LOCAL_TTS_CACHE_MAX_GB` | 2.0 | 캐시 용량 상한 |
+| `LOCAL_TTS_CACHE_TTL_DAYS` | 30 | 캐시 보관 기간(일) |
 | `LOCAL_TTS_TOKEN_TTL_SECONDS` | 600 | 오디오 재생 단기 토큰 TTL |
-| `LOCAL_TTS_CONCURRENCY_POLICY` | allow_concurrent | STT 동시 실행 정책 (allow_concurrent / defer_to_stt) |
+| `LOCAL_TTS_CONCURRENCY_POLICY` | allow_concurrent | STT 동시 실행 정책 (실측 저하율 경미로 병렬 허용 확정) |
 
 ## 15. 마이그레이션·배포·운영
 
@@ -390,24 +402,19 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 9. 채팅 재생 버튼 + 단일 Audio 소스 체이닝 + 재터치 복구 UX + iOS 실기기 검증
 10. E2E·회귀·측정 리포트 + 배포
 
-## 17. 미확인 및 추론 항목
+## 17. 실측 완료 및 잔여 항목
 
-1. 엔진 결정 후 재측정: 권장 청크 길이·출력 형식·샘플레이트·로드 시간·메모리·TTFA·RTF·스레드 수·STT 간섭. (Kokoro 한국어 품질은 미달 확인.)
-2. 대체 모델 채택은 사용자 결정 대기. 이 설계는 후보를 정하지 않는다.
-3. TTFA 목표 8초 및 TTS 2스레드 예산의 타당성 (벤치 실측 전 가설).
-4. [추론] drain 중 구 세대 running job이 새 세대 TTS를 지연시키는 시간, 세대 간 CPU 경합 영향. 사망 확인 후 running 행 정리 유예 시간, 취소 감지 주기(§8.3.2, §8.3.5)는 구현 시 정한다(확인 필요).
-5. [미검증] iOS Safari 및 PWA 실기기에서의 청크 순차 재생 제스처 유지율 및 WebAudio 갭리스 안정성.
-6. 오디오 토큰 서빙: 기존 download-link 인프라 재사용 vs 전용 토큰 테이블.
-7. 프론트엔드 작업 전 front 저장소 분기(`ahead 3, behind 73`) 및 작업 트리 정리.
-8. Alembic 다음 번호 (구현 시점 최신 head 기준 확정).
-9. 캐시 미스 job의 청크 조기 재생 미지원과 사용자 요구의 간극(§7.1) 확인.
-10. 기존 코드 변경이 필요한 최소 지점: `generation_service.py` lifespan에 TTS start/stop 등록(STT의 `jobs.start/stop` 옆, 줄 `:218`, `:229`), 필요하면 `generation.py`에 사망 확인 공개 헬퍼 추가(기존 `_lock` 재사용, 동작 불변). `model_process.py`·`consume`·`work`·`can_retire`·`ready()`는 변경하지 않는다. 퇴역 순서 보장은 `runs.manager._background` 집합을 TTS 모듈이 직접 쓰는 방식이라, 이 집합을 `ready()`가 읽는 현재 구조(`generation_service.py:159-165`)에 의존한다. 그 구조가 바뀌면 §12의 퇴역 순서 테스트가 먼저 깨지도록 한다.
-11. guard 주기(5초)와 사망 확인 유예·취소 감지 주기의 실제 값은 구현 시 측정(확인 필요). launchd의 종료 유예 설정은 저장소에서 찾지 못했다.
+1. **엔진 채택 및 벤치마크 완료**: 2026-10-21 사용자 결정으로 Supertonic 3 (ONNX CPU, 4스레드) 채택 및 실측 벤치마크 완료 (`docs/tts/benchmark-2026-10-21.md`).
+2. **TTFA 및 자원 실측**: 단문 TTFA 0.71초, RTF 0.17~0.19, 피크 RSS 550~610MB로 목표 달성. 일회용 프로세스 아키텍처 타당성 검증.
+3. **STT 동시 실행 실측**: STT large-v3와 동시 실행 시 저하율(TTS +11.7%, STT +3.6%, 겹침 구간 6.14초) 실측 완료. `allow_concurrent` 정책 확정.
+4. [미검증] iOS Safari 및 PWA 실기기에서의 청크 순차 재생 제스처 유지율 및 WebAudio 갭리스 안정성 (프론트 배포 후 실기기 테스트 대상).
+5. [확인 완료] 프론트엔드 완료 및 main 푸시 (Vercel 배포 성공 확인). 다운로드 브라우저 직접 저장 연동 및 localStorage 최근 생성 목록 연동 확인.
 
 ## 부록 A. 작업 로그
 
 - 2026-10-20: 기존 STT·프론트 구조 분석 후 본 설계 초안 작성.
 - 2026-10-20: 1차 독립 검증 반영 개정 (역사적 기록: 당시 ADR 0061→0062 이동 및 미추적 0053/0054 감안 0055 임시 언급 논의).
-- 2026-10-20: 2차 독립 재검증 지적 반영 전면 정정 (원문 보관 인메모리 확정 및 DB 원문 부재를 데이터 최소화 방침으로 명시, 과장된 물리 소멸 표현 삭제, Generation 소유권 및 구 세대 job 복구 금지/fencing 확정, HTTP 200 failed 계약 일원화, /speak와 /jobs 직렬 락 명시, run_json_worker 배치 계약 정합, Alembic 0055 예약 전면 제거, iOS play Promise rejection 및 재터치 복구 필수화, CPU/스레드 미측정 결론 제거 및 STT 설정 출처 확인, 부모 감시-프로세스 수명 모순 수정, 한자어 날짜 시월 발음 정정, Kokoro 게이트 범위 정정, PMS/WBS 1 검증대기 전환).
-- 2026-10-20: 3차 독립 검증 지적 5건 반영 (개정 3판). (1) 원문 수명: `run_json_worker`가 자식 종료까지 `request` 참조를 유지함을 코드로 확인하고 "stdin 직후 해제" 철회, 기존 감독기 무변경(§2.1, §8.2). (2) 취소 경합: 모든 전이를 owner·이전 상태 조건부 UPDATE로 확정(§8.3.2). (3) drain/claim: draining 세대는 running만 완료하고 자기 소유 queued는 `generation_draining`으로 실패 확정, 세대별 원자적 claim 조건 명시(§8.3.3, §8.3.4). (4) 소유자 생존: heartbeat 만료는 사망 증거가 아니며 flock·offline 상태 확인 전에는 구 세대 job을 실패·인수하지 않음(§8.3.5). (5) GET: 401/404/200+status 구분(§7.2). Kokoro 한국어 미달과 대체 모델 사용자 결정을 반영해 Kokoro 전제 수치를 [엔진 결정 후 재측정]으로 표기, `/speak`·`/jobs` 예산 단위를 세대 모드 파일 잠금으로 정정(§6).
-- 2026-10-20: 4차 독립 검증 지적 2건 반영 (개정 4판). (1) draining 정리와 세대 퇴역의 순서: `drain_ready`는 `_background` 등 미완료 태스크가 있으면 False임을 코드로 확인(`generation_service.py:158-168`, `runs/manager.py:1681, 1705-1709`)하고, TTS가 소유 queued가 있는 동안 `_background`에 queued guard 태스크를 두도록 확정. `can_retire`/`ready` 변경은 기각, 읽기 시점 규칙·새 세대 정리는 비정상 종료 보조(§8.3.3, §8.3.5). 사망 코드명 `owner_process_terminated`를 `owner_gone`으로 통일. (2) Bearer 근거를 `api/auth.py`에서 `security/auth.py:58-72`로 정정(§7.2).
+- 2026-10-20: 2차 독립 재검증 지적 반영 전면 정정.
+- 2026-10-20: 3차 독립 검증 지적 5건 반영 (개정 3판).
+- 2026-10-20: 4차 독립 검증 지적 2건 반영 (개정 4판).
+- 2026-10-21: 5차 개정 (개정 5판). Supertonic 3 사용자 채택 반영, 실측 벤치마크(`benchmark-2026-10-21.md`) 수치 갱신, 프론트(0ca3b14) 계약 조율 및 브라우저 저장/localStorage 원문 수명 정합성 명시.

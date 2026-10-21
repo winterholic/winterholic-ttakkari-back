@@ -10,6 +10,7 @@ dist/
 build/
 
 .stt-runtime/
+.tts-runtime/
 .browser-runtime/node_modules/
 .muse-runtime/node_modules/
 .music-runtime/

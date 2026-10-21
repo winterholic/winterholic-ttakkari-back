@@ -22,6 +22,7 @@ MIN_PROD_JWT_SECRET_BYTES = 32
 HOME = Path.home()
 DEFAULT_HOME = HOME / ".ttakkari"
 STT_RUNTIME_ROOT = HOME / "development/projects/winterholic-ttakkari/back/.stt-runtime"
+TTS_RUNTIME_ROOT = HOME / "development/projects/winterholic-ttakkari/back/.tts-runtime/supertonic"
 
 
 def _host(origin: str) -> str:
@@ -241,6 +242,27 @@ class Settings(BaseSettings):
     local_stt_diarization_device: Literal["cpu", "mps", "cuda"] = "cpu"
     local_stt_speaker_embedding_model_path: Path = STT_RUNTIME_ROOT / "ecapa-voxceleb"
     local_stt_separation_model_path: Path | None = None  # offline SepFormer tensor weights
+
+    # 로컬 TTS(ADR 0062). 런타임(venv+가중치)은 STT 와 분리된 .tts-runtime/supertonic 이며 설정이 비어도 이 경로를 쓴다.
+    local_tts_enabled: bool = True
+    local_tts_engine: str = "supertonic"
+    local_tts_python: Path = TTS_RUNTIME_ROOT / "bin/python"
+    local_tts_model_path: Path = TTS_RUNTIME_ROOT / "assets"
+    local_tts_default_voice: str = "M1"
+    local_tts_default_speed: float = Field(default=1.0, ge=0.5, le=2.0)
+    local_tts_steps: int = Field(default=8, ge=1, le=32)
+    local_tts_max_text_chars: int = Field(default=5000, ge=1)
+    local_tts_speak_max_chars: int = Field(default=500, ge=1)
+    # Supertonic 은 한국어 120자에서 내부 재분할하므로(helper.TextToSpeech.__call__) 그보다 길면 캐시 단위가 깨진다.
+    local_tts_chunk_max_chars: int = Field(default=120, ge=20, le=400)
+    local_tts_timeout_seconds: int = Field(default=600, ge=10)
+    local_tts_cpu_threads: int = Field(default=4, ge=1, le=16)
+    local_tts_cache_max_gb: float = Field(default=2.0, gt=0)
+    local_tts_cache_ttl_days: int = Field(default=30, ge=1)
+    local_tts_token_ttl_seconds: int = Field(default=600, ge=30)
+    local_tts_speak_wait_seconds: float = Field(default=15.0, ge=0)
+    local_tts_queued_ttl_seconds: int = Field(default=600, ge=1)
+    local_tts_concurrency_policy: Literal["allow_concurrent", "defer_to_stt"] = "allow_concurrent"
 
     # 회의록 벡터 저장(ADR 0021). e5 = 로컬 multilingual-e5-large, hash = 테스트용 결정적 해시, off = 끔.
     context_embedder: str = "e5"

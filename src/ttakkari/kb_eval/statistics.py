@@ -9,10 +9,10 @@ import numpy as np
 from .validation import (
     BOOTSTRAP_POLICY,
     DEGENERACY,
-    degenerate_width,
     integer,
     number,
     probability,
+    zero_width,
 )
 
 
@@ -33,6 +33,10 @@ def _matrix(values, groups):
     sums = np.array([a[np.array(groups) == g].sum(axis=0) for g in names])
     sizes = np.array([groups.count(g) for g in names])
     return a, sums, sizes
+
+
+def _sd(column):
+    return float(column.std(ddof=1)) if len(column) > 1 else 0.0
 
 
 def _bootstrap(sums, sizes, rng, replicates):
@@ -57,7 +61,9 @@ def cluster_interval(values, groups, *, seed, replicates=10000, alpha=0.05):
         raise ValueError("metric_delta_out_of_range")
     samples = _bootstrap(sums, sizes, np.random.default_rng(seed), replicates)[:, 0]
     low, high = np.quantile(samples, [alpha, 1 - alpha])
-    degenerate = degenerate_width(low, high, DEGENERACY["quality_ci_min_width"])
+    degenerate = _sd(a[:, 0]) < DEGENERACY["quality_min_delta_sd"] or zero_width(
+        low, high
+    )
     return {
         "delta": float(a.mean()),
         "low": float(low),
@@ -126,6 +132,7 @@ def _family(
             "high": float(tails[1, i]),
             "p": ps[k],
             "holm_p": adj[k],
+            "sd": _sd(a[:, i]),
         }
         for i, k in enumerate(keys)
     }
@@ -234,8 +241,10 @@ def quality_family(
             )
     if replicates < BOOTSTRAP_POLICY["minimum_replicates"]:
         reasons.append("bootstrap_replicates_below_registered_minimum")
+    # Information is judged on question-level delta SD, which more clusters
+    # do not shrink; only an exactly zero/NaN interval is a separate guard.
     if any(
-        degenerate_width(d["low"], d["high"], DEGENERACY["quality_ci_min_width"])
+        d["sd"] < DEGENERACY["quality_min_delta_sd"] or zero_width(d["low"], d["high"])
         for d in details.values()
     ):
         reasons.append("degenerate_bootstrap_interval")

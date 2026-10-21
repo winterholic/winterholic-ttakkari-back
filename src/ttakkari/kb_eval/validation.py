@@ -5,7 +5,7 @@ from numbers import Real
 
 # Mirrors kb-eval/statistical-policy.json; a unit test enforces equality.
 BOOTSTRAP_POLICY = {
-    "version": "kb-e0-statistics-v3",
+    "version": "kb-e0-statistics-v4",
     "minimum_replicates": 10000,
     "diagnostic_minimum_replicates": 100,
     "basis": "P1 fixes 10000 draws; P3 adopts the same conservative engineering "
@@ -30,26 +30,41 @@ BOOTSTRAP_POLICY = {
         "treated as constant. The absolute-only 0.1 "
         "ms floor of v2 held informative traces with "
         "mean <= 20 ms (third review table 1-4).",
-        "latency_ratio_ci_min_width": 0.0005,
-        "latency_ratio_basis": "p95 ratio CI width is already "
-        "scale-free; 5e-4 = 1/400 of the 0.2 "
-        "relative margin (ratio 1.2). It does "
-        "not depend on the mean e2e, so it "
-        "applies equally to fast and full "
-        "modes.",
-        "quality_ci_min_width": 0.001,
+        "latency_min_log_ratio_sd": 0.0001,
+        "latency_ratio_basis": "Degeneracy of the relative comparison "
+        "is judged on the SD of per-block "
+        "paired log ratios "
+        "log(candidate/control), not on CI "
+        "width. It is scale-free and does not "
+        "shrink with the block count, so more "
+        "data never turns an informative pass "
+        "into unverified (fourth review: CV "
+        "0.3% passed at 1,000 blocks and was "
+        "unverified at 5,000 under the v3 width "
+        "floor 5e-4). 1e-4 matches "
+        "latency_min_cv: 1/2000 of the 0.2 "
+        "relative margin. Only an exactly zero "
+        "or NaN ratio CI width remains a "
+        "separate degenerate_ratio_ci guard "
+        "(tied p95 blocks).",
+        "quality_min_delta_sd": 0.001,
         "quality_dev_min_std": 0.001,
-        "quality_basis": "0.001 = noninferiority margin 0.05 / 50. A "
-        "metric-delta CI narrower than 2% of the "
-        "margin, or a dev pilot whose per-question "
-        "delta SD is below it, is practically "
-        "constant (far above float noise, which is "
-        "~1e-16) and cannot establish pass or power. "
-        "Real per-question delta SD is typically near "
-        "0.1, so power=established from a pilot near "
-        "this floor is optimistic and must not be "
-        "used as approval evidence before a measured "
-        "pilot.",
+        "quality_basis": "0.001 = noninferiority margin 0.05 / 50. "
+        "Degeneracy is judged on the question-level "
+        "SD of each metric delta (and of dev pilot "
+        "deltas for power), not on CI width: width "
+        "shrinks with more clusters, so a width floor "
+        "turned informative large evaluations "
+        "inconclusive (SD 0.01 was degenerate at "
+        "4,000 clusters under v3). An SD below the "
+        "floor is practically constant (float noise "
+        "is ~1e-16) and cannot establish pass or "
+        "power. Only an exactly zero or NaN interval "
+        "is a separate guard. Real per-question delta "
+        "SD is typically near 0.1, so "
+        "power=established from a pilot near this "
+        "floor is optimistic and must not be used as "
+        "approval evidence before a measured pilot.",
         "scope": "Pre-registered engineering floors before any real "
         "pilot; recheck on measured traces. Exceeding them is "
         "necessary, not sufficient, for an informative "
@@ -59,9 +74,9 @@ BOOTSTRAP_POLICY = {
 DEGENERACY = BOOTSTRAP_POLICY["degeneracy"]
 
 
-def degenerate_width(low, high, minimum):
-    """Scale-aware degeneracy: exact equality misses float-noise intervals."""
-    return not high - low >= minimum
+def zero_width(low, high):
+    """Exactly zero, inverted or NaN width: resampling never moved the statistic."""
+    return not high > low
 
 
 def integer(value, name, *, minimum=0):

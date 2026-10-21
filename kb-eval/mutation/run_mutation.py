@@ -215,7 +215,17 @@ def main():
         "survived_equivalent": [
             r["id"]
             for r in applicable
-            if r["status"] == "survived" and r["expect"] != "kill"
+            if r["status"] == "survived" and r["expect"] == "equivalent"
+        ],
+        "survived_undecided": [
+            r["id"]
+            for r in applicable
+            if r["status"] == "survived" and r["expect"] == "undecided"
+        ],
+        "killed_but_marked_non_kill": [
+            r["id"]
+            for r in applicable
+            if r["status"] == "killed" and r["expect"] != "kill"
         ],
         "results": results,
     }

@@ -27,6 +27,7 @@ stale bytecode 재사용이다. 직전 변이(`power_not_established`)와 이 �
   - pytest plugin이 import된 패키지가 그 복사본인지 확인한다.
   - 대상 문자열이 정확히 한 번 나오지 않으면 `not_applicable`로 기록한다.
 - `expect="equivalent"` 9개는 근거를 함께 적었다.
+  - **정정(4회차 확인 후):** 이 중 Q1·Q2·Q5는 동등하지 않았다. 반례 테스트를 추가하고 `kill`로 바꿨다. Q8은 `undecided`로 바꿨다. 자세한 내용은 [REPORT-v4.md](REPORT-v4.md)에 있다.
   - L7, L15, L17: schema가 먼저 거부한다.
   - Q1, Q2, Q8: 3회차에서도 반례를 만들지 못했다.
   - Q5, Q6: 다른 조건이 이미 포함한다.

@@ -2,8 +2,9 @@
 
 Each mutant replaces one exact source snippet (it must occur exactly once).
 `expect="kill"` means a unit test must fail on the mutant. `expect="equivalent"`
-records a mutant judged behaviour-equivalent or unprovable, with the reason; it
-is reported but does not fail the run. Reason producers (`reasons.append`,
+records a mutant argued behaviour-equivalent, `expect="undecided"` one with
+neither a counterexample nor a convincing equivalence argument; both carry the
+reason, are reported separately and do not fail the run. Reason producers (`reasons.append`,
 `"reasons": [...]`) are generated automatically by run_mutation.py.
 """
 
@@ -104,17 +105,19 @@ GUARDS = [
     ),
     m("L19", "latency.py", 'if mode not in {"full", "fast"}:', "if False:"),
     # Degeneracy floors (N1) and their policy constants.
+    m("N1a", "validation.py", "return not high > low", "return high < low"),
+    m("N1b", "validation.py", "return not high > low", "return high <= low"),
     m(
-        "N1a",
-        "validation.py",
-        "return not high - low >= minimum",
-        "return high - low < minimum",
+        "N1k",
+        "statistics.py",
+        'd["sd"] < DEGENERACY["quality_min_delta_sd"] or ',
+        "",
     ),
     m(
-        "N1b",
-        "validation.py",
-        "return not high - low >= minimum",
-        "return not high - low > minimum",
+        "N1l",
+        "statistics.py",
+        'degenerate = _sd(a[:, 0]) < DEGENERACY["quality_min_delta_sd"] or',
+        "degenerate = False or",
     ),
     m(
         "N1c",
@@ -126,14 +129,26 @@ GUARDS = [
     m(
         "N1e",
         "validation.py",
-        '"latency_ratio_ci_min_width": 0.0005',
-        '"latency_ratio_ci_min_width": 0.0',
+        '"latency_min_log_ratio_sd": 0.0001',
+        '"latency_min_log_ratio_sd": 0.0',
+    ),
+    m(
+        "N1i",
+        "latency.py",
+        "paired_degenerate = log_ratio_sd < DEGENERACY",
+        "paired_degenerate = False and log_ratio_sd < DEGENERACY",
+    ),
+    m(
+        "N1j",
+        "latency.py",
+        "        if zero_width(low, high):\n",
+        "        if False:\n",
     ),
     m(
         "N1f",
         "validation.py",
-        '"quality_ci_min_width": 0.001',
-        '"quality_ci_min_width": 0.0',
+        '"quality_min_delta_sd": 0.001',
+        '"quality_min_delta_sd": 0.0',
     ),
     m(
         "N1g",
@@ -153,16 +168,16 @@ GUARDS = [
         "statistics.py",
         'd["low"] > -margin and d["holm_p"] <= alpha',
         'd["low"] > -1 and d["holm_p"] <= alpha',
-        "equivalent",
-        "third review: with a registered family both lows > -margin almost always imply holm_p <= alpha; no counterexample found",
+        "kill",
+        "was wrongly marked equivalent; fourth review: sparse negative outliers keep Holm p small while the ndcg low falls below -margin",
     ),
     m(
         "Q2",
         "statistics.py",
         'd["low"] > -margin and d["holm_p"] <= alpha',
         'd["low"] > -margin',
-        "equivalent",
-        "third review: Holm adjustment overlaps the Bonferroni tail; no counterexample found",
+        "kill",
+        "was wrongly marked equivalent; fourth review: sparse positive outliers keep lows above -margin while Holm p exceeds alpha",
     ),
     m(
         "Q3",
@@ -181,8 +196,8 @@ GUARDS = [
         "statistics.py",
         "trials >= 200",
         "trials >= 1",
-        "equivalent",
-        "Wilson upper bound 0/n <= 0.05 already needs n >= ~72; lower trials cannot meet the loss bound",
+        "kill",
+        "was wrongly marked equivalent: 73 <= trials < 200 already meets the Wilson bounds, only the registered 200 refuses",
     ),
     m(
         "Q6",
@@ -204,8 +219,8 @@ GUARDS = [
         "statistics.py",
         "cis[1][1] <= 0.05",
         "cis[1][1] <= 1.0",
-        "equivalent",
-        "undecided in third review: no pilot with high neutral pass probability also passes a -0.10 loss",
+        "undecided",
+        "no counterexample, no proof. A simulated -0.10 loss passes only if a resample mean of dev residuals exceeds +0.05 while that resample's own lower bound stays above -0.05; large positive residuals raise the mean but widen the interval, and reaching the neutral >= 0.8 floor needs a bounded left tail. Third and fourth reviews found no pilot; this argument is weak, so the mutant stays undecided rather than equivalent",
     ),
     m("Q9", "statistics.py", "if len(set(groups)) < 2:", "if len(set(groups)) < 1:"),
     m(

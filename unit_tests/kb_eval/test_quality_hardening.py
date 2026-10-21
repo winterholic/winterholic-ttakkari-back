@@ -317,3 +317,128 @@ def test_relevance_grade_above_three_and_incomplete_cache_identity_fail():
     partial.pop("quantization")
     with pytest.raises(ValueError, match="incomplete_cache_identity"):
         e.cache_key(partial, b"x")
+
+
+# Fourth review: statistical pass conditions (Q1, Q2, Q5) and n-monotonicity.
+
+PILOT = {"recall": alternating(0.0, 0.01), "ndcg": alternating(0.0, 0.01)}
+
+
+def jitter(values):
+    return [x + (0.001 if i % 2 else -0.001) for i, x in enumerate(values)]
+
+
+def test_pass_requires_every_lower_bound_above_minus_margin():
+    # Two sparse -0.5 outliers stretch the left tail only: Holm p stays tiny
+    # while the ndcg lower bound falls below -margin.
+    ndcg = jitter([0.002] * 38 + [-0.5, -0.5])
+    r = e.quality_family(
+        {"recall": alternating(0.0, 0.004), "ndcg": ndcg},
+        H,
+        seed=12,
+        dev_deltas=PILOT,
+        dev_groups=D,
+    )
+    assert r["reasons"] == []
+    assert r["metrics"]["ndcg"]["low"] < -0.05
+    assert max(m["holm_p"] for m in r["metrics"].values()) <= 0.05
+    assert r["status"] == "inconclusive"
+
+
+def test_pass_requires_holm_adjusted_p_within_alpha():
+    # Sparse +0.5 outliers stretch the right tail: lower bounds clear -margin
+    # but the recentred null p, after Holm, exceeds alpha.
+    v = jitter([-0.04] * 38 + [0.5, 0.5])
+    r = e.quality_family(
+        {"recall": v, "ndcg": v}, H, seed=12, dev_deltas=PILOT, dev_groups=D
+    )
+    assert r["reasons"] == []
+    assert min(m["low"] for m in r["metrics"].values()) > -0.05
+    assert min(m["holm_p"] for m in r["metrics"].values()) > 0.05
+    assert r["status"] == "inconclusive"
+
+
+@pytest.mark.parametrize("trials,status", [(100, "insufficient"), (200, "established")])
+def test_power_requires_registered_two_hundred_trials(trials, status):
+    p = e.simulate_power(PILOT, D, seed=12, trials=trials)
+    assert p["loss_ci"][1] <= 0.05 and p["neutral_ci"][0] >= 0.8
+    assert p["status"] == status
+
+
+@pytest.mark.parametrize("cv", [0.0005, 0.003])
+@pytest.mark.parametrize("n", [100, 1000, 5000])
+def test_more_blocks_never_turn_an_informative_pass_into_unverified(cv, n):
+    r = e.latency_report(normal_blocks(500.0, cv, n=n), seed=7)
+    assert r["reasons"] == [], (cv, n, r["reasons"])
+    assert r["relative"] == "relative_pass"
+
+
+def proportional(noise):
+    data = normal_blocks(500.0, 0.05, ratio=1.0)
+    for b in data:
+        c = b["control"]["e2e_ms"] * 0.9 * (1 + noise * b["block"])
+        b["candidate"].update(e2e_ms=c, service_ms=c)
+    return data
+
+
+@pytest.mark.parametrize("noise", [0.0, 1e-6])
+def test_constant_paired_ratio_is_unverified_despite_varying_arms(noise):
+    r = e.latency_report(proportional(noise), seed=7)
+    assert r["reasons"] == ["degenerate_paired_ratio"]
+    assert r["relative"] == "relative_unverified"
+    assert r["ci_degenerate"] is True
+
+
+@pytest.mark.parametrize("sd,degenerate", [(0.5e-4, True), (2e-4, False)])
+def test_paired_log_ratio_floor_boundary(sd, degenerate):
+    rng = np.random.default_rng(5)
+    data = normal_blocks(500.0, 0.05, ratio=1.0)
+    for b in data:
+        c = b["control"]["e2e_ms"] * 0.9 * float(np.exp(sd * rng.standard_normal()))
+        b["candidate"].update(e2e_ms=c, service_ms=c)
+    r = e.latency_report(data, seed=7)
+    assert ("degenerate_paired_ratio" in r["reasons"]) is degenerate
+    assert r["relative"] == ("relative_unverified" if degenerate else "relative_pass")
+
+
+def test_exactly_zero_width_ratio_ci_is_unverified():
+    # Tied top blocks pin both p95s; paired ratios still vary below the tail.
+    data = normal_blocks(500.0, 0.05, ratio=1.0)
+    for b in data:
+        top = b["block"] >= 80
+        ctrl = 1000.0 if top else 400.0 + b["block"]
+        cand = 900.0 if top else 300.0 + 2 * b["block"]
+        b["control"].update(e2e_ms=ctrl, service_ms=ctrl)
+        b["candidate"].update(e2e_ms=cand, service_ms=cand)
+    r = e.latency_report(data, seed=7)
+    assert r["ratio_ci"] == [0.9, 0.9]
+    assert r["reasons"] == ["degenerate_ratio_ci"]
+
+
+@pytest.mark.parametrize("n", [40, 400, 4000])
+def test_more_clusters_never_make_an_informative_quality_interval_degenerate(n):
+    v = list(0.01 * np.random.default_rng(1).standard_normal(n))
+    groups = [f"h{i}" for i in range(n)]
+    r = e.quality_family({"recall": v, "ndcg": v}, groups, seed=12)
+    assert r["reasons"] == ["power_not_established"]
+    ci = e.cluster_interval(v, groups, seed=7)
+    assert ci["sampling_status"] == "empirical_cluster_interval"
+    assert ci["ci_degenerate"] is False
+
+
+@pytest.mark.parametrize("amplitude,degenerate", [(0.0009, True), (0.002, False)])
+def test_quality_delta_sd_floor_boundary(amplitude, degenerate):
+    v = alternating(0.0, amplitude)
+    floor = DEGENERACY["quality_min_delta_sd"]
+    assert bool(np.std(v, ddof=1) < floor) is degenerate
+    r = e.quality_family({"recall": v, "ndcg": v}, H, seed=12)
+    assert ("degenerate_bootstrap_interval" in r["reasons"]) is degenerate
+
+
+def test_zero_width_guard_is_strict_and_nan_safe():
+    from ttakkari.kb_eval.validation import zero_width
+
+    assert zero_width(1.0, 1.0) is True
+    assert zero_width(1.0, 0.5) is True
+    assert zero_width(float("nan"), 1.0) is True
+    assert zero_width(1.0, 1.0 + 1e-12) is False

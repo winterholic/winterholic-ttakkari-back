@@ -1,0 +1,103 @@
+........................................................................ [ 80%]
+........F.FFFFF..                                                        [100%]
+=================================== FAILURES ===================================
+_ test_more_blocks_never_turn_an_informative_pass_into_unverified[1000-0.0005] _
+
+cv = 0.0005, n = 1000
+
+    @pytest.mark.parametrize("cv", [0.0005, 0.003])
+    @pytest.mark.parametrize("n", [100, 1000, 5000])
+    def test_more_blocks_never_turn_an_informative_pass_into_unverified(cv, n):
+        r = e.latency_report(normal_blocks(500.0, cv, n=n), seed=7)
+>       assert r["reasons"] == [], (cv, n, r["reasons"])
+E       AssertionError: (0.0005, 1000, ['degenerate_ratio_ci'])
+E       assert ['degenerate_ratio_ci'] == []
+E         
+E         Left contains one more item: 'degenerate_ratio_ci'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:372: AssertionError
+_ test_more_blocks_never_turn_an_informative_pass_into_unverified[5000-0.0005] _
+
+cv = 0.0005, n = 5000
+
+    @pytest.mark.parametrize("cv", [0.0005, 0.003])
+    @pytest.mark.parametrize("n", [100, 1000, 5000])
+    def test_more_blocks_never_turn_an_informative_pass_into_unverified(cv, n):
+        r = e.latency_report(normal_blocks(500.0, cv, n=n), seed=7)
+>       assert r["reasons"] == [], (cv, n, r["reasons"])
+E       AssertionError: (0.0005, 5000, ['degenerate_ratio_ci'])
+E       assert ['degenerate_ratio_ci'] == []
+E         
+E         Left contains one more item: 'degenerate_ratio_ci'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:372: AssertionError
+_ test_more_blocks_never_turn_an_informative_pass_into_unverified[5000-0.003] __
+
+cv = 0.003, n = 5000
+
+    @pytest.mark.parametrize("cv", [0.0005, 0.003])
+    @pytest.mark.parametrize("n", [100, 1000, 5000])
+    def test_more_blocks_never_turn_an_informative_pass_into_unverified(cv, n):
+        r = e.latency_report(normal_blocks(500.0, cv, n=n), seed=7)
+>       assert r["reasons"] == [], (cv, n, r["reasons"])
+E       AssertionError: (0.003, 5000, ['degenerate_ratio_ci'])
+E       assert ['degenerate_ratio_ci'] == []
+E         
+E         Left contains one more item: 'degenerate_ratio_ci'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:372: AssertionError
+______ test_constant_paired_ratio_is_unverified_despite_varying_arms[0.0] ______
+
+noise = 0.0
+
+    @pytest.mark.parametrize("noise", [0.0, 1e-6])
+    def test_constant_paired_ratio_is_unverified_despite_varying_arms(noise):
+        r = e.latency_report(proportional(noise), seed=7)
+>       assert r["reasons"] == ["degenerate_paired_ratio"]
+E       AssertionError: assert ['degenerate_ratio_ci'] == ['degenerate_paired_ratio']
+E         
+E         At index 0 diff: 'degenerate_ratio_ci' != 'degenerate_paired_ratio'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:387: AssertionError
+_____ test_constant_paired_ratio_is_unverified_despite_varying_arms[1e-06] _____
+
+noise = 1e-06
+
+    @pytest.mark.parametrize("noise", [0.0, 1e-6])
+    def test_constant_paired_ratio_is_unverified_despite_varying_arms(noise):
+        r = e.latency_report(proportional(noise), seed=7)
+>       assert r["reasons"] == ["degenerate_paired_ratio"]
+E       AssertionError: assert ['degenerate_ratio_ci'] == ['degenerate_paired_ratio']
+E         
+E         At index 0 diff: 'degenerate_ratio_ci' != 'degenerate_paired_ratio'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:387: AssertionError
+_______________ test_paired_log_ratio_floor_boundary[5e-05-True] _______________
+
+sd = 5e-05, degenerate = True
+
+    @pytest.mark.parametrize("sd,degenerate", [(0.5e-4, True), (2e-4, False)])
+    def test_paired_log_ratio_floor_boundary(sd, degenerate):
+        rng = np.random.default_rng(5)
+        data = normal_blocks(500.0, 0.05, ratio=1.0)
+        for b in data:
+            c = b["control"]["e2e_ms"] * 0.9 * float(np.exp(sd * rng.standard_normal()))
+            b["candidate"].update(e2e_ms=c, service_ms=c)
+        r = e.latency_report(data, seed=7)
+>       assert ("degenerate_paired_ratio" in r["reasons"]) is degenerate
+E       AssertionError: assert ('degenerate_paired_ratio' in ['degenerate_ratio_ci']) is True
+
+unit_tests/kb_eval/test_quality_hardening.py:400: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_more_blocks_never_turn_an_informative_pass_into_unverified[1000-0.0005]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_more_blocks_never_turn_an_informative_pass_into_unverified[5000-0.0005]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_more_blocks_never_turn_an_informative_pass_into_unverified[5000-0.003]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_constant_paired_ratio_is_unverified_despite_varying_arms[0.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_constant_paired_ratio_is_unverified_despite_varying_arms[1e-06]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_paired_log_ratio_floor_boundary[5e-05-True]
+6 failed, 83 passed in 16.94s

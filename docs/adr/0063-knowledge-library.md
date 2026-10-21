@@ -1,6 +1,6 @@
 # ADR 0063. 범용 지식 도서관(Knowledge Library)과 2층 아키텍처
 
-- 상태: KB1+KB2 구현 사실 채택(2026-10-20). 후속 설계 정본은 v2. KB-E0 착수 조건부 승인, 제품검색 미승인. E0 하네스 독립 검증·실제 DB·최종 품질 gate는 별도.
+- 상태: KB1+KB2 구현 사실 채택(2026-10-20). 후속 설계 정본은 v2. KB-E0 로직 완료 승인, 제품검색 미승인(2026-10-22, DB·UI·추론 제외). 실제 DB·최종 품질 gate는 별도. 이전 상태: KB-E0 착수 조건부 승인, 제품검색 미승인.
 - 활성 후속 설계: [v2](../design/kb-v2/knowledge-library-design-v2.md), [검토 대응표](../design/kb-v2/reviews/v2-review-response.md). [v1](../kb/design-v1.md)·[v1 사본](../design/knowledge-library.md)은 역사 기록.
 - 선행: ADR 0007·0009(맥락 도서관), ADR 0031(근거 중심 원장)
 

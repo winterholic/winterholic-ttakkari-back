@@ -1,6 +1,6 @@
 # v2 독립 검토 근거와 설계 반영
 
-현재: **KB-E0 착수 조건부 승인, 제품검색 미승인**. [반영 독립 확인 원문](amendment-independent-review.md)을 바이트 보존한다. E0 구현 추적은 [작업 기록](../../../work-history/2026-10-22-kb-e0-harness.md). 아래 검증 로그는 설계 수정안 당시 기록이다.
+현재: **KB-E0 로직 완료 승인, 제품검색 미승인**([E0 완료 기록](kb-e0-completion.md)). 이전 상태는 **KB-E0 착수 조건부 승인, 제품검색 미승인**였다. [반영 독립 확인 원문](amendment-independent-review.md)을 바이트 보존한다. E0 구현 추적은 [작업 기록](../../../work-history/2026-10-22-kb-e0-harness.md). 아래 검증 로그는 설계 수정안 당시 기록이다.
 
 - 검토 대상: `8e3dc2c11f25098bc2fd1fee3886b6c235b5651f`, Run `78470bf8-41e6-4721-aa1c-20a853841cb3`.
 - [원 보고서](v2-design-review.md): 바이트 보존, 판정 approve-with-changes. 검토자의 측정·미실행 범위를 그대로 읽는다.

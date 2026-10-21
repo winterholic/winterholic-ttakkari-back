@@ -165,7 +165,7 @@ class Policy(Strict):
     margin: Literal[0.05]
     alpha: Literal[0.05]
     bootstrap_replicates: Literal[10000]
-    statistics_policy_version: Literal["kb-e0-statistics-v3"] = "kb-e0-statistics-v3"
+    statistics_policy_version: Literal["kb-e0-statistics-v4"] = "kb-e0-statistics-v4"
     minimum_latency_replicates: Literal[10000] = 10000
     live_tolerance: Tolerance
 

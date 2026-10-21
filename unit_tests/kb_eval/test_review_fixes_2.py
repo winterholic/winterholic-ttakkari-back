@@ -4,7 +4,6 @@ import pytest
 from test_oracles import blocks, varied
 
 from ttakkari.kb_eval import core as e
-from ttakkari.kb_eval.validation import DEGENERACY, degenerate_width
 
 H = [f"h{i}" for i in range(40)]
 D = [f"d{i}" for i in range(40)]
@@ -22,7 +21,7 @@ def test_n1_latency_float_noise_trace_is_not_relative_pass():
     assert r["ratio_ci"][0] < r["ratio_ci"][1]
     assert r["ci_degenerate"] is True
     assert r["relative"] == "relative_unverified"
-    assert "degenerate_ratio_ci" in r["reasons"]
+    assert "degenerate_paired_ratio" in r["reasons"]
     assert r["candidate_absolute"] == "absolute_fail"
 
 
@@ -43,23 +42,6 @@ def test_n1_quality_float_noise_deltas_cannot_pass_or_establish_power():
     assert ci["sampling_status"] == "unverified_degenerate_interval"
 
 
-def test_n1_degenerate_width_boundary_is_inclusive_at_registered_floor():
-    floor = DEGENERACY["latency_ratio_ci_min_width"]
-    assert degenerate_width(1.0, 1.0 + floor * 0.999, floor) is True
-    assert degenerate_width(0.0, floor, floor) is False
-    assert degenerate_width(float("nan"), 1.0, floor) is True
-
-
-@pytest.mark.parametrize("spread,degenerate", [(0.02, True), (0.08, False)])
-def test_n1_latency_ci_width_either_side_of_floor(spread, degenerate):
-    r = e.latency_report(varied(blocks(), spread=spread), seed=7)
-    low, high = r["ratio_ci"]
-    floor = DEGENERACY["latency_ratio_ci_min_width"]
-    assert (high - low < floor) is degenerate
-    assert r["ci_degenerate"] is degenerate
-    assert r["relative"] == ("relative_unverified" if degenerate else "relative_pass")
-
-
 def test_n1_latency_constant_arm_below_resolution_is_unverified():
     data = varied(blocks(), spread=0.5)
     for b in data:
@@ -68,23 +50,6 @@ def test_n1_latency_constant_arm_below_resolution_is_unverified():
     r = e.latency_report(data, seed=7)
     assert r["reasons"] == ["degenerate_arm_variance"]
     assert r["relative"] == "relative_unverified"
-
-
-@pytest.mark.parametrize("amplitude,degenerate", [(0.001, True), (0.003, False)])
-def test_n1_quality_ci_width_either_side_of_floor(amplitude, degenerate):
-    v = alternating(amplitude)
-    r = e.quality_family({"recall": v, "ndcg": v}, H, seed=12)
-    width = r["metrics"]["recall"]["high"] - r["metrics"]["recall"]["low"]
-    assert (width < DEGENERACY["quality_ci_min_width"]) is degenerate
-    assert ("degenerate_bootstrap_interval" in r["reasons"]) is degenerate
-
-
-@pytest.mark.parametrize("amplitude,established", [(0.0009, False), (0.01, True)])
-def test_n1_power_requires_dev_variance_above_floor(amplitude, established):
-    dev = alternating(amplitude)
-    p = e.simulate_power({"recall": dev, "ndcg": dev}, D, seed=12)
-    assert (p["status"] == "established") is established
-    assert p["dev_min_std"] == DEGENERACY["quality_dev_min_std"]
 
 
 def test_n1_normal_controls_keep_their_verdicts():

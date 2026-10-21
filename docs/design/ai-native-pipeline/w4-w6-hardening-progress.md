@@ -26,7 +26,13 @@
 2. 실제 opt-in `/workers` API 요청으로 격리 Workspace·`extra_writable_roots`·ChangeSet 생성까지 통합 검증한다. Settings 단위 로딩과 내부 Git hook 테스트는 통과했지만 API 요청 자체는 실행하지 못했다.
 3. W5 설계가 말하는 `submit_change` MCP 노출은 이번 slice에 추가하지 않았다. 제출 함수와 CLI는 있으나 MCP 경로는 미구현이다. 세대와 무관한 상주 integrator, 배치 검증·이분 탐색도 미구현이다.
 4. bounded repair의 실제 `queue_run` DB 기록 후 동일 worker가 새 커밋을 내고 재제출해 상한에서 멈추는 전 경로는 PostgreSQL 검증 대기다.
-5. **통합 충돌 표면:** main ADR 0067 변경과는 `src/ttakkari/api/orchestrator.py`, `src/ttakkari/config.py`가 겹치므로 두 동작을 보존해야 한다. 독립검증이 확인한 별도 executor commit `95fc0a7`에는 `alembic/versions/0060_run_executor.py`가 있으며 이 feature의 `0060_collector_job_runtime.py → 0061_local_tts.py → 0062_delivery_change_sets.py`와 `0060` revision ID가 충돌한다. 두 migration을 그대로 병합할 수 없다. 양쪽 schema 변경을 보존해 고유 revision과 `down_revision` 순서를 정하고 단일 head를 확인해야 한다. executor 변경과 이 feature는 `README.md`, `deploy/generation-contract.json`, `pyproject.toml`, `src/ttakkari/config.py`, `tests/test_migration_single_head.py`도 함께 수정했다. main rebase/merge 및 실제 충돌 해결은 하지 않았다.
+5. **통합 충돌 표면:** main ADR 0067 변경과는 `src/ttakkari/api/orchestrator.py`, `src/ttakkari/config.py`가 겹치므로 두 동작을 보존해야 한다. 이후 별도 독립검증에서 확인한 executor 고정 SHA `a56ec7a59d7b5f86c142b2c5325cee84aea188a8`의 실제 migration은 `0063_run_executor.py`이며 `0061_local_tts`를 부모로 한다. 이 delivery 후보의 `0062_delivery_change_sets`도 `0061_local_tts`를 부모로 하므로 함께 합치면 두 head가 된다. executor 쪽은 지정 원본 `95fc0a75`의 직계 후손이 아니며 다른 선행 변경도 포함하므로, 해당 브랜치 전체를 delivery 통합 후보에 가져오지 않는다. 최종 통합 시 두 migration 변경과 downgrade 순서를 검토해 선형 `down_revision`으로 직렬화하고, generation contract의 `schema_revision`·`online_migration_from`, Alembic head 및 허용 목록을 함께 맞춰야 한다. 방향과 최종 번호는 통합 시 실제 migration 의존성을 확인한 뒤 정한다. `README.md`, `deploy/generation-contract.json`, `pyproject.toml`, `src/ttakkari/config.py`, `tests/test_migration_single_head.py`도 양쪽이 수정하므로 수동 통합 점검이 필요하다. main rebase/merge 및 실제 충돌 해결은 하지 않았다.
+
+## 실행기 후속 독립검증 결과 반영 (a56ec7a)
+
+별도 보고서 [`run-executor-followup-independent-verification.md`](/Users/winterholic/.ttakkari/data/outbox/49caca1e-be5b-42dc-8b93-1e60d46dab50/run-executor-followup-independent-verification.md)의 판정은 고정 SHA `a56ec7a59d7b5f86c142b2c5325cee84aea188a8`에 대한 **FAIL / 운영 승격 불가**다. manifest content digest 검증이 없고, reconcile apply는 process signal 뒤 DB token을 재검사하는 코드 순서상의 race가 발견되어 후속 수정이 별도 작업으로 진행 중이다. PostgreSQL/ASGI/SSE/controller 실동작도 미검증이다. 이 delivery 후보에서는 executor 변경을 합치거나 해당 결함의 수정·재검증을 중복하지 않는다.
+
+현재 migration graph는 `0060_collector_job_runtime → 0061_local_tts → 0062_delivery_change_sets`와 `0061_local_tts → 0063_run_executor` 두 갈래다. `0062`와 `0063`을 최종 통합 때 직렬화하고 generation contract 및 단일 head를 같은 변경에서 맞춘다. `a56ec7a`는 `95fc0a75`의 직계 후손이 아니며, executor 밖의 TTS·ADR 0067·W1 등 선행 변경도 포함한다. 그러므로 executor의 좁은 소유 변경을 실제 계보·diff로 분리해 검토하기 전에는 그 브랜치를 cherry-pick/merge하지 않는다.
 
 초기 Flash worker 결과의 Antigravity `run_command` sandbox denial은 그 실행 환경에 한정된다. 부모 Codex 환경에서 Git worktree 및 파일 수정은 실제 성공했다. 실패한 환경을 production 제약으로 일반화하지 않는다.
 

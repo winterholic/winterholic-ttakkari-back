@@ -141,6 +141,12 @@ uv run pytest -q --timeout=120 \
 
 ## 통합 전 충돌 및 기능 완료 범위
 
-독립검증이 확인한 다른 executor commit `95fc0a7`에는 `alembic/versions/0060_run_executor.py`가 있고, 현재 이 feature 계보에는 `0060_collector_job_runtime.py → 0061_local_tts.py → 0062_delivery_change_sets.py`가 있다. 두 revision 모두 `0060`을 사용하므로 두 migration을 그대로 병합하면 revision 충돌/다중 head가 난다. 양쪽의 schema 변경과 순서를 보존해 revision/down_revision을 통합한 뒤 `uv run alembic heads`, `tests/test_migration_single_head.py`, generation contract 테스트를 다시 실행해야 한다. 두 계보는 `README.md`, `deploy/generation-contract.json`, `pyproject.toml`, `src/ttakkari/config.py`, `tests/test_migration_single_head.py`도 함께 바꾸므로 수동 통합 점검이 필요하다. main ADR 0067 변경과는 `src/ttakkari/api/orchestrator.py`, `src/ttakkari/config.py`가 겹친다. 이 feature branch에서는 이 통합을 수행하지 않는다.
+별도 executor 독립검증의 고정 SHA `a56ec7a59d7b5f86c142b2c5325cee84aea188a8`에는 `0063_run_executor.py`가 있고 `0061_local_tts`를 부모로 한다. 이 delivery 후보의 `0062_delivery_change_sets.py` 역시 `0061_local_tts`를 부모로 하므로 두 migration을 그대로 합치면 두 head가 된다. 최종 통합에서는 실제 migration 의존성과 downgrade 순서를 검토해 두 변경을 선형 revision/down_revision으로 직렬화하고, `deploy/generation-contract.json`의 `schema_revision`·`online_migration_from`, migration allowlist, Alembic 단일 head를 함께 갱신·검증한다. 방향과 최종 revision 번호는 통합 시점에 정한다. 양 계보가 `README.md`, `deploy/generation-contract.json`, `pyproject.toml`, `src/ttakkari/config.py`, `tests/test_migration_single_head.py`를 함께 수정하므로 파일별 소유 변경을 대조한다. main의 ADR 0067 관련 `src/ttakkari/api/orchestrator.py` 및 `src/ttakkari/config.py` 동작도 보존한다. 이 delivery 후보에서 executor를 병합하거나 통합 해결을 수행하지 않는다.
+
+## Executor 독립검증 차단점과 범위
+
+[`run-executor-followup-independent-verification.md`](/Users/winterholic/.ttakkari/data/outbox/49caca1e-be5b-42dc-8b93-1e60d46dab50/run-executor-followup-independent-verification.md)는 고정 SHA `a56ec7a59d7b5f86c142b2c5325cee84aea188a8`를 **FAIL / 운영 승격 불가**로 판정했다. 확인된 차단점은 manifest content digest 검증 부재와 reconcile apply의 process signal 후 DB token 재검사 순서에서 비롯되는 코드상 race다. race는 PostgreSQL에서 실행 재현된 사실이 아니라 코드 순서에서 추론된 결함이다. manifest pin 및 token race 후속 수정은 별도 작업에 맡겨져 있으므로 여기서 executor 코드 수정·재검증은 하지 않는다. PostgreSQL migration/transaction, ASGI/SSE 전환, controller/launchd activation은 해당 보고서에서 미검증이다.
+
+executor 고정 SHA는 요청 기준 `95fc0a75`의 직계 후손이 아니며 TTS, ADR 0067, W1 등 executor 밖의 선행 변경을 포함한다. 최종 통합 때는 delivery 후보와의 전체 SHA 범위 무차별 병합을 피하고, 확인된 executor 소유 변경만 계보와 diff로 분리해 검토한다. 본 manifest의 delivery host gate가 executor 운영 승격이나 전체 Stage 검증을 대신하지 않는다.
 
 `submit_change` MCP 노출, 상주 integrator, batch validation 및 이분 탐색은 미구현이다. 이 manifest의 gate가 통과해도 W4–W6 전체 완료를 의미하지 않는다.

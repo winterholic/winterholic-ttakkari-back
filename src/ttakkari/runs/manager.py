@@ -628,6 +628,11 @@ class RunManager:
                 await db.execute(update(Run).where(Run.status == RunStatus.queued).values(resume_after=None))
                 await generation.wake(db)
                 await db.commit()
+            # NOTE: the DB is authoritative here, but wakers armed from the old resume_after
+            # live in this process. dispatch() treats an armed waker as "still waiting", so
+            # without this a released Run stayed queued until its original wake time.
+            for rid in list(self._waiting):
+                self._disarm(rid)
             await _reconsider_quota_waits()
             return
         """한도 대기를 풀고 바로 다시 시도한다(사용자가 계정 한도 상태를 풀거나 계정을 켰을 때). 여전히 못 쓰면 다시 대기한다."""

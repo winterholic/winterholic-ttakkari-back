@@ -255,7 +255,8 @@ def test_real_adapter_runs_registered_profile_over_http_and_releases_after_runti
     assert receipt["graph_hash_consistent"] and receipt["seed_consistent"] and receipt["seed"] == 7
     assert receipt["external_prompt_id"] == submitted["id"]
     assert receipt["outputs"][0]["sha256"] == hashlib.sha256(b"RIFF-fake-webp").hexdigest()
-    assert receipt["profile_id"] == PROFILE.profile_id and receipt["workflow_revision"] == PROFILE.revision
+    assert receipt["profile_id"] == PROFILE.profile_id and receipt["workflow_revision_hash"] == PROFILE.revision
+    assert "workflow_revision" not in receipt
     assert receipt["lease"]["owner_task"] == task and receipt["lease"]["runtime_instance"] == job["runtime_instance"]
     assert [m["name"] for m in receipt["models"]] == list(PROFILE.models)
 

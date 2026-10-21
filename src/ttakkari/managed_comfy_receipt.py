@@ -265,7 +265,9 @@ def build_receipt(*, job: dict[str, Any], adapter_job: dict[str, Any], profile: 
         # Comfy 확장
         "profile_id": profile.profile_id,
         "workflow_id": profile.workflow,
-        "workflow_revision": profile.revision,  # registry 내용 해시. G0 의 workflow_revision(int 순번)과 별개다.
+        # registry 내용 해시. G0 의 workflow_revision(int 순번)과 이름이 겹치지 않게 일부러 다른 키를 쓴다.
+        # workflow_revision 키는 G0 통합 때 G0 가 채우므로 여기서는 넣지 않는다.
+        "workflow_revision_hash": profile.revision,
         "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         "models": models,
         "timing": {

@@ -106,8 +106,10 @@ def test_receipt_carries_every_required_field_with_g0_names_where_they_exist(tre
     assert (out["width"], out["height"], out["fps"], out["duration"]) == (832, 480, 24.0, 2.0)
     assert out["metadata_source"] == "mp4-container"
     # Comfy 확장
-    assert (receipt["profile_id"], receipt["workflow_id"], receipt["workflow_revision"]) == (
+    assert (receipt["profile_id"], receipt["workflow_id"], receipt["workflow_revision_hash"]) == (
         "wan22-5b-draft", "t2v-wan22-5b", "a603a63d6f3a")
+    # G0 의 workflow_revision 은 정수 순번이다. Comfy receipt 는 같은 이름의 키를 다른 타입으로 쓰지 않는다.
+    assert "workflow_revision" not in receipt
     assert receipt["prompt_sha256"] == hashlib.sha256(b"A fox").hexdigest()
     assert receipt["resolved_graph_hash"] == receipt["resolved_graph_sha256"][:12]
     assert receipt["graph_hash_consistent"] is True and receipt["seed_consistent"] is True

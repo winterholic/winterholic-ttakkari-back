@@ -17,6 +17,8 @@ import uuid
 from pathlib import Path
 from typing import Any, ClassVar
 
+from ttakkari.host_gpu_guard import proc_start
+
 
 class LeaseError(RuntimeError):
     pass
@@ -130,6 +132,13 @@ class ResourceLeaseManager:
             return record
         return None
 
+    def recorded_phase(self, lease_id: str, generation_token: str) -> str | None:
+        """기록된 lease 가 이 id·세대와 일치할 때만 그 phase 를 돌려준다(이미 released 인지 구분하는 용도)."""
+        record = _read(self.record_path)
+        if record and record.get("lease_id") == lease_id and record.get("generation_token") == generation_token:
+            return record.get("phase")
+        return None
+
     def is_locked(self) -> bool:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.lock_path.open("a+") as fd:
@@ -200,6 +209,9 @@ class ResourceLeaseManager:
             "heartbeat_at": started,
             "expires_at": started + float(ttl_seconds),
             "created_at": started,
+            # 소유 프로세스 신원: 소유자가 죽어 state 도 없을 때 회수 가능 여부(ABSENT 확인)를 판단하는 유일한 근거다.
+            "owner_pid": os.getpid(),
+            "owner_start": proc_start(os.getpid()),
             "cancel_requested_at": None,
             "release_proof": None,
         }

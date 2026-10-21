@@ -25,6 +25,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Literal
 
 import httpx
@@ -33,7 +34,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ttakkari import host_gpu_guard as guard
 from ttakkari.host_gpu_guard import ALIAS
-from ttakkari.host_resource import LeaseBusy, ResourceLeaseHandle, ResourceLeaseManager
+from ttakkari.host_resource import (
+    LeaseBusy,
+    LeaseError,
+    LeaseOwnershipError,
+    ResourceLeaseHandle,
+    ResourceLeaseManager,
+)
 
 MEASURED_ON = "host_gpu_path"
 MEASURED_NOTE = ("Measured on the host GPU path: a llama-server child run by the backend outside any engine sandbox, "
@@ -231,6 +238,47 @@ def device_evidence(log: Path, limit: int = 8) -> list[str]:
     return lines[:limit]
 
 
+def _enumerate_strict(match: Callable[[list[str], float], bool],
+                      since: float | None) -> list[tuple[int, float]] | None:
+    """조건에 맞는 같은 사용자 프로세스 (pid, 시작 시각). 열거가 불완전하면 None(빈 목록은 부재 증거여야 한다).
+
+    다른 사용자 프로세스는 우리 서버일 수 없어 건너뛰고, 종료된 좀비는 살아 있는 서버가 아니다. 같은 사용자 프로세스의
+    argv·시작 시각·상태를 읽지 못하면 불완전으로 본다. 다만 `since`(서버가 뜰 수 있었던 가장 이른 시각)보다 먼저 시작한
+    프로세스는 우리 서버일 수 없으므로 읽지 못해도 건너뛴다(macOS 는 같은 사용자의 일부 보호 프로세스 argv 조회를 거부한다).
+    """
+    uid = os.getuid()
+    found: list[tuple[int, float]] = []
+    try:
+        for proc in psutil.process_iter(["pid", "cmdline", "create_time", "uids", "status"]):
+            info = proc.info
+            uids = info.get("uids")
+            if uids is not None and uids.real != uid:
+                continue
+            if info.get("status") == psutil.STATUS_ZOMBIE:
+                continue
+            cmd, created = info.get("cmdline"), info.get("create_time")
+            if cmd is None or created is None or info.get("status") is None:
+                if created is not None and since is not None and created < since - guard.START_SKEW:
+                    continue
+                return None
+            if match(cmd, created):
+                found.append((int(info["pid"]), float(created)))
+    except (psutil.Error, OSError):
+        return None
+    return found
+
+
+def find_our_servers_strict(server_path: str, port: int, since: float) -> list[tuple[int, float]] | None:
+    """`guard.find_our_servers` 와 같은 기준의 엄격 열거."""
+    return _enumerate_strict(lambda cmd, created: created >= since - guard.START_SKEW
+                             and guard._is_our_server(cmd, server_path, port), since)
+
+
+def find_alias_processes_strict(since: float | None) -> list[tuple[int, float]] | None:
+    """포트·경로와 무관하게 시험 서버 별칭을 argv 에 가진 같은 사용자 프로세스(수동 복구 전 안전 확인용)."""
+    return _enumerate_strict(lambda cmd, _created: guard.ALIAS in cmd, since)
+
+
 # ---- 감독자: 별도 프로세스가 llama-server 하나를 소유하고 가드를 집행한다
 
 class Supervisor:
@@ -278,20 +326,24 @@ class Supervisor:
             started = time.time()
             # 서버보다 먼저 띄운다: 감독자가 서버 직후 SIGKILL 을 맞아도 watchdog 이 이미 지켜보고 있어야 한다.
             watchdog = self._start_watchdog(command[0], port)
-            log = open(self.dir / "server.log", "wb")  # noqa: SIM115
-            server = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                      start_new_session=True, env=_min_env())
-            log.close()
             state = {
                 "launch_id": self.spec["launch_id"], "phase": "starting",
                 "lease_id": lease.lease_id, "lease_generation_token": lease.generation_token,
                 "runtime_instance": lease.runtime_instance,
                 "supervisor_pid": os.getpid(), "supervisor_start": _proc_start(os.getpid()),
-                "watchdog_pid": watchdog.pid, "server_pid": server.pid, "server_start": _proc_start(server.pid),
+                "watchdog_pid": watchdog.pid, "server_pid": None, "server_start": None, "server_spawn": "pending",
                 "port": port, "model": self.req.model, "request": self.req.model_dump(),
                 "command": command, "started_at": started, "deadline_epoch": started + self.max_seconds,
                 "baseline_swap_bytes": baseline, "swap_limit_bytes": limit, "peak_swap_growth_bytes": 0,
             }
+            # 서버는 이 state 가 durable 해진 뒤에만 띄운다. 감독자가 lease 획득과 이 쓰기 사이에서 죽으면 서버가 없었음이
+            # 보장되고, 이 쓰기와 아래 pid 기록 사이에서 죽으면 포트·argv 로 서버를 열거해 정리 여부를 확인한다.
+            _write_state(self.dir, state)
+            log = open(self.dir / "server.log", "wb")  # noqa: SIM115
+            server = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                      start_new_session=True, env=_min_env())
+            log.close()
+            state.update(server_pid=server.pid, server_start=_proc_start(server.pid), server_spawn="spawned")
             _write_state(self.dir, state)
             self._watch(server, state, baseline, limit, time.monotonic())
         except GpuError as exc:
@@ -316,8 +368,7 @@ class Supervisor:
                              server_exit_code=None if server is None else server.returncode)
             else:
                 final.setdefault("phase", "starting")
-                final.setdefault("server_pid", server.pid)
-                final.update(stop_reason=self.reason, stop_unconfirmed=True)
+                final.update(server_pid=server.pid, stop_reason=self.reason, stop_unconfirmed=True)
             _write_state(self.dir, final)
             if server_stopped:
                 if server is None:
@@ -414,39 +465,168 @@ class HostGpu:
             raise Invalid("llama-server executable is missing or not executable")
         return server, model
 
+    def _manager(self) -> ResourceLeaseManager:
+        return ResourceLeaseManager(data_dir=self.dir.parent)
+
+    def _observe_pending_server(self, state: dict[str, Any]) -> guard.ProcState:
+        """pid 를 적기 전에 감독자가 죽은 경우: 포트·argv 로 서버를 열거해 정리하고 부재를 확인한다."""
+        command, port = state.get("command"), state.get("port")
+        since = state.get("supervisor_start") or state.get("started_at")
+        if not command or not port or not since:
+            return guard.ProcState.UNKNOWN
+        for _ in range(2):  # 1차: 발견한 서버 정리, 2차: 다시 열거해 비어 있는지 확인
+            found = find_our_servers_strict(str(command[0]), int(port), float(since))
+            if found is None:
+                return guard.ProcState.UNKNOWN
+            if not found:
+                return guard.ProcState.ABSENT
+            for pid, start in found:
+                guard.kill_our_server(pid, start, port)
+        return guard.ProcState.PRESENT
+
+    def _reconcile(self, lease_id: str, generation_token: str, proof: dict[str, Any]) -> None:
+        """lease 회수. 실패하면 호출한 쪽 state 는 live 로 남아 다음 조회가 다시 시도한다."""
+        manager = self._manager()
+        try:
+            manager.reconcile(lease_id, generation_token, proof=proof)
+        except LeaseOwnershipError:
+            if manager.recorded_phase(lease_id, generation_token) != "released":
+                raise GpuError("lease owner evidence no longer matches the recorded lease; resource lease "
+                               "remains held (see ADR 0037 manual recovery)") from None
+            # 앞선 시도에서 lease 는 이미 풀렸고 state 쓰기만 실패했다. state 만 마저 확정한다.
+        except (LeaseError, OSError, ValueError) as exc:
+            raise GpuError(f"lease reconcile failed; state stays live for retry: {type(exc).__name__}: {exc}") from exc
+
     def _reap_lost(self, state: dict[str, Any]) -> dict[str, Any]:
         """감독자가 사라졌는데 상태가 살아 있으면 정리한다. 상태 파일에 적힌 우리 서버 프로세스만 건드린다."""
         lease_id = state.get("lease_id")
         generation_token = state.get("lease_generation_token")
         if not lease_id or not generation_token:
-            raise GpuError("host resource lease owner evidence is missing; refusing automatic reconciliation")
+            raise GpuError("host resource lease owner evidence is missing; refusing automatic reconciliation "
+                           "(see ADR 0037 manual recovery)")
         server_pid, server_start = state.get("server_pid"), state.get("server_start")
         # kill_our_server 의 bool 은 신호를 보냈는지일 뿐 부재 증거가 아니다. 조회 실패·권한 거부·신원 근거 누락(UNKNOWN)을
         # 부재로 보면 살아 있는 서버가 있는데 lease 가 풀려 다음 모델이 겹쳐 올라간다. 부재가 관찰될 때만 해제한다.
-        observed = guard.process_state(server_pid, server_start)
-        if observed is guard.ProcState.PRESENT:
-            guard.kill_our_server(int(server_pid), server_start, state.get("port"))
+        if state.get("server_spawn") == "pending":
+            observed = self._observe_pending_server(state)
+        else:
             observed = guard.process_state(server_pid, server_start)
+            if observed is guard.ProcState.PRESENT:
+                guard.kill_our_server(int(server_pid), server_start, state.get("port"))
+                observed = guard.process_state(server_pid, server_start)
         if observed is not guard.ProcState.ABSENT:
             raise GpuError(f"owned server stop is not confirmed (observed {observed.value}); "
                            "resource lease remains held")
+        # 순서가 중요하다: lease 회수가 성공한 뒤에만 stopped 를 확정한다. 반대면 reconcile 이 실패했을 때 state 는
+        # 비활성인데 lease 는 live 라서 다시는 정리 경로를 타지 못하고 acquire 가 영구히 거부된다.
+        self._reconcile(lease_id, generation_token, {"runtime_status": "stopped", "evidence": {
+            "runtime_instance": state.get("runtime_instance"), "server_pid": server_pid,
+            "server_start": server_start, "server_process_state": observed.value,
+            "server_spawn": state.get("server_spawn"), "supervisor_lost": True,
+        }})
         state = {**state, "phase": "stopped", "stop_reason": "supervisor_lost", "stopped_at": time.time()}
         _write_state(self.dir, state)
-        ResourceLeaseManager(data_dir=self.dir.parent).reconcile(
-            lease_id,
-            generation_token,
-            proof={"runtime_status": "stopped", "evidence": {
-                "runtime_instance": state.get("runtime_instance"), "server_pid": server_pid,
-                "server_start": server_start, "server_process_state": observed.value, "supervisor_lost": True,
-            }},
-        )
+        return state
+
+    def _recover_orphan_lease(self, record: dict[str, Any], state: dict[str, Any] | None) -> dict[str, Any] | None:
+        """lease 는 live 인데 state 가 비활성이거나 다른 launch 의 것이다(감독자가 lease 획득 직후나 stopped 기록 직후에
+        죽은 경우). 소유 프로세스가 ABSENT 로 확인될 때만 회수한다. UNKNOWN 이면 보존한다."""
+        owner = guard.process_state(record.get("owner_pid"), record.get("owner_start"))
+        if owner is not guard.ProcState.ABSENT:
+            raise GpuError(f"orphan lease owner stop is not confirmed (observed {owner.value}); resource lease "
+                           "remains held (see ADR 0037 manual recovery)")
+        matching = state if state and state.get("lease_id") == record["lease_id"] else None
+        evidence: dict[str, Any] = {
+            "runtime_instance": record["runtime_instance"], "owner_pid": record.get("owner_pid"),
+            "owner_start": record.get("owner_start"), "owner_process_state": owner.value, "orphan_lease": True,
+        }
+        if matching is None:
+            evidence["server_started"] = False  # 서버는 state 를 먼저 쓴 뒤에만 띄운다
+        else:
+            # stopped 는 서버 종료를 관찰한 뒤에만 쓰이지만, 회수 전에 한 번 더 부재를 확인한다.
+            pid, start = matching.get("server_pid"), matching.get("server_start")
+            server = guard.process_state(pid, start) if pid else guard.ProcState.ABSENT
+            if server is not guard.ProcState.ABSENT:
+                raise GpuError(f"orphan lease server stop is not confirmed (observed {server.value}); "
+                               "resource lease remains held")
+            evidence.update(server_pid=pid, server_start=start, server_process_state=server.value,
+                            state_phase=matching.get("phase"))
+        self._reconcile(record["lease_id"], record["generation_token"],
+                        {"runtime_status": "stopped", "evidence": evidence})
         return state
 
     def _current(self) -> dict[str, Any] | None:
         state = _read_state(self.dir)
-        if state and state.get("phase") in _PHASES_LIVE and not _lock_held(self.dir):
-            state = self._reap_lost(state)
+        if _lock_held(self.dir):
+            return state  # 감독자가 flock 을 쥐고 있다. 살아 있는 소유자의 것은 건드리지 않는다.
+        try:
+            record = self._manager().current()
+        except LeaseError as exc:
+            raise GpuError(f"resource lease record is unreadable; refusing automatic recovery: {exc}") from exc
+        if state and state.get("phase") in _PHASES_LIVE:
+            return self._reap_lost(state)
+        if record and record.get("owner_task") == "host_gpu":  # 다른 소비자의 lease 는 그 소비자의 reconcile 몫이다
+            return self._recover_orphan_lease(record, state)
         return state
+
+    def force_release(self, *, reason: str, lease_id: str | None = None,
+                      accept_unrelated_pid: bool = False) -> dict[str, Any]:
+        """자동 복구가 불가능한 상태(legacy state, 서버 pid·start 근거 누락, 우리 서버로 확인되지 않는 프로세스,
+        lease 에 소유자 신원 없음)를 운영자가 직접 해제한다. 아무 프로세스에도 신호를 보내지 않으며, 살아 있는
+        시험 서버가 없음을 이 함수가 직접 확인한 경우에만 해제한다(ADR 0037 수동 복구)."""
+        if not isinstance(reason, str) or not 10 <= len(reason.strip()) <= 300:
+            raise GpuError("reason must describe the verification in 10 to 300 characters")
+        if _lock_held(self.dir):
+            raise GpuError("a live owner still holds the shared host resource lock; nothing was released")
+        state = _read_state(self.dir)
+        try:
+            record = self._manager().current()
+        except LeaseError as exc:
+            raise GpuError(f"resource lease record is unreadable; refusing forced release: {exc}") from exc
+        state_live = bool(state and state.get("phase") in _PHASES_LIVE)
+        if not record and not state_live:
+            raise GpuError("no live lease or live host_gpu state; nothing to release")
+        if record and lease_id != record["lease_id"]:
+            raise GpuError("--lease-id must equal the live lease id shown by the status command")
+        references = [value for value in (
+            (record or {}).get("created_at"), (state or {}).get("started_at"), (state or {}).get("supervisor_start"))
+            if isinstance(value, (int, float)) and not isinstance(value, bool)]
+        # 서버는 lease 획득·감독자 시작 뒤에만 뜬다. 가장 이른 기준보다 먼저 시작한 프로세스는 후보가 아니다.
+        aliased = find_alias_processes_strict(min(references) if references else None)
+        if aliased is None:
+            raise GpuError("process table could not be enumerated completely; refusing forced release")
+        if aliased:
+            raise GpuError(f"live test-server processes exist {[pid for pid, _ in aliased]}; stop them first, "
+                           "this command never signals processes")
+        recorded: dict[str, str] = {}
+        unrelated: list[dict[str, Any]] = []
+        for label, pid, start in (
+            ("server", (state or {}).get("server_pid"), (state or {}).get("server_start")),
+            ("supervisor", (state or {}).get("supervisor_pid"), (state or {}).get("supervisor_start")),
+            ("lease_owner", (record or {}).get("owner_pid"), (record or {}).get("owner_start")),
+        ):
+            observed = guard.process_state(pid, start)
+            recorded[label] = observed.value
+            if not isinstance(pid, int) or isinstance(pid, bool) or not psutil.pid_exists(pid):
+                continue
+            if observed is guard.ProcState.ABSENT:
+                continue
+            if label != "server" or not accept_unrelated_pid:
+                raise GpuError(f"recorded {label} pid {pid} still exists; refusing forced release")
+            unrelated.append({"pid": pid, "cmdline": guard.cmdline(pid)[:6]})
+        evidence = {
+            "operator_override": True, "reason": reason.strip(), "alias_processes": 0,
+            "recorded_process_states": recorded, "unrelated_pid_accepted": unrelated,
+        }
+        released_lease = None
+        if record:  # lease 를 먼저 회수하고 그 뒤에 state 를 확정한다
+            self._reconcile(record["lease_id"], record["generation_token"], {
+                "runtime_status": "stopped", "evidence": {"runtime_instance": record["runtime_instance"], **evidence}})
+            released_lease = record["lease_id"]
+        if state_live:
+            _write_state(self.dir, {**state, "phase": "stopped", "stop_reason": "operator_force_release",
+                                    "stopped_at": time.time(), "operator_reason": reason.strip()})
+        return {"released_lease": released_lease, "state_stopped": state_live, **evidence}
 
     def start(self, req: StartRequest) -> dict[str, Any]:
         server, model = self._paths(req)
@@ -599,7 +779,28 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sup = sub.add_parser("supervise")
     sup.add_argument("--spec-file", required=True)
+    force = sub.add_parser("force-release", help="manual recovery when automatic reconciliation refuses (ADR 0037)")
+    force.add_argument("--data-dir", type=Path, default=None, help="backend data dir (default: settings.data_dir)")
+    force.add_argument("--reason", required=True, help="what was verified (10-300 characters)")
+    force.add_argument("--lease-id", default=None, help="id of the live lease; required when a lease is live")
+    force.add_argument("--accept-unrelated-pid", action="store_true",
+                       help="the recorded server pid is alive but verified NOT to be our test server")
+    force.add_argument("--confirm-no-live-process", action="store_true", required=True,
+                       help="I verified no test server process is running for this lease")
     args = parser.parse_args(argv)
+    if args.command == "force-release":
+        data_dir = args.data_dir
+        if data_dir is None:
+            from ttakkari.config import get_settings
+            data_dir = get_settings().data_dir
+        try:
+            result = HostGpu(SimpleNamespace(data_dir=Path(data_dir))).force_release(
+                reason=args.reason, lease_id=args.lease_id, accept_unrelated_pid=args.accept_unrelated_pid)
+        except GpuError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
     spec_path = Path(args.spec_file)
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     supervisor = Supervisor(spec)

@@ -40,3 +40,29 @@
 - 호스트 기준선 갱신 실패(타임아웃·실행 불가·비정상 종료): 마지막 값은 유지하고 refresh_error로 기록하며 5분간 다시 돌리지 않는다. 조회는 500 없이 응답한다.
 - ps 실행 자체가 EPERM/EACCES로 거부되면 process_list는 blocked다(파일 없음·타임아웃은 unknown).
 - 테스트 추가: SIGKILL 감독자, 닮은 프로세스 불처치, watchdog 준비 실패, 위조·손글·재전송·타 세션·만료·회사 세션 보고 거부, 항목별 stale, detail 정제, 프롬프트 detail 비노출, 호스트 갱신 타임아웃.
+
+## 보완 (G1 lease 독립 재검수: fail-open과 교착 수정, 수동 복구)
+
+- 프로세스 상태 3분류: `host_gpu_guard.process_state`는 PRESENT / ABSENT(없음, 좀비, pid 재사용으로 시작 시각 불일치) / UNKNOWN(조회 실패, 권한 거부, pid·시작 시각 근거 누락)을 돌려준다. lease 해제는 ABSENT가 관찰될 때만 한다. UNKNOWN은 부재가 아니며 lease와 state를 보존한다(fail-closed).
+- 회수 순서: `_reap_lost`는 lease reconcile이 성공한 뒤에만 state를 `stopped`로 확정한다. reconcile이 실패하면 state는 live로 남아 다음 조회가 다시 시도한다. reconcile은 성공했는데 state 쓰기가 실패하면 다음 시도가 lease가 이미 `released`임을 확인하고 state만 확정한다.
+- state를 먼저 쓴다: 감독자는 서버를 띄우기 전에 `server_spawn: "pending"` state(포트·argv·감독자 신원·lease 식별)를 durable하게 쓰고, 서버를 띄운 뒤 pid·시작 시각과 `server_spawn: "spawned"`를 다시 쓴다. state가 없는 live lease는 서버가 없었음이 보장된다. pending 상태에서 죽었다면 `host_gpu`가 포트·argv·별칭으로 같은 사용자 프로세스를 엄격 열거(`find_our_servers_strict`)해 우리 서버를 정리하고 비어 있음을 두 번째 열거로 확인할 때만 회수한다. 같은 사용자 프로세스의 argv·시작 시각·상태를 읽지 못하면 불완전으로 보고 보존한다. 서버가 뜰 수 있었던 가장 이른 시각(감독자 시작)보다 먼저 시작한 프로세스는 후보가 아니므로 읽지 못해도 건너뛴다(macOS는 같은 사용자의 일부 보호 프로세스 argv 조회를 거부한다).
+- lease 소유자 신원: `ResourceLeaseManager.acquire`가 lease.json에 `owner_pid`·`owner_start`를 기록한다. 소유자가 죽어 flock만 풀리고 state가 없거나 다른 launch의 것이거나 `stopped`인 live lease는, 소유자가 ABSENT이고 state에 기록된 서버도 ABSENT일 때만 `host_gpu`(owner_task=host_gpu)가 회수한다. 다른 소비자(Comfy 등)의 lease는 건드리지 않는다(그 소비자의 reconcile 몫). 소유자 신원이 없는 lease(이 보완 이전에 기록된 것)는 UNKNOWN으로 보존된다.
+
+### 수동 복구 절차 (`force-release`)
+
+자동 복구가 거부하는 경우: legacy state(`lease_id` 없음), 서버 pid·start 근거 누락, 우리 서버로 확인되지 않는 프로세스가 기록된 pid로 살아 있음, 소유자 신원이 없는 lease. 거부 메시지가 이 절을 가리킨다.
+
+1. 살아 있는 시험 서버가 없음을 직접 확인한다. 별칭 `ttakkari-gpu-test`를 argv에 가진 프로세스가 없어야 한다. 이 명령은 아무 프로세스에도 신호를 보내지 않는다. 있다면 먼저 정상 경로(`host_gpu_stop` 또는 프로세스 종료)로 멈춘다.
+2. 상태 확인: `host_gpu_status` 또는 `data_dir/host-gpu/state.json`, `data_dir/host-resource/lease.json`에서 `lease_id`를 확인한다.
+3. 실행(백엔드 venv, 저장소 루트):
+   `python -m ttakkari.host_gpu force-release --reason "<무엇을 어떻게 확인했는지 10~300자>" --lease-id <lease_id> --confirm-no-live-process [--data-dir <dir>] [--accept-unrelated-pid]`
+   - live lease가 있으면 `--lease-id`가 일치해야 한다. lease 없는 legacy state만 있으면 생략한다.
+   - `--accept-unrelated-pid`는 기록된 서버 pid가 살아 있지만 우리 서버가 아님을 직접 확인했을 때만 쓴다(argv가 기록으로 남는다).
+4. 명령이 스스로 거부하는 조건(우회 불가): 공용 flock을 쥔 살아 있는 소유자가 있음, 별칭 프로세스가 하나라도 있음, 프로세스 표를 완전히 열거하지 못함(서버가 뜰 수 있었던 가장 이른 시각 이후에 시작한 같은 사용자 프로세스의 argv를 읽지 못함), 기록된 supervisor·lease 소유자 pid가 아직 존재함, 기록된 서버 pid가 존재하는데 `--accept-unrelated-pid`가 없음, reason 부족, 해제할 것이 없음.
+5. 성공하면 lease를 `release_proof`(operator_override, reason, 확인한 프로세스 상태)와 함께 해제한 뒤 state를 `stopped`(`stop_reason: operator_force_release`)로 확정한다. 이 증거는 `lease.json`에 남는다.
+
+### 보완 검증
+- `unit_tests/test_host_resource_process_state.py`: process_state 3분류, terminate_group 종료 관찰, `_reap_lost` UNKNOWN 보존, watchdog.
+- `unit_tests/test_host_resource_recovery.py`: 교착 1(reconcile 실패, state 쓰기 실패, 불일치 lease), 교착 2(소유자 ABSENT/UNKNOWN/PRESENT/pid 재사용/신원 없음, state 없음/타 launch/stopped, 타 소비자 lease 불간섭, pending 서버 열거), state-먼저 순서, force-release 허용·거부와 CLI.
+- 재현 스크립트: `scripts/repro/g1_host_resource_lease_repro.py`(`PYTHONPATH=src python ...`, FAIL이 하나라도 있으면 종료 코드 1).
+- 한계: 이 검증은 CPU child와 psutil 주입이다. 실제 GPU, 운영 llama/Qwen, 실제 권한 거부 환경(sandbox ps/sysctl)은 미실행이다.

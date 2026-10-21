@@ -1,0 +1,189 @@
+{
+  "mutants": 26,
+  "killed": 26,
+  "survivors": [],
+  "results": [
+    {
+      "file": "comparison.py",
+      "line": 59,
+      "reason": "no_valid_pairs",
+      "killed": true,
+      "pytest_tail": "1 failed, 129 passed in 16.63s"
+    },
+    {
+      "file": "comparison.py",
+      "line": 62,
+      "reason": "invalid_required_gold",
+      "killed": true,
+      "pytest_tail": "1 failed, 128 passed in 16.29s"
+    },
+    {
+      "file": "comparison.py",
+      "line": 64,
+      "reason": "execution_failures_present",
+      "killed": true,
+      "pytest_tail": "1 failed, 129 passed in 17.49s"
+    },
+    {
+      "file": "latency.py",
+      "line": 32,
+      "reason": "no_observations",
+      "killed": true,
+      "pytest_tail": "1 failed, 104 passed in 15.61s"
+    },
+    {
+      "file": "latency.py",
+      "line": 60,
+      "reason": "order_imbalance",
+      "killed": true,
+      "pytest_tail": "1 failed, 104 passed in 15.82s"
+    },
+    {
+      "file": "latency.py",
+      "line": 62,
+      "reason": "profile_mismatch",
+      "killed": true,
+      "pytest_tail": "1 failed, 104 passed in 16.03s"
+    },
+    {
+      "file": "latency.py",
+      "line": 64,
+      "reason": "insufficient_observation",
+      "killed": true,
+      "pytest_tail": "1 failed, 104 passed in 15.91s"
+    },
+    {
+      "file": "latency.py",
+      "line": 69,
+      "reason": "load_imbalance",
+      "killed": true,
+      "pytest_tail": "1 failed, 17 passed in 0.25s"
+    },
+    {
+      "file": "latency.py",
+      "line": 74,
+      "reason": "order_load_imbalance",
+      "killed": true,
+      "pytest_tail": "1 failed, 4 passed in 0.17s"
+    },
+    {
+      "file": "latency.py",
+      "line": 81,
+      "reason": "degenerate_arm_variance",
+      "killed": true,
+      "pytest_tail": "1 failed, 98 passed in 7.07s"
+    },
+    {
+      "file": "latency.py",
+      "line": 83,
+      "reason": "bootstrap_replicates_below_registered_minimum",
+      "killed": true,
+      "pytest_tail": "1 failed, 73 passed in 4.57s"
+    },
+    {
+      "file": "latency.py",
+      "line": 98,
+      "reason": "degenerate_ratio_ci",
+      "killed": true,
+      "pytest_tail": "1 failed, 89 passed in 4.56s"
+    },
+    {
+      "file": "metrics.py",
+      "line": 246,
+      "reason": "power_not_established",
+      "killed": true,
+      "pytest_tail": "1 failed, 129 passed in 16.55s"
+    },
+    {
+      "file": "reproducibility.py",
+      "line": 20,
+      "reason": "score_epsilon_exceeded",
+      "killed": true,
+      "pytest_tail": "1 failed, 106 passed in 16.21s"
+    },
+    {
+      "file": "reproducibility.py",
+      "line": 22,
+      "reason": "stable_core_changed",
+      "killed": true,
+      "pytest_tail": "1 failed, 107 passed in 16.33s"
+    },
+    {
+      "file": "reproducibility.py",
+      "line": 24,
+      "reason": "outside_boundary_near_tie",
+      "killed": true,
+      "pytest_tail": "1 failed, 107 passed in 15.99s"
+    },
+    {
+      "file": "reproducibility.py",
+      "line": 32,
+      "reason": "strict_order_changed",
+      "killed": true,
+      "pytest_tail": "1 failed, 107 passed in 16.08s"
+    },
+    {
+      "file": "runner.py",
+      "line": 187,
+      "reason": "power_not_established",
+      "killed": true,
+      "pytest_tail": "1 failed, 129 passed in 16.48s"
+    },
+    {
+      "file": "runner.py",
+      "line": 187,
+      "reason": "fixture_only",
+      "killed": true,
+      "pytest_tail": "1 failed, 129 passed in 16.55s"
+    },
+    {
+      "file": "runner.py",
+      "line": 199,
+      "reason": "invalid_required_gold",
+      "killed": true,
+      "pytest_tail": "1 failed, 123 passed in 16.15s"
+    },
+    {
+      "file": "statistics.py",
+      "line": 228,
+      "reason": "power_design_mismatch",
+      "killed": true,
+      "pytest_tail": "1 failed, 30 passed in 0.27s"
+    },
+    {
+      "file": "statistics.py",
+      "line": 230,
+      "reason": "dev_evaluation_group_overlap",
+      "killed": true,
+      "pytest_tail": "1 failed, 30 passed in 0.26s"
+    },
+    {
+      "file": "statistics.py",
+      "line": 236,
+      "reason": "bootstrap_replicates_below_registered_minimum",
+      "killed": true,
+      "pytest_tail": "1 failed, 105 passed in 15.74s"
+    },
+    {
+      "file": "statistics.py",
+      "line": 241,
+      "reason": "degenerate_bootstrap_interval",
+      "killed": true,
+      "pytest_tail": "1 failed, 91 passed in 4.95s"
+    },
+    {
+      "file": "statistics.py",
+      "line": 243,
+      "reason": "power_not_established",
+      "killed": true,
+      "pytest_tail": "1 failed, 15 passed in 0.17s"
+    },
+    {
+      "file": "statistics.py",
+      "line": 245,
+      "reason": "insufficient_clusters",
+      "killed": true,
+      "pytest_tail": "1 failed, 15 passed in 0.17s"
+    }
+  ]
+}

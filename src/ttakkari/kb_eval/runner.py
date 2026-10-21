@@ -157,8 +157,9 @@ def _run(bundle, out, *, limit=None):
         "power_not_established",
         "no_product_search_adapter",
     ]
-    if bundle["kind"] == "public":
-        blockers.append("public_regression_only")
+    # NOTE: non-fixture kinds are held by validate_rights before this point.
+    # Reintroduce a tested public_regression_only restriction with the
+    # authenticated rights review flow; an unreachable branch hides its absence.
     result = {
         "schema_version": "kb-e0-report-v1",
         "state": "interrupted" if interrupted else "complete_fixture",

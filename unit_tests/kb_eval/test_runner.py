@@ -256,7 +256,10 @@ def test_invalid_required_anchor_blocks_gate_instead_of_scoring_subset(tmp_path)
     value = fixture_bundle()
     value["cases"][0]["anchors"][0]["quote_sha256"] = "f" * 64
     result = e.run(e.load_bundle(write_bundle(tmp_path, value)), tmp_path / "invalid")
-    assert result["quality_gate"]["status"] == "input_invalid"
+    assert result["quality_gate"] == {
+        "status": "input_invalid",
+        "reasons": ["invalid_required_gold"],
+    }
     assert result["metrics"]["invalid"] == 1
     assert result["metrics"]["total"] == 3
     assert result["accounting"]["completed"] == 3
@@ -339,6 +342,35 @@ def test_comparison_keeps_invalid_input_gate(tmp_path):
     bundle = e.load_bundle(write_bundle(tmp_path, data))
     e.run(bundle, tmp_path / "bad")
     result = e.compare_runs(tmp_path / "bad", tmp_path / "bad", treatments=[])
-    assert result["quality"]["status"] == "input_invalid"
+    assert result["quality"] == {
+        "status": "input_invalid",
+        "reasons": ["invalid_required_gold"],
+    }
     assert len(result["excluded"]) == 2
     assert result["total"] == 3
+
+
+def test_comparison_and_runner_gate_reasons_are_exact(tmp_path):
+    result = e.run(e.load_bundle(write_bundle(tmp_path)), tmp_path / "ok")
+    assert result["quality_gate"] == {
+        "status": "inconclusive",
+        "reasons": ["power_not_established", "fixture_only"],
+    }
+    assert result["metrics"]["abstain_intervals"]["reasons"] == [
+        "power_not_established"
+    ]
+    assert "public_regression_only" not in result["blockers"]
+    failing = fixture_bundle()
+    failing["predictions"]["q1"]["failure"] = "adapter_error"
+    e.run(e.load_bundle(write_bundle(tmp_path, failing)), tmp_path / "failed")
+    r = e.compare_runs(tmp_path / "failed", tmp_path / "failed", treatments=[])
+    assert r["quality"] == {
+        "status": "inconclusive",
+        "reasons": ["execution_failures_present"],
+    }
+    empty = fixture_bundle()
+    empty["cases"] = [c for c in empty["cases"] if not c["answerable"]]
+    empty["predictions"] = {"q3": empty["predictions"]["q3"]}
+    e.run(e.load_bundle(write_bundle(tmp_path, empty)), tmp_path / "empty")
+    r = e.compare_runs(tmp_path / "empty", tmp_path / "empty", treatments=[])
+    assert r["quality"] == {"status": "inconclusive", "reasons": ["no_valid_pairs"]}

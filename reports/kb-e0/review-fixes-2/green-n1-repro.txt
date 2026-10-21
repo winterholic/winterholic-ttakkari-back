@@ -1,0 +1,3 @@
+N1-latency: relative_unverified [0.9000000000881487, 0.9000000000970501] ['degenerate_arm_variance', 'degenerate_ratio_ci']
+N1-quality: inconclusive ['degenerate_bootstrap_interval', 'power_not_established'] insufficient
+N2 biased varied reasons: ['load_imbalance']

@@ -1,7 +1,16 @@
 {
-  "version": "kb-e0-statistics-v1",
+  "version": "kb-e0-statistics-v2",
   "minimum_replicates": 10000,
   "diagnostic_minimum_replicates": 100,
   "basis": "P1 fixes 10000 draws; P3 adopts the same conservative engineering minimum before pilot validation",
-  "sufficiency": "Monte Carlo floor only; not evidence of sampling coverage or power"
+  "sufficiency": "Monte Carlo floor only; not evidence of sampling coverage or power",
+  "degeneracy": {
+    "latency_resolution_ms": 0.1,
+    "latency_ratio_ci_min_width": 0.0005,
+    "latency_basis": "0.1 ms is the registered timer resolution floor: 0.05% of the fast 200 ms SLO, below any decision-relevant latency change and far above float noise on ms values. Expressed on the p95 ratio scale as 0.1/200 = 5e-4. A ratio CI narrower than one resolution unit has no resolvable uncertainty and cannot support relative_pass.",
+    "quality_ci_min_width": 0.001,
+    "quality_dev_min_std": 0.001,
+    "quality_basis": "0.001 = noninferiority margin 0.05 / 50. A metric-delta CI narrower than 2% of the margin, or a dev pilot whose per-question delta SD is below it, is constant up to float noise (e.g. summation order) and cannot establish pass or power.",
+    "scope": "Pre-registered engineering floors before any real pilot; recheck on measured traces. Exceeding them is necessary, not sufficient, for an informative interval."
+  }
 }

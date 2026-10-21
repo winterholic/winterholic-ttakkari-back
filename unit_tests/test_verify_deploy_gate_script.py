@@ -39,13 +39,50 @@ def fake_uv(tmp_path: Path, *, pytest_exit: int, pytest_output: str = "1 passed"
     return bindir, calls
 
 
+def make_repo(tmp_path: Path) -> tuple[Path, str, str]:
+    """게이트 스크립트를 복사한 임시 git 저장소와 서로 다른 두 커밋 SHA 를 만든다.
+
+    게이트는 자기 위치의 git 저장소를 기준으로 동작하므로, 비 git 디렉터리(배포 게이트 archive)에서
+    실행돼도 통과하도록 호스트 저장소의 커밋 이력에 기대지 않는다.
+    """
+    repo = tmp_path / "gate-repo"
+    scripts = repo / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "verify_deploy_gate.sh").write_bytes(GATE.read_bytes())
+    (scripts / "verify_deploy_gate.sh").chmod(0o755)
+    (scripts / "pytest_slots.py").write_bytes(SLOTS.read_bytes())
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_contract_marker.py").write_text("# committed contract suite\n")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, capture_output=True, text=True)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=repo, check=True,
+            capture_output=True, text=True,
+        ).stdout.strip()
+
+    git("add", "-A")
+    git("commit", "-qm", "first")
+    first = git("rev-parse", "HEAD")
+    (repo / "tracked.txt").write_text("second\n")
+    git("add", "-A")
+    git("commit", "-qm", "second")
+    return repo, first, git("rev-parse", "HEAD")
+
+
 def run_gate(tmp_path: Path, *args: str, pytest_exit: int, pytest_output: str = "1 passed",
              stdin: str = "") -> subprocess.CompletedProcess[str]:
-    bindir, calls = fake_uv(tmp_path, pytest_exit=pytest_exit, pytest_output=pytest_output)
+    """stdin 의 {main}/{master} 는 임시 저장소의 실제 커밋 SHA 로 치환된다."""
+    repo, first, second = make_repo(tmp_path)
+    fake_root = tmp_path / "fake"
+    fake_root.mkdir()
+    bindir, calls = fake_uv(fake_root, pytest_exit=pytest_exit, pytest_output=pytest_output)
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "GATE_CALL_LOG": str(calls),
            "GATE_PYTEST_EXIT": str(pytest_exit), "GATE_PYTEST_OUTPUT": pytest_output,
            "TTK_PYTEST_SLOT_DIR": str(tmp_path / "slot-locks")}
-    return subprocess.run([str(GATE), *args], input=stdin, text=True, capture_output=True, env=env, timeout=30, check=False)
+    return subprocess.run([str(repo / "scripts" / "verify_deploy_gate.sh"), *args],
+                          input=stdin.format(main=first, master=second), text=True, capture_output=True,
+                          cwd=repo, env=env, timeout=30, check=False)
 
 
 def test_full_mode_rejects_zero_collected_tests(tmp_path):
@@ -57,11 +94,9 @@ def test_full_mode_rejects_zero_collected_tests(tmp_path):
 
 
 def test_pre_push_checks_every_eligible_ref(tmp_path):
-    main_sha = "25b5f9806656067ceb594d6d3217b37fba28d795"
-    master_sha = "184b5c5aebb596f196681feaed055f8ce0370b95"
     stdin = (
-        f"refs/heads/main {main_sha} refs/heads/main {ZERO}\n"
-        f"refs/heads/master {master_sha} refs/heads/master {ZERO}\n"
+        f"refs/heads/main {{main}} refs/heads/main {ZERO}\n"
+        f"refs/heads/master {{master}} refs/heads/master {ZERO}\n"
     )
     result = run_gate(tmp_path, "--pre-push", "origin", "unused", pytest_exit=0, stdin=stdin)
 
@@ -70,11 +105,9 @@ def test_pre_push_checks_every_eligible_ref(tmp_path):
 
 
 def test_pre_push_rejects_when_any_eligible_ref_fails(tmp_path):
-    main_sha = "25b5f9806656067ceb594d6d3217b37fba28d795"
-    master_sha = "184b5c5aebb596f196681feaed055f8ce0370b95"
     stdin = (
-        f"refs/heads/main {main_sha} refs/heads/main {ZERO}\n"
-        f"refs/heads/master {master_sha} refs/heads/master {ZERO}\n"
+        f"refs/heads/main {{main}} refs/heads/main {ZERO}\n"
+        f"refs/heads/master {{master}} refs/heads/master {ZERO}\n"
     )
     result = run_gate(tmp_path, "--pre-push", "origin", "unused", pytest_exit=1, stdin=stdin)
 

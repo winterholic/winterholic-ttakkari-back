@@ -91,7 +91,7 @@ async def coordinate(runtime, manager) -> None:
                     await profiles.load_cooldowns(db)
                     await usage_store.load_latest(db, refresh=True)
             await coordinate_runs(runtime, manager, state)
-            if state == "active":
+            if state == "active" and not manager.remote:
                 from ttakkari.schedules import process_due_schedules
                 # work 잠금으로 감싸 주기 작업(schedules)과 겹치지 않게 하고, 실행 중에는 세대가 퇴역하지 않게 한다.
                 async with generation.work("schedules") as acquired:
@@ -189,6 +189,24 @@ async def _collector_consume() -> None:
     await consume_once()
 
 
+async def start_api_services(execution_mode: str) -> None:
+    """Start request-local API services and local-mode durable workers."""
+    from ttakkari.artifacts import preview
+    from ttakkari.meetings.local_stt import jobs as stt_jobs
+    from ttakkari.runs.desk_qwen_service import service as qwen_service
+    from ttakkari.tts import jobs as tts_jobs
+
+    if execution_mode == "local":
+        await preview.start_worker()
+        await stt_jobs.start()
+    # TTS retains submitted source text in this process until its job finishes;
+    # moving only the consumer would lose the payload on API replacement.
+    await tts_jobs.start()
+    # The managed Qwen server is a request-time accelerator owned per API
+    # generation, not a durable database queue consumer.
+    await qwen_service.start()
+
+
 async def ready(runtime) -> dict:
     from ttakkari.api.assistant import _tasks as indexing
     from ttakkari.meetings.vectors import _pending
@@ -234,10 +252,10 @@ async def lifespan(app):
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.meetings.local_stt import jobs
-    from ttakkari.tts import jobs as tts_jobs
     from ttakkari.runs import desk_pool, profiles, usage_store
     from ttakkari.runs.desk_qwen_service import service as qwen_service
     from ttakkari.runs.manager import manager
+    from ttakkari.tts import jobs as tts_jobs
     s = get_settings()
     if s.is_prod and not s.release_revision:
         raise RuntimeError("generation production requires a pinned release revision")
@@ -253,20 +271,18 @@ async def lifespan(app):
         async with sessionmaker()() as db:
             await profiles.load_cooldowns(db)
             await usage_store.load_latest(db)
-        await preview.start_worker()
-        await jobs.start()
-        await tts_jobs.start()
-        # 세대마다 자기 접수 모델 자식 프로세스를 소유한다(자기 loopback 포트). 표준 전환 중에도 서로 죽이지 않는다.
-        await qwen_service.start()
+        await start_api_services(runtime.execution_mode)
         tasks.append(asyncio.create_task(coordinate(runtime, manager)))
-        for name, operation, interval in maintenance_jobs(s):
-            tasks.append(asyncio.create_task(periodic(name, operation, interval)))
+        if runtime.execution_mode == "local":
+            for name, operation, interval in maintenance_jobs(s):
+                tasks.append(asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}"))
         yield
     finally:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        await jobs.stop()
+        if runtime.execution_mode == "local":
+            await jobs.stop()
         await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
@@ -275,7 +291,8 @@ async def lifespan(app):
         await manager.shutdown()
         await desk_pool.shutdown()
         await qwen_service.stop()
-        await preview.stop_worker()
+        if runtime.execution_mode == "local":
+            await preview.stop_worker()
         await profiles.flush_persist()
         await usage_store.flush()
         await runtime.close()

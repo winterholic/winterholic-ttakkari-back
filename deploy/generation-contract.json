@@ -40,6 +40,7 @@
   ],
   "run_executor": {
     "protocol": 2,
-    "activation": "disabled"
+    "activation": "disabled",
+    "manifest": "deploy/run-executor-manifest.json"
   }
 }

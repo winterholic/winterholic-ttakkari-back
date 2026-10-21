@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+import psutil
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -119,6 +120,7 @@ class _Handle:
     stderr_tail: list[str] = field(default_factory=list)
     owner: generation.GenerationRuntime | None = None
     token: uuid.UUID | None = None
+    process_groups: list[tuple[int, float, int, uuid.UUID, uuid.UUID]] = field(default_factory=list)
 
 
 class QwenSlotBusy(RuntimeError):
@@ -662,6 +664,29 @@ class RunManager:
 
     async def _release_attempt(self, run_id, runtime, token) -> None:
         handle = self._handles.get(run_id)
+        if handle and handle.process_groups:
+            for pid, started_at, pgid, owner_id, fence in tuple(handle.process_groups):
+                if owner_id != runtime.id or fence != token:
+                    log.error("retaining lease for run %s: process group fence differs", run_id)
+                    return
+                try:
+                    os.killpg(pgid, 0)
+                except ProcessLookupError:
+                    handle.process_groups.remove((pid, started_at, pgid, owner_id, fence))
+                    continue
+                except OSError:
+                    log.error("retaining lease for run %s: process group %s is unobservable", run_id, pgid)
+                    return
+                try:
+                    process = psutil.Process(pid)
+                    if abs(process.create_time() - started_at) > 1.0 or os.getpgid(pid) != pgid:
+                        log.error("retaining lease for run %s: process group identity changed", run_id)
+                        return
+                except (psutil.Error, OSError, PermissionError):
+                    log.error("retaining lease for run %s: process group leader identity is unknown", run_id)
+                    return
+                log.error("retaining lease for run %s: attempt process group %s remains", run_id, pgid)
+                return
         if handle and handle.proc is not None and handle.proc.returncode is None:
             log.error("retaining lease for run %s: child exit is unconfirmed", run_id)
             return
@@ -1539,6 +1564,15 @@ class RunManager:
             raise
         if h:
             h.proc = proc
+            if h.owner is not None and h.token is not None:
+                try:
+                    started_at = psutil.Process(proc.pid).create_time()
+                    pgid = os.getpgid(proc.pid)
+                except (psutil.Error, OSError, PermissionError):
+                    await self._terminate(proc)
+                    await proc.wait()
+                    raise RuntimeError("could not establish child process group identity")
+                h.process_groups.append((proc.pid, started_at, pgid, h.owner.id, h.token))
         run.pid = proc.pid
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
         heartbeat_task: asyncio.Task | None = None

@@ -23,13 +23,20 @@ from pathlib import Path
 
 import asyncpg
 import httpx
+import psutil
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.generation import PORTS, PROTOCOL, _lock, activate
-from ttakkari.models import RuntimeControl, RuntimeGeneration, RuntimeLease
+from ttakkari.models import (
+    RuntimeCommand,
+    RuntimeControl,
+    RuntimeGeneration,
+    RuntimeLease,
+    utcnow,
+)
 
 log = logging.getLogger(__name__)
 _LOG_TAIL_LINES = 12
@@ -180,7 +187,26 @@ class Releases:
     @staticmethod
     def contract(path: Path) -> dict:
         value = json.loads((path / "deploy/generation-contract.json").read_text())
-        return validate_contract(value)
+        value = validate_contract(value)
+        executor = value.get("run_executor")
+        if executor:
+            if (executor.get("protocol") != 2 or executor.get("activation") not in {"disabled", "enabled"}
+                    or executor.get("manifest") != "deploy/run-executor-manifest.json"):
+                raise ValueError("invalid run executor contract")
+            manifest_path = path / "deploy/run-executor-manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            if (manifest.get("schema") != 1 or manifest.get("role") != "run-executor"
+                    or manifest.get("activation") != executor.get("activation")
+                    or manifest.get("command") != ["{release}/.venv/bin/python", "-m",
+                                                    "ttakkari.cli", "executor", "--activate"]
+                    or manifest.get("readiness") != ["executor_generation", "revision", "pid",
+                                                       "process_started_at", "heartbeat_at"]
+                    or not {"TTAKKARI_RUNTIME_GENERATION", "TTAKKARI_RELEASE_REVISION",
+                            "TTAKKARI_DEPLOY_STRATEGY", "TTAKKARI_DEPLOY_SOURCE_ROOT"}
+                    <= set(manifest.get("environment", {}))
+                    or not manifest.get("activation_gates")):
+                raise ValueError("invalid or mismatched run executor manifest")
+        return value
 
 
 def validate_contract(value: dict) -> dict:
@@ -299,6 +325,84 @@ class Slots:
         if ready is None:
             raise RuntimeError("unreachable generation needs explicit recovery")
         await self._launchctl("bootout", f"gui/{os.getuid()}/net.winterholic.ttakkari.generation.{PORTS[slot]}")
+
+    @staticmethod
+    def executor_spec(release: Path, revision: str) -> tuple[list[str], dict[str, str]]:
+        contract = Releases.contract(release)
+        executor = contract.get("run_executor")
+        if not executor or executor.get("activation") != "enabled":
+            raise RuntimeError("executor activation is disabled by the pinned release contract")
+        manifest = json.loads((release / executor["manifest"]).read_text())
+        source_root = str(get_settings().deploy_source_root or Path(__file__).resolve().parents[2])
+        command = [value.replace("{release}", str(release)) for value in manifest["command"]]
+        env = {key: value.replace("{revision}", revision).replace("{source_root}", source_root)
+               for key, value in manifest["environment"].items()}
+        env.update({"HOME": str(Path.home()), "PATH": os.environ.get("PATH", ""),
+                    "TTAKKARI_HOME": str(get_settings().home)})
+        return command, env
+
+    async def executor_snapshot(self, *, revision: str) -> dict | None:
+        """Fail closed unless pointer, pinned artifact, heartbeat and OS identity agree."""
+        async with sessionmaker()() as db:
+            control = await db.get(RuntimeControl, 1)
+            row = await db.get(RuntimeGeneration, control.executor_generation) if (
+                control and control.executor_generation) else None
+            if row is None or row.role != "executor" or row.state != "active" or row.revision != revision:
+                return None
+            if row.heartbeat_at is None or (utcnow() - row.heartbeat_at).total_seconds() > 3 * get_settings().runtime_poll_seconds:
+                return None
+            pid, started_at = row.pid, row.process_started_at
+        try:
+            process = psutil.Process(pid)
+            if abs(process.create_time() - started_at) > 1.0:
+                return None
+            command = process.cmdline()
+            if "ttakkari.cli" not in command or "executor" not in command or "--activate" not in command:
+                return None
+        except (psutil.Error, OSError, PermissionError):
+            return None
+        return {"ready": True, "generation": str(row.id), "revision": row.revision,
+                "pid": pid, "process_started_at": started_at, "heartbeat_at": row.heartbeat_at}
+
+    async def ensure_executor(self, release: Path, revision: str) -> dict:
+        contract = Releases.contract(release)
+        executor = contract.get("run_executor")
+        if not executor or executor.get("activation") != "enabled":
+            return {"ready": False, "activation": "disabled"}
+        command, env = self.executor_spec(release, revision)
+        if not Path(command[0]).is_file() or json.loads((release / ".release.json").read_text()).get("revision") != revision:
+            raise RuntimeError("pinned executor interpreter or release marker is invalid")
+        if ready := await self.executor_snapshot(revision=revision):
+            return ready
+        async with sessionmaker()() as db:
+            apis = list((await db.execute(select(RuntimeGeneration.protocol, RuntimeGeneration.execution_mode)
+                .where(RuntimeGeneration.role == "api",
+                       RuntimeGeneration.state.in_(("standby", "active", "draining"))))).all())
+            leases = await db.scalar(select(func.count()).select_from(RuntimeLease))
+            pending = list(await db.scalars(select(RuntimeCommand.kind).where(
+                RuntimeCommand.acknowledged_at.is_(None))))
+        if not apis or any(protocol != 2 or mode != "remote" for protocol, mode in apis):
+            raise RuntimeError("executor activation requires every live API to be protocol2 remote")
+        if leases:
+            raise RuntimeError("executor activation requires a drained Run lease boundary")
+        if set(pending) - {"cancel", "reset", "release_waiting"}:
+            raise RuntimeError("executor activation refuses an unknown pending command")
+        services = self.root / "services"
+        logs = self.root / "logs"
+        services.mkdir(parents=True, exist_ok=True)
+        logs.mkdir(exist_ok=True)
+        label = "net.winterholic.ttakkari.executor"
+        plist = services / f"{label}.plist"
+        plist.write_bytes(plistlib.dumps({"Label": label, "WorkingDirectory": str(release),
+            "ProgramArguments": command, "EnvironmentVariables": env, "KeepAlive": False,
+            "RunAtLoad": False, "StandardOutPath": str(logs / "executor.log"),
+            "StandardErrorPath": str(logs / "executor.log")}))
+        await self._launchctl("bootstrap", f"gui/{os.getuid()}", str(plist))
+        for _ in range(100):
+            if ready := await self.executor_snapshot(revision=revision):
+                return ready
+            await asyncio.sleep(0.3)
+        raise RuntimeError("pinned executor readiness timed out; API generation remains available")
 
     async def retired(self, slot: int, generation_id: str) -> bool:
         async with sessionmaker()() as db:
@@ -419,12 +523,12 @@ class GenerationController:
         if generation_id is None:
             return  # The first transition from legacy mode requires an idle bootstrap.
         info = await self.generation_info(generation_id)
+        release = self.releases.root / "releases" / _sha(info["revision"])
         slot = next((i for i in range(len(PORTS)) if self.slots.origin(i) == info["api_url"]), None)
         if slot is None:
             raise RuntimeError("active generation has an unmanaged origin")
         ready = await self.slots.snapshot(slot)
         if ready is None:
-            release = self.releases.root / "releases" / _sha(info["revision"])
             if Releases.contract(release)["protocol"] != PROTOCOL:
                 raise RuntimeError("cannot restore an incompatible generation")
             ready = await self.slots.start(slot, release, info["revision"])
@@ -437,6 +541,7 @@ class GenerationController:
         await self.slots.ensure_proxy(slot)
         if await self.slots.current_slot() != slot or self.slots.persisted_slot() != slot:
             await self.slots.switch(slot)
+        await self.slots.ensure_executor(release, info["revision"])
 
     # error_command·error_exit 미지정 표식. 명시적 null(해당 없음)과 구분한다.
     _UNSET: object = object()

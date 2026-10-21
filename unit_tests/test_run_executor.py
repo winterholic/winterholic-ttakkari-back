@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import subprocess
 import sys
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import psutil
 import pytest
 
 from ttakkari import generation
@@ -66,6 +68,35 @@ async def test_shutdown_does_not_release_lease_while_child_exit_is_unknown(monke
     monkeypatch.setattr(os, "killpg", gone)
     await manager._release_attempt(rid, runtime, token)
     runtime.release.assert_awaited_once_with(rid, token)
+
+
+async def test_attempt_history_keeps_lease_when_an_earlier_group_outlives_its_leader():
+    rid, token, owner = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    runtime = SimpleNamespace(id=owner, release=AsyncMock())
+    leader = await asyncio.create_subprocess_exec(sys.executable, "-c",
+        "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(8)'],"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)",
+        start_new_session=True, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+    leader_started_at = psutil.Process(leader.pid).create_time()
+    await leader.wait()
+    last = await asyncio.create_subprocess_exec(sys.executable, "-c", "pass", start_new_session=True)
+    last_started_at = psutil.Process(last.pid).create_time()
+    await last.wait()
+    try:
+        handle = _Handle(task=asyncio.current_task(), proc=last, owner=runtime, token=token)
+        handle.process_groups = [(leader.pid, leader_started_at, leader.pid, owner, token),
+                                 (last.pid, last_started_at, last.pid, owner, token)]
+        manager = RunManager(runtime=runtime)
+        manager._handles[rid] = handle
+
+        await manager._release_attempt(rid, runtime, token)
+
+        runtime.release.assert_not_awaited()
+    finally:
+        try:
+            os.killpg(leader.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def test_executor_cli_is_explicit_and_not_enabled_by_serve():

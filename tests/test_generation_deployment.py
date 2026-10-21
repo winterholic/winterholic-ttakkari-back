@@ -37,6 +37,18 @@ def test_application_generation_contract_matches_its_migration_head():
     )
 
 
+def test_executor_migration_follows_tts_and_uses_reserved_integration_revision():
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    source = Path(__file__).resolve().parents[1]
+    config = Config(str(source / "alembic.ini"))
+    config.set_main_option("script_location", str(source / "alembic"))
+    directory = ScriptDirectory.from_config(config)
+    executor = directory.get_revision("0063_run_executor")
+    assert executor.down_revision == "0061_local_tts"
+
+
 def test_qwen_usage_and_resource_history_migrations_are_allowed_online():
     from alembic.config import Config
     from alembic.script import ScriptDirectory

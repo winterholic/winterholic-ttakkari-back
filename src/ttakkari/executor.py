@@ -98,9 +98,23 @@ async def disable() -> None:
         await db.commit()
 
 
+async def start_background_services() -> list[asyncio.Task]:
+    """Own durable non-Run queues and periodic work alongside the Run executor."""
+    from ttakkari.artifacts import preview
+    from ttakkari.generation_service import maintenance_jobs, periodic
+    from ttakkari.meetings.local_stt import jobs as stt_jobs
+
+    await preview.start_worker()
+    await stt_jobs.start()
+    return [asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}")
+            for name, operation, interval in maintenance_jobs(get_settings())]
+
+
 async def serve(*, activate: bool = False) -> None:
+    from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.generation_service import coordinate_runs
+    from ttakkari.meetings.local_stt import jobs as stt_jobs
     from ttakkari.runs import profiles, usage_store
     from ttakkari.runs.manager import manager
 
@@ -109,6 +123,8 @@ async def serve(*, activate: bool = False) -> None:
         raise RuntimeError("executor requires a pinned immutable release revision")
     runtime = ExecutorRuntime(settings.home, revision=revision())
     stop = asyncio.Event()
+    background_tasks: list[asyncio.Task] = []
+    preview_started = stt_started = False
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
@@ -117,6 +133,8 @@ async def serve(*, activate: bool = False) -> None:
         await runtime.register(activate=activate)
         await runtime.listen()
         usage_store.install()
+        background_tasks = await start_background_services()
+        preview_started = stt_started = True
         while not stop.is_set():
             try:
                 runtime.signal.clear()
@@ -141,6 +159,13 @@ async def serve(*, activate: bool = False) -> None:
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
+            for task in background_tasks:
+                task.cancel()
+            await asyncio.gather(*background_tasks, return_exceptions=True)
+            if stt_started:
+                await stt_jobs.stop()
+            if preview_started:
+                await preview.stop_worker()
             await manager.shutdown()
             await profiles.flush_persist()
             await usage_store.flush()

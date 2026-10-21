@@ -26,6 +26,36 @@
 2. 실제 opt-in `/workers` API 요청으로 격리 Workspace·`extra_writable_roots`·ChangeSet 생성까지 통합 검증한다. Settings 단위 로딩과 내부 Git hook 테스트는 통과했지만 API 요청 자체는 실행하지 못했다.
 3. W5 설계가 말하는 `submit_change` MCP 노출은 이번 slice에 추가하지 않았다. 제출 함수와 CLI는 있으나 MCP 경로는 미구현이다. 세대와 무관한 상주 integrator, 배치 검증·이분 탐색도 미구현이다.
 4. bounded repair의 실제 `queue_run` DB 기록 후 동일 worker가 새 커밋을 내고 재제출해 상한에서 멈추는 전 경로는 PostgreSQL 검증 대기다.
-5. **통합 충돌 표면:** feature commit `964ce26a3ac0026ffaac75695aa1167cbd75398f`의 직접 변경 중 현재 main 계보와 겹치는 파일은 `src/ttakkari/api/orchestrator.py`다. main 계보의 같은 파일에는 ADR 0067 agent-stop 변경이 있어, 통합 때 두 동작을 모두 보존해야 한다. main은 `tests/test_orchestrator.py`도 변경했지만 이 feature는 그 파일을 수정하지 않았다. migration `0062_delivery_change_sets`는 `0061_local_tts`를 parent로 하며 공통 기준 `25b5f9806656067ceb594d6d3217b37fba28d795`에 TTS `0061`이 있다. feature의 `alembic/env.py`, `pyproject.toml`/`uv.lock`, `tests/test_migration_single_head.py`는 현재 main 쪽 같은 파일 diff와 직접 겹치지 않는다. main rebase/merge 및 실제 충돌 해결은 하지 않았다. 부모는 최신 main head를 기준으로 `0062` 번호/`down_revision`, 모델 metadata import, 의존성 lock 및 migration single-head contract를 재확인해야 한다.
+5. **통합 충돌 표면:** feature commit `e1d01bceb2e2d59d4be8908193e7437f121bbc5e`의 직접 변경 중 당시 main 계보와 겹치는 파일은 `src/ttakkari/api/orchestrator.py`다. main 계보의 같은 파일에는 ADR 0067 agent-stop 변경이 있어, 통합 때 두 동작을 모두 보존해야 한다. main은 `tests/test_orchestrator.py`도 변경했지만 이 feature는 그 파일을 수정하지 않았다. migration `0062_delivery_change_sets`는 `0061_local_tts`를 parent로 하며 공통 기준 `25b5f9806656067ceb594d6d3217b37fba28d795`에 TTS `0061`이 있다. 후속 수정은 generation contract와 Alembic head 정합성을 별도로 갱신했다. main rebase/merge 및 실제 충돌 해결은 하지 않았다. 부모는 최신 main head를 기준으로 `0062` 번호/`down_revision`, 모델 metadata import, 의존성 lock 및 migration single-head contract를 재확인해야 한다.
 
 초기 Flash worker 결과의 Antigravity `run_command` sandbox denial은 그 실행 환경에 한정된다. 부모 Codex 환경에서 Git worktree 및 파일 수정은 실제 성공했다. 실패한 환경을 production 제약으로 일반화하지 않는다.
+
+## f99c59ca 독립 검증 후속 반영
+
+독립 verifier의 FAIL 대상은 원 draft `f9609ab2715a210fb1d514506ea0fda2505762bd`다. 전달된 보고서와 부모 재현은 그 SHA에서 `process_success=True/status=merged`인데 `main_unchanged=True`, malformed SHA 및 중복 제출 수락을 확인했다. 이는 원 draft의 실행 증거이며, 기능 브랜치 결과로 재계산하지 않는다.
+
+현재 기능 브랜치에서 같은 재현 파일을 그대로 실행하면 첫 import에서 `check_rebase_or_merge` 심볼을 찾지 못해 중단된다. 따라서 그 스크립트는 현재 API의 검증 증거로 취급하지 않았다. 현재 SHA의 실제 임시 Git 검증은 아래 delivery 테스트와 candidate validator 테스트로 별도 실행했다.
+
+추가 조사에서 `project_stage_validator` 자식 프로세스가 candidate를 `cwd`로 지정하면서 `PYTHONPATH`를 고정하지 않는 결함을 찾았다. 이 저장소 `.venv`의 editable 패키지 경로는 기능 worktree의 `src/ttakkari`를 가리켰다. 임시 Git candidate 안에서만 정의한 `ttakkari.REVISION`을 import하는 Stage 2 회귀 테스트를 먼저 추가했을 때 실패했고, candidate `src`를 Python import 경로 앞에 추가한 뒤 통과했다. 테스트는 같은 candidate SHA에서 Stage 1의 실제 ruff + contract pytest(`1 passed`) 및 Stage 2 pytest(`2 passed`)를 실행한다.
+
+독립 검증에서 다시 지적된 generation contract 불일치도 재확인했다. 테스트 당시 Alembic head는 `0062_delivery_change_sets`, `deploy/generation-contract.json`은 `0061_local_tts`여서 실패했다. 계약 revision을 0062로 올리고 온라인 migration 시작점 목록에 0061을 추가한 뒤 다음과 같이 통과했다.
+
+```text
+PYTHONPATH=src .venv/bin/python -m pytest --noconftest -q tests/test_migration_single_head.py tests/test_generation_deployment.py::test_application_generation_contract_matches_its_migration_head
+3 passed in 0.31s
+```
+
+이번 수정 뒤 범위별 재실행 결과:
+
+```text
+PYTHONPATH=src .venv/bin/python -m pytest --noconftest -q --timeout=120 tests/delivery
+43 passed in 6.09s
+
+PYTHONPATH=src .venv/bin/python -m ruff check src/ttakkari/delivery src/ttakkari/delivery_models.py src/ttakkari/api/orchestrator.py src/ttakkari/config.py tests/delivery alembic/env.py tests/test_migration_single_head.py
+All checks passed!
+
+git diff --check
+(출력 없음, exit 0)
+```
+
+`--noconftest` delivery 결과에는 SQLite async 및 임시 Git 테스트가 포함되지만 PostgreSQL advisory lock/`SKIP LOCKED`, migration apply, 실제 `/workers` API 실행 증거는 포함되지 않는다. 이 Run에서는 알려진 sandbox `initdb` 실패 경로를 재시도하지 않았다. 격리 호스트에서 실행할 수 있는 전체 Stage 및 migration 명령은 [W4–W6 격리 호스트 검증 manifest](w4-w6-host-validation-manifest.md)에 둔다.

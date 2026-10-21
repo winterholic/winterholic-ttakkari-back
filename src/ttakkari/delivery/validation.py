@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -28,11 +29,17 @@ def passed_test_count(output: str) -> int:
 async def project_stage_validator(stage: str, candidate: Path, sha: str):
     """Run the repository's real lint/pytest gate inside the detached candidate checkout."""
 
-    def run(args: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(args, cwd=candidate, capture_output=True, text=True, check=False)
-
-    if not candidate.is_dir() or len(sha) != 40:
+    candidate_source = candidate / "src"
+    if not candidate.is_dir() or not (candidate_source / "ttakkari").is_dir() or len(sha) != 40:
         return False, "Candidate checkout or SHA is invalid.", ("candidate", "ValidationError")
+
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(candidate_source) + (os.pathsep + existing_pythonpath if existing_pythonpath else "")
+
+    def run(args: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(args, cwd=candidate, env=env, capture_output=True, text=True, check=False)
+
     git = run(["git", "rev-parse", "HEAD"])
     if git.returncode != 0 or git.stdout.strip() != sha:
         return False, "Candidate HEAD does not match requested tested SHA.", ("candidate_binding", "ValidationError")

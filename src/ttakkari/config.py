@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     deploy_strategy: Literal["idle", "generations"] = "idle"
     deploy_source_root: Path | None = None
     migration_online: bool = False
+    delivery_pipeline_enabled: bool = False
     database_pool_size: int = Field(default=5, ge=1, le=20)
     database_pool_overflow: int = Field(default=3, ge=0, le=10)
 

@@ -16,6 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import Field
 
 from ttakkari.creative.catalog import get_catalog, validate_project_spec
+from ttakkari.creative.director import ConflictError, default_director_store
 from ttakkari.creative.render import inspect_media
 from ttakkari.creative.service import ProjectInput, Scene, Strict, default_studio
 from ttakkari.security.auth import User, decode, issue_download_token
@@ -26,6 +27,57 @@ router = APIRouter(prefix="/api/creative", tags=["creative-studio"])
 @router.get("/catalog")
 async def catalog(_: User):
     return get_catalog()
+
+
+@router.post("/productions", status_code=201)
+async def create_production(body: ProductionInput, _: User):
+    return perform(default_director_store().create_production, body.brief)
+
+
+@router.get("/productions/{pid}")
+async def get_production(pid: uuid.UUID, _: User):
+    return perform(default_director_store().get_production, str(pid))
+
+
+@router.post("/productions/{pid}/artifacts", status_code=201)
+async def upload_production_artifact(pid: uuid.UUID, file: UploadFile, _: User):
+    store = default_director_store()
+    perform(store.get_production, str(pid))
+    name = Path(file.filename or "").name
+    content = await file.read(100 * 1024 * 1024 + 1)
+    if len(content) > 100 * 1024 * 1024:
+        raise HTTPException(413, "파일은 100MB 이하로 올려 주세요.")
+    return perform(
+        store.put_artifact,
+        str(pid),
+        name,
+        content,
+        media_type=file.content_type or "application/octet-stream",
+    )
+
+
+@router.post("/productions/{pid}/attempts", status_code=202)
+async def execute_cpu_attempt(pid: uuid.UUID, body: AttemptInput, _: User):
+    store = default_director_store()
+    attempt = perform(
+        store.submit_attempt,
+        str(pid),
+        body.shot_id,
+        input_sha256=body.input_sha256,
+        idempotency_key=body.idempotency_key,
+    )
+    # CPU adapter uses an existing immutable media asset; real engines enter through this receipt later.
+    return perform(
+        store.execute_attempt,
+        str(pid),
+        attempt["attempt_id"],
+        renderer=lambda source: [source],
+    )
+
+
+@router.post("/productions/{pid}/attempts/{attempt_id}/cancel")
+async def cancel_cpu_attempt(pid: uuid.UUID, attempt_id: uuid.UUID, _: User):
+    return perform(default_director_store().cancel_attempt, str(pid), str(attempt_id))
 
 
 @router.post("/validate")
@@ -53,11 +105,23 @@ class MediaInput(Strict):
     id: uuid.UUID
 
 
+class ProductionInput(Strict):
+    brief: str = Field(min_length=1, max_length=6000)
+
+
+class AttemptInput(Strict):
+    shot_id: str = Field(min_length=1, max_length=80)
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=160)
+
+
 def perform(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(409, str(e)) from e
     except ValueError as e:
         raise HTTPException(409 if "다른 변경" in str(e) else 422, str(e)) from e
 

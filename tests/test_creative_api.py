@@ -58,3 +58,41 @@ async def test_creative_user_flow_and_media_scope(client, auth):
         root, headers=auth, json={"revision": latest["revision"], "scenes": scenes}
     )
     assert stale.status_code == 409
+
+
+async def test_cpu_director_api_uses_existing_media_and_persists_attempt(
+    client, auth, tmp_path, monkeypatch
+):
+    from ttakkari.api import creative as creative_api
+    from ttakkari.creative import director
+
+    monkeypatch.setattr(
+        creative_api, "default_director_store", lambda: director.DirectorStore(tmp_path)
+    )
+    created = await client.post(
+        "/api/creative/productions", headers=auth, json={"brief": "existing clip smoke"}
+    )
+    assert created.status_code == 201, created.text
+    pid = created.json()["manifest"]["production_id"]
+    uploaded = await client.post(
+        f"/api/creative/productions/{pid}/artifacts",
+        headers=auth,
+        files={"file": ("existing.mp4", b"existing-media", "video/mp4")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    submitted = await client.post(
+        f"/api/creative/productions/{pid}/attempts",
+        headers=auth,
+        json={
+            "shot_id": "shot-1",
+            "input_sha256": uploaded.json()["sha256"],
+            "idempotency_key": "api-smoke",
+        },
+    )
+    assert submitted.status_code == 202, submitted.text
+    assert submitted.json()["state"] == "review_pending"
+    persisted = await client.get(f"/api/creative/productions/{pid}", headers=auth)
+    assert (
+        persisted.json()["attempts"][0]["outputs"][0]["sha256"]
+        == uploaded.json()["sha256"]
+    )

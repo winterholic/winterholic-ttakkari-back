@@ -77,7 +77,12 @@ def _latency_report(blocks, *, seed, replicates, mode):
     )
     if (times[:, 1] <= 0).any():
         raise ValueError("zero_control_latency")
-    if (times.std(axis=0) < DEGENERACY["latency_resolution_ms"]).any():
+    # Absolute timer floor and a mean-proportional floor; see statistical-policy.json.
+    floor = np.maximum(
+        DEGENERACY["timer_resolution_ms"],
+        DEGENERACY["latency_min_cv"] * times.mean(axis=0),
+    )
+    if (times.std(axis=0) < floor).any():
         reasons.append("degenerate_arm_variance")
     if replicates < BOOTSTRAP_POLICY["minimum_replicates"]:
         reasons.append("bootstrap_replicates_below_registered_minimum")

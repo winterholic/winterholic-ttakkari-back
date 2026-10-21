@@ -1,16 +1,19 @@
 {
-  "version": "kb-e0-statistics-v2",
+  "version": "kb-e0-statistics-v3",
   "minimum_replicates": 10000,
   "diagnostic_minimum_replicates": 100,
   "basis": "P1 fixes 10000 draws; P3 adopts the same conservative engineering minimum before pilot validation",
   "sufficiency": "Monte Carlo floor only; not evidence of sampling coverage or power",
   "degeneracy": {
-    "latency_resolution_ms": 0.1,
+    "timer_resolution_ms": 0.001,
+    "latency_min_cv": 0.0001,
+    "latency_arm_rule": "an arm is information-free when its e2e SD < max(timer_resolution_ms, latency_min_cv * mean e2e)",
+    "latency_basis": "timer_resolution_ms is an absolute measurement floor, not a variability claim: perf_counter on the reference host is mach_absolute_time with 4.17e-8 s resolution (reports/kb-e0/quality-hardening/timer-resolution.txt); 1 us is a conservative cross-host floor 24x coarser. latency_min_cv 1e-4 is relative: 1/2000 of the 0.2 relative-latency margin, so a trace whose arm varies less than that cannot move a p95 ratio decision and is treated as constant. The absolute-only 0.1 ms floor of v2 held informative traces with mean <= 20 ms (third review table 1-4).",
     "latency_ratio_ci_min_width": 0.0005,
-    "latency_basis": "0.1 ms is the registered timer resolution floor: 0.05% of the fast 200 ms SLO, below any decision-relevant latency change and far above float noise on ms values. Expressed on the p95 ratio scale as 0.1/200 = 5e-4. A ratio CI narrower than one resolution unit has no resolvable uncertainty and cannot support relative_pass.",
+    "latency_ratio_basis": "p95 ratio CI width is already scale-free; 5e-4 = 1/400 of the 0.2 relative margin (ratio 1.2). It does not depend on the mean e2e, so it applies equally to fast and full modes.",
     "quality_ci_min_width": 0.001,
     "quality_dev_min_std": 0.001,
-    "quality_basis": "0.001 = noninferiority margin 0.05 / 50. A metric-delta CI narrower than 2% of the margin, or a dev pilot whose per-question delta SD is below it, is constant up to float noise (e.g. summation order) and cannot establish pass or power.",
+    "quality_basis": "0.001 = noninferiority margin 0.05 / 50. A metric-delta CI narrower than 2% of the margin, or a dev pilot whose per-question delta SD is below it, is practically constant (far above float noise, which is ~1e-16) and cannot establish pass or power. Real per-question delta SD is typically near 0.1, so power=established from a pilot near this floor is optimistic and must not be used as approval evidence before a measured pilot.",
     "scope": "Pre-registered engineering floors before any real pilot; recheck on measured traces. Exceeding them is necessary, not sufficient, for an informative interval."
   }
 }

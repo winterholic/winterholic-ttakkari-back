@@ -1,0 +1,106 @@
+killed          kill       R:comparison.py:no_valid_pairs@59             FAILED unit_tests/kb_eval/test_runner.py::test_comparison_and_runner_gate_reasons_are_exact
+killed          kill       R:comparison.py:invalid_required_gold@62      FAILED unit_tests/kb_eval/test_runner.py::test_comparison_keeps_invalid_input_gate
+killed          kill       R:comparison.py:execution_failures_present@64 FAILED unit_tests/kb_eval/test_runner.py::test_comparison_and_runner_gate_reasons_are_exact
+killed          kill       R:latency.py:no_observations@32               FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n2_every_latency_reason_is_the_sole_cause_on_varied_input
+killed          kill       R:latency.py:order_imbalance                  FAILED unit_tests/kb_eval/test_quality_hardening.py::test_order_imbalance_tolerance_is_one_block
+killed          kill       R:latency.py:profile_mismatch                 FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n2_every_latency_reason_is_the_sole_cause_on_varied_input
+killed          kill       R:latency.py:insufficient_observation         FAILED unit_tests/kb_eval/test_quality_hardening.py::test_ninety_nine_blocks_are_insufficient_even_past_ten_minutes
+killed          kill       R:latency.py:load_imbalance                   FAILED unit_tests/kb_eval/test_oracles.py::test_ab_load_bias_and_candidate_only_regression
+killed          kill       R:latency.py:order_load_imbalance             FAILED unit_tests/kb_eval/test_instrumentation.py::test_ab_order_load_bias_not_hidden_by_equal_arm_average
+killed          kill       R:latency.py:degenerate_arm_variance          FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_float_noise_stays_unverified_at_every_scale[0.5]
+killed          kill       R:latency.py:bootstrap_replicates_below_registered_minimum FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_known_good_adequate_replicates_and_zero_load_keep_absolute
+killed          kill       R:latency.py:degenerate_ratio_ci              FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_degenerate_ratio_ci_is_unverified_even_with_registered_replicates
+killed          kill       R:metrics.py:power_not_established@246        FAILED unit_tests/kb_eval/test_runner.py::test_comparison_and_runner_gate_reasons_are_exact
+killed          kill       R:reproducibility.py:score_epsilon_exceeded   FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_live_tolerance_reasons_are_exact[candidate0-2-reasons0]
+killed          kill       R:reproducibility.py:stable_core_changed      FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_live_tolerance_reasons_are_exact[candidate1-2-reasons1]
+killed          kill       R:reproducibility.py:outside_boundary_near_tie FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_live_tolerance_reasons_are_exact[candidate1-2-reasons1]
+killed          kill       R:reproducibility.py:strict_order_changed     FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_live_tolerance_reasons_are_exact[candidate1-2-reasons1]
+killed          kill       R:runner.py:power_not_established@187         FAILED unit_tests/kb_eval/test_runner.py::test_comparison_and_runner_gate_reasons_are_exact
+killed          kill       R:runner.py:fixture_only@187                  FAILED unit_tests/kb_eval/test_runner.py::test_comparison_and_runner_gate_reasons_are_exact
+killed          kill       R:runner.py:invalid_required_gold@199         FAILED unit_tests/kb_eval/test_runner.py::test_invalid_required_anchor_blocks_gate_instead_of_scoring_subset
+killed          kill       R:statistics.py:power_design_mismatch         FAILED unit_tests/kb_eval/test_oracles.py::test_dev_power_design_and_holdout_groups_must_match_without_overlap
+killed          kill       R:statistics.py:dev_evaluation_group_overlap  FAILED unit_tests/kb_eval/test_oracles.py::test_dev_power_design_and_holdout_groups_must_match_without_overlap
+killed          kill       R:statistics.py:bootstrap_replicates_below_registered_minimum FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n2_quality_low_replicates_reason_is_reported_exactly
+killed          kill       R:statistics.py:degenerate_bootstrap_interval FAILED unit_tests/kb_eval/test_quality_hardening.py::test_single_cluster_reports_insufficient_clusters_exactly
+killed          kill       R:statistics.py:power_not_established         FAILED unit_tests/kb_eval/test_oracles.py::test_missing_power_and_tiny_clusters_never_pass
+killed          kill       R:statistics.py:insufficient_clusters         FAILED unit_tests/kb_eval/test_quality_hardening.py::test_single_cluster_reports_insufficient_clusters_exactly
+killed          kill       L1                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_order_imbalance_tolerance_is_one_block
+killed          kill       L2                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_ninety_nine_blocks_are_insufficient_even_past_ten_minutes
+killed          kill       L3                                            FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n2_every_latency_reason_is_the_sole_cause_on_varied_input
+killed          kill       L4                                            FAILED unit_tests/kb_eval/test_oracles.py::test_ab_load_bias_and_candidate_only_regression
+killed          kill       L5                                            FAILED unit_tests/kb_eval/test_instrumentation.py::test_ab_order_load_bias_not_hidden_by_equal_arm_average
+killed          kill       L6                                            FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n2_every_latency_reason_is_the_sole_cause_on_varied_input
+survived        equivalent L7                                            204 passed in 28.82s
+killed          kill       L8                                            FAILED unit_tests/kb_eval/test_oracles.py::test_ab_load_bias_and_candidate_only_regression
+killed          kill       L9                                            FAILED unit_tests/kb_eval/test_oracles.py::test_ab_load_bias_and_candidate_only_regression
+killed          kill       L10                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_absolute_slo_values_are_800_full_and_200_fast[full-850.0-absolute_fai
+killed          kill       L11                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_known_good_adequate_replicates_and_zero_load_keep_absolute_relative_sep
+killed          kill       L12                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_queue_plus_service_beyond_e2e_is_rejected
+killed          kill       L13                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_duplicate_block_id_is_rejected
+killed          kill       L14                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unregistered_or_invalid_weights_are_not_silently_ignored[0]
+survived        equivalent L15                                           204 passed in 29.23s
+killed          kill       L16                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_nonmonotonic_timer_and_unknown_mode_are_rejected
+survived        equivalent L17                                           204 passed in 29.11s
+killed          kill       L18                                           FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_latency_constant_arm_below_resolution_is_unverified
+killed          kill       L19                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_nonmonotonic_timer_and_unknown_mode_are_rejected
+killed          kill       N1a                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_quality_degenerate_intervals_are_explicitly_diagnostic
+killed          kill       N1b                                           FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_degenerate_width_boundary_is_inclusive_at_registered_floor
+killed          kill       N1c                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_absolute_floor_catches_sub_resolution_variation_at_small_mean
+killed          kill       N1d                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_registered_bootstrap_policy_is_fixed_and_not_a_sufficiency_claim
+killed          kill       N1e                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_registered_bootstrap_policy_is_fixed_and_not_a_sufficiency_claim
+killed          kill       N1f                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_single_cluster_reports_insufficient_clusters_exactly
+killed          kill       N1g                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_registered_bootstrap_policy_is_fixed_and_not_a_sufficiency_claim
+killed          kill       N1h                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_known_good_adequate_replicates_and_zero_load_keep_absolute_relative_sep
+survived        equivalent Q1                                            204 passed in 29.18s
+survived        equivalent Q2                                            204 passed in 28.93s
+killed          kill       Q3                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_wide_interval_straddling_margin_is_inconclusive_not_fail
+killed          kill       Q4                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_noninferiority_p_value_is_recentred_on_the_margin
+survived        equivalent Q5                                            204 passed in 28.86s
+survived        equivalent Q6                                            204 passed in 29.00s
+killed          kill       Q6b                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_unequal_clusters_below_twenty_effective_cannot_establish_power
+killed          kill       Q7                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_noisy_pilot_without_neutral_pass_probability_is_insufficient
+survived        equivalent Q8                                            204 passed in 29.29s
+killed          kill       Q9                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_single_cluster_reports_insufficient_clusters_exactly
+killed          kill       Q10                                           FAILED unit_tests/kb_eval/test_oracles.py::test_holm_stepdown_adjustment_and_stopping
+survived        equivalent Q11                                           204 passed in 29.21s
+killed          kill       Q12                                           FAILED unit_tests/kb_eval/test_oracles.py::test_dev_power_design_and_holdout_groups_must_match_without_overlap
+killed          kill       D1a                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r1_graph_requires_and_uses_authoritative_passage_owners
+killed          kill       D1b                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_positive_gold_outside_declared_documents_is_rejected_without_holdout
+killed          kill       D1c                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_shared_group_label_joins_split_components
+killed          kill       D1d                                           FAILED unit_tests/kb_eval/test_oracles.py::test_translation_duplicate_multidoc_transitive_leakage
+killed          kill       D1e                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_anchor_on_undeclared_document_is_rejected
+killed          kill       D1f                                           FAILED unit_tests/kb_eval/test_runner.py::test_exact_duplicate_hash_auto_connects_split
+killed          kill       D1g                                           FAILED unit_tests/kb_eval/test_oracles.py::test_translation_duplicate_multidoc_transitive_leakage
+killed          kill       D1h                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r1_passage_names_do_not_stand_in_for_document_names
+killed          kill       D1i                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_answerable_case_without_anchor_is_rejected
+killed          kill       D1j                                           FAILED unit_tests/kb_eval/test_runner.py::test_loader_negative_controls[<lambda>-human_attestation_required]
+killed          kill       D1k                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_source_body_hash_mismatch_is_rejected
+killed          kill       D3a                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r3_verified_string_and_fake_url_do_not_authorize_public_data
+killed          kill       D3b                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_each_fixture_rights_detail_is_enforced[change0-rights_synthetic_prove
+killed          kill       D3c                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_each_fixture_rights_detail_is_enforced[change2-rights_synthetic_prove
+killed          kill       D3d                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_each_fixture_rights_detail_is_enforced[change1-rights_synthetic_prove
+killed          kill       D3e                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_links_require_transform_rights
+killed          kill       D3f                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_each_fixture_rights_detail_is_enforced[change3-rights_unverified:code
+killed          kill       D3g                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_each_fixture_rights_detail_is_enforced[change4-rights_unverified:code
+killed          kill       D3h                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_external_source_observation_or_duplicate_right_is_rejected
+killed          kill       D3i                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_external_source_observation_or_duplicate_right_is_rejected
+killed          kill       D3j                                           FAILED unit_tests/kb_eval/test_quality_hardening.py::test_external_source_observation_or_duplicate_right_is_rejected
+killed          kill       D3k                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r3_runner_cannot_bypass_rights_loader_by_mutating_kind
+killed          kill       D4a                                           FAILED unit_tests/kb_eval/test_oracles.py::test_holdout_slot_stays_unconsumed_until_authenticated_flow_exists
+killed          equivalent D4b                                           FAILED unit_tests/kb_eval/test_oracles.py::test_holdout_slot_stays_unconsumed_until_authenticated_flow_exists
+killed          kill       D4c                                           FAILED unit_tests/kb_eval/test_review_fixes.py::test_r4_review_event_actor_is_recorded_as_unauthenticated_claim
+killed          kill       D4d                                           FAILED unit_tests/kb_eval/test_oracles.py::test_mobile_review_contract_resume_no_machine_human_promotion
+killed          kill       D4e                                           FAILED unit_tests/kb_eval/test_oracles.py::test_mobile_review_contract_resume_no_machine_human_promotion
+killed          kill       R1                                            FAILED unit_tests/kb_eval/test_oracles.py::test_cache_replay_compares_score_bytes_and_integrity
+killed          kill       R2                                            FAILED unit_tests/kb_eval/test_oracles.py::test_cache_replay_compares_score_bytes_and_integrity
+killed          kill       R3                                            FAILED unit_tests/kb_eval/test_oracles.py::test_cache_replay_compares_score_bytes_and_integrity
+killed          kill       R4                                            FAILED unit_tests/kb_eval/test_runner.py::test_resume_rejects_changed_input_not_just_id
+killed          kill       R5                                            FAILED unit_tests/kb_eval/test_runner.py::test_duplicate_body_split_leak_and_holdout_runner_denied
+killed          kill       R6                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_relevance_grade_above_three_and_incomplete_cache_identity_fail
+killed          kill       X1                                            FAILED unit_tests/kb_eval/test_oracles.py::test_hand_oracle_three_questions_ten_documents
+killed          kill       X2                                            FAILED unit_tests/kb_eval/test_oracles.py::test_hand_oracle_three_questions_ten_documents
+killed          kill       X3                                            FAILED unit_tests/kb_eval/test_oracles.py::test_hand_oracle_three_questions_ten_documents
+killed          kill       X4                                            FAILED unit_tests/kb_eval/test_oracles.py::test_hand_oracle_three_questions_ten_documents
+killed          kill       X5                                            FAILED unit_tests/kb_eval/test_quality_hardening.py::test_relevance_grade_above_three_and_incomplete_cache_identity_fail
+killed          kill       X6                                            FAILED unit_tests/kb_eval/test_oracles.py::test_hand_oracle_three_questions_ten_documents
+{"rev": "working-tree", "baseline": "204 passed in 24.75s", "total": 105, "not_applicable": 0, "killed": 96, "survived": 9, "survived_expected_kill": [], "survived_equivalent": ["L7", "L15", "L17", "Q1", "Q2", "Q5", "Q6", "Q8", "Q11"]}

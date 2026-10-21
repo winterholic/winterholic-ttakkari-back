@@ -1,12 +1,20 @@
 """Immutable design-system browsing, without a production database."""
 import json
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
+from git_isolation import isolated_git_env, scrub_process_env
+
+# Browser 가 부르는 git 도 훅의 GIT_DIR 같은 호출 환경을 받지 않게 한다.
+scrub_process_env()
+
 
 def git(root, *args):
-    return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+    return subprocess.check_output(["git", "-C", str(root), *args], text=True, env=isolated_git_env()).strip()
 
 
 @pytest.fixture

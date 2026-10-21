@@ -33,6 +33,12 @@ set -uo pipefail
 BACK="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$BACK"
 
+# git 훅은 GIT_DIR·GIT_INDEX_FILE 같은 저장소 지정 환경변수를 자식 프로세스에 그대로 넘긴다(worktree 에서 push 하면
+# GIT_DIR 이 공유 저장소의 .git/worktrees/<이름> 이다). 이 값이 테스트까지 새면 테스트용 `git init`/`git commit` 이
+# 임시 디렉터리가 아니라 공유 저장소에 적용돼 core.bare=true 로 바뀌고 worktree 브랜치가 테스트 커밋으로 덮인다.
+# 이후의 git 호출은 현재 디렉터리(BACK)로 저장소를 찾으므로 그대로 동작한다.
+unset $(git rev-parse --local-env-vars) $(compgen -e | grep -E '^GIT_CONFIG_(KEY|VALUE)_[0-9]+$')
+
 MODE=impacted
 COMMIT=HEAD
 BASE=

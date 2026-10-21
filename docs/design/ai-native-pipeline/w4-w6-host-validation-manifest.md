@@ -1,0 +1,155 @@
+# W4–W6 격리 호스트 검증 manifest
+
+현재 Run의 Codex command sandbox에서 알려진 PostgreSQL fixture `initdb` 실패를 재시도하지 않는다. 아래 명령은 PostgreSQL 임시 클러스터를 시작할 수 있고 사용 승인을 받은 격리 테스트 호스트에서만 실행한다. 운영 호스트/DB, 공유 DB, 서비스 자격 증명을 사용하지 않는다. 각 pytest 프로세스는 `tests/pg_sandbox.py`가 소유하는 `/tmp/ttakkari-test-*` 클러스터를 만들어야 한다. `TTAKKARI_TEST_DB`를 설정하면 이 격리가 우회되므로 설정하지 않는다.
+
+## 불변 checkout 및 전체 delivery gate
+
+`FEATURE_SHA`에 최종 기능 브랜치 SHA를 넣고, 검증 전용 detached worktree에서 실행한다.
+
+```bash
+set -eu
+FEATURE_SHA='<최종 기능 SHA>'
+BASE_SHA='25b5f9806656067ceb594d6d3217b37fba28d795'
+VERIFY_ROOT="/private/tmp/ttakkari-delivery-verify-${FEATURE_SHA}"
+git worktree add --detach "$VERIFY_ROOT" "$FEATURE_SHA"
+cd "$VERIFY_ROOT"
+test "$(git rev-parse HEAD)" = "$FEATURE_SHA"
+unset TTAKKARI_TEST_DB TTAKKARI_DATABASE_URL DATABASE_URL PGHOST PGPORT PGDATABASE
+export TTAKKARI_NO_ENV_FILE=1
+uv sync --frozen --group dev
+git diff --name-only -z "$BASE_SHA..$FEATURE_SHA" -- '*.py' | xargs -0 uv run ruff check
+PYTHONPATH="$VERIFY_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" uv run pytest -q --timeout=120 \
+  tests/delivery \
+  tests/test_migration_single_head.py \
+  tests/test_generation_deployment.py::test_application_generation_contract_matches_its_migration_head
+git status --short --branch
+git rev-parse HEAD
+```
+
+`tests/conftest.py`가 자체 `/tmp/ttakkari-test-*` PostgreSQL 클러스터를 만들고 끝날 때 정리한다. `TTAKKARI_TEST_DB`를 지정하지 않는다. 이 gate가 성공해야 실제 PostgreSQL이 필요한 delivery 동작의 별도 검증을 진행한다.
+
+완료 기준: `git rev-parse HEAD`가 고정한 `FEATURE_SHA`와 같고, 변경 Python 경로 ruff가 exit 0, 지정 pytest 묶음이 exit 0이며 종료 후 `git status --short`가 비어 있어야 한다. 테스트 수와 전체 stdout/stderr를 기록한다. 이 단계는 테스트 suite 통과 증거이지 advisory lock/crash-recovery 전용 증거로 대체되지 않는다.
+
+## 실제 Stage 1/2 명령과 candidate SHA 결합
+
+같은 detached checkout에서 배포 경로의 validator를 호출한다. Stage 1은 delivery ruff와 contract-marked pytest를, Stage 2는 전체 pytest를 실행한다. 각 pytest 프로세스가 전용 임시 PostgreSQL을 만들므로 PostgreSQL host에서 실행한다.
+
+```bash
+PYTHONPATH="$VERIFY_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" uv run python - <<'PY'
+import asyncio
+import subprocess
+from pathlib import Path
+
+from ttakkari.delivery.validation import project_stage_validator
+
+root = Path.cwd()
+sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+
+async def main():
+    for stage in ("stage1", "stage2"):
+        passed, log, signature = await project_stage_validator(stage, root, sha)
+        print(f"stage={stage} passed={passed} sha={sha} signature={signature}")
+        print(log)
+        if not passed:
+            raise SystemExit(1)
+
+asyncio.run(main())
+PY
+```
+
+통과 기준은 두 단계 모두 `passed=True`이고 각각의 결과 로그에 동일한 `tested_sha=<FEATURE_SHA>`가 포함되는 것이다.
+
+완료 기준: 출력된 두 Stage 모두 `passed=True`, 두 `tested_sha`가 고정 `FEATURE_SHA`와 일치, 각 Stage 로그에 실제 pytest 통과 요약이 있어야 한다. 하나라도 실패하거나 summary/SHA가 없으면 전체 gate 실패다.
+
+## 실제 임시 PostgreSQL에 migration 적용 및 컬럼 확인
+
+아래 검사는 `tests/pg_sandbox.py`가 소유하는 새 임시 PostgreSQL cluster/database만 사용한다. 공유 PostgreSQL에 DB를 만들지 않는다.
+
+```bash
+PYTHONPATH="$VERIFY_ROOT/src:$VERIFY_ROOT/tests${PYTHONPATH:+:$PYTHONPATH}" \
+TTAKKARI_NO_ENV_FILE=1 uv run python - <<'PY'
+import asyncio
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+import pg_sandbox
+
+root = Path.cwd()
+cluster = pg_sandbox.start_cluster()
+try:
+    url = cluster.create_database("ttakkari_delivery_migration")
+    env = os.environ | {"TTAKKARI_DATABASE_URL": url, "TTAKKARI_NO_ENV_FILE": "1"}
+    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=root, env=env, check=True)
+
+    async def inspect():
+        engine = create_async_engine(url)
+        try:
+            async with engine.connect() as conn:
+                head = await conn.scalar(text("SELECT version_num FROM alembic_version"))
+                rows = (await conn.execute(text(
+                    "SELECT column_name, data_type FROM information_schema.columns "
+                    "WHERE table_name = 'change_sets'"
+                ))).all()
+                columns = dict(rows)
+                print(f"alembic_head={head}")
+                print(f"candidate_sha={columns.get('candidate_sha')}")
+                print(f"stage1_result={columns.get('stage1_result')}")
+                print(f"signature_attempts={columns.get('signature_attempts')}")
+                assert head == "0062_delivery_change_sets"
+                assert columns.get("candidate_sha") == "character varying"
+                assert columns.get("stage1_result") == "jsonb"
+                assert columns.get("signature_attempts") == "jsonb"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(inspect())
+finally:
+    cluster.stop()
+PY
+```
+
+완료 기준: upgrade가 새 임시 DB에서 종료 코드 0, `alembic_version`이 그 통합 checkout의 유일한 head, `change_sets.candidate_sha`가 `varchar`, `stage1_result`와 `signature_attempts`가 `jsonb`여야 한다. 통합 후 revision 번호/부모가 조정되면 위의 기대값을 추정해서 고정하지 말고, 최종 migration 그래프와 contract에서 읽은 기대 revision으로 검사한다.
+
+## delivery 통합 후보의 PostgreSQL/API 전용 테스트
+
+`tests/delivery/test_merge_queue_postgres.py`와 `tests/test_orchestrator_delivery_isolation.py`는 후보에 추가됐다. 첫 모듈은 실제 PostgreSQL 세션으로 `SKIP LOCKED`, 같은 repository+target advisory lock, ref CAS 직후 새 세션 recovery, 그리고 `0062` upgrade/downgrade와 JSONB column type을 검사한다. 두 번째 모듈은 인증된 ASGI `/workers` on/off/read-only 경로를 실제 DB row와 함께 확인하고, repair 상한에 도달했을 때 실제 CLI repair dispatcher가 호출되지 않아 `Run` row가 추가되지 않는지 검사한다.
+
+두 모듈의 functional 실행은 아래처럼 `tests/conftest.py`가 제공하는 프로세스 전용 disposable PostgreSQL fixture를 사용한다. `TTAKKARI_TEST_DB`를 전달하지 않는다. known `initdb` sandbox denial을 재시도하거나 공유/운영 DB로 우회하지 않는다. 이번 Run에서는 fixture import/DB 실행을 하지 않았으며, `--noconftest --collect-only`는 fixture 및 테스트 이름 수집만 증명한다.
+
+```bash
+uv run pytest -q --timeout=120 \
+  tests/delivery/test_merge_queue_postgres.py \
+  tests/test_orchestrator_delivery_isolation.py
+```
+
+명령을 실행하는 격리 테스트 호스트에서는 실행 직전에 고정 후보 SHA를 확인한다. 실행 기록에는 `git rev-parse HEAD`, PostgreSQL cluster 경로, pytest stdout/stderr를 함께 보존한다.
+
+전용 tests가 다루는 동작:
+
+1. 독립 PostgreSQL 세션의 두 claim이 동일한 ChangeSet을 반환하지 않는 `SKIP LOCKED` 경합.
+2. 동일 repo/target 통합기의 advisory lock 직렬화와, 두 번째 Stage 입력에서 첫 번째 ref advance 결과가 보이는지 확인.
+3. Git ref CAS 성공 직후 DB 최종 상태 commit 전에 예외를 주입한 다음, 새 DB 세션 재시작으로 동일 candidate를 `merged` 복구하고 ref가 중복 변경되지 않는지 확인.
+4. disposable test database에서 delivery migration upgrade/downgrade와 PostgreSQL native `jsonb` 타입 확인.
+5. 인증된 `/workers` opt-in on은 worktree·전용 Workspace·writable root·ChangeSet을 만들고, off/read-only는 원 Workspace를 유지하며 ChangeSet을 만들지 않는지 확인.
+6. repair 횟수 상한에서 실제 `_dispatch_repair` callback 경계가 실행되지 않고 추가 `Run` row가 생성되지 않는지 확인.
+
+이 Run에서 PG/API 테스트는 **실행 안 됨**이다. 따라서 이 후보에 대한 PostgreSQL 경합/recovery, migration apply, 실제 `/workers` ASGI 동작은 계속 **미검증**이며 static compile 또는 collection 성공으로 통과 처리하지 않는다.
+
+## 남는 런타임 판정
+
+## 통합 전 충돌 및 기능 완료 범위
+
+별도 executor 독립검증의 고정 SHA `a56ec7a59d7b5f86c142b2c5325cee84aea188a8`에는 `0063_run_executor.py`가 있고 `0061_local_tts`를 부모로 한다. 이 delivery 후보의 `0062_delivery_change_sets.py` 역시 `0061_local_tts`를 부모로 하므로 두 migration을 그대로 합치면 두 head가 된다. 최종 통합에서는 실제 migration 의존성과 downgrade 순서를 검토해 두 변경을 선형 revision/down_revision으로 직렬화하고, `deploy/generation-contract.json`의 `schema_revision`·`online_migration_from`, migration allowlist, Alembic 단일 head를 함께 갱신·검증한다. 방향과 최종 revision 번호는 통합 시점에 정한다. 양 계보가 `README.md`, `deploy/generation-contract.json`, `pyproject.toml`, `src/ttakkari/config.py`, `tests/test_migration_single_head.py`를 함께 수정하므로 파일별 소유 변경을 대조한다. main의 ADR 0067 관련 `src/ttakkari/api/orchestrator.py` 및 `src/ttakkari/config.py` 동작도 보존한다. 이 delivery 후보에서 executor를 병합하거나 통합 해결을 수행하지 않는다.
+
+## Executor 독립검증 차단점과 범위
+
+[`run-executor-followup-independent-verification.md`](/Users/winterholic/.ttakkari/data/outbox/49caca1e-be5b-42dc-8b93-1e60d46dab50/run-executor-followup-independent-verification.md)는 고정 SHA `a56ec7a59d7b5f86c142b2c5325cee84aea188a8`를 **FAIL / 운영 승격 불가**로 판정했다. 확인된 차단점은 manifest content digest 검증 부재와 reconcile apply의 process signal 후 DB token 재검사 순서에서 비롯되는 코드상 race다. race는 PostgreSQL에서 실행 재현된 사실이 아니라 코드 순서에서 추론된 결함이다. manifest pin 및 token race 후속 수정은 별도 작업에 맡겨져 있으므로 여기서 executor 코드 수정·재검증은 하지 않는다. PostgreSQL migration/transaction, ASGI/SSE 전환, controller/launchd activation은 해당 보고서에서 미검증이다.
+
+executor 고정 SHA는 요청 기준 `95fc0a75`의 직계 후손이 아니며 TTS, ADR 0067, W1 등 executor 밖의 선행 변경을 포함한다. 최종 통합 때는 delivery 후보와의 전체 SHA 범위 무차별 병합을 피하고, 확인된 executor 소유 변경만 계보와 diff로 분리해 검토한다. 본 manifest의 delivery host gate가 executor 운영 승격이나 전체 Stage 검증을 대신하지 않는다.
+
+`submit_change` MCP 노출, 상주 integrator, batch validation 및 이분 탐색은 미구현이다. 이 manifest의 gate가 통과해도 W4–W6 전체 완료를 의미하지 않는다.

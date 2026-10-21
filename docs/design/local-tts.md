@@ -100,11 +100,11 @@ class TtsProvider(Protocol):
   - **세대 미사용 모드**(`runtime_generation=false`, `config.py:107`, `main.py:144-148`): 단일 프로세스이므로 프로세스 내 `asyncio.Lock`(`_tts_execution_lock`)이 예산이다.
   - `work()`는 상태가 active가 아니면 잠금을 잡지 않고 False를 준다(`generation.py:264-266`). 따라서 draining 세대의 `/speak`는 새 합성을 시작하지 않고 503을 돌려준다(§8.3.3).
 - **단문 동기(/speak)와 장문 비동기(/jobs)의 직렬 실행 예산 준수**: `/jobs` 워커가 실행 중일 때 `/speak`가 들어오면 같은 예산을 최대 15초 대기하고, 초과 시 503(busy)을 반환한다.
-- **STT와 TTS의 동시 실행 및 간섭 (2026-10-21 실측 검증 완료)**:
+- **STT와 TTS의 동시 시행 (2026-10-21, 부모 작업 구간만 확인)**:
   - STT는 4스레드(`local_stt_cpu_threads`), TTS도 4스레드(`local_tts_cpu_threads`)를 사용한다.
-  - 동시 실행 실측(5회 전회 겹침 구간 5.66~7.89초 증명) 결과: TTS 벽시계 저하율 +11.69%, STT 벽시계 저하율 +3.55%.
-  - 피크 메모리 합산은 약 4.38GB(TTS 0.58GB + STT 3.79GB)로 안전한 공존이 가능함을 확인.
-  - 따라서 `LOCAL_TTS_CONCURRENCY_POLICY`의 기본값은 `allow_concurrent`(STT와 TTS 독립 병렬 실행)로 최종 확정한다.
+  - 5회 시행의 부모 작업 epoch 겹침은 5.66~7.89초였다. 부모 벽시계 중앙값 변화는 TTS +11.69%, STT +3.55%였지만, 자식 추론 구간의 실제 동시 실행과 CPU 경합 원인은 입증되지 않았다.
+  - 개별 자식 프로세스 피크 RSS를 더한 값은 같은 시점의 호스트 메모리 사용량이 아니다. 호스트 전체 메모리·swap 및 동시점 피크는 측정하지 않아 안전한 공존 여부는 미입증이다.
+  - `LOCAL_TTS_CONCURRENCY_POLICY`의 현재 기본값은 `allow_concurrent`다. 이 벤치는 해당 설정의 자원 안전성이나 최적성을 입증하지 않는다.
 
 ## 7. API 설계
 

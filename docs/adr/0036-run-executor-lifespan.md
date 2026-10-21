@@ -59,7 +59,8 @@
 - 초기 제안 시점에는 선택지 정리였으나, 2026-10-21 사용자 지시로 구현을 진행한다. 1단계 측정 없이는 2단계以降에
   들어가지 않는다.
 - 첫 slice와 후속 구현은 feature-off 상태다. Preview/local STT 및 주기 maintenance는 executor 대상으로 옮겼고,
-  process-local TTS 원문 worker와 request-time Qwen은 API에 남겼다. executor replacement/rollback 및 crash 후 orphan reconcile,
-  PostgreSQL·실 API 프로세스 검증은 완료되지 않았다. 세부 판정은 후속 기록을 따른다.
+  process-local TTS 원문 worker와 request-time Qwen은 API에 남겼다. durable attempt ledger와 dry-run/apply orphan reconcile은
+  구현했지만 DB 경로는 미실행이다. executor replacement/rollback, PostgreSQL·실 API 프로세스 검증은 미완료다.
+  세부 판정은 후속 기록을 따른다.
 - 현행 3슬롯 + `waiting_slot` + `supervisor_upgrade_required` 보고 체계를
   유지한다. 이 설계가 구현되기 전까지 장기 Run 경합은 대기·알림으로 다룬다.

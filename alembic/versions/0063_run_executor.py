@@ -20,6 +20,19 @@ def upgrade():
     op.add_column("runtime_control", sa.Column("executor_generation", postgresql.UUID(as_uuid=True), nullable=True))
     op.create_foreign_key("fk_runtime_control_executor", "runtime_control", "runtime_generations",
                           ["executor_generation"], ["id"])
+    op.create_table("runtime_process_groups",
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("run_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("runs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("generation_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("runtime_generations.id"), nullable=False),
+        sa.Column("lease_token", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("attempt", sa.Integer(), nullable=False),
+        sa.Column("pid", sa.Integer(), nullable=False),
+        sa.Column("process_started_at", sa.Float(), nullable=False),
+        sa.Column("pgid", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("run_id", "lease_token", "attempt", name="uq_runtime_process_groups_fence_attempt"))
+    op.create_index("ix_runtime_process_groups_run_id", "runtime_process_groups", ["run_id"])
+    op.create_index("ix_runtime_process_groups_generation_id", "runtime_process_groups", ["generation_id"])
     install_guards()
 
 
@@ -116,10 +129,14 @@ def downgrade():
       IF EXISTS (SELECT 1 FROM runtime_control WHERE executor_generation IS NOT NULL)
         OR EXISTS (SELECT 1 FROM runtime_leases l JOIN runtime_generations g ON g.id=l.generation_id
                    WHERE g.role='executor')
+        OR EXISTS (SELECT 1 FROM runtime_process_groups)
         OR EXISTS (SELECT 1 FROM runtime_commands c JOIN runtime_generations g ON g.id=c.generation_id
                    WHERE g.role='executor' AND c.acknowledged_at IS NULL)
       THEN RAISE EXCEPTION 'drain executor and disable remote ownership before downgrade'; END IF;
     END $$""")
+    op.drop_index("ix_runtime_process_groups_generation_id", table_name="runtime_process_groups")
+    op.drop_index("ix_runtime_process_groups_run_id", table_name="runtime_process_groups")
+    op.drop_table("runtime_process_groups")
     for table, name in (("runtime_commands", "command"), ("runtime_leases", "lease"),
                         ("runtime_generations", "api"), ("runtime_control", "control")):
         op.execute(f"DROP TRIGGER executor_{name} ON {table}")

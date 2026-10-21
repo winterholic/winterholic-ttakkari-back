@@ -26,19 +26,19 @@ enabled 후보도 다음 조건을 모두 검사한다: release marker/SHA와 pi
 
 ## Attempt process group과 quarantine
 
-실제 reproduction에서 child leader가 exit code 0으로 끝나고 stdio를 닫아도, 그 child가 남긴 descendant가 process group에 남을 수 있음을 관측했다. `_Handle.proc` 하나만 검사하면 앞선 attempt group이 누락될 수 있어 handle이 owner/fence와 함께 모든 attempt의 `(pid, process_started_at, pgid)`를 실행 중 보관하고, lease 해제 전 각 group을 확인하도록 했다. group 부재 확인, identity mismatch, permission/조회 오류는 모두 lease를 보존한다.
+실제 reproduction에서 child leader가 exit code 0으로 끝나고 stdio를 닫아도, 그 child가 남긴 descendant가 process group에 남을 수 있음을 관측했다. `_Handle.proc` 하나만 검사하면 앞선 attempt group이 누락될 수 있어 handle과 `runtime_process_groups` ledger에 owner/fence와 함께 모든 attempt의 `(pid, process_started_at, pgid)`를 기록하고, lease 해제 전 각 group을 확인하도록 했다.
 
-이 attempt 목록은 아직 DB에 durable하지 않으므로 executor crash 뒤의 orphan quarantine reconcile 도구는 구현되지 않았다. PID+start-time+PGID+owner/fence를 재시작 후 검증할 영속 attempt ledger와 dry-run/apply CLI가 다음 필수 변경이다. heartbeat 만료만으로 lease를 가져가거나 provider 작업을 복제하지 않는다.
+`ttakkari executor-reconcile`는 기본 dry-run, `--apply` 선택 방식이다. owner PID/start time과 fence-bound PGID 증거, permission을 확인한다. lease owner가 살아 있거나 ledger가 없거나 PID/PGID 조회가 불명확하면 회수하지 않는다. apply는 확인 가능한 process group만 TERM/KILL하고, 모든 그룹이 사라진 뒤 Run을 interrupted로 기록하고 동일 token lease를 해제한다. leader가 사라졌는데 group이 남은 경우는 소유권을 확정할 수 없어 unknown으로 닫는다. CLI의 DB dry-run/apply 및 PostgreSQL trigger/transaction 실행은 미검증이다. heartbeat 만료만으로 lease를 가져가거나 provider 작업을 복제하지 않는다.
 
 ## Migration 통합
 
-현재 graph는 `0060_collector_job_runtime → 0061_local_tts → 0063_run_executor`이며 `deploy/generation-contract.json`의 head와 `online_migration_from`을 그 chain에 맞췄다. executor revision `0063_run_executor`는 사용자가 지정한 임시 통합 번호다. delivery 작업 c77b60de의 `0062`가 통합되면 executor `down_revision`을 해당 최종 chain으로 바꾸고 contract head/온라인 허용 목록 및 downgrade 순서를 함께 재검증해야 한다. 그 통합 전에는 최종 main graph라고 주장할 수 없다.
+현재 graph는 `0060_collector_job_runtime → 0061_local_tts → 0063_run_executor`이며 `0063`은 ownership trigger와 `runtime_process_groups` ledger를 additive로 만든다. `deploy/generation-contract.json`의 head와 `online_migration_from`도 현재 chain에 맞췄다. executor revision `0063_run_executor`는 사용자가 지정한 임시 통합 번호다. delivery 작업 c77b60de의 `0062`가 통합되면 executor `down_revision`을 해당 최종 chain으로 바꾸고 contract head/온라인 허용 목록 및 downgrade 순서를 함께 재검증해야 한다. 그 통합 전에는 최종 main graph라고 주장할 수 없다.
 
 ## 남은 검증
 
 - 미실행: PostgreSQL claim/lock/trigger, migration 실제 적용·downgrade, API/executor 두 프로세스 및 SSE cursor 교체 경계. `tests/` conftest는 initdb 단계에서 실패해 테스트 collection에 진입하지 못했다. SQLite/fake 검사를 PG 증거로 대체하지 않는다.
 - 미실행: executor activation enabled 후보의 실제 generation controller / launchd / process readiness 통합과 executor replacement/rollback.
-- 미구현: 재시작 뒤 attempt PGID 증거와 dry-run/apply orphan lease reconcile.
+- 구현됐으나 미실행: durable attempt PGID ledger와 dry-run/apply orphan reconcile. owner/group identity가 unknown이면 apply가 fail-closed한다.
 - API 소유 유지: TTS 원문/worker, request-time Qwen. remote API가 해당 worker를 시작하는 것은 현재 소스/데이터 수명에 근거한 선택이다.
 - 미실행: 실모델 응답, 실제 MCP tool 실행, provider conversation resume.
 

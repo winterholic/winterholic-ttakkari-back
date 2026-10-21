@@ -84,8 +84,8 @@ async def test_attempt_history_keeps_lease_when_an_earlier_group_outlives_its_le
     await last.wait()
     try:
         handle = _Handle(task=asyncio.current_task(), proc=last, owner=runtime, token=token)
-        handle.process_groups = [(leader.pid, leader_started_at, leader.pid, owner, token),
-                                 (last.pid, last_started_at, last.pid, owner, token)]
+        handle.process_groups = [(leader.pid, leader_started_at, leader.pid, owner, token, 1),
+                                 (last.pid, last_started_at, last.pid, owner, token, 2)]
         manager = RunManager(runtime=runtime)
         manager._handles[rid] = handle
 

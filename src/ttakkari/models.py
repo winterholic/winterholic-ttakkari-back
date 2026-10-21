@@ -405,6 +405,21 @@ class RuntimeLease(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class RuntimeProcessGroup(Base):
+    """Durable PID/start-time/PGID evidence for one fenced executor attempt."""
+    __tablename__ = "runtime_process_groups"
+    __table_args__ = (UniqueConstraint("run_id", "lease_token", "attempt"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    generation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runtime_generations.id"), index=True)
+    lease_token: Mapped[uuid.UUID] = mapped_column()
+    attempt: Mapped[int] = mapped_column(Integer)
+    pid: Mapped[int] = mapped_column(Integer)
+    process_started_at: Mapped[float] = mapped_column(Float)
+    pgid: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class RuntimeCommand(Base):
     __tablename__ = "runtime_commands"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

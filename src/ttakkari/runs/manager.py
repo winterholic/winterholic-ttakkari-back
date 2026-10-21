@@ -120,7 +120,7 @@ class _Handle:
     stderr_tail: list[str] = field(default_factory=list)
     owner: generation.GenerationRuntime | None = None
     token: uuid.UUID | None = None
-    process_groups: list[tuple[int, float, int, uuid.UUID, uuid.UUID]] = field(default_factory=list)
+    process_groups: list[tuple[int, float, int, uuid.UUID, uuid.UUID, int]] = field(default_factory=list)
 
 
 class QwenSlotBusy(RuntimeError):
@@ -665,14 +665,14 @@ class RunManager:
     async def _release_attempt(self, run_id, runtime, token) -> None:
         handle = self._handles.get(run_id)
         if handle and handle.process_groups:
-            for pid, started_at, pgid, owner_id, fence in tuple(handle.process_groups):
+            for pid, started_at, pgid, owner_id, fence, attempt in tuple(handle.process_groups):
                 if owner_id != runtime.id or fence != token:
                     log.error("retaining lease for run %s: process group fence differs", run_id)
                     return
                 try:
                     os.killpg(pgid, 0)
                 except ProcessLookupError:
-                    handle.process_groups.remove((pid, started_at, pgid, owner_id, fence))
+                    handle.process_groups.remove((pid, started_at, pgid, owner_id, fence, attempt))
                     continue
                 except OSError:
                     log.error("retaining lease for run %s: process group %s is unobservable", run_id, pgid)
@@ -1572,7 +1572,10 @@ class RunManager:
                     await self._terminate(proc)
                     await proc.wait()
                     raise RuntimeError("could not establish child process group identity")
-                h.process_groups.append((proc.pid, started_at, pgid, h.owner.id, h.token))
+                attempt = len(h.process_groups) + 1
+                await h.owner.record_process_group(run.id, h.token, attempt=attempt, pid=proc.pid,
+                                                   process_started_at=started_at, pgid=pgid)
+                h.process_groups.append((proc.pid, started_at, pgid, h.owner.id, h.token, attempt))
         run.pid = proc.pid
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
         heartbeat_task: asyncio.Task | None = None

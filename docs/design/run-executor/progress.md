@@ -32,7 +32,7 @@ PostgreSQL/실 ASGI+executor 통합 8개는 collection만 실행했다. 기존 �
 독립 환경에서 기존 private PG fixture로 다음을 실행한다:
 
 ```sh
-TTAKKARI_NO_ENV_FILE=1 uv run pytest -q unit_tests/test_run_executor.py unit_tests/test_generation_hardening.py
+TTAKKARI_NO_ENV_FILE=1 uv run pytest -q unit_tests/test_run_executor_unit.py unit_tests/test_generation_hardening.py
 uv run pytest -q tests/test_run_executor.py tests/test_run_executor_processes.py tests/test_generations.py tests/test_generation_processes.py tests/test_generation_deployment.py
 ```
 

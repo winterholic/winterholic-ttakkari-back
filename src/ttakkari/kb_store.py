@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import func, select, text as sa_text
+from sqlalchemy import func, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 

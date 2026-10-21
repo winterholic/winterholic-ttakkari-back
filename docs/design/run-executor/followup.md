@@ -18,7 +18,7 @@
 
 ## Executor activation과 배포 감독
 
-`deploy/run-executor-manifest.json`은 immutable release의 Python 경로, 정확한 argv, runtime 환경, readiness 증거, activation gate를 기록한다. `Releases.contract()`가 manifest와 contract의 activation 값을 함께 검증한다. 기존 `GenerationController.reconcile_services()`는 contract가 `activation=enabled`일 때만 `Slots.ensure_executor()`로 전달한다. 기본 계약은 `disabled`라 feature-off Stage3 후보에서는 executor child를 시작하지 않는다.
+`deploy/run-executor-manifest.json`은 immutable release의 Python 경로, 정확한 argv, runtime 환경, readiness 증거, activation gate를 기록한다. `deploy/generation-contract.json`의 `run_executor.manifest_sha256`은 이 manifest 파일의 **release archive 내 raw bytes**에 대한 SHA-256이다. digest는 contract에만 두어 manifest가 자기 자신을 참조하지 않는다. manifest 누락, digest 누락/형식 오류/불일치, manifest schema·내용 불일치는 모두 닫힌다. `Releases.archive()`는 git archive로 만든 artifact를 검증하고 기존 artifact 재사용 때도 다시 검증한다. 이는 `.release.json`의 release SHA와 executor 명령의 pinned interpreter 경로 검사를 대체하지 않는다. 기존 `GenerationController.reconcile_services()`는 contract가 `activation=enabled`일 때만 `Slots.ensure_executor()`로 전달한다. 기본 계약은 `disabled`라 feature-off Stage3 후보에서는 executor child를 시작하지 않는다.
 
 enabled 후보도 다음 조건을 모두 검사한다: release marker/SHA와 pinned interpreter, 모든 live API의 protocol2·remote mode, 남은 Run lease 없음, 지원되는 pending command뿐임. readiness는 `runtime_control.executor_generation` pointer, revision, PID+process start time, heartbeat, 해당 PID의 실제 `ttakkari.cli executor --activate` command line을 대조한다. process 조회가 거부되거나 값이 다르면 준비되지 않은 상태로 닫는다.
 
@@ -28,7 +28,9 @@ enabled 후보도 다음 조건을 모두 검사한다: release marker/SHA와 pi
 
 실제 reproduction에서 child leader가 exit code 0으로 끝나고 stdio를 닫아도, 그 child가 남긴 descendant가 process group에 남을 수 있음을 관측했다. `_Handle.proc` 하나만 검사하면 앞선 attempt group이 누락될 수 있어 handle과 `runtime_process_groups` ledger에 owner/fence와 함께 모든 attempt의 `(pid, process_started_at, pgid)`를 기록하고, lease 해제 전 각 group을 확인하도록 했다.
 
-`ttakkari executor-reconcile`는 기본 dry-run, `--apply` 선택 방식이다. owner PID/start time과 fence-bound PGID 증거, permission을 확인한다. lease owner가 살아 있거나 ledger가 없거나 PID/PGID 조회가 불명확하면 회수하지 않는다. apply는 확인 가능한 process group만 TERM/KILL하고, 모든 그룹이 사라진 뒤 Run을 interrupted로 기록하고 동일 token lease를 해제한다. leader가 사라졌는데 group이 남은 경우는 소유권을 확정할 수 없어 unknown으로 닫는다. CLI의 DB dry-run/apply 및 PostgreSQL trigger/transaction 실행은 미검증이다. heartbeat 만료만으로 lease를 가져가거나 provider 작업을 복제하지 않는다.
+`ttakkari executor-reconcile`는 기본 dry-run, `--apply` 선택 방식이다. owner PID/start time과 fence-bound PGID 증거, permission을 확인한다. lease owner가 살아 있거나 ledger가 없거나 PID/PGID 조회가 불명확하면 회수하지 않는다. apply는 control row → token lease row → owner/process-group/Run rows 순서로 잠그고 snapshot의 owner identity, token, 전체 attempt ledger를 현재 값과 비교한 뒤에만 signal한다. 해당 잠금을 그룹 종료 확인, Run interrupted 기록, lease 해제까지 유지한다. 정상 claim과 process-group 기록은 control lock을 사용하고, 정상 release도 같은 control→lease 잠금·token fence를 사용한다. 기존 Run write fence는 lease row를 잠가 선행 변경을 끝내거나 stale writer를 거부한다. stale token/ledger interleaving에서는 signal 0회를 pure unit/fake DB로 확인했다. PostgreSQL 동적 경합 재현 전에는 이를 실제 운영 피해로 주장하지 않는다. dry-run은 apply를 호출하지 않으며 DB 변경도 하지 않음을 단위 경계로 확인했다. PostgreSQL transaction/locking 및 실제 DB dry-run/apply는 미검증이다. heartbeat 만료만으로 lease를 가져가거나 provider 작업을 복제하지 않는다.
+
+2026-10-21 독립 검증 후속 수정은 별도 feature branch에서 수행했다. manifest content digest와 archive 검증, reconcile pre-signal fence 및 정상 release 잠금 경계를 보강했다. migration 파일/번호/down_revision/contract migration 목록은 이 수정에서 건드리지 않았다. 현재 executor `0063_run_executor`와 delivery `0062_delivery_change_sets`가 각각 `0061_local_tts`를 parent로 둔다는 점만 기록하며, 최종 직렬 graph는 부모 통합 단계에서 정한다.
 
 ## Migration 통합
 
@@ -38,6 +40,7 @@ enabled 후보도 다음 조건을 모두 검사한다: release marker/SHA와 pi
 
 - 미실행: PostgreSQL claim/lock/trigger, migration 실제 적용·downgrade, API/executor 두 프로세스 및 SSE cursor 교체 경계. `tests/` conftest는 initdb 단계에서 실패해 테스트 collection에 진입하지 못했다. SQLite/fake 검사를 PG 증거로 대체하지 않는다.
 - 미실행: executor activation enabled 후보의 실제 generation controller / launchd / process readiness 통합과 executor replacement/rollback.
+- 잔여 소유권 문제: TTS accepted payload는 process-local이라 비정상 API 종료 때 durable하지 않다. Qwen managed server는 API generation마다 중복 기동될 수 있다. TTS payload 정책, Qwen 공유 소유권, executor replacement/drain/rollback은 미구현이다.
 - 구현됐으나 미실행: durable attempt PGID ledger와 dry-run/apply orphan reconcile. owner/group identity가 unknown이면 apply가 fail-closed한다.
 - API 소유 유지: TTS 원문/worker, request-time Qwen. remote API가 해당 worker를 시작하는 것은 현재 소스/데이터 수명에 근거한 선택이다.
 - 미실행: 실모델 응답, 실제 MCP tool 실행, provider conversation resume.

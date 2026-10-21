@@ -69,6 +69,11 @@ def _group_state(record: RuntimeProcessGroup) -> tuple[str, bool]:
     return ("present", True) if same_process and same_group else ("unknown", False)
 
 
+def _group_fence_key(group: RuntimeProcessGroup) -> tuple:
+    return (group.generation_id, group.lease_token, group.attempt, group.pid,
+            group.process_started_at, group.pgid)
+
+
 async def _stop_verified_group(record: RuntimeProcessGroup) -> bool:
     state, identity_ok = _group_state(record)
     if state == "absent":
@@ -117,6 +122,8 @@ async def _read_orphans() -> list[dict]:
             owner_dead = _process_dead(owner.pid, owner.process_started_at) if owner else None
             states = [_group_state(group) for group in groups]
             result.append({"run_id": str(lease.run_id), "owner_id": str(lease.generation_id),
+                "owner_pid": owner.pid if owner else None,
+                "owner_process_started_at": owner.process_started_at if owner else None,
                 "owner_dead": owner_dead, "lease_token_matches": bool(owner and owner.id == lease.generation_id),
                 "groups": [{"attempt": group.attempt, "pid": group.pid, "pgid": group.pgid,
                             "state": state, "identity_verified": identity_ok}
@@ -130,34 +137,40 @@ async def _apply_one(entry: dict) -> bool:
     if entry["disposition"] not in {"process_group_live", "safe_to_release"}:
         return False
     groups: list[RuntimeProcessGroup] = entry["_group_rows"]
-    if _process_dead_for_entry(entry) is not True:
-        return False
-    for group in groups:
-        state, _ = _group_state(group)
-        if state == "present" and not await _stop_verified_group(group):
-            return False
-        if _group_state(group)[0] != "absent":
-            return False
-
     run_id = uuid.UUID(entry["run_id"])
     token = entry["_lease_token"]
     async with sessionmaker()() as db:
+        # Hold the same control→lease fence used by claims/releases while signaling.
+        # This prevents an old snapshot from killing a group after lease replacement.
         await _control(db)
         lease = await db.scalar(select(RuntimeLease).where(RuntimeLease.run_id == run_id).with_for_update())
         if lease is None or lease.generation_id != uuid.UUID(entry["owner_id"]) or lease.token != token:
             return False
-        owner = await db.get(RuntimeGeneration, lease.generation_id)
-        if owner is None or _process_dead(owner.pid, owner.process_started_at) is not True:
+        owner = await db.scalar(select(RuntimeGeneration).where(
+            RuntimeGeneration.id == lease.generation_id).with_for_update())
+        if (owner is None or owner.pid != entry.get("owner_pid")
+                or owner.process_started_at != entry.get("owner_process_started_at")
+                or _process_dead(owner.pid, owner.process_started_at) is not True):
             return False
         current_groups = list(await db.scalars(select(RuntimeProcessGroup).where(
-            RuntimeProcessGroup.run_id == run_id, RuntimeProcessGroup.generation_id == lease.generation_id,
-            RuntimeProcessGroup.lease_token == token).with_for_update()))
-        if ({(x.attempt, x.pid, x.process_started_at, x.pgid) for x in current_groups}
-                != {(x.attempt, x.pid, x.process_started_at, x.pgid) for x in groups}
-                or any(_group_state(x)[0] != "absent" for x in current_groups)):
+            RuntimeProcessGroup.run_id == run_id).order_by(RuntimeProcessGroup.attempt).with_for_update()))
+        if {_group_fence_key(x) for x in current_groups} != {_group_fence_key(x) for x in groups}:
             return False
-        run = await db.get(Run, run_id)
+        run = await db.scalar(select(Run).where(Run.id == run_id).with_for_update())
         if run is None or run.status != RunStatus.running:
+            return False
+        if _process_dead(owner.pid, owner.process_started_at) is not True:
+            return False
+        # Recheck every fenced identity under the locks immediately before any signal.
+        for group in current_groups:
+            state, identity_ok = _group_state(group)
+            if state == "absent":
+                continue
+            if state != "present" or not identity_ok or not await _stop_verified_group(group):
+                return False
+            if _group_state(group)[0] != "absent":
+                return False
+        if any(_group_state(group)[0] != "absent" for group in current_groups):
             return False
         from ttakkari.runs import events
         from ttakkari.runs.manager import _interrupted_handoff
@@ -173,12 +186,6 @@ async def _apply_one(entry: dict) -> bool:
             RuntimeProcessGroup.run_id == run_id, RuntimeProcessGroup.lease_token == token))
         await db.delete(lease)
         await db.commit()
-    return True
-
-
-def _process_dead_for_entry(entry: dict) -> bool | None:
-    if entry["owner_dead"] is not True:
-        return entry["owner_dead"]
     return True
 
 

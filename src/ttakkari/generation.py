@@ -211,11 +211,20 @@ class GenerationRuntime:
 
     async def release(self, run_id: uuid.UUID, token: uuid.UUID) -> None:
         async with sessionmaker()() as db:
+            # Serialize release with claim/reconcile under the same control→lease lock order.
+            await _control(db)
+            lease = await db.scalar(select(RuntimeLease).where(
+                RuntimeLease.run_id == run_id).with_for_update())
+            if lease is None:
+                if self.tokens.get(run_id) == token:
+                    self.tokens.pop(run_id, None)
+                return
+            if lease.generation_id != self.id or lease.token != token:
+                raise OwnershipLost(str(run_id))
             await db.execute(delete(RuntimeProcessGroup).where(
                 RuntimeProcessGroup.run_id == run_id, RuntimeProcessGroup.generation_id == self.id,
                 RuntimeProcessGroup.lease_token == token))
-            await db.execute(delete(RuntimeLease).where(RuntimeLease.run_id == run_id,
-                RuntimeLease.generation_id == self.id, RuntimeLease.token == token))
+            await db.delete(lease)
             await wake(db)
             await db.commit()
         if self.tokens.get(run_id) == token:

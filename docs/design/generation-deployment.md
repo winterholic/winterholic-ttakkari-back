@@ -35,7 +35,7 @@ API/감독 wire protocol1을 보존하고 executor 소유권 capability2를 별�
 | `generation_deployment.py` | 커밋 archive·전용 venv/Node 런타임·격리 DB 검사·세 슬롯 launchd·Caddy 전환·rollback·재조정 |
 | `deployment.py` | 기존 외부 예약/감독 유지, 예약 claim·병합, strategy에 따른 처리 분기 |
 | `0030_runtime_generations.py` | 기존 Run 상태값을 유지하는 additive 소유권·명령 테이블과 요청 멱등 키 |
-| `deploy/generation-contract.json` | 앱/명령 protocol, 목표 schema, 명시적으로 허용한 online migration 출발점 |
+| `deploy/generation-contract.json` | 앱/명령 protocol, 목표 schema, 명시적으로 허용한 online migration 출발점, executor manifest raw-byte SHA-256 |
 
 ## 필수 설정
 

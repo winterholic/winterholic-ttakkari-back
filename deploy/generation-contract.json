@@ -41,6 +41,7 @@
   "run_executor": {
     "protocol": 2,
     "activation": "disabled",
-    "manifest": "deploy/run-executor-manifest.json"
+    "manifest": "deploy/run-executor-manifest.json",
+    "manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266"
   }
 }

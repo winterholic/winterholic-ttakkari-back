@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import io
 import json
 import logging
@@ -168,6 +169,9 @@ class Releases:
         if target.exists():
             if json.loads((target / ".release.json").read_text())["revision"] != revision:
                 raise ValueError("release marker mismatch")
+            # Verify the immutable artifact again on reuse; the revision marker alone
+            # does not detect an edited manifest or a damaged extracted archive.
+            self.contract(target)
             return target
         target.parent.mkdir(parents=True, exist_ok=True)
         # git archive reads the requested object, never the mutable checkout.
@@ -195,6 +199,11 @@ class Releases:
                 raise ValueError("invalid run executor contract")
             manifest_path = path / "deploy/run-executor-manifest.json"
             manifest = json.loads(manifest_path.read_text())
+            expected_digest = executor.get("manifest_sha256")
+            if (not isinstance(expected_digest, str) or len(expected_digest) != 64
+                    or any(char not in "0123456789abcdef" for char in expected_digest)
+                    or hashlib.sha256(manifest_path.read_bytes()).hexdigest() != expected_digest):
+                raise ValueError("executor manifest digest is missing or mismatched")
             if (manifest.get("schema") != 1 or manifest.get("role") != "run-executor"
                     or manifest.get("activation") != executor.get("activation")
                     or manifest.get("command") != ["{release}/.venv/bin/python", "-m",

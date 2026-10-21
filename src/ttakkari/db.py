@@ -23,6 +23,14 @@ def _fence_flush(session, _flush_context, _instances) -> None:
 
     SQLAlchemy runs this synchronous hook within AsyncSession's greenlet. The
     row lock lives in the same transaction as all pending ORM writes.
+
+    NOTE: FOR KEY SHARE, not FOR UPDATE. A lease's run_id/generation_id/token never
+    change after INSERT; the only ways to take it away are DELETE (release/reconcile,
+    which lock FOR UPDATE and so still wait for this transaction) or re-INSERT with a
+    new token. KEY SHARE therefore fences those exactly like FOR UPDATE. It does not
+    conflict with the non-key UPDATE of account_id that choose_profile issues from
+    another session while this Run session is idle in its transaction awaiting it;
+    FOR UPDATE made that pair wait on each other forever.
     """
     frame = session.info.get("runtime_lease")
     if frame is None:
@@ -31,7 +39,7 @@ def _fence_flush(session, _flush_context, _instances) -> None:
     from ttakkari.models import RuntimeLease
     runtime, run_id, token = frame
     row = session.connection().execute(select(RuntimeLease.generation_id, RuntimeLease.token)
-        .where(RuntimeLease.run_id == run_id).with_for_update()).first()
+        .where(RuntimeLease.run_id == run_id).with_for_update(read=True, key_share=True)).first()
     if row is None or row.generation_id != runtime.id or row.token != token:
         raise OwnershipLost(str(run_id))
 

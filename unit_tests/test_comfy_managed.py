@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import ClassVar
 
+import psutil
 import pytest
 
 from ttakkari.host_resource import LeaseBusy, LeaseError, ResourceLeaseManager
@@ -330,3 +332,49 @@ def test_cross_generation_cancel_is_interrupted_only_by_current_lease_owner(cont
     active["heartbeat_stop"].set()
     active["heartbeat_thread"].join(timeout=1)
     active["lease"]._lock_fd.close()
+
+
+def _stale_job(pid, created):
+    return {"runtime_pid": pid, "runtime_created_at": created, "runtime_instance": "runtime-x",
+            "profile": "wan22-5b-draft", "task_id": "t", }
+
+
+@pytest.mark.parametrize(("error", "port_alive", "expected"), [
+    (psutil.AccessDenied(4242), False, None),      # 권한 거부는 부재가 아니다
+    (OSError("lookup blocked"), False, None),
+    (psutil.NoSuchProcess(4242), False, True),     # 프로세스 없음 + 포트 죽음 = 확인된 부재
+    (psutil.NoSuchProcess(4242), None, None),      # 포트 상태를 모르면 부재로 보지 않는다
+    (psutil.NoSuchProcess(4242), True, None),      # 포트가 응답하면 부재가 아니다
+])
+def test_owned_runtime_absence_requires_confirmed_process_and_port_evidence(
+        controller, monkeypatch, error, port_alive, expected):
+    service, _servers = controller
+    real = psutil.Process
+
+    def lookup(pid):
+        if pid == 4242:
+            raise error
+        return real(pid)
+
+    monkeypatch.setattr(psutil, "Process", lookup)
+    monkeypatch.setattr(service, "_is_comfy_port_alive", lambda: port_alive)
+
+    assert service._owned_runtime_absent(_stale_job(4242, 100.0)) is expected
+
+
+def test_owned_runtime_absence_ignores_missing_identity_and_reused_pid_rules(controller, monkeypatch):
+    service, _servers = controller
+    monkeypatch.setattr(service, "_is_comfy_port_alive", lambda: False)
+    child = subprocess.Popen(["sleep", "60"])
+    try:
+        created = psutil.Process(child.pid).create_time()
+        assert service._owned_runtime_absent(_stale_job(None, created)) is None  # pid 근거 누락
+        assert service._owned_runtime_absent(_stale_job(child.pid, None)) is None  # 시작 시각 근거 누락
+        # 살아 있고 시작 시각이 같지만 runtime instance 환경변수·cwd 로 소유를 확인할 수 없다 → unknown
+        assert service._owned_runtime_absent(_stale_job(child.pid, created)) is None
+        # 같은 pid 를 다른 프로세스가 쓴다(시작 시각 불일치) + 포트 죽음 → 기록된 runtime 은 확인된 부재
+        assert service._owned_runtime_absent(_stale_job(child.pid, created - 3600)) is True
+        assert child.poll() is None  # 다른 프로세스는 건드리지 않는다
+    finally:
+        child.kill()
+        child.wait()

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from ttakkari.host_gpu import HostGpu, Supervisor
+from ttakkari.host_gpu_guard import ProcState
 from ttakkari.host_resource import (
     LeaseBusy,
     LeaseOwnershipError,
@@ -207,12 +208,16 @@ def test_host_gpu_restart_reconciles_only_its_recorded_runtime(tmp_path, monkeyp
     killed: list[tuple[int, float, int]] = []
     monkeypatch.setattr("ttakkari.host_gpu.guard.kill_our_server",
                         lambda pid, start, port: killed.append((pid, start, port)))
-    monkeypatch.setattr("ttakkari.host_gpu.guard.same_process", lambda pid, start: False)
+    observations = iter([ProcState.PRESENT, ProcState.ABSENT])  # 신호 전에는 살아 있고, 신호 뒤 부재가 관찰된다
+    seen: list[tuple[int, float]] = []
+    monkeypatch.setattr("ttakkari.host_gpu.guard.process_state",
+                        lambda pid, start: seen.append((pid, start)) or next(observations))
     gpu = HostGpu(SimpleNamespace(data_dir=data))
 
     reconciled = gpu._reap_lost(state)
 
     assert killed == [(4312, 98.5, 19631)]
+    assert seen == [(4312, 98.5), (4312, 98.5)]
     assert reconciled["stop_reason"] == "supervisor_lost"
     assert manager.current() is None
 

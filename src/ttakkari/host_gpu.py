@@ -303,22 +303,31 @@ class Supervisor:
                 _terminate_group(server.pid)
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     server.wait(timeout=5)
+            # 우리 자식이므로 poll() 이 종료의 유일한 증거다. 아직 안 끝났으면 lease 를 풀지 않고 live 상태를 남겨
+            # HostGpu 가 신원 관찰 후 정리하게 한다(감독자 종료로 flock 만 풀린다).
+            server_stopped = server is None or server.poll() is not None
             final = {**state} if state else {"launch_id": self.spec["launch_id"], "request": self.req.model_dump(),
                                              "model": self.req.model, "started_at": time.time(),
                                              "lease_id": lease.lease_id,
                                              "lease_generation_token": lease.generation_token,
                                              "runtime_instance": lease.runtime_instance}
-            final.update(phase="stopped", stop_reason=self.reason, stopped_at=time.time(),
-                         server_exit_code=None if server is None else server.returncode)
-            _write_state(self.dir, final)
-            if server is None:
-                evidence = {"runtime_instance": lease.runtime_instance, "server_started": False,
-                            "supervisor_stop_reason": self.reason}
+            if server_stopped:
+                final.update(phase="stopped", stop_reason=self.reason, stopped_at=time.time(),
+                             server_exit_code=None if server is None else server.returncode)
             else:
-                evidence = {"runtime_instance": lease.runtime_instance, "server_pid": server.pid,
-                            "server_start": state.get("server_start"), "server_exit_code": server.returncode,
-                            "supervisor_stop_reason": self.reason}
-            lease.release(proof={"runtime_status": "stopped", "evidence": evidence})
+                final.setdefault("phase", "starting")
+                final.setdefault("server_pid", server.pid)
+                final.update(stop_reason=self.reason, stop_unconfirmed=True)
+            _write_state(self.dir, final)
+            if server_stopped:
+                if server is None:
+                    evidence = {"runtime_instance": lease.runtime_instance, "server_started": False,
+                                "supervisor_stop_reason": self.reason}
+                else:
+                    evidence = {"runtime_instance": lease.runtime_instance, "server_pid": server.pid,
+                                "server_start": state.get("server_start"), "server_exit_code": server.returncode,
+                                "supervisor_stop_reason": self.reason}
+                lease.release(proof={"runtime_status": "stopped", "evidence": evidence})
         return 0
 
     def _start_watchdog(self, server_path: str, port: int) -> subprocess.Popen:
@@ -411,11 +420,16 @@ class HostGpu:
         generation_token = state.get("lease_generation_token")
         if not lease_id or not generation_token:
             raise GpuError("host resource lease owner evidence is missing; refusing automatic reconciliation")
-        server_pid = state.get("server_pid")
-        if server_pid:
-            guard.kill_our_server(int(server_pid), state.get("server_start"), state.get("port"))
-            if guard.same_process(int(server_pid), state.get("server_start")):
-                raise GpuError("owned server is still present; resource lease remains held")
+        server_pid, server_start = state.get("server_pid"), state.get("server_start")
+        # kill_our_server 의 bool 은 신호를 보냈는지일 뿐 부재 증거가 아니다. 조회 실패·권한 거부·신원 근거 누락(UNKNOWN)을
+        # 부재로 보면 살아 있는 서버가 있는데 lease 가 풀려 다음 모델이 겹쳐 올라간다. 부재가 관찰될 때만 해제한다.
+        observed = guard.process_state(server_pid, server_start)
+        if observed is guard.ProcState.PRESENT:
+            guard.kill_our_server(int(server_pid), server_start, state.get("port"))
+            observed = guard.process_state(server_pid, server_start)
+        if observed is not guard.ProcState.ABSENT:
+            raise GpuError(f"owned server stop is not confirmed (observed {observed.value}); "
+                           "resource lease remains held")
         state = {**state, "phase": "stopped", "stop_reason": "supervisor_lost", "stopped_at": time.time()}
         _write_state(self.dir, state)
         ResourceLeaseManager(data_dir=self.dir.parent).reconcile(
@@ -423,7 +437,7 @@ class HostGpu:
             generation_token,
             proof={"runtime_status": "stopped", "evidence": {
                 "runtime_instance": state.get("runtime_instance"), "server_pid": server_pid,
-                "server_start": state.get("server_start"), "supervisor_lost": True,
+                "server_start": server_start, "server_process_state": observed.value, "supervisor_lost": True,
             }},
         )
         return state

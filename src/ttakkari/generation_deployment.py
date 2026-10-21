@@ -96,6 +96,10 @@ class StageError(RuntimeError):
         super().__init__(f"release stage {stage} failed{tail}; {summary}")
 
 
+class IdleRequired(Exception):
+    """스키마 상태가 온라인 마이그레이션으로 건너갈 수 없어 유휴 구간이 필요하다. 실패가 아니라 대기다."""
+
+
 def test_environment(revision: str, test_url: str) -> dict:
     env = os.environ | {"TTAKKARI_TEST_DB": test_url, "TTAKKARI_RELEASE_REVISION": revision}
     for key in ("TTAKKARI_RUNTIME_GENERATION", "TTAKKARI_DEPLOY_STRATEGY",
@@ -188,6 +192,13 @@ def validate_contract(value: dict) -> dict:
         raise ValueError("unsupported generation/schema contract; idle bootstrap required")
     if not isinstance(value.get("online_migration_from"), list):
         raise TypeError("online migration policy must be explicit")
+    aliases = value.get("schema_aliases", {})
+    known = {value["schema_revision"], *value["online_migration_from"]}
+    if not isinstance(aliases, dict) or any(
+        not isinstance(old, str) or new not in known or old == new for old, new in aliases.items()
+    ):
+        # 별칭은 "물리 스키마가 대상 리비전과 같다"는 보증이다. 알려진 리비전으로만 되돌릴 수 있다.
+        raise TypeError("schema_aliases must map retired revision ids onto known contract revisions")
     supervisor = value.get("supervisor")
     if supervisor is not None and (
         not isinstance(supervisor, dict)
@@ -606,7 +617,7 @@ class GenerationController:
     async def _operation(stage: str):
         try:
             yield
-        except StageError:
+        except (StageError, IdleRequired):
             raise
         except Exception as exc:
             raise StageError(stage, None, None, str(exc)) from exc
@@ -639,22 +650,80 @@ class GenerationController:
             await admin.close()
         async with self._operation("schema_contract"):
             contract = self.releases.contract(release)
-            async with sessionmaker()() as db:
-                schema = await db.scalar(text("SELECT version_num FROM alembic_version"))
-            if schema != contract["schema_revision"] and schema not in contract["online_migration_from"]:
-                raise RuntimeError("schema contract requires an idle migration/bootstrap; active work preserved")
-            needs_migration = schema != contract["schema_revision"]
-        if needs_migration:
-            self.phase(job, "migrating")
-            env = os.environ | {"TTAKKARI_MIGRATION_ONLINE": "true"}
-            await self.command(
-                job, release, str(release / ".venv/bin/python"), "-m", "ttakkari.cli", "migrate",
-                stage="migrate", env=env,
-            )
+            mode, schema = await self.schema_plan(contract)
+            if mode == "idle":
+                # 검사는 이미 통과했다. 릴리스·검사 바인딩을 남겨 다음 패스가 재검사 없이 유휴만 기다린다.
+                self.phase(job, "waiting_idle", release_path=str(release),
+                           tested_revision=job["revision"],
+                           tested_contract=self.contract_fingerprint(contract),
+                           idle_required=True, idle_reason=self.idle_reason(contract, schema),
+                           idle_since=job.get("idle_since") or _utcnow(),
+                           error_stage="schema_contract", active_runs=None,
+                           error_summary="waiting_idle: " + self.idle_reason(contract, schema))
+                raise IdleRequired(self.idle_reason(contract, schema))
+        if mode == "online" and schema != contract["schema_revision"]:
+            # 별칭 스택은 릴리스의 alembic/env.py 가 정렬한다. 감독 코드가 릴리스보다 오래돼도 통하도록 여기서 고쳐 쓰지 않는다.
+            await self.migrate(job, release, online=True)
         self.phase(job, "prepared", release_path=str(release),
                    tested_revision=job["revision"],
                    tested_contract=self.contract_fingerprint(contract))
         return release
+
+    @staticmethod
+    def idle_reason(contract: dict, schema: str | None) -> str:
+        return (f"database schema {schema!r} is outside the online migration range of release "
+                f"{contract['schema_revision']!r}; waiting for an idle moment, no active Run is interrupted")
+
+    async def schema_plan(self, contract: dict) -> tuple[str, str | None]:
+        """현재 DB 스키마와 릴리스 계약을 비교한다. ("current"|"online"|"idle", 버전)."""
+        async with sessionmaker()() as db:
+            schema = await db.scalar(text("SELECT version_num FROM alembic_version"))
+        resolved = contract.get("schema_aliases", {}).get(schema, schema)
+        if resolved == contract["schema_revision"] and resolved == schema:
+            return "current", schema
+        if resolved == contract["schema_revision"] or resolved in contract["online_migration_from"]:
+            return "online", schema
+        return "idle", schema
+
+    async def migrate(self, job, release, *, online: bool) -> None:
+        self.phase(job, "migrating")
+        env = os.environ | ({"TTAKKARI_MIGRATION_ONLINE": "true"} if online else {})
+        await self.command(
+            job, release, str(release / ".venv/bin/python"), "-m", "ttakkari.cli", "migrate",
+            stage="migrate", env=env,
+        )
+
+    async def acquire_idle(self, job, release):
+        """유휴 구간을 기다린다. 실행 중 Run 이 없고 접수 배타 잠금을 얻을 때만 잠금을 돌려준다.
+        그 사이 유휴가 필요 없어졌다면 "online"/"current", 아직 기다려야 하면 None.
+
+        기다리는 동안은 새 Run 접수를 막지 않는다. 대기 상태는 job 에 노출하되 값이 바뀔 때만 쓴다.
+        """
+        from ttakkari.deploy_gate import _active_run_count
+        from ttakkari.deployment import Admission
+        contract = self.releases.contract(release)
+        mode, schema = await self.schema_plan(contract)
+        if mode != "idle":
+            # 그 사이 스키마가 온라인 범위로 들어왔다면 유휴가 필요 없다. 다음 패스가 온라인으로 이행한다.
+            self.phase(job, job["status"], idle_required=False, idle_reason=None,
+                       error_stage=None, error_summary=None, active_runs=None)
+            return mode
+        count = await _active_run_count(None)
+        lease = None
+        if count == 0:
+            lease = Admission(self.store.root).acquire(exclusive=True)
+            if lease is not None and await _active_run_count(None) != 0:
+                lease.close()
+                lease, count = None, await _active_run_count(None)
+        if lease is not None:
+            return lease
+        if job["status"] != "waiting_idle" or job.get("active_runs") != count:
+            self.phase(job, "waiting_idle", active_runs=count,
+                       idle_reason=self.idle_reason(contract, schema),
+                       idle_since=job.get("idle_since") or _utcnow(),
+                       error_stage="schema_contract",
+                       error_summary=f"waiting_idle: {count} active Run(s); {self.idle_reason(contract, schema)}")
+        return None
 
     async def rollback(self, job):
         # 거부 분기는 자체 기록하고, 그 밖의 예외는 rollback 단계로 묶는다.
@@ -806,6 +875,7 @@ class GenerationController:
                 log.exception("generation retirement needs recovery: %s", job["id"])
                 self.record_failure(job, "recovery_pending", exc, stage="drain")
             return
+        idle_lease = None
         try:
             if job["status"] == "rolling_back":
                 await self.rollback(job)
@@ -837,9 +907,25 @@ class GenerationController:
                         job.update(self.store.get(job["id"]))
                         release = None
                 if release is None:
-                    release = await self.prepare_tracked(job)
+                    try:
+                        release = await self.prepare_tracked(job)
+                    except IdleRequired:
+                        job.update(self.store.get(job["id"]))
+                        return
                     if release is None:
                         return
+                if job.get("idle_required"):
+                    # 온라인으로 건너갈 수 없는 스키마는 실패가 아니라 대기다. 유휴 때 잠금을 쥐고 이행한 뒤 컷오버까지 유지한다.
+                    gate = await self.acquire_idle(job, release)
+                    if gate is None:
+                        return
+                    if gate == "online":
+                        await self.migrate(job, release, online=True)
+                    elif gate != "current":
+                        idle_lease = gate
+                        await self.migrate(job, release, online=False)
+                        self.phase(job, job["status"], idle_required=False, idle_reason=None,
+                                   error_stage=None, error_summary=None, active_runs=None)
                 self.phase(job, "starting", candidate_slot=free, previous_slot=old_slot,
                     previous_generation=str(active), previous_revision=snapshots[old_slot]["revision"],
                     release_path=str(release))
@@ -883,6 +969,9 @@ class GenerationController:
                     self.record_failure(job, "recovery_pending",
                         RuntimeError("automatic reconciliation failed; inspect deployment journal"),
                         stage="rollback")
+        finally:
+            if idle_lease is not None:
+                idle_lease.close()
 
 
 async def upgrade_supervisor(controller, revision: str) -> dict:

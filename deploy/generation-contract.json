@@ -34,6 +34,10 @@
     "0057_scheduled_actions",
     "0058_kb_immutability_truncate",
     "0059_collector_intake",
-    "0060_collector_job_runtime"
-  ]
+    "0060_collector_job_runtime",
+    "0059_kb_immutability_truncate"
+  ],
+  "schema_aliases": {
+    "0059_kb_immutability_truncate": "0059_collector_intake"
+  }
 }

@@ -192,7 +192,7 @@ class JobStore:
                 from ttakkari.generation_deployment import equivalent_contracts
                 source = get_settings().deploy_source_root or BACK
                 for old in self.all():
-                    if old["id"] == new_job["id"] or old["status"] != "requested" or old.get("strategy") != "generations":
+                    if old["id"] == new_job["id"] or old["status"] not in {"requested", "waiting_idle"} or old.get("strategy") != "generations":
                         continue
                     ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", old["revision"], sha],
                         cwd=source, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)

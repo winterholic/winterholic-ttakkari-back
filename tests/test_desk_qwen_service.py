@@ -318,13 +318,51 @@ async def test_status_endpoint_reports_state_without_internal_details(client):
     assert r.status_code == 200 and set(body) == {"enabled", "mode", "state", "reason", "ready"}
 
 
-def test_both_lifespans_start_and_stop_the_qwen_service():
+def test_single_process_lifespan_starts_and_stops_the_qwen_service():
     import inspect
 
-    from ttakkari import generation_service, main
-    for module, fn in ((main, main.lifespan), (generation_service, generation_service.lifespan)):
-        src = inspect.getsource(fn)
-        assert "qwen_service.start()" in src and "qwen_service.stop()" in src, module.__name__
+    from ttakkari import main
+    src = inspect.getsource(main.lifespan)
+    assert "qwen_service.start()" in src and "qwen_service.stop()" in src
+
+
+@pytest.mark.parametrize("mode", ["local", "remote"])
+async def test_generation_api_lifespan_starts_and_stops_the_qwen_service(monkeypatch, mode):
+    """Qwen is per-API-generation state, so both execution modes must start it (start_api_services)."""
+    from fastapi import FastAPI
+
+    from ttakkari import generation_service
+    from ttakkari.artifacts import preview
+    from ttakkari.meetings.local_stt import jobs as stt_jobs
+    from ttakkari.runs.desk_qwen_service import service as qwen_service
+    from ttakkari.tts import jobs as tts_jobs
+
+    calls: list[str] = []
+
+    async def record_start():
+        calls.append("qwen.start")
+
+    async def record_stop():
+        calls.append("qwen.stop")
+
+    async def noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(qwen_service, "start", record_start)
+    monkeypatch.setattr(qwen_service, "stop", record_stop)
+    # Durable workers and periodic jobs are not under test; keep them from touching the shared test DB.
+    monkeypatch.setattr(preview, "start_worker", noop)
+    monkeypatch.setattr(preview, "stop_worker", noop)
+    monkeypatch.setattr(stt_jobs, "start", noop)
+    monkeypatch.setattr(stt_jobs, "stop", noop)
+    monkeypatch.setattr(tts_jobs, "start", noop)
+    monkeypatch.setattr(tts_jobs, "stop", noop)
+    monkeypatch.setattr(generation_service, "maintenance_jobs", lambda _s: [])
+    monkeypatch.setattr(get_settings(), "run_executor_mode", mode)
+
+    async with generation_service.lifespan(FastAPI()):
+        assert calls == ["qwen.start"]
+    assert calls == ["qwen.start", "qwen.stop"]
 
 
 async def test_server_is_warmed_before_it_is_marked_ready(managed):

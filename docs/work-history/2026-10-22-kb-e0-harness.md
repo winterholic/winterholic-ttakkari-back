@@ -59,3 +59,7 @@
 자가 상태: **KB-E0 하네스 구현 초안과 fixture 검산을 제출할 수 있음. E0 완료/독립 승인 아님.** 실제 DB manifest/관측 fixture, normalized coordinate mapping, 사람 인증 adapter/브라우저 화면·320/390px 검증, 실제 추론·성능·자원 pilot, 권리 확인 공개세트/E1b 사람 holdout은 위 표의 잔여다. 전체 E0 승인 및 다음 단계 착수는 독립 검증자가 판정한다.
 
 원시 stdout/evidence의 byte 보존 때문에 전체 staged `git diff --check`는 trailing whitespace를 보고했다. 신규 실행 코드·테스트·사용법·현행 설계 상태 문서는 별도 scoped check에서 exit0이다. [전체 원시 결과](../../reports/kb-e0/staged-whitespace.txt)와 [범위 검산](../../reports/kb-e0/whitespace-scope.json)을 보존하며 git whitespace 설정이나 gate를 바꾸지 않았다.
+
+## 작업 branch 게시 확인
+
+구현/검산 commit `43a84275a9a391502c851c86ab6e4e403bca0c4b`를 `origin/feat/kb-e0-harness`에 정상 push했고 `git ls-remote`로 같은 SHA를 확인했다. [게시 원시 출력](../../reports/kb-e0/branch-push.txt), [hook·판정 범위 영수증](../../reports/kb-e0/remote-publication.json). main 진입·계약 통과·배포 성공을 뜻하지 않는다. 이 뒤의 영수증 보완 commit은 코드 변경이 없고, 최종 전달 SHA는 branch 원격 HEAD와 다운로드 변경 manifest에서 확인한다.

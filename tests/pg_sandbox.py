@@ -3,12 +3,17 @@
 공유 PostgreSQL 에는 DB 를 만들지 않는다. 세션마다 /tmp/ttakkari-test-<pid>-<난수>/ 아래에 initdb 로
 클러스터를 띄우고(Unix 소켓은 그 폴더 안, TCP 는 127.0.0.1 임의 포트) 끝나면 멈추고 폴더째 지운다.
 프로세스가 비정상 종료돼 폴더가 남으면 다음 세션 시작 때 소유 pid 가 죽은 폴더만 정리한다.
+
+postmaster 가 SIGKILL 로 죽으면 SysV 공유메모리 세그먼트가 남는다(macOS kern.sysv.shmmni=32 라 고아가
+쌓이면 모든 initdb 가 shmget ENOSPC 로 실패한다). 그래서 폴더를 지우기 전에 postmaster.pid 의 shm key/id 를
+읽어 두고, ipcs 로 key·CPID·소유자·NATTCH 가 모두 맞는 우리 세그먼트만 ipcrm 한다.
 """
 
 from __future__ import annotations
 
 import atexit
 import glob
+import logging
 import os
 import re
 import shutil
@@ -18,6 +23,7 @@ import subprocess
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 PREFIX = "ttakkari-test-"
@@ -31,6 +37,13 @@ _BIN_CANDIDATES = (
     "/opt/homebrew/opt/postgresql@16/bin",
     "/usr/local/opt/postgresql@17/bin",
 )
+
+log = logging.getLogger("pg_sandbox")
+_PLATFORM = sys.platform
+
+# SIGKILL 직후 커널이 프로세스의 detach 를 마치기까지 NATTCH 가 잠깐 남을 수 있어 짧게 기다린다.
+SHM_POLL_SECONDS = 3.0
+SHM_POLL_INTERVAL = 0.1
 
 _cluster: Cluster | None = None
 _asyncpg_orig_connect = None
@@ -109,6 +122,196 @@ def _postmaster_pid(folder: Path) -> int | None:
         return None
 
 
+@dataclass(frozen=True)
+class ShmRef:
+    """postmaster.pid 가 기록한 SysV 공유메모리 세그먼트 식별자와 그 postmaster 의 pid."""
+
+    pid: int
+    key: int
+    shmid: int
+
+
+def _read_shm_ref(folder: Path) -> ShmRef | None:
+    """폴더를 지우기 전에 postmaster.pid 1번째 줄(pid)과 7번째 줄(shm_key shm_id)을 읽어 둔다."""
+    try:
+        data = folder / "data"
+        if data.is_symlink():
+            return None
+        pm_file = data / "postmaster.pid"
+        if not pm_file.is_file() or pm_file.is_symlink():
+            return None
+        lines = pm_file.read_text().splitlines()
+        pid = int(lines[0])
+        key_s, id_s = lines[6].split()
+        ref = ShmRef(pid=pid, key=int(key_s), shmid=int(id_s))
+    except (OSError, ValueError, IndexError):
+        return None
+    if ref.pid <= 0 or ref.key <= 0 or ref.shmid < 0:
+        return None
+    return ref
+
+
+_IPCS_ALIASES = {"id": "id", "shmid": "id", "key": "key", "owner": "owner"}
+
+
+def _parse_ipcs(text: str) -> list[dict[str, str]]:
+    """ipcs -m 출력(macOS, Linux)을 헤더 이름 기준 행 목록으로 바꾼다. 헤더가 없으면 빈 목록."""
+    header: list[str] | None = None
+    rows: list[dict[str, str]] = []
+    for raw in text.splitlines():
+        parts = raw.split()
+        if not parts:
+            continue
+        low = [p.lower() for p in parts]
+        if header is None:
+            if ("id" in low or "shmid" in low) and ("key" in low or "cpid" in low):
+                header = [_IPCS_ALIASES.get(p, p) for p in low]
+            continue
+        # Linux 는 status 열이 비면 토큰이 하나 모자란다. 그 밖에 열 수가 안 맞는 줄은 버린다.
+        if header[-1] == "status" and len(parts) == len(header) - 1:
+            parts.append("")
+        if len(parts) == len(header):
+            rows.append(dict(zip(header, parts)))
+    return rows
+
+
+def _tool(name: str) -> str | None:
+    return shutil.which(name)
+
+
+def _ipcs_segments(runner) -> list[dict[str, str]] | None:
+    """공유메모리 세그먼트 목록. ipcs 를 못 쓰면 None(호출한 쪽은 지우지 않는다)."""
+    ipcs = _tool("ipcs")
+    if ipcs is None:
+        return None
+    try:
+        if _PLATFORM == "darwin":
+            out = runner(
+                [ipcs, "-m", "-a"], capture_output=True, text=True, check=False
+            )
+            return _parse_ipcs(out.stdout or "")
+        # Linux(util-linux): 기본 출력에 key/owner/nattch, -p 출력에 cpid 가 따로 있어 id 로 합친다.
+        base = runner([ipcs, "-m"], capture_output=True, text=True, check=False)
+        pids = runner([ipcs, "-m", "-p"], capture_output=True, text=True, check=False)
+    except OSError:
+        return None
+    cpid_by_id = {r["id"]: r.get("cpid", "") for r in _parse_ipcs(pids.stdout or "")}
+    rows = _parse_ipcs(base.stdout or "")
+    for r in rows:
+        r["cpid"] = cpid_by_id.get(r["id"], "")
+    return rows
+
+
+def _current_user_names() -> set[str]:
+    names = {str(os.getuid())}
+    try:
+        import pwd
+
+        names.add(pwd.getpwuid(os.getuid()).pw_name)
+    except (ImportError, KeyError):
+        pass
+    return names
+
+
+def _match_segment(rows: list[dict[str, str]], ref: ShmRef) -> dict[str, str] | None:
+    for r in rows:
+        if r.get("id") == str(ref.shmid):
+            return r
+    return None
+
+
+def _int_or_none(value: str | None, base: int = 10) -> int | None:
+    try:
+        return int(value or "", base)
+    except ValueError:
+        return None
+
+
+def release_shm_segment(
+    ref: ShmRef | None,
+    *,
+    runner=None,
+    alive=None,
+    sleep=time.sleep,
+    timeout: float | None = None,
+    interval: float | None = None,
+) -> bool:
+    """우리 postmaster 가 남긴 SysV 세그먼트만 ipcrm 한다. 지웠거나 이미 없으면 True, 그 외 False.
+
+    호스트의 다른 세그먼트(공유 PG, aip 등)가 대상이 되지 않도록 shm id 에 더해 다음을 모두 확인한다:
+    key == postmaster.pid 의 key, CPID == 그 postmaster pid, 그 postmaster 는 사망, NATTCH == 0,
+    소유자가 현재 사용자. 하나라도 어긋나면 지우지 않고 경고만 남긴다.
+    """
+    if ref is None:
+        return True
+    runner = runner or subprocess.run
+    alive = alive or _pid_alive
+    timeout = SHM_POLL_SECONDS if timeout is None else timeout
+    interval = SHM_POLL_INTERVAL if interval is None else interval
+    deadline = time.monotonic() + timeout
+    me = _current_user_names()
+
+    while True:
+        # postmaster 가 살아 있으면 세그먼트는 아직 쓰는 중이다. SIGKILL 직후엔 짧게 기다린다.
+        pm_dead = not alive(ref.pid)
+        rows = _ipcs_segments(runner)
+        if rows is None:
+            log.warning("ipcs 를 쓸 수 없어 shm %s 정리를 건너뛴다", ref.shmid)
+            return False
+        seg = _match_segment(rows, ref)
+        if seg is None:
+            return True  # postmaster 가 정상 종료하며 이미 지웠다
+        if _int_or_none(seg.get("key"), 16) != ref.key:
+            log.warning(
+                "shm %s 의 key 가 postmaster.pid 와 달라 지우지 않는다: %s",
+                ref.shmid,
+                seg,
+            )
+            return False
+        if _int_or_none(seg.get("cpid")) != ref.pid:
+            log.warning(
+                "shm %s 의 CPID 가 postmaster %s 와 달라 지우지 않는다: %s",
+                ref.shmid,
+                ref.pid,
+                seg,
+            )
+            return False
+        if seg.get("owner") not in me:
+            log.warning(
+                "shm %s 의 소유자가 현재 사용자가 아니라 지우지 않는다: %s",
+                ref.shmid,
+                seg,
+            )
+            return False
+        if pm_dead and _int_or_none(seg.get("nattch")) == 0:
+            break
+        if time.monotonic() >= deadline:
+            why = (
+                "postmaster 가 아직 살아 있어"
+                if not pm_dead
+                else "NATTCH 가 0 이 아니라"
+            )
+            log.warning("shm %s 를 %s 지우지 않는다: %s", ref.shmid, why, seg)
+            return False
+        sleep(interval)
+
+    ipcrm = _tool("ipcrm")
+    if ipcrm is None:
+        log.warning("ipcrm 이 없어 shm %s 를 지우지 못했다", ref.shmid)
+        return False
+    try:
+        res = runner(
+            [ipcrm, "-m", str(ref.shmid)], capture_output=True, text=True, check=False
+        )
+    except OSError as e:
+        log.warning("ipcrm -m %s 실행 실패: %s", ref.shmid, e)
+        return False
+    if getattr(res, "returncode", 1) != 0:
+        log.warning("ipcrm -m %s 실패: %s", ref.shmid, getattr(res, "stderr", ""))
+        return False
+    return True
+
+
 def _stop_and_remove(folder: Path, pg_bin: Path) -> None:
     """클러스터를 멈추고 폴더를 지운다. 각 단계 실패는 다음 단계로 넘어간다."""
     try:
@@ -121,6 +324,8 @@ def _stop_and_remove(folder: Path, pg_bin: Path) -> None:
 
     data = folder / "data"
     resolved_folder = folder.resolve()
+    # 폴더(postmaster.pid)를 지우면 세그먼트 식별자를 잃으므로 멈추기 전에 읽어 둔다.
+    shm_ref = _read_shm_ref(folder)
 
     # data 가 symlink 인 경우: 외부 디렉터리를 가리킬 위험이 있으므로 pg_ctl 호출 금지!
     # symlink 만 unlink 하고 외부 서버는 절대 건드리지 않는다.
@@ -169,6 +374,8 @@ def _stop_and_remove(folder: Path, pg_bin: Path) -> None:
                 os.kill(pm, signal.SIGKILL)
             except OSError:
                 pass
+    # postmaster 가 SIGKILL 로 죽으면 세그먼트가 남는다. 조건이 맞을 때만 지우고 아니면 경고만 한다.
+    release_shm_segment(shm_ref)
     shutil.rmtree(folder, ignore_errors=True)
 
 

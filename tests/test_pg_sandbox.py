@@ -502,3 +502,356 @@ def test_cluster_recreation_updates_port(tmp_path, monkeypatch):
     assert res2["kwargs"]["port"] == 55432
 
     cluster2.stop()
+
+
+# ---- SysV 공유메모리 세그먼트 정리 (kern.sysv.shmmni=32 고갈 방지) ----
+
+DARWIN_HEADER = (
+    "IPC status from <running system> as of Wed Oct 21 19:25:45 KST 2026\n"
+    "T     ID     KEY        MODE       OWNER    GROUP  CREATOR   CGROUP NATTCH  SEGSZ  CPID  LPID   ATIME    DTIME    CTIME\n"
+    "Shared Memory:\n"
+)
+
+
+def darwin_row(shmid, key, *, owner="winterholic", nattch=0, cpid=4242):
+    return (
+        f"m {shmid} 0x{key:08x} --rw------- {owner}    staff {owner}    staff "
+        f"{nattch}     56  {cpid}      0 no-entry no-entry 19:22:21\n"
+    )
+
+
+class FakeIpc:
+    """ipcs/ipcrm 실행기 대역. 호출 기록을 남기고 ipcs 출력은 목록 순서대로 돌려준다."""
+
+    def __init__(self, ipcs_outputs, *, rm_returncode=0):
+        self.outputs = list(ipcs_outputs)
+        self.calls: list[list[str]] = []
+        self.rm_returncode = rm_returncode
+
+    def __call__(self, cmd, *args, **kwargs):
+        self.calls.append(list(cmd))
+        res = MagicMock()
+        res.stderr = ""
+        res.returncode = 0
+        if cmd[0].endswith("ipcrm"):
+            res.returncode = self.rm_returncode
+            res.stdout = ""
+        else:
+            res.stdout = (
+                self.outputs.pop(0) if len(self.outputs) > 1 else self.outputs[0]
+            )
+        return res
+
+    @property
+    def removed(self):
+        return [c for c in self.calls if c[0].endswith("ipcrm")]
+
+
+@pytest.fixture
+def darwin_ipc(monkeypatch):
+    monkeypatch.setattr(pg_sandbox, "_PLATFORM", "darwin")
+    monkeypatch.setattr(pg_sandbox, "_tool", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        pg_sandbox, "_current_user_names", lambda: {"winterholic", "501"}
+    )
+
+
+REF = pg_sandbox.ShmRef(pid=4242, key=0x0E787393, shmid=5111812)
+
+
+def release(ipc, ref=REF, *, alive=lambda pid: False, **kw):
+    kw.setdefault("timeout", 0.05)
+    kw.setdefault("interval", 0.01)
+    return pg_sandbox.release_shm_segment(
+        ref, runner=ipc, alive=alive, sleep=lambda s: None, **kw
+    )
+
+
+def test_read_shm_ref_parses_postmaster_pid_line_7(tmp_path):
+    folder = make_cluster_folder(tmp_path, 1, "aabbccdd")
+    (folder / "data").mkdir()
+    (folder / "data" / "postmaster.pid").write_text(
+        "89523\n/x/data\n1792578401\n64760\n/x/sock\n127.0.0.1\n242774931   5111812\nready   \n"
+    )
+    assert pg_sandbox._read_shm_ref(folder) == pg_sandbox.ShmRef(
+        pid=89523, key=242774931, shmid=5111812
+    )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "",
+        "89523\n/x/data\n1792578401\n64760\n/x/sock\n127.0.0.1\n",  # 7번째 줄 없음
+        "89523\n/x\n1\n1\n/s\nh\nnot numbers\n",
+        "89523\n/x\n1\n1\n/s\nh\n242774931\n",  # id 없음
+        "abc\n/x\n1\n1\n/s\nh\n242774931 5111812\n",
+        "89523\n/x\n1\n1\n/s\nh\n0 0\n",  # IPC_PRIVATE 류는 대상이 아니다
+    ],
+)
+def test_read_shm_ref_rejects_malformed(tmp_path, content):
+    folder = make_cluster_folder(tmp_path, 1, "aabbccdd")
+    (folder / "data").mkdir()
+    (folder / "data" / "postmaster.pid").write_text(content)
+    assert pg_sandbox._read_shm_ref(folder) is None
+
+
+def test_read_shm_ref_ignores_symlinked_data(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "postmaster.pid").write_text("1\n/x\n1\n1\n/s\nh\n242774931 5111812\n")
+    folder = make_cluster_folder(tmp_path, 1, "aabbccdd")
+    (folder / "data").symlink_to(outside)
+    assert pg_sandbox._read_shm_ref(folder) is None
+
+
+def test_release_removes_matching_segment(darwin_ipc):
+    other = darwin_row(131073, 0x0E6C1474, cpid=75719)
+    ipc = FakeIpc([DARWIN_HEADER + other + darwin_row(5111812, 0x0E787393)])
+    assert release(ipc) is True
+    assert ipc.removed == [["/usr/bin/ipcrm", "-m", "5111812"]]
+
+
+def test_release_noop_when_segment_already_gone(darwin_ipc):
+    ipc = FakeIpc([DARWIN_HEADER + darwin_row(131073, 0x0E6C1474, cpid=75719)])
+    assert release(ipc) is True
+    assert ipc.removed == []
+
+
+def test_release_noop_without_ref(darwin_ipc):
+    ipc = FakeIpc([DARWIN_HEADER])
+    assert pg_sandbox.release_shm_segment(None, runner=ipc) is True
+    assert ipc.calls == []
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        darwin_row(5111812, 0x0E787394),  # id 는 같은데 key 가 다르다(id 재사용)
+        darwin_row(5111812, 0x0E787393, cpid=9999),  # 다른 프로세스가 만든 세그먼트
+        darwin_row(5111812, 0x0E787393, owner="root"),  # 다른 사용자 소유
+    ],
+    ids=["key-mismatch", "cpid-mismatch", "other-owner"],
+)
+def test_release_refuses_when_identity_mismatches(darwin_ipc, row, caplog):
+    ipc = FakeIpc([DARWIN_HEADER + row])
+    with caplog.at_level("WARNING", logger="pg_sandbox"):
+        assert release(ipc) is False
+    assert ipc.removed == []
+    assert "지우지 않는다" in caplog.text
+
+
+def test_release_refuses_while_postmaster_alive(darwin_ipc, caplog):
+    ipc = FakeIpc([DARWIN_HEADER + darwin_row(5111812, 0x0E787393)])
+    with caplog.at_level("WARNING", logger="pg_sandbox"):
+        assert release(ipc, alive=lambda pid: True) is False
+    assert ipc.removed == []
+    assert "살아 있어" in caplog.text
+
+
+def test_release_refuses_when_still_attached(darwin_ipc, caplog):
+    ipc = FakeIpc([DARWIN_HEADER + darwin_row(5111812, 0x0E787393, nattch=2)])
+    with caplog.at_level("WARNING", logger="pg_sandbox"):
+        assert release(ipc) is False
+    assert ipc.removed == []
+    assert "NATTCH" in caplog.text
+
+
+def test_release_polls_until_nattch_drops_to_zero(darwin_ipc):
+    attached = DARWIN_HEADER + darwin_row(5111812, 0x0E787393, nattch=1)
+    detached = DARWIN_HEADER + darwin_row(5111812, 0x0E787393, nattch=0)
+    ipc = FakeIpc([attached, attached, detached])
+    assert release(ipc, timeout=5.0) is True
+    assert ipc.removed == [["/usr/bin/ipcrm", "-m", "5111812"]]
+
+
+def test_release_polls_until_postmaster_dies(darwin_ipc):
+    ipc = FakeIpc([DARWIN_HEADER + darwin_row(5111812, 0x0E787393)])
+    states = iter([True, True, False])
+    assert release(ipc, alive=lambda pid: next(states), timeout=5.0) is True
+    assert len(ipc.removed) == 1
+
+
+def test_release_reports_ipcrm_failure(darwin_ipc, caplog):
+    ipc = FakeIpc([DARWIN_HEADER + darwin_row(5111812, 0x0E787393)], rm_returncode=1)
+    with caplog.at_level("WARNING", logger="pg_sandbox"):
+        assert release(ipc) is False
+    assert "ipcrm" in caplog.text
+
+
+def test_release_skips_when_ipcs_unavailable(monkeypatch, caplog):
+    monkeypatch.setattr(pg_sandbox, "_tool", lambda name: None)
+    ipc = FakeIpc([DARWIN_HEADER])
+    with caplog.at_level("WARNING", logger="pg_sandbox"):
+        assert release(ipc) is False
+    assert ipc.calls == []
+
+
+def test_release_skips_on_unparsable_ipcs_output_without_removing(darwin_ipc):
+    ipc = FakeIpc(["garbage\n"])
+    assert release(ipc) is True  # 목록에 없으면 지울 것도 없다
+    assert ipc.removed == []
+
+
+def test_release_handles_linux_ipcs_format(monkeypatch):
+    monkeypatch.setattr(pg_sandbox, "_PLATFORM", "linux")
+    monkeypatch.setattr(pg_sandbox, "_tool", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(pg_sandbox, "_current_user_names", lambda: {"ubuntu"})
+    base = (
+        "\n------ Shared Memory Segments --------\n"
+        "key        shmid      owner      perms      bytes      nattch     status      \n"
+        "0x0e787393 5111812    ubuntu     600        56         0                       \n"
+        "0x0e6c1474 131073     ubuntu     600        56         0\n"
+    )
+    pids = (
+        "\n------ Shared Memory Creator/Last-op PIDs --------\n"
+        "shmid      owner      cpid       lpid      \n"
+        "5111812    ubuntu     4242       0         \n"
+        "131073     ubuntu     75719      0         \n"
+    )
+    ipc = FakeIpc([base, pids])
+    assert release(ipc) is True
+    assert ipc.removed == [["/usr/bin/ipcrm", "-m", "5111812"]]
+
+
+def test_stop_and_remove_releases_segment_before_rmtree(tmp_path, monkeypatch):
+    """폴더를 지우기 전에 읽어 둔 shm 식별자로 해제를 시도한다(폴더가 사라진 뒤엔 읽을 수 없다)."""
+    monkeypatch.setattr(pg_sandbox, "ROOT_DIR", tmp_path)
+    dead_pid = 99999995
+    folder = make_cluster_folder(tmp_path, dead_pid, "feedface")
+    (folder / "data").mkdir()
+    pg_sandbox._write_marker(folder, dead_pid, 55555)
+    (folder / "data" / "postmaster.pid").write_text(
+        f"{dead_pid}\n{folder}/data\n1\n1\n{folder}/sock\n127.0.0.1\n242774931   5111812\nready\n"
+    )
+    seen: list[pg_sandbox.ShmRef | None] = []
+
+    def fake_release(ref, **kw):
+        assert folder.exists()
+        seen.append(ref)
+        return True
+
+    monkeypatch.setattr(pg_sandbox, "release_shm_segment", fake_release)
+    monkeypatch.setattr(
+        pg_sandbox.subprocess,
+        "run",
+        lambda *a, **k: MagicMock(stdout="", stderr="", returncode=0),
+    )
+    pg_sandbox._stop_and_remove(folder, tmp_path / "bin")
+    assert seen == [pg_sandbox.ShmRef(pid=dead_pid, key=242774931, shmid=5111812)]
+    assert not folder.exists()
+
+
+def _ipcs_ids() -> set[int]:
+    out = subprocess.run(
+        ["ipcs", "-m"], capture_output=True, text=True, check=False
+    ).stdout
+    return {
+        int(p[1])
+        for p in (ln.split() for ln in out.splitlines())
+        if len(p) > 2 and p[0] == "m" and p[1].isdigit()
+    }
+
+
+def _real_cluster_sigkilled(tmp_root: Path):
+    """실제 initdb 클러스터를 /tmp 에 띄우고 postmaster 를 SIGKILL 한다. (folder, ref) 를 돌려준다."""
+    try:
+        pg_bin = pg_sandbox._pg_bin()
+    except RuntimeError as e:
+        pytest.skip(str(e))
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    dead_owner = (
+        child.pid
+    )  # 방금 끝난 프로세스의 pid 를 소유자로 삼아 stale 폴더로 만든다
+    folder = (
+        pg_sandbox.ROOT_DIR / f"{pg_sandbox.PREFIX}{dead_owner}-{os.urandom(4).hex()}"
+    )
+    folder.mkdir(mode=0o700)
+    pg_sandbox._write_marker(folder, dead_owner, 0)
+    try:
+        (folder / "sock").mkdir(mode=0o700)
+        pg_sandbox._run(
+            [
+                str(pg_bin / "initdb"),
+                "-D",
+                str(folder / "data"),
+                "-A",
+                "trust",
+                "-E",
+                "UTF8",
+                "--locale=en_US.UTF-8",
+                "--no-sync",
+            ]
+        )
+        port = pg_sandbox._free_port()
+        opts = (
+            f"-p {port} -c listen_addresses=127.0.0.1 -c unix_socket_directories={folder / 'sock'} "
+            "-c fsync=off -c max_connections=20 -c shared_buffers=16MB"
+        )
+        pg_sandbox._run(
+            [
+                str(pg_bin / "pg_ctl"),
+                "-D",
+                str(folder / "data"),
+                "-l",
+                str(folder / "pg.log"),
+                "-w",
+                "-t",
+                "60",
+                "-o",
+                opts,
+                "start",
+            ]
+        )
+    except subprocess.CalledProcessError as e:
+        pg_sandbox.shutil.rmtree(folder, ignore_errors=True)
+        pytest.skip(
+            f"임시 클러스터를 띄우지 못했다(재시도 안 함): {e.cmd[0]} -> {(e.stderr or '')[-300:]}"
+        )
+    ref = pg_sandbox._read_shm_ref(folder)
+    assert ref is not None
+    os.kill(ref.pid, signal.SIGKILL)
+    return folder, ref
+
+
+def _cleanup_real(folder: Path, ref) -> None:
+    """테스트가 실패해도 우리가 만든 클러스터·세그먼트·폴더가 남지 않게 한다."""
+    if pg_sandbox._pid_alive(ref.pid) and pg_sandbox._is_postmaster_of(ref.pid, folder):
+        os.kill(ref.pid, signal.SIGKILL)
+    pg_sandbox.release_shm_segment(ref)
+    pg_sandbox.shutil.rmtree(folder, ignore_errors=True)
+
+
+@pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="SysV ipcs 필요")
+def test_real_cluster_sigkill_then_reap_stale_leaves_no_segment(capsys):
+    before = _ipcs_ids()
+    folder, ref = _real_cluster_sigkilled(pg_sandbox.ROOT_DIR)
+    try:
+        during = _ipcs_ids()
+        print(f"ipcs -m count before={len(before)} during={len(during)}")
+        assert ref.shmid in during, (
+            "SIGKILL 직후 고아 세그먼트가 남아 있어야 이 시험이 의미가 있다"
+        )
+        reaped = pg_sandbox.reap_stale()
+        assert folder.name in reaped
+        assert not folder.exists()
+        after = _ipcs_ids()
+        print(f"ipcs -m count after={len(after)}")
+        assert ref.shmid not in after
+    finally:
+        _cleanup_real(folder, ref)
+    assert not folder.exists()
+    assert ref.shmid not in _ipcs_ids()
+
+
+@pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="SysV ipcs 필요")
+def test_real_cluster_sigkill_then_stop_and_remove_leaves_no_segment():
+    folder, ref = _real_cluster_sigkilled(pg_sandbox.ROOT_DIR)
+    try:
+        assert ref.shmid in _ipcs_ids()
+        pg_sandbox._stop_and_remove(folder, pg_sandbox._pg_bin())
+        assert not folder.exists()
+        assert ref.shmid not in _ipcs_ids()
+    finally:
+        _cleanup_real(folder, ref)

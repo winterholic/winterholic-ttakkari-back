@@ -284,6 +284,31 @@ async def test_pipeline_cap_precheck_uses_physical_root_bytes_not_db_rows(tmp_pa
     assert await pipeline._storage_full() is True
 
 
+def test_quota_wait_rotation_is_stable_bounded_and_keeps_all_frontier_entries():
+    waiting = [pipeline._entry(f"https://example.test/blocked-{n}", 0) for n in range(6)]
+    for entry in waiting:
+        entry.update(t=1, quota_bytes=9)
+    ready = pipeline._entry("https://example.test/same-orphan", 0)
+    frontier = [*waiting, ready]
+
+    ordered, ready_count = pipeline._order_quota_waiters(frontier, used_bytes=8, cap_bytes=8)
+
+    assert ready_count == 1
+    assert ordered == [ready, *waiting]
+    assert len(ordered) == len(frontier) > pipeline.PAGE_SIZE
+    assert len({entry["u"] for entry in ordered}) == len(frontier)
+    all_waiting, ready_count = pipeline._order_quota_waiters(waiting, used_bytes=8, cap_bytes=8)
+    assert all_waiting == waiting
+    assert ready_count == 0
+    resumed_waiter = dict(waiting[0])
+    fresh_later = pipeline._entry("https://example.test/fresh", 0)
+    prioritized, ready_count = pipeline._order_quota_waiters(
+        [fresh_later, resumed_waiter], used_bytes=8, cap_bytes=17
+    )
+    assert ready_count == 2
+    assert prioritized == [resumed_waiter, fresh_later]
+
+
 @pytest.mark.asyncio
 async def test_handler_replays_same_blob_at_full_cap_but_denies_new_bytes_once(tmp_path: Path, monkeypatch):
     store = FileBlobStore(tmp_path, cap_bytes=8)
@@ -312,7 +337,7 @@ async def test_handler_replays_same_blob_at_full_cap_but_denies_new_bytes_once(t
         saved_cursor = None
 
         async def commit_work(self, work, *, stage=None):
-            await work(object())
+            self.saved_cursor, _outbox = await work(object())
             return "continue"
 
         async def commit_page(self, cursor, *, stage=None):
@@ -336,7 +361,12 @@ async def test_handler_replays_same_blob_at_full_cap_but_denies_new_bytes_once(t
     class Polite:
         async def fetch(self, parsed, *_args, **_kwargs):
             prepared_urls.append(parsed.url)
-            body = orphan if parsed.url.endswith("replay") else b"new-bytes"
+            if parsed.url.endswith(("replay", "same-orphan")):
+                body = orphan
+            elif parsed.url.endswith("new-multi"):
+                body = b"ninebytes"
+            else:
+                body = b"new-bytes"
             return SimpleNamespace(robots="allowed", result=SimpleNamespace(
                 status=200, final_url=parsed.url, redirects=(), not_modified=False, etag=None,
                 last_modified=None, body=body, media_type="application/octet-stream", charset=None,
@@ -381,6 +411,68 @@ async def test_handler_replays_same_blob_at_full_cap_but_denies_new_bytes_once(t
     third_denial = await pipeline.handle_job(new_job, context)
     assert third_denial.status == "retry_wait"
     assert prepared_urls.count(new_url) == 1
+
+    # When the fixture gains exactly the required headroom, the original URL resumes.
+    store.cap_bytes = 17
+    monkeypatch.setattr(pipeline, "get_settings", lambda: SimpleNamespace(collector_blob_cap_bytes=17))
+    store.put(b"x")
+    new_job.cursor = context.saved_cursor
+    still_short = await pipeline.handle_job(new_job, context)
+    assert still_short.status == "retry_wait"
+    assert prepared_urls.count(new_url) == 1
+    store._path(_sha(b"x")).unlink()
+    resumed_after_space = await pipeline.handle_job(new_job, context)
+    assert resumed_after_space.status == "succeeded"
+    assert prepared_urls.count(new_url) == 2
+
+    # A denied head must not block a later URL whose bytes already exist as an orphan.
+    tail_url = "https://example.test/same-orphan"
+    multi_new_url = "https://example.test/new-multi"
+    multi_url_envelope = {"source": {"kind": "web", "key": "source", "url": multi_new_url},
+                          "extensions": {"collector:request": {
+                              "seeds": [multi_new_url, tail_url], "max_pages": 2}}}
+    multi_job = SimpleNamespace(**{**vars(job), "envelope": multi_url_envelope, "cursor": None})
+    first_pass = await pipeline.handle_job(multi_job, context)
+    assert first_pass.status == "retry_wait"
+    assert context.saved_cursor["frontier"][0]["u"] == multi_new_url
+    assert context.saved_cursor["frontier"][1]["u"] == tail_url
+
+    multi_job.cursor = context.saved_cursor
+    resumed = await pipeline.handle_job(multi_job, context)
+    assert resumed.status == "retry_wait"
+    assert tail_url in prepared_urls
+    assert prepared_urls.count(multi_new_url) == 1
+    assert context.saved_cursor["processed"] == 1
+    assert any(entry["u"] == multi_new_url and entry["quota_bytes"] == 9
+               for entry in context.saved_cursor["frontier"])
+    assert len(context.saved_cursor["seen"]) == 2
+    assert context.saved_cursor["discovered"] == (
+        sum(context.saved_cursor["counts"].values()) + len(context.saved_cursor["frontier"])
+    )
+
+    # More than PAGE_SIZE of quota-wait entries still allows a later same-SHA entry to run once.
+    many_blocked = [pipeline._entry(f"https://example.test/blocked-{n}", 0) for n in range(6)]
+    for entry in many_blocked:
+        entry.update(t=1, quota_bytes=9)
+    long_job = SimpleNamespace(**{**vars(multi_job), "cursor": {
+        "v": 1, "frontier": [*many_blocked, pipeline._entry(tail_url, 0)], "seen": [],
+        "processed": 0, "discovered": 7, "counts": dict.fromkeys(pipeline.COUNT_KEYS, 0),
+    }})
+    before_tail_fetch = prepared_urls.count(tail_url)
+    long_result = await pipeline.handle_job(long_job, context)
+    assert long_result.status == "retry_wait"
+    assert prepared_urls.count(tail_url) == before_tail_fetch + 1
+    assert len(context.saved_cursor["frontier"]) == 6
+
+    # If every frontier item is still quota-blocked, the handler exits without fetching or looping.
+    all_wait_job = SimpleNamespace(**{**vars(long_job), "cursor": {
+        "v": 1, "frontier": many_blocked, "seen": [], "processed": 0, "discovered": 6,
+        "counts": dict.fromkeys(pipeline.COUNT_KEYS, 0),
+    }})
+    before_all_wait = list(prepared_urls)
+    all_wait_result = await pipeline.handle_job(all_wait_job, context)
+    assert all_wait_result.status == "retry_wait"
+    assert prepared_urls == before_all_wait
 
 
 def test_quota_pause_commits_only_prepared_prefix_and_keeps_rejected_tail():

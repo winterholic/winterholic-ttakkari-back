@@ -613,6 +613,25 @@ async def _storage_full(required_bytes: int = 0) -> bool:
     return False
 
 
+def _order_quota_waiters(
+    frontier: list[dict[str, Any]], *, used_bytes: int, cap_bytes: int
+) -> tuple[list[dict[str, Any]], int]:
+    """Prioritize quota retries with room, then fresh URLs; keep still-blocked URLs at the tail."""
+    quota_ready: list[dict[str, Any]] = []
+    fresh: list[dict[str, Any]] = []
+    waiting: list[dict[str, Any]] = []
+    for entry in frontier:
+        required = entry.get("quota_bytes")
+        if entry.get("t", 0) > 0 and isinstance(required, int):
+            if used_bytes + required > cap_bytes:
+                waiting.append(entry)
+            else:
+                quota_ready.append(entry)
+        else:
+            fresh.append(entry)
+    return quota_ready + fresh + waiting, len(quota_ready) + len(fresh)
+
+
 def _summary(cursor: dict[str, Any]) -> dict[str, Any]:
     return {"counts": cursor["counts"], "processed": cursor["processed"], "discovered": cursor["discovered"]}
 
@@ -637,15 +656,20 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
     cursor = job.cursor if job.cursor and job.cursor.get("v") == 1 else _new_cursor(req, spec)
 
     while cursor["frontier"] and cursor["processed"] < req.max_pages:
-        # At a full cap, allow one bounded replay probe for the head URL: a crash-left orphan may
-        # already contain its SHA, in which case put() can restore the DB reference without bytes.
-        # If it needs new bytes, the quota refusal below persists t=1 and later retries wait without
-        # repeatedly fetching the same URL. URL policy, per-job page limits, and put() remain enforced.
-        head = cursor["frontier"][0]
-        required_bytes = head.get("quota_bytes", 0) if head.get("t", 0) > 0 else 0
-        if await _storage_full(required_bytes) and head.get("t", 0) > 0:
+        # Move quota-blocked entries behind candidates that may dedupe to already durable orphans.
+        # Stable partitioning scans the cursor once, preserves every URL, and does not increment
+        # attempts or fetch a blocked entry. FileBlobStore.put remains the authoritative locked check.
+        cap_bytes = get_settings().collector_blob_cap_bytes
+        used_bytes = await asyncio.to_thread(deps.blobs.usage_bytes)
+        ordered, ready_count = _order_quota_waiters(
+            cursor["frontier"], used_bytes=used_bytes, cap_bytes=cap_bytes
+        )
+        if ready_count == 0:
+            log.warning("collector storage cap waiting on %d frontier entries", len(cursor["frontier"]))
             return HandlerResult("retry_wait", {"code": "storage_cap_reached", **_summary(cursor)}, retry_after=3600)
-        page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"])]
+        if ordered != cursor["frontier"]:
+            cursor = {**cursor, "frontier": ordered}
+        page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"], ready_count)]
         prepared: list[Prepared] = []
         for entry in page:
             try:

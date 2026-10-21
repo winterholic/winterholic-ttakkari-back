@@ -107,3 +107,11 @@ rc=0; All checks passed!
 ```
 
 이번 결과는 DB-free pure/control fixture다. PostgreSQL cancel/fencing/page atomicity/0063 migration, DB에 내구화된 quota cursor 실증, shared/운영 저장소 및 full suite는 미검증/미실행이다. collector default-off, LLM 호출 0을 유지했으며 DB·운영 root·schedule·migration·shared main을 변경하지 않았다.
+
+## 2026-10-22 후속: quota-wait head-of-line 진행
+
+독립 검증은 `frontier=[new 9-byte URL, same-orphan URL]`, cap/usage 8 조건에서 앞 URL이 `quota_bytes=9`로 기록된 다음 재시도 때 handler head precheck가 tail까지 막는 것을 관측했다. 데이터 유실이나 P1 orphan 회계 회귀가 아니라 진행 차단이다. 기존의 **head-only bounded replay probe**는 최초 구현 선택이었으며, 일반 frontier의 same-SHA 복구를 보장하지 못했다.
+
+stage-handler 계약에 prefix commit과 거절 URL/tail 보존은 있으나 strict FIFO 의무는 없고 `_advance`도 retry 항목을 deferred tail에 둔다. handler는 이제 한 번의 root usage snapshot으로 `used + quota_bytes > cap`인 기존 대기 항목을 stable-order 후보 뒤에 회전시킨다. 다음 page는 후보만 PAGE_SIZE 이내로 처리해 대기 항목을 재-fetch하지 않는다. 그 결과 위 fixture의 재시도는 뒤 same-SHA URL을 처리하고 새 bytes URL은 frontier에 유지한다. URL/seen 중복 방지, discovered/accounting, 실제 commit 호출 경계는 기존 `_advance`·`commit_work`·`commit_page`를 유지한다. 모두 대기면 한 scan 뒤 `retry_wait`로 종료하며, frontier가 PAGE_SIZE보다 길어도 검토는 한 번의 유한 scan이다. cap 여유가 생기면 해당 URL은 후보로 돌아와 재개한다.
+
+이는 cursor URL의 FIFO 순서를 유지한다는 주장을 하지 않는다. quota 대기 항목을 뒤로 회전하는 구현 선택이며, 원문 내용·lineage 보존, logical raw+stage cap, atomic repair 및 flock 정책은 바꾸지 않았다. 단일 head replay 성공을 전체 frontier progress의 증거로 확대하지 않도록 이번 regression 묶음에 tail same-SHA, PAGE_SIZE 초과 대기, all-blocked 종료, 여유 공간 확보 후 재개를 함께 추가했다. DB-free fixture는 DB cursor 내구성/fencing을 증명하지 않는다.

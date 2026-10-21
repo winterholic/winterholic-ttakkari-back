@@ -11,6 +11,7 @@ import importlib
 import json
 import os
 import re
+import socket
 import sys
 import tempfile
 import threading
@@ -25,6 +26,7 @@ from urllib.request import urlopen
 
 import psutil
 
+from ttakkari.host_gpu_guard import ProcState, process_state
 from ttakkari.host_resource import (
     LeaseBusy,
     LeaseError,
@@ -644,3 +646,52 @@ def default_controller(data_dir: Path) -> ComfyManagedController:
         elif _default.data_dir != Path(data_dir):
             raise RuntimeError("managed Comfy controller data directory cannot change while the server is running")
         return _default
+
+
+def _port_connection_refused(port: int) -> bool:
+    """고정 Comfy 포트가 명시적으로 연결을 거부할 때만 True. 응답·타임아웃·기타 오류는 부재 증거가 아니다."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1.0)
+        return probe.connect_ex(("127.0.0.1", port)) == errno.ECONNREFUSED
+
+
+def force_release_evidence(data_dir: Path, record: dict[str, Any], *, port: int | None = None,
+                           allow_unrecorded_pid: bool = False) -> dict[str, Any]:
+    """운영자 force-release 전에 managed Comfy runtime 이 없음을 확인한다. 확인하지 못하면 ValueError(거부 사유).
+
+    controller job 기록(task id·lease id·generation token·runtime instance 일치), 기록된 runtime pid+시작 시각이
+    ABSENT, 고정 포트의 연결 거부를 모두 요구한다. pid 가 한 번도 기록되지 않았다면 운영자가 직접 확인했다는 명시
+    플래그가 있을 때만 포트 거부만으로 진행한다.
+    """
+    port = COMFY_PORT if port is None else port
+    task_id = str(record.get("owner_task"))
+    if not re.fullmatch(r"[a-f0-9]{32}", task_id):
+        raise ValueError("lease owner is not a managed Comfy task id")
+    job_path = Path(data_dir) / "managed-comfy" / "tasks" / f"{task_id}.json"
+    try:
+        job = json.loads(job_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"controller job record is missing or unreadable ({type(exc).__name__}); "
+                         "the Comfy runtime cannot be verified") from exc
+    for key, expected in (("task_id", task_id), ("lease_id", record.get("lease_id")),
+                          ("generation_token", record.get("generation_token")),
+                          ("runtime_instance", record.get("runtime_instance"))):
+        if not isinstance(job, dict) or job.get(key) != expected:
+            raise ValueError(f"controller job record does not match the lease ({key})")
+    pid, start = job.get("runtime_pid"), job.get("runtime_created_at")
+    evidence: dict[str, Any] = {"consumer": "managed_comfy", "task_id": task_id, "runtime_pid": pid,
+                                "runtime_created_at": start}
+    if pid is None:
+        if not allow_unrecorded_pid:
+            raise ValueError("runtime pid was never recorded; verify no Comfy process exists and pass "
+                             "--accept-unrecorded-comfy-runtime")
+        evidence["runtime_process_state"] = "never_recorded_operator_accepted"
+    else:
+        observed = process_state(pid, start)
+        if observed is not ProcState.ABSENT:
+            raise ValueError(f"runtime pid {pid} is not confirmed absent (observed {observed.value})")
+        evidence["runtime_process_state"] = observed.value
+    if not _port_connection_refused(port):
+        raise ValueError(f"fixed Comfy port {port} answers or its state is unknown")
+    evidence.update(port=port, port_connection_refused=True)
+    return evidence

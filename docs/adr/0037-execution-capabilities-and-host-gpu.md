@@ -66,3 +66,14 @@
 - `unit_tests/test_host_resource_recovery.py`: 교착 1(reconcile 실패, state 쓰기 실패, 불일치 lease), 교착 2(소유자 ABSENT/UNKNOWN/PRESENT/pid 재사용/신원 없음, state 없음/타 launch/stopped, 타 소비자 lease 불간섭, pending 서버 열거), state-먼저 순서, force-release 허용·거부와 CLI.
 - 재현 스크립트: `scripts/repro/g1_host_resource_lease_repro.py`(`PYTHONPATH=src python ...`, FAIL이 하나라도 있으면 종료 코드 1).
 - 한계: 이 검증은 CPU child와 psutil 주입이다. 실제 GPU, 운영 llama/Qwen, 실제 권한 거부 환경(sandbox ps/sysctl)은 미실행이다.
+
+## 보완 2 (0704b82 독립 재검수 결함 4건)
+
+- 엄격 열거의 setuid 제외: 같은 사용자의 setuid `login` 프로세스(터미널 창마다 하나, 이 host에서 7개 관측)는 argv 조회가 거부된다. 이 프로세스가 lease 이후에 시작되면 열거가 영구 불완전이 되어 force-release와 pending 회수가 모두 거부되었다. 이제 argv를 못 읽어도 `exe`를 읽을 수 있고 그것이 우리 서버 실행 파일이 아닌 setuid/setgid 일반 파일이면 우리 서버일 수 없으므로 제외한다(`_setuid_foreign_binary`). `exe`도 읽지 못하거나 setuid가 아닌 프로세스는 계속 불완전으로 보고 보존한다(fail-closed). 이 host의 실제 프로세스 표로 7시간 된 lease를 해제해 확인했다. exec 도중인 프로세스의 argv가 잠깐 비는 일시적 불완전은 최대 3회(0.1초 간격) 다시 열거해 넘기고, 계속 불완전하면 거부한다.
+- 다른 소비자 lease의 force-release: `owner_task`가 `host_gpu`가 아닌 lease는 별칭 검사만으로 해제하지 않는다. managed Comfy(`resource_family=comfy`, owner_task가 32자 hex task id)는 `managed_comfy.force_release_evidence`가 (1) controller job 기록의 task id·lease id·generation token·runtime instance 일치, (2) 기록된 runtime pid+시작 시각이 ABSENT, (3) 고정 포트 8199의 연결 거부를 모두 요구한다. runtime pid가 한 번도 기록되지 않았다면 `--accept-unrecorded-comfy-runtime`으로 운영자가 직접 확인했음을 밝혀야 하고 이 사실이 proof에 남는다. 검증기가 없는 소비자의 lease는 거부한다(그 소비자가 자기 lease를 reconcile해야 한다). 다른 소비자 lease 해제는 host_gpu state를 건드리지 않는다.
+- state가 없거나 불일치하는 고아 lease: 감독자가 state를 먼저 쓴다는 불변식에만 기대지 않고, 소유자 ABSENT 확인에 더해 별칭 서버가 없음을 엄격 열거로 확인한 뒤에만 회수한다. 별칭 서버가 있으면(아직 watchdog이 정리하기 전일 수 있다) 보존하고 다음 조회가 다시 시도한다. 이 경로는 서버에 신호를 보내지 않는다. 열거가 불완전해도 보존한다.
+- 시계 역행: pending 서버를 찾는 시작 시각 하한 여유를 `PENDING_MATCH_MARGIN`=300초로 넓혔다(서버는 포트·argv로 이미 특정되고 같은 포트의 옛 서버는 공존할 수 없다). argv를 못 읽는 프로세스를 건너뛰는 기준은 기존 `START_SKEW`(1.5초)를 유지한다. 한계: 시계가 300초 넘게 뒤로 감기면 pending 서버를 놓칠 수 있다. 이 경우 별칭 열거(고아 lease 경로, force-release)가 두 번째 방어선이다.
+
+### 보완 2 검증
+- `unit_tests/test_host_resource_recovery_hardening.py`(25개): setuid 규칙과 열거, 실제 프로세스 표로 7시간 lease 해제, 소비자별 거부·허용, 고아 lease 열거, 시계 역행 3/120/250초.
+- `scripts/repro/g1_rereview_repro_v2.py`: 독립 재검수자의 재현 스크립트 원본(49 checks). 새 HEAD에서 49/49, 0704b82 소스에서는 4건 실패.

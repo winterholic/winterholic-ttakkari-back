@@ -16,6 +16,7 @@ import os
 import re
 import signal
 import socket
+import stat
 import statistics
 import subprocess
 import sys
@@ -238,18 +239,57 @@ def device_evidence(log: Path, limit: int = 8) -> list[str]:
     return lines[:limit]
 
 
-def _enumerate_strict(match: Callable[[list[str], float], bool],
-                      since: float | None) -> list[tuple[int, float]] | None:
+# 서버 후보의 시작 시각 하한 여유. 시계가 뒤로 감기면 서버 create_time 이 감독자 시작 기록보다 이르게 보일 수 있다.
+# 서버는 포트·argv 로 이미 특정되므로 여유를 넉넉히 둬도 오탐 위험이 작다(같은 포트의 옛 서버는 공존할 수 없다).
+PENDING_MATCH_MARGIN = 300.0
+
+
+def _setuid_foreign_binary(exe: object, own_exe: str | None) -> bool:
+    """argv 조회가 거부된 이유가 setuid/setgid 라서이고 우리 서버 실행 파일이 아님이 확실한 프로세스(예: /usr/bin/login).
+    exe 를 읽지 못했거나 일반 파일이 아니면 False(불완전으로 본다)."""
+    if not isinstance(exe, str) or not exe:
+        return False
+    try:
+        mode = os.stat(exe).st_mode
+    except OSError:
+        return False
+    if not stat.S_ISREG(mode) or not mode & (stat.S_ISUID | stat.S_ISGID):
+        return False
+    return own_exe is None or os.path.realpath(exe) != own_exe
+
+
+ENUMERATION_ATTEMPTS = 3
+ENUMERATION_RETRY_DELAY = 0.1
+
+
+def _enumerate_strict(match: Callable[[list[str], float], bool], since: float | None,
+                      own_exe: str | None = None) -> list[tuple[int, float]] | None:
+    """`_enumerate_once` 를 몇 번 다시 시도한다. exec 도중인 프로세스의 argv 가 잠깐 비는 일시적 불완전을 넘기되,
+    계속 불완전하면 None 이다(fail-closed)."""
+    for attempt in range(ENUMERATION_ATTEMPTS):
+        found = _enumerate_once(match, since, own_exe)
+        if found is not None:
+            return found
+        if attempt + 1 < ENUMERATION_ATTEMPTS:
+            time.sleep(ENUMERATION_RETRY_DELAY)
+    return None
+
+
+def _enumerate_once(match: Callable[[list[str], float], bool], since: float | None,
+                    own_exe: str | None = None) -> list[tuple[int, float]] | None:
     """조건에 맞는 같은 사용자 프로세스 (pid, 시작 시각). 열거가 불완전하면 None(빈 목록은 부재 증거여야 한다).
 
     다른 사용자 프로세스는 우리 서버일 수 없어 건너뛰고, 종료된 좀비는 살아 있는 서버가 아니다. 같은 사용자 프로세스의
-    argv·시작 시각·상태를 읽지 못하면 불완전으로 본다. 다만 `since`(서버가 뜰 수 있었던 가장 이른 시각)보다 먼저 시작한
-    프로세스는 우리 서버일 수 없으므로 읽지 못해도 건너뛴다(macOS 는 같은 사용자의 일부 보호 프로세스 argv 조회를 거부한다).
+    argv·시작 시각·상태를 읽지 못하면 불완전으로 본다. 다만 다음은 우리 서버일 수 없으므로 건너뛴다.
+    - `since`(서버가 뜰 수 있었던 가장 이른 시각)보다 먼저 시작한 프로세스
+    - argv 는 못 읽지만 exe 를 읽을 수 있고 그것이 우리 서버가 아닌 setuid/setgid 바이너리인 프로세스(터미널 창마다 하나씩
+      있는 /usr/bin/login 이 대표적이다)
+    exe 도 읽지 못하는 프로세스는 계속 불완전으로 본다(fail-closed).
     """
     uid = os.getuid()
     found: list[tuple[int, float]] = []
     try:
-        for proc in psutil.process_iter(["pid", "cmdline", "create_time", "uids", "status"]):
+        for proc in psutil.process_iter(["pid", "cmdline", "create_time", "uids", "status", "exe"]):
             info = proc.info
             uids = info.get("uids")
             if uids is not None and uids.real != uid:
@@ -259,6 +299,8 @@ def _enumerate_strict(match: Callable[[list[str], float], bool],
             cmd, created = info.get("cmdline"), info.get("create_time")
             if cmd is None or created is None or info.get("status") is None:
                 if created is not None and since is not None and created < since - guard.START_SKEW:
+                    continue
+                if cmd is None and _setuid_foreign_binary(info.get("exe"), own_exe):
                     continue
                 return None
             if match(cmd, created):
@@ -270,12 +312,13 @@ def _enumerate_strict(match: Callable[[list[str], float], bool],
 
 def find_our_servers_strict(server_path: str, port: int, since: float) -> list[tuple[int, float]] | None:
     """`guard.find_our_servers` 와 같은 기준의 엄격 열거."""
-    return _enumerate_strict(lambda cmd, created: created >= since - guard.START_SKEW
-                             and guard._is_our_server(cmd, server_path, port), since)
+    return _enumerate_strict(lambda cmd, created: created >= since - PENDING_MATCH_MARGIN
+                             and guard._is_our_server(cmd, server_path, port), since,
+                             own_exe=os.path.realpath(server_path))
 
 
 def find_alias_processes_strict(since: float | None) -> list[tuple[int, float]] | None:
-    """포트·경로와 무관하게 시험 서버 별칭을 argv 에 가진 같은 사용자 프로세스(수동 복구 전 안전 확인용)."""
+    """포트·경로와 무관하게 시험 서버 별칭을 argv 에 가진 같은 사용자 프로세스(수동 복구·고아 lease 확인용)."""
     return _enumerate_strict(lambda cmd, _created: guard.ALIAS in cmd, since)
 
 
@@ -541,7 +584,16 @@ class HostGpu:
             "owner_start": record.get("owner_start"), "owner_process_state": owner.value, "orphan_lease": True,
         }
         if matching is None:
-            evidence["server_started"] = False  # 서버는 state 를 먼저 쓴 뒤에만 띄운다
+            # 서버는 state 를 먼저 쓴 뒤에만 띄우지만 그 불변식(state 소실·덮어쓰기 포함)에만 기대지 않고, 별칭 서버가
+            # 하나도 없음을 엄격 열거로 확인한 뒤에만 회수한다. 발견한 서버는 여기서 신호하지 않는다(watchdog/수동 정지).
+            aliased = find_alias_processes_strict(record.get("created_at"))
+            if aliased is None:
+                raise GpuError("orphan lease recovery needs a complete process table; enumeration was incomplete, "
+                               "resource lease remains held")
+            if aliased:
+                raise GpuError(f"test-server processes still exist {[pid for pid, _ in aliased]} for an orphan "
+                               "lease; resource lease remains held until they stop")
+            evidence.update(server_started=False, alias_processes=0)
         else:
             # stopped 는 서버 종료를 관찰한 뒤에만 쓰이지만, 회수 전에 한 번 더 부재를 확인한다.
             pid, start = matching.get("server_pid"), matching.get("server_start")
@@ -569,11 +621,26 @@ class HostGpu:
             return self._recover_orphan_lease(record, state)
         return state
 
-    def force_release(self, *, reason: str, lease_id: str | None = None,
-                      accept_unrelated_pid: bool = False) -> dict[str, Any]:
+    def _verify_consumer_stopped(self, record: dict[str, Any], *, accept_unrecorded_runtime: bool) -> dict[str, Any]:
+        """host_gpu 소유가 아닌 lease 는 별칭 검사만으로는 그 소비자의 런타임이 멈췄는지 알 수 없다. 소비자별 검증기가
+        있는 경우(managed Comfy)에만 그 검증을 통과해야 하고, 검증할 수 없는 소비자의 lease 는 거부한다."""
+        owner_task = str(record.get("owner_task"))
+        if record.get("resource_family") == "comfy" and re.fullmatch(r"[a-f0-9]{32}", owner_task):
+            from ttakkari import managed_comfy
+            try:
+                return managed_comfy.force_release_evidence(
+                    self.dir.parent, record, allow_unrecorded_pid=accept_unrecorded_runtime)
+            except ValueError as exc:
+                raise GpuError(f"managed Comfy runtime is not confirmed stopped: {exc}") from exc
+        raise GpuError(f"lease owner {owner_task!r} (family {record.get('resource_family')!r}) has no runtime "
+                       "verifier; that consumer must reconcile its own lease, force-release refuses it")
+
+    def force_release(self, *, reason: str, lease_id: str | None = None, accept_unrelated_pid: bool = False,
+                      accept_unrecorded_runtime: bool = False) -> dict[str, Any]:
         """자동 복구가 불가능한 상태(legacy state, 서버 pid·start 근거 누락, 우리 서버로 확인되지 않는 프로세스,
         lease 에 소유자 신원 없음)를 운영자가 직접 해제한다. 아무 프로세스에도 신호를 보내지 않으며, 살아 있는
-        시험 서버가 없음을 이 함수가 직접 확인한 경우에만 해제한다(ADR 0037 수동 복구)."""
+        시험 서버가 없음을 이 함수가 직접 확인한 경우에만 해제한다(ADR 0037 수동 복구). host_gpu 가 아닌 소비자의
+        lease 는 그 소비자의 런타임 검증을 통과해야만 해제한다."""
         if not isinstance(reason, str) or not 10 <= len(reason.strip()) <= 300:
             raise GpuError("reason must describe the verification in 10 to 300 characters")
         if _lock_held(self.dir):
@@ -588,6 +655,10 @@ class HostGpu:
             raise GpuError("no live lease or live host_gpu state; nothing to release")
         if record and lease_id != record["lease_id"]:
             raise GpuError("--lease-id must equal the live lease id shown by the status command")
+        host_owned = record is None or record.get("owner_task") == "host_gpu"
+        consumer: dict[str, Any] = {}
+        if record and not host_owned:
+            consumer = self._verify_consumer_stopped(record, accept_unrecorded_runtime=accept_unrecorded_runtime)
         references = [value for value in (
             (record or {}).get("created_at"), (state or {}).get("started_at"), (state or {}).get("supervisor_start"))
             if isinstance(value, (int, float)) and not isinstance(value, bool)]
@@ -600,9 +671,10 @@ class HostGpu:
                            "this command never signals processes")
         recorded: dict[str, str] = {}
         unrelated: list[dict[str, Any]] = []
+        host_state = (state or {}) if host_owned else {}  # 다른 소비자의 lease 는 host_gpu state 와 무관하다
         for label, pid, start in (
-            ("server", (state or {}).get("server_pid"), (state or {}).get("server_start")),
-            ("supervisor", (state or {}).get("supervisor_pid"), (state or {}).get("supervisor_start")),
+            ("server", host_state.get("server_pid"), host_state.get("server_start")),
+            ("supervisor", host_state.get("supervisor_pid"), host_state.get("supervisor_start")),
             ("lease_owner", (record or {}).get("owner_pid"), (record or {}).get("owner_start")),
         ):
             observed = guard.process_state(pid, start)
@@ -617,12 +689,14 @@ class HostGpu:
         evidence = {
             "operator_override": True, "reason": reason.strip(), "alias_processes": 0,
             "recorded_process_states": recorded, "unrelated_pid_accepted": unrelated,
+            **({"consumer_verification": consumer} if consumer else {}),
         }
         released_lease = None
         if record:  # lease 를 먼저 회수하고 그 뒤에 state 를 확정한다
             self._reconcile(record["lease_id"], record["generation_token"], {
                 "runtime_status": "stopped", "evidence": {"runtime_instance": record["runtime_instance"], **evidence}})
             released_lease = record["lease_id"]
+        state_live = state_live and host_owned
         if state_live:
             _write_state(self.dir, {**state, "phase": "stopped", "stop_reason": "operator_force_release",
                                     "stopped_at": time.time(), "operator_reason": reason.strip()})
@@ -785,6 +859,9 @@ def main(argv: list[str] | None = None) -> int:
     force.add_argument("--lease-id", default=None, help="id of the live lease; required when a lease is live")
     force.add_argument("--accept-unrelated-pid", action="store_true",
                        help="the recorded server pid is alive but verified NOT to be our test server")
+    force.add_argument("--accept-unrecorded-comfy-runtime", action="store_true",
+                       help="managed Comfy lease whose runtime pid was never recorded; I verified no Comfy "
+                            "runtime process exists")
     force.add_argument("--confirm-no-live-process", action="store_true", required=True,
                        help="I verified no test server process is running for this lease")
     args = parser.parse_args(argv)
@@ -795,7 +872,8 @@ def main(argv: list[str] | None = None) -> int:
             data_dir = get_settings().data_dir
         try:
             result = HostGpu(SimpleNamespace(data_dir=Path(data_dir))).force_release(
-                reason=args.reason, lease_id=args.lease_id, accept_unrelated_pid=args.accept_unrelated_pid)
+                reason=args.reason, lease_id=args.lease_id, accept_unrelated_pid=args.accept_unrelated_pid,
+                accept_unrecorded_runtime=args.accept_unrecorded_comfy_runtime)
         except GpuError as exc:
             print(f"refused: {exc}", file=sys.stderr)
             return 2

@@ -290,3 +290,138 @@ async def test_flush_does_not_spin_on_a_finished_task_whose_discard_callback_nev
         assert stale not in usage_store._tasks
     finally:
         usage_store._tasks.discard(stale)
+
+
+# ---- Codex: 사용량 API 실패 사유가 조용히 세션 로그로 덮이던 문제(2026-10-21 내 codex, 마지막 측정 3시간 28분 전)
+
+def _jwt(expires_in: float) -> str:
+    import base64
+    import json
+
+    def part(d: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
+    return f"{part({'alg': 'none'})}.{part({'exp': int(time.time() + expires_in)})}.sig"
+
+
+_CODEX_BODY = {"plan_type": "plus", "rate_limit": {
+    "primary_window": {"used_percent": 7, "limit_window_seconds": 18000, "reset_at": 1792609134},
+    "secondary_window": {"used_percent": 46, "limit_window_seconds": 604800, "reset_at": 1793090605}}}
+
+
+def _codex_token(monkeypatch, state: dict):
+    """state['token'] 을 auth.json 의 access token 대신 쓴다(실제 파일은 읽지 않는다)."""
+    monkeypatch.setattr(usage, "_codex_headers", lambda _d: {"Authorization": f"Bearer {state['token']}"})
+
+
+async def test_codex_401_failure_names_the_reason_and_relogin(monkeypatch):
+    _codex_token(monkeypatch, {"token": _jwt(3600)})
+
+    async def skipped(_):
+        return "최근에 갱신을 시도함"
+
+    monkeypatch.setattr(usage, "_refresh_codex_login", skipped)
+    _mock_api(monkeypatch, lambda r: httpx.Response(401, json={"error": {"code": "token_expired", "message": "secret-ish"}}))
+
+    u = await usage._fetch_codex("/x")
+
+    assert not u.windows and u.source is None
+    assert "사용량 API 401(token_expired)" in u.error and "재로그인" in u.error
+    assert "최근에 갱신을 시도함" in u.error and "secret-ish" not in u.error
+
+
+async def test_codex_expired_token_is_refreshed_through_the_cli_then_read(monkeypatch):
+    state = {"token": _jwt(-3600), "refreshed": 0}
+    _codex_token(monkeypatch, state)
+
+    async def refresh(_):
+        state["refreshed"] += 1
+        state["token"] = _jwt(3600)  # codex CLI 가 auth.json 을 갱신했다
+
+    monkeypatch.setattr(usage, "_refresh_codex_login", refresh)
+    seen = []
+
+    def handler(r: httpx.Request):
+        seen.append(r.headers["Authorization"])
+        return httpx.Response(200, json=_CODEX_BODY)
+
+    _mock_api(monkeypatch, handler)
+
+    u = await usage._fetch_codex("/x")
+
+    assert state["refreshed"] == 1 and len(seen) == 1 and seen[0].endswith(state["token"])
+    assert u.source == "api" and [(w.key, w.percent) for w in u.windows] == [("five_hour", 7), ("seven_day", 46)]
+
+
+async def test_codex_server_401_with_valid_looking_token_refreshes_once_and_retries(monkeypatch):
+    state = {"token": _jwt(3600), "refreshed": 0}
+    _codex_token(monkeypatch, state)
+    old = state["token"]
+
+    async def refresh(_):
+        state["refreshed"] += 1
+        state["token"] = _jwt(7200)
+
+    monkeypatch.setattr(usage, "_refresh_codex_login", refresh)
+    _mock_api(monkeypatch, lambda r: httpx.Response(200, json=_CODEX_BODY) if not r.headers["Authorization"].endswith(old)
+              else httpx.Response(401, json={}))
+
+    u = await usage._fetch_codex("/x")
+
+    assert state["refreshed"] == 1 and u.source == "api" and u.windows
+
+
+async def test_codex_401_when_cli_leaves_the_token_unchanged_says_so(monkeypatch):
+    _codex_token(monkeypatch, {"token": _jwt(3600)})
+
+    async def refresh(_):
+        return "codex 종료 코드 1"
+
+    monkeypatch.setattr(usage, "_refresh_codex_login", refresh)
+    _mock_api(monkeypatch, lambda r: httpx.Response(401, json={}))
+
+    u = await usage._fetch_codex("/x")
+
+    assert not u.windows and "토큰이 갱신되지 않았어요(codex 종료 코드 1)" in u.error and "재로그인" in u.error
+
+
+async def test_codex_network_failure_and_missing_login_are_named(monkeypatch):
+    _codex_token(monkeypatch, {"token": _jwt(3600)})
+
+    def boom(r: httpx.Request):
+        raise httpx.ConnectTimeout("t")
+
+    _mock_api(monkeypatch, boom)
+    assert "사용량 API 실패(ConnectTimeout)" in (await usage._fetch_codex("/x")).error
+
+    monkeypatch.setattr(usage, "_codex_headers", lambda _d: None)
+    assert "auth.json" in (await usage._fetch_codex("/x")).error
+
+
+def _log_usage(age_seconds: float) -> usage.Usage:
+    return usage.Usage(windows=[usage.Window("five_hour", "5시간", 99, None)], source="session_log",
+                       updated_at=time.time() - age_seconds)
+
+
+async def test_stale_session_log_fallback_carries_the_api_failure_reason(monkeypatch):
+    async def failed(_):
+        return usage.Usage(error="사용량 API 401(token_expired)")
+
+    monkeypatch.setattr(usage, "_fetch_codex", failed)
+    monkeypatch.setattr(usage, "codex_usage", lambda _d: _log_usage(3.5 * 3600))
+
+    u = await usage._codex_usage_or_log("/x")
+
+    assert u.source == "session_log" and u.windows
+    assert u.error == "사용량 API 401(token_expired) · 세션 로그의 마지막 값"
+
+
+async def test_fresh_session_log_fallback_stays_clean_and_api_error_beats_empty_log(monkeypatch):
+    async def failed(_):
+        return usage.Usage(error="사용량 API 401(token_expired)")
+
+    monkeypatch.setattr(usage, "_fetch_codex", failed)
+    monkeypatch.setattr(usage, "codex_usage", lambda _d: _log_usage(60))
+    assert (await usage._codex_usage_or_log("/x")).error is None  # 방금 쓴 로그는 현재 값이다
+
+    monkeypatch.setattr(usage, "codex_usage", lambda _d: usage.Usage(error="아직 따까리에서 쓴 기록이 없어요"))
+    assert (await usage._codex_usage_or_log("/x")).error == "사용량 API 401(token_expired)"

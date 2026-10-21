@@ -16,6 +16,7 @@ Codex: ChatGPT 백엔드(GET https://chatgpt.com/backend-api/wham/usage, 토큰�
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import getpass
 import hashlib
@@ -487,13 +488,33 @@ def _codex_headers(config_dir: str | None) -> dict[str, str] | None:
     return h
 
 
+class CodexApiError(Exception):
+    """사용량 API 가 200 이 아니게 답했다. 토큰·응답 본문은 담지 않고 상태 코드와 오류 코드만 둔다."""
+
+    def __init__(self, status: int, code: str = "") -> None:
+        super().__init__(status, code)
+        self.status, self.code = status, code
+
+
+def _codex_error_code(r: httpx.Response) -> str:
+    with contextlib.suppress(ValueError, AttributeError, TypeError):
+        body = r.json()
+        err = body.get("error") if isinstance(body, dict) else None
+        code = (err.get("code") or err.get("type") if isinstance(err, dict) else err) or (body.get("code") if isinstance(body, dict) else "")
+        return str(code)[:60] if isinstance(code, str) else ""
+    return ""
+
+
 async def _codex_get(config_dir: str | None, path: str) -> dict[str, Any] | None:
+    """로그인 정보가 없으면 None, 200 이 아니면 CodexApiError."""
     h = _codex_headers(config_dir)
     if h is None:
         return None
     async with httpx.AsyncClient(timeout=TIMEOUT) as c:
         r = await c.get(f"{CODEX_API}/{path}", headers=h)
-    return r.json() if r.status_code == 200 else None
+    if r.status_code != 200:
+        raise CodexApiError(r.status_code, _codex_error_code(r))
+    return r.json()
 
 
 async def _codex_post(config_dir: str | None, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -531,19 +552,113 @@ def credits_from(usage_body: dict[str, Any], credits_body: dict[str, Any] | None
     return ResetCredits(available=max(0, int(n)), next_expires_at=exp[0] if exp else None)
 
 
-async def _fetch_codex(config_dir: str | None) -> Usage | None:
+def _codex_token(config_dir: str | None) -> str | None:
+    """갱신 여부 비교용 지문(토큰 원문은 밖으로 내보내지 않는다)."""
+    h = _codex_headers(config_dir)
+    return hashlib.sha256(h["Authorization"].encode()).hexdigest() if h else None
+
+
+def _codex_token_expires_in(config_dir: str | None) -> float | None:
+    """access token(JWT)의 exp 까지 남은 초. 읽을 수 없으면 None."""
+    h = _codex_headers(config_dir)
+    parts = h["Authorization"].removeprefix("Bearer ").split(".") if h else []
+    if len(parts) != 3:
+        return None
+    with contextlib.suppress(ValueError, TypeError, AttributeError):
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        exp = json.loads(base64.urlsafe_b64decode(payload)).get("exp")
+        if isinstance(exp, (int, float)):
+            return exp - time.time()
+    return None
+
+
+# Claude 와 같다: access token 은 Codex CLI 가 실행될 때만 갱신된다. 오래 안 쓴 계정은 401 이 이어진다.
+# 만료·401 이면 그 계정으로 아주 작은 codex 호출을 한 번 보내 CLI 가 스스로 갱신하게 한다. 우리가 refresh token 을 쓰거나
+# auth.json 에 쓰지 않는다(refresh token 은 한 번만 쓸 수 있어 CLI 와 경합하면 로그인이 깨진다).
+_codex_refresh_at: dict[str | None, float] = {}
+
+
+async def _refresh_codex_login(config_dir: str | None) -> str | None:
+    """CLI 로 토큰 갱신을 유도한다. 실제로 호출했으면 None, 건너뛰었거나 실패했으면 사유(짧은 문구)."""
+    now = time.time()
+    if now - _codex_refresh_at.get(config_dir, 0.0) < LOGIN_REFRESH_GAP:
+        return "최근에 갱신을 시도함"
+    _codex_refresh_at[config_dir] = now
+    from ttakkari.runs.profiles import Profile
+    env = Profile(uuid.uuid4(), "", "codex", Path(config_dir) if config_dir else None).env(os.environ.copy())
+    proc = None
     try:
-        body = await _codex_get(config_dir, "usage")
-        if not body or not isinstance(body.get("plan_type"), str):
-            return None
+        proc = await asyncio.create_subprocess_exec(
+            get_settings().codex_bin, "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "ok",
+            cwd=os.path.realpath("/tmp"), env=env, stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await asyncio.wait_for(proc.communicate(), LOGIN_REFRESH_TIMEOUT)
+        return None if proc.returncode == 0 else f"codex 종료 코드 {proc.returncode}"
+    except (OSError, TimeoutError) as e:
+        return f"codex 실행 실패({type(e).__name__})"
+    finally:
+        if proc is not None and proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+
+
+def _codex_failure_text(e: Exception, note: str = "") -> str:
+    if isinstance(e, CodexApiError):
+        what = f"사용량 API {e.status}" + (f"({e.code})" if e.code else "")
+        if e.status in (401, 403):
+            what += " · Codex 로그인이 만료됐거나 거절됐어요. 재로그인이 필요할 수 있어요"
+        return what + note
+    return f"사용량 API 실패({type(e).__name__})" + note
+
+
+async def _fetch_codex(config_dir: str | None) -> Usage:
+    """실패하면 windows 없는 Usage(error=사유). 호출부가 세션 로그로 대신하되 사유는 남긴다."""
+    note = ""
+    left = _codex_token_expires_in(config_dir)
+    if left is not None and left < 60:
+        why = await _refresh_codex_login(config_dir)
+        left = _codex_token_expires_in(config_dir)
+        if left is not None and left < 0:
+            note = f" · 로그인 토큰이 {_ago_text(-left)} 만료됐고 갱신하지 못했어요" + (f"({why})" if why else "")
+    try:
+        try:
+            body = await _codex_get(config_dir, "usage")
+        except CodexApiError as e:
+            if e.status != 401 or note:
+                raise
+            # 만료 시각이 남았어도 서버가 거절했다(다른 곳에서 로그아웃·재로그인). 한 번 갱신을 유도하고 다시 읽는다.
+            before = _codex_token(config_dir)
+            why = await _refresh_codex_login(config_dir)
+            if _codex_token(config_dir) == before:
+                note = f" · 토큰이 갱신되지 않았어요({why or 'codex 호출 뒤에도 같은 토큰'})"
+                raise
+            body = await _codex_get(config_dir, "usage")
+        if body is None:
+            return Usage(error="Codex 로그인 정보(auth.json)를 찾지 못했어요")
+        if not isinstance(body.get("plan_type"), str):
+            return Usage(error="사용량 API 응답 형식이 달라요" + note)
         credits = credits_from(body, None)
         if credits and credits.available > 0:
-            # 사용량 응답엔 개수만 온다. 다음 만료 시각은 크레딧 목록에서 읽는다.
-            credits = credits_from(body, await _codex_get(config_dir, "rate-limit-reset-credits")) or credits
+            # 사용량 응답엔 개수만 온다. 다음 만료 시각은 크레딧 목록에서 읽는다. 목록을 못 읽어도 사용량은 성공이다.
+            with contextlib.suppress(httpx.HTTPError, ValueError, CodexApiError):
+                credits = credits_from(body, await _codex_get(config_dir, "rate-limit-reset-credits")) or credits
         return Usage(windows=windows_from_codex(body), source="api", plan=body["plan_type"], reset_credits=credits,
                      updated_at=time.time())
-    except (httpx.HTTPError, ValueError):
-        return None
+    except (httpx.HTTPError, ValueError, CodexApiError) as e:
+        return Usage(error=_codex_failure_text(e, note))
+
+
+async def _codex_usage_or_log(config_dir: str | None) -> Usage:
+    """API 값을 우선하고, 못 읽으면 세션 로그로 대신한다. 대신한 값이 낡았다면 API 실패 사유를 붙인다."""
+    u = await _fetch_codex(config_dir)
+    if u.windows:
+        return u
+    log = await asyncio.to_thread(codex_usage, config_dir)
+    if not log.windows:
+        return u if u.error else log
+    if log.updated_at is None or time.time() - log.updated_at > get_settings().usage_stale_seconds:
+        return replace(log, error=f"{u.error} · 세션 로그의 마지막 값" if u.error else log.error)
+    return log
 
 
 RESET_OUTCOME = {
@@ -748,7 +863,7 @@ async def _fetch_live(account_id: uuid.UUID, engine: str, config_dir: str | None
             s = _stream[account_id]
             u = Usage(windows=s.windows, source="stream", updated_at=s.updated_at, error=u.error)
     else:
-        u = await _fetch_codex(config_dir) or await asyncio.to_thread(codex_usage, config_dir)
+        u = await _codex_usage_or_log(config_dir)
     _cache[account_id] = (time.time(), u)
     if observed_now and u.source in ("api", "antigravity_cli", "muse_cli"):  # 스트림 값으로 대신한 경우는 remember_stream 이 이미 남겼다.
         _emit(account_id, u)

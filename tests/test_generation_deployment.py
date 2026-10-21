@@ -46,7 +46,7 @@ def test_executor_migration_follows_tts_and_uses_reserved_integration_revision()
     config.set_main_option("script_location", str(source / "alembic"))
     directory = ScriptDirectory.from_config(config)
     executor = directory.get_revision("0063_run_executor")
-    assert executor.down_revision == "0061_local_tts"
+    assert executor.down_revision == "0062_delivery_change_sets"
 
 
 def test_qwen_usage_and_resource_history_migrations_are_allowed_online():

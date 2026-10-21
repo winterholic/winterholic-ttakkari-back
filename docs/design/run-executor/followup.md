@@ -34,7 +34,7 @@ enabled 후보도 다음 조건을 모두 검사한다: release marker/SHA와 pi
 
 ## Migration 통합
 
-현재 graph는 `0060_collector_job_runtime → 0061_local_tts → 0063_run_executor`이며 `0063`은 ownership trigger와 `runtime_process_groups` ledger를 additive로 만든다. `deploy/generation-contract.json`의 head와 `online_migration_from`도 현재 chain에 맞췄다. executor revision `0063_run_executor`는 사용자가 지정한 임시 통합 번호다. delivery 작업 c77b60de의 `0062`가 통합되면 executor `down_revision`을 해당 최종 chain으로 바꾸고 contract head/온라인 허용 목록 및 downgrade 순서를 함께 재검증해야 한다. 그 통합 전에는 최종 main graph라고 주장할 수 없다.
+main(808bc11) 위로 옮긴 뒤 graph는 `0060_collector_job_runtime → 0061_local_tts → 0062_delivery_change_sets → 0063_run_executor`이며 `0063`은 ownership trigger와 `runtime_process_groups` ledger를 additive로 만든다. `0063`의 `down_revision`은 `0062_delivery_change_sets`이고, `deploy/generation-contract.json`은 `schema_revision`을 `0063_run_executor`로 유지하며 `online_migration_from`에 `0062_delivery_change_sets`를 추가했다.
 
 ## 남은 검증
 

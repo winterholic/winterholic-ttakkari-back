@@ -1,6 +1,6 @@
 """Independent executor ownership; additive while disabled, protocol2 activation.
 
-Parent integration must renumber/rebase against collector/TTS migrations.
+Serialized after 0062_delivery_change_sets, which follows 0061_local_tts.
 """
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision = "0063_run_executor"
-down_revision = "0061_local_tts"
+down_revision = "0062_delivery_change_sets"
 branch_labels = None
 depends_on = None
 

@@ -64,26 +64,26 @@ class ChangeSet(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(index=True)
     run_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    
+
     repo_path: Mapped[str] = mapped_column(String(500))
     branch_name: Mapped[str] = mapped_column(String(200))  # e.g. "work/<session_id>"
     worktree_path: Mapped[str] = mapped_column(String(500))
-    
+
     base_sha: Mapped[str] = mapped_column(String(40))  # 작업 시작 시점 main SHA
     head_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)  # 제출된 커밋 SHA
     candidate_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)
     candidate_worktree_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     target_branch: Mapped[str] = mapped_column(String(100), default="main")
-    
+
     status: Mapped[str] = mapped_column(
         String(32), default=ChangeSetStatus.registered, index=True
     )
-    
+
     stage1_result: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
     stage2_result: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
     diff_guard_result: Mapped[dict[str, Any] | None] = mapped_column(JsonType, nullable=True)
-    
+
     # 실패 서명(test_id + exception_type 등)
     failure_signature: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     # 총 수리 시도 횟수 (상한: 3회)
@@ -91,11 +91,11 @@ class ChangeSet(Base):
     # 동일 서명에 대한 수리 시도 횟수 (상한: 2회)
     signature_repair_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     signature_attempts: Mapped[dict[str, int]] = mapped_column(JsonType, default=dict, server_default="{}")
-    
+
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     conflict_files: Mapped[list[str] | None] = mapped_column(JsonType, nullable=True)
     is_dirty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

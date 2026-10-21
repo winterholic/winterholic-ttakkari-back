@@ -661,10 +661,12 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/notebooklm/notebooks/{notebook_id}/sources/url"): "owner-scoped",
     ("POST", "/api/notifications/read-all"): "owner-plain",
     ("POST", "/api/ops-logs/sync"): "owner-scoped",
+    ("POST", "/api/orchestrator/agents/{session_id}/stop"): "agent-plain",
     ("POST", "/api/orchestrator/context/reset"): "agent-plain",
     ("POST", "/api/orchestrator/luna-common30-v2"): "agent-plain",
     ("POST", "/api/orchestrator/pms/projects/{pid}/tasks"): "agent-plain",
     ("POST", "/api/orchestrator/schedules"): "agent-plain",
+    ("POST", "/api/orchestrator/stop-all"): "agent-plain",
     ("POST", "/api/orchestrator/workers"): "agent-plain",
     ("POST", "/api/orchestrator/workers/{worker_id}/messages"): "agent-plain",
     ("POST", "/api/orchestrator/workers/{worker_id}/stop"): "agent-plain",
@@ -737,6 +739,7 @@ MCP_ORCHESTRATOR_ONLY = frozenset(
         "reset_my_context",
         "spawn_worker",
         "start_luna_common30_v2",
+        "stop_agents",
         "stop_worker",
     }
 )
@@ -837,6 +840,7 @@ MCP_SCOPE: dict[str, str] = {
     "share_file": "files",
     "spawn_worker": "orchestration",
     "start_luna_common30_v2": "orchestration",
+    "stop_agents": "orchestration",
     "stop_worker": "orchestration",
     "tossinvest_status": "stocks",
     "update_checklist_item": "planner",

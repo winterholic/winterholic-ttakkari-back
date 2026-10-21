@@ -426,7 +426,7 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "notebooklm_delete", "notebooklm_add_source", "notebooklm_delete_source", "notebooklm_query",
                "notebooklm_job", "notebooklm_job_cancel", "google_account_status", "manage_research",
                "schedule_action", "list_scheduled_actions", "cancel_scheduled_action"}
-WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "account_usage",
+WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",
                 "my_context", "reset_my_context"}
 BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}
 

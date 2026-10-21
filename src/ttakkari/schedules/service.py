@@ -20,9 +20,7 @@ from ttakkari import generation
 from ttakkari.db import sessionmaker
 from ttakkari.models import (
     ChatSession,
-    Run,
     RunOrigin,
-    RunStatus,
     ScheduledAction,
     utcnow,
 )
@@ -198,16 +196,22 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
     payload = schedule.payload or {}
 
     if action == "stop_all":
+        from ttakkari.runs.agent_control import stop_all_agents
+
+        pool = payload.get("scope_pool", "all")
+        ws_id = uuid.UUID(payload["workspace_id"]) if payload.get("workspace_id") else None
+        target_sid = uuid.UUID(payload["session_id"]) if payload.get("session_id") else None
+        reason = schedule.description or "예약된 에이전트 전부 중지"
         async with sessionmaker()() as db:
-            runs = list(await db.scalars(
-                select(Run.id).where(Run.status.in_([RunStatus.queued, RunStatus.running]))
-            ))
-        stopped = []
-        for r in runs:
-            if await manager.cancel(r):
-                stopped.append(str(r))
-        log.info("scheduled stop_all executed: %d runs stopped", len(stopped))
-        return {"stopped": stopped, "count": len(stopped)}
+            res = await stop_all_agents(
+                db,
+                pool=pool,
+                workspace_id=ws_id,
+                session_id=target_sid,
+                reason=reason,
+            )
+        log.info("scheduled stop_all executed: %d runs stopped", len(res.get("stopped", [])))
+        return {**res, "count": len(res.get("stopped", []))}
 
     if action == "cancel_run":
         run_id = uuid.UUID(str(payload["run_id"]))

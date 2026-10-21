@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -13,6 +14,9 @@ from pathlib import Path
 
 import pg_sandbox
 from sqlalchemy.engine import make_url
+from task_cleanup import drain_registered_tasks, is_postgres_deadlock
+
+_log = logging.getLogger(__name__)
 
 _BASE = Path(tempfile.mkdtemp(prefix="ttk-it-")).resolve()
 atexit.register(shutil.rmtree, _BASE, ignore_errors=True)
@@ -152,8 +156,9 @@ async def _clean(_schema_and_app):
                 await db.commit()
             break
         except DBAPIError as exc:
-            if "deadlock detected" not in str(exc) or attempt == 5:
+            if not is_postgres_deadlock(exc) or attempt == 5:
                 raise
+            _log.warning("fixture TRUNCATE deadlock; retrying attempt %d/6 (SQLSTATE 40P01)", attempt + 2)
             await asyncio.sleep(0.3)
     limiter.reset()
     profiles.reset_cooldowns()
@@ -174,21 +179,7 @@ async def _clean(_schema_and_app):
         manager._restart_waker = None
     for rid in list(manager._wakers) + list(manager._waiting):
         manager._disarm(rid)
-    for _ in range(20):
-        if not manager._handles and not _background:
-            break
-        for rid in list(manager._handles):
-            await manager.cancel(rid)
-        for h in list(manager._handles.values()):
-            try:
-                await h.task
-            except BaseException:  # noqa: BLE001, S110
-                pass
-        for t in list(_background):
-            try:
-                await t
-            except BaseException:  # noqa: BLE001, S110
-                pass
+    await drain_registered_tasks(manager._handles, _background, manager.cancel)
 
 
 @pytest_asyncio.fixture(loop_scope="session")

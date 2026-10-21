@@ -115,9 +115,11 @@ PY
 
 완료 기준: upgrade가 새 임시 DB에서 종료 코드 0, `alembic_version`이 그 통합 checkout의 유일한 head, `change_sets.candidate_sha`가 `varchar`, `stage1_result`와 `signature_attempts`가 `jsonb`여야 한다. 통합 후 revision 번호/부모가 조정되면 위의 기대값을 추정해서 고정하지 말고, 최종 migration 그래프와 contract에서 읽은 기대 revision으로 검사한다.
 
-## 아직 전용 테스트가 없는 PostgreSQL/API 동작
+## delivery 통합 후보의 PostgreSQL/API 전용 테스트
 
-아래 테스트 모듈과 node는 현재 feature HEAD에 없다. 따라서 지금 이 명령이 “no tests collected”, import error 또는 node 없음으로 끝나면 통과가 아니다. 별도 구현에서 전용 테스트를 추가한 뒤, 동일한 승인 테스트 호스트의 임시 클러스터에서 실행한다.
+`tests/delivery/test_merge_queue_postgres.py`와 `tests/test_orchestrator_delivery_isolation.py`는 후보에 추가됐다. 첫 모듈은 실제 PostgreSQL 세션으로 `SKIP LOCKED`, 같은 repository+target advisory lock, ref CAS 직후 새 세션 recovery, 그리고 `0062` upgrade/downgrade와 JSONB column type을 검사한다. 두 번째 모듈은 인증된 ASGI `/workers` on/off/read-only 경로를 실제 DB row와 함께 확인하고, repair 상한에 도달했을 때 실제 CLI repair dispatcher가 호출되지 않아 `Run` row가 추가되지 않는지 검사한다.
+
+두 모듈의 functional 실행은 아래처럼 `tests/conftest.py`가 제공하는 프로세스 전용 disposable PostgreSQL fixture를 사용한다. `TTAKKARI_TEST_DB`를 전달하지 않는다. known `initdb` sandbox denial을 재시도하거나 공유/운영 DB로 우회하지 않는다. 이번 Run에서는 fixture import/DB 실행을 하지 않았으며, `--noconftest --collect-only`는 fixture 및 테스트 이름 수집만 증명한다.
 
 ```bash
 uv run pytest -q --timeout=120 \
@@ -125,17 +127,18 @@ uv run pytest -q --timeout=120 \
   tests/test_orchestrator_delivery_isolation.py
 ```
 
-`test_merge_queue_postgres.py`에는 다음을 실제 두 PostgreSQL 세션/process와 disposable Git repo로 검증하는 테스트가 필요하다.
+명령을 실행하는 격리 테스트 호스트에서는 실행 직전에 고정 후보 SHA를 확인한다. 실행 기록에는 `git rev-parse HEAD`, PostgreSQL cluster 경로, pytest stdout/stderr를 함께 보존한다.
 
-1. 같은 repository+target을 처리하는 두 integrator가 advisory lock 구간에서 겹치지 않고, 두 번째 작업은 첫 번째 ref advance 뒤의 target을 다시 읽는다. `SKIP LOCKED` claim은 같은 ChangeSet 중복 반환 없이 서로 다른 행을 claim한다.
-2. validation 동안 외부 target advance가 발생하면 CAS 실패로 안전 재시도하고 거짓 `merged`가 나오지 않는다.
-3. failpoint로 **DB에 candidate/result 저장 뒤 CAS 전** 프로세스를 중단하면 target은 기존 SHA에 남고, 재시작 후 검증/승격이 idempotent하게 완료된다.
-4. failpoint로 **Git CAS 성공 뒤 DB 최종 commit 전** 중단하면 재시작 시 target=candidate와 SHA-bound Stage proof를 확인해 `merged`로 복구하고 중복 승격은 없다.
-5. PostgreSQL commit/rollback 뒤 재조회로 claim/status/result가 기대값과 일치한다. candidate/source worktree 정리 결과도 검사한다.
+전용 tests가 다루는 동작:
 
-`test_orchestrator_delivery_isolation.py`는 실제 `/workers` API 요청에서 opt-in flag on 시 전용 worktree/Workspace writable root/ChangeSet session 연결을 확인하고, flag off 및 read-only 요청에서는 기존 공유 Workspace를 유지하며 ChangeSet을 만들지 않는 음성 대조를 포함해야 한다. 인증된 요청 응답과 DB에 저장된 row를 함께 검사한다.
+1. 독립 PostgreSQL 세션의 두 claim이 동일한 ChangeSet을 반환하지 않는 `SKIP LOCKED` 경합.
+2. 동일 repo/target 통합기의 advisory lock 직렬화와, 두 번째 Stage 입력에서 첫 번째 ref advance 결과가 보이는지 확인.
+3. Git ref CAS 성공 직후 DB 최종 상태 commit 전에 예외를 주입한 다음, 새 DB 세션 재시작으로 동일 candidate를 `merged` 복구하고 ref가 중복 변경되지 않는지 확인.
+4. disposable test database에서 delivery migration upgrade/downgrade와 PostgreSQL native `jsonb` 타입 확인.
+5. 인증된 `/workers` opt-in on은 worktree·전용 Workspace·writable root·ChangeSet을 만들고, off/read-only는 원 Workspace를 유지하며 ChangeSet을 만들지 않는지 확인.
+6. repair 횟수 상한에서 실제 `_dispatch_repair` callback 경계가 실행되지 않고 추가 `Run` row가 생성되지 않는지 확인.
 
-완료 기준: 위 전용 테스트가 명시된 노드 수만큼 실제 실행되어 모두 통과하고, 각 테스트가 만든 PostgreSQL cluster와 Git repo 경로 및 ref/row before-after를 stdout 또는 테스트 artifact로 남긴다. 현재 이 테스트들이 없어 PostgreSQL 동시성·crash recovery·실제 API는 여전히 **미검증**이다.
+이 Run에서 PG/API 테스트는 **실행 안 됨**이다. 따라서 이 후보에 대한 PostgreSQL 경합/recovery, migration apply, 실제 `/workers` ASGI 동작은 계속 **미검증**이며 static compile 또는 collection 성공으로 통과 처리하지 않는다.
 
 ## 남는 런타임 판정
 

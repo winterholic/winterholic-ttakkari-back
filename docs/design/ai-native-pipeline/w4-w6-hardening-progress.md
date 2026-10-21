@@ -73,3 +73,9 @@ git diff --check
 독립검증은 새 변경 Python 경로 lint에서 `alembic/versions/0062_delivery_change_sets.py:12 I001` 한 건도 발견했다. 해당 검사는 migration 파일을 누락했던 기존 범위 lint와 달리 common baseline 이후 변경된 Python 경로를 검사했다. 후속 수정은 migration import만 Ruff 요구 순서로 재배치했다. 이 최신 변경 뒤에는 common baseline `25b5f9806656067ceb594d6d3217b37fba28d795`부터 feature HEAD까지 바뀐 Python 경로 전체를 다시 lint한다. 이 정적 import 순서 변경은 PostgreSQL/API 동작을 새로 검증하지 않는다.
 
 독립검증은 PostgreSQL advisory lock/`SKIP LOCKED` 경쟁, crash recovery, migration 적용, 실제 opt-in `/workers`, 전체 Stage 1/2를 실행하지 않았다. 알려진 sandbox `initdb` 실패를 반복하지 않는다. 승인된 운영과 분리된 테스트 호스트용 격리 명령과 시나리오 완료 기준은 [host validation manifest](w4-w6-host-validation-manifest.md)에 추가했다. 아직 `submit_change` MCP, 상주 integrator, batch/이분 탐색은 미구현이므로 W4–W6 전체를 완료 처리하지 않는다.
+
+## Delivery 통합 후보의 PostgreSQL/API 테스트 준비
+
+delivery-only 후보 보강에서 두 모듈을 추가했다. `tests/delivery/test_merge_queue_postgres.py`는 실제 두 PostgreSQL 세션의 `SKIP LOCKED` claim, 같은 repo/target advisory lock 직렬화, Git ref CAS 직후 예외 후 fresh-session recovery, `0062` migration 왕복 및 JSONB column을 검사한다. `tests/test_orchestrator_delivery_isolation.py`는 인증 ASGI 요청의 opt-in on/off/read-only 경계와 실제 DB Workspace/ChangeSet row, 수리 상한에서 실제 CLI repair dispatcher 미호출 및 Run row 불증가를 검사한다. 상세 대상과 실행 명령은 [host validation manifest](w4-w6-host-validation-manifest.md)에 함께 둔다.
+
+이 Run에서는 새 테스트의 `py_compile`, Ruff, `--noconftest --collect-only`만 실행했다. 총 6개 test node가 수집됐지만, 이 단계는 실행 동작을 입증하지 않는다. 프로젝트 `tests/conftest.py` import는 process-owned PostgreSQL cluster 시작을 유발하고, 과거 Codex command sandbox에서 이 fixture의 `initdb`가 실패했다. 알려진 시작 실패를 반복하지 않고 별도 테스트 DB 경로도 제공되지 않아 PG/API 테스트는 **실행 안 됨**으로 남긴다. SQLite/mock 결과로 대체하지 않는다.

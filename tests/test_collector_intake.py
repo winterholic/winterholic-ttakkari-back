@@ -295,4 +295,5 @@ async def test_runs_on_throwaway_database_not_production():
         name = await db.scalar(text("select current_database()"))
     print(f"COLLECTOR_TEST_DB_IDENTITY={name}")
     assert name != "ttakkari"
-    assert name.startswith("ttakkari_test")
+    # 배포 후보 검사는 ttakkari_gen_<hex> 일회용 DB를 쓰므로 두 접두어 모두 일회용으로 본다.
+    assert name.startswith(("ttakkari_test", "ttakkari_gen_"))

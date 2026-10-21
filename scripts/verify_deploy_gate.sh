@@ -103,15 +103,24 @@ if [ "$ACTION" = preflight ]; then
     done
     if [ -n "$PG_BIN" ]; then echo "ok   initdb/pg_ctl: $PG_BIN"; else echo "FAIL initdb/pg_ctl 없음(TTAKKARI_TEST_PG_BIN 으로 지정)"; PRE_FAIL=1; fi
     if [ "$(uname -s)" = Darwin ]; then
-        SHM_MAX="$(sysctl -n kern.sysv.shmmni 2>/dev/null || echo)"
-        SHM_USED="$(ipcs -m 2>/dev/null | awk '$1 == "m" {n++} END {print n + 0}')"
-        if [ -z "$SHM_MAX" ]; then
-            echo "unverified SysV 공유메모리 한도를 읽지 못함(sysctl 차단 환경일 수 있다)"
-        elif [ $((SHM_MAX - SHM_USED)) -ge 2 ]; then
-            echo "ok   SysV 공유메모리 세그먼트: 사용 $SHM_USED / 한도 $SHM_MAX"
-        else
-            echo "FAIL SysV 공유메모리 세그먼트 소진: 사용 $SHM_USED / 한도 $SHM_MAX. 세션 전용 PG initdb 가 shmget 으로 실패한다. 다른 세션의 자원은 지우지 말고 종료를 기다리거나 호스트 소유자가 한도를 올린다."
+        SHM_MAX="$(sysctl -n kern.sysv.shmmni 2>/dev/null)"
+        SYSCTL_RC=$?
+        IPCS_OUT="$(ipcs -m 2>&1)"
+        IPCS_RC=$?
+        if [ "$SYSCTL_RC" -ne 0 ] || ! [[ "$SHM_MAX" =~ ^[0-9]+$ ]]; then
+            echo "FAIL SysV 공유메모리 한도를 확인할 수 없음(sysctl 차단 또는 잘못된 값)"
             PRE_FAIL=1
+        elif [ "$IPCS_RC" -ne 0 ] || [[ "$IPCS_OUT" != *"Shared Memory:"* ]] || [[ "$IPCS_OUT" == *"ipcs: "* ]]; then
+            echo "FAIL SysV 공유메모리 사용량을 확인할 수 없음(ipcs 차단 또는 잘못된 출력)"
+            PRE_FAIL=1
+        else
+            SHM_USED="$(printf '%s\n' "$IPCS_OUT" | awk '$1 == "m" {n++} END {print n + 0}')"
+            if [ $((SHM_MAX - SHM_USED)) -ge 2 ]; then
+                echo "ok   SysV 공유메모리 세그먼트: 사용 $SHM_USED / 한도 $SHM_MAX"
+            else
+                echo "FAIL SysV 공유메모리 세그먼트 소진: 사용 $SHM_USED / 한도 $SHM_MAX. 세션 전용 PG initdb 가 shmget 으로 실패한다. 다른 세션의 자원은 지우지 말고 종료를 기다리거나 호스트 소유자가 한도를 올린다."
+                PRE_FAIL=1
+            fi
         fi
     fi
     if [ -n "${TTAKKARI_TEST_DB:-}" ]; then echo "info TTAKKARI_TEST_DB 지정됨: 소유자가 관리하는 시험 전용 DB일 때만 쓴다(운영 DB 'ttakkari'는 conftest 가 거부)."; fi

@@ -5,6 +5,8 @@ import subprocess
 import json
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "scripts" / "verify_deploy_gate.sh"
@@ -199,3 +201,23 @@ def test_preflight_passes_with_headroom_and_creates_nothing(tmp_path):
     assert result.returncode == 0, result.stdout
     assert "사용 10 / 한도 32" in result.stdout
     assert set(Path(os.environ.get("TMPDIR", "/tmp")).glob("ttk-gate-*")) == before
+
+
+@pytest.mark.parametrize(("unavailable", "message", "body"), [
+    ("sysctl", "FAIL SysV 공유메모리 한도를 확인할 수 없음", "#!/bin/sh\nexit 1\n"),
+    ("ipcs", "FAIL SysV 공유메모리 사용량을 확인할 수 없음", "#!/bin/sh\nexit 1\n"),
+    ("ipcs", "FAIL SysV 공유메모리 사용량을 확인할 수 없음",
+     "#!/bin/sh\necho 'ipcs: sysctlbyname: Operation not permitted' >&2\necho 'Shared Memory:'\nexit 0\n"),
+])
+def test_preflight_fails_closed_when_sysv_state_is_unavailable(tmp_path, unavailable, message, body):
+    if os.uname().sysname != "Darwin":
+        return
+    env = preflight_env(tmp_path, shmmni=32, segments=1)
+    command = Path(env["PATH"].split(":", 1)[0]) / unavailable
+    command.write_text(body)
+    result = subprocess.run([str(GATE), "--preflight"], text=True, capture_output=True,
+                            env=env, timeout=30)
+
+    assert result.returncode == 1
+    assert message in result.stdout
+    assert "preflight 실패" in result.stdout

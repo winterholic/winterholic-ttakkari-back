@@ -375,6 +375,9 @@ class RuntimeGeneration(Base):
     __tablename__ = "runtime_generations"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     revision: Mapped[str] = mapped_column(String(40))
+    role: Mapped[str] = mapped_column(String(16), default="api", server_default="api")
+    protocol: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    execution_mode: Mapped[str] = mapped_column(String(16), default="local", server_default="local")
     api_url: Mapped[str] = mapped_column(String(150))
     pid: Mapped[int] = mapped_column(Integer)
     process_started_at: Mapped[float] = mapped_column(Float)
@@ -387,6 +390,7 @@ class RuntimeControl(Base):
     __tablename__ = "runtime_control"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     active_generation: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"))
+    executor_generation: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"))
     epoch: Mapped[int] = mapped_column(Integer, default=0)
 
 

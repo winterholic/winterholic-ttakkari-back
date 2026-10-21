@@ -392,7 +392,11 @@ async def _ask(prof: profiles_mod.Profile, system: str, prompt: str, *,
                cfg_override: dict[str, str] | None = None, timeout_seconds: float | None = None,
                use_warm: bool = True, output_schema: Path | None = None) -> Attempt:
     s = get_settings()
-    if use_warm and s.desk_warm_pool and cfg_override is None:
+    from ttakkari import generation
+    from ttakkari.runs.manager import attempt_handle
+    handle = attempt_handle.get()
+    executor = generation.current and generation.current.role == "executor"
+    if use_warm and s.desk_warm_pool and cfg_override is None and not executor:
         from ttakkari.runs import desk_pool
 
         warm = await desk_pool.ask(prof, system, prompt)
@@ -412,13 +416,17 @@ async def _ask(prof: profiles_mod.Profile, system: str, prompt: str, *,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
     except FileNotFoundError:
         return Attempt(None, f"{prof.engine} 실행 파일을 찾을 수 없습니다.", ms())
+    if handle is not None:
+        handle.proc = proc
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout)
     except TimeoutError:
         _kill(proc)
+        await proc.wait()
         return Attempt(None, f"시간 초과({timeout:g}초)", ms())
     except asyncio.CancelledError:
         _kill(proc)
+        await proc.wait()
         raise
     stdout, stderr = out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
     text, error = (_codex_result if prof.engine == "codex" else _claude_result)(stdout)

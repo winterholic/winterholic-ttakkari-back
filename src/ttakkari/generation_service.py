@@ -10,7 +10,14 @@ from sqlalchemy import select
 from ttakkari import generation
 from ttakkari.config import get_settings
 from ttakkari.db import dispose_engine, sessionmaker
-from ttakkari.models import ChatSession, Meeting, Run, RuntimeCommand, utcnow
+from ttakkari.models import (
+    TERMINAL_RUN_STATUSES,
+    ChatSession,
+    Meeting,
+    Run,
+    RuntimeCommand,
+    utcnow,
+)
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +38,10 @@ async def _commands(runtime, manager) -> None:
         if command.kind == "cancel":
             if command.run_id in manager._handles:
                 await manager.cancel(command.run_id)
-                await runtime.ack(command.id)
+                async with sessionmaker()() as db:
+                    run = await db.get(Run, command.run_id)
+                    if run is None or run.status in TERMINAL_RUN_STATUSES:
+                        await runtime.ack(command.id)
             else:
                 async with sessionmaker()() as db:
                     run = await db.get(Run, command.run_id)
@@ -55,9 +65,17 @@ async def _commands(runtime, manager) -> None:
             await runtime.ack(command.id)
 
 
+async def coordinate_runs(runtime, manager, state) -> None:
+    if manager.remote:
+        return
+    await _commands(runtime, manager)
+    if state == "active":
+        from ttakkari.runs.manager import resume_queued
+        await resume_queued()
+
+
 async def coordinate(runtime, manager) -> None:
     from ttakkari.runs import desk_pool, profiles, usage_store
-    from ttakkari.runs.manager import resume_queued
     previous = "standby"
     while True:
         try:
@@ -68,12 +86,12 @@ async def coordinate(runtime, manager) -> None:
                 # In-use exchanges were popped out of _warm; this only stops idle/refill.
                 await desk_pool.shutdown()
             previous = state
-            await _commands(runtime, manager)
             if state == "active":
                 async with sessionmaker()() as db:
                     await profiles.load_cooldowns(db)
                     await usage_store.load_latest(db, refresh=True)
-                await resume_queued()
+            await coordinate_runs(runtime, manager, state)
+            if state == "active":
                 from ttakkari.schedules import process_due_schedules
                 # work 잠금으로 감싸 주기 작업(schedules)과 겹치지 않게 하고, 실행 중에는 세대가 퇴역하지 않게 한다.
                 async with generation.work("schedules") as acquired:

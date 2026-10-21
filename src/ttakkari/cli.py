@@ -21,6 +21,12 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_executor(args: argparse.Namespace) -> int:
+    from ttakkari.executor import serve
+    asyncio.run(serve(activate=args.activate))
+    return 0
+
+
 def _cmd_serve_games(args: argparse.Namespace) -> int:
     """별도 게임 origin 만 띄운다(API·DB 라우트 없음). 로컬 검증이나 별도 포트/터널 운영용이다."""
     import uvicorn
@@ -337,6 +343,10 @@ def _cmd_desk_eval(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="ttakkari")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("executor", help="독립 Run 실행기(protocol2, 기본 비활성)")
+    p.add_argument("--activate", action="store_true", help="idle remote API로 검증된 DB만 명시 활성화")
+    p.set_defaults(func=_cmd_executor)
 
     p = sub.add_parser("serve", help="API 서버 실행")
     p.add_argument("--host", default="127.0.0.1")

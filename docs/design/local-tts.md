@@ -343,6 +343,9 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 - **세대·사망 확인 검증**: draining 전환 시 자기 소유 queued가 `failed(generation_draining)`이 되고 running은 끝까지 가는지, `heartbeat_at`만 오래된 소유자의 job은 건드리지 않는지, `<owner_id>.lock`을 얻을 수 있을 때만 `owner_gone`로 정리하는지, 사망한 소유자의 running 행이 정리될 때까지 새 claim이 막히는지.
 - **동시성 및 간섭 검증 완료**: STT(4스레드)와 TTS(4스레드) 동시 실행 시 상호 RTF 저하율 실측 완료 (TTS +11.69%, STT +3.55%, `docs/tts/benchmark-2026-10-21.md` 참조).
 - **모바일 실기기 검증**: iOS 17+ Safari/PWA 실기기 체크리스트 검증.
+- **DB 0060→0061 테이블 생성 및 schema 이미 0060일 때 migration skip 방지 회귀 케이스**:
+  - `0060_collector_job_runtime` → `0061_local_tts` 업그레이드 시 `tts_jobs`, `tts_cache` 테이블 정상 생성 검증.
+  - `deploy/generation-contract.json`의 `schema_revision`이 `0061_local_tts`이고 `online_migration_from`에 `0060_collector_job_runtime`이 명시되어 있어, DB가 이미 0060인 환경에서도 `generation_deployment.py`가 migration을 skip하지 않고 0061을 안전하게 수행하도록 보장.
 
 ## 13. 측정 항목 및 2026-10-21 실측치 (`docs/tts/benchmark-2026-10-21.md`)
 
@@ -386,7 +389,7 @@ iOS Safari의 WebKit 자동재생 정책(https://webkit.org/blog/6784/new-video-
 
 ## 15. 마이그레이션·배포·운영
 
-- **Alembic Migration**: 미래의 특정 마이그레이션 번호(0055 등)를 미리 예약하지 않는다. 구현 시점에 통합된 최신 Alembic head 및 down_revision을 기준으로 다음 리비전 번호를 결정하여 생성한다. `tts_jobs`, `tts_cache` 테이블 생성 및 downgrade 지원.
+- **Alembic Migration 및 Generation Contract 정합성**: 미래의 특정 마이그레이션 번호(0055 등)를 미리 예약하지 않고, 선행 반영된 Alembic head(`0060_collector_job_runtime`)를 down_revision으로 하여 `0061_local_tts.py`를 확정 생성함(`tts_jobs`, `tts_cache` 테이블 생성 및 downgrade 지원). 무중단 세대 배포 계약(`deploy/generation-contract.json`)에 `schema_revision: "0061_local_tts"` 및 `online_migration_from`에 `0060_collector_job_runtime`을 등록하여, DB 0060→0061 테이블 생성 및 schema 이미 0060일 때 migration skip 방지 회귀 케이스를 충족함.
 - **배포 및 운영**: 기능 코드 변경이 없는 본 설계 단계에서는 백엔드 배포를 요청하지 않는다. 운영 시에는 캐시 용량 모니터링과 미준비 상태(`ready=false`)에 대한 사용자 가이드를 제공한다.
 
 ## 16. WBS 개요 (PMS 「따까리 · 로컬 TTS」 프로젝트)

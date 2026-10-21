@@ -1,6 +1,6 @@
 # ADR 0067. 세션 소유권과 배포 세대를 넘는 에이전트 전역 중지
 
-- 상태: 재작업 구현(2026-10-21), DB 통합 재검증 대기. 이 문서는 사용자 요청의 설계를 기록하며 별도 사용자 승인 기록을 뜻하지 않는다.
+- 상태: 재작업 수정 SHA `32dce03e7ec186d60da2211cb4aeafcb7bd6e42f`의 DB 통합 재검증 대기. feature 브랜치는 원격 push됨; main 반영 및 배포 예약은 미완료. 이 문서는 사용자 요청의 설계를 기록하며 별도 사용자 승인 기록을 뜻하지 않는다.
 - 요청: 새벽에 "에이전트 전부 중지"를 시켰을 때 AIP 작업 세션만 "다른 세션이 끼어들 수 없다"며 남았다. 소유 오케스트레이터와 무관하게 모든 활성·대기 Run 을 멈춘다.
 
 ## 1. 원인
@@ -37,3 +37,10 @@
 - DB 통합 반례 5개는 `tests/test_agent_stop_all.py` 에 추가했으나 미실행이다. 이 실행 환경에는 `TTAKKARI_TEST_DB` 가 설정되지 않았고 `/tmp/ttakkari-test-*` test cluster도 없다. 기존 동일 fixture의 `initdb` 는 `shmget: No space left on device` 로 실패한 이력이 있어 같은 경로를 반복하지 않았다.
 - 기준 SHA 예약 `2c6afdaa-619a-4a5e-9f74-1910cb69763a` 는 최종 `failed` (`schema contract requires an idle migration/bootstrap; active work preserved`). 수정 SHA 독립 gate는 이 ADR 갱신 시점에 아직 예약하지 않았다.
 - 운영 전체 중지는 실행하지 않았다. 05:00 취소 예약을 조회·변경·재활성화·실행하지 않았다.
+
+
+### 후속 검증 상태 (2026-10-21)
+- 수정 SHA `32dce03e7ec186d60da2211cb4aeafcb7bd6e42f`에서 DB 비의존 테스트 `4 passed`, 변경 대상 Ruff `All checks passed!`, compileall, diff check 및 Alembic head 조회를 다시 실행했다.
+- 원격 feature branch push 성공. 원격 main push의 pre-push gate는 Codex 명령 sandbox에서 uv cache 경로 접근 `Operation not permitted (os error 1)`로 `uv sync` 단계에서 멈췄다. 테스트 우회는 하지 않았다.
+- 기존 다른 SHA 예약 `d767a2cc-abcc-4f87-8309-6f0de67e4167`가 조회 시 `testing`이어서 통합 DB 테스트나 무거운 게이트를 겹쳐 시작하지 않았다. 수정 SHA 게이트/배포는 예약되지 않았다.
+- 이 수정 SHA의 DB 통합 반례 5건, 교차세대 lease 실제 집행, scope/token, catch-up/중복 방지 동적 회귀는 미확인이다. 운영 전체 중지와 취소된 05:00 예약은 실행/변경하지 않았다. 위 근거 전까지 최종 독립 통과 판정을 내리지 않는다.

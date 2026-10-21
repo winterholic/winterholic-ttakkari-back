@@ -281,9 +281,11 @@ async def test_egress_never_removes_same_build_network_from_another_attempt():
 async def test_egress_resources_are_owned_by_independent_attempt_ids():
     runner, calls = stale_network_runner([(0, "net-a"), (0, "net-b")])
 
-    async with runner._egress("same-build", attempt_id="attempt-a") as first:
-        async with runner._egress("same-build", attempt_id="attempt-b") as second:
-            assert first["network"] != second["network"]
+    async with (
+        runner._egress("same-build", attempt_id="attempt-a") as first,
+        runner._egress("same-build", attempt_id="attempt-b") as second,
+    ):
+        assert first["network"] != second["network"]
 
     creates = [c for c in calls if c[:2] == ("network", "create")]
     assert len(creates) == 2

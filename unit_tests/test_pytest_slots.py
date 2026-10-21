@@ -8,7 +8,6 @@ import sys
 import time
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SLOTS = ROOT / "scripts" / "pytest_slots.py"
 
@@ -30,8 +29,7 @@ def test_slot_lock_remains_held_by_surviving_child_after_wrapper_is_killed(tmp_p
         wrapper.send_signal(signal.SIGKILL)
         wrapper.wait(timeout=5)
 
-        lock = open(slot_dir / "slot-0.lock", "r+")
-        try:
+        with open(slot_dir / "slot-0.lock", "r+") as lock:
             try:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -39,8 +37,6 @@ def test_slot_lock_remains_held_by_surviving_child_after_wrapper_is_killed(tmp_p
             else:
                 blocked = False
             assert blocked, "wrapper 종료 직후 살아 있는 자식이 슬롯 잠금을 보존해야 한다"
-        finally:
-            lock.close()
         os.kill(child_pid, signal.SIGTERM)
     finally:
         if wrapper.poll() is None:

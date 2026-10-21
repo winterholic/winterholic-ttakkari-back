@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
-import json
 from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "scripts" / "verify_deploy_gate.sh"
@@ -46,7 +45,7 @@ def run_gate(tmp_path: Path, *args: str, pytest_exit: int, pytest_output: str = 
     env = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "GATE_CALL_LOG": str(calls),
            "GATE_PYTEST_EXIT": str(pytest_exit), "GATE_PYTEST_OUTPUT": pytest_output,
            "TTK_PYTEST_SLOT_DIR": str(tmp_path / "slot-locks")}
-    return subprocess.run([str(GATE), *args], input=stdin, text=True, capture_output=True, env=env, timeout=30)
+    return subprocess.run([str(GATE), *args], input=stdin, text=True, capture_output=True, env=env, timeout=30, check=False)
 
 
 def test_full_mode_rejects_zero_collected_tests(tmp_path):
@@ -96,17 +95,17 @@ def test_installed_hook_invokes_gate_automatically_and_preserves_existing_hook(t
     gate.chmod(0o755)
     env = {**os.environ, "GIT_DIR": str(git_dir)}
 
-    installed = subprocess.run([str(GATE), "--install-hook"], capture_output=True, text=True, env=env)
+    installed = subprocess.run([str(GATE), "--install-hook"], capture_output=True, text=True, env=env, check=False)
     assert installed.returncode == 0, installed.stdout + installed.stderr
     hook = git_dir / "hooks" / "pre-push"
     invoked = subprocess.run([str(hook), "origin", "unused"], cwd=repo, input="", text=True,
-                             capture_output=True, env=env)
+                             capture_output=True, env=env, check=False)
     assert invoked.returncode == 0, invoked.stdout + invoked.stderr
     assert marker.read_text().strip() == "invoked:--pre-push"
 
     hook.write_text("#!/bin/sh\necho user-hook\n")
     hook.chmod(0o755)
-    rejected = subprocess.run([str(GATE), "--install-hook"], capture_output=True, text=True, env=env)
+    rejected = subprocess.run([str(GATE), "--install-hook"], capture_output=True, text=True, env=env, check=False)
     assert rejected.returncode != 0
     assert hook.read_text() == "#!/bin/sh\necho user-hook\n"
 
@@ -147,7 +146,7 @@ def test_changed_test_selection_runs_inside_shared_slot(tmp_path):
            "GATE_PYTEST_EXIT": "0", "GATE_PYTEST_OUTPUT": "1 passed",
            "TTK_PYTEST_SLOT_DIR": str(tmp_path / "slot-locks")}
     result = subprocess.run([str(scripts / "verify_deploy_gate.sh"), "--commit", candidate, "--base", base],
-                            cwd=repo, text=True, capture_output=True, env=env, timeout=30)
+                            cwd=repo, text=True, capture_output=True, env=env, timeout=30, check=False)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert (tmp_path / "slot-locks" / "slot-0.lock").is_file()
@@ -179,7 +178,7 @@ def preflight_env(tmp_path: Path, *, shmmni: int, segments: int) -> dict[str, st
 
 def run_preflight(tmp_path: Path, **kw: int) -> subprocess.CompletedProcess[str]:
     return subprocess.run([str(GATE), "--preflight"], text=True, capture_output=True,
-                          env=preflight_env(tmp_path, **kw), timeout=30)
+                          env=preflight_env(tmp_path, **kw), timeout=30, check=False)
 
 
 def test_preflight_fails_when_sysv_shared_memory_is_exhausted(tmp_path):
@@ -216,7 +215,7 @@ def test_preflight_fails_closed_when_sysv_state_is_unavailable(tmp_path, unavail
     command = Path(env["PATH"].split(":", 1)[0]) / unavailable
     command.write_text(body)
     result = subprocess.run([str(GATE), "--preflight"], text=True, capture_output=True,
-                            env=env, timeout=30)
+                            env=env, timeout=30, check=False)
 
     assert result.returncode == 1
     assert message in result.stdout

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import fcntl
 import json
 import os
 import re
@@ -34,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ttakkari import host_gpu_guard as guard
 from ttakkari.host_gpu_guard import ALIAS
+from ttakkari.host_resource import LeaseBusy, ResourceLeaseHandle, ResourceLeaseManager
 
 MEASURED_ON = "host_gpu_path"
 MEASURED_NOTE = ("Measured on the host GPU path: a llama-server child run by the backend outside any engine sandbox, "
@@ -166,15 +166,8 @@ _terminate_group = guard.terminate_group
 
 
 def _lock_held(directory: Path) -> bool:
-    """감독자가 잠금을 쥐고 있는가. 잠금을 얻으면 즉시 놓는다."""
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with open(directory / "lock", "a+") as f:
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            return True
-        fcntl.flock(f, fcntl.LOCK_UN)
-        return False
+    """기존 llama lock 경로를 포함한 공용 호스트 자원 잠금 상태."""
+    return ResourceLeaseManager(data_dir=directory.parent).is_locked()
 
 
 def swap_used_bytes() -> int:
@@ -252,20 +245,26 @@ class Supervisor:
         self.health = health
         self.stop = threading.Event()
         self.reason = "requested"
+        self.lease: ResourceLeaseHandle | None = None
 
     def _acquire(self):
-        self.dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd = open(self.dir / "lock", "a+")  # noqa: SIM115 -- 프로세스가 끝날 때까지 쥔다
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            fd.close()
+            self.lease = ResourceLeaseManager(data_dir=self.dir.parent).acquire(
+                owner_task="host_gpu",
+                owner_attempt=str(self.spec["launch_id"]),
+                runtime_instance=f"host-gpu:{self.spec['launch_id']}",
+                resource_family="llm",
+                claim={"gpu_layers": self.req.gpu_layers, "ctx_size": self.req.ctx_size,
+                       "threads": self.req.threads},
+                ttl_seconds=max(30, self.poll * 4),
+            )
+        except LeaseBusy:
             return None
-        return fd
+        return self.lease
 
     def run(self) -> int:
-        lock = self._acquire()
-        if lock is None:
+        lease = self._acquire()
+        if lease is None:
             return EXIT_BUSY
         server: subprocess.Popen | None = None
         watchdog: subprocess.Popen | None = None
@@ -285,6 +284,8 @@ class Supervisor:
             log.close()
             state = {
                 "launch_id": self.spec["launch_id"], "phase": "starting",
+                "lease_id": lease.lease_id, "lease_generation_token": lease.generation_token,
+                "runtime_instance": lease.runtime_instance,
                 "supervisor_pid": os.getpid(), "supervisor_start": _proc_start(os.getpid()),
                 "watchdog_pid": watchdog.pid, "server_pid": server.pid, "server_start": _proc_start(server.pid),
                 "port": port, "model": self.req.model, "request": self.req.model_dump(),
@@ -300,12 +301,24 @@ class Supervisor:
         finally:
             if server is not None:
                 _terminate_group(server.pid)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    server.wait(timeout=5)
             final = {**state} if state else {"launch_id": self.spec["launch_id"], "request": self.req.model_dump(),
-                                             "model": self.req.model, "started_at": time.time()}
+                                             "model": self.req.model, "started_at": time.time(),
+                                             "lease_id": lease.lease_id,
+                                             "lease_generation_token": lease.generation_token,
+                                             "runtime_instance": lease.runtime_instance}
             final.update(phase="stopped", stop_reason=self.reason, stopped_at=time.time(),
                          server_exit_code=None if server is None else server.returncode)
             _write_state(self.dir, final)
-            lock.close()
+            if server is None:
+                evidence = {"runtime_instance": lease.runtime_instance, "server_started": False,
+                            "supervisor_stop_reason": self.reason}
+            else:
+                evidence = {"runtime_instance": lease.runtime_instance, "server_pid": server.pid,
+                            "server_start": state.get("server_start"), "server_exit_code": server.returncode,
+                            "supervisor_stop_reason": self.reason}
+            lease.release(proof={"runtime_status": "stopped", "evidence": evidence})
         return 0
 
     def _start_watchdog(self, server_path: str, port: int) -> subprocess.Popen:
@@ -338,6 +351,8 @@ class Supervisor:
             if server.poll() is not None:
                 self.reason = f"server_exited:{server.returncode}"
                 return
+            if self.lease is not None:
+                self.lease.heartbeat(ttl_seconds=max(30, self.poll * 4))
             try:
                 growth = self.swap_reader() - baseline
                 failures = 0
@@ -360,6 +375,8 @@ class Supervisor:
                 if self.health(state["port"]):
                     state.update(phase="ready", ready_at=time.time())
                     _write_state(self.dir, state)
+                    if self.lease is not None:
+                        self.lease.mark_running()
                 elif time.monotonic() - t0 > start_timeout:
                     self.reason = "start_timeout"
                     return
@@ -390,11 +407,25 @@ class HostGpu:
 
     def _reap_lost(self, state: dict[str, Any]) -> dict[str, Any]:
         """감독자가 사라졌는데 상태가 살아 있으면 정리한다. 상태 파일에 적힌 우리 서버 프로세스만 건드린다."""
+        lease_id = state.get("lease_id")
+        generation_token = state.get("lease_generation_token")
+        if not lease_id or not generation_token:
+            raise GpuError("host resource lease owner evidence is missing; refusing automatic reconciliation")
         server_pid = state.get("server_pid")
         if server_pid:
             guard.kill_our_server(int(server_pid), state.get("server_start"), state.get("port"))
+            if guard.same_process(int(server_pid), state.get("server_start")):
+                raise GpuError("owned server is still present; resource lease remains held")
         state = {**state, "phase": "stopped", "stop_reason": "supervisor_lost", "stopped_at": time.time()}
         _write_state(self.dir, state)
+        ResourceLeaseManager(data_dir=self.dir.parent).reconcile(
+            lease_id,
+            generation_token,
+            proof={"runtime_status": "stopped", "evidence": {
+                "runtime_instance": state.get("runtime_instance"), "server_pid": server_pid,
+                "server_start": state.get("server_start"), "supervisor_lost": True,
+            }},
+        )
         return state
 
     def _current(self) -> dict[str, Any] | None:
@@ -533,6 +564,9 @@ class HostGpu:
         state = self._current()
         if not state or state.get("phase") not in _PHASES_LIVE:
             return {**self.status(), "stopped_now": False}
+        if state.get("lease_id") and state.get("lease_generation_token"):
+            ResourceLeaseManager(data_dir=self.dir.parent).request_cancel(
+                state["lease_id"], state["lease_generation_token"])
         pid = int(state["supervisor_pid"])
         if not _same_process(pid, state.get("supervisor_start")) or "ttakkari.host_gpu" not in " ".join(_cmdline(pid)):
             raise GpuError("supervisor identity mismatch; refusing to signal an unrelated process")

@@ -17,7 +17,9 @@
 ## 결정 2. 엔진과 무관한 호스트 GPU 경로
 
 - 어떤 엔진의 작업 세션이든 백엔드 프로세스가 수행하는 MCP 도구로 샌드박스 밖 호스트에서 GPU 작업을 요청하는 정식 경로를 둔다. 첫 범위는 로컬 llama-server 시험 인스턴스 하나: 시작·상태·벤치·중지(`host_gpu_start/status/bench/stop`, `ttakkari/host_gpu.py`).
-- 안전장치: 한 번에 하나만(flock 감독자 `python -m ttakkari.host_gpu supervise`, 백엔드 세대가 내려가도 유지), 스왑 증가 가드(시작값보다 1GB 이상이면 자동 종료), 최대 실행 시간, 운영 Qwen 서버(포트 18987·57170)와 포트·프로세스 분리(상태 파일의 pid+시작 시각 일치와 `--alias ttakkari-gpu-test` 확인 후에만 신호), 임의 명령 금지(허용 모델 별칭과 `StartRequest` 고정 필드만 argv로 변환).
+- G1 common lease: 기존 `data_dir/host-gpu/lock` flock을 호스트 단일 GPU 자원의 상호배제 지점으로 유지하고, `data_dir/host-resource/lease.json`에 owner task/attempt, runtime instance, generation token, heartbeat/expiry, cancel phase와 stop proof를 기록한다. `host_gpu`는 `resource_family=llm`으로 이 lease를 잡는다. Comfy/ACE/Three/Blender managed consumer도 같은 `ResourceLeaseManager`와 flock 경로를 써야 하며, 별도 잠금은 자원 통합으로 인정하지 않는다.
+- lease expiry는 런타임 종료 증거가 아니다. 획득 경합은 flock으로 차단하고, 소유자·generation token 불일치 cancel/release는 거부한다. 재시작 대조는 소유 런타임을 확인한 정지 증거가 있어야 하며, 오래된 미확정 lease는 유지한다. 이 변경은 공통 lease의 backend 기반과 llama 연동까지이며, Comfy managed submit/observe/collect/reconcile 경로와 실제 GPU 검증을 완료했다는 뜻은 아니다.
+- 임의 명령 금지(허용 모델 별칭과 `StartRequest` 고정 필드만 argv로 변환).
 - qwen-local-harness와 qwen-local 어댑터·hostmon은 재사용하지 않았다. 하네스는 접수 프롬프트용, 어댑터는 운영 서버 고정 인자용이라 시험 인스턴스의 허용 목록·가드 모델과 맞지 않았다.
 - 이 도구로 잰 결과는 `measured_on: host_gpu_path`로 표시하고 "호스트 GPU 경로에서 측정"으로 말한다. 회사 세션(pool=work)에서는 막는다.
 - 긴 컨텍스트 실험은 ctx_size 최대 1,010,000과 cache_type_k/v의 f16·q8_0·q4_0 고정 선택을 허용한다. 슬롯당 컨텍스트 262,144 초과는 rope_scaling=yarn을 명시해야 하며 scale=4, original context=262144로 고정한다. 기존 기본 ctx8192·KV 타입 미지정·rope 미지정은 유지한다. 이는 허용 모델의 확장 실험 설정이며 1M 품질·처리 시간 보증이 아니다. 기존 단일 실행·소유권·1GB 스왑 가드·시간 상한은 유지한다.
@@ -26,6 +28,7 @@
 
 - `tests/test_execution_capabilities.py`: 프로브 전 항목·상태, 미측정 unknown, 손글 거부, 구 보고 덮어쓰기 금지, 프롬프트 주입, 보고 API(엔진 귀속·위조 거부), account_usage 필드 추가, 영수증 제한.
 - `tests/test_host_gpu.py`: 인자 검증(허용 목록·모순 조합·미지 필드), 단일 실행, 스왑 가드, 타임아웃, 감시 실패 시 fail-closed, 고아 정리(무관 프로세스 불처치), 상태 파일 권한, API 검증·개인 범위.
+- `unit_tests/test_host_resource.py`: LLM/Comfy 공통 경합, foreign/stale generation 거부, 만료 후에도 정지 증거 전까지 lease 유지, 재시작 reconcile, cancel 후 정상 stop release, 응답 유실/다운로드 실패 시 보존, legacy llama 상태 fail-closed.
 - 이번 Run 환경에서는 실제 GPU 끝단 실행을 하지 못했으므로 호스트 실측은 미검증으로 둔다.
 
 ## 보완 (독립 검증 결함 수정)

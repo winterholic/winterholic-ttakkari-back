@@ -227,9 +227,8 @@ async def test_llm_intent_cannot_skip_user_review_by_omitting_questions(client, 
         BASE + "/plans", headers=auth,
         json={"brief": "기술 설명 영상", "intent": candidate},
     )
-    assert response.status_code == 201, response.text
-    assert response.json()["intent_status"] == "unconfirmed_hint"
-    assert response.json()["render_gate"] is False
+    assert response.status_code == 422, response.text
+    assert "검토 전 의도 초안" in response.json()["message"]
 
 
 async def test_style_dna_compose_and_pin_over_api(client, auth):

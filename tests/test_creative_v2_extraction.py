@@ -141,3 +141,28 @@ def test_user_confirmed_constraint_requires_a_quote():
     result = validate_intent("기술 설명 영상", spec)
     assert result.valid is False
     assert any(issue.code == "explicit_without_evidence" for issue in result.errors)
+
+
+def test_quote_presence_does_not_mark_an_llm_proposal_as_semantically_verified():
+    from ttakkari.creative.v2.intent import IntentSpec, validate_intent
+
+    spec = IntentSpec.model_validate({
+        "selections": [{
+            "entry_id": "C01.tech_explainer", "role": "primary", "strength": "soft",
+            "source": "llm_inferred", "evidence": [{"quote": "귀여운 강아지"}],
+        }],
+        "constraints": [{
+            "id": "square", "kind": "aspect", "hard": False,
+            "statement": "정사각형 필수", "source": "llm_inferred",
+            "evidence": [{"quote": "비오는 날"}],
+        }],
+        "duration": {"mode": "exact", "seconds": 900},
+        "aspect": "1:1", "music_seconds": 890,
+        "extraction": {"method": "llm", "model": "mock"},
+    })
+
+    result = validate_intent("비오는 날 귀여운 강아지가 걷는 10초 영상", spec)
+
+    assert result.valid is True  # 구조·인용 존재 검증일 뿐 의미 지지 검증은 아니다.
+    assert result.needs_confirmation is True
+    assert any(issue.code == "semantic_support_unverified" for issue in result.warnings)

@@ -464,3 +464,24 @@ def test_invalid_ids_and_missing_plan(store):
         store.get("not-a-uuid")
     with pytest.raises(FileNotFoundError):
         store.get("33333333-3333-4333-8333-333333333333")
+
+
+def test_unreviewed_llm_scalars_cannot_change_plan_duration_or_content():
+    proposed = IntentSpec.model_validate({
+        "selections": [{
+            "entry_id": "C01.tech_explainer", "role": "primary", "strength": "soft",
+            "source": "llm_inferred", "evidence": [{"quote": "귀여운 강아지"}],
+        }],
+        "duration": {"mode": "preferred", "seconds": 900},
+        "aspect": "1:1", "music_seconds": 890,
+        "info_items": [{"id": "i1", "title": "주장", "narration": "임의 정보", "essential": False,
+                        "evidence": [{"quote": "귀여운 강아지"}]}],
+        "open_questions": ["의도를 검토해 주세요."],
+        "extraction": {"method": "llm", "model": "mock"},
+    })
+
+    with pytest.raises(ValueError, match="검토 전 의도 초안"):
+        build_plan(
+            "비오는 날 귀여운 강아지가 걷는 10초 영상", proposed,
+            duration=DurationRequest(mode="auto"), aspect="16:9", registry=registry(),
+        )

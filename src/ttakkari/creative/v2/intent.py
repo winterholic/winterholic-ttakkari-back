@@ -277,6 +277,18 @@ def validate_intent(brief: str, intent: IntentSpec) -> IntentValidation:
                 path="extraction",
             )
         )
+    if intent.extraction.method == "llm":
+        warnings.append(
+            IntentIssue(
+                code="semantic_support_unverified",
+                message=(
+                    "인용이 브리프에 존재하는지는 확인했지만, 선택·제약·수치·화면비·음악 길이를 "
+                    "의미적으로 뒷받침하는지는 자동 검증하지 않았습니다. 내용을 직접 검토하고 "
+                    "수정하거나 구조화 의도로 확인하기 전에는 계획에 적용하지 않습니다."
+                ),
+                path="intent",
+            )
+        )
     return IntentValidation(
         valid=not errors,
         needs_confirmation=intent.extraction.method in ("lexical_hint", "llm")

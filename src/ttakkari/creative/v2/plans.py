@@ -284,6 +284,10 @@ def build_plan(
             notes.append(
                 f"브리프에 길이 언급({hint['quote']})이 있지만 확인 전에는 적용하지 않았습니다."
             )
+    elif intent.extraction.method == "llm":
+        raise ValueError(
+            "검토 전 의도 초안은 계획 계산에 사용할 수 없습니다. 항목을 직접 검토하고 확인해 주세요."
+        )
     # UI에서 사용자가 고른 길이·화면비는 추출기의 해석보다 우선한다.
     update: dict[str, Any] = {}
     if duration is not None:

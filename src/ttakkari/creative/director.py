@@ -275,6 +275,25 @@ class DirectorStore:
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
+    @contextmanager
+    def locked_unattached_execution(self, production_id: str, section: str, key: str):
+        """attempt에 속하지 않는 엔진 작업(TTS·최종 조립)을 (구역, 키)별로 직렬화한다. 커널 flock이라 프로세스가 죽으면 풀린다."""
+        folder = self.production_path(production_id)
+        lock_folder = folder / "execution-locks"
+        if lock_folder.is_symlink():
+            raise ValueError("실행 잠금 경로 symlink는 허용되지 않습니다.")
+        lock_folder.mkdir(mode=0o700, exist_ok=True)
+        digest = _sha(f"{section}\0{key}".encode())
+        lock_path = lock_folder / f"unattached-{digest}.lock"
+        if lock_path.is_symlink():
+            raise ValueError("작업 잠금 경로 symlink는 허용되지 않습니다.")
+        with lock_path.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
     @staticmethod
     def _save_state(folder: Path, state: dict) -> None:
         temp = folder / (".state-" + _id() + ".tmp")
@@ -758,6 +777,28 @@ class DirectorStore:
                 attempt.update(state="cancelled", updated_at=_now())
                 self._seal_attempt(attempt)
                 return attempt
+            # 이전 실행이 수집 도중 죽어 receipt 없이 남긴 미디어 출력은 검수 전 잔재다. 새 실행의 바이트와
+            # 같은 attempt 전용 이름이 충돌하지 않도록 manifest 항목과 outputs를 버리고(CAS 바이트는 남는다) 사실을 이벤트로 남긴다.
+            stale_names = [
+                name
+                for name in state["artifacts"]
+                if re.fullmatch(re.escape(attempt_id) + r"-\d+\.bin", name)
+            ]
+            if stale_names or attempt.get("outputs"):
+                discarded = [
+                    state["artifacts"].pop(name)["sha256"] for name in stale_names
+                ]
+                attempt["outputs"] = []
+                self._event(
+                    state,
+                    "attempt:"
+                    + attempt_id
+                    + ":stale-outputs-discarded:"
+                    + claim["claim_id"],
+                    "attempt.stale_outputs_discarded",
+                    attempt_id,
+                    output_sha256s=discarded,
+                )
             attempt["state"] = "running"
             attempt["execution_claim"] = claim
             attempt["error_details"] = []
@@ -1169,7 +1210,20 @@ class DirectorStore:
             raise ValueError("허용되지 않은 sidecar 구역입니다.")
         if not key or len(key) > 200:
             raise ValueError("sidecar 키가 잘못됐습니다.")
-        content_hash = _hash(value)
+        # key·content_hash·at는 저장소가 정한다. 호출자 값이 계산값을 덮으면 같은 payload 재호출이 충돌로 보이므로 계산값만 쓴다.
+        reserved = {"key", "content_hash", "at"} & value.keys()
+        if "at" in reserved:
+            raise ValueError(
+                "sidecar 예약 필드 at은 저장소가 정하며 값에 넣을 수 없습니다."
+            )
+        if "key" in reserved and value["key"] != key:
+            raise ValueError("sidecar 값의 key가 인자 key와 다릅니다.")
+        body = {k: v for k, v in value.items() if k not in {"key", "content_hash"}}
+        content_hash = _hash(body)
+        if "content_hash" in reserved and value["content_hash"] != content_hash:
+            raise ValueError(
+                "sidecar 값의 content_hash가 payload 계산값과 다릅니다(예약 필드)."
+            )
         with self._locked_state(pid) as state:
             rows = state.setdefault(section, {})
             prior = rows.get(key)
@@ -1179,7 +1233,7 @@ class DirectorStore:
                         "같은 sidecar 키에 다른 내용을 기록할 수 없습니다."
                     )
                 return prior
-            record = {"key": key, "content_hash": content_hash, "at": _now(), **value}
+            record = {**body, "key": key, "content_hash": content_hash, "at": _now()}
             rows[key] = record
             return record
 

@@ -220,13 +220,16 @@ class _Client:
                 "mode": os.stat(path).st_mode & 0o777,
             }
         )
+        if self.server.on_upload:
+            self.server.on_upload(path)
         if self.server.upload_error:
             raise self.server.upload_error
         return self.server.upload_result or f"ttk/{Path(path).name}"
 
 
 class _Server:
-    def __init__(self, *, upload_error=None, upload_result=None):
+    def __init__(self, *, upload_error=None, upload_result=None, on_upload=None):
+        self.on_upload = on_upload
         self.owned, self.started, self.stopped = True, False, False
         self.uploads: list[dict] = []
         self.upload_error, self.upload_result = upload_error, upload_result
@@ -472,6 +475,56 @@ def test_tampered_or_symlinked_staged_input_is_never_uploaded(tmp_path):
     saved2 = service2.get(record2["task_id"])
     assert saved2["status"] == "failed" and "missing or outside" in saved2["error"]
     assert servers2[0].uploads == [] and _lease(service2) is None
+
+
+def test_upload_gets_the_verified_bytes_even_if_the_staged_file_changes_after_the_hash_check(
+    tmp_path,
+):
+    # G34 검수 반례: 해시 확인 뒤 staged 경로를 넘기면 업로더가 읽는 시점에 바이트가 달라질 수 있었다.
+    paths = {}
+    service, servers = _controller(
+        tmp_path,
+        on_upload=lambda path: paths.update(
+            uploaded=path,
+            staged_before=paths["staged"].read_bytes(),
+            _=paths["staged"].write_bytes(b"changed after the controller hash check"),
+        ),
+    )
+    image = _image()
+    record = service.prepare(I2V, prompt="cafe", seed=2101, image=image)
+    paths["staged"] = _staged_dir(service, record["task_id"]) / NAME
+
+    job = service.execute(record["task_id"])
+
+    assert paths["uploaded"] != str(
+        paths["staged"]
+    )  # 업로더는 검증한 바이트의 별도 사본을 받는다
+    assert servers[0].uploads[0]["bytes_sha256"] == image.sha256
+    assert job["status"] == "succeeded"
+
+
+def test_upload_fails_closed_when_the_uploaded_bytes_stop_matching_the_declared_sha256(
+    tmp_path,
+):
+    service, servers = _controller(
+        tmp_path,
+        on_upload=lambda path: Path(path).write_bytes(
+            b"changed while the uploader was reading"
+        ),
+    )
+    record = service.prepare(I2V, prompt="cafe", seed=2101, image=_image())
+
+    job = service.execute(record["task_id"])
+
+    saved = service.get(record["task_id"])
+    assert job["status"] == saved["status"] == "failed"
+    assert "uploaded bytes no longer match" in saved["error"]
+    assert saved["input_upload"]["prompt_submitted"] is False
+    assert (
+        _Runner.instances[-1].runs == []
+    )  # 변조 가능한 입력으로 제출·생성에 도달하지 않는다
+    assert servers[0].stopped and _lease(service) is None
+    assert not _staged_dir(service, record["task_id"]).exists()
 
 
 def test_second_submission_is_rejected_by_the_shared_lease_and_leaves_no_staged_copy(

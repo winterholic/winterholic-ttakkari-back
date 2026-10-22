@@ -40,7 +40,7 @@
 - 사람 시청/청취, 독립 검수, VLM 의미 검수: 없다. 모든 승인 필드는 null이다. 기계 검수는 의미·미감을 판정하지 않는다.
 - 실제 음악 비트 분석 정확도: 합성 클릭 트랙(120BPM)에서 프레임 정렬(12·24·36 프레임)만 확인했다. 첫 박(t=0)은 플럭스가 0이라 잡지 않는다.
 - Metal/GPU Three 경로, Blender, ACE-Step 음악 생성, 색 변환·LUT 적용: 이번 범위 밖이며 구현하지 않았다.
-- 서버 시작 시 미완료 attempt 자동 재개와 `run_unattached`(TTS·최종 조립)의 execution claim: 없다.
+- 서버 시작 시 미완료 attempt 자동 재개: 없다. (`run_unattached`의 동시 실행 직렬화는 아래 G34 후속 수정으로 추가됨.)
 - 운영 배포: 하지 않았다. 배포 예약도 하지 않았다.
 
 ## 다음 검수자가 볼 곳
@@ -49,3 +49,18 @@
 3. crash 재개·취소·중복 이벤트·revision 충돌·stale 시험: `test_creative_engine_contract.py`.
 4. 정상/결함 대조 검수와 선언 예외: `test_creative_review_real.py`.
 5. 재현: `PYTHONPATH=src python scripts/repro/creative_engines_smoke.py`(약 35~60초, Chrome 사용, 새 임시 폴더에서만 쓴다).
+
+## G34 독립 검수(FAILED) 후속 수정
+검수 보고서(`creative-g34-independent-review`)와 반례 `repro_adversarial.py`에서 재현된 4건을 고쳤다. 회귀 시험은 `unit_tests/test_creative_g34_review_fixes.py`(신규 9)와 `test_comfy_i2v_input.py`(신규 2, 업로드 TOCTOU는 `2026-10-22-e1-i2v-input-contract.md`). 신규 11건 중 7건이 수정 전 코드에서 실패함을 확인했다(`git stash`로 src만 되돌려 실행. 나머지 4건은 이미 맞던 동작을 고정하는 대조 시험이다).
+
+| # | 결함 | 수정 | 시험 |
+|---|---|---|---|
+| P1 | 미디어 출력 기록 뒤 receipt 전에 죽으면 다른 바이트 재개가 `collect_failed` | 부분 수집 보존(기존 G0 시험) 규칙은 유지하고, 새 claim 시점에 그 attempt의 이전 `outputs`와 `{attempt_id}-N.bin` manifest 항목을 버리며 `attempt.stale_outputs_discarded` 이벤트를 남긴다. 완료/실패/취소 attempt는 재실행하지 않는다 | 크래시 후 다른 바이트 재개 성공, 같은 바이트 멱등, 완료 attempt 출력 불변 |
+| P1 | I2V 업로드 TOCTOU | e1 문서 참조 | e1 문서 참조 |
+| P2 | `run_unattached` 동시 실행 | `(구역,키)`별 flock(`locked_unattached_execution`) 안에서 sidecar 재확인, 실행, 기록 순서 | 4스레드 같은 키 어댑터 1회, 다른 키는 서로 막지 않음, 실패 후 재시도 |
+| P2 | sidecar `content_hash` 덮어쓰기 | `key`, `content_hash`, `at`은 저장소 예약 필드. 해시는 예약 필드를 뺀 payload의 계산값이고 호출자 `content_hash`/`key`가 맞지 않거나 `at`이 있으면 `ValueError`. 같은 키 다른 내용은 여전히 `ConflictError` | 계산값 동일 재호출 멱등, 불일치 명확한 오류, 예약 필드 |
+
+- 원본 반례 재실행(수정 worktree, 경로만 치환한 사본): attempt 크래시 후 `resume_state=review_pending`, `resume_error_kind=null`; sidecar `content_hash=caller-value`는 `ValueError`; staged 변조는 `job_failed=true`, `hash_matches_declared=true`, `prompt_submitted=false`. unattached는 원 스크립트의 fake가 동시 상대를 5초 기다리는 장치라 직렬화되면 첫 호출이 BrokenBarrier로 끝나고 두 번째가 순차 실행돼 `adapter_calls=2`로 보인다. 동시 실행 여부는 회귀 시험(어댑터 1회)이 판정한다.
+- 한계: (1) unattached는 실행 직후 sidecar 기록 전 crash 시 같은 키 재호출이 다시 실행하고, 비결정적 엔진이 같은 자산 이름에 다른 바이트를 내면 이름 충돌로 거부된다. (2) 서버 시작 시 미완료 attempt 자동 재개는 여전히 없다.
+- 포맷: 보고된 6개 파일을 `ruff format`으로 정리했다(`managed_comfy.py`는 형식만 바뀐 큰 diff). 로직 변경은 `_upload_input`, `_cleanup_input`, `_read_regular_file`뿐이다.
+- 실제 GPU/Comfy 실행, main 병합, 배포 예약은 하지 않았다.

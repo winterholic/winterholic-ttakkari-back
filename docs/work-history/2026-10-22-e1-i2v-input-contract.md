@@ -47,3 +47,9 @@
 - 감독 LLM 응답 스키마와 피드백 API에는 자산 지정 필드가 없다. I2V 샷은 `apply_shot_plan(assets=…)` 코드 경로로만 만든다.
 - `profiles()` 응답이 T2V 항목에도 새 키를 더한다. 읽기 전용 소비자는 영향이 없지만 정확히 같은 dict를 기대하는 소비자는 갱신해야 한다.
 - 이미지 업로드 이름은 자산 id 그대로(`ttk/<id>`)이고 overwrite=true다. 단일 lease가 직렬화하므로 충돌은 없지만 다른 경로가 같은 이름을 올리면 덮인다(그 경우 receipt의 sha는 요청한 값이지 Comfy 쪽 파일의 실제 바이트 검증이 아니다).
+
+## G34 독립 검수 후속 수정(업로드 TOCTOU)
+- 결함: staged 사본의 해시를 확인한 뒤 같은 경로를 `upload_image()`에 넘겨, 확인과 읽기 사이에 바이트가 바뀔 수 있었다.
+- 수정(`managed_comfy.py::_upload_input`): `O_NOFOLLOW` fd에서 읽은 바이트를 해시 검증하고, 그 메모리 버퍼를 task 폴더의 `.upload/` 비공개(0700/0600) 스냅샷 파일에 새로 써서 그 경로를 업로더에 준다. 업로드 뒤 스냅샷을 다시 해시해 선언 sha256과 다르면 `input_upload_failed: uploaded bytes no longer match…`로 실패 처리한다(`prompt_submitted=false`, `runner.run` 미도달, lease 해제, 사본 삭제).
+- 남는 한계: 업로더(외부 Runner client)가 경로만 받으므로 "바꿨다가 되돌리는" 변조는 재해시로 못 잡는다. 바이트 API가 있는 client가 생기면 그쪽으로 옮기는 것이 정답이다. 같은 사용자 권한의 악의적 프로세스는 위협 모델 밖이다.
+- 시험: `test_comfy_i2v_input.py`의 신규 2건(검증한 바이트가 업로드됨, 업로드 후 변조 시 fail-closed). 수정 전 코드에서는 둘 다 실패함을 확인했다.

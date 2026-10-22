@@ -681,38 +681,50 @@ class ProductionPipeline:
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """멱등 키로 한 번만 실행하는 엔진 작업. 출력은 CAS 자산, 기록은 sidecar. crash 뒤 같은 키로 다시 부르면 기존 결과를 돌려준다."""
-        state = self.store.get_production(pid)
-        prior = state.get(section, {}).get(key)
-        if prior is not None:
+        # 확인→실행→기록이 한 덩어리가 되도록 키별 잠금 안에서 sidecar를 다시 확인한다. 같은 키의 동시 호출은 한 번만 실행된다.
+        if prior := self.store.get_production(pid).get(section, {}).get(key):
             return prior
-        if self.store.get_production(pid)["cancelled"]:
-            raise PipelineError("취소된 제작에는 새 실행을 할 수 없습니다.")
-        outputs, receipt = self._run_adapter(pid, spec, attempt_id=None)
-        stored = []
-        for output, entry in zip(outputs, receipt["outputs"] + [None], strict=False):
-            if entry is None:
-                name, media_type = f"engine-receipt-{key[:24]}.json", "application/json"
-            else:
-                name, media_type = f"{key[:24]}-{entry['name']}", entry["media_type"]
-            stored.append(
-                self.store.put_artifact(pid, name, output, media_type=media_type)
+        with self.store.locked_unattached_execution(pid, section, key):
+            state = self.store.get_production(pid)
+            prior = state.get(section, {}).get(key)
+            if prior is not None:
+                return prior
+            if state["cancelled"]:
+                raise PipelineError("취소된 제작에는 새 실행을 할 수 없습니다.")
+            outputs, receipt = self._run_adapter(pid, spec, attempt_id=None)
+            stored = []
+            for output, entry in zip(
+                outputs, receipt["outputs"] + [None], strict=False
+            ):
+                if entry is None:
+                    name, media_type = (
+                        f"engine-receipt-{key[:24]}.json",
+                        "application/json",
+                    )
+                else:
+                    name, media_type = (
+                        f"{key[:24]}-{entry['name']}",
+                        entry["media_type"],
+                    )
+                stored.append(
+                    self.store.put_artifact(pid, name, output, media_type=media_type)
+                )
+            return self.store.record_sidecar(
+                pid,
+                section,
+                key,
+                {
+                    "engine": spec["engine"],
+                    "profile": spec["profile"],
+                    "spec": spec,
+                    "outputs": stored,
+                    "receipt_sha256": stored[-1]["sha256"],
+                    "output_sha256": stored[0]["sha256"],
+                    "execution_mode": receipt["execution_mode"],
+                    "real_execution": receipt["real_execution"],
+                    **(extra or {}),
+                },
             )
-        return self.store.record_sidecar(
-            pid,
-            section,
-            key,
-            {
-                "engine": spec["engine"],
-                "profile": spec["profile"],
-                "spec": spec,
-                "outputs": stored,
-                "receipt_sha256": stored[-1]["sha256"],
-                "output_sha256": stored[0]["sha256"],
-                "execution_mode": receipt["execution_mode"],
-                "real_execution": receipt["real_execution"],
-                **(extra or {}),
-            },
-        )
 
     def generate_speech(
         self,

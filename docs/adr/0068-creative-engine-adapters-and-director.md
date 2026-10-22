@@ -17,8 +17,8 @@
 
 ### 2. G0 attempt/receipt 연결 (`creative/pipeline.py`)
 - 샷 revision → **render spec**(엔진·프로필·매개변수·바이블/타임라인 조각·cue·seed·입력 자산·idempotency key 전문)을 CAS에 저장 → `submit_attempt(input_sha256=spec sha, resolved_graph=spec)` → `execute_attempt` → 어댑터 실행.
-- **engine receipt는 attempt의 마지막 출력**이다. G0가 출력들을 한 원자 단계로 모으므로 crash 뒤에 영상만 있고 receipt가 없는 상태가 생기지 않는다. receipt에는 엔진·프로필·`execution_mode`(real|mock)·`real_execution`·selection·spec sha·시간·RSS 표본·provenance·출력별 sha/미디어 요약이 있다. mock 또는 대역 컨트롤러 실행은 `real_execution=false`로 남는다.
-- 샷이 아닌 실행(오디오 선행 TTS, 최종 조립)은 G0 attempt가 샷에 묶여 있어 같은 흐름을 쓸 수 없다. 같은 어댑터·receipt 규칙으로 `run_unattached`가 실행하고 sidecar(`engine_runs`, `compositions`)에 멱등 키로 기록한다. **이 두 실행에는 G0의 execution claim이 없다.** crash 뒤에는 같은 키로 다시 부르면 되고 결과는 CAS라 안전하지만 중복 실행을 막는 잠금은 없다.
+- **engine receipt는 attempt의 마지막 출력**이다. G0는 출력을 하나씩 기록하므로(부분 수집 보존 규칙) crash 뒤에 미디어만 있고 receipt가 없는 상태가 남을 수 있다. 재개는 이 잔재를 안전하게 버린다: 새 실행이 claim을 잡을 때 그 attempt의 이전 `outputs`와 `{attempt_id}-N.bin` manifest 항목을 비우고(CAS 바이트는 남는다) `attempt.stale_outputs_discarded` 이벤트를 남긴 뒤 새 바이트로 수집한다. 완료(review_pending)·실패·취소된 attempt는 재실행하지 않으므로 검수 대상 출력은 건드리지 않는다. receipt에는 엔진·프로필·`execution_mode`(real|mock)·`real_execution`·selection·spec sha·시간·RSS 표본·provenance·출력별 sha/미디어 요약이 있다. mock 또는 대역 컨트롤러 실행은 `real_execution=false`로 남는다.
+- 샷이 아닌 실행(오디오 선행 TTS, 최종 조립)은 G0 attempt가 샷에 묶여 있어 같은 흐름을 쓸 수 없다. 같은 어댑터·receipt 규칙으로 `run_unattached`가 실행하고 sidecar(`engine_runs`, `compositions`)에 멱등 키로 기록한다. `(구역, 키)`별 커널 flock(`locked_unattached_execution`, attempt 실행 잠금과 같은 방식이라 프로세스가 죽으면 풀린다) 안에서 sidecar를 다시 확인하므로 같은 키의 동시 호출은 한 번만 실행되고 나머지는 기록을 돌려받는다. 한계: 실행 직후 sidecar 기록 전에 죽으면 같은 키 재호출이 다시 실행하며, 비결정적 엔진이 같은 이름에 다른 바이트를 내면 자산 이름 충돌로 거부된다(미해결).
 - 재개: `resume`는 `queued|running|collecting`인 attempt만 어댑터별 규칙으로 이어 실행한다. Comfy는 제출 전에 `idempotency_key → task_id`를 영속 저장하므로 재개 때 새로 제출하지 않고 저장된 task를 관측·reconcile한다. 제출 재시도 없음.
 - 취소: G0 `cancel_attempt`가 제작을 취소 상태로 만들면 어댑터가 `ctx.cancelled()`로 협조 중단한다(프로세스 그룹 종료, Comfy는 소유 task만 취소). 취소된 시도는 결함 샷이 아니다.
 
@@ -27,7 +27,7 @@
 |---|---|
 | `submit_attempt(resolved_graph=…)` 선택 인자 | 공유 workflow revision을 샷마다 바꾸면 병렬 제출이 서로의 graph를 덮는다. 제출 시점의 spec만 receipt에 고정한다. 없으면 기존 동작. |
 | `create_review(evidence_uris, reviewer, composition_key, attempt_id)` | 키프레임 증거를 output hash에 묶고, 최종 합성물 검수(`shot_revision=None`)와 같은 바이트를 낸 다른 샷의 검수를 구분한다. 증거 URI는 이 제작의 `artifact:<sha256>`만 허용, 승인은 여전히 null만. |
-| `record_sidecar(section, key, value)` | 감독 기록·피드백·검수 보고·합성 기록을 추가 전용으로 남긴다. 구역은 고정 목록, 같은 키에 다른 내용은 거부(`ConflictError`). |
+| `record_sidecar(section, key, value)` | 감독 기록·피드백·검수 보고·합성 기록을 추가 전용으로 남긴다. 구역은 고정 목록, 같은 키에 다른 내용은 거부(`ConflictError`). `key`·`content_hash`·`at`은 저장소가 정하는 예약 필드라 호출자 값이 계산값을 덮지 못한다(`content_hash`·`key`가 맞지 않거나 `at`이 있으면 `ValueError`). |
 | `set_shot_plan(expected_timeline_revision, shots)` | G0에는 샷 목록을 만드는 공개 경로가 없고 `create_production`이 가짜 2샷을 둔다. 타임라인과 정확히 같은 ID·구간이어야 하고, 바뀐 샷만 새 revision이 되며, 실행 기록이 있는 샷은 뺄 수 없다. |
 | `resolve_shot_stale`, `resolve_final_stale` | G0 stale 표시는 쌓이기만 했다. 현재 샷·바이블·타임라인 revision으로 만든 검수 대기 출력이 있을 때만 샷 stale을 지우고, 합성이 현재 출력 해시를 그대로 쓰고 그 합성의 검수가 있고 bible_assets까지 비었을 때만 이웃·전체 표시를 지운다. `bible` 검수 표시는 기계가 판단할 수 없어 일부러 남긴다. |
 

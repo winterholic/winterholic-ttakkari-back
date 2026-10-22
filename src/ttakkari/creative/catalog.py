@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 AnimationType = Literal["still", "zoom_in", "zoom_out", "pan", "pan_down", "pulse"]
 TransitionType = Literal["fade", "cut"]
-CaptionStyleType = Literal["bottom_card", "center_highlight", "title_card", "code_overlay"]
+CaptionStyleType = Literal[
+    "bottom_card", "center_highlight", "title_card", "code_overlay"
+]
 AspectType = Literal["16:9", "9:16", "1:1"]
 
 
@@ -76,42 +78,78 @@ class FormatSpec(BaseModel):
 TOOLS: dict[str, ToolSpec] = {
     # Camera motions
     "still": ToolSpec(
-        id="still", kind="animation", name="정지 (Still)", description="카메라 움직임 없이 원본 구도 유지"
+        id="still",
+        kind="animation",
+        name="정지 (Still)",
+        description="카메라 움직임 없이 원본 구도 유지",
     ),
     "zoom_in": ToolSpec(
-        id="zoom_in", kind="animation", name="천천히 확대 (Zoom In)", description="중심을 향해 1.0에서 1.1배로 부드럽게 확대 (켄번즈)"
+        id="zoom_in",
+        kind="animation",
+        name="천천히 확대 (Zoom In)",
+        description="중심을 향해 1.0에서 1.1배로 부드럽게 확대 (켄번즈)",
     ),
     "zoom_out": ToolSpec(
-        id="zoom_out", kind="animation", name="천천히 축소 (Zoom Out)", description="1.1배에서 1.0배로 부드럽게 축소"
+        id="zoom_out",
+        kind="animation",
+        name="천천히 축소 (Zoom Out)",
+        description="1.1배에서 1.0배로 부드럽게 축소",
     ),
     "pan": ToolSpec(
-        id="pan", kind="animation", name="좌우 패닝 (Pan)", description="좌측에서 우측으로 수평 카메라 이동"
+        id="pan",
+        kind="animation",
+        name="좌우 패닝 (Pan)",
+        description="좌측에서 우측으로 수평 카메라 이동",
     ),
     "pan_down": ToolSpec(
-        id="pan_down", kind="animation", name="수직 패닝 (Pan Down)", description="상단에서 하단으로 수직 이동 (코드/문서 훑기)"
+        id="pan_down",
+        kind="animation",
+        name="수직 패닝 (Pan Down)",
+        description="상단에서 하단으로 수직 이동 (코드/문서 훑기)",
     ),
     "pulse": ToolSpec(
-        id="pulse", kind="animation", name="비트 펄스 (Pulse)", description="미세하게 맥동하며 시각적 강조 부여"
+        id="pulse",
+        kind="animation",
+        name="비트 펄스 (Pulse)",
+        description="미세하게 맥동하며 시각적 강조 부여",
     ),
     # Transitions
     "fade": ToolSpec(
-        id="fade", kind="transition", name="디졸브 페이드 (Fade)", description="0.25초 부드러운 블랙 디졸브 전환"
+        id="fade",
+        kind="transition",
+        name="디졸브 페이드 (Fade)",
+        description="0.25초 부드러운 블랙 디졸브 전환",
     ),
     "cut": ToolSpec(
-        id="cut", kind="transition", name="즉시 컷 (Cut)", description="전환 지연 없이 즉각적인 씬 교체"
+        id="cut",
+        kind="transition",
+        name="즉시 컷 (Cut)",
+        description="전환 지연 없이 즉각적인 씬 교체",
     ),
     # Caption styles
     "bottom_card": ToolSpec(
-        id="bottom_card", kind="caption_style", name="하단 자막 카드", description="화면 하단 반투명 박스에 본문 텍스트 표시"
+        id="bottom_card",
+        kind="caption_style",
+        name="하단 자막 카드",
+        description="화면 하단 반투명 박스에 본문 텍스트 표시",
     ),
     "center_highlight": ToolSpec(
-        id="center_highlight", kind="caption_style", name="중앙 강조 텍스트", description="화면 중앙에 대형 볼드 폰트로 핵심 단어 강조"
+        id="center_highlight",
+        kind="caption_style",
+        name="중앙 강조 텍스트",
+        description="화면 중앙에 대형 볼드 폰트로 핵심 단어 강조",
     ),
     "title_card": ToolSpec(
-        id="title_card", kind="caption_style", name="타이틀 헤드라인", description="중앙 다크 배경과 큰 헤드라인으로 제목/챕터 알림"
+        id="title_card",
+        kind="caption_style",
+        name="타이틀 헤드라인",
+        description="중앙 다크 배경과 큰 헤드라인으로 제목/챕터 알림",
     ),
     "code_overlay": ToolSpec(
-        id="code_overlay", kind="caption_style", name="코드 오버레이", description="상단 정보 바 및 다크 패널 고정폭 텍스트 설명"
+        id="code_overlay",
+        kind="caption_style",
+        name="코드 오버레이",
+        description="상단 정보 바 및 다크 패널 고정폭 텍스트 설명",
     ),
 }
 
@@ -305,7 +343,12 @@ FORMATS: dict[str, FormatSpec] = {
         pacing="moderate",
         allowed_animations=["still", "zoom_in", "zoom_out", "pan", "pan_down"],
         allowed_transitions=["cut", "fade"],
-        allowed_caption_styles=["code_overlay", "bottom_card", "title_card", "center_highlight"],
+        allowed_caption_styles=[
+            "code_overlay",
+            "bottom_card",
+            "title_card",
+            "center_highlight",
+        ],
         min_scene_duration=2.0,
         max_scene_duration=30.0,
         max_caption_lines=4,
@@ -444,9 +487,13 @@ def validate_project_spec(project_data: dict[str, Any]) -> list[str]:
 
     scenes = project_data.get("scenes") or []
     if len(scenes) < fmt.min_scenes:
-        errors.append(f"장면 수가 부족합니다. (최소 {fmt.min_scenes}개, 현재 {len(scenes)}개)")
+        errors.append(
+            f"장면 수가 부족합니다. (최소 {fmt.min_scenes}개, 현재 {len(scenes)}개)"
+        )
     if len(scenes) > fmt.max_scenes:
-        errors.append(f"장면 수가 초과되었습니다. (최대 {fmt.max_scenes}개, 현재 {len(scenes)}개)")
+        errors.append(
+            f"장면 수가 초과되었습니다. (최대 {fmt.max_scenes}개, 현재 {len(scenes)}개)"
+        )
 
     total_duration = sum(float(s.get("duration", 0)) for s in scenes)
     if total_duration < fmt.min_duration - 0.01:
@@ -516,7 +563,10 @@ def validate_project_spec(project_data: dict[str, Any]) -> list[str]:
                     )
         else:
             # Fallback checks without template (template_id is None or unregistered)
-            if dur < fmt.min_scene_duration - 0.01 or dur > fmt.max_scene_duration + 0.01:
+            if (
+                dur < fmt.min_scene_duration - 0.01
+                or dur > fmt.max_scene_duration + 0.01
+            ):
                 errors.append(
                     f"장면 {s_num}의 길이({dur}초)가 포맷 허용 범위({fmt.min_scene_duration}~{fmt.max_scene_duration}초)를 벗어났습니다."
                 )

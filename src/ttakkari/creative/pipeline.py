@@ -35,6 +35,19 @@ RECEIPT_SCHEMA = "ttakkari.engine-receipt.v1"
 DEFAULT_SIZE = (1280, 720)
 
 
+def _input_assets(state: dict, shas: list[str]) -> list[dict[str, str]]:
+    """샷의 입력 자산을 이 제작 manifest의 (이름, sha256)로 확정한다. manifest에 없는 sha는 거부한다(다른 제작·임의 파일 차단)."""
+    by_sha: dict[str, str] = {}
+    for name, record in state["artifacts"].items():
+        by_sha.setdefault(record["sha256"], name)
+    found = []
+    for sha in shas:
+        if sha not in by_sha:
+            raise PipelineError("입력 자산 sha256이 이 제작의 자산 목록에 없습니다.")
+        found.append({"sha256": sha, "name": by_sha[sha], "role": "source"})
+    return found
+
+
 class PipelineError(ValueError):
     """사용자에게 그대로 보일 수 있는 입력·상태 오류(API에서 422)."""
 
@@ -152,9 +165,7 @@ class ProductionPipeline:
             },
             "cues": cues,
             "seed": shot["seed"],
-            "input_assets": [
-                {"sha256": sha, "role": "source"} for sha in shot["input_sha256"][1:]
-            ],
+            "input_assets": _input_assets(state, shot["input_sha256"][1:]),
             "acceptance_criteria": shot["acceptance_criteria"],
             "expect_audio": bool(
                 shot["engine"] in {"ffmpeg"}
@@ -573,7 +584,7 @@ class ProductionPipeline:
                 "end_f": plan["end_f"],
                 "engine": plan["engine"],
                 "profile": plan["profile"],
-                "input_sha256": [],
+                "input_sha256": ["", *plan.get("assets", [])],
                 "seed": plan.get("seed"),
                 "acceptance_criteria": plan.get("acceptance_criteria", []),
             }

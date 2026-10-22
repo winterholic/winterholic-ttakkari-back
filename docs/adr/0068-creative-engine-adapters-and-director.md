@@ -54,3 +54,21 @@
 - 서버 시작 시 미완료 attempt를 자동 재개하지 않는다. `POST …/resume`이 필요하다.
 - 레지스트리 파일은 한 호스트 전용이다(flock). 다중 호스트 공유는 고려하지 않았다.
 - Remotion 라이선스: 개인·3인 이하 영리 조직 등 Free License 자격 조건과 파생 판매 제한이 있다. 회사·다중 사용자 상용 사용 전에 별도 분석이 필요하며 `rights.use_scope=personal`로만 후보가 된다.
+
+## 추가: I2V 기준 이미지 입력과 준비 profile (E1 준비 요청, 2026-10-22)
+
+E1 실험 담당의 `e1-prep/e1-run-spec.json`·`contract-check.json`이 짚은 공백만 메웠다. origin/main `2522d78`의 G1 계약(`PROFILES`가 T2V `wan22-5b-draft`뿐, `Submit`의 `image`는 `extra_forbidden`, `prepare`는 prompt/seed만, runner params도 prompt/seed뿐)이 출발점이다. 그 뒤 main에는 managed Comfy 관련 변경이 없었다(`git diff 2522d78 origin/main` 대상 파일 0건).
+
+- **profile**: `wan22-5b-i2v-draft` → workflow `i2v-wan22-5b`, 불변 revision `6c9413e014d5`, preset `draft`(640×352/33f/12steps, registry meta 그대로, 수정 없음), 모델 3종은 T2V와 같다. `verification="prepared-unverified"`다. **등록했을 뿐 I2V 성공 job은 한 번도 없다.** 기능 활성화나 품질 통과로 읽으면 안 된다.
+- **required_gb=24**: E1 제안의 16GB는 I2V 실측이 아니라서 쓰지 않았다. T2V 실측 peak footprint 24GB를 보수적 근거로 두었고(`required_gb_basis`에 명시, I2V start image VAE encode 비용은 미측정), 실행 시점의 판단은 기존 `server.start(required_gb)`(가용 메모리 대기)와 공용 lease가 그대로 한다. 가드를 새로 만들거나 약화하지 않았다. 실행 직전 `server_resources` 확인은 실행 담당의 몫이다.
+- **입력 계약**(`managed_comfy_input.py`): 임의 경로·외부 URL 없음. `InputImage`는 검증기(`validate_input_image`)만 만든다: 자산 id(영문·숫자·`._-` 파일명, png/jpg/jpeg/webp), 선언 sha256과 바이트 일치, 25MiB 이하, PNG/JPEG/WebP만, 단일 프레임, 64~4096px, 확장자와 실제 형식 일치, 끝까지 디코드.
+- **소유 자산 해석**(`creative/comfy_inputs.py`): G0 제작 CAS를 재사용한다. (자산 id=manifest 이름, sha256) 쌍이 **그 제작의 manifest에 함께** 있어야 하고, 읽기는 `read_artifact`(sha 형식, 디렉터리 이탈, 심볼릭 링크, 해시 변조 거부)를 거친다. 다른 제작의 자산은 존재하지 않는 id와 같은 메시지로 거부한다. 이 앱은 단일 소유자 인증이라 사용자 간 경계는 없고, 경계는 인증(`require_user`)과 제작 단위 격리다.
+- **컨트롤러**(`managed_comfy.py`): `prepare(..., image=InputImage|None)`. I2V에 이미지가 없거나, 검증되지 않은 객체이거나, T2V에 이미지를 주면 **lease 획득 전에** `ValueError`다(서버 기동·lease 없음). 검증된 바이트는 컨트롤러 소유 비공개 폴더(0700/0600)에 task별로 쓰고, 실행 직전 sha256·심볼릭 링크·폴더 이탈을 다시 확인한 뒤 `client.upload_image`로 올리고, 돌려받은 이름이 `ttk/<자산 id>`일 때만 `runner.run(params={prompt, seed, image})`에 넘긴다. 사본은 실행이 끝나면 지운다(원본은 제작 CAS).
+- **업로드 실패**: prompt를 보내기 전이므로 `status=failed`, `error=input_upload_failed: …`, `input_upload.prompt_submitted=false`를 영속 저장하고 소유 런타임을 정지·lease를 해제한다(`lease_release_proof` 포함). `runner.run`에 도달하지 않으므로 GPU 재제출이 없다. 정지를 확인하지 못하면 기존 규칙대로 `needs_reconcile`로 lease를 유지한다.
+- **receipt**: I2V에는 `input_image`(asset_id, sha256, bytes, 형식, 크기, upload_name, 실행한 graph의 LoadImage 값, `graph_consistent`)와 `profile_verification`이 추가된다. 실행한 graph의 LoadImage가 정확히 하나이고 업로드 이름과 같지 않으면 receipt를 만들지 않는다(`receipt_error`). resolved graph hash·seed 기록은 기존 그대로다. T2V receipt에는 새 항목이 없다.
+- **API**(`POST /api/comfy/jobs`): 선택 필드 `image={production_id, asset_id, sha256}`만 받는다(경로·URL 필드는 `extra=forbid`로 422). 제작 없음 404, id·sha 불일치/다른 제작 422, lease 사용 중 409. 응답의 `input_image`는 내부 `staged_path` 없이 내보낸다. 이미지가 없으면 컨트롤러 호출 형태가 기존과 같다.
+- **creative 샷**: `ComfyAdapter`에 같은 id의 profile이 추가됐다. 샷의 첫 입력 자산 뒤(`input_sha256[1:]`)가 기준 이미지이고, render spec의 `input_assets`에 **이 제작 manifest의 이름**이 붙는다. manifest에 없는 sha는 계획 단계에서 거부된다(이전에는 CAS 읽기 실패로만 걸렀다). 검증은 `controller.prepare` 전에 하며 receipt의 이미지 sha·id·graph 일치를 확인하지 못하면 성공으로 보지 않는다. Comfy는 여전히 자동 선택 후보가 아니고 `explicit-lab`으로만 쓴다.
+
+### 하지 않은 것
+- 실제 I2V 생성, 실제 ComfyUI의 `LoadImage`·`/upload/image` 동작, 실제 WS 관측, GPU 메모리/스왑 실측은 하지 않았다. HTTP stub 시험은 `/upload/image`와 `/prompt`의 프로토콜 계약만 흉내 낸다.
+- E1 실험 폴더(`lab/experiments/20261022-e1-e4-run/`)와 registry·skills-draft는 읽기만 했고 수정하지 않았다.

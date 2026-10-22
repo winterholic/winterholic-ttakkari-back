@@ -28,6 +28,12 @@ from ttakkari.creative.engines.base import (
     now_iso,
     validate_params,
 )
+from ttakkari.managed_comfy_input import (
+    ASSET_ID,
+    SHA256,
+    InputImageError,
+    validate_input_image,
+)
 
 TERMINAL = {"succeeded", "failed", "cancelled", "needs_reconcile"}
 POLL_SECONDS = 1.0
@@ -41,7 +47,18 @@ PROFILES = {
         resource_family="gpu",
         params={"prompt": {"type": "str", "required": True, "max_len": 1000}},
         frame_exact=False,
-    )
+    ),
+    # E1 준비 profile. managed profile id와 같다. 등록·계약 시험만 했고 실제 I2V 생성은 한 번도 하지 않았다.
+    "wan22-5b-i2v-draft": ProfileSpec(
+        "wan22-5b-i2v-draft",
+        frozenset({"generative-video", "i2v", "image-conditioned"}),
+        "Wan2.2 TI2V 5B 이미지→영상 초안(managed Comfy 고정 profile, 준비됨·미검증). 입력은 이 제작이 소유한 기준 이미지 자산 하나.",
+        "video",
+        resource_family="gpu",
+        params={"prompt": {"type": "str", "required": True, "max_len": 1000}},
+        needs_assets=True,
+        frame_exact=False,
+    ),
 }
 
 
@@ -143,6 +160,23 @@ class ComfyAdapter(EngineAdapter):
             errors.append("seed는 0~2^32-1 정수여야 합니다(Comfy 재현 키).")
         if "idempotency_key" in spec and not spec["idempotency_key"]:
             errors.append("idempotency_key가 비어 있습니다.")
+        assets = spec.get("input_assets") or []
+        if profile.needs_assets:
+            if len(assets) != 1:
+                errors.append("이 profile은 기준 이미지 자산이 정확히 하나 필요합니다.")
+            else:
+                asset = assets[0]
+                if not (
+                    isinstance(asset.get("name"), str)
+                    and ASSET_ID.fullmatch(asset["name"])
+                    and isinstance(asset.get("sha256"), str)
+                    and SHA256.fullmatch(asset["sha256"])
+                ):
+                    errors.append(
+                        "기준 이미지 자산의 id(이름)와 sha256이 잘못됐습니다."
+                    )
+        elif assets:
+            errors.append("이 profile은 입력 자산을 받지 않습니다.")
         return errors
 
     # ---- task 매핑: 제출 전에 영속 저장한다.
@@ -206,8 +240,25 @@ class ComfyAdapter(EngineAdapter):
         resumed = record is not None
         if record is None:
             # lease를 얻으면서 task가 만들어진다. 응답을 못 받아도 저장된 key로 대조할 수 있도록 start 전에 기록한다.
+            prepare_args: dict[str, Any] = {}
+            if profile.needs_assets:
+                # 이미지 검증은 lease를 잡는 prepare보다 먼저다. 잘못된 입력은 GPU 자원을 건드리지 않는다.
+                asset = spec["input_assets"][0]
+                try:
+                    prepare_args["image"] = validate_input_image(
+                        asset_id=asset["name"],
+                        sha256=asset["sha256"],
+                        data=ctx.read_asset(asset["sha256"]),
+                    )
+                except (InputImageError, FileNotFoundError, ValueError) as exc:
+                    raise EngineError(
+                        "invalid_input_image", f"기준 이미지 검증 실패: {exc}"
+                    ) from exc
             job = self.controller.prepare(
-                spec["profile"], prompt=params["prompt"], seed=spec["seed"]
+                spec["profile"],
+                prompt=params["prompt"],
+                seed=spec["seed"],
+                **prepare_args,
             )
             record = {
                 "task_id": job["task_id"],
@@ -259,6 +310,18 @@ class ComfyAdapter(EngineAdapter):
                 "receipt_inconsistent",
                 "resolved graph 또는 seed가 저장된 요청과 일치하지 않습니다.",
             )
+        if profile.needs_assets:
+            asset = spec["input_assets"][0]
+            recorded = receipt.get("input_image") or {}
+            if (
+                recorded.get("sha256") != asset["sha256"]
+                or recorded.get("asset_id") != asset["name"]
+                or recorded.get("graph_consistent") is not True
+            ):
+                raise EngineError(
+                    "receipt_inconsistent",
+                    "receipt의 기준 이미지 해시·id·graph 입력이 요청과 일치하지 않습니다.",
+                )
         outputs: list[EngineOutput] = []
         for entry in receipt.get("outputs") or []:
             if entry.get("intermediate"):
@@ -302,6 +365,8 @@ class ComfyAdapter(EngineAdapter):
                 "runtime": receipt.get("runtime"),
                 "lease": receipt.get("lease"),
                 "workflow_revision_hash": receipt.get("workflow_revision_hash"),
+                "input_image": receipt.get("input_image"),
+                "profile_verification": receipt.get("profile_verification"),
             },
         )
 

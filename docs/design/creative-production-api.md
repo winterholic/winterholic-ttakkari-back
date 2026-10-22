@@ -104,3 +104,18 @@ POST /api/creative/productions/{pid}/shots/{shot_id}/feedback
 - 독립 검수(`independent=true`)와 VLM 의미 검수: 없다. 기계 검수만 있다.
 - 실제 Comfy 생성: 이 API로 시작하는 경로는 있으나(`engine=comfy`, 명시 선택만) 실제 생성은 실행·검증하지 않았다.
 - 실제 감독 LLM 경로(`SessionRunDirectorLlm`)는 코드만 있고 이 환경에서 실행하지 않았다(테스트 DB 불가).
+
+## 부록: managed Comfy I2V 입력 (`/api/comfy/jobs`)
+
+E1 준비용 확장이다. `profile_id=wan22-5b-i2v-draft`는 **준비됨·미검증**(`GET /api/comfy/profiles`의 `verification="prepared-unverified"`)이다.
+
+```http
+POST /api/comfy/jobs
+{"profile_id": "wan22-5b-i2v-draft", "prompt": "…", "seed": 2101,
+ "image": {"production_id": "<uuid>", "asset_id": "keyframe_flux_cafe.png", "sha256": "<64 hex>"}}
+```
+- `image`는 이 제작 manifest에 있는 자산의 이름과 sha256 쌍이다. 먼저 `POST /api/creative/productions/{pid}/artifacts`로 올린다. 경로·URL·그래프 필드는 422다.
+- I2V profile은 `image`가 없으면, T2V profile은 `image`가 있으면 lease를 잡기 전에 422다. 기존 T2V 요청(`image` 없음)은 그대로 동작한다.
+- 오류: 404 제작 없음, 422 id·sha 불일치(다른 제작 자산 포함)·이미지 검증 실패, 409 공용 lease 사용 중.
+- 작업 응답에 `input_image`(해시·크기·업로드 이름)와, 업로드 단계 결과 `input_upload`가 보인다. 업로드가 실패하면 `status=failed`, `error="input_upload_failed: …"`, `input_upload.prompt_submitted=false`이며 GPU 제출은 없었다.
+- creative 샷에서 쓰려면 `ProductionPipeline.apply_shot_plan`의 샷 계획에 `assets=[sha]`를 준다(코드 경로). 엔진 `comfy`, profile은 위 id, 선택은 `explicit-lab`만 허용된다. 감독 LLM 응답 스키마와 피드백 API에는 자산 필드가 아직 없다(미구현).

@@ -152,11 +152,20 @@ class FakeComfyController:
         self.reconciled: list[str] = []
         self.jobs: dict[str, dict] = {}
         self.get_calls: dict[str, int] = {}
+        self.input_receipt = (
+            "ok"  # wrong-sha | graph-mismatch로 receipt 불일치를 흉내 낸다
+        )
 
-    def prepare(self, profile_id, *, prompt, seed, owner="owner", **extra):
+    def prepare(self, profile_id, *, prompt, seed, owner="owner", image=None, **extra):
         task_id = f"{len(self.prepared) + 1:032x}"
         self.prepared.append(
-            {"task_id": task_id, "profile": profile_id, "prompt": prompt, "seed": seed}
+            {
+                "task_id": task_id,
+                "profile": profile_id,
+                "prompt": prompt,
+                "seed": seed,
+                "image": image,
+            }
         )
         self.jobs[task_id] = {
             "task_id": task_id,
@@ -164,6 +173,7 @@ class FakeComfyController:
             "profile": profile_id,
             "prompt": prompt,
             "seed": seed,
+            "image": None if image is None else image.public(),
         }
         return dict(self.jobs[task_id])
 
@@ -203,6 +213,7 @@ class FakeComfyController:
                 "runtime": {"engine": "comfyui"},
                 "lease": {"owner_task": job["task_id"]},
                 "workflow_revision_hash": "a603a63d6f3a",
+                **self._input_section(job),
                 "peak_rss_gb": None,
                 "outputs": [
                     {
@@ -234,6 +245,16 @@ class FakeComfyController:
         else:
             job["status"] = self.outcome
             job["error"] = "fake"
+
+    def _input_section(self, job):
+        image = job.get("image")
+        if image is None:
+            return {}
+        recorded = {**image, "graph_load_image": f"ttk/{image['upload_name']}"}
+        if self.input_receipt == "wrong-sha":
+            recorded["sha256"] = "0" * 64
+        recorded["graph_consistent"] = self.input_receipt != "graph-mismatch"
+        return {"input_image": recorded, "profile_verification": "prepared-unverified"}
 
     def cancel(self, task_id, *, owner_task=None):
         self.cancelled.append(task_id)
@@ -307,3 +328,14 @@ class FakeTtsProvider:
                 )
             )
         return TtsResult(chunks=results, metrics={"fake": True})
+
+
+def png_bytes(
+    width: int = 128, height: int = 96, color=(120, 60, 200), fmt: str = "PNG"
+) -> bytes:
+    """작은 시험용 이미지. 실제 FLUX 기준 이미지가 아니다."""
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), color).save(buffer, fmt)
+    return buffer.getvalue()

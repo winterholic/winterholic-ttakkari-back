@@ -7,6 +7,7 @@ resource lease.
 from __future__ import annotations
 
 import errno
+import hashlib
 import importlib
 import json
 import os
@@ -33,6 +34,7 @@ from ttakkari.host_resource import (
     ResourceLeaseHandle,
     ResourceLeaseManager,
 )
+from ttakkari.managed_comfy_input import InputImage
 from ttakkari.managed_comfy_receipt import ReceiptError, build_receipt, safe_rss_gb
 
 LAB_ROOT = Path("/Users/winterholic/development/projects/ttakkari-studio-lab")
@@ -51,7 +53,15 @@ class ComfyProfile:
     preset: str
     required_gb: float
     models: tuple[str, ...]
+    # "image"이면 소유 자산 기준 이미지를 반드시 받는다. 없으면 lease 획득 전에 거부한다.
+    input_kind: str = "none"
+    # T2V는 bench.jsonl 실측이 있다. 아래 I2V는 등록만 한 준비 profile이며 실행·품질 검증이 없다.
+    verification: str = "t2v-lab-measured"
+    # required_gb의 근거. memory guard(server.start)가 이 값을 가용 메모리 하한으로 쓴다.
+    required_gb_basis: str = "T2V 실측 기록(16GB는 profile 기본값)"
 
+
+I2V_5B_REVISION = "6c9413e014d5"
 
 PROFILES = {
     "wan22-5b-draft": ComfyProfile(
@@ -59,6 +69,17 @@ PROFILES = {
         preset="draft", required_gb=16, models=("wan2.2_ti2v_5B_fp16.safetensors",
                                                   "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
                                                   "wan2.2_vae.safetensors"),
+    ),
+    # E1 준비 profile. 불변 registry revision에 연결했을 뿐 I2V 성공 job은 한 번도 없다(verification=prepared-unverified).
+    # required_gb는 E1 제안의 16GB(I2V 실측 아님)를 쓰지 않고 T2V 실측 peak footprint 24GB를 보수적 근거로 둔다.
+    # 실제 허용 여부는 server.start(required_gb)의 가용 메모리 대기와 공용 lease가 실행 시점에 판단한다.
+    "wan22-5b-i2v-draft": ComfyProfile(
+        profile_id="wan22-5b-i2v-draft", workflow="i2v-wan22-5b", revision=I2V_5B_REVISION,
+        preset="draft", required_gb=24, models=("wan2.2_ti2v_5B_fp16.safetensors",
+                                                  "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+                                                  "wan2.2_vae.safetensors"),
+        input_kind="image", verification="prepared-unverified",
+        required_gb_basis="T2V 실측 peak footprint 24GB 근거의 보수값. I2V start image VAE encode 비용은 미측정",
     ),
 }
 
@@ -137,15 +158,51 @@ class ComfyManagedController:
 
     def profiles(self) -> list[dict[str, str]]:
         return [{"id": p.profile_id, "workflow": p.workflow, "revision": p.revision,
-                 "preset": p.preset} for p in PROFILES.values()]
+                 "preset": p.preset, "input": p.input_kind, "verification": p.verification,
+                 "required_gb": p.required_gb, "required_gb_basis": p.required_gb_basis}
+                for p in PROFILES.values()]
+
+    def _inputs_root(self) -> Path:
+        return self.data_dir / "managed-comfy" / "inputs"
+
+    def _stage_input(self, task_id: str, image: InputImage) -> Path:
+        """검증된 바이트를 컨트롤러 소유 비공개 폴더에 쓴다(0700/0600, 심볼릭 링크 없음)."""
+        folder = self._inputs_root() / task_id
+        folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path = folder / image.upload_name
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(image.data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        return path
+
+    def _cleanup_input(self, task_id: str) -> None:
+        folder = self._inputs_root() / task_id
+        if folder.is_dir() and not folder.is_symlink():
+            for child in folder.iterdir():
+                child.unlink(missing_ok=True)
+            folder.rmdir()
 
     def prepare(self, profile_id: str, *, prompt: str, seed: int, owner: str = "owner",
-                **extra: Any) -> dict[str, Any]:
+                image: InputImage | None = None, **extra: Any) -> dict[str, Any]:
         if extra:
-            raise ValueError("only registered profile parameters prompt and seed are accepted")
+            raise ValueError("only registered profile parameters prompt, seed and image are accepted")
         profile = PROFILES.get(profile_id)
         if profile is None:
             raise ValueError("unknown registered profile")
+        # 입력 계약은 lease를 잡기 전에 확인한다. 거부된 요청이 GPU 자원이나 서버 기동을 일으키지 않는다.
+        if profile.input_kind == "image":
+            if image is None:
+                raise ValueError("this profile requires an owned reference image (asset id and sha256)")
+            if not isinstance(image, InputImage) or hashlib.sha256(image.data).hexdigest() != image.sha256:
+                raise ValueError("reference image must be a validated InputImage")
+        elif image is not None:
+            raise ValueError("this profile does not accept an input image")
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1000:
             raise ValueError("prompt must contain 1 to 1000 characters")
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 2**32 - 1:
@@ -153,20 +210,30 @@ class ComfyManagedController:
         task_id = uuid.uuid4().hex
         attempt_id = uuid.uuid4().hex
         runtime_instance = uuid.uuid4().hex
-        lease = self.manager.acquire(
-            owner_task=task_id, owner_attempt=attempt_id, runtime_instance=runtime_instance,
-            resource_family="comfy", claim={"profile": profile.profile_id, "workflow": profile.workflow,
-                                             "revision": profile.revision, "models": list(profile.models)},
-            ttl_seconds=45,
-        )
+        staged: Path | None = None
+        if image is not None:
+            staged = self._stage_input(task_id, image)
+        try:
+            lease = self.manager.acquire(
+                owner_task=task_id, owner_attempt=attempt_id, runtime_instance=runtime_instance,
+                resource_family="comfy", claim={"profile": profile.profile_id, "workflow": profile.workflow,
+                                                 "revision": profile.revision, "models": list(profile.models)},
+                ttl_seconds=45,
+            )
+        except BaseException:
+            self._cleanup_input(task_id)
+            raise
         job = {"task_id": task_id, "owner": owner, "owner_attempt": attempt_id,
                "runtime_instance": runtime_instance, "lease_id": lease.lease_id,
                "generation_token": lease.generation_token, "profile": profile.profile_id,
                "prompt": prompt, "seed": seed, "status": "starting", "runner_job_id": None,
                "result": None, "error": None, "created_at": time.time()}
+        if image is not None:
+            job["input_image"] = {**image.public(), "staged_path": str(staged)}
         try:
             self._save(job)
         except BaseException:
+            self._cleanup_input(task_id)
             lease.release(proof={"runtime_status": "stopped", "evidence": {
                 "runtime_instance": runtime_instance, "runtime_spawned": False,
             }})
@@ -303,8 +370,15 @@ class ComfyManagedController:
             active["cancel_thread"].start()
             job["status"] = "running"
             self._save(job)
+            run_params: dict[str, Any] = {"prompt": job["prompt"], "seed": job["seed"]}
+            if job.get("input_image"):
+                uploaded = self._upload_input(job, active)
+                if uploaded is None:
+                    # 제출 전에 실패했다. prompt를 보낸 적이 없으므로 GPU 작업은 없고 재제출도 하지 않는다.
+                    return self._stop_release(task_id, job, active)
+                run_params["image"] = uploaded
             result = runner.run(name=profile.workflow, version=profile.revision,
-                                preset=profile.preset, params={"prompt": job["prompt"], "seed": job["seed"]},
+                                preset=profile.preset, params=run_params,
                                 retries=0, tag=task_id,
                                 on_event=lambda _event: self._maybe_cancel(task_id, active))
             if active.get("released"):
@@ -350,11 +424,48 @@ class ComfyManagedController:
             self._save(job)
             return job
         finally:
+            self._cleanup_input(task_id)
             if active.get("heartbeat_error"):
                 job = self._load(task_id)
                 job["status"] = "needs_reconcile"
                 job["error"] = active["heartbeat_error"]
                 self._save(job)
+
+    def _upload_input(self, job: dict[str, Any], active: dict[str, Any]) -> str | None:
+        """staged 기준 이미지를 Comfy input으로 올린다. 실패하면 영속 실패 기록을 남기고 None을 돌려준다."""
+        info = job["input_image"]
+        expected = f"ttk/{info['upload_name']}"
+
+        def fail(reason: str) -> None:
+            job["status"] = "failed"
+            job["error"] = f"input_upload_failed: {reason}"
+            job["input_upload"] = {"stage": "upload", "error": reason, "prompt_submitted": False,
+                                   "expected_name": expected}
+            self._save(job)
+
+        staged = Path(info["staged_path"])
+        root = self._inputs_root().resolve()
+        try:
+            if staged.is_symlink() or not staged.is_file() or staged.resolve().parent.parent != root:
+                fail("staged input is missing or outside the controller input directory")
+                return None
+            if hashlib.sha256(staged.read_bytes()).hexdigest() != info["sha256"]:
+                fail("staged input bytes no longer match the recorded sha256")
+                return None
+            uploaded = active["client"].upload_image(str(staged))
+        except Exception as exc:  # noqa: BLE001 -- 업로드 실패 유형과 무관하게 같은 영속 실패 기록
+            fail(f"{type(exc).__name__}: {exc}")
+            return None
+        if uploaded != expected:
+            fail(f"unexpected uploaded name {uploaded!r}")
+            return None
+        if Path(uploaded).exists():
+            # 상대 경로 이름이 작업 디렉터리의 실제 파일과 겹치면 Runner가 그 파일을 다시 올린다. 열어 두지 않는다.
+            fail("uploaded name collides with a local path")
+            return None
+        job["input_upload"] = {"stage": "upload", "uploaded_name": uploaded, "prompt_submitted": False}
+        self._save(job)
+        return uploaded
 
     def _attach_receipt(self, job: dict[str, Any], active: dict[str, Any]) -> None:
         """성공한 실행에만 receipt 를 붙인다. receipt 실패는 job 결과를 바꾸지 않고 사유만 남긴다."""
@@ -365,7 +476,8 @@ class ComfyManagedController:
             job["receipt"] = build_receipt(
                 job=job, adapter_job=job["result"], profile=active["profile"], comfy_root=COMFY_ROOT,
                 jobs_root=self.data_dir / "managed-comfy" / "jobs",
-                rss_at_finish_gb=safe_rss_gb(getattr(server, "rss_gb", None)))
+                rss_at_finish_gb=safe_rss_gb(getattr(server, "rss_gb", None)),
+                input_image=job.get("input_image"))
             job.pop("receipt_error", None)
         except (ReceiptError, OSError, KeyError, TypeError, ValueError) as exc:
             job["receipt_error"] = f"{type(exc).__name__}: {exc}"

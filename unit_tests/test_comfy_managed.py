@@ -94,9 +94,16 @@ def controller(tmp_path):
 
 def test_registered_profile_is_fixed_and_rejects_unknown_workflow(controller):
     service, _servers = controller
-    assert service.profiles() == [{"id": "wan22-5b-draft", "workflow": "t2v-wan22-5b",
-                                  "revision": PROFILES["wan22-5b-draft"].revision,
-                                  "preset": "draft"}]
+    listed = {item["id"]: item for item in service.profiles()}
+    # 기존 T2V profile의 네 필드는 그대로이고, I2V 준비 profile이 별도 항목으로 더해졌다(E1 입력 계약).
+    legacy = {"id": "wan22-5b-draft", "workflow": "t2v-wan22-5b",
+              "revision": PROFILES["wan22-5b-draft"].revision, "preset": "draft"}
+    assert {k: listed["wan22-5b-draft"][k] for k in legacy} == legacy
+    assert listed["wan22-5b-draft"]["input"] == "none"
+    assert set(listed) == {"wan22-5b-draft", "wan22-5b-i2v-draft"}
+    i2v = listed["wan22-5b-i2v-draft"]
+    assert (i2v["workflow"], i2v["revision"], i2v["preset"], i2v["input"]) == ("i2v-wan22-5b", "6c9413e014d5", "draft", "image")
+    assert i2v["verification"] == "prepared-unverified" and i2v["required_gb"] == 24
     with pytest.raises(ValueError, match="registered profile"):
         service.prepare("arbitrary-shell-or-workflow", prompt="x", seed=1)
 

@@ -122,3 +122,21 @@ def test_stale_reaper_removes_only_marked_clusters_with_dead_owners(tmp_path, mo
     assert reap_stale(tmp_path) == [dead.name]
     assert not dead.exists()
     assert unrelated.is_dir()
+
+
+def test_stale_reaper_keeps_clusters_owned_by_a_live_generation(tmp_path, monkeypatch):
+    pg_bin = tmp_path / "pg"
+    pg_bin.mkdir()
+    for name in ("initdb", "pg_ctl", "createdb", "psql"):
+        (pg_bin / name).touch()
+    live = tmp_path / "ttakkari-run-test-4242-abcdef12"
+    live.mkdir()
+    (live / "run-test-cluster.marker").write_text(
+        f"prefix=ttakkari-run-test-\nfolder={live.name}\nowner_pid=4242\nrun_id=other-run\nport=54322\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("ttakkari.runs.test_database._pg_bin", lambda: pg_bin)
+    monkeypatch.setattr("ttakkari.runs.test_database._pid_alive", lambda pid: True)
+
+    assert reap_stale(tmp_path) == []
+    assert live.is_dir()

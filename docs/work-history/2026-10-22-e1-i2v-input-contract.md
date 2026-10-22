@@ -53,3 +53,6 @@
 - 현재 수정: controller가 `O_NOFOLLOW` fd에서 읽고 sha256 검증한 immutable bytes를 저장소 소유 multipart integration이 `/upload/image` body에 직접 넣는다. 외부 lab client의 path API·설치·registry는 수정하지 않았다. HTTP stub이 multipart image 파트의 실제 SHA가 선언값과 같은지 검증한다. 공개 API는 계속 `staged_path`를 제거하며 T2V의 upload/receipt 모양은 바꾸지 않았다.
 - 범위 한계: 검증은 controller가 전송한 multipart bytes다. Comfy 업로드 응답에 원격 저장 파일의 hash가 없으므로 서버 측 저장 결과 hash는 미검증이다. 실제 Comfy 서버·GPU 실행도 하지 않았다.
 - 회귀 시험: 실제 lab `ComfyClient` 인스턴스와 urllib 전송 stub을 쓰며 path-open/restore 공격을 포함한다. 기존 구현에서는 multipart SHA 불일치로 실패했고, 수정 후 observed multipart SHA가 선언 SHA와 일치한다.
+
+## G34 재검수 e25f62f 후속: I2V 경로 변경 없음
+- I2V 업로드 경로(`managed_comfy_input.py`, `managed_comfy.py`)는 이번 후속에서 수정하지 않았다. 재검수는 multipart image SHA256이 선언값과 같음을 stub transport에서 통과로 관측했다. 남은 P2 둘은 unattached 요청 snapshot과 `/direct` 복구 flag이며 ADR 0068과 `2026-10-22-creative-engines-director.md`에 기록했다. 서버 저장 파일 hash와 실제 Comfy/GPU 실행은 여전히 미검증이다. 관련 138개 회귀는 신규 시험과 함께 통과했다(152 passed).

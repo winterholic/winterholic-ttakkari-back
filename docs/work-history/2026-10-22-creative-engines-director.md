@@ -80,3 +80,14 @@
   - `git diff --check` → 종료 코드 0, 출력 없음.
   - 커밋 `a7001af` (`fix(creative): bind I2V bytes and checkpoint unattached runs`)을 `origin/feat/creative-engines-director`에 push했다. 결과: `87c701f..a7001af feat/creative-engines-director -> feat/creative-engines-director`.
   - 이 검증 범위는 요청된 회귀 묶음이다. 전체 저장소 pytest, DB/host-resource 검증은 실행하지 않았다. 실제 Comfy HTTP server·GPU·TTS·감독 LLM·Chrome도 실행하지 않았다. main 병합과 배포 예약은 하지 않았다.
+
+## G34 독립 재검수 e25f62f 후속 수정 (P2 2건)
+- 기준: `e25f62f2fac33145b3be91187e04b954baf817a5`의 검수 `creative-g34-e25f62-review`(review.md, recheck_deep_e25.py/.log, api_route_e25.log, api_models_e25.log). 이전 3반례는 재현되지 않았고 잔존 P2 둘만 닫았다. 판정은 FAIL이었으며 아래는 그 두 항목의 수정이다. 기술 게이트 재검수는 별도 단계다.
+- **Phase 1 추적(systematic-debugging)**
+  - P2-1: 호출값 spec/extra → request_identity = hash(canonical(...)) (원 요청 A) → 같은 spec 객체를 `_run_adapter`에 넘김 → adapter가 nested를 바꾸면 ctx.spec/sidecar spec이 B. extra도 identity 계산 뒤 같은 객체를 sidecar에 재사용. 순수 객체 alias 문제라 환경·로그 요인은 없다. "내장 adapter가 입력을 바꾼다"는 가설은 검증하지 못했다(관측 없음).
+  - P2-2: `DirectInput`은 Strict(extra forbid)이고 `retry_unknown_execution` 필드가 없어 `/direct`가 422. 필드만 넣어도 `make_timeline`이 flag를 받지 않아 `generate_speech` 기본값(false)으로 호출되는 두 번째 단절이 있었다(`direct(**kwargs)`는 `make_timeline(**kwargs)`로 그대로 전달).
+- **수정**: `pipeline.py`의 `run_unattached` snapshot(직렬화 후 `json.loads`), adapter 사본 전달과 실행 뒤 직렬화 비교(fail closed, `PipelineError`). `_run_in_slot`도 `ctx.spec` 사본과 변경 검사(`EngineError` kind=input_mutated)로 receipt를 만들기 전에 거부하고, validate 호출도 사본을 쓴다. `api/creative.py`에 `DirectInput.retry_unknown_execution`, `direction.py`의 `make_timeline(retry_unknown_execution)`→`generate_speech`. 정책 상세는 ADR 0068.
+- **회귀**: 신규 `unit_tests/test_creative_g34_request_snapshot.py` 14건. src를 되돌려 실행하면 13건 실패하고 나머지 1건(`receipt_spec_hash`)은 대조 시험이다. 내용: adapter 사본, 호출자 alias 격리, 반환 뒤 변경 무영향, nested·input_asset sha·새 param·top-level key 변경 4종 fail closed(sidecar·artifact 없음, checkpoint executing, 원 요청 재호출 차단), 변경 뒤 명시 재시도는 원 요청 A, 다른 스레드의 호출자 변경, `MockEngineAdapter` 파생의 `ctx.spec` 변경 거부, `/direct` 401·422(extra·타입)·202와 flag→`generate_speech` 전달(기본 false), 실제 `TtsAdapter`(FakeTtsProvider)의 unknown 상태를 `make_timeline`과 `/direct` 백그라운드 경로에서 기본 차단/명시 복구(같은 checkpoint 2번째 시도, 새 key 없음). 기존 통과 검사는 약화하지 않았다.
+- **재현 재실행**: 검수 스크립트 로직(경로만 치환)이 원 요청 identity 유지, 첫 호출 `PipelineError`, sidecar·artifact 없음, checkpoint executing, 원 요청 재호출은 완료 불명 오류로 막힘을 보였다. CAS 도중 crash와 sidecar crash 복구는 이전과 같다(adapter_calls 2/1).
+- **검증**: 138개 선택 묶음 + 신규 = 152 passed in 14.09s. 넓은 creative·API 묶음 74 passed, 2 skipped(skip은 `TTAKKARI_REAL_ENGINE_TESTS=1` 실제 렌더 게이트). `ruff check`·`ruff format --check` 통과, `git diff --check` 통과. 원시 로그와 재현 자료는 outbox `g34-p2-fix/`.
+- **미실행**: 실제 GPU/Comfy/TTS 모델/LLM/Chrome, DB-backed route, 전체 저장소 pytest. 이 환경의 process/sysctl/initdb SysV IPC 거부는 이전에 관측됐고 같은 시도를 반복하거나 우회하지 않았다. 취소 중 unknown checkpoint 복구 절차 설명은 이번 범위가 아니다. main 병합·배포는 독립 검수 뒤 별도 단계다.

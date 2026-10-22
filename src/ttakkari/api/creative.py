@@ -350,6 +350,10 @@ class DirectInput(Strict):
     duration_seconds: float | None = Field(default=None, gt=0, le=600)
     fps: int = Field(default=24, ge=12, le=60)
     size: tuple[int, int] = (1280, 720)
+    retry_unknown_execution: bool = Field(
+        default=False,
+        description="Set true only after reconciling a speech execution whose external completion is unknown.",
+    )
 
 
 class RenderShotInput(Strict):

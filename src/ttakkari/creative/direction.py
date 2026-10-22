@@ -280,13 +280,18 @@ class CreativeDirector:
         voice: str = "F2",
         duration_seconds: float | None = None,
         fps: int = 24,
+        retry_unknown_execution: bool = False,
     ) -> dict[str, Any]:
         state = self.store.get_production(pid)
         sample_rate = state["timelines"][-1]["sample_rate"]
         speech_timing = None
         if speech_lines:
             record = await asyncio.to_thread(
-                self.pipeline.generate_speech, pid, lines=speech_lines, voice=voice
+                self.pipeline.generate_speech,
+                pid,
+                lines=speech_lines,
+                voice=voice,
+                retry_unknown_execution=retry_unknown_execution,
             )
             audio_sha256 = audio_sha256 or record["output_sha256"]
             timing_sha = record["outputs"][1]["sha256"]

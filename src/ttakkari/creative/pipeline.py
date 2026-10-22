@@ -23,6 +23,7 @@ from ttakkari.creative.engines.base import (
     EngineAdapter,
     EngineCancelled,
     EngineEmptyOutput,
+    EngineError,
     ExecutionContext,
     now_iso,
 )
@@ -204,7 +205,7 @@ class ProductionPipeline:
             raise PipelineError(
                 f"{engine}에 등록되지 않은 프로필입니다: {spec['profile']}"
             )
-        errors = adapter.validate(spec)
+        errors = adapter.validate(json.loads(canonical(spec)))
         if errors:
             raise PipelineError(
                 f"{engine}/{spec['profile']} 검증 실패: " + "; ".join(errors)
@@ -332,7 +333,7 @@ class ProductionPipeline:
     ) -> tuple[list[bytes], dict[str, Any]]:
         """어댑터를 실행하고 [출력..., engine receipt] 바이트 목록을 만든다. 실패는 예외로 올려 G0가 failed로 기록하게 한다."""
         adapter = self.registry.adapter(spec["engine"])
-        errors = adapter.validate(spec)
+        errors = adapter.validate(json.loads(canonical(spec)))
         if errors:
             raise PipelineError("; ".join(errors))
         self._acquire_slot(pid, attempt_id)
@@ -372,8 +373,10 @@ class ProductionPipeline:
                 state=state_name,
             )
 
+        # 어댑터에는 사본을 주고, 실행 뒤 사본이 요청과 같은지 확인해 receipt가 실제 요청만 가리키게 한다.
+        spec_bytes = canonical(spec)
         ctx = ExecutionContext(
-            spec=spec,
+            spec=json.loads(spec_bytes),
             workdir=workdir,
             cancelled=lambda: self._cancelled(pid, attempt_id),
             read_asset=lambda sha: self.store.read_artifact(pid, sha),
@@ -383,6 +386,11 @@ class ProductionPipeline:
         t0 = time.monotonic()
         try:
             run = adapter.execute(ctx)
+            if canonical(ctx.spec) != spec_bytes:
+                raise EngineError(
+                    "input_mutated",
+                    "어댑터가 실행 입력 spec을 변경해 결과를 요청의 것으로 발행하지 않습니다.",
+                )
             installation = self.registry.installation(spec["engine"])
             outputs = [o.data for o in run.outputs]
             if not run.outputs or any(not data for data in outputs):
@@ -681,10 +689,22 @@ class ProductionPipeline:
         extra: dict[str, Any] | None = None,
         retry_unknown_execution: bool = False,
     ) -> dict[str, Any]:
-        """같은 요청만 재사용한다. 외부 실행이 불명확한 crash는 명시적 재시도 전까지 중단한다."""
+        """같은 요청만 재사용한다. 외부 실행이 불명확한 crash는 명시적 재시도 전까지 중단한다.
+
+        identity·adapter 입력·sidecar는 호출 시점에 직렬화한 같은 요청 snapshot만 뜻한다. 호출자의 mutable
+        객체는 이후 어디에도 쓰지 않고, adapter에는 매번 새 사본을 줘서 사본이 바뀌었는지 직렬화 비교로 확인한다.
+        """
+        spec_bytes = canonical(spec)
+        snapshot_spec = json.loads(spec_bytes)
+        snapshot_extra = json.loads(canonical(extra or {}))
         request_identity = sha256_hex(
             canonical(
-                {"section": section, "key": key, "spec": spec, "extra": extra or {}}
+                {
+                    "section": section,
+                    "key": key,
+                    "spec": snapshot_spec,
+                    "extra": snapshot_extra,
+                }
             )
         )
 
@@ -747,7 +767,13 @@ class ProductionPipeline:
                     "execution_attempts": attempt_number,
                 },
             )
-            outputs, receipt = self._run_adapter(pid, spec, attempt_id=None)
+            adapter_spec = json.loads(spec_bytes)
+            outputs, receipt = self._run_adapter(pid, adapter_spec, attempt_id=None)
+            if canonical(adapter_spec) != spec_bytes:
+                # 결과가 원 요청이 아니라 변경된 입력의 것일 수 있다. 발행하지 않고 checkpoint는 unknown으로 둔다.
+                raise PipelineError(
+                    "어댑터가 실행 입력 spec을 변경해 결과를 원 요청의 것으로 발행하지 않습니다."
+                )
             stored = []
             for index, (output, entry) in enumerate(
                 zip(outputs, receipt["outputs"] + [None], strict=False)
@@ -767,10 +793,10 @@ class ProductionPipeline:
                     self.store.put_artifact(pid, name, output, media_type=media_type)
                 )
             sidecar_value = {
-                **(extra or {}),
-                "engine": spec["engine"],
-                "profile": spec["profile"],
-                "spec": spec,
+                **snapshot_extra,
+                "engine": snapshot_spec["engine"],
+                "profile": snapshot_spec["profile"],
+                "spec": snapshot_spec,
                 "outputs": stored,
                 "receipt_sha256": stored[-1]["sha256"],
                 "output_sha256": stored[0]["sha256"],

@@ -38,6 +38,11 @@ AGENT_LOG = _BASE / "agent-log.jsonl"
 TEST_DB_EXPLICIT = "TTAKKARI_TEST_DB" in os.environ
 if TEST_DB_EXPLICIT:
     TEST_DB = os.environ["TTAKKARI_TEST_DB"]
+    import asyncpg
+
+    from ttakkari.runs.test_database import patch_asyncpg_test_port
+
+    patch_asyncpg_test_port(asyncpg, TEST_DB)
 else:
     PG_CLUSTER = pg_sandbox.start_cluster()
     pg_sandbox.use_cluster_env(PG_CLUSTER)
@@ -52,6 +57,8 @@ def assert_test_db_isolated(database_url: str) -> None:
 
 
 assert_test_db_isolated(TEST_DB)
+os.environ["TTAKKARI_TEST_DB"] = TEST_DB
+os.environ["TTAKKARI_TEST_RUNNER"] = "1"
 
 os.environ.update({
     "TTAKKARI_NO_ENV_FILE": "1",

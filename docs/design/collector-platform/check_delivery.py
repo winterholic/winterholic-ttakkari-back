@@ -31,8 +31,8 @@ def verify(*,strict=False):
         assert int(a['progress'])==int(row['progress']),row['code']+' stale progress'
         if row['stage']!='S1':
             assert row['status']!='done' and int(row['progress'])<100,'unexecuted implementation marked complete'
-            # Only S2-00 (min gate recorded), S2-01 and S2-02 (implemented, awaiting independent verification) may leave todo, and only as review, never done.
-            if row['status']!='todo':assert row['code'] in ('CP-S2-00','CP-S2-01','CP-S2-02') and row['status']=='review','unexpected in-progress row '+row['code']
+            # Only S2-00 (min gate recorded) and S2-01..S2-04/S2-06 (implemented, awaiting independent verification) may leave todo, and only as review, never done.
+            if row['status']!='todo':assert row['code'] in ('CP-S2-00','CP-S2-01','CP-S2-02','CP-S2-03','CP-S2-04','CP-S2-06') and row['status']=='review','unexpected in-progress row '+row['code']
     if strict:assert sum(r['status']=='done' for r in rows)==3,'design close status missing'
     assert len([r for r in rows if r['stage']=='S1'])==3
     assert len([r for r in rows if r['stage']=='S2'])==11

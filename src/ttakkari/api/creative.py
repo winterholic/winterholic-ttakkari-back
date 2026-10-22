@@ -6,17 +6,19 @@ import asyncio
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlencode
 
 import jwt
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
+from fastapi import Path as PathParam
 from fastapi.responses import FileResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import Field
 
 from ttakkari.creative.catalog import get_catalog, validate_project_spec
 from ttakkari.creative.director import ConflictError, default_director_store
+from ttakkari.creative.records import MEDIA_ID_PATTERN, RecordsService
 from ttakkari.creative.render import inspect_media
 from ttakkari.creative.service import ProjectInput, Scene, Strict, default_studio
 from ttakkari.security.auth import User, decode, issue_download_token
@@ -80,10 +82,100 @@ async def cancel_cpu_attempt(pid: uuid.UUID, attempt_id: uuid.UUID, _: User):
     return perform(default_director_store().cancel_attempt, str(pid), str(attempt_id))
 
 
+@router.get("/records")
+async def list_records(
+    _: User,
+    source: Literal["g0", "v1", "lab"] | None = None,
+    kind: str | None = Query(default=None, max_length=40),
+    engine: str | None = Query(default=None, max_length=40),
+    q: str | None = Query(default=None, max_length=80),
+    limit: int = Query(default=100, ge=1, le=200),
+):
+    """제작 기록 목록. g0/v1/lab 세 원천을 하나의 읽기 모델로 합친다."""
+    result = await asyncio.to_thread(
+        _records().list, source=source, kind=kind, engine=engine, q=q, limit=limit
+    )
+    for item in result["items"]:
+        if item.thumbnail_media_id:
+            item.thumbnail_url = _record_media_url(item.id, item.thumbnail_media_id)
+    return result
+
+
+@router.get("/records/{rid}")
+async def get_record(rid: RecordId, _: User):
+    record = await asyncio.to_thread(perform, _records().get, rid)
+    for item in record.media:
+        item.url = _record_media_url(rid, item.id) if item.available else None
+    return record
+
+
+@router.get("/records/{rid}/media/{media_id}")
+async def record_media(
+    rid: RecordId,
+    media_id: str = PathParam(pattern=MEDIA_ID_PATTERN),
+    token: str = Query(max_length=2000),
+    download: bool = False,
+):
+    try:
+        claims = decode(token, "download")
+        if (
+            claims.get("sub") != str(_record_media_ident(rid, media_id))
+            or claims.get("var") != f"creative-record:{rid}"
+        ):
+            raise jwt.InvalidTokenError()
+    except jwt.PyJWTError as e:
+        raise HTTPException(
+            403, "재생 주소가 만료됐습니다. 제작 기록을 다시 열어 주세요."
+        ) from e
+    file = perform(_records().media_file, rid, media_id)
+    return FileResponse(
+        file.path,
+        media_type=file.mime,
+        filename=file.filename,
+        content_disposition_type="attachment" if download else "inline",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
 @router.post("/validate")
 async def validate_spec(body: dict, _: User):
     errors = validate_project_spec(body)
     return {"valid": len(errors) == 0, "errors": errors}
+
+
+RecordId = Annotated[
+    str,
+    PathParam(
+        pattern=r"^(?:(?:g0|v1)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+        r"|lab-[a-z0-9][a-z0-9-]{1,62})$"
+    ),
+]
+
+
+def _records() -> RecordsService:
+    from ttakkari.config import get_settings
+
+    return RecordsService(
+        director=default_director_store(),
+        studio=default_studio(),
+        lab_root=get_settings().studio_lab_root,
+    )
+
+
+def _record_media_ident(rid: str, media_id: str) -> uuid.UUID:
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"ttakkari-creative-record:{rid}:{media_id}")
+
+
+def _record_media_url(rid: str, media_id: str) -> str:
+    token, _ = issue_download_token(
+        _record_media_ident(rid, media_id), f"creative-record:{rid}"
+    )
+    return f"/api/creative/records/{rid}/media/{media_id}?" + urlencode(
+        {"token": token}
+    )
 
 
 class Edit(Strict):

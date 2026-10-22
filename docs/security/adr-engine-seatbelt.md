@@ -42,7 +42,7 @@ SBPL은 나중 규칙이 이긴다. 순서가 곧 우선순위다.
 1. `(allow default)`: 엔진 CLI가 쓰는 mach 서비스, 키체인 IPC, node 런타임을 하나씩 열지 않기 위해서다.
 2. DB 네트워크 거부: `(remote ip "*:PORT")`로 5432·5433·3306·6379·27017. 원격 호스트도 포함한다.
 3. DB 유닉스 소켓 거부: `.s.PGSQL.N`, `mysqld.sock`, `redis*.sock`, `mongodb-N.sock`.
-4. 소켓 예외: 명시한 `workspace/.ttakkari-db-sockets` 아래만 허용한다. 일반 `write_roots`는 소켓 허용 근거가 아니다. manager는 쓰기 루트에 `/tmp`와 시스템 임시 디렉터리를 항상 넣으므로 이를 재사용하면 운영 PG 소켓이 다시 열린다(코드 확인). `workspace`가 없으면 소켓 예외도 없다. 전용 디렉터리의 심링크 대상이 workspace 밖이면 프로파일 생성을 거부한다. 테스트 DB는 `initdb` + `-k <ws>/.ttakkari-db-sockets`로 별도 클러스터를 띄우는 방식을 전제한다.
+4. 소켓 예외: 명시한 `workspace/.ttakkari-db-sockets` 아래만 허용한다. 일반 `write_roots`는 소켓 허용 근거가 아니다. manager는 쓰기 루트에 `/tmp`와 시스템 임시 디렉터리를 항상 넣으므로 이를 재사용하면 운영 PG 소켓이 다시 열린다(코드 확인). `workspace`가 없으면 소켓 예외도 없다. 전용 디렉터리의 심링크 대상이 workspace 밖이면 프로파일 생성을 거부한다.
 5. ttakkari 홈(`settings.home`) 읽기·쓰기 기본 거부. 내부에서 다시 여는 디렉터리는 이 Run의 `data/outbox/<run>`과 write_roots로 요청된 `data/uploads`, `inbox` 하위뿐이다. `write_roots`가 `accounts`, 다른 계정, `data`, `backups`, `config.env`를 포함해도 열지 않는다. 계정 예외는 **claude 엔진의 `CLAUDE_CONFIG_DIR` 한 곳**만 별도로 추가한다. `CODEX_HOME`, `XDG_*_HOME`은 재허용의 근거로 사용하지 않는다. 가드 로그는 `data/guard.log` 낱개 파일(`literal`)만 다시 연다. 넓은 홈·ttakkari·accounts 루트나 다른 자격 증명 저장소를 Claude 설정 폴더로 주면 거부한다.
 6. 현재 코드가 `settings.home/deploy/releases/<40자리 SHA>`에 있으면 그 릴리스만 읽기 허용한다. Claude 가드 훅(`agents/claude.py`)과 stdio MCP(`orchestrator/runtime.py`)는 백엔드의 `sys.executable`로 실행되므로 배포 릴리스의 모듈·venv 읽기가 필요하다(코드 확인, 후속 커널 실측 미검증). 예외는 `__file__`에서 도출하며 환경 변수나 쓰기 루트에서 받지 않는다. ttakkari 내부에서 릴리스 형식이 아닌 런타임은 거부한다. 다른 릴리스·계정·설정은 열지 않으며 현재 릴리스 쓰기도 허용하지 않는다.
 7. 비밀 경로 읽기·쓰기 거부. 위 예외보다 뒤라 항상 이긴다. 디렉터리 전체: `~/.ssh`, `.aws`, `.gnupg`, `.kube`, `.config/gh`, `.config/gcloud`, `.azure`, `.password-store`, **`.gemini`, `.codex`, `.docker`**. 낱개 파일: `.netrc`, `.pgpass`, `.git-credentials`, `.npmrc`, `.pypirc`, `.my.cnf`. 모든 경로의 `.env`·`.env.*`도 거부한다. 기본 Claude 계정일 때만 `~/.claude/.credentials.json`을 열어 둔다(`CLAUDE_CONFIG_DIR=~/.claude` 명시도 동일). 별도 계정이면 기본 계정의 이 파일은 닫는다. 비밀 경로가 심링크면 설정 당시의 실제 대상 경로도 거부 목록에 넣는다.
@@ -113,9 +113,17 @@ All checks passed!
 - **DB 포트 목록 밖.** 비표준 포트나 원격 DB는 포트로 막히지 않는다. SSH 키와 `.pgpass`가 닫혀 있어 피해 범위는 줄어든다.
 - **HTTP 경로.** 8787 백엔드 API는 열려 있다. 권한은 Run에 묶인 MCP 토큰(SEC2-AGT-02)에 기댄다.
 - **`.env` 쓰기 거부.** 작업 세션이 앱용 `.env`를 만들거나, 테스트가 `.env` 미끼를 만들면 실패한다(테스트 1건에서 확인). 롤아웃 1단계에서 관찰한다.
-- **테스트 DB.** 현재 테스트는 같은 클러스터의 `ttakkari_test`(5432)를 쓴다. 래퍼를 켜면 작업 세션에서 DB 기반 pytest가 막힌다. 워크스페이스 임시 클러스터 도입 전까지 감수한다.
+- **명시적 `TTAKKARI_TEST_DB`.** conftest는 외부에서 지정한 테스트 DB를 소유자 관리 대상으로 계속 취급하며, 운영 DB 이름 `ttakkari`는 거부한다. 엔진 Run은 아래의 Run별 임시 클러스터를 사용한다.
 - **`sandbox-exec` 폐기 예고.** Apple은 사용 중단(deprecated)으로 표기한다. macOS 27.0(26A428)에서는 동작을 확인했다.
 - **codex·qwen-local은 아직 열려 있다.** 위 현황표 그대로다.
+
+## Run별 통합 테스트 DB (2026-10-22)
+
+- 백엔드가 각 엔진 프로세스 시도 직전에 독립 임시 PostgreSQL 클러스터를 만든다. 클러스터는 임의 loopback 포트에만 바인딩하고, Run 전용 계정·무작위 비밀번호와 `ttakkari_test` DB를 만든다. 엔진에는 이 URL을 `TTAKKARI_TEST_DB`로만 넘긴다. 앱의 `TTAKKARI_DATABASE_URL`은 생성이나 전달에 사용하지 않는다.
+- Run마다 별도 클러스터와 계정이므로 테스트 데이터·superuser 권한·포트가 다른 Run과 공유되지 않는다. 공유 PostgreSQL 서버의 임시 DB를 택하지 않은 이유는 연결 권한·실패 시 잔재가 운영 클러스터로 번지지 않게 하기 위해서다.
+- 프로세스 종료·시작 실패·취소 때 backend가 `pg_ctl`로 멈추고 클러스터 폴더를 삭제한다. 백엔드 기동과 다음 Run DB 준비 때는 고아 마커·owner PID·postmaster PID를 확인해 정리한다. SIGKILL로 SysV 공유메모리가 남았으면 `ipcs`의 key, creator PID, owner, attachment 수가 postmaster 기록과 일치할 때만 제거한다. 증거가 불완전하면 다른 IPC 세그먼트를 지우지 않고 정리 실패를 로그에 남긴다.
+- Codex의 `sandbox_mode="workspace-write"`, `network_access=true`, 그리고 claude만 감싸는 기존 Seatbelt 설정은 바꾸지 않는다. Claude 프로파일은 기본 DB 포트와 PostgreSQL 소켓을 막지만, 이 클러스터는 임의 포트를 사용해 Run 전용 DB에 접속한다. 중첩 Seatbelt는 사용하지 않는다.
+- 통합 테스트에서 명시한 loopback 포트 URL도 migration 테스트의 직접 `asyncpg.connect(host="localhost")`에 적용한다. 운영 DB 이름 `ttakkari`는 기존 conftest 가드가 계속 거부한다.
 
 ## 롤아웃 순서
 

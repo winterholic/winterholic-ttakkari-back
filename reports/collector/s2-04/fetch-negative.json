@@ -1,0 +1,442 @@
+{
+  "package": "CP-S2-04",
+  "generated_by": "COLLECTOR_REPORT_FILE=... pytest tests/test_collector_fetch.py (local fixture server; no public network)",
+  "scope_note": "각 행은 해당 케이스를 실행한 pytest 가 남긴 관측값이다. 실제 웹 수집 스모크는 포함하지 않는다(미실행).",
+  "groups": {
+    "fetch-negative": [
+      {
+        "at": "2026-10-21T10:37:07.247535+00:00",
+        "case": "too_large_identity",
+        "expected": "response_too_large",
+        "observed": "response_too_large",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:07.414063+00:00",
+        "case": "gzip_bomb",
+        "expected": "response_too_large",
+        "observed": "response_too_large",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:07.575963+00:00",
+        "case": "deflate_bomb",
+        "expected": "response_too_large",
+        "observed": "response_too_large",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:07.679030+00:00",
+        "case": "empty_200",
+        "expected": "empty_response",
+        "observed": "empty_response",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:07.767852+00:00",
+        "case": "br_unsupported",
+        "expected": "content_encoding_unsupported",
+        "observed": "content_encoding_unsupported",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:07.857432+00:00",
+        "case": "truncated_gzip",
+        "expected": "content_encoding_invalid",
+        "observed": "content_encoding_invalid",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:08.241773+00:00",
+        "case": "timeout",
+        "expected": "timeout",
+        "observed": "timeout",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.024166+00:00",
+        "case": "http_404",
+        "expected": "not_found",
+        "observed": "not_found",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.107599+00:00",
+        "case": "http_410",
+        "expected": "not_found",
+        "observed": "not_found",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.188465+00:00",
+        "case": "http_403",
+        "expected": "access_denied",
+        "observed": "access_denied",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.268034+00:00",
+        "case": "http_401",
+        "expected": "access_denied",
+        "observed": "access_denied",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.350377+00:00",
+        "case": "http_429",
+        "expected": "rate_limited",
+        "observed": "rate_limited",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.437114+00:00",
+        "case": "http_503",
+        "expected": "server_error",
+        "observed": "server_error",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.526586+00:00",
+        "case": "http_500",
+        "expected": "server_error",
+        "observed": "server_error",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.611158+00:00",
+        "case": "http_418",
+        "expected": "unexpected_status",
+        "observed": "unexpected_status",
+        "passed": true
+      }
+    ],
+    "ssrf-negative": [
+      {
+        "at": "2026-10-21T10:37:10.764991+00:00",
+        "case": "address 127.0.0.1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.846933+00:00",
+        "case": "address 10.1.2.3",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:10.932975+00:00",
+        "case": "address 172.16.0.9",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.015435+00:00",
+        "case": "address 192.168.1.1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.092085+00:00",
+        "case": "address 169.254.169.254",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.172652+00:00",
+        "case": "address 0.0.0.0",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.259034+00:00",
+        "case": "address 100.64.0.1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.335866+00:00",
+        "case": "address 224.0.0.1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.408154+00:00",
+        "case": "address ::1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.481316+00:00",
+        "case": "address fe80::1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.555723+00:00",
+        "case": "address fc00::1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.629037+00:00",
+        "case": "address ::ffff:127.0.0.1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.703430+00:00",
+        "case": "address ::ffff:10.0.0.1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.775431+00:00",
+        "case": "address 2002:7f00:1::1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.856086+00:00",
+        "case": "address 64:ff9b::7f00:1",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:11.938345+00:00",
+        "case": "address ::",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.084445+00:00",
+        "case": "url 'file:///etc/passwd'",
+        "expected": "scheme_not_allowed",
+        "observed": "scheme_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.166153+00:00",
+        "case": "url 'gopher://x.test/'",
+        "expected": "scheme_not_allowed",
+        "observed": "scheme_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.244167+00:00",
+        "case": "url 'ftp://x.test/f'",
+        "expected": "scheme_not_allowed",
+        "observed": "scheme_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.317971+00:00",
+        "case": "url 'javascript:alert(1)'",
+        "expected": "scheme_not_allowed",
+        "observed": "scheme_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.394404+00:00",
+        "case": "url 'https://user:pw@x.test/'",
+        "expected": "userinfo_not_allowed",
+        "observed": "userinfo_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.483036+00:00",
+        "case": "url 'https://x.test@evil.test/'",
+        "expected": "userinfo_not_allowed",
+        "observed": "userinfo_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.557993+00:00",
+        "case": "url 'https://x.test:8443/'",
+        "expected": "port_not_allowed",
+        "observed": "port_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.632339+00:00",
+        "case": "url 'https://2130706433/'",
+        "expected": "host_ambiguous_ip",
+        "observed": "host_ambiguous_ip",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.706897+00:00",
+        "case": "url 'https://0x7f.1/'",
+        "expected": "host_ambiguous_ip",
+        "observed": "host_ambiguous_ip",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.782363+00:00",
+        "case": "url 'https://127.1/'",
+        "expected": "host_ambiguous_ip",
+        "observed": "host_ambiguous_ip",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.858293+00:00",
+        "case": "url ''",
+        "expected": "url_invalid",
+        "observed": "url_invalid",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:12.931967+00:00",
+        "case": "url 'https://x.test/\\r\\nHost: evil'",
+        "expected": "url_invalid",
+        "observed": "url_invalid",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.011436+00:00",
+        "case": "url 'https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'",
+        "expected": "url_invalid",
+        "observed": "url_invalid",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.172408+00:00",
+        "case": "dns_rebinding_single_lookup",
+        "expected": "1 lookup, validated address used",
+        "observed": "1 lookup",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.253438+00:00",
+        "case": "redirect to http://internal.test:",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.333881+00:00",
+        "case": "redirect to http://169.254.169.254:",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.419212+00:00",
+        "case": "redirect to http://[::1]:",
+        "expected": "address_not_public",
+        "observed": "address_not_public",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.500265+00:00",
+        "case": "redirect to file:///etc/passwd",
+        "expected": "scheme_not_allowed",
+        "observed": "scheme_not_allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.580172+00:00",
+        "case": "redirect to http://evil.test:",
+        "expected": "host_not_allowed",
+        "observed": "host_not_allowed",
+        "passed": true
+      }
+    ],
+    "robots": [
+      {
+        "at": "2026-10-21T10:37:13.848721+00:00",
+        "case": "disallow + crawl-delay",
+        "expected": "blocked, 1 robots fetch, delay 3s",
+        "observed": "ok",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:13.935324+00:00",
+        "case": "robots.txt 404",
+        "expected": "allowed",
+        "observed": "allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:14.016787+00:00",
+        "case": "robots.txt 410",
+        "expected": "allowed",
+        "observed": "allowed",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:14.096121+00:00",
+        "case": "robots.txt 403",
+        "expected": "robots_forbidden",
+        "observed": "robots_forbidden",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:14.176383+00:00",
+        "case": "robots.txt 401",
+        "expected": "robots_forbidden",
+        "observed": "robots_forbidden",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:14.256595+00:00",
+        "case": "robots.txt 500",
+        "expected": "robots_unreachable",
+        "observed": "robots_unreachable",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:14.338423+00:00",
+        "case": "robots.txt 503",
+        "expected": "robots_unreachable",
+        "observed": "robots_unreachable",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:14.419315+00:00",
+        "case": "robots.txt 429",
+        "expected": "robots_unreachable",
+        "observed": "robots_unreachable",
+        "passed": true
+      }
+    ],
+    "cooldown": [
+      {
+        "at": "2026-10-21T10:37:14.601705+00:00",
+        "case": "429 Retry-After 600",
+        "expected": "durable cooldown 600s, no network while cooling",
+        "observed": "ok",
+        "passed": true
+      },
+      {
+        "at": "2026-10-21T10:37:18.451823+00:00",
+        "case": "503 Retry-After then resume",
+        "expected": "page 1 kept, flaky retried after release",
+        "observed": "ok",
+        "passed": true
+      }
+    ]
+  },
+  "counts": {
+    "fetch-negative": 15,
+    "ssrf-negative": 35,
+    "robots": 8,
+    "cooldown": 2
+  },
+  "all_passed": true
+}

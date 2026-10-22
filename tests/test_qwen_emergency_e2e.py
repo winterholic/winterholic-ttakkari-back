@@ -21,7 +21,7 @@ from ttakkari.runs.manager import manager as run_manager
 
 
 def _write_emergency_worker(tmp_path: Path, *, run_result: dict | str | None = None,
-                            exit_code: int = 0) -> Path:
+                            exit_code: int = 0, wait_for: Path | None = None) -> Path:
     """doctor는 ready, run은 고정 성공/실패 JSON 한 줄. task 파일은 스냅샷으로 남긴다."""
     worker = tmp_path / "bin/qwen-worker"
     snapshot = tmp_path / "task-snapshot.txt"
@@ -32,6 +32,7 @@ def _write_emergency_worker(tmp_path: Path, *, run_result: dict | str | None = N
                       "files": {"added": [], "modified": [], "deleted": []},
                       "metrics": {"host_peaks": {"server_rss_max_bytes": 1024}, "elapsed_seconds": 0.1}}
     result_line = run_result if isinstance(run_result, str) else json.dumps(run_result)
+    gate = f"while [ ! -f {shlex.quote(str(wait_for))} ]; do sleep 0.02; done\n" if wait_for else ""
     script = (
         "#!/bin/sh\n"
         "if [ \"$1\" = doctor ]; then "
@@ -39,6 +40,7 @@ def _write_emergency_worker(tmp_path: Path, *, run_result: dict | str | None = N
         "prev=\"\"; task=\"\"\n"
         "for a in \"$@\"; do if [ \"$prev\" = \"--task-file\" ]; then task=\"$a\"; fi; prev=\"$a\"; done\n"
         f"if [ ! -f '{snapshot}' ] || grep -q \"역할=worker\" \"$task\"; then cp \"$task\" '{snapshot}'; fi\n"
+        f"{gate}"
         f"printf '%s\\n' {shlex.quote(result_line)}\n"
         f"exit {exit_code}\n"
     )
@@ -175,6 +177,46 @@ async def test_emergency_qwen_failure_returns_to_cloud_wait_not_failed(
                        for e in events), "no cloud was free, so no qwen->cloud switch"
     finally:
         run_manager._disarm(uuid.UUID(run_id))
+
+
+@pytest.mark.asyncio
+async def test_qwen_failure_updates_the_saved_fallback_to_the_cloud_engine_that_finishes(
+        client, auth, make_dir, tmp_path, monkeypatch):
+    from ttakkari.runs import manager as run_manager_mod
+
+    gate = tmp_path / "allow-qwen-failure"
+    worker = _write_emergency_worker(
+        tmp_path,
+        run_result={"schema": 1, "status": "error", "exit_code": 2, "result_text": None,
+                    "error": {"kind": "guard", "message": "qwen failed; resume in cloud"}},
+        exit_code=2, wait_for=gate)
+    monkeypatch.setattr(run_manager_mod, "QWEN_LOCAL_ADAPTER",
+                        QwenLocalAdapter(worker_path=worker, enabled=True))
+    await _cooldown_all_cloud(client, auth)
+    root = make_dir()
+    ws = (await client.post("/api/workspaces", json={"name": root.name, "root_path": str(root)},
+                            headers=auth)).json()
+    parent = (await client.post("/api/sessions", json={"workspace_id": ws["id"], "kind": "orchestrator"},
+                                headers=auth)).json()
+    orch_auth = {"Authorization": f"Bearer {issue_token(parent['id'])}"}
+    spawned = await _spawn_worker(client, orch_auth, task_type="routine")
+    deadline = asyncio.get_running_loop().time() + 30
+    snapshot = tmp_path / "task-snapshot.txt"
+    while not snapshot.exists():
+        assert asyncio.get_running_loop().time() < deadline, "Qwen worker did not start"
+        await asyncio.sleep(0.02)
+
+    created = await client.post("/api/accounts", json={"name": "qwen-failure-cloud-recovery", "engine": "codex"},
+                                headers=auth)
+    assert created.status_code == 201, created.text
+    gate.touch()
+    run = await wait_run(client, auth, spawned["active_run_id"], timeout=30.0)
+
+    assert run["status"] == "succeeded", run
+    assert run["engine"] == "codex"
+    assert run["usage"]["selected_engine"] == "codex"
+    assert run["usage"]["fallback"]["to_engine"] == "codex"
+    assert run["usage"]["fallback"]["reason"] == "qwen_failed"
 
 
 @pytest.mark.asyncio

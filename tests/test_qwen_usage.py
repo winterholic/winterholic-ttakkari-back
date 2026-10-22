@@ -324,3 +324,42 @@ async def test_flash_partial_token_metrics_do_not_reset_or_double_count_counters
     assert summary["today"]["input_tokens"] == 120
     assert summary["today"]["output_tokens"] == 30
     assert summary["today"]["total_tokens"] == 150
+
+
+@pytest.mark.asyncio
+async def test_flash_usage_is_collected_by_the_background_maintenance_loop(monkeypatch):
+    from ttakkari import generation_service
+    from ttakkari.runs import qwen_flash_monitor
+
+    observed = {
+        "model": "Qwen3.8-Flash-Next Q2_K",
+        "server": {"status": "running"},
+        "metrics_status": "available",
+        "input_tokens": 123,
+        "cached_input_tokens": 10,
+        "output_tokens": 17,
+        "requests_processing": 0,
+        "requests_deferred": 0,
+    }
+
+    async def snapshot():
+        return observed
+
+    monkeypatch.setattr(qwen_flash_monitor, "snapshot", snapshot)
+    settings = get_settings().model_copy(update={"qwen_flash_poll_seconds": 60})
+    jobs = {name: (callback, interval) for name, callback, interval in
+            generation_service.maintenance_jobs(settings)}
+
+    assert "qwen-flash-usage" in jobs
+    callback, interval = jobs["qwen-flash-usage"]
+    assert interval == 60
+    await callback()
+    async with sessionmaker()() as db:
+        summary = await qwen_flash_monitor.summary(db)
+    assert summary["today"]["input_tokens"] == 123
+    assert summary["today"]["output_tokens"] == 17
+    assert summary["today"]["total_tokens"] == 140
+
+    disabled_jobs = {name for name, _, _ in generation_service.maintenance_jobs(
+        settings.model_copy(update={"qwen_flash_poll_seconds": 0}))}
+    assert "qwen-flash-usage" not in disabled_jobs

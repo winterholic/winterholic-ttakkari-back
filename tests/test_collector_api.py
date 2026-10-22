@@ -308,4 +308,19 @@ async def test_cancel_queued_running_and_finished(client, auth, envelope):
     async with sessionmaker()() as db:
         await jobs.finish(db, claimed[0].id, claimed[0].attempt_token, status="succeeded")
         await db.commit()
-    assert err(await client.post(f"{OWNER}/jobs/{running_id}/cancel", headers=auth)) == (409, "invalid_job_state")
+    # The recorded cancel wins over a late `succeeded` (jobs.finish), so the flagged job ends cancelled and a repeat
+    # cancel stays idempotent like the queued one above.
+    assert (await client.get(f"{OWNER}/jobs/{running_id}", headers=auth)).json()["status"] == "cancelled"
+    assert (await client.post(f"{OWNER}/jobs/{running_id}/cancel", headers=auth)).json()["status"] == "cancelled"
+
+    # A job that really succeeded (no cancel recorded) can no longer be cancelled.
+    finished_id = (await post(client, auth, with_id(envelope), key="f")).json()["job_id"]
+    async with sessionmaker()() as db:
+        (done,) = await jobs.claim_batch(db, owner_generation="test-owner", limit=5)
+        await db.commit()
+    assert done.id == uuid.UUID(finished_id)
+    async with sessionmaker()() as db:
+        assert await jobs.finish(db, done.id, done.attempt_token, status="succeeded") == "succeeded"
+        await db.commit()
+    assert (await client.get(f"{OWNER}/jobs/{finished_id}", headers=auth)).json()["status"] == "succeeded"
+    assert err(await client.post(f"{OWNER}/jobs/{finished_id}/cancel", headers=auth)) == (409, "invalid_job_state")

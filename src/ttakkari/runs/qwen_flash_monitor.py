@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import get_settings
+from ttakkari.db import sessionmaker
 from ttakkari.models import QwenFlashUsage
 
 KST = ZoneInfo("Asia/Seoul")
@@ -204,6 +205,16 @@ async def snapshot() -> dict:
 
 
 async def snapshot_with_history(db: AsyncSession, *, now: datetime | None = None) -> dict:
+    # Multiple live generations can poll during a drain. Serialize their baseline read/write,
+    # including calls from the usage dialog, so one counter delta is persisted once.
+    may_record = await db.scalar(select(func.pg_try_advisory_xact_lock(0x54545157, 0x464C4153)))
     live = await snapshot()
-    await record_observation(db, live, recorded_at=now)
+    if may_record:
+        await record_observation(db, live, recorded_at=now)
     return await summary(db, now=now, live=live)
+
+
+async def collect_once() -> None:
+    """Poll the standalone Flash server and persist counter deltas in the background."""
+    async with sessionmaker()() as db:
+        await snapshot_with_history(db)

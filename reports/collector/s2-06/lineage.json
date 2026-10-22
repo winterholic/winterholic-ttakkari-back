@@ -1,0 +1,112 @@
+{
+  "package": "CP-S2-06",
+  "generated_by": "COLLECTOR_REPORT_FILE=... pytest tests/test_collector_pipeline.py::test_end_to_end_exact_and_near_duplicates_raw_preservation_and_rights",
+  "scope_note": "고정 fixture 4건(a 원문, b 영어, c a와 같은 본문·다른 마크업, d a의 근사본)의 raw→추출→정규화 해시 체인과 중복 판정. 품질 축은 모두 미측정(L1 모델 미탑재).",
+  "items": [
+    {
+      "at": "2026-10-21T10:37:15.696156+00:00",
+      "item": "a",
+      "url_path": "a",
+      "status": "accepted",
+      "decision": "accept",
+      "reason_codes": [
+        "l0_pass",
+        "l1_off"
+      ],
+      "raw_sha256": "07b3742e9157a9962bd87bc0b945f8b32cf841ad2a9d9810d9b759fc5e1385e8",
+      "raw_size": 1102,
+      "extracted_sha256": "0255a0488eedc5ba632e73eefe7388c67a40cb49fc85f7daab86c3678aa35fba",
+      "text_sha256": "0255a0488eedc5ba632e73eefe7388c67a40cb49fc85f7daab86c3678aa35fba",
+      "normalizer_steps": [],
+      "parser_version": "trafilatura-2.3.1+parse-1",
+      "normalizer_version": "norm-1",
+      "language": "ko",
+      "exact_of_item": null,
+      "cluster_root_is_a": false,
+      "dedupe": "dedupe-1:exact-sha256+minhash128-char5-lsh16x8@0.80",
+      "quality_axes_measured": 0,
+      "payload_hash": "6f193fb5dcff4038e1dd2536c69a8741075e7f1444b24f11b53585f2d03b8ae6"
+    },
+    {
+      "at": "2026-10-21T10:37:15.696248+00:00",
+      "item": "b",
+      "url_path": "b",
+      "status": "accepted",
+      "decision": "accept",
+      "reason_codes": [
+        "l0_pass",
+        "l1_off"
+      ],
+      "raw_sha256": "5209be16e1b7b068cd1c32ef75f56b1f1984e9258e39c86683828910743d3cc7",
+      "raw_size": 1047,
+      "extracted_sha256": "7d9ec185afe888e0a14c1f488f73745bfc118280c3ea70cf43c34cf0afcfadfd",
+      "text_sha256": "7d9ec185afe888e0a14c1f488f73745bfc118280c3ea70cf43c34cf0afcfadfd",
+      "normalizer_steps": [],
+      "parser_version": "trafilatura-2.3.1+parse-1",
+      "normalizer_version": "norm-1",
+      "language": "en",
+      "exact_of_item": null,
+      "cluster_root_is_a": false,
+      "dedupe": "dedupe-1:exact-sha256+minhash128-char5-lsh16x8@0.80",
+      "quality_axes_measured": 0,
+      "payload_hash": "62e0ebc1702abc592cf7a24c58b52cd59920d23266064459a7e603ec119da8c6"
+    },
+    {
+      "at": "2026-10-21T10:37:15.696294+00:00",
+      "item": "c",
+      "url_path": "c",
+      "status": "held",
+      "decision": "hold",
+      "reason_codes": [
+        "exact_duplicate"
+      ],
+      "raw_sha256": "cbe9a0236a0992a82ed15c3aa1adbeb4447a1f6cda17ffab43ae3eea9a0439e4",
+      "raw_size": 1138,
+      "extracted_sha256": "0255a0488eedc5ba632e73eefe7388c67a40cb49fc85f7daab86c3678aa35fba",
+      "text_sha256": "0255a0488eedc5ba632e73eefe7388c67a40cb49fc85f7daab86c3678aa35fba",
+      "normalizer_steps": [],
+      "parser_version": "trafilatura-2.3.1+parse-1",
+      "normalizer_version": "norm-1",
+      "language": "ko",
+      "exact_of_item": "a",
+      "cluster_root_is_a": false,
+      "dedupe": "dedupe-1:exact-sha256+minhash128-char5-lsh16x8@0.80",
+      "quality_axes_measured": 0,
+      "payload_hash": "be4c95d90e2548436c664456405e86f06ae2112d1e2e16d3133192a186b5f89f"
+    },
+    {
+      "at": "2026-10-21T10:37:15.696360+00:00",
+      "item": "d",
+      "url_path": "d",
+      "status": "accepted",
+      "decision": "accept",
+      "reason_codes": [
+        "l0_pass",
+        "l1_off",
+        "near_duplicate_candidate"
+      ],
+      "raw_sha256": "fb74c9ade58e16f59e363d72839c860a6a9804a9ee17465a6ad52e00f533e8fa",
+      "raw_size": 1126,
+      "extracted_sha256": "d08b4fd2553b071a21a22288b8ab859af0aaa3c1022c91b5f334c47a952529d0",
+      "text_sha256": "d08b4fd2553b071a21a22288b8ab859af0aaa3c1022c91b5f334c47a952529d0",
+      "normalizer_steps": [],
+      "parser_version": "trafilatura-2.3.1+parse-1",
+      "normalizer_version": "norm-1",
+      "language": "ko",
+      "exact_of_item": null,
+      "cluster_root_is_a": true,
+      "dedupe": "dedupe-1:exact-sha256+minhash128-char5-lsh16x8@0.80",
+      "quality_axes_measured": 0,
+      "payload_hash": "e1e2941c4c9a9d54ba4d4aecb418f5fb15cb894465b960aa5bfdd34418236d31"
+    }
+  ],
+  "profiles": [
+    {
+      "at": "2026-10-21T10:37:16.629376+00:00",
+      "case": "news vs general on identical pages",
+      "expected": "news holds stale/undated, general accepts",
+      "observed": "ok",
+      "passed": true
+    }
+  ]
+}

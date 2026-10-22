@@ -196,6 +196,7 @@ class Settings(BaseSettings):
     # 계정 사용량 수집(runs/usage_collector.py). 0 이면 수집기를 끈다(테스트는 직접 부른다).
     # 평소 poll, Run 이 그 계정을 쓰는 중이거나 잔여가 low_remaining_percent 미만이면 busy 주기로 당긴다. 실패하면 두 배씩 늦춘다(최대 backoff_max).
     usage_poll_seconds: int = 300
+    qwen_flash_poll_seconds: int = Field(default=60, ge=0, le=3600)
     resource_sample_seconds: int = Field(default=30, ge=0)
     usage_poll_busy_seconds: int = 90
     usage_low_remaining_percent: int = 20
@@ -215,8 +216,12 @@ class Settings(BaseSettings):
     instructions_max_chars: int = 8000
     # 일정 알림을 찾는 주기(초). 0 이면 끈다(테스트는 직접 부른다).
     reminder_scan_seconds: int = 30
-    # 수집 플랫폼 consume 루프(CP-S2-02). 단계 handler 가 등록되기 전(S2-03 이후)에는 켜도 아무 job 도 claim 하지 않는다.
+    # 수집 플랫폼 consume 루프(CP-S2-02). 단계 handler(collector/pipeline.py)는 루프가 처음 돌 때 등록된다. 기본 off.
     collector_consume_enabled: bool = False
+    # fetch User-Agent 에 붙는 연락처(URL 또는 이메일). 운영 웹 수집 전에 설정한다.
+    collector_contact: str = ""
+    # 원본 보존소 총량 상한(제안 20GiB, architecture 7). 도달하면 새 fetch 를 멈춘다.
+    collector_blob_cap_bytes: int = Field(default=20 * 1024**3, ge=0)
     collector_batch_size: int = Field(default=5, ge=1, le=50)
     collector_stale_seconds: int = Field(default=300, ge=30)
     # 지식(RAG) 출처로 등록할 수 있는 상위 폴더
@@ -435,6 +440,9 @@ class Settings(BaseSettings):
     @property
     def google_login_timeout(self) -> int:
         return self.google_account_login_timeout_seconds or self.notebooklm_login_timeout_seconds
+
+    # 제작 기록(Production Records)의 lab 실험 원천. 이 루트 아래 <영역>/records/<slug>/record.json 과 그 미디어만 읽고 서빙한다.
+    studio_lab_root: Path = HOME / "development/projects/ttakkari-studio-lab"
 
     # 게임 스튜디오(ADR 0046, docs/design/game-studio.md). 게임 프로젝트는 각자 git 저장소이며 이 아래 <game_slug>/ 에 둔다.
     # allowed_roots(~/development) 안이어야 워크스페이스로 등록된다. 빌드 스테이징·불변 스냅샷은 에이전트가 쓸 수 없는 data_dir 에 둔다.

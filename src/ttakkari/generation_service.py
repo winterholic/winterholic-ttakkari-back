@@ -167,7 +167,9 @@ async def _schedules() -> None:
 
 
 async def _collector_consume() -> None:
+    from ttakkari.collector import pipeline
     from ttakkari.collector.runner import consume_once
+    pipeline.install()
     await consume_once()
 
 
@@ -200,6 +202,9 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:
         jobs.append(("usage", Collector().tick, TICK_SECONDS))
+    if s.qwen_flash_poll_seconds > 0:
+        from ttakkari.runs.qwen_flash_monitor import collect_once
+        jobs.append(("qwen-flash-usage", collect_once, float(s.qwen_flash_poll_seconds)))
     if s.resource_sample_seconds > 0:
         from ttakkari.resource_history import collect_once
         jobs.append(("resource-history", collect_once, s.resource_sample_seconds))
@@ -216,10 +221,10 @@ async def lifespan(app):
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.meetings.local_stt import jobs
-    from ttakkari.tts import jobs as tts_jobs
     from ttakkari.runs import desk_pool, profiles, usage_store
     from ttakkari.runs.desk_qwen_service import service as qwen_service
     from ttakkari.runs.manager import manager
+    from ttakkari.tts import jobs as tts_jobs
     s = get_settings()
     if s.is_prod and not s.release_revision:
         raise RuntimeError("generation production requires a pinned release revision")

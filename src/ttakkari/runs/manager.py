@@ -1281,13 +1281,14 @@ class RunManager:
                 if cloud_free:
                     nxt = await choose(cloud_free, run.id, prefer_engine=prefer, balance_usage=True)
                     qwen_cloud_handoff = True
-                    events.append(db, run, "engine.fallback", {
+                    last_fallback = {
                         "from": prof.name, "from_engine": "qwen-local", "from_model": model,
                         "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
                         "reason": "qwen_failed", "fallback_tier": None,
                         "detail": (state.error or tail or "")[:500], "reset_at": None,
                         "mode": "resume" if lookup_resume_id(nxt) else "handoff",
-                    })
+                    }
+                    events.append(db, run, "engine.fallback", last_fallback)
                     attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
                     if h:
                         h.stderr_tail.clear()
@@ -1430,6 +1431,21 @@ class RunManager:
         """엔진 프로세스 한 번. (상태, 종료 코드, 시간 초과, 실행 파일 없음)."""
         s = get_settings()
         state = ParseState()
+        from ttakkari.runs.test_database import RunTestDatabase
+        test_db = None
+        if os.environ.get("TTAKKARI_TEST_RUNNER") != "1":
+            test_db = RunTestDatabase(str(run.id), root)
+            start_task = asyncio.create_task(asyncio.to_thread(test_db.start))
+            try:
+                await asyncio.shield(start_task)
+                # TTAKKARI_* is scrubbed from ambient settings before engine launch;
+                # this explicit per-attempt URL points only at the owned cluster.
+                env.update(test_db.child_env())
+            except BaseException:
+                with contextlib.suppress(BaseException):
+                    await start_task
+                await asyncio.shield(asyncio.to_thread(test_db.close))
+                raise
         if adapter.engine == "antigravity" or getattr(adapter, "validates_resume_identity", False):
             state.engine_session_id = spec.engine_session_id
         qwen_slot = adapter.engine == "qwen-local"
@@ -1474,6 +1490,8 @@ class RunManager:
                     cleanup(spec)
             finally:
                 release_qwen_slot()
+                if test_db is not None:
+                    await asyncio.shield(asyncio.to_thread(test_db.close))
             return state, None, False, True
         except OSError:
             cleanup = getattr(adapter, "cleanup", None)
@@ -1482,6 +1500,8 @@ class RunManager:
                     cleanup(spec)
             finally:
                 release_qwen_slot()
+                if test_db is not None:
+                    await asyncio.shield(asyncio.to_thread(test_db.close))
             raise
         except BaseException:
             cleanup = getattr(adapter, "cleanup", None)
@@ -1490,6 +1510,8 @@ class RunManager:
                     cleanup(spec)
             finally:
                 release_qwen_slot()
+                if test_db is not None:
+                    await asyncio.shield(asyncio.to_thread(test_db.close))
             raise
         if h:
             h.proc = proc
@@ -1535,6 +1557,8 @@ class RunManager:
                         cleanup(spec)
                 finally:
                     release_qwen_slot()
+                    if test_db is not None:
+                        await asyncio.shield(asyncio.to_thread(test_db.close))
         rc = proc.returncode
         finalize_process = getattr(adapter, "finalize_process", None)
         if finalize_process:

@@ -11,6 +11,7 @@ import errno
 import hashlib
 import importlib
 import json
+import mimetypes
 import os
 import re
 import shutil
@@ -25,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import psutil
 
@@ -586,6 +587,49 @@ class ComfyManagedController:
         with os.fdopen(fd, "rb") as stream:
             return stream.read()
 
+    @staticmethod
+    def _upload_image_bytes(client: Any, data: bytes, filename: str) -> str:
+        """Controller-owned bytes-to-multipart boundary; never asks the client to reopen a path."""
+        uploader = getattr(client, "upload_image_bytes", None)
+        if callable(uploader):
+            return uploader(data, filename)
+        base = getattr(client, "base", None)
+        if not isinstance(base, str) or not base:
+            raise ValueError(
+                "Comfy client must expose upload_image_bytes or a base URL"
+            )
+        boundary = uuid.uuid4().hex
+        parts = []
+        for name, value in (
+            ("subfolder", "ttk"),
+            ("overwrite", "true"),
+            ("type", "input"),
+        ):
+            parts.append(
+                f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
+            )
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="image"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n".encode()
+            + data
+            + b"\r\n"
+        )
+        parts.append(f"--{boundary}--\r\n".encode())
+        request = Request(
+            base.rstrip("/") + "/upload/image",
+            data=b"".join(parts),
+            method="POST",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        with urlopen(request, timeout=120) as response:
+            result = json.loads(response.read())
+        return (
+            f"{result['subfolder']}/{result['name']}"
+            if result.get("subfolder")
+            else result["name"]
+        )
+
     def _upload_input(self, job: dict[str, Any], active: dict[str, Any]) -> str | None:
         """staged 기준 이미지를 Comfy input으로 올린다. 실패하면 영속 실패 기록을 남기고 None을 돌려준다."""
         info = job["input_image"]
@@ -614,29 +658,15 @@ class ComfyManagedController:
                     "staged input is missing or outside the controller input directory"
                 )
                 return None
-            # 검증한 바이트 자체를 업로더에 준다. 경로를 그대로 넘기면 확인과 읽기 사이에 파일이 바뀔 수 있어
-            # 해시를 확인한 메모리 버퍼를 새 비공개 스냅샷 파일에 쓰고, 업로드 뒤 그 파일을 다시 해시해 대조한다.
+            # 검증한 bytes를 multipart에 직접 넣는다. client가 경로를 다시 열지 않는다.
             data = self._read_regular_file(staged)
-            if hashlib.sha256(data).hexdigest() != info["sha256"]:
+            uploaded_sha256 = hashlib.sha256(data).hexdigest()
+            if uploaded_sha256 != info["sha256"]:
                 fail("staged input bytes no longer match the recorded sha256")
                 return None
-            snapshot_dir = staged.parent / ".upload"
-            snapshot_dir.mkdir(mode=0o700)
-            snapshot = snapshot_dir / staged.name
-            fd = os.open(
-                snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+            uploaded = self._upload_image_bytes(
+                active["client"], data, info["upload_name"]
             )
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            uploaded = active["client"].upload_image(str(snapshot))
-            if (
-                hashlib.sha256(self._read_regular_file(snapshot)).hexdigest()
-                != info["sha256"]
-            ):
-                fail("uploaded bytes no longer match the recorded sha256")
-                return None
         except Exception as exc:  # noqa: BLE001 -- 업로드 실패 유형과 무관하게 같은 영속 실패 기록
             fail(f"{type(exc).__name__}: {exc}")
             return None
@@ -650,6 +680,7 @@ class ComfyManagedController:
         job["input_upload"] = {
             "stage": "upload",
             "uploaded_name": uploaded,
+            "uploaded_sha256": uploaded_sha256,
             "prompt_submitted": False,
         }
         self._save(job)

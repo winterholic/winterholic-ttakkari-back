@@ -7,6 +7,9 @@
 
 from __future__ import annotations
 
+import builtins
+import email
+import email.policy
 import hashlib
 import io
 import json
@@ -19,6 +22,7 @@ import pytest
 from creative_support import png_bytes
 from fastapi import FastAPI
 from PIL import Image
+from ttk_comfy.client import ComfyClient
 
 from ttakkari.api import comfy_managed as api
 from ttakkari.creative.comfy_inputs import load_input_image
@@ -212,19 +216,19 @@ class _Client:
     def queue(self):
         return {"queue_running": [], "queue_pending": []}
 
-    def upload_image(self, path):
+    def upload_image_bytes(self, data, filename):
         self.server.uploads.append(
             {
-                "path": path,
-                "bytes_sha256": _sha(Path(path).read_bytes()),
-                "mode": os.stat(path).st_mode & 0o777,
+                "filename": filename,
+                "bytes_sha256": _sha(data),
+                "bytes": len(data),
             }
         )
         if self.server.on_upload:
-            self.server.on_upload(path)
+            self.server.on_upload(data, filename)
         if self.server.upload_error:
             raise self.server.upload_error
-        return self.server.upload_result or f"ttk/{Path(path).name}"
+        return self.server.upload_result or f"ttk/{filename}"
 
 
 class _Server:
@@ -477,40 +481,29 @@ def test_tampered_or_symlinked_staged_input_is_never_uploaded(tmp_path):
     assert servers2[0].uploads == [] and _lease(service2) is None
 
 
-def test_upload_gets_the_verified_bytes_even_if_the_staged_file_changes_after_the_hash_check(
+def test_upload_gets_the_verified_bytes_even_if_staged_file_changes_before_upload(
     tmp_path,
 ):
-    # G34 검수 반례: 해시 확인 뒤 staged 경로를 넘기면 업로더가 읽는 시점에 바이트가 달라질 수 있었다.
-    paths = {}
+    staged = {}
     service, servers = _controller(
-        tmp_path,
-        on_upload=lambda path: paths.update(
-            uploaded=path,
-            staged_before=paths["staged"].read_bytes(),
-            _=paths["staged"].write_bytes(b"changed after the controller hash check"),
-        ),
+        tmp_path, on_upload=lambda _data, _name: staged["path"].write_bytes(b"changed")
     )
     image = _image()
     record = service.prepare(I2V, prompt="cafe", seed=2101, image=image)
-    paths["staged"] = _staged_dir(service, record["task_id"]) / NAME
+    staged["path"] = _staged_dir(service, record["task_id"]) / NAME
 
     job = service.execute(record["task_id"])
 
-    assert paths["uploaded"] != str(
-        paths["staged"]
-    )  # 업로더는 검증한 바이트의 별도 사본을 받는다
     assert servers[0].uploads[0]["bytes_sha256"] == image.sha256
     assert job["status"] == "succeeded"
 
 
-def test_upload_fails_closed_when_the_uploaded_bytes_stop_matching_the_declared_sha256(
+def test_upload_transport_failure_stays_fail_closed(
     tmp_path,
 ):
     service, servers = _controller(
         tmp_path,
-        on_upload=lambda path: Path(path).write_bytes(
-            b"changed while the uploader was reading"
-        ),
+        upload_error=OSError("stub transport failed"),
     )
     record = service.prepare(I2V, prompt="cafe", seed=2101, image=_image())
 
@@ -518,13 +511,93 @@ def test_upload_fails_closed_when_the_uploaded_bytes_stop_matching_the_declared_
 
     saved = service.get(record["task_id"])
     assert job["status"] == saved["status"] == "failed"
-    assert "uploaded bytes no longer match" in saved["error"]
+    assert "stub transport failed" in saved["error"]
     assert saved["input_upload"]["prompt_submitted"] is False
     assert (
         _Runner.instances[-1].runs == []
     )  # 변조 가능한 입력으로 제출·생성에 도달하지 않는다
     assert servers[0].stopped and _lease(service) is None
     assert not _staged_dir(service, record["task_id"]).exists()
+
+
+def test_actual_client_multipart_uses_the_validated_bytes_during_a_restore_race(
+    tmp_path, monkeypatch
+):
+    """Inspect bytes sent by the real lab client; only its HTTP transport is stubbed."""
+    import ttk_comfy.client as client_module
+
+    import ttakkari.managed_comfy as managed_module
+
+    service, _servers = _controller(tmp_path)
+    image = _image()
+    record = service.prepare(I2V, prompt="cafe", seed=2101, image=image)
+    job = service._load(record["task_id"])
+    snapshot = _staged_dir(service, record["task_id"]) / ".upload" / NAME
+    captured = {}
+
+    def stub_urlopen(request, timeout=120):
+        content_type = request.get_header("Content-type")
+        message = email.message_from_bytes(
+            b"Content-Type: "
+            + content_type.encode()
+            + b"\r\nMIME-Version: 1.0\r\n\r\n"
+            + request.data,
+            policy=email.policy.default,
+        )
+        image_part = next(
+            part
+            for part in message.iter_parts()
+            if part.get_param("name", header="content-disposition") == "image"
+        )
+        sent = image_part.get_payload(decode=True)
+        captured["sha256"] = _sha(sent)
+        captured["filename"] = image_part.get_filename()
+
+        class Response:
+            def read(self):
+                return json.dumps({"name": NAME, "subfolder": "ttk"}).encode()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        return Response()
+
+    monkeypatch.setattr(client_module.urllib.request, "urlopen", stub_urlopen)
+    monkeypatch.setattr(managed_module, "urlopen", stub_urlopen)
+    real_open = builtins.open
+
+    class RestoreAfterRead:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self.stream.__enter__()
+
+        def __exit__(self, *args):
+            result = self.stream.__exit__(*args)
+            snapshot.write_bytes(image.data)
+            return result
+
+    def racing_open(file, mode="r", *args, **kwargs):
+        if (
+            isinstance(file, (str, os.PathLike))
+            and Path(file) == snapshot
+            and mode == "rb"
+        ):
+            snapshot.write_bytes(b"transient same-UID modification")
+            return RestoreAfterRead(real_open(file, mode, *args, **kwargs))
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", racing_open)
+    uploaded = service._upload_input(
+        job, {"client": ComfyClient("http://stub.invalid")}
+    )
+
+    assert captured == {"sha256": image.sha256, "filename": NAME}
+    assert uploaded == f"ttk/{NAME}"
 
 
 def test_second_submission_is_rejected_by_the_shared_lease_and_leaves_no_staged_copy(

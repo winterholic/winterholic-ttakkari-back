@@ -403,6 +403,7 @@ class DirectorStore:
             "reviews": [],
             "events": [],
             "artifacts": {},
+            "unattached_executions": {},
             "stale": {
                 "shots": [],
                 "transition_neighbors": [],
@@ -419,6 +420,41 @@ class DirectorStore:
         if not path.is_file() or path.is_symlink():
             raise FileNotFoundError("제작물이 없습니다.")
         return json.loads(path.read_text())
+
+    @staticmethod
+    def _unattached_execution_slot(section: str, key: str) -> str:
+        return _sha(f"{section}\0{key}".encode())
+
+    def get_unattached_execution(
+        self, production_id: str, section: str, key: str
+    ) -> dict | None:
+        state = self.get_production(production_id)
+        return state.get("unattached_executions", {}).get(
+            self._unattached_execution_slot(section, key)
+        )
+
+    def write_unattached_execution(
+        self, production_id: str, section: str, key: str, value: dict
+    ) -> dict:
+        """Persist the unattached engine execution state under the G0 state lock."""
+        slot = self._unattached_execution_slot(section, key)
+        with self._locked_state(production_id) as state:
+            executions = state.setdefault("unattached_executions", {})
+            prior = executions.get(slot)
+            if prior and prior.get("request_identity") != value.get("request_identity"):
+                raise ConflictError(
+                    "같은 unattached 키에 다른 요청 내용을 기록할 수 없습니다."
+                )
+            if prior and prior.get("status") == "completed":
+                if value.get("status") != "completed" or prior != value:
+                    raise ConflictError(
+                        "완료된 unattached 실행 기록은 바꿀 수 없습니다."
+                    )
+                return prior
+            if prior and prior.get("status") != "executing":
+                raise ConflictError("unattached 실행 상태 전이가 유효하지 않습니다.")
+            executions[slot] = {"section": section, "key": key, **value}
+            return executions[slot]
 
     def _revise(
         self,

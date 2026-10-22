@@ -46,10 +46,10 @@
 ## 알려진 한계
 - 감독 LLM 응답 스키마와 피드백 API에는 자산 지정 필드가 없다. I2V 샷은 `apply_shot_plan(assets=…)` 코드 경로로만 만든다.
 - `profiles()` 응답이 T2V 항목에도 새 키를 더한다. 읽기 전용 소비자는 영향이 없지만 정확히 같은 dict를 기대하는 소비자는 갱신해야 한다.
-- 이미지 업로드 이름은 자산 id 그대로(`ttk/<id>`)이고 overwrite=true다. 단일 lease가 직렬화하므로 충돌은 없지만 다른 경로가 같은 이름을 올리면 덮인다(그 경우 receipt의 sha는 요청한 값이지 Comfy 쪽 파일의 실제 바이트 검증이 아니다).
+- 이미지 업로드 이름은 자산 id 그대로(`ttk/<id>`)이고 overwrite=true다. 단일 lease가 직렬화하므로 충돌은 없지만 다른 경로가 같은 이름을 올리면 덮인다. receipt/업로드 기록은 controller가 전송한 multipart image bytes를 증명하며 Comfy 서버에 저장된 원격 파일의 실제 hash는 응답에서 확인할 수 없다.
 
-## G34 독립 검수 후속 수정(업로드 TOCTOU)
-- 결함: staged 사본의 해시를 확인한 뒤 같은 경로를 `upload_image()`에 넘겨, 확인과 읽기 사이에 바이트가 바뀔 수 있었다.
-- 수정(`managed_comfy.py::_upload_input`): `O_NOFOLLOW` fd에서 읽은 바이트를 해시 검증하고, 그 메모리 버퍼를 task 폴더의 `.upload/` 비공개(0700/0600) 스냅샷 파일에 새로 써서 그 경로를 업로더에 준다. 업로드 뒤 스냅샷을 다시 해시해 선언 sha256과 다르면 `input_upload_failed: uploaded bytes no longer match…`로 실패 처리한다(`prompt_submitted=false`, `runner.run` 미도달, lease 해제, 사본 삭제).
-- 남는 한계: 업로더(외부 Runner client)가 경로만 받으므로 "바꿨다가 되돌리는" 변조는 재해시로 못 잡는다. 바이트 API가 있는 client가 생기면 그쪽으로 옮기는 것이 정답이다. 같은 사용자 권한의 악의적 프로세스는 위협 모델 밖이다.
-- 시험: `test_comfy_i2v_input.py`의 신규 2건(검증한 바이트가 업로드됨, 업로드 후 변조 시 fail-closed). 수정 전 코드에서는 둘 다 실패함을 확인했다.
+## G34 독립 재검수 후속 수정 — v2
+- 1차 수정(검증 바이트를 비공개 `.upload/` 경로에 복사하고 업로드 뒤 재해시)은 재검수 v2에서 깨졌다. 실제 lab `ttk_comfy.client.ComfyClient.upload_image()`와 urllib stub으로 확인한 결과, client가 snapshot을 읽는 동안 바꿨다가 원복하자 multipart image SHA는 선언값과 달랐고 controller는 accepted 상태였다. 관측 전제는 같은 OS UID 로컬 actor가 0700/0600 파일에 쓸 수 있는 경우다. API가 경로를 반환한다는 증거는 없다.
+- 현재 수정: controller가 `O_NOFOLLOW` fd에서 읽고 sha256 검증한 immutable bytes를 저장소 소유 multipart integration이 `/upload/image` body에 직접 넣는다. 외부 lab client의 path API·설치·registry는 수정하지 않았다. HTTP stub이 multipart image 파트의 실제 SHA가 선언값과 같은지 검증한다. 공개 API는 계속 `staged_path`를 제거하며 T2V의 upload/receipt 모양은 바꾸지 않았다.
+- 범위 한계: 검증은 controller가 전송한 multipart bytes다. Comfy 업로드 응답에 원격 저장 파일의 hash가 없으므로 서버 측 저장 결과 hash는 미검증이다. 실제 Comfy 서버·GPU 실행도 하지 않았다.
+- 회귀 시험: 실제 lab `ComfyClient` 인스턴스와 urllib 전송 stub을 쓰며 path-open/restore 공격을 포함한다. 기존 구현에서는 multipart SHA 불일치로 실패했고, 수정 후 observed multipart SHA가 선언 SHA와 일치한다.

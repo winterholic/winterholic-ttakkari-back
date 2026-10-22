@@ -679,52 +679,119 @@ class ProductionPipeline:
         key: str,
         spec: dict[str, Any],
         extra: dict[str, Any] | None = None,
+        retry_unknown_execution: bool = False,
     ) -> dict[str, Any]:
-        """멱등 키로 한 번만 실행하는 엔진 작업. 출력은 CAS 자산, 기록은 sidecar. crash 뒤 같은 키로 다시 부르면 기존 결과를 돌려준다."""
-        # 확인→실행→기록이 한 덩어리가 되도록 키별 잠금 안에서 sidecar를 다시 확인한다. 같은 키의 동시 호출은 한 번만 실행된다.
-        if prior := self.store.get_production(pid).get(section, {}).get(key):
+        """같은 요청만 재사용한다. 외부 실행이 불명확한 crash는 명시적 재시도 전까지 중단한다."""
+        request_identity = sha256_hex(
+            canonical(
+                {"section": section, "key": key, "spec": spec, "extra": extra or {}}
+            )
+        )
+
+        def existing_sidecar() -> dict[str, Any] | None:
+            prior = self.store.get_production(pid).get(section, {}).get(key)
+            if prior is None:
+                return None
+            if prior.get("request_identity_version") != 1:
+                raise ConflictError(
+                    "이전 실행 기록에는 요청 identity가 없어 자동 재사용하지 않습니다. 새 키 또는 수동 조정이 필요합니다."
+                )
+            if prior.get("request_identity") != request_identity:
+                raise ConflictError(
+                    "같은 unattached 키에 다른 요청 내용을 실행할 수 없습니다."
+                )
+            return prior
+
+        # 확인→실행→기록을 잠금 안에서 처리하고, 사전 읽기도 요청 identity와 함께 검증한다.
+        if prior := existing_sidecar():
             return prior
         with self.store.locked_unattached_execution(pid, section, key):
             state = self.store.get_production(pid)
             prior = state.get(section, {}).get(key)
             if prior is not None:
+                if prior.get("request_identity_version") != 1:
+                    raise ConflictError(
+                        "이전 실행 기록에는 요청 identity가 없어 자동 재사용하지 않습니다. 새 키 또는 수동 조정이 필요합니다."
+                    )
+                if prior.get("request_identity") != request_identity:
+                    raise ConflictError(
+                        "같은 unattached 키에 다른 요청 내용을 실행할 수 없습니다."
+                    )
                 return prior
+            execution = self.store.get_unattached_execution(pid, section, key)
+            if execution and execution.get("request_identity") != request_identity:
+                raise ConflictError(
+                    "같은 unattached 키에 다른 요청 내용을 실행할 수 없습니다."
+                )
+            if execution and execution.get("status") == "completed":
+                sidecar_value = execution["sidecar_value"]
+                return self.store.record_sidecar(pid, section, key, sidecar_value)
             if state["cancelled"]:
                 raise PipelineError("취소된 제작에는 새 실행을 할 수 없습니다.")
+            if execution and execution.get("status") == "executing":
+                if not retry_unknown_execution:
+                    raise PipelineError(
+                        "이전 엔진 실행의 완료 여부를 확인할 수 없습니다. 외부 상태를 확인한 뒤 retry_unknown_execution=True로 재시도를 명시하세요."
+                    )
+                attempt_number = int(execution.get("execution_attempts", 1)) + 1
+            else:
+                attempt_number = 1
+            execution = self.store.write_unattached_execution(
+                pid,
+                section,
+                key,
+                {
+                    "request_identity": request_identity,
+                    "request_identity_version": 1,
+                    "status": "executing",
+                    "execution_attempts": attempt_number,
+                },
+            )
             outputs, receipt = self._run_adapter(pid, spec, attempt_id=None)
             stored = []
-            for output, entry in zip(
-                outputs, receipt["outputs"] + [None], strict=False
+            for index, (output, entry) in enumerate(
+                zip(outputs, receipt["outputs"] + [None], strict=False)
             ):
+                output_sha = sha256_hex(output)
                 if entry is None:
                     name, media_type = (
-                        f"engine-receipt-{key[:24]}.json",
+                        f"unattached-{request_identity}-{index}-{output_sha}.json",
                         "application/json",
                     )
                 else:
                     name, media_type = (
-                        f"{key[:24]}-{entry['name']}",
+                        f"unattached-{request_identity}-{index}-{output_sha}.bin",
                         entry["media_type"],
                     )
                 stored.append(
                     self.store.put_artifact(pid, name, output, media_type=media_type)
                 )
-            return self.store.record_sidecar(
+            sidecar_value = {
+                **(extra or {}),
+                "engine": spec["engine"],
+                "profile": spec["profile"],
+                "spec": spec,
+                "outputs": stored,
+                "receipt_sha256": stored[-1]["sha256"],
+                "output_sha256": stored[0]["sha256"],
+                "execution_mode": receipt["execution_mode"],
+                "real_execution": receipt["real_execution"],
+                "request_identity_version": 1,
+                "request_identity": request_identity,
+            }
+            self.store.write_unattached_execution(
                 pid,
                 section,
                 key,
                 {
-                    "engine": spec["engine"],
-                    "profile": spec["profile"],
-                    "spec": spec,
-                    "outputs": stored,
-                    "receipt_sha256": stored[-1]["sha256"],
-                    "output_sha256": stored[0]["sha256"],
-                    "execution_mode": receipt["execution_mode"],
-                    "real_execution": receipt["real_execution"],
-                    **(extra or {}),
+                    "request_identity": request_identity,
+                    "request_identity_version": 1,
+                    "status": "completed",
+                    "execution_attempts": attempt_number,
+                    "sidecar_value": sidecar_value,
                 },
             )
+            return self.store.record_sidecar(pid, section, key, sidecar_value)
 
     def generate_speech(
         self,
@@ -734,6 +801,7 @@ class ProductionPipeline:
         voice: str = "F2",
         speed: float = 1.0,
         lang: str = "ko",
+        retry_unknown_execution: bool = False,
     ) -> dict[str, Any]:
         """오디오 선행 단계: TTS 음성과 줄별 정수 샘플 시점을 만든다. 결과는 타임라인 cue의 원시 시점이다."""
         state = self.store.get_production(pid)
@@ -764,7 +832,13 @@ class ProductionPipeline:
             )[:24]
         )
         spec["idempotency_key"] = key
-        return self.run_unattached(pid, section="engine_runs", key=key, spec=spec)
+        return self.run_unattached(
+            pid,
+            section="engine_runs",
+            key=key,
+            spec=spec,
+            retry_unknown_execution=retry_unknown_execution,
+        )
 
     def assert_composable(self, pid: str) -> dict[str, Any]:
         """조립 전제 검사. stale 샷, 현재 출력이 없는 샷, 결함 샷이 있으면 PipelineError(fail-closed)."""
@@ -800,7 +874,12 @@ class ProductionPipeline:
         return state
 
     def compose_final(
-        self, pid: str, *, audio_sha256: str | None = None, audio_gain_db: float = 0.0
+        self,
+        pid: str,
+        *,
+        audio_sha256: str | None = None,
+        audio_gain_db: float = 0.0,
+        retry_unknown_execution: bool = False,
     ) -> dict[str, Any]:
         """현재 revision의 샷 출력들을 타임라인 순서로 조립해 최종 영상을 만든다. stale 샷이나 fail 검수가 있으면 거부한다(fail-closed)."""
         state = self.assert_composable(pid)
@@ -873,6 +952,7 @@ class ProductionPipeline:
                 "format": spec["format"],
                 "composition_key": key,
             },
+            retry_unknown_execution=retry_unknown_execution,
         )
 
     def review_final(self, pid: str, composition_key: str) -> dict[str, Any]:

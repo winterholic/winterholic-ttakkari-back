@@ -375,6 +375,10 @@ class FeedbackInput(Strict):
 class FinalInput(Strict):
     audio_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     audio_gain_db: float = Field(default=0.0, ge=-30.0, le=6.0)
+    retry_unknown_execution: bool = Field(
+        default=False,
+        description="Set true only after reconciling an execution whose external completion is unknown.",
+    )
 
 
 @router.get("/engines")
@@ -542,6 +546,7 @@ async def _compose(pid: str, body: FinalInput) -> None:
             pid,
             audio_sha256=body.audio_sha256,
             audio_gain_db=body.audio_gain_db,
+            retry_unknown_execution=body.retry_unknown_execution,
         )
         await asyncio.to_thread(pipeline.review_final, pid, record["composition_key"])
     except Exception:

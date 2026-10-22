@@ -5,12 +5,15 @@ I2V 업로드 TOCTOU(네 번째 결함)는 컨트롤러 fixture를 쓰는 `test_
 
 from __future__ import annotations
 
+import multiprocessing
+import os
 import threading
+import time
 
 import pytest
 
 from ttakkari.creative.director import DirectorStore, _hash
-from ttakkari.creative.pipeline import ProductionPipeline
+from ttakkari.creative.pipeline import PipelineError, ProductionPipeline
 
 
 def _store(tmp_path):
@@ -143,6 +146,35 @@ def _fake_adapter(calls: dict, barrier: threading.Barrier | None):
     return run
 
 
+def _multiprocess_unattached_worker(root, pid, key, calls_path, results):
+    store = DirectorStore(root)
+    pipeline = ProductionPipeline(store, registry=None)
+
+    def run(_pid, _spec, *, attempt_id):
+        assert attempt_id is None
+        with open(calls_path, "a") as stream:
+            stream.write(f"{os.getpid()}\n")
+        time.sleep(0.2)
+        return [b"process-shared output", b"process-shared receipt"], {
+            "outputs": [{"name": "out.wav", "media_type": "audio/wav"}],
+            "execution_mode": "real",
+            "real_execution": True,
+        }
+
+    pipeline._run_adapter = run
+    try:
+        result = pipeline.run_unattached(
+            pid,
+            section="engine_runs",
+            key=key,
+            spec={"engine": "tts", "profile": "same", "input_refs": ["asset:one"]},
+            extra={"voice": "A"},
+        )
+        results.put(("ok", result["content_hash"]))
+    except Exception as exc:  # noqa: BLE001 - subprocess must report its error
+        results.put(("error", repr(exc)))
+
+
 def test_concurrent_calls_with_one_key_execute_the_engine_exactly_once(tmp_path):
     store, pid = _store(tmp_path)
     pipeline = ProductionPipeline(store, registry=None)
@@ -171,6 +203,30 @@ def test_concurrent_calls_with_one_key_execute_the_engine_exactly_once(tmp_path)
     assert errors == []
     assert calls["n"] == 1
     assert len(results) == 4 and len({r["content_hash"] for r in results}) == 1
+
+
+def test_multiprocess_same_request_executes_once_and_returns_one_sidecar(tmp_path):
+    store, pid = _store(tmp_path)
+    calls_path = tmp_path / "adapter-calls.txt"
+    context = multiprocessing.get_context("spawn")
+    results = context.Queue()
+    workers = [
+        context.Process(
+            target=_multiprocess_unattached_worker,
+            args=(str(store.root), pid, "process-shared", str(calls_path), results),
+        )
+        for _ in range(2)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=20)
+
+    rows = [results.get(timeout=2) for _ in workers]
+    assert [worker.exitcode for worker in workers] == [0, 0]
+    assert all(row[0] == "ok" for row in rows)
+    assert len({row[1] for row in rows}) == 1
+    assert len(calls_path.read_text().splitlines()) == 1
 
 
 def test_different_keys_do_not_block_each_other(tmp_path):
@@ -219,9 +275,279 @@ def test_a_failed_first_execution_does_not_leave_the_key_locked_or_recorded(tmp_
             pid, section="engine_runs", key="speech:flaky", spec=spec
         )
     record = pipeline.run_unattached(
-        pid, section="engine_runs", key="speech:flaky", spec=spec
+        pid,
+        section="engine_runs",
+        key="speech:flaky",
+        spec=spec,
+        retry_unknown_execution=True,
     )
     assert attempts["n"] == 2 and record["key"] == "speech:flaky"
+
+
+def test_same_key_rejects_different_spec_extra_and_input_references(tmp_path):
+    from ttakkari.creative.director import ConflictError
+
+    store, pid = _store(tmp_path)
+    pipeline = ProductionPipeline(store, registry=None)
+    calls = {"n": 0}
+
+    def run(_pid, _spec, *, attempt_id):
+        assert attempt_id is None
+        calls["n"] += 1
+        return [b"audio", b"receipt"], {
+            "outputs": [{"name": "audio.wav", "media_type": "audio/wav"}],
+            "execution_mode": "real",
+            "real_execution": True,
+        }
+
+    pipeline._run_adapter = run
+    request = {
+        "engine": "tts",
+        "profile": "speech",
+        "input_assets": [{"asset_id": "line-1", "sha256": "a" * 64}],
+    }
+    pipeline.run_unattached(
+        pid, section="engine_runs", key="same", spec=request, extra={"voice": "A"}
+    )
+
+    for changed_spec, changed_extra in (
+        ({**request, "profile": "other"}, {"voice": "A"}),
+        (request, {"voice": "B"}),
+        (
+            {**request, "input_assets": [{"asset_id": "line-1", "sha256": "b" * 64}]},
+            {"voice": "A"},
+        ),
+    ):
+        with pytest.raises(ConflictError, match="요청 내용"):
+            pipeline.run_unattached(
+                pid,
+                section="engine_runs",
+                key="same",
+                spec=changed_spec,
+                extra=changed_extra,
+            )
+    assert calls["n"] == 1
+
+
+def test_concurrent_different_requests_with_one_key_execute_only_the_winner(tmp_path):
+    from ttakkari.creative.director import ConflictError
+
+    store, pid = _store(tmp_path)
+    pipeline = ProductionPipeline(store, registry=None)
+    calls = {"n": 0}
+    lock = threading.Lock()
+
+    def run(_pid, _spec, *, attempt_id):
+        assert attempt_id is None
+        with lock:
+            calls["n"] += 1
+        time.sleep(0.1)
+        return [b"winner", b"receipt"], {
+            "outputs": [{"name": "out.wav", "media_type": "audio/wav"}],
+            "execution_mode": "real",
+            "real_execution": True,
+        }
+
+    pipeline._run_adapter = run
+    requests = [
+        {"engine": "tts", "profile": profile, "input_refs": [asset]}
+        for profile, asset in (("one", "asset:a"), ("two", "asset:b"))
+    ]
+    results, errors = [], []
+
+    def work(spec):
+        try:
+            results.append(
+                pipeline.run_unattached(
+                    pid,
+                    section="engine_runs",
+                    key="race",
+                    spec=spec,
+                    extra={"voice": "A"},
+                )
+            )
+        except BaseException as exc:  # noqa: BLE001 - capture the losing request
+            errors.append(exc)
+
+    workers = [threading.Thread(target=work, args=(spec,)) for spec in requests]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=20)
+    assert calls["n"] == 1 and len(results) == 1
+    assert len(errors) == 1 and isinstance(errors[0], ConflictError)
+    assert store.get_production(pid)["engine_runs"]["race"]["spec"] in requests
+
+
+def test_checkpoint_recovers_same_request_after_sidecar_crash_without_rerun(
+    tmp_path, monkeypatch
+):
+    store, pid = _store(tmp_path)
+    pipeline = ProductionPipeline(store, registry=None)
+    outputs = iter((b"nondeterministic A", b"nondeterministic B"))
+    calls = {"n": 0}
+
+    def run(_pid, _spec, *, attempt_id):
+        assert attempt_id is None
+        calls["n"] += 1
+        return [next(outputs), b'{"receipt":true}'], {
+            "outputs": [{"name": "audio.wav", "media_type": "audio/wav"}],
+            "execution_mode": "real",
+            "real_execution": True,
+        }
+
+    pipeline._run_adapter = run
+    spec = {"engine": "tts", "profile": "speech", "version": "same"}
+    sibling = store.record_sidecar(
+        pid, "engine_runs", "sibling", {"engine": "tts", "profile": "other"}
+    )
+    source = store.put_artifact(
+        pid, "protected-input.bin", b"protected", media_type="application/octet-stream"
+    )
+    terminal = store.submit_attempt(
+        pid,
+        "shot-1",
+        input_sha256=source["sha256"],
+        idempotency_key="terminal-sibling",
+        resolved_graph={"engine": "test", "profile": "test"},
+    )
+    terminal = store.execute_attempt(
+        pid,
+        terminal["attempt_id"],
+        renderer=lambda _data: [b"terminal video", b"receipt"],
+    )
+    original = store.record_sidecar
+
+    def crash_final_sidecar(production_id, section, key, value):
+        if section == "engine_runs":
+            raise KeyboardInterrupt("crash after durable output checkpoint")
+        return original(production_id, section, key, value)
+
+    monkeypatch.setattr(store, "record_sidecar", crash_final_sidecar)
+    with pytest.raises(KeyboardInterrupt, match="durable output checkpoint"):
+        pipeline.run_unattached(pid, section="engine_runs", key="checkpoint", spec=spec)
+
+    monkeypatch.setattr(store, "record_sidecar", original)
+    recovered = pipeline.run_unattached(
+        pid, section="engine_runs", key="checkpoint", spec=spec
+    )
+    assert calls["n"] == 1
+    assert store.read_artifact(pid, recovered["output_sha256"]) == b"nondeterministic A"
+    final_state = store.get_production(pid)
+    assert final_state["engine_runs"]["sibling"] == sibling
+    final_terminal = next(
+        attempt
+        for attempt in final_state["attempts"]
+        if attempt["attempt_id"] == terminal["attempt_id"]
+    )
+    assert final_terminal["state"] == "review_pending"
+    assert final_terminal["outputs"] == terminal["outputs"]
+    assert store.read_artifact(pid, source["sha256"]) == b"protected"
+
+
+@pytest.mark.parametrize(
+    "crash_boundary", ["before_cas", "after_cas_before_checkpoint"]
+)
+def test_unknown_external_execution_requires_explicit_retry_and_names_do_not_collide(
+    tmp_path, monkeypatch, crash_boundary
+):
+    store, pid = _store(tmp_path)
+    pipeline = ProductionPipeline(store, registry=None)
+    outputs = iter((b"first CAS bytes", b"different retry bytes"))
+    calls = {"n": 0}
+
+    def run(_pid, _spec, *, attempt_id):
+        assert attempt_id is None
+        calls["n"] += 1
+        return [next(outputs), b"receipt"], {
+            "outputs": [{"name": "audio.wav", "media_type": "audio/wav"}],
+            "execution_mode": "real",
+            "real_execution": True,
+        }
+
+    pipeline._run_adapter = run
+    spec = {"engine": "tts", "profile": "speech", "version": "same"}
+    if crash_boundary == "before_cas":
+        original = store.put_artifact
+        crashed = {"done": False}
+
+        def crash_before_cas(production_id, name, content, *, media_type):
+            if not crashed["done"]:
+                crashed["done"] = True
+                raise KeyboardInterrupt("crash before output CAS")
+            return original(production_id, name, content, media_type=media_type)
+
+        monkeypatch.setattr(store, "put_artifact", crash_before_cas)
+        crash_message = "before output CAS"
+    else:
+        original = store.write_unattached_execution
+        crashed = {"done": False}
+
+        def crash_before_checkpoint(production_id, section, key, value):
+            if value.get("status") == "completed" and not crashed["done"]:
+                crashed["done"] = True
+                raise KeyboardInterrupt("crash after output CAS before checkpoint")
+            return original(production_id, section, key, value)
+
+        monkeypatch.setattr(
+            store, "write_unattached_execution", crash_before_checkpoint
+        )
+        crash_message = "after output CAS before checkpoint"
+
+    with pytest.raises(KeyboardInterrupt, match=crash_message):
+        pipeline.run_unattached(pid, section="engine_runs", key="unknown", spec=spec)
+
+    monkeypatch.setattr(
+        store,
+        "put_artifact"
+        if crash_boundary == "before_cas"
+        else "write_unattached_execution",
+        original,
+    )
+    with pytest.raises(PipelineError, match="완료 여부를 확인할 수 없습니다"):
+        pipeline.run_unattached(pid, section="engine_runs", key="unknown", spec=spec)
+    recovered = pipeline.run_unattached(
+        pid,
+        section="engine_runs",
+        key="unknown",
+        spec=spec,
+        retry_unknown_execution=True,
+    )
+    assert calls["n"] == 2
+    assert (
+        store.read_artifact(pid, recovered["output_sha256"]) == b"different retry bytes"
+    )
+    names = list(store.get_production(pid)["artifacts"])
+    assert len(names) == len(set(names))
+    assert len(names) == (2 if crash_boundary == "before_cas" else 3)
+
+
+def test_legacy_unattached_sidecar_is_not_silently_reused(tmp_path):
+    from ttakkari.creative.director import ConflictError
+
+    store, pid = _store(tmp_path)
+    store.record_sidecar(
+        pid,
+        "engine_runs",
+        "legacy",
+        {"engine": "tts", "profile": "speech", "spec": {"legacy": True}},
+    )
+    pipeline = ProductionPipeline(store, registry=None)
+    pipeline._run_adapter = _fake_adapter({"n": 0}, None)
+    with pytest.raises(ConflictError, match="이전 실행 기록"):
+        pipeline.run_unattached(
+            pid,
+            section="engine_runs",
+            key="legacy",
+            spec={"engine": "tts", "profile": "speech", "legacy": True},
+        )
+
+
+def test_final_api_requires_explicit_opt_in_to_retry_unknown_execution():
+    from ttakkari.api.creative import FinalInput
+
+    assert FinalInput().retry_unknown_execution is False
+    assert FinalInput(retry_unknown_execution=True).retry_unknown_execution is True
 
 
 # ---------- P2: sidecar 예약 필드

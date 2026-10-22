@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 from sqlalchemy.engine import make_url
 
-from ttakkari.runs.test_database import RunTestDatabase, patch_asyncpg_test_port
+from ttakkari.runs.test_database import (
+    RunTestDatabase,
+    patch_asyncpg_test_port,
+    reap_stale,
+)
 
 
 def test_start_creates_a_run_scoped_cluster_and_test_database(tmp_path, monkeypatch):
@@ -70,3 +74,51 @@ def test_explicit_local_test_database_port_is_used_by_direct_asyncpg_calls():
     asyncio.run(asyncpg.connect(host="localhost", database="ttakkari_test"))
 
     assert observed["port"] == 55555
+
+
+def test_each_run_gets_a_distinct_database_url_and_no_application_database_url(tmp_path, monkeypatch):
+    pg_bin = tmp_path / "pg"
+    pg_bin.mkdir()
+    for name in ("initdb", "pg_ctl", "createdb", "psql"):
+        (pg_bin / name).touch()
+
+    def run(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("ttakkari.runs.test_database.subprocess.run", run)
+    first = RunTestDatabase("run-one", tmp_path / "ws-one", pg_bin=pg_bin, root=tmp_path)
+    second = RunTestDatabase("run-two", tmp_path / "ws-two", pg_bin=pg_bin, root=tmp_path)
+
+    first_url = first.start()
+    second_url = second.start()
+
+    assert first.folder != second.folder
+    assert first_url != second_url
+    assert make_url(first_url).database == make_url(second_url).database == "ttakkari_test"
+    assert first.child_env()["TTAKKARI_TEST_DB"] == first_url
+    assert second.child_env()["TTAKKARI_TEST_DB"] == second_url
+    assert "TTAKKARI_DATABASE_URL" not in first.child_env()
+    first.close()
+    second.close()
+
+
+def test_stale_reaper_removes_only_marked_clusters_with_dead_owners(tmp_path, monkeypatch):
+    pg_bin = tmp_path / "pg"
+    pg_bin.mkdir()
+    for name in ("initdb", "pg_ctl", "createdb", "psql"):
+        (pg_bin / name).touch()
+    dead = tmp_path / "ttakkari-run-test-999999-abcdef12"
+    dead.mkdir()
+    (dead / "run-test-cluster.marker").write_text(
+        f"prefix=ttakkari-run-test-\nfolder={dead.name}\nowner_pid=999999\nrun_id=old-run\nport=54321\n",
+        encoding="utf-8",
+    )
+    unrelated = tmp_path / "ttakkari-run-test-888888-abcdef12"
+    unrelated.mkdir()
+    (unrelated / "run-test-cluster.marker").write_text("not our marker\n", encoding="utf-8")
+    monkeypatch.setattr("ttakkari.runs.test_database._pg_bin", lambda: pg_bin)
+    monkeypatch.setattr("ttakkari.runs.test_database._pid_alive", lambda pid: pid != 999999)
+
+    assert reap_stale(tmp_path) == [dead.name]
+    assert not dead.exists()
+    assert unrelated.is_dir()

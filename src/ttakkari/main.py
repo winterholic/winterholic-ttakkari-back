@@ -144,6 +144,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ttakkari.deployment import revision
     app.state.revision = revision()
     init_engine()
+    try:
+        from ttakkari.runs.test_database import reap_stale as reap_stale_test_databases
+        stale_test_dbs = await asyncio.to_thread(reap_stale_test_databases)
+        if stale_test_dbs:
+            log.info("reaped %d orphan Run test PostgreSQL clusters", len(stale_test_dbs))
+    except Exception as e:  # noqa: BLE001 - stale test-cluster cleanup must not block app startup
+        log.warning("orphan Run test PostgreSQL cleanup failed: %s", e)
     from ttakkari.generation_bootstrap import holding
     app.state.bootstrap_hold = holding()
     if app.state.bootstrap_hold:

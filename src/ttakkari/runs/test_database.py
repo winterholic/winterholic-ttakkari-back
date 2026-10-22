@@ -201,6 +201,15 @@ def _valid_folder(folder: Path, root: Path = ROOT) -> tuple[int, int] | None:
         return None
 
 
+def _cleanup_pending(folder: Path) -> bool:
+    try:
+        marker = folder / MARKER
+        fields = dict(line.split("=", 1) for line in marker.read_text().splitlines() if "=" in line)
+        return fields.get("cleanup_pending") == "1"
+    except OSError:
+        return False
+
+
 def _stop_owned(folder: Path, pg_bin: Path, root: Path = ROOT) -> bool:
     """Stop only a validated cluster, retaining it if its postmaster will not exit."""
     if _valid_folder(folder, root) is None:
@@ -238,7 +247,7 @@ def reap_stale(root: Path = ROOT) -> list[str]:
     for name in sorted(glob.glob(str(root / f"{PREFIX}*"))):
         folder = Path(name)
         owner = _valid_folder(folder, root)
-        if owner is None or _pid_alive(owner[0]):
+        if owner is None or (_pid_alive(owner[0]) and not _cleanup_pending(folder)):
             continue
         if _stop_owned(folder, pg_bin, root):
             reaped.append(folder.name)
@@ -323,7 +332,11 @@ class RunTestDatabase:
         folder = self.folder
         self.folder = None
         try:
-            _stop_owned(folder, _pg_bin(self.pg_bin), self.root)
+            if not _stop_owned(folder, _pg_bin(self.pg_bin), self.root) and _valid_folder(folder, self.root):
+                marker = folder / MARKER
+                with marker.open("a", encoding="utf-8") as stream:
+                    stream.write("cleanup_pending=1\n")
+                log.error("Run test PostgreSQL cleanup deferred to the startup reaper: %s", folder)
         except RuntimeError:
             log.exception("Run test PostgreSQL binaries disappeared; preserving %s", folder)
 

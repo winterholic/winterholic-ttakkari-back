@@ -12,7 +12,7 @@ from ttakkari.creative.v2.registry import Registry
 
 VERDICT_LABEL = {
     "studio_executable": "스튜디오 실행 가능",
-    "recipe_demonstrated": "레시피 사례 실행됨(lab)",
+    "recipe_demonstrated": "사례 기록 있음(lab·조건부/미검토, 품질 통과 아님)",
     "capabilities_executed": "능력별 실행됨, 조합 미실행",
     "partially_demonstrated": "부분 실행",
     "unverified": "설치만, 실행 미검증",
@@ -53,8 +53,10 @@ def matrix_markdown(registry: Registry | None = None) -> str:
         "| executed | lab 기록이 completed이고 결과물이 있음. 독립 검수는 아님 |",
         "| verified | 독립 검수 pass 기록이 있음 |",
         "",
-        "연동 범위: creative_runtime은 스튜디오 제작 코드가 호출한다. app_service는 앱 서비스로 있으나 제작에 연결되지 않았다. "
-        "lab_only는 lab에서 수동 실행만 됐다. none은 연결 없음.",
+        (
+            "연동 범위: creative_runtime은 스튜디오 제작 코드가 호출한다. app_service는 앱 서비스로 있으나 제작에 연결되지 않았다. "
+            + "lab_only는 lab에서 수동 실행만 됐다. none은 연결 없음."
+        ),
         "",
         "## 요약",
         "",

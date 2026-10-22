@@ -89,6 +89,78 @@ def _digest(value: Any) -> str:
     ).hexdigest()
 
 
+def _plan_revision_hash(plan: dict[str, Any]) -> str:
+    """Hash the saved plan revision, excluding approval and history metadata."""
+    metadata = {
+        "approval",
+        "history",
+        "updated_at",
+        "render_blockers",
+        "render_gate",
+    }
+    return _digest({key: value for key, value in plan.items() if key not in metadata})
+
+
+def _capability_snapshot(match: dict[str, Any]) -> dict[str, Any]:
+    needs = [
+        {
+            "options": need["options"],
+            "priority": need["priority"],
+            "status": need["status"],
+            "level": need["level"],
+            "best": (
+                {
+                    "entry_id": need["best"]["entry_id"],
+                    "capability": need["best"]["capability"],
+                    "level": need["best"]["level"],
+                    "integration": need["best"]["integration"],
+                }
+                if need.get("best")
+                else None
+            ),
+        }
+        for need in match["needs"]
+    ]
+    return {
+        "execution_scope": match["execution_scope"],
+        "status": match["status"],
+        "fingerprint": match["fingerprint"],
+        "needs": needs,
+    }
+
+
+def _render_authorized(
+    plan: dict[str, Any], current_capabilities: dict[str, Any] | None = None
+) -> bool:
+    approval = plan.get("approval")
+    if not approval or approval.get("revision") != plan["revision"]:
+        return False
+    snapshot = approval.get("snapshot")
+    if not snapshot or snapshot.get("revision") != plan["revision"]:
+        return False
+    if snapshot.get("plan_sha256") != _plan_revision_hash(plan):
+        return False
+    saved_capabilities = _capability_snapshot(plan["match"])
+    if snapshot.get("capabilities") != saved_capabilities:
+        return False
+    if (
+        current_capabilities is not None
+        and snapshot.get("capabilities") != current_capabilities
+    ):
+        return False
+
+    match = current_capabilities or saved_capabilities
+    if match["execution_scope"] != "studio_runtime" or match["status"] != "ready":
+        return False
+    return all(
+        need["status"] == "executed"
+        and need.get("best") is not None
+        and need["best"]["integration"] == "creative_runtime"
+        for need in match["needs"]
+        if need["priority"] == "must"
+    )
+
+
 def _beats(intent: IntentSpec) -> tuple[list[Beat], str, list[str]]:
     """정보 항목이 있으면 그것이 장면이 되고, 없으면 서사 구조 템플릿으로 추정한다. 길이를 채우려고 장면을 만들지 않는다."""
     warnings: list[str] = []
@@ -306,9 +378,10 @@ def _blockers(plan: dict[str, Any]) -> list[str]:
 
 
 class PlanStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, registry: Registry | None = None):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.registry = registry or Registry()
 
     def _folder(self, plan_id: str) -> Path:
         try:
@@ -323,11 +396,29 @@ class PlanStore:
             raise FileNotFoundError("제작 계획이 없습니다.")
         plan = json.loads(path.read_text())
         plan["render_blockers"] = _blockers(plan)
+        try:
+            current_match = match_intent(
+                plan["brief"], IntentSpec.model_validate(plan["intent"]), self.registry
+            )
+            current_capabilities = _capability_snapshot(
+                current_match.model_dump(mode="json")
+            )
+        except (KeyError, ValueError, TypeError):
+            current_capabilities = None
         plan["render_gate"] = (
-            bool(plan["approval"])
-            and plan["approval"]["revision"] == plan["revision"]
+            current_capabilities is not None
+            and _render_authorized(plan, current_capabilities)
             and not plan["render_blockers"]
         )
+        return plan
+
+    def assert_renderable(self, plan_id: str, revision: int) -> dict[str, Any]:
+        """Server-side authorization check for a renderer before it starts work."""
+        plan = self.get(plan_id)
+        if plan["revision"] != revision or not plan["render_gate"]:
+            raise ValueError(
+                "렌더할 수 없습니다: 승인 스냅샷 또는 studio_runtime 조건이 맞지 않습니다."
+            )
         return plan
 
     def list(self) -> list[dict[str, Any]]:
@@ -508,6 +599,11 @@ class PlanStore:
                         for s in plan["scenes"]
                     ]
                 ),
+                "snapshot": {
+                    "revision": plan["revision"],
+                    "plan_sha256": _plan_revision_hash(plan),
+                    "capabilities": _capability_snapshot(plan["match"]),
+                },
             }
             plan["history"].append(
                 {

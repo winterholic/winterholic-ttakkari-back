@@ -2,7 +2,14 @@ import pytest
 
 from ttakkari.creative.v2.duration import DurationRequest, SceneEdit
 from ttakkari.creative.v2.intent import InfoItem, IntentSpec, Selection, Span
-from ttakkari.creative.v2.plans import PlanStore, build_plan
+from ttakkari.creative.v2.matching import MatchResult
+from ttakkari.creative.v2.plans import (
+    PlanStore,
+    _capability_snapshot,
+    _plan_revision_hash,
+    _render_authorized,
+    build_plan,
+)
 from ttakkari.creative.v2.probe import PROBE_IDS
 from ttakkari.creative.v2.registry import Registry
 
@@ -53,7 +60,7 @@ def intent(count=8, **kw):
 
 @pytest.fixture
 def store(tmp_path):
-    return PlanStore(tmp_path)
+    return PlanStore(tmp_path, registry=registry())
 
 
 def make(store, **kw):
@@ -158,7 +165,7 @@ def test_scene_edit_recomputes_total_and_invalidates_approval(store):
     )
     approved = store.approve(plan["id"], plan["revision"])
     assert (
-        approved["render_gate"] is True
+        approved["render_gate"] is False
         and approved["approval"]["planned_frames"] == plan["scenes"][-1]["end_frame"]
     )
     edits = [
@@ -182,7 +189,93 @@ def test_scene_edit_recomputes_total_and_invalidates_approval(store):
     )
     assert edited["basis"] == "user_edited"
     reapproved = store.approve(plan["id"], edited["revision"])
-    assert reapproved["render_gate"] is True
+    assert reapproved["render_gate"] is False
+
+
+def test_studio_runtime_approval_can_render_only_while_snapshot_matches(
+    store, monkeypatch
+):
+    plan = make(store)
+    plan["match"]["execution_scope"] = "studio_runtime"
+    plan["match"]["status"] = "ready"
+    for need in plan["match"]["needs"]:
+        if need["priority"] == "must":
+            need["status"] = "executed"
+            if need["best"]:
+                need["best"]["integration"] = "creative_runtime"
+    store._save(plan)
+    monkeypatch.setattr(
+        "ttakkari.creative.v2.plans.match_intent",
+        lambda _brief, _intent, _registry: MatchResult.model_validate(plan["match"]),
+    )
+
+    approved = store.approve(plan["id"], plan["revision"])
+    assert approved["render_gate"] is True
+    assert store.assert_renderable(plan["id"], plan["revision"])["render_gate"] is True
+
+    renamed = store.get(plan["id"])
+    renamed["name"] += " 수정"
+    store._save(renamed)
+    assert store.get(plan["id"])["render_gate"] is False
+    renamed["name"] = plan["name"]
+    store._save(renamed)
+    assert store.get(plan["id"])["render_gate"] is True
+
+    monkeypatch.setattr(
+        "ttakkari.creative.v2.plans.match_intent",
+        lambda _brief, _intent, _registry: MatchResult.model_validate(
+            plan["match"]
+            | {"execution_scope": "lab_manual", "status": "ready_unverified"}
+        ),
+    )
+    assert store.get(plan["id"])["render_gate"] is False
+    monkeypatch.setattr(
+        "ttakkari.creative.v2.plans.match_intent",
+        lambda _brief, _intent, _registry: MatchResult.model_validate(plan["match"]),
+    )
+
+    tampered = store.get(plan["id"])
+    tampered["match"]["status"] = "ready_unverified"
+    store._save(tampered)
+    assert store.get(plan["id"])["render_gate"] is False
+    with pytest.raises(ValueError, match="렌더할 수 없습니다"):
+        store.assert_renderable(plan["id"], plan["revision"])
+
+
+def test_lab_manual_plan_never_opens_render_gate_after_approval(store):
+    plan = make(store)
+    assert plan["match"]["execution_scope"] == "lab_manual"
+    approved = store.approve(plan["id"], plan["revision"])
+    assert approved["approval"] is not None
+    assert approved["render_gate"] is False
+
+
+def test_approval_persists_immutable_plan_and_capability_snapshot(store):
+    plan = make(store)
+    approved = store.approve(plan["id"], plan["revision"])
+    snapshot = approved["approval"]["snapshot"]
+    assert snapshot["revision"] == plan["revision"]
+    assert len(snapshot["plan_sha256"]) == 64
+    assert (
+        snapshot["capabilities"]["execution_scope"] == plan["match"]["execution_scope"]
+    )
+    assert approved["render_gate"] is False
+
+
+@pytest.mark.parametrize("status", ["ready_unverified", "blocked"])
+def test_unverified_or_blocked_status_never_authorizes_render(store, status):
+    plan = make(store)
+    plan["match"]["execution_scope"] = "studio_runtime"
+    plan["match"]["status"] = status
+    plan["approval"] = {
+        "revision": plan["revision"],
+        "snapshot": {
+            "revision": plan["revision"],
+            "plan_sha256": _plan_revision_hash(plan),
+            "capabilities": _capability_snapshot(plan["match"]),
+        },
+    }
+    assert _render_authorized(plan) is False
 
 
 def test_edit_that_cuts_speech_is_blocked_from_approval_with_fit_suggestion(store):
@@ -284,6 +377,37 @@ def test_template_scaffold_does_not_pad_to_long_target(store):
     assert any(a["kind"] == "extend_content" for a in plan["duration"]["alternatives"])
 
 
+def test_three_short_info_items_deviate_from_six_hundred_seconds_without_padding(store):
+    short_intent = IntentSpec(
+        selections=[
+            Selection(
+                entry_id="C01.tech_explainer",
+                role="primary",
+                strength="hard",
+                source="user_explicit",
+                confidence=0.9,
+                evidence=[Span(quote="기술 설명")],
+            )
+        ],
+        info_items=[
+            InfoItem(id=f"i{i}", title=f"정보 {i}", narration="") for i in range(3)
+        ],
+    )
+    plan = make(
+        store,
+        intent=short_intent,
+        duration=DurationRequest(mode="preferred", seconds=600),
+    )
+    assert plan["duration"]["status"] == "deviated"
+    assert plan["duration"]["planned_seconds"] == 24
+    assert any(
+        "3개" in reason and "24.0초" in reason for reason in plan["duration"]["reasons"]
+    )
+    assert all(
+        alt["requires_user_approval"] for alt in plan["duration"]["alternatives"]
+    )
+
+
 def test_unresolved_style_conflict_blocks_approval_and_records_choice(store, tmp_path):
     from ttakkari.creative.v2.style_dna import (
         Resolution,
@@ -332,7 +456,7 @@ def test_unresolved_style_conflict_blocks_approval_and_records_choice(store, tmp
         resolved["style"]["status"] == "resolved"
         and resolved["scenes"][0]["style_dna"] == resolved["style"]["sha256"]
     )
-    assert store.approve(resolved["id"], resolved["revision"])["render_gate"] is True
+    assert store.approve(resolved["id"], resolved["revision"])["render_gate"] is False
 
 
 def test_invalid_ids_and_missing_plan(store):

@@ -3,6 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from ttakkari.creative.v2 import style_dna
 from ttakkari.creative.v2.style_dna import (
     MERGE_FIELDS,
     REQUIRED_FIELDS,
@@ -29,8 +30,10 @@ def store(tmp_path):
     return StyleStore(tmp_path, seeds=seed_docs())
 
 
-def test_sixteen_required_fields_include_identity_and_version():
+def test_style_dna_has_fifteen_user_fields_and_system_version():
     assert len(REQUIRED_FIELDS) == 16
+    assert len(getattr(style_dna, "USER_CONTENT_FIELDS", ())) == 15
+    assert getattr(style_dna, "SYSTEM_FIELDS", ()) == ("version",)
     assert set(StyleDNA.model_fields) == set(REQUIRED_FIELDS)
     assert set(MERGE_FIELDS) | {"style_id", "version"} == set(REQUIRED_FIELDS)
 

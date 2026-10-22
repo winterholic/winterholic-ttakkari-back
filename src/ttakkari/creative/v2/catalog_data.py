@@ -1140,11 +1140,15 @@ _LINKS: dict[str, dict[str, list]] = {
     "C01.music_video": {
         "cases": [
             (
-                "success",
+                "partial",
                 "remotion-beat-v1-v2",
-                "합성 트랙 기준 컷 오차 최대 0.78프레임",
+                "합성 트랙 기준 컷 오차 최대 0.78프레임. 조건부 검수이며 전체 레시피·품질 통과 증거가 아님",
             ),
-            ("success", "legacy-catalog-sample-music-video", "v1 카탈로그 샘플 렌더"),
+            (
+                "partial",
+                "legacy-catalog-sample-music-video",
+                "v1 카탈로그 샘플 렌더. 검수 미수행이며 전체 레시피·품질 통과 증거가 아님",
+            ),
         ],
         "evidence": [("doc", "ADR 0065", "v1 포맷 카탈로그")],
     },
@@ -1203,9 +1207,9 @@ _LINKS: dict[str, dict[str, list]] = {
     "C09.vocal": {
         "cases": [
             (
-                "success",
+                "partial",
                 "acestep-ko-ballad-run1",
-                "한국어 4줄 30초, Whisper 왕복 전사 일치",
+                "한국어 4줄 30초, Whisper 왕복 전사 일치. R19 구성 요소 사례로만 연결됐고 검수는 conditional이며 전체 레시피·품질 통과 증거가 아님",
             ),
             (
                 "failure",

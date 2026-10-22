@@ -894,7 +894,7 @@ RECIPES: list[Recipe] = [
     _r(
         "R19",
         "뮤직비디오",
-        "비트·가사·립싱크·음악 구간별 전환",
+        "음악 구간 분석과 비트 컷을 중심으로 조립하는 뮤직비디오",
         ["ComfyUI", "Remotion", "영상 생성", "음악 분석"],
         [
             ["audio.music_analysis"],
@@ -909,6 +909,11 @@ RECIPES: list[Recipe] = [
             "remotion-beat-v1-v2",
             "acestep-ko-ballad-run1",
             "legacy-catalog-sample-music-video",
+        ],
+        constraints=[
+            "필수: 음악 분석, 비트 컷, 영상 생성 또는 모션 렌더, 자막, 오디오 동기 검사.",
+            "립싱크와 캐릭터 애니메이션은 선호 항목이며 필수가 아니다. 춤은 이 레시피의 필수 능력이나 사례 증거에 포함되지 않는다.",
+            "연결 사례는 조건부 또는 미검토 구성 요소 사례다. 완성된 R19 레시피나 품질 통과를 입증하지 않는다.",
         ],
     ),
     _r(

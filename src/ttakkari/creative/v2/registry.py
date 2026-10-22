@@ -303,7 +303,7 @@ class Registry:
                 )
             else:
                 verdict = "recipe_demonstrated"
-                summary = "레시피 사례 실행 기록이 있다. 단 스튜디오 제작 런타임에는 연결되지 않았다(lab 수동 실행)."
+                summary = "사례 기록이 있다. 조건부·미검토 판정은 품질 통과가 아니며 완성된 레시피를 입증하지 않는다. 스튜디오 제작 런타임에도 연결되지 않았다(lab 수동 실행)."
         return RecipeEvaluation(
             recipe_id=recipe.id,
             name=recipe.name,

@@ -22,7 +22,7 @@
 ## 요약
 
 - 스튜디오 실행 가능: 0개
-- 레시피 사례 실행됨(lab): 1개
+- 사례 기록 있음(lab·조건부/미검토, 품질 통과 아님): 1개
 - 능력별 실행됨, 조합 미실행: 1개
 - 부분 실행: 0개
 - 설치만, 실행 미검증: 8개
@@ -50,7 +50,7 @@
 | R16 | 다큐멘터리 | 차단(필수 능력 누락) | research.fact_check, research.map_data | research.fact_check; research.map_data | render.dataviz | legacy-catalog-longform-narration-story |
 | R17 | 과학·기술 교육 | 차단(필수 능력 누락) | research.fact_check | research.fact_check | render.dataviz; sim.physics_viz | legacy-catalog-sample-tech-explainer |
 | R18 | 제품 광고 | 설치만, 실행 미검증 | asset.model_3d, light.studio | - | asset.model_3d; light.studio | 없음 |
-| R19 | 뮤직비디오 | 레시피 사례 실행됨(lab) | qa.machine_video, edit.timeline, audio.music_analysis 외 | - | - | remotion-beat-v1-v2, acestep-ko-ballad-run1, legacy-catalog-sample-music-video |
+| R19 | 뮤직비디오 | 사례 기록 있음(lab·조건부/미검토, 품질 통과 아님) | qa.machine_video, edit.timeline, audio.music_analysis 외 | - | - | remotion-beat-v1-v2, acestep-ko-ballad-run1, legacy-catalog-sample-music-video |
 | R20 | 공포·스릴러 | 차단(필수 능력 누락) | audio.sfx_spatial | audio.sfx_spatial | - | 없음 |
 
 ### 레시피별 필수 능력 제공자
@@ -309,7 +309,7 @@
 
 #### R19 뮤직비디오
 
-레시피 사례 실행 기록이 있다. 단 스튜디오 제작 런타임에는 연결되지 않았다(lab 수동 실행).
+사례 기록이 있다. 조건부·미검토 판정은 품질 통과가 아니며 완성된 레시피를 입증하지 않는다. 스튜디오 제작 런타임에도 연결되지 않았다(lab 수동 실행).
 
 | 필수 능력 | 수준 | 제공자 | 연동 | 근거 |
 |---|---|---|---|---|
@@ -320,6 +320,8 @@
 | gen.video_i2v/render.react_motion | executed | skill.ttakkari-remotion-setup | lab_only | record:remotion-intro-v1-v2(completed, 검수 conditional) |
 | edit.captions | executed | skill.v1_ffmpeg_slideshow | creative_runtime | record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed) |
 | qa.audio_sync | executed | skill.studio-music-generate-sync | lab_only | record:acestep-ko-ballad-run1(completed, 검수 conditional) |
+
+제약: 필수: 음악 분석, 비트 컷, 영상 생성 또는 모션 렌더, 자막, 오디오 동기 검사.; 립싱크와 캐릭터 애니메이션은 선호 항목이며 필수가 아니다. 춤은 이 레시피의 필수 능력이나 사례 증거에 포함되지 않는다.; 연결 사례는 조건부 또는 미검토 구성 요소 사례다. 완성된 R19 레시피나 품질 통과를 입증하지 않는다.
 
 #### R20 공포·스릴러
 

@@ -177,13 +177,11 @@ async def test_plan_flow_from_duration_choice_to_edit_and_approval(client, auth)
         json={"revision": replanned["revision"]},
     )
     assert approved.status_code == 200, approved.text
-    assert (
-        approved.json()["render_gate"] is True
-        and approved.json()["approval"]["planned_frames"] == 170 * 30
-    )
+    assert approved.json()["render_gate"] is False
+    assert approved.json()["approval"]["planned_frames"] == 170 * 30
     assert (await client.get(f"{BASE}/plans/{pid}", headers=auth)).json()[
         "render_gate"
-    ] is True
+    ] is False
     assert any(
         p["id"] == pid for p in (await client.get(BASE + "/plans", headers=auth)).json()
     )

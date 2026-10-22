@@ -1,4 +1,4 @@
-"""Style DNA: 필수 16필드, 이미지·영상·코드·렌더 설정·성공/실패 참조, 버전·상속, 명시적 충돌 해결.
+"""Style DNA: 사용자 콘텐츠 15필드와 시스템 version, 참조·상속·명시적 충돌 해결.
 
 규칙 하나가 전부를 지배한다. 서로 다른 출처의 값이 부딪치면 조용히 덮어쓰지 않고 충돌로 올린다.
 충돌은 근거와 결정자를 남긴 해결(Resolution)이 있어야만 닫힌다. assistant가 정한 해결은 사용자 확인 전까지 pending으로 남는다.
@@ -20,9 +20,8 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 
 from ttakkari.creative.v2.capabilities import Strict
 
-REQUIRED_FIELDS: tuple[str, ...] = (
+USER_CONTENT_FIELDS: tuple[str, ...] = (
     "style_id",
-    "version",
     "visual_identity",
     "palette",
     "character_proportions",
@@ -38,6 +37,8 @@ REQUIRED_FIELDS: tuple[str, ...] = (
     "quality_constraints",
     "compatible_skills",
 )
+SYSTEM_FIELDS: tuple[str, ...] = ("version",)
+REQUIRED_FIELDS: tuple[str, ...] = (*USER_CONTENT_FIELDS, *SYSTEM_FIELDS)
 FACET_FIELDS = (
     "visual_identity",
     "character_proportions",
@@ -152,7 +153,7 @@ class Override(Strict):
 
 
 class StyleDNA(Strict):
-    """완성된 Style DNA. 16필드가 모두 있어야 한다."""
+    """완성된 Style DNA. 15개 콘텐츠 필드와 시스템 version이 필요하다."""
 
     style_id: str
     version: str

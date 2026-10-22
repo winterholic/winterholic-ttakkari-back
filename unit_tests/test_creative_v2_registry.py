@@ -88,6 +88,21 @@ def test_twenty_recipes_reference_existing_entries_and_capabilities():
             assert e in ENTRIES, (r.id, e)
         for group in [*r.requires, *r.prefers]:
             assert group and all(c in CAPABILITIES for c in group), (r.id, group)
+
+
+def test_r19_cases_and_requirements_do_not_claim_a_complete_quality_pass():
+    recipe = next(recipe for recipe in registry_data.RECIPES if recipe.id == "R19")
+    music_video_cases = ENTRIES["C01.music_video"].cases
+    assert all(case.outcome == "partial" for case in music_video_cases)
+    assert ["anim.lipsync"] not in recipe.requires
+    assert ["anim.lipsync"] in recipe.prefers
+    assert any("춤" in constraint for constraint in recipe.constraints)
+    assert any("품질 통과" in constraint for constraint in recipe.constraints)
+    evaluation = Registry().evaluate_recipe("R19")
+    assert evaluation.verdict == "recipe_demonstrated"
+    assert "품질 통과가 아니며 완성된 레시피를 입증하지 않는다" in evaluation.summary
+    assert any("conditional" in case for case in evaluation.case_evidence)
+    assert any("unreviewed" in case for case in evaluation.case_evidence)
     assert all(c in CAPABILITIES for c in [*GLOBAL_REQUIRES, *GLOBAL_PREFERS])
 
 
@@ -243,5 +258,10 @@ def test_committed_capability_matrix_doc_is_generated_from_current_code():
 
     from ttakkari.creative.v2.report import matrix_markdown
 
-    doc = Path(__file__).resolve().parents[1] / "docs/design/creative-studio-v2-capability-matrix.md"
-    assert doc.read_text() == matrix_markdown(), "python -m ttakkari.creative.v2.report 로 문서를 다시 생성하세요."
+    doc = (
+        Path(__file__).resolve().parents[1]
+        / "docs/design/creative-studio-v2-capability-matrix.md"
+    )
+    assert doc.read_text() == matrix_markdown(), (
+        "python -m ttakkari.creative.v2.report 로 문서를 다시 생성하세요."
+    )

@@ -1,7 +1,11 @@
 # ADR 0036: Run 실행 프로세스와 API 앱 수명 분리(설계)
 
 ## 상태
-제안(2026-10-18). 구현하지 않는다. 3슬롯 무중단 배포에서 장기 Run이 두 세대를
+구현 착수(2026-10-21 사용자 명시 지시). 독립 executor 첫 slice는 기능 off로 준비하며,
+운영 활성화는 독립 검증 이후다. 첫 slice 기록은 [초기 구현](../design/run-executor/first-slice.md),
+현재 서비스 소유권·manifest·미완료 표면은 [후속 기록](../design/run-executor/followup.md)에 있다.
+
+초기 상태(2026-10-18)는 “제안, 구현하지 않는다”였다. 3슬롯 무중단 배포에서 장기 Run이 두 세대를
 잡고 있으면 후속 배포가 `waiting_slot`에 대기하는 문제를 풀기 위한 설계안이다.
 
 ## 배경
@@ -52,7 +56,11 @@
 5. Qwen·preview·STT 자식의 소속 정리.
 
 ## 결과
-- 이 문서는 결정이 아니라 선택지 정리다. 1단계 측정 없이는 2단계以降에
+- 초기 제안 시점에는 선택지 정리였으나, 2026-10-21 사용자 지시로 구현을 진행한다. 1단계 측정 없이는 2단계以降에
   들어가지 않는다.
+- 첫 slice와 후속 구현은 feature-off 상태다. Preview/local STT 및 주기 maintenance는 executor 대상으로 옮겼고,
+  process-local TTS 원문 worker와 request-time Qwen은 API에 남겼다. durable attempt ledger와 dry-run/apply orphan reconcile은
+  구현했지만 DB 경로는 미실행이다. executor replacement/rollback, PostgreSQL·실 API 프로세스 검증은 미완료다.
+  세부 판정은 후속 기록을 따른다.
 - 현행 3슬롯 + `waiting_slot` + `supervisor_upgrade_required` 보고 체계를
   유지한다. 이 설계가 구현되기 전까지 장기 Run 경합은 대기·알림으로 다룬다.

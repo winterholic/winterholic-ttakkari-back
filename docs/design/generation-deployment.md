@@ -17,6 +17,15 @@
 
 각 앱은 Uvicorn 단일 프로세스다. 등록 단계에서 동시에 살아 있는 앱을 최대 2개로 제한한다. 구세대가 배출 중이면 후속 배포는 자동 대기한다. 아직 `requested`인 예약 중 조상관계와 배포 계약이 같은 커밋만 최신 누적 커밋에 합친다. 시작된 예약은 합치지 않는다.
 
+## 독립 executor 첫 slice(2026-10-21, 운영 비활성)
+
+API/감독 wire protocol1을 보존하고 executor 소유권 capability2를 별도로 기록한다.
+`run_executor_mode=local`이 기본이며, remote API는 기존 DB 큐·명령·SSE만 사용한다.
+별도 `ttakkari executor --activate`가 RunManager·엔진 자식을 소유한다. 실행 중 lease를
+이관하지 않으며, 고아가 의심되면 자동 재실행 대신 기동을 거부한다.
+독립 검증·운영 전환·rollback 조건은 [실행기 설계](run-executor/first-slice.md)를 따른다.
+후속 구현은 [서비스 소유권·manifest·미완료 경계](run-executor/followup.md)에 기록한다. remote API는 Preview와 local STT durable consumer 및 maintenance loop를 시작하지 않고 executor가 기존 queue/작업 목록을 맡는다. TTS는 원문이 API 메모리에 남아 worker를 API가 계속 소유한다. request-time Qwen warm server도 세대별 API 소유를 유지한다. local mode와 기존 API drain 검사는 유지한다.
+
 ## 파일별 책임
 
 | 파일 | 책임 |
@@ -26,7 +35,7 @@
 | `generation_deployment.py` | 커밋 archive·전용 venv/Node 런타임·격리 DB 검사·세 슬롯 launchd·Caddy 전환·rollback·재조정 |
 | `deployment.py` | 기존 외부 예약/감독 유지, 예약 claim·병합, strategy에 따른 처리 분기 |
 | `0030_runtime_generations.py` | 기존 Run 상태값을 유지하는 additive 소유권·명령 테이블과 요청 멱등 키 |
-| `deploy/generation-contract.json` | 앱/명령 protocol, 목표 schema, 명시적으로 허용한 online migration 출발점 |
+| `deploy/generation-contract.json` | 앱/명령 protocol, 목표 schema, 명시적으로 허용한 online migration 출발점, executor manifest raw-byte SHA-256 |
 
 ## 필수 설정
 

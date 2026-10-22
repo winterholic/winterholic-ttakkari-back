@@ -21,6 +21,34 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_executor(args: argparse.Namespace) -> int:
+    from ttakkari.executor import serve
+    asyncio.run(serve(activate=args.activate))
+    return 0
+
+
+def _cmd_executor_reconcile(args: argparse.Namespace) -> int:
+    import json
+
+    from ttakkari import db
+    from ttakkari.executor_reconcile import reconcile_orphans
+
+    if args.apply and os.environ.get("TTAKKARI_RUN_ID"):
+        print("orphan reconciliation apply belongs to the external operator, not an agent Run", file=sys.stderr)
+        return 2
+
+    async def run():
+        db.init_engine()
+        try:
+            return await reconcile_orphans(apply=args.apply)
+        finally:
+            await db.dispose_engine()
+
+    result = asyncio.run(run())
+    print(json.dumps(result, ensure_ascii=False, default=str))
+    return 0 if not args.apply or all(row["action"] != "blocked" for row in result["leases"]) else 2
+
+
 def _cmd_serve_games(args: argparse.Namespace) -> int:
     """별도 게임 origin 만 띄운다(API·DB 라우트 없음). 로컬 검증이나 별도 포트/터널 운영용이다."""
     import uvicorn
@@ -337,6 +365,16 @@ def _cmd_desk_eval(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="ttakkari")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("executor", help="독립 Run 실행기(protocol2, 기본 비활성)")
+    p.add_argument("--activate", action="store_true", help="idle remote API로 검증된 DB만 명시 활성화")
+    p.set_defaults(func=_cmd_executor)
+
+    p = sub.add_parser("executor-reconcile", help="orphan executor lease 증거를 확인하고 안전한 항목만 회수")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", default=True)
+    mode.add_argument("--apply", action="store_true")
+    p.set_defaults(func=_cmd_executor_reconcile)
 
     p = sub.add_parser("serve", help="API 서버 실행")
     p.add_argument("--host", default="127.0.0.1")

@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "role": "run-executor",
+  "activation": "disabled",
+  "command": [
+    "{release}/.venv/bin/python",
+    "-m",
+    "ttakkari.cli",
+    "executor",
+    "--activate"
+  ],
+  "environment": {
+    "TTAKKARI_RUNTIME_GENERATION": "true",
+    "TTAKKARI_RELEASE_REVISION": "{revision}",
+    "TTAKKARI_DEPLOY_STRATEGY": "generations",
+    "TTAKKARI_DEPLOY_SOURCE_ROOT": "{source_root}"
+  },
+  "readiness": [
+    "executor_generation",
+    "revision",
+    "pid",
+    "process_started_at",
+    "heartbeat_at"
+  ],
+  "activation_gates": [
+    "release_marker_matches_revision",
+    "pinned_interpreter_exists",
+    "all_live_apis_protocol2_remote",
+    "no_existing_run_leases",
+    "pending_commands_supported",
+    "executor_process_identity_matches_database"
+  ],
+  "replacement": "drain_runs_and_children_then_replace_under_executor_lock",
+  "rollback": "drain_runs_and_children_then_clear_executor_pointer_before_api_local_mode"
+}

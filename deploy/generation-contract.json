@@ -4,7 +4,7 @@
     "protocol": 1,
     "slots": 3
   },
-  "schema_revision": "0063_collector_stage_items",
+  "schema_revision": "0064_run_executor",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -37,9 +37,16 @@
     "0060_collector_job_runtime",
     "0061_local_tts",
     "0062_delivery_change_sets",
+    "0063_collector_stage_items",
     "0059_kb_immutability_truncate"
   ],
   "schema_aliases": {
     "0059_kb_immutability_truncate": "0059_collector_intake"
+  },
+  "run_executor": {
+    "protocol": 2,
+    "activation": "disabled",
+    "manifest": "deploy/run-executor-manifest.json",
+    "manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266"
   }
 }

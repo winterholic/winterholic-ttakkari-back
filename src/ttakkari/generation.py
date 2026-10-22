@@ -31,12 +31,14 @@ from ttakkari.models import (
     RuntimeControl,
     RuntimeGeneration,
     RuntimeLease,
+    RuntimeProcessGroup,
     SessionKind,
     utcnow,
 )
 
 log = logging.getLogger(__name__)
-PROTOCOL = 1
+PROTOCOL = 1  # Existing API/supervisor wire contract remains compatible.
+EXECUTOR_PROTOCOL = 2  # Ownership/command capability, persisted per incarnation.
 PORTS = (8791, 8792, 8793)
 CHANNEL = "ttakkari_runtime"
 
@@ -48,6 +50,10 @@ def supervisor_capabilities() -> dict:
 
 class OwnershipLost(RuntimeError):
     """A stale attempt must roll back all its pending DB writes."""
+
+
+def claim_owner(control: RuntimeControl) -> uuid.UUID | None:
+    return control.executor_generation or control.active_generation
 
 
 def _lock(path: Path):
@@ -72,7 +78,8 @@ async def activate(generation_id: uuid.UUID, *, expected: uuid.UUID | None) -> i
         if control.active_generation != expected:
             raise ValueError("active generation changed; reconcile before retry")
         target = await db.get(RuntimeGeneration, generation_id)
-        if target is None or target.state not in {"standby", "draining", "active"}:
+        if (target is None or target.role != "api" or target.protocol not in {1, EXECUTOR_PROTOCOL}
+                or target.state not in {"standby", "draining", "active"}):
             raise ValueError("target generation is not available")
         if expected and expected != generation_id:
             previous = await db.get(RuntimeGeneration, expected)
@@ -97,6 +104,8 @@ class GenerationRuntime:
         if url.scheme != "http" or url.hostname != "127.0.0.1" or not url.port or url.path:
             raise ValueError("generation API must be a loopback HTTP origin")
         self.home, self.revision, self.api_url = home, revision, api_url
+        self.role = "api"
+        self.execution_mode = get_settings().run_executor_mode
         self.id = uuid.uuid4()
         self.state = "standby"
         self.signal = asyncio.Event()
@@ -123,6 +132,7 @@ class GenerationRuntime:
                         probe.close()
                         resume_slot = True
                 rows = list(await db.scalars(select(RuntimeGeneration).where(
+                    RuntimeGeneration.role == "api",
                     RuntimeGeneration.state.in_(("standby", "active", "draining")))))
                 live = 0
                 for row in rows:
@@ -137,6 +147,7 @@ class GenerationRuntime:
                 if live >= len(PORTS):
                     raise RuntimeError(f"{len(PORTS)} live generations already exist")
                 db.add(RuntimeGeneration(id=self.id, revision=self.revision, api_url=self.api_url,
+                    role=self.role, protocol=EXECUTOR_PROTOCOL, execution_mode=self.execution_mode,
                     pid=os.getpid(), process_started_at=psutil.Process().create_time(), state="active" if resume_slot else "standby"))
                 if resume_slot:
                     await db.flush()
@@ -161,9 +172,11 @@ class GenerationRuntime:
         return self.state
 
     async def claim(self, run_id: uuid.UUID, lane: str, limit: int) -> uuid.UUID | None:
+        if self.role == "api" and self.execution_mode == "remote":
+            return None
         async with sessionmaker()() as db:
             control = await _control(db)
-            if control.active_generation != self.id:
+            if claim_owner(control) != self.id:
                 return None
             run = await db.get(Run, run_id)
             if run is None or run.status != "queued" or (run.resume_after and run.resume_after > utcnow()):
@@ -198,12 +211,36 @@ class GenerationRuntime:
 
     async def release(self, run_id: uuid.UUID, token: uuid.UUID) -> None:
         async with sessionmaker()() as db:
-            await db.execute(delete(RuntimeLease).where(RuntimeLease.run_id == run_id,
-                RuntimeLease.generation_id == self.id, RuntimeLease.token == token))
+            # Serialize release with claim/reconcile under the same control→lease lock order.
+            await _control(db)
+            lease = await db.scalar(select(RuntimeLease).where(
+                RuntimeLease.run_id == run_id).with_for_update())
+            if lease is None:
+                if self.tokens.get(run_id) == token:
+                    self.tokens.pop(run_id, None)
+                return
+            if lease.generation_id != self.id or lease.token != token:
+                raise OwnershipLost(str(run_id))
+            await db.execute(delete(RuntimeProcessGroup).where(
+                RuntimeProcessGroup.run_id == run_id, RuntimeProcessGroup.generation_id == self.id,
+                RuntimeProcessGroup.lease_token == token))
+            await db.delete(lease)
             await wake(db)
             await db.commit()
         if self.tokens.get(run_id) == token:
             self.tokens.pop(run_id, None)
+
+    async def record_process_group(self, run_id: uuid.UUID, token: uuid.UUID, *, attempt: int,
+                                   pid: int, process_started_at: float, pgid: int) -> None:
+        async with sessionmaker()() as db:
+            await _control(db)
+            lease = await db.scalar(select(RuntimeLease).where(
+                RuntimeLease.run_id == run_id).with_for_update())
+            if lease is None or lease.generation_id != self.id or lease.token != token:
+                raise OwnershipLost(str(run_id))
+            db.add(RuntimeProcessGroup(run_id=run_id, generation_id=self.id, lease_token=token,
+                attempt=attempt, pid=pid, process_started_at=process_started_at, pgid=pgid))
+            await db.commit()
 
     async def choose_profile(self, pool, run_id: uuid.UUID, **kwargs):
         from ttakkari.runs import profiles
@@ -229,7 +266,7 @@ class GenerationRuntime:
         key = key or str(uuid.uuid4())
         async with sessionmaker()() as db:
             control = await _control(db)
-            target = control.active_generation
+            target = claim_owner(control)
             if run_id:
                 lease = await db.get(RuntimeLease, run_id)
                 target = lease.generation_id if lease else target
@@ -282,6 +319,8 @@ class GenerationRuntime:
             owned = await db.scalar(select(func.count()).select_from(RuntimeLease).where(RuntimeLease.generation_id == self.id))
             control = await db.get(RuntimeControl, 1)
         return {"generation": str(self.id), "revision": self.revision, "pid": os.getpid(),
+                "role": self.role, "execution_mode": self.execution_mode,
+                "executor_protocol": EXECUTOR_PROTOCOL,
                 "protocol": PROTOCOL, "state": self.state, "owned_runs": owned,
                 "work": sorted(self._work), "http_inflight": self.http_inflight,
                 "epoch": control.epoch if control else 0}

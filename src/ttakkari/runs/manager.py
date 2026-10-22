@@ -12,10 +12,12 @@ import tempfile
 import time
 import uuid
 from collections.abc import Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+import psutil
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -118,10 +120,14 @@ class _Handle:
     stderr_tail: list[str] = field(default_factory=list)
     owner: generation.GenerationRuntime | None = None
     token: uuid.UUID | None = None
+    process_groups: list[tuple[int, float, int, uuid.UUID, uuid.UUID, int]] = field(default_factory=list)
 
 
 class QwenSlotBusy(RuntimeError):
     """Another backend process acquired the machine-wide Qwen slot first."""
+
+
+attempt_handle: ContextVar[_Handle | None] = ContextVar("run_attempt_handle", default=None)
 
 
 class RunManager:
@@ -153,6 +159,11 @@ class RunManager:
     def runtime(self) -> generation.GenerationRuntime | None:
         return self._runtime or generation.current
 
+    @property
+    def remote(self) -> bool:
+        runtime = self.runtime
+        return bool(runtime and runtime.role == "api" and runtime.execution_mode == "remote")
+
     async def is_owned(self, run_id: uuid.UUID) -> bool:
         if self.runtime is None:
             return self.is_active(run_id)
@@ -167,6 +178,8 @@ class RunManager:
         self._reset_requests.add(session_id)
 
     def start(self, run_id: uuid.UUID, *, lane: str = "workers") -> bool:
+        if self.remote:
+            return False
         if run_id in self._handles or self._shutting_down:
             return False
         lease = Admission(get_settings().home / "deploy").acquire()
@@ -194,6 +207,9 @@ class RunManager:
                 return
 
     async def cancel(self, run_id: uuid.UUID) -> bool:
+        if self.remote:
+            await self.runtime.command("cancel", run_id=run_id)
+            return True
         h = self._handles.get(run_id)
         if h is None:
             if self.runtime and await self.is_owned(run_id):
@@ -250,6 +266,7 @@ class RunManager:
         except TimeoutError:
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
+            await proc.wait()
 
     async def dispatch(self, session_id: uuid.UUID) -> uuid.UUID | None:
         """세션 대기열의 다음 Run 을 시작한다. 엔진 대화는 순서대로만 이어갈 수 있어 세션당 하나씩만 돌린다.
@@ -257,6 +274,11 @@ class RunManager:
         세션 행을 FOR UPDATE 로 잠가, 지시 접수와 Run 종료가 동시에 들어와도 두 개가 함께 시작되지 않게 한다.
         """
         if self._shutting_down:
+            return None
+        if self.remote:
+            async with sessionmaker()() as db:
+                await generation.wake(db)
+                await db.commit()
             return None
         if self.runtime and await self.runtime.refresh() != "active":
             return None
@@ -300,9 +322,10 @@ class RunManager:
             from ttakkari.models import RuntimeCommand, RuntimeLease
             await _control(db)
             lease = await db.get(RuntimeLease, run.id)
-            if lease:
+            if lease or self.remote:
+                control = await db.get(generation.RuntimeControl, 1)
                 db.add(RuntimeCommand(key=str(uuid.uuid4()), kind="cancel", run_id=run.id,
-                                      generation_id=lease.generation_id))
+                                      generation_id=lease.generation_id if lease else generation.claim_owner(control)))
                 await generation.wake(db)
                 return
             await db.refresh(run)
@@ -596,12 +619,20 @@ class RunManager:
         self._arm(run.id, sess.id, until)
 
     async def release_waiting(self) -> None:
+        if self.remote:
+            await self.runtime.command("release_waiting")
+            return
         if self.runtime:
             from sqlalchemy import update
             async with sessionmaker()() as db:
                 await db.execute(update(Run).where(Run.status == RunStatus.queued).values(resume_after=None))
                 await generation.wake(db)
                 await db.commit()
+            # NOTE: the DB is authoritative here, but wakers armed from the old resume_after
+            # live in this process. dispatch() treats an armed waker as "still waiting", so
+            # without this a released Run stayed queued until its original wake time.
+            for rid in list(self._waiting):
+                self._disarm(rid)
             await _reconsider_quota_waits()
             return
         """한도 대기를 풀고 바로 다시 시도한다(사용자가 계정 한도 상태를 풀거나 계정을 켰을 때). 여전히 못 쓰면 다시 대기한다."""
@@ -636,9 +667,51 @@ class RunManager:
 
     # ---- 실행
 
+    async def _release_attempt(self, run_id, runtime, token) -> None:
+        handle = self._handles.get(run_id)
+        if handle and handle.process_groups:
+            for pid, started_at, pgid, owner_id, fence, attempt in tuple(handle.process_groups):
+                if owner_id != runtime.id or fence != token:
+                    log.error("retaining lease for run %s: process group fence differs", run_id)
+                    return
+                try:
+                    os.killpg(pgid, 0)
+                except ProcessLookupError:
+                    handle.process_groups.remove((pid, started_at, pgid, owner_id, fence, attempt))
+                    continue
+                except OSError:
+                    log.error("retaining lease for run %s: process group %s is unobservable", run_id, pgid)
+                    return
+                try:
+                    process = psutil.Process(pid)
+                    if abs(process.create_time() - started_at) > 1.0 or os.getpgid(pid) != pgid:
+                        log.error("retaining lease for run %s: process group identity changed", run_id)
+                        return
+                except (psutil.Error, OSError, PermissionError):
+                    log.error("retaining lease for run %s: process group leader identity is unknown", run_id)
+                    return
+                log.error("retaining lease for run %s: attempt process group %s remains", run_id, pgid)
+                return
+        if handle and handle.proc is not None and handle.proc.returncode is None:
+            log.error("retaining lease for run %s: child exit is unconfirmed", run_id)
+            return
+        if handle and handle.proc is not None:
+            try:
+                os.killpg(handle.proc.pid, 0)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                log.error("retaining lease for run %s: process group exit is unknown", run_id)
+                return
+            else:
+                log.error("retaining lease for run %s: descendants remain in engine process group", run_id)
+                return
+        await runtime.release(run_id, token)
+
     async def _execute(self, run_id: uuid.UUID, lane: str = "workers") -> None:
         sm = sessionmaker()
         runtime, token = self.runtime, None
+        scope = attempt_handle.set(self._handles.get(run_id))
         try:
             if lane == "workers":
                 async with sm() as db:
@@ -679,8 +752,9 @@ class RunManager:
                 if run is not None:
                     await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
         finally:
+            attempt_handle.reset(scope)
             if runtime and token:
-                await runtime.release(run_id, token)
+                await self._release_attempt(run_id, runtime, token)
             self._handles.pop(run_id, None)
             profiles_mod.release(run_id)
             if not self._shutting_down and (runtime is None or token is not None):
@@ -694,6 +768,7 @@ class RunManager:
         """접수 Run. 세션 대기열·엔진 대화 없이 한 번 고르고 끝난다. 실패해도 사용자 메시지를 기획으로 넘겨 멈추지 않게 한다."""
         sm = sessionmaker()
         runtime, token = self.runtime, None
+        scope = attempt_handle.set(self._handles.get(run_id))
         try:
             if runtime:
                 token = await runtime.claim(run_id, "desk", get_settings().max_concurrent_desk)
@@ -738,8 +813,9 @@ class RunManager:
                 if run is not None and run.status not in TERMINAL_RUN_STATUSES:
                     await self._finish(db, run, RunStatus.failed, error=f"내부 오류: {e!r}")
         finally:
+            attempt_handle.reset(scope)
             if runtime and token:
-                await runtime.release(run_id, token)
+                await self._release_attempt(run_id, runtime, token)
             self._handles.pop(run_id, None)
             profiles_mod.release(run_id)
 
@@ -1515,13 +1591,27 @@ class RunManager:
             raise
         if h:
             h.proc = proc
+            if h.owner is not None and h.token is not None:
+                try:
+                    started_at = psutil.Process(proc.pid).create_time()
+                    pgid = os.getpgid(proc.pid)
+                except (psutil.Error, OSError, PermissionError):
+                    await self._terminate(proc)
+                    await proc.wait()
+                    raise RuntimeError("could not establish child process group identity")
+                attempt = len(h.process_groups) + 1
+                await h.owner.record_process_group(run.id, h.token, attempt=attempt, pid=proc.pid,
+                                                   process_started_at=started_at, pgid=pgid)
+                h.process_groups.append((proc.pid, started_at, pgid, h.owner.id, h.token, attempt))
         run.pid = proc.pid
         stderr_task = asyncio.create_task(_drain_stderr(proc, h))
         heartbeat_task: asyncio.Task | None = None
         timed_out = False
         try:
             await self._commit(db, run)
-            heartbeat_task = asyncio.create_task(_heartbeat(run.id), name=f"heartbeat-{run.id}")
+            heartbeat_task = asyncio.create_task(
+                _heartbeat(run.id, owner=h.owner if h else None, token=h.token if h else None),
+                name=f"heartbeat-{run.id}")
             await asyncio.wait_for(self._pump(db, run, proc, adapter, state, root, account_id, spec), s.run_timeout_seconds)
         except TimeoutError:
             timed_out = True
@@ -1674,6 +1764,10 @@ class RunManager:
             preview.enqueue(art_id)
 
     async def _finish(self, db: AsyncSession, run: Run, status: RunStatus, error: str | None = None) -> None:
+        h = self._handles.get(run.id)
+        if h and h.owner and h.token:
+            db.info["runtime_lease"] = (h.owner, run.id, h.token)
+            await h.owner.fence(db, run.id, h.token)
         self._disarm(run.id)
         run.status = status
         run.finished_at = utcnow()
@@ -1773,11 +1867,14 @@ async def _notify_waiting(run: Run, title: str | None, until: float) -> None:
         log.exception("push notification failed for run %s", run.id)
 
 
-async def _heartbeat(run_id: uuid.UUID) -> None:
+async def _heartbeat(run_id: uuid.UUID, *, owner=None, token=None) -> None:
     """Persist liveness independently of agent output, without contending on RunEvent.seq."""
     while True:
         await asyncio.sleep(RUN_HEARTBEAT_SECONDS)
         async with sessionmaker()() as db:
+            if owner and token:
+                db.info["runtime_lease"] = (owner, run_id, token)
+                await owner.fence(db, run_id, token)
             run = await db.get(Run, run_id)
             if run is None or run.status != RunStatus.running:
                 return
@@ -1968,7 +2065,7 @@ async def _reconsider_quota_waits() -> None:
         if manager.runtime:
             from ttakkari.generation import _control
             control = await _control(db)
-            if control.active_generation != manager.runtime.id:
+            if generation.claim_owner(control) != manager.runtime.id:
                 return
         rows = list(await db.scalars(select(Run).where(
             Run.status == RunStatus.queued, Run.resume_after.is_not(None),
@@ -1990,7 +2087,6 @@ async def _reconsider_quota_waits() -> None:
                 manager._disarm(run.id)
                 awoken_sessions.add(run.session_id)
         if awoken_sessions and manager.runtime:
-            from ttakkari import generation
             await generation.wake(db)
         await db.commit()
     for sid in awoken_sessions:

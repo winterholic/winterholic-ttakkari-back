@@ -318,13 +318,47 @@ async def test_status_endpoint_reports_state_without_internal_details(client):
     assert r.status_code == 200 and set(body) == {"enabled", "mode", "state", "reason", "ready"}
 
 
-def test_both_lifespans_start_and_stop_the_qwen_service():
+def test_lifespans_stop_the_qwen_service_and_the_generation_one_starts_it_through_start_api_services():
     import inspect
 
     from ttakkari import generation_service, main
-    for module, fn in ((main, main.lifespan), (generation_service, generation_service.lifespan)):
-        src = inspect.getsource(fn)
-        assert "qwen_service.start()" in src and "qwen_service.stop()" in src, module.__name__
+    main_src = inspect.getsource(main.lifespan)
+    assert "qwen_service.start()" in main_src and "qwen_service.stop()" in main_src
+    # start() moved into start_api_services; the behavior test below proves it still runs.
+    generation_src = inspect.getsource(generation_service.lifespan)
+    assert "start_api_services(" in generation_src and "qwen_service.stop()" in generation_src
+
+
+@pytest.mark.parametrize("mode", ["local", "remote"])
+async def test_generation_api_start_services_starts_the_qwen_service_in_every_mode(monkeypatch, mode):
+    """Qwen is per-API-generation state, so remote-executor APIs must start it too.
+
+    Not run through generation_service.lifespan: its teardown stops the shared RunManager and
+    disposes the engine, which would leave every later test's Runs refused.
+    """
+    from ttakkari import generation_service
+    from ttakkari.artifacts import preview
+    from ttakkari.meetings.local_stt import jobs as stt_jobs
+    from ttakkari.runs.desk_qwen_service import service as qwen_service
+    from ttakkari.tts import jobs as tts_jobs
+
+    calls: list[str] = []
+
+    def recorder(name):
+        async def inner():
+            calls.append(name)
+        return inner
+
+    monkeypatch.setattr(qwen_service, "start", recorder("qwen"))
+    monkeypatch.setattr(preview, "start_worker", recorder("preview"))
+    monkeypatch.setattr(stt_jobs, "start", recorder("stt"))
+    monkeypatch.setattr(tts_jobs, "start", recorder("tts"))
+
+    await generation_service.start_api_services(mode)
+
+    assert "qwen" in calls and "tts" in calls
+    # Durable workers belong to the executor when the API is remote.
+    assert ("preview" in calls and "stt" in calls) == (mode == "local")
 
 
 async def test_server_is_warmed_before_it_is_marked_ready(managed):

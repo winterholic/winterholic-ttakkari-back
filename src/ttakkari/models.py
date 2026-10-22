@@ -375,6 +375,9 @@ class RuntimeGeneration(Base):
     __tablename__ = "runtime_generations"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     revision: Mapped[str] = mapped_column(String(40))
+    role: Mapped[str] = mapped_column(String(16), default="api", server_default="api")
+    protocol: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    execution_mode: Mapped[str] = mapped_column(String(16), default="local", server_default="local")
     api_url: Mapped[str] = mapped_column(String(150))
     pid: Mapped[int] = mapped_column(Integer)
     process_started_at: Mapped[float] = mapped_column(Float)
@@ -387,6 +390,8 @@ class RuntimeControl(Base):
     __tablename__ = "runtime_control"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     active_generation: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"))
+    executor_generation: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runtime_generations.id", name="fk_runtime_control_executor"))
     epoch: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -398,6 +403,21 @@ class RuntimeLease(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
     lane: Mapped[str] = mapped_column(String(16), index=True)
     account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("engine_accounts.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class RuntimeProcessGroup(Base):
+    """Durable PID/start-time/PGID evidence for one fenced executor attempt."""
+    __tablename__ = "runtime_process_groups"
+    __table_args__ = (UniqueConstraint("run_id", "lease_token", "attempt"),)
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    generation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runtime_generations.id"), index=True)
+    lease_token: Mapped[uuid.UUID] = mapped_column()
+    attempt: Mapped[int] = mapped_column(Integer)
+    pid: Mapped[int] = mapped_column(Integer)
+    process_started_at: Mapped[float] = mapped_column(Float)
+    pgid: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 

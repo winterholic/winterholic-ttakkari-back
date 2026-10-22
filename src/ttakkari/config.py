@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     home: Path = DEFAULT_HOME
     # Opt-in only after one idle bootstrap into isolated releases.
     runtime_generation: bool = False
+    run_executor_mode: Literal["local", "remote"] = "local"
     runtime_api_url: str = "http://127.0.0.1:8791"
     runtime_poll_seconds: float = Field(default=5, ge=0.05)
     runtime_sse_drain_seconds: int = Field(default=45, ge=1)
@@ -560,6 +561,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _fail_fast_on_unsafe_operational_settings(self) -> Settings:
+        if self.run_executor_mode == "remote" and not self.runtime_generation:
+            raise ValueError("remote executor requires runtime_generation=true")
         # 모든 기동 경로(API·CLI·워커)가 get_settings/Settings 생성을 거치므로 여기서 fail-fast 한다.
         validate_operational_settings(self)
         return self

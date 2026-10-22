@@ -68,4 +68,5 @@
 - Style DNA: 사용자 콘텐츠 15필드와 시스템 `version` 필드를 코드 상수·요구사항·설계 문서에서 분리했다.
 - 600초 희망 + 발화가 거의 없는 짧은 정보 3항목은 24초 상한에서 `deviated`가 되는 정책임을 명시했다. 내용 삭제·반복 방지가 이유이며 확장 선택은 사용자 승인 대상이다. 계획 UI가 server reasons를 보여주는 jsdom 회귀 테스트를 추가했다. 인증된 실제 브라우저 UI는 이번에도 미검증이다.
 - 검증: backend 계획/API·registry·Style DNA·duration 집중 suite `97 passed`; 변경 Python `ruff check` 통과. frontend `CreativePlanPage.test.tsx` `14 passed`; `pnpm lint` 통과(기존 UI lint 기준선 138); `pnpm build` 성공(기존 500 kB 초과 chunk 안내). 실제 Qwen 모델 응답과 인증 UI 시각 검증은 미실행 상태를 유지한다.
-- 이번 보완은 main에 반영하거나 배포 예약하지 않는다. 코드·문서 커밋 및 push 전의 working tree 기록이다.
+- Backend 구현·문서 커밋 `9a250834415095b6ac99439218345e0e6605033a`를 `feat/creative-multidimensional-v2`에 push했다. Frontend UI 설명 테스트 커밋 `d8257c668f5b78e70a745ba4325832a5295f6bdf`를 `feat/creative-intent-duration`에 push했다. 원격 ref와 로컬 HEAD가 모두 일치하고 두 worktree는 clean이다.
+- main 병합과 배포는 하지 않았다. branch push만 수행했다.

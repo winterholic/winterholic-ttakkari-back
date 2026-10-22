@@ -24,8 +24,7 @@ base 2522d78 이후 main 23 커밋, feature 6 커밋. 두 쪽이 함께 바꾼 �
 
 - 병합 커밋 229780e에서 `scripts/verify_deploy_gate.sh --commit HEAD --base origin/main`: 계약 묶음 exit 2(`4107 deselected, 1 error`), 바뀐 테스트 파일 exit 2. main push 훅이 막았다. 원문 `gate_229780e.log`.
 - feature branch 291ecfc 자체의 결함이며 병합 충돌과 무관하다. 배포 컨트롤러도 같은 체크아웃 방식이면 같은 곳에서 멈출 가능성이 크다(컨트롤러 실행은 미확인).
-- 가드 수정 14982a8: 모듈 로드 시 `pytest.importorskip("ttk_comfy.client")`. lab adapter를 PYTHONPATH에 둔 실행에서는 `test_comfy_i2v_input.py` 40 passed로 동일하게 실행된다. 게이트 환경에서는 그 모듈이 skip된다. 수정 후 같은 게이트: ruff 통과, 계약 묶음 `77 passed, 1 skipped`, 바뀐 테스트 13개 `141 passed, 3 skipped`, rc=0. 원문 `gate_fix.log`.
-- 이 수정은 독립 검수를 받지 않았다. 게이트 환경에서 I2V 입력 계약 40개 테스트가 실행되지 않는다는 점이 trade-off이므로, 검수자가 (a) 이 skip 방식, (b) 어댑터를 PYTHONPATH로 제공하는 게이트 설정, (c) 모듈 vendor 중 하나를 고르게 한다.
+- 이전 인수 보고는 14982a8의 전체 모듈 `pytest.importorskip("ttk_comfy.client")`로 게이트가 `77 passed, 1 skipped`, 바뀐 테스트 13개 `141 passed, 3 skipped`, rc=0이었다고 기록했다. 이 PASS는 핵심 I2V 40개가 모듈 전체 skip으로 실행되지 않은 결과라 계약 검증 완료로 해석할 수 없다. 아래 후속 검증에서 이 해석과 수정 방향을 정정한다.
 
 ## 검증 (통합 SHA 229780e/14982a8 기준, 이 세션에서 실행)
 
@@ -50,6 +49,18 @@ base 2522d78 이후 main 23 커밋, feature 6 커밋. 두 쪽이 함께 바꾼 �
 
 ## 남은 일
 
-1. 가드 수정 14982a8의 독립 검수(위 trade-off 선택).
-2. 승인되면 `integ/g34-creative-engines-main-20261023`을 main에 fast-forward 또는 병합하고(그 시점 origin/main 재확인) full SHA로 배포 예약.
-3. 호스트에서 실제 FFmpeg/TTS/DB 게이트는 컨트롤러 정식 테스트에서 확인.
+1. 새 multipart 계약 테스트와 병합 union을 기존 독립 검수 세션에서 확인한다.
+2. 확인이 끝나면 `integ/g34-creative-engines-main-20261023`을 main에 통합하고(그 시점 origin/main 재확인) full SHA로 배포 예약한다.
+3. 호스트에서 실제 FFmpeg/TTS/DB 게이트는 컨트롤러 정식 테스트에서 확인한다.
+
+
+## 2026-10-23 후속 정정: 필수 I2V 계약을 archive 독립으로 복구
+
+사용자는 모듈 전체 skip 안을 채택하지 않고, 핵심 I2V 계약은 lab 없이 반드시 실행하며 실제 설치본 상호운용성만 선택 테스트로 분리하도록 결정했다. production 소스와 `verify_deploy_gate.sh`, skip 정책은 변경하지 않는다.
+
+- RED (`red-i2v-14e58b5.log`): 게이트가 만든 보존 archive의 `.venv/bin/python`에서 `find_spec('ttk_comfy')`가 `None`; `test_comfy_i2v_input.py`는 `SKIPPED [1] ... No module named 'ttk_comfy'`, `pytest_exit=5`로 전부 수집되지 않았다.
+- 변경: 핵심 테스트의 최상단 외부 import/전체 importorskip 제거. restore-race 테스트를 path-only client (`base`만 있고 `upload_image_bytes` 없음)로 실행해 controller의 실제 multipart 직렬화와 HTTP transport의 최종 `image` part SHA/filename을 확인한다. 실제 lab ComfyClient 사용 검사는 별도 `test_comfy_i2v_lab_interop.py` 함수로 분리하고 그 테스트 안에서만 `importorskip`한다.
+- GREEN (`green-i2v-overlay.log`): 같은 git archive runtime/venv에서 `ttk_comfy None`, 핵심 모듈 `40 passed`, optional interop 단독 `1 skipped` (lab 부재 사유), Ruff 통과. 현재 환경에서 lab 설치본 interop 실행은 미실행이다.
+- 음성 대조 (`negative-control-invalid-sha.log`): disposable archive에서 sha256 비교를 의도적으로 비활성화하자 `test_validator_rejects_tampered_empty_nonimage_truncated_and_oversized_inputs`가 `DID NOT RAISE InputImageError`로 실제 실패(exit 1). archive 소스는 실행 후 바이트 복원했다.
+- 새 revision 전 기본 게이트 (`red-gate-14e58b5.log`)는 계약 묶음 `77 passed, 1 skipped, 4107 deselected`; 변경 테스트는 `22 failed, 113 passed, 3 skipped, 6 errors`. 실패는 ffmpeg smoke의 `psutil` PID 열거에서 `PermissionError: [Errno 1] Operation not permitted (originated from sysctl() malloc 1/3)`로 끝나는 알려진 Codex 명령 sandbox 거부였다. 같은 시스템 호출을 재시도하거나 우회하지 않는다. 새 SHA에서 전체 impacted gate는 이 이유로 미실행 상태이며, 테스트 자체의 단독 archive GREEN으로 이를 대체 표기하지 않는다.
+- 수정 diff는 테스트 2개 파일뿐이며 기존 3개 Ruff format 정렬 부채, G0/G1/공유 lease, API merge union과 291ecfc production bytes는 손대지 않았다. main push/배포 예약은 하지 않는다.

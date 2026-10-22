@@ -36,10 +36,6 @@ from ttakkari.managed_comfy_input import (
 from ttakkari.managed_comfy_receipt import ReceiptError, _input_image_section
 from ttakkari.security.auth import require_user
 
-# lab 어댑터(ttk_comfy)는 저장소 밖 설치본이다. 배포 게이트의 git archive 체크아웃에는 없으므로
-# 모듈 전체를 수집 오류가 아니라 skip으로 처리한다(실제 검증은 PYTHONPATH에 어댑터를 둔 실행에서 한다).
-ComfyClient = pytest.importorskip("ttk_comfy.client").ComfyClient
-
 I2V = "wan22-5b-i2v-draft"
 NAME = "keyframe_flux_cafe.png"
 
@@ -523,12 +519,10 @@ def test_upload_transport_failure_stays_fail_closed(
     assert not _staged_dir(service, record["task_id"]).exists()
 
 
-def test_actual_client_multipart_uses_the_validated_bytes_during_a_restore_race(
+def test_controller_multipart_uses_the_validated_bytes_during_a_restore_race(
     tmp_path, monkeypatch
 ):
-    """Inspect bytes sent by the real lab client; only its HTTP transport is stubbed."""
-    import ttk_comfy.client as client_module
-
+    """Inspect the controller-owned multipart fallback; only HTTP transport is stubbed."""
     import ttakkari.managed_comfy as managed_module
 
     service, _servers = _controller(tmp_path)
@@ -568,7 +562,6 @@ def test_actual_client_multipart_uses_the_validated_bytes_during_a_restore_race(
 
         return Response()
 
-    monkeypatch.setattr(client_module.urllib.request, "urlopen", stub_urlopen)
     monkeypatch.setattr(managed_module, "urlopen", stub_urlopen)
     real_open = builtins.open
 
@@ -595,9 +588,10 @@ def test_actual_client_multipart_uses_the_validated_bytes_during_a_restore_race(
         return real_open(file, mode, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "open", racing_open)
-    uploaded = service._upload_input(
-        job, {"client": ComfyClient("http://stub.invalid")}
-    )
+    # 최소 path-only client 계약: base URL은 있고 upload_image_bytes는 없어야
+    # controller의 실제 bytes-to-multipart fallback 경로를 통과한다.
+    path_only_client = type("PathOnlyClient", (), {"base": "http://stub.invalid"})()
+    uploaded = service._upload_input(job, {"client": path_only_client})
 
     assert captured == {"sha256": image.sha256, "filename": NAME}
     assert uploaded == f"ttk/{NAME}"

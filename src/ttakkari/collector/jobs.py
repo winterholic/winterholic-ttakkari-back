@@ -233,7 +233,8 @@ async def finish(
 ) -> str:
     """End an attempt. Returns the status actually stored.
 
-    - a requested cancellation wins over retry_wait/budget_wait
+    - a requested cancellation wins over succeeded/partial/retry_wait/budget_wait (failed, policy_blocked and
+      quarantined are real outcomes and are kept)
     - retry_wait with no attempts left becomes failed (no infinite retry)
     - retry_wait stores a durable not_before from exponential backoff + jitter (Retry-After is a floor)
     """
@@ -242,8 +243,11 @@ async def finish(
     now = now or _now()
     job = await _fenced_job(db, job_id, attempt_token)
     not_before = None
-    if status in ("retry_wait", "budget_wait") and job.cancel_requested:
-        status, error = "cancelled", {"code": "cancelled", "at": now.isoformat()}
+    if status in ("succeeded", "partial", "retry_wait", "budget_wait") and job.cancel_requested:
+        # A cancel recorded before the attempt ended wins even if the work happened to finish first: the caller was
+        # told "cancelling". Committed pages stay. The would-be status is kept in the error for audit.
+        error = {"code": "cancelled", "at": now.isoformat(), **({"finished_as": status} if status in ("succeeded", "partial") else {})}
+        status = "cancelled"
     elif status == "retry_wait":
         if job.attempts >= job.max_attempts:
             status = "failed"

@@ -1,6 +1,6 @@
 {
   "project_id": "e99a75de-7ccf-48e6-a5d1-46e455eb79b8",
-  "readback_at": "2026-10-21T01:40+09:00 (CP-S2-02 구현 후 S2-02 review 갱신)",
+  "readback_at": "2026-10-21T19:40+09:00 (CP-S2-03/04/06 구현 후 review 갱신, manage_pms update_task 응답 확인)",
   "scope": "q=[CP-], 5/page + final sink revision readback",
   "tasks": [
     {
@@ -60,11 +60,11 @@
       "wbs": "11.1.2.1",
       "has_children": false,
       "title": "[CP-S2-03] 출처별 robots·권리·보존·이용 정책",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-03\n책임 소유 역할: 수집 정책 담당 (개인 실행자·일정 미배정)\n완료기준: 공식 정책 URL/시각/license와 store/train/export/knowledge 용도 분리. unknown deny, robots는 권한 아님. sample source 5 domain×2 languages 제안 inventory.\n검증 명령/절차: uv run pytest -q unit_tests/test_collector_policy.py; source-policy.csv의 URL/확인시각/권리/scope 전수 검사\n산출물: reports/collector/s2-03/source-policy.csv\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a, fd87eb4c-29df-47d1-ad3a-346a8c6260ba\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-03\n책임 소유 역할: 수집 정책 담당 (개인 실행자·일정 미배정)\n완료기준: 공식 정책 URL/시각/license와 store/train/export/knowledge 용도 분리. unknown deny, robots는 권한 아님. sample source 5 domain×2 languages 제안 inventory. 구현(2026-10-21): collector/policy.py SourcePolicySpec(허용 host·용도별 permission·정책 URL/확인시각/license/근거·속도·깊이·원문 보존), 서버 등록 append-only 버전(collector_source_policies, Alembic 0062), 요청은 정책을 좁히기만 함, 정책 없음/미확인 용도 deny. 샘플 inventory 10건(5 domain x ko/en)은 5건 store 허용·5건 근거 부족 unknown이며 WebFetch 요약 기반이라 원문 재확인 필요, train 허용 0. 미구현: 정책 등록 API(S2-07). 독립 검증 전 review.\n검증 명령/절차: uv run pytest -q unit_tests/test_collector_policy.py tests/test_collector_pipeline.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터); source-policy.csv의 URL/확인시각/권리/scope 전수 검사는 unit_tests/test_collector_policy.py::InventoryTests\n산출물: reports/collector/s2-03/source-policy.csv; docs/design/collector-platform/stage-handler.md\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a, fd87eb4c-29df-47d1-ad3a-346a8c6260ba\n상태: 구현·테스트 완료, review. 독립 검증 후 done 결정. 운영 배포·실제 웹 스모크 미실행.\n정본 설계: docs/design/collector-platform/architecture.md; 작업 노트: docs/design/collector-platform/stage-handler.md",
       "priority": "normal",
       "assignee": "역할: 수집 정책 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "review",
+      "progress": 70,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -74,7 +74,7 @@
         "fd87eb4c-29df-47d1-ad3a-346a8c6260ba"
       ],
       "created_at": "2026-10-20T13:54:22.679349+00:00",
-      "updated_at": "2026-10-20T13:54:22.679350+00:00",
+      "updated_at": "2026-10-21T10:39:55+00:00",
       "done_at": null
     },
     {
@@ -189,11 +189,11 @@
       "wbs": "11.1.6.1",
       "has_children": false,
       "title": "[CP-S2-06] 정규화·lineage·중복·회수 보존",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-06\n책임 소유 역할: 백엔드 데이터 담당 (개인 실행자·일정 미배정)\n완료기준: raw/text SHA·변환 map·전처리 버전·품질 미측정·정확 occurrence 보존. near duplicate는 후보, 짧은 문서/낮은 점수 hold·샘플 회수 가능.\n검증 명령/절차: uv run pytest -q tests/test_collector_normalize.py tests/test_collector_dedupe.py\n산출물: reports/collector/s2-06/lineage.json\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-06\n책임 소유 역할: 백엔드 데이터 담당 (개인 실행자·일정 미배정)\n완료기준: raw/text SHA·변환 map·전처리 버전·품질 미측정·정확 occurrence 보존. near duplicate는 후보, 짧은 문서/낮은 점수 hold·샘플 회수 가능. 구현(2026-10-21): collector/pipeline.py·textproc.py·blobs.py. raw/text SHA·NFC 정규화 단계 기록·parser/normalizer 버전·품질 미측정(unmeasured)·정확중복 occurrence 보존(exact_of)·근사중복 후보(MinHash 128, LSH 16x8, 추정 J≥0.80, 판정 불차단)·짧은 문서/낮은 점수 hold+원문 보존, L0 규칙·평가 profile(general/news/tech_docs) job 단위 선택, L1 port·정책 훅(모델 미탑재). 미구현: hold 표본 stratified reservoir 감사(회수 절차), 재처리 job. 독립 검증 전 review.\n검증 명령/절차: uv run pytest -q tests/test_collector_pipeline.py tests/test_collector_stage_migration.py unit_tests/test_collector_parser.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터)\n산출물: reports/collector/s2-06/lineage.json; docs/design/collector-platform/stage-handler.md\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b\n상태: 구현·테스트 완료, review. 독립 검증 후 done 결정. 운영 배포·실제 웹 스모크 미실행.\n정본 설계: docs/design/collector-platform/architecture.md; 작업 노트: docs/design/collector-platform/stage-handler.md",
       "priority": "normal",
       "assignee": "역할: 백엔드 데이터 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "review",
+      "progress": 70,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -202,7 +202,7 @@
         "41405531-dbf8-4615-97e9-3e906eb9e60b"
       ],
       "created_at": "2026-10-20T13:54:22.770867+00:00",
-      "updated_at": "2026-10-20T13:54:22.770869+00:00",
+      "updated_at": "2026-10-21T10:39:55+00:00",
       "done_at": null
     },
     {
@@ -214,11 +214,11 @@
       "wbs": "11.1.8.1",
       "has_children": false,
       "title": "[CP-S2-04] 안전 HTTP fetch·feed·본문 추출",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-04\n책임 소유 역할: 백엔드 수집 담당 (개인 실행자·일정 미배정)\n완료기준: DNS pin/IPv4-v6/redirect/proxy SSRF 방어·robots·429 durable cooldown·최대 bytes/time·빈200 명시 실패. HTML parser와 transport 분리, 브라우저 없음.\n검증 명령/절차: uv run pytest -q tests/test_collector_fetch.py unit_tests/test_collector_parser.py\n산출물: reports/collector/s2-04/fetch-negative.json\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-04\n책임 소유 역할: 백엔드 수집 담당 (개인 실행자·일정 미배정)\n완료기준: DNS pin/IPv4-v6/redirect/proxy SSRF 방어·robots·429 durable cooldown·최대 bytes/time·빈200 명시 실패. HTML parser와 transport 분리, 브라우저 없음. 구현(2026-10-21): collector/netguard.py(URL 정규화·비공개 주소 거부), fetcher.py(검증 IP 고정 연결·redirect hop별 재검사·bytes/time/압축해제 상한·빈 200 명시 실패), robots.py(RFC 9309), polite.py(정책→DB 내구 cooldown→robots 캐시→간격 조절), parse.py(trafilatura·feed/sitemap/링크). 환경 proxy·쿠키 미사용, 브라우저 없음. 미검증: 공용 인터넷 실접속 스모크(미실행), IPv6 실접속. 독립 검증 전 review.\n검증 명령/절차: uv run pytest -q tests/test_collector_fetch.py tests/test_collector_fetch_tls.py tests/test_collector_pipeline.py unit_tests/test_collector_parser.py (로컬 fixture 서버, 공용 네트워크 0)\n산출물: reports/collector/s2-04/fetch-negative.json; docs/design/collector-platform/stage-handler.md\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n상태: 구현·테스트 완료, review. 독립 검증 후 done 결정. 운영 배포·실제 웹 스모크 미실행.\n정본 설계: docs/design/collector-platform/architecture.md; 작업 노트: docs/design/collector-platform/stage-handler.md",
       "priority": "normal",
       "assignee": "역할: 백엔드 수집 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "review",
+      "progress": 80,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -228,7 +228,7 @@
         "0b55c254-6b57-4845-9ead-ac91a7650ab3"
       ],
       "created_at": "2026-10-20T13:54:22.705863+00:00",
-      "updated_at": "2026-10-20T13:54:22.705866+00:00",
+      "updated_at": "2026-10-21T10:39:55+00:00",
       "done_at": null
     },
     {

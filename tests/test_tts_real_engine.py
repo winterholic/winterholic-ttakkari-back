@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import wave
 
@@ -40,17 +41,32 @@ async def test_speak_generates_korean_wav_with_real_supertonic(client, auth):
     assert again.content == first.content
 
 
-async def test_job_generates_audio_and_token_url_serves_it(client, auth):
+async def test_job_generates_audio_and_token_url_serves_it(client, auth, monkeypatch):
+    from ttakkari.tts import jobs
+
+    claimed = asyncio.Event()
+    run_claimed = jobs.run_claimed
+
+    async def mark_claimed(job_id):
+        claimed.set()
+        await run_claimed(job_id)
+
+    # API 응답 직후 consumer 가 먼저 claim 한 경우에도 완료를 올바르게 관찰해야 한다.
+    monkeypatch.setattr(jobs, "run_claimed", mark_claimed)
     created = await client.post("/api/tts/jobs", json={"text": TEXT, "speed": 1.1}, headers=auth)
     assert created.status_code == 202
     body = created.json()
     assert body["chunks"] == 2 and body["cached_chunks"] == 0
-    from ttakkari.tts import jobs
+    await asyncio.wait_for(claimed.wait(), timeout=10)
 
-    for _ in range(4):
-        if await jobs.tick():
-            break
-    state = (await client.get(f"/api/tts/jobs/{body['job_id']}", headers=auth)).json()
+    async with asyncio.timeout(60):
+        while True:
+            response = await client.get(f"/api/tts/jobs/{body['job_id']}", headers=auth)
+            assert response.status_code == 200, response.text
+            state = response.json()
+            if state["status"] in jobs.TERMINAL:
+                break
+            await asyncio.sleep(0.05)
     assert state["status"] == "succeeded", state
     assert state["progress"] == {"done": 2, "total": 2}
     assert state["metrics"]["rtf"] > 0

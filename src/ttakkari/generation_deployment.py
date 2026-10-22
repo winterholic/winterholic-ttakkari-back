@@ -516,7 +516,8 @@ class GenerationController:
     async def run_pytest(self, job, release, env):
         pytest = (str(release / ".venv/bin/python"), "-m", "pytest", "-q", "--timeout=120")
         try:
-            await self.command(job, release, *pytest, "-x", stage="pytest", env=env)
+            # 첫 실행을 끝까지 돌려야 --lf 재시도에서 아직 실행하지 않은 결함을 놓치지 않는다.
+            await self.command(job, release, *pytest, stage="pytest", env=env)
         except StageError as exc:
             # NOTE: 여러 세션이 한 Mac 에서 동시에 돌아 부하가 높으면 시간에 민감한 시험 한 건이 배포 전체를 막았다
             # (2026-10-19 연속 3회). 실패한 시험만 한 번 더 돌려, 진짜 결함은 다시 실패하고 일시적 흔들림은 통과시킨다.

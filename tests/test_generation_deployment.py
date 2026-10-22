@@ -721,7 +721,7 @@ async def test_supervisor_never_routes_to_an_unowned_boot(tmp_path, monkeypatch)
     assert slots.route is None
 
 
-async def test_gate_reruns_only_failed_tests_once_for_test_failures(tmp_path):
+async def test_gate_runs_full_suite_then_reruns_only_failed_tests_once(tmp_path):
     from types import SimpleNamespace
 
     from ttakkari.generation_deployment import GenerationController, StageError
@@ -743,7 +743,7 @@ async def test_gate_reruns_only_failed_tests_once_for_test_failures(tmp_path):
 
     job = {"id": "j"}
     await controller([1, None]).run_pytest(job, tmp_path, {})  # 흔들린 시험 1건은 재실행에서 통과한다
-    assert "-x" in calls[0] and "--lf" in calls[1] and "-x" not in calls[1]
+    assert "-x" not in calls[0] and "--lf" in calls[1] and "-x" not in calls[1]
 
     calls.clear()
     with pytest.raises(StageError):  # 진짜 결함은 재실행에서도 실패해 배포를 막는다
@@ -754,6 +754,39 @@ async def test_gate_reruns_only_failed_tests_once_for_test_failures(tmp_path):
     with pytest.raises(StageError):  # 수집 오류(exit 2)·타임아웃(None)은 재시도하지 않는다
         await controller([2]).run_pytest(job, tmp_path, {})
     assert len(calls) == 1
+
+
+async def test_retry_never_hides_a_later_unexecuted_failure(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from ttakkari.generation_deployment import GenerationController, StageError
+
+    (tmp_path / "test_examples.py").write_text(
+        "from pathlib import Path\n"
+        "def test_transient():\n"
+        "    marker = Path(__file__).with_suffix('.ran')\n"
+        "    if not marker.exists():\n"
+        "        marker.touch()\n"
+        "        assert False, 'transient failure'\n"
+        "def test_permanent():\n"
+        "    assert False, 'permanent failure must block deployment'\n"
+    )
+    control = object.__new__(GenerationController)
+    control.store = SimpleNamespace(jobs=tmp_path)
+
+    async def command(job, release, *args, stage="command", env=None):
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, *args[1:], cwd=release,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        )
+        output, _ = await proc.communicate()
+        if proc.returncode:
+            raise StageError(stage, args, proc.returncode, output.decode())
+
+    control.command = command
+    with pytest.raises(StageError, match="test_permanent"):
+        await control.run_pytest({"id": "coverage"}, tmp_path, {})
 
 
 # ---- 스키마 계약: 별칭(이름이 바뀐 옛 리비전)·유휴 대기 -------------------------------------

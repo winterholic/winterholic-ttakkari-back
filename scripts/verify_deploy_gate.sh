@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 따까리 백엔드 push 전 사전 검증(ADR 0066 D3a 첫 구현) 및 pre-push 훅 설치 스크립트
 #
-# 이 스크립트는 배포 게이트(ttakkari.generation_deployment: pytest -q --timeout=120 -x 전체 실행)를
+# 이 스크립트는 배포 게이트(ttakkari.generation_deployment: pytest -q --timeout=120 전체 실행)를
 # 대신하지 않는다. 게이트가 막을 만한 실패를 push 전에 먼저 잡는 빠른 피드백이다.
 #
 # 동작(ADR 0066 D3a 첫 구현):
@@ -129,7 +129,7 @@ FAILED=()
 STAGES=()
 
 echo "========================================================"
-echo " 따까리 백엔드 사전 검증 (배포 게이트의 전체 실행·-x 를 대신하지 않음)"
+echo " 따까리 백엔드 사전 검증 (배포 게이트의 전체 실행을 대신하지 않음)"
 echo " 대상 커밋: ${SHA:0:12} $(git log -1 --format=%s "$SHA" | cut -c1-60)"
 echo " 변경 기준: ${BASE:0:12}  (작업 트리의 미커밋 변경은 검사하지 않음)"
 echo " 모드: $MODE"

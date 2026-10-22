@@ -15,5 +15,7 @@ def test_collector_migration_follows_the_concurrent_delivery_head():
     contract = json.loads((ROOT / "deploy/generation-contract.json").read_text())
     assert migration.revision == "0063_collector_stage_items"
     assert migration.down_revision == "0062_delivery_change_sets"
-    assert contract["schema_revision"] == migration.revision
+    # run-executor 0064 이 이 위에 직렬화되므로 head 는 더 이상 0063 이 아니다. 대신 0063 이 온라인 허용 목록에 있어야 한다.
+    assert contract["schema_revision"] != migration.revision
+    assert migration.revision in contract["online_migration_from"]
     assert migration.down_revision in contract["online_migration_from"]

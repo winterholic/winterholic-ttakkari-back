@@ -1,6 +1,6 @@
 # Creative Studio v2 — Run-backed intent review (2026-10-23)
 
-범위: 첫 수직 슬라이스 이후 필수 누락을 해소하는 다음 기능 단위. main 병합·배포·영상 렌더는 하지 않았다. 독립 검수 대기 중인 first-slice 기준 SHA는 backend `99a9e084a4716bce21adbc310d0e25f9694872b5`, frontend `02dd278e39b6cea5851283e00a3166de48bf6fe1`로 고정했다. 모든 후속 변경은 해당 브랜치 위의 별도 커밋이다.
+범위: 첫 수직 슬라이스 이후 필수 누락을 해소하는 다음 기능 단위. main 병합·배포·영상 렌더는 하지 않았다. 작업을 시작할 때 first-slice 기준 SHA는 backend `99a9e084a4716bce21adbc310d0e25f9694872b5`, frontend `02dd278e39b6cea5851283e00a3166de48bf6fe1`로 고정되어 독립 검수 대기 상태였다. 후속 검수 결과는 아래의 추가 증거 기록에 반영한다. 모든 후속 변경은 해당 브랜치 위의 별도 커밋이다.
 
 ## 구현
 
@@ -24,7 +24,7 @@
 
 - 실제 설치 모델 응답은 실행하지 않았다. live backend `/api/version`은 `75a12d690ad2458a56ea10675588539afb82791f`로 이 후속 라우트가 없는 revision이다. Qwen status lookup은 기존에 확인한 대로 한 경로는 404, worker 상태는 인증 없이 401이었으므로 운영 activation과 readiness는 미확인이다. worker binary 존재나 host llama-server 관측은 이 intent 경로의 실제 응답을 증명하지 않는다.
 - 실제 MCP tool 실행 0회, 실제 model conversation resume 0회, 모델 usage metering은 미검증이다. 테스트 fake worker의 결과를 실제 모델 결과로 세지 않는다.
-- first-slice exact SHA에 대한 독립 검수는 별도 worker에서 queued 상태이며 통과로 간주하지 않는다. 새 구현 커밋은 그 exact-SHA 검수 대상과 구분한다.
+- first-slice exact SHA는 이후 독립 검수에서 FAIL 보고를 받았다. 추가 수정 후보의 결과와 혼동하지 않도록 고정 SHA 판정은 계속 별도로 보존한다.
 - WBS 8.3/8.6은 아직 done 처리하지 않았다. 실제 Qwen 응답·UI 브라우저 검증 및 잔여 범위가 남아 있다. 전문 레시피 실행 가능성을 새로 주장하지 않았고, 실제 영상 생성은 범위 밖이다.
 
 ## Review branch commits
@@ -91,3 +91,12 @@
 - 같은 backend 재현의 인용 사례는 현재도 `valid=true`, `review_required=true`, `music_seconds=899.0`을 출력했다. 이는 인용의 존재 검사만으로 의미 지지를 보장하지 않는다는 사례다. 시스템은 `semantic_support_unverified` 경고를 유지하고 LLM 출처 intent를 사용자 검토 전 계획 입력에서 거부한다. 따라서 의미 검증기가 무관한 인용을 판별한다고 주장하지 않으며, 이 실행에서 확인된 것은 미확인 표시와 소비 차단이다.
 - 프론트 회귀 test를 추가했으며, backend code는 바꾸지 않았다. 대상 baseline의 `FAIL`은 역사적 판정으로 남고, 현재 격리 브랜치에서 위 두 안전성 반례는 통과로 재검증됐다. R19 partial/conditional 사례, Style DNA 사용자 15 필드와 시스템 version 분리, 600초 희망/24초 deviated 이유는 기존 수정과 기록을 유지한다.
 - 이 증분 실행에서는 actual managed Qwen 응답, 모델 usage receipt, authenticated readiness, MCP 실행, 실제 conversation resume, 인증된 브라우저 UI를 실행하지 않았다. 기존 work-history의 범위별 미검증 상태를 그대로 유지한다. 실제 렌더러는 미연결이며 실제 영상은 0건이다. main merge/deploy 금지.
+
+## 고정 후보 후속 검수와 현재 수정 후보 구분 (2026-10-23)
+
+- 추가 독립 보고서 `outbox/37ddf92f-7d91-42d6-a35c-2842a0d96e45/followup-review.md` 및 evidence zip을 대조했다. 그 실행은 backend `c37309c7e797d6e93fe5a8e601996fdf116cab22`, frontend `e2895691d400544efde4cf9999aa508f07a54b99`에서 했다. 보고서의 backend 123 tests 및 frontend 14 tests는 이 고정 checkout의 결과다.
+- 검수 결과는 부분 수정·병합 보류다. frontend의 늦은 validation 응답 경합은 현재 근거를 유지하고 `confirmed=false`, `createEnabled=false`를 보여 통과했다. 반면 같은 고정 backend에서 `lab_manual` 승인 뒤 `render_gate=true`가 재현되어 FAIL이다. 의미와 무관한 evidence의 validator 값 `valid=true` 및 `music_seconds=899`도 남지만 `review_required=true`가 유지되므로 확정 우회로 확대 해석하지 않는다.
+- 이 c373 backend는 현재 격리 backend HEAD의 조상이다. 뒤의 커밋 `9a250834415095b6ac99439218345e0e6605033a`에서 approval revision/hash/capability snapshot과 `studio_runtime` 한정 gate가 구현됐다. 따라서 c373 검수 FAIL은 그 고정 SHA의 유효한 판정이며, 후속 커밋이 그 기록을 소급 변경하지 않는다.
+- 현재 후보 backend `62890c5b77dc04d2c6b6ad85cd6eb01cb23f2d1b`, frontend `f4287acc90ace7c232dd1077aaf1c24b703a16f9`는 독립 전체 검수 PASS 판정을 받은 것은 아니다. 현재 checkout에서 동일 재현은 `lab_manual_approval` `before=false/after=false`와 승인 snapshot 존재를 보였다. 독립 후속 검수와 같은 범위의 API·추출·Run·route·duration·matching·plans·registry·run-scope·Style DNA suite는 `132 passed in 4.42s`였다. frontend 계획 및 late-validation tests는 `16 passed`; 관측값 `evidence=기술 설명 영상`, `confirmed=false`, `createEnabled=false`다. 최신 후보의 결과는 고정 c373/e289 판정과 분리한다.
+- 인용 의미 추론은 여전히 미보장이다. 현재 재현 결과도 `valid=true`, `review_required=true`, `music_seconds=899.0`이다. 실제 모델·MCP·conversation resume·authenticated readiness/browser·렌더는 이번 재검수에서 수행하지 않았다. 이 범위의 미검증은 유지한다.
+- 앞서 쓴 “first-slice 검수 queued”는 당시 상태였다. 그 기준선 backend `99a9e084a4716bce21adbc310d0e25f9694872b5` / frontend `02dd278e39b6cea5851283e00a3166de48bf6fe1`은 이미 FAIL 보고를 받았고, 별도의 증분 target backend `b7855d09e78982dfd8a8b4ba948e62f4ac0b05e1` / frontend `a78dede6ae81696e7c9c29dd4556d62d2abfea1c`도 FAIL 보고를 받았다. 두 판정은 후속 수정 후보의 회귀 통과와 별개의 고정-target 상태로 보존한다.

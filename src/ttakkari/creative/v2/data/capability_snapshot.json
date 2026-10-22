@@ -1,0 +1,622 @@
+{
+  "command": "~/development/projects/ttakkari-studio-v2-back/src/ttakkari/creative/v2/probe.py --out src/ttakkari/creative/v2/data/capability_snapshot.json",
+  "generated_at": "2026-10-22T14:45:31.192278+00:00",
+  "host": {
+    "machine": "arm64",
+    "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+    "python": "3.13.15"
+  },
+  "probes": {
+    "acestep": {
+      "detail": "~/development/projects/ttakkari-studio-lab/audio/refs/ACE-Step-1.5",
+      "installed": true,
+      "version": null
+    },
+    "artcraft_apps": {
+      "detail": "13종: cadcraft, deckcraft, designcraft, effectcraft, figcraft, filmcraft, gridcraft, lightcraft, pdfcraft, photocraft, soundcraft, vectorcraft, wordcraft",
+      "installed": true,
+      "version": null
+    },
+    "blender_app": {
+      "detail": "Blender GUI 앱 없음",
+      "installed": false,
+      "version": null
+    },
+    "bpy": {
+      "detail": "~/development/projects/ttakkari-studio-lab/3d/.venv-bpy/bin/python",
+      "installed": true,
+      "version": "5.0.1"
+    },
+    "chrome": {
+      "detail": "/Applications/Google Chrome.app",
+      "installed": true,
+      "version": null
+    },
+    "comfy:film_net": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfy:flux2_klein_4b": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfy:hunyuanvideo15": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfy:ltx23": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfy:qwen_image_edit_2511": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfy:seedvr2": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfy:wan22_i2v_14b": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfy:wan22_ti2v_5b": {
+      "detail": "모든 파일 존재",
+      "installed": true,
+      "version": null
+    },
+    "comfyui": {
+      "detail": "~/development/projects/ttakkari-studio-lab/comfyui/ComfyUI",
+      "installed": true,
+      "version": "0.42.0"
+    },
+    "ffmpeg_imageio": {
+      "detail": "~/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1",
+      "installed": true,
+      "version": null
+    },
+    "ffmpeg_system": {
+      "detail": "PATH에 ffmpeg 없음",
+      "installed": false,
+      "version": null
+    },
+    "godot": {
+      "detail": "Godot 없음",
+      "installed": false,
+      "version": null
+    },
+    "local_stt_code": {
+      "detail": "src/ttakkari/meetings/local_stt",
+      "installed": true,
+      "version": null
+    },
+    "node": {
+      "detail": "/opt/homebrew/bin/node",
+      "installed": true,
+      "version": "26.9.0"
+    },
+    "playwright_core": {
+      "detail": "",
+      "installed": true,
+      "version": "1.64.1"
+    },
+    "pnpm": {
+      "detail": "/opt/homebrew/bin/pnpm",
+      "installed": true,
+      "version": "12.6.0"
+    },
+    "r3f": {
+      "detail": "@react-three/fiber 없음",
+      "installed": false,
+      "version": null
+    },
+    "react": {
+      "detail": "",
+      "installed": true,
+      "version": "19.2.3"
+    },
+    "remotion": {
+      "detail": "~/development/projects/ttakkari-studio-lab/remotion/project/node_modules",
+      "installed": true,
+      "version": "4.0.537"
+    },
+    "repo_render_py": {
+      "detail": "src/ttakkari/creative/render.py",
+      "installed": true,
+      "version": null
+    },
+    "rhubarb": {
+      "detail": "~/development/projects/ttakkari-studio-lab/3d/tools/Rhubarb-Lip-Sync-1.14.0-macOS/rhubarb",
+      "installed": true,
+      "version": "1.14.0"
+    },
+    "supertonic_runtime": {
+      "detail": "~/development/projects/winterholic-ttakkari/back/.tts-runtime/supertonic",
+      "installed": true,
+      "version": null
+    },
+    "three": {
+      "detail": "~/development/projects/ttakkari-studio-lab/3d/node_modules",
+      "installed": true,
+      "version": "0.185.0"
+    }
+  },
+  "records": {
+    "acestep-instrumental-cues": {
+      "independent": false,
+      "kind": "audio",
+      "media_count": 7,
+      "path": "audio/records/acestep-instrumental-cues/record.json",
+      "status": "completed",
+      "title": "ACE-Step 인스트루멘탈 큐 2종 (시네마틱 앰비언트 20초, 로파이 bed 18초)",
+      "verdict": "unreviewed"
+    },
+    "acestep-ko-ballad-run1": {
+      "independent": false,
+      "kind": "audio",
+      "media_count": 7,
+      "path": "audio/records/acestep-ko-ballad-run1/record.json",
+      "status": "completed",
+      "title": "ACE-Step 한국어 발라드 30초 + LRC 가사 타임스탬프",
+      "verdict": "conditional"
+    },
+    "acestep-ko-edit-variants": {
+      "independent": false,
+      "kind": "audio",
+      "media_count": 10,
+      "path": "audio/records/acestep-ko-edit-variants/record.json",
+      "status": "partial",
+      "title": "ACE-Step 편집 변형 4종 (cover · extract vocals · repaint ×2)",
+      "verdict": "fail"
+    },
+    "ai-director-architecture-design": {
+      "independent": false,
+      "kind": "design",
+      "media_count": 5,
+      "path": "design/records/ai-director-architecture-design/record.json",
+      "status": "partial",
+      "title": "AI 감독형 제작 구조 설계(통합안 ADR 초안·WBS·실행 순서)",
+      "verdict": "unreviewed"
+    },
+    "blender-eevee-cycles-probe": {
+      "independent": false,
+      "kind": "benchmark",
+      "media_count": 5,
+      "path": "3d/records/blender-eevee-cycles-probe/record.json",
+      "status": "completed",
+      "title": "Blender(bpy 5.0.1) EEVEE vs Cycles Metal 탐침",
+      "verdict": "unreviewed"
+    },
+    "comfy-flux2-klein-character-edit": {
+      "independent": false,
+      "kind": "image",
+      "media_count": 11,
+      "path": "comfyui/records/comfy-flux2-klein-character-edit/record.json",
+      "status": "completed",
+      "title": "FLUX.2 klein 4B 캐릭터 생성 4장 + 참조 편집 3장",
+      "verdict": "conditional"
+    },
+    "comfy-qwen-image-edit-2511": {
+      "independent": false,
+      "kind": "image",
+      "media_count": 5,
+      "path": "comfyui/records/comfy-qwen-image-edit-2511/record.json",
+      "status": "partial",
+      "title": "Qwen-Image-Edit-2511 참조 편집 3건 (성공 1, OOM 실패 2)",
+      "verdict": "conditional"
+    },
+    "comfy-wan22-5b-t2v-bench": {
+      "independent": false,
+      "kind": "video_gen",
+      "media_count": 11,
+      "path": "comfyui/records/comfy-wan22-5b-t2v-bench/record.json",
+      "status": "completed",
+      "title": "Wan2.2 TI2V 5B 텍스트→영상 Apple Silicon 벤치 (32회 실행)",
+      "verdict": "unreviewed"
+    },
+    "legacy-catalog-longform-narration-story": {
+      "independent": false,
+      "kind": "production",
+      "media_count": 1,
+      "path": "legacy/records/legacy-catalog-longform-narration-story/record.json",
+      "status": "completed",
+      "title": "카탈로그 장편: 내레이션 스토리",
+      "verdict": "unreviewed"
+    },
+    "legacy-catalog-sample-music-video": {
+      "independent": false,
+      "kind": "production",
+      "media_count": 1,
+      "path": "legacy/records/legacy-catalog-sample-music-video/record.json",
+      "status": "completed",
+      "title": "카탈로그 샘플: 뮤직비디오",
+      "verdict": "unreviewed"
+    },
+    "legacy-catalog-sample-shorts-9-16": {
+      "independent": false,
+      "kind": "production",
+      "media_count": 1,
+      "path": "legacy/records/legacy-catalog-sample-shorts-9-16/record.json",
+      "status": "completed",
+      "title": "카탈로그 샘플: 9:16 쇼츠",
+      "verdict": "unreviewed"
+    },
+    "legacy-catalog-sample-tech-explainer": {
+      "independent": false,
+      "kind": "production",
+      "media_count": 1,
+      "path": "legacy/records/legacy-catalog-sample-tech-explainer/record.json",
+      "status": "completed",
+      "title": "카탈로그 샘플: 기술 설명",
+      "verdict": "unreviewed"
+    },
+    "legacy-little-signal-30s": {
+      "independent": false,
+      "kind": "production",
+      "media_count": 1,
+      "path": "legacy/records/legacy-little-signal-30s/record.json",
+      "status": "completed",
+      "title": "Little Signal 30초 (스튜디오 1차 제작)",
+      "verdict": "unreviewed"
+    },
+    "pipeline-checkpoints-demo": {
+      "independent": false,
+      "kind": "pipeline",
+      "media_count": 4,
+      "path": "orchestration/records/pipeline-checkpoints-demo/record.json",
+      "status": "completed",
+      "title": "영상 제작 파이프라인 체크포인트·부분 재실행 데모",
+      "verdict": "pass"
+    },
+    "remotion-beat-v1-v2": {
+      "independent": false,
+      "kind": "music_video",
+      "media_count": 11,
+      "path": "remotion/records/remotion-beat-v1-v2/record.json",
+      "status": "completed",
+      "title": "비트에 맞춰 편집되는 뮤직비디오 장면 BeatV1→V2 (Remotion 16.5초)",
+      "verdict": "conditional"
+    },
+    "remotion-intro-supersample": {
+      "independent": false,
+      "kind": "benchmark",
+      "media_count": 5,
+      "path": "remotion/records/remotion-intro-supersample/record.json",
+      "status": "completed",
+      "title": "IntroV2 2배 슈퍼샘플 렌더 실험 (scale=2 → Lanczos 1080p)",
+      "verdict": "conditional"
+    },
+    "remotion-intro-v1-v2": {
+      "independent": false,
+      "kind": "motion_graphics",
+      "media_count": 10,
+      "path": "remotion/records/remotion-intro-v1-v2/record.json",
+      "status": "completed",
+      "title": "따까리 소개 모션그래픽 IntroV1→V2 (Remotion 16초)",
+      "verdict": "conditional"
+    },
+    "three-character-talk-v1-v2": {
+      "independent": false,
+      "kind": "character_video",
+      "media_count": 10,
+      "path": "3d/records/three-character-talk-v1-v2/record.json",
+      "status": "completed",
+      "title": "말하는 3D 캐릭터 v1→v2 (한국어 TTS 립싱크 16초)",
+      "verdict": "conditional"
+    },
+    "three-cinematic-v1-v2": {
+      "independent": false,
+      "kind": "cinematic_3d",
+      "media_count": 10,
+      "path": "3d/records/three-cinematic-v1-v2/record.json",
+      "status": "completed",
+      "title": "시네마틱 3D 장면 v1→v2 (Three.js 14초)",
+      "verdict": "conditional"
+    },
+    "three-filmcraft-assembly": {
+      "independent": false,
+      "kind": "cinematic_3d",
+      "media_count": 4,
+      "path": "3d/records/three-filmcraft-assembly/record.json",
+      "status": "completed",
+      "title": "필름크래프트 조립본 (시네마틱 3D + 말하는 캐릭터, 30초)",
+      "verdict": "unreviewed"
+    },
+    "three-previz-roundtable": {
+      "independent": false,
+      "kind": "benchmark",
+      "media_count": 4,
+      "path": "3d/records/three-previz-roundtable/record.json",
+      "status": "completed",
+      "title": "threejs-previz 레퍼런스 재현 (Remotion + Three, 원탁 90프레임)",
+      "verdict": "unreviewed"
+    }
+  },
+  "schema": 1,
+  "skills": {
+    "edit1-flux2-klein": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/edit1-flux2-klein",
+      "skill_md_sha256": "341c63eac09bf6d6487e0ed0224e650308b71be53b37900fb5bdb785fcbe6f43"
+    },
+    "edit1-qwen-image-edit-2511": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/edit1-qwen-image-edit-2511",
+      "skill_md_sha256": "525cb3f13c827bdeabc6b74add3df4fc86d80822c59baa5906336aad671d96d5"
+    },
+    "edit2-flux2-klein": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/edit2-flux2-klein",
+      "skill_md_sha256": "50c64f12fde0ef0860708a89ddaff203d04c439ca8d757276165d23f9b4aff78"
+    },
+    "edit2-qwen-image-edit-2511": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/edit2-qwen-image-edit-2511",
+      "skill_md_sha256": "35291bc42b119752202fb3686701189fa4b10a6cf85126772bfab499ff512912"
+    },
+    "i2v-wan22-14b-lightx2v": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/i2v-wan22-14b-lightx2v",
+      "skill_md_sha256": "5f76a1a09d3946017ca300609814f15254fe01056676de08b537f1b2f85e123c"
+    },
+    "i2v-wan22-5b": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/i2v-wan22-5b",
+      "skill_md_sha256": "119ca42cc8ca71347703cc9b7f15ec4f3f50c79c1f4b6c6a489d72cb5e020467"
+    },
+    "interpolate-film-video": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/interpolate-film-video",
+      "skill_md_sha256": "610827867b2b06885557c962905ce98a979b06f218f37d63a21f9abf2d3d52ce"
+    },
+    "studio-3d-cinematic": {
+      "file_count": 11,
+      "files": [
+        "SKILL.md",
+        "example-scene/index.html",
+        "example-scene/main.js",
+        "example-scene/world.js",
+        "example-scene/world.v1.snapshot.js",
+        "scripts/audit-negative.mjs",
+        "scripts/audit.mjs",
+        "scripts/check_frames.py",
+        "scripts/dbg-black.mjs",
+        "scripts/framestats.py",
+        "scripts/render-frames.mjs"
+      ],
+      "has_code": true,
+      "io_excerpt": "- 샷 목록: 샷마다 `id`, `start`/`end` 프레임(반열림 `[start,end)`), 의도(`intent`), 주인공 위치(`hero`), 가림 허용 예산(`occlusionBudget`), `pose(u, frame)` 함수.\n- 월드 정의: 지형 높이 해석식, 충돌 대상 목록(거석 등), 조명, 파티클, 후처리 파라미터. 시드 고정 난수(`mulberry32`)만 쓴다.\n- 파라미터 세트(`v1`, `v2`…). 버전별 코드 스냅샷을 남겨 전후 비교를 재현한다(`?world=world.v1.snapshot.js`).\n\n## 출력\n- `frames/f_00000.png …` (프레임당 약 2.8MB, 420프레임 1.2GB. 검수 뒤 삭제)\n- `*.mp4`(H.264 yuv420p BT.709, 30fps, AAC 선택) + `ffprobe` JSON + 디코드 오류 검사 결과\n- 검수 증거: 컨택트 시트 PNG, 프레임 통계(검은 프레임·클리핑), 감사 JSON",
+      "path": "3d/skills-draft/studio-3d-cinematic",
+      "skill_md_sha256": "9d9537ebb8d9e988f4dc6a6feb20aef9bf459086e98aac31d48a9d1cf3b72549"
+    },
+    "studio-audio-mix": {
+      "file_count": 2,
+      "files": [
+        "SKILL.md",
+        "scripts/mix_example.sh"
+      ],
+      "has_code": true,
+      "io_excerpt": "- `voice.wav`(선택, TTS 등), `music.wav`(ACE-Step 등), SFX 정의(임팩트 시각, 길이), 영상 길이, 목표 LUFS(기본 -16), 트루피크 상한(-1.5 dBTP)\n- 영상 이벤트 시각(예: 펄스 11.07초 → SFX 는 `adelay` 10600ms 로 150ms 선행 배치)\n\n## 출력\n- `mix_*.wav`(48kHz stereo), 영상 mux 후 `*.mp4`(AAC 256k), 측정 JSON/로그(LUFS·LRA·Peak)\n\n## 실행 조건·의존성\n- ffmpeg 6+(실측 ffmpeg-static 6.0: `sidechaincompress`, `loudnorm`, `ebur128`, `aevalsrc`, `anoisesrc` 모두 사용 가능). 외부 서비스·API 없음.\n- 오디오 분석 검증용 Python(librosa/soundfile)은 선택.\n\n## 절차\n1. **포맷 정합 먼저**: 모든 입력에 `aformat=sampl",
+      "path": "audio/skills-draft/studio-audio-mix",
+      "skill_md_sha256": "e0ed6dc8273e5d12db25539ffe756d6bd63328a582b95ebccbff4582009bbde1"
+    },
+    "studio-character-lipsync": {
+      "file_count": 9,
+      "files": [
+        "SKILL.md",
+        "example-scene/char.js",
+        "example-scene/char.v1.snapshot.js",
+        "example-scene/index.html",
+        "example-scene/script_ko.json",
+        "scripts/lipsync_ko.py",
+        "scripts/mouth_strip.py",
+        "scripts/tts_dialogue.py",
+        "scripts/whisper_words.py"
+      ],
+      "has_code": true,
+      "io_excerpt": "- `script_ko.json`: `voice`(Supertonic F1~F5, M1~M5), `speed`, `steps`, `lines[]`(줄 단위 대사), `gap`/`lead`/`tail`(무음 초).\n- 캐릭터 정의(프리미티브로 구성: 머리·눈·눈썹·볼·헤드폰·팔·몸). 입은 **절차적 지오메트리**(입술·입 안·윗니·혀)이며 구면 표면에 투영한다.\n- 선택: 카드/자막을 트리거할 단어 목록(예: `연출하고`→카드 등장). 시점은 립싱크 타임라인에서 읽는다.\n\n## 출력\n- `tts/dialogue.wav`(44.1kHz mono), `tts/timeline.json`(줄별 구간, TTS 계측)\n- `lipsync.json`: 30fps 프레임별 `[jaw, width, round, closed, teeth, tongue]`, 음절·단어 시각, 눈 깜빡임·끄덕임·눈썹 이벤트, 검증 지표\n- `*.mp4`(H.264 + AAC) + ffprobe + 디코드 검사 + 입 모",
+      "path": "3d/skills-draft/studio-character-lipsync",
+      "skill_md_sha256": "327d90b258335472d4c87aae55e363e05c2e9a21aeef68bba80b92217a5e097f"
+    },
+    "studio-music-generate-sync": {
+      "file_count": 11,
+      "files": [
+        "SKILL.md",
+        "jobs/ambient_cue.json",
+        "jobs/char_bed.json",
+        "jobs/cover.json",
+        "jobs/extract.json",
+        "jobs/repaint.json",
+        "jobs/repaint2.json",
+        "scripts/run_acestep_job.py",
+        "scripts/run_acestep_ko.py",
+        "scripts/run_acestep_understand.py",
+        "scripts/whisper_words.py"
+      ],
+      "has_code": true,
+      "io_excerpt": "- 용도: `vocal_song`(가사 있음) | `instrumental_cue`(BGM) | `cover` | `repaint` | `extract_vocals` | `analyze`(기존 오디오 BPM·키 추정)\n- 공통: `caption`(영문 스타일 설명 권장), `lyrics`(구조 태그 `[Verse]` `[Chorus]`, 인스트루멘털은 `[Instrumental]`), `language`(`ko`), `duration`(10-600초), `seed`, `bpm`/`keyscale`(선택)\n- 편집류: `src_audio`(절대경로), `repainting_start/end`, `audio_cover_strength`, `instruction`(`Extract the VOCALS track from the audio:`)\n- 영상 연동: 동기화할 이벤트 시각 목록(예: 펄스 11.07초, 컷 시각)\n\n## 출력\n- `*.wav`(48kHz stereo), `metric",
+      "path": "audio/skills-draft/studio-music-generate-sync",
+      "skill_md_sha256": "43b78cdb0ae728a889a2bb5f8535bf82457e6e3a05dfd0906cd865fc0599e7e1"
+    },
+    "studio-pipeline-checkpoints": {
+      "file_count": 4,
+      "files": [
+        "SKILL.md",
+        "scripts/pipeline.cinematic.json",
+        "scripts/pipeline_state.py",
+        "scripts/slideshow_score.py"
+      ],
+      "has_code": true,
+      "io_excerpt": "- 브리프(주제, 길이, 화면비, 언어, 예산 상한), 사용자 제약(유료 API 금지 등)\n- 사용 가능 자원 목록(`doctor`): ffmpeg/ffprobe, Chrome WebGL, Node, Blender(bpy), 로컬 TTS/STT, ACE-Step, GPU 여유\n- `pipeline.json`: 단계 목록(이름, 입력 파일, 출력, `needs`, `gate` 명령)\n\n## 출력\n- 단계 산출물(JSON 아티팩트 + 미디어), `pipeline.state.json`(단계별 입력 해시·상태·시각), 결정 로그(공급자·모델·음성·렌더 방식 선택 이유)\n- 최종: mp4 + ffprobe + 디코드 검사 + 검수 프레임 시트 + 게이트 결과 + 비용/시간 기록\n\n## 단계 (권장 기본)\n`brief → treatment(컨셉 3안·의도) → shot_plan(샷마다 의도·카메라·조명) → assets(음성·음악·SFX) → build(장면 코드) → gate(사전 감사) →",
+      "path": "orchestration/skills-draft/studio-pipeline-checkpoints",
+      "skill_md_sha256": "7b1a96c4ae03260109e85a75e3f18c8335d7e4dd682ade6f1cca5ac948397c55"
+    },
+    "t2i-flux2-klein": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/t2i-flux2-klein",
+      "skill_md_sha256": "2ffcc59c4b993be0ce9eea6dc27a59e1e8a6a49efbb6d5350d8693d1b507a71b"
+    },
+    "t2v-wan22-5b": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/t2v-wan22-5b",
+      "skill_md_sha256": "08c8a855431823c5ec663f57ae5d9323db018461ce82d26089ff8b43f81c9a7b"
+    },
+    "ttakkari-beat-sync": {
+      "file_count": 4,
+      "files": [
+        "SKILL.md",
+        "scripts/analyze_beats.py",
+        "scripts/backtest_cuts.py",
+        "scripts/example_beat_scene.tsx"
+      ],
+      "has_code": true,
+      "io_excerpt": "- 입력: 음원 wav/mp3(로컬·직접 합성. 라이선스는 ttakkari-video-audio 참고), 렌더된 mp4.\n- 출력: `analysis/beat_data.json`(bpm, t0, T, hits, rms_per_beat), `analysis/grid_drift.json`(후보 그리드와 선택 근거), `out/backtest_*.json`(컷별 프레임 오차표).\n\n## 절차\n1. **분석(`scripts/analyze_beats.py <audio> <out_dir> [--truth truth.json]`)**: hpss 타악기 성분 → `beat_track(tightness=400)` → 박 시각 전체를 최소제곱 `t_i = t0 + i*T`로 맞춘다. tempo 스칼라는 믿지 않고 박 시각열을 쓴다. 합성 트랙에서 실측: tempo 스칼라 127.60(실제 128.0), 박열 잔차 3.65ms, 맞춘 BPM 127.987, 오차 BPM 0.013, T 오차 0.05ms",
+      "path": "remotion/skills-draft/ttakkari-beat-sync",
+      "skill_md_sha256": "37b2d7f3d1df827a22e2e04683ebd1534ea81a3e2dbfed7d84af6e70335fd33d"
+    },
+    "ttakkari-motion-rules": {
+      "file_count": 2,
+      "files": [
+        "SKILL.md",
+        "assets/example_motion_intro.tsx"
+      ],
+      "has_code": false,
+      "io_excerpt": "- 입력: brief.md의 샷 표, `src/lib/{theme,motion,Layers,ui}.ts(x)`.\n- 출력: 씬 컴포넌트와 `Sequence` 타임라인. 같은 입력이면 프레임마다 같은 결과(결정론).\n\n## A. 불변 규칙 (위반 시 사유를 README에 기록)\n1. 선형 이징 금지. `interpolate`는 양쪽 clamp와 `Easing.bezier`, 입장은 `spring`. 기본 곡선: out `(0.16,1,0.3,1)`, inOut `(0.83,0,0.17,1)`, in `(0.7,0,0.84,0)`(퇴장 전용). [HR][SC]\n2. 입장은 속성 2~3개 동시(투명도+이동+블러 또는 스케일). 단독 페이드 금지. [HR][X]\n3. 스태거: 단어 4~5f, 카드 10~14f 간격. 무엇도 동시에 들어오지 않는다. [HR]\n4. 퇴장은 입장보다 빠르게(약 10~12f vs 20f+). 퇴장 없는 요소는 씬 끝에서 툭 사라진다. [X] IntroV1의 폰·맥",
+      "path": "remotion/skills-draft/ttakkari-motion-rules",
+      "skill_md_sha256": "a90ef9b9f46c7668576f625d526970060509e370091dfff25d7d3df6b487118f"
+    },
+    "ttakkari-remotion-setup": {
+      "file_count": 9,
+      "files": [
+        "SKILL.md",
+        "assets/lib/Layers.tsx",
+        "assets/lib/beat.ts",
+        "assets/lib/fonts.ts",
+        "assets/lib/motion.ts",
+        "assets/lib/theme.ts",
+        "assets/lib/ui.tsx",
+        "assets/remotion.config.ts",
+        "assets/tsconfig.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "- 입력: 작업 폴더(예: `<lab>/remotion/project`), `ttakkari-video-brief`의 brief.md.\n- 출력: 렌더 가능한 프로젝트(`src/lib/*` 공통 모듈 + 컴포지션), `bin/ffmpeg-full`, `bin/ffprobe`, 재현 가능한 `package.json`.\n\n## 절차\n1. 스캐폴드(빈 폴더): `npx create-video@latest --yes --blank --no-tailwind .` (설치 시간은 미측정, node_modules 312MB).\n2. 같은 버전으로 묶어 설치: `npx remotion add @remotion/transitions @remotion/media @remotion/media-utils @remotion/fonts @remotion/layout-utils @remotion/google-fonts @remotion/effects @remotion/shapes @remotion/noise @",
+      "path": "remotion/skills-draft/ttakkari-remotion-setup",
+      "skill_md_sha256": "c06272d0224bdde58ead33cc26ca17c978ae2ed942d0b00aceca3da95c5ccae5"
+    },
+    "ttakkari-video-audio": {
+      "file_count": 2,
+      "files": [
+        "SKILL.md",
+        "scripts/gen_audio.py"
+      ],
+      "has_code": true,
+      "io_excerpt": "- 입력: 길이·BPM·구조(박 단위), 필요한 SFX 목록.\n- 출력: `public/audio/*.wav`(음악 bed), `public/sfx/*.wav`(8종), `truth.json`(합성 정답 그리드, 분석 검증 전용).\n\n## 절차\n1. **합성(`scripts/gen_audio.py`)**: numpy·scipy만 사용, 시드 고정이라 재생성 시 동일. 128BPM A마이너, 킥(사인 스윕+클릭), 클랩, 하이햇, 베이스(톱니+로패스), 패드, 아르페지오, 리드 스탭, 라이저, 크래시, 사이드체인 덕킹, 합성 리버브. 9.4초에 음악 16.5s + bed 16.5s + SFX 8종 생성.\n2. 구조: 박 0~4 인트로(킥 1발+패드), 4~8 킥 4온더플로어, 8~16 풀 그루브, 16~24 브레이크다운(킥·베이스 제거, 20~24 라이저, 22~24 스네어 롤), 24~32 드롭, 32 마지막 히트+꼬리.\n3. **SFX 어휘**: whoosh(이동) / impact",
+      "path": "remotion/skills-draft/ttakkari-video-audio",
+      "skill_md_sha256": "19468018360db33c7f0487ad8721b37ba8412cc6a916e49a6aa4a8f244fba54d"
+    },
+    "ttakkari-video-brief": {
+      "file_count": 1,
+      "files": [
+        "SKILL.md"
+      ],
+      "has_code": false,
+      "io_excerpt": "- 사용자 요청 한 줄 + 사용 가능한 자산(로고·스크린샷·음원·텍스트).\n- 따까리 브랜드 토큰(`front`의 `--tk-*`: 그래파이트 `#0B0F10`~`#30383A`, 민트 히어로 `#00F0B5`, 본문 `#F4F4ED`). 외부 제품이면 그 제품의 디자인 시스템에서 추출한다(shotcraft 핵심 원칙 2).\n\n## 출력 (파일로 남긴다)\n`brief.md` 하나에 아래 5개 절. 코드 작성 전에 이 파일이 있어야 한다.\n1. **목적·길이·화면비·fps**: 기본 1920x1080, 30fps, 10~20초. 쇼츠는 1080x1920을 별도 에디션으로(같은 장면 트리에서 context flag, 재편집 금지).\n2. **룩 바이블**: 팔레트(배경 1 + 히어로 1 + 중립), 폰트(한글은 Pretendard 로컬 번들), 글자 크기 하한, 금지 목록(이모지 아이콘, 시스템 폰트 헤드라인, 손떨림, 군집 글로우).\n3. **샷 표**: `# | 시작-끝(f) | 화",
+      "path": "remotion/skills-draft/ttakkari-video-brief",
+      "skill_md_sha256": "9429c85280ae95cb29f294bdcafb1fbbc1ba187db997f3c4550b5ec22cd9dc96"
+    },
+    "ttakkari-video-qa": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "scripts/make_compare.sh",
+        "scripts/qa.sh"
+      ],
+      "has_code": true,
+      "io_excerpt": "- 입력: 렌더된 mp4, 컴포지션 id, brief.md.\n- 출력: `qa_<name>.txt`(ffprobe+디코드+피크+정지), 키 프레임 PNG, 컨택트 시트, 결함 목록(프레임 번호 포함), 전후 비교 mp4/PNG.\n\n## 루프\n1. 키 프레임만 먼저: `npx remotion render src/index.ts <Id> out/f --frames=a,b,c --image-format=png` (13~19프레임이 약 3.5초). 의심 구간(씬 경계 ±8f, 이동·입장 도중)을 반드시 포함한다. 정지된 홀드 프레임만 보면 전환 중 겹침을 못 본다.\n2. `ffmpeg-full -vf \"scale=640:-1,tile=4x4\"`로 컨택트 시트를 만들어 한눈에 훑고, 이상한 프레임은 원본 해상도로 다시 연다. 시트에서는 보이지 않는 것(텍스트 겹침, 작은 글자)이 있다.\n3. 결함을 `번호 · 프레임 · 증상 · 원인 가설` 표로 쓴다. 같은 버그 2회차 수정부터는 추측하지",
+      "path": "remotion/skills-draft/ttakkari-video-qa",
+      "skill_md_sha256": "cc0c8af128a306627728284fa233b2c4dd2666d95b65765f9de5e458ef5bfec6"
+    },
+    "upscale-seedvr2-video": {
+      "file_count": 3,
+      "files": [
+        "SKILL.md",
+        "params.json",
+        "workflow.api.json"
+      ],
+      "has_code": true,
+      "io_excerpt": "",
+      "path": "comfyui/skills-draft/upscale-seedvr2-video",
+      "skill_md_sha256": "ebe3ec8954b7d69063d859340457983338f01424adba5ec006730979edc23989"
+    }
+  }
+}

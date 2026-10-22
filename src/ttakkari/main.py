@@ -23,6 +23,7 @@ from ttakkari.api import (
     checklists,
     comfy_managed,
     creative,
+    creative_v2,
     deployments,
     design_system,
     desk_feedback,
@@ -332,6 +333,7 @@ def create_app() -> FastAPI:
     app.include_router(stocks.agent_router)
     app.include_router(games.router)
     app.include_router(creative.router)
+    app.include_router(creative_v2.router)
     app.include_router(comfy_managed.router)
     app.include_router(notebooklm.router)
     app.include_router(notebooklm.agent_router)

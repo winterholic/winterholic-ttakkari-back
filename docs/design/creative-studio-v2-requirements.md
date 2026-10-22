@@ -75,8 +75,8 @@
 
 ## Style DNA
 
-필수 16필드: style_id, version, visual_identity, palette, character_proportions, materials, lighting, camera_language, motion_language, environment_rules, sound_identity, reference_assets, positive_examples, negative_examples, quality_constraints, compatible_skills.
-최초 문서는 version 없이 15개 이름만 나열했다. 사용자 지시가 16필드이고 버전 고정이 요구사항이므로 version을 16번째 필수 필드로 확정한다(2026-10-22 정정).
+사용자 원문이 열거한 필드는 15개다: style_id, visual_identity, palette, character_proportions, materials, lighting, camera_language, motion_language, environment_rules, sound_identity, reference_assets, positive_examples, negative_examples, quality_constraints, compatible_skills.
+구현 계약은 여기에 `version`을 더해 16개 필드를 요구한다. `version` 필드를 추가한 것은 버전 고정 동작을 명시적으로 저장하기 위한 설계 선택이며, 사용자 원문에 16개 필드가 있었다는 뜻은 아니다(2026-10-23 귀속 정정). 버전 고정 자체는 작품 단위 상속·수정·버전 고정 요구를 만족시키기 위한 구현이다.
 자연어뿐 아니라 이미지·영상·코드·렌더 설정·성공/실패를 참조한다. 작품 단위 상속·수정·버전 고정이 가능해야 한다.
 예: 귀여운 3D + 공포 조명 + SF 세계관. 상충 규칙은 출처와 해결 근거를 남기며 묵시적 덮어쓰기를 하지 않는다.
 

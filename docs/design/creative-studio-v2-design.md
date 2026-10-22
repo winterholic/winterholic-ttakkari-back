@@ -47,7 +47,7 @@ API는 `src/ttakkari/api/creative_v2.py`(`/api/creative/v2/*`, 소유자 인증)
 
 ## Style DNA
 
-필수 16필드는 요구사항 문서의 15개 이름에 `version`을 더한 것이다(사용자 지시 16, 버전 고정 요구). 8개 텍스트 면(Facet은 텍스트 + 수치 params), palette, reference_assets(image·video·code는 sha256 필수, render_settings는 params, outcome은 success/failure), positive/negative 예시, quality_constraints, compatible_skills.
+구현의 필수 16필드는 사용자 원문의 15개 필드에 설계상 `version`을 더한 것이다. 사용자는 Style DNA에 작품 단위 상속·수정·버전 고정이 가능해야 한다고 요구했으며, `version` 필드의 추가 자체는 버전 고정을 명시적으로 저장하기 위한 구현 설계 선택이다. 8개 텍스트 면(Facet은 텍스트 + 수치 params), palette, reference_assets(image·video·code는 sha256 필수, render_settings는 params, outcome은 success/failure), positive/negative 예시, quality_constraints, compatible_skills.
 
 - 저장소는 버전이 불변이다. 같은 (id, version)에 다른 내용은 거부한다. 내장 시드는 덮어쓸 수 없다.
 - 부모가 있으면 바꾸는 필드만 적고, 부모와 다른 값은 `overrides`에 사유가 있어야 한다. 사유 없는 덮어쓰기는 저장 단계에서 거부된다.

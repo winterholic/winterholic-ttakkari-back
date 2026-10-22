@@ -441,6 +441,9 @@ class Settings(BaseSettings):
     def google_login_timeout(self) -> int:
         return self.google_account_login_timeout_seconds or self.notebooklm_login_timeout_seconds
 
+    # 제작 기록(Production Records)의 lab 실험 원천. 이 루트 아래 <영역>/records/<slug>/record.json 과 그 미디어만 읽고 서빙한다.
+    studio_lab_root: Path = HOME / "development/projects/ttakkari-studio-lab"
+
     # 게임 스튜디오(ADR 0046, docs/design/game-studio.md). 게임 프로젝트는 각자 git 저장소이며 이 아래 <game_slug>/ 에 둔다.
     # allowed_roots(~/development) 안이어야 워크스페이스로 등록된다. 빌드 스테이징·불변 스냅샷은 에이전트가 쓸 수 없는 data_dir 에 둔다.
     games_root: Path = HOME / "development/projects/games"

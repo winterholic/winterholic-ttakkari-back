@@ -83,6 +83,44 @@ def test_run_output_with_hallucinated_quote_is_rejected():
         extraction.parse_intent_response("기술 설명 영상", raw, model="Qwen3.8-Flash-Next-Q2_K")
 
 
+def test_model_inferred_exact_duration_is_soft_without_explicit_exact_language():
+    raw = json.dumps({"duration": {"mode": "exact", "seconds": 180}}, ensure_ascii=False)
+
+    spec = extraction.parse_intent_response("기술 설명을 3분 정도로 만들어줘", raw, model="qwen")
+
+    assert spec.duration.mode == "preferred"
+    assert spec.duration.seconds == 180
+
+
+def test_explicit_exact_duration_in_brief_remains_strict():
+    raw = json.dumps({"duration": {"mode": "exact", "seconds": 180}}, ensure_ascii=False)
+
+    spec = extraction.parse_intent_response("정확히 3분으로 기술 설명 영상을 만들어줘", raw, model="qwen")
+
+    assert spec.duration.mode == "exact"
+    assert spec.duration.seconds == 180
+
+
+def test_model_platform_cap_requires_known_platform_and_cap_language():
+    raw = json.dumps({"duration": {"mode": "platform_cap", "platform": "youtube_shorts", "source": "made-up", "as_of": "2026-10-23"}}, ensure_ascii=False)
+
+    spec = extraction.parse_intent_response("쇼츠로 3분 정도 영상", raw, model="qwen")
+
+    assert spec.duration.mode == "preferred"
+    assert spec.duration.seconds == 180
+
+
+def test_explicit_known_platform_cap_uses_the_catalogued_source():
+    raw = json.dumps({"duration": {"mode": "platform_cap", "platform": "youtube_shorts", "source": "invented", "as_of": "2026-10-23"}}, ensure_ascii=False)
+
+    spec = extraction.parse_intent_response("YouTube Shorts 3분 이하로 만들어줘", raw, model="qwen")
+
+    assert spec.duration.mode == "platform_cap"
+    assert spec.duration.seconds == 180
+    assert spec.duration.source == extraction.PLATFORM_CAPS["youtube_shorts"]["source"]
+    assert spec.duration.as_of == extraction.PLATFORM_CAPS["youtube_shorts"]["as_of"]
+
+
 def test_run_output_cannot_add_unquoted_information_items():
     raw = json.dumps(
         {"info_items": [{"id": "i1", "title": "달 착륙", "narration": "달 착륙은 1969년이었다."}]},

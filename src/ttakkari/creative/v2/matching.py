@@ -116,7 +116,7 @@ def _selection_weight(sel: Selection) -> float:
 def _priority(sel: Selection, relation: str) -> Literal["must", "should", "prefer"]:
     if relation == "prefers":
         return "prefer"
-    return "must" if sel.strength == "hard" or sel.role == "primary" else "should"
+    return "must" if sel.strength == "hard" else "should"
 
 
 def _fingerprint(registry: Registry, intent: IntentSpec) -> str:

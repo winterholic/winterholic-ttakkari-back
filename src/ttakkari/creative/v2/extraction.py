@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from pydantic import ValidationError
 
 from ttakkari.creative.v2.catalog_data import CATALOG_NAMES, ENTRIES
+from ttakkari.creative.v2.duration import PLATFORM_CAPS, DurationRequest
 from ttakkari.creative.v2.intent import (
     Extraction,
     IntentSpec,
@@ -18,6 +20,57 @@ from ttakkari.creative.v2.intent import (
 
 class IntentExtractionRejected(ValueError):
     """The Run output did not satisfy the structured intent contract."""
+
+
+_DURATION_MENTION = re.compile(r"(\d+(?:\.\d+)?)\s*(초|분|sec|seconds?|min|minutes?)", re.IGNORECASE)
+_EXACT_WORDING = re.compile(r"정확히|정확한|딱|exact(?:ly)?|exact duration", re.IGNORECASE)
+_CAP_WORDING = re.compile(r"이내|이하|넘지|상한|최대|at most|no more than|under", re.IGNORECASE)
+
+
+def _hint_seconds(brief: str) -> float | None:
+    match = _DURATION_MENTION.search(brief)
+    if not match:
+        return None
+    value = float(match.group(1))
+    return value * 60 if match.group(2).lower() in ("분", "min", "minute", "minutes") else value
+
+
+def _brief_has_exact_duration(brief: str, seconds: float | None) -> bool:
+    if seconds is None:
+        return False
+    for match in _DURATION_MENTION.finditer(brief):
+        value = float(match.group(1))
+        unit = match.group(2).lower()
+        mentioned = value * 60 if unit in ("분", "min", "minute", "minutes") else value
+        context = brief[max(0, match.start() - 14):match.end() + 14]
+        if abs(mentioned - seconds) < 0.001 and _EXACT_WORDING.search(context):
+            return True
+    return False
+
+
+def _ground_duration(brief: str, request: DurationRequest) -> DurationRequest:
+    """Only allow model strictness that the brief itself clearly supports."""
+    if request.mode == "exact" and not _brief_has_exact_duration(brief, request.seconds):
+        seconds = request.seconds
+        if seconds is None:
+            seconds = _hint_seconds(brief)
+        return DurationRequest(mode="preferred", seconds=seconds) if seconds else DurationRequest()
+
+    if request.mode == "platform_cap":
+        cap = PLATFORM_CAPS.get(request.platform or "")
+        platform_named = bool(re.search(r"쇼츠|YouTube\s*Shorts", brief, re.IGNORECASE))
+        if cap and request.platform == "youtube_shorts" and platform_named and _CAP_WORDING.search(brief):
+            return DurationRequest(
+                mode="platform_cap",
+                platform="youtube_shorts",
+                source=cap["source"],
+                as_of=cap["as_of"],
+            )
+        seconds = request.seconds
+        if seconds is None:
+            seconds = _hint_seconds(brief)
+        return DurationRequest(mode="preferred", seconds=seconds) if seconds else DurationRequest()
+    return request
 
 
 def build_intent_prompt(brief: str) -> str:
@@ -71,6 +124,7 @@ def parse_intent_response(brief: str, raw: str, *, model: str | None) -> IntentS
                 for constraint in spec.constraints
             ],
             "info_items": [item.model_copy(update={"essential": False}) for item in spec.info_items],
+            "duration": _ground_duration(brief, spec.duration),
             "extraction": Extraction(method="llm", model=model),
             "open_questions": list(
                 dict.fromkeys([*spec.open_questions, "AI가 제안한 의도와 근거를 확인해 주세요."])

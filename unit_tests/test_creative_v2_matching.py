@@ -138,6 +138,25 @@ def test_required_capabilities_are_many_to_many_with_sources_and_global_needs():
     assert {"C03.lowpoly_3d", "C02.cyberpunk"} <= sources
 
 
+def test_llm_primary_selection_does_not_promote_required_capabilities_to_hard():
+    intent = IntentSpec(
+        selections=[S("C01.tech_explainer", "primary", quote="기술 설명", source="llm_inferred")],
+        extraction=Extraction(method="llm", model="qwen"),
+    )
+
+    result = match_intent("기술 설명 영상", intent, reg_all())
+
+    selected_needs = [
+        need for need in result.needs
+        if any(source.entry_id == "C01.tech_explainer" for source in need.sources)
+    ]
+    assert selected_needs
+    assert all(need.priority != "must" for need in selected_needs), [
+        (need.options, need.priority, [source.relation for source in need.sources])
+        for need in selected_needs
+    ]
+
+
 def test_missing_required_capability_blocks_and_offers_alternatives():
     intent = IntentSpec(
         selections=[
@@ -289,4 +308,4 @@ def test_one_capability_can_be_required_by_several_selections():
         "C01.tech_explainer",
         "C03.vector_motion_graphics",
     }
-    assert react.priority == "must"
+    assert react.priority == "should"

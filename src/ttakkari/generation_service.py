@@ -202,6 +202,9 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:
         jobs.append(("usage", Collector().tick, TICK_SECONDS))
+    if s.qwen_flash_poll_seconds > 0:
+        from ttakkari.runs.qwen_flash_monitor import collect_once
+        jobs.append(("qwen-flash-usage", collect_once, float(s.qwen_flash_poll_seconds)))
     if s.resource_sample_seconds > 0:
         from ttakkari.resource_history import collect_once
         jobs.append(("resource-history", collect_once, s.resource_sample_seconds))

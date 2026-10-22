@@ -1281,13 +1281,14 @@ class RunManager:
                 if cloud_free:
                     nxt = await choose(cloud_free, run.id, prefer_engine=prefer, balance_usage=True)
                     qwen_cloud_handoff = True
-                    events.append(db, run, "engine.fallback", {
+                    last_fallback = {
                         "from": prof.name, "from_engine": "qwen-local", "from_model": model,
                         "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
                         "reason": "qwen_failed", "fallback_tier": None,
                         "detail": (state.error or tail or "")[:500], "reset_at": None,
                         "mode": "resume" if lookup_resume_id(nxt) else "handoff",
-                    })
+                    }
+                    events.append(db, run, "engine.fallback", last_fallback)
                     attempt_handoff = await _attempt_handoff(db, run, prof.name, state, tail, attempt_start_seq)
                     if h:
                         h.stderr_tail.clear()

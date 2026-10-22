@@ -34,6 +34,7 @@ uv run ttakkari serve            # http://127.0.0.1:8787
 | `TTAKKARI_DEFAULT_WRITABLE_ROOTS` | 기본 워크스페이스를 처음 만들 때 넣는 추가 쓰기 경로 JSON 배열. 없는 폴더는 건너뛴다. 기본 `~/docs`, `~/personal`, `~/private-resources`, `~/testing`, `~/.claude`, `~/.codex`(하네스 편집용. 로그인 토큰은 guard 가 막는다) |
 | `TTAKKARI_ENGINE_PROFILES` | 엔진 프로필 JSON 배열(순서 = 우선순위). `{"name","engine","config_dir"?}`. 기본 claude → codex. 오케스트레이터·작업 세션(`auto`)은 사용량 한도면 다음 프로필로 넘어간다(ADR 0006) |
 | `TTAKKARI_PROFILE_COOLDOWN_SECONDS` | 한도에 걸린 프로필을 쉬게 하는 시간. 기본 1800 |
+| `TTAKKARI_QWEN_FLASH_POLL_SECONDS` | 별도 Qwen Flash Next 누적 계측 백그라운드 수집 간격(초). 기본 60, 0이면 비활성화 |
 | `TTAKKARI_INTERNAL_API_URL` | 오케스트레이터 MCP 서버가 부르는 백엔드 주소. 기본 `http://127.0.0.1:8787` |
 | `TTAKKARI_TRANSFER_INBOX` | 폰에서 보낸 파일 기본 폴더. 비우면 `~/.ttakkari/inbox`(에이전트가 읽고 쓸 수 있는 ~/.ttakkari 안 유일한 곳) |
 | `TTAKKARI_MEETING_TRANSCRIPT_MAX_CHARS`, `TTAKKARI_MEETING_ANALYSIS_MODEL`, `TTAKKARI_MEETING_ANALYSIS_EFFORT` | 회의록(ADR 0010): 전사 한 건 최대 글자(기본 12만), 분석 세션의 모델·생각 수준 초기 힌트. 실제 분석은 회사 계정 우선 → 개인 계정, 각 범위에서 Gemini Flash high → Luna medium → Antigravity Sonnet medium → native Sonnet medium 고정 순서가 우선한다 |

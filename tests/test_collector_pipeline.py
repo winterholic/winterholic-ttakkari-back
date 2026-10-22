@@ -145,6 +145,16 @@ async def items(job_id: uuid.UUID) -> list[CollectorItem]:
         return list(rows)
 
 
+def stored_raw_files(root: Path) -> list[Path]:
+    """Regular files under a blob root other than the empty quota lock (raw blobs, stage files, lineage manifests)."""
+    if not root.exists():
+        return []
+    return sorted(
+        f for f in root.rglob("*")
+        if f.is_file() and not (f.parent == root and f.name == ".quota.lock" and f.stat().st_size == 0)
+    )
+
+
 def by_path(rows: list[CollectorItem]) -> dict[str, CollectorItem]:
     return {"/" + r.url.split("/", 3)[3]: r for r in rows}
 
@@ -422,7 +432,23 @@ async def test_store_raw_false_keeps_hash_only_and_says_so(env):
     (row,) = await items(job.id)
     assert row.raw_handle is None and row.envelope["raw"]["blob_handle"] == f"unpreserved:sha256:{row.raw_sha256}"
     assert row.envelope["extensions"]["collector:lineage"]["raw_preserved"] is False
-    assert not (Path(env.blobs.root).exists() and any(env.blobs.root.rglob("*")) if env.blobs.root.exists() else False)
+    # usage_bytes() takes the quota lock, so an empty root legitimately holds a 0-byte `.quota.lock`. What must never
+    # exist is raw content: no shard directory, no blob/stage file, no lineage manifest, and no byte of the page.
+    assert stored_raw_files(env.blobs.root) == []
+    assert not any((env.blobs.root / name).exists() for name in (".lineage", row.raw_sha256[:2]))
+    assert all(b"<html" not in f.read_bytes().lower() for f in env.blobs.root.rglob("*") if f.is_file())
+
+
+async def test_store_raw_true_leaves_the_blob_the_scan_looks_for(env):
+    # Positive control for the store_raw=False scan above: the same helper must see a real preserved blob.
+    page = article_html("A", [LONG_EN])
+    env.server.page("/a", page)
+    await register(PERSONAL, "src-yr", spec(env, store_raw=True))
+    job = await run(await submit(env, PERSONAL, "src-yr", ["/a"]))
+    (row,) = await items(job.id)
+    files = stored_raw_files(env.blobs.root)
+    (blob,) = [f for f in files if f.name == row.raw_sha256 and ".lineage" not in f.parts]
+    assert blob.read_bytes() == page.encode() and len(files) > 1  # blob plus its lineage manifest
 
 
 # ---- discovery -------------------------------------------------------------------------------------------------
@@ -651,26 +677,38 @@ async def test_cancel_is_honoured_at_the_page_boundary_and_committed_pages_stay(
     assert len(await items(job_id)) == 2 and env.server.count("/p2") == 0  # stopped at the boundary, kept what was committed
 
 
-async def test_storage_cap_pauses_the_job_without_fetching(env, monkeypatch):
-    env.server.page("/a", article_html("A", [LONG_EN]))
-    env.server.page("/b", article_html("B", [LONG_EN + " second page marker."]))
+async def test_storage_cap_pauses_the_job_and_does_not_refetch_while_full(env, monkeypatch):
+    # Contract (stage-handler.md, cap-full replay): when the root is full the job stops in retry_wait/storage_cap_reached
+    # with the rejected URL and tail kept in the frontier. A fresh URL may be fetched once, because its bytes could dedupe
+    # to a durable orphan; after a quota refusal it is not fetched again until `used + quota_bytes <= cap`.
+    page_a, page_b = article_html("A", [LONG_EN]), article_html("B", [LONG_EN + " second page marker."])
+    env.server.page("/a", page_a)
+    env.server.page("/b", page_b)
+    size_a, size_b = len(page_a.encode()), len(page_b.encode())
     monkeypatch.setattr(pipeline, "PAGE_SIZE", 1)
+    monkeypatch.setattr(get_settings(), "collector_blob_cap_bytes", size_a)  # /a fits exactly, nothing is left for /b
     await register(PERSONAL, "src-cap", spec(env))
     job_id = await submit(env, PERSONAL, "src-cap", ["/a", "/b"])
-    real = pipeline._storage_full
-    state = {"calls": 0}
 
-    async def full_after_first_page():
-        state["calls"] += 1
-        return state["calls"] > 1
-
-    monkeypatch.setattr(pipeline, "_storage_full", full_after_first_page)
     job = await run(job_id)
     assert job.status == "retry_wait" and job.last_error["code"] == "storage_cap_reached"
-    assert env.server.count("/b") == 0 and job.cursor["processed"] == 1
-    monkeypatch.setattr(pipeline, "_storage_full", real)
-    monkeypatch.setattr(get_settings(), "collector_blob_cap_bytes", 1)
-    assert await pipeline._storage_full() is True  # the real check counts distinct preserved bytes
+    assert job.last_error["requested_bytes"] == size_b and job.last_error["cap_bytes"] == size_a
+    assert job.cursor["processed"] == 1 and len(await items(job_id)) == 1
+    assert [(e["t"], e["quota_bytes"]) for e in job.cursor["frontier"]] == [(1, size_b)]  # kept, not dropped
+    assert env.server.count("/a") == 1 and env.server.count("/b") == 1
+    assert env.blobs.usage_bytes() == size_a and [f.name for f in stored_raw_files(env.blobs.root) if f.name.startswith(".stage")] == []
+    assert_accounting(job)
+
+    await release_job_and_host(job_id)
+    still_full = await run(job_id)  # no room appeared: the job stays paused and /b is not fetched a second time
+    assert still_full.status == "retry_wait" and still_full.last_error["code"] == "storage_cap_reached"
+    assert env.server.count("/b") == 1 and len(await items(job_id)) == 1
+
+    monkeypatch.setattr(get_settings(), "collector_blob_cap_bytes", size_a + size_b)
+    await release_job_and_host(job_id)
+    resumed = await run(job_id)  # room appeared: the kept URL is retried and the job finishes
+    assert resumed.status == "succeeded" and len(await items(job_id)) == 2 and env.server.count("/b") == 2
+    assert resumed.cursor["frontier"] == [] and env.blobs.usage_bytes() == size_a + size_b
 
 
 # ---- L1 port ---------------------------------------------------------------------------------------------------

@@ -1,0 +1,26 @@
+import json, re, numpy as np, tantivy, statistics, random, math
+X = np.load("X.npy"); qv = np.load("qv.npy"); ids = json.load(open("ids.json")); Q = json.load(open("queries.json"))
+idpos = {d: i for i, d in enumerate(ids)}
+rel = [[idpos[d] for d in Q["rel"][q] if d in idpos] for q in Q["qids"]]
+rec = lambda r, g, k: len(set(r) & set(g[:k])) / len(r)
+S = qv @ X.T; ex = np.argsort(-S, axis=1)[:, :20]
+idx = tantivy.Index.open("/tmp/kbv2r/real/tv"); idx.reload(); s = idx.searcher()
+def lex(t):
+    toks = sorted({x for x in t.split() if re.fullmatch(r"\w+", x)})
+    return [idpos[s.doc(a).get_first("pid")] for _, a in s.search(idx.parse_query(" OR ".join(toks), ["body"]), 20).hits] if toks else []
+a = np.array([rec(r, lex(q), 10) for r, q in zip(rel, Q["qan"])]); b = np.array([rec(r, list(e), 10) for r, e in zip(rel, ex)])
+d = b - a
+print("per-query R@10 delta (dense - bm25): mean", round(d.mean(), 3), "sd", round(d.std(ddof=1), 3))
+sd = d.std(ddof=1)
+# 중립 변경(참 차이 0)에서 하한 >= -0.02 게이트 통과 확률, n=112/224. 노이즈 SD는 위 sd의 절반(비슷한 두 시스템)과 전체 두 경우를 본다
+rng = np.random.default_rng(0)
+for n in (112, 224):
+    for sdx in (sd, sd / 2):
+        passes = 0; T = 400
+        for _ in range(T):
+            x = rng.normal(0, sdx, n)
+            boots = np.array([rng.choice(x, n).mean() for _ in range(400)])
+            passes += np.percentile(boots, 2.5) >= -0.02
+        print(f"n={n} sd={sdx:.3f}: P(pass | true delta=0) = {passes/T:.2f}")
+# 유형 셀(n=10)에서 한 문항이 바꾸는 Recall 크기
+print("single-question swing in a 10-question cell (recall 1 -> 0):", 1/10)

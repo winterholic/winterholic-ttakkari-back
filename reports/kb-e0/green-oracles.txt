@@ -1,0 +1,19 @@
+........F.........                                                       [100%]
+=================================== FAILURES ===================================
+_______________ test_missing_power_and_tiny_clusters_never_pass ________________
+
+    def test_missing_power_and_tiny_clusters_never_pass():
+        r = e.quality_family({"recall": [.02]*3, "ndcg": [.03]*3}, ["a", "b", "c"], seed=2)
+        assert r["status"] == "inconclusive"
+        assert "power_not_established" in r["reasons"]
+        power = e.simulate_power({"recall": [.8, -.8], "ndcg": [.8, -.8]}, ["a", "b"],
+                                 seed=3, trials=60, replicates=200)
+        assert power["status"] == "insufficient"
+        assert power["neutral_pass_probability"] < .8
+>       assert power["loss_pass_probability"] <= .05
+E       assert 0.26666666666666666 <= 0.05
+
+unit_tests/kb_eval/test_oracles.py:147: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_oracles.py::test_missing_power_and_tiny_clusters_never_pass
+1 failed, 17 passed in 1.09s

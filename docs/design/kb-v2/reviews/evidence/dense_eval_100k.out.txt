@@ -1,0 +1,69 @@
+{
+ "N": 100000,
+ "queries": 213,
+ "exact_dense": {
+  "recall@10": 0.9,
+  "recall@20": 0.956,
+  "recall@100": 0.992
+ },
+ "BQ_exacthamming_query2doc_C100": {
+  "overlap@10": 0.996,
+  "overlap@100": 0.651,
+  "qrels_recall@100": 0.979
+ },
+ "BQ_exacthamming_query2doc_C200": {
+  "overlap@10": 1.0,
+  "overlap@100": 0.831,
+  "qrels_recall@100": 0.993
+ },
+ "BQ_exacthamming_query2doc_C400": {
+  "overlap@10": 1.0,
+  "overlap@100": 0.934,
+  "qrels_recall@100": 0.992
+ },
+ "BQ_doc2doc_C40_overlap@10": 0.886,
+ "BQ_doc2doc_C100_overlap@10": 0.962,
+ "BQ_doc2doc_C200_overlap@10": 0.986,
+ "bm25_only": {
+  "recall@20": 0.856,
+  "recall@100": 0.946
+ },
+ "rrf_bm25_dense": {
+  "recall@20": 0.943,
+  "recall@40": 0.984,
+  "recall@100": 0.999
+ },
+ "bm25_only_recall@40": 0.924,
+ "dense_only_recall@40": 0.982
+}
+insert s 61.7
+bq hnsw build s 43.7 size 41 MB
+full hnsw build s 373.4 size 260 MB
+{
+ "pg_bq_hnsw_C100": {
+  "p50_ms": 3.4,
+  "p95_ms": 28.7,
+  "overlap@10": 0.995,
+  "overlap@100": 0.653,
+  "qrels_recall@100": 0.984
+ },
+ "pg_bq_hnsw_C200": {
+  "p50_ms": 6.3,
+  "p95_ms": 20.6,
+  "overlap@10": 0.997,
+  "overlap@100": 0.831,
+  "qrels_recall@100": 0.997
+ },
+ "pg_bq_hnsw_C400": {
+  "p50_ms": 10.3,
+  "p95_ms": 28.1,
+  "overlap@10": 0.999,
+  "overlap@100": 0.929,
+  "qrels_recall@100": 0.992
+ },
+ "pg_full_hnsw_ef100": {
+  "p50_ms": 6.5,
+  "p95_ms": 7.9,
+  "overlap@10": 0.997
+ }
+}

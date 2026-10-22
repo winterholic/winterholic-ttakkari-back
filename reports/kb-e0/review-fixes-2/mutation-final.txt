@@ -1,0 +1,27 @@
+KILLED   comparison.py 59 no_valid_pairs | 1 failed, 129 passed in 16.63s
+KILLED   comparison.py 62 invalid_required_gold | 1 failed, 128 passed in 16.29s
+KILLED   comparison.py 64 execution_failures_present | 1 failed, 129 passed in 17.49s
+KILLED   latency.py 32 no_observations | 1 failed, 104 passed in 15.61s
+KILLED   latency.py 60 order_imbalance | 1 failed, 104 passed in 15.82s
+KILLED   latency.py 62 profile_mismatch | 1 failed, 104 passed in 16.03s
+KILLED   latency.py 64 insufficient_observation | 1 failed, 104 passed in 15.91s
+KILLED   latency.py 69 load_imbalance | 1 failed, 17 passed in 0.25s
+KILLED   latency.py 74 order_load_imbalance | 1 failed, 4 passed in 0.17s
+KILLED   latency.py 81 degenerate_arm_variance | 1 failed, 98 passed in 7.07s
+KILLED   latency.py 83 bootstrap_replicates_below_registered_minimum | 1 failed, 73 passed in 4.57s
+KILLED   latency.py 98 degenerate_ratio_ci | 1 failed, 89 passed in 4.56s
+KILLED   metrics.py 246 power_not_established | 1 failed, 129 passed in 16.55s
+KILLED   reproducibility.py 20 score_epsilon_exceeded | 1 failed, 106 passed in 16.21s
+KILLED   reproducibility.py 22 stable_core_changed | 1 failed, 107 passed in 16.33s
+KILLED   reproducibility.py 24 outside_boundary_near_tie | 1 failed, 107 passed in 15.99s
+KILLED   reproducibility.py 32 strict_order_changed | 1 failed, 107 passed in 16.08s
+KILLED   runner.py 187 power_not_established | 1 failed, 129 passed in 16.48s
+KILLED   runner.py 187 fixture_only | 1 failed, 129 passed in 16.55s
+KILLED   runner.py 199 invalid_required_gold | 1 failed, 123 passed in 16.15s
+KILLED   statistics.py 228 power_design_mismatch | 1 failed, 30 passed in 0.27s
+KILLED   statistics.py 230 dev_evaluation_group_overlap | 1 failed, 30 passed in 0.26s
+KILLED   statistics.py 236 bootstrap_replicates_below_registered_minimum | 1 failed, 105 passed in 15.74s
+KILLED   statistics.py 241 degenerate_bootstrap_interval | 1 failed, 91 passed in 4.95s
+KILLED   statistics.py 243 power_not_established | 1 failed, 15 passed in 0.17s
+KILLED   statistics.py 245 insufficient_clusters | 1 failed, 15 passed in 0.17s
+mutants=26 killed=26 survived=0; sources restored

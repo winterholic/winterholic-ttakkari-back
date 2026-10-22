@@ -1,0 +1,88 @@
+{
+  "ci_method": "bonferroni_one_sided_cluster_percentile",
+  "elapsed_seconds": 1.9512975001707673,
+  "family_alpha": 0.05,
+  "fixture_only": true,
+  "margin": 0.05,
+  "metrics": {
+    "ndcg": {
+      "delta": 0.0,
+      "high": 0.0,
+      "holm_p": 0.00019998000199980003,
+      "low": 0.0,
+      "p": 9.999000099990002e-05
+    },
+    "recall": {
+      "delta": 0.0,
+      "high": 0.0,
+      "holm_p": 0.00019998000199980003,
+      "low": 0.0,
+      "p": 9.999000099990002e-05
+    }
+  },
+  "power": {
+    "clusters": 40,
+    "limitations": "Conditional empirical pilot; minimum 20 effective clusters is a harness guard, not a sufficiency guarantee.",
+    "loss_ci": [
+      1.734723475976807e-18,
+      0.018845326377266575
+    ],
+    "loss_pass_probability": 0.0,
+    "method": "dev_joint_cluster_residual_nested_bootstrap",
+    "neutral_ci": [
+      0.9811546736227335,
+      1.0
+    ],
+    "neutral_pass_probability": 1.0,
+    "planned_cluster_sizes": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "replicates": 10000,
+    "residual_support": "recentered simulation may extend beyond observed [-1,1]; no clipping",
+    "seed": 12,
+    "status": "established",
+    "trials": 200
+  },
+  "reasons": [],
+  "scope": "statistical_noninferiority_only",
+  "status": "pass"
+}

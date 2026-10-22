@@ -360,11 +360,10 @@ async def test_controller_process_death_releases_admission(tmp_path):
 
 
 def test_generations_reservation_ignores_dirty_tree_and_moved_head(monkeypatch, tmp_path):
-    import subprocess
 
     m = deployment()
-    git = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=tmp_path, check=True,
-                                    capture_output=True, text=True).stdout.strip()
+    from conftest import git as _git
+    git = lambda *a: _git(tmp_path, *a)
     git("init", "-q")
     (tmp_path / "f").write_text("1")
     git("add", "f")

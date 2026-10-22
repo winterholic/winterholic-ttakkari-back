@@ -1,0 +1,3 @@
+40 ['power_not_established'] 0.00576 empirical_cluster_interval 0.0s
+400 ['power_not_established'] 0.00176 empirical_cluster_interval 0.1s
+4000 ['degenerate_bootstrap_interval', 'power_not_established'] 0.00063 unverified_degenerate_interval 1.7s

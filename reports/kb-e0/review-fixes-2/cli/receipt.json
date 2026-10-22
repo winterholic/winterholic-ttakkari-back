@@ -1,0 +1,130 @@
+{
+  "commands": {
+    "exact_replay": {
+      "completed": 3,
+      "exit": 0,
+      "failure": null,
+      "replay": {
+        "compared": "candidate ids/order/score bytes, metrics and anchors",
+        "live_inference": "unexecuted",
+        "metrics": "exact_match",
+        "status": "exact_match"
+      },
+      "rights_authorization": "synthetic_fixture_only",
+      "state": "complete_fixture"
+    },
+    "fake_public_rights": {
+      "completed": null,
+      "exit": 2,
+      "failure": {
+        "category": "rights",
+        "error_type": "ValueError",
+        "reason": "rights_review_authentication_required: public/custom evaluation held; authenticated review flow unavailable"
+      },
+      "replay": null,
+      "rights_authorization": null,
+      "state": "failed"
+    },
+    "interrupt": {
+      "completed": 1,
+      "exit": 3,
+      "failure": null,
+      "replay": {
+        "compared": "candidate ids/order/score bytes, metrics and anchors",
+        "live_inference": "unexecuted",
+        "metrics": "pending",
+        "status": "pending"
+      },
+      "rights_authorization": "synthetic_fixture_only",
+      "state": "interrupted"
+    },
+    "partial_cache": {
+      "completed": null,
+      "exit": 2,
+      "failure": {
+        "category": "input",
+        "error_type": "JSONDecodeError",
+        "reason": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+      },
+      "replay": null,
+      "rights_authorization": null,
+      "state": "failed"
+    },
+    "partial_seed": {
+      "completed": 3,
+      "exit": 0,
+      "failure": null,
+      "replay": {
+        "compared": "candidate ids/order/score bytes, metrics and anchors",
+        "live_inference": "unexecuted",
+        "metrics": "baseline_recorded",
+        "status": "exact_match"
+      },
+      "rights_authorization": "synthetic_fixture_only",
+      "state": "complete_fixture"
+    },
+    "resume": {
+      "completed": 3,
+      "exit": 0,
+      "failure": null,
+      "replay": {
+        "compared": "candidate ids/order/score bytes, metrics and anchors",
+        "live_inference": "unexecuted",
+        "metrics": "baseline_recorded",
+        "status": "exact_match"
+      },
+      "rights_authorization": "synthetic_fixture_only",
+      "state": "complete_fixture"
+    },
+    "rights_denied": {
+      "completed": null,
+      "exit": 2,
+      "failure": {
+        "category": "rights",
+        "error_type": "ValueError",
+        "reason": "rights_unverified:qrels"
+      },
+      "replay": null,
+      "rights_authorization": null,
+      "state": "failed"
+    },
+    "split_leak": {
+      "completed": null,
+      "exit": 2,
+      "failure": {
+        "category": "input",
+        "error_type": "ValueError",
+        "reason": "gold_document_mismatch:q1:d3"
+      },
+      "replay": null,
+      "rights_authorization": null,
+      "state": "failed"
+    },
+    "stale_interrupt": {
+      "completed": 1,
+      "exit": 3,
+      "failure": null,
+      "replay": {
+        "compared": "candidate ids/order/score bytes, metrics and anchors",
+        "live_inference": "unexecuted",
+        "metrics": "pending",
+        "status": "pending"
+      },
+      "rights_authorization": "synthetic_fixture_only",
+      "state": "interrupted"
+    },
+    "stale_manifest": {
+      "completed": null,
+      "exit": 2,
+      "failure": {
+        "category": "integrity",
+        "error_type": "ValueError",
+        "reason": "resume_manifest_mismatch"
+      },
+      "replay": null,
+      "rights_authorization": null,
+      "state": "failed"
+    }
+  },
+  "python": "3.13.15"
+}

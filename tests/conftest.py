@@ -12,7 +12,11 @@ import uuid
 from pathlib import Path
 
 import pg_sandbox
+from git_isolation import git_argv, isolated_git_env, scrub_process_env
 from sqlalchemy.engine import make_url
+
+# pre-push 훅에서 도는 pytest 는 GIT_DIR 등을 물려받는다. 모든 subprocess 가 같은 오염을 받지 않도록 먼저 지운다.
+scrub_process_env()
 
 _BASE = Path(tempfile.mkdtemp(prefix="ttk-it-")).resolve()
 atexit.register(shutil.rmtree, _BASE, ignore_errors=True)
@@ -211,7 +215,7 @@ def outside_dir() -> Path:
 
 def git(cwd: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
+        git_argv(cwd, *args), cwd=cwd, env=isolated_git_env(), check=True,
         capture_output=True, text=True).stdout.strip()
 
 

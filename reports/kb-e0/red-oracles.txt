@@ -1,0 +1,360 @@
+FFFFFFFFFFFFFFFFFF                                                       [100%]
+=================================== FAILURES ===================================
+________________ test_hand_oracle_three_questions_ten_documents ________________
+
+    def test_hand_oracle_three_questions_ten_documents():
+>       result = e.metrics(cases(), predictions(), k=3)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:44: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([{'id': 'q1', 'group': 'g1', 'split': 'dev', 'documents': ['d1', 'd2'], ...}, {'id': 'q2', 'group': 'g2', 'split': 'd..., 'answer_correct': False}, 'q3': {'ranked': ['d8'], 'candidates': [], 'coverage': 'strong', 'answer_correct': False}})
+kwargs = {'k': 3}
+
+    def metrics(*args, **kwargs):
+>       raise NotImplementedError("E0 metrics")
+E       NotImplementedError: E0 metrics
+
+src/ttakkari/kb_eval/core.py:5: NotImplementedError
+_____________ test_invalid_and_missing_are_visible_in_denominators _____________
+
+    def test_invalid_and_missing_are_visible_in_denominators():
+        cs, ps = cases(), predictions()
+        cs[0]["anchor_status"] = "anchor_ambiguous"
+        del ps["q3"]
+>       result = e.metrics(cs, ps, k=3)
+                 ^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:64: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([{'id': 'q1', 'group': 'g1', 'split': 'dev', 'documents': ['d1', 'd2'], ...}, {'id': 'q2', 'group': 'g2', 'split': 'd...ect': True}, 'q2': {'ranked': ['d9', 'd6', 'd10'], 'candidates': ['d6'], 'coverage': 'none', 'answer_correct': False}})
+kwargs = {'k': 3}
+
+    def metrics(*args, **kwargs):
+>       raise NotImplementedError("E0 metrics")
+E       NotImplementedError: E0 metrics
+
+src/ttakkari/kb_eval/core.py:5: NotImplementedError
+______ test_anchor_raw_repetition_context_and_revision_negative_controls _______
+
+    def test_anchor_raw_repetition_context_and_revision_negative_controls():
+        src = source("answer left answer right")
+>       assert e.anchor(quote(src), src)["status"] == "anchor_ambiguous"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:90: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'doc_key': 'd1', 'source_revision_id': 'r1', 'raw_sha256': '9de87af126f3cdea7a11e10a23848d6ed45b48ebbd67d2381474bf9b...48ebbd67d2381474bf9b6f177ed4', 'body_sha256': '9de87af126f3cdea7a11e10a23848d6ed45b48ebbd67d2381474bf9b6f177ed4', ...})
+kwargs = {}
+
+    def anchor(*args, **kwargs):
+>       raise NotImplementedError("E0 anchor")
+E       NotImplementedError: E0 anchor
+
+src/ttakkari/kb_eval/core.py:9: NotImplementedError
+____________ test_anchor_remaps_answer_once_across_chunk_boundaries ____________
+
+    def test_anchor_remaps_answer_once_across_chunk_boundaries():
+        src = source("abcANSWERxyz")
+        a = quote(src, "ANSWER")
+>       result = e.anchor(a, src, passages=[{"id": "p1", "start": 0, "end": 6},
+                                          {"id": "p2", "start": 6, "end": 12}])
+
+unit_tests/kb_eval/test_oracles.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'doc_key': 'd1', 'source_revision_id': 'r1', 'raw_sha256': '3a9cf667beed9d23cb226e67cb76b313b49e5c18ede33c0ac06adeb2...5c18ede33c0ac06adeb2f79770f5', 'body_sha256': '3a9cf667beed9d23cb226e67cb76b313b49e5c18ede33c0ac06adeb2f79770f5', ...})
+kwargs = {'passages': [{'id': 'p1', 'start': 0, 'end': 6}, {'id': 'p2', 'start': 6, 'end': 12}]}
+
+    def anchor(*args, **kwargs):
+>       raise NotImplementedError("E0 anchor")
+E       NotImplementedError: E0 anchor
+
+src/ttakkari/kb_eval/core.py:9: NotImplementedError
+____________ test_translation_duplicate_multidoc_transitive_leakage ____________
+
+    def test_translation_duplicate_multidoc_transitive_leakage():
+        cs = cases()
+        cs[1].update(documents=["d7", "d6"], split="holdout")
+        with pytest.raises(ValueError, match="split_leakage"):
+>           e.components(cs, [["d2", "d4"], ["d4", "d7"]])
+
+unit_tests/kb_eval/test_oracles.py:111: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([{'id': 'q1', 'group': 'g1', 'split': 'dev', 'documents': ['d1', 'd2'], ...}, {'id': 'q2', 'group': 'g2', 'split': 'h...d7', 'd6'], ...}, {'id': 'q3', 'group': 'g3', 'split': 'dev', 'documents': ['d8'], ...}], [['d2', 'd4'], ['d4', 'd7']])
+kwargs = {}
+
+    def components(*args, **kwargs):
+>       raise NotImplementedError("E0 connected split")
+E       NotImplementedError: E0 connected split
+
+src/ttakkari/kb_eval/core.py:13: NotImplementedError
+_______________ test_unequal_cluster_preserves_question_estimand _______________
+
+    def test_unequal_cluster_preserves_question_estimand():
+>       result = e.cluster_interval([1.]*9 + [-1.], ["big"]*9 + ["small"], seed=4, replicates=10000)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, ...], ['big', 'big', 'big', 'big', 'big', 'big', ...])
+kwargs = {'seed': 4, 'replicates': 10000}
+
+    def cluster_interval(*args, **kwargs):
+>       raise NotImplementedError("E0 cluster bootstrap")
+E       NotImplementedError: E0 cluster bootstrap
+
+src/ttakkari/kb_eval/core.py:17: NotImplementedError
+________ test_correlated_cluster_interval_wider_than_question_bootstrap ________
+
+    def test_correlated_cluster_interval_wider_than_question_bootstrap():
+        values = [.2]*50 + [-.2]*50
+>       clustered = e.cluster_interval(values, ["a"]*50+["b"]*50, seed=3)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:129: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([0.2, 0.2, 0.2, 0.2, 0.2, 0.2, ...], ['a', 'a', 'a', 'a', 'a', 'a', ...])
+kwargs = {'seed': 3}
+
+    def cluster_interval(*args, **kwargs):
+>       raise NotImplementedError("E0 cluster bootstrap")
+E       NotImplementedError: E0 cluster bootstrap
+
+src/ttakkari/kb_eval/core.py:17: NotImplementedError
+__________________ test_holm_stepdown_adjustment_and_stopping __________________
+
+    def test_holm_stepdown_adjustment_and_stopping():
+>       assert e.holm({"a": .01, "b": .04, "c": .03}) == pytest.approx({"a": .03, "b": .06, "c": .06})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:135: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'a': 0.01, 'b': 0.04, 'c': 0.03},), kwargs = {}
+
+    def holm(*args, **kwargs):
+>       raise NotImplementedError("E0 Holm")
+E       NotImplementedError: E0 Holm
+
+src/ttakkari/kb_eval/core.py:21: NotImplementedError
+_______________ test_missing_power_and_tiny_clusters_never_pass ________________
+
+    def test_missing_power_and_tiny_clusters_never_pass():
+>       r = e.quality_family({"recall": [.02]*3, "ndcg": [.03]*3}, ["a", "b", "c"], seed=2)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:140: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'recall': [0.02, 0.02, 0.02], 'ndcg': [0.03, 0.03, 0.03]}, ['a', 'b', 'c'])
+kwargs = {'seed': 2}
+
+    def quality_family(*args, **kwargs):
+>       raise NotImplementedError("E0 quality family")
+E       NotImplementedError: E0 quality family
+
+src/ttakkari/kb_eval/core.py:25: NotImplementedError
+______________ test_control_also_exceeds_slo_relative_is_separate ______________
+
+    def test_control_also_exceeds_slo_relative_is_separate():
+>       result = e.latency_report(blocks(), seed=7)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:161: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 900.0, 'queue_ms': 200.0, 'service_ms': 700.0,...didate': {'e2e_ms': 900.0, 'queue_ms': 200.0, 'service_ms': 700.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...],)
+kwargs = {'seed': 7}
+
+    def latency_report(*args, **kwargs):
+>       raise NotImplementedError("E0 latency")
+E       NotImplementedError: E0 latency
+
+src/ttakkari/kb_eval/core.py:33: NotImplementedError
+_______________ test_ab_load_bias_and_candidate_only_regression ________________
+
+    def test_ab_load_bias_and_candidate_only_regression():
+>       assert e.latency_report(blocks(biased=True), seed=7)["relative"] == "relative_unverified"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:169: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ([{'block': 0, 'order': 'AB', 'query_id': 'q0', 'candidate': {'e2e_ms': 900.0, 'queue_ms': 200.0, 'service_ms': 700.0,...didate': {'e2e_ms': 900.0, 'queue_ms': 200.0, 'service_ms': 700.0, 'stages_ms': {'inference': 30.0}, ...}, ...}, ...],)
+kwargs = {'seed': 7}
+
+    def latency_report(*args, **kwargs):
+>       raise NotImplementedError("E0 latency")
+E       NotImplementedError: E0 latency
+
+src/ttakkari/kb_eval/core.py:33: NotImplementedError
+__ test_cache_key_separates_model_role_window_seed_and_one_byte[model-other] ___
+
+field = 'model', new = 'other'
+
+    @pytest.mark.parametrize("field,new", [("model", "other"), ("role", "passage"),
+                                          ("window", "w2"), ("seed", 24)])
+    def test_cache_key_separates_model_role_window_seed_and_one_byte(field, new):
+>       original = e.cache_key(identity(), b"abc")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'corpus': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'gold': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbb...bbbbbbbbbb', 'policy': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'build': 'b1', ...}, b'abc')
+kwargs = {}
+
+    def cache_key(*args, **kwargs):
+>       raise NotImplementedError("E0 cache key")
+E       NotImplementedError: E0 cache key
+
+src/ttakkari/kb_eval/core.py:37: NotImplementedError
+__ test_cache_key_separates_model_role_window_seed_and_one_byte[role-passage] __
+
+field = 'role', new = 'passage'
+
+    @pytest.mark.parametrize("field,new", [("model", "other"), ("role", "passage"),
+                                          ("window", "w2"), ("seed", 24)])
+    def test_cache_key_separates_model_role_window_seed_and_one_byte(field, new):
+>       original = e.cache_key(identity(), b"abc")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'corpus': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'gold': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbb...bbbbbbbbbb', 'policy': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'build': 'b1', ...}, b'abc')
+kwargs = {}
+
+    def cache_key(*args, **kwargs):
+>       raise NotImplementedError("E0 cache key")
+E       NotImplementedError: E0 cache key
+
+src/ttakkari/kb_eval/core.py:37: NotImplementedError
+___ test_cache_key_separates_model_role_window_seed_and_one_byte[window-w2] ____
+
+field = 'window', new = 'w2'
+
+    @pytest.mark.parametrize("field,new", [("model", "other"), ("role", "passage"),
+                                          ("window", "w2"), ("seed", 24)])
+    def test_cache_key_separates_model_role_window_seed_and_one_byte(field, new):
+>       original = e.cache_key(identity(), b"abc")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'corpus': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'gold': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbb...bbbbbbbbbb', 'policy': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'build': 'b1', ...}, b'abc')
+kwargs = {}
+
+    def cache_key(*args, **kwargs):
+>       raise NotImplementedError("E0 cache key")
+E       NotImplementedError: E0 cache key
+
+src/ttakkari/kb_eval/core.py:37: NotImplementedError
+____ test_cache_key_separates_model_role_window_seed_and_one_byte[seed-24] _____
+
+field = 'seed', new = 24
+
+    @pytest.mark.parametrize("field,new", [("model", "other"), ("role", "passage"),
+                                          ("window", "w2"), ("seed", 24)])
+    def test_cache_key_separates_model_role_window_seed_and_one_byte(field, new):
+>       original = e.cache_key(identity(), b"abc")
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:185: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'corpus': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'gold': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbb...bbbbbbbbbb', 'policy': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'build': 'b1', ...}, b'abc')
+kwargs = {}
+
+    def cache_key(*args, **kwargs):
+>       raise NotImplementedError("E0 cache key")
+E       NotImplementedError: E0 cache key
+
+src/ttakkari/kb_eval/core.py:37: NotImplementedError
+_____________ test_cache_replay_compares_score_bytes_and_integrity _____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2644/test_cache_replay_compares_sco0')
+
+    def test_cache_replay_compares_score_bytes_and_integrity(tmp_path):
+>       key = e.cache_key(identity(), b"abc")
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_oracles.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = ({'corpus': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'gold': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbb...bbbbbbbbbb', 'policy': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'build': 'b1', ...}, b'abc')
+kwargs = {}
+
+    def cache_key(*args, **kwargs):
+>       raise NotImplementedError("E0 cache key")
+E       NotImplementedError: E0 cache key
+
+src/ttakkari/kb_eval/core.py:37: NotImplementedError
+________________ test_holdout_one_use_and_developer_open_denied ________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2644/test_holdout_one_use_and_devel0')
+
+    def test_holdout_one_use_and_developer_open_denied(tmp_path):
+        audit = tmp_path / "holdout.json"
+        with pytest.raises(ValueError, match="independent_reviewer_required"):
+>           e.open_holdout(audit, identity(), actor="developer", role="developer", at="2026-10-21T00:00:00Z")
+
+unit_tests/kb_eval/test_oracles.py:209: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2644/test_holdout_on...bbbbbbbbbbbbbbbbbb', 'policy': 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'build': 'b1', ...})
+kwargs = {'actor': 'developer', 'role': 'developer', 'at': '2026-10-21T00:00:00Z'}
+
+    def open_holdout(*args, **kwargs):
+>       raise NotImplementedError("E0 holdout")
+E       NotImplementedError: E0 holdout
+
+src/ttakkari/kb_eval/core.py:57: NotImplementedError
+________ test_mobile_review_contract_resume_no_machine_human_promotion _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2644/test_mobile_review_contract_re0')
+
+    def test_mobile_review_contract_resume_no_machine_human_promotion(tmp_path):
+        path = tmp_path / "review.json"
+>       result = e.review_update(path, {"id": "q1", "label_version": 0, "decision": "approve",
+                                      "actor_kind": "agent", "actor": "test-agent", "at": "2026-10-21T00:00:00Z"})
+
+unit_tests/kb_eval/test_oracles.py:218: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2644/test_mobile_review_contract_re0/review.json'), {'id': 'q1', 'label_version': 0, 'decision': 'approve', 'actor_kind': 'agent', ...})
+kwargs = {}
+
+    def review_update(*args, **kwargs):
+>       raise NotImplementedError("E0 review resume")
+E       NotImplementedError: E0 review resume
+
+src/ttakkari/kb_eval/core.py:53: NotImplementedError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_oracles.py::test_hand_oracle_three_questions_ten_documents
+FAILED unit_tests/kb_eval/test_oracles.py::test_invalid_and_missing_are_visible_in_denominators
+FAILED unit_tests/kb_eval/test_oracles.py::test_anchor_raw_repetition_context_and_revision_negative_controls
+FAILED unit_tests/kb_eval/test_oracles.py::test_anchor_remaps_answer_once_across_chunk_boundaries
+FAILED unit_tests/kb_eval/test_oracles.py::test_translation_duplicate_multidoc_transitive_leakage
+FAILED unit_tests/kb_eval/test_oracles.py::test_unequal_cluster_preserves_question_estimand
+FAILED unit_tests/kb_eval/test_oracles.py::test_correlated_cluster_interval_wider_than_question_bootstrap
+FAILED unit_tests/kb_eval/test_oracles.py::test_holm_stepdown_adjustment_and_stopping
+FAILED unit_tests/kb_eval/test_oracles.py::test_missing_power_and_tiny_clusters_never_pass
+FAILED unit_tests/kb_eval/test_oracles.py::test_control_also_exceeds_slo_relative_is_separate
+FAILED unit_tests/kb_eval/test_oracles.py::test_ab_load_bias_and_candidate_only_regression
+FAILED unit_tests/kb_eval/test_oracles.py::test_cache_key_separates_model_role_window_seed_and_one_byte[model-other]
+FAILED unit_tests/kb_eval/test_oracles.py::test_cache_key_separates_model_role_window_seed_and_one_byte[role-passage]
+FAILED unit_tests/kb_eval/test_oracles.py::test_cache_key_separates_model_role_window_seed_and_one_byte[window-w2]
+FAILED unit_tests/kb_eval/test_oracles.py::test_cache_key_separates_model_role_window_seed_and_one_byte[seed-24]
+FAILED unit_tests/kb_eval/test_oracles.py::test_cache_replay_compares_score_bytes_and_integrity
+FAILED unit_tests/kb_eval/test_oracles.py::test_holdout_one_use_and_developer_open_denied
+FAILED unit_tests/kb_eval/test_oracles.py::test_mobile_review_contract_resume_no_machine_human_promotion
+18 failed in 0.07s

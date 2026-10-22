@@ -1,0 +1,135 @@
+==> [pre-push] 사전 검증: 4236fa10e13c (건너뛰려면 TTK_SKIP_GATE=1 또는 --no-verify)
+========================================================
+ 따까리 백엔드 사전 검증 (배포 게이트의 전체 실행·-x 를 대신하지 않음)
+ 대상 커밋: 4236fa10e13c docs(kb-eval): record E0 quality hardening, DB/contract runs
+ 변경 기준: 301831ee4712  (작업 트리의 미커밋 변경은 검사하지 않음)
+ 모드: impacted
+========================================================
+    변경 파일 339개
+--> ruff (변경된 파이썬 32개)
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports/kb-e0/quality-hardening/cli/run_cli_sequence.py:17:9
+   |
+16 | def cli(name, *args):
+17 |     p = subprocess.run([py, "-m", "ttakkari.kb_eval", *args], cwd=root, capture_output=True, text=True)
+   |         ^^^^^^^^^^^^^^
+18 |     (here / (name + ".stdout")).write_text(p.stdout)
+19 |     (here / (name + ".stderr")).write_text(p.stderr)
+   |
+help: Add explicit `check=False`
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> reports/kb-e0/quality-hardening/stale_pyc_probe.py:1:1
+  |
+1 | / import os, subprocess, sys, time
+2 | | from pathlib import Path
+  | |________________________^
+3 |   m = Path("mod.py")
+4 |   def write(reason):
+  |
+help: Organize imports
+  |
+  - import os, subprocess, sys, time
+1 + import os
+2 + import subprocess
+3 + import sys
+4 + import time
+5 | from pathlib import Path
+6 +
+7 | m = Path("mod.py")
+  |
+
+F401 [*] `time` imported but unused
+ --> reports/kb-e0/quality-hardening/stale_pyc_probe.py:1:29
+  |
+1 | import os, subprocess, sys, time
+  |                             ^^^^
+2 | from pathlib import Path
+3 | m = Path("mod.py")
+  |
+help: Remove unused import: `time`
+  |
+  - import os, subprocess, sys, time
+1 + import os, subprocess, sys
+2 | from pathlib import Path
+  |
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports/kb-e0/quality-hardening/stale_pyc_probe.py:8:1
+   |
+ 6 | # Same-length sources written within one second, then mtime pinned equal.
+ 7 | write("power_not_established")
+ 8 | subprocess.run([sys.executable, "-c", "import mod; print('A', mod.r())"])
+   | ^^^^^^^^^^^^^^
+ 9 | st = m.stat()
+10 | write("insufficient_clusters")
+   |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports/kb-e0/quality-hardening/stale_pyc_probe.py:13:1
+   |
+11 | os.utime(m, ns=(st.st_atime_ns, st.st_mtime_ns))
+12 | print("same size:", m.stat().st_size == st.st_size, "same mtime:", int(m.stat().st_mtime) == int(st.st_mtime))
+13 | subprocess.run([sys.executable, "-c", "import mod; print('B (expect insufficient_clusters)', mod.r())"])
+   | ^^^^^^^^^^^^^^
+14 | subprocess.run([sys.executable, "-c", "import mod; print('B with fresh pycache prefix', mod.r())"], env={**os.environ, "PYTHONPYCACHEP…
+   |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports/kb-e0/quality-hardening/stale_pyc_probe.py:14:1
+   |
+12 | print("same size:", m.stat().st_size == st.st_size, "same mtime:", int(m.stat().st_mtime) == int(st.st_mtime))
+13 | subprocess.run([sys.executable, "-c", "import mod; print('B (expect insufficient_clusters)', mod.r())"])
+14 | subprocess.run([sys.executable, "-c", "import mod; print('B with fresh pycache prefix', mod.r())"], env={**os.environ, "PYTHONPYCACHEP…
+   | ^^^^^^^^^^^^^^
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports/kb-e0/review-fixes-2/cli/run_cli_sequence.py:17:9
+   |
+16 | def cli(name, *args):
+17 |     p = subprocess.run([py, "-m", "ttakkari.kb_eval", *args], cwd=root, capture_output=True, text=True)
+   |         ^^^^^^^^^^^^^^
+18 |     (here / (name + ".stdout")).write_text(p.stdout)
+19 |     (here / (name + ".stderr")).write_text(p.stderr)
+   |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports/kb-e0/review-fixes-2/reason_mutation.py:49:13
+   |
+47 |     try:
+48 |         path.write_text("".join(lines))
+49 |         p = subprocess.run(
+   |             ^^^^^^^^^^^^^^
+50 |             [py, "-m", "pytest", "unit_tests/kb_eval", "-x", "-q", "-p", "no:cacheprovider"],
+51 |             cwd=root,
+   |
+help: Add explicit `check=False`
+
+PLW1510 `subprocess.run` without explicit `check` argument
+  --> reports/kb-e0/review-fixes/cli/run_cli_sequence.py:17:9
+   |
+16 | def cli(name, *args):
+17 |     p = subprocess.run([py, "-m", "ttakkari.kb_eval", *args], cwd=root, capture_output=True, text=True)
+   |         ^^^^^^^^^^^^^^
+18 |     (here / (name + ".stdout")).write_text(p.stdout)
+19 |     (here / (name + ".stderr")).write_text(p.stderr)
+   |
+help: Add explicit `check=False`
+
+--> 계약 묶음 (pytest -m contract)
+...............................................................          [100%]
+63 passed, 3760 deselected in 11.78s
+========================================================
+ 실패  ruff (변경된 파이썬 32개) (0초, exit 1)
+ 통과  계약 묶음 (21초)
+ 건너뜀  바뀐 테스트 파일 (선택된 파일 없음)
+ 총 22초
+ 사전 검증 실패 1건: 위 pytest 'FAILED' 줄이 실패 전체 목록입니다.
+   - ruff (변경된 파이썬 32개)
+ (비상 우회: git push --no-verify 또는 TTK_SKIP_GATE=1. 배포 게이트는 같은 실패로 멈춥니다.)
+========================================================
+error: 레퍼런스를 'https://github.com/winterholic/winterholic-ttakkari-back'에 푸시하는데 실패했습니다

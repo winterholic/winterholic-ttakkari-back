@@ -21,6 +21,7 @@ from ttakkari.api import (
     assistant,
     auth,
     checklists,
+    comfy_managed,
     creative,
     deployments,
     design_system,
@@ -324,6 +325,7 @@ def create_app() -> FastAPI:
     app.include_router(stocks.agent_router)
     app.include_router(games.router)
     app.include_router(creative.router)
+    app.include_router(comfy_managed.router)
     app.include_router(notebooklm.router)
     app.include_router(notebooklm.agent_router)
     notebooklm.install(app)  # code·retry_after·outcome_unknown 을 살리는 NotebookLM 오류 핸들러(ADR 0045)

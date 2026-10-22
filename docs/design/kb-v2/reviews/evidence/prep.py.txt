@@ -1,0 +1,42 @@
+import gzip, json, random, sys, csv, multiprocessing as mp, time, collections
+N = int(sys.argv[1]); OUT = sys.argv[2]
+D = "/tmp/kbv2r/miracl/"
+qrels = collections.defaultdict(dict)
+for l in open(D + "qrels.miracl-v1.0-ko-dev.tsv"):
+    q, _, d, r = l.split(); qrels[q][d] = int(r)
+topics = dict(l.rstrip("\n").split("\t", 1) for l in open(D + "topics.miracl-v1.0-ko-dev.tsv"))
+judged = {d for q in qrels.values() for d in q}
+from kiwipiepy import Kiwi
+KEEP = {"NNG", "NNP", "NNB", "NR", "SL", "SH", "SN", "XR", "VV", "VA"}
+kw = None
+def an(txt):
+    global kw
+    if kw is None: kw = Kiwi()
+    return " ".join(tk.form.lower() for tk in kw.tokenize(txt) if tk.tag in KEEP)
+if __name__ == "__main__":
+    random.seed(11)
+    keep = {}; rest = []
+    t = time.time()
+    for i in range(3):
+        for l in gzip.open(D + f"docs-{i}.jsonl.gz", "rt", encoding="utf-8"):
+            j = json.loads(l)
+            txt = (j["title"] + " " + j["text"]).strip()
+            if j["docid"] in judged: keep[j["docid"]] = txt
+            else: rest.append((j["docid"], txt))
+    print("read", len(keep), len(rest), round(time.time() - t), "s", file=sys.stderr)
+    random.shuffle(rest)
+    for d, tx in rest[: max(0, N - len(keep))]: keep[d] = tx
+    ids = list(keep)
+    t = time.time()
+    with mp.Pool(5) as p:
+        analyzed = p.map(an, [keep[i] for i in ids], chunksize=500)
+        qids = [q for q in qrels if any(v > 0 for v in qrels[q].values())]
+        qan = p.map(an, [topics[q] for q in qids])
+    print("analyzed", len(ids), round(time.time() - t), "s", file=sys.stderr)
+    with open(OUT + "/pas.tsv", "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f, delimiter="\t", quoting=csv.QUOTE_NONE, escapechar="\\")
+        for i, a in zip(ids, analyzed):
+            w.writerow([i, keep[i].replace("\t", " ").replace("\n", " ").replace("\\", " "), a])
+    json.dump({"qids": qids, "qtext": [topics[q] for q in qids], "qan": qan,
+               "rel": {q: [d for d, v in qrels[q].items() if v > 0] for q in qids}}, open(OUT + "/queries.json", "w"), ensure_ascii=False)
+    print("chars/passage", sum(map(len, keep.values())) / len(keep), "queries", len(qids), file=sys.stderr)

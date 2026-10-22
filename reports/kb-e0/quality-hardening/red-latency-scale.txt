@@ -1,0 +1,320 @@
+FFFFF...FFFF....FFFF....FFF.....FF..........F..                          [100%]
+=================================== FAILURES ===================================
+______ test_latency_floor_is_scale_free_for_informative_traces[0.005-0.5] ______
+
+mean = 0.5, cv = 0.005
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (0.5, 0.005, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.005-1.0] ______
+
+mean = 1.0, cv = 0.005
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (1.0, 0.005, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.005-2.0] ______
+
+mean = 2.0, cv = 0.005
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (2.0, 0.005, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.005-5.0] ______
+
+mean = 5.0, cv = 0.005
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (5.0, 0.005, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+_____ test_latency_floor_is_scale_free_for_informative_traces[0.005-20.0] ______
+
+mean = 20.0, cv = 0.005
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (20.0, 0.005, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.01-0.5] _______
+
+mean = 0.5, cv = 0.01
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (0.5, 0.01, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.01-1.0] _______
+
+mean = 1.0, cv = 0.01
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (1.0, 0.01, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.01-2.0] _______
+
+mean = 2.0, cv = 0.01
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (2.0, 0.01, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.01-5.0] _______
+
+mean = 5.0, cv = 0.01
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (5.0, 0.01, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.02-0.5] _______
+
+mean = 0.5, cv = 0.02
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (0.5, 0.02, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.02-1.0] _______
+
+mean = 1.0, cv = 0.02
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (1.0, 0.02, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.02-2.0] _______
+
+mean = 2.0, cv = 0.02
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (2.0, 0.02, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.02-5.0] _______
+
+mean = 5.0, cv = 0.02
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (5.0, 0.02, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.05-0.5] _______
+
+mean = 0.5, cv = 0.05
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (0.5, 0.05, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.05-1.0] _______
+
+mean = 1.0, cv = 0.05
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (1.0, 0.05, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+______ test_latency_floor_is_scale_free_for_informative_traces[0.05-2.0] _______
+
+mean = 2.0, cv = 0.05
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (2.0, 0.05, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+_______ test_latency_floor_is_scale_free_for_informative_traces[0.1-0.5] _______
+
+mean = 0.5, cv = 0.1
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (0.5, 0.1, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+_______ test_latency_floor_is_scale_free_for_informative_traces[0.1-1.0] _______
+
+mean = 1.0, cv = 0.1
+
+    @pytest.mark.parametrize("mean", [0.5, 1.0, 2.0, 5.0, 20.0, 200.0, 800.0, 5000.0])
+    @pytest.mark.parametrize("cv", [0.005, 0.01, 0.02, 0.05, 0.10])
+    def test_latency_floor_is_scale_free_for_informative_traces(mean, cv):
+        r = e.latency_report(normal_blocks(mean, cv), seed=7)
+>       assert r["reasons"] == [], (mean, cv, r["reasons"])
+E       AssertionError: (1.0, 0.1, ['degenerate_arm_variance'])
+E       assert ['degenerate_arm_variance'] == []
+E         
+E         Left contains one more item: 'degenerate_arm_variance'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:41: AssertionError
+__________ test_relative_floor_catches_large_mean_near_constant_trace __________
+
+    def test_relative_floor_catches_large_mean_near_constant_trace():
+        # std 0.25 ms clears the absolute timer floor; CV 5e-5 is below the relative one.
+>       cv = DEGENERACY["latency_min_cv"] / 2
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'latency_min_cv'
+
+unit_tests/kb_eval/test_quality_hardening.py:58: KeyError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.005-0.5]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.005-1.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.005-2.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.005-5.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.005-20.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.01-0.5]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.01-1.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.01-2.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.01-5.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.02-0.5]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.02-1.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.02-2.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.02-5.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.05-0.5]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.05-1.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.05-2.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.1-0.5]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_latency_floor_is_scale_free_for_informative_traces[0.1-1.0]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_relative_floor_catches_large_mean_near_constant_trace
+19 failed, 28 passed in 1.22s

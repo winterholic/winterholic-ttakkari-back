@@ -1,0 +1,30 @@
+.F.F                                                                     [100%]
+=================================== FAILURES ===================================
+__ test_r2_degenerate_ratio_ci_is_unverified_even_with_registered_replicates ___
+
+    def test_r2_degenerate_ratio_ci_is_unverified_even_with_registered_replicates():
+        r = e.latency_report(equal_latency(), seed=7, replicates=10000)
+        assert r["ratio_ci"] == [1.0, 1.0]
+        assert r["ci_degenerate"] is True
+>       assert r["relative"] == "relative_unverified"
+E       AssertionError: assert 'relative_pass' == 'relative_unverified'
+E         
+E         - relative_unverified
+E         + relative_pass
+
+unit_tests/kb_eval/test_review_fixes.py:348: AssertionError
+_________ test_r2_quality_family_degenerate_bootstrap_is_inconclusive __________
+
+    def test_r2_quality_family_degenerate_bootstrap_is_inconclusive():
+        groups = ["a", "a", "b", "b", "c", "c"]
+        flat = {"recall": [0.0] * 6, "ndcg": [0.0] * 6}
+        r = e.quality_family(flat, groups, seed=7, dev_deltas=flat, dev_groups=list("xxyyzz"))
+        assert r["status"] == "inconclusive"
+>       assert "degenerate_bootstrap_interval" in r["reasons"]
+E       AssertionError: assert 'degenerate_bootstrap_interval' in ['power_not_established']
+
+unit_tests/kb_eval/test_review_fixes.py:368: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_degenerate_ratio_ci_is_unverified_even_with_registered_replicates
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_quality_family_degenerate_bootstrap_is_inconclusive
+2 failed, 2 passed, 53 deselected in 0.49s

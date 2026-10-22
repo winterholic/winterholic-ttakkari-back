@@ -1,0 +1,9 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python -c 'import json
+from ttakkari.kb_eval.core import quality_family, cluster_interval, binomial_interval, holm
+r={"unequal":cluster_interval([1.]*9+[-1.],["big"]*9+["small"],seed=4),
+   "holm":holm({"a":.01,"b":.04,"c":.03}), "zero_of_forty":binomial_interval(0,40),
+   "underpowered":quality_family({"recall":[.02]*3,"ndcg":[.03]*3},["a","b","c"],seed=2)}
+print(json.dumps(r,sort_keys=True))'
+{"holm": {"a": 0.03, "b": 0.06, "c": 0.06}, "underpowered": {"ci_method": "bonferroni_one_sided_cluster_percentile", "family_alpha": 0.05, "margin": 0.05, "metrics": {"ndcg": {"delta": 0.03, "high": 0.03, "holm_p": 0.00019998000199980003, "low": 0.03, "p": 9.999000099990002e-05}, "recall": {"delta": 0.02, "high": 0.02, "holm_p": 0.00019998000199980003, "low": 0.02, "p": 9.999000099990002e-05}}, "power": null, "reasons": ["power_not_established"], "scope": "statistical_noninferiority_only", "status": "inconclusive"}, "unequal": {"cluster_sizes": [9, 1], "clusters": 2, "delta": 0.8, "effective_clusters": 1.2195121951219512, "estimand": "question_weighted", "high": 1.0, "low": -1.0, "queries": 10, "replicates": 10000, "seed": 4}, "zero_of_forty": [0.0, 0.07215752450551458]}
+
+exit=0

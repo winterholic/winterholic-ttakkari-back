@@ -1,0 +1,9 @@
+evidence: 18/18 exact sha256+size; source byte comparison: False
+coverage: P1-13=13/13, F1-24=24/24 plus F9a; negative controls rejected
+links: 34 local file targets exist (historical original review excluded)
+historical raw: 213 queries; PG BM25 19.71/.878, Tantivy 8.27/.851, ts_rank_cd 3501.07/.391
+planning only: n_eff=353; 0/40 one-sided upper=0.072158; Kiwi=2.3889h; CPU=45.5373h
+Unicode model: 4/4 early-NFC counterexamples; final NFC fixed points; NFKC: {'㈜': '(주)', '…': '...', 'ﬁ': 'fi', 'x²': 'x2', 'µ': 'μ', '℃': '°C'}
+toy seq model: unguarded loss 2/30, lock-before-allocation serialized loss 0/10
+toy observations: A->B->A current A; late event0 unchanged; A->A freshness advances
+UNEXECUTED: actual PostgreSQL/kill/replay, inference/GPU/CPU, million benchmark, product harness, deployment

@@ -27,6 +27,7 @@ from ttakkari.host_gpu import (
     Supervisor,
     build_args,
 )
+from ttakkari.host_resource import LeaseBusy, ResourceLeaseManager
 
 FAKE_SERVER = textwrap.dedent('''\
     #!{python}
@@ -303,6 +304,36 @@ def test_server_that_never_gets_healthy_is_stopped_at_the_start_timeout(env):
     assert host_gpu._read_state(env.dir)["stop_reason"] == "start_timeout"
 
 
+def test_unconfirmed_server_stop_keeps_the_lease_until_hostgpu_observes_absence(env, monkeypatch):
+    manager = ResourceLeaseManager(data_dir=env.settings.data_dir)
+    sup = Supervisor(_spec(env), poll=0.1)
+    with monkeypatch.context() as patch:
+        patch.setattr(host_gpu, "_terminate_group", lambda *a, **k: None)  # 정리 신호가 듣지 않는 서버
+        t = _run_supervisor(sup)
+        state = _wait(lambda: _phase(env) == "ready" and host_gpu._read_state(env.dir), what="ready")
+        sup.stop.set()
+        t.join(30)
+    assert not t.is_alive()
+    sup.lease._lock_fd.close()  # 감독자 프로세스가 끝나 flock 만 풀린다
+    try:
+        pid = state["server_pid"]
+        assert psutil.pid_exists(pid)  # 서버는 아직 살아 있다
+        left = host_gpu._read_state(env.dir)
+        assert left["phase"] == "ready" and left["stop_unconfirmed"] is True
+        assert manager.current()["lease_id"] == state["lease_id"]
+        with pytest.raises(LeaseBusy):
+            ResourceLeaseManager(data_dir=env.settings.data_dir).acquire(
+                owner_task="successor", owner_attempt="a", runtime_instance="successor-runtime",
+                resource_family="comfy", claim={})
+
+        # 이후 HostGpu 가 신원을 관찰하고 우리 서버를 정리해 부재가 확인되면 그때 lease 가 풀린다.
+        assert env.gpu.status()["stop_reason"] == "supervisor_lost"
+        assert manager.current() is None
+    finally:
+        if psutil.pid_exists(state["server_pid"]):
+            host_gpu._terminate_group(state["server_pid"], grace=2)
+
+
 def test_server_exit_is_recorded(env):
     env.server.write_text(f"#!{sys.executable}\nimport sys\nprint('bad flag', flush=True)\nsys.exit(7)\n")
     sup = Supervisor(_spec(env), poll=0.1)
@@ -375,12 +406,24 @@ def test_bench_requires_a_ready_instance(env):
                                 "note": host_gpu.MEASURED_NOTE, "phase": "idle", "running": False}
 
 
+def _dead_supervisor_lease(env) -> tuple[ResourceLeaseManager, dict]:
+    """감독자가 죽어 flock 만 풀리고 lease 기록은 live 로 남은 상태(공용 lease 도입 이후 상태 파일이 가진 증거)."""
+    manager = ResourceLeaseManager(data_dir=env.settings.data_dir)
+    lease = manager.acquire(owner_task="host_gpu", owner_attempt="lost", runtime_instance="host-gpu:lost",
+                            resource_family="llm", claim={"gpu_layers": 0})
+    lease._lock_fd.close()
+    return manager, {"lease_id": lease.lease_id, "lease_generation_token": lease.generation_token,
+                     "runtime_instance": lease.runtime_instance}
+
+
 def test_lost_supervisor_is_reaped_without_touching_unrelated_processes(env):
     bystander = subprocess.Popen(["sleep", "60"])
     own = subprocess.Popen([str(env.server), "--port", "19590", "--alias", ALIAS, "--model", "x"],
                            start_new_session=True)
+    manager, lease_fields = _dead_supervisor_lease(env)
     try:
         host_gpu._write_state(env.dir, {
+            **lease_fields,
             "launch_id": "lost", "phase": "ready", "supervisor_pid": bystander.pid,
             "supervisor_start": host_gpu._proc_start(bystander.pid), "server_pid": own.pid,
             "server_start": host_gpu._proc_start(own.pid), "port": 19590, "started_at": time.time(),
@@ -390,6 +433,7 @@ def test_lost_supervisor_is_reaped_without_touching_unrelated_processes(env):
         assert status["phase"] == "stopped" and status["stop_reason"] == "supervisor_lost"
         _wait(lambda: own.poll() is not None, 10, "our own orphan server stopped")
         assert bystander.poll() is None  # 관계없는 프로세스(감독자 pid 로 적혀 있어도)는 신호를 받지 않는다
+        assert manager.current() is None  # 서버 종료가 관찰된 뒤에만 lease 가 풀린다
     finally:
         bystander.kill()
         own.kill()
@@ -399,15 +443,24 @@ def test_lost_supervisor_is_reaped_without_touching_unrelated_processes(env):
 
 def test_server_pid_that_is_not_our_alias_is_never_killed(env):
     other = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    manager, lease_fields = _dead_supervisor_lease(env)
     try:
         host_gpu._write_state(env.dir, {
+            **lease_fields,
             "launch_id": "x", "phase": "ready", "supervisor_pid": 999999, "supervisor_start": 1.0,
             "server_pid": other.pid, "server_start": host_gpu._proc_start(other.pid), "port": 19591,
             "started_at": time.time(), "deadline_epoch": time.time() + 60, "baseline_swap_bytes": 0,
             "swap_limit_bytes": GIB})
-        assert env.gpu.status()["stop_reason"] == "supervisor_lost"
+        # 기록된 pid+시작 시각과 같은 프로세스가 살아 있는데 우리 서버로 확인되지 않는다: 신호도 보내지 않고 부재도 아니다.
+        with pytest.raises(GpuError, match="not confirmed"):
+            env.gpu.status()
         time.sleep(0.3)
         assert other.poll() is None
+        assert manager.current()["lease_id"] == lease_fields["lease_id"]
+        with pytest.raises(LeaseBusy):
+            ResourceLeaseManager(data_dir=env.settings.data_dir).acquire(
+                owner_task="successor", owner_attempt="a", runtime_instance="successor-runtime",
+                resource_family="comfy", claim={})
     finally:
         other.kill()
         other.wait()
@@ -439,7 +492,11 @@ def test_state_file_is_private_and_holds_no_secrets(env):
     _wait(lambda: env.gpu.status()["ready"], what="ready")
     try:
         raw = (env.dir / "state.json").read_text()
-        assert "api-key" not in raw and "token" not in raw.lower()
+        # lease 세대 토큰은 로컬 소유권 펜스일 뿐 인증 자격이 아니다. 같은 값이 lease.json 에도 있고 파일은 0600 이다.
+        public = json.loads(raw)
+        assert public.pop("lease_generation_token")
+        assert "api-key" not in raw and "token" not in json.dumps(public).lower()
+        assert (env.dir / "state.json").stat().st_mode & 0o077 == 0
         assert not list(env.dir.glob("spec-*.json"))  # 시작이 끝나면 스펙 파일은 지운다
         assert json.loads(raw)["command"][0] == str(env.server)
     finally:

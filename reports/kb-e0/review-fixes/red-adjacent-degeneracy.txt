@@ -1,0 +1,25 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_r2_quality_degenerate_intervals_are_explicitly_diagnostic ________
+
+    def test_r2_quality_degenerate_intervals_are_explicitly_diagnostic():
+        r = e.cluster_interval([0.,0.], ['one','one'], seed=7)
+>       assert r['ci_degenerate'] is True
+               ^^^^^^^^^^^^^^^^^^
+E       KeyError: 'ci_degenerate'
+
+unit_tests/kb_eval/test_review_fixes.py:317: KeyError
+_______ test_r2_unsupported_stage_retains_reason_and_never_becomes_zero ________
+
+    def test_r2_unsupported_stage_retains_reason_and_never_becomes_zero():
+        data = equal_latency()
+        data[0]['candidate']['stages_ms']['inference'] = None
+>       with pytest.raises(ValueError, match='stage_missing_reason_required'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:326: Failed
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_quality_degenerate_intervals_are_explicitly_diagnostic
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_unsupported_stage_retains_reason_and_never_becomes_zero
+2 failed, 52 deselected in 0.11s

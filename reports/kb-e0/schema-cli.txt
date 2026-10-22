@@ -1,0 +1,4 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python -m ttakkari.kb_eval schema --out /Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/input-schema.json
+{"schema": "/Users/winterholic/development/kb-e0-harness-a28c55e0/reports/kb-e0/input-schema.json"}
+
+exit=0

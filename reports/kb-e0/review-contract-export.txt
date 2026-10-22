@@ -1,0 +1,11 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python -c 'from fastapi import FastAPI
+from ttakkari.kb_eval.loader import load_bundle
+from ttakkari.kb_eval.review_api import create_router
+from ttakkari.kb_eval.state import atomic_json
+app=FastAPI()
+app.include_router(create_router(load_bundle("kb-eval/fixtures/oracle.json"),"/tmp/kbe0-openapi-state-not-written.json"))
+atomic_json("reports/kb-e0/review-openapi.json",app.openapi())
+print("Unmounted review OpenAPI exported; no browser/UI/auth claim")'
+Unmounted review OpenAPI exported; no browser/UI/auth claim
+
+exit=0

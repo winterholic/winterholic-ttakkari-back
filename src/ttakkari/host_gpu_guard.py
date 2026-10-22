@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import enum
 import itertools
 import json
 import os
@@ -33,8 +34,37 @@ def proc_start(pid: int | None) -> float | None:
 
 
 def same_process(pid: int | None, start: float | None) -> bool:
+    """pid+시작 시각이 같다는 "확인된 신원 일치". False 는 부재가 아니라 불일치·조회 실패·근거 누락 전부를 뜻한다.
+
+    신호를 보내기 전 확인용이다. 종료/부재 판정에는 쓰지 말고 `process_state` 를 쓴다.
+    """
     current = proc_start(pid)
     return current is not None and start is not None and abs(current - start) < START_SKEW
+
+
+class ProcState(enum.Enum):
+    PRESENT = "present"  # 기록한 pid+시작 시각과 같은 프로세스가 살아 있다
+    ABSENT = "absent"    # 확인된 부재: 그 pid 의 프로세스가 없거나 종료(좀비)했거나 다른 프로세스가 pid 를 재사용한다
+    UNKNOWN = "unknown"  # 조회 실패·권한 거부·pid/시작 시각 근거 누락. 부재 증거가 아니다
+
+
+def process_state(pid: int | None, start: float | None) -> ProcState:
+    """기록된 프로세스의 상태를 세 갈래로 가른다. lease 해제·종료 확인은 ABSENT 만 근거로 삼는다."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 0:
+        return ProcState.UNKNOWN
+    try:
+        proc = psutil.Process(pid)
+        created = proc.create_time()
+        status = proc.status()
+    except psutil.NoSuchProcess:  # ZombieProcess 포함: 프로세스가 끝났다
+        return ProcState.ABSENT
+    except (psutil.Error, OSError):  # AccessDenied·TimeoutExpired·sandbox 차단 등
+        return ProcState.UNKNOWN
+    if status == psutil.STATUS_ZOMBIE:
+        return ProcState.ABSENT
+    if isinstance(start, bool) or not isinstance(start, (int, float)):
+        return ProcState.UNKNOWN  # 살아 있는 pid 가 기록된 프로세스인지 알 수 없다
+    return ProcState.PRESENT if abs(created - start) < START_SKEW else ProcState.ABSENT
 
 
 def cmdline(pid: int) -> list[str]:
@@ -52,18 +82,20 @@ def zombie(pid: int) -> bool:
 
 
 def alive(pid: int | None, start: float | None) -> bool:
-    return same_process(pid, start) and not zombie(int(pid))
+    return process_state(pid, start) is ProcState.PRESENT
 
 
-def terminate_group(pid: int, grace: float = 15.0) -> None:
-    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 3.0)):
+def terminate_group(pid: int, grace: float = 15.0, *, start: float | None = None, kill_wait: float = 3.0) -> bool:
+    """그룹에 SIGTERM, 이어 SIGKILL 을 보내고 종료가 "관찰됐는지" 돌려준다. 조회 실패는 종료로 치지 않는다."""
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, kill_wait)):
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(pid, sig)
         deadline = time.monotonic() + wait
         while time.monotonic() < deadline:
-            if not psutil.pid_exists(pid) or zombie(pid):
-                return
+            if process_state(pid, start) is ProcState.ABSENT:
+                return True
             time.sleep(0.1)
+    return process_state(pid, start) is ProcState.ABSENT
 
 
 def _is_our_server(cmd: list[str], server_path: str, port: int) -> bool:
@@ -87,7 +119,10 @@ def find_our_servers(server_path: str, port: int, since: float) -> list[int]:
 
 
 def kill_our_server(pid: int, start: float | None, port: object, grace: float = 15.0) -> bool:
-    """상태 파일에 적힌 서버만: pid+시작 시각이 같고 argv 에 별칭과 포트가 있고 자기 프로세스 그룹 리더일 때 그룹에 신호를 보낸다."""
+    """상태 파일에 적힌 서버만: pid+시작 시각이 같고 argv 에 별칭과 포트가 있고 자기 프로세스 그룹 리더일 때 그룹에 신호를 보낸다.
+
+    True 는 종료가 관찰됐다는 뜻이다. False 는 신호를 보내지 않았거나 종료를 확인하지 못했다는 뜻이라 부재 증거가 아니다.
+    """
     if not same_process(pid, start):
         return False
     cmd = cmdline(pid)
@@ -96,8 +131,7 @@ def kill_our_server(pid: int, start: float | None, port: object, grace: float = 
     with contextlib.suppress(ProcessLookupError, PermissionError):
         if os.getpgid(pid) != pid:
             return False
-    terminate_group(pid, grace)
-    return True
+    return terminate_group(pid, grace, start=start)
 
 
 def watch(*, supervisor_pid: int, supervisor_start: float, server_path: str, port: int, ready_file: Path | None = None,
@@ -106,11 +140,12 @@ def watch(*, supervisor_pid: int, supervisor_start: float, server_path: str, por
     if ready_file is not None:
         ready_file.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
     seen: dict[int, float | None] = {}
-    while alive(supervisor_pid, supervisor_start):
+    # 감독자 부재는 확인된 부재일 때만 인정한다. 조회가 막히면 아직 살아 있는 것으로 보고 계속 지켜본다(kill 은 신원 확인 후에만).
+    while process_state(supervisor_pid, supervisor_start) is not ProcState.ABSENT:
         if not seen:
             seen = {pid: proc_start(pid) for pid in find_our_servers(server_path, port, supervisor_start)}
-        elif not any(alive(pid, start) for pid, start in seen.items()):
-            return []  # 서버가 이미 정상 종료했다. 지킬 것이 없다.
+        elif all(process_state(pid, start) is ProcState.ABSENT for pid, start in seen.items()):
+            return []  # 서버가 확인된 종료 상태다. 지킬 것이 없다. 조회 실패(UNKNOWN)는 종료가 아니다.
         time.sleep(poll)
     killed = []
     for pid in find_our_servers(server_path, port, supervisor_start):

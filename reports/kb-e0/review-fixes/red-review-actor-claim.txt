@@ -1,0 +1,26 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_r4_review_event_actor_is_recorded_as_unauthenticated_claim ________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2740/test_r4_review_event_actor_is_0')
+
+    def test_r4_review_event_actor_is_recorded_as_unauthenticated_claim(tmp_path):
+        event = {
+            "id": "q1",
+            "label_version": 0,
+            "decision": "approve",
+            "actor_kind": "agent",
+            "actor": "user-approved-reviewer",
+            "at": "2026-10-22T00:00:00+00:00",
+            "correction": None,
+        }
+        state = e.review_update(tmp_path / "state.json", event)
+        label = state["labels"]["q1"]
+>       assert label["actor_authentication"] == "unauthenticated_claim"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'actor_authentication'
+
+unit_tests/kb_eval/test_review_fixes.py:378: KeyError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r4_review_event_actor_is_recorded_as_unauthenticated_claim
+1 failed, 57 deselected in 0.10s

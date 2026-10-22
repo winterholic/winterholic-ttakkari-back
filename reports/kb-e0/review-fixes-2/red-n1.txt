@@ -1,0 +1,140 @@
+FF.F.FF.FF.                                                              [100%]
+=================================== FAILURES ===================================
+____________ test_n1_latency_float_noise_trace_is_not_relative_pass ____________
+
+    def test_n1_latency_float_noise_trace_is_not_relative_pass():
+        data = blocks()
+        for b in data:
+            b["candidate"]["e2e_ms"] += b["block"] * 1e-9
+        r = e.latency_report(data, seed=7)
+        assert r["ratio_ci"][0] < r["ratio_ci"][1]
+>       assert r["ci_degenerate"] is True
+E       assert False is True
+
+unit_tests/kb_eval/test_review_fixes_2.py:23: AssertionError
+______ test_n1_quality_float_noise_deltas_cannot_pass_or_establish_power _______
+
+    def test_n1_quality_float_noise_deltas_cannot_pass_or_establish_power():
+        noise = [i * 1e-9 for i in range(40)]
+        r = e.quality_family(
+            {"recall": noise, "ndcg": noise},
+            H,
+            seed=12,
+            dev_deltas={"recall": noise, "ndcg": noise},
+            dev_groups=D,
+        )
+>       assert r["status"] == "inconclusive"
+E       AssertionError: assert 'pass' == 'inconclusive'
+E         
+E         - inconclusive
+E         + pass
+
+unit_tests/kb_eval/test_review_fixes_2.py:38: AssertionError
+___________ test_n1_latency_ci_width_either_side_of_floor[0.02-True] ___________
+
+spread = 0.02, degenerate = True
+
+    @pytest.mark.parametrize("spread,degenerate", [(0.02, True), (0.08, False)])
+    def test_n1_latency_ci_width_either_side_of_floor(spread, degenerate):
+        r = e.latency_report(varied(blocks(), spread=spread), seed=7)
+        low, high = r["ratio_ci"]
+        floor = DEGENERACY["latency_ratio_ci_min_width"]
+        assert (high - low < floor) is degenerate
+>       assert r["ci_degenerate"] is degenerate
+E       assert False is True
+
+unit_tests/kb_eval/test_review_fixes_2.py:59: AssertionError
+_________ test_n1_latency_constant_arm_below_resolution_is_unverified __________
+
+    def test_n1_latency_constant_arm_below_resolution_is_unverified():
+        data = varied(blocks(), spread=0.5)
+        for b in data:
+            b["control"]["e2e_ms"] = 1000.0 + b["block"] * 1e-6
+>       r = e.latency_report(data, seed=7)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_review_fixes_2.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/kb_eval/latency.py:19: in latency_report
+    return _latency_report(blocks, seed=seed, replicates=replicates, mode=mode)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+blocks = [{'block': 0, 'order': 'AB', 'query_id': 'q0', 'profile': 'full:c1:warm:N40', ...}, {'block': 1, 'order': 'BA', 'query...ile': 'full:c1:warm:N40', ...}, {'block': 5, 'order': 'BA', 'query_id': 'q5', 'profile': 'full:c1:warm:N40', ...}, ...]
+seed = 7, replicates = 10000, mode = 'full'
+
+    def _latency_report(blocks, *, seed, replicates, mode):
+        if mode not in {"full", "fast"}:
+            raise ValueError("invalid_mode")
+        if not blocks:
+            return {
+                "relative": "relative_unverified",
+                "candidate_absolute": "unverified",
+                "control_absolute": "unverified",
+                "reasons": ["no_observations"],
+            }
+        arms = {}
+        for arm in ("candidate", "control"):
+            for b in blocks:
+                obs = b[arm]
+                if any(
+                    not np.isfinite(obs[k]) or obs[k] < 0
+                    for k in ("e2e_ms", "queue_ms", "service_ms", "load")
+                ):
+                    raise ValueError("invalid_timer")
+                if obs["queue_ms"] + obs["service_ms"] > obs["e2e_ms"] + 1e-6:
+>                   raise ValueError("timer_critical_path_inconsistent")
+E                   ValueError: timer_critical_path_inconsistent
+
+src/ttakkari/kb_eval/latency.py:44: ValueError
+__________ test_n1_quality_ci_width_either_side_of_floor[0.001-True] ___________
+
+amplitude = 0.001, degenerate = True
+
+    @pytest.mark.parametrize("amplitude,degenerate", [(0.001, True), (0.003, False)])
+    def test_n1_quality_ci_width_either_side_of_floor(amplitude, degenerate):
+        v = alternating(amplitude)
+        r = e.quality_family({"recall": v, "ndcg": v}, H, seed=12)
+        width = r["metrics"]["recall"]["high"] - r["metrics"]["recall"]["low"]
+        assert (width < DEGENERACY["quality_ci_min_width"]) is degenerate
+>       assert ("degenerate_bootstrap_interval" in r["reasons"]) is degenerate
+E       AssertionError: assert ('degenerate_bootstrap_interval' in ['power_not_established']) is True
+
+unit_tests/kb_eval/test_review_fixes_2.py:78: AssertionError
+________ test_n1_power_requires_dev_variance_above_floor[0.0009-False] _________
+
+amplitude = 0.0009, established = False
+
+    @pytest.mark.parametrize("amplitude,established", [(0.0009, False), (0.01, True)])
+    def test_n1_power_requires_dev_variance_above_floor(amplitude, established):
+        dev = alternating(amplitude)
+        p = e.simulate_power({"recall": dev, "ndcg": dev}, D, seed=12)
+>       assert (p["status"] == "established") is established
+E       AssertionError: assert ('established' == 'established'
+E         
+E           established) is False
+
+unit_tests/kb_eval/test_review_fixes_2.py:85: AssertionError
+__________ test_n1_power_requires_dev_variance_above_floor[0.01-True] __________
+
+amplitude = 0.01, established = True
+
+    @pytest.mark.parametrize("amplitude,established", [(0.0009, False), (0.01, True)])
+    def test_n1_power_requires_dev_variance_above_floor(amplitude, established):
+        dev = alternating(amplitude)
+        p = e.simulate_power({"recall": dev, "ndcg": dev}, D, seed=12)
+        assert (p["status"] == "established") is established
+>       assert p["dev_min_std"] == DEGENERACY["quality_dev_min_std"]
+               ^^^^^^^^^^^^^^^^
+E       KeyError: 'dev_min_std'
+
+unit_tests/kb_eval/test_review_fixes_2.py:86: KeyError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_latency_float_noise_trace_is_not_relative_pass
+FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_quality_float_noise_deltas_cannot_pass_or_establish_power
+FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_latency_ci_width_either_side_of_floor[0.02-True]
+FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_latency_constant_arm_below_resolution_is_unverified
+FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_quality_ci_width_either_side_of_floor[0.001-True]
+FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_power_requires_dev_variance_above_floor[0.0009-False]
+FAILED unit_tests/kb_eval/test_review_fixes_2.py::test_n1_power_requires_dev_variance_above_floor[0.01-True]
+7 failed, 4 passed in 13.93s

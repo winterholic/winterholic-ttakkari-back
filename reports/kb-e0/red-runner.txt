@@ -1,0 +1,274 @@
+FFFFFFFFFFF                                                              [100%]
+=================================== FAILURES ===================================
+__________ test_loader_freezes_manifest_and_refuses_unverified_rights __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_freezes_manifest_a0')
+
+    def test_loader_freezes_manifest_and_refuses_unverified_rights(tmp_path):
+>       bundle = e.load_bundle(write_bundle(tmp_path))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_runner.py:56: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_freezes_manifest_a0/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+___________ test_loader_negative_controls[<lambda>-extra_forbidden] ____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_0')
+mutation = <function <lambda> at 0x1099ea5c0>, expected = 'extra_forbidden'
+
+    @pytest.mark.parametrize("mutation,expected", [
+        (lambda b: b["manifest"].update(silent_unknown=1), "extra_forbidden"),
+        (lambda b: b["sources"][0].update(body="changed"), "source_hash_mismatch"),
+        (lambda b: b["cases"][0].update(verification="human_verified"), "human_attestation_required"),
+        (lambda b: b["policy"].update(margin=.10), "literal_error"),
+        (lambda b: b["predictions"].update(unknown={"ranked": [], "coverage": "none"}), "unknown_prediction"),
+    ])
+    def test_loader_negative_controls(tmp_path, mutation, expected):
+        data = fixture_bundle()
+        mutation(data)
+        with pytest.raises(ValueError, match=expected):
+>           e.load_bundle(write_bundle(tmp_path, data))
+
+unit_tests/kb_eval/test_runner.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_0/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+_________ test_loader_negative_controls[<lambda>-source_hash_mismatch] _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_1')
+mutation = <function <lambda> at 0x1099ea660>, expected = 'source_hash_mismatch'
+
+    @pytest.mark.parametrize("mutation,expected", [
+        (lambda b: b["manifest"].update(silent_unknown=1), "extra_forbidden"),
+        (lambda b: b["sources"][0].update(body="changed"), "source_hash_mismatch"),
+        (lambda b: b["cases"][0].update(verification="human_verified"), "human_attestation_required"),
+        (lambda b: b["policy"].update(margin=.10), "literal_error"),
+        (lambda b: b["predictions"].update(unknown={"ranked": [], "coverage": "none"}), "unknown_prediction"),
+    ])
+    def test_loader_negative_controls(tmp_path, mutation, expected):
+        data = fixture_bundle()
+        mutation(data)
+        with pytest.raises(ValueError, match=expected):
+>           e.load_bundle(write_bundle(tmp_path, data))
+
+unit_tests/kb_eval/test_runner.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_1/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+______ test_loader_negative_controls[<lambda>-human_attestation_required] ______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_2')
+mutation = <function <lambda> at 0x1099ea700>
+expected = 'human_attestation_required'
+
+    @pytest.mark.parametrize("mutation,expected", [
+        (lambda b: b["manifest"].update(silent_unknown=1), "extra_forbidden"),
+        (lambda b: b["sources"][0].update(body="changed"), "source_hash_mismatch"),
+        (lambda b: b["cases"][0].update(verification="human_verified"), "human_attestation_required"),
+        (lambda b: b["policy"].update(margin=.10), "literal_error"),
+        (lambda b: b["predictions"].update(unknown={"ranked": [], "coverage": "none"}), "unknown_prediction"),
+    ])
+    def test_loader_negative_controls(tmp_path, mutation, expected):
+        data = fixture_bundle()
+        mutation(data)
+        with pytest.raises(ValueError, match=expected):
+>           e.load_bundle(write_bundle(tmp_path, data))
+
+unit_tests/kb_eval/test_runner.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_2/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+____________ test_loader_negative_controls[<lambda>-literal_error] _____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_3')
+mutation = <function <lambda> at 0x1099ea7a0>, expected = 'literal_error'
+
+    @pytest.mark.parametrize("mutation,expected", [
+        (lambda b: b["manifest"].update(silent_unknown=1), "extra_forbidden"),
+        (lambda b: b["sources"][0].update(body="changed"), "source_hash_mismatch"),
+        (lambda b: b["cases"][0].update(verification="human_verified"), "human_attestation_required"),
+        (lambda b: b["policy"].update(margin=.10), "literal_error"),
+        (lambda b: b["predictions"].update(unknown={"ranked": [], "coverage": "none"}), "unknown_prediction"),
+    ])
+    def test_loader_negative_controls(tmp_path, mutation, expected):
+        data = fixture_bundle()
+        mutation(data)
+        with pytest.raises(ValueError, match=expected):
+>           e.load_bundle(write_bundle(tmp_path, data))
+
+unit_tests/kb_eval/test_runner.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_3/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+__________ test_loader_negative_controls[<lambda>-unknown_prediction] __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_4')
+mutation = <function <lambda> at 0x1099ea840>, expected = 'unknown_prediction'
+
+    @pytest.mark.parametrize("mutation,expected", [
+        (lambda b: b["manifest"].update(silent_unknown=1), "extra_forbidden"),
+        (lambda b: b["sources"][0].update(body="changed"), "source_hash_mismatch"),
+        (lambda b: b["cases"][0].update(verification="human_verified"), "human_attestation_required"),
+        (lambda b: b["policy"].update(margin=.10), "literal_error"),
+        (lambda b: b["predictions"].update(unknown={"ranked": [], "coverage": "none"}), "unknown_prediction"),
+    ])
+    def test_loader_negative_controls(tmp_path, mutation, expected):
+        data = fixture_bundle()
+        mutation(data)
+        with pytest.raises(ValueError, match=expected):
+>           e.load_bundle(write_bundle(tmp_path, data))
+
+unit_tests/kb_eval/test_runner.py:76: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_loader_negative_controls_4/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+________________ test_runner_resume_integrity_and_exact_replay _________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_runner_resume_integrity_a0')
+
+    def test_runner_resume_integrity_and_exact_replay(tmp_path):
+>       bundle = e.load_bundle(write_bundle(tmp_path))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_runner.py:80: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_runner_resume_integrity_a0/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+________________ test_resume_rejects_changed_input_not_just_id _________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_resume_rejects_changed_in0')
+
+    def test_resume_rejects_changed_input_not_just_id(tmp_path):
+        path = write_bundle(tmp_path)
+>       bundle = e.load_bundle(path)
+                 ^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_runner.py:107: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_resume_rejects_changed_in0/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+_____________ test_public_or_unverified_gold_cannot_be_final_pass ______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_public_or_unverified_gold0')
+
+    def test_public_or_unverified_gold_cannot_be_final_pass(tmp_path):
+        data = fixture_bundle()
+        data["kind"] = "public"
+>       result = e.run(e.load_bundle(write_bundle(tmp_path, data)), tmp_path/"run")
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_runner.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_public_or_unverified_gold0/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+___________ test_cli_preserves_machine_readable_failures_and_resume ____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_cli_preserves_machine_rea0')
+
+    def test_cli_preserves_machine_readable_failures_and_resume(tmp_path):
+        path = write_bundle(tmp_path)
+        args = [sys.executable, "-m", "ttakkari.kb_eval", "run", str(path), "--out", str(tmp_path/"cli")]
+        first = subprocess.run(args+["--limit", "1"], capture_output=True, text=True)
+>       assert first.returncode == 3, first.stderr
+E       AssertionError: /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python: No module named ttakkari.kb_eval.__main__; 'ttakkari.kb_eval' is a package and cannot be directly executed
+E         
+E       assert 1 == 3
+E        +  where 1 = CompletedProcess(args=['/Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python', '-m', 'ttakkari.kb_ev.../python: No module named ttakkari.kb_eval.__main__; 'ttakkari.kb_eval' is a package and cannot be directly executed\n").returncode
+
+unit_tests/kb_eval/test_runner.py:128: AssertionError
+_______________ test_replay_key_covers_prediction_fixture_bytes ________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_replay_key_covers_predict0')
+
+    def test_replay_key_covers_prediction_fixture_bytes(tmp_path):
+>       one = e.load_bundle(write_bundle(tmp_path))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/kb_eval/test_runner.py:143: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+args = (PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2653/test_replay_key_covers_predict0/bundle.json'),)
+kwargs = {}
+
+    def load_bundle(*args, **kwargs):
+>       raise NotImplementedError("E0 loader")
+E       NotImplementedError: E0 loader
+
+src/ttakkari/kb_eval/core.py:15: NotImplementedError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_runner.py::test_loader_freezes_manifest_and_refuses_unverified_rights
+FAILED unit_tests/kb_eval/test_runner.py::test_loader_negative_controls[<lambda>-extra_forbidden]
+FAILED unit_tests/kb_eval/test_runner.py::test_loader_negative_controls[<lambda>-source_hash_mismatch]
+FAILED unit_tests/kb_eval/test_runner.py::test_loader_negative_controls[<lambda>-human_attestation_required]
+FAILED unit_tests/kb_eval/test_runner.py::test_loader_negative_controls[<lambda>-literal_error]
+FAILED unit_tests/kb_eval/test_runner.py::test_loader_negative_controls[<lambda>-unknown_prediction]
+FAILED unit_tests/kb_eval/test_runner.py::test_runner_resume_integrity_and_exact_replay
+FAILED unit_tests/kb_eval/test_runner.py::test_resume_rejects_changed_input_not_just_id
+FAILED unit_tests/kb_eval/test_runner.py::test_public_or_unverified_gold_cannot_be_final_pass
+FAILED unit_tests/kb_eval/test_runner.py::test_cli_preserves_machine_readable_failures_and_resume
+FAILED unit_tests/kb_eval/test_runner.py::test_replay_key_covers_prediction_fixture_bytes
+11 failed in 0.09s

@@ -1,0 +1,86 @@
+$ /Users/winterholic/development/kb-e0-harness-a28c55e0/.venv/bin/python -m pytest unit_tests/kb_eval/test_review_fixes.py -q
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+____ test_r1_positive_passage_owner_cannot_be_hidden_by_declared_documents _____
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2718/test_r1_positive_passage_owner0')
+
+    def test_r1_positive_passage_owner_cannot_be_hidden_by_declared_documents(tmp_path):
+>       with pytest.raises(ValueError, match='gold_document_mismatch|split_leakage'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:42: Failed
+_______ test_r2_invalid_bootstrap_or_duration_cannot_return_green[1-6.0] _______
+
+replicates = 1, duration = 6.0
+
+    @pytest.mark.parametrize('replicates,duration', [(1, 6.), (1000, float('nan'))])
+    def test_r2_invalid_bootstrap_or_duration_cannot_return_green(replicates, duration):
+        data = equal_latency()
+        for block in data:
+            block['elapsed_seconds'] = duration
+        try:
+            result = e.latency_report(data, seed=7, replicates=replicates)
+        except ValueError:
+            return
+>       assert result['relative'] != 'relative_pass', result
+E       AssertionError: {'relative': 'relative_pass', 'ratio_ci': [1.0, 1.0], 'ratio': 1.0, 'candidate_absolute': 'absolute_pass', ...}
+E       assert 'relative_pass' != 'relative_pass'
+
+unit_tests/kb_eval/test_review_fixes.py:55: AssertionError
+_____ test_r2_invalid_bootstrap_or_duration_cannot_return_green[1000-nan] ______
+
+replicates = 1000, duration = nan
+
+    @pytest.mark.parametrize('replicates,duration', [(1, 6.), (1000, float('nan'))])
+    def test_r2_invalid_bootstrap_or_duration_cannot_return_green(replicates, duration):
+        data = equal_latency()
+        for block in data:
+            block['elapsed_seconds'] = duration
+        try:
+            result = e.latency_report(data, seed=7, replicates=replicates)
+        except ValueError:
+            return
+>       assert result['relative'] != 'relative_pass', result
+E       AssertionError: {'relative': 'relative_pass', 'ratio_ci': [1.0, 1.0], 'ratio': 1.0, 'candidate_absolute': 'absolute_pass', ...}
+E       assert 'relative_pass' != 'relative_pass'
+
+unit_tests/kb_eval/test_review_fixes.py:55: AssertionError
+______ test_r3_verified_string_and_fake_url_do_not_authorize_public_data _______
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2718/test_r3_verified_string_and_fa0')
+
+    def test_r3_verified_string_and_fake_url_do_not_authorize_public_data(tmp_path):
+>       with pytest.raises(ValueError, match='rights_review_authentication_required'):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+unit_tests/kb_eval/test_review_fixes.py:59: Failed
+_________ test_r4_untrusted_reviewer_must_not_consume_or_create_audit __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2718/test_r4_untrusted_reviewer_mus0')
+
+    def test_r4_untrusted_reviewer_must_not_consume_or_create_audit(tmp_path):
+        path = tmp_path/'new'/'audit.json'
+        try:
+            e.open_holdout(path, identity(), actor='user-approved-reviewer',
+                           role='independent_reviewer', at='2026-10-22T00:00:00Z')
+        except ValueError as exc:
+            assert 'reviewer_authentication_required' in str(exc)
+>       assert not path.exists(), 'denied reviewer created consumed audit'
+E       AssertionError: denied reviewer created consumed audit
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-2718/test_r4_untrusted_reviewer_mus0/new/audit.json').exists
+
+unit_tests/kb_eval/test_review_fixes.py:70: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r1_positive_passage_owner_cannot_be_hidden_by_declared_documents
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_bootstrap_or_duration_cannot_return_green[1-6.0]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r2_invalid_bootstrap_or_duration_cannot_return_green[1000-nan]
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r3_verified_string_and_fake_url_do_not_authorize_public_data
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_r4_untrusted_reviewer_must_not_consume_or_create_audit
+5 failed in 0.08s
+
+exit=1

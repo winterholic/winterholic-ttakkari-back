@@ -1,0 +1,9 @@
+$ git push -u origin feat/kb-e0-harness
+branch 'feat/kb-e0-harness' set up to track 'origin/feat/kb-e0-harness'.
+remote: 
+remote: Create a pull request for 'feat/kb-e0-harness' on GitHub by visiting:        
+remote:      https://github.com/winterholic/winterholic-ttakkari-back/pull/new/feat/kb-e0-harness        
+remote: 
+To https://github.com/winterholic/winterholic-ttakkari-back
+ * [new branch]      feat/kb-e0-harness -> feat/kb-e0-harness
+exit=0

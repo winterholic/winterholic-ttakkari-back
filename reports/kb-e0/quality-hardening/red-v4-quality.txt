@@ -1,0 +1,56 @@
+...FFFF                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_more_clusters_never_make_an_informative_quality_interval_degenerate[4000] _
+
+n = 4000
+
+    @pytest.mark.parametrize("n", [40, 400, 4000])
+    def test_more_clusters_never_make_an_informative_quality_interval_degenerate(n):
+        v = list(0.01 * np.random.default_rng(1).standard_normal(n))
+        groups = [f"h{i}" for i in range(n)]
+        r = e.quality_family({"recall": v, "ndcg": v}, groups, seed=12)
+>       assert r["reasons"] == ["power_not_established"]
+E       AssertionError: assert ['degenerate_..._established'] == ['power_not_established']
+E         
+E         At index 0 diff: 'degenerate_bootstrap_interval' != 'power_not_established'
+E         Left contains one more item: 'power_not_established'
+E         Use -v to get more diff
+
+unit_tests/kb_eval/test_quality_hardening.py:423: AssertionError
+______________ test_quality_delta_sd_floor_boundary[0.0009-True] _______________
+
+amplitude = 0.0009, degenerate = True
+
+    @pytest.mark.parametrize("amplitude,degenerate", [(0.0009, True), (0.002, False)])
+    def test_quality_delta_sd_floor_boundary(amplitude, degenerate):
+        v = alternating(0.0, amplitude)
+>       floor = DEGENERACY["quality_min_delta_sd"]
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'quality_min_delta_sd'
+
+unit_tests/kb_eval/test_quality_hardening.py:432: KeyError
+______________ test_quality_delta_sd_floor_boundary[0.002-False] _______________
+
+amplitude = 0.002, degenerate = False
+
+    @pytest.mark.parametrize("amplitude,degenerate", [(0.0009, True), (0.002, False)])
+    def test_quality_delta_sd_floor_boundary(amplitude, degenerate):
+        v = alternating(0.0, amplitude)
+>       floor = DEGENERACY["quality_min_delta_sd"]
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'quality_min_delta_sd'
+
+unit_tests/kb_eval/test_quality_hardening.py:432: KeyError
+_________________ test_zero_width_guard_is_strict_and_nan_safe _________________
+
+    def test_zero_width_guard_is_strict_and_nan_safe():
+>       from ttakkari.kb_eval.validation import zero_width
+E       ImportError: cannot import name 'zero_width' from 'ttakkari.kb_eval.validation' (/Users/winterholic/development/kb-e0-harness-a28c55e0/src/ttakkari/kb_eval/validation.py)
+
+unit_tests/kb_eval/test_quality_hardening.py:439: ImportError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_more_clusters_never_make_an_informative_quality_interval_degenerate[4000]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_quality_delta_sd_floor_boundary[0.0009-True]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_quality_delta_sd_floor_boundary[0.002-False]
+FAILED unit_tests/kb_eval/test_quality_hardening.py::test_zero_width_guard_is_strict_and_nan_safe
+4 failed, 3 passed, 88 deselected in 1.24s

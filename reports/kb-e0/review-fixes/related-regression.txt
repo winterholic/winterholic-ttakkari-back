@@ -1,0 +1,18 @@
+........................................................................ [ 55%]
+..............F...........................................                        [100%]
+=================================== FAILURES ===================================
+____ test_registered_bootstrap_policy_is_fixed_and_not_a_sufficiency_claim _____
+
+    def test_registered_bootstrap_policy_is_fixed_and_not_a_sufficiency_claim():
+        from pathlib import Path
+        from ttakkari.kb_eval.validation import BOOTSTRAP_POLICY
+    
+        path = Path(__file__).resolve().parents[2] / "kb-eval/statistical-policy.json"
+>       assert json.loads(path.read_text()) == BOOTSTRAP_POLICY
+               ^^^^
+E       NameError: name 'json' is not defined. Did you forget to import 'json'?
+
+unit_tests/kb_eval/test_review_fixes.py:308: NameError
+=========================== short test summary info ============================
+FAILED unit_tests/kb_eval/test_review_fixes.py::test_registered_bootstrap_policy_is_fixed_and_not_a_sufficiency_claim
+1 failed, 129 passed, 4887 subtests passed in 5.86s

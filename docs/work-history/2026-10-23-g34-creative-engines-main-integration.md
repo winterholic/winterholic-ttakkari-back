@@ -67,3 +67,4 @@ base 2522d78 이후 main 23 커밋, feature 6 커밋. 두 쪽이 함께 바꾼 �
 - 새 SHA에서 `verify_deploy_gate.sh --contracts-only --commit 5c3caa07fc91d108fd1ae24122448211c4291764 --base origin/main`: Ruff 변경 46개 통과, 계약 `77 passed, 4148 deselected`, exit 0. 새 SHA의 기본 impacted gate는 앞서 관측한 동일 Codex sandbox sysctl 거부를 반복하지 않기 위해 미실행이며, contracts-only 및 단독 테스트를 전체 gate PASS로 표기하지 않는다.
 - 새 SHA 그 자체를 `git archive`한 체크아웃/새 `.venv`에서 `ttk_comfy None`, 필수 I2V `40 passed`, optional lab interop만 `1 skipped`, Ruff 통과. 로그는 outbox `green-i2v-5c3caa0-archive.log`, `gate-contracts-5c3caa0.log`.
 - 수정 diff는 테스트 2개 파일과 work-history만이며 기존 3개 Ruff format 정렬 부채, G0/G1/공유 lease, API merge union과 291ecfc production bytes는 손대지 않았다. main push/배포 예약은 하지 않는다.
+- 기존 독립 검수 session `8f506d6e-25a7-4e9f-ae5a-3f24307e5129`에만 후속 검수 요청을 전달하려 했으나 Ttakkari `schedule_action`이 `403 forbidden: 오케스트레이터 세션이 아닙니다`로 거부했다. 새 세션/작업자를 만들지 않았고 독립 재검수는 아직 시작되지 않았다.

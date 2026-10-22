@@ -148,7 +148,8 @@ def test_runner_exception_checkpoints_terminal_failure(tmp_path, monkeypatch):
 
             return Work()
 
-    module.generation.current = Runtime()
+    # 직접 대입하면 다음 시험에 role 없는 가짜가 남아 desk._ask 의 generation.current.role 읽기가 깨진다.
+    monkeypatch.setattr(module.generation, "current", Runtime())
     try:
         asyncio.run(module._run(job, object()))
     except RuntimeError as exc:
@@ -192,7 +193,8 @@ def test_runner_cancellation_checkpoints_terminal_status(tmp_path, monkeypatch):
 
             return Work()
 
-    module.generation.current = Runtime()
+    # 직접 대입하면 다음 시험에 role 없는 가짜가 남아 desk._ask 의 generation.current.role 읽기가 깨진다.
+    monkeypatch.setattr(module.generation, "current", Runtime())
 
     async def cancel_runner():
         task = asyncio.create_task(module._run(job, object()))

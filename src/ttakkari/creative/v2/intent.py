@@ -59,6 +59,7 @@ class InfoItem(Strict):
     narration: str = Field(default="", max_length=4000)
     weight: float = Field(default=1.0, ge=0.0, le=10.0)
     essential: bool = True
+    evidence: list[Span] = Field(default_factory=list, max_length=5)
 
 
 class Extraction(Strict):
@@ -201,6 +202,51 @@ def validate_intent(brief: str, intent: IntentSpec) -> IntentValidation:
                     path=f"constraints[{i}]",
                 )
             )
+        if c.source == "user_explicit" and not c.evidence:
+            errors.append(
+                IntentIssue(
+                    code="explicit_without_evidence",
+                    message="사용자 명시 제약은 인용이 필요합니다.",
+                    path=f"constraints[{i}]",
+                )
+            )
+    if intent.extraction.method == "llm":
+        for i, selection in enumerate(intent.selections):
+            if not selection.evidence:
+                errors.append(
+                    IntentIssue(
+                        code="missing_evidence",
+                        message="AI 선택 제안에는 브리프 인용 근거가 필요합니다.",
+                        path=f"selections[{i}]",
+                    )
+                )
+        for i, constraint in enumerate(intent.constraints):
+            if not constraint.evidence:
+                errors.append(
+                    IntentIssue(
+                        code="missing_evidence",
+                        message="AI 제약 제안에는 브리프 인용 근거가 필요합니다.",
+                        path=f"constraints[{i}]",
+                    )
+                )
+        for i, item in enumerate(intent.info_items):
+            if not item.evidence:
+                errors.append(
+                    IntentIssue(
+                        code="missing_evidence",
+                        message="AI 전달 항목에는 브리프 인용 근거가 필요합니다.",
+                        path=f"info_items[{i}]",
+                    )
+                )
+            for span in item.evidence:
+                if _normalize(span.quote) not in haystack:
+                    errors.append(
+                        IntentIssue(
+                            code="evidence_not_in_brief",
+                            message=f"전달 항목 근거 문구가 브리프에 없습니다: {span.quote!r}",
+                            path=f"info_items[{i}]",
+                        )
+                    )
     if not any(
         ENTRIES[s.entry_id].catalog == "C01"
         for s in intent.selections
@@ -233,7 +279,7 @@ def validate_intent(brief: str, intent: IntentSpec) -> IntentValidation:
         )
     return IntentValidation(
         valid=not errors,
-        needs_confirmation=intent.extraction.method == "lexical_hint"
+        needs_confirmation=intent.extraction.method in ("lexical_hint", "llm")
         or bool(intent.open_questions),
         errors=errors,
         warnings=warnings,

@@ -9,12 +9,13 @@ import asyncio
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from ttakkari.api.creative import perform
+from ttakkari.api.deps import Db
 from ttakkari.creative.v2.capabilities import CAPABILITIES, Strict
 from ttakkari.creative.v2.catalog_data import CATALOG_NAMES, ENTRIES
 from ttakkari.creative.v2.duration import (
@@ -25,11 +26,6 @@ from ttakkari.creative.v2.duration import (
     policy_summary,
     recheck_duration,
 )
-from ttakkari.creative.v2.extraction import (
-    IntentExtractionRejected,
-    IntentExtractionUnavailable,
-    extract_intent,
-)
 from ttakkari.creative.v2.intent import (
     IntentSpec,
     extraction_contract,
@@ -39,6 +35,11 @@ from ttakkari.creative.v2.intent import (
 from ttakkari.creative.v2.matching import match_intent
 from ttakkari.creative.v2.plans import build_plan, default_plan_store
 from ttakkari.creative.v2.registry import Registry
+from ttakkari.creative.v2.run_extraction import (
+    read_intent_run,
+    resume_intent_run,
+    start_intent_run,
+)
 from ttakkari.creative.v2.style_dna import (
     Resolution,
     StyleDNADoc,
@@ -169,28 +170,29 @@ async def intent_contract(_: User):
     return extraction_contract()
 
 
-@router.post("/intent/extract")
-async def intent_extract(body: BriefInput, _: User):
-    try:
-        intent = await extract_intent(body.brief)
-    except IntentExtractionUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except IntentExtractionRejected as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {
-        "intent": intent,
-        "validation": validate_intent(body.brief, intent),
-        "selection_labels": [
-            {
-                "entry_id": selection.entry_id,
-                "catalog": CATALOG_NAMES[ENTRIES[selection.entry_id].catalog],
-                "name": ENTRIES[selection.entry_id].name,
-            }
-            for selection in intent.selections
-            if selection.entry_id in ENTRIES
-        ],
-        "review_required": True,
-    }
+@router.post("/intent/runs", status_code=202)
+async def intent_run_start(
+    body: BriefInput,
+    _: User,
+    db: Db,
+    request_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=120)] = None,
+):
+    return await start_intent_run(db, body.brief, request_key=request_key)
+
+
+@router.get("/intent/runs/{run_id}")
+async def intent_run_get(run_id: uuid.UUID, _: User, db: Db):
+    return await read_intent_run(db, run_id)
+
+
+@router.post("/intent/runs/{run_id}/resume", status_code=202)
+async def intent_run_resume(
+    run_id: uuid.UUID,
+    _: User,
+    db: Db,
+    request_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=120)] = None,
+):
+    return await resume_intent_run(db, run_id, request_key=request_key)
 
 
 @router.post("/intent/validate")

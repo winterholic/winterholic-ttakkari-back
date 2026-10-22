@@ -215,6 +215,25 @@ async def test_brief_only_plan_is_flagged_and_forged_intent_rejected(client, aut
     ).status_code == 404
 
 
+async def test_llm_intent_cannot_skip_user_review_by_omitting_questions(client, auth):
+    candidate = intent_body(2)
+    candidate["selections"][0]["strength"] = "soft"
+    candidate["selections"][0]["source"] = "llm_inferred"
+    for selection in candidate["selections"]:
+        selection["evidence"] = [{"quote": "기술 설명"}]
+    for item in candidate["info_items"]:
+        item["evidence"] = [{"quote": "기술 설명"}]
+    candidate["extraction"] = {"method": "llm", "model": "fixture-model"}
+    candidate["open_questions"] = []
+    response = await client.post(
+        BASE + "/plans", headers=auth,
+        json={"brief": "기술 설명 영상", "intent": candidate},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["intent_status"] == "unconfirmed_hint"
+    assert response.json()["render_gate"] is False
+
+
 async def test_style_dna_compose_and_pin_over_api(client, auth):
     inputs = [
         {"style_id": "cute_3d", "version": "1.0.0"},
@@ -289,25 +308,53 @@ async def test_intent_validate_hint_and_match_endpoints(client, auth):
     assert bad.status_code == 422
 
 
-async def test_intent_extract_is_authenticated_and_returns_reviewable_proposal(
-    client, auth, monkeypatch
-):
+async def test_legacy_direct_intent_extract_route_is_removed(client, auth):
+    response = await client.post(BASE + "/intent/extract", headers=auth, json={"brief": "기술 설명"})
+    assert response.status_code == 404
+
+
+async def test_intent_run_endpoints_require_auth(client):
+    assert (await client.post(BASE + "/intent/runs", json={"brief": "기술 설명"})).status_code == 401
+    assert (await client.get(BASE + "/intent/runs/00000000-0000-4000-8000-000000000001")).status_code == 401
+    assert (await client.post(BASE + "/intent/runs/00000000-0000-4000-8000-000000000001/resume")).status_code == 401
+
+
+async def test_intent_run_start_and_poll_use_run_lifecycle(client, auth, monkeypatch):
     from ttakkari.api import creative_v2
-    from ttakkari.creative.v2.intent import IntentSpec
 
-    async def fake_extract(_brief):
-        data = intent_body(2)
-        data["extraction"] = {"method": "llm", "model": "test-local-model"}
-        data["open_questions"] = ["AI가 제안한 의도와 근거를 확인해 주세요."]
-        return IntentSpec.model_validate(data)
+    calls = []
 
-    monkeypatch.setattr(creative_v2, "extract_intent", fake_extract)
-    assert (await client.post(BASE + "/intent/extract", json={"brief": "기술 설명"})).status_code == 401
-    response = await client.post(
-        BASE + "/intent/extract", headers=auth, json={"brief": "기술 설명"}
+    async def fake_start(_db, brief, *, request_key=None):
+        calls.append((brief, request_key))
+        return {
+            "session_id": "11111111-1111-4111-8111-111111111111",
+            "run_id": "22222222-2222-4222-8222-222222222222",
+            "status": "queued",
+            "engine": "qwen-local",
+            "model": "Qwen3.8-Flash-Next-Q2_K",
+        }
+
+    async def fake_read(_db, run_id):
+        assert str(run_id) == "22222222-2222-4222-8222-222222222222"
+        return {"run_id": str(run_id), "status": "running", "engine": "qwen-local", "intent": None}
+
+    async def fake_resume(_db, run_id, *, request_key=None):
+        assert str(run_id) == "22222222-2222-4222-8222-222222222222"
+        return {"run_id": str(run_id), "status": "queued", "engine": "qwen-local", "request_key": request_key}
+
+    monkeypatch.setattr(creative_v2, "start_intent_run", fake_start)
+    monkeypatch.setattr(creative_v2, "read_intent_run", fake_read)
+    monkeypatch.setattr(creative_v2, "resume_intent_run", fake_resume)
+
+    started = await client.post(BASE + "/intent/runs", headers={**auth, "Idempotency-Key": "req-1"}, json={"brief": "기술 설명"})
+    assert started.status_code == 202, started.text
+    assert started.json()["status"] == "queued"
+    assert calls == [("기술 설명", "req-1")]
+    polled = await client.get(BASE + "/intent/runs/22222222-2222-4222-8222-222222222222", headers=auth)
+    assert polled.status_code == 200, polled.text
+    assert polled.json()["status"] == "running"
+    resumed = await client.post(
+        BASE + "/intent/runs/22222222-2222-4222-8222-222222222222/resume",
+        headers={**auth, "Idempotency-Key": "resume-1"},
     )
-    assert response.status_code == 200, response.text
-    assert response.json()["review_required"] is True
-    assert response.json()["intent"]["extraction"]["method"] == "llm"
-    assert response.json()["validation"]["needs_confirmation"] is True
-    assert response.json()["selection_labels"][0]["name"] == "기술 설명"
+    assert resumed.status_code == 202 and resumed.json()["request_key"] == "resume-1"

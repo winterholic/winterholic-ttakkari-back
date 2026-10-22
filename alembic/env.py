@@ -32,6 +32,9 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    from ttakkari.schema_aliases import realign
+    if moved := realign(connection):
+        print(f"alembic_version {moved[0]} -> {moved[1]} (contract schema_aliases)")
     context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
     with context.begin_transaction():
         context.run_migrations()

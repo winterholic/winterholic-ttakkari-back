@@ -14,6 +14,7 @@ MAX_LOG_BYTES = 8 * 1024 * 1024
 MAX_LINE_CHARS = 300
 SECTION_MAX_LINES = 40
 FAILED_STATUSES = {"failed", "recovery_pending"}
+WAITING_STATUSES = {"waiting_idle"}
 
 _ERROR_LINE = re.compile(
     r"Traceback \(most recent call last\)|^E\s{2,}|^(?:FAILED|ERROR)\b|\b(?:error|fatal)\b\s*[:\[]|npm ERR!|"
@@ -23,6 +24,9 @@ _ERROR_LINE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 _FAILED_TEST = re.compile(r"^FAILED\s+\S+")
+# pytest 마지막 요약줄. failed·error 없이 passed 로 끝나면 로그 속 경고 줄은 실패 원인이 아니다.
+_PYTEST_SUMMARY = re.compile(r"^=*\s*(?:\d+ (?:passed|skipped|xfailed|xpassed|warnings?|deselected|subtests passed)(?:, )?)+.* in [\d.]+s")
+_PYTEST_BAD = re.compile(r"\b\d+ (?:failed|errors?)\b")
 _E_LINE = re.compile(r"^E\s{2,}\S")
 _STAGE_FROM_ERROR = re.compile(r"release stage (?P<stage>[\w .\-]+?) (?:failed|could not start)")
 _STAGE_MARKERS = [
@@ -103,10 +107,23 @@ def error_sections(lines: list[str], *, max_sections: int = 4, context: int = 3)
     return out
 
 
+def tests_passed(lines: list[str]) -> bool:
+    """로그의 마지막 pytest 요약이 실패 없이 통과로 끝났는가."""
+    for line in reversed(lines[-40:]):
+        if _PYTEST_SUMMARY.match(line.strip()):
+            return not _PYTEST_BAD.search(line)
+    return False
+
+
 def infer_stage(job: dict, lines: list[str]) -> str:
+    if job.get("error_stage"):
+        return str(job["error_stage"])
     m = _STAGE_FROM_ERROR.search(job.get("error") or "")
     if m:
         return m["stage"].strip()
+    if job.get("error") and tests_passed(lines):
+        # 테스트가 통과했는데 job 이 실패했다면 원인은 로그가 아니라 그 뒤 단계(계약·마이그레이션·기동)다.
+        return "schema_contract" if "schema contract" in job["error"] else "post-test"
     text = "\n".join(lines[-400:])
     for name, marker in _STAGE_MARKERS:
         if marker.search(text):
@@ -125,6 +142,9 @@ def signature(job: dict, lines: list[str]) -> str:
     trace = parse_traceback("\n".join(lines))
     if trace:
         return f"{trace.exc_type}: {trace.exc_message}"
+    if job.get("error") and tests_passed(lines):
+        # 통과한 pytest 의 경고 줄을 원인으로 고르지 않고 job 이 기록한 실제 오류를 쓴다.
+        return job["error"].strip().splitlines()[0]
     for line in reversed(lines):
         if _ERROR_LINE.search(line):
             return line.strip()
@@ -147,7 +167,19 @@ def summarize(job: dict, *, with_log: bool = True) -> dict[str, Any]:
     if job.get("status") in FAILED_STATUSES and with_log:
         stage, sig, _ = headline(job, lines)
         base["stage"], base["cause"] = stage, sig[:200]
+    base.update(wait_state(job))
     return base
+
+
+def wait_state(job: dict) -> dict[str, Any]:
+    """유휴·슬롯을 기다리는 예약이 왜 멈춰 있는지. 실패가 아니므로 cause 대신 wait_* 로 보인다."""
+    if job.get("status") not in WAITING_STATUSES:
+        return {}
+    out: dict[str, Any] = {"wait_reason": scrub((job.get("idle_reason") or job.get("error_summary") or "")[:300]) or None}
+    for key in ("active_runs", "idle_since"):
+        if job.get(key) is not None:
+            out[key] = job[key]
+    return out
 
 
 def view(job: dict, mode: str = "summary", *, lines: int = 60, offset: int | None = None) -> dict[str, Any]:

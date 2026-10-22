@@ -382,3 +382,36 @@ def test_generations_reservation_ignores_dirty_tree_and_moved_head(monkeypatch, 
     monkeypatch.setattr(m, "strategy", lambda: "legacy")
     with pytest.raises(ValueError):
         m.ensure_revision(first)
+
+
+@pytest.mark.parametrize("published", [True, False])
+def test_generations_reservation_of_a_commit_outside_local_head(monkeypatch, tmp_path, published):
+    from conftest import git
+
+    m = deployment()
+    git(tmp_path, "init", "-q")
+    (tmp_path / "version").write_text("base")
+    git(tmp_path, "add", "version")
+    git(tmp_path, "commit", "-qm", "base")
+    base = git(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / "version").write_text("published candidate")
+    git(tmp_path, "commit", "-qam", "candidate")
+    candidate = git(tmp_path, "rev-parse", "HEAD")
+    ref = "refs/remotes/origin/main" if published else "refs/heads/unfinished-feature"
+    git(tmp_path, "update-ref", ref, candidate)
+    git(tmp_path, "checkout", "--detach", base)
+    (tmp_path / "version").write_text("local concurrent work")
+    git(tmp_path, "commit", "-qam", "local")
+    local_head = git(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / "dirty").write_text("preserve me")
+    monkeypatch.setattr(m, "resolve_source_root", lambda: tmp_path)
+    monkeypatch.setattr(m, "strategy", lambda: "generations")
+
+    if published:
+        m.ensure_revision(candidate)
+    else:
+        with pytest.raises(ValueError):
+            m.ensure_revision(candidate)
+    assert git(tmp_path, "rev-parse", "HEAD") == local_head
+    assert (tmp_path / "dirty").read_text() == "preserve me"
+    assert (tmp_path / "version").read_text() == "local concurrent work"

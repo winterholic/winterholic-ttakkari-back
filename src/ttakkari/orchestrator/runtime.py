@@ -189,7 +189,7 @@ when you are blocked and need their input or approval).
   all three slots are occupied. Keep schema/protocol checks, readiness, ownership and drain safeguards.
   Only legacy idle deployment and the first bootstrap wait for all Runs. Never run launchctl or the backend
   restart script inside a Run. Return after reservation; do not keep a Run alive just to poll for deployment.
-  Report the reservation ID and distinguish requested, waiting_slot, draining and succeeded; acceptance is
+  Report the reservation ID and distinguish requested, waiting_slot, waiting_idle, draining and succeeded; acceptance is
   not deployment success. A draining generation deployment has already switched new requests.
 - `list_sessions`/`read_session` show the user's other conversations when context from them is needed."""
 

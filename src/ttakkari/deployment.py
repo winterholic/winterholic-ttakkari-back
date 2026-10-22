@@ -90,11 +90,12 @@ def ensure_revision(expected: str) -> None:
     source = resolve_source_root()
     if strategy() == "generations":
         # NOTE: 세대 배포는 `git archive <sha>`로 릴리스를 만든다. 공유 작업 트리의 미커밋 변경이나 다른 세션이 올린 HEAD 는
-        # 배포 내용과 무관하므로, 커밋이 존재하고 현재 브랜치 이력에 있는지만 본다(409 병목 방지).
-        if subprocess.run(["git", "merge-base", "--is-ancestor", expected, "HEAD"],
-                          cwd=source, capture_output=True, check=False).returncode:
-            raise ValueError("예약한 커밋이 없거나 현재 브랜치 이력에 없습니다. 커밋을 확인하세요.")
-        return
+        # 배포 내용과 무관하다. 로컬 HEAD 가 다른 작업으로 갈라져도 origin/main 에 게시된 커밋은 허용한다.
+        for ref in ("HEAD", "refs/remotes/origin/main"):
+            if subprocess.run(["git", "merge-base", "--is-ancestor", expected, ref],
+                              cwd=source, capture_output=True, check=False).returncode == 0:
+                return
+        raise ValueError("예약한 커밋이 없거나 현재 브랜치·origin/main 이력에 없습니다. 커밋을 확인하세요.")
     dirty = subprocess.check_output(
         ["git", "status", "--porcelain"], cwd=source, text=True
     ).strip()
@@ -192,7 +193,7 @@ class JobStore:
                 from ttakkari.generation_deployment import equivalent_contracts
                 source = get_settings().deploy_source_root or BACK
                 for old in self.all():
-                    if old["id"] == new_job["id"] or old["status"] != "requested" or old.get("strategy") != "generations":
+                    if old["id"] == new_job["id"] or old["status"] not in {"requested", "waiting_idle"} or old.get("strategy") != "generations":
                         continue
                     ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", old["revision"], sha],
                         cwd=source, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)

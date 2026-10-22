@@ -211,6 +211,43 @@ async def test_failed_deploy_job_becomes_an_issue_with_stage_and_masked_excerpt(
     assert (await client.get("/api/agent/ops-logs/issues", headers=h)).json()["items"][0]["count"] == 1
 
 
+PASSED_PYTEST_LOG = """============================= test session starts ==============================
+collected 3 items
+tests/test_a.py::test_x
+  /x/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [field_name='run_timeout_seconds', input_value=1.5, input_type=float])
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+3360 passed, 8 skipped, 2 xfailed, 9 warnings, 4952 subtests passed in 1356.95s (0:22:36)
+"""
+
+
+def test_failure_after_passing_tests_reports_the_recorded_error_not_a_warning_line():
+    job = {"id": str(uuid.uuid4()), "status": "failed",
+           "error": "schema contract requires an idle migration/bootstrap; active work preserved"}
+    lines = PASSED_PYTEST_LOG.splitlines()
+    stage, sig, headline = deploy_logs.headline(job, lines)
+    assert stage == "schema_contract"
+    assert sig.startswith("schema contract requires an idle migration")
+    assert "Pydantic" not in headline
+    # 구조화된 단계가 기록돼 있으면 그것을 우선한다.
+    assert deploy_logs.infer_stage(job | {"error_stage": "migrate"}, lines) == "migrate"
+
+
+def test_real_test_failures_still_win_over_the_recorded_error():
+    job = {"id": str(uuid.uuid4()), "status": "failed", "error": "release stage pytest failed (exit 1); x"}
+    lines = ["FAILED tests/test_a.py::test_x - assert 1 == 2", "1 failed, 5 passed in 3.21s"]
+    assert deploy_logs.signature(job, lines).startswith("FAILED tests/test_a.py::test_x")
+    assert not deploy_logs.tests_passed(lines)
+
+
+def test_waiting_idle_job_exposes_why_it_waits_without_a_failure_cause():
+    job = {"id": str(uuid.uuid4()), "status": "waiting_idle", "active_runs": 3, "idle_since": "2026-10-21T11:00:00+00:00",
+           "idle_reason": "database schema '0099' is outside the online migration range"}
+    out = deploy_logs.summarize(job, with_log=False)
+    assert out["wait_reason"].startswith("database schema") and out["active_runs"] == 3
+    assert out["idle_since"] and "cause" not in out
+
+
 async def test_same_cause_on_different_deploys_groups_and_new_sha_is_tagged():
     _job(log=PYTEST_LOG, sha=SHA, created="2026-10-10T00:00:00+00:00")
     _job(log=PYTEST_LOG.replace("3.21s", "9.99s"), sha=SHA2, created="2026-10-11T00:00:00+00:00")

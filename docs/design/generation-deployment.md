@@ -118,6 +118,10 @@ cd ~/.ttakkari/deploy/releases/<새 SHA>
 
 schema 계약이 다르면 명시된 `online_migration_from`에서만 online migration을 허용한다. 기존 테이블을 바꾸지 않는 migration만 온라인 출발점을 명시한다. 현재 `0034_knowledge_ledger`에서 `0035_qwen_token_usage`로는 독립 사용량 테이블을 추가하므로 온라인 전환을 허용한다. 새 migration의 head와 배포 계약이 어긋나면 회귀 검사에서 실패한다. online migration 연결에는 2초 lock timeout과 30초 statement timeout을 적용한다. 파괴적 변경은 기존 안전 전환 절차로 별도 처리한다. DB migration을 자동 downgrade해 rollback하지 않는다.
 
+계약의 `schema_aliases`는 이름이 바뀌어 저장소에 더는 없는 옛 리비전 ID를 알려진 리비전에 대응시킨다. 별칭은 "물리 스키마가 대상 리비전과 같다"는 보증이므로 실제 DB를 대조해 확인한 경우에만 추가한다(2026-10-21: 운영 DB가 커밋된 적 없는 `0059_kb_immutability_truncate`로 찍혀 있었고, 테이블·컬럼·인덱스·트리거 대조 결과 `0059_collector_intake` 상태였다). 정렬은 후보 릴리스의 `alembic/env.py`(`ttakkari.schema_aliases.realign`)가 migration 시작 전에 수행한다. 감독은 릴리스보다 오래된 코드로 돌 수 있어(2026-10-21 기준 `e817fc19` 고정) `schema_aliases`를 모른 채 `online_migration_from`만 본다. 그래서 별칭 키는 `online_migration_from`에도 함께 적고, 별칭 정렬을 감독 코드에 두지 않는다.
+
+온라인 범위 밖의 스키마는 예약을 `failed`로 끝내지 않고 `waiting_idle`로 둔다. 검사는 이미 통과했으므로 릴리스·검사 바인딩을 보존해 재검사 없이 기다린다. 대기 중에는 새 Run 접수를 막지 않고, 실행 중 Run이 0이 되는 순간 접수 배타 잠금을 얻어 일반(비 online) migration과 컷오버를 마친 뒤 잠금을 놓는다. 활성 작업은 종료시키지 않는다. `backend_deploy_status`·`ops_list_deploys`·`ops_deploy_log`는 `active_runs`, `idle_since`, `idle_reason`(`wait_reason`)을 보여준다. 대기 중 더 새 예약이 같은 계약 안에서 들어오면 이전 `waiting_idle` 예약은 `superseded`된다. 유휴 이행 migration 자체가 실패하면 그때는 실제 오류와 함께 `failed`로 기록한다.
+
 ## 검증 범위
 
 새 테스트는 두 개의 **실제 ASGI 프로세스**, 실제 PostgreSQL, 실제 Caddy와 가짜 CLI를 사용한다. 기동·전환·구세대 CLI PID 유지·신규 작업·원격 취소·SSE cursor 재개, 전역 슬롯/세션 순서, DB 명령 중복 제거, rollback/감독 중단, 변경된 사용량 공유와 stale 쓰기 거절을 다룬다.

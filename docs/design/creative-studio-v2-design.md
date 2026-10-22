@@ -19,6 +19,7 @@
 | `probe.py` | 호스트 실측 탐침. 설치·버전·lab 기록·스킬 초안 상태를 스냅샷 JSON으로 저장 |
 | `registry.py` | 스냅샷에서 항목·능력 수준을 계산하고 레시피 실행 가능성을 판정 |
 | `intent.py` | IntentSpec 계약과 검증, 단어 힌트 보조(결정 불가), LLM 추출기용 계약 |
+| `extraction.py` | 관리형 로컬 Qwen으로 구조화 의도 초안 추출, 근거 검증, 추론을 soft로 제한 |
 | `matching.py` | 선택 → 충돌 해석 → 필요 능력 → 레시피 점수 → 결정과 근거 추적 |
 | `style_dna.py` | Style DNA 16필드, 참조 자산, 버전 불변 저장소, 상속, 합성, 충돌 해결, 작품 고정 |
 | `duration.py` | 통합 길이 정책, 발화 추정, 프레임 배분, 재계산 |
@@ -75,7 +76,8 @@ API는 `src/ttakkari/api/creative_v2.py`(`/api/creative/v2/*`, 소유자 인증)
 ## 알려진 한계와 반례
 
 - 발화 추정은 표본 하나와 한 엔진 기준이다. 빠른 화자나 영문·숫자 위주 대본에서 어긋날 수 있다. 실측 오디오 전까지 `speech_source=estimate`로 표시된다.
-- 서버에는 LLM 추출기가 연결돼 있지 않다. 계약(`GET /intent/contract`)과 검증만 있고, 추출 결과는 호출자(에이전트·클라이언트)가 만든다. 브리프만 보내면 단어 힌트 초안이 되어 승인이 막힌다. UI는 현재 이 경로만 쓴다(구조화 의도 입력 UI 없음).
+- `POST /intent/extract`는 기존 관리형 Qwen 서비스에 연결돼 있다. 모델 출력은 IntentSpec으로 파싱하고, 브리프 안에 없는 인용은 거부하며, 선택·제약은 전부 `llm_inferred` soft로 낮춰 사용자 결정을 대신하지 못하게 한다. 추출 결과에는 확인 질문이 붙고, 계획 작성 UI도 검토 체크 후에만 이 의도를 보낸다. 이 세션에서는 API/UI 경로를 mock으로 검증했으며 실제 Qwen 추론은 실행하지 않았다.
+- 화면에서 추출안을 직접 편집하는 기능은 아직 없다. 틀린 결과는 브리프 수정 후 재분석해야 한다.
 - 레시피 사례 연결(`Recipe.cases`)은 사람이 지정한다. R19 사례 기록은 박자 컷 장면이며 립싱크·댄스를 포함하지 않는다.
 - 스냅샷은 수동 생성이고 이 호스트 값이다. 배포 환경의 실제 상태가 아니다. 갱신: `python -m ttakkari.creative.v2.probe --out src/ttakkari/creative/v2/data/capability_snapshot.json` 뒤 `python -m ttakkari.creative.v2.report > docs/design/creative-studio-v2-capability-matrix.md`.
 - 플랫폼 상한은 YouTube Shorts 180초만 근거(YouTube 도움말 15424877, 2026-10-22 확인)가 있다. 다른 플랫폼은 사용자가 근거와 함께 지정한다. Instagram Reels는 20분까지 만들 수 있고 3분 초과는 신규 노출 추천에서 제외된다는 공식 안내가 있어 hard 상한으로 등록하지 않았다.

@@ -9,7 +9,7 @@ import asyncio
 import uuid
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
 from pydantic import Field
@@ -24,6 +24,11 @@ from ttakkari.creative.v2.duration import (
     plan_duration,
     policy_summary,
     recheck_duration,
+)
+from ttakkari.creative.v2.extraction import (
+    IntentExtractionRejected,
+    IntentExtractionUnavailable,
+    extract_intent,
 )
 from ttakkari.creative.v2.intent import (
     IntentSpec,
@@ -162,6 +167,30 @@ async def duration_recheck(body: RecheckInput, _: User):
 @router.get("/intent/contract")
 async def intent_contract(_: User):
     return extraction_contract()
+
+
+@router.post("/intent/extract")
+async def intent_extract(body: BriefInput, _: User):
+    try:
+        intent = await extract_intent(body.brief)
+    except IntentExtractionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except IntentExtractionRejected as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "intent": intent,
+        "validation": validate_intent(body.brief, intent),
+        "selection_labels": [
+            {
+                "entry_id": selection.entry_id,
+                "catalog": CATALOG_NAMES[ENTRIES[selection.entry_id].catalog],
+                "name": ENTRIES[selection.entry_id].name,
+            }
+            for selection in intent.selections
+            if selection.entry_id in ENTRIES
+        ],
+        "review_required": True,
+    }
 
 
 @router.post("/intent/validate")

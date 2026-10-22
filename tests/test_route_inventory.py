@@ -651,6 +651,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/creative/validate"): "owner-plain",
     ("POST", "/api/creative/v2/duration/preview"): "owner-plain",
     ("POST", "/api/creative/v2/duration/recheck"): "owner-plain",
+    ("POST", "/api/creative/v2/intent/extract"): "owner-plain",
     ("POST", "/api/creative/v2/intent/validate"): "owner-plain",
     ("POST", "/api/creative/v2/intent/hint"): "owner-plain",
     ("POST", "/api/creative/v2/match"): "owner-plain",

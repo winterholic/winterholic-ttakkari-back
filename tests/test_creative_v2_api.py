@@ -287,3 +287,27 @@ async def test_intent_validate_hint_and_match_endpoints(client, auth):
         json={"brief": "아무 말", "intent": intent_body(2)},
     )
     assert bad.status_code == 422
+
+
+async def test_intent_extract_is_authenticated_and_returns_reviewable_proposal(
+    client, auth, monkeypatch
+):
+    from ttakkari.api import creative_v2
+    from ttakkari.creative.v2.intent import IntentSpec
+
+    async def fake_extract(_brief):
+        data = intent_body(2)
+        data["extraction"] = {"method": "llm", "model": "test-local-model"}
+        data["open_questions"] = ["AI가 제안한 의도와 근거를 확인해 주세요."]
+        return IntentSpec.model_validate(data)
+
+    monkeypatch.setattr(creative_v2, "extract_intent", fake_extract)
+    assert (await client.post(BASE + "/intent/extract", json={"brief": "기술 설명"})).status_code == 401
+    response = await client.post(
+        BASE + "/intent/extract", headers=auth, json={"brief": "기술 설명"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["review_required"] is True
+    assert response.json()["intent"]["extraction"]["method"] == "llm"
+    assert response.json()["validation"]["needs_confirmation"] is True
+    assert response.json()["selection_labels"][0]["name"] == "기술 설명"

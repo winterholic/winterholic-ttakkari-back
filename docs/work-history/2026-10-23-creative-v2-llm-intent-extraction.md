@@ -26,3 +26,10 @@
 - 실제 MCP tool 실행 0회, 실제 model conversation resume 0회, 모델 usage metering은 미검증이다. 테스트 fake worker의 결과를 실제 모델 결과로 세지 않는다.
 - first-slice exact SHA에 대한 독립 검수는 별도 worker에서 queued 상태이며 통과로 간주하지 않는다. 새 구현 커밋은 그 exact-SHA 검수 대상과 구분한다.
 - WBS 8.3/8.6은 아직 done 처리하지 않았다. 실제 Qwen 응답·UI 브라우저 검증 및 잔여 범위가 남아 있다. 전문 레시피 실행 가능성을 새로 주장하지 않았고, 실제 영상 생성은 범위 밖이다.
+
+## Review branch commits
+
+- Backend implementation: `22486d2efb2bc53bad107f3cf31663b29c0e2840` (`feat(creative): run-backed intent review and editing gate`).
+- Backend feature history: `d7b594e` (`docs(work-history): record Run-backed creative intent review`).
+- Frontend implementation: `efbf1520e96d6b0da948f9f9bd0215fb71e08b90` (`feat(creative): add reviewed intent editing and run recovery UI`).
+- These commits were pushed to `feat/creative-multidimensional-v2` and `feat/creative-intent-duration`. The separate Style DNA correction commit `2073ec26a85f620f7269003caedea8248bad477f` was pushed before them.

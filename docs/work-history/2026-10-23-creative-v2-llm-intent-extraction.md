@@ -33,3 +33,29 @@
 - Backend feature history: `d7b594e` (`docs(work-history): record Run-backed creative intent review`).
 - Frontend implementation: `efbf1520e96d6b0da948f9f9bd0215fb71e08b90` (`feat(creative): add reviewed intent editing and run recovery UI`).
 - These commits were pushed to `feat/creative-multidimensional-v2` and `feat/creative-intent-duration`. The separate Style DNA correction commit `2073ec26a85f620f7269003caedea8248bad477f` was pushed before them.
+
+## Follow-up intent hardening (2026-10-23)
+
+범위는 Run 기반 의도 초안의 제약 승격, 검토 UI의 실제 요청 값, 뒤늦은 응답 보호다. 고정 검수 target인 backend `99a9e084a4716bce21adbc310d0e25f9694872b5`와 frontend `02dd278e39b6cea5851283e00a3166de48bf6fe1`은 변경하지 않았다.
+
+- Backend follow-up: `acdb3565de2eb481ab065d67b27dd8decaab3137` (`fix(creative): ground inferred intent constraints`). LLM이 `exact`를 내도 브리프에 같은 시간과 명시적 정확 표현이 함께 없으면 `preferred`로 낮춘다. `platform_cap`은 알려진 YouTube Shorts 항목, 브리프의 플랫폼 표기와 상한 표현이 모두 있을 때만 허용하고 출처·확인일은 카탈로그 값으로 고정한다. 주 역할(primary)만으로 능력 우선순위가 `must`가 되지 않으며 `strength=hard`만 `must`가 된다.
+- Frontend follow-up: `e2895691d400544efde4cf9999aa508f07a54b99` (`fix(creative): preserve reviewed intent on create`). AI가 낸 희망 시간·화면비를 사용자가 직접 바꾸지 않았으면 생성 API까지 유지한다. 사용자가 명시적으로 바꾸면 그 값이 적용된다. 검토 버튼은 선택·제약의 기존 출처를 일괄 `user_explicit`으로 승격하지 않는다. 브리프/의도 revision이 달라진 뒤 start·resume·validate 응답이 도착하면 현재 초안에 적용하지 않고 늦게 접수된 Run은 취소한다.
+
+### 후속 검증
+
+- Backend: `tests/test_creative_v2_extraction.py tests/test_creative_v2_run_extraction.py tests/test_creative_v2_api.py tests/test_qwen_local_run.py unit_tests/test_creative_v2_run_scope.py unit_tests/test_creative_v2_matching.py` → `51 passed in 7.22s`. Ruff 및 `git diff --check` 통과.
+- Frontend: `pnpm exec vitest run` → `137 passed | 2 skipped` files, `1307 passed | 10 skipped` tests. `pnpm lint` 통과(UI lint 기준선 138건 유지). `pnpm build` 성공; Vite가 기존 500 kB 초과 chunk 안내를 냈다. 로그는 Run outbox `creative-v2-logs/`에 보존했다.
+- TDD 재현: 희망 3분·9:16이 자동·16:9로 덮이는 요청, 편집 뒤 이전 intent Run이 현재 브리프에 붙는 요청, LLM primary가 능력을 `must`로 올리는 요청, 근거 없는 `exact`/`platform_cap` 요청을 먼저 실패시킨 뒤 고쳤다.
+
+### 실제 managed Qwen 응답 smoke: 미실행
+
+- 2026-10-23 KST 00:39경 `curl -sS -i --max-time 8 https://ttakkari-api.winterholic.net/api/version`은 HTTP 200, revision `75a12d690ad2458a56ea10675588539afb82791f`, PID `77581`을 반환했다. `/api/health`는 200 `{"ok":true}`였다.
+- 로컬 배포 release `/Users/winterholic/.ttakkari/deploy/releases/75a12d690ad2458a56ea10675588539afb82791f`가 존재하고 `.release.json`도 같은 revision을 가리켰다. 그 release 소스의 `src/ttakkari/api/creative.py`에는 현재 branch의 `/api/creative/v2/intent/runs` 경로가 없다(소스 대조 결과이며, 외부 응답 자체로 경로 부재를 단정한 것은 아님). `/api/version` 응답은 프로세스 PID만 노출하고 active process의 절대 runtime path는 외부에서 확인되지 않았다.
+- readiness는 확인되지 않았다: `GET /api/ready`는 HTTP 404, `GET /api/runs/account-status`와 `/api/runs/worker-status`는 HTTP 401 Bearer 인증 요구였다. 사용량 endpoint 후보 `/api/usage`는 HTTP 404였다. 따라서 기존 개인 Qwen worker의 activation/readiness, model 응답·토큰량·레이턴시·자원량을 관측하지 않았다. usage lookup은 실제 추론 증거가 아니며, 이번 작업에서 usage lookup도 인증 때문에 미실행이다.
+- 실제 모델 호출 0회, 원문 응답/IntentSpec/schema 검증 0건, live intent Run resume 0회, 실제 MCP 실행 0회다. fake worker 회귀는 Run lifecycle만 검증하며 실모델 결과로 세지 않는다. private desk-Qwen API 직접 호출은 사용하지 않았고 로컬·host GPU 서버도 시작하지 않았다. 미실행 원인은 deployed revision이 현재 Run route보다 앞서 있고 인증된 readiness 조회도 401로 차단된 상태다. live backend가 변경 불가하다는 일반 결론은 아니다.
+
+### 브라우저·남은 범위
+
+- Configured Ttakkari browser로 local Vite `http://localhost:5173/creative/plan`을 열었다. 앱이 `/chat`, 이후 `/login?next=%2Fchat`로 보냈고 콘솔에 `http://127.0.0.1:8787/api/auth/refresh` HTTP 401 및 `sw.js` unsupported MIME 오류가 남았다. 페이지 도구는 닫았다. 인증된 제작 폼은 렌더되지 않아 UI 시각 검수는 미검증이며 shell browser fallback은 하지 않았다. 자동 저장된 snapshot/console은 Run outbox `browser/`에 있다.
+- 8.3/8.6은 실제 Run 모델 응답과 인증된 UI 검증 전이므로 done 처리하지 않았다. 렌더 8.7 미연결, 실제 Recipe Studio 실행 0회, 실제 영상 0편 상태를 유지한다. main merge/배포는 하지 않았다.
+- 설계·요구사항·두 날짜의 진행 기록에서 Style DNA 귀속을 재검색했다. 사용자 원문 15개 필드와 설계 추가 `version`의 구분은 이미 반영되어 있고 “사용자 지시가 16개 필드”라는 오귀속은 남아 있지 않다.

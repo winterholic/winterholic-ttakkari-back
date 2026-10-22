@@ -42,6 +42,8 @@ class StubComfy:
         self.hold = False
         self.view_status = 200
         self.drop_submit_response = False
+        self.uploads: list[dict] = []
+        self.upload_status = 200
         self.hide_queue = False
         self.http: ThreadingHTTPServer | None = None
 
@@ -94,6 +96,31 @@ class StubComfy:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _upload(self, raw: bytes):
+                """ComfyUI /upload/image 의 multipart 계약만 흉내 낸다(받은 필드·바이트를 기록)."""
+                boundary = self.headers["Content-Type"].split("boundary=")[1].encode()
+                fields: dict[str, str] = {}
+                image: dict | None = None
+                for part in raw.split(b"--" + boundary):
+                    if b"\r\n\r\n" not in part:
+                        continue
+                    head, _, payload = part.partition(b"\r\n\r\n")
+                    payload = payload.removesuffix(b"\r\n")
+                    text = head.decode("latin-1")
+                    name = text.split('name="')[1].split('"')[0]
+                    if 'filename="' in text:
+                        image = {"filename": text.split('filename="')[1].split('"')[0], "payload": payload}
+                    else:
+                        fields[name] = payload.decode()
+                with stub.lock:
+                    if stub.upload_status != 200 or image is None:
+                        return self._send({"error": "upload refused"}, stub.upload_status if stub.upload_status != 200 else 400)
+                    stub.uploads.append({"filename": image["filename"], "subfolder": fields.get("subfolder"),
+                                         "type": fields.get("type"), "overwrite": fields.get("overwrite"),
+                                         "sha256": hashlib.sha256(image["payload"]).hexdigest(),
+                                         "bytes": len(image["payload"])})
+                return self._send({"name": image["filename"], "subfolder": fields.get("subfolder", ""), "type": "input"})
+
             def do_GET(self):
                 path = urlparse(self.path).path
                 with stub.lock:
@@ -114,7 +141,10 @@ class StubComfy:
 
             def do_POST(self):
                 path = urlparse(self.path).path
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                raw = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                if path == "/upload/image":
+                    return self._upload(raw)
+                body = json.loads(raw or b"{}")
                 with stub.lock:
                     if path == "/prompt":
                         stub.submit_count += 1
@@ -344,3 +374,116 @@ def test_lost_submit_response_is_reconciled_without_a_second_submit_and_keeps_le
     assert result["status"] == "succeeded"
     assert stub.submit_count == 1
     assert lease_of(service) is None
+
+
+
+# ---------- E1 준비: I2V profile (실제 Runner·registry + HTTP stub, GPU 없음) ----------
+
+I2V_PROFILE = PROFILES["wan22-5b-i2v-draft"]
+E1_SHOTS = {  # e1-prep/e1-run-spec.json 에서 옮긴 prompt/seed 와 준비 단계에서 계산된 resolved hash(draft preset)
+    "shot1": (
+        2101,
+        (
+            "A woman with a silver bob haircut and freckles, wearing a mustard-yellow raincoat, sits by a "
+            "rain-streaked cafe window at night holding a cup of tea. Steam rises from the cup, raindrops slide "
+            "down the glass, the camera slowly pushes in, warm cinematic lighting."
+        ),
+        "e0dc76a6e7d5",
+    ),
+    "shot2": (
+        2102,
+        (
+            "A woman with a silver bob haircut and freckles, wearing a mustard-yellow raincoat, sits by a "
+            "rain-streaked cafe window at night. She slowly turns her head toward the window and lifts her cup, "
+            "soft reflections flicker on the glass, subtle handheld camera drift, shallow depth of field, "
+            "cinematic."
+        ),
+        "1c5e79fb6475",
+    ),
+}
+needs_i2v_registry = pytest.mark.skipif(
+    not (managed_comfy.REGISTRY_ROOT / "i2v-wan22-5b").exists(), reason="Lab i2v registry is not available")
+
+
+def _e1_image():
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (672, 384), (90, 60, 40)).save(buffer, "PNG")  # 실제 FLUX 기준 이미지가 아니라 시험용 대역
+    data = buffer.getvalue()
+    from ttakkari.managed_comfy_input import validate_input_image
+
+    return validate_input_image(asset_id="keyframe_flux_cafe.png", sha256=hashlib.sha256(data).hexdigest(), data=data)
+
+
+@needs_i2v_registry
+def test_i2v_over_http_uploads_the_owned_bytes_once_and_reproduces_the_prepared_e1_resolved_hashes(harness):
+    service, stubs, servers, _state = harness
+    image = _e1_image()
+    for shot, (seed, prompt, resolved_hash) in E1_SHOTS.items():
+        task = service.prepare("wan22-5b-i2v-draft", prompt=prompt, seed=seed, image=image)["task_id"]
+        job = service.execute(task)
+        assert job["status"] == "succeeded", (shot, job.get("error"))
+        stub = stubs[-1]
+        # 업로드: 같은 바이트가 ttk 하위 폴더에 이름 그대로 한 번만 올라갔다.
+        assert stub.uploads == [{"filename": "keyframe_flux_cafe.png", "subfolder": "ttk", "type": "input",
+                                 "overwrite": "true", "sha256": image.sha256, "bytes": len(image.data)}]
+        assert stub.submit_count == 1 and stub.interrupts == []
+        submitted = stub.entries[0]["prompt"]
+        loaders = [n for n in submitted.values() if n["class_type"] == "LoadImage"]
+        assert [n["inputs"]["image"] for n in loaders] == ["ttk/keyframe_flux_cafe.png"]
+        # E1 준비 단계가 계산한 resolved hash 와 일치: 같은 registry revision·draft preset·seed·prompt·이미지 이름.
+        assert job["result"]["resolved_hash"] == resolved_hash
+        receipt = job["receipt"]
+        assert "receipt_error" not in job
+        assert receipt["resolved_graph_sha256"] == canonical_sha256(submitted)
+        assert receipt["graph_hash_consistent"] and receipt["seed_consistent"] and receipt["seed"] == seed
+        assert receipt["workflow_revision_hash"] == "6c9413e014d5" and receipt["profile_id"] == "wan22-5b-i2v-draft"
+        assert receipt["input_image"]["sha256"] == image.sha256 and receipt["input_image"]["graph_consistent"] is True
+        assert receipt["input_image"]["graph_load_image"] == "ttk/keyframe_flux_cafe.png"
+        assert receipt["profile_verification"] == "prepared-unverified"
+        assert servers[-1].start_kwargs == {"required_gb": 24}
+        assert lease_of(service) is None
+        assert job["lease_release_proof"]["evidence"]["server_health_after_stop"] is False
+        assert not (service._inputs_root() / task).exists()
+
+
+@needs_i2v_registry
+def test_i2v_upload_refused_by_the_server_never_submits_and_cleans_up_the_owned_lease(harness):
+    service, stubs, servers, _state = harness
+    image = _e1_image()
+    # stub 은 factory 안에서 만들어지므로, 첫 업로드 요청부터 거부하도록 서버 시작 직후 상태를 바꾼다.
+    original_start = StubServer.start
+
+    def start_then_refuse(self, **kwargs):
+        result = original_start(self, **kwargs)
+        self.stub.upload_status = 500
+        return result
+
+    StubServer.start = start_then_refuse
+    try:
+        task = service.prepare("wan22-5b-i2v-draft", prompt="cafe", seed=2101, image=image)["task_id"]
+        job = service.execute(task)
+    finally:
+        StubServer.start = original_start
+    saved = service.get(task)
+    assert job["status"] == saved["status"] == "failed"
+    assert saved["error"].startswith("input_upload_failed")
+    assert saved["input_upload"]["prompt_submitted"] is False
+    stub = stubs[0]
+    assert stub.submit_count == 0 and stub.uploads == [] and stub.interrupts == []  # GPU 제출 없음
+    assert servers[0].proc is None and lease_of(service) is None  # 소유 런타임 정지·lease 해제
+    assert saved["lease_release_proof"]["evidence"]["server_health_after_stop"] is False
+    assert not (service._inputs_root() / task).exists()
+    # 같은 이미지로 곧바로 다시 제출할 수 있다(lease가 남지 않았다). 재시도는 새 task다.
+    again = service.prepare("wan22-5b-i2v-draft", prompt="cafe", seed=2101, image=image)
+    assert again["task_id"] != task and lease_of(service)["owner_task"] == again["task_id"]
+
+
+def test_t2v_still_works_without_upload_and_never_touches_the_upload_endpoint(harness):
+    service, stubs, _servers, _state = harness
+    task = service.prepare("wan22-5b-draft", prompt="A fox", seed=7)["task_id"]
+    job = service.execute(task)
+    assert job["status"] == "succeeded" and stubs[0].uploads == [] and "input_image" not in job["receipt"]

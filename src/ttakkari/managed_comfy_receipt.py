@@ -237,7 +237,7 @@ def _output_entry(file: dict, root: Path, graph: dict) -> dict[str, Any]:
 
 def build_receipt(*, job: dict[str, Any], adapter_job: dict[str, Any], profile: Any, comfy_root: Path,
                   jobs_root: Path, rss_at_finish_gb: float | None = None,
-                  hash_limit: int = HASH_LIMIT_BYTES) -> dict[str, Any]:
+                  hash_limit: int = HASH_LIMIT_BYTES, input_image: dict[str, Any] | None = None) -> dict[str, Any]:
     """성공한 managed 실행 하나의 receipt. 근거 파일이 없으면 ReceiptError 로 거부한다."""
     if adapter_job.get("status") != "succeeded":
         raise ReceiptError("receipt requires a succeeded adapter job")
@@ -255,11 +255,12 @@ def build_receipt(*, job: dict[str, Any], adapter_job: dict[str, Any], profile: 
     outputs = [_output_entry(f, job_dir, graph) for f in adapter_job.get("files") or []]
     if not outputs:
         raise ReceiptError("succeeded job has no collected output files")
+    input_section = _input_image_section(graph, profile, input_image)
     models_root = comfy_root / "ComfyUI" / "models"
     models = [model_entry(name, models_root, hash_limit=hash_limit) for name in profile.models]
     seeds = {value for per_node in (attempt.get("seed") or {}).values() for value in per_node.values()}
     peak = adapter_job.get("peak_rss_gb")
-    return {
+    receipt = {
         "schema_version": SCHEMA_VERSION,
         "kind": "comfy-execution-receipt",
         # Comfy 확장
@@ -294,6 +295,25 @@ def build_receipt(*, job: dict[str, Any], adapter_job: dict[str, Any], profile: 
         "runtime": comfy_runtime(comfy_root),
         "outputs": outputs,
     }
+    if input_section is not None:
+        receipt["input_image"] = input_section
+        receipt["profile_verification"] = getattr(profile, "verification", None)
+    return receipt
+
+
+def _input_image_section(graph: dict, profile: Any, input_image: dict[str, Any] | None) -> dict[str, Any] | None:
+    """I2V 입력의 해시·크기·업로드 이름과, 실제 실행한 graph의 LoadImage 값이 일치하는지 남긴다. T2V에는 이 항목이 없다."""
+    if getattr(profile, "input_kind", "none") != "image":
+        return None
+    if not input_image:
+        raise ReceiptError("image profile receipt requires the recorded input image")
+    loads = [node.get("inputs", {}).get("image") for node in graph.values()
+             if isinstance(node, dict) and node.get("class_type") == "LoadImage"]
+    expected = f"ttk/{input_image['upload_name']}"
+    if loads != [expected]:
+        raise ReceiptError(f"executed graph LoadImage inputs {loads!r} do not match the staged upload {expected!r}")
+    return {k: input_image[k] for k in ("asset_id", "sha256", "bytes", "format", "width", "height", "upload_name")} | {
+        "graph_load_image": loads[0], "graph_consistent": True}
 
 
 def safe_rss_gb(probe: Any) -> float | None:

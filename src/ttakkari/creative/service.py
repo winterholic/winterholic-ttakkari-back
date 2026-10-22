@@ -83,9 +83,13 @@ class Scene(Strict):
     caption: str = Field(default="", max_length=160)
     asset_id: str | None = None
     template_id: str | None = None
-    animation: Literal["still", "zoom_in", "zoom_out", "pan", "pan_down", "pulse"] = "zoom_in"
+    animation: Literal["still", "zoom_in", "zoom_out", "pan", "pan_down", "pulse"] = (
+        "zoom_in"
+    )
     transition: Literal["fade", "cut"] = "fade"
-    caption_style: Literal["bottom_card", "center_highlight", "title_card", "code_overlay"] = "bottom_card"
+    caption_style: Literal[
+        "bottom_card", "center_highlight", "title_card", "code_overlay"
+    ] = "bottom_card"
 
 
 class ProjectInput(Strict):
@@ -190,12 +194,19 @@ class Studio:
 
         if use_template_generation and fmt and fmt.default_scene_templates:
             scenes = []
-            target_dur = body.duration if body.duration >= fmt.min_duration else fmt.default_duration
-            base_dur_sum = sum(
-                SCENE_TEMPLATES[tid].default_duration
-                for tid in fmt.default_scene_templates
-                if tid in SCENE_TEMPLATES
-            ) or 1.0
+            target_dur = (
+                body.duration
+                if body.duration >= fmt.min_duration
+                else fmt.default_duration
+            )
+            base_dur_sum = (
+                sum(
+                    SCENE_TEMPLATES[tid].default_duration
+                    for tid in fmt.default_scene_templates
+                    if tid in SCENE_TEMPLATES
+                )
+                or 1.0
+            )
             scale = target_dur / base_dur_sum
 
             for i, tid in enumerate(fmt.default_scene_templates):

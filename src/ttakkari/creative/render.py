@@ -160,7 +160,12 @@ def caption_image(
         line_height = round(width * 0.040)
         base = round(height * 0.10)
         d.rounded_rectangle(
-            (width * 0.05, base - 10, width * 0.95, base + len(lines) * line_height + 12),
+            (
+                width * 0.05,
+                base - 10,
+                width * 0.95,
+                base + len(lines) * line_height + 12,
+            ),
             12,
             fill=(15, 23, 42, 225),
             outline=(56, 189, 248, 120),

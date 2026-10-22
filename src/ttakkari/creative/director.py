@@ -275,6 +275,25 @@ class DirectorStore:
             finally:
                 fcntl.flock(lock, fcntl.LOCK_UN)
 
+    @contextmanager
+    def locked_unattached_execution(self, production_id: str, section: str, key: str):
+        """attempt에 속하지 않는 엔진 작업(TTS·최종 조립)을 (구역, 키)별로 직렬화한다. 커널 flock이라 프로세스가 죽으면 풀린다."""
+        folder = self.production_path(production_id)
+        lock_folder = folder / "execution-locks"
+        if lock_folder.is_symlink():
+            raise ValueError("실행 잠금 경로 symlink는 허용되지 않습니다.")
+        lock_folder.mkdir(mode=0o700, exist_ok=True)
+        digest = _sha(f"{section}\0{key}".encode())
+        lock_path = lock_folder / f"unattached-{digest}.lock"
+        if lock_path.is_symlink():
+            raise ValueError("작업 잠금 경로 symlink는 허용되지 않습니다.")
+        with lock_path.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+
     @staticmethod
     def _save_state(folder: Path, state: dict) -> None:
         temp = folder / (".state-" + _id() + ".tmp")
@@ -384,6 +403,7 @@ class DirectorStore:
             "reviews": [],
             "events": [],
             "artifacts": {},
+            "unattached_executions": {},
             "stale": {
                 "shots": [],
                 "transition_neighbors": [],
@@ -400,6 +420,41 @@ class DirectorStore:
         if not path.is_file() or path.is_symlink():
             raise FileNotFoundError("제작물이 없습니다.")
         return json.loads(path.read_text())
+
+    @staticmethod
+    def _unattached_execution_slot(section: str, key: str) -> str:
+        return _sha(f"{section}\0{key}".encode())
+
+    def get_unattached_execution(
+        self, production_id: str, section: str, key: str
+    ) -> dict | None:
+        state = self.get_production(production_id)
+        return state.get("unattached_executions", {}).get(
+            self._unattached_execution_slot(section, key)
+        )
+
+    def write_unattached_execution(
+        self, production_id: str, section: str, key: str, value: dict
+    ) -> dict:
+        """Persist the unattached engine execution state under the G0 state lock."""
+        slot = self._unattached_execution_slot(section, key)
+        with self._locked_state(production_id) as state:
+            executions = state.setdefault("unattached_executions", {})
+            prior = executions.get(slot)
+            if prior and prior.get("request_identity") != value.get("request_identity"):
+                raise ConflictError(
+                    "같은 unattached 키에 다른 요청 내용을 기록할 수 없습니다."
+                )
+            if prior and prior.get("status") == "completed":
+                if value.get("status") != "completed" or prior != value:
+                    raise ConflictError(
+                        "완료된 unattached 실행 기록은 바꿀 수 없습니다."
+                    )
+                return prior
+            if prior and prior.get("status") != "executing":
+                raise ConflictError("unattached 실행 상태 전이가 유효하지 않습니다.")
+            executions[slot] = {"section": section, "key": key, **value}
+            return executions[slot]
 
     def _revise(
         self,
@@ -675,8 +730,16 @@ class DirectorStore:
         return True
 
     def submit_attempt(
-        self, pid: str, shot_id: str, *, input_sha256: str, idempotency_key: str
+        self,
+        pid: str,
+        shot_id: str,
+        *,
+        input_sha256: str,
+        idempotency_key: str,
+        resolved_graph: dict | None = None,
     ):
+        # resolved_graph: 엔진 어댑터가 실제로 실행할 render spec 전문. 없으면 최신 workflow graph를 쓴다(G0 기존 동작).
+        # 공유 workflow revision을 바꿔 가며 쓰면 샷 병렬 제출이 서로의 graph를 덮으므로, 제출 시점 값만 receipt에 고정한다.
         with self._locked_state(pid) as state:
             if state["cancelled"]:
                 raise ValueError("취소된 제작에는 새 제출을 할 수 없습니다.")
@@ -699,7 +762,7 @@ class DirectorStore:
             shot = state["shots"][shot_id][-1]
             workflow = state["workflows"][-1]
             aid, task_id = _id(), _id()
-            graph = workflow["api_graph"]
+            graph = workflow["api_graph"] if resolved_graph is None else resolved_graph
             attempt_body = {
                 "schema_version": 1,
                 "task_id": task_id,
@@ -750,6 +813,28 @@ class DirectorStore:
                 attempt.update(state="cancelled", updated_at=_now())
                 self._seal_attempt(attempt)
                 return attempt
+            # 이전 실행이 수집 도중 죽어 receipt 없이 남긴 미디어 출력은 검수 전 잔재다. 새 실행의 바이트와
+            # 같은 attempt 전용 이름이 충돌하지 않도록 manifest 항목과 outputs를 버리고(CAS 바이트는 남는다) 사실을 이벤트로 남긴다.
+            stale_names = [
+                name
+                for name in state["artifacts"]
+                if re.fullmatch(re.escape(attempt_id) + r"-\d+\.bin", name)
+            ]
+            if stale_names or attempt.get("outputs"):
+                discarded = [
+                    state["artifacts"].pop(name)["sha256"] for name in stale_names
+                ]
+                attempt["outputs"] = []
+                self._event(
+                    state,
+                    "attempt:"
+                    + attempt_id
+                    + ":stale-outputs-discarded:"
+                    + claim["claim_id"],
+                    "attempt.stale_outputs_discarded",
+                    attempt_id,
+                    output_sha256s=discarded,
+                )
             attempt["state"] = "running"
             attempt["execution_claim"] = claim
             attempt["error_details"] = []
@@ -1079,7 +1164,13 @@ class DirectorStore:
         output_sha256: str,
         approval_event_id: str | None,
         criteria: dict | None = None,
+        evidence_uris: list[str] | None = None,
+        reviewer: str = "cpu-check",
+        composition_key: str | None = None,
+        attempt_id: str | None = None,
     ):
+        # composition_key: 최종 합성물처럼 attempt 출력이 아닌 제작 산출물의 검수. shot_revision은 None으로 남는다.
+        # attempt_id: 서로 다른 샷이 같은 바이트를 낼 때 검수 대상 시도를 지정한다(없으면 처음 일치한 시도).
         if approval_event_id is not None:
             raise ValueError(
                 "연구용 검수는 승인 null만 허용하며 사용자 승인을 위조할 수 없습니다."
@@ -1089,27 +1180,52 @@ class DirectorStore:
                 (
                     attempt
                     for attempt in state["attempts"]
-                    if attempt["state"] == "review_pending"
+                    if composition_key is None
+                    and (attempt_id is None or attempt["attempt_id"] == attempt_id)
+                    and attempt["state"] == "review_pending"
                     and any(
                         output_sha256 == out["sha256"] for out in attempt["outputs"]
                     )
                 ),
                 None,
             )
-            if source_attempt is None:
+            composition = (
+                state.get("compositions", {}).get(composition_key)
+                if composition_key is not None
+                else None
+            )
+            if (
+                composition is not None
+                and composition["output_sha256"] != output_sha256
+            ):
+                raise ValueError("검수 대상 output hash가 합성 기록과 다릅니다.")
+            if source_attempt is None and composition is None:
                 raise ValueError(
                     "검수 대상 output hash가 이 제작의 실행 receipt에 없습니다."
                 )
+            known = {item["sha256"] for item in state["artifacts"].values()}
+            for uri in evidence_uris or []:
+                match = re.fullmatch(r"artifact:([0-9a-f]{64})", uri)
+                if not match or match.group(1) not in known:
+                    raise ValueError(
+                        "증거 URI는 이 제작 자산의 artifact:<sha256>이어야 합니다."
+                    )
             review_body = {
                 "schema_version": 1,
                 "review_id": _id(),
                 "output_sha256": output_sha256,
-                "shot_revision": source_attempt["shot_revision"],
-                "bible_revision": source_attempt["bible_revision"],
-                "timeline_revision": source_attempt["timeline_revision"],
+                "shot_revision": source_attempt["shot_revision"]
+                if source_attempt
+                else None,
+                "bible_revision": source_attempt["bible_revision"]
+                if source_attempt
+                else state["bibles"][-1]["revision"],
+                "timeline_revision": source_attempt["timeline_revision"]
+                if source_attempt
+                else state["timelines"][-1]["revision"],
                 "criteria": criteria or {},
-                "evidence_uris": [],
-                "reviewer": "cpu-check",
+                "evidence_uris": list(evidence_uris or []),
+                "reviewer": reviewer,
                 "independent": False,
                 "approval_event_id": None,
                 "created_at": _now(),
@@ -1118,6 +1234,230 @@ class DirectorStore:
             review = ReviewReceipt(**review_body).model_dump()
             state["reviews"].append(review)
             return review
+
+    # 엔진 연결 단계(G0 확장). 기존 계약 필드와 CAS·잠금 규칙은 그대로 두고 아래 네 메서드만 더한다.
+    _SIDECAR_SECTIONS = frozenset(
+        {"compositions", "review_reports", "feedback", "direction", "engine_runs"}
+    )
+
+    def record_sidecar(self, pid: str, section: str, key: str, value: dict) -> dict:
+        """키별 추가 전용 기록. 같은 키에 같은 내용은 멱등, 다른 내용은 덮지 않고 충돌로 거부한다."""
+        if section not in self._SIDECAR_SECTIONS:
+            raise ValueError("허용되지 않은 sidecar 구역입니다.")
+        if not key or len(key) > 200:
+            raise ValueError("sidecar 키가 잘못됐습니다.")
+        # key·content_hash·at는 저장소가 정한다. 호출자 값이 계산값을 덮으면 같은 payload 재호출이 충돌로 보이므로 계산값만 쓴다.
+        reserved = {"key", "content_hash", "at"} & value.keys()
+        if "at" in reserved:
+            raise ValueError(
+                "sidecar 예약 필드 at은 저장소가 정하며 값에 넣을 수 없습니다."
+            )
+        if "key" in reserved and value["key"] != key:
+            raise ValueError("sidecar 값의 key가 인자 key와 다릅니다.")
+        body = {k: v for k, v in value.items() if k not in {"key", "content_hash"}}
+        content_hash = _hash(body)
+        if "content_hash" in reserved and value["content_hash"] != content_hash:
+            raise ValueError(
+                "sidecar 값의 content_hash가 payload 계산값과 다릅니다(예약 필드)."
+            )
+        with self._locked_state(pid) as state:
+            rows = state.setdefault(section, {})
+            prior = rows.get(key)
+            if prior is not None:
+                if prior["content_hash"] != content_hash:
+                    raise ConflictError(
+                        "같은 sidecar 키에 다른 내용을 기록할 수 없습니다."
+                    )
+                return prior
+            record = {**body, "key": key, "content_hash": content_hash, "at": _now()}
+            rows[key] = record
+            return record
+
+    def set_shot_plan(
+        self, pid: str, *, expected_timeline_revision: int, shots: list[dict]
+    ) -> list[dict]:
+        """타임라인에 맞춰 샷 의도·엔진 선택을 한 번에 기록한다. 바뀐 샷만 새 revision이 되고 나머지는 해시가 그대로다."""
+        allowed = {"shot_id", "start_f", "end_f"} | {
+            "intent",
+            "engine",
+            "profile",
+            "input_sha256",
+            "skill_versions",
+            "acceptance_criteria",
+            "seed",
+            "budget",
+        }
+        with self._locked_state(pid) as state:
+            timeline = state["timelines"][-1]
+            if timeline["revision"] != expected_timeline_revision:
+                raise ConflictError(
+                    "expected_timeline_revision이 현재 revision과 다릅니다."
+                )
+            wanted = [
+                (s["shot_id"], s["start_f"], s["end_f"]) for s in timeline["shots"]
+            ]
+            given = [
+                (s.get("shot_id"), s.get("start_f"), s.get("end_f")) for s in shots
+            ]
+            if wanted != given:
+                raise ValueError(
+                    "샷 계획은 현재 타임라인의 샷 ID와 프레임 구간과 정확히 같아야 합니다."
+                )
+            bible_hash = state["bibles"][-1]["content_hash"]
+            used = {a["shot_id"] for a in state["attempts"]}
+            dropped = [
+                sid for sid in state["shots"] if sid not in {g[0] for g in given}
+            ]
+            if any(sid in used for sid in dropped):
+                raise ValueError("실행 기록이 있는 샷은 계획에서 뺄 수 없습니다.")
+            rebuilt: dict[str, list[dict]] = {}
+            changed: list[str] = []
+            for spec in shots:
+                unknown = set(spec) - allowed
+                if unknown:
+                    raise ValueError(
+                        "수정할 수 없는 필드: " + ", ".join(sorted(unknown))
+                    )
+                history = state["shots"].get(spec["shot_id"], [])
+                body = {
+                    "schema_version": 1,
+                    "shot_id": spec["shot_id"],
+                    "intent": "",
+                    "start_f": spec["start_f"],
+                    "end_f": spec["end_f"],
+                    "engine": "cpu-fake",
+                    "profile": "copy-existing-media",
+                    "input_sha256": [],
+                    "bible_hash": bible_hash,
+                    "timeline_hash": timeline["content_hash"],
+                    "skill_versions": {},
+                    "acceptance_criteria": [],
+                    "seed": None,
+                    "budget": {},
+                }
+                if history:
+                    body.update(
+                        {
+                            k: v
+                            for k, v in history[-1].items()
+                            if k not in {"content_hash", "created_at", "revision"}
+                        }
+                    )
+                    body.update(
+                        bible_hash=bible_hash, timeline_hash=timeline["content_hash"]
+                    )
+                body.update({k: v for k, v in spec.items() if k != "shot_id"})
+                if history and all(
+                    history[-1].get(k) == body.get(k)
+                    for k in body
+                    if k not in {"revision"}
+                ):
+                    rebuilt[spec["shot_id"]] = history
+                    continue
+                revision = history[-1]["revision"] + 1 if history else 1
+                body["revision"] = revision
+                body["content_hash"] = _hash(
+                    {k: v for k, v in body.items() if k != "revision"}
+                )
+                body["created_at"] = _now()
+                record = ShotRevision(**body).model_dump()
+                rebuilt[spec["shot_id"]] = [*history, record]
+                changed.append(spec["shot_id"])
+            state["shots"] = rebuilt
+            ordered = list(rebuilt)
+            neighbors: set[str] = set()
+            for sid in changed:
+                i = ordered.index(sid)
+                neighbors.update(ordered[max(0, i - 1) : i] + ordered[i + 1 : i + 2])
+            stale = state["stale"]
+            stale["shots"] = sorted(set(stale["shots"]) | set(changed))
+            stale["transition_neighbors"] = sorted(
+                (set(stale["transition_neighbors"]) | neighbors) & set(ordered)
+            )
+            if changed:
+                stale["reviews"] = sorted(set(stale["reviews"]) | {"production"})
+            stale["shots"] = [sid for sid in stale["shots"] if sid in rebuilt]
+            manifest = state["manifest"]
+            manifest["active_shot_revisions"] = {
+                sid: rows[-1]["revision"] for sid, rows in rebuilt.items()
+            }
+            manifest["manifest_revision"] += 1
+            manifest["updated_at"] = _now()
+            manifest["content_hash"] = _hash(
+                {k: v for k, v in manifest.items() if k != "content_hash"}
+            )
+            return [rows[-1] for rows in rebuilt.values()]
+
+    def resolve_shot_stale(self, pid: str, shot_id: str) -> bool:
+        """현재 샷·바이블·타임라인 revision으로 만든 검수 대기 출력이 있을 때만 그 샷의 stale 표시를 지운다."""
+        with self._locked_state(pid) as state:
+            if shot_id not in state["shots"]:
+                raise ValueError("샷이 없습니다.")
+            shot = state["shots"][shot_id][-1]
+            bible = state["bibles"][-1]["revision"]
+            timeline = state["timelines"][-1]["revision"]
+            fresh = any(
+                a["shot_id"] == shot_id
+                and a["state"] == "review_pending"
+                and a["shot_revision"] == shot["revision"]
+                and a["bible_revision"] == bible
+                and a["timeline_revision"] == timeline
+                and a["outputs"]
+                for a in state["attempts"]
+            )
+            if not fresh:
+                return False
+            stale = state["stale"]
+            stale["shots"] = [sid for sid in stale["shots"] if sid != shot_id]
+            stale["bible_assets"] = [
+                sid for sid in stale["bible_assets"] if sid != shot_id
+            ]
+            return True
+
+    def resolve_final_stale(self, pid: str, composition_key: str) -> bool:
+        """모든 샷이 최신이고 합성이 현재 출력 해시를 그대로 썼으며 그 합성의 검수가 있을 때만 이웃·전체 표시를 지운다."""
+        with self._locked_state(pid) as state:
+            composition = state.get("compositions", {}).get(composition_key)
+            if (
+                composition is None
+                or state["stale"]["shots"]
+                or state["stale"]["bible_assets"]
+            ):
+                return False
+            bible = state["bibles"][-1]["revision"]
+            timeline = state["timelines"][-1]["revision"]
+            current = {}
+            for sid, rows in state["shots"].items():
+                revision = rows[-1]["revision"]
+                outs = [
+                    a["outputs"][0]["sha256"]
+                    for a in state["attempts"]
+                    if a["shot_id"] == sid
+                    and a["state"] == "review_pending"
+                    and a["shot_revision"] == revision
+                    and a["bible_revision"] == bible
+                    and a["timeline_revision"] == timeline
+                    and a["outputs"]
+                ]
+                if not outs:
+                    return False
+                current[sid] = outs[-1]
+            if composition.get("shot_outputs") != current:
+                return False
+            if not any(
+                r["output_sha256"] == composition["output_sha256"]
+                and r["shot_revision"] is None
+                for r in state["reviews"]
+            ):
+                return False
+            stale = state["stale"]
+            stale["transition_neighbors"] = []
+            stale["reviews"] = [
+                item
+                for item in stale["reviews"]
+                if item not in {"production", "timeline"}
+            ]
+            return True
 
 
 class EmptyOutputError(ValueError):

@@ -73,7 +73,9 @@ def _markers(route) -> set[str]:
     def walk(dep) -> None:
         for sub in getattr(dep, "dependencies", []) or []:
             name = getattr(getattr(sub, "call", None), "__name__", None)
-            if (name in _AUTH_CALLS and sub.call is _AUTH_CALLS[name]) or name in _SCOPE_MARKERS:
+            if (
+                name in _AUTH_CALLS and sub.call is _AUTH_CALLS[name]
+            ) or name in _SCOPE_MARKERS:
                 found.add(name)
             if id(sub) not in seen:
                 seen.add(id(sub))
@@ -120,7 +122,10 @@ def collect_routes() -> dict[tuple[str, str], str]:
     for r in _unfolded():
         original = getattr(r, "original_route", r)
         if isinstance(original, APIWebSocketRoute):
-            path = getattr(getattr(r, "starlette_route", None), "path", None) or original.path
+            path = (
+                getattr(getattr(r, "starlette_route", None), "path", None)
+                or original.path
+            )
             key = ("WS", path)
             if key in out:
                 dupes.append(f"WS {path}")
@@ -188,7 +193,9 @@ def test_auth_classification_rejects_same_named_noop_dependency():
     async def require_user():
         return None
 
-    route = APIRoute("/fake", lambda: None, methods=["GET"], dependencies=[Depends(require_user)])
+    route = APIRoute(
+        "/fake", lambda: None, methods=["GET"], dependencies=[Depends(require_user)]
+    )
     assert _label(_markers(route)) == "public"
 
 
@@ -201,7 +208,14 @@ async def test_authentication_markers_reject_missing_credentials():
         await require_orchestrator(None, None)
     assert agent_error.value.status_code == 401
 
-    request = Request({"type": "http", "method": "POST", "path": "/api/transfers/simple", "headers": []})
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/transfers/simple",
+            "headers": [],
+        }
+    )
     with pytest.raises(HTTPException) as transfer_error:
         await _simple_auth(None, request, None)
     assert transfer_error.value.status_code == 401
@@ -382,6 +396,9 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/creative/records"): "owner-plain",
     ("GET", "/api/creative/records/{rid}"): "owner-plain",
     ("GET", "/api/creative/records/{rid}/media/{media_id}"): "public",
+    ("GET", "/api/creative/engines"): "owner-plain",
+    ("GET", "/api/creative/productions/{pid}/record"): "owner-plain",
+    ("GET", "/api/creative/productions/{pid}/artifacts/{sha}"): "public",
     ("GET", "/api/design-systems"): "owner-scoped",
     ("GET", "/api/design-systems/{system}/item"): "owner-scoped",
     ("GET", "/api/design-systems/{system}/items"): "owner-scoped",
@@ -403,10 +420,16 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/github/owners/{owner}"): "owner-plain",
     ("GET", "/api/github/owners/{owner}/repos"): "owner-plain",
     ("GET", "/api/github/repos/{owner}/{repo}"): "owner-plain",
-    ("GET", "/api/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs"): "owner-plain",
+    (
+        "GET",
+        "/api/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs",
+    ): "owner-plain",
     ("GET", "/api/github/repos/{owner}/{repo}/actions/runs"): "owner-plain",
     ("GET", "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}"): "owner-plain",
-    ("GET", "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"): "owner-plain",
+    (
+        "GET",
+        "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
+    ): "owner-plain",
     ("GET", "/api/github/repos/{owner}/{repo}/branches"): "owner-plain",
     ("GET", "/api/github/repos/{owner}/{repo}/contents"): "owner-plain",
     ("GET", "/api/github/repos/{owner}/{repo}/issues"): "owner-plain",
@@ -633,10 +656,29 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/creative/projects/{pid}/demo"): "owner-plain",
     ("POST", "/api/creative/projects/{pid}/media-link"): "owner-plain",
     ("POST", "/api/creative/projects/{pid}/renders"): "owner-plain",
-    ("POST", "/api/creative/projects/{pid}/scenes/{scene_id}/illustration"): "owner-plain",
+    (
+        "POST",
+        "/api/creative/projects/{pid}/scenes/{scene_id}/illustration",
+    ): "owner-plain",
     ("POST", "/api/creative/productions/{pid}/artifacts"): "owner-plain",
     ("POST", "/api/creative/productions/{pid}/attempts"): "owner-plain",
-    ("POST", "/api/creative/productions/{pid}/attempts/{attempt_id}/cancel"): "owner-plain",
+    (
+        "POST",
+        "/api/creative/productions/{pid}/attempts/{attempt_id}/cancel",
+    ): "owner-plain",
+    ("POST", "/api/creative/engines/{engine_id}/measure"): "owner-plain",
+    ("POST", "/api/creative/engines/{engine_id}/smoke"): "owner-plain",
+    ("POST", "/api/creative/engines/{engine_id}/policy"): "owner-plain",
+    ("POST", "/api/creative/productions/{pid}/direct"): "owner-plain",
+    ("POST", "/api/creative/productions/{pid}/shots/{shot_id}/render"): "owner-plain",
+    ("POST", "/api/creative/productions/{pid}/shots/{shot_id}/feedback"): "owner-plain",
+    (
+        "POST",
+        "/api/creative/productions/{pid}/attempts/{attempt_id}/review",
+    ): "owner-plain",
+    ("POST", "/api/creative/productions/{pid}/resume"): "owner-plain",
+    ("POST", "/api/creative/productions/{pid}/final"): "owner-plain",
+    ("POST", "/api/creative/productions/{pid}/artifacts/{sha}/link"): "owner-plain",
     ("POST", "/api/creative/validate"): "owner-plain",
     ("POST", "/api/desk"): "owner-plain",
     ("POST", "/api/exports"): "owner-plain",
@@ -663,8 +705,14 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/meetings/{mid}/transcript"): "owner-plain",
     ("POST", "/api/memo-categories"): "owner-plain",
     ("POST", "/api/memos"): "owner-plain",
-    ("POST", "/api/google-accounts/{account_id}/features/{feature}/resume"): "owner-scoped",
-    ("POST", "/api/google-accounts/{account_id}/features/{feature}/verify"): "owner-scoped",
+    (
+        "POST",
+        "/api/google-accounts/{account_id}/features/{feature}/resume",
+    ): "owner-scoped",
+    (
+        "POST",
+        "/api/google-accounts/{account_id}/features/{feature}/verify",
+    ): "owner-scoped",
     ("POST", "/api/google-accounts/{account_id}/login"): "owner-scoped",
     ("POST", "/api/google-accounts/{account_id}/login/cancel"): "owner-scoped",
     ("POST", "/api/google-accounts/{account_id}/login/complete"): "owner-scoped",

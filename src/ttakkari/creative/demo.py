@@ -39,7 +39,9 @@ def illustration(
         d.ellipse((x, y, x + 2, y + 2), fill=glow)
     moon_x, moon_y = round(width * 0.7), round(height * 0.15)
     moon_r = round(min(width, height) * 0.08)
-    d.ellipse((moon_x - moon_r, moon_y - moon_r, moon_x + moon_r, moon_y + moon_r), fill=glow)
+    d.ellipse(
+        (moon_x - moon_r, moon_y - moon_r, moon_x + moon_r, moon_y + moon_r), fill=glow
+    )
     b_step = max(30, round(width / 16))
     for x in range(-20, width + 40, b_step):
         y = rng.randrange(round(height * 0.45), round(height * 0.8))
@@ -53,22 +55,78 @@ def illustration(
     ground_y = round(height * 0.9)
     d.rectangle((0, ground_y, width, height), fill="#13202e")
     scale_fac = min(width, height) / 720.0
-    for radius in (round(110 * scale_fac), round(160 * scale_fac), round(210 * scale_fac)):
+    for radius in (
+        round(110 * scale_fac),
+        round(160 * scale_fac),
+        round(210 * scale_fac),
+    ):
         d.arc(
-            (x_pos - radius, round(365 * scale_fac) - radius, x_pos + radius, round(365 * scale_fac) + radius),
+            (
+                x_pos - radius,
+                round(365 * scale_fac) - radius,
+                x_pos + radius,
+                round(365 * scale_fac) + radius,
+            ),
             210,
             330,
             fill=glow,
             width=max(2, round(3 * scale_fac)),
         )
     body_y = round(height * 0.72)
-    d.rounded_rectangle((x_pos - round(42 * scale_fac), body_y, x_pos + round(42 * scale_fac), body_y + round(105 * scale_fac)), round(22 * scale_fac), fill="#a9ded2")
+    d.rounded_rectangle(
+        (
+            x_pos - round(42 * scale_fac),
+            body_y,
+            x_pos + round(42 * scale_fac),
+            body_y + round(105 * scale_fac),
+        ),
+        round(22 * scale_fac),
+        fill="#a9ded2",
+    )
     head_y = body_y - round(92 * scale_fac)
-    d.rounded_rectangle((x_pos - round(57 * scale_fac), head_y, x_pos + round(57 * scale_fac), body_y + round(10 * scale_fac)), round(34 * scale_fac), fill="#c8eee3")
-    d.rounded_rectangle((x_pos - round(39 * scale_fac), head_y + round(25 * scale_fac), x_pos + round(39 * scale_fac), head_y + round(70 * scale_fac)), round(20 * scale_fac), fill="#152b3b")
-    d.ellipse((x_pos - round(13 * scale_fac), head_y + round(35 * scale_fac), x_pos + round(13 * scale_fac), head_y + round(61 * scale_fac)), fill="#ffd68a")
-    d.line((x_pos, head_y, x_pos, head_y - round(24 * scale_fac)), fill="#c8eee3", width=max(3, round(6 * scale_fac)))
-    d.ellipse((x_pos - round(6 * scale_fac), head_y - round(32 * scale_fac), x_pos + round(6 * scale_fac), head_y - round(20 * scale_fac)), fill="#ffd68a")
+    d.rounded_rectangle(
+        (
+            x_pos - round(57 * scale_fac),
+            head_y,
+            x_pos + round(57 * scale_fac),
+            body_y + round(10 * scale_fac),
+        ),
+        round(34 * scale_fac),
+        fill="#c8eee3",
+    )
+    d.rounded_rectangle(
+        (
+            x_pos - round(39 * scale_fac),
+            head_y + round(25 * scale_fac),
+            x_pos + round(39 * scale_fac),
+            head_y + round(70 * scale_fac),
+        ),
+        round(20 * scale_fac),
+        fill="#152b3b",
+    )
+    d.ellipse(
+        (
+            x_pos - round(13 * scale_fac),
+            head_y + round(35 * scale_fac),
+            x_pos + round(13 * scale_fac),
+            head_y + round(61 * scale_fac),
+        ),
+        fill="#ffd68a",
+    )
+    d.line(
+        (x_pos, head_y, x_pos, head_y - round(24 * scale_fac)),
+        fill="#c8eee3",
+        width=max(3, round(6 * scale_fac)),
+    )
+    d.ellipse(
+        (
+            x_pos - round(6 * scale_fac),
+            head_y - round(32 * scale_fac),
+            x_pos + round(6 * scale_fac),
+            head_y - round(20 * scale_fac),
+        ),
+        fill="#ffd68a",
+    )
     im.save(path)
 
 

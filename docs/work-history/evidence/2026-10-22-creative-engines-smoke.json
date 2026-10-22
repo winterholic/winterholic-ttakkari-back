@@ -1,0 +1,544 @@
+{
+ "started_at": "2026-10-22T22:58:54+0900",
+ "host_memory_before": {
+  "available_gb": 31.76,
+  "used_percent": 50.4,
+  "swap_used_gb": 28.47
+ },
+ "steps": {
+  "checks": [
+   {
+    "name": "측정 전에는 자동 선택 후보가 없다",
+    "ok": true,
+    "detail": null
+   },
+   {
+    "name": "ffmpeg 실제 smoke",
+    "ok": true,
+    "detail": {
+     "wall": 0.178,
+     "rss_peak_mb": 29.4,
+     "frames": 24
+    }
+   },
+   {
+    "name": "remotion 실제 smoke",
+    "ok": true,
+    "detail": {
+     "wall": 7.384,
+     "rss_peak_mb": 2006.1,
+     "frames": 24
+    }
+   },
+   {
+    "name": "three 실제 smoke",
+    "ok": true,
+    "detail": {
+     "wall": 2.945,
+     "rss_peak_mb": 1258.6,
+     "frames": 24
+    }
+   },
+   {
+    "name": "comfy는 파일 확인만(available 아님)이고 자동 후보가 아니다",
+    "ok": true,
+    "detail": "present"
+   },
+   {
+    "name": "감독 흐름이 G0 데이터로 기록됐다",
+    "ok": true,
+    "detail": {
+     "seconds": 0.04,
+     "beats": 5
+    }
+   },
+   {
+    "name": "선택된 엔진은 remotion·three·ffmpeg",
+    "ok": true,
+    "detail": null
+   },
+   {
+    "name": "shot-1(remotion) 실제 렌더·receipt",
+    "ok": true,
+    "detail": {
+     "wall": 6.751,
+     "verdict": "fail"
+    }
+   },
+   {
+    "name": "shot-2(three) 실제 렌더·receipt",
+    "ok": true,
+    "detail": {
+     "wall": 3.2,
+     "verdict": "pass"
+    }
+   },
+   {
+    "name": "shot-3(ffmpeg) 실제 렌더·receipt",
+    "ok": true,
+    "detail": {
+     "wall": 0.193,
+     "verdict": "pass"
+    }
+   },
+   {
+    "name": "fade-out 암전 샷만 결함으로 잡힌다",
+    "ok": true,
+    "detail": [
+     {
+      "shot_id": "shot-1",
+      "attempt_id": "61775202-bc77-406f-bf2d-ef13da40104a",
+      "kind": "review_failed",
+      "detail": [
+       "black_frames"
+      ],
+      "review_id": "2236b478-c07e-41a1-b6d6-38f1e08ef826"
+     }
+    ]
+   },
+   {
+    "name": "주변 샷 output hash 불변",
+    "ok": true,
+    "detail": null
+   },
+   {
+    "name": "대상 샷 output hash 변경·결함 해소",
+    "ok": true,
+    "detail": null
+   },
+   {
+    "name": "최종 전수 기계 검사 통과",
+    "ok": true,
+    "detail": {
+     "decode": "pass",
+     "frame_count": "pass",
+     "resolution": "pass",
+     "fps": "pass",
+     "duration": "pass",
+     "black_frames": "pass",
+     "freeze": "pass",
+     "audio_present": "pass",
+     "audio_peak": "pass",
+     "audio_silence": "pass",
+     "av_sync": "pass"
+    }
+   },
+   {
+    "name": "최종 합성 뒤 stale이 정리됐다",
+    "ok": true,
+    "detail": null
+   },
+   {
+    "name": "승인은 어디에도 만들어지지 않았다",
+    "ok": true,
+    "detail": null
+   }
+  ],
+  "smoke": {
+   "ffmpeg": {
+    "profile": "solid-color+tone",
+    "wall_seconds": 0.178,
+    "rss_peak_mb": 29.4,
+    "probe": {
+     "duration": 1.0,
+     "start_time": 0.0,
+     "video": {
+      "codec": "h264",
+      "width": 320,
+      "height": 180,
+      "fps": 24.0,
+      "pix_fmt": "yuv420p"
+     },
+     "audio": {
+      "codec": "aac",
+      "sample_rate": 48000,
+      "channels": "mono"
+     }
+    },
+    "decoded_frames": 24,
+    "decode_ok": true,
+    "bytes": 18919,
+    "total_seconds": 0.24
+   },
+   "remotion": {
+    "profile": "title-card",
+    "wall_seconds": 7.384,
+    "rss_peak_mb": 2006.1,
+    "rss_scope": "프로세스 트리(node+Chrome) 합 RSS를 0.1초 간격으로 표본한 최댓값",
+    "probe": {
+     "duration": 1.0,
+     "start_time": 0.0,
+     "video": {
+      "codec": "h264",
+      "width": 640,
+      "height": 360,
+      "fps": 24.0,
+      "pix_fmt": "yuv420p"
+     },
+     "audio": null
+    },
+    "decoded_frames": 24,
+    "decode_ok": true,
+    "bytes": 28302,
+    "provenance": {
+     "remotion": "4.0.537",
+     "node": "v26.9.0",
+     "composition": "ShotText",
+     "props_sha": "02f613255edf21a5cbae7553ad02ea30ad170eb115a558bd36a9f3c5d2026551"
+    },
+    "total_seconds": 7.71
+   },
+   "three": {
+    "profile": "orbit-scene",
+    "wall_seconds": 2.945,
+    "rss_peak_mb": 1258.6,
+    "rss_scope": "프로세스 트리(node+Chrome) 합 RSS를 0.1초 간격으로 표본한 최댓값",
+    "probe": {
+     "duration": 1.0,
+     "start_time": 0.0,
+     "video": {
+      "codec": "h264",
+      "width": 640,
+      "height": 360,
+      "fps": 24.0,
+      "pix_fmt": "yuv420p"
+     },
+     "audio": null
+    },
+    "decoded_frames": 24,
+    "decode_ok": true,
+    "bytes": 40686,
+    "frame_deterministic_across_order": true,
+    "provenance": {
+     "three_revision": "185",
+     "gl_renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+     "scene_sha": "614a5665581460521aa07f54c3eaee8f3dd2b5ce99f75d286b379365a93f0442",
+     "seed": 7,
+     "console_messages": 5
+    },
+    "total_seconds": 8.24
+   }
+  },
+  "comfy_probe": {
+   "state": "present",
+   "environment": "host-managed",
+   "runtime_path": "/Users/winterholic/development/projects/ttakkari-studio-lab/comfyui",
+   "revision": "a603a63d6f3a",
+   "measured_at": "2026-10-22T13:59:10.919183+00:00",
+   "details": {
+    "profile_revision": "a603a63d6f3a",
+    "models_found": 3,
+    "models_missing": [],
+    "runtime": {
+     "engine": "comfyui",
+     "comfyui_version": "0.42.0",
+     "comfyui_commit": "7a28332047b6af638dc6c7f72ef3481a718769fd",
+     "torch_version": "2.14.1"
+    },
+    "runtime_started": false,
+    "note": "파일 존재만 확인했다. managed runtime을 시작하지 않았으므로 available로 올리지 않는다(G2 smoke 필요)."
+   },
+   "error": null,
+   "measured_epoch": 1792677550.919199,
+   "execution_mode": "real"
+  },
+  "candidates": [
+   {
+    "engine": "ffmpeg",
+    "profile": "solid-color"
+   },
+   {
+    "engine": "ffmpeg",
+    "profile": "test-pattern"
+   },
+   {
+    "engine": "ffmpeg",
+    "profile": "conform"
+   },
+   {
+    "engine": "ffmpeg",
+    "profile": "assemble"
+   },
+   {
+    "engine": "remotion",
+    "profile": "title-card"
+   },
+   {
+    "engine": "three",
+    "profile": "orbit-scene"
+   }
+  ],
+  "timeline_cuts": [
+   [
+    "shot-1",
+    0,
+    false,
+    0
+   ],
+   [
+    "shot-2",
+    24,
+    true,
+    0
+   ],
+   [
+    "shot-3",
+    48,
+    true,
+    0
+   ]
+  ],
+  "render": {
+   "shot-1": {
+    "engine": "remotion",
+    "wall_seconds": 6.751,
+    "rss_peak_mb": 2008.4,
+    "state": "review_pending",
+    "verdict": "fail",
+    "criteria": {
+     "black_frames": "fail",
+     "decode": "pass",
+     "duration": "pass",
+     "fps": "pass",
+     "frame_count": "pass",
+     "freeze": "pass",
+     "resolution": "pass"
+    },
+    "output_sha256": "964b07fe403ce3c78bec1751cf25b477effe2344f83bae1f06b3c26e2032191f",
+    "media": {
+     "audio": null,
+     "duration": 1.0,
+     "start_time": 0.0,
+     "video": {
+      "codec": "h264",
+      "fps": 24.0,
+      "height": 360,
+      "pix_fmt": "yuv420p",
+      "width": 640
+     }
+    },
+    "elapsed_with_review": 6.9,
+    "real_execution": true
+   },
+   "shot-2": {
+    "engine": "three",
+    "wall_seconds": 3.2,
+    "rss_peak_mb": 1297.7,
+    "state": "review_pending",
+    "verdict": "pass",
+    "criteria": {
+     "black_frames": "pass",
+     "decode": "pass",
+     "duration": "pass",
+     "fps": "pass",
+     "frame_count": "pass",
+     "freeze": "pass",
+     "resolution": "pass"
+    },
+    "output_sha256": "b697a37b8e4ce9b4ee86a5456ca31df27d4792f3c884def1848e783fffc2c23d",
+    "media": {
+     "audio": null,
+     "duration": 1.0,
+     "start_time": 0.0,
+     "video": {
+      "codec": "h264",
+      "fps": 24.0,
+      "height": 360,
+      "pix_fmt": "yuv420p",
+      "width": 640
+     }
+    },
+    "elapsed_with_review": 3.32,
+    "real_execution": true
+   },
+   "shot-3": {
+    "engine": "ffmpeg",
+    "wall_seconds": 0.193,
+    "rss_peak_mb": 38.7,
+    "state": "review_pending",
+    "verdict": "pass",
+    "criteria": {
+     "black_frames": "pass",
+     "decode": "pass",
+     "duration": "pass",
+     "fps": "pass",
+     "frame_count": "pass",
+     "freeze": "pass",
+     "resolution": "pass"
+    },
+    "output_sha256": "812942e1bfb10259ef8d4a34e87c1fdf2bff4606841630ea66d493a5de9fb982",
+    "media": {
+     "audio": null,
+     "duration": 1.0,
+     "start_time": 0.0,
+     "video": {
+      "codec": "h264",
+      "fps": 24.0,
+      "height": 360,
+      "pix_fmt": "yuv420p",
+      "width": 640
+     }
+    },
+    "elapsed_with_review": 0.33,
+    "real_execution": true
+   }
+  },
+  "defects_before_fix": [
+   {
+    "shot_id": "shot-1",
+    "attempt_id": "61775202-bc77-406f-bf2d-ef13da40104a",
+    "kind": "review_failed",
+    "detail": [
+     "black_frames"
+    ],
+    "review_id": "2236b478-c07e-41a1-b6d6-38f1e08ef826"
+   }
+  ],
+  "rerender": {
+   "seconds": 6.85,
+   "before": {
+    "shot-1": "964b07fe403ce3c78bec1751cf25b477effe2344f83bae1f06b3c26e2032191f",
+    "shot-2": "b697a37b8e4ce9b4ee86a5456ca31df27d4792f3c884def1848e783fffc2c23d",
+    "shot-3": "812942e1bfb10259ef8d4a34e87c1fdf2bff4606841630ea66d493a5de9fb982"
+   },
+   "after": {
+    "shot-1": "660e24d5e846ecb185748e8c77e279ecae8aadea5ce0e4b1b6e250ae33fc69c9",
+    "shot-2": "b697a37b8e4ce9b4ee86a5456ca31df27d4792f3c884def1848e783fffc2c23d",
+    "shot-3": "812942e1bfb10259ef8d4a34e87c1fdf2bff4606841630ea66d493a5de9fb982"
+   },
+   "feedback": {
+    "feedback_id": "c6e786402a5f9de1b53fd1222ab9ebde",
+    "shot_id": "shot-1",
+    "from_revision": 2,
+    "to_revision": 3,
+    "attempt_id": "3fc28380-35bb-46b5-a3a9-57c3c1a7d7cc",
+    "state": "queued",
+    "decided_by": "user-overrides",
+    "reason": "사용자가 지정한 값",
+    "changes": {
+     "params": {
+      "fade_out_frames": 0
+     }
+    }
+   }
+  },
+  "final": {
+   "seconds": 0.33,
+   "criteria": {
+    "decode": "pass",
+    "frame_count": "pass",
+    "resolution": "pass",
+    "fps": "pass",
+    "duration": "pass",
+    "black_frames": "pass",
+    "freeze": "pass",
+    "audio_present": "pass",
+    "audio_peak": "pass",
+    "audio_silence": "pass",
+    "av_sync": "pass"
+   },
+   "verdict": "pass",
+   "sha256": "b849902eb14596c1928d805716d3f9c595fa9094b80d35ddfec31d18b5067d00",
+   "ffprobe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+     {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 640,
+      "height": 360,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "24/1",
+      "duration": "3.000000",
+      "nb_frames": "72"
+     },
+     {
+      "codec_name": "aac",
+      "codec_type": "audio",
+      "sample_rate": "48000",
+      "channels": 1,
+      "r_frame_rate": "0/0",
+      "duration": "3.000000",
+      "nb_frames": "142"
+     }
+    ],
+    "format": {
+     "duration": "3.000000",
+     "size": "206221"
+    }
+   },
+   "path": "/tmp/g34-run/final/creative-engines-smoke-ze563fge/final.mp4"
+  },
+  "shot_ffprobe": {
+   "shot-1": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+     {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 640,
+      "height": 360,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "24/1",
+      "duration": "1.000000",
+      "nb_frames": "24"
+     }
+    ],
+    "format": {
+     "duration": "1.000000",
+     "size": "33287"
+    }
+   },
+   "shot-2": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+     {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 640,
+      "height": 360,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "24/1",
+      "duration": "1.000000",
+      "nb_frames": "24"
+     }
+    ],
+    "format": {
+     "duration": "1.000000",
+     "size": "45463"
+    }
+   },
+   "shot-3": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+     {
+      "codec_name": "h264",
+      "codec_type": "video",
+      "width": 640,
+      "height": 360,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "24/1",
+      "duration": "1.000000",
+      "nb_frames": "24"
+     }
+    ],
+    "format": {
+     "duration": "1.000000",
+     "size": "123894"
+    }
+   }
+  }
+ },
+ "host_memory_after": {
+  "available_gb": 31.29,
+  "used_percent": 51.1,
+  "swap_used_gb": 28.47
+ },
+ "total_seconds": 34.05,
+ "failures": [],
+ "scope_note": "실제 렌더는 Remotion·Three.js(SwiftShader CPU WebGL)·FFmpeg뿐이다. 감독 LLM은 고정 응답 fake이고 Comfy 생성·TTS 합성·GPU 모델·사람 시청/청취는 실행하지 않았다. 기계 검수는 의미·미감을 판정하지 않는다."
+}

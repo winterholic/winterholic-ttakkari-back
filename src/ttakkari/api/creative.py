@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import tempfile
 import uuid
 from pathlib import Path
@@ -17,11 +18,17 @@ from pydantic import Field
 
 from ttakkari.creative.catalog import get_catalog, validate_project_spec
 from ttakkari.creative.director import ConflictError, default_director_store
+from ttakkari.creative.engines.base import EngineError
+from ttakkari.creative.engines.registry import RegistryError
+from ttakkari.creative.feedback import submit_feedback
+from ttakkari.creative.record_view import production_record
 from ttakkari.creative.render import inspect_media
+from ttakkari.creative.runtime import default_director, default_pipeline
 from ttakkari.creative.service import ProjectInput, Scene, Strict, default_studio
 from ttakkari.security.auth import User, decode, issue_download_token
 
 router = APIRouter(prefix="/api/creative", tags=["creative-studio"])
+log = logging.getLogger(__name__)
 
 
 @router.get("/catalog")
@@ -124,6 +131,8 @@ def perform(fn, *args, **kwargs):
         raise HTTPException(409, str(e)) from e
     except ValueError as e:
         raise HTTPException(409 if "다른 변경" in str(e) else 422, str(e)) from e
+    except EngineError as e:
+        raise HTTPException(409, str(e)) from e
 
 
 def _public(p):
@@ -308,6 +317,296 @@ async def media(
     return FileResponse(
         path,
         filename=name,
+        content_disposition_type="attachment" if download else "inline",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+# ---- 엔진 레지스트리·감독·샷 재제작 (4단계). 문서: docs/design/creative-production-api.md
+
+_tasks: set[asyncio.Task] = set()
+
+
+def _schedule(coro) -> None:
+    """응답을 먼저 돌려주고 이어서 실행한다. 진행 상태는 G0 attempt 상태와 제작 기록 GET으로 읽는다."""
+    task = asyncio.create_task(coro)
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+class EnginePolicyInput(Strict):
+    policy: Literal["experimental", "auto_eligible", "held"]
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class DirectInput(Strict):
+    brief: str | None = Field(default=None, min_length=1, max_length=6000)
+    audio_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    speech_lines: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    voice: str = Field(default="F2", max_length=8)
+    duration_seconds: float | None = Field(default=None, gt=0, le=600)
+    fps: int = Field(default=24, ge=12, le=60)
+    size: tuple[int, int] = (1280, 720)
+
+
+class RenderShotInput(Strict):
+    retry: bool = False
+
+
+class ShotOverrides(Strict):
+    engine: str | None = Field(default=None, max_length=40)
+    profile: str | None = Field(default=None, max_length=80)
+    params: dict | None = None
+    drop_params: list[str] | None = Field(default=None, max_length=20)
+    seed: int | None = Field(default=None, ge=0, le=2**32 - 1)
+    intent: str | None = Field(default=None, max_length=400)
+
+
+class FeedbackInput(Strict):
+    expected_shot_revision: int = Field(ge=1)
+    text: str = Field(min_length=1, max_length=2000)
+    idempotency_key: str = Field(min_length=1, max_length=160)
+    overrides: ShotOverrides | None = None
+
+
+class FinalInput(Strict):
+    audio_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    audio_gain_db: float = Field(default=0.0, ge=-30.0, le=6.0)
+
+
+@router.get("/engines")
+async def engines(_: User):
+    return default_pipeline().registry.snapshot()
+
+
+@router.post("/engines/{engine_id}/measure")
+async def measure_engine(engine_id: str, _: User):
+    registry = default_pipeline().registry
+    return await asyncio.to_thread(perform, _measure, registry, engine_id)
+
+
+def _measure(registry, engine_id: str):
+    try:
+        registry.measure(engine_id)
+        return registry.status(engine_id)
+    except RegistryError as e:
+        raise ValueError(str(e)) from e
+
+
+@router.post("/engines/{engine_id}/smoke")
+async def smoke_engine(engine_id: str, _: User):
+    registry = default_pipeline().registry
+
+    def run():
+        try:
+            registry.run_smoke(engine_id)
+            return registry.status(engine_id)
+        except RegistryError as e:
+            raise ValueError(str(e)) from e
+
+    return await asyncio.to_thread(perform, run)
+
+
+@router.post("/engines/{engine_id}/policy")
+async def set_engine_policy(engine_id: str, body: EnginePolicyInput, _: User):
+    registry = default_pipeline().registry
+
+    def run():
+        try:
+            registry.set_policy(engine_id, body.policy, body.reason)
+            return registry.status(engine_id)
+        except RegistryError as e:
+            raise ValueError(str(e)) from e
+
+    return perform(run)
+
+
+@router.get("/productions/{pid}/record")
+async def production_record_view(pid: uuid.UUID, _: User):
+    return await asyncio.to_thread(
+        perform, production_record, default_pipeline(), str(pid)
+    )
+
+
+async def _run_direction(pid: str, brief: str, kwargs: dict) -> None:
+    pipeline = default_pipeline()
+    try:
+        await default_director().direct(pid, brief, **kwargs)
+    except Exception as e:
+        log.exception("creative direction failed for %s", pid)
+        digest = uuid.uuid5(uuid.NAMESPACE_OID, f"{pid}:{type(e).__name__}:{e}").hex
+        pipeline.store.record_sidecar(
+            pid,
+            "direction",
+            f"failed:{digest[:16]}",
+            {
+                "step": "direct",
+                "status": "failed",
+                "error": f"{type(e).__name__}: {e}"[:600],
+                "repairs": None,
+            },
+        )
+
+
+@router.post("/productions/{pid}/direct", status_code=202)
+async def direct_production(pid: uuid.UUID, body: DirectInput, _: User):
+    pipeline = default_pipeline()
+    state = perform(pipeline.store.get_production, str(pid))
+    brief = body.brief or state["manifest"]["brief_ref"]
+    kwargs = body.model_dump(exclude={"brief"}, exclude_none=True)
+    kwargs["size"] = tuple(kwargs["size"])
+    _schedule(_run_direction(str(pid), brief, kwargs))
+    return {"production_id": str(pid), "status": "started"}
+
+
+async def _finish_attempt(pid: str, attempt_id: str) -> None:
+    pipeline = default_pipeline()
+    try:
+        attempt = await asyncio.to_thread(pipeline.execute, pid, attempt_id)
+        if attempt["state"] == "review_pending":
+            await asyncio.to_thread(pipeline.review, pid, attempt_id)
+    except Exception:
+        log.exception("creative attempt %s did not finish cleanly", attempt_id)
+
+
+@router.post("/productions/{pid}/shots/{shot_id}/render", status_code=202)
+async def render_shot(pid: uuid.UUID, shot_id: str, body: RenderShotInput, _: User):
+    pipeline = default_pipeline()
+    attempt = perform(pipeline.submit_shot, str(pid), shot_id, retry=body.retry)
+    if attempt["state"] == "queued":
+        _schedule(_finish_attempt(str(pid), attempt["attempt_id"]))
+    return attempt
+
+
+@router.post("/productions/{pid}/shots/{shot_id}/feedback", status_code=202)
+async def shot_feedback(pid: uuid.UUID, shot_id: str, body: FeedbackInput, _: User):
+    pipeline = default_pipeline()
+    overrides = body.overrides.model_dump(exclude_none=True) if body.overrides else None
+    try:
+        result = await submit_feedback(
+            pipeline,
+            None if overrides else default_director(),
+            str(pid),
+            shot_id,
+            expected_revision=body.expected_shot_revision,
+            text=body.text,
+            idempotency_key=body.idempotency_key,
+            overrides=overrides,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    except ConflictError as e:
+        raise HTTPException(409, str(e)) from e
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(422, str(e)) from e
+    if result["state"] == "queued":
+        _schedule(_finish_attempt(str(pid), result["attempt_id"]))
+    return result
+
+
+@router.post("/productions/{pid}/attempts/{attempt_id}/review")
+async def review_attempt(pid: uuid.UUID, attempt_id: uuid.UUID, _: User):
+    pipeline = default_pipeline()
+    result = await asyncio.to_thread(
+        perform, pipeline.review, str(pid), str(attempt_id)
+    )
+    return {
+        "review": result["review"],
+        "report": result["report"],
+        "reused": result["reused"],
+    }
+
+
+@router.post("/productions/{pid}/resume", status_code=202)
+async def resume_production(pid: uuid.UUID, _: User):
+    pipeline = default_pipeline()
+    state = perform(pipeline.store.get_production, str(pid))
+    pending = [
+        a["attempt_id"]
+        for a in state["attempts"]
+        if a["state"] in {"queued", "running", "collecting"}
+    ]
+    for attempt_id in pending:
+        _schedule(_finish_attempt(str(pid), attempt_id))
+    return {"production_id": str(pid), "resumed_attempts": pending}
+
+
+async def _compose(pid: str, body: FinalInput) -> None:
+    pipeline = default_pipeline()
+    try:
+        record = await asyncio.to_thread(
+            pipeline.compose_final,
+            pid,
+            audio_sha256=body.audio_sha256,
+            audio_gain_db=body.audio_gain_db,
+        )
+        await asyncio.to_thread(pipeline.review_final, pid, record["composition_key"])
+    except Exception:
+        log.exception("creative final composition failed for %s", pid)
+
+
+@router.post("/productions/{pid}/final", status_code=202)
+async def compose_final(pid: uuid.UUID, body: FinalInput, _: User):
+    pipeline = default_pipeline()
+    perform(pipeline.assert_composable, str(pid))
+    _schedule(_compose(str(pid), body))
+    return {"production_id": str(pid), "status": "started"}
+
+
+def _artifact_known(pid: str, sha: str) -> dict:
+    state = perform(default_director_store().get_production, pid)
+    found = next((a for a in state["artifacts"].values() if a["sha256"] == sha), None)
+    if found is None:
+        raise HTTPException(404, "자산이 없습니다.")
+    return found
+
+
+@router.post("/productions/{pid}/artifacts/{sha}/link")
+async def production_artifact_link(pid: uuid.UUID, sha: str, _: User):
+    if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
+        raise HTTPException(422, "sha256가 잘못됐습니다.")
+    _artifact_known(str(pid), sha)
+    token, exp = issue_download_token(
+        uuid.UUID(sha[:32]), f"creative-artifact:{pid}:{sha}"
+    )
+    return {
+        "url": f"/api/creative/productions/{pid}/artifacts/{sha}?"
+        + urlencode({"token": token}),
+        "expires_at": exp.isoformat(),
+    }
+
+
+@router.get("/productions/{pid}/artifacts/{sha}")
+async def production_artifact(
+    pid: uuid.UUID, sha: str, token: str, download: bool = False
+):
+    try:
+        claims = decode(token, "download")
+        if (
+            claims.get("sub") != str(uuid.UUID(sha[:32]))
+            or claims.get("var") != f"creative-artifact:{pid}:{sha}"
+        ):
+            raise jwt.InvalidTokenError()
+    except (jwt.PyJWTError, ValueError) as e:
+        raise HTTPException(
+            403, "재생 주소가 만료됐습니다. 미리보기를 다시 열어 주세요."
+        ) from e
+    record = _artifact_known(str(pid), sha)
+    store = default_director_store()
+    path = store.production_path(str(pid)) / record["path"]
+    if (
+        path.is_symlink()
+        or not path.is_file()
+        or path.stat().st_size != record["bytes"]
+    ):
+        raise HTTPException(404, "자산 파일을 확인할 수 없습니다.")
+    return FileResponse(
+        path,
+        media_type=record["media_type"],
+        filename=record["name"],
         content_disposition_type="attachment" if download else "inline",
         headers={
             "X-Content-Type-Options": "nosniff",

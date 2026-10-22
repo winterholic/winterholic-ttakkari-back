@@ -22,7 +22,6 @@ import pytest
 from creative_support import png_bytes
 from fastapi import FastAPI
 from PIL import Image
-from ttk_comfy.client import ComfyClient
 
 from ttakkari.api import comfy_managed as api
 from ttakkari.creative.comfy_inputs import load_input_image
@@ -36,6 +35,10 @@ from ttakkari.managed_comfy_input import (
 )
 from ttakkari.managed_comfy_receipt import ReceiptError, _input_image_section
 from ttakkari.security.auth import require_user
+
+# lab 어댑터(ttk_comfy)는 저장소 밖 설치본이다. 배포 게이트의 git archive 체크아웃에는 없으므로
+# 모듈 전체를 수집 오류가 아니라 skip으로 처리한다(실제 검증은 PYTHONPATH에 어댑터를 둔 실행에서 한다).
+ComfyClient = pytest.importorskip("ttk_comfy.client").ComfyClient
 
 I2V = "wan22-5b-i2v-draft"
 NAME = "keyframe_flux_cafe.png"

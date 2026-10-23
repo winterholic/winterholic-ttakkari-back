@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from local_llm_eval import codes
 from local_llm_eval.tasks import REGISTRY
 

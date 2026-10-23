@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from local_llm_eval.runner import run_check
 
 

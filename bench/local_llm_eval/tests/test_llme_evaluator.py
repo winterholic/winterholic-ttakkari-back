@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from local_llm_eval import codes
 from local_llm_eval.evaluator import ConfigError, evaluate_attempt
 from local_llm_eval.manifest import manifest_of_files

@@ -1,7 +1,6 @@
 """Full self-check per dev task: classification, references, and every negative control."""
 
 import pytest
-
 from local_llm_eval.selfcheck import selfcheck_task
 from local_llm_eval.tasks import REGISTRY
 

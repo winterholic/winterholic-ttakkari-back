@@ -1,7 +1,6 @@
 """Ledger: nothing is dropped, identity gaps become UNKNOWN, retries add cost not completions."""
 
 import pytest
-
 from local_llm_eval.ledger import REQUIRED_NON_MISSING, Ledger, summarize
 
 IDENT = {name: "x" for name in REQUIRED_NON_MISSING}

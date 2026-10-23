@@ -80,6 +80,26 @@
 - 위 영상의 입력은 **합성 단색 이미지와 사인파**다. 계획→dispatch→v1 렌더러→제작 기록의 **배선**만 입증한다. v2 컨셉 20개나 15분 영상의 제작 증거가 아니고, 시청 가치가 있는 영상도 아니다. v1 합성 3초 데모와 같은 취급을 하지 않기 위해 별도 기록한다.
 - 이 경로로 만들 수 있는 것은 사용자가 이미지·음악을 직접 올리는 정지 이미지 슬라이드쇼뿐이다. ComfyUI/Remotion/Blender/Three.js/ArtCraft 엔진은 dispatch 대상이 아니다. 해당 엔진의 `creative_runtime` 연동은 G34 통합 이후 과제다.
 
+### 3차: 이관 문서 P0 (수직 경로: 승인 → 엔진 실행 → 산출물·QA → 기록)
+
+이관 문서(`creative-studio-audit-implementation-brief.md`)와 통합 보고서 HTML은 이 Run 가드에 막혀 직접 읽지 못했다. 부모가 전달한 요약(P0 수직 경로, gate/UI 일치, 길이 편차, 분할·재개, 실행 계약, Style DNA, 부분 재제작)을 기준으로 구현했다. 문서의 1~7 기준과 일대일 대조는 하지 못했다.
+
+변경:
+- `creative/v2/engines.py` 신규: 엔진 어댑터 계약(`id`, 담당 제공자, 규격 `Limits`, 반영하는 스타일 매개변수, `preflight`)과 v1 FFmpeg 어댑터. `preflight`는 ffmpeg 실행 파일이 버전을 응답하는지와 한국어 자막 글꼴 존재를 실제로 확인한다. 어댑터가 없는 제공자(ComfyUI 등)는 디스패치되지 않는다. 실제 미디어 QA(`qa_media`): 영상·오디오 트랙, 해상도, 길이(구간 수에 비례한 허용 오차), 검은 화면 비율(`blackdetect`), 오디오 최대 음량(`volumedetect`)을 ffmpeg로 측정한다.
+- `creative/v2/dispatch.py` 전면 개편: 계획 구간(`render_plan`)마다 v1 프로젝트를 만들어 실행하고 결과를 이어 붙여 최종 미디어를 만든다. 사용자 자산(장면 이미지·음악)은 계획 폴더에 sha256으로 저장하고 구간 프로젝트에 복사한다(음악은 구간별로 자른다). 구간 실행 키(`run_key`) = 계획 구간 키 + 장면 자산 sha256 + 음악 구간 + 엔진 버전 + 적용 스타일. 키가 같고 끝난 구간은 재실행하지 않고, 키가 바뀐 구간만 새 프로젝트로 실행하며, 실패한 구간은 같은 프로젝트에서 재시도해 끝난 장면 클립을 재사용한다. 상태는 엔진 프로젝트의 실제 작업을 읽어 계산하고(`not_dispatched`, `awaiting_assets`, `ready_to_render`, `rendering`, `failed`, `qa_failed`, `succeeded`, `stale_revision`), 로그 이벤트와 엔진 id·버전·구간 job/project id·산출물 sha256·자산 sha256이 `production.json`에 남는다. QA 실패 미디어는 내려주지 않는다. 사용자가 요청한 길이와 승인된 계획 길이(편차 상태 포함)와 실제 측정 길이를 결과와 함께 기록한다.
+- `plans.py`: 구간은 엔진 최소 3장면을 지키도록 꼬리 구간을 합치고 구간당 최대 40장면. 게이트가 닫힌 이유 `render_gate_reasons`(미승인, 승인 후 내용·능력 변경, 실행 범위, 제작 런타임에 연결되지 않은 필수 능력)를 서버가 같은 조건으로 계산해 UI에 그대로 내려준다. `render_gate`는 이유가 없을 때만 참(테스트로 고정).
+- `render.py`(v1 렌더러) 결함 수정: 읽을 수 없는 이미지를 FFmpeg `-loop 1`에 넣으면 제한 시간 360초까지 멈췄다(실측: 손상 PNG로 60초 타임아웃 재현). 인코딩 전에 이미지를 검증해 즉시 실패시킨다. 회귀 테스트 `test_unreadable_scene_image_fails_fast_instead_of_hanging_ffmpeg`.
+- API: `POST /plans/{pid}/production/assets`(multipart, 이미지는 PIL 정규화, 음악은 길이 검사), `POST .../production/media-link`, `GET .../production/media/{ident}?token=`(서명 토큰, 계획 id 바인딩). 라우트 인벤토리 갱신.
+- frontend: 제작 패널을 새 계약으로 교체(제작 시작 준비, 장면별 이미지·음악 올리기, 구간 상태·시도 횟수·재사용 장면 수, 실패 구간 재시도, 바뀐 구간만 재렌더, 측정된 QA 항목, 길이 편차 표시, 서명 링크로 영상 열기, Style DNA 반영/미반영). 승인 패널은 게이트가 닫혀 있으면 서버의 닫힌 이유를 보여 준다(이전의 "다음 단계에서 붙어요" 문구 삭제).
+
+검증 (작업 checkout, 테스트 환경):
+- backend `pytest unit_tests tests/test_creative_v2_*.py tests/test_creative_*.py tests/test_route_inventory.py` → `1671 passed, 1 skipped`. ruff 변경 파일 통과.
+- 신규 `unit_tests/test_creative_v2_dispatch.py` 21개(실제 FFmpeg 렌더 포함): 승인 전 차단, 글꼴·ffmpeg 의존성 차단, 어댑터 없는 제공자 차단, 9:16 차단, 자산 부족·짧은 음악 거부, 자산→구간 렌더→QA→미디어 E2E, 258초(>240) 계획의 5구간 렌더와 이어 붙이기, 한 장면 이미지 교체 시 해당 구간만 재실행, 손상 이미지 실패→같은 프로젝트 재시도(끝난 장면 재사용), 유실 프로젝트 재생성, 계획 revision 변경 시 stale, QA 실패 시 미디어 차단, 길이 편차 기록, Style DNA 반영·미반영 분리, QA가 검은 영상·무음·해상도·길이 불일치를 실제로 잡음.
+- frontend `tsc` 0, `pnpm lint`(ui-lint 138, 증가 없음), `vitest` `1331 passed | 10 skipped`, `build` 성공.
+- 실제 실행 로그 `work/e2e_run.out`(Run outbox): 9장면 77.4초 계획 2구간(seg-01 6장면 51.6초, seg-02 3장면 25.8초) → 엔진 `skill.v1_ffmpeg_slideshow` / `ffmpeg version 7.1` → 최종 77.43초, QA 6항목 통과, 1,512,481바이트, 구간별 elapsed 6.003/3.09초, peak_rss 339,148,800/336,019,456바이트(`psutil`이 렌더 자식 프로세스에서 측정). 장면 i6 이미지 교체 → `outdated ['seg-02']`, 시도 횟수 seg-01 1 / seg-02 2, 새 미디어 sha 변경. 손상 주입 → seg-01 failed(`장면 i5의 이미지를 읽을 수 없습니다.`) → 복구 후 같은 프로젝트에서 재시도, 장면 5개 재사용(`cached_scenes 5`, elapsed 1.796초).
+
+증거 범위(중요): 입력은 합성 단색 이미지와 사인파다. 계획→게이트→엔진→미디어→QA→기록 **배선**과 재개·재시도 동작의 증거이며, 20개 컨셉이나 15분 영상, 생성 모델 응답, 시청 가치 있는 영상의 증거가 아니다. 실제 모델/Run 기반 의도 추출과 lexical_hint는 별개이며 이 경로는 의도 추출 방식과 무관하게 이미 확인된 의도(승인된 계획)만 실행한다. 독립 ffprobe 대신 이 Run의 ffmpeg 측정을 썼다(호스트 ffprobe 사용 여부는 확인하지 않았다).
+
 ### 남은 공백
 
 - 20개 컨셉 레시피의 실제 제작(blocked 10 / unverified 8 / capabilities_executed 1 / recipe_demonstrated 1, 컨셉 레시피 중 studio_executable 0)과 15분 실제 제작, 240초 초과 구간 디스패치·이어 붙이기.

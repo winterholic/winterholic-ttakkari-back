@@ -543,3 +543,55 @@ def test_render_plan_is_derived_not_stored_and_not_part_of_approval_hash(store, 
     assert _plan_revision_hash(plan) == _plan_revision_hash(
         {k: v for k, v in plan.items() if k != "render_plan"}
     )
+
+
+def test_gate_reasons_explain_every_closed_gate_and_are_empty_when_open(store, tmp_path):
+    # 미승인
+    plan = make(store)
+    assert plan["render_gate"] is False
+    assert any("승인되지 않았습니다" in r for r in plan["render_gate_reasons"])
+    # 승인했지만 lab 수동 범위
+    approved = store.approve(plan["id"], plan["revision"])
+    assert approved["render_gate"] is False
+    assert any("스튜디오 렌더러로 실행할 수 없습니다" in r for r in approved["render_gate_reasons"])
+    assert any("연결되지 않았거나" in r for r in approved["render_gate_reasons"])
+    # 기준선 계획은 승인 뒤 열리고 이유가 없다
+    real = PlanStore(tmp_path / "real", registry=Registry())
+    baseline = real.create(
+        build_plan(
+            BRIEF,
+            IntentSpec(
+                selections=[
+                    Selection(entry_id="C08.three_act", role="primary", confidence=0.8),
+                    Selection(entry_id="C10.dissolve", role="secondary", confidence=0.8),
+                ],
+                info_items=[
+                    InfoItem(id=f"i{i}", title=f"장면 {i}", narration=NARRATION)
+                    for i in range(3)
+                ],
+            ),
+            registry=Registry(),
+        )
+    )
+    assert baseline["render_gate"] is False and baseline["render_gate_reasons"]
+    opened = real.approve(baseline["id"], baseline["revision"])
+    assert opened["render_gate"] is True and opened["render_gate_reasons"] == []
+    # 승인 뒤 장면을 바꾸면 다시 닫히고 이유가 나온다
+    edited = real.edit(
+        baseline["id"],
+        baseline["revision"],
+        scenes=[
+            SceneEdit(
+                id=s["scene_id"], title=s["title"], narration=s["narration"],
+                info_weight=s["info_weight"], essential=s["essential"], seconds=s["seconds"] + 1,
+            )
+            for s in opened["scenes"]
+        ],
+    )
+    assert edited["render_gate"] is False
+    assert any("승인되지 않았습니다" in r for r in edited["render_gate_reasons"])
+
+
+def test_gate_is_open_exactly_when_there_are_no_reasons(store):
+    for plan in (make(store), store.approve(make(store)["id"], 1)):
+        assert plan["render_gate"] == (plan["render_gate_reasons"] == [])

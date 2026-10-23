@@ -1,4 +1,6 @@
-"""Creative v2 API: 인증, 입력 경계, 계획 생성→편집→승인 흐름."""
+"""Creative v2 API: 인증, 입력 경계, 계획 생성→편집→승인→제작 흐름."""
+
+import uuid
 
 NARRATION = "이 단계에서는 시스템이 요청을 받아 검증하고 다음 처리로 넘기는 과정을 차례대로 설명합니다."
 BASE = "/api/creative/v2"
@@ -374,9 +376,17 @@ async def test_capabilities_endpoint_lists_providers_and_runtime_integration(cli
     assert caps["render.kinetic_typo"]["best_level"] != "executed"
 
 
-async def test_production_flow_over_http_dispatches_only_an_approved_baseline_plan(
-    client, auth
-):
+async def test_production_flow_over_http_from_approval_to_downloaded_media(client, auth):
+    import io
+    import math
+    import struct
+    import wave
+
+    from PIL import Image
+
+    from ttakkari.creative.render import scan
+    from ttakkari.creative.service import default_studio
+
     body = {
         "brief": "내가 가진 사진으로 세 장면 슬라이드 영상을 만든다",
         "intent": {
@@ -393,34 +403,81 @@ async def test_production_flow_over_http_dispatches_only_an_approved_baseline_pl
     plan = (await client.post(BASE + "/plans", headers=auth, json=body)).json()
     pid, rev = plan["id"], plan["revision"]
     assert plan["match"]["primary_recipe"] == "R21" and plan["render_gate"] is False
+    prod = f"{BASE}/plans/{pid}/production"
 
-    before = (await client.get(f"{BASE}/plans/{pid}/production", headers=auth)).json()
+    before = (await client.get(prod, headers=auth)).json()
     assert before["state"] == "not_dispatched" and before["dispatchable"] is False
-
-    refused = await client.post(
-        f"{BASE}/plans/{pid}/production", headers=auth, json={"revision": rev}
-    )
+    refused = await client.post(prod, headers=auth, json={"revision": rev})
     assert refused.status_code == 422 and "렌더할 수 없습니다" in refused.text
 
-    approved = await client.post(
-        f"{BASE}/plans/{pid}/approve", headers=auth, json={"revision": rev}
-    )
+    approved = await client.post(f"{BASE}/plans/{pid}/approve", headers=auth, json={"revision": rev})
     assert approved.json()["render_gate"] is True
-    placed = await client.post(
-        f"{BASE}/plans/{pid}/production", headers=auth, json={"revision": rev}
-    )
+    assert (await client.get(prod, headers=auth)).json()["dispatchable"] is True
+    placed = await client.post(prod, headers=auth, json={"revision": rev})
     assert placed.status_code == 201, placed.text
     assert placed.json()["state"] == "awaiting_assets"
-    project = (
-        await client.get(f"/api/creative/projects/{placed.json()['project_id']}", headers=auth)
-    ).json()
-    assert [s["id"] for s in project["scenes"]] == [s["scene_id"] for s in plan["scenes"]]
+    assert placed.json()["engine"]["adapter"] == "skill.v1_ffmpeg_slideshow"
 
-    early = await client.post(
-        f"{BASE}/plans/{pid}/production/render", headers=auth, json={"revision": rev}
+    early = await client.post(prod + "/render", headers=auth, json={"revision": rev})
+    assert early.status_code == 422 and "이미지가 없습니다" in early.text
+
+    def png(shade):
+        buf = io.BytesIO()
+        Image.new("RGB", (1280, 720), (30 + shade, 90, 150)).save(buf, "PNG")
+        return buf.getvalue()
+
+    for i, scene in enumerate(plan["scenes"]):
+        r = await client.post(
+            prod + "/assets",
+            headers=auth,
+            data={"kind": "scene", "scene_id": scene["scene_id"]},
+            files={"file": (f"s{i}.png", png(20 * i), "image/png")},
+        )
+        assert r.status_code == 201, r.text
+    wav = io.BytesIO()
+    with wave.open(wav, "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(22050)
+        total = int(plan["scenes"][-1]["end_time"]) + 2
+        f.writeframes(b"".join(struct.pack("<h", int(8000 * math.sin(n / 20))) for n in range(22050 * total)))
+    r = await client.post(
+        prod + "/assets",
+        headers=auth,
+        data={"kind": "music"},
+        files={"file": ("m.wav", wav.getvalue(), "audio/wav")},
     )
-    assert early.status_code == 422 and "자산이 없습니다" in early.text
-    for path in ("/production", "/production/render"):
-        assert (
-            await client.post(f"{BASE}/plans/{pid}{path}", json={"revision": rev})
-        ).status_code == 401
+    assert r.status_code == 201, r.text
+    bad = await client.post(
+        prod + "/assets",
+        headers=auth,
+        data={"kind": "scene", "scene_id": plan["scenes"][0]["scene_id"]},
+        files={"file": ("x.png", b"not an image", "image/png")},
+    )
+    assert bad.status_code == 422
+    wrong = await client.post(
+        prod + "/assets",
+        headers=auth,
+        data={"kind": "scene", "scene_id": "nope"},
+        files={"file": ("x.png", png(1), "image/png")},
+    )
+    assert wrong.status_code == 422
+
+    assert (await client.get(prod, headers=auth)).json()["state"] == "ready_to_render"
+    queued = await client.post(prod + "/render", headers=auth, json={"revision": rev})
+    assert queued.status_code == 202 and queued.json()["state"] == "rendering"
+    await scan(default_studio())
+
+    done = (await client.get(prod, headers=auth)).json()
+    assert done["state"] == "succeeded", done
+    media_id = done["final"]["id"]
+    link = await client.post(prod + "/media-link", headers=auth, json={"id": media_id})
+    assert link.status_code == 200, link.text
+    fetched = await client.get(link.json()["url"])
+    assert fetched.status_code == 200 and fetched.headers["content-type"].startswith("video/")
+    assert len(fetched.content) == done["final"]["size"]
+    assert (await client.get(f"{prod}/media/{media_id}?token=bogus")).status_code == 403
+    wrong_plan = f"{BASE}/plans/{uuid.uuid4()}/production/media/{media_id}?token=" + link.json()["url"].split("token=")[1]
+    assert (await client.get(wrong_plan)).status_code == 403
+    for path, kw in (("", {"json": {"revision": rev}}), ("/render", {"json": {"revision": rev}}), ("/assets", {"data": {"kind": "music"}}), ("/media-link", {"json": {"id": media_id}})):
+        assert (await client.post(prod + path, **kw)).status_code in (401, 422)

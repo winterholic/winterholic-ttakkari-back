@@ -154,3 +154,24 @@ def test_another_renderer_ownership_is_respected(tmp_path):
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         asyncio.run(scan(studio))
         assert studio.get(p["id"])["render_jobs"][-1]["status"] == "queued"
+
+
+def test_unreadable_scene_image_fails_fast_instead_of_hanging_ffmpeg(tmp_path):
+    import time
+
+    from ttakkari.creative.render import scan
+    from ttakkari.creative.service import ProjectInput, Studio
+
+    studio = Studio(tmp_path)
+    p = studio.create(ProjectInput(name="깨진 이미지", duration=6))
+    studio.demo(p["id"])
+    current = studio.get(p["id"])
+    asset_id = current["scenes"][0]["asset_id"]
+    asset = next(a for a in current["assets"] if a["id"] == asset_id)
+    (studio.path(p["id"]) / asset["file"]).write_bytes(b"not an image")
+    studio.enqueue(p["id"])
+    started = time.monotonic()
+    asyncio.run(scan(studio))
+    job = studio.get(p["id"])["render_jobs"][-1]
+    assert job["status"] == "failed" and "읽을 수 없습니다" in job["error"], job
+    assert time.monotonic() - started < 30

@@ -64,6 +64,15 @@ def inspect_media(path: Path) -> dict:
     }
 
 
+def _require_readable_image(path: Path, scene_id: str) -> None:
+    """읽을 수 없는 이미지를 FFmpeg '-loop 1'에 넣으면 제한 시간(6분)까지 멈춘다. 먼저 빨리 실패시킨다."""
+    try:
+        with Image.open(path) as im:
+            im.verify()
+    except (OSError, ValueError, SyntaxError) as e:
+        raise ValueError(f"장면 {scene_id}의 이미지를 읽을 수 없습니다.") from e
+
+
 def dimensions(aspect: str):
     return {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}[aspect]
 
@@ -311,6 +320,8 @@ async def render(studio: Studio, job: dict, lock_fd: int):
             if clip.is_file():
                 cached += 1
             else:
+                if asset["kind"] == "image":
+                    _require_readable_image(folder / asset["file"], scene["id"])
                 subtitle = folder / "cache" / f"{key}.png"
                 caption_image(
                     subtitle,

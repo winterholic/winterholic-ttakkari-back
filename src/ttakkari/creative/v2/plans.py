@@ -84,6 +84,8 @@ DEFAULT_SCAFFOLD = [("오프닝", 1.0), ("전개 1", 1.3), ("전개 2", 1.3), ("
 SEGMENT_TARGET_SECONDS = 60.0
 RENDERER_SCENE_MAX_SECONDS = 60.0
 RENDERER_PROJECT_MAX_SECONDS = 240.0
+RENDERER_SEGMENT_MIN_SCENES = 3
+RENDERER_SEGMENT_MAX_SCENES = 40
 _POSITION_KEYS = {
     "start_time",
     "end_time",
@@ -110,13 +112,23 @@ def render_plan(plan: dict[str, Any]) -> dict[str, Any]:
     acc = 0.0
     for scene in plan["scenes"]:
         length = (scene["end_frame"] - scene["start_frame"]) / fps
-        if groups and acc + length > SEGMENT_TARGET_SECONDS:
+        if groups and (
+            acc + length > SEGMENT_TARGET_SECONDS
+            or len(groups[-1]) >= RENDERER_SEGMENT_MAX_SCENES
+        ):
             groups.append([])
             acc = 0.0
         if not groups:
             groups.append([])
         groups[-1].append(scene)
         acc += length
+    # 렌더러는 구간마다 최소 장면 수가 있다. 모자란 꼬리 구간은 앞 구간에 합친다.
+    while (
+        len(groups) > 1
+        and len(groups[-1]) < RENDERER_SEGMENT_MIN_SCENES
+        and len(groups[-2]) + len(groups[-1]) <= RENDERER_SEGMENT_MAX_SCENES
+    ):
+        groups[-2].extend(groups.pop())
     segments = []
     for index, group in enumerate(groups, 1):
         start, end = group[0]["start_frame"], group[-1]["end_frame"]
@@ -175,6 +187,7 @@ def _plan_revision_hash(plan: dict[str, Any]) -> str:
         "updated_at",
         "render_blockers",
         "render_gate",
+        "render_gate_reasons",
         "render_plan",
     }
     return _digest({key: value for key, value in plan.items() if key not in metadata})
@@ -238,6 +251,48 @@ def _render_authorized(
         for need in match["needs"]
         if need["priority"] == "must"
     )
+
+
+def _gate_reasons(
+    plan: dict[str, Any], current_capabilities: dict[str, Any] | None
+) -> list[str]:
+    """렌더 게이트가 닫힌 이유. 서버 판정(_render_authorized)과 같은 조건을 사람이 읽는 문장으로 푼다."""
+    reasons = list(plan["render_blockers"])
+    approval = plan.get("approval")
+    if not approval or approval.get("revision") != plan["revision"]:
+        reasons.append("이 revision은 아직 승인되지 않았습니다.")
+        return reasons
+    snapshot = approval.get("snapshot") or {}
+    if (
+        snapshot.get("revision") != plan["revision"]
+        or snapshot.get("plan_sha256") != _plan_revision_hash(plan)
+    ):
+        reasons.append("승인 이후 계획 내용이 바뀌었습니다. 다시 승인해 주세요.")
+    saved = _capability_snapshot(plan["match"])
+    if snapshot.get("capabilities") != saved or (
+        current_capabilities is not None
+        and snapshot.get("capabilities") != current_capabilities
+    ):
+        reasons.append("승인 이후 능력 판정이 바뀌었습니다(레지스트리·설치 상태). 다시 승인해 주세요.")
+    match = current_capabilities or saved
+    if match["execution_scope"] != "studio_runtime" or match["status"] != "ready":
+        reasons.append(
+            f"실행 범위가 {match['execution_scope']}({match['status']})라 스튜디오 렌더러로 실행할 수 없습니다. "
+            "승인은 계획 확정까지만 의미합니다."
+        )
+    unwired = [
+        "/".join(need["options"])
+        for need in match["needs"]
+        if need["priority"] == "must"
+        and not (
+            need["status"] == "executed"
+            and need.get("best") is not None
+            and need["best"]["integration"] == "creative_runtime"
+        )
+    ]
+    if unwired:
+        reasons.append("제작 런타임에 연결되지 않았거나 실행 기록이 없는 필수 능력: " + ", ".join(unwired))
+    return reasons
 
 
 def _beats(intent: IntentSpec) -> tuple[list[Beat], str, list[str]]:
@@ -493,6 +548,12 @@ class PlanStore:
             and _render_authorized(plan, current_capabilities)
             and not plan["render_blockers"]
         )
+        plan["render_gate_reasons"] = (
+            []
+            if plan["render_gate"]
+            else _gate_reasons(plan, current_capabilities)
+            or ["능력 판정을 다시 계산하지 못했습니다."]
+        )
         plan["render_plan"] = render_plan(plan)
         return plan
 
@@ -517,7 +578,13 @@ class PlanStore:
         plan = {
             k: v
             for k, v in plan.items()
-            if k not in ("render_blockers", "render_gate", "render_plan")
+            if k
+            not in (
+                "render_blockers",
+                "render_gate",
+                "render_gate_reasons",
+                "render_plan",
+            )
         }
         folder = self._folder(plan["id"])
         temp = folder / f"{uuid.uuid4()}.tmp"

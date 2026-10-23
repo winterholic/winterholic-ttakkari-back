@@ -6,15 +6,19 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import uuid
+from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Header
+import jwt
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi import Path as PathParam
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import Field
 
-from ttakkari.api.creative import perform
+from ttakkari.api.creative import _normalize, perform
 from ttakkari.api.deps import Db
 from ttakkari.creative.service import default_studio
 from ttakkari.creative.v2 import dispatch as production
@@ -49,7 +53,7 @@ from ttakkari.creative.v2.style_dna import (
     UnresolvedStyleConflict,
     default_style_store,
 )
-from ttakkari.security.auth import User
+from ttakkari.security.auth import User, decode, issue_download_token
 
 router = APIRouter(prefix="/api/creative/v2", tags=["creative-studio-v2"])
 
@@ -378,4 +382,77 @@ async def production_render(pid: PlanId, body: PlanApprove, _: User):
         default_studio(),
         str(pid),
         body.revision,
+    )
+
+
+AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".flac", ".ogg"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+@router.post("/plans/{pid}/production/assets", status_code=201)
+async def production_asset(
+    pid: PlanId,
+    _: User,
+    kind: Annotated[Literal["scene", "music"], Form()],
+    file: Annotated[UploadFile, File()],
+    scene_id: Annotated[str | None, Form(max_length=50)] = None,
+):
+    ext = Path(file.filename or "").suffix.lower()
+    allowed = IMAGE_SUFFIXES if kind == "scene" else AUDIO_SUFFIXES
+    if ext not in allowed:
+        raise HTTPException(422, "장면은 PNG/JPG/WebP, 음악은 MP3/WAV/M4A/FLAC/OGG를 올려 주세요.")
+    if kind == "scene" and not scene_id:
+        raise HTTPException(422, "장면 ID가 필요합니다.")
+    perform(default_plan_store().get, str(pid))
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / ("upload" + ext)
+        size = 0
+        with path.open("wb") as f:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > 100 * 1024 * 1024:
+                    raise HTTPException(413, "파일은 100MB 이하로 올려 주세요.")
+                f.write(chunk)
+        normalized, media_kind, info = await asyncio.to_thread(perform, _normalize, path, ext)
+        if (kind == "scene") != (media_kind == "image"):
+            raise HTTPException(422, "올린 파일 종류가 자산 종류와 맞지 않습니다.")
+        asset = await asyncio.to_thread(
+            perform,
+            lambda: production.put_asset(
+                default_plan_store(), str(pid), kind=kind, scene_id=scene_id,
+                source=normalized, name=file.filename or "자산", meta=info,
+            ),
+        )
+    return {k: asset[k] for k in ("id", "sha256", "name", "kind", "uploaded_at", "meta")}
+
+
+class MediaLinkInput(Strict):
+    id: uuid.UUID
+
+
+@router.post("/plans/{pid}/production/media-link")
+async def production_media_link(pid: PlanId, body: MediaLinkInput, _: User):
+    perform(production.final_media, default_plan_store(), str(pid), str(body.id))
+    token, exp = issue_download_token(body.id, f"creative-v2:{pid}:final")
+    return {
+        "url": f"/api/creative/v2/plans/{pid}/production/media/{body.id}?"
+        + urlencode({"token": token}),
+        "expires_at": exp.isoformat(),
+    }
+
+
+@router.get("/plans/{pid}/production/media/{ident}")
+async def production_media(pid: PlanId, ident: uuid.UUID, token: str, download: bool = False):
+    try:
+        claims = decode(token, "download")
+        if claims.get("sub") != str(ident) or claims.get("var") != f"creative-v2:{pid}:final":
+            raise jwt.InvalidTokenError()
+    except jwt.PyJWTError as e:
+        raise HTTPException(403, "재생 주소가 만료됐습니다. 미리보기를 다시 열어 주세요.") from e
+    path, name = perform(production.final_media, default_plan_store(), str(pid), str(ident))
+    return FileResponse(
+        path,
+        filename=name,
+        content_disposition_type="attachment" if download else "inline",
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
     )

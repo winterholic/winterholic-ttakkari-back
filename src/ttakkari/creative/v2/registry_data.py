@@ -580,6 +580,7 @@ def _r(
     conflicts=(),
     cases=(),
     constraints=(),
+    baseline=False,
 ):
     return Recipe(
         id=rid,
@@ -592,6 +593,7 @@ def _r(
         conflicts=list(conflicts),
         cases=list(cases),
         constraints=list(constraints),
+        baseline=baseline,
     )
 
 
@@ -930,5 +932,30 @@ RECIPES: list[Recipe] = [
         ],
         [["audio.sfx"]],
         ["C05.volumetric_light", "C05.night", "C01.story_film"],
+    ),
+    # R01~R20은 원 요구의 컨셉 레시피다. R21은 컨셉이 아니라 스튜디오 렌더러가 실제로 실행하는 기준선이며,
+    # 이 레시피만이 필수 능력을 모두 creative_runtime으로 채워 렌더 게이트를 열 수 있다.
+    _r(
+        "R21",
+        "정지 이미지 슬라이드쇼(기준선)",
+        "사용자가 준비한 장면 이미지와 음악을 켄번즈·자막으로 잇는 스튜디오 렌더러 기준선",
+        ["FFmpeg"],
+        [["edit.captions"]],
+        [],
+        [
+            "C08.three_act",
+            "C08.kishotenkyeol",
+            "C08.montage",
+            "C10.cut",
+            "C10.dissolve",
+            "C10.subtitles",
+        ],
+        cases=["legacy-catalog-sample-tech-explainer"],
+        constraints=[
+            "장면 이미지와 음악은 사용자가 올린다. 이 레시피는 이미지·영상·음악을 생성하지 않는다.",
+            "생성 영상, 3D, 모션 컴포지션, 립싱크를 만들지 못한다. 그런 선택이 있으면 계획의 필수 능력이 늘어 이 기준선으로는 렌더 게이트가 열리지 않는다.",
+            "스튜디오 렌더러 한도: 장면 1~60초, 3~40장면, 영상 최대 240초, 화면비 16:9 또는 1:1.",
+        ],
+        baseline=True,
     ),
 ]

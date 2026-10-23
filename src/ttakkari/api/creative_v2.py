@@ -16,6 +16,8 @@ from pydantic import Field
 
 from ttakkari.api.creative import perform
 from ttakkari.api.deps import Db
+from ttakkari.creative.service import default_studio
+from ttakkari.creative.v2 import dispatch as production
 from ttakkari.creative.v2.capabilities import CAPABILITIES, Strict
 from ttakkari.creative.v2.catalog_data import CATALOG_NAMES, ENTRIES
 from ttakkari.creative.v2.duration import (
@@ -128,6 +130,30 @@ async def catalog(_: User):
             k: {"name": v[0], "description": v[1]} for k, v in CAPABILITIES.items()
         },
     }
+
+
+@router.get("/capabilities")
+async def capabilities(_: User):
+    """능력별 최고 수준과 공급자. 어떤 능력이 실제 제작 런타임에 연결됐는지 한 번에 본다."""
+
+    def build():
+        registry = _registry()
+        return {
+            "snapshot": registry.snapshot_meta(),
+            "capabilities": {
+                cap: {
+                    "name": name,
+                    "description": description,
+                    "best_level": registry.capability_level(cap),
+                    "providers": [
+                        p.model_dump(mode="json") for p in registry.providers(cap)
+                    ],
+                }
+                for cap, (name, description) in CAPABILITIES.items()
+            },
+        }
+
+    return await asyncio.to_thread(build)
 
 
 @router.get("/registries")
@@ -322,3 +348,34 @@ async def plan_edit(pid: PlanId, body: PlanEdit, _: User):
 @router.post("/plans/{pid}/approve")
 async def plan_approve(pid: PlanId, body: PlanApprove, _: User):
     return perform(default_plan_store().approve, str(pid), body.revision)
+
+
+@router.get("/plans/{pid}/production")
+async def production_get(pid: PlanId, _: User):
+    return await asyncio.to_thread(
+        perform, production.view, default_plan_store(), default_studio(), str(pid)
+    )
+
+
+@router.post("/plans/{pid}/production", status_code=201)
+async def production_dispatch(pid: PlanId, body: PlanApprove, _: User):
+    return await asyncio.to_thread(
+        perform,
+        production.dispatch,
+        default_plan_store(),
+        default_studio(),
+        str(pid),
+        body.revision,
+    )
+
+
+@router.post("/plans/{pid}/production/render", status_code=202)
+async def production_render(pid: PlanId, body: PlanApprove, _: User):
+    return await asyncio.to_thread(
+        perform,
+        production.request_render,
+        default_plan_store(),
+        default_studio(),
+        str(pid),
+        body.revision,
+    )

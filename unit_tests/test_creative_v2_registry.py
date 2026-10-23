@@ -80,9 +80,11 @@ def test_unevidenced_entries_do_not_fake_evidence():
     assert ENTRIES["C01.music_video"].evidence_status == "linked"
 
 
-def test_twenty_recipes_reference_existing_entries_and_capabilities():
+def test_twenty_concept_recipes_plus_baseline_reference_existing_entries_and_capabilities():
     recipes = registry_data.RECIPES
-    assert [r.id for r in recipes] == [f"R{i:02d}" for i in range(1, 21)]
+    assert [r.id for r in recipes] == [f"R{i:02d}" for i in range(1, 22)]
+    # R01~R20은 원 요구의 컨셉 레시피이고 기준선은 R21 하나뿐이다.
+    assert [r.id for r in recipes if r.baseline] == ["R21"]
     for r in recipes:
         for e in [*r.fits, *r.conflicts]:
             assert e in ENTRIES, (r.id, e)
@@ -225,7 +227,7 @@ def test_skill_without_code_is_capped_at_declared_and_missing_dependency_propaga
 def test_recipe_verdict_separates_capability_evidence_from_recipe_evidence():
     reg = Registry()
     verdicts = {m.recipe_id: m for m in reg.recipe_matrix()}
-    assert len(verdicts) == 20
+    assert len(verdicts) == 21
     for m in verdicts.values():
         if m.verdict == "blocked":
             assert m.blockers
@@ -233,9 +235,8 @@ def test_recipe_verdict_separates_capability_evidence_from_recipe_evidence():
             assert any("completed" in c for c in m.case_evidence)
         if m.verdict == "capabilities_executed":
             assert not any("completed" in c for c in m.case_evidence)
-    assert not any(m.verdict == "studio_executable" for m in verdicts.values()), (
-        "스튜디오 제작 런타임에 연결된 레시피는 아직 없다"
-    )
+    # 컨셉 레시피(R01~R20) 중 스튜디오 제작 런타임에 연결된 것은 아직 없다. 실행되는 것은 R21 슬라이드쇼 기준선뿐이다.
+    assert {m.recipe_id for m in verdicts.values() if m.verdict == "studio_executable"} == {"R21"}
 
 
 def test_no_blocked_group_hides_behind_executed_level():

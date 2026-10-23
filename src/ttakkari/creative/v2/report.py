@@ -64,7 +64,7 @@ def matrix_markdown(registry: Registry | None = None) -> str:
     out += [f"- {VERDICT_LABEL[v]}: {counts.get(v, 0)}개" for v in VERDICT_LABEL]
     out += [
         "",
-        "## R01~R20 레시피 판정",
+        "## R01~R21 레시피 판정 (R21은 컨셉이 아닌 슬라이드쇼 기준선)",
         "",
         "| ID | 레시피 | 판정 | 가장 약한 필수 능력 | 누락 | 설치만(미실행) | 레시피 사례 |",
         "|---|---|---|---|---|---|---|",

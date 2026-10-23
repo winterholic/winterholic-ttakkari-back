@@ -173,6 +173,8 @@ class Recipe(Strict):
     conflicts: list[str] = Field(default_factory=list)
     cases: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
+    # 기준선 레시피는 더 풍부한 레시피가 선택에 맞지 않을 때만 주 레시피가 된다. 요청을 조용히 낮추지 않기 위해서다.
+    baseline: bool = False
     version: str = "0.1.0"
 
 

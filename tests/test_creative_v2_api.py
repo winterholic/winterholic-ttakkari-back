@@ -32,6 +32,7 @@ def intent_body(count=14):
 async def test_v2_requires_auth_and_serves_catalog_registries_and_matrix(client, auth):
     for path in (
         "/catalog",
+        "/capabilities",
         "/registries",
         "/matrix",
         "/duration/policy",
@@ -46,7 +47,7 @@ async def test_v2_requires_auth_and_serves_catalog_registries_and_matrix(client,
     )
     matrix = (await client.get(BASE + "/matrix", headers=auth)).json()
     assert [r["recipe_id"] for r in matrix["recipes"]] == [
-        f"R{i:02d}" for i in range(1, 21)
+        f"R{i:02d}" for i in range(1, 22)
     ]
     assert matrix["snapshot"]["available"] is True
     registries = (await client.get(BASE + "/registries", headers=auth)).json()
@@ -357,3 +358,69 @@ async def test_intent_run_start_and_poll_use_run_lifecycle(client, auth, monkeyp
         headers={**auth, "Idempotency-Key": "resume-1"},
     )
     assert resumed.status_code == 202 and resumed.json()["request_key"] == "resume-1"
+
+
+async def test_capabilities_endpoint_lists_providers_and_runtime_integration(client, auth):
+    r = await client.get(BASE + "/capabilities", headers=auth)
+    assert r.status_code == 200, r.text
+    caps = r.json()["capabilities"]
+    timeline = caps["edit.timeline"]
+    assert timeline["best_level"] in ("executed", "verified")
+    assert any(
+        p["entry_id"] == "skill.v1_ffmpeg_slideshow"
+        and p["integration"] == "creative_runtime"
+        for p in timeline["providers"]
+    )
+    assert caps["render.kinetic_typo"]["best_level"] != "executed"
+
+
+async def test_production_flow_over_http_dispatches_only_an_approved_baseline_plan(
+    client, auth
+):
+    body = {
+        "brief": "내가 가진 사진으로 세 장면 슬라이드 영상을 만든다",
+        "intent": {
+            "selections": [
+                {"entry_id": "C08.three_act", "role": "primary", "confidence": 0.8},
+                {"entry_id": "C10.dissolve", "role": "secondary", "confidence": 0.8},
+            ],
+            "info_items": [
+                {"id": f"i{i}", "title": f"장면 {i + 1}", "narration": NARRATION}
+                for i in range(3)
+            ],
+        },
+    }
+    plan = (await client.post(BASE + "/plans", headers=auth, json=body)).json()
+    pid, rev = plan["id"], plan["revision"]
+    assert plan["match"]["primary_recipe"] == "R21" and plan["render_gate"] is False
+
+    before = (await client.get(f"{BASE}/plans/{pid}/production", headers=auth)).json()
+    assert before["state"] == "not_dispatched" and before["dispatchable"] is False
+
+    refused = await client.post(
+        f"{BASE}/plans/{pid}/production", headers=auth, json={"revision": rev}
+    )
+    assert refused.status_code == 422 and "렌더할 수 없습니다" in refused.text
+
+    approved = await client.post(
+        f"{BASE}/plans/{pid}/approve", headers=auth, json={"revision": rev}
+    )
+    assert approved.json()["render_gate"] is True
+    placed = await client.post(
+        f"{BASE}/plans/{pid}/production", headers=auth, json={"revision": rev}
+    )
+    assert placed.status_code == 201, placed.text
+    assert placed.json()["state"] == "awaiting_assets"
+    project = (
+        await client.get(f"/api/creative/projects/{placed.json()['project_id']}", headers=auth)
+    ).json()
+    assert [s["id"] for s in project["scenes"]] == [s["scene_id"] for s in plan["scenes"]]
+
+    early = await client.post(
+        f"{BASE}/plans/{pid}/production/render", headers=auth, json={"revision": rev}
+    )
+    assert early.status_code == 422 and "자산이 없습니다" in early.text
+    for path in ("/production", "/production/render"):
+        assert (
+            await client.post(f"{BASE}/plans/{pid}{path}", json={"revision": rev})
+        ).status_code == 401

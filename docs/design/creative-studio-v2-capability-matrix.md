@@ -21,14 +21,14 @@
 
 ## 요약
 
-- 스튜디오 실행 가능: 0개
+- 스튜디오 실행 가능: 1개
 - 사례 기록 있음(lab·조건부/미검토, 품질 통과 아님): 1개
 - 능력별 실행됨, 조합 미실행: 1개
 - 부분 실행: 0개
 - 설치만, 실행 미검증: 8개
 - 차단(필수 능력 누락): 10개
 
-## R01~R20 레시피 판정
+## R01~R21 레시피 판정 (R21은 컨셉이 아닌 슬라이드쇼 기준선)
 
 | ID | 레시피 | 판정 | 가장 약한 필수 능력 | 누락 | 설치만(미실행) | 레시피 사례 |
 |---|---|---|---|---|---|---|
@@ -52,6 +52,7 @@
 | R18 | 제품 광고 | 설치만, 실행 미검증 | asset.model_3d, light.studio | - | asset.model_3d; light.studio | 없음 |
 | R19 | 뮤직비디오 | 사례 기록 있음(lab·조건부/미검토, 품질 통과 아님) | qa.machine_video, edit.timeline, audio.music_analysis 외 | - | - | remotion-beat-v1-v2, acestep-ko-ballad-run1, legacy-catalog-sample-music-video |
 | R20 | 공포·스릴러 | 차단(필수 능력 누락) | audio.sfx_spatial | audio.sfx_spatial | - | 없음 |
+| R21 | 정지 이미지 슬라이드쇼(기준선) | 스튜디오 실행 가능 | qa.machine_video, edit.timeline, edit.captions | - | - | legacy-catalog-sample-tech-explainer |
 
 ### 레시피별 필수 능력 제공자
 
@@ -336,6 +337,18 @@
 | audio.sfx_spatial | missing | 없음 | - | - |
 | vfx.volumetric | executed | tool.three | lab_only | record:three-cinematic-v1-v2(completed, 검수 conditional) |
 | render.blender_offline/gen.video_i2v/render.three_realtime | executed | skill.studio-3d-cinematic | lab_only | record:three-cinematic-v1-v2(completed, 검수 conditional); record:three-previz-roundtable(completed, 검수 unreviewed) |
+
+#### R21 정지 이미지 슬라이드쇼(기준선)
+
+필수 능력과 레시피 사례 모두 실행 기록이 있고 제작 런타임에 연결돼 있다.
+
+| 필수 능력 | 수준 | 제공자 | 연동 | 근거 |
+|---|---|---|---|---|
+| qa.machine_video | executed | tool.ffmpeg | creative_runtime | record:remotion-intro-v1-v2(completed, 검수 conditional) |
+| edit.timeline | executed | skill.v1_ffmpeg_slideshow | creative_runtime | record:legacy-catalog-sample-music-video(completed, 검수 unreviewed); record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed) |
+| edit.captions | executed | skill.v1_ffmpeg_slideshow | creative_runtime | record:legacy-catalog-sample-tech-explainer(completed, 검수 unreviewed) |
+
+제약: 장면 이미지와 음악은 사용자가 올린다. 이 레시피는 이미지·영상·음악을 생성하지 않는다.; 생성 영상, 3D, 모션 컴포지션, 립싱크를 만들지 못한다. 그런 선택이 있으면 계획의 필수 능력이 늘어 이 기준선으로는 렌더 게이트가 열리지 않는다.; 스튜디오 렌더러 한도: 장면 1~60초, 3~40장면, 영상 최대 240초, 화면비 16:9 또는 1:1.
 
 ## 능력별 최고 수준
 

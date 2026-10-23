@@ -411,6 +411,9 @@ def match_intent(
 
     candidates = _score_recipes(registry, selections, needs)
     viable = [c for c in candidates if c.disqualified is None and c.fit > 0]
+    # 기준선 레시피(정지 이미지 슬라이드쇼)는 풍부한 레시피가 하나도 맞지 않을 때만 주 레시피가 된다.
+    rich = [c for c in viable if not registry.recipes[c.recipe_id].baseline]
+    viable = rich or viable
     primary = viable[0] if viable else None
     auxiliary: list[str] = []
     if primary:
@@ -438,6 +441,7 @@ def match_intent(
                 # 막힌 레시피를 보조로 끌어오면 새 필수 능력 누락만 늘어난다.
                 if c.disqualified is None
                 and c.verdict != "blocked"
+                and not registry.recipes[c.recipe_id].baseline
                 and c.recipe_id not in (primary.recipe_id, *auxiliary)
             ]
             pool = [(gain, c) for gain, c in pool if gain > 0]

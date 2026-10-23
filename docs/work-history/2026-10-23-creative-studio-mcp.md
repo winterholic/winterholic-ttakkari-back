@@ -6,6 +6,8 @@
 - No repository AGENTS.md or CLAUDE.md was found. The mcp-builder skill and its Python server guide were read.
 - At implementation time, deploy job ca6d89f6-4153-4bf7-8323-f0808a9247eb identified active release dc2f165e96e21560f73bd230ebd2c2a359d7dcca at /Users/winterholic/.ttakkari/deploy/releases/dc2f165e96e21560f73bd230ebd2c2a359d7dcca, state draining (new traffic already switched). Its .release.json matched. The current MCP bridge was absent from that release.
 - A prior unrelated cumulative reservation, 38d046c6-5fc1-4d2d-9b18-6352f67a27db for 5e19deb1dc9da9be7e0c1515c7d9458099ef9b17, was waiting_slot. This is separate from this MCP change.
+- Implementation commit d1840eb13f6549f83fa0123ac0b499993166fa19 was fast-forwarded onto main. The tools catalog/read-only contract follow-up is 0f20180d763edf6bbad58e868ae4b55c388a5b42. The final source was pushed to origin/main after the normal pre-push hook passed.
+- Deployment reservation e09ef230-651e-48b6-b08c-e07e0d96ecd3 targets 0f20180d763edf6bbad58e868ae4b55c388a5b42, strategy generations, status requested at 2026-10-23T04:04:36Z. Requested is not deployed or active.
 
 ## Tools and authorization
 
@@ -35,6 +37,7 @@ Read-only hints match behavior; readiness, production status (which reconciles s
 - Follow-up after pagination, progress, tool classification and service-bridge checks: tests/test_creative_mcp_tools.py unit_tests/test_comfy_managed.py unit_tests/test_comfy_managed_api.py unit_tests/test_managed_comfy_receipt.py → 43 passed in 1.31s.
 - MCP/route/role authorization inventory: tests/test_route_inventory.py tests/test_orchestrator.py::test_auto_approval_policy_covers_registered_tools tests/test_orchestrator.py::test_mcp_server_tools_by_role → 9 passed in 2.62s.
 - Ruff, changed-module compileall, and git diff --check passed.
+- Final normal pre-push gate on 0f20180: Ruff passed; pytest -m contract → 78 passed, 4277 deselected; changed test files → 76 passed. This is the repository's impacted gate, not the full backend suite.
 - MCP list_tools and call_tool were exercised with the scoped service transport mocked. API bridge tests verify personal-session rejection, session-bound Comfy submit/idempotency, plan approval revision forwarding, and no-device readiness reported as not-ready. These are not live deployed MCP/API call evidence.
 
 ## Next-run verification order

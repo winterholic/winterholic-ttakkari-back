@@ -74,7 +74,7 @@ def test_a_second_observation_line_from_an_exit_hook_is_tampering(workdir):
     )
     (workdir / "m.py").write_text(hook)
     run = run_check(workdir, "H1", PROBE)
-    assert run.status == "multi_obs"
+    assert run.status == "integrity"
     assert outcome_from_run(CHECK, run).code == "FAIL_CHECKER_PATCH"
 
 
@@ -101,8 +101,7 @@ def test_patching_builtins_does_not_reach_the_probe_and_is_flagged(workdir):
     )
     probe = "import m\nxs = [9, 8]\nrec('n', len(xs))\nrec('l', list(xs))\n"
     run = run_check(workdir, "H1", probe)
-    assert run.obs["n"] == 2 and run.obs["l"] == [9, 8]
-    assert run.obs["__tampered__"] == ["builtins.list"]
+    assert run.status == "integrity" and "builtins" in run.detail
     assert outcome_from_run(CHECK, run).code == "FAIL_CHECKER_PATCH"
 
 
@@ -111,7 +110,7 @@ def test_breaking_the_import_system_through_builtins_is_flagged_not_trusted(work
         "import builtins\nbuiltins.len = lambda *a: 0\ndef f(x):\n    return x * 2\n"
     )
     run = run_check(workdir, "H1", PROBE)
-    assert "builtins.len" in run.obs.get("__tampered__", [])
+    assert run.status == "integrity" and "builtins" in run.detail
     assert outcome_from_run(CHECK, run).passed is False
 
 
@@ -120,7 +119,7 @@ def test_incomplete_observation_stream_without_a_probe_error_is_tampering(workdi
         "import os\nos.write(1, b'\\nOBS\\t{}\\n')\nos._exit(0)\ndef f(x):\n    return x\n"
     )
     out = outcome(workdir)
-    assert out.code == "FAIL_CHECKER_PATCH" and "missing" in out.detail
+    assert out.code == "FAIL_CHECKER_PATCH" and "capability" in out.detail
 
 
 @pytest.mark.parametrize("task_id", sorted(REGISTRY))

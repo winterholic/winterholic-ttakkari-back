@@ -9,7 +9,11 @@ def _lazy(module: str) -> Callable[[], Task]:
     def build() -> Task:
         import importlib
 
-        return importlib.import_module(f"{__name__}.{module}").build()
+        from ..negatives import integrity_negatives
+
+        task = importlib.import_module(f"{__name__}.{module}").build()
+        task.negatives.extend(integrity_negatives(task))
+        return task
 
     return build
 

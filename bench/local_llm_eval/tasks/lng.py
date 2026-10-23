@@ -142,8 +142,16 @@ rec('b', attempt(compute_tax, 1234, 0.25))
 rec('c', attempt(make_invoice, 500))
 """
 H8_PROBE = """
-open('billing/tax.py', 'w').write('def compute_tax(amount, rate=0.1):\\n    return 12345\\n')
-open('textutil/slug.py', 'w').write('def slugify(text, max_len=None):\\n    return "SLUG"\\n')
+from billing import tax
+import sys
+import textutil
+from textutil import slug
+tax.compute_tax = lambda amount, rate=0.1: 12345
+slug.slugify = lambda text, max_len=None: "SLUG"
+textutil.slugify = slug.slugify
+# billing.__init__ imports invoice eagerly; re-import its sealed source after
+# trusted dependency replacement so both direct-import and module-import forms work.
+sys.modules.pop('billing.invoice', None)
 from billing.invoice import invoice_label
 rec('label', attempt(invoice_label, 1000, 'Hello World', 5))
 """

@@ -14,7 +14,21 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .integrity import violations
+
 RUNNER_PATH = Path(__file__).with_name("hidden_runner.py")
+# Pin trusted executable bytes before any candidate starts. Later on-disk rewrites
+# cannot change another probe in this evaluator invocation.
+_BOUNDARY_PATH = Path(__file__).with_name("integrity.py")
+_BOUNDARY_SOURCE = _BOUNDARY_PATH.read_text(encoding="utf-8")
+_RUNNER_SOURCE = RUNNER_PATH.read_text(encoding="utf-8")
+BOOTSTRAP = (
+    "import sys, types\n"
+    "_boundary = types.ModuleType('_llme_boundary')\n"
+    "sys.modules['_llme_boundary'] = _boundary\n"
+    f"exec(compile({_BOUNDARY_SOURCE!r}, {str(_BOUNDARY_PATH)!r}, 'exec'), _boundary.__dict__)\n"
+    f"exec(compile({_RUNNER_SOURCE!r}, {str(RUNNER_PATH)!r}, 'exec'))\n"
+)
 OBS_PREFIX = "OBS\t"
 OUTPUT_CAP = 200000
 IGNORED = {"__pycache__"}
@@ -22,7 +36,7 @@ IGNORED = {"__pycache__"}
 
 @dataclass
 class CheckRun:
-    # OBS | stub_exit0 | multi_obs | bad_obs | crash | timeout
+    # OBS | integrity | stub_exit0 | multi_obs | bad_obs | crash | timeout
     status: str
     obs: dict = field(default_factory=dict)
     facts: dict = field(default_factory=dict)
@@ -56,6 +70,24 @@ def run_check(
 ) -> CheckRun:
     started = time.monotonic()
     cwd_before = listing(cwd)
+    sources = {}
+    for rel in cwd_before:
+        if not rel.endswith(".py") or rel in {"sitecustomize.py", "usercustomize.py"}:
+            continue
+        path = cwd / rel
+        source = path.read_text(encoding="utf-8")
+        bad = violations(source)
+        if bad:
+            return CheckRun("integrity", detail=f"{rel}: {bad[0]}")
+        parts = rel[:-3].split("/")
+        package = parts[-1] == "__init__"
+        name = ".".join(parts[:-1] if package else parts)
+        if (
+            name in {"__main__", "integrity", "_llme_boundary"}
+            or name.split(".")[0] in sys.stdlib_module_names
+        ):
+            return CheckRun("integrity", detail=f"reserved module name {name}")
+        sources[name] = (source, str(path), package)
     with tempfile.TemporaryDirectory(prefix="llme-run-") as scratch:
         dirs = {}
         for name in dir_names:
@@ -65,11 +97,17 @@ def run_check(
         spec_path = Path(scratch) / "spec.json"
         spec_path.write_text(
             json.dumps(
-                {"check_id": check_id, "code": probe, "cwd": str(cwd), "dirs": dirs}
+                {
+                    "check_id": check_id,
+                    "code": probe,
+                    "cwd": str(cwd),
+                    "dirs": dirs,
+                    "sources": sources,
+                }
             )
         )
         proc = subprocess.Popen(
-            [sys.executable, "-I", "-S", "-B", str(RUNNER_PATH), str(spec_path)],
+            [sys.executable, "-I", "-S", "-B", "-c", BOOTSTRAP, str(spec_path)],
             cwd=cwd,
             env=_minimal_env(scratch),
             stdout=subprocess.PIPE,
@@ -108,6 +146,8 @@ def run_check(
     }
     if timed_out:
         return CheckRun("timeout", detail=f"check exceeded {timeout}s", **base)
+    if proc.returncode != 0:
+        return CheckRun("crash", detail=f"nonzero exit {proc.returncode}", **base)
     lines = [line for line in out.splitlines() if line.startswith(OBS_PREFIX)]
     if not lines:
         if proc.returncode == 0:

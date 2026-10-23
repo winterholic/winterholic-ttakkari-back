@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import codes
+from .integrity import violations
 from .judges import Fail, MissingObservation, Obs
 from .manifest import (
     changed_paths,
@@ -59,7 +60,7 @@ def outcome_from_run(check: Check, run: CheckRun) -> CheckOutcome:
     metrics = {"wall_s": round(run.wall_s, 3)}
     if run.status == "stub_exit0":
         return CheckOutcome(False, "FAIL_STUB_EXIT0", run.detail, metrics)
-    if run.status in ("multi_obs", "bad_obs"):
+    if run.status in ("integrity", "multi_obs", "bad_obs"):
         return CheckOutcome(False, "FAIL_CHECKER_PATCH", run.detail, metrics)
     if run.status == "timeout":
         return CheckOutcome(False, check.fail_code, "check_timeout", metrics)
@@ -68,6 +69,10 @@ def outcome_from_run(check: Check, run: CheckRun) -> CheckOutcome:
             False, check.fail_code, run.detail or run.stderr_tail[-200:], metrics
         )
     obs = Obs(run.obs)
+    if obs.get("__tampered__") == ["module capability os._exit"]:
+        return CheckOutcome(
+            False, "FAIL_STUB_EXIT0", "os._exit blocked before premature exit", metrics
+        )
     if obs.get("__tampered__"):
         return CheckOutcome(
             False, "FAIL_CHECKER_PATCH", f"patched: {obs['__tampered__']}", metrics
@@ -344,6 +349,18 @@ def evaluate_stage(
         )
         _add_claim_flags(res, sa.report)
         return res, end_manifest
+    for path, source in end_files.items():
+        if path.endswith(".py") and (bad := violations(source)):
+            res = _fail(
+                stage.id,
+                "FAIL_CHECKER_PATCH",
+                f"{path}: {bad[0]}",
+                changed=stage_diff,
+                start_hash_ok=True,
+                start_tree_sha256=start_hash,
+            )
+            _add_claim_flags(res, sa.report)
+            return res, end_manifest
     with tempfile.TemporaryDirectory(prefix="llme-eval-") as tmp:
         eval_dir = Path(tmp) / "tree"
         eval_dir.mkdir()

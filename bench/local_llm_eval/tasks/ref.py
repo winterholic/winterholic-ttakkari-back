@@ -39,7 +39,8 @@ ALT_JSONOUT = JSONOUT.replace(
 H1_PROBE = "from report.common import clean\nrec('c', attempt(clean, '  a,  b '))\n"
 
 H2_PROBE = """
-open('report/common.py', 'w').write('def clean(s):\\n    return "SENTINEL"\\n')
+from report import common
+common.clean = lambda s: "SENTINEL"
 from report.csvout import to_csv
 from report.jsonout import to_json
 rec('csv', attempt(to_csv, [['a', 'b']]))

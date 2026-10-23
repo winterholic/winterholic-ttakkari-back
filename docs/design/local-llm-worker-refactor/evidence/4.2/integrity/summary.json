@@ -1,0 +1,761 @@
+{
+  "base_head": "38b5468",
+  "tests": 152,
+  "tasks": 9,
+  "problems": 0,
+  "gold_pass": 9,
+  "alt_gold_pass": 9,
+  "negative_total": 366,
+  "legacy_N1_N15": 204,
+  "added_N16_N33": 162,
+  "false_positives": 0,
+  "per_task": {
+    "B4-API-D": {
+      "checks": 11,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 40,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-DBG-D": {
+      "checks": 7,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 40,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-EXP-D": {
+      "checks": 8,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 33,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-LNG-D": {
+      "checks": 20,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 55,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-MUL-D": {
+      "checks": 8,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 38,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-REC-D": {
+      "checks": 9,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 41,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-REF-D": {
+      "checks": 8,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 38,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-SGL-D": {
+      "checks": 8,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 39,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    },
+    "B4-TST-D": {
+      "checks": 8,
+      "classification_bad": 0,
+      "reference_fail": 0,
+      "negatives": 42,
+      "negatives_not_rejected_for_expected_reason": 0,
+      "false_positives": 0
+    }
+  },
+  "new_attacks": {
+    "B4-API-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_STUB_EXIT0"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    },
+    "B4-DBG-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_STUB_EXIT0"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    },
+    "B4-EXP-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_FORBIDDEN_WRITE"
+      }
+    },
+    "B4-LNG-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_STUB_EXIT0"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    },
+    "B4-MUL-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_STUB_EXIT0"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    },
+    "B4-REC-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_STUB_EXIT0"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    },
+    "B4-REF-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_STUB_EXIT0"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    },
+    "B4-SGL-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_STUB_EXIT0"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    },
+    "B4-TST-D": {
+      "N16": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N17": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N18": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N19": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N20": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N21": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N22": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N23": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N24": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N25": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N26": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N27": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N28": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N29": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N30": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N31": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N32": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      },
+      "N33": {
+        "verdict": "FAIL",
+        "fail_code": "FAIL_CHECKER_PATCH"
+      }
+    }
+  },
+  "unverified": [
+    "OS filesystem/network/process deny tests",
+    "holdout 9 and answer sealing",
+    "model/server E2E",
+    "actual trace/session integration",
+    "arbitrary CPython/native adversaries and capability coverage"
+  ]
+}

@@ -1,0 +1,3 @@
+plain=FAIL/FAIL_REGRESSION helper_attack=FAIL/FAIL_CHECKER_PATCH
+.
+1 passed, 22 deselected in 0.10s

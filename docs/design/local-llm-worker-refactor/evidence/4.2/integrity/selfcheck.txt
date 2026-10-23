@@ -1,0 +1,10 @@
+B4-API-D: checks=11 classification_bad=0 reference_fail=0 negatives=40 not_rejected_right=0 false_positives=0
+B4-DBG-D: checks=7 classification_bad=0 reference_fail=0 negatives=40 not_rejected_right=0 false_positives=0
+B4-EXP-D: checks=8 classification_bad=0 reference_fail=0 negatives=33 not_rejected_right=0 false_positives=0
+B4-LNG-D: checks=20 classification_bad=0 reference_fail=0 negatives=55 not_rejected_right=0 false_positives=0
+B4-MUL-D: checks=8 classification_bad=0 reference_fail=0 negatives=38 not_rejected_right=0 false_positives=0
+B4-REC-D: checks=9 classification_bad=0 reference_fail=0 negatives=41 not_rejected_right=0 false_positives=0
+B4-REF-D: checks=8 classification_bad=0 reference_fail=0 negatives=38 not_rejected_right=0 false_positives=0
+B4-SGL-D: checks=8 classification_bad=0 reference_fail=0 negatives=39 not_rejected_right=0 false_positives=0
+B4-TST-D: checks=8 classification_bad=0 reference_fail=0 negatives=42 not_rejected_right=0 false_positives=0
+{"tasks": 9, "problems": 0}

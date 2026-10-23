@@ -1,6 +1,6 @@
 # 로컬 LLM 작업자 벤치 과제 명세 v1 (WBS 4.1)
 
-작성일: 2026-10-23 KST. 상태: **v1 확정(4.1 범위). draft-0(커밋 `ef64f5f`, `c460394`)에 WBS 1.2 감사 결과를 반영해 확정했다. 4.2(fixture·gold·hidden·mutant 구현)는 아직 시작하지 않았다. §9의 잔여 과제는 4.2~4.3과 운영자 조치로 넘긴다.**
+작성일: 2026-10-23 KST. 상태: **v1 확정(4.1 범위). draft-0(커밋 `ef64f5f`, `c460394`)에 WBS 1.2 감사 결과를 반영해 확정했다. 4.2는 후속 구현으로 개발 과제 9개를 검증했으며, 최신 상태는 §0.1.1을 따른다. §9의 잔여 과제는 4.2~4.3과 운영자 조치로 넘긴다.**
 
 - 상위 설계: `docs/design/local-llm-worker-refactor.md` §5(벤치), §10 WBS 4.1. 이 문서는 시각 UI 설계가 아니라 **평가 명세**다.
 - PMS: project `0b1a2a57-eb19-4da0-b572-ab783d6a6735`, task 4.1 `7bad4b21-2a0c-45d2-9934-2cf7a1871e89`, predecessor 1.2 `f4a5ab31-4d6c-4107-917f-40f83b29e94d`. 1.2 감사 완료는 메인이 `raw 61행 / 136,608 bytes / SHA256 d525733d…e1362be0`, manifest 61행 coverage, t6 성공당 165.0초·t8 239.7초를 직접 재집계해 확인했다고 전달했다. 이 문서는 그 전달과 감사 산출물 파일을 근거로 삼는다.
@@ -17,7 +17,7 @@
 | 모의검사 | (a) 기존 verifier 음성 대조 14건, (b) 기존 참조해 재검증, (c) 요구 검사의 base 상태 delta/invariant 확인과 shop trap 확인, (d) 개발 fixture 정적 누출 스캔. 모두 /tmp 복사본, 모델 없음 | 실행함. §5.3, §5.4 |
 | runtime readiness | 서버·worker·Seatbelt·lease 확인 | **미실행** |
 | 실제 모델 완주 | 어떤 모델도 실행하지 않음 | **미실행** |
-| fixture 구현·gold patch·hidden 작성 | 4.2의 일 | **미착수** |
+| fixture 구현·gold patch·hidden 작성 | 4.2의 후속 구현 | 개발 9개 구현·CPU 검증, holdout 미완(§0.1.1) |
 | PMS | 4.1 상태 갱신 | 이 v1 push 뒤 갱신(§9 끝) |
 
 `qwen-local-harness` 저장소는 dirty 상태다(작성 시작 시 HEAD `b278b96f…`, v1 작성 중 HEAD `c9123ac57a0685c652e02076f1baf25aa1426ee7`로 다른 작업자가 전진, 읽기만 했고 건드리지 않았다). 이 문서가 근거로 삼은 `tasks.py`·`stage3.py`·`longtasks.py`·`validate_tasks.py`·`verify_fixture.py`의 sha256은 v1 작성 때 다시 계산해 draft-0 값과 같음을 확인했다(§7).
@@ -36,7 +36,46 @@
 4. **API 원인 unknown(§5.2):** HTTP status·body·server 식별자 증거가 없는 오류는 `UNKNOWN`이며 INFRA로 제외하지 않는다. 과거 26건이 그 사례다. 0초 행은 `zero_wall_no_response`로 플래그하되 비용에서 빼지 않는다. 이후 attempt는 server run/instance ID, model artifact hash, per-call HTTP status를 결측 없이 기록해야 비교 표에 들어간다.
 5. **10/17 원 ZIP 누락(§8):** 2026-10-17 FlashNext efficiency의 `raw_data.zip`은 지정 경로와 검색 범위에서 발견되지 않았다. 원 JSONL 독립 추적은 **미완으로 보류**이고, 그 자료는 31행 CSV correction 수준으로만 재사용 가능하다. 이 명세는 그 자료의 수치를 어떤 기준·비교에도 쓰지 않는다. 원본이 확보되어 감사되기 전까지 같다.
 
-하네스(2.2)는 반례 2건으로 재작업 중이다. 모델 로드·추론·다운로드·학습·운영 변경 금지는 유지되며 이 Run은 모델을 실행하지 않았다. 4.2 구현은 이 Run의 범위가 아니다.
+하네스(2.2)는 반례 2건으로 재작업 중이다. 모델 로드·추론·다운로드·학습·운영 변경 금지는 유지되며 이 Run은 모델을 실행하지 않았다. 이 문장의 범위는 4.1 작성 당시이며, 후속 4.2 상태는 §0.1.1이 갱신한다.
+
+### 0.1.1 WBS 4.2 관측 무결성 계약 (2026-10-23 추가)
+
+이 절은 §0의 4.1 작성 당시 상태와 구현 기록 §9.1의 관측 신뢰 설명을 갱신한다. 개발 과제 9개의 평가기는 구현됐으나 **holdout 9개·정답 봉인·OS 격리·모델 실행은 미완/미실행**이다. 최신 실행 근거는 `evidence/4.2/integrity/`와 구현 기록 §10이다.
+
+**원칙:** 후보 interpreter에서 나온 값은 원래 후보가 통제하는 데이터다. judge를 밖으로 옮기거나 관측을 JSON으로 직렬화했다는 사실만으로는 참이 되지 않는다. 판정용 사실은 (a) 부모가 후보 실행 없이 얻은 정적 사실·입출력/종료 상태·종료 뒤 디스크 상태, 또는 (b) 아래 실행 제약으로 후보의 관측 도우미 접근·변경을 막은 경로의 값이어야 한다. (b)는 명시된 Python capability 집합에 조건부인 경계이며 임의 Python/C 코드의 보안 sandbox 인증이 아니다.
+
+```text
+[trusted 부모: 시작 hash, structural gate, 실행 없는 AST admission]
+    | 봉인된 후보 source bytes + probe 입력, scratch 경로
+    | 시작 시 고정한 runner/helper bytes로 python -I -S -B -c 실행
+    v
+[child trusted loader/probe] --- import 경계 ---> [제약된 후보 모듈]
+    |                               private builtins/import
+    |                               허용 stdlib capability만 노출
+    |                               모든 명시적 속성 load/store 가드
+    |                               frame/GC audit 기록(보강층)
+    | <--- 호출 경계: 실제 인수/반환/예외 --- |
+    | rec/attempt/jsonable/unittest는 후보 namespace에 주지 않음
+    | 거부 시도는 예외를 삼켜도 기록, OBS+종료 상태를 부모에게 반환
+    v
+[부모: 프로토콜/종료/무결성 기록 검사 + 종료 뒤 디스크 관측]
+    v
+[부모 judge: 기대값 비교, delta/invariant, 보고/trace 대조]
+```
+
+- **import:** 부모가 읽은 `.py` 내용을 전달하고 loader는 그 bytes만 변환·실행한다. 실행 중 디스크 변경·pyc·새 loader를 통한 재import를 답의 근거로 사용하지 않는다. 예약 모듈 이름과 trusted 모듈 충돌은 거부한다. 후보에서 `sys`, `inspect`, `gc`, `ctypes`, `builtins`, import hook, `atexit`, signal, thread/process 제어에 접근하지 못한다. 문자열 `getattr`, 함수 globals/code/closure, frame/traceback 속성, 동적 exec/eval도 허용하지 않는다.
+- **호출/관측:** source AST만의 별칭 추적에 의존하지 않는다. 후보의 속성 읽기는 runtime guard, 쓰기/삭제는 guarded subscription을 통과하므로 `helper = json; helper.dumps = ...`도 거부한다. stdlib 모듈·함수·클래스·외부 객체를 수정하지 못한다. 로컬 인스턴스 필드·목록 변경은 허용하며 tuple 대입, 증분 연산, loop/with target의 Python 평가 순서를 유지한다. `from ... import ...`, `operator.attrgetter`도 같은 capability 검사를 거친다. 생성 guard 이름은 인수·import 별칭·패턴 capture 등으로 가릴 수 없다.
+- **audit 한계:** hook은 후보 import 전에 설치하고 후보 filename에서 직접 호출한 frame/GC 이벤트를 기록·차단한다. 정상 dataclass/unittest/traceback의 내부 동작은 허용한다. `json.dumps = ...`, 일반 dict/모듈 속성 대입, `os.write`, `os._exit`는 이 hook만으로 전부 관측된다고 보지 않는다. Python hook 자체는 sandbox가 아니며 우회 불가능하다고 가정하지 않는다. 이 경로들은 source/import/capability/속성 가드로 막는다. [CPython 3.13 sys.addaudithook](https://docs.python.org/3.13/library/sys.html#sys.addaudithook), [audit event 목록](https://docs.python.org/3.13/library/audit_events.html).
+- **판정:** 무결성 거부는 `FAIL_CHECKER_PATCH`; 읽기 전용 EXP의 코드 삽입은 `FAIL_FORBIDDEN_WRITE`. `os._exit` 시도는 차단한 뒤 기존 `FAIL_STUB_EXIT0`로 분류한다(후보 작성 테스트는 더 이른 import 금지로 `FAIL_CHECKER_PATCH`일 수 있다). 정상 종료가 아닌 stream은 유효해 보이는 OBS가 있어도 채택하지 않는다. stdout/stderr 직접 fd 접근과 사후 출력 수단을 후보 capability에서 제거한다.
+
+**선택 근거와 대안:** 최소 child와 JSON 경계는 judge 메모리를 보호하지만 child가 보고한 입력 사후 상태를 독립 관측으로 만들지는 못한다. 입력 list를 복사해 호출하도록 helper만 바꾸는 재현은 정답 상수 없이 거짓 PASS를 만든다. `clean re-grade`도 메모리 안의 helper 변경은 해결하지 못한다. 이번 구현은 일반 Python list/tuple 및 WSGI·dataclass 참조해 호환성을 유지하며 관측 helper로 가는 경로를 제한하는 (b)를 택했다. OS가 제공하는 메모리/파일/네트워크 격리는 별도 수락 조건으로 남긴다.
+
+**공격 수락 기준:** 기존 N1~N15 204건을 유지하고, N16~N33 18종을 과제마다 gold에 주입한다(9×18=162건). probe 교체, frame locals, GC referrers, builtins/copy/json patch, import hook/modules 교체, atexit/thread, fd 1·2, `_exit`, fd open/fdopen, attrgetter, loop target, guard binding 충돌을 포함한다. 별도로 input-mutation 단독은 `FAIL_REGRESSION`, helper 변조 추가도 FAIL이어야 한다. 수정 전 거짓 PASS 원출력도 보존한다. TST N7의 SUT monkeypatch는 종전 mutant 생존 `FAIL_HIDDEN` 대신 실행 시점의 `FAIL_CHECKER_PATCH`로 더 이르게 거부하며 허용 조건을 완화하지 않는다.
+
+**잔여 위협·미검증:** CPython/native/허용 stdlib API의 미발견 우회, 다른 Python 버전·AST 문법, 허용 API 밖 정상해의 호환성, 모든 적응 공격에 대한 완전성은 증명하지 않았다. `open`과 WSGI 저장 기능 때문에 일반 파일 접근은 남아 있으며 같은 UID의 외부 파일·프로세스·네트워크를 격리하지 않는다. 종료 뒤 디스크 사실도 외부 후손/동일 UID 공격자가 계속 접근하면 보호되지 않는다. 정답 구현을 숨겨 특정 입력/호출 맥락에서만 정답을 내는 oracle faker와 분포 과적합도 별도 위협이다. holdout·봉인·실모델 E2E·trace/session 실제 연동은 이번 검증이 아니다.
+
+**OS 격리 deny 테스트 계획(이번에는 실행하지 않음):** 별도 VM/컨테이너/지원 OS sandbox 경로를 선정한 뒤 grader/정답 경로 읽기·쓰기 거부, workspace 밖 쓰기·symlink 탈출 거부, loopback/외부 네트워크 거부, 부모/같은 UID 프로세스 접근 거부, 직접 fd 접근·상속 fd 제한, timeout/취소 시 후손 전부 정리, 양성 파일 저장/계산은 허용됨을 각각 측정한다. source admission·audit·프로세스 분리 성공을 OS deny 실측으로 대체하지 않는다.
+
 
 ## 1. 설계 원칙
 

@@ -1,0 +1,8 @@
+Environment: Codex Run command sandbox; CPU subprocess evaluation only
+macOS-27.0-arm64-arm-64bit-Mach-O
+3.13.15 (main, Sep  1 2026, 14:05:45) [Clang 22.1.3 ]
+/Users/winterholic/development/local-llm-bench-spec-4-1-20261023/.venv/bin/python3
+Base HEAD: 38b54689a06ac83017222d3551056bdb87bed7ce
+Commands (venv bin prepended to PATH):
+cd bench && python3 -m pytest -q local_llm_eval/tests
+cd bench && python3 -m local_llm_eval.selfcheck --json ../docs/design/local-llm-worker-refactor/evidence/4.2/integrity/selfcheck.json

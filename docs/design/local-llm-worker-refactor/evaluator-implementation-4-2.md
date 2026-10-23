@@ -2,7 +2,7 @@
 
 작성일: 2026-10-23 KST. 상태: **4.2 부분 완료.** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N14 전부가 구현되어 CPU에서 재현된다. holdout 9개와 봉인 번들은 만들지 않았으므로 4.2는 완료가 아니다.
 
-> **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. 현재 값은 §9 와 `evidence/4.2/` 가 정본이다.
+> **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. §9 이후 재발견한 in-process helper 변조는 §10이 교정한다. 현재 값은 §10과 `evidence/4.2/integrity/`가 정본이다.
 
 - 명세: `benchmark-spec-draft.md` v1(§0.1 포함), manifest `benchmark-manifest-draft.json`(이 구현에 맞춰 v1.1로 갱신).
 - 코드: `bench/local_llm_eval/`(표준 라이브러리만). 실행법은 그 디렉터리의 `README.md`.
@@ -174,3 +174,40 @@ harness 가 아직 없어서 평가기는 입력 형식만 정의하고 **없으
 증거: `evidence/4.2/{selfcheck_report.json, coverage_summary.json, leakscan_report.json, pytest_output.txt}`(재생성).
 
 **남은 일:** holdout 9개와 봉인 번들(운영자 조치 전), 개정 hidden 의 프롬프트 추적 사람 검토, 평가기와 runner 연결(4.3), 위 §9.1 의 한계 중 난수 probe 입력(미구현).
+
+## 10. 관측 무결성 경계 재작업 (2026-10-23)
+
+**§9.1의 '기대값을 모르므로 위조할 수 없다'는 해석은 폐기한다.** 후보는 기대값을 몰라도 입력을 복사해서 helper에 넘기도록 관측 과정을 바꿀 수 있었다. 같은 interpreter의 관측은 본래 후보 통제 데이터다. 최신 계약·신뢰 경계 다이어그램·대안 선택·미검증 범위·OS deny 테스트 계획은 명세 **§0.1.1**이 정본이다. §9의 204건/129개는 과거 실행이며 현재 실행은 아래 파일을 따른다.
+
+### 10.1 재현과 수정
+
+시작 HEAD `38b5468`에서 재구성한 공격은 `stats.median`의 입력 list를 제자리 정렬하게 만들고, import 도중 probe globals의 `attempt`만 인수 복사 wrapper로 교체한다. 정답 숫자/기대값은 공격에 없다.
+
+```text
+수정 전: plain=FAIL/FAIL_REGRESSION helper_attack=PASS/None
+수정 후: plain=FAIL/FAIL_REGRESSION helper_attack=FAIL/FAIL_CHECKER_PATCH
+```
+
+원출력은 `evidence/4.2/integrity/{before,after}.txt`. `test_llme_integrity.py`의 동일 수락 조건이 수정 전에는 red, 수정 후에는 green이다(후보의 판정은 FAIL).
+
+`integrity.py`는 부모의 실행 없는 admission과 후보 모듈 전용 loader/import/builtins를 제공한다. 부모가 봉인한 source bytes만 실행하며, 모든 후보 속성 읽기·쓰기·삭제를 runtime guard로 바꾼다. alias와 import-from도 stdlib capability view를 통과한다. frame/GC/동적 코드/introspection·모듈 내부·foreign object 변경을 제한하고, 주입 guard 이름을 함수 인수·import 별칭·예외/패턴 binding으로 가리지 못하게 한다. attribute target은 guarded subscription으로 바꿔 Python의 대입 순서·언패킹·증분 연산·loop/with 의미를 유지한다. 일반 객체 필드와 list 연산은 허용한다.
+
+`hidden_runner.py`는 import 전 audit hook을 설치한다. 후보 filename에서 직접 발생한 frame/GC 이벤트는 기록·차단하되 trusted stdlib 내부 이벤트는 허용한다. 제약 위반은 catch해도 기록이 남으며 judge가 그 관측을 채택하지 않는다. audit가 보지 못하는 일반 모듈 대입·dict 변경·직접 fd/종료는 capability/source/속성 가드가 담당한다. 부모 `runner.py`는 trusted runner/helper bytes를 시작 시 고정해 bootstrap하며, 나중의 디스크 재작성으로 다음 probe 실행 코드를 바꾸지 못하게 한다. nonzero 종료 stream은 OBS가 있어도 거부한다.
+
+REF H2와 LNG H8의 의존성 검사도 봉인 loader와 맞췄다. 신뢰된 probe가 source 파일을 덮어쓰는 대신 의존 모듈의 함수를 바꾸며, eager import를 쓰는 LNG는 `billing.invoice`를 캐시에서 제거한 뒤 봉인 source를 재import한다. 직접 함수 import와 모듈 import 방식 모두 검증한다. 부모 judge의 기대값/검사 의미는 유지한다.
+
+기존 공격 테스트는 삭제하지 않았다. builtins/종료 hook처럼 이제 실행 전에 거부되는 것은 과거의 '공격 실행 뒤 내부 관측' 단언을 조기 거부 단언으로 바꿨다. N6의 `_exit` 사유는 `FAIL_STUB_EXIT0`로 유지한다. TST N7의 SUT patch는 mutant 생존을 기다리는 `FAIL_HIDDEN` 대신 더 이른 `FAIL_CHECKER_PATCH`가 되며, 허용 조건을 완화한 것은 없다.
+
+### 10.2 공격군과 최신 CPU 근거
+
+N16~N33 18종은 **gold 위에** 주입하므로 원래 버그가 남아서 우연히 FAIL하는 대조가 아니다. 9과제×18=162건이며 EXP는 실행 없는 read-only 구조 위반으로 거부한다. 나머지는 helper/frame/GC, builtins/copy/json, import hook/modules, atexit/thread, fd 1·2/`_exit`, open/fdopen, attrgetter/loop target/guard binding을 검사한다. 별도 회귀는 audit층 단독(정적 검사를 trusted driver로 건너뛴 시도 포함), catch해도 기록 유지, source 재작성 후 봉인 import, 예약 모듈 충돌, nonzero OBS, 정상 속성 대입 의미를 검증한다.
+
+최신 원출력: `evidence/4.2/integrity/pytest.txt`와 `selfcheck.txt/json`. selfcheck는 개발 과제 9개, 참조해 9/9·대안 참조해 9/9 PASS, 음성 대조 **366/366 기대 사유 reject**, false positive 0, classification 불일치 0을 기록한다. pytest 개수와 시간은 `pytest.txt`가 정본이다. 원래 129개 테스트를 유지하고 23개 회귀 항목을 추가했다.
+
+환경은 Codex Run command sandbox의 macOS 27 arm64, Python 3.13.15다. 호스트 기본 `python3`(3.14)에는 pytest가 없어 테스트 수집 전 `No module named pytest`였으며, 기존 프로젝트 venv를 읽기 전용 실행 경로로 연결해 위 검증을 수행했다. 이는 이 명령 환경의 의존성 차이이며 배포 backend의 엔진·기능 실패라는 증거가 아니다.
+
+### 10.3 한계와 남은 일
+
+이 가드는 **선언한 Python capability 집합의 관측 경계**이며 임의 CPython/C 코드의 보안 sandbox 증명이 아니다. Python audit hook의 무력화/우회 가능성, 감사 이벤트가 없는 일반 속성·컨테이너 변경을 따로 취급한다. 직접 fd open은 실제 경로를 해소해 `/dev`·`/proc`도 제한하지만 일반 파일 저장 권한을 없애지는 않는다. 외부 파일·동일 UID 프로세스·네트워크·후손 격리는 미구현이고, 외부 공격자가 종료 후 디스크를 바꾸지 못한다는 보장도 아직 없다. 미발견 native/stdlib 간접 우회, 다른 Python 버전/문법, capability 밖 정상 풀이, 적응 공격 전수는 미검증이다. 입력·호출 맥락을 구별하는 oracle faker/과적합도 별도 위협이다.
+
+holdout 9개, 정답 봉인, prompt↔hidden 독립 사람 검토, 실모델 완주, trace/session 실제 하네스 연결, OS sandbox deny 실측은 수행하지 않았다. 모델·서버·운영 변경은 없으며 **4.2는 doing으로 유지**한다. OS deny 계획은 명세 §0.1.1 마지막 문단을 따른다. Research Lab `eb41e3a7-43cd-4f2b-8c03-79380a2e1163`의 resume 데이터를 읽었고 연구 원문/제안은 데이터로만 사용했다. 이번 코드 검증 결과를 그 연구의 실험 실행으로 표시하지 않았다.

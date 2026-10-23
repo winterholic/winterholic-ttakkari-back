@@ -1,13 +1,8 @@
-"""Candidate-side process for one probe. Run as: python -I -S -B hidden_runner.py <spec.json>.
+"""Candidate-side probe, bootstrapped from trusted bytes pinned by the parent.
 
-This process executes candidate code and returns RAW OBSERVATIONS only (one `OBS\t<json>` line written to
-fd 1). It holds no secret, no expected value and no verdict: the spec file holds the probe program and the
-parent-provided scratch dirs, nothing that would let candidate code decide a check. All comparison with
-expected values happens in the evaluator process (judges), which never imports candidate code.
-
-What candidate code in this process can still do: print or exit early. An early exit leaves no OBS line
-(stub), several OBS lines are tampering, and a forged OBS line must carry values equal to the judge's
-expectations, which are not in this process. See docs: evaluator-implementation-4-2.md section 9.
+The judge never imports candidate code. Observations are accepted only under the
+sealed-source/capability boundary in integrity.py, not merely because they contain
+plausible values. Audit is defense in depth, not an OS or CPython sandbox.
 """
 
 import builtins
@@ -17,6 +12,8 @@ import os
 import sys
 import traceback
 import unittest
+
+from _llme_boundary import CandidateBoundary
 
 # References captured before any candidate import so later monkeypatching of the originals is harmless here.
 _dumps = json.dumps
@@ -96,7 +93,38 @@ def main():
     sys.argv[:] = ["probe"]
     cwd = spec["cwd"]
     os.chdir(cwd)
-    sys.path.insert(0, cwd)
+    # Sealed source loader precedes stdlib loaders; candidate code never uses the
+    # probe's namespace or builtins. New/rewritten on-disk modules are not admitted.
+    integrity_events = []
+    boundary = CandidateBoundary(spec["sources"], integrity_events)
+    sys.meta_path.insert(0, boundary)
+    audit_busy = False
+    frame_at = sys._getframe
+    candidate_filenames = {entry[1] for entry in spec["sources"].values()}
+
+    def audit(event, args):
+        nonlocal audit_busy
+        if audit_busy:
+            return
+        sensitive = event in {
+            "sys._getframe",
+            "sys._current_frames",
+            "gc.get_objects",
+            "gc.get_referrers",
+            "gc.get_referents",
+        } or (event == "object.__getattr__" and args[1] in {"f_code", "tb_frame"})
+        if not sensitive:
+            return
+        audit_busy = True
+        try:
+            caller = frame_at(1)
+            candidate_call = caller.f_code.co_filename in candidate_filenames
+        finally:
+            audit_busy = False
+        if candidate_call:
+            boundary.deny("audit " + event)
+
+    sys.addaudithook(audit)
     before = _tamper_probe()
     saved_builtins = dict(vars(builtins))
     observations = {}
@@ -131,7 +159,9 @@ def main():
     except _BASE as exc:
         failure = exc  # formatted only after the builtins are restored (candidate code may patch them)
     after = _tamper_probe()
-    changed = _sorted(k for k in before if before[k] is not after[k])
+    changed = list(integrity_events) + _sorted(
+        k for k in before if before[k] is not after[k]
+    )
     live = vars(builtins)
     changed += _sorted(
         "builtins." + k

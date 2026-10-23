@@ -239,7 +239,7 @@ def build() -> Task:
             "N7",
             "tests monkeypatch the SUT in setUp",
             m_set(TEST_PATH, self_referential),
-            ("FAIL_HIDDEN",),
+            ("FAIL_CHECKER_PATCH",),
         ),
         neg(
             "N10",

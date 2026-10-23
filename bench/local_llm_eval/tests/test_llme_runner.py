@@ -33,13 +33,14 @@ def test_probe_error_is_reported_as_error_not_as_pass(workdir):
 
 def test_exit0_at_import_leaves_no_observation_line(workdir):
     (workdir / "e.py").write_text("import os\nos._exit(0)\n")
-    assert run_check(workdir, "H1", "import e").status == "stub_exit0"
+    run = run_check(workdir, "H1", "import e")
+    assert run.status == "OBS" and "os._exit" in str(run.obs["__tampered__"])
 
 
 def test_sys_exit_zero_is_an_error_observation(workdir):
     (workdir / "s.py").write_text("import sys\nsys.exit(0)\n")
     run = run_check(workdir, "H1", "import s")
-    assert run.status == "OBS" and run.obs["__error__"].startswith("SystemExit")
+    assert run.status == "integrity" and "sys" in run.detail
 
 
 def test_timeout_kills_the_process_group(workdir):
@@ -52,7 +53,7 @@ def test_unittest_monkeypatch_is_recorded_as_tampering(workdir):
         "import unittest\nunittest.TestCase.run = lambda self, result=None: None\n"
     )
     run = run_check(workdir, "H1", "import t")
-    assert run.obs["__tampered__"] == ["TestCase.run"]
+    assert "foreign attribute write run" in run.obs["__tampered__"]
 
 
 def test_sitecustomize_in_workspace_is_not_imported(workdir):

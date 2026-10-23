@@ -52,4 +52,4 @@ KIND_PROCESS = "process_metric"  # recorded, never gating
 CHANGE_DIFF = "diff_required"
 CHANGE_READ_ONLY = "read_only_report"
 
-NEGATIVE_CONTROLS = tuple(f"N{i}" for i in range(1, 15))
+NEGATIVE_CONTROLS = tuple(f"N{i}" for i in range(1, 34))

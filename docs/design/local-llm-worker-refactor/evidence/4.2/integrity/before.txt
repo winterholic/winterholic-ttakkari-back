@@ -1,0 +1,20 @@
+plain=FAIL/FAIL_REGRESSION helper_attack=PASS/None
+F
+=================================== FAILURES ===================================
+_______ test_input_mutation_cannot_be_hidden_by_copying_inside_the_probe _______
+
+    def test_input_mutation_cannot_be_hidden_by_copying_inside_the_probe():
+        plain = evaluate_source(MUTATING_MEDIAN)
+        attacked = evaluate_source(COPY_INPUT_ATTACK + MUTATING_MEDIAN)
+        print(f"plain={plain.verdict}/{plain.fail_code} helper_attack={attacked.verdict}/{attacked.fail_code}")
+        assert plain.verdict == codes.FAIL and plain.fail_code == "FAIL_REGRESSION"
+>       assert attacked.verdict == codes.FAIL
+E       AssertionError: assert 'PASS' == 'FAIL'
+E         
+E         - FAIL
+E         + PASS
+
+bench/local_llm_eval/tests/test_llme_integrity.py:43: AssertionError
+=========================== short test summary info ============================
+FAILED bench/local_llm_eval/tests/test_llme_integrity.py::test_input_mutation_cannot_be_hidden_by_copying_inside_the_probe
+1 failed in 0.19s

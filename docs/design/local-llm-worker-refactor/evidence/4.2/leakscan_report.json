@@ -1,44 +1,12 @@
 {
  "B4-API-D": {
-  "hidden_snippet_literals": 100,
+  "hidden_snippet_literals": 44,
   "gold_only_tokens": 85,
-  "spec_stated": 72,
+  "spec_stated": 66,
   "allowed": [
    {
     "direction": "hidden_literal",
-    "token": "PATH_INFO",
-    "where": [
-     "source:notes/app.py"
-    ],
-    "reason": "generic language/stdlib/WSGI vocabulary"
-   },
-   {
-    "direction": "hidden_literal",
-    "token": "REQUEST_METHOD",
-    "where": [
-     "source:notes/app.py"
-    ],
-    "reason": "generic language/stdlib/WSGI vocabulary"
-   },
-   {
-    "direction": "hidden_literal",
-    "token": "headers",
-    "where": [
-     "source:notes/app.py"
-    ],
-    "reason": "generic language/stdlib/WSGI vocabulary"
-   },
-   {
-    "direction": "hidden_literal",
     "token": "status",
-    "where": [
-     "source:notes/app.py"
-    ],
-    "reason": "generic language/stdlib/WSGI vocabulary"
-   },
-   {
-    "direction": "hidden_literal",
-    "token": "utf-8",
     "where": [
      "source:notes/app.py"
     ],
@@ -48,9 +16,9 @@
   "findings": []
  },
  "B4-DBG-D": {
-  "hidden_snippet_literals": 15,
+  "hidden_snippet_literals": 1,
   "gold_only_tokens": 0,
-  "spec_stated": 1,
+  "spec_stated": 0,
   "allowed": [],
   "findings": []
  },
@@ -117,9 +85,9 @@
   "findings": []
  },
  "B4-LNG-D": {
-  "hidden_snippet_literals": 37,
+  "hidden_snippet_literals": 12,
   "gold_only_tokens": 15,
-  "spec_stated": 11,
+  "spec_stated": 8,
   "allowed": [
    {
     "direction": "hidden_literal",
@@ -175,16 +143,16 @@
   "findings": []
  },
  "B4-MUL-D": {
-  "hidden_snippet_literals": 23,
+  "hidden_snippet_literals": 4,
   "gold_only_tokens": 0,
-  "spec_stated": 2,
+  "spec_stated": 1,
   "allowed": [],
   "findings": []
  },
  "B4-REC-D": {
-  "hidden_snippet_literals": 25,
+  "hidden_snippet_literals": 8,
   "gold_only_tokens": 17,
-  "spec_stated": 9,
+  "spec_stated": 8,
   "allowed": [
    {
     "direction": "gold_token",
@@ -198,9 +166,9 @@
   "findings": []
  },
  "B4-REF-D": {
-  "hidden_snippet_literals": 27,
+  "hidden_snippet_literals": 4,
   "gold_only_tokens": 4,
-  "spec_stated": 5,
+  "spec_stated": 2,
   "allowed": [
    {
     "direction": "hidden_literal",
@@ -233,9 +201,9 @@
   "findings": []
  },
  "B4-SGL-D": {
-  "hidden_snippet_literals": 15,
+  "hidden_snippet_literals": 0,
   "gold_only_tokens": 3,
-  "spec_stated": 2,
+  "spec_stated": 1,
   "allowed": [],
   "findings": []
  },

@@ -153,6 +153,9 @@ class StageResult:
     checks: list[dict] = field(default_factory=list)
     changed: dict = field(default_factory=dict)
     start_hash_ok: bool | None = None
+    start_tree_sha256: str | None = (
+        None  # computed by the evaluator from the real start tree
+    )
     detail: str = ""
 
 

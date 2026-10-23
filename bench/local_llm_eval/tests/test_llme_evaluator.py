@@ -212,3 +212,13 @@ def test_tamper_is_judged_against_the_original_not_the_previous_stage():
         end.pop("tests/test_stats.py")
     ev = run(t, ends, reports_for(t, ends, t.gold_reports(t.base_files, ends)))
     assert ev.fail_code == "FAIL_TEST_TAMPER"
+
+
+def test_stage_result_carries_the_start_hash_the_evaluator_computed():
+    from local_llm_eval.manifest import manifest_of_files, tree_hash
+
+    t = task("B4-SGL-D")
+    ev = run(t, gold_ends(t))
+    assert ev.stages[0].start_tree_sha256 == tree_hash(manifest_of_files(t.base_files))
+    mismatch = run(t, gold_ends(t), start_files=dict(gold_ends(t)[0]))
+    assert mismatch.stages[0].start_tree_sha256 != ev.stages[0].start_tree_sha256

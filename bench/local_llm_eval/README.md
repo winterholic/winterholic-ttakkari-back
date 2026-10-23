@@ -22,8 +22,8 @@ python3 -m pytest local_llm_eval/tests -q           # 단위·회귀 테스트
 
 | 파일 | 역할 |
 |---|---|
-| `evaluator.py` | 시작 hash 검증, 구조 게이트, delta/invariant 검사, 보고 대조, verdict |
-| `hidden_runner.py`, `runner.py` | 검사 1개당 `python -I -S -B` 자식 프로세스, nonce 핸드셰이크, process group kill |
+| `evaluator.py` | 시작 트리 직접 해시, 구조 게이트, delta/invariant 검사, 보고 대조, verdict |
+| `hidden_runner.py`, `runner.py`, `judges.py` | probe 프로세스(후보 코드 실행, 원시 관측값만 반환, 비밀·기대값 없음)와 평가기 프로세스의 judge(기대값 비교) 분리, process group kill |
 | `natives.py` | 공개 suite, frozen 파일, 후보가 쓴 테스트(mutant 사망) 검사 |
 | `negatives.py`, `selfcheck.py`, `simulate.py` | 음성 대조 빌더, 자체 검증, 모델 없는 attempt 생성 |
 | `ledger.py` | 추가 전용 attempt ledger, profile 별 요약 |

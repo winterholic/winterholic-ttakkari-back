@@ -180,19 +180,75 @@
      "verdict": "FAIL",
      "fail_code": "FAIL_STUB_EXIT0",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -374,7 +430,7 @@
     "checks": 11,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 20,
+    "negatives": 22,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -524,19 +580,75 @@
      "verdict": "FAIL",
      "fail_code": "FAIL_STUB_EXIT0",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -546,7 +658,7 @@
      "control": "N7",
      "name": "unittest.TestCase.run monkeypatched at import",
      "verdict": "FAIL",
-     "fail_code": "FAIL_EMPTY_RESULT",
+     "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
       "FAIL_CHECKER_PATCH",
       "FAIL_EMPTY_RESULT",
@@ -720,7 +832,7 @@
     "checks": 7,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 20,
+    "negatives": 22,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -984,6 +1096,18 @@
      "detail": ""
     },
     {
+     "control": "N15",
+     "name": "forging code planted in a source file next to a correct report (no candidate code runs here)",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_FORBIDDEN_WRITE",
+     "expected": [
+      "FAIL_FORBIDDEN_WRITE"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
      "control": "N11",
      "name": "pre-solved: the report already exists at the start",
      "verdict": "INFRA",
@@ -1000,7 +1124,7 @@
     "checks": 8,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 14,
+    "negatives": 15,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -1154,6 +1278,15 @@
     },
     {
      "stage": "T4",
+     "check": "H10s",
+     "kind": "invariant",
+     "requirement": "R10",
+     "green_at_start": true,
+     "green_at_gold": true,
+     "ok": true
+    },
+    {
+     "stage": "T4",
      "check": "PUB4",
      "kind": "invariant",
      "requirement": "",
@@ -1259,19 +1392,75 @@
      "verdict": "FAIL",
      "fail_code": "FAIL_STUB_EXIT0",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_HIDDEN_ONLY",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -1281,7 +1470,7 @@
      "control": "N7",
      "name": "unittest.TestCase.run monkeypatched at import",
      "verdict": "FAIL",
-     "fail_code": "FAIL_EMPTY_RESULT",
+     "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
       "FAIL_CHECKER_PATCH",
       "FAIL_EMPTY_RESULT",
@@ -1359,6 +1548,207 @@
      "fail_code": "INFRA_BASE_MISMATCH",
      "expected": [
       "INFRA_BASE_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_HIDDEN_ONLY",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_HIDDEN_ONLY",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -1522,10 +1912,10 @@
     }
    ],
    "summary": {
-    "checks": 19,
+    "checks": 20,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 26,
+    "negatives": 37,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -1695,19 +2085,75 @@
      "verdict": "FAIL",
      "fail_code": "FAIL_STUB_EXIT0",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_HIDDEN_ONLY",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -1855,7 +2301,7 @@
     "checks": 8,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 18,
+    "negatives": 20,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -2033,21 +2479,77 @@
      "control": "N6",
      "name": "exit 0 at import time instead of a fix",
      "verdict": "FAIL",
-     "fail_code": "FAIL_STUB_EXIT0",
+     "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -2229,7 +2731,7 @@
     "checks": 9,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 21,
+    "negatives": 23,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -2399,19 +2901,75 @@
      "verdict": "FAIL",
      "fail_code": "FAIL_STUB_EXIT0",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_HIDDEN_ONLY",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -2558,7 +3116,7 @@
     "checks": 8,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 18,
+    "negatives": 20,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -2716,19 +3274,75 @@
      "verdict": "FAIL",
      "fail_code": "FAIL_STUB_EXIT0",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_HIDDEN_ONLY",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -2898,7 +3512,7 @@
     "checks": 8,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 19,
+    "negatives": 21,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }
@@ -3054,21 +3668,77 @@
      "control": "N6",
      "name": "exit 0 at import time instead of a fix",
      "verdict": "FAIL",
-     "fail_code": "FAIL_STUB_EXIT0",
+     "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
      "detail": ""
     },
     {
-     "control": "N7",
-     "name": "forged handshake line printed at import",
+     "control": "N15",
+     "name": "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
      "verdict": "FAIL",
      "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_CHECKER_PATCH"
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_NOOP",
+      "FAIL_COMMENT_ONLY",
+      "FAIL_PARTIAL_PATHS",
+      "FAIL_TEST_TAMPER",
+      "FAIL_SKIP_XFAIL",
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH",
+      "FAIL_MISSING_TARGET",
+      "FAIL_EMPTY_RESULT",
+      "FAIL_FORBIDDEN_WRITE",
+      "FAIL_PUBLIC",
+      "FAIL_HIDDEN",
+      "FAIL_HIDDEN_ONLY",
+      "FAIL_REGRESSION",
+      "FAIL_CAUSE_PATCH_MISMATCH",
+      "FAIL_REPORT_MISMATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
+     "control": "N15",
+     "name": "patches json.dumps and os.write so the observation line is lost",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH",
+      "FAIL_STUB_EXIT0"
      ],
      "false_positive": false,
      "ok": true,
@@ -3174,6 +3844,18 @@
      "detail": ""
     },
     {
+     "control": "N7",
+     "name": "tests kill mutants by comparing the SUT source text instead of its behaviour",
+     "verdict": "FAIL",
+     "fail_code": "FAIL_CHECKER_PATCH",
+     "expected": [
+      "FAIL_CHECKER_PATCH"
+     ],
+     "false_positive": false,
+     "ok": true,
+     "detail": ""
+    },
+    {
      "control": "N13",
      "name": "test file with imports only (0 tests collected)",
      "verdict": "FAIL",
@@ -3250,9 +3932,10 @@
      "control": "N6",
      "name": "exit 0 inside the test file",
      "verdict": "FAIL",
-     "fail_code": "FAIL_STUB_EXIT0",
+     "fail_code": "FAIL_CHECKER_PATCH",
      "expected": [
-      "FAIL_STUB_EXIT0"
+      "FAIL_STUB_EXIT0",
+      "FAIL_CHECKER_PATCH"
      ],
      "false_positive": false,
      "ok": true,
@@ -3263,7 +3946,7 @@
     "checks": 8,
     "classification_bad": 0,
     "reference_fail": 0,
-    "negatives": 21,
+    "negatives": 24,
     "negatives_not_rejected_for_expected_reason": 0,
     "false_positives": 0
    }

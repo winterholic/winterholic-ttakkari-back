@@ -49,12 +49,13 @@
   "N11": "pre-solved workspace (state-only checker passes no-op); invalid by start hash, or FAIL_NOOP from pristine",
   "N12": "boundary conditions only in comments, no assertions",
   "N13": "empty test file / zero tests collected",
-  "N14": "output normalization omission (e.g. '5 x 2000' vs '5 x 2,000') = NC-A5"
+  "N14": "output normalization omission (e.g. '5 x 2000' vs '5 x 2,000') = NC-A5",
+  "N15": "nonce/handshake/observation forging at import time (secret hunting, frame reading, output patching, early exit)"
  },
  "evaluator": {
-  "boundary": "outside agent write roots; patch applied to clean worktree from base tree; canonical public tests restored; sealed hidden copied after patch; handshake nonce + executed-check count; python -I; no network",
+  "boundary": "probe process returns raw observations only (no secret, no expected value); judges run in the evaluator process; parent-observed facts and static checks preferred; patch applied to a clean tree from the base; python -I -S -B; no network isolation yet (4.3)",
   "verified": "self-check on 9 dev tasks (CPU, no model); isolation (network/sandbox) not applied: 4.3",
-  "start_state": "pristine fixture reset per attempt; base tree hash and per-file sha256 recorded before first request; mismatch = INFRA_BASE_MISMATCH",
+  "start_state": "evaluator hashes the real start tree itself (StageAttempt.start_dir) and compares with the sealed baseline; mismatch = INFRA_BASE_MISMATCH; no tree = UNKNOWN",
   "success_requires": "start hash match, no forbidden writes, all delta checks green (>=1), invariants green, report reconciles with trace/diff",
   "implemented": true
  },
@@ -237,7 +238,8 @@
     "N2",
     "N8",
     "N9",
-    "N10"
+    "N10",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -297,10 +299,11 @@
     "N8": 2,
     "N9": 2,
     "N10": 2,
-    "N11": 1
+    "N11": 1,
+    "N15": 1
    },
    "selfcheck": {
-    "negatives": 14,
+    "negatives": 15,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -382,7 +385,8 @@
     "N6",
     "N7",
     "N10",
-    "N11"
+    "N11",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -439,14 +443,15 @@
     "N3": 6,
     "N4": 2,
     "N6": 1,
-    "N7": 4,
+    "N7": 3,
     "N8": 1,
     "N9": 1,
     "N10": 1,
-    "N11": 1
+    "N11": 1,
+    "N15": 3
    },
    "selfcheck": {
-    "negatives": 19,
+    "negatives": 21,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -532,7 +537,8 @@
     "N7",
     "N10",
     "N11",
-    "N14"
+    "N14",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -591,15 +597,16 @@
     "N3": 3,
     "N4": 3,
     "N6": 1,
-    "N7": 4,
+    "N7": 3,
     "N8": 1,
     "N9": 1,
     "N10": 1,
     "N11": 1,
-    "N14": 1
+    "N14": 1,
+    "N15": 3
    },
    "selfcheck": {
-    "negatives": 18,
+    "negatives": 20,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -691,7 +698,8 @@
     "N7",
     "N9",
     "N10",
-    "N11"
+    "N11",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -749,14 +757,15 @@
     "N3": 7,
     "N4": 2,
     "N6": 1,
-    "N7": 4,
+    "N7": 3,
     "N8": 1,
     "N9": 1,
     "N10": 1,
-    "N11": 1
+    "N11": 1,
+    "N15": 3
    },
    "selfcheck": {
-    "negatives": 20,
+    "negatives": 22,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -843,7 +852,8 @@
     "N7",
     "N8",
     "N10",
-    "N11"
+    "N11",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -899,14 +909,15 @@
     "N3": 6,
     "N4": 3,
     "N6": 1,
-    "N7": 4,
+    "N7": 3,
     "N8": 1,
     "N9": 1,
     "N10": 1,
-    "N11": 1
+    "N11": 1,
+    "N15": 3
    },
    "selfcheck": {
-    "negatives": 20,
+    "negatives": 22,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -995,7 +1006,8 @@
     "N6",
     "N7",
     "N10",
-    "N11"
+    "N11",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -1051,14 +1063,15 @@
     "N3": 4,
     "N4": 2,
     "N6": 1,
-    "N7": 4,
+    "N7": 3,
     "N8": 1,
     "N9": 1,
     "N10": 1,
-    "N11": 1
+    "N11": 1,
+    "N15": 3
    },
    "selfcheck": {
-    "negatives": 18,
+    "negatives": 20,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -1150,7 +1163,8 @@
     "N10",
     "N11",
     "N12",
-    "N13"
+    "N13",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -1214,10 +1228,11 @@
     "N10": 2,
     "N11": 1,
     "N12": 1,
-    "N13": 1
+    "N13": 1,
+    "N15": 3
    },
    "selfcheck": {
-    "negatives": 21,
+    "negatives": 24,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -1310,7 +1325,8 @@
     "N10",
     "N11",
     "N12",
-    "N13"
+    "N13",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -1377,16 +1393,17 @@
     "N4": 2,
     "N5": 1,
     "N6": 1,
-    "N7": 4,
+    "N7": 3,
     "N8": 1,
     "N9": 1,
     "N10": 1,
     "N11": 1,
     "N12": 1,
-    "N13": 2
+    "N13": 2,
+    "N15": 3
    },
    "selfcheck": {
-    "negatives": 21,
+    "negatives": 23,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -1492,7 +1509,8 @@
     "N10",
     "N11",
     "N12",
-    "N13"
+    "N13",
+    "N15"
    ],
    "positive_controls": [
     "gold",
@@ -1541,6 +1559,7 @@
     "H8": "delta",
     "H9": "delta",
     "H10": "invariant",
+    "H10s": "invariant",
     "PUB4": "invariant",
     "H11": "delta",
     "H12": "invariant"
@@ -1548,6 +1567,7 @@
    "check_classes_cpu_verified_at_base": [
     "H1",
     "H10",
+    "H10s",
     "H11",
     "H12",
     "H2",
@@ -1585,16 +1605,17 @@
     "N4": 3,
     "N5": 1,
     "N6": 1,
-    "N7": 4,
+    "N7": 3,
     "N8": 3,
     "N9": 1,
     "N10": 2,
     "N11": 1,
     "N12": 1,
-    "N13": 1
+    "N13": 1,
+    "N15": 12
    },
    "selfcheck": {
-    "negatives": 26,
+    "negatives": 37,
     "false_positives": 0,
     "references": {
      "gold": "PASS",
@@ -1757,8 +1778,8 @@
    "cd bench && python3 -m local_llm_eval.selfcheck",
    "cd bench && python3 -m pytest local_llm_eval/tests -q"
   ],
-  "tests": 90,
-  "negatives_total": 177,
+  "tests": 129,
+  "negatives_total": 204,
   "false_positives": 0,
   "interface_only_pending_2_2": [
    "trace (EXP H8 gating, DBG H1/REC H7 metrics, commands_run)",
@@ -1766,14 +1787,25 @@
   ],
   "lng_turn_script_sha256": "e0e507d084097d2e3ad22fe2f882049927aacf95064525520bb8405a041dceb0",
   "holdout_created": false,
-  "holdout_answers_in_repository": false
+  "holdout_answers_in_repository": false,
+  "verification_fixes": [
+   "probe/judge split (forgery family N15)",
+   "evaluator-computed start tree hash",
+   "evaluator tests in the push gate"
+  ],
+  "residual_limits": [
+   "oracle faker (candidate holding a correct implementation used only to fake observations; mitigation not implemented: per-run random probe inputs)",
+   "public-suite counts are forgeable but non-decisive",
+   "candidate-written tests run in-process (AST denylist reduces, does not prove)",
+   "no network/filesystem sandbox until 4.3"
+  ]
  },
  "evidence_files_4_2": {
-  "evidence/4.2/coverage_summary.json": "975863aa61e27b1e163b9ef066dd7e18c6ba45571a10b7e0b414367d97481a89",
+  "evidence/4.2/coverage_summary.json": "88b94220675d63a6dbbb2bed5a5ee608726bc0e9e36c1901af8204bb1eb3485e",
   "evidence/4.2/environment.txt": "4e8128494e970b0210a719031edd432e096a98d02f881171b194ec05c476203c",
-  "evidence/4.2/leakscan_report.json": "590171335d16070bb95c0e88102bf37511f6557ecc1a2c5702867eee0f1c035e",
+  "evidence/4.2/leakscan_report.json": "a9a8a7bdd38c570b3f486df967d992ce12ba3cf8f69ed6ff5728b12241904b3b",
   "evidence/4.2/ledger_crosscheck_audit.json": "7849cf5b8e4f8fb2adc195a8494ca35e5e0850f9c6097b9a2d93e6a68f995081",
-  "evidence/4.2/pytest_output.txt": "00d4e9baeb9fb7be5f86f88949c65a4d67d782708b217ec39ef08963d56ca88a",
-  "evidence/4.2/selfcheck_report.json": "28ee28c68948033173e49505b94d486d4940f603359c207fed43d6ba6f8c5db3"
+  "evidence/4.2/pytest_output.txt": "10f837ed12701e2d026e1ebff3225e71222e9584528612c5768907de4ade723e",
+  "evidence/4.2/selfcheck_report.json": "ea7ffad38aca6199e2cc22181fc3bc84c1efa237710a38653f3a92d39501cb4a"
  }
 }

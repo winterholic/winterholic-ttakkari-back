@@ -2,7 +2,7 @@
 
 작성일: 2026-10-23 KST. 상태: **4.2 부분 완료.** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N14 전부가 구현되어 CPU에서 재현된다. holdout 9개와 봉인 번들은 만들지 않았으므로 4.2는 완료가 아니다.
 
-> **진행 중 기록(독립 검증 후속 수정, main ad58203c 기준):** 독립 검증이 평가기 결함 2건을 확인했다. (1) [치명] nonce handshake 위조: 후보 코드가 검사 프로세스에서 nonce를 읽어 handshake를 출력하고 `os._exit(0)` 하면 false PASS. 같은 프로세스에서 비밀을 공유하는 방식은 근본적으로 위조 가능하므로 **probe/judge 분리**(후보 프로세스는 원시 관측값만 반환, 기대값 비교는 평가기 프로세스)로 구조를 바꾼다. (2) [중요] 평가기가 시작 workspace 를 직접 해시하지 않고 호출자가 넘긴 manifest 를 믿음 → `start_dir` 을 평가기가 직접 해시. 이 상자는 수정 완료 시 아래 §9 로 대체된다(상태: 구현 중). 아래 §1~§8 은 수정 전(커밋 bcedf3e) 기록이다.
+> **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. 현재 값은 §9 와 `evidence/4.2/` 가 정본이다.
 
 - 명세: `benchmark-spec-draft.md` v1(§0.1 포함), manifest `benchmark-manifest-draft.json`(이 구현에 맞춰 v1.1로 갱신).
 - 코드: `bench/local_llm_eval/`(표준 라이브러리만). 실행법은 그 디렉터리의 `README.md`.
@@ -17,7 +17,7 @@
 | 구조 게이트 | symlink, `.git`, checker 영향 파일(`conftest.py`, `sitecustomize.py`, `usercustomize.py`, `pytest.ini`, `*.pth` 등), frozen 경로 변경(원본 기준, 단계가 지나도 유지), read-only 단계의 추가 쓰기, no-op, comment-only(AST 동일), 빈 required 파일, 누락·부분 경로 | §5.1, §5.2 |
 | delta/invariant | 모든 검사에 `delta`/`invariant`/`process_metric` 종류. PASS는 delta ≥ 1 이고 전부 green, invariant green. delta 없는 단계는 `ConfigError` | §1-8 |
 | 변경 요구 class | `diff_required` 와 `read_only_report` 분리. 탐색 과제는 diff 없이 report 산출물로, 장시간 과제 T5는 diff 없이 보고로 판정 | §1-9, §2.1 |
-| 실행기 | 검사 1개당 `python -I -S -B` 프로세스, 격리된 트리 사본, nonce·검사 id 핸드셰이크, 줄 위조·exit0·`os._exit`·`TestCase.run` 등 monkeypatch 탐지, timeout 시 process group kill | §5.1-4,5 |
+| 실행기(수정 전) | 검사 1개당 `python -I -S -B` 프로세스, 사본 트리, nonce 핸드셰이크 → **§9 에서 probe/judge 분리로 교체** | §5.1-4,5 |
 | 후보가 쓴 테스트 | unittest loader로 수집, gold SUT에서 통과(skip·xfail 0), 사전 검증된 mutant 사망, AST로 assertion·SUT 참조 검사, SUT 불변 | §3.7, §3.8 |
 | 보고 대조 | 구조화 보고의 `changed_files` 를 실제 diff와, `commands_run` 을 trace 와 대조. 불일치는 `FAIL_REPORT_MISMATCH`(코드만 PASS면 `code_pass_report_mismatch` 플래그도) | §5.1-7 |
 | ledger | 추가 전용 JSONL, 행 불변(중복 id 거부), 서버·모델 식별 결측은 `UNKNOWN`·`comparable=false`, wall 0초는 `zero_wall_no_response`, profile 별 요약(재시도는 비용만, 성공 키는 task×repeat 단위, profile 합산 없음) | §6.4 |
@@ -29,17 +29,17 @@
 
 | 과제 | fixture | 이번에 바꾼 것 | 검사 수 | 음성 대조 | 참조해/대안 |
 |---|---|---|---:|---:|---|
-| B4-EXP-D | 기존 ledger 26모듈 | 읽기 전용 과제. 정답 키를 AST로 계산(변환 2·호출자 3), 코드에 기대값을 박지 않음 | 8 | 14 | PASS/PASS |
-| B4-SGL-D | 기존 median | tests 불변, 입력 비수정, 음수·실수, mean 불변 추가 | 8 | 19 | PASS/PASS |
-| B4-MUL-D | 기존 inventory | **프롬프트 rev2**(수량·TOTAL 구분자, 빈 목록 명시), 두 파일 모두 변경 필수 | 8 | 18 | PASS/PASS |
-| B4-API-D | **신규** notes WSGI | 계약 표 프롬프트, in-process 호출(소켓 없음), `os.replace` 스파이로 원자성 순서 검사 | 11 | 20 | PASS/PASS |
-| B4-DBG-D | 기존 rules 60함수 | **rev2**: 실제 실패하는 공개 테스트와 **실제 실행으로 만든** `logs/ci_failure.log`, 원인-패치 대응 검사 | 7 | 20 | PASS/PASS |
-| B4-REF-D | 기존 dedupe | common 치환 검사(sentinel), 복제 본문 AST 검사, 동결 참조 구현과 동작 비교 | 8 | 18 | PASS/PASS |
-| B4-TST-D | 기존 discount | 후보 테스트가 gold 에서 통과해야 함, mutant 8개 전부 사망, SUT 참조 assertion 요구 | 8 | 21 | PASS/PASS |
-| B4-REC-D | 기존 stage1 shop | round() trap, 후보 테스트의 범위 mutant 사망, 회복 지표(trace) | 9 | 21 | PASS/PASS |
-| B4-LNG-D | 기존 3개 합성+filler | 5턴, 지속 제약 C1, T5 read-only, 세션 검사 인터페이스 | 19 | 26 | PASS/PASS |
+| B4-EXP-D | 기존 ledger 26모듈 | 읽기 전용 과제. 정답 키를 AST로 계산(변환 2·호출자 3), 코드에 기대값을 박지 않음 | 8 | 15 | PASS/PASS |
+| B4-SGL-D | 기존 median | tests 불변, 입력 비수정, 음수·실수, mean 불변 추가 | 8 | 21 | PASS/PASS |
+| B4-MUL-D | 기존 inventory | **프롬프트 rev2**(수량·TOTAL 구분자, 빈 목록 명시), 두 파일 모두 변경 필수 | 8 | 20 | PASS/PASS |
+| B4-API-D | **신규** notes WSGI | 계약 표 프롬프트, in-process 호출(소켓 없음), `os.replace` 스파이로 원자성 순서 검사 | 11 | 22 | PASS/PASS |
+| B4-DBG-D | 기존 rules 60함수 | **rev2**: 실제 실패하는 공개 테스트와 **실제 실행으로 만든** `logs/ci_failure.log`, 원인-패치 대응 검사 | 7 | 22 | PASS/PASS |
+| B4-REF-D | 기존 dedupe | common 치환 검사(sentinel), 복제 본문 AST 검사, 동결 참조 구현과 동작 비교 | 8 | 20 | PASS/PASS |
+| B4-TST-D | 기존 discount | 후보 테스트가 gold 에서 통과해야 함, mutant 8개 전부 사망, SUT 참조 assertion 요구 | 8 | 24 | PASS/PASS |
+| B4-REC-D | 기존 stage1 shop | round() trap, 후보 테스트의 범위 mutant 사망, 회복 지표(trace) | 9 | 23 | PASS/PASS |
+| B4-LNG-D | 기존 3개 합성+filler | 5턴, 지속 제약 C1, T5 read-only, 세션 검사 인터페이스 | 20 | 37 | PASS/PASS |
 
-합계: 음성 대조 **177건 전부 기대한 사유로 reject, false positive 0**, 참조해와 대안 참조해 **18건 전부 PASS**, delta/invariant 분류 불일치 0(`evidence/4.2/coverage_summary.json`, `selfcheck_report.json`).
+합계(수정 전): 음성 대조 177건. **수정 후 현재는 204건(N15 포함)이 전부 기대한 사유로 reject, false positive 0**, 참조해와 대안 참조해 **18건 전부 PASS**, delta/invariant 분류 불일치 0(`evidence/4.2/coverage_summary.json`, `selfcheck_report.json`).
 대안 참조해는 참조해와 다른 구현이다(예: 정수 산술 대 Decimal, 테이블 구동 라우팅 대 if 체인). evaluator 가 대안 구현을 부당하게 막지 않는다는 근거다.
 
 ### 음성 대조 커버리지
@@ -94,7 +94,7 @@ harness 가 아직 없어서 평가기는 입력 형식만 정의하고 **없으
 
 ## 6. 한계와 미검증
 
-- **격리:** 검사 프로세스는 `python -I -S -B`, 최소 환경, 사본 트리에서 돌지만 **네트워크 차단과 파일 시스템 샌드박스는 적용하지 않았다**(Seatbelt 는 4.3). 후보 코드는 검사 프로세스 안에서 import 되므로 의지가 있는 공격자는 nonce 를 읽을 수 있다(`hidden_runner.py` 에 명시). 현재 단계에서 막는 것은 우발적·소박한 우회(위조 줄, exit0, monkeypatch, sitecustomize)다.
+- **격리(수정 전 서술, §9 가 대체):** 네트워크 차단과 파일 시스템 샌드박스는 적용하지 않았다(Seatbelt 는 4.3). 수정 전에는 후보 코드와 같은 프로세스에서 nonce 를 공유해 위조가 가능했다(독립 검증이 재현). §9 의 probe/judge 구조로 바뀌었다.
 - **누출 스캔은 어휘 수준**이고 native 검사(비스니펫)는 스캔하지 않는다. 프롬프트가 명시한 토큰은 spec-derived 로 센다. 누출이 없다는 증명이 아니다.
 - 검사의 delta/invariant 분류와 참조해 PASS 는 **개발 과제 9개의 현재 hidden** 에 대해서만 확인했다. 각 hidden 이 프롬프트·docstring 에서 추적되는지(명세 §1-4)는 사람의 검토 항목이며 자동 검증하지 않았다.
 - mutant 8개(TST)·3개(REC)·4개(LNG T2)는 참조 테스트가 전부 죽임을 확인했을 뿐, 후보가 쓸 수 있는 모든 올바른 테스트가 통과하는지(과도한 제한)는 대안 참조 테스트 1종으로만 확인했다.
@@ -116,8 +116,61 @@ harness 가 아직 없어서 평가기는 입력 형식만 정의하고 **없으
 | 명령 | 결과 |
 |---|---|
 | `python3 -m local_llm_eval.selfcheck` | 9과제 `classification_bad=0 reference_fail=0 not_rejected_right=0 false_positives=0`, 마지막 줄 `{"tasks": 9, "problems": 0}`, 약 18초(worker 1개 28초, 8개에서도 동일 결과) |
-| `python3 -m pytest local_llm_eval/tests -q` | `90 passed in 20.91s` |
+| `python3 -m pytest local_llm_eval/tests -q`(수정 전) | `90 passed in 20.91s` → 현재 값은 §9 |
 | `python3 -m local_llm_eval.provenance.crosscheck_audit <evidence-audit>` | 61행, 0초 행 20개, t6 성공당 165.017초, t8 239.733초 |
 | `ruff check --quiet bench`(저장소 루트) | 출력 없음(통과) |
 
 증거 파일: `evidence/4.2/{selfcheck_report.json, coverage_summary.json, leakscan_report.json, ledger_crosscheck_audit.json, pytest_output.txt, environment.txt}`.
+
+## 9. 독립 검증 후속 수정 (main ad58203c 기준, 2건)
+
+### 9.1 [치명] nonce 위조 false PASS → probe/judge 분리
+
+**결함:** 수정 전 구조는 후보 코드를 import 하는 검사 프로세스 안에서 nonce·기대값·assertion 이 함께 돌았다. 후보 코드가 import 시점에 nonce(환경변수, argv, 스펙 파일, 프레임/메모리)를 읽어 유효한 handshake 줄을 stdout 에 쓰고 `os._exit(0)` 하면 checker 본문이 실행되지 않고 PASS 가 났다. 독립 검증이 EXP 를 뺀 코드 과제 8개(TST, 5단계 LNG 포함)에서 재현했다. 검증자의 스크립트는 outbox(guard 차단)라 읽지 못하고 위 설명으로 재구성했다(`tests/test_llme_forgery.py`).
+
+**원인:** 같은 프로세스에서 비밀을 공유하는 handshake 는 근본적으로 위조 가능하다. nonce 를 더 숨겨도 같은 결함이 남는다.
+
+**선택한 설계:** 판정이 후보 코드가 접근할 수 없는 곳에서 나오게 했다.
+1. **probe(후보 쪽 프로세스, `hidden_runner.py`)**: 후보 코드를 호출해 **원시 관측값만** `rec(key, value)`/`attempt(fn, ...)` 로 기록하고, 끝에 `OBS\t<json>` 한 줄(fd 1)로 돌려준다. 이 프로세스에는 nonce, 기대값, 판정 코드가 없다. 스펙 파일에는 probe 프로그램(입력)과 부모가 만든 scratch 디렉터리 경로뿐이다.
+2. **judge(평가기 프로세스, `judges.py` 와 과제 모듈의 `_hN` 함수)**: 관측값을 받아 기대값과 비교한다. 후보 코드를 import 하지 않는다. 기대값은 judge 함수 안에만 있다.
+3. **부모가 직접 본 사실(`facts`)**: 프로세스 종료 뒤 부모가 디스크를 읽는다(작업 디렉터리 목록, 부모가 만든 `data` 디렉터리의 파일 목록과 내용). 후보가 종료 뒤에 고칠 수 없다. 정적 검사(`_clean` 잔존, 복제 본문, `calc_tax` 잔존, 보고서 대조)는 후보 실행 없이 부모가 `end_files` 로 한다.
+4. 추가 방어: probe 는 시작 시점에 복사한 **builtins 사본**을 쓰고 내부 도우미는 import 시점에 잡아 둔 참조만 쓴다(후보가 `builtins.list` 등을 바꿔도 probe 관측은 영향을 받지 않고, 바뀌었으면 `__tampered__` 로 기록돼 `FAIL_CHECKER_PATCH`). 관측 줄이 둘 이상이면(종료 훅이 위조 줄을 추가) `multi_obs`, 줄이 없고 exit 0 이면 `stub_exit0`, JSON 이 아니면 `bad_obs`. probe 가 필요한 키가 없는데 오류도 없으면 스트림이 잘렸거나 위조된 것으로 보고 `FAIL_CHECKER_PATCH`. judge 가 후보 데이터를 해석하지 못하면 잘못된 결과(`FAIL_HIDDEN`)다.
+5. **후보가 쓴 테스트(TST, REC, LNG T2)**: 이 파일은 후보가 실행되는 프로세스에서 unittest 결과를 스스로 만든다. 그래서 AST 금지 목록을 둔다: 허용 목록 밖 import(`os`, `sys`, `inspect`, `importlib`, 상대 import 등), `open`, `exec`, `eval`, `print`, `getattr` 등의 이름, `__code__` 같은 dunder 속성, `run`·`__call__`·`load_tests` 정의, `TestResult` 류 서브클래스. 걸리면 `FAIL_CHECKER_PATCH`. 이는 mutant 를 "SUT 소스 문자열 비교"로 죽이는 테스트도 막는다.
+
+**검증(N15 + 회귀):**
+- **N15** 를 9개 과제 전부에 추가했다. 변형 3종: (a) 환경변수·argv·프레임을 뒤져 비밀을 찾고 legacy handshake 와 빈 OBS 를 쓴 뒤 `os._exit(0)`, (b) 프레임에서 probe 코드를 읽어 모든 키에 `{"ok": true}` 를 채운 OBS 를 쓰고 exit, (c) `json.dumps`/`os.write` 를 바꿔 관측 줄을 잃게 함. 장시간 과제는 T2~T4 단계에도 넣었다. EXP 는 후보 코드가 실행되지 않으므로 소스 파일에 위조 코드를 심으면 읽기 전용 위반(`FAIL_FORBIDDEN_WRITE`)임을 확인했다. 전부 FAIL, false positive 0.
+- 단위 테스트(`test_llme_forgery.py` 외): nonce 사냥+legacy handshake+early exit, 프레임 읽기 위조, 완전한 위조 OBS 줄(기대값을 모름), 종료 훅이 만든 두 번째 OBS 줄, 출력 경로 patch, 예외 삼키기(`sys.excepthook`, 예외를 삼키는 함수), builtins patch, 불완전한 스트림, 후보 테스트의 금지 구성요소 11종과 정상 테스트 4종의 비오탐.
+
+**남는 한계(명시):**
+- **oracle faker:** 후보가 정답 로직을 파일 어딘가에 갖고 있고, probe 를 감지했을 때만 그 로직으로 정확한 관측을 만들어 내보내고 실제 공개 함수는 틀린 채로 두는 경우는 막지 못한다. 기대값을 모르므로 정답 로직 자체를 구현해야 해서 "문제를 푼 것"과 구분되지 않는다. 완화안(미구현): probe 입력을 실행마다 난수로 바꾸고 judge 가 같은 시드로 기대값을 계산.
+- **PUB(공개 suite) 결과의 위조 가능성:** 공개 테스트를 후보 SUT 와 같은 프로세스에서 돌리므로 그 개수·성공 여부는 후보가 위조할 수 있다. 정답 여부는 H 검사(기대값은 judge 쪽)가 결정하고 PUB 는 분류(`FAIL_PUBLIC` 대 `FAIL_HIDDEN_ONLY`)와 보조 게이트에만 쓰인다.
+- **후보가 쓴 테스트**는 금지 목록으로 줄였을 뿐 같은 프로세스 실행이라는 구조는 그대로다(C 확장·`ctypes` 등은 import 금지로 막지만 AST 규칙이 모든 우회를 포괄한다고 증명하지 못한다).
+- 네트워크 차단과 파일 시스템 샌드박스는 여전히 없다(Seatbelt, 4.3). probe 프로세스는 `python -I -S -B`, 최소 환경, 사본 트리다.
+- 같은 이유로 `os.write(1, ...)` 로 직접 쓰는 것은 막을 수 없고, 쓰더라도 유효한 관측이려면 judge 기대값과 같은 값이어야 한다.
+
+### 9.2 [중요] 시작 hash: 평가기가 실제 시작 트리를 직접 해시
+
+**결함:** 수정 전에는 호출자가 넘긴 시작 manifest 를 기준값과 비교만 했다. 거짓 manifest 를 넘기면 실제 시작 상태가 달라도 통과했다(§0.1 의 "시작 hash 검증"을 평가기가 하지 않은 셈).
+
+**수정:** `StageAttempt` 에서 `start_manifest` 를 없애고 `start_dir`(시작 시점 실제 workspace 트리)을 받는다. 평가기가 `dir_manifest(start_dir)` 로 **스스로 해시**해 sealed 기준값(과제 정의의 pristine, 다단계는 평가기가 직전 단계 끝 트리에서 계산한 값)과 대조하고, 불일치(추가·누락·수정·symlink)는 `INFRA_BASE_MISMATCH`, 트리가 없으면 `UNKNOWN`. 계산한 트리 해시는 `StageResult.start_tree_sha256` 으로 ledger 용으로 남는다. 기준값은 `benchmark-manifest-draft.json` 의 `base_tree_sha256` 에 고정돼 있고 테스트가 과제 정의와의 일치를 확인한다. harness 연결 시 `start_dir` 은 첫 모델 요청 **전에** 신뢰하는 쪽이 만든 스냅샷이어야 한다(4.3).
+
+**회귀 테스트:** 시작 트리 바이트 하나 수정, 추가·삭제 파일, symlink, `__pycache__` 무시, 트리 미제공은 UNKNOWN, 호출자 manifest 로는 속일 수 없음(트리를 바꾸면 같은 attempt 가 INFRA 로 바뀜), 다단계 과제의 단계 사이 변경, 결과에 평가기가 계산한 해시가 실림, manifest 고정 해시와 정의 일치.
+
+### 9.3 push 게이트에 평가기 테스트 포함
+
+`scripts/verify_deploy_gate.sh` 의 `impacted` 모드에 단계를 하나 더했다: 변경 파일에 `bench/local_llm_eval/` 가 있으면 그 디렉터리의 pytest 를 돌린다(기존 선택은 `tests/test_*.py` 류만 잡아 이 테스트를 건너뛰었다). CPU 만 쓰고 약 35초이며, 해당 경로가 바뀌지 않은 push 에는 영향이 없다. 로컬에서 `./scripts/verify_deploy_gate.sh --commit HEAD --base origin/main` 으로 확인했다: `통과 평가기 테스트 (bench/local_llm_eval) (34초)`, `128 passed`.
+
+### 9.4 수정 후 결과 (CPU, 모델 없음)
+
+| 항목 | 값 |
+|---|---|
+| 개발 과제 | 9, 검사 87개(과제별 7~20) |
+| 음성 대조 | **204건 전부 기대한 사유로 reject, false positive 0**(N1~N15 15종, N15 34건/9과제) |
+| 참조해·대안 참조해 | 18건 전부 PASS, delta/invariant 분류 불일치 0 |
+| 테스트 | `129 passed in 33.92s`(`cd bench && python3 -m pytest -q local_llm_eval/tests`) |
+| selfcheck | 9과제 모두 `classification_bad=0 reference_fail=0 not_rejected_right=0 false_positives=0`, `{"tasks": 9, "problems": 0}` |
+| 누출 스캔 | 미검토 hit 0(judge 함수의 기대값 리터럴 기준으로 재산출) |
+
+증거: `evidence/4.2/{selfcheck_report.json, coverage_summary.json, leakscan_report.json, pytest_output.txt}`(재생성).
+
+**남은 일:** holdout 9개와 봉인 번들(운영자 조치 전), 개정 hidden 의 프롬프트 추적 사람 검토, 평가기와 runner 연결(4.3), 위 §9.1 의 한계 중 난수 probe 입력(미구현).

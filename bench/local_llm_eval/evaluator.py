@@ -22,6 +22,7 @@ from .manifest import (
     dir_manifest,
     manifest_of_files,
     read_files,
+    tree_hash,
     write_files,
 )
 from .model import (
@@ -314,6 +315,7 @@ def evaluate_stage(
     actual_start = dir_manifest(
         Path(sa.start_dir)
     )  # hashed here, never taken from the caller
+    start_hash = tree_hash(actual_start)
     if actual_start != expected_start:
         diff = diff_manifests(expected_start, actual_start)
         res = StageResult(
@@ -321,6 +323,7 @@ def evaluate_stage(
             codes.INFRA,
             codes.INFRA_BASE_MISMATCH,
             start_hash_ok=False,
+            start_tree_sha256=start_hash,
             detail=f"start tree differs from the sealed baseline: {changed_paths(diff)[:8]}",
         )
         return res, end_manifest
@@ -331,7 +334,14 @@ def evaluate_stage(
     stage_diff = diff_manifests(manifest_of_files(stage_base_files), end_manifest)
     changed = changed_paths(stage_diff)
     if gate is not None:
-        res = _fail(stage.id, gate[0], gate[1], changed=stage_diff, start_hash_ok=True)
+        res = _fail(
+            stage.id,
+            gate[0],
+            gate[1],
+            changed=stage_diff,
+            start_hash_ok=True,
+            start_tree_sha256=start_hash,
+        )
         _add_claim_flags(res, sa.report)
         return res, end_manifest
     with tempfile.TemporaryDirectory(prefix="llme-eval-") as tmp:
@@ -375,6 +385,7 @@ def evaluate_stage(
         checks=rows,
         changed=stage_diff,
         start_hash_ok=True,
+        start_tree_sha256=start_hash,
     )
     _add_claim_flags(res, sa.report)
     return res, end_manifest

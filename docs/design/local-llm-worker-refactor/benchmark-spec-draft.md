@@ -30,7 +30,7 @@
 
 명세에 고정한 다섯 가지:
 
-1. **초기 buggy fixture와 baseline hash 검증(§1-7, §5.1-0):** attempt마다 pristine buggy fixture로 reset하고, 첫 모델 요청 전에 base tree hash와 파일별 sha256을 sealed 기준값과 대조해 ledger에 남긴다. 불일치는 모델 평가가 아니라 `INFRA_BASE_MISMATCH`다. 종료 시점 hash도 기록한다. 이미 정답인 workspace는 현 checker 둘이 no-op을 통과시키므로 이 절차 없이는 성공을 인정하지 않는다.
+1. **초기 buggy fixture와 baseline hash 검증(§1-7, §5.1-0):** attempt마다 pristine buggy fixture로 reset하고, 첫 모델 요청 전에 **평가기가 실제 시작 트리를 스스로 해시**해(호출자가 넘긴 manifest 는 믿지 않는다) sealed 기준값과 대조하고 ledger에 남긴다. 불일치는 모델 평가가 아니라 `INFRA_BASE_MISMATCH`다. 종료 시점 hash도 기록한다. 이미 정답인 workspace는 현 checker 둘이 no-op을 통과시키므로 이 절차 없이는 성공을 인정하지 않는다.
 2. **수정 필요 과제와 탐색 전용 과제의 no-op 판정 구분(§1-8, §1-9, §2.1):** `diff_required` 과제는 pristine 대비 변경이 없으면 `FAIL_NOOP`이고 delta 검사가 green이어야 한다. `read_only_report` 과제(탐색, 장시간 T5)는 변경 없음이 정답 상태이며 diff를 요구하지 않고, 보고 산출물의 존재·정확성·trace로 no-op을 가려낸다. 탐색 과제에서 파일을 수정하면 `FAIL_FORBIDDEN_WRITE`다. 두 class를 섞어 적용하지 않는다.
 3. **실패·재시도 비용 보존(§6.4):** 모든 attempt 행(중복·재시도·0초·API 오류·timeout·truncation 포함)을 제외 없이 ledger에 남긴다. 재시도는 같은 `(task, repeat)` 키의 추가 비용이며 새 분모가 아니다. 성공 시도만의 평균으로 오류 포함 비용을 대체하지 않는다.
 4. **API 원인 unknown(§5.2):** HTTP status·body·server 식별자 증거가 없는 오류는 `UNKNOWN`이며 INFRA로 제외하지 않는다. 과거 26건이 그 사례다. 0초 행은 `zero_wall_no_response`로 플래그하되 비용에서 빼지 않는다. 이후 attempt는 server run/instance ID, model artifact hash, per-call HTTP status를 결측 없이 기록해야 비교 표에 들어간다.
@@ -308,7 +308,7 @@ holdout 요건: (1) 요구↔hidden 매핑표와 gold·alt-gold·mutant·negativ
 1. 모델 프로세스 종료 확인(프로세스 그룹 부재) 뒤 workspace를 snapshot하고 `git diff --binary`로 **시작 snapshot(위 0) 대비** patch를 만든다. patch hash를 기록한다. `diff_required` 과제에서 patch가 비어 있으면 `FAIL_NOOP`이고, `read_only_report` 과제에서는 patch가 report 외 파일을 건드리면 `FAIL_FORBIDDEN_WRITE`다(§2.1).
 2. 새 평가 worktree를 base tree에서 만들고 patch를 적용한다. patch가 `tests/`의 동결 파일, `.git`, `conftest.py`, `sitecustomize.py`, `usercustomize.py`, `*.pth`, `pytest.ini`, evaluator 경로를 건드리면 `FAIL_FORBIDDEN_WRITE`.
 3. 동결 공개 test를 canonical 사본으로 복원해 실행하고, 그 뒤 sealed hidden을 복사해 실행한다. 모델이 쓴 `tests/`를 hidden 판정에 쓰지 않는다(TST 과제의 산출 test는 예외로 §3.7 방식으로만 사용).
-4. **종료 코드만 믿지 않는다.** hidden 러너는 nonce와 실행한 검사 수를 `HIDDEN_DONE <nonce> <n>` 형태로 출력하고, 기대 검사 수와 일치할 때만 성공이다. 줄이 없는 exit 0은 `FAIL_STUB_EXIT0`. unittest는 custom result로 수집 수·skip·expectedFailure를 읽는다.
+4. **종료 코드만 믿지 않고, 판정은 후보 코드가 없는 곳에서 한다.** (개정: 4.2 독립 검증 후속. 초안의 `HIDDEN_DONE <nonce> <n>` handshake 는 같은 프로세스에서 비밀을 공유해 위조 가능했으므로 폐기.) 후보 코드는 probe 프로세스에서 **원시 관측값만** 돌려주고, 기대값 비교는 평가기 프로세스의 judge 가 한다. 부모가 종료 뒤 디스크에서 직접 읽은 사실(`facts`)과 후보 실행 없이 하는 정적 검사를 우선한다. 관측 줄이 없는 exit 0 은 `FAIL_STUB_EXIT0`, 관측 줄이 둘 이상이거나 필요한 키가 비면 `FAIL_CHECKER_PATCH`. 설계와 남는 한계는 `evaluator-implementation-4-2.md` §9.
 5. 평가 프로세스는 `python -I`로 실행해 환경변수·user site·cwd 경로를 줄이고, 네트워크 없음, 시간 제한, 프로세스 그룹 kill. 결과 receipt는 workspace 밖에 쓴다.
 6. 코딩 모델과 다른 검증 컨텍스트가 patch와 원시 명령/출력을 확인한다. LLM judge는 보조 설명 평가에만 쓰고 pass/fail에 관여하지 않는다.
 7. 구조화 보고(`status`, `changed_files`, `commands_run`, 과제별 필드)는 trace·diff와 대조한다. **대조 불일치는 `FAIL_REPORT_MISMATCH`이며 성공이 아니다.** 설계 §5.2의 "success는 public+hidden+요구행동+보고 근거가 충족된 경우에만"을 따른다(v1 결정). 코드만 PASS인 시도는 별도 열 `code_pass_report_mismatch`로도 센다.

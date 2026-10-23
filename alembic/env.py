@@ -5,6 +5,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import ttakkari.collector.budget_models  # noqa: F401
 import ttakkari.collector.control_models
 import ttakkari.delivery_models
 import ttakkari.kb_vector_models  # noqa: F401 - rebuildable KB projections

@@ -40,6 +40,7 @@ def test_collector_tables_are_in_alembic_target_metadata():
 async def test_collector_migrations_match_models_and_round_trip():
     intake = _load("0059_collector_intake")
     runtime = _load("0060_collector_job_runtime")
+    retry = _load("0067_collector_outbox_retry")
     assert intake.down_revision == "0058_kb_immutability_truncate"
     assert runtime.down_revision == "0059_collector_intake"
     async with sessionmaker()() as db:
@@ -64,9 +65,11 @@ async def test_collector_migrations_match_models_and_round_trip():
         await conn.run_sync(run, intake.upgrade)
         assert not runtime_columns & await columns()
         await conn.run_sync(run, runtime.upgrade)
+        await conn.run_sync(run, retry.upgrade)  # outbox retry columns that the ORM model carries
         assert await conn.run_sync(drift) == []
         assert runtime_columns <= await columns()
 
+        await conn.run_sync(run, retry.downgrade)
         await conn.run_sync(run, runtime.downgrade)
         assert not runtime_columns & await columns()
         await conn.run_sync(run, intake.downgrade)
@@ -75,6 +78,7 @@ async def test_collector_migrations_match_models_and_round_trip():
 
         await conn.run_sync(run, intake.upgrade)
         await conn.run_sync(run, runtime.upgrade)
+        await conn.run_sync(run, retry.upgrade)
         assert await conn.run_sync(drift) == []
         names = {r[0] for r in await db.execute(text(
             "select conname from pg_constraint where conrelid in ('collector_jobs'::regclass, 'collector_outbox'::regclass)"))}

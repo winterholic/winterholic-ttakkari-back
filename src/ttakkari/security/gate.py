@@ -45,6 +45,9 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     # managed collection, immutable delivery, scoped knowledge retrieval
     "tests/test_collector_control.py",
     "tests/test_collector_product_flow.py",
+    "tests/test_collector_integration.py",
+    "tests/test_collector_manage.py",
+    "tests/test_collector_budget.py",
     "tests/test_kb_agent_api.py",
     "tests/test_kb_retrieval.py",
     # 인증 세션 파기 (SEC2-AUTH)

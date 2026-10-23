@@ -7,16 +7,56 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from ttakkari.collector import jobs, store
-from ttakkari.collector.contracts import AuthContext, JobStateError
+from ttakkari.collector.budget import budget_day
+from ttakkari.collector.contracts import (
+    AuthContext,
+    CollectorContractError,
+    JobStateError,
+)
 from ttakkari.collector.control_models import CollectorDailyBudget, CollectorSource
 from ttakkari.collector.intake import submit_envelope
-from ttakkari.collector.policy import SourcePolicySpec
+from ttakkari.collector.netguard import normalize_url
+from ttakkari.collector.policy import CollectRequest, SourcePolicySpec
 from ttakkari.collector.quality import unmeasured_quality
 from ttakkari.collector_models import CollectorJob
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 
 ACTIVE = ("queued", "running", "retry_wait", "budget_wait")
+
+
+class SourceKeyExists(Exception):
+    pass
+
+
+async def register_source(db, ctx: AuthContext, *, source_key: str, title: str, seeds: list[str], policy: dict,
+                          interval_minutes: int | None, max_pages: int, max_depth: int = 0,
+                          profile: str = "general", auto_import: bool = True, profile_params: dict | None = None):
+    """Validate the policy and every seed against it, then register policy version and source in one transaction.
+    Shared by the owner API and the pilot bootstrap so both pass exactly the same checks. Raises ValueError / SourceKeyExists."""
+    spec = SourcePolicySpec.from_dict(policy)
+    if not spec.allows("store"):
+        raise CollectorContractError("store permission must be verified before source registration")
+    request = {"seeds": seeds, "profile": profile, "max_pages": max_pages, "max_depth": max_depth}
+    if profile_params:
+        request["profile_params"] = profile_params
+    CollectRequest.from_envelope({"extensions": {"collector:request": request}}, spec)
+    for seed in seeds:
+        parsed = normalize_url(seed, allowed_schemes=spec.schemes, allowed_ports=spec.ports)
+        if reason := spec.check_url(parsed):
+            raise CollectorContractError(reason)
+    await store._lock(db, "control-source", ctx.tenant_id, ctx.scope, source_key)
+    existing = await db.scalar(select(CollectorSource).where(
+        CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.source_key == source_key))
+    if existing is not None:
+        raise SourceKeyExists(source_key)
+    await store.register_policy(db, ctx.tenant_id, ctx.scope, source_key, spec)
+    row = CollectorSource(tenant_id=ctx.tenant_id, scope=ctx.scope, source_key=source_key, title=title, request=request,
+                          interval_minutes=interval_minutes, auto_import=auto_import,
+                          next_run_at=datetime.now(UTC) if interval_minutes else None)
+    db.add(row)
+    return row, spec
 
 
 def intake_envelope(source: CollectorSource, spec: SourcePolicySpec, now: datetime, envelope_id: uuid.UUID) -> dict:
@@ -51,7 +91,7 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None) -
     if policy is None or not policy[0].allows("store"):
         raise JobStateError("source store policy is not allowed")
     # A hard, global page admission ceiling: every new attempt is reserved before enqueue.
-    day = now.astimezone(UTC).date().isoformat()
+    day = budget_day(now)
     await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
     budget = await db.get(CollectorDailyBudget, day, with_for_update=True)
     pages = source.request["max_pages"]

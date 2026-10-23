@@ -193,12 +193,20 @@ async def _collector_consume() -> None:
 
 async def _collector_control() -> None:
     from ttakkari import kb_delivery as delivery
-    from ttakkari.collector import control, pipeline
+    from ttakkari.collector import budget, control, pilot, pipeline, runtime
     from ttakkari.collector.runner import consume_once
-    await control.schedule_once()
-    pipeline.install()
-    await consume_once(limit=1, managed_only=True)
+    async with sessionmaker()() as db:
+        paused = await runtime.is_paused(db)
+        if not paused and get_settings().collector_pilot_enabled:
+            await pilot.seed(db)
+        await db.commit()
+    if not paused:
+        await control.schedule_once()
+        pipeline.install()
+        await consume_once(limit=1, managed_only=True)
+    # A pause stops new fetching only. Already collected items still reach their permitted sink, which re-checks rights.
     await delivery.deliver_once()
+    await budget.sweep_orphans()
 
 
 async def _kb_vectors() -> None:

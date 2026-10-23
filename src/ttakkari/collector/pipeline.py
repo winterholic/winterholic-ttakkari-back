@@ -427,6 +427,8 @@ def _build_envelope(
     quality_axes = quality.unmeasured_quality(textproc.NORMALIZER_VERSION)
     if a is not None:
         quality_axes = a.l1.quality
+        if a.extracted.title:
+            ext["collector:page"] = {"title": a.extracted.title.strip()[:300]}
         ext["collector:l0"] = {"version": a.l0.version, "signals": a.l0.signals, "flags": list(a.l0.flags)}
         profile = profiles_module.get_profile(req.profile)
         ext["collector:profile"] = {

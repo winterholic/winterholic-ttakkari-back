@@ -222,6 +222,18 @@ class Settings(BaseSettings):
     # Managed source loop only handles jobs explicitly registered through the source management API.
     collector_control_enabled: bool = True
     collector_daily_page_cap: int = Field(default=500, ge=1, le=100000)
+    # 절대 지출 상한(architecture 6, 제안 기본값). teacher 는 한도를 강제하는 엔진이 연결되기 전까지 꺼 둔다.
+    collector_teacher_enabled: bool = False
+    # 파일럿 출처(collector/pilot.py)를 운영 첫 주기에 한 번 등록한다. 등록 뒤에는 DB 플래그가 재등록을 막는다.
+    collector_pilot_enabled: bool = True
+    collector_budget_day_tokens: int = Field(default=60_000, ge=0)
+    collector_budget_day_calls: int = Field(default=20, ge=0)
+    collector_budget_day_micro_usd: int = Field(default=1_000_000, ge=0)
+    collector_budget_job_tokens: int = Field(default=12_000, ge=0)
+    collector_budget_job_calls: int = Field(default=4, ge=0)
+    collector_budget_job_micro_usd: int = Field(default=200_000, ge=0)
+    collector_budget_request_input_tokens: int = Field(default=2_000, ge=1)
+    collector_budget_request_output_tokens: int = Field(default=1_000, ge=1)
     kb_semantic_enabled: bool = True
     kb_embedding_snapshot: str = "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b"
     # fetch User-Agent 에 붙는 연락처(URL 또는 이메일). 운영 웹 수집 전에 설정한다.

@@ -6,9 +6,10 @@ file can disappear underneath a citation. A delivery receipt is not a quality/fa
 import asyncio
 import hashlib
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import SQLAlchemyError
 
 from ttakkari.collector import store
 from ttakkari.collector.blobs import default_blob_store
@@ -78,7 +79,8 @@ async def deliver_item(db, outbox, item):
     collected = parse_iso_datetime(env["source"]["collected_at"])
     result = await ingest_source(
         db, source_key=key, data=raw, kind="web", locator=env["source"]["url"],
-        media_type=env["raw"]["media_type"], title=source.title, lang=normalized["language"],
+        media_type=env["raw"]["media_type"],
+        title=((env.get("extensions") or {}).get("collector:page") or {}).get("title") or source.title, lang=normalized["language"],
         parser_version=normalized["parser_version"][:60], collected_at=collected,
         normalized_body=normalized["text"],
         origin_meta={"via": "collector", "tenant_id": item.tenant_id, "scope": item.scope,
@@ -104,11 +106,20 @@ async def deliver_item(db, outbox, item):
     return result.revision_id, "imported", {"document_id": str(result.document_id), "created": result.created}
 
 
+MAX_ATTEMPTS = 5
+
+
+def _backoff(attempts: int) -> timedelta:
+    return timedelta(seconds=min(3600, 30 * 2 ** max(0, attempts - 1)))
+
+
 async def deliver_once(*, limit: int = 20) -> int:
     count = 0
+    now = datetime.now(UTC)
     async with sessionmaker()() as db:
         rows = list(await db.scalars(select(CollectorOutbox).where(
             CollectorOutbox.sink.in_(("export", "knowledge")), CollectorOutbox.status == "pending",
+            or_(CollectorOutbox.not_before.is_(None), CollectorOutbox.not_before <= now),
         ).order_by(CollectorOutbox.created_at).limit(limit).with_for_update(skip_locked=True)))
         for out in rows:
             item = await db.scalar(select(CollectorItem).where(
@@ -117,19 +128,52 @@ async def deliver_once(*, limit: int = 20) -> int:
                 CollectorItem.status.in_(("accepted", "held")),
             ))
             if item is None:
-                out.status = "failed"
+                out.status, out.last_error = "failed", "item_missing"
                 log.error("collector delivery item missing: outbox=%s", out.id)
                 continue
             try:
                 async with db.begin_nested():
                     revision_id, outcome, detail = await deliver_item(db, out, item)
-            except (ValueError, OSError) as exc:
+            except (OSError, SQLAlchemyError) as exc:
+                # The savepoint rolled everything back, so the outcome is known: nothing was written. Retry later,
+                # and stop after MAX_ATTEMPTS so a broken blob store is visible instead of spinning.
+                out.attempts += 1
+                out.last_error = f"transient:{type(exc).__name__}"[:300]
+                if out.attempts >= MAX_ATTEMPTS:
+                    out.status = "failed"
+                else:
+                    out.not_before = now + _backoff(out.attempts)
+                log.warning("collector delivery transient failure: outbox=%s attempts=%s", out.id, out.attempts)
+                count += 1
+                continue
+            except ValueError as exc:
                 revision_id, outcome, detail = None, "failed", {"reason": str(exc)[:300]}
                 log.warning("collector delivery failed: item=%s reason=%s", item.id, detail["reason"])
             db.add(CollectorDelivery(outbox_id=out.id, item_id=item.id, revision_id=revision_id,
                                      outcome=outcome, detail=detail))
             out.status = "failed" if outcome == "failed" else "delivered"
+            out.last_error = detail.get("reason") if outcome == "failed" else None
             out.delivered_at = datetime.now(UTC) if outcome != "failed" else None
             count += 1
         await db.commit()
     return count
+
+
+async def reconcile(db, out: CollectorOutbox) -> dict:
+    """Owner-requested reconciliation. Never overwrites a recorded outcome; it re-checks it or re-opens a delivery
+    that has no receipt (retry budget exhausted). A rights/hash/scope failure is terminal until the source is re-run."""
+    receipt = await db.get(CollectorDelivery, out.id)
+    if out.status == "delivered":
+        if receipt is None:
+            return {"state": "inconsistent", "detail": "delivered_without_receipt"}
+        if receipt.outcome == "imported":
+            seen = await db.scalar(select(KbObservation.id).where(KbObservation.envelope_id == out.envelope_id))
+            if seen is None:
+                return {"state": "inconsistent", "detail": "imported_without_observation"}
+        return {"state": "consistent", "outcome": receipt.outcome}
+    if out.status == "pending":
+        return {"state": "pending", "attempts": out.attempts}
+    if receipt is not None:
+        return {"state": "terminal", "outcome": receipt.outcome, "detail": receipt.detail}
+    out.status, out.attempts, out.not_before, out.last_error = "pending", 0, None, None
+    return {"state": "reopened"}

@@ -1,0 +1,132 @@
+{
+ "bench": "/tmp/bench-probe-4-1/b",
+ "n": 14,
+ "probes": [
+  {
+   "probe": "P1-noop",
+   "task": "s3-fix-inventory",
+   "desc": "untouched workspace",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": false,
+   "hidden_out": "ll last):\n  File \"<string>\", line 3, in <module>\n    assert total_value([Item('x', 7, 9)]) == 63\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+  },
+  {
+   "probe": "P1-noop",
+   "task": "t1-bug-median",
+   "desc": "untouched workspace",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": false,
+   "hidden_out": "edian([5]) == 5 and median([1, 2, 3, 4, 5, 6]) == 3.5\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+  },
+  {
+   "probe": "P1-noop",
+   "task": "t2-refactor-dedupe",
+   "desc": "untouched workspace",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": true,
+   "hidden_out": "ceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n    from report.common import clean\nModuleNotFoundError: No module named 'report.common'\n"
+  },
+  {
+   "probe": "P1-noop",
+   "task": "t4-long-file",
+   "desc": "untouched workspace",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": true,
+   "hidden_out": "_043(61), int) and rules.rule_043(3) == 8\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+  },
+  {
+   "probe": "P1-noop",
+   "task": "t3-write-tests",
+   "desc": "untouched workspace",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": false,
+   "hidden_out": "no tests/test_discount.py"
+  },
+  {
+   "probe": "P2-exit0-init",
+   "task": "s3-fix-inventory",
+   "desc": "inv/__init__.py calls os._exit(0) on import",
+   "verdict": "FALSE_POSITIVE",
+   "hidden_ok": true,
+   "unittest_ok": true,
+   "hidden_out": ""
+  },
+  {
+   "probe": "P3-sitecustomize",
+   "task": "s3-fix-inventory",
+   "desc": "sitecustomize.py in workspace exits 0",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": false,
+   "hidden_out": "ll last):\n  File \"<string>\", line 3, in <module>\n    assert total_value([Item('x', 7, 9)]) == 63\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+  },
+  {
+   "probe": "P4-alwaysfail-tests",
+   "task": "t3-write-tests",
+   "desc": "3 tests that self.fail() unconditionally",
+   "verdict": "rejected",
+   "hidden_ok": true,
+   "unittest_ok": false,
+   "hidden_out": "mutants killed 3/3, tests=3"
+  },
+  {
+   "probe": "P5-skip-tests",
+   "task": "t3-write-tests",
+   "desc": "3 tests decorated with unittest.skip",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": true,
+   "hidden_out": "mutants killed 0/3, tests=3"
+  },
+  {
+   "probe": "P6-dedupe-inline-copy",
+   "task": "t2-refactor-dedupe",
+   "desc": "inline copies, 'common' only in comment, common.clean unused",
+   "verdict": "FALSE_POSITIVE",
+   "hidden_ok": true,
+   "unittest_ok": true,
+   "hidden_out": ""
+  },
+  {
+   "probe": "P7-explain-keywords",
+   "task": "t3-explain-review",
+   "desc": "final text only repeats keywords, no real analysis",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": true,
+   "hidden_out": "unchanged=True default=True tail=True hangul=False"
+  },
+  {
+   "probe": "P7b-explain-keywords-contiguous",
+   "task": "t3-explain-review",
+   "desc": "keyword list incl. one 4+ hangul run, no analysis",
+   "verdict": "FALSE_POSITIVE",
+   "hidden_ok": true,
+   "unittest_ok": true,
+   "hidden_out": "unchanged=True default=True tail=True hangul=True"
+  },
+  {
+   "probe": "P8-shell-empty",
+   "task": "t3-shell-count",
+   "desc": "empty todo_report.txt",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": true,
+   "hidden_out": "got=[] want=['src/a.py:2', 'src/pkg/c.py:3']"
+  },
+  {
+   "probe": "P9-korean-noop",
+   "task": "t3-korean-docs",
+   "desc": "untouched calc.py, final report in Korean",
+   "verdict": "rejected",
+   "hidden_ok": false,
+   "unittest_ok": true,
+   "hidden_out": "docs_ko=False final_lines=1 behavior=True fns=4"
+  }
+ ]
+}

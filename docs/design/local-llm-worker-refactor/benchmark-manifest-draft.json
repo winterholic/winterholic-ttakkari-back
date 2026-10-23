@@ -1,0 +1,1108 @@
+{
+ "manifest_revision": "draft-0",
+ "final": false,
+ "planned_values_only": true,
+ "note": "Pre-registered planned values, not measurements. Blocked: WBS 1.2 raw audit in progress; do not mark 4.1 done or start 4.2.",
+ "wbs": {
+  "task": "4.1",
+  "pms_task_id": "7bad4b21-2a0c-45d2-9934-2cf7a1871e89",
+  "project_id": "0b1a2a57-eb19-4da0-b572-ab783d6a6735",
+  "predecessor": "f4a5ab31-4d6c-4107-917f-40f83b29e94d",
+  "predecessor_status_at_writing": "doing"
+ },
+ "base_main": "474e034a684935e2c3d863820b5e7b0d3ffdc7b7",
+ "design_doc": "docs/design/local-llm-worker-refactor.md",
+ "source_repo": {
+  "path": "/Users/winterholic/development/projects/qwen-local-harness",
+  "head": "b278b96f45865b9dd9104a5735d10ad56344d854",
+  "dirty": true,
+  "cited_files_clean_vs_head": [
+   "tasks.py",
+   "evalbase/stage3.py",
+   "longtasks.py",
+   "validate_tasks.py"
+  ]
+ },
+ "source_sha256": {
+  "tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c",
+  "stage3.py": "291343d777f991410f3f7028e378f24c157588f79b16d065f4966e4c646fa8cc",
+  "validate_tasks.py": "dcd09bf00d5ae1f4ea3bbdfc345ed32ea151a47043cb9f6ba33770c0f3036718",
+  "longtasks.py": "a3c4022c7fceca2a732ce0a0fc82dd071da9e29e6353a8badb82546aee7c63aa",
+  "stage1/task.txt": "3a4849e00d30b83c8bcab9d95d4b8e5b9169436ad410b919ff2974fd5743b42b",
+  "stage1/verify_fixture.py": "003d178fc682315bf6dfbd9478a29060d9818b5f2de65a13f29cb25621605584",
+  "stage1/fixture-template/shop/cart.py": "b088cc835e38b425312e430fb35f33557005ba6c7cf803a943e372fec2ccace7",
+  "stage1/fixture-template/shop/pricing.py": "c70d9e0155807b2b884e93c58ced7848a6af51bf02770517e307335f3dceaee6",
+  "stage1/fixture-template/tests/test_cart.py": "d6f4d63c73f67da0a66eabf6932c6244c5dc40bc7180a9395e3582fcc90d1908"
+ },
+ "negative_control_catalog": {
+  "N1": "no-op / empty patch",
+  "N2": "comment or keyword only",
+  "N3": "required file/path missing",
+  "N4": "test deletion or weakening",
+  "N5": "skip/xfail/expectedFailure",
+  "N6": "exit0 stub without checker handshake",
+  "N7": "checker monkeypatch (sitecustomize/conftest/TestCase.run)",
+  "N8": "missing target / nonexistent path cited",
+  "N9": "empty result or empty report / zero collected",
+  "N10": "forbidden path write"
+ },
+ "evaluator": {
+  "boundary": "outside agent write roots; patch applied to clean worktree from base tree; canonical public tests restored; sealed hidden copied after patch; handshake nonce + executed-check count; python -I; no network",
+  "verified": false
+ },
+ "holdout_protection": {
+  "sealed_bundle_path_proposed": "/Users/winterholic/bench-sealed/local-llm-holdout-r1/",
+  "mode": "0700",
+  "repo_holds_only": "sha256 commitments + counts",
+  "seatbelt_read_deny_verified": false,
+  "single_use_per_profile": true,
+  "sealed_bundle_sha256": null
+ },
+ "protocol_planned": {
+  "repeats": 3,
+  "pilot": {
+   "tasks": [
+    "B4-SGL-D",
+    "B4-MUL-D",
+    "B4-TST-D"
+   ],
+   "repeats": 2
+  },
+  "attempts_formal_per_profile": 54,
+  "seed_scheme": "seed = repeat*100 + turn_index (precedent: agentbench.py call rule); no determinism claim unless engine applies and reads back seed",
+  "repeats_ids": [
+   1,
+   2,
+   3
+  ],
+  "order": "task permutation seeded by sha256(task_set_revision); profile AB/BA by repeat parity",
+  "sampling": {
+   "temperature": 0.6,
+   "other": "engine defaults recorded, must match across arms"
+  },
+  "budgets": {
+   "short": {
+    "wall_s": 600,
+    "turns": 20
+   },
+   "long": {
+    "wall_s": 1800,
+    "turns": 60
+   },
+   "max_tokens_per_call": 4096,
+   "max_tokens_includes_reasoning": true,
+   "tool_timeout_s": 30,
+   "auto_retry": 0,
+   "infra_retry_max": 1
+  },
+  "thinking": {
+   "arm_A": "off (primary)",
+   "arm_B": "low, thinking cap 1024 only if engine supports and readback confirms; else not run"
+  },
+  "cache": {
+   "primary": "loaded+warmed server, no prompt cache across tasks, new slot per task",
+   "os_file_cache": "not purged",
+   "record": [
+    "cache_prompt",
+    "prompt_n",
+    "cache_n",
+    "cold_load_first_request"
+   ]
+  },
+  "telemetry": {
+   "period_s": 1,
+   "stale_abort_s": 5,
+   "min_available_gib": 16
+  }
+ },
+ "attempt_ledger_fields": [
+  "attempt_id",
+  "task_id",
+  "split",
+  "profile_id",
+  "repeat",
+  "seed_scheme",
+  "prompt_sha256",
+  "workspace_base_sha",
+  "enqueue_ts",
+  "lease_acquire_ts",
+  "load_start_ts",
+  "ready_ts",
+  "first_request_ts",
+  "first_token_ts",
+  "last_token_ts",
+  "tool_time_s",
+  "verify_time_s",
+  "cleanup_time_s",
+  "retry_of",
+  "end_reason",
+  "verdict",
+  "fail_code",
+  "trace_sha256",
+  "patch_sha256",
+  "evaluator_sha256",
+  "sealed_bundle_sha256",
+  "per_call_http_status",
+  "per_call_finish_reason",
+  "per_call_error_stage",
+  "token_counts",
+  "telemetry_ref"
+ ],
+ "fail_codes": [
+  "FAIL_NOOP",
+  "FAIL_COMMENT_ONLY",
+  "FAIL_PARTIAL_PATHS",
+  "FAIL_TEST_TAMPER",
+  "FAIL_SKIP_XFAIL",
+  "FAIL_STUB_EXIT0",
+  "FAIL_CHECKER_PATCH",
+  "FAIL_MISSING_TARGET",
+  "FAIL_EMPTY_RESULT",
+  "FAIL_FORBIDDEN_WRITE",
+  "FAIL_PUBLIC",
+  "FAIL_HIDDEN",
+  "FAIL_HIDDEN_ONLY",
+  "FAIL_REGRESSION",
+  "FAIL_CAUSE_PATCH_MISMATCH",
+  "FAIL_FALSE_DONE",
+  "FAIL_REPORT_MISMATCH",
+  "INFRA_*",
+  "TIMEOUT",
+  "GUARD_STOP",
+  "TELEMETRY_STALE",
+  "UNKNOWN"
+ ],
+ "existing_verifier_probe": {
+  "n": 14,
+  "false_positives": [
+   "P2-exit0-init",
+   "P6-dedupe-inline-copy",
+   "P7b-explain-keywords-contiguous"
+  ],
+  "script_sha256": "4259d8194a3ccb71eb6e1d209a0ae9dda07f8ef9f2e18c6c56462943867a7e2b",
+  "output_sha256": "b9991292007e7feafd9fef2c8c521fd0236de87da263343c4c3f8f5392dcda52",
+  "scope": "current HEAD verifiers only; model-free; not a statement about past result rows"
+ },
+ "audit_1_2_unreflected": true,
+ "open_decisions": [
+  "restart server per repeat",
+  "report-diff mismatch counts as fail or flag",
+  "DBG reproduce-before-edit gating",
+  "holdout bundle final location/isolation level",
+  "fault/CI-message injection for REC",
+  "harness support for compaction/resume/event-cancel"
+ ],
+ "tasks": [
+  {
+   "id": "B4-EXP-D",
+   "type": "explore",
+   "split": "dev",
+   "pair_id": "B4-EXP-H",
+   "n_requirements": 8,
+   "n_hidden_checks": 8,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7",
+    "R8"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "H8"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N8",
+    "N9",
+    "N10",
+    "N2"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing_revised",
+    "source_refs": [
+     "longtasks.py#L1-repo-explore"
+    ],
+    "source_sha256": {
+     "longtasks.py": "a3c4022c7fceca2a732ce0a0fc82dd071da9e29e6353a8badb82546aee7c63aa"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "answer_key_to_compute_from_AST",
+   "known_defects": [
+    "no read-only task variant exists",
+    "answer key not yet computed"
+   ]
+  },
+  {
+   "id": "B4-EXP-H",
+   "type": "explore",
+   "split": "holdout",
+   "pair_id": "B4-EXP-D",
+   "n_requirements": 8,
+   "n_hidden_checks": 8,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N8",
+    "N9",
+    "N10",
+    "N2"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-SGL-D",
+   "type": "single_file",
+   "split": "dev",
+   "pair_id": "B4-SGL-H",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N4",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing",
+    "source_refs": [
+     "tasks.py#t1-bug-median"
+    ],
+    "source_sha256": {
+     "tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "exists:validate_tasks.py#sol_median",
+   "known_defects": [
+    "tests/ immutability not checked",
+    "mean() unchanged not checked"
+   ]
+  },
+  {
+   "id": "B4-SGL-H",
+   "type": "single_file",
+   "split": "holdout",
+   "pair_id": "B4-SGL-D",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N4",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-MUL-D",
+   "type": "multi_file",
+   "split": "dev",
+   "pair_id": "B4-MUL-H",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing_revised",
+    "source_refs": [
+     "stage3.py#s3-fix-inventory"
+    ],
+    "source_sha256": {
+     "stage3.py": "291343d777f991410f3f7028e378f24c157588f79b16d065f4966e4c646fa8cc",
+     "tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "exists:validate_tasks.py#sol_inventory",
+   "known_defects": [
+    "prompt does not state qty separators or empty-list line (spec gap)"
+   ]
+  },
+  {
+   "id": "B4-MUL-H",
+   "type": "multi_file",
+   "split": "holdout",
+   "pair_id": "B4-MUL-D",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-API-D",
+   "type": "rest",
+   "split": "dev",
+   "pair_id": "B4-API-H",
+   "n_requirements": 9,
+   "n_hidden_checks": 9,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7",
+    "R8",
+    "R9"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "H8",
+    "H9"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N9",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null
+   },
+   "reference_solution": "to_write",
+   "known_defects": [
+    "fixture does not exist"
+   ]
+  },
+  {
+   "id": "B4-API-H",
+   "type": "rest",
+   "split": "holdout",
+   "pair_id": "B4-API-D",
+   "n_requirements": 9,
+   "n_hidden_checks": 9,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N9",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-DBG-D",
+   "type": "debug",
+   "split": "dev",
+   "pair_id": "B4-DBG-H",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N8",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing_revised",
+    "source_refs": [
+     "tasks.py#t4-long-file"
+    ],
+    "source_sha256": {
+     "tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "exists:validate_tasks.py#sol_long (needs rev2 public test)",
+   "known_defects": [
+    "public unittest passes on untouched workspace (probe P1) though prompt claims a failing test",
+    "no real failure log"
+   ]
+  },
+  {
+   "id": "B4-DBG-H",
+   "type": "debug",
+   "split": "holdout",
+   "pair_id": "B4-DBG-D",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N8",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-REF-D",
+   "type": "refactor",
+   "split": "dev",
+   "pair_id": "B4-REF-H",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing",
+    "source_refs": [
+     "tasks.py#t2-refactor-dedupe"
+    ],
+    "source_sha256": {
+     "tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "exists:validate_tasks.py#sol_dedupe",
+   "known_defects": [
+    "verifier is string-based; inline copy + comment passes (probe P6)"
+   ]
+  },
+  {
+   "id": "B4-REF-H",
+   "type": "refactor",
+   "split": "holdout",
+   "pair_id": "B4-REF-D",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-TST-D",
+   "type": "write_tests",
+   "split": "dev",
+   "pair_id": "B4-TST-H",
+   "n_requirements": 8,
+   "n_hidden_checks": 8,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7",
+    "R8"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "H8"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N4",
+    "N5",
+    "N6",
+    "N7",
+    "N9",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing",
+    "source_refs": [
+     "tasks.py#t3-write-tests"
+    ],
+    "source_sha256": {
+     "tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "exists:validate_tasks.py#sol_tests",
+   "known_defects": [
+    "hidden_ok does not require gold pass (probe P4)",
+    "test count by regex"
+   ]
+  },
+  {
+   "id": "B4-TST-H",
+   "type": "write_tests",
+   "split": "holdout",
+   "pair_id": "B4-TST-D",
+   "n_requirements": 8,
+   "n_hidden_checks": 8,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N4",
+    "N5",
+    "N6",
+    "N7",
+    "N9",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-REC-D",
+   "type": "autonomous_recovery",
+   "split": "dev",
+   "pair_id": "B4-REC-H",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7"
+   ],
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N5",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing",
+    "source_refs": [
+     "stage1/fixture-template",
+     "stage1/task.txt"
+    ],
+    "source_sha256": {
+     "stage1/task.txt": "3a4849e00d30b83c8bcab9d95d4b8e5b9169436ad410b919ff2974fd5743b42b",
+     "stage1/verify_fixture.py": "003d178fc682315bf6dfbd9478a29060d9818b5f2de65a13f29cb25621605584",
+     "stage1/fixture-template/shop/cart.py": "b088cc835e38b425312e430fb35f33557005ba6c7cf803a943e372fec2ccace7",
+     "stage1/fixture-template/shop/pricing.py": "c70d9e0155807b2b884e93c58ced7848a6af51bf02770517e307335f3dceaee6",
+     "stage1/fixture-template/tests/test_cart.py": "d6f4d63c73f67da0a66eabf6932c6244c5dc40bc7180a9395e3582fcc90d1908"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "to_write (no gold patch found)",
+   "known_defects": [
+    "naive-patch trap (round() half-even) not yet CPU-confirmed against public test",
+    "which verify_fixture version judged past runs unknown (1.2)"
+   ]
+  },
+  {
+   "id": "B4-REC-H",
+   "type": "autonomous_recovery",
+   "split": "holdout",
+   "pair_id": "B4-REC-D",
+   "n_requirements": 7,
+   "n_hidden_checks": 7,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "short",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N5",
+    "N6",
+    "N7",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  },
+  {
+   "id": "B4-LNG-D",
+   "type": "long_multi_turn",
+   "split": "dev",
+   "pair_id": "B4-LNG-H",
+   "n_requirements": 14,
+   "n_hidden_checks": 14,
+   "requirement_ids": [
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "R5",
+    "R6",
+    "R7",
+    "R8",
+    "R9",
+    "R10",
+    "R11",
+    "R12",
+    "R13",
+    "R14"
+   ],
+   "hidden_check_ids": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "H8",
+    "H9",
+    "H10",
+    "H11",
+    "H12",
+    "H13",
+    "H14"
+   ],
+   "budget_class": "long",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N8",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "existing_composite",
+    "source_refs": [
+     "stage3.py#s3-feature-slugify",
+     "stage3.py#s3-rename-calc-tax",
+     "tasks.py#t1-bug-median",
+     "longtasks.py#L1-repo-explore(filler)"
+    ],
+    "source_sha256": {
+     "stage3.py": "291343d777f991410f3f7028e378f24c157588f79b16d065f4966e4c646fa8cc",
+     "tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c",
+     "longtasks.py": "a3c4022c7fceca2a732ce0a0fc82dd071da9e29e6353a8badb82546aee7c63aa"
+    },
+    "base_ref": null
+   },
+   "reference_solution": "to_write",
+   "known_defects": [
+    "composite workspace not built",
+    "turn script text not frozen",
+    "resume/cancel hooks unverified"
+   ]
+  },
+  {
+   "id": "B4-LNG-H",
+   "type": "long_multi_turn",
+   "split": "holdout",
+   "pair_id": "B4-LNG-D",
+   "n_requirements": 14,
+   "n_hidden_checks": 14,
+   "requirement_ids": "sealed",
+   "hidden_check_ids": "sealed",
+   "budget_class": "long",
+   "required_negative_controls": [
+    "N1",
+    "N2",
+    "N3",
+    "N4",
+    "N6",
+    "N7",
+    "N8",
+    "N10"
+   ],
+   "positive_controls": [
+    "gold",
+    "alt_gold"
+   ],
+   "verdict_authority": "sealed-evaluator",
+   "model_self_report_counts_as_success": false,
+   "public_tests_only_counts_as_success": false,
+   "status": "spec-draft",
+   "fixture": {
+    "kind": "new",
+    "source_refs": [],
+    "source_sha256": {},
+    "base_ref": null,
+    "structure_constraints_ref": "benchmark-spec-draft.md#41"
+   },
+   "reference_solution": "to_write_sealed",
+   "known_defects": [],
+   "sealed_bundle_ref": null,
+   "never_executed_by_any_model": true
+  }
+ ]
+}

@@ -100,3 +100,10 @@
 - 현재 후보 backend `62890c5b77dc04d2c6b6ad85cd6eb01cb23f2d1b`, frontend `f4287acc90ace7c232dd1077aaf1c24b703a16f9`는 독립 전체 검수 PASS 판정을 받은 것은 아니다. 현재 checkout에서 동일 재현은 `lab_manual_approval` `before=false/after=false`와 승인 snapshot 존재를 보였다. 독립 후속 검수와 같은 범위의 API·추출·Run·route·duration·matching·plans·registry·run-scope·Style DNA suite는 `132 passed in 4.42s`였다. frontend 계획 및 late-validation tests는 `16 passed`; 관측값 `evidence=기술 설명 영상`, `confirmed=false`, `createEnabled=false`다. 최신 후보의 결과는 고정 c373/e289 판정과 분리한다.
 - 인용 의미 추론은 여전히 미보장이다. 현재 재현 결과도 `valid=true`, `review_required=true`, `music_seconds=899.0`이다. 실제 모델·MCP·conversation resume·authenticated readiness/browser·렌더는 이번 재검수에서 수행하지 않았다. 이 범위의 미검증은 유지한다.
 - 앞서 쓴 “first-slice 검수 queued”는 당시 상태였다. 그 기준선 backend `99a9e084a4716bce21adbc310d0e25f9694872b5` / frontend `02dd278e39b6cea5851283e00a3166de48bf6fe1`은 이미 FAIL 보고를 받았고, 별도의 증분 target backend `b7855d09e78982dfd8a8b4ba948e62f4ac0b05e1` / frontend `a78dede6ae81696e7c9c29dd4556d62d2abfea1c`도 FAIL 보고를 받았다. 두 판정은 후속 수정 후보의 회귀 통과와 별개의 고정-target 상태로 보존한다.
+
+## main 통합·배포 (2026-10-23)
+
+- 사용자 명시 지시('프론트도 반영을 좀 다해줘')로 검수된 v2를 main에 통합한다. 통합 전 live `/api/version`은 `7626a9194e302a62111af5c04bc6d85538907864`였고 `git merge-base --is-ancestor`로 이 SHA에 v2가 없음을 확인했다. live `/api/creative/v2/capabilities`와 `/intent/runs`는 404였다.
+- 격리 브랜치 `integ/creative-v2-main-20261023`을 `origin/main`(7626a91)에서 만들고 `feat/creative-multidimensional-v2`(코드 62890c5, 문서 363a233)를 `--no-ff`로 병합했다. 충돌 없음. 마이그레이션 변경 없음(diff에 alembic 없음).
+- 검증: `verify_deploy_gate.sh --commit HEAD --base origin/main` → ruff 통과, 계약 묶음 `78 passed`, 바뀐 테스트 10개 파일 `132 passed`. `-k "creative or runs_manager or qwen_local or write_roots or route_inventory"` → `222 passed`. 전체 pytest는 배포 게이트가 실행한다.
+- 게이트 완화 없음: lab_manual/unverified/blocked 렌더 gate 닫힘, LLM 미검토 계획 422, `semantic_support_unverified` 유지. 렌더러(8.7)는 여전히 미연결이며 실제 영상 0편, 실제 managed Qwen intent 응답은 미검증이다.

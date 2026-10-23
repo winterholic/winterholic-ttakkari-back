@@ -123,6 +123,8 @@
 
 이번 Run에서 독립 확인한 저장소 상태는 별도다: `/Users/winterholic/development/projects/ttakkari-studio-v2-back`에서 `git pull --ff-only origin main`은 `Already up to date`를 반환했고, HEAD와 `origin/main`은 `9f82c9c`였다. 이 사실은 과거 pytest/push 호출 세부사항을 소급 입증하지 않는다.
 
+증거 정정 문서의 local commit `d78f304` push 시도는 별도 확인 결과 실패했다. `functions.exec`의 `tools.exec_command`로 기본 sandbox 경로에서 `git push origin HEAD:main`을 workdir `/Users/winterholic/development/projects/ttakkari-studio-v2-back`로 실행했고 exit 1을 받았다. pre-push hook 단계에서 uv가 `/Users/winterholic/.cache/uv/sdists-v9/.git`에 cache를 열지 못해 `Operation not permitted`를 반환했고, 임시 디렉터리 uv sync도 실패했다. 이 관측은 이 Run의 nested worker sandbox에 한정된다. hook이 안내한 `--no-verify` 및 다른 캐시 경로로는 재시도하지 않았다. 수정 내용은 local branch에만 있으며 `main`으로 push되거나 배포되지 않았다.
+
 ### 자막 모드 계약과 실제 출력 경로
 
 - 지원 모드는 `narration`과 `title_only`다. `creative_v2_production_dispatch`는 `narration`이 기본이며, `title_only`를 명시하면 장면 제목만 caption source로 쓴다. `C10.subtitles`의 선택 여부는 계약 기록의 `plan_selects_subtitles`로 표시되며, 어느 모드도 대본을 화면에 반드시 표시하라는 spec은 아니다. 따라서 명시한 `title_only`는 그 자체로 명세 위반이 아니다.
@@ -130,4 +132,4 @@
 - `title_only`에서 narration이 있는 장면은 대본 자막을 화면에 내보내지 않는다는 notice가 `caption_contract.notices`에 기록된다. 이미 dispatch된 revision에 반대 모드를 요청하면 기존 모드를 바꾸지 않고 `caption_mode_request_ignored`를 돌려준다. 다른 모드를 적용하려면 새 revision 승인과 dispatch가 필요하다.
 - 샘플 plan brief에는 한국어 자막과 한국어 narration이 있었지만 당시 revision의 dispatch mode를 기록하는 근거는 보존되어 있지 않다. 그러므로 옛 영상의 제목-only를 `title_only`로 의도했다고 추정하거나 명세 위반으로 판정하지 않는다. 새 영상에서 대본 자막이 목표일 때는 `narration` 선택, contract의 mode/notices, 각 장면 `caption_segments` 본문, SRT 구간을 함께 확인한다.
 
-이번 정정은 문서 변경만 포함한다. backend 코드·runtime·기존 계획/생성은 바꾸지 않았고, pytest 및 GPU 생성은 실행하지 않았다.
+이번 정정은 문서 변경만 포함한다. backend 코드·runtime·기존 계획/생성은 바꾸지 않았고, pytest 및 GPU 생성은 실행하지 않았다. `git diff --check`는 push 시도 전 통과했다. pre-push 실패 때문에 push는 완료되지 않았다.

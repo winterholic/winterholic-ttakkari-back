@@ -57,6 +57,7 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     # 하네스 조회: 경로 화이트리스트·심볼릭 링크 탈출·비밀 마스킹·소유자 전용 (ADR 0069)
     "tests/test_harness_view_safe.py",
     "tests/test_harness_view_api.py",
+    "tests/test_harness_view_groups.py",
     # 로그 마스킹 및 비밀 노출 방지 (SEC2-SECRET-01)
     "tests/test_runs_events_masking.py",
     "unit_tests/test_oplog_scrub.py",

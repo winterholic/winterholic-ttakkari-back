@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ttakkari.api.deps import Db
 from ttakkari.harness_view import service
 from ttakkari.harness_view.model import CATEGORIES, ENGINES, SCOPES
+from ttakkari.harness_view.taxonomy import CONCERNS, GROUPS, LAYER_LABEL
 from ttakkari.security.auth import User
 
 
@@ -19,6 +20,10 @@ router = APIRouter(prefix="/api/harness", tags=["harness"], dependencies=[Depend
 
 Engine = Literal[tuple(ENGINES)]  # type: ignore[valid-type]
 Scope = Literal[tuple(SCOPES)]  # type: ignore[valid-type]
+HGroup = Literal[tuple(GROUPS)]  # type: ignore[valid-type]
+Concern = Literal[tuple(CONCERNS)]  # type: ignore[valid-type]
+Layer = Literal[tuple(LAYER_LABEL)]  # type: ignore[valid-type]
+PROJECT_KEY = r"^\w[\w.\-]*(/\w[\w.\-]*)?$"  # 각 구간은 글자·숫자로 시작해 ".." 와 숨김 폴더를 거른다
 
 
 @router.get("")
@@ -31,14 +36,18 @@ async def items(db: Db, q: str = Query(default="", max_length=200),
                 category: str | None = Query(default=None, max_length=300), engine: Engine | None = None,
                 scope: Scope | None = None, active: bool | None = None, warned: bool = False,
                 session: Literal["desk", "lead", "worker", "orchestrator"] | None = None, present: bool | None = None,
-                group: str | None = Query(default=None, max_length=80),
+                group: str | None = Query(default=None, max_length=80), hgroup: HGroup | None = None,
+                concern: Concern | None = None, layer: Layer | None = None,
+                project: str | None = Query(default=None, max_length=120, pattern=PROJECT_KEY),
+                pool: Literal["personal", "company"] | None = None,
                 limit: int = Query(default=30, ge=1, le=service.PAGE_MAX), cursor: int = Query(default=0, ge=0)) -> dict:
     cats = {c for c in (category or "").split(",") if c}
     if cats - set(CATEGORIES):
         raise HTTPException(422, "알 수 없는 카테고리")
     snap = await service.snapshot(db)
     return service.search(snap, q=q, categories=cats or None, engine=engine, scope=scope, active=active, warned=warned,
-                          session=session, present=present, group=group, limit=limit, cursor=cursor)
+                          session=session, present=present, group=group, hgroup=hgroup, concern=concern, layer=layer,
+                          project=project, pool=pool, limit=limit, cursor=cursor)
 
 
 @router.get("/items/{item_id}")
@@ -57,3 +66,25 @@ async def layers(db: Db, session: Literal["desk", "lead", "worker", "orchestrato
                  engine: Literal["claude", "codex", "antigravity", "muse", "qwen-local"],
                  pool: Literal["personal", "work"] = "personal") -> dict:
     return await service.layers(db, await service.snapshot(db), session=session, engine=engine, pool=pool)
+
+
+@router.get("/groups/{group}")
+async def group(group: HGroup, db: Db) -> dict:
+    found = await service.group_detail(db, await service.snapshot(db), group)
+    if found is None:
+        raise HTTPException(404, "그룹이 없습니다.")
+    return found
+
+
+@router.get("/projects")
+async def projects(db: Db) -> dict:
+    return service.project_list(await service.snapshot(db))
+
+
+@router.get("/projects/detail")
+async def project(db: Db, key: str = Query(max_length=120, pattern=PROJECT_KEY)) -> dict:
+    # key 는 스냅샷 안의 프로젝트를 고르는 값일 뿐 파일 경로로 쓰지 않는다.
+    found = service.project_detail(await service.snapshot(db), key)
+    if found is None:
+        raise HTTPException(404, "프로젝트가 없습니다.")
+    return found

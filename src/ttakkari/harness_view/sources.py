@@ -28,8 +28,6 @@ SKILL_GROUPS = {
     "life-experts-skills": "생활 전문가", "stock-experts": "주식 전문가",
 }
 MAX_SKILL_DEPTH = 5
-PROJECT_SCAN_DIRS = 4000
-PROJECT_FILES = ("CLAUDE.md", "AGENTS.md", "GEMINI.md")
 SKIP_DIRS = frozenset({"node_modules", ".git", ".venv", "venv", "__pycache__", "dist", "build", ".next", "target"})
 # Codex 프로젝트 문서 한도(project_doc_max_bytes 기본값). 넘으면 뒤가 잘린다.
 CODEX_DOC_LIMIT = 32 * 1024
@@ -48,6 +46,7 @@ class Ctx:
     pinned_brief: str = ""
     claude_settings: dict[str, Any] = field(default_factory=dict)
     codex_config: dict[str, Any] = field(default_factory=dict)
+    projects_seen: dict[str, str] = field(default_factory=dict)  # 프로젝트 키 → pool. 하네스 파일이 없는 프로젝트도 센다.
 
     @property
     def claude(self) -> Path:
@@ -77,7 +76,10 @@ class Ctx:
         return text
 
 
-def build_safe_files(user_home: Path, ttakkari_home: Path, project_roots: list[Path]) -> SafeFiles:
+def build_safe_files(user_home: Path, ttakkari_home: Path, project_roots: list[Path],
+                     qwen_root: Path | None = None) -> SafeFiles:
+    from ttakkari.harness_view.projects import read_patterns
+
     skill_patterns = tuple(
         f"{g}{'/*' * depth}/SKILL.md" for g in SKILL_GROUPS for depth in range(1, MAX_SKILL_DEPTH))
     roots = [
@@ -87,17 +89,22 @@ def build_safe_files(user_home: Path, ttakkari_home: Path, project_roots: list[P
             "plugins/known_marketplaces.json", *skill_patterns)),
         Root(user_home / ".codex", ("AGENTS.md", "config.toml", "hooks.json", "rules/*.rules", "agents/*.toml",
                                     "references/*.md", "skills/*/SKILL.md", "skills/*/*/SKILL.md")),
-        Root(user_home / ".gemini", ("GEMINI.md", "config/hooks.json", "antigravity-cli/settings.json")),
+        Root(user_home / ".gemini", ("GEMINI.md", "config/hooks.json", "config/mcp_config.json",
+                                     "antigravity-cli/settings.json", "antigravity-cli/builtin/skills/*/SKILL.md")),
         Root(user_home / ".agents", ("skills/*/SKILL.md", "rules/*.md", "rules/*.mdc", ".skill-lock.json")),
+        # Muse: 설정 3종 중 auth.json 은 패턴에 없다(존재 확인만). 번들 플러그인의 스킬 문서만 읽는다.
+        Root(user_home / ".config/muse", ("settings.json", "trust.json")),
+        Root(user_home / ".local/share/muse", ("plugins/cache/builtin/*/*/*/SKILL.md",)),
         # 사용자 범위 MCP 가 들어 있는 파일. mcpServers 키만 꺼내고(read_json_subset) 존재 탐색에는 쓰지 않는다.
         Root(user_home, (".claude.json",), probe=False),
         Root(ttakkari_home / "harness", ("*.md",)),
         Root(ttakkari_home / "accounts", ("*/projects/*/memory/*.md",)),
-        *[Root(r, ("CLAUDE.md", "AGENTS.md", "GEMINI.md", "*/CLAUDE.md", "*/AGENTS.md", "*/GEMINI.md",
-                   "*/*/CLAUDE.md", "*/*/AGENTS.md", "*/*/GEMINI.md", "*/*/*/CLAUDE.md", "*/*/*/AGENTS.md",
-                   "*/*/*/GEMINI.md", ".agents/rules/*.md", "*/.agents/rules/*.md", "*/*/.agents/rules/*.md"))
-          for r in project_roots],
+        *[Root(r, read_patterns()) for r in project_roots],
     ]
+    if qwen_root is not None:
+        # Qwen 하네스 저장소: 지침·프롬프트·스킬·기본 설정·생성 설정·실행 옵션 코드만. .runtime/profile(로그인·세션)은 패턴에 없다.
+        roots.append(Root(qwen_root, ("AGENTS.md", "prompts/worker.md", "skills/qwen-local-delegate/SKILL.md",
+                                      "config/harness.conf", ".runtime/settings.json", "src/qwen_local/runtime.py")))
     return SafeFiles(roots)
 
 
@@ -316,49 +323,6 @@ def collect_gemini_instructions(ctx: Ctx) -> list[Item]:
     else:
         out.append(_missing(ctx, "rule", ".agents/rules", ctx.agents / "rules", scope="global", engine="shared",
                             description="전역 Antigravity 규칙 폴더", group="agents rules"))
-    return out
-
-
-def collect_projects(ctx: Ctx, roots: list[Path]) -> list[Item]:
-    """프로젝트 루트의 CLAUDE.md·AGENTS.md·GEMINI.md. git worktree(.git 파일)는 건너뛰어 중복을 줄인다."""
-    out: list[Item] = []
-    budget = [PROJECT_SCAN_DIRS]
-    for root in roots:
-        if not root.is_dir():
-            continue
-        stack = [(root, 0)]
-        while stack and budget[0] > 0:
-            current, depth = stack.pop()
-            budget[0] -= 1
-            git = current / ".git"
-            if depth > 0 and git.is_file():
-                continue
-            for fname in PROJECT_FILES:
-                p = current / fname
-                if p.is_file():
-                    engine = {"CLAUDE.md": "claude", "AGENTS.md": "codex", "GEMINI.md": "antigravity"}[fname]
-                    rel = p.relative_to(root.parent).parent.as_posix()
-                    item = file_item(ctx, p, "instruction", name=f"{rel}/{fname}", scope="project", engine=engine,
-                                     group=rel, description="프로젝트 지침", frontmatter=False,
-                                     sessions=("lead", "worker", "orchestrator"))
-                    item.active, item.active_note = True, "작업 디렉터리가 이 프로젝트일 때 로드"
-                    if fname == "CLAUDE.md":
-                        length_warnings(item, doc="claude")
-                    elif fname == "AGENTS.md":
-                        length_warnings(item, doc="codex")
-                    out.append(item)
-            for rule in sorted(current.glob(".agents/rules/*.md")):
-                rel = rule.relative_to(root.parent).parent.parent.parent.as_posix()
-                out.append(file_item(ctx, rule, "rule", name=f"{rel}/{rule.name}", scope="project", engine="shared",
-                                     group=rel, description="프로젝트 .agents/rules", frontmatter=False))
-            if depth < 3:
-                try:
-                    subs = sorted(e.path for e in os.scandir(current)
-                                  if e.is_dir(follow_symlinks=False) and e.name not in SKIP_DIRS
-                                  and not e.name.startswith("."))
-                except OSError:
-                    subs = []
-                stack.extend((Path(s), depth + 1) for s in reversed(subs))
     return out
 
 

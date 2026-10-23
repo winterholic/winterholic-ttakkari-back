@@ -103,10 +103,12 @@ def collect_prompts(ctx: Ctx) -> list[Item]:
 
     from ttakkari.agents.qwen_local import QwenLocalAdapter
     short = QwenLocalAdapter.build_short_system_note(outbox="<outbox>", write_roots=["<write roots>"], kind="worker")
-    items.append(text_item("prompt", "Qwen 작업자 · 짧은 계약", "code|qwen_short_note", short, scope="ttakkari",
-                           engine="qwen-local", group="엔진별 주입", path=SRC + "agents/qwen_local.py",
-                           description="qwen-local 은 위 클라우드용 레이어를 모두 빼고 이 한 줄만 받는다.",
-                           sessions=("worker",), active=True, active_note="engine=qwen-local 일 때"))
+    contract = text_item("prompt", "Qwen 작업자 · 짧은 계약", "code|qwen_short_note", short, scope="ttakkari",
+                         engine="qwen-local", group="엔진별 주입", path=SRC + "agents/qwen_local.py",
+                         description="qwen-local 은 위 클라우드용 레이어를 모두 빼고 이 한 줄만 받는다.",
+                         sessions=("worker",), active=True, active_note="engine=qwen-local 일 때")
+    contract.hint_group, contract.hint_layer, contract.hint_concern = "qwen", "session", "instruction"
+    items.append(contract)
     items.append(text_item("prompt", "엔진별 주입 방식", "code|injection", INJECTION_TABLE.format(
         setting_sources=ctx.settings.claude_setting_sources or "(비어 있음: 사용자 전역 설정 포함)"),
         scope="ttakkari", engine="ttakkari", group="엔진별 주입", path=SRC + "agents/*.py, runs/desk.py",
@@ -203,17 +205,22 @@ def collect_policy(ctx: Ctx) -> list[Item]:
                            description="task_type 별 엔진·모델 우선순서(같은 단계는 부하로 분산). 켜진 엔진만 표시"))
     for group, fields in POLICY_FIELDS.items():
         data = {f: _setting(s, f) for f in fields if hasattr(s, f)}
-        items.append(json_item("policy", f"설정 · {group}", f"policy|settings|{group}", data, scope="ttakkari",
-                               engine="qwen-local" if group == "Qwen" else "ttakkari", group="설정(config)", source="config",
-                               path="~/.ttakkari/config.env 의 TTAKKARI_* (표시는 허용 목록 필드만)", active=True,
-                               description=", ".join(data)[:200]))
+        setting = json_item("policy", f"설정 · {group}", f"policy|settings|{group}", data, scope="ttakkari",
+                            engine="qwen-local" if group == "Qwen" else "ttakkari", group="설정(config)", source="config",
+                            path="~/.ttakkari/config.env 의 TTAKKARI_* (표시는 허용 목록 필드만)", active=True,
+                            description=", ".join(data)[:200])
+        if group == "Qwen":
+            setting.hint_group, setting.hint_layer, setting.hint_concern = "qwen", "session", "setting"
+        items.append(setting)
     q_row = ctx.app_settings.get("qwen_worker_activation")
-    items.append(json_item("policy", "Qwen 작업자 활성화(DB)", "policy|qwen_activation", {
+    activation = json_item("policy", "Qwen 작업자 활성화(DB)", "policy|qwen_activation", {
         "app_settings.qwen_worker_activation": q_row, "config_locked": "qwen_local_enabled" in s.model_fields_set,
         "qwen_local_enabled(config)": s.qwen_local_enabled},
         scope="ttakkari", engine="qwen-local", group="Qwen", source="db", path="DB app_settings[qwen_worker_activation]",
         active=bool(s.qwen_local_enabled or (q_row or {}).get("enabled")),
-        description="소유자가 비서 관리에서 켠다. 설정에 명시되면 설정이 이긴다"))
+        description="소유자가 비서 관리에서 켠다. 설정에 명시되면 설정이 이긴다")
+    activation.hint_group, activation.hint_layer, activation.hint_concern = "qwen", "session", "setting"
+    items.append(activation)
     for acc in ctx.accounts:
         acc["view"] = {**acc["view"], **_account_config(ctx, acc)}
         item = json_item("policy", f"계정 · {acc['name']}", f"policy|account|{acc['id']}", acc["view"], scope="account",

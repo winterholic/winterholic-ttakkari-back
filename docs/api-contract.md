@@ -531,6 +531,11 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 | GET | `/api/harness/items?q=&category=&engine=&scope=&active=&warned=&present=&session=&group=&limit=&cursor=` | `{total,items:[{id,category,name,group,description,scope,engine,sessions,source,path,mtime,present,active,active_note,kind,chars,lines,masked,warnings,alias_of,matched_in?,snippet?}],next_cursor,facets}`. category 는 쉼표 목록, limit 최대 60 |
 | GET | `/api/harness/items/{id}?offset=&length=` | 항목 + `{body,offset,next_offset,truncated_source,real_path,frontmatter,meta}`. 본문은 마스킹된 상태이며 length 500~40,000 |
 | GET | `/api/harness/layers?session=desk\|lead\|worker\|orchestrator&engine=claude\|codex\|antigravity\|muse\|qwen-local&pool=personal\|work` | `{session,session_label,engine,pool,layers:[{order,id,title,origin,source,applies,condition,evidence,phase,chars,preview,item_id}],notes,prompt_chars,applied,total,external}` |
+| GET | `/api/harness/groups/{group}` | group=claude\|codex\|muse\|qwen\|antigravity\|ttakkari\|projects. `{id,label,kind,blurb,total,present,missing,inactive,warnings,exists,concerns:[{id,label,total,present,missing,inactive,warnings,exists}],layers:[{id,label,note,order,evidence,applies,total,...,concerns:{id:n},link?,injection?}],notes}` (ADR 0070) |
+| GET | `/api/harness/projects` | `{projects:[{key,name,container,pool,total,...,engines,concerns}],total,scanned,without_harness,company}`. 회사(`hyperez/`)가 먼저 |
+| GET | `/api/harness/projects/detail?key=` | `{key,name,pool,total,...,engines:[{id,label,...,concerns:[{id,label,total,items:[행],truncated}]}]}`. key 는 `^\w[\w.\-]*(/\w[\w.\-]*)?$` 이고 아니면 422, 없으면 404 |
+
+2차 개편(ADR 0070)으로 `/api/harness` 응답에 `groups`·`labels`가 붙고, `/items` 는 `hgroup·concern·layer·project·pool` 필터와 행의 `hgroup·concern·layer·project·pool·crumb`, `/items/{id}` 는 `crumb·layer_label·counterparts:{items,concerns}` 를 더한다.
 
 경로는 입력으로 받지 않는다. 항목 id(14자리 16진)만 상세에 쓸 수 있고 모르는 id는 404, 잘못된 카테고리·범위는 422다. `evidence=external` 레이어는 엔진 CLI가 읽는 파일이라 이 저장소 코드로는 확인되지 않는다.
 

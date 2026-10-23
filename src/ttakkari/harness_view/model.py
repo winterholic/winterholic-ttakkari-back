@@ -55,6 +55,15 @@ class Item:
     # 깨진 참조 검사에 쓰는 후보 목록은 수집 단계에서만 쓰고 응답에는 넣지 않는다.
     refs: list[str] = field(default_factory=list)
     alias_of: str | None = None
+    # 계층 분류(taxonomy.assign 이 수집 뒤에 채운다). hgroup 은 최상위 7개 그룹, concern 은 관심사, layer 는 적용 레이어.
+    hgroup: str = ""
+    concern: str = ""
+    layer: str = ""
+    project: str = ""  # 프로젝트별 그룹의 프로젝트 키(예: projects/aip). 그 밖에는 빈 값.
+    pool: str = ""  # 프로젝트별 그룹의 범위: personal | company
+    hint_group: str = ""  # 수집기가 파생 규칙 대신 직접 지정하는 그룹(Muse·Qwen 처럼 category 만으로 못 가르는 항목)
+    hint_layer: str = ""
+    hint_concern: str = ""
     real_path: str | None = None
     abs_path: str | None = None  # 깨진 참조 검사용 실제 경로. 응답에는 넣지 않는다.
     _search: str = ""
@@ -82,6 +91,8 @@ class Item:
             "present": self.present, "active": self.active, "active_note": self.active_note, "kind": self.kind,
             "chars": self.chars, "lines": self.lines, "masked": self.masked, "warnings": list(self.warnings),
             "alias_of": self.alias_of,
+            "hgroup": self.hgroup, "concern": self.concern, "layer": self.layer, "project": self.project,
+            "pool": self.pool,
         }
 
 

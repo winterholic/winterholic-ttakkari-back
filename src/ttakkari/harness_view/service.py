@@ -17,8 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import HOME, get_settings
 from ttakkari.context.store import pinned_brief
+from ttakkari.harness_view import extras, projects, sources, taxonomy, ttakkari_side
 from ttakkari.harness_view import layers as layers_mod
-from ttakkari.harness_view import sources, ttakkari_side
 from ttakkari.harness_view.model import CATEGORIES, ENGINES, SCOPES, Item
 from ttakkari.harness_view.safe import mask_config
 from ttakkari.models import AppSetting, EngineAccount
@@ -47,6 +47,7 @@ class Snapshot:
     items: list[Item]
     by_id: dict[str, Item] = field(default_factory=dict)
     warnings: list[dict[str, Any]] = field(default_factory=list)
+    projects_seen: dict[str, str] = field(default_factory=dict)
 
 
 _cache: Snapshot | None = None
@@ -100,17 +101,21 @@ async def _db_context(db: AsyncSession) -> tuple[list[dict[str, Any]], dict[str,
     return accounts, {k: v for k, v in rows.items() if k == "qwen_worker_activation"}, await pinned_brief(db, scope="all")
 
 
-def _build(ctx: sources.Ctx, tools: list[Any], only: frozenset[str], roots: list[Path]) -> list[Item]:
+def _build(ctx: sources.Ctx, tools: list[Any], only: frozenset[str], roots: list[Path], qwen: Path) -> list[Item]:
     sources.load_claude_settings(ctx)
     sources.load_codex_config(ctx)
     items: list[Item] = []
     items += sources.collect_claude_instructions(ctx)
     items += sources.collect_codex_instructions(ctx)
     items += sources.collect_gemini_instructions(ctx)
-    items += sources.collect_projects(ctx, roots)
+    items += projects.collect_projects(ctx, roots, skip=(qwen,))
     items += sources.collect_claude_settings(ctx)
     items += sources.collect_codex_settings(ctx)
+    items += extras.collect_codex_extras(ctx)
     items += sources.collect_gemini_settings(ctx)
+    items += extras.collect_antigravity_extras(ctx)
+    items += extras.collect_muse(ctx)
+    items += extras.collect_qwen(ctx, qwen)
     items += sources.collect_skills(ctx)
     items += sources.collect_claude_agents_commands_rules(ctx)
     items += sources.collect_memory(ctx)
@@ -126,6 +131,7 @@ def _build(ctx: sources.Ctx, tools: list[Any], only: frozenset[str], roots: list
     items += ttakkari_side.collect_ttakkari_tools(tools, only)
     sources.check_refs(ctx, items)
     sources.check_skill_overrides(items)
+    taxonomy.assign(items)
     for item in items:
         item.finalize()
     return items
@@ -143,12 +149,14 @@ async def snapshot(db: AsyncSession, *, refresh: bool = False) -> Snapshot:
         tools = list(listed[0] if isinstance(listed, tuple) else listed)
         home = user_home()
         roots = project_roots()
-        files = sources.build_safe_files(home, settings.home, roots)
+        qwen = extras.qwen_root(home, getattr(settings, "qwen_local_worker_path", None))
+        files = sources.build_safe_files(home, settings.home, roots, qwen)
         ctx = sources.Ctx(user_home=home, ttakkari_home=settings.home, files=files, settings=settings,
                           now=time.time(), accounts=accounts, app_settings=app_settings, pinned_brief=brief)
         only = ttakkari_side.orchestrator_only_names()
-        items = await asyncio.to_thread(_build, ctx, tools, only, roots)
-        snap = Snapshot(built_at=time.monotonic(), items=items, by_id={i.id: i for i in items})
+        items = await asyncio.to_thread(_build, ctx, tools, only, roots, qwen)
+        snap = Snapshot(built_at=time.monotonic(), items=items, by_id={i.id: i for i in items},
+                        projects_seen=dict(ctx.projects_seen))
         snap.warnings = collect_warnings(items)
         _cache = snap
         return snap
@@ -180,6 +188,9 @@ def summary(snap: Snapshot) -> dict[str, Any]:
         "warning_kinds": {k: kinds.get(k, 0) for k in ("broken_ref", "duplicate", "too_long", "other")},
         "warnings": snap.warnings[:40],
         "session_kinds": list(layers_mod.SESSION_KINDS), "layer_engines": list(layers_mod.LAYER_ENGINES),
+        "groups": taxonomy.group_cards(items),
+        "labels": {"concerns": taxonomy.CONCERNS, "layers": taxonomy.LAYER_LABEL,
+                   "groups": {g: d["label"] for g, d in taxonomy.GROUPS.items()}},
     }
 
 
@@ -195,7 +206,9 @@ def _snippet(text: str, needle: str, width: int = 70) -> str:
 
 def search(snap: Snapshot, *, q: str = "", categories: set[str] | None = None, engine: str | None = None,
            scope: str | None = None, active: bool | None = None, warned: bool = False, session: str | None = None,
-           present: bool | None = None, group: str | None = None, limit: int = 30, cursor: int = 0) -> dict[str, Any]:
+           present: bool | None = None, group: str | None = None, hgroup: str | None = None, concern: str | None = None,
+           layer: str | None = None, project: str | None = None, pool: str | None = None, limit: int = 30,
+           cursor: int = 0) -> dict[str, Any]:
     tokens = [t for t in q.lower().split() if t][:6]
     hits: list[tuple[int, int, Item, str]] = []
     cat_order = list(CATEGORIES)
@@ -216,6 +229,16 @@ def search(snap: Snapshot, *, q: str = "", categories: set[str] | None = None, e
             continue
         if group and item.group != group:
             continue
+        if hgroup and item.hgroup != hgroup:
+            continue
+        if concern and item.concern != concern:
+            continue
+        if layer and item.layer != layer:
+            continue
+        if project and item.project != project:
+            continue
+        if pool and item.pool != pool:
+            continue
         score = 0
         if tokens:
             if not all(t in item._search for t in tokens):
@@ -223,12 +246,15 @@ def search(snap: Snapshot, *, q: str = "", categories: set[str] | None = None, e
             name, desc = item.name.lower(), item.description.lower()
             score = sum(30 if t in name else 10 if t in desc else 3 if t in (item.path or "").lower() else 1
                         for t in tokens) + (20 if name == q.lower().strip() else 0)
-        hits.append((-score, cat_order.index(item.category), item, ""))
-    hits.sort(key=lambda h: (h[0], h[1], h[2].name.lower()))
+        # 그룹을 고르고 검색어가 없으면 레이어 순서(아래로 갈수록 위에 얹힘)대로 보여 준다.
+        rank = taxonomy.layer_rank(item.hgroup, item.layer) if hgroup and not tokens else cat_order.index(item.category)
+        hits.append((-score, rank, item, ""))
+    hits.sort(key=lambda h: (h[0], h[1], h[2].group.lower() if hgroup else "", h[2].name.lower()))
     page = hits[cursor:cursor + limit]
     rows = []
     for _, _, item, _ in page:
         row = item.summary()
+        row["crumb"] = taxonomy.crumb(item)
         if tokens:
             where = [w for w, text in (("name", item.name), ("description", item.description), ("path", item.path or ""))
                      if any(t in text.lower() for t in tokens)]
@@ -254,9 +280,37 @@ def detail(snap: Snapshot, item_id: str, *, offset: int = 0, length: int = BODY_
         "body": chunk, "offset": offset, "next_offset": end if end < len(item.body) else None,
         "truncated_source": item.truncated, "real_path": item.real_path,
         "frontmatter": item.meta.get("frontmatter"), "meta": mask_config({k: v for k, v in item.meta.items() if k != "frontmatter"}),
+        "crumb": taxonomy.crumb(item), "layer_label": taxonomy.LAYER_LABEL.get(item.layer, item.layer),
+        "counterparts": taxonomy.counterparts(snap.items, item),
     })
     return row
 
 
 async def layers(db: AsyncSession, snap: Snapshot, *, session: str, engine: str, pool: str) -> dict[str, Any]:
     return await layers_mod.build(db, snap.items, session=session, engine=engine, pool=pool, settings=get_settings())
+
+
+async def group_detail(db: AsyncSession, snap: Snapshot, gid: str) -> dict[str, Any] | None:
+    if gid not in taxonomy.GROUPS:
+        return None
+    injection: list[dict[str, Any]] | None = None
+    engine = taxonomy.GROUPS[gid]["engine"]
+    if taxonomy.GROUPS[gid]["kind"] == "main" and engine in layers_mod.LAYER_ENGINES:
+        # 따까리가 이 엔진에 얹는 것: 같은 합성 코드(layers)에서 전달 방식·가드·도구 레이어만 꺼낸다(작업자 세션 기준).
+        built = await layers_mod.build(db, snap.items, session="worker", engine=engine, pool="personal",
+                                       settings=get_settings())
+        injection = [{k: layer[k] for k in ("id", "title", "phase", "applies", "evidence", "condition", "item_id", "source")}
+                     for layer in built["layers"] if layer["phase"] not in ("load", "prompt")]
+        prompt = [layer for layer in built["layers"] if layer["phase"] == "prompt" and layer["applies"]]
+        injection.insert(0, {"id": "prompt_parts", "title": f"프롬프트 레이어 {len(prompt)}개 합본(작업자 세션 기준)",
+                             "phase": "prompt", "applies": bool(prompt), "evidence": "code",
+                             "condition": "세션별 레이어 보기는 따까리 하네스 그룹에 있다", "item_id": None, "source": "runs/manager.py"})
+    return taxonomy.group_detail(snap.items, gid, injection)
+
+
+def project_list(snap: Snapshot) -> dict[str, Any]:
+    return taxonomy.projects_list(snap.items, snap.projects_seen)
+
+
+def project_detail(snap: Snapshot, key: str) -> dict[str, Any] | None:
+    return taxonomy.project_detail(snap.items, key)

@@ -107,3 +107,9 @@
 - 격리 브랜치 `integ/creative-v2-main-20261023`을 `origin/main`(7626a91)에서 만들고 `feat/creative-multidimensional-v2`(코드 62890c5, 문서 363a233)를 `--no-ff`로 병합했다. 충돌 없음. 마이그레이션 변경 없음(diff에 alembic 없음).
 - 검증: `verify_deploy_gate.sh --commit HEAD --base origin/main` → ruff 통과, 계약 묶음 `78 passed`, 바뀐 테스트 10개 파일 `132 passed`. `-k "creative or runs_manager or qwen_local or write_roots or route_inventory"` → `222 passed`. 전체 pytest는 배포 게이트가 실행한다.
 - 게이트 완화 없음: lab_manual/unverified/blocked 렌더 gate 닫힘, LLM 미검토 계획 422, `semantic_support_unverified` 유지. 렌더러(8.7)는 여전히 미연결이며 실제 영상 0편, 실제 managed Qwen intent 응답은 미검증이다.
+
+### 배포 상태 (2026-10-23 기록 시점)
+
+- backend: main `710f184c9a99616fad8cfaf28b77c4771f32e81e` push 완료, 배포 예약 `6c75778a-740b-45d1-bf4f-c480e8c31ffd`는 기록 시점에 `testing`(배포 게이트 전체 pytest 진행)이다. live `/api/version`은 아직 `7626a91`이므로 v2 API 반영은 미완료다. 성공 여부는 `backend_deploy_status`와 live `/api/version`, `/api/creative/v2/*` 응답으로 별도 확인해야 한다.
+- frontend: main `e4de26f519cf329ad04f9e86fa7aec68b994eff8` push, Vercel Production deployment `7267320935` success(`ttakkari-qmecx285n-winterholics-projects.vercel.app`). live 번들은 `index-CaMBCAnp.js`, `CreativePage-BBtU9mLF.js`, `CreativePlanPage-A4cSvlE9.js`이며 `creative/plan` route와 `intent/runs` 호출 문자열이 들어 있다.
+- 브라우저: configured ttakkari_browser tool이 이 Run에 없어 운영 UI 스크린샷과 메뉴 진입 확인은 미실행이다. shell browser fallback은 쓰지 않았다. 인증된 UI는 미검증으로 유지한다.

@@ -627,20 +627,110 @@ class GenerationController:
             raise StageError(stage, args, returncode,
                              f"last {_LOG_TAIL_LINES} log lines:\n{tail}")
 
-    async def run_pytest(self, job, release, env):
-        pytest = (str(release / ".venv/bin/python"), "-m", "pytest", "-q", "--timeout=120")
+    # 한 게이트가 pytest 를 띄우는 최대 횟수(첫 실행 + 재시도). 서로 다른 흔들린 시험이 있어도 시험마다 한 번만 재시도한다.
+    _PYTEST_MAX_RUNS = 4
+    _PRIOR_FAILURE_LIMIT = 10
+
+    def _gate_cache_dir(self, job) -> Path:
+        # NOTE: stepwise 상태는 pytest cache_dir 에 남는다. 릴리스 폴더(.pytest_cache)를 쓰면 같은 SHA 를 다시 준비하거나 다른 후보가
+        # 폴더를 재사용할 때 이전 실행의 중단 지점이 섞여, 앞부분 시험을 건너뛴 채 통과할 수 있다. 배포 작업(job id)마다
+        # 따로 두고 시작 전에 비운다.
+        return self.store.jobs / f"{job['id']}.pytest-cache"
+
+    @staticmethod
+    def _stepwise_last_failed(cache_dir: Path) -> str | None:
+        """pytest --sw 가 남긴 마지막 실패 시험 id. 읽지 못하면 None(호출자는 재시도하지 않고 실패시킨다)."""
         try:
-            # 첫 실행을 끝까지 돌려야 --lf 재시도에서 아직 실행하지 않은 결함을 놓치지 않는다.
-            await self.command(job, release, *pytest, stage="pytest", env=env)
-        except StageError as exc:
-            # NOTE: 여러 세션이 한 Mac 에서 동시에 돌아 부하가 높으면 시간에 민감한 시험 한 건이 배포 전체를 막았다
-            # (2026-10-19 연속 3회). 실패한 시험만 한 번 더 돌려, 진짜 결함은 다시 실패하고 일시적 흔들림은 통과시킨다.
-            # 시험 실패(exit 1)만 재시도하고 수집 오류·타임아웃은 그대로 실패시킨다.
-            if exc.exit_code != 1:
-                raise
-            with (self.store.jobs / f"{job['id']}.log").open("ab") as log_file:
-                log_file.write(b"\n== pytest failed; rerunning only the failed tests once (--lf) ==\n")
-            await self.command(job, release, *pytest, "--lf", stage="pytest", env=env)
+            info = json.loads((cache_dir / "v/cache/stepwise").read_text())
+            failed = info["last_failed"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return failed if isinstance(failed, str) and failed else None
+
+    def _prior_failures_path(self) -> Path:
+        return self.store.root / "gate-last-failed.json"
+
+    def _load_prior_failures(self) -> list[str]:
+        try:
+            ids = json.loads(self._prior_failures_path().read_text())["nodeids"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return []
+        # argv 로 그대로 넘기므로 옵션처럼 보이는 값과 시험 id 모양이 아닌 값은 버린다.
+        return [i for i in ids if isinstance(i, str) and not i.startswith("-") and ".py" in i][:self._PRIOR_FAILURE_LIMIT]
+
+    def _save_prior_failures(self, job, nodeids: list[str]) -> None:
+        path = self._prior_failures_path()
+        try:
+            if nodeids:
+                path.write_text(json.dumps({"revision": job.get("revision"), "job": job["id"], "at": _utcnow(),
+                                            "nodeids": nodeids[:self._PRIOR_FAILURE_LIMIT]}))
+            else:
+                path.unlink(missing_ok=True)
+        except OSError:
+            log.warning("could not update %s", path, exc_info=True)
+
+    async def run_pytest(self, job, release, env):
+        """전체 시험을 stepwise(--sw)로 돈다: 첫 실패에서 멈추고, 재시도는 그 시험부터 끝까지 이어 간다.
+
+        NOTE: 예전에는 첫 실행을 -x 로 멈추고 --lf 로 실패한 시험만 다시 돌았다. 재시도가 통과하면 중단 지점 뒤의
+        시험은 한 번도 실행되지 않은 채 게이트가 통과했다. --sw 재시도는 실패했던 시험을 먼저 다시 돌고 통과하면 뒤
+        시험을 이어서 돈다. 같은 시험이 다시 실패하면 진짜 결함이라 게이트가 실패하고, 뒤에서 처음 실패한 시험은
+        한 번 더 재시도한다(시험마다 한 번). 시험 실패만 재시도하고 수집 오류·타임아웃은 그대로 실패시킨다.
+        (여러 세션이 한 Mac 에서 동시에 돌아 부하가 높으면 시간에 민감한 시험 한 건이 배포 전체를 막았다. 2026-10-19)
+        """
+        python = str(release / ".venv/bin/python")
+        pytest = (python, "-m", "pytest", "-q", "--timeout=120")
+        cache_dir = self._gate_cache_dir(job)
+        log_path = self.store.jobs / f"{job['id']}.log"
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        try:
+            await self._run_prior_failures(job, release, env, pytest, cache_dir, log_path)
+            # 보안 회귀 묶음은 앞선 security_gate 단계가 이미 실행했다. 같은 시험을 전체 실행에서 또 돌지 않는다.
+            main = (*pytest, "-m", "not security", "-o", f"cache_dir={cache_dir / 'main'}", "--sw")
+            started_at: str | None = None
+            for attempt in range(1, self._PYTEST_MAX_RUNS + 1):
+                try:
+                    await self.command(job, release, *main, stage="pytest", env=env)
+                    self._save_prior_failures(job, [])
+                    return
+                except StageError as exc:
+                    # NOTE: --sw 는 시험 실패를 exit 2(Interrupted)로 끝낸다. 수집 오류도 exit 2 이므로 stepwise 가 실패
+                    # 시험을 기록했을 때만 시험 실패로 본다. 그 밖의 종료(수집 오류·내부 오류·타임아웃)는 재시도하지 않는다.
+                    failed = self._stepwise_last_failed(cache_dir / "main")
+                    if exc.exit_code not in (1, 2) or failed is None:
+                        raise
+                    if failed == started_at or attempt == self._PYTEST_MAX_RUNS:
+                        self._save_prior_failures(job, [failed])
+                        raise
+                    started_at = failed
+                    with log_path.open("ab") as log_file:
+                        log_file.write(f"\n== pytest failed at {failed}; retrying from it once and continuing "
+                                       f"to the end (--sw, run {attempt + 1}/{self._PYTEST_MAX_RUNS}) ==\n".encode())
+        finally:
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+    async def _run_prior_failures(self, job, release, env, pytest, cache_dir, log_path) -> None:
+        """직전 배포 게이트에서 실패한 시험을 전체 실행 앞에서 먼저 돌려, 같은 결함이면 몇 분 안에 실패를 알린다.
+
+        전체 실행에도 그 시험이 원래 자리에서 다시 포함되므로 시험 범위는 줄지 않는다. 이 단계는 속도용이라 시험이
+        사라졌거나 수집되지 않으면(exit 4/5 등) 그냥 넘어가고, 시험 실패(exit 1)만 한 번 재시도해 두 번 실패하면 중단한다.
+        """
+        ids = self._load_prior_failures()
+        if not ids:
+            return
+        command = (*pytest, "-o", f"cache_dir={cache_dir / 'prior'}", *ids)
+        with log_path.open("ab") as log_file:
+            log_file.write(f"\n== running the previous gate's failures first: {' '.join(ids)} ==\n".encode())
+        for attempt in (1, 2):
+            try:
+                await self.command(job, release, *command, stage="pytest", env=env)
+                return
+            except StageError as exc:
+                if exc.exit_code != 1:
+                    return
+                if attempt == 2:
+                    self._save_prior_failures(job, ids)
+                    raise
 
     async def run_security_gate(self, job, release, env):
         """SEC2-GATE-01: 보안 회귀 묶음을 배포 게이트에서 필수 실행한다."""

@@ -28,6 +28,7 @@ ADR 0036(Run 실행기와 API 수명 분리)과는 별도 과제다. 이 ADR은 
 - 게이트는 `pytest -q -x --timeout=120`을 알파벳 순서로 돌린다(`generation_deployment.py`
   run_pytest). 첫 실패에서 멈추므로 공존하는 다른 실패는 보이지 않는다. 실패하면 `--lf`로
   한 번만 다시 돌린다. 성공 실행 기준 2,917개, 863초(b1a3d162 로그).
+  (2026-10-23 갱신: 첫 실행은 `--sw` stepwise로 바뀌었다. `docs/design/generation-deployment.md` 참조.)
 - 게이트가 검증한 SHA와 배포 아티팩트는 일치한다. `git archive <sha>`로 만든 릴리스에서
   테스트하고, `verify_test_binding`이 릴리스 표식·tested_revision·계약 지문을 대조한다.
   이 부분은 유지한다.

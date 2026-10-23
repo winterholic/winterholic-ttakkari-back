@@ -742,61 +742,27 @@ async def test_supervisor_never_routes_to_an_unowned_boot(tmp_path, monkeypatch)
     assert slots.route is None
 
 
-async def test_gate_runs_full_suite_then_reruns_only_failed_tests_once(tmp_path):
+def _gate_controller(tmp_path, command):
     from types import SimpleNamespace
 
-    from ttakkari.generation_deployment import GenerationController, StageError
+    from ttakkari.generation_deployment import GenerationController
 
-    calls: list[tuple] = []
-
-    def controller(results):
-        c = object.__new__(GenerationController)
-        c.store = SimpleNamespace(jobs=tmp_path)
-
-        async def command(job, release, *args, stage="command", env=None):
-            calls.append(args)
-            outcome = results.pop(0)
-            if outcome is not None:
-                raise StageError(stage, args, outcome, "x")
-
-        c.command = command
-        return c
-
-    job = {"id": "j"}
-    await controller([1, None]).run_pytest(job, tmp_path, {})  # 흔들린 시험 1건은 재실행에서 통과한다
-    assert "-x" not in calls[0] and "--lf" in calls[1] and "-x" not in calls[1]
-
-    calls.clear()
-    with pytest.raises(StageError):  # 진짜 결함은 재실행에서도 실패해 배포를 막는다
-        await controller([1, 1]).run_pytest(job, tmp_path, {})
-    assert len(calls) == 2
-
-    calls.clear()
-    with pytest.raises(StageError):  # 수집 오류(exit 2)·타임아웃(None)은 재시도하지 않는다
-        await controller([2]).run_pytest(job, tmp_path, {})
-    assert len(calls) == 1
-
-
-async def test_retry_never_hides_a_later_unexecuted_failure(tmp_path):
-    import asyncio
-    from types import SimpleNamespace
-
-    from ttakkari.generation_deployment import GenerationController, StageError
-
-    (tmp_path / "test_examples.py").write_text(
-        "from pathlib import Path\n"
-        "def test_transient():\n"
-        "    marker = Path(__file__).with_suffix('.ran')\n"
-        "    if not marker.exists():\n"
-        "        marker.touch()\n"
-        "        assert False, 'transient failure'\n"
-        "def test_permanent():\n"
-        "    assert False, 'permanent failure must block deployment'\n"
-    )
+    jobs = tmp_path / "jobs"
+    jobs.mkdir(exist_ok=True)
     control = object.__new__(GenerationController)
-    control.store = SimpleNamespace(jobs=tmp_path)
+    control.store = SimpleNamespace(jobs=jobs, root=tmp_path)
+    control.command = command
+    return control
 
-    async def command(job, release, *args, stage="command", env=None):
+
+def _toy_command(runs):
+    """게이트가 만든 pytest 명령을 현재 인터프리터로 진짜 실행한다(release 폴더가 cwd)."""
+    import asyncio
+
+    from ttakkari.generation_deployment import StageError
+
+    async def command(job, release, *args, stage="command", env=None, timeout=None):
+        runs.append(args[1:])
         proc = await asyncio.create_subprocess_exec(
             sys.executable, *args[1:], cwd=release,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
@@ -804,10 +770,163 @@ async def test_retry_never_hides_a_later_unexecuted_failure(tmp_path):
         output, _ = await proc.communicate()
         if proc.returncode:
             raise StageError(stage, args, proc.returncode, output.decode())
+    return command
 
-    control.command = command
-    with pytest.raises(StageError, match="test_permanent"):
-        await control.run_pytest({"id": "coverage"}, tmp_path, {})
+
+def _toy_project(root: Path, kinds: str) -> Path:
+    """kinds 문자 하나가 시험 하나: o=통과, t=처음 한 번만 실패(흔들림), f=항상 실패. 실행 횟수를 ran_* 에 남긴다."""
+    release = root / "release"
+    state = root / "state"
+    release.mkdir()
+    state.mkdir()
+    for index, kind in enumerate(kinds):
+        name = f"t{index}"
+        lines = ["from pathlib import Path", f"def test_{name}():",
+                 f"    Path({str(state / ('ran_' + name))!r}).open('a').write('x')"]
+        if kind == "t":
+            marker = state / ("seen_" + name)
+            lines += [f"    m = Path({str(marker)!r})", "    if not m.exists():", "        m.touch()",
+                      "        assert False, 'transient'"]
+        elif kind == "f":
+            lines += ["    assert False, 'permanent'"]
+        (release / f"test_{name}.py").write_text("\n".join(lines) + "\n")
+    return release
+
+
+def _executions(root: Path, count: int) -> list[int]:
+    state = root / "state"
+    return [len((state / f"ran_t{i}").read_text()) if (state / f"ran_t{i}").exists() else 0 for i in range(count)]
+
+
+@pytest.mark.parametrize(("kinds", "passes", "executions"), [
+    # 흔들린 시험 하나: 재시도로 통과하고 중단 지점 뒤(t2)까지 끝까지 실행된다.
+    ("otoo", True, [1, 2, 1, 1]),
+    # 흔들린 시험 뒤에 진짜 결함: 예전에는 재시도만 통과하고 t2 는 실행조차 안 된 채 게이트가 통과했다. 이제 t2 가 실행돼 실패한다.
+    ("otf", False, [1, 2, 2]),
+    # 서로 다른 흔들림 둘은 시험마다 한 번씩 재시도해 통과한다.
+    ("toot", True, [2, 1, 1, 2]),
+    # 진짜 결함은 재시도에서도 실패한다. 뒤 시험은 실행하지 않고 바로 멈춘다(빠른 실패).
+    ("ofo", False, [1, 2, 0]),
+])
+async def test_gate_stepwise_retry_runs_everything_after_the_stop_point(tmp_path, kinds, passes, executions):
+    from ttakkari.generation_deployment import StageError
+
+    runs: list[tuple] = []
+    release = _toy_project(tmp_path, kinds)
+    control = _gate_controller(tmp_path, _toy_command(runs))
+    if passes:
+        await control.run_pytest({"id": "toy"}, release, {})
+    else:
+        with pytest.raises(StageError):
+            await control.run_pytest({"id": "toy"}, release, {})
+    assert _executions(tmp_path, len(kinds)) == executions
+    assert all("--sw" in args and "-x" not in args and "--lf" not in args for args in runs)
+    assert not (tmp_path / "jobs" / "toy.pytest-cache").exists()  # 작업별 캐시는 끝나면 지운다
+
+
+async def test_gate_ignores_a_stale_stepwise_cache_left_in_the_release_folder(tmp_path):
+    """같은 릴리스 폴더를 재사용해도 이전 실행의 중단 지점이 새 게이트에 섞여 앞부분 시험이 건너뛰어지면 안 된다."""
+    runs: list[tuple] = []
+    release = _toy_project(tmp_path, "ooo")
+    stale = release / ".pytest_cache/v/cache"
+    stale.mkdir(parents=True)
+    (stale / "stepwise").write_text(json.dumps({
+        "last_failed": "test_t2.py::test_t2", "last_test_count": 3, "last_cache_date_str": "2026-10-23T00:00:00"}))
+    control = _gate_controller(tmp_path, _toy_command(runs))
+    stale_job_cache = tmp_path / "jobs" / "toy.pytest-cache/main/v/cache"
+    stale_job_cache.mkdir(parents=True)
+    (stale_job_cache / "stepwise").write_text((stale / "stepwise").read_text())
+    await control.run_pytest({"id": "toy"}, release, {})
+    assert _executions(tmp_path, 3) == [1, 1, 1]
+
+
+async def test_gate_does_not_retry_collection_errors_or_timeouts(tmp_path):
+    from ttakkari.generation_deployment import StageError
+
+    runs: list[tuple] = []
+    release = _toy_project(tmp_path, "oo")
+    (release / "test_broken.py").write_text("import module_that_does_not_exist_xyz\n")
+    control = _gate_controller(tmp_path, _toy_command(runs))
+    with pytest.raises(StageError):  # 수집 오류는 --sw 에서도 exit 2 지만 실패 시험이 기록되지 않으므로 재시도하지 않는다
+        await control.run_pytest({"id": "toy"}, release, {})
+    assert len(runs) == 1
+
+    calls: list[tuple] = []
+
+    async def timed_out(job, release, *args, stage="command", env=None, timeout=None):
+        calls.append(args)
+        raise StageError(stage, args, None, "timed out")
+
+    with pytest.raises(StageError):
+        await _gate_controller(tmp_path, timed_out).run_pytest({"id": "t2"}, release, {})
+    assert len(calls) == 1
+
+
+async def test_gate_runs_previous_failures_first_then_the_whole_suite(tmp_path):
+    from ttakkari.generation_deployment import StageError
+
+    calls: list[tuple] = []
+    outcomes: list[int | None] = []
+
+    async def command(job, release, *args, stage="command", env=None, timeout=None):
+        calls.append(args)
+        if outcomes and (code := outcomes.pop(0)) is not None:
+            raise StageError(stage, args, code, "x")
+
+    control = _gate_controller(tmp_path, command)
+    job = {"id": "j1", "revision": "a" * 40}
+    # 첫 게이트: 전체 실행이 같은 시험에서 두 번 실패 → 그 시험이 기록된다. (stepwise 캐시가 없으면 재시도 없이 실패한다)
+    outcomes[:] = [2]
+    with pytest.raises(StageError):
+        await control.run_pytest(job, tmp_path, {})
+    assert not (tmp_path / "gate-last-failed.json").exists()  # 실패 시험을 알 수 없으면 기록하지 않는다
+
+    (tmp_path / "gate-last-failed.json").write_text(json.dumps(
+        {"nodeids": ["tests/test_x.py::test_y", "-x", "--collect-only", "plain-text"]}))
+    calls.clear()
+    outcomes[:] = [None, None]
+    await control.run_pytest({"id": "j2", "revision": "b" * 40}, tmp_path, {})
+    assert calls[0][-1] == "tests/test_x.py::test_y" and "-x" not in calls[0] and "--collect-only" not in calls[0]
+    assert "--sw" not in calls[0] and "--sw" in calls[1] and "not security" in calls[1]
+    assert not (tmp_path / "gate-last-failed.json").exists()  # 통과하면 지운다
+
+    # 직전 실패가 이번에도 실패하면 한 번 재시도한 뒤 전체 실행 없이 실패한다.
+    (tmp_path / "gate-last-failed.json").write_text(json.dumps({"nodeids": ["tests/test_x.py::test_y"]}))
+    calls.clear()
+    outcomes[:] = [1, 1]
+    with pytest.raises(StageError):
+        await control.run_pytest({"id": "j3", "revision": "c" * 40}, tmp_path, {})
+    assert len(calls) == 2 and all("--sw" not in c for c in calls)
+    assert json.loads((tmp_path / "gate-last-failed.json").read_text())["nodeids"] == ["tests/test_x.py::test_y"]
+
+    # 시험이 없어졌거나 수집되지 않으면(exit 4) 속도용 단계라 건너뛰고 전체 실행으로 간다.
+    calls.clear()
+    outcomes[:] = [4, None]
+    await control.run_pytest({"id": "j4", "revision": "d" * 40}, tmp_path, {})
+    assert len(calls) == 2 and "--sw" in calls[1]
+
+
+async def test_security_tests_run_once_between_the_security_gate_and_the_full_run(tmp_path):
+    """보안 묶음(-m security)은 security_gate 단계가 실행하고, 전체 실행은 -m 'not security' 로 겹치지 않는다. 합치면 전부다."""
+    from ttakkari.security.gate import build_security_gate_command
+
+    runs: list[tuple] = []
+    release = tmp_path / "release"
+    release.mkdir()
+    (release / "pytest.ini").write_text("[pytest]\nmarkers =\n    security: s\n")
+    state = tmp_path / "state"
+    state.mkdir()
+    for name, mark in (("sec1", "@pytest.mark.security\n"), ("sec2", "@pytest.mark.security\n"),
+                       ("plain1", ""), ("plain2", "")):
+        (release / f"test_{name}.py").write_text(
+            "import pytest\nfrom pathlib import Path\n"
+            f"{mark}def test_{name}():\n    Path({str(state / name)!r}).open('a').write('x')\n")
+    command = _toy_command(runs)
+    control = _gate_controller(tmp_path, command)
+    await command({"id": "g"}, release, *build_security_gate_command(sys.executable, timeout=120), stage="security_gate")
+    assert sorted(p.name for p in state.iterdir()) == ["sec1", "sec2"]
+    await control.run_pytest({"id": "toy"}, release, {})
+    assert {p.name: p.read_text() for p in state.iterdir()} == {n: "x" for n in ("sec1", "sec2", "plain1", "plain2")}
 
 
 # ---- 스키마 계약: 별칭(이름이 바뀐 옛 리비전)·유휴 대기 -------------------------------------

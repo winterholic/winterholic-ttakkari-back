@@ -98,6 +98,7 @@ os.environ.update({
 import httpx
 import pytest
 import pytest_asyncio
+from argon2 import PasswordHasher
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -112,10 +113,78 @@ from ttakkari.main import app
 from ttakkari.models import Base, Credential
 from ttakkari.runs import desk_pool, profiles, usage_store
 from ttakkari.runs.manager import _background, manager
+from ttakkari.security import passwords as _passwords
 from ttakkari.security.auth import issue_access_token, limiter
 from ttakkari.security.passwords import hash_password
 
 PASSWORD = "correct-horse-battery"
+
+# 시험에서만 argon2 비용을 낮춘다(기본 t=3, m=64MiB, p=4 는 해시 한 번에 약 26ms). 운영 해시 설정은 passwords.py 가 그대로
+# 갖고 있고, 이 대입은 pytest 프로세스 안에서만 일어난다(tests/test_fixture_reset.py 가 운영 값이 그대로임을 고정한다).
+# 낮은 비용으로 만든 해시도 운영 해셔가 파라미터를 읽어 그대로 검증한다.
+_passwords._hasher = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+# 시험마다 같은 계정을 다시 넣으므로 해시는 세션에서 한 번만 만든다.
+PASSWORD_HASH = hash_password(PASSWORD)
+
+_TABLE_NAMES = [t.name for t in Base.metadata.sorted_tables]
+_ALL_TABLES_SQL = ", ".join(f'"{n}"' for n in _TABLE_NAMES)
+# 시험이 건드린 테이블 = 행이 있는 테이블 + 행을 지웠어도 identity/serial 시퀀스가 전진한 테이블.
+# 쓰기를 추적하지 않고 DB 상태를 그대로 읽으므로, 어떤 경로(ORM·원시 SQL·다른 연결)로 썼든 놓치지 않는다.
+_DIRTY_SQL = " UNION ".join([
+    *(f"SELECT '{n}' AS n WHERE EXISTS (SELECT 1 FROM \"{n}\")" for n in _TABLE_NAMES),
+    (
+        "SELECT t.relname AS n FROM pg_class t "
+        "JOIN pg_depend d ON d.refobjid = t.oid AND d.deptype IN ('a', 'i') "
+        "JOIN pg_class s ON s.oid = d.objid AND s.relkind = 'S' "
+        "JOIN pg_sequences q ON q.sequencename = s.relname "
+        "WHERE q.last_value IS NOT NULL"
+    ),
+])
+# TTAKKARI_TEST_FULL_TRUNCATE=1 이면 예전처럼 매번 모든 테이블을 비운다(되돌리기·대조용).
+FULL_TRUNCATE = os.environ.get("TTAKKARI_TEST_FULL_TRUNCATE") == "1"
+RESET_STATS = {"selective": 0, "tables": 0, "full": 0, "fallback": 0}
+
+
+async def dirty_tables(db) -> set[str]:
+    rows = (await db.execute(text(_DIRTY_SQL))).all()
+    return {r[0] for r in rows} & set(_TABLE_NAMES)
+
+
+async def reset_database(db) -> None:
+    """모델 테이블을 시험 시작 상태(비어 있고 시퀀스 처음, 계정 1개)로 되돌린다.
+
+    건드린 테이블만 비운다. 건드린 테이블을 읽는 데 실패하면 예전처럼 전부 비운다(fail-safe).
+    """
+    # kb_* 원장은 BEFORE TRUNCATE 트리거로 TRUNCATE 가 막혀 있다(Alembic 0058). 시험 초기화만 트리거를 건너뛴다.
+    await db.execute(text("SET session_replication_role = 'replica'"))
+    names = _ALL_TABLES_SQL
+    if FULL_TRUNCATE:
+        RESET_STATS["full"] += 1
+    else:
+        try:
+            # 실패한 SQL 은 트랜잭션을 중단시키므로 savepoint 안에서 읽는다.
+            async with db.begin_nested():
+                dirty = await dirty_tables(db)
+            names = ", ".join(f'"{n}"' for n in sorted(dirty))
+            RESET_STATS["selective"] += 1
+            RESET_STATS["tables"] += len(dirty)
+        except Exception:  # noqa: BLE001
+            RESET_STATS["fallback"] += 1
+            names = _ALL_TABLES_SQL
+    if names:
+        await db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
+    await db.execute(text("SET session_replication_role = 'origin'"))
+    db.add(Credential(id=1, password_hash=PASSWORD_HASH))
+    await db.commit()
+
+
+def pytest_terminal_summary(terminalreporter):
+    s = RESET_STATS
+    if s["selective"] or s["full"] or s["fallback"]:
+        mean = s["tables"] / s["selective"] if s["selective"] else 0
+        terminalreporter.write_line(
+            f"db reset: {s['selective']} selective (avg {mean:.1f}/{len(_TABLE_NAMES)} tables), "
+            f"{s['full']} forced full, {s['fallback']} fell back to full")
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
@@ -148,14 +217,8 @@ async def _clean(_schema_and_app):
     await profiles.flush_persist()
     await usage_store.flush()
     usage_store.reset()
-    names = ", ".join(f'"{t.name}"' for t in Base.metadata.sorted_tables)
     async with sessionmaker()() as db:
-        # kb_* 원장은 BEFORE TRUNCATE 트리거로 TRUNCATE 가 막혀 있다(Alembic 0058). 시험 초기화만 트리거를 건너뛴다.
-        await db.execute(text("SET session_replication_role = 'replica'"))
-        await db.execute(text(f"TRUNCATE {names} RESTART IDENTITY CASCADE"))
-        await db.execute(text("SET session_replication_role = 'origin'"))
-        db.add(Credential(id=1, password_hash=hash_password(PASSWORD)))
-        await db.commit()
+        await reset_database(db)
     limiter.reset()
     profiles.reset_cooldowns()
     AGENT_LOG.unlink(missing_ok=True)

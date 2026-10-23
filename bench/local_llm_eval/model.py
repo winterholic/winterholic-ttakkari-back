@@ -97,6 +97,9 @@ class Task:
     split: str = "dev"  # holdout requires successful OS isolation before any execution
     # Harness-dependent gates (resume/cancel). Interface only until WBS 2.2 settles.
     session_check: Callable[["Attempt"], list[tuple[str, "CheckOutcome"]]] | None = None
+    # Bundle facts the evaluator never judges with: sealed_bundle_sha256, suite mutant counts,
+    # an equivalent-mutant screen and per-task leak-scan allowances (holdout selfcheck only).
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def stage_checks(self) -> list[tuple[Stage, Check]]:
         return [(s, c) for s in self.stages for c in s.checks]

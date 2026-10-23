@@ -1,0 +1,19 @@
+{
+ "measured_with": "runner.run_check(mode='holdout') probe inside the sandbox-exec profile used for candidate runs",
+ "status": "OBS",
+ "isolation_active": true,
+ "results": {
+  "manifest_read": "PermissionError",
+  "gold_read": "PermissionError",
+  "hidden_read": "PermissionError",
+  "mutants_read": "PermissionError",
+  "task_read": "PermissionError",
+  "public_prompts_read": "PermissionError",
+  "public_workspace_file_read": "PermissionError",
+  "positive": "ok",
+  "root_listing": "PermissionError",
+  "parent_listing": "PermissionError"
+ },
+ "sealed_root_mode": "0o700",
+ "note": "targets are real sealed files (names withheld here); values are exception type names only"
+}

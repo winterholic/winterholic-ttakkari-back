@@ -1,0 +1,7 @@
+{
+ "python": "3.13.15",
+ "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+ "machine": "arm64",
+ "sandbox_exec": "/usr/bin/sandbox-exec",
+ "base_main": "11f5da273f2ccf23160dfd457c40f9229575397f"
+}

@@ -99,8 +99,28 @@ def test_sealed_baseline_hash_in_the_manifest_matches_the_task_definition():
     pinned = {
         t["id"]: t["base_tree_sha256"]
         for t in manifest["tasks"]
-        if "base_tree_sha256" in t
+        if "base_tree_sha256" in t and t["split"] == "dev"
     }
     assert set(pinned) == set(TASK_IDS)
     for task_id, task in built().items():
         assert tree_hash(manifest_of_files(task.base_files)) == pinned[task_id], task_id
+
+
+def test_holdout_manifest_entries_match_the_committed_commitments():
+    """Holdout entries carry only counts and hashes, and agree with holdout-commitments.json."""
+    from local_llm_eval.bundle_paths import COMMITMENTS, HOLDOUT_IDS
+
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    commitments = json.loads(COMMITMENTS.read_text(encoding="utf-8"))
+    entries = {t["id"]: t for t in manifest["tasks"] if t["split"] == "holdout"}
+    assert sorted(entries) == sorted(HOLDOUT_IDS)
+    protection = manifest["holdout_protection"]
+    assert protection["sealed_bundle_sha256"] == commitments["bundle_sha256"]
+    for task_id, entry in entries.items():
+        facts = commitments["tasks"][task_id]
+        assert entry["base_tree_sha256"] == facts["base_tree_sha256"], task_id
+        assert (
+            entry["sealed_bundle_ref"]["bundle_sha256"] == commitments["bundle_sha256"]
+        )
+        assert entry["n_hidden_checks_implemented"] == facts["checks"], task_id
+        assert entry["never_executed_by_any_model"] is True

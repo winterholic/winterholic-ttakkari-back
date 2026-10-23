@@ -1,0 +1,11 @@
+B4-EXP-H: checks=8 delta_red=7/7 invariant_green=1/1 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=38/38 false_positives=0 leak_findings=0 problems=0
+B4-SGL-H: checks=8 delta_red=4/4 invariant_green=4/4 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=41/41 false_positives=0 leak_findings=0 problems=0
+B4-MUL-H: checks=8 delta_red=6/6 invariant_green=2/2 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=45/45 false_positives=0 leak_findings=0 problems=0
+B4-API-H: checks=11 delta_red=7/7 invariant_green=4/4 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=47/47 false_positives=0 leak_findings=0 problems=0
+B4-DBG-H: checks=7 delta_red=4/4 invariant_green=2/2 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=43/43 false_positives=0 leak_findings=0 problems=0
+B4-REF-H: checks=8 delta_red=3/3 invariant_green=5/5 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=43/43 false_positives=0 leak_findings=0 problems=0
+B4-TST-H: checks=8 delta_red=7/7 invariant_green=1/1 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=44/44 false_positives=0 leak_findings=0 problems=0
+B4-REC-H: checks=9 delta_red=7/7 invariant_green=1/1 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=45/45 false_positives=0 leak_findings=0 problems=0
+B4-LNG-H: checks=24 delta_red=13/13 invariant_green=11/11 references={'gold': 'PASS', 'alt_gold': 'PASS'} negatives=60/60 false_positives=0 leak_findings=0 problems=0
+{"tasks": 9, "problems": 0, "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a", "files": 145}
+exit 0

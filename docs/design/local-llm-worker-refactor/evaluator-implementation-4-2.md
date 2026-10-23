@@ -1,6 +1,6 @@
 # WBS 4.2 평가기 구현 기록 (개발 과제 9개)
 
-작성일: 2026-10-23 KST. 상태: **4.2 부분 완료.** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N14 전부가 구현되어 CPU에서 재현된다. holdout 9개와 봉인 번들은 만들지 않았으므로 4.2는 완료가 아니다.
+작성일: 2026-10-23 KST. 상태: **4.2 구현 완료(§13).** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N33, holdout 9개와 봉인 번들(commitment 검증, 봉인 경로 deny 실측, 봉인 경로를 읽는 별도 selfcheck)이 구현되어 CPU에서 재현된다. §1~§12는 holdout 이전의 기록이며 §7의 1번은 §13이 대체한다. 실모델 결과는 여전히 없다.
 
 > **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. §9 이후 재발견한 in-process helper 변조는 §10이 교정한다. §10은 이후 C1/C2 검증에서 거부됐다. 현재 구조와 증거는 §11과 `evidence/4.2/channel-isolation/`가 정본이었으나, §11의 OS 격리 서술은 독립 검증에서 틀린 것으로 확인되어 **§12가 대체한다**(profile 결함 수정, 격리 켠 전체 테스트, 과잉 차단 완화).
 
@@ -104,7 +104,7 @@ harness 가 아직 없어서 평가기는 입력 형식만 정의하고 **없으
 
 ## 7. 남은 4.2 항목
 
-1. holdout 9개 작성과 봉인 번들 구성(운영자 조치: 저장소 밖 0700 디렉터리 생성, Seatbelt 읽기 거부·네트워크 deny 시험). 이번 지시에 따라 만들지 않았다. 저장소에는 holdout 정답이 없고 레지스트리 테스트가 이를 확인한다.
+1. (완료, §13) holdout 9개 작성과 봉인 번들 구성. 저장소에는 holdout 정답이 없고 레지스트리 테스트와 `test_llme_bundle.py`가 이를 확인한다.
 2. 개정 hidden 의 프롬프트 추적 검토(사람), native 검사까지 포함한 누출 스캔 확장.
 3. 평가기를 runner 에 연결(4.3): attempt ledger 기록, 시작 snapshot 생성, trace·session 공급, 격리 실행.
 4. 2.2 결과에 따라 세션·trace 입력 형식 확정.
@@ -244,3 +244,16 @@ Codex Run command sandbox에서 `/usr/bin/sandbox-exec -p <default-deny profile>
 정상 변형 표본(`evidence/4.2/isolation-fix/variants.py.txt`, 46종×8과제, 격리 on): 이전에 0/8이던 `super().__init__`, `__class__.__name__`, `os.getcwd`, `os.environ`, `sys.maxsize`, `sys.setrecursionlimit`, `threading.Lock`, `shutil`이 7/8로 올랐다. 나머지 1과제는 후보가 쓴 테스트 파일을 제약하는 TST의 의도된 import 집합이다. 여전히 실패: `traceback`(이유 있는 거부), `object.__setattr__`, `w.__name__ = ...`(dunder 쓰기 거부), DBG의 '새 함수 추가' 대조.
 
 미검증/한계: 정확한 syscall 원인 미추적. Python 3.13.15/macOS 27 한 조합. 허용한 capability 조합에 대한 적응 공격 전수 미검증. 봉인 holdout, 실모델, trace/session 연동은 미완이다. PMS 4.2는 doing 유지.
+
+## 13. holdout 9개와 봉인 번들 (2026-10-23)
+
+지시: holdout 9개를 만들고 정답을 저장소 밖에 봉인한다. 모델·서버·다운로드는 쓰지 않았다(CPU 자식 프로세스만). 새 공격 페이로드는 쓰지 않았고 음성 대조는 기존 N1~N33 계열만 썼다. 정본 설명은 명세 §4.2, §4.3이다. 이 절에는 holdout의 도메인·정답·기대값을 적지 않는다.
+
+- **번들:** `/Users/winterholic/bench-sealed/local-llm-holdout-r1/`(0700, 파일 0600), 파일 145개, 번들 hash `6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a`. 저장소에는 `holdout-commitments.json`(파일별 sha256, 번들 hash, 개수)만 있다. 후보 workspace 파일 경로는 도메인을 드러내므로 경로 hash로 commit한다(`bundle.commitment_key`).
+- **코드:** `bundle_paths.py`(위치 고정), `bundle.py`(commitment 검증, 검증한 바이트로 과제 빌드, `export_public`, `evaluate_holdout`, `redact_evaluation`, `seal`), `bundle_selfcheck.py`(봉인 경로를 읽는 자체 검증), `sandbox.py`(봉인 경로와 겹치는 허용 root 거부, deny 대상에 봉인된 것처럼 만든 디렉터리와 실제 봉인 파일 추가), `codes.py`(`INFRA_SEALED_*`), `model.py`(`Task.meta`).
+- **불일치 처리:** 번들 없음 `INFRA_SEALED_MISSING`, 권한·심볼릭 링크 `INFRA_SEALED_PERMISSIONS`, 파일 집합·바이트·기준 트리 불일치 `INFRA_SEALED_COMMITMENT_MISMATCH`. 모두 evaluated=false인 INFRA이며 아무것도 실행하지 않는다. 격리 불가는 번들을 읽기 전에 `INFRA_ISOLATION_UNAVAILABLE`.
+- **selfcheck(봉인 경로를 읽는 별도 명령, 저장소 테스트 아님):** `cd bench && python3 -m local_llm_eval.bundle_selfcheck` 결과 exit 0, 과제 9개 problems 0. 검사 91개(delta 58 전부 base red, invariant 31 전부 base green, process 2), gold·대안 gold 18/18 PASS, mutant와 음성 대조 406/406 기대 사유 거부, false positive 0, 동치 mutant 판별 통과, 누출 스캔 finding 0, 공개 export가 기준 트리와 같음. 원출력(개수·id·코드만): `evidence/4.2/holdout/selfcheck.txt`, `selfcheck.json`.
+- **봉인 경로 deny 실측:** `evidence/4.2/holdout/sealed-deny.json`. 후보 probe가 도는 profile에서 봉인 번들의 파일 7종 읽기와 루트·부모 목록 조회가 전부 `PermissionError`, 작업 영역 쓰기·읽기는 정상. `local_llm_eval.sandbox`는 `ok: true`(`sandbox.json`).
+- **격리 켠 전체 테스트:** `435 passed`, skip 0(`evidence/4.2/holdout/pytest-isolation-on.txt`). 새 테스트는 `test_llme_bundle.py`(commitment 검증, 합성 번들로 변조·누락·추가·권한·링크·교체 시나리오, 실제 번들은 hash만 확인하고 없으면 skip)와 `test_llme_bundle_isolation.py`(profile 겹침 거부, 실측 deny)다. 저장소 CI는 정답을 읽지 않는다.
+- **만들면서 selfcheck가 잡은 설계 오류(내용은 적지 않음):** 동치 mutant 1개(과제 설계 수정으로 해소), 새 mutant가 통과하던 hidden 1개(검사 강화), 요구 항목 누락 1건(manifest 대조가 잡아 보강), 기대 id 계산 실수 몇 건. 모두 봉인 전에 고쳤다.
+- **남은 한계:** 명세 §4.3 참조. 실모델 결과 없음, 번들 변경 시 selfcheck 재실행은 절차 의존, 같은 계정 sandbox 밖 프로세스는 0700만으로 읽을 수 있음, 모델 worker profile 연결은 4.3.

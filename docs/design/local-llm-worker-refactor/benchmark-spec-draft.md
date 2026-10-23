@@ -1,6 +1,6 @@
 # 로컬 LLM 작업자 벤치 과제 명세 v1 (WBS 4.1)
 
-작성일: 2026-10-23 KST. 상태: **v1 확정(4.1 범위). draft-0(커밋 `ef64f5f`, `c460394`)에 WBS 1.2 감사 결과를 반영해 확정했다. 4.2는 후속 구현으로 개발 과제 9개를 검증했으며, 최신 상태는 §0.1.1을 따른다. §9의 잔여 과제는 4.2~4.3과 운영자 조치로 넘긴다.**
+작성일: 2026-10-23 KST. 상태: **v1 확정(4.1 범위). draft-0(커밋 `ef64f5f`, `c460394`)에 WBS 1.2 감사 결과를 반영해 확정했다. 4.2는 후속 구현으로 개발 과제 9개를 검증했고 holdout 9개와 봉인 번들을 구현했다. 최신 상태는 §0.1.1과 §4.3을 따른다. §9의 잔여 과제는 4.2~4.3과 운영자 조치로 넘긴다.**
 
 - 상위 설계: `docs/design/local-llm-worker-refactor.md` §5(벤치), §10 WBS 4.1. 이 문서는 시각 UI 설계가 아니라 **평가 명세**다.
 - PMS: project `0b1a2a57-eb19-4da0-b572-ab783d6a6735`, task 4.1 `7bad4b21-2a0c-45d2-9934-2cf7a1871e89`, predecessor 1.2 `f4a5ab31-4d6c-4107-917f-40f83b29e94d`. 1.2 감사 완료는 메인이 `raw 61행 / 136,608 bytes / SHA256 d525733d…e1362be0`, manifest 61행 coverage, t6 성공당 165.0초·t8 239.7초를 직접 재집계해 확인했다고 전달했다. 이 문서는 그 전달과 감사 산출물 파일을 근거로 삼는다.
@@ -44,7 +44,7 @@
 
 **비밀 원칙:** PASS 위조에 판정용 비밀이 필요하도록 설계해야 한다. 기대값·정답·판정 로직은 부모 judge와 봉인 경로에만 두며 후보가 읽을 수 있는 probe/저장소 파일에 비밀을 둬서는 안 된다. **probe 소스/메모리의 노출을 불가능하다고 가정하지 않는다.** 입력·관측 key·합성 의존성 marker는 공개 입력이며 비밀이 아니다. 같은 interpreter의 관측값은 여전히 후보 통제 데이터로 취급한다.
 
-**개발 과제는 정답이 저장소에 공개되어 위조 방어가 약하다.** 개발 PASS는 구현/호환성 회귀 결과이며 적대적 무결성의 강한 인증이 아니다. **강한 보장의 선행 조건은 비공개 정답을 봉인한 holdout과 실제 deny 검증을 통과한 OS 격리다.** 둘 중 하나라도 확인되지 않았으면 그 보장을 주장하지 않는다. 이것만으로 같은 interpreter의 임의 메모리 변조까지 증명되는 것도 아니다. holdout 9개와 봉인 번들은 아직 만들지 않았다.
+**개발 과제는 정답이 저장소에 공개되어 위조 방어가 약하다.** 개발 PASS는 구현/호환성 회귀 결과이며 적대적 무결성의 강한 인증이 아니다. **강한 보장의 선행 조건은 비공개 정답을 봉인한 holdout과 실제 deny 검증을 통과한 OS 격리다.** 둘 중 하나라도 확인되지 않았으면 그 보장을 주장하지 않는다. 이것만으로 같은 interpreter의 임의 메모리 변조까지 증명되는 것도 아니다. holdout 9개와 봉인 번들(`/Users/winterholic/bench-sealed/local-llm-holdout-r1/`)은 2026-10-23에 만들었고, 이 호스트에서 봉인 경로의 `PermissionError`를 실측했다(§4.3). 이 보장이 성립하는 범위와 남은 한계도 §4.3이 정본이다.
 
 ```text
 [부모: 기대값·판정·정적 검사 / private sealed answers]
@@ -96,7 +96,7 @@
 
 **원본 경로 교정:** `/Users/winterholic/development/projects/winterholic-ttakkari/back`은 존재하지만 그 checkout에는 `bench/local_llm_eval/evaluator.py`가 없었다. 앞선 `FileNotFoundError`는 그 파일 부재였으며 접근 거부 증거가 아니다. 이제 git common-dir에서 찾은 실제 원본의 `pyproject.toml` 등 존재하는 파일을 먼저 검증하고 deny 대상으로 쓴다. 이 호스트에서는 `TTAKKARI_DEPLOY_SOURCE_ROOT`를 실제 원본으로 두고 그 `pyproject.toml`의 `PermissionError`를 실측했다(`evidence/4.2/isolation-fix/sandbox.json`).
 
-**잔여/미검증:** C2의 format을 통한 in-memory 정보 노출과 다른 reflection/native 경로의 완전 차단은 주장하지 않는다. 공개 개발 정답·소스/입력에 따른 oracle faker, 후보 작성 unittest의 자체 결과/AST 우회, ctypes/메타클래스/trace/codecs/dynamic code, fork·fd 상속·출력 경쟁·symlink의 적응 공격 전수는 검증하지 않았다. 기존 대조 통과는 그 전수 증명이 아니다. 봉인 holdout, 다른 Python/OS 버전, 실제 OS deny, 실모델 완주, 실제 하네스 trace/session 연결은 미완이다. 모델과 서버는 실행하지 않았다. 격리가 꺼진 개발 실행에서 `pathlib` 등 stdlib 내부 경로 open으로 `/dev/fd`를 여는 경우, `/`의 항목 목록 노출, 허용한 `sys`·`os`·`shutil`·`threading` capability 조합의 적응 공격, launch 실패의 INFRA 분류(현재 일반 FAIL)는 검증하지 않았거나 알려진 한계다.
+**잔여/미검증:** C2의 format을 통한 in-memory 정보 노출과 다른 reflection/native 경로의 완전 차단은 주장하지 않는다. 공개 개발 정답·소스/입력에 따른 oracle faker, 후보 작성 unittest의 자체 결과/AST 우회, ctypes/메타클래스/trace/codecs/dynamic code, fork·fd 상속·출력 경쟁·symlink의 적응 공격 전수는 검증하지 않았다. 기존 대조 통과는 그 전수 증명이 아니다. 다른 Python/OS 버전, 실모델 완주, 실제 하네스 trace/session 연결은 미완이다(봉인 holdout 구현과 봉인 경로 deny 실측은 §4.3). 모델과 서버는 실행하지 않았다. 격리가 꺼진 개발 실행에서 `pathlib` 등 stdlib 내부 경로 open으로 `/dev/fd`를 여는 경우, `/`의 항목 목록 노출, 허용한 `sys`·`os`·`shutil`·`threading` capability 조합의 적응 공격, launch 실패의 INFRA 분류(현재 일반 FAIL)는 검증하지 않았거나 알려진 한계다.
 
 ## 1. 설계 원칙
 
@@ -347,18 +347,40 @@ hidden은 각 턴 종료 시점의 workspace snapshot을 evaluator가 복사해 
 
 holdout 요건: (1) 요구↔hidden 매핑표와 gold·alt-gold·mutant·negative control을 개발 과제와 같은 수준으로 작성한다. (2) 작성한 컨텍스트와 이후 profile을 튜닝하는 컨텍스트를 분리한다. (3) 어떤 모델·harness 프로필도 실행한 적이 없음을 `ledger`에 기록한다.
 
-### 4.2 holdout 정답을 어디서 보호하나 (제안, 구현 미착수)
+### 4.2 holdout 정답을 어디서 보호하나 (확정, 구현: 4.2)
 
-위험 지점: 이 back 저장소와 `qwen-local-harness/bench`는 같은 계정의 다른 Run·클라우드 worker가 읽을 수 있고, 개발 과제의 gold는 이미 `validate_tasks.py`에 있다. 로컬 모델이 실행되는 Seatbelt 프로필이 이 경로들을 **읽기 거부**하는지는 이 Run에서 확인하지 않았다(**확인 필요**).
+위험 지점: 이 back 저장소와 `qwen-local-harness/bench`는 같은 계정의 다른 Run·클라우드 worker가 읽을 수 있고, 개발 과제의 gold는 이미 `validate_tasks.py`에 있다. 로컬 모델이 실행되는 Seatbelt 프로필의 읽기 거부는 이제 봉인 경로를 포함해 실측했다(§4.3).
 
-1. **sealed 번들 위치(제안값, 4.3에서 확정):** 저장소·worktree·`~/.ttakkari` 밖의 디렉터리 하나, 예) `/Users/winterholic/bench-sealed/local-llm-holdout-r1/`, 모드 0700. `~/.ttakkari` 아래는 원격 자동 Run의 보호 영역이라 evaluator도 읽지 못하므로 쓰지 않는다. 번들 내용은 `hidden/`, `gold/`, `alt_gold/`, `mutants/`, `negative_controls/`, `eval_keys/`, `manifest.sealed.json`.
-2. **저장소에는 commitment만 둔다:** 번들 각 파일의 sha256과 번들 전체 hash, 과제·검사 개수. 내용·정답·상수는 두지 않는다. 이 문서와 manifest의 `sealed_bundle_ref`는 지금 `null`이다.
-3. **모델 workspace에는 `public/`만 복사한다:** 프롬프트, 공개 코드·공개 test, base commit 1개만 가진 새 `git init`(원격·reflog·gold 객체 없음). hidden·gold·mutant·evaluator 경로는 workspace의 어떤 파일·환경변수·도구 설명에도 나타나지 않는다.
-4. **접근 차단 검증은 모델 없이 CPU로 한다(4.3):** worker의 Seatbelt/read roots가 sealed 디렉터리와 `qwen-local-harness/bench`, back 저장소를 읽지 못하는지, 네트워크가 막혀 있는지 deny 테스트로 확인한다. 이 Run에서는 실행하지 않았다. 차단이 확인되지 않으면 holdout 평가를 시작하지 않는다.
-5. **더 강한 대안(확인 필요):** 별도 OS 사용자 또는 평가 때만 마운트하는 암호화 이미지. 이 호스트에서 가능한지 확인되지 않았다.
-6. **evaluator는 모델 프로세스가 끝난 뒤에만 번들을 연다.** 코딩 모델과 동시에 번들을 읽는 경로가 없다.
-7. **holdout은 profile당 1회용:** 튜닝 쪽에는 집계 pass 수만 돌려주고 과제별 실패 상세·로그는 최종 판정 전까지 봉인한다. 상세를 열어 디버깅하면 해당 holdout revision은 폐기하고 새 revision을 만든다(설계 §5.1과 같음).
-8. **개발 과제 쪽 오염 규칙:** 프롬프트·시스템 문구·도구 설명을 수정할 때 개발/holdout fixture의 hidden 전용 리터럴과 gold 전용 식별자(예: `ROUND_HALF_UP`)가 들어가면 자동 경보를 내는 leak scan을 둔다. 일반 지침은 허용하되 특정 fixture의 해법 토큰은 금지한다.
+1. **sealed 번들 위치(확정):** `/Users/winterholic/bench-sealed/local-llm-holdout-r1/`, 모드 0700, 소유자 전용. 저장소·worktree·`~/.ttakkari` 밖이다. `~/.ttakkari` 아래는 원격 자동 Run의 보호 영역이라 evaluator도 읽지 못하므로 쓰지 않는다. 위치는 `bench/local_llm_eval/bundle_paths.py`에 상수로 고정했고 환경변수로 바꿀 수 없다(바꿀 수 있으면 다른 번들로 holdout 판정을 받을 수 있다). 초안의 `hidden/ gold/ alt_gold/ mutants/ negative_controls/ eval_keys/` 분류 디렉터리는 쓰지 않았다. 개발 과제와 같은 구조(한 과제의 gold, hidden, mutant, 기대값이 서로 참조한다)를 유지하려고 과제별 디렉터리에 역할별 파일로 나눴다: `tasks/<ID>/{gold,hidden,mutants,task}.py`(봉인), `tasks/<ID>/public/workspace/…`와 `public/prompts.json`(후보에게 보이는 부분), 번들 루트의 `manifest.sealed.json`(개수와 구조 사실, 답 없음).
+2. **저장소에는 commitment만 둔다:** `docs/design/local-llm-worker-refactor/holdout-commitments.json`에 번들 파일 145개 각각의 sha256, 번들 전체 hash(`path NUL sha256 LF` 줄을 정렬해 해시), 과제별 개수(검사·요구·음성 대조·mutant)와 후보에게 보이는 기준 트리의 hash만 있다. 내용·정답·상수·도메인은 없다. 이 문서와 manifest의 `sealed_bundle_ref`는 이 파일을 가리킨다.
+3. **평가기가 holdout 모드에서 봉인 경로를 읽고 commitment를 검증한다:** `bundle.py`. 번들이 없거나(`INFRA_SEALED_MISSING`), 소유자 전용이 아니거나 심볼릭 링크가 있거나(`INFRA_SEALED_PERMISSIONS`), 파일 집합이나 바이트가 commitment와 다르면(`INFRA_SEALED_COMMITMENT_MISMATCH`) 모델 결과가 아니라 INFRA이며 아무것도 실행하지 않는다. 격리를 쓸 수 없으면 번들을 읽기 전에 `INFRA_ISOLATION_UNAVAILABLE`로 막는다(이전 규칙 유지). 로더는 해시한 바로 그 바이트를 실행하므로 검증 뒤에 바뀐 파일은 실행에 영향이 없다.
+4. **모델 workspace에는 `public/`만 복사한다:** `bundle.export_public`이 검증된 번들에서 후보에게 보이는 트리와 프롬프트만 쓴다. 프롬프트, 공개 코드·공개 test는 있고 hidden·gold·mutant·evaluator 경로는 없다. 새 `git init` 단일 base commit(원격·reflog·gold 객체 없음)은 harness 쪽(4.3) 일이다.
+5. **접근 차단 검증은 모델 없이 CPU로 했고 회귀 테스트가 있다:** sandbox profile 생성기는 허용 root가 봉인 경로와 겹치거나 포함하거나 그 안에 있으면 `ValueError`를 낸다. 실제 deny는 `runner.run_check(mode="holdout")`의 probe로 봉인 파일 읽기와 봉인 루트·부모 목록 조회가 모두 `PermissionError`임을 측정했다(§4.3). 이 측정은 평가기가 후보 probe를 실행하는 profile에 대한 것이다. 모델 worker(WBS 2.2)의 profile이 같은 규칙을 쓰는지는 연결 시점에 같은 deny 검사로 다시 확인해야 한다.
+6. **더 강한 대안(확인 필요):** 별도 OS 사용자 또는 평가 때만 마운트하는 암호화 이미지. 이 호스트에서 가능한지 확인되지 않았다. 같은 계정으로 도는 sandbox 밖 프로세스는 0700만으로는 번들을 읽을 수 있다.
+7. **evaluator는 모델 프로세스가 끝난 뒤에만 번들을 연다.** 코딩 모델과 동시에 번들을 읽는 경로가 없다.
+8. **holdout은 profile당 1회용:** 튜닝 쪽에는 집계 pass 수만 돌려주고 과제별 실패 상세·로그는 최종 판정 전까지 봉인한다. `bundle.redact_evaluation`이 verdict·코드·검사 id만 남기는 출력을 제공한다(하네스 연동 전이라 강제하는 호출 지점은 아직 없다). 상세를 열어 디버깅하면 해당 holdout revision은 폐기하고 새 revision을 만든다(설계 §5.1과 같음).
+9. **개발 과제 쪽 오염 규칙:** 프롬프트·시스템 문구·도구 설명을 수정할 때 개발/holdout fixture의 hidden 전용 리터럴과 gold 전용 식별자(예: `ROUND_HALF_UP`)가 들어가면 자동 경보를 내는 leak scan을 둔다. 일반 지침은 허용하되 특정 fixture의 해법 토큰은 금지한다. holdout 9개에도 같은 스캔을 돌렸다(§4.3).
+
+### 4.3 holdout 구현 결과와 남은 한계 (2026-10-23, WBS 4.2)
+
+**만든 것(개수와 해시만 적는다).** holdout 9개(유형마다 1개, 개발 과제의 표면 변형이 아니라 도메인·식별자·상수·파일 배치·버그 패턴을 모두 새로 쓴 것). 각 과제는 개발 과제와 같은 구조를 따른다: fixture와 프롬프트, gold, 대안 gold, hidden 검사(delta/invariant 분류), mutant, 음성 대조(N1~N33), 요구 수와 변경 class가 짝 개발 과제 및 manifest와 같다. 번들은 파일 145개이고 번들 hash는 `6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a`이다. 검사 91개, 음성 대조 406개(통합 공격 대조 N16~N33 포함, 새 공격 페이로드는 쓰지 않았다), 후보 작성 테스트 과제(TST, REC, LNG T2)의 SUT mutant 8+5+5개다. 번들 생성 시점까지 어떤 모델도 실행하지 않았다(`model_runs_before_seal: 0`).
+
+**자체 검증(CPU, 모델 없음).** 봉인 경로를 읽는 별도 명령 `cd bench && python3 -m local_llm_eval.bundle_selfcheck`로 했다. 저장소 테스트가 아니므로 저장소 CI는 정답을 보지 못한다. 결과: 과제 9개 모두 problems 0. delta 검사는 base에서 전부 red(58/58), invariant 검사는 base에서 전부 green(31/31), gold와 대안 gold는 18/18 PASS, mutant와 음성 대조 406/406이 기대한 사유로 거부, false positive 0, 후보 작성 테스트 mutant의 동치 판별 통과(TST 8/8 비동치, 동치 후보 3/3 동일 확인), 정적 누출 스캔 finding 0(허용 항목은 과제별 사유와 함께 봉인 쪽에 기록), 후보에게 보이는 export가 commitment로 고정한 기준 트리와 같음, 개수가 manifest와 같음. 수치 정본은 `evidence/4.2/holdout/selfcheck.json`(개수·id·코드만, 기대값·gold·mutant 설명 없음)이다.
+
+**봉인 경로 deny 실측.** `evidence/4.2/holdout/sealed-deny.json`: 후보가 도는 profile 안에서 봉인 번들의 `manifest.sealed.json`, `gold.py`, `hidden.py`, `mutants.py`, `task.py`, `public/prompts.json`, `public/workspace` 파일 읽기와 번들 루트·부모 디렉터리 목록 조회가 모두 `PermissionError`, 같은 profile에서 작업 영역 쓰기와 읽기는 정상(양성 대조). `python3 -m local_llm_eval.sandbox`도 `ok: true`이며 deny 대상에 봉인된 것처럼 만든 디렉터리와 실제 봉인 파일 2개가 포함된다. 회귀 테스트: `test_llme_bundle_isolation.py`. 격리를 쓸 수 없는 환경에서는 deny 테스트가 환경 거부일 때만 skip하고 결함이면 실패하며, holdout 평가는 실행 전에 `INFRA_ISOLATION_UNAVAILABLE`로 막힌다.
+
+**왜 작성자 모델(Claude)이 holdout을 봤다는 점이 평가 대상 로컬 모델의 오염과 무관한가.** 오염은 평가 대상 모델이 정답·hidden에 노출되는 경로(학습, 튜닝, 프롬프트·하네스 조정, 실행 중 읽기)에 holdout이 들어가는 것이다. (1) 작성자 Claude와 평가 대상 로컬 모델은 가중치와 실행 환경이 다른 별개 모델이며, 작성 컨텍스트에 있던 내용이 로컬 모델의 학습이나 프롬프트로 흘러가는 경로가 이 작업에 없다. 이 Run은 모델 로드·추론·다운로드를 하지 않았다. (2) holdout은 어떤 모델에도 실행된 적이 없고, 이후 로컬 모델 프로세스가 도는 profile에서는 번들을 읽을 수 없음을 위에서 실측했다. (3) 보호하려는 것은 정답과 hidden의 비공개이지 작성자의 무지가 아니다. 개발 과제의 gold와 hidden도 작성자와 검증자가 안다. (4) 판정은 코드 evaluator가 하므로 작성자의 지식은 판정 로직을 거치지 않고는 결과에 들어가지 않는다. **이 주장이 성립하는 조건과 깨지는 경우:** 이 Run의 대화 기록과 도구 출력에는 holdout 내용이 남아 있다(Claude가 파일을 쓰고 selfcheck를 돌린 흔적). 그 기록이 `~/.ttakkari` 아래 세션 저장소에 있으므로, (a) 로컬 모델 worker의 읽기 허용 목록에 `~/.ttakkari`가 없음을 4.3에서 같은 방식으로 실측해야 하고, (b) 이 기록을 profile 튜닝 컨텍스트로 재사용하면 안 되며(§4.1 요건 2, 작성 컨텍스트와 튜닝 컨텍스트 분리), (c) 로컬 모델을 Claude 산출물로 증류하거나 학습시키는 계획이 생기면 이 주장은 깨진다(현재 계획에 없음, 확인 필요). 작성자가 평가 결과를 해석하며 기대를 갖는 위험은 별개이며 판정 로직과 실패 분류가 코드로 고정돼 있다는 점으로만 완화한다.
+
+**남은 한계(명시).**
+- 모델 결과가 하나도 없다. holdout의 난이도 균형, 변별력, 모델별 정답률은 측정하지 않았다. 개발·holdout 요구 수와 검사 class는 맞췄지만 난이도가 같다는 근거는 없다.
+- commitment는 변조 검출이지 비밀성 보장이 아니다. 각 파일 hash는 저장소에 공개된다. 파일이 길고 비정형이라 hash에서 내용을 복원하는 것은 현실적이지 않다고 보지만 증명하지 않았다(확인 필요). 후보에게 보이는 기준 트리의 hash는 후보가 아는 정보다.
+- 봉인은 0700과 Seatbelt read 거부에 의존한다. 같은 OS 계정으로 sandbox 밖에서 도는 프로세스(다른 Run, 클라우드 worker가 같은 계정이면 포함)는 읽을 수 있다. 별도 OS 사용자·암호화 이미지는 미검증이다. 메타데이터(존재·크기·시각)는 profile이 허용하므로 후보에게 보일 수 있고 내용과 디렉터리 목록만 거부된다.
+- deny 실측은 평가기가 후보 probe를 실행하는 profile에 대한 것이다. 모델 worker(2.2)와 harness가 이 profile을 쓰는지는 연결되지 않았다.
+- `bundle_selfcheck`는 운영자가 직접 돌리며 `bundle seal`이 selfcheck 통과를 강제하지 않는다. 번들을 바꾸면 반드시 selfcheck를 다시 돌리고 commitment를 갱신하는 절차 의존이다. 저장소 테스트는 번들이 이 호스트에 있으면 commitment 일치를, 없으면 건너뛴다.
+- 실모델 완주, 결과 상세 봉인의 호출 지점(`redact_evaluation` 연결), 실제 harness trace·session(resume, 취소) 연결은 미완이다. LNG의 session 검사는 개발 과제와 같은 인터페이스만 쓴다. EXP의 탐색 trace 검사와 REC, DBG의 process metric은 trace가 없으면 pending이다.
+- 일부 음성 대조는 기대 실패 코드를 하나가 아니라 허용 집합으로 둔다. 엄밀한 단일 코드 일치는 아니다.
+- 기존 개발 평가기의 한계(같은 interpreter 메모리 공격, 허용한 capability 조합의 적응 공격, `/` 항목 이름 노출)는 그대로다. Python 3.13.15와 macOS 27 한 조합에서만 확인했다.
+- holdout은 profile당 1회용이다. 이 문서 작성 뒤 selfcheck 상세(`--verbose`)를 열어 본 것은 작성 단계의 디버깅이며 revision `r1` 안에서 끝났다. 이후 어떤 profile 결과로도 holdout 상세를 열어 고치면 revision을 폐기하고 새로 만든다.
 
 ## 5. 독립 평가 경계와 실패 분류
 
@@ -568,15 +590,15 @@ v1에서 정한 것:
 - §6의 숫자 전부가 사전등록 계획값이다. 실측 결과로 인용하지 않는다.
 - probe와 스캔은 개발 fixture 일부에 대한 검사이며 verifier 전체의 신뢰도나 누출 없음을 증명하지 않는다.
 
-**4.2 진행 상태(후속 기록):** 아래 1~3의 개발 과제 쪽(평가기, 개발 과제 9개의 fixture·참조해·hidden·mutant, 음성 대조 N1~N14, 누출 스캔 확장)은 `evaluator-implementation-4-2.md` 에 구현·검증 결과가 있다. holdout 9개와 봉인 번들(4번)은 미착수다. 이 절의 나머지 문장은 4.1 확정 시점의 기록이며 바꾸지 않았다.
+**4.2 진행 상태(후속 기록):** 아래 1~3의 개발 과제 쪽(평가기, 개발 과제 9개의 fixture·참조해·hidden·mutant, 음성 대조 N1~N14, 누출 스캔 확장)은 `evaluator-implementation-4-2.md` 에 구현·검증 결과가 있다. holdout 9개와 봉인 번들(4번)은 구현했다(§4.3). 이 절의 나머지 문장은 4.1 확정 시점의 기록이며 바꾸지 않았다.
 
 **4.2로 넘기는 잔여 과제:**
 1. 모든 과제에서 delta/invariant 분류를 base와 gold에서 CPU로 확인(§1-8), 필수 reject·N1~N14 실행, gold·alt-gold 작성과 독립 검토.
 2. MUL rev2 프롬프트, DBG rev2(공개 test와 실제 실행 failure log), LNG composite 합성과 턴 문안 hash 고정, EXP answer key AST 계산, API fixture, REC gold.
 3. evaluator의 handshake·`python -I`·patch 적용 경로·시작 hash 검사, 누출 스캔을 hidden 전체 리터럴과 gold hunk로 확장.
-4. holdout 9개 작성과 sealed 번들 구성(작성 컨텍스트 분리).
+4. holdout 9개 작성과 sealed 번들 구성(작성 컨텍스트 분리). **완료(§4.3).**
 
-**운영자 조치와 외부 의존:** holdout 번들 위치 생성과 Seatbelt/네트워크 deny 테스트(§4.2). 2.2(하네스 수정 독립 검증)는 반례 2건으로 재작업 중이며 그 결과에 따라 resume·취소·압축 층의 지원 여부가 정해진다. 10/17 efficiency 원 raw 확보 전에는 해당 자료를 쓰지 않는다. 열린 §8 항목(P2·P6·P7b의 과거 trace 사용, `tasks.py` 계열 verifier 판정 버전 매핑, `t4-long-file`의 과거 영향, mock 대상 오류)은 별도 확인이 필요하다.
+**운영자 조치와 외부 의존:** holdout 번들 위치(확정·생성됨)와 봉인 경로 deny는 4.2에서 처리했다. 남은 것은 모델 worker profile이 같은 deny를 갖는지 확인하는 4.3 일이다(§4.3). 2.2(하네스 수정 독립 검증)는 반례 2건으로 재작업 중이며 그 결과에 따라 resume·취소·압축 층의 지원 여부가 정해진다. 10/17 efficiency 원 raw 확보 전에는 해당 자료를 쓰지 않는다. 열린 §8 항목(P2·P6·P7b의 과거 trace 사용, `tasks.py` 계열 verifier 판정 버전 매핑, `t4-long-file`의 과거 영향, mock 대상 오류)은 별도 확인이 필요하다.
 
 ## 부록 A. 이번 Run의 원명령과 출력 요약
 

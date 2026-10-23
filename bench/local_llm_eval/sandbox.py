@@ -11,6 +11,8 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from .bundle_paths import SEALED_ROOT
+
 SANDBOX = Path("/usr/bin/sandbox-exec")
 _PROBE_LOCK = threading.Lock()
 
@@ -45,6 +47,10 @@ def profile_text(runtime, writable):
     roots = [Path(p).resolve() for p in writable]
     if any(str(p) in {"/", "/Users", str(Path.home()), "/private/tmp"} for p in roots):
         raise ValueError("overbroad sandbox root")
+    # The sealed holdout bundle must never become readable: no root may be, contain or sit inside it.
+    sealed = SEALED_ROOT.resolve()
+    if any(p == sealed or sealed in p.parents or p in sealed.parents for p in roots):
+        raise ValueError("sandbox root overlaps the sealed holdout bundle")
     return "\n".join(
         [
             "(version 1)",
@@ -218,8 +224,20 @@ print(json.dumps(result))
     writable = tmp_path / "allowed"
     writable.mkdir()
     profile.write_text(profile_text(runtime_paths(), [writable]))
+    # A sealed-like directory made here (owner-only, outside the allowed root) is always checked, so
+    # the deny holds on hosts without the real bundle. The real manifest is added when it exists.
+    sealed_like = tmp_path / "sealed-like"
+    sealed_like.mkdir(mode=0o700)
+    (sealed_like / "canary.txt").write_text("canary", encoding="utf-8")
+    reads = {k: str(v) for k, v in targets.items()}
+    reads["sealed_like"] = str(sealed_like / "canary.txt")
+    real_manifest = SEALED_ROOT / "manifest.sealed.json"
+    if real_manifest.is_file():
+        reads["sealed_bundle"] = str(real_manifest)
+    for gold in sorted(SEALED_ROOT.glob("tasks/*/gold.py"))[:1]:
+        reads["sealed_bundle_gold"] = str(gold)
     request = {
-        "reads": {k: str(v) for k, v in targets.items()},
+        "reads": reads,
         "outside": str(outside / "file"),
         "home": str(Path.home()),
     }

@@ -13,6 +13,8 @@ python3 -m local_llm_eval.selfcheck                 # 개발 과제 9개: 분류
 python3 -m local_llm_eval.selfcheck B4-MUL-D        # 한 과제만
 python3 -m local_llm_eval.selfcheck --json out.json # 전체 상세 보고
 python3 -m pytest local_llm_eval/tests -q           # 단위·회귀 테스트
+python3 -m local_llm_eval.bundle verify             # 봉인 번들이 저장소의 commitment와 같은지 (해시만 출력)
+python3 -m local_llm_eval.bundle_selfcheck          # holdout 9개 자체 검증 (봉인 경로를 읽는다, 저장소 CI 밖)
 ```
 
 `ruff check`/`ruff format` 은 **저장소 루트에서** 실행한다(push 게이트가 루트 기준으로 import 순서를 본다).
@@ -30,11 +32,13 @@ push 게이트는 `bench/local_llm_eval/` 변경 시 평가기 테스트 전체�
 | `negatives.py`, `selfcheck.py`, `simulate.py` | 음성 대조 빌더, 자체 검증, 모델 없는 attempt 생성 |
 | `ledger.py` | 추가 전용 attempt ledger, profile 별 요약 |
 | `leakscan.py` | 정적 누출 스캔(어휘 수준) |
+| `bundle_paths.py`, `bundle.py` | 봉인 holdout 번들 위치(고정), commitment 검증, 검증한 바이트로 과제 빌드, 후보에게 보이는 부분만 export, 격리 우선 holdout 평가 진입점, 결과 redact |
+| `bundle_selfcheck.py` | holdout 9개 CPU 자체 검증(봉인 경로를 읽음). 출력은 개수·id·코드·해시만 |
 | `tasks/` | 개발 과제 9개(fixture, 참조해, 대안 참조해, hidden, 음성 대조) |
 | `fixture_data/` | 2026-10-18 기존 fixture 를 한 번 추출한 JSON(출처 sha256 포함)과 DBG rev2 실패 로그 |
 | `provenance/` | 추출·감사 대조 스크립트(저장소 밖 자료를 읽음) |
 
-holdout 과제와 정답은 이 디렉터리에 없고 있어서도 안 된다(봉인 디렉터리, 명세 §4.2).
+holdout 과제와 정답은 이 디렉터리에 없고 있어서도 안 된다. 번들은 /Users/winterholic/bench-sealed/local-llm-holdout-r1/ (0700)에 있고 저장소에는 docs/design/local-llm-worker-refactor/holdout-commitments.json(파일별 sha256, 번들 hash, 개수)만 있다. 번들을 바꾸면 `python3 -m local_llm_eval.bundle seal <날짜>`로 commitment를 갱신하고 반드시 bundle_selfcheck를 다시 돌린다. 명세 §4.2, §4.3.
 
 관측 신뢰 계약과 한계는 명세 §0.1.1, 구현 기록 §11을 따른다. judge 분리만으로 관측을 신뢰하지 않으며, Python 가드는 OS sandbox가 아니다. N16~N33은 gold 위에서 관측 경계 공격을 검증한다. 최신 CPU 실행 근거: `docs/design/local-llm-worker-refactor/evidence/4.2/channel-isolation/`.
 

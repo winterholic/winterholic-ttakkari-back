@@ -1,5 +1,5 @@
 {
- "manifest_revision": "v1.4",
+ "manifest_revision": "v1.5",
  "final": true,
  "planned_values_only": true,
  "note": "Pre-registered planned values, not measurements. WBS 1.2 audit received (main re-verified raw 61 rows / 136608 bytes / sha256 d525733d...e1362be0). Remaining items listed in open_items. Design fields are planned; implementation_4_2 and evidence_files_4_2_integrity contain measured CPU results.",
@@ -78,12 +78,20 @@
   "implemented": true
  },
  "holdout_protection": {
-  "sealed_bundle_path_proposed": "/Users/winterholic/bench-sealed/local-llm-holdout-r1/",
   "mode": "0700",
-  "repo_holds_only": "sha256 commitments + counts",
-  "seatbelt_read_deny_verified": false,
+  "repo_holds_only": "sha256 commitments (docs/design/local-llm-worker-refactor/holdout-commitments.json) + counts",
+  "seatbelt_read_deny_verified": true,
   "single_use_per_profile": true,
-  "sealed_bundle_sha256": null
+  "sealed_bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a",
+  "sealed_bundle_path": "/Users/winterholic/bench-sealed/local-llm-holdout-r1/",
+  "path_decision": "confirmed 2026-10-23 (fixed in bundle_paths.py, no environment override)",
+  "commitments": "holdout-commitments.json",
+  "seatbelt_read_deny_evidence": "evidence/4.2/holdout/sealed-deny.json",
+  "seatbelt_read_deny_scope": "evaluator candidate-probe profile; the model worker (WBS 2.2) profile is not connected yet",
+  "bundle_files": 145,
+  "model_runs_before_seal": 0,
+  "selfcheck_command": "cd bench && python3 -m local_llm_eval.bundle_selfcheck",
+  "selfcheck_in_repository_tests": false
  },
  "protocol_planned": {
   "repeats": 3,
@@ -390,7 +398,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -398,13 +406,27 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "read_only_report",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "fccbf7577ef12aa87e753fc4af0ce630ef79f4bcd1a3b619adbd231522f0e35a",
+   "base_file_count": 26,
+   "n_hidden_checks_implemented": 8,
+   "negatives_implemented": 38,
+   "suite_mutants": 0,
+   "check_class_counts": {
+    "delta": 7,
+    "invariant": 1
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "1/1"
   },
   {
    "id": "B4-SGL-D",
@@ -576,7 +598,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -584,13 +606,27 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "08babdd7de9d02f78e2c2706890adf3857d129c21a633e01ae526af6300617cc",
+   "base_file_count": 3,
+   "n_hidden_checks_implemented": 8,
+   "negatives_implemented": 41,
+   "suite_mutants": 0,
+   "check_class_counts": {
+    "delta": 4,
+    "invariant": 4
+   },
+   "delta_red_at_base": "4/4",
+   "invariant_green_at_base": "4/4"
   },
   {
    "id": "B4-MUL-D",
@@ -770,7 +806,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -778,13 +814,27 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "4ceeff65fadf60d0640d014727ee0a5ad17e30121c1d7ad3859b549c1702dbe1",
+   "base_file_count": 6,
+   "n_hidden_checks_implemented": 8,
+   "negatives_implemented": 45,
+   "suite_mutants": 0,
+   "check_class_counts": {
+    "delta": 6,
+    "invariant": 2
+   },
+   "delta_red_at_base": "6/6",
+   "invariant_green_at_base": "2/2"
   },
   {
    "id": "B4-API-D",
@@ -963,7 +1013,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -971,13 +1021,27 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "1e592a645c9489aac6f4bcb75f35556690128dfab51424e34558b3ffc8364139",
+   "base_file_count": 5,
+   "n_hidden_checks_implemented": 11,
+   "negatives_implemented": 47,
+   "suite_mutants": 0,
+   "check_class_counts": {
+    "delta": 7,
+    "invariant": 4
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "4/4"
   },
   {
    "id": "B4-DBG-D",
@@ -1154,7 +1218,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -1162,13 +1226,28 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "9a897c411b7073972719fe22e8fb5db7eda431ef2f48e59d01060924cc39e9c7",
+   "base_file_count": 8,
+   "n_hidden_checks_implemented": 7,
+   "negatives_implemented": 43,
+   "suite_mutants": 0,
+   "check_class_counts": {
+    "process_metric": 1,
+    "delta": 4,
+    "invariant": 2
+   },
+   "delta_red_at_base": "4/4",
+   "invariant_green_at_base": "2/2"
   },
   {
    "id": "B4-REF-D",
@@ -1342,7 +1421,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -1350,13 +1429,27 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "fc117b0074b20e54d732645c841e72b3bc2f5c556e6dd8cb0aaecc1e973ecbe1",
+   "base_file_count": 7,
+   "n_hidden_checks_implemented": 8,
+   "negatives_implemented": 43,
+   "suite_mutants": 0,
+   "check_class_counts": {
+    "delta": 3,
+    "invariant": 5
+   },
+   "delta_red_at_base": "3/3",
+   "invariant_green_at_base": "5/5"
   },
   {
    "id": "B4-TST-D",
@@ -1542,7 +1635,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -1550,13 +1643,27 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "67fda84c1285a9eabdd940fbb2971c92eac10ab2c946de904cb6a6779f29e9d9",
+   "base_file_count": 3,
+   "n_hidden_checks_implemented": 8,
+   "negatives_implemented": 44,
+   "suite_mutants": 8,
+   "check_class_counts": {
+    "delta": 7,
+    "invariant": 1
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "1/1"
   },
   {
    "id": "B4-REC-D",
@@ -1748,7 +1855,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -1756,13 +1863,28 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "2ccc558d8d58c2c9abb08a8cffd93754679c078a3d9aac15a940675a34f63b0b",
+   "base_file_count": 5,
+   "n_hidden_checks_implemented": 9,
+   "negatives_implemented": 45,
+   "suite_mutants": 5,
+   "check_class_counts": {
+    "delta": 7,
+    "invariant": 1,
+    "process_metric": 1
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "1/1"
   },
   {
    "id": "B4-LNG-D",
@@ -1996,7 +2118,7 @@
    "verdict_authority": "sealed-evaluator",
    "model_self_report_counts_as_success": false,
    "public_tests_only_counts_as_success": false,
-   "status": "spec-draft",
+   "status": "implemented-sealed",
    "fixture": {
     "kind": "new",
     "source_refs": [],
@@ -2004,9 +2126,12 @@
     "base_ref": null,
     "structure_constraints_ref": "benchmark-spec-draft.md#41"
    },
-   "reference_solution": "to_write_sealed",
+   "reference_solution": "sealed",
    "known_defects": [],
-   "sealed_bundle_ref": null,
+   "sealed_bundle_ref": {
+    "commitments": "holdout-commitments.json",
+    "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a"
+   },
    "never_executed_by_any_model": true,
    "change_class": "mixed",
    "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
@@ -2017,10 +2142,21 @@
     "T4": "diff_required",
     "T5": "read_only_report"
    },
-   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
+   "implementation_status": "implemented (4.2), sealed; selfcheck clean (evidence/4.2/holdout/selfcheck.json)",
+   "base_tree_sha256": "38355828129dd3a0aa843f4145745cf6bfab8f4d03b45ad431b88f76c5bbd470",
+   "base_file_count": 36,
+   "n_hidden_checks_implemented": 24,
+   "negatives_implemented": 60,
+   "suite_mutants": 5,
+   "check_class_counts": {
+    "delta": 13,
+    "invariant": 11
+   },
+   "delta_red_at_base": "13/13",
+   "invariant_green_at_base": "11/11"
   }
  ],
- "final_scope": "WBS 4.1 task/spec definition (final) + WBS 4.2 evaluator and 9 dev tasks implemented. Holdout fixtures and the sealed bundle are not created.",
+ "final_scope": "WBS 4.1 task/spec definition (final) + WBS 4.2 evaluator, 9 dev tasks and 9 sealed holdout tasks implemented. The holdout bundle lives outside the repository; the repository holds only sha256 commitments.",
  "audit_1_2": {
   "evidence_dir": "local-llm-worker-design-20261023:docs/design/local-llm-worker-refactor/evidence-audit/",
   "raw_c_opt": {
@@ -2120,7 +2256,7 @@
    "cd bench && python3 -m local_llm_eval.selfcheck",
    "cd bench && python3 -m pytest local_llm_eval/tests -q"
   ],
-  "tests": 413,
+  "tests": 435,
   "negatives_total": 366,
   "false_positives": 0,
   "interface_only_pending_2_2": [
@@ -2175,7 +2311,17 @@
    ],
    "previous_codex_environment": "sandbox_apply Operation not permitted exit 71 (environment denial, not a profile fact)"
   },
-  "verified": "CPU dev regression/compatibility with OS isolation ON (413 passed, 0 skipped) and OFF (412 passed, 1 skipped); python3 -m local_llm_eval.sandbox ok true exit 0 on the Mac Studio host; actual deny measured; sealed holdout absent"
+  "verified": "CPU dev regression/compatibility with OS isolation ON (413 passed, 0 skipped) and OFF (412 passed, 1 skipped); python3 -m local_llm_eval.sandbox ok true exit 0 on the Mac Studio host; actual deny measured; sealed holdout absent",
+  "holdout": {
+   "tasks": 9,
+   "checks": 91,
+   "negatives": 406,
+   "selfcheck_problems": 0,
+   "commands": [
+    "cd bench && python3 -m local_llm_eval.bundle verify",
+    "cd bench && python3 -m local_llm_eval.bundle_selfcheck"
+   ]
+  }
  },
  "evidence_files_4_2": {
   "evidence/4.2/coverage_summary.json": "88b94220675d63a6dbbb2bed5a5ee608726bc0e9e36c1901af8204bb1eb3485e",
@@ -2221,5 +2367,13 @@
   "evidence/4.2/isolation-fix/variants-result.json": "c72c3ff79f21d1cd597a5a6755c79346ac612ac390817327b5986ef28738de7e",
   "evidence/4.2/isolation-fix/variants-result.txt": "cbf61194d37fcebdb14f526abe780c1d22de27a20e5deff9e72727eae5f9dedb",
   "evidence/4.2/isolation-fix/variants.py.txt": "0311ddfbb693bc5cec7877f7dcb9da6a7706a3e03e420375bfa9c4ef148162af"
+ },
+ "evidence_files_4_2_holdout": {
+  "evidence/4.2/holdout/selfcheck.json": "95e44403e8be1a1b8abfab95ca88c17a9bf2efe94f484516932553ee45d008d8",
+  "evidence/4.2/holdout/selfcheck.txt": "49cf43d33bd86df7a4e5eb43b9152521c77418593439d04bf3ba8c4ad0d4987b",
+  "evidence/4.2/holdout/sealed-deny.json": "aaeeabd4987438ba1992396f4d9f41072a2cc31554bd754c58157c42eda7f2b2",
+  "evidence/4.2/holdout/sandbox.json": "ad1197add4e8eb5a2ce808a6cdcc79c41ba2c2930b1835c03f6d69a9f1a00862",
+  "evidence/4.2/holdout/environment.json": "ef26dacb74ea3ede7423cd13bc790846d3baf0d2d88b8e31fee244ab8d8247cd",
+  "evidence/4.2/holdout/pytest-isolation-on.txt": "d1757d73a667dcc89ab104cc78633865a0210342659ba9f41b51560e9ca0858a"
  }
 }

@@ -1,0 +1,539 @@
+{
+ "bundle_sha256": "6614d6c20d45f42cef887d417ae3c522611caac9162c2dd694348c5f6a886a4a",
+ "files": 145,
+ "isolation": {
+  "available": true,
+  "reason": "readiness exit 0"
+ },
+ "tasks": {
+  "B4-EXP-H": {
+   "checks": 8,
+   "check_kinds": {
+    "delta": 7,
+    "invariant": 1
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "1/1",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 38,
+    "rejected_for_expected_reason": 38,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 2,
+     "N11": 1,
+     "N15": 1,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 9,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N7": 1,
+     "N8": 2,
+     "N9": 2
+    }
+   },
+   "suite_mutants": 0,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 9,
+    "spec_stated": 6
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-SGL-H": {
+   "checks": 8,
+   "check_kinds": {
+    "delta": 4,
+    "invariant": 4
+   },
+   "delta_red_at_base": "4/4",
+   "invariant_green_at_base": "4/4",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 41,
+    "rejected_for_expected_reason": 41,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 1,
+     "N11": 1,
+     "N15": 3,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 8,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 2,
+     "N6": 1,
+     "N7": 3,
+     "N8": 1,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 0,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 0,
+    "spec_stated": 2
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-MUL-H": {
+   "checks": 8,
+   "check_kinds": {
+    "delta": 6,
+    "invariant": 2
+   },
+   "delta_red_at_base": "6/6",
+   "invariant_green_at_base": "2/2",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 45,
+    "rejected_for_expected_reason": 45,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 1,
+     "N11": 1,
+     "N14": 1,
+     "N15": 3,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 10,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 3,
+     "N6": 1,
+     "N7": 3,
+     "N8": 1,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 0,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 1,
+    "spec_stated": 3
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-API-H": {
+   "checks": 11,
+   "check_kinds": {
+    "delta": 7,
+    "invariant": 4
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "4/4",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 47,
+    "rejected_for_expected_reason": 47,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 1,
+     "N11": 1,
+     "N15": 3,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 14,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 2,
+     "N6": 1,
+     "N7": 3,
+     "N8": 1,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 0,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 1,
+    "spec_stated": 78
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-DBG-H": {
+   "checks": 7,
+   "check_kinds": {
+    "process_metric": 1,
+    "delta": 4,
+    "invariant": 2
+   },
+   "delta_red_at_base": "4/4",
+   "invariant_green_at_base": "2/2",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 43,
+    "rejected_for_expected_reason": 43,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 1,
+     "N11": 1,
+     "N15": 3,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 10,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 2,
+     "N6": 1,
+     "N7": 3,
+     "N8": 1,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 0,
+   "failure_log_reproducible": true,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 0,
+    "spec_stated": 0
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-REF-H": {
+   "checks": 8,
+   "check_kinds": {
+    "delta": 3,
+    "invariant": 5
+   },
+   "delta_red_at_base": "3/3",
+   "invariant_green_at_base": "5/5",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 43,
+    "rejected_for_expected_reason": 43,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 1,
+     "N11": 1,
+     "N15": 3,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 10,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 2,
+     "N6": 1,
+     "N7": 3,
+     "N8": 1,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 0,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 10,
+    "spec_stated": 10
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-TST-H": {
+   "checks": 8,
+   "check_kinds": {
+    "delta": 7,
+    "invariant": 1
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "1/1",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 44,
+    "rejected_for_expected_reason": 44,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 2,
+     "N11": 1,
+     "N12": 1,
+     "N13": 1,
+     "N15": 3,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 5,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 1,
+     "N5": 1,
+     "N6": 2,
+     "N7": 5,
+     "N8": 1,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 8,
+   "mutant_screen": {
+    "mutants_nonequivalent": "8/8",
+    "equivalent_candidates_confirmed_equal": "3/3"
+   },
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 4,
+    "spec_stated": 14
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-REC-H": {
+   "checks": 9,
+   "check_kinds": {
+    "delta": 7,
+    "invariant": 1,
+    "process_metric": 1
+   },
+   "delta_red_at_base": "7/7",
+   "invariant_green_at_base": "1/1",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 45,
+    "rejected_for_expected_reason": 45,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 1,
+     "N11": 1,
+     "N12": 1,
+     "N13": 2,
+     "N15": 3,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 1,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 8,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 2,
+     "N5": 1,
+     "N6": 1,
+     "N7": 3,
+     "N8": 1,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 5,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 1,
+    "spec_stated": 11
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  },
+  "B4-LNG-H": {
+   "checks": 24,
+   "check_kinds": {
+    "delta": 13,
+    "invariant": 11
+   },
+   "delta_red_at_base": "13/13",
+   "invariant_green_at_base": "11/11",
+   "references": {
+    "gold": "PASS",
+    "alt_gold": "PASS"
+   },
+   "negatives": {
+    "total": 60,
+    "rejected_for_expected_reason": 60,
+    "false_positives": 0,
+    "by_control": {
+     "N1": 1,
+     "N10": 2,
+     "N11": 1,
+     "N12": 1,
+     "N13": 1,
+     "N15": 12,
+     "N16": 1,
+     "N17": 1,
+     "N18": 1,
+     "N19": 1,
+     "N2": 2,
+     "N20": 1,
+     "N21": 1,
+     "N22": 1,
+     "N23": 1,
+     "N24": 1,
+     "N25": 1,
+     "N26": 1,
+     "N27": 1,
+     "N28": 1,
+     "N29": 1,
+     "N3": 10,
+     "N30": 1,
+     "N31": 1,
+     "N32": 1,
+     "N33": 1,
+     "N4": 3,
+     "N5": 1,
+     "N6": 1,
+     "N7": 3,
+     "N8": 3,
+     "N9": 1
+    }
+   },
+   "suite_mutants": 5,
+   "leak_scan": {
+    "findings": 0,
+    "allowed": 3,
+    "spec_stated": 10
+   },
+   "public_export_equals_base": true,
+   "problems": 0
+  }
+ },
+ "problems": []
+}

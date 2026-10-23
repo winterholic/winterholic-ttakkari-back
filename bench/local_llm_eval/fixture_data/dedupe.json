@@ -1,0 +1,13 @@
+{
+ "files": {
+  "report/__init__.py": "",
+  "report/csvout.py": "def _clean(s):\n    return \" \".join(str(s).split()).replace(\",\", \";\")\n\n\ndef to_csv(rows):\n    return \"\\n\".join(\",\".join(_clean(c) for c in r) for r in rows)\n",
+  "report/jsonout.py": "import json\n\n\ndef _clean(s):\n    return \" \".join(str(s).split()).replace(\",\", \";\")\n\n\ndef to_json(rows):\n    return json.dumps([[_clean(c) for c in r] for r in rows], ensure_ascii=False)\n",
+  "tests/__init__.py": "",
+  "tests/test_out.py": "import unittest\nfrom report.csvout import to_csv\nfrom report.jsonout import to_json\n\n\nclass T(unittest.TestCase):\n    def test_csv(self):\n        self.assertEqual(to_csv([[\"a b\", \"c,d\"]]), \"a b,c;d\")\n\n    def test_json(self):\n        self.assertEqual(to_json([[\"x  y\", \"1,2\"]]), '[[\"x y\", \"1;2\"]]')\n"
+ },
+ "original_prompt": "report/csvout.py 와 report/jsonout.py 에 똑같은 _clean 함수가 복사돼 있다. report/common.py 를 새로 만들어 clean(s) 로 옮기고 두 모듈이 그것을 import 해서 쓰게 하라. 동작은 그대로 유지하고 run_tests 로 확인하라. _clean 이라는 이름은 어디에도 남지 않아야 한다.",
+ "sources": {
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+ }
+}

@@ -1,0 +1,14 @@
+{
+ "files": {
+  "billing/__init__.py": "from .tax import calc_tax\nfrom .invoice import make_invoice\n",
+  "billing/invoice.py": "from .tax import calc_tax\n\n\ndef make_invoice(amount):\n    tax = calc_tax(amount)\n    return {\"amount\": amount, \"tax\": tax, \"total\": amount + calc_tax(amount)}\n",
+  "billing/tax.py": "def calc_tax(amount, rate=0.1):\n    \"\"\"Tax rounded to the nearest won.\"\"\"\n    return round(amount * rate)\n",
+  "tests/__init__.py": "",
+  "tests/test_billing.py": "import unittest\nfrom billing import calc_tax, make_invoice\n\n\nclass T(unittest.TestCase):\n    def test_tax(self):\n        self.assertEqual(calc_tax(1000), 100)\n        self.assertEqual(calc_tax(1005, 0.5), 502)\n\n    def test_invoice(self):\n        self.assertEqual(make_invoice(2000), {\"amount\": 2000, \"tax\": 200, \"total\": 2200})\n"
+ },
+ "original_prompt": "billing 패키지의 함수 calc_tax 를 compute_tax 로 이름을 바꿔라. 정의, import, 호출, __init__ 의 export, tests 안의 사용처까지 전부 바꿔서 calc_tax 라는 이름이 어디에도 남지 않게 하고, 동작은 그대로 유지한다. run_tests 로 확인하라.",
+ "sources": {
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/evalbase/stage3.py": "291343d777f991410f3f7028e378f24c157588f79b16d065f4966e4c646fa8cc",
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+ }
+}

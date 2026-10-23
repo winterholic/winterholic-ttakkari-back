@@ -1,0 +1,14 @@
+{
+ "files": {
+  "inv/__init__.py": "from .items import Item, total_value\nfrom .report import format_report\n",
+  "inv/items.py": "from dataclasses import dataclass\n\n\n@dataclass\nclass Item:\n    name: str\n    price: int  # won\n    qty: int\n\n\ndef total_value(items):\n    \"\"\"Sum of price * qty over all items.\"\"\"\n    return sum(i.price + i.qty for i in items)\n",
+  "inv/report.py": "from .items import total_value\n\n\ndef format_report(items):\n    \"\"\"One line per item sorted by name, then a TOTAL line. Numbers use thousands separators.\"\"\"\n    lines = []\n    for i in sorted(items, key=lambda i: i.price):\n        lines.append(f\"{i.name}: {i.price} x {i.qty}\")\n    lines.append(f\"TOTAL: {total_value(items)}\")\n    return \"\\n\".join(lines)\n",
+  "tests/__init__.py": "",
+  "tests/test_inv.py": "import unittest\nfrom inv import Item, total_value, format_report\n\n\nclass T(unittest.TestCase):\n    def test_total(self):\n        self.assertEqual(total_value([Item(\"a\", 100, 3), Item(\"b\", 250, 2)]), 800)\n\n    def test_empty(self):\n        self.assertEqual(total_value([]), 0)\n\n    def test_report(self):\n        items = [Item(\"pear\", 1200, 1), Item(\"apple\", 3000, 2)]\n        self.assertEqual(format_report(items), \"apple: 3,000 x 2\\npear: 1,200 x 1\\nTOTAL: 7,200\")\n"
+ },
+ "original_prompt": "inv 패키지의 테스트가 실패한다. 원인이 되는 소스 코드를 고쳐 모든 테스트를 통과시켜라. tests/ 폴더의 파일은 수정하지 마라.",
+ "sources": {
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/evalbase/stage3.py": "291343d777f991410f3f7028e378f24c157588f79b16d065f4966e4c646fa8cc",
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+ }
+}

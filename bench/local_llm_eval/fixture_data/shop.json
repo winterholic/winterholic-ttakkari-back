@@ -1,0 +1,14 @@
+{
+ "files": {
+  "shop/__init__.py": "",
+  "shop/cart.py": "\"\"\"장바구니.\"\"\"\nfrom .pricing import apply_discount\n\n\nclass Cart:\n    def __init__(self):\n        self.items = []  # (sku, unit_price_cents, qty)\n\n    def add(self, sku: str, unit_price_cents: int, qty: int = 1) -> None:\n        self.items.append((sku, unit_price_cents, qty))\n\n    def subtotal(self) -> int:\n        \"\"\"수량을 곱한 합계(센트).\"\"\"\n        return sum(price for _, price, _ in self.items)\n\n    def total(self, discount_percent: int = 0) -> int:\n        return apply_discount(self.subtotal(), discount_percent)\n",
+  "shop/pricing.py": "\"\"\"가격 계산. 금액은 모두 정수 센트.\"\"\"\n\n\ndef apply_discount(price_cents: int, percent: int) -> int:\n    \"\"\"percent% 할인한 가격을 돌려준다. 소수점 이하는 반올림(half-up)한다.\n\n    percent는 0 이상 100 이하여야 하며 벗어나면 ValueError를 낸다.\n    \"\"\"\n    discount = price_cents * percent // 100\n    return price_cents - discount\n",
+  "tests/__init__.py": "",
+  "tests/test_cart.py": "import unittest\n\nfrom shop.cart import Cart\nfrom shop.pricing import apply_discount\n\n\nclass CartTests(unittest.TestCase):\n    def test_subtotal_multiplies_quantity(self):\n        cart = Cart()\n        cart.add(\"a\", 250, qty=3)\n        cart.add(\"b\", 100)\n        self.assertEqual(cart.subtotal(), 850)\n\n    def test_total_without_discount(self):\n        cart = Cart()\n        cart.add(\"a\", 500, qty=2)\n        self.assertEqual(cart.total(), 1000)\n\n    def test_discount_rounds_half_up(self):\n        self.assertEqual(apply_discount(999, 15), 849)\n        self.assertEqual(apply_discount(1005, 50), 503)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"
+ },
+ "original_prompt": "shop 패키지의 장바구니 합계 계산에 버그가 있다. tests/test_cart.py를 실행해 실패 원인을 찾아 고쳐라.\n고친 뒤에는 shop/pricing.py의 apply_discount가 percent가 0~100을 벗어나면 ValueError를 내도록 하고, 이를 확인하는 테스트(음수, 101)를 tests/test_pricing.py에 새로 추가해라.\n마지막에 `python3 -m unittest discover -s tests -t .`가 전부 통과해야 한다.\n",
+ "sources": {
+  "/Users/winterholic/testing/qwen-worker-stage1/task.txt": "3a4849e00d30b83c8bcab9d95d4b8e5b9169436ad410b919ff2974fd5743b42b",
+  "/Users/winterholic/testing/qwen-worker-stage1/verify_fixture.py": "003d178fc682315bf6dfbd9478a29060d9818b5f2de65a13f29cb25621605584"
+ }
+}

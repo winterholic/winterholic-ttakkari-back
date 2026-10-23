@@ -1,0 +1,11 @@
+{
+ "files": {
+  "shop/__init__.py": "",
+  "shop/discount.py": "def apply_discount(price, percent):\n    \"\"\"percent must be within 0..100 inclusive, else ValueError. Result rounded to 2 decimals.\"\"\"\n    if percent < 0 or percent > 100:\n        raise ValueError(\"percent out of range\")\n    return round(price * (100 - percent) / 100, 2)\n",
+  "tests/__init__.py": ""
+ },
+ "original_prompt": "shop/discount.py 의 apply_discount 에 대한 단위 테스트를 tests/test_discount.py 로 작성하라. 정상 값, 경계값(0 과 100), 범위를 벗어난 값, 소수 반올림을 포함하고 run_tests 로 통과를 확인하라. shop/discount.py 는 수정하지 마라.",
+ "sources": {
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+ }
+}

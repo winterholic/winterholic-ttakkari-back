@@ -1,0 +1,14 @@
+{
+ "files": {
+  "tests/__init__.py": "",
+  "tests/test_slug.py": "import unittest\nfrom textutil import slugify\nfrom textutil.cli import main\n\n\nclass T(unittest.TestCase):\n    def test_basic(self):\n        self.assertEqual(slugify(\"Hello, World!\"), \"hello-world\")\n\n    def test_cli(self):\n        self.assertEqual(main([\"Hello World\"]), \"hello-world\")\n",
+  "textutil/__init__.py": "from .slug import slugify\n",
+  "textutil/cli.py": "from .slug import slugify\n\n\ndef main(argv):\n    \"\"\"argv: [text] -> slug string.\"\"\"\n    if not argv:\n        raise SystemExit(\"usage: slugify TEXT [--max-len N]\")\n    return slugify(argv[0])\n",
+  "textutil/slug.py": "import re\n\n\ndef slugify(text):\n    \"\"\"Lowercase, replace runs of non-alphanumerics with '-', strip '-' at both ends.\"\"\"\n    s = re.sub(r\"[^a-z0-9]+\", \"-\", text.lower())\n    return s.strip(\"-\")\n"
+ },
+ "original_prompt": "textutil.slug.slugify 에 선택 인자 max_len=None 을 추가하라. 지정되면 결과를 max_len 글자로 자르되 끝에 '-' 가 남지 않게 한다. 그리고 textutil.cli.main 이 인자 목록에서 '--max-len N' 옵션을 받아 slugify 에 전달하게 하라(옵션이 없으면 기존 동작). tests/test_slug.py 에 max_len 을 검증하는 테스트를 하나 이상 추가하고 run_tests 로 모두 통과하는지 확인하라.",
+ "sources": {
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/evalbase/stage3.py": "291343d777f991410f3f7028e378f24c157588f79b16d065f4966e4c646fa8cc",
+  "/tmp/bench-probe-4-1/bench2/2026-10-18/tasks.py": "2ca19a31d2501f600d667b10934548f389a69bdae8c69b6f041943914965519c"
+ }
+}

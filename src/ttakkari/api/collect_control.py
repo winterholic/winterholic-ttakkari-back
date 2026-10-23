@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import func, select, update
+from sqlalchemy import String, func, select, update
 
 from ttakkari.api.collect import _view, user_access
 from ttakkari.api.deps import Db
@@ -495,3 +495,27 @@ async def register_pilot(ctx: Access, db: Db):
             continue
     await db.commit()
     return {"created": created, "available": [s["source_key"] for s in pilot.PILOT_SOURCES]}
+
+
+@router.get("/review/audit")
+async def hold_audit_sample(ctx: Access, db: Db, per_group: int = Query(2, ge=1, le=10)):
+    """Stratified recovery audit of held documents (architecture 7). The sample is a deterministic daily reservoir per
+    (source, first reason), so repeated opens within a day show the same items and every stratum is represented."""
+    from ttakkari.collector import budget
+    day = budget.budget_day()
+    reason = func.coalesce(CollectorItem.reason_codes[0].astext, "none")
+    rank = func.row_number().over(partition_by=(CollectorItem.source_key, reason),
+                                  order_by=func.md5(func.concat(CollectorItem.id.cast(String), day)))
+    base = select(CollectorItem, reason.label("reason"), rank.label("n")).where(
+        CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope, CollectorItem.status == "held",
+        CollectorItem.kind == "document", CollectorItem.text_sha256.is_not(None))
+    sub = base.subquery()
+    sizes = {(r.source_key, r.reason): r.total for r in (await db.execute(
+        select(sub.c.source_key, sub.c.reason, func.count().label("total")).group_by(sub.c.source_key, sub.c.reason))).all()}
+    picked = (await db.execute(select(CollectorItem, sub.c.reason).join(sub, sub.c.id == CollectorItem.id).where(
+        sub.c.n <= per_group).order_by(sub.c.source_key, sub.c.reason, sub.c.n))).all()
+    return {"day": day, "per_group": per_group,
+            "groups": [{"source_key": s, "reason": r, "held": n, "sampled": min(per_group, n)} for (s, r), n in sorted(sizes.items())],
+            "items": [{"id": str(i.id), "url": i.url, "source_key": i.source_key, "status": i.status, "reason_codes": i.reason_codes,
+                       "language": i.language, "text_chars": i.text_chars, "signals": i.signals,
+                       "preview": ((i.envelope or {}).get("normalized") or {}).get("text", "")[:1200]} for i, _ in picked]}

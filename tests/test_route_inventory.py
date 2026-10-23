@@ -236,6 +236,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("GET", "/api/assistant/collect/summary"): "owner-scoped",
     ("GET", "/api/assistant/collect/budgets"): "owner-scoped",
     ("GET", "/api/assistant/collect/review"): "owner-scoped",
+    ("GET", "/api/assistant/collect/review/audit"): "owner-scoped",
     ("GET", "/api/assistant/collect/items/{item_id}"): "owner-scoped",
     ("GET", "/api/assistant/collect/deliveries"): "owner-scoped",
     ("POST", "/api/assistant/collect/deliveries/{outbox_id}/reconcile"): "owner-scoped",

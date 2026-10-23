@@ -4,7 +4,7 @@ Everything runs against the isolated PostgreSQL and a local fixture web server; 
 """
 import pytest
 from collector_support import article_html, prose
-from sqlalchemy import select
+from sqlalchemy import func, select
 from test_collector_control import BASE, source_body
 from test_collector_pipeline import (
     env,  # noqa: F401 -- isolated HTTP/PG fixture
@@ -193,3 +193,28 @@ async def test_pilot_sources_pass_the_normal_validation_and_seed_once(client, au
     assert len(work["created"]) == 3  # same keys are independent per scope
 
 pytestmark = pytest.mark.security
+
+
+async def test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason(client, auth, env, monkeypatch):  # noqa: F811
+    from collector_support import article_html
+
+    from ttakkari.collector_models import CollectorItem
+    for i in range(5):
+        env.server.page(f"/s{i}", article_html(f"짧은 글 {i}", [f"짧다 {i}."]))
+    body = source_body(seeds=[env.server.url(f"/s{i}") for i in range(5)], max_pages=5)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    source = (await client.get(BASE + "/sources", headers=auth)).json()["items"][0]
+    await client.post(BASE + f"/sources/{source['id']}/run", headers=auth)
+    await runner.consume_once(limit=1, managed_only=True)
+    first = (await client.get(BASE + "/review/audit", headers=auth, params={"per_group": 2})).json()
+    again = (await client.get(BASE + "/review/audit", headers=auth, params={"per_group": 2})).json()
+    assert [i["id"] for i in first["items"]] == [i["id"] for i in again["items"]]  # same day, same reservoir
+    held = first["groups"]
+    assert held and sum(g["held"] for g in held) == 5 and all(g["sampled"] <= 2 for g in held)
+    assert len(first["items"]) == sum(g["sampled"] for g in held)
+    assert (await client.get(BASE + "/review/audit", headers=auth, params={"scope": "work"})).json()["items"] == []
+    assert (await client.get(BASE + "/review/audit", params={"per_group": 2})).status_code == 401
+    assert (await client.get(BASE + "/review/audit", headers=auth, params={"per_group": 99})).status_code == 422
+    async with sessionmaker()() as db:
+        assert (await db.scalar(select(func.count()).select_from(CollectorItem).where(CollectorItem.status == "held"))) == 5

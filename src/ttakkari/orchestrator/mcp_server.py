@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 from urllib.parse import quote
 
 import httpx
@@ -252,16 +252,22 @@ async def creative_v2_plan(plan_id: str) -> str:
     return await _creative("plan", {"plan_id": plan_id})
 
 
+class CreativeStyleRef(TypedDict):
+    style_id: str
+    version: str
+
+
 @server.tool()
 async def creative_v2_plan_create(brief: Annotated[str, Field(min_length=1, max_length=6000)],
                                   name: Annotated[str, Field(max_length=120)] = "",
                                   intent: dict[str, Any] | None = None,
                                   duration: dict[str, Any] | None = None,
                                   aspect: Literal["16:9", "9:16", "1:1"] | None = None,
-                                  style: list[dict[str, Any]] | None = None,
+                                  style: list[CreativeStyleRef] | None = None,
                                   resolutions: list[dict[str, Any]] | None = None) -> str:
     """Create a plan from the existing catalog/recipe matcher. Approval is a separate revision-bound step.
-    Brief is 1–6000 characters; style is capped at 8 refs and resolutions at 60."""
+    Brief is 1–6000 characters; style is capped at 8 Style DNA refs with style_id and version
+    (for example neutral_base@1.0.0), not catalog entry IDs; resolutions are capped at 60."""
     return await _creative("plan_create", {"brief": brief, "name": name, "intent": intent,
         "duration": duration, "aspect": aspect, "style": style or [], "resolutions": resolutions or []})
 

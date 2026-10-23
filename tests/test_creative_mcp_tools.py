@@ -24,6 +24,10 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
     assert expected <= tools.keys()
     assert "prompt" in tools["comfy_submit"].input_schema["properties"]
     assert "revision" in tools["creative_v2_plan_approve"].input_schema["properties"]
+    plan_create_schema = tools["creative_v2_plan_create"].input_schema
+    style_items = plan_create_schema["properties"]["style"]["anyOf"][0]["items"]
+    assert style_items["$ref"] == "#/$defs/CreativeStyleRef"
+    assert plan_create_schema["$defs"]["CreativeStyleRef"]["required"] == ["style_id", "version"]
 
     call = AsyncMock(return_value='{"status":"starting"}')
     monkeypatch.setattr(ms, "_call", call)
@@ -51,6 +55,27 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
     call.assert_awaited_once_with("POST", "/auto_assets_start", {"data": {
         "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
     }}, prefix="/api/agent/creative-v2")
+
+    call.reset_mock()
+    await ms.server.call_tool("creative_v2_plan_create", {
+        "brief": "Kafka consumer group 동작을 설명한다.",
+        "style": [{"style_id": "neutral_base", "version": "1.0.0"}],
+    })
+    call.assert_awaited_once_with("POST", "/plan_create", {"data": {
+        "brief": "Kafka consumer group 동작을 설명한다.", "name": "", "intent": None,
+        "duration": None, "aspect": None,
+        "style": [{"style_id": "neutral_base", "version": "1.0.0"}], "resolutions": [],
+    }}, prefix="/api/agent/creative-v2")
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    call.reset_mock()
+    with pytest.raises(ToolError, match="style.0.style_id"):
+        await ms.server.call_tool("creative_v2_plan_create", {
+            "brief": "Kafka consumer group 동작을 설명한다.",
+            "style": [{"entry_id": "C03.vector_motion_graphics"}],
+        })
+    call.assert_not_awaited()
 
 
 def test_managed_comfy_owner_filter_hides_jobs_from_other_personal_principals(tmp_path):
@@ -149,6 +174,77 @@ async def test_creative_bridge_fails_closed_for_unknown_operations_and_reports_a
     assert available["available"] is True
     assert available["supported_recipes"] == ["R21"]
     assert available["cancel_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_plan_create_rejects_catalog_entries_as_style_refs_with_422_without_echoing_input(monkeypatch):
+    from fastapi import HTTPException
+
+    from ttakkari.api import creative_v2
+    from ttakkari.api.creative_mcp import Command, command
+
+    plan_create = AsyncMock()
+    monkeypatch.setattr(creative_v2, "plan_create", plan_create)
+
+    with pytest.raises(HTTPException) as exc:
+        await command("plan_create", Command(data={
+            "brief": "Kafka consumer group 동작을 세 장면으로 설명한다.",
+            "style": [{"entry_id": "C03.vector_motion_graphics"}],
+        }), "personal")
+
+    assert exc.value.status_code == 422
+    assert "style.0.style_id" in exc.value.detail
+    assert "style.0.version" in exc.value.detail
+    assert "C03.vector_motion_graphics" not in exc.value.detail
+    plan_create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_plan_create_accepts_versioned_style_refs(monkeypatch):
+    from ttakkari.api import creative_v2
+    from ttakkari.api.creative_mcp import Command, command
+
+    plan_create = AsyncMock(return_value={"id": "plan-1", "revision": 1})
+    monkeypatch.setattr(creative_v2, "plan_create", plan_create)
+
+    result = await command("plan_create", Command(data={
+        "brief": "Kafka consumer group 동작을 세 장면으로 설명한다.",
+        "style": [{"style_id": "neutral_base", "version": "1.0.0"}],
+    }), "personal")
+
+    assert result == {"id": "plan-1", "revision": 1}
+    model, owner = plan_create.await_args.args
+    assert [(ref.style_id, ref.version) for ref in model.style] == [("neutral_base", "1.0.0")]
+    assert owner == "owner"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("brief", "seconds", "style_id"), [
+    ("Kafka consumer group의 작동 원리를 한국어로 설명한다.", 20, "anime_cel"),
+    ("교토 골목을 걷는 여행 브이로그를 만든다.", 60, "sf_world"),
+    ("휴대용 커피 메이커의 장점을 소개한다.", 150, "neutral_base"),
+    ("비 오는 밤의 짧은 감성 이야기를 만든다.", 60, "horror_lighting"),
+    ("오늘의 과학 뉴스를 간결하게 요약한다.", 150, "cute_3d"),
+])
+async def test_plan_create_contract_accepts_varied_briefs_lengths_and_styles(
+    monkeypatch, brief, seconds, style_id,
+):
+    from ttakkari.api import creative_v2
+    from ttakkari.api.creative_mcp import Command, command
+
+    plan_create = AsyncMock(return_value={"id": "plan-1", "revision": 1})
+    monkeypatch.setattr(creative_v2, "plan_create", plan_create)
+
+    await command("plan_create", Command(data={
+        "brief": brief,
+        "duration": {"mode": "preferred", "seconds": seconds},
+        "aspect": "16:9",
+        "style": [{"style_id": style_id, "version": "1.0.0"}],
+    }), "personal")
+
+    model, _owner = plan_create.await_args.args
+    assert model.duration.seconds == seconds
+    assert [(ref.style_id, ref.version) for ref in model.style] == [(style_id, "1.0.0")]
 
 
 @pytest.mark.asyncio

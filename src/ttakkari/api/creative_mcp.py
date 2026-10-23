@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ttakkari.api import creative_v2 as c2
 from ttakkari.api.creative import _normalize, perform
@@ -135,7 +135,15 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
     if operation == "plan":
         return await c2.plan_get(_uuid(data), "owner")
     if operation == "plan_create":
-        return await c2.plan_create(c2.PlanCreate.model_validate(data), "owner")
+        try:
+            plan = c2.PlanCreate.model_validate(data)
+        except ValidationError as exc:
+            problems = "; ".join(
+                f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+                for error in exc.errors(include_input=False)
+            )
+            raise HTTPException(422, f"invalid plan_create input: {problems}") from exc
+        return await c2.plan_create(plan, "owner")
     if operation == "plan_edit":
         plan_id = _uuid(data)
         edit = c2.PlanEdit.model_validate({k: v for k, v in data.items() if k != "plan_id"})

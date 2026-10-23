@@ -11,7 +11,7 @@ For an approved v2 plan, automatically create scene imagery, per-scene voice, an
 - Active G34 engine work is in `/private/tmp/back-g34` (`feat/creative-engines-director`) and `/private/tmp/back-g34-integ` (`integ/g34-creative-engines-main-20261023`). The candidate is not main and had no push/deploy evidence. No files in G34's `director.py`, `pipeline.py`, or `managed_comfy.py` were edited.
 - Backend task worktree: `/private/tmp/creative-v2-auto-assets-main`, branch `feat/creative-v2-auto-assets-main-20261023`, based on current `origin/main` `ad58203c1dbc7265452d10aa523171a6c664158b` after rebase.
 - Frontend task worktree: `/private/tmp/creative-v2-auto-assets-front`, branch `feat/creative-v2-auto-assets-20261023`, based on current `origin/main` `d7a63d2094ae0818e423c1d55ca5d14ee97fdbd4` after rebase.
-- Changes are uncommitted. Nothing was pushed and no backend deployment was requested.
+- Backend implementation commit `318f1e5` is pushed to `feat/creative-v2-auto-assets-main-20261023`; frontend commit `1d8395f` is pushed to `feat/creative-v2-auto-assets-20261023`. Neither branch was merged to main. No backend deployment was requested because the real media E2E acceptance gate failed.
 
 ### Implemented locally
 

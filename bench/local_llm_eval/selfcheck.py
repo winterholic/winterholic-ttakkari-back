@@ -81,9 +81,13 @@ def classification_rows(task: Task) -> list[dict]:
     return rows
 
 
-def _evaluate_ends(task: Task, ends, start_files=None, extra_reports=None):
+def _evaluate_ends(
+    task: Task, ends, start_files=None, extra_reports=None, session=None
+):
     reports = reports_for(task, ends, extra_reports)
-    with materialize(task, ends, reports, start_files=start_files) as attempt:
+    with materialize(
+        task, ends, reports, start_files=start_files, session=session
+    ) as attempt:
         return evaluate_attempt(task, attempt)
 
 
@@ -94,7 +98,7 @@ def reference_rows(task: Task) -> list[dict]:
             continue
         ends = fn(task.base_files)
         extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
-        ev = _evaluate_ends(task, ends, extra_reports=extra)
+        ev = _evaluate_ends(task, ends, extra_reports=extra, session=task.gold_session)
         rows.append(
             {
                 "reference": name,
@@ -123,7 +127,10 @@ def negative_rows(task: Task) -> list[dict]:
         ends = neg.end(task.base_files, gold)
         start = neg.start(task.base_files, gold) if neg.start else None
         extra = neg.report(task.base_files, gold) if neg.report else None
-        ev = _evaluate_ends(task, ends, start_files=start, extra_reports=extra)
+        session = neg.session if neg.session is not None else task.gold_session
+        ev = _evaluate_ends(
+            task, ends, start_files=start, extra_reports=extra, session=session
+        )
         ok = ev.verdict == neg.expect_verdict and (
             not neg.expect_codes or ev.fail_code in neg.expect_codes
         )

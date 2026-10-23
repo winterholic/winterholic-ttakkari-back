@@ -45,6 +45,7 @@ def materialize(
     reports: list[dict | None] | None = None,
     start_files: dict[str, str] | None = None,
     traces: list[list[dict] | None] | None = None,
+    session: dict | None = None,
     **meta,
 ) -> Iterator[Attempt]:
     """Write each stage end into its own directory and yield an Attempt with honest start hashes."""
@@ -70,5 +71,6 @@ def materialize(
             profile_id=meta.pop("profile_id", "simulated"),
             repeat=meta.pop("repeat", 1),
             stages=stages,
+            session=session,
             meta=meta,
         )

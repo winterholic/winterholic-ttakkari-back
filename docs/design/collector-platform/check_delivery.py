@@ -33,14 +33,15 @@ def verify(*,strict=False):
         assert a['description'],'missing persisted PMS description'
         assert int(a['progress'])==int(row['progress']),row['code']+' stale progress'
         if row['stage']!='S1':
-            # S2 rows may be done only with an explicit self-verification state and an existing evidence file; S3 stays unstarted.
+            # Done rows need self-verification evidence. Partial S3 implementation is allowed but cannot imply independent or production validation.
             if row['status']=='done':
                 assert int(row['progress'])==100 and row['execution_state'].startswith('verified_'),'done without verified state '+row['code']
                 assert row['stage']=='S2' and (P.parent.parent.parent/'reports/collector/s2-final/verification-2026-10-23.txt').is_file(),'done without evidence '+row['code']
             else:
                 assert int(row['progress'])<100,'unfinished row at 100% '+row['code']
-                if row['status']!='todo':assert row['stage']=='S2' and row['status']=='review','unexpected in-progress row '+row['code']
-            if row['stage']=='S3':assert row['status']=='todo' and int(row['progress'])==0,'S3 must stay unstarted '+row['code']
+                if row['status']!='todo':
+                    assert row['stage']=='S2' and row['status']=='review' or row['stage']=='S3' and row['status']=='doing','unexpected in-progress row '+row['code']
+                    if row['stage']=='S3':assert row['execution_state'].startswith('partial_'),'S3 in-progress row needs partial evidence state '+row['code']
     if strict:assert sum(r['status']=='done' for r in rows if r['stage']=='S1')==3,'design close status missing'
     assert len([r for r in rows if r['stage']=='S1'])==3
     assert len([r for r in rows if r['stage']=='S2'])==11
@@ -66,7 +67,7 @@ def verify(*,strict=False):
             assert (f.parent/target.split('#')[0]).exists(),f'{f.name}: missing link {target}'
     assert '{{' not in (P/'summary.html').read_text(),'HTML template placeholder'
     print('design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1')
-    print(f'fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2 done={sum(r["status"]=="done" and r["stage"]=="S2" for r in rows)}/11 review={sum(r["status"]=="review" and r["stage"]=="S2" for r in rows)} (self-verified, not independent); S3 unstarted; local document links=PASS')
+    print(f'fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2 done={sum(r["status"]=="done" and r["stage"]=="S2" for r in rows)}/11 review={sum(r["status"]=="review" and r["stage"]=="S2" for r in rows)} (self-verified, not independent); S3 partial={sum(r["status"]=="doing" and r["stage"]=="S3" for r in rows)}; local document links=PASS')
 
 if __name__=='__main__':
     import sys

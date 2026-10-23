@@ -46,7 +46,19 @@ def install(model):
 
         async def score(self, text, language):
             value = await asyncio.to_thread(learning.predict, model.artifact, text)
+            calibration = model.artifact.get("calibration")
+            calibration_id = None
+            probability = None
+            gold_hash = None
+            if calibration is not None:
+                calibration_id = hashlib.sha256(json.dumps(
+                    calibration, sort_keys=True, allow_nan=False, separators=(",", ":")
+                ).encode()).hexdigest()
+                probability = learning.calibrated_probability(calibration, value)
+                gold_hash = calibration["gold_hash"]
             return {"utility": AxisScore(value=value, scale="raw_logit",
+                    calibrated_probability=probability, calibration_id=calibration_id,
+                    calibration_gold_hash=gold_hash,
                     evidence=(f"input_chars={len(text)}; feature_prefix_chars={min(20000, len(text))}; shadow_only",))}
     register_scorer(Scorer())
 
@@ -71,8 +83,14 @@ async def train(db, tenant, scope):
         if (normalized is None or normalized["truncated"] or active is None or not active[0].allows("train")
                 or "train" not in item.envelope["rights"]["purposes"]):
             continue
+        rights = item.envelope["rights"]
         samples.append({"id": str(review.id), "group": urlsplit(item.final_url or item.url).hostname or item.source_key,
-                        "text": normalized["text"], "label": int(review.decision == "accept")})
+                        "text": normalized["text"], "label": int(review.decision == "accept"),
+                        "review_id": str(review.id), "review_actor": review.actor,
+                        "reviewed_at": review.created_at.isoformat(), "source_key": item.source_key,
+                        "source_policy_hash": active[2], "source_policy_version": rights.get("policy_version"),
+                        "license_id": rights.get("license_id"), "policy_url": active[0].policy_url,
+                        "train_permission": True})
     artifact = await asyncio.to_thread(learning.fit, samples)
     model = CollectorQualityModel(tenant_id=tenant, scope=scope, digest=artifact["digest"], artifact=artifact)
     db.add(model)

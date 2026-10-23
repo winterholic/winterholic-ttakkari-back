@@ -2,6 +2,8 @@
 
 Everything runs against the isolated PostgreSQL and a local fixture web server; no public network.
 """
+import uuid
+
 import pytest
 from collector_support import article_html, prose
 from sqlalchemy import func, select
@@ -218,3 +220,31 @@ async def test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason(cl
     assert (await client.get(BASE + "/review/audit", headers=auth, params={"per_group": 99})).status_code == 422
     async with sessionmaker()() as db:
         assert (await db.scalar(select(func.count()).select_from(CollectorItem).where(CollectorItem.status == "held"))) == 5
+
+
+async def test_reprocess_uses_the_preserved_raw_blob_and_is_idempotent(client, auth, env, monkeypatch):  # noqa: F811
+    await collect(client, auth, env, monkeypatch)
+    held = (await client.get(BASE + "/review", headers=auth)).json()["items"][0]
+    assert held["can_reprocess"] is True
+    detail = (await client.get(BASE + f"/items/{held['id']}", headers=auth)).json()
+    hidden = await client.post(BASE + f"/items/{held['id']}/reprocess", headers=auth, params={"scope": "work"})
+    assert hidden.status_code == 404
+    first = await client.post(BASE + f"/items/{held['id']}/reprocess", headers=auth)
+    assert first.status_code == 202, first.text
+    replay = await client.post(BASE + f"/items/{held['id']}/reprocess", headers=auth)
+    assert replay.status_code == 202 and replay.json()["job_id"] == first.json()["job_id"]
+
+    from ttakkari.collector import pipeline
+
+    async def forbidden_fetch(*_args, **_kwargs):
+        raise AssertionError("raw reprocessing must not perform a network fetch")
+
+    monkeypatch.setattr(pipeline.get_deps().polite, "fetch", forbidden_fetch)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    items = (await client.get(BASE + f"/jobs/{first.json()['job_id']}/items", headers=auth)).json()["items"]
+    assert len(items) == 1 and items[0]["status"] == "held"
+    async with sessionmaker()() as db:
+        from ttakkari.collector_models import CollectorItem
+        rerun = await db.get(CollectorItem, uuid.UUID(items[0]["id"]))
+        assert rerun.raw_sha256 == detail["hashes"]["raw_sha256"]
+        assert rerun.envelope["extensions"]["collector:lineage"]["reprocessed_from"] == held["id"]

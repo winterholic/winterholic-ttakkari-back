@@ -233,6 +233,7 @@ def test_mcp_scope_values_valid():
 
 ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/assistant/collect/items/{item_id}/import"): "owner-scoped",
+    ("POST", "/api/assistant/collect/items/{item_id}/reprocess"): "owner-scoped",
     ("GET", "/api/assistant/collect/summary"): "owner-scoped",
     ("GET", "/api/assistant/collect/budgets"): "owner-scoped",
     ("GET", "/api/assistant/collect/review"): "owner-scoped",

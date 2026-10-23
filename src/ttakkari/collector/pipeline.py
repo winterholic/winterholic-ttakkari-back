@@ -25,12 +25,15 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
+from sqlalchemy import select
+
 from ttakkari.collector import parse, quality, store, textproc
 from ttakkari.collector import profiles as profiles_module
 from ttakkari.collector.blobs import BlobQuotaExceeded, BlobStore, default_blob_store
 from ttakkari.collector.contracts import (
     CollectorContractError,
     compute_payload_hash,
+    parse_iso_datetime,
     validate_envelope,
 )
 from ttakkari.collector.fetcher import FetchError, FetchLimits, SafeFetcher
@@ -424,6 +427,8 @@ def _build_envelope(
             "revision_of": p.signals.get("revision_of"),
         },
     }
+    if p.signals.get("reprocessed_from"):
+        ext["collector:lineage"]["reprocessed_from"] = p.signals["reprocessed_from"]
     quality_axes = quality.unmeasured_quality(textproc.NORMALIZER_VERSION)
     if a is not None:
         quality_axes = a.l1.quality
@@ -661,6 +666,16 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
     except ValueError as e:
         return HandlerResult("quarantined", {"code": "quality_model_invalid", "detail": str(e)[:300]})
     label = policy_version_label(source["key"], version, digest)
+    reprocess = (job.envelope.get("extensions") or {}).get("collector:reprocess")
+    if reprocess is not None:
+        if not spec.store_raw:
+            return HandlerResult("policy_blocked", {"code": "raw_reprocessing_not_permitted"})
+        try:
+            original_id = uuid.UUID(str(reprocess["item_id"]))
+            expected_raw_sha256 = str(reprocess["raw_sha256"])
+        except (KeyError, TypeError, ValueError):
+            return HandlerResult("quarantined", {"code": "invalid_reprocess_request"})
+        return await _handle_reprocess(job, ctx, spec, label, req, original_id, expected_raw_sha256, deps)
     cursor = job.cursor if job.cursor and job.cursor.get("v") == 1 else _new_cursor(req, spec)
 
     while cursor["frontier"] and cursor["processed"] < req.max_pages:
@@ -745,4 +760,86 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
         return HandlerResult("partial", {"code": "items_failed", **_summary(cursor)})
     if counts["blocked"] and not handled:
         return HandlerResult("policy_blocked", {"code": "all_items_blocked", **_summary(cursor)})
+    return HandlerResult("succeeded")
+
+
+async def _handle_reprocess(job, ctx, spec, label, req, original_id, expected_raw_sha256, deps) -> HandlerResult:
+    """Re-run current extraction/scoring over a retained raw response; this path never opens a network connection."""
+    async with sessionmaker()() as db:
+        original = await db.scalar(select(CollectorItem).where(
+            CollectorItem.id == original_id, CollectorItem.tenant_id == job.tenant_id,
+            CollectorItem.scope == job.scope,
+        ))
+        if original is None or original.kind != "document" or not original.raw_handle or not original.raw_sha256:
+            return HandlerResult("quarantined", {"code": "reprocess_source_unavailable"})
+        if original.raw_sha256 != expected_raw_sha256:
+            return HandlerResult("quarantined", {"code": "reprocess_source_changed"})
+        original_data = {
+            "id": str(original.id), "url": original.final_url or original.url, "url_key": original.url_key,
+            "raw_handle": original.raw_handle, "raw_sha256": original.raw_sha256, "raw_size": original.raw_size,
+            "media_type": original.media_type, "http_status": original.http_status, "fetched_at": original.fetched_at,
+            "robots": (original.envelope or {}).get("rights", {}).get("robots", "unknown"),
+            "retain_until": (original.envelope or {}).get("rights", {}).get("retain_until"),
+        }
+    if original_data["retain_until"]:
+        try:
+            if parse_iso_datetime(original_data["retain_until"]) <= deps.clock():
+                return HandlerResult("policy_blocked", {"code": "raw_retention_expired"})
+        except CollectorContractError:
+            return HandlerResult("quarantined", {"code": "invalid_source_retention"})
+    current_retain_until = spec.retain_until(original_data["fetched_at"]) if original_data["fetched_at"] else None
+    if current_retain_until and current_retain_until <= deps.clock():
+        return HandlerResult("policy_blocked", {"code": "current_source_retention_expired"})
+    try:
+        body = await asyncio.to_thread(deps.blobs.get, original_data["raw_handle"])
+    except (OSError, ValueError) as exc:
+        return HandlerResult("quarantined", {"code": "raw_blob_unavailable", "detail": type(exc).__name__})
+    raw_sha = hashlib.sha256(body).hexdigest()
+    if raw_sha != original_data["raw_sha256"]:
+        return HandlerResult("quarantined", {"code": "raw_blob_hash_mismatch"})
+
+    entry = _entry(original_data["url"], 0, parent_item=original_id, parent_url=original_data["url"])
+    p = Prepared(entry, uuid.uuid4(), original_data["url"], original_data["url_key"],
+                 final_url=original_data["url"], http_status=original_data["http_status"],
+                 fetched_at=original_data["fetched_at"], raw_sha256=raw_sha, raw_size=len(body),
+                 raw_handle=original_data["raw_handle"], media_type=original_data["media_type"],
+                 robots=original_data["robots"])
+    p.signals["reprocessed_from"] = str(original_id)
+    detected = parse.detect_kind(body, p.media_type)
+    if detected.kind not in ("html", "text"):
+        p.status, p.stage = "held", "fetched"
+        p.reasons = [f"unsupported_media:{detected.reason or detected.kind}"]
+        p.errors = [_err("extract", detected.reason or "unsupported_media", detected.media_type)]
+    else:
+        try:
+            extracted = await asyncio.to_thread(parse.extract_document, body, url=p.url, kind=detected.kind)
+            p.analysis = await _analyze(extracted, p.url, None, req, deps)
+            p.stage = "scored"
+        except ValueError as exc:
+            p.status, p.stage = "failed", "extracted"
+            p.reasons = [str(exc)]
+            p.errors = [_err("extract", str(exc), "no main text could be extracted from preserved raw data")]
+            p.signals["decision_hint"] = "error"
+        except Exception as exc:  # noqa: BLE001 hostile saved markup remains an item-level failure
+            log.warning("reprocess extraction failed for item %s: %s", original_id, type(exc).__name__)
+            p.status, p.stage = "failed", "extracted"
+            p.reasons = ["parser_error"]
+            p.errors = [_err("extract", "parser_error", type(exc).__name__)]
+            p.signals["decision_hint"] = "error"
+
+    cursor = {"v": 1, "frontier": [entry], "seen": [p.url_key[:16]], "processed": 0,
+              "discovered": 1, "counts": dict.fromkeys(COUNT_KEYS, 0)}
+    result: dict[str, Any] = {}
+
+    async def work(db):
+        return await _finalize_page(db, job, spec, label, req, cursor, [entry], [p], deps.clock(), result)
+
+    if await ctx.commit_work(work, stage=STAGE_PROCESS) == "cancelled":
+        return HandlerResult("cancelled")
+    cursor = result["cursor"]
+    if await ctx.commit_page(cursor, stage="done") == "cancelled":
+        return HandlerResult("cancelled")
+    counts = cursor["counts"]
+    if counts["failed"]:
+        return HandlerResult("partial", {"code": "reprocessed_item_failed", "counts": counts})
     return HandlerResult("succeeded")

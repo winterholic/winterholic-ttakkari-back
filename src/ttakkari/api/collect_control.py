@@ -253,6 +253,22 @@ async def retry(job_id: uuid.UUID, ctx: Access, db: Db):
     return _view(job)
 
 
+@router.post("/items/{item_id}/reprocess", status_code=202)
+async def reprocess_item(item_id: uuid.UUID, ctx: Access, db: Db):
+    """Queue the current parser/scorer over a retained raw response, without an outbound HTTP request."""
+    visible = await db.scalar(select(CollectorItem.id).where(
+        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope,
+    ))
+    if visible is None:
+        raise HTTPException(404, "item_not_found")
+    try:
+        job = await control.enqueue_reprocess(db, ctx, item_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await db.commit()
+    return _view(job)
+
+
 @router.get("/jobs/{job_id}/items")
 async def job_items(job_id: uuid.UUID, ctx: Access, db: Db,
                     limit: int = Query(30, ge=1, le=100), offset: int = Query(0, ge=0)):
@@ -392,6 +408,7 @@ async def review_queue(ctx: Access, db: Db, limit: int = Query(20, ge=1, le=50),
     return {"items": [{"id": str(r.id), "url": r.url, "source_key": r.source_key, "status": r.status,
                        "reason_codes": r.reason_codes, "language": r.language, "text_chars": r.text_chars,
                        "signals": r.signals,
+                       "can_reprocess": bool(r.raw_handle and r.raw_sha256),
                        "preview": ((r.envelope or {}).get("normalized") or {}).get("text", "")[:1200]} for r in rows],
             "total": total, "limit": limit, "offset": offset}
 
@@ -518,4 +535,5 @@ async def hold_audit_sample(ctx: Access, db: Db, per_group: int = Query(2, ge=1,
             "groups": [{"source_key": s, "reason": r, "held": n, "sampled": min(per_group, n)} for (s, r), n in sorted(sizes.items())],
             "items": [{"id": str(i.id), "url": i.url, "source_key": i.source_key, "status": i.status, "reason_codes": i.reason_codes,
                        "language": i.language, "text_chars": i.text_chars, "signals": i.signals,
+                       "can_reprocess": bool(i.raw_handle and i.raw_sha256),
                        "preview": ((i.envelope or {}).get("normalized") or {}).get("text", "")[:1200]} for i, _ in picked]}

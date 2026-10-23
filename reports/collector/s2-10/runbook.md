@@ -61,4 +61,6 @@
 - `quality.L1Policy`/`run_l1`(shadow 모드)과 `quality_service` 참고 모델은 그대로다. S3의 공개 classifier·student는 이 경로에 `mode=shadow`로 붙는다.
 - 모델 호출은 반드시 `budget.guarded_call(...)`만 거친다. 엔진은 `EngineBound`로 입력/출력 한도 강제·단가·usage 반환을 모두 증명해야 한다. 하나라도 없으면 거부된다.
 - 결과 캐시는 `cache.cache_key`(tenant·scope·text hash·모델 revision·전처리·rubric·정책·질의)를 쓴다.
-- S3 착수 조건: (1) 라벨 rubric·누출 방지 split·권리 manifest(CP-S3-01), (2) 학습 허용(`train`)이 확인된 출처 5개 이상과 사람 라벨 20건 이상(참고 모델 규칙과 동일), (3) 한도 강제 엔진 증명 전에는 teacher 비활성, (4) 운영 실제 적재 문서에 대한 독립 검토. 현재 파일럿은 `train=unknown`이라 학습 자료로 쓸 수 없다.
+- S3 운영 승격 조건: (1) 라벨 rubric·누출 방지 split·권리 manifest(CP-S3-01), (2) 학습 허용(`train`)이 확인된 출처 5개 이상과 사람 라벨 20건 이상, (3) 한도 강제 엔진 증명 전에는 teacher 비활성, (4) 운영 실제 적재 문서에 대한 독립 검토. 코드의 로컬 utility baseline/calibration은 shadow에만 붙으며 이 조건을 대신하지 않는다. 현재 파일럿은 `train=unknown`이라 학습 자료로 쓸 수 없다.
+- source-heldout calibration이 있는 artifact만 `calibrated_probability`를 반환한다. 지원 표본/독립 출처가 부족하면 `calibration=null`이고 소비자는 확률 대신 raw logit과 미측정 상태를 사용해야 한다. Manifest에는 label review ID/actor/time, source policy hash/version, license/policy URL, train permission과 본문 해시가 포함된다. 이는 학습 출처를 재현하는 코드 근거이며 사람 검토나 권리의 실체를 독립 증명하지 않는다.
+- hold 재처리는 기존 보존 원문만 읽고 네트워크를 호출하지 않는다. 요청 시점과 실행 시점의 보존 만료·현재 store/store_raw 권리를 모두 확인하고, 동일 item/source/policy/profile/model 버전 요청은 멱등하다. 보존 원문이 없거나 권리가 철회된 경우 작업을 만들지 않는다.

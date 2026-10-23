@@ -12,6 +12,7 @@ from ttakkari.collector.contracts import (
     AuthContext,
     CollectorContractError,
     JobStateError,
+    jcs,
 )
 from ttakkari.collector.control_models import CollectorDailyBudget, CollectorSource
 from ttakkari.collector.intake import submit_envelope
@@ -117,6 +118,90 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None) -
         source.next_run_at = now + timedelta(minutes=source.interval_minutes)
     await db.flush()
     return await db.get(CollectorJob, result.job_id)
+
+
+async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: datetime | None = None) -> CollectorJob:
+    """Queue a parser/normalizer replay of one preserved response without fetching the network again."""
+    from ttakkari.collector import parse, quality_service, textproc
+    from ttakkari.collector.blobs import sha_of_handle
+    from ttakkari.collector.contracts import parse_iso_datetime
+    from ttakkari.collector.profiles import get_profile
+    from ttakkari.collector_models import CollectorItem
+
+    now = now or datetime.now(UTC)
+    item = await db.scalar(select(CollectorItem).where(
+        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope,
+    ).with_for_update())
+    if item is None:
+        raise JobStateError("item not found")
+    if item.kind != "document" or not item.raw_handle or not item.raw_sha256:
+        raise JobStateError("item has no preserved raw document")
+    if sha_of_handle(item.raw_handle) != item.raw_sha256:
+        raise JobStateError("raw blob handle does not match the item hash")
+    if item.envelope is None:
+        raise JobStateError("item has no source rights record")
+    retain_until = item.envelope.get("rights", {}).get("retain_until")
+    if retain_until and parse_iso_datetime(retain_until) <= now:
+        raise JobStateError("raw document retention has expired")
+
+    source = await db.scalar(select(CollectorSource).where(
+        CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.source_key == item.source_key,
+    ).with_for_update())
+    if source is None:
+        raise JobStateError("source is no longer registered")
+    policy = await store.active_policy(db, ctx.tenant_id, ctx.scope, source.source_key)
+    if policy is None or not policy[0].allows("store") or not policy[0].store_raw:
+        raise JobStateError("current source policy does not allow raw reprocessing")
+    spec, _, policy_digest = policy
+    current_retain_until = spec.retain_until(item.fetched_at) if item.fetched_at else None
+    if current_retain_until and current_retain_until <= now:
+        raise JobStateError("current source retention window has expired")
+    profile_name = source.request.get("profile", spec.default_profile)
+    profile = get_profile(profile_name)
+    request = {
+        "seeds": [item.final_url or item.url], "profile": profile_name,
+        "profile_params": source.request.get("profile_params", {}), "max_pages": 1, "max_depth": 0,
+    }
+    CollectRequest.from_envelope({"extensions": {"collector:request": request}}, spec)
+    model = await quality_service.latest_model(db, source.tenant_id, source.scope)
+    processor_versions = {"pipeline": "collector-pipeline-1", "parser": parse.PARSER_VERSION,
+                          "normalizer": textproc.NORMALIZER_VERSION, "profile": profile.version,
+                          "model": model.digest if model else "none"}
+    processor_fingerprint = hashlib.sha256(jcs({"versions": processor_versions, "profile": profile_name,
+                                               "profile_params": request["profile_params"]}).encode()).hexdigest()
+    request_key = f"collector-reprocess:{item.id}:{policy_digest}:{processor_fingerprint}"
+    existing = await db.scalar(select(CollectorJob).where(
+        CollectorJob.tenant_id == ctx.tenant_id, CollectorJob.scope == ctx.scope,
+        CollectorJob.source_key == source.source_key, CollectorJob.request_key == request_key,
+    ))
+    if existing is not None:
+        return existing
+    ident = uuid.uuid5(uuid.NAMESPACE_URL, request_key)
+    envelope = intake_envelope(source, spec, now, ident)
+    envelope["extensions"]["collector:request"] = request
+    envelope["extensions"]["collector:reprocess"] = {
+        "item_id": str(item.id), "raw_sha256": item.raw_sha256, "processor_versions": processor_versions,
+    }
+    if model is not None:
+        quality_service.install(model)
+        request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(
+            source.tenant_id, source.scope, model.digest)}
+        envelope["extensions"]["collector:request"] = request
+    result = await submit_envelope(
+        db, AuthContext(tenant_id=source.tenant_id, scope=source.scope, principal_id="owner", kind="owner"),
+        request_key, envelope,
+    )
+    if result.status == "created":
+        day = budget_day(now)
+        await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
+        budget = await db.get(CollectorDailyBudget, day, with_for_update=True)
+        if budget.reserved_pages + 1 > get_settings().collector_daily_page_cap:
+            raise JobStateError("daily collection page budget reached")
+        budget.reserved_pages += 1
+        source.last_job_id = result.job_id
+    from ttakkari.collector import jobs
+    return await jobs.get_job(db, ctx.tenant_id, ctx.scope, result.job_id)
 
 
 async def schedule_once(*, now: datetime | None = None) -> int:

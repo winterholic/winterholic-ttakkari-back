@@ -1309,7 +1309,8 @@
    "positive_elapsed_no_response": 3,
    "response_or_tool_observed": 3,
    "zero_elapsed_no_response": 20,
-   "cause": "unknown"
+   "cause": "unknown",
+   "order_as_stated_by_main": "observed 3 / positive elapsed 3 / zero elapsed 20"
   },
   "note_report_typo": "audit-report body had 6+6+20; corrected to 3+3+20 by main; JSON/CSV are authoritative",
   "past_costs_not_a_direct_baseline": {
@@ -1321,7 +1322,26 @@
    "past_sha256": "9ed432cb121bfc7f2698362f5b8af80edc45652a2792c48a05799b15cdaa5ec2",
    "current_sha256": "003d178fc682315bf6dfbd9478a29060d9818b5f2de65a13f29cb25621605584"
   },
-  "deferred": "2026-10-17 efficiency raw_data.zip not found; original JSONL audit incomplete; numbers from it are not used"
+  "deferred": "2026-10-17 efficiency raw_data.zip not found; original JSONL audit incomplete; numbers from it are not used",
+  "audit_report_sha256": "75d1bcbedeb7f48493c95038619d0f8c985d257000bc30b1044b9d10112f2479",
+  "audit_report_note": "long-term evidence-audit/audit-report.md with main re-review correction (3+3+20); read directly",
+  "reviewed_outbox_copy": {
+   "path": "outbox/9914a0bf-619d-4bea-987b-a52c5f34d346/audit-report-reviewed.md",
+   "read": false,
+   "reason": "blocked by ttakkari guard; not bypassed; content equality with long-term copy not verified"
+  },
+  "main_verified": [
+   "raw 61 rows <-> attempt manifest full correspondence",
+   "t6 success cost 165.0s",
+   "t8 success cost 239.7s"
+  ],
+  "fixed_in_spec": {
+   "baseline_hash": "spec section 1-7, 5.1-0",
+   "noop_class_split": "spec sections 1-8, 1-9, 2.1",
+   "failure_retry_cost": "spec section 6.4",
+   "api_unknown": "spec section 5.2",
+   "raw_data_zip_missing": "spec section 8 (open, deferred)"
+  }
  },
  "open_items": [
   "P2/P6/P7b past-row trace usage not checked (not found in audit report)",
@@ -1362,5 +1382,6 @@
   "evidence/4.1/verify_delta_and_trap_output.json": "745d9e3b1455ce8107294845c42cbdd6af66b5a5baecf6bd6915f05b99824483",
   "evidence/4.1/leak_scan_dev.py": "6d5185c9690811570402d0978b4cdb8540b7cc91403cbe4acb2b9d4eaab27c22",
   "evidence/4.1/leak_scan_dev_output.json": "9d7eb576bf239f7934f6949bdd538202c2d7d02583f5836175db3a45dabcd017"
- }
+ },
+ "harness_note": "WBS 2.2 under rework after 2 counterexamples; no model load/inference/download/operations change in this work"
 }

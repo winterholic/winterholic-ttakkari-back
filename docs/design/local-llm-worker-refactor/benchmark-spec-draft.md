@@ -22,6 +22,22 @@
 
 `qwen-local-harness` 저장소는 dirty 상태다(작성 시작 시 HEAD `b278b96f…`, v1 작성 중 HEAD `c9123ac57a0685c652e02076f1baf25aa1426ee7`로 다른 작업자가 전진, 읽기만 했고 건드리지 않았다). 이 문서가 근거로 삼은 `tasks.py`·`stage3.py`·`longtasks.py`·`validate_tasks.py`·`verify_fixture.py`의 sha256은 v1 작성 때 다시 계산해 draft-0 값과 같음을 확인했다(§7).
 
+### 0.1 1.2 감사 확정 사항 요약 (이 명세가 고정하는 내용)
+
+메인이 직접 확인한 사실: 원자료 61행과 attempt manifest의 전수 대응, t6 성공당 165.0초와 t8 239.7초. API 오류 26건의 내역은 raw·JSON 기준 **응답/도구 관측 3건, 양의 경과시간 3건, wall 0초 20건**이다. 보고서 본문의 `6+6+20`은 전사 오류였고 장기 기록 `evidence-audit/audit-report.md`(sha256 `75d1bcbedeb7f48493c95038619d0f8c985d257000bc30b1044b9d10112f2479`, 말미 "메인 재검토 정정")와 `artifact_manifest.csv`에 `3+3+20`으로 정정돼 있다. 이전 outbox 원본은 보존되어 있다. 이 명세는 `audit_recount.json`과 CSV를 정본으로 쓴다.
+
+교정판 outbox 파일 `…/outbox/9914a0bf-619d-4bea-987b-a52c5f34d346/audit-report-reviewed.md`는 이 Run에서 ttakkari guard가 읽기를 막아 **직접 읽지 못했다**(우회하지 않음). 이 명세가 읽은 것은 장기 기록의 `audit-report.md`이며, 그 정정 문구가 전달받은 교정 내용과 일치한다. 교정판 파일 자체의 내용 일치는 검증하지 못했다(검증 못함: guard 차단).
+
+명세에 고정한 다섯 가지:
+
+1. **초기 buggy fixture와 baseline hash 검증(§1-7, §5.1-0):** attempt마다 pristine buggy fixture로 reset하고, 첫 모델 요청 전에 base tree hash와 파일별 sha256을 sealed 기준값과 대조해 ledger에 남긴다. 불일치는 모델 평가가 아니라 `INFRA_BASE_MISMATCH`다. 종료 시점 hash도 기록한다. 이미 정답인 workspace는 현 checker 둘이 no-op을 통과시키므로 이 절차 없이는 성공을 인정하지 않는다.
+2. **수정 필요 과제와 탐색 전용 과제의 no-op 판정 구분(§1-8, §1-9, §2.1):** `diff_required` 과제는 pristine 대비 변경이 없으면 `FAIL_NOOP`이고 delta 검사가 green이어야 한다. `read_only_report` 과제(탐색, 장시간 T5)는 변경 없음이 정답 상태이며 diff를 요구하지 않고, 보고 산출물의 존재·정확성·trace로 no-op을 가려낸다. 탐색 과제에서 파일을 수정하면 `FAIL_FORBIDDEN_WRITE`다. 두 class를 섞어 적용하지 않는다.
+3. **실패·재시도 비용 보존(§6.4):** 모든 attempt 행(중복·재시도·0초·API 오류·timeout·truncation 포함)을 제외 없이 ledger에 남긴다. 재시도는 같은 `(task, repeat)` 키의 추가 비용이며 새 분모가 아니다. 성공 시도만의 평균으로 오류 포함 비용을 대체하지 않는다.
+4. **API 원인 unknown(§5.2):** HTTP status·body·server 식별자 증거가 없는 오류는 `UNKNOWN`이며 INFRA로 제외하지 않는다. 과거 26건이 그 사례다. 0초 행은 `zero_wall_no_response`로 플래그하되 비용에서 빼지 않는다. 이후 attempt는 server run/instance ID, model artifact hash, per-call HTTP status를 결측 없이 기록해야 비교 표에 들어간다.
+5. **10/17 원 ZIP 누락(§8):** 2026-10-17 FlashNext efficiency의 `raw_data.zip`은 지정 경로와 검색 범위에서 발견되지 않았다. 원 JSONL 독립 추적은 **미완으로 보류**이고, 그 자료는 31행 CSV correction 수준으로만 재사용 가능하다. 이 명세는 그 자료의 수치를 어떤 기준·비교에도 쓰지 않는다. 원본이 확보되어 감사되기 전까지 같다.
+
+하네스(2.2)는 반례 2건으로 재작업 중이다. 모델 로드·추론·다운로드·학습·운영 변경 금지는 유지되며 이 Run은 모델을 실행하지 않았다. 4.2 구현은 이 Run의 범위가 아니다.
+
 ## 1. 설계 원칙
 
 1. **9유형×2변형=18과제.** 유형마다 개발(D) 1개, holdout(H) 1개. 유형은 설계 §5.1 표와 같다: 탐색, 단일 파일, 다중 파일, REST, 디버깅, 리팩토링, 테스트 작성, 오류 후 자율 수정, 장시간 다중 턴.

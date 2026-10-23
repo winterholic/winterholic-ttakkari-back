@@ -74,6 +74,36 @@ async def test_managed_server_becomes_ready_and_stop_kills_the_child():
     assert q.endpoint is None and not list((get_settings().home / "qwen").glob("*.json"))  # pid 파일도 정리
 
 
+def test_child_argv_keeps_the_shape_the_qwen_local_harness_identifies_it_by(managed):
+    """qwen-local-harness 의 가드는 argv 로 접수 서버를 알아본다(runner.managed_intake_signature).
+
+    TTAKKARI_HOME 이 다른 백엔드(개발·검증 인스턴스)의 자식은 pid 기록을 공용 디렉터리에서 못 찾으므로
+    이 argv 와 살아 있는 부모(백엔드)만이 소유 증거다. 플래그가 바뀌면 qwen-local 이 다시 막힌다.
+    """
+    argv = svc._server_args(Path("/srv/llama-server"), Path("/m/Qwen3.5-4B-Q4_K_M.gguf"), 51011)
+
+    def value(flag: str) -> str:
+        return argv[argv.index(flag) + 1]
+
+    assert argv[0] == "/srv/llama-server"
+    assert (value("--device"), value("--gpu-layers"), value("--host"), value("--port")) == ("none", "0", "127.0.0.1", "51011")
+    assert value("--model") == "/m/Qwen3.5-4B-Q4_K_M.gguf" and "--no-webui" in argv
+    assert "--alias" not in argv and "--api-key" not in argv  # 하네스 자신의 Flash-Next 서버와 구분되는 표지
+
+
+async def test_managed_child_is_a_direct_child_and_its_pid_record_names_the_live_owner(managed):
+    q = svc.QwenServer()
+    await q.start()
+    await until(lambda: q.state == "ready", what="ready")
+    child = q._child.pid
+    assert psutil.Process(child).ppid() == os.getpid()  # 소유자 = 직계 부모(가드의 소유 증거)
+    [record_file] = list((get_settings().home / "qwen").glob("*.json"))
+    rec = json.loads(record_file.read_text())
+    assert rec["owner_pid"] == os.getpid() and rec["child_pid"] == child
+    assert {"port", "server", "model", "owner_start", "child_start"} <= set(rec)
+    await q.stop()
+
+
 async def test_start_is_idempotent_and_never_spawns_twice():
     q = svc.QwenServer()
     await q.start()

@@ -143,7 +143,8 @@ class ComfyManagedController:
         } for p in PROFILES.values()]
 
     def prepare(self, profile_id: str, *, prompt: str, seed: int, owner: str = "owner",
-                idempotency_key: str | None = None, **extra: Any) -> dict[str, Any]:
+                idempotency_key: str | None = None, lease_wait_seconds: float = 0,
+                **extra: Any) -> dict[str, Any]:
         if extra:
             raise ValueError("only registered profile parameters prompt and seed are accepted")
         profile = PROFILES.get(profile_id)
@@ -178,7 +179,7 @@ class ComfyManagedController:
             owner_task=task_id, owner_attempt=attempt_id, runtime_instance=runtime_instance,
             resource_family="comfy", claim={"profile": profile.profile_id, "workflow": profile.workflow,
                                              "revision": profile.revision, "models": list(profile.models)},
-            ttl_seconds=45,
+            ttl_seconds=45, wait_seconds=lease_wait_seconds,
         )
         job = {"task_id": task_id, "owner": owner, "owner_attempt": attempt_id,
                "runtime_instance": runtime_instance, "lease_id": lease.lease_id,
@@ -531,9 +532,14 @@ class ComfyManagedController:
         return {"items": page, "total_count": len(rows), "offset": offset,
                 "has_more": next_offset is not None, "next_offset": next_offset}
 
-    def get(self, task_id: str, *, owner: str | None = None) -> dict[str, Any]:
+    def get(self, task_id: str, *, owner: str | None = None,
+            readable_owner_prefixes: tuple[str, ...] = ()) -> dict[str, Any]:
+        """owner 가 일치하거나, 읽기 전용으로 공개한 소유자 접두사(예: 자동 생성 작업)에 속하면 돌려준다."""
         job = self._load(task_id)
-        if owner is not None and job.get("owner") != owner:
+        if owner is not None and job.get("owner") != owner and not any(
+            isinstance(job.get("owner"), str) and job["owner"].startswith(prefix)
+            for prefix in readable_owner_prefixes
+        ):
             raise FileNotFoundError("managed Comfy task not found")
         with self._lock:
             active = self._active.get(task_id)

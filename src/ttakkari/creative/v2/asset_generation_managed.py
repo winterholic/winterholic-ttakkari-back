@@ -34,6 +34,9 @@ ACESTEP_JOB_RUNNER = ASSET_LAB_ROOT / "audio/run_acestep_job.py"
 ACESTEP_PYTHON = ACESTEP_ROOT / ".venv/bin/python"
 ACESTEP_TIMEOUT_SECONDS = 1800
 LEASE_TTL_SECONDS = 300
+# 앞 엔진은 성공을 기록한 뒤 런타임을 멈추고 lease 를 해제한다(Comfy 정지는 수 초에서 수십 초). 같은 작업의 다음 엔진은
+# 그 인계 구간을 기다려야 하며, 기다려도 풀리지 않는 외부 점유만 실패로 올린다.
+LEASE_HANDOFF_WAIT_SECONDS = 180
 
 
 class ManagedAssetGenerator:
@@ -343,6 +346,7 @@ class ManagedAssetGenerator:
                 prompt=prompt,
                 seed=seed,
                 owner=f"creative-v2:{plan['id']}:{plan['revision']}:{scene_id}",
+                lease_wait_seconds=LEASE_HANDOFF_WAIT_SECONDS,
             )
             attempts.append({"task_id": job["task_id"], "submitted_at": time.time()})
             self._write_checkpoint(checkpoint, {"identity": identity, "attempts": attempts})
@@ -491,6 +495,7 @@ class ManagedAssetGenerator:
             resource_family="gpu",
             claim={"engine": "ACE-Step 1.5", "mode": "text2music", "duration_seconds": duration},
             ttl_seconds=LEASE_TTL_SECONDS,
+            wait_seconds=LEASE_HANDOFF_WAIT_SECONDS,
         )
         process = None
         last_heartbeat = self._clock()

@@ -25,7 +25,12 @@ class LeaseError(RuntimeError):
 
 
 class LeaseBusy(LeaseError):
-    pass
+    # 소유자가 곧 해제할 수 있는 일시적 점유만 True. 만료·읽기 불가·legacy 기록은 사람이 reconcile 해야 하므로 기다려도 풀리지 않는다.
+    retryable = False
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class LeaseOwnershipError(LeaseError):
@@ -161,6 +166,54 @@ class ResourceLeaseManager:
         claim: dict[str, Any],
         ttl_seconds: float = 30,
         now: float | None = None,
+        wait_seconds: float = 0,
+        poll_seconds: float = 0.5,
+    ) -> ResourceLeaseHandle:
+        """lease 를 얻는다. wait_seconds>0 이면 일시적 점유(retryable)에 한해 그 시간까지 기다린다.
+
+        같은 작업 안에서 엔진이 순차로 이어질 때, 앞 엔진은 성공을 기록한 뒤 런타임을 멈추고 lease 를 해제하므로
+        그 짧은 구간의 점유를 즉시 실패로 취급하면 자기 자신과 충돌한다. 시간 안에 풀리지 않으면 소유자 정보를 담아 실패한다.
+        """
+        if isinstance(wait_seconds, bool) or not math.isfinite(float(wait_seconds)) or not 0 <= float(wait_seconds) <= 3600:
+            raise ValueError("wait_seconds must be between 0 and 3600")
+        if not math.isfinite(float(poll_seconds)) or poll_seconds <= 0:
+            raise ValueError("poll_seconds must be positive")
+        deadline = time.monotonic() + float(wait_seconds)
+        while True:
+            try:
+                return self._acquire_once(
+                    owner_task=owner_task, owner_attempt=owner_attempt, runtime_instance=runtime_instance,
+                    resource_family=resource_family, claim=claim, ttl_seconds=ttl_seconds, now=now,
+                )
+            except LeaseBusy as exc:
+                remaining = deadline - time.monotonic()
+                if not exc.retryable or remaining <= 0:
+                    if wait_seconds > 0 and exc.retryable:
+                        raise LeaseBusy(f"{exc} (waited {float(wait_seconds):g}s without release)") from exc
+                    raise
+                time.sleep(min(float(poll_seconds), remaining))
+
+    def _describe_holder(self) -> str:
+        """점유 사유를 오류 문구에 남긴다. 기록을 읽지 못해도 획득 판단에는 영향이 없다."""
+        try:
+            record = _read(self.record_path)
+        except LeaseBusy:
+            return "lease record unreadable"
+        if not record or record.get("phase") not in self.LIVE_PHASES:
+            return "no live lease record; holder is a legacy or unmanaged process holding the host GPU lock"
+        return (f"owner_task={record.get('owner_task')} family={record.get('resource_family')} "
+                f"runtime={record.get('runtime_instance')} phase={record.get('phase')}")
+
+    def _acquire_once(
+        self,
+        *,
+        owner_task: str,
+        owner_attempt: str,
+        runtime_instance: str,
+        resource_family: str,
+        claim: dict[str, Any],
+        ttl_seconds: float,
+        now: float | None,
     ) -> ResourceLeaseHandle:
         owner_task = _valid_text(owner_task, "owner_task")
         owner_attempt = _valid_text(owner_attempt, "owner_attempt")
@@ -178,7 +231,9 @@ class ResourceLeaseManager:
         except OSError as exc:
             fd.close()
             if exc.errno in (errno.EACCES, errno.EAGAIN):
-                raise LeaseBusy("host GPU resource is owned by another runtime") from exc
+                raise LeaseBusy(
+                    f"host GPU resource is owned by another runtime ({self._describe_holder()})", retryable=True,
+                ) from exc
             raise
 
         current = _read(self.record_path)

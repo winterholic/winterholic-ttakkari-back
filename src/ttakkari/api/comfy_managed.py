@@ -41,6 +41,11 @@ class Submit(BaseModel):
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=120)
 
 
+# 자동 소재 생성(creative-v2)이 만든 작업은 receipt 의 task_id 로 개인 세션이 조회할 수 있어야 한다. 읽기 전용이며
+# 취소·reconcile 은 계속 소유자 일치를 요구한다.
+READABLE_OWNER_PREFIXES = ("creative-v2:",)
+
+
 def _controller() -> ComfyManagedController:
     return default_controller(get_settings().data_dir)
 
@@ -234,7 +239,9 @@ async def agent_submit(body: Submit, owner: str = Depends(agent_access)) -> dict
 @agent_router.get("/jobs/{task_id}")
 async def agent_status(task_id: str, owner: str = Depends(agent_access)) -> dict:
     try:
-        return _agent_public(_controller().get(task_id, owner=owner))
+        return _agent_public(_controller().get(
+            task_id, owner=owner, readable_owner_prefixes=READABLE_OWNER_PREFIXES,
+        ))
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
 

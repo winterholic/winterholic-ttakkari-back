@@ -77,6 +77,35 @@ def dimensions(aspect: str):
     return {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}[aspect]
 
 
+def _wrap_text_lines(text: str, draw: ImageDraw.ImageDraw, font: ImageFont.FreeTypeFont,
+                     max_width: float) -> list[str]:
+    """Prefer whitespace boundaries; split a token into characters only when it cannot fit alone."""
+    lines: list[str] = []
+    for paragraph in text.replace("\r", "").split("\n"):
+        line = ""
+        for word in paragraph.split():
+            if draw.textlength(word, font=font) > max_width:
+                if line:
+                    lines.append(line)
+                    line = ""
+                for char in word:
+                    if line and draw.textlength(line + char, font=font) > max_width:
+                        lines.append(line)
+                        line = char
+                    else:
+                        line += char
+                continue
+            candidate = f"{line} {word}" if line else word
+            if line and draw.textlength(candidate, font=font) > max_width:
+                lines.append(line)
+                line = word
+            else:
+                line = candidate
+        if line:
+            lines.append(line)
+    return lines
+
+
 def compile_caption_segments(
     text: str,
     duration: float,
@@ -102,20 +131,7 @@ def compile_caption_segments(
     font = ImageFont.truetype(str(font_path), round(width * font_scale))
     measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     max_width = width * width_scale
-    lines: list[str] = []
-    line = ""
-    for paragraph in text.replace("\r", "").split("\n"):
-        for char in paragraph:
-            if line and measure.textlength(line + char, font=font) > max_width:
-                lines.append(line.rstrip())
-                line = "" if char.isspace() else char
-            else:
-                line += char
-        lines.append(line.rstrip())
-        line = ""
-    if line:
-        lines.append(line)
-    lines = [item for item in lines if item]
+    lines = _wrap_text_lines(text, measure, font, max_width)
     groups = [lines[i : i + max_lines] for i in range(0, len(lines), max_lines)]
     cue_texts = ["\n".join(group) for group in groups]
     weights = [max(1, len(cue.replace("\n", "").replace(" ", ""))) for cue in cue_texts]
@@ -151,14 +167,7 @@ def caption_image(
     if style == "center_highlight":
         font_size = round(width * 0.052)
         font = ImageFont.truetype(str(font_path), font_size)
-        lines, line = [], ""
-        for char in caption.replace("\r", ""):
-            if char == "\n" or d.textlength(line + char, font=font) > width * 0.85:
-                lines.append(line)
-                line = "" if char == "\n" else char
-            else:
-                line += char
-        lines.append(line)
+        lines = _wrap_text_lines(caption, d, font, width * 0.85)
         if len(lines) > 3:
             lines = lines[:3]
         line_height = round(width * 0.070)
@@ -182,14 +191,7 @@ def caption_image(
     elif style == "title_card":
         font_size = round(width * 0.046)
         font = ImageFont.truetype(str(font_path), font_size)
-        lines, line = [], ""
-        for char in caption.replace("\r", ""):
-            if char == "\n" or d.textlength(line + char, font=font) > width * 0.82:
-                lines.append(line)
-                line = "" if char == "\n" else char
-            else:
-                line += char
-        lines.append(line)
+        lines = _wrap_text_lines(caption, d, font, width * 0.82)
         if len(lines) > 2:
             lines = lines[:2]
         line_height = round(width * 0.065)
@@ -213,14 +215,7 @@ def caption_image(
     elif style == "code_overlay":
         font_size = round(width * 0.028)
         font = ImageFont.truetype(str(font_path), font_size)
-        lines, line = [], ""
-        for char in caption.replace("\r", ""):
-            if char == "\n" or d.textlength(line + char, font=font) > width * 0.84:
-                lines.append(line)
-                line = "" if char == "\n" else char
-            else:
-                line += char
-        lines.append(line)
+        lines = _wrap_text_lines(caption, d, font, width * 0.84)
         if len(lines) > 4:
             lines = lines[:4]
         line_height = round(width * 0.040)
@@ -243,14 +238,7 @@ def caption_image(
     else:  # bottom_card
         font_size = round(width * 0.032)
         font = ImageFont.truetype(str(font_path), font_size)
-        lines, line = [], ""
-        for char in caption.replace("\r", ""):
-            if char == "\n" or d.textlength(line + char, font=font) > width * 0.84:
-                lines.append(line)
-                line = "" if char == "\n" else char
-            else:
-                line += char
-        lines.append(line)
+        lines = _wrap_text_lines(caption, d, font, width * 0.84)
         if len(lines) > 4:
             raise ValueError("자막은 화면당 4줄 이하로 줄여 주세요.")
         line_height = round(width * 0.045)

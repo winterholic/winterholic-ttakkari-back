@@ -38,13 +38,17 @@ LEASE_TTL_SECONDS = 300
 # 앞 엔진은 성공을 기록한 뒤 런타임을 멈추고 lease 를 해제한다(Comfy 정지는 수 초에서 수십 초). 같은 작업의 다음 엔진은
 # 그 인계 구간을 기다려야 하며, 기다려도 풀리지 않는 외부 점유만 실패로 올린다.
 LEASE_HANDOFF_WAIT_SECONDS = 180
+SCENE_NEGATIVE_PROMPT = (
+    "text, letters, words, captions, subtitles, typography, watermark, watermarks, "
+    "logo, logos, signage, signs, writing, symbols"
+)
 
 
 class ManagedAssetGenerator:
     """R21 scene assets via the existing managed Comfy, local TTS and ACE-Step paths."""
 
     engine_id = "creative-v2.managed-comfy+supertonic+acestep"
-    version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo+scene-brief-v2"
+    version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo+scene-brief-v3"
 
     def __init__(self, *, controller=None, store=None, clock=time.monotonic, loop=None):
         self._controller = controller
@@ -336,15 +340,25 @@ class ManagedAssetGenerator:
                 break
         if not shot_direction:
             shot_direction = str(scene.get("narration") or scene.get("narrative_goal") or scene["title"]).strip()
+        else:
+            shot_direction = re.sub(
+                r"(?im)^\s*(?:내레이션|narration)\s*:\s*.*$", "", shot_direction
+            ).strip()
+        context = " ".join(
+            sentence.strip()
+            for sentence in re.split(r"(?<=[.!?])\s+|(?<=。)\s*", context)
+            if sentence.strip()
+            and not re.search(r"내레이션|자막|narration|caption|subtitle|줌|패닝|생성형 영상 모션", sentence, re.IGNORECASE)
+        )
         # The full brief may include mutually exclusive visuals for every shot. Keep only shared
         # context plus this scene's own instruction so each Comfy request has one visual target.
         value = (
             "Create one cinematic documentary shot, not a collage. "
             f"Shared project context: {context or 'a Korean documentary short'}. "
             f"Required scene {scene.get('scene_id', '')} ({scene['title']}): {shot_direction}. "
-            f"Use the scene narration only as supporting context: {scene.get('narration') or '(no narration)'}. "
-            "Show the named place, subjects, action, time and lighting in this shot; preserve each specific detail. "
-            "Natural photographic detail, no text, no logos."
+            "Preserve the named place, subjects, action, time and lighting. "
+            "Make the named subjects large and clear in the foreground; keep key action above the bottom 25%, "
+            "leaving that band visually simple and unobstructed. Natural photographic detail."
         )
         if len(value) > 1000:
             raise ValueError(
@@ -365,12 +379,14 @@ class ManagedAssetGenerator:
         checkpoint = workdir / f"{scene_id}-managed-comfy.json"
         identity = hashlib.sha256(
             json.dumps(
-                {"plan_id": plan["id"], "revision": plan["revision"], "scene_id": scene_id, "prompt": prompt, "seed": seed},
+                {"plan_id": plan["id"], "revision": plan["revision"], "scene_id": scene_id,
+                 "prompt": prompt, "negative_prompt": SCENE_NEGATIVE_PROMPT, "seed": seed},
                 ensure_ascii=False,
                 sort_keys=True,
             ).encode()
         ).hexdigest()
         prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        negative_prompt_sha256 = hashlib.sha256(SCENE_NEGATIVE_PROMPT.encode("utf-8")).hexdigest()
         prior = json.loads(checkpoint.read_text()) if checkpoint.is_file() else None
         attempts = list(prior.get("attempts", [])) if prior and prior.get("identity") == identity else []
         job = None
@@ -389,6 +405,7 @@ class ManagedAssetGenerator:
             job = self.controller.prepare(
                 "wan22-5b-draft",
                 prompt=prompt,
+                negative_prompt=SCENE_NEGATIVE_PROMPT,
                 seed=seed,
                 owner=f"creative-v2:{plan['id']}:{plan['revision']}:{scene_id}",
                 lease_wait_seconds=LEASE_HANDOFF_WAIT_SECONDS,
@@ -418,6 +435,11 @@ class ManagedAssetGenerator:
         received_prompt_hash = job["receipt"].get("prompt_sha256")
         if received_prompt_hash != prompt_sha256:
             raise RuntimeError(f"Comfy scene {scene_id} receipt prompt hash does not match the submitted prompt.")
+        received_negative_prompt_hash = job["receipt"].get("negative_prompt_sha256")
+        if received_negative_prompt_hash != negative_prompt_sha256:
+            raise RuntimeError(
+                f"Comfy scene {scene_id} receipt negative prompt hash does not match the submitted negative prompt."
+            )
         attempts[-1].update(
             status="succeeded",
             prompt_sha256=prompt_sha256,

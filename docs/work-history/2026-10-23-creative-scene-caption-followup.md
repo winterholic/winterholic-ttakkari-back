@@ -133,3 +133,39 @@
 - 샘플 plan brief에는 한국어 자막과 한국어 narration이 있었지만 당시 revision의 dispatch mode를 기록하는 근거는 보존되어 있지 않다. 그러므로 옛 영상의 제목-only를 `title_only`로 의도했다고 추정하거나 명세 위반으로 판정하지 않는다. 새 영상에서 대본 자막이 목표일 때는 `narration` 선택, contract의 mode/notices, 각 장면 `caption_segments` 본문, SRT 구간을 함께 확인한다.
 
 이번 정정은 문서 변경만 포함한다. backend 코드·runtime·기존 계획/생성은 바꾸지 않았고, pytest 및 GPU 생성은 실행하지 않았다. `git diff --check`는 push 시도 전 통과했다. pre-push 실패 때문에 push는 완료되지 않았다.
+
+## 보강 4: 품질 샘플 이어받기 및 렌더 대기 상태 (2026-10-23)
+
+이번 새 Run은 기존 승인 plan/generation만 이어받았다. 신규 자산 생성·retry는 호출하지 않았다.
+
+- plan `f851a977-de2a-4358-8441-a2ea84b7e316`, revision 1, R21 / 16:9, 사용자 승인 기록 유지. 계획 길이 31.367초(941 frames @30fps).
+- generation `d88728f0-c919-46ea-809f-6dfa4c66560a`, key `36e795aab82bf2b2b1ab25eb06fabe6a0b34dc90a5a94abd7f7f19dbad87d997`가 `succeeded`로 끝났고 assets.complete=true: 장면 이미지 3/3, 음성 3/3, 음악 31.37초. 기존 Comfy tasks는 s1 `6286e573e6354e6aab9a57555a2e72fa`, s2 `16e48d9ac47f4fc8955a7fb23b67b2f4`, s3 `80968d85dcfe44f9a7128c92faaebcc3`이며 새 task는 만들지 않았다.
+- scene prompt hashes는 각각 s1 `e94277995ca6b4eb2c8d4c49d61c6cbd51d1a0c8742d9a403583c31d0d265770`, s2 `d17c0d44508bc05ac8575f27da9db7149acffb30bce540de07d5a8100a5d0fdc`, s3 `135de544068b5b965a434cddb70f40657e80a27ea6446305ab7b09c5de4bef00`. 각 prompt와 managed Comfy receipt의 prompt hash가 일치하고 generation asset metadata에도 같은 해시가 연결된다. scene-specific 블록은 각각 푸른 여명/가로등, 첫 버스와 환경미화원, 한강 수면의 연한 금빛 반사를 지시한다. s1 prompt는 공통 컨텍스트 뒤 s1 조건만, s2와 s3도 각자 scene block만 담고 있다.
+- `creative_v2_production_dispatch(plan_id, revision=1, caption_mode="narration")` 실행 결과 `caption_mode=narration`, `caption_sources={s1:narration,s2:narration,s3:narration}`, timing은 synthesized voice asset duration 기준 추정, word-level alignment 없음으로 확인됐다.
+- `creative_v2_production_render(plan_id, revision=1)` 접수 뒤 production status: state=`rendering`, segment `seg-01` status=`running`, attempts=1, project_id=`0ff87fbb-28a4-402a-9ad0-7d658563fb63`, job_id=`3900168f-e4eb-49fc-b104-4158831588bb`, run_key=`ab5d7567a77517bafd2e6ddf3b914d32c38edbbce2aa110c99a09e41e582bad0`; outdated_segments=[]; final=null. 이 상태 이후 불필요한 장기 폴링이나 중복 queue를 하지 않았다.
+- 다음 재개: `production_status`로 위 동일 segment/job이 완료됐는지 확인. 실패일 경우 원인·소유권·reconcile 상태를 먼저 판단하고 무조건 retry하지 않는다. 성공 시 final media id로 단기 media link를 만들고 제공 계약을 확인한 뒤 이번 Run outbox에 MP4와 프레임 contact sheet를 저장/share한다. MP4 프레임에서 실제 장면별 시각 일치와 본문자막을 각각 점검하고 음성은 실제 청취 여부를 따로 기록한다. 독립 검수 전 전체 완료를 선언하지 않는다.
+- 이번 status/dispatch/render는 원격 MCP의 실제 반환값이다. MP4, 프레임, caption cue/SRT, 본문 자막의 실출력 및 음성 청취는 아직 미실행이며 별도 QA로 남는다. 이전 5809bb7f 샘플은 그대로 미충족 기준 사례이고 이번 증거로 재사용하지 않는다.
+- 저장소 `git pull --ff-only`는 현재 브랜치 `fix/creative-scene-captions-20261023`에 tracking branch가 없어 종료코드 1로 실행되지 않았다(명령 출력: “There is no tracking information for the current branch.”). remote/branch를 추정해 바꾸거나 pull 대상으로 임의 지정하지 않았다. 이번 작업 변경은 해당 기록에만 추가했다.
+
+## 보강 5: R21 시각 검수 결함 대응 (2026-10-23)
+
+기준 저장소 `/Users/winterholic/development/projects/ttakkari-studio-v2-back`, `origin/main` 최신 확인 SHA `9f82c9c` (`feat(creative): expose verified Style DNA render controls`). 시작 당시 checkout은 `fix/creative-scene-captions-20261023`, HEAD `827ae35`였으며 원격 추적이 없어 첫 `git pull --ff-only`는 tracking 정보 부재로 실패했다. `git fetch origin main`으로 비교 기준을 확인했고 기존 work-history 변경 13줄은 보존했다. R21 독립 검수 보고서는 지정 경로에서 읽혔다.
+
+### receipt·workflow 원인 근거
+
+- plan `f851a977-de2a-4358-8441-a2ea84b7e316`, generation `d88728f0-c919-46ea-809f-6dfa4c66560a`, R21 16:9. s2 Comfy receipt의 실제 positive prompt SHA-256은 `d17c0d44508bc05ac8575f27da9db7149acffb30bce540de07d5a8100a5d0fdc`이며 검수 보고서와 같았다. positive prompt 끝에는 `no text, no logos`가 있었고 장면 조건에 버스·환경미화원·빗자루·낙엽은 있었으나 대상 크기·전경·하단 자막 안전영역 지시는 없었다. s1 receipt의 장면 방향에는 켜진 가로등의 따뜻한 작은 빛이 명시돼 있어 새 prompt 구성에서도 이를 유지한다.
+- 실제 실행 receipt 및 managed profile이 고정한 workflow `t2v-wan22-5b`, revision `a603a63d6f3a`의 registry 정의를 읽었다. `registry/t2v-wan22-5b/a603a63d6f3a.api.json` node 3 KSampler의 `positive` 입력은 node 6, `negative` 입력은 node 7이다. 대응 meta의 `negative.bind`도 node 7 `text`이며 기존 기본값은 중국어 품질 금지어와 `字幕`다. 따라서 negative 자체가 미연결된 것은 아니며, 백엔드가 Runner에 넘긴 params가 `prompt`·`seed`뿐이라 장면별 negative를 전달할 수 없었다. 긍정 prompt의 `no text`가 글리프의 원인이라고 단정할 근거는 1개 영상뿐이므로 인과로 확정하지 않는다.
+- 실제 shared context는 내레이션 본문 자막을 언급하고 scene block은 `내레이션:` 줄을 포함해 positive prompt에 합쳐졌다. 이는 이미지 생성에 불필요한 텍스트 유도 문맥이므로 visual prompt에서 제거했다.
+
+### 변경·검증
+
+- `src/ttakkari/creative/render.py`: 공백 토큰 단위로 먼저 줄바꿈하고, 한 토큰 자체가 픽셀 폭을 넘을 때만 글자 단위로 분할한다. narration cue와 4종 자막 이미지 overlay가 같은 픽셀 래퍼를 사용한다.
+- `src/ttakkari/creative/v2/asset_generation_managed.py`: visual prompt에서 narration/caption-only 문맥을 제거하고 전경의 식별 가능한 큰 주체, 화면 아래 25%의 단순하고 가려지지 않은 공간을 지시한다. 긍정 prompt의 `no text`는 제거한다. 장면별 negative는 text/letters/words/captions/subtitles/typography/watermark/logo/signage/signs/writing/symbols를 금지한다. engine version과 resume identity에 negative를 포함하고 receipt hash도 확인한다.
+- `src/ttakkari/managed_comfy.py`, `src/ttakkari/managed_comfy_receipt.py`: 선택적 `negative_prompt`를 고정 profile workflow의 `negative` 파라미터로 전달하고 작업 기록·receipt에 원문과 SHA-256을 남긴다. 미제공이면 기존 workflow 기본 동작을 유지한다.
+- 회귀: 한글 어절 경계 우선, 단일 초과 어절의 문자 분할, 실제 R21 brief의 s1 따뜻한 가로등 유지/s2 전경·하단 안전영역·positive 자막 문구 제거/1000자 상한, Comfy `negative` 전달, receipt negative hash.
+- RED 단계: 새 prompt 구도 테스트는 `foreground` 부재로 실패, negative 전달 테스트는 controller가 negative를 거부해 실패, receipt 테스트는 negative hash 부재로 실패했다. 수정 후 초록.
+- `.venv/bin/pytest -q unit_tests/test_creative_v2_asset_generation.py unit_tests/test_creative_v2_asset_generation_e2e.py unit_tests/test_comfy_managed.py unit_tests/test_managed_comfy_receipt.py` — **53 passed**.
+- `.venv/bin/pytest -q unit_tests/test_comfy_managed_api.py` — **2 passed**.
+- `.venv/bin/ruff check` 변경 Python 7개 파일 — **All checks passed!**; `git diff --check` — 통과.
+- 실제 GPU/Comfy 생성·retry, 기존 plan/generation/영상 변경은 하지 않았다. prompt 문자열과 workflow wiring은 코드 근거이며 생성 이미지의 시각 개선은 후속 E2E 검수가 필요하다.
+- commit 당시 SHA `e70e25ad6b57e154681b20a76447e8ba59eb50eb`. `git push origin HEAD:main`은 pre-push impacted gate가 uv cache 초기화 단계에서 `/Users/winterholic/.cache/uv/sdists-v9/.git: Operation not permitted (os error 1)`로 실패했다. guard 우회나 동일 캐시 재시도는 하지 않았다. 원격 push 미완료이므로 배포 예약도 제출하지 않았다.

@@ -142,16 +142,21 @@ class ComfyManagedController:
             "capabilities": ["gen.video_t2v"], "required_gb": p.required_gb, "models": list(p.models),
         } for p in PROFILES.values()]
 
-    def prepare(self, profile_id: str, *, prompt: str, seed: int, owner: str = "owner",
+    def prepare(self, profile_id: str, *, prompt: str, seed: int, negative_prompt: str | None = None,
+                owner: str = "owner",
                 idempotency_key: str | None = None, lease_wait_seconds: float = 0,
                 **extra: Any) -> dict[str, Any]:
         if extra:
-            raise ValueError("only registered profile parameters prompt and seed are accepted")
+            raise ValueError("only registered profile parameters prompt, negative_prompt, and seed are accepted")
         profile = PROFILES.get(profile_id)
         if profile is None:
             raise ValueError("unknown registered profile")
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1000:
             raise ValueError("prompt must contain 1 to 1000 characters")
+        if negative_prompt is not None and (
+            not isinstance(negative_prompt, str) or not negative_prompt.strip() or len(negative_prompt) > 1000
+        ):
+            raise ValueError("negative_prompt must contain 1 to 1000 characters when provided")
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 2**32 - 1:
             raise ValueError("seed must be a 32-bit unsigned integer")
         if idempotency_key is not None and (
@@ -168,8 +173,9 @@ class ComfyManagedController:
             except FileNotFoundError:
                 existing = None
             if existing is not None:
-                if (existing.get("profile"), existing.get("prompt"), existing.get("seed")) != (
-                    profile_id, prompt, seed,
+                if (existing.get("profile"), existing.get("prompt"), existing.get("negative_prompt"),
+                        existing.get("seed")) != (
+                    profile_id, prompt, negative_prompt, seed,
                 ):
                     raise ValueError("idempotency key was already used with different task arguments")
                 return existing
@@ -184,7 +190,8 @@ class ComfyManagedController:
         job = {"task_id": task_id, "owner": owner, "owner_attempt": attempt_id,
                "runtime_instance": runtime_instance, "lease_id": lease.lease_id,
                "generation_token": lease.generation_token, "profile": profile.profile_id,
-               "prompt": prompt, "seed": seed, "status": "starting", "runner_job_id": None,
+               "prompt": prompt, "negative_prompt": negative_prompt, "seed": seed,
+               "status": "starting", "runner_job_id": None,
                "result": None, "error": None, "created_at": time.time()}
         try:
             self._save(job)
@@ -344,8 +351,11 @@ class ComfyManagedController:
                     active["progress"].update(phase="complete", pct=100)
                 self._maybe_cancel(task_id, active)
 
+            params = {"prompt": job["prompt"], "seed": job["seed"]}
+            if job.get("negative_prompt") is not None:
+                params["negative"] = job["negative_prompt"]
             result = runner.run(name=profile.workflow, version=profile.revision,
-                                preset=profile.preset, params={"prompt": job["prompt"], "seed": job["seed"]},
+                                preset=profile.preset, params=params,
                                 retries=0, tag=task_id,
                                 on_event=on_event)
             if active.get("released"):

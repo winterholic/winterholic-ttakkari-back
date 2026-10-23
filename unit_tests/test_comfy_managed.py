@@ -389,3 +389,14 @@ def test_receipt_failure_is_recorded_without_changing_a_succeeded_result(control
 
     assert job["status"] == "succeeded"  # fake runner 의 job 은 resolved graph·출력 파일 근거가 없다
     assert "receipt" not in job and job["receipt_error"].startswith("ReceiptError")
+
+
+def test_run_passes_registered_negative_prompt_to_workflow(controller):
+    service, _servers = controller
+    negative_prompt = "text, letters, watermark, signage"
+    record = service.prepare("wan22-5b-draft", prompt="A fox", negative_prompt=negative_prompt, seed=7)
+
+    service.execute(record["task_id"])
+
+    args = FakeRunner.instances[-1].runs[0]
+    assert args["params"] == {"prompt": "A fox", "negative": negative_prompt, "seed": 7}

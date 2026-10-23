@@ -102,10 +102,12 @@ class _FakeController:
         self.jobs: dict[str, dict] = {}
         self.waits: list[float] = []
         self.prompts: list[str] = []
+        self.negative_prompts: list[str | None] = []
 
-    def prepare(self, profile, *, prompt, seed, owner, lease_wait_seconds=0):
+    def prepare(self, profile, *, prompt, seed, negative_prompt=None, owner, lease_wait_seconds=0):
         self.waits.append(lease_wait_seconds)
         self.prompts.append(prompt)
+        self.negative_prompts.append(negative_prompt)
         task_id = hashlib.sha256(f"{owner}:{seed}".encode()).hexdigest()[:32]
         video = self.root / f"{task_id}.mp4"
         subprocess.run(
@@ -118,6 +120,7 @@ class _FakeController:
             "task_id": task_id, "profile": profile, "status": "succeeded", "runner_job_id": f"runner-{task_id[:6]}",
             "receipt": {"workflow_revision_hash": "rev-test", "workflow_revision": "rev-test",
                         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                        "negative_prompt_sha256": hashlib.sha256(negative_prompt.encode()).hexdigest(),
                         "outputs": [{"sha256": sha, "source_path": str(video), "intermediate": False}]},
         }
         return {"task_id": task_id, "status": "starting"}
@@ -243,7 +246,11 @@ def test_scene_prompt_is_specific_and_receipt_keeps_the_exact_comfy_input(pipeli
     assert [run["prompt"] for run in runs] == prompts
     assert all(run["prompt_sha256"] == hashlib.sha256(run["prompt"].encode()).hexdigest() for run in runs)
     assert all(run["receipt"]["prompt_sha256"] == run["prompt_sha256"] for run in runs)
+    assert all(run["receipt"]["negative_prompt_sha256"] == hashlib.sha256(
+        managed.SCENE_NEGATIVE_PROMPT.encode()
+    ).hexdigest() for run in runs)
     assert controller.prompts == prompts
+    assert controller.negative_prompts == [managed.SCENE_NEGATIVE_PROMPT] * len(prompts)
 
 
 def test_scene_prompt_refuses_to_silently_truncate_required_visual_details(pipeline):
@@ -276,6 +283,42 @@ def test_seoul_sample_scene_brief_keeps_each_visual_target_separate(pipeline):
     assert "한강 수면" in prompts[2] and "꺼지는 가로등" not in prompts[2]
 
 
+def test_scene_prompt_keeps_subjects_prominent_and_caption_safe_area_without_positive_text_tokens(pipeline):
+    _settings, _plans, plan, generator, _controller, _studio = pipeline
+    plan = dict(plan)
+    plan["brief"] = (
+        "공통 소개: 16:9 가로형, 현실적인 서울 새벽의 짧은 3장면 시네마틱 스틸 이미지 슬라이드쇼. "
+        "장면 간 같은 새벽 공기와 자연스러운 톤을 유지하되, 각 장면은 아래에 적힌 장소와 행동만 보여 준다. "
+        "각 장면에 다른 장면의 주 피사체를 넣지 않는다. 부드러운 카메라 줌/패닝은 지원될 때만 사용하고, "
+        "실제 생성형 영상 모션이라고 표현하지 않는다. 차분하고 명료한 한국어 내레이션과 각 내레이션 본문 자막을 사용한다. "
+        "가상의 인물은 식별 가능한 실제 인물로 묘사하지 않는다.\n\n"
+        "장면 1: 해가 뜨기 직전의 서울 골목. 화면은 차가운 푸른 여명과 짙은 남색 그림자, "
+        "아직 켜져 있는 오래된 가로등의 따뜻한 작은 빛으로 구성한다. 텅 빈 좁은 골목과 고요한 건물 실루엣을 넓은 구도로 보여 준다. "
+        "해나 황금빛 아침은 아직 보이지 않는다. 버스, 환경미화원, 한강은 이 장면에 넣지 않는다.\n"
+        "내레이션: 해가 아직 뜨기 전, 푸른 여명이 서울의 골목을 채웁니다. 가로등은 밤의 마지막 빛을 지키고 있습니다.\n\n"
+        "장면 2: 새벽의 서울 큰길. 첫 시내버스 한 대가 도로를 지나가고, 도로 가장자리에서 형광 안전 조끼를 입은 "
+        "환경미화원이 빗자루로 낙엽을 쓸고 있다. 버스와 청소 행동이 한 프레임에서 분명히 보이게 하고, "
+        "차분한 푸른 새벽빛을 유지한다. 한강, 해돋이 수면, 텅 빈 골목만 있는 장면은 만들지 않는다.\n"
+        "내레이션: 첫 버스가 큰길을 지나고, 환경미화원은 빗자루로 밤새 쌓인 낙엽을 쓸어 냅니다. 도시는 천천히 깨어납니다.\n\n"
+        "장면 3: 해가 막 떠오르는 한강의 넓은 수면. 강변이나 다리의 실루엣은 배경에 절제해 두고, "
+        "화면의 중심은 잔물결과 수면에 길게 번지는 연한 금빛 아침 햇살의 반사다. 실제 강물처럼 자연스러운 물결과 빛을 보여 준다. "
+        "버스, 청소 인력, 골목은 이 장면에 넣지 않는다."
+    )
+    plan["name"] = "품질수정 검증 서울 새벽 3장면 R21"
+
+    prompts = [
+        generator._prompt(plan, {"scene_id": "s1", "title": "새벽 골목"}),
+        generator._prompt(plan, {"scene_id": "s2", "title": "첫 버스와 환경미화원"}),
+    ]
+
+    assert "가로등" in prompts[0] and "따뜻한 작은 빛" in prompts[0]
+    assert "foreground" in prompts[1]
+    assert "bottom 25%" in prompts[1]
+    assert "no text" not in prompts[1].lower()
+    assert "자막" not in prompts[1] and "내레이션" not in prompts[1]
+    assert len(prompts[1]) <= 1000
+
+
 def test_caption_compiler_wraps_korean_for_selected_style_and_uses_estimated_interval():
     from ttakkari.creative.render import compile_caption_segments
 
@@ -291,6 +334,31 @@ def test_caption_compiler_wraps_korean_for_selected_style_and_uses_estimated_int
     font = ImageFont.truetype("/System/Library/Fonts/AppleSDGothicNeo.ttc", round(width * 0.052))
     draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     assert all(draw.textlength(line, font=font) <= width * 0.85 for cue in cues for line in cue["text"].splitlines())
+
+
+def test_caption_compiler_prefers_korean_word_boundaries():
+    from ttakkari.creative.render import compile_caption_segments
+
+    text = "밤의 마지막 빛을 지키고 있습니다."
+
+    cues = compile_caption_segments(text, 4.2, 720, style="center_highlight")
+
+    assert [word for cue in cues for line in cue["text"].splitlines() for word in line.split()] == text.split()
+
+
+def test_caption_compiler_splits_a_single_oversized_word_only_as_fallback():
+    from ttakkari.creative.render import compile_caption_segments
+
+    text = "가" * 50
+    width = 720
+    cues = compile_caption_segments(text, 4.2, width, style="center_highlight")
+    font = ImageFont.truetype("/System/Library/Fonts/AppleSDGothicNeo.ttc", round(width * 0.052))
+    draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    lines = [line for cue in cues for line in cue["text"].splitlines()]
+
+    assert len(lines) > 1
+    assert "".join(lines) == text
+    assert all(draw.textlength(line, font=font) <= width * 0.85 for line in lines)
 
 
 def test_dispatch_narration_captions_use_scene_voice_duration_and_title_only_is_explicit(pipeline):

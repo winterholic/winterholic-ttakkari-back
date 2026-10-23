@@ -78,7 +78,7 @@ def tree(tmp_path):
                    "path": str(job_dir / "outputs" / "58" / "wan.mp4"), "intermediate": False}],
     }
     job = {"task_id": "a" * 32, "owner_attempt": "b" * 32, "runtime_instance": "c" * 32, "lease_id": "d" * 32,
-           "prompt": "A fox", "seed": 7}
+           "prompt": "A fox", "negative_prompt": "text, letters, watermark, signage", "seed": 7}
     return SimpleNamespace(comfy=comfy, jobs=jobs, job_dir=job_dir, adapter=adapter_job, job=job, video=video)
 
 
@@ -111,6 +111,10 @@ def test_receipt_carries_every_required_field_with_g0_names_where_they_exist(tre
     # G0 의 workflow_revision 은 정수 순번이다. Comfy receipt 는 같은 이름의 키를 다른 타입으로 쓰지 않는다.
     assert "workflow_revision" not in receipt
     assert receipt["prompt_sha256"] == hashlib.sha256(b"A fox").hexdigest()
+    assert receipt["negative_prompt"] == "text, letters, watermark, signage"
+    assert receipt["negative_prompt_sha256"] == hashlib.sha256(
+        b"text, letters, watermark, signage"
+    ).hexdigest()
     assert receipt["resolved_graph_hash"] == receipt["resolved_graph_sha256"][:12]
     assert receipt["graph_hash_consistent"] is True and receipt["seed_consistent"] is True
     assert receipt["lease"] == {"owner_task": "a" * 32, "owner_attempt": "b" * 32,

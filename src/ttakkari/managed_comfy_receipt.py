@@ -252,6 +252,7 @@ def build_receipt(*, job: dict[str, Any], adapter_job: dict[str, Any], profile: 
     graph = json.loads(graph_path.read_text(encoding="utf-8"))
     graph_sha = canonical_sha256(graph)
     prompt = job["prompt"]
+    negative_prompt = job.get("negative_prompt")
     outputs = [_output_entry(f, job_dir, graph) for f in adapter_job.get("files") or []]
     if not outputs:
         raise ReceiptError("succeeded job has no collected output files")
@@ -269,6 +270,10 @@ def build_receipt(*, job: dict[str, Any], adapter_job: dict[str, Any], profile: 
         # workflow_revision 키는 G0 통합 때 G0 가 채우므로 여기서는 넣지 않는다.
         "workflow_revision_hash": profile.revision,
         "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        **({
+            "negative_prompt": negative_prompt,
+            "negative_prompt_sha256": hashlib.sha256(negative_prompt.encode("utf-8")).hexdigest(),
+        } if isinstance(negative_prompt, str) else {}),
         "models": models,
         "timing": {
             "observed_seconds": adapter_job.get("seconds"),  # submit→terminal, 대기열 시간 포함

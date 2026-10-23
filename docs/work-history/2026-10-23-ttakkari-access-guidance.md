@@ -27,3 +27,9 @@
 - 운영 배포 및 실제 모델이 거부 후 재시도를 줄이는지에 대한 행동 측정은 이 검사로 입증하지 않았다. 프롬프트는 행동 안내이며 OS 정책을 강제 변경하지 않는다.
 
 검증 후 main push와 generation 배포 예약을 수행한다. 예약 접수와 배포 성공을 구분한다.
+
+## Push 및 배포 전 추가 확인
+
+- `f85481f` main push: 변경 Python 7개 Ruff, 계약 **84 passed**, 변경 테스트 **25 passed**. 전체 suite 통과를 뜻하지 않는다.
+- 첫 push 시 Codex 명령 샌드박스의 uv sync에서 기본 캐시 `~/.cache/uv/sdists-v9/.git` 접근이 `Operation not permitted`로 거부됐다. 같은 경로를 재시도하지 않고 `UV_CACHE_DIR=/private/tmp/ttakkari-harness-uv-cache`를 명시해 허용된 임시 경로로 바꿔 통과했다. 훅·샌드박스를 끄지 않았다.
+- 최근 두 실패 배포의 기존 ADR 문구 검사를 별도로 실행해 동일 실패를 확인했다. ADR의 `2026-10-23 사용자 지시`를 기존 테스트가 요구하는 `2026-10-23 사용자의 명시 지시`로만 맞췄다. 기능·품질 gate 미통과 서술은 보존했다. 별도 커밋으로 배포 차단 원인을 제거한다.

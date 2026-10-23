@@ -1,6 +1,6 @@
 # ADR 0063. 범용 지식 도서관(Knowledge Library)과 2층 아키텍처
 
-- 상태: KB1+KB2 구현 사실 채택(2026-10-20). 후속 설계 정본은 v2. KB-E0 로직 완료 승인(2026-10-22, DB·UI·추론 제외). **2026-10-23 사용자 지시에 따라 검색·수집 제품 경로를 구현했다: 출처 등록·실행, 품질 검토, 권한 검증된 KB 전달, 개인/회사 범위 검색·근거 열람.** 통합 구현·검증 기록은 [작업 기록](../work-history/2026-10-23-kb-collector-product.md)에 둔다. 이번 구현은 v2 KB7 품질 gate(사람 확인 holdout, 검정력, coverage/abstain 보정)를 통과한 것이 아니다. KB-E1b·E0.5·검색 품질 입증은 미완료로 남는다. 이전 상태: KB-E0 착수 조건부 승인, 제품검색 미승인.
+- 상태: KB1+KB2 구현 사실 채택(2026-10-20). 후속 설계 정본은 v2. KB-E0 로직 완료 승인(2026-10-22, DB·UI·추론 제외). **2026-10-23 사용자의 명시 지시에 따라 검색·수집 제품 경로를 구현했다: 출처 등록·실행, 품질 검토, 권한 검증된 KB 전달, 개인/회사 범위 검색·근거 열람.** 통합 구현·검증 기록은 [작업 기록](../work-history/2026-10-23-kb-collector-product.md)에 둔다. 이번 구현은 v2 KB7 품질 gate(사람 확인 holdout, 검정력, coverage/abstain 보정)를 통과한 것이 아니다. KB-E1b·E0.5·검색 품질 입증은 미완료로 남는다. 이전 상태: KB-E0 착수 조건부 승인, 제품검색 미승인.
 - 활성 후속 설계: [v2](../design/kb-v2/knowledge-library-design-v2.md), [검토 대응표](../design/kb-v2/reviews/v2-review-response.md). [v1](../kb/design-v1.md)·[v1 사본](../design/knowledge-library.md)은 역사 기록.
 - 선행: ADR 0007·0009(맥락 도서관), ADR 0031(근거 중심 원장)
 

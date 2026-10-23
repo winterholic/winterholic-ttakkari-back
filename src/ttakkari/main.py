@@ -348,6 +348,8 @@ def create_app() -> FastAPI:
     from ttakkari.api import knowledge
     app.include_router(knowledge.router)
     app.include_router(knowledge.agent_router)
+    from ttakkari.api import kb_library
+    app.include_router(kb_library.router)
     app.include_router(research.router)
     app.include_router(research.agent_router)
     from ttakkari.api import tts as tts_api

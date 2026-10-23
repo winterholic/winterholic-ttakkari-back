@@ -259,7 +259,7 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
     import json
 
     from ttakkari import db
-    from ttakkari.kb_store import KbInputError, ingest_source
+    from ttakkari.kb_store import KbInputError, ingest_source, segment_revision
 
     path = Path(args.file).expanduser()
     try:
@@ -285,6 +285,8 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
                     title=args.title,
                     lang=args.lang,
                 )
+                # 패시지가 있어야 검색된다. 이미 나뉜 리비전이면 같은 행이 남는다(멱등).
+                await segment_revision(session, result.revision_id)
                 await session.commit()
                 return result
         finally:
@@ -304,6 +306,26 @@ def _cmd_kb_ingest(args: argparse.Namespace) -> int:
         "created": result.created,
         "healed_file": result.healed_file,
     }, ensure_ascii=False))
+    return 0
+
+
+def _cmd_kb_segment(args: argparse.Namespace) -> int:
+    import json
+
+    from ttakkari import db
+    from ttakkari.kb_library import segment_unsegmented
+
+    async def run():
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                result = await segment_unsegmented(session)
+                await session.commit()
+                return result
+        finally:
+            await db.dispose_engine()
+
+    print(json.dumps(asyncio.run(run()), ensure_ascii=False))
     return 0
 
 
@@ -438,6 +460,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--title", default=None)
     p.add_argument("--lang", default=None)
     p.set_defaults(func=_cmd_kb_ingest)
+
+    p = sub.add_parser("kb-segment", help="패시지가 없는 지식 도서관 리비전을 문단으로 나눠 검색 가능하게 한다(멱등)")
+    p.set_defaults(func=_cmd_kb_segment)
 
     p = sub.add_parser("kb-verify", help="지식 도서관 DB·원본 저장소 무결성 점검")
     p.add_argument("--clean-orphans", action="store_true", help="DB 에 없는 고아 원본 파일과 방치된 임시 파일을 디스크에서 정리")

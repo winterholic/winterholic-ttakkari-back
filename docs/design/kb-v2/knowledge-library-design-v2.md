@@ -2,6 +2,8 @@
 
 > **상태: KB-E0 로직 완료 승인, 제품검색 미승인.** 활성 설계 정본은 이 파일이다. KB-E0 하네스는 main `1e9bb1a` 기준으로 독립 확인 4회차에서 passed를 받았다([3회차](reviews/kb-e0-independent-review-v3.md), [4회차](reviews/kb-e0-independent-review-v4.md), [E0 완료 기록](reviews/kb-e0-completion.md)). 승인 범위는 DB·UI·추론을 제외한 E0 로직이다. 실제 DB export adapter·모바일 UI·실추론·실서버 계측은 미실행 잔여다. 검색/수집 제품 구현·엔진/모델 선택·최종 품질·운영배포는 미승인이다. 다음 단위는 9.2 순서를 따르되 배정 전에는 시작하지 않는다.
 
+> 2026-10-23 갱신: 사용자의 명시 지시로 검색·열람 최소 제품화(API `/api/assistant/kb/*`, UI `/knowledge-library`)를 진행했다. 위 '제품검색 미승인' 표기의 해제 근거와 범위, KB7 품질 gate 미통과 사실은 [ADR 0063](../../adr/0063-knowledge-library.md)이 정본이다.
+
 > 역사적 상태(E0 착수 시점): **상태: KB-E0 착수 조건부 승인, 제품검색 미승인.** 활성 설계 정본은 이 파일이다. 설계 수정 `460237722654d6cf1d540f321eae504e63028175`의 [반영 독립 확인 원문](reviews/amendment-independent-review.md)을 보존한다. 승인 범위는 평가 스키마·runner·고정 manifest·통계·계측·실패 분류 및 재개 골격의 KB-E0 착수까지다. E0 완료·검색/수집 제품 구현·엔진/모델 선택·최종 품질·운영배포는 미승인이다. [대응표](reviews/v2-review-response.md), §9 완료조건 및 [E0 구현 추적](../../work-history/2026-10-22-kb-e0-harness.md)으로 이어간다.
 
 > 역사적 상태(수정안 작성 당시): **상태: v2 독립 검토 반영안 — 반영 여부 독립 확인 대기, 제품 구현 금지.** 활성 설계 정본은 이 파일이다. 검토 대상은 `8e3dc2c11f25098bc2fd1fee3886b6c235b5651f`, 검토 Run은 `78470bf8-41e6-4721-aa1c-20a853841cb3`이다. [원 보고서](reviews/v2-design-review.md)의 `approve-with-changes` 판정을 보존한다. 이번 변경은 P1–13·F1–24의 문서 해법이며 실행 통과나 사용자 승인을 뜻하지 않는다. [대응표](reviews/v2-review-response.md)와 §12의 검증·책임 단위로 추적한다. 부모가 반영 독립 확인을 받은 뒤 KB-E0를 시작한다. 이번 작업에서는 하네스도 구현하지 않는다.

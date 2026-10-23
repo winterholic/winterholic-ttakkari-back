@@ -30,10 +30,15 @@ def verify(*,strict=False):
         assert a['description'],'missing persisted PMS description'
         assert int(a['progress'])==int(row['progress']),row['code']+' stale progress'
         if row['stage']!='S1':
-            assert row['status']!='done' and int(row['progress'])<100,'unexecuted implementation marked complete'
-            # Only S2-00 (min gate recorded) and S2-01..S2-04/S2-06 (implemented, awaiting independent verification) may leave todo, and only as review, never done.
-            if row['status']!='todo':assert row['code'] in ('CP-S2-00','CP-S2-01','CP-S2-02','CP-S2-03','CP-S2-04','CP-S2-06') and row['status']=='review','unexpected in-progress row '+row['code']
-    if strict:assert sum(r['status']=='done' for r in rows)==3,'design close status missing'
+            # S2 rows may be done only with an explicit self-verification state and an existing evidence file; S3 stays unstarted.
+            if row['status']=='done':
+                assert int(row['progress'])==100 and row['execution_state'].startswith('verified_'),'done without verified state '+row['code']
+                assert row['stage']=='S2' and (P.parent.parent.parent/'reports/collector/s2-final/verification-2026-10-23.txt').is_file(),'done without evidence '+row['code']
+            else:
+                assert int(row['progress'])<100,'unfinished row at 100% '+row['code']
+                if row['status']!='todo':assert row['stage']=='S2' and row['status']=='review','unexpected in-progress row '+row['code']
+            if row['stage']=='S3':assert row['status']=='todo' and int(row['progress'])==0,'S3 must stay unstarted '+row['code']
+    if strict:assert sum(r['status']=='done' for r in rows if r['stage']=='S1')==3,'design close status missing'
     assert len([r for r in rows if r['stage']=='S1'])==3
     assert len([r for r in rows if r['stage']=='S2'])==11
     assert len([r for r in rows if r['stage']=='S3'])==11
@@ -58,7 +63,7 @@ def verify(*,strict=False):
             assert (f.parent/target.split('#')[0]).exists(),f'{f.name}: missing link {target}'
     assert '{{' not in (P/'summary.html').read_text(),'HTML template placeholder'
     print(f'design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1')
-    print(f'fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2-00 live=review {by["fd87eb4c-29df-47d1-ad3a-346a8c6260ba"]["progress"]}%, S2-01 live=review {by["48d0a2b4-09f5-47ab-a6ac-d86a92c249a5"]["progress"]}% S2-02 live=review {by["7a90615c-2871-47ed-b0cb-75f74c73a132"]["progress"]}% (HTTP route implemented in S2-02); local document links=PASS; S2-01 implementation=reworked, awaiting independent verification; ML/deploy=NOT EXECUTED')
+    print(f'fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2 done={sum(r["status"]=="done" and r["stage"]=="S2" for r in rows)}/11 review={sum(r["status"]=="review" and r["stage"]=="S2" for r in rows)} (self-verified, not independent); S3 unstarted; local document links=PASS')
 
 if __name__=='__main__':
     import sys

@@ -1,6 +1,6 @@
 # 범용 수집 플랫폼 + ML 품질 평가 실행 설계 납품
 
-2026-10-20 · 설계/PMS 단계. 제품 구현·학습·운영 전환·배포는 미실행.
+2026-10-20 설계, 2026-10-23 S2 구현·검증 갱신. S3(ML 학습·calibration)는 미착수. 배포는 예약 기록과 별도 확인. 실행 기록은 [작업 기록](../../work-history/2026-10-23-collector-s2-completion.md), [runbook](../../../reports/collector/s2-10/runbook.md).
 
 - [요약 HTML](summary.html): 휴대폰용 핵심 결정·3단계·PMS UUID.
 - [아키텍처](architecture.md) / [ADR](../../adr/collector-platform-20261020.md): 모듈 경계·저장·상태·generation·예산·safe fetch·별도 API/UI.

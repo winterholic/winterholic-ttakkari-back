@@ -1,6 +1,6 @@
 {
   "project_id": "e99a75de-7ccf-48e6-a5d1-46e455eb79b8",
-  "readback_at": "2026-10-21T19:40+09:00 (CP-S2-03/04/06 구현 후 review 갱신, manage_pms update_task 응답 확인)",
+  "readback_at": "2026-10-23T16:46+09:00 (CP-S2-00..10 갱신, manage_pms update_task 응답 확인: status/progress/assignee/predecessors)",
   "scope": "q=[CP-], 5/page + final sink revision readback",
   "tasks": [
     {
@@ -35,11 +35,11 @@
       "wbs": "11.1.1.2",
       "has_children": false,
       "title": "[CP-S2-00] 최신 revision·runtime·DB·변경 소유권 인벤토리",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-00\n책임 소유 역할: 통합 담당 (개인 실행자·일정 미배정)\n완료기준: 코드 HEAD/dirty·배포 full SHA/runtime path·schema head·DB identity·활성 스케줄을 읽기 전용 증거로 구분. 다른 작업 파일 staging 금지. CP-S2-01 gate용 최소 산출: collector 신규 파일 소유권(공유 models/main/generation_service 접점 담당 확인), 현재 alembic head와 새 revision 배정, pytest fixture가 쓰는 테스트 DB identity(운영 DB 아님).\n검증 명령/절차: git status --short --branch; git rev-parse HEAD; uv run alembic heads; 실제 버전/ready API와 DB identity 기록(운영 실행 필요)\n산출물: reports/collector/s2-00/inventory.json\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a\n후행 gate: CP-S2-01 48d0a2b4-09f5-47ab-a6ac-d86a92c249a5 (intake/migration)\n재기록(2026-10-21 CP-S2-01 재작업): 이전 inventory(v1)는 HEAD·alembic head·dirty 목록·DB identity가 실제와 달라 검증 FAILED였다. v2.1.0은 명령 출력 그대로다: HEAD 1e70f33cac28e29c9cd8e52181772c6edcd3b2ca, alembic heads=0059_collector_intake(head, down 0058_kb_immutability_truncate; 0058은 KB 세션 커밋 1e70f33), collector 소유 파일과 남의 dirty 파일 분리, 테스트 DB는 /tmp 임시 PostgreSQL 클러스터 안의 DB(공유 PG에 만들지 않음, 운영 DB 거부). 최소 gate 산출은 충족. 미측정: 배포 full SHA/runtime path/ready API/활성 스케줄/운영 DB identity(운영 접속 금지). 전체 완료기준 미충족이므로 done이 아니라 review.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-00\n책임 소유 역할: 역할: 통합 담당 (실행자 미배정)\n완료기준(요약): 코드 HEAD/dirty·배포 full SHA/runtime path·schema head·DB identity·활성 스케줄을 읽기 전용 증거로 구분. 다른 작업 파일 staging 금지. CP-S2-01 gate용 최소 산출: collector 신규 파일 소유권(공유 models/main/generation_service 접점 담당 확인), 현재 alembic head와 새 revision 배정, pytest fixture가 쓰는 테스트 DB identity(…\n검증 명령/절차: git status --short --branch; git rev-parse HEAD; uv run alembic heads; 실제 버전/ready API와 DB identity 기록(운영 실행 필요)\n산출물: reports/collector/s2-00/inventory.json\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a\n현재 상태(2026-10-23): 배포 대상 HEAD·alembic head 0067_collector_outbox_retry·일회용 테스트 DB 사용을 재확인. 남음: 배포된 runtime path·ready API·활성 스케줄·운영 DB identity는 운영 인증/.env 없이는 읽지 못해 미측정(배포 예약 상태는 backend_deploy_status로 별도 확인).\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 통합 담당 (실행자 미배정)",
       "status": "review",
-      "progress": 80,
+      "progress": 90,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -48,7 +48,7 @@
         "3078ab3a-6ab8-470f-88f6-efd0a8a2790a"
       ],
       "created_at": "2026-10-20T13:54:22.592291+00:00",
-      "updated_at": "2026-10-20T14:50:16.213953+00:00",
+      "updated_at": "2026-10-23T07:45:20.878556+00:00",
       "done_at": null
     },
     {
@@ -60,11 +60,11 @@
       "wbs": "11.1.2.1",
       "has_children": false,
       "title": "[CP-S2-03] 출처별 robots·권리·보존·이용 정책",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-03\n책임 소유 역할: 수집 정책 담당 (개인 실행자·일정 미배정)\n완료기준: 공식 정책 URL/시각/license와 store/train/export/knowledge 용도 분리. unknown deny, robots는 권한 아님. sample source 5 domain×2 languages 제안 inventory. 구현(2026-10-21): collector/policy.py SourcePolicySpec(허용 host·용도별 permission·정책 URL/확인시각/license/근거·속도·깊이·원문 보존), 서버 등록 append-only 버전(collector_source_policies, Alembic 0062), 요청은 정책을 좁히기만 함, 정책 없음/미확인 용도 deny. 샘플 inventory 10건(5 domain x ko/en)은 5건 store 허용·5건 근거 부족 unknown이며 WebFetch 요약 기반이라 원문 재확인 필요, train 허용 0. 미구현: 정책 등록 API(S2-07). 독립 검증 전 review.\n검증 명령/절차: uv run pytest -q unit_tests/test_collector_policy.py tests/test_collector_pipeline.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터); source-policy.csv의 URL/확인시각/권리/scope 전수 검사는 unit_tests/test_collector_policy.py::InventoryTests\n산출물: reports/collector/s2-03/source-policy.csv; docs/design/collector-platform/stage-handler.md\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a, fd87eb4c-29df-47d1-ad3a-346a8c6260ba\n상태: 구현·테스트 완료, review. 독립 검증 후 done 결정. 운영 배포·실제 웹 스모크 미실행.\n정본 설계: docs/design/collector-platform/architecture.md; 작업 노트: docs/design/collector-platform/stage-handler.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-03\n책임 소유 역할: 역할: 수집 정책 담당 (실행자 미배정)\n완료기준(요약): 공식 정책 URL/시각/license와 store/train/export/knowledge 용도 분리. unknown deny, robots는 권한 아님. sample source 5 domain×2 languages 제안 inventory. 구현(2026-10-21): collector/policy.py SourcePolicySpec(허용 host·용도별 permission·정책 URL/확인시각/license/근거·속도·깊이·원문 보존), 서버 등록 appen…\n검증 명령/절차: uv run pytest -q unit_tests/test_collector_policy.py tests/test_collector_pipeline.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터); source-policy.csv의 URL/확인시각/권리/scope 전수 검사는 unit_tests/test_collector_policy.py::InventoryTests\n산출물: reports/collector/s2-03/source-policy.csv; docs/design/collector-platform/stage-handler.md\n선행 UUID: 3078ab3a-6ab8-470f-88f6-efd0a8a2790a, fd87eb4c-29df-47d1-ad3a-346a8c6260ba\n현재 상태(2026-10-23): 정책 등록 API 구현됨(sources). 파일럿 3곳의 라이선스·robots를 원문으로 재확인(kubernetes/website LICENSE=CC BY 4.0, GOV.UK 약관=OGL). 42 passed. 나머지 샘플 inventory는 여전히 unknown deny(코드가 거부), 운영자 법률 검토는 아님.\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 수집 정책 담당 (실행자 미배정)",
-      "status": "review",
-      "progress": 70,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -74,8 +74,8 @@
         "fd87eb4c-29df-47d1-ad3a-346a8c6260ba"
       ],
       "created_at": "2026-10-20T13:54:22.679349+00:00",
-      "updated_at": "2026-10-21T10:39:55+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:35.195144+00:00",
+      "done_at": "2026-10-23T07:45:35.194900+00:00"
     },
     {
       "id": "3078ab3a-6ab8-470f-88f6-efd0a8a2790a",
@@ -112,11 +112,11 @@
       "wbs": "11.1.3.2",
       "has_children": false,
       "title": "[CP-S2-01] 첫 slice: strict 계약·멱등 등록",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-01\n책임 소유 역할: 백엔드 담당 (개인 실행자·일정 미배정)\n완료기준: contracts.py/intake.py 및 별도 모델·additive migration. 동일키 10개 병렬 요청 job 1행, payload 충돌 409, scope 누출/실패 잔여0. network/LLM/sink write 0. intake fixture 10건(contracts/fixtures/intake)이 서비스(submit_envelope)+일회용 PostgreSQL 경로에서 같은 결과: envelope access(tenant_id/scope/principal_ids)는 인증 주체 산출값과 불일치 시 ScopeBindingMismatchError(http_status 403, scope_binding_mismatch), payload_hash=SHA-256(RFC 8785 JCS(envelope - /recorded_at)), key 순서·recorded_at만 다른 재전송 replay, 의미 필드·envelope_id 변경 409. 같은 tenant/scope에서 다른 request key로 같은 envelope_id가 오면 EnvelopeIdConflictError(409), 다른 tenant는 독립(outbox UNIQUE에 tenant 포함). lone surrogate·2**53 초과 정수·NaN·NUL은 CollectorContractError(422).\nHTTP 경계 이동: HTTP 라우트, 인증 주체→AuthContext(tenant/scope/principal) 산출, HTTP 403/409/422 상태 코드 테스트는 CP-S2-02로 이동했다(코드베이스에 tenant 개념이 없어 매핑 결정이 필요하고 main.py 공유 접점이다). S2-01은 예외의 http_status/error_code 계약까지 제공한다.\n선행 gate(독립 검증 R03): CP-S2-00(fd87eb4c-29df-47d1-ad3a-346a8c6260ba) 최소 산출 기록됨(reports/collector/s2-00/inventory.json v2.1.0).\n검증 명령/절차: .venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py; uv run pytest -q unit_tests/test_collector_contracts.py tests/test_collector_intake.py tests/test_collector_migration.py; uv run ruff check src/ttakkari/collector src/ttakkari/collector_models.py\n산출물: reports/collector/s2-01/verification.txt; docs/design/collector-platform/first-slice.md\n계약 정본: docs/design/collector-platform/intake-binding.md, contracts/intake-binding.json\n상태: 독립 검증 FAILED(2026-10-20) 지적 반영 재작업 완료, 커밋 전 review. 독립 재검증 후 done 결정.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-01\n책임 소유 역할: 백엔드 담당 (개인 실행자·일정 미배정)\n완료기준: contracts.py/intake.py 및 별도 모델·additive migration. 동일키 10개 병렬 요청 job 1행, payload 충돌 409, scope 누출/실패 잔여0. network/LLM/sink write 0. intake fixture 10건(contracts/fixtures/intake)이 서비스(submit_envelope)+일회용 PostgreSQL 경로에서 같은 결과: envelope access(tenant_id/scope/principal_ids)는 인증 주체 산출값과 불일치 시 ScopeBindingMismatchError(http_status 403, scope_binding_mismatch), payload_hash=SHA-256(RFC 8785 JCS(envelope - /recorded_at)), key 순서·recorded_at만 다른 재전송 replay, 의미 필드·envelope_id 변경 409. 같은 tenant/scope에서 다른 request key로 같은 envelope_id가 오면 EnvelopeIdConflictError(409), 다른 tenant는 독립(outbox UNIQUE에 tenant 포함). lone surrogate·2**53 초과 정수·NaN·NUL은 CollectorContractError(422).\nHTTP 경계 이동: HTTP 라우트, 인증 주체→AuthContext(tenant/scope/principal) 산출, HTTP 403/409/422 상태 코드 테스트는 CP-S2-02로 이동했다(코드베이스에 tenant 개념이 없어 매핑 결정이 필요하고 main.py 공유 접점이다). S2-01은 예외의 http_status/error_code 계약까지 제공한다.\n선행 gate(독립 검증 R03): CP-S2-00(fd87eb4c-29df-47d1-ad3a-346a8c6260ba) 최소 산출 기록됨(reports/collector/s2-00/inventory.json v2.1.0).\n검증 명령/절차: .venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py; uv run pytest -q unit_tests/test_collector_contracts.py tests/test_collector_intake.py tests/test_collector_migration.py; uv run ruff check src/ttakkari/collector src/ttakkari/collector_models.py\n산출물: reports/collector/s2-01/verification.txt; docs/design/collector-platform/first-slice.md\n계약 정본: docs/design/collector-platform/intake-binding.md, contracts/intake-binding.json\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md\n현재 상태(2026-10-23): 2026-10-23 자체 검증 통과(독립 검증 아님): contracts verify_contracts.py PASS, 51 passed(contracts/intake/migration), ruff clean. 증거 reports/collector/s2-final/verification-2026-10-23.txt.",
       "priority": "high",
       "assignee": "Antigravity (CP-S2-01 backend)",
-      "status": "review",
-      "progress": 90,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -126,8 +126,8 @@
         "fd87eb4c-29df-47d1-ad3a-346a8c6260ba"
       ],
       "created_at": "2026-10-20T13:54:22.626279+00:00",
-      "updated_at": "2026-10-20T14:50:23.214090+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:26.332243+00:00",
+      "done_at": "2026-10-23T07:45:26.331832+00:00"
     },
     {
       "id": "7a90615c-2871-47ed-b0cb-75f74c73a132",
@@ -138,11 +138,11 @@
       "wbs": "11.1.3.3",
       "has_children": false,
       "title": "[CP-S2-02] generation 주기·claim·cursor·복구",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-02\n책임 소유 역할: 백엔드 실행 담당 (개인 실행자·일정 미배정)\n완료기준: periodic/consume/work 재사용, DB owner/token fence·page commit+cursor/outbox 원자성·취소. heartbeat만 탈취 X; drain 중 새 claim0. CP-S2-01에서 이관해 구현: HTTP 라우트(POST/GET /api/assistant/collect/jobs, GET /jobs/{id}, POST /jobs/{id}/cancel와 /api/agent/collect 동일 경로; Idempotency-Key)와 인증 주체→AuthContext 산출(owner JWT: tenant owner·scope 쿼리 personal|work, agent: session.pool), HTTP 403/409/422/404 테스트. 구현 범위: collector/jobs.py(SKIP LOCKED claim·attempt token fence·page commit+cursor+outbox 원자성·취소·orphan 복구), runner.py(bounded batch, handler 등록형), generation maintenance 'collector-consume'(기본 off), Alembic 0060_collector_job_runtime. 미구현·후속: 단계 handler(S2-03 이후)·source 주기 scan('collector-schedule')·POST /jobs/{id}/retry, generation 전환 중 실측은 독립 검증 필요.\n검증 명령/절차: uv run pytest -q tests/test_collector_jobs.py tests/test_collector_api.py tests/test_collector_migration.py tests/test_route_inventory.py tests/test_generation_deployment.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터)\n산출물: reports/collector/s2-02/verification.txt\n선행 UUID: 48d0a2b4-09f5-47ab-a6ac-d86a92c249a5\n상태: 구현·테스트 완료, 커밋 전 review. 독립 검증 후 done 결정.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-02\n책임 소유 역할: 백엔드 실행 담당 (개인 실행자·일정 미배정)\n완료기준: periodic/consume/work 재사용, DB owner/token fence·page commit+cursor/outbox 원자성·취소. heartbeat만 탈취 X; drain 중 새 claim0. CP-S2-01에서 이관해 구현: HTTP 라우트(POST/GET /api/assistant/collect/jobs, GET /jobs/{id}, POST /jobs/{id}/cancel와 /api/agent/collect 동일 경로; Idempotency-Key)와 인증 주체→AuthContext 산출(owner JWT: tenant owner·scope 쿼리 personal|work, agent: session.pool), HTTP 403/409/422/404 테스트. 구현 범위: collector/jobs.py(SKIP LOCKED claim·attempt token fence·page commit+cursor+outbox 원자성·취소·orphan 복구), runner.py(bounded batch, handler 등록형), generation maintenance 'collector-consume'(기본 off), Alembic 0060_collector_job_runtime. 미구현·후속: 단계 handler(S2-03 이후)·source 주기 scan('collector-schedule')·POST /jobs/{id}/retry, generation 전환 중 실측은 독립 검증 필요.\n검증 명령/절차: uv run pytest -q tests/test_collector_jobs.py tests/test_collector_api.py tests/test_collector_migration.py tests/test_route_inventory.py tests/test_generation_deployment.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터)\n산출물: reports/collector/s2-02/verification.txt\n선행 UUID: 48d0a2b4-09f5-47ab-a6ac-d86a92c249a5\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md\n현재 상태(2026-10-23): 2026-10-23 자체 검증 통과: jobs/api/migration/route_inventory/generation_deployment 128 passed. 추가: 죽은 owner mid-job 재개(중복0·stale token fence), draining 중 claim0, 살아 있는 owner 비탈취(tests/test_collector_integration.py), source 주기 scan·retry는 collector-control 루프와 /jobs/{id}/retry로 구현됨. 실제 운영 generation 전환 관찰은 배포 뒤 별도.",
       "priority": "normal",
       "assignee": "역할: 백엔드 실행 담당 (실행자 미배정)",
-      "status": "review",
-      "progress": 85,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -151,8 +151,8 @@
         "48d0a2b4-09f5-47ab-a6ac-d86a92c249a5"
       ],
       "created_at": "2026-10-20T13:54:22.652204+00:00",
-      "updated_at": "2026-10-20T14:50:26.578197+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:31.159825+00:00",
+      "done_at": "2026-10-23T07:45:31.159582+00:00"
     },
     {
       "id": "985da575-0c06-44e8-b73a-fa5848715600",
@@ -163,11 +163,11 @@
       "wbs": "11.1.5.1",
       "has_children": false,
       "title": "[CP-S2-05] 전역 day/job 절대 예산·정산·캐시",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-05\n책임 소유 역할: 백엔드 비용 담당 (개인 실행자·일정 미배정)\n완료기준: 원자 선예약으로 병렬/retry/unknown/자정 경계 초과0. teacher/judge/synthetic 공용 bucket. bound 미지원 엔진 off. 캐시 scope/model/prompt/query 격리.\n검증 명령/절차: uv run pytest -q tests/test_collector_budget.py tests/test_collector_cache.py\n산출물: reports/collector/s2-05/budget-replay.json\n선행 UUID: 48d0a2b4-09f5-47ab-a6ac-d86a92c249a5, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-05\n책임 소유 역할: 역할: 백엔드 비용 담당 (실행자 미배정)\n완료기준(요약): 원자 선예약으로 병렬/retry/unknown/자정 경계 초과0. teacher/judge/synthetic 공용 bucket. bound 미지원 엔진 off. 캐시 scope/model/prompt/query 격리.…\n검증 명령/절차: .venv/bin/python -m pytest -q tests/test_collector_budget.py tests/test_collector_cache.py (PYTHONPATH=src, 격리 PostgreSQL)\n산출물: reports/collector/s2-05/budget-replay.json; src/ttakkari/collector/budget.py; src/ttakkari/collector/cache.py\n선행 UUID: 48d0a2b4-09f5-47ab-a6ac-d86a92c249a5, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n현재 상태(2026-10-23): 구현·검증: collector/budget.py(day→job 순 선예약 commit 후 호출, 환불은 receipt 시에만, Asia/Seoul 날짜, 미보장 엔진 거부)·cache.py·Alembic 0066. 16 passed. 요청 30/300/3000 모두 20건 허용(reports/collector/s2-05/budget-replay.json). 실제 모델 호출은 연결되지 않았고 teacher는 off.\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 백엔드 비용 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -177,8 +177,8 @@
         "0b55c254-6b57-4845-9ead-ac91a7650ab3"
       ],
       "created_at": "2026-10-20T13:54:22.739246+00:00",
-      "updated_at": "2026-10-20T13:54:22.739247+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:43.520838+00:00",
+      "done_at": "2026-10-23T07:45:43.520688+00:00"
     },
     {
       "id": "a87930c5-7842-4170-9d0d-bf34649df0c6",
@@ -189,11 +189,11 @@
       "wbs": "11.1.6.1",
       "has_children": false,
       "title": "[CP-S2-06] 정규화·lineage·중복·회수 보존",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-06\n책임 소유 역할: 백엔드 데이터 담당 (개인 실행자·일정 미배정)\n완료기준: raw/text SHA·변환 map·전처리 버전·품질 미측정·정확 occurrence 보존. near duplicate는 후보, 짧은 문서/낮은 점수 hold·샘플 회수 가능. 구현(2026-10-21): collector/pipeline.py·textproc.py·blobs.py. raw/text SHA·NFC 정규화 단계 기록·parser/normalizer 버전·품질 미측정(unmeasured)·정확중복 occurrence 보존(exact_of)·근사중복 후보(MinHash 128, LSH 16x8, 추정 J≥0.80, 판정 불차단)·짧은 문서/낮은 점수 hold+원문 보존, L0 규칙·평가 profile(general/news/tech_docs) job 단위 선택, L1 port·정책 훅(모델 미탑재). 미구현: hold 표본 stratified reservoir 감사(회수 절차), 재처리 job. 독립 검증 전 review.\n검증 명령/절차: uv run pytest -q tests/test_collector_pipeline.py tests/test_collector_stage_migration.py unit_tests/test_collector_parser.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터)\n산출물: reports/collector/s2-06/lineage.json; docs/design/collector-platform/stage-handler.md\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b\n상태: 구현·테스트 완료, review. 독립 검증 후 done 결정. 운영 배포·실제 웹 스모크 미실행.\n정본 설계: docs/design/collector-platform/architecture.md; 작업 노트: docs/design/collector-platform/stage-handler.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-06\n책임 소유 역할: 역할: 백엔드 데이터 담당 (실행자 미배정)\n완료기준(요약): raw/text SHA·변환 map·전처리 버전·품질 미측정·정확 occurrence 보존. near duplicate는 후보, 짧은 문서/낮은 점수 hold·샘플 회수 가능. 구현(2026-10-21): collector/pipeline.py·textproc.py·blobs.py. raw/text SHA·NFC 정규화 단계 기록·parser/normalizer 버전·품질 미측정(unmeasured)·정확중복 occurrence 보존(exact_of)·근사중복…\n검증 명령/절차: uv run pytest -q tests/test_collector_pipeline.py tests/test_collector_stage_migration.py unit_tests/test_collector_parser.py (TTAKKARI_TEST_DB=/tmp initdb 임시 클러스터)\n산출물: reports/collector/s2-06/lineage.json; docs/design/collector-platform/stage-handler.md\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b\n현재 상태(2026-10-23): 59 passed, 보류 표본 감사(출처×사유 층화·하루 고정 reservoir)와 소유자 검토→적재로 회수 절차 구현. 남음: hold 재처리 job(parser 버전이 바뀔 때 필요, 현재 버전 1개라 미구현).\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 백엔드 데이터 담당 (실행자 미배정)",
       "status": "review",
-      "progress": 70,
+      "progress": 90,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -202,7 +202,7 @@
         "41405531-dbf8-4615-97e9-3e906eb9e60b"
       ],
       "created_at": "2026-10-20T13:54:22.770867+00:00",
-      "updated_at": "2026-10-21T10:39:55+00:00",
+      "updated_at": "2026-10-23T07:45:47.089340+00:00",
       "done_at": null
     },
     {
@@ -214,11 +214,11 @@
       "wbs": "11.1.8.1",
       "has_children": false,
       "title": "[CP-S2-04] 안전 HTTP fetch·feed·본문 추출",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-04\n책임 소유 역할: 백엔드 수집 담당 (개인 실행자·일정 미배정)\n완료기준: DNS pin/IPv4-v6/redirect/proxy SSRF 방어·robots·429 durable cooldown·최대 bytes/time·빈200 명시 실패. HTML parser와 transport 분리, 브라우저 없음. 구현(2026-10-21): collector/netguard.py(URL 정규화·비공개 주소 거부), fetcher.py(검증 IP 고정 연결·redirect hop별 재검사·bytes/time/압축해제 상한·빈 200 명시 실패), robots.py(RFC 9309), polite.py(정책→DB 내구 cooldown→robots 캐시→간격 조절), parse.py(trafilatura·feed/sitemap/링크). 환경 proxy·쿠키 미사용, 브라우저 없음. 미검증: 공용 인터넷 실접속 스모크(미실행), IPv6 실접속. 독립 검증 전 review.\n검증 명령/절차: uv run pytest -q tests/test_collector_fetch.py tests/test_collector_fetch_tls.py tests/test_collector_pipeline.py unit_tests/test_collector_parser.py (로컬 fixture 서버, 공용 네트워크 0)\n산출물: reports/collector/s2-04/fetch-negative.json; docs/design/collector-platform/stage-handler.md\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n상태: 구현·테스트 완료, review. 독립 검증 후 done 결정. 운영 배포·실제 웹 스모크 미실행.\n정본 설계: docs/design/collector-platform/architecture.md; 작업 노트: docs/design/collector-platform/stage-handler.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-04\n책임 소유 역할: 역할: 백엔드 수집 담당 (실행자 미배정)\n완료기준(요약): DNS pin/IPv4-v6/redirect/proxy SSRF 방어·robots·429 durable cooldown·최대 bytes/time·빈200 명시 실패. HTML parser와 transport 분리, 브라우저 없음. 구현(2026-10-21): collector/netguard.py(URL 정규화·비공개 주소 거부), fetcher.py(검증 IP 고정 연결·redirect hop별 재검사·bytes/time/압축해제 상한·빈 200 명시 실패),…\n검증 명령/절차: uv run pytest -q tests/test_collector_fetch.py tests/test_collector_fetch_tls.py tests/test_collector_pipeline.py unit_tests/test_collector_parser.py (로컬 fixture 서버, 공용 네트워크 0)\n산출물: reports/collector/s2-04/fetch-negative.json; docs/design/collector-platform/stage-handler.md\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 0b55c254-6b57-4845-9ead-ac91a7650ab3\n현재 상태(2026-10-23): 132 passed + 공용 인터넷 실접속 스모크 실행(운영 기본 NetGuard, 격리 DB): reports/collector/s2-10/live-pilot-smoke-2026-10-23.txt. SSRF 반례(사설 DNS·redirect·metadata/loopback seed)는 접속 전 차단. IPv6 실접속은 미검증.\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 백엔드 수집 담당 (실행자 미배정)",
-      "status": "review",
-      "progress": 80,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -228,8 +228,8 @@
         "0b55c254-6b57-4845-9ead-ac91a7650ab3"
       ],
       "created_at": "2026-10-20T13:54:22.705863+00:00",
-      "updated_at": "2026-10-21T10:39:55+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:39.389454+00:00",
+      "done_at": "2026-10-23T07:45:39.389217+00:00"
     },
     {
       "id": "e83100c9-c48a-4cab-9ac3-e50bed63f550",
@@ -240,11 +240,11 @@
       "wbs": "11.1.8.2",
       "has_children": false,
       "title": "[CP-S2-07] 독립 /collect API·모바일 관리 화면",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-07\n책임 소유 역할: 프론트·API 통합 담당 (개인 실행자·일정 미배정)\n완료기준: back API auth/scope/idempotency; front clean checkout·라우트/feature 단일 통합 담당. sources/runs/review/quality 탭과 loading/empty/error/partial/budget_wait.\n검증 명령/절차: back: uv run pytest -q tests/test_collector_api.py; front: TTAKKARI_NO_ENV_FILE=1 pnpm test --run src/features/collector; pnpm lint; pnpm build; ttakkari_browser 320/390/768/1440 검사\n산출물: reports/collector/s2-07/ui/\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 985da575-0c06-44e8-b73a-fa5848715600, a87930c5-7842-4170-9d0d-bf34649df0c6\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-07\n책임 소유 역할: 역할: 프론트·API 통합 담당 (실행자 미배정)\n완료기준(요약): back API auth/scope/idempotency; front clean checkout·라우트/feature 단일 통합 담당. sources/runs/review/quality 탭과 loading/empty/error/partial/budget_wait.…\n검증 명령/절차: back: PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_collector_api.py tests/test_collector_control.py tests/test_collector_manage.py; front: TTAKKARI_NO_ENV_FILE=1 vitest run; eslint .; node scripts/ui-lint.mjs; tsc -b; vite build; 브라우저 320/390/768/1440 렌더 검사\n산출물: src/ttakkari/api/collect_control.py; front src/pages/CollectPage.tsx; front src/features/collector/\n선행 UUID: 7a90615c-2871-47ed-b0cb-75f74c73a132, 985da575-0c06-44e8-b73a-fa5848715600, a87930c5-7842-4170-9d0d-bf34649df0c6\n현재 상태(2026-10-23): 독립 /collect(현황·출처·실행·검토·품질/한도) + back summary/budgets/review/review-audit/items/deliveries/runtime/pilot API. back 52 passed, front vitest 1357 passed·tsc·eslint·ui-lint·build 통과, 브라우저 320/390/768/1440 가로 넘침·터치 타깃·콘솔 오류 0(합성 API).\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 프론트·API 통합 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -255,8 +255,8 @@
         "a87930c5-7842-4170-9d0d-bf34649df0c6"
       ],
       "created_at": "2026-10-20T13:54:22.803969+00:00",
-      "updated_at": "2026-10-20T13:54:22.803971+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:51.394212+00:00",
+      "done_at": "2026-10-23T07:45:51.393955+00:00"
     },
     {
       "id": "b80d960e-c589-4755-9469-dab2c6f9e8ef",
@@ -267,11 +267,11 @@
       "wbs": "11.1.8.3",
       "has_children": false,
       "title": "[CP-S2-08] export sink·선택적 knowledge adapter",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-08\n책임 소유 역할: 백엔드 어댑터 담당 (개인 실행자·일정 미배정)\n완료기준: envelope+delivery receipt·outbox 재시도/unknown reconcile. export 먼저. kb/artifact blob port 소유권 합의·scope/parser contract 시험 후 knowledge import. collector가 knowledge 직접 import X.\n검증 명령/절차: uv run pytest -q tests/test_collector_delivery.py tests/test_collector_knowledge_adapter.py\n산출물: reports/collector/s2-08/receipts.json\n선행 UUID: a87930c5-7842-4170-9d0d-bf34649df0c6, 985da575-0c06-44e8-b73a-fa5848715600\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md\n마감 재대조: 기존 docs/kb/design-v1.md discover/fetch/parse Protocol 확장. contract-compatibility.md 기준 KB extension(strict title/authors/section offset/hash/visibility) 검증·blob ref ownership·동일 raw parser 재처리 계약 정합화. ADR0063/0055는 커밋됨, 초기 ADR 충돌 해결 확인. legacy knowledge gate와 kb-only import는 구분.",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-08\n책임 소유 역할: 역할: 백엔드 어댑터 담당 (실행자 미배정)\n완료기준(요약): envelope+delivery receipt·outbox 재시도/unknown reconcile. export 먼저. kb/artifact blob port 소유권 합의·scope/parser contract 시험 후 knowledge import. collector가 knowledge 직접 import X.…\n검증 명령/절차: .venv/bin/python -m pytest -q tests/test_collector_manage.py tests/test_collector_product_flow.py tests/test_collector_control.py unit_tests/test_collector_blob_store.py (PYTHONPATH=src, 격리 PostgreSQL)\n산출물: src/ttakkari/kb_delivery.py; alembic/versions/0067_collector_outbox_retry.py\n선행 UUID: a87930c5-7842-4170-9d0d-bf34649df0c6, 985da575-0c06-44e8-b73a-fa5848715600\n현재 상태(2026-10-23): export 먼저, 일시 오류 backoff 재시도 5회 후 failed 노출, 소유자 reconcile(덮어쓰기 없음), knowledge 전달은 collector 밖 kb_delivery가 권리/해시/scope 재검증. 34 passed. 외부 sink용 delivery_unknown 경로는 sink가 없어 미구현.\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 백엔드 어댑터 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -281,8 +281,8 @@
         "985da575-0c06-44e8-b73a-fa5848715600"
       ],
       "created_at": "2026-10-20T13:54:22.834928+00:00",
-      "updated_at": "2026-10-20T14:05:06.328039+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:55.194010+00:00",
+      "done_at": "2026-10-23T07:45:55.193751+00:00"
     },
     {
       "id": "bec59aeb-8876-4c3b-91fd-fc7febaa9a58",
@@ -293,11 +293,11 @@
       "wbs": "11.1.9.1",
       "has_children": false,
       "title": "[CP-S2-09] 복구·scope·SSRF·절대 비용 통합 시험",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-09\n책임 소유 역할: 검증 담당 (개인 실행자·일정 미배정)\n완료기준: generation switch·crash 단계별 재개·중복0·stale commit0·scope 누출0·N→10N 절대 호출상한 동일. 사용량 조회/실응답/resume/MCP 분리 검사.\n검증 명령/절차: uv run pytest -q tests/test_collector_integration.py tests/test_collector_generation.py; fixture replay N/10N\n산출물: reports/collector/s2-09/integration.json\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b, 985da575-0c06-44e8-b73a-fa5848715600, e83100c9-c48a-4cab-9ac3-e50bed63f550, b80d960e-c589-4755-9469-dab2c6f9e8ef\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-09\n책임 소유 역할: 역할: 검증 담당 (실행자 미배정)\n완료기준(요약): generation switch·crash 단계별 재개·중복0·stale commit0·scope 누출0·N→10N 절대 호출상한 동일. 사용량 조회/실응답/resume/MCP 분리 검사.…\n검증 명령/절차: .venv/bin/python -m pytest -q tests/test_collector_integration.py tests/test_collector_jobs.py (PYTHONPATH=src, 격리 PostgreSQL); budget 재생 reports/collector/s2-05/budget-replay.json\n산출물: tests/test_collector_integration.py; reports/collector/s2-final/verification-2026-10-23.txt\n선행 UUID: 41405531-dbf8-4615-97e9-3e906eb9e60b, 985da575-0c06-44e8-b73a-fa5848715600, e83100c9-c48a-4cab-9ac3-e50bed63f550, b80d960e-c589-4755-9469-dab2c6f9e8ef\n현재 상태(2026-10-23): tests/test_collector_integration.py(크래시 재개·세대 교체/drain·scope 격리·SSRF·N→10N). 39 passed. 모델 호출이 꺼져 있어 사용량 조회/실응답/MCP 분리 검사는 해당 없음. 실제 운영 generation 전환은 미관찰.\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 검증 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "done",
+      "progress": 100,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -309,8 +309,8 @@
         "b80d960e-c589-4755-9469-dab2c6f9e8ef"
       ],
       "created_at": "2026-10-20T13:54:22.866412+00:00",
-      "updated_at": "2026-10-20T13:54:22.866413+00:00",
-      "done_at": null
+      "updated_at": "2026-10-23T07:45:59.490641+00:00",
+      "done_at": "2026-10-23T07:45:59.490429+00:00"
     },
     {
       "id": "92c8ac3a-766d-4f4c-9e4a-c0907b1dba29",
@@ -321,11 +321,11 @@
       "wbs": "11.1.10.1",
       "has_children": false,
       "title": "[CP-S2-10] teacher off 파일럿·runbook·제한 운영",
-      "description": "단계: S2; 전용 실행 패키지 CP-S2-10\n책임 소유 역할: 운영 통합 담당 (개인 실행자·일정 미배정)\n완료기준: 소스별 flag·한도·중지/재개·DB accounting·실제 runtime/DB 동일성·drain 증거. clean relevant checks→commit/push→generation deploy reservation, 수락과 성공 구분.\n검증 명령/절차: 관련 back tests 전체·front lint/build; 배포 reservation full SHA와 runtime ready/canary는 별도 실행\n산출물: reports/collector/s2-10/runbook.md\n선행 UUID: bec59aeb-8876-4c3b-91fd-fc7febaa9a58\n현재 범위: S1 설계/정정만 수행. S2/S3 구현·학습·운영·배포 미실행. 미래 검증 파일/명령은 예정이며 현재 존재/통과를 뜻하지 않음.\n정본 설계: docs/design/collector-platform/architecture.md; 첫 구현: docs/design/collector-platform/first-slice.md",
+      "description": "단계: S2; 전용 실행 패키지 CP-S2-10\n책임 소유 역할: 역할: 운영 통합 담당 (실행자 미배정)\n완료기준(요약): 소스별 flag·한도·중지/재개·DB accounting·실제 runtime/DB 동일성·drain 증거. clean relevant checks→commit/push→generation deploy reservation, 수락과 성공 구분.…\n검증 명령/절차: 배포 게이트와 같은 명령: security_gate(-m security) + pytest -m \"not security\"(호스트, 격리 DB); front vitest·eslint·tsc·build; 배포 예약 후 backend_deploy_status\n산출물: reports/collector/s2-10/runbook.md; reports/collector/s2-10/live-pilot-smoke-2026-10-23.txt; src/ttakkari/collector/pilot.py; src/ttakkari/collector/runtime.py\n선행 UUID: bec59aeb-8876-4c3b-91fd-fc7febaa9a58\n현재 상태(2026-10-23): 파일럿 3곳·DB 일시정지·runbook(reports/collector/s2-10/runbook.md)·실서버 스모크 완료. 남음: 배포 예약 성공 확인과 인증된 운영 화면/검색 확인.\n정본 설계: docs/design/collector-platform/architecture.md",
       "priority": "normal",
       "assignee": "역할: 운영 통합 담당 (실행자 미배정)",
-      "status": "todo",
-      "progress": 0,
+      "status": "review",
+      "progress": 90,
       "start_date": null,
       "end_date": null,
       "dates_rollup": false,
@@ -334,7 +334,7 @@
         "bec59aeb-8876-4c3b-91fd-fc7febaa9a58"
       ],
       "created_at": "2026-10-20T13:54:22.897357+00:00",
-      "updated_at": "2026-10-20T13:54:22.897359+00:00",
+      "updated_at": "2026-10-23T07:46:03.143116+00:00",
       "done_at": null
     },
     {
@@ -659,6 +659,7 @@
       "status": "open",
       "title": "[CP-S2-01] 독립 설계 검증 보완 전달: scope 결속·JCS 멱등·S2-00 gate",
       "owner": "worker 85f10519-989e-4ef3-8f5b-66114e91a448"
-    }
+    },
+    "2026-10-23: S2 구현 결과를 반영했다. status/progress/assignee/predecessors/updated_at 은 update_task 응답과 list_tasks 재조회로 확인했다. S2 행 description 은 wbs.csv 에서 생성한 사본이며 PMS 에 보낸 문구와 글자 단위로 같지 않을 수 있다(길이는 응답의 description_length 로만 확인)."
   ]
 }

@@ -1,0 +1,39 @@
+{
+ "policy": {
+  "day_calls": 20,
+  "day_tokens": 60000,
+  "job_calls": 4,
+  "request_input_cap": 2000,
+  "request_output_cap": 1000
+ },
+ "engine": "fake bounded provider (reservation discipline only; no real model was called)",
+ "runs": [
+  {
+   "requests": 30,
+   "admitted": 20,
+   "denied": {
+    "day_budget": 10
+   },
+   "day_calls_reserved": 20,
+   "day_tokens_reserved": 40000
+  },
+  {
+   "requests": 300,
+   "admitted": 20,
+   "denied": {
+    "day_budget": 280
+   },
+   "day_calls_reserved": 20,
+   "day_tokens_reserved": 40000
+  },
+  {
+   "requests": 3000,
+   "admitted": 20,
+   "denied": {
+    "day_budget": 2980
+   },
+   "day_calls_reserved": 20,
+   "day_tokens_reserved": 40000
+  }
+ ]
+}

@@ -1,0 +1,59 @@
+base: b6471e69b5700e50f5e65b98be5d874e2fbc145c on origin/main c6d55400d8b33857ec60e4374b9fe2d97b710a2b
+### .venv/bin/python docs/design/collector-platform/contracts/verify_contracts.py
+schema meta-validation: 2 PASS; fixture expectations: 18 PASS
+positive=4 negative=14; hash/calibration/query/time/scope/unknown-setting controls checked
+intake binding/idempotency: 10 PASS (negative=7: tenant/principal/scope tamper, cross-scope replay, 409 conflicts; replay=key-order+recorded_at); JCS vectors=11 PASS
+runtime budget/SSRF/DB/lease enforcement: NOT EXECUTED (design only)
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider unit_tests/test_collector_contracts.py tests/test_collector_intake.py tests/test_collector_migration.py
+......... [ 17%]
+..........................................                               [100%]
+db reset: 42 selective (avg 1.8/106 tables), 0 forced full, 0 fell back to full
+51 passed, 4887 subtests passed in 2.05s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_collector_jobs.py tests/test_collector_api.py tests/test_collector_migration.py tests/test_route_inventory.py tests/test_generation_deployment.py
+........................................................................ [ 56%]
+........................................................                 [100%]
+db reset: 128 selective (avg 1.8/106 tables), 0 forced full, 0 fell back to full
+128 passed in 5.42s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider unit_tests/test_collector_policy.py tests/test_collector_pipeline.py
+........................... [ 64%]
+...............                                                          [100%]
+db reset: 28 selective (avg 6.9/106 tables), 0 forced full, 0 fell back to full
+42 passed, 45 subtests passed in 3.08s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_collector_fetch.py tests/test_collector_fetch_tls.py tests/test_collector_pipeline.py unit_tests/test_collector_parser.py
+......................................................... [ 97%]
+...                                                              [100%]
+db reset: 103 selective (avg 2.6/106 tables), 0 forced full, 0 fell back to full
+132 passed, 23 subtests passed in 6.11s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_collector_budget.py tests/test_collector_cache.py
+................                                                         [100%]
+db reset: 16 selective (avg 2.7/106 tables), 0 forced full, 0 fell back to full
+16 passed in 1.20s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_collector_pipeline.py tests/test_collector_stage_migration.py unit_tests/test_collector_parser.py
+...........................................................                                                               [100%]
+db reset: 30 selective (avg 6.6/106 tables), 0 forced full, 0 fell back to full
+59 passed, 23 subtests passed in 3.31s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_collector_api.py tests/test_collector_control.py tests/test_collector_manage.py
+....................................................                     [100%]
+db reset: 52 selective (avg 4.2/106 tables), 0 forced full, 0 fell back to full
+52 passed in 2.29s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_collector_manage.py tests/test_collector_product_flow.py tests/test_collector_control.py unit_tests/test_collector_blob_store.py
+..................................                                       [100%]
+db reset: 18 selective (avg 9.8/106 tables), 0 forced full, 0 fell back to full
+34 passed in 2.13s
+
+### .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_collector_integration.py tests/test_collector_jobs.py
+.......................................                                  [100%]
+db reset: 39 selective (avg 3.6/106 tables), 0 forced full, 0 fell back to full
+39 passed in 2.09s
+
+### .venv/bin/ruff check src/ttakkari/collector src/ttakkari/kb_delivery.py src/ttakkari/api/collect_control.py src/ttakkari/generation_service.py tests/test_collector_budget.py tests/test_collector_cache.py tests/test_collector_manage.py tests/test_collector_integration.py
+All checks passed!
+

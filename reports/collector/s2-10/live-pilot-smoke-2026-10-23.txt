@@ -1,0 +1,38 @@
+# Live pilot smoke 2026-10-23 16:40 KST, real public internet through the production-default NetGuard, isolated disposable PostgreSQL, rule-only quality, teacher off. Not the production DB.
+SEEDED ['pilot:kubernetes-blog-feed', 'pilot:kubernetes-docs-ko', 'pilot:govuk-news-atom']
+JOB pilot:govuk-news-atom succeeded None {'held': 1, 'failed': 0, 'blocked': 0, 'accepted': 8, 'discovery': 1, 'not_modified': 0, 'skipped_limit': 11, 'skipped_policy': 0}
+JOB pilot:kubernetes-docs-ko succeeded None {'held': 0, 'failed': 0, 'blocked': 0, 'accepted': 6, 'discovery': 0, 'not_modified': 0, 'skipped_limit': 0, 'skipped_policy': 0}
+JOB pilot:kubernetes-blog-feed succeeded None {'held': 0, 'failed': 0, 'blocked': 0, 'accepted': 9, 'discovery': 1, 'not_modified': 0, 'skipped_limit': 41, 'skipped_policy': 0}
+ITEMS 24 {'accepted': 23, 'held': 1}
+   accepted en 12673 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/10/14/tracing-kueue-admission-with-headlamp/ []
+   accepted en 15454 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/10/06/kubernetes-cgroups-v2-shift/ []
+   accepted en 9057 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/10/05/scaling-kubernetes-workloads-with-node-swap/ []
+   accepted en 12455 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/09/22/sig-apps-spotlight/ []
+   accepted en 6326 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/09/21/kubernetes-v1-37-pvc-last-used-time/ []
+   accepted en 11094 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/09/16/kubernetes-v1-37-hardening-container-storage/ []
+   accepted en 2355 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/09/15/kubernetes-v1-37-pod-level-resource-managers-beta/ []
+   accepted en 3217 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/09/14/csi-changed-block-tracking-beta/ []
+   accepted en 4848 ['l0_pass', 'l1_off'] https://kubernetes.io/blog/2026/09/14/kubernetes-v1-37-memory-qos-graduates-to-beta/ []
+   accepted ko 5011 ['l0_pass', 'l1_off'] https://kubernetes.io/ko/docs/concepts/overview/ []
+   accepted ko 10528 ['l0_pass', 'l1_off'] https://kubernetes.io/ko/docs/concepts/workloads/pods/ []
+   accepted ko 21321 ['l0_pass', 'l1_off'] https://kubernetes.io/ko/docs/concepts/services-networking/service/ []
+   accepted ko 5304 ['l0_pass', 'l1_off'] https://kubernetes.io/ko/docs/concepts/configuration/configmap/ []
+   accepted ko 23521 ['l0_pass', 'l1_off'] https://kubernetes.io/ko/docs/concepts/storage/persistent-volumes/ []
+   accepted ko 28667 ['l0_pass', 'l1_off'] https://kubernetes.io/ko/docs/concepts/workloads/controllers/deployment/ []
+   accepted en 3463 ['l0_pass', 'l1_off'] https://www.gov.uk/government/news/representatives-from-chiles-public-and-private-sectors- []
+   accepted en 9686 ['l0_pass', 'l1_off'] https://www.gov.uk/government/news/government-slashes-red-tape-and-tariffs-to-give-busines []
+   accepted en 7851 ['l0_pass', 'l1_off'] https://www.gov.uk/government/news/military-planes-and-helicopters-to-fight-wildfires-from []
+   accepted en 6791 ['l0_pass', 'l1_off'] https://www.gov.uk/government/news/pm-puts-communities-first-in-government-investment-rule []
+   accepted en 2159 ['l0_pass', 'l1_off'] https://www.gov.uk/government/speeches/chief-of-the-general-staffs-speech-at-the-opening-o []
+   held en 7062 ['l0_repeated_lines', 'l0_repetitive', 'l0_mostly_short_lines', 'news_stale'] https://www.gov.uk/government/news/applications-and-complaints []
+   accepted en 14562 ['l0_pass', 'l1_off'] https://www.gov.uk/government/news/social-media-campaign-urges-brits-to-get-vaccinated-for []
+   accepted en 2790 ['l0_pass', 'l1_off'] https://www.gov.uk/government/news/national-energy-security-supported-by-new-subsea-cable- []
+   accepted en 7762 ['l0_pass', 'l1_off'] https://www.gov.uk/government/speeches/defence-secretary-wes-streetings-speech-at-the-open []
+KBDOCS 15 PASSAGES 15
+SUMMARY {"discovered": 2, "fetched": 26, "extracted": 24, "accepted": 23, "held": 1, "blocked": 0, "failed": 0, "not_modified": 0, "delivered": 15, "awaiting_delivery": 0, "awaiting_review": 9} {'succeeded': 3}
+SEARCH kubernetes 10 ['The Shift to cgroup v2 in Kubernetes: What You Nee', 'Spotlight on SIG Apps', 'Why Is My Kubernetes Job Still Pending? Tracing Ku']
+SEARCH 파드 6 ['파드', '디플로이먼트', '서비스']
+SEARCH Pod 10 ['The Shift to cgroup v2 in Kubernetes: What You Nee', 'Why Is My Kubernetes Job Still Pending? Tracing Ku', 'Kubernetes v1.37: Hardening Container Storage with']
+.ROUND2 docs 15 -> 15 items 26 -> 34 [('kubernetes-blog-feed', 'succeeded', 0), ('kubernetes-docs-ko', 'succeeded', 0), ('govuk-news-atom', 'succeeded', 0), ('kubernetes-blog-feed', 'succeeded', 1), ('kubernetes-docs-ko', 'succeeded', 6), ('govuk-news-atom', '
+ROUND2 statuses {'accepted': 23, 'not_modified': 8, 'held': 1} exact_dups 0
+2 passed in 122.49s (0:02:02)

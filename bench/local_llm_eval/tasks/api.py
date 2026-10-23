@@ -218,7 +218,7 @@ def build() -> Task:
         Check(cid, kind, f"R{cid[1:]}", snippet=PRE + code, timeout=30.0)
         for cid, kind, code in snippets
     ]
-    checks.append(frozen_unchanged("H10", FROZEN, "R10"))
+    checks.append(frozen_unchanged("H10", FROZEN))
     checks.append(public_suite("PUB", 3, codes.KIND_INVARIANT))
     stage = Stage(
         "S1",

@@ -17,6 +17,7 @@ from ..natives import (
 )
 from ..negatives import (
     EXIT0,
+    m_delete,
     m_set,
     neg,
     presolved_negative,
@@ -177,6 +178,12 @@ def build() -> Task:
     )
     imports_only = "import unittest\n\nfrom shop.discount import apply_discount\n"
     negatives += [
+        neg(
+            "N4",
+            "test infrastructure tests/__init__.py deleted",
+            m_delete("tests/__init__.py"),
+            ("FAIL_TEST_TAMPER",),
+        ),
         neg(
             "N5",
             "every gold test decorated with unittest.skip",

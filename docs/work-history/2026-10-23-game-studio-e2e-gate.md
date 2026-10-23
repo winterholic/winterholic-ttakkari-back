@@ -1,0 +1,1 @@
+2026-10-23: 배포 38b5468의 게임 E2E 실패는 방1 소탕 후 방2 이동 도중 이미 gameover가 된 유효 경로를 테스트가 거부한 과잉 단언이며, 이동 또는 game_over를 허용하도록 수정; creative/MCP 44 passed, 전체 pytest 1,211 passed 뒤 별도 migration DB password-auth 오류로 중단, Codex browser preflight blocked로 브라우저 검증 미실행.

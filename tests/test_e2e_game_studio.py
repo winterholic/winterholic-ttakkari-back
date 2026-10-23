@@ -140,10 +140,12 @@ async def test_game_studio_flow_with_recorded_worker_output(client, auth, monkey
         assert git(root, "diff", "--stat", v1_commit, "HEAD") == ""
         assert (await client.get(f"/api/games/{gid}", headers=auth)).json()["active_build_id"] == restored["id"]  # 복구 빌드가 활성이 된다
         # 기본 대상은 활성 빌드(복구 빌드). 방1 을 먼저 비우려는 변형으로, 처치 단계가 방을 비우면 게임오버를 못 기다리던 간헐 실패 경로를 지난다.
-        # 비우는 도중 봇이 맞아 죽을 수도 있어(그 경우 게임오버는 이미 확인된 것이다) 경로를 지났는지는 단정하지 않고 결과 파일에만 남긴다.
+        # 비우거나 방2 로 이동하는 도중 봇이 죽으면 이동 검사는 실패해도 게임오버는 이미 확인된 것이다.
         r3 = await play_rules("v3-restored", None, quick=True, clear_first=True)
         if r3.get("roomClearedInKillPhase"):
-            assert r3["checks"].get("moved_on_after_clear"), {k: r3.get(k) for k in ("notes", "hpSeen", "gameover", "checks")}
+            assert r3["checks"].get("moved_on_after_clear") or r3["checks"].get("game_over"), {
+                k: r3.get(k) for k in ("notes", "hpSeen", "gameover", "checks")
+            }
         builds = (await client.get(f"/api/games/{gid}/builds", headers=auth)).json()
         assert len(builds) == 3 and {b["status"] for b in builds} == {"succeeded"}  # 원래·수정·복구 빌드가 모두 남았다
 

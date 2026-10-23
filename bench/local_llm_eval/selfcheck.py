@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import codes
 from .evaluator import _run_checks, evaluate_attempt
-from .manifest import manifest_of_files, write_files
+from .manifest import diff_manifests, manifest_of_files, write_files
 from .model import Ctx, Task
 from .simulate import gold_ends, materialize, reports_for, stage_bases
 
@@ -32,7 +32,9 @@ def _eval_checks_on(
             stage_base_files=stage_base,
             end_files=files,
             eval_dir=tree,
-            changed={},
+            changed=diff_manifests(
+                manifest_of_files(stage_base), manifest_of_files(files)
+            ),
             report=None,
             trace=None,
             scratch=Path(tmp),
@@ -152,7 +154,6 @@ def selfcheck_task(task: Task) -> dict:
                 not r["ok"] for r in negatives
             ),
             "false_positives": sum(r["false_positive"] for r in negatives),
-            "base_hash": manifest_of_files(task.base_files) and len(task.base_files),
         },
     }
 
@@ -172,6 +173,12 @@ def main(argv: list[str]) -> int:
             f"not_rejected_right={s['negatives_not_rejected_for_expected_reason']} "
             f"false_positives={s['false_positives']}"
         )
+        for section in ("classification", "references", "negatives"):
+            for row in report[section]:
+                if not row["ok"]:
+                    print(
+                        f"  NOT OK {section}: {json.dumps(row, ensure_ascii=False)[:600]}"
+                    )
         bad += (
             s["classification_bad"]
             + s["reference_fail"]

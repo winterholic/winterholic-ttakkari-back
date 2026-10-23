@@ -68,10 +68,13 @@ def m_revert(path: str) -> Mutate:
     return run
 
 
-def m_misplaced(path: str, new_path: str) -> Mutate:
+def m_misplaced(paths: tuple[str, ...]) -> Mutate:
+    """Gold content written next to every required path (as *_fixed.py); the real paths stay at start."""
+
     def run(prev: Files, gold: Files, base: Files) -> Files:
-        out = m_revert(path)(prev, gold, base)
-        out[new_path] = gold[path]
+        out = dict(prev)
+        for path in paths:
+            out[path[:-3] + "_fixed.py"] = gold[path]
         return out
 
     return run
@@ -95,12 +98,13 @@ def m_add(extra: Files, on_gold: bool = True) -> Mutate:
     return run
 
 
-def m_prepend(path: str, text: str) -> Mutate:
-    """Prepend to the start state of `path` (or create it); the real fix is NOT applied."""
+def m_prepend(paths: tuple[str, ...], text: str) -> Mutate:
+    """Prepend text to the start state of every path (or create it); the real fix is NOT applied."""
 
     def run(prev: Files, gold: Files, base: Files) -> Files:
         out = dict(prev)
-        out[path] = text + out.get(path, "")
+        for path in paths:
+            out[path] = text + out.get(path, "")
         return out
 
     return run
@@ -148,7 +152,7 @@ def standard_negatives(
         neg(
             "N2",
             "comment/keyword only in the required source",
-            m_comment((first,)),
+            m_comment(required),
             ("FAIL_COMMENT_ONLY",),
             stage=stage,
         )
@@ -167,7 +171,7 @@ def standard_negatives(
         neg(
             "N8",
             "fix written to a misnamed file, real target untouched",
-            m_misplaced(first, first[:-3] + "_fixed.py"),
+            m_misplaced(required),
             ("FAIL_MISSING_TARGET",),
             stage=stage,
         )
@@ -185,7 +189,7 @@ def standard_negatives(
         neg(
             "N6",
             "exit 0 at import time instead of a fix",
-            m_prepend(first, EXIT0),
+            m_prepend(required, EXIT0),
             ("FAIL_STUB_EXIT0",),
             stage=stage,
         )
@@ -194,7 +198,7 @@ def standard_negatives(
         neg(
             "N7",
             "forged handshake line printed at import",
-            m_prepend(first, FORGED),
+            m_prepend(required, FORGED),
             ("FAIL_CHECKER_PATCH",),
             stage=stage,
         )
@@ -203,7 +207,7 @@ def standard_negatives(
         neg(
             "N7",
             "unittest.TestCase.run monkeypatched at import",
-            m_prepend(first, PATCH_TESTCASE),
+            m_prepend(required, PATCH_TESTCASE),
             ("FAIL_CHECKER_PATCH", "FAIL_EMPTY_RESULT", "FAIL_PUBLIC", "FAIL_HIDDEN"),
             stage=stage,
         )

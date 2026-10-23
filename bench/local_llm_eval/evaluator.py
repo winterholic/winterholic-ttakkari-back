@@ -9,6 +9,7 @@ Model self-report never makes an attempt pass; it can only add a failure.
 import ast
 import fnmatch
 import os
+import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -143,14 +144,14 @@ def _structural_gate(
         return None
     if not changed:
         return "FAIL_NOOP", "no change from the stage start state"
+    required = stage.required_change_paths
+    touched = [p for p in required if p in changed]
+    for path in touched:
+        if path in end_files and not end_files[path].strip():
+            return "FAIL_EMPTY_RESULT", f"required path emptied: {path}"
     if _is_comment_only(stage_base_files, end_files, stage_diff):
         return "FAIL_COMMENT_ONLY", "only comments/whitespace changed"
-    required = stage.required_change_paths
     if required:
-        touched = [p for p in required if p in changed]
-        for path in touched:
-            if path in end_files and not end_files[path].strip():
-                return "FAIL_EMPTY_RESULT", f"required path emptied: {path}"
         if not touched:
             return (
                 "FAIL_MISSING_TARGET",
@@ -201,15 +202,19 @@ def _reconcile_report(
     return None, False
 
 
+def _isolated_run(ctx: Ctx, check: Check) -> CheckRun:
+    """Each snippet gets its own copy of the eval tree (checks may write, e.g. a sentinel module)."""
+    copy = ctx.scratch / f"check-{check.id}"
+    shutil.copytree(ctx.eval_dir, copy)
+    return run_check(copy, check.id, check.snippet, check.timeout)
+
+
 def _run_checks(ctx: Ctx, stage: Stage) -> list[tuple[Check, CheckOutcome]]:
     snippet_checks = [c for c in stage.checks if c.snippet is not None]
     native_checks = [c for c in stage.checks if c.native is not None]
     results: dict[str, CheckOutcome] = {}
     with ThreadPoolExecutor(max_workers=max(1, WORKERS)) as pool:
-        futures = {
-            c.id: pool.submit(run_check, ctx.eval_dir, c.id, c.snippet, c.timeout)
-            for c in snippet_checks
-        }
+        futures = {c.id: pool.submit(_isolated_run, ctx, c) for c in snippet_checks}
         for check in snippet_checks:
             results[check.id] = outcome_from_run(check, futures[check.id].result())
     for check in native_checks:

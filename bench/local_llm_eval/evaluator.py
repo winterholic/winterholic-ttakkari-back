@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import codes
+from .judges import Fail, MissingObservation, Obs
 from .manifest import (
     changed_paths,
     diff_manifests,
@@ -53,19 +54,51 @@ class ConfigError(Exception):
 
 
 def outcome_from_run(check: Check, run: CheckRun) -> CheckOutcome:
-    metrics = {"wall_s": round(run.wall_s, 3), **run.result}
-    if run.status == "OK":
-        return CheckOutcome(True, None, run.detail, metrics)
-    if run.status in ("EXIT", "stub_exit0"):
+    """Map an observation run to an outcome. The judge runs HERE, in the evaluator process."""
+    metrics = {"wall_s": round(run.wall_s, 3)}
+    if run.status == "stub_exit0":
         return CheckOutcome(False, "FAIL_STUB_EXIT0", run.detail, metrics)
-    if run.status in ("TAMPER", "forged"):
+    if run.status in ("multi_obs", "bad_obs"):
         return CheckOutcome(False, "FAIL_CHECKER_PATCH", run.detail, metrics)
     if run.status == "timeout":
         return CheckOutcome(False, check.fail_code, "check_timeout", metrics)
-    detail = run.detail or run.stderr_tail[-200:]
-    return CheckOutcome(
-        False, run.result.get("code") or check.fail_code, detail, metrics
-    )
+    if run.status != "OBS":
+        return CheckOutcome(
+            False, check.fail_code, run.detail or run.stderr_tail[-200:], metrics
+        )
+    obs = Obs(run.obs)
+    if obs.get("__tampered__"):
+        return CheckOutcome(
+            False, "FAIL_CHECKER_PATCH", f"patched: {obs['__tampered__']}", metrics
+        )
+    error = obs.get("__error__")
+    if error and error.startswith("SystemExit"):
+        return CheckOutcome(False, "FAIL_STUB_EXIT0", error, metrics)
+    if error:
+        return CheckOutcome(False, check.fail_code, error, metrics)
+    try:
+        check.judge(obs, run.facts)
+    except Fail as exc:
+        return CheckOutcome(False, exc.code, exc.detail[:300], metrics)
+    except AssertionError as exc:
+        return CheckOutcome(
+            False, check.fail_code, str(exc)[:300] or "assertion failed", metrics
+        )
+    except MissingObservation as exc:
+        return CheckOutcome(
+            False,
+            "FAIL_CHECKER_PATCH",
+            f"observation {exc} missing: stream cut or forged",
+            metrics,
+        )
+    except Exception as exc:  # noqa: BLE001 - candidate data the judge cannot interpret is a wrong result
+        return CheckOutcome(
+            False,
+            check.fail_code,
+            f"malformed observation: {type(exc).__name__}: {exc}"[:300],
+            metrics,
+        )
+    return CheckOutcome(True, None, "", metrics)
 
 
 def _py_ast_dump(source: str) -> str | None:
@@ -203,19 +236,19 @@ def _reconcile_report(
 
 
 def _isolated_run(ctx: Ctx, check: Check) -> CheckRun:
-    """Each snippet gets its own copy of the eval tree (checks may write, e.g. a sentinel module)."""
+    """Each probe gets its own copy of the eval tree (probes may write, e.g. a sentinel module)."""
     copy = ctx.scratch / f"check-{check.id}"
     shutil.copytree(ctx.eval_dir, copy)
-    return run_check(copy, check.id, check.snippet, check.timeout)
+    return run_check(copy, check.id, check.probe, check.timeout, check.dirs)
 
 
 def _run_checks(ctx: Ctx, stage: Stage) -> list[tuple[Check, CheckOutcome]]:
-    snippet_checks = [c for c in stage.checks if c.snippet is not None]
+    probe_checks = [c for c in stage.checks if c.probe is not None]
     native_checks = [c for c in stage.checks if c.native is not None]
     results: dict[str, CheckOutcome] = {}
     with ThreadPoolExecutor(max_workers=max(1, WORKERS)) as pool:
-        futures = {c.id: pool.submit(_isolated_run, ctx, c) for c in snippet_checks}
-        for check in snippet_checks:
+        futures = {c.id: pool.submit(_isolated_run, ctx, c) for c in probe_checks}
+        for check in probe_checks:
             results[check.id] = outcome_from_run(check, futures[check.id].result())
     for check in native_checks:
         results[check.id] = check.native(ctx)
@@ -264,25 +297,31 @@ def evaluate_stage(
     """Evaluate one stage. Returns the result and the stage end manifest.
 
     stage_base_files is the pristine task for stage 0 and the previous stage end otherwise;
-    the recorded start manifest must equal its manifest (a workspace changed between stages
-    is not a model result).
+    the evaluator hashes the real start tree itself and requires it to equal that baseline's
+    manifest (a workspace changed between stages is not a model result).
     """
     base_manifest = manifest_of_files(task.base_files)
     end_manifest = dir_manifest(sa.end_dir)
     expected_start = manifest_of_files(stage_base_files)
-    if sa.start_manifest is None:
+    if sa.start_dir is None or not Path(sa.start_dir).is_dir():
         res = StageResult(
-            stage.id, codes.UNKNOWN, "UNKNOWN", detail="start manifest not recorded"
+            stage.id,
+            codes.UNKNOWN,
+            "UNKNOWN",
+            detail="start workspace tree not provided",
         )
         return res, end_manifest
-    if sa.start_manifest != expected_start:
-        diff = diff_manifests(expected_start or {}, sa.start_manifest)
+    actual_start = dir_manifest(
+        Path(sa.start_dir)
+    )  # hashed here, never taken from the caller
+    if actual_start != expected_start:
+        diff = diff_manifests(expected_start, actual_start)
         res = StageResult(
             stage.id,
             codes.INFRA,
             codes.INFRA_BASE_MISMATCH,
             start_hash_ok=False,
-            detail=f"start state differs from pristine/previous end: {changed_paths(diff)[:8]}",
+            detail=f"start tree differs from the sealed baseline: {changed_paths(diff)[:8]}",
         )
         return res, end_manifest
     end_files = read_files(sa.end_dir)

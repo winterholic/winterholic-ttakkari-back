@@ -6,6 +6,7 @@ failing run and fix it. H7 only measures that from a trace; it never decides suc
 """
 
 from .. import codes, fixtures
+from ..judges import raised, same, val
 from ..model import Check, CheckOutcome, Ctx, Stage, Task
 from ..natives import (
     SuiteSpec,
@@ -88,35 +89,48 @@ class RangeGuard(unittest.TestCase):
                 self.assertGreaterEqual(pricing.apply_discount(500, ok), 0)
 """
 
-H1 = """
+H1_PROBE = """
 from shop.cart import Cart
 c = Cart()
 c.add('a', 250, qty=3)
 c.add('b', 100)
-assert c.subtotal() == 850, c.subtotal()
-assert c.total(10) == 765, c.total(10)
-assert c.total() == 850
+rec('sub', attempt(c.subtotal))
+rec('total10', attempt(c.total, 10))
+rec('total0', attempt(c.total))
 """
-H2 = """
-from shop.pricing import apply_discount
-assert apply_discount(999, 15) == 849
-assert apply_discount(1005, 50) == 503
-assert apply_discount(1, 50) == 1
-assert apply_discount(200, 100) == 0
-assert apply_discount(200, 0) == 200
-"""
-H3 = """
+H2_CASES = ((999, 15), (1005, 50), (1, 50), (200, 100), (200, 0))
+H2_PROBE = (
+    "from shop.pricing import apply_discount\n"
+    f"for price, pct in {H2_CASES!r}:\n"
+    "    rec('v%d_%d' % (price, pct), attempt(apply_discount, price, pct))\n"
+)
+H3_PROBE = """
 from shop.pricing import apply_discount
 for bad in (-1, 101, -100, 1000):
-    try:
-        apply_discount(100, bad)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError('no ValueError for %d' % bad)
-apply_discount(100, 0)
-apply_discount(100, 100)
+    rec('bad%d' % bad, attempt(apply_discount, 100, bad))
+rec('good0', attempt(apply_discount, 100, 0))
+rec('good100', attempt(apply_discount, 100, 100))
 """
+
+
+def _h1(o, f):
+    same(
+        (val(o, "sub"), val(o, "total10"), val(o, "total0")),
+        (850, 765, 850),
+        "cart totals",
+    )
+
+
+def _h2(o, f):
+    for (price, pct), want in zip(H2_CASES, (849, 503, 1, 0, 200), strict=True):
+        same(val(o, f"v{price}_{pct}"), want, f"apply_discount({price}, {pct})")
+
+
+def _h3(o, f):
+    for bad in (-1, 101, -100, 1000):
+        raised(o, f"bad{bad}", "ValueError")
+    val(o, "good0")
+    val(o, "good100")
 
 
 def _gold(base):
@@ -187,11 +201,12 @@ def build() -> Task:
             },
         },
         min_tests=2,
+        allowed_modules=("shop",),
     )
     checks = [
-        Check("H1", codes.KIND_DELTA, "R1", snippet=H1),
-        Check("H2", codes.KIND_DELTA, "R2", snippet=H2),
-        Check("H3", codes.KIND_DELTA, "R3", snippet=H3),
+        Check("H1", codes.KIND_DELTA, "R1", probe=H1_PROBE, judge=_h1),
+        Check("H2", codes.KIND_DELTA, "R2", probe=H2_PROBE, judge=_h2),
+        Check("H3", codes.KIND_DELTA, "R3", probe=H3_PROBE, judge=_h3),
         suite_kills("H4", spec, tuple(spec.mutants), "R4"),
         suite_quality("H4q", spec, "R4"),
         suite_gold_pass("H5", spec, "R5"),

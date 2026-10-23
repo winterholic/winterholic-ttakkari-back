@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import codes
+from .judges import unittest_ok
 from .manifest import write_files
 from .model import Check, CheckOutcome, Ctx
 from .runner import CheckRun, run_check
@@ -15,31 +16,16 @@ from .runner import CheckRun, run_check
 SKIP_NAMES = {"skip", "skipIf", "skipUnless", "expectedFailure", "skipTest", "xfail"}
 
 
-def unittest_snippet(
-    min_tests: int, start_dir: str = "tests", pattern: str = "test*.py"
-) -> str:
-    """Hidden-runner snippet: the unittest suite must be green, non-empty and skip-free."""
-    return f"""
-r = run_unittest({start_dir!r}, ".", {pattern!r})
-RESULT = dict(r)
-if r["skipped"] or r["expected_failures"] or r["unexpected_successes"]:
-    RESULT["code"] = "FAIL_SKIP_XFAIL"
-    raise AssertionError("skip/xfail present: %s" % r)
-if r["tests"] < {min_tests}:
-    RESULT["code"] = "FAIL_EMPTY_RESULT" if r["tests"] == 0 else "FAIL_PUBLIC"
-    raise AssertionError("collected %d tests, need {min_tests}" % r["tests"])
-assert r["ok"], r["tail"] or "unittest failed"
-"""
-
-
 def public_suite(
     check_id: str, min_tests: int, kind: str, requirement: str = ""
 ) -> Check:
+    """The workspace's own unittest suite must be green, non-empty and skip-free."""
     return Check(
         id=check_id,
         kind=kind,
         requirement=requirement,
-        snippet=unittest_snippet(min_tests),
+        probe='rec("unittest", run_unittest("tests", ".", "test*.py"))\n',
+        judge=lambda obs, facts: unittest_ok(obs, "unittest", min_tests),
         fail_code="FAIL_PUBLIC",
         public=True,
     )
@@ -74,9 +60,89 @@ class SuiteSpec:
     ]  # canonical SUT files used instead of the candidate's
     mutants: dict[str, dict[str, str]]  # name -> overriding SUT files
     min_tests: int
+    allowed_modules: tuple[str, ...] = ()  # SUT packages a candidate test may import
     groups: dict[str, tuple[str, ...]] = field(
         default_factory=dict
     )  # check id -> mutant names
+
+
+ALLOWED_IMPORTS = frozenset(
+    {
+        "unittest",
+        "math",
+        "decimal",
+        "fractions",
+        "itertools",
+        "functools",
+        "collections",
+        "typing",
+        "datetime",
+        "re",
+        "string",
+        "operator",
+        "__future__",
+    }
+)
+FORBIDDEN_NAMES = frozenset(
+    {
+        "open",
+        "exec",
+        "eval",
+        "compile",
+        "__import__",
+        "globals",
+        "locals",
+        "vars",
+        "getattr",
+        "setattr",
+        "delattr",
+        "print",
+        "breakpoint",
+        "input",
+        "exit",
+        "quit",
+        "_exit",
+        "__builtins__",
+        "__file__",
+        "__loader__",
+        "excepthook",
+        "modules",
+        "settrace",
+        "__dict__",
+        "__code__",
+        "__globals__",
+        "stdout",
+        "stderr",
+        "getsource",
+        "getsourcefile",
+    }
+)
+
+
+def forbidden_constructs(source: str, allowed_modules: tuple[str, ...]) -> list[str]:
+    """Constructs a candidate-written test has no reason to use: they enable forging results,
+    reading the SUT source to detect mutants, exiting early or printing observation lines."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    allowed = ALLOWED_IMPORTS | set(allowed_modules)
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found += [
+                f"import {a.name}"
+                for a in node.names
+                if a.name.split(".")[0] not in allowed
+            ]
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or (node.module or "").split(".")[0] not in allowed:
+                found.append(f"from {'.' * node.level}{node.module or ''} import ...")
+        elif isinstance(node, ast.Name) and node.id in FORBIDDEN_NAMES:
+            found.append(f"name {node.id}")
+        elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_NAMES:
+            found.append(f"attribute {node.attr}")
+    return sorted(set(found))
 
 
 def analyze_tests(source: str, sut_names: tuple[str, ...]) -> dict:
@@ -140,7 +206,7 @@ def _suite_run(
     pattern = spec.test_path.rsplit("/", 1)[-1]
     with tempfile.TemporaryDirectory(prefix=f"llme-suite-{label}-") as tmp:
         write_files(Path(tmp), files)
-        code = f'RESULT = dict(run_unittest("tests", ".", {pattern!r}))\n'
+        code = f'rec("unittest", run_unittest("tests", ".", {pattern!r}))\n'
         return run_check(Path(tmp), f"suite-{label}", code, 30.0)
 
 
@@ -162,15 +228,40 @@ def _suite_cache(ctx: Ctx, spec: SuiteSpec) -> dict:
             "mutants": {n: f.result() for n, f in mut.items()},
         }
     cache["info"] = analyze_tests(ctx.end_files.get(spec.test_path, ""), spec.sut_names)
+    changed_tests = [
+        p
+        for p in ctx.changed.get("added", []) + ctx.changed.get("modified", [])
+        if p.startswith("tests/") and p.endswith(".py")
+    ]
+    cache["info"]["forbidden"] = sorted(
+        {
+            f"{p}: {item}"
+            for p in {spec.test_path, *changed_tests}
+            for item in forbidden_constructs(
+                ctx.end_files.get(p, ""), spec.allowed_modules
+            )
+        }
+    )
     ctx.cache[key] = cache
     return cache
 
 
+def _ut(run: CheckRun) -> dict:
+    return run.obs.get("unittest", {}) if run.status == "OBS" else {}
+
+
 def _structural_run_failure(run: CheckRun) -> CheckOutcome | None:
-    if run.status in ("stub_exit0", "EXIT"):
+    if run.status == "stub_exit0":
         return CheckOutcome(False, "FAIL_STUB_EXIT0", run.detail)
-    if run.status in ("forged", "TAMPER"):
+    if run.status in ("multi_obs", "bad_obs"):
         return CheckOutcome(False, "FAIL_CHECKER_PATCH", run.detail)
+    if run.status == "OBS":
+        if run.obs.get("__tampered__"):
+            return CheckOutcome(
+                False, "FAIL_CHECKER_PATCH", f"patched: {run.obs['__tampered__']}"
+            )
+        if str(run.obs.get("__error__", "")).startswith("SystemExit"):
+            return CheckOutcome(False, "FAIL_STUB_EXIT0", run.obs["__error__"])
     return None
 
 
@@ -189,7 +280,7 @@ def suite_collected(
         structural = _structural_run_failure(data["gold"])
         if structural:
             return structural
-        count = data["gold"].result.get("tests", 0)
+        count = _ut(data["gold"]).get("tests", 0)
         if count == 0:
             return CheckOutcome(False, _empty_code(data["info"]), "0 tests collected")
         if count < spec.min_tests:
@@ -212,7 +303,7 @@ def suite_gold_pass(
         structural = _structural_run_failure(data["gold"])
         if structural:
             return structural
-        res = data["gold"].result
+        res = _ut(data["gold"])
         if (
             res.get("skipped")
             or res.get("expected_failures")
@@ -221,7 +312,7 @@ def suite_gold_pass(
             return CheckOutcome(False, "FAIL_SKIP_XFAIL", str(res))
         if res.get("tests", 0) == 0:
             return CheckOutcome(False, _empty_code(data["info"]), "0 tests collected")
-        if not res.get("ok"):
+        if res.get("failures", 0) + res.get("errors", 0):
             return CheckOutcome(
                 False, "FAIL_HIDDEN", "candidate tests fail on the gold SUT"
             )
@@ -245,7 +336,7 @@ def suite_kills(
             structural = _structural_run_failure(run_)
             if structural:
                 return structural
-            res = run_.result
+            res = _ut(run_)
             killed = res.get("failures", 0) + res.get("errors", 0) > 0
             if not killed:
                 survivors.append(name)
@@ -264,6 +355,12 @@ def suite_quality(
 ) -> Check:
     def run(ctx: Ctx) -> CheckOutcome:
         info = _suite_cache(ctx, spec)["info"]
+        if info["forbidden"]:
+            return CheckOutcome(
+                False,
+                "FAIL_CHECKER_PATCH",
+                f"forbidden constructs in tests: {info['forbidden'][:5]}",
+            )
         if info["parse_error"]:
             return CheckOutcome(False, "FAIL_HIDDEN", "test file does not parse")
         if info["skip_markers"]:

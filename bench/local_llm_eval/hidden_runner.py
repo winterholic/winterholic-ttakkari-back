@@ -1,19 +1,55 @@
-"""Child process for one hidden check. Run as: python -I -S -B hidden_runner.py <spec.json>.
+"""Candidate-side process for one probe. Run as: python -I -S -B hidden_runner.py <spec.json>.
 
-The spec file (check id, nonce, code, cwd) is deleted right after it is read. The result is reported
-only by a handshake line `HIDDEN_DONE\t<nonce>\t<check_id>\t<STATUS>\t<json>` so that an exit code of 0
-without the handshake (import-time `os._exit(0)`, forged output) is never mistaken for success.
+This process executes candidate code and returns RAW OBSERVATIONS only (one `OBS\t<json>` line written to
+fd 1). It holds no secret, no expected value and no verdict: the spec file holds the probe program and the
+parent-provided scratch dirs, nothing that would let candidate code decide a check. All comparison with
+expected values happens in the evaluator process (judges), which never imports candidate code.
 
-Known limit: candidate code is imported into this same process, so a determined attacker could read the
-nonce from interpreter state. The CPU stage accepts that; Seatbelt/process isolation belongs to 4.3.
+What candidate code in this process can still do: print or exit early. An early exit leaves no OBS line
+(stub), several OBS lines are tampering, and a forged OBS line must carry values equal to the judge's
+expectations, which are not in this process. See docs: evaluator-implementation-4-2.md section 9.
 """
 
+import builtins
 import io
 import json
 import os
 import sys
 import traceback
 import unittest
+
+# References captured before any candidate import so later monkeypatching of the originals is harmless here.
+_dumps = json.dumps
+_write = os.write
+_isinstance = isinstance
+_str = str
+_repr = repr
+_sorted = sorted
+_type = type
+_BASE = BaseException
+_list, _tuple, _set, _frozenset, _dict, _bytes = (
+    list,
+    tuple,
+    set,
+    frozenset,
+    dict,
+    bytes,
+)
+_int, _float, _bool = int, float, bool
+
+
+def jsonable(value):
+    if value is None or _isinstance(value, (_bool, _int, _float, _str)):
+        return value
+    if _isinstance(value, (_list, _tuple)):
+        return [jsonable(v) for v in value]
+    if _isinstance(value, (_set, _frozenset)):
+        return [jsonable(v) for v in _sorted(value, key=_repr)]
+    if _isinstance(value, _dict):
+        return {_str(k): jsonable(v) for k, v in value.items()}
+    if _isinstance(value, _bytes):
+        return value.decode("utf-8", "replace")
+    return {"__repr__": _repr(value)[:300]}
 
 
 def run_unittest(start_dir="tests", top=".", pattern="test*.py"):
@@ -28,7 +64,6 @@ def run_unittest(start_dir="tests", top=".", pattern="test*.py"):
         "skipped": len(result.skipped),
         "expected_failures": len(result.expectedFailures),
         "unexpected_successes": len(result.unexpectedSuccesses),
-        "ok": result.wasSuccessful(),
         "tail": "\n".join(
             text.strip().splitlines()[-1] if text.strip() else ""
             for _, text in (result.failures + result.errors)[:3]
@@ -48,7 +83,8 @@ def _tamper_probe():
         "TestResult.addError": result.addError,
         "TestResult.wasSuccessful": result.wasSuccessful,
         "unittest.main": unittest.main,
-        "os._exit": os._exit,
+        "json.dumps": json.dumps,
+        "os.write": os.write,
     }
 
 
@@ -57,35 +93,62 @@ def main():
     with open(spec_path) as fh:
         spec = json.load(fh)
     os.unlink(spec_path)
-    sys.argv[:] = ["hidden"]
-    nonce, check_id, cwd = spec["nonce"], spec["check_id"], spec["cwd"]
+    sys.argv[:] = ["probe"]
+    cwd = spec["cwd"]
     os.chdir(cwd)
     sys.path.insert(0, cwd)
     before = _tamper_probe()
+    saved_builtins = dict(vars(builtins))
+    observations = {}
+
+    def rec(name, value):
+        observations[_str(name)] = jsonable(value)
+
+    def attempt(fn, *args, **kwargs):
+        try:
+            return {"ok": jsonable(fn(*args, **kwargs))}
+        except _BASE as exc:
+            return {
+                "raised": [c.__name__ for c in _type(exc).__mro__],
+                "msg": _str(exc)[:200],
+            }
+
+    # the probe sees a private copy of the builtins so patching `builtins.list` etc. cannot reach it
+    private_builtins = dict(vars(builtins))
     namespace = {
-        "__name__": "__hidden__",
+        "__name__": "__probe__",
+        "__builtins__": private_builtins,
         "W": cwd,
+        "DIRS": spec.get("dirs", {}),
+        "rec": rec,
+        "attempt": attempt,
+        "jsonable": jsonable,
         "run_unittest": run_unittest,
-        "RESULT": {},
     }
-    status, detail = "OK", ""
+    failure = None
     try:
-        exec(compile(spec["code"], f"<check {check_id}>", "exec"), namespace)  # noqa: S102
-    except SystemExit as exc:
-        status, detail = "EXIT", f"SystemExit({exc.code!r})"
-    except BaseException as exc:  # noqa: BLE001 - every candidate failure must be reported
-        status = "FAIL"
-        tb = traceback.format_exception_only(type(exc), exc)
-        detail = "".join(tb).strip()[-400:]
+        exec(compile(spec["code"], "<probe>", "exec"), namespace)  # noqa: S102
+    except _BASE as exc:
+        failure = exc  # formatted only after the builtins are restored (candidate code may patch them)
     after = _tamper_probe()
-    changed = sorted(k for k in before if before[k] is not after[k])
-    if status == "OK" and changed:
-        status, detail = "TAMPER", "patched: " + ",".join(changed)
-    payload = {"detail": detail, "result": namespace.get("RESULT") or {}}
-    sys.stdout.write(
-        f"\nHIDDEN_DONE\t{nonce}\t{check_id}\t{status}\t{json.dumps(payload)}\n"
+    changed = _sorted(k for k in before if before[k] is not after[k])
+    live = vars(builtins)
+    changed += _sorted(
+        "builtins." + k
+        for k in saved_builtins
+        if live.get(k, None) is not saved_builtins[k]
     )
-    sys.stdout.flush()
+    vars(builtins).update(saved_builtins)
+    if failure is not None:
+        if _isinstance(failure, SystemExit):
+            observations["__error__"] = f"SystemExit({failure.code!r})"
+        else:
+            observations["__error__"] = "".join(
+                traceback.format_exception_only(_type(failure), failure)
+            ).strip()[-400:]
+    if changed:
+        observations["__tampered__"] = changed
+    _write(1, ("\nOBS\t" + _dumps(observations) + "\n").encode("utf-8", "replace"))
 
 
 main()

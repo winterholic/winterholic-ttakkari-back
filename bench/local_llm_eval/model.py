@@ -18,22 +18,28 @@ class CheckOutcome:
 
 @dataclass
 class Check:
-    """One requirement-mapped check. Exactly one of `snippet` / `native` is set.
+    """One requirement-mapped check. Exactly one of (`probe` + `judge`) / `native` is set.
 
-    snippet: python run in the hidden runner (workspace on sys.path, `run_unittest` available).
-    native:  callable(ctx) -> CheckOutcome, runs in the evaluator process.
+    probe:  python run next to candidate code in the observation process; it only records raw
+            observations (rec/attempt) and never contains an expected value or a verdict.
+    judge:  callable(obs, facts) run in the evaluator process; raises AssertionError or judges.Fail.
+    native: callable(ctx) -> CheckOutcome, runs in the evaluator process (static scans, suites).
     """
 
     id: str
     kind: str = KIND_DELTA
     requirement: str = ""
-    snippet: str | None = None
+    probe: str | None = None
+    judge: Callable[[dict, dict], None] | None = None
     native: Callable[["Ctx"], CheckOutcome] | None = None
     fail_code: str = "FAIL_HIDDEN"
     public: bool = (
         False  # part of the public suite: pass here + hidden fail => FAIL_HIDDEN_ONLY
     )
     timeout: float = 20.0
+    dirs: tuple[
+        str, ...
+    ] = ()  # scratch directories created and inspected by the parent
 
 
 @dataclass
@@ -113,7 +119,9 @@ class Ctx:
 
 @dataclass
 class StageAttempt:
-    start_manifest: dict[str, str] | None
+    start_dir: (
+        Path | None
+    )  # real workspace tree at the start; the evaluator hashes it itself
     end_dir: Path
     report: dict | None = None
     trace: list[dict] | None = None

@@ -48,17 +48,20 @@ def materialize(
     session: dict | None = None,
     **meta,
 ) -> Iterator[Attempt]:
-    """Write each stage end into its own directory and yield an Attempt with honest start hashes."""
+    """Write each stage start and end tree into its own directory and yield an Attempt."""
     with tempfile.TemporaryDirectory(prefix="llme-attempt-") as tmp:
         stages = []
         previous = start_files if start_files is not None else task.base_files
         for index, end in enumerate(ends):
+            start_dir = Path(tmp) / f"start{index}"
+            start_dir.mkdir()
+            write_files(start_dir, previous)
             end_dir = Path(tmp) / f"stage{index}"
             end_dir.mkdir()
             write_files(end_dir, end)
             stages.append(
                 StageAttempt(
-                    start_manifest=manifest_of_files(previous),
+                    start_dir=start_dir,
                     end_dir=end_dir,
                     report=reports[index] if reports else None,
                     trace=traces[index] if traces else None,

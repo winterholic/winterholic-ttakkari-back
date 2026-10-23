@@ -9,7 +9,16 @@ import json
 
 from .. import codes, fixtures
 from ..model import Check, CheckOutcome, Ctx, Negative, Stage, Task
-from ..negatives import EXIT0, m_add, m_noop, m_replace_in, m_set, neg, presolved_start
+from ..negatives import (
+    EXIT0,
+    FORGER_NONCE,
+    m_add,
+    m_noop,
+    m_replace_in,
+    m_set,
+    neg,
+    presolved_start,
+)
 from ._common import check_unique, with_paths
 
 REPORT = "report.json"
@@ -202,6 +211,12 @@ def _explored(ctx: Ctx) -> CheckOutcome:
     return CheckOutcome(True)
 
 
+def _forger_in_source(prev, gold, base):
+    out = dict(gold)
+    out["ledger/money.py"] = FORGER_NONCE + out["ledger/money.py"]
+    return out
+
+
 def _gold_report() -> str:
     key = answer_key(fixtures.files("ledger"))
     body = {
@@ -390,6 +405,12 @@ def build() -> Task:
             "sitecustomize.py added",
             m_add({"sitecustomize.py": EXIT0}),
             ("FAIL_CHECKER_PATCH",),
+        ),
+        neg(
+            "N15",
+            "forging code planted in a source file next to a correct report (no candidate code runs here)",
+            _forger_in_source,
+            ("FAIL_FORBIDDEN_WRITE",),
         ),
         Negative(
             "N11",

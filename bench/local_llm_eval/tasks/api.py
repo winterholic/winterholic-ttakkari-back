@@ -1,6 +1,9 @@
 """B4-API-D REST endpoints (notes service). New fixture, in-process WSGI. Spec section 3.4."""
 
+import json
+
 from .. import codes
+from ..judges import same, val
 from ..model import Check, Stage, Task
 from ..natives import frozen_unchanged, public_suite
 from ..negatives import neg, presolved_negative, standard_negatives
@@ -14,19 +17,12 @@ PRE = (
     fx.WSGI_HELPER
     + """
 import os
-import tempfile
 from notes.app import create_app
 
 
 def fresh():
-    data_dir = tempfile.mkdtemp()
+    data_dir = DIRS["data"]
     return create_app(data_dir), data_dir
-
-
-def err(res, status, code, field):
-    got_status, _, body = res
-    assert got_status == status, (got_status, body)
-    assert body == {"error": {"code": code, "field": field}}, body
 
 
 def make(app, title, body=None):
@@ -37,100 +33,96 @@ def make(app, title, body=None):
 """
 )
 
-H1 = """
+H1_PROBE = (
+    PRE
+    + """
 app, _ = fresh()
-status, headers, body = make(app, "  First  ", "hello")
-assert status == 201, (status, body)
-assert headers.get("Location") == "/notes/1", headers
-assert body == {"id": 1, "title": "First", "body": "hello"}, body
-status, headers, body = make(app, "Second")
-assert status == 201 and body == {"id": 2, "title": "Second", "body": ""}, body
-assert headers.get("Location") == "/notes/2"
-assert headers.get("Content-Type", "").startswith("application/json")
+rec("r1", attempt(make, app, "  First  ", "hello"))
+rec("r2", attempt(make, app, "Second"))
 """
-
-H2 = """
+)
+H2_PROBE = (
+    PRE
+    + """
 app, _ = fresh()
-for bad in (None, "", "   ", "x" * 81, 5, ["a"]):
+for i, bad in enumerate((None, "", "   ", "x" * 81, 5, ["a"])):
     payload = {} if bad is None else {"title": bad}
-    err(call(app, "POST", "/notes", payload), 400, "invalid_title", "title")
-err(make(app, "ok", "b" * 1001), 400, "invalid_body", "body")
-err(make(app, "ok", 7), 400, "invalid_body", "body")
-err(call(app, "POST", "/notes", raw=b"{bad"), 400, "invalid_json", None)
-err(call(app, "POST", "/notes", raw=b"[1, 2]"), 400, "invalid_json", None)
-assert make(app, "t" * 80)[0] == 201
-assert make(app, "u", "b" * 1000)[0] == 201
+    rec("t%d" % i, attempt(call, app, "POST", "/notes", payload))
+rec("body_big", attempt(make, app, "ok", "b" * 1001))
+rec("body_int", attempt(make, app, "ok", 7))
+rec("bad_json", attempt(call, app, "POST", "/notes", raw=b"{bad"))
+rec("array", attempt(call, app, "POST", "/notes", raw=b"[1, 2]"))
+rec("t80", attempt(make, app, "t" * 80))
+rec("b1000", attempt(make, app, "u", "b" * 1000))
 """
-
-H3 = """
+)
+H3_PROBE = (
+    PRE
+    + """
 app, _ = fresh()
-assert make(app, "Alpha")[0] == 201
-err(make(app, "alpha"), 409, "duplicate_title", "title")
-err(make(app, "  ALPHA  "), 409, "duplicate_title", "title")
-status, _, body = make(app, "Beta")
-assert status == 201 and body["id"] == 2, body
+rec("first", attempt(make, app, "Alpha"))
+rec("dup_lower", attempt(make, app, "alpha"))
+rec("dup_spaces", attempt(make, app, "  ALPHA  "))
+rec("next", attempt(make, app, "Beta"))
 """
-
-H4 = """
+)
+H4_PROBE = (
+    PRE
+    + """
 app, _ = fresh()
 make(app, "One", "1")
-assert call(app, "GET", "/notes/1")[2] == {"id": 1, "title": "One", "body": "1"}
-for bad in ("/notes/2", "/notes/abc", "/notes/0", "/notes/-1", "/notes/1.5"):
-    err(call(app, "GET", bad), 404, "not_found", None)
+rec("ok", attempt(call, app, "GET", "/notes/1"))
+for i, bad in enumerate(("/notes/2", "/notes/abc", "/notes/0", "/notes/-1", "/notes/1.5")):
+    rec("bad%d" % i, attempt(call, app, "GET", bad))
 """
-
-H5 = """
+)
+H5_PROBE = (
+    PRE
+    + """
 app, _ = fresh()
-for i in range(25):
-    assert make(app, "n%d" % i)[0] == 201
-status, _, body = call(app, "GET", "/notes")
-assert status == 200 and [n["id"] for n in body["items"]] == list(range(1, 21)), body
-assert (body["total"], body["limit"], body["offset"]) == (25, 20, 0)
-status, _, body = call(app, "GET", "/notes", query="limit=5&offset=20")
-assert [n["id"] for n in body["items"]] == [21, 22, 23, 24, 25] and body["limit"] == 5 and body["offset"] == 20
-assert call(app, "GET", "/notes", query="limit=100")[0] == 200
-assert call(app, "GET", "/notes", query="offset=99")[2]["items"] == []
-for q in ("limit=0", "limit=101", "limit=abc", "limit=-1"):
-    err(call(app, "GET", "/notes", query=q), 400, "invalid_limit", "limit")
-for q in ("offset=-1", "offset=abc"):
-    err(call(app, "GET", "/notes", query=q), 400, "invalid_offset", "offset")
+rec("created", [attempt(make, app, "n%d" % i) for i in range(25)])
+rec("default", attempt(call, app, "GET", "/notes"))
+rec("page", attempt(call, app, "GET", "/notes", query="limit=5&offset=20"))
+rec("max", attempt(call, app, "GET", "/notes", query="limit=100"))
+rec("beyond", attempt(call, app, "GET", "/notes", query="offset=99"))
+for i, q in enumerate(("limit=0", "limit=101", "limit=abc", "limit=-1")):
+    rec("lim%d" % i, attempt(call, app, "GET", "/notes", query=q))
+for i, q in enumerate(("offset=-1", "offset=abc")):
+    rec("off%d" % i, attempt(call, app, "GET", "/notes", query=q))
 """
-
-H6 = """
+)
+H6_PROBE = (
+    PRE
+    + """
 import json
-import os
 
 app1, data_dir = fresh()
-assert make(app1, "Persist", "b")[0] == 201
 path = os.path.join(data_dir, "notes.json")
-data = json.load(open(path))
-assert set(data) >= {"next_id", "notes"}, data
+rec("create1", attempt(make, app1, "Persist", "b"))
 app2 = create_app(data_dir)
-assert call(app2, "GET", "/notes/1")[2] == {"id": 1, "title": "Persist", "body": "b"}
-assert make(app2, "Second")[2]["id"] == 2
+rec("get1", attempt(call, app2, "GET", "/notes/1"))
+rec("create2", attempt(make, app2, "Second"))
 
-# os.replace must be used, with a complete temp file and an untouched target at that moment
 real = os.replace
-seen = []
+spy_log = []
+before = open(path).read()
 
 
 def spy(src, dst, *a, **k):
-    assert json.load(open(src)), "temp file must hold complete JSON before the swap"
-    assert open(dst).read() == before, "target changed before os.replace"
-    seen.append(src)
+    try:
+        src_json = json.load(open(src))
+    except Exception as exc:
+        src_json = "unreadable: " + type(exc).__name__
+    spy_log.append({"src_json": src_json, "dst_text": open(dst).read(), "before": before})
     return real(src, dst, *a, **k)
 
 
-before = open(path).read()
 os.replace = spy
 try:
-    assert make(app2, "Third")[0] == 201
+    rec("create3", attempt(make, app2, "Third"))
 finally:
     os.replace = real
-assert seen, "os.replace was never used"
-
-# a failing replace leaves file and state untouched and consumes no id
-before = open(path).read()
+rec("spy", spy_log)
 
 
 def boom(*a, **k):
@@ -139,52 +131,175 @@ def boom(*a, **k):
 
 os.replace = boom
 try:
-    err(make(app2, "Fourth"), 500, "storage_error", None)
+    rec("fail", attempt(make, app2, "Fourth"))
 finally:
     os.replace = real
-assert open(path).read() == before
-assert call(app2, "GET", "/notes")[2]["total"] == 3
-status, _, body = make(app2, "Fourth")
-assert status == 201 and body["id"] == 4, body
-leftovers = [n for n in os.listdir(data_dir) if n != "notes.json"]
-assert not leftovers, leftovers
+rec("after_fail_list", attempt(call, app2, "GET", "/notes"))
+rec("create4", attempt(make, app2, "Fourth"))
 """
-
-H7 = """
+)
+H7_PROBE = (
+    PRE
+    + """
 app, _ = fresh()
-assert call(app, "GET", "/health") [:1] == (200,) and call(app, "GET", "/health")[2] == {"status": "ok"}
-assert call(app, "GET", "/notes")[2] == {"items": [], "total": 0, "limit": 20, "offset": 0}
+rec("health", attempt(call, app, "GET", "/health"))
+rec("list", attempt(call, app, "GET", "/notes"))
 """
-
-H8 = """
+)
+H8_PROBE = (
+    PRE
+    + """
 app, _ = fresh()
-for method, path, allow in (
-    ("POST", "/health", "GET"),
-    ("DELETE", "/notes", "GET, POST"),
-    ("PUT", "/notes", "GET, POST"),
-    ("POST", "/notes/1", "GET"),
-):
-    status, headers, body = call(app, method, path)
-    assert status == 405, (method, path, status)
-    assert headers.get("Allow") == allow, headers
-    assert body == {"error": {"code": "method_not_allowed", "field": None}}, body
-err(call(app, "POST", "/notes", {"title": "a"}, content_type="text/plain"), 415, "unsupported_media_type", None)
-assert call(app, "POST", "/notes", {"title": "a"}, content_type="application/json; charset=utf-8")[0] == 201
+for i, (method, path) in enumerate((("POST", "/health"), ("DELETE", "/notes"), ("PUT", "/notes"), ("POST", "/notes/1"))):
+    rec("m%d" % i, attempt(call, app, method, path))
+rec("plain", attempt(call, app, "POST", "/notes", {"title": "a"}, content_type="text/plain"))
+rec("charset", attempt(call, app, "POST", "/notes", {"title": "a"}, content_type="application/json; charset=utf-8"))
 """
-
-H9 = """
-import os
-
-before = sorted(os.listdir("."))
-app, data_dir = fresh()
+)
+H9_PROBE = (
+    PRE
+    + """
+app, _ = fresh()
 make(app, "a")
 make(app, "b")
 call(app, "GET", "/notes/1")
 call(app, "POST", "/notes", raw=b"{bad")
-assert sorted(os.listdir(".")) == before, sorted(os.listdir("."))
-extra = [n for n in os.listdir(data_dir) if n != "notes.json"]
-assert not extra, extra
 """
+)
+
+
+def _err(res, status, code, field):
+    got_status, _, body = res
+    same(got_status, status, "status")
+    same(body, {"error": {"code": code, "field": field}}, "error body")
+
+
+def _h1(o, f):
+    status, headers, body = val(o, "r1")
+    same(status, 201, "status")
+    same(headers.get("Location"), "/notes/1", "Location")
+    same(body, {"id": 1, "title": "First", "body": "hello"}, "created note")
+    assert headers.get("Content-Type", "").startswith("application/json"), headers
+    status, headers, body = val(o, "r2")
+    same((status, body), (201, {"id": 2, "title": "Second", "body": ""}), "second note")
+    same(headers.get("Location"), "/notes/2", "Location 2")
+
+
+def _h2(o, f):
+    for i in range(6):
+        _err(val(o, f"t{i}"), 400, "invalid_title", "title")
+    _err(val(o, "body_big"), 400, "invalid_body", "body")
+    _err(val(o, "body_int"), 400, "invalid_body", "body")
+    _err(val(o, "bad_json"), 400, "invalid_json", None)
+    _err(val(o, "array"), 400, "invalid_json", None)
+    same(val(o, "t80")[0], 201, "80-char title")
+    same(val(o, "b1000")[0], 201, "1000-char body")
+
+
+def _h3(o, f):
+    same(val(o, "first")[0], 201, "first create")
+    _err(val(o, "dup_lower"), 409, "duplicate_title", "title")
+    _err(val(o, "dup_spaces"), 409, "duplicate_title", "title")
+    status, _, body = val(o, "next")
+    same((status, body["id"]), (201, 2), "failed requests must not consume an id")
+
+
+def _h4(o, f):
+    same(val(o, "ok")[2], {"id": 1, "title": "One", "body": "1"}, "get by id")
+    for i in range(5):
+        _err(val(o, f"bad{i}"), 404, "not_found", None)
+
+
+def _h5(o, f):
+    same([r["ok"][0] for r in o["created"]], [201] * 25, "25 creates")
+    status, _, body = val(o, "default")
+    same(status, 200, "default list status")
+    same([n["id"] for n in body["items"]], list(range(1, 21)), "default page ids")
+    same(
+        (body["total"], body["limit"], body["offset"]),
+        (25, 20, 0),
+        "default paging fields",
+    )
+    _, _, page = val(o, "page")
+    same([n["id"] for n in page["items"]], [21, 22, 23, 24, 25], "page ids")
+    same((page["limit"], page["offset"]), (5, 20), "page fields")
+    same(val(o, "max")[0], 200, "limit=100")
+    same(val(o, "beyond")[2]["items"], [], "offset beyond total")
+    for i in range(4):
+        _err(val(o, f"lim{i}"), 400, "invalid_limit", "limit")
+    for i in range(2):
+        _err(val(o, f"off{i}"), 400, "invalid_offset", "offset")
+
+
+def _note(note_id, title, body=""):
+    return {"id": note_id, "title": title, "body": body}
+
+
+def _h6(o, f):
+    same(val(o, "create1")[0], 201, "create1")
+    same(
+        val(o, "get1")[2], _note(1, "Persist", "b"), "a new app must read earlier data"
+    )
+    same(val(o, "create2")[2]["id"], 2, "id continues after restart")
+    same(val(o, "create3")[0], 201, "create3 with spy")
+    spy = o["spy"]
+    assert spy, "os.replace was never used"
+    want_tmp = {
+        "next_id": 4,
+        "notes": [_note(1, "Persist", "b"), _note(2, "Second"), _note(3, "Third")],
+    }
+    same(
+        spy[0]["src_json"],
+        want_tmp,
+        "temp file must hold the complete new state before the swap",
+    )
+    same(
+        spy[0]["dst_text"],
+        spy[0]["before"],
+        "target must be untouched before os.replace",
+    )
+    _err(val(o, "fail"), 500, "storage_error", None)
+    same(
+        val(o, "after_fail_list")[2]["total"],
+        3,
+        "a failed write must not change the state",
+    )
+    same(val(o, "create4")[2]["id"], 4, "a failed write must not consume an id")
+    disk = json.loads(f["dir_files"]["data"]["notes.json"])
+    same(disk["next_id"], 5, "next_id on disk")
+    same(
+        [n["title"] for n in disk["notes"]],
+        ["Persist", "Second", "Third", "Fourth"],
+        "notes on disk",
+    )
+    same(f["dirs"]["data"], ["notes.json"], "no temp files may remain")
+
+
+def _h7(o, f):
+    same((val(o, "health")[0], val(o, "health")[2]), (200, {"status": "ok"}), "health")
+    same(
+        val(o, "list")[2],
+        {"items": [], "total": 0, "limit": 20, "offset": 0},
+        "empty list",
+    )
+
+
+def _h8(o, f):
+    expected = (("GET", 0), ("GET, POST", 1), ("GET, POST", 2), ("GET", 3))
+    for allow, i in expected:
+        status, headers, body = val(o, f"m{i}")
+        same(status, 405, f"status {i}")
+        same(headers.get("Allow"), allow, f"Allow {i}")
+        same(
+            body, {"error": {"code": "method_not_allowed", "field": None}}, f"body {i}"
+        )
+    _err(val(o, "plain"), 415, "unsupported_media_type", None)
+    same(val(o, "charset")[0], 201, "application/json with parameters")
+
+
+def _h9(o, f):
+    same(f["cwd_after"], f["cwd_before"], "files created outside data_dir")
+    assert set(f["dirs"]["data"]) <= {"notes.json"}, f["dirs"]["data"]
 
 
 def _gold(base):
@@ -203,20 +318,28 @@ def build() -> Task:
         "tests/wsgi_helper.py": fx.WSGI_HELPER,
         "tests/test_app.py": fx.PUBLIC_TESTS,
     }
-    snippets = [
-        ("H1", codes.KIND_DELTA, H1),
-        ("H2", codes.KIND_DELTA, H2),
-        ("H3", codes.KIND_DELTA, H3),
-        ("H4", codes.KIND_DELTA, H4),
-        ("H5", codes.KIND_DELTA, H5),
-        ("H6", codes.KIND_DELTA, H6),
-        ("H7", codes.KIND_INVARIANT, H7),
-        ("H8", codes.KIND_DELTA, H8),
-        ("H9", codes.KIND_INVARIANT, H9),
+    probes = [
+        ("H1", codes.KIND_DELTA, H1_PROBE, _h1),
+        ("H2", codes.KIND_DELTA, H2_PROBE, _h2),
+        ("H3", codes.KIND_DELTA, H3_PROBE, _h3),
+        ("H4", codes.KIND_DELTA, H4_PROBE, _h4),
+        ("H5", codes.KIND_DELTA, H5_PROBE, _h5),
+        ("H6", codes.KIND_DELTA, H6_PROBE, _h6),
+        ("H7", codes.KIND_INVARIANT, H7_PROBE, _h7),
+        ("H8", codes.KIND_DELTA, H8_PROBE, _h8),
+        ("H9", codes.KIND_INVARIANT, H9_PROBE, _h9),
     ]
     checks = [
-        Check(cid, kind, f"R{cid[1:]}", snippet=PRE + code, timeout=30.0)
-        for cid, kind, code in snippets
+        Check(
+            cid,
+            kind,
+            f"R{cid[1:]}",
+            probe=probe,
+            judge=judge,
+            timeout=30.0,
+            dirs=("data",),
+        )
+        for cid, kind, probe, judge in probes
     ]
     checks.append(frozen_unchanged("H10", FROZEN))
     checks.append(public_suite("PUB", 3, codes.KIND_INVARIANT))

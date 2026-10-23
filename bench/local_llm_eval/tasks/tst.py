@@ -110,6 +110,7 @@ def build() -> Task:
         gold_overrides={},
         mutants=_mutants(base[SUT_PATH]),
         min_tests=4,
+        allowed_modules=("shop",),
     )
     checks = [
         suite_collected("H1", spec, "R1"),
@@ -176,6 +177,14 @@ def build() -> Task:
             for n in ("a", "b", "c", "d")
         )
     )
+    source_detector = GOLD_TESTS.replace(
+        "import unittest\n",
+        "import unittest\n\nORIGINAL = " + repr(base[SUT_PATH]) + "\n",
+        1,
+    ) + (
+        "\n    def test_sut_is_unchanged(self):\n"
+        "        self.assertEqual(open('shop/discount.py').read(), ORIGINAL)\n"
+    )
     imports_only = "import unittest\n\nfrom shop.discount import apply_discount\n"
     negatives += [
         neg(
@@ -195,6 +204,12 @@ def build() -> Task:
             "boundary conditions only in comments, tests without assertions",
             m_set(TEST_PATH, no_assert),
             ("FAIL_COMMENT_ONLY",),
+        ),
+        neg(
+            "N7",
+            "tests kill mutants by comparing the SUT source text instead of its behaviour",
+            m_set(TEST_PATH, source_detector),
+            ("FAIL_CHECKER_PATCH",),
         ),
         neg(
             "N13",
@@ -236,7 +251,7 @@ def build() -> Task:
             "N6",
             "exit 0 inside the test file",
             m_set(TEST_PATH, EXIT0 + GOLD_TESTS),
-            ("FAIL_STUB_EXIT0",),
+            ("FAIL_STUB_EXIT0", "FAIL_CHECKER_PATCH"),
         ),
     ]
     return check_unique(

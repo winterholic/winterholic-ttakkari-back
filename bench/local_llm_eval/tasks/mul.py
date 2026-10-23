@@ -5,6 +5,7 @@ original prompt left them implicit (1.2 audit P1-2: raw C_opt line 60 failed on 
 """
 
 from .. import codes, fixtures
+from ..judges import same, val
 from ..model import Check, CheckOutcome, Ctx, Stage, Task
 from ..natives import frozen_unchanged, public_suite
 from ..negatives import neg, presolved_negative, standard_negatives
@@ -66,59 +67,59 @@ def _both_files_changed(ctx: Ctx) -> CheckOutcome:
     return CheckOutcome(True)
 
 
+H1_PROBE = (
+    "from inv import Item, total_value\n"
+    "rec('t', attempt(lambda: total_value([Item('x', 7, 9)])))\n"
+    "rec('z', attempt(total_value, []))\n"
+)
+H2_PROBE = (
+    "from inv import Item, format_report\n"
+    "rec('r', attempt(lambda: format_report([Item('b', 100, 1), Item('a', 500, 1), Item('c', 50, 1)])))\n"
+)
+H3_PROBE = (
+    "from inv import Item, format_report\n"
+    "rec('r', attempt(lambda: format_report([Item('alpha', 5, 2000), Item('zeta', 1000000, 1)])))\n"
+)
+H4_PROBE = (
+    "from inv import Item, format_report\n"
+    "rec('r', attempt(lambda: format_report([Item('zeta', 1000000, 1), Item('alpha', 5, 2000), Item('mid', 10, 10)])))\n"
+)
+H5_PROBE = "from inv import format_report\nrec('r', attempt(format_report, []))\n"
+
+
+def _h1(o, f):
+    same((val(o, "t"), val(o, "z")), (63, 0), "totals")
+
+
+def _h2(o, f):
+    lines = val(o, "r").splitlines()[:-1]
+    same([line.split(":")[0] for line in lines], ["a", "b", "c"], "item order")
+
+
+def _h3(o, f):
+    report = val(o, "r")
+    assert "alpha: 5 x 2,000" in report, report
+    assert "zeta: 1,000,000 x 1" in report, report
+
+
+def _h4(o, f):
+    want = "alpha: 5 x 2,000\nmid: 10 x 10\nzeta: 1,000,000 x 1\nTOTAL: 1,010,100"
+    same(val(o, "r"), want, "report")
+
+
+def _h5(o, f):
+    same(val(o, "r"), "TOTAL: 0", "empty report")
+
+
 def build() -> Task:
     base = fixtures.files("inventory")
     prompt = fixtures.load("inventory")["original_prompt"] + PROMPT_ADDENDUM
     checks = [
-        Check(
-            "H1",
-            codes.KIND_DELTA,
-            "R1",
-            snippet=(
-                "from inv import Item, total_value\n"
-                "assert total_value([Item('x', 7, 9)]) == 63\n"
-                "assert total_value([]) == 0\n"
-            ),
-        ),
-        Check(
-            "H2",
-            codes.KIND_DELTA,
-            "R2",
-            snippet=(
-                "from inv import Item, format_report\n"
-                "r = format_report([Item('b', 100, 1), Item('a', 500, 1), Item('c', 50, 1)])\n"
-                "names = [line.split(':')[0] for line in r.splitlines()[:-1]]\n"
-                "assert names == ['a', 'b', 'c'], names\n"
-            ),
-        ),
-        Check(
-            "H3",
-            codes.KIND_DELTA,
-            "R3",
-            snippet=(
-                "from inv import Item, format_report\n"
-                "r = format_report([Item('alpha', 5, 2000), Item('zeta', 1000000, 1)])\n"
-                "assert 'alpha: 5 x 2,000' in r, r\n"
-                "assert 'zeta: 1,000,000 x 1' in r, r\n"
-            ),
-        ),
-        Check(
-            "H4",
-            codes.KIND_DELTA,
-            "R4",
-            snippet=(
-                "from inv import Item, format_report\n"
-                "r = format_report([Item('zeta', 1000000, 1), Item('alpha', 5, 2000), Item('mid', 10, 10)])\n"
-                "want = 'alpha: 5 x 2,000\\nmid: 10 x 10\\nzeta: 1,000,000 x 1\\nTOTAL: 1,010,100'\n"
-                "assert r == want, repr(r)\n"
-            ),
-        ),
-        Check(
-            "H5",
-            codes.KIND_INVARIANT,
-            "R5",
-            snippet="from inv import format_report\nassert format_report([]) == 'TOTAL: 0'\n",
-        ),
+        Check("H1", codes.KIND_DELTA, "R1", probe=H1_PROBE, judge=_h1),
+        Check("H2", codes.KIND_DELTA, "R2", probe=H2_PROBE, judge=_h2),
+        Check("H3", codes.KIND_DELTA, "R3", probe=H3_PROBE, judge=_h3),
+        Check("H4", codes.KIND_DELTA, "R4", probe=H4_PROBE, judge=_h4),
+        Check("H5", codes.KIND_INVARIANT, "R5", probe=H5_PROBE, judge=_h5),
         frozen_unchanged("H6", FROZEN, "R6"),
         Check("H7", codes.KIND_DELTA, "R7", native=_both_files_changed),
         public_suite("PUB", 3, codes.KIND_DELTA),

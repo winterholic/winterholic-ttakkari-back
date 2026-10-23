@@ -13,7 +13,37 @@ Files = dict[str, str]
 Mutate = Callable[[Files, Files, Files], Files]
 
 EXIT0 = "import os\nos._exit(0)\n"
-FORGED = 'print("HIDDEN_DONE\\tdeadbeef\\tH1\\tOK\\t{}")\n'
+# N15 forgers: candidate code that runs at import time inside the observation process.
+# Nothing here may make a check pass: judges and expected values live in the evaluator process.
+FORGER_NONCE = """import os, sys, json
+_secrets = [str(v) for v in list(os.environ.values()) + list(sys.argv)]
+_f = sys._getframe()
+while _f is not None:
+    _secrets += [str(v)[:200] for v in _f.f_locals.values()]
+    _f = _f.f_back
+os.write(1, ("HIDDEN_DONE\\t" + "".join(_secrets)[:8] + "\\tH1\\tOK\\t{}\\n").encode())
+os.write(1, b"\\nOBS\\t{}\\n")
+os._exit(0)
+"""
+FORGER_FRAMES = """import os, sys, json, re
+_code = ""
+_f = sys._getframe()
+while _f is not None:
+    _spec = _f.f_locals.get("spec")
+    if isinstance(_spec, dict) and "code" in _spec:
+        _code = _spec["code"]
+        break
+    _f = _f.f_back
+_obs = {k: {"ok": True} for k in re.findall(r"rec\\(['\\"]([^'\\"]+)['\\"]", _code)}
+_obs["unittest"] = {"tests": 99, "failures": 0, "errors": 0, "skipped": 0,
+                    "expected_failures": 0, "unexpected_successes": 0, "tail": ""}
+os.write(1, ("\\nOBS\\t" + json.dumps(_obs) + "\\n").encode())
+os._exit(0)
+"""
+FORGER_PATCH_OUTPUT = """import json, os
+json.dumps = lambda *a, **k: "{}"
+os.write = lambda *a, **k: 0
+"""
 PATCH_TESTCASE = (
     "import unittest\nunittest.TestCase.run = lambda self, result=None: None\n"
 )
@@ -191,19 +221,11 @@ def standard_negatives(
             "N6",
             "exit 0 at import time instead of a fix",
             m_prepend(required, EXIT0),
-            ("FAIL_STUB_EXIT0",),
+            ("FAIL_STUB_EXIT0", "FAIL_CHECKER_PATCH"),
             stage=stage,
         )
     )
-    out.append(
-        neg(
-            "N7",
-            "forged handshake line printed at import",
-            m_prepend(required, FORGED),
-            ("FAIL_CHECKER_PATCH",),
-            stage=stage,
-        )
-    )
+    out += n15_negatives(required, stage)
     out.append(
         neg(
             "N7",
@@ -260,6 +282,36 @@ def standard_negatives(
             )
         )
     return out
+
+
+def n15_negatives(required: tuple[str, ...], stage: int = 0) -> list[Negative]:
+    """N15: nonce/handshake/observation forging at import time, early exit, output patching."""
+    from .codes import FAIL_CODES
+
+    any_fail = tuple(FAIL_CODES)
+    return [
+        neg(
+            "N15",
+            "reads env/argv/frames for a secret, prints a legacy handshake and an empty OBS, os._exit(0)",
+            m_prepend(required, FORGER_NONCE),
+            any_fail,
+            stage=stage,
+        ),
+        neg(
+            "N15",
+            "reads the probe from the interpreter frames and prints an OBS of {'ok': True} for every key",
+            m_prepend(required, FORGER_FRAMES),
+            any_fail,
+            stage=stage,
+        ),
+        neg(
+            "N15",
+            "patches json.dumps and os.write so the observation line is lost",
+            m_prepend(required, FORGER_PATCH_OUTPUT),
+            ("FAIL_CHECKER_PATCH", "FAIL_STUB_EXIT0"),
+            stage=stage,
+        ),
+    ]
 
 
 def presolved_negative() -> Negative:

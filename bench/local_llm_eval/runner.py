@@ -1,8 +1,11 @@
-"""Parent side of the hidden-check runner: spawn, handshake validation, process-group kill."""
+"""Parent side of the probe runner: spawn the candidate-side process, collect observations and facts.
+
+The parent never imports candidate code. Judging happens in the evaluator process from the returned
+observations plus facts the parent observed on disk itself (which the candidate cannot rewrite after exit).
+"""
 
 import json
 import os
-import secrets
 import signal
 import subprocess
 import sys
@@ -12,15 +15,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 RUNNER_PATH = Path(__file__).with_name("hidden_runner.py")
-HANDSHAKE = "HIDDEN_DONE"
-OUTPUT_CAP = 20000
+OBS_PREFIX = "OBS\t"
+OUTPUT_CAP = 200000
+IGNORED = {"__pycache__"}
 
 
 @dataclass
 class CheckRun:
-    status: str  # OK | FAIL | EXIT | TAMPER | stub_exit0 | forged | timeout | crash
+    # OBS | stub_exit0 | multi_obs | bad_obs | crash | timeout
+    status: str
+    obs: dict = field(default_factory=dict)
+    facts: dict = field(default_factory=dict)
     detail: str = ""
-    result: dict = field(default_factory=dict)
     wall_s: float = 0.0
     stdout_tail: str = ""
     stderr_tail: str = ""
@@ -30,14 +36,36 @@ def _minimal_env(home: str) -> dict[str, str]:
     return {"PATH": "/usr/bin:/bin", "PYTHONDONTWRITEBYTECODE": "1", "HOME": home}
 
 
-def run_check(cwd: Path, check_id: str, code: str, timeout: float = 20.0) -> CheckRun:
-    nonce = secrets.token_hex(8)
+def listing(root: Path) -> list[str]:
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in IGNORED)
+        for name in sorted(filenames):
+            rel = (Path(dirpath) / name).relative_to(root)
+            if rel.suffix != ".pyc":
+                out.append(rel.as_posix())
+    return sorted(out)
+
+
+def run_check(
+    cwd: Path,
+    check_id: str,
+    probe: str,
+    timeout: float = 20.0,
+    dir_names: tuple[str, ...] = (),
+) -> CheckRun:
     started = time.monotonic()
+    cwd_before = listing(cwd)
     with tempfile.TemporaryDirectory(prefix="llme-run-") as scratch:
+        dirs = {}
+        for name in dir_names:
+            path = Path(scratch) / f"dir-{name}"
+            path.mkdir()
+            dirs[name] = str(path)
         spec_path = Path(scratch) / "spec.json"
         spec_path.write_text(
             json.dumps(
-                {"nonce": nonce, "check_id": check_id, "code": code, "cwd": str(cwd)}
+                {"check_id": check_id, "code": probe, "cwd": str(cwd), "dirs": dirs}
             )
         )
         proc = subprocess.Popen(
@@ -57,27 +85,44 @@ def run_check(cwd: Path, check_id: str, code: str, timeout: float = 20.0) -> Che
             os.killpg(proc.pid, signal.SIGKILL)
             out, err = proc.communicate()
             timed_out = True
-    wall = time.monotonic() - started
+        facts = {
+            "cwd_before": cwd_before,
+            "cwd_after": listing(cwd),
+            "dirs": {name: listing(Path(p)) for name, p in dirs.items()},
+            "dir_files": {
+                name: {
+                    rel: (Path(p) / rel).read_text(encoding="utf-8", errors="replace")
+                    for rel in listing(Path(p))
+                    if (Path(p) / rel).stat().st_size < 200000
+                }
+                for name, p in dirs.items()
+            },
+            "returncode": proc.returncode,
+        }
     out, err = out[-OUTPUT_CAP:], err[-OUTPUT_CAP:]
-    base = {"wall_s": wall, "stdout_tail": out[-400:], "stderr_tail": err[-400:]}
+    base = {
+        "facts": facts,
+        "wall_s": time.monotonic() - started,
+        "stdout_tail": out[-400:],
+        "stderr_tail": err[-400:],
+    }
     if timed_out:
-        return CheckRun("timeout", f"check exceeded {timeout}s", **base)
-    valid, forged = None, False
-    for line in out.splitlines():
-        if not line.startswith(HANDSHAKE + "\t"):
-            continue
-        parts = line.split("\t", 4)
-        if len(parts) == 5 and parts[1] == nonce and parts[2] == check_id:
-            valid = parts
-        else:
-            forged = True
-    if forged:
-        return CheckRun("forged", "handshake line with wrong nonce/check id", **base)
-    if valid is None:
+        return CheckRun("timeout", detail=f"check exceeded {timeout}s", **base)
+    lines = [line for line in out.splitlines() if line.startswith(OBS_PREFIX)]
+    if not lines:
         if proc.returncode == 0:
-            return CheckRun("stub_exit0", "exit 0 without handshake", **base)
-        return CheckRun("crash", f"exit {proc.returncode} without handshake", **base)
-    payload = json.loads(valid[4])
-    return CheckRun(
-        valid[3], payload.get("detail", ""), payload.get("result", {}), **base
-    )
+            return CheckRun(
+                "stub_exit0", detail="exit 0 without an observation line", **base
+            )
+        return CheckRun(
+            "crash", detail=f"exit {proc.returncode} without observations", **base
+        )
+    if len(lines) > 1:
+        return CheckRun("multi_obs", detail=f"{len(lines)} observation lines", **base)
+    try:
+        obs = json.loads(lines[0][len(OBS_PREFIX) :])
+    except ValueError:
+        return CheckRun("bad_obs", detail="observation line is not JSON", **base)
+    if not isinstance(obs, dict):
+        return CheckRun("bad_obs", detail="observation is not an object", **base)
+    return CheckRun("OBS", obs=obs, **base)

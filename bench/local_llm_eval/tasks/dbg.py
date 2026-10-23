@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 from .. import codes, fixtures
+from ..judges import same, val
 from ..manifest import write_files
 from ..model import Check, CheckOutcome, Ctx, Stage, Task
 from ..natives import frozen_unchanged, public_suite
@@ -44,20 +45,34 @@ PROMPT = (
     "mechanism 은 float-division, off-by-one, wrong-constant, wrong-operator, other 중 하나다."
 )
 
-H2 = """
+H2_PROBE = """
 import rules
-assert rules.rule_043(61) == 27, rules.rule_043(61)
-assert rules.rule_043(3) == 8
+rec('v61', attempt(rules.rule_043, 61))
+rec('v3', attempt(rules.rule_043, 3))
 for x in (-5, 0, 1, 2, 59, 60, 61, 89, 90, 91, 100):
-    assert isinstance(rules.rule_043(x), int), (x, rules.rule_043(x))
+    rec('t%d' % x, attempt(lambda x=x: type(rules.rule_043(x)).__name__))
 """
-H4 = """
-import rules
-for x in (-5, 0, 1, 2, 3, 59, 60, 61, 89, 90, 91, 100, 1000):
-    want = max(0, min(x, 90)) // 3 + 7
-    got = rules.rule_043(x)
-    assert got == want and isinstance(got, int), (x, got, want)
-"""
+H4_INPUTS = (-5, 0, 1, 2, 3, 59, 60, 61, 89, 90, 91, 100, 1000)
+H4_PROBE = (
+    "import rules\n"
+    f"for x in {H4_INPUTS!r}:\n"
+    "    rec('v%d' % x, attempt(rules.rule_043, x))\n"
+    "    rec('t%d' % x, attempt(lambda x=x: type(rules.rule_043(x)).__name__))\n"
+)
+
+
+def _h2(o, f):
+    same(val(o, "v61"), 27, "rule_043(61)")
+    same(val(o, "v3"), 8, "rule_043(3)")
+    for x in (-5, 0, 1, 2, 59, 60, 61, 89, 90, 91, 100):
+        same(val(o, f"t{x}"), "int", f"type of rule_043({x})")
+
+
+def _h4(o, f):
+    for x in H4_INPUTS:
+        want = max(0, min(x, 90)) // 3 + 7
+        same(val(o, f"v{x}"), want, f"rule_043({x})")
+        same(val(o, f"t{x}"), "int", f"type of rule_043({x})")
 
 
 def generate_ci_log(files: dict[str, str]) -> str:
@@ -199,9 +214,9 @@ def build() -> Task:
     )
     checks = [
         Check("H1", codes.KIND_PROCESS, "R1", native=_reproduced_before_edit),
-        Check("H2", codes.KIND_DELTA, "R2", snippet=H2),
+        Check("H2", codes.KIND_DELTA, "R2", probe=H2_PROBE, judge=_h2),
         Check("H3", codes.KIND_INVARIANT, "R3", native=_others_unchanged),
-        Check("H4", codes.KIND_DELTA, "R4", snippet=H4),
+        Check("H4", codes.KIND_DELTA, "R4", probe=H4_PROBE, judge=_h4),
         Check("H6", codes.KIND_DELTA, "R6", native=_cause_matches_patch),
         frozen_unchanged("H7", FROZEN, "R7"),
         public_suite("PUB", 3, codes.KIND_DELTA, "R5"),

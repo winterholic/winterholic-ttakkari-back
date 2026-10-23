@@ -6,6 +6,14 @@ from local_llm_eval.model import Check
 from local_llm_eval.tasks import REGISTRY
 
 
+def _planted_judge(obs, facts):
+    assert obs["x"] != "ONLY_IN_HIDDEN_9731"
+
+
+def _planted_judge(obs, facts):
+    assert obs["x"] != "ONLY_IN_HIDDEN_9731"
+
+
 @pytest.mark.parametrize("task_id", sorted(REGISTRY))
 def test_no_unreviewed_leak(task_id):
     result = scan(REGISTRY[task_id]())
@@ -14,9 +22,7 @@ def test_no_unreviewed_leak(task_id):
 
 def test_scan_fires_on_a_hidden_literal_planted_in_workspace_source():
     task = REGISTRY["B4-SGL-D"]()
-    task.stages[0].checks.append(
-        Check("HX", snippet="assert 'ONLY_IN_HIDDEN_9731' != ''")
-    )
+    task.stages[0].checks.append(Check("HX", probe="rec('x', 1)", judge=_planted_judge))
     task.base_files["stats.py"] += "\n# ONLY_IN_HIDDEN_9731\n"
     findings = scan(task).findings
     assert any(

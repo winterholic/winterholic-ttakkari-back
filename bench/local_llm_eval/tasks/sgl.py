@@ -1,6 +1,7 @@
 """B4-SGL-D single-file fix (median). Fixture: reused `t1-bug-median`. Spec section 3.2."""
 
 from .. import codes, fixtures
+from ..judges import raised, same, val
 from ..model import Check, Stage, Task
 from ..natives import frozen_unchanged, public_suite
 from ..negatives import (
@@ -73,69 +74,76 @@ PUBLIC_ONLY = GOOD.replace(
 )
 
 
+H1_PROBE = (
+    "from stats import median\n"
+    "rec('a', attempt(median, [10, 20]))\n"
+    "rec('b', attempt(median, [4, 1, 3, 2]))\n"
+    "rec('c', attempt(median, [1, 2, 3, 4, 5, 6]))\n"
+)
+H2_PROBE = "from stats import median\nrec('e', attempt(median, []))\n"
+H3_PROBE = "from stats import median\nrec('a', attempt(median, [3, 1, 2]))\nrec('b', attempt(median, [5]))\n"
+H4_PROBE = (
+    "from stats import median\n"
+    "xs = [3, 1, 2]\nrec('r', attempt(median, xs))\nrec('xs', list(xs))\n"
+    "t = (3, 1, 2)\nrec('rt', attempt(median, t))\nrec('t', list(t))\n"
+)
+H5_PROBE = (
+    "from stats import median\n"
+    "rec('a', attempt(median, [-3, -1]))\n"
+    "rec('b', attempt(median, [0.5, 1.5, 2.5, 3.5]))\n"
+    "rec('c', attempt(median, [1.5]))\n"
+)
+H7_PROBE = (
+    "from stats import mean\n"
+    "rec('m', attempt(mean, [1, 2, 3]))\n"
+    "rec('e', attempt(mean, []))\n"
+)
+
+
+def _h1(o, f):
+    same(
+        (val(o, "a"), val(o, "b"), val(o, "c")), (15.0, 2.5, 3.5), "even-length medians"
+    )
+
+
+def _h2(o, f):
+    raised(o, "e", "ValueError")
+
+
+def _h3(o, f):
+    same((val(o, "a"), val(o, "b")), (2, 5), "odd-length medians")
+
+
+def _h4(o, f):
+    same(val(o, "r"), 2, "list median")
+    same(o["xs"], [3, 1, 2], "list input must not be modified")
+    same(val(o, "rt"), 2, "tuple median")
+    same(o["t"], [3, 1, 2], "tuple input")
+
+
+def _h5(o, f):
+    same(
+        (val(o, "a"), val(o, "b"), val(o, "c")),
+        (-2.0, 2.0, 1.5),
+        "negative/float medians",
+    )
+
+
+def _h7(o, f):
+    same(val(o, "m"), 2, "mean unchanged")
+    raised(o, "e", "ZeroDivisionError")
+
+
 def build() -> Task:
     base = fixtures.files("median")
     checks = [
-        Check(
-            "H1",
-            codes.KIND_DELTA,
-            "R1",
-            snippet=(
-                "from stats import median\n"
-                "assert median([10, 20]) == 15.0\n"
-                "assert median([4, 1, 3, 2]) == 2.5\n"
-                "assert median([1, 2, 3, 4, 5, 6]) == 3.5\n"
-            ),
-        ),
-        Check(
-            "H2",
-            codes.KIND_DELTA,
-            "R2",
-            snippet=(
-                "from stats import median\n"
-                "try:\n    median([])\nexcept ValueError:\n    pass\n"
-                "else:\n    raise AssertionError('no ValueError')\n"
-            ),
-        ),
-        Check(
-            "H3",
-            codes.KIND_INVARIANT,
-            "R3",
-            snippet="from stats import median\nassert median([3, 1, 2]) == 2 and median([5]) == 5\n",
-        ),
-        Check(
-            "H4",
-            codes.KIND_INVARIANT,
-            "R4",
-            snippet=(
-                "from stats import median\n"
-                "xs = [3, 1, 2]\nmedian(xs)\nassert xs == [3, 1, 2]\n"
-                "t = (3, 1, 2)\nassert median(t) == 2 and t == (3, 1, 2)\n"
-            ),
-        ),
-        Check(
-            "H5",
-            codes.KIND_DELTA,
-            "R5",
-            snippet=(
-                "from stats import median\n"
-                "assert median([-3, -1]) == -2.0\n"
-                "assert median([0.5, 1.5, 2.5, 3.5]) == 2.0\n"
-                "assert median([1.5]) == 1.5\n"
-            ),
-        ),
+        Check("H1", codes.KIND_DELTA, "R1", probe=H1_PROBE, judge=_h1),
+        Check("H2", codes.KIND_DELTA, "R2", probe=H2_PROBE, judge=_h2),
+        Check("H3", codes.KIND_INVARIANT, "R3", probe=H3_PROBE, judge=_h3),
+        Check("H4", codes.KIND_INVARIANT, "R4", probe=H4_PROBE, judge=_h4),
+        Check("H5", codes.KIND_DELTA, "R5", probe=H5_PROBE, judge=_h5),
         frozen_unchanged("H6", FROZEN, "R6"),
-        Check(
-            "H7",
-            codes.KIND_INVARIANT,
-            "R7",
-            snippet=(
-                "from stats import mean\n"
-                "assert mean([1, 2, 3]) == 2\n"
-                "try:\n    mean([])\nexcept ZeroDivisionError:\n    pass\n"
-                "else:\n    raise AssertionError('mean([]) changed')\n"
-            ),
-        ),
+        Check("H7", codes.KIND_INVARIANT, "R7", probe=H7_PROBE, judge=_h7),
         public_suite("PUB", 4, codes.KIND_DELTA),
     ]
     stage = Stage(

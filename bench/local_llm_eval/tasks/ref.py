@@ -5,8 +5,12 @@ The old verifier matched strings ('common' in source), so an inline copy plus a 
 through it; H5 forbids a surviving duplicated body.
 """
 
+import ast
+import json
+
 from .. import codes, fixtures
-from ..model import Check, Stage, Task
+from ..judges import same, val
+from ..model import Check, CheckOutcome, Stage, Task
 from ..natives import frozen_unchanged, public_suite
 from ..negatives import neg, presolved_negative, standard_negatives
 from ._common import check_unique, single_stage, with_paths
@@ -32,68 +36,103 @@ ALT_JSONOUT = JSONOUT.replace(
     "from .common import clean", "from . import common"
 ).replace("clean(c)", "common.clean(c)")
 
-H2 = """
+H1_PROBE = "from report.common import clean\nrec('c', attempt(clean, '  a,  b '))\n"
+
+H2_PROBE = """
 open('report/common.py', 'w').write('def clean(s):\\n    return "SENTINEL"\\n')
 from report.csvout import to_csv
 from report.jsonout import to_json
-assert to_csv([['a', 'b']]) == 'SENTINEL,SENTINEL', to_csv([['a', 'b']])
-assert to_json([['a']]) == '[["SENTINEL"]]', to_json([['a']])
+rec('csv', attempt(to_csv, [['a', 'b']]))
+rec('json', attempt(to_json, [['a']]))
 """
 
-H3 = """
-import os
-for root, _, files in os.walk('.'):
-    for name in files:
-        if name.endswith('.py'):
-            text = open(os.path.join(root, name)).read()
-            assert '_clean' not in text, os.path.join(root, name)
-"""
-
-H4 = r"""
-import json
-from report.csvout import to_csv
-from report.jsonout import to_json
-
-
-def ref(s):
-    return " ".join(str(s).split()).replace(",", ";")
-
-
-rows = [
+H4_ROWS = [
     ["a b", "c,d"],
     ["  x\t\ty  ", "1,2,3", 5],
-    [" nbsp ", None, 3.5],
+    ["\u00a0nbsp\u00a0", None, 3.5],
     ["한국어  공백", "a\nb"],
     [],
 ]
-assert to_csv(rows) == "\n".join(",".join(ref(c) for c in r) for r in rows)
-assert to_json(rows) == json.dumps([[ref(c) for c in r] for r in rows], ensure_ascii=False)
-"""
+H4_PROBE = (
+    "from report.csvout import to_csv\nfrom report.jsonout import to_json\n"
+    f"rows = {H4_ROWS!r}\n"
+    "rec('csv', attempt(to_csv, rows))\nrec('json', attempt(to_json, rows))\n"
+)
 
-H5 = """
-import ast
-import os
-seen = {}
-for root, dirs, files in os.walk('.'):
-    dirs[:] = [d for d in dirs if d != 'tests']
-    for name in files:
-        if not name.endswith('.py'):
-            continue
-        path = os.path.join(root, name)
-        for node in ast.walk(ast.parse(open(path).read())):
-            if isinstance(node, ast.FunctionDef) and node.body:
-                key = ast.dump(ast.Module(body=node.body, type_ignores=[]))
-                assert key not in seen, 'duplicate body: %s and %s:%s' % (seen[key], path, node.name)
-                seen[key] = '%s:%s' % (path, node.name)
-"""
-
-H7 = """
+H7_PROBE = """
 import inspect
 from report.csvout import to_csv
 from report.jsonout import to_json
-assert list(inspect.signature(to_csv).parameters) == ['rows']
-assert list(inspect.signature(to_json).parameters) == ['rows']
+rec('csv', list(inspect.signature(to_csv).parameters))
+rec('json', list(inspect.signature(to_json).parameters))
 """
+
+
+def _reference_clean(value):
+    return " ".join(str(value).split()).replace(",", ";")
+
+
+def _h1(o, f):
+    same(val(o, "c"), "a; b", "clean")
+
+
+def _h2(o, f):
+    same(
+        val(o, "csv"),
+        "SENTINEL,SENTINEL",
+        "to_csv must route through report.common.clean",
+    )
+    same(
+        val(o, "json"),
+        '[["SENTINEL"]]',
+        "to_json must route through report.common.clean",
+    )
+
+
+def _h4(o, f):
+    csv_want = "\n".join(",".join(_reference_clean(c) for c in r) for r in H4_ROWS)
+    json_want = json.dumps(
+        [[_reference_clean(c) for c in r] for r in H4_ROWS], ensure_ascii=False
+    )
+    same(val(o, "csv"), csv_want, "to_csv behaviour")
+    same(val(o, "json"), json_want, "to_json behaviour")
+
+
+def _h7(o, f):
+    same((o["csv"], o["json"]), (["rows"], ["rows"]), "signatures")
+
+
+def _no_old_name(ctx):
+    """Static scan in the evaluator process: the old private name must be gone from every .py file."""
+    hits = [
+        p for p, text in ctx.end_files.items() if p.endswith(".py") and "_clean" in text
+    ]
+    if hits:
+        return CheckOutcome(False, "FAIL_HIDDEN", f"_clean still present in {hits[:3]}")
+    return CheckOutcome(True)
+
+
+def _no_duplicate_bodies(ctx):
+    """Static scan: no two non-test functions may share a normalised body."""
+    seen = {}
+    for path, text in sorted(ctx.end_files.items()):
+        if not path.endswith(".py") or path.startswith("tests/"):
+            continue
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return CheckOutcome(False, "FAIL_HIDDEN", f"{path} does not parse")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.body:
+                key = ast.dump(ast.Module(body=node.body, type_ignores=[]))
+                if key in seen:
+                    return CheckOutcome(
+                        False,
+                        "FAIL_HIDDEN",
+                        f"duplicate body: {seen[key]} and {path}:{node.name}",
+                    )
+                seen[key] = f"{path}:{node.name}"
+    return CheckOutcome(True)
 
 
 def _gold(base):
@@ -122,18 +161,13 @@ def build() -> Task:
     base = fixtures.files("dedupe")
     prompt = fixtures.load("dedupe")["original_prompt"]
     checks = [
-        Check(
-            "H1",
-            codes.KIND_DELTA,
-            "R1",
-            snippet="from report.common import clean\nassert clean('  a,  b ') == 'a; b'\n",
-        ),
-        Check("H2", codes.KIND_DELTA, "R2", snippet=H2),
-        Check("H3", codes.KIND_DELTA, "R3", snippet=H3),
-        Check("H4", codes.KIND_INVARIANT, "R4", snippet=H4),
-        Check("H5", codes.KIND_DELTA, "R5", snippet=H5),
+        Check("H1", codes.KIND_DELTA, "R1", probe=H1_PROBE, judge=_h1),
+        Check("H2", codes.KIND_DELTA, "R2", probe=H2_PROBE, judge=_h2),
+        Check("H3", codes.KIND_DELTA, "R3", native=_no_old_name),
+        Check("H4", codes.KIND_INVARIANT, "R4", probe=H4_PROBE, judge=_h4),
+        Check("H5", codes.KIND_DELTA, "R5", native=_no_duplicate_bodies),
         frozen_unchanged("H6", FROZEN, "R6"),
-        Check("H7", codes.KIND_INVARIANT, "R7", snippet=H7),
+        Check("H7", codes.KIND_INVARIANT, "R7", probe=H7_PROBE, judge=_h7),
         public_suite("PUB", 2, codes.KIND_INVARIANT),
     ]
     stage = Stage(

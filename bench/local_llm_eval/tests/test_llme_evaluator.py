@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 from local_llm_eval import codes
 from local_llm_eval.evaluator import ConfigError, evaluate_attempt
-from local_llm_eval.manifest import manifest_of_files
 from local_llm_eval.model import Attempt
 from local_llm_eval.simulate import gold_ends, materialize, reports_for
 from local_llm_eval.tasks import REGISTRY
@@ -37,7 +36,7 @@ def test_start_state_must_equal_the_pristine_manifest():
     solved = dict(gold_ends(t)[0])
     ev = run(t, gold_ends(t), start_files=solved)
     assert (ev.verdict, ev.fail_code) == (codes.INFRA, codes.INFRA_BASE_MISMATCH)
-    assert "start state differs" in ev.stages[0].detail
+    assert "differs from the sealed baseline" in ev.stages[0].detail
 
 
 def test_one_changed_byte_in_the_start_state_is_a_mismatch():
@@ -48,12 +47,52 @@ def test_one_changed_byte_in_the_start_state_is_a_mismatch():
     assert ev.fail_code == codes.INFRA_BASE_MISMATCH
 
 
-def test_missing_start_manifest_is_unknown_not_a_model_result():
+def test_missing_start_tree_is_unknown_not_a_model_result():
     t = task("B4-SGL-D")
     with materialize(t, gold_ends(t), reports_for(t, gold_ends(t))) as attempt:
-        attempt.stages[0].start_manifest = None
+        attempt.stages[0].start_dir = None
         ev = evaluate_attempt(t, attempt)
     assert ev.verdict == codes.UNKNOWN
+
+
+def test_evaluator_hashes_the_real_start_tree_not_a_caller_manifest():
+    """The caller can no longer vouch for the start state: only files on disk count."""
+    t = task("B4-SGL-D")
+    ends = gold_ends(t)
+    with materialize(t, ends, reports_for(t, ends)) as attempt:
+        start = attempt.stages[0].start_dir
+        assert evaluate_attempt(t, attempt).verdict == codes.PASS
+        (start / "stats.py").write_text(
+            t.base_files["stats.py"] + "\n# tampered before the run\n"
+        )
+        ev = evaluate_attempt(t, attempt)
+    assert (ev.verdict, ev.fail_code) == (codes.INFRA, codes.INFRA_BASE_MISMATCH)
+
+
+def test_extra_missing_or_symlinked_start_files_are_a_mismatch():
+    t = task("B4-SGL-D")
+    ends = gold_ends(t)
+    for mutate in ("extra", "missing", "symlink"):
+        with materialize(t, ends, reports_for(t, ends)) as attempt:
+            start = attempt.stages[0].start_dir
+            if mutate == "extra":
+                (start / "leftover.txt").write_text("x")
+            elif mutate == "missing":
+                (start / "stats.py").unlink()
+            else:
+                os.symlink("/etc/hosts", start / "link.txt")
+            ev = evaluate_attempt(t, attempt)
+        assert ev.fail_code == codes.INFRA_BASE_MISMATCH, mutate
+
+
+def test_pycache_in_the_start_tree_does_not_count():
+    t = task("B4-SGL-D")
+    ends = gold_ends(t)
+    with materialize(t, ends, reports_for(t, ends)) as attempt:
+        cache = attempt.stages[0].start_dir / "__pycache__"
+        cache.mkdir()
+        (cache / "stats.cpython-313.pyc").write_bytes(b"\0")
+        assert evaluate_attempt(t, attempt).verdict == codes.PASS
 
 
 def test_noop_differs_by_change_class():
@@ -158,7 +197,7 @@ def test_long_task_start_must_continue_from_the_previous_end():
     with materialize(
         t, ends, reports_for(t, ends, t.gold_reports(t.base_files, ends))
     ) as attempt:
-        attempt.stages[2].start_manifest = manifest_of_files(t.base_files)
+        (attempt.stages[2].start_dir / "stats.py").write_text(t.base_files["stats.py"])
         ev = evaluate_attempt(t, attempt)
     assert (
         ev.verdict == codes.INFRA

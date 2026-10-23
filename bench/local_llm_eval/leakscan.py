@@ -1,7 +1,7 @@
 """Static answer-leak scan for a task (spec 4.1 section 5.4-3, extended in 4.2).
 
 Two directions, both lexical (a lexical scan cannot prove there is no leak):
-1. hidden-only literals: strings (4+ chars) and ints (100+) found in hidden-check snippets that appear in
+1. hidden-only literals: strings (4+ chars) and ints (100+) found in the judge functions (expected values) that appear in
    the model-facing prompt or in non-test workspace sources;
 2. gold-only tokens: strings/identifiers/ints introduced by the reference solution (gold vs pristine) that
    appear in the prompt or in the pristine workspace.
@@ -11,7 +11,9 @@ stdlib, WSGI vocabulary: GENERIC) or allowlisted per task with a reason. Native 
 """
 
 import ast
+import inspect
 import re
+import textwrap
 from dataclasses import dataclass, field
 
 from .model import Task
@@ -75,14 +77,33 @@ class ScanResult:
     spec_stated: int = 0
 
 
-def _literals(source: str) -> set[str]:
+def _label_ids(tree: ast.AST) -> set[int]:
+    """Constants that name observation keys or label an assertion message (not expected values)."""
+    skip: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in ("val", "raised", "unittest_ok"):
+                skip |= {id(a) for a in node.args if isinstance(a, ast.Constant)}
+            elif node.func.id == "same" and len(node.args) >= 3:
+                skip.add(id(node.args[2]))
+        elif isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant):
+            skip.add(id(node.slice))
+        elif isinstance(node, ast.JoinedStr):
+            skip |= {id(v) for v in node.values if isinstance(v, ast.Constant)}
+        elif isinstance(node, ast.Assert) and isinstance(node.msg, ast.Constant):
+            skip.add(id(node.msg))
+    return skip
+
+
+def _literals(source: str, judge: bool = False) -> set[str]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
         return set()
+    skip = _label_ids(tree) if judge else set()
     out: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant):
+        if isinstance(node, ast.Constant) and id(node) not in skip:
             value = node.value
             if isinstance(value, str) and len(value) >= 4:
                 out.add(value)
@@ -105,8 +126,13 @@ def _tokens(text: str) -> set[str]:
 def hidden_literals(task: Task) -> set[str]:
     out: set[str] = set()
     for _, check in task.stage_checks():
-        if check.snippet:
-            out |= _literals(check.snippet)
+        if check.judge is not None:
+            try:
+                out |= _literals(
+                    textwrap.dedent(inspect.getsource(check.judge)), judge=True
+                )
+            except (OSError, TypeError):
+                continue
     return out
 
 

@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from .. import codes, fixtures
+from ..judges import raised, same, val
 from ..manifest import diff_manifests, manifest_of_files
 from ..model import Attempt, Check, CheckOutcome, Ctx, Stage, Task
 from ..natives import (
@@ -28,6 +29,7 @@ from ..negatives import (
     m_misplaced,
     m_revert,
     m_set,
+    n15_negatives,
     neg,
     presolved_negative,
     standard_negatives,
@@ -113,64 +115,108 @@ PROMPTS = {
     ),
 }
 
-H1 = """
+H1_PROBE = """
 from stats import median
-assert median([10, 20]) == 15.0 and median([4, 1, 3, 2]) == 2.5 and median([1, 2, 3, 4, 5, 6]) == 3.5
-assert median([-3, -1]) == -2.0
-try:
-    median([])
-except ValueError:
-    pass
-else:
-    raise AssertionError('no ValueError')
+rec('a', attempt(median, [10, 20]))
+rec('b', attempt(median, [4, 1, 3, 2]))
+rec('c', attempt(median, [1, 2, 3, 4, 5, 6]))
+rec('d', attempt(median, [-3, -1]))
+rec('e', attempt(median, []))
 """
-H3 = """
+H3_PROBE = """
 from textutil import slugify
-assert slugify('Hello, World!', max_len=7) == 'hello-w'
-assert slugify('Hello, World!', max_len=6) == 'hello'
-assert slugify('Hello, World!', max_len=100) == 'hello-world'
-assert slugify('Hello, World!') == 'hello-world'
+rec('a', attempt(slugify, 'Hello, World!', max_len=7))
+rec('b', attempt(slugify, 'Hello, World!', max_len=6))
+rec('c', attempt(slugify, 'Hello, World!', max_len=100))
+rec('d', attempt(slugify, 'Hello, World!'))
 """
-H4 = """
+H4_PROBE = """
 from textutil.cli import main
-assert main(['Hello World', '--max-len', '5']) == 'hello'
-assert main(['Hello World']) == 'hello-world'
+rec('a', attempt(main, ['Hello World', '--max-len', '5']))
+rec('b', attempt(main, ['Hello World']))
 """
-H6 = """
-import os
-for root, _, files in os.walk('.'):
-    for name in files:
-        if name.endswith('.py'):
-            assert 'calc_tax' not in open(os.path.join(root, name)).read(), os.path.join(root, name)
-from billing import compute_tax
-"""
-H7 = """
+H7_PROBE = """
 from billing import compute_tax, make_invoice
-assert compute_tax(1000) == 100 and compute_tax(1234, 0.25) == 308
-assert make_invoice(500) == {'amount': 500, 'tax': 50, 'total': 550}
+rec('a', attempt(compute_tax, 1000))
+rec('b', attempt(compute_tax, 1234, 0.25))
+rec('c', attempt(make_invoice, 500))
 """
-H8 = """
+H8_PROBE = """
 open('billing/tax.py', 'w').write('def compute_tax(amount, rate=0.1):\\n    return 12345\\n')
 open('textutil/slug.py', 'w').write('def slugify(text, max_len=None):\\n    return "SLUG"\\n')
 from billing.invoice import invoice_label
-assert invoice_label(1000, 'Hello World', 5) == 'SLUG:13345', invoice_label(1000, 'Hello World', 5)
+rec('label', attempt(invoice_label, 1000, 'Hello World', 5))
 """
-H9 = """
+H9_PROBE = """
 from billing.invoice import invoice_label
-assert invoice_label(2000, 'Hello World', 5) == 'hello:2200'
-assert invoice_label(2000, 'Hello, World!', 100) == 'hello-world:2200'
+rec('a', attempt(invoice_label, 2000, 'Hello World', 5))
+rec('b', attempt(invoice_label, 2000, 'Hello, World!', 100))
 """
-H10 = """
-import os
-for root, _, files in os.walk('.'):
-    for name in files:
-        if name.endswith('.py'):
-            assert 'calc_tax' not in open(os.path.join(root, name)).read(), os.path.join(root, name)
+H10_PROBE = """
 from stats import median
 from textutil import slugify
-assert median([10, 20]) == 15.0
-assert slugify('Hello, World!', max_len=6) == 'hello'
+rec('m', attempt(median, [10, 20]))
+rec('s', attempt(slugify, 'Hello, World!', max_len=6))
 """
+
+
+def _h1(o, f):
+    same(
+        (val(o, "a"), val(o, "b"), val(o, "c"), val(o, "d")),
+        (15.0, 2.5, 3.5, -2.0),
+        "medians",
+    )
+    raised(o, "e", "ValueError")
+
+
+def _h3(o, f):
+    same(
+        (val(o, "a"), val(o, "b"), val(o, "c"), val(o, "d")),
+        ("hello-w", "hello", "hello-world", "hello-world"),
+        "slugify",
+    )
+
+
+def _h4(o, f):
+    same((val(o, "a"), val(o, "b")), ("hello", "hello-world"), "cli")
+
+
+def _h7(o, f):
+    same(val(o, "a"), 100, "compute_tax(1000)")
+    same(val(o, "b"), 308, "compute_tax(1234, 0.25)")
+    same(val(o, "c"), {"amount": 500, "tax": 50, "total": 550}, "make_invoice")
+
+
+def _h8(o, f):
+    same(
+        val(o, "label"), "SLUG:13345", "invoice_label must call compute_tax and slugify"
+    )
+
+
+def _h9(o, f):
+    same(
+        (val(o, "a"), val(o, "b")), ("hello:2200", "hello-world:2200"), "invoice_label"
+    )
+
+
+def _h10(o, f):
+    same((val(o, "m"), val(o, "s")), (15.0, "hello"), "earlier turns still hold")
+
+
+def _no_calc_tax(check_id: str):
+    def run(ctx):
+        hits = [
+            p
+            for p, text in ctx.end_files.items()
+            if p.endswith(".py") and "calc_tax" in text
+        ]
+        if hits:
+            return CheckOutcome(
+                False, "FAIL_HIDDEN", f"calc_tax still present in {hits[:3]}"
+            )
+        return CheckOutcome(True)
+
+    return run
 
 
 def _filler_base() -> dict[str, str]:
@@ -378,6 +424,7 @@ def build() -> Task:
             },
         },
         min_tests=3,
+        allowed_modules=("textutil",),
     )
     stages = [
         Stage(
@@ -385,7 +432,7 @@ def build() -> Task:
             prompt=PROMPTS["T1"],
             required_change_paths=("stats.py",),
             checks=[
-                Check("H1", codes.KIND_DELTA, "R1", snippet=H1),
+                Check("H1", codes.KIND_DELTA, "R1", probe=H1_PROBE, judge=_h1),
                 frozen_unchanged("H2", ("tests/test_stats.py",), "R2"),
                 public_suite("PUB1", 1, codes.KIND_DELTA),
             ],
@@ -399,8 +446,8 @@ def build() -> Task:
                 "tests/test_slug.py",
             ),
             checks=[
-                Check("H3", codes.KIND_DELTA, "R3", snippet=H3),
-                Check("H4", codes.KIND_DELTA, "R4", snippet=H4),
+                Check("H3", codes.KIND_DELTA, "R3", probe=H3_PROBE, judge=_h3),
+                Check("H4", codes.KIND_DELTA, "R4", probe=H4_PROBE, judge=_h4),
                 suite_collected("H5c", spec, "R5"),
                 suite_kills("H5", spec, tuple(spec.mutants), "R5"),
                 suite_gold_pass("H5g", spec, "R5", codes.KIND_INVARIANT),
@@ -413,8 +460,8 @@ def build() -> Task:
             prompt=PROMPTS["T3"],
             required_change_paths=RENAME_PATHS,
             checks=[
-                Check("H6", codes.KIND_DELTA, "R6", snippet=H6),
-                Check("H7", codes.KIND_DELTA, "R7", snippet=H7),
+                Check("H6", codes.KIND_DELTA, "R6", native=_no_calc_tax("H6")),
+                Check("H7", codes.KIND_DELTA, "R7", probe=H7_PROBE, judge=_h7),
                 public_suite("PUB3", 1, codes.KIND_INVARIANT),
             ],
         ),
@@ -423,9 +470,10 @@ def build() -> Task:
             prompt=PROMPTS["T4"],
             required_change_paths=("billing/invoice.py",),
             checks=[
-                Check("H8", codes.KIND_DELTA, "R8", snippet=H8),
-                Check("H9", codes.KIND_DELTA, "R9", snippet=H9),
-                Check("H10", codes.KIND_INVARIANT, "R10", snippet=H10),
+                Check("H8", codes.KIND_DELTA, "R8", probe=H8_PROBE, judge=_h8),
+                Check("H9", codes.KIND_DELTA, "R9", probe=H9_PROBE, judge=_h9),
+                Check("H10", codes.KIND_INVARIANT, "R10", probe=H10_PROBE, judge=_h10),
+                Check("H10s", codes.KIND_INVARIANT, "R10", native=_no_calc_tax("H10s")),
                 public_suite("PUB4", 1, codes.KIND_INVARIANT),
             ],
         ),
@@ -444,6 +492,9 @@ def build() -> Task:
         required=("stats.py",), frozen_test="tests/test_stats.py", stage=0
     )
     negatives.append(presolved_negative())
+    for index, stage in enumerate(stages[:4], start=0):
+        if index:
+            negatives += n15_negatives(stage.required_change_paths, index)
 
     def slug_tests_with(extra: str):
         def run(prev, gold, base_):

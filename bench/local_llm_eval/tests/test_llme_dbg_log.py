@@ -21,13 +21,16 @@ def test_committed_log_equals_a_fresh_run_on_the_pristine_files():
 def test_original_fixture_public_suite_was_green_at_base(tmp_path):
     """The reason for rev2: the old prompt claimed a failing test but nothing failed."""
     write_files(tmp_path, fixtures.files("long_rules"))
-    code = "RESULT = dict(run_unittest('tests', '.'))\nassert RESULT['ok']\n"
-    run = run_check(tmp_path, "orig", code)
-    assert run.status == "OK" and run.result["failures"] == 0
+    run = run_check(tmp_path, "orig", "rec('u', run_unittest('tests', '.'))\n")
+    assert (
+        run.status == "OBS"
+        and run.obs["u"]["failures"] == 0
+        and run.obs["u"]["errors"] == 0
+    )
 
 
 def test_rev2_base_has_exactly_one_failing_public_test(tmp_path):
     files = dbg.base_files_without_log()
     write_files(tmp_path, files)
-    run = run_check(tmp_path, "rev2", "RESULT = dict(run_unittest('tests', '.'))\n")
-    assert run.result["failures"] == 1 and run.result["errors"] == 0
+    run = run_check(tmp_path, "rev2", "rec('u', run_unittest('tests', '.'))\n")
+    assert run.obs["u"]["failures"] == 1 and run.obs["u"]["errors"] == 0

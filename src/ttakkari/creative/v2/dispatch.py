@@ -171,7 +171,7 @@ class ProductionStore:
             return json.loads(path.read_text())
         return {
             "plan_id": str(uuid.UUID(plan_id)),
-            "assets": {"scenes": {}, "music": None},
+            "assets": {"scenes": {}, "voices": {}, "music": None},
             "dispatches": [],
         }
 
@@ -223,7 +223,7 @@ def put_asset(
 ) -> dict[str, Any]:
     """이미 검증·정규화된 파일을 계획의 제작 자산으로 등록한다. 같은 내용은 한 번만 저장한다."""
     plan = plans.get(plan_id)
-    if kind == "scene":
+    if kind in {"scene", "voice"}:
         if scene_id not in {s["scene_id"] for s in plan["scenes"]}:
             raise ProductionError(f"현재 계획 revision에 장면 {scene_id}이(가) 없습니다.")
     elif kind != "music":
@@ -250,6 +250,8 @@ def put_asset(
         }
         if kind == "scene":
             data["assets"]["scenes"][scene_id] = asset
+        elif kind == "voice":
+            data.setdefault("assets", {}).setdefault("voices", {})[scene_id] = asset
         else:
             data["assets"]["music"] = asset
     return asset
@@ -643,6 +645,21 @@ def _compose(
         "plan_id": plan["id"],
         "plan_revision": plan["revision"],
         "assets": assets,
+        "asset_generation_blockers": (
+            []
+            if plan.get("match", {}).get("primary_recipe") == "R21"
+            else [
+                f"레시피 {plan.get('match', {}).get('primary_recipe') or '미지정'}는 자동 자산 생성 어댑터가 지원하지 않습니다."
+            ]
+        ),
+        "asset_generation": next(
+            (
+                item
+                for item in reversed(data.get("asset_generations", []))
+                if item.get("plan_revision") == plan["revision"]
+            ),
+            None,
+        ),
         "history": [
             {"revision": d["revision"], "dispatched_at": d["dispatched_at"], "final": (d.get("final") or {}).get("status")}
             for d in data["dispatches"]

@@ -21,7 +21,9 @@ from pydantic import Field
 from ttakkari.api.creative import _normalize, perform
 from ttakkari.api.deps import Db
 from ttakkari.creative.service import default_studio
+from ttakkari.creative.v2 import asset_generation
 from ttakkari.creative.v2 import dispatch as production
+from ttakkari.creative.v2.asset_generation_managed import ManagedAssetGenerator
 from ttakkari.creative.v2.capabilities import CAPABILITIES, Strict
 from ttakkari.creative.v2.catalog_data import CATALOG_NAMES, ENTRIES
 from ttakkari.creative.v2.duration import (
@@ -56,6 +58,7 @@ from ttakkari.creative.v2.style_dna import (
 from ttakkari.security.auth import User, decode, issue_download_token
 
 router = APIRouter(prefix="/api/creative/v2", tags=["creative-studio-v2"])
+_ASSET_GENERATION_TASKS: dict[tuple[str, int], asyncio.Task] = {}
 
 PlanId = Annotated[uuid.UUID, PathParam()]
 StyleId = Annotated[str, PathParam(pattern=r"^[a-z][a-z0-9_]{1,59}$")]
@@ -383,6 +386,37 @@ async def production_render(pid: PlanId, body: PlanApprove, _: User):
         str(pid),
         body.revision,
     )
+
+
+async def _run_asset_generation(plan_id: str, revision: int) -> None:
+    try:
+        await asyncio.to_thread(
+            asset_generation.generate_assets,
+            default_plan_store(),
+            plan_id,
+            revision,
+            ManagedAssetGenerator(),
+        )
+    except asset_generation.AssetGenerationError:
+        # 실패 상세는 자산 생성 service가 production.json에 기록한다.
+        return
+
+
+@router.post("/plans/{pid}/production/generate-assets", status_code=202)
+async def production_generate_assets(pid: PlanId, body: PlanApprove, _: User):
+    perform(default_plan_store().assert_renderable, str(pid), body.revision)
+    key = (str(pid), body.revision)
+    existing = _ASSET_GENERATION_TASKS.get(key)
+    if existing is not None and not existing.done():
+        return {"plan_id": str(pid), "plan_revision": body.revision, "status": "running"}
+    task = asyncio.create_task(_run_asset_generation(str(pid), body.revision))
+    _ASSET_GENERATION_TASKS[key] = task
+    def clear_task(done: asyncio.Task) -> None:
+        if _ASSET_GENERATION_TASKS.get(key) is done:
+            _ASSET_GENERATION_TASKS.pop(key, None)
+
+    task.add_done_callback(clear_task)
+    return {"plan_id": str(pid), "plan_revision": body.revision, "status": "queued"}
 
 
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".flac", ".ogg"}

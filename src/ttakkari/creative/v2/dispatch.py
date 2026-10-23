@@ -559,6 +559,38 @@ def _reconcile(
 # --- 공개 API -----------------------------------------------------------------
 
 
+def _caption_contract(plan: dict[str, Any], caption_mode: str) -> dict[str, Any]:
+    """자막 모드가 계획의 C10.subtitles 선택·대본과 어떻게 맞물리는지 기록한다.
+
+    title_only 는 유효한 명시적 모드라서 거부하지 않는다. 다만 브리프가 대본 자막을 기대할 수 있는
+    계획에서 대본이 화면에 나오지 않으면 검수자가 명세 위반과 의도된 모드를 구분할 수 있게 알린다.
+    """
+    selected = {s.get("entry_id") for s in (plan.get("match") or {}).get("selections", [])}
+    subtitles_selected = "C10.subtitles" in selected
+    with_narration = [s["scene_id"] for s in plan["scenes"] if str(s.get("narration") or "").strip()]
+    without = [s["scene_id"] for s in plan["scenes"] if s["scene_id"] not in with_narration]
+    notices: list[str] = []
+    if caption_mode == "title_only" and with_narration:
+        notices.append(
+            f"title_only: 대본이 있는 장면 {len(with_narration)}개의 내레이션은 화면 자막으로 나오지 않습니다."
+            + (" 계획에 C10.subtitles 선택이 있어 대본 자막이 기대될 수 있습니다." if subtitles_selected else "")
+            + " 대본 자막이 필요하면 새 revision을 caption_mode=narration으로 디스패치하세요."
+        )
+    if caption_mode == "narration" and without:
+        notices.append(
+            f"narration: 대본이 없는 장면 {len(without)}개는 제목 fallback 자막을 씁니다: " + ", ".join(without)
+        )
+    if caption_mode == "narration" and not with_narration:
+        notices.append("narration: 모든 장면의 대본이 비어 있어 자막이 전부 제목입니다.")
+    return {
+        "mode": caption_mode,
+        "plan_selects_subtitles": subtitles_selected,
+        "narration_scene_ids": with_narration,
+        "title_caption_scene_ids": without if caption_mode == "narration" else with_narration + without,
+        "notices": notices,
+    }
+
+
 def _new_record(
     plan: dict[str, Any], adapter: engines.EngineAdapter, pre: engines.Preflight, caption_mode: str
 ) -> dict[str, Any]:
@@ -582,6 +614,7 @@ def _new_record(
             )
             for scene in plan["scenes"]
         },
+        "caption_contract": _caption_contract(plan, caption_mode),
         "dispatched_at": _now(),
         "segments": [
             {
@@ -627,9 +660,17 @@ def dispatch(
     assert adapter is not None
     store = ProductionStore(plans)
     with store.tx(plan_id) as data:
-        if _record(data, revision) is None:
+        existing = _record(data, revision)
+        if existing is None:
             data["dispatches"].append(_new_record(plan, adapter, adapter.preflight(), caption_mode))
-        return _compose(plans, studio, plan, data, store)
+        view_ = _compose(plans, studio, plan, data, store)
+    if existing is not None and existing.get("caption_mode", "narration") != caption_mode:
+        # revision당 한 번만 디스패치되므로 뒤늦은 모드 요청은 적용되지 않는다. 조용히 무시하지 않고 알린다.
+        view_["caption_mode_request_ignored"] = (
+            f"이 revision은 이미 caption_mode={existing.get('caption_mode', 'narration')}로 디스패치되어 "
+            f"{caption_mode} 요청은 적용되지 않았습니다. 다른 모드는 새 revision 승인 후 디스패치하세요."
+        )
+    return view_
 
 
 def request_render(plans: PlanStore, studio: Studio, plan_id: str, revision: int) -> dict[str, Any]:
@@ -707,6 +748,7 @@ def _compose(
         "caption_mode": record.get("caption_mode") if record else None,
         "caption_timing": record.get("caption_timing") if record else None,
         "caption_sources": record.get("caption_sources") if record else None,
+        "caption_contract": record.get("caption_contract") if record else None,
         "assets": assets,
         "asset_generation_blockers": (
             []
@@ -750,7 +792,10 @@ def _compose(
         [
             s["id"]
             for s in segments
-            if s["run_key"] != _run_key(plan, s, data, record["engine"], record["style"])
+            if s["run_key"]
+            != _run_key(
+                plan, s, data, record["engine"], record["style"], record.get("caption_mode", "narration")
+            )
         ]
         if assets["complete"]
         else []

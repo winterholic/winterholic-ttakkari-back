@@ -113,6 +113,8 @@ Project → Sequence → Scene → Shot → Asset. 각 단계 독립 생성·검
 - 계획과 Comfy receipt를 scene별로 추적한다. 생성 receipt는 실제 prompt 원문과 UTF-8 SHA-256을 저장하고 Comfy receipt의 prompt hash와 일치해야 한다. 이 연결은 입력 추적 근거이며, 출력 이미지가 의미 요구와 일치한다는 판정은 별도 시각 검수로 남긴다.
 - R21 정지 이미지 경로는 정지 이미지 기반 슬라이드쇼로 설명한다. 이미 연결된 FFmpeg animation/transition 선택만 적용하고, 장면 prompt 개선이나 정지 이미지 지속을 영상 생성 모션 지원으로 표현하지 않는다.
 - 제작 dispatch의 `caption_mode`는 `narration`(기본) 또는 명시적 `title_only`다. narration 모드에서 대본이 비어 있는 장면은 제목 fallback으로 기록한다. narration 자막은 화면 폭의 84% 안전영역 안에서 두 줄 이하 cue로 나누고 실제 장면별 음성 asset 길이 안에 배치한다. 단어 단위 오디오 정렬이 없으면 타이밍은 추정으로 표시한다.
+- 두 모드는 서로 다른 명세다. `C10.subtitles`와 R21의 필수 능력 `edit.captions`는 "읽을 수 있는 자막이 화면에 있다"만 요구하며 대본이 자막이어야 한다고 정하지 않는다. 따라서 제목만 있는 영상은 `title_only`로 명시했다면 의도된 결과이고 모드 위반이 아니다. 브리프가 내레이션 자막을 기대하는데 화면에 제목만 나오면 모드 선택 오류이거나 구버전 기본 동작이다. 판정은 dispatch 기록의 `caption_contract`(모드, `plan_selects_subtitles`, 대본 장면, 제목 자막 장면, notices)로 구분한다. `title_only`가 대본 있는 장면에서 선택되면 notices에 대본 자막이 나오지 않는다고 남긴다.
+- revision당 dispatch는 한 번이라 이미 기록된 모드와 다른 `caption_mode`를 뒤늦게 요청하면 적용되지 않으며, 응답에 `caption_mode_request_ignored`로 알린다. 다른 모드는 새 revision 승인 후 dispatch한다. 구간의 stale 판정(`outdated_segments`)은 기록된 `caption_mode`로 run key를 계산한다.
 - 기계 미디어 QA 성공은 장면 내용·시청 가치·발음·음악과 음성의 청감 품질을 입증하지 않는다. 음향 청취와 장면 의미 검수는 실행한 경우만 별도로 기록한다.
 
 ## QA·피드백·학습

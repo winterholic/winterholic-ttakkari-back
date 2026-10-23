@@ -42,3 +42,32 @@
 현재 deployed runtime revision `81a95a5...`가 구 코드이고 다른 배포가 `draining` 상태여서 이 코드로 새 sample을 생성하지 않았다. 새 SHA 배포 예약 후 candidate가 활성화되면 기존 plan/asset을 수정하지 말고 새 plan revision/approval/generation으로 3장면을 생성해야 한다. 그 결과에서 s1 푸른 여명/가로등, s2 버스와 청소인력, s3 해와 한강 수면 반사를 각각 contact sheet로 직접 판정하고 미충족은 그대로 기록한다. 기존 lease/TTS loop, ownership, approval, revision/hash 검사, resume key와 QA 보호를 유지한다. `2ac86aa4...needs_reconcile` 작업은 건드리지 않았다.
 
 새 영상은 아직 없음: 실제 신규 시각 QA와 contact sheet 비교는 미실행이다. 음성 청취도 미실행이며 파형/음량에서 발음이나 배경음 명료성을 추론하지 않았다. 이 샘플은 다섯 편의 다양한 영상 E2E 검증으로 계산하지 않는다.
+
+
+## 보강: 자막 모드 계약 검증 (2026-10-23 18:5x KST)
+
+기준 SHA는 `4f341c5`이며 이미 `b2faeb5`(plan style `style_id`+`version` 검증, 422) 위에 있다. 재기반 충돌은 없고 해당 변경은 그대로 보존했다.
+
+### 계약 확인
+
+- `C10.subtitles`(catalog)는 `edit.captions`를 요구하고 "글자 크기 하한과 읽는 시간 확보"만 말한다. R21의 필수 능력도 `edit.captions`다. 둘 다 자막 내용이 대본이어야 한다고 정하지 않는다.
+- 따라서 제목만 있는 영상은 `title_only`를 명시했다면 명세 위반이 아니다. 독립 검수의 "제목-only"를 곧바로 명세 위반으로 확정하지 않는다. 다만 브리프(한국어 자막, 차분한 한국어 내레이션)는 대본 자막을 기대할 수 있고, 기존 R21 영상은 구버전 dispatch가 모드 구분 없이 제목을 쓴 결과였다.
+- 이 해석은 코드와 문서 근거이며 사용자 의도를 직접 확인한 것은 아니다. 확인 필요.
+
+### 변경
+
+- dispatch 기록과 status에 `caption_contract`를 추가했다. 모드, 계획의 `C10.subtitles` 선택 여부(`plan_selects_subtitles`), 대본이 있는 장면, 제목 자막 장면, 사람이 읽는 notices를 담는다. `title_only`로 대본 있는 장면을 렌더하면 대본이 화면에 나오지 않는다고 알린다. `narration`에서 대본이 빈 장면은 제목 fallback으로 알린다.
+- 이미 다른 모드로 dispatch된 revision에 뒤늦게 `caption_mode`를 요청하면 조용히 무시하지 않고 응답에 `caption_mode_request_ignored`를 넣는다.
+- 버그 수정: status의 `outdated_segments` 계산이 기록된 `caption_mode`를 쓰지 않고 항상 narration 기본값으로 run key를 만들었다. `title_only` 성공 렌더가 "다시 렌더할 구간"으로 보이는 문제다. 새 테스트는 수정을 되돌리면 `outdated_segments` 단언에서 실패함을 확인했다.
+
+### 검증
+
+- 새 테스트 2개(`test_caption_contract_...`, `test_title_only_dispatch_renders_...`)는 임시 홈에서 실제 ffmpeg 렌더까지 실행한다. 실제 Comfy/ACE-Step 생성은 하지 않았다(GPU 경쟁 방지 지시).
+
+### 적용 후 관찰 기준 (E2E 담당용)
+
+- 새 plan을 만들 때 `style`에는 `{style_id, version}` 형태 DNA ref만 넣는다. catalog `entry_id`는 `style`이 아니라 intent `selections`에 둔다.
+- 대본 자막이 목표면 dispatch를 `caption_mode=narration`(기본)으로 한다. dispatch 응답의 `caption_contract.mode == "narration"`, `narration_scene_ids`가 전 장면이고 `notices`가 비어 있는지 본다.
+- 렌더 후 project의 scene별 `caption_segments`가 그 장면 narration과 같고, 마지막 cue `end`가 voice asset 길이인지, SRT가 같은 구간인지 본다. 타이밍은 추정이며 청취 sync는 미검증이다.
+- 장면 prompt는 generation receipt의 `prompt`/`prompt_sha256`을 보고 s1은 푸른 새벽 골목과 가로등, s2는 첫 버스와 환경미화원, s3는 한강 해돋이와 금빛 윤슬만 담았는지 확인한다. 최종 판정은 contact sheet 시각 검수이며 prompt 문자열 일치로 대체하지 않는다.
+- 새 영상의 실출력은 아직 없다. 장면 의미 일치와 음성 청취는 **미실행**이다.

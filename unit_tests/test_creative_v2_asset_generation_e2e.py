@@ -385,3 +385,46 @@ async def test_tts_budget_runs_on_the_server_loop_when_generation_runtime_is_act
     path, receipt = await asyncio.to_thread(generator._synthesize_voice, "안녕하세요. 테스트 문장입니다.", tmp_path / "tts")
 
     assert path.is_file() and receipt["real_execution"] is True
+
+
+def test_caption_contract_distinguishes_title_only_from_narration_subtitles():
+    scenes = [
+        {"scene_id": "s1", "title": "새벽 골목", "narration": "가로등이 꺼집니다."},
+        {"scene_id": "s2", "title": "도시가 깨어난다", "narration": ""},
+    ]
+    plan = {"scenes": scenes, "match": {"selections": [{"entry_id": "C10.subtitles"}]}}
+
+    title_only = dispatch._caption_contract(plan, "title_only")
+    assert title_only["plan_selects_subtitles"] is True
+    assert title_only["title_caption_scene_ids"] == ["s1", "s2"]
+    assert "C10.subtitles" in title_only["notices"][0] and "narration" in title_only["notices"][0]
+
+    narration = dispatch._caption_contract(plan, "narration")
+    assert narration["narration_scene_ids"] == ["s1"]
+    assert narration["title_caption_scene_ids"] == ["s2"]
+    assert "s2" in narration["notices"][0]
+
+    silent = dispatch._caption_contract({"scenes": [dict(s, narration="") for s in scenes], "match": {}}, "narration")
+    assert silent["plan_selects_subtitles"] is False
+    assert any("모든 장면" in notice for notice in silent["notices"])
+
+
+def test_title_only_dispatch_renders_and_stays_current_and_late_mode_change_is_reported(pipeline):
+    _settings, plans, plan, generator, _controller, studio = pipeline
+    asset_generation.generate_assets(plans, plan["id"], plan["revision"], generator)
+
+    first = dispatch.dispatch(plans, studio, plan["id"], plan["revision"], caption_mode="title_only")
+    assert first["caption_contract"]["mode"] == "title_only"
+    assert first["caption_contract"]["notices"]
+    assert "caption_mode_request_ignored" not in first
+
+    again = dispatch.dispatch(plans, studio, plan["id"], plan["revision"], caption_mode="narration")
+    assert again["caption_mode"] == "title_only"
+    assert "title_only" in again["caption_mode_request_ignored"]
+
+    dispatch.request_render(plans, studio, plan["id"], plan["revision"])
+    _run_renderer(studio)
+    done = dispatch.view(plans, studio, plan["id"])
+    # title_only run_key 와 같은 방식으로 stale 여부를 계산해야 성공 렌더가 다시 렌더 대상으로 보이지 않는다.
+    assert done["outdated_segments"] == []
+    assert done["state"] == "succeeded", done

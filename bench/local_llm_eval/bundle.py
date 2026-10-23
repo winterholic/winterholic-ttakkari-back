@@ -91,13 +91,41 @@ def _check_permissions(root: Path) -> None:
         )
 
 
-def read_bundle(root: Path = SEALED_ROOT) -> dict[str, bytes]:
-    """Every regular file under root as bytes, refusing symlinks and group/other access."""
-    root = Path(root)
-    if not root.exists():
-        raise BundleError(codes.INFRA_SEALED_MISSING, "sealed bundle directory absent")
-    _check_permissions(root)
-    out: dict[str, bytes] = {}
+def _refuse(rel: str, why: str) -> BundleError:
+    return BundleError(
+        codes.INFRA_SEALED_COMMITMENT_MISMATCH, f"{why} in bundle: {rel}"
+    )
+
+
+def _read_regular(path: Path, rel: str) -> bytes:
+    """Read one regular, single-link file without ever blocking on or following something else.
+
+    The type is checked on the opened descriptor, so an entry swapped for a symlink, FIFO or socket after
+    the directory scan is still refused; O_NONBLOCK keeps a FIFO from stalling the open.
+    """
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        raise _refuse(rel, f"unreadable entry ({type(exc).__name__})") from exc
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise _refuse(rel, "non-regular file")
+        if info.st_nlink > 1:
+            raise _refuse(rel, "hard-linked file")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            return handle.read()
+    finally:
+        os.close(descriptor)
+
+
+def scan_entries(root: Path, enforce_access: bool = True) -> list[tuple[str, Path]]:
+    """Regular files under root. Only directories and regular single-link files are allowed.
+
+    Symlinks (to anything), FIFOs, sockets, devices and hard-linked files are refused, never skipped.
+    Nothing is opened here, so a special file cannot block the scan.
+    """
+    found: list[tuple[str, Path]] = []
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames.sort()
         for name in sorted(dirnames + filenames):
@@ -105,17 +133,29 @@ def read_bundle(root: Path = SEALED_ROOT) -> dict[str, bytes]:
             info = path.lstat()
             rel = path.relative_to(root).as_posix()
             if stat.S_ISLNK(info.st_mode):
-                raise BundleError(
-                    codes.INFRA_SEALED_COMMITMENT_MISMATCH, f"symlink in bundle: {rel}"
-                )
-            if info.st_mode & 0o077:
+                raise _refuse(rel, "symlink")
+            if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                raise _refuse(rel, "non-regular entry")
+            if enforce_access and info.st_mode & 0o077:
                 raise BundleError(
                     codes.INFRA_SEALED_PERMISSIONS,
                     f"{rel} is accessible to group/other",
                 )
-            if stat.S_ISREG(info.st_mode):
-                out[rel] = path.read_bytes()
-    return out
+            if stat.S_ISDIR(info.st_mode):
+                continue
+            if info.st_nlink > 1:
+                raise _refuse(rel, "hard-linked file")
+            found.append((rel, path))
+    return found
+
+
+def read_bundle(root: Path = SEALED_ROOT) -> dict[str, bytes]:
+    """Every file under root as bytes. Non-regular entries and group/other access are refused."""
+    root = Path(root)
+    if not os.path.lexists(root):
+        raise BundleError(codes.INFRA_SEALED_MISSING, "sealed bundle directory absent")
+    _check_permissions(root)
+    return {rel: _read_regular(path, rel) for rel, path in scan_entries(root)}
 
 
 def commitment_key(path: str) -> str:
@@ -323,8 +363,14 @@ def seal(
 ) -> dict:
     """Author-side: write manifest.sealed.json, lock permissions, write the public commitments."""
     root = Path(root)
-    for path in [root, *root.rglob("*")]:
-        path.chmod(0o700 if path.is_dir() else 0o600)
+    # refuse links and special files before any chmod: chmod would follow a symlink out of the bundle
+    entries = scan_entries(root, enforce_access=False)
+    root.chmod(0o700)
+    for dirpath, dirnames, _ in os.walk(root, followlinks=False):
+        for name in dirnames:
+            (Path(dirpath) / name).chmod(0o700)
+    for _, path in entries:
+        path.chmod(0o600)
     manifest_path = root / MANIFEST_NAME
     manifest_path.unlink(missing_ok=True)
     data = read_bundle(root)

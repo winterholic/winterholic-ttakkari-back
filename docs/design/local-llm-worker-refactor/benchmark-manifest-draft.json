@@ -2256,7 +2256,7 @@
    "cd bench && python3 -m local_llm_eval.selfcheck",
    "cd bench && python3 -m pytest local_llm_eval/tests -q"
   ],
-  "tests": 435,
+  "tests": 480,
   "negatives_total": 366,
   "false_positives": 0,
   "interface_only_pending_2_2": [
@@ -2374,6 +2374,7 @@
   "evidence/4.2/holdout/sealed-deny.json": "aaeeabd4987438ba1992396f4d9f41072a2cc31554bd754c58157c42eda7f2b2",
   "evidence/4.2/holdout/sandbox.json": "ad1197add4e8eb5a2ce808a6cdcc79c41ba2c2930b1835c03f6d69a9f1a00862",
   "evidence/4.2/holdout/environment.json": "ef26dacb74ea3ede7423cd13bc790846d3baf0d2d88b8e31fee244ab8d8247cd",
-  "evidence/4.2/holdout/pytest-isolation-on.txt": "d1757d73a667dcc89ab104cc78633865a0210342659ba9f41b51560e9ca0858a"
+  "evidence/4.2/holdout/pytest-isolation-on.txt": "d1757d73a667dcc89ab104cc78633865a0210342659ba9f41b51560e9ca0858a",
+  "evidence/4.2/holdout/pytest-isolation-on-noncanonical-fix.txt": "5e9a3b1051877484191e4962151ea7307ac8fe5da94d0ce216cf36ce2e3e6d57"
  }
 }

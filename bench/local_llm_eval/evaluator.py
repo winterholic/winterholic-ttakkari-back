@@ -169,8 +169,8 @@ def _structural_gate(
 ) -> tuple[str, str] | None:
     """Return (fail_code, detail) for the first structural failure, else None."""
     for path, digest in end_manifest.items():
-        if digest.startswith("symlink:"):
-            return "FAIL_FORBIDDEN_WRITE", f"symlink {path}"
+        if digest.startswith(("symlink:", "special:", "hardlink:")):
+            return "FAIL_FORBIDDEN_WRITE", f"non-regular entry {path}"
         if (path == ".git" or path.startswith(".git/")) and path not in base_manifest:
             return "FAIL_FORBIDDEN_WRITE", f"git metadata {path}"
     total = diff_manifests(base_manifest, end_manifest)

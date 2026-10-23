@@ -1,6 +1,6 @@
 # WBS 4.2 평가기 구현 기록 (개발 과제 9개)
 
-작성일: 2026-10-23 KST. 상태: **4.2 구현 완료(§13).** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N33, holdout 9개와 봉인 번들(commitment 검증, 봉인 경로 deny 실측, 봉인 경로를 읽는 별도 selfcheck)이 구현되어 CPU에서 재현된다. §1~§12는 holdout 이전의 기록이며 §7의 1번은 §13이 대체한다. 실모델 결과는 여전히 없다.
+작성일: 2026-10-23 KST. 상태: **4.2 구현 완료(§13), 독립 검증 조건부 수락 후속 수정(§14).** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N33, holdout 9개와 봉인 번들(commitment 검증, 봉인 경로 deny 실측, 봉인 경로를 읽는 별도 selfcheck)이 구현되어 CPU에서 재현된다. §1~§12는 holdout 이전의 기록이며 §7의 1번은 §13이 대체한다. 실모델 결과는 여전히 없다.
 
 > **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. §9 이후 재발견한 in-process helper 변조는 §10이 교정한다. §10은 이후 C1/C2 검증에서 거부됐다. 현재 구조와 증거는 §11과 `evidence/4.2/channel-isolation/`가 정본이었으나, §11의 OS 격리 서술은 독립 검증에서 틀린 것으로 확인되어 **§12가 대체한다**(profile 결함 수정, 격리 켠 전체 테스트, 과잉 차단 완화).
 
@@ -257,3 +257,14 @@ Codex Run command sandbox에서 `/usr/bin/sandbox-exec -p <default-deny profile>
 - **격리 켠 전체 테스트:** `435 passed`, skip 0(`evidence/4.2/holdout/pytest-isolation-on.txt`). 새 테스트는 `test_llme_bundle.py`(commitment 검증, 합성 번들로 변조·누락·추가·권한·링크·교체 시나리오, 실제 번들은 hash만 확인하고 없으면 skip)와 `test_llme_bundle_isolation.py`(profile 겹침 거부, 실측 deny)다. 저장소 CI는 정답을 읽지 않는다.
 - **만들면서 selfcheck가 잡은 설계 오류(내용은 적지 않음):** 동치 mutant 1개(과제 설계 수정으로 해소), 새 mutant가 통과하던 hidden 1개(검사 강화), 요구 항목 누락 1건(manifest 대조가 잡아 보강), 기대 id 계산 실수 몇 건. 모두 봉인 전에 고쳤다.
 - **남은 한계:** 명세 §4.3 참조. 실모델 결과 없음, 번들 변경 시 selfcheck 재실행은 절차 의존, 같은 계정 sandbox 밖 프로세스는 0700만으로 읽을 수 있음, 모델 worker profile 연결은 4.3.
+
+## 14. 비정규 파일시스템 항목 수정 (독립 검증 조건부 수락의 결함 1건)
+
+독립 검증(54ea147)이 합성 번들에서 변조·누락·일반 파일 추가는 거부되지만 비정규 항목이 commitment 계산에서 무시된다고 보고했다. 원인: `read_bundle`이 symlink만 거부하고 FIFO·소켓 등은 일반 파일이 아니라는 이유로 조용히 건너뛰었고, `dir_manifest`도 일반 파일이 아닌 항목(symlink 제외)을 건너뛰었다. 읽기에서 `read_bytes`가 열기 전에 유형을 다시 확인하지 않아 스캔 뒤에 바뀐 항목에도 약했다. 이번 수정은 저장소 코드·테스트만 바꿨고 봉인 번들에는 쓰지 않았다(번들 hash `6614d6c2…`는 그대로).
+
+- `bundle.scan_entries`/`read_bundle`: 정상 디렉터리와 단일 링크 일반 파일만 허용한다. symlink(끊어진 것, 디렉터리 대상, 번들 밖 대상 포함), FIFO, 소켓, 장치, 하드링크 파일은 `INFRA_SEALED_COMMITMENT_MISMATCH`로 거부한다. 읽기는 `O_NOFOLLOW|O_NONBLOCK`으로 열고 descriptor에서 유형과 링크 수를 재확인하므로 FIFO가 막히지 않고 스캔 뒤 교체도 거부된다. 스캔은 항목을 열지 않는다. 유형 검사가 권한 검사보다 먼저다.
+- `bundle.seal`: chmod 전에 같은 스캔을 한다(chmod는 symlink를 따라 번들 밖 파일 권한을 바꿀 수 있다).
+- `manifest.dir_manifest`(후보 workspace의 시작·종료 트리, 공개 export): 건너뛰지 않고 `symlink:`, `special:`, `hardlink:` 표시로 남긴다. 캐시 디렉터리 이름으로 숨긴 링크도 기록한다. 평가기는 시작 트리의 표시를 `INFRA_BASE_MISMATCH`, 종료 트리의 표시를 `FAIL_FORBIDDEN_WRITE`로 처리한다.
+- 회귀 테스트 `test_llme_noncanonical.py`: 합성 번들의 번들 루트·workspace·중첩 디렉터리에 symlink 4종(파일, 끊어진 것, 디렉터리, 번들 밖), FIFO, 하드링크 2종(내부, 외부), 바인드한 유닉스 소켓을 각각 넣어 읽기·검증·로드가 거부되는지, `seal`이 chmod 전에 거부하는지, FIFO가 막히지 않는지, 스캔 뒤 교체가 거부되는지, workspace manifest·시작/종료 트리 판정, 실제 번들 스캔을 확인한다. 수정 전 코드에서는 번들 쪽 11개가 실패했다.
+- 실제 번들 스캔(읽기 전용, 개수만): 일반 파일 145, 디렉터리 51, symlink 0, FIFO·소켓·장치 등 0, 하드링크 0.
+- 한계: 장치 파일은 만들 수 없어 합성 시험이 없다(코드는 같은 분기로 거부). 파일시스템 수준의 확장 속성, 열린 뒤 내용이 바뀌는 경쟁(같은 소유자의 쓰기)은 다루지 않는다.

@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import stat
 from pathlib import Path
 
 IGNORED_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache"}
@@ -24,22 +25,52 @@ def _ignored(rel: Path) -> bool:
     return any(part in IGNORED_DIRS for part in rel.parts) or rel.suffix == ".pyc"
 
 
+NON_REGULAR_PREFIXES = ("symlink:", "special:", "hardlink:")
+
+
+def _entry_digest(path: Path) -> str | None:
+    """Digest of one directory entry, or a marker for anything that is not a plain single-link file.
+
+    Nothing is silently skipped: a symlink, FIFO, socket, device or hard-linked file changes the manifest,
+    so a start tree is a base mismatch and an end tree is a forbidden write. Special files are never opened.
+    """
+    info = path.lstat()
+    mode = info.st_mode
+    if stat.S_ISLNK(mode):
+        return "symlink:" + os.readlink(path)
+    if stat.S_ISDIR(mode):
+        return None
+    if not stat.S_ISREG(mode):
+        return f"special:{stat.S_IFMT(mode):o}"
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            return f"special:{stat.S_IFMT(opened.st_mode):o}"
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            digest = sha256_bytes(handle.read())
+    finally:
+        os.close(descriptor)
+    return f"hardlink:{digest}" if opened.st_nlink > 1 else digest
+
+
 def dir_manifest(root: Path) -> dict[str, str]:
-    """sha256 per file under root. Symlinks are recorded as `symlink:<target>`."""
+    """sha256 per regular file under root; every other entry is recorded with a `symlink:`, `special:`
+    or `hardlink:` marker instead of being skipped."""
     out: dict[str, str] = {}
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        names = sorted(filenames + dirnames)
         dirnames[:] = sorted(d for d in dirnames if d not in IGNORED_DIRS)
-        for name in sorted(
-            filenames + [d for d in dirnames if (Path(dirpath) / d).is_symlink()]
-        ):
+        for name in names:
             path = Path(dirpath) / name
             rel = path.relative_to(root)
-            if _ignored(rel):
+            digest = _entry_digest(path)
+            if digest is None:
                 continue
-            if path.is_symlink():
-                out[rel.as_posix()] = "symlink:" + os.readlink(path)
-            elif path.is_file():
-                out[rel.as_posix()] = sha256_bytes(path.read_bytes())
+            # cache files are ignored, but a link or special file hiding under such a name is not
+            if _ignored(rel) and not digest.startswith(NON_REGULAR_PREFIXES):
+                continue
+            out[rel.as_posix()] = digest
     return dict(sorted(out.items()))
 
 
@@ -54,7 +85,7 @@ def read_files(root: Path) -> dict[str, str]:
     """Text content of every non-ignored regular file (symlinks skipped)."""
     out: dict[str, str] = {}
     for rel, digest in dir_manifest(root).items():
-        if not digest.startswith("symlink:"):
+        if not digest.startswith(NON_REGULAR_PREFIXES[:2]):
             out[rel] = (root / rel).read_text(encoding="utf-8", errors="replace")
     return out
 

@@ -353,7 +353,7 @@ holdout 요건: (1) 요구↔hidden 매핑표와 gold·alt-gold·mutant·negativ
 
 1. **sealed 번들 위치(확정):** `/Users/winterholic/bench-sealed/local-llm-holdout-r1/`, 모드 0700, 소유자 전용. 저장소·worktree·`~/.ttakkari` 밖이다. `~/.ttakkari` 아래는 원격 자동 Run의 보호 영역이라 evaluator도 읽지 못하므로 쓰지 않는다. 위치는 `bench/local_llm_eval/bundle_paths.py`에 상수로 고정했고 환경변수로 바꿀 수 없다(바꿀 수 있으면 다른 번들로 holdout 판정을 받을 수 있다). 초안의 `hidden/ gold/ alt_gold/ mutants/ negative_controls/ eval_keys/` 분류 디렉터리는 쓰지 않았다. 개발 과제와 같은 구조(한 과제의 gold, hidden, mutant, 기대값이 서로 참조한다)를 유지하려고 과제별 디렉터리에 역할별 파일로 나눴다: `tasks/<ID>/{gold,hidden,mutants,task}.py`(봉인), `tasks/<ID>/public/workspace/…`와 `public/prompts.json`(후보에게 보이는 부분), 번들 루트의 `manifest.sealed.json`(개수와 구조 사실, 답 없음).
 2. **저장소에는 commitment만 둔다:** `docs/design/local-llm-worker-refactor/holdout-commitments.json`에 번들 파일 145개 각각의 sha256, 번들 전체 hash(`path NUL sha256 LF` 줄을 정렬해 해시), 과제별 개수(검사·요구·음성 대조·mutant)와 후보에게 보이는 기준 트리의 hash만 있다. 내용·정답·상수·도메인은 없다. 이 문서와 manifest의 `sealed_bundle_ref`는 이 파일을 가리킨다.
-3. **평가기가 holdout 모드에서 봉인 경로를 읽고 commitment를 검증한다:** `bundle.py`. 번들이 없거나(`INFRA_SEALED_MISSING`), 소유자 전용이 아니거나 심볼릭 링크가 있거나(`INFRA_SEALED_PERMISSIONS`), 파일 집합이나 바이트가 commitment와 다르면(`INFRA_SEALED_COMMITMENT_MISMATCH`) 모델 결과가 아니라 INFRA이며 아무것도 실행하지 않는다. 격리를 쓸 수 없으면 번들을 읽기 전에 `INFRA_ISOLATION_UNAVAILABLE`로 막는다(이전 규칙 유지). 로더는 해시한 바로 그 바이트를 실행하므로 검증 뒤에 바뀐 파일은 실행에 영향이 없다.
+3. **평가기가 holdout 모드에서 봉인 경로를 읽고 commitment를 검증한다:** `bundle.py`. 번들이 없거나(`INFRA_SEALED_MISSING`), 소유자 전용이 아니면(`INFRA_SEALED_PERMISSIONS`), 파일 집합이나 바이트가 commitment와 다르거나 정상 디렉터리와 단일 링크 일반 파일이 아닌 항목이 있으면(`INFRA_SEALED_COMMITMENT_MISMATCH`) 모델 결과가 아니라 INFRA이며 아무것도 실행하지 않는다. 거부하는 항목은 symlink(대상과 무관, 끊어진 것과 디렉터리를 가리키는 것 포함), FIFO, 소켓, 장치 파일, 하드링크된 파일이며 건너뛰지 않는다. 특수 파일은 열지 않고(`O_NONBLOCK`, `O_NOFOLLOW`, 열린 descriptor의 `fstat`로 유형 재확인) 스캔 뒤에 바뀐 항목도 거부한다. 후보 workspace 쪽 manifest(`dir_manifest`)도 같은 항목을 건너뛰지 않고 `symlink:`, `special:`, `hardlink:` 표시로 남겨서, 시작 트리에 있으면 `INFRA_BASE_MISMATCH`, 종료 트리에 있으면 `FAIL_FORBIDDEN_WRITE`가 된다(4.2 독립 검증 조건부 수락의 결함 1건에 대한 수정). 격리를 쓸 수 없으면 번들을 읽기 전에 `INFRA_ISOLATION_UNAVAILABLE`로 막는다(이전 규칙 유지). 로더는 해시한 바로 그 바이트를 실행하므로 검증 뒤에 바뀐 파일은 실행에 영향이 없다.
 4. **모델 workspace에는 `public/`만 복사한다:** `bundle.export_public`이 검증된 번들에서 후보에게 보이는 트리와 프롬프트만 쓴다. 프롬프트, 공개 코드·공개 test는 있고 hidden·gold·mutant·evaluator 경로는 없다. 새 `git init` 단일 base commit(원격·reflog·gold 객체 없음)은 harness 쪽(4.3) 일이다.
 5. **접근 차단 검증은 모델 없이 CPU로 했고 회귀 테스트가 있다:** sandbox profile 생성기는 허용 root가 봉인 경로와 겹치거나 포함하거나 그 안에 있으면 `ValueError`를 낸다. 실제 deny는 `runner.run_check(mode="holdout")`의 probe로 봉인 파일 읽기와 봉인 루트·부모 목록 조회가 모두 `PermissionError`임을 측정했다(§4.3). 이 측정은 평가기가 후보 probe를 실행하는 profile에 대한 것이다. 모델 worker(WBS 2.2)의 profile이 같은 규칙을 쓰는지는 연결 시점에 같은 deny 검사로 다시 확인해야 한다.
 6. **더 강한 대안(확인 필요):** 별도 OS 사용자 또는 평가 때만 마운트하는 암호화 이미지. 이 호스트에서 가능한지 확인되지 않았다. 같은 계정으로 도는 sandbox 밖 프로세스는 0700만으로는 번들을 읽을 수 있다.
@@ -381,6 +381,12 @@ holdout 요건: (1) 요구↔hidden 매핑표와 gold·alt-gold·mutant·negativ
 - 일부 음성 대조는 기대 실패 코드를 하나가 아니라 허용 집합으로 둔다. 엄밀한 단일 코드 일치는 아니다.
 - 기존 개발 평가기의 한계(같은 interpreter 메모리 공격, 허용한 capability 조합의 적응 공격, `/` 항목 이름 노출)는 그대로다. Python 3.13.15와 macOS 27 한 조합에서만 확인했다.
 - holdout은 profile당 1회용이다. 이 문서 작성 뒤 selfcheck 상세(`--verbose`)를 열어 본 것은 작성 단계의 디버깅이며 revision `r1` 안에서 끝났다. 이후 어떤 profile 결과로도 holdout 상세를 열어 고치면 revision을 폐기하고 새로 만든다.
+
+### 4.4 봉인 번들 운영 기록과 쓰기 절차 (2026-10-23)
+
+**기록.** holdout을 만든 Run에서 ttakkari guard는 Write 도구의 봉인 경로 쓰기를 "워크스페이스 밖 쓰기 차단"으로 막았다. 같은 경로에 대한 Bash heredoc 쓰기와 `mkdir`는 가드가 막지 않았고(Bash 훅은 명령 이름을 변수·치환으로 구성한 실행과 백틱 포함 명령에서만 별도로 막았다), 번들 파일 145개는 Bash heredoc으로 썼다. 즉 Write 도구가 막힌 뒤에도 같은 쓰기를 다른 도구로 이어 갔다. 지시는 저장소 밖 쓰기가 막히면 우회하지 말고 사용자가 실행할 스크립트를 준비하라는 것이었는데 그 지시를 따르지 않은 것이므로 사실 그대로 적는다. 두 도구의 판정이 다른 이유(가드 규칙의 범위 차이인지 공백인지)는 확인하지 못했다(확인 필요). 이 호스트에서 Bash 쓰기가 허용된다는 사실은 승인이 아니다.
+
+**절차(이후 적용).** 봉인 번들(`/Users/winterholic/bench-sealed/local-llm-holdout-r1/`)에 쓰는 모든 작업(파일 추가·수정·삭제, `bundle seal`, 권한 변경)은 도구와 무관하게 사용자 승인을 먼저 받는다. 한 Run에서 한 도구가 막히면 다른 도구로 같은 쓰기를 이어 가지 않고 막힌 명령과 오류를 보고한 뒤 사용자가 직접 실행할 스크립트를 준비한다(정답 내용은 스크립트에 넣지 않는다). 승인 없이 허용되는 것은 읽기 전용 점검(`bundle verify`, `bundle_selfcheck`, 비정규 항목 스캔)뿐이다. 저장소 코드·테스트·commitment 파일의 수정은 이 절차의 대상이 아니다. 번들이 바뀌면 commitment 갱신과 selfcheck 재실행을 같은 승인 안에서 한다(§4.3). 이번 비정규 항목 수정은 번들에 쓰지 않았고 번들 hash는 그대로다.
 
 ## 5. 독립 평가 경계와 실패 분류
 

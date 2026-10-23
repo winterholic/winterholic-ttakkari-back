@@ -2167,27 +2167,35 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
     return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + run.prompt
 
 
-async def _system_note(db: AsyncSession, outbox: Path, sess: ChatSession, scope: str = "all") -> str:
-    """기본 안내 + 도구 안내 + 비서 지침(~/.ttakkari/harness, 공통 + 역할) + 고정 기억. 매 Run 에 들어가므로 짧게 유지한다(ADR 0007, 0020)."""
-    parts = [SYSTEM_NOTE.format(outbox=outbox), AGENT_NOTE, capabilities.prompt_note()]
+async def _system_note_parts(db: AsyncSession, outbox: Path, sess: ChatSession, scope: str = "all") -> list[tuple[str, str]]:
+    """(레이어 id, 본문) 순서 목록. 하네스 조회 화면(harness_view)이 같은 목록을 그대로 보여 주므로 순서·id 를 바꾸면 그쪽 시험이 깨진다."""
+    parts = [("system_note", SYSTEM_NOTE.format(outbox=outbox)), ("agent_note", AGENT_NOTE),
+             ("capabilities", capabilities.prompt_note())]
     role: instructions_mod.Role | None = None
     if sess.kind == SessionKind.orchestrator:
         # 접수가 만든 기획 세션은 사용자와 직접 대화하지 않는다. 옛 메인 오케스트레이터(부모 없음)는 그대로.
-        parts.append(LEAD_NOTE if sess.parent_id else ORCHESTRATOR_NOTE)
+        parts.append(("lead_note", LEAD_NOTE) if sess.parent_id else ("orchestrator_note", ORCHESTRATOR_NOTE))
         role = "lead"
     elif sess.kind == SessionKind.worker:
         role = "worker"
-    for label, text in (("User's standing instructions for this assistant", instructions_mod.read("common")),
-                        ("Instructions for your role", instructions_mod.read(role) if role else "")):
+    for key, label, text in (("common_instructions", "User's standing instructions for this assistant",
+                              instructions_mod.read("common")),
+                             ("role_instructions", "Instructions for your role",
+                              instructions_mod.read(role) if role else "")):
         if text:
-            parts.append(f"[{label}]\n{text}")
+            parts.append((key, f"[{label}]\n{text}"))
     brief = await pinned_brief(db, scope=scope)
     if brief:
-        parts.append("[Pinned facts about the user — use recall for more]\n" + brief)
+        parts.append(("pinned_brief", "[Pinned facts about the user — use recall for more]\n" + brief))
     if sess.kind == SessionKind.orchestrator:
         from ttakkari.orchestrator.runtime import model_routing_note
-        parts.append(model_routing_note())
-    return "\n\n".join(parts)
+        parts.append(("routing_note", model_routing_note()))
+    return parts
+
+
+async def _system_note(db: AsyncSession, outbox: Path, sess: ChatSession, scope: str = "all") -> str:
+    """기본 안내 + 도구 안내 + 비서 지침(~/.ttakkari/harness, 공통 + 역할) + 고정 기억. 매 Run 에 들어가므로 짧게 유지한다(ADR 0007, 0020)."""
+    return "\n\n".join(text for _, text in await _system_note_parts(db, outbox, sess, scope))
 
 
 def _iso(epoch: float | None) -> str | None:

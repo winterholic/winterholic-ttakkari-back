@@ -521,6 +521,19 @@ Frontend는 preview → 사용자가 선택·검토 → 게시 → capability fr
 `GET /api/accounts`도 Muse의 공식 로그인 관측값을 사용한다. 첫 수집 전에는 동일한 읽기 전용 조회로 상태를 확인하며 이후에는 수집기 TTL 캐시를 재사용한다. 사용량 창이 비어 있어도 `accountLogin`이면 `login=ok`, `login_command=null`이다. Muse의 `config_dir` 변경 시 이전 프로필의 관측 캐시는 폐기한다. 로그인 여부와 사용량 수치 제공 여부를 혼동하지 않는다.
 
 
+### 하네스 조회 (ADR 0069)
+
+소유자 JWT 전용 읽기 API. 에이전트 세션 토큰은 401이다.
+
+| 메서드 | 경로 | 응답 |
+|---|---|---|
+| GET | `/api/harness?refresh=` | `{generated_at,total,present,categories:[{id,label,total,present,missing,inactive,warnings}],engines,scopes,warning_total,warning_kinds,warnings:[{item_id,name,category,engine,kind,message,count}],session_kinds,layer_engines}` |
+| GET | `/api/harness/items?q=&category=&engine=&scope=&active=&warned=&present=&session=&group=&limit=&cursor=` | `{total,items:[{id,category,name,group,description,scope,engine,sessions,source,path,mtime,present,active,active_note,kind,chars,lines,masked,warnings,alias_of,matched_in?,snippet?}],next_cursor,facets}`. category 는 쉼표 목록, limit 최대 60 |
+| GET | `/api/harness/items/{id}?offset=&length=` | 항목 + `{body,offset,next_offset,truncated_source,real_path,frontmatter,meta}`. 본문은 마스킹된 상태이며 length 500~40,000 |
+| GET | `/api/harness/layers?session=desk\|lead\|worker\|orchestrator&engine=claude\|codex\|antigravity\|muse\|qwen-local&pool=personal\|work` | `{session,session_label,engine,pool,layers:[{order,id,title,origin,source,applies,condition,evidence,phase,chars,preview,item_id}],notes,prompt_chars,applied,total,external}` |
+
+경로는 입력으로 받지 않는다. 항목 id(14자리 16진)만 상세에 쓸 수 있고 모르는 id는 404, 잘못된 카테고리·범위는 422다. `evidence=external` 레이어는 엔진 CLI가 읽는 파일이라 이 저장소 코드로는 확인되지 않는다.
+
 ### 디자인시스템 조회와 시각 미리보기 (ADR 0034)
 
 소유자 JWT: `GET /api/design-systems`, `/{system}/items`, `/{system}/item`. MCP는 같은 계약의 `/api/agent/design-systems` 아래 개인 세션에서만 허용하며 회사 세션은 403이다. 검색·상세는 원본 전체 40자리 `revision` SHA로 고정한다. 검색 kind는 token/document/component/example이며 토큰 요약에 `values:{light,dark}`가 포함된다.

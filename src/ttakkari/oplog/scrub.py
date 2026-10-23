@@ -86,6 +86,44 @@ def scrub(text: str, extra: Iterable[str] = ()) -> str:
     return text
 
 
+_PROSE_KV = re.compile(
+    r"""(?i)(?<![\w.\-])(?P<k>[\w.\-]{0,40}(?:secret|passw(?:or)?d|pwd|token(?!s\b)|api[_-]?key|apikey|access[_-]?key"""
+    r"""|private[_-]?key|credential)[\w.\-]{0,40})(?P<sep>["']?\s*[:=]\s*)(?P<q>["']?)(?P<v>[^\s"'`,;)\]}]{8,})(?P=q)"""
+)
+_PROSE_SCHEME = re.compile(r"(?i)\b(Bearer|Basic|Token)\s+([A-Za-z0-9._~+/=\-]{8,})")
+
+
+def _secret_shaped(value: str) -> bool:
+    """문서 속 예시 단어(Authentication 등)와 실제 비밀 값을 가른다: 숫자가 있거나 기호가 섞이거나 아주 길다."""
+    has_digit = any(c.isdigit() for c in value)
+    return len(value) >= 24 or (has_digit and any(c.isalpha() for c in value)) or (
+        has_digit and bool(re.search(r"[._~+/=\-]", value)))
+
+
+def scrub_prose(text: str, extra: Iterable[str] = ()) -> str:
+    """사람이 쓴 문서 본문용 마스킹. 알려진 비밀 값·PEM·URL 자격·알려진 토큰 형식·비밀처럼 생긴 값만 가린다.
+
+    scrub() 는 `token:`·`Basic Auth` 같은 산문까지 가려 문서를 못 읽게 만든다. 형식을 모르는 임의 문자열 비밀은
+    못 잡는다는 한계가 있으며, 설정 파일 값은 이 함수가 아니라 구조 마스킹(harness_view.safe.mask_config)이 맡는다."""
+    if not text:
+        return text
+    if len(text) > MAX_SCRUB_CHARS:
+        text = text[:MAX_SCRUB_CHARS] + "…"
+    for secret in sorted({*known_secrets(), *extra}, key=len, reverse=True):
+        if len(secret) >= 6:
+            text = text.replace(secret, MASK)
+    text = _PEM.sub(MASK, text)
+    text = _URL_USERINFO.sub(rf"\1{MASK}@", text)
+    text = _HEADER_LINE.sub(rf"\1\2{MASK}", text)
+    text = _PROSE_SCHEME.sub(lambda m: f"{m.group(1)} {MASK}" if _secret_shaped(m.group(2)) else m.group(0), text)
+    text = _PROSE_KV.sub(
+        lambda m: m.group(0) if m["v"].startswith("[REDACTED") or not _secret_shaped(m["v"])
+        else f"{m['k']}{m['sep']}{m['q']}{MASK}{m['q']}", text)
+    for pattern in _TOKEN_FORMATS:
+        text = pattern.sub(MASK, text)
+    return text
+
+
 def scrub_value(value: Any, extra: Iterable[str] = ()) -> Any:
     """dict·list 안의 문자열까지 마스킹한다. 민감한 키 이름의 값은 통째로 가린다."""
     if isinstance(value, str):

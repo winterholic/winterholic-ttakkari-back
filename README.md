@@ -113,6 +113,11 @@ alembic/        마이그레이션
 배포 job 로그, Run 실패·엔진 폴백, API 500, `~/.ttakkari/logs/*.log`의 ERROR/Traceback을 백엔드가 읽어 비밀값을 가리고 fingerprint로 이슈를 묶는다. 에이전트는 보호 영역을 건드리지 않고 MCP 도구로 읽는다: `ops_list_issues` → `ops_get_issue`, `ops_deploy_log(job="latest_failed")`, `ops_search_logs`, `ops_list_deploys`, `ops_update_issue`.
 응답은 요약 우선이고 항상 16,000자 이하다. 프론트는 부가 기능 > 로그·이슈. 주기 인입은 `TTAKKARI_OPS_LOG_SYNC_SECONDS`(기본 60, 0이면 끔)이고 조회 직전에도 20초 넘게 지났으면 한 번 돌린다. 보존·삭제 정책은 아직 없다.
 
+## 하네스 조회
+
+부가 기능 > 하네스(`/harness`)는 내 Claude Code·Codex·Antigravity 설정과 따까리가 세션에 주입하는 지침을 읽기만 한다. 찾기(이름·설명·본문 검색, 카테고리·엔진·범위 필터, 경고)와 세션별로 보기(접수·기획·작업자 × 엔진의 레이어 순서)가 있다.
+API는 소유자 JWT 전용 `GET /api/harness`, `/items`, `/items/{id}`, `/layers`이고 에이전트 토큰은 401이다. 경로 화이트리스트와 심볼릭 링크 탈출 방지, 비밀 마스킹, 레이어와 실제 주입 목록의 일치는 [ADR 0069](docs/adr/0069-harness-view.md)와 `tests/test_harness_view_*.py`가 지킨다. 파일 읽기는 읽기 전용이며 `~/.claude` 등은 코드에 고정한 파일 패턴만 읽는다.
+
 ## 디자인시스템 조회
 
 디자인시스템 조회는 부가 기능 > 디자인시스템에서 프로젝트별 토큰·테마·참조·문서·컴포넌트 CSS·예제 원문을 읽는다.

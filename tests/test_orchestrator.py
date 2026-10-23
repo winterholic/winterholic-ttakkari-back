@@ -425,7 +425,14 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_create", "notebooklm_rename",
                "notebooklm_delete", "notebooklm_add_source", "notebooklm_delete_source", "notebooklm_query",
                "notebooklm_job", "notebooklm_job_cancel", "google_account_status", "manage_research",
-               "schedule_action", "list_scheduled_actions", "cancel_scheduled_action"}
+               "schedule_action", "list_scheduled_actions", "cancel_scheduled_action",
+               "comfy_profiles", "comfy_readiness", "comfy_jobs", "comfy_submit", "comfy_job",
+               "comfy_cancel", "comfy_reconcile", "creative_v2_catalog", "creative_v2_capabilities",
+               "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
+               "creative_v2_plan_create", "creative_v2_plan_edit", "creative_v2_plan_approve",
+               "creative_v2_production_assets", "creative_v2_auto_assets_status",
+               "creative_v2_production_dispatch", "creative_v2_production_render",
+               "creative_v2_production_status", "creative_v2_production_media_link"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",
                 "my_context", "reset_my_context"}
 BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}

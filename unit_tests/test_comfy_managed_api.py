@@ -16,8 +16,9 @@ def test_managed_comfy_api_exposes_only_registered_profiles_and_starts_owner_job
         def profiles(self):
             return [{"id": "fixed-profile"}]
 
-        def prepare(self, profile, *, prompt, seed):
+        def prepare(self, profile, *, prompt, seed, idempotency_key=None):
             assert (profile, prompt, seed) == ("fixed-profile", "fox", 17)
+            assert idempotency_key is None
             return {"task_id": "a" * 32, "profile": profile, "status": "starting",
                     "owner_attempt": "internal", "generation_token": "internal"}
 
@@ -37,7 +38,7 @@ def test_managed_comfy_api_exposes_only_registered_profiles_and_starts_owner_job
     assert response.status_code == 202
     assert response.json() == {"task_id": "a" * 32, "profile": "fixed-profile", "status": "starting",
                                "runner_job_id": None, "error": None, "receipt": None,
-                                   "receipt_error": None, "result": {}}
+                                   "receipt_error": None, "progress": None, "result": {}}
     assert service.started == ["a" * 32]
 
 

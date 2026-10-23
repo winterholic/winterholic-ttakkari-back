@@ -61,6 +61,8 @@ MCP_SCOPES = frozenset(
         "orchestration",
         "host",
         "context",
+        "comfy",
+        "creative",
         "notify",
     }
 )
@@ -230,6 +232,14 @@ def test_mcp_scope_values_valid():
 
 
 ROUTE_SCOPE: dict[tuple[str, str], str] = {
+    ("GET", "/api/agent/comfy/profiles"): "agent-scoped",
+    ("GET", "/api/agent/comfy/readiness"): "agent-scoped",
+    ("GET", "/api/agent/comfy/jobs"): "agent-scoped",
+    ("GET", "/api/agent/comfy/jobs/{task_id}"): "agent-scoped",
+    ("POST", "/api/agent/comfy/submit"): "agent-scoped",
+    ("POST", "/api/agent/comfy/jobs/{task_id}/cancel"): "agent-scoped",
+    ("POST", "/api/agent/comfy/jobs/{task_id}/reconcile"): "agent-scoped",
+    ("POST", "/api/agent/creative-v2/{operation}"): "agent-scoped",
     ("DELETE", "/api/accounts/override"): "owner-plain",
     ("DELETE", "/api/accounts/{account_id}"): "owner-plain",
     ("DELETE", "/api/agent/checklists/items/{id}"): "agent-scoped",
@@ -807,6 +817,28 @@ MCP_ORCHESTRATOR_ONLY = frozenset(
 )
 
 MCP_SCOPE: dict[str, str] = {
+    "comfy_cancel": "comfy",
+    "comfy_job": "comfy",
+    "comfy_jobs": "comfy",
+    "comfy_profiles": "comfy",
+    "comfy_readiness": "comfy",
+    "comfy_reconcile": "comfy",
+    "comfy_submit": "comfy",
+    "creative_v2_auto_assets_status": "creative",
+    "creative_v2_capabilities": "creative",
+    "creative_v2_catalog": "creative",
+    "creative_v2_plan": "creative",
+    "creative_v2_plan_approve": "creative",
+    "creative_v2_plan_create": "creative",
+    "creative_v2_plan_edit": "creative",
+    "creative_v2_plans": "creative",
+    "creative_v2_production_assets": "creative",
+    "creative_v2_production_dispatch": "creative",
+    "creative_v2_production_media_link": "creative",
+    "creative_v2_production_render": "creative",
+    "creative_v2_production_status": "creative",
+    "creative_v2_recipe_matrix": "creative",
+    "creative_v2_registries": "creative",
     "account_usage": "orchestration",
     "backend_deploy_status": "ops",
     "begin_environment_probe": "host",

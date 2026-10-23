@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
+from pydantic import Field
 
 from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
 from ttakkari.pms import PmsOperation
@@ -22,7 +24,7 @@ server = MCPServer(
     name="ttakkari",
     instructions="The user's own Ttakkari app: long-term memory about the user (recall/remember/link), files "
                  "(list_artifacts/share_file), notifications, other conversations, and the user's memos and calendar "
-                 "(Asia/Seoul)."
+                 "(Asia/Seoul), managed Comfy and Creative Studio production."
                  + (" As orchestrator, delegate work with spawn_worker; results come back as '[작업 보고]' messages, "
                     "so do not poll." if ROLE == "orchestrator" else ""),
 )
@@ -147,6 +149,176 @@ async def reverse_message(job_id: str, prompt: str) -> str:
 
 async def _agent(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
     return await _call(method, path, body, prefix="/api/agent", params=params)
+
+
+async def _comfy(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:
+    return await _call(method, path, body, prefix="/api/agent/comfy", params=params)
+
+
+async def _creative(operation: str, data: dict[str, Any] | None = None) -> str:
+    return await _call("POST", f"/{operation}", {"data": data or {}}, prefix="/api/agent/creative-v2")
+
+
+# ---- Managed Comfy (개인 세션 전용; 고정 profile 외 workflow/파일/프로세스 입력 없음)
+
+@query_tool
+async def comfy_profiles() -> str:
+    """List the registered managed Comfy profiles and their pinned workflow revisions."""
+    return await _comfy("GET", "/profiles")
+
+
+@server.tool()
+async def comfy_readiness() -> str:
+    """Run a bounded device-only check with the exact configured Comfy Python on the backend host.
+    Returns source, runtime path, measurement time and probe error. Does not load models or start Comfy.
+    Agent sandbox GPU checks are separate and are not substituted for this host measurement."""
+    return await _comfy("GET", "/readiness")
+
+
+@query_tool
+async def comfy_jobs(limit: int = 20, cursor: int = 0) -> str:
+    """List up to 100 Comfy jobs owned by this personal agent session, newest first.
+    Follow next_offset while has_more=true; cursor is the next offset."""
+    return await _comfy("GET", "/jobs", limit=limit, offset=cursor)
+
+
+@server.tool()
+async def comfy_submit(profile_id: Annotated[str, Field(min_length=1, max_length=80)],
+                       prompt: Annotated[str, Field(min_length=1, max_length=1000)],
+                       seed: Annotated[int, Field(ge=0, le=4_294_967_295)],
+                       idempotency_key: Annotated[str, Field(min_length=8, max_length=120)]) -> str:
+    """Prepare and start one task on a registered Comfy profile. Requires a stable 8–120 character
+    idempotency_key; same-key retries return the original task, and changed arguments are rejected.
+    Prompt is 1–1000 characters; seed is uint32. No arbitrary workflow or runtime parameters."""
+    return await _comfy("POST", "/submit", {
+        "profile_id": profile_id, "prompt": prompt, "seed": seed, "idempotency_key": idempotency_key,
+    })
+
+
+@query_tool
+async def comfy_job(task_id: str) -> str:
+    """Read one task owned by this personal agent session, including status, live progress when available,
+    bounded failure logs, receipt, generated asset IDs and result IDs."""
+    return await _comfy("GET", f"/jobs/{quote(task_id, safe='')}")
+
+
+@server.tool()
+async def comfy_cancel(task_id: str) -> str:
+    """Request cancellation of this session's managed Comfy task. Runtime/lease ownership checks remain enforced."""
+    return await _comfy("POST", f"/jobs/{quote(task_id, safe='')}/cancel")
+
+
+@server.tool()
+async def comfy_reconcile(task_id: str) -> str:
+    """Safely reconcile this session's task only when the managed runtime ownership checks permit it."""
+    return await _comfy("POST", f"/jobs/{quote(task_id, safe='')}/reconcile")
+
+
+# ---- Creative Studio v2 (개인 세션 전용; 기존 service/API 계약 재사용)
+
+@query_tool
+async def creative_v2_catalog() -> str:
+    """Read the Creative Studio v2 concept, transition, visual-style and capability catalogs."""
+    return await _creative("catalog")
+
+
+@query_tool
+async def creative_v2_capabilities() -> str:
+    """Read provider capability levels and explicit availability of automatic asset generation."""
+    return await _creative("capabilities")
+
+
+@query_tool
+async def creative_v2_recipe_matrix() -> str:
+    """List registered recipes and their capability requirements."""
+    return await _creative("recipe_matrix")
+
+
+@query_tool
+async def creative_v2_registries() -> str:
+    """Read the current immutable registry snapshot and source metadata."""
+    return await _creative("registries")
+
+
+@query_tool
+async def creative_v2_plans() -> str:
+    """List Creative Studio v2 plans with revision and approval/render-gate state."""
+    return await _creative("plans")
+
+
+@query_tool
+async def creative_v2_plan(plan_id: str) -> str:
+    """Read one plan by client-facing plan ID, including current revision and render gate."""
+    return await _creative("plan", {"plan_id": plan_id})
+
+
+@server.tool()
+async def creative_v2_plan_create(brief: Annotated[str, Field(min_length=1, max_length=6000)],
+                                  name: Annotated[str, Field(max_length=120)] = "",
+                                  intent: dict[str, Any] | None = None,
+                                  duration: dict[str, Any] | None = None,
+                                  aspect: Literal["16:9", "9:16", "1:1"] | None = None,
+                                  style: list[dict[str, Any]] | None = None,
+                                  resolutions: list[dict[str, Any]] | None = None) -> str:
+    """Create a plan from the existing catalog/recipe matcher. Approval is a separate revision-bound step.
+    Brief is 1–6000 characters; style is capped at 8 refs and resolutions at 60."""
+    return await _creative("plan_create", {"brief": brief, "name": name, "intent": intent,
+        "duration": duration, "aspect": aspect, "style": style or [], "resolutions": resolutions or []})
+
+
+@server.tool()
+async def creative_v2_plan_edit(plan_id: str, revision: Annotated[int, Field(ge=1)],
+                                scenes: Annotated[list[dict[str, Any]] | None, Field(max_length=400)] = None,
+                                duration: dict[str, Any] | None = None) -> str:
+    """Edit a plan only at its current expected revision. Editing invalidates its previous approval."""
+    return await _creative("plan_edit", {"plan_id": plan_id, "revision": revision,
+                                          "scenes": scenes, "duration": duration})
+
+
+@server.tool()
+async def creative_v2_plan_approve(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Approve exactly the current plan revision; stale revisions and unmet plan blockers are rejected."""
+    return await _creative("plan_approve", {"plan_id": plan_id, "revision": revision})
+
+
+@server.tool()
+async def creative_v2_production_assets(plan_id: str, kind: Literal["scene", "music"], filename: str,
+                                        content_base64: Annotated[str, Field(max_length=14_000_000)],
+                                        scene_id: Annotated[str | None, Field(max_length=50)] = None) -> str:
+    """Register one image/audio asset for an existing plan. Content is base64, max 10 MiB; no local paths
+    or URLs are accepted. Scenes require scene_id. Supported image/audio types match the production API."""
+    return await _creative("production_asset", {"plan_id": plan_id, "kind": kind, "filename": filename,
+        "content_base64": content_base64, "scene_id": scene_id})
+
+
+@query_tool
+async def creative_v2_auto_assets_status() -> str:
+    """Report whether automatic image/TTS/music generation is available in this deployed revision and why."""
+    return await _creative("auto_assets_status")
+
+
+@server.tool()
+async def creative_v2_production_dispatch(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Create or retrieve the idempotent production dispatch for an approved, renderable plan revision."""
+    return await _creative("production_dispatch", {"plan_id": plan_id, "revision": revision})
+
+
+@server.tool()
+async def creative_v2_production_render(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Queue eligible render segments for an approved dispatch; backend limits, retries and QA are reused."""
+    return await _creative("production_render", {"plan_id": plan_id, "revision": revision})
+
+
+@query_tool
+async def creative_v2_production_status(plan_id: str) -> str:
+    """Read production state, segment jobs, bounded log entries, QA result and final media ID."""
+    return await _creative("production_status", {"plan_id": plan_id})
+
+
+@server.tool()
+async def creative_v2_production_media_link(plan_id: str, media_id: str) -> str:
+    """Create a short-lived, plan/media-bound download link for a completed production result."""
+    return await _creative("production_media_link", {"plan_id": plan_id, "id": media_id})
 
 
 async def _pms(body: dict[str, Any]) -> str:

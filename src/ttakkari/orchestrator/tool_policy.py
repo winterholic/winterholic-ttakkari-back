@@ -11,6 +11,9 @@ READ_ONLY_TOOLS = frozenset({
     "reverse_list", "reverse_get", "tossinvest_status",
     "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job", "google_account_status",
     "list_scheduled_actions",
+    "comfy_profiles", "comfy_jobs", "comfy_job", "creative_v2_catalog", "creative_v2_capabilities",
+    "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
+    "creative_v2_auto_assets_status",
 })
 # 리버스 엔지니어링 시작은 상태를 바꾸므로 읽기 전용으로 표시하지 않는다.
 # 사용자 지시로 요청하는 작업이라 무인 실행 승인 목록에는 둔다.
@@ -45,6 +48,14 @@ BENCHMARK_TOOLS = frozenset({"start_luna_common30_v2", "luna_common30_v2_cancel"
 # Research Lab: 연구 지식·실험·재개 관리(ADR 0056)
 RESEARCH_TOOLS = frozenset({"manage_research"})
 SCHEDULE_TOOLS = frozenset({"schedule_action", "cancel_scheduled_action"})
+# Creative Studio and managed Comfy are explicit personal-session services. Plan approval,
+# fixed profiles, host leases and runtime ownership remain enforced by their service layer.
+CREATIVE_TOOLS = frozenset({
+    "comfy_cancel", "comfy_readiness", "comfy_reconcile", "comfy_submit",
+    "creative_v2_plan_create", "creative_v2_plan_edit", "creative_v2_plan_approve",
+    "creative_v2_production_assets", "creative_v2_production_dispatch", "creative_v2_production_render",
+    "creative_v2_production_media_link", "creative_v2_production_status",
+})
 AUTO_APPROVED_TOOLS = (READ_ONLY_TOOLS | PMS_TOOLS | DEPLOY_TOOLS | CHECKLIST_TOOLS | OPS_LOG_TOOLS
                        | ASSISTANT_WRITE_TOOLS | NOTEBOOKLM_TOOLS | HOST_ENV_TOOLS | WORKER_MANAGEMENT_TOOLS
-                       | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS)
+                       | BENCHMARK_TOOLS | REVERSE_TOOLS | SCHEDULE_TOOLS | RESEARCH_TOOLS | CREATIVE_TOOLS)

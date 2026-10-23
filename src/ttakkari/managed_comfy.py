@@ -119,6 +119,7 @@ class ComfyManagedController:
         self.runtime_factory = runtime_factory or self._runtime_factory
         self.spawn = spawn or self._spawn
         self._active: dict[str, dict[str, Any]] = {}
+        self._started: set[str] = set()
         self._lock = threading.RLock()
 
     def _path(self, task_id: str) -> Path:
@@ -135,12 +136,14 @@ class ComfyManagedController:
     def _save(self, job: dict[str, Any]) -> None:
         _write_json(self._path(job["task_id"]), job)
 
-    def profiles(self) -> list[dict[str, str]]:
-        return [{"id": p.profile_id, "workflow": p.workflow, "revision": p.revision,
-                 "preset": p.preset} for p in PROFILES.values()]
+    def profiles(self) -> list[dict[str, Any]]:
+        return [{
+            "id": p.profile_id, "workflow": p.workflow, "revision": p.revision, "preset": p.preset,
+            "capabilities": ["gen.video_t2v"], "required_gb": p.required_gb, "models": list(p.models),
+        } for p in PROFILES.values()]
 
     def prepare(self, profile_id: str, *, prompt: str, seed: int, owner: str = "owner",
-                **extra: Any) -> dict[str, Any]:
+                idempotency_key: str | None = None, **extra: Any) -> dict[str, Any]:
         if extra:
             raise ValueError("only registered profile parameters prompt and seed are accepted")
         profile = PROFILES.get(profile_id)
@@ -150,7 +153,25 @@ class ComfyManagedController:
             raise ValueError("prompt must contain 1 to 1000 characters")
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 2**32 - 1:
             raise ValueError("seed must be a 32-bit unsigned integer")
-        task_id = uuid.uuid4().hex
+        if idempotency_key is not None and (
+            not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 120
+        ):
+            raise ValueError("idempotency_key must contain 8 to 120 characters")
+        task_id = (
+            uuid.uuid5(uuid.NAMESPACE_URL, f"managed-comfy:{owner}:{idempotency_key}").hex
+            if idempotency_key else uuid.uuid4().hex
+        )
+        if idempotency_key:
+            try:
+                existing = self._load(task_id)
+            except FileNotFoundError:
+                existing = None
+            if existing is not None:
+                if (existing.get("profile"), existing.get("prompt"), existing.get("seed")) != (
+                    profile_id, prompt, seed,
+                ):
+                    raise ValueError("idempotency key was already used with different task arguments")
+                return existing
         attempt_id = uuid.uuid4().hex
         runtime_instance = uuid.uuid4().hex
         lease = self.manager.acquire(
@@ -173,6 +194,7 @@ class ComfyManagedController:
             raise
         with self._lock:
             active = {"lease": lease, "server": None, "runner": None, "client": None,
+                      "progress": None,
                       "profile": profile, "heartbeat_error": None, "lease_guard": threading.RLock(),
                       "heartbeat_stop": threading.Event(), "cancel_stop": threading.Event(),
                       "cancel_guard": threading.Lock(), "cancel_interrupt_sent": False,
@@ -201,9 +223,16 @@ class ComfyManagedController:
 
     def start(self, task_id: str) -> dict[str, Any]:
         job = self._load(task_id)
-        if job["status"] != "starting":
-            return job
-        self.spawn(self.execute, task_id)
+        with self._lock:
+            if job["status"] != "starting" or task_id in self._started:
+                return job
+            self._started.add(task_id)
+        try:
+            self.spawn(self.execute, task_id)
+        except BaseException:
+            with self._lock:
+                self._started.discard(task_id)
+            raise
         return job
 
     def _runtime_factory(self, profile: ComfyProfile, runtime_instance: str,
@@ -303,15 +332,28 @@ class ComfyManagedController:
             active["cancel_thread"].start()
             job["status"] = "running"
             self._save(job)
+            def on_event(event: dict[str, Any]) -> None:
+                phase = event.get("phase")
+                active["progress"] = {
+                    key: event[key]
+                    for key in ("phase", "node", "class", "value", "max", "pct", "t")
+                    if key in event
+                }
+                if phase == "done":
+                    active["progress"].update(phase="complete", pct=100)
+                self._maybe_cancel(task_id, active)
+
             result = runner.run(name=profile.workflow, version=profile.revision,
                                 preset=profile.preset, params={"prompt": job["prompt"], "seed": job["seed"]},
                                 retries=0, tag=task_id,
-                                on_event=lambda _event: self._maybe_cancel(task_id, active))
+                                on_event=on_event)
             if active.get("released"):
                 return self.get(task_id)
             job["runner_job_id"] = result.get("id")
             job["result"] = result
             job["status"] = result.get("status", "needs_reconcile")
+            if job["status"] == "succeeded":
+                active["progress"] = {"phase": "complete", "pct": 100}
             if (active.get("cancel_result") or {}).get("status") == "cancelled":
                 job["status"] = "cancelled"
             elif active.get("cancel_interrupt_sent") and self._interrupted(result):
@@ -471,11 +513,39 @@ class ComfyManagedController:
             return None
         return True if absent and self._is_comfy_port_alive() is False else (None if absent else False)
 
-    def get(self, task_id: str) -> dict[str, Any]:
-        return self._load(task_id)
+    def list_jobs(self, *, owner: str, limit: int = 20, offset: int = 0) -> dict[str, Any]:
+        if isinstance(limit, bool) or not 1 <= limit <= 100 or isinstance(offset, bool) or offset < 0:
+            raise ValueError("limit must be between 1 and 100 and offset must be non-negative")
+        if not self.jobs_dir.exists():
+            return {"items": [], "total_count": 0, "offset": offset, "has_more": False, "next_offset": None}
+        rows = []
+        for path in sorted(self.jobs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                job = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if job.get("owner") == owner:
+                rows.append(job)
+        page = rows[offset:offset + limit]
+        next_offset = offset + len(page) if offset + len(page) < len(rows) else None
+        return {"items": page, "total_count": len(rows), "offset": offset,
+                "has_more": next_offset is not None, "next_offset": next_offset}
 
-    def cancel(self, task_id: str, *, owner_task: str | None = None) -> dict[str, Any]:
+    def get(self, task_id: str, *, owner: str | None = None) -> dict[str, Any]:
         job = self._load(task_id)
+        if owner is not None and job.get("owner") != owner:
+            raise FileNotFoundError("managed Comfy task not found")
+        with self._lock:
+            active = self._active.get(task_id)
+            if active and active.get("progress") is not None:
+                job["progress"] = dict(active["progress"])
+        return job
+
+    def cancel(self, task_id: str, *, owner_task: str | None = None,
+               owner: str | None = None) -> dict[str, Any]:
+        job = self._load(task_id)
+        if owner is not None and job.get("owner") != owner:
+            raise FileNotFoundError("managed Comfy task not found")
         if owner_task is not None and owner_task != task_id:
             raise PermissionError("task owner does not match")
         with self._lock:
@@ -573,8 +643,11 @@ class ComfyManagedController:
                     and current.get("generation_token") == job.get("generation_token")
                     and current.get("runtime_instance") == job.get("runtime_instance"))
 
-    def reconcile(self, task_id: str, *, owner_task: str | None = None) -> dict[str, Any]:
+    def reconcile(self, task_id: str, *, owner_task: str | None = None,
+                  owner: str | None = None) -> dict[str, Any]:
         job = self._load(task_id)
+        if owner is not None and job.get("owner") != owner:
+            raise FileNotFoundError("managed Comfy task not found")
         if owner_task is not None and owner_task != task_id:
             raise PermissionError("task owner does not match")
         with self._lock:

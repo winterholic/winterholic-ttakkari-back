@@ -142,3 +142,36 @@ def test_forging_with_a_correct_report_in_the_read_only_task_is_a_forbidden_writ
     ends = neg.end(task.base_files, gold_ends(task))
     with materialize(task, ends, reports_for(task, ends)) as attempt:
         assert evaluate_attempt(task, attempt).fail_code == "FAIL_FORBIDDEN_WRITE"
+
+
+FORBIDDEN_TEST_SOURCES = {
+    "reads the SUT source": "import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.assertEqual(open('shop/discount.py').read(), '')\n",
+    "imports os": "import os\nimport unittest\n",
+    "imports sys": "import sys\n",
+    "relative import": "from . import helpers\n",
+    "takes over run": "import unittest\nclass T(unittest.TestCase):\n    def run(self, result=None):\n        return None\n",
+    "load_tests hook": "import unittest\ndef load_tests(loader, tests, pattern):\n    return tests\n",
+    "custom result class": "import unittest\nclass R(unittest.TestResult):\n    pass\n",
+    "code object access": "from shop.discount import apply_discount\nX = apply_discount.__code__\n",
+    "getattr": "import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        getattr(self, 'x', None)\n",
+    "print": "print('OBS')\n",
+    "exec": "exec('x = 1')\n",
+}
+
+
+@pytest.mark.parametrize("name", sorted(FORBIDDEN_TEST_SOURCES))
+def test_forbidden_constructs_in_candidate_written_tests_are_flagged(name):
+    from local_llm_eval.natives import forbidden_constructs
+
+    assert forbidden_constructs(FORBIDDEN_TEST_SOURCES[name], ("shop",)), name
+
+
+def test_ordinary_tests_are_not_flagged():
+    from local_llm_eval.natives import forbidden_constructs
+    from local_llm_eval.tasks.rec import ALT_TESTS
+    from local_llm_eval.tasks.rec import GOLD_TESTS as REC_GOLD
+    from local_llm_eval.tasks.tst import ALT_TESTS as TST_ALT
+    from local_llm_eval.tasks.tst import GOLD_TESTS as TST_GOLD
+
+    for source in (REC_GOLD, ALT_TESTS, TST_GOLD, TST_ALT):
+        assert forbidden_constructs(source, ("shop",)) == []

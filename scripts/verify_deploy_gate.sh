@@ -211,6 +211,14 @@ else
         else
             STAGES+=("건너뜀  바뀐 테스트 파일 (선택된 파일 없음)")
         fi
+        # 평가기(bench/local_llm_eval)는 testpaths 밖이라 위 선택에 잡히지 않는다. 코드나 테스트가 바뀌면 전체를 돌린다(약 40초, CPU만).
+        BENCH_EVAL_CHANGED=0
+        for f in ${CHANGED[@]+"${CHANGED[@]}"}; do
+            case "$f" in bench/local_llm_eval/*) BENCH_EVAL_CHANGED=1 ;; esac
+        done
+        if [ "$BENCH_EVAL_CHANGED" = 1 ] && [ -d bench/local_llm_eval/tests ]; then
+            stage "평가기 테스트 (bench/local_llm_eval)" bash -c 'cd bench && exec "$0" -m pytest -q --timeout=300 -p no:cacheprovider local_llm_eval/tests' "$PY"
+        fi
     fi
 fi
 

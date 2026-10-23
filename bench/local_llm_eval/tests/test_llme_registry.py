@@ -89,3 +89,18 @@ def test_base_trees_are_text_with_unix_newlines():
     for task in built().values():
         for path, content in task.base_files.items():
             assert isinstance(content, str) and "\r" not in content, path
+
+
+def test_sealed_baseline_hash_in_the_manifest_matches_the_task_definition():
+    """The start-state baseline the evaluator compares against is pinned in the committed manifest."""
+    from local_llm_eval.manifest import manifest_of_files, tree_hash
+
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    pinned = {
+        t["id"]: t["base_tree_sha256"]
+        for t in manifest["tasks"]
+        if "base_tree_sha256" in t
+    }
+    assert set(pinned) == set(TASK_IDS)
+    for task_id, task in built().items():
+        assert tree_hash(manifest_of_files(task.base_files)) == pinned[task_id], task_id

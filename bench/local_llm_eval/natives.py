@@ -115,6 +115,42 @@ FORBIDDEN_NAMES = frozenset(
         "stderr",
         "getsource",
         "getsourcefile",
+        "TestResult",
+        "TextTestResult",
+        "TestLoader",
+        "TestSuite",
+        "TextTestRunner",
+        "defaultTestResult",
+    }
+)
+
+
+# Methods/hooks through which a test module could take over how its own tests are run or reported.
+FORBIDDEN_DEFS = frozenset(
+    {
+        "run",
+        "__call__",
+        "countTestCases",
+        "_callTestMethod",
+        "_callSetUp",
+        "_callTearDown",
+        "_callCleanup",
+        "doCleanups",
+        "load_tests",
+        "setUpModule",
+        "tearDownModule",
+    }
+)
+ALLOWED_DUNDER = frozenset(
+    {
+        "__name__",
+        "__doc__",
+        "__class__",
+        "__init__",
+        "__eq__",
+        "__len__",
+        "__str__",
+        "__repr__",
     }
 )
 
@@ -142,6 +178,18 @@ def forbidden_constructs(source: str, allowed_modules: tuple[str, ...]) -> list[
             found.append(f"name {node.id}")
         elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_NAMES:
             found.append(f"attribute {node.attr}")
+        elif (
+            isinstance(node, ast.Attribute)
+            and node.attr.startswith("__")
+            and node.attr.endswith("__")
+            and node.attr not in ALLOWED_DUNDER
+        ):
+            found.append(f"dunder attribute {node.attr}")
+        elif (
+            isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name in FORBIDDEN_DEFS
+        ):
+            found.append(f"def {node.name}")
     return sorted(set(found))
 
 

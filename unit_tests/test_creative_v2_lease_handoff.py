@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -199,7 +200,10 @@ def test_scene_generation_requests_bounded_lease_wait_from_controller(tmp_path):
 
         def get(self, task_id):
             return {"task_id": task_id, "profile": "wan22-5b-draft", "status": "succeeded",
-                    "runner_job_id": "j1", "receipt": {"outputs": [{"sha256": "c" * 64}]}}
+                    "runner_job_id": "j1", "receipt": {
+                        "prompt_sha256": hashlib.sha256(b"prompt").hexdigest(),
+                        "outputs": [{"sha256": "c" * 64}],
+                    }}
 
     generator = managed.ManagedAssetGenerator(controller=Controller())
     plan = {"id": "plan-1", "revision": 1}

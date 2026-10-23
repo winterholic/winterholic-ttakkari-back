@@ -24,9 +24,14 @@ import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from ttakkari.creative.render import ffmpeg, inspect_media
+from ttakkari.creative.render import (
+    compile_caption_segments,
+    dimensions,
+    ffmpeg,
+    inspect_media,
+)
 from ttakkari.creative.service import ProjectInput, Scene, Studio
 from ttakkari.creative.v2 import engines
 from ttakkari.creative.v2.plans import PlanStore
@@ -298,6 +303,7 @@ def _run_key(
     data: dict[str, Any],
     engine: dict[str, Any],
     style: dict[str, Any],
+    caption_mode: str = "narration",
 ) -> str:
     music = data["assets"]["music"]
     start = segment["start_frame"] / plan["profile"]["fps"]
@@ -308,6 +314,14 @@ def _run_key(
             "music": {"sha256": music["sha256"], "start": round(start, 3), "seconds": segment["seconds"]},
             "engine": {"id": engine["adapter"], "version": engine["version"]},
             "style": style["applied"],
+            "caption_mode": caption_mode,
+            "voice_assets": {
+                scene_id: {
+                    "sha256": (data.get("assets", {}).get("voices", {}).get(scene_id) or {}).get("sha256"),
+                    "duration": ((data.get("assets", {}).get("voices", {}).get(scene_id) or {}).get("meta") or {}).get("duration"),
+                }
+                for scene_id in segment["scene_ids"]
+            },
         }
     )
 
@@ -335,6 +349,7 @@ def _create_project(
     segment: dict[str, Any],
     data: dict[str, Any],
     style: dict[str, Any],
+    caption_mode: str = "narration",
 ) -> str:
     project = studio.create(
         ProjectInput(
@@ -347,6 +362,7 @@ def _create_project(
     )
     pid = project["id"]
     fps = plan["profile"]["fps"]
+    width, _height = dimensions(plan["aspect"])
     scenes: list[Scene] = []
     for scene in _segment_scenes(plan, segment):
         asset = data["assets"]["scenes"][scene["scene_id"]]
@@ -358,12 +374,29 @@ def _create_project(
             provenance=f"v2-plan-asset:{asset['sha256']}",
             metadata=asset.get("meta") or {},
         )
+        narration = str(scene.get("narration") or "").strip()
+        voice = data.get("assets", {}).get("voices", {}).get(scene["scene_id"])
+        voice_seconds = ((voice or {}).get("meta") or {}).get("duration")
+        if caption_mode == "narration" and narration:
+            caption_seconds = min(float(voice_seconds), scene["seconds"]) if voice_seconds else scene["seconds"]
+            caption_style = style.get("applied", {}).get("caption_style", "bottom_card")
+            caption_segments = compile_caption_segments(
+                narration, caption_seconds, width, style=caption_style
+            )
+            caption_text = caption_segments[0]["text"] if caption_segments else ""
+            timing_basis = "estimated_voice_duration" if voice_seconds else "scene_duration"
+            for cue in caption_segments:
+                cue["timing_basis"] = timing_basis
+        else:
+            caption_text = scene["title"][:160]
+            caption_segments = []
         scenes.append(
             Scene(
                 id=scene["scene_id"],
                 duration=scene["seconds"],
                 prompt=(scene["narration"] or scene["title"])[:3000],
-                caption=scene["title"][:160],
+                caption=caption_text,
+                caption_segments=caption_segments,
                 asset_id=added["id"],
                 **style["applied"],
             )
@@ -526,13 +559,29 @@ def _reconcile(
 # --- 공개 API -----------------------------------------------------------------
 
 
-def _new_record(plan: dict[str, Any], adapter: engines.EngineAdapter, pre: engines.Preflight) -> dict[str, Any]:
+def _new_record(
+    plan: dict[str, Any], adapter: engines.EngineAdapter, pre: engines.Preflight, caption_mode: str
+) -> dict[str, Any]:
     style = _style_defaults(plan, adapter)
     record = {
         "revision": plan["revision"],
         "plan_sha256": plan["approval"]["snapshot"]["plan_sha256"],
         "engine": {"adapter": adapter.id, "version": pre.version, "preflight_at": _now()},
         "style": style,
+        "caption_mode": caption_mode,
+        "caption_timing": (
+            "scene duration; title-only captions"
+            if caption_mode == "title_only"
+            else "estimated from synthesized voice asset duration; no word-level alignment"
+        ),
+        "caption_sources": {
+            scene["scene_id"]: (
+                "title_only"
+                if caption_mode == "title_only"
+                else "narration" if str(scene.get("narration") or "").strip() else "title_fallback_no_narration"
+            )
+            for scene in plan["scenes"]
+        },
         "dispatched_at": _now(),
         "segments": [
             {
@@ -560,9 +609,17 @@ def _new_record(plan: dict[str, Any], adapter: engines.EngineAdapter, pre: engin
     return record
 
 
-def dispatch(plans: PlanStore, studio: Studio, plan_id: str, revision: int) -> dict[str, Any]:
+def dispatch(
+    plans: PlanStore,
+    studio: Studio,
+    plan_id: str,
+    revision: int,
+    caption_mode: Literal["narration", "title_only"] = "narration",
+) -> dict[str, Any]:
     """승인된 계획 revision의 실행 기록을 만든다. 게이트·엔진·의존성이 맞을 때만, revision당 한 번."""
     plan = plans.assert_renderable(plan_id, revision)
+    if caption_mode not in {"narration", "title_only"}:
+        raise ProductionError("caption_mode는 narration 또는 title_only여야 합니다.")
     blockers = dispatch_blockers(plan)
     if blockers:
         raise ProductionError("디스패치할 수 없습니다: " + " / ".join(blockers))
@@ -571,7 +628,7 @@ def dispatch(plans: PlanStore, studio: Studio, plan_id: str, revision: int) -> d
     store = ProductionStore(plans)
     with store.tx(plan_id) as data:
         if _record(data, revision) is None:
-            data["dispatches"].append(_new_record(plan, adapter, adapter.preflight()))
+            data["dispatches"].append(_new_record(plan, adapter, adapter.preflight(), caption_mode))
         return _compose(plans, studio, plan, data, store)
 
 
@@ -599,7 +656,8 @@ def request_render(plans: PlanStore, studio: Studio, plan_id: str, revision: int
         style = record["style"]
         for segment in record["segments"]:
             _sync_segment(studio, record, segment)
-            key = _run_key(plan, segment, data, record["engine"], style)
+            caption_mode = record.get("caption_mode", "narration")
+            key = _run_key(plan, segment, data, record["engine"], style, caption_mode)
             reusable = segment["run_key"] == key and segment["status"] in ("succeeded", *SEGMENT_ACTIVE)
             if reusable:
                 continue
@@ -611,7 +669,9 @@ def request_render(plans: PlanStore, studio: Studio, plan_id: str, revision: int
             if retry_same:
                 job = studio.enqueue(segment["project_id"], retry=True)
             else:
-                segment["project_id"] = _create_project(studio, store, plan, segment, data, style)
+                segment["project_id"] = _create_project(
+                    studio, store, plan, segment, data, style, caption_mode
+                )
                 job = studio.enqueue(segment["project_id"])
             segment.update(
                 run_key=key, job_id=job["id"], status="queued", error=None, output=None,
@@ -644,6 +704,9 @@ def _compose(
     base = {
         "plan_id": plan["id"],
         "plan_revision": plan["revision"],
+        "caption_mode": record.get("caption_mode") if record else None,
+        "caption_timing": record.get("caption_timing") if record else None,
+        "caption_sources": record.get("caption_sources") if record else None,
         "assets": assets,
         "asset_generation_blockers": (
             []

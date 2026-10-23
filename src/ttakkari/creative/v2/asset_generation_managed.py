@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -43,7 +44,7 @@ class ManagedAssetGenerator:
     """R21 scene assets via the existing managed Comfy, local TTS and ACE-Step paths."""
 
     engine_id = "creative-v2.managed-comfy+supertonic+acestep"
-    version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo"
+    version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo+scene-brief-v2"
 
     def __init__(self, *, controller=None, store=None, clock=time.monotonic, loop=None):
         self._controller = controller
@@ -127,6 +128,11 @@ class ManagedAssetGenerator:
         ]
         if missing_narration:
             reasons.append("장면별 음성 대본이 없습니다: " + ", ".join(missing_narration))
+        for scene in plan["scenes"]:
+            try:
+                self._prompt(plan, scene)
+            except ValueError as exc:
+                reasons.append(str(exc))
         return reasons
 
     @staticmethod
@@ -204,6 +210,7 @@ class ManagedAssetGenerator:
                     "source_production_id": source_id,
                     "source_task_id": job["task_id"],
                     "source_runner_job_id": job.get("runner_job_id"),
+                    "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
                 },
             }
             engine_runs.append(
@@ -212,6 +219,8 @@ class ManagedAssetGenerator:
                     "engine": "managed-comfy",
                     "profile": job["profile"],
                     "real_execution": True,
+                    "prompt": prompt,
+                    "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
                     "task_id": job["task_id"],
                     "runner_job_id": job.get("runner_job_id"),
                     "output_sha256": output_sha,
@@ -305,12 +314,44 @@ class ManagedAssetGenerator:
 
     @staticmethod
     def _prompt(plan: dict[str, Any], scene: dict[str, Any]) -> str:
-        value = (
-            f"Create one cinematic documentary scene for: {plan['brief']}. "
-            f"Scene: {scene['title']}. Visual direction: {scene.get('narration') or scene['title']}. "
-            "Natural photographic detail, coherent Korean setting when appropriate, no text, no logos, no collage."
+        brief = str(plan.get("brief") or "").strip()
+        match = re.fullmatch(r"s(\d+)", str(scene.get("scene_id") or ""))
+        scene_number = int(match.group(1)) if match else None
+        headings = list(re.finditer(r"(?:^|\s)(장면|scene)\s+(\d+)\s*:\s*", brief, re.IGNORECASE))
+        shot_direction = ""
+        plan_name = str(plan.get("name") or "").strip()
+        context = (
+            plan_name
+            if plan_name and not brief.startswith(plan_name)
+            else "a short Korean documentary"
         )
-        return value[:1000]
+        if headings and scene_number is not None:
+            for index, heading in enumerate(headings):
+                if int(heading.group(2)) != scene_number:
+                    continue
+                start = heading.end()
+                end = headings[index + 1].start() if index + 1 < len(headings) else len(brief)
+                shot_direction = brief[start:end].strip(" .。\n\t")
+                context = brief[: headings[0].start()].strip(" .。\n\t")
+                break
+        if not shot_direction:
+            shot_direction = str(scene.get("narration") or scene.get("narrative_goal") or scene["title"]).strip()
+        # The full brief may include mutually exclusive visuals for every shot. Keep only shared
+        # context plus this scene's own instruction so each Comfy request has one visual target.
+        value = (
+            "Create one cinematic documentary shot, not a collage. "
+            f"Shared project context: {context or 'a Korean documentary short'}. "
+            f"Required scene {scene.get('scene_id', '')} ({scene['title']}): {shot_direction}. "
+            f"Use the scene narration only as supporting context: {scene.get('narration') or '(no narration)'}. "
+            "Show the named place, subjects, action, time and lighting in this shot; preserve each specific detail. "
+            "Natural photographic detail, no text, no logos."
+        )
+        if len(value) > 1000:
+            raise ValueError(
+                f"장면 {scene.get('scene_id', '')} 시각 지시가 managed Comfy 한도 1000자를 넘습니다. "
+                "장면 대본이나 시각 지시를 줄여 주세요."
+            )
+        return value
 
     def _run_comfy(
         self,
@@ -329,6 +370,7 @@ class ManagedAssetGenerator:
                 sort_keys=True,
             ).encode()
         ).hexdigest()
+        prompt_sha256 = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         prior = json.loads(checkpoint.read_text()) if checkpoint.is_file() else None
         attempts = list(prior.get("attempts", [])) if prior and prior.get("identity") == identity else []
         job = None
@@ -373,8 +415,12 @@ class ManagedAssetGenerator:
             )
         if not isinstance(job.get("receipt"), dict) or not job["receipt"].get("outputs"):
             raise RuntimeError(f"Comfy scene {scene_id} succeeded without a verifiable output receipt.")
+        received_prompt_hash = job["receipt"].get("prompt_sha256")
+        if received_prompt_hash != prompt_sha256:
+            raise RuntimeError(f"Comfy scene {scene_id} receipt prompt hash does not match the submitted prompt.")
         attempts[-1].update(
             status="succeeded",
+            prompt_sha256=prompt_sha256,
             runner_job_id=job.get("runner_job_id"),
             receipt=job["receipt"],
         )
@@ -383,6 +429,7 @@ class ManagedAssetGenerator:
             "stage": "scene_comfy_succeeded",
             "scene_id": scene_id,
             "task_id": job["task_id"],
+            "prompt_sha256": prompt_sha256,
             "runner_job_id": job.get("runner_job_id"),
             "output_sha256": next((x.get("sha256") for x in job["receipt"]["outputs"] if not x.get("intermediate")), None),
             "workflow_revision": job["receipt"].get("workflow_revision"),

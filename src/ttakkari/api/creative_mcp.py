@@ -102,7 +102,7 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         "plan_approve": {"plan_id", "revision"}, "production_status": {"plan_id"},
         "auto_assets_status": set(), "auto_assets_start": {"plan_id", "revision"},
         "auto_assets_retry": {"plan_id", "revision"},
-        "production_dispatch": {"plan_id", "revision"},
+        "production_dispatch": {"plan_id", "revision", "caption_mode"},
         "production_render": {"plan_id", "revision"},
         "production_asset": {"plan_id", "kind", "filename", "content_base64", "scene_id"},
         "production_media_link": {"plan_id", "id"},
@@ -183,8 +183,13 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         return await c2.production_generate_assets(plan_id, request, "owner")
     if operation == "production_dispatch":
         plan_id = _uuid(data)
-        approve = c2.PlanApprove.model_validate({k: v for k, v in data.items() if k != "plan_id"})
-        return await c2.production_dispatch(plan_id, approve, "owner")
+        caption_mode = data.get("caption_mode", "narration")
+        if caption_mode not in {"narration", "title_only"}:
+            raise HTTPException(422, "caption_mode must be narration or title_only")
+        approve = c2.PlanApprove.model_validate(
+            {k: v for k, v in data.items() if k not in {"plan_id", "caption_mode"}}
+        )
+        return await c2.production_dispatch(plan_id, approve, "owner", caption_mode)
     if operation == "production_render":
         plan_id = _uuid(data)
         approve = c2.PlanApprove.model_validate({k: v for k, v in data.items() if k != "plan_id"})

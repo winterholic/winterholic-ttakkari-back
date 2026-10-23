@@ -77,6 +77,63 @@ def dimensions(aspect: str):
     return {"16:9": (1280, 720), "9:16": (720, 1280), "1:1": (720, 720)}[aspect]
 
 
+def compile_caption_segments(
+    text: str,
+    duration: float,
+    width: int,
+    *,
+    style: str = "bottom_card",
+    max_lines: int = 2,
+) -> list[dict]:
+    """Wrap narration into safe-area cues and spread them over the estimated voice interval."""
+    if not text.strip():
+        return []
+    if duration <= 0:
+        raise ValueError("자막 구간 길이는 0보다 커야 합니다.")
+    font_path = Path("/System/Library/Fonts/AppleSDGothicNeo.ttc")
+    if not font_path.is_file():
+        raise ValueError("한국어 자막 글꼴(AppleSDGothicNeo)이 없습니다.")
+    font_scale, width_scale = {
+        "bottom_card": (0.032, 0.84),
+        "center_highlight": (0.052, 0.85),
+        "title_card": (0.046, 0.82),
+        "code_overlay": (0.028, 0.84),
+    }.get(style, (0.032, 0.84))
+    font = ImageFont.truetype(str(font_path), round(width * font_scale))
+    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    max_width = width * width_scale
+    lines: list[str] = []
+    line = ""
+    for paragraph in text.replace("\r", "").split("\n"):
+        for char in paragraph:
+            if line and measure.textlength(line + char, font=font) > max_width:
+                lines.append(line.rstrip())
+                line = "" if char.isspace() else char
+            else:
+                line += char
+        lines.append(line.rstrip())
+        line = ""
+    if line:
+        lines.append(line)
+    lines = [item for item in lines if item]
+    groups = [lines[i : i + max_lines] for i in range(0, len(lines), max_lines)]
+    cue_texts = ["\n".join(group) for group in groups]
+    weights = [max(1, len(cue.replace("\n", "").replace(" ", ""))) for cue in cue_texts]
+    weight_total = sum(weights)
+    cursor = 0.0
+    cues = []
+    for index, (cue, weight) in enumerate(zip(cue_texts, weights, strict=True)):
+        end = duration if index == len(cue_texts) - 1 else duration * sum(weights[: index + 1]) / weight_total
+        cues.append({
+            "text": cue,
+            "start": round(cursor, 3),
+            "end": round(end, 3),
+            "timing_basis": "estimated_voice_duration",
+        })
+        cursor = end
+    return cues
+
+
 def caption_image(
     path: Path, caption: str, width: int, height: int, style: str = "bottom_card"
 ):
@@ -322,14 +379,21 @@ async def render(studio: Studio, job: dict, lock_fd: int):
             else:
                 if asset["kind"] == "image":
                     _require_readable_image(folder / asset["file"], scene["id"])
-                subtitle = folder / "cache" / f"{key}.png"
-                caption_image(
-                    subtitle,
-                    scene["caption"],
-                    width,
-                    height,
-                    style=scene.get("caption_style", "bottom_card"),
-                )
+                caption_segments = scene.get("caption_segments") or []
+                captions = caption_segments or ([{"text": scene["caption"], "start": 0.0, "end": duration}] if scene["caption"] else [])
+                subtitle_paths = []
+                if not captions:
+                    captions = [{"text": "", "start": 0.0, "end": duration}]
+                for cue_index, cue in enumerate(captions):
+                    subtitle = folder / "cache" / f"{key}-caption-{cue_index}.png"
+                    caption_image(
+                        subtitle,
+                        cue["text"],
+                        width,
+                        height,
+                        style=scene.get("caption_style", "bottom_card"),
+                    )
+                    subtitle_paths.append(subtitle)
                 inputs = (
                     ["-loop", "1", "-framerate", str(FPS)]
                     if asset["kind"] == "image"
@@ -343,13 +407,9 @@ async def render(studio: Studio, job: dict, lock_fd: int):
                     *inputs,
                     "-i",
                     str(folder / asset["file"]),
-                    "-loop",
-                    "1",
-                    "-framerate",
-                    str(FPS),
-                    "-i",
-                    str(subtitle),
                 ]
+                for subtitle in subtitle_paths:
+                    args.extend(["-loop", "1", "-framerate", str(FPS), "-i", str(subtitle)])
                 frames = max(1, round(duration * FPS))
                 base = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1"
                 anim = scene.get("animation", "still")
@@ -379,7 +439,17 @@ async def render(studio: Studio, job: dict, lock_fd: int):
                         x = "(iw-iw/zoom)/2"
                         y = "(ih-ih/zoom)/2"
                     base += f",zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s={width}x{height}:fps={FPS}"
-                filters = f"[0:v]{base},fps={FPS},format=yuv420p[v];[v][1:v]overlay=0:0:shortest=1"
+                filters = f"[0:v]{base},fps={FPS},format=yuv420p[v]"
+                current = "v"
+                for cue_index, cue in enumerate(captions):
+                    next_label = f"caption{cue_index}"
+                    filters += (
+                        f";[{current}][{cue_index + 1}:v]overlay=0:0:"
+                        f"enable='between(t,{float(cue['start']):.3f},{float(cue['end']):.3f})'"
+                        f"[{next_label}]"
+                    )
+                    current = next_label
+                filters += f";[{current}]null"
                 if scene["transition"] == "fade":
                     filters += f",fade=t=in:d=0.25,fade=t=out:st={max(0, duration - 0.25):.6f}:d=0.25"
                 filters += "[out]"
@@ -416,9 +486,12 @@ async def render(studio: Studio, job: dict, lock_fd: int):
                 )
                 partial.replace(clip)
             clips.append(clip)
-            if scene["caption"]:
+            caption_segments = scene.get("caption_segments") or []
+            captions = caption_segments or ([{"text": scene["caption"], "start": 0.0, "end": duration}] if scene["caption"] else [])
+            for cue in captions:
                 srt.append(
-                    f"{len(srt) + 1}\n{_stamp(cursor)} --> {_stamp(cursor + duration)}\n{scene['caption']}\n"
+                    f"{len(srt) + 1}\n{_stamp(cursor + float(cue['start']))} --> "
+                    f"{_stamp(cursor + float(cue['end']))}\n{cue['text']}\n"
                 )
             cursor += duration
             update(

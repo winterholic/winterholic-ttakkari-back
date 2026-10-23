@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+from PIL import Image, ImageDraw, ImageFont
 
 from ttakkari import generation
 from ttakkari.config import Settings
@@ -100,9 +101,11 @@ class _FakeController:
         self.root = root
         self.jobs: dict[str, dict] = {}
         self.waits: list[float] = []
+        self.prompts: list[str] = []
 
     def prepare(self, profile, *, prompt, seed, owner, lease_wait_seconds=0):
         self.waits.append(lease_wait_seconds)
+        self.prompts.append(prompt)
         task_id = hashlib.sha256(f"{owner}:{seed}".encode()).hexdigest()[:32]
         video = self.root / f"{task_id}.mp4"
         subprocess.run(
@@ -114,6 +117,7 @@ class _FakeController:
         self.jobs[task_id] = {
             "task_id": task_id, "profile": profile, "status": "succeeded", "runner_job_id": f"runner-{task_id[:6]}",
             "receipt": {"workflow_revision_hash": "rev-test", "workflow_revision": "rev-test",
+                        "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
                         "outputs": [{"sha256": sha, "source_path": str(video), "intermediate": False}]},
         }
         return {"task_id": task_id, "status": "starting"}
@@ -198,7 +202,11 @@ def test_generator_runs_every_stage_with_real_settings_and_feeds_dispatch(pipeli
     assert music["meta"]["duration"] + 0.1 >= plan["scenes"][-1]["end_time"]
 
     # 생성 결과가 dispatch 입력 조건(장면 이미지 전부 + 전체 길이 음악)을 실제로 만족해 렌더까지 간다.
-    dispatch.dispatch(plans, studio, plan["id"], plan["revision"])
+    dispatch.dispatch(plans, studio, plan["id"], plan["revision"], caption_mode="narration")
+    dispatch_record = dispatch.ProductionStore(plans).read(plan["id"])["dispatches"][-1]
+    assert dispatch_record["caption_mode"] == "narration"
+    assert dispatch_record["caption_timing"].endswith("no word-level alignment")
+    assert set(dispatch_record["caption_sources"].values()) == {"narration"}
     assert dispatch.view(plans, studio, plan["id"])["state"] == "ready_to_render"
     dispatch.request_render(plans, studio, plan["id"], plan["revision"])
     _run_renderer(studio)
@@ -207,6 +215,132 @@ def test_generator_runs_every_stage_with_real_settings_and_feeds_dispatch(pipeli
     path, _name = dispatch.final_media(plans, plan["id"], done["final"]["id"])
     info = inspect_media(path)
     assert info["has_video"] and info["has_audio"]
+    project_id = done["segments"][0]["project_id"]
+    rendered_project = studio.get(project_id)
+    assert [cue["text"] for cue in rendered_project["timeline"]["captions"]] == [
+        cue["text"] for scene in plan["scenes"]
+        for cue in rendered_project["scenes"][plan["scenes"].index(scene)]["caption_segments"]
+    ]
+    srt = (studio.path(project_id) / "renders" / f"{done['segments'][0]['job_id']}.srt").read_text()
+    first_cue_end = rendered_project["scenes"][0]["caption_segments"][0]["end"]
+    expected_end_ms = round(first_cue_end * 1000)
+    assert "첫 번째 장면에서는" in srt and f"00:00:00,{expected_end_ms % 1000:03}" in srt
+
+
+def test_scene_prompt_is_specific_and_receipt_keeps_the_exact_comfy_input(pipeline):
+    _settings, _plans, plan, generator, controller, _studio = pipeline
+
+    prompts = [generator._prompt(plan, scene) for scene in plan["scenes"]]
+
+    assert "장면 2:" not in prompts[0]
+    assert "장면 3:" not in prompts[0]
+    assert "장면 2의 설명" not in prompts[0]
+    assert "장면 1의 설명" in prompts[1]
+    assert "장면 2의 설명" not in prompts[1]
+    assert "장면 2의 설명" in prompts[2]
+    result = asset_generation.generate_assets(_plans, plan["id"], plan["revision"], generator)
+    runs = result["receipt"]["engine_runs"]
+    assert [run["prompt"] for run in runs] == prompts
+    assert all(run["prompt_sha256"] == hashlib.sha256(run["prompt"].encode()).hexdigest() for run in runs)
+    assert all(run["receipt"]["prompt_sha256"] == run["prompt_sha256"] for run in runs)
+    assert controller.prompts == prompts
+
+
+def test_scene_prompt_refuses_to_silently_truncate_required_visual_details(pipeline):
+    _settings, _plans, _plan, generator, _controller, _studio = pipeline
+    plan = {"brief": "도시 다큐멘터리", "name": "도시 다큐멘터리"}
+    scene = {"scene_id": "s1", "title": "골목", "narration": "푸른 새벽빛과 가로등의 상세 묘사 " * 90}
+
+    with pytest.raises(ValueError, match="1000자를 넘습니다"):
+        generator._prompt(plan, scene)
+
+
+def test_seoul_sample_scene_brief_keeps_each_visual_target_separate(pipeline):
+    _settings, _plans, plan, generator, _controller, _studio = pipeline
+    plan = dict(plan)
+    plan["brief"] = (
+        "서울 새벽 3장면. 장면 1: 푸른 새벽빛 골목과 꺼지는 가로등. "
+        "장면 2: 첫 버스와 환경미화원이 거리를 지나간다. "
+        "장면 3: 한강 수면에 떠오르는 해와 금빛 윤슬."
+    )
+    scenes = [
+        {"scene_id": "s1", "title": "새벽 골목", "narration": "가로등이 하나둘 꺼집니다."},
+        {"scene_id": "s2", "title": "도시가 깨어난다", "narration": "첫 버스와 청소 인력이 거리를 엽니다."},
+        {"scene_id": "s3", "title": "한강의 일출", "narration": "한강 수면에 금빛 윤슬이 번집니다."},
+    ]
+
+    prompts = [generator._prompt(plan, scene) for scene in scenes]
+
+    assert "푸른 새벽빛 골목" in prompts[0] and "첫 버스" not in prompts[0]
+    assert "첫 버스와 환경미화원" in prompts[1] and "한강 수면" not in prompts[1]
+    assert "한강 수면" in prompts[2] and "꺼지는 가로등" not in prompts[2]
+
+
+def test_caption_compiler_wraps_korean_for_selected_style_and_uses_estimated_interval():
+    from ttakkari.creative.render import compile_caption_segments
+
+    text = "한강 위로 해가 떠오르며 금빛 윤슬이 번집니다. 서울의 하루가 시작되고 강변의 도시는 천천히 깨어납니다."
+    width = 720
+
+    cues = compile_caption_segments(text, 4.2, width, style="center_highlight")
+
+    assert "".join(cue["text"].replace("\n", "") for cue in cues).replace(" ", "") == text.replace(" ", "")
+    assert cues[0]["start"] == 0
+    assert cues[-1]["end"] == pytest.approx(4.2)
+    assert all(len(cue["text"].splitlines()) <= 2 for cue in cues)
+    font = ImageFont.truetype("/System/Library/Fonts/AppleSDGothicNeo.ttc", round(width * 0.052))
+    draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    assert all(draw.textlength(line, font=font) <= width * 0.85 for cue in cues for line in cue["text"].splitlines())
+
+
+def test_dispatch_narration_captions_use_scene_voice_duration_and_title_only_is_explicit(pipeline):
+    _settings, plans, plan, generator, _controller, studio = pipeline
+    generated = asset_generation.generate_assets(plans, plan["id"], plan["revision"], generator)
+
+    dispatch.dispatch(plans, studio, plan["id"], plan["revision"], caption_mode="narration")
+    narration_pid = dispatch._create_project(
+        studio,
+        dispatch.ProductionStore(plans),
+        plan,
+        plan["render_plan"]["segments"][0],
+        dispatch.ProductionStore(plans).read(plan["id"]),
+        {"applied": {}},
+        caption_mode="narration",
+    )
+    narration_project = studio.get(narration_pid)
+    for plan_scene, rendered_scene in zip(plan["scenes"], narration_project["scenes"], strict=True):
+        voice_seconds = generated["assets"]["voices"][plan_scene["scene_id"]]["meta"]["duration"]
+        compiled = "".join(segment["text"].replace("\n", "") for segment in rendered_scene["caption_segments"])
+        assert compiled.replace(" ", "") == plan_scene["narration"].replace(" ", "")
+        assert rendered_scene["caption_segments"]
+        assert rendered_scene["caption_segments"][-1]["end"] == pytest.approx(voice_seconds)
+
+    title_pid = dispatch._create_project(
+        studio,
+        dispatch.ProductionStore(plans),
+        plan,
+        plan["render_plan"]["segments"][0],
+        dispatch.ProductionStore(plans).read(plan["id"]),
+        {"applied": {}},
+        caption_mode="title_only",
+    )
+    title_project = studio.get(title_pid)
+    assert [scene["caption"] for scene in title_project["scenes"]] == [scene["title"] for scene in plan["scenes"]]
+    assert all(not scene["caption_segments"] for scene in title_project["scenes"])
+
+    no_narration_plan = {**plan, "scenes": [dict(scene, narration="") for scene in plan["scenes"]]}
+    fallback_pid = dispatch._create_project(
+        studio,
+        dispatch.ProductionStore(plans),
+        no_narration_plan,
+        plan["render_plan"]["segments"][0],
+        dispatch.ProductionStore(plans).read(plan["id"]),
+        {"applied": {}},
+        caption_mode="narration",
+    )
+    fallback_project = studio.get(fallback_pid)
+    assert [scene["caption"] for scene in fallback_project["scenes"]] == [scene["title"] for scene in plan["scenes"]]
+    assert all(not scene["caption_segments"] for scene in fallback_project["scenes"])
 
 
 def test_tts_scene_script_limit_uses_a_real_settings_field(pipeline):

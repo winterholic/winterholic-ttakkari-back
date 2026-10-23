@@ -365,7 +365,12 @@ async def production_get(pid: PlanId, _: User):
 
 
 @router.post("/plans/{pid}/production", status_code=201)
-async def production_dispatch(pid: PlanId, body: PlanApprove, _: User):
+async def production_dispatch(
+    pid: PlanId,
+    body: PlanApprove,
+    _: User,
+    caption_mode: Literal["narration", "title_only"] = "narration",
+):
     return await asyncio.to_thread(
         perform,
         production.dispatch,
@@ -373,6 +378,7 @@ async def production_dispatch(pid: PlanId, body: PlanApprove, _: User):
         default_studio(),
         str(pid),
         body.revision,
+        caption_mode,
     )
 
 

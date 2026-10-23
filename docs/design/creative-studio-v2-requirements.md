@@ -107,6 +107,14 @@ Project → Sequence → Scene → Shot → Asset. 각 단계 독립 생성·검
 장면 필수 정보: scene_id, start_time/end_time, narrative_goal, style_dna, characters, environment, camera, motion, audio, required_skills, selected_tools, selected_models, dependencies, output_assets, quality_checks.
 기술이 달라도 미술·서사 일관성을 유지한다. 사용자가 시각적으로 계획을 확인·수정할 수 있어야 한다.
 
+### R21 장면 입력·내레이션 자막 실행 계약 (2026-10-23 후속)
+
+- 이미지 prompt는 전체 brief의 장면 지시를 모든 shot에 복사하지 않는다. `장면 N:`으로 구조화된 요청이면 공통 소개와 해당 장면 절만 전달하고, 비구조화 brief에서는 승인된 해당 scene narration/title을 shot 지시로 사용한다.
+- 계획과 Comfy receipt를 scene별로 추적한다. 생성 receipt는 실제 prompt 원문과 UTF-8 SHA-256을 저장하고 Comfy receipt의 prompt hash와 일치해야 한다. 이 연결은 입력 추적 근거이며, 출력 이미지가 의미 요구와 일치한다는 판정은 별도 시각 검수로 남긴다.
+- R21 정지 이미지 경로는 정지 이미지 기반 슬라이드쇼로 설명한다. 이미 연결된 FFmpeg animation/transition 선택만 적용하고, 장면 prompt 개선이나 정지 이미지 지속을 영상 생성 모션 지원으로 표현하지 않는다.
+- 제작 dispatch의 `caption_mode`는 `narration`(기본) 또는 명시적 `title_only`다. narration 모드에서 대본이 비어 있는 장면은 제목 fallback으로 기록한다. narration 자막은 화면 폭의 84% 안전영역 안에서 두 줄 이하 cue로 나누고 실제 장면별 음성 asset 길이 안에 배치한다. 단어 단위 오디오 정렬이 없으면 타이밍은 추정으로 표시한다.
+- 기계 미디어 QA 성공은 장면 내용·시청 가치·발음·음악과 음성의 청감 품질을 입증하지 않는다. 음향 청취와 장면 의미 검수는 실행한 경우만 별도로 기록한다.
+
 ## QA·피드백·학습
 
 검증 축: 스타일 정체성, 캐릭터 일관성, 카메라·모션, 의미 적합성, 장면 연속성, 음성/음악 동기화, 자막 가독성, 역사/과학 정확성, 길이/전개, 실제 시청 경험.

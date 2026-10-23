@@ -24,6 +24,9 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
     assert expected <= tools.keys()
     assert "prompt" in tools["comfy_submit"].input_schema["properties"]
     assert "revision" in tools["creative_v2_plan_approve"].input_schema["properties"]
+    dispatch_schema = tools["creative_v2_production_dispatch"].input_schema
+    assert dispatch_schema["properties"]["caption_mode"]["default"] == "narration"
+    assert set(dispatch_schema["properties"]["caption_mode"]["enum"]) == {"narration", "title_only"}
     plan_create_schema = tools["creative_v2_plan_create"].input_schema
     style_items = plan_create_schema["properties"]["style"]["anyOf"][0]["items"]
     assert style_items["$ref"] == "#/$defs/CreativeStyleRef"
@@ -54,6 +57,16 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
     })
     call.assert_awaited_once_with("POST", "/auto_assets_start", {"data": {
         "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
+    }}, prefix="/api/agent/creative-v2")
+
+    call.reset_mock()
+    await ms.server.call_tool("creative_v2_production_dispatch", {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
+        "caption_mode": "title_only",
+    })
+    call.assert_awaited_once_with("POST", "/production_dispatch", {"data": {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
+        "caption_mode": "title_only",
     }}, prefix="/api/agent/creative-v2")
 
     call.reset_mock()

@@ -319,9 +319,15 @@ async def creative_v2_auto_assets_retry(plan_id: str, revision: Annotated[int, F
 
 
 @server.tool()
-async def creative_v2_production_dispatch(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
-    """Create or retrieve the idempotent production dispatch for an approved, renderable plan revision."""
-    return await _creative("production_dispatch", {"plan_id": plan_id, "revision": revision})
+async def creative_v2_production_dispatch(
+    plan_id: str,
+    revision: Annotated[int, Field(ge=1)],
+    caption_mode: Literal["narration", "title_only"] = "narration",
+) -> str:
+    """Dispatch an approved plan. Narration captions are the default; choose title_only to render titles only."""
+    return await _creative("production_dispatch", {
+        "plan_id": plan_id, "revision": revision, "caption_mode": caption_mode,
+    })
 
 
 @server.tool()

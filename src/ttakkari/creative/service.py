@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ttakkari.creative.catalog import (
     FORMATS,
@@ -51,7 +51,20 @@ def timeline(data: dict) -> dict:
                 "caption_style": scene.get("caption_style", "bottom_card"),
             }
         )
-        if scene["caption"]:
+        caption_segments = scene.get("caption_segments") or []
+        if caption_segments:
+            captions.extend(
+                {
+                    "scene_id": scene["id"],
+                    "text": item["text"],
+                    "style": scene.get("caption_style", "bottom_card"),
+                    "start": cursor + item["start"],
+                    "end": cursor + item["end"],
+                    "timing_basis": item.get("timing_basis"),
+                }
+                for item in caption_segments
+            )
+        elif scene["caption"]:
             captions.append(
                 {
                     "scene_id": scene["id"],
@@ -76,16 +89,31 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
+class CaptionSegment(Strict):
+    text: str = Field(min_length=1, max_length=160)
+    start: float = Field(ge=0, le=60)
+    end: float = Field(gt=0, le=60)
+    timing_basis: Literal["estimated_voice_duration", "scene_duration", "user_supplied"] = "user_supplied"
+
+
 class Scene(Strict):
     id: str = Field(default_factory=uid, max_length=50)
     duration: float = Field(default=10, ge=1, le=60)
     prompt: str = Field(default="", max_length=3000)
     caption: str = Field(default="", max_length=160)
+    caption_segments: list[CaptionSegment] = Field(default_factory=list, max_length=120)
     asset_id: str | None = None
     template_id: str | None = None
     animation: Literal["still", "zoom_in", "zoom_out", "pan", "pan_down", "pulse"] = "zoom_in"
     transition: Literal["fade", "cut"] = "fade"
     caption_style: Literal["bottom_card", "center_highlight", "title_card", "code_overlay"] = "bottom_card"
+
+    @model_validator(mode="after")
+    def _caption_ranges_fit_scene(self):
+        for segment in self.caption_segments:
+            if segment.start >= segment.end or segment.end > self.duration:
+                raise ValueError("자막 구간은 장면 길이 안에서 시작보다 늦게 끝나야 합니다.")
+        return self
 
 
 class ProjectInput(Strict):

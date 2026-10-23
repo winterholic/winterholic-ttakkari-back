@@ -103,3 +103,31 @@
 - 실제 ffmpeg 렌더까지 격리 임시 홈에서 실행했다(등록 style → 계획 → dispatch 기록 → 렌더 project 장면 값). 실제 Comfy/ACE-Step/GPU는 쓰지 않았다.
 - 움직임·전환·자막 스타일이 화면에서 편별로 달라 보이는지는 새 영상의 시각 검수가 필요하며 아직 **미실행**이다.
 - MCP tool schema는 중첩 `StyleDNADoc` 모델을 직접 사용해 unknown properties를 닫고(`additionalProperties=false`); 브리지에 JSON으로 보낼 때만 model dump 한다. 자유형 object schema를 검출하는 회귀는 먼저 실패했고, typed model 적용 후 통과했다.
+
+
+## 보강 3: 실행 증거 범위 정정 및 자막 동작 요약 (2026-10-23)
+
+### 실행 기록의 증거 한계
+
+이전 worker 결과에는 실행 원문 대신 요약만 남아 있다. worker session `c935fb6c-f195-40d1-aa8f-9ca423280c2f`의 기록된 결과에는 아래 문자열과 요약이 보인다.
+
+| 작업 | session에 남은 내용 | 원문에서 확인되지 않는 항목 |
+|---|---|---|
+| 첫 회귀 | `PYTHONPATH=src:unit_tests .venv/bin/python -m pytest -q ...tests...`; `90 passed in 109.64s` | `...tests...`의 전체 argv, 호출 tool, 실행 옵션, 작업 디렉터리, 원시 종료 출력 |
+| 첫 push | `UV_CACHE_DIR=/private/tmp/ttakkari-uv-cache git push origin HEAD:main`; 결과 메시지에 “Pushed” | 호출 tool/옵션/작업 디렉터리 및 git의 원시 stdout·stderr·종료 코드 |
+| 두 번째 회귀·pre-push | `105 passed in 142.07s`; Ruff, 계약 테스트 84개, 변경 테스트 105개 통과; `6428081..9f82c9c HEAD -> main` push라고 worker가 보고 | 각 명령의 전체 argv, 호출 tool/옵션/작업 디렉터리, 각 원시 출력·종료 코드 |
+
+따라서 위 검증과 push는 **worker 보고**이며 이 Run에서 독립 재실행한 결과가 아니다. 특히 관련 코드 검사 92개 및 hook 검사 84/11 보고도 worker가 수행했다고 보고한 범위로만 취급한다. 해당 원문 기록에는 최초 캐시 거부의 정확한 환경, 명령, 에러 출력, 거부 단계가 없다. “허용된 임시 캐시로 같은 gate를 통과” 및 “임시 캐시 삭제가 safety guard에 막힘”도 실행 출력이 보존되지 않아 worker 진술 이상의 증거로 승격하지 않는다.
+
+현재 확인 가능한 어느 원문에도 “저장소를 sandbox에서 읽을 수 없어 git/pytest/push를 sandbox 밖에서 실행했다”는 실행 근거나 외부 실행 흔적이 없다. 또한 tool 호출의 승인/격상 필드가 session 기록에 보존되지 않았다. 그러므로 기본 실행 경로였는지, 별도 escalation이 있었는지, 우회였는지는 **판정 불가**다. 이는 환경 전체의 접근 불가를 뜻하지 않는다. 이 정정은 실행을 재시도하지 않고 남아 있는 session 결과와 저장소 기록만으로 작성했다.
+
+이번 Run에서 독립 확인한 저장소 상태는 별도다: `/Users/winterholic/development/projects/ttakkari-studio-v2-back`에서 `git pull --ff-only origin main`은 `Already up to date`를 반환했고, HEAD와 `origin/main`은 `9f82c9c`였다. 이 사실은 과거 pytest/push 호출 세부사항을 소급 입증하지 않는다.
+
+### 자막 모드 계약과 실제 출력 경로
+
+- 지원 모드는 `narration`과 `title_only`다. `creative_v2_production_dispatch`는 `narration`이 기본이며, `title_only`를 명시하면 장면 제목만 caption source로 쓴다. `C10.subtitles`의 선택 여부는 계약 기록의 `plan_selects_subtitles`로 표시되며, 어느 모드도 대본을 화면에 반드시 표시하라는 spec은 아니다. 따라서 명시한 `title_only`는 그 자체로 명세 위반이 아니다.
+- `narration`에서 장면 narration이 비어 있지 않으면 그 본문이 `caption_segments`가 된다. 줄바꿈은 지정된 caption style과 안전 폭을 사용하며 시간 길이는 음성 asset duration(없으면 장면 duration) 기반 추정이다. 대본과 음성의 단어 단위 sync는 보장하지 않는다. 대본이 비어 있는 장면은 제목 fallback이고 `caption_contract.notices`가 이를 알린다.
+- `title_only`에서 narration이 있는 장면은 대본 자막을 화면에 내보내지 않는다는 notice가 `caption_contract.notices`에 기록된다. 이미 dispatch된 revision에 반대 모드를 요청하면 기존 모드를 바꾸지 않고 `caption_mode_request_ignored`를 돌려준다. 다른 모드를 적용하려면 새 revision 승인과 dispatch가 필요하다.
+- 샘플 plan brief에는 한국어 자막과 한국어 narration이 있었지만 당시 revision의 dispatch mode를 기록하는 근거는 보존되어 있지 않다. 그러므로 옛 영상의 제목-only를 `title_only`로 의도했다고 추정하거나 명세 위반으로 판정하지 않는다. 새 영상에서 대본 자막이 목표일 때는 `narration` 선택, contract의 mode/notices, 각 장면 `caption_segments` 본문, SRT 구간을 함께 확인한다.
+
+이번 정정은 문서 변경만 포함한다. backend 코드·runtime·기존 계획/생성은 바꾸지 않았고, pytest 및 GPU 생성은 실행하지 않았다.

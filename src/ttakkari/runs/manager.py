@@ -99,6 +99,15 @@ STRIP_ENV_PREFIXES = ("TTAKKARI_", "ORCA_", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOIN
 # 계정 폴더는 계정 설정으로만 정한다. 백엔드를 띄운 셸(예: Orca)의 값이 기본 계정에 새지 않게 지운다(ADR 0006).
 STRIP_ENV_KEYS = {"DATABASE_URL", "PGPASSWORD", "CLAUDE_CONFIG_DIR", "CODEX_HOME"}
 
+
+def write_roots_for_session(sess: ChatSession, *, root: Path, outbox: Path, settings,
+                            extra_writable_roots: Iterable[Path], tmp_dirs: Iterable[Path]) -> list[Path]:
+    """Keep Creative Studio intent inference read-only outside its disposable Run outbox."""
+    if sess.worker_task_type == "creative_intent":
+        return [outbox]
+    return [root, outbox, settings.uploads_root, settings.inbox_root,
+            *[Path(p) for p in extra_writable_roots], *tmp_dirs]
+
 SYSTEM_NOTE = """\
 You are running unattended via Winterholic Ttakkari on the user's Mac Studio. The user is remote, usually on a phone, \
 and sees your messages and the files you produce in a web app.
@@ -1127,7 +1136,10 @@ class RunManager:
         outbox.mkdir(parents=True, exist_ok=True)
         run.outbox_path = str(outbox)
         # 업로드 폴더는 guard 보호 영역(~/.ttakkari) 안이라 에이전트가 첨부를 읽으려면 허용 목록에 있어야 한다.
-        write_roots = [root, outbox, s.uploads_root, s.inbox_root, *[Path(p) for p in ws.extra_writable_roots], *_tmp_dirs()]
+        write_roots = write_roots_for_session(
+            sess, root=root, outbox=outbox, settings=s,
+            extra_writable_roots=ws.extra_writable_roots, tmp_dirs=_tmp_dirs(),
+        )
 
         # ArtCraft 작업(ADR 0039)은 첨부를 작업 폴더로 복사해 안내하고 앱 MCP 서버를 붙인다. 일반 세션은 plan 이 None.
         art_plan = await _artcraft_plan(db, sess, run, outbox)

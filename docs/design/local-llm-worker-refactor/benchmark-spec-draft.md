@@ -508,6 +508,8 @@ v1에서 정한 것:
 - §6의 숫자 전부가 사전등록 계획값이다. 실측 결과로 인용하지 않는다.
 - probe와 스캔은 개발 fixture 일부에 대한 검사이며 verifier 전체의 신뢰도나 누출 없음을 증명하지 않는다.
 
+**4.2 진행 상태(후속 기록):** 아래 1~3의 개발 과제 쪽(평가기, 개발 과제 9개의 fixture·참조해·hidden·mutant, 음성 대조 N1~N14, 누출 스캔 확장)은 `evaluator-implementation-4-2.md` 에 구현·검증 결과가 있다. holdout 9개와 봉인 번들(4번)은 미착수다. 이 절의 나머지 문장은 4.1 확정 시점의 기록이며 바꾸지 않았다.
+
 **4.2로 넘기는 잔여 과제:**
 1. 모든 과제에서 delta/invariant 분류를 base와 gold에서 CPU로 확인(§1-8), 필수 reject·N1~N14 실행, gold·alt-gold 작성과 독립 검토.
 2. MUL rev2 프롬프트, DBG rev2(공개 test와 실제 실행 failure log), LNG composite 합성과 턴 문안 hash 고정, EXP answer key AST 계산, API fixture, REC gold.

@@ -1,5 +1,5 @@
 {
- "manifest_revision": "v1",
+ "manifest_revision": "v1.1",
  "final": true,
  "planned_values_only": true,
  "note": "Pre-registered planned values, not measurements. WBS 1.2 audit received (main re-verified raw 61 rows / 136608 bytes / sha256 d525733d...e1362be0). Remaining items listed in open_items.",
@@ -53,9 +53,10 @@
  },
  "evaluator": {
   "boundary": "outside agent write roots; patch applied to clean worktree from base tree; canonical public tests restored; sealed hidden copied after patch; handshake nonce + executed-check count; python -I; no network",
-  "verified": false,
+  "verified": "self-check on 9 dev tasks (CPU, no model); isolation (network/sandbox) not applied: 4.3",
   "start_state": "pristine fixture reset per attempt; base tree hash and per-file sha256 recorded before first request; mismatch = INFRA_BASE_MISMATCH",
-  "success_requires": "start hash match, no forbidden writes, all delta checks green (>=1), invariants green, report reconciles with trace/diff"
+  "success_requires": "start hash match, no forbidden writes, all delta checks green (>=1), invariants green, report reconciles with trace/diff",
+  "implemented": true
  },
  "holdout_protection": {
   "sealed_bundle_path_proposed": "/Users/winterholic/bench-sealed/local-llm-holdout-r1/",
@@ -263,10 +264,50 @@
    ],
    "change_class": "read_only_report",
    "check_classes": {
-    "H6": "invariant"
+    "H1": "delta",
+    "H2": "delta",
+    "H3": "delta",
+    "H4": "delta",
+    "H5": "delta",
+    "H6": "invariant",
+    "H7": "delta",
+    "H8": "delta"
    },
-   "check_classes_cpu_verified_at_base": [],
-   "check_classes_note": "H1-H5,H7,H8 are delta on the report artifact (absent at base)"
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7"
+   ],
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/exp.py",
+   "base_file_count": 60,
+   "base_tree_sha256": "786191c3a0cf2d91a9af7c656980c70178e9a44d9a8d8c975704d98c74c26d9e",
+   "check_classes_pending_or_metric": [
+    "H8"
+   ],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 1,
+    "N3": 4,
+    "N7": 1,
+    "N8": 2,
+    "N9": 2,
+    "N10": 2,
+    "N11": 1
+   },
+   "selfcheck": {
+    "negatives": 14,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   }
   },
   {
    "id": "B4-EXP-H",
@@ -305,7 +346,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "read_only_report",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-SGL-D",
@@ -373,7 +415,8 @@
     "H4": "invariant",
     "H5": "delta",
     "H6": "invariant",
-    "H7": "invariant"
+    "H7": "invariant",
+    "PUB": "delta"
    },
    "check_classes_cpu_verified_at_base": [
     "H1",
@@ -381,8 +424,36 @@
     "H3",
     "H4",
     "H5",
-    "H7"
-   ]
+    "H6",
+    "H7",
+    "PUB"
+   ],
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/sgl.py",
+   "base_file_count": 3,
+   "base_tree_sha256": "7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285",
+   "check_classes_pending_or_metric": [],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 1,
+    "N3": 6,
+    "N4": 2,
+    "N6": 1,
+    "N7": 4,
+    "N8": 1,
+    "N9": 1,
+    "N10": 1,
+    "N11": 1
+   },
+   "selfcheck": {
+    "negatives": 19,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   }
   },
   {
    "id": "B4-SGL-H",
@@ -423,7 +494,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-MUL-D",
@@ -494,14 +566,48 @@
     "H4": "delta",
     "H5": "invariant",
     "H6": "invariant",
-    "H7": "delta"
+    "H7": "delta",
+    "PUB": "delta"
    },
    "check_classes_cpu_verified_at_base": [
     "H1",
+    "H2",
     "H3",
-    "H5"
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "PUB"
    ],
-   "prompt_status": "rev2 required (state qty/total separators and empty-list line)"
+   "prompt_status": "rev2 implemented",
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/mul.py",
+   "base_file_count": 5,
+   "base_tree_sha256": "68d7e378b73dc06b804c151df5bf51f8dddef3a1ffebe41e0f76485318c7fe3d",
+   "check_classes_pending_or_metric": [],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 1,
+    "N3": 3,
+    "N4": 3,
+    "N6": 1,
+    "N7": 4,
+    "N8": 1,
+    "N9": 1,
+    "N10": 1,
+    "N11": 1,
+    "N14": 1
+   },
+   "selfcheck": {
+    "negatives": 18,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   },
+   "defects_status": "fixed in rev2 (see implementation record)"
   },
   {
    "id": "B4-MUL-H",
@@ -544,7 +650,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-API-D",
@@ -614,9 +721,49 @@
     "H6": "delta",
     "H7": "invariant",
     "H8": "delta",
-    "H9": "invariant"
+    "H9": "invariant",
+    "H10": "invariant",
+    "PUB": "invariant"
    },
-   "check_classes_cpu_verified_at_base": []
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H10",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "H8",
+    "H9",
+    "PUB"
+   ],
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/api.py",
+   "base_file_count": 5,
+   "base_tree_sha256": "f0d684837e3213bc31df73479b4250cc9361b7631c6283658517f3e592f5c5aa",
+   "check_classes_pending_or_metric": [],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 1,
+    "N3": 7,
+    "N4": 2,
+    "N6": 1,
+    "N7": 4,
+    "N8": 1,
+    "N9": 1,
+    "N10": 1,
+    "N11": 1
+   },
+   "selfcheck": {
+    "negatives": 20,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   }
   },
   {
    "id": "B4-API-H",
@@ -658,7 +805,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-DBG-D",
@@ -726,12 +874,48 @@
     "H2": "delta",
     "H3": "invariant",
     "H4": "delta",
-    "H5": "delta",
     "H6": "delta",
-    "H7": "invariant"
+    "H7": "invariant",
+    "PUB": "delta"
    },
-   "check_classes_cpu_verified_at_base": [],
-   "check_classes_note": "rev2 fixture needed; base public unittest green on current t4-long-file (CPU-confirmed)"
+   "check_classes_cpu_verified_at_base": [
+    "H2",
+    "H3",
+    "H4",
+    "H6",
+    "H7",
+    "PUB"
+   ],
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/dbg.py",
+   "base_file_count": 4,
+   "base_tree_sha256": "615b80460fb5695154627a37e169f2c5ddde2b9ea4bdff120974344155fa7e7f",
+   "check_classes_pending_or_metric": [
+    "H1"
+   ],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 1,
+    "N3": 6,
+    "N4": 3,
+    "N6": 1,
+    "N7": 4,
+    "N8": 1,
+    "N9": 1,
+    "N10": 1,
+    "N11": 1
+   },
+   "selfcheck": {
+    "negatives": 20,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   },
+   "prompt_status": "rev2 implemented",
+   "defects_status": "fixed in rev2 (see implementation record)"
   },
   {
    "id": "B4-DBG-H",
@@ -774,7 +958,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-REF-D",
@@ -842,12 +1027,46 @@
     "H4": "invariant",
     "H5": "delta",
     "H6": "invariant",
-    "H7": "invariant"
+    "H7": "invariant",
+    "PUB": "invariant"
    },
    "check_classes_cpu_verified_at_base": [
     "H1",
-    "H4"
-   ]
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "PUB"
+   ],
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/ref.py",
+   "base_file_count": 5,
+   "base_tree_sha256": "477eba218a79b82359abe0e75f1a35e6703d3cdaff686c6e06825da3a409628b",
+   "check_classes_pending_or_metric": [],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 2,
+    "N3": 4,
+    "N4": 2,
+    "N6": 1,
+    "N7": 4,
+    "N8": 1,
+    "N9": 1,
+    "N10": 1,
+    "N11": 1
+   },
+   "selfcheck": {
+    "negatives": 18,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   },
+   "defects_status": "fixed (substitution check / gold-pass requirement)"
   },
   {
    "id": "B4-REF-H",
@@ -889,7 +1108,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-TST-D",
@@ -966,7 +1186,46 @@
     "H7": "delta",
     "H8": "invariant"
    },
-   "check_classes_cpu_verified_at_base": []
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "H7",
+    "H8"
+   ],
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/tst.py",
+   "base_file_count": 3,
+   "base_tree_sha256": "1c0af76d00bdc8af6d26bc1fb50b61863f9fa299b258bd5a353c5de4c2f08859",
+   "check_classes_pending_or_metric": [],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 1,
+    "N3": 3,
+    "N4": 1,
+    "N5": 1,
+    "N6": 2,
+    "N7": 5,
+    "N8": 1,
+    "N9": 1,
+    "N10": 2,
+    "N11": 1,
+    "N12": 1,
+    "N13": 1
+   },
+   "selfcheck": {
+    "negatives": 21,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   },
+   "defects_status": "fixed (substitution check / gold-pass requirement)"
   },
   {
    "id": "B4-TST-H",
@@ -1011,7 +1270,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-REC-D",
@@ -1087,12 +1347,53 @@
     "H2": "delta",
     "H3": "delta",
     "H4": "delta",
+    "H4q": "delta",
     "H5": "delta",
     "H6": "invariant",
-    "H7": "process_metric"
+    "H7": "process_metric",
+    "PUB": "delta"
    },
-   "check_classes_cpu_verified_at_base": [],
-   "check_classes_note": "trap CPU-confirmed: naive round() patch fails public half-up test; integer half-up patch passes"
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H4q",
+    "H5",
+    "H6",
+    "PUB"
+   ],
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/rec.py",
+   "base_file_count": 5,
+   "base_tree_sha256": "a5fc7c1ee76af8dbe306d7294dc8bab9a84865d47cdd9541d19f8a6adad06a55",
+   "check_classes_pending_or_metric": [
+    "H7"
+   ],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 1,
+    "N3": 4,
+    "N4": 2,
+    "N5": 1,
+    "N6": 1,
+    "N7": 4,
+    "N8": 1,
+    "N9": 1,
+    "N10": 1,
+    "N11": 1,
+    "N12": 1,
+    "N13": 2
+   },
+   "selfcheck": {
+    "negatives": 21,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
+   }
   },
   {
    "id": "B4-REC-H",
@@ -1137,7 +1438,8 @@
    "sealed_bundle_ref": null,
    "never_executed_by_any_model": true,
    "change_class": "diff_required",
-   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   },
   {
    "id": "B4-LNG-D",
@@ -1223,19 +1525,82 @@
    ],
    "change_class": "mixed",
    "check_classes": {
+    "H1": "delta",
     "H2": "invariant",
-    "H7": "invariant",
+    "PUB1": "delta",
+    "H3": "delta",
+    "H4": "delta",
+    "H5c": "delta",
+    "H5": "delta",
+    "H5g": "invariant",
+    "H5q": "invariant",
+    "PUB2": "invariant",
+    "H6": "delta",
+    "H7": "delta",
+    "PUB3": "invariant",
+    "H8": "delta",
+    "H9": "delta",
     "H10": "invariant",
+    "PUB4": "invariant",
+    "H11": "delta",
     "H12": "invariant"
    },
-   "check_classes_cpu_verified_at_base": [],
-   "check_classes_note": "other checks delta per turn; H13/H14 session checks; T5 is read_only_report (no diff)",
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H10",
+    "H11",
+    "H12",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H5c",
+    "H5g",
+    "H5q",
+    "H6",
+    "H7",
+    "H8",
+    "H9",
+    "PUB1",
+    "PUB2",
+    "PUB3",
+    "PUB4"
+   ],
    "turn_change_class": {
     "T1": "diff_required",
     "T2": "diff_required",
     "T3": "diff_required",
     "T4": "diff_required",
     "T5": "read_only_report"
+   },
+   "implementation_status": "implemented (4.2)",
+   "implemented_in": "bench/local_llm_eval/tasks/lng.py",
+   "base_file_count": 64,
+   "base_tree_sha256": "493fc3af28a1c5a12783bcd1b3a9d4b390e54c3f219fd9a89be23fb7d0cc2a0f",
+   "check_classes_pending_or_metric": [],
+   "negative_controls_implemented": {
+    "N1": 1,
+    "N2": 2,
+    "N3": 5,
+    "N4": 3,
+    "N5": 1,
+    "N6": 1,
+    "N7": 4,
+    "N8": 3,
+    "N9": 1,
+    "N10": 2,
+    "N11": 1,
+    "N12": 1,
+    "N13": 1
+   },
+   "selfcheck": {
+    "negatives": 26,
+    "false_positives": 0,
+    "references": {
+     "gold": "PASS",
+     "alt_gold": "PASS"
+    },
+    "classification_bad": 0
    }
   },
   {
@@ -1288,10 +1653,11 @@
     "T3": "diff_required",
     "T4": "diff_required",
     "T5": "read_only_report"
-   }
+   },
+   "implementation_status": "not implemented (sealed operations pending; holdout answers never go in this repository)"
   }
  ],
- "final_scope": "WBS 4.1 task/spec definition only. 4.2 (fixtures, gold, hidden, mutants, evaluator) not started.",
+ "final_scope": "WBS 4.1 task/spec definition (final) + WBS 4.2 evaluator and 9 dev tasks implemented. Holdout fixtures and the sealed bundle are not created.",
  "audit_1_2": {
   "evidence_dir": "local-llm-worker-design-20261023:docs/design/local-llm-worker-refactor/evidence-audit/",
   "raw_c_opt": {
@@ -1383,5 +1749,31 @@
   "evidence/4.1/leak_scan_dev.py": "6d5185c9690811570402d0978b4cdb8540b7cc91403cbe4acb2b9d4eaab27c22",
   "evidence/4.1/leak_scan_dev_output.json": "9d7eb576bf239f7934f6949bdd538202c2d7d02583f5836175db3a45dabcd017"
  },
- "harness_note": "WBS 2.2 under rework after 2 counterexamples; no model load/inference/download/operations change in this work"
+ "harness_note": "WBS 2.2 under rework after 2 counterexamples; no model load/inference/download/operations change in this work",
+ "implementation_4_2": {
+  "package": "bench/local_llm_eval",
+  "record": "docs/design/local-llm-worker-refactor/evaluator-implementation-4-2.md",
+  "commands": [
+   "cd bench && python3 -m local_llm_eval.selfcheck",
+   "cd bench && python3 -m pytest local_llm_eval/tests -q"
+  ],
+  "tests": 90,
+  "negatives_total": 177,
+  "false_positives": 0,
+  "interface_only_pending_2_2": [
+   "trace (EXP H8 gating, DBG H1/REC H7 metrics, commands_run)",
+   "session (LNG H13/H14)"
+  ],
+  "lng_turn_script_sha256": "e0e507d084097d2e3ad22fe2f882049927aacf95064525520bb8405a041dceb0",
+  "holdout_created": false,
+  "holdout_answers_in_repository": false
+ },
+ "evidence_files_4_2": {
+  "evidence/4.2/coverage_summary.json": "975863aa61e27b1e163b9ef066dd7e18c6ba45571a10b7e0b414367d97481a89",
+  "evidence/4.2/environment.txt": "4e8128494e970b0210a719031edd432e096a98d02f881171b194ec05c476203c",
+  "evidence/4.2/leakscan_report.json": "590171335d16070bb95c0e88102bf37511f6557ecc1a2c5702867eee0f1c035e",
+  "evidence/4.2/ledger_crosscheck_audit.json": "7849cf5b8e4f8fb2adc195a8494ca35e5e0850f9c6097b9a2d93e6a68f995081",
+  "evidence/4.2/pytest_output.txt": "00d4e9baeb9fb7be5f86f88949c65a4d67d782708b217ec39ef08963d56ca88a",
+  "evidence/4.2/selfcheck_report.json": "28ee28c68948033173e49505b94d486d4940f603359c207fed43d6ba6f8c5db3"
+ }
 }

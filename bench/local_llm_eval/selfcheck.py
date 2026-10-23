@@ -174,6 +174,11 @@ def selfcheck_task(task: Task) -> dict:
 def main(argv: list[str]) -> int:
     from .tasks import REGISTRY
 
+    json_out = None
+    if "--json" in argv:
+        index = argv.index("--json")
+        json_out = Path(argv[index + 1])
+        argv = argv[:index] + argv[index + 2 :]
     wanted = argv or sorted(REGISTRY)
     reports = []
     bad = 0
@@ -198,6 +203,14 @@ def main(argv: list[str]) -> int:
             + s["negatives_not_rejected_for_expected_reason"]
         )
         reports.append(report)
+    if json_out is not None:
+        json_out.write_text(
+            json.dumps(
+                {"tasks": reports, "problems": bad}, ensure_ascii=False, indent=1
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     print(json.dumps({"tasks": len(reports), "problems": bad}))
     return 1 if bad else 0
 

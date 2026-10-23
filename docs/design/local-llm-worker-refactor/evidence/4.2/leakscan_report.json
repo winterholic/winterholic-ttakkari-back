@@ -1,0 +1,258 @@
+{
+ "B4-API-D": {
+  "hidden_snippet_literals": 100,
+  "gold_only_tokens": 85,
+  "spec_stated": 72,
+  "allowed": [
+   {
+    "direction": "hidden_literal",
+    "token": "PATH_INFO",
+    "where": [
+     "source:notes/app.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "hidden_literal",
+    "token": "REQUEST_METHOD",
+    "where": [
+     "source:notes/app.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "hidden_literal",
+    "token": "headers",
+    "where": [
+     "source:notes/app.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "hidden_literal",
+    "token": "status",
+    "where": [
+     "source:notes/app.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "hidden_literal",
+    "token": "utf-8",
+    "where": [
+     "source:notes/app.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   }
+  ],
+  "findings": []
+ },
+ "B4-DBG-D": {
+  "hidden_snippet_literals": 15,
+  "gold_only_tokens": 0,
+  "spec_stated": 1,
+  "allowed": [],
+  "findings": []
+ },
+ "B4-EXP-D": {
+  "hidden_snippet_literals": 0,
+  "gold_only_tokens": 17,
+  "spec_stated": 6,
+  "allowed": [
+   {
+    "direction": "gold_token",
+    "token": "_cents",
+    "where": [
+     "source:ledger/invoice.py",
+     "source:ledger/legacy/fees.py",
+     "source:ledger/money.py",
+     "source:ledger/tax.py"
+    ],
+    "reason": "exploration target names exist in the workspace by construction; the answer is the selection and the definition lines, not a token"
+   },
+   {
+    "direction": "gold_token",
+    "token": "invoice",
+    "where": [
+     "source:ledger/invoice.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "gold_token",
+    "token": "line_cents",
+    "where": [
+     "source:ledger/invoice.py"
+    ],
+    "reason": "exploration target names exist in the workspace by construction; the answer is the selection and the definition lines, not a token"
+   },
+   {
+    "direction": "gold_token",
+    "token": "processing_fee",
+    "where": [
+     "source:ledger/legacy/fees.py"
+    ],
+    "reason": "exploration target names exist in the workspace by construction; the answer is the selection and the definition lines, not a token"
+   },
+   {
+    "direction": "gold_token",
+    "token": "tax_cents",
+    "where": [
+     "source:ledger/invoice.py",
+     "source:ledger/tax.py"
+    ],
+    "reason": "exploration target names exist in the workspace by construction; the answer is the selection and the definition lines, not a token"
+   },
+   {
+    "direction": "gold_token",
+    "token": "to_cents",
+    "where": [
+     "source:ledger/invoice.py",
+     "source:ledger/money.py",
+     "source:ledger/tax.py"
+    ],
+    "reason": "exploration target names exist in the workspace by construction; the answer is the selection and the definition lines, not a token"
+   }
+  ],
+  "findings": []
+ },
+ "B4-LNG-D": {
+  "hidden_snippet_literals": 37,
+  "gold_only_tokens": 15,
+  "spec_stated": 11,
+  "allowed": [
+   {
+    "direction": "hidden_literal",
+    "token": "total",
+    "where": [
+     "source:billing/invoice.py",
+     "source:ledger/catalog.py",
+     "source:ledger/customers.py",
+     "source:ledger/exports.py",
+     "source:ledger/geo.py",
+     "source:ledger/imports.py",
+     "source:ledger/labels.py",
+     "source:ledger/loyalty.py",
+     "source:ledger/notifications.py",
+     "source:ledger/queue.py",
+     "source:ledger/reports.py",
+     "source:ledger/returns.py",
+     "source:ledger/reviews.py",
+     "source:ledger/scheduling.py",
+     "source:ledger/search.py",
+     "source:ledger/sessions.py",
+     "source:ledger/settings.py",
+     "source:ledger/suppliers.py",
+     "source:ledger/warehouse.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "gold_token",
+    "token": "rstrip",
+    "where": [
+     "source:ledger/analytics.py",
+     "source:ledger/cache.py",
+     "source:ledger/coupons.py",
+     "source:ledger/exports.py",
+     "source:ledger/inventory.py",
+     "source:ledger/labels.py",
+     "source:ledger/loyalty.py",
+     "source:ledger/orders.py",
+     "source:ledger/permissions.py",
+     "source:ledger/queue.py",
+     "source:ledger/reports.py",
+     "source:ledger/returns.py",
+     "source:ledger/reviews.py",
+     "source:ledger/search.py",
+     "source:ledger/sessions.py",
+     "source:ledger/settings.py",
+     "source:ledger/suppliers.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   }
+  ],
+  "findings": []
+ },
+ "B4-MUL-D": {
+  "hidden_snippet_literals": 23,
+  "gold_only_tokens": 0,
+  "spec_stated": 2,
+  "allowed": [],
+  "findings": []
+ },
+ "B4-REC-D": {
+  "hidden_snippet_literals": 25,
+  "gold_only_tokens": 17,
+  "spec_stated": 9,
+  "allowed": [
+   {
+    "direction": "gold_token",
+    "token": "import",
+    "where": [
+     "source:shop/cart.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   }
+  ],
+  "findings": []
+ },
+ "B4-REF-D": {
+  "hidden_snippet_literals": 27,
+  "gold_only_tokens": 4,
+  "spec_stated": 5,
+  "allowed": [
+   {
+    "direction": "hidden_literal",
+    "token": "rows",
+    "where": [
+     "source:report/csvout.py",
+     "source:report/jsonout.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "gold_token",
+    "token": "replace",
+    "where": [
+     "source:report/csvout.py",
+     "source:report/jsonout.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   },
+   {
+    "direction": "gold_token",
+    "token": "return",
+    "where": [
+     "source:report/csvout.py",
+     "source:report/jsonout.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   }
+  ],
+  "findings": []
+ },
+ "B4-SGL-D": {
+  "hidden_snippet_literals": 15,
+  "gold_only_tokens": 3,
+  "spec_stated": 2,
+  "allowed": [],
+  "findings": []
+ },
+ "B4-TST-D": {
+  "hidden_snippet_literals": 0,
+  "gold_only_tokens": 19,
+  "spec_stated": 3,
+  "allowed": [
+   {
+    "direction": "gold_token",
+    "token": "ValueError",
+    "where": [
+     "source:shop/discount.py"
+    ],
+    "reason": "generic language/stdlib/WSGI vocabulary"
+   }
+  ],
+  "findings": []
+ }
+}

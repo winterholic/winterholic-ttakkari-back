@@ -1,6 +1,9 @@
 """Verify the design package and captured PMS receipt, not the product implementation."""
-import csv,json,re
+import csv
+import json
+import re
 from pathlib import Path
+
 P=Path(__file__).resolve().parent
 
 def verify(*,strict=False):
@@ -62,7 +65,7 @@ def verify(*,strict=False):
             if target.startswith(('https://','http://','#','/')):continue
             assert (f.parent/target.split('#')[0]).exists(),f'{f.name}: missing link {target}'
     assert '{{' not in (P/'summary.html').read_text(),'HTML template placeholder'
-    print(f'design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1')
+    print('design package: PASS; WBS/readback=25; stages=3/11/11; dependency DAG=PASS; external P0=1')
     print(f'fixture evidence=18 (4 positive/14 negative) + intake=10 (7 negative, tamper 4 rejected); S2 done={sum(r["status"]=="done" and r["stage"]=="S2" for r in rows)}/11 review={sum(r["status"]=="review" and r["stage"]=="S2" for r in rows)} (self-verified, not independent); S3 unstarted; local document links=PASS')
 
 if __name__=='__main__':

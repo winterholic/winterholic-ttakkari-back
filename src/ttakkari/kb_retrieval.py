@@ -20,6 +20,7 @@ from ttakkari.models import EMBED_DIM
 
 _lock = asyncio.Lock()
 _last_error: str | None = None
+_failed_passages: dict[str, str] = {}
 
 
 def model_key():
@@ -35,6 +36,8 @@ def windows(text):
 async def embed_complete(texts, *, query=False):
     if not embedder.enabled():
         raise RuntimeError("kb_semantic_disabled")
+    if any(len(text) > 50000 for text in texts):
+        raise ValueError("passage_too_long_for_semantic_projection")
     s = get_settings()
     if s.context_embedder == "e5":
         result = await run_json_worker(module="ttakkari.kb_embedding_worker",
@@ -57,20 +60,42 @@ async def index_pending(*, limit=16):
     async with _lock:
         async with sessionmaker()() as db:
             indexed = select(V.passage_id).where(V.passage_id == KbPassage.id, V.model_key == model_key()).exists()
-            passages = list(await db.scalars(select(KbPassage).where(~indexed).order_by(KbPassage.created_at, KbPassage.id).limit(limit)))
+            query = select(KbPassage).where(~indexed).order_by(KbPassage.created_at, KbPassage.id)
+            if _failed_passages:
+                query = query.where(KbPassage.id.not_in(_failed_passages.keys()))
+            passages = list(await db.scalars(query.limit(limit)))
         if not passages:
             return 0
         try:
             vectors = await embed_complete([p.body for p in passages])
         except Exception as exc:
-            _last_error = type(exc).__name__ + ":" + str(exc)[:200]
-            raise
+            # Isolate permanent per-passage failures so one bad document cannot block
+            # later rows. Transient/model-wide failures still abort and remain visible.
+            if "passage_too_long_for_semantic_projection" not in str(exc):
+                _last_error = type(exc).__name__ + ":" + str(exc)[:200]
+                raise
+            vectors, usable = [], []
+            for passage in passages:
+                try:
+                    [vector] = await embed_complete([passage.body])
+                except ValueError as item_error:
+                    if "passage_too_long_for_semantic_projection" not in str(item_error):
+                        _last_error = type(item_error).__name__ + ":" + str(item_error)[:200]
+                        raise
+                    _failed_passages[str(passage.id)] = str(item_error)[:200]
+                else:
+                    usable.append(passage)
+                    vectors.append(vector)
+            passages = usable
+            if not passages:
+                _last_error = "ValueError:passage_too_long_for_semantic_projection"
+                return 0
         async with sessionmaker()() as db:
             for passage, vector in zip(passages, vectors, strict=True):
                 await db.execute(insert(V).values(passage_id=passage.id, model_key=model_key(),
                     text_sha256=passage.sha256, vector=vector).on_conflict_do_nothing())
             await db.commit()
-        _last_error = None
+        _last_error = None if not _failed_passages else "ValueError:passage_too_long_for_semantic_projection"
         return len(passages)
 
 
@@ -80,7 +105,10 @@ async def status(db, scope="personal"):
     indexed = await db.scalar(select(func.count()).select_from(V).join(KbPassage).join(KbRevision).join(KbDocument)
                               .where(V.model_key == model_key(), V.text_sha256 == KbPassage.sha256,
                                      lib.scope_filter(scope))) or 0
-    return {"model": embedder.model_name(), "model_key": model_key(), "indexed": indexed, "total": total,
+    passage_ids = {str(passage_id) for passage_id in await db.scalars(
+        select(KbPassage.id).join(KbRevision).join(KbDocument).where(lib.scope_filter(scope)))}
+    failed = len(passage_ids.intersection(_failed_passages))
+    return {"model": embedder.model_name(), "model_key": model_key(), "indexed": indexed, "total": total, "failed": failed,
             "enabled": get_settings().kb_semantic_enabled, "last_error": _last_error,
             "quality_gate": "unverified", "engine": "postgresql_exact_cosine"}
 

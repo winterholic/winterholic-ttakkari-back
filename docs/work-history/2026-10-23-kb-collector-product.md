@@ -31,3 +31,10 @@ back-kb-complete / front-kb-complete, branch feat/kb-complete-20261023. 공유 b
 - 공개 classifier·teacher/student·calibration·출처/언어별 frozen human holdout, 100만 규모 엔진 선택.
 - collector blob/KB 원문의 만료 삭제·권한 tombstone 프로토콜, 304 observation, 완전한 reconciliation/receipt retry 운영.
 - 운영 적용·readiness·인증된 운영 수집/검색은 배포 상태와 별도 확인한다. 예약 수락을 성공으로 쓰지 않는다.
+
+## 인수 세션 검증 (2026-10-23)
+- 새 oversized passage 회귀 테스트가 처음에는 `index_pending()`이 2를 반환해 실패했다. 50,000자 초과 입력을 명시적 실패로 처리하고, 해당 passage만 격리해 뒤의 정상 passage 색인을 계속하도록 고쳤다. 관련 KB·collector·agent·security-inventory와 배포 스키마 계약 묶음은 23 passed.
+- 전체 백엔드 `PYTHONPATH=src .venv/bin/python -m pytest -q`: 4330 passed, 49 failed, 15 skipped, 2 xfailed, 5020 subtests passed (22m08s). 실패 목록은 게임/Google/KB 이전 마이그레이션, host GPU/process recovery, security inventory였다. 보안 inventory 실패는 새 보안 테스트 4개가 deployment inventory에 빠진 것이어서 `SECURITY_TEST_FILES`에 추가했고 inventory 포함 핵심 묶음 23 passed로 재실행했다. 전체 suite는 이 수정 후 재실행하지 않았다. 이전 마이그레이션 subprocess 실패의 stderr는 pytest가 노출하지 않아 원인은 미확인이다. Host GPU/process recovery 실패는 codex 시험 환경에서 관찰된 실패이며 호스트 운영 환경에 일반화하지 않는다.
+- `ruff check .` 전체는 저장소 전반 104건으로 실패했다. 변경·신규 백엔드 Python 파일에 한정한 ruff는 통과했다.
+- 프론트 전체: Vitest 1347 passed, 10 skipped; ESLint/UI lint 통과(위반 138건은 기존 기준선과 동일); TypeScript와 Vite build 통과. `pnpm`은 symlink node_modules를 workspace-hoist 디렉터리로 처리하며 실행을 거절했지만 동일 설치본의 바이너리를 직접 호출해 각 검사를 마쳤다.
+- 브라우저 UI 확인은 headless 격리 프로필의 인증이 없어 `/login`으로 이동해 검증하지 못했다. 운영 DB 또는 인증된 운영 수집/검색은 검증하지 않았다.

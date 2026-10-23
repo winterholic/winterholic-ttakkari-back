@@ -42,6 +42,11 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     # 게임 서빙 격리 및 롤백 무결성 (SEC2-GAME)
     "tests/test_game_serving_security.py",
     "tests/test_game_rollback.py",
+    # managed collection, immutable delivery, scoped knowledge retrieval
+    "tests/test_collector_control.py",
+    "tests/test_collector_product_flow.py",
+    "tests/test_kb_agent_api.py",
+    "tests/test_kb_retrieval.py",
     # 인증 세션 파기 (SEC2-AUTH)
     "tests/test_password_session_revocation.py",
     # 입력 살균

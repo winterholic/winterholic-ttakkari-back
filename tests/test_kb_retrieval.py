@@ -49,6 +49,17 @@ async def test_failed_dense_query_is_reported_not_silently_relabelled(client, au
     assert r.status_code == 503
 
 
+async def test_oversize_passage_does_not_starve_following_documents(client, auth):
+    await register(client, auth, "x" * 50001)
+    await register(client, auth, "searchable ordinary passage")
+    from ttakkari import kb_retrieval
+    assert await kb_retrieval.index_pending(limit=30) == 1
+    assert await kb_retrieval.index_pending(limit=30) == 0
+    summary = (await client.get("/api/assistant/kb/summary", headers=auth)).json()
+    assert summary["retrieval"]["indexed"] == 1
+    assert summary["retrieval"]["failed"] == 1
+
+
 @pytest.mark.parametrize("text", ["a" * 2000, "한글 시험입니다." * 300, "line\n" * 800])
 def test_embedding_windows_cover_the_whole_passage(text):
     from ttakkari.kb_retrieval import windows

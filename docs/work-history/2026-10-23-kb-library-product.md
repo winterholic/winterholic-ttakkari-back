@@ -28,3 +28,8 @@
 - 전체 `PYTHONPATH=src .venv/bin/python -m pytest -q`: 최초 `10 failed, 4292 passed, 14 errors`. 이 중 `unit_tests/kb_eval/test_design_status.py` 1건은 ADR 상태 문구를 바꾼 내 변경 때문이라 해제 사실과 품질 gate 미통과를 함께 요구하는 시험으로 고쳤다(재실행 통과). 나머지 9 failed·14 errors(마이그레이션 시험 5개 파일, delivery)는 공유 `.venv`(다른 체크아웃에 editable 설치)에 `aiosqlite`가 없어 생긴 환경 문제로, origin/main 그대로의 별도 worktree에서도 같은 9 failed·14 errors가 재현됐다.
 - ruff: 변경·신규 파일 `All checks passed!`. 전체 `ruff check src`에는 이번 변경과 무관한 기존 4건(artcraft·deploy_gate·security/guard)이 있다.
 - 마이그레이션(alembic head)을 적용한 격리 PostgreSQL 클러스터에서 `kb-ingest`로 샘플 수집 → API 검색 → 근거 위치 조회를 확인했다(수정 전에는 passages 0이라 검색 0건, 수정 후 2건·hash_verified true). **운영 DB의 실제 문서로 한 검증이 아니다.** 운영 DB 접근에는 비밀(.env)이 필요해 이 Run에서 하지 않았다.
+
+### 게시·배포
+- 백엔드 main 푸시: `5e19deb1dc9da9be7e0c1515c7d9458099ef9b17`(pre-push 훅 통과: ruff, 계약 묶음 78, 바뀐 테스트 17. 훅 우회 없음). 프론트 main `d6d1b7e`(Vercel 배포 7269050794 success, 운영 index 자산에 `knowledge-library` 라우트와 `KnowledgeLibraryPage-BTQkmTeG.js` 청크 반영 확인).
+- 백엔드 배포 예약 ID `38d046c6-5fc1-4d2d-9b18-6352f67a27db`, 전략 generations. 기록 시점 상태는 `requested`다. 예약 수락이며 배포 성공이 아니다. 활성화 여부는 `backend_deploy_status`로 확인해야 하고 이 기록 시점에는 미확인이다.
+- 배포 뒤 할 일: 운영 DB에 CLI로 수집된 kb 문서가 있다면 `ttakkari kb-segment`를 한 번 실행(없으면 no-op), 사람이 `/knowledge-library`에서 샘플 한 건을 등록해 검색·원문 위치를 확인.

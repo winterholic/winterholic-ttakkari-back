@@ -42,4 +42,7 @@
 - 배포 결과는 아래 기록에 이어 적는다(예약 수락은 성공이 아니다).
 
 ## 게시·배포
-(푸시·예약 후 기록)
+- 배포 게이트와 같은 명령을 호스트(격리 PostgreSQL)에서 먼저 끝까지 실행: 보안 묶음 -m security 583 passed, -m "not security" 3839 passed·실패 0(10분 39초). 푸시 전에 origin/main의 다른 세션 커밋 1건이 더 들어와 rebase했고, 그 범위는 pre-push 훅(ruff·계약 묶음 84·바뀐 시험 40)으로만 다시 확인했다.
+- 백엔드 main 53c3da7bbd7cb585845fc2f3014000038f483c03. 배포 예약 225219b7-bf54-4dac-bd75-0c3d875d58a3, 전략 generations. 이 기록 시점 상태는 testing(수락일 뿐 성공이 아님). 성공 여부는 backend_deploy_status로 확인해야 한다.
+- 프론트 main 8b81349(Vercel 반영 확인: 운영 index 자산 assets/index-BPQC4ANQ.js에 CollectPage 라우트 포함).
+- 배포 뒤 할 일: runbook 5절 순서(상태 succeeded → ops 로그에서 collector 첫 tick과 파일럿 job → 로그인한 /collect 현황 확인). 이 Run에는 운영 인증이 없다.

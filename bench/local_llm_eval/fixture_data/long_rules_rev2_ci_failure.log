@@ -1,0 +1,14 @@
+..F
+======================================================================
+FAIL: test_rule_043_non_multiple (tests.test_rules.T.test_rule_043_non_multiple)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/workspace/tests/test_rules.py", line 15, in test_rule_043_non_multiple
+    self.assertEqual(rules.rule_043(61), 27)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 27.333333333333332 != 27
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.000s
+
+FAILED (failures=1)

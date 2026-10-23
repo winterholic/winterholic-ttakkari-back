@@ -19,7 +19,11 @@ from .simulate import gold_ends, materialize, reports_for, stage_bases
 
 
 def _eval_checks_on(
-    task: Task, stage_index: int, files: dict[str, str], stage_base: dict[str, str]
+    task: Task,
+    stage_index: int,
+    files: dict[str, str],
+    stage_base: dict[str, str],
+    report: dict | None = None,
 ):
     stage = task.stages[stage_index]
     with tempfile.TemporaryDirectory(prefix="llme-sc-") as tmp:
@@ -35,7 +39,7 @@ def _eval_checks_on(
             changed=diff_manifests(
                 manifest_of_files(stage_base), manifest_of_files(files)
             ),
-            report=None,
+            report=report,
             trace=None,
             scratch=Path(tmp),
         )
@@ -44,12 +48,14 @@ def _eval_checks_on(
 
 def classification_rows(task: Task) -> list[dict]:
     ends = gold_ends(task)
+    extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+    reports = reports_for(task, ends, extra)
     rows = []
     for index, (base, gold) in enumerate(
         zip(stage_bases(task, ends), ends, strict=True)
     ):
         at_start = _eval_checks_on(task, index, base, base)
-        at_gold = _eval_checks_on(task, index, gold, base)
+        at_gold = _eval_checks_on(task, index, gold, base, reports[index])
         for check_id, (check, start_out) in at_start.items():
             gold_out = at_gold[check_id][1]
             row = {

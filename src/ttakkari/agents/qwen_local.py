@@ -85,7 +85,9 @@ class QwenLocalAdapter:
             "[Qwen local 계약: MCP 없이 좁은 파일 작업만 한다. "
             f"역할={kind}. 결과물은 outbox에 쓴다: {outbox}. "
             f"쓸 수 있는 곳: {roots}. "
-            "바깥 쓰기·비밀 읽기·외부망은 OS 샌드박스가 막는다.]"
+            "바깥 쓰기·비밀 읽기·외부망은 OS 샌드박스가 막는다. "
+            ".ttakkari의 설정·로그·다른 Run outbox를 탐색하지 않는다. "
+            "접근 거부 시 명령을 바꿔 재시도하지 말고 미검증 항목으로 보고한다.]"
         )
 
     @staticmethod

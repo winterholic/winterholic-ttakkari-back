@@ -5,6 +5,7 @@ common 은 접수를 뺀 모든 실행에, lead·worker 는 그 역할에만 붙
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from ttakkari.config import get_settings
@@ -41,6 +42,26 @@ DESK_DEFAULT = """\
 말투는 사용자를 따라 짧게, 한국어로."""
 
 DEFAULTS: dict[Role, str] = {"desk": DESK_DEFAULT}
+
+
+def access_note(outbox: Path) -> str:
+    """Expose path metadata, never protected contents or additional permissions."""
+    s = get_settings()
+    return f"""[Ttakkari filesystem access — plan before using file tools]
+- `{s.home}` is protected by default, including harness files, logs, accounts, backups and other Runs' outboxes.
+  A workspace permission folder or a path returned by MCP does not grant access through every guard/sandbox.
+  Use this Run's outbox `{outbox}`; transfer locations are `{s.uploads_root}` and `{s.inbox_root}` only when
+  included in this Run's writable roots. A resumed conversation gets a new Run outbox.
+- Logs/deployments: use `ops_list_issues`, `ops_search_logs`, `ops_deploy_log`, `ops_list_deploys` and
+  `backend_deploy_status`; do not scan protected log files. Quota/capabilities: `account_usage` / `execution_capabilities`.
+  Other work: `read_session` / `get_worker`; `list_artifacts` provides metadata, not file-read permission.
+  Keep reviewable evidence in an authorized repository; if another Run's original is inaccessible, label it unverified.
+- Standing/role instructions are already injected below. Change the repository's harness source when authorized;
+  do not read or edit protected harness/config.env/account files to rediscover instructions or settings.
+  A deployed release's read-only runtime exception does not allow installation, cache writes or service restarts there.
+- After a permission denial, do not retry the same target via another command, interpreter, symlink or engine.
+  Use the supported tool or authorized source instead. If none exists, report the exact blocked step once,
+  continue independent work, and leave that check unverified; do not infer host-wide failure."""
 
 
 def read(role: Role) -> str:

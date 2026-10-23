@@ -2169,7 +2169,8 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
 
 async def _system_note_parts(db: AsyncSession, outbox: Path, sess: ChatSession, scope: str = "all") -> list[tuple[str, str]]:
     """(레이어 id, 본문) 순서 목록. 하네스 조회 화면(harness_view)이 같은 목록을 그대로 보여 주므로 순서·id 를 바꾸면 그쪽 시험이 깨진다."""
-    parts = [("system_note", SYSTEM_NOTE.format(outbox=outbox)), ("agent_note", AGENT_NOTE),
+    parts = [("system_note", SYSTEM_NOTE.format(outbox=outbox) + "\n\n" + instructions_mod.access_note(outbox)),
+             ("agent_note", AGENT_NOTE),
              ("capabilities", capabilities.prompt_note())]
     role: instructions_mod.Role | None = None
     if sess.kind == SessionKind.orchestrator:

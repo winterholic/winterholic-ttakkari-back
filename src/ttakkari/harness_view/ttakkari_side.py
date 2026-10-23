@@ -71,7 +71,9 @@ def collect_prompts(ctx: Ctx) -> list[Item]:
         items.append(item)
 
     code_prompts: list[tuple[str, str, str, str, tuple[str, ...], str]] = [
-        ("SYSTEM_NOTE", manager.SYSTEM_NOTE, "runs/manager.py", "기본 안내(출력 폴더·무인 실행·가드). {outbox} 는 Run 마다 채워진다.", ("lead", "worker", "orchestrator"), "모든 비접수 Run 의 첫 레이어"),
+        ("SYSTEM_NOTE", manager.SYSTEM_NOTE + "\n\n" + instructions_mod.access_note(Path("<outbox>")), "runs/manager.py",
+         "기본 안내(출력 폴더·무인 실행·가드·보호 영역 조회 경로). {outbox} 는 Run 마다 채워진다.",
+         ("lead", "worker", "orchestrator"), "모든 비접수 Run 의 첫 레이어"),
         ("AGENT_NOTE", runtime.AGENT_NOTE, "orchestrator/runtime.py", "ttakkari MCP 도구 사용·배포 방침 안내.", ("lead", "worker", "orchestrator"), "모든 비접수 Run"),
         ("ORCHESTRATOR_NOTE", runtime.ORCHESTRATOR_NOTE, "orchestrator/runtime.py", "옛 메인 오케스트레이터(부모 없음) 역할 안내.", ("orchestrator",), "부모 없는 orchestrator 세션"),
         ("LEAD_NOTE", runtime.LEAD_NOTE, "orchestrator/runtime.py", "기획 세션 역할 안내(접수가 넘긴 요청을 맡는다).", ("lead",), "부모가 있는 orchestrator 세션"),

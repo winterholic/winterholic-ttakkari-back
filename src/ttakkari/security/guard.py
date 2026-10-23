@@ -290,9 +290,7 @@ def _stage_has_input_redirect(argv: list[str]) -> bool:
     for tok in argv[1:]:
         if tok == "<" or (tok.startswith("<") and not tok.startswith("<<")):
             return True
-    if argv and re.search(r"<(?!<)", Path(argv[0]).name):
-        return True
-    return False
+    return bool(argv and re.search(r"<(?!<)", Path(argv[0]).name))
 
 
 def _check_client_stdin(command: str) -> str | None:
@@ -308,9 +306,9 @@ def _check_client_stdin(command: str) -> str | None:
         a = _unwrap_for_analysis(argv)
         if a and Path(a[0]).name.lower() in DB_CLIENT_VERBS and _stage_has_input_redirect(argv):
             return "고위험 명령 차단(DB 클라이언트로 파일 입력 전달)"
-        if a and Path(a[0]).name.lower() in _CONTAINER_VERBS and _stage_has_input_redirect(argv):
-            if any(Path(w).name.lower() in DB_CLIENT_VERBS for w in a[1:]):
-                return "고위험 명령 차단(DB 클라이언트로 파일 입력 전달)"
+        if (a and Path(a[0]).name.lower() in _CONTAINER_VERBS and _stage_has_input_redirect(argv)
+                and any(Path(w).name.lower() in DB_CLIENT_VERBS for w in a[1:])):
+            return "고위험 명령 차단(DB 클라이언트로 파일 입력 전달)"
     if len(stages) > 1:
         for stage in stages[1:]:
             if _stage_invokes_client(_lex_stage(stage)):
@@ -416,13 +414,19 @@ def _protected(p: Path, cfg: GuardConfig) -> bool:
     return any(is_within(p, r) for r in cfg.protected) and not _in_write_roots(p, cfg)
 
 
+def _protected_reason(raw: str) -> str:
+    return (f"ttakkari 보호 영역 접근 차단: {raw}. 동일 대상의 명령·인터프리터 변경 재시도 금지. "
+            "로그는 ops_deploy_log/ops_search_logs, 다른 작업은 read_session/get_worker로 조회. "
+            "파일은 이번 Run outbox 또는 허용된 저장소를 사용하고, 대체 수단이 없으면 해당 검증만 미실행으로 보고.")
+
+
 def check_path_tool(tool: str, tool_input: dict, cwd: Path, cfg: GuardConfig) -> str | None:
     raw = tool_input.get("file_path") or tool_input.get("notebook_path") or tool_input.get("path")
     if not raw or not isinstance(raw, str):
         return None
     p = _resolve(raw, cwd)
     if _protected(p, cfg):
-        return f"ttakkari 보호 영역 접근 차단: {raw}"
+        return _protected_reason(raw)
     if is_sensitive(p):
         return f"민감 파일 접근 차단: {raw}"
     if tool in WRITE_TOOLS and cfg.write_roots and not _in_write_roots(p, cfg):
@@ -499,7 +503,7 @@ def check_bash(command: str, cwd: Path, cfg: GuardConfig, _depth: int = 0) -> st
                 continue
             p = _resolve(tok.split("=", 1)[-1], cwd)
             if _protected(p, cfg):
-                return f"ttakkari 보호 영역 접근 차단: {tok}"
+                return _protected_reason(tok)
             if (verb in READ_VERBS or verb in _INTERPRETER_VERBS) and is_sensitive(p):
                 return f"민감 파일 읽기·반출 차단: {tok}"
     return None
@@ -514,7 +518,7 @@ def check_mcp_paths(tool_input: object, cwd: Path, cfg: GuardConfig, depth: int 
             return None
         p = _resolve(tool_input, cwd)
         if _protected(p, cfg):
-            return f"ttakkari 보호 영역 접근 차단: {tool_input}"
+            return _protected_reason(tool_input)
         if is_sensitive(p):
             return f"민감 파일 접근 차단: {tool_input}"
     elif isinstance(tool_input, dict):

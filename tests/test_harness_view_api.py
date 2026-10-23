@@ -224,6 +224,8 @@ async def test_layers_match_the_real_injected_parts(client, auth, fake_home):
             sess.kind, sess.parent_id = kind, parent
             async with sessionmaker()() as db:
                 parts = await manager._system_note_parts(db, Path("<outbox>"), sess, scope="all")
+            assert "Ttakkari filesystem access" in dict(parts)["system_note"]
+            assert "ops_deploy_log" in dict(parts)["system_note"]
             r = await client.get("/api/harness/layers", params={"session": session, "engine": "claude"}, headers=auth)
             layers = r.json()["layers"]
             applied = [(layer["id"], layer["chars"]) for layer in layers if layer["phase"] == "prompt" and layer["applies"]]

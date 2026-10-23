@@ -322,16 +322,28 @@ def duration_hint(brief: str) -> dict[str, Any] | None:
     return None
 
 
+def _hint_pattern(hint: str) -> re.Pattern[str]:
+    """힌트 양끝이 영문·숫자면 그 끝은 단어 경계에서만 맞춘다. 'transfers'의 'sf', 'build'의 'ui'를 장르로 읽지 않기 위해서다.
+
+    한글 끝에는 경계를 두지 않는다. 조사가 붙기 때문이다(예: 'UI를').
+    """
+    body = re.escape(hint)
+    if re.match(r"[0-9A-Za-z]", hint[0]):
+        body = rf"(?<![0-9A-Za-z]){body}"
+    if re.match(r"[0-9A-Za-z]", hint[-1]):
+        body = rf"{body}(?![0-9A-Za-z])"
+    return re.compile(body, re.IGNORECASE)
+
+
 def hint_intent(brief: str) -> tuple[IntentSpec, dict[str, Any] | None]:
     """사전 힌트로 만든 초안. 모든 선택은 soft·secondary·낮은 신뢰도이며 사용자가 확인해야 한다."""
     selections: list[Selection] = []
-    lowered = brief.casefold()
     for entry in ENTRIES.values():
         for hint in entry.hints:
             if len(hint) < 2:
                 continue
-            at = lowered.find(hint.casefold())
-            if at >= 0:
+            found = _hint_pattern(hint).search(brief)
+            if found:
                 selections.append(
                     Selection(
                         entry_id=entry.id,
@@ -339,7 +351,7 @@ def hint_intent(brief: str) -> tuple[IntentSpec, dict[str, Any] | None]:
                         strength="soft",
                         confidence=0.3,
                         source="lexical_hint",
-                        evidence=[Span(quote=brief[at : at + len(hint)])],
+                        evidence=[Span(quote=found.group(0))],
                     )
                 )
                 break

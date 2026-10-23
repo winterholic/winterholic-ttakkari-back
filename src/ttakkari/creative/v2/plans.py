@@ -79,6 +79,84 @@ SCAFFOLDS: dict[str, list[tuple[str, float]]] = {
 DEFAULT_SCAFFOLD = [("오프닝", 1.0), ("전개 1", 1.3), ("전개 2", 1.3), ("마무리", 1.0)]
 
 
+# v1 렌더러의 실제 한도(creative/service.py Scene.duration<=60, 프로젝트<=240초)에서 가져온 값이다.
+# 이를 넘는 영상은 분할 렌더 없이는 만들 수 없으므로 계획 단계에서 구간과 재개 키를 정해 둔다.
+SEGMENT_TARGET_SECONDS = 60.0
+RENDERER_SCENE_MAX_SECONDS = 60.0
+RENDERER_PROJECT_MAX_SECONDS = 240.0
+_POSITION_KEYS = {
+    "start_time",
+    "end_time",
+    "start_frame",
+    "end_frame",
+    "dependencies",
+}
+
+
+def render_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """승인된 장면에서 계산하는 분할 렌더·체크포인트 계획. 저장하지 않고 조회 때마다 장면에서 다시 만든다.
+
+    구간 키(input_sha256)는 장면 내용과 구간 안 길이로만 정하고 절대 위치는 넣지 않는다.
+    앞 장면 길이가 바뀌어도 내용이 같은 뒤 구간은 같은 키를 가져 이어 하기에서 재사용할 수 있다.
+    이 계획은 실행 증거가 아니다. 렌더러가 연결되기 전에는 구간 산출물이 없다.
+    """
+    fps = plan["profile"]["fps"]
+    shared = {
+        "aspect": plan["aspect"],
+        "fps": fps,
+        "style_dna": (plan.get("style") or {}).get("sha256"),
+    }
+    groups: list[list[dict[str, Any]]] = []
+    acc = 0.0
+    for scene in plan["scenes"]:
+        length = (scene["end_frame"] - scene["start_frame"]) / fps
+        if groups and acc + length > SEGMENT_TARGET_SECONDS:
+            groups.append([])
+            acc = 0.0
+        if not groups:
+            groups.append([])
+        groups[-1].append(scene)
+        acc += length
+    segments = []
+    for index, group in enumerate(groups, 1):
+        start, end = group[0]["start_frame"], group[-1]["end_frame"]
+        content = [
+            {
+                **{k: v for k, v in sc.items() if k not in _POSITION_KEYS},
+                "frames": sc["end_frame"] - sc["start_frame"],
+            }
+            for sc in group
+        ]
+        segments.append(
+            {
+                "id": f"seg-{index:02d}",
+                "scene_ids": [sc["scene_id"] for sc in group],
+                "start_frame": start,
+                "end_frame": end,
+                "seconds": round((end - start) / fps, 3),
+                "input_sha256": _digest({**shared, "scenes": content}),
+            }
+        )
+    total = plan["scenes"][-1]["end_frame"] / fps if plan["scenes"] else 0.0
+    warnings = [
+        f"장면 {sc['scene_id']}이(가) {sc['seconds']:g}초로 렌더러 장면 한도 {RENDERER_SCENE_MAX_SECONDS:g}초를 넘습니다. 장면을 나눠야 합니다."
+        for sc in plan["scenes"]
+        if sc["seconds"] > RENDERER_SCENE_MAX_SECONDS
+    ]
+    return {
+        "segment_target_seconds": SEGMENT_TARGET_SECONDS,
+        "requires_split": total > RENDERER_PROJECT_MAX_SECONDS,
+        "segments": segments,
+        "join": {
+            "method": "concat_in_order",
+            "inputs": [seg["id"] for seg in segments],
+        },
+        "resume": "구간의 input_sha256이 같고 산출물이 남아 있으면 그 구간은 다시 렌더하지 않는다.",
+        "executed": False,
+        "warnings": warnings,
+    }
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -97,6 +175,7 @@ def _plan_revision_hash(plan: dict[str, Any]) -> str:
         "updated_at",
         "render_blockers",
         "render_gate",
+        "render_plan",
     }
     return _digest({key: value for key, value in plan.items() if key not in metadata})
 
@@ -414,6 +493,7 @@ class PlanStore:
             and _render_authorized(plan, current_capabilities)
             and not plan["render_blockers"]
         )
+        plan["render_plan"] = render_plan(plan)
         return plan
 
     def assert_renderable(self, plan_id: str, revision: int) -> dict[str, Any]:
@@ -435,7 +515,9 @@ class PlanStore:
 
     def _save(self, plan: dict[str, Any]) -> None:
         plan = {
-            k: v for k, v in plan.items() if k not in ("render_blockers", "render_gate")
+            k: v
+            for k, v in plan.items()
+            if k not in ("render_blockers", "render_gate", "render_plan")
         }
         folder = self._folder(plan["id"])
         temp = folder / f"{uuid.uuid4()}.tmp"

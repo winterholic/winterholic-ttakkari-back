@@ -179,6 +179,8 @@ async def test_plan_flow_from_duration_choice_to_edit_and_approval(client, auth)
     assert approved.status_code == 200, approved.text
     assert approved.json()["render_gate"] is False
     assert approved.json()["approval"]["planned_frames"] == 170 * 30
+    rp = approved.json()["render_plan"]
+    assert rp["executed"] is False and rp["segments"][-1]["end_frame"] == 170 * 30
     assert (await client.get(f"{BASE}/plans/{pid}", headers=auth)).json()[
         "render_gate"
     ] is False

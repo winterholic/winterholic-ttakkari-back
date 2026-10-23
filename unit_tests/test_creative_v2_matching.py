@@ -309,3 +309,32 @@ def test_one_capability_can_be_required_by_several_selections():
         "C03.vector_motion_graphics",
     }
     assert react.priority == "should"
+
+
+@pytest.mark.parametrize(
+    ("brief", "absent"),
+    [
+        ("I build a quiz about bank transfers", {"C03.ui_animation", "C02.space_sf"}),
+        ("a quick guide to pilots", {"C03.ui_animation"}),
+        ("pcfg 설정 안내", {"C01.advertisement"}),
+    ],
+)
+def test_ascii_hints_match_whole_words_only(brief, absent):
+    spec, _ = hint_intent(brief)
+    assert absent.isdisjoint({s.entry_id for s in spec.selections})
+
+
+@pytest.mark.parametrize(
+    ("brief", "present", "quote"),
+    [
+        ("UI를 보여주는 영상", "C03.ui_animation", "UI"),
+        ("SF 배경의 짧은 영상", "C02.space_sf", "SF"),
+        ("Kafka 개념 설명 영상", "C01.tech_explainer", "개념 설명"),
+    ],
+)
+def test_hints_still_match_with_korean_particles_and_new_explainer_phrases(
+    brief, present, quote
+):
+    spec, _ = hint_intent(brief)
+    found = {s.entry_id: s.evidence[0].quote for s in spec.selections}
+    assert found.get(present) == quote and quote in brief

@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import pytest
 
 from ttakkari.creative.v2.duration import DurationRequest, SceneEdit
@@ -485,3 +487,59 @@ def test_unreviewed_llm_scalars_cannot_change_plan_duration_or_content():
             "비오는 날 귀여운 강아지가 걷는 10초 영상", proposed,
             duration=DurationRequest(mode="auto"), aspect="16:9", registry=registry(),
         )
+
+
+def test_long_plan_gets_split_render_segments_with_resume_keys(store):
+    plan = make(store, intent=intent(count=40))
+    rp = plan["render_plan"]
+    total = plan["scenes"][-1]["end_frame"]
+    assert plan["scenes"][-1]["end_time"] > 240 and rp["requires_split"] is True
+    segs = rp["segments"]
+    assert len(segs) > 1 and rp["executed"] is False
+    # 구간은 장면 경계에서 빈틈과 겹침 없이 전체를 덮는다.
+    assert segs[0]["start_frame"] == 0 and segs[-1]["end_frame"] == total
+    assert all(a["end_frame"] == b["start_frame"] for a, b in pairwise(segs))
+    assert [sid for seg in segs for sid in seg["scene_ids"]] == [
+        s["scene_id"] for s in plan["scenes"]
+    ]
+    assert all(seg["seconds"] <= 60 or len(seg["scene_ids"]) == 1 for seg in segs)
+    assert rp["join"]["inputs"] == [seg["id"] for seg in segs]
+    assert len({seg["input_sha256"] for seg in segs}) == len(segs)
+
+
+def test_short_plan_is_a_single_segment_without_split(store):
+    rp = make(store, intent=intent(count=3))["render_plan"]
+    assert rp["requires_split"] is False and len(rp["segments"]) == 1
+
+
+def test_segment_keys_ignore_position_so_unchanged_later_segments_can_resume(store):
+    base = make(store, intent=intent(count=40))
+    first_scene = base["scenes"][0]
+    longer = store.edit(
+        base["id"],
+        base["revision"],
+        scenes=[
+            SceneEdit(
+                id=s["scene_id"],
+                title=s["title"],
+                narration=s["narration"],
+                info_weight=s["info_weight"],
+                essential=s["essential"],
+                seconds=s["seconds"] + (1.0 if s["scene_id"] == first_scene["scene_id"] else 0),
+            )
+            for s in base["scenes"]
+        ],
+    )
+    old = {tuple(g["scene_ids"]): g["input_sha256"] for g in base["render_plan"]["segments"]}
+    new = {tuple(g["scene_ids"]): g["input_sha256"] for g in longer["render_plan"]["segments"]}
+    changed = [ids for ids in old if ids in new and old[ids] != new[ids]]
+    assert changed == [tuple(base["render_plan"]["segments"][0]["scene_ids"])]
+
+
+def test_render_plan_is_derived_not_stored_and_not_part_of_approval_hash(store, tmp_path):
+    plan = make(store)
+    saved = (tmp_path / plan["id"] / "plan.json").read_text()
+    assert "render_plan" not in saved
+    assert _plan_revision_hash(plan) == _plan_revision_hash(
+        {k: v for k, v in plan.items() if k != "render_plan"}
+    )

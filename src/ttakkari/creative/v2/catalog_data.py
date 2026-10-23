@@ -181,7 +181,7 @@ _e(
     pref=["audio.tts", "render.dataviz"],
     compat=["C08.explainer", "C08.problem_solution"],
     val=["C12.factual_accuracy", "C12.subtitle_legibility"],
-    hints=["기술 설명", "아키텍처", "개발자", "explainer"],
+    hints=["기술 설명", "개념 설명", "설명 영상", "아키텍처", "개발자", "explainer"],
 )
 _e(
     "C01",

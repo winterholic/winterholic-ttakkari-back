@@ -430,6 +430,8 @@ attempt 행은 변경하지 않는 기록이다. 필드: `attempt_id, task_id, s
 | `python3 verifier_probe_existing.py …/b` | 14 probes, false positive 3 (`P2-exit0-init`, `P6-dedupe-inline-copy`, `P7b-explain-keywords-contiguous`) |
 | 산술 확인 | `round(1005*(100-50)/100)=502`, `61/3+7=27.333333333333332`, `60/3+7==27 → True` |
 
-probe 파일 hash: `verifier_probe_existing.py` `4259d8194a3ccb71eb6e1d209a0ae9dda07f8ef9f2e18c6c56462943867a7e2b`, `verifier_probe_output.json` `b9991292007e7feafd9fef2c8c521fd0236de87da263343c4c3f8f5392dcda52`.
+probe 파일 hash: `verifier_probe_existing.py` `44d161fa53115b93def792b28577cb42c0790e5e8e0c3b717e3466be1286a013`, `verifier_probe_output.json` `b9991292007e7feafd9fef2c8c521fd0236de87da263343c4c3f8f5392dcda52`.
+
+probe 스크립트는 첫 실행 뒤 push 게이트(ruff)를 통과시키려고 import 정리, 파일 열기 방식, 포맷만 바꿨다. 로직은 같고, 바뀐 스크립트로 재실행한 출력이 첫 출력과 바이트 단위로 같음을 cmp로 확인했다(위 해시는 바뀐 스크립트 기준).
 
 차단 기록: `~/.ttakkari` 아래 도구 결과 파일 읽기와 outbox 디렉터리 목록 조회, 재귀 삭제는 ttakkari guard가 막았다. 우회하지 않고 worktree에서 문서를 다시 읽거나 삭제 없이 진행했다.

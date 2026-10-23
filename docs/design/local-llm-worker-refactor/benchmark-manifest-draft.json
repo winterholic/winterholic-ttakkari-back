@@ -179,7 +179,7 @@
    "P6-dedupe-inline-copy",
    "P7b-explain-keywords-contiguous"
   ],
-  "script_sha256": "4259d8194a3ccb71eb6e1d209a0ae9dda07f8ef9f2e18c6c56462943867a7e2b",
+  "script_sha256": "44d161fa53115b93def792b28577cb42c0790e5e8e0c3b717e3466be1286a013",
   "output_sha256": "b9991292007e7feafd9fef2c8c521fd0236de87da263343c4c3f8f5392dcda52",
   "scope": "current HEAD verifiers only; model-free; not a statement about past result rows"
  },

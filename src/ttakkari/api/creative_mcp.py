@@ -18,6 +18,12 @@ from ttakkari.api.creative import _normalize, perform
 from ttakkari.api.deps import Db
 from ttakkari.creative.v2 import dispatch as production
 from ttakkari.creative.v2.plans import default_plan_store
+from ttakkari.creative.v2.style_dna import (
+    SEMVER,
+    SLUG,
+    StyleDNADoc,
+    default_style_store,
+)
 from ttakkari.models import ChatSession
 from ttakkari.orchestrator.runtime import OrchestratorSession
 
@@ -28,6 +34,7 @@ AVAILABLE_OPERATIONS = frozenset({
     "plan_create", "plan_edit", "plan_approve", "production_status", "auto_assets_status",
     "auto_assets_start", "auto_assets_retry",
     "production_dispatch", "production_render", "production_asset", "production_media_link",
+    "styles", "style", "style_put",
 })
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 AUDIO_SUFFIXES = {".mp3", ".wav", ".m4a", ".flac", ".ogg"}
@@ -90,6 +97,40 @@ def _asset(data: dict[str, Any], plan_id: uuid.UUID) -> dict[str, Any]:
     return {key: asset[key] for key in ("id", "sha256", "name", "kind", "uploaded_at", "meta")}
 
 
+def _style_put(data: dict[str, Any]) -> dict[str, Any]:
+    """Register one immutable Style DNA version from a strictly validated document.
+
+    The document is the existing Strict `StyleDNADoc` model: unknown fields are rejected, refs are slugs or
+    safe relative names with pinned hashes, and nothing here reads or executes a path from it. Existing
+    (style_id, version) pairs and built-in seeds cannot change, so a plan's pinned style never moves.
+    """
+    dry_run = data.get("dry_run", False)
+    if not isinstance(dry_run, bool):
+        raise HTTPException(422, "dry_run must be a boolean")
+    try:
+        doc = StyleDNADoc.model_validate(data.get("doc"))
+    except ValidationError as exc:
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+            for error in exc.errors(include_input=False)
+        )
+        raise HTTPException(422, f"invalid style doc: {problems}") from exc
+    store = default_style_store()
+    problems = perform(store.validate_doc, doc)
+    ref = f"{doc.style_id}@{doc.version}"
+    dumped = doc.model_dump(mode="json")
+    effective = (
+        perform(store.effective, doc.parent).model_dump(mode="json") if doc.parent and not problems else {}
+    )
+    for field in doc.own_fields():
+        effective[field] = dumped[field]
+    preview = production.style_render_preview(effective) if not problems else None
+    if dry_run:
+        return {"dry_run": True, "valid": not problems, "ref": ref, "problems": problems, "render_effects": preview}
+    perform(store.put, doc)
+    return {"dry_run": False, "saved": True, "ref": ref, "render_effects": preview}
+
+
 @router.post("/{operation}")
 async def command(operation: str, body: Command, _: str = Depends(agent_access)) -> Any:
     if operation not in AVAILABLE_OPERATIONS:
@@ -106,10 +147,27 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         "production_render": {"plan_id", "revision"},
         "production_asset": {"plan_id", "kind", "filename", "content_base64", "scene_id"},
         "production_media_link": {"plan_id", "id"},
+        "styles": set(), "style": {"style_id", "version"}, "style_put": {"doc", "dry_run"},
     }
     unknown = set(data) - allowed_fields[operation]
     if unknown:
         raise HTTPException(422, "unsupported input fields: " + ", ".join(sorted(unknown)))
+    if operation == "styles":
+        return {
+            "styles": await c2.style_list("owner"),
+            "render_controls": production.style_render_controls(),
+        }
+    if operation == "style":
+        style_id, version = data.get("style_id"), data.get("version", "latest")
+        if not isinstance(style_id, str) or not SLUG.match(style_id):
+            raise HTTPException(422, "style_id must be a lowercase slug")
+        if not isinstance(version, str) or not (version == "latest" or SEMVER.match(version)):
+            raise HTTPException(422, "version must be x.y.z or latest")
+        found = await c2.style_get(style_id, version, "owner")
+        dna = found["dna"].model_dump(mode="json")
+        return {**found, "dna": dna, "render_effects": production.style_render_preview(dna)}
+    if operation == "style_put":
+        return await asyncio.to_thread(_style_put, data)
     if operation == "catalog":
         return await c2.catalog("owner")
     if operation == "capabilities":
@@ -121,6 +179,7 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
             "cancel_available": False,
             "reason": "Readiness is checked by comfy_readiness and again immediately before generation. Whole-job cancellation is not supported.",
         }
+        result["style_dna_render_controls"] = production.style_render_controls()
         result["share_to_library"] = {
             "available": False,
             "reason": "This revision can issue a short-lived media download link but has no production-to-library artifact registration service.",

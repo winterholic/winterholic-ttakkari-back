@@ -117,6 +117,14 @@ Project → Sequence → Scene → Shot → Asset. 각 단계 독립 생성·검
 - revision당 dispatch는 한 번이라 이미 기록된 모드와 다른 `caption_mode`를 뒤늦게 요청하면 적용되지 않으며, 응답에 `caption_mode_request_ignored`로 알린다. 다른 모드는 새 revision 승인 후 dispatch한다. 구간의 stale 판정(`outdated_segments`)은 기록된 `caption_mode`로 run key를 계산한다.
 - 기계 미디어 QA 성공은 장면 내용·시청 가치·발음·음악과 음성의 청감 품질을 입증하지 않는다. 음향 청취와 장면 의미 검수는 실행한 경우만 별도로 기록한다.
 
+### R21 Style DNA 렌더 설정 입력 계약
+
+- 현재 슬라이드쇼 렌더러가 실제 소비하는 Style DNA 값은 `motion_language.params.animation` (`still`, `zoom_in`, `zoom_out`, `pan`, `pan_down`, `pulse`), `motion_language.params.transition` (`fade`, `cut`), `visual_identity.params.caption_style` (`bottom_card`, `center_highlight`, `title_card`, `code_overlay`)뿐이다. 범위는 계획 전체이며 각 장면에 동일 적용한다. 다른 값은 지원된 것으로 표시하지 않고 dispatch receipt의 `style.ignored`에 남긴다.
+- MCP `creative_v2_styles`는 렌더러가 읽는 facet/param/허용 값을 목록으로 제공하고, `creative_v2_style`은 특정 immutable version의 `render_effects.applied`/`ignored`를 미리 본다. 단순히 Style DNA가 목록에 있거나 저장됐다는 사실만으로 렌더 적용을 판정하지 않는다.
+- MCP `creative_v2_style_put`은 엄격한 `StyleDNADoc`만 받는다. 미지 필드·알 수 없는 경로 입력은 거부하며, `dry_run=true`로 저장 전 검증/효과 미리보기를 제공한다. 버전은 불변이고 내장 seed 버전을 덮어쓸 수 없다. 참조는 콘텐츠 해시로 고정한다.
+- 새 계획의 `style`에는 카탈로그 ID가 아니라 `{style_id, version}` 참조를 넣는다. 승인된 plan revision은 Style DNA hash를 고정한다. 다른 편에 다른 모션/전환/자막 스타일을 적용할 때는 새 Style DNA version과 새 계획/승인을 사용한다. 실제 확인은 dispatch의 `style.applied` → 렌더 project scene 설정 → 렌더 이미지의 시각 검수 순서로 한다.
+- 이 계약은 계획 단위 스타일 선택만 지원한다. 장면마다 다른 Style DNA 값을 보내는 기능은 노출하지 않는다.
+
 ## QA·피드백·학습
 
 검증 축: 스타일 정체성, 캐릭터 일관성, 카메라·모션, 의미 적합성, 장면 연속성, 음성/음악 동기화, 자막 가독성, 역사/과학 정확성, 길이/전개, 실제 시청 경험.

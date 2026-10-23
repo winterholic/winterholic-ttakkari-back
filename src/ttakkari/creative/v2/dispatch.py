@@ -129,8 +129,11 @@ def _style_defaults(plan: dict[str, Any], adapter: engines.EngineAdapter) -> dic
     ignored: list[str] = []
     if not style:
         return {"style_dna": None, "applied": applied, "ignored": ignored}
+    # 계획에 저장되는 style 은 합성 결과(ComposeResult)라 facet 이 `dna` 아래에 있다. 이전에는 최상위만 읽어서
+    # 실제 계획의 animation/transition/caption_style 이 조용히 적용되지 않았다. 평평한 형태도 계속 받는다.
+    dna = style.get("dna") or style
     for name, (facet, key) in STYLE_SOURCES.items():
-        value = ((style.get(facet) or {}).get("params") or {}).get(key)
+        value = ((dna.get(facet) or {}).get("params") or {}).get(key)
         if value is None:
             continue
         if value in adapter.style_params.get(name, ()):
@@ -150,9 +153,34 @@ def _style_defaults(plan: dict[str, Any], adapter: engines.EngineAdapter) -> dic
             "sound_identity",
             "palette",
         )
-        if style.get(field) and field not in consumed
+        if dna.get(field) and field not in consumed
     ]
     return {"style_dna": style.get("sha256"), "applied": applied, "ignored": ignored}
+
+
+def style_render_controls(adapter: engines.EngineAdapter | None = None) -> dict[str, Any]:
+    """Style DNA 중 렌더러가 실제 소비하는 매개변수의 위치와 허용 값. 계획 전체(모든 장면)에 같게 적용된다."""
+    adapter = adapter or engines.ADAPTERS[0]
+    return {
+        "engine": adapter.id,
+        "scope": "plan",
+        "controls": {
+            name: {"facet": facet, "param": key, "allowed": list(adapter.style_params.get(name, ()))}
+            for name, (facet, key) in STYLE_SOURCES.items()
+        },
+        "note": (
+            "허용 값 밖의 값, 그리고 이 표에 없는 facet 매개변수는 렌더에 반영되지 않고 dispatch 기록의 "
+            "style.ignored 에 남는다. 장면별 값은 지원하지 않으며 계획 전체에 같게 적용된다."
+        ),
+    }
+
+
+def style_render_preview(dna: dict[str, Any], sha256: str | None = None) -> dict[str, Any]:
+    """저장된 Style DNA 하나가 R21 렌더러에서 무엇을 적용·무시하는지 미리 보인다. 생성은 하지 않는다."""
+    adapter = engines.ADAPTERS[0]
+    result = _style_defaults({"style": {"dna": dna, "sha256": sha256}}, adapter)
+    return {"engine": adapter.id, "applied": result["applied"], "ignored": result["ignored"]}
+
 
 
 # --- 저장소 -----------------------------------------------------------------

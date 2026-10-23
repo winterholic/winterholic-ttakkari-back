@@ -428,3 +428,53 @@ def test_title_only_dispatch_renders_and_stays_current_and_late_mode_change_is_r
     # title_only run_key 와 같은 방식으로 stale 여부를 계산해야 성공 렌더가 다시 렌더 대상으로 보이지 않는다.
     assert done["outdated_segments"] == []
     assert done["state"] == "succeeded", done
+
+
+def test_registered_style_reaches_dispatch_record_project_scenes_and_cache_key(pipeline, tmp_path):
+    """등록한 StyleDNA 의 움직임·전환·자막 스타일이 실제 계획 → dispatch 기록 → 렌더 프로젝트까지 도달하는지 본다."""
+    from ttakkari.creative.v2.style_dna import (
+        Facet,
+        Override,
+        StyleDNADoc,
+        StyleRef,
+        StyleStore,
+        seed_docs,
+    )
+
+    _settings, plans, base_plan, generator, _controller, studio = pipeline
+    styles = StyleStore(tmp_path / "styles", seeds=seed_docs())
+    styles.put(StyleDNADoc(
+        style_id="probe_motion", version="1.0.0",
+        parent=StyleRef(style_id="neutral_base", version="1.0.0"),
+        overrides=[
+            Override(field="motion_language", reason="편별 움직임 구분 시험"),
+            Override(field="visual_identity", reason="편별 자막 스타일 구분 시험"),
+        ],
+        motion_language=Facet(text="패닝과 컷", params={"animation": "pan", "transition": "cut"}),
+        visual_identity=Facet(text="중앙 자막", params={"caption_style": "center_highlight"}),
+    ))
+    styled = plans.create(build_plan(
+        "가을 산책로를 소개하는 짧은 영상", _intent(), registry=Registry(), styles=styles,
+        style_refs=[StyleRef(style_id="probe_motion", version="1.0.0")],
+    ))
+    styled = plans.approve(styled["id"], styled["revision"])
+    asset_generation.generate_assets(plans, styled["id"], styled["revision"], generator)
+
+    dispatch.dispatch(plans, studio, styled["id"], styled["revision"])
+    record = dispatch.ProductionStore(plans).read(styled["id"])["dispatches"][-1]
+    assert record["style"]["applied"] == {"animation": "pan", "transition": "cut", "caption_style": "center_highlight"}
+    dispatch.request_render(plans, studio, styled["id"], styled["revision"])
+    _run_renderer(studio)
+    done = dispatch.view(plans, studio, styled["id"])
+    assert done["state"] == "succeeded", done
+    assert done["outdated_segments"] == []
+    project = studio.get(done["segments"][0]["project_id"])
+    assert {scene["animation"] for scene in project["scenes"]} == {"pan"}
+    assert {scene["transition"] for scene in project["scenes"]} == {"cut"}
+    assert {scene["caption_style"] for scene in project["scenes"]} == {"center_highlight"}
+
+    # 스타일이 없는 기본 계획은 적용 내역이 비어 zoom_in/fade/bottom_card 기본값을 쓴다.
+    asset_generation.generate_assets(plans, base_plan["id"], base_plan["revision"], generator)
+    dispatch.dispatch(plans, studio, base_plan["id"], base_plan["revision"])
+    base_record = dispatch.ProductionStore(plans).read(base_plan["id"])["dispatches"][-1]
+    assert base_record["style"]["applied"] == {}

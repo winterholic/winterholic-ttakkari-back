@@ -430,6 +430,7 @@ AGENT_TOOLS = {"kb_search", "kb_documents", "kb_document", "kb_evidence","list_c
                "comfy_cancel", "comfy_reconcile", "creative_v2_catalog", "creative_v2_capabilities",
                "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
                "creative_v2_plan_create", "creative_v2_plan_edit", "creative_v2_plan_approve",
+               "creative_v2_styles", "creative_v2_style", "creative_v2_style_put",
                "creative_v2_production_assets", "creative_v2_auto_assets_status",
                "creative_v2_auto_assets_start", "creative_v2_auto_assets_retry",
                "creative_v2_production_dispatch", "creative_v2_production_render",
@@ -478,7 +479,7 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
         "list_scheduled_actions",
         "comfy_profiles", "comfy_jobs", "comfy_job", "creative_v2_catalog", "creative_v2_capabilities",
         "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
-        "creative_v2_auto_assets_status",
+        "creative_v2_auto_assets_status", "creative_v2_styles", "creative_v2_style",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

@@ -499,3 +499,45 @@ def test_deviated_target_length_is_recorded_with_the_result(stores, tmp_path):
     duration = done["final"]["duration"]
     assert duration["requested"]["seconds"] == 600 and duration["plan_status"] == "deviated"
     assert duration["measured_seconds"] < 100
+
+
+def test_real_plan_style_params_reach_the_renderer_defaults(tmp_path):
+    """계획에 저장되는 style 은 ComposeResult 라 facet 이 `dna` 아래에 있다. 평평한 가짜 style 만 시험하던 때는
+    실제 계획의 animation/transition/caption_style 이 조용히 적용되지 않았다."""
+    from ttakkari.creative.v2.intent import InfoItem, IntentSpec, Selection
+    from ttakkari.creative.v2.plans import build_plan
+    from ttakkari.creative.v2.style_dna import (
+        Facet,
+        Override,
+        StyleDNADoc,
+        StyleRef,
+        StyleStore,
+        seed_docs,
+    )
+
+    store = StyleStore(tmp_path, seeds=seed_docs())
+    store.put(StyleDNADoc(
+        style_id="probe_motion", version="1.0.0",
+        parent=StyleRef(style_id="neutral_base", version="1.0.0"),
+        overrides=[
+            Override(field="motion_language", reason="편별 움직임 구분 시험"),
+            Override(field="visual_identity", reason="편별 자막 스타일 구분 시험"),
+        ],
+        motion_language=Facet(text="패닝과 컷", params={"animation": "pan", "transition": "cut"}),
+        visual_identity=Facet(text="중앙 자막", params={"caption_style": "center_highlight"}),
+    ))
+    intent = IntentSpec(
+        selections=[Selection(entry_id="C08.three_act", role="primary", confidence=1.0)],
+        info_items=[InfoItem(id=f"s{i}", title=f"t{i}", narration=f"n{i}") for i in range(3)],
+    )
+    plan = build_plan(
+        "probe", intent, styles=store, style_refs=[StyleRef(style_id="probe_motion", version="1.0.0")]
+    )
+    assert "dna" in plan["style"]
+
+    result = dispatch._style_defaults(plan, engines.V1SlideshowAdapter())
+
+    assert result["style_dna"] == plan["style"]["sha256"]
+    assert result["applied"] == {"animation": "pan", "transition": "cut", "caption_style": "center_highlight"}
+    # 계획 style 이 없으면 그대로 기본값이다.
+    assert dispatch._style_defaults({**plan, "style": None}, engines.V1SlideshowAdapter())["applied"] == {}

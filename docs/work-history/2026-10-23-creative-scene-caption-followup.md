@@ -44,7 +44,7 @@
 새 영상은 아직 없음: 실제 신규 시각 QA와 contact sheet 비교는 미실행이다. 음성 청취도 미실행이며 파형/음량에서 발음이나 배경음 명료성을 추론하지 않았다. 이 샘플은 다섯 편의 다양한 영상 E2E 검증으로 계산하지 않는다.
 
 
-## 보강: 자막 모드 계약 검증 (2026-10-23 18:5x KST)
+## 보강: 자막 모드 계약 검증 (2026-10-23)
 
 기준 SHA는 `4f341c5`이며 이미 `b2faeb5`(plan style `style_id`+`version` 검증, 422) 위에 있다. 재기반 충돌은 없고 해당 변경은 그대로 보존했다.
 
@@ -71,3 +71,35 @@
 - 렌더 후 project의 scene별 `caption_segments`가 그 장면 narration과 같고, 마지막 cue `end`가 voice asset 길이인지, SRT가 같은 구간인지 본다. 타이밍은 추정이며 청취 sync는 미검증이다.
 - 장면 prompt는 generation receipt의 `prompt`/`prompt_sha256`을 보고 s1은 푸른 새벽 골목과 가로등, s2는 첫 버스와 환경미화원, s3는 한강 해돋이와 금빛 윤슬만 담았는지 확인한다. 최종 판정은 contact sheet 시각 검수이며 prompt 문자열 일치로 대체하지 않는다.
 - 새 영상의 실출력은 아직 없다. 장면 의미 일치와 음성 청취는 **미실행**이다.
+
+
+## 보강 2: Style DNA 렌더 제어를 검증 가능하게 지정하는 경로 (2026-10-23)
+
+입력: E2E 담당 원장에 따르면 기존 StyleDNA 시드 5개에는 animation/transition/caption_style 매개변수가 없고 MCP에 DNA 등록 도구가 없어 5편 모두 style을 생략했다. 그 계획 5개와 진행 중 generation은 건드리지 않았다.
+
+### 조사한 계약
+- 렌더러(`V1SlideshowAdapter`)가 Style DNA에서 소비하는 값은 세 가지다. `motion_language.params.animation`(still, zoom_in, zoom_out, pan, pan_down, pulse), `motion_language.params.transition`(fade, cut), `visual_identity.params.caption_style`(bottom_card, center_highlight, title_card, code_overlay). 이 밖의 facet과 허용 값 밖의 값은 dispatch 기록 `style.ignored`에 남는다.
+- 적용 범위는 계획 전체다. 모든 장면에 같은 값이 들어가므로 변화는 편(plan)별 style 선택으로 만든다. 장면별 값은 지원하지 않는다.
+- HTTP API에는 `POST /api/creative/v2/style-dna`(등록, 버전 불변)가 있었지만 MCP 브리지에는 style 조회·등록 연산이 없었다.
+
+### 새로 발견한 실제 버그 (소스 원인 확인)
+- 계획에 저장되는 `plan.style`은 합성 결과(ComposeResult)라 facet이 `plan.style.dna` 아래에 있다. `_style_defaults`는 최상위 facet만 읽었다. 격리 재현에서 animation=pan, transition=cut, caption_style=center_highlight를 가진 DNA로 실제 `build_plan`을 만들어도 `applied={}`, `ignored=[]`였다. 즉 DNA를 등록해도 조용히 적용되지 않았다. 기존 단위 테스트는 평평한 가짜 style만 넣어 이 경로를 못 잡았다.
+- 수정: `dna`가 있으면 그 아래를 읽고 평평한 형태도 계속 받는다. 실제 `build_plan` 결과를 쓰는 회귀 테스트를 추가했고, 수정을 되돌리면 `applied == {}`로 실패함을 확인했다.
+
+### 추가한 MCP 경로 (기존 서비스·계약 재사용)
+- `creative_v2_styles`(읽기): 등록 style 목록과 `render_controls`(facet, 매개변수 이름, 허용 값). `creative_v2_capabilities`에도 `style_dna_render_controls`를 넣었다.
+- `creative_v2_style`(읽기): 효과 DNA, 상속 provenance, `render_effects`(R21 렌더에서 적용·무시될 값). 목록이나 저장만으로 지원 완료로 보지 않고 이 미리보기로 확인한다.
+- `creative_v2_style_put`(쓰기): 기존 `StyleDNADoc`(Strict, 알 수 없는 필드 거부, 참조는 slug·안전한 상대 이름·해시 고정)만 받는다. `dry_run=true`로 저장 없이 검증과 미리보기를 한다. 같은 (style_id, version)의 다른 내용과 내장 시드 덮어쓰기는 거부하며 같은 내용은 멱등이다. 경로·URL·셸 입력 필드가 없고 개인 세션만 쓸 수 있다.
+- 기존 plan_create의 `style`은 그대로 `{style_id, version}` 참조만 받는다. 카탈로그 ID를 style ref로 쓰지 않는다. 계획 revision 승인과 버전 고정(plan.style.sha256)도 그대로다.
+
+### 사용 방법 (E2E 담당용)
+1. `creative_v2_styles`로 허용 값을 확인한다.
+2. 편마다 `neutral_base@1.0.0`을 부모로 한 새 style을 `creative_v2_style_put`으로 만든다. `motion_language`와 `visual_identity`를 override하고 각각 `overrides`에 사유를 적는다. 먼저 `dry_run=true`로 `render_effects.applied`에 세 값이 모두 있는지 본다.
+3. `creative_v2_plan_create`의 `style`에 그 `{style_id, version}`을 넣고 새 plan을 만들어 승인한다. 기존 5개 계획은 style을 바꿀 수 없으므로(plan_edit에 style 없음) 새 plan이 필요하다.
+4. dispatch 후 `production_status`의 `style.applied`가 의도한 값인지, 렌더 project 장면의 animation/transition/caption_style이 같은지 확인한다. 시각적 구분은 contact sheet로 직접 본다.
+- 배포 전 구버전은 이 도구와 수정이 없다. 새 revision 활성화를 확인한 뒤 사용한다.
+
+### 검증 범위
+- 실제 ffmpeg 렌더까지 격리 임시 홈에서 실행했다(등록 style → 계획 → dispatch 기록 → 렌더 project 장면 값). 실제 Comfy/ACE-Step/GPU는 쓰지 않았다.
+- 움직임·전환·자막 스타일이 화면에서 편별로 달라 보이는지는 새 영상의 시각 검수가 필요하며 아직 **미실행**이다.
+- MCP tool schema는 중첩 `StyleDNADoc` 모델을 직접 사용해 unknown properties를 닫고(`additionalProperties=false`); 브리지에 JSON으로 보낼 때만 model dump 한다. 자유형 object schema를 검출하는 회귀는 먼저 실패했고, typed model 적용 후 통과했다.

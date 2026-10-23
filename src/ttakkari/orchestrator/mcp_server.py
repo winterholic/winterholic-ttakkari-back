@@ -16,6 +16,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from ttakkari.creative.v2.style_dna import StyleDNADoc
 from ttakkari.orchestrator.tool_policy import READ_ONLY_TOOLS
 from ttakkari.pms import PmsOperation
 
@@ -238,6 +239,32 @@ async def creative_v2_recipe_matrix() -> str:
 async def creative_v2_registries() -> str:
     """Read the current immutable registry snapshot and source metadata."""
     return await _creative("registries")
+
+
+@query_tool
+async def creative_v2_styles() -> str:
+    """List registered Style DNA ids and versions, plus the exact Style DNA parameters the renderer consumes
+    (animation, transition, caption_style: facet, param name and allowed values; applied plan-wide).
+    A style listed here is not proof that its parameters are applied; use creative_v2_style render_effects."""
+    return await _creative("styles")
+
+
+@query_tool
+async def creative_v2_style(style_id: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{1,59}$")],
+                            version: Annotated[str, Field(pattern=r"^(?:\d{1,3}\.\d{1,3}\.\d{1,3}|latest)$")] = "latest") -> str:
+    """Read one Style DNA (effective, with inheritance provenance) and render_effects: which of its
+    parameters the R21 renderer would apply or ignore. Pin the returned x.y.z version in plan_create."""
+    return await _creative("style", {"style_id": style_id, "version": version})
+
+
+@server.tool()
+async def creative_v2_style_put(doc: StyleDNADoc, dry_run: bool = False) -> str:
+    """Register one new immutable Style DNA version (StyleDNADoc; unknown fields rejected). Existing
+    versions and built-in seeds cannot change. To control rendering, derive from a parent such as
+    neutral_base@1.0.0 and override motion_language.params.animation / .transition and
+    visual_identity.params.caption_style with values from creative_v2_styles; each overridden field needs
+    an overrides entry with a reason. Use dry_run=true first to validate and preview render_effects."""
+    return await _creative("style_put", {"doc": doc.model_dump(mode="json"), "dry_run": dry_run})
 
 
 @query_tool

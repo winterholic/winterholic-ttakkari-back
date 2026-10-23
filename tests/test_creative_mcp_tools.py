@@ -360,3 +360,135 @@ def test_comfy_readiness_reports_no_device_as_not_ready_and_is_explicitly_host_m
     assert result["device"] is None
     assert result["measured_at"]
 
+
+
+def _motion_doc(version="1.0.0", animation="pan", transition="cut", caption="center_highlight"):
+    return {
+        "style_id": "probe_motion",
+        "version": version,
+        "parent": {"style_id": "neutral_base", "version": "1.0.0"},
+        "overrides": [
+            {"field": "motion_language", "reason": "장면 움직임과 전환을 편별로 구분한다"},
+            {"field": "visual_identity", "reason": "자막 스타일을 편별로 구분한다"},
+        ],
+        "motion_language": {"text": "느린 패닝과 컷 전환", "params": {"animation": animation, "transition": transition}},
+        "visual_identity": {"text": "중앙 강조 자막", "params": {"caption_style": caption}},
+    }
+
+
+@pytest.fixture
+def style_store(tmp_path, monkeypatch):
+    from ttakkari.api import creative_mcp, creative_v2
+    from ttakkari.creative.v2.style_dna import StyleStore, seed_docs
+
+    store = StyleStore(tmp_path / "styles", seeds=seed_docs())
+    monkeypatch.setattr(creative_mcp, "default_style_store", lambda: store)
+    monkeypatch.setattr(creative_v2, "default_style_store", lambda: store)
+    return store
+
+
+@pytest.mark.asyncio
+async def test_style_tools_are_registered_with_safe_schemas():
+    from ttakkari.orchestrator import mcp_server as ms
+    from ttakkari.orchestrator.tool_policy import CREATIVE_TOOLS, READ_ONLY_TOOLS
+
+    tools = {tool.name: tool for tool in await ms.server.list_tools()}
+    assert {"creative_v2_styles", "creative_v2_style", "creative_v2_style_put"} <= tools.keys()
+    assert {"creative_v2_styles", "creative_v2_style"} <= READ_ONLY_TOOLS
+    assert "creative_v2_style_put" in CREATIVE_TOOLS and "creative_v2_style_put" not in READ_ONLY_TOOLS
+    # 경로·URL·임의 실행 입력이 없고, DNA 문서도 서버의 엄격한 계약으로 제한해야 한다.
+    assert set(tools["creative_v2_style_put"].input_schema["properties"]) == {"doc", "dry_run"}
+    doc_schema = tools["creative_v2_style_put"].input_schema["$defs"]["StyleDNADoc"]
+    assert doc_schema["additionalProperties"] is False
+    assert doc_schema["required"] == ["style_id", "version"]
+    assert "additionalProperties" not in tools["creative_v2_style_put"].input_schema["properties"]["doc"]
+    assert set(tools["creative_v2_style"].input_schema["properties"]) == {"style_id", "version"}
+
+
+@pytest.mark.asyncio
+async def test_style_dna_can_be_registered_previewed_and_pinned_through_the_agent_bridge(style_store):
+    from fastapi import HTTPException
+
+    from ttakkari.api.creative_mcp import Command, command
+
+    listing = await command("styles", Command(), "personal")
+    controls = listing["render_controls"]["controls"]
+    assert controls["animation"] == {
+        "facet": "motion_language", "param": "animation",
+        "allowed": ["still", "zoom_in", "zoom_out", "pan", "pan_down", "pulse"],
+    }
+    assert controls["transition"]["allowed"] == ["fade", "cut"]
+    assert controls["caption_style"]["facet"] == "visual_identity"
+    assert {s["style_id"] for s in listing["styles"]} >= {"neutral_base", "anime_cel"}
+
+    dry = await command("style_put", Command(data={"doc": _motion_doc(), "dry_run": True}), "personal")
+    assert dry["valid"] is True and dry["dry_run"] is True
+    assert dry["render_effects"]["applied"] == {
+        "animation": "pan", "transition": "cut", "caption_style": "center_highlight",
+    }
+    assert style_store.versions("probe_motion") == []  # dry run 은 저장하지 않는다.
+
+    saved = await command("style_put", Command(data={"doc": _motion_doc()}), "personal")
+    assert saved["saved"] is True and saved["ref"] == "probe_motion@1.0.0"
+    read = await command("style", Command(data={"style_id": "probe_motion", "version": "latest"}), "personal")
+    assert read["ref"] == "probe_motion@1.0.0"
+    assert read["render_effects"]["applied"]["animation"] == "pan"
+    assert read["dna"]["motion_language"]["params"] == {"animation": "pan", "transition": "cut"}
+
+    # 같은 내용은 멱등, 같은 버전의 다른 내용과 시드 덮어쓰기는 거부한다.
+    again = await command("style_put", Command(data={"doc": _motion_doc()}), "personal")
+    assert again["saved"] is True
+    with pytest.raises(HTTPException) as changed:
+        await command("style_put", Command(data={"doc": _motion_doc(animation="zoom_out")}), "personal")
+    assert changed.value.status_code == 422 and "불변" in changed.value.detail
+    seed = _motion_doc()
+    seed["style_id"], seed["version"] = "anime_cel", "1.0.0"
+    with pytest.raises(HTTPException):
+        await command("style_put", Command(data={"doc": seed}), "personal")
+    assert style_store.versions("anime_cel") == ["1.0.0"]
+
+
+@pytest.mark.asyncio
+async def test_style_preview_reports_values_the_renderer_does_not_accept_instead_of_claiming_support(style_store):
+    from ttakkari.api.creative_mcp import Command, command
+
+    dry = await command("style_put", Command(data={
+        "doc": _motion_doc(animation="dolly", transition="wipe", caption="neon"), "dry_run": True,
+    }), "personal")
+
+    assert dry["valid"] is True  # 저장 가능한 DNA 와 렌더러가 소비하는 값은 별개다.
+    assert dry["render_effects"]["applied"] == {}
+    assert any("animation" in i and "dolly" in i for i in dry["render_effects"]["ignored"])
+    assert any("transition" in i and "wipe" in i for i in dry["render_effects"]["ignored"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data", [
+    {"doc": {**_motion_doc(), "script": "rm -rf /"}},
+    {"doc": {**_motion_doc(), "reference_assets": [{"kind": "image", "ref": "../../etc/passwd", "sha256": "a" * 64}]}},
+    {"doc": _motion_doc(), "path": "/tmp/x"},
+    {"doc": _motion_doc(), "dry_run": "yes"},
+    {"doc": None},
+])
+async def test_style_put_rejects_unknown_fields_unsafe_refs_and_bad_flags(style_store, data):
+    from fastapi import HTTPException
+
+    from ttakkari.api.creative_mcp import Command, command
+
+    with pytest.raises(HTTPException) as exc:
+        await command("style_put", Command(data=data), "personal")
+    assert exc.value.status_code == 422
+    assert "rm -rf" not in exc.value.detail
+    assert style_store.versions("probe_motion") == []
+
+
+@pytest.mark.asyncio
+async def test_style_read_rejects_non_slug_ids(style_store):
+    from fastapi import HTTPException
+
+    from ttakkari.api.creative_mcp import Command, command
+
+    for data in ({"style_id": "../x"}, {"style_id": "neutral_base", "version": "1"}):
+        with pytest.raises(HTTPException) as exc:
+            await command("style", Command(data=data), "personal")
+        assert exc.value.status_code == 422

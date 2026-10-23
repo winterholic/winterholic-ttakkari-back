@@ -1,0 +1,10 @@
+{
+  "engine": "Claude Code (Sonnet 5.5) on the Mac Studio host, outside any engine Seatbelt sandbox",
+  "platform": "macOS 27.0 / Darwin 27.0.0 arm64",
+  "python": "CPython 3.13.15 (uv-managed runtime; evaluator started through the repository venv symlink)",
+  "seatbelt_control": "sandbox_check(getpid()) = 0 for the plain process, 1 inside an allow-default sandbox-exec (control measured 2026-10-23)",
+  "sandbox_exec_apply": "works (allow-default profile exit 0)",
+  "original_checkout": "/Users/winterholic/development/projects/winterholic-ttakkari/back",
+  "clone": "/tmp/llme-impl (fresh clone of origin/main a7f8930; original dirty checkouts untouched)",
+  "contrast": "Codex Run: sandbox_apply Operation not permitted (exit 71) = environment denial; this host: shipped profile readiness exit -6 (SIGABRT) = profile defect"
+}

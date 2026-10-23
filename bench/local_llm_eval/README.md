@@ -38,4 +38,4 @@ holdout 과제와 정답은 이 디렉터리에 없고 있어서도 안 된다(�
 
 관측 신뢰 계약과 한계는 명세 §0.1.1, 구현 기록 §11을 따른다. judge 분리만으로 관측을 신뢰하지 않으며, Python 가드는 OS sandbox가 아니다. N16~N33은 gold 위에서 관측 경계 공격을 검증한다. 최신 CPU 실행 근거: `docs/design/local-llm-worker-refactor/evidence/4.2/channel-isolation/`.
 
-격리 진단: `python3 -m local_llm_eval.sandbox`(실제 deny를 실행하지 못하면 exit 2 + 이유/미검증 JSON). 개발 모드는 격리 불가를 flag로 남기며 holdout 모드는 실행 전에 거부한다. 개발 정답은 공개되어 있으므로 PASS를 강한 무결성 인증으로 해석하지 않는다. 강한 보장은 봉인 holdout과 실제 검증된 OS 격리를 전제로 한다.
+격리 진단: `python3 -m local_llm_eval.sandbox`(exit 0 실측 통과, exit 2 환경이 sandbox 적용을 거부해 미검증, exit 1 profile 결함 또는 deny 불이행). 엔진 sandbox 밖의 이 호스트에서는 exit 0이며, push 게이트가 같은 진단을 돌려 exit 2는 사유만 기록하고 exit 1은 실패로 처리한다. 개발 모드는 격리 불가를 flag로 남기며 holdout 모드는 실행 전에 거부한다. 개발 정답은 공개되어 있으므로 PASS를 강한 무결성 인증으로 해석하지 않는다. 강한 보장은 봉인 holdout과 실제 검증된 OS 격리를 전제로 한다.

@@ -63,6 +63,10 @@ def test_runtime_does_not_admit_the_venv_checkout():
     assert "(deny process-fork)" in profile
     assert "winterholic-ttakkari/back" not in profile
     assert '(subpath "/Users/winterholic")' not in profile
+    # macOS 27 aborts every process whose profile cannot data-read the root
+    # directory (readiness exit -6 in 4.2 review). Only that one literal, never a subtree.
+    assert '(allow file-read-data (literal "/"))' in profile
+    assert '(subpath "/")' not in profile
 
 
 def test_sandbox_deny_paths_and_positive_stdlib(tmp_path):
@@ -70,18 +74,55 @@ def test_sandbox_deny_paths_and_positive_stdlib(tmp_path):
 
     status = availability()
     if not status.available:
+        # A denied sandbox_apply (engine sandbox) or an operator-recorded denial is
+        # an environment fact. Any other unavailability is a defect, never a skip.
+        assert not status.defect, "isolation defect: " + status.reason
         pytest.skip("OS deny unverified in this engine: " + status.reason)
     results = run_deny_checks(tmp_path)
     assert results["positive"] == "ok"
     assert all(value == "PermissionError" for value in results["reads"].values()), (
         results
     )
-    assert (
-        results["network"]
-        == results["fork"]
-        == results["outside_write"]
-        == "PermissionError"
-    )
+    for key in (
+        "dev_fd_path",
+        "network",
+        "fork",
+        "outside_write",
+        "home_listing",
+        "tmp_listing",
+    ):
+        assert results[key] == "PermissionError", (key, results)
+
+
+def test_unexpected_readiness_failure_is_a_defect_not_an_environment_denial(
+    monkeypatch,
+):
+    from local_llm_eval import sandbox
+
+    monkeypatch.delenv("LOCAL_LLM_EVAL_SANDBOX_UNAVAILABLE", raising=False)
+    sandbox._probe.cache_clear()
+    try:
+        monkeypatch.setattr(
+            sandbox,
+            "profile_text",
+            lambda runtime, writable: "(version 1)\n(deny default)",
+        )
+        status = sandbox.availability()
+        if not sandbox.SANDBOX.is_file():
+            pytest.skip("sandbox-exec absent")
+        # Either sandbox_apply is denied here (environment) or the profile is broken (defect).
+        assert not status.available
+        assert status.defect == ("sandbox_apply" not in status.reason)
+    finally:
+        sandbox._probe.cache_clear()
+
+
+def test_operator_recorded_denial_is_not_a_defect(monkeypatch):
+    from local_llm_eval.sandbox import availability
+
+    monkeypatch.setenv("LOCAL_LLM_EVAL_SANDBOX_UNAVAILABLE", "measured denial")
+    status = availability()
+    assert not status.available and not status.defect
 
 
 def test_holdout_native_checks_never_run_without_isolation(tmp_path, monkeypatch):

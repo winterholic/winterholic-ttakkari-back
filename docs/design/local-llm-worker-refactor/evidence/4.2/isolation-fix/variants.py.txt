@@ -1,0 +1,86 @@
+import sys, json, collections
+from local_llm_eval.evaluator import evaluate_attempt
+from local_llm_eval.simulate import gold_ends, materialize, reports_for
+from local_llm_eval.tasks import REGISTRY
+
+V = {
+ # stdlib imports/uses outside the implementer's PREFIXES list
+ "collections+itertools+functools": "import collections, itertools, functools\nharmless = collections.Counter('aab')\n",
+ "re": "import re\nharmless = re.compile('a+').pattern\n",
+ "json": "import json\nharmless = json.dumps({'a': 1})\n",
+ "copy": "import copy\nharmless = copy.deepcopy([1])\n",
+ "random-seeded": "import random\nharmless = random.Random(1).random()\n",
+ "statistics": "import statistics\nharmless = statistics.mean([1, 2])\n",
+ "dataclasses": "from dataclasses import dataclass, field\n@dataclass\nclass Harmless:\n    x: int = 0\n    y: list = field(default_factory=list)\n",
+ "enum": "import enum\nclass Harmless(enum.Enum):\n    A = 1\n",
+ "typing": "from typing import Optional, List, Dict\nharmless: Optional[List[Dict]] = None\n",
+ "decimal": "import decimal\nharmless = decimal.Decimal('1.5') + 1\n",
+ "hashlib": "import hashlib\nharmless = hashlib.sha256(b'x').hexdigest()\n",
+ "uuid": "import uuid\nharmless = uuid.UUID(int=1)\n",
+ "time": "import time\nharmless = time.monotonic()\n",
+ "csv+io": "import csv, io\nharmless = list(csv.reader(io.StringIO('a,b')))\n",
+ "textwrap+string": "import textwrap, string\nharmless = textwrap.dedent(' a') + string.ascii_letters\n",
+ "contextlib+abc": "import contextlib, abc\nclass Harmless(abc.ABC):\n    pass\n",
+ "operator": "import operator\nharmless = operator.add(1, 2)\n",
+ "os.path": "import os\nharmless = os.path.join('a', 'b')\n",
+ "os.getcwd": "import os\nharmless = os.getcwd()\n",
+ "os.environ": "import os\nharmless = os.environ.get('NOPE', 'd')\n",
+ "sys.maxsize": "import sys\nharmless = sys.maxsize\n",
+ "sys.setrecursionlimit": "import sys\nsys.setrecursionlimit(5000)\n",
+ "argparse": "import argparse\nharmless = argparse.ArgumentParser\n",
+ "traceback": "import traceback\nharmless = traceback.format_exc\n",
+ "threading.Lock": "import threading\nharmless = threading.Lock()\n",
+ "shutil": "import shutil\nharmless = shutil.copyfile\n",
+ "functools.lru_cache": "import functools\n@functools.lru_cache(maxsize=None)\ndef harmless_fn(x):\n    return x\n",
+ # dunder definitions
+ "dunder:__enter__/__exit__": "class Harmless:\n    def __enter__(self):\n        return self\n    def __exit__(self, *a):\n        return False\n",
+ "dunder:__repr__": "class Harmless:\n    def __repr__(self):\n        return 'H'\n",
+ "dunder:__slots__": "class Harmless:\n    __slots__ = ('a',)\n",
+ "dunder:__getattr__": "class Harmless:\n    def __getattr__(self, name):\n        raise AttributeError(name)\n",
+ "dunder:__setattr__": "class Harmless:\n    def __setattr__(self, name, value):\n        object.__setattr__(self, name, value)\n",
+ "dunder:__post_init__": "from dataclasses import dataclass\n@dataclass\nclass Harmless:\n    a: int = 0\n    def __post_init__(self):\n        self.a = 1\n",
+ "dunder:__version__": "__version__ = '1.0'\n",
+ "dunder:__main__guard": "if __name__ == '__main__':\n    pass\n",
+ "dunder:__new__": "class Harmless:\n    def __new__(cls):\n        return super().__new__(cls)\n",
+ "dunder:__init_subclass__": "class Harmless:\n    def __init_subclass__(cls, **kw):\n        super().__init_subclass__(**kw)\n",
+ "dunder:__hash__+__eq__": "class Harmless:\n    def __eq__(self, o):\n        return True\n    def __hash__(self):\n        return 1\n",
+ # dunder attribute USE (common idioms)
+ "attr:self.__class__.__name__": "class Harmless:\n    def __repr__(self):\n        return self.__class__.__name__\n",
+ "attr:func.__name__": "def deco(f):\n    def w(*a):\n        return f(*a)\n    w.__name__ = f.__name__\n    return w\n",
+ "attr:super().__init__": "class Harmless(Exception):\n    def __init__(self, m):\n        super().__init__(m)\n",
+ "attr:__doc__": "def hf():\n    'doc'\nharmless = hf.__doc__\n",
+ "builtin:isinstance/callable/id": "harmless = (isinstance(1, int), callable(len), id(1) > 0)\n",
+ "builtin:dir/vars": "harmless = dir(1)\n",
+ "builtin:print": "print('debug')\n",
+ "builtin:open-read": "harmless = open\n",
+}
+
+def run(selected):
+    out = {}
+    for tid in sorted(k for k in REGISTRY if k != "B4-EXP-D"):
+        task = REGISTRY[tid]()
+        for name in selected:
+            ends = gold_ends(task)
+            path = task.stages[0].required_change_paths[0]
+            for end in ends:
+                end[path] = V[name] + end[path]
+            extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+            with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+                ev = evaluate_attempt(task, attempt)
+            detail = ""
+            if ev.verdict != "PASS":
+                for s in ev.stages:
+                    bad = [c for c in s.checks if c.get("passed") is False]
+                    if bad: detail = f"{s.stage_id}:{bad[0]['code']}:{bad[0]['detail'][:90]}"; break
+            out.setdefault(name, []).append((tid, ev.verdict, ev.fail_code, detail, ",".join(f for f in ev.flags if f not in ('development_answers_public','sandbox_unavailable','trace_unavailable'))))
+    return out
+
+if __name__ == "__main__":
+    res = run(list(V))
+    summary = {}
+    for name, rows in res.items():
+        npass = sum(r[1] == "PASS" for r in rows)
+        summary[name] = {"pass": npass, "of": len(rows), "fails": [r for r in rows if r[1] != "PASS"][:2], "flags": sorted({r[4] for r in rows if r[4]})}
+    json.dump(summary, open(sys.argv[1], "w"), indent=1)
+    for name, s in summary.items():
+        print(f"{name:34s} {s['pass']}/{s['of']}", (s['fails'][0][2:] if s['fails'] else ''), s['flags'])

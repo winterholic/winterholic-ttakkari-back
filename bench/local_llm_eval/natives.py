@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import codes
-from .integrity import PURE_STDLIB
+from .integrity import PURE_STDLIB, SAFE_DUNDER_READS
 from .judges import unittest_ok
 from .manifest import write_files
 from .model import Check, CheckOutcome, Ctx, task_mode
@@ -140,18 +140,9 @@ FORBIDDEN_DEFS = frozenset(
         "tearDownModule",
     }
 )
-ALLOWED_DUNDER = frozenset(
-    {
-        "__name__",
-        "__doc__",
-        "__class__",
-        "__init__",
-        "__eq__",
-        "__len__",
-        "__str__",
-        "__repr__",
-    }
-)
+# Same dunder reads as the candidate import boundary; `__dict__`, `__code__`,
+# `__globals__` and the raw attribute protocol stay rejected.
+ALLOWED_DUNDER = SAFE_DUNDER_READS
 
 
 def forbidden_constructs(source: str, allowed_modules: tuple[str, ...]) -> list[str]:

@@ -217,7 +217,15 @@ else
             case "$f" in bench/local_llm_eval/*) BENCH_EVAL_CHANGED=1 ;; esac
         done
         if [ "$BENCH_EVAL_CHANGED" = 1 ] && [ -d bench/local_llm_eval/tests ]; then
-            stage "평가기 테스트 (bench/local_llm_eval)" bash -c 'cd bench && exec "$0" -m pytest -q --timeout=300 -p no:cacheprovider local_llm_eval/tests' "$PY"
+            stage "평가기 테스트 (bench/local_llm_eval)" bash -c 'cd bench && exec "$0" -m pytest -q -rs --timeout=300 -p no:cacheprovider local_llm_eval/tests' "$PY"
+            # OS 격리 진단. 엔진 sandbox 안에서는 sandbox_apply 가 거부되어(exit 2) 건너뛰는 것이 정상이므로
+            # 사유만 기록한다. 격리가 가능한데 deny 가 깨졌거나 profile 이 비정상(exit 1)이면 실패다.
+            ISO_OUT="$(cd bench && "$PY" -m local_llm_eval.sandbox 2>"$TMP/iso.err")"; ISO_RC=$?
+            case "$ISO_RC" in
+                0) STAGES+=("통과  OS 격리 deny 실측 (평가기 소스·gold·원본 checkout·홈 읽기, network, fork, 밖 쓰기)") ;;
+                2) STAGES+=("건너뜀  OS 격리 deny 미검증 (환경이 sandbox 적용을 거부): $(printf '%s' "$ISO_OUT" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["availability"]["reason"][:100])' 2>/dev/null)") ;;
+                *) FAILED+=("OS 격리 진단 (exit $ISO_RC)"); STAGES+=("실패  OS 격리 진단 (exit $ISO_RC)"); printf '%s\n' "$ISO_OUT" | tail -40; tail -20 "$TMP/iso.err" ;;
+            esac
         fi
     fi
 fi

@@ -54,6 +54,11 @@ def profile_text(runtime, writable):
             "(allow process-exec " + _paths("literal", [runtime.executable]) + ")",
             "(allow sysctl-read)",
             "(allow file-read-metadata)",
+            # Measured on macOS 27 (Darwin 27.0.0): without data-read of the root
+            # directory itself even /bin/echo aborts at process start (exit 134).
+            # The directory entries of "/" become listable; nothing below it is.
+            # The exact caller inside dyld/libSystem was not traced (unverified).
+            '(allow file-read-data (literal "/"))',
             "(allow file-read* "
             + _paths(
                 "subpath",
@@ -93,6 +98,9 @@ def profile_text(runtime, writable):
 class Availability:
     available: bool
     reason: str
+    # True when isolation failed for a reason other than an environment denial
+    # (profile/runtime defect, abnormal readiness exit). Gates must not skip these.
+    defect: bool = False
 
 
 def availability():
@@ -128,11 +136,13 @@ def _probe():
             check=False,
         )
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        return Availability(False, str(exc))
-    return Availability(
-        proc.returncode == 0 and proc.stdout.strip() == "llme-sandbox-ready",
-        proc.stderr.strip() or f"readiness exit {proc.returncode}",
-    )
+        return Availability(False, str(exc), defect=True)
+    ready = proc.returncode == 0 and proc.stdout.strip() == "llme-sandbox-ready"
+    reason = proc.stderr.strip() or f"readiness exit {proc.returncode}"
+    # Applying a profile from inside another sandbox fails in sandbox_apply
+    # (exit 71, EPERM). Anything else that is not ready is our own defect.
+    denied = proc.returncode == 71 and "sandbox_apply" in proc.stderr
+    return Availability(ready, reason, defect=not ready and not denied)
 
 
 def command(bootstrap, profile_path):
@@ -171,6 +181,7 @@ def protected_sources():
         "probe_source": root / "bench/local_llm_eval/hidden_runner.py",
         "original_checkout": original / "pyproject.toml",
         "home_settings": Path.home() / ".zshrc",
+        "system_config": Path("/etc/hosts"),
     }
     for label, path in targets.items():
         if not path.is_file():
@@ -195,7 +206,7 @@ for name, path in request['reads'].items():
         pathlib.Path(path).read_bytes()
         result['reads'][name] = 'ALLOWED'
     except OSError as exc: result['reads'][name] = type(exc).__name__
-for name, fn in [('network',lambda:socket.socket().connect(('127.0.0.1',9))), ('fork',fork_once), ('outside_write',lambda:open(request['outside'],'w'))]:
+for name, fn in [('dev_fd_path',lambda:open('/dev/fd/0','rb')), ('network',lambda:socket.socket().connect(('127.0.0.1',9))), ('fork',fork_once), ('outside_write',lambda:open(request['outside'],'w')), ('home_listing',lambda:os.listdir(request['home'])), ('tmp_listing',lambda:os.listdir('/private/tmp'))]:
     try:
         fn()
         result[name] = 'ALLOWED'
@@ -210,6 +221,7 @@ print(json.dumps(result))
     request = {
         "reads": {k: str(v) for k, v in targets.items()},
         "outside": str(outside / "file"),
+        "home": str(Path.home()),
     }
     proc = subprocess.run(
         command(probe, profile),
@@ -245,14 +257,26 @@ def main():
             and all(v == "PermissionError" for v in checked["reads"].values())
             and all(
                 checked[k] == "PermissionError"
-                for k in ("network", "fork", "outside_write")
+                for k in (
+                    "dev_fd_path",
+                    "network",
+                    "fork",
+                    "outside_write",
+                    "home_listing",
+                    "tmp_listing",
+                )
             )
         )
     else:
         report["ok"] = False
         report["unverified"] = ["OS read, write, network and fork denial"]
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if report["ok"] else 2
+    # 0: verified. 2: unavailable because the environment denies sandbox_apply or
+    # an operator recorded a measured denial (not a failure). 1: our defect, or a
+    # deny check that did not deny; callers must not treat this as "unverified".
+    if report["ok"]:
+        return 0
+    return 1 if status.available or status.defect else 2
 
 
 if __name__ == "__main__":

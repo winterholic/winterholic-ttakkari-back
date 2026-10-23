@@ -1,0 +1,6 @@
+# macOS 27.0 / Darwin 27.0.0 arm64; measured 2026-10-23 15:32:46 KST; not under Seatbelt (sandbox_check control: plain=0, inside allow-default=1)
+/bin/echo under allow-default + (deny file-read-data (literal "/")) -> exit=134 out=''
+/bin/echo under allow-default + (deny file-read-metadata (literal "/")) -> exit=0 out='hi'
+/bin/echo under allow-default + (deny file-read-xattr (literal "/")) -> exit=0 out='hi'
+/bin/echo under allow-default + (deny file-read* (literal "/Users")) -> exit=0 out='hi'
+uv python3.13 under the same rule -> exit=134

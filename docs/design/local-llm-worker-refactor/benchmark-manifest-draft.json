@@ -1,5 +1,5 @@
 {
- "manifest_revision": "v1.3",
+ "manifest_revision": "v1.4",
  "final": true,
  "planned_values_only": true,
  "note": "Pre-registered planned values, not measurements. WBS 1.2 audit received (main re-verified raw 61 rows / 136608 bytes / sha256 d525733d...e1362be0). Remaining items listed in open_items. Design fields are planned; implementation_4_2 and evidence_files_4_2_integrity contain measured CPU results.",
@@ -2120,7 +2120,7 @@
    "cd bench && python3 -m local_llm_eval.selfcheck",
    "cd bench && python3 -m pytest local_llm_eval/tests -q"
   ],
-  "tests": 281,
+  "tests": 413,
   "negatives_total": 366,
   "false_positives": 0,
   "interface_only_pending_2_2": [
@@ -2141,30 +2141,41 @@
    "dedicated framed observation pipe; stdout diagnostic only",
    "read allowlist OS profile and real runtime; unavailable dev flags, holdout fail closed",
    "shared stdlib compatibility policy and nondecisive signals",
-   "selfcheck retains isolation flags"
+   "selfcheck retains isolation flags",
+   "sandbox profile defect fixed: root directory data-read literal (macOS 27 aborts every process without it); readiness exit -6 was a defect, Codex exit 71 was an environment denial",
+   "Availability.defect separates environment denial from our defect; deny test skips only for environment denial",
+   "pre-push gate runs evaluator tests with -rs and local_llm_eval.sandbox (exit 0 pass, 2 environment skip with reason, 1 fail)",
+   "ordinary-solution relaxations: 27 safe dunder reads, dir, vars of own instances, sys constants, os process facts, threading locks, argparse, shutil copy/move; stores and raw attribute protocol stay denied",
+   "io.FileIO denied and io.open routed through the raw-fd guard"
   ],
   "residual_limits": [
    "C2 indirect format/globals and arbitrary same-interpreter memory compromise not excluded",
    "inherited observation pipe and child identity checks are not cryptographic authentication",
    "dev gold is public; strong claims require sealed holdout plus verified OS isolation",
-   "sandbox_apply denied in current Codex Run; actual deny tests skipped, not host-wide failure",
    "candidate unittest/AST, native/metaclass/trace/codecs/dynamic-code adaptive bypass completeness unverified",
-   "holdout9/sealing/model E2E/actual trace-session integration unverified"
+   "holdout9/sealing/model E2E/actual trace-session integration unverified",
+   "Codex Run sandbox_apply exit 71 is an environment denial there; on engines that deny it the deny tests skip with the reason (gate exit 2 is informational)",
+   "with isolation off (dev fallback) stdlib-internal path opens such as /dev/fd via pathlib are not intercepted by Python guards; OS isolation denies them",
+   "root directory listing is visible inside the sandbox (data-read literal on /); nothing below it",
+   "launch failure after a passing readiness maps to the check's ordinary FAIL code, not INFRA",
+   "syscall that needs the root data-read was not traced (unverified)"
   ],
-  "tests_passed": 280,
-  "tests_skipped": 1,
+  "tests_passed": 413,
+  "tests_skipped": 0,
   "strong_integrity_certified": false,
   "holdout_requires_os_isolation": true,
   "verification_environment": {
-   "engine": "Codex command sandbox",
-   "sandbox_available": false,
-   "os_deny_verified": false,
+   "engine": "Claude Code (Sonnet 5.5), host outside Seatbelt (sandbox_check control)",
+   "sandbox_available": true,
+   "os_deny_verified": true,
+   "platform": "macOS 27.0 arm64, CPython 3.13.15",
    "flags": [
     "development_answers_public",
-    "sandbox_unavailable",
     "trace_unavailable"
-   ]
-  }
+   ],
+   "previous_codex_environment": "sandbox_apply Operation not permitted exit 71 (environment denial, not a profile fact)"
+  },
+  "verified": "CPU dev regression/compatibility with OS isolation ON (413 passed, 0 skipped) and OFF (412 passed, 1 skipped); python3 -m local_llm_eval.sandbox ok true exit 0 on the Mac Studio host; actual deny measured; sealed holdout absent"
  },
  "evidence_files_4_2": {
   "evidence/4.2/coverage_summary.json": "88b94220675d63a6dbbb2bed5a5ee608726bc0e9e36c1901af8204bb1eb3485e",
@@ -2194,5 +2205,21 @@
   "evidence/4.2/channel-isolation/selfcheck.json": "45d8ad8495da0fc2c08221f38fe2175052d89dd144f7cff01ce2031b56eaa7aa",
   "evidence/4.2/channel-isolation/selfcheck.txt": "edac554ad034131e63fc26c9ddb0702880f7193d52a9aa8093c65a994ae0bb36",
   "evidence/4.2/channel-isolation/summary.json": "9b8bbf6c6337ff8f3187cba2a1cbad31a1a06a123b44f905930f670e97f689e9"
+ },
+ "evidence_files_4_2_isolation_fix": {
+  "evidence/4.2/isolation-fix/PROGRESS.md": "25d6c35f201f3a1295fd256b1f46c922aeeac3c18339e9112addebb712108fd6",
+  "evidence/4.2/isolation-fix/environment.json": "90aace411be5a8e76916b21d7e6a9a6cafafa41544b8ac3042b2419eddf83c6a",
+  "evidence/4.2/isolation-fix/profile-example.sb": "518a077a120cbe66f3864f1423a906d3142b1f15be8db863a17a95822ab9b0f6",
+  "evidence/4.2/isolation-fix/pytest-isolation-off.txt": "08ec43fe11638ec35efa1ce06aed83b6303b0f18d0909355fa9850e6765d8a49",
+  "evidence/4.2/isolation-fix/pytest-isolation-on.txt": "b23b44091ede0cc57a636c5d6c489d621105b825aef3942fedbbb20957042b25",
+  "evidence/4.2/isolation-fix/root-read-bisect.txt": "d2bdf47a704eddf327702aa61aa45f357670e15920dc039daf34c4723f6c99c8",
+  "evidence/4.2/isolation-fix/sandbox-exit.txt": "b9309bb5b453f691f8d11380a8821b0a669dea46b5fd002a73bec904b0142b85",
+  "evidence/4.2/isolation-fix/sandbox.json": "5983fed95a96a3c94e501fa85782b4a04fbe1054f67a9a0f6a3535c8e6aa9c97",
+  "evidence/4.2/isolation-fix/selfcheck.json": "f0c8a955b68faaf4a74d8fedac795ca81147d95087c32354bbfc9f02609f6d35",
+  "evidence/4.2/isolation-fix/selfcheck.txt": "5ec721655d9bc98c275c3d4cbd694cab14fd5d0383931bb44e2f782cf3ed1425",
+  "evidence/4.2/isolation-fix/variants-before-4.2-review-fix.json": "4443991343d162b6afdc7fde89264209a7afd4d3037de0ed9f019dac44f6dc51",
+  "evidence/4.2/isolation-fix/variants-result.json": "c72c3ff79f21d1cd597a5a6755c79346ac612ac390817327b5986ef28738de7e",
+  "evidence/4.2/isolation-fix/variants-result.txt": "cbf61194d37fcebdb14f526abe780c1d22de27a20e5deff9e72727eae5f9dedb",
+  "evidence/4.2/isolation-fix/variants.py.txt": "0311ddfbb693bc5cec7877f7dcb9da6a7706a3e03e420375bfa9c4ef148162af"
  }
 }

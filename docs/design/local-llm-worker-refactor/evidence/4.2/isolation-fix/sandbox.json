@@ -1,0 +1,38 @@
+{
+  "availability": {
+    "available": true,
+    "reason": "readiness exit 0",
+    "defect": false
+  },
+  "runtime": {
+    "executable": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/bin/python3.13",
+    "stdlib": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13",
+    "libraries": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib"
+  },
+  "deny_targets": {
+    "evaluator": "/private/tmp/llme-impl/bench/local_llm_eval/evaluator.py",
+    "gold": "/private/tmp/llme-impl/bench/local_llm_eval/tasks/sgl.py",
+    "probe_source": "/private/tmp/llme-impl/bench/local_llm_eval/hidden_runner.py",
+    "original_checkout": "/Users/winterholic/development/projects/winterholic-ttakkari/back/pyproject.toml",
+    "home_settings": "/Users/winterholic/.zshrc",
+    "system_config": "/etc/hosts"
+  },
+  "deny_checks": {
+    "positive": "ok",
+    "reads": {
+      "evaluator": "PermissionError",
+      "gold": "PermissionError",
+      "probe_source": "PermissionError",
+      "original_checkout": "PermissionError",
+      "home_settings": "PermissionError",
+      "system_config": "PermissionError"
+    },
+    "dev_fd_path": "PermissionError",
+    "network": "PermissionError",
+    "fork": "PermissionError",
+    "outside_write": "PermissionError",
+    "home_listing": "PermissionError",
+    "tmp_listing": "PermissionError"
+  },
+  "ok": true
+}

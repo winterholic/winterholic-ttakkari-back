@@ -2,7 +2,7 @@
 
 작성일: 2026-10-23 KST. 상태: **4.2 부분 완료.** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N14 전부가 구현되어 CPU에서 재현된다. holdout 9개와 봉인 번들은 만들지 않았으므로 4.2는 완료가 아니다.
 
-> **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. §9 이후 재발견한 in-process helper 변조는 §10이 교정한다. §10은 이후 C1/C2 검증에서 거부됐다. 현재 구조와 증거는 §11과 `evidence/4.2/channel-isolation/`가 정본이다.
+> **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. §9 이후 재발견한 in-process helper 변조는 §10이 교정한다. §10은 이후 C1/C2 검증에서 거부됐다. 현재 구조와 증거는 §11과 `evidence/4.2/channel-isolation/`가 정본이었으나, §11의 OS 격리 서술은 독립 검증에서 틀린 것으로 확인되어 **§12가 대체한다**(profile 결함 수정, 격리 켠 전체 테스트, 과잉 차단 완화).
 
 - 명세: `benchmark-spec-draft.md` v1(§0.1 포함), manifest `benchmark-manifest-draft.json`(이 구현에 맞춰 v1.1로 갱신).
 - 코드: `bench/local_llm_eval/`(표준 라이브러리만). 실행법은 그 디렉터리의 `README.md`.
@@ -221,10 +221,26 @@ holdout 9개, 정답 봉인, prompt↔hidden 독립 사람 검토, 실모델 완
 - `runner.py`/`evaluator.py`: 격리 불가 개발 결과는 사유+flag. holdout은 mode 또는 Task.split/id 계약으로 실행 전에 차단(native 포함). readiness 뒤 launch 실패는 격리 없이 재실행하지 않는다.
 - `integrity.py`/`natives.py`: 동일 stdlib import 정책, 보통 getattr/hasattr/type()·dunder 정의·__all__ 호환성 복원. 애매한 신호는 flag. 기존 명백한 변조 대조는 거부한다. DBG는 기존 함수를 그대로 보호하며 정상 import·상수·클래스 prelude를 허용한다. 기존 '관련 없는 새 함수 추가' 대조는 계속 실패시킨다.
 
-Codex Run command sandbox에서 `/usr/bin/sandbox-exec -p <default-deny profile> /usr/bin/true`는 exit 71, `sandbox-exec: sandbox_apply: Operation not permitted`였다. 이를 우회하거나 같은 거부를 재시도하지 않았다. 후속 CPU 검증에는 측정된 사유를 환경변수로 전달했다. 실제 OS deny 테스트는 skip이며 JSON 진단은 ok=false/exit2다. 이는 현재 Codex 환경의 증거이며 Claude/호스트에서 격리가 불가능하다는 뜻이 아니다. 사용자 제공 Claude 실측 요약을 이번 독립 실행 결과로 재인용하지 않는다.
+Codex Run command sandbox에서 `/usr/bin/sandbox-exec -p <default-deny profile> /usr/bin/true`는 exit 71, `sandbox-exec: sandbox_apply: Operation not permitted`였다. 이를 우회하거나 같은 거부를 재시도하지 않았다. 후속 CPU 검증에는 측정된 사유를 환경변수로 전달했다. 실제 OS deny 테스트는 skip이며 JSON 진단은 ok=false/exit2다. 이는 현재 Codex 환경의 증거이며 Claude/호스트에서 격리가 불가능하다는 뜻이 아니다. 사용자 제공 Claude 실측 요약을 이번 독립 실행 결과로 재인용하지 않는다. **정정(§12):** 이 호스트(엔진 sandbox 밖)에서는 출하된 profile이 `readiness exit -6`(SIGABRT)이었고 원인은 환경이 아니라 profile 결함(루트 `/` data-read 누락)이었다. 구현 당시 어느 환경에서도 이 profile이 Python을 실제로 띄운 적이 없었으므로 §11의 'deny 미검증' 서술은 Codex 한정이 아니라 '출하 profile은 사용 불가'였다.
 
 실제 Python은 `/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/bin/python3.13`이다. 원본 checkout은 존재하지만 이전에 검사한 원본의 evaluator.py는 존재하지 않았다. 실제 파일 pyproject.toml을 git common-dir로 찾아 존재 검사를 통과시킨 후 deny 대상으로 썼다. OS 안의 PermissionError는 아직 확인하지 못했다.
 
 개발 정답은 공개되어 위조 방어가 약하다. 강한 보장은 봉인 holdout과 OS deny 수락을 선행 조건으로 하며 현재 달성했다고 주장하지 않는다. format/globals의 in-memory 노출, 새 native/reflection 우회, 후보 unittest 자체 결과/AST 우회, 적응 공격 전수는 이번 증거가 아니다. holdout9·정답 봉인·실제 OS deny·실모델·하네스 연동은 남아 있다. 모델·서버·운영 배포는 실행하지 않았고 PMS 4.2는 doing으로 유지한다.
 
 이번 CPU 최종 출력: `280 passed, 1 skipped in 126.18s`, selfcheck `problems: 0`(flags: development_answers_public, sandbox_unavailable, trace_unavailable). 참조해9/9·대안9/9 PASS, 기존366개 음성 대조가 모두 기대 사유로 거부된다. 과잉 차단 회귀는 14×8=112건 PASS다. skip 1건은 실제 OS deny이며 PermissionError 검증을 통과했다고 해석하지 않는다. selfcheck 결과 JSON도 각 결과/최상위에 격리 flag를 보존한다.
+
+## 12. 4.2 리뷰 필수 조건 이행 (2026-10-23)
+
+독립 검증(Claude Sonnet 5.5, 엔진 sandbox 밖 Mac Studio)의 조건부 수락에 대한 이행이다. 새 공격 페이로드는 쓰지 않았고 모델·서버는 실행하지 않았다. 증거: `evidence/4.2/isolation-fix/`.
+
+**1. sandbox profile 결함.** 출하 profile로 `sandbox-exec -f <profile> python3.13 -I -S -c ...`는 exit 134였다(stderr 없음). 이분 탐색에서 `(allow file-read-data (literal "/"))` 한 줄이 충분했고, 같은 조건에서 `/bin/echo`도 abort하므로 Python 고유 문제가 아니다(macOS 27, Darwin 27.0.0). 더 좁은 `file-read-metadata`/`xattr` 거부는 영향이 없다. 호출 주체(dyld/libSystem 추정)는 추적하지 못했다(확인 필요, `sandbox-exec (trace)`가 이 OS에서 파일을 만들지 않았다). 그래서 최소 규칙으로 data-read 한 줄만 추가했고 하위 경로는 열지 않는다. 부작용은 `/` 항목 이름 목록의 노출이다.
+- `python3 -m local_llm_eval.sandbox`: `ok: true`, exit 0. deny 대상은 평가기 소스·gold·probe 소스·원본 checkout(`TTAKKARI_DEPLOY_SOURCE_ROOT`=실제 원본의 `pyproject.toml`)·`~/.zshrc`·`/etc/hosts`이며 모두 `PermissionError`. 홈과 `/private/tmp` 목록, `/dev/fd/0` 경로 open, network, fork, 작업 영역 밖 쓰기도 `PermissionError`.
+- 이전 판정 기준 변경: `Availability.defect`를 추가해 환경 거부(sandbox_apply EPERM, 측정 사유 override, 플랫폼 없음)와 우리 결함(그 밖의 readiness 실패)을 구분한다. deny 테스트는 환경 거부일 때만 skip하고 결함이면 실패한다. 종료 코드는 0 통과, 2 환경 거부, 1 결함/deny 실패다.
+
+**2. 격리를 켠 전체 테스트와 gate.** 격리 on `413 passed`(skip 0, deny 테스트 실행), 격리 off(`LOCAL_LLM_EVAL_SANDBOX_UNAVAILABLE`) `412 passed, 1 skipped`. selfcheck는 `problems: 0`, 참조해 18/18 PASS, 음성 대조 366/366 기대 사유 거부이며 flags에서 `sandbox_unavailable`이 사라졌다. pre-push gate(`scripts/verify_deploy_gate.sh`)는 `bench/local_llm_eval/` 변경 시 평가기 테스트를 `-rs`로 돌리고 이어서 `local_llm_eval.sandbox`를 실행한다. exit 0이면 통과 줄, exit 2(엔진 sandbox 등 환경 거부)이면 사유를 적고 건너뛰며 gate를 깨지 않는다. exit 1(격리 가능한데 deny가 거부하지 않거나 profile 결함)이면 gate 실패다. 즉 이번 `-6` 같은 결함은 더 이상 조용히 skip되지 않는다.
+
+**3. 과잉 차단 완화.** 허용·거부와 이유는 명세 §0.1.1 '4.2 리뷰 후속 완화'가 정본이다. 요약: dunder 읽기 27종 허용(`super().__init__`, `__class__`/`__name__`/`__doc__` 등), `dir()`·후보 소유 인스턴스의 `vars()`, `sys` 상수·재귀 한도, `os.getcwd/environ/getenv/sep`, `threading` 동기화 객체, `argparse`, `shutil` 복사·이동·삭제. 거부 유지: dunder 쓰기와 `__dict__`/`__globals__`/`__self__`/`__getattribute__`/`__setattr__` 등, `sys.modules/stdout/_getframe/exit`, `Thread`/`Timer`, 모듈·클래스에 대한 `vars`, `traceback`, 후보 작성 테스트의 sys/os/threading/shutil. `io.FileIO`는 거부, `io.open`은 내장 `open`과 같은 가드로 교체했다. 남은 위험(격리 off에서 `pathlib` 등의 `/dev/fd` 경로 open)은 명세에 적었다. 판정 경계(전용 pipe frame, 부모 판정, OS 격리)는 건드리지 않았다. 기존 `test_sys_exit_zero_is_an_error_observation`은 정적 import 거부에서 런타임 capability 거부(`module capability sys.exit`)로 바뀐 점을 반영했으며 여전히 거부다.
+
+정상 변형 표본(`evidence/4.2/isolation-fix/variants.py.txt`, 46종×8과제, 격리 on): 이전에 0/8이던 `super().__init__`, `__class__.__name__`, `os.getcwd`, `os.environ`, `sys.maxsize`, `sys.setrecursionlimit`, `threading.Lock`, `shutil`이 7/8로 올랐다. 나머지 1과제는 후보가 쓴 테스트 파일을 제약하는 TST의 의도된 import 집합이다. 여전히 실패: `traceback`(이유 있는 거부), `object.__setattr__`, `w.__name__ = ...`(dunder 쓰기 거부), DBG의 '새 함수 추가' 대조.
+
+미검증/한계: 정확한 syscall 원인 미추적. Python 3.13.15/macOS 27 한 조합. 허용한 capability 조합에 대한 적응 공격 전수 미검증. 봉인 holdout, 실모델, trace/session 연동은 미완이다. PMS 4.2는 doing 유지.

@@ -40,7 +40,9 @@ def test_exit0_at_import_leaves_no_observation_line(workdir):
 def test_sys_exit_zero_is_an_error_observation(workdir):
     (workdir / "s.py").write_text("import sys\nsys.exit(0)\n")
     run = run_check(workdir, "H1", "import s")
-    assert run.status == "integrity" and "sys" in run.detail
+    # `import sys` is admitted for constants only; exit stays outside the capability set.
+    assert run.status == "OBS"
+    assert run.obs["__tampered__"] == ["module capability sys.exit"]
 
 
 def test_timeout_kills_the_process_group(workdir):

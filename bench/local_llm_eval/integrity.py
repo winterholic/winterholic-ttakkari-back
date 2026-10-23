@@ -9,6 +9,7 @@ import ast
 import builtins
 import importlib.abc
 import importlib.util
+import io
 import operator
 import os
 import sys
@@ -32,6 +33,51 @@ CAPABILITIES = {
         "makedirs",
         "listdir",
         "stat",
+        # Read-only process facts. The environment is the parent's minimal one.
+        "getcwd",
+        "getenv",
+        "environ",
+        "sep",
+        "linesep",
+        "pathsep",
+        "curdir",
+    },
+    # Constants and recursion tuning only. No modules, streams, frames or exit.
+    "sys": {
+        "maxsize",
+        "maxunicode",
+        "byteorder",
+        "platform",
+        "version_info",
+        "hexversion",
+        "float_info",
+        "getrecursionlimit",
+        "setrecursionlimit",
+        "getsizeof",
+        "intern",
+    },
+    # Lock-like primitives only: no Thread/Timer, so no code runs outside the call.
+    "threading": {
+        "Lock",
+        "RLock",
+        "Condition",
+        "Event",
+        "Semaphore",
+        "BoundedSemaphore",
+    },
+    # No archive, ownership or format registry APIs.
+    "shutil": {
+        "copy",
+        "copy2",
+        "copyfile",
+        "copyfileobj",
+        "copymode",
+        "copytree",
+        "move",
+        "rmtree",
+        "ignore_patterns",
+        "Error",
+        "SameFileError",
     },
     "posixpath": {
         "join",
@@ -147,6 +193,7 @@ CAPABILITIES = {
 # Import and observation safety are separate from OS confinement. Public stdlib
 # APIs are broadly available; explicit interpreter/process-control APIs remain guarded.
 UNSAFE_MODULES = {
+    # "sys" and "threading" are reachable only through the narrow CAPABILITIES sets.
     "sys",
     "gc",
     "inspect",
@@ -167,6 +214,7 @@ UNSAFE_MODULES = {
 }
 PURE_STDLIB = {
     "abc",
+    "argparse",
     "array",
     "base64",
     "binascii",
@@ -217,8 +265,6 @@ FORBIDDEN_NAMES = {
     "__import__",
     "globals",
     "locals",
-    "vars",
-    "dir",
     "setattr",
     "delattr",
     "breakpoint",
@@ -261,8 +307,52 @@ class IntegrityError(Exception):
     pass
 
 
+# Dunder names a program may READ. They give no path to frames, globals, code,
+# closures, bases/subclasses, `__dict__`, `__self__` or the raw attribute protocol
+# (`__getattribute__`, `__setattr__`, `__reduce__`...). Stores and deletes of any
+# dunder stay rejected, so this never widens the write boundary.
+SAFE_DUNDER_READS = frozenset(
+    {
+        "__init__",
+        "__new__",
+        "__init_subclass__",
+        "__class__",
+        "__name__",
+        "__qualname__",
+        "__doc__",
+        "__module__",
+        "__repr__",
+        "__str__",
+        "__format__",
+        "__eq__",
+        "__ne__",
+        "__lt__",
+        "__le__",
+        "__gt__",
+        "__ge__",
+        "__hash__",
+        "__bool__",
+        "__len__",
+        "__iter__",
+        "__next__",
+        "__contains__",
+        "__getitem__",
+        "__call__",
+        "__enter__",
+        "__exit__",
+    }
+)
+
+
 def forbidden_attribute(name):
+    """Strict rule for stores, deletes and reflective imports."""
     return name.startswith(("__", "_llme_")) or name in FORBIDDEN_ATTRS
+
+
+def forbidden_read(name):
+    if name in SAFE_DUNDER_READS:
+        return False
+    return forbidden_attribute(name)
 
 
 def violations(source):
@@ -284,7 +374,11 @@ def violations(source):
             n.id in FORBIDDEN_NAMES or n.id.startswith("_llme_")
         ):
             bad.append(f"line {n.lineno}: name {n.id}")
-        elif isinstance(n, ast.Attribute) and forbidden_attribute(n.attr):
+        elif isinstance(n, ast.Attribute) and (
+            forbidden_read(n.attr)
+            if isinstance(n.ctx, ast.Load)
+            else forbidden_attribute(n.attr)
+        ):
             bad.append(f"line {n.lineno}: attribute {n.attr}")
         elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if n.name.startswith("_llme_"):
@@ -292,14 +386,12 @@ def violations(source):
         elif isinstance(n, ast.Import):
             for alias in n.names:
                 if alias.name.split(".")[0] in {
-                    "sys",
                     "gc",
                     "inspect",
                     "ctypes",
                     "builtins",
                     "importlib",
                     "atexit",
-                    "threading",
                     "_thread",
                     "signal",
                     "subprocess",
@@ -386,7 +478,7 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         raise IntegrityError(message)
 
     def get(self, obj, name):
-        if forbidden_attribute(name):
+        if forbidden_read(name):
             self.deny(f"attribute {name}")
         if type(obj) is ModuleView:
             return self.get(object.__getattribute__(obj, "_module"), name)
@@ -401,9 +493,7 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         if value is operator.attrgetter:
 
             def attrgetter(*names):
-                if any(
-                    forbidden_attribute(part) for n in names for part in n.split(".")
-                ):
+                if any(forbidden_read(part) for n in names for part in n.split(".")):
                     self.deny("reflective attrgetter")
 
                 # Do not let attrgetter bypass module capability checks.
@@ -419,6 +509,12 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
                 return getattrs
 
             return attrgetter
+        if obj is io and name == "FileIO":
+            # Raw-descriptor constructor; ordinary files go through open().
+            self.deny("module capability io.FileIO")
+        if obj is io and name == "open":
+            # Same rule as the builtin: no integer descriptors, no /dev or /proc.
+            return self.opening
         if obj is os and name == "fdopen":
 
             def fdopen(fd, *args, **kwargs):
@@ -472,6 +568,28 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             if default:
                 return default[0]
             raise
+
+    def vars(self, *args):
+        # Only the instance namespace of candidate-owned classes. Modules, classes,
+        # functions, bound methods and frame locals expose raw capabilities.
+        if len(args) != 1:
+            self.deny("vars without an argument")
+        obj = args[0]
+        if (
+            isinstance(
+                obj,
+                (
+                    types.ModuleType,
+                    type,
+                    types.FunctionType,
+                    types.BuiltinFunctionType,
+                    types.MethodType,
+                ),
+            )
+            or builtins.type(obj).__module__ not in self.modules
+        ):
+            self.deny("vars on foreign object")
+        return builtins.vars(obj)
 
     def opening(self, file, *args, **kwargs):
         if isinstance(file, int) or os.path.realpath(file).startswith(
@@ -532,6 +650,7 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         private["open"] = self.opening
         private["getattr"] = self.getattr
         private["hasattr"] = self.hasattr
+        private["vars"] = self.vars
         # Preserve native type identity/isinstance semantics. Access to returned
         # type objects still goes through GuardAttributes, including aliases.
         private["type"] = builtins.type

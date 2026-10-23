@@ -1,6 +1,7 @@
 """자체 MCP 실행 권한과 도구의 읽기·쓰기 의미를 구분한다(ADR 0003)."""
 
 READ_ONLY_TOOLS = frozenset({
+    "kb_search", "kb_documents", "kb_document", "kb_evidence",
     "list_checklist", "list_checklist_templates", "library_catalog", "recall", "get_entity", "list_artifacts", "list_sessions", "read_session",
     "server_resources", "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo",
     "list_events", "list_meetings", "get_meeting", "search_meeting_items", "search_meetings",

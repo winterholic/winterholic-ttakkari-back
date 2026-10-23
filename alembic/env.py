@@ -5,7 +5,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-import ttakkari.delivery_models  # noqa: F401 - registers ChangeSet on shared Base.metadata
+import ttakkari.collector.control_models
+import ttakkari.delivery_models
+import ttakkari.kb_vector_models  # noqa: F401 - rebuildable KB projections
 from alembic import context
 from ttakkari.config import get_settings
 from ttakkari.models import Base

@@ -50,3 +50,19 @@
 ## 후속 작업
 
 v2 §9/§12의 E0 선행·단위별 독립 검증을 따른다. 기존 단계번호와 PG/Tantivy 선택은 구현 승인으로 쓰지 않는다. 수집은 독립 collector 플랫폼, kb는 표준 envelope 소비·원장/검색/정본 소유다. 엔진·삭제 경로·생산자 계약 변경은 v2 반영 확인 및 각 단위 실제 DB 검증 전 활성화하지 않는다.
+
+
+## 2026-10-23 수집·검색 운영 경로 확장
+
+사용자의 후속 지시 "완성본배포까지 필요한 개발 다 진행해줘"로 수집/검색 제품 개발과 배포 범위를 이어간다.
+KB7 품질 승인, 사람 확인 holdout, E0.5 대규모 엔진 선정 또는 공개 ML 모델 검증 완료를 뜻하지 않는다.
+이번 동작·검증 근거와 미완료 범위는 `docs/work-history/2026-10-23-kb-collector-product.md`에 기록한다.
+
+- collector의 직접 KB import를 금지한 경계를 유지한다. KB 소유 소비자 `kb_delivery.py`가 표준 envelope·원문 blob·현재 정책·권한·해시를 재검증하고 원문 사본을 KB 저장소에 pin한다. outbox의 실제 import/export 결과를 영속 receipt로 남긴다.
+- `collector_sources`로 등록한 출처만 별도 generation 작업 `collector-control`(기본 on)이 주기 실행한다. 기존 일반 `collector-consume` 기본 off는 유지한다. 정책·robots·SSRF·중단/복구·500-page 기본 일일 신규 job admission을 재사용한다. admission은 모든 HTTP 요청/재시도의 절대 예산이나 LLM 예산이 아니다. teacher/LLM 호출은 없다.
+- KB access record로 personal/work를 분리한다. 기존 미분류 문서는 personal에만 남는다. 정책에서 store/knowledge를 회수하면 해당 출처의 접근 record를 숨기며, 검색·상세·인용 API 모두 적용한다. immutable 본문을 고치지 않는다.
+- collector 수집은 원본 bytes와 추출된 NFC 본문을 따로 저장한다. 수동/CLI raw-v1의 NFKC 동작은 유지한다. 관측 ledger가 있는 문서는 event_time으로 현재 리비전을 고른다(A→B→A 및 늦은 옛 snapshot). 전체 v2 KB4/KB5 계약, 304 재확인 관측, tombstone/pin 소유권·삭제 프로토콜까지 완료한 것은 아니다.
+- 검색 선택 `mode=hybrid`: 현재 PG 안에서 exact cosine과 기존 lexical 후보를 RRF로 합친다. 기존 로컬 E5 ONNX snapshot ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b만 읽고 다운로드하지 않는다. 토큰 수를 세어 본문 전체를 window로 처리하며 상한을 넘으면 실패로 표시한다. API에 indexed/total/model/오류/quality_gate=unverified를 보인다. 이것은 E0.5의 100만 자료 비교·엔진 확정·KB7 통과가 아니다.
+- owner의 유용성 검토는 append-only이고 사실성 승인이 아니다. 학습 권리가 수집 당시와 현재 모두 허용된 자료에만 group-heldout TF-IDF/logistic 기준선을 학습한다. 모델은 shadow-only, 사실성은 unmeasured다. 공개 classifier/teacher/student/보정/최종 holdout은 후속 실험이다.
+- scope가 인증 세션에서 정해지는 read-only MCP `kb_search`, `kb_documents`, `kb_document`, `kb_evidence`를 별도로 제공한다. 기존 recall/knowledge 원장과 검색 풀을 섞지 않는다.
+- 미래 삭제 기한을 KB immutable 원문 pin이 이행하는 경로가 없으므로 retain_until이 있는 문서는 KB import를 거부한다. 원문 회수/삭제·보존 만료 운영은 별도 미완료다.

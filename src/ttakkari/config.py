@@ -219,6 +219,11 @@ class Settings(BaseSettings):
     reminder_scan_seconds: int = 30
     # 수집 플랫폼 consume 루프(CP-S2-02). 단계 handler(collector/pipeline.py)는 루프가 처음 돌 때 등록된다. 기본 off.
     collector_consume_enabled: bool = False
+    # Managed source loop only handles jobs explicitly registered through the source management API.
+    collector_control_enabled: bool = True
+    collector_daily_page_cap: int = Field(default=500, ge=1, le=100000)
+    kb_semantic_enabled: bool = True
+    kb_embedding_snapshot: str = "ac6781cd1cf88b8306a536d7c9d18a5bd57cc14b"
     # fetch User-Agent 에 붙는 연락처(URL 또는 이메일). 운영 웹 수집 전에 설정한다.
     collector_contact: str = ""
     # 원본 보존소 총량 상한(제안 20GiB, architecture 7). 도달하면 새 fetch 를 멈춘다.

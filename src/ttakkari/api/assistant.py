@@ -44,6 +44,10 @@ EType = Literal["person", "project", "org", "place", "tool", "topic", "preferenc
 TOOLS: list[dict[str, str]] = [
     {"name": "knowledge_extraction_status", "group": "맥락", "who": "모든 실행", "desc": "추출 실행 기록·실패 사유·재처리 계보"},
     {"name": "knowledge_retry_extraction", "group": "맥락", "who": "모든 실행", "desc": "재처리 가능한 실패만 최대3회 재개"},
+    {"name": "kb_search", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 문서 검색·원문 근거 후보"},
+    {"name": "kb_documents", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 도서관 문서 목록"},
+    {"name": "kb_document", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 문서와 현재 버전"},
+    {"name": "kb_evidence", "group": "지식 도서관", "who": "모든 실행", "desc": "일반 지식 인용 위치·해시 검증"},
     {"name": "knowledge_sources", "group": "맥락", "who": "모든 실행", "desc": "범위 내 원문 버전 목록"},
     {"name": "knowledge_recall", "group": "맥락", "who": "모든 실행", "desc": "원문 근거·시점·상태를 가진 지식과 관계 검색"},
     {"name": "knowledge_assertion", "group": "맥락", "who": "모든 실행", "desc": "관계의 근거와 정정 이력 조회"},

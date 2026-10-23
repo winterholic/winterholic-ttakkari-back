@@ -1,18 +1,20 @@
-"""범용 지식 도서관(kb) 사용자 API. 개인 맥락 도서관(/api/assistant/knowledge)과 라우터·테이블·검색 풀이 다르다(ADR 0063 D1).
+"""Owner KB API: scoped documents, citations, lexical search and optional dense fusion.
 
-kb 원장에는 아직 scope 열이 없다(v2 G8). 소유자 인증만 요구하며 개인/회사 scope 필터는 scope 열이 생기는 단위에서 건다.
-읽기 전용 엔드포인트와 등록(POST /documents)만 있다. 등록은 기존 수집 함수(멱등·불변)를 그대로 쓴다.
+New and collected documents have explicit access records. Legacy unclassified rows remain
+personal-only. Model rankings are evidence candidates; KB7 quality approval is separate.
 """
 
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from ttakkari import kb_library as lib
+from ttakkari import kb_retrieval
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.kb_store import KbInputError
@@ -24,6 +26,7 @@ router = APIRouter(prefix="/api/assistant/kb", tags=["kb-library"])
 class RegisterIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    scope: Literal["personal", "work"] = "personal"
     title: str = Field(min_length=1, max_length=500)
     text: str = Field(min_length=1, max_length=lib.MAX_TEXT_CHARS)
     source_key: str | None = Field(default=None, min_length=1, max_length=500)
@@ -52,8 +55,8 @@ class RegisterIn(BaseModel):
 
 
 @router.get("/summary")
-async def kb_summary(_: User, db: Db) -> dict:
-    return await lib.summary(db)
+async def kb_summary(_: User, db: Db, scope: Literal["personal", "work"] = "personal") -> dict:
+    return {**await lib.summary(db, scope=scope), "retrieval": await kb_retrieval.status(db, scope)}
 
 
 @router.get("/documents")
@@ -62,8 +65,9 @@ async def kb_documents(
     q: str | None = Query(None, max_length=200),
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    scope: Literal["personal", "work"] = "personal",
 ) -> dict:
-    return await lib.list_documents(db, q=q, limit=limit, offset=offset)
+    return await lib.list_documents(db, q=q, limit=limit, offset=offset, scope=scope)
 
 
 @router.post("/documents", status_code=201)
@@ -71,7 +75,7 @@ async def kb_register(body: RegisterIn, _: User, db: Db) -> dict:
     try:
         result = await lib.register_text(
             db, title=body.title, text=body.text, source_key=body.source_key, lang=body.lang,
-            locator=body.locator,
+            locator=body.locator, scope=body.scope,
         )
         record(
             db, actor="user", action="kb.register", target_type="kb_revision", target_id=result.revision_id,
@@ -103,10 +107,11 @@ async def kb_document(
     revision_id: uuid.UUID | None = None,
     passage_limit: int = Query(100, ge=1, le=500),
     passage_offset: int = Query(0, ge=0),
+    scope: Literal["personal", "work"] = "personal",
 ) -> dict:
     try:
         return await lib.get_document(
-            db, document_id, revision_id=revision_id, passage_limit=passage_limit, passage_offset=passage_offset
+            db, document_id, revision_id=revision_id, passage_limit=passage_limit, passage_offset=passage_offset, scope=scope
         )
     except lib.KbNotFound as exc:
         raise HTTPException(404, f"kb_{exc}_not_found") from exc
@@ -120,9 +125,19 @@ async def kb_search(
     offset: int = Query(0, ge=0),
     document_id: uuid.UUID | None = None,
     current_only: bool = True,
+    scope: Literal["personal", "work"] = "personal",
+    mode: Literal["lexical", "hybrid"] = "lexical",
 ) -> dict:
+    if mode == "hybrid":
+        try:
+            return await kb_retrieval.search(db, query=q, limit=limit, offset=offset,
+                                             document_id=document_id, current_only=current_only, scope=scope)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(503, "kb_semantic_temporarily_unavailable") from exc
     return await lib.search_passages(
-        db, query=q, limit=limit, offset=offset, document_id=document_id, current_only=current_only
+        db, query=q, limit=limit, offset=offset, document_id=document_id, current_only=current_only, scope=scope
     )
 
 
@@ -131,9 +146,10 @@ async def kb_evidence(
     passage_id: uuid.UUID, _: User, db: Db,
     start: int | None = Query(None, ge=0),
     end: int | None = Query(None, ge=1),
+    scope: Literal["personal", "work"] = "personal",
 ) -> dict:
     try:
-        return await lib.get_evidence(db, passage_id, start=start, end=end)
+        return await lib.get_evidence(db, passage_id, start=start, end=end, scope=scope)
     except lib.KbNotFound as exc:
         raise HTTPException(404, f"kb_{exc}_not_found") from exc
     except KbInputError as exc:

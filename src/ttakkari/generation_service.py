@@ -191,6 +191,21 @@ async def _collector_consume() -> None:
     await consume_once()
 
 
+async def _collector_control() -> None:
+    from ttakkari import kb_delivery as delivery
+    from ttakkari.collector import control, pipeline
+    from ttakkari.collector.runner import consume_once
+    await control.schedule_once()
+    pipeline.install()
+    await consume_once(limit=1, managed_only=True)
+    await delivery.deliver_once()
+
+
+async def _kb_vectors() -> None:
+    from ttakkari.kb_retrieval import index_pending
+    await index_pending(limit=8)
+
+
 async def start_api_services(execution_mode: str) -> None:
     """Start request-local API services and local-mode durable workers."""
     from ttakkari.artifacts import preview
@@ -234,6 +249,10 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
         ("schedules", _schedules, s.runtime_poll_seconds)]
     if s.collector_consume_enabled:
         jobs.append(("collector-consume", _collector_consume, s.runtime_poll_seconds))
+    if s.collector_control_enabled:
+        jobs.append(("collector-control", _collector_control, max(10, s.runtime_poll_seconds)))
+    if s.kb_semantic_enabled:
+        jobs.append(("kb-vectors", _kb_vectors, 60))
     if s.reminder_scan_seconds > 0:
         jobs += [("reminders", _reminders, s.reminder_scan_seconds), ("weather", _weather, s.reminder_scan_seconds)]
     if s.usage_poll_seconds > 0:

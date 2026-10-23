@@ -1,0 +1,126 @@
+"""Scoped lexical/dense fusion. Scores are ranking signals, never factuality or calibrated confidence.
+
+PG exact cosine is a bounded-corpus operational path, not the million-passage engine selection.
+That separate E0.5 quality/scale gate remains unverified. Failed projections are visible and retriable.
+"""
+import asyncio
+import math
+
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
+
+from ttakkari import kb_library as lib
+from ttakkari.config import get_settings
+from ttakkari.context import embedder
+from ttakkari.db import sessionmaker
+from ttakkari.kb_models import KbDocument, KbPassage, KbRevision, KbSource
+from ttakkari.kb_vector_models import KbPassageVector as V
+from ttakkari.model_process import run_json_worker
+from ttakkari.models import EMBED_DIM
+
+_lock = asyncio.Lock()
+_last_error: str | None = None
+
+
+def model_key():
+    snapshot = get_settings().kb_embedding_snapshot if get_settings().context_embedder == "e5" else "test"
+    return embedder.model_name() + ":kb-full-v1:" + snapshot
+
+
+def windows(text):
+    # Deterministic lexical/hash test backend; the real model worker splits by exact token counts.
+    return [text[i:i + 384] for i in range(0, max(1, len(text) - 64), 320)]
+
+
+async def embed_complete(texts, *, query=False):
+    if not embedder.enabled():
+        raise RuntimeError("kb_semantic_disabled")
+    s = get_settings()
+    if s.context_embedder == "e5":
+        result = await run_json_worker(module="ttakkari.kb_embedding_worker",
+            request={"texts": texts, "query": query, "model": s.context_model,
+                     "cache_dir": str(s.models_dir), "threads": s.context_embedding_cpu_threads,
+                     "snapshot": s.kb_embedding_snapshot},
+            timeout=s.context_embedding_timeout_seconds, error_prefix="kb_embedding")
+        if result.get("coverage") != "full":
+            raise ValueError("kb_embedding_incomplete")
+        vectors = result["vectors"]
+    else:
+        vectors = await embedder.embed(texts, query=query)
+    if len(vectors) != len(texts) or any(len(v) != EMBED_DIM or not all(math.isfinite(x) for x in v) for v in vectors):
+        raise ValueError("kb_embedding_invalid")
+    return vectors
+
+
+async def index_pending(*, limit=16):
+    global _last_error
+    async with _lock:
+        async with sessionmaker()() as db:
+            indexed = select(V.passage_id).where(V.passage_id == KbPassage.id, V.model_key == model_key()).exists()
+            passages = list(await db.scalars(select(KbPassage).where(~indexed).order_by(KbPassage.created_at, KbPassage.id).limit(limit)))
+        if not passages:
+            return 0
+        try:
+            vectors = await embed_complete([p.body for p in passages])
+        except Exception as exc:
+            _last_error = type(exc).__name__ + ":" + str(exc)[:200]
+            raise
+        async with sessionmaker()() as db:
+            for passage, vector in zip(passages, vectors, strict=True):
+                await db.execute(insert(V).values(passage_id=passage.id, model_key=model_key(),
+                    text_sha256=passage.sha256, vector=vector).on_conflict_do_nothing())
+            await db.commit()
+        _last_error = None
+        return len(passages)
+
+
+async def status(db, scope="personal"):
+    total = await db.scalar(select(func.count()).select_from(KbPassage).join(KbRevision).join(KbDocument)
+                            .where(lib.scope_filter(scope))) or 0
+    indexed = await db.scalar(select(func.count()).select_from(V).join(KbPassage).join(KbRevision).join(KbDocument)
+                              .where(V.model_key == model_key(), V.text_sha256 == KbPassage.sha256,
+                                     lib.scope_filter(scope))) or 0
+    return {"model": embedder.model_name(), "model_key": model_key(), "indexed": indexed, "total": total,
+            "enabled": get_settings().kb_semantic_enabled, "last_error": _last_error,
+            "quality_gate": "unverified", "engine": "postgresql_exact_cosine"}
+
+
+async def search(db, *, query, limit=10, offset=0, document_id=None, current_only=True, scope="personal"):
+    if not get_settings().kb_semantic_enabled:
+        raise RuntimeError("kb_semantic_disabled")
+    if offset > 200:
+        raise ValueError("kb_hybrid_offset_limit")
+    [vector] = await embed_complete([query], query=True)
+    lexical = await lib.search_passages(db, query=query, limit=200, offset=0,
+                                        document_id=document_id, current_only=current_only, scope=scope)
+    cosine = V.vector.cosine_distance(vector).label("distance")
+    stmt = select(KbPassage, KbRevision, KbDocument, cosine).join(V, V.passage_id == KbPassage.id).join(
+        KbRevision, KbPassage.revision_id == KbRevision.id).join(KbDocument, KbRevision.document_id == KbDocument.id).where(
+            V.model_key == model_key(), V.text_sha256 == KbPassage.sha256, lib.scope_filter(scope))
+    if current_only:
+        stmt = stmt.where(lib._current_revision_filter())
+    if document_id is not None:
+        stmt = stmt.where(KbDocument.id == document_id)
+    dense = (await db.execute(stmt.order_by(cosine, KbPassage.id).limit(200))).all()
+    scores, items = {}, {}
+    for rank, item in enumerate(lexical["items"], 1):
+        pid = item["passage_id"]
+        scores[pid], items[pid] = 1 / (60 + rank), item
+    for rank, (passage, revision, document, distance) in enumerate(dense, 1):
+        pid = str(passage.id)
+        scores[pid] = scores.get(pid, 0) + 1 / (60 + rank)
+        if pid not in items:
+            source = await db.get(KbSource, revision.source_id)
+            snippet, marks = lib.snippet_with_highlights(passage.body, lexical["terms"])
+            current = await lib._latest_revision(db, document.id)
+            items[pid] = {"passage_id": pid, "ord": passage.ord, "heading": passage.heading,
+                          "snippet": snippet, "highlights": marks, "char_start": passage.char_start,
+                          "char_end": passage.char_end,
+                          "document": {"id": str(document.id), "title": document.title, "lang": document.lang},
+                          "revision": {"id": str(revision.id), "rev_no": revision.rev_no,
+                                       "current": current.id == revision.id, "char_count": revision.char_count},
+                          "source": lib._source_out(source)}
+    ranked = sorted(items, key=lambda pid: (-scores[pid], pid))
+    hits = [{**items[pid], "score": scores[pid]} for pid in ranked[offset:offset + limit]]
+    return {**lexical, "items": hits, "limit": limit, "offset": offset,
+            "has_more": len(ranked) > offset + limit, "retrieval": await status(db, scope)}

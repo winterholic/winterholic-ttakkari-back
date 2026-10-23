@@ -2,8 +2,8 @@
 
 불변 규칙: kb_sources·kb_revisions·kb_passages·kb_evidence 행은 UPDATE 와 DELETE 를 거부한다.
 외래키 제약조건은 RESTRICT 로 결속되어 부모 삭제로 인한 연쇄 삭제(CASCADE)가 방지된다.
-정규화 및 오프셋 기준: 유니코드 NFKC, LF 줄바꿈('\n'), 0-based Unicode 코드포인트(char) 오프셋 기준.
-리비전의 현재성(active)은 가변 포인터가 아니라 문서별 최대 rev_no 로 정한다.
+정규화 및 오프셋 기준: legacy raw-v1은 NFKC, collector 추출 본문은 NFC, LF 줄바꿈('\n'), 0-based Unicode 코드포인트(char) 오프셋 기준.
+리비전의 현재성은 관측 ledger가 있으면 event_time 최신 관측, 없으면 문서별 최대 rev_no 로 정한다.
 kb_evidence 인용 구간은 INSERT 때 kb_passages.body 와 sha256 을 대조한다.
 아래 트리거 DDL 은 Alembic 0055 와 동기화한다(create_all 로 만드는 테스트 DB 용).
 """

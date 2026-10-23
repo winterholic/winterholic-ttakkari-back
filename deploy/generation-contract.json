@@ -4,7 +4,7 @@
     "protocol": 1,
     "slots": 3
   },
-  "schema_revision": "0064_run_executor",
+  "schema_revision": "0065_collector_delivery",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -38,7 +38,8 @@
     "0061_local_tts",
     "0062_delivery_change_sets",
     "0063_collector_stage_items",
-    "0059_kb_immutability_truncate"
+    "0059_kb_immutability_truncate",
+    "0064_run_executor"
   ],
   "schema_aliases": {
     "0059_kb_immutability_truncate": "0059_collector_intake"

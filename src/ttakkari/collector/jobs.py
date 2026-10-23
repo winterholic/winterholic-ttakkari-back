@@ -87,10 +87,13 @@ def retry_delay(attempts: int, retry_after: float | None = None, rng: random.Ran
 
 
 async def claim_batch(
-    db: AsyncSession, *, owner_generation: str, limit: int = 1, now: datetime | None = None
+    db: AsyncSession, *, owner_generation: str, limit: int = 1, now: datetime | None = None,
+    managed_only: bool = False,
 ) -> list[ClaimedJob]:
     """Lock up to `limit` runnable jobs for this owner. Jobs with no attempts left are not claimed."""
     now = now or _now()
+    from ttakkari.collector.control_models import CollectorSource
+    managed = select(CollectorSource.id).where(CollectorSource.last_job_id == CollectorJob.id).exists()
     rows = (
         await db.scalars(
             select(CollectorJob)
@@ -98,6 +101,7 @@ async def claim_batch(
                 CollectorJob.status.in_(CLAIMABLE),
                 CollectorJob.cancel_requested.is_(False),
                 CollectorJob.attempts < CollectorJob.max_attempts,
+                managed if managed_only else True,
                 or_(CollectorJob.not_before.is_(None), CollectorJob.not_before <= now),
             )
             .order_by(CollectorJob.created_at, CollectorJob.id)

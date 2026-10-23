@@ -170,7 +170,7 @@ async def run_one(job: ClaimedJob, handler: JobHandler) -> str | None:
         return None
 
 
-async def consume_once(*, limit: int | None = None) -> int:
+async def consume_once(*, limit: int | None = None, managed_only: bool = False) -> int:
     """One bounded batch: recover orphans of dead owners, then claim and run up to `limit` jobs one at a time."""
     await recover()
     handler = _handler
@@ -183,7 +183,7 @@ async def consume_once(*, limit: int | None = None) -> int:
         if not accepting():
             break
         async with sessionmaker()() as db:
-            claimed = await jobs.claim_batch(db, owner_generation=owner, limit=1)
+            claimed = await jobs.claim_batch(db, owner_generation=owner, limit=1, managed_only=managed_only)
             await db.commit()
         if not claimed:
             break

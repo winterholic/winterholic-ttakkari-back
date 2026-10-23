@@ -11,9 +11,10 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import func, literal, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
 from ttakkari.context.search import lexical, terms
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_store import (
@@ -34,12 +35,32 @@ class KbNotFound(LookupError):
     """요청한 문서·리비전·패시지가 없다."""
 
 
+def scope_filter(scope: str = "personal"):
+    matched = select(KbDocumentAccess.document_id).where(
+        KbDocumentAccess.document_id == KbDocument.id, KbDocumentAccess.tenant_id == "owner",
+        KbDocumentAccess.scope == scope,
+        KbDocumentAccess.hidden.is_(False),
+    ).exists()
+    any_access = select(KbDocumentAccess.document_id).where(KbDocumentAccess.document_id == KbDocument.id).exists()
+    # Existing unclassified rows stay visible only in personal scope, never also in work.
+    return or_(matched, ~any_access) if scope == "personal" else matched
+
+
+async def require_document_scope(db, document_id, scope="personal"):
+    if not await db.scalar(select(KbDocument.id).where(KbDocument.id == document_id, scope_filter(scope))):
+        raise KbNotFound("document")
+
+
 def _current_revision_filter():
-    """문서별 최대 rev_no 만 현재 리비전이다(kb_models 의 현재성 규칙)."""
     newer = KbRevision.__table__.alias("newer")
-    return ~select(literal(1)).where(
+    obs = KbObservation.__table__.alias("current_observation")
+    observed = select(obs.c.revision_id).where(obs.c.document_id == KbRevision.document_id).order_by(
+        obs.c.event_time.desc(), obs.c.recorded_at.desc(), obs.c.id.desc(),
+    ).limit(1).correlate(KbRevision).scalar_subquery()
+    legacy = ~select(literal(1)).where(
         newer.c.document_id == KbRevision.document_id, newer.c.rev_no > KbRevision.rev_no
     ).exists()
+    return or_(KbRevision.id == observed, and_(observed.is_(None), legacy))
 
 
 def snippet_with_highlights(body: str, words: list[str]) -> tuple[str, list[list[int]]]:
@@ -85,17 +106,26 @@ def _source_out(src: KbSource) -> dict:
     }
 
 
-async def summary(db: AsyncSession) -> dict:
+async def summary(db: AsyncSession, *, scope: str = "personal") -> dict:
     counts = {}
-    for name, model in (("sources", KbSource), ("documents", KbDocument), ("revisions", KbRevision),
-                        ("passages", KbPassage), ("evidence", KbEvidence)):
-        counts[name] = await db.scalar(select(func.count()).select_from(model)) or 0
-    last = await db.scalar(select(func.max(KbSource.collected_at)))
+    for name, model in (("documents", KbDocument), ("revisions", KbRevision), ("passages", KbPassage), ("evidence", KbEvidence)):
+        stmt = select(func.count()).select_from(model)
+        if model is KbEvidence:
+            stmt = stmt.join(KbPassage, KbEvidence.passage_id == KbPassage.id)
+        if model in (KbPassage, KbEvidence):
+            stmt = stmt.join(KbRevision, KbPassage.revision_id == KbRevision.id)
+        if model is not KbDocument:
+            stmt = stmt.join(KbDocument, KbRevision.document_id == KbDocument.id)
+        counts[name] = await db.scalar(stmt.where(scope_filter(scope))) or 0
+    src = select(KbSource.id, KbSource.collected_at).join(KbRevision, KbSource.id == KbRevision.source_id).join(
+        KbDocument, KbRevision.document_id == KbDocument.id).where(scope_filter(scope)).distinct().subquery()
+    counts["sources"] = await db.scalar(select(func.count()).select_from(src)) or 0
+    last = await db.scalar(select(func.max(src.c.collected_at)))
     return {"counts": counts, "last_collected_at": last.isoformat() if last else None}
 
 
-async def list_documents(db: AsyncSession, *, q: str | None, limit: int, offset: int) -> dict:
-    stmt = select(KbDocument)
+async def list_documents(db: AsyncSession, *, q: str | None, limit: int, offset: int, scope: str = "personal") -> dict:
+    stmt = select(KbDocument).where(scope_filter(scope))
     if q and q.strip():
         pattern = q.strip()
         stmt = stmt.where(
@@ -111,6 +141,10 @@ async def list_documents(db: AsyncSession, *, q: str | None, limit: int, offset:
 
 
 async def _latest_revision(db: AsyncSession, document_id: uuid.UUID) -> KbRevision | None:
+    observed = await db.scalar(select(KbObservation.revision_id).where(KbObservation.document_id == document_id)
+                               .order_by(KbObservation.event_time.desc(), KbObservation.recorded_at.desc(), KbObservation.id.desc()).limit(1))
+    if observed is not None:
+        return await db.get(KbRevision, observed)
     return await db.scalar(
         select(KbRevision).where(KbRevision.document_id == document_id).order_by(KbRevision.rev_no.desc()).limit(1)
     )
@@ -143,8 +177,9 @@ async def _document_row(db: AsyncSession, doc: KbDocument) -> dict:
 
 async def get_document(
     db: AsyncSession, document_id: uuid.UUID, *, revision_id: uuid.UUID | None,
-    passage_limit: int, passage_offset: int,
+    passage_limit: int, passage_offset: int, scope: str = "personal",
 ) -> dict:
+    await require_document_scope(db, document_id, scope)
     doc = await db.get(KbDocument, document_id)
     if doc is None:
         raise KbNotFound("document")
@@ -153,7 +188,7 @@ async def get_document(
     )
     if not revs:
         raise KbNotFound("revision")
-    current = revs[0]
+    current = await _latest_revision(db, doc.id)
     selected = current
     if revision_id is not None:
         selected = next((r for r in revs if r.id == revision_id), None)
@@ -194,6 +229,10 @@ async def get_document(
         "lang": doc.lang,
         "created_at": doc.created_at.isoformat(),
         "updated_at": doc.updated_at.isoformat(),
+        "observations": [{"envelope_id": str(o.envelope_id), "revision_id": str(o.revision_id),
+                          "event_time": o.event_time.isoformat(), "provenance": o.provenance}
+                         for o in await db.scalars(select(KbObservation).where(KbObservation.document_id == doc.id)
+                                                   .order_by(KbObservation.event_time.desc()).limit(100))],
         "revisions": revisions,
         "selected_revision_id": str(selected.id),
         "passages": {
@@ -211,7 +250,7 @@ async def get_document(
 
 async def search_passages(
     db: AsyncSession, *, query: str, limit: int, offset: int,
-    document_id: uuid.UUID | None, current_only: bool,
+    document_id: uuid.UUID | None, current_only: bool, scope: str = "personal",
 ) -> dict:
     words = terms(query)
     if not words:
@@ -222,7 +261,7 @@ async def search_passages(
         select(KbPassage, KbRevision, KbDocument, score)
         .join(KbRevision, KbRevision.id == KbPassage.revision_id)
         .join(KbDocument, KbDocument.id == KbRevision.document_id)
-        .where(predicate)
+        .where(predicate, scope_filter(scope))
     )
     if current_only:
         stmt = stmt.where(_current_revision_filter())
@@ -238,16 +277,7 @@ async def search_passages(
         s.id: s
         for s in await db.scalars(select(KbSource).where(KbSource.id.in_({rev.source_id for _, rev, _, _ in rows})))
     }
-    latest = {
-        doc_id: n
-        for doc_id, n in (
-            await db.execute(
-                select(KbRevision.document_id, func.max(KbRevision.rev_no))
-                .where(KbRevision.document_id.in_({doc.id for _, _, doc, _ in rows}))
-                .group_by(KbRevision.document_id)
-            )
-        ).all()
-    }
+    latest = {doc_id: (await _latest_revision(db, doc_id)).id for doc_id in {d.id for _, _, d, _ in rows}}
     items = []
     for passage, rev, doc, raw_score in rows[:limit]:
         text, marks = snippet_with_highlights(passage.body, words)
@@ -263,7 +293,7 @@ async def search_passages(
             "char_end": passage.char_end,
             "document": {"id": str(doc.id), "title": doc.title, "lang": doc.lang},
             "revision": {
-                "id": str(rev.id), "rev_no": rev.rev_no, "current": rev.rev_no == latest.get(doc.id),
+                "id": str(rev.id), "rev_no": rev.rev_no, "current": rev.id == latest.get(doc.id),
                 "char_count": rev.char_count,
             },
             "source": _source_out(src) if src else None,
@@ -276,12 +306,13 @@ def _line_number(body: str, offset: int) -> int:
 
 
 async def get_evidence(
-    db: AsyncSession, passage_id: uuid.UUID, *, start: int | None, end: int | None,
+    db: AsyncSession, passage_id: uuid.UUID, *, start: int | None, end: int | None, scope: str = "personal",
 ) -> dict:
     passage = await db.get(KbPassage, passage_id)
     if passage is None:
         raise KbNotFound("passage")
     rev = await db.get(KbRevision, passage.revision_id)
+    await require_document_scope(db, rev.document_id, scope)
     doc = await db.get(KbDocument, rev.document_id)
     src = await db.get(KbSource, rev.source_id)
     span_start = 0 if start is None else start
@@ -330,7 +361,7 @@ class RegisterResult:
 
 async def register_text(
     db: AsyncSession, *, title: str, text: str, source_key: str | None, lang: str | None,
-    locator: str | None,
+    locator: str | None, scope: str = "personal",
 ) -> RegisterResult:
     """사용자가 붙여넣거나 올린 텍스트를 기존 수집 경로(ingest_source)로 등록하고 패시지로 나눈다.
 
@@ -342,10 +373,20 @@ async def register_text(
         raise KbInputError("text_too_long")
     data = text.encode("utf-8")
     key = source_key or f"upload:{hashlib.sha256(data).hexdigest()[:16]}"
+    if scope == "work":
+        key = "work:" + hashlib.sha256(key.encode()).hexdigest()
+    existing = await db.scalar(select(KbDocument).where(KbDocument.doc_key == key))
+    if existing is not None:
+        await require_document_scope(db, existing.id, scope)
     result = await ingest_source(
         db, source_key=key, data=data, kind="upload", locator=locator, media_type="text/plain",
         title=title, lang=lang, origin_meta={"via": "kb_library_api"},
     )
+    access = await db.get(KbDocumentAccess, result.document_id)
+    if access is None:
+        db.add(KbDocumentAccess(document_id=result.document_id, tenant_id="owner", scope=scope))
+    elif access.scope != scope or access.tenant_id != "owner":
+        raise KbInputError("document_scope_mismatch")
     passages = await segment_revision(db, result.revision_id)
     return RegisterResult(
         document_id=result.document_id, revision_id=result.revision_id, rev_no=result.rev_no,

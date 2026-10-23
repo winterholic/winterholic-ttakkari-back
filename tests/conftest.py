@@ -71,6 +71,8 @@ os.environ.update({
     "TTAKKARI_GAME_AUTO_BUILD": "false",  # 게임 요청 테스트가 격리 빌드를 몰래 띄우지 않게 한다. 자동 빌드 테스트만 켠다
     "TTAKKARI_TRANSFER_CHUNK_BYTES": "1024",
     "TTAKKARI_REMINDER_SCAN_SECONDS": "0",
+    "TTAKKARI_COLLECTOR_CONTROL_ENABLED": "false",
+    "TTAKKARI_KB_SEMANTIC_ENABLED": "false",
     "TTAKKARI_USAGE_POLL_SECONDS": "0",
     "TTAKKARI_QWEN_FLASH_POLL_SECONDS": "0",
     "TTAKKARI_RESOURCE_SAMPLE_SECONDS": "0",

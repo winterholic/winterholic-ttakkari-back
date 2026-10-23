@@ -650,8 +650,14 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
         return HandlerResult("policy_blocked", {"code": "store_not_permitted", "source_key": source["key"]})
     try:
         req = CollectRequest.from_envelope(job.envelope, spec)
+        if req.l1.scorer and req.l1.scorer.startswith("utility:"):
+            from ttakkari.collector import quality_service
+            async with sessionmaker()() as db:
+                await quality_service.load_requested(db, job.tenant_id, job.scope, req.l1.scorer)
     except CollectorContractError as e:
         return HandlerResult("quarantined", {"code": "invalid_request", "detail": str(e)[:300]})
+    except ValueError as e:
+        return HandlerResult("quarantined", {"code": "quality_model_invalid", "detail": str(e)[:300]})
     label = policy_version_label(source["key"], version, digest)
     cursor = job.cursor if job.cursor and job.cursor.get("v") == 1 else _new_cursor(req, spec)
 

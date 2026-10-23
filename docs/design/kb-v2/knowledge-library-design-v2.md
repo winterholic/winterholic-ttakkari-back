@@ -1,3 +1,8 @@
+> 2026-10-23 후속 운영 경로: scoped collection controls, KB consumer/receipts, NFC extraction,
+> event-time observations and optional PG exact dense fusion are added by the user's completion/deployment request.
+> Full v2 unit gates remain separate; see ADR 0063 "수집·검색 운영 경로 확장" and
+> `docs/work-history/2026-10-23-kb-collector-product.md`. Historical implementation-gap tables below are not current delivery receipts.
+
 # 따까리 범용 지식 도서관(kb) 설계 v2
 
 > **상태: KB-E0 로직 완료 승인, 제품검색 미승인.** 활성 설계 정본은 이 파일이다. KB-E0 하네스는 main `1e9bb1a` 기준으로 독립 확인 4회차에서 passed를 받았다([3회차](reviews/kb-e0-independent-review-v3.md), [4회차](reviews/kb-e0-independent-review-v4.md), [E0 완료 기록](reviews/kb-e0-completion.md)). 승인 범위는 DB·UI·추론을 제외한 E0 로직이다. 실제 DB export adapter·모바일 UI·실추론·실서버 계측은 미실행 잔여다. 검색/수집 제품 구현·엔진/모델 선택·최종 품질·운영배포는 미승인이다. 다음 단위는 9.2 순서를 따르되 배정 전에는 시작하지 않는다.

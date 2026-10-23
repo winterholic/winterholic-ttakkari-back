@@ -153,12 +153,15 @@ async def ingest_source(
     parser_version: str = PARSER_VERSION_RAW,
     collected_at: datetime | None = None,
     origin_meta: dict | None = None,
+    normalized_body: str | None = None,
 ) -> IngestResult:
     """원본 바이트를 수집한다. 같은 (source_key, sha256) 재수집은 기존 행을 돌려준다(멱등).
 
     파일이 행보다 먼저 지워졌거나 손상되었으면 다시 써서 살린다(healed_file). 동시에 같은 바이트를
     넣으면 한쪽이 unique 충돌로 실패한다. 호출자가 재시도하면 기존 행을 받는다.
     """
+    if normalized_body is not None and ("\x00" in normalized_body or not normalized_body.strip()):
+        raise KbInputError("normalized_body must be nonempty and NUL-free")
     _validate_ingest_input(
         data,
         {"source_key": source_key, "kind": kind, "locator": locator, "media_type": media_type,
@@ -173,6 +176,10 @@ async def ingest_source(
     relpath = object_relpath(digest)
     now = utcnow()
     collected = collected_at or now
+    # New extracted-text ingestion keeps NFC and raw bytes separate. Legacy raw-v1 remains NFKC.
+    body_text = (unicodedata.normalize("NFC", normalized_body).replace("\r\n", "\n").replace("\r", "\n")
+                 if normalized_body is not None else normalize_text(data))
+    await db.execute(sa_text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": "kb-ingest:" + source_key})
 
     existing = (
         await db.execute(select(KbSource).where(KbSource.source_key == source_key, KbSource.sha256 == digest))
@@ -184,19 +191,22 @@ async def ingest_source(
             await db.execute(
                 select(KbRevision)
                 .where(KbRevision.source_id == existing.id)
+                .where(KbRevision.parser_version == parser_version, KbRevision.text_sha256 == sha256_hex(body_text.encode()))
                 .order_by(KbRevision.rev_no.desc())
                 .limit(1)
             )
-        ).scalar_one()
-        return IngestResult(
-            source_id=existing.id, document_id=rev.document_id, revision_id=rev.id,
-            rev_no=rev.rev_no, sha256=digest, created=False, healed_file=healed,
-        )
+        ).scalar_one_or_none()
+        if rev is not None:
+            return IngestResult(
+                source_id=existing.id, document_id=rev.document_id, revision_id=rev.id,
+                rev_no=rev.rev_no, sha256=digest, created=False, healed_file=healed,
+            )
 
     # 같은 해시의 손상 blob 이 남아 있으면 덮어써 교체한다(내용 주소 저장소라 새로 써도 안전하다).
     _ensure_blob(root / relpath, data, digest)
-    source_id = uuid.uuid4()
-    await db.execute(
+    source_id = existing.id if existing is not None else uuid.uuid4()
+    if existing is None:
+        await db.execute(
         insert(KbSource).values(
             id=source_id, source_key=source_key, kind=kind, locator=locator, sha256=digest,
             byte_size=len(data), media_type=media_type, store_path=str(relpath),
@@ -225,7 +235,7 @@ async def ingest_source(
                 select(KbRevision).where(KbRevision.document_id == doc_id, KbRevision.rev_no == prev_no)
             )
         ).scalar_one()
-    text = normalize_text(data)
+    text = body_text
     revision_id = uuid.uuid4()
     await db.execute(
         insert(KbRevision).values(

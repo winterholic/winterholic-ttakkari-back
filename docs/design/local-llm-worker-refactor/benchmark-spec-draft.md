@@ -38,44 +38,49 @@
 
 하네스(2.2)는 반례 2건으로 재작업 중이다. 모델 로드·추론·다운로드·학습·운영 변경 금지는 유지되며 이 Run은 모델을 실행하지 않았다. 이 문장의 범위는 4.1 작성 당시이며, 후속 4.2 상태는 §0.1.1이 갱신한다.
 
-### 0.1.1 WBS 4.2 관측 무결성 계약 (2026-10-23 추가)
+### 0.1.1 WBS 4.2 관측 채널·비밀·OS 경계 (2026-10-23 방향 전환)
 
-이 절은 §0의 4.1 작성 당시 상태와 구현 기록 §9.1의 관측 신뢰 설명을 갱신한다. 개발 과제 9개의 평가기는 구현됐으나 **holdout 9개·정답 봉인·OS 격리·모델 실행은 미완/미실행**이다. 최신 실행 근거는 `evidence/4.2/integrity/`와 구현 기록 §10이다.
+이 절은 `852d561`의 접근 불가/직접 fd 제거 주장을 교정하고 구현 기록 **§11**을 따른다. 이전 §10과 `evidence/4.2/integrity/`는 당시 증거다. 독립 검증에서 C1(fd 비교의 int subclass 우회)과 C2(format 문자열의 globals 순회)가 보고됐고, 당시 152개 테스트가 이를 보장하지 못했다. 이번 작업은 새 공격 페이로드 없이 구조 불변식과 정상해 변형으로 검증한다.
 
-**원칙:** 후보 interpreter에서 나온 값은 원래 후보가 통제하는 데이터다. judge를 밖으로 옮기거나 관측을 JSON으로 직렬화했다는 사실만으로는 참이 되지 않는다. 판정용 사실은 (a) 부모가 후보 실행 없이 얻은 정적 사실·입출력/종료 상태·종료 뒤 디스크 상태, 또는 (b) 아래 실행 제약으로 후보의 관측 도우미 접근·변경을 막은 경로의 값이어야 한다. (b)는 명시된 Python capability 집합에 조건부인 경계이며 임의 Python/C 코드의 보안 sandbox 인증이 아니다.
+**비밀 원칙:** PASS 위조에 판정용 비밀이 필요하도록 설계해야 한다. 기대값·정답·판정 로직은 부모 judge와 봉인 경로에만 두며 후보가 읽을 수 있는 probe/저장소 파일에 비밀을 둬서는 안 된다. **probe 소스/메모리의 노출을 불가능하다고 가정하지 않는다.** 입력·관측 key·합성 의존성 marker는 공개 입력이며 비밀이 아니다. 같은 interpreter의 관측값은 여전히 후보 통제 데이터로 취급한다.
+
+**개발 과제는 정답이 저장소에 공개되어 위조 방어가 약하다.** 개발 PASS는 구현/호환성 회귀 결과이며 적대적 무결성의 강한 인증이 아니다. **강한 보장의 선행 조건은 비공개 정답을 봉인한 holdout과 실제 deny 검증을 통과한 OS 격리다.** 둘 중 하나라도 확인되지 않았으면 그 보장을 주장하지 않는다. 이것만으로 같은 interpreter의 임의 메모리 변조까지 증명되는 것도 아니다. holdout 9개와 봉인 번들은 아직 만들지 않았다.
 
 ```text
-[trusted 부모: 시작 hash, structural gate, 실행 없는 AST admission]
-    | 봉인된 후보 source bytes + probe 입력, scratch 경로
-    | 시작 시 고정한 runner/helper bytes로 python -I -S -B -c 실행
+[부모: 기대값·판정·정적 검사 / private sealed answers]
+    | 공개 입력·봉인 source snapshot·probe → stdin (디스크 spec 없음)
+    | 실제 Python 런타임 경로 + default-deny sandbox-exec profile
     v
-[child trusted loader/probe] --- import 경계 ---> [제약된 후보 모듈]
-    |                               private builtins/import
-    |                               허용 stdlib capability만 노출
-    |                               모든 명시적 속성 load/store 가드
-    |                               frame/GC audit 기록(보강층)
-    | <--- 호출 경계: 실제 인수/반환/예외 --- |
-    | rec/attempt/jsonable/unittest는 후보 namespace에 주지 않음
-    | 거부 시도는 예외를 삼켜도 기록, OBS+종료 상태를 부모에게 반환
+[OS 경계: 시스템/런타임/후보 tree/전용 tmp·data만 읽기 허용]
+    | evaluator·repo gold·원본 checkout·홈 설정: 읽기 기본 거부
+    | network / fork: 거부
     v
-[부모: 프로토콜/종료/무결성 기록 검사 + 종료 뒤 디스크 관측]
+[child: 공개 probe + 후보 / 제한적인 Python 가드는 보강층]
+    | stdout/stderr → 크기 제한된 진단 로그 (관측값 파싱 금지)
+    | 전용 pipe → LLO1 + length + JSON envelope
+    | trusted writer가 원본 fd와 guard duplicate identity 확인
     v
-[부모 judge: 기대값 비교, delta/invariant, 보고/trace 대조]
+[부모: 정확히 한 frame / 크기·형식·identity·종료·timeout 확인]
+    | 실패면 judge에 전달하지 않음 / 종료 뒤 외부 디스크 관측
+    v
+[부모 judge: 기대값 비교·delta/invariant·보고/trace 대조]
 ```
 
-- **import:** 부모가 읽은 `.py` 내용을 전달하고 loader는 그 bytes만 변환·실행한다. 실행 중 디스크 변경·pyc·새 loader를 통한 재import를 답의 근거로 사용하지 않는다. 예약 모듈 이름과 trusted 모듈 충돌은 거부한다. 후보에서 `sys`, `inspect`, `gc`, `ctypes`, `builtins`, import hook, `atexit`, signal, thread/process 제어에 접근하지 못한다. 문자열 `getattr`, 함수 globals/code/closure, frame/traceback 속성, 동적 exec/eval도 허용하지 않는다.
-- **호출/관측:** source AST만의 별칭 추적에 의존하지 않는다. 후보의 속성 읽기는 runtime guard, 쓰기/삭제는 guarded subscription을 통과하므로 `helper = json; helper.dumps = ...`도 거부한다. stdlib 모듈·함수·클래스·외부 객체를 수정하지 못한다. 로컬 인스턴스 필드·목록 변경은 허용하며 tuple 대입, 증분 연산, loop/with target의 Python 평가 순서를 유지한다. `from ... import ...`, `operator.attrgetter`도 같은 capability 검사를 거친다. 생성 guard 이름은 인수·import 별칭·패턴 capture 등으로 가릴 수 없다.
-- **audit 한계:** hook은 후보 import 전에 설치하고 후보 filename에서 직접 호출한 frame/GC 이벤트를 기록·차단한다. 정상 dataclass/unittest/traceback의 내부 동작은 허용한다. `json.dumps = ...`, 일반 dict/모듈 속성 대입, `os.write`, `os._exit`는 이 hook만으로 전부 관측된다고 보지 않는다. Python hook 자체는 sandbox가 아니며 우회 불가능하다고 가정하지 않는다. 이 경로들은 source/import/capability/속성 가드로 막는다. [CPython 3.13 sys.addaudithook](https://docs.python.org/3.13/library/sys.html#sys.addaudithook), [audit event 목록](https://docs.python.org/3.13/library/audit_events.html).
-- **판정:** 무결성 거부는 `FAIL_CHECKER_PATCH`; 읽기 전용 EXP의 코드 삽입은 `FAIL_FORBIDDEN_WRITE`. `os._exit` 시도는 차단한 뒤 기존 `FAIL_STUB_EXIT0`로 분류한다(후보 작성 테스트는 더 이른 import 금지로 `FAIL_CHECKER_PATCH`일 수 있다). 정상 종료가 아닌 stream은 유효해 보이는 OBS가 있어도 채택하지 않는다. stdout/stderr 직접 fd 접근과 사후 출력 수단을 후보 capability에서 제거한다.
+**채널:** 부모가 `os.pipe()`로 관측 전용 pipe와 guard duplicate를 만든다. child는 import 전 캡처한 writer로 관측을 쓰며 두 fd의 `fstat(dev, ino, mode)`를 원래 값과 비교한다. 닫힘/교체는 nonzero 종료, frame 누락·중복·truncation·형식/identity 오류·nonzero 종료는 FAIL이다. stdout에 OBS처럼 보이는 줄만 있어도 관측으로 인정하지 않는다. selector로 stdin·관측·stdout·stderr를 함께 처리하고 각각의 메모리/출력 한도와 process group 정리를 둔다. `fdopen`의 descriptor는 비교 전 기본 정수로 정규화하지만 채널 보장을 그 비교에 의존시키지 않는다.
 
-**선택 근거와 대안:** 최소 child와 JSON 경계는 judge 메모리를 보호하지만 child가 보고한 입력 사후 상태를 독립 관측으로 만들지는 못한다. 입력 list를 복사해 호출하도록 helper만 바꾸는 재현은 정답 상수 없이 거짓 PASS를 만든다. `clean re-grade`도 메모리 안의 helper 변경은 해결하지 못한다. 이번 구현은 일반 Python list/tuple 및 WSGI·dataclass 참조해 호환성을 유지하며 관측 helper로 가는 경로를 제한하는 (b)를 택했다. OS가 제공하는 메모리/파일/네트워크 격리는 별도 수락 조건으로 남긴다.
+**채널 한계:** framing과 child writer의 identity 검사에는 암호학적 인증이 없다. inherited fd나 identity 값은 비밀이 아니며 같은 interpreter가 완전히 장악된 경우의 external attestation이 아니다. C1의 stdout 재지정 경로는 판정 채널과 분리했지만, 임의 native/메모리 공격에 대한 완전한 방어를 주장하지 않는다.
 
-**공격 수락 기준:** 기존 N1~N15 204건을 유지하고, N16~N33 18종을 과제마다 gold에 주입한다(9×18=162건). probe 교체, frame locals, GC referrers, builtins/copy/json patch, import hook/modules 교체, atexit/thread, fd 1·2, `_exit`, fd open/fdopen, attrgetter, loop target, guard binding 충돌을 포함한다. 별도로 input-mutation 단독은 `FAIL_REGRESSION`, helper 변조 추가도 FAIL이어야 한다. 수정 전 거짓 PASS 원출력도 보존한다. TST N7의 SUT monkeypatch는 종전 mutant 생존 `FAIL_HIDDEN` 대신 실행 시점의 `FAIL_CHECKER_PATCH`로 더 이르게 거부하며 허용 조건을 완화하지 않는다.
+**OS allowlist:** `.venv`나 그 부모 저장소를 허용하지 않는다. 평가기에 사용한 executable symlink를 해소해 실제 CPython executable·stdlib·런타임 lib만 시스템 경로와 함께 허용한다(site-packages는 제외). 평가기 소스·repository gold·원본 checkout·사용자 HOME는 기본 거부이며 후보별 tree·HOME/tmp·데이터 디렉터리만 추가한다. profile 파일·probe 파일은 허용 root 안에 만들지 않는다. 입력 spec/probe는 stdin으로 전달한다. 기본 거부 위에 network/fork 명시 거부를 둔다. 부모가 이후 읽는 데이터도 symlink를 따라 허용 디렉터리 밖으로 읽지 않는다.
 
-**잔여 위협·미검증:** CPython/native/허용 stdlib API의 미발견 우회, 다른 Python 버전·AST 문법, 허용 API 밖 정상해의 호환성, 모든 적응 공격에 대한 완전성은 증명하지 않았다. `open`과 WSGI 저장 기능 때문에 일반 파일 접근은 남아 있으며 같은 UID의 외부 파일·프로세스·네트워크를 격리하지 않는다. 종료 뒤 디스크 사실도 외부 후손/동일 UID 공격자가 계속 접근하면 보호되지 않는다. 정답 구현을 숨겨 특정 입력/호출 맥락에서만 정답을 내는 oracle faker와 분포 과적합도 별도 위협이다. holdout·봉인·실모델 E2E·trace/session 실제 연동은 이번 검증이 아니다.
+**불가 환경:** readiness가 실패하거나 해당 엔진에서 측정한 거부 사유가 제공되면 개발 결과에 `sandbox_unavailable` flag와 이유를 남긴다. `LOCAL_LLM_EVAL_SANDBOX_UNAVAILABLE`은 격리를 끄고 사유를 보존할 뿐 활성화나 holdout 우회를 허용하지 않는다. `run_check(mode="holdout")`은 실행 없이 거부하고, `Task.split="holdout"` 또는 `-H` 과제는 native 검사도 실행하기 전 `INFRA_ISOLATION_UNAVAILABLE`로 종료한다. active 경로의 launch가 나중에 실패해도 평문 실행으로 재시도하지 않는다.
 
-**OS 격리 deny 테스트 계획(이번에는 실행하지 않음):** 별도 VM/컨테이너/지원 OS sandbox 경로를 선정한 뒤 grader/정답 경로 읽기·쓰기 거부, workspace 밖 쓰기·symlink 탈출 거부, loopback/외부 네트워크 거부, 부모/같은 UID 프로세스 접근 거부, 직접 fd 접근·상속 fd 제한, timeout/취소 시 후손 전부 정리, 양성 파일 저장/계산은 허용됨을 각각 측정한다. source admission·audit·프로세스 분리 성공을 OS deny 실측으로 대체하지 않는다.
+**정상해 정책:** `integrity.PURE_STDLIB`를 후보 import와 TST/REC/LNG T2의 AST 검사에서 함께 사용한다. datetime·heapq·bisect·logging·pathlib·fractions와 math의 공용 연산을 허용한다. `getattr`/`hasattr`은 같은 속성 가드를 사용하며, `type()`는 본래 타입 identity/생성 semantics를 보존하면서 반환한 타입의 명시적 속성 접근을 가드한다. `__all__`와 dunder 정의는 허용한다. 애매한 format/dunder hook 신호는 flag이며 FAIL 사유로 쓰지 않는다. 명백한 checker 쓰기·예약 guard binding 충돌 등 기존 대조는 유지한다. 이 Python 정책은 OS 보안 경계가 아니며 순수 API 전체의 안전 증명도 아니다.
 
+**검증 경계:** 새 회귀는 trusted transport driver의 fd 닫힘/교체·중복/누락 frame·stdout-only·비정상 종료, 격리 없는 holdout의 실행 전 차단, profile/runtime 경로 선택, 실파일 deny 대상 존재, 무해한 prefix 14종×8과제=112건이다. 실제 OS deny 검사는 evaluator/gold/probe/원본 실제 파일/홈 설정의 `PermissionError`, 정상 stdlib·tmp 쓰기 허용, network/fork/workspace 밖 쓰기 거부를 측정한다. 이 Codex Run의 `sandbox-exec`은 `sandbox_apply: Operation not permitted`(exit 71)라 **실제 deny 검사는 skip/미검증**이며 다른 엔진이나 호스트의 불가를 뜻하지 않는다. `python3 -m local_llm_eval.sandbox`는 불가 상태를 JSON으로 출력하고 exit 2로 끝낸다. 원출력: `evidence/4.2/channel-isolation/`.
+
+**원본 경로 교정:** `/Users/winterholic/development/projects/winterholic-ttakkari/back`은 존재하지만 그 checkout에는 `bench/local_llm_eval/evaluator.py`가 없었다. 앞선 `FileNotFoundError`는 그 파일 부재였으며 접근 거부 증거가 아니다. 이제 git common-dir에서 찾은 실제 원본의 `pyproject.toml` 등 존재하는 파일을 먼저 검증하고 deny 대상으로 쓴다. 실제 PermissionError 여부는 이 엔진에서 미검증이다.
+
+**잔여/미검증:** C2의 format을 통한 in-memory 정보 노출과 다른 reflection/native 경로의 완전 차단은 주장하지 않는다. 공개 개발 정답·소스/입력에 따른 oracle faker, 후보 작성 unittest의 자체 결과/AST 우회, ctypes/메타클래스/trace/codecs/dynamic code, fork·fd 상속·출력 경쟁·symlink의 적응 공격 전수는 검증하지 않았다. 기존 대조 통과는 그 전수 증명이 아니다. 봉인 holdout, 다른 Python/OS 버전, 실제 OS deny, 실모델 완주, 실제 하네스 trace/session 연결은 미완이다. 모델과 서버는 실행하지 않았다.
 
 ## 1. 설계 원칙
 

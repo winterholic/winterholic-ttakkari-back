@@ -14,6 +14,7 @@ class CheckOutcome:
     code: str | None = None
     detail: str = ""
     metrics: dict = field(default_factory=dict)
+    flags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -93,6 +94,7 @@ class Task:
     negatives: list[Negative] = field(default_factory=list)
     sources: dict[str, str] = field(default_factory=dict)
     notes: str = ""
+    split: str = "dev"  # holdout requires successful OS isolation before any execution
     # Harness-dependent gates (resume/cancel). Interface only until WBS 2.2 settles.
     session_check: Callable[["Attempt"], list[tuple[str, "CheckOutcome"]]] | None = None
 
@@ -168,3 +170,9 @@ class Evaluation:
     stages: list[StageResult]
     evaluated: bool = True
     detail: str = ""
+
+
+def task_mode(task: Task) -> str:
+    if task.split not in {"dev", "holdout"}:
+        raise ValueError(f"unknown task split {task.split}")
+    return "holdout" if task.split == "holdout" or task.id.endswith("-H") else "dev"

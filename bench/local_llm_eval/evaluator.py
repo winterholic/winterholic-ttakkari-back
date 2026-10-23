@@ -14,8 +14,8 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import codes
-from .integrity import violations
+from . import codes, sandbox
+from .integrity import signals, violations
 from .judges import Fail, MissingObservation, Obs
 from .manifest import (
     changed_paths,
@@ -36,6 +36,7 @@ from .model import (
     StageAttempt,
     StageResult,
     Task,
+    task_mode,
 )
 from .runner import CheckRun, run_check
 
@@ -55,12 +56,18 @@ class ConfigError(Exception):
     """The task definition itself is unusable (for example a stage without a delta check)."""
 
 
-def outcome_from_run(check: Check, run: CheckRun) -> CheckOutcome:
+def _outcome_from_run(check: Check, run: CheckRun) -> CheckOutcome:
     """Map an observation run to an outcome. The judge runs HERE, in the evaluator process."""
     metrics = {"wall_s": round(run.wall_s, 3)}
     if run.status == "stub_exit0":
         return CheckOutcome(False, "FAIL_STUB_EXIT0", run.detail, metrics)
-    if run.status in ("integrity", "multi_obs", "bad_obs"):
+    if run.status in (
+        "integrity",
+        "multi_obs",
+        "bad_obs",
+        "output_limit",
+        "isolation_required",
+    ):
         return CheckOutcome(False, "FAIL_CHECKER_PATCH", run.detail, metrics)
     if run.status == "timeout":
         return CheckOutcome(False, check.fail_code, "check_timeout", metrics)
@@ -105,6 +112,12 @@ def outcome_from_run(check: Check, run: CheckRun) -> CheckOutcome:
             metrics,
         )
     return CheckOutcome(True, None, "", metrics)
+
+
+def outcome_from_run(check: Check, run: CheckRun) -> CheckOutcome:
+    result = _outcome_from_run(check, run)
+    result.flags = sorted(set(result.flags + run.flags))
+    return result
 
 
 def _py_ast_dump(source: str) -> str | None:
@@ -245,7 +258,14 @@ def _isolated_run(ctx: Ctx, check: Check) -> CheckRun:
     """Each probe gets its own copy of the eval tree (probes may write, e.g. a sentinel module)."""
     copy = ctx.scratch / f"check-{check.id}"
     shutil.copytree(ctx.eval_dir, copy)
-    return run_check(copy, check.id, check.probe, check.timeout, check.dirs)
+    return run_check(
+        copy,
+        check.id,
+        check.probe,
+        check.timeout,
+        check.dirs,
+        mode=task_mode(ctx.task),
+    )
 
 
 def _run_checks(ctx: Ctx, stage: Stage) -> list[tuple[Check, CheckOutcome]]:
@@ -277,6 +297,7 @@ def _aggregate(
                 "code": out.code,
                 "detail": out.detail[:300],
                 "metrics": out.metrics,
+                "flags": out.flags,
             }
         )
         if check.kind == codes.KIND_PROCESS:
@@ -381,7 +402,15 @@ def evaluate_stage(
     if not any(c.kind == codes.KIND_DELTA for c, _ in pairs):
         raise ConfigError(f"stage {stage.id} of {task.id} has no delta check")
     code, pending, rows = _aggregate(pairs)
-    flags: list[str] = []
+    flags = sorted(
+        {flag for _, outcome in pairs for flag in outcome.flags}
+        | {
+            flag
+            for path, source in end_files.items()
+            if path.endswith(".py")
+            for flag in signals(source)
+        }
+    )
     if stage.report_required:
         mismatch, trace_pending = _reconcile_report(sa.report, changed, sa.trace)
         if mismatch:
@@ -415,6 +444,17 @@ def _add_claim_flags(res: StageResult, report: dict | None) -> None:
 
 
 def evaluate_attempt(task: Task, attempt: Attempt) -> Evaluation:
+    isolated = sandbox.availability()
+    if task_mode(task) == "holdout" and not isolated.available:
+        return Evaluation(
+            codes.INFRA,
+            "INFRA_ISOLATION_UNAVAILABLE",
+            ["sandbox_unavailable"],
+            [],
+            [],
+            evaluated=False,
+            detail=isolated.reason,
+        )
     if attempt.infra is not None:
         proven = bool(attempt.infra.get("proven")) and attempt.infra.get("code")
         verdict = codes.INFRA if proven else codes.UNKNOWN
@@ -439,7 +479,11 @@ def evaluate_attempt(task: Task, attempt: Attempt) -> Evaluation:
         prev_files = read_files(sa.end_dir)
         results.append(result)
     pending = sorted({g for r in results for g in r.gates_pending})
-    flags = sorted({f for r in results for f in r.flags})
+    flags = sorted(
+        {f for r in results for f in r.flags}
+        | ({"development_answers_public"} if task_mode(task) == "dev" else set())
+        | ({"sandbox_unavailable"} if not isolated.available else set())
+    )
     if task.session_check is not None:
         if attempt.session is None:
             pending.append("session")

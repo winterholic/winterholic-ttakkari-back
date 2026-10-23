@@ -126,8 +126,8 @@ def _function_dumps(source: str) -> tuple[dict[str, str], str]:
 
 def _others_unchanged(ctx: Ctx) -> CheckOutcome:
     try:
-        base_f, base_rest = _function_dumps(ctx.base_files["rules.py"])
-        end_f, end_rest = _function_dumps(ctx.end_files["rules.py"])
+        base_f, _base_rest = _function_dumps(ctx.base_files["rules.py"])
+        end_f, _end_rest = _function_dumps(ctx.end_files["rules.py"])
     except (SyntaxError, KeyError) as exc:
         return CheckOutcome(False, "FAIL_HIDDEN", f"rules.py unusable: {exc}")
     changed = sorted(
@@ -135,7 +135,22 @@ def _others_unchanged(ctx: Ctx) -> CheckOutcome:
         for n in set(base_f) | set(end_f)
         if n != "rule_043" and base_f.get(n) != end_f.get(n)
     )
-    if changed or base_rest != end_rest:
+
+    # Original top-level statements must survive unchanged and in order.
+    # Additional imports/constants/helper classes are permitted normal scaffolding.
+    def statements(source):
+        return [
+            ast.dump(n)
+            for n in ast.parse(source).body
+            if not isinstance(n, ast.FunctionDef)
+        ]
+
+    remaining = iter(statements(ctx.end_files["rules.py"]))
+    preserved = all(
+        any(got == wanted for got in remaining)
+        for wanted in statements(ctx.base_files["rules.py"])
+    )
+    if changed or not preserved:
         return CheckOutcome(
             False, "FAIL_REGRESSION", f"other code changed: {changed[:5]}"
         )

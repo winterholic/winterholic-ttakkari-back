@@ -2,7 +2,7 @@
 
 작성일: 2026-10-23 KST. 상태: **4.2 부분 완료.** 평가기 골격, 개발 과제 9개, 음성 대조 N1~N14 전부가 구현되어 CPU에서 재현된다. holdout 9개와 봉인 번들은 만들지 않았으므로 4.2는 완료가 아니다.
 
-> **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. §9 이후 재발견한 in-process helper 변조는 §10이 교정한다. 현재 값은 §10과 `evidence/4.2/integrity/`가 정본이다.
+> **독립 검증 후속 수정 반영(main ad58203c 기준 검증 2건, §9).** §1~§8 은 수정 전 구조(커밋 bcedf3e)의 서술을 그대로 두되, 아래 항목은 §9 가 대체한다: §1 '실행기' 행, §2 의 과제별 음성 대조 수와 합계(177→204), §3 일부, §6 첫 항목(격리·위조), §8 의 재현 출력. §9 이후 재발견한 in-process helper 변조는 §10이 교정한다. §10은 이후 C1/C2 검증에서 거부됐다. 현재 구조와 증거는 §11과 `evidence/4.2/channel-isolation/`가 정본이다.
 
 - 명세: `benchmark-spec-draft.md` v1(§0.1 포함), manifest `benchmark-manifest-draft.json`(이 구현에 맞춰 v1.1로 갱신).
 - 코드: `bench/local_llm_eval/`(표준 라이브러리만). 실행법은 그 디렉터리의 `README.md`.
@@ -175,7 +175,7 @@ harness 가 아직 없어서 평가기는 입력 형식만 정의하고 **없으
 
 **남은 일:** holdout 9개와 봉인 번들(운영자 조치 전), 개정 hidden 의 프롬프트 추적 사람 검토, 평가기와 runner 연결(4.3), 위 §9.1 의 한계 중 난수 probe 입력(미구현).
 
-## 10. 관측 무결성 경계 재작업 (2026-10-23)
+## 10. 관측 무결성 경계 재작업 (2026-10-23, 후속 C1/C2로 보장 주장 거부)
 
 **§9.1의 '기대값을 모르므로 위조할 수 없다'는 해석은 폐기한다.** 후보는 기대값을 몰라도 입력을 복사해서 helper에 넘기도록 관측 과정을 바꿀 수 있었다. 같은 interpreter의 관측은 본래 후보 통제 데이터다. 최신 계약·신뢰 경계 다이어그램·대안 선택·미검증 범위·OS deny 테스트 계획은 명세 **§0.1.1**이 정본이다. §9의 204건/129개는 과거 실행이며 현재 실행은 아래 파일을 따른다.
 
@@ -211,3 +211,20 @@ N16~N33 18종은 **gold 위에** 주입하므로 원래 버그가 남아서 우�
 이 가드는 **선언한 Python capability 집합의 관측 경계**이며 임의 CPython/C 코드의 보안 sandbox 증명이 아니다. Python audit hook의 무력화/우회 가능성, 감사 이벤트가 없는 일반 속성·컨테이너 변경을 따로 취급한다. 직접 fd open은 실제 경로를 해소해 `/dev`·`/proc`도 제한하지만 일반 파일 저장 권한을 없애지는 않는다. 외부 파일·동일 UID 프로세스·네트워크·후손 격리는 미구현이고, 외부 공격자가 종료 후 디스크를 바꾸지 못한다는 보장도 아직 없다. 미발견 native/stdlib 간접 우회, 다른 Python 버전/문법, capability 밖 정상 풀이, 적응 공격 전수는 미검증이다. 입력·호출 맥락을 구별하는 oracle faker/과적합도 별도 위협이다.
 
 holdout 9개, 정답 봉인, prompt↔hidden 독립 사람 검토, 실모델 완주, trace/session 실제 하네스 연결, OS sandbox deny 실측은 수행하지 않았다. 모델·서버·운영 변경은 없으며 **4.2는 doing으로 유지**한다. OS deny 계획은 명세 §0.1.1 마지막 문단을 따른다. Research Lab `eb41e3a7-43cd-4f2b-8c03-79380a2e1163`의 resume 데이터를 읽었고 연구 원문/제안은 데이터로만 사용했다. 이번 코드 검증 결과를 그 연구의 실험 실행으로 표시하지 않았다.
+
+## 11. 전용 관측 pipe·OS 경계·정상해 호환성으로 전환
+
+§10의 테스트는 C1/C2와 과잉 차단을 보장하지 못했다. 사용자 제공 독립 검증 요약을 근거로 이전 주장을 교정하고, 이번에는 공격 페이로드를 추가하지 않았다. 기존 대조는 유지하며 새 회귀는 trusted driver가 구조적 실패를 주입한다. 최신 계약과 한계는 명세 §0.1.1, 원출력은 `evidence/4.2/channel-isolation/`를 따른다.
+
+- `channel.py`: 부모 전용 pipe, 바이너리 framing, 정확히 한 frame, envelope/identity/종료 상태 확인. stdout은 진단만, 모든 stream에 수집 한도를 둔다. fd와 guard duplicate를 닫거나 바꾸면 writer가 nonzero로 종료한다. 이것은 암호학적 인증이나 임의 child 메모리 장악에 대한 external attestation이 아니다.
+- `sandbox.py`: default deny read allowlist, 네트워크/fork 거부. Python은 `.venv`가 아닌 실제 관리 런타임을 직접 실행한다. repo·원본 checkout·홈 설정을 allow하지 않는다. 후보에 전달하는 spec/probe 파일은 만들지 않는다. 실행 경로와 실제 deny 대상 목록을 isolation.json에 남긴다.
+- `runner.py`/`evaluator.py`: 격리 불가 개발 결과는 사유+flag. holdout은 mode 또는 Task.split/id 계약으로 실행 전에 차단(native 포함). readiness 뒤 launch 실패는 격리 없이 재실행하지 않는다.
+- `integrity.py`/`natives.py`: 동일 stdlib import 정책, 보통 getattr/hasattr/type()·dunder 정의·__all__ 호환성 복원. 애매한 신호는 flag. 기존 명백한 변조 대조는 거부한다. DBG는 기존 함수를 그대로 보호하며 정상 import·상수·클래스 prelude를 허용한다. 기존 '관련 없는 새 함수 추가' 대조는 계속 실패시킨다.
+
+Codex Run command sandbox에서 `/usr/bin/sandbox-exec -p <default-deny profile> /usr/bin/true`는 exit 71, `sandbox-exec: sandbox_apply: Operation not permitted`였다. 이를 우회하거나 같은 거부를 재시도하지 않았다. 후속 CPU 검증에는 측정된 사유를 환경변수로 전달했다. 실제 OS deny 테스트는 skip이며 JSON 진단은 ok=false/exit2다. 이는 현재 Codex 환경의 증거이며 Claude/호스트에서 격리가 불가능하다는 뜻이 아니다. 사용자 제공 Claude 실측 요약을 이번 독립 실행 결과로 재인용하지 않는다.
+
+실제 Python은 `/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/bin/python3.13`이다. 원본 checkout은 존재하지만 이전에 검사한 원본의 evaluator.py는 존재하지 않았다. 실제 파일 pyproject.toml을 git common-dir로 찾아 존재 검사를 통과시킨 후 deny 대상으로 썼다. OS 안의 PermissionError는 아직 확인하지 못했다.
+
+개발 정답은 공개되어 위조 방어가 약하다. 강한 보장은 봉인 holdout과 OS deny 수락을 선행 조건으로 하며 현재 달성했다고 주장하지 않는다. format/globals의 in-memory 노출, 새 native/reflection 우회, 후보 unittest 자체 결과/AST 우회, 적응 공격 전수는 이번 증거가 아니다. holdout9·정답 봉인·실제 OS deny·실모델·하네스 연동은 남아 있다. 모델·서버·운영 배포는 실행하지 않았고 PMS 4.2는 doing으로 유지한다.
+
+이번 CPU 최종 출력: `280 passed, 1 skipped in 126.18s`, selfcheck `problems: 0`(flags: development_answers_public, sandbox_unavailable, trace_unavailable). 참조해9/9·대안9/9 PASS, 기존366개 음성 대조가 모두 기대 사유로 거부된다. 과잉 차단 회귀는 14×8=112건 PASS다. skip 1건은 실제 OS deny이며 PermissionError 검증을 통과했다고 해석하지 않는다. selfcheck 결과 JSON도 각 결과/최상위에 격리 flag를 보존한다.

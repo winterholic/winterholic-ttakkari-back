@@ -1,0 +1,7 @@
+...........s............................................................ [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 76%]
+.................................................................        [100%]
+=========================== short test summary info ============================
+SKIPPED [1] local_llm_eval/tests/test_llme_channel_sandbox.py:73: OS deny unverified in this engine: Codex command sandbox: sandbox-exec sandbox_apply: Operation not permitted (exit 71), measured 2026-10-23
+280 passed, 1 skipped in 126.18s (0:02:06)

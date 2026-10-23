@@ -1,0 +1,36 @@
+{
+  "engine": "Codex Run command sandbox",
+  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "version": "3.13.15 (main, Sep  1 2026, 14:05:45) [Clang 22.1.3 ]",
+  "evaluator_executable": "/Users/winterholic/development/local-llm-bench-spec-4-1-20261023/.venv/bin/python",
+  "runtime": {
+    "executable": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/bin/python3.13",
+    "stdlib": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13",
+    "libraries": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib"
+  },
+  "worktree_start": "ba359c8",
+  "original_checkout": "/Users/winterholic/development/projects/winterholic-ttakkari/back",
+  "original_revision": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
+  "guessed_original_evaluator_exists": false,
+  "existing_original_deny_target": "/Users/winterholic/development/projects/winterholic-ttakkari/back/pyproject.toml",
+  "sandbox_preflight": {
+    "command": [
+      "/usr/bin/sandbox-exec",
+      "-p",
+      "(version 1) (deny default) (allow process-exec) (allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/Library\"))",
+      "/usr/bin/true"
+    ],
+    "returncode": 71,
+    "stderr": "sandbox-exec: sandbox_apply: Operation not permitted",
+    "evidence_scope": "transcribed from this Run initial command tool output; not rerun after known denial"
+  },
+  "verification_env": {
+    "LOCAL_LLM_EVAL_SANDBOX_UNAVAILABLE": "Codex command sandbox: sandbox-exec sandbox_apply: Operation not permitted (exit 71), measured 2026-10-23"
+  },
+  "unverified": [
+    "actual sandbox deny behavior in this Codex engine",
+    "other engine/host sandbox behavior",
+    "sealed holdout",
+    "adversarial native/memory introspection completeness"
+  ]
+}

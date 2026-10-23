@@ -1,5 +1,5 @@
 {
- "manifest_revision": "v1.2",
+ "manifest_revision": "v1.3",
  "final": true,
  "planned_values_only": true,
  "note": "Pre-registered planned values, not measurements. WBS 1.2 audit received (main re-verified raw 61 rows / 136608 bytes / sha256 d525733d...e1362be0). Remaining items listed in open_items. Design fields are planned; implementation_4_2 and evidence_files_4_2_integrity contain measured CPU results.",
@@ -71,8 +71,8 @@
   "N33": "generated guard binding collision"
  },
  "evaluator": {
-  "boundary": "Parent static admission + sealed source bytes; candidate-specific builtins/import and runtime attribute guards; audit defense in depth; pinned trusted bootstrap; raw observations accepted only under declared capability restrictions, judge in parent; no OS filesystem/network/process isolation.",
-  "verified": "self-check on 9 dev tasks (CPU, no model); isolation (network/sandbox) not applied: 4.3",
+  "boundary": "Parent judge and private answers; dedicated bounded framed pipe (stdout never authoritative), one frame and exit/identity checks; stdin public probe; read-allowlist sandbox-exec using resolved runtime outside venv/repository. Python guards are supplementary; same-interpreter memory is not authenticated.",
+  "verified": "CPU dev regression/compatibility only; Codex sandbox-exec sandbox_apply denied exit71; actual OS deny unverified; holdout cannot fall back.",
   "start_state": "evaluator hashes the real start tree itself (StageAttempt.start_dir) and compares with the sealed baseline; mismatch = INFRA_BASE_MISMATCH; no tree = UNKNOWN",
   "success_requires": "start hash match, no forbidden writes, all delta checks green (>=1), invariants green, report reconciles with trace/diff",
   "implemented": true
@@ -2120,7 +2120,7 @@
    "cd bench && python3 -m local_llm_eval.selfcheck",
    "cd bench && python3 -m pytest local_llm_eval/tests -q"
   ],
-  "tests": 152,
+  "tests": 281,
   "negatives_total": 366,
   "false_positives": 0,
   "interface_only_pending_2_2": [
@@ -2137,15 +2137,34 @@
    "sealed candidate source/capability/attribute boundary (N16-N33)",
    "frame/GC audit defense in depth",
    "trusted executable bytes pinned in parent",
-   "nonzero exit observations rejected"
+   "nonzero exit observations rejected",
+   "dedicated framed observation pipe; stdout diagnostic only",
+   "read allowlist OS profile and real runtime; unavailable dev flags, holdout fail closed",
+   "shared stdlib compatibility policy and nondecisive signals",
+   "selfcheck retains isolation flags"
   ],
   "residual_limits": [
-   "OS filesystem/network/same-UID process isolation not applied",
-   "Python audit/AST/capability restrictions are not an arbitrary CPython/native-code sandbox proof",
-   "unreviewed stdlib capabilities, alternate Python versions and valid solutions outside admitted API set unverified",
-   "oracle faker/context-sensitive behavior and task overfitting",
-   "actual harness trace/session integration unverified"
-  ]
+   "C2 indirect format/globals and arbitrary same-interpreter memory compromise not excluded",
+   "inherited observation pipe and child identity checks are not cryptographic authentication",
+   "dev gold is public; strong claims require sealed holdout plus verified OS isolation",
+   "sandbox_apply denied in current Codex Run; actual deny tests skipped, not host-wide failure",
+   "candidate unittest/AST, native/metaclass/trace/codecs/dynamic-code adaptive bypass completeness unverified",
+   "holdout9/sealing/model E2E/actual trace-session integration unverified"
+  ],
+  "tests_passed": 280,
+  "tests_skipped": 1,
+  "strong_integrity_certified": false,
+  "holdout_requires_os_isolation": true,
+  "verification_environment": {
+   "engine": "Codex command sandbox",
+   "sandbox_available": false,
+   "os_deny_verified": false,
+   "flags": [
+    "development_answers_public",
+    "sandbox_unavailable",
+    "trace_unavailable"
+   ]
+  }
  },
  "evidence_files_4_2": {
   "evidence/4.2/coverage_summary.json": "88b94220675d63a6dbbb2bed5a5ee608726bc0e9e36c1901af8204bb1eb3485e",
@@ -2163,5 +2182,17 @@
   "evidence/4.2/integrity/selfcheck.json": "10df85250cd53cae7b0747b8992fb5514c481339e42f5e112cbcec8c7e13f435",
   "evidence/4.2/integrity/selfcheck.txt": "d99647cd84ce5f73e30eb91d4e194a4052277f9e3dac42a4c6d6322c853be7d6",
   "evidence/4.2/integrity/summary.json": "7d1101e150b2a821db38c684c34fb4df49f2b7aa6de1868d132aff7e4621fe4c"
+ },
+ "evidence_files_4_2_channel_isolation": {
+  "evidence/4.2/channel-isolation/PROGRESS.md": "fe872b3d6b1f9278d7a191a5afc49dbb332c6643b9b30cd3ea8f08283ede07f7",
+  "evidence/4.2/channel-isolation/compat-red.txt": "0fef70504a96a77bd0c0dfee78e61e820ddca6b798d8e0949b83cf096ca8ded7",
+  "evidence/4.2/channel-isolation/environment.json": "26c69621870e77181d150ea0b5a9a057a767b15fcadbff4cc12d080b1c5b936b",
+  "evidence/4.2/channel-isolation/isolation.json": "0037692327339a888953af75f834dfaa7ecbf0d69c98de0dcdba1f8d2bf453e6",
+  "evidence/4.2/channel-isolation/profile-example.sb": "49f3070164c5de1133593c36c7eb40867ff970a6686a26c5c5dd6a2e81641941",
+  "evidence/4.2/channel-isolation/pytest.txt": "97eeb088451501d3b276c8cd2fb0db269652f5c32675cf9f32c049743c83c112",
+  "evidence/4.2/channel-isolation/red.txt": "9e148ec41d91c66174a8ad2feb4626cf27f0786364422e3588f93e54efc6da4f",
+  "evidence/4.2/channel-isolation/selfcheck.json": "45d8ad8495da0fc2c08221f38fe2175052d89dd144f7cff01ce2031b56eaa7aa",
+  "evidence/4.2/channel-isolation/selfcheck.txt": "edac554ad034131e63fc26c9ddb0702880f7193d52a9aa8093c65a994ae0bb36",
+  "evidence/4.2/channel-isolation/summary.json": "9b8bbf6c6337ff8f3187cba2a1cbad31a1a06a123b44f905930f670e97f689e9"
  }
 }

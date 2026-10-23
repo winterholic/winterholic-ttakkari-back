@@ -162,7 +162,11 @@ FORBIDDEN_TEST_SOURCES = {
 def test_forbidden_constructs_in_candidate_written_tests_are_flagged(name):
     from local_llm_eval.natives import forbidden_constructs
 
-    assert forbidden_constructs(FORBIDDEN_TEST_SOURCES[name], ("shop",)), name
+    result = forbidden_constructs(FORBIDDEN_TEST_SOURCES[name], ("shop",))
+    if name == "getattr":
+        assert result == []  # protected ordinary lookup is now permitted
+    else:
+        assert result, name
 
 
 def test_ordinary_tests_are_not_flagged():

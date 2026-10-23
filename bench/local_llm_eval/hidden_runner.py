@@ -1,8 +1,8 @@
-"""Candidate-side probe, bootstrapped from trusted bytes pinned by the parent.
+"""Public candidate-side probe; observations use a dedicated framed pipe.
 
-The judge never imports candidate code. Observations are accepted only under the
-sealed-source/capability boundary in integrity.py, not merely because they contain
-plausible values. Audit is defense in depth, not an OS or CPython sandbox.
+The parent alone judges. Python guards are supplementary; neither this child nor
+its inherited transport is a cryptographically authenticated observation source.
+Sealed holdout and verified OS isolation are prerequisites for stronger claims.
 """
 
 import builtins
@@ -14,6 +14,7 @@ import traceback
 import unittest
 
 from _llme_boundary import CandidateBoundary
+from _llme_channel import writer
 
 # References captured before any candidate import so later monkeypatching of the originals is harmless here.
 _dumps = json.dumps
@@ -86,17 +87,19 @@ def _tamper_probe():
 
 
 def main():
-    spec_path = sys.argv[1]
-    with open(spec_path) as fh:
-        spec = json.load(fh)
-    os.unlink(spec_path)
+    channel_fd, guard_fd = int(sys.argv[1]), int(sys.argv[2])
+    expected_identity = json.loads(sys.argv[3])
+    send = writer(channel_fd, guard_fd, expected_identity)
+    spec = json.load(sys.stdin)
     sys.argv[:] = ["probe"]
     cwd = spec["cwd"]
     os.chdir(cwd)
     # Sealed source loader precedes stdlib loaders; candidate code never uses the
     # probe's namespace or builtins. New/rewritten on-disk modules are not admitted.
     integrity_events = []
-    boundary = CandidateBoundary(spec["sources"], integrity_events)
+    boundary = CandidateBoundary(
+        spec["sources"], integrity_events, (channel_fd, guard_fd)
+    )
     sys.meta_path.insert(0, boundary)
     audit_busy = False
     frame_at = sys._getframe
@@ -178,7 +181,7 @@ def main():
             ).strip()[-400:]
     if changed:
         observations["__tampered__"] = changed
-    _write(1, ("\nOBS\t" + _dumps(observations) + "\n").encode("utf-8", "replace"))
+    send(observations)
 
 
 main()

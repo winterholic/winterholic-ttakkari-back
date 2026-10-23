@@ -1,8 +1,8 @@
-"""Candidate admission and capability boundary; NOT an OS/Python security sandbox.
+"""Candidate source compatibility and explicit attribute guards, not a sandbox.
 
-Only sealed workspace sources can be imported as candidate code. Every attribute access
-in those sources goes through a guard, including aliases and imported module members.
-The probe's globals/builtins are never supplied to candidate modules.
+Sealed sources and explicit AST attribute accesses are guarded. Indirect traversal
+(e.g. format strings) and arbitrary same-interpreter compromise are not excluded.
+Secrets belong to the parent and sealed paths, protected by validated OS isolation.
 """
 
 import ast
@@ -11,6 +11,7 @@ import importlib.abc
 import importlib.util
 import operator
 import os
+import sys
 import types
 
 # Reviewed stdlib capabilities needed by ordinary solutions to the nine dev tasks.
@@ -143,6 +144,72 @@ CAPABILITIES = {
         "whitespace",
     },
 }
+# Import and observation safety are separate from OS confinement. Public stdlib
+# APIs are broadly available; explicit interpreter/process-control APIs remain guarded.
+UNSAFE_MODULES = {
+    "sys",
+    "gc",
+    "inspect",
+    "ctypes",
+    "builtins",
+    "importlib",
+    "atexit",
+    "threading",
+    "_thread",
+    "signal",
+    "subprocess",
+    "multiprocessing",
+    "runpy",
+    "marshal",
+    "code",
+    "codeop",
+    "site",
+}
+PURE_STDLIB = {
+    "abc",
+    "array",
+    "base64",
+    "binascii",
+    "bisect",
+    "calendar",
+    "collections",
+    "contextlib",
+    "csv",
+    "dataclasses",
+    "datetime",
+    "decimal",
+    "enum",
+    "fractions",
+    "functools",
+    "hashlib",
+    "heapq",
+    "hmac",
+    "http",
+    "io",
+    "itertools",
+    "logging",
+    "math",
+    "numbers",
+    "operator",
+    "pathlib",
+    "random",
+    "re",
+    "statistics",
+    "string",
+    "struct",
+    "textwrap",
+    "time",
+    "typing",
+    "unicodedata",
+    "urllib",
+    "uuid",
+    "warnings",
+    "weakref",
+    "zoneinfo",
+    "__future__",
+    "tempfile",
+}
+
 FORBIDDEN_NAMES = {
     "eval",
     "exec",
@@ -152,14 +219,11 @@ FORBIDDEN_NAMES = {
     "locals",
     "vars",
     "dir",
-    "getattr",
     "setattr",
     "delattr",
-    "hasattr",
     "breakpoint",
     "help",
     "input",
-    "type",
     "memoryview",
     "__builtins__",
     "__loader__",
@@ -217,17 +281,13 @@ def violations(source):
                 ):
                     bad.append(f"line {n.lineno}: reserved binding")
         if isinstance(n, ast.Name) and (
-            n.id in FORBIDDEN_NAMES
-            or n.id.startswith("_llme_")
-            or (n.id.startswith("__") and n.id not in {"__name__", "__file__"})
+            n.id in FORBIDDEN_NAMES or n.id.startswith("_llme_")
         ):
             bad.append(f"line {n.lineno}: name {n.id}")
         elif isinstance(n, ast.Attribute) and forbidden_attribute(n.attr):
             bad.append(f"line {n.lineno}: attribute {n.attr}")
         elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if n.name.startswith("_llme_") or (
-                n.name.startswith("__") and n.name not in SAFE_DEFS
-            ):
+            if n.name.startswith("_llme_"):
                 bad.append(f"line {n.lineno}: definition {n.name}")
         elif isinstance(n, ast.Import):
             for alias in n.names:
@@ -309,13 +369,13 @@ class ModuleView:
 
 
 class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
-    def __init__(self, sources, record):
-        import sys
+    def __init__(self, sources, record, protected_fds=()):
 
         collisions = set(sources) & set(sys.modules)
         if collisions:
             record.append("module name collision " + min(collisions))
             raise IntegrityError(record[-1])
+        self.protected_fds = {0, 1, 2, *protected_fds}
         self.sources = sources
         self.record = record
         self.modules = set()
@@ -333,6 +393,7 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         if (
             isinstance(obj, types.ModuleType)
             and obj.__name__ not in self.modules
+            and (obj.__name__.split(".")[0] not in PURE_STDLIB or name.startswith("_"))
             and name not in CAPABILITIES.get(obj.__name__, set())
         ):
             self.deny(f"module capability {obj.__name__}.{name}")
@@ -361,9 +422,12 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         if obj is os and name == "fdopen":
 
             def fdopen(fd, *args, **kwargs):
-                if fd in (0, 1, 2):
+                number = (
+                    int.__index__(fd) if isinstance(fd, int) else operator.index(fd)
+                )
+                if number in self.protected_fds:
                     self.deny("raw fd fdopen")
-                return value(fd, *args, **kwargs)
+                return value(number, *args, **kwargs)
 
             return fdopen
         return self.view(value)
@@ -394,6 +458,21 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             return module
         return ModuleView(module, self)
 
+    def hasattr(self, obj, name):
+        try:
+            self.get(obj, name)
+        except AttributeError:
+            return False
+        return True
+
+    def getattr(self, obj, name, *default):
+        try:
+            return self.get(obj, name)
+        except AttributeError:
+            if default:
+                return default[0]
+            raise
+
     def opening(self, file, *args, **kwargs):
         if isinstance(file, int) or os.path.realpath(file).startswith(
             ("/dev/", "/proc/")
@@ -407,7 +486,11 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             if level
             else name
         )
-        if absolute not in CAPABILITIES and absolute not in self.sources:
+        if (
+            absolute not in CAPABILITIES
+            and absolute not in self.sources
+            and absolute.split(".")[0] not in PURE_STDLIB
+        ):
             self.deny(f"import capability {absolute}")
         module = self.real_import(name, globals, locals, fromlist, level)
         if fromlist:
@@ -447,6 +530,11 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             private.pop(name, None)
         private["__import__"] = self.importing
         private["open"] = self.opening
+        private["getattr"] = self.getattr
+        private["hasattr"] = self.hasattr
+        # Preserve native type identity/isinstance semantics. Access to returned
+        # type objects still goes through GuardAttributes, including aliases.
+        private["type"] = builtins.type
         module.__dict__.update(
             __builtins__=private,
             _llme_get=self.get,
@@ -457,3 +545,27 @@ class CandidateBoundary(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             module.__path__ = []
         self.modules.add(module.__name__)
         exec(compile(tree, filename, "exec"), module.__dict__)  # noqa: S102
+
+
+def signals(source):
+    """Non-decisive observations; never promote string/dunder heuristics to a reject."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    flags = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and "{" in node.value
+            and "__" in node.value
+        ):
+            flags.add("format_introspection_signal")
+        if isinstance(node, ast.FunctionDef) and node.name in {
+            "__getattribute__",
+            "__del__",
+            "__reduce__",
+        }:
+            flags.add("custom_runtime_hook_signal")
+    return sorted(flags)

@@ -1,0 +1,292 @@
+FFFFFFFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+________ test_harmless_prefix_is_not_a_checker_patch[__all__-B4-SGL-D] _________
+
+task_id = 'B4-SGL-D', prefix = '__all__'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', '__all__', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done'], gates_pending...3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='stats.py: line 1: name __all__')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+_________ test_harmless_prefix_is_not_a_checker_patch[bisect-B4-SGL-D] _________
+
+task_id = 'B4-SGL-D', prefix = 'bisect'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'bisect', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done', 'trace_unavaila...ree_sha256='7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+________ test_harmless_prefix_is_not_a_checker_patch[datetime-B4-SGL-D] ________
+
+task_id = 'B4-SGL-D', prefix = 'datetime'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'datetime', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done', 'trace_unavai...ree_sha256='7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+_________ test_harmless_prefix_is_not_a_checker_patch[dunder-B4-SGL-D] _________
+
+task_id = 'B4-SGL-D', prefix = 'dunder'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'dunder', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done'], gates_pending=...802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='stats.py: line 1: name __call__')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+_______ test_harmless_prefix_is_not_a_checker_patch[fractions-B4-SGL-D] ________
+
+task_id = 'B4-SGL-D', prefix = 'fractions'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'fractions', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done', 'trace_unava...ree_sha256='7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+________ test_harmless_prefix_is_not_a_checker_patch[getattr-B4-SGL-D] _________
+
+task_id = 'B4-SGL-D', prefix = 'getattr'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'getattr', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done'], gates_pending...3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='stats.py: line 1: name getattr')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+________ test_harmless_prefix_is_not_a_checker_patch[hasattr-B4-SGL-D] _________
+
+task_id = 'B4-SGL-D', prefix = 'hasattr'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'hasattr', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done'], gates_pending...3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='stats.py: line 1: name hasattr')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+_________ test_harmless_prefix_is_not_a_checker_patch[heapq-B4-SGL-D] __________
+
+task_id = 'B4-SGL-D', prefix = 'heapq'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'heapq', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done', 'trace_unavailab...ree_sha256='7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+________ test_harmless_prefix_is_not_a_checker_patch[logging-B4-SGL-D] _________
+
+task_id = 'B4-SGL-D', prefix = 'logging'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'logging', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done', 'trace_unavail...ree_sha256='7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+________ test_harmless_prefix_is_not_a_checker_patch[math.log-B4-SGL-D] ________
+
+task_id = 'B4-SGL-D', prefix = 'math.log'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'math.log', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done', 'trace_unavai...ree_sha256='7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+________ test_harmless_prefix_is_not_a_checker_patch[pathlib-B4-SGL-D] _________
+
+task_id = 'B4-SGL-D', prefix = 'pathlib'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'pathlib', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done', 'trace_unavail...ree_sha256='7da70e4259d98892da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+__________ test_harmless_prefix_is_not_a_checker_patch[type-B4-SGL-D] __________
+
+task_id = 'B4-SGL-D', prefix = 'type'
+
+    @pytest.mark.parametrize('task_id', sorted(k for k in REGISTRY if k != 'B4-EXP-D'))
+    @pytest.mark.parametrize('prefix', sorted(PREFIXES))
+    def test_harmless_prefix_is_not_a_checker_patch(task_id, prefix):
+        task = REGISTRY[task_id]()
+        ends = gold_ends(task)
+        path = task.stages[0].required_change_paths[0]
+        for end in ends:
+            end[path] = PREFIXES[prefix] + end[path]
+        extra = task.gold_reports(task.base_files, ends) if task.gold_reports else None
+        with materialize(task, ends, reports_for(task, ends, extra), session=task.gold_session) as attempt:
+            ev = evaluate_attempt(task, attempt)
+>       assert ev.verdict == 'PASS', (task_id, prefix, ev)
+E       AssertionError: ('B4-SGL-D', 'type', Evaluation(verdict='FAIL', fail_code='FAIL_CHECKER_PATCH', flags=['false_done'], gates_pending=[]...2da3802e429468803e6beac6d8d4f621cc3224a39f453c285', detail='stats.py: line 1: name type')], evaluated=True, detail=''))
+E       assert 'FAIL' == 'PASS'
+E         
+E         - PASS
+E         + FAIL
+
+bench/local_llm_eval/tests/test_llme_compatibility.py:35: AssertionError
+=========================== short test summary info ============================
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[__all__-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[bisect-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[datetime-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[dunder-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[fractions-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[getattr-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[hasattr-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[heapq-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[logging-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[math.log-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[pathlib-B4-SGL-D]
+FAILED bench/local_llm_eval/tests/test_llme_compatibility.py::test_harmless_prefix_is_not_a_checker_patch[type-B4-SGL-D]
+12 failed, 84 deselected in 0.68s

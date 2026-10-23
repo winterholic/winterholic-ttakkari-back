@@ -4,17 +4,16 @@ The parent never imports candidate code. Judging happens in the evaluator proces
 observations plus facts the parent observed on disk itself (which the candidate cannot rewrite after exit).
 """
 
-import json
 import os
-import signal
-import subprocess
 import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .integrity import violations
+from . import sandbox
+from .channel import collect
+from .integrity import signals, violations
 
 RUNNER_PATH = Path(__file__).with_name("hidden_runner.py")
 # Pin trusted executable bytes before any candidate starts. Later on-disk rewrites
@@ -27,6 +26,9 @@ BOOTSTRAP = (
     "_boundary = types.ModuleType('_llme_boundary')\n"
     "sys.modules['_llme_boundary'] = _boundary\n"
     f"exec(compile({_BOUNDARY_SOURCE!r}, {str(_BOUNDARY_PATH)!r}, 'exec'), _boundary.__dict__)\n"
+    "_channel = types.ModuleType('_llme_channel')\n"
+    "sys.modules['_llme_channel'] = _channel\n"
+    f"exec(compile({Path(__file__).with_name('channel.py').read_text(encoding='utf-8')!r}, '<transport>', 'exec'), _channel.__dict__)\n"
     f"exec(compile({_RUNNER_SOURCE!r}, {str(RUNNER_PATH)!r}, 'exec'))\n"
 )
 OBS_PREFIX = "OBS\t"
@@ -38,6 +40,7 @@ IGNORED = {"__pycache__"}
 class CheckRun:
     # OBS | integrity | stub_exit0 | multi_obs | bad_obs | crash | timeout
     status: str
+    flags: list[str] = field(default_factory=list)
     obs: dict = field(default_factory=dict)
     facts: dict = field(default_factory=dict)
     detail: str = ""
@@ -67,8 +70,26 @@ def run_check(
     probe: str,
     timeout: float = 20.0,
     dir_names: tuple[str, ...] = (),
+    *,
+    mode: str = "dev",
 ) -> CheckRun:
+    if mode not in {"dev", "holdout"}:
+        raise ValueError("unknown evaluation mode")
     started = time.monotonic()
+    isolated = sandbox.availability()
+    flags = ["development_answers_public"] if mode == "dev" else []
+    if not isolated.available:
+        flags.append("sandbox_unavailable")
+        if mode == "holdout":
+            return CheckRun(
+                "isolation_required",
+                flags=flags,
+                detail=isolated.reason,
+                facts={
+                    "launched": False,
+                    "isolation": {"active": False, "reason": isolated.reason},
+                },
+            )
     cwd_before = listing(cwd)
     sources = {}
     for rel in cwd_before:
@@ -76,9 +97,10 @@ def run_check(
             continue
         path = cwd / rel
         source = path.read_text(encoding="utf-8")
+        flags.extend(flag for flag in signals(source) if flag not in flags)
         bad = violations(source)
         if bad:
-            return CheckRun("integrity", detail=f"{rel}: {bad[0]}")
+            return CheckRun("integrity", flags=flags, detail=f"{rel}: {bad[0]}")
         parts = rel[:-3].split("/")
         package = parts[-1] == "__init__"
         name = ".".join(parts[:-1] if package else parts)
@@ -86,7 +108,9 @@ def run_check(
             name in {"__main__", "integrity", "_llme_boundary"}
             or name.split(".")[0] in sys.stdlib_module_names
         ):
-            return CheckRun("integrity", detail=f"reserved module name {name}")
+            return CheckRun(
+                "integrity", flags=flags, detail=f"reserved module name {name}"
+            )
         sources[name] = (source, str(path), package)
     with tempfile.TemporaryDirectory(prefix="llme-run-") as scratch:
         dirs = {}
@@ -94,35 +118,33 @@ def run_check(
             path = Path(scratch) / f"dir-{name}"
             path.mkdir()
             dirs[name] = str(path)
-        spec_path = Path(scratch) / "spec.json"
-        spec_path.write_text(
-            json.dumps(
-                {
-                    "check_id": check_id,
-                    "code": probe,
-                    "cwd": str(cwd),
-                    "dirs": dirs,
-                    "sources": sources,
-                }
+        home = Path(scratch) / "home"
+        temporary = Path(scratch) / "tmp"
+        home.mkdir()
+        temporary.mkdir()
+        spec = {
+            "check_id": check_id,
+            "code": probe,
+            "cwd": str(cwd),
+            "dirs": dirs,
+            "sources": sources,
+        }
+        env = _minimal_env(str(home))
+        env["TMPDIR"] = str(temporary)
+        runtime = sandbox.runtime_paths()
+        command = [str(runtime.executable), "-I", "-S", "-B", "-c", BOOTSTRAP]
+        if isolated.available:
+            profile = Path(scratch) / "isolation.sb"
+            profile.write_text(
+                sandbox.profile_text(runtime, [cwd, home, temporary, *dirs.values()])
             )
+            command = sandbox.command(BOOTSTRAP, profile)
+        result = collect(command, cwd, env, spec, timeout)
+        launch_failed = isolated.available and result.stderr_tail.startswith(
+            "sandbox-exec:"
         )
-        proc = subprocess.Popen(
-            [sys.executable, "-I", "-S", "-B", "-c", BOOTSTRAP, str(spec_path)],
-            cwd=cwd,
-            env=_minimal_env(scratch),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            errors="replace",
-            start_new_session=True,
-        )
-        try:
-            out, err = proc.communicate(timeout=timeout)
-            timed_out = False
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            out, err = proc.communicate()
-            timed_out = True
+        if launch_failed:
+            flags.append("sandbox_launch_failed")
         facts = {
             "cwd_before": cwd_before,
             "cwd_after": listing(cwd),
@@ -131,38 +153,27 @@ def run_check(
                 name: {
                     rel: (Path(p) / rel).read_text(encoding="utf-8", errors="replace")
                     for rel in listing(Path(p))
-                    if (Path(p) / rel).stat().st_size < 200000
+                    if (Path(p) / rel).resolve().is_relative_to(Path(p).resolve())
+                    and not (Path(p) / rel).is_symlink()
+                    and (Path(p) / rel).stat().st_size < 200000
                 }
                 for name, p in dirs.items()
             },
-            "returncode": proc.returncode,
+            "returncode": result.returncode,
+            "launched": True,
+            "isolation": {
+                "active": isolated.available and not launch_failed,
+                "reason": isolated.reason,
+                "runtime": str(runtime.executable),
+            },
         }
-    out, err = out[-OUTPUT_CAP:], err[-OUTPUT_CAP:]
-    base = {
-        "facts": facts,
-        "wall_s": time.monotonic() - started,
-        "stdout_tail": out[-400:],
-        "stderr_tail": err[-400:],
-    }
-    if timed_out:
-        return CheckRun("timeout", detail=f"check exceeded {timeout}s", **base)
-    if proc.returncode != 0:
-        return CheckRun("crash", detail=f"nonzero exit {proc.returncode}", **base)
-    lines = [line for line in out.splitlines() if line.startswith(OBS_PREFIX)]
-    if not lines:
-        if proc.returncode == 0:
-            return CheckRun(
-                "stub_exit0", detail="exit 0 without an observation line", **base
-            )
-        return CheckRun(
-            "crash", detail=f"exit {proc.returncode} without observations", **base
-        )
-    if len(lines) > 1:
-        return CheckRun("multi_obs", detail=f"{len(lines)} observation lines", **base)
-    try:
-        obs = json.loads(lines[0][len(OBS_PREFIX) :])
-    except ValueError:
-        return CheckRun("bad_obs", detail="observation line is not JSON", **base)
-    if not isinstance(obs, dict):
-        return CheckRun("bad_obs", detail="observation is not an object", **base)
-    return CheckRun("OBS", obs=obs, **base)
+    return CheckRun(
+        result.status,
+        flags=flags,
+        obs=result.obs,
+        facts=facts,
+        detail=result.detail,
+        wall_s=time.monotonic() - started,
+        stdout_tail=result.stdout_tail,
+        stderr_tail=result.stderr_tail,
+    )

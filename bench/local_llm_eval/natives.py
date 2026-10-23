@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import codes
+from .integrity import PURE_STDLIB
 from .judges import unittest_ok
 from .manifest import write_files
-from .model import Check, CheckOutcome, Ctx
+from .model import Check, CheckOutcome, Ctx, task_mode
 from .runner import CheckRun, run_check
 
 SKIP_NAMES = {"skip", "skipIf", "skipUnless", "expectedFailure", "skipTest", "xfail"}
@@ -93,7 +94,6 @@ FORBIDDEN_NAMES = frozenset(
         "globals",
         "locals",
         "vars",
-        "getattr",
         "setattr",
         "delattr",
         "print",
@@ -129,7 +129,6 @@ FORBIDDEN_NAMES = frozenset(
 FORBIDDEN_DEFS = frozenset(
     {
         "run",
-        "__call__",
         "countTestCases",
         "_callTestMethod",
         "_callSetUp",
@@ -162,7 +161,7 @@ def forbidden_constructs(source: str, allowed_modules: tuple[str, ...]) -> list[
         tree = ast.parse(source)
     except SyntaxError:
         return []
-    allowed = ALLOWED_IMPORTS | set(allowed_modules)
+    allowed = ALLOWED_IMPORTS | PURE_STDLIB | set(allowed_modules)
     found: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -255,7 +254,13 @@ def _suite_run(
     with tempfile.TemporaryDirectory(prefix=f"llme-suite-{label}-") as tmp:
         write_files(Path(tmp), files)
         code = f'rec("unittest", run_unittest("tests", ".", {pattern!r}))\n'
-        return run_check(Path(tmp), f"suite-{label}", code, 30.0)
+        return run_check(
+            Path(tmp),
+            f"suite-{label}",
+            code,
+            30.0,
+            mode=task_mode(ctx.task),
+        )
 
 
 def _suite_cache(ctx: Ctx, spec: SuiteSpec) -> dict:
@@ -301,7 +306,13 @@ def _ut(run: CheckRun) -> dict:
 def _structural_run_failure(run: CheckRun) -> CheckOutcome | None:
     if run.status == "stub_exit0":
         return CheckOutcome(False, "FAIL_STUB_EXIT0", run.detail)
-    if run.status in ("multi_obs", "bad_obs"):
+    if run.status in (
+        "integrity",
+        "multi_obs",
+        "bad_obs",
+        "output_limit",
+        "isolation_required",
+    ):
         return CheckOutcome(False, "FAIL_CHECKER_PATCH", run.detail)
     if run.status == "OBS":
         if run.obs.get("__tampered__"):

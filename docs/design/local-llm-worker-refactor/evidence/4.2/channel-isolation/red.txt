@@ -1,0 +1,129 @@
+.FFFFFFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+__________________________ test_binary_frame_contract __________________________
+
+    def test_binary_frame_contract():
+>       from local_llm_eval.channel import decode_frame, encode_frame, ChannelError
+E       ModuleNotFoundError: No module named 'local_llm_eval.channel'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:17: ModuleNotFoundError
+________________ test_trusted_driver_channel_faults_fail[close] ________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_trusted_driver_channel_fa0')
+fault = 'close'
+
+    @pytest.mark.parametrize('fault', ['close', 'replace', 'duplicate', 'missing', 'malformed', 'nonzero'])
+    def test_trusted_driver_channel_faults_fail(tmp_path, fault):
+>       from local_llm_eval.channel import exercise_channel
+E       ModuleNotFoundError: No module named 'local_llm_eval.channel'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:28: ModuleNotFoundError
+_______________ test_trusted_driver_channel_faults_fail[replace] _______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_trusted_driver_channel_fa1')
+fault = 'replace'
+
+    @pytest.mark.parametrize('fault', ['close', 'replace', 'duplicate', 'missing', 'malformed', 'nonzero'])
+    def test_trusted_driver_channel_faults_fail(tmp_path, fault):
+>       from local_llm_eval.channel import exercise_channel
+E       ModuleNotFoundError: No module named 'local_llm_eval.channel'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:28: ModuleNotFoundError
+______________ test_trusted_driver_channel_faults_fail[duplicate] ______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_trusted_driver_channel_fa2')
+fault = 'duplicate'
+
+    @pytest.mark.parametrize('fault', ['close', 'replace', 'duplicate', 'missing', 'malformed', 'nonzero'])
+    def test_trusted_driver_channel_faults_fail(tmp_path, fault):
+>       from local_llm_eval.channel import exercise_channel
+E       ModuleNotFoundError: No module named 'local_llm_eval.channel'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:28: ModuleNotFoundError
+_______________ test_trusted_driver_channel_faults_fail[missing] _______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_trusted_driver_channel_fa3')
+fault = 'missing'
+
+    @pytest.mark.parametrize('fault', ['close', 'replace', 'duplicate', 'missing', 'malformed', 'nonzero'])
+    def test_trusted_driver_channel_faults_fail(tmp_path, fault):
+>       from local_llm_eval.channel import exercise_channel
+E       ModuleNotFoundError: No module named 'local_llm_eval.channel'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:28: ModuleNotFoundError
+______________ test_trusted_driver_channel_faults_fail[malformed] ______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_trusted_driver_channel_fa4')
+fault = 'malformed'
+
+    @pytest.mark.parametrize('fault', ['close', 'replace', 'duplicate', 'missing', 'malformed', 'nonzero'])
+    def test_trusted_driver_channel_faults_fail(tmp_path, fault):
+>       from local_llm_eval.channel import exercise_channel
+E       ModuleNotFoundError: No module named 'local_llm_eval.channel'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:28: ModuleNotFoundError
+_______________ test_trusted_driver_channel_faults_fail[nonzero] _______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_trusted_driver_channel_fa5')
+fault = 'nonzero'
+
+    @pytest.mark.parametrize('fault', ['close', 'replace', 'duplicate', 'missing', 'malformed', 'nonzero'])
+    def test_trusted_driver_channel_faults_fail(tmp_path, fault):
+>       from local_llm_eval.channel import exercise_channel
+E       ModuleNotFoundError: No module named 'local_llm_eval.channel'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:28: ModuleNotFoundError
+________________ test_holdout_never_falls_back_without_sandbox _________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_holdout_never_falls_back_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1074c8e90>
+
+    def test_holdout_never_falls_back_without_sandbox(tmp_path, monkeypatch):
+        monkeypatch.setenv('LOCAL_LLM_EVAL_SANDBOX_UNAVAILABLE', 'measured test environment unavailable')
+>       run = run_check(tmp_path, 'holdout', "rec('v', 3)", mode='holdout')
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: run_check() got an unexpected keyword argument 'mode'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:36: TypeError
+________________ test_development_records_unavailable_isolation ________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_development_records_unava0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1074c90f0>
+
+    def test_development_records_unavailable_isolation(tmp_path, monkeypatch):
+        monkeypatch.setenv('LOCAL_LLM_EVAL_SANDBOX_UNAVAILABLE', 'measured test environment unavailable')
+        run = run_check(tmp_path, 'dev', "rec('v', 3)")
+>       assert run.status == 'OBS' and 'sandbox_unavailable' in run.flags
+                                                                ^^^^^^^^^
+E       AttributeError: 'CheckRun' object has no attribute 'flags'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:45: AttributeError
+________________ test_runtime_does_not_admit_the_venv_checkout _________________
+
+    def test_runtime_does_not_admit_the_venv_checkout():
+>       from local_llm_eval.sandbox import runtime_paths, profile_text
+E       ModuleNotFoundError: No module named 'local_llm_eval.sandbox'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:50: ModuleNotFoundError
+_________________ test_sandbox_deny_paths_and_positive_stdlib __________________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-3775/test_sandbox_deny_paths_and_po0')
+
+    def test_sandbox_deny_paths_and_positive_stdlib(tmp_path):
+>       from local_llm_eval.sandbox import availability, run_deny_checks
+E       ModuleNotFoundError: No module named 'local_llm_eval.sandbox'
+
+bench/local_llm_eval/tests/test_llme_channel_sandbox.py:62: ModuleNotFoundError
+=========================== short test summary info ============================
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_binary_frame_contract
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_trusted_driver_channel_faults_fail[close]
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_trusted_driver_channel_faults_fail[replace]
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_trusted_driver_channel_faults_fail[duplicate]
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_trusted_driver_channel_faults_fail[missing]
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_trusted_driver_channel_faults_fail[malformed]
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_trusted_driver_channel_faults_fail[nonzero]
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_holdout_never_falls_back_without_sandbox
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_development_records_unavailable_isolation
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_runtime_does_not_admit_the_venv_checkout
+FAILED bench/local_llm_eval/tests/test_llme_channel_sandbox.py::test_sandbox_deny_paths_and_positive_stdlib
+11 failed, 1 passed in 0.15s

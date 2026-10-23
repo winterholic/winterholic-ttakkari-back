@@ -1,0 +1,22 @@
+{
+  "availability": {
+    "available": false,
+    "reason": "Codex command sandbox: sandbox-exec sandbox_apply: Operation not permitted (exit 71), measured 2026-10-23"
+  },
+  "runtime": {
+    "executable": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/bin/python3.13",
+    "stdlib": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13",
+    "libraries": "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib"
+  },
+  "deny_targets": {
+    "evaluator": "/Users/winterholic/development/local-llm-bench-spec-4-1-20261023/bench/local_llm_eval/evaluator.py",
+    "gold": "/Users/winterholic/development/local-llm-bench-spec-4-1-20261023/bench/local_llm_eval/tasks/sgl.py",
+    "probe_source": "/Users/winterholic/development/local-llm-bench-spec-4-1-20261023/bench/local_llm_eval/hidden_runner.py",
+    "original_checkout": "/Users/winterholic/development/projects/winterholic-ttakkari/back/pyproject.toml",
+    "home_settings": "/Users/winterholic/.zshrc"
+  },
+  "ok": false,
+  "unverified": [
+    "OS read, write, network and fork denial"
+  ]
+}

@@ -65,6 +65,7 @@ def classification_rows(task: Task) -> list[dict]:
                 "requirement": check.requirement,
                 "green_at_start": start_out.passed,
                 "green_at_gold": gold_out.passed,
+                "flags": sorted(set(start_out.flags + gold_out.flags)),
             }
             if check.kind == codes.KIND_PROCESS or gold_out.passed is None:
                 row["ok"] = True
@@ -106,6 +107,7 @@ def reference_rows(task: Task) -> list[dict]:
                 "fail_code": ev.fail_code,
                 "ok": ev.verdict == codes.PASS,
                 "gates_pending": ev.gates_pending,
+                "flags": ev.flags,
                 "detail": "" if ev.verdict == codes.PASS else _failure_text(ev),
             }
         )
@@ -142,6 +144,7 @@ def negative_rows(task: Task) -> list[dict]:
                 "fail_code": ev.fail_code,
                 "expected": list(neg.expect_codes),
                 "false_positive": ev.verdict == codes.PASS,
+                "flags": ev.flags,
                 "ok": ok,
                 "detail": "" if ok else _failure_text(ev),
             }
@@ -203,15 +206,25 @@ def main(argv: list[str]) -> int:
             + s["negatives_not_rejected_for_expected_reason"]
         )
         reports.append(report)
+    flags = sorted(
+        {
+            flag
+            for report in reports
+            for row in report["references"]
+            for flag in row["flags"]
+        }
+    )
     if json_out is not None:
         json_out.write_text(
             json.dumps(
-                {"tasks": reports, "problems": bad}, ensure_ascii=False, indent=1
+                {"tasks": reports, "problems": bad, "flags": flags},
+                ensure_ascii=False,
+                indent=1,
             )
             + "\n",
             encoding="utf-8",
         )
-    print(json.dumps({"tasks": len(reports), "problems": bad}))
+    print(json.dumps({"tasks": len(reports), "problems": bad, "flags": flags}))
     return 1 if bad else 0
 
 

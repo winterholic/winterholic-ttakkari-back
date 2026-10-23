@@ -309,7 +309,7 @@ async def creative_v2_production_render(plan_id: str, revision: Annotated[int, F
     return await _creative("production_render", {"plan_id": plan_id, "revision": revision})
 
 
-@query_tool
+@server.tool()
 async def creative_v2_production_status(plan_id: str) -> str:
     """Read production state, segment jobs, bounded log entries, QA result and final media ID."""
     return await _creative("production_status", {"plan_id": plan_id})

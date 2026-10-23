@@ -475,6 +475,9 @@ def test_mcp_queries_are_marked_read_only_without_marking_writes(role):
         "reverse_list", "reverse_get", "tossinvest_status",
         "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_job", "google_account_status",
         "list_scheduled_actions",
+        "comfy_profiles", "comfy_jobs", "comfy_job", "creative_v2_catalog", "creative_v2_capabilities",
+        "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
+        "creative_v2_auto_assets_status",
     }
     for tool in replies[2]["result"]["tools"]:
         annotations = tool.get("annotations") or {}

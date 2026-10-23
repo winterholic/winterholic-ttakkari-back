@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/agent/creative-v2", tags=["creative-studio-v2-ag
 AVAILABLE_OPERATIONS = frozenset({
     "catalog", "capabilities", "recipe_matrix", "registries", "plans", "plan",
     "plan_create", "plan_edit", "plan_approve", "production_status", "auto_assets_status",
+    "auto_assets_start", "auto_assets_retry",
     "production_dispatch", "production_render", "production_asset", "production_media_link",
 })
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -99,7 +100,9 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         "plan": {"plan_id"}, "plan_create": {"brief", "name", "intent", "duration", "aspect", "style", "resolutions"},
         "plan_edit": {"plan_id", "revision", "scenes", "duration"},
         "plan_approve": {"plan_id", "revision"}, "production_status": {"plan_id"},
-        "auto_assets_status": set(), "production_dispatch": {"plan_id", "revision"},
+        "auto_assets_status": set(), "auto_assets_start": {"plan_id", "revision"},
+        "auto_assets_retry": {"plan_id", "revision"},
+        "production_dispatch": {"plan_id", "revision"},
         "production_render": {"plan_id", "revision"},
         "production_asset": {"plan_id", "kind", "filename", "content_base64", "scene_id"},
         "production_media_link": {"plan_id", "id"},
@@ -112,8 +115,11 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
     if operation == "capabilities":
         result = await c2.capabilities("owner")
         result["automatic_asset_generation"] = {
-            "available": False,
-            "reason": "The automatic asset generation implementation remains on an unmerged feature branch; this deployed revision exposes no generator.",
+            "available": True,
+            "supported_recipes": ["R21"],
+            "engines": ["managed-comfy Wan 2.2 draft", "local Supertonic", "local ACE-Step 1.5"],
+            "cancel_available": False,
+            "reason": "Readiness is checked by comfy_readiness and again immediately before generation. Whole-job cancellation is not supported.",
         }
         result["share_to_library"] = {
             "available": False,
@@ -148,10 +154,25 @@ async def command(operation: str, body: Command, _: str = Depends(agent_access))
         return result
     if operation == "auto_assets_status":
         return {
-            "available": False,
-            "reason": "Automatic image, TTS and music generation is implemented only in the unmerged creative-v2-auto-assets feature branch. No generator is called by this MCP tool.",
-            "required_feature": "feat/creative-v2-auto-assets-main-20261023",
+            "available": True,
+            "supported_recipes": ["R21"],
+            "engines": ["managed-comfy Wan 2.2 draft", "local Supertonic", "local ACE-Step 1.5"],
+            "start": "creative_v2_auto_assets_start",
+            "retry": "creative_v2_auto_assets_retry",
+            "cancel_available": False,
+            "cancel_reason": "The v2 generation service has no safe whole-job cancellation contract. A Comfy scene task must not be interrupted independently from its generation receipt and cleanup.",
+            "result_flow": ["generated asset IDs and engine receipts", "creative_v2_production_dispatch", "creative_v2_production_render", "creative_v2_production_status", "creative_v2_production_media_link"],
+            "readiness": "Check comfy_readiness before starting. The generation service repeats exact runtime, model, local TTS and ACE-Step preflight checks.",
         }
+    if operation in {"auto_assets_start", "auto_assets_retry"}:
+        plan_id = _uuid(data)
+        request = c2.PlanApprove.model_validate({k: v for k, v in data.items() if k != "plan_id"})
+        if operation == "auto_assets_retry":
+            current = await c2.production_get(plan_id, "owner")
+            generation = current.get("asset_generation") or {}
+            if generation.get("status") != "failed":
+                raise HTTPException(409, "Only a recorded failed generation can be retried; inspect production_status first.")
+        return await c2.production_generate_assets(plan_id, request, "owner")
     if operation == "production_dispatch":
         plan_id = _uuid(data)
         approve = c2.PlanApprove.model_validate({k: v for k, v in data.items() if k != "plan_id"})

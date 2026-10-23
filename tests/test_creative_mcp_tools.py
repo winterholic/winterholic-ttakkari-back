@@ -16,7 +16,8 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
         "creative_v2_capabilities", "creative_v2_recipe_matrix", "creative_v2_registries",
         "creative_v2_plans", "creative_v2_plan", "creative_v2_plan_create",
         "creative_v2_plan_edit", "creative_v2_plan_approve", "creative_v2_production_assets",
-        "creative_v2_auto_assets_status", "creative_v2_production_dispatch",
+        "creative_v2_auto_assets_status", "creative_v2_auto_assets_start",
+        "creative_v2_production_dispatch",
         "creative_v2_production_render", "creative_v2_production_status",
         "creative_v2_production_media_link",
     }
@@ -40,6 +41,14 @@ async def test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_ser
         "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
     })
     call.assert_awaited_once_with("POST", "/plan_approve", {"data": {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
+    }}, prefix="/api/agent/creative-v2")
+
+    call.reset_mock()
+    await ms.server.call_tool("creative_v2_auto_assets_start", {
+        "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
+    })
+    call.assert_awaited_once_with("POST", "/auto_assets_start", {"data": {
         "plan_id": "00000000-0000-0000-0000-000000000001", "revision": 3,
     }}, prefix="/api/agent/creative-v2")
 
@@ -125,7 +134,7 @@ async def test_agent_creative_and_comfy_access_rejects_work_sessions():
 
 
 @pytest.mark.asyncio
-async def test_creative_bridge_fails_closed_for_unknown_operations_and_unmerged_auto_assets():
+async def test_creative_bridge_fails_closed_for_unknown_operations_and_reports_auto_asset_contract():
     from fastapi import HTTPException
 
     from ttakkari.api.creative_mcp import Command, command
@@ -136,9 +145,36 @@ async def test_creative_bridge_fails_closed_for_unknown_operations_and_unmerged_
     with pytest.raises(HTTPException) as e:
         await command("plan", Command(data={"plan_id": "00000000-0000-0000-0000-000000000001", "path": "/tmp/x"}), "personal")
     assert e.value.status_code == 422
-    unavailable = await command("auto_assets_status", Command(), "personal")
-    assert unavailable["available"] is False
-    assert "unmerged" in unavailable["reason"]
+    available = await command("auto_assets_status", Command(), "personal")
+    assert available["available"] is True
+    assert available["supported_recipes"] == ["R21"]
+    assert available["cancel_available"] is False
+
+
+@pytest.mark.asyncio
+async def test_auto_asset_start_and_retry_reuse_approved_revision_route(monkeypatch):
+    import uuid
+    from unittest.mock import AsyncMock
+
+    from ttakkari.api import creative_v2
+    from ttakkari.api.creative_mcp import Command, command
+
+    plan_id = "00000000-0000-0000-0000-000000000001"
+    start = AsyncMock(return_value={"plan_id": plan_id, "plan_revision": 3, "status": "queued"})
+    status = AsyncMock(return_value={"asset_generation": {"status": "failed"}})
+    monkeypatch.setattr(creative_v2, "production_generate_assets", start)
+    monkeypatch.setattr(creative_v2, "production_get", status)
+
+    result = await command("auto_assets_start", Command(data={"plan_id": plan_id, "revision": 3}), "personal")
+    assert result["status"] == "queued"
+    assert start.await_args.args[0] == uuid.UUID(plan_id)
+    assert start.await_args.args[1].revision == 3
+
+    start.reset_mock()
+    result = await command("auto_assets_retry", Command(data={"plan_id": plan_id, "revision": 3}), "personal")
+    assert result["status"] == "queued"
+    status.assert_awaited_once()
+    assert start.await_args.args[1].revision == 3
 
 
 @pytest.mark.asyncio

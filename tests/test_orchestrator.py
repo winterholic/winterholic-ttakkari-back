@@ -431,6 +431,7 @@ AGENT_TOOLS = {"list_checklist", "create_checklist_item", "update_checklist_item
                "creative_v2_recipe_matrix", "creative_v2_registries", "creative_v2_plans", "creative_v2_plan",
                "creative_v2_plan_create", "creative_v2_plan_edit", "creative_v2_plan_approve",
                "creative_v2_production_assets", "creative_v2_auto_assets_status",
+               "creative_v2_auto_assets_start", "creative_v2_auto_assets_retry",
                "creative_v2_production_dispatch", "creative_v2_production_render",
                "creative_v2_production_status", "creative_v2_production_media_link"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",

@@ -53,6 +53,7 @@ SCHEDULE_TOOLS = frozenset({"schedule_action", "cancel_scheduled_action"})
 CREATIVE_TOOLS = frozenset({
     "comfy_cancel", "comfy_readiness", "comfy_reconcile", "comfy_submit",
     "creative_v2_plan_create", "creative_v2_plan_edit", "creative_v2_plan_approve",
+    "creative_v2_auto_assets_start", "creative_v2_auto_assets_retry",
     "creative_v2_production_assets", "creative_v2_production_dispatch", "creative_v2_production_render",
     "creative_v2_production_media_link", "creative_v2_production_status",
 })

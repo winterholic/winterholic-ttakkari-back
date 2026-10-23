@@ -826,6 +826,8 @@ MCP_SCOPE: dict[str, str] = {
     "comfy_reconcile": "comfy",
     "comfy_submit": "comfy",
     "creative_v2_auto_assets_status": "creative",
+    "creative_v2_auto_assets_start": "creative",
+    "creative_v2_auto_assets_retry": "creative",
     "creative_v2_capabilities": "creative",
     "creative_v2_catalog": "creative",
     "creative_v2_plan": "creative",

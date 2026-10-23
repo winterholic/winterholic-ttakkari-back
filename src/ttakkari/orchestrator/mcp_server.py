@@ -298,6 +298,21 @@ async def creative_v2_auto_assets_status() -> str:
 
 
 @server.tool()
+async def creative_v2_auto_assets_start(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Start image, per-scene voice and music generation for the exact approved plan revision.
+    Repeated submissions are idempotent while running; after a recorded failure use the retry tool.
+    Only the R21/16:9 managed local engine path is supported."""
+    return await _creative("auto_assets_start", {"plan_id": plan_id, "revision": revision})
+
+
+@server.tool()
+async def creative_v2_auto_assets_retry(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
+    """Retry a failed generation for the same still-approved plan revision. The service reuses its
+    generation key, safe Comfy task checkpoints and file lock; needs_reconcile tasks are not resubmitted."""
+    return await _creative("auto_assets_retry", {"plan_id": plan_id, "revision": revision})
+
+
+@server.tool()
 async def creative_v2_production_dispatch(plan_id: str, revision: Annotated[int, Field(ge=1)]) -> str:
     """Create or retrieve the idempotent production dispatch for an approved, renderable plan revision."""
     return await _creative("production_dispatch", {"plan_id": plan_id, "revision": revision})

@@ -1,0 +1,85 @@
+{
+ "B4-SGL-D": {
+  "task": "t1-bug-median",
+  "n_hidden_literals": 4,
+  "prompt": [],
+  "nontest_source": [],
+  "public_test_overlap": []
+ },
+ "B4-MUL-D": {
+  "task": "s3-fix-inventory",
+  "n_hidden_literals": 11,
+  "prompt": [],
+  "nontest_source": [],
+  "public_test_overlap": [
+   "100 @ tests/test_inv.py"
+  ]
+ },
+ "B4-REF-D": {
+  "task": "t2-refactor-dedupe",
+  "n_hidden_literals": 14,
+  "prompt": [
+   "_clean",
+   "clean",
+   "common",
+   "common.py",
+   "report",
+   "report/csvout.py",
+   "report/jsonout.py"
+  ],
+  "nontest_source": [
+   "_clean @ report/csvout.py",
+   "_clean @ report/jsonout.py",
+   "clean @ report/csvout.py",
+   "clean @ report/jsonout.py",
+   "def  @ report/csvout.py",
+   "def  @ report/jsonout.py"
+  ],
+  "public_test_overlap": [
+   "def  @ tests/test_out.py",
+   "report @ tests/test_out.py",
+   "test_ @ tests/test_out.py"
+  ]
+ },
+ "B4-DBG-D": {
+  "task": "t4-long-file",
+  "n_hidden_literals": 3,
+  "prompt": [
+   "rules.py"
+  ],
+  "nontest_source": [
+   "def rule_ @ rules.py"
+  ],
+  "public_test_overlap": []
+ },
+ "B4-TST-D": {
+  "task": "t3-write-tests",
+  "n_hidden_literals": 3,
+  "prompt": [
+   "test_discount.py",
+   "tests"
+  ],
+  "nontest_source": [],
+  "public_test_overlap": []
+ },
+ "B4-REC-D": {
+  "task": "stage1-shop",
+  "n_hidden_literals": 12,
+  "prompt": [
+   "100",
+   "101"
+  ],
+  "nontest_source": [
+   "100 @ shop/pricing.py"
+  ],
+  "public_test_overlap": [
+   "100 @ tests/test_cart.py",
+   "1005 @ tests/test_cart.py",
+   "250 @ tests/test_cart.py",
+   "503 @ tests/test_cart.py",
+   "849 @ tests/test_cart.py",
+   "850 @ tests/test_cart.py",
+   "999 @ tests/test_cart.py"
+  ]
+ }
+}

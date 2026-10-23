@@ -1,25 +1,26 @@
-# 로컬 LLM 작업자 벤치 과제 명세 초안 (WBS 4.1)
+# 로컬 LLM 작업자 벤치 과제 명세 v1 (WBS 4.1)
 
-작성일: 2026-10-23 KST. 상태: **초안 draft-0. 최종 확정 아님. WBS 1.2(원자료 감사)가 병행 중이며 끝나기 전에는 4.1을 done으로 올리지 않고 4.2 구현으로 넘어가지 않는다.**
+작성일: 2026-10-23 KST. 상태: **v1 확정(4.1 범위). draft-0(커밋 `ef64f5f`, `c460394`)에 WBS 1.2 감사 결과를 반영해 확정했다. 4.2(fixture·gold·hidden·mutant 구현)는 아직 시작하지 않았다. §9의 잔여 과제는 4.2~4.3과 운영자 조치로 넘긴다.**
 
 - 상위 설계: `docs/design/local-llm-worker-refactor.md` §5(벤치), §10 WBS 4.1. 이 문서는 시각 UI 설계가 아니라 **평가 명세**다.
-- PMS: project `0b1a2a57-eb19-4da0-b572-ab783d6a6735`, task 4.1 `7bad4b21-2a0c-45d2-9934-2cf7a1871e89`(작성 시점 status `todo`), predecessor 1.2 `f4a5ab31-4d6c-4107-917f-40f83b29e94d`(작성 시점 status `doing`, progress 0, assignee `worker 23bedea1`).
-- 기준 main: `474e034a684935e2c3d863820b5e7b0d3ffdc7b7`. 설계 commit `7e637d79…`는 origin/main의 ancestor임을 확인했다.
-- 짝 파일: `benchmark-manifest-draft.json`(과제·검사 id 목록), `evidence/4.1/`(이번 CPU probe 원스크립트·원출력).
-- **이 문서의 모든 숫자는 사전등록 계획값이며 실측 결과가 아니다.** 모델 응답·서버·GPU·학습·벤치는 이번 작업에서 실행하지 않았다.
+- PMS: project `0b1a2a57-eb19-4da0-b572-ab783d6a6735`, task 4.1 `7bad4b21-2a0c-45d2-9934-2cf7a1871e89`, predecessor 1.2 `f4a5ab31-4d6c-4107-917f-40f83b29e94d`. 1.2 감사 완료는 메인이 `raw 61행 / 136,608 bytes / SHA256 d525733d…e1362be0`, manifest 61행 coverage, t6 성공당 165.0초·t8 239.7초를 직접 재집계해 확인했다고 전달했다. 이 문서는 그 전달과 감사 산출물 파일을 근거로 삼는다.
+- 기준 main: `474e034a684935e2c3d863820b5e7b0d3ffdc7b7`에서 작성을 시작했다. 설계 commit `7e637d79…`는 origin/main의 ancestor임을 확인했다.
+- 짝 파일: `benchmark-manifest-draft.json`(과제·검사 id 목록, `manifest_revision: v1`), `evidence/4.1/`(CPU 검사 스크립트·원출력).
+- **이 문서의 모든 숫자는 사전등록 계획값이며 실측 결과가 아니다.** 모델 응답·서버·GPU·학습·벤치는 실행하지 않았다.
+- 감사 정본: `local-llm-worker-design-20261023` worktree의 `docs/design/local-llm-worker-refactor/evidence-audit/`(`audit-report.md`, `attempt_manifest.csv`, `config_summary.csv`, `source_manifest.csv`, `verifier_case_summary.csv`, `audit_recount.json`). 이 문서가 감사 수치를 옮길 때는 `audit_recount.json`과 CSV를 정본으로 삼고 원 JSONL과 대조했다. 감사 보고서 본문의 API 오류 내역 설명에 전사 오류가 있었으며(6+6+20으로 쓰였던 것을 3+3+20으로 정정), 원본 수치를 쓴다.
 
 ## 0. 이번 작업에서 실제로 한 일과 하지 않은 일
 
 | 구분 | 내용 | 상태 |
 |---|---|---|
-| 파일/코드 확인 | 설계 문서, `qwen-local-harness`의 `bench/2026-10-18/{tasks.py,validate_tasks.py,evalbase/*}`, `bench/2026-10-18-longctx/longtasks.py`, `/Users/winterholic/testing/qwen-worker-stage1/{task.txt,verify_fixture.py,fixture-template}` 읽기 | 확인함(읽기 전용) |
-| 모의검사 | 기존 verifier에 모델 없는 음성 대조 14건 (`evidence/4.1/verifier_probe_existing.py`, /tmp 복사본에서 실행) | 실행함. §5.3 |
+| 파일/코드 확인 | 설계 문서, `qwen-local-harness`의 `bench/2026-10-18/{tasks.py,validate_tasks.py,evalbase/*}`, `bench/2026-10-18-longctx/longtasks.py`, `/Users/winterholic/testing/qwen-worker-stage1/{task.txt,verify_fixture.py,verify_fixture.py.orig,fixture-template}`, 1.2 감사 산출물 읽기 | 확인함(읽기 전용) |
+| 모의검사 | (a) 기존 verifier 음성 대조 14건, (b) 기존 참조해 재검증, (c) 요구 검사의 base 상태 delta/invariant 확인과 shop trap 확인, (d) 개발 fixture 정적 누출 스캔. 모두 /tmp 복사본, 모델 없음 | 실행함. §5.3, §5.4 |
 | runtime readiness | 서버·worker·Seatbelt·lease 확인 | **미실행** |
 | 실제 모델 완주 | 어떤 모델도 실행하지 않음 | **미실행** |
 | fixture 구현·gold patch·hidden 작성 | 4.2의 일 | **미착수** |
-| PMS | 4.1 status/progress 변경 | 하지 않음 |
+| PMS | 4.1 상태 갱신 | 이 v1 push 뒤 갱신(§9 끝) |
 
-`qwen-local-harness` 저장소는 HEAD `b278b96f45865b9dd9104a5735d10ad56344d854`에 수정 9개·미추적 5개가 있는 dirty 상태다(읽기만 했고 건드리지 않았다). 이 문서가 근거로 삼은 `tasks.py`·`stage3.py`·`longtasks.py`·`validate_tasks.py`는 `git diff HEAD`가 비어 있는 파일이다. 수정 중인 `evalbase/qc.py`·`agentbench.py`·`optbench.py`는 명세 근거로 쓰지 않고 예산 선례(seed 규칙 등)를 읽는 데만 썼다.
+`qwen-local-harness` 저장소는 dirty 상태다(작성 시작 시 HEAD `b278b96f…`, v1 작성 중 HEAD `c9123ac57a0685c652e02076f1baf25aa1426ee7`로 다른 작업자가 전진, 읽기만 했고 건드리지 않았다). 이 문서가 근거로 삼은 `tasks.py`·`stage3.py`·`longtasks.py`·`validate_tasks.py`·`verify_fixture.py`의 sha256은 v1 작성 때 다시 계산해 draft-0 값과 같음을 확인했다(§7).
 
 ## 1. 설계 원칙
 
@@ -29,6 +30,9 @@
 4. **모델에게 주는 문제는 hidden 조건까지 포함한 완전한 기능 명세다.** hidden은 공개 문제문에 없는 요구를 추가하는 수단이 아니다. 모든 hidden 검사는 프롬프트·docstring·공개 코드 주석의 문장 중 하나로 추적돼야 한다(§3의 요구↔hidden 표). 추적되지 않는 검사는 삭제하거나 프롬프트를 개정한다.
 5. **성공은 모델 자기보고나 공개 테스트 통과로 인정하지 않는다.** 성공 = 보호된 evaluator의 PASS(공개+hidden+요구행동) + trace와 맞는 구조화 보고. 공개 테스트만 통과하고 hidden이 실패하면 별도 분류 `FAIL_HIDDEN_ONLY`로 센다.
 6. 모든 과제는 새 임시 디렉터리, 고정 base, 같은 도구·권한으로 시작한다. 원본 checkout·운영 DB·비밀을 fixture로 쓰지 않는다. 의존성은 표준 라이브러리만 쓴다(네트워크·pip 불필요).
+7. **attempt마다 pristine buggy fixture로 reset하고 시작 상태를 hash로 고정한다(1.2 감사 P1-3).** 시작 직전 base tree hash와 파일별 sha256을 기록하고 sealed 기준값과 같을 때만 첫 모델 요청을 보낸다. 다르면 그 attempt는 모델 평가가 아니라 `INFRA_BASE_MISMATCH`(무효, 비용은 기록)다. 종료 시점의 파일별 sha256도 기록한다. 이유: 현재 checker 둘(과거·현행 `verify_fixture.py`)은 최종 상태만 보므로, **이미 정답인 workspace와 유효한 test가 있으면 no-op도 PASS한다**(`verifier_case_summary.csv` `no_op_already_satisfied_with_valid_tests`: 두 checker 모두 exit 0).
+8. **최종 상태만으로 성공을 판정하지 않고, 초기 상태와 요구 변경을 대조한다.** 모든 hidden 검사를 `delta`(base에서 red, 참조해에서 green)와 `invariant`(양쪽 green)로 분류한다. PASS는 모든 delta 검사 green이고 invariant 검사 green이며, delta 검사가 1개 이상 있어야 한다. base에서 delta 검사가 실제로 red임을 과제마다 CPU로 확인하는 것이 4.2의 수락 조건이다(§5.4에 개발 과제 일부 확인 결과).
+9. **변경 요구 class를 과제별로 구분한다.** `diff_required`(코드·테스트 변경이 있어야 함)와 `read_only_report`(정답이 변경 없음+보고)를 섞지 않는다. 모든 과제에 "diff 필수"를 적용하면 탐색 과제의 정답이 no-op과 같은 상태가 되므로 오판한다. 탐색 과제의 no-op 방지는 diff가 아니라 보고 산출물(`report.json`)의 존재·정확성·trace로 한다(§2.1).
 
 ## 2. 18과제 일람
 
@@ -55,7 +59,18 @@ D는 개발, H는 holdout. `기존`은 재활용하는 fixture, `신규`는 새�
 | B4-LNG-D | 장시간 다중 턴 | D | 기존 `s3-feature-slugify`+`s3-rename-calc-tax`+`t1-bug-median`을 한 workspace로 합성 | 14/14 | long |
 | B4-LNG-H | 장시간 다중 턴 | H | 신규 | 14/14 | long |
 
-설계 §5.1의 파일럿 대표 3과제는 과거 C_opt 기본 task 집합(`optbench.py` 기본값 `t1-bug-median,s3-fix-inventory,t3-write-tests`)과 같은 **B4-SGL-D, B4-MUL-D, B4-TST-D**로 제안한다. 과거 6/6 결과와 같은 과제이므로 새 verifier로 재판정한 값과 비교할 수 있다(1.2 결과 필요).
+설계 §5.1의 파일럿 대표 3과제는 과거 C_opt 기본 task 집합(`optbench.py` 기본값 `t1-bug-median,s3-fix-inventory,t3-write-tests`)과 같은 **B4-SGL-D, B4-MUL-D, B4-TST-D**로 한다. 같은 과제를 쓰는 이유는 verifier·fixture 호환성 오류를 찾기 위해서이지 과거 수치와 비교하기 위해서가 아니다. **과거 `cmoe-t6-ub256-ctx4k-low`의 성공당 165.0초(6/6, 모든 시도 wall 990.1초, 실제 batch 990.7초)와 `cmoe-t8-ub256-ctx4k-low`의 239.7초(12시도 중 성공 6, wall 1,438.4초)는 새 E2E 측정의 직접 비교 기준으로 쓰지 않는다.** 감사(`audit-report.md`)가 확인했듯 이 값은 setup, 서버 start→ready, 별도 최종 hidden/mutation 채점, 초기화 비용이 빠진 agent-run 비용이다. 또 t8의 239.7초에는 API 오류가 섞인 재시도 비용이 들어 있고(성공 시도만의 평균은 184.7초이며 이것으로 대체할 수 없다), 과거 설정들은 출력 상한(off 1,800 vs low/default 3,500 token)과 thinking이 서로 달라 단일 변수 비교가 아니다. 각 attempt를 특정 서버·모델 artifact에 암호학적으로 묶는 필드(HTTP status, server run/instance ID, artifact hash)도 raw에 없다. 새 baseline은 같은 프로토콜로 FlashNext를 다시 측정한다.
+
+### 2.1 변경 요구 class
+
+| 과제 | class | 정답 상태의 diff | no-op 방지 수단 |
+|---|---|---|---|
+| EXP-D/H | `read_only_report` | report 파일 외 **변경 없음** | 보고 파일 없음·빈 보고·틀린 보고는 FAIL, 수정은 `FAIL_FORBIDDEN_WRITE`. diff 요구 없음 |
+| SGL, MUL, DBG, REF, REC (D/H) | `diff_required` | 요구 경로 변경 필수 | delta 검사(§1-8), 필수 경로 변경(MUL은 두 소스 파일 모두) |
+| API (D/H) | `diff_required` | 신규 endpoint 구현 | delta 검사(base는 `/health`와 빈 `GET /notes`만 동작) |
+| TST (D/H) | `diff_required`(산출물은 테스트) | 새 test 파일은 있고 **SUT는 불변** | 새 test의 gold 통과, mutant 사망, SUT hash 불변 |
+| LNG T1~T4 | `diff_required` | 턴마다 요구 경로 변경 | 턴별 delta 검사 |
+| LNG T5 | `read_only_report` | **diff 없음**(보고만 하라는 턴) | 보고 JSON이 실제 누적 diff와 일치, T5 중 파일 수정은 `FAIL_FORBIDDEN_WRITE` |
 
 기존 fixture 중 18과제에 쓰지 않는 것: `t1-bug-paginate`(SGL 대체 후보), `t3-explain-review`·`t3-korean-docs`(키워드 정규식 verifier 때문에 수락 근거 불가, §5.3 P7b), `t3-shell-count`(shell 도구 경로 보조), `L1-repo-dump`·`L1-repo-small`(컨텍스트 4K/8K/32K 층화용, 5.2 소관). 이들은 18과제의 점수에 섞지 않는다.
 
@@ -82,6 +97,8 @@ D는 개발, H는 holdout. `기존`은 재활용하는 fixture, `신규`는 새�
 
 필수 reject: 빈 report, report 없음, money.py만 기재, 존재하지 않는 경로 인용, 파일명을 산문으로만 언급(구조화 필드 없음), 파일 수정, 호출자 목록에 decoy 모듈 기재. 설계 §5.1 "키워드 포함만으로 pass 금지"를 따른다.
 
+change class는 `read_only_report`다. **변경 없는 workspace가 정답 상태**이므로 diff를 요구하지 않고 `report.json`의 존재·정확성과 trace로만 판정한다(H6은 invariant, 나머지 H는 report 산출물에 대한 delta: base에는 report가 없어 red). pristine reset·시작 hash 기록(§1-7)은 그대로 적용한다.
+
 ### 3.2 B4-SGL-D 단일 파일 (median)
 
 기존 프롬프트(`tasks.py` `t1-bug-median`)가 짝수 평균·빈 리스트 ValueError·`tests/` 수정 금지를 명시한다. docstring이 입력 비수정을 명시한다.
@@ -98,11 +115,15 @@ D는 개발, H는 holdout. `기존`은 재활용하는 fixture, `신규`는 새�
 
 필수 reject: no-op, `xs.sort()`로 입력 변경, 짝수에서 `//` 평균(2.5 대신 2), 빈 입력에 None 반환, 홀수만 고치고 짝수 누락, 항상 ValueError. 참조해는 `validate_tasks.py` `sol_median` 재사용.
 
+base 상태 확인(§5.4, CPU 실행함): H1·H2·H5는 base red→참조해 green(delta), H3·H4·H7은 양쪽 green(invariant). H6(tests 불변)은 4.2에서 구현 후 확인. change class `diff_required`.
+
 ### 3.3 B4-MUL-D 다중 파일 (inventory)
 
 기존 `s3-fix-inventory`. `inv/report.py` docstring이 "sorted by name … Numbers use thousands separators"를 명시하고, 프롬프트는 "테스트 실패, 소스 수정, tests/ 수정 금지"만 말한다.
 
-**프롬프트 개정 필요(spec gap):** 현 hidden은 수량(`5 x 2,000`)과 TOTAL의 천 단위 구분자, 빈 목록에서 `'TOTAL: 0'`을 검사하는데 프롬프트에 수량·빈 목록 규칙이 없고 docstring의 "Numbers"가 수량까지 가리키는지 모호하다. 설계 §5.1 원칙 4에 따라 프롬프트에 "가격·수량·TOTAL 모든 숫자에 천 단위 구분자, 빈 목록은 `TOTAL: 0`"을 명시하는 rev2를 만들거나 해당 hidden을 빼야 한다. 과거 B 다중 파일 실패(공개 테스트 통과 후 hidden의 천 단위 출력 누락)가 이 경계와 관련됐는지는 1.2에서 행 단위로 확인해야 한다(확인 필요).
+**프롬프트 개정 필요(spec gap):** 현 hidden은 수량(`5 x 2,000`)과 TOTAL의 천 단위 구분자, 빈 목록에서 `'TOTAL: 0'`을 검사하는데 프롬프트에 수량·빈 목록 규칙이 없고 docstring의 "Numbers"가 수량까지 가리키는지 모호하다. 설계 §5.1 원칙 4에 따라 프롬프트에 "가격·수량·TOTAL 모든 숫자에 천 단위 구분자, 빈 목록은 `TOTAL: 0`"을 명시하는 rev2를 만든다(해당 hidden을 빼는 대안은 채택하지 않는다).
+
+**1.2 감사로 확정된 과거 사례(P1-2):** `C_opt.jsonl` 60행(`cmoe-t6-ub256-ctx4k-default`, `s3-fix-inventory`, rep 1, 같은 task×rep의 2번째 attempt, `end_reason=truncated`, wall 336.4초, 11 tool calls)은 공개 테스트까지 통과시켰으나 hidden이 `alpha: 5 x 2,000\nmid: 10 x 10\nzeta: 1,000,000 x 1\nTOTAL: 1,010,100`와의 정확 일치에서 실패했다(`hidden_ok=false`, `unittest_ok=true`). 원 raw 행의 `hidden_out`은 마지막 300자만 있어 모델이 낸 실제 문자열은 raw에서 복원되지 않는다. 감사 보고서는 그것을 `5 x 2000`(수량 구분자 누락)으로 기술한다. 이 한 줄이 위 spec gap(수량 구분자)과 같은 경계를 가리키지만, 실제 출력 문자열은 감사 보고의 기술이며 raw로는 독립 확인하지 못했다(확인 필요). 이 사례를 **H3의 negative control `NC-A5`(수량 구분자 없음, `5 x 2000`)**로 고정하고, MUL-H에도 같은 종류(구분자·정규화 누락)의 출력 hidden을 둔다.
 
 | 요구 | hidden | 근거 |
 |---|---|---|
@@ -114,7 +135,9 @@ D는 개발, H는 holdout. `기존`은 재활용하는 fixture, `신규`는 새�
 | R6 `tests/` 불변 | H6 | 프롬프트 |
 | R7 두 경로 일관 | H7 `items.py`와 `report.py` 두 파일 모두 수정되어야 통과(한 파일만 고친 patch는 reject) | 설계 §5.1 |
 
-필수 reject: total만 수정, 정렬만 수정, 가격에만 구분자, 구분자 대신 `,` 하드코딩 문자열, `tests/` 삭제, 테스트 기대값만 수정. 참조해는 `sol_inventory` 재사용.
+필수 reject: total만 수정, 정렬만 수정, **`5 x 2000`처럼 가격에만 구분자(NC-A5)**, 구분자 대신 `,` 하드코딩 문자열, `tests/` 삭제, 테스트 기대값만 수정. 참조해는 `sol_inventory` 재사용.
+
+base 상태 확인(§5.4, CPU 실행함): H1(합계)·H3(수량 구분자)는 base red→참조해 green(delta), H5(빈 목록 `TOTAL: 0`)는 base에서도 green(invariant). change class `diff_required`, 필수 변경 경로는 `inv/items.py`와 `inv/report.py` 둘 다.
 
 ### 3.4 B4-API-D REST (신규)
 
@@ -138,7 +161,7 @@ D는 개발, H는 holdout. `기존`은 재활용하는 fixture, `신규`는 새�
 
 ### 3.5 B4-DBG-D 디버깅 (rules 60함수, rev2)
 
-**fixture 결함(직접 확인):** 기존 `t4-long-file`은 프롬프트가 "test_rule_043이 실패한다"고 말하지만, 미수정 workspace에서 공개 `unittest`가 **통과한다**(§5.3 P1, `unittest_ok=True`). 이유는 공개 test의 입력 60·100·-5가 clamp 뒤 3의 배수라서 `y/3+7`이 27.0·37.0·7.0이고 `27.0==27`이 참이기 때문이다. 실제 실패는 hidden의 `isinstance(int)`와 61 입력(`61/3+7=27.333…`)에서만 드러난다(산술 확인함). 따라서 이 fixture는 "stack trace·log에서 원인 추적"이라는 유형에 맞지 않는다.
+**fixture 결함(직접 확인):** 기존 `t4-long-file`은 프롬프트가 "test_rule_043이 실패한다"고 말하지만, 미수정 workspace에서 공개 `unittest`가 **통과한다**(§5.3 P1, `unittest_ok=True`). 이유는 공개 test의 입력 60·100·-5가 clamp 뒤 3의 배수라서 `y/3+7`이 27.0·37.0·7.0이고 `27.0==27`이 참이기 때문이다. 실제 실패는 hidden의 `isinstance(int)`와 61 입력(`61/3+7=27.333…`)에서만 드러난다(산술 확인함). 따라서 이 fixture는 "stack trace·log에서 원인 추적"이라는 유형에 맞지 않는다. 이 Run에서 CPU로 재확인했다(`evidence/4.1/verify_delta_and_trap_output.json`: 미수정 base의 공개 unittest green, `rule_043(61)==27` red).
 
 rev2(신규 작성): 공개 test에 `rule_043(61)==27`을 추가해 미수정 상태에서 실제로 실패하게 하고, `logs/ci_failure.log`는 **빌드 시 CPU로 실행한 실제 출력**을 저장한다(손으로 쓴 로그 금지). 파일 안 주석("scale must use floor division by 3")은 그대로 요구 근거다.
 
@@ -191,7 +214,9 @@ rev2(신규 작성): 공개 test에 `rule_043(61)==27`을 추가해 미수정 �
 
 기존 stage1 fixture(`task.txt`: 장바구니 합계 버그 수정, `apply_discount` 0~100 밖은 ValueError, `tests/test_pricing.py`에 -1·101 테스트 추가). `pricing.py` docstring이 half-up과 범위를 명시한다.
 
-**내장 trap(산술 확인함):** 가장 흔한 첫 수정 `round(price*(100-percent)/100)`은 Python 은행가 반올림 때문에 `apply_discount(1005,50)`에서 502.5→**502**를 내서 공개 test `==503`을 실패시킨다. 첫 patch 뒤 `run_tests`가 실제로 실패하고 모델이 정수 산술 등으로 다시 고쳐야 한다. 별도 오류 주입(스크립트된 CI 메시지, 도구 오류 주입)은 harness 구현이 필요하므로 이 초안의 범위가 아니다. 4.2에서 "naive patch NP1이 공개 test에서 실패함"을 모델 없이 CPU로 확인해야 한다.
+**내장 trap(산술 확인함):** 가장 흔한 첫 수정 `round(price*(100-percent)/100)`은 Python 은행가 반올림 때문에 `apply_discount(1005,50)`에서 502.5→**502**를 내서 공개 test `==503`을 실패시킨다. 첫 patch 뒤 `run_tests`가 실제로 실패하고 모델이 정수 산술 등으로 다시 고쳐야 한다. 별도 오류 주입(스크립트된 CI 메시지, 도구 오류 주입)은 harness 구현이 필요하므로 v1 범위가 아니다. **이 trap은 이 Run에서 CPU로 확인했다**(`evidence/4.1/verify_delta_and_trap_output.json`): 미수정 base의 공개 unittest는 3건 실패, cart 수정과 `round()` 패치(NP1)를 함께 적용하면 `FAILED (failures=1)`이고 실패는 `503`을 기대하는 half-up test이며, 정수 산술 `(p*(100-pct)*2+100)//200` 패치는 3건 OK다. 단 이는 trap이 존재한다는 확인일 뿐 어떤 모델이 이 경로를 밟는지는 모른다. holdout REC-H에도 같은 방식의 사전 확인을 4.2에서 요구한다.
+
+과거 `verify_fixture.py`의 두 checker는 서로 다르다. 과거본(`verify_fixture.py.orig`, sha256 `9ed432cb…`)은 `new_test_covers_bounds`가 문자열 존재만 검사해 주석 한 줄(`# ValueError -1 101`)만 있는 test도 PASS했고, 현행본(`003d178f…`)은 실제 discovery와 경계 mutation을 요구해 이를 FAIL시킨다(`verifier_case_summary.csv`). **현행본도 final-state checker여서 이미 정답인 workspace와 유효한 test가 있으면 no-op을 PASS한다.** 따라서 REC는 §1-7·§1-8의 reset·delta 규칙 없이는 수락 근거가 될 수 없다. change class `diff_required`.
 
 | 요구 | hidden | 출처 |
 |---|---|---|
@@ -203,7 +228,7 @@ rev2(신규 작성): 공개 test에 `rule_043(61)==27`을 추가해 미수정 �
 | R6 기존 `test_cart.py` 불변 | H6 | 신규 |
 | R7 복구 trace | H7 (측정 항목, 성공 판정 아님) 첫 patch 뒤 실패→재편집→통과 순서를 trace에서 판정해 `trap_activated`, `recovered`, 재시도 비용을 기록 | 설계 §5.1 |
 
-과거 stage1 14턴/994.73초/6 tests(fx3)와 fx2 partial·테스트 미실행은 **1회 사례**다. 이 과제로의 성공 확대 해석을 금지한다. `verify_fixture.py`는 과거에 주석만 있는 test도 통과시킨 false positive가 있었고 그 뒤 mutation 방식으로 수정된 것으로 보이며(해시 `003d17…`, `.orig` 존재), 어느 버전이 어느 결과를 판정했는지는 1.2 확인 사항이다.
+과거 stage1 fx-improved-3의 14턴/994.73초/6 tests는 감사가 `WORK_LOG.md`와 `.runtime/logs/worker-runs.jsonl`의 `a0c73b28b621` 행으로 두 단계 추적한 **실제 당시 worker 영수증**이다(14 turns, `Bash=5/Read=5/Edit=3`, 수정 전 3 failure→수정 후 6 OK). 그러나 작은 Python 과제 1건의 사례이므로 이 과제나 다른 과제로의 성공 확대 해석을 금지한다. comment-only false positive는 이미 고쳐진 최종 fixture에서 경계 test 내용을 주석으로 바꿔 재검증할 때 생긴 것이라 과거 코드 실행 결과를 취소하지 않고 "새 경계 test가 실제 assertion이었다"는 세부 판정만 신뢰하지 않는다.
 
 ### 3.9 B4-LNG-D 장시간 다중 턴 (composite-A)
 
@@ -263,13 +288,15 @@ holdout 요건: (1) 요구↔hidden 매핑표와 gold·alt-gold·mutant·negativ
 
 ### 5.1 평가 절차 (제안)
 
-1. 모델 프로세스 종료 확인(프로세스 그룹 부재) 뒤 workspace를 snapshot하고 `git diff --binary`로 base 대비 patch를 만든다. patch hash를 기록한다.
+0. **시작 전 reset과 hash 고정(§1-7).** attempt마다 새 디렉터리에 pristine buggy fixture(`__pycache__`·`.git` 이력 없는 단일 base commit)를 복원하고 base tree hash와 파일별 sha256을 ledger에 기록한다. sealed 기준값과 다르면 모델 요청 없이 `INFRA_BASE_MISMATCH`로 attempt를 무효 처리하고 소요 시간을 기록한다. 종료 시점 파일별 sha256도 기록한다.
+1. 모델 프로세스 종료 확인(프로세스 그룹 부재) 뒤 workspace를 snapshot하고 `git diff --binary`로 **시작 snapshot(위 0) 대비** patch를 만든다. patch hash를 기록한다. `diff_required` 과제에서 patch가 비어 있으면 `FAIL_NOOP`이고, `read_only_report` 과제에서는 patch가 report 외 파일을 건드리면 `FAIL_FORBIDDEN_WRITE`다(§2.1).
 2. 새 평가 worktree를 base tree에서 만들고 patch를 적용한다. patch가 `tests/`의 동결 파일, `.git`, `conftest.py`, `sitecustomize.py`, `usercustomize.py`, `*.pth`, `pytest.ini`, evaluator 경로를 건드리면 `FAIL_FORBIDDEN_WRITE`.
 3. 동결 공개 test를 canonical 사본으로 복원해 실행하고, 그 뒤 sealed hidden을 복사해 실행한다. 모델이 쓴 `tests/`를 hidden 판정에 쓰지 않는다(TST 과제의 산출 test는 예외로 §3.7 방식으로만 사용).
 4. **종료 코드만 믿지 않는다.** hidden 러너는 nonce와 실행한 검사 수를 `HIDDEN_DONE <nonce> <n>` 형태로 출력하고, 기대 검사 수와 일치할 때만 성공이다. 줄이 없는 exit 0은 `FAIL_STUB_EXIT0`. unittest는 custom result로 수집 수·skip·expectedFailure를 읽는다.
 5. 평가 프로세스는 `python -I`로 실행해 환경변수·user site·cwd 경로를 줄이고, 네트워크 없음, 시간 제한, 프로세스 그룹 kill. 결과 receipt는 workspace 밖에 쓴다.
 6. 코딩 모델과 다른 검증 컨텍스트가 patch와 원시 명령/출력을 확인한다. LLM judge는 보조 설명 평가에만 쓰고 pass/fail에 관여하지 않는다.
-7. 구조화 보고(`status`, `changed_files`, `commands_run`, 과제별 필드)는 trace·diff와 대조한다. 대조 불일치는 `FAIL_REPORT_MISMATCH`로 분류하되 성공 판정에는 H 검사가 우선한다(보고가 틀려도 코드가 PASS면 `PASS`+`report_mismatch` 플래그를 남기고 성공률에서는 별도 열로 센다. 이 정책은 §6.7에서 결정).
+7. 구조화 보고(`status`, `changed_files`, `commands_run`, 과제별 필드)는 trace·diff와 대조한다. **대조 불일치는 `FAIL_REPORT_MISMATCH`이며 성공이 아니다.** 설계 §5.2의 "success는 public+hidden+요구행동+보고 근거가 충족된 경우에만"을 따른다(v1 결정). 코드만 PASS인 시도는 별도 열 `code_pass_report_mismatch`로도 센다.
+8. **시도 가치 판정 순서:** (a) 시작 hash 일치, (b) 금지 경로·우회 검사, (c) delta·invariant 검사, (d) 보고 대조. (a)가 틀리면 모델 평가가 아니다.
 
 ### 5.2 verdict와 실패 분류
 
@@ -292,11 +319,29 @@ verdict는 `PASS`, `FAIL`(모델 원인), `INFRA`(원인이 입증된 비모델 
 | FAIL_CAUSE_PATCH_MISMATCH | 원인 설명과 패치 불일치(DBG) |
 | FAIL_FALSE_DONE | 완료 보고했으나 위 FAIL 중 하나(플래그, 중복 계수 아님) |
 | FAIL_REPORT_MISMATCH | 보고가 trace·diff와 불일치 |
+| INFRA_BASE_MISMATCH | 시작 hash가 sealed 기준과 다름(무효 attempt, 비용은 기록) |
 | INFRA_* / TIMEOUT / GUARD_STOP / TELEMETRY_STALE / UNKNOWN | 비모델 원인 또는 미상. HTTP status·finish reason·error stage 보존 |
+
+**API·비모델 오류의 회계(1.2 감사 불변식):** 과거 C_opt의 `api_error` 26행(3+3+20: 양의 경과시간·응답 없음 3, 도구·completion 관측 3, wall 0초·응답 없음 20)은 raw에 HTTP status·body·server 식별자가 없어 **원인 unknown**이다. 같은 방식으로 원인 증거(HTTP status, error stage, server run/instance ID, 요청 body hash)가 없는 오류는 `UNKNOWN`으로 두고 임의로 INFRA로 제외하지 않는다. wall 0초 행은 비용에 포함하되 `zero_wall_no_response` 플래그를 달아 별도 집계한다(성공·실패·무시 어느 쪽으로도 조용히 처리하지 않는다). 재시도는 새 분모가 아니라 같은 `(task, repeat)` 키의 추가 비용이다(§6.4).
 
 ### 5.3 negative control과 기존 verifier probe 증거
 
-**필수 negative control 세트(4.2에서 모델 실행 전에 모두 수행):** N1 no-op, N2 주석·키워드만, N3 한 파일 누락, N4 test 삭제, N5 skip/xfail, N6 exit 0 stub, N7 checker monkeypatch(sitecustomize·conftest·`TestCase.run` 교체), N8 대상 없음·없는 경로 인용, N9 빈 결과·빈 report, N10 금지 경로 수정. 18과제 각각에 해당하는 N을 manifest `negative_controls`에 둔다. 양성 대조: gold와 alt-gold는 PASS해야 한다. 과제당 reject해야 할 부분 patch 목록은 §3의 "필수 reject"이다.
+**필수 negative control 세트(4.2에서 모델 실행 전에 모두 수행):** N1 no-op, N2 주석·키워드만, N3 한 파일 누락, N4 test 삭제, N5 skip/xfail, N6 exit 0 stub, N7 checker monkeypatch(sitecustomize·conftest·`TestCase.run` 교체), N8 대상 없음·없는 경로 인용, N9 빈 결과·빈 report, N10 금지 경로 수정, **N11 이미 정답인 workspace(시작 hash 불일치로 무효, 또는 pristine에서 no-op이면 FAIL_NOOP)**, **N12 주석에만 경계 조건을 적은 test(assertion 없음)**, **N13 빈 test 파일·수집 0건**, **N14 출력 정규화 누락(`5 x 2000`)**. 18과제 각각에 해당하는 N을 manifest `required_negative_controls`에 둔다. 양성 대조: gold와 alt-gold는 PASS해야 한다. 과제당 reject해야 할 부분 patch 목록은 §3의 "필수 reject"이다.
+
+**1.2 감사가 확정한 사례의 매핑(`verifier_case_summary.csv`, `checker_mutations.csv`):**
+
+| 감사 사례 | 과거 checker | 현행 checker | 이 명세의 negative control |
+|---|---|---|---|
+| `comment_only_correct_baseline`(경계 test 내용을 주석 `# ValueError -1 101`로 교체) | PASS(false positive) | FAIL | N12, REC·TST 필수. 평가기는 실제 discovery와 mutant 사망으로만 인정 |
+| `no_task_change_buggy_baseline`(코드 미수정+주석) | FAIL | FAIL | N1, N2 |
+| `no_op_already_satisfied_with_valid_tests` | PASS | PASS | **N11**, §1-7·§1-8로만 막힘. 두 checker 모두 막지 못함 |
+| `valid_tests_correct_baseline` | PASS | PASS | 양성 대조(gold) |
+| `test_file_deleted`, `test_file_missing` | FAIL | FAIL | N4, N3 |
+| `empty_test_file` | FAIL | FAIL | N13 |
+| `pricing_file_missing`(필수 source 누락) | FAIL | FAIL | N8(대상 없음), N3 |
+| raw 60행 `s3-fix-inventory`(`5 x 2,000` 정확 일치 실패) | n/a | n/a | N14=`NC-A5` |
+
+위 감사 사례는 stage1 shop fixture의 checker를 대상으로 한다. 이 Run의 §5.3 probe 14건은 `tasks.py` 계열 verifier를 대상으로 한 별개 검사이며, 둘의 결과를 하나의 verifier에 대한 결과로 합치지 않는다.
 
 **이번 Run의 모델 없는 probe(실제 실행, `evidence/4.1/`):** 기존 verifier(`tasks.py` HEAD 상태)를 /tmp 복사본에서 돌렸다. 환경은 Python 3.13.15, macOS 27.0, arm64이며 호출 방식은 `cd /tmp/bench-probe-4-1 && PYTHONDONTWRITEBYTECODE=1 python3 verifier_probe_existing.py /tmp/bench-probe-4-1/b`다.
 
@@ -313,7 +358,15 @@ verdict는 `PASS`, `FAIL`(모델 원인), `INFRA`(원인이 입증된 비모델 
 | P8 빈 todo_report | shell-count | reject | |
 | P9 한국어 보고만 | korean-docs | reject | |
 
-false positive는 14건 중 3건(P2, P6, P7b)이다. 이는 **verifier 결함의 존재 증거**이지 과거 모델 결과의 오염 정도를 보여주지 않는다. 과거 성공 행 중 이런 경로로 통과한 것이 있는지는 1.2에서 trace를 확인해야 한다(§8).
+false positive는 14건 중 3건(P2, P6, P7b)이다. 이는 **verifier 결함의 존재 증거**이지 과거 모델 결과의 오염 정도를 보여주지 않는다. 과거 성공 행 중 이런 경로로 통과한 것이 있는지는 감사 범위에 없었고 열려 있다(§8).
+
+### 5.4 요구 검사의 base 상태 확인과 참조해·누출 검사 (이 Run, 모델 없는 CPU)
+
+원스크립트·원출력은 `evidence/4.1/`에 있다. 환경: Python 3.13.15, macOS 27.0, arm64. 호출은 /tmp 복사본에서 `PYTHONDONTWRITEBYTECODE=1 python3 <script> <bench/2026-10-18 복사본> <stage1 경로>` 형태다. 소스 sha256은 §7과 같다.
+
+1. **참조해 재검증(`validate_tasks.py`):** 11개 기존 과제 모두 `untouched_fails=True solution_passes=True`, 마지막 줄 `BAD 0`. 이는 기존 hidden에 대한 확인이며 **개정된 hidden·프롬프트(rev2)·신규 과제의 참조해 검토는 4.2에 남는다.** `untouched_fails`는 hidden+unittest 합산이고 `t4-long-file`은 공개 unittest 단독으로는 green이다(§3.5).
+2. **delta/invariant 확인(`verify_delta_and_trap.py`):** 개발 과제의 선택한 검사 11건이 모두 기대대로다. delta(base red, 참조해 green): SGL.H1·H2·H5, MUL.H1·H3, REF.H1. invariant(양쪽 green): SGL.H3·H4·H7, MUL.H5, REF.H4. 다른 H 검사, API·TST·LNG 전체, holdout 전체는 구현 전이라 **미확인**이며 4.2에서 같은 방식으로 확인해야 한다. shop trap 확인은 §3.8.
+3. **정적 누출 스캔(`leak_scan_dev.py`, 자동 추출, 완전하지 않음):** hidden 코드 문자열에서 추출한 리터럴(문자열 4자 이상, 정수 100 이상)이 프롬프트·비테스트 소스·공개 test에 나타나는지 봤다. SGL·MUL에서는 프롬프트·비테스트 소스 hit이 없다(MUL은 공개 test의 `100` 하나가 overlap). TST·REF·DBG·REC의 hit은 전부 프롬프트가 이미 명시한 식별자·파일명(`test_discount.py`, `clean`, `common.py`, `rules.py`), 소스에 원래 있는 `def rule_` 같은 구문 조각, 또는 docstring이 명시한 범위(100, 101)이며 기대값 누출로 보이지 않는다(자동 분류를 사람이 읽고 판정). REC는 공개 `test_cart.py`가 hidden과 같은 값(849, 503, 850, 999, 1005)을 포함하는데 이는 docstring의 half-up 규칙에서 도출되는 spec 기반 중복(public_test_overlap)으로 분류한다. **한계:** 정수 100 미만(63, 27 등)과 짧은 문자열은 스캔 밖이므로 누출이 없다는 증명이 아니다. 4.2에서 hidden 전체 리터럴과 gold diff hunk를 대상으로 확장하고 holdout에도 적용한다.
 
 ## 6. 실행 프로토콜 고정값 (사전등록 계획값, 실측 아님)
 
@@ -324,12 +377,12 @@ false positive는 14건 중 3건(P2, P6, P7b)이다. 이는 **verifier 결함의
 | 항목 | 계획값 |
 |---|---|
 | 정식 표본 | 18과제×3반복=54시도/profile. 개발 9×3=27, holdout 9×3=27 |
-| 파일럿 | B4-SGL-D, B4-MUL-D, B4-TST-D 각 2회=6시도(호환성·verifier 오류 탐지용, 수락 근거 아님) |
+| 파일럿 | B4-SGL-D, B4-MUL-D, B4-TST-D 각 2회=6시도(호환성·verifier 오류 탐지용, 수락 근거 아님. 과거 165.0초·239.7초와 비교하지 않음, §2) |
 | 반복 id | r ∈ {1,2,3} |
 | seed | `seed = r*100 + turn_index`(과거 `agentbench.py`의 호출 규칙과 연속). seed를 지원하지 않거나 적용을 읽어서 확인하지 못한 엔진은 seed 통제를 주장하지 않는다 |
 | 같은 pair | 동일 task×r×seed를 FlashNext와 후보에 같은 prompt hash·tool 집합으로 준다 |
 | 순서 | task 순서는 `sha256(task_set_revision)`로 시드한 순열을 모든 profile이 공유. profile 간 AB/BA는 r의 홀짝으로 교차 |
-| 시간 블록 | 3반복은 서로 다른 시간 블록. 같은 서버 프로세스를 공유(적재 비용을 반복마다 3배 하지 않기 위함). 서버 재시작 반복은 baseline의 noise floor 측정에만 선택적으로 사용. 이 선택은 §6.7에서 결정 |
+| 시간 블록 | 3반복은 서로 다른 시간 블록. 같은 서버 프로세스를 공유(적재 비용을 반복마다 3배 하지 않기 위함). 서버 재시작 반복은 baseline의 noise floor 측정에만 선택적으로 사용(v1 결정: 정식 표본은 profile당 1회 적재, 4.3이 재확인) |
 
 ### 6.2 출력·시간·thinking 예산 (설계 §5.5 초기안과 동일)
 
@@ -357,9 +410,16 @@ sampling: temperature 0.6(과거 선례), 그 밖의 top_p·top_k는 엔진 기�
 
 ### 6.4 전체 비용 기록 (attempt ledger 필드)
 
-attempt 행은 변경하지 않는 기록이다. 필드: `attempt_id, task_id, split, profile_id, repeat, seed_scheme, prompt_sha256, workspace_base_sha, enqueue_ts, lease_acquire_ts, load_start_ts, ready_ts, first_request_ts, first_token_ts, last_token_ts, tool_time_s, verify_time_s, cleanup_time_s, retry_of, end_reason, verdict, fail_code, trace_sha256, patch_sha256, evaluator_sha256, sealed_bundle_sha256(holdout만), http_status/finish_reason/error_stage per call, prompt_tokens/cached/completion/reasoning tokens, telemetry samples ref`. 분해: queue, acquire, load→ready, TTFT(first request→first streamed token; `prompt_tokens/pp_rate`로 대체 금지), prefill, decode, tool/명령, 검증, 복구·재배정, end-to-end. 모델 선택 시간과 handoff 시간도 campaign 비용에 포함한다.
+attempt 행은 변경하지 않는 기록이다. 1.2 감사가 지적한 raw 결측(HTTP status, server run/instance ID, model artifact hash가 attempt에 없음)을 막기 위해 **아래 필드는 결측 불가**이고, 비어 있으면 그 attempt는 비교 표에 들어가지 않고 `UNKNOWN`으로 남는다. 필드: `attempt_id, task_id, split, profile_id, repeat, seed_scheme, prompt_sha256, workspace_base_sha, base_tree_sha, file_sha256_at_start{path: sha256}, file_sha256_at_end{path: sha256}, server_run_id, server_instance_id, model_artifact_sha256, engine_build, config_digest, enqueue_ts, lease_acquire_ts, load_start_ts, ready_ts, first_request_ts, first_token_ts, last_token_ts, tool_time_s, verify_time_s, cleanup_time_s, retry_of, end_reason, verdict, fail_code, trace_sha256, patch_sha256, evaluator_sha256, sealed_bundle_sha256(holdout만), http_status/finish_reason/error_stage per call, prompt_tokens/cached/completion/reasoning tokens, telemetry samples ref`. 분해: queue, acquire, load→ready, TTFT(first request→first streamed token; `prompt_tokens/pp_rate`로 대체 금지), prefill, decode, tool/명령, 검증, 복구·재배정, end-to-end. 모델 선택 시간과 handoff 시간도 campaign 비용에 포함한다.
 
 완료 비용 정의는 설계 §5.3을 그대로 쓴다: `campaign 전체 경과시간 / 검증된 고유 작업 완료 수`. 분모는 evaluator의 PASS만 센다. 성공이 0이면 N/A와 총비용을 표시한다. 모델 비교는 local-only, cloud fallback 없음.
+
+**회계 불변식(1.2 감사에서 채택):**
+1. attempt 행 1개는 ledger 1행이다. 중복·재시도·0초·API 오류·timeout·truncation 행을 제외하지 않고 행 단위로 보존한다(과거 C_opt는 61행 전부 manifest에 있고 제외 0행).
+2. 성공 분모는 설정(profile)별 고유 `(task, repeat)` 키다. 재시도는 새 분모가 아니라 같은 키의 추가 비용이다. 서로 다른 설정 사이에 task×repeat가 겹치므로 설정을 가로질러 성공 행을 독립 표본 수나 하나의 성공률로 합치지 않는다(과거 성공 raw행 29개는 그렇게 합산하지 않았다).
+3. 비용에는 실패와 재시도 시간이 포함된다. 성공 시도만의 평균을 오류 비용 포함 지표 대신 쓰지 않는다(과거 t8: 오류 포함 성공당 239.7초 vs 성공 시도 평균 184.7초).
+4. 병렬 실행에서 task wall 합과 batch elapsed를 구분하고 throughput 시간은 batch elapsed를 쓴다(과거 conc2: 개별 wall 합 589.1초는 경과시간이 아니고 batch 310.1초, 직렬 대조 254.4초).
+5. E2E는 setup, 서버 start→ready, load, agent loop, cleanup, 독립 hidden/mutation 채점, 재시도 비용을 나누어 기록하고 전체 wall을 함께 낸다. generation tok/s와 코딩 E2E는 다른 지표다.
 
 ### 6.5 정량 gate 인용
 
@@ -369,14 +429,19 @@ attempt 행은 변경하지 않는 기록이다. 필드: `attempt_id, task_id, s
 
 구조화 보고 공통 필드: `status`, `changed_files[]`, `commands_run[]`, `notes`. 과제별 추가: EXP는 report 파일, DBG는 `root_cause`, LNG의 T5는 파일별 변경 JSON. 모델의 "완료"와 evaluator verdict는 독립이다. trace에는 실제 검색→읽기→편집→명령 이벤트와 시각이 남아야 한다. 답변 코드만 내거나 trace가 없는 시도는 성공이 아니다.
 
-### 6.7 결정 필요 항목 (이 초안이 정하지 않은 것)
+### 6.7 결정 사항 (v1)
 
-1. 서버 재시작을 반복마다 할지(§6.1).
-2. 보고-diff 불일치를 성공 판정에서 실패로 볼지, 플래그로만 둘지(§5.1-7).
-3. DBG의 "재현 없이 편집"(H1)을 gating으로 할지 측정 항목으로 둘지.
-4. holdout 번들의 최종 위치와 접근 차단 수준(§4.2).
-5. 도구 오류·CI 메시지 주입을 REC 과제에 추가할지(harness 구현 필요, 별도 WBS).
-6. 컨텍스트 압축·resume·이벤트 기반 취소를 harness가 지원하는지(2.x 결과).
+v1에서 정한 것:
+
+1. **서버 재시작:** 정식 표본은 profile당 1회 적재하고 3반복은 서로 다른 시간 블록으로 둔다. 재시작 반복은 baseline의 noise floor 측정에만 선택적으로 쓴다. 4.3이 재확인한다.
+2. **보고-diff 불일치:** 실패(`FAIL_REPORT_MISMATCH`)로 센다(§5.1-7). 설계 §5.2의 성공 정의를 따른 것이다.
+3. **DBG의 재현 전 편집:** 성공 판정의 gating이 아니라 측정 항목(`reproduced_before_edit`)으로 기록한다. 프로세스를 이유로 정답 patch를 실패시키지 않는다.
+
+이 문서가 정하지 않고 넘기는 것(§9 잔여 과제와 같다):
+
+4. holdout 번들의 최종 위치와 접근 차단 수준. 디렉터리 생성과 Seatbelt read 거부 deny 테스트는 운영자 조치가 필요하다(§4.2).
+5. 도구 오류·CI 메시지 주입을 REC 과제에 넣을지. harness 구현이 필요하므로 별도 WBS이며 v1 과제에는 포함하지 않는다.
+6. 컨텍스트 압축·resume·이벤트 기반 취소를 harness가 지원하는지. 2.2가 반례 2건으로 재작업 중이므로 v1은 harness 동작에 의존하는 주장을 하지 않고, 지원되지 않으면 해당 층을 `unsupported`로 기록한다.
 
 ## 7. 기존 fixture 재활용 매핑
 
@@ -388,35 +453,52 @@ attempt 행은 변경하지 않는 기록이다. 필드: `attempt_id, task_id, s
 | `bench/2026-10-18-longctx/longtasks.py` `L1-repo-explore` | EXP-D, LNG-D의 decoy | 읽기 전용 과제로 개정, answer key AST 계산 | `a3c4022c7fceca2a732ce0a0fc82dd071da9e29e6353a8badb82546aee7c63aa` |
 | `/Users/winterholic/testing/qwen-worker-stage1/fixture-template` | REC-D | 첫 patch trap의 CPU 사전 확인 | `cart.py b088cc83…`, `pricing.py c70d9e01…`, `test_cart.py d6f4d63c…` |
 | `…/qwen-worker-stage1/task.txt` | REC-D 프롬프트 | | `3a4849e00d30b83c8bcab9d95d4b8e5b9169436ad410b919ff2974fd5743b42b` |
-| `…/qwen-worker-stage1/verify_fixture.py` | REC-D 평가의 mutation 방식 | evaluator 규격으로 이관 | `003d17…`(전체 해시는 manifest) |
+| `…/qwen-worker-stage1/verify_fixture.py` | REC-D 평가의 mutation 방식 | evaluator 규격으로 이관, final-state checker라는 한계는 §1-7·§1-8로 보완 | 현행 `003d178fc682315bf6dfbd9478a29060d9818b5f2de65a13f29cb25621605584`, 과거 `.orig` `9ed432cb121bfc7f2698362f5b8af80edc45652a2792c48a05799b15cdaa5ec2`(감사 보고서와 일치, v1 작성 때 재계산) |
 | `evalbase/qc.py` | 호출 필드 선례(`finish`, `http_status`, `error_phase`) | dirty 파일이라 근거로 삼지 않고 필드 이름만 참고 | `7e678473…`(작업 트리 값, 수정 중) |
 
-## 8. 원자료 감사(WBS 1.2) 결과 미반영 체크리스트
+## 8. 원자료 감사(WBS 1.2) 결과 반영 현황
 
-1.2는 이 초안 작성 시점에 진행 중이며 결과가 없다. 아래는 결과가 나오면 이 명세에 반영해야 하는 항목이다. 전부 **미반영**이다.
+1.2 감사가 끝났고 메인이 raw 61행 / 136,608 bytes / SHA256 `d525733d010a2efa284ee6b40a8d5c10c31db1a8fbf8cbbdff2c3733e1362be0`, manifest 61행 coverage, t6 성공당 165.0초·t8 239.7초를 직접 재집계했다. 이 문서는 감사 산출물(`audit_recount.json`, CSV)을 정본으로 읽었고, 아래 항목은 반영 위치를 적는다. 열린 항목은 열린 채로 둔다.
 
-- [ ] 감사가 고정한 `qwen-local-harness` revision과 파일 hash로 §7 해시를 갱신(현재 dirty tree 기준, `evalbase/qc.py` 등 수정 중).
-- [ ] 61행 재집계의 "누락행 0" 결과와 정정 revision 연결(`raw/C_opt.jsonl` 61행, sha `d525733d…`, 2026-10-23 확인한 현재 값이 설계 §14 snapshot과 같음. `C_table.md`도 같음).
-- [ ] 6/6·agent wall 990.1초·성공당 165.0초의 3과제가 `t1-bug-median`, `s3-fix-inventory`, `t3-write-tests`(`optbench.py` 기본값)임을 raw 행으로 확정하고, 새 verifier로 재판정한 값을 파일럿 비교 기준에 연결.
-- [ ] 병렬 대조 310.1초 대 254.4초의 "같은 2과제"가 어느 과제인지 확정.
-- [ ] API 26건의 실패·원인 unknown 분류. 이 초안은 API26 기반 수치를 쓰지 않았다.
-- [ ] 과거 verifier 변경 이력(`cb8ef81` 이후)과 각 결과 행이 어느 verifier 버전으로 판정됐는지. 이번 probe는 **현재 HEAD** 기준이다.
-- [ ] §5.3의 false positive 3건(P2, P6, P7b)이 과거 성공 행의 trace에서 실제로 쓰였는지 검사(`os._exit`, 인라인 복제, 키워드 나열).
-- [ ] `t4-long-file`: 공개 test가 미수정에서 통과하는데 프롬프트가 실패를 전제한 점이 과거 성공률에 미친 영향.
-- [ ] B 다중 파일 inventory "공개 통과·hidden 천 단위 누락" 행의 식별과 §3.3 spec gap과의 일치 여부.
-- [ ] stage1 fx2·fx3 판정에 쓴 `verify_fixture.py` 버전(`.orig` 포함)과 14턴/994.73초 기록의 연결.
-- [ ] timeout·0초 행·mock 대상 오류 행의 처리.
-- [ ] 위 결과로 §3·§5.3의 "필수 reject"와 negative control 목록 갱신.
+| 항목 | 상태 | 반영 위치·메모 |
+|---|---|---|
+| 감사 고정 hash와 §7 소스 hash | 반영함 | `C_opt.jsonl`, `C_table.md`, `verify_fixture.py`(현행·`.orig`), `tasks.py` 등 sha256을 다시 계산해 감사와 같음 확인. `qwen-local-harness` HEAD는 작성 중 전진했고 fixture 소스 hash는 그대로 |
+| 61행 manifest coverage, 제외 0 | 반영함 | `attempt_manifest.csv`의 `raw_line` 1..61을 직접 확인. 성공 raw행 29, API 오류 26, wall 0초 20, timeout 1 |
+| 6/6·성공당 165.0초의 3과제 | 확정 | `cmoe-t6-ub256-ctx4k-low`가 `s3-fix-inventory`, `t1-bug-median`, `t3-write-tests` 6행(모두 성공). 새 E2E 직접 비교 기준에서 제외(§2) |
+| 병렬 대조 310.1초 대 254.4초 | 확정 | 두 설정 모두 `t1-bug-median`, `t3-write-tests`만(각 설정 기대 6키 중 4키). 589.1초는 경과시간이 아님(§6.4-4) |
+| API 26건 원인 unknown | 반영함 | §5.2. 3(양의 경과·응답 없음)+3(도구/completion 관측)+20(wall 0초). 감사 보고서 본문의 6+6+20 표기는 전사 오류이며 JSON·CSV가 정본 |
+| comment-only false positive | 반영함 | N12, §5.3 매핑. 과거 checker만 PASS, 현행 FAIL |
+| 빈/누락 test, 대상 없음 | 반영함 | N13, N4, N3, N8 |
+| inventory `5 x 2,000` hidden | 반영함 | §3.3, N14=NC-A5. 실제 출력 문자열은 감사 보고의 기술이며 raw로 독립 복원하지 못함 |
+| pristine reset, 시작 hash, 요구 변경 대조 | 반영함 | §1-7·§1-8·§5.1-0, N11 |
+| 탐색 전용 과제와 수정 필수 과제 구분 | 반영함 | §1-9, §2.1 |
+| 14턴 기록의 범위 | 반영함 | §3.8. 1건 사례, 영수증 `a0c73b28b621` |
+| 4B/FlashNext 분리, 16일 Common30·10/17 31행 correction | 이 명세는 사용하지 않음 | 코딩 과제 점수에 섞지 않는다는 설계 §5.1을 유지 |
+| 10/17 efficiency 원 raw(`raw_data.zip`) | **열림(보류)** | 지정 경로와 검색한 outbox에서 발견하지 못함. 원 JSONL 독립 추적은 미완이며 31행 CSV correction 수준으로만 재사용 가능. 이 명세는 그 수치를 쓰지 않았고, 원본이 찾아지기 전에는 쓰지 않는다 |
+| P2·P6·P7b가 과거 성공 행에서 실제로 쓰였는지 | **열림** | 감사 보고에서 언급을 찾지 못함. trace에 `os._exit`, 인라인 복제, 키워드 나열이 있는지 별도 확인 필요 |
+| `tasks.py` 계열 verifier의 변경 이력과 행별 판정 버전 | **열림** | 감사는 stage1 checker의 과거·현행만 비교. C_opt 행의 판정에 쓰인 `tasks.py` 계열 verifier 버전 매핑은 미확인 |
+| `t4-long-file` 전제 불일치가 과거 성공률에 미친 영향 | **열림** | fixture 결함 자체는 반영(§3.5). 과거 행 영향은 미확인 |
+| mock 대상 오류 행 처리 | **열림** | 감사 보고에서 언급을 찾지 못함 |
+| fx2 partial·테스트 미실행 기록의 checker 연결 | **부분** | fx3 영수증과 checker 재검증은 감사가 추적. fx2는 감사에서 별도 확인하지 못함 |
 
-4.1을 최종 확정하려면 1.2 결과 반영, §6.7 결정 6건 해소, §4.2 접근 차단 검증 계획 승인이 필요하다. 그 전에는 draft-0이다.
+## 9. 확정 범위, 미검증 범위, 잔여 과제
 
-## 9. 미검증 범위
+**4.1이 확정한 것:** 18과제 명세(유형·분할·fixture 출처·요구↔hidden 매핑·필수 reject·change class), 평가 경계와 실패 분류, negative control 세트, holdout 구조 제약과 보호 방침, 실행 프로토콜 계획값, 감사 반영 현황.
 
-- 어떤 fixture도 구현하지 않았으므로 gold·alt-gold·mutant·negative control의 실제 동작은 **미검증**이다. 각 과제의 "필수 reject" 판정 가능성과 hidden의 오탐 여부는 4.2에서 CPU로 확인해야 한다.
+**미검증(이 Run에서 확인하지 못함):**
+- fixture·gold·alt-gold·mutant·negative control의 실제 동작. 개정한 hidden과 rev2 프롬프트의 오탐 여부. §5.4는 기존 hidden 일부와 shop trap만 확인했다.
 - B4-API, B4-DBG rev2, B4-LNG 합성, 모든 holdout은 존재하지 않는다.
-- Seatbelt read 거부·네트워크 차단·resume·이벤트 취소·thinking readback·slot 비우기 지원은 확인하지 않았다.
+- Seatbelt read 거부, 네트워크 차단, resume, 이벤트 취소, thinking readback, slot 비우기 지원, 컨텍스트 압축 발생.
 - §6의 숫자 전부가 사전등록 계획값이다. 실측 결과로 인용하지 않는다.
-- probe는 14건이며 verifier 전체의 신뢰도를 증명하지 않는다.
+- probe와 스캔은 개발 fixture 일부에 대한 검사이며 verifier 전체의 신뢰도나 누출 없음을 증명하지 않는다.
+
+**4.2로 넘기는 잔여 과제:**
+1. 모든 과제에서 delta/invariant 분류를 base와 gold에서 CPU로 확인(§1-8), 필수 reject·N1~N14 실행, gold·alt-gold 작성과 독립 검토.
+2. MUL rev2 프롬프트, DBG rev2(공개 test와 실제 실행 failure log), LNG composite 합성과 턴 문안 hash 고정, EXP answer key AST 계산, API fixture, REC gold.
+3. evaluator의 handshake·`python -I`·patch 적용 경로·시작 hash 검사, 누출 스캔을 hidden 전체 리터럴과 gold hunk로 확장.
+4. holdout 9개 작성과 sealed 번들 구성(작성 컨텍스트 분리).
+
+**운영자 조치와 외부 의존:** holdout 번들 위치 생성과 Seatbelt/네트워크 deny 테스트(§4.2). 2.2(하네스 수정 독립 검증)는 반례 2건으로 재작업 중이며 그 결과에 따라 resume·취소·압축 층의 지원 여부가 정해진다. 10/17 efficiency 원 raw 확보 전에는 해당 자료를 쓰지 않는다. 열린 §8 항목(P2·P6·P7b의 과거 trace 사용, `tasks.py` 계열 verifier 판정 버전 매핑, `t4-long-file`의 과거 영향, mock 대상 오류)은 별도 확인이 필요하다.
 
 ## 부록 A. 이번 Run의 원명령과 출력 요약
 
@@ -433,5 +515,17 @@ attempt 행은 변경하지 않는 기록이다. 필드: `attempt_id, task_id, s
 probe 파일 hash: `verifier_probe_existing.py` `44d161fa53115b93def792b28577cb42c0790e5e8e0c3b717e3466be1286a013`, `verifier_probe_output.json` `b9991292007e7feafd9fef2c8c521fd0236de87da263343c4c3f8f5392dcda52`.
 
 probe 스크립트는 첫 실행 뒤 push 게이트(ruff)를 통과시키려고 import 정리, 파일 열기 방식, 포맷만 바꿨다. 로직은 같고, 바뀐 스크립트로 재실행한 출력이 첫 출력과 바이트 단위로 같음을 cmp로 확인했다(위 해시는 바뀐 스크립트 기준).
+
+**v1 추가 실행(1.2 반영 뒤, 모두 /tmp 복사본·모델 없음, Python 3.13.15 / macOS 27.0 / arm64):**
+
+| 명령 | 핵심 출력 |
+|---|---|
+| `shasum -a 256 tasks.py stage3.py validate_tasks.py longtasks.py verify_fixture.py verify_fixture.py.orig` | §7 값과 동일(`2ca19a31…`, `291343d7…`, `dcd09bf0…`, `a3c4022c…`, `003d178f…`, `9ed432cb…`) |
+| `python3 validate_tasks.py`(복사본) | 11과제 모두 `untouched_fails=True solution_passes=True`, `BAD 0` |
+| `python3 verify_delta_and_trap.py <bench 복사본> <fixture-template>` | claims 12건 전부 `claim_holds=true`, shop: pristine 3건 실패, naive `round()` 패치 `FAILED (failures=1)`, 정수 half-up 패치 `OK` |
+| `python3 leak_scan_dev.py <bench 복사본> <stage1>` | §5.4-3 요약 |
+| `ruff check`·`ruff format` | 새 스크립트 2개 통과(push 게이트 대비) |
+
+v1 증거 파일 6개(`evidence/4.1/`)의 sha256은 manifest `evidence_files`에 전부 기록했다(스크립트는 ruff 통과 상태에서 해시했고 출력은 그 스크립트의 실행 결과다).
 
 차단 기록: `~/.ttakkari` 아래 도구 결과 파일 읽기와 outbox 디렉터리 목록 조회, 재귀 삭제는 ttakkari guard가 막았다. 우회하지 않고 worktree에서 문서를 다시 읽거나 삭제 없이 진행했다.

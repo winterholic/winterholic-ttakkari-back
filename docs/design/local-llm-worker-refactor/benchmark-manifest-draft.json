@@ -1,14 +1,15 @@
 {
- "manifest_revision": "draft-0",
- "final": false,
+ "manifest_revision": "v1",
+ "final": true,
  "planned_values_only": true,
- "note": "Pre-registered planned values, not measurements. Blocked: WBS 1.2 raw audit in progress; do not mark 4.1 done or start 4.2.",
+ "note": "Pre-registered planned values, not measurements. WBS 1.2 audit received (main re-verified raw 61 rows / 136608 bytes / sha256 d525733d...e1362be0). Remaining items listed in open_items.",
  "wbs": {
   "task": "4.1",
   "pms_task_id": "7bad4b21-2a0c-45d2-9934-2cf7a1871e89",
   "project_id": "0b1a2a57-eb19-4da0-b572-ab783d6a6735",
   "predecessor": "f4a5ab31-4d6c-4107-917f-40f83b29e94d",
-  "predecessor_status_at_writing": "doing"
+  "predecessor_status_at_writing": "doing",
+  "predecessor_status_at_v1": "audit complete per main; re-verified by main"
  },
  "base_main": "474e034a684935e2c3d863820b5e7b0d3ffdc7b7",
  "design_doc": "docs/design/local-llm-worker-refactor.md",
@@ -44,11 +45,17 @@
   "N7": "checker monkeypatch (sitecustomize/conftest/TestCase.run)",
   "N8": "missing target / nonexistent path cited",
   "N9": "empty result or empty report / zero collected",
-  "N10": "forbidden path write"
+  "N10": "forbidden path write",
+  "N11": "pre-solved workspace (state-only checker passes no-op); invalid by start hash, or FAIL_NOOP from pristine",
+  "N12": "boundary conditions only in comments, no assertions",
+  "N13": "empty test file / zero tests collected",
+  "N14": "output normalization omission (e.g. '5 x 2000' vs '5 x 2,000') = NC-A5"
  },
  "evaluator": {
   "boundary": "outside agent write roots; patch applied to clean worktree from base tree; canonical public tests restored; sealed hidden copied after patch; handshake nonce + executed-check count; python -I; no network",
-  "verified": false
+  "verified": false,
+  "start_state": "pristine fixture reset per attempt; base tree hash and per-file sha256 recorded before first request; mismatch = INFRA_BASE_MISMATCH",
+  "success_requires": "start hash match, no forbidden writes, all delta checks green (>=1), invariants green, report reconciles with trace/diff"
  },
  "holdout_protection": {
   "sealed_bundle_path_proposed": "/Users/winterholic/bench-sealed/local-llm-holdout-r1/",
@@ -66,7 +73,8 @@
     "B4-MUL-D",
     "B4-TST-D"
    ],
-   "repeats": 2
+   "repeats": 2,
+   "note": "compatibility/verifier-error detection only; not compared with past 165.0s/239.7s"
   },
   "attempts_formal_per_profile": 54,
   "seed_scheme": "seed = repeat*100 + turn_index (precedent: agentbench.py call rule); no determinism claim unless engine applies and reads back seed",
@@ -146,7 +154,17 @@
   "per_call_finish_reason",
   "per_call_error_stage",
   "token_counts",
-  "telemetry_ref"
+  "telemetry_ref",
+  "base_tree_sha",
+  "file_sha256_at_start",
+  "file_sha256_at_end",
+  "server_run_id",
+  "server_instance_id",
+  "model_artifact_sha256",
+  "engine_build",
+  "config_digest",
+  "zero_wall_no_response_flag",
+  "code_pass_report_mismatch"
  ],
  "fail_codes": [
   "FAIL_NOOP",
@@ -166,6 +184,7 @@
   "FAIL_CAUSE_PATCH_MISMATCH",
   "FAIL_FALSE_DONE",
   "FAIL_REPORT_MISMATCH",
+  "INFRA_BASE_MISMATCH",
   "INFRA_*",
   "TIMEOUT",
   "GUARD_STOP",
@@ -181,17 +200,8 @@
   ],
   "script_sha256": "44d161fa53115b93def792b28577cb42c0790e5e8e0c3b717e3466be1286a013",
   "output_sha256": "b9991292007e7feafd9fef2c8c521fd0236de87da263343c4c3f8f5392dcda52",
-  "scope": "current HEAD verifiers only; model-free; not a statement about past result rows"
+  "scope": "tasks.py-family verifiers at current files; separate from the audit's stage1 checker cases"
  },
- "audit_1_2_unreflected": true,
- "open_decisions": [
-  "restart server per repeat",
-  "report-diff mismatch counts as fail or flag",
-  "DBG reproduce-before-edit gating",
-  "holdout bundle final location/isolation level",
-  "fault/CI-message injection for REC",
-  "harness support for compaction/resume/event-cancel"
- ],
  "tasks": [
   {
    "id": "B4-EXP-D",
@@ -223,10 +233,10 @@
    "budget_class": "short",
    "required_negative_controls": [
     "N1",
+    "N2",
     "N8",
     "N9",
-    "N10",
-    "N2"
+    "N10"
    ],
    "positive_controls": [
     "gold",
@@ -250,7 +260,13 @@
    "known_defects": [
     "no read-only task variant exists",
     "answer key not yet computed"
-   ]
+   ],
+   "change_class": "read_only_report",
+   "check_classes": {
+    "H6": "invariant"
+   },
+   "check_classes_cpu_verified_at_base": [],
+   "check_classes_note": "H1-H5,H7,H8 are delta on the report artifact (absent at base)"
   },
   {
    "id": "B4-EXP-H",
@@ -264,10 +280,10 @@
    "budget_class": "short",
    "required_negative_controls": [
     "N1",
+    "N2",
     "N8",
     "N9",
-    "N10",
-    "N2"
+    "N10"
    ],
    "positive_controls": [
     "gold",
@@ -287,7 +303,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "read_only_report",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-SGL-D",
@@ -321,7 +339,8 @@
     "N4",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -345,6 +364,24 @@
    "known_defects": [
     "tests/ immutability not checked",
     "mean() unchanged not checked"
+   ],
+   "change_class": "diff_required",
+   "check_classes": {
+    "H1": "delta",
+    "H2": "delta",
+    "H3": "invariant",
+    "H4": "invariant",
+    "H5": "delta",
+    "H6": "invariant",
+    "H7": "invariant"
+   },
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H7"
    ]
   },
   {
@@ -363,7 +400,8 @@
     "N4",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -383,7 +421,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "diff_required",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-MUL-D",
@@ -418,7 +458,9 @@
     "N4",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11",
+    "N14"
    ],
    "positive_controls": [
     "gold",
@@ -441,8 +483,25 @@
    },
    "reference_solution": "exists:validate_tasks.py#sol_inventory",
    "known_defects": [
-    "prompt does not state qty separators or empty-list line (spec gap)"
-   ]
+    "prompt does not state qty separators or empty-list line (spec gap)",
+    "past C_opt raw line 60 failed hidden exact match on '5 x 2,000' (audit P1-2)"
+   ],
+   "change_class": "diff_required",
+   "check_classes": {
+    "H1": "delta",
+    "H2": "delta",
+    "H3": "delta",
+    "H4": "delta",
+    "H5": "invariant",
+    "H6": "invariant",
+    "H7": "delta"
+   },
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H3",
+    "H5"
+   ],
+   "prompt_status": "rev2 required (state qty/total separators and empty-list line)"
   },
   {
    "id": "B4-MUL-H",
@@ -461,7 +520,9 @@
     "N4",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11",
+    "N14"
    ],
    "positive_controls": [
     "gold",
@@ -481,7 +542,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "diff_required",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-API-D",
@@ -520,7 +583,8 @@
     "N6",
     "N7",
     "N9",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -539,7 +603,20 @@
    "reference_solution": "to_write",
    "known_defects": [
     "fixture does not exist"
-   ]
+   ],
+   "change_class": "diff_required",
+   "check_classes": {
+    "H1": "delta",
+    "H2": "delta",
+    "H3": "delta",
+    "H4": "delta",
+    "H5": "delta",
+    "H6": "delta",
+    "H7": "invariant",
+    "H8": "delta",
+    "H9": "invariant"
+   },
+   "check_classes_cpu_verified_at_base": []
   },
   {
    "id": "B4-API-H",
@@ -558,7 +635,8 @@
     "N6",
     "N7",
     "N9",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -578,7 +656,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "diff_required",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-DBG-D",
@@ -614,7 +694,8 @@
     "N6",
     "N7",
     "N8",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -638,7 +719,19 @@
    "known_defects": [
     "public unittest passes on untouched workspace (probe P1) though prompt claims a failing test",
     "no real failure log"
-   ]
+   ],
+   "change_class": "diff_required",
+   "check_classes": {
+    "H1": "process_metric",
+    "H2": "delta",
+    "H3": "invariant",
+    "H4": "delta",
+    "H5": "delta",
+    "H6": "delta",
+    "H7": "invariant"
+   },
+   "check_classes_cpu_verified_at_base": [],
+   "check_classes_note": "rev2 fixture needed; base public unittest green on current t4-long-file (CPU-confirmed)"
   },
   {
    "id": "B4-DBG-H",
@@ -658,7 +751,8 @@
     "N6",
     "N7",
     "N8",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -678,7 +772,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "diff_required",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-REF-D",
@@ -713,7 +809,8 @@
     "N4",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -736,6 +833,20 @@
    "reference_solution": "exists:validate_tasks.py#sol_dedupe",
    "known_defects": [
     "verifier is string-based; inline copy + comment passes (probe P6)"
+   ],
+   "change_class": "diff_required",
+   "check_classes": {
+    "H1": "delta",
+    "H2": "delta",
+    "H3": "delta",
+    "H4": "invariant",
+    "H5": "delta",
+    "H6": "invariant",
+    "H7": "invariant"
+   },
+   "check_classes_cpu_verified_at_base": [
+    "H1",
+    "H4"
    ]
   },
   {
@@ -755,7 +866,8 @@
     "N4",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11"
    ],
    "positive_controls": [
     "gold",
@@ -775,7 +887,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "diff_required",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-TST-D",
@@ -813,7 +927,10 @@
     "N6",
     "N7",
     "N9",
-    "N10"
+    "N10",
+    "N11",
+    "N12",
+    "N13"
    ],
    "positive_controls": [
     "gold",
@@ -837,7 +954,19 @@
    "known_defects": [
     "hidden_ok does not require gold pass (probe P4)",
     "test count by regex"
-   ]
+   ],
+   "change_class": "diff_required",
+   "check_classes": {
+    "H1": "delta",
+    "H2": "delta",
+    "H3": "delta",
+    "H4": "delta",
+    "H5": "delta",
+    "H6": "delta",
+    "H7": "delta",
+    "H8": "invariant"
+   },
+   "check_classes_cpu_verified_at_base": []
   },
   {
    "id": "B4-TST-H",
@@ -857,7 +986,10 @@
     "N6",
     "N7",
     "N9",
-    "N10"
+    "N10",
+    "N11",
+    "N12",
+    "N13"
    ],
    "positive_controls": [
     "gold",
@@ -877,7 +1009,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "diff_required",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-REC-D",
@@ -913,7 +1047,10 @@
     "N5",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11",
+    "N12",
+    "N13"
    ],
    "positive_controls": [
     "gold",
@@ -941,8 +1078,21 @@
    "reference_solution": "to_write (no gold patch found)",
    "known_defects": [
     "naive-patch trap (round() half-even) not yet CPU-confirmed against public test",
-    "which verify_fixture version judged past runs unknown (1.2)"
-   ]
+    "which verify_fixture version judged past runs unknown (1.2)",
+    "current verify_fixture.py is final-state only: pre-solved workspace + valid tests passes no-op (audit P1-3)"
+   ],
+   "change_class": "diff_required",
+   "check_classes": {
+    "H1": "delta",
+    "H2": "delta",
+    "H3": "delta",
+    "H4": "delta",
+    "H5": "delta",
+    "H6": "invariant",
+    "H7": "process_metric"
+   },
+   "check_classes_cpu_verified_at_base": [],
+   "check_classes_note": "trap CPU-confirmed: naive round() patch fails public half-up test; integer half-up patch passes"
   },
   {
    "id": "B4-REC-H",
@@ -962,7 +1112,10 @@
     "N5",
     "N6",
     "N7",
-    "N10"
+    "N10",
+    "N11",
+    "N12",
+    "N13"
    ],
    "positive_controls": [
     "gold",
@@ -982,7 +1135,9 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "diff_required",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2"
   },
   {
    "id": "B4-LNG-D",
@@ -1032,7 +1187,10 @@
     "N6",
     "N7",
     "N8",
-    "N10"
+    "N10",
+    "N11",
+    "N12",
+    "N13"
    ],
    "positive_controls": [
     "gold",
@@ -1062,7 +1220,23 @@
     "composite workspace not built",
     "turn script text not frozen",
     "resume/cancel hooks unverified"
-   ]
+   ],
+   "change_class": "mixed",
+   "check_classes": {
+    "H2": "invariant",
+    "H7": "invariant",
+    "H10": "invariant",
+    "H12": "invariant"
+   },
+   "check_classes_cpu_verified_at_base": [],
+   "check_classes_note": "other checks delta per turn; H13/H14 session checks; T5 is read_only_report (no diff)",
+   "turn_change_class": {
+    "T1": "diff_required",
+    "T2": "diff_required",
+    "T3": "diff_required",
+    "T4": "diff_required",
+    "T5": "read_only_report"
+   }
   },
   {
    "id": "B4-LNG-H",
@@ -1082,7 +1256,10 @@
     "N6",
     "N7",
     "N8",
-    "N10"
+    "N10",
+    "N11",
+    "N12",
+    "N13"
    ],
    "positive_controls": [
     "gold",
@@ -1102,7 +1279,88 @@
    "reference_solution": "to_write_sealed",
    "known_defects": [],
    "sealed_bundle_ref": null,
-   "never_executed_by_any_model": true
+   "never_executed_by_any_model": true,
+   "change_class": "mixed",
+   "check_classes": "must mirror paired dev task structure; verified at base by CPU in 4.2",
+   "turn_change_class": {
+    "T1": "diff_required",
+    "T2": "diff_required",
+    "T3": "diff_required",
+    "T4": "diff_required",
+    "T5": "read_only_report"
+   }
   }
- ]
+ ],
+ "final_scope": "WBS 4.1 task/spec definition only. 4.2 (fixtures, gold, hidden, mutants, evaluator) not started.",
+ "audit_1_2": {
+  "evidence_dir": "local-llm-worker-design-20261023:docs/design/local-llm-worker-refactor/evidence-audit/",
+  "raw_c_opt": {
+   "bytes": 136608,
+   "lines": 61,
+   "sha256": "d525733d010a2efa284ee6b40a8d5c10c31db1a8fbf8cbbdff2c3733e1362be0"
+  },
+  "authoritative_for_numbers": [
+   "audit_recount.json",
+   "attempt_manifest.csv",
+   "config_summary.csv"
+  ],
+  "api_error_rows": {
+   "total": 26,
+   "positive_elapsed_no_response": 3,
+   "response_or_tool_observed": 3,
+   "zero_elapsed_no_response": 20,
+   "cause": "unknown"
+  },
+  "note_report_typo": "audit-report body had 6+6+20; corrected to 3+3+20 by main; JSON/CSV are authoritative",
+  "past_costs_not_a_direct_baseline": {
+   "t6_success_cost_s": 165.0,
+   "t8_success_cost_s": 239.7,
+   "reason": "exclude setup, server start->ready, final hidden/mutation grading; differing output caps/effort; no server/model identity per attempt"
+  },
+  "stage1_checker": {
+   "past_sha256": "9ed432cb121bfc7f2698362f5b8af80edc45652a2792c48a05799b15cdaa5ec2",
+   "current_sha256": "003d178fc682315bf6dfbd9478a29060d9818b5f2de65a13f29cb25621605584"
+  },
+  "deferred": "2026-10-17 efficiency raw_data.zip not found; original JSONL audit incomplete; numbers from it are not used"
+ },
+ "open_items": [
+  "P2/P6/P7b past-row trace usage not checked (not found in audit report)",
+  "tasks.py-family verifier version per C_opt row not mapped",
+  "t4-long-file premise mismatch effect on past success rates unknown",
+  "mock-target error rows: no mention found in audit report",
+  "fx2 partial run checker linkage",
+  "holdout bundle location + Seatbelt/network deny test (operator action, 4.3)",
+  "fault/CI-message injection for REC: separate WBS, not in v1",
+  "harness resume/cancel/compaction support: depends on 2.2 (rework after 2 counterexamples)"
+ ],
+ "decisions_v1": {
+  "server_restart": "one load per profile; 3 repeats in separate time blocks; restart only for optional baseline noise-floor",
+  "report_mismatch": "counts as failure (FAIL_REPORT_MISMATCH); also report column code_pass_report_mismatch",
+  "dbg_reproduce_before_edit": "non-gating metric reproduced_before_edit"
+ },
+ "attempt_ledger_required_non_missing": [
+  "server_run_id",
+  "server_instance_id",
+  "model_artifact_sha256",
+  "engine_build",
+  "config_digest",
+  "base_tree_sha",
+  "file_sha256_at_start",
+  "per_call_http_status"
+ ],
+ "accounting_invariants": [
+  "one raw row = one ledger attempt; duplicates/retries/zero-wall/api errors/timeouts kept",
+  "denominator = unique (task, repeat) per profile; retries add cost, not denominators; no cross-profile pooling of success rows",
+  "failure and retry cost included; success-only means never replace all-attempt cost",
+  "task wall sum != batch elapsed; throughput uses batch elapsed",
+  "E2E split: setup, start->ready, load, agent loop, cleanup, independent grading, retries; plus total wall"
+ ],
+ "evidence_files": {
+  "evidence/4.1/verifier_probe_existing.py": "44d161fa53115b93def792b28577cb42c0790e5e8e0c3b717e3466be1286a013",
+  "evidence/4.1/verifier_probe_output.json": "b9991292007e7feafd9fef2c8c521fd0236de87da263343c4c3f8f5392dcda52",
+  "evidence/4.1/verify_delta_and_trap.py": "dccf154eda11fcb51885384ff21a216c3ca910c3012ad85061e0be21893282bf",
+  "evidence/4.1/verify_delta_and_trap_output.json": "745d9e3b1455ce8107294845c42cbdd6af66b5a5baecf6bd6915f05b99824483",
+  "evidence/4.1/leak_scan_dev.py": "6d5185c9690811570402d0978b4cdb8540b7cc91403cbe4acb2b9d4eaab27c22",
+  "evidence/4.1/leak_scan_dev_output.json": "9d7eb576bf239f7934f6949bdd538202c2d7d02583f5836175db3a45dabcd017"
+ }
 }

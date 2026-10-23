@@ -1,0 +1,114 @@
+{
+ "claims": [
+  {
+   "task": "t1-bug-median",
+   "claim": "SGL.H1 even average",
+   "kind": "delta",
+   "green_at_base": false,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t1-bug-median",
+   "claim": "SGL.H2 empty ValueError",
+   "kind": "delta",
+   "green_at_base": false,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t1-bug-median",
+   "claim": "SGL.H3 odd",
+   "kind": "invariant",
+   "green_at_base": true,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t1-bug-median",
+   "claim": "SGL.H4 no input mutation",
+   "kind": "invariant",
+   "green_at_base": true,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t1-bug-median",
+   "claim": "SGL.H5 negatives",
+   "kind": "delta",
+   "green_at_base": false,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t1-bug-median",
+   "claim": "SGL.H7 mean unchanged",
+   "kind": "invariant",
+   "green_at_base": true,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "s3-fix-inventory",
+   "claim": "MUL.H1 total",
+   "kind": "delta",
+   "green_at_base": false,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "s3-fix-inventory",
+   "claim": "MUL.H5 empty report",
+   "kind": "invariant",
+   "green_at_base": true,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "s3-fix-inventory",
+   "claim": "MUL.H3 qty separator",
+   "kind": "delta",
+   "green_at_base": false,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t2-refactor-dedupe",
+   "claim": "REF.H1 common.clean exists",
+   "kind": "delta",
+   "green_at_base": false,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t2-refactor-dedupe",
+   "claim": "REF.H4 behaviour",
+   "kind": "invariant",
+   "green_at_base": true,
+   "green_at_reference": true,
+   "claim_holds": true
+  },
+  {
+   "task": "t4-long-file",
+   "claim": "DBG public unittest green at base; rule_043(61)==27 red at base",
+   "kind": "fixture-defect",
+   "green_at_base": true,
+   "green_at_reference": null,
+   "claim_holds": true
+  }
+ ],
+ "shop_trap": {
+  "pristine": {
+   "public_unittest_green": false,
+   "tail": "1000  ---------------------------------------------------------------------- Ran 3 tests in 0.000s  FAILED (failures=3) "
+  },
+  "naive_round_patch": {
+   "public_unittest_green": false,
+   "tail": " 503  ---------------------------------------------------------------------- Ran 3 tests in 0.000s  FAILED (failures=1) "
+  },
+  "integer_half_up_patch": {
+   "public_unittest_green": true,
+   "tail": "... ---------------------------------------------------------------------- Ran 3 tests in 0.000s  OK "
+  }
+ }
+}

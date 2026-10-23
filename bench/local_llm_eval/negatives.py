@@ -29,13 +29,14 @@ def neg(
     verdict: str = "FAIL",
     start: Callable | None = None,
     report: Callable | None = None,
+    session: dict | None = None,
 ) -> Negative:
     def end(base: Files, gold: list[Files]) -> list[Files]:
         prev = base if stage == 0 else gold[stage - 1]
         mutated = mutate(dict(prev), dict(gold[stage]), base)
         return [dict(g) for g in gold[:stage]] + [mutated] * (len(gold) - stage)
 
-    return Negative(id_, name, end, verdict, expect, start, report)
+    return Negative(id_, name, end, verdict, expect, start, report, session)
 
 
 def m_noop(prev: Files, gold: Files, base: Files) -> Files:

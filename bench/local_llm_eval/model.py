@@ -67,6 +67,7 @@ class Negative:
     report: (
         Callable[[dict[str, str], list[dict[str, str]]], list[dict | None]] | None
     ) = None
+    session: dict | None = None  # overrides Task.gold_session when set
 
 
 @dataclass
@@ -82,6 +83,7 @@ class Task:
     gold_reports: (
         Callable[[dict[str, str], list[dict[str, str]]], list[dict | None]] | None
     ) = None
+    gold_session: dict | None = None
     negatives: list[Negative] = field(default_factory=list)
     sources: dict[str, str] = field(default_factory=dict)
     notes: str = ""

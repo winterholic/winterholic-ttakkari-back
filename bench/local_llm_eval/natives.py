@@ -178,7 +178,12 @@ def _empty_code(info: dict) -> str:
     return "FAIL_COMMENT_ONLY" if info["has_comments"] else "FAIL_EMPTY_RESULT"
 
 
-def suite_collected(check_id: str, spec: SuiteSpec, requirement: str = "") -> Check:
+def suite_collected(
+    check_id: str,
+    spec: SuiteSpec,
+    requirement: str = "",
+    kind: str = codes.KIND_DELTA,
+) -> Check:
     def run(ctx: Ctx) -> CheckOutcome:
         data = _suite_cache(ctx, spec)
         structural = _structural_run_failure(data["gold"])
@@ -193,10 +198,15 @@ def suite_collected(check_id: str, spec: SuiteSpec, requirement: str = "") -> Ch
             )
         return CheckOutcome(True, metrics={"tests": count})
 
-    return Check(check_id, codes.KIND_DELTA, requirement, native=run)
+    return Check(check_id, kind, requirement, native=run)
 
 
-def suite_gold_pass(check_id: str, spec: SuiteSpec, requirement: str = "") -> Check:
+def suite_gold_pass(
+    check_id: str,
+    spec: SuiteSpec,
+    requirement: str = "",
+    kind: str = codes.KIND_DELTA,
+) -> Check:
     def run(ctx: Ctx) -> CheckOutcome:
         data = _suite_cache(ctx, spec)
         structural = _structural_run_failure(data["gold"])
@@ -217,11 +227,15 @@ def suite_gold_pass(check_id: str, spec: SuiteSpec, requirement: str = "") -> Ch
             )
         return CheckOutcome(True)
 
-    return Check(check_id, codes.KIND_DELTA, requirement, native=run)
+    return Check(check_id, kind, requirement, native=run)
 
 
 def suite_kills(
-    check_id: str, spec: SuiteSpec, mutant_names: tuple[str, ...], requirement: str = ""
+    check_id: str,
+    spec: SuiteSpec,
+    mutant_names: tuple[str, ...],
+    requirement: str = "",
+    kind: str = codes.KIND_DELTA,
 ) -> Check:
     def run(ctx: Ctx) -> CheckOutcome:
         data = _suite_cache(ctx, spec)
@@ -239,10 +253,15 @@ def suite_kills(
             return CheckOutcome(False, "FAIL_HIDDEN", f"mutants survived: {survivors}")
         return CheckOutcome(True, metrics={"killed": list(mutant_names)})
 
-    return Check(check_id, codes.KIND_DELTA, requirement, native=run)
+    return Check(check_id, kind, requirement, native=run)
 
 
-def suite_quality(check_id: str, spec: SuiteSpec, requirement: str = "") -> Check:
+def suite_quality(
+    check_id: str,
+    spec: SuiteSpec,
+    requirement: str = "",
+    kind: str = codes.KIND_DELTA,
+) -> Check:
     def run(ctx: Ctx) -> CheckOutcome:
         info = _suite_cache(ctx, spec)["info"]
         if info["parse_error"]:
@@ -261,7 +280,7 @@ def suite_quality(check_id: str, spec: SuiteSpec, requirement: str = "") -> Chec
             )
         return CheckOutcome(True, metrics={"tests": info["tests"]})
 
-    return Check(check_id, codes.KIND_DELTA, requirement, native=run)
+    return Check(check_id, kind, requirement, native=run)
 
 
 def unchanged_paths(

@@ -395,7 +395,7 @@ async def _run_asset_generation(plan_id: str, revision: int) -> None:
             default_plan_store(),
             plan_id,
             revision,
-            ManagedAssetGenerator(),
+            ManagedAssetGenerator(loop=asyncio.get_running_loop()),
         )
     except asset_generation.AssetGenerationError:
         # 실패 상세는 자산 생성 service가 production.json에 기록한다.

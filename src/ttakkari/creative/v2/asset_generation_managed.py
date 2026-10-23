@@ -45,10 +45,13 @@ class ManagedAssetGenerator:
     engine_id = "creative-v2.managed-comfy+supertonic+acestep"
     version = "wan22-5b-draft+local-supertonic+acestep-v15-turbo"
 
-    def __init__(self, *, controller=None, store=None, clock=time.monotonic):
+    def __init__(self, *, controller=None, store=None, clock=time.monotonic, loop=None):
         self._controller = controller
         self._store = store
         self._clock = clock
+        # generate()는 worker thread 에서 돈다. TTS 실행 예산(generation.work, DB 풀)은 서버 이벤트 루프에 묶여 있어
+        # 새 루프(asyncio.run)에서 쓰면 "attached to a different loop" 로 실패하므로 그 루프에서 실행한다.
+        self._loop = loop
 
     @property
     def controller(self):
@@ -392,15 +395,14 @@ class ManagedAssetGenerator:
         temporary.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
         temporary.replace(path)
 
-    @staticmethod
-    def _synthesize_voice(text: str, staging_root: Path) -> tuple[Path, dict[str, Any]]:
+    def _synthesize_voice(self, text: str, staging_root: Path) -> tuple[Path, dict[str, Any]]:
         """Run the existing Supertonic provider under its shared concurrency budget."""
         from ttakkari.tts import cache, service
 
         async def run() -> tuple[Path, dict[str, Any]]:
             settings = get_settings()
-            if len(text) > settings.local_tts_max_chars:
-                raise RuntimeError(f"장면 대본이 Supertonic 글자 수 제한을 넘습니다: {len(text)}")
+            if len(text) > settings.local_tts_max_text_chars:
+                raise RuntimeError(f"장면 대본이 Supertonic 글자 수 제한 {settings.local_tts_max_text_chars}자를 넘습니다: {len(text)}")
             plan = service.make_plan(text, None, None, settings=settings)
             staging = staging_root / uuid.uuid4().hex
             staging.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -439,6 +441,9 @@ class ManagedAssetGenerator:
                 "output_sha256": hashlib.sha256(voice_bytes).hexdigest(),
             }
 
+        loop = self._loop
+        if loop is not None and loop.is_running():
+            return asyncio.run_coroutine_threadsafe(run(), loop).result()
         return asyncio.run(run())
 
     @staticmethod

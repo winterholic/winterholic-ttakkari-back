@@ -54,7 +54,7 @@ flowchart LR
 5. **executor 교체**: signal/ownership 종료 경로에서 queued_work/background/TTS 새 claim을 먼저 닫는다. 진행 Run/runtime work/각 pending drain 완료를 기다리고 이후 자식·서비스를 정리한다. 유한 drain timeout 후 자연 완료를 계속 기다릴 수 있다. 무기한 cleanup 실패를 퇴역 성공으로 보고하지 않는다.
 6. **local rollback**: API local 경로는 STT/TTS/background/주기 및 Creative/Game 소비자를 다시 시작할 수 있어야 한다. 세대 draining→active는 claim pause를 resume하고 residual watcher를 취소·join한다. lifespan 재진입은 claim 스위치를 reopen한다. 종료의 1,800초 예산 초과 취소는 executor 자연 완료와 다른 계약이다. 실서비스 rollback/restart 증거는 아직 없다.
 7. **외부 controller**: 배포/retire의 소유자는 기존 외부 controller다. API/Run 내부에서 launchctl·재시작·운영 proxy 조작을 하지 않는다. 첫 bootstrap 유휴 예외를 일반 무중단 전환 성공으로 확장하지 않는다.
-8. **migration**: 단일 head는 `0071_library_platform_v2_merge`, 부모는 기존 library0068과 executor queue0070을 유지한다. DB 복수 version row는 거절한다. merge를 한 부모로 downgrade하면 다른 branch가 남으므로 완전 복원이라고 부르지 않는다. 실제 PostgreSQL 왕복·backup restore는 미검증이다.
+8. **migration**: 단일 head는 `0071_library_platform_v2_merge`, 부모는 기존 library0068과 executor queue0070을 유지한다. DB 복수 version row는 거절한다. merge를 한 부모로 downgrade하면 다른 branch가 남으므로 완전 복원이라고 부르지 않는다. 후속 격리 PostgreSQL 왕복은 아래에 기록했으며, 운영 backup restore는 미검증이다.
 
 ## 요구·증거·미완료 연결
 
@@ -63,8 +63,12 @@ flowchart LR
 | P0 | `p1-current-inventory-review.md`의 운영 예약 d56455c8 메타데이터 | 현재 serving/실시간 ownership, 백업·복원 영수증, 비교 가능한 성능 기준선 |
 | P1 | backend 현 snapshot + 이번 frontend/runtime/tests delta | helper15, 신규 화면 의미/권한/상태, loader byte binding, 배포 shell/설정 의미 및 실시간 자원 소유권 |
 | P2 | 본 계약과 원래 요구/13산출물/9시나리오의 연결 | 운영 E2E 근거·전체 산출물/PMS 최종 대조; 문서 통합만으로 done 아님 |
-| P3/S2/INT | 3a49526 residual 교정, a3a29ec merge, 2fde901 fail-closed. 각 범위의 과거 검사는 기존 원문 재사용 | 새 정확 후보 DB9건·library 통합·전체 gate·독립 residual; 과거 전체gate 수치를 현재 후보로 인용하지 않음 |
+| P3/S2/INT | 3a49526 residual 교정, a3a29ec merge, 2fde901 fail-closed. 각 범위의 과거 검사는 기존 원문 재사용 | 후속 격리 DB9건·library 통합 통과는 아래 참조. 현재 후보 전체 gate·독립 residual은 미완료; 과거 전체gate 수치를 현재 후보로 인용하지 않음 |
 | FND1 | `fnd1-transport-completion-guard.md`, `fnd1-native-graceful-verdict.md` 및 반례 JSON | 요구와 양립하는 최초 전환 경로 미해결; 새 lease/fence/번들로 우회하지 않음 |
 | P4/P5/P6 | Step2~6 source 배선과 도메인별 좁은 증거 | Core 무배포 독립 변경/릴리스, 진행 accepted work·장기 Run 보존, 요청 전환·격리·rollback/restart, 실제 모델 응답/MCP/재개·보안·사용자 E2E·검증된 재배포 |
 
 known `initdb shmget Operation not permitted`은 Codex 명령 샌드박스에서의 관측이다. 변경 없는 재시도나 다른 interpreter/engine을 통한 동일 거부 우회를 하지 않는다. 승인된 기존 DB 검증 경로/영수증을 먼저 찾고 그 범위 안에서 진행한다. main push와 배포 예약은 계속 보류한다.
+
+## 2026-10-25 격리 DB 후속
+
+위 미완료 표는 source6f9802a 시점이다. 이후 d31e3a0에서 test-only 접속 helper와 0048 검사 범위를 교정했고, 주입된 Run 테스트 PostgreSQL17.11에서 migration9건·library/실행부6파일161건·DB helper39건(범위 중복 합산 금지)을 확인했다. 실제 main0068→merge0071에서 보관 의도 metadata 보존, merge→한부모 downgrade시 두 version행 잔류, 공통조상0067→head schema/합성 payload 왕복을 실행했다. 운영backup restore·전체gate·FND1·P4/P6 완료가 아니다. [정확한 명령·결과·한계](../../../review/platform-v2/20261025/db-validation-followup.md)와 [변경3입력 manifest](../../../review/platform-v2/20261025/p1-db-correction-manifest.json)를 우선한다.

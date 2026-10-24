@@ -85,7 +85,7 @@ async def test_0048_adds_only_nullable_columns_and_downgrades_cleanly(migration_
         await conn.execute("INSERT INTO game_builds(id,game_id,seq,created_at) VALUES(gen_random_uuid(),$1,1,now())", game)
     finally:
         await conn.close()
-    await asyncio.to_thread(migrate, database, "head")
+    await asyncio.to_thread(migrate, database, "0048_game_active_build")
     assert await _columns(database, "game_projects") == projects_before | {"active_build_id"}
     assert await _columns(database, "game_builds") == builds_before | {"restored_from_id"}
     conn = await asyncpg.connect(database=database, host="localhost")

@@ -589,7 +589,17 @@ def use_cluster_env(cluster: Cluster) -> None:
 
 
 def localhost_database_url(database: str) -> str:
-    """alembic 자식 등 별도 프로세스에 넘기는 localhost URL. 클러스터가 떠 있으면 그 포트를 쓴다."""
+    """Keep the explicitly managed test cluster's credentials for Alembic children."""
+    if database == "ttakkari":
+        raise ValueError("migration requires an isolated loopback test database")
+    explicit = os.environ.get("TTAKKARI_TEST_DB")
+    if explicit:
+        from sqlalchemy.engine import make_url
+
+        url = make_url(explicit)
+        if url.host not in {"localhost", "127.0.0.1", "::1"} or not url.database or url.database == "ttakkari":
+            raise ValueError("migration requires an isolated loopback test database")
+        return url.set(database=database).render_as_string(hide_password=False)
     return (
         f"postgresql+asyncpg://localhost:{os.environ.get('PGPORT', '5432')}/{database}"
     )

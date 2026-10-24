@@ -1,0 +1,15 @@
+..F......                                                                [100%]
+=================================== FAILURES ===================================
+_________ test_0048_adds_only_nullable_columns_and_downgrades_cleanly __________
+tests/test_game_migration.py:90: in test_0048_adds_only_nullable_columns_and_downgrades_cleanly
+    assert await _columns(database, "game_builds") == builds_before | {"restored_from_id"}
+E   AssertionError: assert {'artifact_id...imed_at', ...} == {'artifact_id...ated_at', ...}
+E     
+E     Extra items in the left set:
+E     'claimed_at'
+E     'queue_state'
+E     Use -v to get more diff
+db reset: 9 selective (avg 1.2/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_game_migration.py::test_0048_adds_only_nullable_columns_and_downgrades_cleanly
+1 failed, 8 passed, 25 deselected in 11.79s

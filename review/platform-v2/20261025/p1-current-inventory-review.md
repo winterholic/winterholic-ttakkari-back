@@ -53,3 +53,7 @@ MCP `ops_list_deploys(limit=3)`와 `backend_deploy_status(job_id='596947fc-f72d-
 연결 PMS의 9개 항목을 실제 조회했고 P3.1 하나만 done, 나머지 8개는 미완료다. 상태를 완료로 올리지 않았다.
 
 P1 전체는 review를 유지한다. frontend/runtime/test 분모의 현 후보 정합화와 기능 의미 대조가 남는다. P0 백업/복원·실시간 소유권·성능, P2 계약 통합, FND1 자동 전환, 실제 DB 왕복/DB 9건·library 통합·전체 gate·독립 residual 검증·P4/P6 운영 실증도 남는다. 알려진 initdb shmget 거부는 재시도하지 않았다. main push와 운영 배포는 계속 보류한다.
+
+## 후속 frontend/runtime/tests 및 DB 대조
+
+backend source snapshot을 다시 수집하지 않았다. [현재 frontend/runtime/test delta](p1-frontend-runtime-tests-review.md)는 backend6f9802a와 frontend 원격main da9d98dd를 구분한다. 뒤의 test-only DB 교정3입력은 [추가 manifest](p1-db-correction-manifest.json), 실제 PostgreSQL 검증과 남은 운영 경계는 [DB 후속](db-validation-followup.md)에 별도로 기록했다. 이 원문의 과거 미검증 목록을 현재 실패/성공 상태로 단독 인용하지 않는다.

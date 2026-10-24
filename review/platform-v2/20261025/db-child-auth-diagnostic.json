@@ -1,0 +1,28 @@
+{
+  "environment": "root Codex command sandbox, explicitly injected isolated Run test DB",
+  "source_revision": "d31e3a097b0739f4e9e638e3333456548574bd43",
+  "command": [
+    ".venv/bin/alembic",
+    "current"
+  ],
+  "managed_readonly_preflight": "PostgreSQL 17.11; successful",
+  "helper_matches_managed_port": true,
+  "managed_url_has_username": true,
+  "managed_url_has_password": true,
+  "helper_has_username": false,
+  "helper_has_password": false,
+  "child_exit": 1,
+  "stderr_tail": [
+    "  File \"/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py\", line 205, in greenlet_spawn",
+    "    value = await result",
+    "            ^^^^^^^^^^^^",
+    "  File \"/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py\", line 378, in create",
+    "    cls._handle_exception_no_connection(dbapi, error)",
+    "    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^",
+    "  File \"/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py\", line 840, in _handle_exception_no_connection",
+    "    raise translated_error from error",
+    "sqlalchemy.exc.DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) password authentication failed for user \"winterholic\"",
+    "(Background on this error at: https://sqlalche.me/e/21/dbapi)"
+  ],
+  "created_owned_database": true
+}

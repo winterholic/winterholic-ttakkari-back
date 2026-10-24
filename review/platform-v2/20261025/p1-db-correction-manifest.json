@@ -1,0 +1,110 @@
+{
+  "baseline_evidence": "p1-frontend-runtime-tests-delta.json",
+  "baseline_evidence_sha256": "fddcc7aa816295823b5ecc6f04bcfab69f01c28697333080cdc7b61ee096c58c",
+  "scope": "Only DB test correction delta after d31e3a0; source and frontend unchanged. AST is not runtime test collection.",
+  "changed_inputs": [
+    {
+      "path": "tests/pg_sandbox.py",
+      "previous_sha256": "2bfee29b5bbb6710465a4514731b0ffc2ac37575b470d7909403d2c8de40ce7d",
+      "current_sha256": "472a3b7acaafbf9049236a6511d7c9df5e0caf151dc9bd2c8380566a7cbbd0ed"
+    },
+    {
+      "path": "tests/test_pg_sandbox.py",
+      "previous_sha256": "20579f9203d3276cdcccb278c6b7121a496122ce6618f0c9f2256443aba1bc46",
+      "current_sha256": "968b66b542a1a19d89696638faf81944a408856b63c54bedc9de90e8f8a6156c",
+      "current_classification": {
+        "path": "tests/test_pg_sandbox.py",
+        "test_count": 32,
+        "test_functions": [
+          "test_reap_stale_cleans_dead_owner_with_valid_marker",
+          "test_reap_stale_protects_live_owner",
+          "test_reap_stale_protects_invalid_marker",
+          "test_reap_stale_protects_top_level_symlink",
+          "test_stop_and_remove_does_not_call_pg_ctl_on_nested_data_symlink",
+          "test_zero_external_impact_on_mixed_stale_run",
+          "test_asyncpg_patch_unpatch_and_ipv6",
+          "test_cluster_stop_restores_signal_handlers_and_asyncpg",
+          "test_cluster_stop_restores_its_own_signal_handler_snapshot",
+          "test_startup_failure_restores_signal_handlers",
+          "test_cluster_recreation_updates_port",
+          "test_read_shm_ref_parses_postmaster_pid_line_7",
+          "test_read_shm_ref_rejects_malformed",
+          "test_read_shm_ref_ignores_symlinked_data",
+          "test_release_removes_matching_segment",
+          "test_release_noop_when_segment_already_gone",
+          "test_release_noop_without_ref",
+          "test_release_refuses_when_identity_mismatches",
+          "test_release_refuses_while_postmaster_alive",
+          "test_release_refuses_when_still_attached",
+          "test_release_polls_until_nattch_drops_to_zero",
+          "test_release_polls_until_postmaster_dies",
+          "test_release_reports_ipcrm_failure",
+          "test_release_skips_when_ipcs_unavailable",
+          "test_release_skips_on_unparsable_ipcs_output_without_removing",
+          "test_release_handles_linux_ipcs_format",
+          "test_stop_and_remove_releases_segment_before_rmtree",
+          "test_real_cluster_sigkill_then_reap_stale_leaves_no_segment",
+          "test_real_cluster_sigkill_then_stop_and_remove_leaves_no_segment",
+          "test_migration_child_url_keeps_explicit_test_cluster_identity",
+          "test_migration_child_url_uses_session_port_without_explicit_test_url",
+          "test_migration_child_url_rejects_production_or_remote_target"
+        ],
+        "primary_category": "Module Integration",
+        "multi_labels": [
+          "process_fixture",
+          "runtime_ownership"
+        ],
+        "rationale": "Tests single module against isolated database schema and ASGI client",
+        "has_contract_mark": false,
+        "has_ast_security_mark": false,
+        "has_security_heuristic": false,
+        "security_marked_funcs_count": 0,
+        "uses_db_fixtures": false,
+        "fixtures": [
+          "caplog",
+          "capsys",
+          "content",
+          "darwin_ipc",
+          "monkeypatch",
+          "row",
+          "source",
+          "target",
+          "tmp_path"
+        ],
+        "is_unit_dir": false
+      }
+    },
+    {
+      "path": "tests/test_game_migration.py",
+      "previous_sha256": "55fe538b5fe445194e442bdb0761922f5618141fd812c2c76c02b2b4f239dcdd",
+      "current_sha256": "c837de22ca9cef0f261fe018a8744ac357547a0b38b64f3a2cf139214086dc91",
+      "current_classification": {
+        "path": "tests/test_game_migration.py",
+        "test_count": 3,
+        "test_functions": [
+          "test_game_migration_is_additive_and_downgrades_cleanly",
+          "test_game_tables_enforce_uniqueness_and_cascade",
+          "test_0048_adds_only_nullable_columns_and_downgrades_cleanly"
+        ],
+        "primary_category": "Migration",
+        "multi_labels": [
+          "alembic_fixture"
+        ],
+        "rationale": "Alembic migration chain, single head, or schema predicate check",
+        "has_contract_mark": false,
+        "has_ast_security_mark": false,
+        "has_security_heuristic": false,
+        "security_marked_funcs_count": 0,
+        "uses_db_fixtures": false,
+        "fixtures": [
+          "migration_database"
+        ],
+        "is_unit_dir": false
+      }
+    }
+  ],
+  "test_files": 333,
+  "unchanged_test_classifications_reused": 331,
+  "updated_test_classifications": 2,
+  "static_test_function_definitions": 3889
+}

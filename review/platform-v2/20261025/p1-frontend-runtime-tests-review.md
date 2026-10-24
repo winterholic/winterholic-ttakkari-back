@@ -56,3 +56,7 @@ executor는 immutable `release_revision` 없이 기동을 거절한다. ownershi
 P1은 review를 유지한다. 이 대조는 현재 source 분모와 실행 소유권 배선을 정합화했다. backend loader/source-byte binding, 새 frontend 기능의 실제 backend 응답·권한·로딩/빈/오류 상태, 15개 helper 추출, scripts/배포 shell·설정의 의미 전수 대조와 실제 런타임 자원 소유권은 미완료다.
 
 P2의 현행 계약은 [실행부 분리 통합 계약](../../../docs/design/platform-v2/current-execution-contract.md)으로 연결한다. FND1 자동 전송 장벽은 미구현이며 기존 명시 거절을 유지한다. DB9건·library/V2 실제 DB 통합·왕복/복원·전체 gate·독립 residual·운영 모델/MCP/재개·장기 Run·P4/P6를 완료로 올리지 않는다. main push/배포 예약 없음.
+
+## 이후 test-only DB 교정
+
+위 source6f9802a snapshot 이후의 입력 변경은 [추가 manifest](p1-db-correction-manifest.json) 3파일로 한정된다. [실제 DB 후속](db-validation-followup.md)에서 migration9건·library/실행부161건·schema/합성 데이터 왕복을 확인했다. 원래 P1 snapshot은 다시 생성하지 않았다. 운영 backup restore·전체gate·FND1·P4/P6는 여전히 미완료다.

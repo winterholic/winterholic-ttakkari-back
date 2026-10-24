@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pg_sandbox
 import pytest
+from sqlalchemy.engine import make_url
 
 
 def make_cluster_folder(
@@ -855,3 +856,37 @@ def test_real_cluster_sigkill_then_stop_and_remove_leaves_no_segment():
         assert ref.shmid not in _ipcs_ids()
     finally:
         _cleanup_real(folder, ref)
+
+
+def test_migration_child_url_keeps_explicit_test_cluster_identity(monkeypatch):
+    monkeypatch.setenv("TTAKKARI_TEST_DB", "postgresql+asyncpg://ttk_test:p%40ss%3Aword@127.0.0.1:55432/ttakkari_test?application_name=migration")
+    monkeypatch.setenv("PGPORT", "5432")
+
+    child = make_url(pg_sandbox.localhost_database_url("ttk_retire_example"))
+
+    assert child.host == "127.0.0.1" and child.port == 55432
+    assert child.username == "ttk_test" and child.password == "p@ss:word"
+    assert child.database == "ttk_retire_example"
+    assert child.query == {"application_name": "migration"}
+
+
+def test_migration_child_url_uses_session_port_without_explicit_test_url(monkeypatch):
+    monkeypatch.delenv("TTAKKARI_TEST_DB", raising=False)
+    monkeypatch.setenv("PGPORT", "55433")
+
+    child = make_url(pg_sandbox.localhost_database_url("ttk_retire_example"))
+
+    assert child.host == "localhost" and child.port == 55433
+    assert child.username is None and child.password is None
+    assert child.database == "ttk_retire_example"
+
+
+@pytest.mark.parametrize("source,target", [
+    ("postgresql+asyncpg://ttk_test:p@127.0.0.1:55432/ttakkari", "ttk_retire_example"),
+    ("postgresql+asyncpg://ttk_test:p@127.0.0.1:55432/ttakkari_test", "ttakkari"),
+    ("postgresql+asyncpg://ttk_test:p@example.com:55432/ttakkari_test", "ttk_retire_example"),
+])
+def test_migration_child_url_rejects_production_or_remote_target(monkeypatch, source, target):
+    monkeypatch.setenv("TTAKKARI_TEST_DB", source)
+    with pytest.raises(ValueError, match="isolated loopback test"):
+        pg_sandbox.localhost_database_url(target)

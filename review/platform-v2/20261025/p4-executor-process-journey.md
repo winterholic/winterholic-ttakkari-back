@@ -30,15 +30,16 @@
 ## 2. 코드로 본 실제 모듈 실행 (grep)
 
 ```
-$ grep -n 'ttakkari.cli\|PYTHONPATH\|"serve"\|"executor"' tests/test_executor_process_journey.py
-36:    path = os.pathsep.join(filter(None, [str(SRC), os.environ.get("PYTHONPATH", "")]))
-37:    return os.environ | {"PYTHONPATH": path, ...
-64:            sys.executable, "-m", "ttakkari.cli", "serve", "--host", "127.0.0.1", "--port", str(port),
-89:            sys.executable, "-m", "ttakkari.cli", "executor", "--activate",
-101:                assert row.role == "executor" and row.revision == revision
+$ grep -n 'ttakkari.cli\|PYTHONPATH\|row.role == "executor"' tests/test_executor_process_journey.py   (afeaa15 기준, docstring 행 생략)
+38:    path = os.pathsep.join(filter(None, [str(SRC), os.environ.get("PYTHONPATH", "")]))
+39:    return os.environ | {"PYTHONPATH": path, "TTAKKARI_RUNTIME_GENERATION": "true",
+141:            sys.executable, "-m", "ttakkari.cli", "serve", "--host", "127.0.0.1", "--port", str(port),
+166:            sys.executable, "-m", "ttakkari.cli", "executor", "--activate",
+178:                assert row.role == "executor" and row.revision == revision
+219:    assert child_env()["PYTHONPATH"].split(os.pathsep)[0] == str(SRC)
 ```
 
-`python -c`나 가짜 파일큐 스크립트는 없다. 행 101은 자식이 제품 코드(`ExecutorRuntime.register`)로 DB에 남긴 등록 행을 확인한다.
+`python -c`나 가짜 파일큐 스크립트는 없다. 178행은 자식이 제품 코드(`ExecutorRuntime.register`)로 DB에 남긴 등록 행을 확인한다.
 
 ## 3. 실행 명령과 결과
 
@@ -69,9 +70,6 @@ Core observer 표본(0.05초 간격 목표, 실제 간격은 요청 시간이 �
 
 이 표본은 구간 안에서 Core가 반복 확인으로 정상이었다는 증거이지, 표본 사이의 매 순간 무중단 보증이 아니다.
 
-```
-$ ruff check tests/test_executor_process_journey.py   -> All checks passed!
-$ git diff --check                                    -> 출력 없음
 ```
 $ ruff check tests/test_executor_process_journey.py   -> All checks passed!
 $ git diff --check                                    -> 출력 없음

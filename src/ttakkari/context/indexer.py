@@ -202,11 +202,18 @@ async def index_source(db: AsyncSession, src: CtxSource) -> dict[str, int]:
 
 
 async def index_all(db: AsyncSession) -> int:
+    from ttakkari.context import index_queue
     n = 0
     for src in list(await db.scalars(select(CtxSource).where(CtxSource.enabled.is_(True)))):
+        # 수동 색인 소비자가 이미 돌리는 출처는 건너뛴다. 같은 출처를 두 곳에서 동시에 쓰지 않는다.
+        sid = src.id
+        if not await index_queue.claim(sid):
+            continue
         try:
             await index_source(db, src)
             n += 1
         except Exception:
             log.exception("indexing %s failed", src.path)
+        finally:
+            await index_queue.release(sid)
     return n

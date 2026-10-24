@@ -218,6 +218,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if n:
             log.info("meeting vectors: %d meetings queued for indexing", n)
     await local_stt_jobs.start()
+    from ttakkari import background_consumers
+    await background_consumers.start()
     from ttakkari.tts import jobs as tts_jobs
     await tts_jobs.start()
     from ttakkari.creative.render import legacy_loop
@@ -258,6 +260,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
+        await background_consumers.stop(drain_seconds=0)
         from ttakkari.notebooklm.service import service as notebooklm_service
         await notebooklm_service.shutdown()
         await manager.shutdown()

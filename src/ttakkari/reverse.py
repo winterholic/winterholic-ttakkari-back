@@ -1120,6 +1120,74 @@ def _job_dir(job_id: uuid.UUID) -> Path:
     return work_root() / job_id.hex
 
 
+def _spawn(job_id: uuid.UUID, target: dict[str, str], *, claimed: bool) -> None:
+    async def run() -> None:
+        # 직접 실행도 소비자와 같은 행 조건으로 가져온다. 어느 쪽이 먼저든 파이프라인은 한 번만 돈다.
+        if claimed or await _claim(job_id):
+            await _pipeline(job_id, target)
+
+    task = asyncio.get_running_loop().create_task(run())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+def _dispatch_local(job_id: uuid.UUID, target: dict[str, str]) -> None:
+    """로컬 모드는 예전처럼 바로 돌린다. 원격 모드의 API 는 queued 행만 남기고 실행부 소비자가 가져간다."""
+    from ttakkari.background_consumers import deferred
+    if not deferred():
+        _spawn(job_id, target, claimed=False)
+
+
+async def _claim(job_id: uuid.UUID) -> bool:
+    from sqlalchemy import update
+
+    from ttakkari import db as dbmod
+    from ttakkari.models import ReverseJob
+    async with dbmod.sessionmaker()() as session:
+        res = await session.execute(update(ReverseJob).where(
+            ReverseJob.id == job_id, ReverseJob.status == QUEUED, ReverseJob.kind != "reconstruction")
+            .values(status=RUNNING, updated_at=utcnow()))
+        await session.commit()
+        return res.rowcount == 1
+
+
+def inflight() -> int:
+    return sum(not t.done() for t in _tasks)
+
+
+async def pump_queued() -> int:
+    """실행부 소비자 한 번의 순회. 동시 실행 상한 안에서 queued 작업을 가져와 파이프라인을 시작한다.
+
+    running 행은 가져가지 않는다(무작정 재실행 금지). 대상은 normalize_target 을 다시 통과한다.
+    """
+    from sqlalchemy import select
+
+    from ttakkari import db as dbmod
+    from ttakkari.models import ReverseJob
+    room = MAX_CONCURRENT - inflight()
+    if room <= 0:
+        return 0
+    claimed: list[tuple[uuid.UUID, dict[str, str]]] = []
+    async with dbmod.sessionmaker()() as session:
+        rows = (await session.execute(
+            select(ReverseJob).where(ReverseJob.status == QUEUED, ReverseJob.kind != "reconstruction")
+            .order_by(ReverseJob.created_at).limit(room).with_for_update(skip_locked=True))).scalars().all()
+        for job in rows:
+            try:
+                target = normalize_target(job.target)
+            except ReverseError as exc:
+                job.status, job.error = FAILED, f"대상 검증 실패: {exc.message}"
+                job.stages = _fail_stages(job.stages or _fresh_stages())
+                job.updated_at = utcnow()
+                continue
+            job.status, job.updated_at = RUNNING, utcnow()
+            claimed.append((job.id, target))
+        await session.commit()
+    for job_id, target in claimed:  # await 없이 곧바로 task 로 넘긴다
+        _spawn(job_id, target, claimed=True)
+    return len(claimed)
+
+
 def _safe_git_env() -> dict[str, str]:
     """git 실행 환경. 시스템·전역 설정을 무시하고 비대화형으로 고정한다.
 
@@ -1265,7 +1333,8 @@ def _public(job: Any, detail: bool = False) -> dict[str, Any]:
 
 
 def _stale(job: Any) -> bool:
-    return getattr(job, "kind", None) != "reconstruction" and job.status in (QUEUED, RUNNING) and (utcnow() - job.updated_at).total_seconds() > STALE_MINUTES * 60
+    # queued 는 실행부 소비자가 가져갈 입력이다. 오래 기다려도 실패로 만들지 않는다(가져간 뒤 running 만 낡음을 본다).
+    return getattr(job, "kind", None) != "reconstruction" and job.status == RUNNING and (utcnow() - job.updated_at).total_seconds() > STALE_MINUTES * 60
 
 
 TERMINAL = (DONE, FAILED, PARTIAL)
@@ -1282,10 +1351,11 @@ def _fail_stages(stages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 async def recover_reverse_jobs() -> int:
-    """서버 시작 시 남아 있는 진행 중 작업을 실패로 정리한다. 재시작 복구용.
+    """서버 시작 시 남아 있는 실행 중 작업을 실패로 정리한다. 재시작 복구용.
 
+    queued 는 소비자가 이어받을 입력이라 건드리지 않는다. running 은 무작정 다시 돌리지 않고 실패로 둔다.
     모델 대기는 끝난 상태가 아니라 재개 대상으로 남긴다. 호출 쪽이 이어서
-    resume_waiting_reverse_jobs로 다시 돌린다.
+    resume_waiting_reverse_jobs로 다시 큐에 넣는다.
     """
     from sqlalchemy import select
 
@@ -1293,7 +1363,7 @@ async def recover_reverse_jobs() -> int:
     from ttakkari.models import ReverseJob
     async with dbmod.sessionmaker()() as session:
         rows = (await session.execute(
-            select(ReverseJob).where(ReverseJob.status.in_((QUEUED, RUNNING)), ReverseJob.kind != "reconstruction")
+            select(ReverseJob).where(ReverseJob.status == RUNNING, ReverseJob.kind != "reconstruction")
         )).scalars().all()
         for job in rows:
             job.status, job.error = FAILED, "서버 재시작 등으로 중단되었습니다. 다시 시작하세요."
@@ -1331,7 +1401,7 @@ def _target_from_job(job: Any) -> dict[str, str]:
 
 
 async def resume_waiting_reverse_jobs() -> int:
-    """모델 대기 작업을 다시 큐에 넣고 파이프라인을 다시 돌린다. 기동·쿼터 회복용.
+    """모델 대기 작업을 다시 큐에 넣는다. 기동·쿼터 회복용. 실제 실행은 소비자가 queued 를 가져가 맡는다.
 
     기동 재개는 쿼터 초기화 시각 전에는 돌리지 않는다.
     모든 대상은 normalize_target을 다시 통과해야 한다.
@@ -1352,7 +1422,7 @@ async def resume_waiting_reverse_jobs() -> int:
         rows = (await session.execute(
             select(ReverseJob).where(ReverseJob.status == WAITING, ReverseJob.kind != "reconstruction")
         )).scalars().all()
-        targets: list[tuple[uuid.UUID, dict[str, str]]] = []
+        requeued = 0
         for job in rows:
             try:
                 target = normalize_target(job.target)
@@ -1365,13 +1435,9 @@ async def resume_waiting_reverse_jobs() -> int:
             job.stages = _prepare_retry_stages(job.stages, root_ok)
             job.status, job.error = QUEUED, None
             job.updated_at = utcnow()
-            targets.append((job.id, target))
+            requeued += 1
         await session.commit()
-    for job_id, target in targets:
-        task = asyncio.get_running_loop().create_task(_pipeline(job_id, target))
-        _tasks.add(task)
-        task.add_done_callback(_tasks.discard)
-    return len(targets)
+    return requeued
 
 
 async def retry_job(job_id: str, db: Any) -> dict[str, Any]:
@@ -1404,9 +1470,7 @@ async def retry_job(job_id: str, db: Any) -> dict[str, Any]:
     row.status, row.error, row.result = QUEUED, None, None
     row.updated_at = utcnow()
     await db.commit()
-    task = asyncio.get_running_loop().create_task(_pipeline(uid, target))
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
+    _dispatch_local(uid, target)
     return {"id": job_id, "status": QUEUED, "stage": "request"}
 
 
@@ -1769,9 +1833,7 @@ async def start_repository_analysis(raw_target: str, db: Any) -> dict[str, Any]:
     await db.commit()
     await _mark(job_id, "request", RUNNING, evidence=[f"대상 접수: {label}"],
                 job_status=QUEUED)
-    task = asyncio.get_running_loop().create_task(_pipeline(job_id, target))
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
+    _dispatch_local(job_id, target)
     return {"id": str(job_id), "target": job.target, "kind": job.kind,
             "status": QUEUED, "stage": "request"}
 

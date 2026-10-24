@@ -1817,7 +1817,14 @@ def classify_migration(stem: str) -> str:
 
     # Execution Plane
     if any(
-        x in s for x in ("orchestrator", "run_resume", "worker_routing", "run_executor")
+        x in s
+        for x in (
+            "orchestrator",
+            "run_resume",
+            "worker_routing",
+            "run_executor",
+            "background_consumer",
+        )
     ):
         return "exec.run_engine"
     if "scheduled_actions" in s:
@@ -2090,6 +2097,7 @@ def classify_source_file(rel_path: str) -> str:
             "/experiments/",
             "/api/orchestrator.py",
             "executor",
+            "background_consumers",
         )
     ) or p.endswith(("/cli.py", "/model_catalog.py")):
         return "exec.run_engine"

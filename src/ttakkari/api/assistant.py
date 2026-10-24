@@ -15,12 +15,11 @@ from sqlalchemy import func, or_, select
 
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
+from ttakkari.background_consumers import deferred
 from ttakkari.broker.policy import is_sensitive, is_within
 from ttakkari.config import get_settings
-from ttakkari.context import store
-from ttakkari.context.indexer import index_source
+from ttakkari.context import index_queue, store
 from ttakkari.context.library import library_catalog
-from ttakkari.db import sessionmaker
 from ttakkari.models import (
     CtxChunk,
     CtxDocument,
@@ -457,32 +456,23 @@ async def _source_out(db: Db, s: CtxSource) -> dict[str, Any]:
     chunks = await db.scalar(select(func.coalesce(func.sum(CtxDocument.chunk_count), 0)).where(CtxDocument.source_id == s.id))
     return {"id": str(s.id), "path": s.path, "pattern": s.pattern, "enabled": s.enabled, "documents": docs,
             "chunks": int(chunks or 0), "last_indexed_at": s.last_indexed_at.isoformat() if s.last_indexed_at else None,
-            "last_error": s.last_error, "indexing": str(s.id) in _indexing,
+            "last_error": s.last_error, "indexing": index_queue.is_active(s),
             "scope": s.scope, "category": s.category, "entity_id": str(s.entity_id) if s.entity_id else None}
 
 
-_indexing: set[str] = set()
 _tasks: set[asyncio.Task] = set()
 
 
-def _start_index(source_id: uuid.UUID) -> None:
-    sid = str(source_id)
-    if sid in _indexing:
+async def _start_index(source_id: uuid.UUID) -> None:
+    """색인을 시작한다. 원격 모드의 API 는 요청만 남기고 실행부 소비자가 돌린다(Step 6).
+
+    로컬 모드는 예전처럼 이 프로세스에서 바로 돌리되, 같은 출처를 다른 곳이 돌리는 중이면 겹치지 않는다."""
+    if deferred():
+        await index_queue.request(source_id)
         return
-    _indexing.add(sid)
-
-    async def run() -> None:
-        try:
-            async with sessionmaker()() as db:
-                src = await db.get(CtxSource, source_id)
-                if src is not None:
-                    await index_source(db, src)
-        except Exception:
-            log.exception("indexing failed")
-        finally:
-            _indexing.discard(sid)
-
-    t = asyncio.create_task(run())
+    if not await index_queue.claim(source_id):
+        return
+    t = asyncio.create_task(index_queue.run_claimed(source_id))
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)
 
@@ -509,7 +499,8 @@ async def add_source(body: SourceIn, _: User, db: Db) -> dict[str, Any]:
                   scope=body.scope, category=body.category, entity_id=body.entity_id)
     db.add(s)
     await db.commit()
-    _start_index(s.id)
+    await _start_index(s.id)
+    await db.refresh(s)
     return await _source_out(db, s)
 
 
@@ -518,7 +509,8 @@ async def reindex(sid: uuid.UUID, _: User, db: Db) -> dict[str, Any]:
     s = await db.get(CtxSource, sid)
     if s is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "출처가 없어요.")
-    _start_index(s.id)
+    await _start_index(s.id)
+    await db.refresh(s)
     return await _source_out(db, s)
 
 

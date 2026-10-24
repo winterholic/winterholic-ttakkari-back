@@ -28,6 +28,7 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
+from ttakkari.background_consumers import deferred
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.google_account import login
@@ -107,12 +108,25 @@ def job_out(row: NotebookLMJob) -> dict[str, Any]:
     }
 
 
+def _spec_json(spec: dict[str, Any]) -> dict[str, Any]:
+    """job 행에 남길 수 있는 형태로 바꾼다(경로는 문자열)."""
+    return {k: (str(v) if isinstance(v, Path) else v) for k, v in spec.items()}
+
+
+def _spec_from_row(spec: dict[str, Any]) -> dict[str, Any]:
+    out = dict(spec)
+    if out.get("file_path"):
+        out["file_path"] = Path(out["file_path"])
+    return out
+
+
 class NotebookLMService:
     def __init__(self, backend_factory: BackendFactory | None = None) -> None:
         self._factory: BackendFactory = backend_factory or default_backend_factory
         self._backends: dict[str, NotebookLMBackend] = {}
         self._sems: dict[str, asyncio.Semaphore] = {}
         self._tasks: dict[uuid.UUID, asyncio.Task] = {}
+        self._task_accounts: dict[uuid.UUID, str] = {}
         self._last_verify: dict[str, float] = {}
         self._last_error: dict[str, dict[str, Any]] = {}
 
@@ -514,15 +528,15 @@ class NotebookLMService:
                                        job_id, force=force)
         if existing is not None:
             return existing
-        async with sessionmaker()() as db:
-            db.add(NotebookLMJob(id=job_id, account_id=account_id, kind=job_kind, notebook_id=notebook_id,
-                                 status="queued", params=params, heartbeat_at=_now()))
-            await db.commit()
         spec = {"kind": kind, "url": params.get("url"), "title": (title or "").strip() or None, "text": text,
                 "file_path": file_path, "key": key}
-        task = asyncio.create_task(self._run_source_job(job_id, account_id, notebook_id, spec))
-        self._tasks[job_id] = task
-        task.add_done_callback(lambda _t, jid=job_id: self._tasks.pop(jid, None))
+        # 입력 원본을 job 행에 함께 남긴다. 실행부는 이 행만 보고 이어받으므로 API 프로세스 메모리에 의존하지 않는다.
+        async with sessionmaker()() as db:
+            db.add(NotebookLMJob(id=job_id, account_id=account_id, kind=job_kind, notebook_id=notebook_id,
+                                 status="queued", params=params, heartbeat_at=_now(),
+                                 spec=_spec_json(spec)))
+            await db.commit()
+        self._dispatch_local(job_id, account_id, lambda: self._run_source_job(job_id, account_id, notebook_id, spec))
         metrics.incr("jobs.started")
         return {"duplicate": False, "job": await self.get_job(job_id), "source": None}
 
@@ -596,6 +610,63 @@ class NotebookLMService:
 
     # ------------------------------------------------------------------ job
 
+    def _spawn(self, job_id: uuid.UUID, account_id: str, coro: Awaitable[None]) -> None:
+        task = asyncio.create_task(coro)
+        self._tasks[job_id] = task
+        self._task_accounts[job_id] = account_id
+
+        def _forget(_t: asyncio.Task, jid: uuid.UUID = job_id) -> None:
+            self._tasks.pop(jid, None)
+            self._task_accounts.pop(jid, None)
+
+        task.add_done_callback(_forget)
+
+    def _dispatch_local(self, job_id: uuid.UUID, account_id: str, factory: Callable[[], Awaitable[None]]) -> None:
+        """로컬 모드는 예전처럼 바로 돌린다. 원격 모드의 API 는 행만 남기고 실행부 소비자가 가져간다."""
+        if not deferred():
+            self._spawn(job_id, account_id, factory())
+
+    def inflight(self) -> int:
+        return sum(not t.done() for t in self._tasks.values())
+
+    async def _claim_job(self, job_id: uuid.UUID) -> bool:
+        """queued → running 을 한 번만 성공시킨다. 소비자와 로컬 직접 실행이 겹쳐도 한쪽만 이긴다."""
+        async with sessionmaker()() as db:
+            res = await db.execute(update(NotebookLMJob).where(
+                NotebookLMJob.id == job_id, NotebookLMJob.status == "queued",
+                NotebookLMJob.cancel_requested.is_(False)).values(
+                status="running", started_at=_now(), heartbeat_at=_now(), updated_at=_now()))
+            await db.commit()
+            return res.rowcount == 1
+
+    async def pump_queued(self) -> int:
+        """실행부 소비자 한 번의 순회. 계정별 동시 실행 상한 안에서 queued job 을 가져와 시작한다."""
+        cap = get_settings().notebooklm_concurrency
+        busy: dict[str, int] = {}
+        for jid in list(self._tasks):
+            acct = self._task_accounts.get(jid)
+            if acct is not None:
+                busy[acct] = busy.get(acct, 0) + 1
+        claimed: list[tuple[uuid.UUID, str, str, str, dict[str, Any]]] = []
+        async with sessionmaker()() as db:
+            rows = await db.scalars(select(NotebookLMJob).where(
+                NotebookLMJob.status == "queued", NotebookLMJob.cancel_requested.is_(False))
+                .order_by(NotebookLMJob.created_at).with_for_update(skip_locked=True).limit(32))
+            for row in rows:
+                if not row.spec or busy.get(row.account_id, 0) >= cap:
+                    continue  # 입력 원본이 없는 이전 세대의 행은 recover_jobs 가 정리한다
+                row.status, row.started_at, row.heartbeat_at = "running", _now(), _now()
+                busy[row.account_id] = busy.get(row.account_id, 0) + 1
+                claimed.append((row.id, row.account_id, row.kind, row.notebook_id, _spec_from_row(row.spec)))
+            await db.commit()
+        # 가져온 job 은 await 없이 곧바로 task 로 넘긴다. 사이에 취소가 끼어 running 에 갇히지 않게 한다.
+        for job_id, account_id, kind, notebook_id, spec in claimed:
+            run = (self._run_query_job if kind == "query" else self._run_source_job)
+            self._spawn(job_id, account_id, run(job_id, account_id, notebook_id, spec, claimed=True))
+        if claimed:
+            metrics.incr("jobs.started", len(claimed))
+        return len(claimed)
+
     async def _job_update(self, job_id: uuid.UUID, **fields: Any) -> None:
         async with sessionmaker()() as db:
             await db.execute(update(NotebookLMJob).where(NotebookLMJob.id == job_id).values(updated_at=_now(), **fields))
@@ -603,7 +674,7 @@ class NotebookLMService:
 
     async def _finish(self, job_id: uuid.UUID, status: str, *, result: dict | None = None, error: str | None = None,
                       code: str | None = None) -> None:
-        await self._job_update(job_id, status=status, result=result, finished_at=_now(),
+        await self._job_update(job_id, status=status, result=result, finished_at=_now(), spec=None,
                                error=redact.mask(error)[:500] if error else None, error_code=code)
         metrics.incr(f"jobs.{status}")
         metrics.event("job_finished", job=str(job_id), status=status, code=code)
@@ -624,13 +695,20 @@ class NotebookLMService:
             except Exception:  # noqa: BLE001 -- 하트비트 실패가 작업을 죽이지 않게
                 log.warning("notebooklm heartbeat failed")
 
-    async def _run_source_job(self, job_id: uuid.UUID, account_id: str, notebook_id: str, spec: dict[str, Any]) -> None:
+    async def _run_source_job(self, job_id: uuid.UUID, account_id: str, notebook_id: str, spec: dict[str, Any],
+                              *, claimed: bool = False) -> None:
         s = get_settings()
         key = spec["key"]
         phase = "queued"  # queued: 아직 Google 에 아무것도 보내지 않음 → write: 등록 요청 전송 중 → wait: 등록됨, 처리 대기
         added: SourceInfo | None = None
-        hb = asyncio.create_task(self._heartbeat(job_id, asyncio.current_task()))  # type: ignore[arg-type]
+        owned = claimed  # 이 실행이 job 을 가져왔다. 못 가져왔으면 업로드 폴더도 건드리지 않는다
+        hb: asyncio.Task | None = None
         try:
+            if not owned:
+                owned = await self._claim_job(job_id)
+                if not owned:
+                    return
+            hb = asyncio.create_task(self._heartbeat(job_id, asyncio.current_task()))  # type: ignore[arg-type]
             kind = spec["kind"]
 
             async def add(b: NotebookLMBackend) -> SourceInfo:
@@ -642,7 +720,6 @@ class NotebookLMService:
                     return await b.add_text(notebook_id, spec["title"], spec["text"])
                 return await b.add_file(notebook_id, spec["file_path"], title=spec["title"])
 
-            await self._job_update(job_id, status="running", started_at=_now(), heartbeat_at=_now())
             try:
                 added = await self._call(account_id, f"source_add.{kind}", add, write=True,
                                          timeout=float(s.notebooklm_request_timeout_seconds) * 4,
@@ -678,7 +755,8 @@ class NotebookLMService:
                         "source": added.model_dump(), "ready": False,
                         "note": f"등록은 됐으나 처리 상태를 확인하지 못했습니다({e.code})."})
         except asyncio.CancelledError:
-            await asyncio.shield(self._on_job_cancelled(job_id, account_id, notebook_id, key, phase, added))
+            if owned:
+                await asyncio.shield(self._on_job_cancelled(job_id, account_id, notebook_id, key, phase, added))
             raise
         except Exception as e:  # noqa: BLE001
             log.warning("notebooklm job crashed: %s", redact.safe_error(e))
@@ -688,10 +766,11 @@ class NotebookLMService:
                 await self._finish(job_id, "unknown" if phase != "queued" else "failed",
                                    error="작업 중 예상하지 못한 오류가 났습니다.", code="internal")
         finally:
-            hb.cancel()
-            await asyncio.gather(hb, return_exceptions=True)
+            if hb is not None:
+                hb.cancel()
+                await asyncio.gather(hb, return_exceptions=True)
             fp = spec.get("file_path")
-            if fp is not None:
+            if fp is not None and owned:
                 shutil.rmtree(Path(fp).parent, ignore_errors=True)  # 업로드 임시 폴더(job 단위)
 
     async def _on_job_cancelled(self, job_id: uuid.UUID, account_id: str, notebook_id: str, key: str, phase: str,
@@ -735,13 +814,40 @@ class NotebookLMService:
         if cur["status"] in TERMINAL:
             raise errors.Busy("이미 끝난 작업입니다.")
         jid = uuid.UUID(cur["id"])
+        if await self._cancel_queued(jid):
+            return await self.get_job(jid, account_id)
         await self._job_update(jid, cancel_requested=True)
         task = self._tasks.get(jid)
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await asyncio.wait_for(asyncio.shield(task), 10)
+        else:
+            # 다른 프로세스(실행부)가 돌리는 job 이다. 그쪽 하트비트가 cancel_requested 를 보고 스스로 멈춘다.
+            for _ in range(int((HEARTBEAT_SECONDS * 2 + 1) / 0.25)):
+                if (await self.get_job(jid, account_id))["status"] in TERMINAL:
+                    break
+                await asyncio.sleep(0.25)
         return await self.get_job(jid, account_id)
+
+    async def _cancel_queued(self, job_id: uuid.UUID) -> bool:
+        """아직 아무도 가져가지 않은 job 이면 그 자리에서 취소한다. 가져간 뒤라면 False(취소 요청만 남긴다)."""
+        async with sessionmaker()() as db:
+            row = await db.scalar(select(NotebookLMJob).where(NotebookLMJob.id == job_id).with_for_update())
+            if row is None or row.status != "queued":
+                return False
+            spec = _spec_from_row(row.spec) if row.spec else {}
+            row.status, row.cancel_requested, row.finished_at = "cancelled", True, _now()
+            row.error, row.error_code, row.spec = "사용자가 취소했습니다.", "cancelled", None
+            row.updated_at = _now()
+            await db.execute(delete(NotebookLMSource).where(  # 예약만 풀고 등록된 소스는 건드리지 않는다
+                NotebookLMSource.job_id == job_id, NotebookLMSource.status == "reserved"))
+            await db.commit()
+        if spec.get("file_path"):
+            shutil.rmtree(Path(spec["file_path"]).parent, ignore_errors=True)
+        metrics.incr("jobs.cancelled")
+        metrics.event("job_finished", job=str(job_id), status="cancelled", code="cancelled")
+        return True
 
     async def recover_jobs(self, *, stale_seconds: int | None = None) -> int:
         """멈춘 job 정리. running 은 unknown(결과 불명), queued 는 failed(시작 전). 소스 원장도 같이 맞춘다.
@@ -758,11 +864,13 @@ class NotebookLMService:
             for row in rows:
                 if row.id in self._tasks:
                     continue
+                if row.status == "queued" and row.spec and not row.cancel_requested:
+                    continue  # 입력 원본이 남은 queued 는 실행부 소비자가 이어받는다. 실패로 만들지 않는다
                 was_running = row.status == "running"
                 row.status = "unknown" if was_running else "failed"
                 row.error_code = "interrupted" if was_running else "shutdown"
                 row.error = recovery_message(row.kind, was_running=was_running)
-                row.finished_at = _now()
+                row.finished_at, row.spec = _now(), None
                 src = await db.scalar(select(NotebookLMSource).where(NotebookLMSource.job_id == row.id))
                 if src is not None and src.status == "reserved":
                     if was_running:
@@ -831,31 +939,36 @@ class NotebookLMService:
             params["conversation_id"] = conversation_id
         if source_ids:
             params["source_ids"] = list(source_ids)
-        async with sessionmaker()() as db:
-            db.add(NotebookLMJob(id=job_id, account_id=account_id, kind="query", notebook_id=notebook_id,
-                                 status="queued", params=params, heartbeat_at=_now()))
-            await db.commit()
         spec = {"question": q, "conversation_id": conversation_id, "source_ids": source_ids,
                 "export_for_ledger": export_for_ledger}
-        task = asyncio.create_task(self._run_query_job(job_id, account_id, notebook_id, spec))
-        self._tasks[job_id] = task
-        task.add_done_callback(lambda _t, jid=job_id: self._tasks.pop(jid, None))
+        async with sessionmaker()() as db:
+            db.add(NotebookLMJob(id=job_id, account_id=account_id, kind="query", notebook_id=notebook_id,
+                                 status="queued", params=params, heartbeat_at=_now(), spec=_spec_json(spec)))
+            await db.commit()
+        self._dispatch_local(job_id, account_id, lambda: self._run_query_job(job_id, account_id, notebook_id, spec))
         metrics.incr("jobs.started")
         return {"job": await self.get_job(job_id)}
 
-    async def _run_query_job(self, job_id: uuid.UUID, account_id: str, notebook_id: str, spec: dict[str, Any]) -> None:
+    async def _run_query_job(self, job_id: uuid.UUID, account_id: str, notebook_id: str, spec: dict[str, Any],
+                             *, claimed: bool = False) -> None:
         s = get_settings()
         result: QueryResult | None = None
         phase = "queued"  # queued: 아직 Google 에 아무것도 보내지 않음 → write: 질의 전송 중 → enrich: 출처 정보 채우기
-        hb = asyncio.create_task(self._heartbeat(job_id, asyncio.current_task()))  # type: ignore[arg-type]
+        owned = claimed
+        hb: asyncio.Task | None = None
         try:
+            if not owned:
+                owned = await self._claim_job(job_id)
+                if not owned:
+                    return
+            hb = asyncio.create_task(self._heartbeat(job_id, asyncio.current_task()))  # type: ignore[arg-type]
+
             async def ask(b: NotebookLMBackend) -> QueryResult:
                 nonlocal phase
                 phase = "write"  # 세마포어·상태 검사를 지나 실제로 전송을 시작하는 순간
-                return await b.ask(notebook_id, spec["question"], conversation_id=spec["conversation_id"],
-                                   source_ids=spec["source_ids"])
+                return await b.ask(notebook_id, spec["question"], conversation_id=spec.get("conversation_id"),
+                                   source_ids=spec.get("source_ids"))
 
-            await self._job_update(job_id, status="running", started_at=_now(), heartbeat_at=_now())
             try:
                 result = await self._call(account_id, "query", ask, write=True,
                                           timeout=float(s.notebooklm_query_timeout_seconds),
@@ -870,17 +983,17 @@ class NotebookLMService:
             phase = "enrich"
             await self._enrich_sources(notebook_id, result, account_id)
             payload: dict[str, Any] = {"query": result.model_dump()}
-            if spec["export_for_ledger"]:
+            if spec.get("export_for_ledger"):
                 payload["ledger_export"] = build_ledger_export(result, account_id=account_id)
             await self._finish(job_id, "succeeded", result=payload)
         except asyncio.CancelledError:
             if result is not None:
                 # 답변은 이미 확정됐다. 선택적 출처 보강이나 저장 중 취소가 답변을 지우지 않게 한다.
                 payload = {"query": result.model_dump()}
-                if spec["export_for_ledger"]:
+                if spec.get("export_for_ledger"):
                     payload["ledger_export"] = build_ledger_export(result, account_id=account_id)
                 await asyncio.shield(self._finish(job_id, "succeeded", result=payload))
-            else:
+            elif owned:
                 await asyncio.shield(self._on_query_job_cancelled(job_id, phase))
             raise
         except Exception as e:  # noqa: BLE001
@@ -889,8 +1002,9 @@ class NotebookLMService:
                 await self._finish(job_id, "unknown" if phase != "queued" else "failed",
                                    error="작업 중 예상하지 못한 오류가 났습니다.", code="internal")
         finally:
-            hb.cancel()
-            await asyncio.gather(hb, return_exceptions=True)
+            if hb is not None:
+                hb.cancel()
+                await asyncio.gather(hb, return_exceptions=True)
 
     async def _on_query_job_cancelled(self, job_id: uuid.UUID, phase: str) -> None:
         """질의 job 취소 정리. 소스 원장이 없어 소스 job 과 달리 원장 손질은 없다."""

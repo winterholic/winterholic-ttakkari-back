@@ -4,7 +4,7 @@
     "protocol": 1,
     "slots": 3
   },
-  "schema_revision": "0068_tts_payload_chunks",
+  "schema_revision": "0069_background_consumer_queue",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -42,7 +42,8 @@
     "0064_run_executor",
     "0065_collector_delivery",
     "0066_collector_budget",
-    "0067_collector_outbox_retry"
+    "0067_collector_outbox_retry",
+    "0068_tts_payload_chunks"
   ],
   "schema_aliases": {
     "0059_kb_immutability_truncate": "0059_collector_intake"

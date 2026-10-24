@@ -679,6 +679,10 @@ class CtxSource(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_indexed_at: Mapped[datetime | None]
     last_error: Mapped[str | None] = mapped_column(Text)
+    # 색인 요청 표시. API 는 요청만 기록하고 실행부 소비자가 가져가 돌린다(Step 6).
+    # requested: 대기 중, started: 소비자가 가져가 실행 중(비정상 종료 대비로 오래되면 다시 가져갈 수 있다).
+    index_requested_at: Mapped[datetime | None]
+    index_started_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -1185,6 +1189,8 @@ class NotebookLMJob(Base):
     notebook_id: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(12), default="queued")  # queued|running|succeeded|failed|cancelled|unknown
     params: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    # 실행부가 이어받을 입력 원본(질문·텍스트·업로드 경로). 응답에는 싣지 않고 끝나면 비운다(Step 6).
+    spec: Mapped[dict[str, Any] | None]
     result: Mapped[dict[str, Any] | None]
     error_code: Mapped[str | None] = mapped_column(String(40))
     error: Mapped[str | None] = mapped_column(Text)

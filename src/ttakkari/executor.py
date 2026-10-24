@@ -100,17 +100,21 @@ async def disable() -> None:
 
 async def start_background_services() -> list[asyncio.Task]:
     """Own durable non-Run queues and periodic work alongside the Run executor."""
+    from ttakkari import background_consumers
     from ttakkari.artifacts import preview
     from ttakkari.generation_service import maintenance_jobs, periodic
     from ttakkari.meetings.local_stt import jobs as stt_jobs
 
     await preview.start_worker()
     await stt_jobs.start()
+    # NotebookLM/Reverse/manual-index requests the API only recorded (platform v2 Step 6).
+    await background_consumers.start()
     return [asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}")
             for name, operation, interval in maintenance_jobs(get_settings())]
 
 
 async def serve(*, activate: bool = False) -> None:
+    from ttakkari import background_consumers
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.generation_service import coordinate_runs
@@ -159,6 +163,8 @@ async def serve(*, activate: bool = False) -> None:
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
+            # Stop claiming and let in-flight NotebookLM/Reverse/index work finish; queued rows stay queued.
+            await background_consumers.stop()
             for task in background_tasks:
                 task.cancel()
             await asyncio.gather(*background_tasks, return_exceptions=True)

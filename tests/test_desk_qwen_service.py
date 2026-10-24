@@ -97,10 +97,17 @@ async def test_managed_child_is_a_direct_child_and_its_pid_record_names_the_live
     await until(lambda: q.state == "ready", what="ready")
     child = q._child.pid
     assert psutil.Process(child).ppid() == os.getpid()  # 소유자 = 직계 부모(가드의 소유 증거)
-    [record_file] = list((get_settings().home / "qwen").glob("*.json"))
+    state_dir = get_settings().home / "qwen"
+    # pid 기록(`<owner_pid>-<token>.json`)과 ready 후 생기는 active.json 포인터는 서로 다른 파일이다.
+    [record_file] = [f for f in state_dir.glob("*.json") if f.name != "active.json"]
+    assert record_file.name.startswith(f"{os.getpid()}-")
     rec = json.loads(record_file.read_text())
     assert rec["owner_pid"] == os.getpid() and rec["child_pid"] == child
     assert {"port", "server", "model", "owner_start", "child_start"} <= set(rec)
+    assert rec["owner_start"] == svc._proc_start(os.getpid()) and rec["child_start"] == svc._proc_start(child)
+    pointer = json.loads((state_dir / "active.json").read_text())  # 같은 소유자·자식·시작 시각을 가리킨다
+    assert {k: pointer[k] for k in ("owner_pid", "owner_start", "child_pid", "child_start", "port")} == \
+        {k: rec[k] for k in ("owner_pid", "owner_start", "child_pid", "child_start", "port")}
     await q.stop()
 
 

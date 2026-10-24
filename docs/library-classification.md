@@ -11,7 +11,7 @@
 1. **보관 상태 (area)**: `files` (내 보관함) vs `agent` (AI 작업 파일) vs `all` (전체)
 2. **실제 출처 (origin)**: `user` (사용자 제공) vs `agent` (AI 생성·수정) vs `external` (외부 수집) vs `unknown` (확인 불가)
 3. **보관 사유 (keep_reason)**: `direct_upload` (직접 업로드), `direct_register` (직접 등록), `user_button` (화면 버튼 보관), `chat_request` (대화 보관 요청), `None` (미보관)
-4. **보관 근거 (keep_evidence)**: 대화 보관 요청 시의 요청 지시문 원문, 세션 ID, Run ID 메타데이터
+4. **보관 근거 (keep_evidence)**: 대화 보관 요청 시 사용자가 실제로 한 말의 인용(quote), 그 발화를 담은 메시지 ID·출처·작성 시각, 세션 ID, 보관을 실행한 Run ID
 5. **탐색용 카테고리 (category)**: 뷰어용 `kind`와 분리된 파일 탐색 및 필터 분류
 
 ---
@@ -23,7 +23,7 @@
 | 사용자 직접 업로드 (`/api/uploads`) | `files` | `user` | `direct_upload` |
 | 워크스페이스 직접 등록 (`/api/artifacts` POST) | `files` | `unknown` (등록은 보관 의도이지 제작 증거 아님) | `direct_register` |
 | 화면에서 '내 보관함에 보관' 클릭 (`PATCH /api/artifacts/{id}`) | `files` | 기존 유지 | `user_button` |
-| 대화에서 "만들어서 보관함에 넣어줘" 요청 (`keep_artifact`) | `files` | `agent` | `chat_request` (지시문·세션·Run·메시지ID·요청시각 근거 기록) |
+| 대화에서 "만들어서 보관함에 넣어줘" 요청 (`keep_artifact`) | `files` | `agent` | `chat_request` (실제 사용자 발화 인용·메시지 ID·세션·Run·시각 근거 기록) |
 | AI 파일 생성·수정·자동 수집 (outbox 수집) | `agent` | `agent` | `None` |
 | AI 자발적 결과물 전달 (`share_file`) | `agent` | `agent` | `None` |
 | 대화 링크 열기 / 다운로드 링크 발급 / 뷰어 열람 (`resolve`) | `agent` | `unknown` (비-outbox) / `agent` (outbox) | `None` |
@@ -79,10 +79,15 @@
 - `share_file(path: str)`:
   - 대화에서 사용자가 열람/다운로드할 수 있도록 결과물을 전달합니다.
   - 파일은 `area='agent'`(AI 작업 파일)로 등록/유지되며, 내 보관함에 자동으로 보관되지 않습니다.
-- `keep_artifact(path: str, instruction: str)`:
-  - 사용자가 대화에서 명시적으로 보관을 요청했을 때("만들어서 보관함에 넣어줘", "내 보관함에 보관해줘" 등) 사용자의 내 보관함(`area='files'`)에 영구 보관합니다.
-  - 요청 지시문(`instruction` 필수)을 시스템 근거(세션 ID, Run ID, 요청 메시지 ID, 사용자 프롬프트, 요청 시각)와 함께 `keep_evidence`로 영구 기록합니다. Run이 특정되지 않으면 409 거부합니다.
-  - 사용자 명시적 보관 요청이 없는 한 호출하지 않습니다.
+- `keep_artifact(path: str, quote: str)`:
+  - 사용자가 대화에서 보관을 요청했을 때("만들어서 보관함에 넣어줘" 등) 내 보관함(`area='files'`)에 영구 보관합니다. 에이전트가 요청 여부를 스스로 판단해 호출하지 않습니다.
+  - `quote` 는 사용자가 보관을 요청한 말의 그대로 인용입니다. 서버는 키워드로 의도를 추론하지 않고, 이 세션에 실제로 저장된 사용자 발화에서 그 인용(공백 정규화 후 부분 문자열)을 찾습니다. 못 찾으면 `422 quote_not_found` 로 거부하고 아무것도 바꾸지 않습니다.
+  - 사용자 메시지는 별도 테이블이 아니라 `Run.prompt` 로 저장됩니다. 인정하는 발화는 둘뿐입니다.
+    - `message`: 이 세션에 사용자가 직접 보낸 메시지(`origin=user` Run 의 prompt).
+    - `run_prompt`: 접수가 기획 세션에 넘긴 사용자 요청(`origin=desk` Run 의 `[접수에서 넘긴 사용자 요청]` 본문). 같은 Run 의 `[최근 대화 — 참고만]` 이하와 `따까리:` 응답은 사용자 발화로 보지 않습니다.
+  - 찾는 범위는 호출한 Run 이후에 생긴 메시지를 뺀, 그 시점까지의 최근 사용자·접수 Run 20개입니다. 다른 세션의 메시지, 기획이 작업 세션에 쓴 지시(`origin=orchestrator`), 작업 보고(`report`)는 근거가 되지 않습니다. 작업 세션은 사용자 발화가 없으므로 기획 세션이 직접 보관해야 합니다.
+  - `keep_evidence` 에는 `message_id`(발화를 담은 Run ID), `message_source`(`message`|`run_prompt`), `message_origin`, `message_at`, `quote`, `user_message`(발화 발췌), `session_id`, `run_id`(보관을 실행한 Run), `kept_at` 이 남습니다.
+  - 이미 내 보관함에 있는 파일은 처음의 보관 사유·근거를 덮어쓰지 않고 그대로 돌려줍니다(중복 호출해도 행은 1개). 사용자가 앱에서 뺀 파일은 그 뒤에 한 새 요청이 있어야 다시 보관됩니다(`409 removed_after_request`).
 - `set_artifact_area(artifact_id: str, area: Literal["agent"])`:
   - AI 작업 파일('agent')로 빼기만 가능합니다. 내 보관함('files')으로의 임의 승격은 409 거부되며(keep_artifact 사용 필수), 사용자가 보관한 파일(`keep_reason` 존재)이나 직접 올린 파일은 에이전트가 뺄 수 없습니다(403 거부).
 
@@ -90,11 +95,13 @@
 
 ## 5. 기존 데이터 정리 및 마이그레이션 (0068_library_intent)
 
-- **유지/이동 기준 (운영 DB 실측 기준)**:
-  - `source = 'upload'` (직접 업로드): 81건 -> `area='files'` (내 보관함) 유지, `origin='user'`, `keep_reason='direct_upload'`
-  - 그 외 (`source = 'agent_output'` 등): 1,857건 -> `area='agent'` (AI 작업 파일)로 일괄 이동, `origin='agent'`, `keep_reason=NULL`
-  - 기존 `area='agent'`: 15,274건 -> `area='agent'` 유지
-  - 총 결과물: 17,212건
-- **데이터 보존**:
-  - 원본 경로, 파일 저장 사본, SHA256 해시, 세션 연결, 다운로드 링크는 100% 온전히 유지됩니다.
-  - 변경 전 상태는 `artifact_area_backup_0068` 테이블(id, source, area)에 보존되어 downgrade 시 100% 롤백 가능합니다.
+- **유지/이동 기준**: 직접 업로드(`source='upload'`)만 `files` 에 남기고 `origin='user'`, `keep_reason='direct_upload'` 를 부여합니다. 그 외 `files` 행(AI 산출물·링크 등록 등)은 `agent` 로 옮기고, `origin` 은 `agent_output`/`agent_modified` 면 `agent`, 그 밖은 `unknown` 으로 채웁니다.
+- **운영 DB 사본 드라이런(2026-10-25, 임시 클러스터에 복원, 운영 DB는 읽기 전용 pg_dump 만 사용)**:
+  - 사본: 17,243행(스키마 0067), 삭제 안 된 행 17,234.
+  - 전: `files/upload` 81, `files/agent_output` 1,869, `agent/agent_output` 11,380, `agent/agent_modified` 3,913.
+  - 후(0068): `files/upload/user/direct_upload` 81 유지, `agent/agent_output/agent` 13,249(1,869 이동 포함), `agent/agent_modified/agent` 3,913. 백업 표 `artifact_area_backup_0068` 17,243행.
+  - 파일명·MIME 기반 `category` 백필: archive 126, audio 129, code 8,769, document 2,722, image 3,275, other 2,064, presentation 3, spreadsheet 88, video 67.
+  - 원본 경로·저장 사본 경로·sha256·세션/Run 연결·크기·생성/삭제 시각 등 변경 대상이 아닌 컬럼의 전체 행 체크섬이 upgrade 전후 같습니다. 대표 12건(이동 6, 유지 3, 기존 agent 3)은 저장 파일이 존재하고 DB sha256 과 파일 sha256 이 같습니다.
+  - downgrade 로 `area×source` 집계와 체크섬이 사전 상태와 같아지고 새 컬럼 4개와 백업 표가 사라집니다. 재 upgrade 도 같은 결과입니다.
+- **재실행 안전**: 같은 migration 을 `alembic_version` 밖에서 다시 실행하면 새 컬럼이 이미 있는 것을 보고 데이터 정리를 건너뜁니다. 그 사이 사용자가 보관한 파일이 `agent` 로 내려가지 않습니다. downgrade 도 이미 내려간 상태에서 오류 없이 지나갑니다.
+- **온라인 배포**: 0068 은 기본값 있는 컬럼 추가와 행 이동뿐이라 `generation-contract.json` 의 `online_migration_from` 에 0067 을 넣었습니다. 전환 중 이전 세대가 승격한 `files` 행은 `keep_reason` 이 없고, 목록 API 는 `files` 탭에서 `keep_reason` 이 있는 행만 보여 줍니다.

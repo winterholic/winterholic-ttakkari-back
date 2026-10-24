@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -22,6 +23,7 @@ from ttakkari.api.planner import (
     new_event,
 )
 from ttakkari.artifacts import preview
+from ttakkari.artifacts.keep_evidence import build_evidence, find_user_quote
 from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import refresh_from_original, register_file
 from ttakkari.audit import record
@@ -34,6 +36,7 @@ from ttakkari.models import (
     ArtifactArea,
     ArtifactKeepReason,
     ArtifactOrigin,
+    AuditLog,
     ChatSession,
     CtxMemory,
     Memo,
@@ -206,13 +209,17 @@ async def link(body: LinkIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 
 @router.get("/artifacts")
 async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str | None = None, limit: int = 20,
-                    area: Literal["files", "agent"] | None = None) -> dict[str, Any]:
+                    category: str | None = None, area: Literal["files", "agent"] | None = None) -> dict[str, Any]:
     session = await _session(db, sid)
     stmt = select(Artifact).where(Artifact.deleted_at.is_(None), *_artifact_scope(session))
     if kind:
         stmt = stmt.where(Artifact.kind == kind)
+    if category:
+        stmt = stmt.where(Artifact.category == category)
     if area:
         stmt = stmt.where(Artifact.area == area)
+        if area == "files":
+            stmt = stmt.where(Artifact.keep_reason.is_not(None))
     if q:
         like = f"%{q.replace('%', r'\%').replace('_', r'\_')}%"
         stmt = stmt.where(or_(Artifact.filename.ilike(like), Artifact.rel_path.ilike(like)))
@@ -311,12 +318,10 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
 
 @router.post("/keep")
 async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -> dict[str, Any]:
-    """사용자가 대화에서 명시적으로 보관을 요청했을 때(예: '만들어서 보관함에 넣어줘', '보관함에 보관해줘') 대상 파일을 내 보관함(files)에 영구 보관한다.
-    요청 근거(지시문, 세션 ID, Run ID, 요청 메시지 ID, 시각)를 함께 기록한다."""
-    instruction = body.instruction.strip()
-    if not instruction:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "보관 요청 지시문(instruction)은 필수입니다.")
+    """사용자가 대화에서 보관을 요청했을 때 대상 파일을 내 보관함(files)에 영구 보관한다.
 
+    body.quote 는 사용자가 보관을 요청한 말의 그대로 인용이다. 이 세션의 실제 사용자 발화(사용자 메시지 또는 접수가 넘긴 사용자 요청)에
+    그 인용이 없으면 422(quote_not_found)로 거부하고 아무것도 바꾸지 않는다. 근거(발화 Run·세션·시각)는 keep_evidence 에 남는다."""
     sid, token_run_id = caller
     sess = await _session(db, sid)
     ws = await db.get(Workspace, sess.workspace_id)
@@ -340,36 +345,37 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
     if not run_id:
         run_id = await db.scalar(select(Run.id).where(
             Run.session_id == sid).order_by(Run.created_at.desc()).limit(1))
-    if run_id is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "run_not_found", "message": "보관 근거를 남길 Run을 특정할 수 없습니다."})
-
-    run = await db.get(Run, run_id)
-    if run is None:
+    run = await db.get(Run, run_id) if run_id else None
+    if run is None or run.session_id != sid:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "run_not_found", "message": "보관 근거를 남길 Run을 찾을 수 없습니다."})
 
-    evidence = {
-        "session_id": str(sid),
-        "run_id": str(run.id),
-        "message_id": str(run.id),
-        "user_prompt": run.prompt,
-        "requested_at": run.created_at.isoformat(),
-        "instruction": instruction,
-    }
+    match = await find_user_quote(db, sid, run, body.quote)
+    if match is None:
+        raise HTTPException(422, {"code": "quote_not_found", "message":
+                            "이 세션의 사용자 발화에서 그 인용을 찾지 못했어요. 사용자가 보관을 요청한 말을 그대로 인용하세요. "
+                            "기획이 작업 세션에 쓴 지시는 사용자 발화가 아니므로 근거가 될 수 없고, 작업 세션이면 기획 세션이 직접 보관해야 합니다."})
+    evidence = build_evidence(match, session_id=sid, run=run, quote=body.quote, kept_at=utcnow())
 
     existing = await db.scalar(select(Artifact).where(
         Artifact.deleted_at.is_(None), Artifact.session_id == sid,
         Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))
     if existing is not None:
+        if existing.area == ArtifactArea.files and existing.keep_reason is not None:
+            # 이미 내 보관함에 있다. 처음의 보관 사유·근거를 덮어쓰지 않는다(업로드·직접 등록이 chat_request 로 바뀌면 안 된다).
+            return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
+        removed_at = await _last_user_removal(db, existing.id)
+        if removed_at is not None and match.run.created_at <= removed_at:
+            raise HTTPException(status.HTTP_409_CONFLICT, {"code": "removed_after_request", "message":
+                                "사용자가 이 요청 뒤에 내 보관함에서 뺀 파일이에요. 새로 보관을 요청한 말이 필요합니다."})
         try:
             changed = await refresh_from_original(existing, real)
         except BrokerError as e:
             raise broker_http(e) from e
-        already_kept = (existing.area == ArtifactArea.files and existing.keep_reason == ArtifactKeepReason.chat_request)
         existing.area = ArtifactArea.files
         existing.keep_reason = ArtifactKeepReason.chat_request
         existing.keep_evidence = evidence
         record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=existing.id,
-               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id), "already_kept": already_kept})
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run.id), "message_id": evidence["message_id"]})
         await db.commit()
         if needs_server_preview(existing.kind) and (
                 changed or existing.preview_status not in (PreviewStatus.ready, PreviewStatus.processing)):
@@ -379,16 +385,24 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
         art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.files,
                                   origin=ArtifactOrigin.agent, keep_reason=ArtifactKeepReason.chat_request,
                                   keep_evidence=evidence,
-                                  workspace_id=ws.id, session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),
+                                  workspace_id=ws.id, session_id=sid, run_id=run.id, rel_path=str(real.relative_to(root)),
                                   export_allowed=ws.export_allowed)
         record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=art.id,
-               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id), "already_kept": False})
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run.id), "message_id": evidence["message_id"]})
     except BrokerError as e:
         raise broker_http(e) from e
     await db.commit()
     if needs_server_preview(art.kind):
         preview.enqueue(art.id)
     return {"artifact": ArtifactOut.from_model(art).model_dump(mode="json")}
+
+
+async def _last_user_removal(db: Db, art_id: uuid.UUID) -> datetime | None:
+    """사용자가 앱에서 이 파일을 내 보관함에서 뺀 마지막 시각."""
+    return await db.scalar(select(AuditLog.at).where(
+        AuditLog.action == "artifact.move", AuditLog.actor == "user", AuditLog.outcome == "ok",
+        AuditLog.target_id == str(art_id), AuditLog.detail["to"].as_string() == ArtifactArea.agent)
+        .order_by(AuditLog.at.desc()).limit(1))
 
 
 # ---- 서버

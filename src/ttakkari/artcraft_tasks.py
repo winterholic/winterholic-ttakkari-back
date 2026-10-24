@@ -376,7 +376,7 @@ async def _previous_outputs(db: AsyncSession, run: Run) -> list[Artifact]:
 NOTE = """\
 [ArtCraft 작업 지침] 범주: {category}. 연결된 앱 MCP 서버: {servers}.
 - 작업 폴더: {base}  (in/ 입력 복사본, prev/ 이전 결과 복사본, work/ 중간 파일, out/ 최종 결과). 앱 도구는 이 폴더 안의 파일만 읽고 쓰게 설정돼 있다.
-- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 {out} 에 의미 있는 이름(예: report-v2.docx)으로 저장한다. 그곳에 저장한 파일은 outbox로 복사돼 에이전트 파일로 자동 수집된다. 사용자가 파일 보관함에서 보게 하려면 share_file 로 공유한다.
+- 입력 파일(in/, prev/)은 고치지 말고 읽기만 한다. 고칠 때는 work/ 로 복사해 작업하고, 최종 결과는 {out} 에 의미 있는 이름(예: report-v2.docx)으로 저장한다. 그곳에 저장한 파일은 outbox로 복사돼 에이전트 파일로 자동 수집된다. 사용자가 대화에서 열어 보게 하려면 share_file 로 공유한다(AI 작업 파일에 남는다).
 - 앱 MCP 도구가 안 보이거나 막히면 CLI 로 같은 일을 한다: {launcher} run <app> ... (명령 ID 목록은 `{launcher} run <app> commands`, 상세는 {agents}).
 - 끝내기 전에 결과를 직접 확인한다(렌더·info·text 등으로 열어 보고, 이미지 결과는 PNG 로 렌더해 본다). 확인한 내용을 답에 한두 줄로 적는다.
 - 앱이 못 하는 일은 지어내지 말고 무엇이 안 됐는지 솔직히 알린다. 유료·클라우드·AI 제공자 기능은 쓰지 않는다. 비밀·토큰 파일은 읽지 않는다.

@@ -97,6 +97,9 @@ async def list_artifacts(
     # 보관함 탭: files 는 사용자가 보관한 내 보관함, agent 는 AI 작업 파일. all 또는 생략 시 전체.
     if area and area != "all":
         stmt = stmt.where(Artifact.area == area)
+        if area == "files":
+            # 보관 사유가 없는 files 행(배포 전환 중 이전 세대가 만든 행 등)은 내 보관함에 보이지 않는다.
+            stmt = stmt.where(Artifact.keep_reason.is_not(None))
     if category and category != "all":
         stmt = stmt.where(Artifact.category == category)
     if origin and origin != "all":

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from helpers import run_to_end, wait_run
@@ -46,13 +47,15 @@ async def test_direct_chat_outbox_remains_agent_on_share_and_files_on_keep(clien
     """AI 생성·수정 및 자발적 share_file 은 AI 작업 파일(agent)로 유지된다.
     대화에서 명시적 보관 요청(keep)이 있을 때만 내 보관함(files)으로 들어가고 출처(agent)와 근거가 남는다."""
     _ws, sess = await new_session(make_git_dir())
-    await run_to_end(client, auth, sess["id"], "MODIFY")
+    ask = "MODIFY 그리고 만든 report.md 를 내 보관함에 보관해줘"
+    run = await run_to_end(client, auth, sess["id"], ask)
     assert await _areas(client, auth, session_id=sess["id"]) == {
         "report.md": "agent", "README.md": "agent", "new_file.txt": "agent"}
     assert await _areas(client, auth, session_id=sess["id"], area="files") == {}
 
     # 에이전트가 share_file 로 넘겨도 내 보관함(files)이 아닌 AI 작업 파일(agent)에 남는다.
     run_id = (await client.get(f"/api/sessions/{sess['id']}/runs", headers=auth)).json()[0]["id"]
+    assert run_id == run["id"]
     outbox = get_settings().outbox_root / run_id
     h = _orch(issue_token(sess["id"]))
     before = (await client.get("/api/artifacts", params={"session_id": sess["id"]}, headers=auth)).json()
@@ -69,14 +72,17 @@ async def test_direct_chat_outbox_remains_agent_on_share_and_files_on_keep(clien
     assert r2.json()["artifact"]["area"] == "agent"
 
     # 사용자가 대화에서 명시적으로 보관을 요청했을 때(keep) 비로소 내 보관함(files)이 되고 근거가 기록된다.
-    r_keep = await client.post("/api/agent/keep", json={"path": str(outbox / "report.md"), "instruction": "만들어서 보관함에 넣어줘"}, headers=h)
-    assert r_keep.status_code == 200
+    r_keep = await client.post("/api/agent/keep", json={"path": str(outbox / "report.md"),
+                                                         "quote": "report.md 를 내 보관함에 보관해줘"}, headers=h)
+    assert r_keep.status_code == 200, r_keep.text
     kept = r_keep.json()["artifact"]
     assert kept["id"] == before_id
     assert kept["area"] == "files"
     assert kept["origin"] == "agent"  # AI 파일 출처 유지!
     assert kept["keep_reason"] == "chat_request"
-    assert kept["keep_evidence"]["instruction"] == "만들어서 보관함에 넣어줘"
+    assert kept["keep_evidence"]["quote"] == "report.md 를 내 보관함에 보관해줘"
+    assert kept["keep_evidence"]["message_id"] == run["id"]  # 실제 사용자 메시지(Run prompt)
+    assert kept["keep_evidence"]["message_source"] == "message"
     assert await _areas(client, auth, session_id=sess["id"], area="files") == {"report.md": "files"}
 
 
@@ -271,7 +277,7 @@ async def test_removed_from_library_never_resurfaces_via_share_or_collect(client
     ws, sess = await new_session()
     sid = uuid.UUID(sess["id"])
     async with sessionmaker()() as db:
-        run = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="keep file", engine="claude", status="running")
+        run = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="keep file: 보관함에 보관해줘", engine="claude", status="running")
         db.add(run)
         await db.commit()
         run_id = run.id
@@ -283,7 +289,7 @@ async def test_removed_from_library_never_resurfaces_via_share_or_collect(client
     h = _orch(issue_token(sid, run_id))
 
     # 1. 사용자의 요청으로 보관함에 보관됨
-    r_keep = await client.post("/api/agent/keep", json={"path": str(target), "instruction": "보관함에 보관해줘"}, headers=h)
+    r_keep = await client.post("/api/agent/keep", json={"path": str(target), "quote": "보관함에 보관해줘"}, headers=h)
     assert r_keep.status_code == 200
     art = r_keep.json()["artifact"]
     assert art["area"] == "files" and art["keep_reason"] == "chat_request"
@@ -537,6 +543,8 @@ async def test_migration_0068_library_intent():
         mod = _migration_0068()
         stmts: list[str] = []
         mod.op = FakeOp(stmts)
+        # 테스트 DB 는 모델로 만들어져 새 컬럼이 이미 있다. 0068 이전 스키마였던 것처럼 첫 적용 경로를 탄다.
+        mod._existing_columns = lambda: set()
         mod.upgrade()
 
         for s in stmts:
@@ -577,6 +585,8 @@ async def test_migration_0068_library_intent():
         # 롤백(downgrade) 검증
         down: list[str] = []
         mod.op = FakeOp(down)
+        mod._existing_columns = lambda: set()
+        mod._has_backup_table = lambda: True
         mod.downgrade()
         for s in down:
             await db.execute(text(s))
@@ -627,7 +637,7 @@ async def test_twelve_scenarios_comprehensive(client, auth, new_session):
 
     # 시나리오 2: AI 생성 → AI 작업 파일
     async with sessionmaker()() as db:
-        run = Run(session_id=sid, workspace_id=ws_id, prompt="generate files", engine="claude", status="running")
+        run = Run(session_id=sid, workspace_id=ws_id, prompt="generate files. 엑셀 만들어서 보관함에 넣어줘", engine="claude", status="running")
         db.add(run)
         await db.commit()
         run_id = run.id
@@ -665,13 +675,15 @@ async def test_twelve_scenarios_comprehensive(client, auth, new_session):
     assert dl_file_resp.status_code == 200 and dl_file_resp.content == b"PK\x03\x04 fake sheet"
 
     # 시나리오 5: 보관 요청으로 AI 파일 보관 → 내 보관함 + AI 출처 유지 + 근거 기록
-    keep_resp = await client.post("/api/agent/keep", json={"path": str(ai_file), "instruction": "엑셀 만들어서 보관함에 넣어줘"}, headers=h)
+    keep_resp = await client.post("/api/agent/keep", json={"path": str(ai_file), "quote": "엑셀 만들어서 보관함에 넣어줘"}, headers=h)
     assert keep_resp.status_code == 200
     kept_art = keep_resp.json()["artifact"]
     assert kept_art["area"] == "files"
     assert kept_art["origin"] == "agent"  # 출처는 AI 유지!
     assert kept_art["keep_reason"] == "chat_request"
-    assert kept_art["keep_evidence"]["instruction"] == "엑셀 만들어서 보관함에 넣어줘"
+    assert kept_art["keep_evidence"]["quote"] == "엑셀 만들어서 보관함에 넣어줘"
+    assert kept_art["keep_evidence"]["message_id"] == str(run_id)
+    assert kept_art["keep_evidence"]["message_source"] == "message"
 
     # 시나리오 6: 링크 열기/다운로드만으로 미보관
     ws_root = Path(ws["root_path"])
@@ -725,7 +737,7 @@ async def test_twelve_scenarios_comprehensive(client, auth, new_session):
     before_count = len((await client.get("/api/artifacts", params={"session_id": str(sid)}, headers=auth)).json())
     for _ in range(3):
         await client.post("/api/agent/share", json={"path": str(ai_file)}, headers=h)
-        await client.post("/api/agent/keep", json={"path": str(ai_file), "instruction": "다시 보관"}, headers=h)
+        await client.post("/api/agent/keep", json={"path": str(ai_file), "quote": "보관함에 넣어줘"}, headers=h)
     after_count = len((await client.get("/api/artifacts", params={"session_id": str(sid)}, headers=auth)).json())
     assert before_count == after_count
 
@@ -772,57 +784,208 @@ async def test_agent_move_artifact_forbidden_and_conflict(client, auth, new_sess
     assert r2.json()["code"] == "user_kept"
 
 
-async def test_keep_artifact_validations_and_evidence(client, auth, new_session):
-    """keep_artifact 지시문 필수(빈값 400), Run 특정 불가 시 409 거부,
-    성공 시 keep_evidence 에 session_id, run_id, message_id, user_prompt, requested_at, instruction 모두 기록."""
+async def _mk_run(ws_id: str, sid: uuid.UUID, prompt: str, *, origin: str = "user", status: str = "succeeded",
+                  at: datetime | None = None) -> uuid.UUID:
     from ttakkari.models import Run
 
-    ws, sess = await new_session()
-    sid = uuid.UUID(sess["id"])
-
-    # Run 없는 세션의 토큰으로 호출 시 409 거부
-    h_norun = _orch(issue_token(sid))
-    ws_root = Path(ws["root_path"])
-    f = ws_root / "test_keep.md"
-    f.write_text("# keep me")
-
-    r_norun = await client.post("/api/agent/keep", json={"path": str(f), "instruction": "보관해줘"}, headers=h_norun)
-    assert r_norun.status_code == 409
-    assert r_norun.json()["code"] == "run_not_found"
-
-    # Run 생성
     async with sessionmaker()() as db:
-        run = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="사용자가 보관을 지시함",
-                  engine="claude", status="running")
+        run = Run(session_id=sid, workspace_id=uuid.UUID(ws_id), prompt=prompt, engine="claude", status=status, origin=origin)
+        if at is not None:
+            run.created_at = at
         db.add(run)
         await db.commit()
-        run_id = run.id
+        return run.id
 
-    h = _orch(issue_token(sid, run_id))
 
-    # instruction 빈 값 -> 422 또는 400 거부
-    r_empty = await client.post("/api/agent/keep", json={"path": str(f), "instruction": "   "}, headers=h)
-    assert r_empty.status_code in (400, 422)
+async def _keep(client, sid: uuid.UUID, run_id: uuid.UUID | None, path: Path, quote: str):
+    return await client.post("/api/agent/keep", json={"path": str(path), "quote": quote},
+                             headers=_orch(issue_token(sid, run_id)))
 
-    # 정상 보관 호출
-    r_ok = await client.post("/api/agent/keep", json={"path": str(f), "instruction": "보관함에 꼭 넣어줘"}, headers=h)
-    assert r_ok.status_code == 200
-    kept = r_ok.json()["artifact"]
-    assert kept["area"] == "files"
-    assert kept["keep_reason"] == "chat_request"
-    ev = kept["keep_evidence"]
-    assert ev["session_id"] == str(sid)
-    assert ev["run_id"] == str(run_id)
+
+async def _artifact_rows(sid: uuid.UUID) -> list[Artifact]:
+    async with sessionmaker()() as db:
+        return list(await db.scalars(select(Artifact).where(Artifact.session_id == sid)))
+
+
+async def test_keep_without_user_request_is_rejected_and_changes_nothing(client, auth, new_session):
+    """보관 요청이 없던 Run 에서 임의 인용으로 keep 하면 422, 행·area·근거 모두 그대로다(결함 1 재현)."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "summary.md"
+    f.write_text("# s")
+    run_id = await _mk_run(ws["id"], sid, "이 파일을 요약만 해줘. 보관 요청은 없음.", status="running")
+
+    # 이미 공유된(agent) 파일도, 아직 등록 전 파일도 영향이 없어야 한다.
+    shared = await client.post("/api/agent/share", json={"path": str(f)}, headers=_orch(issue_token(sid, run_id)))
+    assert shared.status_code == 200 and shared.json()["artifact"]["area"] == "agent"
+    before = await _artifact_rows(sid)
+
+    for quote in ("사용자가 보관 요청함", "보관함에 넣어줘", "x", "   "):
+        r = await _keep(client, sid, run_id, f, quote)
+        assert r.status_code in (422,), (quote, r.text)
+    assert (await _keep(client, sid, run_id, f, "사용자가 보관 요청함")).json()["code"] == "quote_not_found"
+
+    after = await _artifact_rows(sid)
+    assert [(a.id, a.area, a.keep_reason, a.keep_evidence) for a in after] == \
+        [(a.id, a.area, a.keep_reason, a.keep_evidence) for a in before]
+    assert after[0].area == "agent" and after[0].keep_reason is None
+
+    # 아직 등록되지 않은 파일도 거부되면 행이 생기지 않는다.
+    g = Path(ws["root_path"]) / "fresh.md"
+    g.write_text("# fresh")
+    assert (await _keep(client, sid, run_id, g, "임의로 지어낸 요청")).status_code == 422
+    assert len(await _artifact_rows(sid)) == len(before)
+
+
+async def test_keep_with_real_user_message_quote_records_the_actual_message(client, auth, new_session):
+    """실제 사용자 메시지를 (공백이 달라도) 인용하면 files 로 보관되고, origin=agent 가 유지되며 근거는 그 메시지를 가리킨다."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "report.md"
+    f.write_text("# report")
+    t0 = datetime.now(UTC)
+    msg_id = await _mk_run(ws["id"], sid, "보고서 만들고\n그 파일 내 보관함에   보관해줘 고마워", at=t0 - timedelta(minutes=5))
+    run_id = await _mk_run(ws["id"], sid, "계속 진행해", status="running", at=t0)
+
+    r = await _keep(client, sid, run_id, f, "내 보관함에 보관해줘")
+    assert r.status_code == 200, r.text
+    a = r.json()["artifact"]
+    assert a["area"] == "files" and a["origin"] == "agent" and a["keep_reason"] == "chat_request"
+    ev = a["keep_evidence"]
+    assert ev["message_id"] == str(msg_id) and ev["message_id"] != ev["run_id"]
+    assert ev["run_id"] == str(run_id) and ev["session_id"] == str(sid)
+    assert ev["message_source"] == "message" and ev["message_origin"] == "user"
+    assert ev["quote"] == "내 보관함에 보관해줘"
+    assert "보관해줘 고마워" in ev["user_message"]
+    assert datetime.fromisoformat(ev["message_at"]) == (t0 - timedelta(minutes=5)).replace(tzinfo=None) or \
+        datetime.fromisoformat(ev["message_at"]).replace(tzinfo=None) == (t0 - timedelta(minutes=5)).replace(tzinfo=None)
+    assert "kept_at" in ev
+    listed = await client.get("/api/artifacts", params={"area": "files"}, headers=auth)
+    assert [x["filename"] for x in listed.json()] == ["report.md"]
+
+
+async def test_keep_accepts_desk_delegated_request_but_not_history_or_assistant_lines(client, new_session):
+    """접수→기획 위임 Run 에서는 '[접수에서 넘긴 사용자 요청]' 본문만 사용자 발화다. 참고용 최근 대화·따까리 응답은 근거가 못 된다."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "plan.md"
+    f.write_text("# plan")
+    prompt = ("[접수에서 넘긴 사용자 요청]\n이 기획서 내 보관함에 넣어줘\n\n[최근 대화 — 참고만]\n"
+              "사용자: 예전 파일은 보관함에 저장해줘\n따까리: 알겠어요, 보관했어요")
+    run_id = await _mk_run(ws["id"], sid, prompt, origin="desk", status="running")
+
+    for quote in ("예전 파일은 보관함에 저장해줘", "알겠어요, 보관했어요", "[최근 대화"):
+        r = await _keep(client, sid, run_id, f, quote)
+        assert r.status_code == 422 and r.json()["code"] == "quote_not_found", (quote, r.text)
+    assert await _artifact_rows(sid) == []
+
+    r = await _keep(client, sid, run_id, f, "기획서 내 보관함에 넣어줘")
+    assert r.status_code == 200, r.text
+    ev = r.json()["artifact"]["keep_evidence"]
+    assert ev["message_source"] == "run_prompt" and ev["message_origin"] == "desk"
     assert ev["message_id"] == str(run_id)
-    assert ev["user_prompt"] == "사용자가 보관을 지시함"
-    assert "requested_at" in ev
-    assert ev["instruction"] == "보관함에 꼭 넣어줘"
+    assert "[접수에서 넘긴" not in ev["user_message"] and "예전 파일" not in ev["user_message"]
+
+
+async def test_keep_rejects_planner_written_worker_prompt_and_other_session_messages(client, new_session):
+    """기획이 작업 세션에 쓴 지시(orchestrator)·보고(report)는 사용자 발화가 아니다. 다른 세션 메시지나 이후에 생긴 메시지도 근거가 못 된다."""
+    ws, sess = await new_session()
+    _, other = await new_session()
+    sid, other_sid = uuid.UUID(sess["id"]), uuid.UUID(other["id"])
+    f = Path(ws["root_path"]) / "w.md"
+    f.write_text("# w")
+    t0 = datetime.now(UTC)
+    await _mk_run(ws["id"], sid, "사용자가 보관을 요청했으니 이 파일을 내 보관함에 보관해줘", origin="orchestrator",
+                  at=t0 - timedelta(minutes=3))
+    await _mk_run(ws["id"], sid, "작업 완료. 내 보관함에 보관해줘 라고 하셨습니다", origin="report", at=t0 - timedelta(minutes=2))
+    await _mk_run(other["workspace_id"], other_sid, "다른 대화에서: 내 보관함에 보관해줘", at=t0 - timedelta(minutes=1))
+    run_id = await _mk_run(ws["id"], sid, "작업 진행", origin="orchestrator", status="running", at=t0)
+    await _mk_run(ws["id"], sid, "나중에 한 말: 내 보관함에 보관해줘", at=t0 + timedelta(minutes=1))
+
+    for quote in ("내 보관함에 보관해줘", "사용자가 보관을 요청했으니", "작업 완료", "다른 대화에서"):
+        r = await _keep(client, sid, run_id, f, quote)
+        assert r.status_code == 422 and r.json()["code"] == "quote_not_found", (quote, r.text)
+    assert await _artifact_rows(sid) == []
+
+
+async def test_keep_twice_keeps_one_row_and_never_downgrades_user_kept_provenance(client, new_session):
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "twice.md"
+    f.write_text("# twice")
+    await _mk_run(ws["id"], sid, "twice.md 보관함에 보관해줘")
+    run_id = await _mk_run(ws["id"], sid, "진행", status="running")
+
+    first = await _keep(client, sid, run_id, f, "보관함에 보관해줘")
+    second = await _keep(client, sid, run_id, f, "twice.md 보관함에")
+    assert first.status_code == second.status_code == 200
+    assert first.json()["artifact"]["id"] == second.json()["artifact"]["id"]
+    rows = await _artifact_rows(sid)
+    assert len(rows) == 1
+    # 처음의 근거가 유지된다(덮어쓰지 않는다).
+    assert rows[0].keep_evidence["quote"] == "보관함에 보관해줘"
+
+    # 사용자가 직접 올린 보관 파일은 chat_request 로 바뀌지 않는다.
+    g = Path(ws["root_path"]) / "mine.md"
+    g.write_text("# mine")
+    async with sessionmaker()() as db:
+        db.add(Artifact(session_id=sid, workspace_id=uuid.UUID(ws["id"]), filename="mine.md", mime_type="text/markdown",
+                        kind="markdown", source="upload", area=ArtifactArea.files, origin="user", keep_reason="direct_upload",
+                        original_path=str(g.resolve()), stored_path=str(g.resolve()), storage_mode="reference",
+                        size_bytes=6, sha256="0" * 64))
+        await db.commit()
+    r = await _keep(client, sid, run_id, g, "보관함에 보관해줘")
+    assert r.status_code == 200
+    assert r.json()["artifact"]["keep_reason"] == "direct_upload" and r.json()["artifact"]["keep_evidence"] is None
+
+
+async def test_keep_after_user_removed_requires_a_newer_request(client, auth, new_session):
+    """사용자가 내 보관함에서 뺀 뒤에는 그 이전 발화로 다시 보관할 수 없다. 새 요청이 있으면 가능하다."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "back.md"
+    f.write_text("# back")
+    t0 = datetime.now(UTC)
+    await _mk_run(ws["id"], sid, "back.md 내 보관함에 보관해줘", at=t0 - timedelta(minutes=10))
+    run1 = await _mk_run(ws["id"], sid, "진행", status="running", at=t0 - timedelta(minutes=9))
+    kept = (await _keep(client, sid, run1, f, "내 보관함에 보관해줘")).json()["artifact"]
+    assert kept["area"] == "files"
+
+    out = await client.patch(f"/api/artifacts/{kept['id']}", json={"area": "agent"}, headers=auth)
+    assert out.status_code == 200 and out.json()["area"] == "agent" and out.json()["keep_reason"] is None
+
+    run2 = await _mk_run(ws["id"], sid, "다시 진행", status="running", at=datetime.now(UTC) + timedelta(seconds=1))
+    r = await _keep(client, sid, run2, f, "내 보관함에 보관해줘")
+    assert r.status_code == 409 and r.json()["code"] == "removed_after_request"
+    assert (await _artifact_rows(sid))[0].area == "agent"
+
+    await _mk_run(ws["id"], sid, "아 그 파일 다시 내 보관함에 넣어줘", at=datetime.now(UTC) + timedelta(seconds=2))
+    run3 = await _mk_run(ws["id"], sid, "또 진행", status="running", at=datetime.now(UTC) + timedelta(seconds=3))
+    r = await _keep(client, sid, run3, f, "다시 내 보관함에 넣어줘")
+    assert r.status_code == 200 and r.json()["artifact"]["area"] == "files"
+
+
+async def test_keep_requires_resolvable_run_and_path_scope(client, new_session):
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "x.md"
+    f.write_text("# x")
+    # Run 이 없는 세션의 토큰은 근거를 남길 Run 을 특정하지 못해 409.
+    r = await _keep(client, sid, None, f, "보관해줘")
+    assert r.status_code == 409 and r.json()["code"] == "run_not_found"
+    run_id = await _mk_run(ws["id"], sid, "x.md 보관해줘", status="running")
+    outside = Path(ws["root_path"]).parent / "outside-keep.md"
+    outside.write_text("# o")
+    r = await _keep(client, sid, run_id, outside, "보관해줘")
+    assert r.status_code == 403 and r.json()["code"] == "outside_root"
+    # 빈 인용은 스키마에서 거부된다.
+    assert (await _keep(client, sid, run_id, f, "")).status_code == 422
 
 
 async def test_resolve_and_register_origin_is_unknown(client, auth, new_session):
     """비-outbox 링크 resolve 시 origin=unknown, area=agent, keep_reason=None.
     사용자 직접 등록(POST /api/artifacts) 시 origin=unknown, area=files, keep_reason=direct_register."""
-    ws, sess = await new_session()
+    ws, _ = await new_session()
     ws_root = Path(ws["root_path"])
     p = ws_root / "sample_code.py"
     p.write_text("print('hello')")
@@ -846,10 +1009,77 @@ async def test_resolve_and_register_origin_is_unknown(client, auth, new_session)
     assert reg_art["keep_reason"] == "direct_register"
 
 
+async def test_migration_0068_runs_for_real_and_is_safe_to_repeat():
+    """실제 Alembic 연산으로 0068 을 격리 스키마에서 upgrade→재실행→downgrade→재실행→upgrade 한다(롤백으로 정리).
+    버전 표 밖에서 같은 migration 을 다시 돌려도 사용자가 보관한 파일을 agent 로 내리지 않는다."""
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    mod = _migration_0068()
+
+    def _rows(c):
+        return {r[0]: tuple(r[1:]) for r in c.execute(text(
+            "SELECT filename, area, origin, keep_reason, category FROM artifacts ORDER BY filename"))}
+
+    def _cols(c):
+        return {r[0] for r in c.execute(text(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema = 'mig0068' AND table_name = 'artifacts'"))}
+
+    def scenario(c):
+        c.execute(text("CREATE SCHEMA mig0068"))
+        c.execute(text("SET LOCAL search_path TO mig0068"))
+        c.execute(text("CREATE TABLE artifacts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), filename varchar(500), "
+                       "mime_type varchar(200), kind varchar(20), source varchar(30), area varchar(10) NOT NULL DEFAULT 'agent')"))
+        for name, mime, kind, source, area in [
+            ("up.txt", "text/plain", "code", "upload", "files"),
+            ("reg.md", "text/markdown", "markdown", "user_registered", "files"),
+            ("ai.mp4", "video/mp4", "video", "agent_output", "files"),
+            ("bundle.zip", "application/zip", "other", "agent_output", "agent"),
+        ]:
+            c.execute(text("INSERT INTO artifacts (filename, mime_type, kind, source, area) VALUES (:a, :b, :c, :d, :e)"),
+                      {"a": name, "b": mime, "c": kind, "d": source, "e": area})
+        ctx = MigrationContext.configure(c)
+        with Operations.context(ctx):
+            mod.upgrade()
+            first = _rows(c)
+            assert first == {
+                "up.txt": ("files", "user", "direct_upload", "document"),
+                "reg.md": ("agent", "unknown", None, "document"),
+                "ai.mp4": ("agent", "agent", None, "video"),
+                "bundle.zip": ("agent", "agent", None, "archive"),
+            }
+            assert c.execute(text("SELECT count(*) FROM artifact_area_backup_0068")).scalar() == 4
+
+            # 이후 사용자가 AI 파일을 보관한 상태에서 같은 migration 을 다시 실행한다.
+            c.execute(text("UPDATE artifacts SET area = 'files', keep_reason = 'chat_request' WHERE filename = 'ai.mp4'"))
+            mod.upgrade()
+            again = _rows(c)
+            assert again["ai.mp4"] == ("files", "agent", "chat_request", "video")
+            assert {k: v for k, v in again.items() if k != "ai.mp4"} == {k: v for k, v in first.items() if k != "ai.mp4"}
+            assert c.execute(text("SELECT count(*) FROM artifact_area_backup_0068")).scalar() == 4
+
+            mod.downgrade()
+            assert {"category", "origin", "keep_reason", "keep_evidence"}.isdisjoint(_cols(c))
+            assert c.execute(text("SELECT to_regclass('artifact_area_backup_0068')")).scalar() is None
+            assert {r[0]: r[1] for r in c.execute(text("SELECT filename, area FROM artifacts"))} == {
+                "up.txt": "files", "reg.md": "files", "ai.mp4": "files", "bundle.zip": "agent"}
+            mod.downgrade()  # 이미 내려간 상태에서 다시 내려도 오류가 없다.
+
+            mod.upgrade()
+            assert _rows(c) == first | {"ai.mp4": ("agent", "agent", None, "video")}
+
+    async with sessionmaker()() as db:
+        conn = await db.connection()
+        try:
+            await conn.run_sync(scenario)
+        finally:
+            await db.rollback()
+
+
 async def test_category_sql_matches_python_detect_category():
     """SQL category 백필 CASE 식과 Python detect_category 가 대표 확장자 표에 대해 동일한 결과를 내는지 검증.
     대표 확장자: .ts .txt .log .json .html .csv .zip .tar.gz .mp4 .mov .mp3 .m4a .pdf .docx .pptx .png .unknown"""
-    from ttakkari.artifacts.kinds import detect, detect_category
+    from ttakkari.artifacts.kinds import detect_category
 
     ext_cases = [
         ("file.ts", "text/plain", "code", "code"),
@@ -900,3 +1130,24 @@ async def test_category_sql_matches_python_detect_category():
             assert sql_cat == expected, f"SQL category mismatch for {filename}: got {sql_cat}, expected {expected}"
             assert py_cat == sql_cat, f"Python vs SQL mismatch for {filename}: {py_cat} != {sql_cat}"
 
+
+async def test_files_tab_hides_rows_without_a_keep_reason_and_agent_list_filters_category(client, auth, new_session):
+    """area=files 이어도 보관 사유가 없는 행(배포 전환 중 이전 세대가 승격한 행 등)은 내 보관함 목록에 나오지 않는다."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    async with sessionmaker()() as db:
+        for name, reason in (("legit.md", "user_button"), ("leaked.md", None)):
+            db.add(Artifact(session_id=sid, workspace_id=uuid.UUID(ws["id"]), filename=name, mime_type="text/markdown",
+                            kind="markdown", category="document", source="agent_output", area=ArtifactArea.files,
+                            origin="agent", keep_reason=reason, original_path=f"/{name}", stored_path=f"/{name}",
+                            storage_mode="reference", size_bytes=1, sha256="0" * 64))
+        db.add(Artifact(session_id=sid, workspace_id=uuid.UUID(ws["id"]), filename="clip.mp4", mime_type="video/mp4",
+                        kind="video", category="video", source="agent_output", area=ArtifactArea.agent, origin="agent",
+                        original_path="/clip.mp4", stored_path="/clip.mp4", storage_mode="reference", size_bytes=1, sha256="0" * 64))
+        await db.commit()
+    assert await _areas(client, auth, area="files") == {"legit.md": "files"}
+    h = _orch(issue_token(sid))
+    agent_files = (await client.get("/api/agent/artifacts", params={"area": "files"}, headers=h)).json()["artifacts"]
+    assert [a["filename"] for a in agent_files] == ["legit.md"]
+    videos = (await client.get("/api/agent/artifacts", params={"category": "video"}, headers=h)).json()["artifacts"]
+    assert [a["filename"] for a in videos] == ["clip.mp4"]

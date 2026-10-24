@@ -215,10 +215,17 @@ async def test_agent_work_artifacts_are_workspace_and_session_scoped(client, set
         json={"area": "files"},
     )
     assert forbidden_move.status_code == 404
-    allowed_move = await client.patch(
+    # 범위 안의 파일이어도 에이전트는 files 로 올릴 수 없다(409). agent 로 두는 것은 허용된다.
+    promote = await client.patch(
         f"/api/agent/artifacts/{work_artifact.id}",
         headers=work_headers,
         json={"area": "files"},
+    )
+    assert promote.status_code == 409
+    allowed_move = await client.patch(
+        f"/api/agent/artifacts/{work_artifact.id}",
+        headers=work_headers,
+        json={"area": "agent"},
     )
     assert allowed_move.status_code == 200
 

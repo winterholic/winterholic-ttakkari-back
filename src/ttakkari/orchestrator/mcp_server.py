@@ -465,12 +465,15 @@ async def share_file(path: str) -> str:
 
 
 @server.tool()
-async def keep_artifact(path: str, instruction: str) -> str:
-    """Permanently save a file into the user's personal library ('files') upon explicit user request
+async def keep_artifact(path: str, quote: str) -> str:
+    """Permanently save a file into the user's personal library ('files') because the user asked for it in the conversation
     (e.g. '만들어서 보관함에 넣어줘', '내 보관함에 보관해줘').
-    Pass the file path and the user's request instruction text as evidence (instruction is required).
-    Do NOT call this unless the user explicitly requested keeping/saving it in their library."""
-    return await _agent("POST", "/keep", {"path": path, "instruction": instruction})
+    `quote` must be the user's own words asking to keep it, copied verbatim from their message. The server looks the quote up
+    in the real user messages of this session and records that message as evidence; if it is not found (422 quote_not_found)
+    nothing is kept. Never invent, paraphrase or reuse a quote that is not a keep request, and never call this on your own.
+    Only the planning (lead) session that received the user's request can keep: a worker session only sees instructions the
+    planner wrote, which are not user words and are rejected, so ask the planning session to keep the file."""
+    return await _agent("POST", "/keep", {"path": path, "quote": quote})
 
 
 @server.tool()

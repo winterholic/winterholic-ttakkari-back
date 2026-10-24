@@ -271,7 +271,8 @@ class ArtifactAreaIn(BaseModel):
 
 class ArtifactKeepIn(BaseModel):
     path: str = Field(min_length=1, max_length=4096)
-    instruction: str = Field(min_length=1, max_length=4096)
+    # 사용자가 보관을 요청한 말의 그대로 인용. 서버가 이 세션의 실제 사용자 발화에서 찾는다.
+    quote: str = Field(min_length=1, max_length=2000)
 
 
 class ArtifactRegisterIn(BaseModel):

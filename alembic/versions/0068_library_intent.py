@@ -112,17 +112,42 @@ _CODE_COND = """(
 )"""
 
 
-def upgrade() -> None:
-    # 1. 컬럼 추가
-    op.add_column("artifacts", sa.Column("category", sa.String(length=30), nullable=False, server_default="other"))
-    op.add_column("artifacts", sa.Column("origin", sa.String(length=20), nullable=False, server_default="agent"))
-    op.add_column("artifacts", sa.Column("keep_reason", sa.String(length=30), nullable=True))
-    op.add_column("artifacts", sa.Column("keep_evidence", postgresql.JSONB().with_variant(sa.JSON(), "sqlite"), nullable=True))
+_NEW_COLUMNS = ("category", "origin", "keep_reason", "keep_evidence")
 
-    op.create_index("ix_artifacts_category", "artifacts", ["category"])
-    op.create_index("ix_artifacts_origin", "artifacts", ["origin"])
+
+def _existing_columns() -> set[str]:
+    return {c["name"] for c in sa.inspect(op.get_bind()).get_columns("artifacts")}
+
+
+def _has_backup_table() -> bool:
+    return sa.inspect(op.get_bind()).has_table("artifact_area_backup_0068")
+
+
+def upgrade() -> None:
+    # 같은 SQL 을 alembic_version 밖에서 다시 실행해도 안전해야 한다. 데이터 정리 단계는 files 에 있는 사용자 보관 파일을
+    # 다시 agent 로 내릴 수 있으므로, 새 컬럼이 이미 하나라도 있으면(= 이미 적용됨) 컬럼 보강만 하고 데이터는 건드리지 않는다.
+    existing = _existing_columns()
+    first_run = not (set(_NEW_COLUMNS) & existing)
+
+    # 1. 컬럼 추가
+    if "category" not in existing:
+        op.add_column("artifacts", sa.Column("category", sa.String(length=30), nullable=False, server_default="other"))
+    if "origin" not in existing:
+        op.add_column("artifacts", sa.Column("origin", sa.String(length=20), nullable=False, server_default="agent"))
+    if "keep_reason" not in existing:
+        op.add_column("artifacts", sa.Column("keep_reason", sa.String(length=30), nullable=True))
+    if "keep_evidence" not in existing:
+        op.add_column("artifacts", sa.Column("keep_evidence", postgresql.JSONB().with_variant(sa.JSON(), "sqlite"), nullable=True))
+
+    op.execute("CREATE INDEX IF NOT EXISTS ix_artifacts_category ON artifacts (category)")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_artifacts_origin ON artifacts (origin)")
+
+    if not first_run:
+        print("[0068_library_intent] 이미 적용된 스키마라 데이터 정리는 건너뜀")
+        return
 
     # 2. 백업 테이블 생성 (변경 전 원본 상태 보존: source, area)
+    op.execute("DROP TABLE IF EXISTS artifact_area_backup_0068")
     op.execute("""
         CREATE TABLE artifact_area_backup_0068 AS
         SELECT id, source, area
@@ -179,16 +204,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("""
-        UPDATE artifacts SET
-            area = b.area
-        FROM artifact_area_backup_0068 b
-        WHERE artifacts.id = b.id
-    """)
+    if _has_backup_table():
+        op.execute("""
+            UPDATE artifacts SET
+                area = b.area
+            FROM artifact_area_backup_0068 b
+            WHERE artifacts.id = b.id
+        """)
     op.execute("DROP TABLE IF EXISTS artifact_area_backup_0068")
-    op.drop_index("ix_artifacts_origin", "artifacts")
-    op.drop_index("ix_artifacts_category", "artifacts")
-    op.drop_column("artifacts", "keep_evidence")
-    op.drop_column("artifacts", "keep_reason")
-    op.drop_column("artifacts", "origin")
-    op.drop_column("artifacts", "category")
+    op.execute("DROP INDEX IF EXISTS ix_artifacts_origin")
+    op.execute("DROP INDEX IF EXISTS ix_artifacts_category")
+    existing = _existing_columns()
+    for name in ("keep_evidence", "keep_reason", "origin", "category"):
+        if name in existing:
+            op.drop_column("artifacts", name)

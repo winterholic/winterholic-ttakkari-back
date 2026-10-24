@@ -222,7 +222,7 @@ def _prompt(job: ReverseJob, run: Run, *, review: bool = False) -> str:
  "observations":[{{"finding":"직접 관찰한 입력→출력", "evidence":"evidence/observation.txt 또는 사용자 설명의 해당 문장"}}],
  "checks":[{{"command":"실제로 실행한 명령", "exit_code":0, "expected_exit_code":0, "required":true, "log":"evidence/test.log"}}],
  "limitations":["미확인 동작과 차이"], "verdict":"{'passed 또는 failed 또는 needs_input' if review else '구현자는 생략'}"}}
-폴더와 파일은 도구로 직접 생성한다. JSON을 답변에 붙이는 것으로 대체하지 않는다. 소스·테스트·로그를 묶은 ZIP을 현재 Run outbox에 저장하고 share_file 로 공유해 사용자가 파일 보관함에서 내려받게 한다. outbox에 두기만 한 파일은 에이전트 파일로 수집된다.
+폴더와 파일은 도구로 직접 생성한다. JSON을 답변에 붙이는 것으로 대체하지 않는다. 소스·테스트·로그를 묶은 ZIP을 현재 Run outbox에 저장하고 share_file 로 공유해 사용자가 대화에서 내려받게 한다. 공유한 파일과 outbox에 두기만 한 파일은 모두 AI 작업 파일로 남는다.
 [사용자가 설명한 대상·재현 목표]
 {job.target}
 """

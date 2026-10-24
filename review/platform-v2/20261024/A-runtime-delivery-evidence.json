@@ -2,17 +2,17 @@
   "schema_version": "platform-v2-worker-a-evidence-v2",
   "generated_at": "2026-10-24T22:25:00+09:00",
   "snapshot_binding": {
-    "candidate_head_sha": "c0670cd5258cb7620c6ff52df302add2465d1ad4",
-    "candidate_tree_sha": "5b55902a7d5f71874f91f40017e55d0b99d7ad4f",
-    "candidate_src_ttakkari_tree_sha": "ab7b0c41144fc8d47fc216f85b0bd75c86b4a9cc",
+    "candidate_head_sha": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "candidate_tree_sha": "fe5f62a53eafd09a1276e6973406cb6de37afe62",
+    "candidate_src_ttakkari_tree_sha": "9aa984a4ad4b0377b77f0b382563513ab5c5c798",
     "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
     "audited_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
     "audited_src_ttakkari_tree_sha": "f2e5572ce8d039341eacc4dad5a70db03c61553b",
-    "checkout_branch": "audit/platform-v2-a-runtime-delivery-20261024",
-    "head_src_ttakkari_tree_sha": "ab7b0c41144fc8d47fc216f85b0bd75c86b4a9cc",
+    "checkout_branch": "fix/platform-v2-verified-integration-20261024",
+    "head_src_ttakkari_tree_sha": "9aa984a4ad4b0377b77f0b382563513ab5c5c798",
     "head_alembic_tree_sha": "5ba5ed46808b09daf2a28771c2bfdd4ef0f59e45",
-    "head_tests_tree_sha": "46a8b9cac4acbca58e42652da2cd22973836c800",
-    "head_unit_tests_tree_sha": "1c40bb67cb02ce465525a542ac173ee63f9c4ce9",
+    "head_tests_tree_sha": "2fde8f1ef5d8004e56803da925185c3d20c35e4b",
+    "head_unit_tests_tree_sha": "e7004cfa26b31c73240efc4d43f9ca2c981f3737",
     "head_deploy_tree_sha": "0a7c61a2aa1e17fd09036aaecf295abe1d045119",
     "origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
     "origin_main_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
@@ -23,20 +23,105 @@
       "entries": [
         {
           "status": " M",
-          "path": "review/platform-v2/20261024/test_a_runtime_delivery_evidence.py"
+          "path": "docs/design/platform-v2/backend-dependency-graph.json"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/backend-dependency-graph.md"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/backend-dependency-graph.mmd"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/backend-module-inventory.csv"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/backend-module-inventory.json"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/backend-module-inventory.md"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/backend-scan-coverage.csv"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/data-ownership.md"
+        },
+        {
+          "status": " M",
+          "path": "docs/design/platform-v2/frontend-feature-map.md"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/backend/audit_summary.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/backend/dynamic_imports_ledger.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/backend/migration_ddl_ledger.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/backend/source_manifest.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/frontend-tests/backend-test-classification.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/frontend-tests/frontend-api-inventory.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/frontend-tests/frontend-routes.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/frontend-tests/summary.json"
         }
       ],
       "dirty_source_paths": [],
       "dirty_audit_doc_paths": [
-        "review/platform-v2/20261024/test_a_runtime_delivery_evidence.py"
+        "docs/design/platform-v2/backend-dependency-graph.json",
+        "docs/design/platform-v2/backend-dependency-graph.md",
+        "docs/design/platform-v2/backend-dependency-graph.mmd",
+        "docs/design/platform-v2/backend-module-inventory.csv",
+        "docs/design/platform-v2/backend-module-inventory.json",
+        "docs/design/platform-v2/backend-module-inventory.md",
+        "docs/design/platform-v2/backend-scan-coverage.csv",
+        "docs/design/platform-v2/data-ownership.md",
+        "docs/design/platform-v2/frontend-feature-map.md",
+        "review/platform-v2/20261024/backend/audit_summary.json",
+        "review/platform-v2/20261024/backend/dynamic_imports_ledger.json",
+        "review/platform-v2/20261024/backend/migration_ddl_ledger.json",
+        "review/platform-v2/20261024/backend/source_manifest.json",
+        "review/platform-v2/20261024/frontend-tests/backend-test-classification.json",
+        "review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json",
+        "review/platform-v2/20261024/frontend-tests/frontend-api-inventory.json",
+        "review/platform-v2/20261024/frontend-tests/frontend-routes.json",
+        "review/platform-v2/20261024/frontend-tests/summary.json"
       ],
       "other_dirty_paths": [],
       "is_clean_source_tree": true,
       "is_clean_audit_docs": false
     },
     "import_binding": {
-      "expected_src_root": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/src",
-      "actual_ttakkari_init_file": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/src/ttakkari/__init__.py",
+      "expected_src_root": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration/src",
+      "actual_ttakkari_init_file": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration/src/ttakkari/__init__.py",
       "actual_ttakkari_init_sha256": "91447944015cec709e8aa7655f7e9d64e1e4508e7023a57fe3746911c0fc6fed",
       "is_bound_to_worktree_src": true
     }
@@ -119,8 +204,8 @@
     "A_runtime_delivery": {
       "worker_id": "e65430e3-0775-4e2c-910a-5050cdb7d216",
       "role": "Runtime / Delivery / Architecture",
-      "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a",
-      "branch": "audit/platform-v2-a-runtime-delivery-20261024",
+      "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration",
+      "branch": "fix/platform-v2-verified-integration-20261024",
       "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
       "base_origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
       "verification_history": [
@@ -398,7 +483,7 @@
   },
   "codebase_metrics": {
     "total_python_files": 385,
-    "total_lines": 94711,
+    "total_lines": 94894,
     "top_level_unit_count": 80,
     "top_fan_in_units": [
       {
@@ -1310,7 +1395,7 @@
       },
       "delivery": {
         "file_count": 8,
-        "line_count": 1679,
+        "line_count": 1862,
         "depends_on": [
           "api",
           "config",
@@ -2837,8 +2922,8 @@
       "creative_decision": {
         "status": "cache_miss_unverified_closure",
         "module_id": "creative",
-        "candidate_git_head_sha": "c0670cd5258cb7620c6ff52df302add2465d1ad4",
-        "candidate_git_tree_sha": "5b55902a7d5f71874f91f40017e55d0b99d7ad4f",
+        "candidate_git_head_sha": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+        "candidate_git_tree_sha": "fe5f62a53eafd09a1276e6973406cb6de37afe62",
         "closure_complete": false,
         "reasons": [
           "dynamic_import_in_closure:google_account:src/ttakkari/google_account/registry.py:['import_module']",
@@ -2847,13 +2932,13 @@
         "cache_decision": "broad_validation_fallback (conservative no-reuse due to dynamic import in transitive closure)"
       },
       "verified_sample_key": {
-        "cache_key": "evk-v2-design_system-16bf1ab07a8eec6d151b03a119c52e34",
-        "sha256": "16bf1ab07a8eec6d151b03a119c52e3499f3e62855e918fb5e05a674edbe1cbf",
+        "cache_key": "evk-v2-design_system-5f22ccf7fce331a42c55469659729695",
+        "sha256": "5f22ccf7fce331a42c554696597296952609c9d16f1b245c710d2433dd6f541c",
         "components": {
           "schema_version": "platform-v2-evidence-key-v2",
           "module_id": "design_system",
-          "candidate_git_head_sha": "c0670cd5258cb7620c6ff52df302add2465d1ad4",
-          "candidate_git_tree_sha": "5b55902a7d5f71874f91f40017e55d0b99d7ad4f",
+          "candidate_git_head_sha": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+          "candidate_git_tree_sha": "fe5f62a53eafd09a1276e6973406cb6de37afe62",
           "changed_file_hashes": {
             "src/ttakkari/design_system.py": "c102adfebcbbffbec96801353fb56e012f17de4a658a371cff0ae28617016fba"
           },

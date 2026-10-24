@@ -7,9 +7,7 @@ and negative controls (NC-BACK-ROOT-FALLBACK, NC-MANIFEST-MISSING, NC-MANIFEST-M
 
 from __future__ import annotations
 
-import io
 import json
-import subprocess
 import sys
 import tarfile
 from pathlib import Path
@@ -26,20 +24,8 @@ from scripts.platform_v2_test_audit import audit_backend_tests
 def historical_back_root(tmp_path_factory):
     """Historic 251-file assertions belong to the submitted C source snapshot."""
     root = tmp_path_factory.mktemp("platform-v2-c-historical")
-    result = subprocess.run(
-        [
-            "git",
-            "archive",
-            "b155049063a471ddab54d309831c2ee8758bfcd7",
-            "tests",
-            "unit_tests",
-            "benchmark_tests",
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        check=True,
-    )
-    with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
+    fixture = REPO_ROOT / "unit_tests/fixtures/platform_v2/c-b155-test-sources.tar.gz"
+    with tarfile.open(fixture) as archive:
         archive.extractall(root, filter="data")
     return root
 

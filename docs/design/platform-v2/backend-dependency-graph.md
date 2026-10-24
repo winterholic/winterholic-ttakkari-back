@@ -1,5 +1,5 @@
 # 따까리 플랫폼 V2 백엔드 의존성 그래프 및 구조 분석 (Dependency Graph - Corrected)
-> 기준 소스 SHA: `5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8` | 감사 시각: 2026-10-24
+> 기준 소스 SHA: `bbf62d5c1bd923dfc0c692692703b7cf5b7182c7` | 감사 시각: 2026-10-24
 
 ## 1. 아키텍처 다이어그램 (Mermaid)
 ```mermaid
@@ -41,6 +41,7 @@ flowchart TD
   exec_run_engine --> core_generation_deploy
   exec_run_engine --> core_system_routing
   exec_run_engine --> delivery_git_cas
+  exec_run_engine --> domain_creative_studio
   exec_run_engine --> domain_game_studio
   exec_run_engine --> domain_knowledge_rag
   exec_run_engine --> domain_meetings_stt
@@ -52,7 +53,9 @@ flowchart TD
   core_accounts_quota --> core_auth_session
   core_accounts_quota --> core_system_routing
   core_accounts_quota --> exec_run_engine
+  core_auth_session --> core_generation_deploy
   core_auth_session --> core_system_routing
+  core_auth_session --> domain_collector
   core_auth_session --> domain_knowledge_rag
   core_auth_session --> domain_memory_ontology
   core_auth_session --> domain_pms_tasks
@@ -65,7 +68,9 @@ flowchart TD
   domain_pms_tasks --> exec_run_engine
   domain_pms_tasks --> ops_monitoring
   domain_creative_studio --> core_auth_session
+  domain_creative_studio --> core_generation_deploy
   domain_creative_studio --> core_system_routing
+  domain_creative_studio --> core_workspaces_transfers
   domain_creative_studio --> domain_shares_artifacts
   domain_creative_studio --> exec_host_gpu
   domain_creative_studio --> exec_run_engine
@@ -76,12 +81,14 @@ flowchart TD
   domain_shares_artifacts --> exec_run_engine
   domain_collector --> core_auth_session
   domain_collector --> core_system_routing
+  domain_collector --> domain_knowledge_rag
   domain_collector --> exec_run_engine
   core_generation_deploy --> core_auth_session
   core_generation_deploy --> core_system_routing
   core_generation_deploy --> core_workspaces_transfers
   core_generation_deploy --> domain_collector
   core_generation_deploy --> domain_creative_studio
+  core_generation_deploy --> domain_knowledge_rag
   core_generation_deploy --> domain_media_tts
   core_generation_deploy --> domain_meetings_stt
   core_generation_deploy --> domain_memory_ontology
@@ -125,6 +132,7 @@ flowchart TD
   exec_host_gpu --> exec_run_engine
   domain_knowledge_rag --> core_auth_session
   domain_knowledge_rag --> core_system_routing
+  domain_knowledge_rag --> domain_collector
   domain_knowledge_rag --> domain_memory_ontology
   domain_knowledge_rag --> exec_run_engine
   domain_memory_ontology --> core_auth_session
@@ -179,37 +187,39 @@ flowchart TD
 > 상대 임포트(relative imports)를 해석한 파일 수준의 Tarjan SCC 결과, **정적 AST 파일 상호 참조 컴포넌트는 총 8개**입니다.
 > 주의: 이는 AST 구문 수준의 상호 참조이며, `if TYPE_CHECKING:` 가드, 함수 내부 lazy import, 런타임 importlib wiring 등의 조건부 실행이 분리되지 않은 정적 참조 집합입니다.
 
-### 2.1 정적 AST 파일 수준 상호 참조 (File-Level SCCs: 총 8개)
+### 2.1 정적 AST 파일 수준 상호 참조 (File-Level SCCs: 총 10개)
 정적 AST 상호 import를 형성하는 파일 집합:
 
-1. **SCC (크기: 2개 파일)**: `src/ttakkari/runs/usage.py`, `src/ttakkari/agents/muse.py`
-2. **SCC (크기: 4개 파일)**: `src/ttakkari/generation_deployment.py`, `src/ttakkari/generation_bootstrap.py`, `src/ttakkari/deploy_gate.py`, `src/ttakkari/deployment.py`
-3. **SCC (크기: 2개 파일)**: `src/ttakkari/context/library.py`, `src/ttakkari/api/assistant.py`
-4. **SCC (크기: 3개 파일)**: `src/ttakkari/creative/demo.py`, `src/ttakkari/creative/service.py`, `src/ttakkari/creative/render.py`
-5. **SCC (크기: 7개 파일)**: `src/ttakkari/runs/usage_collector.py`, `src/ttakkari/api/sessions.py`, `src/ttakkari/schedules/service.py`, `src/ttakkari/schedules/__init__.py`, `src/ttakkari/generation_service.py`, `src/ttakkari/runs/agent_control.py`, `src/ttakkari/runs/manager.py`
-6. **SCC (크기: 2개 파일)**: `src/ttakkari/design_preview.py`, `src/ttakkari/design_system.py`
-7. **SCC (크기: 2개 파일)**: `src/ttakkari/meetings/providers.py`, `src/ttakkari/meetings/local_stt/jobs.py`
-8. **SCC (크기: 2개 파일)**: `src/ttakkari/reverse.py`, `src/ttakkari/reverse_tasks.py`
+1. **SCC (크기: 2개 파일)**: `src/ttakkari/generation.py`, `src/ttakkari/db.py`
+2. **SCC (크기: 2개 파일)**: `src/ttakkari/runs/usage.py`, `src/ttakkari/agents/muse.py`
+3. **SCC (크기: 4개 파일)**: `src/ttakkari/generation_deployment.py`, `src/ttakkari/generation_bootstrap.py`, `src/ttakkari/deploy_gate.py`, `src/ttakkari/deployment.py`
+4. **SCC (크기: 2개 파일)**: `src/ttakkari/context/library.py`, `src/ttakkari/api/assistant.py`
+5. **SCC (크기: 3개 파일)**: `src/ttakkari/creative/demo.py`, `src/ttakkari/creative/service.py`, `src/ttakkari/creative/render.py`
+6. **SCC (크기: 7개 파일)**: `src/ttakkari/runs/usage_collector.py`, `src/ttakkari/api/sessions.py`, `src/ttakkari/schedules/service.py`, `src/ttakkari/schedules/__init__.py`, `src/ttakkari/generation_service.py`, `src/ttakkari/runs/agent_control.py`, `src/ttakkari/runs/manager.py`
+7. **SCC (크기: 2개 파일)**: `src/ttakkari/design_preview.py`, `src/ttakkari/design_system.py`
+8. **SCC (크기: 2개 파일)**: `src/ttakkari/meetings/providers.py`, `src/ttakkari/meetings/local_stt/jobs.py`
+9. **SCC (크기: 2개 파일)**: `src/ttakkari/reverse.py`, `src/ttakkari/reverse_tasks.py`
+10. **SCC (크기: 2개 파일)**: `src/ttakkari/harness_view/projects.py`, `src/ttakkari/harness_view/sources.py`
 
-### 2.2 모듈 수준 집계 사이클 (Coarse Module Cycles: 총 66개)
+### 2.2 모듈 수준 집계 사이클 (Coarse Module Cycles: 총 68개)
 모듈 간 상호 파일 참조가 묶여서 발생하는 아키텍처 수준의 의존성 루프:
 
-1. `core.auth_session` -> `core.system_routing` -> `core.auth_session`
-2. `core.auth_session` -> `core.system_routing` -> `core.generation_deploy` -> `core.auth_session`
-3. `core.system_routing` -> `core.generation_deploy` -> `core.system_routing`
-4. `core.auth_session` -> `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `core.auth_session`
-5. `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `core.system_routing`
-6. `core.auth_session` -> `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `core.auth_session`
-7. `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `core.generation_deploy`
-8. `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `core.system_routing`
-9. `core.auth_session` -> `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `core.auth_session`
-10. `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `core.generation_deploy`
-11. `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `core.system_routing`
+1. `core.auth_session` -> `core.generation_deploy` -> `core.auth_session`
+2. `core.auth_session` -> `core.generation_deploy` -> `core.system_routing` -> `core.auth_session`
+3. `core.generation_deploy` -> `core.system_routing` -> `core.generation_deploy`
+4. `core.auth_session` -> `core.generation_deploy` -> `core.system_routing` -> `core.workspaces_transfers` -> `core.auth_session`
+5. `core.system_routing` -> `core.workspaces_transfers` -> `core.system_routing`
+6. `core.auth_session` -> `core.generation_deploy` -> `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `core.auth_session`
+7. `core.generation_deploy` -> `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `core.generation_deploy`
+8. `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `core.system_routing`
+9. `core.auth_session` -> `core.generation_deploy` -> `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `core.auth_session`
+10. `core.generation_deploy` -> `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `core.generation_deploy`
+11. `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `core.system_routing`
 12. `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `core.workspaces_transfers`
-13. `core.auth_session` -> `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `domain.memory_ontology` -> `core.auth_session`
-14. `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `domain.memory_ontology` -> `core.system_routing`
-15. `core.auth_session` -> `core.system_routing` -> `core.generation_deploy` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `domain.memory_ontology` -> `domain.knowledge_rag` -> `core.auth_session`
-... 외 51개 집계 사이클
+13. `core.auth_session` -> `core.generation_deploy` -> `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `domain.memory_ontology` -> `core.auth_session`
+14. `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `domain.memory_ontology` -> `core.system_routing`
+15. `core.auth_session` -> `core.generation_deploy` -> `core.system_routing` -> `core.workspaces_transfers` -> `domain.shares_artifacts` -> `domain.meetings_stt` -> `domain.memory_ontology` -> `domain.knowledge_rag` -> `core.auth_session`
+... 외 53개 집계 사이클
 
 ### 2.3 동적 임포트 및 런타임 Wiring (Dynamic Imports Ledger)
 정적 import 문이 아닌 `importlib.import_module()` 또는 `__import__()`로 동적 로딩되는 런타임 간선 (정적 그래프 외부):
@@ -217,10 +227,10 @@ flowchart TD
 | 소스 파일 | 라인 | 동적 호출식 | 런타임 영향 |
 |---|---|---|---|
 | `src/ttakkari/google_account/registry.py` | L85 | `importlib.import_module('ttakkari.notebooklm.consumer')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
-| `src/ttakkari/managed_comfy.py` | L213 | `importlib.import_module('ttk_comfy.server')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
-| `src/ttakkari/managed_comfy.py` | L214 | `importlib.import_module('ttk_comfy.client')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
-| `src/ttakkari/managed_comfy.py` | L215 | `importlib.import_module('ttk_comfy.runner')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
-| `src/ttakkari/managed_comfy.py` | L216 | `importlib.import_module('ttk_comfy.workflow')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
+| `src/ttakkari/managed_comfy.py` | L250 | `importlib.import_module('ttk_comfy.server')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
+| `src/ttakkari/managed_comfy.py` | L251 | `importlib.import_module('ttk_comfy.client')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
+| `src/ttakkari/managed_comfy.py` | L252 | `importlib.import_module('ttk_comfy.runner')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
+| `src/ttakkari/managed_comfy.py` | L253 | `importlib.import_module('ttk_comfy.workflow')` | 동적 런타임 로딩 (정적 AST 의존성 외부) |
 
 ## 3. 핵심 참조 집중 파일 (AST Import Statement In-degree)
 
@@ -229,18 +239,18 @@ flowchart TD
 
 | 순위 | 파일 경로 | AST 임포트문 수 (In-degree) | 소속 모듈 | 결합 분석 |
 |---|---|---|---|---|
-| 1 | `src/ttakkari/models.py` | **137회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 2 | `src/ttakkari/config.py` | **106회** | `core.system_routing` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 3 | `src/ttakkari/runs/__init__.py` | **88회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 4 | `src/ttakkari/__init__.py` | **73회** | `core.system_routing` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 5 | `src/ttakkari/db.py` | **44회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 6 | `src/ttakkari/security/auth.py` | **40회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 7 | `src/ttakkari/api/deps.py` | **35회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 8 | `src/ttakkari/audit.py` | **30회** | `core.system_routing` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 9 | `src/ttakkari/broker/policy.py` | **21회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 10 | `src/ttakkari/runs/manager.py` | **19회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 11 | `src/ttakkari/orchestrator/runtime.py` | **19회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 12 | `src/ttakkari/knowledge/__init__.py` | **17회** | `domain.knowledge_rag` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 13 | `src/ttakkari/knowledge_models.py` | **17회** | `domain.knowledge_rag` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 14 | `src/ttakkari/github/errors.py` | **12회** | `domain.external_connectors` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
-| 15 | `src/ttakkari/artifacts/service.py` | **11회** | `domain.shares_artifacts` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 1 | `src/ttakkari/models.py` | **149회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 2 | `src/ttakkari/config.py` | **119회** | `core.system_routing` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 3 | `src/ttakkari/runs/__init__.py` | **96회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 4 | `src/ttakkari/__init__.py` | **85회** | `core.system_routing` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 5 | `src/ttakkari/db.py` | **53회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 6 | `src/ttakkari/security/auth.py` | **43회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 7 | `src/ttakkari/api/deps.py` | **42회** | `core.auth_session` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 8 | `src/ttakkari/audit.py` | **31회** | `core.system_routing` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 9 | `src/ttakkari/collector/__init__.py` | **23회** | `domain.collector` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 10 | `src/ttakkari/broker/policy.py` | **22회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 11 | `src/ttakkari/runs/manager.py` | **22회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 12 | `src/ttakkari/orchestrator/runtime.py` | **21회** | `exec.run_engine` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 13 | `src/ttakkari/knowledge/__init__.py` | **17회** | `domain.knowledge_rag` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 14 | `src/ttakkari/knowledge_models.py` | **17회** | `domain.knowledge_rag` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |
+| 15 | `src/ttakkari/collector/contracts.py` | **14회** | `domain.collector` | 전역 공통 인터페이스/모델로 임포트 빈도 높음 |

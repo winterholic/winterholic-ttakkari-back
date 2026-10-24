@@ -36,6 +36,7 @@ flowchart TD
   exec_run_engine --> core_generation_deploy
   exec_run_engine --> core_system_routing
   exec_run_engine --> delivery_git_cas
+  exec_run_engine --> domain_creative_studio
   exec_run_engine --> domain_game_studio
   exec_run_engine --> domain_knowledge_rag
   exec_run_engine --> domain_meetings_stt
@@ -47,7 +48,9 @@ flowchart TD
   core_accounts_quota --> core_auth_session
   core_accounts_quota --> core_system_routing
   core_accounts_quota --> exec_run_engine
+  core_auth_session --> core_generation_deploy
   core_auth_session --> core_system_routing
+  core_auth_session --> domain_collector
   core_auth_session --> domain_knowledge_rag
   core_auth_session --> domain_memory_ontology
   core_auth_session --> domain_pms_tasks
@@ -60,7 +63,9 @@ flowchart TD
   domain_pms_tasks --> exec_run_engine
   domain_pms_tasks --> ops_monitoring
   domain_creative_studio --> core_auth_session
+  domain_creative_studio --> core_generation_deploy
   domain_creative_studio --> core_system_routing
+  domain_creative_studio --> core_workspaces_transfers
   domain_creative_studio --> domain_shares_artifacts
   domain_creative_studio --> exec_host_gpu
   domain_creative_studio --> exec_run_engine
@@ -71,12 +76,14 @@ flowchart TD
   domain_shares_artifacts --> exec_run_engine
   domain_collector --> core_auth_session
   domain_collector --> core_system_routing
+  domain_collector --> domain_knowledge_rag
   domain_collector --> exec_run_engine
   core_generation_deploy --> core_auth_session
   core_generation_deploy --> core_system_routing
   core_generation_deploy --> core_workspaces_transfers
   core_generation_deploy --> domain_collector
   core_generation_deploy --> domain_creative_studio
+  core_generation_deploy --> domain_knowledge_rag
   core_generation_deploy --> domain_media_tts
   core_generation_deploy --> domain_meetings_stt
   core_generation_deploy --> domain_memory_ontology
@@ -120,6 +127,7 @@ flowchart TD
   exec_host_gpu --> exec_run_engine
   domain_knowledge_rag --> core_auth_session
   domain_knowledge_rag --> core_system_routing
+  domain_knowledge_rag --> domain_collector
   domain_knowledge_rag --> domain_memory_ontology
   domain_knowledge_rag --> exec_run_engine
   domain_memory_ontology --> core_auth_session

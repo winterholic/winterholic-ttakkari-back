@@ -2617,5 +2617,19 @@
   "unmatched_count": 50,
   "backend_registry_version": "20261024-v2-b-25modules",
   "registry_status": "valid",
-  "coverage_status": "complete"
+  "unresolved_ledger": [
+    {
+      "source_file": "src/api/stream.ts",
+      "line": 37,
+      "column": 12,
+      "function": "authedFetch",
+      "top_level_function": "subscribeRun",
+      "callee": "fetch",
+      "call_kind": "fetch",
+      "reason": "url is a bare parameter of the enclosing function (not recognised as a request wrapper)",
+      "url_template": "${input}",
+      "expression": "fetch(input, { ...init, headers, credentials: \"include\" })"
+    }
+  ],
+  "coverage_status": "incomplete"
 }

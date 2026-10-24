@@ -1345,6 +1345,7 @@ def generate_feature_map_artifacts(
     back_tests_result: dict,
     design_dir: Path,
     registry_valid: bool,
+    front_root: Path = DEFAULT_FRONT_ROOT,
 ):
     """Generate consistent frontend-feature-map.json, frontend-feature-map.csv,
 
@@ -1416,12 +1417,15 @@ def generate_feature_map_artifacts(
     # Write JSON
     feature_map_json = {
         "summary": {
-            "backend_target_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+            "backend_target_sha": get_git_info(design_dir.parents[2]).get(
+                "sha", "unknown"
+            ),
+            "historical_product_baseline": "c8f10156845d007ec6496a65d6d8417be19260bd",
             "backend_registry_version": api_result.get(
                 "backend_registry_version", "unknown"
             ),
-            "frontend_local_head": "630040b1b7007a219a93c9d3d4491fab714c555d",
-            "frontend_remote_ref": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
+            "frontend_local_head": get_git_info(front_root).get("sha", "unknown"),
+            "historical_frontend_reference": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
             "routes_count": len(routes_result.get("routes", [])),
             "concrete_routes_count": routes_result.get("metrics", {}).get(
                 "concrete_paths_count", 0
@@ -1614,6 +1618,7 @@ def main():
         back_tests_result=back_tests_result,
         design_dir=design_dir,
         registry_valid=registry_valid,
+        front_root=front_root,
     )
 
     summary = {

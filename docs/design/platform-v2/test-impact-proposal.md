@@ -1,5 +1,8 @@
 # 따까리 플랫폼 V2: 테스트 임팩트 및 딜리버리 재설계 제안서 (교정본)
 
+> 현재 교정 및 실제 배포 범위는 [검증 실패 교정·통합 기록](verified-corrections-20261024.md)이 우선한다. 아래의 이전 후보 완료 표시는 당시 이력이며 V2 전체 완료나 현재 운영 검증을 뜻하지 않는다.
+
+
 > **설계 담당**: Worker C (Frontend 전체 feature mapping / test architecture / baseline audit 교정)  
 > **검증자 및 판정 대조**: Verifier `fed2c630-a867-42f1-9574-4a92905de864` (FAILED 판정 후 교정 반영)  
 > **설계 시각**: 2026-10-24 21:55 KST  

@@ -389,7 +389,8 @@
     ],
     "unique_pages_count": 29,
     "redirect_routes_count": 1,
-    "coverage_status": "complete"
+    "coverage_status": "complete",
+    "coverage": "complete"
   },
   "coverage_status": "complete"
 }

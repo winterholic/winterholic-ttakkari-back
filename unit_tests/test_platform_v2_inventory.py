@@ -718,8 +718,20 @@ def test_sanity_floor_is_recorded_as_heuristic_only(monkeypatch, real):
     assert "tools" not in sanity["below_floor"]
 
 
-def test_scan_target_records_tree_hash_and_manifest():
-    data = run_audit()
+def test_scan_target_records_tree_hash_and_manifest(mini_ctx):
+    # Test Git binding against an owned fixture, including in deployment archives
+    # that intentionally do not contain the development repository's .git.
+    from ttakkari.delivery.worktree import run_git
+
+    for args in (
+        ["init", "-b", "main"],
+        ["config", "user.name", "Audit fixture"],
+        ["config", "user.email", "fixture@example.invalid"],
+        ["add", "."],
+        ["commit", "-m", "audit inputs"],
+    ):
+        run_git(args, mini_ctx.repo_root)
+    data = run_audit(mini_ctx)
     target = data["scan_report"]["target"]
     assert target["scanner_file"].endswith("scripts/platform_v2_inventory.py")
     assert target["git"]["available"] is True

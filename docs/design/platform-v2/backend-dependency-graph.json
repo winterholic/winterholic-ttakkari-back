@@ -5,6 +5,7 @@
       "core.generation_deploy",
       "core.system_routing",
       "delivery.git_cas",
+      "domain.creative_studio",
       "domain.game_studio",
       "domain.knowledge_rag",
       "domain.meetings_stt",
@@ -20,7 +21,9 @@
       "exec.run_engine"
     ],
     "core.auth_session": [
+      "core.generation_deploy",
       "core.system_routing",
+      "domain.collector",
       "domain.knowledge_rag",
       "domain.memory_ontology",
       "domain.pms_tasks",
@@ -37,7 +40,9 @@
     ],
     "domain.creative_studio": [
       "core.auth_session",
+      "core.generation_deploy",
       "core.system_routing",
+      "core.workspaces_transfers",
       "domain.shares_artifacts",
       "exec.host_gpu",
       "exec.run_engine"
@@ -52,6 +57,7 @@
     "domain.collector": [
       "core.auth_session",
       "core.system_routing",
+      "domain.knowledge_rag",
       "exec.run_engine"
     ],
     "core.generation_deploy": [
@@ -60,6 +66,7 @@
       "core.workspaces_transfers",
       "domain.collector",
       "domain.creative_studio",
+      "domain.knowledge_rag",
       "domain.media_tts",
       "domain.meetings_stt",
       "domain.memory_ontology",
@@ -115,6 +122,7 @@
     "domain.knowledge_rag": [
       "core.auth_session",
       "core.system_routing",
+      "domain.collector",
       "domain.memory_ontology",
       "exec.run_engine"
     ],
@@ -186,6 +194,10 @@
   },
   "file_sccs": [
     [
+      "src/ttakkari/generation.py",
+      "src/ttakkari/db.py"
+    ],
+    [
       "src/ttakkari/runs/usage.py",
       "src/ttakkari/agents/muse.py"
     ],
@@ -224,63 +236,66 @@
     [
       "src/ttakkari/reverse.py",
       "src/ttakkari/reverse_tasks.py"
+    ],
+    [
+      "src/ttakkari/harness_view/projects.py",
+      "src/ttakkari/harness_view/sources.py"
     ]
   ],
   "module_cycles": [
     [
       "core.auth_session",
-      "core.system_routing",
-      "core.auth_session"
-    ],
-    [
-      "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
       "core.auth_session"
     ],
     [
-      "core.system_routing",
+      "core.auth_session",
       "core.generation_deploy",
-      "core.system_routing"
+      "core.system_routing",
+      "core.auth_session"
+    ],
+    [
+      "core.generation_deploy",
+      "core.system_routing",
+      "core.generation_deploy"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "core.auth_session"
     ],
     [
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "core.generation_deploy"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -288,6 +303,7 @@
     ],
     [
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -295,7 +311,6 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -309,8 +324,8 @@
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -319,7 +334,6 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -328,8 +342,8 @@
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -339,13 +353,52 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
       "domain.memory_ontology",
       "domain.knowledge_rag",
       "core.system_routing"
+    ],
+    [
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "core.workspaces_transfers",
+      "domain.shares_artifacts",
+      "domain.meetings_stt",
+      "domain.memory_ontology",
+      "domain.knowledge_rag",
+      "domain.collector",
+      "core.auth_session"
+    ],
+    [
+      "core.system_routing",
+      "core.workspaces_transfers",
+      "domain.shares_artifacts",
+      "domain.meetings_stt",
+      "domain.memory_ontology",
+      "domain.knowledge_rag",
+      "domain.collector",
+      "core.system_routing"
+    ],
+    [
+      "domain.knowledge_rag",
+      "domain.collector",
+      "domain.knowledge_rag"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "core.workspaces_transfers",
+      "domain.shares_artifacts",
+      "domain.meetings_stt",
+      "domain.memory_ontology",
+      "domain.knowledge_rag",
+      "domain.collector",
+      "exec.run_engine"
     ],
     [
       "domain.memory_ontology",
@@ -355,8 +408,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -372,8 +425,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -388,8 +441,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -398,8 +451,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "exec.run_engine"
@@ -407,56 +460,39 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
-      "domain.collector",
-      "core.auth_session"
-    ],
-    [
       "core.system_routing",
-      "core.generation_deploy",
-      "domain.collector",
-      "core.system_routing"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
-      "domain.collector",
-      "exec.run_engine"
-    ],
-    [
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
       "domain.creative_studio",
       "core.auth_session"
     ],
     [
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
+      "domain.creative_studio",
+      "core.generation_deploy"
+    ],
+    [
+      "core.system_routing",
       "domain.creative_studio",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.creative_studio",
       "exec.host_gpu",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.creative_studio",
       "exec.host_gpu",
       "core.system_routing"
@@ -464,8 +500,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.creative_studio",
       "exec.host_gpu",
       "exec.run_engine"
@@ -473,56 +509,73 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.creative_studio",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
+      "domain.game_studio",
+      "core.auth_session"
+    ],
+    [
+      "core.system_routing",
+      "domain.game_studio",
+      "core.system_routing"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "domain.game_studio",
+      "exec.run_engine"
+    ],
+    [
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
       "domain.media_tts",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.media_tts",
       "core.system_routing"
     ],
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.media_tts",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.notebooklm",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.notebooklm",
       "domain.external_connectors",
       "core.system_routing"
@@ -530,16 +583,16 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -547,6 +600,7 @@
     ],
     [
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -554,7 +608,6 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -563,8 +616,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -573,101 +626,54 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.personal_tools",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.personal_tools",
       "core.system_routing"
     ],
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.personal_tools",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.pms_tasks",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.pms_tasks",
       "core.system_routing"
     ],
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.pms_tasks",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
-      "exec.durable_scheduler",
-      "core.auth_session"
-    ],
-    [
-      "core.system_routing",
-      "core.generation_deploy",
-      "exec.durable_scheduler",
-      "core.system_routing"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
-      "exec.durable_scheduler",
-      "exec.run_engine"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
-      "exec.run_engine"
-    ],
-    [
-      "core.auth_session",
-      "core.system_routing",
-      "domain.game_studio",
-      "core.auth_session"
-    ],
-    [
-      "core.system_routing",
-      "domain.game_studio",
-      "core.system_routing"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "domain.game_studio",
-      "exec.run_engine"
-    ],
-    [
-      "core.auth_session",
       "core.system_routing",
       "domain.reverse_eng",
       "core.auth_session"
@@ -680,14 +686,42 @@
     [
       "exec.run_engine",
       "core.auth_session",
+      "core.generation_deploy",
       "core.system_routing",
       "domain.reverse_eng",
       "exec.run_engine"
     ],
     [
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "exec.durable_scheduler",
+      "core.auth_session"
+    ],
+    [
+      "core.system_routing",
+      "exec.durable_scheduler",
+      "core.system_routing"
+    ],
+    [
       "exec.run_engine",
       "core.auth_session",
+      "core.generation_deploy",
       "core.system_routing",
+      "exec.durable_scheduler",
+      "exec.run_engine"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "exec.run_engine"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
       "exec.run_engine"
     ],
     [
@@ -715,69 +749,73 @@
     },
     {
       "source_file": "src/ttakkari/managed_comfy.py",
-      "line": 213,
+      "line": 250,
       "call": "importlib.import_module('ttk_comfy.server')"
     },
     {
       "source_file": "src/ttakkari/managed_comfy.py",
-      "line": 214,
+      "line": 251,
       "call": "importlib.import_module('ttk_comfy.client')"
     },
     {
       "source_file": "src/ttakkari/managed_comfy.py",
-      "line": 215,
+      "line": 252,
       "call": "importlib.import_module('ttk_comfy.runner')"
     },
     {
       "source_file": "src/ttakkari/managed_comfy.py",
-      "line": 216,
+      "line": 253,
       "call": "importlib.import_module('ttk_comfy.workflow')"
     }
   ],
   "god_files_ast_statement_counts": [
     [
       "src/ttakkari/models.py",
-      137
+      149
     ],
     [
       "src/ttakkari/config.py",
-      106
+      119
     ],
     [
       "src/ttakkari/runs/__init__.py",
-      88
+      96
     ],
     [
       "src/ttakkari/__init__.py",
-      73
+      85
     ],
     [
       "src/ttakkari/db.py",
-      44
+      53
     ],
     [
       "src/ttakkari/security/auth.py",
-      40
+      43
     ],
     [
       "src/ttakkari/api/deps.py",
-      35
+      42
     ],
     [
       "src/ttakkari/audit.py",
-      30
+      31
+    ],
+    [
+      "src/ttakkari/collector/__init__.py",
+      23
     ],
     [
       "src/ttakkari/broker/policy.py",
-      21
+      22
     ],
     [
       "src/ttakkari/runs/manager.py",
-      19
+      22
     ],
     [
       "src/ttakkari/orchestrator/runtime.py",
-      19
+      21
     ],
     [
       "src/ttakkari/knowledge/__init__.py",
@@ -788,12 +826,8 @@
       17
     ],
     [
-      "src/ttakkari/github/errors.py",
-      12
-    ],
-    [
-      "src/ttakkari/artifacts/service.py",
-      11
+      "src/ttakkari/collector/contracts.py",
+      14
     ]
   ]
 }

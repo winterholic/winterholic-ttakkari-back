@@ -2911,7 +2911,7 @@ def write_outputs(audit_data: dict[str, Any], ctx: AuditContext | None = None):
     # 2. backend-scan-coverage.csv
     cov_csv_path = design_dir / "backend-scan-coverage.csv"
     with open(cov_csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, lineterminator="\n")
         writer.writerow(
             [
                 "category",
@@ -2949,7 +2949,7 @@ def write_outputs(audit_data: dict[str, Any], ctx: AuditContext | None = None):
 
     csv_path = design_dir / "backend-module-inventory.csv"
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, lineterminator="\n")
         writer.writerow(
             [
                 "id",

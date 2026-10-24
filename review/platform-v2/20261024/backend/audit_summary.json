@@ -1,18 +1,18 @@
 {
   "scan_report": {
     "target": {
-      "scanner_file": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-b/scripts/platform_v2_inventory.py",
+      "scanner_file": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration/scripts/platform_v2_inventory.py",
       "git": {
         "available": true,
-        "head": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
-        "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
+        "head": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+        "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
         "src_dirty": false
       },
       "declared_baseline": {
         "baseline_code_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
         "src_tree_matches_scanned": false
       },
-      "claims_product_inventory": true
+      "claims_product_inventory": false
     },
     "extraction": {
       "ok": true,
@@ -47,38 +47,38 @@
       "all_collected_classified": true,
       "by_category": {
         "routes": {
-          "collected": 497,
-          "classified": 497,
+          "collected": 579,
+          "classified": 579,
           "unmatched": 0,
           "unmatched_items": []
         },
         "tools": {
-          "collected": 102,
-          "classified": 102,
+          "collected": 133,
+          "classified": 133,
           "unmatched": 0,
           "unmatched_items": []
         },
         "tables": {
-          "collected": 88,
-          "classified": 88,
+          "collected": 106,
+          "classified": 106,
           "unmatched": 0,
           "unmatched_items": []
         },
         "migrations": {
-          "collected": 62,
-          "classified": 62,
+          "collected": 67,
+          "classified": 67,
           "unmatched": 0,
           "unmatched_items": []
         },
         "configs": {
-          "collected": 212,
-          "classified": 212,
+          "collected": 231,
+          "classified": 231,
           "unmatched": 0,
           "unmatched_items": []
         },
         "source_files": {
-          "collected": 321,
-          "classified": 321,
+          "collected": 385,
+          "classified": 385,
           "unmatched": 0,
           "unmatched_items": []
         }
@@ -87,28 +87,28 @@
     "collection_scope": {
       "by_category": {
         "routes": {
-          "collected_count": 497,
-          "collected_ids_sha256": "caf6425d34e3e0144154b836de450f54b280d2837d99d78d6839b9617a82e00f"
+          "collected_count": 579,
+          "collected_ids_sha256": "390409b1c98e920a1adf093be0fdf54ee26727b4b2f51fb05036014817d4e2a1"
         },
         "tools": {
-          "collected_count": 102,
-          "collected_ids_sha256": "38d00c4c783d8d9f5cc4839710681815a0d2bfe0a475cf9c9a79a244ab887d04"
+          "collected_count": 133,
+          "collected_ids_sha256": "c6b13dbbc787be58def615ff7c74916478492491d3387c6e143bbe5977671262"
         },
         "tables": {
-          "collected_count": 88,
-          "collected_ids_sha256": "6aed9a54538ffd66c9163bd84920ace4ad120d0b6f0cbb91c535d5dd40823150"
+          "collected_count": 106,
+          "collected_ids_sha256": "2bd9ad3b800c1027ef1c719a01b249c3f486a4b3fcea217e4c16b26ff5991af1"
         },
         "migrations": {
-          "collected_count": 62,
-          "collected_ids_sha256": "7076105b6a5ce2fe0570539d5970d3f9752c2c6825ee3ce833361aeeb22e12db"
+          "collected_count": 67,
+          "collected_ids_sha256": "3836b475116c3327193c42210664d9d23343b59075978b70c8c889a66d640192"
         },
         "configs": {
-          "collected_count": 212,
-          "collected_ids_sha256": "ffcfb201832e363909627cdefab789e10c56adb0d18bf8329382ccfa59b5a0ba"
+          "collected_count": 231,
+          "collected_ids_sha256": "f4bfc38746e35d055bbd11e6b6d3d36e1f57b1caa5b3f5c1f572b54280c5b2ec"
         },
         "source_files": {
-          "collected_count": 321,
-          "collected_ids_sha256": "6186cfe308b877c0e5d6127ede28c5b3d4b48e48734753319686c455d805cbbf"
+          "collected_count": 385,
+          "collected_ids_sha256": "a3732fee12870ff106141344137e1905a0215d35f5716e516507b1ad08edb8d4"
         }
       }
     },
@@ -117,10 +117,12 @@
         "routes": {
           "category": "routes",
           "state": "unknown",
+          "static_state": "unknown",
           "reasons": [
-            "No independent candidate discovery available; coverage is unverified/unknown"
+            "Import source binding is unbound or outside target context root",
+            "Loaded object/source-byte identity is unverified; static reconciliation only"
           ],
-          "collected_count": 497,
+          "collected_count": 579,
           "candidate_count": null,
           "missing_from_collected": [],
           "extra_in_collected": [],
@@ -133,15 +135,19 @@
             }
           ],
           "auxiliary": {
-            "route_decorator_call_sites": 452
+            "route_decorator_call_sites": 534
           }
         },
         "tools": {
           "category": "tools",
-          "state": "reconciled",
-          "reasons": [],
-          "collected_count": 102,
-          "candidate_count": 102,
+          "state": "unknown",
+          "static_state": "matching_ids",
+          "reasons": [
+            "Import source binding is unbound or outside target context root",
+            "Loaded object/source-byte identity is unverified; static reconciliation only"
+          ],
+          "collected_count": 133,
+          "candidate_count": 133,
           "missing_from_collected": [],
           "extra_in_collected": [],
           "duplicates_in_collected": [],
@@ -151,10 +157,14 @@
         },
         "tables": {
           "category": "tables",
-          "state": "reconciled",
-          "reasons": [],
-          "collected_count": 88,
-          "candidate_count": 88,
+          "state": "unknown",
+          "static_state": "matching_ids",
+          "reasons": [
+            "Import source binding is unbound or outside target context root",
+            "Loaded object/source-byte identity is unverified; static reconciliation only"
+          ],
+          "collected_count": 106,
+          "candidate_count": 106,
           "missing_from_collected": [],
           "extra_in_collected": [],
           "duplicates_in_collected": [],
@@ -166,8 +176,8 @@
           "category": "migrations",
           "state": "reconciled",
           "reasons": [],
-          "collected_count": 62,
-          "candidate_count": 62,
+          "collected_count": 67,
+          "candidate_count": 67,
           "missing_from_collected": [],
           "extra_in_collected": [],
           "duplicates_in_collected": [],
@@ -177,10 +187,14 @@
         },
         "configs": {
           "category": "configs",
-          "state": "reconciled",
-          "reasons": [],
-          "collected_count": 212,
-          "candidate_count": 212,
+          "state": "unknown",
+          "static_state": "matching_ids",
+          "reasons": [
+            "Import source binding is unbound or outside target context root",
+            "Loaded object/source-byte identity is unverified; static reconciliation only"
+          ],
+          "collected_count": 231,
+          "candidate_count": 231,
           "missing_from_collected": [],
           "extra_in_collected": [],
           "duplicates_in_collected": [],
@@ -192,8 +206,8 @@
           "category": "source_files",
           "state": "reconciled",
           "reasons": [],
-          "collected_count": 321,
-          "candidate_count": 321,
+          "collected_count": 385,
+          "candidate_count": 385,
           "missing_from_collected": [],
           "extra_in_collected": [],
           "duplicates_in_collected": [],
@@ -205,14 +219,14 @@
       "all_reconciled": false,
       "summary": {
         "reconciled": [
-          "tools",
-          "tables",
           "migrations",
-          "configs",
           "source_files"
         ],
         "unknown": [
-          "routes"
+          "routes",
+          "tools",
+          "tables",
+          "configs"
         ],
         "mismatch": []
       }
@@ -236,6 +250,26 @@
         "reason": "FastAPI routes decorated dynamically; independent discovery candidate set unavailable (unknown)"
       },
       {
+        "category": "configs",
+        "item": "configs",
+        "reason": "Import source binding unbound / outside target root: Loaded object/source-byte identity is unverified; static reconciliation only"
+      },
+      {
+        "category": "tables",
+        "item": "tables",
+        "reason": "Import source binding unbound / outside target root: Loaded object/source-byte identity is unverified; static reconciliation only"
+      },
+      {
+        "category": "tools",
+        "item": "tools",
+        "reason": "Import source binding unbound / outside target root: Loaded object/source-byte identity is unverified; static reconciliation only"
+      },
+      {
+        "category": "routes",
+        "item": "routes",
+        "reason": "Import source binding unbound / outside target root: Loaded object/source-byte identity is unverified; static reconciliation only"
+      },
+      {
         "category": "routes",
         "item": "routes",
         "reason": "FastAPI route decorates/includes router dynamically without a unified static registry"
@@ -245,13 +279,13 @@
     "scope_note": "이 scanner status는 정적 수집 및 독립 대조 상태만 뜻하며, DB 연결 상태나 제품 runtime 건강과 무관합니다."
   },
   "collected_counts": {
-    "routes": 497,
-    "tools": 102,
-    "tables": 88,
-    "migrations": 62,
-    "configs": 212,
-    "source_files": 321,
-    "total_lines": 71985
+    "routes": 579,
+    "tools": 133,
+    "tables": 106,
+    "migrations": 67,
+    "configs": 231,
+    "source_files": 385,
+    "total_lines": 94894
   },
   "limits_ledger": [
     "1. ORM Base.metadata(88/106 tables)를 검사하였으며, 실제 운영 PostgreSQL 물리 DB에 직접 연결하여 쿼리하지 않음.",
@@ -268,8 +302,12 @@
     "configs": [],
     "source_files": []
   },
-  "file_sccs_count": 8,
+  "file_sccs_count": 10,
   "file_sccs": [
+    [
+      "src/ttakkari/generation.py",
+      "src/ttakkari/db.py"
+    ],
     [
       "src/ttakkari/runs/usage.py",
       "src/ttakkari/agents/muse.py"
@@ -309,64 +347,67 @@
     [
       "src/ttakkari/reverse.py",
       "src/ttakkari/reverse_tasks.py"
+    ],
+    [
+      "src/ttakkari/harness_view/projects.py",
+      "src/ttakkari/harness_view/sources.py"
     ]
   ],
-  "module_cycles_count": 66,
+  "module_cycles_count": 68,
   "module_cycles": [
     [
       "core.auth_session",
-      "core.system_routing",
-      "core.auth_session"
-    ],
-    [
-      "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
       "core.auth_session"
     ],
     [
-      "core.system_routing",
+      "core.auth_session",
       "core.generation_deploy",
-      "core.system_routing"
+      "core.system_routing",
+      "core.auth_session"
+    ],
+    [
+      "core.generation_deploy",
+      "core.system_routing",
+      "core.generation_deploy"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "core.auth_session"
     ],
     [
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "core.generation_deploy"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -374,6 +415,7 @@
     ],
     [
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -381,7 +423,6 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -395,8 +436,8 @@
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -405,7 +446,6 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -414,8 +454,8 @@
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -425,13 +465,52 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
       "domain.memory_ontology",
       "domain.knowledge_rag",
       "core.system_routing"
+    ],
+    [
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "core.workspaces_transfers",
+      "domain.shares_artifacts",
+      "domain.meetings_stt",
+      "domain.memory_ontology",
+      "domain.knowledge_rag",
+      "domain.collector",
+      "core.auth_session"
+    ],
+    [
+      "core.system_routing",
+      "core.workspaces_transfers",
+      "domain.shares_artifacts",
+      "domain.meetings_stt",
+      "domain.memory_ontology",
+      "domain.knowledge_rag",
+      "domain.collector",
+      "core.system_routing"
+    ],
+    [
+      "domain.knowledge_rag",
+      "domain.collector",
+      "domain.knowledge_rag"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "core.workspaces_transfers",
+      "domain.shares_artifacts",
+      "domain.meetings_stt",
+      "domain.memory_ontology",
+      "domain.knowledge_rag",
+      "domain.collector",
+      "exec.run_engine"
     ],
     [
       "domain.memory_ontology",
@@ -441,8 +520,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -458,8 +537,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -474,8 +553,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "domain.meetings_stt",
@@ -484,8 +563,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "domain.shares_artifacts",
       "exec.run_engine"
@@ -493,56 +572,39 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "core.workspaces_transfers",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
-      "domain.collector",
-      "core.auth_session"
-    ],
-    [
       "core.system_routing",
-      "core.generation_deploy",
-      "domain.collector",
-      "core.system_routing"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
-      "domain.collector",
-      "exec.run_engine"
-    ],
-    [
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
       "domain.creative_studio",
       "core.auth_session"
     ],
     [
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
+      "domain.creative_studio",
+      "core.generation_deploy"
+    ],
+    [
+      "core.system_routing",
       "domain.creative_studio",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.creative_studio",
       "exec.host_gpu",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.creative_studio",
       "exec.host_gpu",
       "core.system_routing"
@@ -550,8 +612,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.creative_studio",
       "exec.host_gpu",
       "exec.run_engine"
@@ -559,56 +621,73 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.creative_studio",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
+      "domain.game_studio",
+      "core.auth_session"
+    ],
+    [
+      "core.system_routing",
+      "domain.game_studio",
+      "core.system_routing"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "domain.game_studio",
+      "exec.run_engine"
+    ],
+    [
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
       "domain.media_tts",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.media_tts",
       "core.system_routing"
     ],
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.media_tts",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.notebooklm",
       "core.system_routing"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.notebooklm",
       "domain.external_connectors",
       "core.system_routing"
@@ -616,16 +695,16 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -633,6 +712,7 @@
     ],
     [
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -640,7 +720,6 @@
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -649,8 +728,8 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "domain.external_connectors",
       "ops.monitoring",
@@ -659,101 +738,54 @@
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.notebooklm",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.personal_tools",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.personal_tools",
       "core.system_routing"
     ],
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.personal_tools",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.pms_tasks",
       "core.auth_session"
     ],
     [
       "core.system_routing",
-      "core.generation_deploy",
       "domain.pms_tasks",
       "core.system_routing"
     ],
     [
       "exec.run_engine",
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
+      "core.system_routing",
       "domain.pms_tasks",
       "exec.run_engine"
     ],
     [
       "core.auth_session",
-      "core.system_routing",
       "core.generation_deploy",
-      "exec.durable_scheduler",
-      "core.auth_session"
-    ],
-    [
-      "core.system_routing",
-      "core.generation_deploy",
-      "exec.durable_scheduler",
-      "core.system_routing"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
-      "exec.durable_scheduler",
-      "exec.run_engine"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "core.generation_deploy",
-      "exec.run_engine"
-    ],
-    [
-      "core.auth_session",
-      "core.system_routing",
-      "domain.game_studio",
-      "core.auth_session"
-    ],
-    [
-      "core.system_routing",
-      "domain.game_studio",
-      "core.system_routing"
-    ],
-    [
-      "exec.run_engine",
-      "core.auth_session",
-      "core.system_routing",
-      "domain.game_studio",
-      "exec.run_engine"
-    ],
-    [
-      "core.auth_session",
       "core.system_routing",
       "domain.reverse_eng",
       "core.auth_session"
@@ -766,14 +798,42 @@
     [
       "exec.run_engine",
       "core.auth_session",
+      "core.generation_deploy",
       "core.system_routing",
       "domain.reverse_eng",
       "exec.run_engine"
     ],
     [
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "exec.durable_scheduler",
+      "core.auth_session"
+    ],
+    [
+      "core.system_routing",
+      "exec.durable_scheduler",
+      "core.system_routing"
+    ],
+    [
       "exec.run_engine",
       "core.auth_session",
+      "core.generation_deploy",
       "core.system_routing",
+      "exec.durable_scheduler",
+      "exec.run_engine"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
+      "core.system_routing",
+      "exec.run_engine"
+    ],
+    [
+      "exec.run_engine",
+      "core.auth_session",
+      "core.generation_deploy",
       "exec.run_engine"
     ],
     [
@@ -797,47 +857,51 @@
   "god_files_ast_counts": [
     [
       "src/ttakkari/models.py",
-      137
+      149
     ],
     [
       "src/ttakkari/config.py",
-      106
+      119
     ],
     [
       "src/ttakkari/runs/__init__.py",
-      88
+      96
     ],
     [
       "src/ttakkari/__init__.py",
-      73
+      85
     ],
     [
       "src/ttakkari/db.py",
-      44
+      53
     ],
     [
       "src/ttakkari/security/auth.py",
-      40
+      43
     ],
     [
       "src/ttakkari/api/deps.py",
-      35
+      42
     ],
     [
       "src/ttakkari/audit.py",
-      30
+      31
+    ],
+    [
+      "src/ttakkari/collector/__init__.py",
+      23
     ],
     [
       "src/ttakkari/broker/policy.py",
-      21
+      22
     ],
     [
       "src/ttakkari/runs/manager.py",
-      19
+      22
     ],
     [
       "src/ttakkari/orchestrator/runtime.py",
-      19
+      21
     ],
     [
       "src/ttakkari/knowledge/__init__.py",
@@ -848,12 +912,8 @@
       17
     ],
     [
-      "src/ttakkari/github/errors.py",
-      12
-    ],
-    [
-      "src/ttakkari/artifacts/service.py",
-      11
+      "src/ttakkari/collector/contracts.py",
+      14
     ]
   ]
 }

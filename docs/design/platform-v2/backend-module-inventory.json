@@ -11,8 +11,8 @@
     "difficulty": "medium",
     "benefit": "플랫폼 전반의 단일 신원 인증 및 세션 검증 토큰 분리로 다른 서비스들의 인증 위임 가능",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "POST",
@@ -401,9 +401,11 @@
       "src/ttakkari/security/passwords.py",
       "src/ttakkari/security/seatbelt.py"
     ],
-    "lines": 5105,
+    "lines": 5202,
     "dependencies_internal": [
+      "core.generation_deploy",
       "core.system_routing",
+      "domain.collector",
       "domain.knowledge_rag",
       "domain.memory_ontology",
       "domain.pms_tasks",
@@ -424,8 +426,8 @@
     "difficulty": "low",
     "benefit": "정적 파일 서빙 및 업로드/다운로드 경로 분리 시 대용량 파일 전송 중 Core 이벤트 루프 차단 해소",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -630,8 +632,8 @@
     "difficulty": "medium",
     "benefit": "계정 회전 및 쿼터 차단 로직을 중앙 집중화하여 다중 런타임 간 계정 충돌 방지",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -1035,8 +1037,8 @@
     "difficulty": "high",
     "benefit": "세대 전환 시 기존 활성 Run의 안전한 드레인 및 zero-downtime 배포 보장",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -1079,6 +1081,9 @@
         "columns": [
           "id",
           "revision",
+          "role",
+          "protocol",
+          "execution_mode",
           "api_url",
           "pid",
           "process_started_at",
@@ -1093,11 +1098,16 @@
         "columns": [
           "id",
           "active_generation",
+          "executor_generation",
           "epoch"
         ],
         "foreign_keys": [
           {
             "column": "active_generation",
+            "target": "runtime_generations.id"
+          },
+          {
+            "column": "executor_generation",
             "target": "runtime_generations.id"
           }
         ]
@@ -1116,16 +1126,16 @@
         ],
         "foreign_keys": [
           {
+            "column": "generation_id",
+            "target": "runtime_generations.id"
+          },
+          {
             "column": "run_id",
             "target": "runs.id"
           },
           {
             "column": "session_id",
             "target": "sessions.id"
-          },
-          {
-            "column": "generation_id",
-            "target": "runtime_generations.id"
           }
         ]
       }
@@ -1195,6 +1205,8 @@
     ],
     "files": [
       "src/ttakkari/api/deployments.py",
+      "src/ttakkari/creative/v2/asset_generation.py",
+      "src/ttakkari/creative/v2/asset_generation_managed.py",
       "src/ttakkari/deploy_gate.py",
       "src/ttakkari/deployment.py",
       "src/ttakkari/generation.py",
@@ -1202,13 +1214,14 @@
       "src/ttakkari/generation_deployment.py",
       "src/ttakkari/generation_service.py"
     ],
-    "lines": 2713,
+    "lines": 4005,
     "dependencies_internal": [
       "core.auth_session",
       "core.system_routing",
       "core.workspaces_transfers",
       "domain.collector",
       "domain.creative_studio",
+      "domain.knowledge_rag",
       "domain.media_tts",
       "domain.meetings_stt",
       "domain.memory_ontology",
@@ -1234,8 +1247,8 @@
     "difficulty": "low",
     "benefit": "전역 설정 및 푸시 디스패처 모듈화로 도메인 모듈들이 비동기 이벤트로 알림 요청 가능",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -1319,6 +1332,41 @@
       },
       {
         "method": "GET",
+        "path": "/api/harness",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/harness/items",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/harness/items/{item_id}",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/harness/layers",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/harness/groups/{group}",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/harness/projects",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/harness/projects/detail",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
         "path": "/api/notifications",
         "label": "owner-plain"
       },
@@ -1361,12 +1409,12 @@
         ],
         "foreign_keys": [
           {
-            "column": "session_id",
-            "target": "sessions.id"
-          },
-          {
             "column": "run_id",
             "target": "runs.id"
+          },
+          {
+            "column": "session_id",
+            "target": "sessions.id"
           }
         ]
       },
@@ -1567,12 +1615,23 @@
     "files": [
       "src/ttakkari/__init__.py",
       "src/ttakkari/api/desk_feedback.py",
+      "src/ttakkari/api/harness.py",
       "src/ttakkari/api/notifications.py",
       "src/ttakkari/api/push.py",
       "src/ttakkari/api/system.py",
       "src/ttakkari/audit.py",
       "src/ttakkari/backup_status.py",
       "src/ttakkari/config.py",
+      "src/ttakkari/harness_view/__init__.py",
+      "src/ttakkari/harness_view/extras.py",
+      "src/ttakkari/harness_view/layers.py",
+      "src/ttakkari/harness_view/model.py",
+      "src/ttakkari/harness_view/projects.py",
+      "src/ttakkari/harness_view/safe.py",
+      "src/ttakkari/harness_view/service.py",
+      "src/ttakkari/harness_view/sources.py",
+      "src/ttakkari/harness_view/taxonomy.py",
+      "src/ttakkari/harness_view/ttakkari_side.py",
       "src/ttakkari/main.py",
       "src/ttakkari/push/__init__.py",
       "src/ttakkari/push/service.py",
@@ -1581,7 +1640,7 @@
       "src/ttakkari/sysinfo.py",
       "src/ttakkari/textsafe.py"
     ],
-    "lines": 2221,
+    "lines": 5164,
     "dependencies_internal": [
       "core.auth_session",
       "core.generation_deploy",
@@ -1613,8 +1672,8 @@
     "difficulty": "low",
     "benefit": "모니터링 시스템을 Core와 독립시켜 Core 장애 상황에서도 관측성 유지",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -1916,7 +1975,7 @@
       "src/ttakkari/oplog/store.py",
       "src/ttakkari/oplog/views.py"
     ],
-    "lines": 1447,
+    "lines": 1485,
     "dependencies_internal": [
       "core.auth_session",
       "core.generation_deploy",
@@ -1936,8 +1995,8 @@
     "difficulty": "high",
     "benefit": "Core 웹 서버와 긴 에이전트 CLI 실행의 수명주기 분리로 Core 배포 시 에이전트 중단 방지",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -2187,16 +2246,40 @@
             "target": "sessions.id"
           },
           {
-            "column": "account_id",
-            "target": "engine_accounts.id"
+            "column": "generation_id",
+            "target": "runtime_generations.id"
           },
           {
             "column": "run_id",
             "target": "runs.id"
           },
           {
+            "column": "account_id",
+            "target": "engine_accounts.id"
+          }
+        ]
+      },
+      {
+        "name": "runtime_process_groups",
+        "columns": [
+          "id",
+          "run_id",
+          "generation_id",
+          "lease_token",
+          "attempt",
+          "pid",
+          "process_started_at",
+          "pgid",
+          "created_at"
+        ],
+        "foreign_keys": [
+          {
             "column": "generation_id",
             "target": "runtime_generations.id"
+          },
+          {
+            "column": "run_id",
+            "target": "runs.id"
           }
         ]
       },
@@ -2334,6 +2417,65 @@
         ],
         "used_filename_fallback": false,
         "parse_error": null
+      },
+      {
+        "filename": "0064_run_executor.py",
+        "revision": "0064_run_executor",
+        "down_revision": "0063_collector_stage_items",
+        "stem": "0064_run_executor",
+        "branch_labels": [],
+        "ddl_call_sites": [
+          {
+            "kind": "add_column",
+            "target": "runtime_generations",
+            "sql_classification": "static_literal",
+            "line": 17
+          },
+          {
+            "kind": "add_column",
+            "target": "runtime_generations",
+            "sql_classification": "static_literal",
+            "line": 18
+          },
+          {
+            "kind": "add_column",
+            "target": "runtime_generations",
+            "sql_classification": "static_literal",
+            "line": 19
+          },
+          {
+            "kind": "add_column",
+            "target": "runtime_control",
+            "sql_classification": "static_literal",
+            "line": 20
+          },
+          {
+            "kind": "create_foreign_key",
+            "target": "fk_runtime_control_executor",
+            "sql_classification": "static_literal",
+            "line": 21
+          },
+          {
+            "kind": "create_table",
+            "target": "runtime_process_groups",
+            "sql_classification": "static_literal",
+            "line": 23
+          },
+          {
+            "kind": "create_index",
+            "target": "ix_runtime_process_groups_run_id",
+            "sql_classification": "static_literal",
+            "line": 34
+          },
+          {
+            "kind": "create_index",
+            "target": "ix_runtime_process_groups_generation_id",
+            "sql_classification": "static_literal",
+            "line": 35
+          }
+        ],
+        "used_filename_fallback": false,
+        "parse_error": null
       }
     ],
     "configs": [
@@ -2369,11 +2511,13 @@
       "qwen35_shadow_sample_rate",
       "qwen_flash_monitor_model",
       "qwen_flash_monitor_port",
+      "qwen_flash_poll_seconds",
       "qwen_local_enabled",
       "qwen_local_turns",
       "qwen_local_worker_path",
       "qwen_parallel_routing",
       "qwen_queue_retry_seconds",
+      "run_executor_mode",
       "run_timeout_seconds",
       "worker_default_models"
     ],
@@ -2393,6 +2537,8 @@
       "src/ttakkari/broker/policy.py",
       "src/ttakkari/cli.py",
       "src/ttakkari/delivery/cli.py",
+      "src/ttakkari/executor.py",
+      "src/ttakkari/executor_reconcile.py",
       "src/ttakkari/experiments/__init__.py",
       "src/ttakkari/experiments/qwen35_feedback_export.py",
       "src/ttakkari/experiments/qwen35_observer.py",
@@ -2427,17 +2573,19 @@
       "src/ttakkari/runs/qwen_flash_monitor.py",
       "src/ttakkari/runs/qwen_slot.py",
       "src/ttakkari/runs/qwen_usage.py",
+      "src/ttakkari/runs/test_database.py",
       "src/ttakkari/runs/usage.py",
       "src/ttakkari/runs/usage_collector.py",
       "src/ttakkari/runs/usage_store.py",
       "src/ttakkari/runs/worker_routing.py"
     ],
-    "lines": 14442,
+    "lines": 15762,
     "dependencies_internal": [
       "core.auth_session",
       "core.generation_deploy",
       "core.system_routing",
       "delivery.git_cas",
+      "domain.creative_studio",
       "domain.game_studio",
       "domain.knowledge_rag",
       "domain.meetings_stt",
@@ -2460,8 +2608,8 @@
     "difficulty": "medium",
     "benefit": "독립 프로세스 워커로 전환 시 스케줄러 재시작 없이 웹 서버만 단독 롤링 배포 가능",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [],
     "tools": [
       "cancel_scheduled_action",
@@ -2570,8 +2718,8 @@
     "difficulty": "medium",
     "benefit": "GPU llama-server 수명을 백엔드 재배포와 완전히 격리하여 가속기 로딩 오버헤드 0화",
     "status": "partial",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "POST",
@@ -2661,7 +2809,7 @@
       "src/ttakkari/host_resource.py",
       "src/ttakkari/resource_history.py"
     ],
-    "lines": 1586,
+    "lines": 1641,
     "dependencies_internal": [
       "core.auth_session",
       "core.system_routing",
@@ -2680,8 +2828,8 @@
     "difficulty": "high",
     "benefit": "무중단 배포 및 자동 검증 엔진의 독립 실행으로 배포 파이프라인 장애가 운영 서빙에 전파되지 않음",
     "status": "partial",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [],
     "tools": [],
     "tables": [
@@ -2769,7 +2917,7 @@
       "src/ttakkari/delivery/worktree.py",
       "src/ttakkari/delivery_models.py"
     ],
-    "lines": 1365,
+    "lines": 1820,
     "dependencies_internal": [
       "core.auth_session"
     ]
@@ -2786,8 +2934,8 @@
     "difficulty": "medium",
     "benefit": "RAG 엔진과 저장소 계층을 라이브러리화하여 다양한 에이전트에서 인프로세스 또는 경량 API로 공유",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -3022,11 +3170,11 @@
         ],
         "foreign_keys": [
           {
-            "column": "subject_id",
+            "column": "object_id",
             "target": "ctx_entities.id"
           },
           {
-            "column": "object_id",
+            "column": "subject_id",
             "target": "ctx_entities.id"
           }
         ]
@@ -3296,6 +3444,7 @@
       "context_review_percent",
       "context_source_roots",
       "game_build_memory_mb",
+      "kb_embedding_snapshot",
       "local_stt_speaker_embedding_model_path"
     ],
     "files": [
@@ -3331,8 +3480,8 @@
     "difficulty": "high",
     "benefit": "지식 추출 배치의 장시간 연산 분리로 Core API 지연 방지 및 지식 저장소 독립 마이그레이션",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "POST",
@@ -3458,9 +3607,63 @@
         "method": "POST",
         "path": "/api/agent/knowledge/extractions/{jid}/retry",
         "label": "agent-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/kb/search",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/kb/documents",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/kb/documents/{document_id}",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/kb/passages/{passage_id}/evidence",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/kb/summary",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/kb/documents",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/kb/documents",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/kb/documents/{document_id}",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/kb/search",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/kb/passages/{passage_id}/evidence",
+        "label": "owner-plain"
       }
     ],
     "tools": [
+      "kb_document",
+      "kb_documents",
+      "kb_evidence",
+      "kb_search",
       "knowledge_assertion",
       "knowledge_extraction_status",
       "knowledge_next_batch",
@@ -3523,12 +3726,12 @@
             "target": "kb_documents.id"
           },
           {
-            "column": "supersedes_id",
-            "target": "kb_revisions.id"
-          },
-          {
             "column": "source_id",
             "target": "kb_sources.id"
+          },
+          {
+            "column": "supersedes_id",
+            "target": "kb_revisions.id"
           }
         ]
       },
@@ -3726,12 +3929,65 @@
         ],
         "foreign_keys": [
           {
-            "column": "run_id",
-            "target": "runs.id"
-          },
-          {
             "column": "revision_id",
             "target": "knowledge_revisions.id"
+          },
+          {
+            "column": "run_id",
+            "target": "runs.id"
+          }
+        ]
+      },
+      {
+        "name": "kb_document_access",
+        "columns": [
+          "document_id",
+          "tenant_id",
+          "scope",
+          "hidden"
+        ],
+        "foreign_keys": [
+          {
+            "column": "document_id",
+            "target": "kb_documents.id"
+          }
+        ]
+      },
+      {
+        "name": "kb_observations",
+        "columns": [
+          "id",
+          "document_id",
+          "revision_id",
+          "envelope_id",
+          "event_time",
+          "recorded_at",
+          "provenance"
+        ],
+        "foreign_keys": [
+          {
+            "column": "revision_id",
+            "target": "kb_revisions.id"
+          },
+          {
+            "column": "document_id",
+            "target": "kb_documents.id"
+          }
+        ]
+      },
+      {
+        "name": "kb_passage_vectors",
+        "columns": [
+          "passage_id",
+          "model_key",
+          "text_sha256",
+          "vector",
+          "created_at"
+        ],
+        "foreign_keys": [
+          {
+            "column": "passage_id",
+            "target": "kb_passages.id"
           }
         ]
       }
@@ -4127,9 +4383,15 @@
         "parse_error": null
       }
     ],
-    "configs": [],
+    "configs": [
+      "kb_semantic_enabled"
+    ],
     "files": [
+      "src/ttakkari/api/kb_agent.py",
+      "src/ttakkari/api/kb_library.py",
       "src/ttakkari/api/knowledge.py",
+      "src/ttakkari/kb_delivery.py",
+      "src/ttakkari/kb_embedding_worker.py",
       "src/ttakkari/kb_eval/__init__.py",
       "src/ttakkari/kb_eval/__main__.py",
       "src/ttakkari/kb_eval/comparison.py",
@@ -4146,8 +4408,11 @@
       "src/ttakkari/kb_eval/state.py",
       "src/ttakkari/kb_eval/statistics.py",
       "src/ttakkari/kb_eval/validation.py",
+      "src/ttakkari/kb_library.py",
       "src/ttakkari/kb_models.py",
+      "src/ttakkari/kb_retrieval.py",
       "src/ttakkari/kb_store.py",
+      "src/ttakkari/kb_vector_models.py",
       "src/ttakkari/knowledge/__init__.py",
       "src/ttakkari/knowledge/chatgpt.py",
       "src/ttakkari/knowledge/commands.py",
@@ -4156,10 +4421,11 @@
       "src/ttakkari/knowledge/store.py",
       "src/ttakkari/knowledge_models.py"
     ],
-    "lines": 5369,
+    "lines": 6417,
     "dependencies_internal": [
       "core.auth_session",
       "core.system_routing",
+      "domain.collector",
       "domain.memory_ontology",
       "exec.run_engine"
     ]
@@ -4176,9 +4442,119 @@
     "difficulty": "medium",
     "benefit": "수집 파이프라인 크롤링 부하를 Core 웹 프로세스에서 완전히 격리하고 독자 재시작/스케일링",
     "status": "partial",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/items/{item_id}/reviews",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/quality",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/quality/train",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/sources",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/sources",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/assistant/collect/sources/{source_id}",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/sources/{source_id}/run",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/jobs/{job_id}/retry",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/items/{item_id}/reprocess",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/jobs/{job_id}/items",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/items/{item_id}/export",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/items/{item_id}/import",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/summary",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/budgets",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/review",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/items/{item_id}",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/deliveries",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/deliveries/{outbox_id}/reconcile",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/runtime",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "PUT",
+        "path": "/api/assistant/collect/runtime",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/assistant/collect/pilot",
+        "label": "owner-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/assistant/collect/review/audit",
+        "label": "owner-scoped"
+      },
       {
         "method": "POST",
         "path": "/api/assistant/collect/jobs",
@@ -4261,7 +4637,10 @@
           "payload_hash",
           "status",
           "created_at",
-          "delivered_at"
+          "delivered_at",
+          "attempts",
+          "not_before",
+          "last_error"
         ],
         "foreign_keys": [
           {
@@ -4269,6 +4648,264 @@
             "target": "collector_jobs.id"
           }
         ]
+      },
+      {
+        "name": "collector_source_policies",
+        "columns": [
+          "id",
+          "tenant_id",
+          "scope",
+          "source_key",
+          "version",
+          "spec",
+          "spec_hash",
+          "created_at"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_host_state",
+        "columns": [
+          "origin",
+          "robots_status",
+          "robots_body",
+          "robots_fetched_at",
+          "robots_expires_at",
+          "cooldown_until",
+          "cooldown_reason",
+          "next_allowed_at",
+          "updated_at"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_fetch_cache",
+        "columns": [
+          "id",
+          "tenant_id",
+          "scope",
+          "source_key",
+          "url_key",
+          "url",
+          "etag",
+          "last_modified",
+          "last_raw_sha256",
+          "last_item_id",
+          "last_fetched_at"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_items",
+        "columns": [
+          "id",
+          "job_id",
+          "tenant_id",
+          "scope",
+          "source_key",
+          "kind",
+          "status",
+          "stage",
+          "url",
+          "url_key",
+          "final_url",
+          "depth",
+          "discovered_from",
+          "http_status",
+          "raw_sha256",
+          "raw_size",
+          "raw_handle",
+          "media_type",
+          "text_sha256",
+          "text_chars",
+          "language",
+          "language_confidence",
+          "minhash",
+          "exact_of",
+          "cluster_id",
+          "profile",
+          "decision_state",
+          "reason_codes",
+          "errors",
+          "signals",
+          "envelope_id",
+          "envelope",
+          "payload_hash",
+          "parser_version",
+          "normalizer_version",
+          "fetched_at",
+          "created_at"
+        ],
+        "foreign_keys": [
+          {
+            "column": "job_id",
+            "target": "collector_jobs.id"
+          }
+        ]
+      },
+      {
+        "name": "collector_dedupe_bands",
+        "columns": [
+          "item_id",
+          "band",
+          "tenant_id",
+          "scope",
+          "band_hash"
+        ],
+        "foreign_keys": [
+          {
+            "column": "item_id",
+            "target": "collector_items.id"
+          }
+        ]
+      },
+      {
+        "name": "collector_budget_buckets",
+        "columns": [
+          "kind",
+          "key",
+          "limit_tokens",
+          "limit_calls",
+          "limit_micro_usd",
+          "reserved_tokens",
+          "reserved_calls",
+          "reserved_micro_usd",
+          "created_at"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_budget_reservations",
+        "columns": [
+          "id",
+          "request_key",
+          "day",
+          "job_id",
+          "purpose",
+          "engine",
+          "state",
+          "reserved_tokens",
+          "reserved_micro_usd",
+          "charged_tokens",
+          "charged_micro_usd",
+          "receipt",
+          "created_at",
+          "settled_at"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_cache",
+        "columns": [
+          "cache_key",
+          "tenant_id",
+          "scope",
+          "kind",
+          "result",
+          "reason",
+          "hits",
+          "expires_at",
+          "created_at"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_runtime_flags",
+        "columns": [
+          "name",
+          "value",
+          "updated_at"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_sources",
+        "columns": [
+          "id",
+          "tenant_id",
+          "scope",
+          "source_key",
+          "title",
+          "request",
+          "enabled",
+          "auto_import",
+          "interval_minutes",
+          "next_run_at",
+          "last_job_id",
+          "version",
+          "last_error",
+          "created_at",
+          "updated_at"
+        ],
+        "foreign_keys": [
+          {
+            "column": "last_job_id",
+            "target": "collector_jobs.id"
+          }
+        ]
+      },
+      {
+        "name": "collector_deliveries",
+        "columns": [
+          "outbox_id",
+          "item_id",
+          "revision_id",
+          "outcome",
+          "detail",
+          "created_at"
+        ],
+        "foreign_keys": [
+          {
+            "column": "outbox_id",
+            "target": "collector_outbox.id"
+          },
+          {
+            "column": "revision_id",
+            "target": "kb_revisions.id"
+          },
+          {
+            "column": "item_id",
+            "target": "collector_items.id"
+          }
+        ]
+      },
+      {
+        "name": "collector_daily_budgets",
+        "columns": [
+          "day",
+          "reserved_pages"
+        ],
+        "foreign_keys": []
+      },
+      {
+        "name": "collector_reviews",
+        "columns": [
+          "id",
+          "item_id",
+          "decision",
+          "reason",
+          "actor",
+          "text_sha256",
+          "created_at"
+        ],
+        "foreign_keys": [
+          {
+            "column": "item_id",
+            "target": "collector_items.id"
+          }
+        ]
+      },
+      {
+        "name": "collector_quality_models",
+        "columns": [
+          "id",
+          "tenant_id",
+          "scope",
+          "digest",
+          "artifact",
+          "created_at"
+        ],
+        "foreign_keys": []
       }
     ],
     "migrations": [
@@ -4359,26 +4996,311 @@
         ],
         "used_filename_fallback": false,
         "parse_error": null
+      },
+      {
+        "filename": "0063_collector_stage_items.py",
+        "revision": "0063_collector_stage_items",
+        "down_revision": "0062_delivery_change_sets",
+        "stem": "0063_collector_stage_items",
+        "branch_labels": [],
+        "ddl_call_sites": [
+          {
+            "kind": "create_table",
+            "target": "collector_source_policies",
+            "sql_classification": "static_literal",
+            "line": 22
+          },
+          {
+            "kind": "create_table",
+            "target": "collector_host_state",
+            "sql_classification": "static_literal",
+            "line": 36
+          },
+          {
+            "kind": "create_table",
+            "target": "collector_fetch_cache",
+            "sql_classification": "static_literal",
+            "line": 49
+          },
+          {
+            "kind": "create_table",
+            "target": "collector_items",
+            "sql_classification": "static_literal",
+            "line": 65
+          },
+          {
+            "kind": "create_index",
+            "target": "ix_collector_items_text",
+            "sql_classification": "static_literal",
+            "line": 114
+          },
+          {
+            "kind": "create_index",
+            "target": "ix_collector_items_url",
+            "sql_classification": "static_literal",
+            "line": 115
+          },
+          {
+            "kind": "create_index",
+            "target": "ix_collector_items_job",
+            "sql_classification": "static_literal",
+            "line": 116
+          },
+          {
+            "kind": "create_table",
+            "target": "collector_dedupe_bands",
+            "sql_classification": "static_literal",
+            "line": 117
+          },
+          {
+            "kind": "create_index",
+            "target": "ix_collector_dedupe_bands_lookup",
+            "sql_classification": "static_literal",
+            "line": 127
+          }
+        ],
+        "used_filename_fallback": false,
+        "parse_error": null
+      },
+      {
+        "filename": "0065_collector_delivery.py",
+        "revision": "0065_collector_delivery",
+        "down_revision": "0064_run_executor",
+        "stem": "0065_collector_delivery",
+        "branch_labels": [],
+        "ddl_call_sites": [
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_sources (\n\tid UUID NOT NULL, \n\ttenant_id VARCHAR(64) NOT NULL, \n\tscope VARCHAR(32) NOT NULL, \n\tsource_key VARCHAR(256) NOT NULL, \n\ttitle VARCHAR(500) NOT NULL, \n\trequest JSONB NOT NULL, \n\tenabled BOOLEAN NOT NULL, \n\tauto_import BOOLEAN NOT NULL, \n\tinterval_minutes INTEGER, \n\tnext_run_at TIMESTAMP WITH TIME ZONE, \n\tlast_job_id UUID, \n\tversion INTEGER NOT NULL, \n\tlast_error VARCHAR(500), \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tCONSTRAINT uq_collector_sources_identity UNIQUE (tenant_id, scope, source_key), \n\tCONSTRAINT ck_collector_sources_scope CHECK (scope IN ('personal', 'work')), \n\tCONSTRAINT ck_collector_sources_interval CHECK (interval_minutes IS NULL OR interval_minutes >= 15), \n\tFOREIGN KEY(last_job_id) REFERENCES collector_jobs (id) ON DELETE SET NULL\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 10
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE INDEX ix_collector_sources_next_run_at ON collector_sources (next_run_at)",
+            "sql_classification": "static_literal",
+            "line": 11
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE kb_document_access (\n\tdocument_id UUID NOT NULL, \n\ttenant_id VARCHAR(64) NOT NULL, \n\tscope VARCHAR(32) NOT NULL, \n\thidden BOOLEAN NOT NULL, \n\tPRIMARY KEY (document_id), \n\tCONSTRAINT ck_kb_document_access_scope CHECK (scope IN ('personal', 'work')), \n\tFOREIGN KEY(document_id) REFERENCES kb_documents (id) ON DELETE RESTRICT\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 12
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE kb_observations (\n\tid UUID NOT NULL, \n\tdocument_id UUID NOT NULL, \n\trevision_id UUID NOT NULL, \n\tenvelope_id UUID NOT NULL, \n\tevent_time TIMESTAMP WITH TIME ZONE NOT NULL, \n\trecorded_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tprovenance JSONB NOT NULL, \n\tPRIMARY KEY (id), \n\tCONSTRAINT uq_kb_observations_envelope UNIQUE (envelope_id), \n\tFOREIGN KEY(document_id) REFERENCES kb_documents (id) ON DELETE RESTRICT, \n\tFOREIGN KEY(revision_id) REFERENCES kb_revisions (id) ON DELETE RESTRICT\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 13
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE INDEX ix_kb_observations_document_id ON kb_observations (document_id)",
+            "sql_classification": "static_literal",
+            "line": 14
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_deliveries (\n\toutbox_id UUID NOT NULL, \n\titem_id UUID NOT NULL, \n\trevision_id UUID, \n\toutcome VARCHAR(32) NOT NULL, \n\tdetail JSONB NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (outbox_id), \n\tFOREIGN KEY(outbox_id) REFERENCES collector_outbox (id) ON DELETE RESTRICT, \n\tFOREIGN KEY(item_id) REFERENCES collector_items (id) ON DELETE RESTRICT, \n\tFOREIGN KEY(revision_id) REFERENCES kb_revisions (id) ON DELETE RESTRICT\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 15
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE INDEX ix_collector_deliveries_item_id ON collector_deliveries (item_id)",
+            "sql_classification": "static_literal",
+            "line": 16
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_daily_budgets (\n\tday VARCHAR(10) NOT NULL, \n\treserved_pages INTEGER NOT NULL, \n\tPRIMARY KEY (day)\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 17
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_reviews (\n\tid UUID NOT NULL, \n\titem_id UUID NOT NULL, \n\tdecision VARCHAR(16) NOT NULL, \n\treason VARCHAR(2000) NOT NULL, \n\tactor VARCHAR(32) NOT NULL, \n\ttext_sha256 VARCHAR(64) NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(item_id) REFERENCES collector_items (id) ON DELETE RESTRICT\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 18
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE INDEX ix_collector_reviews_item_id ON collector_reviews (item_id)",
+            "sql_classification": "static_literal",
+            "line": 19
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_quality_models (\n\tid UUID NOT NULL, \n\ttenant_id VARCHAR(64) NOT NULL, \n\tscope VARCHAR(32) NOT NULL, \n\tdigest VARCHAR(64) NOT NULL, \n\tartifact JSONB NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id)\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 20
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE kb_passage_vectors (\n\tpassage_id UUID NOT NULL, \n\tmodel_key VARCHAR(200) NOT NULL, \n\ttext_sha256 VARCHAR(64) NOT NULL, \n\tvector VECTOR(1024) NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (passage_id, model_key), \n\tFOREIGN KEY(passage_id) REFERENCES kb_passages (id) ON DELETE RESTRICT\n)\n\n",
+            "sql_classification": "static_literal",
+            "line": 21
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE OR REPLACE FUNCTION collector_evidence_immutable() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'collector evidence is immutable' USING ERRCODE='23514'; END; $$ LANGUAGE plpgsql",
+            "sql_classification": "static_literal",
+            "line": 22
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE TRIGGER kb_observations_immutable BEFORE UPDATE OR DELETE ON kb_observations FOR EACH ROW EXECUTE FUNCTION collector_evidence_immutable()",
+            "sql_classification": "static_literal",
+            "line": 23
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE TRIGGER collector_reviews_immutable BEFORE UPDATE OR DELETE ON collector_reviews FOR EACH ROW EXECUTE FUNCTION collector_evidence_immutable()",
+            "sql_classification": "static_literal",
+            "line": 24
+          },
+          {
+            "kind": "execute",
+            "target": "CREATE TRIGGER collector_quality_models_immutable BEFORE UPDATE OR DELETE ON collector_quality_models FOR EACH ROW EXECUTE FUNCTION collector_evidence_immutable()",
+            "sql_classification": "static_literal",
+            "line": 25
+          }
+        ],
+        "used_filename_fallback": false,
+        "parse_error": null
+      },
+      {
+        "filename": "0066_collector_budget.py",
+        "revision": "0066_collector_budget",
+        "down_revision": "0065_collector_delivery",
+        "stem": "0066_collector_budget",
+        "branch_labels": [],
+        "ddl_call_sites": [
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_budget_buckets (\n\tkind VARCHAR(8) NOT NULL, \n\tkey VARCHAR(64) NOT NULL, \n\tlimit_tokens BIGINT NOT NULL, \n\tlimit_calls INTEGER NOT NULL, \n\tlimit_micro_usd BIGINT NOT NULL, \n\treserved_tokens BIGINT NOT NULL, \n\treserved_calls INTEGER NOT NULL, \n\treserved_micro_usd BIGINT NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (kind, key), \n\tCONSTRAINT ck_collector_budget_buckets_kind CHECK (kind IN ('day', 'job')), \n\tCONSTRAINT ck_collector_budget_buckets_nonneg CHECK (reserved_tokens >= 0 AND reserved_calls >= 0 AND reserved_micro_usd >= 0)\n)\n",
+            "sql_classification": "static_literal",
+            "line": 11
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_budget_reservations (\n\tid UUID NOT NULL, \n\trequest_key VARCHAR(200) NOT NULL, \n\tday VARCHAR(10) NOT NULL, \n\tjob_id VARCHAR(64), \n\tpurpose VARCHAR(24) NOT NULL, \n\tengine VARCHAR(80) NOT NULL, \n\tstate VARCHAR(12) NOT NULL, \n\treserved_tokens BIGINT NOT NULL, \n\treserved_micro_usd BIGINT NOT NULL, \n\tcharged_tokens BIGINT NOT NULL, \n\tcharged_micro_usd BIGINT NOT NULL, \n\treceipt JSONB, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tsettled_at TIMESTAMP WITH TIME ZONE, \n\tPRIMARY KEY (id), \n\tCONSTRAINT uq_collector_budget_reservations_key UNIQUE (request_key), \n\tCONSTRAINT ck_collector_budget_reservations_state CHECK (state IN ('reserved', 'settled', 'unknown'))\n)\n",
+            "sql_classification": "static_literal",
+            "line": 12
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE INDEX ix_collector_budget_reservations_day ON collector_budget_reservations (day)\n",
+            "sql_classification": "static_literal",
+            "line": 13
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_cache (\n\tcache_key VARCHAR(64) NOT NULL, \n\ttenant_id VARCHAR(64) NOT NULL, \n\tscope VARCHAR(32) NOT NULL, \n\tkind VARCHAR(10) NOT NULL, \n\tresult JSONB NOT NULL, \n\treason VARCHAR(200), \n\thits INTEGER NOT NULL, \n\texpires_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (cache_key), \n\tCONSTRAINT ck_collector_cache_kind CHECK (kind IN ('positive', 'negative', 'unknown'))\n)\n",
+            "sql_classification": "static_literal",
+            "line": 14
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE INDEX ix_collector_cache_expires_at ON collector_cache (expires_at)\n",
+            "sql_classification": "static_literal",
+            "line": 15
+          },
+          {
+            "kind": "execute",
+            "target": "\nCREATE TABLE collector_runtime_flags (\n\tname VARCHAR(64) NOT NULL, \n\tvalue JSONB NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (name)\n)\n",
+            "sql_classification": "static_literal",
+            "line": 16
+          }
+        ],
+        "used_filename_fallback": false,
+        "parse_error": null
+      },
+      {
+        "filename": "0067_collector_outbox_retry.py",
+        "revision": "0067_collector_outbox_retry",
+        "down_revision": "0066_collector_budget",
+        "stem": "0067_collector_outbox_retry",
+        "branch_labels": [],
+        "ddl_call_sites": [
+          {
+            "kind": "execute",
+            "target": "ALTER TABLE collector_outbox ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
+            "sql_classification": "static_literal",
+            "line": 11
+          },
+          {
+            "kind": "execute",
+            "target": "ALTER TABLE collector_outbox ADD COLUMN not_before TIMESTAMP WITH TIME ZONE",
+            "sql_classification": "static_literal",
+            "line": 12
+          },
+          {
+            "kind": "execute",
+            "target": "ALTER TABLE collector_outbox ADD COLUMN last_error VARCHAR(300)",
+            "sql_classification": "static_literal",
+            "line": 13
+          }
+        ],
+        "used_filename_fallback": false,
+        "parse_error": null
       }
     ],
     "configs": [
       "collector_batch_size",
+      "collector_blob_cap_bytes",
+      "collector_budget_day_calls",
+      "collector_budget_day_micro_usd",
+      "collector_budget_day_tokens",
+      "collector_budget_job_calls",
+      "collector_budget_job_micro_usd",
+      "collector_budget_job_tokens",
+      "collector_budget_request_input_tokens",
+      "collector_budget_request_output_tokens",
       "collector_consume_enabled",
-      "collector_stale_seconds"
+      "collector_contact",
+      "collector_control_enabled",
+      "collector_daily_page_cap",
+      "collector_pilot_enabled",
+      "collector_stale_seconds",
+      "collector_teacher_enabled"
     ],
     "files": [
       "src/ttakkari/api/collect.py",
+      "src/ttakkari/api/collect_control.py",
       "src/ttakkari/collector/__init__.py",
+      "src/ttakkari/collector/blobs.py",
+      "src/ttakkari/collector/budget.py",
+      "src/ttakkari/collector/budget_models.py",
+      "src/ttakkari/collector/cache.py",
       "src/ttakkari/collector/contracts.py",
+      "src/ttakkari/collector/control.py",
+      "src/ttakkari/collector/control_models.py",
+      "src/ttakkari/collector/fetcher.py",
       "src/ttakkari/collector/intake.py",
       "src/ttakkari/collector/jobs.py",
+      "src/ttakkari/collector/learning.py",
+      "src/ttakkari/collector/netguard.py",
+      "src/ttakkari/collector/parse.py",
+      "src/ttakkari/collector/pilot.py",
+      "src/ttakkari/collector/pipeline.py",
+      "src/ttakkari/collector/policy.py",
+      "src/ttakkari/collector/polite.py",
+      "src/ttakkari/collector/profiles.py",
+      "src/ttakkari/collector/quality.py",
+      "src/ttakkari/collector/quality_service.py",
+      "src/ttakkari/collector/robots.py",
       "src/ttakkari/collector/runner.py",
+      "src/ttakkari/collector/runtime.py",
+      "src/ttakkari/collector/store.py",
+      "src/ttakkari/collector/textproc.py",
       "src/ttakkari/collector_models.py"
     ],
-    "lines": 1665,
+    "lines": 6865,
     "dependencies_internal": [
       "core.auth_session",
       "core.system_routing",
+      "domain.knowledge_rag",
       "exec.run_engine"
     ]
   },
@@ -4394,8 +5316,8 @@
     "difficulty": "high",
     "benefit": "세션 ID 분리 및 managed Comfy/ArtCraft 프로세스 decoupling 후 점진적 서비스화 가능 (현재 즉시 분리 불가)",
     "status": "partial",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -4508,6 +5430,21 @@
         "label": "owner-plain"
       },
       {
+        "method": "GET",
+        "path": "/api/creative/records",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/records/{rid}",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/records/{rid}/media/{media_id}",
+        "label": "public"
+      },
+      {
         "method": "POST",
         "path": "/api/creative/validate",
         "label": "owner-plain"
@@ -4564,6 +5501,166 @@
       },
       {
         "method": "GET",
+        "path": "/api/creative/v2/catalog",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/capabilities",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/registries",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/matrix",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/duration/policy",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/duration/preview",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/duration/recheck",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/intent/contract",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/intent/runs",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/intent/runs/{run_id}",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/intent/runs/{run_id}/resume",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/intent/validate",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/intent/hint",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/match",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/style-dna",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/style-dna/{style_id}/{version}",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/style-dna",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/style-dna/compose",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/style-dna/works/{work_id}/pin",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/style-dna/works/{work_id}",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/plans",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/plans",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/plans/{pid}",
+        "label": "owner-plain"
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/creative/v2/plans/{pid}",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/plans/{pid}/approve",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/plans/{pid}/production",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/plans/{pid}/production",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/plans/{pid}/production/render",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/plans/{pid}/production/generate-assets",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/plans/{pid}/production/assets",
+        "label": "owner-plain"
+      },
+      {
+        "method": "POST",
+        "path": "/api/creative/v2/plans/{pid}/production/media-link",
+        "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/creative/v2/plans/{pid}/production/media/{ident}",
+        "label": "public"
+      },
+      {
+        "method": "GET",
         "path": "/api/comfy/profiles",
         "label": "owner-plain"
       },
@@ -4586,9 +5683,77 @@
         "method": "POST",
         "path": "/api/comfy/jobs/{task_id}/reconcile",
         "label": "owner-plain"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/comfy/profiles",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/comfy/readiness",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/comfy/jobs",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/agent/comfy/submit",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "GET",
+        "path": "/api/agent/comfy/jobs/{task_id}",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/agent/comfy/jobs/{task_id}/cancel",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/agent/comfy/jobs/{task_id}/reconcile",
+        "label": "agent-scoped"
+      },
+      {
+        "method": "POST",
+        "path": "/api/agent/creative-v2/{operation}",
+        "label": "agent-scoped"
       }
     ],
-    "tools": [],
+    "tools": [
+      "comfy_cancel",
+      "comfy_job",
+      "comfy_jobs",
+      "comfy_profiles",
+      "comfy_readiness",
+      "comfy_reconcile",
+      "comfy_submit",
+      "creative_v2_auto_assets_retry",
+      "creative_v2_auto_assets_start",
+      "creative_v2_auto_assets_status",
+      "creative_v2_capabilities",
+      "creative_v2_catalog",
+      "creative_v2_plan",
+      "creative_v2_plan_approve",
+      "creative_v2_plan_create",
+      "creative_v2_plan_edit",
+      "creative_v2_plans",
+      "creative_v2_production_assets",
+      "creative_v2_production_dispatch",
+      "creative_v2_production_media_link",
+      "creative_v2_production_render",
+      "creative_v2_production_status",
+      "creative_v2_recipe_matrix",
+      "creative_v2_registries",
+      "creative_v2_style",
+      "creative_v2_style_put",
+      "creative_v2_styles"
+    ],
     "tables": [
       {
         "name": "artcraft_tasks",
@@ -4639,12 +5804,15 @@
     ],
     "configs": [
       "artcraft_auto_remote_check",
-      "artcraft_root"
+      "artcraft_root",
+      "studio_lab_root"
     ],
     "files": [
       "src/ttakkari/api/artcraft.py",
       "src/ttakkari/api/comfy_managed.py",
       "src/ttakkari/api/creative.py",
+      "src/ttakkari/api/creative_mcp.py",
+      "src/ttakkari/api/creative_v2.py",
       "src/ttakkari/artcraft.py",
       "src/ttakkari/artcraft_bugs.py",
       "src/ttakkari/artcraft_catalog.py",
@@ -4653,15 +5821,34 @@
       "src/ttakkari/creative/catalog.py",
       "src/ttakkari/creative/demo.py",
       "src/ttakkari/creative/director.py",
+      "src/ttakkari/creative/records.py",
       "src/ttakkari/creative/render.py",
       "src/ttakkari/creative/service.py",
+      "src/ttakkari/creative/v2/__init__.py",
+      "src/ttakkari/creative/v2/capabilities.py",
+      "src/ttakkari/creative/v2/catalog_data.py",
+      "src/ttakkari/creative/v2/dispatch.py",
+      "src/ttakkari/creative/v2/duration.py",
+      "src/ttakkari/creative/v2/engines.py",
+      "src/ttakkari/creative/v2/extraction.py",
+      "src/ttakkari/creative/v2/intent.py",
+      "src/ttakkari/creative/v2/matching.py",
+      "src/ttakkari/creative/v2/plans.py",
+      "src/ttakkari/creative/v2/probe.py",
+      "src/ttakkari/creative/v2/registry.py",
+      "src/ttakkari/creative/v2/registry_data.py",
+      "src/ttakkari/creative/v2/report.py",
+      "src/ttakkari/creative/v2/run_extraction.py",
+      "src/ttakkari/creative/v2/style_dna.py",
       "src/ttakkari/managed_comfy.py",
       "src/ttakkari/managed_comfy_receipt.py"
     ],
-    "lines": 6281,
+    "lines": 16742,
     "dependencies_internal": [
       "core.auth_session",
+      "core.generation_deploy",
       "core.system_routing",
+      "core.workspaces_transfers",
       "domain.shares_artifacts",
       "exec.host_gpu",
       "exec.run_engine"
@@ -4679,8 +5866,8 @@
     "difficulty": "medium",
     "benefit": "헤드리스 브라우저의 메모리 누수 및 좀비 프로세스 문제를 Core로부터 완전 격리",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -5041,8 +6228,8 @@
     "difficulty": "low",
     "benefit": "연구 데이터 스키마와 실험 메트릭 독립 관리",
     "status": "prototype",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -5158,12 +6345,12 @@
         ],
         "foreign_keys": [
           {
-            "column": "evidence_id",
-            "target": "kb_evidence.id"
-          },
-          {
             "column": "supersedes_id",
             "target": "research_nodes.id"
+          },
+          {
+            "column": "evidence_id",
+            "target": "kb_evidence.id"
           },
           {
             "column": "study_id",
@@ -5185,11 +6372,11 @@
         ],
         "foreign_keys": [
           {
-            "column": "to_id",
+            "column": "from_id",
             "target": "research_nodes.id"
           },
           {
-            "column": "from_id",
+            "column": "to_id",
             "target": "research_nodes.id"
           },
           {
@@ -5422,8 +6609,8 @@
     "difficulty": "medium",
     "benefit": "헤비한 분석 작업 단독 큐 분리",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "POST",
@@ -5627,8 +6814,8 @@
     "difficulty": "high",
     "benefit": "Whisper 모델 로딩 및 무거운 음성 전사 연산이 웹 요청 처리 지연을 유발하지 않도록 격리",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -5840,16 +7027,16 @@
         ],
         "foreign_keys": [
           {
-            "column": "audio_artifact_id",
-            "target": "artifacts.id"
+            "column": "meeting_id",
+            "target": "meetings.id"
           },
           {
             "column": "parent_job_id",
             "target": "local_stt_jobs.id"
           },
           {
-            "column": "meeting_id",
-            "target": "meetings.id"
+            "column": "audio_artifact_id",
+            "target": "artifacts.id"
           }
         ]
       },
@@ -5947,12 +7134,12 @@
         ],
         "foreign_keys": [
           {
-            "column": "meeting_id",
-            "target": "meetings.id"
-          },
-          {
             "column": "entity_id",
             "target": "ctx_entities.id"
+          },
+          {
+            "column": "meeting_id",
+            "target": "meetings.id"
           }
         ]
       }
@@ -6206,8 +7393,8 @@
     "difficulty": "low",
     "benefit": "도메인 데이터가 명확하고 부작용이 적어 서비스화 또는 코어 라이브러리로 유지 용이",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -6704,8 +7891,8 @@
     "difficulty": "low",
     "benefit": "프론트엔드 빌드 산출물과 정적 파일 동기화만으로 독립 배포 가능",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -6777,8 +7964,8 @@
     "difficulty": "medium",
     "benefit": "음성 합성 외부 API 또는 로컬 엔진 지연이 Core 요청 쓰레드를 잠식하지 않음",
     "status": "partial",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -6953,8 +8140,8 @@
     "difficulty": "low",
     "benefit": "게임 프로젝트 데이터 격리",
     "status": "prototype",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -7267,8 +8454,8 @@
     "difficulty": "low",
     "benefit": "개인 편의 기능들을 독립 도메인으로 묶어 비즈니스 로직과 분리",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -7525,12 +8712,12 @@
         ],
         "foreign_keys": [
           {
-            "column": "run_id",
-            "target": "runs.id"
-          },
-          {
             "column": "session_id",
             "target": "sessions.id"
+          },
+          {
+            "column": "run_id",
+            "target": "runs.id"
           }
         ]
       },
@@ -7868,8 +9055,8 @@
     "difficulty": "medium",
     "benefit": "외부 서비스 인증 프로토콜 변경 시 어댑터만 단독 업데이트",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",
@@ -8151,8 +9338,8 @@
     "difficulty": "low",
     "benefit": "사용자에게 결과물을 노출하는 정적 게이트웨이 역할",
     "status": "implemented",
-    "src_tree": "d56a96c0c9a1a4e779b0a8f0678b1a9efbdfc205",
-    "scan_commit": "5a000a9bcac8c8955d85aafb9c04eb49d4e2bbb8",
+    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
     "routes": [
       {
         "method": "GET",

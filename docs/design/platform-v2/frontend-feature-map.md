@@ -43,7 +43,7 @@
 - **레이아웃 라우트 (path 없음)**: 1개 (`<Route element={<AppShell />}>`)
 - **실제 페이지 컴포넌트**: 29종 (Suspense 내부 지연 로딩 페이지 포함)
 - **리다이렉트 라우트**: 1개 (`*` -> `Navigate to="/chat"`)
-- **미해결 동적 라우트 (Unresolved Ledger)**: 0건
+- **미해결 라우트 (Unresolved Ledger)**: 0건
 
 | No | 라우트 경로 | 컴포넌트 | 담당 도메인 / 설명 | 상태 관리 및 쿼리 키 | Backend Module ID (25종 바인딩) | 상태 | Fallback / 오류 처리 |
 |---|---|---|---|---|---|---|---|
@@ -102,3 +102,195 @@
   - `src/shell/useConnection.ts`: `fetchHealth` -> GET 30초 주기 heartbeat 수집 원장에 포함 (line 25).
   - `src/api/client.ts`: `refreshAccessToken` -> POST 직접 fetch 토큰 재발급 원장에 포함 (line 114).
   - `src/api/client.ts`: `publicShareRequest` -> `getPublicMeetingShare` 및 `downloadPublicMeetingShare` 원장에 포함.
+
+### API callsites
+
+Extraction coverage: `incomplete`; unresolved: 1.
+
+| Source | Line | Function | Method | Endpoint | Backend module | Mapping |
+|---|---:|---|---|---|---|---|
+| src/api/client.ts | 114 | refreshAccessToken | POST | /api/auth/refresh | core.auth_session | provisional |
+| src/api/client.ts | 195 | listNotifications | GET | /api/notifications | core.system_routing | provisional |
+| src/api/client.ts | 197 | readNotification | PATCH | /api/notifications/${id}/read | core.system_routing | provisional |
+| src/api/client.ts | 199 | readAllNotifications | POST | /api/notifications/read-all | core.system_routing | provisional |
+| src/api/client.ts | 204 | previewMeetingShare | POST | /api/shares/preview | domain.shares_artifacts | provisional |
+| src/api/client.ts | 205 | listMeetingShares | GET | /api/shares | domain.shares_artifacts | provisional |
+| src/api/client.ts | 206 | publishMeetingShare | POST | /api/shares | domain.shares_artifacts | provisional |
+| src/api/client.ts | 207 | republishMeetingShare | PUT | /api/shares/${id}/publication | domain.shares_artifacts | provisional |
+| src/api/client.ts | 208 | revokeMeetingShare | DELETE | /api/shares/${id} | domain.shares_artifacts | provisional |
+| src/api/client.ts | 209 | exportMeetingDocument | POST | /api/exports | domain.shares_artifacts | provisional |
+| src/api/client.ts | 219 | getPublicMeetingShare | GET | /api/public/shares/${id} | domain.shares_artifacts | provisional |
+| src/api/client.ts | 222 | downloadPublicMeetingShare | GET | /api/public/shares/${id}/download | domain.shares_artifacts | provisional |
+| src/api/client.ts | 226 | login | POST | /api/auth/login | core.auth_session | provisional |
+| src/api/client.ts | 232 | logout | POST | /api/auth/logout | core.auth_session | provisional |
+| src/api/client.ts | 239 | me | GET | /api/auth/me | core.auth_session | provisional |
+| src/api/client.ts | 243 | listWeatherBriefings | GET | /api/weather/briefings | domain.personal_tools | provisional |
+| src/api/client.ts | 245 | getWeatherBriefing | GET | /api/weather/briefings/${day} | domain.personal_tools | provisional |
+| src/api/client.ts | 247 | generateWeatherBriefing | POST | /api/weather/generate | domain.personal_tools | provisional |
+| src/api/client.ts | 251 | listWorkspaces | GET | /api/workspaces | core.workspaces_transfers | provisional |
+| src/api/client.ts | 253 | createWorkspace | POST | /api/workspaces | core.workspaces_transfers | provisional |
+| src/api/client.ts | 254 | getWorkspace | GET | /api/workspaces/${id} | core.workspaces_transfers | provisional |
+| src/api/client.ts | 256 | getDefaultWorkspace | GET | /api/workspaces/default | core.workspaces_transfers | provisional |
+| src/api/client.ts | 258 | patchWorkspace | PATCH | /api/workspaces/${id} | core.workspaces_transfers | provisional |
+| src/api/client.ts | 260 | listFiles | GET | /api/workspaces/${id}/files | core.workspaces_transfers | provisional |
+| src/api/client.ts | 262 | searchFiles | GET | /api/workspaces/${id}/search | core.workspaces_transfers | provisional |
+| src/api/client.ts | 266 | listSessions | GET | /api/sessions | core.auth_session | provisional |
+| src/api/client.ts | 267 | createSession | POST | /api/sessions | core.auth_session | provisional |
+| src/api/client.ts | 268 | getSession | GET | /api/sessions/${id} | core.auth_session | provisional |
+| src/api/client.ts | 270 | ensureDesk | POST | /api/desk | core.auth_session | provisional |
+| src/api/client.ts | 272 | patchSession | PATCH | /api/sessions/${id} | core.auth_session | provisional |
+| src/api/client.ts | 276 | activeTasks | GET | /api/tasks/active | domain.pms_tasks | provisional |
+| src/api/client.ts | 278 | taskLibrary | GET | /api/tasks/library | domain.pms_tasks | provisional |
+| src/api/client.ts | 279 | searchTasks | GET | /api/tasks/search | domain.pms_tasks | provisional |
+| src/api/client.ts | 280 | taskTree | GET | /api/tasks/${sessionId}/tree | domain.pms_tasks | provisional |
+| src/api/client.ts | 285 | listRuns | GET | /api/sessions/${sessionId}/runs | core.auth_session | provisional |
+| src/api/client.ts | 287 | listFailedRuns | GET | /api/runs/failed | exec.run_engine | provisional |
+| src/api/client.ts | 289 | createRun | POST | /api/sessions/${sessionId}/runs | core.auth_session | provisional |
+| src/api/client.ts | 290 | getRun | GET | /api/runs/${id} | exec.run_engine | provisional |
+| src/api/client.ts | 291 | cancelRun | POST | /api/runs/${id}/cancel | exec.run_engine | provisional |
+| src/api/client.ts | 293 | putDeskFeedback | POST | /api/runs/${runId}/desk-feedback | exec.run_engine | provisional |
+| src/api/client.ts | 295 | runEvents | GET | /api/runs/${id}/events | exec.run_engine | provisional |
+| src/api/client.ts | 297 | runDiff | GET | /api/runs/${id}/diff | exec.run_engine | provisional |
+| src/api/client.ts | 302 | listArtifacts | GET | /api/artifacts | domain.shares_artifacts | provisional |
+| src/api/client.ts | 303 | getArtifact | GET | /api/artifacts/${id} | domain.shares_artifacts | provisional |
+| src/api/client.ts | 305 | registerArtifact | POST | /api/artifacts | domain.shares_artifacts | provisional |
+| src/api/client.ts | 308 | resolveArtifactLink | POST | /api/artifacts/resolve | domain.shares_artifacts | provisional |
+| src/api/client.ts | 310 | moveArtifact | PATCH | /api/artifacts/${id} | domain.shares_artifacts | provisional |
+| src/api/client.ts | 311 | deleteArtifact | DELETE | /api/artifacts/${id} | domain.shares_artifacts | provisional |
+| src/api/client.ts | 313 | retryPreview | POST | /api/artifacts/${id}/preview/retry | domain.shares_artifacts | provisional |
+| src/api/client.ts | 315 | contentBlob | GET | /api/artifacts/${id}/content | domain.shares_artifacts | provisional |
+| src/api/client.ts | 319 | downloadLink | POST | /api/artifacts/${id}/download-link | domain.shares_artifacts | provisional |
+| src/api/client.ts | 329 | uploadFile | POST | /api/uploads | unknown | unknown |
+| src/api/client.ts | 333 | systemInfo | GET | /api/system/info | core.system_routing | provisional |
+| src/api/client.ts | 334 | stopAll | POST | /api/system/stop-all | core.system_routing | provisional |
+| src/api/client.ts | 337 | listAccounts | GET | /api/accounts | core.accounts_quota | provisional |
+| src/api/client.ts | 338 | createAccount | POST | /api/accounts | core.accounts_quota | provisional |
+| src/api/client.ts | 340 | patchAccount | PATCH | /api/accounts/${id} | core.accounts_quota | provisional |
+| src/api/client.ts | 341 | deleteAccount | DELETE | /api/accounts/${id} | core.accounts_quota | provisional |
+| src/api/client.ts | 344 | reorderAccounts | POST | /api/accounts/reorder | core.accounts_quota | provisional |
+| src/api/client.ts | 346 | clearAccountCooldown | POST | /api/accounts/${id}/cooldown/clear | core.accounts_quota | provisional |
+| src/api/client.ts | 392 | startTransfer | POST | /api/transfers | unknown | unknown |
+| src/api/client.ts | 393 | transferStatus | GET | /api/transfers/${id} | unknown | unknown |
+| src/api/client.ts | 395 | putTransferChunk | PUT | /api/transfers/${id} | unknown | unknown |
+| src/api/client.ts | 396 | completeTransfer | POST | /api/transfers/${id}/complete | unknown | unknown |
+| src/api/client.ts | 397 | cancelTransfer | DELETE | /api/transfers/${id} | unknown | unknown |
+| src/api/client.ts | 398 | transferFolders | GET | /api/transfers/folders | unknown | unknown |
+| src/api/client.ts | 399 | makeTransferFolder | POST | /api/transfers/folders | unknown | unknown |
+| src/api/client.ts | 400 | listTransferTokens | GET | /api/transfer-tokens | unknown | unknown |
+| src/api/client.ts | 401 | createTransferToken | POST | /api/transfer-tokens | unknown | unknown |
+| src/api/client.ts | 402 | revokeTransferToken | DELETE | /api/transfer-tokens/${id} | unknown | unknown |
+| src/api/client.ts | 493 | meetingProviders | GET | /api/meetings/providers | domain.meetings_stt | provisional |
+| src/api/client.ts | 495 | listMeetings | GET | /api/meetings | domain.meetings_stt | provisional |
+| src/api/client.ts | 496 | createMeeting | POST | /api/meetings | domain.meetings_stt | provisional |
+| src/api/client.ts | 497 | getMeeting | GET | /api/meetings/${id} | domain.meetings_stt | provisional |
+| src/api/client.ts | 499 | patchMeeting | PATCH | /api/meetings/${id} | domain.meetings_stt | provisional |
+| src/api/client.ts | 500 | deleteMeeting | DELETE | /api/meetings/${id} | domain.meetings_stt | provisional |
+| src/api/client.ts | 502 | putMeetingTranscript | POST | /api/meetings/${id}/transcript | domain.meetings_stt | provisional |
+| src/api/client.ts | 504 | requestMeetingTranscription | POST | /api/meetings/${id}/transcribe | domain.meetings_stt | provisional |
+| src/api/client.ts | 505 | analyzeMeeting | POST | /api/meetings/${id}/analyze | domain.meetings_stt | provisional |
+| src/api/client.ts | 506 | cancelMeetingAnalysis | POST | /api/meetings/${id}/analyze/cancel | domain.meetings_stt | provisional |
+| src/api/client.ts | 508 | patchMeetingItem | PATCH | /api/meetings/${id}/items/${itemId} | domain.meetings_stt | provisional |
+| src/api/client.ts | 510 | resolveMeetingProposal | POST | /api/meetings/${id}/proposals/${proposalId}/${action} | domain.meetings_stt | provisional |
+| src/api/client.ts | 569 | listMeetingSttUtterances | GET | /api/meetings/${id}/stt/${jobId}/utterances | domain.meetings_stt | provisional |
+| src/api/client.ts | 572 | retranscribeMeeting | POST | /api/meetings/${id}/retranscribe | domain.meetings_stt | provisional |
+| src/api/client.ts | 579 | probeRetranscribe | POST | /api/meetings/${id}/retranscribe | domain.meetings_stt | provisional |
+| src/api/client.ts | 589 | listMeetingSttJobs | GET | /api/meetings/${id}/stt | domain.meetings_stt | provisional |
+| src/api/client.ts | 591 | listMeetingSttSegments | GET | /api/meetings/${id}/stt/${jobId}/segments | domain.meetings_stt | provisional |
+| src/api/client.ts | 667 | assistantStatus | GET | /api/assistant/status | unknown | unknown |
+| src/api/client.ts | 676 | getInstructions | GET | /api/assistant/instructions | unknown | unknown |
+| src/api/client.ts | 678 | putInstructions | PUT | /api/assistant/instructions | unknown | unknown |
+| src/api/client.ts | 680 | resetInstructions | DELETE | /api/assistant/instructions | unknown | unknown |
+| src/api/client.ts | 682 | listMemories | GET | /api/assistant/memories | unknown | unknown |
+| src/api/client.ts | 684 | addMemory | POST | /api/assistant/memories | unknown | unknown |
+| src/api/client.ts | 686 | patchMemory | PATCH | /api/assistant/memories/${id} | unknown | unknown |
+| src/api/client.ts | 687 | deleteMemory | DELETE | /api/assistant/memories/${id} | unknown | unknown |
+| src/api/client.ts | 688 | listEntities | GET | /api/assistant/entities | unknown | unknown |
+| src/api/client.ts | 689 | getEntity | GET | /api/assistant/entities/${id} | unknown | unknown |
+| src/api/client.ts | 691 | addEntity | POST | /api/assistant/entities | unknown | unknown |
+| src/api/client.ts | 693 | patchEntity | PATCH | /api/assistant/entities/${id} | unknown | unknown |
+| src/api/client.ts | 694 | deleteEntity | DELETE | /api/assistant/entities/${id} | unknown | unknown |
+| src/api/client.ts | 696 | addRelation | POST | /api/assistant/relations | unknown | unknown |
+| src/api/client.ts | 697 | listSources | GET | /api/assistant/sources | unknown | unknown |
+| src/api/client.ts | 699 | addSource | POST | /api/assistant/sources | unknown | unknown |
+| src/api/client.ts | 700 | reindexSource | POST | /api/assistant/sources/${id}/reindex | unknown | unknown |
+| src/api/client.ts | 701 | deleteSource | DELETE | /api/assistant/sources/${id} | unknown | unknown |
+| src/api/client.ts | 702 | listTools | GET | /api/assistant/tools | unknown | unknown |
+| src/api/client.ts | 783 | libOverview | GET | /api/assistant/library/overview | unknown | unknown |
+| src/api/client.ts | 784 | libTree | GET | /api/assistant/library/tree | unknown | unknown |
+| src/api/client.ts | 785 | libSourceDocuments | GET | /api/assistant/library/sources/${id}/documents | unknown | unknown |
+| src/api/client.ts | 786 | libDocumentChunks | GET | /api/assistant/library/documents/${id}/chunks | unknown | unknown |
+| src/api/client.ts | 787 | libGraph | GET | /api/assistant/library/graph | unknown | unknown |
+| src/api/client.ts | 788 | libEntity | GET | /api/assistant/library/entities/${id} | unknown | unknown |
+| src/api/client.ts | 789 | libQuality | GET | /api/assistant/library/quality | unknown | unknown |
+| src/api/client.ts | 791 | libSearchLab | POST | /api/assistant/library/search-lab | unknown | unknown |
+| src/api/client.ts | 793 | libItem | GET | /api/assistant/library/items/${kind}/${id} | unknown | unknown |
+| src/api/client.ts | 857 | getOverride | GET | /api/accounts/override | core.accounts_quota | provisional |
+| src/api/client.ts | 859 | putOverride | PUT | /api/accounts/override | core.accounts_quota | provisional |
+| src/api/client.ts | 861 | deleteOverride | DELETE | /api/accounts/override | core.accounts_quota | provisional |
+| src/api/client.ts | 862 | accountUsage | GET | /api/accounts/usage | core.accounts_quota | provisional |
+| src/api/client.ts | 864 | singleAccountUsage | GET | /api/accounts/${id}/usage | core.accounts_quota | provisional |
+| src/api/client.ts | 866 | refreshSingleAccountUsage | POST | /api/accounts/${id}/usage/refresh | core.accounts_quota | provisional |
+| src/api/client.ts | 867 | qwenUsage | GET | /api/accounts/qwen-usage | core.accounts_quota | provisional |
+| src/api/client.ts | 893 | qwenFlashUsage | GET | /api/accounts/qwen-flash-usage | core.accounts_quota | provisional |
+| src/api/client.ts | 896 | codexReset | POST | /api/accounts/${id}/codex-reset | core.accounts_quota | provisional |
+| src/api/client.ts | 957 | systemResources | GET | /api/system/resources | core.system_routing | provisional |
+| src/api/client.ts | 981 | systemResourceHistory | GET | /api/system/resources/history | core.system_routing | provisional |
+| src/api/client.ts | 1064 | listMemos | GET | /api/memos | domain.memory_ontology | provisional |
+| src/api/client.ts | 1066 | listMemoTags | GET | /api/memos/tags | domain.memory_ontology | provisional |
+| src/api/client.ts | 1068 | createMemo | POST | /api/memos | domain.memory_ontology | provisional |
+| src/api/client.ts | 1069 | getMemo | GET | /api/memos/${id} | domain.memory_ontology | provisional |
+| src/api/client.ts | 1070 | patchMemo | PATCH | /api/memos/${id} | domain.memory_ontology | provisional |
+| src/api/client.ts | 1071 | deleteMemo | DELETE | /api/memos/${id} | domain.memory_ontology | provisional |
+| src/api/client.ts | 1072 | listMemoCategories | GET | /api/memo-categories | unknown | unknown |
+| src/api/client.ts | 1074 | createMemoCategory | POST | /api/memo-categories | unknown | unknown |
+| src/api/client.ts | 1076 | patchMemoCategory | PATCH | /api/memo-categories/${id} | unknown | unknown |
+| src/api/client.ts | 1078 | orderMemoCategories | PUT | /api/memo-categories/order | unknown | unknown |
+| src/api/client.ts | 1079 | deleteMemoCategory | DELETE | /api/memo-categories/${id} | unknown | unknown |
+| src/api/client.ts | 1082 | listEvents | GET | /api/calendar/events | domain.personal_tools | provisional |
+| src/api/client.ts | 1084 | listHolidays | GET | /api/calendar/holidays | domain.personal_tools | provisional |
+| src/api/client.ts | 1085 | getEvent | GET | /api/calendar/events/${id} | domain.personal_tools | provisional |
+| src/api/client.ts | 1086 | createEvent | POST | /api/calendar/events | domain.personal_tools | provisional |
+| src/api/client.ts | 1088 | patchEvent | PATCH | /api/calendar/events/${id} | domain.personal_tools | provisional |
+| src/api/client.ts | 1089 | deleteEvent | DELETE | /api/calendar/events/${id} | domain.personal_tools | provisional |
+| src/api/client.ts | 1094 | listPmsProjects | GET | /api/pms/projects | domain.pms_tasks | provisional |
+| src/api/client.ts | 1095 | createPmsProject | POST | /api/pms/projects | domain.pms_tasks | provisional |
+| src/api/client.ts | 1096 | getPmsProject | GET | /api/pms/projects/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1098 | patchPmsProject | PATCH | /api/pms/projects/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1099 | deletePmsProject | DELETE | /api/pms/projects/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1100 | getPmsDashboard | GET | /api/pms/projects/${id}/dashboard | domain.pms_tasks | provisional |
+| src/api/client.ts | 1101 | listPmsTasks | GET | /api/pms/projects/${id}/tasks | domain.pms_tasks | provisional |
+| src/api/client.ts | 1103 | createPmsTask | POST | /api/pms/projects/${id}/tasks | domain.pms_tasks | provisional |
+| src/api/client.ts | 1105 | patchPmsTask | PATCH | /api/pms/tasks/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1107 | movePmsTask | POST | /api/pms/tasks/${id}/move | domain.pms_tasks | provisional |
+| src/api/client.ts | 1108 | deletePmsTask | DELETE | /api/pms/tasks/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1109 | listPmsMilestones | GET | /api/pms/projects/${id}/milestones | domain.pms_tasks | provisional |
+| src/api/client.ts | 1111 | createPmsMilestone | POST | /api/pms/projects/${id}/milestones | domain.pms_tasks | provisional |
+| src/api/client.ts | 1113 | patchPmsMilestone | PATCH | /api/pms/milestones/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1114 | deletePmsMilestone | DELETE | /api/pms/milestones/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1116 | listPmsNotes | GET | /api/pms/projects/${id}/notes | domain.pms_tasks | provisional |
+| src/api/client.ts | 1117 | createPmsNote | POST | /api/pms/projects/${id}/notes | domain.pms_tasks | provisional |
+| src/api/client.ts | 1118 | patchPmsNote | PATCH | /api/pms/notes/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1119 | deletePmsNote | DELETE | /api/pms/notes/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1125 | listChecklist | GET | /api/checklists | domain.pms_tasks | provisional |
+| src/api/client.ts | 1126 | listChecklistTemplates | GET | /api/checklists/templates | domain.pms_tasks | provisional |
+| src/api/client.ts | 1127 | createChecklistItem | POST | /api/checklists/items | domain.pms_tasks | provisional |
+| src/api/client.ts | 1128 | patchChecklistItem | PATCH | /api/checklists/items/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1129 | deleteChecklistItem | DELETE | /api/checklists/items/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1130 | createChecklistTemplate | POST | /api/checklists/templates | domain.pms_tasks | provisional |
+| src/api/client.ts | 1131 | patchChecklistTemplate | PATCH | /api/checklists/templates/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1132 | deleteChecklistTemplate | DELETE | /api/checklists/templates/${id} | domain.pms_tasks | provisional |
+| src/api/client.ts | 1136 | knowledgeStatus | GET | /api/assistant/knowledge/status | unknown | unknown |
+| src/api/client.ts | 1137 | knowledgeAssertions | GET | /api/assistant/knowledge/assertions | unknown | unknown |
+| src/api/client.ts | 1138 | knowledgeRecall | POST | /api/assistant/knowledge/recall | unknown | unknown |
+| src/api/client.ts | 1139 | knowledgeReview | POST | /api/assistant/knowledge/assertions/${id}/reviews | unknown | unknown |
+| src/api/client.ts | 1140 | knowledgeCorrect | POST | /api/assistant/knowledge/assertions/${id}/corrections | unknown | unknown |
+| src/api/client.ts | 1141 | knowledgeAssertion | GET | /api/assistant/knowledge/assertions/${id} | unknown | unknown |
+| src/api/client.ts | 1146 | listOpsIssues | GET | /api/ops-logs/issues | ops.monitoring | provisional |
+| src/api/client.ts | 1147 | getOpsIssue | GET | /api/ops-logs/issues/${id} | ops.monitoring | provisional |
+| src/api/client.ts | 1149 | patchOpsIssue | PATCH | /api/ops-logs/issues/${id} | ops.monitoring | provisional |
+| src/api/client.ts | 1150 | opsTrend | GET | /api/ops-logs/trend | ops.monitoring | provisional |
+| src/api/client.ts | 1151 | listOpsDeploys | GET | /api/ops-logs/deploys | ops.monitoring | provisional |
+| src/api/client.ts | 1152 | getOpsDeployLog | GET | /api/ops-logs/deploys/${id}/log | ops.monitoring | provisional |
+| src/api/stream.ts | 45 | subscribeRun | GET | /api/runs/${runId}/stream | exec.run_engine | provisional |
+| src/shell/useConnection.ts | 25 | fetchHealth | GET | /api/health | core.system_routing | provisional |
+- Unresolved: `src/api/stream.ts`: url is a bare parameter of the enclosing function (not recognised as a request wrapper)

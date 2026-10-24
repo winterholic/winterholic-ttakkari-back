@@ -132,6 +132,34 @@
       "is_unit_dir": false
     },
     {
+      "path": "tests/delivery/test_validation_cache.py",
+      "test_count": 7,
+      "test_functions": [
+        "test_candidate_snapshot_identity_capture",
+        "test_validation_key_digest_stability_and_sensitivity",
+        "test_validation_cache_policy_positive_and_negative_reuse",
+        "test_caller_supplied_hashes_are_not_snapshot_evidence",
+        "test_empty_closure_cannot_authorize_reuse",
+        "test_dirty_bytes_change_snapshot_identity",
+        "test_capture_rejects_source_changed_after_status"
+      ],
+      "primary_category": "Module Integration",
+      "multi_labels": [
+        "process_fixture"
+      ],
+      "rationale": "Tests single module against isolated database schema and ASGI client",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
       "path": "tests/delivery/test_validation_runner.py",
       "test_count": 2,
       "test_functions": [
@@ -1545,6 +1573,160 @@
       "is_unit_dir": false
     },
     {
+      "path": "tests/test_collector_budget.py",
+      "test_count": 12,
+      "test_functions": [
+        "test_unbounded_or_disabled_engine_never_spends",
+        "test_parallel_requests_never_exceed_day_calls_and_n_to_10n_is_the_same",
+        "test_usd_ceiling_binds_before_calls",
+        "test_job_bucket_limits_calls_per_job_and_jobs_share_the_day",
+        "test_reservation_is_idempotent_and_conflicting_reuse_is_refused",
+        "test_retries_judges_and_synthetic_generation_are_all_charged",
+        "test_success_releases_only_the_difference_and_requires_a_receipt",
+        "test_usage_above_the_reservation_is_charged_and_flagged",
+        "test_failed_or_cancelled_call_keeps_the_full_reservation_until_a_receipt",
+        "test_guarded_call_happy_path_and_orphan_sweep",
+        "test_a_call_admitted_before_midnight_is_charged_to_its_own_day",
+        "test_lowering_a_limit_takes_effect_immediately"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "runtime_ownership"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 12,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "limits",
+        "monkeypatch",
+        "volume"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_cache.py",
+      "test_count": 3,
+      "test_functions": [
+        "test_every_key_component_changes_the_key",
+        "test_hit_is_scoped_and_expires",
+        "test_negative_and_unknown_entries_need_a_reason_and_a_short_ttl"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_control.py",
+      "test_count": 8,
+      "test_functions": [
+        "test_sources_require_auth_and_scope_isolation",
+        "test_policy_and_limits_are_validated_before_writing",
+        "test_run_replays_active_job_and_retry_preserves_cursor",
+        "test_schedule_is_atomic_and_pause_blocks_new_runs",
+        "test_manual_documents_are_scope_bound_and_detail_is_hidden",
+        "test_delivery_preserves_raw_and_nfc_text_with_idempotent_receipt",
+        "test_knowledge_permission_revocation_prevents_delivery",
+        "test_source_update_uses_version_precondition"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": true,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 8,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_fetch.py",
+      "test_count": 23,
+      "test_functions": [
+        "test_fetch_sends_user_agent_no_cookies_and_ignores_environment_proxy",
+        "test_conditional_request_and_304",
+        "test_body_limits_fail_explicitly",
+        "test_total_timeout_is_retryable",
+        "test_status_mapping",
+        "test_retry_after_parsing_caps_and_dates",
+        "test_non_public_addresses_are_rejected_as_literals_and_as_dns_answers",
+        "test_one_private_record_among_public_ones_rejects_the_host",
+        "test_url_rejections_happen_before_any_dns_lookup",
+        "test_default_guard_refuses_loopback_server_and_makes_no_request",
+        "test_dns_is_resolved_once_per_connection_and_the_validated_address_is_used",
+        "test_redirect_targets_are_revalidated",
+        "test_redirect_loop_and_limit",
+        "test_allowed_redirect_is_followed_and_reported",
+        "test_robots_disallow_blocks_without_fetching_the_page",
+        "test_robots_status_handling",
+        "test_robots_cache_expires_and_empty_robots_means_no_rules",
+        "test_429_stores_cooldown_from_retry_after_and_blocks_the_next_attempt_offline",
+        "test_min_delay_paces_consecutive_requests",
+        "test_policy_host_scheme_port_and_path_limits_apply_before_the_network",
+        "test_robots_longest_match_allow_wins_ties_and_wildcards",
+        "test_robots_unavailable_denies_everything",
+        "test_robots_percent_encoding_and_size_cap"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "address",
+        "code",
+        "monkeypatch",
+        "name",
+        "outcome",
+        "retryable",
+        "server",
+        "status",
+        "target",
+        "url",
+        "use_policy"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_fetch_tls.py",
+      "test_count": 3,
+      "test_functions": [
+        "test_https_verifies_the_original_host_name_not_the_pinned_ip",
+        "test_certificate_for_another_name_is_refused",
+        "test_untrusted_certificate_is_refused_with_default_trust_store"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [],
+      "is_unit_dir": false
+    },
+    {
       "path": "tests/test_collector_intake.py",
       "test_count": 20,
       "test_functions": [
@@ -1587,8 +1769,37 @@
       "is_unit_dir": false
     },
     {
+      "path": "tests/test_collector_integration.py",
+      "test_count": 5,
+      "test_functions": [
+        "test_dead_owner_mid_job_resumes_without_duplicates_and_old_commit_is_fenced",
+        "test_draining_generation_claims_nothing_and_an_alive_owner_keeps_its_job",
+        "test_same_source_key_in_two_scopes_never_mixes_documents_or_search",
+        "test_ssrf_counterexamples_are_stopped_before_any_connection",
+        "test_absolute_limits_are_independent_of_collection_volume"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": true,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 5,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "env",
+        "monkeypatch"
+      ],
+      "is_unit_dir": false
+    },
+    {
       "path": "tests/test_collector_jobs.py",
-      "test_count": 24,
+      "test_count": 26,
       "test_functions": [
         "test_claim_sets_owner_token_attempt_and_runs_each_job_once",
         "test_stale_or_wrong_token_is_fenced_and_changes_nothing",
@@ -1596,6 +1807,8 @@
         "test_failed_page_leaves_neither_cursor_nor_outbox",
         "test_cancel_queued_is_immediate_and_running_stops_at_page_boundary",
         "test_cancel_wins_over_retry_wait_at_finish",
+        "test_cancel_recorded_before_the_attempt_ends_wins_even_if_the_work_finished",
+        "test_consume_cancel_after_the_last_page_commit_still_ends_cancelled",
         "test_cancel_other_scope_or_finished_job",
         "test_retry_wait_backoff_is_durable_and_attempts_are_capped",
         "test_retry_delay_is_exponential_jittered_and_honors_retry_after",
@@ -1626,8 +1839,45 @@
       "security_marked_funcs_count": 0,
       "uses_db_fixtures": false,
       "fixtures": [
+        "ending",
+        "finished_as",
         "monkeypatch",
-        "status"
+        "status",
+        "stored"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_manage.py",
+      "test_count": 10,
+      "test_functions": [
+        "test_summary_review_queue_and_item_detail_for_one_collection",
+        "test_management_reads_are_scoped_and_require_auth",
+        "test_budgets_report_the_absolute_ceiling_and_pages",
+        "test_delivery_list_and_reconcile_never_overwrite_an_outcome",
+        "test_transient_delivery_failure_retries_with_backoff_then_surfaces_and_can_be_reopened",
+        "test_rights_failure_is_terminal_and_not_reopened_by_reconcile",
+        "test_pause_stops_new_claims_and_resume_restores_them",
+        "test_pilot_sources_pass_the_normal_validation_and_seed_once",
+        "test_hold_audit_is_a_stable_stratified_sample_per_source_and_reason",
+        "test_reprocess_uses_the_preserved_raw_blob_and_is_idempotent"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 10,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "env",
+        "monkeypatch"
       ],
       "is_unit_dir": false
     },
@@ -1638,6 +1888,100 @@
         "test_collector_tables_are_in_alembic_target_metadata",
         "test_collector_migrations_match_models_and_round_trip",
         "test_runtime_migration_only_adds_columns_to_the_new_table"
+      ],
+      "primary_category": "Migration",
+      "multi_labels": [
+        "alembic_fixture"
+      ],
+      "rationale": "Alembic migration chain, single head, or schema predicate check",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_pipeline.py",
+      "test_count": 28,
+      "test_functions": [
+        "test_end_to_end_exact_and_near_duplicates_raw_preservation_and_rights",
+        "test_text_is_only_nfc_normalized_and_the_chain_is_hash_linked",
+        "test_missing_policy_and_unverified_store_purpose_are_denied_without_network",
+        "test_policy_versions_are_append_only_and_jobs_pin_the_active_version",
+        "test_robots_disallow_blocks_every_item_and_the_job_reports_policy_blocked",
+        "test_seed_outside_policy_is_a_blocked_item_not_a_silent_skip",
+        "test_request_cannot_widen_the_policy_and_invalid_requests_are_quarantined",
+        "test_news_profile_judges_freshness_and_general_profile_does_not",
+        "test_tech_docs_profile_records_versions_and_holds_unversioned_pages",
+        "test_l0_rules_hold_but_never_delete",
+        "test_unsupported_empty_missing_and_forbidden_responses_are_recorded_not_skipped",
+        "test_html_served_as_text_plain_and_binary_as_html_are_held_as_mismatches",
+        "test_store_raw_false_keeps_hash_only_and_says_so",
+        "test_store_raw_true_leaves_the_blob_the_scan_looks_for",
+        "test_feed_sitemap_and_link_discovery_respect_policy_depth_and_page_limit",
+        "test_malformed_feed_is_held_and_the_job_continues",
+        "test_unchanged_content_is_not_a_new_revision_and_a_to_b_to_a_is",
+        "test_same_bytes_without_validators_are_detected_by_content_hash",
+        "test_dedupe_and_cache_never_cross_scope",
+        "test_transient_failure_defers_with_durable_cooldown_and_resumes_without_redoing_work",
+        "test_url_is_failed_after_three_attempts_not_retried_forever",
+        "test_a_page_commits_atomically_and_a_crash_resumes_at_the_failed_page",
+        "test_cancel_is_honoured_at_the_page_boundary_and_committed_pages_stay",
+        "test_storage_cap_pauses_the_job_and_does_not_refetch_while_full",
+        "test_l1_hook_shadow_gate_and_unavailable_scorer",
+        "test_collector_package_has_no_llm_or_knowledge_dependency",
+        "test_host_state_is_public_data_only_and_policy_rows_are_tenant_scoped",
+        "test_work_is_committed_with_the_fence_so_a_stale_attempt_leaves_nothing"
+      ],
+      "primary_category": "Cross-module",
+      "multi_labels": [
+        "runtime_ownership"
+      ],
+      "rationale": "Coordinates multiple subsystem domains (collector, knowledge, agent orchestration)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "env",
+        "monkeypatch"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_product_flow.py",
+      "test_count": 1,
+      "test_functions": [
+        "test_collection_reaches_search_with_original_bytes"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 1,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "env",
+        "monkeypatch"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_collector_stage_migration.py",
+      "test_count": 2,
+      "test_functions": [
+        "test_models_are_registered_in_target_metadata",
+        "test_stage_migration_matches_models_adds_only_new_tables_and_round_trips"
       ],
       "primary_category": "Migration",
       "multi_labels": [
@@ -1800,6 +2144,184 @@
       "is_unit_dir": false
     },
     {
+      "path": "tests/test_creative_mcp_tools.py",
+      "test_count": 17,
+      "test_functions": [
+        "test_creative_and_comfy_tools_are_registered_and_call_scoped_agent_services",
+        "test_managed_comfy_owner_filter_hides_jobs_from_other_personal_principals",
+        "test_managed_comfy_idempotency_reuses_task_and_rejects_changed_arguments",
+        "test_agent_creative_and_comfy_access_rejects_work_sessions",
+        "test_creative_bridge_fails_closed_for_unknown_operations_and_reports_auto_asset_contract",
+        "test_plan_create_rejects_catalog_entries_as_style_refs_with_422_without_echoing_input",
+        "test_plan_create_accepts_versioned_style_refs",
+        "test_plan_create_contract_accepts_varied_briefs_lengths_and_styles",
+        "test_auto_asset_start_and_retry_reuse_approved_revision_route",
+        "test_creative_bridge_reuses_plan_service_and_revision_gate",
+        "test_agent_comfy_api_binds_submit_to_personal_session_and_idempotency",
+        "test_comfy_readiness_reports_no_device_as_not_ready_and_is_explicitly_host_measured",
+        "test_style_tools_are_registered_with_safe_schemas",
+        "test_style_dna_can_be_registered_previewed_and_pinned_through_the_agent_bridge",
+        "test_style_preview_reports_values_the_renderer_does_not_accept_instead_of_claiming_support",
+        "test_style_put_rejects_unknown_fields_unsafe_refs_and_bad_flags",
+        "test_style_read_rejects_non_slug_ids"
+      ],
+      "primary_category": "Module Integration",
+      "multi_labels": [
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Tests single module against isolated database schema and ASGI client",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "brief",
+        "data",
+        "monkeypatch",
+        "seconds",
+        "style_id",
+        "style_store",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_creative_records.py",
+      "test_count": 21,
+      "test_functions": [
+        "test_lab_manifest_is_normalized_with_source_and_missing_value",
+        "test_lab_ignores_server_owned_fields_in_manifest",
+        "test_media_path_escape_is_rejected",
+        "test_symlinked_file_and_directory_escape_are_rejected_after_resolution",
+        "test_only_whitelisted_extensions_for_the_declared_kind_are_served",
+        "test_manifest_outside_root_or_invalid_is_skipped_not_fatal",
+        "test_missing_media_file_is_flagged_unavailable_and_not_served",
+        "test_lab_media_file_mime_and_unknown_ids",
+        "test_unconfigured_lab_root_lists_nothing",
+        "test_g0_production_is_normalized_with_attempt_output",
+        "test_v1_project_is_normalized_and_missing_memory_is_unmeasured",
+        "test_service_merges_sources_and_filters",
+        "test_service_get_rejects_unknown_and_malformed_ids",
+        "test_records_endpoints_require_auth",
+        "test_records_list_detail_and_media_flow",
+        "test_record_media_token_is_scoped_to_record_and_media",
+        "test_record_api_rejects_traversal_and_unknown_ids",
+        "test_record_api_never_serves_symlink_escape",
+        "test_g0_record_media_is_served_from_cas",
+        "test_default_lab_root_setting_points_at_studio_lab",
+        "test_record_ids_are_unique_per_source"
+      ],
+      "primary_category": "Module Integration",
+      "multi_labels": [
+        "db_fixture"
+      ],
+      "rationale": "Tests single module against isolated database schema and ASGI client",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "lab",
+        "path",
+        "records_api",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_creative_v2_api.py",
+      "test_count": 12,
+      "test_functions": [
+        "test_v2_requires_auth_and_serves_catalog_registries_and_matrix",
+        "test_duration_boundaries_rejected_at_api",
+        "test_plan_flow_from_duration_choice_to_edit_and_approval",
+        "test_brief_only_plan_is_flagged_and_forged_intent_rejected",
+        "test_llm_intent_cannot_skip_user_review_by_omitting_questions",
+        "test_style_dna_compose_and_pin_over_api",
+        "test_intent_validate_hint_and_match_endpoints",
+        "test_legacy_direct_intent_extract_route_is_removed",
+        "test_intent_run_endpoints_require_auth",
+        "test_intent_run_start_and_poll_use_run_lifecycle",
+        "test_capabilities_endpoint_lists_providers_and_runtime_integration",
+        "test_production_flow_over_http_from_approval_to_downloaded_media"
+      ],
+      "primary_category": "Module Integration",
+      "multi_labels": [
+        "db_fixture"
+      ],
+      "rationale": "Tests single module against isolated database schema and ASGI client",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "monkeypatch"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_creative_v2_extraction.py",
+      "test_count": 11,
+      "test_functions": [
+        "test_prompt_keeps_brief_as_untrusted_json_data_and_disallows_tools",
+        "test_run_output_is_a_soft_evidence_bound_intent_draft",
+        "test_run_output_schema_mismatch_is_rejected",
+        "test_run_output_with_hallucinated_quote_is_rejected",
+        "test_model_inferred_exact_duration_is_soft_without_explicit_exact_language",
+        "test_explicit_exact_duration_in_brief_remains_strict",
+        "test_model_platform_cap_requires_known_platform_and_cap_language",
+        "test_explicit_known_platform_cap_uses_the_catalogued_source",
+        "test_run_output_cannot_add_unquoted_information_items",
+        "test_user_confirmed_constraint_requires_a_quote",
+        "test_quote_presence_does_not_mark_an_llm_proposal_as_semantically_verified"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "raw"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_creative_v2_run_extraction.py",
+      "test_count": 2,
+      "test_functions": [
+        "test_intent_run_uses_personal_qwen_and_returns_review_only_structured_output",
+        "test_intent_run_fails_closed_when_qwen_is_disabled"
+      ],
+      "primary_category": "Module Integration",
+      "multi_labels": [
+        "db_fixture"
+      ],
+      "rationale": "Tests single module against isolated database schema and ASGI client",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
       "path": "tests/test_csrf_defense.py",
       "test_count": 2,
       "test_functions": [
@@ -1858,7 +2380,7 @@
     },
     {
       "path": "tests/test_deployment.py",
-      "test_count": 17,
+      "test_count": 18,
       "test_functions": [
         "test_reservation_survives_requester_and_deduplicates",
         "test_admission_serializes_start_against_restart_and_unlocks",
@@ -1876,7 +2398,8 @@
         "test_company_session_cannot_deploy_personal_server",
         "test_multiple_running_leases_do_not_release_each_other",
         "test_controller_process_death_releases_admission",
-        "test_generations_reservation_ignores_dirty_tree_and_moved_head"
+        "test_generations_reservation_ignores_dirty_tree_and_moved_head",
+        "test_generations_reservation_of_a_commit_outside_local_head"
       ],
       "primary_category": "Deployment smoke",
       "multi_labels": [
@@ -1896,6 +2419,7 @@
         "make_dir",
         "monkeypatch",
         "new_session",
+        "published",
         "tmp_path"
       ],
       "is_unit_dir": false
@@ -2052,12 +2576,13 @@
     },
     {
       "path": "tests/test_desk_qwen_live.py",
-      "test_count": 4,
+      "test_count": 5,
       "test_functions": [
         "test_live_social_is_answered_by_qwen",
         "test_live_unsupported_agent_status_is_handed_over_not_invented",
         "test_live_work_request_goes_to_a_planner",
-        "test_live_populated_context_uses_default_timeout"
+        "test_live_populated_context_uses_default_timeout",
+        "test_live_topic_boundary"
       ],
       "primary_category": "Module Integration",
       "multi_labels": [
@@ -2072,16 +2597,22 @@
       "fixtures": [
         "auth",
         "client",
+        "expected",
+        "history",
         "make_dir",
-        "monkeypatch"
+        "message",
+        "monkeypatch",
+        "title"
       ],
       "is_unit_dir": false
     },
     {
       "path": "tests/test_desk_qwen_service.py",
-      "test_count": 22,
+      "test_count": 25,
       "test_functions": [
         "test_managed_server_becomes_ready_and_stop_kills_the_child",
+        "test_child_argv_keeps_the_shape_the_qwen_local_harness_identifies_it_by",
+        "test_managed_child_is_a_direct_child_and_its_pid_record_names_the_live_owner",
         "test_start_is_idempotent_and_never_spawns_twice",
         "test_child_listens_on_loopback_only_with_a_minimal_environment",
         "test_port_collision_retries_on_another_port",
@@ -2100,14 +2631,16 @@
         "test_desk_request_goes_to_the_managed_server_of_this_process",
         "test_requests_use_cli_while_the_model_is_not_ready",
         "test_status_endpoint_reports_state_without_internal_details",
-        "test_both_lifespans_start_and_stop_the_qwen_service",
+        "test_lifespans_stop_the_qwen_service_and_the_generation_one_starts_it_through_start_api_services",
+        "test_generation_api_start_services_starts_the_qwen_service_in_every_mode",
         "test_server_is_warmed_before_it_is_marked_ready",
         "test_warmup_failure_does_not_block_readiness"
       ],
       "primary_category": "Module Integration",
       "multi_labels": [
         "db_fixture",
-        "process_fixture"
+        "process_fixture",
+        "runtime_ownership"
       ],
       "rationale": "Tests single module against isolated database schema and ASGI client",
       "has_contract_mark": false,
@@ -2120,6 +2653,7 @@
         "client",
         "make_dir",
         "managed",
+        "mode",
         "monkeypatch"
       ],
       "is_unit_dir": false
@@ -2249,6 +2783,32 @@
         "auth",
         "client",
         "new_session"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_fixture_reset.py",
+      "test_count": 8,
+      "test_functions": [
+        "test_production_password_hashing_parameters_are_unchanged",
+        "test_production_hasher_is_constructed_with_defaults_and_nothing_else_overrides_it",
+        "test_test_hasher_is_cheap_but_its_hashes_verify_under_the_production_hasher",
+        "test_dirty_query_names_every_model_table",
+        "test_clean_state_has_only_the_seeded_credential",
+        "test_reset_clears_rows_and_sequences_whatever_wrote_them",
+        "test_reset_falls_back_to_truncating_everything_when_dirty_detection_fails",
+        "test_forced_full_truncate_switch_restores_the_old_behaviour"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch"
       ],
       "is_unit_dir": false
     },
@@ -2841,10 +3401,11 @@
     },
     {
       "path": "tests/test_generation_deployment.py",
-      "test_count": 37,
+      "test_count": 42,
       "test_functions": [
         "test_generation_queue_accepts_new_revision_and_deduplicates",
         "test_application_generation_contract_matches_its_migration_head",
+        "test_executor_migration_follows_tts_and_uses_reserved_integration_revision",
         "test_qwen_usage_and_resource_history_migrations_are_allowed_online",
         "test_release_archive_does_not_follow_later_checkout_changes",
         "test_overlapping_deployments_use_third_slot_and_retire_without_rerouting",
@@ -2869,7 +3430,11 @@
         "test_supervisor_recreates_active_slot_and_rechecks_its_boot_identity",
         "test_proxy_service_uses_its_own_persisted_config",
         "test_supervisor_never_routes_to_an_unowned_boot",
-        "test_gate_reruns_only_failed_tests_once_for_test_failures",
+        "test_gate_stepwise_retry_runs_everything_after_the_stop_point",
+        "test_gate_ignores_a_stale_stepwise_cache_left_in_the_release_folder",
+        "test_gate_does_not_retry_collection_errors_or_timeouts",
+        "test_gate_runs_previous_failures_first_then_the_whole_suite",
+        "test_security_tests_run_once_between_the_security_gate_and_the_full_run",
         "test_contract_aliases_must_map_retired_ids_onto_known_revisions",
         "test_committed_contract_aliases_are_not_real_revisions_and_resolve_to_online_range",
         "test_schema_plan_classifies_stamp",
@@ -2884,6 +3449,7 @@
       "primary_category": "Security",
       "multi_labels": [
         "alembic_fixture",
+        "process_fixture",
         "runtime_ownership"
       ],
       "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
@@ -2893,9 +3459,12 @@
       "security_marked_funcs_count": 0,
       "uses_db_fixtures": false,
       "fixtures": [
+        "executions",
+        "kinds",
         "make_git_dir",
         "mode",
         "monkeypatch",
+        "passes",
         "stamp",
         "target_slot",
         "tmp_path"
@@ -3167,6 +3736,119 @@
       "is_unit_dir": false
     },
     {
+      "path": "tests/test_harness_view_api.py",
+      "test_count": 14,
+      "test_functions": [
+        "test_owner_login_required",
+        "test_agent_session_token_cannot_read",
+        "test_no_secret_value_reaches_any_response",
+        "test_user_scope_mcp_from_home_claude_json_shows_only_server_names",
+        "test_secret_files_are_not_listed_or_readable",
+        "test_overview_counts_and_warnings",
+        "test_search_filters_and_detail",
+        "test_long_body_is_paged",
+        "test_layers_match_the_real_injected_parts",
+        "test_missing_instruction_layers_are_listed_as_not_applied",
+        "test_layers_reject_unknown_values",
+        "test_mcp_tool_items_match_server_tools",
+        "test_snapshot_reads_db_accounts_without_paths_of_secrets",
+        "test_account_memory_is_listed_but_account_secrets_are_not"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture",
+        "process_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 14,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "fake_home",
+        "path"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_harness_view_groups.py",
+      "test_count": 10,
+      "test_functions": [
+        "test_group_routes_require_owner_login",
+        "test_every_item_belongs_to_exactly_one_group",
+        "test_group_membership_rules",
+        "test_muse_and_qwen_never_expose_login_or_profile_state",
+        "test_projects_are_grouped_per_project_then_engine_then_concern",
+        "test_no_canary_reaches_group_project_or_search_responses",
+        "test_group_detail_layers_and_notes",
+        "test_search_filters_by_group_concern_layer_and_returns_breadcrumb",
+        "test_detail_has_breadcrumb_layer_and_counterparts",
+        "test_project_locator_rules"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture",
+        "process_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 10,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "path",
+        "rich_home",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_harness_view_safe.py",
+      "test_count": 16,
+      "test_functions": [
+        "test_reads_only_whitelisted_patterns",
+        "test_pattern_star_does_not_cross_directories",
+        "test_secret_names_are_never_read_even_if_pattern_allows",
+        "test_symlink_escape_outside_roots_is_denied",
+        "test_symlink_to_secret_inside_root_is_denied_by_pattern",
+        "test_symlink_inside_allowed_roots_is_followed",
+        "test_directory_and_missing_are_denied",
+        "test_oversized_file_is_truncated",
+        "test_claude_json_only_exposes_requested_keys",
+        "test_exists_does_not_probe_outside_roots",
+        "test_mask_config_hides_env_headers_and_secret_keys",
+        "test_mask_text_hides_secret_shaped_values_but_keeps_prose",
+        "test_mask_text_is_idempotent",
+        "test_parse_frontmatter_handles_colons_blocks_and_quotes",
+        "test_realpath_of_root_symlink_is_used",
+        "test_home_root_reads_only_claude_json_and_never_probes"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 16,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "name",
+        "tmp_path",
+        "tree"
+      ],
+      "is_unit_dir": false
+    },
+    {
       "path": "tests/test_host_gpu.py",
       "test_count": 31,
       "test_functions": [
@@ -3222,6 +3904,31 @@
         "monkeypatch",
         "parallel",
         "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_kb_agent_api.py",
+      "test_count": 2,
+      "test_functions": [
+        "test_agent_kb_search_scope_comes_from_session",
+        "test_agent_kb_has_no_unauthenticated_access"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 2,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "headers"
       ],
       "is_unit_dir": false
     },
@@ -3285,6 +3992,40 @@
       "is_unit_dir": false
     },
     {
+      "path": "tests/test_kb_library_api.py",
+      "test_count": 10,
+      "test_functions": [
+        "test_requires_auth",
+        "test_register_is_idempotent_and_versions_by_source_key",
+        "test_register_rejects_bad_input",
+        "test_summary_and_document_list_paginate",
+        "test_document_detail_lists_revisions_and_selected_passages",
+        "test_search_finds_passages_with_highlights_and_current_only",
+        "test_search_pagination_and_degenerate_queries",
+        "test_evidence_reports_original_position_and_hash",
+        "test_unsegmented_revision_becomes_searchable_after_backfill",
+        "test_cli_kb_ingest_makes_the_document_searchable"
+      ],
+      "primary_category": "Module Integration",
+      "multi_labels": [
+        "db_fixture",
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Tests single module against isolated database schema and ASGI client",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
       "path": "tests/test_kb_migration.py",
       "test_count": 1,
       "test_functions": [
@@ -3301,6 +4042,52 @@
       "security_marked_funcs_count": 0,
       "uses_db_fixtures": false,
       "fixtures": [],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_kb_observations.py",
+      "test_count": 1,
+      "test_functions": [
+        "test_observation_time_handles_a_b_a_and_late_old_snapshot"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_kb_retrieval.py",
+      "test_count": 5,
+      "test_functions": [
+        "test_search_mode_is_validated",
+        "test_hybrid_projection_is_idempotent_and_scope_filtered",
+        "test_failed_dense_query_is_reported_not_silently_relabelled",
+        "test_oversize_passage_does_not_starve_following_documents",
+        "test_embedding_windows_cover_the_whole_passage"
+      ],
+      "primary_category": "Security",
+      "multi_labels": [
+        "security_mark",
+        "db_fixture"
+      ],
+      "rationale": "Authentication, token scoping, sandbox netguard, or security regression gate (heuristic)",
+      "has_contract_mark": false,
+      "has_ast_security_mark": true,
+      "has_security_heuristic": true,
+      "security_marked_funcs_count": 5,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "client",
+        "monkeypatch",
+        "text"
+      ],
       "is_unit_dir": false
     },
     {
@@ -3457,6 +4244,30 @@
         "make_dir",
         "monkeypatch",
         "new_session"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_lease_fence_locking.py",
+      "test_count": 3,
+      "test_functions": [
+        "test_fence_does_not_block_account_update_from_another_session",
+        "test_fence_still_blocks_release_until_the_run_transaction_ends",
+        "test_fence_rejects_a_replaced_lease"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "runtime_ownership"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "new_session",
+        "tmp_path"
       ],
       "is_unit_dir": false
     },
@@ -4926,11 +5737,12 @@
     },
     {
       "path": "tests/test_qwen_emergency_e2e.py",
-      "test_count": 5,
+      "test_count": 6,
       "test_functions": [
         "test_all_cloud_limited_routes_worker_to_qwen_with_emergency_trigger",
         "test_all_cloud_limited_runs_orchestrator_degraded_on_qwen",
         "test_emergency_qwen_failure_returns_to_cloud_wait_not_failed",
+        "test_qwen_failure_updates_the_saved_fallback_to_the_cloud_engine_that_finishes",
         "test_ineligible_design_task_waits_without_qwen_reason",
         "test_degraded_orchestrator_spawn_queue_replays_as_workers"
       ],
@@ -5055,7 +5867,7 @@
     },
     {
       "path": "tests/test_qwen_usage.py",
-      "test_count": 12,
+      "test_count": 13,
       "test_functions": [
         "test_usage_sums_operational_calls_and_keeps_unmetered_separate",
         "test_duplicate_callback_is_idempotent_and_rejects_inconsistent_total",
@@ -5068,7 +5880,8 @@
         "test_generation_server_terminates_only_its_owned_child",
         "test_flash_usage_endpoint_is_authenticated_and_independent",
         "test_flash_usage_records_deltas_and_survives_restarts",
-        "test_flash_partial_token_metrics_do_not_reset_or_double_count_counters"
+        "test_flash_partial_token_metrics_do_not_reset_or_double_count_counters",
+        "test_flash_usage_is_collected_by_the_background_maintenance_loop"
       ],
       "primary_category": "Module Integration",
       "multi_labels": [
@@ -5118,6 +5931,29 @@
         "configured",
         "make_dir",
         "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_release_waiting_disarm.py",
+      "test_count": 1,
+      "test_functions": [
+        "test_release_waiting_disarms_wakers_so_dispatch_starts_the_run"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "runtime_ownership"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "new_session",
         "tmp_path"
       ],
       "is_unit_dir": false
@@ -5307,6 +6143,63 @@
       "security_marked_funcs_count": 7,
       "uses_db_fixtures": false,
       "fixtures": [],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_run_executor.py",
+      "test_count": 6,
+      "test_functions": [
+        "test_executor_claim_survives_api_cutover_and_duplicate_start",
+        "test_raw_old_claim_and_registration_and_rollback_are_rejected",
+        "test_cancel_ack_retry_reset_and_idle_executor_replacement",
+        "test_crashed_owner_is_quarantined_even_with_expired_heartbeat",
+        "test_executor_concurrent_registration_has_one_winner",
+        "test_migration_round_trip_and_active_downgrade_refusal"
+      ],
+      "primary_category": "Migration",
+      "multi_labels": [
+        "alembic_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Alembic migration chain, single head, or schema predicate check",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "executor_schema",
+        "monkeypatch",
+        "new_session",
+        "tmp_path"
+      ],
+      "is_unit_dir": false
+    },
+    {
+      "path": "tests/test_run_executor_processes.py",
+      "test_count": 2,
+      "test_functions": [
+        "test_api_replacement_keeps_executor_child_and_sse_cursor",
+        "test_idle_executor_restart_resumes_db_waiting_queue"
+      ],
+      "primary_category": "Module Integration",
+      "multi_labels": [
+        "db_fixture",
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Tests single module against isolated database schema and ASGI client",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": true,
+      "fixtures": [
+        "auth",
+        "monkeypatch",
+        "new_session",
+        "tmp_path"
+      ],
       "is_unit_dir": false
     },
     {
@@ -5887,7 +6780,8 @@
       "uses_db_fixtures": true,
       "fixtures": [
         "auth",
-        "client"
+        "client",
+        "monkeypatch"
       ],
       "is_unit_dir": false
     },
@@ -6135,9 +7029,10 @@
     },
     {
       "path": "unit_tests/kb_eval/test_design_status.py",
-      "test_count": 2,
+      "test_count": 3,
       "test_functions": [
         "test_current_status_records_e0_logic_completion",
+        "test_adr_records_user_directed_minimal_productization_without_claiming_quality_gate",
         "test_delivery_checker_rejects_missing_current_state_even_if_history_mentions_approval"
       ],
       "primary_category": "Unit",
@@ -6631,6 +7526,44 @@
       "is_unit_dir": true
     },
     {
+      "path": "unit_tests/test_collector_blob_store.py",
+      "test_count": 16,
+      "test_functions": [
+        "test_quota_counts_durable_orphans_and_deduplicates_same_sha",
+        "test_same_size_corruption_is_repaired_atomically_by_put",
+        "test_repair_reserves_stage_bytes_inside_logical_cap",
+        "test_repair_at_full_cap_is_rejected_without_destroying_old_bytes_or_lineage",
+        "test_repair_readers_never_observe_partially_replaced_file",
+        "test_put_then_precommit_failure_keeps_recoverable_raw_lineage",
+        "test_failed_final_replace_leaves_recoverable_stage_and_lineage",
+        "test_stale_partial_stage_is_reconciled_before_quota_check",
+        "test_complete_stage_from_crash_is_promoted_and_counted_once",
+        "test_cross_process_different_blobs_cannot_both_cross_cap",
+        "test_process_death_after_put_keeps_orphan_and_releases_quota_lock",
+        "test_quota_boundary_is_inclusive_and_blob_paths_reject_symlinks",
+        "test_pipeline_cap_precheck_uses_physical_root_bytes_not_db_rows",
+        "test_quota_wait_rotation_is_stable_bounded_and_keeps_all_frontier_entries",
+        "test_handler_replays_same_blob_at_full_cap_but_denies_new_bytes_once",
+        "test_quota_pause_commits_only_prepared_prefix_and_keeps_rejected_tail"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
       "path": "unit_tests/test_collector_contracts.py",
       "test_count": 9,
       "test_functions": [
@@ -6658,8 +7591,129 @@
       "is_unit_dir": true
     },
     {
+      "path": "unit_tests/test_collector_migration_chain.py",
+      "test_count": 1,
+      "test_functions": [
+        "test_collector_migration_follows_the_concurrent_delivery_head"
+      ],
+      "primary_category": "Migration",
+      "multi_labels": [
+        "alembic_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Alembic migration chain, single head, or schema predicate check",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_collector_parser.py",
+      "test_count": 29,
+      "test_functions": [
+        "test_kinds",
+        "test_mismatch_and_binary_are_unsupported_with_a_reason",
+        "test_main_text_without_navigation_and_with_metadata",
+        "test_empty_extraction_is_an_error_not_an_empty_document",
+        "test_declared_and_detected_charsets",
+        "test_text_cap_marks_truncation",
+        "test_version_hints",
+        "test_rss_atom_sitemap_and_links",
+        "test_xml_entities_are_not_expanded_or_fetched",
+        "test_nfc_not_nfkc_and_every_change_is_counted",
+        "test_clean_text_has_no_steps_and_truncation_is_flagged",
+        "test_normalization_is_idempotent",
+        "test_script_and_model_paths",
+        "test_too_short_is_und_with_zero_confidence_not_a_guess",
+        "test_signature_properties",
+        "test_similarity_orders_identical_near_and_unrelated",
+        "test_dedupe_key_ignores_case_punctuation_width_but_not_content",
+        "test_exact_hash_is_over_the_normalized_text",
+        "test_clean_prose_has_no_flags",
+        "test_each_rule_fires_alone_and_flags_are_only_holds",
+        "test_thresholds_are_per_profile",
+        "test_empty_text_does_not_divide_by_zero",
+        "test_policy_validation",
+        "test_off_and_unavailable_never_report_a_zero_score",
+        "test_scorer_errors_and_bad_output_become_errors_not_scores",
+        "test_registry_and_param_validation",
+        "test_news_age_rules",
+        "test_roundtrip_and_cap",
+        "test_corrupt_and_truncated_streams"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "self"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_collector_policy.py",
+      "test_count": 14,
+      "test_functions": [
+        "test_minimal_policy_is_conservative",
+        "test_invalid_policies_are_rejected",
+        "test_an_allowed_purpose_needs_its_source_of_truth_but_unknown_does_not",
+        "test_hash_is_stable_and_changes_with_any_field",
+        "test_host_matching_is_exact_or_explicit_subdomain",
+        "test_check_url_reasons",
+        "test_rights_block_reflects_only_the_policy",
+        "test_permission_is_the_most_restrictive_known_state",
+        "test_defaults_come_from_the_policy_and_source_url",
+        "test_a_request_can_narrow_but_never_widen",
+        "test_l1_request_shape",
+        "test_five_domains_by_two_languages",
+        "test_every_row_is_complete_and_unknown_is_never_promoted",
+        "test_allowed_rows_load_as_valid_policies"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "self"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_collector_quality_learning.py",
+      "test_count": 6,
+      "test_functions": [
+        "test_learning_requires_group_separation_and_both_classes",
+        "test_model_roundtrip_replays_predictions_and_has_no_factuality_claim",
+        "test_duplicate_content_cannot_cross_the_validation_boundary",
+        "test_calibration_uses_source_heldout_groups_and_only_emits_probability_with_enough_support",
+        "test_shadow_scorer_returns_calibrated_utility_probability_with_its_gold_hash",
+        "test_training_and_calibration_manifests_preserve_label_and_rights_provenance"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [],
+      "is_unit_dir": true
+    },
+    {
       "path": "unit_tests/test_comfy_managed.py",
-      "test_count": 16,
+      "test_count": 17,
       "test_functions": [
         "test_registered_profile_is_fixed_and_rejects_unknown_workflow",
         "test_prepare_rejects_extra_parameters_before_acquiring_lease",
@@ -6676,7 +7730,8 @@
         "test_cross_generation_cancel_is_interrupted_only_by_current_lease_owner",
         "test_owned_runtime_absence_requires_confirmed_process_and_port_evidence",
         "test_owned_runtime_absence_ignores_missing_identity_and_reused_pid_rules",
-        "test_receipt_failure_is_recorded_without_changing_a_succeeded_result"
+        "test_receipt_failure_is_recorded_without_changing_a_succeeded_result",
+        "test_run_passes_registered_negative_prompt_to_workflow"
       ],
       "primary_category": "Unit",
       "multi_labels": [
@@ -6814,7 +7869,7 @@
     },
     {
       "path": "unit_tests/test_creative_studio.py",
-      "test_count": 8,
+      "test_count": 9,
       "test_functions": [
         "test_studio_can_create_edit_and_reopen_project",
         "test_studio_rejects_outside_asset_and_invalid_timeline",
@@ -6823,7 +7878,8 @@
         "test_four_minute_project_has_valid_scenes",
         "test_disguised_playlist_cannot_read_arbitrary_local_files",
         "test_short_music_fails_visibly_and_interrupted_work_is_recoverable",
-        "test_another_renderer_ownership_is_respected"
+        "test_another_renderer_ownership_is_respected",
+        "test_unreadable_scene_image_fails_fast_instead_of_hanging_ffmpeg"
       ],
       "primary_category": "Unit",
       "multi_labels": [
@@ -6837,6 +7893,353 @@
       "uses_db_fixtures": false,
       "fixtures": [
         "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_asset_generation.py",
+      "test_count": 4,
+      "test_functions": [
+        "test_asset_generation_requires_approved_current_renderable_revision",
+        "test_asset_generation_blocks_unsupported_recipe_without_slideshow_fallback",
+        "test_asset_generation_registers_every_scene_and_audio_with_engine_receipt",
+        "test_managed_generator_blocks_comfy_when_torch_has_no_usable_device"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_asset_generation_e2e.py",
+      "test_count": 15,
+      "test_functions": [
+        "test_generator_runs_every_stage_with_real_settings_and_feeds_dispatch",
+        "test_scene_prompt_is_specific_and_receipt_keeps_the_exact_comfy_input",
+        "test_scene_prompt_refuses_to_silently_truncate_required_visual_details",
+        "test_seoul_sample_scene_brief_keeps_each_visual_target_separate",
+        "test_scene_prompt_keeps_subjects_prominent_and_caption_safe_area_without_positive_text_tokens",
+        "test_caption_compiler_wraps_korean_for_selected_style_and_uses_estimated_interval",
+        "test_caption_compiler_prefers_korean_word_boundaries",
+        "test_caption_compiler_splits_a_single_oversized_word_only_as_fallback",
+        "test_dispatch_narration_captions_use_scene_voice_duration_and_title_only_is_explicit",
+        "test_tts_scene_script_limit_uses_a_real_settings_field",
+        "test_blockers_runs_against_real_settings_without_attribute_errors",
+        "test_tts_budget_runs_on_the_server_loop_when_generation_runtime_is_active",
+        "test_caption_contract_distinguishes_title_only_from_narration_subtitles",
+        "test_title_only_dispatch_renders_and_stays_current_and_late_mode_change_is_reported",
+        "test_registered_style_reaches_dispatch_record_project_scenes_and_cache_key"
+      ],
+      "primary_category": "E2E",
+      "multi_labels": [
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Multi-step user workflow with browser or external tool integration",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "pipeline",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_dispatch.py",
+      "test_count": 22,
+      "test_functions": [
+        "test_baseline_slideshow_selection_opens_the_render_gate_only_when_approved",
+        "test_rich_selection_keeps_its_own_recipe_and_gate_stays_closed",
+        "test_unapproved_plan_is_not_dispatched_or_rendered",
+        "test_missing_required_font_blocks_dispatch",
+        "test_missing_ffmpeg_blocks_dispatch",
+        "test_provider_without_an_engine_adapter_is_not_dispatched",
+        "test_vertical_aspect_is_refused_by_the_engine_limits",
+        "test_dispatch_records_engine_identity_and_plan_segments_without_creating_projects",
+        "test_render_is_refused_until_scene_images_and_long_enough_music_exist",
+        "test_assets_for_unknown_scenes_are_rejected",
+        "test_approved_plan_renders_a_verified_media_asset_with_engine_and_input_ids",
+        "test_long_plan_over_the_single_project_limit_runs_split_segments_and_joins_them",
+        "test_replacing_one_scene_image_reruns_only_its_segment",
+        "test_failed_segment_is_retried_in_place_reusing_finished_scene_clips",
+        "test_lost_engine_project_is_rebuilt_on_the_next_request",
+        "test_plan_revision_after_dispatch_closes_gate_and_marks_record_stale",
+        "test_failed_qa_is_reported_and_the_media_is_not_served",
+        "test_style_dna_applies_only_what_the_engine_consumes_and_reports_the_rest",
+        "test_qa_detects_black_video_silence_resolution_and_duration",
+        "test_scene_ids_cover_segments_exactly_once",
+        "test_deviated_target_length_is_recorded_with_the_result",
+        "test_real_plan_style_params_reach_the_renderer_defaults"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "process_fixture"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "stores",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_duration.py",
+      "test_count": 22,
+      "test_functions": [
+        "test_auto_without_request_uses_content_ideal_and_exact_frames",
+        "test_auto_length_grows_with_content_not_with_fixed_default",
+        "test_three_minutes_preferred_met_by_adjusting_scenes",
+        "test_ten_minute_longform_from_content_has_distinct_scenes",
+        "test_too_short_soft_target_is_deviated_with_alternatives_not_truncation",
+        "test_too_long_soft_target_is_capped_at_non_filler_limit",
+        "test_exact_inside_range_is_met_to_the_frame",
+        "test_exact_conflict_returns_no_plan_and_nondestructive_alternatives",
+        "test_exact_above_content_range_asks_for_more_content_instead_of_padding",
+        "test_platform_cap_compresses_but_keeps_essentials",
+        "test_platform_cap_below_minimum_conflicts",
+        "test_optional_beats_can_be_proposed_for_removal_when_cap_is_tight",
+        "test_invalid_requests_are_rejected",
+        "test_json_nan_literal_and_bool_rejected",
+        "test_auto_cannot_carry_seconds_and_missing_seconds_rejected",
+        "test_boundaries_one_and_nine_hundred_seconds_are_accepted",
+        "test_policy_exposes_presets_and_platform_source",
+        "test_music_anchors_runtime_and_flags_overflow",
+        "test_speech_estimate_is_monotonic_and_measured_overrides",
+        "test_recompute_after_scene_edit_updates_total_and_flags_cut_speech",
+        "test_recompute_reflects_narration_change_and_platform_cap",
+        "test_plan_is_deterministic_and_json_serializable"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "bad"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_lease_handoff.py",
+      "test_count": 7,
+      "test_functions": [
+        "test_next_scene_prepare_waits_for_previous_scene_lease_handoff",
+        "test_acquire_reports_external_holder_after_bounded_wait",
+        "test_acquire_does_not_wait_for_expired_lease_that_needs_reconcile",
+        "test_acquire_rejects_invalid_wait",
+        "test_creative_owned_task_is_readable_but_foreign_owner_is_not",
+        "test_agent_job_status_exposes_creative_tasks_read_only",
+        "test_scene_generation_requests_bounded_lease_wait_from_controller"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_matching.py",
+      "test_count": 20,
+      "test_functions": [
+        "test_hallucinated_evidence_is_rejected",
+        "test_hard_selection_requires_quote_and_unknown_entry_is_rejected",
+        "test_multiple_primary_in_single_primary_catalog_and_duplicates_rejected",
+        "test_lexical_hint_cannot_decide_and_is_flagged_for_confirmation",
+        "test_extraction_contract_exposes_schema_and_all_catalog_ids",
+        "test_scifi_cinematic_selects_recipe_by_structure_not_keywords",
+        "test_required_capabilities_are_many_to_many_with_sources_and_global_needs",
+        "test_llm_primary_selection_does_not_promote_required_capabilities_to_hard",
+        "test_missing_required_capability_blocks_and_offers_alternatives",
+        "test_same_intent_different_registry_changes_decision_with_reasons",
+        "test_hard_vs_soft_conflict_drops_soft_with_rationale",
+        "test_both_hard_conflict_needs_user_decision_not_silent_choice",
+        "test_soft_conflict_is_kept_as_hybrid_and_routed_to_style_dna",
+        "test_shorts_with_exact_length_over_platform_cap_cites_source_and_needs_user",
+        "test_match_is_deterministic_and_fingerprint_tracks_registry_state",
+        "test_invalid_intent_is_refused_before_matching",
+        "test_no_viable_recipe_is_reported_not_forced",
+        "test_one_capability_can_be_required_by_several_selections",
+        "test_ascii_hints_match_whole_words_only",
+        "test_hints_still_match_with_korean_particles_and_new_explainer_phrases"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "absent",
+        "brief",
+        "present",
+        "quote"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_plans.py",
+      "test_count": 25,
+      "test_functions": [
+        "test_auto_plan_has_expected_runtime_reasons_and_complete_scene_fields",
+        "test_three_minute_preference_flows_into_scenes_and_total",
+        "test_user_duration_overrides_extractor_reading",
+        "test_too_short_request_keeps_content_and_exposes_alternatives",
+        "test_strict_conflict_keeps_editable_layout_but_blocks_approval",
+        "test_scene_edit_recomputes_total_and_invalidates_approval",
+        "test_studio_runtime_approval_can_render_only_while_snapshot_matches",
+        "test_lab_manual_plan_never_opens_render_gate_after_approval",
+        "test_approval_persists_immutable_plan_and_capability_snapshot",
+        "test_unverified_or_blocked_status_never_authorizes_render",
+        "test_edit_that_cuts_speech_is_blocked_from_approval_with_fit_suggestion",
+        "test_changing_duration_replans_scenes_from_current_content",
+        "test_stale_revision_conflicts",
+        "test_brief_only_plan_is_unconfirmed_hint_and_cannot_be_approved",
+        "test_template_scaffold_does_not_pad_to_long_target",
+        "test_three_short_info_items_deviate_from_six_hundred_seconds_without_padding",
+        "test_unresolved_style_conflict_blocks_approval_and_records_choice",
+        "test_invalid_ids_and_missing_plan",
+        "test_unreviewed_llm_scalars_cannot_change_plan_duration_or_content",
+        "test_long_plan_gets_split_render_segments_with_resume_keys",
+        "test_short_plan_is_a_single_segment_without_split",
+        "test_segment_keys_ignore_position_so_unchanged_later_segments_can_resume",
+        "test_render_plan_is_derived_not_stored_and_not_part_of_approval_hash",
+        "test_gate_reasons_explain_every_closed_gate_and_are_empty_when_open",
+        "test_gate_is_open_exactly_when_there_are_no_reasons"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "status",
+        "store",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_registry.py",
+      "test_count": 16,
+      "test_functions": [
+        "test_twelve_catalogs_with_required_entry_shape",
+        "test_every_relation_target_resolves_to_entry_or_capability",
+        "test_relations_cover_all_seven_types",
+        "test_unevidenced_entries_do_not_fake_evidence",
+        "test_twenty_concept_recipes_plus_baseline_reference_existing_entries_and_capabilities",
+        "test_r19_cases_and_requirements_do_not_claim_a_complete_quality_pass",
+        "test_registry_claims_and_probe_ids_are_consistent",
+        "test_committed_snapshot_covers_registry_references",
+        "test_without_snapshot_nothing_is_called_installed_or_executed",
+        "test_missing_probe_makes_claims_missing_and_blocks_recipe",
+        "test_installed_without_record_is_not_executed_and_record_evidence_raises_level",
+        "test_partial_record_is_partial_and_independent_pass_is_verified",
+        "test_skill_without_code_is_capped_at_declared_and_missing_dependency_propagates",
+        "test_recipe_verdict_separates_capability_evidence_from_recipe_evidence",
+        "test_no_blocked_group_hides_behind_executed_level",
+        "test_committed_capability_matrix_doc_is_generated_from_current_code"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_run_scope.py",
+      "test_count": 2,
+      "test_functions": [
+        "test_creative_intent_qwen_run_can_write_only_to_its_run_outbox",
+        "test_regular_run_keeps_existing_write_root_policy"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_creative_v2_style_dna.py",
+      "test_count": 16,
+      "test_functions": [
+        "test_style_dna_has_fifteen_user_fields_and_system_version",
+        "test_all_seed_documents_validate_and_resolve",
+        "test_root_style_must_fill_all_fields",
+        "test_child_overriding_parent_field_requires_declared_reason",
+        "test_versions_are_immutable_and_idempotent",
+        "test_parent_must_exist_and_inheritance_cycles_are_detected",
+        "test_cute_3d_plus_horror_lighting_plus_sf_world_surfaces_explicit_conflicts",
+        "test_explicit_resolutions_close_conflicts_and_record_provenance",
+        "test_assistant_resolution_stays_pending_until_user_confirms",
+        "test_resolution_for_nonexistent_conflict_or_bad_winner_is_rejected",
+        "test_pin_work_refuses_unresolved_and_uses_revision_cas",
+        "test_new_version_does_not_change_a_pinned_work",
+        "test_reference_assets_cover_image_video_code_render_settings_and_outcomes",
+        "test_params_reject_nan_and_inf",
+        "test_conflicting_example_polarity_is_a_conflict",
+        "test_composed_dna_is_json_serializable"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "store"
       ],
       "is_unit_dir": true
     },
@@ -6903,6 +8306,93 @@
       "fixtures": [
         "api",
         "monkeypatch"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_desk_topic_boundary.py",
+      "test_count": 4,
+      "test_functions": [
+        "test_picker_rejects_valid_id_without_both_continuity_checks",
+        "test_picker_uses_session_title_as_identity_instead_of_contaminated_result",
+        "test_cli_fallback_also_requires_continuity_and_bypasses_title_dedup",
+        "test_cli_fallback_preserves_verified_continuation"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "checks",
+        "same_project",
+        "same_task"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_executor_migration_contract.py",
+      "test_count": 5,
+      "test_functions": [
+        "test_executor_migration_follows_tts_and_uses_reserved_integration_revision",
+        "test_executor_flag_is_a_declared_setting_and_preserves_local_voice_defaults",
+        "test_executor_command_manifest_pins_interpreter_revision_and_disabled_activation",
+        "test_executor_manifest_digest_is_required_and_checked_against_content",
+        "test_release_archive_binds_manifest_digest_to_archived_git_revision"
+      ],
+      "primary_category": "Contract",
+      "multi_labels": [
+        "alembic_fixture",
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Schema consistency, route/tool inventory, marker contracts",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_executor_reconcile.py",
+      "test_count": 7,
+      "test_functions": [
+        "test_reconcile_disposition_fails_closed_on_missing_or_unknown_evidence",
+        "test_reconcile_command_exposes_dry_run_and_apply_without_database_access",
+        "test_reconcile_stale_snapshot_never_signals_process_group",
+        "test_reconcile_dry_run_does_not_call_apply_or_change_rows",
+        "test_reconcile_timeout_rolls_back_and_reports_distinct_retryable",
+        "test_reconcile_user_cancel_and_other_errors_roll_back_and_propagate",
+        "test_normal_release_uses_control_and_lease_fence"
+      ],
+      "primary_category": "Recovery-rollback",
+      "multi_labels": [
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Crash recovery, CAS repair, dirty worktree or status reconciliation",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "action",
+        "current_state",
+        "expected",
+        "groups",
+        "message",
+        "monkeypatch",
+        "owner_dead",
+        "sqlstate",
+        "token_matches"
       ],
       "is_unit_dir": true
     },
@@ -8149,6 +9639,25 @@
       "is_unit_dir": true
     },
     {
+      "path": "unit_tests/test_qwen_flash_monitor_jobs.py",
+      "test_count": 1,
+      "test_functions": [
+        "test_flash_counter_collection_is_a_periodic_job_and_can_be_disabled"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch"
+      ],
+      "is_unit_dir": true
+    },
+    {
       "path": "unit_tests/test_qwen_local_contract.py",
       "test_count": 1,
       "test_functions": [
@@ -8391,6 +9900,130 @@
       "is_unit_dir": true
     },
     {
+      "path": "unit_tests/test_run_executor_services.py",
+      "test_count": 3,
+      "test_functions": [
+        "test_remote_api_keeps_ephemeral_tts_and_request_qwen_but_skips_durable_consumers",
+        "test_local_api_preserves_existing_worker_startup",
+        "test_executor_starts_durable_consumers_and_maintenance"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "runtime_ownership"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_run_executor_unit.py",
+      "test_count": 19,
+      "test_functions": [
+        "test_claim_owner_is_independent_of_api_cutover",
+        "test_remote_api_start_never_creates_engine_task",
+        "test_remote_api_release_waiting_is_a_durable_command",
+        "test_remote_cancel_does_not_inspect_or_kill_processes",
+        "test_shutdown_does_not_release_lease_while_child_exit_is_unknown",
+        "test_attempt_history_keeps_lease_when_an_earlier_group_outlives_its_leader",
+        "test_executor_cli_is_explicit_and_not_enabled_by_serve",
+        "test_executor_activation_refuses_unsafe_handoff",
+        "test_executor_activation_accepts_only_idle_remote_protocol2_apis",
+        "test_api_remote_tick_does_not_consume_executor_commands",
+        "test_executor_tick_consumes_commands_before_resuming_queue",
+        "test_lost_fence_prevents_finish_side_effects",
+        "test_remote_mode_requires_generation_lifecycle",
+        "test_flush_fence_blocks_stale_side_effect_before_autoflush",
+        "test_command_ack_waits_for_durable_terminal_state",
+        "test_desk_cold_child_is_owned_and_reaped_before_cancel_returns",
+        "test_remote_api_cannot_claim_even_before_executor_activation",
+        "test_handoff_rejects_unknown_command_protocol",
+        "test_exited_leader_does_not_authorize_release_with_live_descendants"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "process_fixture",
+        "runtime_ownership"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "accepted",
+        "apis",
+        "error",
+        "kinds",
+        "leases",
+        "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_run_test_database.py",
+      "test_count": 6,
+      "test_functions": [
+        "test_start_creates_a_run_scoped_cluster_and_test_database",
+        "test_close_stops_and_removes_only_its_cluster",
+        "test_explicit_local_test_database_port_is_used_by_direct_asyncpg_calls",
+        "test_each_run_gets_a_distinct_database_url_and_no_application_database_url",
+        "test_stale_reaper_removes_only_marked_clusters_with_dead_owners",
+        "test_stale_reaper_keeps_clusters_owned_by_a_live_generation"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "process_fixture"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "monkeypatch",
+        "tmp_path"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_run_test_database_manager.py",
+      "test_count": 7,
+      "test_functions": [
+        "test_attempt_hands_only_the_owned_test_url_to_the_engine_and_closes_after_exit",
+        "test_two_attempts_get_independent_databases",
+        "test_spawn_failure_or_cancellation_closes_the_cluster",
+        "test_provisioning_failure_never_launches_the_engine_and_cleans_up",
+        "test_cancellation_while_the_cluster_is_starting_waits_then_closes",
+        "test_cancellation_during_pump_terminates_then_closes",
+        "test_test_runner_process_does_not_provision_nested_clusters"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [
+        "process_fixture"
+      ],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "failure",
+        "monkeypatch"
+      ],
+      "is_unit_dir": true
+    },
+    {
       "path": "unit_tests/test_share_refresh.py",
       "test_count": 6,
       "test_functions": [
@@ -8486,6 +10119,29 @@
         "state",
         "url",
         "world"
+      ],
+      "is_unit_dir": true
+    },
+    {
+      "path": "unit_tests/test_ttakkari_access_guidance.py",
+      "test_count": 3,
+      "test_functions": [
+        "test_qwen_short_contract_stops_repeated_denied_access_without_requiring_mcp",
+        "test_access_note_uses_current_run_and_custom_paths_without_file_reads",
+        "test_protected_denial_explains_alternative_and_still_allows_own_outbox"
+      ],
+      "primary_category": "Unit",
+      "multi_labels": [],
+      "rationale": "Pure in-memory, mock-based or calculation-only logic without DB fixtures",
+      "has_contract_mark": false,
+      "has_ast_security_mark": false,
+      "has_security_heuristic": false,
+      "security_marked_funcs_count": 0,
+      "uses_db_fixtures": false,
+      "fixtures": [
+        "channel",
+        "monkeypatch",
+        "tmp_path"
       ],
       "is_unit_dir": true
     },
@@ -8616,56 +10272,56 @@
       "is_unit_dir": false
     }
   ],
-  "test_files_count": 251,
-  "total_test_functions_count": 3016,
+  "test_files_count": 303,
+  "total_test_functions_count": 3546,
   "primary_categories": {
-    "Security": 31,
-    "Unit": 78,
-    "Migration": 14,
-    "Recovery-rollback": 5,
-    "Contract": 8,
-    "Module Integration": 97,
-    "E2E": 4,
-    "Deployment smoke": 4,
-    "Cross-module": 10
+    "Security": 41,
+    "Unit": 106,
+    "Migration": 17,
+    "Recovery-rollback": 6,
+    "Module Integration": 104,
+    "Contract": 9,
+    "E2E": 5,
+    "Cross-module": 11,
+    "Deployment smoke": 4
   },
   "primary_test_counts": {
-    "Security": 430,
-    "Unit": 903,
-    "Migration": 88,
-    "Recovery-rollback": 91,
-    "Contract": 54,
-    "Module Integration": 1306,
-    "E2E": 16,
-    "Deployment smoke": 27,
-    "Cross-module": 101
+    "Security": 518,
+    "Unit": 1201,
+    "Migration": 97,
+    "Recovery-rollback": 98,
+    "Module Integration": 1384,
+    "Contract": 59,
+    "E2E": 32,
+    "Cross-module": 129,
+    "Deployment smoke": 28
   },
   "multi_labels": {
     "alembic_fixture": {
-      "file_count": 16,
-      "test_count": 127
+      "file_count": 20,
+      "test_count": 146
     },
     "runtime_ownership": {
-      "file_count": 45,
-      "test_count": 945
-    },
-    "db_fixture": {
-      "file_count": 118,
-      "test_count": 1547
-    },
-    "security_mark": {
-      "file_count": 27,
-      "test_count": 366
+      "file_count": 62,
+      "test_count": 1130
     },
     "process_fixture": {
-      "file_count": 69,
-      "test_count": 1002
+      "file_count": 85,
+      "test_count": 1217
+    },
+    "db_fixture": {
+      "file_count": 131,
+      "test_count": 1656
+    },
+    "security_mark": {
+      "file_count": 37,
+      "test_count": 449
     }
   },
   "security_audit": {
-    "classified_files_count": 31,
-    "marker_files_count": 27,
-    "marker_function_defs_count": 366,
+    "classified_files_count": 41,
+    "marker_files_count": 37,
+    "marker_function_defs_count": 449,
     "runtime_collected_cases": "unknown (unmeasured in static audit)"
   },
   "manifest_status": "none",

@@ -6,22 +6,22 @@
   },
   {
     "source_file": "src/ttakkari/managed_comfy.py",
-    "line": 213,
+    "line": 250,
     "call": "importlib.import_module('ttk_comfy.server')"
   },
   {
     "source_file": "src/ttakkari/managed_comfy.py",
-    "line": 214,
+    "line": 251,
     "call": "importlib.import_module('ttk_comfy.client')"
   },
   {
     "source_file": "src/ttakkari/managed_comfy.py",
-    "line": 215,
+    "line": 252,
     "call": "importlib.import_module('ttk_comfy.runner')"
   },
   {
     "source_file": "src/ttakkari/managed_comfy.py",
-    "line": 216,
+    "line": 253,
     "call": "importlib.import_module('ttk_comfy.workflow')"
   }
 ]

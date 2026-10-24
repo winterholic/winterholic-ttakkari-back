@@ -1,0 +1,61 @@
+{
+  "historical_snapshot": "1edfc43acc95c4e5a55045300e0b23b9f29b506a",
+  "current_source_revision": "2fde9018fde4ea84af96331433ba789a85875433",
+  "scope": "collected sets only; source binding remains unknown for routes/tools/tables/configs",
+  "categories": {
+    "routes": {
+      "historical_collected": 579,
+      "current_collected": 581,
+      "added": [
+        "POST /api/agent/keep",
+        "POST /api/orchestrator/work"
+      ],
+      "removed": []
+    },
+    "tools": {
+      "historical_collected": 133,
+      "current_collected": 135,
+      "added": [
+        "keep_artifact",
+        "manage_work"
+      ],
+      "removed": []
+    },
+    "tables": {
+      "historical_collected": 106,
+      "current_collected": 106,
+      "added": [],
+      "removed": []
+    },
+    "migrations": {
+      "historical_collected": 68,
+      "current_collected": 72,
+      "added": [
+        "0068_library_intent",
+        "0069_game_build_executor_handoff",
+        "0070_background_consumer_queue",
+        "0071_library_platform_v2_merge"
+      ],
+      "removed": []
+    },
+    "configs": {
+      "historical_collected": 232,
+      "current_collected": 232,
+      "added": [],
+      "removed": []
+    },
+    "source_files": {
+      "historical_collected": 385,
+      "current_collected": 391,
+      "added": [
+        "src/ttakkari/artifacts/keep_evidence.py",
+        "src/ttakkari/background_consumers.py",
+        "src/ttakkari/context/index_queue.py",
+        "src/ttakkari/creative/v2/asset_worker.py",
+        "src/ttakkari/orchestrator/work.py",
+        "src/ttakkari/queued_work.py"
+      ],
+      "removed": []
+    }
+  }
+}

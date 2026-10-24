@@ -60,6 +60,6 @@ PYTHONPATH=src ../back/.venv/bin/python review/platform-v2/20261025/fnd1_pre_cou
 
 ## 남은 일
 
-- FND1 자동 전환 **미해결**. native Caddy 프로세스 종료는 완료 ack를 제공하는 경로이지만, 이를 쓰려면 첫 bootstrap의 유휴 예외·SSE/Run 보존·접속 가용성·외부 controller 소유권을 함께 검증해야 한다. 이 문서만으로 운영 proxy stop/restart를 허용하지 않는다. 새 lease/fence/MSA/번들 플랫폼은 추가하지 않는다.
+- FND1 자동 전환 **미해결**. 후속 [native graceful 실험](fnd1-native-graceful-verdict.md)에서 무제한 grace는 보류 HTTP를 기다리나 새 접속을 거절했고, 유한 grace는 미완료 응답에도 exit 0이었다. 현재 가용성/보존 요구의 자동 장벽으로 채택하지 않는다. 최초 bootstrap 유휴 예외를 이미 실행 중인 혼합 세대 전환으로 확대하지 않는다. 운영 proxy stop/restart를 허용하지 않으며 새 lease/fence/MSA/번들 플랫폼은 추가하지 않는다.
 - 실제 DB 왕복/기존 DB 9건·library 통합·전체 gate·독립 residual 검증·P0/P1/P2/P4/P6 운영 실증은 남는다. initdb shmget 권한거부는 재시도하지 않았다.
 - MCP 최신 배포 목록의 운영은 여전히 d56455c8 succeeded다. 이번 후보는 운영 배포가 아니다. PMS 9개 항목 중 8개는 done이 아니며 전체 목표를 완료로 판정할 수 없다.

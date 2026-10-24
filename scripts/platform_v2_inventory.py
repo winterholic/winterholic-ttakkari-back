@@ -1786,6 +1786,10 @@ def classify_table(name: str) -> str:
 def classify_migration(stem: str) -> str:
     s = stem.lower()
     # Core & Control
+    if s == "0071_library_platform_v2_merge":
+        # A no-op merge joins the library and execution branches; deployment
+        # owns convergence, while each parent retains its domain's DDL.
+        return "core.generation_deploy"
     if "initial" in s or "login_throttle" in s:
         return "core.auth_session"
     if "transfer_tokens" in s:
@@ -2566,10 +2570,10 @@ def run_audit(ctx: AuditContext | None = None) -> dict[str, Any]:
     }
 
     limits_ledger = [
-        "1. ORM Base.metadata(88/106 tables)를 검사하였으며, 실제 운영 PostgreSQL 물리 DB에 직접 연결하여 쿼리하지 않음.",
+        "1. ORM Base.metadata를 검사하였으며, 실제 운영 PostgreSQL 물리 DB에 직접 연결하여 쿼리하지 않음. 수집 테이블 수는 collected_counts.tables를 참조.",
         "2. 파이썬 소스 분모는 src/**/*.py에 한정되며, frontend, scripts, tests, 배포 쉘 스크립트 등은 이 분모에 포함되지 않음.",
-        "3. op.execute 66건은 AST call-site 수이며, SQL 런타임 의미·트리거·인덱스·downgrade 영향이 해석된 것이 아님 (정적 문자열/파라미터화/보간 분류만 제공).",
-        "4. 파일 SCC 8개는 정적 AST 파일 상호 참조 컴포넌트이며, 런타임 import cycle 또는 순환 실행 증거가 아님 (TYPE_CHECKING/lazy import 미구분).",
+        "3. op.execute는 AST call-site 수집이며, SQL 런타임 의미·트리거·인덱스·downgrade 영향이 해석된 것이 아님 (정적 문자열/파라미터화/보간 분류만 제공). 개별 위치는 migration ddl_call_sites를 참조.",
+        "4. 파일 SCC는 정적 AST 파일 상호 참조 컴포넌트이며, 런타임 import cycle 또는 순환 실행 증거가 아님 (TYPE_CHECKING/lazy import 미구분). 수집 목록은 file_sccs를 참조.",
         "5. 분모 내 unmatched=0은 수집된 항목의 분류 완료를 의미할 뿐 제품 전체의 기능 전수성이나 런타임 무결성을 입증하지 않음 (100% 전수 커버리지 주장 철회 및 범위 한정, routes 등 독립 대조 불가 범주는 unknown 처리).",
     ]
 

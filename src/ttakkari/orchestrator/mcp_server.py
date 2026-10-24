@@ -467,10 +467,14 @@ async def share_file(path: str) -> str:
 @server.tool()
 async def keep_artifact(path: str, quote: str) -> str:
     """Permanently save a file into the user's personal library ('files') because the user asked for it in the conversation
-    (e.g. '만들어서 보관함에 넣어줘', '내 보관함에 보관해줘').
-    `quote` must be the user's own words asking to keep it, copied verbatim from their message. The server looks the quote up
-    in the real user messages of this session and records that message as evidence; if it is not found (422 quote_not_found)
-    nothing is kept. Never invent, paraphrase or reuse a quote that is not a keep request, and never call this on your own.
+    (e.g. '이 보고서 내 보관함에 보관해줘', '만들어서 보관함에 넣어줘'). Never call this on your own.
+    `quote` must be ONE complete sentence (or line) of the user's own message asking to keep it, copied verbatim, at least
+    8 characters without spaces. A word or fragment ('보관') is rejected (422 quote_not_found).
+    The server also checks that the sentence points at this file, else 422 quote_not_bound: either the sentence names the file
+    (file name, name without extension, or its path tail), or the file was made by this conversation's work after that
+    message (same session, or a worker session this session started). A sentence like '만들어서 보관함에 넣어줘' is enough for
+    a file made during that request; for an older file or a file you did not make for that request, the user's sentence
+    must name it. Sentences that say not to keep ('보관하지 마', "don't save") are rejected (422 quote_negated).
     Only the planning (lead) session that received the user's request can keep: a worker session only sees instructions the
     planner wrote, which are not user words and are rejected, so ask the planning session to keep the file."""
     return await _agent("POST", "/keep", {"path": path, "quote": quote})

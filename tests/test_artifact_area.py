@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from helpers import run_to_end, wait_run
 from sqlalchemy import select, text, update
 from test_orchestrator import _orch, _session
@@ -73,14 +75,15 @@ async def test_direct_chat_outbox_remains_agent_on_share_and_files_on_keep(clien
 
     # 사용자가 대화에서 명시적으로 보관을 요청했을 때(keep) 비로소 내 보관함(files)이 되고 근거가 기록된다.
     r_keep = await client.post("/api/agent/keep", json={"path": str(outbox / "report.md"),
-                                                         "quote": "report.md 를 내 보관함에 보관해줘"}, headers=h)
+                                                         "quote": ask}, headers=h)
     assert r_keep.status_code == 200, r_keep.text
     kept = r_keep.json()["artifact"]
     assert kept["id"] == before_id
     assert kept["area"] == "files"
     assert kept["origin"] == "agent"  # AI 파일 출처 유지!
     assert kept["keep_reason"] == "chat_request"
-    assert kept["keep_evidence"]["quote"] == "report.md 를 내 보관함에 보관해줘"
+    assert kept["keep_evidence"]["quote"] == ask
+    assert kept["keep_evidence"]["binding"] == "filename"
     assert kept["keep_evidence"]["message_id"] == run["id"]  # 실제 사용자 메시지(Run prompt)
     assert kept["keep_evidence"]["message_source"] == "message"
     assert await _areas(client, auth, session_id=sess["id"], area="files") == {"report.md": "files"}
@@ -277,7 +280,7 @@ async def test_removed_from_library_never_resurfaces_via_share_or_collect(client
     ws, sess = await new_session()
     sid = uuid.UUID(sess["id"])
     async with sessionmaker()() as db:
-        run = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="keep file: 보관함에 보관해줘", engine="claude", status="running")
+        run = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="user_fav.md 파일을 보관함에 보관해줘", engine="claude", status="running")
         db.add(run)
         await db.commit()
         run_id = run.id
@@ -289,7 +292,7 @@ async def test_removed_from_library_never_resurfaces_via_share_or_collect(client
     h = _orch(issue_token(sid, run_id))
 
     # 1. 사용자의 요청으로 보관함에 보관됨
-    r_keep = await client.post("/api/agent/keep", json={"path": str(target), "quote": "보관함에 보관해줘"}, headers=h)
+    r_keep = await client.post("/api/agent/keep", json={"path": str(target), "quote": "user_fav.md 파일을 보관함에 보관해줘"}, headers=h)
     assert r_keep.status_code == 200
     art = r_keep.json()["artifact"]
     assert art["area"] == "files" and art["keep_reason"] == "chat_request"
@@ -637,7 +640,7 @@ async def test_twelve_scenarios_comprehensive(client, auth, new_session):
 
     # 시나리오 2: AI 생성 → AI 작업 파일
     async with sessionmaker()() as db:
-        run = Run(session_id=sid, workspace_id=ws_id, prompt="generate files. 엑셀 만들어서 보관함에 넣어줘", engine="claude", status="running")
+        run = Run(session_id=sid, workspace_id=ws_id, prompt="엑셀 만들어서 보관함에 넣어줘", engine="claude", status="running")
         db.add(run)
         await db.commit()
         run_id = run.id
@@ -684,6 +687,7 @@ async def test_twelve_scenarios_comprehensive(client, auth, new_session):
     assert kept_art["keep_evidence"]["quote"] == "엑셀 만들어서 보관함에 넣어줘"
     assert kept_art["keep_evidence"]["message_id"] == str(run_id)
     assert kept_art["keep_evidence"]["message_source"] == "message"
+    assert kept_art["keep_evidence"]["binding"] == "same_run"  # 이 Run 이 만든 파일 + 파일명 없는 문장
 
     # 시나리오 6: 링크 열기/다운로드만으로 미보관
     ws_root = Path(ws["root_path"])
@@ -737,7 +741,7 @@ async def test_twelve_scenarios_comprehensive(client, auth, new_session):
     before_count = len((await client.get("/api/artifacts", params={"session_id": str(sid)}, headers=auth)).json())
     for _ in range(3):
         await client.post("/api/agent/share", json={"path": str(ai_file)}, headers=h)
-        await client.post("/api/agent/keep", json={"path": str(ai_file), "quote": "보관함에 넣어줘"}, headers=h)
+        await client.post("/api/agent/keep", json={"path": str(ai_file), "quote": "엑셀 만들어서 보관함에 넣어줘"}, headers=h)
     after_count = len((await client.get("/api/artifacts", params={"session_id": str(sid)}, headers=auth)).json())
     assert before_count == after_count
 
@@ -807,47 +811,180 @@ async def _artifact_rows(sid: uuid.UUID) -> list[Artifact]:
         return list(await db.scalars(select(Artifact).where(Artifact.session_id == sid)))
 
 
+def _outbox_file(run_id: uuid.UUID, name: str, body: str = "# made") -> Path:
+    d = get_settings().outbox_root / str(run_id)
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / name
+    f.write_text(body)
+    return f
+
+
 async def test_keep_without_user_request_is_rejected_and_changes_nothing(client, auth, new_session):
-    """보관 요청이 없던 Run 에서 임의 인용으로 keep 하면 422, 행·area·근거 모두 그대로다(결함 1 재현)."""
+    """보관 요청이 없던 Run 에서 임의 인용으로 keep 하면 422, 행·area·근거 모두 그대로다(r1 결함 1 재현)."""
     ws, sess = await new_session()
     sid = uuid.UUID(sess["id"])
     f = Path(ws["root_path"]) / "summary.md"
     f.write_text("# s")
     run_id = await _mk_run(ws["id"], sid, "이 파일을 요약만 해줘. 보관 요청은 없음.", status="running")
 
-    # 이미 공유된(agent) 파일도, 아직 등록 전 파일도 영향이 없어야 한다.
     shared = await client.post("/api/agent/share", json={"path": str(f)}, headers=_orch(issue_token(sid, run_id)))
     assert shared.status_code == 200 and shared.json()["artifact"]["area"] == "agent"
     before = await _artifact_rows(sid)
 
-    for quote in ("사용자가 보관 요청함", "보관함에 넣어줘", "x", "   "):
+    for quote in ("사용자가 보관 요청함", "보관함에 넣어줘", "x", "   ", "보관 요청은 없음", "summary.md 를 보관함에 넣어줘"):
         r = await _keep(client, sid, run_id, f, quote)
-        assert r.status_code in (422,), (quote, r.text)
-    assert (await _keep(client, sid, run_id, f, "사용자가 보관 요청함")).json()["code"] == "quote_not_found"
+        assert r.status_code == 422, (quote, r.text)
+        assert r.json()["code"] == "quote_not_found", (quote, r.text)
 
     after = await _artifact_rows(sid)
     assert [(a.id, a.area, a.keep_reason, a.keep_evidence) for a in after] == \
         [(a.id, a.area, a.keep_reason, a.keep_evidence) for a in before]
     assert after[0].area == "agent" and after[0].keep_reason is None
 
-    # 아직 등록되지 않은 파일도 거부되면 행이 생기지 않는다.
     g = Path(ws["root_path"]) / "fresh.md"
     g.write_text("# fresh")
-    assert (await _keep(client, sid, run_id, g, "임의로 지어낸 요청")).status_code == 422
+    assert (await _keep(client, sid, run_id, g, "임의로 지어낸 요청 문장입니다")).status_code == 422
     assert len(await _artifact_rows(sid)) == len(before)
 
 
+async def test_keep_rejects_short_negative_quote_and_quote_reused_for_another_file(client, new_session):
+    """r2 반례: '보관하지 마' 발화에서 '보관' 만 인용, 그리고 다른 파일을 가리키는 문장을 무관한 파일에 재사용."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    root = Path(ws["root_path"])
+    t0 = datetime.now(UTC)
+    await _mk_run(ws["id"], sid, "이 파일은 보관하지 마. 내용만 확인해줘.", at=t0 - timedelta(minutes=6))
+    await _mk_run(ws["id"], sid, "보고서.md를 내 보관함에 보관해줘", at=t0 - timedelta(minutes=5))
+    run_id = await _mk_run(ws["id"], sid, "계속", status="running", at=t0)
+    neg = root / "neg.md"
+    neg.write_text("# n")
+    other = root / "other-result.txt"
+    other.write_text("other")
+    report = root / "보고서.md"
+    report.write_text("# 보고서")
+
+    r = await _keep(client, sid, run_id, neg, "보관")
+    assert r.status_code == 422 and r.json()["code"] == "quote_not_found"
+    r = await _keep(client, sid, run_id, neg, "이 파일은 보관하지 마")
+    assert r.status_code == 422 and r.json()["code"] == "quote_negated"
+    r = await _keep(client, sid, run_id, other, "보고서.md를 내 보관함에 보관해줘")
+    assert r.status_code == 422 and r.json()["code"] == "quote_not_bound"
+    assert await _artifact_rows(sid) == []
+
+    r = await _keep(client, sid, run_id, report, "보고서.md를 내 보관함에 보관해줘")
+    assert r.status_code == 200, r.text
+    ev = r.json()["artifact"]["keep_evidence"]
+    assert r.json()["artifact"]["area"] == "files" and ev["binding"] == "filename" and ev["binding_detail"] == "보고서.md"
+    assert ev["quote_sentence"] == "보고서.md를 내 보관함에 보관해줘"
+
+
+async def test_keep_binds_to_files_made_by_the_requested_work(client, new_session):
+    """파일명이 없는 문장은 그 발화 뒤 이 대화의 작업이 만든 파일에만 쓸 수 있다(same_run). 이전 Run 의 파일·무관한 세션은 거부."""
+    ws, sess = await new_session()
+    _, other = await new_session()
+    sid, other_sid = uuid.UUID(sess["id"]), uuid.UUID(other["id"])
+    t0 = datetime.now(UTC)
+    early = await _mk_run(ws["id"], sid, "예전 작업", at=t0 - timedelta(minutes=30))
+    msg = await _mk_run(ws["id"], sid, "만들어서 보관함에 넣어줘", at=t0 - timedelta(minutes=5))
+    now_run = await _mk_run(ws["id"], sid, "이어서 진행", status="running", at=t0)
+    async with sessionmaker()() as db:
+        child = ChatSession(workspace_id=uuid.UUID(ws["id"]), title="worker", engine="claude", parent_id=sid)
+        db.add(child)
+        await db.commit()
+        child_id = child.id
+    worker_run = await _mk_run(ws["id"], child_id, "작업자 지시", origin="orchestrator", at=t0 - timedelta(minutes=2))
+    stranger_run = await _mk_run(other["workspace_id"], other_sid, "다른 대화 작업", at=t0 - timedelta(minutes=1))
+
+    quote = "만들어서 보관함에 넣어줘"
+    # 같은 Run(발화 뒤)이 만든 파일
+    mine = _outbox_file(now_run, "mine.md")
+    r = await _keep(client, sid, now_run, mine, quote)
+    assert r.status_code == 200, r.text
+    ev = r.json()["artifact"]["keep_evidence"]
+    assert ev["binding"] == "same_run" and ev["binding_detail"] == str(now_run) and ev["message_id"] == str(msg)
+
+    # 이 세션이 띄운 작업 세션의 Run 이 발화 뒤에 만든 파일
+    made_by_worker = _outbox_file(worker_run, "from-worker.md")
+    r = await _keep(client, sid, now_run, made_by_worker, quote)
+    assert r.status_code == 200 and r.json()["artifact"]["keep_evidence"]["binding_detail"] == str(worker_run)
+
+    # 발화 앞 Run 이 만든 무관한 파일, 관련 없는 세션 Run 이 만든 파일, 파일 수정 시각이 발화보다 오래된 파일
+    for label, creator, name in (("early", early, "old.md"), ("stranger", stranger_run, "stranger.md")):
+        f = _outbox_file(creator, name)
+        r = await _keep(client, sid, now_run, f, quote)
+        assert r.status_code == 422 and r.json()["code"] == "quote_not_bound", (label, r.text)
+    stale = _outbox_file(now_run, "stale.md")
+    os.utime(stale, (t0.timestamp() - 86400, t0.timestamp() - 86400))
+    r = await _keep(client, sid, now_run, stale, quote)
+    assert r.status_code == 422 and r.json()["code"] == "quote_not_bound"
+    # 작업공간에 있던 파일(어떤 Run outbox 도 아님)은 파일명이 있어야 한다.
+    plain = Path(ws["root_path"]) / "plain.md"
+    plain.write_text("# plain")
+    r = await _keep(client, sid, now_run, plain, quote)
+    assert r.status_code == 422 and r.json()["code"] == "quote_not_bound"
+    assert sorted(a.filename for a in await _artifact_rows(sid)) == ["from-worker.md", "mine.md"]
+
+
+@pytest.mark.parametrize("sentence", [
+    "neg.md 는 보관하지 마",
+    "neg.md 내 보관함에 넣지 마세요",
+    "neg.md 저장하지 말아줘 제발",
+    "neg.md 보관 말고 요약만 해줘",
+    "neg.md 보관함에 넣지 말고 읽기만 해줘",
+    "please don't keep neg.md in my library",
+    "do not save neg.md",
+])
+async def test_keep_rejects_negative_sentences_even_when_they_name_the_file(client, new_session, sentence):
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "neg.md"
+    f.write_text("# neg")
+    await _mk_run(ws["id"], sid, sentence, at=datetime.now(UTC) - timedelta(minutes=1))
+    run_id = await _mk_run(ws["id"], sid, "진행", status="running")
+    r = await _keep(client, sid, run_id, f, sentence)
+    assert r.status_code == 422 and r.json()["code"] == "quote_negated", (sentence, r.text)
+    assert await _artifact_rows(sid) == []
+
+
+def test_keep_quote_sentence_rules():
+    from ttakkari.artifacts.keep_evidence import (
+        is_negated,
+        is_whole_sentence,
+        names_file,
+    )
+
+    text = "이 파일은 보관하지 마. 내용만 확인해줘.\n보고서.md를 내 보관함에 보관해줘! 고마워요 정말 감사합니다"
+    assert is_whole_sentence("이 파일은 보관하지 마", text)
+    assert is_whole_sentence("보고서.md를 내 보관함에 보관해줘!", text)  # 문장부호는 무시
+    assert is_whole_sentence("  보고서.md를   내 보관함에 보관해줘 ", text)  # 공백 정규화
+    assert is_whole_sentence("고마워요 정말 감사합니다", text)  # 한 줄의 끝 문장
+    assert not is_whole_sentence("보관", text)  # 단어 일부
+    assert not is_whole_sentence("내 보관함에 보관해줘", text)  # 문장의 뒷부분만
+    assert not is_whole_sentence("내용만 확인해줘", text)  # 8자 미만
+    assert not is_whole_sentence("내용만 확인해줘. 보고서.md를 내 보관함에 보관해줘", text)  # 줄을 넘어 이어 붙임
+    assert is_negated("보관하지 마") and is_negated("넣지 마") and is_negated("저장하지 마") and is_negated("Don't save it")
+    assert not is_negated("보고서.md를 내 보관함에 보관해줘") and not is_negated("만들어서 보관함에 넣어줘")
+
+    p = Path("/w/docs/Report Q3.md")
+    assert names_file("report q3.md 보관해줘", p) == "report q3.md"
+    assert names_file("docs/report q3 를 보관함에", p) == "docs/report q3"
+    assert names_file("Report Q3 보관해줘", p) == "report q3"  # 확장자 뺀 이름
+    assert names_file("보고서를 보관해줘", p) is None
+    assert names_file("a 보관해줘", Path("/w/a.md")) is None  # 너무 짧은 이름은 확장자 없이 맞추지 않는다
+    assert names_file("a.md 보관해줘", Path("/w/a.md")) == "a.md"
+
+
 async def test_keep_with_real_user_message_quote_records_the_actual_message(client, auth, new_session):
-    """실제 사용자 메시지를 (공백이 달라도) 인용하면 files 로 보관되고, origin=agent 가 유지되며 근거는 그 메시지를 가리킨다."""
+    """실제 사용자 메시지의 문장(공백이 달라도)을 인용하고 파일명이 문장에 있으면 files 로 보관되고 근거는 그 메시지를 가리킨다."""
     ws, sess = await new_session()
     sid = uuid.UUID(sess["id"])
     f = Path(ws["root_path"]) / "report.md"
     f.write_text("# report")
     t0 = datetime.now(UTC)
-    msg_id = await _mk_run(ws["id"], sid, "보고서 만들고\n그 파일 내 보관함에   보관해줘 고마워", at=t0 - timedelta(minutes=5))
+    msg_id = await _mk_run(ws["id"], sid, "보고서 만들고\n그 report.md 파일 내 보관함에   보관해줘\n고마워", at=t0 - timedelta(minutes=5))
     run_id = await _mk_run(ws["id"], sid, "계속 진행해", status="running", at=t0)
 
-    r = await _keep(client, sid, run_id, f, "내 보관함에 보관해줘")
+    r = await _keep(client, sid, run_id, f, "그 report.md 파일 내 보관함에 보관해줘")
     assert r.status_code == 200, r.text
     a = r.json()["artifact"]
     assert a["area"] == "files" and a["origin"] == "agent" and a["keep_reason"] == "chat_request"
@@ -855,10 +992,10 @@ async def test_keep_with_real_user_message_quote_records_the_actual_message(clie
     assert ev["message_id"] == str(msg_id) and ev["message_id"] != ev["run_id"]
     assert ev["run_id"] == str(run_id) and ev["session_id"] == str(sid)
     assert ev["message_source"] == "message" and ev["message_origin"] == "user"
-    assert ev["quote"] == "내 보관함에 보관해줘"
-    assert "보관해줘 고마워" in ev["user_message"]
-    assert datetime.fromisoformat(ev["message_at"]) == (t0 - timedelta(minutes=5)).replace(tzinfo=None) or \
-        datetime.fromisoformat(ev["message_at"]).replace(tzinfo=None) == (t0 - timedelta(minutes=5)).replace(tzinfo=None)
+    assert ev["quote"] == "그 report.md 파일 내 보관함에 보관해줘"
+    assert ev["binding"] == "filename" and ev["binding_detail"] == "report.md"
+    assert "고마워" in ev["user_message"]
+    assert datetime.fromisoformat(ev["message_at"]) == t0 - timedelta(minutes=5)
     assert "kept_at" in ev
     listed = await client.get("/api/artifacts", params={"area": "files"}, headers=auth)
     assert [x["filename"] for x in listed.json()] == ["report.md"]
@@ -870,21 +1007,21 @@ async def test_keep_accepts_desk_delegated_request_but_not_history_or_assistant_
     sid = uuid.UUID(sess["id"])
     f = Path(ws["root_path"]) / "plan.md"
     f.write_text("# plan")
-    prompt = ("[접수에서 넘긴 사용자 요청]\n이 기획서 내 보관함에 넣어줘\n\n[최근 대화 — 참고만]\n"
-              "사용자: 예전 파일은 보관함에 저장해줘\n따까리: 알겠어요, 보관했어요")
+    prompt = ("[접수에서 넘긴 사용자 요청]\n이 plan.md 기획서 내 보관함에 넣어줘\n\n[최근 대화 — 참고만]\n"
+              "사용자: plan.md 는 보관함에 저장해줘 예전 요청\n따까리: plan.md 알겠어요, 보관했어요")
     run_id = await _mk_run(ws["id"], sid, prompt, origin="desk", status="running")
 
-    for quote in ("예전 파일은 보관함에 저장해줘", "알겠어요, 보관했어요", "[최근 대화"):
+    for quote in ("plan.md 는 보관함에 저장해줘 예전 요청", "plan.md 알겠어요, 보관했어요", "[최근 대화 — 참고만]"):
         r = await _keep(client, sid, run_id, f, quote)
         assert r.status_code == 422 and r.json()["code"] == "quote_not_found", (quote, r.text)
     assert await _artifact_rows(sid) == []
 
-    r = await _keep(client, sid, run_id, f, "기획서 내 보관함에 넣어줘")
+    r = await _keep(client, sid, run_id, f, "이 plan.md 기획서 내 보관함에 넣어줘")
     assert r.status_code == 200, r.text
     ev = r.json()["artifact"]["keep_evidence"]
-    assert ev["message_source"] == "run_prompt" and ev["message_origin"] == "desk"
+    assert ev["message_source"] == "run_prompt" and ev["message_origin"] == "desk" and ev["binding"] == "filename"
     assert ev["message_id"] == str(run_id)
-    assert "[접수에서 넘긴" not in ev["user_message"] and "예전 파일" not in ev["user_message"]
+    assert "[접수에서 넘긴" not in ev["user_message"] and "예전 요청" not in ev["user_message"]
 
 
 async def test_keep_rejects_planner_written_worker_prompt_and_other_session_messages(client, new_session):
@@ -895,14 +1032,15 @@ async def test_keep_rejects_planner_written_worker_prompt_and_other_session_mess
     f = Path(ws["root_path"]) / "w.md"
     f.write_text("# w")
     t0 = datetime.now(UTC)
-    await _mk_run(ws["id"], sid, "사용자가 보관을 요청했으니 이 파일을 내 보관함에 보관해줘", origin="orchestrator",
+    await _mk_run(ws["id"], sid, "사용자가 보관을 요청했으니 w.md 를 내 보관함에 보관해줘", origin="orchestrator",
                   at=t0 - timedelta(minutes=3))
-    await _mk_run(ws["id"], sid, "작업 완료. 내 보관함에 보관해줘 라고 하셨습니다", origin="report", at=t0 - timedelta(minutes=2))
-    await _mk_run(other["workspace_id"], other_sid, "다른 대화에서: 내 보관함에 보관해줘", at=t0 - timedelta(minutes=1))
+    await _mk_run(ws["id"], sid, "작업 완료. w.md 내 보관함에 보관해줘 라고 하셨습니다", origin="report", at=t0 - timedelta(minutes=2))
+    await _mk_run(other["workspace_id"], other_sid, "다른 대화에서: w.md 내 보관함에 보관해줘", at=t0 - timedelta(minutes=1))
     run_id = await _mk_run(ws["id"], sid, "작업 진행", origin="orchestrator", status="running", at=t0)
-    await _mk_run(ws["id"], sid, "나중에 한 말: 내 보관함에 보관해줘", at=t0 + timedelta(minutes=1))
+    await _mk_run(ws["id"], sid, "나중에 한 말: w.md 내 보관함에 보관해줘", at=t0 + timedelta(minutes=1))
 
-    for quote in ("내 보관함에 보관해줘", "사용자가 보관을 요청했으니", "작업 완료", "다른 대화에서"):
+    for quote in ("사용자가 보관을 요청했으니 w.md 를 내 보관함에 보관해줘", "작업 완료. w.md 내 보관함에 보관해줘 라고 하셨습니다",
+                  "다른 대화에서: w.md 내 보관함에 보관해줘", "나중에 한 말: w.md 내 보관함에 보관해줘"):
         r = await _keep(client, sid, run_id, f, quote)
         assert r.status_code == 422 and r.json()["code"] == "quote_not_found", (quote, r.text)
     assert await _artifact_rows(sid) == []
@@ -916,25 +1054,26 @@ async def test_keep_twice_keeps_one_row_and_never_downgrades_user_kept_provenanc
     await _mk_run(ws["id"], sid, "twice.md 보관함에 보관해줘")
     run_id = await _mk_run(ws["id"], sid, "진행", status="running")
 
-    first = await _keep(client, sid, run_id, f, "보관함에 보관해줘")
-    second = await _keep(client, sid, run_id, f, "twice.md 보관함에")
+    first = await _keep(client, sid, run_id, f, "twice.md 보관함에 보관해줘")
+    second = await _keep(client, sid, run_id, f, "twice.md 보관함에 보관해줘!")
     assert first.status_code == second.status_code == 200
     assert first.json()["artifact"]["id"] == second.json()["artifact"]["id"]
     rows = await _artifact_rows(sid)
     assert len(rows) == 1
-    # 처음의 근거가 유지된다(덮어쓰지 않는다).
-    assert rows[0].keep_evidence["quote"] == "보관함에 보관해줘"
+    assert rows[0].keep_evidence["quote"] == "twice.md 보관함에 보관해줘"  # 처음의 근거가 유지된다
 
     # 사용자가 직접 올린 보관 파일은 chat_request 로 바뀌지 않는다.
     g = Path(ws["root_path"]) / "mine.md"
     g.write_text("# mine")
+    await _mk_run(ws["id"], sid, "mine.md 보관함에 보관해줘")
+    run_id = await _mk_run(ws["id"], sid, "다음 진행", status="running")
     async with sessionmaker()() as db:
         db.add(Artifact(session_id=sid, workspace_id=uuid.UUID(ws["id"]), filename="mine.md", mime_type="text/markdown",
                         kind="markdown", source="upload", area=ArtifactArea.files, origin="user", keep_reason="direct_upload",
                         original_path=str(g.resolve()), stored_path=str(g.resolve()), storage_mode="reference",
                         size_bytes=6, sha256="0" * 64))
         await db.commit()
-    r = await _keep(client, sid, run_id, g, "보관함에 보관해줘")
+    r = await _keep(client, sid, run_id, g, "mine.md 보관함에 보관해줘")
     assert r.status_code == 200
     assert r.json()["artifact"]["keep_reason"] == "direct_upload" and r.json()["artifact"]["keep_evidence"] is None
 
@@ -948,20 +1087,20 @@ async def test_keep_after_user_removed_requires_a_newer_request(client, auth, ne
     t0 = datetime.now(UTC)
     await _mk_run(ws["id"], sid, "back.md 내 보관함에 보관해줘", at=t0 - timedelta(minutes=10))
     run1 = await _mk_run(ws["id"], sid, "진행", status="running", at=t0 - timedelta(minutes=9))
-    kept = (await _keep(client, sid, run1, f, "내 보관함에 보관해줘")).json()["artifact"]
+    kept = (await _keep(client, sid, run1, f, "back.md 내 보관함에 보관해줘")).json()["artifact"]
     assert kept["area"] == "files"
 
     out = await client.patch(f"/api/artifacts/{kept['id']}", json={"area": "agent"}, headers=auth)
     assert out.status_code == 200 and out.json()["area"] == "agent" and out.json()["keep_reason"] is None
 
     run2 = await _mk_run(ws["id"], sid, "다시 진행", status="running", at=datetime.now(UTC) + timedelta(seconds=1))
-    r = await _keep(client, sid, run2, f, "내 보관함에 보관해줘")
+    r = await _keep(client, sid, run2, f, "back.md 내 보관함에 보관해줘")
     assert r.status_code == 409 and r.json()["code"] == "removed_after_request"
     assert (await _artifact_rows(sid))[0].area == "agent"
 
-    await _mk_run(ws["id"], sid, "아 그 파일 다시 내 보관함에 넣어줘", at=datetime.now(UTC) + timedelta(seconds=2))
+    await _mk_run(ws["id"], sid, "아 back.md 다시 내 보관함에 넣어줘", at=datetime.now(UTC) + timedelta(seconds=2))
     run3 = await _mk_run(ws["id"], sid, "또 진행", status="running", at=datetime.now(UTC) + timedelta(seconds=3))
-    r = await _keep(client, sid, run3, f, "다시 내 보관함에 넣어줘")
+    r = await _keep(client, sid, run3, f, "아 back.md 다시 내 보관함에 넣어줘")
     assert r.status_code == 200 and r.json()["artifact"]["area"] == "files"
 
 
@@ -971,12 +1110,12 @@ async def test_keep_requires_resolvable_run_and_path_scope(client, new_session):
     f = Path(ws["root_path"]) / "x.md"
     f.write_text("# x")
     # Run 이 없는 세션의 토큰은 근거를 남길 Run 을 특정하지 못해 409.
-    r = await _keep(client, sid, None, f, "보관해줘")
+    r = await _keep(client, sid, None, f, "x.md 를 보관함에 보관해줘")
     assert r.status_code == 409 and r.json()["code"] == "run_not_found"
-    run_id = await _mk_run(ws["id"], sid, "x.md 보관해줘", status="running")
+    run_id = await _mk_run(ws["id"], sid, "x.md 를 보관함에 보관해줘", status="running")
     outside = Path(ws["root_path"]).parent / "outside-keep.md"
     outside.write_text("# o")
-    r = await _keep(client, sid, run_id, outside, "보관해줘")
+    r = await _keep(client, sid, run_id, outside, "x.md 를 보관함에 보관해줘")
     assert r.status_code == 403 and r.json()["code"] == "outside_root"
     # 빈 인용은 스키마에서 거부된다.
     assert (await _keep(client, sid, run_id, f, "")).status_code == 422

@@ -317,3 +317,60 @@ async def test_legacy_runtime_runs_the_creative_and_game_consumers_so_rollback_l
     source = inspect.getsource(main.lifespan)
     assert "start_legacy_queued_consumers" in source and "finish_claimed_work" in source
     assert "stop(drain_seconds=0)" not in source
+
+
+# ------------------------------------------------------------------ queued 행 보존 경로: drain 중 미착수 대기열 불변
+
+async def test_drain_preserves_queued_rows_for_notebooklm_reverse_and_context_index(monkeypatch):
+    """drain() 은 이미 running/in-flight 인 작업만 자연 완료(또는 상한 후 취소)를 기다리며,
+    아직 claim 되지 않은 queued 행(NotebookLM, Reverse, 수동색인)은 건드리지 않고 보존해야 한다."""
+    queued_store = {
+        "notebooklm": ["job-queued-1", "job-queued-2"],
+        "reverse": ["rev-queued-1"],
+        "context-index": ["source-queued-1"],
+    }
+    claimed = []
+
+    async def fake_pump_notebooklm():
+        if queued_store["notebooklm"]:
+            job = queued_store["notebooklm"].pop(0)
+            claimed.append(job)
+            return 1
+        return 0
+
+    async def fake_pump_reverse():
+        if queued_store["reverse"]:
+            job = queued_store["reverse"].pop(0)
+            claimed.append(job)
+            return 1
+        return 0
+
+    async def fake_pump_context():
+        if queued_store["context-index"]:
+            job = queued_store["context-index"].pop(0)
+            claimed.append(job)
+            return 1
+        return 0
+
+    consumers = background_consumers.BackgroundConsumers()
+    monkeypatch.setattr(background_consumers, "consumers", consumers)
+    monkeypatch.setattr(background_consumers, "PUMPS", (
+        ("notebooklm", fake_pump_notebooklm),
+        ("reverse", fake_pump_reverse),
+        ("context-index", fake_pump_context),
+    ))
+    monkeypatch.setattr(background_consumers, "inflight", lambda: 0)
+    monkeypatch.setattr("ttakkari.reverse.resume_waiting_reverse_jobs", AsyncMock(return_value=0))
+
+    # 1. 종료 신호 도착: stop_claiming() 호출
+    consumers.stop_claiming()
+
+    # 2. drain 실행 (소비자 루프는 정지된 상태에서 잔여 in-flight drain 대기)
+    drained = await consumers.drain(drain_seconds=0.1)
+    assert drained is True
+
+    # 3. stop_claiming 이후이므로 queued 항목들은 소비/삭제/취소되지 않고 그대로 보존됨
+    assert queued_store["notebooklm"] == ["job-queued-1", "job-queued-2"]
+    assert queued_store["reverse"] == ["rev-queued-1"]
+    assert queued_store["context-index"] == ["source-queued-1"]
+    assert claimed == []

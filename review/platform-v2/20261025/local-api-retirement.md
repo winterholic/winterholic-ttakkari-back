@@ -27,3 +27,27 @@ Red `local-api-retirement-red.txt`: 10 failed in 3.81s. Observed defects:
 - `scripts/pytest_slots.py` could not open `/tmp/ttk-pytest-slots/slot-0.lock` (EPERM), so pytest ran directly.
 - Step2 heartbeat coordination note: executor `drain()` emits initial `row.heartbeat_at = utcnow()` and updates tick/commands, while background consumer pumps operate under the executor or local API without separate DB heartbeat stamps. Full ownership lease binding during long consumer drains is tracked under Step2 verification (검증자 판정: 결함 아님 확인).
 - Not measured: real launchd, production, full suite, STT jobs shutdown (still `jobs.stop()`).
+
+## Context Index Queue Cancellation Preservation (base 05ae55d)
+Scope: `src/ttakkari/context/index_queue.py` manual index claim/cancellation lifecycle.
+
+### Observed Defect
+`claim()`이 `index_requested_at=None`으로 수동 색인 요청을 지운 상태에서 종료 상한 초과 등으로 실행 중 작업이 취소되면, `run_claimed()`가 `CancelledError`를 다시 던지고 `release()`는 `index_started_at`만 비워 수동 색인 요청이 재대기 표시도 실패 기록도 없이 영구 소실됨.
+
+### Counterexamples & Red
+- `unit_tests/test_context_index_queue.py`:
+  Red `PYTHONPATH=src:. ../back/.venv/bin/pytest -q -p no:cacheprovider unit_tests/test_context_index_queue.py`: `1 failed, 3 passed in 0.23s`.
+  `FAILED unit_tests/test_context_index_queue.py::test_claimed_manual_index_request_is_restored_to_queued_on_cancellation` - `assert None == datetime(...)` (취소 후 index_requested_at 소실 재현).
+- DB-backed test `tests/test_background_consumers.py::test_manual_index_request_is_restored_to_queued_on_cancellation` 작성 완료. 샌드박스 loopback 소켓 연결 차단(`PermissionError: [Errno 1] Operation not permitted`)으로 미실행 표기.
+
+### Correction
+- `index_queue.claim`: 출처의 `index_requested_at` 및 `index_started_at`을 원자적으로 확인하여 수동 요청 시각(`req`)을 보관하고 claim 확정.
+- `index_queue.run_claimed`: `except asyncio.CancelledError` 경로에서 수동 요청이었던 경우에만 `requeue_at = req`를 지정하여 `release()`에 전달하고 `CancelledError` 재전파. 정상 완료 및 일반 예외 경로 동작은 불변 유지.
+- `index_queue.release`: `requested_at` 인자를 지원하여 취소 복원 시 `index_requested_at`을 원래 요청 시각으로 원자적 복원하고 `index_started_at`을 해제. 주기 색인(`index_all`) 등 수동 요청이 아닌 claim은 `requested_at=None`으로 유지되어 `index_requested_at`이 생성되지 않음.
+- `index_queue.pump`: 선별 시점의 `index_requested_at`을 `run_claimed`에 연계 전달.
+
+### Evidence & Mutation
+- Green `unit_tests/test_context_index_queue.py`: `4 passed in 0.24s`.
+- Mutation test: `requeue_at = req` 복원 라인 무력화 시 `test_claimed_manual_index_request_is_restored_to_queued_on_cancellation`에서 `assert None in (...)`으로 즉시 Red 실패 확인(`1 failed, 3 passed in 0.23s`). 정상 복구 시 Green(`4 passed in 0.21s`).
+- 13개 DB-free 회귀 스위트: `125 passed in 48.47s` (test_local_api_retirement.py, test_tts_claim_stop_race.py, test_executor_integrated_drain.py, test_executor_safety.py, test_run_executor_drain.py, test_run_executor_services.py, test_executor_queued_consumers.py, test_creative_v2_asset_queue.py, test_creative_v2_asset_generation_e2e.py, test_desk_qwen_isolation.py, test_qwen_flash_monitor_jobs.py, test_run_executor_unit.py, test_context_index_queue.py).
+- Ruff check 통과, git diff --check 통과.

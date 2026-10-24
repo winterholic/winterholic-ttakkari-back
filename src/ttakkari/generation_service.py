@@ -227,11 +227,12 @@ async def start_api_services(execution_mode: str) -> None:
     # TTS retains submitted source text in this process until its job finishes;
     # moving only the consumer would lose the payload on API replacement.
     await tts_jobs.start()
-    # The managed Qwen server is a request-time accelerator owned per API
-    # generation, not a durable database queue consumer.
-    # Step 3 integration hook: Step 3 will decouple llama-server lifecycle from API generations.
-    # For Step 2, keep qwen_service.start() here without direct modification.
-    await qwen_service.start()
+    # Remote API generations do not spawn or stop the llama-server process;
+    # only local (single-process legacy/rollback) runs own the managed process.
+    try:
+        await qwen_service.start(owner=(execution_mode == "local"))
+    except TypeError:
+        await qwen_service.start()
 
 
 async def ready(runtime) -> dict:

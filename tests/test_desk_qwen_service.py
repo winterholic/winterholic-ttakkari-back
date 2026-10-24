@@ -97,10 +97,17 @@ async def test_managed_child_is_a_direct_child_and_its_pid_record_names_the_live
     await until(lambda: q.state == "ready", what="ready")
     child = q._child.pid
     assert psutil.Process(child).ppid() == os.getpid()  # 소유자 = 직계 부모(가드의 소유 증거)
-    [record_file] = list((get_settings().home / "qwen").glob("*.json"))
+    state_dir = get_settings().home / "qwen"
+    # pid 기록(`<owner_pid>-<token>.json`)과 ready 후 생기는 active.json 포인터는 서로 다른 파일이다.
+    [record_file] = [f for f in state_dir.glob("*.json") if f.name != "active.json"]
+    assert record_file.name.startswith(f"{os.getpid()}-")
     rec = json.loads(record_file.read_text())
     assert rec["owner_pid"] == os.getpid() and rec["child_pid"] == child
     assert {"port", "server", "model", "owner_start", "child_start"} <= set(rec)
+    assert rec["owner_start"] == svc._proc_start(os.getpid()) and rec["child_start"] == svc._proc_start(child)
+    pointer = json.loads((state_dir / "active.json").read_text())  # 같은 소유자·자식·시작 시각을 가리킨다
+    assert {k: pointer[k] for k in ("owner_pid", "owner_start", "child_pid", "child_start", "port")} == \
+        {k: rec[k] for k in ("owner_pid", "owner_start", "child_pid", "child_start", "port")}
     await q.stop()
 
 
@@ -362,7 +369,8 @@ def test_lifespans_stop_the_qwen_service_and_the_generation_one_starts_it_throug
 
 @pytest.mark.parametrize("mode", ["local", "remote"])
 async def test_generation_api_start_services_starts_the_qwen_service_in_every_mode(monkeypatch, mode):
-    """Qwen is per-API-generation state, so remote-executor APIs must start it too.
+    """Qwen is request-accelerated, so remote-executor APIs start it in client mode (owner=False),
+    while local mode APIs own the managed process (owner=True).
 
     Not run through generation_service.lifespan: its teardown stops the shared RunManager and
     disposes the engine, which would leave every later test's Runs refused.
@@ -374,10 +382,13 @@ async def test_generation_api_start_services_starts_the_qwen_service_in_every_mo
     from ttakkari.tts import jobs as tts_jobs
 
     calls: list[str] = []
+    qwen_owners: list[bool] = []
 
     def recorder(name):
-        async def inner():
+        async def inner(*args, **kwargs):
             calls.append(name)
+            if name == "qwen":
+                qwen_owners.append(kwargs.get("owner", True))
         return inner
 
     monkeypatch.setattr(qwen_service, "start", recorder("qwen"))
@@ -388,6 +399,7 @@ async def test_generation_api_start_services_starts_the_qwen_service_in_every_mo
     await generation_service.start_api_services(mode)
 
     assert "qwen" in calls and "tts" in calls
+    assert qwen_owners == [mode == "local"]
     # Durable workers belong to the executor when the API is remote.
     assert ("preview" in calls and "stt" in calls) == (mode == "local")
 

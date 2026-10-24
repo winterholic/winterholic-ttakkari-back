@@ -195,6 +195,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
     from ttakkari.generation_service import coordinate_runs
     from ttakkari.meetings.local_stt import jobs as stt_jobs
     from ttakkari.runs import profiles, usage_store
+    from ttakkari.runs.desk_qwen_service import service as qwen_service
     from ttakkari.runs.manager import manager
 
     settings = get_settings()
@@ -214,6 +215,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
         registered = True
         await runtime.listen()
         usage_store.install()
+        await qwen_service.start(owner=True)
         background_tasks = await start_background_services()
         preview_started = stt_started = True
         while not stop.is_set():
@@ -252,6 +254,8 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
                     await stt_jobs.stop()
                 if preview_started:
                     await preview.stop_worker()
+                from ttakkari.runs.desk_qwen_service import service as qwen_service
+                await qwen_service.stop()
                 await manager.shutdown()
                 await profiles.flush_persist()
                 await usage_store.flush()

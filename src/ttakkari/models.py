@@ -1258,6 +1258,10 @@ class GameBuild(Base):
     error: Mapped[str | None] = mapped_column(Text)
     # 롤백으로 소스를 복구해 만든 빌드이면 복구 대상이던 이전 빌드. 원래 빌드는 그대로 남는다.
     restored_from_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("game_builds.id", ondelete="SET NULL"))
+    # 원격 API 가 접수한 빌드의 실행부 인계 표식. queued(실행부 대기) → claimed(실행부가 맡음). NULL 은 API/Run 이 직접 돌린
+    # 빌드와 이 표식 이전의 기존 행이라 실행부가 절대 집지 않는다. status 는 계속 building 이라 API 응답 계약은 그대로다.
+    queue_state: Mapped[str | None] = mapped_column(String(10))
+    claimed_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     finished_at: Mapped[datetime | None]
 

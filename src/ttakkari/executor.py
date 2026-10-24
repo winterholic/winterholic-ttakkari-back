@@ -10,7 +10,7 @@ import time
 import psutil
 from sqlalchemy import func, select, update
 
-from ttakkari import generation
+from ttakkari import generation, queued_work
 from ttakkari.config import get_settings
 from ttakkari.db import dispose_engine, sessionmaker
 from ttakkari.generation import EXECUTOR_PROTOCOL, GenerationRuntime, _control, _lock
@@ -245,6 +245,8 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
+            queued_work.begin_drain()
+            await queued_work.wait_idle()
             if tts_started:
                 await tts_jobs.drain()
             if registered and not await drain(runtime, manager, timeout=drain_timeout):

@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from sqlalchemy import select
 
+from ttakkari import queued_work
 from ttakkari.api.deps import Db
 from ttakkari.audit import record
 from ttakkari.config import get_settings
@@ -422,19 +423,26 @@ async def _run_build(plan: game_builds.BuildPlan) -> None:
         log.exception("game build %s failed unexpectedly", plan.build_id)  # 빌드 행은 execute_build 가 failed 로 닫았다
 
 
+def _spawn_build(build: GameBuild, plan: game_builds.BuildPlan) -> None:
+    """로컬 모드는 API 프로세스가 빌드를 돌린다. 원격 API 가 넘긴 행(queue_state=queued)은 실행부 소비자가 이어받는다."""
+    if build.queue_state == "queued":
+        return
+    task = asyncio.create_task(_run_build(plan))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
 @router.post("/{game_id}/builds", response_model=BuildOut, status_code=202)
 async def start_build(game_id: uuid.UUID, body: BuildStartIn, _: User, db: Db, request: Request) -> GameBuild:
     game = await _game(db, game_id)
     try:
-        build, plan = await game_builds.prepare_build(db, game, run_id=body.run_id)
+        build, plan = await game_builds.prepare_build(db, game, run_id=body.run_id, queued=queued_work.delegated())
     except GameContractError as e:
         raise _http(e) from e
     record(db, action="game.build.start", target_type="game_build", target_id=build.id, ip=client_ip(request),
            detail={"game": game.slug, "seq": build.seq})
     await db.commit()
-    task = asyncio.create_task(_run_build(plan))
-    _background.add(task)
-    task.add_done_callback(_background.discard)
+    _spawn_build(build, plan)
     return build
 
 
@@ -527,7 +535,7 @@ async def rollback_game(game_id: uuid.UUID, body: RollbackIn, _: User, db: Db, r
                 raise GameContractError("게임의 workspace 를 찾을 수 없습니다.", "no_workspace")
             restore_commit = await game_builds.restore_source(resolve_project_path(Path(ws.root_path)), target)
             game.active_build_id = target.id  # 소스를 되돌린 뒤 포인터를 옮기고, prepare_build 의 commit 에 함께 기록된다
-            new_build, plan = await game_builds.prepare_build(db, game, restored_from=target.id)
+            new_build, plan = await game_builds.prepare_build(db, game, restored_from=target.id, queued=queued_work.delegated())
         else:
             game.active_build_id = target.id
     except GameContractError as e:
@@ -541,8 +549,6 @@ async def rollback_game(game_id: uuid.UUID, body: RollbackIn, _: User, db: Db, r
                    "restore_commit": restore_commit, "restore_build": str(new_build.id) if new_build else None})
     await db.commit()
     if plan is not None:
-        task = asyncio.create_task(_run_build(plan))
-        _background.add(task)
-        task.add_done_callback(_background.discard)
+        _spawn_build(new_build, plan)
     return RollbackOut(game_id=game.id, active_build_id=target.id, previous_active_build_id=previous, restore_commit=restore_commit,
                        restore_build=BuildOut.model_validate(new_build) if new_build else None)

@@ -179,7 +179,7 @@ class GenerationRuntime:
             control = await _control(db)
             if claim_owner(control) != self.id:
                 return None
-            run = await db.get(Run, run_id)
+            run = await db.get(Run, run_id)  # 잠금 없이 세션만 찾는다. 잠금 순서는 ChatSession → Run 이다.
             if run is None or run.status != "queued" or (run.resume_after and run.resume_after > utcnow()):
                 return None
             if await db.get(RuntimeLease, run_id):
@@ -191,8 +191,9 @@ class GenerationRuntime:
             )
             if sess is None:
                 return None
+            # 큐 취소·report 병합과 직렬화한다. 잠금을 기다린 뒤 커밋된 상태를 다시 읽어야 한다.
             run = await db.scalar(
-                select(Run).where(Run.id == run_id).with_for_update()
+                select(Run).where(Run.id == run_id).with_for_update().execution_options(populate_existing=True)
             )
             if run is None or run.status != "queued" or (run.resume_after and run.resume_after > utcnow()):
                 return None

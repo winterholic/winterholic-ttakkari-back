@@ -221,15 +221,42 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
 
     if action == "send_message":
         from ttakkari.api.sessions import queue_run
+        from ttakkari.orchestrator.work import is_contract_resume_schedule, load
         session_id = uuid.UUID(str(payload["session_id"]))
         prompt = payload.get("message") or payload.get("prompt") or ""
         async with sessionmaker()() as db:
             sess = await db.get(ChatSession, session_id)
             if sess is None:
                 raise ValueError(f"ChatSession {session_id} not found")
+            # 계약 재개 예약인 경우, 현재 목표 상태가 active가 아니면(paused/blocked/complete 등) 새 Run을 큐잉하지 않고 건너뛴다.
+            if is_contract_resume_schedule(schedule):
+                # Same session-row lock as checkpoint/after_run. Keep it through
+                # queue_run's commit so cancellation cannot interleave after load.
+                await db.scalar(select(ChatSession.id).where(ChatSession.id == session_id).with_for_update())
+                contract = await load(db, session_id)
+                c_state = contract.get("state")
+                if not c_state or c_state.get("status") != "active":
+                    log.info("scheduled send_message skipped for session %s: goal contract is %s",
+                             session_id, (c_state or {}).get("status"))
+                    return {
+                        "status": "skipped",
+                        "reason": f"goal contract is {(c_state or {}).get('status')}",
+                        "session_id": str(session_id),
+                    }
+                # A poller may still hold a leased snapshot after cancellation.
+                # Explicitly resuming the goal does not revive that cancelled schedule.
+                persisted = await db.get(ScheduledAction, schedule.id, populate_existing=True)
+                if persisted is None or persisted.status not in ("pending", "leased"):
+                    return {"status": "skipped", "reason": "contract schedule is no longer pending or leased",
+                            "session_id": str(session_id)}
             # 리스 만료 뒤 재실행돼도 Run 이 중복 생성되지 않도록 예약 id 를 멱등 키로 쓴다.
+            def mark_continuation(queued):
+                queued.usage = {**(queued.usage or {}), "work_continuation": {
+                    "schedule_id": str(schedule.id), "revision": contract["revision"]}}
+
             run = await queue_run(db, sess, prompt, origin=RunOrigin.orchestrator,
-                                  request_key=f"schedule:{schedule.id}")
+                                  request_key=f"schedule:{schedule.id}",
+                                  on_queued=mark_continuation if is_contract_resume_schedule(schedule) else None)
         log.info("scheduled send_message executed for session %s: run %s queued", session_id, run.id)
         return {"queued_run_id": str(run.id), "session_id": str(session_id)}
 

@@ -1,0 +1,14 @@
+Dedicated test database: ttakkari_test_cancel_ac4bf8a0fcce4bdd
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________ test_cancellation_during_profile_selection_is_not_overwritten _________
+tests/test_planning_contract.py:701: in test_cancellation_during_profile_selection_is_not_overwritten
+    assert (await db.get(Run, rid)).status == RunStatus.cancelled
+E   AssertionError: assert 'succeeded' == <RunStatus.ca...: 'cancelled'>
+E     
+E     - cancelled
+E     + succeeded
+db reset: 1 selective (avg 3.0/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_planning_contract.py::test_cancellation_during_profile_selection_is_not_overwritten
+1 failed in 0.59s

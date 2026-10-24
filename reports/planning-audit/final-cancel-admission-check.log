@@ -1,0 +1,4 @@
+Dedicated test database: ttakkari_test_cancel_2cfc5525f06f42d6
+.........                                                                [100%]
+db reset: 9 selective (avg 7.0/106 tables), 0 forced full, 0 fell back to full
+9 passed in 0.99s

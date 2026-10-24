@@ -96,20 +96,28 @@ P1/P2는 이번 업무의 수정 우선도다. 실제 데이터 손실이나 전
 상세 실행 결과는 `verification.json`과 원 로그(`planning-contract.log`, `automatic-dispatch.log`, `full-regression.log`)를 기준으로 기록한다.
 
 - 최초 RED: 목표 완료 API 부재로 Gate A 완료 요청 404 실패. 추가 RED: PMS 0%인데 done PATCH 200 허용, 작업판 succeeded→완료 오표시, live worker 있어도 목표 complete 허용, checkpoint 증거/PMS 연결 소실, 엔진 실패 후 active 방치가 각각 재현됨.
-- 신규 계약 회귀: `PYTHONPATH=src pytest tests/test_planning_contract.py` → 20 passed in 1.60s. 영속 resume 예약(ScheduledAction)의 후속 소유권 인정 및 중복 후속 차단(`test_persisted_resume_schedule_owns_next_step_without_duplicate_run`), 사용자 추가 지시 없는 자동 후속 실행(`test_dispatch_executes_followups_without_another_user_message`) 모두 통과.
-- 관련 핵심 회귀: `PYTHONPATH=src pytest tests/test_planning_contract.py tests/test_orchestrator.py tests/test_route_inventory.py` → 66 passed in 12.82s.
-- 코드 스타일: `ruff check` (수정 16개 파일 전수) → All checks passed.
-- 전체 suite(`full-regression.log`) 관측 실패 38건 분류:
-  1. 68% 백업 테스트(14건, `unit_tests/test_backup_ops_remaining.py`, `unit_tests/test_backup_restore.py`): worktree 환경의 `.venv` 심볼릭 링크 부재로 스크립트 실행 불가 및 mktemp 샌드박스 차단. `.venv` 심볼릭 링크 생성 후 bypass sandbox 환경에서 22 passed, 1 skipped(100% 통과).
-  2. 35% 호스트 GPU 테스트(12건, `tests/test_host_gpu.py`): 샌드박스 내부의 process_list 및 watchdog signal 차단. bypass sandbox 단독 실행 시 32 passed in 31.87s(100% 통과).
-  3. 28%~41% 마이그레이션 테스트(8건, `test_game_migration.py`, `test_google_account.py`, `test_knowledge_migration.py`, `test_meeting_lineage_migration.py`, `test_retire_clovanote_migration.py`): 환경변수 `TTAKKARI_TEST_DB`의 인증 정보가 Alembic 서브프로세스에 누락되어 발생한 인증 오류. `origin/main`과 동일한 코드이며, `env -u TTAKKARI_TEST_DB` 독립 클러스터 환경에서 34 passed(100% 통과).
-  4. 53% 연구 실험 테스트(1건, `tests/test_research_lab.py`): 단독 실행 시 12 passed in 0.98s(100% 통과).
-  결론: 이번 기획 하네스 및 계약 변경으로 인한 회귀 실패는 0건이다.
+- ⚠️ 이전 F-1 완료 판정과 '미해결 회귀 0건 확정'은 철회한다. 독립 검증 `5f0a668c`가 개인 예약 문구 오분류를 재현했고, 상태 확인→Run 등록 사이 잠금 누락을 지적했다. 원 구현 작업자 `826d2939`의 verification_status=failed를 기록했다.
+- 재수정 전 RED: 개인 예약 분류·취소 후 개인 예약 보존·실제 다중 DB 취소 경합 3개 테스트가 실패했다(`cancel-red.log`).
+- 재수정: 정확한 boolean `work_continuation=True`만 계약 예약으로 인정. 프롬프트/설명/origin 추정 제거. 개인 예약은 성공한 턴의 후속 실행 소유자로도 계산하지 않는다. 계약 예약은 상태 읽기 전 세션 행 잠금을 얻고 Run 등록 커밋까지 유지한다.
+- 독립 전용 DB에서 관련 계약·예약·기획·route 검사와 과거 실패 12건을 실행: **105 passed in 31.85s** (`cancel-dedicated-green.log`). 다중 DB 테스트는 `pg_blocking_pids`로 스케줄러가 취소 트랜잭션에 막혔음을 확인한 뒤 취소를 커밋하며, 결과 skipped와 새 활성 Run 부재를 검증한다.
+- 원 전체 suite 로그는 **13 failed, 4570 passed, 21 skipped, 2 xfailed** 기록 그대로다. 1건은 manage_work 분류 누락(앞선 수정/51건 통과 기록), 3건은 Muse, 9건은 migration이다. 이 합계만으로 기준선 동일 실패나 전체 통과를 보증하지 않는다.
+- 기준선 `917ea4b`를 git archive로 별도 경로에 복원하고 동일 interpreter, 전용 테스트 DB, PG 접속 환경, 명시적 release revision으로 과거 Muse 3+마이그레이션 9건을 실행: **12 passed in 14.25s** (`baseline-917ea4b-final.log`). 현재 코드의 같은 12건도 위 105건에 포함되어 통과했다. '기준선도 실패했다'는 이전 실행 주장은 근거 부족으로 철회한다. 최초 전체 검사와 환경이 달라 정확한 당시 실패 원인의 확정은 하지 않는다.
+- 기준선 비교 준비 중 공유 fixture DB reset deadlock, 임시 클러스터 initdb exit 1, archive에서 git revision 부재를 관측했다. 전용 DB 생성/제거와 명시적 revision으로 비교를 구성했다. Codex 실행 환경의 관측이며 운영 장애를 뜻하지 않는다.
+- ⚠️ 64e90c9도 독립 재검증 FAIL: scheduler-first로 이미 커밋된 자동 Run이 목표 paused 후 queued로 남았다. 105건 통과는 그 반례를 포함하지 않았다.
+- 추가 RED 8건: 이미 등록된 예약·직접/구버전 계약 후속·paused checkpoint 정리, cancelled 네이티브 재진입, leased queued 취소 명령 부재, generation claim 경합, 프로필 선택 중 취소 덮어쓰기, 취소 뒤 목표 재개를 만난 오래된 예약 스냅숏 부활. `scheduler-first-{red,owned-red,claim-red,profile-red,stale-red}.log`에 원 출력 기록.
+- 추가 교정: 신규 예약 Run에도 계약 표식 기록, queued 계약 후속 정리, 소유 lease는 기존 세대 cancel 명령 사용, generation claim Run 잠금, 네이티브 진입 및 프로필 선택 후 상태 재확인. 취소된 예약 스냅숏이 목표 재개 후 부활하지 않도록 현재 예약 행 상태도 확인. 사용자 요청/개인 예약/보고 Run은 정리 대상에서 제외한다.
+- 재수정 관련 검사 **125 passed in 17.03s** (`scheduler-first-green.log`), 실행·중지·복구 확대 검사 **140 passed in 37.26s** (`scheduler-first-lifecycle-green.log`). 전용 DB는 실행 후 제거했다. scheduler-first 테스트는 실제 dispatcher의 선택을 호출하되 프로세스 생성만 Mock으로 차단해, 취소된 후속이 선택되지 않음을 확인한다. 세대 소유 Run은 cancel 명령 생성/lease 보존까지만 이 신규 검사에서 확인했다.
+- bff631b 독립 검증 결과: **PASS — 취소/예약/Run lifecycle 한정**. 작업자 보고는 8 passed/0.84s 및 226 passed/47.03s, Ruff 통과. 원 로그는 사용자 Files에 있으며 lead가 보호된 다른 Run outbox를 직접 읽지는 않았다.
+- lead 추가 실행 `final-cancel-admission-check.log`: **9 passed in 0.99s**. 8개 경계 + `test_manager_drain_keeps_real_child_and_other_manager_cancels_owner`는 실제 fake-agent 자식 프로세스를 세대 전환 중 유지한 뒤, 다른 세대가 요청한 RuntimeCommand를 소유자가 읽고 집행/ack하여 Run cancelled 및 이전 세대 retire-ready까지 확인한다. 실제 클라우드 모델 응답 검증은 아니다.
+- 수정 전 17212d9 배포 11be2d66은 컨트롤러 전체 gate **4595 passed, 12 skipped, 2 xfailed**(1147.66s), 상태 **draining**을 ops_deploy_log로 확인했다. 구버전 전체 통과가 bff631b의 전체 통과를 뜻하지 않는다.
+- 새 수정은 관련 검사와 독립 검증 후 main에 fast-forward push하고 배포 컨트롤러에 전체 gate를 예약한다. 새 배포의 접수/대기/활성화/이전 세대 종료는 구분한다.
+- 전체 suite는 이번 재수정 뒤 로컬에서 중복 실행하지 않았다. 최종 독립 재검증과 배포 컨트롤러 전체 gate는 별도 판정이다.
 
 A: 부분 Gate complete 거절, 미완료 식별, 실제 manager 종료에서 후속 큐 연결, 최종 complete 뒤 후속 없음.
 B: 공통 원인·검증 비용에 따른 계획 선택은 두 실제 모델 응답으로 한정 평가했다. 코드 테스트만으로 기획 능력 개선을 보증하지 않는다.
 C/D: 엔진 전환·context reset 뒤 목표/증거/다음 동작 복원, 실제 모델별 합성 응답, 기존 resume/context 회귀 유지.
 E: 전략 변경 사유 요구, 요구/완료 증거 보존, 중복/불필요 재실행 방지, stale revision 거절.
+F-1: 정확한 계약 표식/개인 예약 보존/다중 DB 취소 경계 회귀를 추가했다. 최종 판정은 현재 verification.json의 재검증 상태를 따른다.
 
 배포 예약 접수는 운영 반영 성공과 구분하며, 예약 ID와 상태를 배포 단계에서 추적한다.
 
@@ -122,6 +130,8 @@ E: 전략 변경 사유 요구, 요구/완료 증거 보존, 중복/불필요 �
 5. 외부 장애/권한의 해소는 기존 도구·재개 경로를 따르며 불가능한 환경을 우회하지 않는다.
 6. 실제 운영 완료율·요구 누락률·반복 검증·재지시·시간/토큰 개선은 동등 조건의 후속 운영 관측이 필요하다. 이번 결과는 실측 개선치가 아니다.
 7. V2 전체 리팩터링·AIP 포팅·Studio 검수 완성은 각 원 작업의 목표이며 이번 감사가 완료했다고 표시하지 않는다.
+8. work_continuation=True는 명시적 계약 예약 opt-in이다. 표식 없는 과거 예약은 개인 예약으로 유지하며 자동 계약 소유로 추정하지 않는다. 새 API 권한 경계나 표식 생성자를 추가한 것은 아니다.
+
 
 ## 참고 근거
 

@@ -835,7 +835,7 @@ class RunManager:
     async def _run(self, db: AsyncSession, run_id: uuid.UUID) -> None:
         s = get_settings()
         run = await db.get(Run, run_id)
-        if run is None:
+        if run is None or run.status != RunStatus.queued:
             return
         sess = await db.get(ChatSession, run.session_id)
         ws = await db.get(Workspace, run.workspace_id)
@@ -1087,6 +1087,12 @@ class RunManager:
                                     "account_scope": sess.pool})
         run.usage = {**(run.usage or {}), "routing_request": routing_request}
         resume_handoff = run.resume_handoff or (await _waiting_handoff(db, run) if resumed else "")
+        # Profile selection may await other work. A queued cancellation committed
+        # in that interval must win before this attempt changes the status.
+        with db.no_autoflush:
+            await db.refresh(run, attribute_names=["status"], with_for_update=True)
+        if run.status != RunStatus.queued:
+            return
         self._disarm(run.id)
         run.status = RunStatus.running
         run.error = None

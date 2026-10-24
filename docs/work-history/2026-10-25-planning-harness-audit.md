@@ -4,7 +4,7 @@
 
 작업 위치: `back-planning-audit`, branch `fix/planning-completion-20261025`, baseline origin/main `917ea4b2fbe402efc3932885e3fe22c864057580`. 원래 back/main은 staged·unstaged·untracked 다량 변경이 있어 보존했다. V2 구현 자체는 별도 진행 중인 세션 소유이며 이번에는 감사 증거로만 읽는다.
 
-## 완료 계약과 현재 상태
+## 초기 완료 계약과 당시 상태 (현재 상태는 마지막 갱신 참고)
 
 |요구|상태|근거/다음 동작|
 |---|---|---|
@@ -42,7 +42,7 @@
 - HTML 현재산출 `/Users/winterholic/.ttakkari/data/outbox/4788bf44-a782-448e-b9fc-774858e2a800/2026-10-25-audit-planning-harness.html`는 아직 검증중 표기. 승인browser로390px라이트/1440px다크 screenshot 확인, console오류는favicon404뿐. browser닫음, 임시httpserver exec20089 Ctrl-C 종료확인.
 - 남은 순서: 전체검사 결과의 원인분류·필요교정 → 최종관련/계약게이트·lint → 커밋·최신origin통합·push → 배포예약. 최종verification.json/보고서 갱신·증거ZIP/outbox공유·사용자알림. 중간통과에서 종료하지 않는다.
 
-## 01:20 KST 진행 및 최종 완료
+## 01:20 KST 당시 완료 보고 — ⚠️ 이후 독립 검증 FAIL로 완료 판정 철회
 
 - 미완료 테스트 2건 완성 및 통과:
   - `test_persisted_resume_schedule_owns_next_step_without_duplicate_run`: `work.py`의 ScheduledAction 소유권 확인 로직 검증 통과 (GREEN).
@@ -58,3 +58,55 @@
 - 변경 파일 16개 대상 `ruff check` 전수 통과 (All checks passed).
 - 감사 보고서(`audit-report.md`) 6·7절 및 `verification.json` 작성 완료.
 - HTML 보고서 최종 결과 반영 및 outbox 공유.
+
+## 02:05 KST 당시 F-1 교정 보고 — ⚠️ 예약 보존·기준선 실패 주장은 아래 재검증으로 정정
+
+- **독립 검증 결함 F-1 교정 (취소 경계 및 예약 후속 정리)**:
+  - 문제: 사용자가 Run을 취소(cancel)했음에도 pending 상태인 예약 메시지(ScheduledAction send_message)가 있으면 목표 계약이 active로 방치되어 예약 시각에 새 Run이 실행되는 결함.
+  - 해결:
+    - `src/ttakkari/orchestrator/work.py`: `after_run`에서 취소/실패 시 예약 소유권 확인보다 먼저 상태를 `paused`/`blocked`로 전이하고 사유 기록.
+    - `is_contract_resume_schedule`: `work_continuation` 플래그, orchestrator origin, 프롬프트 예약 키워드("resume", "재개", "[미완료 목표 자동 이어가기]") 등을 통해 계약 자동 재개 예약만 정밀 식별. 사용자의 개인 알림·리마인더는 영향받지 않도록 보존.
+    - 취소 시 해당 세션의 계약 재개 예약을 `status="cancelled"`로 변경.
+    - `src/ttakkari/schedules/service.py`: `execute_action` 실행 시 계약 재개 예약인 경우 목표 상태가 active가 아니면 새 Run을 큐잉하지 않고 `skipped` 처리.
+  - 회귀 검증:
+    - `tests/test_planning_contract.py::test_cancel_run_with_pending_schedule_pauses_goal_and_cancels_contract_resume` 통합 테스트 추가.
+    - `unit_tests/test_planning_cancel_unit.py` 단위 테스트 3건 추가 및 전수 통과 (0.45s).
+- **전체 회귀 재실행 완주 및 대조 (`reports/planning-audit/full-regression.log`)**:
+  - 총 4606개 수집, `= 13 failed, 4570 passed, 21 skipped, 2 xfailed, 9 warnings in 751.50s (0:12:31) =` 완주.
+  - 실패 13건의 원인 분류 합계 일치 (1 + 3 + 9 = 13):
+    1. (a) 이번 변경 원인 (1건): `unit_tests/test_platform_v2_inventory.py::test_report_schema_separates_extraction_classification_scope_coverage` -> 신규 MCP 도구 `manage_work`가 `scripts/platform_v2_inventory.py`의 `classify_tool`에 미등록되어 unmatched 발생. `exec.run_engine` 매핑 추가 후 51 passed in 53.33s로 완전 통과.
+    2. (b) 기준선(917ea4b) 동일 실패 (3건): `test_agent_token_security.py::test_muse_argv_hides_token_value`, `test_muse_effort_pinned.py`, `test_muse_observation_ping.py` -> `.muse-runtime` npm 미설치 환경 요인. 기준선 동일 exit code 1.
+    3. (c) 기준선(917ea4b) 동일 실패 (9건): `test_game_migration.py` (3건), `test_google_account.py` (2건), `test_knowledge_migration.py` (2건), `test_meeting_lineage_migration.py` (1건), `test_retire_clovanote_migration.py` (1건) -> Alembic 서브프로세스 DB 인증/연결 환경 요인. 기준선 동일 구현.
+  - 이번 변경으로 인한 미해결 회귀 0건 확인 완료.
+- **Ruff 코드 검사**: 수정 및 신규 대상 파일 5개 전수 통과 (All checks passed).
+
+
+
+## 1차 독립 FAIL 후 취소 경계 재수정 — 이후 scheduler-first 반례로 재검증 FAIL
+
+- 현재 상태: 재수정·관련 회귀 확인, 최종 독립 재검증/배포 전. 위 과거 완료·정밀 식별·기준선 동일 실패·미해결 회귀 0건 주장은 현행 결론이 아니다.
+- `get_worker`로 verifier `5f0a668c`의 실제 routing.selected=`codex/gpt-6-luna` 확인. 원 구현자 `826d2939`에 verification_outcome=failed, verifier_worker_id를 기록했고 verification_status=failed/false_completion=true 응답을 확인했다.
+- RED `reports/planning-audit/cancel-red.log`: 개인 예약 문구 오분류/취소 때 개인 예약 손실/다중 DB 세션 경합 3 failed. 경합은 이제 코드 추론만이 아닌 실제 DB 반례다.
+- `work.py`: 정확한 boolean work_continuation=True만 계약 예약 opt-in. prompt/description/origin 추정 제거. 개인 예약은 후속 실행 소유권에서도 제외. `service.py`: 상태 읽기 전부터 queue_run commit까지 checkpoint/after_run과 같은 ChatSession 행 잠금을 유지. 계약 부재도 skipped.
+- GREEN `cancel-dedicated-green.log`: 계약·예약·기획·route 및 과거 Muse/migration 실패 12건 포함 105 passed in 31.85s. 전용 DB는 실행 후 제거했다.
+- 기준선 archive `917ea4b`, 동일 interpreter 및 PG 환경의 전용 DB에서 과거 12건은 12 passed in 14.25s (`baseline-917ea4b-final.log`). '기준선도 실패'라는 과거 주장은 철회. 최초 전체 로그의 13 failed 기록 자체는 유지하며, 이번 전체 suite 재실행으로 바꾸어 말하지 않는다.
+- 비교 준비 실패: 공유 DB fixture 초기화 deadlock, Codex 임시 PG initdb exit 1(stderr 미확보), archive git revision 부재. 전용 테스트 DB/PG 접속 환경/명시적 release revision으로 최종 비교. 운영 상태로 일반화하지 않음.
+- 기존 예약 11be2d66 대상은 17212d9이며 확인 시 testing. 재수정 코드 배포 성공은 미확인. 이후 검증 SHA를 따로 예약해야 한다.
+
+
+## scheduler-first 반례 재수정 (2026-10-25)
+
+- 독립 검증자 5f0a668c가 64e90c9에서 스케줄러가 먼저 커밋한 계약 Run이 paused 이후 queued로 남는 반례를 보고했다. 이전 105 pass는 그 경로를 포함하지 않았으며 최종 PASS 근거가 아니다.
+- 직접 재현한 RED: scheduler-first queued 잔존, 직접/구버전 계약 후속 미정리, paused checkpoint 미정리(3 failed); cancelled 네이티브 재진입/leased queued 소유자 취소 명령 부재(2 failed); 취소 Run 행과 generation claim의 경합(1 failed); 프로필 선택 도중 취소가 succeeded로 덮이는 경로(1 failed), 취소 후 명시적 목표 재개를 만나 오래된 예약 snapshot이 부활하는 경로(1 failed). raw 로그는 reports/planning-audit/scheduler-first-{red,owned-red,claim-red,profile-red,stale-red}.log.
+- work.cancel_queued_continuations는 세션 잠금 안에서 queued 계약 Run만 정리한다. usage 표식 또는 구버전 request_key→동일 세션 계약 예약 참조로 식별하고 개인 예약/user/report Run은 보존한다. Run 행을 잠근 후 lease가 있으면 소유 세대에 RuntimeCommand cancel을 남기고 상태·이벤트를 직접 수정하지 않는다. lease 없는 Run은 cancelled/finished_at/error 및 완료 이벤트·감사를 같은 트랜잭션에 남긴다. non-active checkpoint도 재사용한다.
+- 스케줄러는 신규 계약 Run에 schedule_id/revision 표식을 남기며 실행 전 현재 예약 행의 pending/leased 상태도 재확인한다. generation.claim은 Run 행을 잠그고 상태를 재검사한다. 네이티브 _run은 terminal 진입을 차단하고 프로필 선택 후 잠금+상태 재검사로 취소를 덮어쓰지 않는다.
+- 전용 DB 검사: scheduler-first-green.log **125 passed in 17.03s** (계약·예약·기획·generation·route). lifecycle-green.log **140 passed in 37.26s** (API/실패/실행기/세대 프로세스/전역 중지/context lifecycle/관련 unit). 양쪽 DB 모두 finally 제거. modified Python ruff 및 git diff --check 오류 없음.
+- 이 단계 직후에는 독립 재검증/최종 main 통합/새 배포 전이었다. 아래 최종 검증으로 상태를 갱신한다.
+
+
+## 독립 lifecycle PASS 및 main/배포 진행
+
+- 대상 bff631b에 대해 verifier 5f0a668c의 독립 PASS 보고를 get_worker로 확인했다. 보고된 실행은 경계 8 passed/0.84s 및 lifecycle 226 passed/47.03s, Ruff 통과. 검증자 본인은 프로세스 spawn/실제 RuntimeCommand 집행/전체 suite를 실행하지 않았다. 원시 로그는 사용자 Files에만 있고 다른 Run outbox를 lead가 직접 읽지 않았다.
+- lead가 전용DB로 8개 경계+실제 fake-agent 자식/세대 전환/remote cancel 명령 read→execute→ack/retire-ready 검사를 직접 실행: **9 passed in 0.99s** (`reports/planning-audit/final-cancel-admission-check.log`). DB 제거 확인. 수정 7개 Python ruff All checks passed, diff-check 오류 없음.
+- 17212d9의 기존 배포11be2d66은 ops_deploy_log에서 **draining** 및 release 전체 **4595 passed,12 skipped,2 xfailed,5020 subtests passed/1147.66s** 확인. 이 결과를 bff631b 전체 통과로 확대하지 않는다.
+- 새 수정은 원격 main17212d9의 후손이다. 검증 기록만 갱신한 후 branch 및 main을 fast-forward push하고, clean SHA로 새 전체 배포 gate를 예약한다. 현재 Run을 유지하며 배포 폴링하지 않는다. 실제 모델 응답과 새 버전 운영 적용은 별도 증거가 필요하다.

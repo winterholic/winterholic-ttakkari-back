@@ -1,0 +1,11 @@
+Dedicated test database: ttakkari_test_cancel_fee705f5a0324ac6
+F                                                                        [100%]
+=================================== FAILURES ===================================
+________________ test_claim_waits_for_pending_run_cancellation _________________
+tests/test_generations.py:478: in test_claim_waits_for_pending_run_cancellation
+    assert await asyncio.wait_for(task, 5) is None
+E   AssertionError: assert UUID('bf1a1c2a-dcb0-4768-9861-2d0c98250430') is None
+db reset: 1 selective (avg 3.0/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_generations.py::test_claim_waits_for_pending_run_cancellation
+1 failed in 0.61s

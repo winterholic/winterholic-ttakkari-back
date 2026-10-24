@@ -1,0 +1,30 @@
+Dedicated test database: ttakkari_test_cancel_2b8b3ad8554844ac
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+________ test_scheduler_first_continuation_is_cancelled_before_dispatch ________
+tests/test_planning_contract.py:553: in test_scheduler_first_continuation_is_cancelled_before_dispatch
+    assert resume.status == RunStatus.cancelled
+E   AssertionError: assert 'queued' == <RunStatus.ca...: 'cancelled'>
+E     
+E     - cancelled
+E     + queued
+_ test_cancel_sweeps_direct_and_legacy_continuations_but_preserves_personal_runs _
+tests/test_planning_contract.py:594: in test_cancel_sweeps_direct_and_legacy_continuations_but_preserves_personal_runs
+    assert [direct.status, legacy.status] == [RunStatus.cancelled, RunStatus.cancelled]
+E   AssertionError: assert [<RunStatus.q...ed: 'queued'>] == [<RunStatus.c... 'cancelled'>]
+E     
+E     At index 0 diff: <RunStatus.queued: 'queued'> != <RunStatus.cancelled: 'cancelled'>
+E     Use -v to get more diff
+_________ test_paused_checkpoint_removes_queued_contract_continuation __________
+tests/test_planning_contract.py:616: in test_paused_checkpoint_removes_queued_contract_continuation
+    assert (await db.get(Run, continuation_id)).status == RunStatus.cancelled
+E   AssertionError: assert 'queued' == <RunStatus.ca...: 'cancelled'>
+E     
+E     - cancelled
+E     + queued
+db reset: 3 selective (avg 6.3/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_planning_contract.py::test_scheduler_first_continuation_is_cancelled_before_dispatch
+FAILED tests/test_planning_contract.py::test_cancel_sweeps_direct_and_legacy_continuations_but_preserves_personal_runs
+FAILED tests/test_planning_contract.py::test_paused_checkpoint_removes_queued_contract_continuation
+3 failed in 0.89s

@@ -1,47 +1,542 @@
-........................................................................ [  1%]
-........................................................................ [  3%]
-........................................................................ [  4%]
-........................................................................ [  6%]
-........................................................................ [  7%]
-........................................................................ [  9%]
-........................................................................ [ 10%]
-........................................................................ [ 12%]
-.................................................................. [ 13%]
-........................................................................ [ 15%]
-........................................................................ [ 17%]
-........................................................................ [ 18%]
-........................................................................ [ 20%]
-........................................................................ [ 21%]
-........................................................................ [ 23%]
-.............................ssssssss..........................s........ [ 24%]
-...................................................................s.... [ 26%]
-..................................................................FFF.ss [ 28%]
-......ss....................s........................................... [ 29%]
-........................................................................ [ 31%]
-......................FF.................................x...x.......... [ 32%]
-........................................................................ [ 34%]
-........................................................FF.F.FFFFF....FF [ 35%]
-FFF..................................................................... [ 37%]
-........................FF.............................................. [ 38%]
-........................................................................ [ 40%]
-...............................F........................................ [ 42%]
-........................................................................ [ 43%]
-........................................................................ [ 45%]
-........................................................................ [ 46%]
-........................................................................ [ 48%]
-...........................ss........................................... [ 49%]
-........................................................................ [ 51%]
-........................................................................ [ 53%]
-.........F.............................................................. [ 54%]
-................s....................................................... [ 56%]
-........................................................................ [ 57%]
-........................................................................ [ 59%]
-........................................................................ [ 60%]
-........................................................................ [ 62%]
-........................................................................ [ 64%]
-........................................................................ [ 65%]
-........................................................................ [ 67%]
-..............................FFFFFF.FF....FFFFF.FFFs................... [ 68%]
-..................................................................................... [ 70%]
-........................................................................ [ 72%]
-.
+============================= test session starts ==============================
+platform darwin -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit
+configfile: pyproject.toml
+testpaths: tests, benchmark_tests, unit_tests
+plugins: timeout-2.4.0, asyncio-1.4.0, anyio-4.15.1
+timeout: 120.0s
+timeout method: signal
+timeout func_only: False
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collected 4606 items
+
+tests/delivery/test_diff_guard.py .........                              [  0%]
+tests/delivery/test_merge_queue.py .............                         [  0%]
+tests/delivery/test_merge_queue_postgres.py .....                        [  0%]
+tests/delivery/test_provenance.py ...                                    [  0%]
+tests/delivery/test_repair_policy.py ......                              [  0%]
+tests/delivery/test_validation_cache.py .......                          [  0%]
+tests/delivery/test_validation_runner.py ..                              [  0%]
+tests/delivery/test_worktree_isolation.py ..........                     [  1%]
+tests/test_account_selection.py ........................................ [  2%]
+....                                                                     [  2%]
+tests/test_accounts.py .......................................           [  2%]
+tests/test_agent_pms.py .............                                    [  3%]
+tests/test_agent_scope_auth.py .......                                   [  3%]
+tests/test_agent_stop_all.py ..............                              [  3%]
+tests/test_agent_token_security.py .....F........                        [  4%]
+tests/test_antigravity_adapter.py ..........                             [  4%]
+tests/test_antigravity_migration_graph.py .                              [  4%]
+tests/test_antigravity_model_availability.py .....                       [  4%]
+tests/test_antigravity_model_routing.py ..........................       [  4%]
+tests/test_antigravity_policy.py .....                                   [  5%]
+tests/test_antigravity_run.py ...........                                [  5%]
+tests/test_antigravity_usage.py ...                                      [  5%]
+tests/test_antigravity_usage_contract.py ...                             [  5%]
+tests/test_antigravity_usage_states.py ...........................       [  6%]
+tests/test_api_artifact_resolve.py ........                              [  6%]
+tests/test_api_artifacts.py .............ss.................             [  6%]
+tests/test_api_auth.py .....................                             [  7%]
+tests/test_api_game_create.py ..........                                 [  7%]
+tests/test_api_games.py ..........                                       [  7%]
+tests/test_api_git_runs.py .........                                     [  7%]
+tests/test_api_runs.py ...................................               [  8%]
+tests/test_api_uploads.py ......                                         [  8%]
+tests/test_api_workspaces.py ..................................          [  9%]
+tests/test_artcraft.py ............................                      [ 10%]
+tests/test_artcraft_bugs.py .......                                      [ 10%]
+tests/test_artcraft_tasks.py .s.................                         [ 10%]
+tests/test_artifact_area.py .............                                [ 11%]
+tests/test_authz03_agent_scope.py ......................                 [ 11%]
+tests/test_authz03_host_scope.py .................                       [ 11%]
+tests/test_authz03_orchestrator_scope.py ..................              [ 12%]
+tests/test_broker_policy.py ............................................ [ 13%]
+.....                                                                    [ 13%]
+tests/test_browser_mcp.py ...                                            [ 13%]
+tests/test_browser_preflight.py .......                                  [ 13%]
+tests/test_checklists.py ........                                        [ 13%]
+tests/test_claude_hook_fail_closed.py ....                               [ 13%]
+tests/test_collector_api.py ...................................          [ 14%]
+tests/test_collector_budget.py .............                             [ 14%]
+tests/test_collector_cache.py ...                                        [ 14%]
+tests/test_collector_control.py ........                                 [ 15%]
+tests/test_collector_fetch.py .......................................... [ 16%]
+..............................                                           [ 16%]
+tests/test_collector_fetch_tls.py ...                                    [ 16%]
+tests/test_collector_intake.py .......................................   [ 17%]
+tests/test_collector_integration.py .....                                [ 17%]
+tests/test_collector_jobs.py ..................................          [ 18%]
+tests/test_collector_manage.py ..........                                [ 18%]
+tests/test_collector_migration.py ...                                    [ 18%]
+tests/test_collector_pipeline.py ............................            [ 19%]
+tests/test_collector_product_flow.py .                                   [ 19%]
+tests/test_collector_stage_migration.py ..                               [ 19%]
+tests/test_context.py ...........                                        [ 19%]
+tests/test_context_library.py ..........                                 [ 19%]
+tests/test_context_lifecycle.py ...............                          [ 20%]
+tests/test_contract_marker.py ...                                        [ 20%]
+tests/test_creative_api.py ..                                            [ 20%]
+tests/test_creative_mcp_tools.py .........................               [ 20%]
+tests/test_creative_records.py ..........................                [ 21%]
+tests/test_creative_v2_api.py ............                               [ 21%]
+tests/test_creative_v2_extraction.py ............                        [ 21%]
+tests/test_creative_v2_run_extraction.py ..                              [ 21%]
+tests/test_csrf_defense.py ..                                            [ 21%]
+tests/test_deploy_gate.py ........                                       [ 22%]
+tests/test_deployment.py ...................                             [ 22%]
+tests/test_design_system_integration.py .                                [ 22%]
+tests/test_desk.py ..............                                        [ 22%]
+tests/test_desk_feedback.py .....                                        [ 23%]
+tests/test_desk_qwen.py ...........................................      [ 23%]
+tests/test_desk_qwen_live.py ssssssss                                    [ 24%]
+tests/test_desk_qwen_service.py ..........................               [ 24%]
+tests/test_e2e_game_studio.py s                                          [ 24%]
+tests/test_embedder_lifetime.py .....                                    [ 24%]
+tests/test_execution_capabilities.py ................................... [ 25%]
+..                                                                       [ 25%]
+tests/test_failed_runs.py .                                              [ 25%]
+tests/test_fixture_reset.py ........                                     [ 25%]
+tests/test_game_adapter.py ..........                                    [ 26%]
+tests/test_game_autobuild.py ...........                                 [ 26%]
+tests/test_game_bridge.py ...                                            [ 26%]
+tests/test_game_browser_smoke.py s                                       [ 26%]
+tests/test_game_build_isolation.py ...................                   [ 26%]
+tests/test_game_build_snapshots.py ...........                           [ 27%]
+tests/test_game_clip_bench.py ........                                   [ 27%]
+tests/test_game_contract.py .......................                      [ 27%]
+tests/test_game_feedback_clip.py ....                                    [ 27%]
+tests/test_game_feedback_request.py .....                                [ 27%]
+tests/test_game_migration.py FFF                                         [ 27%]
+tests/test_game_pick.py .ss                                              [ 28%]
+tests/test_game_record.py ......ss                                       [ 28%]
+tests/test_game_rollback.py .........                                    [ 28%]
+tests/test_game_serving_security.py ...........                          [ 28%]
+tests/test_game_smoke_generic.py s                                       [ 28%]
+tests/test_game_versions.py .........                                    [ 28%]
+tests/test_game_worker_flow.py ...........                               [ 29%]
+tests/test_generation_bootstrap.py .................                     [ 29%]
+tests/test_generation_deployment.py .................................... [ 30%]
+.............                                                            [ 30%]
+tests/test_generation_processes.py ...                                   [ 30%]
+tests/test_generations.py ........................                       [ 31%]
+tests/test_git_env_isolation.py .......                                  [ 31%]
+tests/test_github_integration.py ...                                     [ 31%]
+tests/test_google_account.py ..............FF...........                 [ 31%]
+tests/test_guard.py ......................x...x......................... [ 33%]
+......................................................                   [ 34%]
+tests/test_harness_view_api.py ....................                      [ 34%]
+tests/test_harness_view_groups.py ............                           [ 34%]
+tests/test_harness_view_safe.py .................                        [ 35%]
+tests/test_host_gpu.py ................................                  [ 35%]
+tests/test_kb_agent_api.py ..                                            [ 35%]
+tests/test_kb_defects_reproduce.py ......................                [ 36%]
+tests/test_kb_library.py ............                                    [ 36%]
+tests/test_kb_library_api.py ..........                                  [ 36%]
+tests/test_kb_migration.py .                                             [ 36%]
+tests/test_kb_observations.py .                                          [ 36%]
+tests/test_kb_retrieval.py .......                                       [ 37%]
+tests/test_knowledge.py ...........................                      [ 37%]
+tests/test_knowledge_extraction.py ......                                [ 37%]
+tests/test_knowledge_graph_paths.py ..                                   [ 37%]
+tests/test_knowledge_migration.py FF                                     [ 37%]
+tests/test_lead_cleanup.py ..........                                    [ 38%]
+tests/test_lease_fence_locking.py ...                                    [ 38%]
+tests/test_library_insight.py .......                                    [ 38%]
+tests/test_local_stt.py .............                                    [ 38%]
+tests/test_local_stt_benchmark.py ....                                   [ 38%]
+tests/test_local_stt_core.py ..............                              [ 39%]
+tests/test_local_stt_enhancement.py ....................                 [ 39%]
+tests/test_local_stt_runner.py ......                                    [ 39%]
+tests/test_local_stt_worker.py .....                                     [ 39%]
+tests/test_login_throttle_shadow.py .................................... [ 40%]
+.......                                                                  [ 40%]
+tests/test_meeting_evidence.py ..........                                [ 40%]
+tests/test_meeting_exports.py ..............                             [ 41%]
+tests/test_meeting_lineage_migration.py F                                [ 41%]
+tests/test_meeting_pms.py ..                                             [ 41%]
+tests/test_meeting_retranscribe.py .............                         [ 41%]
+tests/test_meeting_routing.py ...............                            [ 41%]
+tests/test_meeting_scope.py .........                                    [ 42%]
+tests/test_meeting_stt_ui_api.py ......                                  [ 42%]
+tests/test_meetings.py .................                                 [ 42%]
+tests/test_memo_categories.py ....                                       [ 42%]
+tests/test_migration_single_head.py ..                                   [ 42%]
+tests/test_model_policy.py ..........                                    [ 42%]
+tests/test_muse_api.py .............                                     [ 43%]
+tests/test_muse_auto_routing.py ........................                 [ 43%]
+tests/test_muse_effort_pinned.py ...F...                                 [ 43%]
+tests/test_muse_exploration_claim.py ........                            [ 44%]
+tests/test_muse_observation_ping.py ...........F......                   [ 44%]
+tests/test_muse_usage_pump.py .                                          [ 44%]
+tests/test_notebooklm_adapter.py ....                                    [ 44%]
+tests/test_notebooklm_service.py ....................................... [ 45%]
+...........                                                              [ 45%]
+tests/test_notifications.py ..................                           [ 46%]
+tests/test_nul_sanitize.py ...                                           [ 46%]
+tests/test_oplog.py ........................................             [ 46%]
+tests/test_oplog_migration.py ..                                         [ 46%]
+tests/test_orchestrator.py .......................................       [ 47%]
+tests/test_orchestrator_delivery_isolation.py ..                         [ 47%]
+tests/test_orchestrator_muse.py ....                                     [ 47%]
+tests/test_password_session_revocation.py ..........                     [ 48%]
+tests/test_pg_sandbox.py ....................................            [ 48%]
+tests/test_planner.py ...............                                    [ 49%]
+tests/test_planning_contract.py .....................                    [ 49%]
+tests/test_pms.py ...................                                    [ 50%]
+tests/test_public_share_migration.py .                                   [ 50%]
+tests/test_public_sharing.py ........................................... [ 51%]
+..........                                                               [ 51%]
+tests/test_push.py ..............                                        [ 51%]
+tests/test_qwen_emergency_e2e.py ......                                  [ 51%]
+tests/test_qwen_local_adapter.py ..........                              [ 51%]
+tests/test_qwen_local_run.py ........                                    [ 52%]
+tests/test_qwen_parallel_routing.py ............                         [ 52%]
+tests/test_qwen_usage.py .............                                   [ 52%]
+tests/test_qwen_worker_settings.py .........                             [ 52%]
+tests/test_release_waiting_disarm.py .                                   [ 52%]
+tests/test_remove_clovanote.py .....                                     [ 53%]
+tests/test_research_lab.py ............                                  [ 53%]
+tests/test_retire_clovanote_migration.py F                               [ 53%]
+tests/test_reverse.py .....................                              [ 53%]
+tests/test_reverse_reconstruction.py ......                              [ 53%]
+tests/test_route_inventory.py .......                                    [ 54%]
+tests/test_run_executor.py ......                                        [ 54%]
+tests/test_run_executor_processes.py ..                                  [ 54%]
+tests/test_runs_events_masking.py ..                                     [ 54%]
+tests/test_scheduled_actions.py ....................                     [ 54%]
+tests/test_seatbelt.py .............................................     [ 55%]
+tests/test_security_gate.py .........                                    [ 55%]
+tests/test_security_gate_inventory.py ...                                [ 55%]
+tests/test_stt_local_first.py .......                                    [ 56%]
+tests/test_stt_quality.py ..........................                     [ 56%]
+tests/test_stt_utterances_api.py ...                                     [ 56%]
+tests/test_system_resource_history.py .......                            [ 56%]
+tests/test_system_resources.py .....                                     [ 56%]
+tests/test_tasks.py ......                                               [ 57%]
+tests/test_tossinvest.py ...........................                     [ 57%]
+tests/test_transfers.py .............................                    [ 58%]
+tests/test_tts_api.py .....................                              [ 58%]
+tests/test_tts_queue.py ..................................               [ 59%]
+tests/test_tts_real_engine.py ss                                         [ 59%]
+tests/test_usage_collector.py .................                          [ 59%]
+tests/test_weather.py .....                                              [ 60%]
+tests/test_weather_api.py ...                                            [ 60%]
+tests/test_weather_engine.py .........................                   [ 60%]
+tests/test_worker_quota_recovery.py .......                              [ 60%]
+tests/test_worker_routing.py ........................................... [ 61%]
+..............                                                           [ 62%]
+benchmark_tests/test_luna_benchmark_service.py ...........               [ 62%]
+unit_tests/kb_eval/test_design_status.py ...                             [ 62%]
+unit_tests/kb_eval/test_instrumentation.py .....                         [ 62%]
+unit_tests/kb_eval/test_oracles.py ..........................            [ 63%]
+unit_tests/kb_eval/test_quality_hardening.py ........................... [ 63%]
+....................................................................     [ 65%]
+unit_tests/kb_eval/test_review_api.py ..                                 [ 65%]
+unit_tests/kb_eval/test_review_fixes.py ................................ [ 65%]
+..........................                                               [ 66%]
+unit_tests/kb_eval/test_review_fixes_2.py ..........                     [ 66%]
+unit_tests/kb_eval/test_runner.py ....................                   [ 67%]
+unit_tests/test_antigravity_account_isolation.py ....                    [ 67%]
+unit_tests/test_antigravity_managed_profiles.py ........................ [ 67%]
+....                                                                     [ 67%]
+unit_tests/test_artifact_delivery_guidance.py ....                       [ 67%]
+unit_tests/test_backup_ops_remaining.py .............                    [ 68%]
+unit_tests/test_backup_restore.py .........s                             [ 68%]
+unit_tests/test_backup_status_allowlist.py ..                            [ 68%]
+unit_tests/test_codex_resume.py ....                                     [ 68%]
+unit_tests/test_collector_blob_store.py ................                 [ 68%]
+unit_tests/test_collector_contracts.py .........                         [ 68%]
+unit_tests/test_collector_migration_chain.py .                           [ 68%]
+unit_tests/test_collector_parser.py .............................        [ 69%]
+unit_tests/test_collector_policy.py ..............                       [ 69%]
+unit_tests/test_collector_quality_learning.py ......                     [ 70%]
+unit_tests/test_comfy_managed.py .....................                   [ 70%]
+unit_tests/test_comfy_managed_api.py ..                                  [ 70%]
+unit_tests/test_comfy_managed_protocol.py ....                           [ 70%]
+unit_tests/test_creative_catalog.py ..........                           [ 70%]
+unit_tests/test_creative_director.py ...................                 [ 71%]
+unit_tests/test_creative_studio.py .........                             [ 71%]
+unit_tests/test_creative_v2_asset_generation.py ....                     [ 71%]
+unit_tests/test_creative_v2_asset_generation_e2e.py ...............      [ 71%]
+unit_tests/test_creative_v2_dispatch.py ......................           [ 72%]
+unit_tests/test_creative_v2_duration.py .............................    [ 72%]
+unit_tests/test_creative_v2_lease_handoff.py .......                     [ 73%]
+unit_tests/test_creative_v2_matching.py ........................         [ 73%]
+unit_tests/test_creative_v2_plans.py ..........................          [ 74%]
+unit_tests/test_creative_v2_registry.py ................                 [ 74%]
+unit_tests/test_creative_v2_run_scope.py ..                              [ 74%]
+unit_tests/test_creative_v2_style_dna.py ................                [ 74%]
+unit_tests/test_design_system.py ........................                [ 75%]
+unit_tests/test_design_system_api.py ....                                [ 75%]
+unit_tests/test_desk_topic_boundary.py ........                          [ 75%]
+unit_tests/test_executor_migration_contract.py .....                     [ 75%]
+unit_tests/test_executor_reconcile.py ..................                 [ 76%]
+unit_tests/test_generation_hardening.py ...............................  [ 76%]
+unit_tests/test_github_accounts.py ...........                           [ 77%]
+unit_tests/test_github_api.py .......................................... [ 78%]
+.                                                                        [ 78%]
+unit_tests/test_github_client.py ....................................... [ 78%]
+.....                                                                    [ 79%]
+unit_tests/test_github_hardening.py .................................... [ 79%]
+........................                                                 [ 80%]
+unit_tests/test_github_main.py .                                         [ 80%]
+unit_tests/test_github_targets.py ...................................... [ 81%]
+........................................................................ [ 82%]
+........                                                                 [ 82%]
+unit_tests/test_github_views.py ...................                      [ 83%]
+unit_tests/test_gpu_resources.py ...............                         [ 83%]
+unit_tests/test_host_resource.py ...........                             [ 83%]
+unit_tests/test_host_resource_process_state.py ......................... [ 84%]
+.......                                                                  [ 84%]
+unit_tests/test_host_resource_recovery.py .............................. [ 85%]
+                                                                         [ 85%]
+unit_tests/test_host_resource_recovery_hardening.py .................... [ 85%]
+......                                                                   [ 85%]
+unit_tests/test_kb_store_pure.py .........                               [ 86%]
+unit_tests/test_knowledge_chatgpt.py ....                                [ 86%]
+unit_tests/test_knowledge_evaluation.py ......                           [ 86%]
+unit_tests/test_knowledge_inventory.py .........................         [ 86%]
+unit_tests/test_knowledge_mcp.py .                                       [ 86%]
+unit_tests/test_managed_comfy_receipt.py .............                   [ 87%]
+unit_tests/test_migration_0052_predicate.py ..                           [ 87%]
+unit_tests/test_muse_adapter.py ...............                          [ 87%]
+unit_tests/test_muse_guard.py .......                                    [ 87%]
+unit_tests/test_muse_protocol.py ........                                [ 87%]
+unit_tests/test_muse_registration.py .....                               [ 87%]
+unit_tests/test_muse_tui_usage.py ..........                             [ 88%]
+unit_tests/test_muse_usage.py ...........                                [ 88%]
+unit_tests/test_muse_usage_capacity.py ...............                   [ 88%]
+unit_tests/test_muse_usage_recovery.py ................................. [ 89%]
+...                                                                      [ 89%]
+unit_tests/test_notebooklm_unit.py ..................................... [ 90%]
+.                                                                        [ 90%]
+unit_tests/test_operational_settings.py ...........                      [ 90%]
+unit_tests/test_oplog_limits.py .....                                    [ 90%]
+unit_tests/test_oplog_normalize.py ......                                [ 90%]
+unit_tests/test_oplog_scrub.py .....................................     [ 91%]
+unit_tests/test_platform_v2_api_audit.py .......                         [ 91%]
+unit_tests/test_platform_v2_corrections.py ........                      [ 91%]
+unit_tests/test_platform_v2_inventory.py ............................... [ 92%]
+.....F..............                                                     [ 92%]
+unit_tests/test_platform_v2_route_audit.py ......                        [ 93%]
+unit_tests/test_platform_v2_test_classification.py .......               [ 93%]
+unit_tests/test_qwen_emergency.py ...........................            [ 93%]
+unit_tests/test_qwen_flash_monitor.py ..........                         [ 94%]
+unit_tests/test_qwen_flash_monitor_jobs.py .                             [ 94%]
+unit_tests/test_qwen_local_contract.py .                                 [ 94%]
+unit_tests/test_qwen_parallel.py ....................                    [ 94%]
+unit_tests/test_qwen_waiter_wake.py .                                    [ 94%]
+unit_tests/test_remote_desktop.py .................                      [ 94%]
+unit_tests/test_remote_desktop_api.py .........                          [ 95%]
+unit_tests/test_research_benchmark.py ..                                 [ 95%]
+unit_tests/test_research_rules.py ......                                 [ 95%]
+unit_tests/test_reverse_static.py ........................               [ 95%]
+unit_tests/test_reverse_tasks.py ..........                              [ 96%]
+unit_tests/test_run_executor_services.py ...                             [ 96%]
+unit_tests/test_run_executor_unit.py .......................             [ 96%]
+unit_tests/test_run_test_database.py ......                              [ 96%]
+unit_tests/test_run_test_database_manager.py .........                   [ 96%]
+unit_tests/test_share_refresh.py ......                                  [ 97%]
+unit_tests/test_tossinvest_cdp.py ...........                            [ 97%]
+unit_tests/test_tossinvest_unit.py .................................     [ 98%]
+unit_tests/test_ttakkari_access_guidance.py .....                        [ 98%]
+unit_tests/test_tts_cache_key.py .                                       [ 98%]
+unit_tests/test_tts_normalize.py ....................................... [ 99%]
+.......................                                                  [ 99%]
+unit_tests/test_usage_failure_visibility.py .......................      [100%]
+
+=================================== FAILURES ===================================
+_______________________ test_muse_argv_hides_token_value _______________________
+tests/test_agent_token_security.py:139: in test_muse_argv_hides_token_value
+    argv = adapter.build_command(spec, env)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/agents/muse.py:32: in build_command
+    raise RuntimeError('Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts')
+E   RuntimeError: Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts
+____________ test_game_migration_is_additive_and_downgrades_cleanly ____________
+tests/test_game_migration.py:24: in test_game_migration_is_additive_and_downgrades_cleanly
+    await asyncio.to_thread(migrate, database, "0046_notebooklm")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', '0046_notebooklm']' returned non-zero exit status 1.
+_______________ test_game_tables_enforce_uniqueness_and_cascade ________________
+tests/test_game_migration.py:37: in test_game_tables_enforce_uniqueness_and_cascade
+    await asyncio.to_thread(migrate, database, "head")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', 'head']' returned non-zero exit status 1.
+_________ test_0048_adds_only_nullable_columns_and_downgrades_cleanly __________
+tests/test_game_migration.py:76: in test_0048_adds_only_nullable_columns_and_downgrades_cleanly
+    await asyncio.to_thread(migrate, database, "0047_game_studio")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', '0047_game_studio']' returned non-zero exit status 1.
+_ test_migration_copies_notebooklm_account_state_without_touching_the_old_table _
+tests/test_google_account.py:351: in test_migration_copies_notebooklm_account_state_without_touching_the_old_table
+    await asyncio.to_thread(migrate, database, "0048_game_active_build")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', '0048_game_active_build']' returned non-zero exit status 1.
+______________ test_migration_is_idempotent_on_rerun_of_the_copy _______________
+tests/test_google_account.py:389: in test_migration_is_idempotent_on_rerun_of_the_copy
+    await asyncio.to_thread(migrate, database, "head")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', 'head']' returned non-zero exit status 1.
+___________ test_knowledge_migration_is_additive_and_guards_evidence ___________
+tests/test_knowledge_migration.py:13: in test_knowledge_migration_is_additive_and_guards_evidence
+    await asyncio.to_thread(migrate, database, "0033")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', '0033']' returned non-zero exit status 1.
+______ test_populated_ledger_cannot_be_destroyed_by_application_rollback _______
+tests/test_knowledge_migration.py:48: in test_populated_ledger_cannot_be_destroyed_by_application_rollback
+    await asyncio.to_thread(migrate, migration_database, "head")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', 'head']' returned non-zero exit status 1.
+____ test_lineage_migration_backfills_valid_full_jobs_and_preserves_sources ____
+tests/test_meeting_lineage_migration.py:34: in test_lineage_migration_backfills_valid_full_jobs_and_preserves_sources
+    await asyncio.to_thread(migrate, database, "0026")
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_meeting_lineage_migration.py:16: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', '0026']' returned non-zero exit status 1.
+______ test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise _______
+tests/test_muse_effort_pinned.py:55: in test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise
+    cmd = adapter.build_command(spec, {"XDG_CONFIG_HOME": str(tmp_path / "cfg")})
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/agents/muse.py:32: in build_command
+    raise RuntimeError('Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts')
+E   RuntimeError: Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts
+_______ test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch ________
+tests/test_muse_observation_ping.py:214: in test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch
+    cmd = adapter.build_command(spec, {"XDG_CONFIG_HOME": str(tmp_path / "cfg")})
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/agents/muse.py:32: in build_command
+    raise RuntimeError('Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts')
+E   RuntimeError: Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts
+____ test_retirement_preserves_every_source_row_and_meetings_and_downgrades ____
+tests/test_retire_clovanote_migration.py:58: in test_retirement_preserves_every_source_row_and_meetings_and_downgrades
+    await asyncio.to_thread(migrate, "0025", database)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/threads.py:26: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py:59: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_retire_clovanote_migration.py:36: in migrate
+    subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/.venv/bin/alembic', 'upgrade', '0025']' returned non-zero exit status 1.
+____ test_report_schema_separates_extraction_classification_scope_coverage _____
+unit_tests/test_platform_v2_inventory.py:682: in test_report_schema_separates_extraction_classification_scope_coverage
+    assert report["classification"]["all_collected_classified"] is True
+E   assert False is True
+=============================== warnings summary ===============================
+tests/test_accounts.py::test_antigravity_check_endpoint_confirms_only_with_user_supplied_identity
+unit_tests/test_tossinvest_unit.py::test_limit_validation
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/fastapi/routing.py:360: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    return await dependant.call(**values)
+
+tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]
+tests/test_antigravity_run.py::test_mcp_config_survives_init_until_cli_exit_and_is_always_removed[timeout]
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `int` - serialized value may not be as expected [field_name='run_timeout_seconds', input_value=1.5, input_type=float])
+    return self.__pydantic_serializer__.to_python(
+
+unit_tests/test_github_main.py::test_router_registered_read_only_and_error_handler_installed
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/fastapi/openapi/utils.py:303: UserWarning: Duplicate Operation ID get_api_public_shares__sid__get for function get at /Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/src/ttakkari/api/public_shares.py
+    warnings.warn(message, stacklevel=1)
+
+unit_tests/test_github_main.py::test_router_registered_read_only_and_error_handler_installed
+  /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/lib/python3.13/site-packages/fastapi/openapi/utils.py:303: UserWarning: Duplicate Operation ID download_api_public_shares__sid__download_get for function download at /Users/winterholic/development/projects/winterholic-ttakkari/back-planning-audit/src/ttakkari/api/public_shares.py
+    warnings.warn(message, stacklevel=1)
+
+unit_tests/test_muse_usage_recovery.py::test_reader_reports_cli_exit_before_composer
+unit_tests/test_muse_usage_recovery.py::test_reader_times_out_when_composer_never_paints
+unit_tests/test_muse_usage_recovery.py::test_reader_reports_permission_denied_screen
+  /Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/pty.py:95: DeprecationWarning: This process (pid=26381) is multi-threaded, use of forkpty() may lead to deadlocks in the child.
+    pid, fd = os.forkpty()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+db reset: 2847 selective (avg 3.4/106 tables), 1 forced full, 1 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_agent_token_security.py::test_muse_argv_hides_token_value
+FAILED tests/test_game_migration.py::test_game_migration_is_additive_and_downgrades_cleanly
+FAILED tests/test_game_migration.py::test_game_tables_enforce_uniqueness_and_cascade
+FAILED tests/test_game_migration.py::test_0048_adds_only_nullable_columns_and_downgrades_cleanly
+FAILED tests/test_google_account.py::test_migration_copies_notebooklm_account_state_without_touching_the_old_table
+FAILED tests/test_google_account.py::test_migration_is_idempotent_on_rerun_of_the_copy
+FAILED tests/test_knowledge_migration.py::test_knowledge_migration_is_additive_and_guards_evidence
+FAILED tests/test_knowledge_migration.py::test_populated_ledger_cannot_be_destroyed_by_application_rollback
+FAILED tests/test_meeting_lineage_migration.py::test_lineage_migration_backfills_valid_full_jobs_and_preserves_sources
+FAILED tests/test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise
+FAILED tests/test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch
+FAILED tests/test_retire_clovanote_migration.py::test_retirement_preserves_every_source_row_and_meetings_and_downgrades
+FAILED unit_tests/test_platform_v2_inventory.py::test_report_schema_separates_extraction_classification_scope_coverage
+= 13 failed, 4570 passed, 21 skipped, 2 xfailed, 9 warnings in 751.50s (0:12:31) =

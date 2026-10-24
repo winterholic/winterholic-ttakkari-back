@@ -96,7 +96,9 @@ async def test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims(mo
     from ttakkari.runs import profiles, usage_store
     from ttakkari.runs.desk_qwen_service import service as qwen
     from ttakkari.runs.manager import manager
+    from ttakkari.tts import jobs as tts_jobs
 
+    monkeypatch.setattr(tts_jobs, "_draining", False)
     @asynccontextmanager
     async def fake_session():
         yield SimpleNamespace()
@@ -142,3 +144,4 @@ async def test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims(mo
         release.set()
         await asyncio.gather(serving, job, return_exceptions=True)
         queued_work.reopen()
+        tts_jobs._draining = False

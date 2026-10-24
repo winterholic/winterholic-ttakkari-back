@@ -111,6 +111,8 @@ class FakeSlots:
         self.rows = {}
         self.route = None
         self.stopped = []
+        self.executor_calls = []
+        self.fail_executor = False
 
     @staticmethod
     def origin(slot):
@@ -132,6 +134,12 @@ class FakeSlots:
 
     async def verify(self, revision):
         assert self.rows[self.route]["revision"] == revision
+
+    async def ensure_executor(self, release, revision):
+        self.executor_calls.append((release, revision))
+        if self.fail_executor:
+            raise RuntimeError("executor activation failed")
+        return {"ready": False, "activation": "disabled"}
 
     async def stop(self, slot):
         self.stopped.append(slot)
@@ -581,6 +589,18 @@ async def test_db_create_schema_record_failures_carry_their_stage(tmp_path, monk
                     await control.prepare(job)
             return excinfo.value.stage
         else:
+            import asyncpg
+
+            class FakeAdmin:
+                async def execute(self, sql):
+                    pass
+
+                async def close(self):
+                    pass
+
+            async def connect(*args, **kwargs):
+                return FakeAdmin()
+
             class FakeDB:
                 async def scalar(self, query):
                     return "x-old"
@@ -592,6 +612,7 @@ async def test_db_create_schema_record_failures_carry_their_stage(tmp_path, monk
                 async def __aexit__(self, *args):
                     return False
 
+            monkeypatch.setattr(asyncpg, "connect", connect)
             monkeypatch.setattr(gd, "sessionmaker", lambda: FakeSession())
             monkeypatch.setattr(control, "run_security_gate", lambda *args: asyncio.sleep(0))
             job = store.request("a" * 40, skip_tests=True)
@@ -798,6 +819,39 @@ async def test_activate_cutover_readiness_drain_failures_carry_their_stage(tmp_p
         assert record["error_exit"] is None and "exit code is null" in record["error_summary"]
     record = await run_case("drain")
     assert record["status"] == "recovery_pending" and record["error_stage"] == "drain"
+
+
+async def test_ensure_executor_failure_rolls_back(tmp_path, monkeypatch):
+    """ensure_executor 실패 시 readiness 단계 오류로 기록되고 이전 세대로 롤백된다."""
+    from ttakkari.generation_deployment import GenerationController
+    store = JobStore(tmp_path)
+    slots = FakeSlots()
+    old = await slots.start(0, Path("unused"), "0" * 40)
+    holder = {"active": uuid.UUID(old["generation"])}
+    control = GenerationController(store, slots=slots)
+    monkeypatch.setattr(control, "active", lambda: asyncio.sleep(0, result=holder["active"]))
+
+    async def activate(gid, *, expected):
+        holder["active"] = gid
+
+    async def prepare(_job):
+        return Path("candidate")
+
+    monkeypatch.setattr(control, "activate", activate)
+    monkeypatch.setattr(control, "prepare", prepare)
+
+    slots.fail_executor = True
+    job = store.request("b" * 40)
+    await control.process(job)
+
+    record = store.get(job["id"])
+    assert record["status"] in {"rolling_back", "failed"}
+    assert record["error_stage"] == "readiness"
+    assert "executor activation failed" in record["error_summary"]
+    # 구 세대로의 원복(스위치 및 active 복귀) 확인
+    assert holder["active"] == uuid.UUID(old["generation"])
+    assert slots.route == 0
+    assert len(slots.executor_calls) == 1
 
 
 async def test_identity_mismatch_is_a_launch_stage_error(tmp_path, monkeypatch):

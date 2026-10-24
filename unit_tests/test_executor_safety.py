@@ -109,7 +109,9 @@ async def test_serve_drain_timeout_is_not_permission_to_shutdown(tmp_path, monke
     from ttakkari.meetings.local_stt import jobs
     from ttakkari.runs import manager as managers
     from ttakkari.runs import profiles, usage_store
+    from ttakkari.tts import jobs as tts_jobs
 
+    monkeypatch.setattr(tts_jobs, "_draining", False)
     runtime = SimpleNamespace(state=state, register=AsyncMock(), listen=AsyncMock(), close=AsyncMock())
     monkeypatch.setattr(executor, "get_settings", lambda: SimpleNamespace(home=tmp_path, release_revision="a" * 40))
     monkeypatch.setattr(executor, "ExecutorRuntime", lambda *args, **kwargs: runtime)
@@ -128,7 +130,10 @@ async def test_serve_drain_timeout_is_not_permission_to_shutdown(tmp_path, monke
     monkeypatch.setattr(loop, "add_signal_handler", lambda sig, callback: callback())
     monkeypatch.setattr(loop, "remove_signal_handler", lambda sig: None)
     monkeypatch.setattr(generation, "current", None)
-    await executor.serve(drain_timeout=0)
+    try:
+        await executor.serve(drain_timeout=0)
+    finally:
+        tts_jobs._draining = False
     assert drain.await_count == 2
     assert drain.await_args_list[1].kwargs["timeout"] is None
 

@@ -357,11 +357,17 @@ async def test_executor_starts_and_stops_qwen_as_owner(monkeypatch):
     monkeypatch.setattr(s, "release_revision", "rev-test")
     monkeypatch.setattr(s, "runtime_poll_seconds", 0.05)
 
+    from ttakkari.tts import jobs as tts_jobs
+
+    monkeypatch.setattr(tts_jobs, "_draining", False)
     # serve를 실행하고 바로 SIGTERM/stop 트리거
     serve_task = asyncio.create_task(executor.serve(activate=True))
     await asyncio.sleep(0.05)
-    os.kill(os.getpid(), 15)  # SIGTERM
-    await asyncio.wait_for(serve_task, timeout=2.0)
+    try:
+        os.kill(os.getpid(), 15)  # SIGTERM
+        await asyncio.wait_for(serve_task, timeout=2.0)
+    finally:
+        tts_jobs._draining = False
 
     assert "start:True" in calls
     assert "stop" in calls

@@ -122,10 +122,10 @@ def upgrade() -> None:
     op.create_index("ix_artifacts_category", "artifacts", ["category"])
     op.create_index("ix_artifacts_origin", "artifacts", ["origin"])
 
-    # 2. 백업 테이블 생성 (변경 전 원본 상태 보존)
+    # 2. 백업 테이블 생성 (변경 전 원본 상태 보존: source, area)
     op.execute("""
         CREATE TABLE artifact_area_backup_0068 AS
-        SELECT id, area, origin, keep_reason
+        SELECT id, source, area
         FROM artifacts
     """)
 
@@ -145,12 +145,11 @@ def upgrade() -> None:
         END
     """)
 
-    # 4. origin 백필
+    # 4. origin 백필: 직접 업로드만 user, AI 산출물은 agent, user_registered 및 불명은 unknown
     op.execute("""
         UPDATE artifacts
         SET origin = CASE
             WHEN source = 'upload' THEN 'user'
-            WHEN source = 'user_registered' THEN 'user'
             WHEN source IN ('agent_output', 'agent_modified') THEN 'agent'
             ELSE 'unknown'
         END
@@ -164,20 +163,25 @@ def upgrade() -> None:
     """)
 
     # 6. area 정리: 직접 업로드된 파일만 files(내 보관함) 유지.
-    # 그 외(AI 생성·공유, 불명확 등) files 에 있던 모든 행은 agent(AI 작업 파일)로 이동.
+    # 그 외(AI 생성·공유, 링크 등록 등) files 에 있던 모든 행은 agent(AI 작업 파일)로 이동.
     op.execute("""
         UPDATE artifacts
         SET area = 'agent'
         WHERE area = 'files' AND source != 'upload'
     """)
 
+    # 7. 업그레이드 결과(유지/이동 건수) 기록
+    conn = op.get_bind()
+    if conn is not None and hasattr(conn, "execute"):
+        maintained = conn.execute(sa.text("SELECT count(*) FROM artifacts WHERE area = 'files' AND source = 'upload'")).scalar() or 0
+        moved = conn.execute(sa.text("SELECT count(*) FROM artifact_area_backup_0068 WHERE area = 'files' AND source != 'upload'")).scalar() or 0
+        print(f"[0068_library_intent] 보관함 분류 개편 완료: 내 보관함 유지 {maintained}건, AI 작업 파일로 이동 {moved}건")
+
 
 def downgrade() -> None:
     op.execute("""
         UPDATE artifacts SET
-            area = b.area,
-            origin = b.origin,
-            keep_reason = b.keep_reason
+            area = b.area
         FROM artifact_area_backup_0068 b
         WHERE artifacts.id = b.id
     """)

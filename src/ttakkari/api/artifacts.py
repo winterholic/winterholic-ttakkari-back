@@ -44,6 +44,9 @@ from ttakkari.broker.policy import (
 from ttakkari.config import get_settings
 from ttakkari.models import (
     Artifact,
+    ArtifactArea,
+    ArtifactKeepReason,
+    ArtifactOrigin,
     ChatSession,
     ExportPolicy,
     PreviewStatus,
@@ -121,8 +124,16 @@ async def register_artifact(body: ArtifactRegisterIn, _: User, db: Db, request: 
     ws = await get_workspace(db, body.workspace_id)
     try:
         r = resolve_in_root(Path(ws.root_path), body.rel_path)
-        art = await register_file(db, r, source="user_registered", workspace_id=ws.id, session_id=body.session_id,
-                                  export_allowed=ws.export_allowed)
+        art = await register_file(
+            db, r,
+            source="user_registered",
+            area=ArtifactArea.files,
+            origin=ArtifactOrigin.unknown,  # 등록은 보관 의도이지 제작 증거가 아니므로 출처는 unknown
+            keep_reason=ArtifactKeepReason.direct_register,
+            workspace_id=ws.id,
+            session_id=body.session_id,
+            export_allowed=ws.export_allowed,
+        )
     except BrokerError as e:
         record(db, action="artifact.register", outcome="denied", detail={"rel_path": body.rel_path, "code": e.code},
                ip=client_ip(request))
@@ -201,8 +212,8 @@ async def resolve_artifact_link(body: ArtifactResolveIn, _: User, db: Db, reques
         art = await register_file(
             db, resolved,
             source="agent_output" if in_outbox else "user_registered",
-            area="agent",  # 링크를 눌러 열었다고 보관함 파일 탭에 쌓지 않는다.
-            origin="agent" if in_outbox else "user",
+            area=ArtifactArea.agent,  # 링크를 눌러 열었다고 보관함 파일 탭에 쌓지 않는다.
+            origin=ArtifactOrigin.agent if in_outbox else ArtifactOrigin.unknown,  # 비-outbox 링크는 사용자가 만들었다는 증거가 없으므로 unknown
             keep_reason=None,
             workspace_id=owner.id if owner else None,
             session_id=sess.id if sess else None,

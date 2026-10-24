@@ -224,7 +224,9 @@ async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str |
 
 @router.patch("/artifacts/{art_id}")
 async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    """보관함 분류를 옮긴다(내 보관함 ↔ AI 작업 파일). 되돌릴 수 있다. 사용자가 올리거나 등록한 파일은 사용자만 옮긴다."""
+    """보관함 분류를 옮긴다(내 보관함 ↔ AI 작업 파일).
+    에이전트는 이 경로로 내 보관함(files)으로 승격할 수 없으며(keep_artifact 사용),
+    사용자가 보관한 파일(keep_reason 존재)이나 사용자가 올린 파일은 뺄 수 없다."""
     session = await _session(db, sid)
     art = await db.scalar(select(Artifact).where(
         Artifact.id == art_id,
@@ -233,19 +235,21 @@ async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSessi
     ))
     if art is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact 가 없습니다.")
+    if body.area == ArtifactArea.files:
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "use_keep_artifact", "message":
+                            "에이전트는 이 경로로 내 보관함에 넣을 수 없습니다. 사용자 요청 근거와 함께 keep_artifact 를 쓰세요."})
     if art.source in ("upload", "user_registered") or art.origin == ArtifactOrigin.user:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
                             "사용자가 올린 파일의 분류는 앱에서만 바꿀 수 있어요."})
+    if art.keep_reason is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_kept", "message":
+                            "사용자가 보관한 파일은 에이전트가 내 보관함에서 뺄 수 없어요. 내 보관함에서 빼기는 사용자 앱에서만 가능합니다."})
     if art.area != body.area:
         record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=art.id,
                detail={"from": art.area, "to": body.area, "session": str(sid)})
         art.area = body.area
-        if body.area == ArtifactArea.files:
-            if not art.keep_reason:
-                art.keep_reason = ArtifactKeepReason.chat_request
-        else:
-            art.keep_reason = None
-            art.keep_evidence = None
+        art.keep_reason = None
+        art.keep_evidence = None
         await db.commit()
     return {"id": str(art.id), "filename": art.filename, "area": art.area}
 
@@ -308,7 +312,11 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
 @router.post("/keep")
 async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -> dict[str, Any]:
     """사용자가 대화에서 명시적으로 보관을 요청했을 때(예: '만들어서 보관함에 넣어줘', '보관함에 보관해줘') 대상 파일을 내 보관함(files)에 영구 보관한다.
-    요청 근거(지시문, 세션 ID, Run ID)를 함께 기록한다."""
+    요청 근거(지시문, 세션 ID, Run ID, 요청 메시지 ID, 시각)를 함께 기록한다."""
+    instruction = body.instruction.strip()
+    if not instruction:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "보관 요청 지시문(instruction)은 필수입니다.")
+
     sid, token_run_id = caller
     sess = await _session(db, sid)
     ws = await db.get(Workspace, sess.workspace_id)
@@ -325,13 +333,27 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "outside_root",
                                                         "message": "실행 위치·권한 폴더 안의 일반 파일만 보관할 수 있어요."})
     await db.execute(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
-    run_id = token_run_id or await db.scalar(select(Run.id).where(
-        Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
+    run_id = token_run_id
+    if not run_id:
+        run_id = await db.scalar(select(Run.id).where(
+            Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
+    if not run_id:
+        run_id = await db.scalar(select(Run.id).where(
+            Run.session_id == sid).order_by(Run.created_at.desc()).limit(1))
+    if run_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "run_not_found", "message": "보관 근거를 남길 Run을 특정할 수 없습니다."})
+
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "run_not_found", "message": "보관 근거를 남길 Run을 찾을 수 없습니다."})
 
     evidence = {
         "session_id": str(sid),
-        "run_id": str(run_id) if run_id else None,
-        "instruction": body.instruction,
+        "run_id": str(run.id),
+        "message_id": str(run.id),
+        "user_prompt": run.prompt,
+        "requested_at": run.created_at.isoformat(),
+        "instruction": instruction,
     }
 
     existing = await db.scalar(select(Artifact).where(
@@ -342,11 +364,12 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
             changed = await refresh_from_original(existing, real)
         except BrokerError as e:
             raise broker_http(e) from e
+        already_kept = (existing.area == ArtifactArea.files and existing.keep_reason == ArtifactKeepReason.chat_request)
         existing.area = ArtifactArea.files
         existing.keep_reason = ArtifactKeepReason.chat_request
         existing.keep_evidence = evidence
         record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=existing.id,
-               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id)})
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id), "already_kept": already_kept})
         await db.commit()
         if needs_server_preview(existing.kind) and (
                 changed or existing.preview_status not in (PreviewStatus.ready, PreviewStatus.processing)):
@@ -359,7 +382,7 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
                                   workspace_id=ws.id, session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),
                                   export_allowed=ws.export_allowed)
         record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=art.id,
-               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id)})
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id), "already_kept": False})
     except BrokerError as e:
         raise broker_http(e) from e
     await db.commit()

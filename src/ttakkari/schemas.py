@@ -271,7 +271,7 @@ class ArtifactAreaIn(BaseModel):
 
 class ArtifactKeepIn(BaseModel):
     path: str = Field(min_length=1, max_length=4096)
-    instruction: str = Field("", max_length=4096)
+    instruction: str = Field(min_length=1, max_length=4096)
 
 
 class ArtifactRegisterIn(BaseModel):

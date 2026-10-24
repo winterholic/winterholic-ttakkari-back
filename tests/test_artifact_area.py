@@ -503,7 +503,9 @@ async def test_migration_0068_library_intent():
         # 1. 업로드 (files 유지, origin=user, keep_reason=direct_upload)
         art("upload", "doc.pdf", "files", mime="application/pdf", kind="pdf"),
         art("upload", "data.csv", "files", mime="text/csv", kind="sheet"),
-        # 2. AI 작업 파일인데 레거시로 files 에 있던 것 (agent 로 이동, origin=agent, keep_reason=None)
+        # 2. 사용자 등록 파일 (files 에 있었더라도 0068 에서 agent 로 이동, origin=unknown 백필)
+        art("user_registered", "registered.md", "files", mime="text/markdown", kind="markdown"),
+        # 3. AI 작업 파일인데 레거시로 files 에 있던 것 (agent 로 이동, origin=agent, keep_reason=None)
         art("agent_output", "report.md", "files", mime="text/markdown", kind="markdown"),
         art("agent_output", "slide.pptx", "files", mime="application/vnd.ms-powerpoint", kind="pptx"),
         art("agent_output", "video.mp4", "files", mime="video/mp4", kind="video"),
@@ -511,7 +513,7 @@ async def test_migration_0068_library_intent():
         art("agent_output", "archive.zip", "files", mime="application/zip", kind="other"),
         art("agent_output", "script.py", "files", mime="text/x-python", kind="code"),
         art("agent_output", "notes.txt", "files", mime="text/plain", kind="code"),
-        # 3. 원래 agent 였던 것 (agent 유지)
+        # 4. 원래 agent 였던 것 (agent 유지)
         art("agent_output", "temp.log", "agent", mime="text/plain", kind="code"),
         art("agent_modified", "main.rs", "agent", mime="text/rust", kind="code"),
     ]
@@ -551,6 +553,10 @@ async def test_migration_0068_library_intent():
 
         assert rows["data.csv"].area == "files" and rows["data.csv"].origin == "user"
         assert rows["data.csv"].category == "spreadsheet"
+
+        # user_registered 파일은 0068 에서 agent 로 이동하고 origin=unknown 백필
+        assert rows["registered.md"].area == "agent" and rows["registered.md"].origin == "unknown"
+        assert rows["registered.md"].keep_reason is None
 
         # AI 결과물은 전부 agent 로 이동!
         assert rows["report.md"].area == "agent" and rows["report.md"].origin == "agent"
@@ -722,3 +728,175 @@ async def test_twelve_scenarios_comprehensive(client, auth, new_session):
         await client.post("/api/agent/keep", json={"path": str(ai_file), "instruction": "다시 보관"}, headers=h)
     after_count = len((await client.get("/api/artifacts", params={"session_id": str(sid)}, headers=auth)).json())
     assert before_count == after_count
+
+
+async def test_agent_move_artifact_forbidden_and_conflict(client, auth, new_session):
+    """에이전트가 PATCH 로 files 로 옮기려 하면 409 거부(keep_artifact 쓰라는 안내).
+    또한 사용자가 보관한 파일(keep_reason 있음)을 agent 로 빼려 해도 403 거부."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    h = _orch(issue_token(sid))
+
+    # 1. AI 임시 파일 생성
+    async with sessionmaker()() as db:
+        art = Artifact(
+            session_id=sid, workspace_id=uuid.UUID(ws["id"]), filename="temp.txt",
+            mime_type="text/plain", kind="code", source="agent_output", area=ArtifactArea.agent,
+            origin="agent", original_path="/temp.txt", stored_path="/temp.txt", storage_mode="reference",
+            size_bytes=10, sha256="0" * 64,
+        )
+        db.add(art)
+        await db.commit()
+        art_id = art.id
+
+    # 에이전트가 PATCH 로 area=files 승격 시도 -> 409 거부!
+    r = await client.patch(f"/api/agent/artifacts/{art_id}", json={"area": "files"}, headers=h)
+    assert r.status_code == 409
+    assert r.json()["code"] == "use_keep_artifact"
+
+    # 2. 사용자가 보관한 파일(keep_reason 있음) 생성
+    async with sessionmaker()() as db:
+        kept = Artifact(
+            session_id=sid, workspace_id=uuid.UUID(ws["id"]), filename="kept.txt",
+            mime_type="text/plain", kind="code", source="agent_output", area=ArtifactArea.files,
+            origin="agent", keep_reason="chat_request", original_path="/kept.txt", stored_path="/kept.txt",
+            storage_mode="reference", size_bytes=10, sha256="0" * 64,
+        )
+        db.add(kept)
+        await db.commit()
+        kept_id = kept.id
+
+    # 에이전트가 files -> agent 빼기 시도 -> 403 거부!
+    r2 = await client.patch(f"/api/agent/artifacts/{kept_id}", json={"area": "agent"}, headers=h)
+    assert r2.status_code == 403
+    assert r2.json()["code"] == "user_kept"
+
+
+async def test_keep_artifact_validations_and_evidence(client, auth, new_session):
+    """keep_artifact 지시문 필수(빈값 400), Run 특정 불가 시 409 거부,
+    성공 시 keep_evidence 에 session_id, run_id, message_id, user_prompt, requested_at, instruction 모두 기록."""
+    from ttakkari.models import Run
+
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+
+    # Run 없는 세션의 토큰으로 호출 시 409 거부
+    h_norun = _orch(issue_token(sid))
+    ws_root = Path(ws["root_path"])
+    f = ws_root / "test_keep.md"
+    f.write_text("# keep me")
+
+    r_norun = await client.post("/api/agent/keep", json={"path": str(f), "instruction": "보관해줘"}, headers=h_norun)
+    assert r_norun.status_code == 409
+    assert r_norun.json()["code"] == "run_not_found"
+
+    # Run 생성
+    async with sessionmaker()() as db:
+        run = Run(session_id=sid, workspace_id=uuid.UUID(ws["id"]), prompt="사용자가 보관을 지시함",
+                  engine="claude", status="running")
+        db.add(run)
+        await db.commit()
+        run_id = run.id
+
+    h = _orch(issue_token(sid, run_id))
+
+    # instruction 빈 값 -> 422 또는 400 거부
+    r_empty = await client.post("/api/agent/keep", json={"path": str(f), "instruction": "   "}, headers=h)
+    assert r_empty.status_code in (400, 422)
+
+    # 정상 보관 호출
+    r_ok = await client.post("/api/agent/keep", json={"path": str(f), "instruction": "보관함에 꼭 넣어줘"}, headers=h)
+    assert r_ok.status_code == 200
+    kept = r_ok.json()["artifact"]
+    assert kept["area"] == "files"
+    assert kept["keep_reason"] == "chat_request"
+    ev = kept["keep_evidence"]
+    assert ev["session_id"] == str(sid)
+    assert ev["run_id"] == str(run_id)
+    assert ev["message_id"] == str(run_id)
+    assert ev["user_prompt"] == "사용자가 보관을 지시함"
+    assert "requested_at" in ev
+    assert ev["instruction"] == "보관함에 꼭 넣어줘"
+
+
+async def test_resolve_and_register_origin_is_unknown(client, auth, new_session):
+    """비-outbox 링크 resolve 시 origin=unknown, area=agent, keep_reason=None.
+    사용자 직접 등록(POST /api/artifacts) 시 origin=unknown, area=files, keep_reason=direct_register."""
+    ws, sess = await new_session()
+    ws_root = Path(ws["root_path"])
+    p = ws_root / "sample_code.py"
+    p.write_text("print('hello')")
+
+    # 1. resolve_artifact_link (비-outbox)
+    r_res = await client.post("/api/artifacts/resolve", json={"path": str(p), "workspace_id": ws["id"]}, headers=auth)
+    assert r_res.status_code == 200
+    res_art = r_res.json()
+    assert res_art["origin"] == "unknown"  # 사용자가 작성했다는 보장이 없으므로 unknown
+    assert res_art["area"] == "agent"
+    assert res_art["keep_reason"] is None
+
+    # 2. register_artifact (사용자 직접 등록)
+    p2 = ws_root / "manual_reg.py"
+    p2.write_text("print('reg')")
+    r_reg = await client.post("/api/artifacts", json={"workspace_id": ws["id"], "rel_path": "manual_reg.py"}, headers=auth)
+    assert r_reg.status_code == 201
+    reg_art = r_reg.json()
+    assert reg_art["origin"] == "unknown"  # 직접 등록도 보관 의도일 뿐 제작 증거가 아니므로 unknown
+    assert reg_art["area"] == "files"
+    assert reg_art["keep_reason"] == "direct_register"
+
+
+async def test_category_sql_matches_python_detect_category():
+    """SQL category 백필 CASE 식과 Python detect_category 가 대표 확장자 표에 대해 동일한 결과를 내는지 검증.
+    대표 확장자: .ts .txt .log .json .html .csv .zip .tar.gz .mp4 .mov .mp3 .m4a .pdf .docx .pptx .png .unknown"""
+    from ttakkari.artifacts.kinds import detect, detect_category
+
+    ext_cases = [
+        ("file.ts", "text/plain", "code", "code"),
+        ("file.txt", "text/plain", "code", "document"),
+        ("file.log", "text/plain", "code", "code"),
+        ("file.json", "application/json", "code", "code"),
+        ("file.html", "text/html", "html", "code"),
+        ("file.csv", "text/csv", "sheet", "spreadsheet"),
+        ("file.zip", "application/zip", "other", "archive"),
+        ("file.tar.gz", "application/gzip", "other", "archive"),
+        ("file.mp4", "video/mp4", "video", "video"),
+        ("file.mov", "video/quicktime", "video", "video"),
+        ("file.mp3", "audio/mpeg", "audio", "audio"),
+        ("file.m4a", "audio/mp4", "audio", "audio"),
+        ("file.pdf", "application/pdf", "pdf", "document"),
+        ("file.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx", "document"),
+        ("file.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "pptx", "presentation"),
+        ("file.png", "image/png", "image", "image"),
+        ("file.unknown", "application/octet-stream", "other", "other"),
+    ]
+
+    mod = _migration_0068()
+    sql = f"""
+        SELECT (
+            CASE
+                WHEN {mod._DOCUMENT_COND} THEN 'document'
+                WHEN {mod._SPREADSHEET_COND} THEN 'spreadsheet'
+                WHEN {mod._PRESENTATION_COND} THEN 'presentation'
+                WHEN {mod._IMAGE_COND} THEN 'image'
+                WHEN {mod._VIDEO_COND} THEN 'video'
+                WHEN {mod._AUDIO_COND} THEN 'audio'
+                WHEN {mod._ARCHIVE_COND} THEN 'archive'
+                WHEN {mod._CODE_COND} THEN 'code'
+                ELSE 'other'
+            END
+        ) AS cat
+        FROM (SELECT :filename AS filename, :mime_type AS mime_type, :kind AS kind) AS t
+    """
+
+    async with sessionmaker()() as db:
+        for filename, mime, kind, expected in ext_cases:
+            # 1. Python detect_category 검증
+            py_cat = detect_category(Path(filename), mime, kind)
+            assert py_cat == expected, f"Python detect_category mismatch for {filename}: got {py_cat}, expected {expected}"
+
+            # 2. SQL CASE WHEN 검증
+            sql_cat = (await db.execute(text(sql), {"filename": filename, "mime_type": mime, "kind": kind})).scalar()
+            assert sql_cat == expected, f"SQL category mismatch for {filename}: got {sql_cat}, expected {expected}"
+            assert py_cat == sql_cat, f"Python vs SQL mismatch for {filename}: {py_cat} != {sql_cat}"
+

@@ -448,9 +448,10 @@ async def list_artifacts(query: str | None = None, kind: str | None = None, cate
 
 
 @server.tool()
-async def set_artifact_area(artifact_id: str, area: Literal["files", "agent"]) -> str:
-    """Move a file between "files" (user's personal library) and "agent" (AI work files).
-    Files the user uploaded or directly registered cannot be moved by you."""
+async def set_artifact_area(artifact_id: str, area: Literal["agent"]) -> str:
+    """Move a file to 'agent' (AI work files). Agents can only demote files to 'agent' (cannot promote to 'files').
+    To save or keep a file in the user's personal library ('files') upon user request, use keep_artifact instead.
+    Files kept by the user (with keep_reason) or uploaded/registered by the user cannot be moved by agents."""
     return await _agent("PATCH", f"/artifacts/{artifact_id}", {"area": area})
 
 
@@ -464,10 +465,10 @@ async def share_file(path: str) -> str:
 
 
 @server.tool()
-async def keep_artifact(path: str, instruction: str = "") -> str:
+async def keep_artifact(path: str, instruction: str) -> str:
     """Permanently save a file into the user's personal library ('files') upon explicit user request
     (e.g. '만들어서 보관함에 넣어줘', '내 보관함에 보관해줘').
-    Pass the file path and the user's request instruction text as evidence.
+    Pass the file path and the user's request instruction text as evidence (instruction is required).
     Do NOT call this unless the user explicitly requested keeping/saving it in their library."""
     return await _agent("POST", "/keep", {"path": path, "instruction": instruction})
 

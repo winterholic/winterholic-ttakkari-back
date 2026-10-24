@@ -101,7 +101,7 @@ async def register_file(
         policy = ExportPolicy.allow
 
     if origin is None:
-        if source == "upload" or source == "user_registered":
+        if source == "upload":
             origin = ArtifactOrigin.user
         elif source in ("agent_output", "agent_modified"):
             origin = ArtifactOrigin.agent

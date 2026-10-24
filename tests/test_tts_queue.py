@@ -443,6 +443,54 @@ async def test_unknown_owner_is_not_death(client, auth, two_generations, tts_env
     assert await status_of(jid) == "queued"
 
 
+async def test_stale_running_row_of_unknown_owner_is_reaped_to_unblock_claims(two_generations, tts_env, client, auth):
+    """P1 회귀 테스트: 런타임 행이 없는 고아 소유자의 running 행이 타임아웃을 초과하면
+    owner_unknown_stale 로 마감되어 양쪽 세대의 claim 차단이 해소된다.
+    반면 아직 타임아웃되지 않은 살아있는 작업은 잘못 죽이지 않는다.
+    """
+    a, b = two_generations
+    unknown_owner = uuid.uuid4()
+    timeout = get_settings().local_tts_timeout_seconds
+    stale_age = timeout + jobs.STALE_RUNNING_GRACE_SECONDS + 10.0
+
+    # 1. 고아 running 행 생성 (타임아웃 초과)
+    stale_orphan = await insert_job(owner=unknown_owner, status="running", age_seconds=stale_age)
+
+    # 2. 구세대 a 를 draining 으로 전환: 구세대는 소유 pending 이 없으므로 can_retire() == True
+    await activate(b.id, expected=a.id)
+    assert await a.refresh() == "draining"
+    assert await a.can_retire() is True
+
+    # 3. 고아 running 행 때문에 양쪽 세대 모두 claim 이 차단된다.
+    q_a = await insert_job(owner=a.id, status="queued")
+    q_b = await insert_job(owner=b.id, status="queued")
+    assert await jobs._claim(a.id) is None
+    assert await jobs._claim(b.id) is None
+
+    # 4. 아직 유예 기간 내에 있는 신규 running 행은 housekeeping 에서 유지되어야 한다 (살아있는 작업 보호)
+    young_owner = uuid.uuid4()
+    young_orphan = await insert_job(owner=young_owner, status="running", age_seconds=5.0)
+
+    # 5. GET 조회 시 maybe_reap 에 의해 stale_orphan 은 즉시 owner_unknown_stale 로 마감된다.
+    res = (await client.get(f"/api/tts/jobs/{stale_orphan}", headers=auth)).json()
+    assert res["status"] == "failed"
+    row = await job_row(stale_orphan)
+    assert row.status == "failed" and row.error_code == "owner_unknown_stale"
+
+    # 6. young_orphan 은 여전히 running 으로 유지된다.
+    assert await status_of(young_orphan) == "running"
+
+    # young_orphan 을 정리한 뒤, housekeeping 으로 q_a 와 q_b claim 이 모두 풀리는지 검증
+    await jobs.cas(young_orphan, expected=("running",), status="succeeded")
+    await jobs._housekeeping(a.id)
+    assert await jobs._claim(a.id) == q_a
+    # a 가 running 을 쥐었으니 b 는 다시 대기
+    assert await jobs._claim(b.id) is None
+    # a 의 작업이 끝나면 b 의 claim 도 성공
+    await jobs.cas(q_a, expected=("running",), status="succeeded")
+    assert await jobs._claim(b.id) == q_b
+
+
 async def test_dead_owner_running_row_is_reaped_after_grace_and_blocks_claims_until_then(two_generations, tts_env, monkeypatch):
     a, b = two_generations
     running = await insert_job(owner=b.id, status="running")

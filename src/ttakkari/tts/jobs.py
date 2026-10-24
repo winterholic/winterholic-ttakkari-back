@@ -19,7 +19,7 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 
 from ttakkari import generation
 from ttakkari.config import get_settings
@@ -38,6 +38,8 @@ DEAD_GRACE_SECONDS = 3.0
 # 소유 세대가 DELETE 를 감지하는 주기. runtime_poll_seconds(기본 5초)보다 짧아야 한다.
 CANCEL_POLL_SECONDS = 1.0
 CACHE_PRUNE_SECONDS = 3600.0
+# 런타임 행이 없는 소유자의 running 행 마감 여유분. local_tts_timeout_seconds(기본 600초)에 더해 적용한다.
+STALE_RUNNING_GRACE_SECONDS = 60.0
 
 _process_owner = uuid.uuid4()
 _pending_texts: dict[uuid.UUID, list[str]] = {}
@@ -394,12 +396,67 @@ async def reap_dead_owner(owner: uuid.UUID) -> bool:
     return bool(await fail_owned(owner, expected=expected, error_code="owner_gone"))
 
 
+async def _reap_stale_unknown_running() -> list[uuid.UUID]:
+    """런타임(RuntimeGeneration) 행이 없는 소유자의 running 행이 합성 타임아웃을 초과하면
+    owner_unknown_stale 로 마감하여 전체 큐가 무기한 막히는 것을 방지한다.
+
+    살아 있는 작업을 잘못 죽이지 않는 근거:
+    1. 정상적인 워커는 local_tts_timeout_seconds(기본 600초) 초과 시 자체 타임아웃으로 worker_timeout 종료된다.
+    2. 추가 유예 시간(STALE_RUNNING_GRACE_SECONDS)까지 지난 시점에도 running 이 유지되고 소유 세대 행조차
+       존재하지 않는다면, 작업을 실행 중이던 프로세스가 이미 비정상 종료(SIGKILL 등)되어 고아가 되었음이 확실하다.
+    """
+    threshold_seconds = get_settings().local_tts_timeout_seconds + STALE_RUNNING_GRACE_SECONDS
+    cutoff = utcnow() - timedelta(seconds=threshold_seconds)
+    stmt = (
+        update(TtsJob)
+        .where(
+            TtsJob.status == "running",
+            func.coalesce(TtsJob.started_at, TtsJob.created_at) < cutoff,
+            ~select(RuntimeGeneration.id)
+            .where(RuntimeGeneration.id == TtsJob.owner_id)
+            .exists(),
+        )
+        .values(
+            status="failed",
+            error_code="owner_unknown_stale",
+            finished_at=utcnow(),
+        )
+        .returning(TtsJob.id)
+    )
+    async with sessionmaker()() as db:
+        result = await db.execute(stmt)
+        reaped = list(result.scalars())
+        await db.commit()
+    for job_id in reaped:
+        _pending_texts.pop(job_id, None)
+        task = _running.pop(job_id, None)
+        if task is not None:
+            task.cancel()
+    if reaped:
+        log.warning("reaped %d stale running tts jobs from unknown owners: %s", len(reaped), reaped)
+    return reaped
+
+
 async def maybe_reap(job: TtsJob) -> TtsJob:
     """GET·DELETE 의 읽기 시점 규칙. 다른 소유자의 non-terminal job 이면 사망 증거를 확인하고 CAS 로 확정한다."""
-    if job.status in ACTIVE and job.owner_id != owner_id() and await reap_dead_owner(job.owner_id):
-        async with sessionmaker()() as db:
-            fresh = await db.get(TtsJob, job.id, populate_existing=True)
-        return fresh or job
+    if job.status in ACTIVE and job.owner_id != owner_id():
+        if await reap_dead_owner(job.owner_id):
+            async with sessionmaker()() as db:
+                fresh = await db.get(TtsJob, job.id, populate_existing=True)
+            return fresh or job
+        if job.status == "running":
+            threshold_seconds = get_settings().local_tts_timeout_seconds + STALE_RUNNING_GRACE_SECONDS
+            cutoff = utcnow() - timedelta(seconds=threshold_seconds)
+            started = job.started_at or job.created_at
+            if started and started < cutoff:
+                async with sessionmaker()() as db:
+                    has_gen = (await db.get(RuntimeGeneration, job.owner_id)) is not None
+                if not has_gen and await cas(
+                    job.id, expected=("running",), status="failed", error_code="owner_unknown_stale"
+                ):
+                    async with sessionmaker()() as db:
+                        fresh = await db.get(TtsJob, job.id, populate_existing=True)
+                    return fresh or job
     return job
 
 
@@ -452,6 +509,7 @@ async def _housekeeping(me: uuid.UUID) -> None:
             )
         for owner in owners:
             await reap_dead_owner(owner)
+    await _reap_stale_unknown_running()
     if time.monotonic() - _last_prune >= CACHE_PRUNE_SECONDS:
         _last_prune = time.monotonic()
         async with sessionmaker()() as db:

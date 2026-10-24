@@ -14,17 +14,25 @@ from ttakkari.tts_models import TtsJob
 
 async def insert_job(
     *, owner: uuid.UUID, status: str = "queued", age_seconds: float = 0, keys: list[str] | None = None,
-    error_code: str | None = None,
+    error_code: str | None = None, started_at_age_seconds: float | None = None,
 ) -> uuid.UUID:  # fmt: skip
     job_id = uuid.uuid4()
     keys = keys if keys is not None else [uuid.uuid4().hex]
+    created = utcnow() - timedelta(seconds=age_seconds)
+    if started_at_age_seconds is not None:
+        started = utcnow() - timedelta(seconds=started_at_age_seconds)
+    elif status == "running":
+        started = created
+    else:
+        started = None
     async with sessionmaker()() as db:
         db.add(
             TtsJob(
                 id=job_id, owner_id=owner, status=status, error_code=error_code,
                 params={"voice": "M1", "speed": 1.0, "lang": "ko", "text_length": 3, "chunk_count": len(keys),
                         "chunk_keys": keys, "cached_chunks": 0},
-                created_at=utcnow() - timedelta(seconds=age_seconds),
+                created_at=created,
+                started_at=started,
             )
         )  # fmt: skip
         await db.commit()

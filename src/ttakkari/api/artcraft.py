@@ -223,7 +223,7 @@ async def patch_task(task_id: uuid.UUID, body: TaskPatch, _: User, db: Db) -> di
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
     data = body.model_dump(exclude_unset=True)
-    if "title" in data and data["title"]:
+    if data.get("title"):
         task.title = data["title"].strip()[:200]
     if "archived" in data and data["archived"] is not None:
         from ttakkari.models import utcnow

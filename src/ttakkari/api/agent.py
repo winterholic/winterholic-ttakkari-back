@@ -27,9 +27,11 @@ from ttakkari.artifacts.keep_evidence import (
     build_evidence,
     creator_run_id,
     find_user_quotes,
+    has_keep_expression,
     is_negated,
-    made_after_request,
+    made_by_request_run,
     names_file,
+    same_basename_paths,
 )
 from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import refresh_from_original, register_file
@@ -366,22 +368,38 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
                             "이 세션의 사용자 발화에서 그 인용을 찾지 못했어요. 사용자가 보관을 요청한 말을 문장 하나(또는 한 줄) 그대로, "
                             "공백 제외 8자 이상으로 인용하세요. 단어 일부만 인용하면 안 됩니다. 기획이 작업 세션에 쓴 지시는 사용자 발화가 아니므로 "
                             "근거가 될 수 없고, 작업 세션이면 기획 세션이 직접 보관해야 합니다."})
+    if not has_keep_expression(body.quote):
+        raise HTTPException(422, {"code": "quote_no_keep_request", "message":
+                            "인용한 문장에 보관을 요청하는 표현(보관, 저장해, 간직, 남겨줘, keep, save 등)이 없어요. "
+                            "사용자가 보관을 요청한 문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요."})
     if is_negated(body.quote):
         raise HTTPException(422, {"code": "quote_negated", "message":
-                            "인용한 문장에 보관을 하지 말라는 표현이 있어요. 사용자가 앱의 보관 버튼으로 직접 보관할 수 있어요."})
+                            "인용한 문장에 부정·금지·제외 표현이 있어요. 사용자가 앱의 '내 보관함에 보관' 버튼으로 직접 보관할 수 있어요."})
     match, binding, binding_detail = None, "", ""
-    if (token := names_file(body.quote, real)) is not None:
-        match, binding, binding_detail = matches[0], "filename", token
-    else:
+    mention = names_file(body.quote, real)
+    others = await same_basename_paths(db, session_id=sid, path=real, outbox_root=s.outbox_root)
+    if mention is not None:
+        if mention.path_token is not None:
+            clash = [o for o in others if o.casefold().endswith("/" + mention.path_token.lstrip("/")) or o.casefold() == mention.path_token]
+        else:
+            clash = others
+        if not clash:
+            match, binding, binding_detail = matches[0], "filename", mention.path_token or mention.token
+    if match is None:
         created_by = creator_run_id(real, s.outbox_root, existing.run_id if existing is not None else None)
         for cand in matches:
-            if await made_after_request(db, session_id=sid, match=cand, path=real, created_by=created_by):
+            if await made_by_request_run(db, session_id=sid, match=cand, path=real, created_by=created_by):
                 match, binding, binding_detail = cand, "same_run", str(created_by)
                 break
+    if match is None and mention is not None and others:
+        raise HTTPException(422, {"code": "quote_ambiguous_file", "message":
+                            f"같은 이름 {real.name} 파일이 여러 개라 어느 파일인지 문장만으로 정할 수 없어요. 폴더가 들어간 경로가 적힌 "
+                            "문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요. 후보: " + ", ".join(others[:3])})
     if match is None:
         raise HTTPException(422, {"code": "quote_not_bound", "message":
-                            f"그 인용 문장이 {real.name} 을(를) 가리키지 않아요. 문장에 파일 이름이 있거나, 이 파일이 그 요청 뒤 이 대화의 "
-                            "작업이 만든 파일이어야 합니다. 작업 세션이 만든 파일도 사용자 말에 파일 이름이 있어야 기획 세션이 보관할 수 있어요."})
+                            f"그 인용 문장이 {real.name} 을(를) 가리키지 않아요. 문장에 확장자까지 포함한 파일 이름이 있거나, 이 파일이 "
+                            "그 발화를 처리한 Run(또는 그 Run 중에 띄운 작업 세션)의 결과물이어야 합니다. 로그·스크린샷 같은 부산물은 "
+                            "파일 이름을 직접 쓴 문장이 필요해요."})
     evidence = build_evidence(match, session_id=sid, run=run, quote=body.quote, kept_at=utcnow(),
                               binding=binding, binding_detail=binding_detail)
 

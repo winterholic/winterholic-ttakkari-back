@@ -6,17 +6,21 @@
   '[최근 대화 — 참고만]' 이후를 뺀 사용자 발화 부분).
 기획이 작업 세션에 쓴 지시(orchestrator)·작업 보고(report)·시스템 Run 은 사용자 발화가 아니므로 근거가 되지 않는다.
 
-검사는 모두 문자열 규칙이고 의도를 추론하거나 모델에 묻지 않는다.
+검사는 모두 문자열 규칙이고 의도를 추론하거나 모델에 묻지 않는다. 애매하면 거부하고 사용자는 앱의 보관 버튼으로 대체한다.
 1. 인용 단위: quote 는 사용자 발화의 한 문장(또는 한 줄)과 정규화 후 정확히 같아야 한다. 부분 단어 매칭은 없다.
    문장 경계는 줄바꿈, 마침표·물음표·느낌표(뒤에 공백이나 끝이 올 때만), 한국어 종결 어미(다·요·죠·까·줘·라·자·네) 뒤 공백이다.
    공백 제외 MIN_QUOTE_CHARS 자 이상이어야 한다.
-2. 부정 방어: 인용 문장에 보관 부정 표현('보관하지', '넣지 마', "don't keep" 등)이 있으면 거부한다. 정상 요청까지 막히는
-   쪽으로 틀리는 것은 허용한다(앱의 보관 버튼으로 대체 가능). 의도 추론이 아니라 명백한 반대 의사를 막는 가드다.
-3. 대상 결속: 인용 문장에 대상 파일의 이름이 있거나(filename), 대상 파일이 그 발화 뒤 이 세션(또는 이 세션이 띄운
-   작업 세션)의 Run 이 만든 것이어야 한다(same_run).
+2. 보관 표현: 문장에 보관 동작 표현(보관·간직·저장해·남겨줘·keep/save/store/archive 등)이 있어야 한다. 의도 추론이 아니라
+   근거 문장의 최소 요건이다.
+3. 부정 가드: 보관 표현과 같은 문장에 부정·금지·제외 형태소(지 마, 말아, 말고, 하지, 않, 없이, 빼고, not, without 등)가 하나라도
+   있으면 거부한다. 정상 요청이 막히는 쪽으로 틀리는 것은 허용한다.
+4. 대상 결속: (filename) 확장자를 포함한 전체 파일명이 단어 경계로 문장에 있고(폴더가 적혔다면 경로 끝부분이 일치, 같은 이름의
+   다른 파일이 있으면 경로로 구분돼야 함), 또는 (same_run) 대상 파일이 발화를 담은 Run 자체, 혹은 그 Run 실행 중에 시작된 자식
+   작업 세션 Run 이 만든 결과물이어야 한다. 부산물은 same_run 에서 제외한다.
 """
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 import uuid
@@ -25,16 +29,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.models import ChatSession, Run, RunOrigin
+from ttakkari.models import Artifact, ChatSession, Run, RunOrigin
 
 # 이 Run(포함)과 그 이전 사용자·접수 Run 중 최근 몇 개에서 인용을 찾을지.
 LOOKBACK_RUNS = 20
 MIN_QUOTE_CHARS = 8
-# 파일명 확장자를 뺀 이름으로 맞출 때 필요한 최소 길이. 너무 짧은 이름이 아무 문장에나 맞는 것을 막는다.
-MIN_STEM_CHARS = 3
+# 같은 이름의 다른 파일을 찾을 때 훑는 최근 Run 수(이 세션과 이 세션이 띄운 작업 세션).
+AMBIGUITY_RUNS = 50
 DESK_HEADER = "[접수에서 넘긴 사용자 요청]"
 DESK_HISTORY_MARKER = "[최근 대화 — 참고만]"
 EXCERPT_CHARS = 1000
@@ -43,15 +47,22 @@ _SENTENCE_END = re.compile(r"(?<=[.!?。！？])\s+")
 _KOREAN_END = re.compile(r"(?<=[다요죠까줘라자네])\s+")
 _TRAILING = re.compile(r"[\s.!?。！？~]+$")
 
-# 공백을 뺀 소문자 문장에서 찾는 한국어 부정 표현.
+# 보관 동작 표현. 공백을 뺀 소문자 문장에서 부분 문자열로 찾고, 영어는 단어로 찾는다.
+_KEEP_KO = ("보관", "간직", "저장해", "저장하", "저장할", "남겨둬", "남겨줘", "남겨주", "남겨두", "남겨놔")
+_KEEP_EN = re.compile(r"\b(?:keep|save|store|archive)\b")
+# 부정·금지·제외 형태소. 보관 표현과 같은 문장에 하나라도 있으면 거부한다(정상 요청이 막혀도 허용한다).
 _NEGATIVE_KO = (
-    "보관하지", "보관말", "보관은말", "보관안", "보관금지", "보관취소", "보관필요없", "보관할필요없", "보관하면안", "보관않",
-    "넣지마", "넣지말", "넣지않", "넣으면안", "넣을필요없", "넣지는",
-    "저장하지", "저장말", "저장안", "저장금지", "저장않",
-    "올리지마", "올리지말", "올리지않",
+    "지마", "지말", "말아", "말고", "마세요", "마라", "마요", "말자", "말것", "하지", "아니", "아님", "안해", "안넣", "안돼", "안되", "않", "못",
+    "없이", "필요없", "빼고", "빼줘", "빼주", "제외", "금지", "싫",
 )
 _NEGATIVE_EN = re.compile(
-    r"\b(?:don'?t|do not|dont|never|no need to|shouldn'?t|should not)\b.{0,24}\b(?:keep|save|store|archive|put|add)\b")
+    r"\b(?:not|never|no need|don'?t|dont|do not|without|cannot|can'?t|shouldn'?t|should not|exclude|except|skip)\b|n't\b")
+
+# same_run 에서도 제외하는 부산물. 0052 마이그레이션의 기준(로그, 증거·캡처 폴더, 워커 증거 JSON)을 따르고, 스크린샷·임시·검증 산출물을 더한다.
+_BYPRODUCT_DIRS = frozenset({"evidence", "browser", "screenshots", "screenshot", "captures", "capture", ".verification",
+                             "tmp", "temp", "__pycache__", "node_modules", ".git"})
+_BYPRODUCT_EXT = frozenset({".log", ".tmp", ".temp", ".bak", ".pyc", ".pid"})
+_BYPRODUCT_NAME = ("screenshot", "capture", "evidence")
 
 
 @dataclass(frozen=True)
@@ -59,6 +70,12 @@ class QuoteMatch:
     run: Run
     source: str
     excerpt: str
+
+
+@dataclass(frozen=True)
+class FileMention:
+    token: str
+    path_token: str | None  # 문장에 폴더가 함께 적혀 있으면 그 경로 끝부분(소문자, 슬래시 구분)
 
 
 def normalize(text: str) -> str:
@@ -89,29 +106,59 @@ def is_whole_sentence(quote: str, text: str) -> bool:
     return len(needle.replace(" ", "")) >= MIN_QUOTE_CHARS and needle in sentence_units(text)
 
 
+def _flat(sentence: str) -> str:
+    return "".join(unicodedata.normalize("NFC", sentence).split()).casefold()
+
+
+def has_keep_expression(sentence: str) -> bool:
+    """보관 동작 표현이 있는지. 의도 추론이 아니라 근거 문장의 최소 요건이다."""
+    if any(token in _flat(sentence) for token in _KEEP_KO):
+        return True
+    return _KEEP_EN.search(normalize(sentence).casefold()) is not None
+
+
 def is_negated(sentence: str) -> bool:
-    flat = "".join(unicodedata.normalize("NFC", sentence).split()).casefold()
-    if any(token in flat for token in _NEGATIVE_KO):
+    """부정·금지·제외 형태소가 하나라도 있는지(보관 표현이 함께 있는 문장에서 쓴다)."""
+    if any(token in _flat(sentence) for token in _NEGATIVE_KO):
         return True
     return _NEGATIVE_EN.search(normalize(sentence).casefold()) is not None
 
 
-def names_file(sentence: str, path: Path) -> str | None:
-    """인용 문장이 대상 파일을 이름으로 가리키면 맞은 표기를 돌려준다. 파일명 전체·확장자 뺀 이름·발화에 나온 경로 끝부분 순이다."""
+def names_file(sentence: str, path: Path) -> FileMention | None:
+    """인용 문장에 확장자를 포함한 전체 파일명이 단어 경계로 있고, 폴더가 함께 적혔다면 경로 끝부분이 대상 경로와 맞는지.
+
+    확장자를 뺀 이름(stem)으로는 맞추지 않는다. 폴더 없이 이름만 적은 경우 같은 이름의 다른 파일이 있는지는 호출한 쪽이 따로 본다."""
     text = normalize(sentence).casefold()
     name = path.name.casefold()
-    stem = path.stem.casefold()
-    candidates = [name]
-    if path.parent.name:
-        parent = path.parent.name.casefold()
-        candidates += [f"{parent}/{name}", f"{parent}/{stem}"]
-    if len(stem.replace(" ", "")) >= MIN_STEM_CHARS:
-        candidates.append(stem)
-    # 긴 표기부터 확인해 가장 구체적인 맞춤을 기록한다.
-    for cand in sorted(set(candidates), key=len, reverse=True):
-        if cand and cand in text:
-            return cand
-    return None
+    full = path.resolve().as_posix().casefold()
+    pattern = re.compile(r"(?P<folder>/?(?:[\w.~\-]+/)*)" + re.escape(name) + r"(?![A-Za-z0-9_\-]|\.[A-Za-z0-9])")
+    bare = False
+    for m in pattern.finditer(text):
+        folder = m.group("folder")
+        if not folder:
+            if m.start() > 0 and re.match(r"[A-Za-z0-9_\-.]", text[m.start() - 1]):
+                continue  # 다른 이름의 일부(예: my.report.md)
+            bare = True
+            continue
+        token = os.path.expanduser(folder + name) if folder.startswith("~/") else (folder + name).removeprefix("./")
+        if token.startswith("/"):
+            matched = full == token
+        else:
+            matched = full.endswith("/" + token)
+        if matched:
+            return FileMention(name, token)
+    return FileMention(name, None) if bare else None
+
+
+def is_byproduct(path: Path) -> bool:
+    """로그·스크린샷·캡처·임시·증거·검증 산출물처럼 사용자가 요청한 결과물이 아닐 가능성이 큰 부산물."""
+    parts = [p.casefold() for p in path.parts]
+    name = path.name.casefold()
+    if path.suffix.casefold() in _BYPRODUCT_EXT or any(p in _BYPRODUCT_DIRS for p in parts[:-1]):
+        return True
+    if any(token in name for token in _BYPRODUCT_NAME):
+        return True
+    return path.suffix.casefold() == ".json" and name.startswith(("tmp", "temp"))
 
 
 def user_utterance(run: Run) -> tuple[str, str] | None:
@@ -153,26 +200,48 @@ def creator_run_id(path: Path, outbox_root: Path, artifact_run_id: uuid.UUID | N
         return artifact_run_id
 
 
-async def made_after_request(db: AsyncSession, *, session_id: uuid.UUID, match: QuoteMatch, path: Path,
-                             created_by: uuid.UUID | None) -> bool:
-    """대상 파일이 그 발화 뒤 이 세션(또는 이 세션이 띄운 작업 세션)의 Run 이 만든 것인지.
+async def made_by_request_run(db: AsyncSession, *, session_id: uuid.UUID, match: QuoteMatch, path: Path,
+                              created_by: uuid.UUID | None) -> bool:
+    """대상 파일이 인용 발화를 처리한 Run 이 만든 결과물인지(same_run).
 
-    기획이 작업 세션에 일을 시키면 파일은 작업 세션의 Run outbox 에 생기므로 부모 세션이 session_id 인 작업 세션도 같은 계열로 본다.
+    허용: (1) 발화를 담은 Run 자체가 만든 파일, (2) 그 Run 이 실행 중이던 시간(시작~종료, 아직 실행 중이면 지금까지) 안에 시작된
+    이 세션의 자식 작업 세션 Run 이 만든 파일. 그 뒤 턴의 Run 이나 Run 종료 뒤에 시작된 자식 Run 은 허용하지 않는다.
+    부산물(로그·스크린샷·캡처·증거·임시 파일)은 허용하지 않으며 사용자 문장에 파일명이 있어야 한다.
     Run 이 기록된 시각만으로는 보관 직전에 공유한 오래된 파일도 통과하므로 파일 수정 시각도 발화 뒤여야 한다."""
-    if created_by is None:
+    if created_by is None or is_byproduct(path):
         return False
     creator = await db.get(Run, created_by)
-    if creator is None or creator.created_at < match.run.created_at:
+    if creator is None:
         return False
-    if creator.session_id != session_id:
+    if creator.id != match.run.id:
         owner = await db.get(ChatSession, creator.session_id)
-        if owner is None or owner.parent_id != session_id:
+        if owner is None or owner.parent_id != session_id or creator.session_id == session_id:
+            return False
+        started = match.run.started_at or match.run.created_at
+        if creator.created_at < started or (match.run.finished_at is not None and creator.created_at > match.run.finished_at):
             return False
     try:
         modified = datetime.fromtimestamp(path.stat().st_mtime, UTC)
     except OSError:
         return False
     return modified >= match.run.created_at
+
+
+async def same_basename_paths(db: AsyncSession, *, session_id: uuid.UUID, path: Path, outbox_root: Path) -> list[str]:
+    """이 세션과 이 세션이 띄운 작업 세션의 artifact 및 최근 Run outbox 에 있는, 같은 파일명의 다른 경로."""
+    real = path.resolve().as_posix()
+    name = path.name
+    sessions = [session_id, *(await db.scalars(select(ChatSession.id).where(ChatSession.parent_id == session_id)))]
+    found = {r.resolve().as_posix() if (r := Path(p)).is_absolute() else p for p in await db.scalars(
+        select(Artifact.original_path).where(
+            Artifact.deleted_at.is_(None), Artifact.session_id.in_(sessions), func.lower(Artifact.filename) == name.lower()))}
+    run_ids = await db.scalars(select(Run.id).where(Run.session_id.in_(sessions)).order_by(Run.created_at.desc()).limit(AMBIGUITY_RUNS))
+    for run_id in run_ids:
+        box = outbox_root / str(run_id)
+        if box.is_dir():
+            found.update(f.resolve().as_posix() for f in box.rglob(name) if f.is_file())
+    found.discard(real)
+    return sorted(found)
 
 
 def build_evidence(match: QuoteMatch, *, session_id: uuid.UUID, run: Run, quote: str, kept_at: datetime,

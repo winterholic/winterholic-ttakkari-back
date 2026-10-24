@@ -466,17 +466,25 @@ async def share_file(path: str) -> str:
 
 @server.tool()
 async def keep_artifact(path: str, quote: str) -> str:
-    """Permanently save a file into the user's personal library ('files') because the user asked for it in the conversation
-    (e.g. '이 보고서 내 보관함에 보관해줘', '만들어서 보관함에 넣어줘'). Never call this on your own.
-    `quote` must be ONE complete sentence (or line) of the user's own message asking to keep it, copied verbatim, at least
-    8 characters without spaces. A word or fragment ('보관') is rejected (422 quote_not_found).
-    The server also checks that the sentence points at this file, else 422 quote_not_bound: either the sentence names the file
-    (file name, name without extension, or its path tail), or the file was made by this conversation's work after that
-    message (same session, or a worker session this session started). A sentence like '만들어서 보관함에 넣어줘' is enough for
-    a file made during that request; for an older file or a file you did not make for that request, the user's sentence
-    must name it. Sentences that say not to keep ('보관하지 마', "don't save") are rejected (422 quote_negated).
+    """Permanently save a file into the user's personal library ('files') because the user asked for it in the conversation.
+    Never call this on your own. When unsure, do not call it: tell the user to press '내 보관함에 보관' in the app instead.
+    `quote` must be ONE complete sentence (or line) of the user's own message, copied verbatim (at least 8 characters
+    without spaces), and that sentence itself must ask to keep/save the file (보관, 보관함에 넣어줘, 저장해, 간직, 남겨줘,
+    keep, save ...). The server checks only strings, in this order, and rejects with 422 and changes nothing:
+    - quote_not_found: not a whole sentence/line of a real user message in this session (a fragment, a paraphrase, planner
+      text and worker prompts do not count). Quote the sentence exactly, or ask the user.
+    - quote_no_keep_request: the sentence has no keep/save expression. Quote a sentence that asks for it, or tell the user to
+      use the app button.
+    - quote_negated: the sentence also has any negation/exclusion ('하지', '않', '말고', '빼고', "don't", 'without' ...).
+      Do not retry; tell the user to use the app button.
+    - quote_ambiguous_file: several files share the name and the sentence does not tell them apart. Quote a sentence that
+      includes the folder path, or tell the user to use the app button.
+    - quote_not_bound: the sentence does not point at this file. Either the sentence contains the full file name with its
+      extension (e.g. '보고서.md를 내 보관함에 보관해줘'), or the file is a result made by the Run that holds the user's message
+      (or by a worker session started during that Run). Files from later turns, logs, screenshots, captures and temp/evidence
+      files are never bound that way: the user's sentence must name them, otherwise tell the user to use the app button.
     Only the planning (lead) session that received the user's request can keep: a worker session only sees instructions the
-    planner wrote, which are not user words and are rejected, so ask the planning session to keep the file."""
+    planner wrote, which are not user words, so ask the planning session to keep the file."""
     return await _agent("POST", "/keep", {"path": path, "quote": quote})
 
 

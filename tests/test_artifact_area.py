@@ -973,7 +973,7 @@ NEGATIVE_SENTENCES = [
     "report.md 빼고 전부 보관함에 넣어줘",
     "report.md 제외하고 보관해줘",
     "report.md 없이 보관함에 넣어줘",
-    "report.md 를 보관해 달라는 게 아니야 단지 질문이야",
+    "report.md 를 보관해 달라고 한 게 아니야 단지 질문이야",
     "please don't keep report.md in my library",
     "do not save report.md",
     "never store report.md",
@@ -992,6 +992,52 @@ async def test_keep_rejects_negative_sentences_even_when_they_name_the_file(clie
     r = await _keep(client, sid, run_id, f, sentence)
     assert r.status_code == 422 and r.json()["code"] == "quote_negated", (sentence, r.text)
     assert await _artifact_rows(sid) == []
+
+
+@pytest.mark.parametrize("sentence", [
+    "report.md 보관해줘라는 문장이 자연스러운지 설명해줘",  # r4: 인용된 말
+    "archive.md라는 파일 이름의 뜻을 설명해줘",  # r4: 파일명 속 단어
+    "report.md 보관 지시문을 요약해줘",  # r4: 명사 수식어
+    "archive 폴더 구조를 설명해줘",
+    "보관함에 넣는 방법 알려줘",
+    "keep.md 내용 보여줘",
+    "save_report.py를 리뷰해줘",
+    '"보관해줘"라고 쓰면 되나요?',
+    "report.md 를 보관함에 넣어줘 그리고 요약해줘",  # 마지막 요청이 보관이 아님
+    "Can you explain what archive means in report.md",
+])
+async def test_keep_rejects_sentences_that_mention_keeping_without_asking_for_it(client, new_session, sentence):
+    """보관 표현이 문장 어디에 있든 인정하지 않는다. 파일명·인용·수식어를 뺀 뒤 마지막 서술 요청이 보관 동작이어야 한다."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    root = Path(ws["root_path"])
+    files = [root / name for name in ("report.md", "archive.md", "keep.md", "save_report.py")]
+    for f in files:
+        f.write_text("x")
+    await _mk_run(ws["id"], sid, sentence, at=datetime.now(UTC) - timedelta(minutes=1))
+    run_id = await _mk_run(ws["id"], sid, "진행", status="running")
+    for f in files:
+        r = await _keep(client, sid, run_id, f, sentence)
+        assert r.status_code == 422 and r.json()["code"] == "quote_no_keep_request", (sentence, f.name, r.text)
+    assert await _artifact_rows(sid) == []
+
+
+@pytest.mark.parametrize(("sentence", "name"), [
+    ("보고서.md를 내 보관함에 보관해줘", "보고서.md"),
+    ("정리해서 report.md 저장해줘", "report.md"),
+    ("Please save report.md to my library", "report.md"),
+    ("report.md 내 보관함에 남겨 둬 부탁해요", "report.md"),
+    ("이 파일 report.md 를 라이브러리에 넣어 주세요", "report.md"),
+])
+async def test_keep_accepts_requests_whose_last_predicate_is_keeping(client, new_session, sentence, name):
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / name
+    f.write_text("# x")
+    await _mk_run(ws["id"], sid, sentence, at=datetime.now(UTC) - timedelta(minutes=1))
+    run_id = await _mk_run(ws["id"], sid, "진행", status="running")
+    r = await _keep(client, sid, run_id, f, sentence)
+    assert r.status_code == 200, (sentence, r.text)
 
 
 @pytest.mark.parametrize("sentence", [
@@ -1062,6 +1108,7 @@ def test_keep_quote_sentence_rules():
     from ttakkari.artifacts.keep_evidence import (
         has_keep_expression,
         is_byproduct,
+        is_keep_request,
         is_negated,
         is_whole_sentence,
         names_file,
@@ -1079,8 +1126,18 @@ def test_keep_quote_sentence_rules():
 
     for yes in ("내 보관함에 넣어줘", "저장해 줘", "간직해줘", "남겨 줘", "Keep it", "please archive this"):
         assert has_keep_expression(yes), yes
+        assert is_keep_request(yes), yes
     for no in ("The report was clear and useful.", "내용이 좋네요", "저장소를 확인해줘", "report.md 열어줘"):
         assert not has_keep_expression(no), no
+        assert not is_keep_request(no), no
+    # 보관 단어가 있어도 요청 형식이 아닌 문장
+    for mention in ("report.md 보관해줘라는 문장을 설명해줘", "archive.md라는 파일 이름의 뜻을 알려줘", "report.md 보관 지시문을 요약해줘",
+                    '"보관해줘"라고 쓰면 되나요?', "보관함에 넣는 방법 알려줘", "keep.md 내용 보여줘", "만들어줘"):
+        assert not is_keep_request(mention), mention
+    assert is_keep_request("만들어서 보관함에 넣어줘") and is_keep_request("정리하고 저장해줘")
+    assert is_keep_request("보관해 주세요") and is_keep_request("보관해줄래?") and is_keep_request("내 보관함에 넣어둬")
+    assert is_keep_request("Can you please store it") and not is_keep_request("Please explain how to save it")
+    assert not is_negated('"하지 마"라고 쓴 문장을 보관해줘')  # 따옴표 안 텍스트는 판정에서 뺀다
     assert is_negated("보관하지 마") and is_negated("넣는 건 하지 말아줘") and is_negated("Don't save it") and is_negated("keep it without logs")
     assert not is_negated("보고서.md를 내 보관함에 보관해줘") and not is_negated("만들어서 보관함에 넣어줘")
 

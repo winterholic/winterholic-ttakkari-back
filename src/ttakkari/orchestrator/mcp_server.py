@@ -469,12 +469,15 @@ async def keep_artifact(path: str, quote: str) -> str:
     """Permanently save a file into the user's personal library ('files') because the user asked for it in the conversation.
     Never call this on your own. When unsure, do not call it: tell the user to press '내 보관함에 보관' in the app instead.
     `quote` must be ONE complete sentence (or line) of the user's own message, copied verbatim (at least 8 characters
-    without spaces), and that sentence itself must ask to keep/save the file (보관, 보관함에 넣어줘, 저장해, 간직, 남겨줘,
-    keep, save ...). The server checks only strings, in this order, and rejects with 422 and changes nothing:
+    without spaces), and that sentence must itself be a keep REQUEST. After the server removes quoted text, file names/paths
+    and any phrase before '…라는/…이라는/…란', the sentence must END with a keep action plus request ending: '…보관해 줘',
+    '…보관함에 넣어 줘/주세요/둬', '…저장해 줘', '…남겨 줘' (a clause like '만들어서' before it is fine); in English it must start
+    with keep/save/store/archive, optionally after please/can you/could you. Merely mentioning keeping, e.g. a question or
+    '보관 지시문을 요약해줘', does not count. The server checks only strings, in this order, and rejects with 422 and changes nothing:
     - quote_not_found: not a whole sentence/line of a real user message in this session (a fragment, a paraphrase, planner
       text and worker prompts do not count). Quote the sentence exactly, or ask the user.
-    - quote_no_keep_request: the sentence has no keep/save expression. Quote a sentence that asks for it, or tell the user to
-      use the app button.
+    - quote_no_keep_request: the sentence is not in that keep-request form. Quote a sentence that asks for it, or tell the
+      user to use the app button.
     - quote_negated: the sentence also has any negation/exclusion ('하지', '않', '말고', '빼고', "don't", 'without' ...).
       Do not retry; tell the user to use the app button.
     - quote_ambiguous_file: several files share the name and the sentence does not tell them apart. Quote a sentence that

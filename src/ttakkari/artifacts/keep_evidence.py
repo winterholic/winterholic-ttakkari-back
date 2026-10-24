@@ -10,9 +10,9 @@
 1. 인용 단위: quote 는 사용자 발화의 한 문장(또는 한 줄)과 정규화 후 정확히 같아야 한다. 부분 단어 매칭은 없다.
    문장 경계는 줄바꿈, 마침표·물음표·느낌표(뒤에 공백이나 끝이 올 때만), 한국어 종결 어미(다·요·죠·까·줘·라·자·네) 뒤 공백이다.
    공백 제외 MIN_QUOTE_CHARS 자 이상이어야 한다.
-2. 보관 표현: 문장에 보관 동작 표현(보관·간직·저장해·남겨줘·keep/save/store/archive 등)이 있어야 한다. 의도 추론이 아니라
-   근거 문장의 최소 요건이다.
-3. 부정 가드: 보관 표현과 같은 문장에 부정·금지·제외 형태소(지 마, 말아, 말고, 하지, 않, 없이, 빼고, not, without 등)가 하나라도
+2. 보관 요청 형식: 따옴표 안 텍스트·파일명/경로 토큰·'…라는' 앞 구절을 지운 문장의 마지막 서술 요청이 보관 동작(…보관해 줘,
+   …보관함에 넣어 줘, …저장해 줘, …남겨 줘, 영어는 Please keep/save …)이어야 한다. 의도 추론이 아니라 문장 형식의 최소 요건이다.
+3. 부정 가드: (같은 정리를 거친) 보관 표현과 같은 문장에 부정·금지·제외 형태소(지 마, 말아, 말고, 하지, 않, 없이, 빼고, not, without 등)가 하나라도
    있으면 거부한다. 정상 요청이 막히는 쪽으로 틀리는 것은 허용한다.
 4. 대상 결속: (filename) 확장자를 포함한 전체 파일명이 단어 경계로 문장에 있고(폴더가 적혔다면 경로 끝부분이 일치, 같은 이름의
    다른 파일이 있으면 경로로 구분돼야 함), 또는 (same_run) 대상 파일이 발화를 담은 Run 자체, 혹은 그 Run 실행 중에 시작된 자식
@@ -110,18 +110,76 @@ def _flat(sentence: str) -> str:
     return "".join(unicodedata.normalize("NFC", sentence).split()).casefold()
 
 
+_QUOTED = re.compile(
+    r"\"[^\"]*\"|(?<!\w)'[^']*'(?!\w)|“[^”]*”|‘[^’]*’|「[^」]*」|`[^`]*`")
+_PATH_TOKEN = re.compile(r"\S*/\S*")
+_FILE_TOKEN = re.compile(r"[\w.~\-]*\.[A-Za-z0-9]{1,10}(?![A-Za-z0-9_])")
+_CITED = re.compile(r"(?:이?라는|이?란)(?![가-힣])")
+_BREAK = ",.;:!?，。"
+# 요청 끝에 붙는 공손·감사 표현. 마지막 서술 요청을 판정할 때 떼어 낸다.
+_FILLER = frozenset({"부탁해요", "부탁해", "부탁합니다", "부탁드려요", "부탁드립니다", "고마워요", "고마워", "감사해요", "감사해",
+                     "감사합니다", "제발", "좀", "플리즈", "ㅎㅎ", "ㅋㅋ", "^^", "ㅠㅠ"})
+_TRAIL_PUNCT = re.compile(r"[\s.!?~,…^ㅎㅋㅠ]+$")
+_REQ = r"(?:줘요?|주세요|주라|줘라|줄래요?|주실래요|주십시오|주시겠어요|줄수있(?:어요?|나요))"
+_HOLD = r"(?:둬요?|두세요|놔요?|놓아줘)"
+# 공백을 뺀 문장 끝이 보관 동작 + 요청·명령 어미인지.
+_KO_KEEP_REQUEST = re.compile(
+    r"(?:"
+    rf"(?:보관|저장|간직)(?:해{_REQ}|해(?:요|라)?|하세요|해{_HOLD})"
+    rf"|(?:보관함|라이브러리)에(?:넣|올려)(?:어|어서)?{_REQ}"
+    rf"|(?:보관함|라이브러리)에(?:넣|올려)(?:어|어서)?{_HOLD}"
+    rf"|남겨{_REQ}|남겨{_HOLD}"
+    r")$")
+_EN_KEEP_REQUEST = re.compile(
+    r"^(?:(?:please|pls|plz)\s+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)?(?:keep|save|store|archive)\b")
+
+
+def scrub(sentence: str) -> str:
+    """보관 표현·부정을 판정하기 전에 문장에서 지운다: 따옴표 안 텍스트, 파일명·경로 토큰, '…라는/…이라는/…란' 앞의 인용 구절.
+
+    인용된 말, 파일 이름 속 단어(archive.md), 설명 대상('…라는 문장')이 보관 요청처럼 보이는 것을 막는다."""
+    text = normalize(sentence)
+    text = _QUOTED.sub(" ", text)
+    text = _PATH_TOKEN.sub(" ", text)
+    text = _FILE_TOKEN.sub(" ", text)
+    while (m := _CITED.search(text)) is not None:
+        start = max((text.rfind(ch, 0, m.start()) for ch in _BREAK), default=-1) + 1
+        text = text[:start] + " " + text[m.end():]
+    return normalize(text)
+
+
 def has_keep_expression(sentence: str) -> bool:
-    """보관 동작 표현이 있는지. 의도 추론이 아니라 근거 문장의 최소 요건이다."""
-    if any(token in _flat(sentence) for token in _KEEP_KO):
+    """scrub 한 문장에 보관 동작 표현이 있는지(부정 판정의 전제). 보관 요청인지는 is_keep_request 가 본다."""
+    text = scrub(sentence)
+    if any(token in "".join(text.split()).casefold() for token in _KEEP_KO):
         return True
-    return _KEEP_EN.search(normalize(sentence).casefold()) is not None
+    return _KEEP_EN.search(text.casefold()) is not None
+
+
+def is_keep_request(sentence: str) -> bool:
+    """scrub 한 문장의 마지막 서술 요청이 보관 동작인지. 보관을 요청하는 문장 형식의 최소 요건이며 의도 추론이 아니다.
+
+    한국어: 문장 끝이 보관·저장·간직해 줘/주세요/줄래/해, (보관함|라이브러리)에 넣어 줘/주세요/둬, 남겨 줘/둬 같은 보관 동사 + 요청·명령 어미.
+    앞 절에 다른 동사가 있어도(만들어서 보관함에 넣어줘) 마지막이 보관이면 된다. 설명·요약·알려줘 같은 다른 요청으로 끝나면 아니다.
+    영어: keep/save/store/archive 가 문장 시작이나 please/can you/could you 직후에 명령 동사로 온다."""
+    text = scrub(sentence)
+    if re.search(r"[가-힣]", text):
+        words = _TRAIL_PUNCT.sub("", text).split()
+        while words and _TRAIL_PUNCT.sub("", words[-1]) in _FILLER:
+            words.pop()
+            words = _TRAIL_PUNCT.sub("", " ".join(words)).split()
+        flat = "".join(words).casefold()
+        flat = _TRAIL_PUNCT.sub("", flat)
+        return _KO_KEEP_REQUEST.search(flat) is not None
+    return _EN_KEEP_REQUEST.search(_TRAIL_PUNCT.sub("", text.casefold())) is not None
 
 
 def is_negated(sentence: str) -> bool:
-    """부정·금지·제외 형태소가 하나라도 있는지(보관 표현이 함께 있는 문장에서 쓴다)."""
-    if any(token in _flat(sentence) for token in _NEGATIVE_KO):
+    """scrub 한 문장에 부정·금지·제외 형태소가 하나라도 있는지."""
+    text = scrub(sentence)
+    if any(token in "".join(text.split()).casefold() for token in _NEGATIVE_KO):
         return True
-    return _NEGATIVE_EN.search(normalize(sentence).casefold()) is not None
+    return _NEGATIVE_EN.search(text.casefold()) is not None
 
 
 def names_file(sentence: str, path: Path) -> FileMention | None:

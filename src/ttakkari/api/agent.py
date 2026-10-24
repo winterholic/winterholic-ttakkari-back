@@ -28,6 +28,7 @@ from ttakkari.artifacts.keep_evidence import (
     creator_run_id,
     find_user_quotes,
     has_keep_expression,
+    is_keep_request,
     is_negated,
     made_by_request_run,
     names_file,
@@ -368,13 +369,14 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
                             "이 세션의 사용자 발화에서 그 인용을 찾지 못했어요. 사용자가 보관을 요청한 말을 문장 하나(또는 한 줄) 그대로, "
                             "공백 제외 8자 이상으로 인용하세요. 단어 일부만 인용하면 안 됩니다. 기획이 작업 세션에 쓴 지시는 사용자 발화가 아니므로 "
                             "근거가 될 수 없고, 작업 세션이면 기획 세션이 직접 보관해야 합니다."})
-    if not has_keep_expression(body.quote):
-        raise HTTPException(422, {"code": "quote_no_keep_request", "message":
-                            "인용한 문장에 보관을 요청하는 표현(보관, 저장해, 간직, 남겨줘, keep, save 등)이 없어요. "
-                            "사용자가 보관을 요청한 문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요."})
-    if is_negated(body.quote):
+    if has_keep_expression(body.quote) and is_negated(body.quote):
         raise HTTPException(422, {"code": "quote_negated", "message":
                             "인용한 문장에 부정·금지·제외 표현이 있어요. 사용자가 앱의 '내 보관함에 보관' 버튼으로 직접 보관할 수 있어요."})
+    if not is_keep_request(body.quote):
+        raise HTTPException(422, {"code": "quote_no_keep_request", "message":
+                            "인용한 문장이 보관을 요청하는 형식이 아니에요. 파일명·따옴표 안의 말·'…라는' 앞 구절을 뺀 문장이 "
+                            "'…보관해 줘', '…보관함에 넣어 줘', '…저장해 줘', '…남겨 줘'(영어는 Please keep/save …)처럼 보관 동작으로 끝나야 해요. "
+                            "사용자가 보관을 요청한 문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요."})
     match, binding, binding_detail = None, "", ""
     mention = names_file(body.quote, real)
     others = await same_basename_paths(db, session_id=sid, path=real, outbox_root=s.outbox_root)

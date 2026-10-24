@@ -1,0 +1,2638 @@
+{
+  "candidate_first_modules": [
+    {
+      "depended_by": [
+        "api",
+        "generation_service",
+        "main",
+        "orchestrator"
+      ],
+      "depends_on": [
+        "api",
+        "config",
+        "host_resource",
+        "managed_comfy",
+        "managed_comfy_receipt",
+        "models",
+        "runs",
+        "tts"
+      ],
+      "display_name": "Creative Studio (V1 + V2)",
+      "external_dep_reverse_modules": [
+        "generation_service",
+        "main"
+      ],
+      "file_count": 25,
+      "first_module_suitability": "rank_1_recommended",
+      "line_count": 13194,
+      "module_id": "creative",
+      "plane": "Domain + Execution adapter",
+      "recent_deploy_blocker_incidents": [
+        "794447f3 (063002a1): LOG-194 test_creative_v2_lease_handoff failed after 985.34s",
+        "d4f439d6 (81a95a50): LOG-190 test_creative_records_api failed after 696.95s",
+        "bf9a853d (a2a0ad9c): LOG-186 test_creative_v2_auto_assets_api failed after 197.81s"
+      ],
+      "runtime_hazards_found": [
+        "api/creative_v2.py:418 spawns untracked asyncio.create_task(_run_asset_generation) outside generation.work()",
+        "creative/v2/asset_generation_managed.py:478 calls tts.service.budget() which fails if API slot enters draining during ComfyUI run",
+        "creative/render.py:576 runs inside API generation maintenance_jobs('creative-render') every 2s"
+      ],
+      "storage_mode": "Filesystem JSON manifests + immutable media (`~/.ttakkari/data/creative*`, `studio_lab_root`); 0 dedicated PostgreSQL tables (uses `runs` only for optional V2 intent extraction)",
+      "test_files_count": 19
+    },
+    {
+      "depended_by": [
+        "api",
+        "cli",
+        "main",
+        "runs"
+      ],
+      "depends_on": [
+        "api",
+        "artifacts",
+        "broker",
+        "config",
+        "db",
+        "models",
+        "security"
+      ],
+      "display_name": "Game Studio",
+      "external_dep_reverse_modules": [
+        "cli",
+        "main",
+        "runs"
+      ],
+      "file_count": 11,
+      "first_module_suitability": "rank_2_after_creative",
+      "line_count": 2407,
+      "module_id": "games",
+      "plane": "Domain + Execution adapter (Docker/OrbStack)",
+      "recent_deploy_blocker_incidents": [
+        "5693d3aa (a7f89304): LOG-185 test_neon_survivor_progression_balance failed after 1004.55s"
+      ],
+      "runtime_hazards_found": [
+        "Coupled to `api/orchestrator.py:_game_worker_context` and `runs/manager.py` auto-build/auto-repair hooks"
+      ],
+      "storage_mode": "PostgreSQL tables (`game_projects`, `game_builds`, `game_sessions`, etc.) + git repos (`~/development/projects/games`) + `~/.ttakkari/data/game-builds`",
+      "test_files_count": 22
+    },
+    {
+      "depended_by": [
+        "api",
+        "generation_service",
+        "kb_delivery",
+        "kb_library",
+        "models"
+      ],
+      "depends_on": [
+        "collector_models",
+        "config",
+        "db",
+        "generation",
+        "models"
+      ],
+      "display_name": "Collector Platform",
+      "external_dep_reverse_modules": [
+        "generation_service",
+        "kb_delivery",
+        "kb_library",
+        "models"
+      ],
+      "file_count": 26,
+      "first_module_suitability": "defer_until_p5",
+      "line_count": 5915,
+      "module_id": "collector",
+      "plane": "Domain + Execution worker",
+      "recent_deploy_blocker_incidents": [
+        "166996a7 (981149ea): LOG-191 test_collector_fetch_tls failed after 690.51s"
+      ],
+      "runtime_hazards_found": [
+        "Heavy dirty state in shared `/back` worktree; cross-coupled with `kb` (`knowledge_rag`) and `generation_service.py` (`collector-consume`, `collector-control`)"
+      ],
+      "storage_mode": "PostgreSQL tables (`collector_*`, 0060/0061/0063 migrations) + blob store (`~/.ttakkari/data/collector`)",
+      "test_files_count": 22
+    },
+    {
+      "depended_by": [
+        "api",
+        "creative",
+        "generation_service",
+        "main"
+      ],
+      "depends_on": [
+        "config",
+        "db",
+        "generation",
+        "model_process",
+        "models",
+        "runs",
+        "security",
+        "tts_models"
+      ],
+      "display_name": "Local TTS (Supertonic)",
+      "external_dep_reverse_modules": [
+        "creative",
+        "generation_service",
+        "main"
+      ],
+      "file_count": 10,
+      "first_module_suitability": "foundation_prerequisite_p3",
+      "line_count": 2029,
+      "module_id": "tts",
+      "plane": "Execution capability / media runtime",
+      "recent_deploy_blocker_incidents": [],
+      "runtime_hazards_found": [
+        "tts/jobs.py:42 stores text chunks only in process-local `_pending_texts: dict[UUID, list[str]]`",
+        "tts/jobs.py:154 `_fail_queued_draining` actively fails accepted 202 queued jobs with `generation_draining` when slot drains",
+        "tts/service.py:130 `generation.work('tts')` rejects work in draining state, preventing queued jobs from draining"
+      ],
+      "storage_mode": "PostgreSQL `tts_jobs` metadata + process-local `_pending_texts` in RAM + disk audio cache",
+      "test_files_count": 8
+    }
+  ],
+  "codebase_metrics": {
+    "modules": {
+      "__init__": {
+        "depended_by": [],
+        "depends_on": [],
+        "fan_in": 0,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 1
+      },
+      "agents": {
+        "depended_by": [
+          "api",
+          "harness_view",
+          "runs"
+        ],
+        "depends_on": [
+          "config",
+          "model_catalog",
+          "orchestrator",
+          "runs"
+        ],
+        "fan_in": 3,
+        "fan_out": 4,
+        "file_count": 10,
+        "line_count": 1298
+      },
+      "antigravity_accounts": {
+        "depended_by": [
+          "api",
+          "reverse",
+          "runs"
+        ],
+        "depends_on": [
+          "config",
+          "security"
+        ],
+        "fan_in": 3,
+        "fan_out": 2,
+        "file_count": 1,
+        "line_count": 403
+      },
+      "api": {
+        "depended_by": [
+          "artcraft_tasks",
+          "context",
+          "creative",
+          "delivery",
+          "games",
+          "generation_service",
+          "main",
+          "meetings",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "weather"
+        ],
+        "depends_on": [
+          "agents",
+          "antigravity_accounts",
+          "artcraft",
+          "artcraft_catalog",
+          "artcraft_tasks",
+          "artifacts",
+          "audit",
+          "backup_status",
+          "broker",
+          "collector",
+          "collector_models",
+          "config",
+          "context",
+          "creative",
+          "db",
+          "delivery",
+          "deployment",
+          "design_system",
+          "games",
+          "generation",
+          "generation_service",
+          "github",
+          "google_account",
+          "harness_view",
+          "host_gpu",
+          "host_resource",
+          "kb_delivery",
+          "kb_library",
+          "kb_models",
+          "kb_retrieval",
+          "kb_store",
+          "knowledge",
+          "knowledge_models",
+          "managed_comfy",
+          "meetings",
+          "model_catalog",
+          "models",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "planner",
+          "pms",
+          "push",
+          "remote_desktop",
+          "research",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "schemas",
+          "security",
+          "sharing",
+          "stocks",
+          "sysinfo",
+          "transfer",
+          "tts",
+          "tts_models",
+          "weather"
+        ],
+        "fan_in": 12,
+        "fan_out": 58,
+        "file_count": 49,
+        "line_count": 12676
+      },
+      "artcraft": {
+        "depended_by": [
+          "api",
+          "artcraft_tasks"
+        ],
+        "depends_on": [
+          "artcraft_bugs",
+          "config"
+        ],
+        "fan_in": 2,
+        "fan_out": 2,
+        "file_count": 1,
+        "line_count": 757
+      },
+      "artcraft_bugs": {
+        "depended_by": [
+          "artcraft"
+        ],
+        "depends_on": [],
+        "fan_in": 1,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 158
+      },
+      "artcraft_catalog": {
+        "depended_by": [
+          "api",
+          "artcraft_tasks"
+        ],
+        "depends_on": [],
+        "fan_in": 2,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 356
+      },
+      "artcraft_tasks": {
+        "depended_by": [
+          "api",
+          "runs"
+        ],
+        "depends_on": [
+          "api",
+          "artcraft",
+          "artcraft_catalog",
+          "artifacts",
+          "broker",
+          "config",
+          "models",
+          "schemas"
+        ],
+        "fan_in": 2,
+        "fan_out": 8,
+        "file_count": 1,
+        "line_count": 477
+      },
+      "artifacts": {
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "executor",
+          "games",
+          "generation_service",
+          "main",
+          "meetings",
+          "runs",
+          "transfer"
+        ],
+        "depends_on": [
+          "broker",
+          "config",
+          "db",
+          "generation",
+          "generation_service",
+          "models"
+        ],
+        "fan_in": 9,
+        "fan_out": 6,
+        "file_count": 4,
+        "line_count": 429
+      },
+      "audit": {
+        "depended_by": [
+          "api",
+          "meetings",
+          "planner",
+          "push",
+          "runs",
+          "sharing"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 6,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 49
+      },
+      "backup_status": {
+        "depended_by": [
+          "api"
+        ],
+        "depends_on": [],
+        "fan_in": 1,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 74
+      },
+      "broker": {
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "artifacts",
+          "cli",
+          "context",
+          "games",
+          "harness_view",
+          "knowledge",
+          "meetings",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "security",
+          "transfer"
+        ],
+        "depends_on": [],
+        "fan_in": 14,
+        "fan_out": 0,
+        "file_count": 2,
+        "line_count": 242
+      },
+      "cli": {
+        "depended_by": [],
+        "depends_on": [
+          "broker",
+          "config",
+          "context",
+          "db",
+          "executor",
+          "executor_reconcile",
+          "games",
+          "generation_bootstrap",
+          "kb_library",
+          "kb_store",
+          "knowledge",
+          "models",
+          "push",
+          "runs",
+          "security"
+        ],
+        "fan_in": 0,
+        "fan_out": 15,
+        "file_count": 1,
+        "line_count": 483
+      },
+      "collector": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "kb_delivery",
+          "kb_library",
+          "models"
+        ],
+        "depends_on": [
+          "collector_models",
+          "config",
+          "db",
+          "generation",
+          "models"
+        ],
+        "fan_in": 5,
+        "fan_out": 5,
+        "file_count": 26,
+        "line_count": 5915
+      },
+      "collector_models": {
+        "depended_by": [
+          "api",
+          "collector",
+          "kb_delivery",
+          "models"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 4,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 239
+      },
+      "config": {
+        "depended_by": [
+          "agents",
+          "antigravity_accounts",
+          "api",
+          "artcraft",
+          "artcraft_tasks",
+          "artifacts",
+          "cli",
+          "collector",
+          "context",
+          "creative",
+          "db",
+          "delivery",
+          "deployment",
+          "executor",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "harness_view",
+          "host_gpu",
+          "kb_retrieval",
+          "kb_store",
+          "main",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "push",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "security",
+          "sharing",
+          "stocks",
+          "transfer",
+          "tts",
+          "weather"
+        ],
+        "depends_on": [
+          "model_catalog"
+        ],
+        "fan_in": 39,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 600
+      },
+      "context": {
+        "depended_by": [
+          "api",
+          "cli",
+          "generation_service",
+          "harness_view",
+          "kb_library",
+          "kb_retrieval",
+          "knowledge",
+          "main",
+          "meetings",
+          "runs"
+        ],
+        "depends_on": [
+          "api",
+          "broker",
+          "config",
+          "knowledge",
+          "knowledge_models",
+          "meetings",
+          "model_process",
+          "models"
+        ],
+        "fan_in": 10,
+        "fan_out": 8,
+        "file_count": 9,
+        "line_count": 1569
+      },
+      "creative": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main",
+          "orchestrator"
+        ],
+        "depends_on": [
+          "api",
+          "config",
+          "host_resource",
+          "managed_comfy",
+          "managed_comfy_receipt",
+          "models",
+          "runs",
+          "tts"
+        ],
+        "fan_in": 4,
+        "fan_out": 8,
+        "file_count": 25,
+        "line_count": 13194
+      },
+      "db": {
+        "depended_by": [
+          "api",
+          "artifacts",
+          "cli",
+          "collector",
+          "deploy_gate",
+          "deployment",
+          "executor",
+          "executor_reconcile",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "kb_delivery",
+          "kb_retrieval",
+          "knowledge",
+          "main",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "planner",
+          "push",
+          "resource_history",
+          "reverse",
+          "runs",
+          "schedules",
+          "security",
+          "sharing",
+          "tts",
+          "weather"
+        ],
+        "depends_on": [
+          "config",
+          "generation",
+          "models"
+        ],
+        "fan_in": 32,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 73
+      },
+      "delivery": {
+        "depended_by": [
+          "api"
+        ],
+        "depends_on": [
+          "api",
+          "config",
+          "delivery_models",
+          "models"
+        ],
+        "fan_in": 1,
+        "fan_out": 4,
+        "file_count": 8,
+        "line_count": 1407
+      },
+      "delivery_models": {
+        "depended_by": [
+          "delivery"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 1,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 104
+      },
+      "deploy_gate": {
+        "depended_by": [
+          "deployment",
+          "generation_deployment"
+        ],
+        "depends_on": [
+          "db",
+          "deployment",
+          "models"
+        ],
+        "fan_in": 2,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 171
+      },
+      "deployment": {
+        "depended_by": [
+          "api",
+          "deploy_gate",
+          "executor",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "main",
+          "oplog",
+          "runs"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "deploy_gate",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "security"
+        ],
+        "fan_in": 9,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 566
+      },
+      "design_preview": {
+        "depended_by": [
+          "design_system"
+        ],
+        "depends_on": [
+          "design_system"
+        ],
+        "fan_in": 1,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 178
+      },
+      "design_system": {
+        "depended_by": [
+          "api",
+          "design_preview"
+        ],
+        "depends_on": [
+          "design_preview"
+        ],
+        "fan_in": 2,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 262
+      },
+      "executor": {
+        "depended_by": [
+          "cli"
+        ],
+        "depends_on": [
+          "artifacts",
+          "config",
+          "db",
+          "deployment",
+          "generation",
+          "generation_service",
+          "meetings",
+          "models",
+          "runs"
+        ],
+        "fan_in": 1,
+        "fan_out": 9,
+        "file_count": 1,
+        "line_count": 177
+      },
+      "executor_reconcile": {
+        "depended_by": [
+          "cli"
+        ],
+        "depends_on": [
+          "db",
+          "generation",
+          "models",
+          "runs"
+        ],
+        "fan_in": 1,
+        "fan_out": 4,
+        "file_count": 1,
+        "line_count": 255
+      },
+      "experiments": {
+        "depended_by": [
+          "runs"
+        ],
+        "depends_on": [],
+        "fan_in": 1,
+        "fan_out": 0,
+        "file_count": 4,
+        "line_count": 619
+      },
+      "games": {
+        "depended_by": [
+          "api",
+          "cli",
+          "main",
+          "runs"
+        ],
+        "depends_on": [
+          "api",
+          "artifacts",
+          "broker",
+          "config",
+          "db",
+          "models",
+          "security"
+        ],
+        "fan_in": 4,
+        "fan_out": 7,
+        "file_count": 11,
+        "line_count": 2407
+      },
+      "generation": {
+        "depended_by": [
+          "api",
+          "artifacts",
+          "collector",
+          "db",
+          "deployment",
+          "executor",
+          "executor_reconcile",
+          "generation_deployment",
+          "generation_service",
+          "meetings",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "tts"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "models",
+          "runs"
+        ],
+        "fan_in": 14,
+        "fan_out": 4,
+        "file_count": 1,
+        "line_count": 379
+      },
+      "generation_bootstrap": {
+        "depended_by": [
+          "cli",
+          "deployment",
+          "generation_deployment",
+          "main"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "deployment",
+          "generation_deployment",
+          "models",
+          "push",
+          "security"
+        ],
+        "fan_in": 4,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 272
+      },
+      "generation_deployment": {
+        "depended_by": [
+          "deployment",
+          "generation_bootstrap"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "deploy_gate",
+          "deployment",
+          "generation",
+          "generation_bootstrap",
+          "models",
+          "security"
+        ],
+        "fan_in": 2,
+        "fan_out": 8,
+        "file_count": 1,
+        "line_count": 1225
+      },
+      "generation_service": {
+        "depended_by": [
+          "api",
+          "artifacts",
+          "executor",
+          "main",
+          "meetings",
+          "runs"
+        ],
+        "depends_on": [
+          "api",
+          "artifacts",
+          "collector",
+          "config",
+          "context",
+          "creative",
+          "db",
+          "deployment",
+          "generation",
+          "kb_delivery",
+          "kb_retrieval",
+          "meetings",
+          "models",
+          "notebooklm",
+          "oplog",
+          "planner",
+          "resource_history",
+          "runs",
+          "schedules",
+          "sharing",
+          "transfer",
+          "tts",
+          "weather"
+        ],
+        "fan_in": 6,
+        "fan_out": 23,
+        "file_count": 1,
+        "line_count": 357
+      },
+      "github": {
+        "depended_by": [
+          "api"
+        ],
+        "depends_on": [
+          "oplog"
+        ],
+        "fan_in": 1,
+        "fan_out": 1,
+        "file_count": 17,
+        "line_count": 2598
+      },
+      "google_account": {
+        "depended_by": [
+          "api",
+          "notebooklm"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "models",
+          "push"
+        ],
+        "fan_in": 2,
+        "fan_out": 4,
+        "file_count": 8,
+        "line_count": 1299
+      },
+      "harness_view": {
+        "depended_by": [
+          "api"
+        ],
+        "depends_on": [
+          "agents",
+          "broker",
+          "config",
+          "context",
+          "models",
+          "oplog",
+          "orchestrator",
+          "runs",
+          "security"
+        ],
+        "fan_in": 1,
+        "fan_out": 9,
+        "file_count": 10,
+        "line_count": 2808
+      },
+      "host_gpu": {
+        "depended_by": [
+          "api"
+        ],
+        "depends_on": [
+          "config",
+          "host_gpu_guard",
+          "host_resource",
+          "managed_comfy"
+        ],
+        "fan_in": 1,
+        "fan_out": 4,
+        "file_count": 1,
+        "line_count": 891
+      },
+      "host_gpu_guard": {
+        "depended_by": [
+          "host_gpu",
+          "host_resource",
+          "managed_comfy"
+        ],
+        "depends_on": [],
+        "fan_in": 3,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 171
+      },
+      "host_resource": {
+        "depended_by": [
+          "api",
+          "creative",
+          "host_gpu",
+          "managed_comfy"
+        ],
+        "depends_on": [
+          "host_gpu_guard"
+        ],
+        "fan_in": 4,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 366
+      },
+      "kb_delivery": {
+        "depended_by": [
+          "api",
+          "generation_service"
+        ],
+        "depends_on": [
+          "collector",
+          "collector_models",
+          "db",
+          "kb_store"
+        ],
+        "fan_in": 2,
+        "fan_out": 4,
+        "file_count": 1,
+        "line_count": 179
+      },
+      "kb_embedding_worker": {
+        "depended_by": [],
+        "depends_on": [
+          "model_process"
+        ],
+        "fan_in": 0,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 74
+      },
+      "kb_eval": {
+        "depended_by": [],
+        "depends_on": [],
+        "fan_in": 0,
+        "fan_out": 0,
+        "file_count": 16,
+        "line_count": 2138
+      },
+      "kb_library": {
+        "depended_by": [
+          "api",
+          "cli",
+          "kb_retrieval"
+        ],
+        "depends_on": [
+          "collector",
+          "context",
+          "kb_models",
+          "kb_store"
+        ],
+        "fan_in": 3,
+        "fan_out": 4,
+        "file_count": 1,
+        "line_count": 404
+      },
+      "kb_models": {
+        "depended_by": [
+          "api",
+          "kb_library",
+          "kb_retrieval",
+          "kb_store",
+          "models",
+          "research"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 6,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 274
+      },
+      "kb_retrieval": {
+        "depended_by": [
+          "api",
+          "generation_service"
+        ],
+        "depends_on": [
+          "config",
+          "context",
+          "db",
+          "kb_library",
+          "kb_models",
+          "kb_vector_models",
+          "model_process",
+          "models"
+        ],
+        "fan_in": 2,
+        "fan_out": 8,
+        "file_count": 1,
+        "line_count": 154
+      },
+      "kb_store": {
+        "depended_by": [
+          "api",
+          "cli",
+          "kb_delivery",
+          "kb_library",
+          "research"
+        ],
+        "depends_on": [
+          "config",
+          "kb_models",
+          "models"
+        ],
+        "fan_in": 5,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 462
+      },
+      "kb_vector_models": {
+        "depended_by": [
+          "kb_retrieval"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 1,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 18
+      },
+      "knowledge": {
+        "depended_by": [
+          "api",
+          "cli",
+          "context"
+        ],
+        "depends_on": [
+          "broker",
+          "context",
+          "db",
+          "knowledge_models",
+          "models"
+        ],
+        "fan_in": 3,
+        "fan_out": 5,
+        "file_count": 6,
+        "line_count": 1692
+      },
+      "knowledge_models": {
+        "depended_by": [
+          "api",
+          "context",
+          "knowledge",
+          "models"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 4,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 269
+      },
+      "main": {
+        "depended_by": [],
+        "depends_on": [
+          "api",
+          "artifacts",
+          "config",
+          "context",
+          "creative",
+          "db",
+          "deployment",
+          "games",
+          "generation_bootstrap",
+          "generation_service",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "planner",
+          "resource_history",
+          "reverse",
+          "runs",
+          "schedules",
+          "security",
+          "sharing",
+          "transfer",
+          "tts",
+          "weather"
+        ],
+        "fan_in": 0,
+        "fan_out": 23,
+        "file_count": 1,
+        "line_count": 369
+      },
+      "managed_comfy": {
+        "depended_by": [
+          "api",
+          "creative",
+          "host_gpu"
+        ],
+        "depends_on": [
+          "host_gpu_guard",
+          "host_resource",
+          "managed_comfy_receipt"
+        ],
+        "fan_in": 3,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 786
+      },
+      "managed_comfy_receipt": {
+        "depended_by": [
+          "creative",
+          "managed_comfy"
+        ],
+        "depends_on": [],
+        "fan_in": 2,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 313
+      },
+      "meetings": {
+        "depended_by": [
+          "api",
+          "context",
+          "executor",
+          "generation_service",
+          "main",
+          "runs",
+          "sharing"
+        ],
+        "depends_on": [
+          "api",
+          "artifacts",
+          "audit",
+          "broker",
+          "config",
+          "context",
+          "db",
+          "generation",
+          "generation_service",
+          "model_catalog",
+          "model_process",
+          "models",
+          "push",
+          "runs",
+          "sharing"
+        ],
+        "fan_in": 7,
+        "fan_out": 15,
+        "file_count": 23,
+        "line_count": 3509
+      },
+      "model_catalog": {
+        "depended_by": [
+          "agents",
+          "api",
+          "config",
+          "meetings",
+          "runs"
+        ],
+        "depends_on": [],
+        "fan_in": 5,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 41
+      },
+      "model_process": {
+        "depended_by": [
+          "context",
+          "kb_embedding_worker",
+          "kb_retrieval",
+          "meetings",
+          "tts"
+        ],
+        "depends_on": [],
+        "fan_in": 5,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 91
+      },
+      "models": {
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "artifacts",
+          "audit",
+          "cli",
+          "collector",
+          "collector_models",
+          "context",
+          "creative",
+          "db",
+          "delivery",
+          "delivery_models",
+          "deploy_gate",
+          "executor",
+          "executor_reconcile",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "harness_view",
+          "kb_models",
+          "kb_retrieval",
+          "kb_store",
+          "kb_vector_models",
+          "knowledge",
+          "knowledge_models",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "planner",
+          "pms",
+          "push",
+          "research",
+          "resource_history",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "security",
+          "sharing",
+          "transfer",
+          "tts",
+          "tts_models",
+          "weather"
+        ],
+        "depends_on": [
+          "collector",
+          "collector_models",
+          "kb_models",
+          "knowledge_models",
+          "research",
+          "textsafe",
+          "tts_models"
+        ],
+        "fan_in": 47,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 1300
+      },
+      "notebooklm": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "google_account",
+          "models"
+        ],
+        "fan_in": 3,
+        "fan_out": 4,
+        "file_count": 12,
+        "line_count": 1670
+      },
+      "oplog": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "github",
+          "harness_view",
+          "main",
+          "orchestrator",
+          "runs"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "deployment",
+          "models"
+        ],
+        "fan_in": 7,
+        "fan_out": 4,
+        "file_count": 8,
+        "line_count": 1362
+      },
+      "orchestrator": {
+        "depended_by": [
+          "agents",
+          "api",
+          "harness_view",
+          "runs"
+        ],
+        "depends_on": [
+          "config",
+          "creative",
+          "db",
+          "models",
+          "oplog",
+          "pms",
+          "runs",
+          "security"
+        ],
+        "fan_in": 4,
+        "fan_out": 8,
+        "file_count": 4,
+        "line_count": 1656
+      },
+      "planner": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
+        "depends_on": [
+          "audit",
+          "db",
+          "models",
+          "push"
+        ],
+        "fan_in": 3,
+        "fan_out": 4,
+        "file_count": 6,
+        "line_count": 588
+      },
+      "pms": {
+        "depended_by": [
+          "api",
+          "orchestrator"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 2,
+        "fan_out": 1,
+        "file_count": 2,
+        "line_count": 471
+      },
+      "push": {
+        "depended_by": [
+          "api",
+          "cli",
+          "generation_bootstrap",
+          "google_account",
+          "meetings",
+          "planner",
+          "runs",
+          "weather"
+        ],
+        "depends_on": [
+          "audit",
+          "config",
+          "db",
+          "models"
+        ],
+        "fan_in": 8,
+        "fan_out": 4,
+        "file_count": 3,
+        "line_count": 212
+      },
+      "remote_desktop": {
+        "depended_by": [
+          "api"
+        ],
+        "depends_on": [],
+        "fan_in": 1,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 114
+      },
+      "research": {
+        "depended_by": [
+          "api",
+          "models"
+        ],
+        "depends_on": [
+          "kb_models",
+          "kb_store",
+          "models"
+        ],
+        "fan_in": 2,
+        "fan_out": 3,
+        "file_count": 6,
+        "line_count": 709
+      },
+      "resource_history": {
+        "depended_by": [
+          "generation_service",
+          "main"
+        ],
+        "depends_on": [
+          "db",
+          "models",
+          "sysinfo"
+        ],
+        "fan_in": 2,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 90
+      },
+      "reverse": {
+        "depended_by": [
+          "api",
+          "main",
+          "reverse_tasks"
+        ],
+        "depends_on": [
+          "antigravity_accounts",
+          "broker",
+          "config",
+          "db",
+          "models",
+          "reverse_tasks",
+          "runs"
+        ],
+        "fan_in": 3,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 1836
+      },
+      "reverse_tasks": {
+        "depended_by": [
+          "api",
+          "reverse",
+          "runs"
+        ],
+        "depends_on": [
+          "api",
+          "broker",
+          "config",
+          "generation",
+          "models",
+          "reverse",
+          "runs",
+          "schemas"
+        ],
+        "fan_in": 3,
+        "fan_out": 8,
+        "file_count": 1,
+        "line_count": 398
+      },
+      "runs": {
+        "depended_by": [
+          "agents",
+          "api",
+          "cli",
+          "creative",
+          "executor",
+          "executor_reconcile",
+          "generation",
+          "generation_service",
+          "harness_view",
+          "main",
+          "meetings",
+          "orchestrator",
+          "reverse",
+          "reverse_tasks",
+          "schedules",
+          "tts",
+          "weather"
+        ],
+        "depends_on": [
+          "agents",
+          "antigravity_accounts",
+          "api",
+          "artcraft_tasks",
+          "artifacts",
+          "audit",
+          "broker",
+          "config",
+          "context",
+          "db",
+          "deployment",
+          "experiments",
+          "games",
+          "generation",
+          "generation_service",
+          "meetings",
+          "model_catalog",
+          "models",
+          "oplog",
+          "orchestrator",
+          "push",
+          "reverse_tasks",
+          "schemas",
+          "security"
+        ],
+        "fan_in": 17,
+        "fan_out": 24,
+        "file_count": 29,
+        "line_count": 9997
+      },
+      "schedules": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
+        "depends_on": [
+          "api",
+          "db",
+          "generation",
+          "models",
+          "runs"
+        ],
+        "fan_in": 3,
+        "fan_out": 5,
+        "file_count": 2,
+        "line_count": 380
+      },
+      "schema_aliases": {
+        "depended_by": [],
+        "depends_on": [],
+        "fan_in": 0,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 51
+      },
+      "schemas": {
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "reverse_tasks",
+          "runs"
+        ],
+        "depends_on": [],
+        "fan_in": 4,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 344
+      },
+      "security": {
+        "depended_by": [
+          "antigravity_accounts",
+          "api",
+          "cli",
+          "deployment",
+          "games",
+          "generation_bootstrap",
+          "generation_deployment",
+          "harness_view",
+          "main",
+          "orchestrator",
+          "runs",
+          "sharing",
+          "tts"
+        ],
+        "depends_on": [
+          "broker",
+          "config",
+          "db",
+          "models"
+        ],
+        "fan_in": 13,
+        "fan_out": 4,
+        "file_count": 10,
+        "line_count": 1884
+      },
+      "sharing": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main",
+          "meetings"
+        ],
+        "depends_on": [
+          "audit",
+          "config",
+          "db",
+          "meetings",
+          "models",
+          "security"
+        ],
+        "fan_in": 4,
+        "fan_out": 6,
+        "file_count": 7,
+        "line_count": 936
+      },
+      "stocks": {
+        "depended_by": [
+          "api"
+        ],
+        "depends_on": [
+          "config"
+        ],
+        "fan_in": 1,
+        "fan_out": 1,
+        "file_count": 2,
+        "line_count": 740
+      },
+      "sysinfo": {
+        "depended_by": [
+          "api",
+          "resource_history"
+        ],
+        "depends_on": [],
+        "fan_in": 2,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 295
+      },
+      "textsafe": {
+        "depended_by": [
+          "models"
+        ],
+        "depends_on": [],
+        "fan_in": 1,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 51
+      },
+      "transfer": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
+        "depends_on": [
+          "artifacts",
+          "broker",
+          "config",
+          "models"
+        ],
+        "fan_in": 3,
+        "fan_out": 4,
+        "file_count": 4,
+        "line_count": 411
+      },
+      "tts": {
+        "depended_by": [
+          "api",
+          "creative",
+          "generation_service",
+          "main"
+        ],
+        "depends_on": [
+          "config",
+          "db",
+          "generation",
+          "model_process",
+          "models",
+          "runs",
+          "security",
+          "tts_models"
+        ],
+        "fan_in": 4,
+        "fan_out": 8,
+        "file_count": 10,
+        "line_count": 2029
+      },
+      "tts_models": {
+        "depended_by": [
+          "api",
+          "models",
+          "tts"
+        ],
+        "depends_on": [
+          "models"
+        ],
+        "fan_in": 3,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 50
+      },
+      "weather": {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
+        "depends_on": [
+          "api",
+          "config",
+          "db",
+          "models",
+          "push",
+          "runs"
+        ],
+        "fan_in": 3,
+        "fan_out": 6,
+        "file_count": 3,
+        "line_count": 587
+      }
+    },
+    "top_fan_in_units": [
+      {
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "artifacts",
+          "audit",
+          "cli",
+          "collector",
+          "collector_models",
+          "context",
+          "creative",
+          "db",
+          "delivery",
+          "delivery_models",
+          "deploy_gate",
+          "executor",
+          "executor_reconcile",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "harness_view",
+          "kb_models",
+          "kb_retrieval",
+          "kb_store",
+          "kb_vector_models",
+          "knowledge",
+          "knowledge_models",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "planner",
+          "pms",
+          "push",
+          "research",
+          "resource_history",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "security",
+          "sharing",
+          "transfer",
+          "tts",
+          "tts_models",
+          "weather"
+        ],
+        "fan_in": 47,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 1300,
+        "unit": "models"
+      },
+      {
+        "depended_by": [
+          "agents",
+          "antigravity_accounts",
+          "api",
+          "artcraft",
+          "artcraft_tasks",
+          "artifacts",
+          "cli",
+          "collector",
+          "context",
+          "creative",
+          "db",
+          "delivery",
+          "deployment",
+          "executor",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "harness_view",
+          "host_gpu",
+          "kb_retrieval",
+          "kb_store",
+          "main",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "push",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "security",
+          "sharing",
+          "stocks",
+          "transfer",
+          "tts",
+          "weather"
+        ],
+        "fan_in": 39,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 600,
+        "unit": "config"
+      },
+      {
+        "depended_by": [
+          "api",
+          "artifacts",
+          "cli",
+          "collector",
+          "deploy_gate",
+          "deployment",
+          "executor",
+          "executor_reconcile",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "kb_delivery",
+          "kb_retrieval",
+          "knowledge",
+          "main",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "planner",
+          "push",
+          "resource_history",
+          "reverse",
+          "runs",
+          "schedules",
+          "security",
+          "sharing",
+          "tts",
+          "weather"
+        ],
+        "fan_in": 32,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 73,
+        "unit": "db"
+      },
+      {
+        "depended_by": [
+          "agents",
+          "api",
+          "cli",
+          "creative",
+          "executor",
+          "executor_reconcile",
+          "generation",
+          "generation_service",
+          "harness_view",
+          "main",
+          "meetings",
+          "orchestrator",
+          "reverse",
+          "reverse_tasks",
+          "schedules",
+          "tts",
+          "weather"
+        ],
+        "fan_in": 17,
+        "fan_out": 24,
+        "file_count": 29,
+        "line_count": 9997,
+        "unit": "runs"
+      },
+      {
+        "depended_by": [
+          "api",
+          "artifacts",
+          "collector",
+          "db",
+          "deployment",
+          "executor",
+          "executor_reconcile",
+          "generation_deployment",
+          "generation_service",
+          "meetings",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "tts"
+        ],
+        "fan_in": 14,
+        "fan_out": 4,
+        "file_count": 1,
+        "line_count": 379,
+        "unit": "generation"
+      },
+      {
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "artifacts",
+          "cli",
+          "context",
+          "games",
+          "harness_view",
+          "knowledge",
+          "meetings",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "security",
+          "transfer"
+        ],
+        "fan_in": 14,
+        "fan_out": 0,
+        "file_count": 2,
+        "line_count": 242,
+        "unit": "broker"
+      },
+      {
+        "depended_by": [
+          "antigravity_accounts",
+          "api",
+          "cli",
+          "deployment",
+          "games",
+          "generation_bootstrap",
+          "generation_deployment",
+          "harness_view",
+          "main",
+          "orchestrator",
+          "runs",
+          "sharing",
+          "tts"
+        ],
+        "fan_in": 13,
+        "fan_out": 4,
+        "file_count": 10,
+        "line_count": 1884,
+        "unit": "security"
+      },
+      {
+        "depended_by": [
+          "artcraft_tasks",
+          "context",
+          "creative",
+          "delivery",
+          "games",
+          "generation_service",
+          "main",
+          "meetings",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "weather"
+        ],
+        "fan_in": 12,
+        "fan_out": 58,
+        "file_count": 49,
+        "line_count": 12676,
+        "unit": "api"
+      },
+      {
+        "depended_by": [
+          "api",
+          "cli",
+          "generation_service",
+          "harness_view",
+          "kb_library",
+          "kb_retrieval",
+          "knowledge",
+          "main",
+          "meetings",
+          "runs"
+        ],
+        "fan_in": 10,
+        "fan_out": 8,
+        "file_count": 9,
+        "line_count": 1569,
+        "unit": "context"
+      },
+      {
+        "depended_by": [
+          "api",
+          "deploy_gate",
+          "executor",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "main",
+          "oplog",
+          "runs"
+        ],
+        "fan_in": 9,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 566,
+        "unit": "deployment"
+      },
+      {
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "executor",
+          "games",
+          "generation_service",
+          "main",
+          "meetings",
+          "runs",
+          "transfer"
+        ],
+        "fan_in": 9,
+        "fan_out": 6,
+        "file_count": 4,
+        "line_count": 429,
+        "unit": "artifacts"
+      },
+      {
+        "depended_by": [
+          "api",
+          "cli",
+          "generation_bootstrap",
+          "google_account",
+          "meetings",
+          "planner",
+          "runs",
+          "weather"
+        ],
+        "fan_in": 8,
+        "fan_out": 4,
+        "file_count": 3,
+        "line_count": 212,
+        "unit": "push"
+      },
+      {
+        "depended_by": [
+          "api",
+          "context",
+          "executor",
+          "generation_service",
+          "main",
+          "runs",
+          "sharing"
+        ],
+        "fan_in": 7,
+        "fan_out": 15,
+        "file_count": 23,
+        "line_count": 3509,
+        "unit": "meetings"
+      },
+      {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "github",
+          "harness_view",
+          "main",
+          "orchestrator",
+          "runs"
+        ],
+        "fan_in": 7,
+        "fan_out": 4,
+        "file_count": 8,
+        "line_count": 1362,
+        "unit": "oplog"
+      },
+      {
+        "depended_by": [
+          "api",
+          "artifacts",
+          "executor",
+          "main",
+          "meetings",
+          "runs"
+        ],
+        "fan_in": 6,
+        "fan_out": 23,
+        "file_count": 1,
+        "line_count": 357,
+        "unit": "generation_service"
+      },
+      {
+        "depended_by": [
+          "api",
+          "kb_library",
+          "kb_retrieval",
+          "kb_store",
+          "models",
+          "research"
+        ],
+        "fan_in": 6,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 274,
+        "unit": "kb_models"
+      },
+      {
+        "depended_by": [
+          "api",
+          "meetings",
+          "planner",
+          "push",
+          "runs",
+          "sharing"
+        ],
+        "fan_in": 6,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 49,
+        "unit": "audit"
+      },
+      {
+        "depended_by": [
+          "api",
+          "generation_service",
+          "kb_delivery",
+          "kb_library",
+          "models"
+        ],
+        "fan_in": 5,
+        "fan_out": 5,
+        "file_count": 26,
+        "line_count": 5915,
+        "unit": "collector"
+      },
+      {
+        "depended_by": [
+          "api",
+          "cli",
+          "kb_delivery",
+          "kb_library",
+          "research"
+        ],
+        "fan_in": 5,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 462,
+        "unit": "kb_store"
+      },
+      {
+        "depended_by": [
+          "context",
+          "kb_embedding_worker",
+          "kb_retrieval",
+          "meetings",
+          "tts"
+        ],
+        "fan_in": 5,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 91,
+        "unit": "model_process"
+      }
+    ],
+    "top_level_unit_count": 80,
+    "total_lines": 94439,
+    "total_python_files": 385
+  },
+  "contracts_and_manifests": {
+    "contract_test_files": [
+      "tests/test_context.py",
+      "tests/test_contract_marker.py",
+      "tests/test_generation_deployment.py",
+      "tests/test_migration_single_head.py",
+      "tests/test_route_inventory.py",
+      "tests/test_security_gate.py",
+      "tests/test_security_gate_inventory.py"
+    ],
+    "generation_contract": {
+      "online_migration_from": [
+        "0032_weather_briefings",
+        "0033_weather_analysis_engine",
+        "0034_knowledge_ledger",
+        "0035_qwen_token_usage",
+        "0036_system_resource_samples",
+        "0037_worker_routing",
+        "0038_qwen_flash_usage",
+        "0039_ops_log_issues",
+        "0040_ops_event_receipts",
+        "0041_reverse_jobs",
+        "0042_artcraft_tasks",
+        "0043_reverse_jobs_jsonb",
+        "0044_reverse_reconstruction",
+        "0045_tossinvest_runs",
+        "0046_notebooklm",
+        "0047_game_studio",
+        "0048_game_active_build",
+        "0049_google_accounts",
+        "0050_login_throttle_shadow",
+        "0051_scope_memo_event",
+        "0052_artifact_area_byproducts",
+        "0053_kb_core",
+        "0054_kb_evidence",
+        "0055_kb_immutability_hardening",
+        "0056_research_lab",
+        "0057_scheduled_actions",
+        "0058_kb_immutability_truncate",
+        "0059_collector_intake",
+        "0060_collector_job_runtime",
+        "0061_local_tts",
+        "0062_delivery_change_sets",
+        "0063_collector_stage_items",
+        "0059_kb_immutability_truncate",
+        "0064_run_executor",
+        "0065_collector_delivery",
+        "0066_collector_budget"
+      ],
+      "protocol": 1,
+      "run_executor": {
+        "activation": "disabled",
+        "manifest": "deploy/run-executor-manifest.json",
+        "manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266",
+        "protocol": 2
+      },
+      "schema_aliases": {
+        "0059_kb_immutability_truncate": "0059_collector_intake"
+      },
+      "schema_revision": "0067_collector_outbox_retry",
+      "supervisor": {
+        "protocol": 1,
+        "slots": 3
+      }
+    },
+    "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
+    "maintenance_job_count": 15,
+    "maintenance_job_names": [
+      "retention",
+      "vectors",
+      "notebooklm-jobs",
+      "creative-render",
+      "schedules",
+      "collector-consume",
+      "collector-control",
+      "kb-vectors",
+      "reminders",
+      "weather",
+      "usage",
+      "qwen-flash-usage",
+      "resource-history",
+      "archive",
+      "ops-logs"
+    ],
+    "run_executor_manifest": {
+      "activation": "disabled",
+      "activation_gates": [
+        "release_marker_matches_revision",
+        "pinned_interpreter_exists",
+        "all_live_apis_protocol2_remote",
+        "no_existing_run_leases",
+        "pending_commands_supported",
+        "executor_process_identity_matches_database"
+      ],
+      "command": [
+        "{release}/.venv/bin/python",
+        "-m",
+        "ttakkari.cli",
+        "executor",
+        "--activate"
+      ],
+      "environment": {
+        "TTAKKARI_DEPLOY_SOURCE_ROOT": "{source_root}",
+        "TTAKKARI_DEPLOY_STRATEGY": "generations",
+        "TTAKKARI_RELEASE_REVISION": "{revision}",
+        "TTAKKARI_RUNTIME_GENERATION": "true"
+      },
+      "readiness": [
+        "executor_generation",
+        "revision",
+        "pid",
+        "process_started_at",
+        "heartbeat_at"
+      ],
+      "replacement": "drain_runs_and_children_then_replace_under_executor_lock",
+      "role": "run-executor",
+      "rollback": "drain_runs_and_children_then_clear_executor_pointer_before_api_local_mode",
+      "schema": 1
+    },
+    "run_executor_manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266"
+  },
+  "generated_at": "2026-10-24T21:33:00+09:00",
+  "git_revisions": {
+    "audited_origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "commits_between_live_and_origin_main": 4,
+    "commits_between_shared_head_and_origin_main": 111,
+    "front_origin_main_sha": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
+    "live_deployed_sha": "9f82c9c16cd604e81ddf43180b0be2e895ec85cb",
+    "retired_previous_sha": "4f341c54813830c59fc0dd2ab41a8d37c811df52",
+    "shared_back_worktree_head_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
+    "supervisor_pinned_release_sha": "e817fc19471bdc48054158cada4a99466f7eaa6f",
+    "ui_worker_session_verified": {
+      "backend_side_effects": "none",
+      "commit_sha": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
+      "repo_touched": "/Users/winterholic/development/projects/winterholic-ttakkari/front",
+      "session_id": "6e33860e-3773-48bf-8df5-a3dc2c330a3e",
+      "title": "Worker: 메인 화면 카드 겹침·잘림 전수 수정 및 재발 방지"
+    }
+  },
+  "migrations": {
+    "heads": [
+      "0067_collector_outbox_retry"
+    ],
+    "latest_files": [
+      "0063_collector_stage_items.py",
+      "0064_run_executor.py",
+      "0065_collector_delivery.py",
+      "0066_collector_budget.py",
+      "0067_collector_outbox_retry.py"
+    ],
+    "migration_file_count": 67,
+    "revision_count": 67,
+    "single_head": true
+  },
+  "p0_operational_baseline": {
+    "active_deployment": {
+      "activated_revision": "9f82c9c16cd604e81ddf43180b0be2e895ec85cb",
+      "candidate_generation": "5ef462e5-d7f7-40e7-bf27-1d4bf19e1d91",
+      "candidate_port": 8792,
+      "candidate_slot": 1,
+      "created_at": "2026-10-23T10:16:49.556741+00:00",
+      "db_reset_tables": 106,
+      "db_selective_resets": 2822,
+      "job_id": "4a6e09a8-c49f-4c2f-9a6c-c0d83fe5824a",
+      "previous_port": 8791,
+      "previous_slot": 0,
+      "pytest_passed": 4473,
+      "pytest_skipped": 8,
+      "pytest_subtests_passed": 5020,
+      "pytest_wall_seconds": 1045.97,
+      "pytest_xfailed": 2,
+      "release_path": "/Users/winterholic/.ttakkari/deploy/releases/9f82c9c16cd604e81ddf43180b0be2e895ec85cb",
+      "retired_generation": "e1eb4ad0-5ce7-415f-b91e-9c0b0eab2ba3",
+      "status": "succeeded",
+      "strategy": "generations",
+      "updated_at": "2026-10-23T10:43:06.032849+00:00",
+      "wall_clock_seconds": 1576.48
+    },
+    "backup_and_restore": {
+      "api_endpoint": "GET /api/system/backup-status",
+      "backup_db_script": "scripts/backup_db.sh",
+      "code_status": "implemented",
+      "live_latest_manifest_state": "unknown (확인 필요: ~/.ttakkari-backups/latest.json is outside workspace writable/readable roots and no MCP wrapper exposes /api/system/backup-status)",
+      "restore_rehearsal_script": "scripts/restore_rehearsal.sh",
+      "snapshot_data_script": "scripts/snapshot_data.sh",
+      "status_reader_module": "src/ttakkari/backup_status.py"
+    },
+    "deploy_history_window": {
+      "by_stage": {
+        "deploy:archive": {
+          "events": 2,
+          "issue_groups": 1
+        },
+        "deploy:pytest": {
+          "events": 54,
+          "issue_groups": 33
+        }
+      },
+      "deploy_failure_events_total": 56,
+      "deploy_issue_groups_total": 34,
+      "period_utc": "2026-10-16T08:11:13Z..2026-10-23T17:19:03Z",
+      "sampled_job_counts": {
+        "draining_active": 0,
+        "failed_recent_cap": 50,
+        "succeeded_recent_cap": 50,
+        "superseded_recent": 40,
+        "waiting_slot_active": 0
+      }
+    },
+    "host_resources": {
+      "chip": "Apple M5 Max",
+      "cpu_logical_cores": 18,
+      "cpu_usage_percent": 17.6,
+      "disk_used_percent": 77.3,
+      "gpu_cores": 40,
+      "gpu_usage_percent": 0.0,
+      "memory_total_bytes": 68719476736,
+      "memory_used_percent": 42.1,
+      "observed_backend_pid": 44104,
+      "observed_llama_server_pid": 44129,
+      "observed_llama_server_rss_bytes": 7734657024,
+      "sampled_at": "2026-10-24T12:20:12.690830+00:00",
+      "swap_total_bytes": 35745689856,
+      "swap_used_bytes": 34059649024,
+      "swap_used_percent": 95.3
+    },
+    "latest_blocked_deployments": [
+      {
+        "cause": "AssertionError: assert 'harness-v3-topic-boundary' == 'harness-v2'",
+        "failed_test": "tests/test_desk_qwen_service.py::test_desk_request_goes_to_the_managed_server_of_this_process",
+        "failing_stage": "pytest",
+        "issue_id": "LOG-195",
+        "job_id": "e15536bc-c7f9-4e1a-89cb-95e2f91192e5",
+        "passed_before_abort": 1112,
+        "pytest_seconds_before_abort": 172.23,
+        "status": "failed",
+        "target_sha": "c8f10156845d007ec6496a65d6d8417be19260bd"
+      },
+      {
+        "cause": "AssertionError: assert 349 == 324 (prompt length changed by caption word-wrapping fix)",
+        "failed_test": "unit_tests/test_creative_v2_lease_handoff.py::test_scene_generation_requests_bounded_lease_wait_from_controller",
+        "failing_stage": "pytest",
+        "issue_id": "LOG-194",
+        "job_id": "794447f3-8635-443d-b4c5-de975b0e91fb",
+        "passed_before_abort": 3327,
+        "pytest_seconds_before_abort": 985.34,
+        "status": "failed",
+        "target_sha": "063002a14c21fc7d3fa668db66eb3e503f4cb5cc"
+      }
+    ]
+  },
+  "sample_evidence_cache_key": {
+    "cache_key": "evk-v1-creative-046e6252825d0ecfbebf16f8",
+    "components": {
+      "changed_files": [
+        "src/ttakkari/creative/render.py"
+      ],
+      "dependency_closure_hashes": {
+        "src/ttakkari/config.py": "b50c8d87887b3d755157720d0362d53f8614567003cf78467272c8eb9196753b",
+        "src/ttakkari/host_resource.py": "387912b757995b38ba8d888b2fbfa4ddbcc21857b6bfcd804489e24ddcf26219",
+        "src/ttakkari/managed_comfy.py": "60a2a6d76e7a707450ecb34b95b931a30ea4c567abd14f87fdf0a527e74aac1c",
+        "src/ttakkari/managed_comfy_receipt.py": "0ac2a4afe1341d676a3f9f64d1c3953bf23db893a1e023934d64dca4825f097b",
+        "src/ttakkari/models.py": "f77ad6600a9763d07a407cc465580f7b9e1a9fadbd829a2b7c2e71dab0f87f3e"
+      },
+      "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
+      "migration_head": "0067_collector_outbox_retry",
+      "module_id": "creative",
+      "python_version": "3.13",
+      "schema_version": "platform-v2-evidence-key-v1",
+      "suite_selector": "pytest -m contract + tests/test_creative*.py + unit_tests/test_creative*.py",
+      "uv_lock_sha256": "1c98140912d3c7a49b9ef06b671d53f57c92592c2e1e02d8a6065027e3f15937"
+    },
+    "sha256": "046e6252825d0ecfbebf16f8bc005d690ffefc7e68298e12bff980a809f4f15b"
+  },
+  "sample_impact_classifications": {
+    "alembic_schema_change": {
+      "gate_mode": "broad_fail_closed",
+      "impacted_reverse_modules": [],
+      "reasons": [
+        "broad_gate_trigger:alembic/versions/0064_run_executor.py",
+        "unclassified_path:alembic/versions/0064_run_executor.py"
+      ],
+      "touched_modules": []
+    },
+    "creative_only_change": {
+      "gate_mode": "module_scoped",
+      "impacted_reverse_modules": [
+        "api",
+        "generation_service",
+        "main",
+        "orchestrator"
+      ],
+      "reasons": [],
+      "touched_modules": [
+        "creative"
+      ]
+    },
+    "high_fan_in_core_change": {
+      "gate_mode": "broad_fail_closed",
+      "impacted_reverse_modules": [
+        "api",
+        "artcraft_tasks",
+        "artifacts",
+        "audit",
+        "cli",
+        "collector",
+        "collector_models",
+        "context",
+        "creative",
+        "db",
+        "delivery",
+        "delivery_models",
+        "deploy_gate",
+        "executor",
+        "executor_reconcile",
+        "games",
+        "generation",
+        "generation_bootstrap",
+        "generation_deployment",
+        "generation_service",
+        "google_account",
+        "harness_view",
+        "kb_models",
+        "kb_retrieval",
+        "kb_store",
+        "kb_vector_models",
+        "knowledge",
+        "knowledge_models",
+        "meetings",
+        "notebooklm",
+        "oplog",
+        "orchestrator",
+        "planner",
+        "pms",
+        "push",
+        "research",
+        "resource_history",
+        "reverse",
+        "reverse_tasks",
+        "runs",
+        "schedules",
+        "security",
+        "sharing",
+        "transfer",
+        "tts",
+        "tts_models",
+        "weather"
+      ],
+      "reasons": [
+        "broad_gate_trigger:src/ttakkari/models.py",
+        "high_fan_in_module:models(fan_in=47)"
+      ],
+      "touched_modules": [
+        "models"
+      ]
+    }
+  },
+  "schema_version": "platform-v2-worker-a-evidence-v1",
+  "subsystem_status_matrix": [
+    {
+      "code_status": "implemented",
+      "config_contract_default": "feature-off (deploy/generation-contract.json run_executor.activation='disabled', Settings.run_executor_mode='local')",
+      "evidence_paths": [
+        "src/ttakkari/executor.py",
+        "src/ttakkari/executor_reconcile.py",
+        "alembic/versions/0064_run_executor.py",
+        "deploy/generation-contract.json",
+        "deploy/run-executor-manifest.json"
+      ],
+      "live_status": "feature-off (code & migration 0064_run_executor deployed in 9f82c9c1, but active slot runs in execution_mode='local')",
+      "subsystem": "ADR 0036 Standalone RunExecutor & Postgres Command Queue",
+      "test_status": "tested (unit_tests/test_executor_migration_contract.py, unit_tests/test_executor_reconcile.py, tests/test_run_executor.py)"
+    },
+    {
+      "code_status": "implemented (partial: Stage 2 validator still runs full pytest; no daemon or MCP submit_change tool)",
+      "config_contract_default": "feature-off (Settings.delivery_pipeline_enabled=False)",
+      "evidence_paths": [
+        "src/ttakkari/delivery_models.py",
+        "src/ttakkari/delivery/merge_queue.py",
+        "src/ttakkari/delivery/validation.py",
+        "src/ttakkari/delivery/worktree.py",
+        "src/ttakkari/delivery/provenance.py",
+        "src/ttakkari/delivery/diff_guard.py",
+        "src/ttakkari/delivery/repair_policy.py",
+        "alembic/versions/0062_delivery_change_sets.py"
+      ],
+      "live_status": "feature-off (deployed in 9f82c9c1, not enabled in production)",
+      "subsystem": "ADR 0066 AI-Native Delivery Pipeline (ChangeSet / MergeQueue / Worktree)",
+      "test_status": "tested (tests/delivery/test_*.py)"
+    },
+    {
+      "code_status": "implemented",
+      "config_contract_default": "enabled in prod (deploy_strategy='generations', runtime_generation=True)",
+      "evidence_paths": [
+        "src/ttakkari/generation.py",
+        "src/ttakkari/generation_service.py",
+        "src/ttakkari/generation_deployment.py",
+        "src/ttakkari/deployment.py",
+        "src/ttakkari/deploy_gate.py"
+      ],
+      "live_status": "live & measured (slot 1 port 8792 active on 9f82c9c1; supervisor running from pinned release e817fc19)",
+      "subsystem": "3-Slot Generation Deployment (8791/8792/8793) & Cutover Controller",
+      "test_status": "tested (tests/test_generation_deployment.py, unit_tests/test_deploy_stepwise_gate.py)"
+    },
+    {
+      "code_status": "implemented (with process-local _pending_texts defect)",
+      "config_contract_default": "local_tts_enabled=True",
+      "evidence_paths": [
+        "src/ttakkari/tts/jobs.py",
+        "src/ttakkari/tts/service.py"
+      ],
+      "live_status": "live (process-local _pending_texts and _fail_queued_draining active in API process)",
+      "subsystem": "Local TTS Queue & Supertonic Provider",
+      "test_status": "tested (tests/test_tts*.py)"
+    },
+    {
+      "code_status": "implemented (per-API-generation child process ownership)",
+      "config_contract_default": "desk_qwen_enabled=True, desk_qwen_manage=True, desk_qwen_base_url=''",
+      "evidence_paths": [
+        "src/ttakkari/runs/desk_qwen_service.py",
+        "src/ttakkari/generation_service.py"
+      ],
+      "live_status": "live & measured (pid 44129 llama-server RSS 7.20 GiB)",
+      "subsystem": "Desk Qwen Managed Server (Qwen3.5-4B llama-server)",
+      "test_status": "tested (tests/test_desk_qwen_service.py)"
+    },
+    {
+      "code_status": "implemented",
+      "config_contract_default": "enabled (locks data_dir/host-gpu/lock + data_dir/host-resource/lease.json)",
+      "evidence_paths": [
+        "src/ttakkari/host_resource.py",
+        "src/ttakkari/host_gpu.py",
+        "src/ttakkari/managed_comfy.py"
+      ],
+      "live_status": "live (deployed in 9f82c9c1)",
+      "subsystem": "Exclusive Host GPU Resource Lease (G1)",
+      "test_status": "tested (unit_tests/test_host_resource_lease.py, unit_tests/test_creative_v2_lease_handoff.py)"
+    }
+  ],
+  "worker": {
+    "branch": "audit/platform-v2-a-runtime-delivery-20261024",
+    "id": "A",
+    "role": "runtime / delivery / architecture",
+    "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a"
+  }
+}

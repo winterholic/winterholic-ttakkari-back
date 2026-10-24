@@ -15,10 +15,10 @@
    모두 거부하고 사용자는 앱 버튼으로 보관한다. 의도 추론이 아니라 문장 형식의 최소 요건이다.
 3. 중단·부정·제외 표지: (같은 정리를 거친) 보관 표현과 같은 문장에 그만, 더 이상, 중단, 취소, 해제, 빼, 제외, 말고, 지 마, 하지, 안 , 않, 없이, not, without 등이 하나라도
    있으면 거부한다. 정상 요청이 막히는 쪽으로 틀리는 것은 허용한다.
-4. 대상 결속: (filename) 확장자를 포함한 전체 파일명이 **보관 절**(연결어미·접속 표지로 나눈 절 중 보관 서술어가 있는 마지막 절)에
-   단어 경계로 있고(폴더가 적혔다면 경로 끝부분이 일치, 같은 이름의
+4. 대상 결속: (filename) 확장자를 포함한 전체 파일명이 보관 서술어의 **직접 목적어 자리**(파일명과 서술어 사이에 조사·'내'·
+   보관함/라이브러리에·일반 명사 1개만 허용)에 단어 경계로 있고(폴더가 적혔다면 경로 끝부분이 일치, 같은 이름의
    다른 파일이 있으면 경로로 구분돼야 함), 또는 (same_run) 대상 파일이 발화를 담은 Run 자체, 혹은 그 Run 실행 중에 시작된 자식
-   작업 세션 Run 이 만든 결과물이어야 한다. 보관 절이 대상이 아닌 다른 파일을 지목하면 same_run 도 쓰지 않는다. 부산물은 same_run 에서 제외한다.
+   작업 세션 Run 이 만든 결과물이어야 한다. 목적어 자리에 다른 파일명이 있으면 same_run 도 쓰지 않는다. 부산물은 same_run 에서 제외한다.
 """
 from __future__ import annotations
 
@@ -196,27 +196,69 @@ def is_negated(sentence: str) -> bool:
     return _NEGATIVE_EN.search(text.casefold()) is not None
 
 
-# 절을 나누는 연결어미·접속 표지: -고/-하고, -해서/-서, -며/-면서, -은 뒤/후, 그리고, 그다음, 그 후, 및, 쉼표·세미콜론, 영어 and/then/after.
-# '-서' 는 해서·어서·아서·가서처럼 용언 연결형일 때만 나눈다(기획서·보고서·문서 같은 명사는 나누지 않는다). '-고' 로 끝나는 명사 앞에서는
-# 나뉠 수 있지만, 그러면 파일명이 보관 절 밖으로 밀려 same_run 으로만 판단하는 거부 쪽으로 틀린다.
-_CLAUSE_SPLIT = re.compile(
-    r"\s*[,;，；]\s*"
-    r"|(?<=고)\s+|(?<=[해어아여라가와나워줘]서)\s+|(?<=며)\s+|(?<=면서)\s+|(?<=뒤)\s+|(?<=후)\s+"
-    r"|(?:^|\s)(?:그리고|그다음|및)\s+"
-    r"|\s+(?:and|then|after)\s+", re.IGNORECASE)
+def names_other_file(token: str) -> bool:
+    """토큰에 파일명(확장자가 있는 토큰)이나 경로 토큰이 있는지. 대상 파일과 맞지 않을 때 다른 파일을 지목한 것인지 가르는 데 쓴다."""
+    return _PATH_TOKEN.search(token) is not None or _FILE_TOKEN.search(token) is not None
 
 
-def keep_clause(sentence: str) -> str:
-    """문장을 절로 나눠, 보관 서술어가 있는 마지막 절(보관 절)을 돌려준다. 보관 서술어가 있는 절이 없으면 마지막 절."""
-    clauses = [c.strip() for c in _CLAUSE_SPLIT.split(normalize(sentence)) if c and c.strip()]
-    if not clauses:
-        return ""
-    return next((c for c in reversed(clauses) if has_keep_expression(c)), clauses[-1])
+# 인접성 결속: 파일명은 보관 서술어의 직접 목적어 자리에 있을 때만 대상을 가리킨다.
+_PARTICLES = frozenset({"을", "를", "은", "는", "도", "만", "이", "가"})
+_MY = frozenset({"내", "나의"})
+_DESTINATION = re.compile(r"^(?:내|나의)?(?:보관함|라이브러리)(?:에다|에)?$")
+_PREDICATE = re.compile(r"^(?:(?:보관|저장|간직)(?!함)|넣어|남겨)")
+_TRIM = ",.;:!?\"'()[]"
+_PARTICLE_TAIL = re.compile(r"(?:에는|에도|에서|으로|로|에|의|와|과|을|를|은|는|이|가|도|만)$")
+# 활용형·시간·순서 표지로 끝나는 말은 일반 명사로 치지 않는다. '-서' 는 해서·어서처럼 용언 연결형일 때만 제외(기획서·문서는 명사).
+_NOT_NOUN_END = re.compile(r"(?:다|고|며|면|때|뒤|후|음|니|지|게|도록)$|(?<=[해어아여라가와나워줘])서$")
+_ORDER_WORDS = frozenset({"다음", "전", "후", "뒤", "먼저", "이후", "이전", "직후", "동안", "중", "나서", "그다음", "그리고", "및", "나중", "그후", "그뒤"})
+_EN_OBJECT = re.compile(
+    r"^(?:(?:please|can you|could you)\s+)*(?:keep|save|store|archive)\s+(?:(?:the|this|that)\s+)?(?P<obj>\S+)\s+(?:to|in|into)\s+"
+    r"(?:my\s+)?(?:library|vault|saved files|files)(?:\s+please)?$")
 
 
-def names_other_file(clause: str) -> bool:
-    """보관 절에 파일명(확장자가 있는 토큰)이나 경로 토큰이 있는지. 대상 파일과 맞지 않을 때 다른 파일을 지목한 문장인지 가르는 데 쓴다."""
-    return _PATH_TOKEN.search(clause) is not None or _FILE_TOKEN.search(clause) is not None
+def _generic_noun(token: str) -> bool:
+    stem = _PARTICLE_TAIL.sub("", token)
+    if not stem or re.fullmatch(r"[가-힣A-Za-z0-9]+", stem) is None:
+        return False
+    return stem not in _ORDER_WORDS and _NOT_NOUN_END.search(stem) is None
+
+
+def object_binding(quote: str, path: Path) -> tuple[FileMention | None, bool]:
+    """보관 서술어의 직접 목적어 자리에 대상 파일명이 있는지(첫 값), 그 자리에 대상이 아닌 다른 파일명이 있는지(둘째 값).
+
+    한국어: 서술어 토큰(보관/저장/간직/넣어/남겨…) 앞쪽으로 거슬러 가며, 파일명 토큰과 서술어 사이에는 조사, '내'·'나의', 목적지구
+    (보관함/라이브러리 + 에/에다), 일반 명사 토큰 최대 1개만 올 수 있다. 다른 토큰(용언 연결형, 시간·순서 표지 등)이 끼면 결속하지 않는다.
+    영어: keep|save|store|archive <object> to|in|into [my] library… 의 <object> 가 정확히 파일명(또는 the/this/that + 파일명)이어야 한다."""
+    text = normalize(quote)
+    scrubbed = scrub(text)
+    if re.search(r"[가-힣]", scrubbed):
+        tokens = _TRAIL_PUNCT.sub("", text).split()
+        while tokens and tokens[-1].strip(_TRIM) in _FILLER:
+            tokens.pop()
+        tokens = [t.strip(_TRIM) or t for t in tokens]
+        last = max((i for i, t in enumerate(tokens) if _PREDICATE.match(t)), default=None)
+        if last is None:
+            return None, False
+        generic = 0
+        for token in reversed(tokens[:last]):
+            if token in _PARTICLES or token in _MY or _DESTINATION.match(token):
+                continue
+            if (mention := names_file(token, path)) is not None:
+                return mention, False
+            if names_other_file(token):
+                return None, True
+            if generic == 0 and _generic_noun(token):
+                generic += 1
+                continue
+            break
+        return None, False
+    m = _EN_OBJECT.match(_TRAIL_PUNCT.sub("", text.casefold()))
+    if m is None:
+        return None, False
+    obj = m.group("obj")
+    if (mention := names_file(obj, path)) is not None:
+        return mention, False
+    return None, names_other_file(obj)
 
 
 def names_file(sentence: str, path: Path) -> FileMention | None:

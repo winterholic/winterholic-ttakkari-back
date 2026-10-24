@@ -1058,9 +1058,17 @@ async def test_keep_rejects_anything_outside_the_allowed_templates(client, new_s
     "report.md를 읽고, 내 보관함에 보관해줘",
     "Summarize report.md and save it to my library",
     "Read report.md, then keep the result in my library",
+    # r7: 시간·순서 표지는 연결어 목록 없이 인접성 규칙으로 막힌다
+    "report.md를 요약한 다음 결과물은 보관함에 넣어줘",
+    "report.md를 요약한 다음에 결과물을 보관해줘",
+    "report.md를 검토한 뒤에 결과물을 내 보관함에 보관해줘",
+    "report.md를 검토한 후에 결과물을 보관함에 넣어줘",
+    "report.md를 요약할 때 결과물은 보관함에 넣어줘",
+    "report.md 읽고 나서 결과는 보관해줘",
+    "report.md를 요약하기 전에 결과물을 보관함에 넣어줘",
 ])
-async def test_keep_filename_binding_is_limited_to_the_keep_clause(client, new_session, sentence):
-    """filename 결속은 보관 서술어가 있는 마지막 절 안에 대상 파일명이 있을 때만. 앞 절에서 언급만 된 파일은 보관할 수 없다."""
+async def test_keep_filename_binding_requires_the_file_in_the_object_position(client, new_session, sentence):
+    """filename 결속은 대상 파일명이 보관 서술어의 직접 목적어 자리에 있을 때만(인접성). 앞쪽에서 언급만 된 파일은 보관할 수 없다."""
     ws, sess = await new_session()
     sid = uuid.UUID(sess["id"])
     f = Path(ws["root_path"]) / "report.md"
@@ -1075,7 +1083,7 @@ async def test_keep_filename_binding_is_limited_to_the_keep_clause(client, new_s
     assert await _artifact_rows(sid) == []
 
 
-async def test_keep_clause_naming_the_target_binds_and_generic_clause_needs_same_run(client, new_session):
+async def test_keep_object_naming_the_target_binds_and_generic_object_needs_same_run(client, new_session):
     ws, sess = await new_session()
     sid = uuid.UUID(sess["id"])
     root = Path(ws["root_path"])
@@ -1197,22 +1205,37 @@ async def test_keep_filename_must_be_the_full_name_and_unambiguous(client, new_s
     assert one.exists()
 
 
-def test_keep_clause_splitting():
-    from ttakkari.artifacts.keep_evidence import keep_clause, names_other_file
+def test_keep_object_binding_adjacency():
+    from ttakkari.artifacts.keep_evidence import object_binding
 
-    assert keep_clause("report.md를 요약하고 summary.md를 내 보관함에 보관해줘") == "summary.md를 내 보관함에 보관해줘"
-    assert keep_clause("report.md를 먼저 검토하고 결과물은 내 보관함에 보관해줘") == "결과물은 내 보관함에 보관해줘"
-    assert keep_clause("report.md 검토해서 결과물은 보관함에 넣어줘") == "결과물은 보관함에 넣어줘"
-    assert keep_clause("report.md를 검토한 뒤 그걸 보관함에 넣어줘") == "그걸 보관함에 넣어줘"
-    assert keep_clause("정리하며 report.md 저장해줘") == "report.md 저장해줘"
-    assert keep_clause("이 plan.md 기획서 내 보관함에 넣어줘") == "이 plan.md 기획서 내 보관함에 넣어줘"  # 명사 '-서' 는 나누지 않는다
-    assert keep_clause("이 문서 보고서.md 보관해줘 부탁해요").endswith("보고서.md 보관해줘 부탁해요")
-    assert keep_clause("summarize report.md and save it to my library") == "save it to my library"
-    assert keep_clause("report.md 보관해줘, 부탁해요") == "report.md 보관해줘"  # 보관 서술어가 있는 절
-    assert keep_clause("MODIFY 그리고 만든 report.md 를 내 보관함에 보관해줘") == "만든 report.md 를 내 보관함에 보관해줘"
-    assert keep_clause("보고서.md를 내 보관함에 보관해줘") == "보고서.md를 내 보관함에 보관해줘"
-    assert names_other_file("summary.md를 보관해줘") and names_other_file("docs/a.md 를 보관해줘")
-    assert not names_other_file("결과물은 내 보관함에 보관해줘") and not names_other_file("save it to my library")
+    def bound(sentence, name="report.md"):
+        mention, other = object_binding(sentence, Path("/w") / name)
+        return mention is not None, other
+
+    assert bound("보고서.md를 내 보관함에 보관해줘", "보고서.md") == (True, False)
+    assert bound("이 plan.md 기획서 내 보관함에 넣어줘", "plan.md") == (True, False)  # 일반 명사 1개
+    assert bound("그 report.md 파일 내 보관함에 보관해줘") == (True, False)
+    assert bound("이 문서 report.md 보관해줘 부탁해요") == (True, False)
+    assert bound("MODIFY 그리고 만든 report.md 를 내 보관함에 보관해줘") == (True, False)  # 조사가 떨어져 있어도
+    assert bound("내 보관함에 report.md 넣어줘") == (True, False)
+    assert bound("report.md 파일 기획서 보관해줘") == (False, False)  # 일반 명사 2개
+    assert bound("report.md 요약 결과를 보관해줘") == (False, False)
+    # 시간·순서·활용형 토큰이 끼면 결속하지 않는다
+    for sentence in ("report.md를 요약한 다음 결과물은 보관함에 넣어줘", "report.md를 검토한 뒤에 결과물을 보관해줘",
+                     "report.md를 요약할 때 결과물은 보관함에 넣어줘", "report.md 읽고 나서 결과는 보관해줘",
+                     "report.md를 요약하기 전에 결과물을 보관함에 넣어줘", "report.md를 읽고 내 보관함에 보관해줘",
+                     "report.md 검토해서 결과물은 보관함에 넣어줘"):
+        assert bound(sentence) == (False, False), sentence
+    # 목적어 자리의 다른 파일명
+    assert bound("report.md를 요약하고 summary.md를 내 보관함에 보관해줘") == (False, True)
+    assert bound("report.md를 요약하고 summary.md를 내 보관함에 보관해줘", "summary.md") == (True, False)
+    assert bound("만들어서 보관함에 넣어줘") == (False, False)
+    # 영어: <object> 가 정확히 파일명(또는 the/this/that + 파일명)
+    assert bound("Save report.md to my library") == (True, False)
+    assert bound("Can you please store the report.md in my vault") == (True, False)
+    assert bound("Please keep summary.md in my library") == (False, True)
+    assert bound("Summarize report.md and save it to my library") == (False, False)
+    assert bound("Keep it in my library") == (False, False)
 
 
 def test_keep_quote_sentence_rules():

@@ -30,10 +30,8 @@ from ttakkari.artifacts.keep_evidence import (
     has_keep_expression,
     is_keep_request,
     is_negated,
-    keep_clause,
     made_by_request_run,
-    names_file,
-    names_other_file,
+    object_binding,
     same_basename_paths,
 )
 from ttakkari.artifacts.kinds import needs_server_preview
@@ -380,8 +378,7 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
                             "'…보관해 줘', '…보관함에 넣어 줘', '…저장해 줘'(영어는 Please keep X in my library)처럼 끝나야 해요. "
                             "사용자가 보관을 요청한 문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요."})
     match, binding, binding_detail = None, "", ""
-    clause = keep_clause(body.quote)  # filename 결속은 보관 서술어가 있는 마지막 절 안에서만 성립한다
-    mention = names_file(clause, real)
+    mention, names_another = object_binding(body.quote, real)  # filename 결속은 보관 서술어의 직접 목적어 자리에서만 성립한다
     others = await same_basename_paths(db, session_id=sid, path=real, outbox_root=s.outbox_root)
     if mention is not None:
         if mention.path_token is not None:
@@ -390,7 +387,7 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
             clash = others
         if not clash:
             match, binding, binding_detail = matches[0], "filename", mention.path_token or mention.token
-    if match is None and (mention is not None or not names_other_file(clause)):
+    if match is None and (mention is not None or not names_another):
         created_by = creator_run_id(real, s.outbox_root, existing.run_id if existing is not None else None)
         for cand in matches:
             if await made_by_request_run(db, session_id=sid, match=cand, path=real, created_by=created_by):

@@ -487,11 +487,12 @@ async def keep_artifact(path: str, quote: str) -> str:
       app button.
     - quote_ambiguous_file: several files share the name and the sentence does not tell them apart. Quote a sentence that
       includes the folder path, or tell the user to use the app button.
-    - quote_not_bound: the sentence does not point at this file. Either the KEEP CLAUSE (the last clause, the one with the
-      keep verb; clauses are split at -고, -해서, -며, -은 뒤, 그리고, 그 후, 및, commas, and/then/after) contains the full file
-      name with its extension (e.g. '보고서.md를 내 보관함에 보관해줘'; a file named only in an earlier clause, as in
-      'report.md를 요약하고 summary.md를 …보관해줘', does not count, and if the keep clause names a different file the
-      same-run route is closed too), or the file is a result made by the Run that holds the user's message
+    - quote_not_bound: the sentence does not point at this file. Either the full file name with its extension (e.g.
+      '보고서.md를 내 보관함에 보관해줘') sits in the DIRECT OBJECT position of the keep verb: between the file name and the verb
+      only particles, '내', '보관함에/라이브러리에' and at most one plain noun ('기획서', '파일') may appear. A verb form or
+      time/order word in between ('요약한 다음', '읽고 나서', '요약하기 전에', '~할 때') breaks the link, so 'report.md를
+      요약한 다음 결과물은 보관함에 넣어줘' does not name report.md; if another file name sits in the object position, the
+      same-run route is closed too. In English the <object> must be exactly the file name (optionally after the/this/that), or the file is a result made by the Run that holds the user's message
       (or by a worker session started during that Run). Files from later turns, logs, screenshots, captures and temp/evidence
       files are never bound that way: the user's sentence must name them, otherwise tell the user to use the app button.
     Only the planning (lead) session that received the user's request can keep: a worker session only sees instructions the

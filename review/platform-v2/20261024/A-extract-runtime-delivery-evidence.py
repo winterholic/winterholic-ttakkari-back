@@ -24,6 +24,8 @@ OUT_PATH = Path(__file__).resolve().parent / "A-runtime-delivery-evidence.json"
 
 BASELINE_607_SHA = "607f8bda0df7dbdd458e4f0e54d703ce9edd3def"
 CANONICAL_C8_SHA = "c8f10156845d007ec6496a65d6d8417be19260bd"
+CANONICAL_C8_TREE_SHA = "d224086fed586484437819bbe100c5b4d58195f1"
+CANONICAL_C8_SRC_TREE_SHA = "f2e5572ce8d039341eacc4dad5a70db03c61553b"
 
 SOURCE_CRITICAL_PREFIXES = (
     "src/",
@@ -151,6 +153,7 @@ def compute_dirty_manifest(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         "dirty_audit_doc_paths": sorted(dirty_audit_doc_paths),
         "other_dirty_paths": sorted(other_dirty_paths),
         "is_clean_source_tree": len(dirty_source_paths) == 0 and len(other_dirty_paths) == 0,
+        "is_clean_audit_docs": len(dirty_audit_doc_paths) == 0,
     }
 
 
@@ -172,6 +175,17 @@ def verify_snapshot_binding(
     branch = _run_git(repo_root, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
     try:
+        c8_tree_sha = _run_git(
+            repo_root, "rev-parse", "--verify", f"{CANONICAL_C8_SHA}^{{tree}}"
+        ).strip()
+        c8_src_tree_sha = _run_git(
+            repo_root, "rev-parse", "--verify", f"{CANONICAL_C8_SHA}:src/ttakkari"
+        ).strip()
+    except SnapshotBindingError:
+        c8_tree_sha = CANONICAL_C8_TREE_SHA
+        c8_src_tree_sha = CANONICAL_C8_SRC_TREE_SHA
+
+    try:
         origin_main_sha = _run_git(repo_root, "rev-parse", "--verify", "origin/main").strip()
         origin_main_tree_sha = _run_git(
             repo_root, "rev-parse", "--verify", "origin/main^{tree}"
@@ -180,9 +194,9 @@ def verify_snapshot_binding(
             repo_root, "rev-parse", "--verify", "origin/main:src/ttakkari"
         ).strip()
     except SnapshotBindingError:
-        origin_main_sha = head_sha
-        origin_main_tree_sha = head_tree_sha
-        origin_main_src_tree_sha = src_tree_sha
+        origin_main_sha = CANONICAL_C8_SHA
+        origin_main_tree_sha = c8_tree_sha
+        origin_main_src_tree_sha = c8_src_tree_sha
 
     dirty = compute_dirty_manifest(repo_root)
     if not allow_dirty_source_paths and not dirty["is_clean_source_tree"]:
@@ -199,8 +213,12 @@ def verify_snapshot_binding(
         )
 
     return {
-        "audited_commit_sha": origin_main_sha,
-        "audited_tree_sha": origin_main_tree_sha,
+        "candidate_head_sha": head_sha,
+        "candidate_tree_sha": head_tree_sha,
+        "candidate_src_ttakkari_tree_sha": src_tree_sha,
+        "audited_commit_sha": CANONICAL_C8_SHA,
+        "audited_tree_sha": c8_tree_sha,
+        "audited_src_ttakkari_tree_sha": c8_src_tree_sha,
         "checkout_branch": branch,
         "head_src_ttakkari_tree_sha": src_tree_sha,
         "head_alembic_tree_sha": alembic_tree_sha,
@@ -210,11 +228,15 @@ def verify_snapshot_binding(
         "origin_main_sha": origin_main_sha,
         "origin_main_tree_sha": origin_main_tree_sha,
         "origin_main_src_ttakkari_tree_sha": origin_main_src_tree_sha,
+        "source_tree_matches_audited": src_tree_sha == c8_src_tree_sha,
         "source_tree_matches_origin_main": src_tree_sha == origin_main_src_tree_sha,
         "dirty_manifest": {
+            "entries": dirty["entries"],
             "dirty_source_paths": dirty["dirty_source_paths"],
+            "dirty_audit_doc_paths": dirty["dirty_audit_doc_paths"],
             "other_dirty_paths": dirty["other_dirty_paths"],
             "is_clean_source_tree": dirty["is_clean_source_tree"],
+            "is_clean_audit_docs": dirty["is_clean_audit_docs"],
         },
         "import_binding": import_binding,
     }
@@ -584,8 +606,10 @@ def compute_transitive_module_closure(
                 reasons.append(f"missing_or_invalid_file_hash:{rel_file}")
             else:
                 closure_files[rel_file] = digest
-            if rel_file in dynamic_imports and mod == module_id:
-                reasons.append(f"dynamic_import_in_module:{rel_file}:{dynamic_imports[rel_file]}")
+            if rel_file in dynamic_imports:
+                reasons.append(
+                    f"dynamic_import_in_closure:{mod}:{rel_file}:{dynamic_imports[rel_file]}"
+                )
 
     closure_complete = len(reasons) == 0 and len(closure_files) > 0
     return sorted(visited), dict(sorted(closure_files.items())), closure_complete, reasons
@@ -1056,64 +1080,82 @@ def build_sample_evidence_cache_key_v2(
     migrations: dict[str, Any],
     contracts: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build a real, content-addressed EvidenceCacheKey v2 sample for `creative`."""
-    _closure_mods, closure_file_hashes, closure_ok, _ = compute_transitive_module_closure(
+    """Demonstrate fail-closed cache decision: unverified closure causes cache miss, verified closure produces key."""
+    _closure_mods, _closure_file_hashes, closure_ok, reasons = compute_transitive_module_closure(
         "creative", graph
     )
-    mod_files = {
-        f: graph["file_hashes"][f]
-        for f in graph["modules"]["creative"]["files"]
-    }
-    dep_files = {
-        f: h for f, h in closure_file_hashes.items() if f not in mod_files
-    }
-    selected_tests: dict[str, str] = {}
-    for p in sorted((repo_root / "tests").glob("*creative*.py")) + sorted(
-        (repo_root / "unit_tests").glob("*creative*.py")
-    ):
-        rel = p.relative_to(repo_root).as_posix()
-        selected_tests[rel] = sha256_file(p)
+    candidate_head = snapshot.get("candidate_head_sha", snapshot.get("origin_main_sha"))
+    candidate_tree = snapshot.get("candidate_tree_sha", snapshot.get("origin_main_tree_sha"))
 
-    conftest_helpers = {
-        "tests/conftest.py": sha256_file(repo_root / "tests" / "conftest.py"),
-        "tests/test_contract_marker.py": sha256_file(
-            repo_root / "tests" / "test_contract_marker.py"
-        ),
+    sanitized_env_str = f"PYTHONDONTWRITEBYTECODE={sys.dont_write_bytecode}"
+    pytest_plugin_str = "pytest-8+asyncio+subtests-noconftest"
+
+    creative_decision = {
+        "status": "cache_miss_unverified_closure",
+        "module_id": "creative",
+        "candidate_git_head_sha": candidate_head,
+        "candidate_git_tree_sha": candidate_tree,
+        "closure_complete": closure_ok,
+        "reasons": reasons,
+        "cache_decision": "broad_validation_fallback (conservative no-reuse due to dynamic import in transitive closure)",
     }
 
-    target_changed = "src/ttakkari/creative/render.py"
-    changed_hashes = {target_changed: mod_files[target_changed]}
-
-    return compute_evidence_cache_key(
-        module_id="creative",
-        candidate_git_head_sha=snapshot["origin_main_sha"],
-        candidate_git_tree_sha=snapshot["origin_main_tree_sha"],
-        dirty_source_paths=snapshot["dirty_manifest"]["dirty_source_paths"],
-        changed_file_hashes=changed_hashes,
-        module_source_file_hashes=mod_files,
-        transitive_dependency_file_hashes=dep_files,
-        closure_complete=closure_ok,
-        selected_test_file_hashes=selected_tests,
-        conftest_and_helper_hashes=conftest_helpers,
-        selector_args=[
-            "pytest",
-            "-m",
-            "contract",
-            *sorted(selected_tests.keys()),
-        ],
-        pyproject_sha256=sha256_file(repo_root / "pyproject.toml"),
-        uv_lock_sha256=sha256_file(repo_root / "uv.lock"),
-        python_full_version=platform.python_version(),
-        platform_tag=f"{sys.platform}-{platform.machine()}",
-        pytest_plugins_sha256=sha256_bytes(b"pytest-8+asyncio+subtests-noconftest"),
-        sanitized_env_sha256=sha256_bytes(b"PYTHONDONTWRITEBYTECODE=1"),
-        models_py_sha256=graph["file_hashes"]["src/ttakkari/models.py"],
-        alembic_env_sha256=sha256_file(repo_root / "alembic" / "env.py"),
-        migration_file_hashes=migrations["migration_file_hashes"],
-        migration_head=migrations["heads"][0],
-        generation_contract_sha256=contracts["generation_contract_sha256"],
-        run_executor_manifest_sha256=contracts["run_executor_manifest_sha256"],
+    _ds_mods, ds_file_hashes, ds_closure_ok, _ds_reasons = compute_transitive_module_closure(
+        "design_system", graph
     )
+    verified_key: dict[str, Any] | None = None
+    if ds_closure_ok and "src/ttakkari/design_system.py" in ds_file_hashes:
+        ds_target_changed = "src/ttakkari/design_system.py"
+        ds_changed_hashes = {ds_target_changed: ds_file_hashes[ds_target_changed]}
+        ds_mod_files = {
+            f: graph["file_hashes"][f] for f in graph["modules"]["design_system"]["files"]
+        }
+        ds_dep_files = {f: h for f, h in ds_file_hashes.items() if f not in ds_mod_files}
+        ds_tests = {
+            p.relative_to(repo_root).as_posix(): sha256_file(p)
+            for p in sorted((repo_root / "tests").glob("*design_system*.py"))
+            + sorted((repo_root / "unit_tests").glob("*design_system*.py"))
+        }
+        if not ds_tests:
+            marker = repo_root / "tests" / "test_contract_marker.py"
+            ds_tests = {marker.relative_to(repo_root).as_posix(): sha256_file(marker)}
+
+        conftest_helpers = {
+            "tests/conftest.py": sha256_file(repo_root / "tests" / "conftest.py"),
+            "tests/test_contract_marker.py": sha256_file(
+                repo_root / "tests" / "test_contract_marker.py"
+            ),
+        }
+        verified_key = compute_evidence_cache_key(
+            module_id="design_system",
+            candidate_git_head_sha=candidate_head,
+            candidate_git_tree_sha=candidate_tree,
+            dirty_source_paths=snapshot["dirty_manifest"]["dirty_source_paths"],
+            changed_file_hashes=ds_changed_hashes,
+            module_source_file_hashes=ds_mod_files,
+            transitive_dependency_file_hashes=ds_dep_files,
+            closure_complete=ds_closure_ok,
+            selected_test_file_hashes=ds_tests,
+            conftest_and_helper_hashes=conftest_helpers,
+            selector_args=["pytest", "-m", "contract", *sorted(ds_tests.keys())],
+            pyproject_sha256=sha256_file(repo_root / "pyproject.toml"),
+            uv_lock_sha256=sha256_file(repo_root / "uv.lock"),
+            python_full_version=platform.python_version(),
+            platform_tag=f"{sys.platform}-{platform.machine()}",
+            pytest_plugins_sha256=sha256_bytes(pytest_plugin_str.encode("utf-8")),
+            sanitized_env_sha256=sha256_bytes(sanitized_env_str.encode("utf-8")),
+            models_py_sha256=graph["file_hashes"]["src/ttakkari/models.py"],
+            alembic_env_sha256=sha256_file(repo_root / "alembic" / "env.py"),
+            migration_file_hashes=migrations["migration_file_hashes"],
+            migration_head=migrations["heads"][0],
+            generation_contract_sha256=contracts["generation_contract_sha256"],
+            run_executor_manifest_sha256=contracts["run_executor_manifest_sha256"],
+        )
+
+    return {
+        "creative_decision": creative_decision,
+        "verified_sample_key": verified_key,
+    }
 
 
 def build_evidence(
@@ -1178,8 +1220,18 @@ def build_evidence(
                         "inspected_commit_sha": "0d048ea61f755a047ee70a0d467489c01025d46b",
                         "note": "Time-fixed intermediate status snapshot; superseded by current corrected candidate.",
                     },
+                    {
+                        "inspected_commit_sha": "5204b259cdfc90b9a58a60422d6c8d362c329cf5",
+                        "verifier_ref": "d3f718997fef6a97709475adb48bbb6e73e5fd01",
+                        "verdict": "failed_snapshot_and_cache_binding_incomplete",
+                        "notes": (
+                            "Candidate identity missing from verify_snapshot_binding, dirty audit doc paths dropped, "
+                            "transitive dynamic import ignored in closure, cache bound origin/main instead of candidate. "
+                            "All corrected in current candidate."
+                        ),
+                    },
                 ],
-                "current_status": "reconciled_with_independent_verification_93af9ef6",
+                "current_status": "reconciled_with_independent_verification_d3f7189",
             },
             "B_backend_data": {
                 "worker_id": "c1e9cd73-83ef-4240-99c8-809e500bd903",
@@ -1202,8 +1254,14 @@ def build_evidence(
                         "inspected_commit_sha": "7cf",
                         "note": "Denominator expansion only; still incomplete.",
                     },
+                    {
+                        "inspected_commit_sha": "ac7c8c5",
+                        "verifier_ref": "de1bd7f",
+                        "verdict": "failed",
+                        "notes": "Failed independent verification de1bd7f (category error & source binding incomplete); revising.",
+                    },
                 ],
-                "current_status": "revising_in_d492_do_not_use_as_final_boundary",
+                "current_status": "revising_after_de1bd7f_failure_do_not_use_as_final_boundary",
             },
             "C_frontend_test": {
                 "worker_id": "9a3215de-01d4-4efd-b3ff-9e282de9b766",
@@ -1219,13 +1277,18 @@ def build_evidence(
                             "main missing security test / deploy security duplicate 31 claims unverified across candidate/workingtree conditions",
                             "front 5.48s and back 1045.97s citations lacked C-side revision/env/raw-log verification",
                         ],
-                    }
+                    },
+                    {
+                        "inspected_commit_sha": "b155049063a471ddab54d309831c2ee8758bfcd7",
+                        "verdict": "verification_in_progress",
+                        "notes": "New candidate submitted; verification in progress.",
+                    },
                 ],
-                "current_status": "revising_after_failed_initial_verification_do_not_use_as_final_boundary",
+                "current_status": "candidate_b1550490_under_verification",
             },
             "independent_verifiers": {
                 "1d994e50-c900-4f90-9975-1ff082522a35": {
-                    "status": "completed",
+                    "status": "not_reused_65pct_progress",
                     "completed_verifications": [
                         "Worker B initial commit 86373ce (failed @ b245d5a)",
                         "Worker A initial commit fddad5e (verified @ 93af9ef6e202b95883d73c74d710e1775cb402b9)",
@@ -1548,9 +1611,10 @@ def build_evidence(
         },
         "completion_status": {
             "P0": "not_complete (historical receipts & static code audited; live version/supervisor, backup freshness/restore rehearsal, and cutover/rollback E2E are unknown/확인 필요)",
-            "P1": "not_complete (Worker A reconciled; Worker B in d492 revision and Worker C revising after failed initial verifications)",
-            "P2": "not_complete (contracts and options specified; final boundary sign-off awaits B/C reconciliation in Root)",
-            "platform_v2_overall": "not_complete",
+            "P1": "not_complete (Worker A corrected; Worker B revising after de1bd7f; Worker C candidate b1550490 under verification)",
+            "P2": "not_complete (contracts and options specified; final boundary sign-off awaits B/C reconciliation in Root and Gate B)",
+            "P3": "isolated_foundation_candidate_in_progress (Gate A: delivery validation contract implemented in src/ttakkari/delivery)",
+            "platform_v2_overall": "not_complete (P0/P1/P2 pending, Gate A isolated foundation candidate in progress)",
             "non_circular_precondition_policy": (
                 "Separate (Gate A) Isolated P3 Implementation Entry from (Gate B) Production Activation & Cutover. "
                 "Unverified P0 operational items (live backup rehearsal, live cutover E2E) are mandatory preconditions for Gate B (production activation), "

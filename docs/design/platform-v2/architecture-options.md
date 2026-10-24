@@ -1,7 +1,7 @@
 # 따까리 플랫폼 V2 아키텍처 대안·계약·모듈 전환 설계 (`architecture-options.md` — 독립 검증 교정판)
 
 - 문서 소유: Worker A (Runtime / Delivery / Architecture / 세션 ID `e65430e3-0775-4e2c-910a-5050cdb7d216`)
-- 갱신 시각: `2026-10-24T22:20:00+09:00` (독립 검증 `93af9ef6e202b95883d73c74d710e1775cb402b9` 반영)
+- 갱신 시각: `2026-10-24T22:50:00+09:00` (독립 재검증 `d3f7189` 지적 교정 및 Gate A 격리 공용 기반 코드 구현 반영)
 - 근거 데이터:
   - `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/review/platform-v2/20261024/A-runtime-delivery.md`
   - `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/review/platform-v2/20261024/A-runtime-delivery-evidence.json`
@@ -35,7 +35,7 @@
 ## 2. 아키텍처 대안 비교 (3 Architecture Alternatives — 현재 상태 vs 목표 설계 구분)
 
 > **구현 상태 명확화**:
-> 아래 대안 2에 포함된 **독립 모듈 릴리스 아카이브(`~/.ttakkari/deploy/module-releases`), 활성 포인터(`active.json`), 버전드 모듈 디스패처, 모듈 릴리스 컨트롤러, `<1s` 포인터 롤백, 모듈 단독 릴리스 시 `Core 재배포 0회`**는 현재 `src/ttakkari`에 구현되어 있지 않은 **목표 아키텍처(Target Architecture) 및 P4 인수 기준**이다.
+> 아래 대안 2에 포함된 **독립 모듈 릴리스 아카이브(`~/.ttakkari/deploy/module-releases`), 활성 포인터(`active.json`), 버전드 모듈 디스패처, 모듈 릴리스 컨트롤러, 원자적 포인터 롤백, 모듈 단독 릴리스 시 `Core 재배포 0회`**는 현재 `src/ttakkari`에 구현되어 있지 않은 **목표 아키텍처(Target Architecture) 및 P4 인수 기준**이다. (근거 없는 '1초 미만' 임의 목표는 배제하고 향후 실제 롤백 소요 시간 측정 대상으로 교정함).
 
 ```mermaid
 flowchart TB
@@ -112,7 +112,7 @@ flowchart TB
 | **모듈 단독 수정 시 Core API 재배포 횟수 (목표)** | `1회` (불만족) | **`0회` (P4 목표 시나리오 #4 만족)** | `0회` |
 | **실행 중 모듈 잡 드레인 및 구버전 보존** | 세대 슬롯 의존 | **`pinned_module_revision` 고정 실행으로 구버전 드레인 보장** | 서비스별 슬롯 재구축 필요 |
 | **DB 스키마 호환성 통제** | 단일 배포와 동일 | **무변경/Expand-only만 모듈 단독 릴리스 허용, 그 외엔 Core 광역 배포로 Fail-Closed 승격** | 서비스별 DB 분리 필요 |
-| **롤백 방식 및 목표 시간** | Core 슬롯 재전환 (수십 초~수 분) | **`active.json` 원자적 포인터 복원 (목표 `<1s`, Core 무중단)** | 데몬 재기동 필요 |
+| **롤백 방식 및 목표 시간** | Core 슬롯 재전환 (수십 초~수 분) | **`active.json` 원자적 포인터 복원 (Core 무중단, 실측 대상)** | 데몬 재기동 필요 |
 | **호스트 RAM / Swap 추가 비용** | 낮음 | **최소 (상주 데몬 추가 없음, Qwen 외부 단일화로 전환 시 중복 스폰 방지)** | 매우 높음 (기각) |
 | **최종 판정** | 기각 (Scenario 4 불만족) | **목표 아키텍처로 채택 (Target Recommended)** | 기각 (자원 및 불변 조건 위배) |
 
@@ -160,7 +160,7 @@ flowchart TB
   }
   ```
 - **롤백 및 Fail-Closed 계약**:
-  - 모듈 스모크 실패 시 `active.json`을 `previous_revision`으로 원자적 복원(`os.replace`, 목표 `<1s`)하며 Core API는 재시작하지 않는다.
+  - 모듈 스모크 실패 시 `active.json`을 `previous_revision`으로 원자적 복원(`os.replace`, Core API 무재기동, 실제 소요 시간 실측)하며 Core API는 재시작하지 않는다.
   - 단, 공유 리소스 리스 불일치나 DB 마이그레이션 오류 등 공유 상태 불명이 감지되면 즉시 `recovery_pending`으로 전환하여 Fail-Closed로 멈춘다.
 
 ### 4.2 Durable Job Ownership & State Transition Contract (영속 잡 소유권·상태 전이 계약)

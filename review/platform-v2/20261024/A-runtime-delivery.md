@@ -6,7 +6,7 @@
   - 검증 워커 `1d994e50-c900-4f90-9975-1ff082522a35` 커밋 `93af9ef6e202b95883d73c74d710e1775cb402b9`
   - `/private/tmp/back-platform-v2-a-runtime-delivery-verification-20261024/review/platform-v2/20261024/A-runtime-delivery-independent-verification.md`
   - `/private/tmp/back-platform-v2-a-runtime-delivery-verification-20261024/review/platform-v2/20261024/A-runtime-delivery-independent-verification-evidence.json`
-- 감사 대상 정본 SHA (`origin/main`): `c8f10156845d007ec6496a65d6d8417be19260bd` (`src/ttakkari` 트리 SHA `f2e5572cbc38e4234157be9c4c83090a1358be83`)
+- 감사 대상 정본 SHA (`origin/main`): `c8f10156845d007ec6496a65d6d8417be19260bd` (`src/ttakkari` 트리 SHA `f2e5572ce8d039341eacc4dad5a70db03c61553b`)
 - 공유 작업 트리(`/Users/winterholic/development/projects/winterholic-ttakkari/back`) 로컬 HEAD: `607f8bda0df7dbdd458e4f0e54d703ce9edd3def`
   - `merge-base(607f8bda, c8f10156)` = `2522d78e29b14ffb29d8536bcf833d832b4f87e1`
   - 양방향 분기 토폴로지: **`2 ahead / 118 behind`** (`607f8bda` 고유 커밋 2개: `607f8bd`, `66c8402`; `c8f10156` 고유 커밋 118개)
@@ -212,7 +212,7 @@ API 세대, 영속 잡 큐(TTS / Creative), 독립 `RunExecutor` 간 작업 수�
   "schema_version": "platform-v2-evidence-key-v2",
   "module_id": "creative",
   "gate_mode": "module_scoped",
-  "candidate_src_tree_sha": "f2e5572cbc38e4234157be9c4c83090a1358be83",
+  "candidate_src_tree_sha": "f2e5572ce8d039341eacc4dad5a70db03c61553b",
   "changed_file_hashes": {
     "src/ttakkari/creative/render.py": "<sha256>"
   },
@@ -323,7 +323,7 @@ API 세대, 영속 잡 큐(TTS / Creative), 독립 `RunExecutor` 간 작업 수�
      - 전환 전후 Core API 슬롯(`8791/8792/8793`)의 프로세스 `pid`와 `runtime_generations.id`가 불변이다 (`Core redeploy count == 0`).
      - 전환 이전에 시작된 `v1` 잡은 `pinned_module_revision == v1`로 끝까지 완료되고, 전환 직후 요청은 `v2`로 처리된다.
      - 모듈 스키마 변경이 필요한 경우 **Expand-only(nullable 컬럼/신규 테이블 추가)만 허용**하며, 파괴적 변경이나 공유 테이블 마이그레이션이 포함되면 즉시 Core 광역 배포로 승격한다.
-     - 포인터(`active.json`)를 `previous_revision`으로 되돌리면 Core 재시작 없이 1초 미만(`<1s`)에 `v1`으로 롤백된다.
+     - 포인터(`active.json`)를 `previous_revision`으로 되돌리면 Core 재시작 없이 신속하게 `v1`으로 롤백된다 (근거 없는 '1초 미만' 임의 목표는 배제하고 향후 실제 롤백 소요 시간 측정 대상으로 교정).
      - 단, `Creative Studio`의 최종 1순위 확정은 Worker B(DB/FK/파일 소유권 교정본) 및 Worker C(프런트/테스트 교정본) 검증 완료 후 루트 통합에서 확정하며, 현재는 **`provisional` (잠정 1순위)**로 유지한다.
 6. **`ACC-06` (Gate B 운영 전환 전 필수 선행 실증 — Non-Circular Preconditions)**:
    - **비순환 게이트 분리**:

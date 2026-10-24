@@ -1,0 +1,11 @@
+base=344df69ce0549c0e7087f9fc71268490c62dedd5
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-fnd-review-2a50c86
+command=['scripts/pytest_slots.py', '--timeout', '90', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', '-s', 'tests/test_tts_first_transition_caddy.py']
+env가 'dev'인데 public_share_origin이 공개 도메인(https://ttakkari.winterholic.net)입니다. 개발용 서명키와 Secure 미적용 쿠키로 동작 중이니, 운영 트래픽을 받으면 TTAKKARI_ENV=prod와 32바이트 이상 서명키를 설정하세요.
+cors_origins가 localhost/loopback 전용(http://localhost:5173)입니다. 운영 프론트(별도 사이트)가 있으면 브라우저 호출이 막히니 구성을 확인하세요.
+{"load_and_gate_returned_before_admission": true, "new_post": 503, "old_post": 202, "status": "failed", "error": "generation_draining", "chunks": ["forwarded original"]}
+.
+db reset: 1 selective (avg 3.0/106 tables), 0 forced full, 0 fell back to full
+1 passed in 1.31s
+
+exit_code=0

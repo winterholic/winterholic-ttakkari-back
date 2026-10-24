@@ -38,3 +38,33 @@ worker's 917ea4b model must not be presented as the measured live binary.
 Next required boundary: establish a supported proxy/transport admission barrier
 or another verified lossless first transition. No production switch, main push,
 service restart, new lease/fence or forced Run termination was performed.
+
+## Follow-up: real isolated Caddy transport
+
+`tests/test_tts_first_transition_caddy.py` launches its own Caddy v2.11.7 child on
+ephemeral public/admin ports with a controlled asyncio upstream. Production
+8787/20191, production processes and production DB are not touched. A forwarded
+POST is delayed before the old-model API admission check. The real `/load`
+response and candidate `drain_previous_tts` return before that check runs.
+New POSTs receive 503, but the request in the old configuration later receives
+202 and is then marked failed/generation_draining by the old algorithm.
+
+Measurements: initial reproducer `1 passed in 1.31s`; a second run adding the
+Caddy upstream diagnostic reports `1 passed in 0.59s`. These are successful
+reproductions of the unsafe ordering, not acceptance-test approval. Raw outputs:
+`root-fnd-caddy-delivery-probe.txt`, `root-fnd-caddy-counter-probe.txt`.
+The diagnostic after the candidate's gate returns shows `num_requests: 1`,
+whereas the modeled API's HTTP admission count is zero. A proxy-side count could
+detect this reproduced case, but a counter-only extension has not been proved
+to cover earlier pre-handler scheduling, proxy restart or direct-port requests.
+It must not be described as a complete barrier without that verification.
+
+This upgrades only the transport part of the earlier model evidence: Caddy and
+isolated PostgreSQL are real; the old API/guard remains a model. No production
+loss is observed. The author's background full-suite report does not close this
+boundary and is not a reason to approve automatic first transition.
+
+Reference inspected for installed version (not a deployed-binary binding):
+https://raw.githubusercontent.com/caddyserver/caddy/v2.11.7/modules/caddyhttp/app.go
+(reload waits for shutdown start, completion waiting is on process exit), and
+reverseproxy/hosts.go plus reverseproxy/reverseproxy.go (upstream count scope).

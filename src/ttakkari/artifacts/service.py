@@ -8,11 +8,12 @@ import shutil
 import uuid
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.artifacts.kinds import detect, needs_server_preview
+from ttakkari.artifacts.kinds import detect, detect_category, needs_server_preview
 from ttakkari.broker.policy import (
     BrokerError,
     ResolvedPath,
@@ -22,6 +23,9 @@ from ttakkari.broker.policy import (
 from ttakkari.config import get_settings
 from ttakkari.models import (
     Artifact,
+    ArtifactArea,
+    ArtifactKeepReason,
+    ArtifactOrigin,
     ExportPolicy,
     PreviewStatus,
     default_artifact_area,
@@ -44,12 +48,19 @@ def _safe_filename(name: str) -> str:
     return name[:200] or "file"
 
 
+_DEFAULT = object()
+
+
 async def register_file(
     db: AsyncSession,
     resolved: ResolvedPath,
     *,
     source: str,
     area: str | None = None,
+    origin: str | None = None,
+    category: str | None = None,
+    keep_reason: Any = _DEFAULT,
+    keep_evidence: dict | None = None,
     workspace_id: uuid.UUID | None,
     session_id: uuid.UUID | None = None,
     run_id: uuid.UUID | None = None,
@@ -66,6 +77,7 @@ async def register_file(
     s = get_settings()
     st = ensure_regular_file(resolved.path)
     mime, kind = detect(resolved.path)
+    cat = category or detect_category(resolved.path, mime, kind)
     sha = await asyncio.to_thread(_sha256, resolved.path)
 
     art_id = uuid.uuid4()
@@ -88,6 +100,28 @@ async def register_file(
     else:
         policy = ExportPolicy.allow
 
+    if origin is None:
+        if source == "upload" or source == "user_registered":
+            origin = ArtifactOrigin.user
+        elif source in ("agent_output", "agent_modified"):
+            origin = ArtifactOrigin.agent
+        else:
+            origin = ArtifactOrigin.unknown
+
+    if keep_reason is _DEFAULT:
+        if source == "upload":
+            keep_reason = ArtifactKeepReason.direct_upload
+        elif source == "user_registered":
+            keep_reason = ArtifactKeepReason.direct_register
+        else:
+            keep_reason = None
+
+    if area is None:
+        if keep_reason is not None:
+            area = ArtifactArea.files
+        else:
+            area = default_artifact_area(source)
+
     art = Artifact(
         id=art_id,
         workspace_id=workspace_id,
@@ -96,8 +130,12 @@ async def register_file(
         filename=_safe_filename(resolved.path.name),
         mime_type=mime,
         kind=kind,
+        category=cat,
         source=source,
-        area=area or default_artifact_area(source),
+        origin=origin,
+        area=area,
+        keep_reason=keep_reason,
+        keep_evidence=keep_evidence,
         original_path=str(resolved.path),
         rel_path=rel_path if rel_path is not None else resolved.rel,
         storage_mode=mode,
@@ -138,6 +176,7 @@ async def refresh_from_original(art: Artifact, real: Path) -> bool:
     art.sha256 = sha
     art.mime_type = mime
     art.kind = kind
+    art.category = detect_category(real, mime, kind)
     art.preview_status = PreviewStatus.pending if needs_server_preview(kind) else PreviewStatus.not_required
     art.preview_path = None
     art.preview_error = None

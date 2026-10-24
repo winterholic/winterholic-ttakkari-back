@@ -79,8 +79,10 @@ def _disposition(kind: str, filename: str) -> str:
 async def list_artifacts(
     _: User, db: Db,
     workspace_id: uuid.UUID | None = None, session_id: uuid.UUID | None = None, run_id: uuid.UUID | None = None,
-    kind: str | None = None, q: str | None = Query(None, max_length=200),
-    changed: bool | None = None, area: Literal["files", "agent"] | None = None,
+    kind: str | None = None, category: str | None = None,
+    origin: str | None = None, keep_reason: str | None = None,
+    q: str | None = Query(None, max_length=200),
+    changed: bool | None = None, area: Literal["files", "agent", "all"] | None = None,
     limit: int = Query(50, le=200), offset: int = Query(0, ge=0),
 ) -> list[ArtifactOut]:
     stmt = select(Artifact).where(Artifact.deleted_at.is_(None))
@@ -89,16 +91,22 @@ async def list_artifacts(
         stmt = stmt.where(Artifact.source == "agent_modified")
     elif changed is False:
         stmt = stmt.where(Artifact.source != "agent_modified")
-    # 보관함 탭: files 는 사용자가 올렸거나 넘겨받은 결과물, agent 는 에이전트가 작업 중 만든 파일. 생략하면 모두(세션 화면).
-    if area:
+    # 보관함 탭: files 는 사용자가 보관한 내 보관함, agent 는 AI 작업 파일. all 또는 생략 시 전체.
+    if area and area != "all":
         stmt = stmt.where(Artifact.area == area)
+    if category and category != "all":
+        stmt = stmt.where(Artifact.category == category)
+    if origin and origin != "all":
+        stmt = stmt.where(Artifact.origin == origin)
+    if keep_reason:
+        stmt = stmt.where(Artifact.keep_reason == keep_reason)
     if workspace_id:
         stmt = stmt.where(Artifact.workspace_id == workspace_id)
     if session_id:
         stmt = stmt.where(Artifact.session_id == session_id)
     if run_id:
         stmt = stmt.where(Artifact.run_id == run_id)
-    if kind:
+    if kind and kind != "all":
         stmt = stmt.where(Artifact.kind == kind)
     if q:
         like = f"%{q.replace('%', r'\%').replace('_', r'\_')}%"
@@ -194,6 +202,8 @@ async def resolve_artifact_link(body: ArtifactResolveIn, _: User, db: Db, reques
             db, resolved,
             source="agent_output" if in_outbox else "user_registered",
             area="agent",  # 링크를 눌러 열었다고 보관함 파일 탭에 쌓지 않는다.
+            origin="agent" if in_outbox else "user",
+            keep_reason=None,
             workspace_id=owner.id if owner else None,
             session_id=sess.id if sess else None,
             export_allowed=owner.export_allowed if owner else True,
@@ -265,12 +275,19 @@ async def get_art(art_id: uuid.UUID, _: User, db: Db) -> ArtifactOut:
 
 @router.patch("/artifacts/{art_id}", response_model=ArtifactOut)
 async def move_art(art_id: uuid.UUID, body: ArtifactAreaIn, _: User, db: Db, request: Request) -> ArtifactOut:
-    """보관함 분류를 바꾼다(파일 ↔ 에이전트 파일). 파일 내용·세션 연결은 그대로다."""
+    """보관함 분류를 바꾼다(내 보관함 ↔ AI 작업 파일). 파일 내용·세션 연결·출처(origin)는 그대로다."""
     art = await get_artifact(db, art_id)
     if art.area != body.area:
         record(db, action="artifact.move", target_type="artifact", target_id=art.id,
                detail={"from": art.area, "to": body.area}, ip=client_ip(request))
         art.area = body.area
+        if body.area == "files":
+            if not art.keep_reason:
+                art.keep_reason = "user_button"
+        else:
+            # 내 보관함에서 뺀 파일은 보관 사유/근거가 제거되며, 이후 자동 수집이나 AI 재공유로 되돌아가지 않는다.
+            art.keep_reason = None
+            art.keep_evidence = None
         await db.commit()
     return ArtifactOut.from_model(art)
 

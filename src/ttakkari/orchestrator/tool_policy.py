@@ -32,7 +32,7 @@ CHECKLIST_TOOLS = frozenset({"create_checklist_item", "update_checklist_item", "
 # 실제 권한은 API의 세션 토큰·역할·범위 검사로 제한한다. 쓰기를 readOnlyHint로 위장하지 않는다.
 ASSISTANT_WRITE_TOOLS = frozenset({
     "knowledge_retry_extraction", "knowledge_start_extraction", "knowledge_submit_batch", "knowledge_review_assertion",
-    "remember", "describe_entity", "link", "forget", "share_file", "set_artifact_area", "notify_user",
+    "remember", "describe_entity", "link", "forget", "share_file", "keep_artifact", "set_artifact_area", "notify_user",
     "create_memo", "update_memo", "delete_memo", "create_event", "update_event", "delete_event",
 })
 # 운영 로그 이슈의 해결·메모. 조회는 READ_ONLY_TOOLS, 개인 세션 한정은 API가 검사한다(ADR 0033).

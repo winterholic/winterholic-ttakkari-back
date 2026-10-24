@@ -430,25 +430,46 @@ async def forget(memory_id: str) -> str:
 
 
 @query_tool
-async def list_artifacts(query: str | None = None, kind: str | None = None, limit: int = 20,
-                         area: Literal["files", "agent"] | None = None) -> str:
+async def list_artifacts(query: str | None = None, kind: str | None = None, category: str | None = None,
+                         limit: int = 20, area: Literal["files", "agent", "all"] | None = None) -> str:
     """List files in the user's library (results and uploads), newest first, with their paths on disk.
-    `area` keeps one tab: "files" (uploads and files handed to the user) or "agent" (files made while working)."""
-    return await _agent("GET", "/artifacts", q=query, kind=kind, limit=limit, area=area)
+    `area` filters tabs: "files" (user's personal library), "agent" (AI work files), or None/all for all files.
+    `category` filters document category: "document", "spreadsheet", "presentation", "image", "video", "audio", "code", "archive", "other"."""
+    params: dict[str, Any] = {"limit": limit}
+    if query:
+        params["q"] = query
+    if kind:
+        params["kind"] = kind
+    if category:
+        params["category"] = category
+    if area and area != "all":
+        params["area"] = area
+    return await _agent("GET", "/artifacts", **params)
 
 
 @server.tool()
 async def set_artifact_area(artifact_id: str, area: Literal["files", "agent"]) -> str:
-    """Move a library file between the "files" and "agent" tabs (reversible). Files the user uploaded or registered
-    cannot be moved by you."""
+    """Move a file between "files" (user's personal library) and "agent" (AI work files).
+    Files the user uploaded or directly registered cannot be moved by you."""
     return await _agent("PATCH", f"/artifacts/{artifact_id}", {"area": area})
 
 
 @server.tool()
 async def share_file(path: str) -> str:
-    """Put a file (inside the workspace, permission folders or inbox) into the user's library so they can open
-    and download it on their phone."""
+    """Hand over a file (inside workspace, permission folders or inbox) to the conversation so the user can open,
+    preview and download it.
+    Note: this registers the file under AI work files ('agent') and does NOT put it into the user's permanent personal library ('files').
+    If the user explicitly asked to keep/save it in their library ('보관함에 넣어줘' 등), use keep_artifact instead."""
     return await _agent("POST", "/share", {"path": path})
+
+
+@server.tool()
+async def keep_artifact(path: str, instruction: str = "") -> str:
+    """Permanently save a file into the user's personal library ('files') upon explicit user request
+    (e.g. '만들어서 보관함에 넣어줘', '내 보관함에 보관해줘').
+    Pass the file path and the user's request instruction text as evidence.
+    Do NOT call this unless the user explicitly requested keeping/saving it in their library."""
+    return await _agent("POST", "/keep", {"path": path, "instruction": instruction})
 
 
 @server.tool()

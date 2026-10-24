@@ -32,6 +32,8 @@ from ttakkari.context.library import library_catalog
 from ttakkari.models import (
     Artifact,
     ArtifactArea,
+    ArtifactKeepReason,
+    ArtifactOrigin,
     ChatSession,
     CtxMemory,
     Memo,
@@ -47,7 +49,7 @@ from ttakkari.planner import kr_holidays
 from ttakkari.planner import service as planner
 from ttakkari.push.service import PushKind
 from ttakkari.push.service import notify as push_notify
-from ttakkari.schemas import ArtifactAreaIn, ArtifactOut
+from ttakkari.schemas import ArtifactAreaIn, ArtifactKeepIn, ArtifactOut
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -222,7 +224,7 @@ async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str |
 
 @router.patch("/artifacts/{art_id}")
 async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    """보관함 분류를 옮긴다(파일 ↔ 에이전트 파일). 되돌릴 수 있다. 사용자가 올리거나 등록한 파일은 사용자만 옮긴다."""
+    """보관함 분류를 옮긴다(내 보관함 ↔ AI 작업 파일). 되돌릴 수 있다. 사용자가 올리거나 등록한 파일은 사용자만 옮긴다."""
     session = await _session(db, sid)
     art = await db.scalar(select(Artifact).where(
         Artifact.id == art_id,
@@ -231,20 +233,28 @@ async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSessi
     ))
     if art is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact 가 없습니다.")
-    if art.source in ("upload", "user_registered"):
+    if art.source in ("upload", "user_registered") or art.origin == ArtifactOrigin.user:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
                             "사용자가 올린 파일의 분류는 앱에서만 바꿀 수 있어요."})
     if art.area != body.area:
         record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=art.id,
                detail={"from": art.area, "to": body.area, "session": str(sid)})
         art.area = body.area
+        if body.area == ArtifactArea.files:
+            if not art.keep_reason:
+                art.keep_reason = ArtifactKeepReason.chat_request
+        else:
+            art.keep_reason = None
+            art.keep_evidence = None
         await db.commit()
     return {"id": str(art.id), "filename": art.filename, "area": art.area}
 
 
 @router.post("/share")
 async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any]:
-    """에이전트가 만든(또는 찾은) 파일을 사용자 보관함(파일)에 올린다. 공유는 사용자에게 넘기겠다는 명시 신호다. 실행 위치·권한 폴더·inbox 안의 파일만."""
+    """에이전트가 만든(또는 찾은) 파일을 대화에서 사용자에게 전달한다(링크·미리보기·다운로드 제공).
+    내 보관함(files)에 자동으로 영구 보관되지 않으며 AI 작업 파일(agent)로 등록/유지된다.
+    실행 위치·권한 폴더·inbox 안의 파일만."""
     sid, token_run_id = caller
     sess = await _session(db, sid)
     ws = await db.get(Workspace, sess.workspace_id)
@@ -266,8 +276,8 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
     # Run 에 묶이지 않은 레거시 토큰만 실행 중인 가장 최근 Run 으로 대신한다.
     run_id = token_run_id or await db.scalar(select(Run.id).where(
         Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
-    # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않고 파일로 옮긴다. 같은 파일이 두 탭에 쌓이지 않게.
-    # 기존 행의 run_id 는 파일을 만든 Run 의 출처 기록이라 공유한 Run 으로 바꾸지 않는다(분류만 승격).
+    # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않는다.
+    # 사용자가 보관함에서 뺀 파일을 share_file 로 재공유하더라도 다시 files 로 승격되지 않는다!
     existing = await db.scalar(select(Artifact).where(
         Artifact.deleted_at.is_(None), Artifact.session_id == sid,
         Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))
@@ -276,21 +286,80 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
             changed = await refresh_from_original(existing, real)
         except BrokerError as e:
             raise broker_http(e) from e
-        moved = existing.area != ArtifactArea.files
-        if moved:
-            record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=existing.id,
-                   detail={"from": existing.area, "to": ArtifactArea.files, "via": "share", "session": str(sid)})
-            existing.area = ArtifactArea.files
-        if moved or changed:
+        if changed:
             await db.commit()
         if needs_server_preview(existing.kind) and (
                 changed or existing.preview_status not in (PreviewStatus.ready, PreviewStatus.processing)):
             preview.enqueue(existing.id)
         return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
     try:
-        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.files,
+        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.agent,
+                                  origin=ArtifactOrigin.agent, keep_reason=None,
                                   workspace_id=ws.id, session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),
                                   export_allowed=ws.export_allowed)
+    except BrokerError as e:
+        raise broker_http(e) from e
+    await db.commit()
+    if needs_server_preview(art.kind):
+        preview.enqueue(art.id)
+    return {"artifact": ArtifactOut.from_model(art).model_dump(mode="json")}
+
+
+@router.post("/keep")
+async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -> dict[str, Any]:
+    """사용자가 대화에서 명시적으로 보관을 요청했을 때(예: '만들어서 보관함에 넣어줘', '보관함에 보관해줘') 대상 파일을 내 보관함(files)에 영구 보관한다.
+    요청 근거(지시문, 세션 ID, Run ID)를 함께 기록한다."""
+    sid, token_run_id = caller
+    sess = await _session(db, sid)
+    ws = await db.get(Workspace, sess.workspace_id)
+    assert ws is not None
+    s = get_settings()
+    p = Path(body.path).expanduser()
+    if not p.is_absolute():
+        p = Path(ws.root_path) / p
+    real = p.resolve()
+    scope = [Path(ws.root_path).resolve(), s.inbox_root.resolve(), s.outbox_root.resolve(),
+             *[Path(x).resolve() for x in ws.extra_writable_roots]]
+    root = next((r for r in scope if is_within(real, r)), None)
+    if root is None or is_sensitive(real) or not real.is_file():
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "outside_root",
+                                                        "message": "실행 위치·권한 폴더 안의 일반 파일만 보관할 수 있어요."})
+    await db.execute(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
+    run_id = token_run_id or await db.scalar(select(Run.id).where(
+        Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
+
+    evidence = {
+        "session_id": str(sid),
+        "run_id": str(run_id) if run_id else None,
+        "instruction": body.instruction,
+    }
+
+    existing = await db.scalar(select(Artifact).where(
+        Artifact.deleted_at.is_(None), Artifact.session_id == sid,
+        Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))
+    if existing is not None:
+        try:
+            changed = await refresh_from_original(existing, real)
+        except BrokerError as e:
+            raise broker_http(e) from e
+        existing.area = ArtifactArea.files
+        existing.keep_reason = ArtifactKeepReason.chat_request
+        existing.keep_evidence = evidence
+        record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=existing.id,
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id)})
+        await db.commit()
+        if needs_server_preview(existing.kind) and (
+                changed or existing.preview_status not in (PreviewStatus.ready, PreviewStatus.processing)):
+            preview.enqueue(existing.id)
+        return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
+    try:
+        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.files,
+                                  origin=ArtifactOrigin.agent, keep_reason=ArtifactKeepReason.chat_request,
+                                  keep_evidence=evidence,
+                                  workspace_id=ws.id, session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),
+                                  export_allowed=ws.export_allowed)
+        record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=art.id,
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run_id)})
     except BrokerError as e:
         raise broker_http(e) from e
     await db.commit()

@@ -240,8 +240,12 @@ class ArtifactOut(ORM):
     filename: str
     mime_type: str
     kind: str
+    category: str = "other"
     source: str
+    origin: str = "agent"
     area: str
+    keep_reason: str | None = None
+    keep_evidence: dict[str, Any] | None = None
     rel_path: str | None
     storage_mode: str
     size_bytes: int
@@ -263,6 +267,11 @@ class ArtifactOut(ORM):
 
 class ArtifactAreaIn(BaseModel):
     area: Literal["files", "agent"]
+
+
+class ArtifactKeepIn(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    instruction: str = Field("", max_length=4096)
 
 
 class ArtifactRegisterIn(BaseModel):

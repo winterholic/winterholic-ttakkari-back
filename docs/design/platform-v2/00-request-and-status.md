@@ -1,5 +1,7 @@
 # 따까리 플랫폼 V2 요구사항 정본 및 전체 진행 상태 원장 (`00-request-and-status.md`)
 
+> **2026-10-25 현재 상태 정정:** 이 파일의 아래 상태표·담당 워커·기준 SHA는 2026-10-24 역사 원장이다. 원래 요구/ID/필수 실증은 유지한다. 현재 실행부 분리 결정·P0~P6/S2/FND1/INT의 미완료 경계는 [현재 실행 계약](current-execution-contract.md)과 최신 `manage_work`가 우선한다. 버전별 모듈 번들·active.json·새 공통 lease/fence·HMAC 게이트 의무화 제안은 폐기됐다. P4/Core 무배포·보존·rollback 및 P6 요구 자체는 폐기하지 않았다. 현재 frontend/runtime/test 분모는 [2026-10-25 대조](../../../review/platform-v2/20261025/p1-frontend-runtime-tests-review.md)를 읽는다. main push/배포 예약 보류.
+
 > 현재 교정 및 실제 배포 범위는 [검증 실패 교정·통합 기록](verified-corrections-20261024.md)이 우선한다. 아래의 이전 후보 완료 표시는 당시 이력이며 V2 전체 완료나 현재 운영 검증을 뜻하지 않는다.
 
 

@@ -1,5 +1,7 @@
 # Platform V2 리팩토링 재수립 계획: 실행부 격리 중심 전환
 
+> **2026-10-25 현재 후보 보충:** 본문의 Step별 미구현/제거 예정·첫 배포 권고·예상 일수는 작성 당시 계획이며 현재 실행 증거가 아니다. Step2~6 소스는 통합 후보에 있고 실제 운영 활성화·FND1 장벽은 미완료다. [현행 계약](../../docs/design/platform-v2/current-execution-contract.md)과 [현 후보 frontend/runtime/test 대조](20261025/p1-frontend-runtime-tests-review.md)를 우선한다. 기존 can_retire/TTS 보호의 제거는 완료된 remote 전환 검증을 전제로만 판단한다. main push/배포 보류.
+
 - 작성일: 2026-10-25
 - 대상 저장소: `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration`
 - 기준 브랜치 및 커밋: `fix/platform-v2-verified-integration-20261024` (`bf2d566`)

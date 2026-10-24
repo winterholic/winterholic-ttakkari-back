@@ -1,5 +1,7 @@
 # 따까리 플랫폼 V2 아키텍처 대안·계약·모듈 전환 설계 (`architecture-options.md` — 독립 검증 교정판)
 
+> **2026-10-25 대체 결정:** 아래는 이전 대안 비교 및 기각 전 제안의 원문이다. 특히 §2의 bundle/dispatcher와 §4.1 module-releases/active.json, §4.2의 모든 잡 공통 새 소유권 필드, §4.3 신규 공통 fence 의무화는 현재 채택안이 아니다. [현재 실행부 분리 계약](current-execution-contract.md)이 우선한다. 기존 lease·자원·domain queue를 재사용하며 FND1 전송 장벽은 미해결이다. 과거 메모리·시간·코드 결함 수치는 그 당시 입력의 이력으로만 읽는다.
+
 > 현재 교정 및 실제 배포 범위는 [검증 실패 교정·통합 기록](verified-corrections-20261024.md)이 우선한다. 아래의 이전 후보 완료 표시는 당시 이력이며 V2 전체 완료나 현재 운영 검증을 뜻하지 않는다.
 
 

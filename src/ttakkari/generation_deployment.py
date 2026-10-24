@@ -572,6 +572,17 @@ class Slots:
         """같은 업스트림을 유지한 채 새 TTS 접수만 막는다. 영속하지 않는다(프록시가 재시작되면 열린 상태로 돌아간다)."""
         await self._load_proxy(slot, tts_ingress_closed=True)
 
+    async def wait_tts_transport_drained(self, slot: int) -> bool:
+        """True requires completion of every request on the superseded route.
+
+        Stock Caddy 2.11.7 exposes neither that reload acknowledgement nor a
+        counter covering the entire old handler lifetime. /load and upstream
+        num_requests=0 are insufficient. Refuse until a supported boundary is
+        implemented; never turn an unavailable observation into a success.
+        """
+        raise StageError("tts-drain", None, None,
+                         "TTS transport completion unavailable with stock Caddy reload; activation refused")
+
     async def verify(self, revision: str) -> None:
         async with httpx.AsyncClient(timeout=5) as client:
             for origin in ("http://127.0.0.1:8787", "https://ttakkari-api.winterholic.net"):
@@ -1071,17 +1082,35 @@ class GenerationController:
         구세대 코드는 바꿀 수 없다. 구세대 POST 는 active 를 한 번 확인한 뒤 DB 를 조회하고 커밋하므로, 큐가
         0건이라는 관측만으로는 확인과 커밋 사이에 낀 요청을 막지 못한다. 그래서 (1) 프록시에서 새 TTS 접수를
         503 재시도로 거절하고, (2) 구세대의 진행 HTTP 가 0이 된 뒤 (3) queued/running 이 0건인지 확인한다.
-        이 관측은 아직 프록시에서 API 로 전달되지 않은 요청까지 증명하지는 않는다. 첫 전환의 별도
-        전송 장벽 검증이 필요하며, 고정 sleep 을 그 장벽의 증거로 사용해서는 안 된다.
+        HTTP 관측 전 구 프록시 경로 전체의 전송 완료 확인이 필수다. 현재 stock Caddy 는 이를 제공하지
+        않으므로 실제 전환은 명시적으로 거절한다. 고정 sleep/업스트림 카운터를 완료 확인으로 사용하지 않는다.
         증명하지 못하면(시간 초과·조회 오류·구세대 확인 불가) activate 하지 않고 실패시키며 접수 경로는 다시 연다.
         """
         previous_slot, previous_id = job["previous_slot"], uuid.UUID(job["previous_generation"])
+        close_attempted = False
         try:
+            previous = await self.slots.snapshot(previous_slot)
+            if previous is None or previous.get("generation") != str(previous_id):
+                raise StageError("tts-drain", None, None,
+                                 "previous generation unreachable or changed; activation refused")
+            if previous.get("execution_mode") == "remote" and previous.get("executor_protocol") == 2:
+                # Remote API commits chunks to QUEUE_OWNER; the executor, not
+                # this API generation, owns their completion across cutover.
+                return
             # /load can succeed before verification/persistence fails or is cancelled.
             # Every partial close must therefore use the same restoration path.
+            close_attempted = True
             await self.slots.close_tts_ingress(previous_slot)
             deadline = time.monotonic() + timeout
-            await asyncio.sleep(poll)  # 폴링 유예일 뿐 전송 계층 quiescence 보증은 아니다.
+            try:
+                async with asyncio.timeout(max(0, timeout)):
+                    completed = await self.slots.wait_tts_transport_drained(previous_slot)
+            except TimeoutError as exc:
+                raise StageError("tts-drain", None, None,
+                                 "TTS transport completion timed out; activation refused") from exc
+            if completed is not True:
+                raise StageError("tts-drain", None, None,
+                                 "TTS transport completion not acknowledged; activation refused")
             while True:
                 snapshot = await self.slots.snapshot(previous_slot)
                 if snapshot is None or snapshot.get("generation") != str(previous_id):
@@ -1104,10 +1133,11 @@ class GenerationController:
                                      f"http_inflight={inflight} queued_tts={queued}; activation refused")
                 await asyncio.sleep(poll)
         except BaseException:
-            try:
-                await self.slots.switch(previous_slot)  # 거절 상태를 남기지 않는다
-            except Exception:
-                log.exception("TTS ingress restoration failed for previous slot %s", previous_slot)
+            if close_attempted:
+                try:
+                    await self.slots.switch(previous_slot)  # 거절 상태를 남기지 않는다
+                except Exception:
+                    log.exception("TTS ingress restoration failed for previous slot %s", previous_slot)
             raise
 
     async def ensure_supervisor_capable(self, job) -> bool:

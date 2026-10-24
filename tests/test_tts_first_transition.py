@@ -33,6 +33,10 @@ class _Slots:
         self.tts_closed = slot
         self.events.append("closed")
 
+    async def wait_tts_transport_drained(self, slot):
+        # Model-only completed transport; the real Slots implementation refuses.
+        return True
+
     async def switch(self, slot):
         self.route, self.tts_closed = slot, None
         self.events.append(f"switch:{slot}")
@@ -165,7 +169,11 @@ async def test_drain_refuses_activation_and_reopens_ingress_when_idle_is_unprove
     with pytest.raises(StageError) as raised:
         await control.drain_previous_tts(_job(old_id), timeout=0.2, poll=0.02)
     assert raised.value.stage == "tts-drain"
-    assert slots.events[-1] == "switch:0" and slots.tts_closed is None  # 거절 상태를 남기지 않는다
+    if case in {"unreachable", "identity"}:
+        assert slots.events == []  # close 전 identity 실패에는 프록시를 쓰지 않는다
+    else:
+        assert slots.events[-1] == "switch:0"
+    assert slots.tts_closed is None  # 거절 상태를 남기지 않는다
     assert await _state(old_id) == "active"  # activate 하지 않았다
 
 

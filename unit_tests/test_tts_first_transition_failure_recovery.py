@@ -17,6 +17,11 @@ class Slots:
     async def close_tts_ingress(self, slot):
         self.closed = True
 
+    async def wait_tts_transport_drained(self, slot):
+        # This DB-free fixture has no proxy requests. It models an explicit ack;
+        # it does not establish that stock Caddy can supply one.
+        return True
+
     async def switch(self, slot):
         self.restored += 1
         self.closed = False

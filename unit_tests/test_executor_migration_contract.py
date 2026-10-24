@@ -26,6 +26,7 @@ def test_deployed_library_and_previous_v2_schemas_are_declared_upgrade_sources()
 
 
 def test_deployed_library_upgrade_and_rollback_sql_do_not_reapply_its_data_migration(monkeypatch):
+    import sqlite3
     from io import StringIO
     from types import SimpleNamespace
 
@@ -50,8 +51,17 @@ def test_deployed_library_upgrade_and_rollback_sql_do_not_reapply_its_data_migra
         # Downgrading a merge to one parent preserves the other branch. It is
         # not a physical rollback of V2; keep this limitation visible.
         assert f"DROP COLUMN {column}" not in rollback
-    assert "VALUES ('0070_background_consumer_queue')" in rollback
-    assert "version_num='0068_library_intent'" in rollback
+    # Alembic can INSERT either parent and UPDATE the merge row to the other,
+    # depending on set traversal/hash seed. Check the resulting version rows,
+    # not the incidental ordering. These version DML statements are portable;
+    # this does not substitute for PostgreSQL schema/data rollback verification.
+    with sqlite3.connect(":memory:") as db:
+        db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)")
+        db.execute("INSERT INTO alembic_version VALUES ('0071_library_platform_v2_merge')")
+        db.commit()
+        db.executescript(rollback)
+        assert {row[0] for row in db.execute("SELECT version_num FROM alembic_version")} == {
+            "0068_library_intent", "0070_background_consumer_queue"}
     for plan in (upgrade, rollback):
         assert "UPDATE artifacts" not in plan
         assert "ALTER TABLE artifacts" not in plan

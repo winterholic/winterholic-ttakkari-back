@@ -1,5 +1,7 @@
 # FND1 프로토타입 검수와 부분 교정
 
+> 후속: [실제 Caddy pre-counter 반례와 전송 완료 미확인 거절](fnd1-transport-completion-guard.md). 아래는 9013719 이전 검수 기록이다. 새 교정도 lossless 자동 전환 장벽의 완성을 뜻하지 않는다.
+
 2026-10-25 root GPT Sol, Codex command sandbox. 통합 기준 `3a49526e52a881953e90b5bcae2a5ced2e781af4`, 검수 대상 프로토타입 `e522187b454c6bdbcf5cc8f4748facb0410560e1`. FND1 전체는 미해결이며 main 병합·배포는 하지 않았다.
 
 ## 판정: 설계 미채택

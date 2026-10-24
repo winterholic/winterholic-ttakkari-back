@@ -132,6 +132,9 @@ class FakeSlots:
     async def close_tts_ingress(self, slot):
         pass
 
+    async def wait_tts_transport_drained(self, slot):
+        return True  # simulated transport; stock Caddy has no completion ack
+
     async def verify(self, revision):
         assert self.rows[self.route]["revision"] == revision
 

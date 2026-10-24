@@ -185,6 +185,18 @@ async def _lead_line(db: AsyncSession, lead: ChatSession) -> str:
     if workers:
         busy = len(set(await db.scalars(select(Run.session_id).where(
             Run.session_id.in_(workers), Run.status.in_([RunStatus.queued, RunStatus.running])))))
+    from ttakkari.orchestrator import work
+    contract = await work.load(db, lead.id)
+    if contract.get("state"):
+        objective = contract["state"]
+        pending = sum(r["status"] != "done" for r in objective["requirements"])
+        state = {"active": "목표 진행 중", "blocked": "목표 진행 불가", "paused": "목표 일시 중단",
+                 "complete": "목표 완료"}[objective["status"]]
+        if busy and objective["status"] == "active":
+            state += "(작업자 결과 대기)"
+        state += f" · 미완료 {pending}"
+    elif done and done.status == "succeeded" and not active:
+        state = "턴 종료(목표 완료 미확정)"
     line = f"- lead_id={lead.id} 「{lead.title}」 상태: {state} · 작업 세션 {len(workers)}개(실행 중 {busy})"
     ctx = await context_usage.latest(db, lead)
     if ctx:

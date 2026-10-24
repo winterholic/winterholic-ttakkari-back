@@ -29,6 +29,7 @@ PART_ITEMS = {
     "orchestrator_note": ("prompt", "code|ORCHESTRATOR_NOTE", "메인 오케스트레이터 역할", "orchestrator/runtime.py"),
     "lead_note": ("prompt", "code|LEAD_NOTE", "기획 세션 역할", "orchestrator/runtime.py LEAD_NOTE"),
     "common_instructions": ("prompt", "harness|common", "사용자 공통 지침", "~/.ttakkari/harness/instructions.md"),
+    "planning_contract": ("prompt", "code|PLANNING_CONTRACT", "기획 실행 계약", "runs/instructions.py PLANNING_CONTRACT"),
     "role_instructions": ("prompt", None, "역할 지침", "~/.ttakkari/harness/<role>.md"),
     "pinned_brief": ("prompt", "db|pinned_brief", "고정 기억(핀)", "DB 맥락 도서관 pinned_brief"),
     "routing_note": ("prompt", "code|MODEL_ROUTING_NOTE", "모델 라우팅 정책", "orchestrator/runtime.py model_routing_note()"),
@@ -131,7 +132,7 @@ async def _work(db: AsyncSession, items: list[Item], *, session: str, engine: st
     role_note = {"lead": "lead_note", "orchestrator": "orchestrator_note"}.get(session)
     canonical = ["system_note", "agent_note", "capabilities", *([role_note] if role_note else []),
                  "common_instructions", "role_instructions", "pinned_brief",
-                 *(["routing_note"] if session in ("lead", "orchestrator") else [])]
+                 *(["planning_contract", "routing_note"] if session in ("lead", "orchestrator") else [])]
     for pid in canonical:
         category, key, title, source = PART_ITEMS[pid]
         key = key or role_key

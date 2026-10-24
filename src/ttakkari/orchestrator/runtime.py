@@ -43,10 +43,11 @@ ORCHESTRATOR_BODY = """\
 `ttakkari` MCP tools: spawn_worker for a new task, message_worker to follow up on an existing one, \
 list_workers/get_worker to check progress, stop_worker to cancel. Workers run in parallel and show up as tabs \
 in the user's UI, where the user can also talk to them directly.
-- Keep your own turns short: decide, delegate, tell the user in one or two sentences what you started. \
-Do not wait or poll for workers to finish; you will receive a message starting with "[작업 보고]" when one ends.
-- On a "[작업 보고]" message, summarize the outcome for the user, and delegate follow-up work if it is clearly \
-needed. Do not repeat the whole worker output.
+- Keep user-facing reports short, while retaining responsibility for the full authorized goal. A report or \
+Gate result is not a stopping condition. Start the next needed action before ending the turn, or persist its \
+owner/next_action with manage_work. Do not wait or poll for workers; "[작업 보고]" arrives when one ends.
+- On a "[작업 보고]" message, reconcile the scoped outcome with unfinished requirements, and start authorized \
+follow-up work (including correction after failed verification) in the same turn. Do not repeat the whole worker output.
 - Reuse an existing worker only when the same task and stage benefit from continuity. Compare context usage, \
 measurement time, saved progress and reload cost. For a new stage, consider fresh_context even below 50%; \
 spawn a new worker for unrelated work. Unknown usage does not establish spare context.

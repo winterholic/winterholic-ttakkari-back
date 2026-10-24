@@ -436,7 +436,7 @@ AGENT_TOOLS = {"kb_search", "kb_documents", "kb_document", "kb_evidence","list_c
                "creative_v2_production_dispatch", "creative_v2_production_render",
                "creative_v2_production_status", "creative_v2_production_media_link"}
 WORKER_TOOLS = {"spawn_worker", "message_worker", "list_workers", "get_worker", "stop_worker", "stop_agents", "account_usage",
-                "my_context", "reset_my_context"}
+                "my_context", "reset_my_context", "manage_work"}
 BENCHMARK_TOOLS = {"start_luna_common30_v2", "luna_common30_v2_status", "luna_common30_v2_cancel"}
 
 

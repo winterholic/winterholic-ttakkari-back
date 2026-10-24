@@ -1,0 +1,31 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_persisted_resume_schedule_owns_next_step_without_duplicate_run ______
+
+client = <httpx.AsyncClient object at 0x110639a90>
+auth = {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0dGFra2FyaSIsImF1ZCI6ImFwaSIsInN1YiI6Im93bmV...AiOjE3OTI4NTg5NTUsImp0aSI6IjM0N2M4MTJhMDJmYzQyODBhOTRhNTg4ODIyNzFmNmMzIn0.HPapnEtaz0dWg-f_TMnuLZHhA2SxQ5wkzT_rfBz-AM4'}
+make_dir = <function make_dir.<locals>._make at 0x1106f7560>
+
+    async def test_persisted_resume_schedule_owns_next_step_without_duplicate_run(client, auth, make_dir):
+        from datetime import timedelta
+    
+        from ttakkari.models import ScheduledAction, utcnow
+        from ttakkari.orchestrator import work
+    
+        sess, h = await lead(client, auth, make_dir)
+        assert (await checkpoint(client, h, state())).status_code == 200
+        async with sessionmaker()() as db:
+            s = await db.get(ChatSession, UUID(sess['id']))
+            db.add(ScheduledAction(action_type='send_message', payload={'session_id': str(s.id), 'prompt': 'resume'},
+                                   status='pending', due_at=utcnow() + timedelta(minutes=10)))
+            run = Run(session_id=s.id, workspace_id=s.workspace_id, engine='codex', prompt='partial', status='succeeded')
+            db.add(run)
+            await db.flush()
+>           assert await work.after_run(db, s, run) is None
+E           AssertionError: assert UUID('86259515-4ac7-4459-a084-0b1a10f70363') is None
+
+tests/test_planning_contract.py:337: AssertionError
+db reset: 1 selective (avg 3.0/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_planning_contract.py::test_persisted_resume_schedule_owns_next_step_without_duplicate_run
+1 failed, 18 deselected in 6.75s

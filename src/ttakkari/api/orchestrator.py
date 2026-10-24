@@ -36,6 +36,7 @@ from ttakkari.models import (
     SessionKind,
     Workspace,
 )
+from ttakkari.orchestrator import work
 from ttakkari.orchestrator.runtime import OrchestratorSession
 from ttakkari.pms import service as pms_svc
 from ttakkari.runs import context_usage, events, luna_benchmark, worker_routing
@@ -161,6 +162,18 @@ async def _orchestrator(db: Db, sid: uuid.UUID) -> ChatSession:
     if s is None or s.kind != SessionKind.orchestrator or s.archived_at is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "오케스트레이터 세션이 아닙니다.")
     return s
+
+
+@router.post("/work")
+async def manage_work(body: work.WorkIn, sid: OrchestratorSession, db: Db) -> dict:
+    sess = await _orchestrator(db, sid)
+    if body.operation == "get":
+        return await work.load(db, sid)
+    saved = await work.checkpoint(db, sess, body)
+    record(db, actor="agent", action="work.checkpoint", target_type="session", target_id=sid,
+           detail={"revision": saved["revision"], "status": saved["state"]["status"]})
+    await db.commit()
+    return saved
 
 
 async def _worker(db: Db, sid: uuid.UUID, worker_id: uuid.UUID) -> ChatSession:

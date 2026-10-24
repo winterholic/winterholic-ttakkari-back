@@ -54,6 +54,10 @@ async def _archive_under(db: AsyncSession, desk_id: uuid.UUID, cutoff: datetime)
         ChatSession.archived_at.is_(None))))
     n = 0
     for lead in leads:
+        from ttakkari.orchestrator import work
+        contract = await work.load(db, lead.id)
+        if contract.get("state") and contract["state"]["status"] != "complete":
+            continue  # Unfinished/blocked/paused goals remain discoverable on the desk board.
         workers = list(await db.scalars(select(ChatSession).where(ChatSession.parent_id == lead.id)))
         ids = [lead.id, *(w.id for w in workers)]
         if await db.scalar(select(func.count()).select_from(Run).where(Run.session_id.in_(ids), Run.status.in_(ACTIVE))):

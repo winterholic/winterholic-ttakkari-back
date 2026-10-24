@@ -199,6 +199,11 @@ async def patch_project(pid: uuid.UUID, body: ProjectPatch, _: User, db: Db) -> 
     data = body.model_dump(exclude_unset=True)
     svc.check_dates(data.get("start_date", p.start_date),
                     data.get("end_date", p.end_date))
+    if data.get("status") == "done":
+        ordered, _nodes = await svc.tree(db, pid)
+        unfinished = [n.wbs for n in ordered if n.is_leaf and n.status != "done"]
+        if unfinished:
+            raise svc.bad("미완료 작업이 있어 프로젝트를 완료할 수 없어요: " + ", ".join(unfinished[:20]))
     for k in ("description", "scope", "status"):
         if data.get(k) is not None:
             setattr(p, k, data[k])

@@ -1803,6 +1803,9 @@ class RunManager:
             await apply_reset(db, sess)
         from ttakkari import reverse_tasks
         reverse_next = await reverse_tasks.on_finished(db, run)
+        from ttakkari.orchestrator import work
+        if sess is not None:
+            await work.after_run(db, sess, run)
         parent_id = await _enqueue_report(db, sess, run) if sess is not None else None
         if sess is not None:
             await _post_lead_report(db, sess, run)
@@ -2153,8 +2156,12 @@ async def _artcraft_plan(db: AsyncSession, sess: ChatSession, run: Run, outbox: 
 
 
 async def _compose_prompt(db: AsyncSession, run: Run) -> str:
+    from ttakkari.orchestrator import work
+    sess = await db.get(ChatSession, run.session_id)
+    contract = await work.prompt_note(db, sess) if sess is not None else ""
+    prompt = (contract + "\n\n" if contract else "") + run.prompt
     if not run.context_artifact_ids:
-        return run.prompt
+        return prompt
     lines = []
     for aid in run.context_artifact_ids:
         art = await db.get(Artifact, uuid.UUID(str(aid)))
@@ -2163,8 +2170,8 @@ async def _compose_prompt(db: AsyncSession, run: Run) -> str:
         # 관리 영역 복사본은 guard 보호 영역이라 에이전트가 못 읽는다. 원본 경로를 알려준다.
         lines.append(f"- {art.filename}: {art.original_path}")
     if not lines:
-        return run.prompt
-    return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + run.prompt
+        return prompt
+    return "[사용자가 함께 보낸 파일(보고 있던 결과물·첨부)]\n" + "\n".join(lines) + "\n\n" + prompt
 
 
 async def _system_note_parts(db: AsyncSession, outbox: Path, sess: ChatSession, scope: str = "all") -> list[tuple[str, str]]:
@@ -2189,6 +2196,7 @@ async def _system_note_parts(db: AsyncSession, outbox: Path, sess: ChatSession, 
     if brief:
         parts.append(("pinned_brief", "[Pinned facts about the user — use recall for more]\n" + brief))
     if sess.kind == SessionKind.orchestrator:
+        parts.append(("planning_contract", instructions_mod.PLANNING_CONTRACT))
         from ttakkari.orchestrator.runtime import model_routing_note
         parts.append(("routing_note", model_routing_note()))
     return parts
@@ -2385,9 +2393,17 @@ async def _post_lead_report(db: AsyncSession, sess: ChatSession, run: Run) -> No
     parent = await db.get(ChatSession, sess.parent_id)
     if parent is None or parent.kind != SessionKind.desk or parent.archived_at is not None:
         return
-    label = {RunStatus.succeeded: "완료", RunStatus.failed: "실패", RunStatus.cancelled: "취소",
+    from ttakkari.orchestrator import work
+    contract = await work.load(db, sess.id)
+    goal_status = (contract.get("state") or {}).get("status")
+    label = {RunStatus.succeeded: "목표 완료" if goal_status == "complete" else "턴 종료(목표 완료 미확정)",
+             RunStatus.failed: "실패", RunStatus.cancelled: "취소",
              RunStatus.interrupted: "중단"}.get(RunStatus(run.status), run.status)
     text = run.result_text or (f"(실패) {run.error}" if run.error else "")
+    if contract.get("state") and goal_status != "complete":
+        state = contract["state"]
+        pending = [r["id"] for r in state["requirements"] if r["status"] != "done"]
+        text = f"[전체 목표 {goal_status}; 미완료: {', '.join(pending) or '최종 확인'}]\n" + text
     if run.status == RunStatus.cancelled and not text:
         return
     now = utcnow()

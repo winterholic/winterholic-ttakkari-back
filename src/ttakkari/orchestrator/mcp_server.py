@@ -907,6 +907,22 @@ def orchestrator_tool(fn):
 
 
 @orchestrator_tool
+async def manage_work(operation: Literal["get", "checkpoint"] = "get", revision: int = 0,
+                      state: dict[str, Any] | None = None) -> str:
+    """Get/checkpoint this lead's durable goal contract before sustained work and after milestones.
+    checkpoint uses the revision from get (stale writes rejected). state: goal, strategy, requirements
+    [{id,text,status:pending|review|done,evidence}], status:active|blocked|paused|complete, next_action;
+    optional completed_work, validation, changed_files, decisions (lists of evidence/paths),
+    replan_reason, blocker, pms_project_id. Preserve requirement ids/text and original goal when replanning.
+    Done requires evidence; complete requires every requirement and linked PMS leaf done. Gate success
+    is intermediate. active requires next_action; blocked/paused requires exact blocker (pause: user request).
+    Existing workers own pending execution; otherwise unfinished active work automatically continues,
+    stopping after two continuations without recorded progress. get restores across engine/context changes.
+    Evidence strings are assertions to inspect, not independently verified execution receipts."""
+    return await _call("POST", "/work", {"operation": operation, "revision": revision, "state": state})
+
+
+@orchestrator_tool
 async def spawn_worker(title: str, prompt: str, engine: Literal["auto", "claude", "codex", "antigravity", "muse", "qwen-local"] = "auto",
                        model: str | None = None,
                        effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,

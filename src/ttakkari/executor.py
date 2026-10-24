@@ -182,9 +182,11 @@ async def start_background_services() -> list[asyncio.Task]:
     from ttakkari.artifacts import preview
     from ttakkari.generation_service import maintenance_jobs, periodic
     from ttakkari.meetings.local_stt import jobs as stt_jobs
+    from ttakkari.tts import jobs as tts_jobs
 
     await preview.start_worker()
     await stt_jobs.start()
+    await tts_jobs.start()
     return [asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}")
             for name, operation, interval in maintenance_jobs(get_settings())]
 
@@ -197,6 +199,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
     from ttakkari.runs import profiles, usage_store
     from ttakkari.runs.desk_qwen_service import service as qwen_service
     from ttakkari.runs.manager import manager
+    from ttakkari.tts import jobs as tts_jobs
 
     settings = get_settings()
     if not settings.release_revision:
@@ -205,7 +208,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
     stop = asyncio.Event()
     background_tasks: list[asyncio.Task] = []
     registered = False
-    preview_started = stt_started = False
+    preview_started = stt_started = tts_started = False
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
@@ -217,7 +220,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
         usage_store.install()
         await qwen_service.start(owner=True)
         background_tasks = await start_background_services()
-        preview_started = stt_started = True
+        preview_started = stt_started = tts_started = True
         while not stop.is_set():
             try:
                 runtime.signal.clear()
@@ -242,6 +245,8 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
+            if tts_started:
+                await tts_jobs.drain()
             if registered and not await drain(runtime, manager, timeout=drain_timeout):
                 log.warning("executor drain deadline expired; waiting for natural completion")
                 await drain(runtime, manager, timeout=None)

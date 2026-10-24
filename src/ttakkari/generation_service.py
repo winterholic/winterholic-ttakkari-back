@@ -224,9 +224,7 @@ async def start_api_services(execution_mode: str) -> None:
     if execution_mode == "local":
         await preview.start_worker()
         await stt_jobs.start()
-    # TTS retains submitted source text in this process until its job finishes;
-    # moving only the consumer would lose the payload on API replacement.
-    await tts_jobs.start()
+        await tts_jobs.start()
     # Remote API generations do not spawn or stop the llama-server process;
     # only local (single-process legacy/rollback) runs own the managed process.
     try:
@@ -318,7 +316,7 @@ async def lifespan(app):
         await asyncio.gather(*tasks, return_exceptions=True)
         if runtime.execution_mode == "local":
             await jobs.stop()
-        await tts_jobs.stop()
+            await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
         from ttakkari.notebooklm.service import service as notebooklm_service

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 
-async def test_remote_api_keeps_ephemeral_tts_and_request_qwen_but_skips_durable_consumers(monkeypatch):
+async def test_remote_api_keeps_request_qwen_but_skips_durable_consumers_including_tts(monkeypatch):
     from ttakkari import generation_service
     from ttakkari.artifacts import preview
     from ttakkari.meetings.local_stt import jobs as stt_jobs
@@ -17,7 +17,7 @@ async def test_remote_api_keeps_ephemeral_tts_and_request_qwen_but_skips_durable
 
     await generation_service.start_api_services("remote")
 
-    assert calls == ["tts", "qwen"]
+    assert calls == ["qwen"]
 
 
 async def test_local_api_preserves_existing_worker_startup(monkeypatch):
@@ -42,10 +42,12 @@ async def test_executor_starts_durable_consumers_and_maintenance(monkeypatch):
     from ttakkari import executor, generation_service
     from ttakkari.artifacts import preview
     from ttakkari.meetings.local_stt import jobs as stt_jobs
+    from ttakkari.tts import jobs as tts_jobs
 
     calls = []
     monkeypatch.setattr(preview, "start_worker", AsyncMock(side_effect=lambda: calls.append("preview")))
     monkeypatch.setattr(stt_jobs, "start", AsyncMock(side_effect=lambda: calls.append("stt")))
+    monkeypatch.setattr(tts_jobs, "start", AsyncMock(side_effect=lambda: calls.append("tts")))
     monkeypatch.setattr(generation_service, "maintenance_jobs", lambda _s: [("one", object(), 60)])
     def fake_create_task(coro, name=None):
         calls.append(name)
@@ -56,5 +58,5 @@ async def test_executor_starts_durable_consumers_and_maintenance(monkeypatch):
 
     tasks = await executor.start_background_services()
 
-    assert calls == ["preview", "stt", "periodic:one"]
+    assert calls == ["preview", "stt", "tts", "periodic:one"]
     assert len(tasks) == 1

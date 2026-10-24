@@ -993,9 +993,12 @@ class PublicShare(Base):
 from ttakkari import collector_models as _collector_models  # noqa: F401
 from ttakkari import kb_models as _kb_models  # noqa: F401
 from ttakkari import knowledge_models as _knowledge_models  # noqa: F401
-from ttakkari import tts_models as _tts_models  # noqa: F401
+from ttakkari import tts_models as _tts_models
 from ttakkari.collector import budget_models as _collector_budget_models  # noqa: F401
 from ttakkari.research import models as _research_models  # noqa: F401
+
+TtsJob = _tts_models.TtsJob
+TtsCache = _tts_models.TtsCache
 
 
 class OpsIssue(Base):

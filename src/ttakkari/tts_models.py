@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ttakkari.models import Base, utcnow
@@ -22,6 +23,7 @@ class TtsJob(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column()
     status: Mapped[str] = mapped_column(String(16), default="queued")
     params: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    chunks_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=None)
     result_metadata: Mapped[dict[str, Any]] = mapped_column(default=dict)
     error_code: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

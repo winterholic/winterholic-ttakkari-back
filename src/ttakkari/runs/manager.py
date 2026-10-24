@@ -1897,8 +1897,27 @@ async def _heartbeat(run_id: uuid.UUID, *, owner=None, token=None) -> None:
 manager = RunManager()
 
 
+def _inspect_run_process(pid: int) -> str:
+    """프로세스 상태 분류: 'alive' (존재), 'absent' (확실히 없음), 'unknown' (권한/OS 오류)."""
+    try:
+        p = psutil.Process(pid)
+        if p.is_running():
+            return "alive"
+        return "absent"
+    except psutil.NoSuchProcess:
+        return "absent"
+    except (psutil.AccessDenied, OSError, PermissionError):
+        return "unknown"
+
+
 async def recover_interrupted() -> int:
-    """서버가 죽었다 살아나면 실행 중이던 Run 은 프로세스를 잃은 것이다. 상태를 정리해 사용자가 이어서 지시할 수 있게 한다."""
+    """서버가 죽었다 살아나면 실행 중이던 Run 은 프로세스를 잃은 것이다. 상태를 정리해 사용자가 이어서 지시할 수 있게 한다.
+
+    FND-01:
+    - ALIVE: 실행 중인 프로세스 보존 (건드리지 않고 스킵)
+    - UNKNOWN: AccessDenied/OSError 로 판정 불명인 경우 보존 (건드리지 않고 스킵)
+    - ABSENT: NoSuchProcess 로 확실히 종료된 Run 만 interrupted 로 마감
+    """
     async with sessionmaker()() as db:
         # An accidentally started legacy server must not perform a global sweep
         # over a generation cluster, even if it currently has no active Runs.
@@ -1909,10 +1928,24 @@ async def recover_interrupted() -> int:
                 raise RuntimeError("generation runtime is registered; legacy recovery is forbidden")
         # 시작하지 않은 대기 Run 은 그대로 두고 resume_queued 가 이어서 돌린다.
         rows = list(await db.scalars(select(Run).where(Run.status == RunStatus.running)))
+        recovered_count = 0
         for run in rows:
-            if run.pid and _looks_like_agent(run.pid):
-                with contextlib.suppress(ProcessLookupError, PermissionError):
-                    os.killpg(run.pid, signal.SIGTERM)
+            if run.pid:
+                try:
+                    state = _inspect_run_process(run.pid)
+                except psutil.NoSuchProcess:
+                    state = "absent"
+                except (psutil.AccessDenied, OSError, PermissionError):
+                    state = "unknown"
+                except Exception:  # noqa: BLE001
+                    state = "alive"
+
+                if state in ("alive", "unknown"):
+                    continue
+
+                if _looks_like_agent(run.pid):
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
+                        os.killpg(run.pid, signal.SIGTERM)
             run.heartbeat_at = utcnow()
             run.status = RunStatus.interrupted
             run.pid = None
@@ -1921,8 +1954,9 @@ async def recover_interrupted() -> int:
             run.resume_handoff = await _interrupted_handoff(db, run)
             events.append(db, run, "run.finished", {"status": RunStatus.interrupted, "error": run.error,
                                                     "result_text": None, "cost_usd": None, "exit_code": None})
+            recovered_count += 1
         await db.commit()
-        return len(rows)
+        return recovered_count
 
 
 async def _consume_pending_cancel(db: AsyncSession, run_id: uuid.UUID) -> bool:
@@ -1938,8 +1972,12 @@ async def _consume_pending_cancel(db: AsyncSession, run_id: uuid.UUID) -> bool:
     return True
 
 
-async def resume_interrupted() -> int:
-    """Queue only server-shutdown interruptions, with persisted bounded exponential backoff."""
+async def resume_interrupted(force: bool = False) -> int:
+    """Queue only server-shutdown interruptions, with persisted bounded exponential backoff.
+
+    FND-01 / ACC-03: 소유권 미확인 작업의 무조건 자동 재큐잉을 차단하여
+    중복 실행 및 중복 부수효과를 방지한다. auto_requeued_count 는 기본 0이다.
+    """
     async with sessionmaker()() as db:
         rows = list(await db.scalars(
             select(Run).where(Run.status == RunStatus.interrupted, Run.error == "서버 종료로 중단",
@@ -1952,6 +1990,8 @@ async def resume_interrupted() -> int:
             if await _consume_pending_cancel(db, run.id):
                 # 소유 세대 집행 전에 세대가 죽어 interrupted 로 남은 Run. 재개하지 않고 취소로 마감한다.
                 await manager._finish(db, run, RunStatus.cancelled, error="전역 중지 요청 후 세대 종료로 취소 마감")
+                continue
+            if not force and not get_settings().auto_resume_interrupted:
                 continue
             if not run.resume_handoff:
                 run.resume_handoff = await _interrupted_handoff(db, run)

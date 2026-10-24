@@ -150,8 +150,8 @@ async def _guard_loop() -> None:
     poll = get_settings().runtime_poll_seconds
     while True:
         try:
-            if await runtime.refresh() != "active":
-                await _fail_queued_draining(runtime.id)
+            await runtime.refresh()
+            # FND-01: draining 시 queued 작업을 fail 처리하지 않고 끝까지 수행한다.
             async with _guard_lock:
                 # 새 POST 는 이 락 안에서 job 을 커밋하므로, 여기서 0건이면 guard 없이 남는 queued 가 없다.
                 if not await _has_owned_queued(runtime.id):
@@ -213,6 +213,7 @@ async def accept(plan: Plan) -> dict:
         owner_id=me,
         status="succeeded" if all_cached else "queued",
         params=_params(plan, cached=cached),
+        chunks_json=list(plan.chunks),
         result_metadata={"synthesized_chunks": 0, "from_cache": True} if all_cached else {},
         created_at=now,
         started_at=now if all_cached else None,
@@ -282,13 +283,15 @@ async def run_claimed(job_id: uuid.UUID) -> None:
     """claim 된 job 하나를 실행한다. 호출자가 실행 예산(budget)을 쥐고 있어야 한다."""
     me = owner_id()
     try:
-        texts = _pending_texts.get(job_id)
-        if texts is None:
-            await cas(job_id, expected=("running",), status="failed", owner=me, error_code="input_missing")
-            return
         async with sessionmaker()() as db:
             job = await db.get(TtsJob, job_id)
         if job is None:
+            return
+        texts = _pending_texts.get(job_id)
+        if texts is None and job.chunks_json:
+            texts = list(job.chunks_json)
+        if texts is None:
+            await cas(job_id, expected=("running",), status="failed", owner=me, error_code="input_missing")
             return
         try:
             plan = _plan_from_job(job, texts)
@@ -461,11 +464,11 @@ async def tick() -> bool:
     me = owner_id()
     await _housekeeping(me)
     runtime = generation.current
-    if runtime is not None and await runtime.refresh() != "active":
-        return False  # draining 정리는 guard 가 맡는다. 이 세대는 새 job 을 시작하지 않는다.
+    if runtime is not None and await runtime.refresh() not in ("active", "draining"):
+        return False  # retired / offline 은 새 job 을 시작하지 않는다.
     if not await _has_owned_queued(me):
         return False
-    async with service.budget(0) as outcome:
+    async with service.budget(0, allow_draining=True) as outcome:
         if outcome != "ok":
             return False
         job_id = await _claim(me)

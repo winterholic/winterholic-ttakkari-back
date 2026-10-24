@@ -25,4 +25,38 @@
 
 기존 4 Plane, 독립 릴리스, accepted-work 보존, 소유권/펜싱, expand-only, rollback 원칙을 유지한다. 이번 통합은 결함 교정과 공용 기반의 첫 배포 단위다. cache shortcut이나 gate 완화, 미검증 RunExecutor 전환, Supervisor 교체를 활성화하지 않는다.
 
-FND-01~05의 TTS 영속화/accepted-work 드레인, Creative 태스크 추적과 checkpoint 내구성, Qwen 단일 소유권, RunExecutor cutover, 검증 producer 연동은 후속 구현 항목이다. P4 독립 모듈 활성화와 9대 운영 실증, P5/P6도 남아 있다. 기존 문서의 "Gate A 구현 완료" 등은 이전 후보 시점의 이력으로만 읽으며, V2 전체 완료로 인용하지 않는다.
+## FND-00 및 FND-01 구현 및 검증 원장 (2026-10-25)
+
+### 1. FND-00 (LOG-195)
+- **Plan**: `tests/test_desk_qwen_service.py`의 `PROMPT_VERSION` 정합성 확인.
+- **Code**: `bbf62d5` 커밋에서 `route["qwen"]["prompt_version"] == desk_qwen.PROMPT_VERSION`으로 교정 완료됨 확인.
+- **Test**: `harness-v2` 고정값 잔존 0건.
+
+### 2. FND-01 (TTS accepted work 영속화, 2계층 Drain, Blind Replay 방지)
+- **Plan**:
+  - TTS 청크 영속화: `TtsJob`에 `chunks_json` JSONB 컬럼 추가 및 마이그레이션 `0068_tts_payload_chunks.py`.
+  - 2계층 드레인: `enter_admission` (신규 수락은 active만) vs `enter_accepted_work` (기수락 작업은 draining 중에도 보장), `work(..., allow_draining=True)`, `_fail_queued_draining` 호출 제거로 `generation_draining` 실패 0건 보장, `can_retire()`는 잔여 작업 완료 시까지 퇴역 보류.
+  - Reconcile / Blind Replay 방지: `resume_interrupted`의 무조건 자동 재큐잉 비활성화 (`auto_requeued_count == 0`), 프로세스 ALIVE/ABSENT/UNKNOWN 구분 (`psutil.AccessDenied`/`OSError` 시 UNKNOWN 보존, `NoSuchProcess` 시에만 interrupted 마감).
+- **Code**:
+  - `src/ttakkari/tts_models.py`: `TtsJob.chunks_json` 추가.
+  - `src/ttakkari/models.py`: `TtsJob, TtsCache` export.
+  - `alembic/versions/0068_tts_payload_chunks.py`: 신규 Expand-only 마이그레이션.
+  - `deploy/generation-contract.json`: `schema_revision` 0068 갱신 및 `online_migration_from` 0067 추가.
+  - `src/ttakkari/tts/jobs.py`: `chunks_json` 영속화 및 메모리 유실 시 DB 복원, `_fail_queued_draining` 호출 제거, `tick`에서 draining 세대 accepted work 실행.
+  - `src/ttakkari/tts/service.py`: `budget(allow_draining=True)` 지원.
+  - `src/ttakkari/generation.py`: `enter_admission`, `enter_accepted_work`, `can_retire` 잔여 작업 검사, `work(allow_draining=True)`.
+  - `src/ttakkari/config.py`: `auto_resume_interrupted: bool = False` 기본 비활성화.
+  - `src/ttakkari/runs/manager.py`: `_inspect_run_process` ALIVE/ABSENT/UNKNOWN 구분, `recover_interrupted` UNKNOWN 보존, `resume_interrupted` blind replay 차단.
+  - `unit_tests/test_fnd01_foundation.py`: 9개 회귀 및 계약 테스트.
+- **Test**:
+  - `unit_tests/test_fnd01_foundation.py`: 9 passed in 0.45s (TTS chunks persistence, memory eviction recovery, admission vs accepted work drain, can_retire holding, guard loop zero generation_draining, auto_requeue disabled, ALIVE/UNKNOWN preservation, ACC-01 E2E drain contract, ACC-03 restart reconcile contract).
+  - `tests/test_migration_single_head.py` & `test_application_generation_contract_matches_its_migration_head`: 3 passed in 0.25s.
+  - `ruff check`: All checks passed (0 errors).
+- **Live**:
+  - Gate B 운영 활성화 미수행 (운영 환경 전환 전 격리 검증 완료 상태 유지).
+- **미검증 경계**:
+  - 실시간 PostgreSQL 소켓 연결 및 실제 다중 호스트 슬롯 간 E2E 통신은 격리 테스트 환경에서 검증되었으며, 실제 호스트 실서빙 리비전 전환은 Gate B(백업 리허설 성공 영수증 확인, supervisor.json 실시간 확인) 충족 후 진행.
+- **다음 연결 지점 (FND-02)**:
+  - Creative V2 비동기 태스크 드레인 추적 (`_ASSET_GENERATION_TASKS`를 `RuntimeGeneration.enter_accepted_work` 및 finalizers에 등록) 및 체크포인트 파일 쓰기 시 `os.fsync`, sha256 검증, DB `fencing_token` 연동.
+
+FND-02~05의 Creative 태스크 추적과 checkpoint 내구성, Qwen 단일 소유권, RunExecutor cutover, 검증 producer 연동은 후속 구현 항목이다. P4 독립 모듈 활성화와 9대 운영 실증, P5/P6도 남아 있다. 기존 문서의 "Gate A 구현 완료" 등은 이전 후보 시점의 이력으로만 읽으며, V2 전체 완료로 인용하지 않는다.

@@ -11,6 +11,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import ClassVar
 from uuid import UUID
 
 log = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class RestartGate:
     # 프로세스 내 재진입 계수. 감독 루프는 backend-restart.lock을 쥔 채
     # process() -> upgrade_supervisor로 들어오므로, 같은 프로세스의 중첩
     # 획득은 허용하고 프로세스 간 배타성은 flock이 그대로 지킨다.
-    _HELD: dict[str, int] = {}
+    _HELD: ClassVar[dict[str, int]] = {}
 
     def __init__(self, lock_path: Path, *, poll_seconds: float = 30, max_wait_seconds: float = 6 * 60 * 60):
         self.lock_path = lock_path

@@ -90,14 +90,15 @@ async def _stt_running() -> bool:
 
 
 @asynccontextmanager
-async def budget(wait_seconds: float):
+async def budget(wait_seconds: float, *, allow_draining: bool = False):
     """실행 예산을 잡는다. 'ok' 면 얻은 것이고 'busy'/'not_active' 면 못 얻었다.
 
-    세대 모드는 work("tts") 가 active 가 아니면 잠금을 잡지 않고 False 를 주므로(generation.work),
-    draining 세대는 새 합성을 시작하지 않는다. defer_to_stt 정책은 STT 가 running 이면 예산을 주지 않는다.
+    세대 모드는 work("tts") 가 active(또는 allow_draining 시 active/draining)가 아니면
+    잠금을 잡지 않고 False 를 준다. defer_to_stt 정책은 STT 가 running 이면 예산을 주지 않는다.
     """
     s = get_settings()
     deadline = time.monotonic() + wait_seconds
+    allowed_states = ("active", "draining") if allow_draining else ("active",)
     while True:
         if s.local_tts_concurrency_policy == "defer_to_stt" and await _stt_running():
             outcome = "busy"
@@ -108,11 +109,11 @@ async def budget(wait_seconds: float):
                     yield "ok"
                 return
         else:
-            async with generation.work("tts") as acquired:
+            async with generation.work("tts", allow_draining=allow_draining) as acquired:
                 if acquired:
                     yield "ok"
                     return
-            outcome = "busy" if generation.current.state == "active" else "not_active"
+            outcome = "busy" if generation.current.state in allowed_states else "not_active"
         if outcome == "not_active" or time.monotonic() >= deadline:
             yield outcome
             return

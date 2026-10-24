@@ -1,10 +1,9 @@
-"""TTS 전용 직렬 큐(설계 §6, §8). STT·E5 큐는 건드리지 않는다.
+"""TTS 전용 직렬 큐(설계 §6, §8, FND-01). STT·E5 큐는 건드리지 않는다.
 
-- 원문은 DB 에 두지 않고 접수한 프로세스의 `_pending_texts` 에만 둔다. 부모는 claim 부터 자식 종료까지
-  원문을 보유한다(run_json_worker 가 request 를 자식 종료까지 쥔다). "stdin 직후 해제"를 가정하지 않는다.
+- FND-01: 원문 청크는 `TtsJob.chunks_json`에 영속화되어 프로세스 재시작 및 드레인 중 복구를 지원한다.
+  접수한 프로세스는 `_pending_texts`에도 캐시하며 부모는 자식 종료까지 원문을 보유한다.
 - 모든 상태 전이는 `UPDATE ... WHERE id=:id AND status IN (...) [AND owner_id=:me]` 한 문장이고 영향 행 1일 때만 확정한다.
-- 소유 queued 가 있는 동안 `runs.manager._background` 에 `tts-queued-guard` 태스크를 둬 세대 퇴역(drain_ready)보다
-  원문 정리가 먼저 끝나도록 한다. 공유 세대 코드(work·can_retire·ready)는 바꾸지 않는다.
+- 소유 queued 가 있는 동안 세대 퇴역(`can_retire`)을 차단하여 기수락 작업(accepted work)을 끝까지 완수한다.
 - 소유자 사망은 flock 획득 성공 또는 runtime_generations.state='offline' 만 증거로 쓴다. heartbeat 만료는 증거가 아니다.
 """
 from __future__ import annotations
@@ -20,7 +19,7 @@ import uuid
 from datetime import timedelta
 from pathlib import Path
 
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 
 from ttakkari import generation
 from ttakkari.config import get_settings
@@ -39,6 +38,8 @@ DEAD_GRACE_SECONDS = 3.0
 # 소유 세대가 DELETE 를 감지하는 주기. runtime_poll_seconds(기본 5초)보다 짧아야 한다.
 CANCEL_POLL_SECONDS = 1.0
 CACHE_PRUNE_SECONDS = 3600.0
+# 런타임 행이 없는 소유자의 running 행 마감 여유분. local_tts_timeout_seconds(기본 600초)에 더해 적용한다.
+STALE_RUNNING_GRACE_SECONDS = 60.0
 
 _process_owner = uuid.uuid4()
 _pending_texts: dict[uuid.UUID, list[str]] = {}
@@ -150,8 +151,8 @@ async def _guard_loop() -> None:
     poll = get_settings().runtime_poll_seconds
     while True:
         try:
-            if await runtime.refresh() != "active":
-                await _fail_queued_draining(runtime.id)
+            await runtime.refresh()
+            # FND-01: draining 시 queued 작업을 fail 처리하지 않고 끝까지 수행한다.
             async with _guard_lock:
                 # 새 POST 는 이 락 안에서 job 을 커밋하므로, 여기서 0건이면 guard 없이 남는 queued 가 없다.
                 if not await _has_owned_queued(runtime.id):
@@ -213,6 +214,7 @@ async def accept(plan: Plan) -> dict:
         owner_id=me,
         status="succeeded" if all_cached else "queued",
         params=_params(plan, cached=cached),
+        chunks_json=list(plan.chunks),
         result_metadata={"synthesized_chunks": 0, "from_cache": True} if all_cached else {},
         created_at=now,
         started_at=now if all_cached else None,
@@ -282,13 +284,15 @@ async def run_claimed(job_id: uuid.UUID) -> None:
     """claim 된 job 하나를 실행한다. 호출자가 실행 예산(budget)을 쥐고 있어야 한다."""
     me = owner_id()
     try:
-        texts = _pending_texts.get(job_id)
-        if texts is None:
-            await cas(job_id, expected=("running",), status="failed", owner=me, error_code="input_missing")
-            return
         async with sessionmaker()() as db:
             job = await db.get(TtsJob, job_id)
         if job is None:
+            return
+        texts = _pending_texts.get(job_id)
+        if texts is None and job.chunks_json:
+            texts = list(job.chunks_json)
+        if texts is None:
+            await cas(job_id, expected=("running",), status="failed", owner=me, error_code="input_missing")
             return
         try:
             plan = _plan_from_job(job, texts)
@@ -392,12 +396,67 @@ async def reap_dead_owner(owner: uuid.UUID) -> bool:
     return bool(await fail_owned(owner, expected=expected, error_code="owner_gone"))
 
 
+async def _reap_stale_unknown_running() -> list[uuid.UUID]:
+    """런타임(RuntimeGeneration) 행이 없는 소유자의 running 행이 합성 타임아웃을 초과하면
+    owner_unknown_stale 로 마감하여 전체 큐가 무기한 막히는 것을 방지한다.
+
+    살아 있는 작업을 잘못 죽이지 않는 근거:
+    1. 정상적인 워커는 local_tts_timeout_seconds(기본 600초) 초과 시 자체 타임아웃으로 worker_timeout 종료된다.
+    2. 추가 유예 시간(STALE_RUNNING_GRACE_SECONDS)까지 지난 시점에도 running 이 유지되고 소유 세대 행조차
+       존재하지 않는다면, 작업을 실행 중이던 프로세스가 이미 비정상 종료(SIGKILL 등)되어 고아가 되었음이 확실하다.
+    """
+    threshold_seconds = get_settings().local_tts_timeout_seconds + STALE_RUNNING_GRACE_SECONDS
+    cutoff = utcnow() - timedelta(seconds=threshold_seconds)
+    stmt = (
+        update(TtsJob)
+        .where(
+            TtsJob.status == "running",
+            func.coalesce(TtsJob.started_at, TtsJob.created_at) < cutoff,
+            ~select(RuntimeGeneration.id)
+            .where(RuntimeGeneration.id == TtsJob.owner_id)
+            .exists(),
+        )
+        .values(
+            status="failed",
+            error_code="owner_unknown_stale",
+            finished_at=utcnow(),
+        )
+        .returning(TtsJob.id)
+    )
+    async with sessionmaker()() as db:
+        result = await db.execute(stmt)
+        reaped = list(result.scalars())
+        await db.commit()
+    for job_id in reaped:
+        _pending_texts.pop(job_id, None)
+        task = _running.pop(job_id, None)
+        if task is not None:
+            task.cancel()
+    if reaped:
+        log.warning("reaped %d stale running tts jobs from unknown owners: %s", len(reaped), reaped)
+    return reaped
+
+
 async def maybe_reap(job: TtsJob) -> TtsJob:
     """GET·DELETE 의 읽기 시점 규칙. 다른 소유자의 non-terminal job 이면 사망 증거를 확인하고 CAS 로 확정한다."""
-    if job.status in ACTIVE and job.owner_id != owner_id() and await reap_dead_owner(job.owner_id):
-        async with sessionmaker()() as db:
-            fresh = await db.get(TtsJob, job.id, populate_existing=True)
-        return fresh or job
+    if job.status in ACTIVE and job.owner_id != owner_id():
+        if await reap_dead_owner(job.owner_id):
+            async with sessionmaker()() as db:
+                fresh = await db.get(TtsJob, job.id, populate_existing=True)
+            return fresh or job
+        if job.status == "running":
+            threshold_seconds = get_settings().local_tts_timeout_seconds + STALE_RUNNING_GRACE_SECONDS
+            cutoff = utcnow() - timedelta(seconds=threshold_seconds)
+            started = job.started_at or job.created_at
+            if started and started < cutoff:
+                async with sessionmaker()() as db:
+                    has_gen = (await db.get(RuntimeGeneration, job.owner_id)) is not None
+                if not has_gen and await cas(
+                    job.id, expected=("running",), status="failed", error_code="owner_unknown_stale"
+                ):
+                    async with sessionmaker()() as db:
+                        fresh = await db.get(TtsJob, job.id, populate_existing=True)
+                    return fresh or job
     return job
 
 
@@ -450,6 +509,7 @@ async def _housekeeping(me: uuid.UUID) -> None:
             )
         for owner in owners:
             await reap_dead_owner(owner)
+    await _reap_stale_unknown_running()
     if time.monotonic() - _last_prune >= CACHE_PRUNE_SECONDS:
         _last_prune = time.monotonic()
         async with sessionmaker()() as db:
@@ -461,11 +521,11 @@ async def tick() -> bool:
     me = owner_id()
     await _housekeeping(me)
     runtime = generation.current
-    if runtime is not None and await runtime.refresh() != "active":
-        return False  # draining 정리는 guard 가 맡는다. 이 세대는 새 job 을 시작하지 않는다.
+    if runtime is not None and await runtime.refresh() not in ("active", "draining"):
+        return False  # retired / offline 은 새 job 을 시작하지 않는다.
     if not await _has_owned_queued(me):
         return False
-    async with service.budget(0) as outcome:
+    async with service.budget(0, allow_draining=True) as outcome:
         if outcome != "ok":
             return False
         job_id = await _claim(me)

@@ -112,6 +112,7 @@ class GenerationRuntime:
         self._liveness = None
         self._listener: asyncpg.Connection | None = None
         self._work: set[str] = set()
+        self._accepted_work: dict[uuid.UUID, str] = {}
         self.tokens: dict[uuid.UUID, uuid.UUID] = {}
         self.http_inflight = 0
 
@@ -294,11 +295,47 @@ class GenerationRuntime:
                 cmd.acknowledged_at = utcnow()
                 await db.commit()
 
+    async def enter_admission(self, kind: str = "http") -> bool:
+        """신규 변이/요청 수락 게이트. active 상태일 때만 True."""
+        return await self.refresh() == "active"
+
     @asynccontextmanager
-    async def work(self, name: str):
+    async def enter_accepted_work(self, kind: str, accepted_generation_id: uuid.UUID | None = None):
+        """기수락 작업 실행 게이트. active 또는 draining 상태이고 소유권이 일치할 때 허용."""
+        if accepted_generation_id is not None and accepted_generation_id != self.id:
+            yield False
+            return
+        state = await self.refresh()
+        if state not in ("active", "draining"):
+            yield False
+            return
+        token = uuid.uuid4()
+        self._accepted_work[token] = kind
+        try:
+            yield True
+        finally:
+            self._accepted_work.pop(token, None)
+
+    async def _has_pending_tts_jobs(self) -> bool:
+        try:
+            from ttakkari.tts_models import TtsJob
+            async with sessionmaker()() as db:
+                return (await db.scalar(
+                    select(TtsJob.id).where(
+                        TtsJob.owner_id == self.id,
+                        TtsJob.status.in_(("queued", "running")),
+                    ).limit(1)
+                )) is not None
+        except Exception:
+            log.warning("failed to check pending tts jobs for generation %s; fail-closed assuming pending", self.id, exc_info=True)
+            return True
+
+    @asynccontextmanager
+    async def work(self, name: str, *, allow_draining: bool = False):
         if not name.replace("-", "").isalnum():
             raise ValueError("invalid work lock name")
-        if await self.refresh() != "active":
+        allowed_states = ("active", "draining") if allow_draining else ("active",)
+        if await self.refresh() not in allowed_states:
             yield False
             return
         lock = _lock(self.home / "runtime" / f"work-{name}.lock")
@@ -307,8 +344,8 @@ class GenerationRuntime:
             return
         self._work.add(name)
         try:
-            # Recheck after lock acquisition against an intervening activation.
-            yield await self.refresh() == "active"
+            # Recheck after lock acquisition against an intervening state change.
+            yield await self.refresh() in allowed_states
         finally:
             self._work.discard(name)
             lock.close()
@@ -327,7 +364,11 @@ class GenerationRuntime:
 
     async def can_retire(self) -> bool:
         snap = await self.snapshot()
-        return snap["state"] == "draining" and not (snap["owned_runs"] or self._work or self.http_inflight)
+        if snap["state"] != "draining":
+            return False
+        if snap["owned_runs"] or self._work or self.http_inflight or bool(self._accepted_work):
+            return False
+        return not await self._has_pending_tts_jobs()
 
     async def listen(self) -> None:
         if self._listener is not None and not self._listener.is_closed():
@@ -370,10 +411,25 @@ async def fence_pending(db: AsyncSession) -> None:
             await current.fence(db, run_id, current.tokens[run_id])
 
 
+async def enter_admission(kind: str = "http") -> bool:
+    if current is None:
+        return True
+    return await current.enter_admission(kind)
+
+
 @asynccontextmanager
-async def work(name: str):
+async def enter_accepted_work(kind: str, accepted_generation_id: uuid.UUID | None = None):
     if current is None:
         yield True
     else:
-        async with current.work(name) as acquired:
+        async with current.enter_accepted_work(kind, accepted_generation_id) as acquired:
+            yield acquired
+
+
+@asynccontextmanager
+async def work(name: str, *, allow_draining: bool = False):
+    if current is None:
+        yield True
+    else:
+        async with current.work(name, allow_draining=allow_draining) as acquired:
             yield acquired

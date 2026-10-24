@@ -2705,5 +2705,19 @@
         "line": 13
       }
     ]
+  },
+  {
+    "stem": "0068_tts_payload_chunks",
+    "revision": "0068_tts_payload_chunks",
+    "down_revision": "0067_collector_outbox_retry",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "tts_jobs",
+        "sql_classification": "static_literal",
+        "line": 17
+      }
+    ]
   }
 ]

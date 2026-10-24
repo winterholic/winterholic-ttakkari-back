@@ -1,4 +1,4 @@
-"""로컬 TTS ORM 모델(ADR 0062). tts_jobs 에는 원문을 두지 않는다(설계 §8.1)."""
+"""로컬 TTS ORM 모델(ADR 0062, FND-01). chunks_json 에 청크 텍스트를 영속화한다."""
 from __future__ import annotations
 
 import datetime
@@ -6,13 +6,14 @@ import uuid
 from typing import Any
 
 from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ttakkari.models import Base, utcnow
 
 
 class TtsJob(Base):
-    """장문 비동기 합성 작업. params 에는 음성·속도·글자 수·청크 키만, 텍스트는 없다."""
+    """장문 비동기 합성 작업. chunks_json 에 청크 텍스트 영속화, params 에는 음성·속도·글자 수·청크 키만 둔다."""
 
     __tablename__ = "tts_jobs"
     __table_args__ = (Index("ix_tts_jobs_status_owner_created", "status", "owner_id", "created_at"),)
@@ -22,6 +23,7 @@ class TtsJob(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column()
     status: Mapped[str] = mapped_column(String(16), default="queued")
     params: Mapped[dict[str, Any]] = mapped_column(default=dict)
+    chunks_json: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True, default=None)
     result_metadata: Mapped[dict[str, Any]] = mapped_column(default=dict)
     error_code: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

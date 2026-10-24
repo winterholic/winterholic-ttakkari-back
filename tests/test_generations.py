@@ -453,3 +453,24 @@ async def test_desk_retry_cannot_commit_events_after_losing_ownership(tmp_path, 
                 await desk.handle(db, row, sess)
         async with sessionmaker()() as db:
             assert (await db.get(Run, run.id)).last_seq == 0
+
+
+async def test_can_retire_fails_closed_when_pending_tts_check_raises(tmp_path, monkeypatch):
+    """DB 조회 예외 시 can_retire()는 fail-closed 정책에 따라 False를 반환해야 한다."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+    async with generations(tmp_path) as (a, b):
+        await activate(a.id, expected=None)
+        await activate(b.id, expected=a.id)
+        assert (await a.snapshot())["state"] == "draining"
+
+        orig_scalar = AsyncSession.scalar
+
+        async def failing_scalar(self, stmt, *args, **kwargs):
+            if "tts_jobs" in str(stmt):
+                raise ConnectionError("db error during tts pending check")
+            return await orig_scalar(self, stmt, *args, **kwargs)
+
+        monkeypatch.setattr(AsyncSession, "scalar", failing_scalar)
+
+        assert await a._has_pending_tts_jobs() is True
+        assert await a.can_retire() is False

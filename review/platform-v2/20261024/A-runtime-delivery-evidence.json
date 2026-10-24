@@ -2,92 +2,30 @@
   "schema_version": "platform-v2-worker-a-evidence-v2",
   "generated_at": "2026-10-24T22:25:00+09:00",
   "snapshot_binding": {
-    "candidate_head_sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
-    "candidate_tree_sha": "c7a65ced609f7a325f541b6cc3129b4dd2e96b5f",
-    "candidate_src_ttakkari_tree_sha": "390484f301cab814d16c5464a164a639840265a4",
+    "candidate_head_sha": "9847022df6100620d4b8eca465979dc23a4496d6",
+    "candidate_tree_sha": "618b9fb9a69b6142dafaf2ce9c22489e0dcb2949",
+    "candidate_src_ttakkari_tree_sha": "08e4cd624711e96012ae184c81ad98939bfed9af",
     "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
     "audited_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
     "audited_src_ttakkari_tree_sha": "f2e5572ce8d039341eacc4dad5a70db03c61553b",
     "checkout_branch": "fix/platform-v2-verified-integration-20261024",
-    "head_src_ttakkari_tree_sha": "390484f301cab814d16c5464a164a639840265a4",
-    "head_alembic_tree_sha": "5ba5ed46808b09daf2a28771c2bfdd4ef0f59e45",
+    "head_src_ttakkari_tree_sha": "08e4cd624711e96012ae184c81ad98939bfed9af",
+    "head_alembic_tree_sha": "afa4fa99e4025894be95b3d846e2c91210486933",
     "head_tests_tree_sha": "98941bcb4ab2a35f004360b26edd03ddfef0ee48",
-    "head_unit_tests_tree_sha": "e297f315583775301bb2386730276616f8f1d21f",
-    "head_deploy_tree_sha": "0a7c61a2aa1e17fd09036aaecf295abe1d045119",
-    "origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
-    "origin_main_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
-    "origin_main_src_ttakkari_tree_sha": "f2e5572ce8d039341eacc4dad5a70db03c61553b",
+    "head_unit_tests_tree_sha": "b4991b4281b62e4bcdcba1ce821718e1e20c3d83",
+    "head_deploy_tree_sha": "c522db868d240e9fe41393abff0eae0d58449e7a",
+    "origin_main_sha": "917ea4b2fbe402efc3932885e3fe22c864057580",
+    "origin_main_tree_sha": "37a83f1aefe9c65cc7d7f0da78191db2430eaa4a",
+    "origin_main_src_ttakkari_tree_sha": "390484f301cab814d16c5464a164a639840265a4",
     "source_tree_matches_audited": false,
     "source_tree_matches_origin_main": false,
     "dirty_manifest": {
-      "entries": [
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/backend-dependency-graph.md"
-        },
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/backend-module-inventory.csv"
-        },
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/backend-module-inventory.json"
-        },
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/backend-module-inventory.md"
-        },
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/backend-scan-coverage.csv"
-        },
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/data-ownership.md"
-        },
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/frontend-feature-map.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/A-runtime-delivery-evidence.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/backend/audit_summary.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/backend/source_manifest.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/frontend-tests/summary.json"
-        }
-      ],
+      "entries": [],
       "dirty_source_paths": [],
-      "dirty_audit_doc_paths": [
-        "docs/design/platform-v2/backend-dependency-graph.md",
-        "docs/design/platform-v2/backend-module-inventory.csv",
-        "docs/design/platform-v2/backend-module-inventory.json",
-        "docs/design/platform-v2/backend-module-inventory.md",
-        "docs/design/platform-v2/backend-scan-coverage.csv",
-        "docs/design/platform-v2/data-ownership.md",
-        "docs/design/platform-v2/frontend-feature-map.json",
-        "review/platform-v2/20261024/A-runtime-delivery-evidence.json",
-        "review/platform-v2/20261024/backend/audit_summary.json",
-        "review/platform-v2/20261024/backend/source_manifest.json",
-        "review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json",
-        "review/platform-v2/20261024/frontend-tests/summary.json"
-      ],
+      "dirty_audit_doc_paths": [],
       "other_dirty_paths": [],
       "is_clean_source_tree": true,
-      "is_clean_audit_docs": false
+      "is_clean_audit_docs": true
     },
     "import_binding": {
       "expected_src_root": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration/src",
@@ -177,7 +115,7 @@
       "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration",
       "branch": "fix/platform-v2-verified-integration-20261024",
       "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
-      "base_origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+      "base_origin_main_sha": "917ea4b2fbe402efc3932885e3fe22c864057580",
       "verification_history": [
         {
           "inspected_commit_sha": "fddad5e152754f5f1e7ac5eac07ec26b453d6987",
@@ -453,7 +391,7 @@
   },
   "codebase_metrics": {
     "total_python_files": 385,
-    "total_lines": 94926,
+    "total_lines": 95031,
     "top_level_unit_count": 80,
     "top_fan_in_units": [
       {
@@ -461,7 +399,7 @@
         "fan_in": 47,
         "fan_out": 7,
         "file_count": 1,
-        "line_count": 1300,
+        "line_count": 1303,
         "depended_by": [
           "api",
           "artcraft_tasks",
@@ -517,7 +455,7 @@
         "fan_in": 39,
         "fan_out": 1,
         "file_count": 1,
-        "line_count": 600,
+        "line_count": 601,
         "depended_by": [
           "agents",
           "antigravity_accounts",
@@ -606,7 +544,7 @@
         "fan_in": 17,
         "fan_out": 24,
         "file_count": 29,
-        "line_count": 9997,
+        "line_count": 10037,
         "depended_by": [
           "agents",
           "api",
@@ -630,9 +568,9 @@
       {
         "unit": "generation",
         "fan_in": 14,
-        "fan_out": 4,
+        "fan_out": 5,
         "file_count": 1,
-        "line_count": 379,
+        "line_count": 434,
         "depended_by": [
           "api",
           "artifacts",
@@ -1220,7 +1158,7 @@
       },
       "config": {
         "file_count": 1,
-        "line_count": 600,
+        "line_count": 601,
         "depends_on": [
           "model_catalog"
         ],
@@ -1524,12 +1462,13 @@
       },
       "generation": {
         "file_count": 1,
-        "line_count": 379,
+        "line_count": 434,
         "depends_on": [
           "config",
           "db",
           "models",
-          "runs"
+          "runs",
+          "tts_models"
         ],
         "depended_by": [
           "api",
@@ -1547,7 +1486,7 @@
           "schedules",
           "tts"
         ],
-        "fan_out": 4,
+        "fan_out": 5,
         "fan_in": 14
       },
       "generation_bootstrap": {
@@ -1992,7 +1931,7 @@
       },
       "models": {
         "file_count": 1,
-        "line_count": 1300,
+        "line_count": 1303,
         "depends_on": [
           "collector",
           "collector_models",
@@ -2249,7 +2188,7 @@
       },
       "runs": {
         "file_count": 29,
-        "line_count": 9997,
+        "line_count": 10037,
         "depends_on": [
           "agents",
           "antigravity_accounts",
@@ -2436,7 +2375,7 @@
       },
       "tts": {
         "file_count": 10,
-        "line_count": 2029,
+        "line_count": 2033,
         "depends_on": [
           "config",
           "db",
@@ -2458,17 +2397,18 @@
       },
       "tts_models": {
         "file_count": 1,
-        "line_count": 50,
+        "line_count": 52,
         "depends_on": [
           "models"
         ],
         "depended_by": [
           "api",
+          "generation",
           "models",
           "tts"
         ],
         "fan_out": 1,
-        "fan_in": 3
+        "fan_in": 4
       },
       "weather": {
         "file_count": 3,
@@ -2492,30 +2432,30 @@
     }
   },
   "migrations": {
-    "migration_file_count": 67,
-    "revision_count": 67,
+    "migration_file_count": 68,
+    "revision_count": 68,
     "heads": [
-      "0067_collector_outbox_retry"
+      "0068_tts_payload_chunks"
     ],
     "single_head": true,
     "latest_files": [
-      "0063_collector_stage_items.py",
       "0064_run_executor.py",
       "0065_collector_delivery.py",
       "0066_collector_budget.py",
-      "0067_collector_outbox_retry.py"
+      "0067_collector_outbox_retry.py",
+      "0068_tts_payload_chunks.py"
     ]
   },
   "contracts_and_manifests": {
     "generation_contract_path": "deploy/generation-contract.json",
-    "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
+    "generation_contract_sha256": "640a689d4da73aa9d1c926ae494923c4e96f04958b43ac10698a09a6bee78912",
     "generation_contract": {
       "protocol": 1,
       "supervisor": {
         "protocol": 1,
         "slots": 3
       },
-      "schema_revision": "0067_collector_outbox_retry",
+      "schema_revision": "0068_tts_payload_chunks",
       "online_migration_from": [
         "0032_weather_briefings",
         "0033_weather_analysis_engine",
@@ -2552,7 +2492,8 @@
         "0059_kb_immutability_truncate",
         "0064_run_executor",
         "0065_collector_delivery",
-        "0066_collector_budget"
+        "0066_collector_budget",
+        "0067_collector_outbox_retry"
       ],
       "schema_aliases": {
         "0059_kb_immutability_truncate": "0059_collector_intake"
@@ -2866,7 +2807,7 @@
       ],
       "first_module_suitability": "foundation_prerequisite_p3",
       "file_count": 10,
-      "line_count": 2029,
+      "line_count": 2033,
       "depends_on": [
         "config",
         "db",
@@ -2892,8 +2833,8 @@
       "creative_decision": {
         "status": "cache_miss_unverified_closure",
         "module_id": "creative",
-        "candidate_git_head_sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
-        "candidate_git_tree_sha": "c7a65ced609f7a325f541b6cc3129b4dd2e96b5f",
+        "candidate_git_head_sha": "9847022df6100620d4b8eca465979dc23a4496d6",
+        "candidate_git_tree_sha": "618b9fb9a69b6142dafaf2ce9c22489e0dcb2949",
         "closure_complete": false,
         "reasons": [
           "dynamic_import_in_closure:google_account:src/ttakkari/google_account/registry.py:['import_module']",
@@ -2902,13 +2843,13 @@
         "cache_decision": "broad_validation_fallback (conservative no-reuse due to dynamic import in transitive closure)"
       },
       "verified_sample_key": {
-        "cache_key": "evk-v2-design_system-c040f8d04955b20d847442baad76d6b5",
-        "sha256": "c040f8d04955b20d847442baad76d6b55c54dce74605e3fa18d49bb5c25c9a2b",
+        "cache_key": "evk-v2-design_system-eee6a0feb9311b9fb5a2450060ad9ab9",
+        "sha256": "eee6a0feb9311b9fb5a2450060ad9ab9dbbb68ce623ea09885fccd5ae79e6c69",
         "components": {
           "schema_version": "platform-v2-evidence-key-v2",
           "module_id": "design_system",
-          "candidate_git_head_sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
-          "candidate_git_tree_sha": "c7a65ced609f7a325f541b6cc3129b4dd2e96b5f",
+          "candidate_git_head_sha": "9847022df6100620d4b8eca465979dc23a4496d6",
+          "candidate_git_tree_sha": "618b9fb9a69b6142dafaf2ce9c22489e0dcb2949",
           "changed_file_hashes": {
             "src/ttakkari/design_system.py": "c102adfebcbbffbec96801353fb56e012f17de4a658a371cff0ae28617016fba"
           },
@@ -2942,7 +2883,7 @@
           "platform_tag": "darwin-arm64",
           "pytest_plugins_sha256": "480dcf078a9045bebd5f404f658060ec07c548ca9f12357ccdd758fc30ce2889",
           "sanitized_env_sha256": "5693f379b5b31f5ff321efb78d214ef65f6a2bf7faa619d05ae42e0e65c0bfa4",
-          "models_py_sha256": "f77ad6600a9763d07a407cc465580f7b9e1a9fadbd829a2b7c2e71dab0f87f3e",
+          "models_py_sha256": "82b2112823b4a76a5d29c1cd739967a88a2d4935ca14c7fb909ca4d7186b1718",
           "alembic_env_sha256": "f7282d5a0d0ffc78b33fdca6a6ef4eab85d78e01014da0f57fe225a193c3c966",
           "migration_file_hashes": {
             "alembic/versions/0001_initial.py": "d1d60d8875dde9db665fba571163a363c43ac57b343a122aa304397513022251",
@@ -3011,10 +2952,11 @@
             "alembic/versions/0064_run_executor.py": "6176efac478065bf5e408a1767897e76910d230f2bdab90570b62cae995778e5",
             "alembic/versions/0065_collector_delivery.py": "8a497371f1ddc3e05e477f18b6cc187964a2db49041472a47dbcdc2e223d03d7",
             "alembic/versions/0066_collector_budget.py": "b58fc768d698cfeac4be0e0d9ce2f82ae2f6449da323d99cff97ca84f8a4e259",
-            "alembic/versions/0067_collector_outbox_retry.py": "c1057ff3ff0eeddc5ad51a511b01f77e6ff896327dd24ba6b91e9fd7b3ce1ae6"
+            "alembic/versions/0067_collector_outbox_retry.py": "c1057ff3ff0eeddc5ad51a511b01f77e6ff896327dd24ba6b91e9fd7b3ce1ae6",
+            "alembic/versions/0068_tts_payload_chunks.py": "fd26fafc08ac710ec1b8448ddec22a8cb33772faaeba6b9760f422359f861725"
           },
-          "migration_head": "0067_collector_outbox_retry",
-          "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
+          "migration_head": "0068_tts_payload_chunks",
+          "generation_contract_sha256": "640a689d4da73aa9d1c926ae494923c4e96f04958b43ac10698a09a6bee78912",
           "run_executor_manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266"
         }
       }

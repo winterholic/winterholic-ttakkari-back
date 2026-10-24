@@ -68,3 +68,10 @@ Reference inspected for installed version (not a deployed-binary binding):
 https://raw.githubusercontent.com/caddyserver/caddy/v2.11.7/modules/caddyhttp/app.go
 (reload waits for shutdown start, completion waiting is on process exit), and
 reverseproxy/hosts.go plus reverseproxy/reverseproxy.go (upstream count scope).
+
+DB scope clarification: the command inherited an explicitly provided
+TTAKKARI_TEST_DB. Conftest rejects the production database name, but this was not
+an independently created PostgreSQL cluster. Earlier "isolated PostgreSQL"
+wording means the non-production test context only; a separate server was not
+established by this execution. Only Caddy's own process/admin/public ports were
+newly isolated by the reproducer.

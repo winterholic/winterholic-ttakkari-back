@@ -1,0 +1,105 @@
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025
+command=['scripts/pytest_slots.py', '--timeout', '60', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', 'unit_tests/test_executor_integrated_drain.py']
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+_________ test_executor_keeps_heartbeating_while_other_consumers_drain _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4269/test_executor_keeps_heartbeati0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cfea9e0>
+
+    async def test_executor_keeps_heartbeating_while_other_consumers_drain(tmp_path, monkeypatch):
+        runtime = runtime_and_db(tmp_path, monkeypatch)
+        owner = asyncio.create_task(asyncio.sleep(0.035))
+        try:
+>           assert await executor.drain(runtime, SimpleNamespace(_handles={}),
+                                        pending=(owner,), poll_interval=0.003, timeout=1)
+E                                       TypeError: drain() got an unexpected keyword argument 'pending'
+
+unit_tests/test_executor_integrated_drain.py:30: TypeError
+_________ test_executor_deadline_does_not_cancel_other_consumer_drain __________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4269/test_executor_deadline_does_no0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d034290>
+
+    async def test_executor_deadline_does_not_cancel_other_consumer_drain(tmp_path, monkeypatch):
+        runtime = runtime_and_db(tmp_path, monkeypatch)
+        owner = asyncio.create_task(asyncio.Event().wait())
+        try:
+>           assert not await executor.drain(runtime, SimpleNamespace(_handles={}),
+                                            pending=(owner,), poll_interval=0.001, timeout=0.01)
+E                                           TypeError: drain() got an unexpected keyword argument 'pending'
+
+unit_tests/test_executor_integrated_drain.py:42: TypeError
+_ test_executor_can_request_unbounded_background_drain_without_cancelling_work _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d070d10>
+
+    async def test_executor_can_request_unbounded_background_drain_without_cancelling_work(monkeypatch):
+        active = True
+        monkeypatch.setattr(background_consumers, "inflight", lambda: int(active))
+        cancel = AsyncMock()
+        monkeypatch.setattr(background_consumers, "_cancel_inflight", cancel)
+        consumer = background_consumers.BackgroundConsumers()
+    
+        async def finish():
+            nonlocal active
+            await asyncio.sleep(0.025)
+            active = False
+    
+        task = asyncio.create_task(finish())
+        try:
+>           await asyncio.wait_for(consumer.drain(drain_seconds=None), 1)
+
+unit_tests/test_executor_integrated_drain.py:64: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ttakkari.background_consumers.BackgroundConsumers object at 0x10d0f8410>
+drain_seconds = None
+
+    async def drain(self, drain_seconds: float = DRAIN_SECONDS) -> None:
+        """Wait for in-flight work for up to ``drain_seconds``, then cancel what is left."""
+        loop = asyncio.get_running_loop()
+>       deadline = loop.time() + drain_seconds
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: unsupported operand type(s) for +: 'float' and 'NoneType'
+
+src/ttakkari/background_consumers.py:115: TypeError
+_____ test_tts_claims_can_be_closed_synchronously_before_waiting_for_runs ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10cfe3050>
+
+    def test_tts_claims_can_be_closed_synchronously_before_waiting_for_runs(monkeypatch):
+        monkeypatch.setattr(tts_jobs, "_draining", False)
+>       tts_jobs.stop_claiming()
+        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'ttakkari.tts.jobs' has no attribute 'stop_claiming'
+
+unit_tests/test_executor_integrated_drain.py:73: AttributeError
+_____ test_remote_qwen_internal_typeerror_does_not_retry_as_process_owner ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d006210>
+
+    async def test_remote_qwen_internal_typeerror_does_not_retry_as_process_owner(monkeypatch):
+        from ttakkari.runs.desk_qwen_service import service
+        start = AsyncMock(side_effect=TypeError("internal service error"))
+        monkeypatch.setattr(service, "start", start)
+        with pytest.raises(TypeError, match="internal service error"):
+            await generation_service.start_api_services("remote")
+>       assert start.await_count == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = <AsyncMock id='4517288592'>.await_count
+
+unit_tests/test_executor_integrated_drain.py:83: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_executor_integrated_drain.py::test_executor_keeps_heartbeating_while_other_consumers_drain
+FAILED unit_tests/test_executor_integrated_drain.py::test_executor_deadline_does_not_cancel_other_consumer_drain
+FAILED unit_tests/test_executor_integrated_drain.py::test_executor_can_request_unbounded_background_drain_without_cancelling_work
+FAILED unit_tests/test_executor_integrated_drain.py::test_tts_claims_can_be_closed_synchronously_before_waiting_for_runs
+FAILED unit_tests/test_executor_integrated_drain.py::test_remote_qwen_internal_typeerror_does_not_retry_as_process_owner
+5 failed in 0.64s
+
+exit_code=1

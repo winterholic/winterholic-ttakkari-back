@@ -15,10 +15,8 @@ import asyncio
 import json
 import os
 import time
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 
 from ttakkari.config import get_settings
@@ -64,7 +62,6 @@ class _FakeChild:
 
 async def test_remote_api_does_not_spawn_and_discovers_owner(tmp_path, monkeypatch):
     """remote API 세대는 프로세스를 spawn하지 않고 owner가 띄운 managed 서버를 발견하여 ready가 된다."""
-    owner_server = svc.QwenServer()
     remote_api = svc.QwenServer()
 
     # 가짜 owner 상태 파일 작성 (포트 54321)
@@ -294,7 +291,7 @@ async def test_inflight_inference_preserved_across_api_replacement(monkeypatch):
 
 async def test_generation_service_start_api_services_uses_non_owner_for_remote(monkeypatch):
     """generation_service.start_api_services는 execution_mode='remote'일 때 owner=False로 기동한다."""
-    from ttakkari import generation_service
+    from ttakkari import background_consumers, generation_service
     from ttakkari.artifacts import preview
     from ttakkari.meetings.local_stt import jobs as stt_jobs
     from ttakkari.tts import jobs as tts_jobs
@@ -302,6 +299,7 @@ async def test_generation_service_start_api_services_uses_non_owner_for_remote(m
     monkeypatch.setattr(preview, "start_worker", AsyncMock())
     monkeypatch.setattr(stt_jobs, "start", AsyncMock())
     monkeypatch.setattr(tts_jobs, "start", AsyncMock())
+    monkeypatch.setattr(background_consumers, "start", AsyncMock())
 
     started_owners: list[bool] = []
 
@@ -340,6 +338,7 @@ async def test_executor_starts_and_stops_qwen_as_owner(monkeypatch):
     from ttakkari import generation_service
     monkeypatch.setattr(generation_service, "coordinate_runs", AsyncMock())
     monkeypatch.setattr(executor, "dispose_engine", AsyncMock())
+    monkeypatch.setattr(executor, "drain", AsyncMock(return_value=True))
     monkeypatch.setattr(manager.manager, "shutdown", AsyncMock())
 
     calls: list[str] = []

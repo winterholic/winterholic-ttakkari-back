@@ -1,0 +1,1401 @@
+base=3423a98; cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025
+command=['scripts/pytest_slots.py', '--timeout', '90', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', 'unit_tests/test_executor_integrated_drain.py', 'unit_tests/test_executor_safety.py', 'unit_tests/test_run_executor_drain.py', 'unit_tests/test_run_executor_services.py', 'unit_tests/test_executor_queued_consumers.py', 'unit_tests/test_creative_v2_asset_queue.py', 'unit_tests/test_creative_v2_asset_generation_e2e.py', 'unit_tests/test_desk_qwen_isolation.py', 'tests/test_tts_executor_isolation.py', 'tests/test_background_consumers.py', 'tests/test_game_build_queue.py', 'tests/test_background_consumer_migration.py', 'tests/test_migration_single_head.py', 'tests/test_generation_deployment.py']
+DB=explicitly provided test database (production guarded by conftest)
+...........................F..FF....F...........F....................... [ 38%]
+......F...............................................F................. [ 77%]
+..........................................                               [100%]
+=================================== FAILURES ===================================
+____________ test_remote_api_does_not_start_stt_preview_maintenance ____________
+
+    @pytest.mark.asyncio
+    async def test_remote_api_does_not_start_stt_preview_maintenance():
+        """In remote mode, API must not start STT, preview, or maintenance jobs."""
+        with patch("ttakkari.artifacts.preview.start_worker", new_callable=AsyncMock) as preview_mock, \
+             patch("ttakkari.meetings.local_stt.jobs.start", new_callable=AsyncMock) as stt_mock, \
+             patch("ttakkari.tts.jobs.start", new_callable=AsyncMock) as tts_mock, \
+             patch("ttakkari.runs.desk_qwen_service.service.start", new_callable=AsyncMock) as qwen_mock:
+    
+            await start_api_services("remote")
+    
+            preview_mock.assert_not_awaited()
+            stt_mock.assert_not_awaited()
+>           tts_mock.assert_awaited_once()
+
+unit_tests/test_run_executor_drain.py:217: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock name='start' id='4626634400'>
+
+    def assert_awaited_once(self):
+        """
+        Assert that the mock was awaited exactly once.
+        """
+        if not self.await_count == 1:
+            msg = (f"Expected {self._mock_name or 'mock'} to have been awaited once."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected start to have been awaited once. Awaited 0 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2370: AssertionError
+_ test_remote_api_keeps_request_qwen_but_skips_durable_consumers_including_tts _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1138f77e0>
+
+    async def test_remote_api_keeps_request_qwen_but_skips_durable_consumers_including_tts(monkeypatch):
+        from ttakkari import generation_service
+        from ttakkari.artifacts import preview
+        from ttakkari.meetings.local_stt import jobs as stt_jobs
+        from ttakkari.runs.desk_qwen_service import service as qwen
+        from ttakkari.tts import jobs as tts_jobs
+    
+        calls = []
+        monkeypatch.setattr(preview, "start_worker", AsyncMock(side_effect=lambda: calls.append("preview")))
+        monkeypatch.setattr(stt_jobs, "start", AsyncMock(side_effect=lambda: calls.append("stt")))
+        monkeypatch.setattr(tts_jobs, "start", AsyncMock(side_effect=lambda: calls.append("tts")))
+        monkeypatch.setattr(qwen, "start", AsyncMock(side_effect=lambda: calls.append("qwen")))
+    
+>       await generation_service.start_api_services("remote")
+
+unit_tests/test_run_executor_services.py:18: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/generation_service.py:244: in start_api_services
+    await qwen_service.start(owner=(execution_mode == "local"))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4630925328'>, args = (), kwargs = {'owner': False}
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                try:
+                    result = next(effect)
+                except StopIteration:
+                    # It is impossible to propagate a StopIteration
+                    # through coroutines because of PEP 479
+                    raise StopAsyncIteration
+                if _is_exception(result):
+                    raise result
+            elif iscoroutinefunction(effect):
+                result = await effect(*args, **kwargs)
+            else:
+>               result = effect(*args, **kwargs)
+                         ^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: test_remote_api_keeps_request_qwen_but_skips_durable_consumers_including_tts.<locals>.<lambda>() got an unexpected keyword argument 'owner'
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2340: TypeError
+_______________ test_local_api_preserves_existing_worker_startup _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x113b82970>
+
+    async def test_local_api_preserves_existing_worker_startup(monkeypatch):
+        from ttakkari import generation_service
+        from ttakkari.artifacts import preview
+        from ttakkari.meetings.local_stt import jobs as stt_jobs
+        from ttakkari.runs.desk_qwen_service import service as qwen
+        from ttakkari.tts import jobs as tts_jobs
+    
+        calls = []
+        for service, name in ((preview, "preview"), (stt_jobs, "stt"),
+                              (tts_jobs, "tts"), (qwen, "qwen")):
+            monkeypatch.setattr(service, "start_worker" if name == "preview" else "start",
+                                AsyncMock(side_effect=lambda n=name: calls.append(n)))
+    
+>       await generation_service.start_api_services("local")
+
+unit_tests/test_run_executor_services.py:36: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/generation_service.py:244: in start_api_services
+    await qwen_service.start(owner=(execution_mode == "local"))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4630928688'>, args = (), kwargs = {'owner': True}
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+                try:
+                    result = next(effect)
+                except StopIteration:
+                    # It is impossible to propagate a StopIteration
+                    # through coroutines because of PEP 479
+                    raise StopAsyncIteration
+                if _is_exception(result):
+                    raise result
+            elif iscoroutinefunction(effect):
+                result = await effect(*args, **kwargs)
+            else:
+>               result = effect(*args, **kwargs)
+                         ^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: test_local_api_preserves_existing_worker_startup.<locals>.<lambda>() got an unexpected keyword argument 'owner'
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2340: TypeError
+_____ test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims ______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11359fc40>
+
+    async def test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims(monkeypatch):
+        from ttakkari.artifacts import preview
+        from ttakkari.meetings.local_stt import jobs as stt_jobs
+        from ttakkari.runs import profiles, usage_store
+        from ttakkari.runs.manager import manager
+    
+        @asynccontextmanager
+        async def fake_session():
+            yield SimpleNamespace()
+    
+        monkeypatch.setattr(executor, "get_settings", lambda: SimpleNamespace(release_revision="rev", runtime_poll_seconds=0.05, home="/tmp"))
+        monkeypatch.setattr(executor, "ExecutorRuntime", _Runtime)
+        monkeypatch.setattr(executor, "sessionmaker", lambda: fake_session)
+        monkeypatch.setattr(executor, "dispose_engine", AsyncMock())
+        monkeypatch.setattr(executor, "start_background_services", AsyncMock(return_value=[]))
+        monkeypatch.setattr(generation_service, "coordinate_runs", AsyncMock())
+        monkeypatch.setattr("ttakkari.deployment.revision", lambda: "rev")
+        for owner, name in ((profiles, "load_cooldowns"), (profiles, "flush_persist"), (usage_store, "load_latest"),
+                            (usage_store, "flush"), (stt_jobs, "stop"), (preview, "stop_worker"), (manager, "shutdown")):
+            monkeypatch.setattr(owner, name, AsyncMock())
+        monkeypatch.setattr(usage_store, "install", lambda: None)
+        queued_work.reopen()
+        release = asyncio.Event()
+        finished = []
+    
+        async def long_job():
+            await release.wait()
+            finished.append(True)
+    
+        serving = asyncio.create_task(executor.serve(activate=True))
+        await asyncio.sleep(0.2)
+        job = asyncio.create_task(queued_work.run_tracked(long_job()))  # 소비자가 맡은 빌드·자산 생성
+        await asyncio.sleep(0.05)
+    
+        os.kill(os.getpid(), signal.SIGTERM)  # 배포가 실행부에 보내는 종료 신호
+        await asyncio.sleep(0.5)
+        assert queued_work.draining() is True  # 새로 맡지 않는다
+>       assert not serving.done() and finished == []  # 맡은 일이 끝날 때까지 프로세스는 내려가지 않는다
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       assert (not True)
+E        +  where True = <built-in method done of _asyncio.Task object at 0x1136a4f70>()
+E        +    where <built-in method done of _asyncio.Task object at 0x1136a4f70> = <Task finished name='Task-51' coro=<serve() done, defined at /Users/winterholic/development/projects/winterholic-ttakk...tion-all-20261025/src/ttakkari/executor.py:198> exception=AttributeError("'_Runtime' object has no attribute '_work'")>.done
+
+unit_tests/test_executor_queued_consumers.py:129: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    ttakkari.background_consumers:background_consumers.py:101 background consumer failed: notebooklm
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 581, in _prepare_and_execute
+    prepared_stmt, attributes = await adapt_connection._prepare(
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, self._invalidate_schema_cache_asof
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 819, in _prepare
+    prepared_stmt = await self._connection.prepare(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, name=self._prepared_statement_name_func()
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 661, in prepare
+    return await self._prepare(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 680, in _prepare
+    stmt = await self._get_statement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 466, in _get_statement
+    statement = await self._protocol.prepare(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "asyncpg/protocol/protocol.pyx", line 161, in prepare
+asyncpg.exceptions.UndefinedColumnError: column notebooklm_jobs.spec does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_dbapi.ProgrammingError: column notebooklm_jobs.spec does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 97, in _loop
+    started = await pump()
+              ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 36, in _pump_notebooklm
+    return await service.pump_queued()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/notebooklm/service.py", line 652, in pump_queued
+    rows = await db.scalars(select(NotebookLMJob).where(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        NotebookLMJob.status == "queued", NotebookLMJob.cancel_requested.is_(False))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        .order_by(NotebookLMJob.created_at).with_for_update(skip_locked=True).limit(32))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 777, in scalars
+    result = await self.execute(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 651, in execute
+    result = await greenlet_spawn(
+             ^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 210, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<9 lines>...
+        param_dict=param_dict,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.exc.ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) column notebooklm_jobs.spec does not exist
+[SQL: SELECT notebooklm_jobs.id, notebooklm_jobs.account_id, notebooklm_jobs.kind, notebooklm_jobs.notebook_id, notebooklm_jobs.status, notebooklm_jobs.params, notebooklm_jobs.spec, notebooklm_jobs.result, notebooklm_jobs.error_code, notebooklm_jobs.error, notebooklm_jobs.cancel_requested, notebooklm_jobs.heartbeat_at, notebooklm_jobs.created_at, notebooklm_jobs.started_at, notebooklm_jobs.finished_at, notebooklm_jobs.updated_at 
+FROM notebooklm_jobs 
+WHERE notebooklm_jobs.status = $1::VARCHAR AND notebooklm_jobs.cancel_requested IS false ORDER BY notebooklm_jobs.created_at 
+ LIMIT $2::INTEGER FOR UPDATE SKIP LOCKED]
+[parameters: ('queued', 32)]
+(Background on this error at: https://sqlalche.me/e/21/f405)
+ERROR    ttakkari.background_consumers:background_consumers.py:101 background consumer failed: context-index
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 581, in _prepare_and_execute
+    prepared_stmt, attributes = await adapt_connection._prepare(
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, self._invalidate_schema_cache_asof
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 819, in _prepare
+    prepared_stmt = await self._connection.prepare(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, name=self._prepared_statement_name_func()
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 661, in prepare
+    return await self._prepare(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 680, in _prepare
+    stmt = await self._get_statement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 466, in _get_statement
+    statement = await self._protocol.prepare(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "asyncpg/protocol/protocol.pyx", line 161, in prepare
+asyncpg.exceptions.UndefinedColumnError: column ctx_sources.index_requested_at does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_dbapi.ProgrammingError: column ctx_sources.index_requested_at does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 97, in _loop
+    started = await pump()
+              ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 46, in _pump_context_index
+    return await index_queue.pump()
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/context/index_queue.py", line 89, in pump
+    sid = await db.scalar(select(CtxSource.id).where(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        .order_by(CtxSource.index_requested_at).limit(1))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 720, in scalar
+    return await greenlet_spawn(
+           ^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 210, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2534, in scalar
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        **kw,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<9 lines>...
+        param_dict=param_dict,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.exc.ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) column ctx_sources.index_requested_at does not exist
+[SQL: SELECT ctx_sources.id 
+FROM ctx_sources 
+WHERE ctx_sources.index_requested_at IS NOT NULL AND (ctx_sources.index_started_at IS NULL OR ctx_sources.index_started_at < $1::TIMESTAMP WITH TIME ZONE) ORDER BY ctx_sources.index_requested_at 
+ LIMIT $2::INTEGER]
+[parameters: (datetime.datetime(2026, 10, 24, 16, 7, 31, 751479, tzinfo=datetime.timezone.utc), 1)]
+(Background on this error at: https://sqlalche.me/e/21/f405)
+ERROR    ttakkari.executor:executor.py:142 failed to persist executor draining state to database
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/executor.py", line 136, in drain
+    row = await db.get(RuntimeGeneration, runtime.id)
+                ^^^^^^
+AttributeError: 'types.SimpleNamespace' object has no attribute 'get'
+____________ test_drain_waits_for_the_running_generation_to_finish _____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4271/test_drain_waits_for_the_runni0')
+
+    def test_drain_waits_for_the_running_generation_to_finish(tmp_path):
+        plans, plan = approved_plan(tmp_path)
+        gate = {"release": None}
+    
+        class Slow(FakeGenerator):
+            def generate(self, plan, *, workdir, progress):
+                gate["started"].set()
+                asyncio.run_coroutine_threadsafe(gate["release"].wait(), gate["loop"]).result(10)
+                return super().generate(plan, workdir=workdir, progress=progress)
+    
+        generator = Slow(tmp_path)
+        asset_generation.enqueue_assets(plans, plan["id"], plan["revision"], generator)
+    
+        async def scenario():
+            gate["loop"] = asyncio.get_running_loop()
+            gate["release"] = asyncio.Event()
+            gate["started"] = __import__("threading").Event()
+            consumer = asyncio.create_task(asset_worker.consume_once(plans=plans, generator=generator))
+            await asyncio.to_thread(gate["started"].wait, 10)
+            queued_work.begin_drain()
+            consumer.cancel()  # 소비자 task 가 취소돼도(종료 신호) 실행 중인 작업은 끝까지 간다
+            idle = asyncio.create_task(queued_work.wait_idle())
+            await asyncio.sleep(0.2)
+            assert not idle.done()
+            assert records(plans, plan["id"])[0]["status"] == "running"
+            gate["release"].set()
+            await asyncio.wait_for(idle, 20)
+            with pytest.raises(asyncio.CancelledError):
+                await consumer
+    
+>       asyncio.run(scenario())
+
+unit_tests/test_creative_v2_asset_queue.py:284: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def scenario():
+        gate["loop"] = asyncio.get_running_loop()
+        gate["release"] = asyncio.Event()
+        gate["started"] = __import__("threading").Event()
+        consumer = asyncio.create_task(asset_worker.consume_once(plans=plans, generator=generator))
+        await asyncio.to_thread(gate["started"].wait, 10)
+        queued_work.begin_drain()
+        consumer.cancel()  # 소비자 task 가 취소돼도(종료 신호) 실행 중인 작업은 끝까지 간다
+        idle = asyncio.create_task(queued_work.wait_idle())
+        await asyncio.sleep(0.2)
+>       assert not idle.done()
+E       AssertionError: assert not True
+E        +  where True = <built-in method done of _asyncio.Task object at 0x1138ddb20>()
+E        +    where <built-in method done of _asyncio.Task object at 0x1138ddb20> = <Task finished name='Task-145' coro=<wait_idle() done, defined at /Users/winterholic/development/projects/winterholic-...work.py:52> exception=ValueError('The future belongs to a different loop than the one specified as the loop argument')>.done
+
+unit_tests/test_creative_v2_asset_queue.py:277: AssertionError
+_________________ test_executor_starts_and_stops_qwen_as_owner _________________
+
+fut = <Task cancelled name='Task-262' coro=<serve() done, defined at /Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/executor.py:198>>
+timeout = 2.0
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/executor.py:267: in serve
+    if registered and not await drain(runtime, manager, timeout=drain_timeout, pending=pending):
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/executor.py:169: in drain
+    await asyncio.sleep(poll_interval)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+delay = 0.2, result = None
+
+    async def sleep(delay, result=None):
+        """Coroutine that completes after a given time (in seconds)."""
+        if delay <= 0:
+            await __sleep0()
+            return result
+    
+        if math.isnan(delay):
+            raise ValueError("Invalid delay: NaN (not a number)")
+    
+        loop = events.get_running_loop()
+        future = loop.create_future()
+        h = loop.call_later(delay,
+                            futures._set_result_unless_cancelled,
+                            future, result)
+        try:
+>           return await future
+                   ^^^^^^^^^^^^
+E           asyncio.exceptions.CancelledError
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:720: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1135e2d60>
+
+    async def test_executor_starts_and_stops_qwen_as_owner(monkeypatch):
+        """executor는 serve 기동 시 Qwen을 owner=True로 시작하고 종료 시 stop한다."""
+        from ttakkari import executor
+        from ttakkari.artifacts import preview
+        from ttakkari.meetings.local_stt import jobs as stt_jobs
+        from ttakkari.runs import manager
+    
+        monkeypatch.setattr(preview, "start_worker", AsyncMock())
+        monkeypatch.setattr(preview, "stop_worker", AsyncMock())
+        monkeypatch.setattr(stt_jobs, "start", AsyncMock())
+        monkeypatch.setattr(stt_jobs, "stop", AsyncMock())
+        monkeypatch.setattr(executor, "start_background_services", AsyncMock(return_value=[]))
+        monkeypatch.setattr(executor.ExecutorRuntime, "register", AsyncMock())
+        monkeypatch.setattr(executor.ExecutorRuntime, "listen", AsyncMock())
+        monkeypatch.setattr(executor.ExecutorRuntime, "refresh", AsyncMock(return_value="active"))
+        monkeypatch.setattr(executor.ExecutorRuntime, "close", AsyncMock())
+        from ttakkari import generation_service
+        monkeypatch.setattr(generation_service, "coordinate_runs", AsyncMock())
+        monkeypatch.setattr(executor, "dispose_engine", AsyncMock())
+        monkeypatch.setattr(manager.manager, "shutdown", AsyncMock())
+    
+        calls: list[str] = []
+    
+        async def fake_start(*, owner=True):
+            calls.append(f"start:{owner}")
+    
+        async def fake_stop():
+            calls.append("stop")
+    
+        monkeypatch.setattr(svc.service, "start", fake_start)
+        monkeypatch.setattr(svc.service, "stop", fake_stop)
+    
+        # settings mock
+        s = get_settings()
+        monkeypatch.setattr(s, "release_revision", "rev-test")
+        monkeypatch.setattr(s, "runtime_poll_seconds", 0.05)
+    
+        # serve를 실행하고 바로 SIGTERM/stop 트리거
+        serve_task = asyncio.create_task(executor.serve(activate=True))
+        await asyncio.sleep(0.05)
+        os.kill(os.getpid(), 15)  # SIGTERM
+>       await asyncio.wait_for(serve_task, timeout=2.0)
+
+unit_tests/test_desk_qwen_isolation.py:365: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x114200b80>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is not None:
+                # Since there are no new cancel requests, we're
+                # handling this.
+                if issubclass(exc_type, exceptions.CancelledError):
+>                   raise TimeoutError from exc_val
+E                   TimeoutError
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: TimeoutError
+------------------------------ Captured log call -------------------------------
+ERROR    ttakkari.background_consumers:background_consumers.py:101 background consumer failed: context-index
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 581, in _prepare_and_execute
+    prepared_stmt, attributes = await adapt_connection._prepare(
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, self._invalidate_schema_cache_asof
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 819, in _prepare
+    prepared_stmt = await self._connection.prepare(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, name=self._prepared_statement_name_func()
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 661, in prepare
+    return await self._prepare(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 680, in _prepare
+    stmt = await self._get_statement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 466, in _get_statement
+    statement = await self._protocol.prepare(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "asyncpg/protocol/protocol.pyx", line 161, in prepare
+asyncpg.exceptions.UndefinedColumnError: column ctx_sources.index_requested_at does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_dbapi.ProgrammingError: column ctx_sources.index_requested_at does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 97, in _loop
+    started = await pump()
+              ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 46, in _pump_context_index
+    return await index_queue.pump()
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/context/index_queue.py", line 89, in pump
+    sid = await db.scalar(select(CtxSource.id).where(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        .order_by(CtxSource.index_requested_at).limit(1))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 720, in scalar
+    return await greenlet_spawn(
+           ^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 210, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2534, in scalar
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        **kw,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<9 lines>...
+        param_dict=param_dict,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.exc.ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) column ctx_sources.index_requested_at does not exist
+[SQL: SELECT ctx_sources.id 
+FROM ctx_sources 
+WHERE ctx_sources.index_requested_at IS NOT NULL AND (ctx_sources.index_started_at IS NULL OR ctx_sources.index_started_at < $1::TIMESTAMP WITH TIME ZONE) ORDER BY ctx_sources.index_requested_at 
+ LIMIT $2::INTEGER]
+[parameters: (datetime.datetime(2026, 10, 24, 16, 8, 17, 337679, tzinfo=datetime.timezone.utc), 1)]
+(Background on this error at: https://sqlalche.me/e/21/f405)
+ERROR    ttakkari.background_consumers:background_consumers.py:101 background consumer failed: notebooklm
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 581, in _prepare_and_execute
+    prepared_stmt, attributes = await adapt_connection._prepare(
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, self._invalidate_schema_cache_asof
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 819, in _prepare
+    prepared_stmt = await self._connection.prepare(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        operation, name=self._prepared_statement_name_func()
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 661, in prepare
+    return await self._prepare(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 680, in _prepare
+    stmt = await self._get_statement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/asyncpg/connection.py", line 466, in _get_statement
+    statement = await self._protocol.prepare(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "asyncpg/protocol/protocol.pyx", line 161, in prepare
+asyncpg.exceptions.UndefinedColumnError: column notebooklm_jobs.spec does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_dbapi.ProgrammingError: column notebooklm_jobs.spec does not exist
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 97, in _loop
+    started = await pump()
+              ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/background_consumers.py", line 36, in _pump_notebooklm
+    return await service.pump_queued()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/notebooklm/service.py", line 652, in pump_queued
+    rows = await db.scalars(select(NotebookLMJob).where(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        NotebookLMJob.status == "queued", NotebookLMJob.cancel_requested.is_(False))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        .order_by(NotebookLMJob.created_at).with_for_update(skip_locked=True).limit(32))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 777, in scalars
+    result = await self.execute(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/ext/asyncio/session.py", line 651, in execute
+    result = await greenlet_spawn(
+             ^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 210, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+    compile_state_cls.orm_execute_statement(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self,
+        ^^^^^
+    ...<4 lines>...
+        conn,
+        ^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+    result = conn.execute(
+        statement, params or {}, execution_options=execution_options
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<9 lines>...
+        param_dict=param_dict,
+    )
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 656, in execute
+    await_(self._prepare_and_execute(operation, parameters))
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 167, in await_
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/util/concurrency.py", line 205, in greenlet_spawn
+    value = await result
+            ^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 618, in _prepare_and_execute
+    self._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 568, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 847, in _handle_exception
+    super()._handle_exception(error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/connectors/asyncio.py", line 412, in _handle_exception
+    self._handle_exception_no_connection(self.dbapi, error)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 840, in _handle_exception_no_connection
+    raise translated_error from error
+sqlalchemy.exc.ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) column notebooklm_jobs.spec does not exist
+[SQL: SELECT notebooklm_jobs.id, notebooklm_jobs.account_id, notebooklm_jobs.kind, notebooklm_jobs.notebook_id, notebooklm_jobs.status, notebooklm_jobs.params, notebooklm_jobs.spec, notebooklm_jobs.result, notebooklm_jobs.error_code, notebooklm_jobs.error, notebooklm_jobs.cancel_requested, notebooklm_jobs.heartbeat_at, notebooklm_jobs.created_at, notebooklm_jobs.started_at, notebooklm_jobs.finished_at, notebooklm_jobs.updated_at 
+FROM notebooklm_jobs 
+WHERE notebooklm_jobs.status = $1::VARCHAR AND notebooklm_jobs.cancel_requested IS false ORDER BY notebooklm_jobs.created_at 
+ LIMIT $2::INTEGER FOR UPDATE SKIP LOCKED]
+[parameters: ('queued', 32)]
+(Background on this error at: https://sqlalche.me/e/21/f405)
+__ test_drain_lets_the_running_build_finish_even_if_its_consumer_is_cancelled __
+
+fut = <Task cancelled name='Task-1810' coro=<wait_idle() done, defined at /Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/src/ttakkari/queued_work.py:52>>
+timeout = 60
+
+    async def wait_for(fut, timeout):
+        """Wait for the single Future or coroutine to complete, with timeout.
+    
+        Coroutine will be wrapped in Task.
+    
+        Returns result of the Future or coroutine.  When a timeout occurs,
+        it cancels the task and raises TimeoutError.  To avoid the task
+        cancellation, wrap it in shield().
+    
+        If the wait is cancelled, the task is also cancelled.
+    
+        If the task suppresses the cancellation and returns a value instead,
+        that value is returned.
+    
+        This function is a coroutine.
+        """
+        # The special case for timeout <= 0 is for the following case:
+        #
+        # async def test_waitfor():
+        #     func_started = False
+        #
+        #     async def func():
+        #         nonlocal func_started
+        #         func_started = True
+        #
+        #     try:
+        #         await asyncio.wait_for(func(), 0)
+        #     except asyncio.TimeoutError:
+        #         assert not func_started
+        #     else:
+        #         assert False
+        #
+        # asyncio.run(test_waitfor())
+    
+    
+        if timeout is not None and timeout <= 0:
+            fut = ensure_future(fut)
+    
+            if fut.done():
+                return fut.result()
+    
+            await _cancel_and_wait(fut)
+            try:
+                return fut.result()
+            except exceptions.CancelledError as exc:
+                raise TimeoutError from exc
+    
+        async with timeouts.timeout(timeout):
+>           return await fut
+                   ^^^^^^^^^
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/queued_work.py:54: in wait_idle
+    await asyncio.gather(*tuple(_inflight), return_exceptions=True)
+unit_tests/test_executor_queued_consumers.py:118: in long_job
+    await release.wait()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <asyncio.locks.Event object at 0x113b63e30 [unset]>
+
+    async def wait(self):
+        """Block until the internal flag is true.
+    
+        If the internal flag is true on entry, return True
+        immediately.  Otherwise, block until another task calls
+        set() to set the flag to true, then return True.
+        """
+        if self._value:
+            return True
+    
+        fut = self._get_loop().create_future()
+        self._waiters.append(fut)
+        try:
+>           await fut
+E           asyncio.exceptions.CancelledError
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+client = <httpx.AsyncClient object at 0x115331c10>
+auth = {'Authorization': 'Bearer [REDACTED_TEST_TOKEN]'}
+probe = <test_game_build_queue.Probe object at 0x114606cf0>, remote_api = None
+
+    async def test_drain_lets_the_running_build_finish_even_if_its_consumer_is_cancelled(client, auth, probe, remote_api):
+        game = await new_game(client, auth, "q-finish")
+        accepted = (await start(client, auth, game["id"])).json()
+        probe.gate = asyncio.Event()
+    
+        consumer = asyncio.create_task(builds.consume_queued_build())
+        for _ in range(100):
+            if probe.started:
+                break
+            await asyncio.sleep(0.05)
+        assert probe.started
+        queued_work.begin_drain()
+        consumer.cancel()  # 종료 신호로 소비 루프가 취소된다
+        idle = asyncio.create_task(queued_work.wait_idle())
+        await asyncio.sleep(0.2)
+        assert not idle.done() and (await row(accepted["id"])).status == "building"
+    
+        probe.gate.set()
+>       await asyncio.wait_for(idle, 60)
+
+tests/test_game_build_queue.py:240: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x114135740>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is not None:
+                # Since there are no new cancel requests, we're
+                # handling this.
+                if issubclass(exc_type, exceptions.CancelledError):
+>                   raise TimeoutError from exc_val
+E                   TimeoutError
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: TimeoutError
+db reset: 106 selective (avg 3.0/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED unit_tests/test_run_executor_drain.py::test_remote_api_does_not_start_stt_preview_maintenance
+FAILED unit_tests/test_run_executor_services.py::test_remote_api_keeps_request_qwen_but_skips_durable_consumers_including_tts
+FAILED unit_tests/test_run_executor_services.py::test_local_api_preserves_existing_worker_startup
+FAILED unit_tests/test_executor_queued_consumers.py::test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims
+FAILED unit_tests/test_creative_v2_asset_queue.py::test_drain_waits_for_the_running_generation_to_finish
+FAILED unit_tests/test_desk_qwen_isolation.py::test_executor_starts_and_stops_qwen_as_owner
+FAILED tests/test_game_build_queue.py::test_drain_lets_the_running_build_finish_even_if_its_consumer_is_cancelled
+7 failed, 179 passed in 124.73s (0:02:04)
+
+exit_code=1

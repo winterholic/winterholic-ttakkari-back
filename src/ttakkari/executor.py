@@ -117,12 +117,13 @@ async def drain(
     *,
     poll_interval: float = 0.2,
     timeout: float | None = None,
+    pending: tuple[asyncio.Task, ...] = (),
 ) -> bool:
     """Drain in-flight Runs, durable queues (STT/preview), and periodic maintenance before termination.
 
     1. Stops new claims immediately: marks runtime state as 'draining'.
     2. Keeps processing runtime commands (cancel, reset) so in-flight work can be cleanly controlled.
-    3. Waits for manager._handles (active Run subprocesses) and runtime._work (in-flight STT/preview/periodic) to drain.
+    3. Waits for Run handles, runtime work, and the other consumers' pending drain tasks.
     4. Emits periodic heartbeat so readiness and controller checks observe progress.
     5. Returns True when fully drained, False if timeout expired.
     """
@@ -150,7 +151,7 @@ async def drain(
     except Exception:
         log.exception("error processing commands at drain start")
 
-    while manager._handles or runtime._work:
+    while manager._handles or runtime._work or any(not task.done() for task in pending):
         if deadline is not None and time.monotonic() > deadline:
             log.warning("executor drain timed out: active_runs=%d active_work=%s",
                         len(manager._handles), list(runtime._work))
@@ -212,10 +213,18 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
     stop = asyncio.Event()
     background_tasks: list[asyncio.Task] = []
     registered = False
-    preview_started = stt_started = tts_started = False
+    preview_started = stt_started = False
     loop = asyncio.get_running_loop()
+
+    def request_stop():
+        runtime._draining = True
+        queued_work.begin_drain()
+        background_consumers.consumers.stop_claiming()
+        tts_jobs.stop_claiming()
+        stop.set()
+
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, stop.set)
+        loop.add_signal_handler(sig, request_stop)
     generation.current = runtime
     try:
         await runtime.register(activate=activate)
@@ -224,7 +233,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
         usage_store.install()
         await qwen_service.start(owner=True)
         background_tasks = await start_background_services()
-        preview_started = stt_started = tts_started = True
+        preview_started = stt_started = True
         while not stop.is_set():
             try:
                 runtime.signal.clear()
@@ -249,14 +258,16 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
-            await background_consumers.stop()
-            queued_work.begin_drain()
-            await queued_work.wait_idle()
-            if tts_started:
-                await tts_jobs.drain()
-            if registered and not await drain(runtime, manager, timeout=drain_timeout):
+            request_stop()
+            pending = (
+                asyncio.create_task(background_consumers.stop(drain_seconds=None)),
+                asyncio.create_task(queued_work.wait_idle()),
+                asyncio.create_task(tts_jobs.drain()),
+            )
+            if registered and not await drain(runtime, manager, timeout=drain_timeout, pending=pending):
                 log.warning("executor drain deadline expired; waiting for natural completion")
-                await drain(runtime, manager, timeout=None)
+                await drain(runtime, manager, timeout=None, pending=pending)
+            await asyncio.gather(*pending)
         finally:
             try:
                 for task in background_tasks:

@@ -1,0 +1,22 @@
+DB-free: --noconftest; command=['scripts/pytest_slots.py', '--timeout', '60', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '--noconftest', '-q', 'tests/test_migration_single_head.py']
+F.                                                                       [100%]
+=================================== FAILURES ===================================
+______________________ test_alembic_has_exactly_one_head _______________________
+
+    def test_alembic_has_exactly_one_head():
+        config = Config(str(ROOT / "alembic.ini"))
+        config.set_main_option("script_location", str(ROOT / "alembic"))
+        heads = ScriptDirectory.from_config(config).get_heads()
+>       assert len(heads) == 1, (
+            f"마이그레이션 head 가 {len(heads)}개다: {sorted(heads)}. 한쪽 down_revision 을 다른 head 뒤로 옮겨 합친다."
+        )
+E       AssertionError: 마이그레이션 head 가 2개다: ['0069_background_consumer_queue', '0069_game_build_executor_handoff']. 한쪽 down_revision 을 다른 head 뒤로 옮겨 합친다.
+E       assert 2 == 1
+E        +  where 2 = len(['0069_background_consumer_queue', '0069_game_build_executor_handoff'])
+
+tests/test_migration_single_head.py:22: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_migration_single_head.py::test_alembic_has_exactly_one_head
+1 failed, 1 passed in 0.21s
+
+exit_code=1

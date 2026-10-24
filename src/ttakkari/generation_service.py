@@ -241,10 +241,7 @@ async def start_api_services(execution_mode: str) -> None:
         await background_consumers.start()
     # Remote API generations do not spawn or stop the llama-server process;
     # only local (single-process legacy/rollback) runs own the managed process.
-    try:
-        await qwen_service.start(owner=(execution_mode == "local"))
-    except TypeError:
-        await qwen_service.start()
+    await qwen_service.start(owner=(execution_mode == "local"))
 
 
 async def ready(runtime) -> dict:

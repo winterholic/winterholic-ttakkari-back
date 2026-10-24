@@ -1,0 +1,15 @@
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025
+command=['scripts/pytest_slots.py', '--timeout', '60', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', 'tests/test_migration_single_head.py']
+ImportError while loading conftest '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/tests/conftest.py'.
+tests/conftest.py:47: in <module>
+    PG_CLUSTER = pg_sandbox.start_cluster()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/pg_sandbox.py:522: in start_cluster
+    _run(
+tests/pg_sandbox.py:494: in _run
+    return subprocess.run(
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/subprocess.py:577: in run
+    raise CalledProcessError(retcode, process.args,
+E   subprocess.CalledProcessError: Command '['/opt/homebrew/opt/postgresql@17/bin/initdb', '-D', '/tmp/ttakkari-test-22215-520b24d2/data', '-A', 'trust', '-E', 'UTF8', '--locale=en_US.UTF-8', '--no-sync']' returned non-zero exit status 1.
+
+exit_code=4

@@ -1,0 +1,10 @@
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025
+command=['scripts/pytest_slots.py', '--timeout', '90', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', 'unit_tests/test_tts_claim_stop_race.py', 'unit_tests/test_executor_integrated_drain.py', 'unit_tests/test_executor_safety.py', 'unit_tests/test_run_executor_drain.py', 'unit_tests/test_run_executor_services.py', 'unit_tests/test_executor_queued_consumers.py', 'unit_tests/test_creative_v2_asset_queue.py', 'unit_tests/test_creative_v2_asset_generation_e2e.py', 'unit_tests/test_desk_qwen_isolation.py', 'tests/test_tts_executor_isolation.py', 'tests/test_background_consumers.py', 'tests/test_game_build_queue.py', 'tests/test_background_consumer_migration.py', 'tests/test_migration_single_head.py', 'tests/test_generation_deployment.py']
+DB=explicit provided non-production test DB
+........................................................................ [ 38%]
+........................................................................ [ 76%]
+.............................................                            [100%]
+db reset: 106 selective (avg 3.0/106 tables), 0 forced full, 0 fell back to full
+189 passed in 62.00s (0:01:02)
+
+exit_code=0

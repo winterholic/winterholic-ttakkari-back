@@ -561,7 +561,7 @@ async def tick() -> bool:
     if not await _has_owned_queued(me, **adopt):
         return False
     async with service.budget(0, allow_draining=True) as outcome:
-        if outcome != "ok":
+        if outcome != "ok" or _draining:
             return False
         job_id = await _claim(me, **adopt)
         if job_id is None:
@@ -622,11 +622,16 @@ async def start() -> None:
     kick()
 
 
-async def drain() -> None:
-    """executor 교체용 종료. 새 claim 을 멈추고 진행 중인 1건은 끝까지 마친다. queued 는 건드리지 않는다."""
+def stop_claiming() -> None:
+    """Close admission synchronously before waiting for any other executor work."""
     global _draining
     _draining = True
     _wake.set()
+
+
+async def drain() -> None:
+    """executor 교체용 종료. 새 claim 을 멈추고 진행 중인 1건은 끝까지 마친다. queued 는 건드리지 않는다."""
+    stop_claiming()
     task = _task
     if task is not None and not task.done():
         with contextlib.suppress(asyncio.CancelledError, Exception):

@@ -214,8 +214,8 @@ async def test_remote_api_does_not_start_stt_preview_maintenance():
 
         preview_mock.assert_not_awaited()
         stt_mock.assert_not_awaited()
-        tts_mock.assert_awaited_once()
-        qwen_mock.assert_awaited_once()
+        tts_mock.assert_not_awaited()
+        qwen_mock.assert_awaited_once_with(owner=False)
 
 
 @pytest.mark.asyncio

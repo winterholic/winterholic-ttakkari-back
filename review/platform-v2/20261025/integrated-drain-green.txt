@@ -1,0 +1,6 @@
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025
+command=['scripts/pytest_slots.py', '--timeout', '60', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', 'unit_tests/test_executor_integrated_drain.py']
+.....                                                                    [100%]
+5 passed in 0.39s
+
+exit_code=0

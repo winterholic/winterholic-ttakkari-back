@@ -1,0 +1,163 @@
+command=['scripts/pytest_slots.py', '--timeout', '60', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', 'unit_tests/test_tts_claim_stop_race.py']
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+__________ test_suspended_tts_tick_does_not_claim_after_stop[refresh] __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bad8e90>
+stage = 'refresh'
+
+    @pytest.mark.parametrize("stage", ["refresh", "queue", "budget"])
+    async def test_suspended_tts_tick_does_not_claim_after_stop(monkeypatch, stage):
+        entered, release = asyncio.Event(), asyncio.Event()
+    
+        async def pause(at, result):
+            if stage == at:
+                entered.set()
+                await release.wait()
+            return result
+    
+        @asynccontextmanager
+        async def budget(*args, **kwargs):
+            yield await pause("budget", "ok")
+    
+        runtime = SimpleNamespace(id=uuid.uuid4(), refresh=lambda: pause("refresh", "active"))
+        monkeypatch.setattr(generation, "current", runtime)
+        monkeypatch.setattr(jobs, "_draining", False)
+        monkeypatch.setattr(jobs, "_housekeeping", AsyncMock())
+        monkeypatch.setattr(jobs, "_has_owned_queued", lambda *args, **kwargs: pause("queue", True))
+        monkeypatch.setattr(jobs.service, "budget", budget)
+        claim = AsyncMock(return_value=None)
+        monkeypatch.setattr(jobs, "_claim", claim)
+        tick = asyncio.create_task(jobs.tick())
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            jobs.stop_claiming()
+            release.set()
+            assert await tick is False
+>           claim.assert_not_awaited()
+
+unit_tests/test_tts_claim_stop_race.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4479971216'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2465: AssertionError
+___________ test_suspended_tts_tick_does_not_claim_after_stop[queue] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10baf1250>
+stage = 'queue'
+
+    @pytest.mark.parametrize("stage", ["refresh", "queue", "budget"])
+    async def test_suspended_tts_tick_does_not_claim_after_stop(monkeypatch, stage):
+        entered, release = asyncio.Event(), asyncio.Event()
+    
+        async def pause(at, result):
+            if stage == at:
+                entered.set()
+                await release.wait()
+            return result
+    
+        @asynccontextmanager
+        async def budget(*args, **kwargs):
+            yield await pause("budget", "ok")
+    
+        runtime = SimpleNamespace(id=uuid.uuid4(), refresh=lambda: pause("refresh", "active"))
+        monkeypatch.setattr(generation, "current", runtime)
+        monkeypatch.setattr(jobs, "_draining", False)
+        monkeypatch.setattr(jobs, "_housekeeping", AsyncMock())
+        monkeypatch.setattr(jobs, "_has_owned_queued", lambda *args, **kwargs: pause("queue", True))
+        monkeypatch.setattr(jobs.service, "budget", budget)
+        claim = AsyncMock(return_value=None)
+        monkeypatch.setattr(jobs, "_claim", claim)
+        tick = asyncio.create_task(jobs.tick())
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            jobs.stop_claiming()
+            release.set()
+            assert await tick is False
+>           claim.assert_not_awaited()
+
+unit_tests/test_tts_claim_stop_race.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4491248032'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2465: AssertionError
+__________ test_suspended_tts_tick_does_not_claim_after_stop[budget] ___________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bafd150>
+stage = 'budget'
+
+    @pytest.mark.parametrize("stage", ["refresh", "queue", "budget"])
+    async def test_suspended_tts_tick_does_not_claim_after_stop(monkeypatch, stage):
+        entered, release = asyncio.Event(), asyncio.Event()
+    
+        async def pause(at, result):
+            if stage == at:
+                entered.set()
+                await release.wait()
+            return result
+    
+        @asynccontextmanager
+        async def budget(*args, **kwargs):
+            yield await pause("budget", "ok")
+    
+        runtime = SimpleNamespace(id=uuid.uuid4(), refresh=lambda: pause("refresh", "active"))
+        monkeypatch.setattr(generation, "current", runtime)
+        monkeypatch.setattr(jobs, "_draining", False)
+        monkeypatch.setattr(jobs, "_housekeeping", AsyncMock())
+        monkeypatch.setattr(jobs, "_has_owned_queued", lambda *args, **kwargs: pause("queue", True))
+        monkeypatch.setattr(jobs.service, "budget", budget)
+        claim = AsyncMock(return_value=None)
+        monkeypatch.setattr(jobs, "_claim", claim)
+        tick = asyncio.create_task(jobs.tick())
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            jobs.stop_claiming()
+            release.set()
+            assert await tick is False
+>           claim.assert_not_awaited()
+
+unit_tests/test_tts_claim_stop_race.py:42: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4491250384'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2465: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_tts_claim_stop_race.py::test_suspended_tts_tick_does_not_claim_after_stop[refresh]
+FAILED unit_tests/test_tts_claim_stop_race.py::test_suspended_tts_tick_does_not_claim_after_stop[queue]
+FAILED unit_tests/test_tts_claim_stop_race.py::test_suspended_tts_tick_does_not_claim_after_stop[budget]
+3 failed in 0.26s
+
+exit_code=1

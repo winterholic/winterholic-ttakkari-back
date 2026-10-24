@@ -109,18 +109,20 @@ class BackgroundConsumers:
         if self._stopping is not None:
             self._stopping.set()
 
-    async def drain(self, drain_seconds: float = DRAIN_SECONDS) -> None:
-        """Wait for in-flight work for up to ``drain_seconds``, then cancel what is left."""
+    async def drain(self, drain_seconds: float | None = DRAIN_SECONDS) -> None:
+        """Wait for work; None preserves it indefinitely, a finite window allows cancellation."""
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + drain_seconds
-        while inflight() and loop.time() < deadline:
+        deadline = loop.time() + drain_seconds if drain_seconds is not None else None
+        while inflight() and (deadline is None or loop.time() < deadline):
             await asyncio.sleep(0.1)
+        if deadline is None:
+            return  # Executor replacement is natural completion, never timeout cancellation.
         if inflight():
             log.warning("background consumers: cancelling %d in-flight jobs after %.0fs drain", inflight(),
                         drain_seconds)
         await _cancel_inflight()
 
-    async def stop(self, drain_seconds: float = DRAIN_SECONDS) -> None:
+    async def stop(self, drain_seconds: float | None = DRAIN_SECONDS) -> None:
         """stop_claiming(), wait for the loops to leave, then drain()."""
         self.stop_claiming()
         loops, self._loops = self._loops, []
@@ -135,5 +137,5 @@ async def start() -> None:
     await consumers.start()
 
 
-async def stop(drain_seconds: float = DRAIN_SECONDS) -> None:
+async def stop(drain_seconds: float | None = DRAIN_SECONDS) -> None:
     await consumers.stop(drain_seconds)

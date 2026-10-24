@@ -90,9 +90,11 @@ class _Runtime:
 
 
 async def test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims(monkeypatch):
+    from ttakkari import background_consumers
     from ttakkari.artifacts import preview
     from ttakkari.meetings.local_stt import jobs as stt_jobs
     from ttakkari.runs import profiles, usage_store
+    from ttakkari.runs.desk_qwen_service import service as qwen
     from ttakkari.runs.manager import manager
 
     @asynccontextmanager
@@ -104,6 +106,10 @@ async def test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims(mo
     monkeypatch.setattr(executor, "sessionmaker", lambda: fake_session)
     monkeypatch.setattr(executor, "dispose_engine", AsyncMock())
     monkeypatch.setattr(executor, "start_background_services", AsyncMock(return_value=[]))
+    monkeypatch.setattr(executor, "drain", AsyncMock(return_value=True))
+    monkeypatch.setattr(qwen, "start", AsyncMock())
+    monkeypatch.setattr(qwen, "stop", AsyncMock())
+    monkeypatch.setattr(background_consumers, "stop", AsyncMock())
     monkeypatch.setattr(generation_service, "coordinate_runs", AsyncMock())
     monkeypatch.setattr("ttakkari.deployment.revision", lambda: "rev")
     for owner, name in ((profiles, "load_cooldowns"), (profiles, "flush_persist"), (usage_store, "load_latest"),
@@ -123,13 +129,16 @@ async def test_executor_shutdown_waits_for_a_claimed_job_and_stops_new_claims(mo
     job = asyncio.create_task(queued_work.run_tracked(long_job()))  # 소비자가 맡은 빌드·자산 생성
     await asyncio.sleep(0.05)
 
-    os.kill(os.getpid(), signal.SIGTERM)  # 배포가 실행부에 보내는 종료 신호
-    await asyncio.sleep(0.5)
-    assert queued_work.draining() is True  # 새로 맡지 않는다
-    assert not serving.done() and finished == []  # 맡은 일이 끝날 때까지 프로세스는 내려가지 않는다
-
-    release.set()
-    await asyncio.wait_for(serving, 10)
-    await job
-    assert finished == [True]
-    queued_work.reopen()
+    try:
+        os.kill(os.getpid(), signal.SIGTERM)  # 배포가 실행부에 보내는 종료 신호
+        await asyncio.sleep(0.5)
+        assert queued_work.draining() is True  # 새로 맡지 않는다
+        assert not serving.done() and finished == []  # 맡은 일이 끝날 때까지 프로세스는 내려가지 않는다
+        release.set()
+        await asyncio.wait_for(serving, 10)
+        await job
+        assert finished == [True]
+    finally:
+        release.set()
+        await asyncio.gather(serving, job, return_exceptions=True)
+        queued_work.reopen()

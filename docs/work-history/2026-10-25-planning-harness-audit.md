@@ -101,4 +101,12 @@
 - work.cancel_queued_continuations는 세션 잠금 안에서 queued 계약 Run만 정리한다. usage 표식 또는 구버전 request_key→동일 세션 계약 예약 참조로 식별하고 개인 예약/user/report Run은 보존한다. Run 행을 잠근 후 lease가 있으면 소유 세대에 RuntimeCommand cancel을 남기고 상태·이벤트를 직접 수정하지 않는다. lease 없는 Run은 cancelled/finished_at/error 및 완료 이벤트·감사를 같은 트랜잭션에 남긴다. non-active checkpoint도 재사용한다.
 - 스케줄러는 신규 계약 Run에 schedule_id/revision 표식을 남기며 실행 전 현재 예약 행의 pending/leased 상태도 재확인한다. generation.claim은 Run 행을 잠그고 상태를 재검사한다. 네이티브 _run은 terminal 진입을 차단하고 프로필 선택 후 잠금+상태 재검사로 취소를 덮어쓰지 않는다.
 - 전용 DB 검사: scheduler-first-green.log **125 passed in 17.03s** (계약·예약·기획·generation·route). lifecycle-green.log **140 passed in 37.26s** (API/실패/실행기/세대 프로세스/전역 중지/context lifecycle/관련 unit). 양쪽 DB 모두 finally 제거. modified Python ruff 및 git diff --check 오류 없음.
-- 현재 재수정은 독립 재검증 전이며 전체 suite 재실행/최종 main 통합/새 배포는 아직이다. 모델 실행 자체를 이 검사 결과로 보증하지 않는다.
+- 이 단계 직후에는 독립 재검증/최종 main 통합/새 배포 전이었다. 아래 최종 검증으로 상태를 갱신한다.
+
+
+## 독립 lifecycle PASS 및 main/배포 진행
+
+- 대상 bff631b에 대해 verifier 5f0a668c의 독립 PASS 보고를 get_worker로 확인했다. 보고된 실행은 경계 8 passed/0.84s 및 lifecycle 226 passed/47.03s, Ruff 통과. 검증자 본인은 프로세스 spawn/실제 RuntimeCommand 집행/전체 suite를 실행하지 않았다. 원시 로그는 사용자 Files에만 있고 다른 Run outbox를 lead가 직접 읽지 않았다.
+- lead가 전용DB로 8개 경계+실제 fake-agent 자식/세대 전환/remote cancel 명령 read→execute→ack/retire-ready 검사를 직접 실행: **9 passed in 0.99s** (`reports/planning-audit/final-cancel-admission-check.log`). DB 제거 확인. 수정 7개 Python ruff All checks passed, diff-check 오류 없음.
+- 17212d9의 기존 배포11be2d66은 ops_deploy_log에서 **draining** 및 release 전체 **4595 passed,12 skipped,2 xfailed,5020 subtests passed/1147.66s** 확인. 이 결과를 bff631b 전체 통과로 확대하지 않는다.
+- 새 수정은 원격 main17212d9의 후손이다. 검증 기록만 갱신한 후 branch 및 main을 fast-forward push하고, clean SHA로 새 전체 배포 gate를 예약한다. 현재 Run을 유지하며 배포 폴링하지 않는다. 실제 모델 응답과 새 버전 운영 적용은 별도 증거가 필요하다.

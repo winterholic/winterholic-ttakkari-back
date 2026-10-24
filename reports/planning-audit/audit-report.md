@@ -107,7 +107,11 @@ P1/P2는 이번 업무의 수정 우선도다. 실제 데이터 손실이나 전
 - 추가 RED 8건: 이미 등록된 예약·직접/구버전 계약 후속·paused checkpoint 정리, cancelled 네이티브 재진입, leased queued 취소 명령 부재, generation claim 경합, 프로필 선택 중 취소 덮어쓰기, 취소 뒤 목표 재개를 만난 오래된 예약 스냅숏 부활. `scheduler-first-{red,owned-red,claim-red,profile-red,stale-red}.log`에 원 출력 기록.
 - 추가 교정: 신규 예약 Run에도 계약 표식 기록, queued 계약 후속 정리, 소유 lease는 기존 세대 cancel 명령 사용, generation claim Run 잠금, 네이티브 진입 및 프로필 선택 후 상태 재확인. 취소된 예약 스냅숏이 목표 재개 후 부활하지 않도록 현재 예약 행 상태도 확인. 사용자 요청/개인 예약/보고 Run은 정리 대상에서 제외한다.
 - 재수정 관련 검사 **125 passed in 17.03s** (`scheduler-first-green.log`), 실행·중지·복구 확대 검사 **140 passed in 37.26s** (`scheduler-first-lifecycle-green.log`). 전용 DB는 실행 후 제거했다. scheduler-first 테스트는 실제 dispatcher의 선택을 호출하되 프로세스 생성만 Mock으로 차단해, 취소된 후속이 선택되지 않음을 확인한다. 세대 소유 Run은 cancel 명령 생성/lease 보존까지만 이 신규 검사에서 확인했다.
-- 전체 suite는 이번 재수정 뒤 다시 실행하지 않았다. 최종 독립 재검증과 배포 컨트롤러 전체 gate는 별도 판정이다.
+- bff631b 독립 검증 결과: **PASS — 취소/예약/Run lifecycle 한정**. 작업자 보고는 8 passed/0.84s 및 226 passed/47.03s, Ruff 통과. 원 로그는 사용자 Files에 있으며 lead가 보호된 다른 Run outbox를 직접 읽지는 않았다.
+- lead 추가 실행 `final-cancel-admission-check.log`: **9 passed in 0.99s**. 8개 경계 + `test_manager_drain_keeps_real_child_and_other_manager_cancels_owner`는 실제 fake-agent 자식 프로세스를 세대 전환 중 유지한 뒤, 다른 세대가 요청한 RuntimeCommand를 소유자가 읽고 집행/ack하여 Run cancelled 및 이전 세대 retire-ready까지 확인한다. 실제 클라우드 모델 응답 검증은 아니다.
+- 수정 전 17212d9 배포 11be2d66은 컨트롤러 전체 gate **4595 passed, 12 skipped, 2 xfailed**(1147.66s), 상태 **draining**을 ops_deploy_log로 확인했다. 구버전 전체 통과가 bff631b의 전체 통과를 뜻하지 않는다.
+- 새 수정은 관련 검사와 독립 검증 후 main에 fast-forward push하고 배포 컨트롤러에 전체 gate를 예약한다. 새 배포의 접수/대기/활성화/이전 세대 종료는 구분한다.
+- 전체 suite는 이번 재수정 뒤 로컬에서 중복 실행하지 않았다. 최종 독립 재검증과 배포 컨트롤러 전체 gate는 별도 판정이다.
 
 A: 부분 Gate complete 거절, 미완료 식별, 실제 manager 종료에서 후속 큐 연결, 최종 complete 뒤 후속 없음.
 B: 공통 원인·검증 비용에 따른 계획 선택은 두 실제 모델 응답으로 한정 평가했다. 코드 테스트만으로 기획 능력 개선을 보증하지 않는다.

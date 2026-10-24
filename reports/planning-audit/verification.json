@@ -84,10 +84,10 @@
       "Acquire shared session row lock before reading contract, hold until Run queue commit",
       "Skip explicit continuation when no active contract exists"
     ],
-    "status": "two earlier solutions rejected; scheduler_first_rework pending independent review"
+    "status": "independent lifecycle PASS for bff631b; earlier FAIL history retained"
   },
   "previous_verification_timestamp": "2026-10-25T02:05:00+09:00",
-  "status": "scheduler_first_rework_tested_pending_independent_review",
+  "status": "independent_lifecycle_passed_deployment_pending",
   "independent_review": {
     "verifier_worker_id": "5f0a668c-28f9-4018-a20c-0cd466cae51e",
     "implementation_worker_id": "826d2939-5083-456d-8a33-d360051cf8d8",
@@ -99,6 +99,21 @@
       "result": "failed",
       "reason": "scheduler-first committed continuation remained queued after goal paused",
       "direct_dispatch_or_model_execution": "not measured by verifier"
+    },
+    "final_result": {
+      "commit": "bff631b97b8c4249dace45c53b88d711797b421f",
+      "result": "passed",
+      "scope": "cancellation/scheduling/Run lifecycle only",
+      "reported_tests": [
+        "8 passed in 0.84s",
+        "226 passed in 47.03s"
+      ],
+      "source": "get_worker 5f0a668c final result; original worker logs in user Files, not read by lead",
+      "not_executed_by_verifier": [
+        "full suite",
+        "process spawn",
+        "RuntimeCommand execution"
+      ]
     }
   },
   "rework": {
@@ -127,7 +142,7 @@
     "status": "64e90c9 rejected by independent scheduler-first probe"
   },
   "scheduler_first_rework": {
-    "status": "tested_pending_independent_review",
+    "status": "independent_lifecycle_passed",
     "changes": [
       "Tag scheduled continuation Runs with schedule_id/revision",
       "Cancel unleased queued goal continuations, including legacy explicit schedule links; preserve personal/user/report Runs",
@@ -156,6 +171,13 @@
       "result": "140 passed in 37.26s"
     },
     "full_suite_after_rework": "not rerun",
-    "deployment": "not requested for this rework yet"
+    "deployment": "main push and controller full gate pending",
+    "lead_final_check": {
+      "log": "final-cancel-admission-check.log",
+      "command": "dedicated-DB launcher: 8 boundary cases + test_generations.py::test_manager_drain_keeps_real_child_and_other_manager_cancels_owner",
+      "result": "9 passed in 0.99s",
+      "scope": "8 regressions + fake-agent real child process retained across generation switch, remote cancellation command read/executed/acknowledged, Run cancelled and old generation retire-ready",
+      "not_verified": "real cloud model response; new revision full release gate"
+    }
   }
 }

@@ -1,74 +1,91 @@
 {
-  "timestamp": "2026-10-25T01:18:30+09:00",
+  "timestamp": "2026-10-25T02:05:00+09:00",
   "base_commit": "917ea4b2fbe402efc3932885e3fe22c864057580",
   "branch": "fix/planning-completion-20261025",
   "summary": {
-    "planning_contract_suite": {
-      "command": "PYTHONPATH=src pytest tests/test_planning_contract.py",
-      "total": 20,
-      "passed": 20,
+    "planning_cancel_unit_suite": {
+      "command": "PYTHONPATH=.:src pytest unit_tests/test_planning_cancel_unit.py -v",
+      "total": 3,
+      "passed": 3,
       "failed": 0,
-      "duration_seconds": 1.60
+      "duration_seconds": 0.45
     },
-    "relevant_regression_suite": {
-      "command": "PYTHONPATH=src pytest tests/test_planning_contract.py tests/test_orchestrator.py tests/test_route_inventory.py",
-      "total": 66,
-      "passed": 66,
+    "platform_v2_inventory_suite": {
+      "command": "PYTHONPATH=.:src pytest unit_tests/test_platform_v2_inventory.py -q",
+      "total": 51,
+      "passed": 51,
       "failed": 0,
-      "duration_seconds": 12.82
+      "duration_seconds": 53.33
+    },
+    "full_regression_suite": {
+      "command": "PYTHONPATH=src pytest --tb=short --timeout=120",
+      "total": 4606,
+      "passed": 4570,
+      "failed": 13,
+      "skipped": 21,
+      "xfailed": 2,
+      "warnings": 9,
+      "duration_seconds": 751.50
     },
     "code_style": {
-      "command": "ruff check src/ttakkari/api/assistant.py src/ttakkari/api/orchestrator.py src/ttakkari/api/pms.py src/ttakkari/harness_view/layers.py src/ttakkari/harness_view/ttakkari_side.py src/ttakkari/orchestrator/mcp_server.py src/ttakkari/orchestrator/runtime.py src/ttakkari/orchestrator/tool_policy.py src/ttakkari/runs/desk.py src/ttakkari/runs/instructions.py src/ttakkari/runs/lead_archive.py src/ttakkari/runs/manager.py tests/test_orchestrator.py tests/test_route_inventory.py src/ttakkari/orchestrator/work.py tests/test_planning_contract.py",
+      "command": "ruff check src/ttakkari/orchestrator/work.py src/ttakkari/schedules/service.py tests/test_planning_contract.py scripts/platform_v2_inventory.py unit_tests/test_planning_cancel_unit.py",
       "status": "passed"
     }
   },
   "full_regression_failure_classification": {
     "log_source": "reports/planning-audit/full-regression.log",
-    "observed_failures": 38,
+    "total_failures": 13,
     "categories": {
-      "worktree_environment_missing_venv_and_sandbox": {
-        "count": 14,
-        "files": [
-          "unit_tests/test_backup_ops_remaining.py",
-          "unit_tests/test_backup_restore.py"
-        ],
-        "cause": "git worktree 디렉터리에 .venv 심볼릭 링크가 없어 backup_db.sh가 python 바이너리를 찾지 못함 및 mktemp 샌드박스 쓰기 차단",
-        "verification": ".venv 심볼릭 링크 생성 및 bypass sandbox 재실행 시 22 passed, 1 skipped (100% 통과)"
-      },
-      "host_gpu_sandbox_process_isolation": {
-        "count": 12,
-        "files": [
-          "tests/test_host_gpu.py"
-        ],
-        "cause": "터미널 샌드박스 내부에서 프로세스 목록 조회(process_list) 및 watchdog 신호(signal) 차단",
-        "verification": "bypass sandbox 단독 실행 시 32 passed in 31.87s (100% 통과)"
-      },
-      "migration_isolated_db_credential_forwarding": {
-        "count": 8,
-        "files": [
-          "tests/test_game_migration.py",
-          "tests/test_google_account.py",
-          "tests/test_knowledge_migration.py",
-          "tests/test_meeting_lineage_migration.py",
-          "tests/test_retire_clovanote_migration.py"
-        ],
-        "cause": "환경 변수 TTAKKARI_TEST_DB에 주입된 username:password 인증 정보가 Alembic 자식 프로세스 호출(localhost_database_url)에 전달되지 않아 DB 인증 오류 발생. origin/main 기준선과 동일한 구조.",
-        "verification": "독립 클러스터(env -u TTAKKARI_TEST_DB) 환경에서 34 passed (100% 통과)"
-      },
-      "research_lab_transient": {
+      "a_this_change_fixed": {
         "count": 1,
+        "name": "이번 변경 원인 (고침 완료)",
         "files": [
-          "tests/test_research_lab.py"
+          "unit_tests/test_platform_v2_inventory.py::test_report_schema_separates_extraction_classification_scope_coverage"
         ],
-        "cause": "전체 실행 시 세션 DB 리셋 경합으로 추정",
-        "verification": "단독 실행 시 12 passed in 0.98s (100% 통과)"
+        "cause": "신규 MCP 도구 manage_work가 scripts/platform_v2_inventory.py의 classify_tool에 등록되지 않아 도구 미분류(unmatched: 1) 발생",
+        "action": "scripts/platform_v2_inventory.py에 manage_work를 exec.run_engine으로 등록하여 해결. unit_tests/test_platform_v2_inventory.py 51건 전수 통과 확인"
+      },
+      "b_baseline_sdk_missing": {
+        "count": 3,
+        "name": "기준선(917ea4b) 동일 실패 - Muse SDK 런타임 부재",
+        "files": [
+          "tests/test_agent_token_security.py::test_muse_argv_hides_token_value",
+          "tests/test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise",
+          "tests/test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch"
+        ],
+        "cause": "호스트 환경에 .muse-runtime npm 패키지 미설치 (RuntimeError: Muse SDK runtime missing; run npm ci --prefix .muse-runtime --ignore-scripts)",
+        "baseline_comparison": "기준선 917ea4b에서도 동일하게 exit code 1로 실패 확인"
+      },
+      "c_baseline_migration_alembic_subprocess": {
+        "count": 9,
+        "name": "기준선(917ea4b) 동일 실패 - Alembic 서브프로세스 마이그레이션 인증/환경",
+        "files": [
+          "tests/test_game_migration.py::test_game_migration_is_additive_and_downgrades_cleanly",
+          "tests/test_game_migration.py::test_game_tables_enforce_uniqueness_and_cascade",
+          "tests/test_game_migration.py::test_0048_adds_only_nullable_columns_and_downgrades_cleanly",
+          "tests/test_google_account.py::test_migration_copies_notebooklm_account_state_without_touching_the_old_table",
+          "tests/test_google_account.py::test_migration_is_idempotent_on_rerun_of_the_copy",
+          "tests/test_knowledge_migration.py::test_knowledge_migration_is_additive_and_guards_evidence",
+          "tests/test_knowledge_migration.py::test_populated_ledger_cannot_be_destroyed_by_application_rollback",
+          "tests/test_meeting_lineage_migration.py::test_lineage_migration_backfills_valid_full_jobs_and_preserves_sources",
+          "tests/test_retire_clovanote_migration.py::test_retirement_preserves_every_source_row_and_meetings_and_downgrades"
+        ],
+        "cause": "환경 변수 TTAKKARI_TEST_DB의 인증 정보가 Alembic 서브프로세스에 전달되지 않아 DB 접속 실패(CalledProcessError). 기준선과 동일한 코드 및 환경 요인",
+        "baseline_comparison": "기준선 917ea4b와 동일한 마이그레이션 테스트 구현"
       }
     },
-    "impact_of_current_changes": "이번 기획 하네스 및 계약 변경으로 인한 회귀 실패 0건"
+    "reconciliation_sum_check": "1 (고침) + 3 (기준선 SDK) + 9 (기준선 마이그레이션) = 13 (총 실패 수와 정확히 일치)",
+    "impact_of_current_changes": "이번 기획 하네스 및 취소 경계 변경으로 인한 미해결 회귀 0건 (manage_work 분류 1건 발견 후 즉시 수정 완료)"
   },
-  "model_evaluation": {
-    "source": "reports/planning-audit/model-evaluation.json",
-    "models": ["claude-3-5-sonnet", "codex-gpt-6-luna"],
-    "result": "두 모델 모두 결함 묶음, 증거 보존, 중간 Gate와 전체 완료 분리, 후속 자동화 지침 준수"
+  "f1_defect_resolution": {
+    "defect": "취소된 Run이 pending 예약 메시지 때문에 목표를 계속 active로 두고 예약 시각에 새 Run이 실행되는 결함",
+    "solution": [
+      "src/ttakkari/orchestrator/work.py: after_run에서 run.status in (cancelled, failed) 시 예약 소유권 검사보다 먼저 목표 상태를 paused/blocked로 전이",
+      "src/ttakkari/orchestrator/work.py: is_contract_resume_schedule 함수로 계약 자동 후속/재개 예약만 특정 식별(work_continuation 플래그, origin, 프롬프트 키워드 등). 사용자의 일반 알림/리마인더는 보존",
+      "src/ttakkari/orchestrator/work.py: 취소 시 해당 세션의 계약 재개 예약을 찾아 status='cancelled'로 전이",
+      "src/ttakkari/schedules/service.py: execute_action에서 계약 재개 예약 실행 시 현재 목표 상태가 active가 아니면 건너뜀(skipped) 처리",
+      "tests/test_planning_contract.py: test_cancel_run_with_pending_schedule_pauses_goal_and_cancels_contract_resume 회귀 테스트 추가",
+      "unit_tests/test_planning_cancel_unit.py: 단위 테스트 3건 전수 검증 완료"
+    ]
   }
 }

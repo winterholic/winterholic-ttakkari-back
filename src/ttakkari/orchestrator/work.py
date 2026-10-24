@@ -169,6 +169,29 @@ async def prompt_note(db: AsyncSession, sess: ChatSession) -> str:
     return "[영속 목표 계약 — 보고/메모는 실행 증거와 대조하고, 원래 요구와 미완료부터 이어간다]\n" + json.dumps(payload, ensure_ascii=False)
 
 
+def is_contract_resume_schedule(schedule: ScheduledAction) -> bool:
+    """예약 작업이 기획 목표 계약의 자동 후속/재개 목적인지 판정한다.
+
+    사용자가 직접 등록한 무관한 예약(개인 리마인더, 회의 알림 등)을 오인 취소하지 않도록,
+    명시적인 계약 메타데이터(work_continuation 플래그, orchestrator/work_contract origin,
+    재개 프롬프트 키워드 또는 계약 설명)가 있는 예약만 계약 후속으로 분류한다.
+    """
+    if schedule.action_type != "send_message":
+        return False
+    payload = schedule.payload or {}
+    if payload.get("work_continuation") is True:
+        return True
+    if payload.get("origin") in ("orchestrator", "work_contract"):
+        return True
+    prompt = (payload.get("prompt") or payload.get("message") or "").strip()
+    if prompt.lower() in ("resume", "continue", "재개", "이어가기"):
+        return True
+    if "[미완료 목표 자동 이어가기]" in prompt or "[영속 목표 계약]" in prompt:
+        return True
+    desc = (schedule.description or "").strip().lower()
+    return any(k in desc for k in ("목표 계약", "work continuation", "목표 자동 이어가기", "contract resume"))
+
+
 async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:
     if sess.kind != SessionKind.orchestrator or sess.archived_at:
         return None
@@ -177,6 +200,36 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
     state = current.get("state")
     if not state or state["status"] != "active":
         return None
+
+    # 취소/실패는 명시적 중단 또는 실행 실패이므로 예약 소유권보다 먼저 반영돼야 한다.
+    if run.status != RunStatus.succeeded:
+        if run.status in (RunStatus.failed, RunStatus.cancelled):
+            row = await db.get(AppSetting, key(sess.id))
+            is_cancel = run.status == RunStatus.cancelled
+            new_status = "paused" if is_cancel else "blocked"
+            reason = (f"{run.engine} Run {run.id} cancelled: {run.error or 'cancelled; inspect user stop request'}"
+                      if is_cancel else
+                      f"{run.engine} Run {run.id} failed: {run.error or 'unknown failure'}")
+            row.value = {**current, "state": {**state, "status": new_status, "blocker": reason[:2000]},
+                         "revision": current["revision"] + 1}
+            events.append(db, run, f"work.{new_status}", {"reason": reason[:2000]})
+
+            # 취소 시 이 계약이 만든 자동 후속/재개 예약은 취소하여 이후 시점에 자동 부활하지 않게 한다.
+            # 사용자가 직접 만든 무관한 예약(일반 리마인더 등)은 보존한다.
+            if is_cancel:
+                sched_stmt = select(ScheduledAction).where(
+                    ScheduledAction.action_type == "send_message",
+                    ScheduledAction.status.in_(("pending", "leased")),
+                    ScheduledAction.payload["session_id"].as_string() == str(sess.id),
+                )
+                pending_scheds = (await db.scalars(sched_stmt)).all()
+                for ps in pending_scheds:
+                    if is_contract_resume_schedule(ps):
+                        ps.status = "cancelled"
+                        ps.last_error = f"cancelled due to session {sess.id} work pause on run cancel"
+                        ps.updated_at = utcnow()
+        return None  # interrupted Runs use existing restart recovery, not a new duplicate Run.
+
     # User steering/reports already queued, and live child workers, are durable owners of the next step.
     children = select(ChatSession.id).where(ChatSession.parent_id == sess.id, ChatSession.archived_at.is_(None))
     existing = await db.scalar(select(Run.id).where(Run.id != run.id, Run.status.in_(ACTIVE),
@@ -186,14 +239,7 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
         ScheduledAction.payload["session_id"].as_string() == str(sess.id)).limit(1))
     if existing is not None or scheduled is not None:
         return None
-    if run.status != RunStatus.succeeded:
-        if run.status in (RunStatus.failed, RunStatus.cancelled):
-            row = await db.get(AppSetting, key(sess.id))
-            reason = f"{run.engine} Run {run.id} {run.status}: {run.error or 'cancelled; inspect user stop request'}"
-            row.value = {**current, "state": {**state, "status": "blocked", "blocker": reason[:2000]},
-                         "revision": current["revision"] + 1}
-            events.append(db, run, "work.blocked", {"reason": reason[:2000]})
-        return None  # interrupted Runs use existing restart recovery, not a new duplicate Run.
+
     count = current.get("unchanged_continuations", 0)
     row = await db.get(AppSetting, key(sess.id))
     if count >= MAX_UNCHANGED_CONTINUATIONS:

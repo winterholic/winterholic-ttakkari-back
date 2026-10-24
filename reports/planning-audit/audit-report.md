@@ -96,20 +96,30 @@ P1/P2는 이번 업무의 수정 우선도다. 실제 데이터 손실이나 전
 상세 실행 결과는 `verification.json`과 원 로그(`planning-contract.log`, `automatic-dispatch.log`, `full-regression.log`)를 기준으로 기록한다.
 
 - 최초 RED: 목표 완료 API 부재로 Gate A 완료 요청 404 실패. 추가 RED: PMS 0%인데 done PATCH 200 허용, 작업판 succeeded→완료 오표시, live worker 있어도 목표 complete 허용, checkpoint 증거/PMS 연결 소실, 엔진 실패 후 active 방치가 각각 재현됨.
-- 신규 계약 회귀: `PYTHONPATH=src pytest tests/test_planning_contract.py` → 20 passed in 1.60s. 영속 resume 예약(ScheduledAction)의 후속 소유권 인정 및 중복 후속 차단(`test_persisted_resume_schedule_owns_next_step_without_duplicate_run`), 사용자 추가 지시 없는 자동 후속 실행(`test_dispatch_executes_followups_without_another_user_message`) 모두 통과.
+- F-1 결함 교정 및 취소 경계 검증:
+  - 취소된 Run이 예약 메시지(ScheduledAction send_message)로 인해 목표를 active로 방치하고 미래 시점에 새 Run을 생성하던 결함 해결.
+  - `work.py`: `after_run`에서 취소/실패 시 예약 소유권 검사보다 먼저 목표 상태를 `paused`/`blocked`로 전이하고, `is_contract_resume_schedule`로 계약 자동 재개 예약만 식별하여 `cancelled` 처리 (무관한 사용자 개인 예약은 보존).
+  - `schedules/service.py`: `execute_action` 실행 시 계약 재개 예약은 목표 상태가 `active`가 아니면 건너뜀(`skipped`).
+  - 회귀 검증: `tests/test_planning_contract.py::test_cancel_run_with_pending_schedule_pauses_goal_and_cancels_contract_resume` 통합 테스트 및 `unit_tests/test_planning_cancel_unit.py` 단위 테스트 3건 전수 통과 (0.45s).
+- 신규 계약 회귀: `PYTHONPATH=src pytest tests/test_planning_contract.py` → 21 passed (신규 취소 경계 테스트 포함).
 - 관련 핵심 회귀: `PYTHONPATH=src pytest tests/test_planning_contract.py tests/test_orchestrator.py tests/test_route_inventory.py` → 66 passed in 12.82s.
-- 코드 스타일: `ruff check` (수정 16개 파일 전수) → All checks passed.
-- 전체 suite(`full-regression.log`) 관측 실패 38건 분류:
-  1. 68% 백업 테스트(14건, `unit_tests/test_backup_ops_remaining.py`, `unit_tests/test_backup_restore.py`): worktree 환경의 `.venv` 심볼릭 링크 부재로 스크립트 실행 불가 및 mktemp 샌드박스 차단. `.venv` 심볼릭 링크 생성 후 bypass sandbox 환경에서 22 passed, 1 skipped(100% 통과).
-  2. 35% 호스트 GPU 테스트(12건, `tests/test_host_gpu.py`): 샌드박스 내부의 process_list 및 watchdog signal 차단. bypass sandbox 단독 실행 시 32 passed in 31.87s(100% 통과).
-  3. 28%~41% 마이그레이션 테스트(8건, `test_game_migration.py`, `test_google_account.py`, `test_knowledge_migration.py`, `test_meeting_lineage_migration.py`, `test_retire_clovanote_migration.py`): 환경변수 `TTAKKARI_TEST_DB`의 인증 정보가 Alembic 서브프로세스에 누락되어 발생한 인증 오류. `origin/main`과 동일한 코드이며, `env -u TTAKKARI_TEST_DB` 독립 클러스터 환경에서 34 passed(100% 통과).
-  4. 53% 연구 실험 테스트(1건, `tests/test_research_lab.py`): 단독 실행 시 12 passed in 0.98s(100% 통과).
-  결론: 이번 기획 하네스 및 계약 변경으로 인한 회귀 실패는 0건이다.
+- 코드 스타일: `ruff check` (수정 대상 전체 파일) → All checks passed!
+- 전체 suite 재실행 완주 결과 (`reports/planning-audit/full-regression.log`):
+  `= 13 failed, 4570 passed, 21 skipped, 2 xfailed, 9 warnings in 751.50s (0:12:31) =` (총 4606개 수집).
+  이전 72% 중단 로그와 달리 100% 끝까지 완주했으며, 관측 실패 13건의 원인 분류 합계는 다음과 같다:
+
+|분류|건수|해당 테스트|원인 및 검증 결과|
+|---|---|---|---|
+|(a) 이번 변경 원인 (고침 완료)|1|`unit_tests/test_platform_v2_inventory.py::test_report_schema_separates_extraction_classification_scope_coverage`|신규 MCP 도구 `manage_work`가 `scripts/platform_v2_inventory.py`의 `classify_tool`에 누락되어 도구 미분류(`unmatched: 1`) 발생. `exec.run_engine` 매핑 추가 후 51 passed in 53.33s로 전수 통과 확인.|
+|(b) 기준선(917ea4b) 동일 실패 - SDK 부재|3|`tests/test_agent_token_security.py::test_muse_argv_hides_token_value`<br>`tests/test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise`<br>`tests/test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch`|`.muse-runtime` npm 패키지 미설치로 인한 `RuntimeError: Muse SDK runtime missing`. 기준선(917ea4b)에서도 동일하게 exit code 1로 실패 확인.|
+|(c) 기준선(917ea4b) 동일 실패 - 마이그레이션 서브프로세스|9|`tests/test_game_migration.py` (3건)<br>`tests/test_google_account.py` (2건)<br>`tests/test_knowledge_migration.py` (2건)<br>`tests/test_meeting_lineage_migration.py` (1건)<br>`tests/test_retire_clovanote_migration.py` (1건)|환경변수 `TTAKKARI_TEST_DB` 인증 정보가 Alembic 자식 프로세스에 전달되지 않아 DB 접속 실패(`CalledProcessError`). 기준선(917ea4b)과 동일한 마이그레이션 테스트 구현 및 환경 요인.|
+|**합계**|**13**|**총 실패 건수와 100% 일치** (1 + 3 + 9 = 13)|이번 변경으로 인한 미해결 회귀 실패 0건 확정.|
 
 A: 부분 Gate complete 거절, 미완료 식별, 실제 manager 종료에서 후속 큐 연결, 최종 complete 뒤 후속 없음.
 B: 공통 원인·검증 비용에 따른 계획 선택은 두 실제 모델 응답으로 한정 평가했다. 코드 테스트만으로 기획 능력 개선을 보증하지 않는다.
 C/D: 엔진 전환·context reset 뒤 목표/증거/다음 동작 복원, 실제 모델별 합성 응답, 기존 resume/context 회귀 유지.
 E: 전략 변경 사유 요구, 요구/완료 증거 보존, 중복/불필요 재실행 방지, stale revision 거절.
+F-1: 취소 시 목표 상태 paused 전이 및 계약 후속 예약 자동 취소, 스케줄러 실행 시점 스킵 방어선 완비.
 
 배포 예약 접수는 운영 반영 성공과 구분하며, 예약 ID와 상태를 배포 단계에서 추적한다.
 
@@ -122,6 +132,8 @@ E: 전략 변경 사유 요구, 요구/완료 증거 보존, 중복/불필요 �
 5. 외부 장애/권한의 해소는 기존 도구·재개 경로를 따르며 불가능한 환경을 우회하지 않는다.
 6. 실제 운영 완료율·요구 누락률·반복 검증·재지시·시간/토큰 개선은 동등 조건의 후속 운영 관측이 필요하다. 이번 결과는 실측 개선치가 아니다.
 7. V2 전체 리팩터링·AIP 포팅·Studio 검수 완성은 각 원 작업의 목표이며 이번 감사가 완료했다고 표시하지 않는다.
+8. 무관한 사용자 예약 보존 기준은 명시적 메타데이터(work_continuation, origin, 프롬프트 키워드)에 기반하므로, 사용자가 'resume' 등 예약어만 단독으로 프롬프트에 넣은 경우 계약 예약으로 오인될 수 있는 경계 위험이 존재한다.
+
 
 ## 참고 근거
 

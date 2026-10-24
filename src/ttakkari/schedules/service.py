@@ -221,12 +221,25 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
 
     if action == "send_message":
         from ttakkari.api.sessions import queue_run
+        from ttakkari.orchestrator.work import is_contract_resume_schedule, load
         session_id = uuid.UUID(str(payload["session_id"]))
         prompt = payload.get("message") or payload.get("prompt") or ""
         async with sessionmaker()() as db:
             sess = await db.get(ChatSession, session_id)
             if sess is None:
                 raise ValueError(f"ChatSession {session_id} not found")
+            # 계약 재개 예약인 경우, 현재 목표 상태가 active가 아니면(paused/blocked/complete 등) 새 Run을 큐잉하지 않고 건너뛴다.
+            if is_contract_resume_schedule(schedule):
+                contract = await load(db, session_id)
+                c_state = contract.get("state")
+                if c_state and c_state.get("status") != "active":
+                    log.info("scheduled send_message skipped for session %s: goal contract is %s",
+                             session_id, c_state.get("status"))
+                    return {
+                        "status": "skipped",
+                        "reason": f"goal contract is {c_state.get('status')}",
+                        "session_id": str(session_id),
+                    }
             # 리스 만료 뒤 재실행돼도 Run 이 중복 생성되지 않도록 예약 id 를 멱등 키로 쓴다.
             run = await queue_run(db, sess, prompt, origin=RunOrigin.orchestrator,
                                   request_key=f"schedule:{schedule.id}")

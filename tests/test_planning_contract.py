@@ -361,3 +361,63 @@ async def test_dispatch_executes_followups_without_another_user_message(client, 
     # Fake engine records no work progress: bounded blocking, never a false complete result.
     assert result['state']['status'] == 'blocked'
     assert result['state']['requirements'][1]['status'] == 'pending'
+
+
+async def test_cancel_run_with_pending_schedule_pauses_goal_and_cancels_contract_resume(client, auth, make_dir):
+    from datetime import timedelta
+
+    from ttakkari.models import ScheduledAction, utcnow
+    from ttakkari.schedules.service import execute_action
+
+    sess, h = await lead(client, auth, make_dir)
+    assert (await checkpoint(client, h, state())).status_code == 200
+
+    # 1. 활성 Run 큐잉
+    run_resp = await client.post(f"/api/sessions/{sess['id']}/runs", headers=auth, json={"prompt": "work in progress"})
+    assert run_resp.status_code == 202
+    run_id = run_resp.json()["id"]
+
+    # 2. 계약 재개 예약과 무관한 사용자 예약 등록
+    async with sessionmaker()() as db:
+        s = await db.get(ChatSession, UUID(sess["id"]))
+        resume_sched = ScheduledAction(
+            action_type="send_message",
+            payload={"session_id": str(s.id), "prompt": "resume", "work_continuation": True},
+            status="pending",
+            due_at=utcnow() + timedelta(minutes=10),
+            description="목표 계약 자동 재개",
+        )
+        user_sched = ScheduledAction(
+            action_type="send_message",
+            payload={"session_id": str(s.id), "message": "사용자 리마인더"},
+            status="pending",
+            due_at=utcnow() + timedelta(minutes=15),
+            description="사용자 개인 알림",
+        )
+        db.add_all([resume_sched, user_sched])
+        await db.commit()
+        resume_id = resume_sched.id
+        user_id = user_sched.id
+
+    # 3. 취소 API 호출
+    cancel_resp = await client.post(f"/api/runs/{run_id}/cancel", headers=auth)
+    assert cancel_resp.status_code == 200
+
+    # 4. 목표 상태 확인 -> paused여야 함 (기존 버그: active로 남아있었음)
+    work_resp = (await client.post("/api/orchestrator/work", headers=h, json={"operation": "get"})).json()
+    assert work_resp["state"]["status"] == "paused"
+    assert "cancelled" in work_resp["state"]["blocker"].lower()
+
+    # 5. 예약 상태 확인 -> 계약 재개 예약은 cancelled, 사용자 예약은 pending 유지
+    async with sessionmaker()() as db:
+        r_item = await db.get(ScheduledAction, resume_id)
+        u_item = await db.get(ScheduledAction, user_id)
+        assert r_item.status == "cancelled"
+        assert u_item.status == "pending"
+
+    # 6. 예약 실행 시점 검증
+    # 계약 재개 예약은 실행 시도 시 취소/스킵됨
+    # 사용자 예약은 실행 시 정상적으로 run이 큐잉됨
+    user_res = await execute_action(u_item)
+    assert "queued_run_id" in user_res
+

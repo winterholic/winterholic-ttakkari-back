@@ -58,3 +58,25 @@
 - 변경 파일 16개 대상 `ruff check` 전수 통과 (All checks passed).
 - 감사 보고서(`audit-report.md`) 6·7절 및 `verification.json` 작성 완료.
 - HTML 보고서 최종 결과 반영 및 outbox 공유.
+
+## 02:05 KST 독립 감사 결함(F-1) 교정 및 전체 회귀 완주 대조
+
+- **독립 검증 결함 F-1 교정 (취소 경계 및 예약 후속 정리)**:
+  - 문제: 사용자가 Run을 취소(cancel)했음에도 pending 상태인 예약 메시지(ScheduledAction send_message)가 있으면 목표 계약이 active로 방치되어 예약 시각에 새 Run이 실행되는 결함.
+  - 해결:
+    - `src/ttakkari/orchestrator/work.py`: `after_run`에서 취소/실패 시 예약 소유권 확인보다 먼저 상태를 `paused`/`blocked`로 전이하고 사유 기록.
+    - `is_contract_resume_schedule`: `work_continuation` 플래그, orchestrator origin, 프롬프트 예약 키워드("resume", "재개", "[미완료 목표 자동 이어가기]") 등을 통해 계약 자동 재개 예약만 정밀 식별. 사용자의 개인 알림·리마인더는 영향받지 않도록 보존.
+    - 취소 시 해당 세션의 계약 재개 예약을 `status="cancelled"`로 변경.
+    - `src/ttakkari/schedules/service.py`: `execute_action` 실행 시 계약 재개 예약인 경우 목표 상태가 active가 아니면 새 Run을 큐잉하지 않고 `skipped` 처리.
+  - 회귀 검증:
+    - `tests/test_planning_contract.py::test_cancel_run_with_pending_schedule_pauses_goal_and_cancels_contract_resume` 통합 테스트 추가.
+    - `unit_tests/test_planning_cancel_unit.py` 단위 테스트 3건 추가 및 전수 통과 (0.45s).
+- **전체 회귀 재실행 완주 및 대조 (`reports/planning-audit/full-regression.log`)**:
+  - 총 4606개 수집, `= 13 failed, 4570 passed, 21 skipped, 2 xfailed, 9 warnings in 751.50s (0:12:31) =` 완주.
+  - 실패 13건의 원인 분류 합계 일치 (1 + 3 + 9 = 13):
+    1. (a) 이번 변경 원인 (1건): `unit_tests/test_platform_v2_inventory.py::test_report_schema_separates_extraction_classification_scope_coverage` -> 신규 MCP 도구 `manage_work`가 `scripts/platform_v2_inventory.py`의 `classify_tool`에 미등록되어 unmatched 발생. `exec.run_engine` 매핑 추가 후 51 passed in 53.33s로 완전 통과.
+    2. (b) 기준선(917ea4b) 동일 실패 (3건): `test_agent_token_security.py::test_muse_argv_hides_token_value`, `test_muse_effort_pinned.py`, `test_muse_observation_ping.py` -> `.muse-runtime` npm 미설치 환경 요인. 기준선 동일 exit code 1.
+    3. (c) 기준선(917ea4b) 동일 실패 (9건): `test_game_migration.py` (3건), `test_google_account.py` (2건), `test_knowledge_migration.py` (2건), `test_meeting_lineage_migration.py` (1건), `test_retire_clovanote_migration.py` (1건) -> Alembic 서브프로세스 DB 인증/연결 환경 요인. 기준선 동일 구현.
+  - 이번 변경으로 인한 미해결 회귀 0건 확인 완료.
+- **Ruff 코드 검사**: 수정 및 신규 대상 파일 5개 전수 통과 (All checks passed).
+

@@ -179,6 +179,7 @@ async def drain(
 
 async def start_background_services() -> list[asyncio.Task]:
     """Own durable non-Run queues and periodic work alongside the Run executor."""
+    from ttakkari import background_consumers
     from ttakkari.artifacts import preview
     from ttakkari.generation_service import maintenance_jobs, periodic
     from ttakkari.meetings.local_stt import jobs as stt_jobs
@@ -187,11 +188,14 @@ async def start_background_services() -> list[asyncio.Task]:
     await preview.start_worker()
     await stt_jobs.start()
     await tts_jobs.start()
+    # NotebookLM/Reverse/manual-index requests the API only recorded (platform v2 Step 6).
+    await background_consumers.start()
     return [asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}")
             for name, operation, interval in maintenance_jobs(get_settings())]
 
 
 async def serve(*, activate: bool = False, drain_timeout: float | None = None) -> None:
+    from ttakkari import background_consumers
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.generation_service import coordinate_runs
@@ -245,6 +249,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
+            await background_consumers.stop()
             queued_work.begin_drain()
             await queued_work.wait_idle()
             if tts_started:

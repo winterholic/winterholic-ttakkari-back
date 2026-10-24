@@ -228,6 +228,7 @@ async def _kb_vectors() -> None:
 
 async def start_api_services(execution_mode: str) -> None:
     """Start request-local API services and local-mode durable workers."""
+    from ttakkari import background_consumers
     from ttakkari.artifacts import preview
     from ttakkari.meetings.local_stt import jobs as stt_jobs
     from ttakkari.runs.desk_qwen_service import service as qwen_service
@@ -237,6 +238,7 @@ async def start_api_services(execution_mode: str) -> None:
         await preview.start_worker()
         await stt_jobs.start()
         await tts_jobs.start()
+        await background_consumers.start()
     # Remote API generations do not spawn or stop the llama-server process;
     # only local (single-process legacy/rollback) runs own the managed process.
     try:
@@ -296,6 +298,7 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
 
 @asynccontextmanager
 async def lifespan(app):
+    from ttakkari import background_consumers
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.meetings.local_stt import jobs
@@ -333,6 +336,8 @@ async def lifespan(app):
             await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
+        if runtime.execution_mode == "local":
+            await background_consumers.stop(drain_seconds=0)
         from ttakkari.notebooklm.service import service as notebooklm_service
         await notebooklm_service.shutdown()
         await manager.shutdown()

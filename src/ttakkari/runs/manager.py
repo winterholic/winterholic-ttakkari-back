@@ -173,12 +173,16 @@ class RunManager:
         runtime = self.runtime
         return bool(runtime and runtime.role == "api" and runtime.execution_mode == "remote")
 
-    async def is_owned(self, run_id: uuid.UUID) -> bool:
-        if self.runtime is None:
-            return self.is_active(run_id)
+    async def is_owned(self, run_id: uuid.UUID, db: AsyncSession | None = None) -> bool:
         from ttakkari.models import RuntimeLease
-        async with sessionmaker()() as db:
-            return await db.get(RuntimeLease, run_id) is not None
+        if db is not None:
+            if await db.get(RuntimeLease, run_id) is not None:
+                return True
+        elif self.runtime is not None:
+            async with sessionmaker()() as session:
+                if await session.get(RuntimeLease, run_id) is not None:
+                    return True
+        return self.is_active(run_id)
 
     async def request_context_reset(self, session_id: uuid.UUID) -> None:
         if self.runtime:
@@ -2367,12 +2371,17 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     text = "\n".join(body)
     pending = await db.scalar(
         select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)
-        .order_by(Run.created_at.desc()).limit(1))
-    if pending is not None and not await manager.is_owned(pending.id):
-        pending.prompt = pending.prompt + "\n\n" + text
-        parent.updated_at = utcnow()
-        await db.flush()
-        return parent.id
+        .order_by(Run.created_at.desc()).limit(1).with_for_update())
+    if pending is not None:
+        try:
+            owned = await manager.is_owned(pending.id, db=db)
+        except TypeError:
+            owned = await manager.is_owned(pending.id)
+        if not owned:
+            pending.prompt = pending.prompt + "\n\n" + text
+            parent.updated_at = utcnow()
+            await db.flush()
+            return parent.id
     report = Run(session_id=parent.id, workspace_id=parent.workspace_id, prompt=text, engine=parent.engine,
                  model=parent.model, effort=parent.effort, status=RunStatus.queued, origin=RunOrigin.report)
     db.add(report)

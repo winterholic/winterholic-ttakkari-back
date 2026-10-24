@@ -185,7 +185,18 @@ class GenerationRuntime:
                 return None
             if await db.scalar(select(func.count()).select_from(RuntimeLease).where(RuntimeLease.lane == lane)) >= limit:
                 return None
-            sess = await db.get(ChatSession, run.session_id)
+            sess = await db.scalar(
+                select(ChatSession).where(ChatSession.id == run.session_id).with_for_update()
+            )
+            if sess is None:
+                return None
+            run = await db.scalar(
+                select(Run).where(Run.id == run_id).with_for_update()
+            )
+            if run is None or run.status != "queued" or (run.resume_after and run.resume_after > utcnow()):
+                return None
+            if await db.get(RuntimeLease, run_id):
+                return None
             if sess.kind != SessionKind.desk:
                 if await db.scalar(select(RuntimeLease.run_id).where(RuntimeLease.session_id == run.session_id).limit(1)):
                     return None

@@ -1,47 +1,82 @@
 {
-  "baseline_drift_607f8bda_to_c8f10156": {
-    "commit_count_delta": 111,
-    "major_subtrees_added_or_expanded": [
-      "src/ttakkari/creative/v2/* (20 files) + src/ttakkari/creative/records.py + src/ttakkari/api/{creative_v2,creative_mcp}.py",
-      "src/ttakkari/collector/* (21 new files) + src/ttakkari/api/collect_control.py",
-      "src/ttakkari/executor.py + src/ttakkari/executor_reconcile.py + deploy/run-executor-manifest.json",
-      "src/ttakkari/harness_view/* (9 files) + src/ttakkari/api/harness.py",
-      "src/ttakkari/kb_{delivery,embedding_worker,library,retrieval,vector_models}.py + src/ttakkari/api/{kb_agent,kb_library}.py",
-      "src/ttakkari/runs/test_database.py"
+  "schema_version": "platform-v2-worker-a-evidence-v2",
+  "generated_at": "2026-10-24T22:25:00+09:00",
+  "snapshot_binding": {
+    "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "audited_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
+    "checkout_branch": "audit/platform-v2-a-runtime-delivery-20261024",
+    "head_src_ttakkari_tree_sha": "f2e5572ce8d039341eacc4dad5a70db03c61553b",
+    "head_alembic_tree_sha": "5ba5ed46808b09daf2a28771c2bfdd4ef0f59e45",
+    "head_tests_tree_sha": "11b8fd89808bfbe64074839b74c5d6c2397c0d31",
+    "head_unit_tests_tree_sha": "1c40bb67cb02ce465525a542ac173ee63f9c4ce9",
+    "head_deploy_tree_sha": "0a7c61a2aa1e17fd09036aaecf295abe1d045119",
+    "origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "origin_main_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
+    "origin_main_src_ttakkari_tree_sha": "f2e5572ce8d039341eacc4dad5a70db03c61553b",
+    "source_tree_matches_origin_main": true,
+    "dirty_manifest": {
+      "dirty_source_paths": [],
+      "other_dirty_paths": [],
+      "is_clean_source_tree": true
+    },
+    "import_binding": {
+      "expected_src_root": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/src",
+      "actual_ttakkari_init_file": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/src/ttakkari/__init__.py",
+      "actual_ttakkari_init_sha256": "91447944015cec709e8aa7655f7e9d64e1e4508e7023a57fe3746911c0fc6fed",
+      "is_bound_to_worktree_src": true
+    }
+  },
+  "git_topology_607f8bda_vs_c8f10156": {
+    "left_baseline_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
+    "right_canonical_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "merge_base_sha": "2522d78e29b14ffb29d8536bcf833d832b4f87e1",
+    "left_right_unique_commits": [
+      2,
+      118
     ],
-    "migrations_delta": {
-      "added_migrations": [
-        "0063_collector_stage_items.py",
-        "0064_run_executor.py",
-        "0065_collector_delivery.py",
-        "0066_collector_budget.py",
-        "0067_collector_outbox_retry.py"
-      ],
-      "at_607f8bda": 62,
-      "at_c8f10156": 67
+    "left_unique_commits_in_607f8bda": 2,
+    "left_unique_commit_summaries": [
+      "607f8bd Merge remote-tracking branch 'origin/main' into integ/g1-66-main-20261022",
+      "66c8402 fix(deploy): 이름이 바뀐 옛 리비전 별칭 처리와 유휴 필요 배포의 waiting_idle 대기"
+    ],
+    "right_unique_commits_in_c8f10156": 118,
+    "diff_stat_607f8bda_to_c8f10156": {
+      "changed_paths": 366,
+      "insertions": 86213,
+      "deletions": 339,
+      "raw_shortstat": "366 files changed, 86213 insertions(+), 339 deletions(-)"
     },
-    "origin_main_head": "c8f10156845d007ec6496a65d6d8417be19260bd",
-    "python_files_delta": {
-      "at_607f8bda": 321,
-      "at_c8f10156": 385,
-      "net_added_files": 64
+    "snapshot_at_607f8bda": {
+      "python_files": 321,
+      "source_lines": 71985,
+      "migration_files": 62
     },
-    "shared_back_local_head": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
-    "tables_added_in_drift_21_total": {
-      "0063_collector_stage_items": [
+    "snapshot_at_c8f10156": {
+      "python_files": 385,
+      "source_lines": 94439,
+      "migration_files": 67
+    },
+    "net_added_python_files": 64,
+    "net_added_source_lines": 22454,
+    "added_migrations": [
+      "0063_collector_stage_items.py",
+      "0064_run_executor.py",
+      "0065_collector_delivery.py",
+      "0066_collector_budget.py",
+      "0067_collector_outbox_retry.py"
+    ],
+    "new_tables_by_migration": {
+      "0063_collector_stage_items.py": [
         "collector_source_policies",
         "collector_host_state",
         "collector_fetch_cache",
         "collector_items",
         "collector_dedupe_bands"
       ],
-      "0064_run_executor": [
-        "run_executor_states",
-        "run_execution_commands",
-        "run_execution_leases",
-        "run_process_groups"
+      "0064_run_executor.py": [
+        "runtime_process_groups"
       ],
-      "0065_collector_delivery": [
+      "0065_collector_delivery.py": [
         "collector_sources",
         "kb_document_access",
         "kb_observations",
@@ -51,208 +86,534 @@
         "collector_quality_models",
         "kb_passage_vectors"
       ],
-      "0066_collector_budget": [
+      "0066_collector_budget.py": [
         "collector_budget_buckets",
         "collector_budget_reservations",
         "collector_cache",
         "collector_runtime_flags"
-      ]
+      ],
+      "0067_collector_outbox_retry.py": []
+    },
+    "total_new_tables_in_added_migrations": 18,
+    "retracted_prior_a_claims": [
+      "Retracted: '607f8bda is simply 111 commits behind c8f10156 with 253 files changed'. Actual git topology is divergent across merge-base 2522d78e29b14ffb29d8536bcf833d832b4f87e1: 607f8bda has 2 unique commits and c8f10156 has 118 unique commits; full diff is 366 files changed, 86,213 insertions(+), 339 deletions(-).",
+      "Retracted: '0064_run_executor creates 4 tables (run_executor_states, run_execution_commands, run_execution_leases, run_process_groups) for 21 total new tables in 0063..0067'. Actual 0064_run_executor creates 1 new table (`runtime_process_groups`), adds columns (`role`, `protocol`, `execution_mode` on `runtime_generations`; `executor_generation` on `runtime_control`), and installs 4 PL/pgSQL guard triggers; total new tables across 0063..0067 is 18 (5 + 1 + 8 + 4 + 0)."
+    ]
+  },
+  "worker_and_verification_ledger": {
+    "A_runtime_delivery": {
+      "worker_id": "e65430e3-0775-4e2c-910a-5050cdb7d216",
+      "role": "Runtime / Delivery / Architecture",
+      "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a",
+      "branch": "audit/platform-v2-a-runtime-delivery-20261024",
+      "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+      "base_origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+      "verification_history": [
+        {
+          "inspected_commit_sha": "fddad5e152754f5f1e7ac5eac07ec26b453d6987",
+          "verifier_worker_id": "1d994e50-c900-4f90-9975-1ff082522a35",
+          "verification_commit_sha": "93af9ef6e202b95883d73c74d710e1775cb402b9",
+          "verdict_by_item": {
+            "adr0036_adr0066_state_distinction": "passed",
+            "run_ownership_and_reconcile": "passed_with_caveat",
+            "side_effects_and_comfy": "partially_passed",
+            "baseline_and_snapshot_binding": "failed",
+            "tts_drain": "failed",
+            "creative_v2_task_tracking": "failed",
+            "desk_qwen_ownership": "failed_structure_unverified_overlap_swap_causality",
+            "failure_denominator_34_56": "failed",
+            "noconftest_sample_39_5s": "failed",
+            "evidence_cache_key_v1": "failed",
+            "independent_module_release_implementation_claim": "failed_design_only",
+            "live_supervisor_direct_observation": "unverified",
+            "backup_p0_and_cutover_rollback_e2e": "unverified",
+            "creative_first_module_candidate": "provisional"
+          }
+        },
+        {
+          "inspected_commit_sha": "0d048ea61f755a047ee70a0d467489c01025d46b",
+          "note": "Time-fixed intermediate status snapshot; superseded by current corrected candidate."
+        }
+      ],
+      "current_status": "reconciled_with_independent_verification_93af9ef6"
+    },
+    "B_backend_data": {
+      "worker_id": "c1e9cd73-83ef-4240-99c8-809e500bd903",
+      "role": "Backend / Data / Dependency Audit",
+      "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-b",
+      "verification_history": [
+        {
+          "inspected_commit_sha": "86373cedda20e298ad2b82d857352f845ae70980",
+          "verifier_worker_id": "1d994e50-c900-4f90-9975-1ff082522a35",
+          "verification_commit_sha": "b245d5a",
+          "verdict": "failed"
+        },
+        {
+          "inspected_commit_sha": "2cc",
+          "verifier_worker_id": "fed2c630-a867-42f1-9574-4a92905de864",
+          "verification_commit_sha": "5aa5968",
+          "verdict": "failed"
+        },
+        {
+          "inspected_commit_sha": "7cf",
+          "note": "Denominator expansion only; still incomplete."
+        }
+      ],
+      "current_status": "revising_in_d492_do_not_use_as_final_boundary"
+    },
+    "C_frontend_test": {
+      "worker_id": "9a3215de-01d4-4efd-b3ff-9e282de9b766",
+      "role": "Frontend / Test Architecture Audit",
+      "verification_history": [
+        {
+          "inspected_target": "initial_untracked_outputs_in_shared_back",
+          "verifier_worker_id": "fed2c630-a867-42f1-9574-4a92905de864",
+          "verdict": "failed",
+          "failures_found": [
+            "summary 38 routes vs scanner 36 routes",
+            "claimed 10 test categories but omitted runtime/ownership (dict 9 categories / 257 files vs summary total 262)",
+            "main missing security test / deploy security duplicate 31 claims unverified across candidate/workingtree conditions",
+            "front 5.48s and back 1045.97s citations lacked C-side revision/env/raw-log verification"
+          ]
+        }
+      ],
+      "current_status": "revising_after_failed_initial_verification_do_not_use_as_final_boundary"
+    },
+    "independent_verifiers": {
+      "1d994e50-c900-4f90-9975-1ff082522a35": {
+        "status": "completed",
+        "completed_verifications": [
+          "Worker B initial commit 86373ce (failed @ b245d5a)",
+          "Worker A initial commit fddad5e (verified @ 93af9ef6e202b95883d73c74d710e1775cb402b9)"
+        ]
+      },
+      "fed2c630-a867-42f1-9574-4a92905de864": {
+        "status": "completed",
+        "completed_verifications": [
+          "Worker C initial audit outputs (failed)",
+          "Worker B follow-up commit 2cc (failed @ 5aa5968)"
+        ]
+      }
     }
   },
-  "candidate_first_modules": [
-    {
-      "depended_by": [
-        "api",
-        "generation_service",
-        "main",
-        "orchestrator"
-      ],
-      "depends_on": [
-        "api",
-        "config",
-        "host_resource",
-        "managed_comfy",
-        "managed_comfy_receipt",
-        "models",
-        "runs",
-        "tts"
-      ],
-      "display_name": "Creative Studio (V1 + V2)",
-      "external_dep_reverse_modules": [
-        "generation_service",
-        "main"
-      ],
-      "file_count": 25,
-      "first_module_suitability": "rank_1_recommended",
-      "line_count": 13194,
-      "module_id": "creative",
-      "plane": "Domain + Execution adapter",
-      "recent_deploy_blocker_incidents": [
-        "794447f3 (063002a1): LOG-194 test_creative_v2_lease_handoff failed after 985.34s",
-        "d4f439d6 (81a95a50): LOG-190 test_creative_records_api failed after 696.95s",
-        "bf9a853d (a2a0ad9c): LOG-186 test_creative_v2_auto_assets_api failed after 197.81s"
-      ],
-      "runtime_hazards_found": [
-        "api/creative_v2.py:418 spawns untracked asyncio.create_task(_run_asset_generation) outside generation.work()",
-        "creative/v2/asset_generation_managed.py:478 calls tts.service.budget() which fails if API slot enters draining during ComfyUI run",
-        "creative/render.py:576 runs inside API generation maintenance_jobs('creative-render') every 2s"
-      ],
-      "storage_mode": "Filesystem JSON manifests + immutable media (`~/.ttakkari/data/creative*`, `studio_lab_root`); 0 dedicated PostgreSQL tables (uses `runs` only for optional V2 intent extraction)",
-      "test_files_count": 19
-    },
-    {
-      "depended_by": [
-        "api",
-        "cli",
-        "main",
-        "runs"
-      ],
-      "depends_on": [
-        "api",
-        "artifacts",
-        "broker",
-        "config",
-        "db",
-        "models",
-        "security"
-      ],
-      "display_name": "Game Studio",
-      "external_dep_reverse_modules": [
-        "cli",
-        "main",
-        "runs"
-      ],
-      "file_count": 11,
-      "first_module_suitability": "rank_2_after_creative",
-      "line_count": 2407,
-      "module_id": "games",
-      "plane": "Domain + Execution adapter (Docker/OrbStack)",
-      "recent_deploy_blocker_incidents": [
-        "5693d3aa (a7f89304): LOG-185 test_neon_survivor_progression_balance failed after 1004.55s"
-      ],
-      "runtime_hazards_found": [
-        "Coupled to `api/orchestrator.py:_game_worker_context` and `runs/manager.py` auto-build/auto-repair hooks"
-      ],
-      "storage_mode": "PostgreSQL tables (`game_projects`, `game_builds`, `game_sessions`, etc.) + git repos (`~/development/projects/games`) + `~/.ttakkari/data/game-builds`",
-      "test_files_count": 22
-    },
-    {
-      "depended_by": [
-        "api",
-        "generation_service",
-        "kb_delivery",
-        "kb_library",
-        "models"
-      ],
-      "depends_on": [
-        "collector_models",
-        "config",
-        "db",
-        "generation",
-        "models"
-      ],
-      "display_name": "Collector Platform",
-      "external_dep_reverse_modules": [
-        "generation_service",
-        "kb_delivery",
-        "kb_library",
-        "models"
-      ],
-      "file_count": 26,
-      "first_module_suitability": "defer_until_p5",
-      "line_count": 5915,
-      "module_id": "collector",
-      "plane": "Domain + Execution worker",
-      "recent_deploy_blocker_incidents": [
-        "166996a7 (981149ea): LOG-191 test_collector_fetch_tls failed after 690.51s"
-      ],
-      "runtime_hazards_found": [
-        "Heavy dirty state in shared `/back` worktree; cross-coupled with `kb` (`knowledge_rag`) and `generation_service.py` (`collector-consume`, `collector-control`)"
-      ],
-      "storage_mode": "PostgreSQL tables (`collector_*`, 0060/0061/0063 migrations) + blob store (`~/.ttakkari/data/collector`)",
-      "test_files_count": 22
-    },
-    {
-      "depended_by": [
-        "api",
-        "creative",
-        "generation_service",
-        "main"
-      ],
-      "depends_on": [
-        "config",
-        "db",
-        "generation",
-        "model_process",
-        "models",
-        "runs",
-        "security",
-        "tts_models"
-      ],
-      "display_name": "Local TTS (Supertonic)",
-      "external_dep_reverse_modules": [
-        "creative",
-        "generation_service",
-        "main"
-      ],
-      "file_count": 10,
-      "first_module_suitability": "foundation_prerequisite_p3",
-      "line_count": 2029,
-      "module_id": "tts",
-      "plane": "Execution capability / media runtime",
-      "recent_deploy_blocker_incidents": [],
-      "runtime_hazards_found": [
-        "tts/jobs.py:42 stores text chunks only in process-local `_pending_texts: dict[UUID, list[str]]`",
-        "tts/jobs.py:154 `_fail_queued_draining` actively fails accepted 202 queued jobs with `generation_draining` when slot drains",
-        "tts/service.py:130 `generation.work('tts')` rejects work in draining state, preventing queued jobs from draining"
-      ],
-      "storage_mode": "PostgreSQL `tts_jobs` metadata + process-local `_pending_texts` in RAM + disk audio cache",
-      "test_files_count": 8
-    }
-  ],
-  "codebase_metrics": {
-    "modules": {
-      "__init__": {
-        "depended_by": [],
-        "depends_on": [],
-        "fan_in": 0,
-        "fan_out": 0,
-        "file_count": 1,
-        "line_count": 1
+  "p0_operational_and_recovery_baseline": {
+    "evidence_classification_policy": "Strictly separate: (1) historical_receipt, (2) config_default, (3) direct_current_observation, and (4) unknown (확인 필요). Historical deploy receipts or issue stacktraces do not prove current live revision, slot, or supervisor process.",
+    "historical_deploy_receipts": {
+      "last_succeeded_deploy_receipt": {
+        "classification": "historical_receipt",
+        "deploy_id": "4a6e09a8-c49f-4c2f-9a6c-c0d83fe5824a",
+        "revision": "9f82c9c16cd604e81ddf43180b0be2e895ec85cb",
+        "slot_at_completion": 1,
+        "port_at_completion": 8792,
+        "generation_id_at_completion": "5ef462e5-d7f7-40e7-bf27-1d4bf19e1d91",
+        "previous_retired_generation_id": "e1eb4ad0-5ce7-415f-b91e-9c0b0eab2ba3",
+        "created_at": "2026-10-23T10:16:49.556741+00:00",
+        "updated_at": "2026-10-23T10:43:06.032849+00:00",
+        "total_wall_seconds": 1576.48,
+        "full_pytest_gate_seconds": 1045.97,
+        "pytest_summary": "4473 passed, 8 skipped, 2 xfailed, 5020 subtests passed in 1045.97s (0:17:25)",
+        "selective_db_resets": 2822,
+        "selective_db_tables": 106
       },
-      "agents": {
+      "subsequent_failed_deploy_receipts": [
+        {
+          "classification": "historical_receipt (early-abort -x, not equivalent benchmark to full pass)",
+          "deploy_id": "794447f3-8635-443d-b4c5-de975b0e91fb",
+          "revision": "063002a1739a0f1241a94709e413e004f8786d57",
+          "status": "failed",
+          "failed_stage": "pytest",
+          "issue_id": "LOG-194",
+          "pytest_seconds_until_first_failure_x": 985.34,
+          "passed_before_abort": 3327,
+          "failed_test": "unit_tests/test_creative_v2_lease_handoff.py::test_scene_generation_requests_bounded_lease_wait_from_controller"
+        },
+        {
+          "classification": "historical_receipt (early-abort -x, not equivalent benchmark to full pass)",
+          "deploy_id": "e15536bc-37ec-4c66-9f2e-fcc42d59538d",
+          "revision": "c8f10156845d007ec6496a65d6d8417be19260bd",
+          "status": "failed",
+          "failed_stage": "pytest",
+          "updated_at": "2026-10-24T11:56:21.977907+00:00",
+          "issue_id": "LOG-195",
+          "pytest_seconds_until_first_failure_x": 172.23,
+          "passed_before_abort": 1112,
+          "failed_test": "tests/test_desk_qwen_service.py::test_desk_request_goes_to_the_managed_server_of_this_process"
+        }
+      ],
+      "historical_supervisor_code_trace": {
+        "classification": "historical_receipt (from LOG-68 stacktrace / 2026-10-23 work-history, NOT a direct current process observation)",
+        "observed_release_in_historical_trace": "e817fc19471bdc48054158cada4a99466f7eaa6f"
+      }
+    },
+    "direct_current_observations": {
+      "host_resource_snapshots": [
+        {
+          "classification": "direct_current_observation (process/resource snapshot only; does not prove live revision/slot/supervisor or swap causality)",
+          "collected_at": "2026-10-24T21:20:12+09:00",
+          "backend_pid": 44104,
+          "backend_rss_bytes": 392298496,
+          "llama_server_pid": 44129,
+          "llama_server_rss_bytes": 7734870016,
+          "swap_used_pct": 95.3,
+          "memory_pressure": "normal"
+        },
+        {
+          "classification": "direct_current_observation (verifier snapshot)",
+          "collected_at": "2026-10-24T21:51:34+09:00",
+          "backend_pid": 44104,
+          "llama_server_pid": 44129,
+          "llama_server_rss_bytes": 7203520512,
+          "swap_used_pct": 94.8,
+          "memory_pressure": "normal"
+        }
+      ],
+      "execution_capabilities_by_scope": {
+        "note": "Host and engine sandboxes are distinct execution scopes; stale measurements must not be reported as fresh `blocked=[]` facts.",
+        "host": {
+          "measured_at_kst": "2026-10-24T21:20:09+09:00",
+          "blocked": [],
+          "stale_items": [],
+          "status": "fresh_measured_on_host"
+        },
+        "codex_sandbox": {
+          "measured_at_kst": "2026-10-24T21:51:37+09:00",
+          "blocked": [
+            "gpu_metal",
+            "llama_list_devices",
+            "process_list",
+            "sysctl_read"
+          ],
+          "available": [
+            "spawn_process",
+            "network_loopback",
+            "network_outbound",
+            "writable_paths"
+          ],
+          "stale_items": [],
+          "status": "fresh_measured_in_codex_sandbox"
+        },
+        "antigravity_sandbox": {
+          "measured_at_kst": "2026-10-21T18:29:15+09:00",
+          "blocked": [],
+          "stale_items": [
+            "gpu_metal",
+            "llama_list_devices",
+            "process_list",
+            "sysctl_read",
+            "spawn_process",
+            "network_loopback",
+            "network_outbound",
+            "writable_paths"
+          ],
+          "status": "stale_measurement_확인_필요"
+        },
+        "muse_sandbox": {
+          "measured_at_kst": "2026-10-21T17:55:27+09:00",
+          "blocked": [],
+          "stale_items": [
+            "gpu_metal",
+            "llama_list_devices",
+            "process_list",
+            "sysctl_read",
+            "spawn_process",
+            "network_loopback",
+            "network_outbound",
+            "writable_paths"
+          ],
+          "status": "stale_measurement_확인_필요"
+        },
+        "claude": {
+          "status": "not_measured_확인_필요"
+        },
+        "qwen_local": {
+          "status": "not_measured_확인_필요"
+        }
+      }
+    },
+    "unknown_and_unverified_operational_items": {
+      "current_live_api_revision_slot_and_generation_id": "unknown (확인 필요: requires direct live `/api/version` or `runtime_control` DB read; only historical deploy receipt `9f82c9c1` is observed via MCP)",
+      "current_live_supervisor_revision": "unknown (확인 필요: `~/.ttakkari/deploy/supervisor.json` is protected; historical `e817fc19` trace does not prove current running supervisor process)",
+      "backup_freshness_and_restore_rehearsal": "unknown (확인 필요: `scripts/backup_db.sh`, `scripts/restore_rehearsal.sh`, `scripts/snapshot_data.sh` are implemented in code, but `~/.ttakkari-backups/latest.json` and live rehearsal execution are unverified)",
+      "deploy_failure_aggregation_without_raw_pages": {
+        "status": "retracted_a_34_56_claim_and_marked_확인_필요_without_raw_event_ids",
+        "retracted_claim": "A previously reported 34 groups / 56 events (pytest 33/54, archive 1/2) for 2026-10-16T08:11:13Z..2026-10-23T17:19:03Z — RETRACTED.",
+        "independent_verifier_paged_measurement": {
+          "all_issue_groups": 34,
+          "all_issue_count_sum": 65,
+          "paged_raw_events_in_window": 58,
+          "issue_groups_in_window": 29,
+          "window_stage_events": {
+            "pytest": 56,
+            "archive": 2
+          },
+          "raw_event_min_max_utc": [
+            "2026-10-16T11:08:43Z",
+            "2026-10-23T11:10:22Z"
+          ]
+        },
+        "full_deploy_denominator_beyond_50_cap": "unknown (확인 필요: `ops_list_deploys` caps at 50 per status)"
+      }
+    },
+    "narrow_db_free_test_sample": {
+      "retracted_prior_claim": "Retracted: '39 passed in 5.00s proves full contract suite runs in <5s via --noconftest'. That count mixed 4 extractor unit tests with 35 repo tests, and `--noconftest` only bypasses `tests/conftest.py` for DB-free static tests — it does NOT prove full DB-backed contract or runtime drain guarantees.",
+      "verified_repo_narrow_sample": {
+        "command": "PYTHONPATH=<worktree>/src PYTHONDONTWRITEBYTECODE=1 /Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python -m pytest --noconftest -q tests/test_contract_marker.py tests/test_migration_single_head.py unit_tests/test_executor_migration_contract.py unit_tests/test_executor_reconcile.py unit_tests/test_creative_v2_lease_handoff.py",
+        "test_count": 35,
+        "verified_wall_seconds": 3.34,
+        "scope_limit": "Narrow DB-free static/unit sample only; global DB `tests/conftest.py` and DB-touching contract tests were not executed (미실행 / 확인 필요)."
+      }
+    }
+  },
+  "codebase_metrics": {
+    "total_python_files": 385,
+    "total_lines": 94439,
+    "top_level_unit_count": 80,
+    "top_fan_in_units": [
+      {
+        "unit": "models",
+        "fan_in": 47,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 1300,
         "depended_by": [
           "api",
+          "artcraft_tasks",
+          "artifacts",
+          "audit",
+          "cli",
+          "collector",
+          "collector_models",
+          "context",
+          "creative",
+          "db",
+          "delivery",
+          "delivery_models",
+          "deploy_gate",
+          "executor",
+          "executor_reconcile",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
           "harness_view",
-          "runs"
-        ],
-        "depends_on": [
-          "config",
-          "model_catalog",
+          "kb_models",
+          "kb_retrieval",
+          "kb_store",
+          "kb_vector_models",
+          "knowledge",
+          "knowledge_models",
+          "meetings",
+          "notebooklm",
+          "oplog",
           "orchestrator",
-          "runs"
-        ],
-        "fan_in": 3,
+          "planner",
+          "pms",
+          "push",
+          "research",
+          "resource_history",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "security",
+          "sharing",
+          "transfer",
+          "tts",
+          "tts_models",
+          "weather"
+        ]
+      },
+      {
+        "unit": "config",
+        "fan_in": 39,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 600,
+        "depended_by": [
+          "agents",
+          "antigravity_accounts",
+          "api",
+          "artcraft",
+          "artcraft_tasks",
+          "artifacts",
+          "cli",
+          "collector",
+          "context",
+          "creative",
+          "db",
+          "delivery",
+          "deployment",
+          "executor",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "harness_view",
+          "host_gpu",
+          "kb_retrieval",
+          "kb_store",
+          "main",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "push",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "security",
+          "sharing",
+          "stocks",
+          "transfer",
+          "tts",
+          "weather"
+        ]
+      },
+      {
+        "unit": "db",
+        "fan_in": 32,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 73,
+        "depended_by": [
+          "api",
+          "artifacts",
+          "cli",
+          "collector",
+          "deploy_gate",
+          "deployment",
+          "executor",
+          "executor_reconcile",
+          "games",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "google_account",
+          "kb_delivery",
+          "kb_retrieval",
+          "knowledge",
+          "main",
+          "meetings",
+          "notebooklm",
+          "oplog",
+          "orchestrator",
+          "planner",
+          "push",
+          "resource_history",
+          "reverse",
+          "runs",
+          "schedules",
+          "security",
+          "sharing",
+          "tts",
+          "weather"
+        ]
+      },
+      {
+        "unit": "runs",
+        "fan_in": 17,
+        "fan_out": 24,
+        "file_count": 29,
+        "line_count": 9997,
+        "depended_by": [
+          "agents",
+          "api",
+          "cli",
+          "creative",
+          "executor",
+          "executor_reconcile",
+          "generation",
+          "generation_service",
+          "harness_view",
+          "main",
+          "meetings",
+          "orchestrator",
+          "reverse",
+          "reverse_tasks",
+          "schedules",
+          "tts",
+          "weather"
+        ]
+      },
+      {
+        "unit": "generation",
+        "fan_in": 14,
+        "fan_out": 4,
+        "file_count": 1,
+        "line_count": 379,
+        "depended_by": [
+          "api",
+          "artifacts",
+          "collector",
+          "db",
+          "deployment",
+          "executor",
+          "executor_reconcile",
+          "generation_deployment",
+          "generation_service",
+          "meetings",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "tts"
+        ]
+      },
+      {
+        "unit": "broker",
+        "fan_in": 14,
+        "fan_out": 0,
+        "file_count": 2,
+        "line_count": 242,
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "artifacts",
+          "cli",
+          "context",
+          "games",
+          "harness_view",
+          "knowledge",
+          "meetings",
+          "reverse",
+          "reverse_tasks",
+          "runs",
+          "security",
+          "transfer"
+        ]
+      },
+      {
+        "unit": "security",
+        "fan_in": 13,
         "fan_out": 4,
         "file_count": 10,
-        "line_count": 1298
-      },
-      "antigravity_accounts": {
+        "line_count": 1884,
         "depended_by": [
+          "antigravity_accounts",
           "api",
-          "reverse",
-          "runs"
-        ],
-        "depends_on": [
-          "config",
-          "security"
-        ],
-        "fan_in": 3,
-        "fan_out": 2,
-        "file_count": 1,
-        "line_count": 403
+          "cli",
+          "deployment",
+          "games",
+          "generation_bootstrap",
+          "generation_deployment",
+          "harness_view",
+          "main",
+          "orchestrator",
+          "runs",
+          "sharing",
+          "tts"
+        ]
       },
-      "api": {
+      {
+        "unit": "api",
+        "fan_in": 12,
+        "fan_out": 58,
+        "file_count": 49,
+        "line_count": 12676,
         "depended_by": [
           "artcraft_tasks",
           "context",
@@ -266,7 +627,244 @@
           "runs",
           "schedules",
           "weather"
+        ]
+      },
+      {
+        "unit": "context",
+        "fan_in": 10,
+        "fan_out": 8,
+        "file_count": 9,
+        "line_count": 1569,
+        "depended_by": [
+          "api",
+          "cli",
+          "generation_service",
+          "harness_view",
+          "kb_library",
+          "kb_retrieval",
+          "knowledge",
+          "main",
+          "meetings",
+          "runs"
+        ]
+      },
+      {
+        "unit": "deployment",
+        "fan_in": 9,
+        "fan_out": 7,
+        "file_count": 1,
+        "line_count": 566,
+        "depended_by": [
+          "api",
+          "deploy_gate",
+          "executor",
+          "generation_bootstrap",
+          "generation_deployment",
+          "generation_service",
+          "main",
+          "oplog",
+          "runs"
+        ]
+      },
+      {
+        "unit": "artifacts",
+        "fan_in": 9,
+        "fan_out": 6,
+        "file_count": 4,
+        "line_count": 429,
+        "depended_by": [
+          "api",
+          "artcraft_tasks",
+          "executor",
+          "games",
+          "generation_service",
+          "main",
+          "meetings",
+          "runs",
+          "transfer"
+        ]
+      },
+      {
+        "unit": "push",
+        "fan_in": 8,
+        "fan_out": 4,
+        "file_count": 3,
+        "line_count": 212,
+        "depended_by": [
+          "api",
+          "cli",
+          "generation_bootstrap",
+          "google_account",
+          "meetings",
+          "planner",
+          "runs",
+          "weather"
+        ]
+      },
+      {
+        "unit": "meetings",
+        "fan_in": 7,
+        "fan_out": 15,
+        "file_count": 23,
+        "line_count": 3509,
+        "depended_by": [
+          "api",
+          "context",
+          "executor",
+          "generation_service",
+          "main",
+          "runs",
+          "sharing"
+        ]
+      },
+      {
+        "unit": "oplog",
+        "fan_in": 7,
+        "fan_out": 4,
+        "file_count": 8,
+        "line_count": 1362,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "github",
+          "harness_view",
+          "main",
+          "orchestrator",
+          "runs"
+        ]
+      },
+      {
+        "unit": "generation_service",
+        "fan_in": 6,
+        "fan_out": 23,
+        "file_count": 1,
+        "line_count": 357,
+        "depended_by": [
+          "api",
+          "artifacts",
+          "executor",
+          "main",
+          "meetings",
+          "runs"
+        ]
+      },
+      {
+        "unit": "kb_models",
+        "fan_in": 6,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 274,
+        "depended_by": [
+          "api",
+          "kb_library",
+          "kb_retrieval",
+          "kb_store",
+          "models",
+          "research"
+        ]
+      },
+      {
+        "unit": "audit",
+        "fan_in": 6,
+        "fan_out": 1,
+        "file_count": 1,
+        "line_count": 49,
+        "depended_by": [
+          "api",
+          "meetings",
+          "planner",
+          "push",
+          "runs",
+          "sharing"
+        ]
+      },
+      {
+        "unit": "collector",
+        "fan_in": 5,
+        "fan_out": 5,
+        "file_count": 26,
+        "line_count": 5915,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "kb_delivery",
+          "kb_library",
+          "models"
+        ]
+      },
+      {
+        "unit": "kb_store",
+        "fan_in": 5,
+        "fan_out": 3,
+        "file_count": 1,
+        "line_count": 462,
+        "depended_by": [
+          "api",
+          "cli",
+          "kb_delivery",
+          "kb_library",
+          "research"
+        ]
+      },
+      {
+        "unit": "model_process",
+        "fan_in": 5,
+        "fan_out": 0,
+        "file_count": 1,
+        "line_count": 91,
+        "depended_by": [
+          "context",
+          "kb_embedding_worker",
+          "kb_retrieval",
+          "meetings",
+          "tts"
+        ]
+      }
+    ],
+    "modules": {
+      "__init__": {
+        "file_count": 1,
+        "line_count": 1,
+        "depends_on": [],
+        "depended_by": [],
+        "fan_out": 0,
+        "fan_in": 0
+      },
+      "agents": {
+        "file_count": 10,
+        "line_count": 1298,
+        "depends_on": [
+          "config",
+          "model_catalog",
+          "orchestrator",
+          "runs"
         ],
+        "depended_by": [
+          "api",
+          "harness_view",
+          "runs"
+        ],
+        "fan_out": 4,
+        "fan_in": 3
+      },
+      "antigravity_accounts": {
+        "file_count": 1,
+        "line_count": 403,
+        "depends_on": [
+          "config",
+          "security"
+        ],
+        "depended_by": [
+          "api",
+          "reverse",
+          "runs"
+        ],
+        "fan_out": 2,
+        "fan_in": 3
+      },
+      "api": {
+        "file_count": 49,
+        "line_count": 12676,
         "depends_on": [
           "agents",
           "antigravity_accounts",
@@ -327,51 +925,61 @@
           "tts_models",
           "weather"
         ],
-        "fan_in": 12,
+        "depended_by": [
+          "artcraft_tasks",
+          "context",
+          "creative",
+          "delivery",
+          "games",
+          "generation_service",
+          "main",
+          "meetings",
+          "reverse_tasks",
+          "runs",
+          "schedules",
+          "weather"
+        ],
         "fan_out": 58,
-        "file_count": 49,
-        "line_count": 12676
+        "fan_in": 12
       },
       "artcraft": {
-        "depended_by": [
-          "api",
-          "artcraft_tasks"
-        ],
+        "file_count": 1,
+        "line_count": 757,
         "depends_on": [
           "artcraft_bugs",
           "config"
         ],
-        "fan_in": 2,
-        "fan_out": 2,
-        "file_count": 1,
-        "line_count": 757
-      },
-      "artcraft_bugs": {
-        "depended_by": [
-          "artcraft"
-        ],
-        "depends_on": [],
-        "fan_in": 1,
-        "fan_out": 0,
-        "file_count": 1,
-        "line_count": 158
-      },
-      "artcraft_catalog": {
         "depended_by": [
           "api",
           "artcraft_tasks"
         ],
-        "depends_on": [],
-        "fan_in": 2,
-        "fan_out": 0,
-        "file_count": 1,
-        "line_count": 356
+        "fan_out": 2,
+        "fan_in": 2
       },
-      "artcraft_tasks": {
+      "artcraft_bugs": {
+        "file_count": 1,
+        "line_count": 158,
+        "depends_on": [],
+        "depended_by": [
+          "artcraft"
+        ],
+        "fan_out": 0,
+        "fan_in": 1
+      },
+      "artcraft_catalog": {
+        "file_count": 1,
+        "line_count": 356,
+        "depends_on": [],
         "depended_by": [
           "api",
-          "runs"
+          "artcraft_tasks"
         ],
+        "fan_out": 0,
+        "fan_in": 2
+      },
+      "artcraft_tasks": {
+        "file_count": 1,
+        "line_count": 477,
         "depends_on": [
           "api",
           "artcraft",
@@ -382,12 +990,24 @@
           "models",
           "schemas"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "api",
+          "runs"
+        ],
         "fan_out": 8,
-        "file_count": 1,
-        "line_count": 477
+        "fan_in": 2
       },
       "artifacts": {
+        "file_count": 4,
+        "line_count": 429,
+        "depends_on": [
+          "broker",
+          "config",
+          "db",
+          "generation",
+          "generation_service",
+          "models"
+        ],
         "depended_by": [
           "api",
           "artcraft_tasks",
@@ -399,20 +1019,15 @@
           "runs",
           "transfer"
         ],
-        "depends_on": [
-          "broker",
-          "config",
-          "db",
-          "generation",
-          "generation_service",
-          "models"
-        ],
-        "fan_in": 9,
         "fan_out": 6,
-        "file_count": 4,
-        "line_count": 429
+        "fan_in": 9
       },
       "audit": {
+        "file_count": 1,
+        "line_count": 49,
+        "depends_on": [
+          "models"
+        ],
         "depended_by": [
           "api",
           "meetings",
@@ -421,25 +1036,23 @@
           "runs",
           "sharing"
         ],
-        "depends_on": [
-          "models"
-        ],
-        "fan_in": 6,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 49
+        "fan_in": 6
       },
       "backup_status": {
+        "file_count": 1,
+        "line_count": 74,
+        "depends_on": [],
         "depended_by": [
           "api"
         ],
-        "depends_on": [],
-        "fan_in": 1,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 74
+        "fan_in": 1
       },
       "broker": {
+        "file_count": 2,
+        "line_count": 242,
+        "depends_on": [],
         "depended_by": [
           "api",
           "artcraft_tasks",
@@ -456,14 +1069,12 @@
           "security",
           "transfer"
         ],
-        "depends_on": [],
-        "fan_in": 14,
         "fan_out": 0,
-        "file_count": 2,
-        "line_count": 242
+        "fan_in": 14
       },
       "cli": {
-        "depended_by": [],
+        "file_count": 1,
+        "line_count": 483,
         "depends_on": [
           "broker",
           "config",
@@ -481,19 +1092,13 @@
           "runs",
           "security"
         ],
-        "fan_in": 0,
+        "depended_by": [],
         "fan_out": 15,
-        "file_count": 1,
-        "line_count": 483
+        "fan_in": 0
       },
       "collector": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "kb_delivery",
-          "kb_library",
-          "models"
-        ],
+        "file_count": 26,
+        "line_count": 5915,
         "depends_on": [
           "collector_models",
           "config",
@@ -501,27 +1106,37 @@
           "generation",
           "models"
         ],
-        "fan_in": 5,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "kb_delivery",
+          "kb_library",
+          "models"
+        ],
         "fan_out": 5,
-        "file_count": 26,
-        "line_count": 5915
+        "fan_in": 5
       },
       "collector_models": {
+        "file_count": 1,
+        "line_count": 239,
+        "depends_on": [
+          "models"
+        ],
         "depended_by": [
           "api",
           "collector",
           "kb_delivery",
           "models"
         ],
-        "depends_on": [
-          "models"
-        ],
-        "fan_in": 4,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 239
+        "fan_in": 4
       },
       "config": {
+        "file_count": 1,
+        "line_count": 600,
+        "depends_on": [
+          "model_catalog"
+        ],
         "depended_by": [
           "agents",
           "antigravity_accounts",
@@ -563,15 +1178,22 @@
           "tts",
           "weather"
         ],
-        "depends_on": [
-          "model_catalog"
-        ],
-        "fan_in": 39,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 600
+        "fan_in": 39
       },
       "context": {
+        "file_count": 9,
+        "line_count": 1569,
+        "depends_on": [
+          "api",
+          "broker",
+          "config",
+          "knowledge",
+          "knowledge_models",
+          "meetings",
+          "model_process",
+          "models"
+        ],
         "depended_by": [
           "api",
           "cli",
@@ -584,28 +1206,12 @@
           "meetings",
           "runs"
         ],
-        "depends_on": [
-          "api",
-          "broker",
-          "config",
-          "knowledge",
-          "knowledge_models",
-          "meetings",
-          "model_process",
-          "models"
-        ],
-        "fan_in": 10,
         "fan_out": 8,
-        "file_count": 9,
-        "line_count": 1569
+        "fan_in": 10
       },
       "creative": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "main",
-          "orchestrator"
-        ],
+        "file_count": 25,
+        "line_count": 13194,
         "depends_on": [
           "api",
           "config",
@@ -616,12 +1222,23 @@
           "runs",
           "tts"
         ],
-        "fan_in": 4,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main",
+          "orchestrator"
+        ],
         "fan_out": 8,
-        "file_count": 25,
-        "line_count": 13194
+        "fan_in": 4
       },
       "db": {
+        "file_count": 1,
+        "line_count": 73,
+        "depends_on": [
+          "config",
+          "generation",
+          "models"
+        ],
         "depended_by": [
           "api",
           "artifacts",
@@ -656,59 +1273,63 @@
           "tts",
           "weather"
         ],
-        "depends_on": [
-          "config",
-          "generation",
-          "models"
-        ],
-        "fan_in": 32,
         "fan_out": 3,
-        "file_count": 1,
-        "line_count": 73
+        "fan_in": 32
       },
       "delivery": {
-        "depended_by": [
-          "api"
-        ],
+        "file_count": 8,
+        "line_count": 1407,
         "depends_on": [
           "api",
           "config",
           "delivery_models",
           "models"
         ],
-        "fan_in": 1,
+        "depended_by": [
+          "api"
+        ],
         "fan_out": 4,
-        "file_count": 8,
-        "line_count": 1407
+        "fan_in": 1
       },
       "delivery_models": {
-        "depended_by": [
-          "delivery"
-        ],
+        "file_count": 1,
+        "line_count": 104,
         "depends_on": [
           "models"
         ],
-        "fan_in": 1,
+        "depended_by": [
+          "delivery"
+        ],
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 104
+        "fan_in": 1
       },
       "deploy_gate": {
-        "depended_by": [
-          "deployment",
-          "generation_deployment"
-        ],
+        "file_count": 1,
+        "line_count": 171,
         "depends_on": [
           "db",
           "deployment",
           "models"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "deployment",
+          "generation_deployment"
+        ],
         "fan_out": 3,
-        "file_count": 1,
-        "line_count": 171
+        "fan_in": 2
       },
       "deployment": {
+        "file_count": 1,
+        "line_count": 566,
+        "depends_on": [
+          "config",
+          "db",
+          "deploy_gate",
+          "generation",
+          "generation_bootstrap",
+          "generation_deployment",
+          "security"
+        ],
         "depended_by": [
           "api",
           "deploy_gate",
@@ -720,49 +1341,37 @@
           "oplog",
           "runs"
         ],
-        "depends_on": [
-          "config",
-          "db",
-          "deploy_gate",
-          "generation",
-          "generation_bootstrap",
-          "generation_deployment",
-          "security"
-        ],
-        "fan_in": 9,
         "fan_out": 7,
-        "file_count": 1,
-        "line_count": 566
+        "fan_in": 9
       },
       "design_preview": {
+        "file_count": 1,
+        "line_count": 178,
+        "depends_on": [
+          "design_system"
+        ],
         "depended_by": [
           "design_system"
         ],
-        "depends_on": [
-          "design_system"
-        ],
-        "fan_in": 1,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 178
+        "fan_in": 1
       },
       "design_system": {
+        "file_count": 1,
+        "line_count": 262,
+        "depends_on": [
+          "design_preview"
+        ],
         "depended_by": [
           "api",
           "design_preview"
         ],
-        "depends_on": [
-          "design_preview"
-        ],
-        "fan_in": 2,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 262
+        "fan_in": 2
       },
       "executor": {
-        "depended_by": [
-          "cli"
-        ],
+        "file_count": 1,
+        "line_count": 177,
         "depends_on": [
           "artifacts",
           "config",
@@ -774,43 +1383,40 @@
           "models",
           "runs"
         ],
-        "fan_in": 1,
-        "fan_out": 9,
-        "file_count": 1,
-        "line_count": 177
-      },
-      "executor_reconcile": {
         "depended_by": [
           "cli"
         ],
+        "fan_out": 9,
+        "fan_in": 1
+      },
+      "executor_reconcile": {
+        "file_count": 1,
+        "line_count": 255,
         "depends_on": [
           "db",
           "generation",
           "models",
           "runs"
         ],
-        "fan_in": 1,
+        "depended_by": [
+          "cli"
+        ],
         "fan_out": 4,
-        "file_count": 1,
-        "line_count": 255
+        "fan_in": 1
       },
       "experiments": {
+        "file_count": 4,
+        "line_count": 619,
+        "depends_on": [],
         "depended_by": [
           "runs"
         ],
-        "depends_on": [],
-        "fan_in": 1,
         "fan_out": 0,
-        "file_count": 4,
-        "line_count": 619
+        "fan_in": 1
       },
       "games": {
-        "depended_by": [
-          "api",
-          "cli",
-          "main",
-          "runs"
-        ],
+        "file_count": 11,
+        "line_count": 2407,
         "depends_on": [
           "api",
           "artifacts",
@@ -820,12 +1426,24 @@
           "models",
           "security"
         ],
-        "fan_in": 4,
+        "depended_by": [
+          "api",
+          "cli",
+          "main",
+          "runs"
+        ],
         "fan_out": 7,
-        "file_count": 11,
-        "line_count": 2407
+        "fan_in": 4
       },
       "generation": {
+        "file_count": 1,
+        "line_count": 379,
+        "depends_on": [
+          "config",
+          "db",
+          "models",
+          "runs"
+        ],
         "depended_by": [
           "api",
           "artifacts",
@@ -842,24 +1460,12 @@
           "schedules",
           "tts"
         ],
-        "depends_on": [
-          "config",
-          "db",
-          "models",
-          "runs"
-        ],
-        "fan_in": 14,
         "fan_out": 4,
-        "file_count": 1,
-        "line_count": 379
+        "fan_in": 14
       },
       "generation_bootstrap": {
-        "depended_by": [
-          "cli",
-          "deployment",
-          "generation_deployment",
-          "main"
-        ],
+        "file_count": 1,
+        "line_count": 272,
         "depends_on": [
           "config",
           "db",
@@ -869,16 +1475,18 @@
           "push",
           "security"
         ],
-        "fan_in": 4,
+        "depended_by": [
+          "cli",
+          "deployment",
+          "generation_deployment",
+          "main"
+        ],
         "fan_out": 7,
-        "file_count": 1,
-        "line_count": 272
+        "fan_in": 4
       },
       "generation_deployment": {
-        "depended_by": [
-          "deployment",
-          "generation_bootstrap"
-        ],
+        "file_count": 1,
+        "line_count": 1225,
         "depends_on": [
           "config",
           "db",
@@ -889,20 +1497,16 @@
           "models",
           "security"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "deployment",
+          "generation_bootstrap"
+        ],
         "fan_out": 8,
-        "file_count": 1,
-        "line_count": 1225
+        "fan_in": 2
       },
       "generation_service": {
-        "depended_by": [
-          "api",
-          "artifacts",
-          "executor",
-          "main",
-          "meetings",
-          "runs"
-        ],
+        "file_count": 1,
+        "line_count": 357,
         "depends_on": [
           "api",
           "artifacts",
@@ -928,43 +1532,48 @@
           "tts",
           "weather"
         ],
-        "fan_in": 6,
+        "depended_by": [
+          "api",
+          "artifacts",
+          "executor",
+          "main",
+          "meetings",
+          "runs"
+        ],
         "fan_out": 23,
-        "file_count": 1,
-        "line_count": 357
+        "fan_in": 6
       },
       "github": {
-        "depended_by": [
-          "api"
-        ],
+        "file_count": 17,
+        "line_count": 2598,
         "depends_on": [
           "oplog"
         ],
-        "fan_in": 1,
+        "depended_by": [
+          "api"
+        ],
         "fan_out": 1,
-        "file_count": 17,
-        "line_count": 2598
+        "fan_in": 1
       },
       "google_account": {
-        "depended_by": [
-          "api",
-          "notebooklm"
-        ],
+        "file_count": 8,
+        "line_count": 1299,
         "depends_on": [
           "config",
           "db",
           "models",
           "push"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "api",
+          "notebooklm"
+        ],
         "fan_out": 4,
-        "file_count": 8,
-        "line_count": 1299
+        "fan_in": 2
       },
       "harness_view": {
-        "depended_by": [
-          "api"
-        ],
+        "file_count": 10,
+        "line_count": 2808,
         "depends_on": [
           "agents",
           "broker",
@@ -976,105 +1585,111 @@
           "runs",
           "security"
         ],
-        "fan_in": 1,
-        "fan_out": 9,
-        "file_count": 10,
-        "line_count": 2808
-      },
-      "host_gpu": {
         "depended_by": [
           "api"
         ],
+        "fan_out": 9,
+        "fan_in": 1
+      },
+      "host_gpu": {
+        "file_count": 1,
+        "line_count": 891,
         "depends_on": [
           "config",
           "host_gpu_guard",
           "host_resource",
           "managed_comfy"
         ],
-        "fan_in": 1,
+        "depended_by": [
+          "api"
+        ],
         "fan_out": 4,
-        "file_count": 1,
-        "line_count": 891
+        "fan_in": 1
       },
       "host_gpu_guard": {
+        "file_count": 1,
+        "line_count": 171,
+        "depends_on": [],
         "depended_by": [
           "host_gpu",
           "host_resource",
           "managed_comfy"
         ],
-        "depends_on": [],
-        "fan_in": 3,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 171
+        "fan_in": 3
       },
       "host_resource": {
+        "file_count": 1,
+        "line_count": 366,
+        "depends_on": [
+          "host_gpu_guard"
+        ],
         "depended_by": [
           "api",
           "creative",
           "host_gpu",
           "managed_comfy"
         ],
-        "depends_on": [
-          "host_gpu_guard"
-        ],
-        "fan_in": 4,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 366
+        "fan_in": 4
       },
       "kb_delivery": {
-        "depended_by": [
-          "api",
-          "generation_service"
-        ],
+        "file_count": 1,
+        "line_count": 179,
         "depends_on": [
           "collector",
           "collector_models",
           "db",
           "kb_store"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "api",
+          "generation_service"
+        ],
         "fan_out": 4,
-        "file_count": 1,
-        "line_count": 179
+        "fan_in": 2
       },
       "kb_embedding_worker": {
-        "depended_by": [],
+        "file_count": 1,
+        "line_count": 74,
         "depends_on": [
           "model_process"
         ],
-        "fan_in": 0,
+        "depended_by": [],
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 74
+        "fan_in": 0
       },
       "kb_eval": {
-        "depended_by": [],
-        "depends_on": [],
-        "fan_in": 0,
-        "fan_out": 0,
         "file_count": 16,
-        "line_count": 2138
+        "line_count": 2138,
+        "depends_on": [],
+        "depended_by": [],
+        "fan_out": 0,
+        "fan_in": 0
       },
       "kb_library": {
-        "depended_by": [
-          "api",
-          "cli",
-          "kb_retrieval"
-        ],
+        "file_count": 1,
+        "line_count": 404,
         "depends_on": [
           "collector",
           "context",
           "kb_models",
           "kb_store"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "cli",
+          "kb_retrieval"
+        ],
         "fan_out": 4,
-        "file_count": 1,
-        "line_count": 404
+        "fan_in": 3
       },
       "kb_models": {
+        "file_count": 1,
+        "line_count": 274,
+        "depends_on": [
+          "models"
+        ],
         "depended_by": [
           "api",
           "kb_library",
@@ -1083,19 +1698,12 @@
           "models",
           "research"
         ],
-        "depends_on": [
-          "models"
-        ],
-        "fan_in": 6,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 274
+        "fan_in": 6
       },
       "kb_retrieval": {
-        "depended_by": [
-          "api",
-          "generation_service"
-        ],
+        "file_count": 1,
+        "line_count": 154,
         "depends_on": [
           "config",
           "context",
@@ -1106,12 +1714,21 @@
           "model_process",
           "models"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "api",
+          "generation_service"
+        ],
         "fan_out": 8,
-        "file_count": 1,
-        "line_count": 154
+        "fan_in": 2
       },
       "kb_store": {
+        "file_count": 1,
+        "line_count": 462,
+        "depends_on": [
+          "config",
+          "kb_models",
+          "models"
+        ],
         "depended_by": [
           "api",
           "cli",
@@ -1119,34 +1736,24 @@
           "kb_library",
           "research"
         ],
-        "depends_on": [
-          "config",
-          "kb_models",
-          "models"
-        ],
-        "fan_in": 5,
         "fan_out": 3,
-        "file_count": 1,
-        "line_count": 462
+        "fan_in": 5
       },
       "kb_vector_models": {
+        "file_count": 1,
+        "line_count": 18,
+        "depends_on": [
+          "models"
+        ],
         "depended_by": [
           "kb_retrieval"
         ],
-        "depends_on": [
-          "models"
-        ],
-        "fan_in": 1,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 18
+        "fan_in": 1
       },
       "knowledge": {
-        "depended_by": [
-          "api",
-          "cli",
-          "context"
-        ],
+        "file_count": 6,
+        "line_count": 1692,
         "depends_on": [
           "broker",
           "context",
@@ -1154,28 +1761,32 @@
           "knowledge_models",
           "models"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "cli",
+          "context"
+        ],
         "fan_out": 5,
-        "file_count": 6,
-        "line_count": 1692
+        "fan_in": 3
       },
       "knowledge_models": {
+        "file_count": 1,
+        "line_count": 269,
+        "depends_on": [
+          "models"
+        ],
         "depended_by": [
           "api",
           "context",
           "knowledge",
           "models"
         ],
-        "depends_on": [
-          "models"
-        ],
-        "fan_in": 4,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 269
+        "fan_in": 4
       },
       "main": {
-        "depended_by": [],
+        "file_count": 1,
+        "line_count": 369,
         "depends_on": [
           "api",
           "artifacts",
@@ -1201,48 +1812,40 @@
           "tts",
           "weather"
         ],
-        "fan_in": 0,
+        "depended_by": [],
         "fan_out": 23,
-        "file_count": 1,
-        "line_count": 369
+        "fan_in": 0
       },
       "managed_comfy": {
-        "depended_by": [
-          "api",
-          "creative",
-          "host_gpu"
-        ],
+        "file_count": 1,
+        "line_count": 786,
         "depends_on": [
           "host_gpu_guard",
           "host_resource",
           "managed_comfy_receipt"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "creative",
+          "host_gpu"
+        ],
         "fan_out": 3,
-        "file_count": 1,
-        "line_count": 786
+        "fan_in": 3
       },
       "managed_comfy_receipt": {
+        "file_count": 1,
+        "line_count": 313,
+        "depends_on": [],
         "depended_by": [
           "creative",
           "managed_comfy"
         ],
-        "depends_on": [],
-        "fan_in": 2,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 313
+        "fan_in": 2
       },
       "meetings": {
-        "depended_by": [
-          "api",
-          "context",
-          "executor",
-          "generation_service",
-          "main",
-          "runs",
-          "sharing"
-        ],
+        "file_count": 23,
+        "line_count": 3509,
         "depends_on": [
           "api",
           "artifacts",
@@ -1260,12 +1863,22 @@
           "runs",
           "sharing"
         ],
-        "fan_in": 7,
+        "depended_by": [
+          "api",
+          "context",
+          "executor",
+          "generation_service",
+          "main",
+          "runs",
+          "sharing"
+        ],
         "fan_out": 15,
-        "file_count": 23,
-        "line_count": 3509
+        "fan_in": 7
       },
       "model_catalog": {
+        "file_count": 1,
+        "line_count": 41,
+        "depends_on": [],
         "depended_by": [
           "agents",
           "api",
@@ -1273,13 +1886,13 @@
           "meetings",
           "runs"
         ],
-        "depends_on": [],
-        "fan_in": 5,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 41
+        "fan_in": 5
       },
       "model_process": {
+        "file_count": 1,
+        "line_count": 91,
+        "depends_on": [],
         "depended_by": [
           "context",
           "kb_embedding_worker",
@@ -1287,13 +1900,21 @@
           "meetings",
           "tts"
         ],
-        "depends_on": [],
-        "fan_in": 5,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 91
+        "fan_in": 5
       },
       "models": {
+        "file_count": 1,
+        "line_count": 1300,
+        "depends_on": [
+          "collector",
+          "collector_models",
+          "kb_models",
+          "knowledge_models",
+          "research",
+          "textsafe",
+          "tts_models"
+        ],
         "depended_by": [
           "api",
           "artcraft_tasks",
@@ -1343,38 +1964,35 @@
           "tts_models",
           "weather"
         ],
-        "depends_on": [
-          "collector",
-          "collector_models",
-          "kb_models",
-          "knowledge_models",
-          "research",
-          "textsafe",
-          "tts_models"
-        ],
-        "fan_in": 47,
         "fan_out": 7,
-        "file_count": 1,
-        "line_count": 1300
+        "fan_in": 47
       },
       "notebooklm": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "main"
-        ],
+        "file_count": 12,
+        "line_count": 1670,
         "depends_on": [
           "config",
           "db",
           "google_account",
           "models"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
         "fan_out": 4,
-        "file_count": 12,
-        "line_count": 1670
+        "fan_in": 3
       },
       "oplog": {
+        "file_count": 8,
+        "line_count": 1362,
+        "depends_on": [
+          "config",
+          "db",
+          "deployment",
+          "models"
+        ],
         "depended_by": [
           "api",
           "generation_service",
@@ -1384,24 +2002,12 @@
           "orchestrator",
           "runs"
         ],
-        "depends_on": [
-          "config",
-          "db",
-          "deployment",
-          "models"
-        ],
-        "fan_in": 7,
         "fan_out": 4,
-        "file_count": 8,
-        "line_count": 1362
+        "fan_in": 7
       },
       "orchestrator": {
-        "depended_by": [
-          "agents",
-          "api",
-          "harness_view",
-          "runs"
-        ],
+        "file_count": 4,
+        "line_count": 1656,
         "depends_on": [
           "config",
           "creative",
@@ -1412,42 +2018,54 @@
           "runs",
           "security"
         ],
-        "fan_in": 4,
+        "depended_by": [
+          "agents",
+          "api",
+          "harness_view",
+          "runs"
+        ],
         "fan_out": 8,
-        "file_count": 4,
-        "line_count": 1656
+        "fan_in": 4
       },
       "planner": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "main"
-        ],
+        "file_count": 6,
+        "line_count": 588,
         "depends_on": [
           "audit",
           "db",
           "models",
           "push"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
         "fan_out": 4,
-        "file_count": 6,
-        "line_count": 588
+        "fan_in": 3
       },
       "pms": {
+        "file_count": 2,
+        "line_count": 471,
+        "depends_on": [
+          "models"
+        ],
         "depended_by": [
           "api",
           "orchestrator"
         ],
-        "depends_on": [
-          "models"
-        ],
-        "fan_in": 2,
         "fan_out": 1,
-        "file_count": 2,
-        "line_count": 471
+        "fan_in": 2
       },
       "push": {
+        "file_count": 3,
+        "line_count": 212,
+        "depends_on": [
+          "audit",
+          "config",
+          "db",
+          "models"
+        ],
         "depended_by": [
           "api",
           "cli",
@@ -1458,63 +2076,52 @@
           "runs",
           "weather"
         ],
-        "depends_on": [
-          "audit",
-          "config",
-          "db",
-          "models"
-        ],
-        "fan_in": 8,
         "fan_out": 4,
-        "file_count": 3,
-        "line_count": 212
+        "fan_in": 8
       },
       "remote_desktop": {
+        "file_count": 1,
+        "line_count": 114,
+        "depends_on": [],
         "depended_by": [
           "api"
         ],
-        "depends_on": [],
-        "fan_in": 1,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 114
+        "fan_in": 1
       },
       "research": {
-        "depended_by": [
-          "api",
-          "models"
-        ],
+        "file_count": 6,
+        "line_count": 709,
         "depends_on": [
           "kb_models",
           "kb_store",
           "models"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "api",
+          "models"
+        ],
         "fan_out": 3,
-        "file_count": 6,
-        "line_count": 709
+        "fan_in": 2
       },
       "resource_history": {
-        "depended_by": [
-          "generation_service",
-          "main"
-        ],
+        "file_count": 1,
+        "line_count": 90,
         "depends_on": [
           "db",
           "models",
           "sysinfo"
         ],
-        "fan_in": 2,
+        "depended_by": [
+          "generation_service",
+          "main"
+        ],
         "fan_out": 3,
-        "file_count": 1,
-        "line_count": 90
+        "fan_in": 2
       },
       "reverse": {
-        "depended_by": [
-          "api",
-          "main",
-          "reverse_tasks"
-        ],
+        "file_count": 1,
+        "line_count": 1836,
         "depends_on": [
           "antigravity_accounts",
           "broker",
@@ -1524,17 +2131,17 @@
           "reverse_tasks",
           "runs"
         ],
-        "fan_in": 3,
-        "fan_out": 7,
-        "file_count": 1,
-        "line_count": 1836
-      },
-      "reverse_tasks": {
         "depended_by": [
           "api",
-          "reverse",
-          "runs"
+          "main",
+          "reverse_tasks"
         ],
+        "fan_out": 7,
+        "fan_in": 3
+      },
+      "reverse_tasks": {
+        "file_count": 1,
+        "line_count": 398,
         "depends_on": [
           "api",
           "broker",
@@ -1545,31 +2152,17 @@
           "runs",
           "schemas"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "reverse",
+          "runs"
+        ],
         "fan_out": 8,
-        "file_count": 1,
-        "line_count": 398
+        "fan_in": 3
       },
       "runs": {
-        "depended_by": [
-          "agents",
-          "api",
-          "cli",
-          "creative",
-          "executor",
-          "executor_reconcile",
-          "generation",
-          "generation_service",
-          "harness_view",
-          "main",
-          "meetings",
-          "orchestrator",
-          "reverse",
-          "reverse_tasks",
-          "schedules",
-          "tts",
-          "weather"
-        ],
+        "file_count": 29,
+        "line_count": 9997,
         "depends_on": [
           "agents",
           "antigravity_accounts",
@@ -1596,17 +2189,31 @@
           "schemas",
           "security"
         ],
-        "fan_in": 17,
+        "depended_by": [
+          "agents",
+          "api",
+          "cli",
+          "creative",
+          "executor",
+          "executor_reconcile",
+          "generation",
+          "generation_service",
+          "harness_view",
+          "main",
+          "meetings",
+          "orchestrator",
+          "reverse",
+          "reverse_tasks",
+          "schedules",
+          "tts",
+          "weather"
+        ],
         "fan_out": 24,
-        "file_count": 29,
-        "line_count": 9997
+        "fan_in": 17
       },
       "schedules": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "main"
-        ],
+        "file_count": 2,
+        "line_count": 380,
         "depends_on": [
           "api",
           "db",
@@ -1614,33 +2221,44 @@
           "models",
           "runs"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
         "fan_out": 5,
-        "file_count": 2,
-        "line_count": 380
+        "fan_in": 3
       },
       "schema_aliases": {
-        "depended_by": [],
-        "depends_on": [],
-        "fan_in": 0,
-        "fan_out": 0,
         "file_count": 1,
-        "line_count": 51
+        "line_count": 51,
+        "depends_on": [],
+        "depended_by": [],
+        "fan_out": 0,
+        "fan_in": 0
       },
       "schemas": {
+        "file_count": 1,
+        "line_count": 344,
+        "depends_on": [],
         "depended_by": [
           "api",
           "artcraft_tasks",
           "reverse_tasks",
           "runs"
         ],
-        "depends_on": [],
-        "fan_in": 4,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 344
+        "fan_in": 4
       },
       "security": {
+        "file_count": 10,
+        "line_count": 1884,
+        "depends_on": [
+          "broker",
+          "config",
+          "db",
+          "models"
+        ],
         "depended_by": [
           "antigravity_accounts",
           "api",
@@ -1656,24 +2274,12 @@
           "sharing",
           "tts"
         ],
-        "depends_on": [
-          "broker",
-          "config",
-          "db",
-          "models"
-        ],
-        "fan_in": 13,
         "fan_out": 4,
-        "file_count": 10,
-        "line_count": 1884
+        "fan_in": 13
       },
       "sharing": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "main",
-          "meetings"
-        ],
+        "file_count": 7,
+        "line_count": 936,
         "depends_on": [
           "audit",
           "config",
@@ -1682,68 +2288,68 @@
           "models",
           "security"
         ],
-        "fan_in": 4,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main",
+          "meetings"
+        ],
         "fan_out": 6,
-        "file_count": 7,
-        "line_count": 936
+        "fan_in": 4
       },
       "stocks": {
-        "depended_by": [
-          "api"
-        ],
+        "file_count": 2,
+        "line_count": 740,
         "depends_on": [
           "config"
         ],
-        "fan_in": 1,
+        "depended_by": [
+          "api"
+        ],
         "fan_out": 1,
-        "file_count": 2,
-        "line_count": 740
+        "fan_in": 1
       },
       "sysinfo": {
+        "file_count": 1,
+        "line_count": 295,
+        "depends_on": [],
         "depended_by": [
           "api",
           "resource_history"
         ],
-        "depends_on": [],
-        "fan_in": 2,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 295
+        "fan_in": 2
       },
       "textsafe": {
+        "file_count": 1,
+        "line_count": 51,
+        "depends_on": [],
         "depended_by": [
           "models"
         ],
-        "depends_on": [],
-        "fan_in": 1,
         "fan_out": 0,
-        "file_count": 1,
-        "line_count": 51
+        "fan_in": 1
       },
       "transfer": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "main"
-        ],
+        "file_count": 4,
+        "line_count": 411,
         "depends_on": [
           "artifacts",
           "broker",
           "config",
           "models"
         ],
-        "fan_in": 3,
-        "fan_out": 4,
-        "file_count": 4,
-        "line_count": 411
-      },
-      "tts": {
         "depended_by": [
           "api",
-          "creative",
           "generation_service",
           "main"
         ],
+        "fan_out": 4,
+        "fan_in": 3
+      },
+      "tts": {
+        "file_count": 10,
+        "line_count": 2029,
         "depends_on": [
           "config",
           "db",
@@ -1754,31 +2360,32 @@
           "security",
           "tts_models"
         ],
-        "fan_in": 4,
+        "depended_by": [
+          "api",
+          "creative",
+          "generation_service",
+          "main"
+        ],
         "fan_out": 8,
-        "file_count": 10,
-        "line_count": 2029
+        "fan_in": 4
       },
       "tts_models": {
+        "file_count": 1,
+        "line_count": 50,
+        "depends_on": [
+          "models"
+        ],
         "depended_by": [
           "api",
           "models",
           "tts"
         ],
-        "depends_on": [
-          "models"
-        ],
-        "fan_in": 3,
         "fan_out": 1,
-        "file_count": 1,
-        "line_count": 50
+        "fan_in": 3
       },
       "weather": {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "main"
-        ],
+        "file_count": 3,
+        "line_count": 587,
         "depends_on": [
           "api",
           "config",
@@ -1787,480 +2394,41 @@
           "push",
           "runs"
         ],
-        "fan_in": 3,
+        "depended_by": [
+          "api",
+          "generation_service",
+          "main"
+        ],
         "fan_out": 6,
-        "file_count": 3,
-        "line_count": 587
+        "fan_in": 3
       }
-    },
-    "top_fan_in_units": [
-      {
-        "depended_by": [
-          "api",
-          "artcraft_tasks",
-          "artifacts",
-          "audit",
-          "cli",
-          "collector",
-          "collector_models",
-          "context",
-          "creative",
-          "db",
-          "delivery",
-          "delivery_models",
-          "deploy_gate",
-          "executor",
-          "executor_reconcile",
-          "games",
-          "generation",
-          "generation_bootstrap",
-          "generation_deployment",
-          "generation_service",
-          "google_account",
-          "harness_view",
-          "kb_models",
-          "kb_retrieval",
-          "kb_store",
-          "kb_vector_models",
-          "knowledge",
-          "knowledge_models",
-          "meetings",
-          "notebooklm",
-          "oplog",
-          "orchestrator",
-          "planner",
-          "pms",
-          "push",
-          "research",
-          "resource_history",
-          "reverse",
-          "reverse_tasks",
-          "runs",
-          "schedules",
-          "security",
-          "sharing",
-          "transfer",
-          "tts",
-          "tts_models",
-          "weather"
-        ],
-        "fan_in": 47,
-        "fan_out": 7,
-        "file_count": 1,
-        "line_count": 1300,
-        "unit": "models"
-      },
-      {
-        "depended_by": [
-          "agents",
-          "antigravity_accounts",
-          "api",
-          "artcraft",
-          "artcraft_tasks",
-          "artifacts",
-          "cli",
-          "collector",
-          "context",
-          "creative",
-          "db",
-          "delivery",
-          "deployment",
-          "executor",
-          "games",
-          "generation",
-          "generation_bootstrap",
-          "generation_deployment",
-          "generation_service",
-          "google_account",
-          "harness_view",
-          "host_gpu",
-          "kb_retrieval",
-          "kb_store",
-          "main",
-          "meetings",
-          "notebooklm",
-          "oplog",
-          "orchestrator",
-          "push",
-          "reverse",
-          "reverse_tasks",
-          "runs",
-          "security",
-          "sharing",
-          "stocks",
-          "transfer",
-          "tts",
-          "weather"
-        ],
-        "fan_in": 39,
-        "fan_out": 1,
-        "file_count": 1,
-        "line_count": 600,
-        "unit": "config"
-      },
-      {
-        "depended_by": [
-          "api",
-          "artifacts",
-          "cli",
-          "collector",
-          "deploy_gate",
-          "deployment",
-          "executor",
-          "executor_reconcile",
-          "games",
-          "generation",
-          "generation_bootstrap",
-          "generation_deployment",
-          "generation_service",
-          "google_account",
-          "kb_delivery",
-          "kb_retrieval",
-          "knowledge",
-          "main",
-          "meetings",
-          "notebooklm",
-          "oplog",
-          "orchestrator",
-          "planner",
-          "push",
-          "resource_history",
-          "reverse",
-          "runs",
-          "schedules",
-          "security",
-          "sharing",
-          "tts",
-          "weather"
-        ],
-        "fan_in": 32,
-        "fan_out": 3,
-        "file_count": 1,
-        "line_count": 73,
-        "unit": "db"
-      },
-      {
-        "depended_by": [
-          "agents",
-          "api",
-          "cli",
-          "creative",
-          "executor",
-          "executor_reconcile",
-          "generation",
-          "generation_service",
-          "harness_view",
-          "main",
-          "meetings",
-          "orchestrator",
-          "reverse",
-          "reverse_tasks",
-          "schedules",
-          "tts",
-          "weather"
-        ],
-        "fan_in": 17,
-        "fan_out": 24,
-        "file_count": 29,
-        "line_count": 9997,
-        "unit": "runs"
-      },
-      {
-        "depended_by": [
-          "api",
-          "artifacts",
-          "collector",
-          "db",
-          "deployment",
-          "executor",
-          "executor_reconcile",
-          "generation_deployment",
-          "generation_service",
-          "meetings",
-          "reverse_tasks",
-          "runs",
-          "schedules",
-          "tts"
-        ],
-        "fan_in": 14,
-        "fan_out": 4,
-        "file_count": 1,
-        "line_count": 379,
-        "unit": "generation"
-      },
-      {
-        "depended_by": [
-          "api",
-          "artcraft_tasks",
-          "artifacts",
-          "cli",
-          "context",
-          "games",
-          "harness_view",
-          "knowledge",
-          "meetings",
-          "reverse",
-          "reverse_tasks",
-          "runs",
-          "security",
-          "transfer"
-        ],
-        "fan_in": 14,
-        "fan_out": 0,
-        "file_count": 2,
-        "line_count": 242,
-        "unit": "broker"
-      },
-      {
-        "depended_by": [
-          "antigravity_accounts",
-          "api",
-          "cli",
-          "deployment",
-          "games",
-          "generation_bootstrap",
-          "generation_deployment",
-          "harness_view",
-          "main",
-          "orchestrator",
-          "runs",
-          "sharing",
-          "tts"
-        ],
-        "fan_in": 13,
-        "fan_out": 4,
-        "file_count": 10,
-        "line_count": 1884,
-        "unit": "security"
-      },
-      {
-        "depended_by": [
-          "artcraft_tasks",
-          "context",
-          "creative",
-          "delivery",
-          "games",
-          "generation_service",
-          "main",
-          "meetings",
-          "reverse_tasks",
-          "runs",
-          "schedules",
-          "weather"
-        ],
-        "fan_in": 12,
-        "fan_out": 58,
-        "file_count": 49,
-        "line_count": 12676,
-        "unit": "api"
-      },
-      {
-        "depended_by": [
-          "api",
-          "cli",
-          "generation_service",
-          "harness_view",
-          "kb_library",
-          "kb_retrieval",
-          "knowledge",
-          "main",
-          "meetings",
-          "runs"
-        ],
-        "fan_in": 10,
-        "fan_out": 8,
-        "file_count": 9,
-        "line_count": 1569,
-        "unit": "context"
-      },
-      {
-        "depended_by": [
-          "api",
-          "deploy_gate",
-          "executor",
-          "generation_bootstrap",
-          "generation_deployment",
-          "generation_service",
-          "main",
-          "oplog",
-          "runs"
-        ],
-        "fan_in": 9,
-        "fan_out": 7,
-        "file_count": 1,
-        "line_count": 566,
-        "unit": "deployment"
-      },
-      {
-        "depended_by": [
-          "api",
-          "artcraft_tasks",
-          "executor",
-          "games",
-          "generation_service",
-          "main",
-          "meetings",
-          "runs",
-          "transfer"
-        ],
-        "fan_in": 9,
-        "fan_out": 6,
-        "file_count": 4,
-        "line_count": 429,
-        "unit": "artifacts"
-      },
-      {
-        "depended_by": [
-          "api",
-          "cli",
-          "generation_bootstrap",
-          "google_account",
-          "meetings",
-          "planner",
-          "runs",
-          "weather"
-        ],
-        "fan_in": 8,
-        "fan_out": 4,
-        "file_count": 3,
-        "line_count": 212,
-        "unit": "push"
-      },
-      {
-        "depended_by": [
-          "api",
-          "context",
-          "executor",
-          "generation_service",
-          "main",
-          "runs",
-          "sharing"
-        ],
-        "fan_in": 7,
-        "fan_out": 15,
-        "file_count": 23,
-        "line_count": 3509,
-        "unit": "meetings"
-      },
-      {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "github",
-          "harness_view",
-          "main",
-          "orchestrator",
-          "runs"
-        ],
-        "fan_in": 7,
-        "fan_out": 4,
-        "file_count": 8,
-        "line_count": 1362,
-        "unit": "oplog"
-      },
-      {
-        "depended_by": [
-          "api",
-          "artifacts",
-          "executor",
-          "main",
-          "meetings",
-          "runs"
-        ],
-        "fan_in": 6,
-        "fan_out": 23,
-        "file_count": 1,
-        "line_count": 357,
-        "unit": "generation_service"
-      },
-      {
-        "depended_by": [
-          "api",
-          "kb_library",
-          "kb_retrieval",
-          "kb_store",
-          "models",
-          "research"
-        ],
-        "fan_in": 6,
-        "fan_out": 1,
-        "file_count": 1,
-        "line_count": 274,
-        "unit": "kb_models"
-      },
-      {
-        "depended_by": [
-          "api",
-          "meetings",
-          "planner",
-          "push",
-          "runs",
-          "sharing"
-        ],
-        "fan_in": 6,
-        "fan_out": 1,
-        "file_count": 1,
-        "line_count": 49,
-        "unit": "audit"
-      },
-      {
-        "depended_by": [
-          "api",
-          "generation_service",
-          "kb_delivery",
-          "kb_library",
-          "models"
-        ],
-        "fan_in": 5,
-        "fan_out": 5,
-        "file_count": 26,
-        "line_count": 5915,
-        "unit": "collector"
-      },
-      {
-        "depended_by": [
-          "api",
-          "cli",
-          "kb_delivery",
-          "kb_library",
-          "research"
-        ],
-        "fan_in": 5,
-        "fan_out": 3,
-        "file_count": 1,
-        "line_count": 462,
-        "unit": "kb_store"
-      },
-      {
-        "depended_by": [
-          "context",
-          "kb_embedding_worker",
-          "kb_retrieval",
-          "meetings",
-          "tts"
-        ],
-        "fan_in": 5,
-        "fan_out": 0,
-        "file_count": 1,
-        "line_count": 91,
-        "unit": "model_process"
-      }
+    }
+  },
+  "migrations": {
+    "migration_file_count": 67,
+    "revision_count": 67,
+    "heads": [
+      "0067_collector_outbox_retry"
     ],
-    "top_level_unit_count": 80,
-    "total_lines": 94439,
-    "total_python_files": 385
+    "single_head": true,
+    "latest_files": [
+      "0063_collector_stage_items.py",
+      "0064_run_executor.py",
+      "0065_collector_delivery.py",
+      "0066_collector_budget.py",
+      "0067_collector_outbox_retry.py"
+    ]
   },
   "contracts_and_manifests": {
-    "contract_test_files": [
-      "tests/test_context.py",
-      "tests/test_contract_marker.py",
-      "tests/test_generation_deployment.py",
-      "tests/test_migration_single_head.py",
-      "tests/test_route_inventory.py",
-      "tests/test_security_gate.py",
-      "tests/test_security_gate_inventory.py"
-    ],
+    "generation_contract_path": "deploy/generation-contract.json",
+    "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
     "generation_contract": {
+      "protocol": 1,
+      "supervisor": {
+        "protocol": 1,
+        "slots": 3
+      },
+      "schema_revision": "0067_collector_outbox_retry",
       "online_migration_from": [
         "0032_weather_briefings",
         "0033_weather_analysis_engine",
@@ -2299,25 +2467,54 @@
         "0065_collector_delivery",
         "0066_collector_budget"
       ],
-      "protocol": 1,
-      "run_executor": {
-        "activation": "disabled",
-        "manifest": "deploy/run-executor-manifest.json",
-        "manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266",
-        "protocol": 2
-      },
       "schema_aliases": {
         "0059_kb_immutability_truncate": "0059_collector_intake"
       },
-      "schema_revision": "0067_collector_outbox_retry",
-      "supervisor": {
-        "protocol": 1,
-        "slots": 3
+      "run_executor": {
+        "protocol": 2,
+        "activation": "disabled",
+        "manifest": "deploy/run-executor-manifest.json",
+        "manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266"
       }
     },
-    "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
-    "maintenance_job_count": 15,
-    "maintenance_job_names": [
+    "run_executor_manifest_path": "deploy/run-executor-manifest.json",
+    "run_executor_manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266",
+    "run_executor_manifest": {
+      "schema": 1,
+      "role": "run-executor",
+      "activation": "disabled",
+      "command": [
+        "{release}/.venv/bin/python",
+        "-m",
+        "ttakkari.cli",
+        "executor",
+        "--activate"
+      ],
+      "environment": {
+        "TTAKKARI_RUNTIME_GENERATION": "true",
+        "TTAKKARI_RELEASE_REVISION": "{revision}",
+        "TTAKKARI_DEPLOY_STRATEGY": "generations",
+        "TTAKKARI_DEPLOY_SOURCE_ROOT": "{source_root}"
+      },
+      "readiness": [
+        "executor_generation",
+        "revision",
+        "pid",
+        "process_started_at",
+        "heartbeat_at"
+      ],
+      "activation_gates": [
+        "release_marker_matches_revision",
+        "pinned_interpreter_exists",
+        "all_live_apis_protocol2_remote",
+        "no_existing_run_leases",
+        "pending_commands_supported",
+        "executor_process_identity_matches_database"
+      ],
+      "replacement": "drain_runs_and_children_then_replace_under_executor_lock",
+      "rollback": "drain_runs_and_children_then_clear_executor_pointer_before_api_local_mode"
+    },
+    "maintenance_jobs": [
       "retention",
       "vectors",
       "notebooklm-jobs",
@@ -2334,423 +2531,791 @@
       "archive",
       "ops-logs"
     ],
-    "run_executor_manifest": {
-      "activation": "disabled",
-      "activation_gates": [
-        "release_marker_matches_revision",
-        "pinned_interpreter_exists",
-        "all_live_apis_protocol2_remote",
-        "no_existing_run_leases",
-        "pending_commands_supported",
-        "executor_process_identity_matches_database"
-      ],
-      "command": [
-        "{release}/.venv/bin/python",
-        "-m",
-        "ttakkari.cli",
-        "executor",
-        "--activate"
-      ],
-      "environment": {
-        "TTAKKARI_DEPLOY_SOURCE_ROOT": "{source_root}",
-        "TTAKKARI_DEPLOY_STRATEGY": "generations",
-        "TTAKKARI_RELEASE_REVISION": "{revision}",
-        "TTAKKARI_RUNTIME_GENERATION": "true"
-      },
-      "readiness": [
-        "executor_generation",
-        "revision",
-        "pid",
-        "process_started_at",
-        "heartbeat_at"
-      ],
-      "replacement": "drain_runs_and_children_then_replace_under_executor_lock",
-      "role": "run-executor",
-      "rollback": "drain_runs_and_children_then_clear_executor_pointer_before_api_local_mode",
-      "schema": 1
-    },
-    "run_executor_manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266"
+    "maintenance_job_count": 15,
+    "parsed_job_matches": 19
   },
-  "generated_at": "2026-10-24T21:33:00+09:00",
-  "git_revisions": {
-    "audited_origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
-    "commits_between_live_and_origin_main": 4,
-    "commits_between_shared_head_and_origin_main": 111,
-    "front_origin_main_sha": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
-    "live_deployed_sha": "9f82c9c16cd604e81ddf43180b0be2e895ec85cb",
-    "retired_previous_sha": "4f341c54813830c59fc0dd2ab41a8d37c811df52",
-    "shared_back_worktree_head_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
-    "supervisor_pinned_release_sha": "e817fc19471bdc48054158cada4a99466f7eaa6f",
-    "ui_worker_session_verified": {
-      "backend_side_effects": "none",
-      "commit_sha": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
-      "repo_touched": "/Users/winterholic/development/projects/winterholic-ttakkari/front",
-      "session_id": "6e33860e-3773-48bf-8df5-a3dc2c330a3e",
-      "title": "Worker: 메인 화면 카드 겹침·잘림 전수 수정 및 재발 방지"
-    }
-  },
-  "migrations": {
-    "heads": [
-      "0067_collector_outbox_retry"
-    ],
-    "latest_files": [
-      "0063_collector_stage_items.py",
-      "0064_run_executor.py",
-      "0065_collector_delivery.py",
-      "0066_collector_budget.py",
-      "0067_collector_outbox_retry.py"
-    ],
-    "migration_file_count": 67,
-    "revision_count": 67,
-    "single_head": true
-  },
-  "p0_operational_baseline": {
-    "active_deployment": {
-      "activated_revision": "9f82c9c16cd604e81ddf43180b0be2e895ec85cb",
-      "candidate_generation": "5ef462e5-d7f7-40e7-bf27-1d4bf19e1d91",
-      "candidate_port": 8792,
-      "candidate_slot": 1,
-      "created_at": "2026-10-23T10:16:49.556741+00:00",
-      "db_reset_tables": 106,
-      "db_selective_resets": 2822,
-      "job_id": "4a6e09a8-c49f-4c2f-9a6c-c0d83fe5824a",
-      "previous_port": 8791,
-      "previous_slot": 0,
-      "pytest_passed": 4473,
-      "pytest_skipped": 8,
-      "pytest_subtests_passed": 5020,
-      "pytest_wall_seconds": 1045.97,
-      "pytest_xfailed": 2,
-      "release_path": "/Users/winterholic/.ttakkari/deploy/releases/9f82c9c16cd604e81ddf43180b0be2e895ec85cb",
-      "retired_generation": "e1eb4ad0-5ce7-415f-b91e-9c0b0eab2ba3",
-      "status": "succeeded",
-      "strategy": "generations",
-      "updated_at": "2026-10-23T10:43:06.032849+00:00",
-      "wall_clock_seconds": 1576.48
-    },
-    "backup_and_restore": {
-      "api_endpoint": "GET /api/system/backup-status",
-      "backup_db_script": "scripts/backup_db.sh",
+  "subsystem_status_matrix": [
+    {
+      "subsystem": "Generation Deployment & 3-Slot API Runtime (8791/8792/8793)",
+      "files": [
+        "src/ttakkari/generation.py",
+        "src/ttakkari/generation_service.py",
+        "src/ttakkari/generation_deployment.py",
+        "src/ttakkari/deployment.py"
+      ],
       "code_status": "implemented",
-      "live_latest_manifest_state": "unknown (확인 필요: ~/.ttakkari-backups/latest.json is outside workspace writable/readable roots and no MCP wrapper exposes /api/system/backup-status)",
-      "restore_rehearsal_script": "scripts/restore_rehearsal.sh",
-      "snapshot_data_script": "scripts/snapshot_data.sh",
-      "status_reader_module": "src/ttakkari/backup_status.py"
+      "test_status": "tested (unit/static; live cutover E2E unverified)",
+      "config_default": "deploy_strategy='generations', runtime_generation=True (generation deployment itself is enabled; only independent RunExecutor is disabled)",
+      "live_status": "historical_receipt_confirmed_9f82c9c1 (current live slot/revision unknown without direct DB/HTTP read)"
     },
-    "deploy_history_window": {
-      "by_stage": {
-        "deploy:archive": {
-          "events": 2,
-          "issue_groups": 1
-        },
-        "deploy:pytest": {
-          "events": 54,
-          "issue_groups": 33
-        }
-      },
-      "deploy_failure_events_total": 56,
-      "deploy_issue_groups_total": 34,
-      "period_utc": "2026-10-16T08:11:13Z..2026-10-23T17:19:03Z",
-      "sampled_job_counts": {
-        "draining_active": 0,
-        "failed_recent_cap": 50,
-        "succeeded_recent_cap": 50,
-        "superseded_recent": 40,
-        "waiting_slot_active": 0
-      }
-    },
-    "host_resources": {
-      "chip": "Apple M5 Max",
-      "cpu_logical_cores": 18,
-      "cpu_usage_percent": 17.6,
-      "disk_used_percent": 77.3,
-      "gpu_cores": 40,
-      "gpu_usage_percent": 0.0,
-      "memory_total_bytes": 68719476736,
-      "memory_used_percent": 42.1,
-      "observed_backend_pid": 44104,
-      "observed_llama_server_pid": 44129,
-      "observed_llama_server_rss_bytes": 7734657024,
-      "sampled_at": "2026-10-24T12:20:12.690830+00:00",
-      "swap_total_bytes": 35745689856,
-      "swap_used_bytes": 34059649024,
-      "swap_used_percent": 95.3
-    },
-    "latest_blocked_deployments": [
-      {
-        "cause": "AssertionError: assert 'harness-v3-topic-boundary' == 'harness-v2'",
-        "failed_test": "tests/test_desk_qwen_service.py::test_desk_request_goes_to_the_managed_server_of_this_process",
-        "failing_stage": "pytest",
-        "issue_id": "LOG-195",
-        "job_id": "e15536bc-c7f9-4e1a-89cb-95e2f91192e5",
-        "passed_before_abort": 1112,
-        "pytest_seconds_before_abort": 172.23,
-        "status": "failed",
-        "target_sha": "c8f10156845d007ec6496a65d6d8417be19260bd"
-      },
-      {
-        "cause": "AssertionError: assert 349 == 324 (prompt length changed by caption word-wrapping fix)",
-        "failed_test": "unit_tests/test_creative_v2_lease_handoff.py::test_scene_generation_requests_bounded_lease_wait_from_controller",
-        "failing_stage": "pytest",
-        "issue_id": "LOG-194",
-        "job_id": "794447f3-8635-443d-b4c5-de975b0e91fb",
-        "passed_before_abort": 3327,
-        "pytest_seconds_before_abort": 985.34,
-        "status": "failed",
-        "target_sha": "063002a14c21fc7d3fa668db66eb3e503f4cb5cc"
-      }
-    ]
-  },
-  "sample_evidence_cache_key": {
-    "cache_key": "evk-v1-creative-046e6252825d0ecfbebf16f8",
-    "components": {
-      "changed_files": [
-        "src/ttakkari/creative/render.py"
+    {
+      "subsystem": "ADR 0036 Independent RunExecutor & Process Group Ledger",
+      "files": [
+        "src/ttakkari/executor.py",
+        "src/ttakkari/executor_reconcile.py",
+        "alembic/versions/0064_run_executor.py"
       ],
-      "dependency_closure_hashes": {
-        "src/ttakkari/config.py": "b50c8d87887b3d755157720d0362d53f8614567003cf78467272c8eb9196753b",
-        "src/ttakkari/host_resource.py": "387912b757995b38ba8d888b2fbfa4ddbcc21857b6bfcd804489e24ddcf26219",
-        "src/ttakkari/managed_comfy.py": "60a2a6d76e7a707450ecb34b95b931a30ea4c567abd14f87fdf0a527e74aac1c",
-        "src/ttakkari/managed_comfy_receipt.py": "0ac2a4afe1341d676a3f9f64d1c3953bf23db893a1e023934d64dca4825f097b",
-        "src/ttakkari/models.py": "f77ad6600a9763d07a407cc465580f7b9e1a9fadbd829a2b7c2e71dab0f87f3e"
-      },
-      "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
-      "migration_head": "0067_collector_outbox_retry",
+      "code_status": "implemented (`runtime_process_groups` table + 4 PL/pgSQL triggers + `validate_handoff` + `reconcile_orphans`)",
+      "test_status": "tested (DB-free unit tests in `unit_tests/test_executor_migration_contract.py` & `test_executor_reconcile.py`)",
+      "config_default": "feature-off (`deploy/generation-contract.json` `run_executor.activation='disabled'`, `Settings.run_executor_mode='local'`; `Slots.ensure_executor` returns `disabled`)",
+      "live_status": "feature-off / unverified in production"
+    },
+    {
+      "subsystem": "Run Recovery: Executor Reconcile vs Legacy Startup Auto-Resume",
+      "files": [
+        "src/ttakkari/executor_reconcile.py:26-241",
+        "src/ttakkari/runs/manager.py:1900-1975",
+        "src/ttakkari/main.py:193-204"
+      ],
+      "code_status": "Two distinct code paths: (1) `executor_reconcile.py` treats only `psutil.NoSuchProcess` as ABSENT and `AccessDenied`/`OSError` as UNKNOWN (retained), re-verifies `(pid, process_started_at, pgid)` and `(generation_id, lease_token)` under row locks before signaling, marks confirmed orphans `interrupted` without auto-replay. (2) Legacy non-generation startup (`main.py:201` -> `runs/manager.py:1941` `resume_interrupted()`) is forbidden when `runtime_control.active_generation` exists, but in legacy mode re-queues `interrupted` runs with `error == '서버 종료로 중단'` up to `MAX_RESTART_RESUME_ATTEMPTS = 3`.",
+      "test_status": "executor_reconcile tested; legacy resume identity/approval semantics 확인 필요",
+      "config_default": "generation mode forbids legacy `recover_interrupted`",
+      "live_status": "unverified E2E under crash/restart"
+    },
+    {
+      "subsystem": "ADR 0066 Delivery ChangeSets / Worktree / MergeQueue",
+      "files": [
+        "src/ttakkari/delivery/worktree.py",
+        "src/ttakkari/delivery/validation.py",
+        "src/ttakkari/delivery/merge_queue.py",
+        "alembic/versions/0062_delivery_change_sets.py"
+      ],
+      "code_status": "implemented (partial: Stage 2 runs full `pytest -q --timeout=120`; not wired to `generation_deployment.py` or receipt cache)",
+      "test_status": "tested (`tests/delivery/test_*.py`)",
+      "config_default": "feature-off (`Settings.delivery_pipeline_enabled=False`)",
+      "live_status": "feature-off"
+    },
+    {
+      "subsystem": "Local TTS Queue (`tts_jobs`) & Generation Drain",
+      "files": [
+        "src/ttakkari/tts/jobs.py",
+        "src/ttakkari/tts/service.py",
+        "src/ttakkari/generation.py:298-315"
+      ],
+      "code_status": "defect_confirmed_in_code (`_pending_texts` in-memory only; `_fail_queued_draining` fails accepted 202 queued jobs on drain; `budget()` refuses `generation.work('tts')` when not `active`)",
+      "test_status": "existing unit tests do not cover accepted-job drain across generation switch",
+      "config_default": "local_tts_enabled=True",
+      "live_status": "code defect present in 9f82c9c1/c8f10156 (live drain failure reproduction unexecuted)"
+    },
+    {
+      "subsystem": "Creative Studio V2 Auto-Assets & Checkpoints",
+      "files": [
+        "src/ttakkari/api/creative_v2.py:418",
+        "src/ttakkari/creative/v2/asset_generation_managed.py"
+      ],
+      "code_status": "defect_confirmed_in_code (`_ASSET_GENERATION_TASKS` is untracked in-memory dict without `generation.work`, `ready()` finalizer, or DB fence; Comfy step checks input identity and receipt prompt hashes, but `_write_checkpoint` is `.tmp` + `os.replace` without `fsync`/hash; subsequent Supertonic TTS step fails if generation enters `draining`)",
+      "test_status": "Comfy lease handoff unit-tested (`test_creative_v2_lease_handoff.py`); outer task drain untracked",
+      "config_default": "enabled",
+      "live_status": "code defect present (live transition reproduction unexecuted)"
+    },
+    {
+      "subsystem": "Desk Qwen Service (`llama-server` ownership)",
+      "files": [
+        "src/ttakkari/runs/desk_qwen_service.py",
+        "src/ttakkari/generation_service.py:232"
+      ],
+      "code_status": "structural_finding_confirmed (`start_api_services` calls `qwen_service.start()` per API process; spawns managed child when `desk_qwen_base_url == ''` and `desk_qwen_manage == True`, or uses external health watcher when `desk_qwen_base_url` is set)",
+      "test_status": "unit-tested (note: `LOG-195` prompt version mismatch in `tests/test_desk_qwen_service.py` at `c8f10156`)",
+      "config_default": "desk_qwen_enabled=True, desk_qwen_manage=True, desk_qwen_base_url=''",
+      "live_status": "single `llama-server` (PID 44129, RSS 7.20 GiB) observed in current host snapshot; multi-server overlap count and swap causality are unverified (확인 필요)"
+    },
+    {
+      "subsystem": "Independent Module Release Archive / Active Pointer / Versioned Dispatcher",
+      "files": [],
+      "code_status": "unimplemented_design_target (not present in `src/ttakkari`)",
+      "test_status": "unimplemented",
+      "config_default": "n/a",
+      "live_status": "unimplemented (target architecture for P3/P4)"
+    }
+  ],
+  "candidate_modules_evaluation": [
+    {
       "module_id": "creative",
-      "python_version": "3.13",
-      "schema_version": "platform-v2-evidence-key-v1",
-      "suite_selector": "pytest -m contract + tests/test_creative*.py + unit_tests/test_creative*.py",
-      "uv_lock_sha256": "1c98140912d3c7a49b9ef06b671d53f57c92592c2e1e02d8a6065027e3f15937"
-    },
-    "sha256": "046e6252825d0ecfbebf16f8bc005d690ffefc7e68298e12bff980a809f4f15b"
-  },
-  "sample_impact_classifications": {
-    "alembic_schema_change": {
-      "gate_mode": "broad_fail_closed",
-      "impacted_reverse_modules": [],
-      "reasons": [
-        "broad_gate_trigger:alembic/versions/0064_run_executor.py",
-        "unclassified_path:alembic/versions/0064_run_executor.py"
+      "display_name": "Creative Studio (V1 Legacy + V2 Remotion/Managed Comfy/TTS/ACE-Step)",
+      "storage_mode": "Filesystem JSON manifests (`PlanStore`, `ProductionStore`, `StyleStore`, `DirectorStore`) + content-addressed media assets; V2 intent extraction (`creative/v2/run_extraction.py`) creates `ChatSession`/`Run` rows (`worker_task_type='creative_intent'`). Note: `artcraft_tasks` belongs to `src/ttakkari/artcraft.py`, not `src/ttakkari/creative/`.",
+      "external_dep_reverse_modules": [],
+      "test_files_count": 19,
+      "recent_deploy_blocker_incidents": [
+        {
+          "deploy_id": "794447f3-8635-443d-b4c5-de975b0e91fb",
+          "sha": "063002a1",
+          "issue": "LOG-194",
+          "failed_test": "unit_tests/test_creative_v2_lease_handoff.py::test_scene_generation_requests_bounded_lease_wait_from_controller",
+          "wall_seconds_before_fail_with_x": 985.34
+        },
+        {
+          "deploy_id": "d4f439d6-589f-4c72-9754-83aa5364c459",
+          "sha": "5201053b",
+          "issue": "LOG-190",
+          "failed_test": "unit_tests/test_creative_v2_lease_handoff.py::test_scene_generation_requests_bounded_lease_wait_from_controller"
+        },
+        {
+          "deploy_id": "bf9a853d-a24e-4b02-9a91-6bd3872e8a7f",
+          "sha": "ee4f06f3",
+          "issue": "LOG-186",
+          "failed_test": "tests/test_creative_v2_api.py::test_plan_create_edit_approve_and_production_lifecycle"
+        }
       ],
-      "touched_modules": []
-    },
-    "creative_only_change": {
-      "gate_mode": "module_scoped",
-      "impacted_reverse_modules": [
+      "runtime_hazards_found": [
+        "api/creative_v2.py:418 spawns `_ASSET_GENERATION_TASKS` in-memory without `generation.work` or `ready()` finalizer tracking or durable DB job fence",
+        "creative/v2/asset_generation_managed.py:478 calls `tts.service.budget(600)` which acquires `generation.work('tts')` and fails if API slot enters `draining` during multi-minute ComfyUI stage",
+        "creative/v2/asset_generation_managed.py `_write_checkpoint` writes `.tmp` + `os.replace` without `fsync` or checkpoint content hash",
+        "generation_service.py:256 runs `creative-render` scan every 2s inside API generation when `execution_mode == 'local'`"
+      ],
+      "first_module_suitability": "provisional_rank_1_pending_b_c_reconciliation",
+      "selection_caveat": "Provisional Rank 1 candidate: name-based `fan_in=4` alone does not prove FK, resource lease, file side-effect, or test-helper isolation. Final selection awaits Worker B (FK/data/lease) and Worker C (frontend/test classification) verified reconciliation in Root.",
+      "file_count": 25,
+      "line_count": 13194,
+      "depends_on": [
+        "api",
+        "config",
+        "host_resource",
+        "managed_comfy",
+        "managed_comfy_receipt",
+        "models",
+        "runs",
+        "tts"
+      ],
+      "depended_by": [
         "api",
         "generation_service",
         "main",
         "orchestrator"
-      ],
-      "reasons": [],
-      "touched_modules": [
-        "creative"
       ]
     },
-    "high_fan_in_core_change": {
-      "gate_mode": "broad_fail_closed",
-      "impacted_reverse_modules": [
+    {
+      "module_id": "games",
+      "display_name": "Game Studio (2D/3D Three.js, Autobuild, Runner, Verifier)",
+      "storage_mode": "PostgreSQL tables (`game_projects`, `game_builds`, `game_sessions`, etc.) + workspace files",
+      "external_dep_reverse_modules": [
+        "runs"
+      ],
+      "test_files_count": 22,
+      "recent_deploy_blocker_incidents": [
+        {
+          "deploy_id": "4e0f903e-8d19-4dc6-a9b8-e6061fa604bb",
+          "sha": "6fc943bc",
+          "issue": "LOG-185",
+          "failed_test": "tests/test_games_3d_Quality_rebuild.py::test_session_run_triggers_one_3d_quality_repair_when_first_build_fails"
+        }
+      ],
+      "runtime_hazards_found": [
+        "Coupled to `runs` (`runs/manager.py:1820` triggers `games.autobuild.after_run` on game runs) and `models.py`"
+      ],
+      "first_module_suitability": "provisional_rank_2_candidate",
+      "file_count": 11,
+      "line_count": 2407,
+      "depends_on": [
         "api",
-        "artcraft_tasks",
         "artifacts",
-        "audit",
-        "cli",
-        "collector",
-        "collector_models",
-        "context",
-        "creative",
+        "broker",
+        "config",
         "db",
-        "delivery",
-        "delivery_models",
-        "deploy_gate",
-        "executor",
-        "executor_reconcile",
-        "games",
+        "models",
+        "security"
+      ],
+      "depended_by": [
+        "api",
+        "cli",
+        "main",
+        "runs"
+      ]
+    },
+    {
+      "module_id": "collector",
+      "display_name": "Collector Platform (Fetch, Discovery, Bandit, Outbox, KB Delivery)",
+      "storage_mode": "PostgreSQL tables (2 base tables + 14 new `collector_*` tables and 3 `kb_*` tables across migrations 0063/0065/0066/0067) + content-addressed blob store",
+      "external_dep_reverse_modules": [
+        "kb_delivery",
+        "kb_library",
+        "models"
+      ],
+      "test_files_count": 22,
+      "recent_deploy_blocker_incidents": [
+        {
+          "deploy_id": "0a871bc1-d4df-4bf4-9b7a-755ef6e095a9",
+          "sha": "4da0348c",
+          "issue": "LOG-191",
+          "failed_test": "unit_tests/test_collector_s2_fetch_items.py"
+        }
+      ],
+      "runtime_hazards_found": [
+        "Heavy schema evolution (0060, 0061, 0063, 0065, 0066, 0067) and bidirectional coupling with `kb_delivery`/`kb_library`",
+        "Shared `/back` checkout currently has uncommitted collector edits on top of 607f8bda"
+      ],
+      "first_module_suitability": "defer_to_p5_after_schema_and_worktree_stabilization",
+      "file_count": 26,
+      "line_count": 5915,
+      "depends_on": [
+        "collector_models",
+        "config",
+        "db",
         "generation",
-        "generation_bootstrap",
-        "generation_deployment",
+        "models"
+      ],
+      "depended_by": [
+        "api",
         "generation_service",
-        "google_account",
-        "harness_view",
-        "kb_models",
-        "kb_retrieval",
-        "kb_store",
-        "kb_vector_models",
-        "knowledge",
-        "knowledge_models",
-        "meetings",
-        "notebooklm",
-        "oplog",
-        "orchestrator",
-        "planner",
-        "pms",
-        "push",
-        "research",
-        "resource_history",
-        "reverse",
-        "reverse_tasks",
-        "runs",
-        "schedules",
-        "security",
-        "sharing",
-        "transfer",
-        "tts",
-        "tts_models",
-        "weather"
-      ],
-      "reasons": [
-        "broad_gate_trigger:src/ttakkari/models.py",
-        "high_fan_in_module:models(fan_in=47)"
-      ],
-      "touched_modules": [
+        "kb_delivery",
+        "kb_library",
         "models"
       ]
-    }
-  },
-  "schema_version": "platform-v2-worker-a-evidence-v1",
-  "subsystem_status_matrix": [
-    {
-      "code_status": "implemented",
-      "config_contract_default": "feature-off (deploy/generation-contract.json run_executor.activation='disabled', Settings.run_executor_mode='local')",
-      "evidence_paths": [
-        "src/ttakkari/executor.py",
-        "src/ttakkari/executor_reconcile.py",
-        "alembic/versions/0064_run_executor.py",
-        "deploy/generation-contract.json",
-        "deploy/run-executor-manifest.json"
-      ],
-      "live_status": "feature-off (code & migration 0064_run_executor deployed in 9f82c9c1, but active slot runs in execution_mode='local')",
-      "subsystem": "ADR 0036 Standalone RunExecutor & Postgres Command Queue",
-      "test_status": "tested (unit_tests/test_executor_migration_contract.py, unit_tests/test_executor_reconcile.py, tests/test_run_executor.py)"
     },
     {
-      "code_status": "implemented (partial: Stage 2 validator still runs full pytest; no daemon or MCP submit_change tool)",
-      "config_contract_default": "feature-off (Settings.delivery_pipeline_enabled=False)",
-      "evidence_paths": [
-        "src/ttakkari/delivery_models.py",
-        "src/ttakkari/delivery/merge_queue.py",
-        "src/ttakkari/delivery/validation.py",
-        "src/ttakkari/delivery/worktree.py",
-        "src/ttakkari/delivery/provenance.py",
-        "src/ttakkari/delivery/diff_guard.py",
-        "src/ttakkari/delivery/repair_policy.py",
-        "alembic/versions/0062_delivery_change_sets.py"
+      "module_id": "tts",
+      "display_name": "Local TTS (Supertonic ONNX Queue & Synthesis)",
+      "storage_mode": "PostgreSQL `tts_jobs` metadata + process-local `_pending_texts` in RAM + disk audio cache",
+      "external_dep_reverse_modules": [
+        "creative",
+        "generation_service",
+        "main"
       ],
-      "live_status": "feature-off (deployed in 9f82c9c1, not enabled in production)",
-      "subsystem": "ADR 0066 AI-Native Delivery Pipeline (ChangeSet / MergeQueue / Worktree)",
-      "test_status": "tested (tests/delivery/test_*.py)"
-    },
-    {
-      "code_status": "implemented",
-      "config_contract_default": "enabled in prod (deploy_strategy='generations', runtime_generation=True)",
-      "evidence_paths": [
-        "src/ttakkari/generation.py",
-        "src/ttakkari/generation_service.py",
-        "src/ttakkari/generation_deployment.py",
-        "src/ttakkari/deployment.py",
-        "src/ttakkari/deploy_gate.py"
+      "test_files_count": 8,
+      "recent_deploy_blocker_incidents": [],
+      "runtime_hazards_found": [
+        "tts/jobs.py:42 stores text chunks only in process-local `_pending_texts: dict[UUID, list[str]]`",
+        "tts/jobs.py:154 `_fail_queued_draining` actively fails accepted 202 queued jobs with `generation_draining` when slot drains",
+        "tts/service.py:130 `generation.work('tts')` rejects work in draining state, preventing accepted queued jobs from draining"
       ],
-      "live_status": "live & measured (slot 1 port 8792 active on 9f82c9c1; supervisor running from pinned release e817fc19)",
-      "subsystem": "3-Slot Generation Deployment (8791/8792/8793) & Cutover Controller",
-      "test_status": "tested (tests/test_generation_deployment.py, unit_tests/test_deploy_stepwise_gate.py)"
-    },
-    {
-      "code_status": "implemented (with process-local _pending_texts defect)",
-      "config_contract_default": "local_tts_enabled=True",
-      "evidence_paths": [
-        "src/ttakkari/tts/jobs.py",
-        "src/ttakkari/tts/service.py"
+      "first_module_suitability": "foundation_prerequisite_p3",
+      "file_count": 10,
+      "line_count": 2029,
+      "depends_on": [
+        "config",
+        "db",
+        "generation",
+        "model_process",
+        "models",
+        "runs",
+        "security",
+        "tts_models"
       ],
-      "live_status": "live (process-local _pending_texts and _fail_queued_draining active in API process)",
-      "subsystem": "Local TTS Queue & Supertonic Provider",
-      "test_status": "tested (tests/test_tts*.py)"
-    },
-    {
-      "code_status": "implemented (per-API-generation child process ownership)",
-      "config_contract_default": "desk_qwen_enabled=True, desk_qwen_manage=True, desk_qwen_base_url=''",
-      "evidence_paths": [
-        "src/ttakkari/runs/desk_qwen_service.py",
-        "src/ttakkari/generation_service.py"
-      ],
-      "live_status": "live & measured (pid 44129 llama-server RSS 7.20 GiB)",
-      "subsystem": "Desk Qwen Managed Server (Qwen3.5-4B llama-server)",
-      "test_status": "tested (tests/test_desk_qwen_service.py)"
-    },
-    {
-      "code_status": "implemented",
-      "config_contract_default": "enabled (locks data_dir/host-gpu/lock + data_dir/host-resource/lease.json)",
-      "evidence_paths": [
-        "src/ttakkari/host_resource.py",
-        "src/ttakkari/host_gpu.py",
-        "src/ttakkari/managed_comfy.py"
-      ],
-      "live_status": "live (deployed in 9f82c9c1)",
-      "subsystem": "Exclusive Host GPU Resource Lease (G1)",
-      "test_status": "tested (unit_tests/test_host_resource_lease.py, unit_tests/test_creative_v2_lease_handoff.py)"
+      "depended_by": [
+        "api",
+        "creative",
+        "generation_service",
+        "main"
+      ]
     }
   ],
-  "worker": {
-    "audit_stage_policy": "Initial audit completion is not project completion and does not wait for user approval; do not adopt unverified B or C claims as final boundaries; root integrates A/B/C after Bv (1d994e50-c900-4f90-9975-1ff082522a35) and Cv (fed2c630-a867-42f1-9574-4a92905de864) complete and dispatches P2->P3.",
-    "branch": "audit/platform-v2-a-runtime-delivery-20261024",
-    "id": "A",
-    "parallel_audit_workers": {
-      "A_runtime_delivery": {
-        "base_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
-        "status": "audit_delivered",
-        "worker_id": "e65430e3-0775-4e2c-910a-5050cdb7d216",
-        "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a"
-      },
-      "B_backend_data": {
-        "base_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
-        "head_sha": "86373cedda20e298ad2b82d857352f845ae70980",
-        "independent_verifier_worker_id": "1d994e50-c900-4f90-9975-1ff082522a35",
-        "model_tier": "flash",
-        "unverified_claims_do_not_adopt_yet": [
-          "25 modules / 497 routes / 102 tools / 88 tables / 62 migrations / 212 configs / 321 .py / unmatched 0 (measured on stale 607f8bda, 111 commits behind origin/main c8f10156)",
-          "Creative = artcraft_tasks 1 table / FK 0 (conflates artcraft.py with src/ttakkari/creative/ and misses creative/v2/run_extraction.py ChatSession/Run coupling)",
-          "collector = 2 tables (misses 14 collector_* tables and 3 kb_* tables added in 0063/0065/0066/0067 on origin/main)",
-          "cycle = 34"
+  "evidence_cache_key_v2_spec_and_sample": {
+    "status": "unintegrated_design_and_verifier_prototype (production `generation_deployment.py` full regression, security, and recovery gates remain unchanged)",
+    "retracted_v1_flaw": "Retracted v1 preview which passed `changed_files` as path strings only and omitted changed file content hashes, test tree/conftest/helper hashes, full transitive closure, and runtime/schema content digests.",
+    "sample_creative_key_v2": {
+      "cache_key": "evk-v2-creative-a4b1d67be7a11e0493f1b1feef5f3a38",
+      "sha256": "a4b1d67be7a11e0493f1b1feef5f3a38751b995eaa340740bab13cd8a9fea57c",
+      "components": {
+        "schema_version": "platform-v2-evidence-key-v2",
+        "module_id": "creative",
+        "candidate_git_head_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+        "candidate_git_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
+        "changed_file_hashes": {
+          "src/ttakkari/creative/render.py": "4b54f6a89b5957891245ca05af2f8c07abf7d1ee80097bbaf813fffd82203100"
+        },
+        "module_source_file_hashes": {
+          "src/ttakkari/creative/__init__.py": "f20c3bde6c5850b21c51a7a6fd21783bfcef1eaef4e9dddf1d9c27ff245c2d36",
+          "src/ttakkari/creative/catalog.py": "304b868865526750ae759728b87263e07020e4dac783b691b05bc23ba4cf5f80",
+          "src/ttakkari/creative/demo.py": "f16f2b5c93b15a103aa90ff452b38e16ed2ae13537a599b908a22f4965d50de0",
+          "src/ttakkari/creative/director.py": "4a09459ad17d4638e0f68a50bf8d61b1480dc147106d4c5c60d0c60cf557dcff",
+          "src/ttakkari/creative/records.py": "983252672f4e2f77848adf3f727b76dafc060e2bee8d66e4ab3ef1289c512f4c",
+          "src/ttakkari/creative/render.py": "4b54f6a89b5957891245ca05af2f8c07abf7d1ee80097bbaf813fffd82203100",
+          "src/ttakkari/creative/service.py": "dc37b52e095100c1254e4ab403620b6738da9dd53c7b2fdf9b869da4b82658cb",
+          "src/ttakkari/creative/v2/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/creative/v2/asset_generation.py": "90f4b730f23752eebb397de29b83e11a8d058779d1295f5ba473f9549f382af2",
+          "src/ttakkari/creative/v2/asset_generation_managed.py": "c077df1b3a760a9d63003d129e99e27b35a00a165fae2c37a5c985c85f71fd2a",
+          "src/ttakkari/creative/v2/capabilities.py": "c08d4bdb19f815d728e9d02284fa34e4dcc0988f641bb3ea187d415617101965",
+          "src/ttakkari/creative/v2/catalog_data.py": "5b2053d0f268b4a39158220dd72afeac6072766e7131d8ec420c2362993b2936",
+          "src/ttakkari/creative/v2/dispatch.py": "51b6bf81ce015e2c2e90ab79caa549fc8dbe81807b146c71225eb9af0ac5cc65",
+          "src/ttakkari/creative/v2/duration.py": "55c05750777b78ca22dffe2e93a051242c45fbe15a9acc5c14dc451eae06a5c8",
+          "src/ttakkari/creative/v2/engines.py": "d2836ef81ebed3c89412a279c86dcaf157d7832e6f92944b2e3a1279896c8190",
+          "src/ttakkari/creative/v2/extraction.py": "3c35115cad39222e35340872105e1ca8d511d2ec5750557e30a818ed37a1c250",
+          "src/ttakkari/creative/v2/intent.py": "619102df7c1cb28ffba780aad11373e7bb2e3ef430829b76e60b7896abad39c7",
+          "src/ttakkari/creative/v2/matching.py": "bb1a84743ec50746dc801f7f352c3866878d36f312239867b10b423fe931540a",
+          "src/ttakkari/creative/v2/plans.py": "e4a19cd852cfd84d0e82b447d71f61a0db64d2e50b5156a0b101466bc4cdf4c7",
+          "src/ttakkari/creative/v2/probe.py": "9798674a54e800644d3d4d8cbd32adc714ecdce15080e18dd6ab1b334e0830b8",
+          "src/ttakkari/creative/v2/registry.py": "97bd25b50e0783dfa1ba96223f04b108ca430905f86552538772835ffa4cf4ab",
+          "src/ttakkari/creative/v2/registry_data.py": "9b97b2ac27a1a560f7c89c4f01b497adca9ec72b5ce06f34c7b0acf09fb2d5e5",
+          "src/ttakkari/creative/v2/report.py": "3bd4c48027f2ebce779936b131b8c0a3df416a5b10e15f16c2461ce92847259d",
+          "src/ttakkari/creative/v2/run_extraction.py": "a15a30400bb6ea0523d233c55125a368d8adfea027d5521fc20d8d0e043403c3",
+          "src/ttakkari/creative/v2/style_dna.py": "beda0d73af51492d96fe0d1c67564679341576447005701bb05178895df2f4c2"
+        },
+        "transitive_dependency_file_hashes": {
+          "src/ttakkari/agents/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/agents/antigravity.py": "8eb46ad6bf054adc6ca105c356fbd3b890d4e5479ca246d72285ee8f02822b2f",
+          "src/ttakkari/agents/base.py": "50f5655d6ff545e4ae2c67dc0b01e2d76d9ca09e13c4c018abc546b4a85630d3",
+          "src/ttakkari/agents/browser_mcp.py": "04382b6da81d086eb7f4e9409f6d9047d46e345004c5866bef8b285bc50b4b44",
+          "src/ttakkari/agents/browser_preflight.py": "f7f3b2d93d1b31c67e8994f49839ffe7b0437f9383d8f203e78730e1ed107103",
+          "src/ttakkari/agents/claude.py": "15d211f5c695f878dbcaf32afb864964d6b8f646ac2bcd8e575514d04afb4532",
+          "src/ttakkari/agents/codex.py": "b755f9a43d7d77805e1dbe9b7a4a662500959bd1a929d11cf727f9a9d99a9eee",
+          "src/ttakkari/agents/muse.py": "47c1c60d8aafd8690416cfe242a4f261a94a563a115511fc21b2c148b60e75fb",
+          "src/ttakkari/agents/muse_protocol.py": "d37169300fcdfe88f6c13fb98cbf1eeaf06b85d387e8ca49929d8dd9d0715323",
+          "src/ttakkari/agents/qwen_local.py": "947ca0cb76c09d4d8066409b8430338fc23839eae47403fecf9d088098242827",
+          "src/ttakkari/antigravity_accounts.py": "085492a5a497d62de2bf861e8a3dab922c3148548c0efb8835a6aa23a30bac02",
+          "src/ttakkari/api/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/api/accounts.py": "f1133e58f7c95473f9ab478fe374174e987ac739968d11e9135a624bb5c51ea9",
+          "src/ttakkari/api/agent.py": "076ff4e047aadf5d39bb8eb788b70a30cc4d182f00e74a5daa2d2493150da3c6",
+          "src/ttakkari/api/agent_pms.py": "c4efe1c554462006db487c2ce0b79d2febd64b12a6b9a77c1077b69639062d30",
+          "src/ttakkari/api/artcraft.py": "0376deb98517f2c5858c384263df9846f61668cb466dbfc39673ffee172824b5",
+          "src/ttakkari/api/artifacts.py": "e2fbc9864ef145c9e48075a44512e83d44e7579b70d6bea30933d5f4e31f5a8b",
+          "src/ttakkari/api/assistant.py": "88cb35d74702c77afd253e1c5e7eafc6bba36f368f3f943d88ddf8967626aca5",
+          "src/ttakkari/api/auth.py": "cb5cefcf018c3a01cf123be6d917b1d4907abbf8591537e1e88ff06a4abd3c73",
+          "src/ttakkari/api/checklists.py": "e39ca488cd5d1423cadde67a03a2192ee28fddcd996ec953a70e656a47615e0a",
+          "src/ttakkari/api/collect.py": "ec3ba5ec64681842260b6a064da61d8e24fe801df80566c5ae608cbbe5971285",
+          "src/ttakkari/api/collect_control.py": "a403c4c9a3ce0247f3864269d261f54baa00de6dd49f0dafbb5375a161be8885",
+          "src/ttakkari/api/comfy_managed.py": "861fb16c7e15bfe13e66252102739461f1b95d5c643ca149d567b045b1fdccf2",
+          "src/ttakkari/api/creative.py": "2c141c077e2224ad73661e68d3373f2a40853fecaf6083fcbad1373faf5c0335",
+          "src/ttakkari/api/creative_mcp.py": "a4538fbab067dfd9a59253562bb44359555210eeb3d9c8e54e940c9ec4b3361e",
+          "src/ttakkari/api/creative_v2.py": "d1087f4c95ed166c211862dc3f950b125f12969b0f3852a455aa3d8c0f3b7902",
+          "src/ttakkari/api/deployments.py": "1bf56abfb1be6d56838aa721aebee98ce6096cca9673b14e8be53886a69a4d71",
+          "src/ttakkari/api/deps.py": "26f6db1af61285c51869a36a35e8d774946b3dadb3379172645e55541b6926d5",
+          "src/ttakkari/api/design_system.py": "8163b6f69047734d175d2d7d7d37eb55f46c2c9befdebbe63a05389294f8992f",
+          "src/ttakkari/api/desk_feedback.py": "8160b58d9c5d8dfaaf25bdbc228c58b9a6961d1ee93572c1abd49d25ed7e4490",
+          "src/ttakkari/api/games.py": "4622bf0e33468a3c2817beb071006374e943552759c8204d9b7a8545cd10f7ec",
+          "src/ttakkari/api/github.py": "744eb59574f725de83166bea16b58d56ba29dbf976544fa02a52c1ca891dc4e9",
+          "src/ttakkari/api/google_accounts.py": "6eae9c6b27f9876b22dce09868edbc2cfcbe3a0a5cf5387716772fd939fa4cd9",
+          "src/ttakkari/api/harness.py": "9ff9da433a3b6d4d4d62d1d5e2bf26601a695d60181a74c9b9624e57f0d6a6eb",
+          "src/ttakkari/api/host_env.py": "74f4566432b397451cfb8cafdc41a05471aa86d12094d296e818732a44f646b9",
+          "src/ttakkari/api/kb_agent.py": "3b7ee4cac8801fb5e7dd70747eee4af5085ef524dc83ba7a6b56ba5e962c181f",
+          "src/ttakkari/api/kb_library.py": "a35c774daf85a0a40430bf2e40f14d96f5dde44bb866f96e35c62360f24b6269",
+          "src/ttakkari/api/knowledge.py": "ffba5b116c565094d269da0ffa4e329e6d662378158f7a73c3d44774ddcdec4b",
+          "src/ttakkari/api/library_insight.py": "f62b3de5fcdead8ae8796d4daff94b0ac7d2b5dc00d64171e2f47fcd75bec7dd",
+          "src/ttakkari/api/meetings.py": "6a9148f7c5bcc8372fefd21b1d2fa300d59a476bda0316165483c3f19aab2c7f",
+          "src/ttakkari/api/notebooklm.py": "718dce58a291f17b8fb5518b322242c99e8d6896a3949f39647aec202f79751c",
+          "src/ttakkari/api/notifications.py": "3575a1422703f98708faa354151e95edd6cd55fe9cb4e50cbd41f774c4c6ad29",
+          "src/ttakkari/api/oplogs.py": "94160fa1158b5ab041d8f4f3986c077d20dd766012e9c838077ea8f9d986d2a8",
+          "src/ttakkari/api/orchestrator.py": "d319b5d02aa4ba3883b39f1bf32b086b393fd741d0c31b0ee938ed786d2566ba",
+          "src/ttakkari/api/planner.py": "0173380c4f654f1e76d46b67dec29e2d52fc91f18fff6603403ab3614ea716b2",
+          "src/ttakkari/api/pms.py": "b5bcc5170f6a9d2a5a52fdc0177707352755ad7718a745faa4b1d6eab2578cab",
+          "src/ttakkari/api/public_shares.py": "c16712b2e244bf184b4c2e33f11d6b96933a084b315737cfec60ba073d8e527a",
+          "src/ttakkari/api/push.py": "44b1e62726ab48b9b45377b1f91d77bb3c1f8b053351549c8762a1ba425eceba",
+          "src/ttakkari/api/remote_desktop.py": "40fea0899dda9a2accb88ed3acdc7d14bad5fd51a7a5e93640441f6a258f5780",
+          "src/ttakkari/api/research.py": "5d1677ebdebe9502b7a5ada78505d0f7906b254297cc76a1d581471b1aec957a",
+          "src/ttakkari/api/reverse.py": "8f14ea41daebf77313660092a09d75395a769b1b0358a436d22a881640f6ac39",
+          "src/ttakkari/api/sessions.py": "4cfbd2e9be56e4a6a607ae1af6fc76a4c78dcdcd7d2df98c2f4ef74c46e3cc7f",
+          "src/ttakkari/api/shares.py": "832ec8d57adaaa8049ed1ef1269684d3c4768a7aab023edb026c6a0b800eba04",
+          "src/ttakkari/api/stocks.py": "3d46a951d8215a9d916b526823674865496fd64d83fde739436f5e9b348acfbd",
+          "src/ttakkari/api/system.py": "ca8fe9e072a8252e69bf2a63b5c9a52e0f27603938ea4b4294e7ba2268ec441a",
+          "src/ttakkari/api/tasks.py": "9ae0fa7ce510ffd34062e6b645d04130f0ce24d4c49724c6dff0dd207c56b3e9",
+          "src/ttakkari/api/transfers.py": "6b37703230bcbdc332e693896f24903b6a7f185f8103e7ea4f30bce774480a73",
+          "src/ttakkari/api/tts.py": "cc07c7021b8b2d8a065bfe95464bf570c30f0f845ed65ffc16d53860907d9a64",
+          "src/ttakkari/api/weather.py": "5a88b1f63f87f050674d8f4470d052ff125bce77a112379135c0faf301685fc8",
+          "src/ttakkari/api/workspaces.py": "c899cc657b07760a7c69c3d470be660c75847e6e55252d4df61dd85d8481ea0b",
+          "src/ttakkari/artcraft.py": "6e69121e448becef7290549dde7a9ee5fa19b1ccbcc1f6a435a07ac4b73068c8",
+          "src/ttakkari/artcraft_bugs.py": "bf99f3768288785471c8ca2f4404703221f4589c802ed5172caa71b3bea3734b",
+          "src/ttakkari/artcraft_catalog.py": "8564f99eb131f4d9b714b430587c234d4ae294f96d0795630e6fc1c06a639803",
+          "src/ttakkari/artcraft_tasks.py": "19a44ec26f1ced51cc74e3b9b9518a62a7db35858bf883c0cac012a565e9db0a",
+          "src/ttakkari/artifacts/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/artifacts/kinds.py": "1dfe376a6ba0fe2795f036441865aa26f9334944b986f1a0c443c317ce883c73",
+          "src/ttakkari/artifacts/preview.py": "7dff2ca3dd9ee309f2940cdcc9e6b80b6d0000b7a5c14beed92aa3aa4dbf1083",
+          "src/ttakkari/artifacts/service.py": "6a3aaf7754236e649c49a7abe30323d7eabf5a33a57305d21a00464aaa17980d",
+          "src/ttakkari/audit.py": "582d45f39cfb80bbcab2c741ebc4946662ffa735f56d4a1a246d6b5a6fb96919",
+          "src/ttakkari/backup_status.py": "ed2ff2589ff75785260e60c8f521012831baf3aebc0ed1b68ff55ed78395ba53",
+          "src/ttakkari/broker/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/broker/policy.py": "ad1a6007ba774d6afcf7cb0523fa49354997af38eb1ab505b7a576d4c9f33ea7",
+          "src/ttakkari/collector/__init__.py": "1ca4f61b93833f415e8dce8627b56dad7f3ca5fb4081fce6f98712524c59ce1d",
+          "src/ttakkari/collector/blobs.py": "c4b1ae0def397e7040d39e53dc9cec9e88577a02998a3dc1bd44df7ea8e2e2f9",
+          "src/ttakkari/collector/budget.py": "ca28428e35d37fb6737c900bd71ff5d45229852dadcca9123e6224839a5948cb",
+          "src/ttakkari/collector/budget_models.py": "9f7c5958183859eb6f500973cb4fab6e02afbfc5b309bdee183cb1f98d28aa8a",
+          "src/ttakkari/collector/cache.py": "e544de02014a9fb17bcd7bbc8ca7bf0739418c5a676f1123a6660ce203a537b6",
+          "src/ttakkari/collector/contracts.py": "fce4decf9d93f6cdffe8baeb6ec8ae63a14bf49a47e9871ec1ad93828f5ff5ee",
+          "src/ttakkari/collector/control.py": "6c4cb3ad388f8e0f265c1756d06340c5fae526bf5d21f7394a6d54142a02655e",
+          "src/ttakkari/collector/control_models.py": "db48151ac31344929adc545587ddb52988a1b43098f5a96093c3d6c660105f54",
+          "src/ttakkari/collector/fetcher.py": "797059d7643c90749be685cd2ebafcdbe540e8ed4c6eef86732ce877e4df51c4",
+          "src/ttakkari/collector/intake.py": "e559b2f2323c498190f37b73304365da872b9ca8d695000d05a2ed076c20a411",
+          "src/ttakkari/collector/jobs.py": "57ddc1aa96e78c53c3b715a53be32cd61fa47346ab58c632fa8f54ff14584e41",
+          "src/ttakkari/collector/learning.py": "38b58cef057af8160562e53f319fa5ccc5cbb0f8e1c2f67793d92ee55ec01789",
+          "src/ttakkari/collector/netguard.py": "050d95b7bfd371e56335fb847a490f834d1d5b09add7e54fdf6a54eb6b5d5304",
+          "src/ttakkari/collector/parse.py": "55c2443c7d067ecb3b802342f1cecf26fa7aea1a5cecd4e95fa98a90b422edf0",
+          "src/ttakkari/collector/pilot.py": "2dffeb4e4dd961eb88b13e978acf374d0d2db939cab2c71b35ffd16367b3eef5",
+          "src/ttakkari/collector/pipeline.py": "b590eff466a09c7462ffecad4e3c0b83d9c219d43050589b8b49b3c4285089c5",
+          "src/ttakkari/collector/policy.py": "24fab64e33fe7861716590574bff535e7e534ec03aee0d4a317a151dbc0e9409",
+          "src/ttakkari/collector/polite.py": "973801c0bba2a75f290d53fc13da6572d327d9de1901029fb7c1ee207b1cace6",
+          "src/ttakkari/collector/profiles.py": "c3e3ab4972f463f18b4e4eb4b60c6a699e9bd16e000385181c89311149b47646",
+          "src/ttakkari/collector/quality.py": "e51d2cee6782778eb597574d2fdea1babe8948231bf2650114086492570e02e3",
+          "src/ttakkari/collector/quality_service.py": "9b19074f0fece2051f3bba4d672e43f270d9b421512855e6fa4de917296dc1bb",
+          "src/ttakkari/collector/robots.py": "dbdf102dbf8cbb9a5958f44ce130e5ddae058e9fc1d4bfb63ef53f1d39f456e7",
+          "src/ttakkari/collector/runner.py": "f20eb2bd8a63222d8986b1448f8f7590ee73d286f3026f5ed18a9444bbd1060a",
+          "src/ttakkari/collector/runtime.py": "822bfababee5e5b6ef7485be4351a2fffaaf235e57257511964c8fe9e1241c3b",
+          "src/ttakkari/collector/store.py": "56e602b5229a19120909135cafe57d478945fccf3515a62328f4e3329e8d449a",
+          "src/ttakkari/collector/textproc.py": "f076e1e19ec371b7cb0088e9ebb7a3ceea84fb3deb64afdea701c69b34702f24",
+          "src/ttakkari/collector_models.py": "b8f5eee1e647fa335128c8bb8ba69706af9a15b331245071563351cd3da66668",
+          "src/ttakkari/config.py": "b50c8d87887b3d755157720d0362d53f8614567003cf78467272c8eb9196753b",
+          "src/ttakkari/context/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/context/embedder.py": "d484265bd946cd2bbcc7bd705502a4af57e69746a3eedc500e695294f5096b89",
+          "src/ttakkari/context/embedder_worker.py": "4ea505248b961dcd9d6595d225b7e2953bd656766d5821d08ede25f26f43775d",
+          "src/ttakkari/context/indexer.py": "775771dde1243edb7021b9c6db55d48342fde8fdb1affeaeac9e964a07795fe3",
+          "src/ttakkari/context/insight.py": "b600206038b95d00357146da80380b935ca352fc33a46d72be2a6f1fc8683d08",
+          "src/ttakkari/context/inventory.py": "ed827ce708760498567c8dcb9251bfb781abeab31e805aadf80195750e909958",
+          "src/ttakkari/context/library.py": "a924388a19abfb276675023142599d4344d47ae686b4010980c287a72d540369",
+          "src/ttakkari/context/search.py": "f46d909a39f35124218f2354fa046148eb35ef4ce9806cc6d443051642d6a8f3",
+          "src/ttakkari/context/store.py": "9cdee477d585d6a55e7fe0e15f6b0f296393fc8c79f2f2272bcd108f93a09ebd",
+          "src/ttakkari/db.py": "0617151928c3650dd7b137914b0ce4ff347895d07326b1a907607565933aae1d",
+          "src/ttakkari/delivery/__init__.py": "6bcb87b7b947c272ffbcf0f7f8431a833286ad349abab7cbf7b74aa883155991",
+          "src/ttakkari/delivery/cli.py": "2f4946f12f966bee606763b0b8dc1c71b8b4e6e29a363e80626f1edad372b89e",
+          "src/ttakkari/delivery/diff_guard.py": "f3f75f8797f9734afb9e2549e367873ed2c1931833d78242fabf30df88d949d5",
+          "src/ttakkari/delivery/merge_queue.py": "e3146d35855d6684eda0911dceeb383bafa5758e16307f2910211f4ff393bf64",
+          "src/ttakkari/delivery/provenance.py": "714e815fd17f6ca2000e5c04d4f33a4a1788f222e8aaaeaa3366dcd3149107cd",
+          "src/ttakkari/delivery/repair_policy.py": "a4cfb1e514777bf8dc0408e788e68d67d3480c5f7bcb75523511a5d45a95ff8c",
+          "src/ttakkari/delivery/validation.py": "b59ad1aa76990b3273a8d49d0cad68a63de0eea4a78b3d785c232e522b321e9c",
+          "src/ttakkari/delivery/worktree.py": "9b0bee859c8f08ad5067240bdce177e6def77e68ed6f8319cb0bbacf09490716",
+          "src/ttakkari/delivery_models.py": "6f43a3542919748695fb33742cfe470ba6b21cb713699e84f109b41d97cf3fb9",
+          "src/ttakkari/deploy_gate.py": "b97be3059d8bc0bd4a2b46eae6e53cf01d6df45c76a5018e55ab68a5b4dbd54d",
+          "src/ttakkari/deployment.py": "8fa3a1c2d2325b7a3752bb21a81dfc01b8488d767502aa31a7a878991d10a0a5",
+          "src/ttakkari/design_preview.py": "46c6bf405ded429e5615db3186d1f230f3c9ac44c2b2bee3cc00940f3fc496dc",
+          "src/ttakkari/design_system.py": "c102adfebcbbffbec96801353fb56e012f17de4a658a371cff0ae28617016fba",
+          "src/ttakkari/experiments/__init__.py": "b8305005363eb7c473fe56ed2c2cf6f65851d6394f86c9de310d33015035fc3f",
+          "src/ttakkari/experiments/qwen35_feedback_export.py": "a25c281bf47e5316ff8ecd46523256bc5d6f655a07ee8c2ca4fcbee37cbaabdc",
+          "src/ttakkari/experiments/qwen35_observer.py": "e26ec1ea03bd400dcbebdae9b8515f3dfcc2252ca9a4eb85ef51320939ea8742",
+          "src/ttakkari/experiments/qwen35_shadow.py": "8473488b30dc2bfc1159bfd3e39250b7b0ecfac980c90d7cd2caebfa816ec1c8",
+          "src/ttakkari/games/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/games/adapter.py": "5ec932382a3863d13e1be85934ba5208810111e6be55d827b6e8fd3bb2a3cfdc",
+          "src/ttakkari/games/autobuild.py": "065e2e2cb8616256098fcde1f74edf2d3e5acbd62c201dcc16e7ad6f51efb28e",
+          "src/ttakkari/games/builds.py": "66824a32e0fab6c1e19417a16f1ed4ec37069f0067ba3ab151409011e7db979f",
+          "src/ttakkari/games/contract.py": "cf9c582f2714430894dab912de02e7282e40f3f71b0a3b2cc3228cd7efe1c71f",
+          "src/ttakkari/games/create.py": "60a33d588db099d640e81edb6f3d4b6f2a23a2d5b2f0e15e01183d09567c23ec",
+          "src/ttakkari/games/feedback.py": "b030e5bd05f35e6ceaad6f288505e812708068019c5ca903bd4295f370dfcf5e",
+          "src/ttakkari/games/isolation.py": "a6fcbbf42a448b98111b7ad92899b048f40e6e8c231a1c0282dfe6d67798ecea",
+          "src/ttakkari/games/origin.py": "1603e25151bf9a3c347d270eae83e159146914055224c943e6bd1a682f41c736",
+          "src/ttakkari/games/versions.py": "73f362dd6e5c1aa6c3e0931736c9dc84281208b7eafa994760b5b76d179681ed",
+          "src/ttakkari/games/worker.py": "d05c1cfdb64231367f754447346442bcf7431bece5f00ab7831fcddc256bccd4",
+          "src/ttakkari/generation.py": "0c89100544881c04379edf01893ac27aab62c321f6584eda0db9d0d565c6f1a3",
+          "src/ttakkari/generation_bootstrap.py": "59654f70239285bf83c71a0f77ca76bef4af435c028f580c1b5d1c66d1358057",
+          "src/ttakkari/generation_deployment.py": "bac724e100a4c26615d315bb3fe2c6a7289a775c91517be77bf9d743c5949af7",
+          "src/ttakkari/generation_service.py": "11a704405370e6fa40f6f1ba49edd8ff6fc60c54f5ebe58db2e5b2f31a0c9158",
+          "src/ttakkari/github/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/github/accounts.py": "dd513b86331e6659f587f4b78939be2c81d1298c5e303a50c65ecb3ad052ea05",
+          "src/ttakkari/github/cache.py": "b09366ba840db17426688aa5759f4773dfd4cebe354b393664d718a41fb7ca87",
+          "src/ttakkari/github/client.py": "957237f974f5ae4c9e53bb7a47393b9d6bb7d350d408a5e856e813ea1f2fc781",
+          "src/ttakkari/github/errors.py": "fb01327373a8eb942279a165feef23e07f08ccb08ba98d94f5aad894fa3f57ba",
+          "src/ttakkari/github/logs.py": "d582e1374e92892664f87ea3f6063577443739e1e804226ba484eeb0ef722f44",
+          "src/ttakkari/github/refs.py": "5cd09b25df60834ab2ea703367a01c40c689ac7365e6bcafbc3d797539c401ad",
+          "src/ttakkari/github/routes_actions.py": "94c68b4dc09762939d2f6678c8df03fa348a4c956c79121eb9b6df2c99f725a4",
+          "src/ttakkari/github/routes_code.py": "38713b17b54c8c1fa2ced5ddd716b6b55f081b3d385521ba3920a1f3c600ccff",
+          "src/ttakkari/github/routes_common.py": "a4012f7d4402ce29a5920229dd0f0d57767378d880393ff68649758249b68dad",
+          "src/ttakkari/github/routes_identity.py": "6bddec1a4105f37cf286b468f1a415526802848101348be8d5abb1ad89da73a2",
+          "src/ttakkari/github/routes_issues.py": "0820ec676ac5cb55057e016f7b51fa5b301cacff8ab9e6b9736109d2848d6c95",
+          "src/ttakkari/github/routes_pulls.py": "914eced41b5e7a98ff912ddc10aeedd69a1a5c5909007f741d6e97d6c20d94ee",
+          "src/ttakkari/github/schemas.py": "978c357867e26d1c608ca35f21f4a54c0565808dd43958a7bbc744e2fa836801",
+          "src/ttakkari/github/service.py": "514f55f230fff06e26f1112d4951a01383550974d09c1ff863ddea787027fb5d",
+          "src/ttakkari/github/targets.py": "e391341a5a9d9f8fe2018b2ce777222cf23ea67ed77178f66c545bd5c8eefe1b",
+          "src/ttakkari/github/views.py": "6be64956eb5bba5aeac1270680eb086d8843ae4176c9e7d63d5160d9ea91f499",
+          "src/ttakkari/google_account/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/google_account/errors.py": "14b78c3884e22ea49ea3c73b0ed07e44aa2eed9129aa2595ee787bdaf2e44b7d",
+          "src/ttakkari/google_account/login.py": "7dcc7cf17a8325ddfb2420616d99224b755162d5670bc041104ccae4582d4926",
+          "src/ttakkari/google_account/metrics.py": "92b9d72ed45d0458364bf981aa25db0daa271d35f4e5a6d906869f810d6670df",
+          "src/ttakkari/google_account/redact.py": "986d4ba5351d55f44afd607882a35084c4110ead3d2f31f6742b63dcf278a17c",
+          "src/ttakkari/google_account/registry.py": "78123de76f0413c4404169ba3114499507c719385cfb6d8ce132e9afc88c946d",
+          "src/ttakkari/google_account/service.py": "0880cac51d66ec8a58ccae85d27501c97b4db9df90c46541498af656c4615eb9",
+          "src/ttakkari/google_account/session.py": "aed985c113676eef5d9691d58b6fdf2482510c4813bb41439bd19a3966ab2fe0",
+          "src/ttakkari/harness_view/__init__.py": "4e88acc2c98d3f44a500c4dc5a6012a4ee6bf4ee78725e6a0da0208485bceff7",
+          "src/ttakkari/harness_view/extras.py": "0f71cb53ea0d3b53cea70ee4ec9abb4a238fcca7bfbe22728ed6b749b771f463",
+          "src/ttakkari/harness_view/layers.py": "969992eb3c41b4252a33ba5f815dc5e3da62f8f53f78b61e8cc553a871b17a46",
+          "src/ttakkari/harness_view/model.py": "9897e8826692b50abe7ad760a9f9c77a0e6d4ae4c914a6e547ddd7da0a8797bc",
+          "src/ttakkari/harness_view/projects.py": "18920f8a979bd10e93a3535bf8d922325015b322425c61935cd7ceb1cc623b56",
+          "src/ttakkari/harness_view/safe.py": "1524743b116a29a6e343e0adfed73bceae97594b3370fa6d343bdad9e4b3606c",
+          "src/ttakkari/harness_view/service.py": "60677d2c36fa2264e56ab5a71d8b052b1f5cf9a6938de736f27196fdf5aff4e7",
+          "src/ttakkari/harness_view/sources.py": "ef3ddd303713b890c75fce4e301517ebc14bf9515841a23d6634e44d8c9affc0",
+          "src/ttakkari/harness_view/taxonomy.py": "d1221a1c09d6bad36c0a4561559bc8813d464681c1ddacd966c13a4baf3a1817",
+          "src/ttakkari/harness_view/ttakkari_side.py": "8da5045361ac5310fed744c93a9b69904abca85a38bacd01a8a7c37857d13b95",
+          "src/ttakkari/host_gpu.py": "196a8a07b1635d8ff9bb4f2fa450965fa1169e514a95da4b97836a56eee06f00",
+          "src/ttakkari/host_gpu_guard.py": "f9cc7eae671ac87d39a7effe855238f17465979c793644c5ebfcd2f871e5d80c",
+          "src/ttakkari/host_resource.py": "387912b757995b38ba8d888b2fbfa4ddbcc21857b6bfcd804489e24ddcf26219",
+          "src/ttakkari/kb_delivery.py": "0b50d99135aab1ef0b3982841c63c7f4ed00121cfdec505d2cd81ad9d2e28791",
+          "src/ttakkari/kb_library.py": "94ed5685184d8464c8bc368161b140a059721719157803eb412069b366db2916",
+          "src/ttakkari/kb_models.py": "c0344d8af865af55e7b95de2b8606369d87a9bf426ff9e25571397ddc7ad2050",
+          "src/ttakkari/kb_retrieval.py": "a5bcd8b663f3f73211135108c0049cc135e3c99ef768791ca2eaadd8d7aab997",
+          "src/ttakkari/kb_store.py": "9a26d81279b99a0760b81c121fffed1cbb3f94afa0360c533b025c34f10fedda",
+          "src/ttakkari/kb_vector_models.py": "d75071680cf6ef0a241536caf1c664b4c9c3decf6125d5a52ad7d084f0173f74",
+          "src/ttakkari/knowledge/__init__.py": "ab962104a94b64b635d3002123f6e1785674043fd91f519ae9d125fea444f201",
+          "src/ttakkari/knowledge/chatgpt.py": "cc218697c7dec4f0e8d6a405bdaae875367d2311bc3a0403fb2789edaf1a2a57",
+          "src/ttakkari/knowledge/commands.py": "05b1f03ad82d5b2d0c2a750ca4325952ccfdc2d3c55c234d8fdb50b985d6cd1d",
+          "src/ttakkari/knowledge/evaluation.py": "a84d3bab49c8fc26253706f6cb96613dade7181533d8a6481dccb06e190f6ba4",
+          "src/ttakkari/knowledge/extraction.py": "40611c293b3b98a82f75c3ecf298bee647816316c26a5a9ff2f62f9983b12f14",
+          "src/ttakkari/knowledge/store.py": "9aca4279ad6f97399fe9237576b1f4e759c30f7700e11d1afccafaa7d94ab9e0",
+          "src/ttakkari/knowledge_models.py": "b01d3527a7ee621f7fb13918a55a465f98a4dd5207867bc0758e9075d4a34243",
+          "src/ttakkari/managed_comfy.py": "60a2a6d76e7a707450ecb34b95b931a30ea4c567abd14f87fdf0a527e74aac1c",
+          "src/ttakkari/managed_comfy_receipt.py": "0ac2a4afe1341d676a3f9f64d1c3953bf23db893a1e023934d64dca4825f097b",
+          "src/ttakkari/meetings/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/meetings/document.py": "1cf660f36487aaede946bc78a5468e509f8fea208c63b8176716aea31e0df4ee",
+          "src/ttakkari/meetings/evidence.py": "d7380d13ccc2525bf07649f614c71e61129fc621968b8de5834e51b01b9a0c2c",
+          "src/ttakkari/meetings/local_stt/__init__.py": "3faee143cd93ac0f3d24ae03dd3b9a05348fd56a01a13012ba51238b94153c6b",
+          "src/ttakkari/meetings/local_stt/benchmark.py": "752624ff2f5087ccd8ee9bf1130908b6a9f6fda2b61231dc3e420624dcc849d1",
+          "src/ttakkari/meetings/local_stt/core.py": "6088a259526af4c8e541be3162aa1d726e5692657f7769e044c9d40e074aca95",
+          "src/ttakkari/meetings/local_stt/diarization.py": "f278e3bb2ac0122b70ee76215839304b2a4f907b211d88a54556084219edf4a3",
+          "src/ttakkari/meetings/local_stt/embedding_diarization.py": "39663e1508a4e2f1db071dfe23a9591efbfd9c3f341cc90517c3c1d9d67f02a3",
+          "src/ttakkari/meetings/local_stt/enhance.py": "d35e5a44f6440977144ea1d837e8c5f8e1a3a0170613c4d539ef7af271c220b7",
+          "src/ttakkari/meetings/local_stt/jobs.py": "daebee3c5a52678f9948709ecd8d78841f11a604a42b59ef264f20610986f398",
+          "src/ttakkari/meetings/local_stt/quality.py": "eaf5f73ed6b5d596b984e383e3be0acae48f92925d508e2e7be037a7db96bd7f",
+          "src/ttakkari/meetings/local_stt/read_model.py": "85eb1ff49251312c3689564832b1fe03f36cb9309496a188e4bcbf3498e2964e",
+          "src/ttakkari/meetings/local_stt/runner.py": "7ea81055c1f2108b1f3900549687c181c583493b02709f1cfc0b85aa9a306222",
+          "src/ttakkari/meetings/local_stt/separation.py": "61e0b15dabdd5666a442c743e40c8b4f391fc96673aa1673915f0b3dc63eed2b",
+          "src/ttakkari/meetings/local_stt/utterances.py": "1dfdbfbab6cfdfd2da3d5dc1e242d8b3c8cbb05b2e518a79081fec68d8b2a97a",
+          "src/ttakkari/meetings/local_stt/worker.py": "b474971e7424bbd79c39f155ecf4213d7b613d1be41fab899e81057ce8b61287",
+          "src/ttakkari/meetings/pipeline.py": "946dda91d97bb92b5c5cb6a747e53cf431305d2099232917cd71549304f1433f",
+          "src/ttakkari/meetings/projects.py": "11fb4853a632766d4856296d1fa37f8ea84059750514878e0e7234b944ce446c",
+          "src/ttakkari/meetings/providers.py": "19a36f7f0cb3b69545759b4b28d21a655dddfdada0d1726e60333eebf48f973e",
+          "src/ttakkari/meetings/read.py": "e9b709998b148b145a55feefb84d80c1e2cd2770cb18173ab2c3a4c27cf0c884",
+          "src/ttakkari/meetings/routing.py": "10b43b5e37ec5dfc57f0582c7a0b827f1ba2979fb6d499c34d6d21380e03a3e8",
+          "src/ttakkari/meetings/schema.py": "2bae4c8ef46f681168c5b8b2e9c2506bdfd4d8a8604ac88a642ebe20ead1fe6f",
+          "src/ttakkari/meetings/vectors.py": "4097b377315de369547e91df0646dce5080c9b5761643e6e0618b55640a47eb1",
+          "src/ttakkari/model_catalog.py": "a898be7e1b4fde818f6453d8e241ceb8747a520557737d14160f9072bf1ec733",
+          "src/ttakkari/model_process.py": "d0888e9dfadc7fe1696b978cf042addc1b121bbd47db5d9ffed44353203f7068",
+          "src/ttakkari/models.py": "f77ad6600a9763d07a407cc465580f7b9e1a9fadbd829a2b7c2e71dab0f87f3e",
+          "src/ttakkari/notebooklm/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/notebooklm/adapters/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/notebooklm/adapters/notebooklm_py.py": "04b5aae3c21b424ecfb1d71b0d41d4b035a130e3a26498368a2c313147e6617c",
+          "src/ttakkari/notebooklm/consumer.py": "9490340f9d1c27be9c6b18c0f4906e54d22464ef25abc1356b7e5033350f2bea",
+          "src/ttakkari/notebooklm/dedupe.py": "0dd36514125ce43892ebe5d98e12fa5834440fb0a941f8321a415789df3b1e9e",
+          "src/ttakkari/notebooklm/errors.py": "5f867d6474ca8915ffddceed287b3964331e3ef0deb03c822210138de89a473b",
+          "src/ttakkari/notebooklm/export.py": "fefefe7f7cef5d79a26e87f966b25bb65ea2e2ac2f147895e400152541fdb04d",
+          "src/ttakkari/notebooklm/metrics.py": "ed917506f1571d55c1524ca035714ff14180507ac810f0a6f0fad8f776aca8d6",
+          "src/ttakkari/notebooklm/ports.py": "ed5be5af42cc259e6ae884b96a23a3f673cd64a394d267cceb409c23db291ec4",
+          "src/ttakkari/notebooklm/redact.py": "e50598f7d3591f558e16ba9b30c1f76cc0ff3575ad2b4ead79d89c55116ff3e0",
+          "src/ttakkari/notebooklm/service.py": "9e6602401ee0df8d2710b177afaba02ba19b3e92b5663f807a08683869033866",
+          "src/ttakkari/notebooklm/session.py": "e7e9b98084d9fab3973b0d3e951c3a15ca1302df1bcf0ff4913d8b9657aaf1c8",
+          "src/ttakkari/oplog/__init__.py": "09fea80e4959b529cda627c8be14a5a4407a4bd8329a7c7ab83a12653a2f9919",
+          "src/ttakkari/oplog/deploy_logs.py": "a0c5cfed6443f45e67889e999b95b5e00e1f3392e19451f609ff0f1c67f736b3",
+          "src/ttakkari/oplog/ingest.py": "2c0576c02b74c6294e94367d62f3d765f4e74b9ed4b9d15ad9d6a0efd8721ab4",
+          "src/ttakkari/oplog/limits.py": "8e351a2350904528de20e118c087c64f268744cd38bc9df82e7d568546d522e4",
+          "src/ttakkari/oplog/normalize.py": "6248cb904beff5cb832c5ece02dec070efc61f3ecedbb33821f0c1b7e5b5e9a1",
+          "src/ttakkari/oplog/scrub.py": "26805336e1704c2a0eac1a79391dc3f956aa0ea11655b9c90274b89174e50aa9",
+          "src/ttakkari/oplog/store.py": "8ef42e55cfebb5973c745dc7936f3c1b6412132a7096b549a0db301d54a60159",
+          "src/ttakkari/oplog/views.py": "c3b1b53aefd662d7d3e6d0b4245ba667f079e2f688b90308f7ee6b86358cea65",
+          "src/ttakkari/orchestrator/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/orchestrator/mcp_server.py": "a3124a713c0692aeece8e1d7cf6f72f654e5778b9ce3dd04871f7382ff791a31",
+          "src/ttakkari/orchestrator/runtime.py": "55e994b3d0f8e0edd51a7d9e6b3e1fc28af1448200fa8e60d5bd37905b57648c",
+          "src/ttakkari/orchestrator/tool_policy.py": "df3bd65a44b0303299cda4491810493c7108c49eb249cab87fb838e8b79f410c",
+          "src/ttakkari/planner/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/planner/checklist_reminders.py": "ea09e52ef3de9a7e5864bb850d2d1db15cc1b71bf65bbeaf9f4c491f9ab1eaae",
+          "src/ttakkari/planner/checklists.py": "3e2bcde2753867712ea06227bc356c213bde796790c9f7667221eafb7fb270d2",
+          "src/ttakkari/planner/kr_holidays.py": "68da742363b3935f25970c000874d97a420ddf763049096f052b19e918f54258",
+          "src/ttakkari/planner/reminders.py": "70eea9b0b46a5fc9731542c68a42d7c44d8f464e926910068b85dc6ed23cd399",
+          "src/ttakkari/planner/service.py": "9954b49a3b7d20d98a69d7970194f88d624182e4c21fe0c1477cbd0bdfc6d766",
+          "src/ttakkari/pms/__init__.py": "d657ac5ca6d83598c661c9bafd9216b0ddf8cc5019f1c7e149d197882c83df37",
+          "src/ttakkari/pms/service.py": "1964ee5d6072dba63bdd451c0271b6addf9b22fb104013de974b368ed150026b",
+          "src/ttakkari/push/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/push/service.py": "61734b35ba0925a757629ebd2ba11c3886dd25270354af5087e00718cd8a3407",
+          "src/ttakkari/push/vapid.py": "37bca302bd77cd6dfc3bb2e055547278552809f10b8ee2c41c6c3a22a4146008",
+          "src/ttakkari/remote_desktop.py": "3c98fae00aa1eec037b7359fb2f345180764f20e178d42da071707c3ce5f0d94",
+          "src/ttakkari/research/__init__.py": "6b1e7b46d12d5c2bdd8c33d699724890a8cb3cf3bbfa8dc9a39f05cdb30101c4",
+          "src/ttakkari/research/benchmark.py": "3d9db0c7c403a92c28e540bb57ffa310740478f72cff15b2e1f971ac13747107",
+          "src/ttakkari/research/discovery.py": "bfd528128f5ecf1d08701e810af2fc78ee8f46175d189eaace09863ce3173885",
+          "src/ttakkari/research/models.py": "9200dc922b95607fe50901673641d1895bc0862bd15d0999d011745f3c68c9a5",
+          "src/ttakkari/research/rules.py": "14040de9e2bfc9ecfcc82274439b89be55443249479499c27ed27d47e6e64eeb",
+          "src/ttakkari/research/service.py": "9c02f054da6d8d866d2741d1ec6c04533e926efbca08f75f695e96a627c37065",
+          "src/ttakkari/resource_history.py": "4da0f4ac58d872f660337c559f11a01aae90404d5817042c480f5c5091ec21da",
+          "src/ttakkari/reverse.py": "b7336b7245e40b4bd734f5c0308b266625fd792effc98ddcf2c60a74c0f32642",
+          "src/ttakkari/reverse_tasks.py": "0672d4329d7ef0d7ef63f49d7d963c70bd7a1d2ded17b4eb870d453e84658b74",
+          "src/ttakkari/runs/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/runs/account_status.py": "6b8353364c49ba2ddc8fc3d6b1cf3fc01dc719d3326cde9d9b4ab28a00eb6737",
+          "src/ttakkari/runs/agent_control.py": "6baa37a2750eccdef88114cf0574c0e17acea83431dd5b2fef0831c5a845ff31",
+          "src/ttakkari/runs/agy_models.py": "9da6947af308121b905ef7878a5ac852b9d65980a2fa296a3098f3bb0df5f713",
+          "src/ttakkari/runs/capabilities.py": "3ef3a0589a0237a67355a2ebaaabb562412f6f3bcb31f52740a1d545005cc738",
+          "src/ttakkari/runs/context_usage.py": "ba71cfc87146350bf6fdd47ed5d8d161111450ca985652a1a2315f16ddeb76e0",
+          "src/ttakkari/runs/desk.py": "00518d209a9995614da4cd29bb3ce381011f69e5b228f963a9a49c4421d3aa26",
+          "src/ttakkari/runs/desk_eval.py": "a3da92be74568e4e8cc0b069ecc7fe71eaaa9401b5ad4ac7f27190ab07bc4e75",
+          "src/ttakkari/runs/desk_pool.py": "6064bfe1ea187603d9d54f502255eae47d6909243c41f0ee3d66a7b923b57bcd",
+          "src/ttakkari/runs/desk_qwen.py": "ca1911414e31c0d7307f9cb8aa82a746ce914054010e53f09259eecd8a0b68d7",
+          "src/ttakkari/runs/desk_qwen_server.py": "268b35f9a421cbe7eec4036eb386fd81043a88102e7c568f5d035844b0788b78",
+          "src/ttakkari/runs/desk_qwen_service.py": "e0bff20e36327308f8efb7f337f462a22fcbca5823684c36f23b5be8f60a7546",
+          "src/ttakkari/runs/env_probe.py": "aed1a38ca7d80ed52ecf6712307f97e92fd0f6ceb0ce21792890314986d6d1af",
+          "src/ttakkari/runs/events.py": "999c5ab77c138cfe1aa4b62fa3b29c6815752918fea5d2e791323122d4c4be6b",
+          "src/ttakkari/runs/instructions.py": "91837c4d39323a431bbb90a8cd95fc3a962a6c956c09a831d59067d4e59f9f9b",
+          "src/ttakkari/runs/lead_archive.py": "68bbeff66676c5dbb0fc8c3174e1d3567697796e71d67f554c03b439736ce3b2",
+          "src/ttakkari/runs/luna_benchmark.py": "c97cca24447cc02d67b06d1a8069662206dd8a0a3c3ed348d9aac6dd40206c58",
+          "src/ttakkari/runs/manager.py": "fd7b75bf4faabe138f2e27d17629303b122e4f31e2794862e64fe2c861257e63",
+          "src/ttakkari/runs/muse_usage.py": "8cda52bb9a885891708da08be80d4a890d011de19fe1660d8becce1c438b5ebd",
+          "src/ttakkari/runs/profiles.py": "4102da992ea12f20a8e7b554c9b8493b7fd2adc0aeaab3c461e29610b04d510b",
+          "src/ttakkari/runs/qwen_activation.py": "c0a2a22ddfbeae014dbc6b922cd660f8cedc43c8f7306c95880168642bc35162",
+          "src/ttakkari/runs/qwen_flash_monitor.py": "aaade07218b7408583771cfac293028838f04c07d12191b4aff2f25f06323ab9",
+          "src/ttakkari/runs/qwen_slot.py": "e34c7390bfb0ebebf2589429c919e1dfd3c655b0ac21a58d01380810cff78400",
+          "src/ttakkari/runs/qwen_usage.py": "10112c4fb431410f5154feeb7e290d1afd54a9d0f1d59307536917c702a32429",
+          "src/ttakkari/runs/test_database.py": "97e53fe8b51023601ccf3df59152e02873df580706e4ae07d9128f71791d547a",
+          "src/ttakkari/runs/usage.py": "753e3fcf262db61de4759393d6c15d2531fb71e4dd058bdd365d896151dd07e1",
+          "src/ttakkari/runs/usage_collector.py": "5d9b4d855610ec9f6b0b39d627faf2a97e34aba25c6f09e46c6f656ad8af9276",
+          "src/ttakkari/runs/usage_store.py": "04b870d0c700e9dd9f0ee880f468ce5267ba029ce4d2bc7f6313878e228e4cc2",
+          "src/ttakkari/runs/worker_routing.py": "34e04b2d31b13fa81f3058d589ced4b92a5b8b8e153607bdf37297f3a2e19e71",
+          "src/ttakkari/schedules/__init__.py": "2fa3084e91e7bb68c0136032a271a4da84e066678ffc8823ecb697326391533b",
+          "src/ttakkari/schedules/service.py": "aadffcc404a33b31474e949c7abfd9798384c48d31d65e07c9b3957b566d5ff3",
+          "src/ttakkari/schemas.py": "c387106137a35921f351b6009762e73167f333426cca37b040a7727045ce5bc2",
+          "src/ttakkari/security/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/security/antigravity_keychain.py": "4299949098c70c9969f4cee38eac10db0b498be2fd48c13dab4d26b320373991",
+          "src/ttakkari/security/auth.py": "1287a976b03154b987b6519138d366f8d47fa34003f50d6c13b59fafb639dbf6",
+          "src/ttakkari/security/claude_hook.py": "1dc5ee46efcc55833abf77bd88300fe2a4c9376963f0ab4846d00cdce2c8efce",
+          "src/ttakkari/security/gate.py": "12d004953e963ed2c7403ea6a78905fca490a77bdf8d06b23ed6b99f3d827798",
+          "src/ttakkari/security/guard.py": "7a800e7724eec034230db25946847f5862e5104b9aab81432efb2cd7bcdadb60",
+          "src/ttakkari/security/login_throttle.py": "53818ec76a68b1f8447b70470f6351542d958a2902f1f0094e2ea674960194c2",
+          "src/ttakkari/security/muse_hook.py": "4be92f6eee8d417b45efa516ea90d540648bf2d35fa43f7668b6c2dba20b2f2d",
+          "src/ttakkari/security/passwords.py": "373bcd71d9eec087407f0f4fbdb831c173df47f74990f9b2afb3ec4da82e1f96",
+          "src/ttakkari/security/seatbelt.py": "2cb3c1932a7ab6d89c4700a5edfbe9e9b897634151886ef802184ec6187ee0da",
+          "src/ttakkari/sharing/__init__.py": "32b5cd38e375f72a083ad07827a50b7e33ca4a8cf8bbce341c875d8ebf5d5687",
+          "src/ttakkari/sharing/delivery.py": "5d48001616967dddb94255dcc2254eb8df9bb8522f762f4bd072afb8871816b3",
+          "src/ttakkari/sharing/errors.py": "9d670b0030ea044d910b63e852661d37686f0b38e788e17ce4da1add3f5649ef",
+          "src/ttakkari/sharing/exports.py": "ed3294f08b2b950e81c6549ccc93a346545debc3ec7481804743aab664457d49",
+          "src/ttakkari/sharing/middleware.py": "c37e473c82a559551d9f97f414b60b2c177c856fcd499264eae5bd9bce51b2c9",
+          "src/ttakkari/sharing/schemas.py": "adad1ae43d49825b02c1cbad4d2e0f921e3411f5d30e2181940c51abd0be66c2",
+          "src/ttakkari/sharing/service.py": "06c7eb229a7f38ebf792ef95cd1697fb047237cf3bb19fb6cf24e0d7954f1cba",
+          "src/ttakkari/stocks/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/stocks/tossinvest.py": "63f0e531c5c628e9ff982e7e1313c6c75879f3beb988723e9ef2253cc7727a5f",
+          "src/ttakkari/sysinfo.py": "ebe736e36c7ef7f669c0b51eb099dcfe4fc27a9799431a28291b68d5f18dd8fb",
+          "src/ttakkari/textsafe.py": "8be74516cb35ac448eb9a25397d7117ea1a77df14e3483f24fa4116f0247f3c7",
+          "src/ttakkari/transfer/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "src/ttakkari/transfer/diagnostics.py": "0e97996f46eb8081bce287a22917a30e54a8529daba036d49590c36064b024d0",
+          "src/ttakkari/transfer/media.py": "4f44697ac1ab67a0be53c8126779c655cfa056bb3fb984eb6665cc9ab6411dad",
+          "src/ttakkari/transfer/service.py": "29a0bcb119f44a61491c29766b88fb6e8c3982d28be4b4ab4f1fe372a6b90624",
+          "src/ttakkari/tts/__init__.py": "af87596cd5799f9c6cbc0d2d5970624aae1c6c90acbf9a1a2f6f075069227053",
+          "src/ttakkari/tts/cache.py": "97726e5c18e758513967e2bf28a6b6d159dbb1ce51d786af0783266ede728d10",
+          "src/ttakkari/tts/jobs.py": "7f88e256ad95daaeedb8cf7cf9d66bb49917e00a5075a5a9c917e1a6a1c1efb5",
+          "src/ttakkari/tts/normalize.py": "5b9d67334adae003a62843e35ac3d4e21be0942287eb75672bee035557c73687",
+          "src/ttakkari/tts/providers.py": "b0a8688fd8caf8f3daed00ed269a981ec01caeaeb362dd13cfa9883113ed34e5",
+          "src/ttakkari/tts/read_model.py": "42bfb393968ce2568c5799cdb044fbe65c5d9f6fddb84efda2bb1516cf73d3e0",
+          "src/ttakkari/tts/runner.py": "ca8de60e32e56e82fad12fe7166a78c958afd04cfbfb7900e84b65226a3a694c",
+          "src/ttakkari/tts/service.py": "f5a6cfdb67af7a00ccb670c6e1112bc75eef8273ef693c6184f4874c98bb1b31",
+          "src/ttakkari/tts/supertonic.py": "1450ecae89905f99e601eb3cc2e101f813287fb9e1943294002754d3ad5b47dd",
+          "src/ttakkari/tts/worker_supertonic.py": "988f60e17f7edd90965586837aa38b30f0e24ccb13ca659ff6c44cb4390cc4ed",
+          "src/ttakkari/tts_models.py": "d1aff09a29d05a281f30dff7a0b8ae8b77dd842bdfb58cbee9d8280625feda37",
+          "src/ttakkari/weather/__init__.py": "e85b5065873ce1abf3c0021f72c8cc2abc020db675724e54086e148adbc71ee4",
+          "src/ttakkari/weather/open_meteo.py": "c79a81314f7a5c5df33bd5ca4d76006e4f7c9edb94fc5977edf5ed92cfb71358",
+          "src/ttakkari/weather/service.py": "98383cd5e41f658e841149bcef0dcc1b0359013599abe13b989757065fe4e39d"
+        },
+        "closure_complete": true,
+        "selected_test_file_hashes": {
+          "tests/test_creative_api.py": "3bc920c79b0f998b9fc5d4cb010e01db6d019e24f9c98f0e8f046e707e8b70bd",
+          "tests/test_creative_mcp_tools.py": "f922e4ba13657bd01ee1c58cadc2789b793c7b6a1d2d8a8bf19188b325b2c956",
+          "tests/test_creative_records.py": "bda5a7ece4987d104893b3d5d31d0cefd8c29d5880bd711e0ff81bbce6ea658e",
+          "tests/test_creative_v2_api.py": "2bf4b6cc14a63d791d334c919e3d013baabe1d4ae7065abdb9857d06c0c72e31",
+          "tests/test_creative_v2_extraction.py": "ac9a42a8fbb943167f47cfd44cf05c86a1b87a7ffc6416671c9da5647fd15731",
+          "tests/test_creative_v2_run_extraction.py": "780126b4a003926e969a5e6f46855cbc7247c37fb1ed87d69fc4cd77431dac4c",
+          "unit_tests/test_creative_catalog.py": "11b0de64f28796f6c32a55478b2587563dbdbea41bc05ae7e7d57abb4e952739",
+          "unit_tests/test_creative_director.py": "dd4bc110cff2e413eb25b6ad5c58fbc061194381aa9e2353ba8c990fecad45f8",
+          "unit_tests/test_creative_studio.py": "bee6fc2d4f87d03e5d2240cd704aad42ddfc3b93159b65908ec1df6c15c08731",
+          "unit_tests/test_creative_v2_asset_generation.py": "6a033c67976a2b280a3c77abace2334f5437137584e8c23e315fb1e0ace19a62",
+          "unit_tests/test_creative_v2_asset_generation_e2e.py": "8a5373d209995579518b3e3d9bd8e1447ede611e558592415f0dbb9fb02fa753",
+          "unit_tests/test_creative_v2_dispatch.py": "b8e5cdfc6f706e120c3c8f901b9e4e8437fc9493c7df289a0a25723293fd2584",
+          "unit_tests/test_creative_v2_duration.py": "912a78d89167af74720c2a1c184d1e592e1e9219fdc977bdc94580415bc854e9",
+          "unit_tests/test_creative_v2_lease_handoff.py": "a44cdd2d7b1d3097d3a4d2a0ecae77d7e50f09ac63d3717a2b4339aab6b2de09",
+          "unit_tests/test_creative_v2_matching.py": "a874a66443270acc74fb1b5843deffec62af43d0ce5548c8707801b1ddac4a46",
+          "unit_tests/test_creative_v2_plans.py": "b0a8826c7be6d4aaca2ef45580960c8bec518297aa6f6a2d400a6fb7ddfd9555",
+          "unit_tests/test_creative_v2_registry.py": "998f01aa1ed0b09bb3a98afa0ce5f3abc69bcda577ff467c66beed74e16beb53",
+          "unit_tests/test_creative_v2_run_scope.py": "93e3df68a8b8ee70ec07526a5795de4abb7a5c630ec509d1f4c8193cc229270d",
+          "unit_tests/test_creative_v2_style_dna.py": "1a8f8d441ade5d4c7ef01d3dbd077263c21488a544c762aa3f7a62197a3a7028"
+        },
+        "conftest_and_helper_hashes": {
+          "tests/conftest.py": "19211a4ab17e09879852cad517a3be65cd4d9787cfbf01c361726aa75d7a65d1",
+          "tests/test_contract_marker.py": "133f0bff424ad3495ec99084b6642aced71814ae17cf052d9c7c37ee8a3dce46"
+        },
+        "selector_args": [
+          "pytest",
+          "-m",
+          "contract",
+          "tests/test_creative_api.py",
+          "tests/test_creative_mcp_tools.py",
+          "tests/test_creative_records.py",
+          "tests/test_creative_v2_api.py",
+          "tests/test_creative_v2_extraction.py",
+          "tests/test_creative_v2_run_extraction.py",
+          "unit_tests/test_creative_catalog.py",
+          "unit_tests/test_creative_director.py",
+          "unit_tests/test_creative_studio.py",
+          "unit_tests/test_creative_v2_asset_generation.py",
+          "unit_tests/test_creative_v2_asset_generation_e2e.py",
+          "unit_tests/test_creative_v2_dispatch.py",
+          "unit_tests/test_creative_v2_duration.py",
+          "unit_tests/test_creative_v2_lease_handoff.py",
+          "unit_tests/test_creative_v2_matching.py",
+          "unit_tests/test_creative_v2_plans.py",
+          "unit_tests/test_creative_v2_registry.py",
+          "unit_tests/test_creative_v2_run_scope.py",
+          "unit_tests/test_creative_v2_style_dna.py"
         ],
-        "verification_status": "verification_pending (확인 필요)",
-        "worker_id": "c1e9cd73-83ef-4240-99c8-809e500bd903",
-        "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-b"
-      },
-      "B_independent_verifier": {
-        "role": "Independent verification of Worker B Flash audit (auto/verification GPT-6 Luna)",
-        "status": "running",
-        "worker_id": "1d994e50-c900-4f90-9975-1ff082522a35"
-      },
-      "C_frontend_test": {
-        "independent_verifier_worker_id": "fed2c630-a867-42f1-9574-4a92905de864",
-        "model_tier": "flash",
-        "observed_untracked_outputs_in_shared_back": [
-          "docs/design/platform-v2/frontend-feature-map.{md,json,csv}",
-          "docs/design/platform-v2/test-architecture-and-baseline.md",
-          "docs/design/platform-v2/test-impact-proposal.md",
-          "review/platform-v2/20261024/frontend-tests/"
-        ],
-        "unverified_claims_and_inconsistencies_do_not_adopt_yet": [
-          "summary claims 38 frontend routes vs scanner 36 routes (internal inconsistency)",
-          "claims 10 test categories but omits runtime/ownership: dict has 9 categories and 257 files vs summary total 262 (internal inconsistency)",
-          "main missing security test / deploy security duplicate 31 claims pending candidate/workingtree condition verification",
-          "C-reported front 5.48s and back 1045.97s pending revision/env/raw-log verification by Cv (fed2c630-a867-42f1-9574-4a92905de864)"
-        ],
-        "verification_status": "verification_pending (확인 필요)",
-        "worker_id": "9a3215de-01d4-4efd-b3ff-9e282de9b766"
-      },
-      "C_independent_verifier": {
-        "role": "Independent verification of Worker C Flash audit (auto/verification)",
-        "status": "running",
-        "worker_id": "fed2c630-a867-42f1-9574-4a92905de864"
+        "pyproject_sha256": "0d45f37fca72a73d51eb787023c2c4df3a70779d1bcb2e5d3e20da863f01b001",
+        "uv_lock_sha256": "1c98140912d3c7a49b9ef06b671d53f57c92592c2e1e02d8a6065027e3f15937",
+        "python_full_version": "3.13.15",
+        "platform_tag": "darwin-arm64",
+        "pytest_plugins_sha256": "480dcf078a9045bebd5f404f658060ec07c548ca9f12357ccdd758fc30ce2889",
+        "sanitized_env_sha256": "402624638e6bb363053bdd8933fdbcdc17ee640a0b80bcded834412b7b892ec7",
+        "models_py_sha256": "f77ad6600a9763d07a407cc465580f7b9e1a9fadbd829a2b7c2e71dab0f87f3e",
+        "alembic_env_sha256": "f7282d5a0d0ffc78b33fdca6a6ef4eab85d78e01014da0f57fe225a193c3c966",
+        "migration_file_hashes": {
+          "alembic/versions/0001_initial.py": "d1d60d8875dde9db665fba571163a363c43ac57b343a122aa304397513022251",
+          "alembic/versions/0002_push_subscriptions.py": "bd8a83657978026e441e7029f654edbd93ebcbc64c6d3cb921fffeb0176c822b",
+          "alembic/versions/0003_orchestrator.py": "9e33103445085a5e1578c825c9851b0376e4973308a6e538797bcb7a77af797a",
+          "alembic/versions/0004_engine_accounts.py": "2855c773483fcb453913ed8fdef65567b12a78dbfa920ade180ae9efd95e5556",
+          "alembic/versions/0005_transfer_tokens.py": "7de6cb1418298766481fe7d9d3c28cd20a3303d563e8bb9e68661df6597d5a1b",
+          "alembic/versions/0006_assistant_context.py": "c03716b25fb63baa51f321fe22aa9556fe89b13215b49085dba4358ec4940380",
+          "alembic/versions/0007_app_settings.py": "9debe707e9c062ae71442a0b5e3fa951022a657532b54ac68b8609eb8a682421",
+          "alembic/versions/0008_account_pools.py": "99c848c75fe8a5520b55ec723b05a0e7ef9acc92b6143c9be86d0e288ffc44dc",
+          "alembic/versions/0009_memos_calendar.py": "ec84e7d64fbd4e14699827e809c30dd35eaaa201b75a1fab81b751e98d3c3d3f",
+          "alembic/versions/0010_account_groups.py": "f36974d654420672f38e8ccb7082f405ab98a38982bbc61351e370b110d251d0",
+          "alembic/versions/0011_event_reminders.py": "973598a2491b7acffa8aaaedd9a91d5aff7dc24d0e3b2bfe2c8d26e66a7dc367",
+          "alembic/versions/0012_memo_categories.py": "41a78bd077d0b58fd864d91871c36bbb94039cf7ba50f22d218a3ad19112483a",
+          "alembic/versions/0013_context_library.py": "d9f7e7df3950d7037cdd1d6f97d6253693b4e9d93bb2728a571e8786f25c6a13",
+          "alembic/versions/0014_artifact_area.py": "3979f479a404b10643d7bc43e67bc35205eb26b4a6e066327d7edcffd5c7a6be",
+          "alembic/versions/0015_account_usage_samples.py": "1a607a0eeb9a52b94a30e8940a8032762e9d0892a35210578884e07b98568da6",
+          "alembic/versions/0016_meetings.py": "29875daa097aebbb7ed5a2b62cbc72fa408190e7d90a30f83effa7ad075b5346",
+          "alembic/versions/0017_work_mode_settings.py": "dd397eb8666b22dee03b319afae137a1bb4603983a669cad54cc85214fdd6412",
+          "alembic/versions/0018_pms.py": "a073c3b2f63e53948fe93a572eeca65e4a17f9dde62c6ab1bbf5fc5402630b66",
+          "alembic/versions/0019_run_resume.py": "d350145d24c11351edc5e9f03db973158abc86df14ea8da59fff63b0edfd8ccd",
+          "alembic/versions/0020_desk_feedback.py": "704488481e317915a500c6f72adf5312bbdb717197db1245a466abe70d8cce78",
+          "alembic/versions/0021_clovanote_vectors.py": "07c598bb851c2f7933915e66e31f68541a5e4d43436c20159259427920a79c87",
+          "alembic/versions/0022_meeting_pms_project.py": "5d4136423c4ed7959d07146a4c942ac9250ca94927298bed8f1929fbbab7479a",
+          "alembic/versions/0023_account_usage_caps.py": "53da0bc11362df01a3be81509ce7b26636ac883f36a195138203071f2c3a5914",
+          "alembic/versions/0024_checklists.py": "22d166efa754ec5d31414ebf546803578e878f0249f4fd65b765226e59fa8c37",
+          "alembic/versions/0025_local_stt.py": "683d6f6ac7980bd26785da2894c959a5611d5c3559d0d9854f91e2eabe7c358c",
+          "alembic/versions/0026_retire_clovanote.py": "3a8f50a6de2de3f7115c546e082b6b77d38f54a3b648a6d0570a6036c4133694",
+          "alembic/versions/0027_meeting_lineage.py": "f49abdd98d344a17b583ae17a3e7eb1751ed902b043127cc2908b0ff6066dc4c",
+          "alembic/versions/0028_public_shares.py": "5515a9c4a7469f537de434d455269913ec587ce6868129e9229147a8a5ed5f7a",
+          "alembic/versions/0029_antigravity_usage_credits.py": "40dc07f909a9ae6a7cc19fceacab1e5d71fd317d816f5f8b85638cc87c99ffd0",
+          "alembic/versions/0030_runtime_generations.py": "4876532ae49c8f304402e75f283accddc813a577c4fd7136eabfb76720567ef1",
+          "alembic/versions/0031_notifications.py": "d4f380e647d026978fe9dd2341b2cd73f826feec446fa6d991fa77fa3ad9a112",
+          "alembic/versions/0032_weather_briefings.py": "39b49d72e6b3452ffbc055f00d77cd2c6f72da2b17ac04fd6976a7b5e58ea439",
+          "alembic/versions/0033_weather_analysis_engine.py": "02717f08bdcb49fedf8a50c6d733b082f1735b58f05315f9e24412c98e4b30df",
+          "alembic/versions/0034_knowledge_ledger.py": "f59530eb769f164e729dce9e54ef9a69cf91829b8ff931b33f013ef9194e1a49",
+          "alembic/versions/0035_qwen_token_usage.py": "76584b2a3e13000bf5b425fa4714a1739494ca6c82d053cbe71ef7551dfdd660",
+          "alembic/versions/0036_system_resource_samples.py": "4c878f73b2617487a9dee4e44185b9042dd3f38bb588ebaaeed9cc5410486652",
+          "alembic/versions/0037_worker_routing.py": "9f44fe6564bed95480084d9a72f185985c29d0453f79a1b3bb1f54a597948f25",
+          "alembic/versions/0038_qwen_flash_usage.py": "0756b9f9a93eb69b1bd198b40b0d2e72f1e9dc24826a6d9aecfef4004e6d2dc7",
+          "alembic/versions/0039_ops_log_issues.py": "9cfe8921d610e269948dfdb261964e35dd4053b693a1bdc939ec36330bf59918",
+          "alembic/versions/0040_ops_event_receipts.py": "274c1f66bf38ef9f89f4fe2a8303b90d09d9bf984d7c99dcf0ad96439e8226ba",
+          "alembic/versions/0041_reverse_jobs.py": "fdd013dc11368dccb3ea9017671b4232b448aca71383e4daa62bef55faa7c8af",
+          "alembic/versions/0042_artcraft_tasks.py": "967f755a2f6129d85c30dfc30d4ded00bb5a7e51baed2f8193eb14e5db71302b",
+          "alembic/versions/0043_reverse_jobs_jsonb.py": "5ea4179285d86242cb10908780ac50830d592dea37719d0bab35498196d1119b",
+          "alembic/versions/0044_reverse_reconstruction.py": "9fdb9f437715f0b6a707d8c3f6be81394d9b6dff9a41e7fc5cf2202f074e9dfc",
+          "alembic/versions/0045_tossinvest_runs.py": "5f5c8e70013252518b9fd0d2412b9bcfeb2d0e7af56e17ace8dfdcd3b7da2c64",
+          "alembic/versions/0046_notebooklm.py": "0e5c49597645ed5db88e40bb3d989992593e1021fe04d8a55cc2616cafbfa596",
+          "alembic/versions/0047_game_studio.py": "94075fb4ab322dda015e3314d682d41824a7ad6c69f1ea7dac75471c87641e7d",
+          "alembic/versions/0048_game_active_build.py": "09b13ca715d6db978038c6db58210360a52d5a854ee0197f43c95df8b7e7ce1c",
+          "alembic/versions/0049_google_accounts.py": "e5299813b3d41e36d3cca31f85285dd2d67e9f928b971a57a01fa3204eb7ce19",
+          "alembic/versions/0050_login_throttle_shadow.py": "088ff8560135b1d6c7ebb41ae03d59e0af840a3d2d0f2040eaf9d5194a408a74",
+          "alembic/versions/0051_scope_memo_event.py": "4bbf2164bd2ef9e50f451fc3fc882f5c765767e27f200570eff3cc88e6e95bd3",
+          "alembic/versions/0052_artifact_area_byproducts.py": "5574b5ebbc13c5b1f85720f9cd9eaedb530ff94672d9f2d62ba71c2017857bd6",
+          "alembic/versions/0053_kb_core.py": "9bf41c6a679ebdfb26075d29ea3946029c2368c5d4fb2dfb7711407fd2ec671f",
+          "alembic/versions/0054_kb_evidence.py": "18cc4eb5a1ec32c27037441b635cd54a7e95a591ff0d97a6a6af83c7a56a30bb",
+          "alembic/versions/0055_kb_immutability_hardening.py": "45228e24cd8dcacbbb3bac04e87be08ab2cf4086c146a8027c4e2f5e6b5465fd",
+          "alembic/versions/0056_research_lab.py": "d08addbc1c12072ad57b631ec36bfddbf2119c549366a3098e5fc57a961faa28",
+          "alembic/versions/0057_scheduled_actions.py": "928899f0613bc187482d10ac81da7af66c62ed909886e0faa26051a685e090c2",
+          "alembic/versions/0058_kb_immutability_truncate.py": "d18f2428bb7434a4cc1a54dc6f9d592c2e150e6fba2225b08a0c2c2987c56ce3",
+          "alembic/versions/0059_collector_intake.py": "0408b7ca28d4f04a74cc3919270d73b397b4e0f19001e29dba21227c19758f39",
+          "alembic/versions/0060_collector_job_runtime.py": "044530e68f9d3609bc5414b1e971f49698982e88cb8dfbd4846b8489eb5d12f8",
+          "alembic/versions/0061_local_tts.py": "686ace5d55d0cbefe38ec0483c6374e82872514b8dd80e67c5f7c95e3504bbcc",
+          "alembic/versions/0062_delivery_change_sets.py": "6a3a78c675d6d214e80377d0a4d58900ad3d580addb434c613761791e1161f6e",
+          "alembic/versions/0063_collector_stage_items.py": "e3b9c8bc1df645aedee7b43bc5e244895e6c90df18d30b21dbf9e053205d4e58",
+          "alembic/versions/0064_run_executor.py": "6176efac478065bf5e408a1767897e76910d230f2bdab90570b62cae995778e5",
+          "alembic/versions/0065_collector_delivery.py": "8a497371f1ddc3e05e477f18b6cc187964a2db49041472a47dbcdc2e223d03d7",
+          "alembic/versions/0066_collector_budget.py": "b58fc768d698cfeac4be0e0d9ce2f82ae2f6449da323d99cff97ca84f8a4e259",
+          "alembic/versions/0067_collector_outbox_retry.py": "c1057ff3ff0eeddc5ad51a511b01f77e6ff896327dd24ba6b91e9fd7b3ce1ae6"
+        },
+        "migration_head": "0067_collector_outbox_retry",
+        "generation_contract_sha256": "02197c0dcaa19606ecebdd470326de05289a622742422213bc64ee1b87d6c1c0",
+        "run_executor_manifest_sha256": "516c2220ba4b013027c7bd50d36a1f99b6be43332baea5ea70a20d2bc914a266"
       }
-    },
-    "pms_p2_predecessors": [
-      "06d3fd18-d2b6-425c-b280-89afa6c3b836",
-      "9f414a3c-4533-4e1d-93ec-52ecb901864d"
-    ],
-    "pms_project_id": "e62fbc3f-b2d3-40ad-b5fc-687c8ccff286",
-    "role": "runtime / delivery / architecture",
-    "session_id": "e65430e3-0775-4e2c-910a-5050cdb7d216",
-    "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a"
+    }
+  },
+  "completion_status": {
+    "P0": "not_complete (historical receipts & static code audited; live version/supervisor, backup freshness/restore rehearsal, and cutover/rollback E2E are unknown/확인 필요)",
+    "P1": "not_complete (Worker A reconciled; Worker B in d492 revision and Worker C revising after failed initial verifications)",
+    "P2": "not_complete (contracts and options specified; final boundary sign-off awaits B/C reconciliation in Root)",
+    "platform_v2_overall": "not_complete",
+    "non_circular_precondition_policy": "Separate (Gate A) Isolated P3 Implementation Entry from (Gate B) Production Activation & Cutover. Unverified P0 operational items (live backup rehearsal, live cutover E2E) are mandatory preconditions for Gate B (production activation), but must NOT block Gate A (writing and testing P3 foundation fixes in an isolated worktree/test DB)."
   }
 }

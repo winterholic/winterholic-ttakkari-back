@@ -1,10 +1,14 @@
-"""Unit tests for Worker A's reproducible runtime/delivery evidence extractor."""
+"""Unit and negative-control regression tests for Worker A's runtime/delivery evidence extractor."""
 
 from __future__ import annotations
 
+import copy
 import importlib.util
-import json
+import sys
+import types
 from pathlib import Path
+
+import pytest
 
 EVIDENCE_DIR = Path(__file__).resolve().parent
 SCRIPT_PATH = EVIDENCE_DIR / "A-extract-runtime-delivery-evidence.py"
@@ -14,38 +18,291 @@ def _load_extractor():
     spec = importlib.util.spec_from_file_location("a_extractor", SCRIPT_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules["a_extractor"] = module
     spec.loader.exec_module(module)
     return module
 
 
-def test_extractor_builds_valid_evidence_and_verifies_single_migration_head():
+def test_git_topology_and_snapshot_binding_are_dynamically_computed():
     mod = _load_extractor()
     evidence = mod.build_evidence(mod.REPO_ROOT)
 
-    assert evidence["schema_version"] == "platform-v2-worker-a-evidence-v1"
-    assert evidence["git_revisions"]["audited_origin_main_sha"] == "c8f10156845d007ec6496a65d6d8417be19260bd"
-    assert evidence["git_revisions"]["live_deployed_sha"] == "9f82c9c16cd604e81ddf43180b0be2e895ec85cb"
-    assert evidence["migrations"]["single_head"] is True
-    assert evidence["migrations"]["heads"] == ["0067_collector_outbox_retry"]
-    assert evidence["migrations"]["migration_file_count"] == 67
-    assert evidence["contracts_and_manifests"]["generation_contract"]["run_executor"]["activation"] == "disabled"
-    assert evidence["contracts_and_manifests"]["run_executor_manifest"]["activation"] == "disabled"
-    assert evidence["contracts_and_manifests"]["maintenance_job_count"] == 15
-    b_info = evidence["worker"]["parallel_audit_workers"]["B_backend_data"]
-    assert b_info["worker_id"] == "c1e9cd73-83ef-4240-99c8-809e500bd903"
-    assert b_info["head_sha"] == "86373cedda20e298ad2b82d857352f845ae70980"
-    assert b_info["independent_verifier_worker_id"] == "1d994e50-c900-4f90-9975-1ff082522a35"
-    assert "verification_pending" in b_info["verification_status"]
-    c_info = evidence["worker"]["parallel_audit_workers"]["C_frontend_test"]
-    assert c_info["worker_id"] == "9a3215de-01d4-4efd-b3ff-9e282de9b766"
-    assert c_info["independent_verifier_worker_id"] == "fed2c630-a867-42f1-9574-4a92905de864"
-    assert "verification_pending" in c_info["verification_status"]
-    drift = evidence["baseline_drift_607f8bda_to_c8f10156"]
-    assert drift["commit_count_delta"] == 111
-    assert len(drift["migrations_delta"]["added_migrations"]) == 5
+    assert evidence["schema_version"] == "platform-v2-worker-a-evidence-v2"
+
+    snap = evidence["snapshot_binding"]
+    assert snap["origin_main_sha"] == "c8f10156845d007ec6496a65d6d8417be19260bd"
+    assert snap["source_tree_matches_origin_main"] is True
+    assert snap["dirty_manifest"]["is_clean_source_tree"] is True
+    assert snap["import_binding"]["is_bound_to_worktree_src"] is True
+    assert Path(snap["import_binding"]["actual_ttakkari_init_file"]).resolve() == (
+        mod.REPO_ROOT / "src" / "ttakkari" / "__init__.py"
+    ).resolve()
+
+    topo = evidence["git_topology_607f8bda_vs_c8f10156"]
+    assert topo["merge_base_sha"] == "2522d78e29b14ffb29d8536bcf833d832b4f87e1"
+    assert topo["left_right_unique_commits"] == [2, 118]
+    assert topo["left_unique_commits_in_607f8bda"] == 2
+    assert topo["right_unique_commits_in_c8f10156"] == 118
+    assert topo["diff_stat_607f8bda_to_c8f10156"]["changed_paths"] == 366
+    assert topo["diff_stat_607f8bda_to_c8f10156"]["insertions"] == 86213
+    assert topo["diff_stat_607f8bda_to_c8f10156"]["deletions"] == 339
+    assert topo["snapshot_at_607f8bda"] == {
+        "python_files": 321,
+        "source_lines": 71985,
+        "migration_files": 62,
+    }
+    assert topo["snapshot_at_c8f10156"] == {
+        "python_files": 385,
+        "source_lines": 94439,
+        "migration_files": 67,
+    }
+    assert topo["total_new_tables_in_added_migrations"] == 18
+    assert topo["new_tables_by_migration"]["0064_run_executor.py"] == ["runtime_process_groups"]
+
+    comp = evidence["completion_status"]
+    for stage in ("P0", "P1", "P2", "platform_v2_overall"):
+        assert comp[stage].startswith("not_complete")
+
+    on_disk = mod.json.loads(mod.OUT_PATH.read_text(encoding="utf-8"))
+    assert evidence == on_disk
 
 
-def test_change_impact_classifier_separates_module_scoped_and_fail_closed_broad_gate():
+def test_snapshot_binding_negative_controls_reject_invalid_root_dirty_tree_mismatch_and_parse_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    mod = _load_extractor()
+
+    # 1. Invalid repository root
+    with pytest.raises(mod.SnapshotBindingError) as exc_info:
+        mod.verify_snapshot_binding(tmp_path)
+    assert exc_info.value.code == "invalid_repo_root"
+
+    # 2. Tree SHA mismatch negative control
+    with pytest.raises(mod.SnapshotBindingError) as exc_info:
+        mod.verify_snapshot_binding(
+            mod.REPO_ROOT,
+            expected_source_tree_sha="0" * 40,
+        )
+    assert exc_info.value.code == "tree_mismatch"
+
+    # 3. Foreign checkout import in sys.modules negative control
+    fake_pkg = types.ModuleType("ttakkari")
+    fake_pkg.__file__ = str(tmp_path / "other_checkout" / "src" / "ttakkari" / "__init__.py")
+    monkeypatch.setitem(sys.modules, "ttakkari", fake_pkg)
+    with pytest.raises(mod.SnapshotBindingError) as exc_info:
+        mod.verify_import_origin(mod.REPO_ROOT)
+    assert exc_info.value.code == "wrong_checkout_import"
+    monkeypatch.undo()
+
+    # 4. Dirty source tree negative control
+    monkeypatch.setattr(
+        mod,
+        "compute_dirty_manifest",
+        lambda _root=mod.REPO_ROOT: {
+            "entries": [{"status": " M", "path": "src/ttakkari/generation.py"}],
+            "dirty_source_paths": ["src/ttakkari/generation.py"],
+            "dirty_audit_doc_paths": [],
+            "other_dirty_paths": [],
+            "is_clean_source_tree": False,
+        },
+    )
+    with pytest.raises(mod.SnapshotBindingError) as exc_info:
+        mod.verify_snapshot_binding(mod.REPO_ROOT, allow_dirty_source_paths=False)
+    assert exc_info.value.code == "dirty_source_tree"
+    monkeypatch.undo()
+
+    # 5. Python AST syntax error negative control
+    bad_src = tmp_path / "bad_project" / "src" / "ttakkari"
+    bad_src.mkdir(parents=True)
+    (bad_src / "broken.py").write_text("def broken(:\n", encoding="utf-8")
+    with pytest.raises(mod.SnapshotBindingError) as exc_info:
+        mod.analyze_source_graph(bad_src)
+    assert exc_info.value.code == "parse_failure"
+
+    # 6. Malformed migration file without `revision = ...` negative control
+    bad_repo = tmp_path / "bad_mig_repo"
+    bad_migs = bad_repo / "alembic" / "versions"
+    bad_migs.mkdir(parents=True)
+    (bad_migs / "0001_bad.py").write_text("down_revision = None\n", encoding="utf-8")
+    with pytest.raises(mod.SnapshotBindingError) as exc_info:
+        mod.analyze_migrations(bad_repo)
+    assert exc_info.value.code == "parse_failure"
+
+
+def _sample_valid_cache_inputs(mod) -> dict:
+    h1 = mod.sha256_bytes(b"render-v1")
+    h2 = mod.sha256_bytes(b"service-v1")
+    h_dep = mod.sha256_bytes(b"managed-comfy-v1")
+    h_test = mod.sha256_bytes(b"test-creative-v1")
+    h_conf = mod.sha256_bytes(b"conftest-v1")
+    return {
+        "module_id": "creative",
+        "candidate_git_head_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+        "candidate_git_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
+        "dirty_source_paths": [],
+        "changed_file_hashes": {"src/ttakkari/creative/render.py": h1},
+        "module_source_file_hashes": {
+            "src/ttakkari/creative/render.py": h1,
+            "src/ttakkari/creative/service.py": h2,
+        },
+        "transitive_dependency_file_hashes": {
+            "src/ttakkari/managed_comfy.py": h_dep,
+        },
+        "closure_complete": True,
+        "selected_test_file_hashes": {"tests/test_creative_studio.py": h_test},
+        "conftest_and_helper_hashes": {"tests/conftest.py": h_conf},
+        "selector_args": ["pytest", "-m", "contract", "tests/test_creative_studio.py"],
+        "pyproject_sha256": mod.sha256_bytes(b"pyproject-v1"),
+        "uv_lock_sha256": mod.sha256_bytes(b"uv-lock-v1"),
+        "python_full_version": "3.13.2",
+        "platform_tag": "darwin-arm64",
+        "pytest_plugins_sha256": mod.sha256_bytes(b"plugins-v1"),
+        "sanitized_env_sha256": mod.sha256_bytes(b"env-v1"),
+        "models_py_sha256": mod.sha256_bytes(b"models-v1"),
+        "alembic_env_sha256": mod.sha256_bytes(b"alembic-env-v1"),
+        "migration_file_hashes": {"alembic/versions/0067.py": mod.sha256_bytes(b"0067-v1")},
+        "migration_head": "0067_collector_outbox_retry",
+        "generation_contract_sha256": mod.sha256_bytes(b"gen-contract-v1"),
+        "run_executor_manifest_sha256": mod.sha256_bytes(b"exec-manifest-v1"),
+    }
+
+
+def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invalid_inputs():
+    mod = _load_extractor()
+    base_inputs = _sample_valid_cache_inputs(mod)
+    bundle_v1 = mod.compute_evidence_cache_key(**base_inputs)
+
+    expected_init = str((mod.REPO_ROOT / "src" / "ttakkari" / "__init__.py").resolve())
+    receipt = mod.issue_validation_receipt(
+        evidence_key_bundle=bundle_v1,
+        verifier_id="verifier-1",
+        import_origin_file=expected_init,
+        executed_command=["pytest", "-m", "contract", "tests/test_creative_studio.py"],
+        exit_code=0,
+        passed_count=35,
+        created_at_epoch=1000.0,
+        ttl_seconds=3600,
+    )
+
+    ok, reason = mod.verify_validation_receipt(
+        receipt,
+        base_inputs,
+        expected_worktree_src_init=expected_init,
+        now_epoch=1500.0,
+    )
+    assert ok is True and reason == "verified_ok"
+
+    # Negative Control 1: 1-byte content change to the SAME changed file path (`render.py`)
+    edited_source = copy.deepcopy(base_inputs)
+    h1_modified = mod.sha256_bytes(b"render-v2")
+    edited_source["changed_file_hashes"]["src/ttakkari/creative/render.py"] = h1_modified
+    edited_source["module_source_file_hashes"]["src/ttakkari/creative/render.py"] = h1_modified
+    bundle_v2 = mod.compute_evidence_cache_key(**edited_source)
+    assert bundle_v2["cache_key"] != bundle_v1["cache_key"]
+    ok, reason = mod.verify_validation_receipt(
+        receipt,
+        edited_source,
+        expected_worktree_src_init=expected_init,
+        now_epoch=1500.0,
+    )
+    assert ok is False and reason == "mismatch:changed_file_hashes"
+
+    # Negative Control 2: 1-byte change to an untouched file in the module or transitive dependency
+    edited_dep = copy.deepcopy(base_inputs)
+    edited_dep["transitive_dependency_file_hashes"]["src/ttakkari/managed_comfy.py"] = (
+        mod.sha256_bytes(b"managed-comfy-v2")
+    )
+    ok, reason = mod.verify_validation_receipt(
+        receipt,
+        edited_dep,
+        expected_worktree_src_init=expected_init,
+        now_epoch=1500.0,
+    )
+    assert ok is False and reason == "mismatch:transitive_dependency_file_hashes"
+
+    # Negative Control 3: 1-byte change to test file or conftest/helper
+    edited_test = copy.deepcopy(base_inputs)
+    edited_test["conftest_and_helper_hashes"]["tests/conftest.py"] = mod.sha256_bytes(
+        b"conftest-v2"
+    )
+    ok, reason = mod.verify_validation_receipt(
+        receipt,
+        edited_test,
+        expected_worktree_src_init=expected_init,
+        now_epoch=1500.0,
+    )
+    assert ok is False and reason == "mismatch:conftest_and_helper_hashes"
+
+    # Negative Control 4: Selector, Python patch version, or migration file content change
+    for field, new_val in (
+        ("selector_args", ["pytest", "tests/test_creative_studio.py"]),
+        ("python_full_version", "3.13.3"),
+        ("migration_file_hashes", {"alembic/versions/0067.py": mod.sha256_bytes(b"0067-edited")}),
+        ("generation_contract_sha256", mod.sha256_bytes(b"gen-contract-v2")),
+    ):
+        mutated = copy.deepcopy(base_inputs)
+        mutated[field] = new_val
+        ok, reason = mod.verify_validation_receipt(
+            receipt,
+            mutated,
+            expected_worktree_src_init=expected_init,
+            now_epoch=1500.0,
+        )
+        assert ok is False and reason == f"mismatch:{field}"
+
+    # Negative Control 5: Incomplete closure, dirty source tree, or missing hash raises ValueError / fails closed
+    incomplete = copy.deepcopy(base_inputs)
+    incomplete["closure_complete"] = False
+    with pytest.raises(ValueError, match="incomplete_dependency_closure"):
+        mod.compute_evidence_cache_key(**incomplete)
+    ok, reason = mod.verify_validation_receipt(
+        receipt,
+        incomplete,
+        expected_worktree_src_init=expected_init,
+        now_epoch=1500.0,
+    )
+    assert ok is False and "incomplete_dependency_closure" in reason
+
+    dirty = copy.deepcopy(base_inputs)
+    dirty["dirty_source_paths"] = ["src/ttakkari/creative/render.py"]
+    with pytest.raises(ValueError, match="dirty_source_tree"):
+        mod.compute_evidence_cache_key(**dirty)
+
+    missing_hash = copy.deepcopy(base_inputs)
+    missing_hash["models_py_sha256"] = "not-a-valid-sha256"
+    with pytest.raises(ValueError, match="invalid_scalar_hash:models_py_sha256"):
+        mod.compute_evidence_cache_key(**missing_hash)
+
+    # Negative Control 6: Expired receipt, untrusted import origin, or tampered signature
+    ok, reason = mod.verify_validation_receipt(
+        receipt,
+        base_inputs,
+        expected_worktree_src_init=expected_init,
+        now_epoch=99999.0,
+    )
+    assert ok is False and reason == "receipt_expired_or_future_dated"
+
+    ok, reason = mod.verify_validation_receipt(
+        receipt,
+        base_inputs,
+        expected_worktree_src_init="/wrong/worktree/src/ttakkari/__init__.py",
+        now_epoch=1500.0,
+    )
+    assert ok is False and reason == "untrusted_import_origin"
+
+    tampered = copy.deepcopy(receipt)
+    tampered["signature_hmac_sha256"] = "0" * 64
+    ok, reason = mod.verify_validation_receipt(
+        tampered,
+        base_inputs,
+        expected_worktree_src_init=expected_init,
+        now_epoch=1500.0,
+    )
+    assert ok is False and reason == "signature_mismatch"
+
+
+def test_change_impact_classifier_promotes_core_schema_conftest_and_unknown_to_broad_gate():
     mod = _load_extractor()
     graph = mod.analyze_source_graph(mod.SRC_ROOT)
 
@@ -57,58 +314,14 @@ def test_change_impact_classifier_separates_module_scoped_and_fail_closed_broad_
     assert creative_impact["touched_modules"] == ["creative"]
     assert creative_impact["reasons"] == []
 
-    schema_impact = mod.classify_change_impact(
+    for broad_path in (
         ["alembic/versions/0064_run_executor.py"],
-        graph,
-    )
-    assert schema_impact["gate_mode"] == "broad_fail_closed"
-    assert any(r.startswith("broad_gate_trigger:alembic/") for r in schema_impact["reasons"])
-
-    unknown_impact = mod.classify_change_impact(
         ["deploy/generation-contract.json"],
-        graph,
-    )
-    assert unknown_impact["gate_mode"] == "broad_fail_closed"
-
-
-def test_evidence_cache_key_is_deterministic_and_sensitive_to_contract_changes():
-    mod = _load_extractor()
-    key_a = mod.compute_evidence_cache_key_preview(
-        module_id="creative",
-        changed_files=["src/ttakkari/creative/render.py", "src/ttakkari/creative/service.py"],
-        dependency_closure_hashes={"b": "222", "a": "111"},
-        uv_lock_sha256="lock-1",
-        migration_head="0064_run_executor",
-        generation_contract_sha256="contract-1",
-        suite_selector="creative-suite",
-    )
-    key_b = mod.compute_evidence_cache_key_preview(
-        module_id="creative",
-        changed_files=["src/ttakkari/creative/service.py", "src/ttakkari/creative/render.py"],
-        dependency_closure_hashes={"a": "111", "b": "222"},
-        uv_lock_sha256="lock-1",
-        migration_head="0064_run_executor",
-        generation_contract_sha256="contract-1",
-        suite_selector="creative-suite",
-    )
-    assert key_a["cache_key"] == key_b["cache_key"]
-
-    key_c = mod.compute_evidence_cache_key_preview(
-        module_id="creative",
-        changed_files=["src/ttakkari/creative/render.py", "src/ttakkari/creative/service.py"],
-        dependency_closure_hashes={"a": "111", "b": "222"},
-        uv_lock_sha256="lock-1",
-        migration_head="0065_new_head",
-        generation_contract_sha256="contract-1",
-        suite_selector="creative-suite",
-    )
-    assert key_a["cache_key"] != key_c["cache_key"]
-
-
-def test_generated_json_file_matches_extractor_output():
-    mod = _load_extractor()
-    mod.main()
-    assert mod.OUTPUT_PATH.is_file()
-    loaded = json.loads(mod.OUTPUT_PATH.read_text(encoding="utf-8"))
-    assert loaded["migrations"]["heads"] == ["0067_collector_outbox_retry"]
-    assert loaded["codebase_metrics"]["total_python_files"] == 385
+        ["tests/conftest.py"],
+        ["src/ttakkari/models.py"],
+        ["src/ttakkari/runs/manager.py"],
+        [],
+    ):
+        impact = mod.classify_change_impact(broad_path, graph)
+        assert impact["gate_mode"] == "broad_fail_closed"
+        assert len(impact["reasons"]) > 0

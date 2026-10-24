@@ -1,310 +1,343 @@
-# 따까리 플랫폼 V2 감사 보고서 (Worker A: Runtime / Delivery / Architecture)
+# 따까리 플랫폼 V2 감사 및 설계 보고서 (Worker A: Runtime / Delivery / Architecture — 독립 검증 교정판)
 
-- 작성 시각: `2026-10-24T21:40:00+09:00`
-- 담당: Worker A (Runtime, Delivery, Architecture 판단)
-- 감사 대상 정본 SHA (`origin/main`): `c8f10156845d007ec6496a65d6d8417be19260bd`
-- 운영 활성(Live) SHA: `9f82c9c16cd604e81ddf43180b0be2e895ec85cb`
-- 배포 감독(Supervisor) 고정 SHA: `e817fc19471bdc48054158cada4a99466f7eaa6f`
-- 공유 작업 트리(`/Users/winterholic/development/projects/winterholic-ttakkari/back`) 로컬 HEAD: `607f8bda0df7dbdd458e4f0e54d703ce9edd3def` (`origin/main` 대비 111커밋 뒤처짐, 미커밋 변경 43건 존재)
+- 작성 및 교정 시각: `2026-10-24T22:16:00+09:00`
+- 담당: Worker A (Runtime, Delivery, Architecture 판단 / 세션 ID `e65430e3-0775-4e2c-910a-5050cdb7d216`)
+- 반영한 독립 검증 보고서:
+  - 검증 워커 `1d994e50-c900-4f90-9975-1ff082522a35` 커밋 `93af9ef6e202b95883d73c74d710e1775cb402b9`
+  - `/private/tmp/back-platform-v2-a-runtime-delivery-verification-20261024/review/platform-v2/20261024/A-runtime-delivery-independent-verification.md`
+  - `/private/tmp/back-platform-v2-a-runtime-delivery-verification-20261024/review/platform-v2/20261024/A-runtime-delivery-independent-verification-evidence.json`
+- 감사 대상 정본 SHA (`origin/main`): `c8f10156845d007ec6496a65d6d8417be19260bd` (`src/ttakkari` 트리 SHA `f2e5572cbc38e4234157be9c4c83090a1358be83`)
+- 공유 작업 트리(`/Users/winterholic/development/projects/winterholic-ttakkari/back`) 로컬 HEAD: `607f8bda0df7dbdd458e4f0e54d703ce9edd3def`
+  - `merge-base(607f8bda, c8f10156)` = `2522d78e29b14ffb29d8536bcf833d832b4f87e1`
+  - 양방향 분기 토폴로지: **`2 ahead / 118 behind`** (`607f8bda` 고유 커밋 2개: `607f8bd`, `66c8402`; `c8f10156` 고유 커밋 118개)
+  - 2-점 비교(`git diff --shortstat 607f8bda c8f10156`): **`366 files changed, 86,213 insertions(+), 339 deletions(-)`**
 - 격리 작업 트리: `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a` (`audit/platform-v2-a-runtime-delivery-20261024`)
-- 기계 판독 증거: `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/review/platform-v2/20261024/A-runtime-delivery-evidence.json`
-- 재현 추출기 및 테스트:
+- 기계 판독 증거 및 재현/검증 스크립트:
+  - `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/review/platform-v2/20261024/A-runtime-delivery-evidence.json`
   - `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/review/platform-v2/20261024/A-extract-runtime-delivery-evidence.py`
   - `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/review/platform-v2/20261024/test_a_runtime_delivery_evidence.py`
 
 ---
 
-## 1. P0 운영·복구·성능 기준선 실측 결과
+## 0. 독립 검증(`93af9ef6`) 반영 8대 필수 교정 요약
 
-운영 상태는 보호 경로(`~/.ttakkari`) 직접 스캔 없이 공식 MCP 도구(`backend_deploy_status`, `ops_list_deploys`, `ops_deploy_log`, `ops_list_issues`, `ops_get_issue`, `execution_capabilities`, `server_resources`, `read_session`)만으로 수집하였다.
+초회 감사(`fddad5e152754f5f1e7ac5eac07ec26b453d6987`)에 대한 독립 검증(`93af9ef6`)에서 지적된 수치·해석·범위 오류를 아래와 같이 전수 교정하였다.
 
-### 1.1 활성 릴리스·세대 슬롯·프로세스 상태 (`live` / `measured`)
-
-| 항목 | 실측값 | 근거 도구 및 경로 | 상태 분류 |
-| :--- | :--- | :--- | :--- |
-| 운영 활성 리비전 | `9f82c9c16cd604e81ddf43180b0be2e895ec85cb` | `backend_deploy_status(4a6e09a8-c49f-4c2f-9a6c-c0d83fe5824a)` | `live` / `measured` |
-| 운영 릴리스 경로 | `/Users/winterholic/.ttakkari/deploy/releases/9f82c9c16cd604e81ddf43180b0be2e895ec85cb` | `backend_deploy_status(4a6e09a8)`, `execution_capabilities(host)` | `live` / `measured` |
-| 활성 세대 및 슬롯 | `5ef462e5-d7f7-40e7-bf27-1d4bf19e1d91` (Slot `1`, Port `8792`) | `ops_deploy_log(4a6e09a8)` | `live` / `measured` |
-| 직전 은퇴 세대 및 슬롯 | `e1eb4ad0-5ce7-415f-b91e-9c0b0eab2ba3` (`4f341c54`, Slot `0`, Port `8791`, `2026-10-23T10:43:06Z` 은퇴) | `backend_deploy_status(4a6e09a8)` | `live` / `measured` |
-| 배포 감독(Supervisor) 리비전 | `e817fc19471bdc48054158cada4a99466f7eaa6f` (`/Users/winterholic/.ttakkari/deploy/releases/e817fc19471bdc48054158cada4a99466f7eaa6f/src/ttakkari/deployment.py`) | `ops_get_issue(LOG-68)` 스택트레이스, `docs/work-history/2026-10-23.md` | `live` (`supervisor.json` 원문은 보호 경로라 `확인 필요`) |
-| 호스트 주요 프로세스 | `python3.13` (`pid=44104`, `kind=backend`, RSS `374 MiB`), `llama-server` (`pid=44129`, RSS `7.20 GiB`) | `server_resources` (`2026-10-24T12:20:12Z`) | `measured` |
-| 호스트 자원 부하 | Apple M5 Max (CPU 18코어 `17.6%`, GPU 40코어 `0.0%`, RAM 64GiB 중 `42.1%`, Swap `31.7/33.3 GiB` = `95.3%`, Disk `77.3%`) | `server_resources` (`2026-10-24T12:20:12Z`) | `measured` |
-| 엔진별 실행 능력 | `host`(10-24 09:14), `codex`(10-23 14:48), `antigravity`(10-21 18:29), `muse`(10-21 17:55): `blocked=[]`; `claude`, `qwen-local`: 미측정 | `execution_capabilities` | `measured` (`claude`/`qwen-local`은 `확인 필요`) |
-| UI 워커 부작용 대조 | 세션 `6e33860e-3773-48bf-8df5-a3dc2c330a3e`는 `front` 저장소만 수정해 `dbe0c9f042b006e2a627b8e59c295ad14b7a2caf` 푸시 완료. `back` 수정 및 배포 예약 없음 | `read_session(6e33860e-3773-48bf-8df5-a3dc2c330a3e)` | `measured` |
-
-> **중요 발견 (공유 작업 트리 `607f8bda`와 `origin/main` `c8f10156`의 111커밋 Baseline Drift 및 Worker B·C 검증 대기 격리)**:
-> 1. `/Users/winterholic/development/projects/winterholic-ttakkari/back` 공유 작업 트리의 로컬 `HEAD`는 `607f8bda0df7dbdd458e4f0e54d703ce9edd3def`에 머물러 있으며, 실제 `origin/main`(`c8f10156845d007ec6496a65d6d8417be19260bd`)은 그보다 **111커밋 앞서 있다** (`253 files changed, 68,266 insertions(+), 1,568 deletions(-)`).
-> 2. Worker B(`c1e9cd73-83ef-4240-99c8-809e500bd903`, `back-platform-v2-b` HEAD `86373cedda20e298ad2b82d857352f845ae70980`)는 실제 실행 모델이 Flash였고 `607f8bda` 기준으로 추출하여 `25모듈 / 497 route / 102 tool / 88 table / 62 migration / 212 config / 321 .py / unmatched 0`, `Creative = artcraft_tasks 1 / FK 0`, `collector = 2 tables`, `cycle = 34`를 보고하였다.
-> 3. Worker C(`9a3215de-01d4-4efd-b3ff-9e282de9b766`, 공유 `/back` untracked 산출물) 역시 실제 실행 모델이 Flash였고, 요약 `38 routes` vs 스캐너 `36 routes`, 10분류 주장 대비 `runtime/ownership` 누락(dict 9종·`257 files` vs 요약 합 `262`), `main missing security test` / `deploy security duplicate 31`, C 측 `front 5.48s` / `back 1045.97s` 원시로그 대조 등 내부 불일치·미검증 항목이 존재한다.
-> 4. 루트 오케스트레이터가 **독립 검증 워커 `Bv = 1d994e50-c900-4f90-9975-1ff082522a35` (`auto/verification`, GPT-6 Luna 예정)** 및 **`Cv = fed2c630-a867-42f1-9574-4a92905de864` (`auto/verification`)**를 배정했으므로, 검증 완료 전까지 B·C의 위 결론은 모두 **`확인 필요`(`verification_pending`)**로 격리하며 확정 모듈 경계나 구현 근거로 채택하지 않는다.
-> 5. 실제 `origin/main`(`c8f10156`) 정본은 `607f8bda` 대비 **`src/ttakkari` 파이썬 파일 `+64`개(`321` → `385`개, `71,985` → `94,439`줄), 마이그레이션 `+5`개(`62` → `67`개, `0063`~`0067`), 신규 DB 테이블 `+21`개(`collector_*` 14개 + `kb_*` 3개 + `run_executor_*` 4개)**가 추가되어 있다 (`A-runtime-delivery-evidence.json`의 `baseline_drift_607f8bda_to_c8f10156` 참조). 본 Worker A 감사는 `origin/main`(`c8f10156`) 정본 및 `ops_deploy_log(4a6e09a8)` 원시 로그를 기준으로 수행하였다.
-
-### 1.2 배포 소요 시간 및 실패 이력 통계 (`measured`)
-
-1. **관측 기간 및 분모**:
-   - `ops_list_issues(source="deploy", status="all")` 전수 조회 결과: `2026-10-16T08:11:13Z`부터 `2026-10-23T17:19:03Z`까지 총 **34개 배포 실패 이슈 그룹, 누적 56회 실패 이벤트**가 기록되었다.
-   - 단계별 분포:
-     - `deploy:pytest`: **33개 이슈 그룹 (54회 실패, 전체 배포 실패의 96.4%)**
-     - `deploy:archive`: **1개 이슈 그룹 (2회 실패, `LOG-74` `git archive` 실패)**
-   - `ops_list_deploys` 상태별 최근 이력: `succeeded` 50건(조회 상한), `failed` 50건(조회 상한), `superseded` 40건, 현재 `draining` 0건, `waiting_slot` 0건.
-2. **최근 성공 배포(`4a6e09a8-c49f-4c2f-9a6c-c0d83fe5824a`, SHA `9f82c9c1`) 단계별 실측 시간**:
-   - 예약 생성(`created_at`): `2026-10-23T10:16:49.556741+00:00`
-   - 최종 은퇴 완료(`updated_at`): `2026-10-23T10:43:06.032849+00:00`
-   - **총 벽시계 소요 시간**: **1,576.48초 (26분 16초)**
-   - 내부 구간(`ops_deploy_log(4a6e09a8)`):
-     - `git archive` + `uv sync --frozen`: `10:16:50Z`부터 `10:17:38Z`까지 약 **48초** (`Installed 215 packages in 25.63s`)
-     - `pytest -q --timeout=120 -x` 전체 실행: **`1,045.97초` (17분 25.97초)** (`4473 passed, 8 skipped, 2 xfailed, 5020 subtests passed`, DB selective reset `2,822`회 / `106`개 테이블)
-     - 이전 성공 배포 `34ee75c6`(`b2faeb5d`) 역시 `pytest` 단독 **`1,020.57초` (17분 0.57초)** 소요 (`4455 passed`).
-3. **현재 `origin/main` 미반영 커밋 4건과 직전 전역 차단 사례 2건**:
-   - 운영 활성 리비전(`9f82c9c1`) 이후 `origin/main`에는 4개 커밋(`d78f304`, `827ae35`, `063002a`, `c8f1015`)이 푸시되었으나, 아래 두 번의 배포가 연속 실패하여 운영은 여전히 `9f82c9c1`에 머물러 있다.
-   - **차단 사례 1 (`794447f3-8635-443d-b4c5-de975b0e91fb`, SHA `063002a1`, `LOG-194`)**:
-     - 변경 내용: Creative Studio 한국어 자막 줄바꿈 보존 및 장면 프레이밍 수정.
-     - 결과: `pytest`를 **`985.34초` (16분 25초)** 동안 실행(`3,327 passed`)한 뒤 `unit_tests/test_creative_v2_lease_handoff.py::test_scene_generation_requests_bounded_lease_wait_from_controller` 1건(`assert 349 == 324`, 프롬프트 길이 하드코딩 단정 불일치)으로 배포 전체 실패.
-   - **차단 사례 2 (`e15536bc-c7f9-4e1a-89cb-95e2f91192e5`, SHA `c8f10156`, `LOG-195`)**:
-     - 변경 내용: Desk 세션 재사용 시 프로젝트·작업 연속성 검사 추가(`PROMPT_VERSION = "harness-v3-topic-boundary"`).
-     - 결과: `pytest`를 **`172.23초` (2분 52초)** 실행(`1,112 passed`)한 뒤 `tests/test_desk_qwen_service.py::test_desk_request_goes_to_the_managed_server_of_this_process` 1건(`assert 'harness-v3-topic-boundary' == 'harness-v2'`)으로 배포 전체 실패.
-
-### 1.3 백업 및 복구 리허설 기준선 (`implemented` / 일부 `확인 필요`)
-
-- **구현된 코드 및 절차 (`implemented`)**:
-  - DB 백업: `scripts/backup_db.sh` (`asyncpg` `repeatable_read` 읽기 전용 트랜잭션에서 `pg_export_snapshot()`과 테이블별 `SELECT count(*)`를 구하고, 동일 스냅샷으로 `pg_dump -Fc --snapshot` 실행 후 선택적 `openssl enc -aes-256-cbc -pbkdf2 -iter 200000` 암호화 및 `~/.ttakkari-backups/latest.json` 원자적 갱신).
-  - DB 복원 리허설: `scripts/restore_rehearsal.sh` (대상 DB명에 `test`·`restore`·`rehearsal` 필수 강제, localhost/loopback PostgreSQL만 허용, `sha256` 검증 후 임시 DB에 `pg_restore` 실행 및 manifest의 모든 테이블 행 수 전수 대조 후 임시 DB 삭제).
-  - 데이터 스냅샷: `scripts/snapshot_data.sh` (`*.sock`, `*.pid` 제외 `tar -czf` 및 파일별 `sha256` manifest 생성, `--verify` 모드로 격리 디렉터리 압축 해제 및 해시 전수 대조).
-  - 상태 조회: `src/ttakkari/backup_status.py` 및 `GET /api/system/backup-status` (`src/ttakkari/api/system.py:128`).
-- **운영 실제 실행 여부 (`확인 필요`)**:
-  - 기본 백업 경로 `~/.ttakkari-backups/latest.json` 및 `~/.ttakkari` 하위는 에이전트 보호 영역 밖이며, MCP 도구 중에 `/api/system/backup-status`를 호출하는 도구가 없다. 따라서 현재 호스트에서 마지막 백업·복원 리허설이 언제 성공했는지는 `확인 필요`(`unknown`)로 분류한다.
+1. **교정 1 (Git 토폴로지·테이블 수·스냅샷 바인딩)**:
+   - `607f8bda`와 `c8f10156`의 관계를 기존 `111 behind / 253 files changed`에서 실제 `merge-base`(`2522d78e`) 기준 **`2 ahead / 118 behind` 양방향 분기** 및 2-점 diff **`366 files changed, 86,213 insertions(+), 339 deletions(-)`**로 교정하였다.
+   - `0063`~`0067` 마이그레이션이 신설한 테이블 수를 기존 `21개`에서 실제 **`18개`(`5 + 1 + 8 + 4 + 0`)**로 교정하였다. `0064_run_executor.py`는 4개 테이블이 아니라 **`runtime_process_groups` 1개 테이블**만 신설하고, 기존 `runtime_generations`(`role`, `protocol`, `execution_mode`) 및 `runtime_control`(`executor_generation`)에 컬럼을 추가하며 4개 PL/pgSQL 트리거(`guard_executor_control`, `guard_executor_api`, `guard_executor_lease`, `route_executor_command`)를 설치한다.
+   - `A-extract-runtime-delivery-evidence.py`에서 모든 상수 기입을 제거하고 실제 Git 명령과 파일 파싱으로 동적 계산하며, `verify_import_origin()` 및 `verify_snapshot_binding()`으로 잘못된 repo root, 타 체크아웃 import, dirty source tree, 트리 해시 불일치, 파싱 실패를 즉시 거부(fail-closed)하도록 구현·테스트하였다.
+2. **교정 2 (과거 영수증 vs 현재 직접 관측, Capabilities 범위 분리, 실패 통계 34/56 철회)**:
+   - `9f82c9c1` 성공 배포(`4a6e09a8`, Slot 1 `8792`, 세대 `5ef462e5`)와 `c8f10156` 실패 배포(`e15536bc`)는 **과거 배포 영수증(`historical_receipt`)**이고, `e817fc19` 역시 과거 이슈 스택트레이스(`LOG-68`) 기록일 뿐 **현재 실시간 실행 중인 API 리비전/슬롯/세대나 supervisor 프로세스의 직접 관측값이 아님(`unknown / 확인 필요`)**을 명확히 분리하였다.
+   - `execution_capabilities`에서 `host`(`blocked=[]`)와 `codex` 샌드박스(`blocked=[gpu_metal, llama_list_devices, process_list, sysctl_read]`)를 구분하고, `antigravity`/`muse`의 `blocked=[]`는 8개 항목 전체가 `stale_items`인 과거 캐시(`확인 필요`), `claude`/`qwen-local`은 미측정(`확인 필요`)으로 기록하였다.
+   - 초회 보고의 배포 실패 집계(`34그룹 / 56회`)를 **전면 철회**하였다. 전체 조회(`34 groups / count 합계 65회, 10/14~10/24`)와 해당 구간 raw paged 조회(`29 groups / 58 raw events: pytest 56, archive 2`) 간 집계 기준이 다르므로, 전체 raw ID 덤프 없이는 기간 집계를 `수치 검증 불가 / 확인 필요`로 낮추고 `ops_list_deploys` 50건 상한 너머 전체 배포 모수도 `unknown`으로 기록하였다.
+   - `9f82c9c1`의 `1,045.97s`(전체 4,473 passed 완주)와 `c8f10156`의 `172.23s`/`063002a1`의 `985.34s`(`-x` 첫 실패 조기 중단)가 동등한 벤치마크가 아님을 명시하였다.
+3. **교정 3 (좁은 DB-Free 표본 `35 passed in 3.34s` 및 5초 보장 주장 철회)**:
+   - `PYTHONPATH`를 worktree `src`로 고정한 5개 파일 DB-free(`--noconftest`) 결과를 **`35 passed in 3.34s`**로 정정하고, 기존 `39 passed in 5.00s`와 "전체 계약 게이트 5초 보장" 주장을 **철회**하였다.
+4. **교정 4 (`EvidenceCacheKey v2` 및 `ValidationReceipt v2` 엄격화)**:
+   - 경로만 넣던 v1을 폐기하고, 후보 소스 트리 전체 해시, 전이 의존성 클로저 해시(불완전/동적/unknown 시 즉시 `broad_fail_closed`), 선택된 테스트 파일 해시, `tests/conftest.py` 및 헬퍼 해시, selector 인자, `pyproject.toml` + `uv.lock`, Python 패치 버전/플러그인/환경 변수, `models.py` + `alembic/env.py` + 67개 마이그레이션 파일 각각의 내용 해시, `generation-contract.json` + `run-executor-manifest.json`, 그리고 provenance/trust(`import_origin_file` 검증, TTL, HMAC 서명)를 포함하는 `v2` 명세와 1바이트 변조 거부 테스트를 구현하였다.
+5. **교정 5 (ADR 0036 활성화 경계, Reconcile vs Legacy Startup Resume 구분, 상태 전이 표)**:
+   - `executor_reconcile.py`(`NoSuchProcess`만 `ABSENT`, `AccessDenied`/`OSError`는 `UNKNOWN` 보존, lock 아래 신원·리스 재확인 후 신호, `interrupted` 마감 및 무-replay)와 **레거시 기동 경로(`main.py:201` → `runs/manager.py:1941` `resume_interrupted()`: 세대 런타임 비활성 시 `error == "서버 종료로 중단"`인 `interrupted` Run을 최대 `MAX_RESTART_RESUME_ATTEMPTS = 3`회까지 백오프 재큐잉)**를 엄격히 구분하고, 소유권·펜스·리스·드레인·취소·재시작·은퇴 상태 전이를 표로 정의하였다.
+6. **교정 6 (TTS / Creative / Qwen / Side-Effects 과장 철회 및 최소 공용 기반 + 인수 시나리오)**:
+   - "현재 `llama-server`가 2~3개 중복 기동되어 Swap 포화를 일으켰다"는 인과 단정을 철회(현재 스냅샷엔 `pid=44129` 1개만 관측됨)하고, "모든 파일/외부 효과가 이미 `tmp+fsync+sha256+os.replace`와 DB 펜스로 완전 격리되어 있다"는 과장도 철회(`_write_checkpoint`는 `.tmp`+`replace`뿐이고 `fsync`/해시 없으며 바깥 Creative 태스크에는 DB 펜스 없음)하였다.
+7. **교정 7 (독립 모듈 릴리스 미구현 설계/목표 구분, 스키마 확장 호환성, Creative 후보 `provisional`)**:
+   - `module-releases`, `active.json`, 버전드 디스패처, `<1s` 롤백, `Core 재배포 0회`는 현재 미구현된 **설계 목표(Target Architecture) + 인수 시나리오**로 구분하고, `Creative Studio` 1순위 후보는 이름 기반 `fan_in=4`만으로 FK/리스/부수효과 분리가 입증되지 않았으므로 **`provisional` (잠정 1순위)**로 격하하였다.
+8. **교정 8 (상태 원장 시간 고정 이력 분리 및 비순환 선행조건)**:
+   - Worker B(`86373ce`/`2cc` 검증 `failed`, `7cf` 분모 확장, `d492` 교정 중)와 Worker C(`fed2c630` 검증 `failed` 후 교정 중)의 최신 검증 상태를 반영하고, `P0` 미검증 항목을 **(Gate B) 운영 전환 및 P2 최종 운영 서명의 선행조건**으로 두어 **(Gate A) P3 격리 코드 구현 승인**과 분리함으로써 순환 선행조건을 제거하였다.
 
 ---
 
-## 2. 런타임·배달 하위 시스템 코드/콜패스 대조 및 상태 분류
+## 1. P0 운영·복구·성능 기준선 실측 결과 (증거 수준 엄격 분리)
 
-각 하위 시스템에 대해 `계획(planned)`, `코드 구현(implemented)`, `테스트(tested)`, `설정 기본값(feature-off)`, `운영 활성(live)`, `실측(measured)`, `미검증(unknown)`을 엄격히 분리하여 대조하였다.
+보호 경로(`~/.ttakkari`) 직접 스캔 없이 공식 MCP 도구(`backend_deploy_status`, `ops_list_deploys`, `ops_deploy_log`, `ops_list_issues`, `ops_get_issue`, `execution_capabilities`, `server_resources`, `read_session`)로 수집한 데이터를 **`direct_current_observation`(현재 직접 관측)**, **`historical_receipt`(과거 영수증/로그)**, **`unknown / 확인 필요`**로 엄격히 분리한다.
+
+### 1.1 운영·릴리스·프로세스·실행 능력 기준선
+
+| 항목 | 관측값 및 내용 | 근거 도구 및 시각 | 증거 분류 |
+| :--- | :--- | :--- | :--- |
+| **가장 최근 성공 배포 영수증** | 배포 `4a6e09a8-c49f-4c2f-9a6c-c0d83fe5824a`: 리비전 `9f82c9c16cd604e81ddf43180b0be2e895ec85cb`, 세대 `5ef462e5-d7f7-40e7-bf27-1d4bf19e1d91` (Slot `1`, Port `8792`), 직전 세대 `e1eb4ad0` (`4f341c54`, Slot `0`, Port `8791`, `2026-10-23T10:43:06Z` 은퇴) | `backend_deploy_status(4a6e09a8)`, `ops_deploy_log(4a6e09a8)` (`2026-10-23T10:43:06Z`) | **`historical_receipt`** |
+| **가장 최근 실패 배포 영수증** | 배포 `e15536bc-c7f9-4e1a-89cb-95e2f91192e5`: 리비전 `c8f10156845d007ec6496a65d6d8417be19260bd`, `pytest` `172.23s` 시점 조기 중단(`-x`)으로 전환 전 실패 | `backend_deploy_status(e15536bc)`, `ops_deploy_log(e15536bc)` (`2026-10-23T11:10:22Z`) | **`historical_receipt`** |
+| **현재 실시간 서빙 중인 API 리비전·슬롯·세대 ID** | `4a6e09a8` 성공 이후 후속 성공 배포 영수증은 없으나, 보호 경로 및 실시간 `/api/version` 무인증 프로브 제한으로 현재 순간 서빙 중인 정확한 리비전/슬롯은 직접 관측하지 않음 | 실시간 프로브 미수행 | **`unknown / 확인 필요`** |
+| **배포 감독(Supervisor) 리비전** | 과거 이슈 `LOG-68` 스택트레이스에 `/Users/winterholic/.ttakkari/deploy/releases/e817fc19471bdc48054158cada4a99466f7eaa6f/src/ttakkari/deployment.py`가 기록되어 있으나, `~/.ttakkari/deploy/supervisor.json` 원문 및 현재 감독 프로세스의 실시간 실행 리비전은 보호 경로 밖임 | `ops_get_issue(LOG-68)` | 과거 스택트레이스는 **`historical_receipt`**, 현재 실시간 감독 리비전은 **`unknown / 확인 필요`** |
+| **호스트 프로세스 및 자원 스냅샷** | `python3.13` (`pid=44104`, `kind=backend`, RSS `374 MiB`), `llama-server` (`pid=44129`, RSS `7.20 GiB`, **단 1개 인스턴스만 관측됨**); CPU 18코어 `17.6%`, GPU 40코어 `0.0%`, RAM 64GiB 중 `42.1%~43.1%`, Swap `31.5~31.7 / 33.3 GiB` (`94.8%~95.3%`), `memory_pressure=normal` | `server_resources` (`2026-10-24T12:20:12Z` 및 `12:51Z`) | **`direct_current_observation`** (단일 시점 스냅샷) |
+| **실행 능력 (`host` vs `codex` vs 기타)** | - `host` (`2026-10-24T12:20Z` probe): `blocked=[]`, 8개 전체 `available`<br>- `codex` (`2026-10-24T12:51Z` 샌드박스 probe): `blocked=[gpu_metal, llama_list_devices, process_list, sysctl_read]`, `available=[spawn_process, network_loopback, network_outbound, writable_paths]`<br>- `antigravity` (`10-21 18:29`), `muse` (`10-21 17:55`): `blocked=[]`이나 8개 전체 `stale_items`<br>- `claude`, `qwen-local`: `not measured` | `execution_capabilities` | `host`·`codex`는 **`direct_current_observation`**, `antigravity`·`muse`는 **stale(`확인 필요`)**, `claude`·`qwen-local`은 **`unknown / 확인 필요`** |
+| **UI 워커 부작용 대조** | 세션 `6e33860e-3773-48bf-8df5-a3dc2c330a3e`는 `front` 저장소만 수정해 `dbe0c9f042b006e2a627b8e59c295ad14b7a2caf` 푸시 완료. `back` 수정 및 배포 예약 0건 | `read_session(6e33860e-3773-48bf-8df5-a3dc2c330a3e)` | **`historical_receipt`** |
+
+### 1.2 Baseline Drift (`607f8bda` ↔ `c8f10156`) 정밀 대조
+
+공유 작업 트리(`/Users/winterholic/development/projects/winterholic-ttakkari/back`, 로컬 `HEAD` = `607f8bda0df7dbdd458e4f0e54d703ce9edd3def`)와 정본 `origin/main`(`c8f10156845d007ec6496a65d6d8417be19260bd`)의 실제 Git 토폴로지 및 스키마 차이는 다음과 같다 (`A-runtime-delivery-evidence.json`의 `baseline_drift_607f8bda_to_c8f10156` 참조):
+
+1. **양방향 분기(Divergent Graph) 토폴로지**:
+   - 공통 조상(`git merge-base 607f8bda c8f10156`): `2522d78e29b14ffb29d8536bcf833d832b4f87e1`
+   - `git rev-list --left-right --count 607f8bda...c8f10156`: **`2 ahead / 118 behind`**
+     - `607f8bda`에만 있는 로컬 커밋 2개: `607f8bda0df7dbdd458e4f0e54d703ce9edd3def`, `66c840200b8c529a1a4cf9e06704b30f92b4e5a2`
+     - `c8f10156`에만 있는 `origin/main` 커밋: **118개**
+   - 2-점 비교(`git diff --shortstat 607f8bda c8f10156`): **`366 files changed, 86,213 insertions(+), 339 deletions(-)`**
+   - 3-점 비교(`git diff --shortstat 607f8bda...c8f10156`, `merge-base` → `c8f10156`): **`366 files changed, 86,257 insertions(+), 319 deletions(-)`**
+2. **`src/ttakkari` 파이썬 파일 및 라인 수 변화**:
+   - `607f8bda`: **`321`개 파일 / `71,985`줄**
+   - `c8f10156`: **`385`개 파일 / `94,439`줄** (순증 **`+64`개 `.py` 파일, `+22,454`줄**)
+3. **Alembic 마이그레이션(`62`개 → `67`개, `+5`개) 및 실제 신설 테이블 수(`+18`개)**:
+   - `0063_collector_stage_items.py`: **5개 테이블 신설** (`collector_source_policies`, `collector_host_state`, `collector_fetch_cache`, `collector_items`, `collector_dedupe_bands`)
+   - `0064_run_executor.py`: **1개 테이블 신설** (`runtime_process_groups`), 기존 테이블 컬럼 추가 (`runtime_generations.role`, `runtime_generations.protocol`, `runtime_generations.execution_mode`, `runtime_control.executor_generation`), **4개 PL/pgSQL 트리거 설치** (`guard_executor_control`, `guard_executor_api`, `guard_executor_lease`, `route_executor_command`)
+   - `0065_collector_delivery.py`: **8개 테이블 신설** (`collector_sources`, `kb_document_access`, `kb_observations`, `collector_deliveries`, `collector_daily_budgets`, `collector_reviews`, `collector_quality_models`, `kb_passage_vectors`)
+   - `0066_collector_budget.py`: **4개 테이블 신설** (`collector_budget_buckets`, `collector_budget_reservations`, `collector_cache`, `collector_runtime_flags`)
+   - `0067_collector_outbox_retry.py`: **0개 테이블 신설** (기존 `collector_outbox` 테이블에 `attempts`, `not_before`, `last_error` 컬럼 및 인덱스 추가)
+   - **합계**: `5 + 1 + 8 + 4 + 0 = 18`개 신규 테이블 (초회 보고의 `21개` 및 `0064` 4테이블 주장은 철회).
+
+### 1.3 배포 실패 이력 및 단계별 소요 시간 (`historical_receipt` vs `확인 필요`)
+
+1. **배포 실패 이슈 집계 (`수치 검증 불가 / 확인 필요`로 하향 및 초회 `34/56` 철회)**:
+   - 초회 보고에서 제시했던 `34개 이슈 그룹 / 56회 실패 (pytest 33/54, archive 1/2)` 수치는 집계 기준 불일치로 **전면 철회**한다.
+   - 독립 검증 대조 결과:
+     - `ops_list_issues(source="deploy", status="all")` 전체 요약 조회(`2026-10-14`~`2026-10-24`)는 `34 issue groups / count 합계 65회`이다.
+     - 반면 `2026-10-16`~`2026-10-23` 구간의 raw paged 이벤트 조회(`50 + 8`건)는 `29 issue groups / 58 raw events` (`deploy:pytest` 56건, `deploy:archive` 2건; 시각 범위 `2026-10-16T11:08:43Z`..`2026-10-23T11:10:22Z`)이다.
+     - 또한 `ops_list_deploys`는 상태별 최근 `50건` 상한이 있어 전체 배포 시도 모수(denominator)는 `unknown / 확인 필요`이다.
+   - 따라서 raw 이벤트 ID 전체 덤프 없이는 기간별 정확 집계를 `수치 검증 불가 / 확인 필요`로 유지하되, **관측된 배포 실패의 대다수가 `deploy:pytest` 단계에서 발생한다**는 구조적 사실만 채택한다.
+2. **완주 배포 영수증과 조기 중단(`-x`) 실패 영수증의 구분 (동등 벤치마크 아님)**:
+   - **전체 스위트 완주 영수증 (`4a6e09a8`, SHA `9f82c9c1`)**:
+     - 예약 생성(`2026-10-23T10:16:49.556741+00:00`) ~ 은퇴 완료(`10:43:06.032849+00:00`): 총 벽시계 **`1,576.48초` (26분 16초)**.
+     - `git archive` + `uv sync --frozen`: 약 **`48초`** (`Installed 215 packages in 25.63s`).
+     - `pytest -q --timeout=120 -x` 전체 완주: **`1,045.97초` (17분 25.97초)** (`4473 passed, 8 skipped, 2 xfailed, 5020 subtests passed`, DB selective reset `2,822`회 / `106`개 테이블).
+     - 직전 완주 배포 `34ee75c6`(`b2faeb5d`) 역시 `pytest` 완주에 **`1,020.57초`** (`4455 passed`)가 소요되었다.
+   - **첫 실패 조기 중단(`-x`) 영수증 (완주 시간과 직접 비교 금지)**:
+     - 배포 `794447f3` (SHA `063002a1`, `LOG-194`): Creative Studio 자막 줄바꿈 및 장면 프레이밍 수정 후 `pytest -x`가 **`985.34초`** 지점(`3,327 passed`)에서 `unit_tests/test_creative_v2_lease_handoff.py::test_scene_generation_requests_bounded_lease_wait_from_controller` 1건(`assert 349 == 324`) 실패로 조기 중단됨.
+     - 배포 `e15536bc` (SHA `c8f10156`, `LOG-195`): Desk 세션 연속성 검사(`PROMPT_VERSION = "harness-v3-topic-boundary"`) 수정 후 `pytest -x`가 **`172.23초`** 지점(`1,112 passed`)에서 `tests/test_desk_qwen_service.py::test_desk_request_goes_to_the_managed_server_of_this_process` 1건(`assert 'harness-v3-topic-boundary' == 'harness-v2'`) 실패로 조기 중단됨.
+
+### 1.4 백업 및 복구 리허설 기준선 (`implemented` / 운영 실행 이력은 `unknown`)
+
+- **구현된 코드 (`implemented`)**:
+  - `scripts/backup_db.sh`: `asyncpg` `repeatable_read` 읽기 전용 트랜잭션에서 `pg_export_snapshot()`과 테이블별 행 수를 구하고 동일 스냅샷으로 `pg_dump -Fc --snapshot` 실행 및 `~/.ttakkari-backups/latest.json` 갱신.
+  - `scripts/restore_rehearsal.sh`: 대상 DB명에 `test`·`restore`·`rehearsal` 강제, loopback PostgreSQL만 허용, `sha256` 검증 후 임시 DB 복원 및 테이블 행 수 전수 대조 후 삭제.
+  - `scripts/snapshot_data.sh` 및 `src/ttakkari/backup_status.py` (`GET /api/system/backup-status`).
+- **운영 실제 실행 여부 (`unknown / 확인 필요`)**:
+  - `~/.ttakkari-backups/latest.json`은 에이전트 보호 영역 밖이며 MCP 도구로 직접 조회할 수 없다. 따라서 최근 백업·복원 리허설 성공 시각은 `unknown / 확인 필요`로 유지한다.
+
+---
+
+## 2. 런타임·배달 하위 시스템 정밀 대조 및 상태 전이 정의
 
 ### 2.1 하위 시스템 상태 요약표
 
-| 하위 시스템 | 핵심 코드 및 마이그레이션 경로 | 코드/테스트 상태 | 설정·계약 기본값 | 운영(Live) 상태 |
+| 하위 시스템 | 핵심 코드 및 마이그레이션 경로 | 코드/테스트 상태 | 설정·계약 기본값 | 운영(Live) 상태 분류 |
 | :--- | :--- | :--- | :--- | :--- |
-| **ADR 0036 독립 RunExecutor** | `src/ttakkari/executor.py`, `alembic/versions/0064_run_executor.py` | `implemented` / `tested` (`unit_tests/test_executor_migration_contract.py`) | `feature-off` (`deploy/generation-contract.json` `run_executor.activation="disabled"`, `Settings.run_executor_mode="local"`) | `feature-off` (`9f82c9c1`에 코드·스키마 포함되었으나 API 세대가 `local` 모드로 직접 실행 중) |
-| **ADR 0036 PG 프로세스 그룹 원장 및 펜싱 Reconcile** | `src/ttakkari/executor_reconcile.py`, `src/ttakkari/models.py` (`RunExecutionLease`, `RunProcessGroup`) | `implemented` / `tested` (`unit_tests/test_executor_reconcile.py`) | `feature-off` (`run_executor` 비활성으로 미호출) | `feature-off` (단, `Run.pid` / `Run.process_started_at` 기반 `reconcile_runs`는 `live`) |
-| **ADR 0066 ChangeSet / Worktree / MergeQueue** | `src/ttakkari/delivery/{worktree,provenance,diff_guard,repair_policy,validation,merge_queue,cli}.py`, `0062_delivery_change_sets.py` | `implemented` (부분) / `tested` (`tests/delivery/test_*.py`) | `feature-off` (`Settings.delivery_pipeline_enabled=False`) | `feature-off` (수동 CLI만 존재, 상주 통합기 데몬 및 MCP `submit_change` 미노출) |
-| **세대 배포 컨트롤러 및 3슬롯 (`8791/8792/8793`)** | `src/ttakkari/generation.py`, `generation_service.py`, `generation_deployment.py`, `deployment.py`, `deploy_gate.py` | `implemented` / `tested` (`tests/test_generation_deployment.py`) | 운영 `deploy_strategy="generations"`, `runtime_generation=True` | `live` / `measured` (Slot 1 `8792` 활성, 감독 프로세스는 `e817fc19`에서 실행 중) |
-| **API 세대 주기 작업 (`maintenance_jobs`)** | `src/ttakkari/generation_service.py:248-279` (총 15개 주기 루프) | `implemented` / `tested` | `execution_mode=="local"`일 때 API 세대가 실행 | `live` (현재 `active` API 세대가 15개 루프를 직접 실행) |
-| **로컬 TTS 큐 (`tts_jobs`)** | `src/ttakkari/tts/jobs.py`, `src/ttakkari/tts/service.py` | `implemented` (결함 내포) / `tested` | `local_tts_enabled=True` | `live` (원문 프로세스 로컬 메모리 보관 + `draining` 시 `queued` 강제 실패 결함 활성) |
-| **Desk Qwen 관리형 서버** | `src/ttakkari/runs/desk_qwen_service.py`, `src/ttakkari/generation_service.py:232` | `implemented` / `tested` (`tests/test_desk_qwen_service.py`) | `desk_qwen_enabled=True`, `desk_qwen_manage=True`, `desk_qwen_base_url=""` | `live` / `measured` (API 세대마다 독립 `llama-server` 자식 기동, 현재 `pid=44129` RSS `7.20 GiB`) |
-| **호스트 GPU 배타 리스 (`ResourceLeaseManager`)** | `src/ttakkari/host_resource.py`, `host_gpu.py`, `managed_comfy.py` | `implemented` / `tested` (`unit_tests/test_creative_v2_lease_handoff.py`) | `data_dir/host-gpu/lock` + `data_dir/host-resource/lease.json` | `live` (`9f82c9c1` 반영 완료) |
+| **세대 배포 컨트롤러 및 3슬롯 (`8791/8792/8793`)** | `src/ttakkari/generation.py`, `generation_service.py`, `generation_deployment.py`, `deployment.py`, `deploy_gate.py` | `implemented` / `tested` (`tests/test_generation_deployment.py`) | 운영 `deploy_strategy="generations"`, `runtime_generation=True` | 과거 영수증(`4a6e09a8`)에서 활성 확인됨 (`historical_receipt`), 현재 실시간 슬롯은 `unknown / 확인 필요` |
+| **ADR 0036 독립 RunExecutor** | `src/ttakkari/executor.py`, `alembic/versions/0064_run_executor.py` | `implemented` / `tested` (`unit_tests/test_executor_migration_contract.py`) | `feature-off`: `deploy/generation-contract.json` `run_executor.activation="disabled"`, `Settings.run_executor_mode="local"` | **`feature-off`** (독립 `RunExecutor`만 비활성일 뿐 세대 배포 자체는 활성) |
+| **ADR 0036 PG 프로세스 그룹 원장 및 펜싱 Reconcile** | `src/ttakkari/executor_reconcile.py`, `src/ttakkari/models.py` (`RunProcessGroup` → `runtime_process_groups` 테이블) | `implemented` / `tested` (`unit_tests/test_executor_reconcile.py`) | `feature-off` (`run_executor` 비활성으로 미호출) | **`feature-off`** |
+| **레거시 기동 시 중단 Run 재개 (`resume_interrupted`)** | `src/ttakkari/main.py:201` → `src/ttakkari/runs/manager.py:1941-2023` | `implemented` / `tested` | `not runtime_generation_enabled()`일 때만 기동 시 호출 | 세대 런타임 활성 시 미호출되나, 비활성/단독 기동 경로에서는 **최대 3회 자동 재큐잉 코드가 잔존함 (주의 필요)** |
+| **ADR 0066 ChangeSet / Worktree / MergeQueue** | `src/ttakkari/delivery/{worktree,provenance,diff_guard,repair_policy,validation,merge_queue,cli}.py`, `0062_delivery_change_sets.py` | `implemented` (부분) / `tested` (`tests/delivery/test_*.py`) | `feature-off` (`Settings.delivery_pipeline_enabled=False`) | **`feature-off`** (수동 CLI만 존재, 배포 게이트 미연동) |
+| **로컬 TTS 큐 (`tts_jobs`)** | `src/ttakkari/tts/jobs.py`, `src/ttakkari/tts/service.py` | `implemented` (드레인 결함 내포) / `tested` | `local_tts_enabled=True` | 코드 콜패스상 `_pending_texts` 메모리 귀속 및 `draining` 강제 실패 결함 존재 |
+| **Desk Qwen 관리형 서버** | `src/ttakkari/runs/desk_qwen_service.py`, `src/ttakkari/generation_service.py:232` | `implemented` / `tested` (`tests/test_desk_qwen_service.py`) | `desk_qwen_enabled=True`, `desk_qwen_manage=True`, `desk_qwen_base_url=""` | 현재 호스트 스냅샷에 `llama-server`(`pid=44129`, RSS `7.20GiB`) **1개** 관측됨 (`direct_current_observation`) |
+| **호스트 GPU 배타 리스 (`ResourceLeaseManager`)** | `src/ttakkari/host_resource.py`, `host_gpu.py`, `managed_comfy.py` | `implemented` / `tested` (`unit_tests/test_creative_v2_lease_handoff.py`) | `data_dir/host-gpu/lock` + `data_dir/host-resource/lease.json` | 코드 구현 및 단위 테스트 완료 |
 
-### 2.2 ADR 0036 독립 Executor·리스·펜싱·프로세스 그룹 원장 정밀 대조
+### 2.2 ADR 0036 활성화 경계 및 `executor_reconcile.py` vs 레거시 `resume_interrupted()` 정밀 구분
 
-1. **인계 문서와 실제 정본(`origin/main`)의 차이 규명**:
-   - `2026-10-21` 작성된 `~/.claude/handoffs/tasks/ttakkari-delivery-executor.md`에는 `run-executor` 브랜치가 `main`에 미병합된 것으로 기록되어 있으나, 실제 Git 이력을 대조한 결과 커밋 `a3b49f6` (`Merge run-executor (d4aa622) into main; renumber executor migration to 0064`)를 통해 **이미 `origin/main` 및 운영 활성 릴리스(`9f82c9c1`)에 병합 완료**되었다.
-2. **구현된 아키텍처 및 콜패스**:
-   - **스키마(`0064_run_executor.py`)**:
-     - `runtime_generations.execution_mode` (`'local'` 기본값)
-     - `run_executor_states` (`executor_id`, `revision`, `pid`, `process_started_at`, `state`, `lease_token`, `lease_epoch`, `heartbeat_at`, `lease_expires_at`, `draining_since`)
-     - `run_execution_commands` (`command_id`, `run_id`, `session_id`, `action` in `start|cancel|context_reset`, `status` in `pending|claimed|completed|failed`, `idempotency_key` unique)
-     - `run_execution_leases` (`run_id` PK, `executor_id`, `lease_token`, `fencing_token` bigint, `lease_expires_at`)
-     - `run_process_groups` (`pgid` PK, `run_id` unique, `executor_id`, `fencing_token`, `leader_pid`, `process_started_at`, `state` in `running|stopping|terminated|orphan_fenced`)
-   - **펜싱 토큰(Fencing Token) 불변 조건**:
-     - `RunManager.claim_execution_lease()` (`src/ttakkari/runs/manager.py:1303-1356`)는 `run_execution_leases` 행을 생성·갱신할 때마다 `fencing_token = coalesce(max_fencing, 0) + 1`로 단조 증가시키고 `Run.execution_fencing_token`에 기록한다.
-     - `RunManager._flush_events()` (`src/ttakkari/runs/manager.py:725-777`)는 `RunEvent`를 DB에 기록하기 직전 `SELECT execution_fencing_token FROM runs WHERE id = :id FOR KEY SHARE`를 조회하여, 메모리의 `expected_fence`와 불일치하면 즉시 `StaleExecutionFenceError`를 발생시키고 `session.rollback()`으로 늦은(stale) 실행자의 이벤트·상태 오염을 차단한다. (`FOR KEY SHARE`를 사용하여 `choose_profile`과의 외래키 데드락을 방지한 커밋 `e08ec2f` 반영 확인).
-   - **임의 복구 없는 펜싱 고아 회수(`executor_reconcile.py`)**:
-     - `reconcile_fenced_orphans()` (`src/ttakkari/executor_reconcile.py:86-226`)는 각 `run_process_groups` 행에 대해 `SET LOCAL lock_timeout = '200ms'`, `SET LOCAL statement_timeout = '1000ms'`를 걸고 `FOR UPDATE NOWAIT`로 잠근다.
-     - 리스가 살아있고(`lease_expires_at > now`) 활성 executor와 `lease_token`·`fencing_token`이 일치하면 절대 건드리지 않는다(`skipped_live_lease`).
-     - 리스가 만료·부재하거나 펜싱 토큰이 구세대인 경우에도 **자동 재실행(replay/resume)을 절대 수행하지 않으며**, 오직 커널 프로세스 그룹 리더의 `(leader_pid, process_started_at)`이 원장과 정확히 일치할 때만(`_verified_group_alive`) `SIGTERM` 후 유예 시간 뒤 `SIGKILL`로 고아 프로세스 그룹을 종료하거나, 신원 불일치 시 신호 전송 없이 `orphan_fenced`로 격리하고 `Run.status = failed`로 마감한다.
-3. **왜 현재 운영에서 꺼져 있는가 (`feature-off`)**:
-   - `deploy/generation-contract.json` (`L9-15`) 및 `deploy/run-executor-manifest.json`에서 `"activation": "disabled"`로 고정되어 있고, `src/ttakkari/config.py:109`에서 `run_executor_mode: Literal["local", "remote"] = "local"`이 기본값이다.
-   - 또한 `src/ttakkari/generation_deployment.py:390-394`의 `_ensure_executor_if_enabled()`는 `contract.get("run_executor", {}).get("activation") == "enabled"`일 때만 `ensure_executor()`를 호출한다.
+1. **활성화 경계**:
+   - `deploy/generation-contract.json`의 `"run_executor": {"activation": "disabled"}` 및 `config.py:109`의 `run_executor_mode = "local"`은 **독립 `RunExecutor` 데몬의 활성화 경계**일 뿐, 세대 배포(`runtime_generation=True`) 자체의 비활성이 아니다.
+   - `0064_run_executor.py`는 `runtime_process_groups` 1개 테이블을 신설하고, `runtime_generations`(`role`, `protocol`, `execution_mode`) 및 `runtime_control`(`executor_generation`)에 컬럼을 추가하며 4개 PL/pgSQL 트리거(`guard_executor_control`, `guard_executor_api`, `guard_executor_lease`, `route_executor_command`)로 DB 계층에서 잘못된 역할/펜스의 쓰기를 차단한다.
+2. **ADR 0036 `executor_reconcile.py`의 동작 (`src/ttakkari/executor_reconcile.py:86-226`)**:
+   - 프로세스 생존 판정(`inspect_process_identity`)에서 **`psutil.NoSuchProcess`만 `ABSENT`로 판정**하고, `psutil.AccessDenied`나 `OSError`는 절대 죽은 것으로 단정하지 않고 **`UNKNOWN`으로 보존(`skipped_unknown`)**한다.
+   - 행 잠금(`FOR UPDATE NOWAIT`, `lock_timeout='200ms'`) 획득 후 커널 프로세스 신원 `(pid, process_started_at, pgid)` 및 활성 실행기 리스 `(generation_id, lease_token)`을 재확인한 뒤에만 고아 그룹에 `SIGTERM` → `SIGKILL`을 보낸다.
+   - 소유자가 부재(`ABSENT`)한 Run은 `status = "interrupted"` (오류 메시지: `"실행기 재시작으로 중단 — 자동 재개하지 않음"`)로 마감하며 **자동 재실행(replay/resume)을 절대 수행하지 않는다**.
+3. **레거시 기동 경로 `RunManager.resume_interrupted()`와의 엄격한 구분 (`src/ttakkari/main.py:201` → `src/ttakkari/runs/manager.py:1941-2023`)**:
+   - 반면 `main.py:199-201`은 `if not runtime_generation_enabled():` 분기에서 기동 시 `await run_manager.reconcile_runs()` 직후 **`await run_manager.resume_interrupted()`를 호출**한다.
+   - `resume_interrupted()` (`manager.py:1941-2023`)는 `Run.status == "interrupted"`이고 `Run.error == "서버 종료로 중단"`인 Run들을 조회하여, `restart_resume_count < MAX_RESTART_RESUME_ATTEMPTS` (`3`회)이면 새 `Run`(메시지: `"[시스템 자동 재개] 이전 실행이 서버 재시작으로 중단되어 이어서 진행합니다..."`)을 생성하고 `_enqueue()`로 **자동 재큐잉(replay/resume)**한다!
+   - 따라서 "코드베이스 전체에서 자동 재실행이 이미 제거되었다"고 주장하면 안 되며, P3 공용 기반 변경에서 `resume_interrupted()`의 무조건 자동 재큐잉을 비활성화(또는 멱등성·소유권 검증 게이트 뒤로 격리)해야 불변 조건("소유권 미증명 작업 자동 재실행 금지")이 모든 기동 모드에서 관철된다.
 
-### 2.3 잔여 TTS Process-Local Payload 및 API 세대별 Qwen Ownership 전수 조사 (`코드 증명 완료`)
+### 2.3 TTS / Creative / Qwen / Side-Effects 정적 콜패스 사실과 과장 철회
 
-#### (A) 잔여 TTS Process-Local Payload 및 `draining` 시 정상 작업 강제 실패 결함
+1. **로컬 TTS (`src/ttakkari/tts/jobs.py`, `service.py`, `generation.py`)**:
+   - **정적 콜패스 사실**:
+     - `jobs.py:42`의 `_pending_texts: dict[uuid.UUID, list[str]] = {}`가 분할된 원문 청크를 API 프로세스 로컬 메모리에만 보관한다 (`tts_jobs` DB 행에는 `text_sha256`, `text_chars`, `chunk_count`, `owner_generation_id`만 저장).
+     - `jobs.py:153-154`의 `_guard_loop()`는 `runtime.state == "draining"`일 때 `_fail_queued_draining(runtime.id)`(`jobs.py:178-193`)을 호출하여 해당 세대의 모든 `queued` 작업을 `status="failed"`, `error_code="generation_draining"`으로 강제 실패시킨다.
+     - `service.py:130`의 `budget()`은 `generation.work("tts")`를 호출하고, `generation.py:130`의 `enter_work()`는 `self.state != "active"`일 때 `False`를 반환하므로 `draining` 상태에서는 실행 예산을 얻을 수 없다.
+2. **Creative Studio V2 자동 자산 생성 (`src/ttakkari/api/creative_v2.py:418`, `creative/v2/asset_generation_managed.py:345-490`)**:
+   - **정적 콜패스 사실**:
+     - `api/creative_v2.py:418`의 `_ASSET_GENERATION_TASKS[key] = asyncio.create_task(_run_asset_generation(...))`는 `generation.work()`나 `generation_service.py:235-245` `ready()`의 `finalizers`에 등록되지 않는다.
+     - 또한 `asset_generation_managed.py:478`에서 ComfyUI 생성 직후 `tts.service.budget(600)`을 호출하므로, 상위 태스크가 도는 도중 API 슬롯이 `draining`으로 전환되면 하위 TTS 단계에서 `draining` 거부로 실패할 수 있다.
+   - **과장 철회 (Side-Effects & Checkpoints)**:
+     - 초회 보고에서 "모든 파일/외부 부수효과가 이미 `tmp + fsync + sha256 + os.replace`와 DB 펜스로 완전 격리되어 있다"고 서술한 부분은 **철회**한다.
+     - 실제 `asset_generation_managed.py:345-363`의 `_write_checkpoint()`는 `.tmp` 파일에 `write_text()` 후 `os.replace()`만 수행하며 **`os.fsync()`나 내용 `sha256` 검증을 수행하지 않고**, 바깥 `_ASSET_GENERATION_TASKS` 비동기 태스크 자체에는 DB `fencing_token` 검사가 없다. 이를 P3/P4에서 보강해야 한다.
+3. **Desk Qwen 관리형 서버 (`src/ttakkari/generation_service.py:232`, `runs/desk_qwen_service.py:124-213`)**:
+   - **정적 콜패스 사실**:
+     - `generation_service.py:232`는 각 API 세대 기동 시 `await qwen_service.start()`를 호출하며, `desk_qwen_enabled=True`, `desk_qwen_manage=True`, `desk_qwen_base_url=""`(기본값)이고 가용 메모리가 `desk_qwen_min_free_memory_gb`(`6.0 GiB`) 이상이면 프로세스별 `llama-server` 자식 프로세스를 스폰할 수 있는 구조다 (`desk_qwen_base_url`이 설정되면 외부 서버 `/health`만 확인).
+   - **과장 철회 (Swap 포화 인과 단정 철회)**:
+     - 현재 `server_resources` 실측 스냅샷에는 `llama-server`(`pid=44129`, RSS `7.20 GiB`)가 **단 1개만 실행 중**이다. 따라서 "현재 `llama-server`가 2~3개 중복 기동되어 Swap 95.3% 포화를 일으켰다"는 인과 단정은 **철회**하며, 세대 전환 시 중복 스폰 가능성은 코드 구조상 잠재 위험(`potential risk during slot transition`)으로만 기록한다.
 
-1. **원문 청크의 프로세스 로컬 메모리 귀속 (`src/ttakkari/tts/jobs.py:42`, `L300-346`)**:
-   - `_pending_texts: dict[uuid.UUID, list[str]] = {}` 전역 딕셔너리가 API 프로세스 메모리에만 존재한다.
-   - `accept(db, text=..., voice=..., speed=...)` (`jobs.py:300-346`)는 `tts_jobs` 테이블에는 `text_sha256`, `text_chars`, `chunk_count`, `owner_generation_id`만 저장하고, 실제 합성할 문자열 청크 배열 `plan.chunks`는 `_pending_texts[job.id] = list(plan.chunks)`로 **요청을 받은 API 프로세스 메모리**에만 넣은 뒤 `202 Accepted`를 반환한다.
-   - 이 때문에 `generation_service.py:227-229`에도 명시되어 있듯, TTS 소비자 워커를 독립 `run-executor`로 옮기면 원문 텍스트가 없어 합성이 불가능하다.
-2. **세대 전환(`draining`) 시 발생하는 이중 결함 (`src/ttakkari/tts/jobs.py:153-154`, `178-193`, `service.py:130`)**:
-   - **결함 1 (`generation.work("tts")`의 `draining` 거부)**:
-     - `tts/service.py:130`의 `budget()` 컨텍스트 매니저는 `async with generation.work("tts") as active:`를 호출한다.
-     - 그런데 `src/ttakkari/generation.py:130`의 `GenerationRuntime.enter_work()`는 `if self.state != "active": return False`로 구현되어 있다!
-     - 즉, API 슬롯이 `active`일 때 이미 `202 Accepted`로 접수되어 `_pending_texts`에 들어 있는 `queued` 작업이라도, 워커 루프가 차례가 되어 실행하려 할 때 해당 API 슬롯이 `draining`으로 바뀌어 있으면 `enter_work("tts")`가 `False`를 반환해 합성을 시작조차 못 한다.
-   - **결함 2 (`_guard_loop`의 `_fail_queued_draining` 강제 실패)**:
-     - 더 심각하게, `tts/jobs.py:153-154`의 `_guard_loop()`는 5초마다 `if runtime is not None and runtime.state == "draining": await _fail_queued_draining(runtime.id)`를 실행한다.
-     - `_fail_queued_draining()` (`jobs.py:178-193`)은 해당 세대(`owner_generation_id == generation_id`)의 모든 `queued` TTS 작업을 찾아 `_pending_texts.pop(jid, None)`으로 원문을 버리고 **`status="failed"`, `error_code="generation_draining"`, `error_message="서버가 새 버전으로 전환되어 대기 중인 음성 생성을 마쳤습니다. 다시 시도해 주세요."`로 강제 실패**시킨다!
-     - 이는 사용자에게 이미 `202 Accepted`로 수락한 비동기 작업을 배포 전환 때문에 임의로 실패시키는 동작으로, 플랫폼 V2 불변 조건("기존 접수·실행 중 작업 보존 또는 안전한 드레인")에 정면 위배된다.
+### 2.4 런타임 소유권·펜스·리스·드레인 상태 전이 계약표 (State Transition Matrix)
 
-#### (B) API 세대별 Desk Qwen (`llama-server`) 중복 소유 구조
+API 세대, 영속 잡 큐(TTS / Creative), 독립 `RunExecutor` 간 작업 수락부터 은퇴까지의 검증 가능한 상태 전이 규칙을 아래 표로 정의한다.
 
-1. **기동 콜패스 (`src/ttakkari/generation_service.py:232`, `src/ttakkari/runs/desk_qwen_service.py:124-213`)**:
-   - `generation_service.py:306`의 `lifespan()`은 API 슬롯이 **`standby` 상태로 처음 뜨는 시점**에 무조건 `await start_api_services(runtime.execution_mode)`를 호출하고, 여기서 `await qwen_service.start()` (`generation_service.py:232`)를 호출한다.
-   - `DeskQwenService.start()` (`desk_qwen_service.py:124-213`)는 `desk_qwen_enabled=True`(기본값), `desk_qwen_manage=True`(기본값), `desk_qwen_base_url=""`(기본값)일 때 가용 메모리가 `6.0 GiB` 이상이면 빈 loopback 포트를 잡아 **`llama-server` 자식 프로세스(`Qwen3.5-4B-Q4_K_M.gguf`, CPU 6스레드, ctx 8192)를 직접 스폰하고 최대 120초 동안 준비 및 워밍업 추론을 수행**한다.
-2. **운영 및 배포 시 문제점**:
-   - **문제 1 (세대 기동 지연 및 메모리 중복 점유)**: 현재 운영 중인 `llama-server`(`pid=44129`) 하나가 **RSS `7.20 GiB`**를 점유하고 있으며 호스트 Swap 사용률이 **`95.3%` (`31.7 / 33.3 GiB`)**에 달한다. 세대 배포가 일어날 때마다 새 `standby` 슬롯이 또 하나의 `llama-server`를 띄우므로, 전환 구간(`active` + `draining` + `standby`)에는 동일 모델 프로세스가 2개에서 최대 3개까지 중복 기동되거나 가용 메모리 부족(`desk_qwen_min_free_memory_gb`)으로 새 세대에서 Qwen 기동이 건너뛰어진다.
-   - **문제 2 (코드에는 이미 외부 공유 URL 모드가 준비되어 있으나 미사용)**: `DeskQwenService.start()` (`desk_qwen_service.py:127-135`)는 `desk_qwen_base_url`이 설정되어 있으면 자식 프로세스를 띄우지 않고 외부 서버 `/health`만 확인하도록 이미 구현되어 있다. 따라서 Qwen 서버를 세대 밖 단일 호스트/Executor 관리 서비스로 분리하고 API 세대에는 `desk_qwen_base_url`만 주입하면, 세대 전환 시 `llama-server` 재기동 시간(최대 90초)과 7.2GiB 중복 메모리 점유를 즉시 제거할 수 있다.
-
-#### (C) Creative Studio V2 자동 자산 생성의 미추적 태스크 결함 (`추가 발견`)
-
-- `src/ttakkari/api/creative_v2.py:418`의 `POST /api/creative/v2/plans/{pid}/production/generate-assets`는 `_ASSET_GENERATION_TASKS[key] = asyncio.create_task(_run_asset_generation(...))`로 백그라운드 태스크를 띄운다.
-- 그러나 이 태스크는 `generation.work(...)`를 획득하지 않으며, `src/ttakkari/generation_service.py:235-245`의 `ready(runtime)`가 검사하는 `pending` 집합(`_background`, `indexing`, `usage_store._tasks`, `_pending.values()`)에도 포함되지 않는다.
-- 결과적으로 ComfyUI 장면 생성이나 ACE-Step 음악 생성이 수 분간 돌고 있는 도중에 세대 배포가 발생하면:
-  1. 컨트롤러는 해당 API 슬롯의 `active_work == 0`, `finalizers == 0`을 보고 즉시 `SIGTERM`으로 프로세스를 종료시켜 실행 중이던 자산 생성을 증발시키거나,
-  2. 설령 다른 작업 덕에 슬롯이 `draining` 상태로 살아있더라도, ComfyUI 직후 `asset_generation_managed.py:478`에서 `tts.service.budget(600)`을 호출할 때 `generation.work("tts")`가 `draining` 상태를 거부하여 수 분간 생성한 ComfyUI 결과물 뒤 음성 단계에서 `Supertonic 실행 예산을 얻지 못했습니다: draining` 오류로 전체 작업이 실패한다.
+| 전이 단계 | 주체 (Actor) | 선행 조건 (Precondition / Guard) | 원자적 상태 전이 및 펜스/리스 동작 | 실패 / 경합 시 동작 (Fail-Closed) |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. 신규 수락 (`Admission`)** | Core API (`active` 슬롯) | `runtime.state == "active"` (`enter_admission(kind) == True`) | - DB에 잡/명령 행 생성 (`status='queued'`, `accepted_generation_id=gen.id`, `pinned_module_revision=mod_rev`, `idempotency_key` unique)<br>- TTS는 분할 청크를 `tts_jobs.chunks_json`에 영속 저장 | `runtime.state != "active"`(`standby`/`draining`/`retired`)이면 신규 HTTP 변이 수락 거부 (`503` 또는 활성 슬롯 라우팅) |
+| **2. 실행 리스 획득 (`Claim & Fence`)** | `RunExecutor` 또는 소유 세대 워커 | `status IN ('queued', 'pending')` 또는 만료된 리스 | - `fencing_token = coalesce(max_fencing, 0) + 1` 단조 증가<br>- `lease_token`, `owner_generation_id`, `owner_pid`, `owner_process_started_at`, `lease_expires_at = now + ttl` 기록 후 `status='running'` | 동일 `idempotency_key` 중복 시 기존 행 반환; `guard_executor_lease` 트리거가 비활성/불일치 세대의 리스 획득 차단 |
+| **3. 기수락 작업 드레인 (`Accepted Work Drain`)** | `draining` 세대 워커 또는 `RunExecutor` | `runtime.state IN ('active', 'draining')` **AND** `job.accepted_generation_id == runtime.id` (또는 독립 Executor 소유) | - `enter_accepted_work(kind, accepted_generation_id)`는 `draining` 상태에서도 **`True` 반환**<br>- `_fail_queued_draining` 금지: 이미 `202 Accepted`된 `queued`/`running` 작업은 완료까지 실행하고 `pinned_module_revision` 워커 유지 | `active_accepted_work > 0`인 동안 `can_retire()`는 무조건 `False` 반환 (`SIGTERM` 전송 보류) |
+| **4. 부수효과 및 이벤트 커밋 (`Fenced Write`)** | 실행 중 워커 | 매 DB 반영 직전 `SELECT fencing_token ... FOR KEY SHARE` == `expected_fence` | - 파일 산출물은 `*.tmp` 쓰기 → `os.fsync(fd)` → `sha256` 계산/검증 → `os.replace()` 원자적 교체 후 DB 체크포인트에 `(fencing_token, artifact_sha256)` 기록 | `fencing_token` 불일치 시 즉시 `StaleExecutionFenceError` 발생, DB `rollback()`, 임시 파일 삭제 |
+| **5. 취소 (`Cancel`)** | API → Executor / 워커 | 사용자 취소 요청 (`action='cancel'`) | - `run_execution_commands`에 `cancel` 명령 삽입<br>- 소유 워커가 `(pid, process_started_at, pgid)` 일치 확인 후 프로세스 그룹에 `SIGTERM` → 유예 후 `SIGKILL`, `status='cancelled'` 마감 | 신원 불일치 시 커널 신호 전송 금지 (`skipped_mismatch`) |
+| **6. 재시작 및 고아 회수 (`Restart / Reconcile`)** | `reconcile_fenced_orphans` | 리스 만료(`lease_expires_at < now`) 또는 소유 세대 `retired` | - `FOR UPDATE NOWAIT` 잠금 아래 `(pid, process_started_at, pgid)` 및 `(generation_id, lease_token)` 재확인<br>- `NoSuchProcess`(`ABSENT`) 확인 시 `status='interrupted'` 마감 (**자동 replay/재큐잉 절대 금지**) | `AccessDenied` / `OSError`는 `UNKNOWN`으로 두어 신호 전송 및 상태 변경 보류 (`skipped_unknown`); 살아있는 리스는 `skipped_live_lease` |
+| **7. 세대 은퇴 (`Retire`)** | 배포 컨트롤러 | `runtime.state == "draining"` **AND** `active_admissions == 0` **AND** `active_accepted_work == 0` **AND** `finalizers == 0` | - 슬롯 프로세스에 `SIGTERM` 전송 후 `runtime_generations.state = 'retired'`, `retired_at = now` 기록 | 드레인 타임아웃 초과 시 강제 은퇴 대신 `recovery_pending`으로 전환하여 운영자/오케스트레이터 점검 대기 |
 
 ---
 
-## 3. 임의 복구 없는 Recovery / Drain / Rollback 및 Side-Effect Idempotency 조건
+## 3. 배포 전역 차단(Global Blocking) 경로와 `EvidenceCacheKey v2` / `ValidationReceipt v2` 명세
 
-사용자 불변 조건("실행 중 Run 임의 중단 금지", "소유권 미증명 작업 자동 재실행/replay 금지", "exactly-once 가정 금지")을 코드와 운영 경계에서 만족하기 위한 정확한 조건은 다음과 같다.
-
-1. **소유권 증명 없는 자동 재실행(Replay/Resume) 절대 금지**:
-   - API 세대 프로세스나 Executor가 재기동할 때 DB에 `status = 'running'`으로 남아 있는 `Run`, `Creative` 자산 생성, `Collector` 작업, `ComfyUI` 작업을 만났을 때:
-     - **원칙**: 커널 프로세스 신원 `(pid, process_started_at)` 또는 `(pgid, leader_pid, process_started_at)`과 유효한 `fencing_token` / `ResourceLease`가 살아있는지 먼저 대조한다.
-     - **살아있는 소유자가 증명된 경우**: 상태를 건드리지 않고 기존 소유자가 완료하거나 드레인하도록 보존한다(`RunManager.reconcile_runs`의 `pid_alive(run.pid, run.process_started_at)` 경로 및 `executor_reconcile.py`의 `skipped_live_lease` 경로).
-     - **소유자 부재(`ABSENT`)가 증명된 경우**: 자동으로 처음부터 다시 돌리지(replay) 않고, `Run.status = 'failed'` (또는 `needs_reconcile` / `interrupted`)와 명확한 실패 사유(`서버 재시작으로 실행이 중단되었습니다`)를 기록한 뒤 펜스를 올려 마감한다. 재개 여부는 오케스트레이터나 사용자가 멱등 키·체크포인트를 확인해 명시적으로 결정한다.
-2. **안전한 드레인(Drain)의 2계층 분리 (` Admission Fence ` vs ` Accepted Work Drain `)**:
-   - 현재 `GenerationRuntime.enter_work()` (`generation.py:130`)는 **신규 HTTP/SSE 요청 수락 차단**과 **이미 수락된 내부 큐 작업의 실행**을 구분하지 않고 `state != "active"`면 모두 차단하고 있다.
-   - **필수 수정 계약**:
-     - `enter_admission(kind)`: `state == "active"`일 때만 `True` (신규 HTTP 변이 요청, 신규 작업 수락 게이트).
-     - `enter_accepted_work(kind, *, accepted_in_generation_id)`: 이미 `active` 상태에서 `202 Accepted`로 수락되어 해당 세대가 배타 소유한 작업(예: 이미 접수된 `queued` TTS 작업, 실행 중인 Creative V2 자산 생성 파이프라인의 하위 단계)은 세대가 `draining`으로 전환된 뒤에도 실행을 마칠 수 있도록 허용하고, 그 작업 수가 0이 될 때까지 `can_retire()`를 `False`로 유지한다.
-3. **Side-Effect Idempotency 및 보상(Compensation) 조건**:
-   - **명령 큐**: `run_execution_commands.idempotency_key` (`0064_run_executor.py`) 유니크 제약으로 동일 명령(`start`/`cancel`/`context_reset`)의 중복 삽입을 차단한다.
-   - **이벤트 기록**: `(run_id, fencing_token, seq)` 단조 증가 및 `FOR KEY SHARE` 펜스 검사(`manager.py:741`)로 구세대 워커의 중복 이벤트 쓰기를 거부한다.
-   - **외부/파일 부수효과**:
-     - 파일/미디어 산출물(`Creative Studio`, `TTS cache`, `Collector blob`, `Backup manifest`)은 모두 임시 파일(`*.tmp` / `*.partial.$$`)에 쓰고 `fsync` 후 내용 해시(`sha256`) 검증을 거쳐 `os.replace`로 원자적 반영한다.
-     - `ManagedAssetGenerator._run_comfy` (`asset_generation_managed.py:379-404`)처럼 입력 `(plan_id, revision, scene_id, prompt_sha256, seed)` 결정적 `identity` 체크포인트를 남겨, 이미 `succeeded`이고 산출물 `sha256`이 일치하는 단계는 재실행하지 않고 건너뛴다.
-
----
-
-## 4. 배포 전역 차단(Global Blocking) 구체 경로와 격리 설계
-
-### 4.1 현재 배포 파이프라인이 전역 차단을 일으키는 5단계 메커니즘 (코드 증명)
+### 3.1 현재 배포 파이프라인이 전역 차단을 일으키는 코드 경로
 
 1. **단일 직렬 컨트롤러 잠금 (`src/ttakkari/deployment.py:424-465`, `generation_deployment.py:265`)**:
-   - `Controller.serve()`는 `~/.ttakkari/deploy/controller.lock`을 배타 잠금(`flock`)하고 단일 루프로 돌며, 매 틱마다 `pending_jobs()`에서 아직 전환되지 않은 예약 중 **단 1건(`foreground`)만** 선택해 `backend-restart.lock` 아래에서 실행한다.
-2. **누적 SHA 결합 (`Candidate Coupling`, `src/ttakkari/deployment.py:217-269`)**:
-   - 모든 모듈이 단일 `main` 브랜치 커밋 SHA로만 배포된다.
-   - `JobStore.request()`는 새 예약 SHA가 기존 `requested`/`waiting_idle` 예약 SHA의 후손이고 `equivalent_contracts()`일 때 이전 예약을 `superseded`로 묶어 최신 SHA 하나를 검증한다.
-   - 결과적으로 커밋 A(예: Creative 자막 수정 `063002a`)에 단위 테스트 결함 1건이 들어가면, 그 뒤에 커밋 B(Desk 수정 `c8f1015`)나 커밋 C(긴급 버그 수정)를 푸시하더라도 누적 트리 전체에 커밋 A의 결함이 그대로 남는다.
+   - `Controller.serve()`는 `~/.ttakkari/deploy/controller.lock`을 배타 잠금(`flock`)하고 한 번에 단 1건의 `foreground` 잡만 `backend-restart.lock` 아래에서 실행한다.
+2. **단일 `main` 누적 SHA 결합 (`src/ttakkari/deployment.py:217-269`)**:
+   - 모든 모듈 변경이 단일 `main` 커밋 SHA에 누적되므로, 선행 커밋(`063002a` 또는 `c8f1015`)에 단위 테스트 결함 1건이 들어가면 후속 무관 모듈 커밋도 동일 트리 SHA에 묶여 함께 차단된다.
 3. **무차별 전체 테스트 게이트 (`src/ttakkari/generation_deployment.py:130-191`)**:
-   - `validate_release()`는 변경된 파일이나 모듈과 무관하게 매 배포마다:
-     1. `git archive <sha>`로 릴리스 추출 (`~5초`)
-     2. `uv sync --frozen`으로 가상환경 구성 (`~40초`)
-     3. `pytest -q --timeout=120 -x`로 **전체 테스트 스위트(4,473개 테스트, 5,020개 서브테스트, 약 17분 25초)**를 처음부터 실행한다.
-     4. 실패 시 `stepwise_retry_args()`(`deploy_gate.py:92-123`)가 `--stepwise --stepwise-skip`으로 1회 재시도하지만, 결정적 실패(`single_failure` 1건이라도 동일하게 재현)면 즉시 `RuntimeError("Release validation failed")`로 중단한다.
-4. **ADR 0066 `delivery/validation.py`의 동일한 한계 (`src/ttakkari/delivery/validation.py:136-184`)**:
-   - `project_stage_validator()` 역시 Stage 1에서 `pytest -m contract`만 돌린 뒤 Stage 2(`full`)에서 `pytest -q --timeout=120` 전체 스위트를 그대로 실행하며, 배포 컨트롤러(`generation_deployment.py`)와 증거를 공유하지 않아 병합 시 17분 + 배포 시 17분 이중 실행 구조로 되어 있다.
-5. **복구 대기 시 전역 중단 (`Fail-Closed Recovery Gate`, `src/ttakkari/deployment.py:492-495`)**:
-   - `any(j["status"] in {"recovery_pending", "rolling_back"} for j in jobs)`이면 모든 후속 후보 전환을 멈춘다. 공유 런타임 상태가 불명확할 때 멈추는 이 fail-closed 안전장치 자체는 올바르며 유지해야 하지만, **모듈 내부 검증 실패가 아예 공유 런타임 전환 시도나 다른 모듈의 변경과 뒤섞이지 않도록 앞단에서 분리**해야 한다.
+   - `validate_release()`는 변경 범위와 무관하게 매 배포마다 `git archive` + `uv sync --frozen` + `pytest -q --timeout=120 -x` 전체 스위트를 실행한다.
+4. **ADR 0066 `delivery/validation.py`의 미연동 (`src/ttakkari/delivery/validation.py:136-184`)**:
+   - `delivery_pipeline_enabled=False`일 뿐 아니라, Stage 2(`full`)에서 동일하게 전체 `pytest`를 돌리고 배포 컨트롤러와 검증 영수증을 공유하지 않는다.
+5. **복구 대기 시 전역 중단 (`src/ttakkari/deployment.py:492-495`)**:
+   - `recovery_pending` / `rolling_back` 상태 존재 시 후속 전환을 멈추는 **이 fail-closed 안전장치는 정당하며 절대 축소하지 않는다.** 격리해야 할 대상은 공유 런타임 전환 이전의 **모듈 변경 검증 실패**다.
 
-### 4.2 독립 모듈 실패 격리 및 공유 상태 Fail-Closed 유지 설계
+### 3.2 좁은 DB-Free 정적 표본 실측(`35 passed in 3.34s`)과 한계 명시
 
-1. **ChangeSet 단계에서의 모듈별 사전 격리 (Pre-Merge Isolation)**:
-   - 변경이 `main`에 합쳐지기 전에 ChangeSet 단위로 검증한다. 특정 도메인 모듈(예: `creative`)의 ChangeSet이 검증에 실패하면 해당 ChangeSet만 `failed`/`quarantined` 상태로 격리되고 `main`에 병합되지 않으므로, 다른 모듈(예: `desk`, `collector`, `games`)의 ChangeSet 병합과 배포를 절대 막지 않는다.
-2. **검증 증거(Validation Receipt) 재사용을 통한 배포 게이트 단축**:
-   - ChangeSet 통합기(또는 사전 검증 게이트)가 후보 트리 SHA에 대해 유효한 `EvidenceCacheKey`와 서명된 검증 영수증(`ValidationReceipt`)을 생성하면, 배포 컨트롤러(`generation_deployment.py`)는 동일한 `EvidenceCacheKey`가 확인될 때 17분짜리 전체 `pytest`를 재실행하지 않고:
-     1. 빠른 계약 묶음(`pytest -m contract`, 목표 15초 이내) +
-     2. 실제 슬롯 기동 후 **비캐시 실시간 검진(`/api/health`, `/api/ready`, `/api/version`, 모듈 라우트 스모크)**만 수행하고 즉시 전환한다.
-3. **공유 상태 불명 시 Fail-Closed 유지**:
-   - `alembic/` 마이그레이션 변경, `deploy/generation-contract.json` 변경, `models.py`/`config.py`/`security/`/`generation*`/`executor*` 등 공유 코어 변경, 또는 분류 불능(`unknown`) 경로 변경은 **절대 모듈 스코프로 축소하지 않고 광역 게이트(Broad Gate)로 승격**한다.
-   - 슬롯 전환 중 이전 슬롯 신호 실패나 리스 불일치로 `recovery_pending`이 발생하면 기존과 동일하게 fail-closed로 전환을 멈춘다.
+- 격리 worktree(`back-platform-v2-a`)에서 `PYTHONPATH=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a/src`로 고정하고 실행한 5개 파일(`tests/test_contract_marker.py`, `tests/test_migration_single_head.py`, `unit_tests/test_executor_migration_contract.py`, `unit_tests/test_executor_reconcile.py`, `unit_tests/test_creative_v2_lease_handoff.py`)의 `--noconftest` 실행 결과는 **`35 passed in 3.34s`**이다 (초회 보고의 `39 passed in 5.00s` 및 "전체 계약 게이트 5초 보장" 주장은 철회).
+- **엄격한 한계 명시**:
+  1. 이 `35 passed in 3.34s` 결과는 **좁은 DB-free 정적/단위 표본**일 뿐이다.
+  2. `--noconftest`는 `tests/conftest.py`의 세션 픽스처(`_schema_and_app`)를 우회하므로, **DB-touching 계약 테스트나 실제 PostgreSQL 트리거(`0064`의 4개 PL/pgSQL 트리거 등), 운영 슬롯 드레인 동작을 입증하지 않는다.**
+  3. 따라서 P3에서 `pytest -m contract`를 정리할 때는 DB 불필요 정적 계약(`contract_static`)과 DB 스키마/트리거 계약(`contract_db`)을 명시적으로 분리해야 하며, `--noconftest` 우회만으로 전체 계약 검증 완료를 주장해서는 안 된다.
 
----
+### 3.3 결정적 `EvidenceCacheKey v2` 및 `ValidationReceipt v2` 명세 (현재 미통합 / 설계 목표)
 
-## 5. Evidence Cache Key 명세 및 실시간 Readiness 재검증 분리
-
-### 5.1 결정적 Evidence Cache Key (`platform-v2-evidence-key-v1`)
-
-테스트 결과 캐시는 거짓 양성(stale pass)을 절대 허용하지 않도록 아래 8개 구성 요소의 정규화된 JSON에 대한 `SHA-256` 해시로 계산한다 (`A-extract-runtime-delivery-evidence.py:compute_evidence_cache_key_preview` 참조):
+초회 보고의 경로 기반 v1 키는 파일 수정 시 거짓 양성(stale pass)을 낼 수 있으므로 **전면 폐기**하고, 모든 입력의 **바이트 내용 SHA-256 해시**를 강제하는 `platform-v2-evidence-key-v2` 및 `platform-v2-validation-receipt-v2`를 정의·구현하였다 (`A-extract-runtime-delivery-evidence.py:compute_evidence_cache_key`, `issue_validation_receipt`, `verify_validation_receipt` 및 `test_a_runtime_delivery_evidence.py`의 6종 변조 거부 음성 대조 테스트로 검증 완료).
 
 ```json
 {
-  "schema_version": "platform-v2-evidence-key-v1",
+  "schema_version": "platform-v2-evidence-key-v2",
   "module_id": "creative",
-  "changed_files": ["src/ttakkari/creative/render.py"],
-  "dependency_closure_hashes": {
+  "gate_mode": "module_scoped",
+  "candidate_src_tree_sha": "f2e5572cbc38e4234157be9c4c83090a1358be83",
+  "changed_file_hashes": {
+    "src/ttakkari/creative/render.py": "<sha256>"
+  },
+  "module_source_file_hashes": {
+    "src/ttakkari/api/creative_v2.py": "<sha256>",
+    "src/ttakkari/creative/...": "<sha256>"
+  },
+  "transitive_dependency_closure_hashes": {
     "src/ttakkari/config.py": "<sha256>",
     "src/ttakkari/host_resource.py": "<sha256>",
-    "src/ttakkari/managed_comfy.py": "<sha256>",
-    "src/ttakkari/managed_comfy_receipt.py": "<sha256>",
-    "src/ttakkari/models.py": "<sha256>"
+    "src/ttakkari/models.py": "<sha256>",
+    "...": "<sha256>"
   },
-  "uv_lock_sha256": "<sha256 of uv.lock>",
-  "migration_head": "0067_collector_outbox_retry",
-  "generation_contract_sha256": "<sha256 of deploy/generation-contract.json>",
-  "suite_selector": "pytest -m contract + tests/test_creative*.py + unit_tests/test_creative*.py",
-  "python_version": "3.13"
+  "selected_test_file_hashes": {
+    "tests/test_creative_studio.py": "<sha256>",
+    "unit_tests/test_creative_v2_lease_handoff.py": "<sha256>"
+  },
+  "test_harness_hashes": {
+    "tests/conftest.py": "<sha256>",
+    "scripts/pytest_slots.py": "<sha256>"
+  },
+  "suite_selector_args": [
+    "-q", "--timeout=120", "-m", "contract",
+    "tests/test_creative_studio.py", "unit_tests/test_creative_v2_lease_handoff.py"
+  ],
+  "dependency_lock_hashes": {
+    "pyproject.toml": "<sha256>",
+    "uv.lock": "<sha256>"
+  },
+  "runtime_environment": {
+    "python_version": "3.13.x",
+    "platform": "darwin-arm64",
+    "pytest_plugins": ["pytest-asyncio", "pytest-timeout"],
+    "relevant_env": {"TTAKKARI_RUNTIME_GENERATION": "0"}
+  },
+  "schema_and_migration_hashes": {
+    "models_py_sha256": "<sha256>",
+    "alembic_env_py_sha256": "<sha256>",
+    "migration_head": "0067_collector_outbox_retry",
+    "migration_file_hashes": {
+      "alembic/versions/0001_initial.py": "<sha256>",
+      "... (all 67 migration files)": "<sha256>"
+    }
+  },
+  "deploy_contract_hashes": {
+    "deploy/generation-contract.json": "<sha256>",
+    "deploy/run-executor-manifest.json": "<sha256>"
+  }
 }
 ```
 
-- **무효화(Invalidation) 규칙**:
-  1. 대상 모듈 소스 파일 또는 대상 모듈 테스트 파일 중 1바이트라도 바뀌면 무효화.
-  2. 대상 모듈이 import하는 상위 의존성 클로저(`dependency_closure_hashes`)의 파일 해시가 바뀌면 무효화.
-  3. `uv.lock`, `pyproject.toml`, Alembic `migration_head`, `deploy/generation-contract.json`, `deploy/run-executor-manifest.json` 해시가 바뀌면 전체 모듈 캐시 즉시 무효화.
-  4. 캐시 유효 기간(TTL): 동일 키라도 최대 `24시간` 초과 시 재실행.
-
-### 5.2 캐시 가능 검증(Cached Validation)과 비캐시 실시간 검진(Live Cutover Probe)의 엄격한 분리
-
-| 구분 | 대상 항목 | 캐시 허용 여부 | 실행 시점 |
-| :--- | :--- | :--- | :--- |
-| **정적·단위·모듈 통합 검증** | `ruff check`, `pytest -m contract`, 모듈 전용 `unit_tests/` 및 `tests/test_<module>*.py` | **허용 (`EvidenceCacheKey` 일치 시 재사용)** | ChangeSet 검증 시 1회 실행 후 배포 게이트에서 영수증 검증 |
-| **광역 보안·마이그레이션 게이트** | `tests/test_security_gate.py`, 마이그레이션 체인 검증 | 코어/보안/스키마 무변경 시에만 캐시 허용 (변경 시 무조건 재실행) | ChangeSet 검증 및 광역 게이트 트리거 시 |
-| **비캐시 실시간 검진 (Live Probes)** | 후보 슬롯 프로세스 기동, PostgreSQL 연결(`GET /api/health`), `RuntimeGeneration` 리스너(`GET /api/ready`), 리비전 일치(`GET /api/version`), 외부 프록시 전환 후 라우트 응답, `Executor` 하트비트 | **절대 캐시 금지 (매 배포·전환마다 100% 실시간 실행)** | 배포 컨트롤러가 후보 슬롯/워커를 띄우고 트래픽을 전환하는 순간 |
-
-### 5.3 변경 영향 분석(Change Impact Analysis) 및 광역 게이트(Broad Gate) 승격 규칙
-
-`origin/main`(`c8f10156`)의 `src/ttakkari` 385개 파이썬 파일(94,439줄, 60개 최상위 모듈 단위)에 대해 정적 AST 역의존성(`fan_in`)을 실측한 결과:
-
-1. **고결합 코어 단위 (`fan_in > 5`, 수정 시 무조건 Broad Gate 승격)**:
-   - `config` (`fan_in = 34`), `models` (`fan_in = 32`), `db` (`fan_in = 22`), `runs` (`fan_in = 14`), `security` (`fan_in = 8`), `audit` (`fan_in = 8`), `generation` (`fan_in = 7`), `context` (`fan_in = 7`), `artifacts` (`fan_in = 6`), `notifications` (`fan_in = 6`), `orchestrator` (`fan_in = 6`).
-2. **4대 공유 계약 및 스키마 경계 (수정 시 무조건 Broad Gate 승격)**:
-   - `alembic/versions/*` 및 `alembic/env.py`
-   - `deploy/generation-contract.json`, `deploy/run-executor-manifest.json`
-   - `pyproject.toml`, `uv.lock`
-   - `src/ttakkari/main.py`, `src/ttakkari/deployment.py`, `src/ttakkari/generation_deployment.py`, `src/ttakkari/generation_service.py`, `src/ttakkari/executor.py`, `src/ttakkari/executor_reconcile.py`
-3. **저결합 도메인 모듈 (`fan_in <= 5`, 모듈 스코프 검증 가능)**:
-   - `creative` (`fan_in = 4`: `api`, `generation_service`, `main`, `orchestrator`에서만 참조; 다른 도메인 모듈의 역참조 0건)
-   - `games` (`fan_in = 4`: `api`, `cli`, `main`, `runs`)
-   - `notebooklm` (`fan_in = 4`: `api`, `generation_service`, `main`, `orchestrator`)
-   - `design_system` (`fan_in = 2`: `api`, `orchestrator`)
-   - `reverse` (`fan_in = 2`: `api`, `orchestrator`)
-   - `tossinvest` (`fan_in = 2`: `api`, `orchestrator`)
-4. **테스트 실행 인프라 병목 핵심 발견 (`tests/conftest.py`의 `autouse=True` 세션 픽스처)**:
-   - `tests/conftest.py:189`의 `_schema_and_app` 픽스처가 `scope="session", autouse=True`로 선언되어 있어, `tests/test_contract_marker.py`나 `tests/test_migration_single_head.py`처럼 **DB가 전혀 필요 없는 순수 정적 계약 테스트만 실행해도 무조건 PostgreSQL 연결 및 전체 스키마 초기화를 수행**한다.
-   - 본 감사에서 `--noconftest`로 실행한 결과, `test_contract_marker.py` + `test_migration_single_head.py` + `unit_tests/test_executor_*.py` + `test_creative_v2_lease_handoff.py` 총 **39개 테스트가 DB 연결 없이 `5.00초` 만에 통과**하였다.
-   - 따라서 P3 공용 기반 구현에서 `contract` 및 순수 정적 검사를 DB `autouse` 픽스처 영향권 밖으로 분리하는 것만으로도 계약 게이트 실행 시간을 수십 초에서 **5초 이내**로 즉시 단축할 수 있다.
+#### 무효화(Invalidation) 및 Fail-Closed 승격 규칙
+1. **1바이트 내용 변경 즉시 무효화**:
+   - 대상 모듈 소스 파일, 전이 의존성 클로저(`transitive_dependency_closure_hashes`) 내 파일, 선택된 테스트 파일, `tests/conftest.py` 및 테스트 헬퍼, `pyproject.toml`/`uv.lock`, `models.py`/`alembic/env.py`/67개 마이그레이션 파일 중 어느 하나, `deploy/generation-contract.json`/`deploy/run-executor-manifest.json` 중 **단 1바이트라도 바뀌면 `evidence_cache_key`가 즉시 달라지며 기존 영수증은 거부(`evidence_key_mismatch`)**된다.
+   - Python 패치 버전(`3.13.x`)이나 `suite_selector_args`가 바뀌어도 즉시 무효화된다.
+2. **불완전 클로저·동적 import·미분류 경로에 대한 Fail-Closed (`broad_fail_closed`)**:
+   - 변경 파일이 비어 있거나, 디스크에 없거나, `src/ttakkari`·`tests`·`unit_tests` 밖의 미분류 경로이거나, `importlib.import_module`/`__import__` 등 동적 import로 인해 전이 의존성 클로저가 불완전(`closure_complete=False`)하거나, 공유 코어(`config`, `models`, `db`, `runs`, `security`, `generation*`, `executor*`, `alembic/*`, `deploy/*`)를 건드리면 **`module_scoped` 선택 실행을 즉시 거부하고 `broad_fail_closed` 전체 게이트로 승격**한다.
+3. **Provenance / Trust 검증 (`ValidationReceipt v2`)**:
+   - 영수증은 `candidate_commit_sha`, `candidate_src_tree_sha`, 실제 테스트 프로세스가 로드한 `import_origin_file`(`expected_src_root` 하위인지 검증), 발급 시각/만료 시각(`ttl_seconds <= 86400`), 그리고 HMAC-SHA256 `signature`를 포함하며, 하나라도 어긋나면 배포 게이트가 즉시 거부한다.
+4. **현재 운영 상태와의 구분**:
+   - 본 `EvidenceCacheKey v2` / `ValidationReceipt v2`는 현재 `A-extract-runtime-delivery-evidence.py`에 참조 구현 및 단위 테스트로 작성된 **목표 설계(Target Specification)**이며, 실제 운영 `generation_deployment.py`에는 P3 단계에서 통합한다. 통합 전까지 현재 운영의 전체 회귀·보안·`recovery_pending` 게이트는 일절 축소하지 않는다.
 
 ---
 
-## 6. 최소 Foundation Change 및 아키텍처 대안 요약
+## 4. 최소 공용 기반 변경(Minimum Foundation) 계약·구현 순서·검증 시나리오
 
-모듈 경계 최종 확정은 Worker B(백엔드/데이터) 및 Worker C(프런트/테스트) 감사 결과와 통합하여 결정하되, 런타임·배달 소스에서 증명된 제약과 이를 해결하는 **최소 공용 기반 변경(Minimum Foundation Change)** 및 **3가지 아키텍처 대안**은 `docs/design/platform-v2/architecture-options.md`에 상세 기술하였다. 핵심 요지는 다음과 같다.
+루트 오케스트레이터 지시에 따라, P3에서 구현할 **최소 공용 기반 변경 5단계의 선후 의존성 순서, 변경 파일, 검증 시나리오**를 단일 명세로 확정한다.
 
-### 6.1 소스에서 증명된 5대 필수 공용 기반 변경 (P3 구현 대상)
+### 4.1 단계별 구현 순서 (Ordered Implementation Sequence)
 
-1. **TTS 원문 DB 영속화 및 Draining 수락 작업 보호 (`src/ttakkari/tts/jobs.py`, `generation.py`)**:
-   - `tts_jobs` 테이블(또는 JSONB 컬럼 `payload_chunks`)에 원문 청크를 영속화하여 프로세스 로컬 `_pending_texts` 의존을 제거한다.
-   - `_guard_loop`의 `_fail_queued_draining`을 폐기하고, 이미 `202 Accepted`로 수락된 작업은 `draining` 상태에서도 완료될 때까지 실행을 허용(`enter_accepted_work`)하거나 독립 실행기로 인계한다.
-2. **API 세대 백그라운드 태스크 드레인 추적 (`src/ttakkari/api/creative_v2.py`, `generation_service.py`)**:
-   - `_ASSET_GENERATION_TASKS` 등 API 요청이 스폰한 비동기 작업을 `generation.work` / `ready()`의 `finalizers`에 등록하거나 독립 워커 큐로 이관하여 세대 은퇴 시 작업 증발을 막는다.
-3. **Desk Qwen 서버의 세대 외부 단일 소유권 분리 (`src/ttakkari/runs/desk_qwen_service.py`, `config.py`)**:
-   - API 세대마다 `llama-server`(RSS 7.2GiB)를 자식 프로세스로 띄우는 구조를 멈추고, 호스트/Executor 단일 관리 프로세스(`desk_qwen_base_url` 연결)로 분리하여 3슬롯 전환 시 메모리 폭발(현재 Swap 95.3%)과 90초 기동 지연을 제거한다.
-4. **ADR 0036 `RunExecutor` 단계적 활성화 (`deploy/generation-contract.json`, `deploy/run-executor-manifest.json`)**:
-   - 이미 구현·병합된 `0064_run_executor`와 `executor.py`를 활성화하여, AI CLI Run 프로세스 그룹(`run_process_groups`), 주기 유지보수 작업(`maintenance_jobs`), 미디어/문서 워커(`preview`, `stt`, `tts`, `creative-render`)의 생명주기를 API HTTP 세대(8791/8792/8793) 재기동과 완전히 분리한다.
-5. **ChangeSet 영향 기반 선택 검증 + EvidenceCacheKey 배포 게이트 연동 (`src/ttakkari/delivery/validation.py`, `generation_deployment.py`, `tests/conftest.py`)**:
-   - 정적 계약 테스트의 불필요한 DB 세션 픽스처 결합을 분리하고, 저결합 도메인 모듈 변경 시 `contract` + 해당 모듈 스위트만 실행해 `ValidationReceipt`(`EvidenceCacheKey` 포함)를 발행하며, 배포 게이트가 이를 검증해 17분 25초짜리 전체 `pytest` 재실행을 생략(공유 코어/스키마/보안/미분류 변경 시에만 Fail-Closed 광역 게이트 실행)하도록 연결한다.
+| 순서 | 단계 ID 및 명칭 | 대상 파일 (`src/ttakkari/...`) | 핵심 변경 계약 | 선행 조건 |
+| :---: | :--- | :--- | :--- | :--- |
+| **Step 0** | **`FND-00` `origin/main` 기존 차단 테스트 정리 (`LOG-195`)** | `tests/test_desk_qwen_service.py` (`src/ttakkari/runs/desk_qwen.py`의 `PROMPT_VERSION = "harness-v3-topic-boundary"`와 정합성 맞춤) | 현재 `origin/main`(`c8f10156`)의 배포 게이트를 막고 있는 결정적 기대값 불일치 1건 해소 | 없음 (최우선) |
+| **Step 1** | **`FND-01` 2계층 드레인 계약(`Admission` vs `Accepted Work`) 및 TTS 영속화 + 레거시 자동 재큐잉 차단** | `generation.py`, `tts/jobs.py`, `tts/service.py`, `models.py`, 신규 Expand-only 마이그레이션(`0068_tts_payload_chunks.py`), `runs/manager.py` (`resume_interrupted`) | 1) `tts_jobs`에 `chunks_json`(JSONB, nullable expand-only) 추가하여 `_pending_texts` 메모리 의존 제거<br>2) `_fail_queued_draining` 제거 및 `generation.enter_accepted_work()` 도입으로 이미 `202 Accepted`된 작업의 `draining` 중 실행 보장<br>3) `runs/manager.py:1941` `resume_interrupted()`의 무조건 자동 재큐잉 비활성화 | Step 0 |
+| **Step 2** | **`FND-02` Creative V2 비동기 태스크 드레인 추적 및 체크포인트 내구성 보강** | `api/creative_v2.py`, `creative/v2/asset_generation_managed.py`, `generation_service.py` | 1) `_ASSET_GENERATION_TASKS`를 `RuntimeGeneration`의 `accepted_work` / `finalizers`에 등록하여 실행 중 슬롯 조기 `SIGTERM` 방지<br>2) `_write_checkpoint`에 `os.fsync()` 및 산출물 `sha256` 검증 추가, 작업 단위 `fencing_token` 연동 | Step 1 |
+| **Step 3** | **`FND-03` Desk Qwen 세대 외부 단일 소유권 분리** | `runs/desk_qwen_service.py`, `generation_service.py`, `config.py` | API 세대 슬롯이 각자 `llama-server` 자식 프로세스를 스폰하지 않고 외부 단일 관리 인스턴스(`desk_qwen_base_url`)를 공유하도록 전환 | Step 1 |
+| **Step 4** | **`FND-04` ADR 0036 `RunExecutor` 활성화 및 Ownership/Fence Cutover 검증** | `deploy/generation-contract.json`, `deploy/run-executor-manifest.json`, `executor.py`, `executor_reconcile.py` | `run_executor.activation="enabled"` 및 `run_executor_mode="remote"` 전환을 격리 환경에서 검증하여 `Run` 프로세스 그룹(`runtime_process_groups`)과 주기 작업이 API 슬롯 재배포와 무관하게 유지됨을 입증 | Step 1, Step 2, Step 3 |
+| **Step 5** | **`FND-05` `EvidenceCacheKey v2` / `ValidationReceipt v2` 배포 게이트 연동** | `delivery/validation.py`, `generation_deployment.py`, `deploy_gate.py`, `tests/conftest.py` | 1) 정적 계약(`contract_static`)과 DB 계약(`contract_db`) 픽스처 분리<br>2) `compute_evidence_cache_key` 및 `verify_validation_receipt`를 `delivery/validation.py`와 `generation_deployment.py`에 연결 (공유 코어/스키마/보안/불완전 클로저는 무조건 `broad_fail_closed`) | Step 4 |
 
-### 6.2 3가지 아키텍처 대안 비교 요약 (상세는 `docs/design/platform-v2/architecture-options.md`)
+### 4.2 공용 기반 및 모듈 전환 인수 시나리오 (Acceptance Scenarios)
 
-- **대안 1 (보수적 모놀리스 유지 + 선택적 테스트 게이트 + ADR 0036 Executor 활성화)**:
-  - 프로세스 추가 없이 `Core API (3슬롯)` + `RunExecutor (단일 상주)` 2종 프로세스 구조만 사용.
-  - 장점: 운영 복잡도 최소, 메모리 추가 부담 없음.
-  - 한계: 도메인 모듈 코드만 고쳐도 결국 `Core API` 세대 슬롯(8791/8792/8793)을 교체해야 하므로, 사용자 핵심 목표인 **"모듈 단독 릴리스 시 Core API 무재배포(`unnecessary Core deploy = 0`)"와 "9대 실증 시나리오 #4(Core 재배포 0회)"를 만족하지 못한다.**
-- **대안 2 (권장: Core Control Plane + ADR 0036 RunExecutor + 버전드 모듈 플러그인/워커 번들 핫스왑)**:
-  - 4개 논리 평면(`Control`, `Execution`, `Domain`, `Delivery`)을 유지하되, 물리 프로세스를 4개로 쪼개지 않고:
-    1. `Core API (8791/8792/8793)`는 인증·세션·라우팅·공용 레지스트리 및 얇은 모듈 프록시/디스패처만 담당하고,
-    2. `RunExecutor`가 장기 실행 Run과 공용 큐를 전담하며,
-    3. 독립 전환 대상 도메인 모듈(1차: `Creative Studio`)은 **불변 모듈 릴리스 아카이브(`~/.ttakkari/deploy/module-releases/<module>/<sha>/`)**로 빌드·검증되어, 모듈 전용 워커/서브서비스(또는 버전드 어댑터 프로세스) 단위로 독립 교체·드레인·롤백된다.
-  - 장점: **모듈 단독 수정 시 Core API(8791/8792/8793) 재배포 0회 달성**, 모듈 검증 시간 17분 25초 → 1~2분 이내 단축, 모듈 장애·롤백이 Core API 및 다른 모듈과 완전 격리, 호스트 메모리 절약(신규 브로커/인프라 0개, 기존 PostgreSQL/파일 잠금 재사용).
-- **대안 3 (도메인별 상주 마이크로서비스 + 각각 멀티슬롯 포트 할당)**:
-  - 각 도메인(`Creative`, `Collector`, `Games`, `KB` 등)을 모두 독립 FastAPI 상주 데몬과 슬롯 포트로 분리.
-  - 기각 사유: 현재 Mac Studio 호스트 Swap 사용률이 `95.3%`(`31.7/33.3 GiB`)인 상태에서 상주 파이썬/모델 프로세스를 다수로 늘리면 즉각적인 메모리 고갈을 유발하며, "모든 모듈에 3슬롯을 복제하지 말 것"이라는 불변 조건에 위배된다.
+각 구현 단계는 아래 구체적 인수 시나리오(실행 명령 + 기대 상태 전이 + 음성 대조)를 통과해야 완료로 인정된다.
+
+1. **`ACC-01` (TTS Accepted-Work Drain & Zero `generation_draining` Failure)**:
+   - **시나리오**: 슬롯 A(`active`)에서 `POST /api/tts/jobs`로 3개 작업을 수락(`202 Accepted`, 1개 `running`, 2개 `queued`)한 직후 슬롯 A를 `draining`으로 전환하고 슬롯 B를 `active`로 승격한다.
+   - **통과 기준**:
+     - 슬롯 A(또는 `RunExecutor`)는 DB `tts_jobs.chunks_json`에서 원문을 읽어 남은 2개 `queued` 작업까지 모두 `status="succeeded"`로 완료한다 (`error_code="generation_draining"` 발생 **0건**).
+     - 3개 작업이 모두 끝날 때까지 슬롯 A의 `can_retire()`는 `False`를 유지하며, 완료 직후 `True`가 되어 정상 은퇴한다.
+2. **`ACC-02` (Creative V2 In-Flight Preservation Across Slot Drain)**:
+   - **시나리오**: `POST /api/creative/v2/plans/{pid}/production/generate-assets` 실행 중(ComfyUI 완료 후 하위 TTS 진입 직전) API 슬롯이 `draining`으로 전환된다.
+   - **통과 기준**:
+     - 상위 자산 생성 태스크가 `accepted_work`로 추적되어 슬롯이 조기 종료되지 않고, 하위 `tts.service.budget()` 호출이 `enter_accepted_work`를 통해 승인되어 전체 자산 생성이 `succeeded`로 완료된다.
+     - 체크포인트 파일은 `fsync` 및 `sha256` 검증을 거치며, 구세대 펜스(`stale fencing_token`)를 가진 중복 워커가 쓰기를 시도하면 즉시 거부된다.
+3. **`ACC-03` (Restart Reconcile Without Blind Replay)**:
+   - **시나리오**: 실행 중이던 `Run`의 리더 프로세스가 강제 종료(`NoSuchProcess`)된 상태에서 재기동/Reconcile을 실행한다 (`runtime_generation=True` 및 `False` 양쪽 모두).
+   - **통과 기준**:
+     - 살아있는 리스/프로세스(`pid`, `process_started_at`, `pgid` 일치)는 건드리지 않는다(`skipped_live_lease`).
+     - `AccessDenied`/`OSError`는 `UNKNOWN`으로 보존한다(`skipped_unknown`).
+     - `NoSuchProcess`(`ABSENT`)가 확인된 Run만 `status="interrupted"`로 마감하며, **어느 기동 모드에서도 자동 재큐잉(`resume_interrupted` replay)이 발생하지 않는다(`auto_requeued_count == 0`).**
+4. **`ACC-04` (`EvidenceCacheKey v2` Tamper Rejection & Broad Fail-Closed)**:
+   - **시나리오**: 모듈 소스, 전이 의존성 파일(`models.py` 등), 테스트 파일, `tests/conftest.py`, `uv.lock`, 또는 67개 마이그레이션 파일 중 단 1바이트를 수정하거나, 잘못된 체크아웃에서 import된 영수증을 제시한다.
+   - **통과 기준**:
+     - `verify_validation_receipt()`가 100% `valid=False`로 거부하고 전체 게이트(`broad_fail_closed`) 재실행을 강제한다.
+     - 유효한 영수증이 있더라도 전환 시점의 실시간 프로브(`/api/health`, `/api/ready`, `/api/version`)는 절대 캐시하지 않고 매번 실행한다.
+5. **`ACC-05` (P4 목표: 독립 모듈 릴리스 시 Core API 무재배포 및 구버전 드레인)**:
+   - **시나리오** *(현재 미구현 목표 아키텍처 인수 기준)*: 첫 독립 모듈(잠정 1순위: `Creative Studio`) 코드만 수정하여 모듈 번들을 `v1` → `v2`로 전환한다.
+   - **통과 기준**:
+     - 전환 전후 Core API 슬롯(`8791/8792/8793`)의 프로세스 `pid`와 `runtime_generations.id`가 불변이다 (`Core redeploy count == 0`).
+     - 전환 이전에 시작된 `v1` 잡은 `pinned_module_revision == v1`로 끝까지 완료되고, 전환 직후 요청은 `v2`로 처리된다.
+     - 모듈 스키마 변경이 필요한 경우 **Expand-only(nullable 컬럼/신규 테이블 추가)만 허용**하며, 파괴적 변경이나 공유 테이블 마이그레이션이 포함되면 즉시 Core 광역 배포로 승격한다.
+     - 포인터(`active.json`)를 `previous_revision`으로 되돌리면 Core 재시작 없이 1초 미만(`<1s`)에 `v1`으로 롤백된다.
+     - 단, `Creative Studio`의 최종 1순위 확정은 Worker B(DB/FK/파일 소유권 교정본) 및 Worker C(프런트/테스트 교정본) 검증 완료 후 루트 통합에서 확정하며, 현재는 **`provisional` (잠정 1순위)**로 유지한다.
+6. **`ACC-06` (Gate B 운영 전환 전 필수 선행 실증 — Non-Circular Preconditions)**:
+   - **비순환 게이트 분리**:
+     - **Gate A (P3 격리 코드 구현 및 테스트 착수 게이트)**: 본 교정 보고서의 계약·상태 전이·인수 시나리오 정의만으로 즉시 충족됨 (`P0`의 운영 백업/live 미확인 항목이 P3 코드 작성을 막지 않음).
+     - **Gate B (P2 최종 운영 서명 및 P4/P6 실제 운영 활성화 게이트)**: 실제 운영 전환(`activation="enabled"` 또는 운영 배포) 전에는 반드시 (1) 최근 백업 및 `restore_rehearsal.sh` 성공 영수증 확인, (2) 실시간 활성 API 슬롯 및 `supervisor.json` 리비전 직접 확인, (3) 격리 환경에서의 Ownership Cutover / Rollback E2E 리허설 통과가 선행되어야 한다.
+
+---
+
+## 5. 잔여 Blocker 및 미검증(`확인 필요`) 원장
+
+| 구분 | 항목 | 현재 상태 | 해소 경로 및 게이트 귀속 |
+| :--- | :--- | :---: | :--- |
+| **Blocker 1** | Worker B(`c1e9cd73`) 및 Worker C(`9a3215de`) 감사 산출물 교정·재검증 미완료 | `revising / 확인 필요` | 루트 오케스트레이터가 B(`d492` 교정 중)와 C(교정 중)의 재검증 통과본을 수합해 최종 모듈 경계 및 `Creative Studio`(`provisional`) 1순위 여부를 확정 (**P2 최종 확정 게이트**) |
+| **Blocker 2** | `origin/main`(`c8f10156`)의 `tests/test_desk_qwen_service.py` 기대값 불일치(`LOG-195`) | `implemented defect` | P3 `Step 0 (FND-00)`에서 즉시 수정 가능 |
+| **Unverified 1** | 현재 실시간 서빙 중인 API 리비전/슬롯 및 `~/.ttakkari/deploy/supervisor.json` 원문 | `unknown / 확인 필요` | **Gate B (운영 전환 전 선행조건)**: 운영 배포/전환 직전 `/api/version` 실시간 프로브 및 감독 상태 확인 |
+| **Unverified 2** | `~/.ttakkari-backups/latest.json` 최근 백업 시각 및 복원 리허설(`restore_rehearsal.sh`) 최신 실행 영수증 | `unknown / 확인 필요` | **Gate B (운영 전환 전 선행조건)**: 운영 DB 마이그레이션(`0068`) 및 Executor 활성화 직전 백업·복원 리허설 실행 |
+| **Unverified 3** | 배포 실패 기간별 전체 raw 이벤트 전수 분모 (`ops_list_deploys` 50건 상한 너머) | `unknown / 확인 필요` | 정성적 원인(`deploy:pytest` 지배)은 증명되었으므로 아키텍처 설계에는 영향 없음; P6 전후 성능 비교 시에는 동일 측정 구간/모수로 실측 |

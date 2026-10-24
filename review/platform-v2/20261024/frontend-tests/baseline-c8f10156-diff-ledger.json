@@ -1,0 +1,111 @@
+{
+  "baseline_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
+  "target_product_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+  "git_metrics": {
+    "rev_list_distance_behind": 118,
+    "rev_list_distance_ahead": 2,
+    "a_document_claim_111_behind_verification": "FACT: actual git rev-list distance is 118 behind, 2 ahead",
+    "src_py_files_delta": {
+      "baseline_607": 321,
+      "target_c8": 385,
+      "delta": 64,
+      "a_claim_verified": true
+    },
+    "alembic_migrations_delta": {
+      "baseline_607": 62,
+      "target_c8": 67,
+      "delta": 5,
+      "a_claim_verified": true
+    },
+    "total_diff_shortstat": "366 files changed, 86213 insertions(+), 339 deletions(-)"
+  },
+  "test_files_delta": {
+    "baseline_committed_count": 252,
+    "target_c8_count": 303,
+    "added_files_count": 51,
+    "removed_files_count": 0,
+    "added_files": [
+      "tests/test_collector_budget.py",
+      "tests/test_collector_cache.py",
+      "tests/test_collector_control.py",
+      "tests/test_collector_fetch.py",
+      "tests/test_collector_fetch_tls.py",
+      "tests/test_collector_integration.py",
+      "tests/test_collector_manage.py",
+      "tests/test_collector_pipeline.py",
+      "tests/test_collector_product_flow.py",
+      "tests/test_collector_stage_migration.py",
+      "tests/test_creative_mcp_tools.py",
+      "tests/test_creative_records.py",
+      "tests/test_creative_v2_api.py",
+      "tests/test_creative_v2_extraction.py",
+      "tests/test_creative_v2_run_extraction.py",
+      "tests/test_fixture_reset.py",
+      "tests/test_harness_view_api.py",
+      "tests/test_harness_view_groups.py",
+      "tests/test_harness_view_safe.py",
+      "tests/test_kb_agent_api.py",
+      "tests/test_kb_library_api.py",
+      "tests/test_kb_observations.py",
+      "tests/test_kb_retrieval.py",
+      "tests/test_lease_fence_locking.py",
+      "tests/test_release_waiting_disarm.py",
+      "tests/test_run_executor.py",
+      "tests/test_run_executor_processes.py",
+      "unit_tests/test_collector_blob_store.py",
+      "unit_tests/test_collector_migration_chain.py",
+      "unit_tests/test_collector_parser.py",
+      "unit_tests/test_collector_policy.py",
+      "unit_tests/test_collector_quality_learning.py",
+      "unit_tests/test_creative_v2_asset_generation.py",
+      "unit_tests/test_creative_v2_asset_generation_e2e.py",
+      "unit_tests/test_creative_v2_dispatch.py",
+      "unit_tests/test_creative_v2_duration.py",
+      "unit_tests/test_creative_v2_lease_handoff.py",
+      "unit_tests/test_creative_v2_matching.py",
+      "unit_tests/test_creative_v2_plans.py",
+      "unit_tests/test_creative_v2_registry.py",
+      "unit_tests/test_creative_v2_run_scope.py",
+      "unit_tests/test_creative_v2_style_dna.py",
+      "unit_tests/test_desk_topic_boundary.py",
+      "unit_tests/test_executor_migration_contract.py",
+      "unit_tests/test_executor_reconcile.py",
+      "unit_tests/test_qwen_flash_monitor_jobs.py",
+      "unit_tests/test_run_executor_services.py",
+      "unit_tests/test_run_executor_unit.py",
+      "unit_tests/test_run_test_database.py",
+      "unit_tests/test_run_test_database_manager.py",
+      "unit_tests/test_ttakkari_access_guidance.py"
+    ],
+    "removed_files": []
+  },
+  "category_shifts": {
+    "baseline_primary_9": {
+      "Module Integration": 95,
+      "Unit": 87,
+      "Security": 31,
+      "Migration": 16,
+      "Recovery-rollback": 5,
+      "Contract": 8,
+      "Cross-module": 7,
+      "Deployment smoke": 4,
+      "E2E": 4
+    },
+    "target_c8_primary_9": {
+      "Module Integration": 103,
+      "Unit": 107,
+      "Security": 41,
+      "Migration": 17,
+      "Recovery-rollback": 6,
+      "Contract": 9,
+      "E2E": 5,
+      "Cross-module": 11,
+      "Deployment smoke": 4
+    }
+  },
+  "unmatched_or_unverified_ledger": [
+    "Vercel actual deployment receipt for front origin/main dbe0c9f0",
+    "Runtime pytest collected case count for c8f10156 -m security",
+    "End-to-end full execution of c8f10156 on staging database"
+  ]
+}

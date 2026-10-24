@@ -329,7 +329,8 @@ async def test_desk_request_goes_to_the_managed_server_of_this_process(client, a
         desk = await _desk(client, auth, make_dir)
         run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "코드 고쳐줘"))["id"], timeout=30)
         route = next(e for e in await run_events(client, auth, run["id"]) if e["type"] == "desk.route")["payload"]
-        assert run["engine"] == "qwen" and route["engine"] == "qwen" and route["qwen"]["prompt_version"] == "harness-v2"
+        assert run["engine"] == "qwen" and route["engine"] == "qwen"
+        assert route["qwen"]["prompt_version"] == desk_qwen.PROMPT_VERSION
         assert len(await _leads(client, auth, desk["id"])) == 1
     finally:
         await svc.service.stop()

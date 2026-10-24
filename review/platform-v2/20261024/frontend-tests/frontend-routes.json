@@ -1,0 +1,395 @@
+{
+  "routes": [
+    {
+      "path": "/login",
+      "component": "LoginPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 50,
+      "raw": "<Route path=\"/login\" element={<LoginPage />} />"
+    },
+    {
+      "path": "/share/:shareId",
+      "component": "PublicMeetingPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 51,
+      "raw": "<Route path=\"/share/:shareId\" element={<PublicMeetingPage />} />"
+    },
+    {
+      "path": "/chat",
+      "component": "DeskHome",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 54,
+      "raw": "<Route path=\"/chat\" element={<DeskHome pool=\"personal\" />} />"
+    },
+    {
+      "path": "/chat/thread",
+      "component": "ChatPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 55,
+      "raw": "<Route path=\"/chat/thread\" element={<ChatPage />} />"
+    },
+    {
+      "path": "/chat/:sessionId",
+      "component": "ChatPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 56,
+      "raw": "<Route path=\"/chat/:sessionId\" element={<ChatPage />} />"
+    },
+    {
+      "path": "/work",
+      "component": "DeskHome",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 57,
+      "raw": "<Route path=\"/work\" element={<DeskHome pool=\"work\" />} />"
+    },
+    {
+      "path": "/work/thread",
+      "component": "ChatPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 58,
+      "raw": "<Route path=\"/work/thread\" element={<ChatPage pool=\"work\" />} />"
+    },
+    {
+      "path": "/work/:sessionId",
+      "component": "ChatPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 59,
+      "raw": "<Route path=\"/work/:sessionId\" element={<ChatPage pool=\"work\" />} />"
+    },
+    {
+      "path": "/tasks",
+      "component": "TasksPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 60,
+      "raw": "<Route path=\"/tasks\" element={<TasksPage />} />"
+    },
+    {
+      "path": "/tasks/failed",
+      "component": "FailedTasksPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 61,
+      "raw": "<Route path=\"/tasks/failed\" element={<FailedTasksPage />} />"
+    },
+    {
+      "path": "/workspace",
+      "component": "WorkspacePage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 62,
+      "raw": "<Route path=\"/workspace\" element={<WorkspacePage />} />"
+    },
+    {
+      "path": "/workspace/:sessionId",
+      "component": "WorkspacePage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 63,
+      "raw": "<Route path=\"/workspace/:sessionId\" element={<WorkspacePage />} />"
+    },
+    {
+      "path": "/library",
+      "component": "LibraryPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 64,
+      "raw": "<Route path=\"/library\" element={<LibraryPage />} />"
+    },
+    {
+      "path": "/context-library",
+      "component": "ContextLibraryPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 65,
+      "raw": "<Route path=\"/context-library\" element={ <Suspense fallback={<RouteFallback />}> <ContextLibraryPage /> </Suspense> } />"
+    },
+    {
+      "path": "/context-library/items/:kind/:id",
+      "component": "ContextLibraryItemPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 73,
+      "raw": "<Route path=\"/context-library/items/:kind/:id\" element={<Suspense fallback={<RouteFallback />}><ContextLibraryItemPage /></Suspense>} />"
+    },
+    {
+      "path": "/files",
+      "component": "FilesPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 74,
+      "raw": "<Route path=\"/files\" element={<FilesPage />} />"
+    },
+    {
+      "path": "/settings",
+      "component": "SettingsPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 75,
+      "raw": "<Route path=\"/settings\" element={<SettingsPage />} />"
+    },
+    {
+      "path": "/assistant",
+      "component": "AssistantPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 76,
+      "raw": "<Route path=\"/assistant\" element={<AssistantPage />} />"
+    },
+    {
+      "path": "/more",
+      "component": "MorePage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 77,
+      "raw": "<Route path=\"/more\" element={<MorePage />} />"
+    },
+    {
+      "path": "/notifications",
+      "component": "NotificationsPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 78,
+      "raw": "<Route path=\"/notifications\" element={<NotificationsPage />} />"
+    },
+    {
+      "path": "/weather",
+      "component": "WeatherPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 79,
+      "raw": "<Route path=\"/weather\" element={<WeatherPage />} />"
+    },
+    {
+      "path": "/resources",
+      "component": "ResourcesPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 80,
+      "raw": "<Route path=\"/resources\" element={<ResourcesPage />} />"
+    },
+    {
+      "path": "/logs",
+      "component": "OpsLogsPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 81,
+      "raw": "<Route path=\"/logs\" element={<OpsLogsPage />} />"
+    },
+    {
+      "path": "/logs/issues/:id",
+      "component": "OpsIssuePage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 82,
+      "raw": "<Route path=\"/logs/issues/:id\" element={<OpsIssuePage />} />"
+    },
+    {
+      "path": "/meetings",
+      "component": "MeetingsPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 83,
+      "raw": "<Route path=\"/meetings\" element={<MeetingsPage />} />"
+    },
+    {
+      "path": "/meetings/new",
+      "component": "MeetingNewPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 84,
+      "raw": "<Route path=\"/meetings/new\" element={<MeetingNewPage />} />"
+    },
+    {
+      "path": "/meetings/:meetingId",
+      "component": "MeetingDetailPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 85,
+      "raw": "<Route path=\"/meetings/:meetingId\" element={<MeetingDetailPage />} />"
+    },
+    {
+      "path": "/pms",
+      "component": "PmsListPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 86,
+      "raw": "<Route path=\"/pms\" element={<Suspense fallback={<RouteFallback />}><PmsListPage /></Suspense>} />"
+    },
+    {
+      "path": "/pms/:projectId",
+      "component": "PmsProjectPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 87,
+      "raw": "<Route path=\"/pms/:projectId\" element={<Suspense fallback={<RouteFallback />}><PmsProjectPage /></Suspense>} />"
+    },
+    {
+      "path": "/pms/:projectId/:tab",
+      "component": "PmsProjectPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 88,
+      "raw": "<Route path=\"/pms/:projectId/:tab\" element={<Suspense fallback={<RouteFallback />}><PmsProjectPage /></Suspense>} />"
+    },
+    {
+      "path": "/wbs",
+      "component": "WbsListPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 89,
+      "raw": "<Route path=\"/wbs\" element={<Suspense fallback={<RouteFallback />}><WbsListPage /></Suspense>} />"
+    },
+    {
+      "path": "/wbs/:projectId",
+      "component": "WbsProjectPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 90,
+      "raw": "<Route path=\"/wbs/:projectId\" element={<Suspense fallback={<RouteFallback />}><WbsProjectPage /></Suspense>} />"
+    },
+    {
+      "path": "/wbs/:projectId/:view",
+      "component": "WbsProjectPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 91,
+      "raw": "<Route path=\"/wbs/:projectId/:view\" element={<Suspense fallback={<RouteFallback />}><WbsProjectPage /></Suspense>} />"
+    },
+    {
+      "path": "/checklists",
+      "component": "ChecklistsPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 92,
+      "raw": "<Route path=\"/checklists\" element={<ChecklistsPage />} />"
+    },
+    {
+      "path": "/memos",
+      "component": "MemosPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 93,
+      "raw": "<Route path=\"/memos\" element={<MemosPage />} />"
+    },
+    {
+      "path": "/memos/:memoId",
+      "component": "MemosPage",
+      "is_wildcard": false,
+      "is_dynamic": true,
+      "is_redirect": false,
+      "line_number": 94,
+      "raw": "<Route path=\"/memos/:memoId\" element={<MemosPage />} />"
+    },
+    {
+      "path": "/calendar",
+      "component": "CalendarPage",
+      "is_wildcard": false,
+      "is_dynamic": false,
+      "is_redirect": false,
+      "line_number": 95,
+      "raw": "<Route path=\"/calendar\" element={ // FullCalendar 는 약 77KB(gzip)라 캘린더를 열 때만 받는다. <Suspense fallback={<RouteFallback />}> <CalendarPage /> </Suspense> } />"
+    },
+    {
+      "path": "*",
+      "component": "Navigate(to=/chat)",
+      "is_wildcard": true,
+      "is_dynamic": false,
+      "is_redirect": true,
+      "line_number": 105,
+      "raw": "<Route path=\"*\" element={<Navigate to=\"/chat\" replace />} />"
+    }
+  ],
+  "layout_routes": [
+    {
+      "component": "AppShell",
+      "line_number": 52,
+      "raw": "<Route element={<AppShell />}>"
+    }
+  ],
+  "unresolved_ledger": [],
+  "metrics": {
+    "path_declarations_count": 38,
+    "concrete_paths_count": 37,
+    "wildcard_paths_count": 1,
+    "layout_routes_count": 1,
+    "unique_pages": [
+      "AssistantPage",
+      "CalendarPage",
+      "ChatPage",
+      "ChecklistsPage",
+      "ContextLibraryItemPage",
+      "ContextLibraryPage",
+      "DeskHome",
+      "FailedTasksPage",
+      "FilesPage",
+      "LibraryPage",
+      "LoginPage",
+      "MeetingDetailPage",
+      "MeetingNewPage",
+      "MeetingsPage",
+      "MemosPage",
+      "MorePage",
+      "NotificationsPage",
+      "OpsIssuePage",
+      "OpsLogsPage",
+      "PmsListPage",
+      "PmsProjectPage",
+      "PublicMeetingPage",
+      "ResourcesPage",
+      "SettingsPage",
+      "TasksPage",
+      "WbsListPage",
+      "WbsProjectPage",
+      "WeatherPage",
+      "WorkspacePage"
+    ],
+    "unique_pages_count": 29,
+    "redirect_routes_count": 1,
+    "coverage_status": "complete"
+  },
+  "coverage_status": "complete"
+}

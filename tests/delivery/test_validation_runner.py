@@ -20,11 +20,15 @@ def test_pytest_summaries_require_an_explicit_nonempty_suite():
 
 
 @pytest.mark.asyncio
-async def test_stage_validator_runs_tests_from_candidate_checkout_source(tmp_path: Path):
+async def test_stage_validator_runs_tests_from_candidate_checkout_source(
+    tmp_path: Path,
+):
     candidate = tmp_path / "candidate"
     candidate.mkdir()
     (candidate / "src" / "ttakkari" / "delivery").mkdir(parents=True)
-    (candidate / "src" / "ttakkari" / "__init__.py").write_text('REVISION = "candidate"\n')
+    (candidate / "src" / "ttakkari" / "__init__.py").write_text(
+        'REVISION = "candidate"\n'
+    )
     (candidate / "src" / "ttakkari" / "delivery" / "__init__.py").write_text("")
     (candidate / "tests").mkdir()
     (candidate / "tests" / "test_candidate_source.py").write_text(
@@ -37,7 +41,9 @@ async def test_stage_validator_runs_tests_from_candidate_checkout_source(tmp_pat
         "def test_contract_imports_the_candidate_source():\n"
         "    assert ttakkari.REVISION == 'candidate'\n"
     )
-    (candidate / "pytest.ini").write_text("[pytest]\nmarkers =\n    contract: candidate contract gate\n")
+    (candidate / "pytest.ini").write_text(
+        "[pytest]\nmarkers =\n    contract: candidate contract gate\n"
+    )
     run_git(["init", "-b", "main"], candidate)
     run_git(["config", "user.name", "Validation test"], candidate)
     run_git(["config", "user.email", "validation@example.invalid"], candidate)
@@ -45,7 +51,9 @@ async def test_stage_validator_runs_tests_from_candidate_checkout_source(tmp_pat
     run_git(["commit", "-m", "candidate source"], candidate)
     sha = run_git(["rev-parse", "HEAD"], candidate).stdout.strip()
 
-    stage1_passed, stage1_log, _ = await project_stage_validator("stage1", candidate, sha)
+    stage1_passed, stage1_log, _ = await project_stage_validator(
+        "stage1", candidate, sha
+    )
     assert stage1_passed, stage1_log
     assert "1 passed" in stage1_log
     assert f"tested_sha={sha}" in stage1_log
@@ -55,3 +63,8 @@ async def test_stage_validator_runs_tests_from_candidate_checkout_source(tmp_pat
     assert passed, log
     assert "2 passed" in log
     assert f"tested_sha={sha}" in log
+
+    (candidate / "src/ttakkari/__init__.py").write_text('REVISION = "edited"\n')
+    passed, log, _ = await project_stage_validator("stage2", candidate, sha)
+    assert passed is False
+    assert "dirty" in log.lower()

@@ -58,12 +58,17 @@ def sha256_bytes(data: bytes) -> str:
 
 def sha256_file(path: Path) -> str:
     if not path.is_file():
-        raise SnapshotBindingError("missing_file", f"Required file does not exist: {path}")
+        raise SnapshotBindingError(
+            "missing_file", f"Required file does not exist: {path}"
+        )
     return sha256_bytes(path.read_bytes())
 
 
 def _run_git(repo_root: Path, *args: str) -> str:
-    if not (repo_root / ".git").exists() or not (repo_root / "src" / "ttakkari").is_dir():
+    if (
+        not (repo_root / ".git").exists()
+        or not (repo_root / "src" / "ttakkari").is_dir()
+    ):
         raise SnapshotBindingError(
             "invalid_repo_root",
             f"Path is not a valid ttakkari backend git checkout: {repo_root}",
@@ -152,7 +157,8 @@ def compute_dirty_manifest(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         "dirty_source_paths": sorted(dirty_source_paths),
         "dirty_audit_doc_paths": sorted(dirty_audit_doc_paths),
         "other_dirty_paths": sorted(other_dirty_paths),
-        "is_clean_source_tree": len(dirty_source_paths) == 0 and len(other_dirty_paths) == 0,
+        "is_clean_source_tree": len(dirty_source_paths) == 0
+        and len(other_dirty_paths) == 0,
         "is_clean_audit_docs": len(dirty_audit_doc_paths) == 0,
     }
 
@@ -167,11 +173,19 @@ def verify_snapshot_binding(
     import_binding = verify_import_origin(repo_root)
     head_sha = _run_git(repo_root, "rev-parse", "--verify", "HEAD").strip()
     head_tree_sha = _run_git(repo_root, "rev-parse", "--verify", "HEAD^{tree}").strip()
-    src_tree_sha = _run_git(repo_root, "rev-parse", "--verify", "HEAD:src/ttakkari").strip()
-    alembic_tree_sha = _run_git(repo_root, "rev-parse", "--verify", "HEAD:alembic").strip()
+    src_tree_sha = _run_git(
+        repo_root, "rev-parse", "--verify", "HEAD:src/ttakkari"
+    ).strip()
+    alembic_tree_sha = _run_git(
+        repo_root, "rev-parse", "--verify", "HEAD:alembic"
+    ).strip()
     tests_tree_sha = _run_git(repo_root, "rev-parse", "--verify", "HEAD:tests").strip()
-    unit_tests_tree_sha = _run_git(repo_root, "rev-parse", "--verify", "HEAD:unit_tests").strip()
-    deploy_tree_sha = _run_git(repo_root, "rev-parse", "--verify", "HEAD:deploy").strip()
+    unit_tests_tree_sha = _run_git(
+        repo_root, "rev-parse", "--verify", "HEAD:unit_tests"
+    ).strip()
+    deploy_tree_sha = _run_git(
+        repo_root, "rev-parse", "--verify", "HEAD:deploy"
+    ).strip()
     branch = _run_git(repo_root, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
     try:
@@ -186,7 +200,9 @@ def verify_snapshot_binding(
         c8_src_tree_sha = CANONICAL_C8_SRC_TREE_SHA
 
     try:
-        origin_main_sha = _run_git(repo_root, "rev-parse", "--verify", "origin/main").strip()
+        origin_main_sha = _run_git(
+            repo_root, "rev-parse", "--verify", "origin/main"
+        ).strip()
         origin_main_tree_sha = _run_git(
             repo_root, "rev-parse", "--verify", "origin/main^{tree}"
         ).strip()
@@ -206,7 +222,10 @@ def verify_snapshot_binding(
             f"source={dirty['dirty_source_paths']} other={dirty['other_dirty_paths']}",
         )
 
-    if expected_source_tree_sha is not None and src_tree_sha != expected_source_tree_sha:
+    if (
+        expected_source_tree_sha is not None
+        and src_tree_sha != expected_source_tree_sha
+    ):
         raise SnapshotBindingError(
             "tree_mismatch",
             f"HEAD:src/ttakkari tree {src_tree_sha} != expected {expected_source_tree_sha}",
@@ -274,7 +293,9 @@ def compute_git_topology_and_drift(
 
     left_commits = [
         line
-        for line in _run_git(repo_root, "log", "--oneline", left_sha, f"^{right_sha}").splitlines()
+        for line in _run_git(
+            repo_root, "log", "--oneline", left_sha, f"^{right_sha}"
+        ).splitlines()
         if line.strip()
     ]
 
@@ -283,12 +304,16 @@ def compute_git_topology_and_drift(
     ins_m = re.search(r"(\d+)\s+insertions?\(\+\)", shortstat)
     del_m = re.search(r"(\d+)\s+deletions?\(-\)", shortstat)
     if not files_m:
-        raise SnapshotBindingError("parse_failure", f"Could not parse git diff --shortstat: {shortstat}")
+        raise SnapshotBindingError(
+            "parse_failure", f"Could not parse git diff --shortstat: {shortstat}"
+        )
 
     def _count_tree_py_and_migrations(rev: str) -> dict[str, Any]:
         py_Paths = [
             p
-            for p in _run_git(repo_root, "ls-tree", "-r", "--name-only", rev, "src/ttakkari").splitlines()
+            for p in _run_git(
+                repo_root, "ls-tree", "-r", "--name-only", rev, "src/ttakkari"
+            ).splitlines()
             if p.endswith(".py")
         ]
         total_lines = 0
@@ -297,7 +322,9 @@ def compute_git_topology_and_drift(
             total_lines += len(blob.splitlines())
         mig_paths = sorted(
             p
-            for p in _run_git(repo_root, "ls-tree", "-r", "--name-only", rev, "alembic/versions").splitlines()
+            for p in _run_git(
+                repo_root, "ls-tree", "-r", "--name-only", rev, "alembic/versions"
+            ).splitlines()
             if p.endswith(".py")
         )
         return {
@@ -345,8 +372,10 @@ def compute_git_topology_and_drift(
             "source_lines": right_stats["source_lines"],
             "migration_files": right_stats["migration_files"],
         },
-        "net_added_python_files": right_stats["python_files"] - left_stats["python_files"],
-        "net_added_source_lines": right_stats["source_lines"] - left_stats["source_lines"],
+        "net_added_python_files": right_stats["python_files"]
+        - left_stats["python_files"],
+        "net_added_source_lines": right_stats["source_lines"]
+        - left_stats["source_lines"],
         "added_migrations": [Path(p).name for p in added_migrations],
         "new_tables_by_migration": migration_table_details,
         "total_new_tables_in_added_migrations": len(all_new_tables),
@@ -370,10 +399,14 @@ def analyze_source_graph(src_root: Path = SRC_ROOT) -> dict[str, Any]:
     Fail-closed on any SyntaxError or unreadable file.
     """
     if not src_root.is_dir():
-        raise SnapshotBindingError("invalid_src_root", f"Source directory does not exist: {src_root}")
+        raise SnapshotBindingError(
+            "invalid_src_root", f"Source directory does not exist: {src_root}"
+        )
     py_files = sorted(src_root.rglob("*.py"))
     if not py_files:
-        raise SnapshotBindingError("empty_src_root", f"No Python files found in {src_root}")
+        raise SnapshotBindingError(
+            "empty_src_root", f"No Python files found in {src_root}"
+        )
 
     module_files: dict[str, list[str]] = defaultdict(list)
     module_lines: dict[str, int] = defaultdict(int)
@@ -484,7 +517,9 @@ def analyze_migrations(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         raise SnapshotBindingError("invalid_migrations_dir", f"Missing {versions_dir}")
     files = sorted(versions_dir.glob("*.py"))
     if not files:
-        raise SnapshotBindingError("empty_migrations_dir", f"No migration files in {versions_dir}")
+        raise SnapshotBindingError(
+            "empty_migrations_dir", f"No migration files in {versions_dir}"
+        )
 
     revisions: dict[str, str] = {}
     down_revisions: dict[str, list[str]] = {}
@@ -545,10 +580,13 @@ def analyze_contracts_and_manifests(repo_root: Path = REPO_ROOT) -> dict[str, An
     gen_contract = json.loads(gen_contract_path.read_text(encoding="utf-8"))
     exec_manifest = json.loads(exec_manifest_path.read_text(encoding="utf-8"))
 
-    gen_service_text = (repo_root / "src" / "ttakkari" / "generation_service.py").read_text(
-        encoding="utf-8"
+    gen_service_text = (
+        repo_root / "src" / "ttakkari" / "generation_service.py"
+    ).read_text(encoding="utf-8")
+    maint_jobs = re.findall(
+        r'\("([a-z0-9-]+)",\s*_[a-z0-9_]+|creative_scan|Collector\(\)\.tick|collect_once|lead_archive\.archive_idle_leads|sync_all',
+        gen_service_text,
     )
-    maint_jobs = re.findall(r'\("([a-z0-9-]+)",\s*_[a-z0-9_]+|creative_scan|Collector\(\)\.tick|collect_once|lead_archive\.archive_idle_leads|sync_all', gen_service_text)
     maint_job_names = re.findall(
         r'\("([a-z0-9-]+)",\s*(?:_[a-z0-9_]+|creative_scan|Collector\(\)\.tick|collect_once|lead_archive\.archive_idle_leads|sync_all)',
         gen_service_text,
@@ -612,10 +650,17 @@ def compute_transitive_module_closure(
                 )
 
     closure_complete = len(reasons) == 0 and len(closure_files) > 0
-    return sorted(visited), dict(sorted(closure_files.items())), closure_complete, reasons
+    return (
+        sorted(visited),
+        dict(sorted(closure_files.items())),
+        closure_complete,
+        reasons,
+    )
 
 
-def _validate_hash_map(name: str, mapping: dict[str, str], *, allow_empty: bool = False) -> list[str]:
+def _validate_hash_map(
+    name: str, mapping: dict[str, str], *, allow_empty: bool = False
+) -> list[str]:
     if not isinstance(mapping, dict) or (not allow_empty and len(mapping) == 0):
         return [f"empty_or_invalid_hash_map:{name}"]
     errors: list[str] = []
@@ -663,11 +708,17 @@ def compute_evidence_cache_key(
         errors.append(f"dirty_source_tree:{sorted(dirty_source_paths)}")
     if not closure_complete:
         errors.append("incomplete_dependency_closure")
-    if not candidate_git_head_sha or not re.match(r"^[0-9a-f]{40}$", candidate_git_head_sha):
+    if not candidate_git_head_sha or not re.match(
+        r"^[0-9a-f]{40}$", candidate_git_head_sha
+    ):
         errors.append("invalid_candidate_git_head_sha")
-    if not candidate_git_tree_sha or not re.match(r"^[0-9a-f]{40}$", candidate_git_tree_sha):
+    if not candidate_git_tree_sha or not re.match(
+        r"^[0-9a-f]{40}$", candidate_git_tree_sha
+    ):
         errors.append("invalid_candidate_git_tree_sha")
-    if not selector_args or not all(isinstance(s, str) and s.strip() for s in selector_args):
+    if not selector_args or not all(
+        isinstance(s, str) and s.strip() for s in selector_args
+    ):
         errors.append("empty_or_invalid_selector_args")
     if not re.match(r"^\d+\.\d+\.\d+", python_full_version or ""):
         errors.append("invalid_python_full_version")
@@ -677,12 +728,20 @@ def compute_evidence_cache_key(
         errors.append("missing_migration_head")
 
     errors.extend(_validate_hash_map("changed_file_hashes", changed_file_hashes))
-    errors.extend(_validate_hash_map("module_source_file_hashes", module_source_file_hashes))
     errors.extend(
-        _validate_hash_map("transitive_dependency_file_hashes", transitive_dependency_file_hashes)
+        _validate_hash_map("module_source_file_hashes", module_source_file_hashes)
     )
-    errors.extend(_validate_hash_map("selected_test_file_hashes", selected_test_file_hashes))
-    errors.extend(_validate_hash_map("conftest_and_helper_hashes", conftest_and_helper_hashes))
+    errors.extend(
+        _validate_hash_map(
+            "transitive_dependency_file_hashes", transitive_dependency_file_hashes
+        )
+    )
+    errors.extend(
+        _validate_hash_map("selected_test_file_hashes", selected_test_file_hashes)
+    )
+    errors.extend(
+        _validate_hash_map("conftest_and_helper_hashes", conftest_and_helper_hashes)
+    )
     errors.extend(_validate_hash_map("migration_file_hashes", migration_file_hashes))
 
     for path, digest in changed_file_hashes.items():
@@ -744,7 +803,9 @@ def compute_evidence_cache_key(
         "generation_contract_sha256": generation_contract_sha256,
         "run_executor_manifest_sha256": run_executor_manifest_sha256,
     }
-    digest = sha256_bytes(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8"))
+    digest = sha256_bytes(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
     return {
         "cache_key": f"evk-v2-{module_id}-{digest[:32]}",
         "sha256": digest,
@@ -762,11 +823,17 @@ def issue_validation_receipt(
     passed_count: int,
     created_at_epoch: float,
     ttl_seconds: int = 86400,
-    signing_secret: bytes = b"ttakkari-local-receipt-v2-key",
+    signing_secret: bytes | None = None,
 ) -> dict[str, Any]:
     """Create a signed ValidationReceipt bound to an EvidenceCacheKey v2."""
+    if not signing_secret:
+        raise ValueError(
+            "A verifier-owned signing key is required; no source-code default is trusted"
+        )
     if exit_code != 0 or passed_count <= 0:
-        raise ValueError("Cannot issue a passing ValidationReceipt for a failed or empty test run")
+        raise ValueError(
+            "Cannot issue a passing ValidationReceipt for a failed or empty test run"
+        )
     body = {
         "schema_version": "platform-v2-validation-receipt-v2",
         "cache_key": evidence_key_bundle["cache_key"],
@@ -793,9 +860,11 @@ def verify_validation_receipt(
     *,
     expected_worktree_src_init: str,
     now_epoch: float,
-    signing_secret: bytes = b"ttakkari-local-receipt-v2-key",
+    signing_secret: bytes | None = None,
 ) -> tuple[bool, str]:
     """Fail-closed verifier for ValidationReceipt v2 against current candidate inputs."""
+    if not signing_secret:
+        return False, "signing_secret_required"
     try:
         if receipt.get("schema_version") != "platform-v2-validation-receipt-v2":
             return False, "invalid_receipt_schema_version"
@@ -911,7 +980,9 @@ def classify_change_impact(
             continue
         if mod_info["fan_in"] > 5:
             reasons.append(f"high_fan_in_module:{mod}(fan_in={mod_info['fan_in']})")
-        _, _, closure_ok, closure_reasons = compute_transitive_module_closure(mod, graph)
+        _, _, closure_ok, closure_reasons = compute_transitive_module_closure(
+            mod, graph
+        )
         if not closure_ok:
             reasons.extend(f"incomplete_closure:{mod}:{r}" for r in closure_reasons)
 
@@ -931,14 +1002,18 @@ def classify_change_impact(
         }
 
     return {
-        "gate_mode": "module_scoped" if len(touched_modules) == 1 else "multi_module_scoped",
+        "gate_mode": "module_scoped"
+        if len(touched_modules) == 1
+        else "multi_module_scoped",
         "touched_modules": sorted(touched_modules),
         "impacted_reverse_modules": impacted_reverse,
         "reasons": [],
     }
 
 
-def evaluate_candidate_modules(graph: dict[str, Any], repo_root: Path = REPO_ROOT) -> list[dict[str, Any]]:
+def evaluate_candidate_modules(
+    graph: dict[str, Any], repo_root: Path = REPO_ROOT
+) -> list[dict[str, Any]]:
     modules = graph["modules"]
     candidates = [
         {
@@ -1081,11 +1156,13 @@ def build_sample_evidence_cache_key_v2(
     contracts: dict[str, Any],
 ) -> dict[str, Any]:
     """Demonstrate fail-closed cache decision: unverified closure causes cache miss, verified closure produces key."""
-    _closure_mods, _closure_file_hashes, closure_ok, reasons = compute_transitive_module_closure(
-        "creative", graph
+    _closure_mods, _closure_file_hashes, closure_ok, reasons = (
+        compute_transitive_module_closure("creative", graph)
     )
     candidate_head = snapshot.get("candidate_head_sha", snapshot.get("origin_main_sha"))
-    candidate_tree = snapshot.get("candidate_tree_sha", snapshot.get("origin_main_tree_sha"))
+    candidate_tree = snapshot.get(
+        "candidate_tree_sha", snapshot.get("origin_main_tree_sha")
+    )
 
     sanitized_env_str = f"PYTHONDONTWRITEBYTECODE={sys.dont_write_bytecode}"
     pytest_plugin_str = "pytest-8+asyncio+subtests-noconftest"
@@ -1100,17 +1177,20 @@ def build_sample_evidence_cache_key_v2(
         "cache_decision": "broad_validation_fallback (conservative no-reuse due to dynamic import in transitive closure)",
     }
 
-    _ds_mods, ds_file_hashes, ds_closure_ok, _ds_reasons = compute_transitive_module_closure(
-        "design_system", graph
+    _ds_mods, ds_file_hashes, ds_closure_ok, _ds_reasons = (
+        compute_transitive_module_closure("design_system", graph)
     )
     verified_key: dict[str, Any] | None = None
     if ds_closure_ok and "src/ttakkari/design_system.py" in ds_file_hashes:
         ds_target_changed = "src/ttakkari/design_system.py"
         ds_changed_hashes = {ds_target_changed: ds_file_hashes[ds_target_changed]}
         ds_mod_files = {
-            f: graph["file_hashes"][f] for f in graph["modules"]["design_system"]["files"]
+            f: graph["file_hashes"][f]
+            for f in graph["modules"]["design_system"]["files"]
         }
-        ds_dep_files = {f: h for f, h in ds_file_hashes.items() if f not in ds_mod_files}
+        ds_dep_files = {
+            f: h for f, h in ds_file_hashes.items() if f not in ds_mod_files
+        }
         ds_tests = {
             p.relative_to(repo_root).as_posix(): sha256_file(p)
             for p in sorted((repo_root / "tests").glob("*design_system*.py"))

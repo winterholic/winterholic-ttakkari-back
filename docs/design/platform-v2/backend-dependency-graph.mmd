@@ -1,0 +1,167 @@
+flowchart TD
+  subgraph Control[Control Plane]
+    core_auth_session["인증·세션·보안 제어<br/>(core.auth_session)"]
+    core_workspaces_transfers["워크스페이스·파일 전송<br/>(core.workspaces_transfers)"]
+    core_accounts_quota["계정 풀·쿼터·토큰 계측<br/>(core.accounts_quota)"]
+    core_generation_deploy["세대 배포·수명주기 감독<br/>(core.generation_deploy)"]
+    core_system_routing["시스템 상태·설정·알림<br/>(core.system_routing)"]
+    ops_monitoring["운영 관측성·오류 수집·배포 로그<br/>(ops.monitoring)"]
+  end
+  subgraph Execution[Execution Plane]
+    exec_run_engine["에이전트 실행 엔진·런타임<br/>(exec.run_engine)"]
+    exec_durable_scheduler["내구성 스케줄러·Lease 실행기<br/>(exec.durable_scheduler)"]
+    exec_host_gpu["호스트 GPU 가속기·LLM 서빙<br/>(exec.host_gpu)"]
+  end
+  subgraph Domain[Domain Plane]
+    domain_memory_ontology["기억·엔티티 온톨로지 RAG<br/>(domain.memory_ontology)"]
+    domain_knowledge_rag["검증 지식 베이스(KB)·증거 추출<br/>(domain.knowledge_rag)"]
+    domain_collector["웹 데이터 수집·정제 플랫폼<br/>(domain.collector)"]
+    domain_creative_studio["크리에이티브 스튜디오·디렉터·ComfyUI<br/>(domain.creative_studio)"]
+    domain_notebooklm["NotebookLM 브라우저 연동<br/>(domain.notebooklm)"]
+    domain_research_lab["리서치 랩·실험 벤치마크<br/>(domain.research_lab)"]
+    domain_reverse_eng["리버스 엔지니어링·재구성<br/>(domain.reverse_eng)"]
+    domain_meetings_stt["회의록·로컬 Whisper STT<br/>(domain.meetings_stt)"]
+    domain_pms_tasks["PMS·마일스톤·체크리스트<br/>(domain.pms_tasks)"]
+    domain_design_system["디자인 시스템 카탈로그<br/>(domain.design_system)"]
+    domain_media_tts["로컬·클라우드 음성 합성(TTS)<br/>(domain.media_tts)"]
+    domain_game_studio["게임 스튜디오 프로토타입<br/>(domain.game_studio)"]
+    domain_personal_tools["개인 일상 도구(메모·일정·날씨·주식)<br/>(domain.personal_tools)"]
+    domain_external_connectors["외부 서비스 커넥터(Google·GitHub·RDP)<br/>(domain.external_connectors)"]
+    domain_shares_artifacts["결과물 공유·공개 배포<br/>(domain.shares_artifacts)"]
+  end
+  subgraph Delivery[Delivery Plane (사용자 Delivery 정의)]
+    delivery_git_cas["코드 배포 파이프라인·Git CAS<br/>(delivery.git_cas)"]
+  end
+  exec_run_engine --> core_auth_session
+  exec_run_engine --> core_generation_deploy
+  exec_run_engine --> core_system_routing
+  exec_run_engine --> delivery_git_cas
+  exec_run_engine --> domain_game_studio
+  exec_run_engine --> domain_knowledge_rag
+  exec_run_engine --> domain_meetings_stt
+  exec_run_engine --> domain_memory_ontology
+  exec_run_engine --> domain_pms_tasks
+  exec_run_engine --> domain_shares_artifacts
+  exec_run_engine --> exec_durable_scheduler
+  exec_run_engine --> ops_monitoring
+  core_accounts_quota --> core_auth_session
+  core_accounts_quota --> core_system_routing
+  core_accounts_quota --> exec_run_engine
+  core_auth_session --> core_system_routing
+  core_auth_session --> domain_knowledge_rag
+  core_auth_session --> domain_memory_ontology
+  core_auth_session --> domain_pms_tasks
+  core_auth_session --> domain_research_lab
+  core_auth_session --> domain_shares_artifacts
+  core_auth_session --> exec_run_engine
+  domain_pms_tasks --> core_auth_session
+  domain_pms_tasks --> core_system_routing
+  domain_pms_tasks --> core_workspaces_transfers
+  domain_pms_tasks --> exec_run_engine
+  domain_pms_tasks --> ops_monitoring
+  domain_creative_studio --> core_auth_session
+  domain_creative_studio --> core_system_routing
+  domain_creative_studio --> domain_shares_artifacts
+  domain_creative_studio --> exec_host_gpu
+  domain_creative_studio --> exec_run_engine
+  domain_shares_artifacts --> core_auth_session
+  domain_shares_artifacts --> core_generation_deploy
+  domain_shares_artifacts --> core_system_routing
+  domain_shares_artifacts --> domain_meetings_stt
+  domain_shares_artifacts --> exec_run_engine
+  domain_collector --> core_auth_session
+  domain_collector --> core_system_routing
+  domain_collector --> exec_run_engine
+  core_generation_deploy --> core_auth_session
+  core_generation_deploy --> core_system_routing
+  core_generation_deploy --> core_workspaces_transfers
+  core_generation_deploy --> domain_collector
+  core_generation_deploy --> domain_creative_studio
+  core_generation_deploy --> domain_media_tts
+  core_generation_deploy --> domain_meetings_stt
+  core_generation_deploy --> domain_memory_ontology
+  core_generation_deploy --> domain_notebooklm
+  core_generation_deploy --> domain_personal_tools
+  core_generation_deploy --> domain_pms_tasks
+  core_generation_deploy --> domain_shares_artifacts
+  core_generation_deploy --> exec_durable_scheduler
+  core_generation_deploy --> exec_host_gpu
+  core_generation_deploy --> exec_run_engine
+  core_generation_deploy --> ops_monitoring
+  domain_design_system --> core_auth_session
+  domain_design_system --> core_system_routing
+  domain_design_system --> exec_run_engine
+  core_system_routing --> core_auth_session
+  core_system_routing --> core_generation_deploy
+  core_system_routing --> core_workspaces_transfers
+  core_system_routing --> domain_creative_studio
+  core_system_routing --> domain_game_studio
+  core_system_routing --> domain_media_tts
+  core_system_routing --> domain_meetings_stt
+  core_system_routing --> domain_memory_ontology
+  core_system_routing --> domain_notebooklm
+  core_system_routing --> domain_personal_tools
+  core_system_routing --> domain_pms_tasks
+  core_system_routing --> domain_reverse_eng
+  core_system_routing --> domain_shares_artifacts
+  core_system_routing --> exec_durable_scheduler
+  core_system_routing --> exec_run_engine
+  core_system_routing --> ops_monitoring
+  domain_game_studio --> core_auth_session
+  domain_game_studio --> core_system_routing
+  domain_game_studio --> domain_shares_artifacts
+  domain_game_studio --> exec_run_engine
+  domain_external_connectors --> core_auth_session
+  domain_external_connectors --> core_system_routing
+  domain_external_connectors --> exec_run_engine
+  domain_external_connectors --> ops_monitoring
+  exec_host_gpu --> core_auth_session
+  exec_host_gpu --> core_system_routing
+  exec_host_gpu --> exec_run_engine
+  domain_knowledge_rag --> core_auth_session
+  domain_knowledge_rag --> core_system_routing
+  domain_knowledge_rag --> domain_memory_ontology
+  domain_knowledge_rag --> exec_run_engine
+  domain_memory_ontology --> core_auth_session
+  domain_memory_ontology --> core_system_routing
+  domain_memory_ontology --> domain_knowledge_rag
+  domain_memory_ontology --> domain_meetings_stt
+  domain_memory_ontology --> exec_run_engine
+  domain_meetings_stt --> core_auth_session
+  domain_meetings_stt --> core_generation_deploy
+  domain_meetings_stt --> core_system_routing
+  domain_meetings_stt --> core_workspaces_transfers
+  domain_meetings_stt --> domain_memory_ontology
+  domain_meetings_stt --> domain_shares_artifacts
+  domain_meetings_stt --> exec_run_engine
+  domain_notebooklm --> core_auth_session
+  domain_notebooklm --> core_system_routing
+  domain_notebooklm --> domain_external_connectors
+  domain_notebooklm --> exec_run_engine
+  ops_monitoring --> core_auth_session
+  ops_monitoring --> core_generation_deploy
+  ops_monitoring --> core_system_routing
+  ops_monitoring --> exec_run_engine
+  domain_research_lab --> core_auth_session
+  domain_research_lab --> core_system_routing
+  domain_research_lab --> domain_knowledge_rag
+  domain_research_lab --> exec_run_engine
+  domain_reverse_eng --> core_auth_session
+  domain_reverse_eng --> core_system_routing
+  domain_reverse_eng --> core_workspaces_transfers
+  domain_reverse_eng --> exec_run_engine
+  domain_personal_tools --> core_auth_session
+  domain_personal_tools --> core_system_routing
+  domain_personal_tools --> core_workspaces_transfers
+  domain_personal_tools --> exec_run_engine
+  core_workspaces_transfers --> core_auth_session
+  core_workspaces_transfers --> core_system_routing
+  core_workspaces_transfers --> domain_shares_artifacts
+  core_workspaces_transfers --> exec_run_engine
+  domain_media_tts --> core_auth_session
+  domain_media_tts --> core_system_routing
+  domain_media_tts --> exec_run_engine
+  delivery_git_cas --> core_auth_session
+  exec_durable_scheduler --> core_auth_session
+  exec_durable_scheduler --> core_system_routing
+  exec_durable_scheduler --> exec_run_engine

@@ -118,11 +118,49 @@ def test_validation_key_digest_stability_and_sensitivity():
         mutated = copy.deepcopy(inputs1)
         mutated[field_name] = new_val
         k_mut = ValidationKey.create(**mutated)
-        assert k_mut.compute_digest() != d1, f"Digest did not change on mutating {field_name}"
+        assert k_mut.compute_digest() != d1, (
+            f"Digest did not change on mutating {field_name}"
+        )
 
 
-def test_validation_cache_policy_positive_and_negative_reuse():
+def test_validation_cache_policy_positive_and_negative_reuse(tmp_path):
     inputs = _sample_valid_inputs()
+    candidate = tmp_path / "candidate"
+    for field in (
+        "changed_files",
+        "module_source_files",
+        "transitive_dependency_files",
+        "selected_test_files",
+        "conftest_helper_files",
+    ):
+        for rel, digest in inputs[field].items():
+            path = candidate / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(digest)
+            inputs[field][rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    run_git(["init", "-b", "main"], candidate)
+    run_git(["config", "user.name", "Test"], candidate)
+    run_git(["config", "user.email", "test@example.com"], candidate)
+    run_git(["add", "."], candidate)
+    run_git(["commit", "-m", "immutable validation inputs"], candidate)
+    for field in (
+        "changed_files",
+        "module_source_files",
+        "transitive_dependency_files",
+        "selected_test_files",
+        "conftest_helper_files",
+    ):
+        inputs[field] = {
+            rel: hashlib.sha256((candidate / rel).read_bytes()).hexdigest()
+            for rel in inputs[field]
+        }
+    snapshot = CandidateSnapshotIdentity.capture(candidate)
+    inputs.update(
+        candidate_head_sha=snapshot.candidate_head_sha,
+        candidate_tree_sha=snapshot.candidate_tree_sha,
+        candidate_src_tree_sha=snapshot.candidate_src_tree_sha,
+        snapshot=snapshot,
+    )
     key = ValidationKey.create(**inputs)
     digest = key.compute_digest()
 
@@ -165,7 +203,9 @@ def test_validation_cache_policy_positive_and_negative_reuse():
 
     # 4. Input key digest mismatch -> rejected
     changed_inputs = copy.deepcopy(inputs)
-    changed_inputs["pyproject_sha256"] = hashlib.sha256(b"pyproject-changed").hexdigest()
+    changed_inputs["pyproject_sha256"] = hashlib.sha256(
+        b"pyproject-changed"
+    ).hexdigest()
     changed_key = ValidationKey.create(**changed_inputs)
     reusable, reason = ValidationCachePolicy.can_reuse(
         changed_key, receipt, now_epoch=1500.0, secret=TEST_SECRET
@@ -211,3 +251,80 @@ def test_validation_cache_policy_positive_and_negative_reuse():
     )
     assert reusable is False
     assert reason == "receipt_failed_or_empty"
+
+
+def test_caller_supplied_hashes_are_not_snapshot_evidence():
+    key = ValidationKey.create(**_sample_valid_inputs())
+    receipt = ValidationReceipt.issue(
+        key_digest=key.compute_digest(),
+        verifier_id="review",
+        exit_code=0,
+        passed_count=1,
+        created_at_epoch=1000,
+        ttl_seconds=3600,
+        secret=TEST_SECRET,
+    )
+    assert (
+        ValidationCachePolicy.can_reuse(
+            key,
+            receipt,
+            now_epoch=1500,
+            secret=TEST_SECRET,
+        )[0]
+        is False
+    )
+
+
+def test_empty_closure_cannot_authorize_reuse():
+    inputs = _sample_valid_inputs()
+    inputs["transitive_dependency_files"] = {}
+    key = ValidationKey.create(**inputs)
+    receipt = ValidationReceipt.issue(
+        key_digest=key.compute_digest(),
+        verifier_id="review",
+        exit_code=0,
+        passed_count=1,
+        created_at_epoch=1000,
+        ttl_seconds=3600,
+        secret=TEST_SECRET,
+    )
+    assert (
+        ValidationCachePolicy.can_reuse(
+            key,
+            receipt,
+            now_epoch=1500,
+            secret=TEST_SECRET,
+        )[0]
+        is False
+    )
+
+
+def test_dirty_bytes_change_snapshot_identity(tmp_path):
+    test_candidate_snapshot_identity_capture(tmp_path)
+    candidate = tmp_path / "repo"
+    source = candidate / "src/ttakkari/__init__.py"
+    a = CandidateSnapshotIdentity.capture(candidate)
+    source.write_text("# different dirty bytes\n")
+    b = CandidateSnapshotIdentity.capture(candidate)
+    assert a != b
+
+
+def test_capture_rejects_source_changed_after_status(tmp_path, monkeypatch):
+    from ttakkari.delivery import validation
+
+    test_candidate_snapshot_identity_capture(tmp_path)
+    root = tmp_path / "repo"
+    original = validation.subprocess.run
+    mutated = False
+
+    def mutate_after_status(args, *pargs, **kwargs):
+        nonlocal mutated
+        result = original(args, *pargs, **kwargs)
+        if "status" in args and not mutated:
+            mutated = True
+            (root / "src/ttakkari/new.py").write_text("after status\n")
+        return result
+
+    monkeypatch.setattr(validation.subprocess, "run", mutate_after_status)
+    with pytest.raises(CandidateBindingError, match="snapshot_changed"):
+        CandidateSnapshotIdentity.capture(root)

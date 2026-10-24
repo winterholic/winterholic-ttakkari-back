@@ -1,0 +1,7 @@
+category,collected_count,candidate_count,coverage_state,reasons
+routes,497,,unknown,No independent candidate discovery available; coverage is unverified/unknown
+tools,102,102,reconciled,
+tables,88,88,reconciled,
+migrations,62,62,reconciled,
+configs,212,212,reconciled,
+source_files,321,321,reconciled,

@@ -30,19 +30,30 @@ def test_git_topology_and_snapshot_binding_are_dynamically_computed():
     assert evidence["schema_version"] == "platform-v2-worker-a-evidence-v2"
 
     snap = evidence["snapshot_binding"]
-    assert snap["candidate_head_sha"] is not None and len(snap["candidate_head_sha"]) == 40
-    assert snap["candidate_tree_sha"] is not None and len(snap["candidate_tree_sha"]) == 40
-    assert snap["candidate_src_ttakkari_tree_sha"] is not None and len(snap["candidate_src_ttakkari_tree_sha"]) == 40
+    assert (
+        snap["candidate_head_sha"] is not None and len(snap["candidate_head_sha"]) == 40
+    )
+    assert (
+        snap["candidate_tree_sha"] is not None and len(snap["candidate_tree_sha"]) == 40
+    )
+    assert (
+        snap["candidate_src_ttakkari_tree_sha"] is not None
+        and len(snap["candidate_src_ttakkari_tree_sha"]) == 40
+    )
     assert snap["audited_commit_sha"] == "c8f10156845d007ec6496a65d6d8417be19260bd"
-    assert snap["audited_src_ttakkari_tree_sha"] == "f2e5572ce8d039341eacc4dad5a70db03c61553b"
+    assert (
+        snap["audited_src_ttakkari_tree_sha"]
+        == "f2e5572ce8d039341eacc4dad5a70db03c61553b"
+    )
     assert isinstance(snap["dirty_manifest"]["entries"], list)
     assert isinstance(snap["dirty_manifest"]["dirty_audit_doc_paths"], list)
     assert snap["dirty_manifest"]["is_clean_source_tree"] is True
     assert isinstance(snap["dirty_manifest"]["is_clean_audit_docs"], bool)
     assert snap["import_binding"]["is_bound_to_worktree_src"] is True
-    assert Path(snap["import_binding"]["actual_ttakkari_init_file"]).resolve() == (
-        mod.REPO_ROOT / "src" / "ttakkari" / "__init__.py"
-    ).resolve()
+    assert (
+        Path(snap["import_binding"]["actual_ttakkari_init_file"]).resolve()
+        == (mod.REPO_ROOT / "src" / "ttakkari" / "__init__.py").resolve()
+    )
 
     topo = evidence["git_topology_607f8bda_vs_c8f10156"]
     assert topo["merge_base_sha"] == "2522d78e29b14ffb29d8536bcf833d832b4f87e1"
@@ -63,7 +74,9 @@ def test_git_topology_and_snapshot_binding_are_dynamically_computed():
         "migration_files": 67,
     }
     assert topo["total_new_tables_in_added_migrations"] == 18
-    assert topo["new_tables_by_migration"]["0064_run_executor.py"] == ["runtime_process_groups"]
+    assert topo["new_tables_by_migration"]["0064_run_executor.py"] == [
+        "runtime_process_groups"
+    ]
 
     comp = evidence["completion_status"]
     for stage in ("P0", "P1", "P2", "platform_v2_overall"):
@@ -73,12 +86,21 @@ def test_git_topology_and_snapshot_binding_are_dynamically_computed():
     on_disk = mod.json.loads(mod.OUT_PATH.read_text(encoding="utf-8"))
     # Avoid cyclic self-output/self-commit comparison: compare input/source specifications and metrics
     assert evidence["schema_version"] == on_disk["schema_version"]
-    assert evidence["git_topology_607f8bda_vs_c8f10156"] == on_disk["git_topology_607f8bda_vs_c8f10156"]
+    assert (
+        evidence["git_topology_607f8bda_vs_c8f10156"]
+        == on_disk["git_topology_607f8bda_vs_c8f10156"]
+    )
     assert evidence["codebase_metrics"] == on_disk["codebase_metrics"]
     assert evidence["migrations"] == on_disk["migrations"]
     assert evidence["completion_status"] == on_disk["completion_status"]
-    assert evidence["snapshot_binding"]["audited_commit_sha"] == on_disk["snapshot_binding"]["audited_commit_sha"]
-    assert evidence["snapshot_binding"]["audited_src_ttakkari_tree_sha"] == on_disk["snapshot_binding"]["audited_src_ttakkari_tree_sha"]
+    assert (
+        evidence["snapshot_binding"]["audited_commit_sha"]
+        == on_disk["snapshot_binding"]["audited_commit_sha"]
+    )
+    assert (
+        evidence["snapshot_binding"]["audited_src_ttakkari_tree_sha"]
+        == on_disk["snapshot_binding"]["audited_src_ttakkari_tree_sha"]
+    )
 
 
 def test_snapshot_binding_negative_controls_reject_invalid_root_dirty_tree_mismatch_and_parse_errors(
@@ -102,7 +124,9 @@ def test_snapshot_binding_negative_controls_reject_invalid_root_dirty_tree_misma
 
     # 3. Foreign checkout import in sys.modules negative control
     fake_pkg = types.ModuleType("ttakkari")
-    fake_pkg.__file__ = str(tmp_path / "other_checkout" / "src" / "ttakkari" / "__init__.py")
+    fake_pkg.__file__ = str(
+        tmp_path / "other_checkout" / "src" / "ttakkari" / "__init__.py"
+    )
     monkeypatch.setitem(sys.modules, "ttakkari", fake_pkg)
     with pytest.raises(mod.SnapshotBindingError) as exc_info:
         mod.verify_import_origin(mod.REPO_ROOT)
@@ -148,15 +172,24 @@ def test_snapshot_binding_negative_controls_reject_invalid_root_dirty_tree_misma
         mod,
         "compute_dirty_manifest",
         lambda _root=mod.REPO_ROOT: {
-            "entries": [{"status": " M", "path": "review/platform-v2/20261024/A-runtime-delivery.md"}],
+            "entries": [
+                {
+                    "status": " M",
+                    "path": "review/platform-v2/20261024/A-runtime-delivery.md",
+                }
+            ],
             "dirty_source_paths": [],
-            "dirty_audit_doc_paths": ["review/platform-v2/20261024/A-runtime-delivery.md"],
+            "dirty_audit_doc_paths": [
+                "review/platform-v2/20261024/A-runtime-delivery.md"
+            ],
             "other_dirty_paths": [],
             "is_clean_source_tree": True,
             "is_clean_audit_docs": False,
         },
     )
-    doc_dirty_snap = mod.verify_snapshot_binding(mod.REPO_ROOT, allow_dirty_source_paths=False)
+    doc_dirty_snap = mod.verify_snapshot_binding(
+        mod.REPO_ROOT, allow_dirty_source_paths=False
+    )
     assert doc_dirty_snap["dirty_manifest"]["is_clean_source_tree"] is True
     assert doc_dirty_snap["dirty_manifest"]["is_clean_audit_docs"] is False
     assert doc_dirty_snap["dirty_manifest"]["dirty_audit_doc_paths"] == [
@@ -167,8 +200,14 @@ def test_snapshot_binding_negative_controls_reject_invalid_root_dirty_tree_misma
     # 8. Transitive dependency dynamic import negative control
     fake_graph = {
         "modules": {
-            "creative": {"files": ["src/ttakkari/creative/render.py"], "depends_on": ["managed_comfy"]},
-            "managed_comfy": {"files": ["src/ttakkari/managed_comfy.py"], "depends_on": []},
+            "creative": {
+                "files": ["src/ttakkari/creative/render.py"],
+                "depends_on": ["managed_comfy"],
+            },
+            "managed_comfy": {
+                "files": ["src/ttakkari/managed_comfy.py"],
+                "depends_on": [],
+            },
         },
         "file_hashes": {
             "src/ttakkari/creative/render.py": mod.sha256_bytes(b"render"),
@@ -216,7 +255,9 @@ def _sample_valid_cache_inputs(mod) -> dict:
         "sanitized_env_sha256": mod.sha256_bytes(b"env-v1"),
         "models_py_sha256": mod.sha256_bytes(b"models-v1"),
         "alembic_env_sha256": mod.sha256_bytes(b"alembic-env-v1"),
-        "migration_file_hashes": {"alembic/versions/0067.py": mod.sha256_bytes(b"0067-v1")},
+        "migration_file_hashes": {
+            "alembic/versions/0067.py": mod.sha256_bytes(b"0067-v1")
+        },
         "migration_head": "0067_collector_outbox_retry",
         "generation_contract_sha256": mod.sha256_bytes(b"gen-contract-v1"),
         "run_executor_manifest_sha256": mod.sha256_bytes(b"exec-manifest-v1"),
@@ -238,6 +279,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         passed_count=35,
         created_at_epoch=1000.0,
         ttl_seconds=3600,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
 
     ok, reason = mod.verify_validation_receipt(
@@ -245,14 +287,19 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         base_inputs,
         expected_worktree_src_init=expected_init,
         now_epoch=1500.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is True and reason == "verified_ok"
 
     # Negative Control 1: 1-byte content change to the SAME changed file path (`render.py`)
     edited_source = copy.deepcopy(base_inputs)
     h1_modified = mod.sha256_bytes(b"render-v2")
-    edited_source["changed_file_hashes"]["src/ttakkari/creative/render.py"] = h1_modified
-    edited_source["module_source_file_hashes"]["src/ttakkari/creative/render.py"] = h1_modified
+    edited_source["changed_file_hashes"]["src/ttakkari/creative/render.py"] = (
+        h1_modified
+    )
+    edited_source["module_source_file_hashes"]["src/ttakkari/creative/render.py"] = (
+        h1_modified
+    )
     bundle_v2 = mod.compute_evidence_cache_key(**edited_source)
     assert bundle_v2["cache_key"] != bundle_v1["cache_key"]
     ok, reason = mod.verify_validation_receipt(
@@ -260,6 +307,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         edited_source,
         expected_worktree_src_init=expected_init,
         now_epoch=1500.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is False and reason == "mismatch:changed_file_hashes"
 
@@ -273,6 +321,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         edited_dep,
         expected_worktree_src_init=expected_init,
         now_epoch=1500.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is False and reason == "mismatch:transitive_dependency_file_hashes"
 
@@ -286,6 +335,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         edited_test,
         expected_worktree_src_init=expected_init,
         now_epoch=1500.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is False and reason == "mismatch:conftest_and_helper_hashes"
 
@@ -293,7 +343,10 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
     for field, new_val in (
         ("selector_args", ["pytest", "tests/test_creative_studio.py"]),
         ("python_full_version", "3.13.3"),
-        ("migration_file_hashes", {"alembic/versions/0067.py": mod.sha256_bytes(b"0067-edited")}),
+        (
+            "migration_file_hashes",
+            {"alembic/versions/0067.py": mod.sha256_bytes(b"0067-edited")},
+        ),
         ("generation_contract_sha256", mod.sha256_bytes(b"gen-contract-v2")),
     ):
         mutated = copy.deepcopy(base_inputs)
@@ -303,6 +356,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
             mutated,
             expected_worktree_src_init=expected_init,
             now_epoch=1500.0,
+            signing_secret=b"unit-test-only-explicit-verifier-key",
         )
         assert ok is False and reason == f"mismatch:{field}"
 
@@ -316,6 +370,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         incomplete,
         expected_worktree_src_init=expected_init,
         now_epoch=1500.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is False and "incomplete_dependency_closure" in reason
 
@@ -335,6 +390,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         base_inputs,
         expected_worktree_src_init=expected_init,
         now_epoch=99999.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is False and reason == "receipt_expired_or_future_dated"
 
@@ -343,6 +399,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         base_inputs,
         expected_worktree_src_init="/wrong/worktree/src/ttakkari/__init__.py",
         now_epoch=1500.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is False and reason == "untrusted_import_origin"
 
@@ -353,6 +410,7 @@ def test_evidence_cache_key_v2_and_receipt_fail_closed_on_1byte_edits_and_invali
         base_inputs,
         expected_worktree_src_init=expected_init,
         now_epoch=1500.0,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
     assert ok is False and reason == "signature_mismatch"
 
@@ -407,18 +465,51 @@ def test_cache_invalidation_matrix_across_all_input_dimensions():
         passed_count=10,
         created_at_epoch=1000.0,
         ttl_seconds=3600,
+        signing_secret=b"unit-test-only-explicit-verifier-key",
     )
 
     invalidation_cases = [
-        ("product_source_hash", "changed_file_hashes", {"src/ttakkari/creative/render.py": mod.sha256_bytes(b"render-changed")}),
+        (
+            "product_source_hash",
+            "changed_file_hashes",
+            {"src/ttakkari/creative/render.py": mod.sha256_bytes(b"render-changed")},
+        ),
         ("lock_file", "uv_lock_sha256", mod.sha256_bytes(b"uv-lock-changed")),
-        ("selector_args", "selector_args", ["pytest", "-m", "contract", "tests/other.py"]),
-        ("selected_tests", "selected_test_file_hashes", {"tests/test_other.py": mod.sha256_bytes(b"test-other")}),
-        ("config_pyproject", "pyproject_sha256", mod.sha256_bytes(b"pyproject-changed")),
-        ("config_alembic_env", "alembic_env_sha256", mod.sha256_bytes(b"alembic-env-changed")),
-        ("config_generation_contract", "generation_contract_sha256", mod.sha256_bytes(b"gen-contract-changed")),
-        ("plugin_pytest", "pytest_plugins_sha256", mod.sha256_bytes(b"plugins-changed")),
-        ("schema_migration_files", "migration_file_hashes", {"alembic/versions/0067.py": mod.sha256_bytes(b"0067-changed")}),
+        (
+            "selector_args",
+            "selector_args",
+            ["pytest", "-m", "contract", "tests/other.py"],
+        ),
+        (
+            "selected_tests",
+            "selected_test_file_hashes",
+            {"tests/test_other.py": mod.sha256_bytes(b"test-other")},
+        ),
+        (
+            "config_pyproject",
+            "pyproject_sha256",
+            mod.sha256_bytes(b"pyproject-changed"),
+        ),
+        (
+            "config_alembic_env",
+            "alembic_env_sha256",
+            mod.sha256_bytes(b"alembic-env-changed"),
+        ),
+        (
+            "config_generation_contract",
+            "generation_contract_sha256",
+            mod.sha256_bytes(b"gen-contract-changed"),
+        ),
+        (
+            "plugin_pytest",
+            "pytest_plugins_sha256",
+            mod.sha256_bytes(b"plugins-changed"),
+        ),
+        (
+            "schema_migration_files",
+            "migration_file_hashes",
+            {"alembic/versions/0067.py": mod.sha256_bytes(b"0067-changed")},
+        ),
         ("schema_migration_head", "migration_head", "0068_next_head"),
         ("schema_models_py", "models_py_sha256", mod.sha256_bytes(b"models-changed")),
         ("env_sanitized", "sanitized_env_sha256", mod.sha256_bytes(b"env-changed")),
@@ -429,17 +520,43 @@ def test_cache_invalidation_matrix_across_all_input_dimensions():
         mutated[field_name] = new_val
         # if changed_file_hashes is changed, also update module_source_file_hashes so compute_evidence_cache_key doesn't fail consistency check
         if field_name == "changed_file_hashes":
-            mutated["module_source_file_hashes"]["src/ttakkari/creative/render.py"] = new_val["src/ttakkari/creative/render.py"]
+            mutated["module_source_file_hashes"]["src/ttakkari/creative/render.py"] = (
+                new_val["src/ttakkari/creative/render.py"]
+            )
 
         mutated_bundle = mod.compute_evidence_cache_key(**mutated)
-        assert mutated_bundle["cache_key"] != base_bundle["cache_key"], f"{label} did not change cache_key"
-        assert mutated_bundle["sha256"] != base_bundle["sha256"], f"{label} did not change sha256"
+        assert mutated_bundle["cache_key"] != base_bundle["cache_key"], (
+            f"{label} did not change cache_key"
+        )
+        assert mutated_bundle["sha256"] != base_bundle["sha256"], (
+            f"{label} did not change sha256"
+        )
 
         ok, reason = mod.verify_validation_receipt(
             receipt,
             mutated,
             expected_worktree_src_init=expected_init,
             now_epoch=1500.0,
+            signing_secret=b"unit-test-only-explicit-verifier-key",
         )
         assert ok is False, f"{label} unexpectedly allowed receipt reuse"
-        assert f"mismatch:{field_name}" in reason, f"{label} mismatch reason unexpected: {reason}"
+        assert f"mismatch:{field_name}" in reason, (
+            f"{label} mismatch reason unexpected: {reason}"
+        )
+
+
+def test_receipt_prototype_requires_a_verifier_owned_signing_key():
+    import pytest
+
+    mod = _load_extractor()
+    bundle = mod.compute_evidence_cache_key(**_sample_valid_cache_inputs(mod))
+    with pytest.raises(ValueError, match="signing"):
+        mod.issue_validation_receipt(
+            evidence_key_bundle=bundle,
+            verifier_id="untrusted",
+            import_origin_file="irrelevant",
+            executed_command=["true"],
+            exit_code=0,
+            passed_count=999,
+            created_at_epoch=1000,
+        )

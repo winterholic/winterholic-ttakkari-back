@@ -1,0 +1,2417 @@
+[
+  {
+    "stem": "0001_initial",
+    "revision": "0001",
+    "down_revision": null,
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "audit_logs",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 34
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 35
+      },
+      {
+        "kind": "create_table",
+        "target": "credentials",
+        "sql_classification": "static_literal",
+        "line": 36
+      },
+      {
+        "kind": "create_table",
+        "target": "refresh_tokens",
+        "sql_classification": "static_literal",
+        "line": 42
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 55
+      },
+      {
+        "kind": "create_table",
+        "target": "workspaces",
+        "sql_classification": "static_literal",
+        "line": 56
+      },
+      {
+        "kind": "create_table",
+        "target": "sessions",
+        "sql_classification": "static_literal",
+        "line": 70
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 84
+      },
+      {
+        "kind": "create_table",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 85
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 111
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 112
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 113
+      },
+      {
+        "kind": "create_table",
+        "target": "artifacts",
+        "sql_classification": "static_literal",
+        "line": 114
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_artifacts_created",
+        "sql_classification": "static_literal",
+        "line": 142
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 143
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 144
+      },
+      {
+        "kind": "create_index",
+        "target": "call:op.f",
+        "sql_classification": "parameterized",
+        "line": 145
+      },
+      {
+        "kind": "create_table",
+        "target": "run_events",
+        "sql_classification": "static_literal",
+        "line": 146
+      }
+    ]
+  },
+  {
+    "stem": "0002_push_subscriptions",
+    "revision": "0002",
+    "down_revision": "0001",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "push_subscriptions",
+        "sql_classification": "static_literal",
+        "line": 20
+      }
+    ]
+  },
+  {
+    "stem": "0003_orchestrator",
+    "revision": "0003",
+    "down_revision": "0002",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "sessions",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "add_column",
+        "target": "sessions",
+        "sql_classification": "static_literal",
+        "line": 23
+      },
+      {
+        "kind": "add_column",
+        "target": "sessions",
+        "sql_classification": "static_literal",
+        "line": 24
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "fk_sessions_parent",
+        "sql_classification": "static_literal",
+        "line": 25
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_sessions_kind",
+        "sql_classification": "static_literal",
+        "line": 26
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_sessions_parent_id",
+        "sql_classification": "static_literal",
+        "line": 27
+      },
+      {
+        "kind": "execute",
+        "target": "UPDATE sessions SET engine_sessions = jsonb_build_object(engine, engine_session_id) WHERE engine_session_id IS NOT NULL",
+        "sql_classification": "static_literal",
+        "line": 29
+      },
+      {
+        "kind": "add_column",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 31
+      },
+      {
+        "kind": "add_column",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 32
+      }
+    ]
+  },
+  {
+    "stem": "0004_engine_accounts",
+    "revision": "0004",
+    "down_revision": "0003",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "engine_accounts",
+        "sql_classification": "static_literal",
+        "line": 20
+      }
+    ]
+  },
+  {
+    "stem": "0005_transfer_tokens",
+    "revision": "0005",
+    "down_revision": "0004",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "transfer_tokens",
+        "sql_classification": "static_literal",
+        "line": 20
+      }
+    ]
+  },
+  {
+    "stem": "0006_assistant_context",
+    "revision": "0006",
+    "down_revision": "0005",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "execute",
+        "target": "CREATE EXTENSION IF NOT EXISTS vector",
+        "sql_classification": "static_literal",
+        "line": 25
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+        "sql_classification": "static_literal",
+        "line": 26
+      },
+      {
+        "kind": "create_table",
+        "target": "ctx_entities",
+        "sql_classification": "static_literal",
+        "line": 27
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_entities_type",
+        "sql_classification": "static_literal",
+        "line": 39
+      },
+      {
+        "kind": "create_table",
+        "target": "ctx_relations",
+        "sql_classification": "static_literal",
+        "line": 40
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_relations_subject_id",
+        "sql_classification": "static_literal",
+        "line": 49
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_relations_object_id",
+        "sql_classification": "static_literal",
+        "line": 50
+      },
+      {
+        "kind": "create_table",
+        "target": "ctx_memories",
+        "sql_classification": "static_literal",
+        "line": 51
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_memories_kind",
+        "sql_classification": "static_literal",
+        "line": 63
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_memories_pinned",
+        "sql_classification": "static_literal",
+        "line": 64
+      },
+      {
+        "kind": "create_table",
+        "target": "ctx_sources",
+        "sql_classification": "static_literal",
+        "line": 65
+      },
+      {
+        "kind": "create_table",
+        "target": "ctx_documents",
+        "sql_classification": "static_literal",
+        "line": 73
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_documents_source_id",
+        "sql_classification": "static_literal",
+        "line": 81
+      },
+      {
+        "kind": "create_table",
+        "target": "ctx_chunks",
+        "sql_classification": "static_literal",
+        "line": 82
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_chunks_document_id",
+        "sql_classification": "static_literal",
+        "line": 89
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_ctx_chunks_trgm ON ctx_chunks USING gin (content gin_trgm_ops)",
+        "sql_classification": "static_literal",
+        "line": 93
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_ctx_memories_trgm ON ctx_memories USING gin (content gin_trgm_ops)",
+        "sql_classification": "static_literal",
+        "line": 94
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_ctx_entities_trgm ON ctx_entities USING gin (name gin_trgm_ops)",
+        "sql_classification": "static_literal",
+        "line": 95
+      },
+      {
+        "kind": "execute",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 92
+      }
+    ]
+  },
+  {
+    "stem": "0007_app_settings",
+    "revision": "0007",
+    "down_revision": "0006",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "app_settings",
+        "sql_classification": "static_literal",
+        "line": 21
+      }
+    ]
+  },
+  {
+    "stem": "0008_account_pools",
+    "revision": "0008",
+    "down_revision": "0007",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "execute",
+        "target": "UPDATE app_settings SET key = 'account_priority_override:personal' WHERE key = 'account_priority_override'",
+        "sql_classification": "static_literal",
+        "line": 24
+      },
+      {
+        "kind": "add_column",
+        "target": "t",
+        "sql_classification": "unknown",
+        "line": 21
+      },
+      {
+        "kind": "create_index",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 22
+      }
+    ]
+  },
+  {
+    "stem": "0009_memos_calendar",
+    "revision": "0009",
+    "down_revision": "0008",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "memos",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_memos_updated_at",
+        "sql_classification": "static_literal",
+        "line": 34
+      },
+      {
+        "kind": "create_table",
+        "target": "calendar_events",
+        "sql_classification": "static_literal",
+        "line": 35
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_calendar_events_start_at",
+        "sql_classification": "static_literal",
+        "line": 50
+      }
+    ]
+  },
+  {
+    "stem": "0010_account_groups",
+    "revision": "0010",
+    "down_revision": "0009",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 23
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 25
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 26
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 22
+      }
+    ]
+  },
+  {
+    "stem": "0011_event_reminders",
+    "revision": "0011",
+    "down_revision": "0010",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "calendar_events",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "add_column",
+        "target": "calendar_events",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "add_column",
+        "target": "calendar_events",
+        "sql_classification": "static_literal",
+        "line": 22
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_calendar_events_remind_at",
+        "sql_classification": "static_literal",
+        "line": 23
+      }
+    ]
+  },
+  {
+    "stem": "0012_memo_categories",
+    "revision": "0012",
+    "down_revision": "0011",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "memo_categories",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "add_column",
+        "target": "memos",
+        "sql_classification": "static_literal",
+        "line": 28
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "memos_category_id_fkey",
+        "sql_classification": "static_literal",
+        "line": 29
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_memos_category_id",
+        "sql_classification": "static_literal",
+        "line": 30
+      }
+    ]
+  },
+  {
+    "stem": "0013_context_library",
+    "revision": "0013",
+    "down_revision": "0012",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "ctx_sources",
+        "sql_classification": "static_literal",
+        "line": 18
+      },
+      {
+        "kind": "add_column",
+        "target": "ctx_sources",
+        "sql_classification": "static_literal",
+        "line": 19
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "ctx_sources_entity_id_fkey",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ctx_sources_entity_id",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "add_column",
+        "target": "table",
+        "sql_classification": "unknown",
+        "line": 16
+      },
+      {
+        "kind": "create_index",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 17
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 23
+      }
+    ]
+  },
+  {
+    "stem": "0014_artifact_area",
+    "revision": "0014",
+    "down_revision": "0013",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "artifacts",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_artifacts_area",
+        "sql_classification": "static_literal",
+        "line": 22
+      },
+      {
+        "kind": "execute",
+        "target": "UPDATE artifacts SET area = 'files' WHERE source IN ('upload', 'user_registered')",
+        "sql_classification": "static_literal",
+        "line": 24
+      },
+      {
+        "kind": "execute",
+        "target": "\n        UPDATE artifacts SET area = 'files'\n        WHERE source = 'agent_output'\n          AND session_id IN (SELECT id FROM sessions WHERE kind IN ('chat', 'orchestrator'))\n    ",
+        "sql_classification": "static_literal",
+        "line": 27
+      }
+    ]
+  },
+  {
+    "stem": "0015_account_usage_samples",
+    "revision": "0015",
+    "down_revision": "0014",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "account_usage_samples",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_account_usage_samples_measured_at",
+        "sql_classification": "static_literal",
+        "line": 30
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_account_usage_samples_account_measured",
+        "sql_classification": "static_literal",
+        "line": 31
+      }
+    ]
+  },
+  {
+    "stem": "0016_meetings",
+    "revision": "0016",
+    "down_revision": "0015",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "meetings",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meetings_scope",
+        "sql_classification": "static_literal",
+        "line": 46
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meetings_status",
+        "sql_classification": "static_literal",
+        "line": 47
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meetings_entity_id",
+        "sql_classification": "static_literal",
+        "line": 48
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meetings_created",
+        "sql_classification": "static_literal",
+        "line": 49
+      },
+      {
+        "kind": "create_table",
+        "target": "meeting_items",
+        "sql_classification": "static_literal",
+        "line": 50
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meeting_items_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 66
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meeting_items_kind",
+        "sql_classification": "static_literal",
+        "line": 67
+      },
+      {
+        "kind": "create_table",
+        "target": "meeting_proposals",
+        "sql_classification": "static_literal",
+        "line": 68
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meeting_proposals_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 81
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meeting_proposals_status",
+        "sql_classification": "static_literal",
+        "line": 82
+      }
+    ]
+  },
+  {
+    "stem": "0017_work_mode_settings",
+    "revision": "0017",
+    "down_revision": "0016",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "engine_accounts",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "add_column",
+        "target": "engine_accounts",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 24
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 27
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 25
+      }
+    ]
+  },
+  {
+    "stem": "0018_pms",
+    "revision": "0018",
+    "down_revision": "0017",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "pms_projects",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_pms_projects_scope",
+        "sql_classification": "static_literal",
+        "line": 34
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_pms_projects_status",
+        "sql_classification": "static_literal",
+        "line": 35
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_pms_projects_created",
+        "sql_classification": "static_literal",
+        "line": 36
+      },
+      {
+        "kind": "create_table",
+        "target": "pms_tasks",
+        "sql_classification": "static_literal",
+        "line": 37
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_pms_tasks_project_id",
+        "sql_classification": "static_literal",
+        "line": 56
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_pms_tasks_project_parent",
+        "sql_classification": "static_literal",
+        "line": 57
+      },
+      {
+        "kind": "create_table",
+        "target": "pms_milestones",
+        "sql_classification": "static_literal",
+        "line": 58
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_pms_milestones_project_id",
+        "sql_classification": "static_literal",
+        "line": 67
+      },
+      {
+        "kind": "create_table",
+        "target": "pms_notes",
+        "sql_classification": "static_literal",
+        "line": 68
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_pms_notes_project_id",
+        "sql_classification": "static_literal",
+        "line": 83
+      }
+    ]
+  },
+  {
+    "stem": "0019_run_resume",
+    "revision": "0019",
+    "down_revision": "0018",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "add_column",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "add_column",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 22
+      },
+      {
+        "kind": "add_column",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 23
+      }
+    ]
+  },
+  {
+    "stem": "0020_desk_feedback",
+    "revision": "0020",
+    "down_revision": "0019",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "desk_feedback",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_desk_feedback_session_id",
+        "sql_classification": "static_literal",
+        "line": 32
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_desk_feedback_updated_at",
+        "sql_classification": "static_literal",
+        "line": 33
+      }
+    ]
+  },
+  {
+    "stem": "0021_clovanote_vectors",
+    "revision": "0021",
+    "down_revision": "0020",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "meetings",
+        "sql_classification": "static_literal",
+        "line": 23
+      },
+      {
+        "kind": "add_column",
+        "target": "meetings",
+        "sql_classification": "static_literal",
+        "line": 24
+      },
+      {
+        "kind": "add_column",
+        "target": "meetings",
+        "sql_classification": "static_literal",
+        "line": 25
+      },
+      {
+        "kind": "add_column",
+        "target": "meetings",
+        "sql_classification": "static_literal",
+        "line": 26
+      },
+      {
+        "kind": "create_table",
+        "target": "meeting_chunks",
+        "sql_classification": "static_literal",
+        "line": 27
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meeting_chunks_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 41
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meeting_chunks_scope",
+        "sql_classification": "static_literal",
+        "line": 42
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meeting_chunks_entity_id",
+        "sql_classification": "static_literal",
+        "line": 43
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_meeting_chunks_embedding ON meeting_chunks USING hnsw (embedding vector_cosine_ops)",
+        "sql_classification": "static_literal",
+        "line": 44
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_meeting_chunks_lexical ON meeting_chunks USING gin (to_tsvector('simple', content))",
+        "sql_classification": "static_literal",
+        "line": 45
+      },
+      {
+        "kind": "create_table",
+        "target": "clovanote_notes",
+        "sql_classification": "static_literal",
+        "line": 47
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_clovanote_notes_state",
+        "sql_classification": "static_literal",
+        "line": 69
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_clovanote_notes_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 70
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_clovanote_notes_lexical ON clovanote_notes USING gin (to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(transcript, '')))",
+        "sql_classification": "static_literal",
+        "line": 71
+      },
+      {
+        "kind": "create_table",
+        "target": "clovanote_jobs",
+        "sql_classification": "static_literal",
+        "line": 74
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_clovanote_jobs_created",
+        "sql_classification": "static_literal",
+        "line": 93
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_clovanote_jobs_status",
+        "sql_classification": "static_literal",
+        "line": 94
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_clovanote_jobs_note_id",
+        "sql_classification": "static_literal",
+        "line": 95
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_clovanote_jobs_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 96
+      }
+    ]
+  },
+  {
+    "stem": "0022_meeting_pms_project",
+    "revision": "0022",
+    "down_revision": "0021",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "meetings",
+        "sql_classification": "static_literal",
+        "line": 13
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "fk_meetings_pms_project",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meetings_pms_project_id",
+        "sql_classification": "static_literal",
+        "line": 15
+      }
+    ]
+  },
+  {
+    "stem": "0023_account_usage_caps",
+    "revision": "0023",
+    "down_revision": "0022",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "engine_accounts",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "execute",
+        "target": "UPDATE engine_accounts SET max_used_percent = 95 WHERE (engine = 'claude' AND name ILIKE '내 클로드%') OR (engine = 'codex' AND name ILIKE 'daddy codex%')",
+        "sql_classification": "static_literal",
+        "line": 22
+      }
+    ]
+  },
+  {
+    "stem": "0024_checklists",
+    "revision": "0024",
+    "down_revision": "0023",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "checklist_templates",
+        "sql_classification": "static_literal",
+        "line": 16
+      },
+      {
+        "kind": "create_table",
+        "target": "checklist_items",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_checklist_items_day",
+        "sql_classification": "static_literal",
+        "line": 27
+      },
+      {
+        "kind": "create_table",
+        "target": "checklist_reminders",
+        "sql_classification": "static_literal",
+        "line": 28
+      }
+    ]
+  },
+  {
+    "stem": "0025_local_stt",
+    "revision": "0025",
+    "down_revision": "0024",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "local_stt_jobs",
+        "sql_classification": "static_literal",
+        "line": 15
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_local_stt_jobs_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 43
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_local_stt_jobs_status",
+        "sql_classification": "static_literal",
+        "line": 44
+      },
+      {
+        "kind": "create_table",
+        "target": "local_stt_segments",
+        "sql_classification": "static_literal",
+        "line": 45
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_local_stt_segments_job_id",
+        "sql_classification": "static_literal",
+        "line": 71
+      }
+    ]
+  },
+  {
+    "stem": "0026_retire_clovanote",
+    "revision": "0026",
+    "down_revision": "0025",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "retired_integration_records",
+        "sql_classification": "static_literal",
+        "line": 20
+      },
+      {
+        "kind": "execute",
+        "target": "UPDATE meetings m SET transcript = n.transcript,\n                  transcript_source = COALESCE(m.transcript_source, 'provider:clovanote')\n        FROM (SELECT DISTINCT ON (meeting_id) meeting_id, transcript\n              FROM clovanote_notes WHERE meeting_id IS NOT NULL AND btrim(COALESCE(transcript,'')) <> ''\n              ORDER BY meeting_id, transcript_fetched_at DESC NULLS LAST, synced_at DESC, id) n\n        WHERE m.id=n.meeting_id AND btrim(COALESCE(m.transcript,'')) = ''",
+        "sql_classification": "static_literal",
+        "line": 35
+      },
+      {
+        "kind": "drop_table",
+        "target": "clovanote_jobs",
+        "sql_classification": "static_literal",
+        "line": 41
+      },
+      {
+        "kind": "drop_table",
+        "target": "clovanote_notes",
+        "sql_classification": "static_literal",
+        "line": 42
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 28
+      }
+    ]
+  },
+  {
+    "stem": "0027_meeting_lineage",
+    "revision": "0027",
+    "down_revision": "0026",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "meetings",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "fk_meetings_source_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 15
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_meetings_source_meeting_id",
+        "sql_classification": "static_literal",
+        "line": 23
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 26
+      }
+    ]
+  },
+  {
+    "stem": "0028_public_shares",
+    "revision": "0028",
+    "down_revision": "0027",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "public_shares",
+        "sql_classification": "static_literal",
+        "line": 46
+      },
+      {
+        "kind": "create_index",
+        "target": "uq_public_shares_active_root",
+        "sql_classification": "static_literal",
+        "line": 66
+      },
+      {
+        "kind": "execute",
+        "target": "call:sa.text",
+        "sql_classification": "parameterized",
+        "line": 69
+      }
+    ]
+  },
+  {
+    "stem": "0029_antigravity_usage_credits",
+    "revision": "0029_antigravity_usage_credits",
+    "down_revision": "0028",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "account_usage_samples",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "add_column",
+        "target": "account_usage_samples",
+        "sql_classification": "static_literal",
+        "line": 15
+      }
+    ]
+  },
+  {
+    "stem": "0030_runtime_generations",
+    "revision": "0030_runtime_generations",
+    "down_revision": "0029_antigravity_usage_credits",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "runs",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_table",
+        "target": "runtime_generations",
+        "sql_classification": "static_literal",
+        "line": 16
+      },
+      {
+        "kind": "create_table",
+        "target": "runtime_control",
+        "sql_classification": "static_literal",
+        "line": 25
+      },
+      {
+        "kind": "create_table",
+        "target": "runtime_leases",
+        "sql_classification": "static_literal",
+        "line": 29
+      },
+      {
+        "kind": "create_table",
+        "target": "runtime_commands",
+        "sql_classification": "static_literal",
+        "line": 39
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_runtime_commands_generation_id",
+        "sql_classification": "static_literal",
+        "line": 48
+      },
+      {
+        "kind": "create_index",
+        "target": "'ix_runtime_leases_' + column",
+        "sql_classification": "unknown",
+        "line": 38
+      }
+    ]
+  },
+  {
+    "stem": "0031_notifications",
+    "revision": "0031_notifications",
+    "down_revision": "0030_runtime_generations",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "notifications",
+        "sql_classification": "static_literal",
+        "line": 13
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_notifications_category",
+        "sql_classification": "static_literal",
+        "line": 22
+      }
+    ]
+  },
+  {
+    "stem": "0032_weather_briefings",
+    "revision": "0032_weather_briefings",
+    "down_revision": "0031_notifications",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "weather_briefings",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_weather_briefings_day",
+        "sql_classification": "static_literal",
+        "line": 36
+      },
+      {
+        "kind": "add_column",
+        "target": "notifications",
+        "sql_classification": "static_literal",
+        "line": 37
+      },
+      {
+        "kind": "create_index",
+        "target": "uq_notifications_dedupe_key",
+        "sql_classification": "static_literal",
+        "line": 38
+      }
+    ]
+  },
+  {
+    "stem": "0033_weather_analysis_engine",
+    "revision": "0033_weather_analysis_engine",
+    "down_revision": "0032_weather_briefings",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "weather_briefings",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "add_column",
+        "target": "weather_briefings",
+        "sql_classification": "static_literal",
+        "line": 15
+      },
+      {
+        "kind": "add_column",
+        "target": "weather_briefings",
+        "sql_classification": "static_literal",
+        "line": 16
+      }
+    ]
+  },
+  {
+    "stem": "0034_knowledge_ledger",
+    "revision": "0034_knowledge_ledger",
+    "down_revision": "0033_weather_analysis_engine",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "execute",
+        "target": "statement",
+        "sql_classification": "unknown",
+        "line": 50
+      }
+    ]
+  },
+  {
+    "stem": "0035_qwen_token_usage",
+    "revision": "0035_qwen_token_usage",
+    "down_revision": "0034_knowledge_ledger",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "qwen_token_usage",
+        "sql_classification": "static_literal",
+        "line": 13
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_qwen_token_usage_recorded_at",
+        "sql_classification": "static_literal",
+        "line": 27
+      }
+    ]
+  },
+  {
+    "stem": "0036_system_resource_samples",
+    "revision": "0036_system_resource_samples",
+    "down_revision": "0035_qwen_token_usage",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "system_resource_samples",
+        "sql_classification": "static_literal",
+        "line": 13
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_system_resource_samples_sampled_at",
+        "sql_classification": "static_literal",
+        "line": 25
+      }
+    ]
+  },
+  {
+    "stem": "0037_worker_routing",
+    "revision": "0037_worker_routing",
+    "down_revision": "0036_system_resource_samples",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "sessions",
+        "sql_classification": "static_literal",
+        "line": 13
+      },
+      {
+        "kind": "add_column",
+        "target": "sessions",
+        "sql_classification": "static_literal",
+        "line": 14
+      }
+    ]
+  },
+  {
+    "stem": "0038_qwen_flash_usage",
+    "revision": "0038_qwen_flash_usage",
+    "down_revision": "0037_worker_routing",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "qwen_flash_usage",
+        "sql_classification": "static_literal",
+        "line": 13
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_qwen_flash_usage_recorded_at",
+        "sql_classification": "static_literal",
+        "line": 26
+      }
+    ]
+  },
+  {
+    "stem": "0039_ops_log_issues",
+    "revision": "0039_ops_log_issues",
+    "down_revision": "0038_qwen_flash_usage",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "ops_issues",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_issues_source",
+        "sql_classification": "static_literal",
+        "line": 38
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_issues_last_seen",
+        "sql_classification": "static_literal",
+        "line": 39
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_issues_status_last_seen",
+        "sql_classification": "static_literal",
+        "line": 40
+      },
+      {
+        "kind": "create_table",
+        "target": "ops_events",
+        "sql_classification": "static_literal",
+        "line": 41
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_events_occurred_at",
+        "sql_classification": "static_literal",
+        "line": 60
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_events_release",
+        "sql_classification": "static_literal",
+        "line": 61
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_events_ref",
+        "sql_classification": "static_literal",
+        "line": 62
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_events_issue_occurred",
+        "sql_classification": "static_literal",
+        "line": 63
+      },
+      {
+        "kind": "create_table",
+        "target": "ops_issue_stats",
+        "sql_classification": "static_literal",
+        "line": 64
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_issue_stats_bucket",
+        "sql_classification": "static_literal",
+        "line": 72
+      },
+      {
+        "kind": "create_table",
+        "target": "ops_ingest_cursors",
+        "sql_classification": "static_literal",
+        "line": 73
+      }
+    ]
+  },
+  {
+    "stem": "0040_ops_event_receipts",
+    "revision": "0040_ops_event_receipts",
+    "down_revision": "0039_ops_log_issues",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "ops_event_receipts",
+        "sql_classification": "static_literal",
+        "line": 13
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_ops_event_receipts_created_at",
+        "sql_classification": "static_literal",
+        "line": 18
+      },
+      {
+        "kind": "execute",
+        "target": "INSERT INTO ops_event_receipts (dedupe_key) SELECT dedupe_key FROM ops_events WHERE dedupe_key IS NOT NULL ON CONFLICT DO NOTHING",
+        "sql_classification": "static_literal",
+        "line": 19
+      }
+    ]
+  },
+  {
+    "stem": "0041_reverse_jobs",
+    "revision": "0041_reverse_jobs",
+    "down_revision": "0040_ops_event_receipts",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "reverse_jobs",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_reverse_jobs_status",
+        "sql_classification": "static_literal",
+        "line": 27
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_reverse_jobs_updated_at",
+        "sql_classification": "static_literal",
+        "line": 28
+      }
+    ]
+  },
+  {
+    "stem": "0042_artcraft_tasks",
+    "revision": "0042_artcraft_tasks",
+    "down_revision": "0041_reverse_jobs",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "artcraft_tasks",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_artcraft_tasks_category_updated",
+        "sql_classification": "static_literal",
+        "line": 30
+      }
+    ]
+  },
+  {
+    "stem": "0043_reverse_jobs_jsonb",
+    "revision": "0043_reverse_jobs_jsonb",
+    "down_revision": "0042_artcraft_tasks",
+    "branch_labels": [],
+    "ddl_call_sites": []
+  },
+  {
+    "stem": "0044_reverse_reconstruction",
+    "revision": "0044_reverse_reconstruction",
+    "down_revision": "0043_reverse_jobs_jsonb",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "reverse_jobs",
+        "sql_classification": "static_literal",
+        "line": 16
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_reverse_jobs_session_id",
+        "sql_classification": "static_literal",
+        "line": 17
+      },
+      {
+        "kind": "add_column",
+        "target": "reverse_jobs",
+        "sql_classification": "static_literal",
+        "line": 14
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 15
+      }
+    ]
+  },
+  {
+    "stem": "0045_tossinvest_runs",
+    "revision": "0045_tossinvest_runs",
+    "down_revision": "0044_reverse_reconstruction",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "tossinvest_sync_runs",
+        "sql_classification": "static_literal",
+        "line": 15
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_tossinvest_sync_runs_status",
+        "sql_classification": "static_literal",
+        "line": 31
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_tossinvest_sync_runs_created",
+        "sql_classification": "static_literal",
+        "line": 34
+      }
+    ]
+  },
+  {
+    "stem": "0046_notebooklm",
+    "revision": "0046_notebooklm",
+    "down_revision": "0045_tossinvest_runs",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "notebooklm_accounts",
+        "sql_classification": "static_literal",
+        "line": 19
+      },
+      {
+        "kind": "create_table",
+        "target": "notebooklm_sources",
+        "sql_classification": "static_literal",
+        "line": 32
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_notebooklm_sources_account_id",
+        "sql_classification": "static_literal",
+        "line": 47
+      },
+      {
+        "kind": "create_table",
+        "target": "notebooklm_jobs",
+        "sql_classification": "static_literal",
+        "line": 48
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_notebooklm_jobs_account_status",
+        "sql_classification": "static_literal",
+        "line": 66
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_notebooklm_jobs_updated_at",
+        "sql_classification": "static_literal",
+        "line": 67
+      }
+    ]
+  },
+  {
+    "stem": "0047_game_studio",
+    "revision": "0047_game_studio",
+    "down_revision": "0046_notebooklm",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "game_projects",
+        "sql_classification": "static_literal",
+        "line": 23
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_game_projects_pms_project_id",
+        "sql_classification": "static_literal",
+        "line": 36
+      },
+      {
+        "kind": "create_table",
+        "target": "game_builds",
+        "sql_classification": "static_literal",
+        "line": 37
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_game_builds_game_id",
+        "sql_classification": "static_literal",
+        "line": 59
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_game_builds_run_id",
+        "sql_classification": "static_literal",
+        "line": 60
+      },
+      {
+        "kind": "create_table",
+        "target": "game_feedbacks",
+        "sql_classification": "static_literal",
+        "line": 61
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_game_feedbacks_game_id",
+        "sql_classification": "static_literal",
+        "line": 73
+      }
+    ]
+  },
+  {
+    "stem": "0048_game_active_build",
+    "revision": "0048_game_active_build",
+    "down_revision": "0047_game_studio",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "game_projects",
+        "sql_classification": "static_literal",
+        "line": 15
+      },
+      {
+        "kind": "add_column",
+        "target": "game_builds",
+        "sql_classification": "static_literal",
+        "line": 16
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "fk_game_builds_restored_from",
+        "sql_classification": "static_literal",
+        "line": 17
+      }
+    ]
+  },
+  {
+    "stem": "0049_google_accounts",
+    "revision": "0049_google_accounts",
+    "down_revision": "0048_game_active_build",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "google_accounts",
+        "sql_classification": "static_literal",
+        "line": 29
+      },
+      {
+        "kind": "execute",
+        "target": "\n        INSERT INTO google_accounts\n            (account_id, state, message, last_error_code, last_ok_at, last_checked_at, reauth_notified_at,\n             created_at, updated_at)\n        SELECT account_id,\n               CASE\n                   WHEN state = 'reauth_required' THEN 'reauth_required'\n                   WHEN state = 'session_saved' THEN 'session_saved'\n                   WHEN state IN ('ready', 'cooldown', 'blocked') AND last_ok_at IS NOT NULL THEN 'ready'\n                   WHEN state IN ('ready', 'cooldown', 'blocked') THEN 'session_saved'\n                   ELSE 'login_required'\n               END,\n               CASE WHEN state IN ('reauth_required', 'session_saved', 'login_required') THEN message ELSE NULL END,\n               CASE WHEN state = 'reauth_required' THEN last_error_code ELSE NULL END,\n               last_ok_at, last_checked_at, reauth_notified_at, created_at, updated_at\n        FROM notebooklm_accounts\n        ON CONFLICT (account_id) DO NOTHING\n        ",
+        "sql_classification": "static_literal",
+        "line": 43
+      }
+    ]
+  },
+  {
+    "stem": "0050_login_throttle_shadow",
+    "revision": "0050_login_throttle_shadow",
+    "down_revision": "0049_google_accounts",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "login_throttle",
+        "sql_classification": "static_literal",
+        "line": 19
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_login_throttle_updated_at",
+        "sql_classification": "static_literal",
+        "line": 33
+      },
+      {
+        "kind": "create_table",
+        "target": "login_bucket",
+        "sql_classification": "static_literal",
+        "line": 34
+      },
+      {
+        "kind": "create_table",
+        "target": "login_attempts",
+        "sql_classification": "static_literal",
+        "line": 41
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_login_attempts_reserved_at",
+        "sql_classification": "static_literal",
+        "line": 52
+      }
+    ]
+  },
+  {
+    "stem": "0051_scope_memo_event",
+    "revision": "0051_scope_memo_event",
+    "down_revision": "0050_login_throttle_shadow",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "table",
+        "sql_classification": "unknown",
+        "line": 20
+      },
+      {
+        "kind": "create_index",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 26
+      }
+    ]
+  },
+  {
+    "stem": "0052_artifact_area_byproducts",
+    "revision": "0052_artifact_area_byproducts",
+    "down_revision": "0051_scope_memo_event",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "execute",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 51
+      },
+      {
+        "kind": "execute",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 55
+      }
+    ]
+  },
+  {
+    "stem": "0053_kb_core",
+    "revision": "0053_kb_core",
+    "down_revision": "0052_artifact_area_byproducts",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "kb_sources",
+        "sql_classification": "static_literal",
+        "line": 19
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_kb_sources_source_key",
+        "sql_classification": "static_literal",
+        "line": 35
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_kb_sources_sha256",
+        "sql_classification": "static_literal",
+        "line": 36
+      },
+      {
+        "kind": "create_table",
+        "target": "kb_documents",
+        "sql_classification": "static_literal",
+        "line": 37
+      },
+      {
+        "kind": "create_table",
+        "target": "kb_revisions",
+        "sql_classification": "static_literal",
+        "line": 47
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_kb_revisions_document_id",
+        "sql_classification": "static_literal",
+        "line": 72
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_kb_revisions_source_id",
+        "sql_classification": "static_literal",
+        "line": 73
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_kb_revisions_supersedes_id",
+        "sql_classification": "static_literal",
+        "line": 74
+      },
+      {
+        "kind": "create_table",
+        "target": "kb_passages",
+        "sql_classification": "static_literal",
+        "line": 75
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_kb_passages_revision_id",
+        "sql_classification": "static_literal",
+        "line": 93
+      }
+    ]
+  },
+  {
+    "stem": "0054_kb_evidence",
+    "revision": "0054_kb_evidence",
+    "down_revision": "0053_kb_core",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "kb_evidence",
+        "sql_classification": "static_literal",
+        "line": 43
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_kb_evidence_passage_id",
+        "sql_classification": "static_literal",
+        "line": 60
+      },
+      {
+        "kind": "execute",
+        "target": "IMMUTABLE_FUNCTION",
+        "sql_classification": "unknown",
+        "line": 61
+      },
+      {
+        "kind": "execute",
+        "target": "SPAN_FUNCTION",
+        "sql_classification": "unknown",
+        "line": 67
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER kb_evidence_validate BEFORE INSERT ON kb_evidence FOR EACH ROW EXECUTE FUNCTION kb_validate_evidence_span()",
+        "sql_classification": "static_literal",
+        "line": 68
+      },
+      {
+        "kind": "execute",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 63
+      }
+    ]
+  },
+  {
+    "stem": "0055_kb_immutability_hardening",
+    "revision": "0055_kb_immutability_hardening",
+    "down_revision": "0054_kb_evidence",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_foreign_key",
+        "target": "kb_revisions_document_id_fkey",
+        "sql_classification": "static_literal",
+        "line": 28
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "kb_passages_revision_id_fkey",
+        "sql_classification": "static_literal",
+        "line": 38
+      },
+      {
+        "kind": "create_foreign_key",
+        "target": "kb_evidence_passage_id_fkey",
+        "sql_classification": "static_literal",
+        "line": 48
+      },
+      {
+        "kind": "execute",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 20
+      },
+      {
+        "kind": "execute",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 21
+      }
+    ]
+  },
+  {
+    "stem": "0056_research_lab",
+    "revision": "0056_research_lab",
+    "down_revision": "0055_kb_immutability_hardening",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "execute",
+        "target": "\nCREATE TABLE research_studies (\n\tid UUID NOT NULL, \n\ttitle VARCHAR(240) NOT NULL, \n\tgoal TEXT NOT NULL, \n\tscope VARCHAR(20) NOT NULL, \n\tphase VARCHAR(100) NOT NULL, \n\tenvironment JSONB NOT NULL, \n\tcriteria JSONB NOT NULL, \n\tnext_actions JSONB NOT NULL, \n\tversion INTEGER NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tupdated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tCONSTRAINT ck_research_scope CHECK (scope in ('personal','work'))\n)\n\n",
+        "sql_classification": "static_literal",
+        "line": 12
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_studies_scope ON research_studies (scope)",
+        "sql_classification": "static_literal",
+        "line": 15
+      },
+      {
+        "kind": "execute",
+        "target": "\nCREATE TABLE research_nodes (\n\tid UUID NOT NULL, \n\tstudy_id UUID NOT NULL, \n\tkind VARCHAR(100) NOT NULL, \n\ttitle VARCHAR(240) NOT NULL, \n\tsummary TEXT NOT NULL, \n\tconditions JSONB NOT NULL, \n\tdetails JSONB NOT NULL, \n\tepistemic_status VARCHAR(40) NOT NULL, \n\tevidence_id UUID, \n\tsupersedes_id UUID, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(study_id) REFERENCES research_studies (id), \n\tFOREIGN KEY(evidence_id) REFERENCES kb_evidence (id), \n\tFOREIGN KEY(supersedes_id) REFERENCES research_nodes (id)\n)\n\n",
+        "sql_classification": "static_literal",
+        "line": 16
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_nodes_evidence_id ON research_nodes (evidence_id)",
+        "sql_classification": "static_literal",
+        "line": 19
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_nodes_kind ON research_nodes (kind)",
+        "sql_classification": "static_literal",
+        "line": 22
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_nodes_study_id ON research_nodes (study_id)",
+        "sql_classification": "static_literal",
+        "line": 23
+      },
+      {
+        "kind": "execute",
+        "target": "\nCREATE TABLE research_relations (\n\tid UUID NOT NULL, \n\tstudy_id UUID NOT NULL, \n\tfrom_id UUID NOT NULL, \n\tto_id UUID NOT NULL, \n\tpredicate VARCHAR(100) NOT NULL, \n\trationale TEXT NOT NULL, \n\tconditions JSONB NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(study_id) REFERENCES research_studies (id), \n\tFOREIGN KEY(from_id) REFERENCES research_nodes (id), \n\tFOREIGN KEY(to_id) REFERENCES research_nodes (id)\n)\n\n",
+        "sql_classification": "static_literal",
+        "line": 24
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_relations_from_id ON research_relations (from_id)",
+        "sql_classification": "static_literal",
+        "line": 27
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_relations_study_id ON research_relations (study_id)",
+        "sql_classification": "static_literal",
+        "line": 30
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_relations_to_id ON research_relations (to_id)",
+        "sql_classification": "static_literal",
+        "line": 33
+      },
+      {
+        "kind": "execute",
+        "target": "\nCREATE TABLE research_experiments (\n\tid UUID NOT NULL, \n\tstudy_id UUID NOT NULL, \n\ttitle VARCHAR(240) NOT NULL, \n\thypothesis TEXT NOT NULL, \n\trationale TEXT NOT NULL, \n\tadapter VARCHAR(100) NOT NULL, \n\tstate VARCHAR(30) NOT NULL, \n\tconfig JSONB NOT NULL, \n\tenvironment JSONB NOT NULL, \n\tbudget JSONB NOT NULL, \n\treceipt JSONB NOT NULL, \n\tmethod_ids JSONB NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tfinished_at TIMESTAMP WITH TIME ZONE, \n\tPRIMARY KEY (id), \n\tCONSTRAINT ck_research_execution_state CHECK (state in ('queued','running','paused','blocked','completed','failed','cancelled','needs_verification')), \n\tFOREIGN KEY(study_id) REFERENCES research_studies (id)\n)\n\n",
+        "sql_classification": "static_literal",
+        "line": 34
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_experiments_state ON research_experiments (state)",
+        "sql_classification": "static_literal",
+        "line": 37
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_experiments_study_id ON research_experiments (study_id)",
+        "sql_classification": "static_literal",
+        "line": 40
+      },
+      {
+        "kind": "execute",
+        "target": "\nCREATE TABLE research_events (\n\tid UUID NOT NULL, \n\tstudy_id UUID NOT NULL, \n\tkind VARCHAR(100) NOT NULL, \n\tactor VARCHAR(100) NOT NULL, \n\tpayload JSONB NOT NULL, \n\tcreated_at TIMESTAMP WITH TIME ZONE NOT NULL, \n\tPRIMARY KEY (id), \n\tFOREIGN KEY(study_id) REFERENCES research_studies (id)\n)\n\n",
+        "sql_classification": "static_literal",
+        "line": 43
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE INDEX ix_research_events_study_id ON research_events (study_id)",
+        "sql_classification": "static_literal",
+        "line": 46
+      },
+      {
+        "kind": "execute",
+        "target": "\nCREATE OR REPLACE FUNCTION research_immutable_row() RETURNS trigger AS $$\nBEGIN\n  RAISE EXCEPTION 'research history is immutable; append a correction' USING ERRCODE='23514';\nEND;\n$$ LANGUAGE plpgsql\n",
+        "sql_classification": "static_literal",
+        "line": 47
+      },
+      {
+        "kind": "execute",
+        "target": "\nCREATE OR REPLACE FUNCTION research_validate_relation() RETURNS trigger AS $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM research_nodes WHERE id=NEW.from_id AND study_id=NEW.study_id)\n    OR NOT EXISTS (SELECT 1 FROM research_nodes WHERE id=NEW.to_id AND study_id=NEW.study_id) THEN\n    RAISE EXCEPTION 'research relation study mismatch' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql\n",
+        "sql_classification": "static_literal",
+        "line": 50
+      },
+      {
+        "kind": "execute",
+        "target": "\nCREATE OR REPLACE FUNCTION research_validate_node() RETURNS trigger AS $$\nBEGIN\n  IF NEW.kind IN ('claim','finding') AND NEW.evidence_id IS NULL THEN\n    RAISE EXCEPTION 'source evidence required' USING ERRCODE='23514';\n  END IF;\n  IF NEW.evidence_id IS NOT NULL AND NOT EXISTS (\n    SELECT 1 FROM kb_evidence e JOIN kb_passages u ON u.id=e.passage_id\n    JOIN kb_revisions r ON r.id=u.revision_id JOIN kb_sources source ON source.id=r.source_id\n    JOIN research_studies s ON s.id=NEW.study_id\n    WHERE e.id=NEW.evidence_id AND source.origin_meta->>'research_scope'=s.scope) THEN\n    RAISE EXCEPTION 'research evidence scope mismatch' USING ERRCODE='23514';\n  END IF;\n  IF NEW.supersedes_id IS NOT NULL AND NOT EXISTS (\n    SELECT 1 FROM research_nodes WHERE id=NEW.supersedes_id AND study_id=NEW.study_id) THEN\n    RAISE EXCEPTION 'research correction study mismatch' USING ERRCODE='23514';\n  END IF;\n  RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql\n",
+        "sql_classification": "static_literal",
+        "line": 53
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER research_nodes_immutable BEFORE UPDATE OR DELETE ON research_nodes FOR EACH ROW EXECUTE FUNCTION research_immutable_row()",
+        "sql_classification": "static_literal",
+        "line": 56
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER research_relations_immutable BEFORE UPDATE OR DELETE ON research_relations FOR EACH ROW EXECUTE FUNCTION research_immutable_row()",
+        "sql_classification": "static_literal",
+        "line": 59
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER research_events_immutable BEFORE UPDATE OR DELETE ON research_events FOR EACH ROW EXECUTE FUNCTION research_immutable_row()",
+        "sql_classification": "static_literal",
+        "line": 62
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER research_relation_validate BEFORE INSERT ON research_relations FOR EACH ROW EXECUTE FUNCTION research_validate_relation()",
+        "sql_classification": "static_literal",
+        "line": 65
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER research_node_validate BEFORE INSERT ON research_nodes FOR EACH ROW EXECUTE FUNCTION research_validate_node()",
+        "sql_classification": "static_literal",
+        "line": 68
+      }
+    ]
+  },
+  {
+    "stem": "0057_scheduled_actions",
+    "revision": "0057_scheduled_actions",
+    "down_revision": "0056_research_lab",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "scheduled_actions",
+        "sql_classification": "static_literal",
+        "line": 19
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_scheduled_actions_action_type",
+        "sql_classification": "static_literal",
+        "line": 37
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_scheduled_actions_due_at",
+        "sql_classification": "static_literal",
+        "line": 38
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_scheduled_actions_status",
+        "sql_classification": "static_literal",
+        "line": 39
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_scheduled_actions_owner_id",
+        "sql_classification": "static_literal",
+        "line": 40
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_scheduled_actions_leased_until",
+        "sql_classification": "static_literal",
+        "line": 41
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_scheduled_actions_status_due",
+        "sql_classification": "static_literal",
+        "line": 42
+      }
+    ]
+  },
+  {
+    "stem": "0058_kb_immutability_truncate",
+    "revision": "0058_kb_immutability_truncate",
+    "down_revision": "0057_scheduled_actions",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "execute",
+        "target": "TRUNCATE_FUNCTION",
+        "sql_classification": "unknown",
+        "line": 69
+      },
+      {
+        "kind": "execute",
+        "target": "REVISION_VALIDATE_FUNCTION",
+        "sql_classification": "unknown",
+        "line": 77
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER kb_revisions_validate BEFORE INSERT ON kb_revisions FOR EACH ROW EXECUTE FUNCTION kb_validate_revision()",
+        "sql_classification": "static_literal",
+        "line": 78
+      },
+      {
+        "kind": "execute",
+        "target": "PASSAGE_VALIDATE_FUNCTION",
+        "sql_classification": "unknown",
+        "line": 84
+      },
+      {
+        "kind": "execute",
+        "target": "CREATE TRIGGER kb_passages_validate BEFORE INSERT ON kb_passages FOR EACH ROW EXECUTE FUNCTION kb_validate_passage()",
+        "sql_classification": "static_literal",
+        "line": 85
+      },
+      {
+        "kind": "execute",
+        "target": "[interpolated f-string]",
+        "sql_classification": "interpolated",
+        "line": 71
+      }
+    ]
+  },
+  {
+    "stem": "0059_collector_intake",
+    "revision": "0059_collector_intake",
+    "down_revision": "0058_kb_immutability_truncate",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "collector_jobs",
+        "sql_classification": "static_literal",
+        "line": 24
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_collector_jobs_status",
+        "sql_classification": "static_literal",
+        "line": 56
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_collector_jobs_tenant_scope",
+        "sql_classification": "static_literal",
+        "line": 57
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_collector_jobs_claim",
+        "sql_classification": "static_literal",
+        "line": 58
+      },
+      {
+        "kind": "create_table",
+        "target": "collector_outbox",
+        "sql_classification": "static_literal",
+        "line": 60
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_collector_outbox_status",
+        "sql_classification": "static_literal",
+        "line": 90
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_collector_outbox_job_id",
+        "sql_classification": "static_literal",
+        "line": 91
+      }
+    ]
+  },
+  {
+    "stem": "0060_collector_job_runtime",
+    "revision": "0060_collector_job_runtime",
+    "down_revision": "0059_collector_intake",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "add_column",
+        "target": "collector_jobs",
+        "sql_classification": "static_literal",
+        "line": 21
+      },
+      {
+        "kind": "add_column",
+        "target": "collector_jobs",
+        "sql_classification": "static_literal",
+        "line": 22
+      },
+      {
+        "kind": "add_column",
+        "target": "collector_jobs",
+        "sql_classification": "static_literal",
+        "line": 26
+      },
+      {
+        "kind": "add_column",
+        "target": "collector_jobs",
+        "sql_classification": "static_literal",
+        "line": 27
+      }
+    ]
+  },
+  {
+    "stem": "0061_local_tts",
+    "revision": "0061_local_tts",
+    "down_revision": "0060_collector_job_runtime",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "tts_jobs",
+        "sql_classification": "static_literal",
+        "line": 18
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_tts_jobs_status_owner_created",
+        "sql_classification": "static_literal",
+        "line": 30
+      },
+      {
+        "kind": "create_table",
+        "target": "tts_cache",
+        "sql_classification": "static_literal",
+        "line": 31
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_tts_cache_last_hit_at",
+        "sql_classification": "static_literal",
+        "line": 47
+      }
+    ]
+  },
+  {
+    "stem": "0062_delivery_change_sets",
+    "revision": "0062_delivery_change_sets",
+    "down_revision": "0061_local_tts",
+    "branch_labels": [],
+    "ddl_call_sites": [
+      {
+        "kind": "create_table",
+        "target": "change_sets",
+        "sql_classification": "static_literal",
+        "line": 28
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_change_sets_status_submitted_at",
+        "sql_classification": "static_literal",
+        "line": 59
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_change_sets_session_id",
+        "sql_classification": "static_literal",
+        "line": 64
+      },
+      {
+        "kind": "create_index",
+        "target": "ix_change_sets_failure_sig",
+        "sql_classification": "static_literal",
+        "line": 69
+      }
+    ]
+  }
+]

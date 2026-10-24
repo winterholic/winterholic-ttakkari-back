@@ -1,0 +1,576 @@
+[
+  {
+    "path": "src/AppErrorBoundary.test.tsx",
+    "tests_estimated": 1,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1120
+  },
+  {
+    "path": "src/api/client.test.ts",
+    "tests_estimated": 7,
+    "describes": 3,
+    "category": "API Client Contract",
+    "size_bytes": 4008
+  },
+  {
+    "path": "src/api/notifications.test.ts",
+    "tests_estimated": 1,
+    "describes": 0,
+    "category": "API Client Contract",
+    "size_bytes": 1299
+  },
+  {
+    "path": "src/api/sharing.test.ts",
+    "tests_estimated": 3,
+    "describes": 0,
+    "category": "API Client Contract",
+    "size_bytes": 2614
+  },
+  {
+    "path": "src/features/accounts/AccountsSection.test.tsx",
+    "tests_estimated": 13,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 14611
+  },
+  {
+    "path": "src/features/accounts/OverrideDialog.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 3722
+  },
+  {
+    "path": "src/features/accounts/UsageDialog.test.tsx",
+    "tests_estimated": 19,
+    "describes": 5,
+    "category": "UI/Component",
+    "size_bytes": 16192
+  },
+  {
+    "path": "src/features/canvas/CanvasBoundary.test.tsx",
+    "tests_estimated": 1,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 967
+  },
+  {
+    "path": "src/features/canvas/layout.test.ts",
+    "tests_estimated": 5,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 2540
+  },
+  {
+    "path": "src/features/canvas/usePanZoom.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1948
+  },
+  {
+    "path": "src/features/chat/Attachments.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 2388
+  },
+  {
+    "path": "src/features/chat/Composer.paste.test.tsx",
+    "tests_estimated": 11,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 5474
+  },
+  {
+    "path": "src/features/chat/Composer.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1521
+  },
+  {
+    "path": "src/features/chat/DeskFeedback.test.tsx",
+    "tests_estimated": 5,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 4777
+  },
+  {
+    "path": "src/features/chat/RunBlock.desk.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 2527
+  },
+  {
+    "path": "src/features/chat/RunCard.test.tsx",
+    "tests_estimated": 3,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 2584
+  },
+  {
+    "path": "src/features/chat/leadOf.test.ts",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1093
+  },
+  {
+    "path": "src/features/chat/runView.test.ts",
+    "tests_estimated": 11,
+    "describes": 4,
+    "category": "UI/Component",
+    "size_bytes": 6149
+  },
+  {
+    "path": "src/features/contextlib/contextlib.test.ts",
+    "tests_estimated": 13,
+    "describes": 4,
+    "category": "UI/Component",
+    "size_bytes": 6046
+  },
+  {
+    "path": "src/features/knowledge/KnowledgeTab.test.tsx",
+    "tests_estimated": 4,
+    "describes": 0,
+    "category": "Domain Feature",
+    "size_bytes": 4260
+  },
+  {
+    "path": "src/features/markdown/AppMarkdown.test.tsx",
+    "tests_estimated": 8,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 6076
+  },
+  {
+    "path": "src/features/markdown/linkTarget.test.ts",
+    "tests_estimated": 12,
+    "describes": 3,
+    "category": "UI/Component",
+    "size_bytes": 5642
+  },
+  {
+    "path": "src/features/meetings/MeetingSharing.test.tsx",
+    "tests_estimated": 8,
+    "describes": 0,
+    "category": "Domain Feature",
+    "size_bytes": 8917
+  },
+  {
+    "path": "src/features/meetings/TranscriptView.test.tsx",
+    "tests_estimated": 25,
+    "describes": 7,
+    "category": "Domain Feature",
+    "size_bytes": 23487
+  },
+  {
+    "path": "src/features/meetings/meetingHtml.test.ts",
+    "tests_estimated": 5,
+    "describes": 0,
+    "category": "Domain Feature",
+    "size_bytes": 6732
+  },
+  {
+    "path": "src/features/meetings/meetings.test.tsx",
+    "tests_estimated": 23,
+    "describes": 7,
+    "category": "Domain Feature",
+    "size_bytes": 23673
+  },
+  {
+    "path": "src/features/meetings/retranscribe.test.tsx",
+    "tests_estimated": 13,
+    "describes": 3,
+    "category": "Domain Feature",
+    "size_bytes": 12481
+  },
+  {
+    "path": "src/features/meetings/transcript.test.ts",
+    "tests_estimated": 22,
+    "describes": 8,
+    "category": "Domain Feature",
+    "size_bytes": 10933
+  },
+  {
+    "path": "src/features/onboarding/Onboarding.test.tsx",
+    "tests_estimated": 3,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 2285
+  },
+  {
+    "path": "src/features/planner/MemoEditor.test.tsx",
+    "tests_estimated": 15,
+    "describes": 3,
+    "category": "Domain Feature",
+    "size_bytes": 13802
+  },
+  {
+    "path": "src/features/planner/caret.test.tsx",
+    "tests_estimated": 7,
+    "describes": 2,
+    "category": "Domain Feature",
+    "size_bytes": 4815
+  },
+  {
+    "path": "src/features/planner/lunar.test.ts",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "Domain Feature",
+    "size_bytes": 1489
+  },
+  {
+    "path": "src/features/planner/planner.test.ts",
+    "tests_estimated": 11,
+    "describes": 3,
+    "category": "Domain Feature",
+    "size_bytes": 5062
+  },
+  {
+    "path": "src/features/pms/pms.test.tsx",
+    "tests_estimated": 22,
+    "describes": 9,
+    "category": "Domain Feature",
+    "size_bytes": 16103
+  },
+  {
+    "path": "src/features/push/PushSettings.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "PWA & Push Service",
+    "size_bytes": 2687
+  },
+  {
+    "path": "src/features/push/notificationClick.test.ts",
+    "tests_estimated": 8,
+    "describes": 1,
+    "category": "PWA & Push Service",
+    "size_bytes": 4102
+  },
+  {
+    "path": "src/features/push/pushState.test.ts",
+    "tests_estimated": 5,
+    "describes": 2,
+    "category": "PWA & Push Service",
+    "size_bytes": 1449
+  },
+  {
+    "path": "src/features/system/ResourcesPanel.test.tsx",
+    "tests_estimated": 10,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 9930
+  },
+  {
+    "path": "src/features/tasks/buildTree.test.ts",
+    "tests_estimated": 4,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 2010
+  },
+  {
+    "path": "src/features/tasks/dayGroups.test.ts",
+    "tests_estimated": 4,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 1528
+  },
+  {
+    "path": "src/features/transfer/transferStore.test.ts",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 3291
+  },
+  {
+    "path": "src/features/viewer/FollowupComposer.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "Artifact Viewer & Security",
+    "size_bytes": 2192
+  },
+  {
+    "path": "src/features/viewer/ViewerErrorBoundary.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "Artifact Viewer & Security",
+    "size_bytes": 2047
+  },
+  {
+    "path": "src/features/viewer/kinds.test.ts",
+    "tests_estimated": 13,
+    "describes": 5,
+    "category": "Artifact Viewer & Security",
+    "size_bytes": 4432
+  },
+  {
+    "path": "src/features/viewer/renderers/CodeView.test.tsx",
+    "tests_estimated": 6,
+    "describes": 1,
+    "category": "Artifact Viewer & Security",
+    "size_bytes": 2962
+  },
+  {
+    "path": "src/features/viewer/renderers/clip.test.ts",
+    "tests_estimated": 6,
+    "describes": 1,
+    "category": "Artifact Viewer & Security",
+    "size_bytes": 1335
+  },
+  {
+    "path": "src/features/viewer/renderers/highlight.test.ts",
+    "tests_estimated": 7,
+    "describes": 2,
+    "category": "Artifact Viewer & Security",
+    "size_bytes": 2552
+  },
+  {
+    "path": "src/features/viewer/staleChunk.test.tsx",
+    "tests_estimated": 1,
+    "describes": 1,
+    "category": "Artifact Viewer & Security",
+    "size_bytes": 4168
+  },
+  {
+    "path": "src/features/weather/WeatherPage.test.tsx",
+    "tests_estimated": 7,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 9504
+  },
+  {
+    "path": "src/features/weather/weatherData.test.ts",
+    "tests_estimated": 5,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 2848
+  },
+  {
+    "path": "src/hooks/useForegroundResync.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1078
+  },
+  {
+    "path": "src/hooks/useRunStream.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 2761
+  },
+  {
+    "path": "src/integration.test.ts",
+    "tests_estimated": 1,
+    "describes": 0,
+    "category": "E2E Backend Integration",
+    "size_bytes": 1153
+  },
+  {
+    "path": "src/pages/CalendarPage.test.tsx",
+    "tests_estimated": 1,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 1669
+  },
+  {
+    "path": "src/pages/ChecklistsPage.test.tsx",
+    "tests_estimated": 10,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 8873
+  },
+  {
+    "path": "src/pages/ContextLibraryPage.test.tsx",
+    "tests_estimated": 13,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 16684
+  },
+  {
+    "path": "src/pages/DeskHome.test.tsx",
+    "tests_estimated": 1,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 5097
+  },
+  {
+    "path": "src/pages/DesktopPaste.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 6462
+  },
+  {
+    "path": "src/pages/FailedTasksPage.test.tsx",
+    "tests_estimated": 1,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 2253
+  },
+  {
+    "path": "src/pages/LibraryPage.test.tsx",
+    "tests_estimated": 6,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 5585
+  },
+  {
+    "path": "src/pages/LoginPage.test.tsx",
+    "tests_estimated": 6,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 4498
+  },
+  {
+    "path": "src/pages/MemosPage.test.tsx",
+    "tests_estimated": 6,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 6505
+  },
+  {
+    "path": "src/pages/NotificationsPage.test.tsx",
+    "tests_estimated": 6,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 5079
+  },
+  {
+    "path": "src/pages/OpsLogsPage.test.tsx",
+    "tests_estimated": 6,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 7209
+  },
+  {
+    "path": "src/pages/OrchestrationFlow.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1218
+  },
+  {
+    "path": "src/pages/PublicMeetingPage.test.tsx",
+    "tests_estimated": 6,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 4736
+  },
+  {
+    "path": "src/pages/WorkspacePage.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 3226
+  },
+  {
+    "path": "src/pwaRegistration.test.ts",
+    "tests_estimated": 5,
+    "describes": 1,
+    "category": "PWA & Push Service",
+    "size_bytes": 2874
+  },
+  {
+    "path": "src/pwaUpdate.test.ts",
+    "tests_estimated": 9,
+    "describes": 3,
+    "category": "PWA & Push Service",
+    "size_bytes": 3277
+  },
+  {
+    "path": "src/shell/AppShell.test.tsx",
+    "tests_estimated": 17,
+    "describes": 2,
+    "category": "Shell & Navigation",
+    "size_bytes": 12595
+  },
+  {
+    "path": "src/shell/PageHeader.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "Shell & Navigation",
+    "size_bytes": 1307
+  },
+  {
+    "path": "src/shell/groupSessions.test.ts",
+    "tests_estimated": 5,
+    "describes": 3,
+    "category": "Shell & Navigation",
+    "size_bytes": 2478
+  },
+  {
+    "path": "src/shell/useKeyboardOpen.test.tsx",
+    "tests_estimated": 1,
+    "describes": 1,
+    "category": "Shell & Navigation",
+    "size_bytes": 926
+  },
+  {
+    "path": "src/ui/Art.test.tsx",
+    "tests_estimated": 3,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 1539
+  },
+  {
+    "path": "src/ui/Dialog.test.tsx",
+    "tests_estimated": 1,
+    "describes": 0,
+    "category": "UI/Component",
+    "size_bytes": 765
+  },
+  {
+    "path": "src/ui/EngineBadge.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1066
+  },
+  {
+    "path": "src/ui/FileButton.test.tsx",
+    "tests_estimated": 3,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 2194
+  },
+  {
+    "path": "src/ui/Select.test.tsx",
+    "tests_estimated": 5,
+    "describes": 2,
+    "category": "UI/Component",
+    "size_bytes": 5112
+  },
+  {
+    "path": "src/ui/dialogFocus.test.ts",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 998
+  },
+  {
+    "path": "src/ui/primitives.test.tsx",
+    "tests_estimated": 4,
+    "describes": 3,
+    "category": "UI/Component",
+    "size_bytes": 3768
+  },
+  {
+    "path": "src/ui/sheetGuard.test.ts",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1191
+  },
+  {
+    "path": "src/ui/useTheme.test.tsx",
+    "tests_estimated": 2,
+    "describes": 1,
+    "category": "UI/Component",
+    "size_bytes": 1800
+  }
+]

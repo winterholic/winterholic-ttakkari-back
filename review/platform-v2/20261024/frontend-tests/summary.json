@@ -1,0 +1,237 @@
+{
+  "audit_version": "20261024-corrected-candidate-fix2",
+  "verifier_binding": "fed2c630-a867-42f1-9574-4a92905de864",
+  "git": {
+    "front": {
+      "repo": "/Users/winterholic/development/projects/winterholic-ttakkari/front",
+      "sha": "630040b1b7007a219a93c9d3d4491fab714c555d",
+      "branch": "main",
+      "dirty": true,
+      "status_lines": [
+        "M docs/work-history/2026-10-17-design-system-1-2.md",
+        " M docs/work-history/2026-10-17-mascot-logo-art.md",
+        " M scripts/ui-sweep/fixtures-library.json",
+        " M scripts/ui-sweep/run.sh",
+        " M scripts/ui-sweep/stub.mjs",
+        " M scripts/ui-sweep/webkit-shots.mjs",
+        " M src/api/types.ts",
+        " M src/features/accounts/AccountsSection.test.tsx",
+        " M src/features/accounts/AccountsSection.tsx",
+        " M src/features/chat/Composer.tsx",
+        " M src/features/chat/composer.css",
+        " M src/features/meetings/NewMeetingForm.tsx",
+        " M src/features/meetings/TranscriptField.tsx",
+        " M src/features/pms/Board.tsx",
+        " M src/features/pms/pms.css",
+        " M src/features/pms/pms.test.tsx",
+        " M src/pages/AssistantPage.tsx",
+        " M src/pages/ChecklistsPage.tsx",
+        " M src/pages/ContextLibraryPage.tsx",
+        " M src/pages/LibraryPage.tsx",
+        " M src/pages/NotificationsPage.tsx",
+        " M src/pages/library.css",
+        " M src/pages/notifications.css",
+        " M src/pages/planner.css",
+        " M src/shell/PageHeader.tsx",
+        " M src/shell/notification-link.css",
+        " M src/ui/EngineBadge.tsx",
+        " M src/ui/engineBadge.css",
+        " M src/vendor/ttakkari/VERSION",
+        " M src/vendor/ttakkari/components.css",
+        "?? docs/work-history/2026-10-17-ios-webkit-ui-fixes.md",
+        "?? docs/work-history/2026-10-17-ui-design-flaw-diagnosis.md",
+        "?? src/shell/PageHeader.test.tsx",
+        "?? src/ui/FileButton.test.tsx",
+        "?? src/ui/FileButton.tsx",
+        "?? src/ui/fileButton.css",
+        "?? src/ui/useScrollFade.ts"
+      ]
+    },
+    "back": {
+      "repo": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-c-fix2",
+      "sha": "8663d64ce05b5c9739758025e0170e7842104c8c",
+      "branch": "audit/platform-v2-c-correction2-20261024",
+      "dirty": true,
+      "status_lines": [
+        "M docs/design/platform-v2/frontend-feature-map.csv",
+        " M docs/design/platform-v2/frontend-feature-map.json",
+        " M docs/design/platform-v2/frontend-feature-map.md",
+        " M docs/design/platform-v2/test-architecture-and-baseline.md",
+        " M docs/design/platform-v2/test-impact-proposal.md",
+        " M review/platform-v2/20261024/frontend-tests/backend-test-classification.json",
+        " M review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json",
+        " M review/platform-v2/20261024/frontend-tests/frontend-api-inventory.json",
+        " M review/platform-v2/20261024/frontend-tests/frontend-routes.json",
+        " M review/platform-v2/20261024/frontend-tests/frontend-test-inventory.json",
+        " M review/platform-v2/20261024/frontend-tests/summary.json",
+        " M scripts/platform_v2_test_audit.py",
+        " M unit_tests/test_platform_v2_api_audit.py",
+        " M unit_tests/test_platform_v2_route_audit.py",
+        " M unit_tests/test_platform_v2_test_classification.py",
+        "?? scripts/platform_v2_ts_ast.mjs"
+      ]
+    }
+  },
+  "input_provenance": {
+    "backend_target_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "backend_baseline_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
+    "frontend_remote_main": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
+    "frontend_remote_blobs": {
+      "src/App.tsx": "90dc3ab9ebaf2673286905b53b91fdaa777b65e9",
+      "src/api/client.ts": "c9a6b8726c15fe5b05a59a58efe7f60701843091",
+      "src/api/stream.ts": "dae6416337ec48557010d72330ee00cfb0b21843",
+      "src/shell/useConnection.ts": "683d767d82c03b420c9cf86bc0624331e24f4b87"
+    },
+    "frontend_historical_dirty": {
+      "head": "630040b1b7007a219a93c9d3d4491fab714c555d",
+      "porcelain_sha256": "f7d9a949fa437af7c3e9bdaa11fada48c7ad613e79c96119e970361498c2c6af",
+      "blobs_sha256": {
+        "src/App.tsx": "739a98c184cdc9bf72db0f2f81988795de88ba91b51176be261c916be35a8a7d",
+        "src/api/client.ts": "4ec6810e285cfab79f7fe289524f24453f4773c122fbe7bddb6eb8acdd924a93",
+        "src/api/stream.ts": "ded201bf6094ec3e9a188585d4efc54ff60246733dcbe631576844dea841d4d3",
+        "src/shell/useConnection.ts": "28c7b5a37e068f64bfad10184db497dbf958be6883307dbba989f938ce5de7f7"
+      }
+    },
+    "backend_registry": {
+      "path": "docs/design/platform-v2/backend-module-inventory.json",
+      "sha256": "0dd1c0b84ac18c7f9471615ac6b0cfb2f6fef085e9eabdf58a38f61d5bafb69a",
+      "modules_count": 25,
+      "version": "20261024-v2-b-25modules (provisional)"
+    }
+  },
+  "frontend": {
+    "routes_count": 38,
+    "concrete_routes_count": 37,
+    "wildcard_routes_count": 1,
+    "layout_routes_count": 1,
+    "unique_pages_count": 29,
+    "api_endpoints_count": 184,
+    "api_unmatched_count": 50,
+    "test_files_count": 82,
+    "test_cases_estimated": 513
+  },
+  "backend": {
+    "test_files_count": 251,
+    "test_functions_count": 3016,
+    "categories": {
+      "Security": 31,
+      "Unit": 78,
+      "Migration": 14,
+      "Recovery-rollback": 5,
+      "Contract": 8,
+      "Module Integration": 97,
+      "E2E": 4,
+      "Deployment smoke": 4,
+      "Cross-module": 10
+    },
+    "category_test_counts": {
+      "Security": 430,
+      "Unit": 903,
+      "Migration": 88,
+      "Recovery-rollback": 91,
+      "Contract": 54,
+      "Module Integration": 1306,
+      "E2E": 16,
+      "Deployment smoke": 27,
+      "Cross-module": 101
+    },
+    "multi_labels": {
+      "alembic_fixture": {
+        "file_count": 16,
+        "test_count": 127
+      },
+      "runtime_ownership": {
+        "file_count": 45,
+        "test_count": 945
+      },
+      "db_fixture": {
+        "file_count": 118,
+        "test_count": 1547
+      },
+      "security_mark": {
+        "file_count": 27,
+        "test_count": 366
+      },
+      "process_fixture": {
+        "file_count": 69,
+        "test_count": 1002
+      }
+    },
+    "security_audit": {
+      "classified_files_count": 31,
+      "marker_files_count": 27,
+      "marker_function_defs_count": 366,
+      "runtime_collected_cases": "unknown (unmeasured in static audit)"
+    }
+  },
+  "c8f10156_product_inventory": {
+    "ref": "origin/main",
+    "sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "test_files_count": 303,
+    "test_functions_count": 3539,
+    "primary_categories": {
+      "Unit": 107,
+      "Module Integration": 103,
+      "Security": 41,
+      "Migration": 17,
+      "Cross-module": 11,
+      "Contract": 9,
+      "Recovery-rollback": 6,
+      "E2E": 5,
+      "Deployment smoke": 4
+    },
+    "security_audit": {
+      "classified_files_count": 41,
+      "marker_files_count": 37,
+      "marker_function_defs_count": 449,
+      "runtime_collected_cases": "unknown (unmeasured in static audit)"
+    }
+  },
+  "baseline_drift_delta": {
+    "baseline_sha": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",
+    "target_product_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "git_metrics": {
+      "rev_list_distance_behind": 118,
+      "rev_list_distance_ahead": 2,
+      "a_claim_111_behind_verified": false,
+      "a_claim_111_behind_correction": "Actual measured git rev-list distance is 118 behind, 2 ahead",
+      "src_py_delta": 64,
+      "alembic_migrations_delta": 5,
+      "diff_shortstat": "366 files changed, 86213 insertions(+), 339 deletions(-)"
+    },
+    "test_files_delta": {
+      "baseline_committed_count": 252,
+      "clean_worktree_count": 251,
+      "baseline_manifest_dirty_count": 257,
+      "target_c8_count": 303,
+      "added_files_count": 51,
+      "removed_files_count": 0
+    }
+  },
+  "measured_baselines": {
+    "vitest_wall_duration_seconds": 5.43,
+    "vitest_passed": 548,
+    "vitest_skipped": 1,
+    "vitest_total": 549,
+    "vitest_jsdom_aggregate_environment_seconds": 33.21,
+    "deploy_9f82c9c1_pytest_seconds": 1045.97,
+    "deploy_9f82c9c1_passed": 4473,
+    "deploy_9f82c9c1_subtests": 5020,
+    "deploy_c8f10156_pytest_failed_seconds": 172.23,
+    "fast_unit_seconds": 0.22
+  },
+  "retraction_and_correction_ledger": [
+    {
+      "claim": "tests/test_collector_control.py missing in shared main security gate",
+      "correction": "RETRACTED. Registration and file absent in shared main 607f8bda. Both present in back-collector-s2/complete candidate worktrees. Not a live operational defect."
+    },
+    {
+      "claim": "Duplicate 31 tests in run_security_gate can be eliminated",
+      "correction": "CORRECTED. 31 is file count, not executed test case count. Gate must be retained; deduplication proposals must provide test identity/environment equivalence keys."
+    },
+    {
+      "claim": "100% complete contract mapping to backend modules",
+      "correction": "CORRECTED. Mappings bound to provisional 25-module backend registry. Unmatched items recorded in unmatched_ledger."
+    }
+  ]
+}

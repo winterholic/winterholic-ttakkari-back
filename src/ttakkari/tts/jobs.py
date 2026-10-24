@@ -1,10 +1,9 @@
-"""TTS 전용 직렬 큐(설계 §6, §8). STT·E5 큐는 건드리지 않는다.
+"""TTS 전용 직렬 큐(설계 §6, §8, FND-01). STT·E5 큐는 건드리지 않는다.
 
-- 원문은 DB 에 두지 않고 접수한 프로세스의 `_pending_texts` 에만 둔다. 부모는 claim 부터 자식 종료까지
-  원문을 보유한다(run_json_worker 가 request 를 자식 종료까지 쥔다). "stdin 직후 해제"를 가정하지 않는다.
+- FND-01: 원문 청크는 `TtsJob.chunks_json`에 영속화되어 프로세스 재시작 및 드레인 중 복구를 지원한다.
+  접수한 프로세스는 `_pending_texts`에도 캐시하며 부모는 자식 종료까지 원문을 보유한다.
 - 모든 상태 전이는 `UPDATE ... WHERE id=:id AND status IN (...) [AND owner_id=:me]` 한 문장이고 영향 행 1일 때만 확정한다.
-- 소유 queued 가 있는 동안 `runs.manager._background` 에 `tts-queued-guard` 태스크를 둬 세대 퇴역(drain_ready)보다
-  원문 정리가 먼저 끝나도록 한다. 공유 세대 코드(work·can_retire·ready)는 바꾸지 않는다.
+- 소유 queued 가 있는 동안 세대 퇴역(`can_retire`)을 차단하여 기수락 작업(accepted work)을 끝까지 완수한다.
 - 소유자 사망은 flock 획득 성공 또는 runtime_generations.state='offline' 만 증거로 쓴다. heartbeat 만료는 증거가 아니다.
 """
 from __future__ import annotations

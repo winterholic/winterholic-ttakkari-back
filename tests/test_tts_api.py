@@ -254,25 +254,36 @@ async def test_audio_expired_when_cache_is_pruned_after_success(client, auth, tt
     assert after["status"] == "succeeded" and "audio_full_url" not in after and after["progress"]["done"] == 0
 
 
-# ---------------------------------------------------------------- 원문 미저장
+# ---------------------------------------------------------------- 원문 영속화 및 응답 격리(FND-01)
 
 async def test_text_is_never_persisted_in_db_or_responses(client, auth, tts_env):
+    """FND-01: chunks_json에 청크 텍스트를 영속화하여 복구를 보장하되,
+    API 응답(GET /jobs/{id}), params, tts_cache에는 원문이 노출되지 않는다.
+    """
     r = await client.post("/api/tts/jobs", json={"text": SECRET_SENTENCE}, headers=auth)
     jid = r.json()["job_id"]
-    assert jobs._pending_texts[uuid.UUID(jid)] == [SECRET_SENTENCE]  # 접수 프로세스 메모리에만 있다
+    assert jobs._pending_texts[uuid.UUID(jid)] == [SECRET_SENTENCE]
     await jobs.tick()
     assert uuid.UUID(jid) not in jobs._pending_texts  # 종료 뒤 해제
-    async with sessionmaker()() as db:
-        dump = (await db.execute(text("SELECT row_to_json(t)::text FROM tts_jobs t"))).scalars().all()
-        cache_dump = (await db.execute(text("SELECT row_to_json(t)::text FROM tts_cache t"))).scalars().all()
-    blob = json.dumps(dump + cache_dump, ensure_ascii=False)
-    for word in ("비밀문장", "알파브라보", "델타"):
-        assert word not in blob
-    state = json.dumps((await client.get(f"/api/tts/jobs/{jid}", headers=auth)).json(), ensure_ascii=False)
-    assert "비밀문장" not in state
+
     row = await job_row(uuid.UUID(jid))
+    # FND-01 영속화 계약: chunks_json 에 청크 텍스트가 보존된다.
+    assert row.chunks_json == [SECRET_SENTENCE]
+    # params 에는 메타데이터만 있고 원문이 없다.
     assert set(row.params) == {"engine", "model_revision", "voice", "speed", "lang", "text_length", "chunk_count",
                                "chunk_keys", "cached_chunks"}  # fmt: skip
+
+    # tts_cache 에는 오디오 및 키만 저장되고 원문 텍스트가 없다.
+    async with sessionmaker()() as db:
+        cache_dump = (await db.execute(text("SELECT row_to_json(t)::text FROM tts_cache t"))).scalars().all()
+    cache_blob = json.dumps(cache_dump, ensure_ascii=False)
+    for word in ("비밀문장", "알파브라보", "델타"):
+        assert word not in cache_blob
+
+    # API 응답에는 원문 텍스트가 노출되지 않는다.
+    state = json.dumps((await client.get(f"/api/tts/jobs/{jid}", headers=auth)).json(), ensure_ascii=False)
+    for word in ("비밀문장", "알파브라보", "델타"):
+        assert word not in state
 
 
 # ---------------------------------------------------------------- 세대 비활성

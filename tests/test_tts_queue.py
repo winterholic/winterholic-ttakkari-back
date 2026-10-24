@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
 from tts_helpers import insert_job, job_row, plan_for
@@ -13,7 +14,7 @@ from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.generation import GenerationRuntime, activate
 from ttakkari.runs.manager import _background
-from ttakkari.tts import jobs
+from ttakkari.tts import jobs, service
 from ttakkari.tts_models import TtsJob
 
 pytest_plugins = ("conftest_tts",)
@@ -157,10 +158,12 @@ async def test_concurrent_claims_start_exactly_one_job(tts_env):
 
 
 async def test_missing_input_fails_the_claimed_job(tts_env):
+    """chunks_json=NULL 이면서 메모리 payload 도 없는 과거 행은 input_missing 으로 실패한다."""
     me = jobs.owner_id()
-    jid = await insert_job(owner=me, status="queued")  # 접수 프로세스가 아니라 _pending_texts 가 없다
+    jid = await insert_job(owner=me, status="queued")  # 접수 프로세스가 아니라 _pending_texts 가 없고 chunks_json=None
     assert await jobs.tick() is True
     row = await job_row(jid)
+    assert row.chunks_json is None
     assert (row.status, row.error_code) == ("failed", "input_missing")
 
 
@@ -269,12 +272,15 @@ async def test_queued_guard_blocks_retirement_until_text_is_cleared(two_generati
     assert (await generation_service.ready(a))["drain_ready"] is False
     await activate(b.id, expected=a.id)  # a 는 draining
     assert await a.refresh() == "draining"
-    # draining 이어도 guard 가 queued 를 확정·정리하기 전에는 퇴역할 수 없다.
-    await wait_for(lambda: _is(jid, "failed"))
-    row = await job_row(jid)
-    assert (row.status, row.error_code) == ("failed", "generation_draining")
+    # FND-01: draining 이어도 queued 작업이 generation_draining 으로 실패하지 않고 보존된다.
+    assert (await job_row(jid)).status == "queued"
+    assert (await generation_service.ready(a))["drain_ready"] is False
+    assert await a.can_retire() is False
+    # draining 세대가 tick 으로 기수락 작업을 실행하여 완료한다.
+    assert await jobs.tick() is True
+    assert await status_of(jid) == "succeeded"
     assert jid not in jobs._pending_texts
-    # 정리를 마친 뒤에야 guard 가 종료하고 drain_ready 가 True 가 된다.
+    # 작업을 마친 뒤에야 guard 가 종료하고 drain_ready 가 True 가 된다.
     await wait_for(lambda: _not_guard())
     ready = await generation_service.ready(a)
     assert ready["drain_ready"] is True and ready["finalizers"] == 0
@@ -284,23 +290,25 @@ async def _not_guard():
     return not await guard_alive()
 
 
-async def test_drain_ready_is_false_for_whole_window_until_cleanup(two_generations, tts_env, monkeypatch):
-    """guard 의 정리가 끝나기 전 어느 시점에도 drain_ready 가 True 가 되지 않는다."""
+async def test_drain_ready_is_false_for_whole_window_until_cleanup(two_generations, tts_env):
+    """기수락 작업이 완료되기 전 어느 시점에도 drain_ready 가 True 가 되지 않는다."""
     a, b = two_generations
-    real = jobs._fail_queued_draining
-    observed: list[bool] = []
-
-    async def slow_cleanup(owner):
-        for _ in range(5):  # 정리가 진행되는 동안 계속 관측한다
-            observed.append((await generation_service.ready(a))["drain_ready"])
-            await asyncio.sleep(0.02)
-        await real(owner)
-
-    monkeypatch.setattr(jobs, "_fail_queued_draining", slow_cleanup)
+    tts_env.delay = 0.2
     created = await jobs.accept(plan_for(tts_env, "천천히 정리되는 문장입니다."))
     jid = uuid.UUID(created["job_id"])
     await activate(b.id, expected=a.id)
-    await wait_for(lambda: _is(jid, "failed"))
+    assert await a.refresh() == "draining"
+
+    observed: list[bool] = []
+    worker = asyncio.create_task(jobs.tick())
+    await asyncio.wait_for(tts_env.started.wait(), 5)
+
+    for _ in range(5):
+        observed.append((await generation_service.ready(a))["drain_ready"])
+        await asyncio.sleep(0.02)
+
+    await worker
+    assert await status_of(jid) == "succeeded"
     assert observed and not any(observed)
     await wait_for(lambda: _not_guard())
     assert (await generation_service.ready(a))["drain_ready"] is True
@@ -323,13 +331,22 @@ async def test_running_job_blocks_retirement_and_finishes_in_draining_generation
 
 
 async def test_draining_generation_never_starts_new_job(two_generations, tts_env):
+    """FND-01: draining 세대는 신규 접수는 거절하지만, 기수락된 queued 작업은 끝까지 실행한다."""
     a, b = two_generations
     created = await jobs.accept(plan_for(tts_env, "시작되면 안 되는 문장입니다."))
     jid = uuid.UUID(created["job_id"])
     await activate(b.id, expected=a.id)
-    assert await jobs.tick() is False
-    assert tts_env.calls == []
-    await wait_for(lambda: _is(jid, "failed"))
+    assert await a.refresh() == "draining"
+
+    # 신규 작업 접수는 거절된다(503 generation_not_active)
+    with pytest.raises(service.TtsError) as exc_info:
+        await jobs.accept(plan_for(tts_env, "드레인 중 신규 접수"))
+    assert exc_info.value.code == "generation_not_active"
+
+    # 기수락된 작업은 draining 중에도 정상 실행된다(accepted work 보존)
+    assert await jobs.tick() is True
+    assert len(tts_env.calls) == 1
+    assert await status_of(jid) == "succeeded"
 
 
 async def test_post_during_http_inflight_blocks_retirement(two_generations, tts_env, client, auth):

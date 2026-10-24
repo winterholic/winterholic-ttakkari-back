@@ -326,8 +326,9 @@ class GenerationRuntime:
                         TtsJob.status.in_(("queued", "running")),
                     ).limit(1)
                 )) is not None
-        except Exception:  # noqa: BLE001
-            return False
+        except Exception:
+            log.warning("failed to check pending tts jobs for generation %s; fail-closed assuming pending", self.id, exc_info=True)
+            return True
 
     @asynccontextmanager
     async def work(self, name: str, *, allow_draining: bool = False):

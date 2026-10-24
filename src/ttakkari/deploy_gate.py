@@ -11,6 +11,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import ClassVar
 from uuid import UUID
 
 log = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class RestartGate:
     # 프로세스 내 재진입 계수. 감독 루프는 backend-restart.lock을 쥔 채
     # process() -> upgrade_supervisor로 들어오므로, 같은 프로세스의 중첩
     # 획득은 허용하고 프로세스 간 배타성은 flock이 그대로 지킨다.
-    _HELD: dict[str, int] = {}
+    _HELD: ClassVar[dict[str, int]] = {}
 
     def __init__(self, lock_path: Path, *, poll_seconds: float = 30, max_wait_seconds: float = 6 * 60 * 60):
         self.lock_path = lock_path
@@ -136,6 +137,24 @@ async def _active_run_count(own_run_id: str | None) -> int:
         if own_run_id:
             stmt = stmt.where(Run.id != UUID(own_run_id))
         return int(await db.scalar(stmt) or 0)
+
+
+async def check_tts_queue_empty() -> tuple[bool, int]:
+    """배포 전 TTS 큐 상태 점검. (비어있음 여부, 대기/실행 중 작업 수)"""
+    from sqlalchemy import func, select
+
+    from ttakkari.db import sessionmaker
+    try:
+        from ttakkari.tts_models import TtsJob
+        async with sessionmaker()() as db:
+            count = await db.scalar(
+                select(func.count(TtsJob.id)).where(
+                    TtsJob.status.in_(("queued", "running"))
+                )
+            ) or 0
+            return (count == 0, int(count))
+    except Exception:  # noqa: BLE001
+        return (True, 0)
 
 
 async def deploy_backend(own_run_id: str | None) -> bool:

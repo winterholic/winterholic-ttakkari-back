@@ -986,6 +986,37 @@ class GenerationController:
             await self.slots.stop(job["previous_slot"])
             self.succeed(job)
 
+    async def _wait_previous_tts_queue_empty(self, previous_generation: str | None, *, timeout: float = 30.0) -> None:
+        """혼합 세대 전환 완화: 구세대(0068 이전)는 draining 진입 시 queued 작업을 generation_draining으로 실패시킨다.
+        구세대의 queued 작업이 모두 처리되어 비어있을 때까지 대기하여 전환 중 작업 유실을 방지한다.
+        """
+        if not previous_generation:
+            return
+        try:
+            prev_id = uuid.UUID(previous_generation)
+        except (ValueError, TypeError):
+            return
+        try:
+            from ttakkari.tts_models import TtsJob
+        except ImportError:
+            return
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                async with sessionmaker()() as db:
+                    count = await db.scalar(
+                        select(func.count(TtsJob.id)).where(
+                            TtsJob.owner_id == prev_id,
+                            TtsJob.status == "queued",
+                        )
+                    )
+            except Exception:  # noqa: BLE001
+                break
+            if not count:
+                return
+            log.info("waiting for previous generation %s queued tts jobs to finish before activate: count=%d", previous_generation, count)
+            await asyncio.sleep(0.5)
+
     async def ensure_supervisor_capable(self, job) -> bool:
         """릴리스 요구조건과 실행 중 감독을 비교한다. 진행 가능하면 True.
 
@@ -1150,6 +1181,8 @@ class GenerationController:
             async with self._operation("activate"):
                 current = await self.active()
                 if current != cid:
+                    if job.get("previous_generation"):
+                        await self._wait_previous_tts_queue_empty(job["previous_generation"])
                     await self.activate(cid, expected=uuid.UUID(job["previous_generation"]))
             if job["status"] != "draining":
                 async with self._operation("cutover"):

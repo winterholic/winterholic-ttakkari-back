@@ -1,4 +1,4 @@
-"""로컬 TTS ORM 모델(ADR 0062). tts_jobs 에는 원문을 두지 않는다(설계 §8.1)."""
+"""로컬 TTS ORM 모델(ADR 0062, FND-01). chunks_json 에 청크 텍스트를 영속화한다."""
 from __future__ import annotations
 
 import datetime
@@ -13,7 +13,7 @@ from ttakkari.models import Base, utcnow
 
 
 class TtsJob(Base):
-    """장문 비동기 합성 작업. params 에는 음성·속도·글자 수·청크 키만, 텍스트는 없다."""
+    """장문 비동기 합성 작업. chunks_json 에 청크 텍스트 영속화, params 에는 음성·속도·글자 수·청크 키만 둔다."""
 
     __tablename__ = "tts_jobs"
     __table_args__ = (Index("ix_tts_jobs_status_owner_created", "status", "owner_id", "created_at"),)

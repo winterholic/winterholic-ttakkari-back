@@ -448,7 +448,26 @@ def build_evidence(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
                 },
                 "C_frontend_test": {
                     "worker_id": "9a3215de-01d4-4efd-b3ff-9e282de9b766",
-                    "status": "audit_in_progress_or_delivered",
+                    "model_tier": "flash",
+                    "verification_status": "verification_pending (확인 필요)",
+                    "independent_verifier_worker_id": "fed2c630-a867-42f1-9574-4a92905de864",
+                    "observed_untracked_outputs_in_shared_back": [
+                        "docs/design/platform-v2/frontend-feature-map.{md,json,csv}",
+                        "docs/design/platform-v2/test-architecture-and-baseline.md",
+                        "docs/design/platform-v2/test-impact-proposal.md",
+                        "review/platform-v2/20261024/frontend-tests/",
+                    ],
+                    "unverified_claims_and_inconsistencies_do_not_adopt_yet": [
+                        "summary claims 38 frontend routes vs scanner 36 routes (internal inconsistency)",
+                        "claims 10 test categories but omits runtime/ownership: dict has 9 categories and 257 files vs summary total 262 (internal inconsistency)",
+                        "main missing security test / deploy security duplicate 31 claims pending candidate/workingtree condition verification",
+                        "C-reported front 5.48s and back 1045.97s pending revision/env/raw-log verification by Cv (fed2c630-a867-42f1-9574-4a92905de864)",
+                    ],
+                },
+                "C_independent_verifier": {
+                    "worker_id": "fed2c630-a867-42f1-9574-4a92905de864",
+                    "role": "Independent verification of Worker C Flash audit (auto/verification)",
+                    "status": "running",
                 },
             },
             "pms_project_id": "e62fbc3f-b2d3-40ad-b5fc-687c8ccff286",
@@ -456,7 +475,7 @@ def build_evidence(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
                 "06d3fd18-d2b6-425c-b280-89afa6c3b836",
                 "9f414a3c-4533-4e1d-93ec-52ecb901864d",
             ],
-            "audit_stage_policy": "Initial audit completion is not project completion and does not wait for user approval; do not adopt unverified B claims as final boundaries; root integrates A/B/C after independent verification and dispatches P2->P3 immediately.",
+            "audit_stage_policy": "Initial audit completion is not project completion and does not wait for user approval; do not adopt unverified B or C claims as final boundaries; root integrates A/B/C after Bv (1d994e50-c900-4f90-9975-1ff082522a35) and Cv (fed2c630-a867-42f1-9574-4a92905de864) complete and dispatches P2->P3.",
         },
         "baseline_drift_607f8bda_to_c8f10156": {
             "shared_back_local_head": "607f8bda0df7dbdd458e4f0e54d703ce9edd3def",

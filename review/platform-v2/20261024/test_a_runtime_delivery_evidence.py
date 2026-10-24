@@ -36,6 +36,10 @@ def test_extractor_builds_valid_evidence_and_verifies_single_migration_head():
     assert b_info["head_sha"] == "86373cedda20e298ad2b82d857352f845ae70980"
     assert b_info["independent_verifier_worker_id"] == "1d994e50-c900-4f90-9975-1ff082522a35"
     assert "verification_pending" in b_info["verification_status"]
+    c_info = evidence["worker"]["parallel_audit_workers"]["C_frontend_test"]
+    assert c_info["worker_id"] == "9a3215de-01d4-4efd-b3ff-9e282de9b766"
+    assert c_info["independent_verifier_worker_id"] == "fed2c630-a867-42f1-9574-4a92905de864"
+    assert "verification_pending" in c_info["verification_status"]
     drift = evidence["baseline_drift_607f8bda_to_c8f10156"]
     assert drift["commit_count_delta"] == 111
     assert len(drift["migrations_delta"]["added_migrations"]) == 5

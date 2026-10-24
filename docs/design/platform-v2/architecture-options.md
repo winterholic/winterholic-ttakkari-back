@@ -189,15 +189,16 @@ flowchart TB
 
 ### 4.4 API & Frontend Compatibility Contract (외부 호환성 계약)
 
-- 프런트엔드가 호출하는 179개 API 엔드포인트 경로 및 백엔드 전체 HTTP 라우트 시그니처, 오케스트레이터 MCP 도구 스키마(참고: Worker B가 보고한 `497 route / 102 tool` 수치는 `607f8bda` 기준 Flash 미검증 보고치이므로 `확인 필요` — 독립 검증 워커 `1d994e50-c900-4f90-9975-1ff082522a35` 검증 중)는 모듈 분리 전후 동일하게 유지된다 (`pytest -m contract`로 강제).
+- 프런트엔드가 호출하는 API 엔드포인트 경로 및 라우트, 백엔드 전체 HTTP 라우트 시그니처, 오케스트레이터 MCP 도구 스키마(참고: Worker B가 보고한 `497 route / 102 tool`은 `Bv` `1d994e50-c900-4f90-9975-1ff082522a35` 검증 중이고, Worker C가 보고한 프런트 `38 vs 36 route / 179 API`는 `Cv` `fed2c630-a867-42f1-9574-4a92905de864` 검증 중이므로 모두 `확인 필요`)는 모듈 분리 전후 동일하게 유지된다 (`pytest -m contract`로 강제).
 
 ---
 
-## 5. 첫 독립 전환 모듈 후보 실측 평가 및 Worker B 미검증 수치 대조 (First Independent Module Evaluation)
+## 5. 첫 독립 전환 모듈 후보 실측 평가 및 Worker B·C 미검증 수치 대조 (First Independent Module Evaluation)
 
-> **주의 (Worker B 산출물 검증 대기 격리)**:
-> Worker B(`c1e9cd73-83ef-4240-99c8-809e500bd903`, `back-platform-v2-b` HEAD `86373cedda20e298ad2b82d857352f845ae70980`)가 보고한 수치(`25모듈 / 497 route / 102 tool / 88 table / 62 migration / 212 config / 321 .py / unmatched 0`, `Creative = artcraft_tasks 1 / FK 0`, `collector = 2 tables`, `cycle = 34`)는 Flash 모델로 공유 `/back`의 과거 커밋(`607f8bda0df7dbdd458e4f0e54d703ce9edd3def`, `origin/main` 대비 111커밋 뒤처짐)에서 추출되었으며 현재 **독립 검증 워커 `1d994e50-c900-4f90-9975-1ff082522a35` (`auto/verification`, GPT-6 Luna 예정)**가 검증 중이다(`확인 필요`).
-> 따라서 본 문서에서는 Worker B의 수치를 확정 모듈 경계나 구현 근거로 채택하지 않고, Worker A가 `origin/main`(`c8f10156845d007ec6496a65d6d8417be19260bd`)에서 직접 추출·검증한 실측치와 Baseline Drift(`+64 .py`, `+5 migrations 0063~0067`, `+21 tables`)만을 근거로 평가한다.
+> **주의 (Worker B·C 산출물 검증 대기 격리)**:
+> 1. Worker B(`c1e9cd73-83ef-4240-99c8-809e500bd903`, `back-platform-v2-b` HEAD `86373cedda20e298ad2b82d857352f845ae70980`)가 보고한 수치(`25모듈 / 497 route / 102 tool / 88 table / 62 migration / 212 config / 321 .py / unmatched 0`, `Creative = artcraft_tasks 1 / FK 0`, `collector = 2 tables`, `cycle = 34`)는 Flash 모델로 공유 `/back`의 과거 커밋(`607f8bda0df7dbdd458e4f0e54d703ce9edd3def`, `origin/main` 대비 111커밋 뒤처짐)에서 추출되었으며 현재 **독립 검증 워커 `Bv = 1d994e50-c900-4f90-9975-1ff082522a35` (`auto/verification`, GPT-6 Luna 예정)**가 검증 중이다(`확인 필요`).
+> 2. Worker C(`9a3215de-01d4-4efd-b3ff-9e282de9b766`, 공유 `/back` untracked 산출물)의 초기 감사 역시 Flash 모델로 실행되었고 내부 불일치(요약 `38 routes` vs 스캐너 `36 routes`, 10분류 주장 대비 `runtime/ownership` 누락으로 dict 9종·`257 files` vs 요약 합 `262`) 및 미검증 항목(`main missing security test` / `deploy security duplicate 31` 조건, C 측 `front 5.48s` / `back 1045.97s` 원시로그 검증)이 있어 **독립 검증 워커 `Cv = fed2c630-a867-42f1-9574-4a92905de864` (`auto/verification`)**가 검증 중이다(`확인 필요`).
+> 3. 따라서 본 문서에서는 Worker B·C의 수치를 확정 모듈 경계나 구현 근거로 채택하지 않고, Worker A가 `origin/main`(`c8f10156845d007ec6496a65d6d8417be19260bd`) 및 `ops_deploy_log(4a6e09a8)` 원시 로그에서 직접 추출·검증한 실측치와 Baseline Drift(`+64 .py`, `+5 migrations 0063~0067`, `+21 tables`)만을 근거로 평가한다.
 
 사용자 지침("첫 독립 모듈은 `Creative Studio`를 우선 평가하되, 데이터 결합도·변경 빈도·검사 비용·장애 이력·운영비 실측으로 다른 후보와 비교할 것")에 따라 `origin/main`(`c8f10156`)에서 4개 주요 후보를 정량 비교하였다.
 

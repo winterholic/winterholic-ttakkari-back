@@ -69,7 +69,7 @@ async def coordinate_runs(runtime, manager, state) -> None:
     if manager.remote:
         return
     await _commands(runtime, manager)
-    if state == "active":
+    if state == "active" and not getattr(runtime, "draining", False):
         from ttakkari.runs.manager import resume_queued
         await resume_queued()
 
@@ -91,7 +91,7 @@ async def coordinate(runtime, manager) -> None:
                     await profiles.load_cooldowns(db)
                     await usage_store.load_latest(db, refresh=True)
             await coordinate_runs(runtime, manager, state)
-            if state == "active" and not manager.remote:
+            if state == "active" and not manager.remote and not getattr(runtime, "draining", False):
                 from ttakkari.schedules import process_due_schedules
                 # work 잠금으로 감싸 주기 작업(schedules)과 겹치지 않게 하고, 실행 중에는 세대가 퇴역하지 않게 한다.
                 async with generation.work("schedules") as acquired:
@@ -229,6 +229,8 @@ async def start_api_services(execution_mode: str) -> None:
     await tts_jobs.start()
     # The managed Qwen server is a request-time accelerator owned per API
     # generation, not a durable database queue consumer.
+    # Step 3 integration hook: Step 3 will decouple llama-server lifecycle from API generations.
+    # For Step 2, keep qwen_service.start() here without direct modification.
     await qwen_service.start()
 
 

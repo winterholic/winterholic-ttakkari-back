@@ -175,6 +175,8 @@ class GenerationRuntime:
     async def claim(self, run_id: uuid.UUID, lane: str, limit: int) -> uuid.UUID | None:
         if self.role == "api" and self.execution_mode == "remote":
             return None
+        if getattr(self, "draining", False) or self.state == "draining":
+            return None
         async with sessionmaker()() as db:
             control = await _control(db)
             if claim_owner(control) != self.id:

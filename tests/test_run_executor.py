@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from ttakkari.db import sessionmaker
-from ttakkari.executor import ExecutorRuntime, disable
+from ttakkari.executor import ExecutorRuntime, disable, drain
 from ttakkari.generation import GenerationRuntime, OwnershipLost, activate
 from ttakkari.generation_service import _commands
 from ttakkari.models import (
@@ -235,3 +235,83 @@ async def test_migration_round_trip_and_active_downgrade_refusal(tmp_path, execu
         conn = await db.connection()
         with pytest.raises(DBAPIError, match="drain executor"):
             await conn.run_sync(run, migration().downgrade)
+
+
+async def test_executor_drain_and_child_pid_survival_during_api_cutover(tmp_path, new_session, executor_schema):
+    """API cutover must not disrupt executor child process PID, and drain must complete inflight run before exit."""
+    import sys
+    run1 = await queued(new_session)
+    async with owners(tmp_path) as (api_a, executor):
+        # 1. Executor claims run1
+        token = await executor.claim(run1.id, "workers", 8)
+        assert token is not None
+
+        # 2. Spawn a real child subprocess simulating an agent run
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-c", "import time; time.sleep(0.5)",
+            start_new_session=True,
+        )
+        child_pid = proc.pid
+
+        manager = RunManager(runtime=executor)
+        async def run_task():
+            await proc.wait()
+            async with sessionmaker()() as db:
+                r = await db.get(Run, run1.id)
+                r.status = "succeeded"
+                await db.commit()
+            await executor.release(run1.id, token)
+            manager._handles.pop(run1.id, None)
+
+        task = asyncio.create_task(run_task())
+        from ttakkari.runs.manager import _Handle
+        manager._handles[run1.id] = _Handle(task=task, proc=proc, owner=executor, token=token)
+
+        # 3. Cutover API: API A -> API B
+        api_b = GenerationRuntime(tmp_path, revision="b" * 40, api_url="http://127.0.0.1:18792")
+        api_b.execution_mode = "remote"
+        await api_b.register()
+        await activate(api_b.id, expected=api_a.id)
+
+        # Child subprocess PID must remain alive and unkilled across API cutover!
+        assert proc.returncode is None
+        import psutil
+        p = psutil.Process(child_pid)
+        assert p.is_running()
+
+        # 4. Executor receives drain signal while run1 is in-flight
+        # Queue a new run2 in DB
+        run2 = await queued(new_session)
+
+        drain_task = asyncio.create_task(drain(executor, manager, poll_interval=0.05, timeout=5.0))
+
+        # While draining, executor refuses to claim new run2
+        await asyncio.sleep(0.05)
+        assert executor.draining is True
+        assert await executor.claim(run2.id, "workers", 8) is None
+
+        # Wait for drain to finish
+        drained = await drain_task
+        assert drained is True
+        assert proc.returncode == 0
+        assert manager._handles == {}
+
+        # Run1 lease is released after completion
+        async with sessionmaker()() as db:
+            assert await db.get(RuntimeLease, run1.id) is None
+            assert (await db.get(Run, run1.id)).status == "succeeded"
+
+        # 5. Replacement executor can now register cleanly without lease collision
+        await executor.close()
+        replacement = ExecutorRuntime(tmp_path, revision="e2" * 20)
+        try:
+            await replacement.register(activate=True)
+            # Replacement executor can claim run2
+            token2 = await replacement.claim(run2.id, "workers", 8)
+            assert token2 is not None
+            await replacement.release(run2.id, token2)
+            await disable()
+        finally:
+            await replacement.close()
+            await api_b.close()
+

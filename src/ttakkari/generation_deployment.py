@@ -15,6 +15,7 @@ import os
 import plistlib
 import re
 import shutil
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -384,6 +385,30 @@ class Slots:
         return {"ready": True, "generation": str(row.id), "revision": row.revision,
                 "pid": pid, "process_started_at": started_at, "heartbeat_at": row.heartbeat_at}
 
+    async def stop_executor(self, *, timeout: float = 30.0) -> None:
+        async with sessionmaker()() as db:
+            control = await db.get(RuntimeControl, 1)
+            row = await db.get(RuntimeGeneration, control.executor_generation) if (
+                control and control.executor_generation) else None
+        if row and row.role == "executor" and row.state in ("active", "draining") and row.pid:
+            try:
+                os.kill(row.pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                try:
+                    p = psutil.Process(row.pid)
+                    if not p.is_running():
+                        break
+                except (psutil.NoSuchProcess, ProcessLookupError):
+                    break
+                await asyncio.sleep(0.3)
+        label = "net.winterholic.ttakkari.executor"
+        target = f"gui/{os.getuid()}/{label}"
+        with contextlib.suppress(Exception):
+            await self._launchctl("bootout", target)
+
     async def ensure_executor(self, release: Path, revision: str) -> dict:
         contract = Releases.contract(release)
         executor = contract.get("run_executor")
@@ -394,6 +419,7 @@ class Slots:
             raise RuntimeError("pinned executor interpreter or release marker is invalid")
         if ready := await self.executor_snapshot(revision=revision):
             return ready
+        await self.stop_executor()
         async with sessionmaker()() as db:
             apis = list((await db.execute(select(RuntimeGeneration.protocol, RuntimeGeneration.execution_mode)
                 .where(RuntimeGeneration.role == "api",
@@ -1207,6 +1233,7 @@ class GenerationController:
                     await self.slots.switch(job["candidate_slot"])
                 async with self._operation("readiness"):
                     await self.slots.verify(job["revision"])
+                    await self.slots.ensure_executor(Path(job["release_path"]), job["revision"])
                 async with self._operation("record"):
                     self.record_active(job)
                 self.phase(job, "draining", activated_revision=job["revision"])

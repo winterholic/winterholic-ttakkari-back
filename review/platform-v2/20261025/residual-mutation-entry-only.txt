@@ -1,0 +1,84 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+__ test_retries_remaining_work_without_resetting_deadline[exception-artcraft] __
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:87: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:112 draining residual artcraft raised error: RuntimeError('transient cleanup failure')
+_ test_retries_remaining_work_without_resetting_deadline[exception-google_login] _
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:87: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:112 draining residual google_login raised error: RuntimeError('transient cleanup failure')
+____ test_retries_remaining_work_without_resetting_deadline[false-artcraft] ____
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:87: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:97 draining ArtCraft work timed out after 30.0s; cancelled in-flight jobs
+__ test_retries_remaining_work_without_resetting_deadline[false-google_login] __
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:87: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:105 draining Google login timed out after 20.0s; cancelled in-flight logins
+=========================== short test summary info ============================
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[exception-artcraft]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[exception-google_login]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[false-artcraft]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[false-google_login]
+4 failed, 5 deselected in 0.99s

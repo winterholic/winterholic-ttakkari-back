@@ -1,0 +1,5 @@
+$ PYTHONPATH=src:. ../back/.venv/bin/pytest -q -p no:cacheprovider --tb=short unit_tests/test_generation_hardening.py unit_tests/test_fnd01_foundation.py unit_tests/test_local_api_retirement.py unit_tests/test_tts_claim_stop_race.py unit_tests/test_executor_integrated_drain.py unit_tests/test_executor_safety.py unit_tests/test_run_executor_drain.py unit_tests/test_run_executor_services.py unit_tests/test_executor_queued_consumers.py unit_tests/test_creative_v2_asset_queue.py unit_tests/test_creative_v2_asset_generation_e2e.py unit_tests/test_desk_qwen_isolation.py unit_tests/test_qwen_flash_monitor_jobs.py unit_tests/test_run_executor_unit.py unit_tests/test_context_index_queue.py unit_tests/test_remote_api_residual_execution.py unit_tests/test_residual_drain_supervision.py
+........................................................................ [ 37%]
+........................................................................ [ 74%]
+.................................................                        [100%]
+193 passed in 58.43s

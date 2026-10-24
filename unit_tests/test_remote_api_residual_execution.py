@@ -518,6 +518,8 @@ async def test_remote_lifespan_logs_warning_on_residual_drain_failure_or_excepti
     monkeypatch.setattr(manager, "shutdown", AsyncMock())
     monkeypatch.setattr(desk_pool, "shutdown", AsyncMock())
     monkeypatch.setattr(qwen_service, "stop", AsyncMock())
+    monkeypatch.setattr(profiles, "load_cooldowns", AsyncMock())
+    monkeypatch.setattr(usage_store, "load_latest", AsyncMock())
     monkeypatch.setattr(profiles, "flush_persist", AsyncMock())
     monkeypatch.setattr(usage_store, "flush", AsyncMock())
     monkeypatch.setattr("ttakkari.notebooklm.service.service.shutdown", AsyncMock())

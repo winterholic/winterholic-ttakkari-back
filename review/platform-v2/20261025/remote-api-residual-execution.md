@@ -1,5 +1,7 @@
 # 플랫폼 V2 원격 API 잔여 실행 경로 처리 보고서
 
+> 2026-10-25 정정: `3a252a9`는 배포 경로의 상한 미연결로, 후속 `6d342dd`는 drain 예외 후 감시 재시도 부재로 각각 GPT 독립검증 FAIL이다. 아래 구현·자체 테스트 기록을 전체 완료 근거로 쓰지 않는다. 현재 예외 복구 교정과 실행 증거는 [residual-drain-supervision.md](residual-drain-supervision.md)를 따른다. 실제 Chrome 프로세스 트리·프로필 잠금 정리는 미검증이다.
+
 **작성일**: 2026-10-25  
 **대상 브랜치**: `integration/platform-v2-execution-all-20261025`  
 **대상 위치**: `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025`  

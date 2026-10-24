@@ -1,0 +1,116 @@
+FFFFFF                                                                   [100%]Task exception was never retrieved
+future: <Task finished name='residual_drain_watcher' coro=<test_unexpected_watcher_exception_is_observed_and_retried.<locals>.watcher() done, defined at /Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/unit_tests/test_residual_drain_supervision.py:99> exception=RuntimeError('watcher failed outside gather')>
+Traceback (most recent call last):
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/unit_tests/test_residual_drain_supervision.py", line 102, in watcher
+    raise RuntimeError("watcher failed outside gather")
+RuntimeError: watcher failed outside gather
+
+=================================== FAILURES ===================================
+__ test_retries_remaining_work_without_resetting_deadline[exception-artcraft] __
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:79: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:111 draining residual artcraft raised error: RuntimeError('transient cleanup failure')
+_ test_retries_remaining_work_without_resetting_deadline[exception-google_login] _
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:79: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:111 draining residual google_login raised error: RuntimeError('transient cleanup failure')
+____ test_retries_remaining_work_without_resetting_deadline[false-artcraft] ____
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:79: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:96 draining ArtCraft work timed out after 30.0s; cancelled in-flight jobs
+__ test_retries_remaining_work_without_resetting_deadline[false-google_login] __
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:79: in test_retries_remaining_work_without_resetting_deadline
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:104 draining Google login timed out after 20.0s; cancelled in-flight logins
+__________ test_unexpected_watcher_exception_is_observed_and_retried ___________
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:507: in wait_for
+    return await fut
+           ^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/locks.py:213: in wait
+    await fut
+E   asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+unit_tests/test_residual_drain_supervision.py:113: in test_unexpected_watcher_exception_is_observed_and_retried
+    await asyncio.wait_for(recovered.wait(), 0.2)
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/tasks.py:506: in wait_for
+    async with timeouts.timeout(timeout):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/timeouts.py:117: in __aexit__
+    raise TimeoutError from exc_val
+E   TimeoutError
+_____________ test_rollback_awaits_watcher_cleanup_before_reentry ______________
+unit_tests/test_residual_drain_supervision.py:144: in test_rollback_awaits_watcher_cleanup_before_reentry
+    assert not rollback.done(), "rollback must await cancellation cleanup before reopening admission"
+E   AssertionError: rollback must await cancellation cleanup before reopening admission
+E   assert not True
+E    +  where True = <built-in method done of _asyncio.Task object at 0x10dc29c80>()
+E    +    where <built-in method done of _asyncio.Task object at 0x10dc29c80> = <Task finished name='Task-21' coro=<Runtime.tick() done, defined at /Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/unit_tests/test_residual_drain_supervision.py:24> result=None>.done
+=========================== short test summary info ============================
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[exception-artcraft]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[exception-google_login]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[false-artcraft]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[false-google_login]
+FAILED unit_tests/test_residual_drain_supervision.py::test_unexpected_watcher_exception_is_observed_and_retried
+FAILED unit_tests/test_residual_drain_supervision.py::test_rollback_awaits_watcher_cleanup_before_reentry
+6 failed in 1.43s

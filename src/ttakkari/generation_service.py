@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from time import monotonic
 
 from sqlalchemy import select
 
@@ -116,10 +117,20 @@ async def drain_residual_jobs(
 
 
 async def coordinate(runtime, manager) -> None:
-    from ttakkari import background_consumers, queued_work
+    from ttakkari import artcraft, background_consumers, queued_work
+    from ttakkari.google_account.login import manager as login_manager
     from ttakkari.runs import desk_pool, profiles, usage_store
     previous = "standby"
     residual_drain_task: asyncio.Task | None = None
+    drain_started: float | None = None
+
+    async def stop_residual_watcher() -> None:
+        nonlocal residual_drain_task
+        if residual_drain_task is not None:
+            if not residual_drain_task.done():
+                residual_drain_task.cancel()
+            await asyncio.gather(residual_drain_task, return_exceptions=True)
+            residual_drain_task = None
     try:
         while True:
             try:
@@ -127,28 +138,42 @@ async def coordinate(runtime, manager) -> None:
                 await runtime.listen()
                 state = await runtime.refresh()
                 if state == "draining" and previous != state:
+                    if drain_started is None:
+                        drain_started = monotonic()
                     if not manager.remote:
                         # 이 세대가 소비자를 돌리는 local 모드다. 이미 맡은 일은 두고 새로 가져가는 것만 멈춘다.
                         queued_work.begin_drain()
                         background_consumers.consumers.pause_claiming()
                     # In-use exchanges were popped out of _warm; this only stops idle/refill.
                     await desk_pool.shutdown()
-                    if residual_drain_task is None or residual_drain_task.done():
-                        residual_drain_task = asyncio.create_task(
-                            drain_residual_jobs(
-                                artcraft_timeout=ARTCRAFT_DRAIN_TIMEOUT,
-                                login_timeout=GOOGLE_LOGIN_DRAIN_TIMEOUT,
-                            ),
-                            name="residual_drain_watcher",
-                        )
                 elif state == "active" and previous == "draining":
                     # 롤백으로 퇴역 중이던 세대가 다시 active 가 됐다.
+                    await stop_residual_watcher()
+                    drain_started = None
                     if not manager.remote:
                         queued_work.reopen()
                         background_consumers.consumers.resume_claiming()
-                    if residual_drain_task and not residual_drain_task.done():
-                        residual_drain_task.cancel()
+                if state == "draining":
+                    if residual_drain_task is not None and residual_drain_task.done():
+                        if not residual_drain_task.cancelled():
+                            error = residual_drain_task.exception()
+                            if error is not None:
+                                log.warning("residual drain watcher failed; retrying: %r", error)
                         residual_drain_task = None
+                    # A timeout returns False even after successful cancellation. Actual
+                    # in-flight work, not that return value, determines whether to retry.
+                    if residual_drain_task is None and (
+                        previous != state or artcraft.inflight() or login_manager.inflight()
+                    ):
+                        assert drain_started is not None
+                        elapsed = monotonic() - drain_started
+                        residual_drain_task = asyncio.create_task(
+                            drain_residual_jobs(
+                                artcraft_timeout=max(0.0, ARTCRAFT_DRAIN_TIMEOUT - elapsed),
+                                login_timeout=max(0.0, GOOGLE_LOGIN_DRAIN_TIMEOUT - elapsed),
+                            ),
+                            name="residual_drain_watcher",
+                        )
                 previous = state
                 if state == "active":
                     async with sessionmaker()() as db:
@@ -170,8 +195,7 @@ async def coordinate(runtime, manager) -> None:
             except TimeoutError:
                 pass
     finally:
-        if residual_drain_task and not residual_drain_task.done():
-            residual_drain_task.cancel()
+        await stop_residual_watcher()
 
 
 async def periodic(name, operation, interval) -> None:

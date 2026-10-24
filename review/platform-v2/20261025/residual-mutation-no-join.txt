@@ -1,0 +1,12 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____________ test_rollback_awaits_watcher_cleanup_before_reentry ______________
+unit_tests/test_residual_drain_supervision.py:152: in test_rollback_awaits_watcher_cleanup_before_reentry
+    assert not rollback.done(), "rollback must await cancellation cleanup before reopening admission"
+E   AssertionError: rollback must await cancellation cleanup before reopening admission
+E   assert not True
+E    +  where True = <built-in method done of _asyncio.Task object at 0x10baad9c0>()
+E    +    where <built-in method done of _asyncio.Task object at 0x10baad9c0> = <Task finished name='Task-3' coro=<Runtime.tick() done, defined at /Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-execution-all-20261025/unit_tests/test_residual_drain_supervision.py:26> result=None>.done
+=========================== short test summary info ============================
+FAILED unit_tests/test_residual_drain_supervision.py::test_rollback_awaits_watcher_cleanup_before_reentry
+1 failed, 8 deselected in 0.27s

@@ -1,0 +1,36 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+__ test_retries_remaining_work_without_resetting_deadline[exception-artcraft] __
+unit_tests/test_residual_drain_supervision.py:89: in test_retries_remaining_work_without_resetting_deadline
+    assert calls[1] == 0.0
+E   assert 30.0 == 0.0
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:112 draining residual artcraft raised error: RuntimeError('transient cleanup failure')
+WARNING  ttakkari.generation_service:generation_service.py:97 draining ArtCraft work timed out after 30.0s; cancelled in-flight jobs
+_ test_retries_remaining_work_without_resetting_deadline[exception-google_login] _
+unit_tests/test_residual_drain_supervision.py:89: in test_retries_remaining_work_without_resetting_deadline
+    assert calls[1] == 0.0
+E   assert 20.0 == 0.0
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:112 draining residual google_login raised error: RuntimeError('transient cleanup failure')
+WARNING  ttakkari.generation_service:generation_service.py:105 draining Google login timed out after 20.0s; cancelled in-flight logins
+____ test_retries_remaining_work_without_resetting_deadline[false-artcraft] ____
+unit_tests/test_residual_drain_supervision.py:89: in test_retries_remaining_work_without_resetting_deadline
+    assert calls[1] == 0.0
+E   assert 30.0 == 0.0
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:97 draining ArtCraft work timed out after 30.0s; cancelled in-flight jobs
+WARNING  ttakkari.generation_service:generation_service.py:97 draining ArtCraft work timed out after 30.0s; cancelled in-flight jobs
+__ test_retries_remaining_work_without_resetting_deadline[false-google_login] __
+unit_tests/test_residual_drain_supervision.py:89: in test_retries_remaining_work_without_resetting_deadline
+    assert calls[1] == 0.0
+E   assert 20.0 == 0.0
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.generation_service:generation_service.py:105 draining Google login timed out after 20.0s; cancelled in-flight logins
+WARNING  ttakkari.generation_service:generation_service.py:105 draining Google login timed out after 20.0s; cancelled in-flight logins
+=========================== short test summary info ============================
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[exception-artcraft]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[exception-google_login]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[false-artcraft]
+FAILED unit_tests/test_residual_drain_supervision.py::test_retries_remaining_work_without_resetting_deadline[false-google_login]
+4 failed, 5 deselected in 0.13s

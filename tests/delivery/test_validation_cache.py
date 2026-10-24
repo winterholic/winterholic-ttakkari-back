@@ -123,7 +123,7 @@ def test_validation_key_digest_stability_and_sensitivity():
         )
 
 
-def test_validation_cache_policy_positive_and_negative_reuse(tmp_path):
+def test_validation_cache_policy_positive_and_negative_reuse(tmp_path, monkeypatch):
     inputs = _sample_valid_inputs()
     candidate = tmp_path / "candidate"
     for field in (
@@ -180,6 +180,14 @@ def test_validation_cache_policy_positive_and_negative_reuse(tmp_path):
     )
     assert reusable is True
     assert reason == "reusable"
+
+    with monkeypatch.context() as changed_env:
+        changed_env.setenv("TTAKKARI_VALIDATION_RUNTIME_INPUT", "changed")
+        reusable, reason = ValidationCachePolicy.can_reuse(
+            key, receipt, now_epoch=1500.0, secret=TEST_SECRET
+        )
+        assert reusable is False
+        assert reason == "runtime_changed"
 
     # 2. Dynamic import present -> rejected (unverified closure)
     dynamic_inputs = copy.deepcopy(inputs)

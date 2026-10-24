@@ -4,7 +4,7 @@
 
 ## 실제 코드 변경
 
-- A: 후보의 tracked/untracked 파일 바이트를 해시하고, 두 차례 읽기와 Git 상태/HEAD 재대조로 읽는 중 변경을 거부한다. rename의 출발/도착 경로도 보존한다. 캐시 재사용은 실파일 해시와 결속한 clean snapshot을 요구하고, 현재 후보를 재캡처하여 stale receipt를 거부한다. 빈 closure map, snapshot 없는 호출자 선언은 재사용할 수 없다. Delivery의 실제 stage runner도 실행 전후 후보를 대조한다.
+- A: 후보의 tracked/untracked 파일 바이트를 해시하고, 두 차례 읽기와 Git 상태/HEAD 재대조로 읽는 중 변경을 거부한다. rename의 출발/도착 경로도 보존한다. 캐시 재사용은 실파일 해시와 결속한 clean snapshot을 요구하고, 현재 후보를 재캡처하여 stale receipt를 거부한다. 빈 closure map, snapshot 없는 호출자 선언은 재사용할 수 없다. Delivery의 실제 stage runner도 실행 전후 후보를 대조한다. Python/플랫폼/설치 배포판 버전 및 환경 전체의 집계 해시도 실제 프로세스에서 수집하여, 호출자가 이전 env/plugin 해시를 재사용하더라도 환경 변경 시 receipt 재사용을 거부한다. 환경 값은 기록하지 않고 집계 해시만 남긴다. 외부 서비스·가변 데이터의 완전성은 별도 미검증 경계로 남긴다.
 - A prototype: 공개 기본 HMAC 키를 제거했다. 명시적인 verifier 소유 키 없이는 receipt 발행/검증을 거부한다. 서명은 키 소유자의 주장 무결성을 검증하는 수단이며, 수동으로 전달된 통과 건수가 실제 실행을 입증하지는 않는다. prototype은 배포 게이트의 인증 근거로 사용하지 않는다.
 - B: loader/spec/file 경로는 실제 실행 소스 바이트의 증거가 아니므로 runtime binding은 `unknown`이다. 정적 집합의 누락/중복/치환은 별도 `static_state`와 원장에 계속 표시한다. 미지원 discovery, 구문/읽기 오류를 성공으로 승격하지 않는다. 과거 607 기준 작업 트리 대신 현재 통합 소스를 실제 스캔했다.
 - C: 25종 레지스트리의 ID 집합과 행 스키마를 검사한다. 잘린 레지스트리는 `incomplete`, 매핑은 `unknown/null`이다. 생성기와 테스트의 공유 `/back` fallback을 제거했다. TypeScript 오류/미지원 호출 원장을 coverage에 반영하고, 입력 파일 해시를 수집 전후 비교한다. Markdown에도 JSON/CSV와 같은 API callsite별 표를 만든다.

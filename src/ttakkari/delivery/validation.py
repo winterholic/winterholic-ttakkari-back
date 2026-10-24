@@ -6,11 +6,13 @@ import hashlib
 import hmac
 import json
 import os
+import platform
 import re
 import subprocess
 import sys
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from importlib.metadata import distributions
 from pathlib import Path
 
 SOURCE_CRITICAL_PREFIXES = (
@@ -35,6 +37,28 @@ class CandidateBindingError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+def _runtime_fingerprint() -> str:
+    """Capture actual process inputs instead of trusting caller-supplied hashes.
+
+    Environment values stay in memory and only their aggregate digest is kept.
+    Installed distribution metadata includes pytest/plugin and dependency versions.
+    This does not attest external services or mutable data; their closure must
+    still be declared unverified and use the broad validation gate.
+    """
+    payload = {
+        "python": sys.version,
+        "executable": str(Path(sys.executable).resolve()),
+        "platform": platform.platform(),
+        "environment_sha256": hashlib.sha256(
+            json.dumps(dict(os.environ), sort_keys=True).encode()
+        ).hexdigest(),
+        "distributions": sorted(
+            (dist.metadata.get("Name", ""), dist.version) for dist in distributions()
+        ),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -197,6 +221,7 @@ class ValidationKey:
     closure_complete: bool
     has_dynamic_imports: bool
     snapshot: CandidateSnapshotIdentity | None = None
+    runtime_fingerprint: str = ""
 
     @classmethod
     def create(
@@ -246,12 +271,14 @@ class ValidationKey:
             closure_complete=closure_complete,
             has_dynamic_imports=has_dynamic_imports,
             snapshot=snapshot,
+            runtime_fingerprint=_runtime_fingerprint(),
         )
 
     def compute_digest(self) -> str:
         payload = {
             "schema": "delivery-validation-key-v2",
             "snapshot": asdict(self.snapshot) if self.snapshot is not None else None,
+            "runtime_fingerprint": self.runtime_fingerprint,
             "candidate_head_sha": self.candidate_head_sha,
             "candidate_tree_sha": self.candidate_tree_sha,
             "candidate_src_tree_sha": self.candidate_src_tree_sha,
@@ -340,6 +367,11 @@ class ValidationCachePolicy:
             return False, "incomplete_dependency_closure"
         if key.has_dynamic_imports:
             return False, "unverified_dynamic_imports"
+        if (
+            not key.runtime_fingerprint
+            or key.runtime_fingerprint != _runtime_fingerprint()
+        ):
+            return False, "runtime_changed"
         maps = (
             key.changed_files,
             key.module_source_files,

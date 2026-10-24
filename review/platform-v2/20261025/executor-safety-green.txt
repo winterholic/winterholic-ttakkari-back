@@ -1,0 +1,8 @@
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025
+command=['scripts/pytest_slots.py', '--timeout', '60', '--', 'uv', 'run', 'pytest', '-q', 'unit_tests/test_executor_safety.py']
+[slots] 2개 슬롯이 다 찼습니다. 비기를 기다립니다(최대 60초)...
+[slots] 슬롯 1 획득(대기 10초).
+................                                                         [100%]
+16 passed in 1.45s
+
+exit_code=0

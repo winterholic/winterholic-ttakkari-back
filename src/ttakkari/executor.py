@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import signal
+import time
 
 import psutil
 from sqlalchemy import func, select, update
@@ -13,7 +14,12 @@ from ttakkari import generation
 from ttakkari.config import get_settings
 from ttakkari.db import dispose_engine, sessionmaker
 from ttakkari.generation import EXECUTOR_PROTOCOL, GenerationRuntime, _control, _lock
-from ttakkari.models import RuntimeCommand, RuntimeGeneration, RuntimeLease
+from ttakkari.models import (
+    RuntimeCommand,
+    RuntimeGeneration,
+    RuntimeLease,
+    utcnow,
+)
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +42,11 @@ class ExecutorRuntime(GenerationRuntime):
         super().__init__(home, revision=revision, api_url="http://127.0.0.1:1")
         self.role, self.execution_mode = "executor", "local"
         self.api_url = "executor://local"
+        self._draining = False
+
+    @property
+    def draining(self) -> bool:
+        return self._draining or self.state == "draining"
 
     async def register(self, *, activate: bool = False) -> None:
         if not activate:
@@ -81,12 +92,14 @@ class ExecutorRuntime(GenerationRuntime):
             raise
 
     async def refresh(self) -> str:
-        state = await super().refresh()
+        await super().refresh()
+        if self._draining and self.state != "draining":
+            self.state = "draining"
         async with sessionmaker()() as db:
             control = await db.get(generation.RuntimeControl, 1)
             if control.executor_generation != self.id:
                 raise generation.OwnershipLost("executor pointer changed")
-        return state
+        return self.state
 
 
 async def disable() -> None:
@@ -96,6 +109,72 @@ async def disable() -> None:
         control.executor_generation = None
         await generation.wake(db)
         await db.commit()
+
+
+async def drain(
+    runtime: ExecutorRuntime,
+    manager,
+    *,
+    poll_interval: float = 0.2,
+    timeout: float | None = None,
+) -> bool:
+    """Drain in-flight Runs, durable queues (STT/preview), and periodic maintenance before termination.
+
+    1. Stops new claims immediately: marks runtime state as 'draining'.
+    2. Keeps processing runtime commands (cancel, reset) so in-flight work can be cleanly controlled.
+    3. Waits for manager._handles (active Run subprocesses) and runtime._work (in-flight STT/preview/periodic) to drain.
+    4. Emits periodic heartbeat so readiness and controller checks observe progress.
+    5. Returns True when fully drained, False if timeout expired.
+    """
+    from ttakkari.generation_service import _commands
+
+    runtime._draining = True
+    runtime.state = "draining"
+    try:
+        async with sessionmaker()() as db:
+            row = await db.get(RuntimeGeneration, runtime.id)
+            if row:
+                row.state = "draining"
+                row.heartbeat_at = utcnow()
+                await db.commit()
+    except Exception:
+        log.exception("failed to persist executor draining state to database")
+
+    deadline = (time.monotonic() + timeout) if timeout is not None else None
+    log.info("executor drain started: active_runs=%d active_work=%s",
+             len(manager._handles), list(runtime._work))
+
+    # Process any pending commands immediately before entering drain loop
+    try:
+        await _commands(runtime, manager)
+    except Exception:
+        log.exception("error processing commands at drain start")
+
+    while manager._handles or runtime._work:
+        if deadline is not None and time.monotonic() > deadline:
+            log.warning("executor drain timed out: active_runs=%d active_work=%s",
+                        len(manager._handles), list(runtime._work))
+            return False
+        try:
+            await _commands(runtime, manager)
+            await runtime.refresh()
+        except generation.OwnershipLost:
+            # Losing the pointer does not imply our subprocesses finished. Keep
+            # admission closed and wait for their own completion, never shutdown
+            # live children merely because another owner was recorded.
+            log.warning("executor ownership changed during drain; retaining in-flight work")
+        except Exception:
+            log.exception("error during executor drain iteration")
+        await asyncio.sleep(poll_interval)
+
+    # Final pass to acknowledge any commands that completed alongside final handles
+    try:
+        await _commands(runtime, manager)
+    except Exception:
+        log.exception("error during final drain command acknowledgment")
+
+    log.info("executor drain completed cleanly: 0 active runs, 0 active work")
+    return True
 
 
 async def start_background_services() -> list[asyncio.Task]:
@@ -110,7 +189,7 @@ async def start_background_services() -> list[asyncio.Task]:
             for name, operation, interval in maintenance_jobs(get_settings())]
 
 
-async def serve(*, activate: bool = False) -> None:
+async def serve(*, activate: bool = False, drain_timeout: float | None = None) -> None:
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.generation_service import coordinate_runs
@@ -124,6 +203,7 @@ async def serve(*, activate: bool = False) -> None:
     runtime = ExecutorRuntime(settings.home, revision=revision())
     stop = asyncio.Event()
     background_tasks: list[asyncio.Task] = []
+    registered = False
     preview_started = stt_started = False
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -131,6 +211,7 @@ async def serve(*, activate: bool = False) -> None:
     generation.current = runtime
     try:
         await runtime.register(activate=activate)
+        registered = True
         await runtime.listen()
         usage_store.install()
         background_tasks = await start_background_services()
@@ -159,19 +240,24 @@ async def serve(*, activate: bool = False) -> None:
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
-            for task in background_tasks:
-                task.cancel()
-            await asyncio.gather(*background_tasks, return_exceptions=True)
-            if stt_started:
-                await stt_jobs.stop()
-            if preview_started:
-                await preview.stop_worker()
-            await manager.shutdown()
-            await profiles.flush_persist()
-            await usage_store.flush()
+            if registered and not await drain(runtime, manager, timeout=drain_timeout):
+                log.warning("executor drain deadline expired; waiting for natural completion")
+                await drain(runtime, manager, timeout=None)
         finally:
-            await runtime.close()
-            generation.current = None
-            for sig in (signal.SIGTERM, signal.SIGINT):
-                loop.remove_signal_handler(sig)
-            await dispose_engine()
+            try:
+                for task in background_tasks:
+                    task.cancel()
+                await asyncio.gather(*background_tasks, return_exceptions=True)
+                if stt_started:
+                    await stt_jobs.stop()
+                if preview_started:
+                    await preview.stop_worker()
+                await manager.shutdown()
+                await profiles.flush_persist()
+                await usage_store.flush()
+            finally:
+                await runtime.close()
+                generation.current = None
+                for sig in (signal.SIGTERM, signal.SIGINT):
+                    loop.remove_signal_handler(sig)
+                await dispose_engine()

@@ -1,0 +1,429 @@
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025
+command=['scripts/pytest_slots.py', '--timeout', '60', '--', 'uv', 'run', 'pytest', '-q', 'unit_tests/test_executor_safety.py']
+[slots] 2개 슬롯이 다 찼습니다. 비기를 기다립니다(최대 60초)...
+[slots] 슬롯 0 획득(대기 26초).
+FFFFFFFFFFFFFFFF                                                         [100%]
+=================================== FAILURES ===================================
+________ test_ownership_loss_never_reports_clean_drain_with_live_child _________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4254/test_ownership_loss_never_repo0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ad7de00>
+
+    async def test_ownership_loss_never_reports_clean_drain_with_live_child(tmp_path, monkeypatch):
+        runtime = executor.ExecutorRuntime(tmp_path, revision="a" * 40)
+        runtime.state = "active"
+        runtime.refresh = AsyncMock(side_effect=generation.OwnershipLost("pointer changed"))
+        runtime.commands = AsyncMock(return_value=[])
+        manager = RunManager(runtime=runtime)
+        task = asyncio.create_task(asyncio.Event().wait())
+        rid = uuid.uuid4()
+        manager._handles[rid] = _Handle(task=task, proc=SimpleNamespace(returncode=None), owner=runtime)
+        database(monkeypatch, executor, row=SimpleNamespace(state="active", id=runtime.id))
+        try:
+>           assert await executor.drain(runtime, manager, poll_interval=0.001, timeout=0.02) is False
+E           assert True is False
+
+unit_tests/test_executor_safety.py:77: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.executor:executor.py:162 executor ownership changed during drain; aborting drain
+_______________ test_ownership_loss_waits_for_natural_completion _______________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4254/test_ownership_loss_waits_for_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ae04950>
+
+    async def test_ownership_loss_waits_for_natural_completion(tmp_path, monkeypatch):
+        runtime = executor.ExecutorRuntime(tmp_path, revision="a" * 40)
+        runtime.state = "active"
+        runtime.refresh = AsyncMock(side_effect=generation.OwnershipLost("pointer changed"))
+        runtime.commands = AsyncMock(return_value=[])
+        manager = RunManager(runtime=runtime)
+        rid = uuid.uuid4()
+        database(monkeypatch, executor, row=SimpleNamespace(state="active", id=runtime.id))
+    
+        async def complete():
+            await asyncio.sleep(0.025)
+            manager._handles.pop(rid)
+    
+        task = asyncio.create_task(complete())
+        manager._handles[rid] = _Handle(task=task, owner=runtime)
+        try:
+            assert await executor.drain(runtime, manager, poll_interval=0.001, timeout=1) is True
+>           assert task.done() and not manager._handles
+E           AssertionError: assert (False)
+E            +  where False = <built-in method done of _asyncio.Task object at 0x10ae2d180>()
+E            +    where <built-in method done of _asyncio.Task object at 0x10ae2d180> = <Task pending name='Task-4' coro=<test_ownership_loss_waits_for_natural_completion.<locals>.complete() running at /Use...lopment/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/unit_tests/test_executor_safety.py:93>>.done
+
+unit_tests/test_executor_safety.py:101: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.executor:executor.py:162 executor ownership changed during drain; aborting drain
+____________ test_serve_drain_timeout_is_not_permission_to_shutdown ____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4254/test_serve_drain_timeout_is_no0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ae98160>
+
+    async def test_serve_drain_timeout_is_not_permission_to_shutdown(tmp_path, monkeypatch):
+        from ttakkari.artifacts import preview
+        from ttakkari.meetings.local_stt import jobs
+        from ttakkari.runs import manager as managers
+        from ttakkari.runs import profiles, usage_store
+    
+        runtime = SimpleNamespace(state="active", register=AsyncMock(), listen=AsyncMock(), close=AsyncMock())
+        monkeypatch.setattr(executor, "get_settings", lambda: SimpleNamespace(home=tmp_path, release_revision="a" * 40))
+        monkeypatch.setattr(executor, "ExecutorRuntime", lambda *args, **kwargs: runtime)
+        monkeypatch.setattr("ttakkari.deployment.revision", lambda: "a" * 40)
+        monkeypatch.setattr(executor, "start_background_services", AsyncMock(return_value=[]))
+        drain = AsyncMock(side_effect=[False, True])
+        monkeypatch.setattr(executor, "drain", drain)
+        monkeypatch.setattr(executor, "dispose_engine", AsyncMock())
+        monkeypatch.setattr(managers.manager, "shutdown", AsyncMock())
+        monkeypatch.setattr(profiles, "flush_persist", AsyncMock())
+        monkeypatch.setattr(usage_store, "install", lambda: None)
+        monkeypatch.setattr(usage_store, "flush", AsyncMock())
+        monkeypatch.setattr(preview, "stop_worker", AsyncMock())
+        monkeypatch.setattr(jobs, "stop", AsyncMock())
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(loop, "add_signal_handler", lambda sig, callback: callback())
+        monkeypatch.setattr(loop, "remove_signal_handler", lambda sig: None)
+        monkeypatch.setattr(generation, "current", None)
+        await executor.serve(drain_timeout=0)
+>       assert drain.await_count == 2
+E       AssertionError: assert 1 == 2
+E        +  where 1 = <AsyncMock id='4477949264'>.await_count
+
+unit_tests/test_executor_safety.py:131: AssertionError
+_____________ test_api_revision_change_preserves_healthy_executor ______________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10af206e0>, namespace(id=UUID('bc501a76-36cf-4452-831e-3d894a668968...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 33, 811320, tzinfo=datetime.timezone.utc)), <MagicMock id='4478599248'>)
+
+    async def test_api_revision_change_preserves_healthy_executor(process_environment):
+        slots, row, process = process_environment
+        slots.stop_executor = AsyncMock(side_effect=AssertionError("healthy executor must survive API-only revision"))
+        newer = pinned_release(slots.root, "b" * 40)
+>       ready = await slots.ensure_executor(newer, "b" * 40)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+unit_tests/test_executor_safety.py:139: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/ttakkari/generation_deployment.py:422: in ensure_executor
+    await self.stop_executor()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4478607648'>, args = (), kwargs = {}
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               AssertionError: healthy executor must survive API-only revision
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2327: AssertionError
+_ test_activation_checks_gates_before_stopping[1-apis0-pending0-lease boundary] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4254/test_activation_checks_gates_b0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10afd4050>
+leases = 1, apis = [(2, 'remote')], pending = (), message = 'lease boundary'
+
+    @pytest.mark.parametrize(("leases", "apis", "pending", "message"), [
+        (1, [(2, "remote")], (), "lease boundary"),
+        (0, [(1, "local")], (), "protocol2 remote"),
+        (0, [(2, "remote")], ("unknown",), "unknown pending command"),
+    ])
+    async def test_activation_checks_gates_before_stopping(tmp_path, monkeypatch, leases, apis, pending, message):
+        release = pinned_release(tmp_path, "b" * 40)
+        slots = deployment.Slots(tmp_path)
+        slots.executor_snapshot = AsyncMock(return_value=None)
+        slots.stop_executor = AsyncMock()
+        monkeypatch.setattr(deployment.Releases, "contract", lambda path: {"run_executor": {"activation": "enabled"}})
+        monkeypatch.setattr(deployment.Slots, "executor_spec", staticmethod(lambda path, rev: (command(path), {})))
+        database(monkeypatch, deployment, leases=leases, apis=apis, pending=pending)
+        with pytest.raises(RuntimeError, match=message):
+            await slots.ensure_executor(release, "b" * 40)
+>       slots.stop_executor.assert_not_awaited()
+
+unit_tests/test_executor_safety.py:162: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4478608992'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2465: AssertionError
+_ test_activation_checks_gates_before_stopping[0-apis1-pending1-protocol2 remote] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4254/test_activation_checks_gates_b1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aea58d0>
+leases = 0, apis = [(1, 'local')], pending = (), message = 'protocol2 remote'
+
+    @pytest.mark.parametrize(("leases", "apis", "pending", "message"), [
+        (1, [(2, "remote")], (), "lease boundary"),
+        (0, [(1, "local")], (), "protocol2 remote"),
+        (0, [(2, "remote")], ("unknown",), "unknown pending command"),
+    ])
+    async def test_activation_checks_gates_before_stopping(tmp_path, monkeypatch, leases, apis, pending, message):
+        release = pinned_release(tmp_path, "b" * 40)
+        slots = deployment.Slots(tmp_path)
+        slots.executor_snapshot = AsyncMock(return_value=None)
+        slots.stop_executor = AsyncMock()
+        monkeypatch.setattr(deployment.Releases, "contract", lambda path: {"run_executor": {"activation": "enabled"}})
+        monkeypatch.setattr(deployment.Slots, "executor_spec", staticmethod(lambda path, rev: (command(path), {})))
+        database(monkeypatch, deployment, leases=leases, apis=apis, pending=pending)
+        with pytest.raises(RuntimeError, match=message):
+            await slots.ensure_executor(release, "b" * 40)
+>       slots.stop_executor.assert_not_awaited()
+
+unit_tests/test_executor_safety.py:162: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4478603952'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2465: AssertionError
+_ test_activation_checks_gates_before_stopping[0-apis2-pending2-unknown pending command] _
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4254/test_activation_checks_gates_b2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10ae42990>
+leases = 0, apis = [(2, 'remote')], pending = ('unknown',)
+message = 'unknown pending command'
+
+    @pytest.mark.parametrize(("leases", "apis", "pending", "message"), [
+        (1, [(2, "remote")], (), "lease boundary"),
+        (0, [(1, "local")], (), "protocol2 remote"),
+        (0, [(2, "remote")], ("unknown",), "unknown pending command"),
+    ])
+    async def test_activation_checks_gates_before_stopping(tmp_path, monkeypatch, leases, apis, pending, message):
+        release = pinned_release(tmp_path, "b" * 40)
+        slots = deployment.Slots(tmp_path)
+        slots.executor_snapshot = AsyncMock(return_value=None)
+        slots.stop_executor = AsyncMock()
+        monkeypatch.setattr(deployment.Releases, "contract", lambda path: {"run_executor": {"activation": "enabled"}})
+        monkeypatch.setattr(deployment.Slots, "executor_spec", staticmethod(lambda path, rev: (command(path), {})))
+        database(monkeypatch, deployment, leases=leases, apis=apis, pending=pending)
+        with pytest.raises(RuntimeError, match=message):
+            await slots.ensure_executor(release, "b" * 40)
+>       slots.stop_executor.assert_not_awaited()
+
+unit_tests/test_executor_safety.py:162: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4478600928'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2465: AssertionError
+_______________ test_stop_timeout_never_boots_out_live_executor ________________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10ad7de00>, namespace(id=UUID('605de583-95bc-4b29-a1e2-0462878b9d5f...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 33, 887197, tzinfo=datetime.timezone.utc)), <MagicMock id='4477954640'>)
+
+    async def test_stop_timeout_never_boots_out_live_executor(process_environment):
+        slots, _row, _process = process_environment
+>       with pytest.raises(RuntimeError, match="drain|running|exit"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+unit_tests/test_executor_safety.py:167: Failed
+______________ test_stop_refuses_unverified_identity[pid_reused] _______________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10adbe9f0>, namespace(id=UUID('baa31c0f-622d-4ceb-ab85-ed00cf1c4557...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 33, 891293, tzinfo=datetime.timezone.utc)), <MagicMock id='4477300624'>)
+identity = 'pid_reused'
+
+    @pytest.mark.parametrize("identity", ["pid_reused", "wrong_command", "unobservable"])
+    async def test_stop_refuses_unverified_identity(process_environment, identity):
+        slots, row, process = process_environment
+        if identity == "pid_reused":
+            process.create_time.return_value = row.process_started_at + 100
+        elif identity == "wrong_command":
+            process.cmdline.return_value = ["python", "-m", "unrelated"]
+        else:
+            process.cmdline.side_effect = deployment.psutil.AccessDenied(row.pid)
+>       with pytest.raises(RuntimeError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+unit_tests/test_executor_safety.py:181: Failed
+_____________ test_stop_refuses_unverified_identity[wrong_command] _____________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10ae9b350>, namespace(id=UUID('865d9e50-c7cf-4bbc-a44f-ff70f79c8b7c...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 33, 895236, tzinfo=datetime.timezone.utc)), <MagicMock id='4477291552'>)
+identity = 'wrong_command'
+
+    @pytest.mark.parametrize("identity", ["pid_reused", "wrong_command", "unobservable"])
+    async def test_stop_refuses_unverified_identity(process_environment, identity):
+        slots, row, process = process_environment
+        if identity == "pid_reused":
+            process.create_time.return_value = row.process_started_at + 100
+        elif identity == "wrong_command":
+            process.cmdline.return_value = ["python", "-m", "unrelated"]
+        else:
+            process.cmdline.side_effect = deployment.psutil.AccessDenied(row.pid)
+>       with pytest.raises(RuntimeError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+unit_tests/test_executor_safety.py:181: Failed
+_____________ test_stop_refuses_unverified_identity[unobservable] ______________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10ae9bac0>, namespace(id=UUID('729f1825-8a61-4621-a30c-49bcc2eacef4...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 33, 899070, tzinfo=datetime.timezone.utc)), <MagicMock id='4478735696'>)
+identity = 'unobservable'
+
+    @pytest.mark.parametrize("identity", ["pid_reused", "wrong_command", "unobservable"])
+    async def test_stop_refuses_unverified_identity(process_environment, identity):
+        slots, row, process = process_environment
+        if identity == "pid_reused":
+            process.create_time.return_value = row.process_started_at + 100
+        elif identity == "wrong_command":
+            process.cmdline.return_value = ["python", "-m", "unrelated"]
+        else:
+            process.cmdline.side_effect = deployment.psutil.AccessDenied(row.pid)
+>       with pytest.raises(RuntimeError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+unit_tests/test_executor_safety.py:181: Failed
+____________ test_stop_boots_out_only_after_matching_process_exits _____________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10b2fc350>, namespace(id=UUID('ec6f9987-6019-4bbf-8c7e-43a268675caa...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 33, 902758, tzinfo=datetime.timezone.utc)), <MagicMock id='4478744768'>)
+
+    async def test_stop_boots_out_only_after_matching_process_exits(process_environment):
+        slots, _row, process = process_environment
+        process.is_running.side_effect = [True, False]
+        await slots.stop_executor(timeout=1)
+>       process.send_signal.assert_called_once_with(deployment.signal.SIGTERM)
+
+unit_tests/test_executor_safety.py:192: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock name='mock.send_signal' id='4482637104'>
+args = (<Signals.SIGTERM: 15>,), kwargs = {}
+
+    def assert_called_once_with(self, /, *args, **kwargs):
+        """assert that the mock was called exactly once and that that call was
+        with the specified arguments."""
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to be called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'send_signal' to be called once. Called 0 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:990: AssertionError
+___________ test_stop_without_database_owner_does_not_touch_launchd ____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4254/test_stop_without_database_own0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10af6cd70>
+
+    async def test_stop_without_database_owner_does_not_touch_launchd(tmp_path, monkeypatch):
+        slots = deployment.Slots(tmp_path)
+        slots._launchctl = AsyncMock()
+        database(monkeypatch, deployment)
+        await slots.stop_executor()
+>       slots._launchctl.assert_not_awaited()
+
+unit_tests/test_executor_safety.py:201: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4482637440'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2465: AssertionError
+______________ test_snapshot_rejects_command_from_another_release ______________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10ad12d50>, namespace(id=UUID('88caf7e2-d5de-4238-8fad-60c998504606...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 34, 238604, tzinfo=datetime.timezone.utc)), <MagicMock id='4476239360'>)
+
+    async def test_snapshot_rejects_command_from_another_release(process_environment):
+        slots, row, process = process_environment
+        other = pinned_release(slots.root, "b" * 40)
+        process.cmdline.return_value = command(other)
+>       assert await slots.executor_snapshot(revision=row.revision) is None
+E       AssertionError: assert {'ready': True, 'generation': '88caf7e2-d5de-4238-8fad-60c998504606', 'revision': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'pid': 424242, ...} is None
+
+unit_tests/test_executor_safety.py:208: AssertionError
+________________ test_snapshot_rejects_tampered_release_marker _________________
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10ae323f0>, namespace(id=UUID('a52d6195-f282-411b-a2ae-32d3a3186f41...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 34, 243025, tzinfo=datetime.timezone.utc)), <MagicMock id='4478743088'>)
+
+    async def test_snapshot_rejects_tampered_release_marker(process_environment):
+        slots, row, _process = process_environment
+        marker = slots.root / "releases" / row.revision / ".release.json"
+        marker.write_text(json.dumps({"revision": "b" * 40}))
+>       assert await slots.executor_snapshot(revision=row.revision) is None
+E       AssertionError: assert {'ready': True, 'generation': 'a52d6195-f282-411b-a2ae-32d3a3186f41', 'revision': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'pid': 424242, ...} is None
+
+unit_tests/test_executor_safety.py:215: AssertionError
+____ test_explicit_executor_replacement_remains_separate_from_api_revision _____
+
+process_environment = (<ttakkari.generation_deployment.Slots object at 0x10aedd7f0>, namespace(id=UUID('7911972c-7940-4786-a10e-77fe7adb883e...eat_at=datetime.datetime(2026, 10, 24, 17, 46, 34, 246974, tzinfo=datetime.timezone.utc)), <MagicMock id='4477288528'>)
+
+    async def test_explicit_executor_replacement_remains_separate_from_api_revision(process_environment):
+        slots, _row, _process = process_environment
+        target = "b" * 40
+        release = pinned_release(slots.root, target)
+        slots.executor_snapshot = AsyncMock(side_effect=[None, {"ready": True, "revision": target}])
+        slots.stop_executor = AsyncMock()
+>       ready = await slots.ensure_executor(release, target, replace=True)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: Slots.ensure_executor() got an unexpected keyword argument 'replace'
+
+unit_tests/test_executor_safety.py:224: TypeError
+=========================== short test summary info ============================
+FAILED unit_tests/test_executor_safety.py::test_ownership_loss_never_reports_clean_drain_with_live_child
+FAILED unit_tests/test_executor_safety.py::test_ownership_loss_waits_for_natural_completion
+FAILED unit_tests/test_executor_safety.py::test_serve_drain_timeout_is_not_permission_to_shutdown
+FAILED unit_tests/test_executor_safety.py::test_api_revision_change_preserves_healthy_executor
+FAILED unit_tests/test_executor_safety.py::test_activation_checks_gates_before_stopping[1-apis0-pending0-lease boundary]
+FAILED unit_tests/test_executor_safety.py::test_activation_checks_gates_before_stopping[0-apis1-pending1-protocol2 remote]
+FAILED unit_tests/test_executor_safety.py::test_activation_checks_gates_before_stopping[0-apis2-pending2-unknown pending command]
+FAILED unit_tests/test_executor_safety.py::test_stop_timeout_never_boots_out_live_executor
+FAILED unit_tests/test_executor_safety.py::test_stop_refuses_unverified_identity[pid_reused]
+FAILED unit_tests/test_executor_safety.py::test_stop_refuses_unverified_identity[wrong_command]
+FAILED unit_tests/test_executor_safety.py::test_stop_refuses_unverified_identity[unobservable]
+FAILED unit_tests/test_executor_safety.py::test_stop_boots_out_only_after_matching_process_exits
+FAILED unit_tests/test_executor_safety.py::test_stop_without_database_owner_does_not_touch_launchd
+FAILED unit_tests/test_executor_safety.py::test_snapshot_rejects_command_from_another_release
+FAILED unit_tests/test_executor_safety.py::test_snapshot_rejects_tampered_release_marker
+FAILED unit_tests/test_executor_safety.py::test_explicit_executor_replacement_remains_separate_from_api_revision
+16 failed in 1.63s
+
+exit_code=1

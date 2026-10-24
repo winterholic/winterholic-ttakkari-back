@@ -15,6 +15,7 @@ import os
 import plistlib
 import re
 import shutil
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -372,30 +373,72 @@ class Slots:
                     "TTAKKARI_HOME": str(get_settings().home)})
         return command, env
 
-    async def executor_snapshot(self, *, revision: str) -> dict | None:
+    def _executor_process(self, row):
+        """Bind a recorded owner to its own immutable release before signalling."""
+        if not row.pid or not row.process_started_at or row.role != "executor":
+            raise RuntimeError("executor process identity is incomplete")
+        release = self.root / "releases" / _sha(row.revision)
+        marker = json.loads((release / ".release.json").read_text())
+        if marker.get("revision") != row.revision:
+            raise RuntimeError("executor release marker does not match its owner")
+        expected, _ = self.executor_spec(release, row.revision)
+        if not expected or not Path(expected[0]).is_file():
+            raise RuntimeError("pinned executor interpreter is missing")
+        process = psutil.Process(row.pid)
+        if abs(process.create_time() - row.process_started_at) > 0.001 or process.cmdline() != expected:
+            raise RuntimeError("executor process identity does not match its pinned release")
+        return process
+
+    async def executor_snapshot(self, *, revision: str | None = None) -> dict | None:
         """Fail closed unless pointer, pinned artifact, heartbeat and OS identity agree."""
         async with sessionmaker()() as db:
             control = await db.get(RuntimeControl, 1)
             row = await db.get(RuntimeGeneration, control.executor_generation) if (
                 control and control.executor_generation) else None
-            if row is None or row.role != "executor" or row.state != "active" or row.revision != revision:
+            if (row is None or row.role != "executor" or row.state != "active"
+                    or (revision is not None and row.revision != revision)):
                 return None
             if row.heartbeat_at is None or (utcnow() - row.heartbeat_at).total_seconds() > 3 * get_settings().runtime_poll_seconds:
                 return None
             pid, started_at = row.pid, row.process_started_at
         try:
-            process = psutil.Process(pid)
-            if abs(process.create_time() - started_at) > 1.0:
+            process = self._executor_process(row)
+            if not process.is_running():
                 return None
-            command = process.cmdline()
-            if "ttakkari.cli" not in command or "executor" not in command or "--activate" not in command:
-                return None
-        except (psutil.Error, OSError, PermissionError):
+        except (psutil.Error, OSError, ValueError, TypeError, RuntimeError, KeyError):
             return None
         return {"ready": True, "generation": str(row.id), "revision": row.revision,
                 "pid": pid, "process_started_at": started_at, "heartbeat_at": row.heartbeat_at}
 
-    async def ensure_executor(self, release: Path, revision: str) -> dict:
+    async def stop_executor(self, *, timeout: float = 30.0) -> None:
+        async with sessionmaker()() as db:
+            control = await db.get(RuntimeControl, 1)
+            row = await db.get(RuntimeGeneration, control.executor_generation) if (
+                control and control.executor_generation) else None
+        if row is None:
+            return
+        if row.role != "executor" or row.state not in ("active", "draining", "offline"):
+            raise RuntimeError("executor owner is not safe to stop")
+        try:
+            process = self._executor_process(row)
+            if process.is_running():
+                # psutil binds signal delivery to PID + creation time, including
+                # its final reuse check immediately before sending the signal.
+                process.send_signal(signal.SIGTERM)
+            deadline = time.monotonic() + timeout
+            while process.is_running():
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("executor still running after drain timeout; bootout refused")
+                await asyncio.sleep(0.3)
+        except psutil.NoSuchProcess:
+            pass  # The recorded process already exited, never signal a new PID.
+        except (psutil.Error, OSError, ValueError, TypeError, KeyError) as exc:
+            raise RuntimeError("executor process identity or exit is unverified; bootout refused") from exc
+        label = "net.winterholic.ttakkari.executor"
+        target = f"gui/{os.getuid()}/{label}"
+        await self._launchctl("bootout", target)
+
+    async def ensure_executor(self, release: Path, revision: str, *, replace: bool = False) -> dict:
         contract = Releases.contract(release)
         executor = contract.get("run_executor")
         if not executor or executor.get("activation") != "enabled":
@@ -403,7 +446,9 @@ class Slots:
         command, env = self.executor_spec(release, revision)
         if not Path(command[0]).is_file() or json.loads((release / ".release.json").read_text()).get("revision") != revision:
             raise RuntimeError("pinned executor interpreter or release marker is invalid")
-        if ready := await self.executor_snapshot(revision=revision):
+        # An API-only release does not choose the executor's revision. Replacing
+        # a healthy owner is a separate, explicitly requested lifecycle action.
+        if ready := await self.executor_snapshot(revision=revision if replace else None):
             return ready
         async with sessionmaker()() as db:
             apis = list((await db.execute(select(RuntimeGeneration.protocol, RuntimeGeneration.execution_mode)
@@ -418,6 +463,7 @@ class Slots:
             raise RuntimeError("executor activation requires a drained Run lease boundary")
         if set(pending) - {"cancel", "reset", "release_waiting"}:
             raise RuntimeError("executor activation refuses an unknown pending command")
+        await self.stop_executor()
         services = self.root / "services"
         logs = self.root / "logs"
         services.mkdir(parents=True, exist_ok=True)
@@ -1225,6 +1271,7 @@ class GenerationController:
                     await self.slots.switch(job["candidate_slot"])
                 async with self._operation("readiness"):
                     await self.slots.verify(job["revision"])
+                    await self.slots.ensure_executor(Path(job["release_path"]), job["revision"])
                 async with self._operation("record"):
                     self.record_active(job)
                 self.phase(job, "draining", activated_revision=job["revision"])

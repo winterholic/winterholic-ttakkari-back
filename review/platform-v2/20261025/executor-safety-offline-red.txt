@@ -1,0 +1,44 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_serve_drain_timeout_is_not_permission_to_shutdown[offline] ________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-4259/test_serve_drain_timeout_is_no1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bae3890>
+state = 'offline'
+
+    @pytest.mark.parametrize("state", ["active", "offline"])
+    async def test_serve_drain_timeout_is_not_permission_to_shutdown(tmp_path, monkeypatch, state):
+        from ttakkari.artifacts import preview
+        from ttakkari.meetings.local_stt import jobs
+        from ttakkari.runs import manager as managers
+        from ttakkari.runs import profiles, usage_store
+    
+        runtime = SimpleNamespace(state=state, register=AsyncMock(), listen=AsyncMock(), close=AsyncMock())
+        monkeypatch.setattr(executor, "get_settings", lambda: SimpleNamespace(home=tmp_path, release_revision="a" * 40))
+        monkeypatch.setattr(executor, "ExecutorRuntime", lambda *args, **kwargs: runtime)
+        monkeypatch.setattr("ttakkari.deployment.revision", lambda: "a" * 40)
+        monkeypatch.setattr(executor, "start_background_services", AsyncMock(return_value=[]))
+        drain = AsyncMock(side_effect=[False, True])
+        monkeypatch.setattr(executor, "drain", drain)
+        monkeypatch.setattr(executor, "dispose_engine", AsyncMock())
+        monkeypatch.setattr(managers.manager, "shutdown", AsyncMock())
+        monkeypatch.setattr(profiles, "flush_persist", AsyncMock())
+        monkeypatch.setattr(usage_store, "install", lambda: None)
+        monkeypatch.setattr(usage_store, "flush", AsyncMock())
+        monkeypatch.setattr(preview, "stop_worker", AsyncMock())
+        monkeypatch.setattr(jobs, "stop", AsyncMock())
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(loop, "add_signal_handler", lambda sig, callback: callback())
+        monkeypatch.setattr(loop, "remove_signal_handler", lambda sig: None)
+        monkeypatch.setattr(generation, "current", None)
+        await executor.serve(drain_timeout=0)
+>       assert drain.await_count == 2
+E       AssertionError: assert 0 == 2
+E        +  where 0 = <AsyncMock id='4491128384'>.await_count
+
+unit_tests/test_executor_safety.py:132: AssertionError
+=========================== short test summary info ============================
+FAILED unit_tests/test_executor_safety.py::test_serve_drain_timeout_is_not_permission_to_shutdown[offline]
+1 failed, 1 passed, 15 deselected in 0.45s
+
+exit_code=1

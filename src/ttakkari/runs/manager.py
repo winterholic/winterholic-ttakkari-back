@@ -195,6 +195,8 @@ class RunManager:
             return False
         if run_id in self._handles or self._shutting_down:
             return False
+        if self.runtime and getattr(self.runtime, "draining", False):
+            return False
         lease = Admission(get_settings().home / "deploy").acquire()
         if lease is None:
             if self._restart_waker is None or self._restart_waker.done():
@@ -293,7 +295,7 @@ class RunManager:
                 await generation.wake(db)
                 await db.commit()
             return None
-        if self.runtime and await self.runtime.refresh() != "active":
+        if self.runtime and (getattr(self.runtime, "draining", False) or await self.runtime.refresh() != "active"):
             return None
         async with sessionmaker()() as db:
             kind = await db.scalar(select(ChatSession.kind).where(ChatSession.id == session_id).with_for_update())

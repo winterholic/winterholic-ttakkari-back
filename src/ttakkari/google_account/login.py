@@ -358,12 +358,28 @@ class LoginManager:
             self._states[account_id] = st
         return self.state(account_id)
 
-    async def shutdown(self) -> None:
+    def inflight(self) -> int:
+        return sum(not t.done() for t in self._tasks.values())
+
+    async def drain(self, timeout: float | None = 20.0) -> bool:
+        """진행 중인 로그인 태스크의 완료를 기다린다. timeout 초과 시 shutdown() 후 False."""
+        tasks = [t for t in self._tasks.values() if not t.done()]
+        if not tasks:
+            return True
+        _done, unfinished = await asyncio.wait(tasks, timeout=timeout)
+        if unfinished:
+            await self.shutdown(timeout=min(2.0, timeout if timeout is not None else 2.0))
+            return False
+        return True
+
+    async def shutdown(self, timeout: float = 20.0) -> None:
         for ev in self._cancel.values():
             ev.set()
         tasks = [t for t in self._tasks.values() if not t.done()]
         if tasks:
-            await asyncio.wait(tasks, timeout=20)
+            for t in tasks:
+                t.cancel()
+            await asyncio.wait(tasks, timeout=timeout)
 
     async def _run(self, st: LoginState, chrome: Path, target: registry.LoginTarget, on_done) -> None:
         s = get_settings()

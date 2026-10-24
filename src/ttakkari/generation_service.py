@@ -254,8 +254,9 @@ async def start_api_services(execution_mode: str) -> None:
 
 
 async def ready(runtime) -> dict:
-    from ttakkari import background_consumers, queued_work
+    from ttakkari import artcraft, background_consumers, queued_work
     from ttakkari.api.assistant import _tasks as indexing
+    from ttakkari.google_account.login import manager as login_manager
     from ttakkari.meetings.vectors import _pending
     from ttakkari.runs import usage_store
     from ttakkari.runs.manager import _background, manager
@@ -263,9 +264,14 @@ async def ready(runtime) -> dict:
     pending = sum(not t.done() for t in (*_background, *indexing, *usage_store._tasks, *_pending.values()))
     # 로컬 API 가 소비자로 이미 맡은 일(NotebookLM/Reverse/색인 task, claim 중인 pump, Creative/게임 job).
     consumer_work = background_consumers.busy() + queued_work.inflight()
+    # 원격/로컬 API 에서 실행 중인 잔여 작업(ArtCraft, Google 로그인).
+    api_residual = artcraft.inflight() + login_manager.inflight()
     value["finalizers"] = pending
     value["consumer_work"] = consumer_work
-    value["drain_ready"] = await runtime.can_retire() and not (manager._handles or pending or consumer_work)
+    value["api_residual"] = api_residual
+    value["drain_ready"] = await runtime.can_retire() and not (
+        manager._handles or pending or consumer_work or api_residual
+    )
     value["ready"] = runtime._listener is not None and not runtime._listener.is_closed()
     return value
 
@@ -342,6 +348,10 @@ async def finish_claimed_work(seconds: float = SHUTDOWN_DRAIN_SECONDS) -> dict[s
         await asyncio.gather(tts_drain, return_exceptions=True)
     results["creative_game"] = await queued_work.drain(left())
     results["background"] = await background_consumers.stop(drain_seconds=left())
+    from ttakkari import artcraft
+    from ttakkari.google_account.login import manager as login_manager
+    results["artcraft"] = await artcraft.drain(left())
+    results["google_login"] = await login_manager.drain(left())
     if not all(results.values()):
         log.warning("local shutdown cut claimed work after %.0fs: %s", seconds,
                     sorted(name for name, finished in results.items() if not finished))
@@ -394,6 +404,14 @@ async def lifespan(app):
             await jobs.stop()
             await finish_claimed_work()
             await tts_jobs.stop()
+        else:
+            from ttakkari import artcraft
+            from ttakkari.google_account.login import manager as login_manager
+            await asyncio.gather(
+                artcraft.drain(min(30.0, SHUTDOWN_DRAIN_SECONDS)),
+                login_manager.drain(min(20.0, SHUTDOWN_DRAIN_SECONDS)),
+                return_exceptions=True,
+            )
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
         from ttakkari.notebooklm.service import service as notebooklm_service

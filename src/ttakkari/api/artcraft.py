@@ -20,6 +20,17 @@ def _http(exc: artcraft.ArtcraftError) -> HTTPException:
     return HTTPException(exc.status, {"code": exc.code, "message": exc.message})
 
 
+async def _assert_admitting() -> None:
+    from ttakkari import generation
+    runtime = generation.current
+    if runtime is not None and not await runtime.enter_admission("artcraft"):
+        raise HTTPException(
+            503,
+            {"code": "draining", "message": "배포 전환 중입니다. 잠시 후 다시 시도해 주세요."},
+            headers={"Retry-After": "5"},
+        )
+
+
 class SmokeIn(BaseModel):
     apps: list[str] | None = Field(default=None, max_length=20)
     mode: Literal["cli", "full"] = "cli"
@@ -48,6 +59,7 @@ async def apps(_: User, response: Response, refresh: bool = False) -> dict:
 
 @router.post("/remote-check", status_code=202)
 async def remote_check(_: User) -> dict:
+    await _assert_admitting()
     try:
         return artcraft.start_remote_check(manual=True).public()
     except artcraft.ArtcraftError as exc:
@@ -56,6 +68,7 @@ async def remote_check(_: User) -> dict:
 
 @router.post("/smoke", status_code=202)
 async def smoke(body: SmokeIn, request: Request, _: User, db: Db) -> dict:
+    await _assert_admitting()
     try:
         job = await artcraft.start_smoke(body.apps, body.mode, body.confirm)
     except artcraft.ArtcraftError as exc:
@@ -68,6 +81,7 @@ async def smoke(body: SmokeIn, request: Request, _: User, db: Db) -> dict:
 
 @router.post("/apps/{app}/gui", status_code=202)
 async def gui(app: str, body: GuiIn, request: Request, _: User, db: Db) -> dict:
+    await _assert_admitting()
     try:
         job = await artcraft.start_gui(app, body.action, body.confirm)
     except artcraft.ArtcraftError as exc:
@@ -223,7 +237,7 @@ async def patch_task(task_id: uuid.UUID, body: TaskPatch, _: User, db: Db) -> di
     except artcraft.ArtcraftError as exc:
         raise _http(exc) from exc
     data = body.model_dump(exclude_unset=True)
-    if "title" in data and data["title"]:
+    if data.get("title"):
         task.title = data["title"].strip()[:200]
     if "archived" in data and data["archived"] is not None:
         from ttakkari.models import utcnow

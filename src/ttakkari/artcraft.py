@@ -469,6 +469,28 @@ def get_job(job_id: str) -> Job:
     return job
 
 
+def inflight() -> int:
+    """진행 중(queued, running)인 Job의 개수를 반환한다."""
+    return sum(bool(j.active) for j in JOBS.values())
+
+
+async def drain(timeout: float | None = 60.0) -> bool:
+    """진행 중인 active 작업들의 완료를 기다린다. timeout 초과 시 남은 task 취소 후 False."""
+    loop = asyncio.get_running_loop()
+    deadline = None if timeout is None else loop.time() + timeout
+    while True:
+        tasks = [j.task for j in JOBS.values() if j.active and j.task and not j.task.done()]
+        if not tasks:
+            return True
+        remaining = None if deadline is None else max(0.0, deadline - loop.time())
+        _done, unfinished = await asyncio.wait(tasks, timeout=remaining)
+        if unfinished and deadline is not None and loop.time() >= deadline:
+            for t in unfinished:
+                t.cancel()
+            await asyncio.gather(*unfinished, return_exceptions=True)
+            return False
+
+
 def _finish(job: Job, result: Result, ok_summary: str, fail_summary: str, timeout: float) -> None:
     job.output = clean_output(result.out)[-TAIL_CHARS:]
     if result.timed_out:

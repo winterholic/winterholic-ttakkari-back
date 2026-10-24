@@ -72,6 +72,14 @@ def _routes(r: APIRouter, *, agent: bool) -> None:
     @r.post("/{account_id}/login", status_code=status.HTTP_202_ACCEPTED)
     async def login_start(account_id: str, body: LoginIn | None = None) -> dict[str, Any]:
         """Mac 화면에 그 계정 전용 프로필 Chrome 창을 연다. 사람이 그 창에서 Google 로그인을 한 번 한다."""
+        from ttakkari import generation
+        runtime = generation.current
+        if runtime is not None and not await runtime.enter_admission("google_login"):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                {"code": "draining", "message": "배포 전환 중입니다. 잠시 후 다시 시도해 주세요."},
+                headers={"Retry-After": "5"},
+            )
         return await service.start_login(account_id, feature=body.feature if body else None)
 
     @r.post("/{account_id}/login/complete")

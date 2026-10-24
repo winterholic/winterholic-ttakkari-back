@@ -57,9 +57,10 @@ async def claim(source_id: uuid.UUID) -> bool:
             return False
         req = src.index_requested_at
         prev_started = src.index_started_at
-        cond = CtxSource.index_started_at.is_(None) if prev_started is None else (CtxSource.index_started_at == prev_started)
+        started_cond = CtxSource.index_started_at.is_(None) if prev_started is None else (CtxSource.index_started_at == prev_started)
+        req_cond = CtxSource.index_requested_at.is_(None) if req is None else (CtxSource.index_requested_at == req)
         res = await db.execute(update(CtxSource).where(
-            CtxSource.id == source_id, cond)
+            CtxSource.id == source_id, started_cond, req_cond)
             .values(index_requested_at=None, index_started_at=utcnow()))
         if res.rowcount != 1:
             return False
@@ -71,11 +72,12 @@ async def claim(source_id: uuid.UUID) -> bool:
         return True
 
 
-async def release(source_id: uuid.UUID, *, requested_at: datetime | None = None) -> None:
-    _claimed_requests.pop(source_id, None)
+async def release(source_id: uuid.UUID, *, cancelled: bool = False, requested_at: datetime | None = None) -> None:
+    cached_req = _claimed_requests.pop(source_id, None)
     values: dict[str, Any] = {"index_started_at": None}
-    if requested_at is not None:
-        values["index_requested_at"] = requested_at
+    restore_req = (requested_at or cached_req) if cancelled else None
+    if restore_req is not None:
+        values["index_requested_at"] = restore_req
     async with sessionmaker()() as db:
         await db.execute(update(CtxSource).where(CtxSource.id == source_id).values(**values))
         await db.commit()
@@ -83,21 +85,19 @@ async def release(source_id: uuid.UUID, *, requested_at: datetime | None = None)
 
 async def run_claimed(source_id: uuid.UUID, requested_at: datetime | None = None) -> None:
     """claim 한 출처를 색인하고 실행권을 돌려준다. 실패는 index_source 가 last_error 에 남긴다."""
-    req = requested_at or _claimed_requests.pop(source_id, None)
-    requeue_at: datetime | None = None
+    cancelled = False
     try:
         async with sessionmaker()() as db:
             src = await db.get(CtxSource, source_id)
             if src is not None:
                 await index_source(db, src)
     except asyncio.CancelledError:
-        requeue_at = req
+        cancelled = True
         raise
     except Exception:
         log.exception("indexing failed")
     finally:
-        _claimed_requests.pop(source_id, None)
-        await asyncio.shield(release(source_id, requested_at=requeue_at))
+        await asyncio.shield(release(source_id, cancelled=cancelled, requested_at=requested_at))
 
 
 def inflight() -> int:
@@ -118,7 +118,13 @@ async def pump() -> int:
     sid, req_at = row
     if not await claim(sid):
         return 0
-    task = asyncio.create_task(run_claimed(sid, requested_at=req_at))
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
-    return 1
+    started = False
+    try:
+        task = asyncio.create_task(run_claimed(sid, requested_at=req_at))
+        _tasks.add(task)
+        task.add_done_callback(_tasks.discard)
+        started = True
+        return 1
+    finally:
+        if not started:
+            await asyncio.shield(release(sid, cancelled=True, requested_at=req_at))

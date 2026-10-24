@@ -151,3 +151,94 @@ async def test_claimed_manual_index_clears_requested_at_on_normal_exception(queu
     assert after.index_requested_at is None
     assert after.index_started_at is None
     assert index_queue.is_active(after) is False
+
+
+async def test_index_all_restores_manual_index_request_on_cancellation(queue_db, monkeypatch):
+    """주기 색인(indexer.index_all)이 수동 요청 출처를 claim한 뒤 취소되면 수동 요청 시각이 복원되어야 한다."""
+    t0 = utcnow() - timedelta(seconds=10)
+    sid = await _create_source(queue_db, requested_at=t0)
+
+    started = asyncio.Event()
+    hang = asyncio.Event()
+
+    async def slow_index(db, src):
+        started.set()
+        await hang.wait()
+
+    monkeypatch.setattr("ttakkari.context.indexer.index_source", slow_index)
+
+    from ttakkari.context import indexer
+
+    async def run():
+        async with queue_db() as db:
+            await indexer.index_all(db)
+
+    task = asyncio.create_task(run())
+    await asyncio.wait_for(started.wait(), 5)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    after = await _get_source(queue_db, sid)
+    assert after.index_requested_at in (t0, t0.replace(tzinfo=None))
+    assert after.index_started_at is None
+    assert index_queue.is_active(after) is True
+
+
+async def test_claim_compare_and_set_guards_against_concurrent_request_race(queue_db, monkeypatch):
+    """claim의 SELECT와 UPDATE 사이에 새 수동 요청이 등록되면 덮어쓰지 않고 claim이 실패하여 새 요청을 보존해야 한다."""
+    sid = await _create_source(queue_db, requested_at=None)
+    t_new = utcnow()
+
+    real_sm = queue_db
+    raced = False
+
+    def wrapping_sm():
+        session = real_sm()
+        real_execute = session.execute
+
+        async def hooked_execute(statement, *args, **kwargs):
+            nonlocal raced
+            if not raced and statement.__class__.__name__ == "Update":
+                raced = True
+                async with real_sm() as db2:
+                    src = await db2.get(CtxSource, sid)
+                    src.index_requested_at = t_new
+                    await db2.commit()
+            return await real_execute(statement, *args, **kwargs)
+
+        session.execute = hooked_execute
+        return session
+
+    monkeypatch.setattr(index_queue, "sessionmaker", lambda: wrapping_sm)
+
+    claimed = await index_queue.claim(sid)
+    assert claimed is False
+
+    after = await _get_source(queue_db, sid)
+    assert after.index_requested_at in (t_new, t_new.replace(tzinfo=None))
+    assert after.index_started_at is None
+    assert index_queue.is_active(after) is True
+
+
+async def test_pump_claim_cancellation_before_task_spawn_releases_started_marker(queue_db, monkeypatch):
+    """claim 직후 task 생성 전에 취소(CancelledError)되면 index_started_at이 남아 stuck 되지 않고 release되어야 한다."""
+    t0 = utcnow() - timedelta(seconds=10)
+    sid = await _create_source(queue_db, requested_at=t0)
+
+    orig_create_task = asyncio.create_task
+
+    def fail_create_task(coro, *args, **kwargs):
+        if getattr(coro, "__name__", None) == "run_claimed":
+            coro.close()
+            raise asyncio.CancelledError("cancelled before task spawn")
+        return orig_create_task(coro, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_task", fail_create_task)
+
+    with pytest.raises(asyncio.CancelledError):
+        await index_queue.pump()
+
+    after = await _get_source(queue_db, sid)
+    assert after.index_started_at is None
+    assert after.index_requested_at in (t0, t0.replace(tzinfo=None))
+    assert index_queue.is_active(after) is True

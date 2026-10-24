@@ -522,6 +522,41 @@ async def test_manual_index_request_is_restored_to_queued_on_cancellation(client
     assert index_queue.is_active(after_src) is True
 
 
+async def test_index_all_restores_manual_index_request_on_cancellation(client, auth, remote_api, monkeypatch):
+    from ttakkari.context import indexer
+
+    d = _notes("bg-index-all-cancel")
+    created = (await client.post("/api/assistant/sources", json={"path": str(d)}, headers=auth)).json()
+    sid = created["id"]
+    orig_src = await _source(sid)
+    orig_requested_at = orig_src.index_requested_at
+    assert orig_requested_at is not None
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_index(db, src):
+        started.set()
+        await release.wait()
+        return {}
+
+    monkeypatch.setattr(indexer, "index_source", slow_index)
+
+    async def run_all():
+        async with sessionmaker()() as db:
+            await indexer.index_all(db)
+
+    task = asyncio.create_task(run_all())
+    await asyncio.wait_for(started.wait(), 5)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+    after_src = await _source(sid)
+    assert after_src.index_requested_at == orig_requested_at
+    assert after_src.index_started_at is None
+    assert index_queue.is_active(after_src) is True
+
+
 # ------------------------------------------------------------------ 소비자 생명주기
 
 async def test_consumer_loops_finish_recorded_work_and_stop_drains_in_flight_but_keeps_queued_rows(

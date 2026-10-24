@@ -209,11 +209,15 @@ async def index_all(db: AsyncSession) -> int:
         sid = src.id
         if not await index_queue.claim(sid):
             continue
+        cancelled = False
         try:
             await index_source(db, src)
             n += 1
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
         except Exception:
             log.exception("indexing %s failed", src.path)
         finally:
-            await index_queue.release(sid)
+            await asyncio.shield(index_queue.release(sid, cancelled=cancelled))
     return n

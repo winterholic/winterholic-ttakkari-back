@@ -473,9 +473,15 @@ async def _start_index(source_id: uuid.UUID) -> None:
         return
     if not await index_queue.claim(source_id):
         return
-    t = asyncio.create_task(index_queue.run_claimed(source_id))
-    _tasks.add(t)
-    t.add_done_callback(_tasks.discard)
+    started = False
+    try:
+        t = asyncio.create_task(index_queue.run_claimed(source_id))
+        _tasks.add(t)
+        t.add_done_callback(_tasks.discard)
+        started = True
+    finally:
+        if not started:
+            await asyncio.shield(index_queue.release(source_id, cancelled=True))
 
 
 @router.get("/sources")

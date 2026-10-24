@@ -109,6 +109,7 @@ from ttakkari.config import get_settings
 get_settings.cache_clear()
 assert str(get_settings().database_url) == TEST_DB, "테스트 DB 설정이 적용되지 않았다"
 
+from ttakkari import generation
 from ttakkari.api.assistant import wait_indexing
 from ttakkari.db import sessionmaker
 from ttakkari.main import app
@@ -219,6 +220,9 @@ async def _clean(_schema_and_app):
     await profiles.flush_persist()
     await usage_store.flush()
     usage_store.reset()
+    generation.current = None
+    manager._runtime = None
+    manager._reset_requests.clear()
     async with sessionmaker()() as db:
         await reset_database(db)
     limiter.reset()
@@ -230,6 +234,9 @@ async def _clean(_schema_and_app):
     # 지식 색인(백그라운드)이 다음 테스트의 TRUNCATE 와 겹치면 교착이 난다.
     await wait_indexing()
     await desk_pool.shutdown()
+    generation.current = None
+    manager._runtime = None
+    manager._reset_requests.clear()
     # 한도 대기 중인 Run 의 재개 타이머가 다음 테스트로 새지 않게 끈다.
     if manager._restart_waker is not None:
         manager._restart_waker.cancel()

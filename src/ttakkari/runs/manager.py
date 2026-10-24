@@ -2339,7 +2339,9 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     from ttakkari.runs.agent_control import should_suppress_report
     if await should_suppress_report(db, run):
         return None
-    parent = await db.get(ChatSession, sess.parent_id)
+    parent = await db.scalar(
+        select(ChatSession).where(ChatSession.id == sess.parent_id).with_for_update()
+    )
     if parent is None or parent.archived_at is not None:
         return None
     label = {RunStatus.succeeded: "완료", RunStatus.failed: "실패", RunStatus.cancelled: "취소",
@@ -2366,11 +2368,13 @@ async def _enqueue_report(db: AsyncSession, sess: ChatSession, run: Run) -> uuid
     pending = await db.scalar(
         select(Run).where(Run.session_id == parent.id, Run.status == RunStatus.queued, Run.origin == RunOrigin.report)
         .order_by(Run.created_at.desc()).limit(1))
-    if pending is not None and manager.runtime is None and not await manager.is_owned(pending.id):
+    if pending is not None and not await manager.is_owned(pending.id):
         pending.prompt = pending.prompt + "\n\n" + text
+        parent.updated_at = utcnow()
+        await db.flush()
         return parent.id
     report = Run(session_id=parent.id, workspace_id=parent.workspace_id, prompt=text, engine=parent.engine,
-                 model=parent.model, effort=parent.effort, origin=RunOrigin.report)
+                 model=parent.model, effort=parent.effort, status=RunStatus.queued, origin=RunOrigin.report)
     db.add(report)
     await db.flush()
     events.append(db, report, "run.status", {"status": RunStatus.queued, "ahead": 0})

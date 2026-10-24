@@ -9,7 +9,7 @@ import signal
 import psutil
 from sqlalchemy import func, select, update
 
-from ttakkari import generation
+from ttakkari import generation, queued_work
 from ttakkari.config import get_settings
 from ttakkari.db import dispose_engine, sessionmaker
 from ttakkari.generation import EXECUTOR_PROTOCOL, GenerationRuntime, _control, _lock
@@ -159,6 +159,9 @@ async def serve(*, activate: bool = False) -> None:
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
+            # 새로 맡는 일을 멈추고, 이미 맡은 Creative 자산 생성·게임 빌드는 끝까지 기다린다. 대기 중인 요청은 보존된다.
+            queued_work.begin_drain()
+            await queued_work.wait_idle()
             for task in background_tasks:
                 task.cancel()
             await asyncio.gather(*background_tasks, return_exceptions=True)

@@ -209,6 +209,18 @@ async def _collector_control() -> None:
     await budget.sweep_orphans()
 
 
+async def _creative_assets() -> None:
+    from ttakkari.creative.v2 import asset_worker
+    while await asset_worker.consume_once():
+        pass
+
+
+async def _game_builds() -> None:
+    from ttakkari.games import builds
+    while await builds.consume_queued_build():
+        pass
+
+
 async def _kb_vectors() -> None:
     from ttakkari.kb_retrieval import index_pending
     await index_pending(limit=8)
@@ -254,7 +266,9 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     jobs: list[tuple[str, object, float]] = [
         ("retention", _retention, 3600), ("vectors", _vectors, s.runtime_poll_seconds),
         ("notebooklm-jobs", _notebooklm_jobs, 60), ("creative-render", creative_scan, 2),
-        ("schedules", _schedules, s.runtime_poll_seconds)]
+        ("schedules", _schedules, s.runtime_poll_seconds),
+        # 원격 API 가 접수한 일을 순차로 끝낸다. 로컬 모드 API 도 같은 주기 작업을 돌려 모드 전환 때 대기 요청이 남지 않는다.
+        ("creative-assets", _creative_assets, s.runtime_poll_seconds), ("game-builds", _game_builds, s.runtime_poll_seconds)]
     if s.collector_consume_enabled:
         jobs.append(("collector-consume", _collector_consume, s.runtime_poll_seconds))
     if s.collector_control_enabled:

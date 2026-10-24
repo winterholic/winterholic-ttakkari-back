@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import os
 import re
 import shutil
@@ -20,12 +21,14 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari import queued_work
 from ttakkari.artifacts.service import register_file
 from ttakkari.broker.policy import ResolvedPath
 from ttakkari.config import get_settings
+from ttakkari.db import sessionmaker
 from ttakkari.games.adapter import (
     GameEngineAdapter,
     get_adapter,
@@ -42,6 +45,8 @@ from ttakkari.games.contract import (
 )
 from ttakkari.games.isolation import IsolatedBuildRunner
 from ttakkari.models import Artifact, GameBuild, GameProject, Run, Workspace, utcnow
+
+log = logging.getLogger(__name__)
 
 BUNDLE_DIRNAME = "bundle"
 LOG_TAIL_CHARS = 20_000
@@ -133,19 +138,33 @@ def require_lock_intact(game: GameProject, manifest: ProjectManifest) -> None:
             "lock_violation")
 
 
-async def _next_build(db: AsyncSession, game: GameProject, run: Run | None, restored_from: uuid.UUID | None = None) -> GameBuild:
-    """게임 행을 잠가 순번을 매기고 building 행을 만든다. 진행 중인 빌드가 있으면 거부하고, 중단된 오래된 빌드는 실패로 닫는다."""
+def _is_stale(build: GameBuild, stale_before) -> bool:
+    """맡은 시각(없으면 접수 시각)이 기준보다 오래된 building 행. 실행부 대기(queued)는 아직 시작 전이라 오래돼도 stale 이 아니다."""
+    if build.queue_state == "queued":
+        return False
+    started = build.claimed_at or build.created_at
+    return started.replace(tzinfo=None) < stale_before.replace(tzinfo=None)
+
+
+async def _next_build(
+    db: AsyncSession, game: GameProject, run: Run | None, restored_from: uuid.UUID | None = None, *, queued: bool = False,
+) -> GameBuild:
+    """게임 행을 잠가 순번을 매기고 building 행을 만든다. 진행 중인 빌드가 있으면 거부하고, 중단된 오래된 빌드는 실패로 닫는다.
+
+    queued=True 이면 원격 API 접수다. 행은 그대로 building 이고 queue_state=queued 로 실행부에 넘긴다.
+    """
     s = get_settings()
     await db.execute(select(GameProject.id).where(GameProject.id == game.id).with_for_update())
     stale_before = utcnow() - timedelta(seconds=s.game_build_install_timeout_seconds + s.game_build_timeout_seconds + STALE_SLACK_SECONDS)
     for b in (await db.scalars(select(GameBuild).where(GameBuild.game_id == game.id, GameBuild.status == "building"))).all():
-        if b.created_at.replace(tzinfo=None) < stale_before.replace(tzinfo=None):
+        if _is_stale(b, stale_before):
             b.status, b.error, b.finished_at = "failed", "빌드가 중단되었습니다(서버 재시작 또는 시간 초과).", utcnow()
         else:
             await db.rollback()
             raise GameContractError("이 게임의 다른 빌드가 진행 중입니다.", "build_in_progress")
     seq = (await db.scalar(select(func.coalesce(func.max(GameBuild.seq), 0)).where(GameBuild.game_id == game.id))) + 1
-    build = GameBuild(game_id=game.id, seq=seq, status="building", run_id=run.id if run else None, restored_from_id=restored_from)
+    build = GameBuild(game_id=game.id, seq=seq, status="building", run_id=run.id if run else None, restored_from_id=restored_from,
+                      queue_state="queued" if queued else None)
     db.add(build)
     await db.commit()
     return build
@@ -164,9 +183,11 @@ class BuildPlan:
 
 
 async def prepare_build(
-    db: AsyncSession, game: GameProject, *, run_id: uuid.UUID | None = None, restored_from: uuid.UUID | None = None,
+    db: AsyncSession, game: GameProject, *, run_id: uuid.UUID | None = None, restored_from: uuid.UUID | None = None, queued: bool = False,
 ) -> tuple[GameBuild, BuildPlan]:
-    """경로·매니페스트·Run 을 검증하고 순번을 매긴 building 행을 만든다. 검증에 실패하면 빌드 행을 만들지 않는다."""
+    """경로·매니페스트·Run 을 검증하고 순번을 매긴 building 행을 만든다. 검증에 실패하면 빌드 행을 만들지 않는다.
+
+    queued=True(원격 API)이면 행을 실행부 대기로 표시하고, 빌드는 consume_queued_build 가 이어받는다."""
     ws = await db.get(Workspace, game.workspace_id)
     if ws is None:
         raise GameContractError("게임의 workspace 를 찾을 수 없습니다.", "no_workspace")
@@ -182,7 +203,7 @@ async def prepare_build(
     if manifest.id != game.slug or manifest.engine != game.engine_id:
         raise GameContractError("매니페스트가 등록된 게임(slug/engine)과 다릅니다.", "bad_manifest")
     require_lock_intact(game, manifest)
-    build = await _next_build(db, game, run, restored_from)
+    build = await _next_build(db, game, run, restored_from, queued=queued)
     return build, BuildPlan(game.id, build.id, root, ws.id, game.engine_id, manifest_sha)
 
 
@@ -225,6 +246,64 @@ async def execute_build(
         await asyncio.to_thread(shutil.rmtree, work / str(plan.build_id), True)
         await db.commit()
     return build
+
+
+async def _plan_for(db: AsyncSession, build: GameBuild) -> BuildPlan:
+    """DB 행만으로 BuildPlan 을 다시 만든다. 경로·엔진은 prepare_build 가 검증한 게임·workspace 에서 그대로 유도된다."""
+    game = await db.get(GameProject, build.game_id)
+    ws = await db.get(Workspace, game.workspace_id) if game else None
+    if game is None or ws is None:
+        raise GameContractError("게임 또는 workspace 를 찾을 수 없습니다.", "no_workspace")
+    root = resolve_project_path(Path(ws.root_path))
+    if root.name != game.slug:
+        raise GameContractError("workspace 경로가 게임 slug 와 다릅니다.", "bad_path")
+    return BuildPlan(game.id, build.id, root, ws.id, game.engine_id, build.manifest_sha256 or "")
+
+
+async def claim_queued_build(db: AsyncSession) -> BuildPlan | None:
+    """원격 API 가 넘긴(queue_state=queued) 가장 오래된 빌드 하나를 맡는다. 조건부 UPDATE 라 둘이 동시에 맡을 수 없다.
+
+    queue_state 가 NULL 인 building 행(API/Run 이 직접 돌리는 빌드, 이 표식 이전 행)은 후보가 아니다."""
+    candidates = list(await db.scalars(
+        select(GameBuild.id).where(GameBuild.status == "building", GameBuild.queue_state == "queued")
+        .order_by(GameBuild.created_at, GameBuild.id)))
+    for build_id in candidates:
+        claimed = await db.execute(
+            update(GameBuild).where(GameBuild.id == build_id, GameBuild.status == "building", GameBuild.queue_state == "queued")
+            .values(queue_state="claimed", claimed_at=utcnow()))
+        await db.commit()
+        if claimed.rowcount != 1:
+            continue
+        build = await db.get(GameBuild, build_id, populate_existing=True)
+        try:
+            return await _plan_for(db, build)
+        except GameContractError as e:
+            # 맡았지만 실행할 수 없는 행은 실패로 닫는다. 닫지 않으면 이 게임의 다음 접수를 영원히 막는다.
+            build.status, build.error, build.finished_at = "failed", str(e)[:500], utcnow()
+            await db.commit()
+    return None
+
+
+async def consume_queued_build(*, adapter: GameEngineAdapter | None = None, runner: IsolatedBuildRunner | None = None) -> GameBuild | None:
+    """대기 중인 빌드 하나를 맡아 끝까지 실행한다. 맡은 행이 없으면 None. 드레인 중에는 새로 맡지 않는다.
+
+    실행 중인 빌드는 소비 루프가 취소돼도 끝까지 간다(queued_work.run_tracked)."""
+    if queued_work.draining():
+        return None
+    async with sessionmaker()() as db:
+        plan = await claim_queued_build(db)
+    if plan is None:
+        return None
+
+    async def run() -> GameBuild | None:
+        async with sessionmaker()() as db:
+            try:
+                return await execute_build(db, plan, adapter=adapter, runner=runner)
+            except Exception:
+                log.exception("game build %s failed unexpectedly", plan.build_id)  # 행은 execute_build 가 failed 로 닫았다
+                return await db.get(GameBuild, plan.build_id, populate_existing=True)
+
+    return await queued_work.run_tracked(run())
 
 
 async def build_game(
@@ -308,9 +387,9 @@ async def check_activatable(db: AsyncSession, game: GameProject, build: GameBuil
 
 async def assert_no_build_in_progress(db: AsyncSession, game: GameProject) -> None:
     s = get_settings()
-    stale_before = (utcnow() - timedelta(seconds=s.game_build_install_timeout_seconds + s.game_build_timeout_seconds + STALE_SLACK_SECONDS)).replace(tzinfo=None)
+    stale_before = utcnow() - timedelta(seconds=s.game_build_install_timeout_seconds + s.game_build_timeout_seconds + STALE_SLACK_SECONDS)
     for b in (await db.scalars(select(GameBuild).where(GameBuild.game_id == game.id, GameBuild.status == "building"))).all():
-        if b.created_at.replace(tzinfo=None) >= stale_before:
+        if not _is_stale(b, stale_before):
             raise GameContractError("이 게임의 다른 빌드가 진행 중입니다.", "build_in_progress")
 
 

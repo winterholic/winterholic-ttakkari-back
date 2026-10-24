@@ -460,9 +460,23 @@ class ManagedAssetGenerator:
 
     @staticmethod
     def _write_checkpoint(path: Path, value: dict[str, Any]) -> None:
+        # 제출한 Comfy task id 는 재시도 때 중복 제출을 막는 유일한 근거다. 전원·프로세스 종료 뒤에도 이전 checkpoint 이거나
+        # 완전한 새 checkpoint 여야 하므로 내용과 디렉터리 항목을 모두 디스크에 반영한 뒤 교체한다.
         temporary = path.with_suffix(path.suffix + ".tmp")
-        temporary.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-        temporary.replace(path)
+        try:
+            with temporary.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(value, ensure_ascii=False, sort_keys=True))
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.replace(path)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
     def _synthesize_voice(self, text: str, staging_root: Path) -> tuple[Path, dict[str, Any]]:
         """Run the existing Supertonic provider under its shared concurrency budget."""

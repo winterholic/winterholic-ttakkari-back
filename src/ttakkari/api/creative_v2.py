@@ -18,10 +18,11 @@ from fastapi import Path as PathParam
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import Field
 
+from ttakkari import queued_work
 from ttakkari.api.creative import _normalize, perform
 from ttakkari.api.deps import Db
 from ttakkari.creative.service import default_studio
-from ttakkari.creative.v2 import asset_generation
+from ttakkari.creative.v2 import asset_generation, asset_worker
 from ttakkari.creative.v2 import dispatch as production
 from ttakkari.creative.v2.asset_generation_managed import ManagedAssetGenerator
 from ttakkari.creative.v2.capabilities import CAPABILITIES, Strict
@@ -396,21 +397,22 @@ async def production_render(pid: PlanId, body: PlanApprove, _: User):
 
 async def _run_asset_generation(plan_id: str, revision: int) -> None:
     try:
-        await asyncio.to_thread(
-            asset_generation.generate_assets,
-            default_plan_store(),
-            plan_id,
-            revision,
-            ManagedAssetGenerator(loop=asyncio.get_running_loop()),
-        )
+        await asset_worker.run_asset_generation(plan_id, revision)
     except asset_generation.AssetGenerationError:
-        # 실패 상세는 자산 생성 service가 production.json에 기록한다.
+        # 다른 실행자가 같은 키를 돌리는 중이다. 그쪽이 production.json 에 결과를 기록한다.
         return
 
 
 @router.post("/plans/{pid}/production/generate-assets", status_code=202)
 async def production_generate_assets(pid: PlanId, body: PlanApprove, _: User):
     perform(default_plan_store().assert_renderable, str(pid), body.revision)
+    if queued_work.delegated():
+        # 원격 API 는 요청을 production.json 에 남기고 현재 상태만 답한다. 실행은 별도 실행부 소비자가 한다.
+        status = await asyncio.to_thread(
+            perform, asset_generation.enqueue_assets, default_plan_store(), str(pid), body.revision,
+            ManagedAssetGenerator(),
+        )
+        return {"plan_id": str(pid), "plan_revision": body.revision, "status": status}
     key = (str(pid), body.revision)
     existing = _ASSET_GENERATION_TASKS.get(key)
     if existing is not None and not existing.done():

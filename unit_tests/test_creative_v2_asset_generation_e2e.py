@@ -437,7 +437,7 @@ class _LoopBoundRuntime:
         self.loop = loop
 
     @asynccontextmanager
-    async def work(self, _name):
+    async def work(self, _name, *, allow_draining=False):
         if asyncio.get_running_loop() is not self.loop:
             raise RuntimeError("Future attached to a different loop")
         yield True

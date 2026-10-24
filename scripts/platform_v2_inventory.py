@@ -1852,7 +1852,7 @@ def classify_migration(stem: str) -> str:
         return "domain.pms_tasks"
     if any(x in s for x in ("local_tts", "tts")):
         return "domain.media_tts"
-    if any(x in s for x in ("game_studio", "game_active")):
+    if any(x in s for x in ("game_studio", "game_active", "game_build")):
         return "domain.game_studio"
     if any(
         x in s
@@ -2090,6 +2090,7 @@ def classify_source_file(rel_path: str) -> str:
             "/experiments/",
             "/api/orchestrator.py",
             "executor",
+            "queued_work",
         )
     ) or p.endswith(("/cli.py", "/model_catalog.py")):
         return "exec.run_engine"

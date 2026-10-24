@@ -44,6 +44,10 @@ class AssetGenerationError(ValueError):
     """계획을 자동 생성 자산으로 채울 수 없는 이유."""
 
 
+class AssetGenerationBusy(AssetGenerationError):
+    """같은 생성 키를 다른 실행자가 살아서 돌리고 있다. 요청 기록은 건드리지 않는다."""
+
+
 class AssetGenerator(Protocol):
     engine_id: str
     version: str
@@ -59,6 +63,100 @@ class AssetGenerator(Protocol):
         workdir: Path,
         progress: Callable[[dict[str, Any]], None],
     ) -> dict[str, Any]: ...
+
+
+def _workdir(store: ProductionStore, plan_id: str, key: str) -> Path:
+    return store.folder(plan_id) / "generation-work" / key
+
+
+def _owner_is_alive(workdir: Path) -> bool:
+    """생성 실행자는 workdir 의 generation.lock 을 잡고 있다. 프로세스가 죽으면 커널이 풀어 주므로 살아 있는지 알 수 있다."""
+    lock_path = workdir / "generation.lock"
+    if not lock_path.is_file():
+        return False
+    with lock_path.open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        return False
+
+
+def enqueue_assets(plans: PlanStore, plan_id: str, revision: int, generator: AssetGenerator) -> str:
+    """API 가 하는 일의 전부: 승인 revision 의 자산 생성 요청을 production.json 에 queued 로 남기고 현재 상태를 돌려준다.
+
+    실행은 하지 않는다. 같은 요청이 이미 대기·실행 중이면 새 기록을 만들지 않고, 이미 성공한 같은 키는 아무것도 하지 않는다
+    (기존 응답 계약: queued). 소비자가 맡지 않은 채 남은 running 기록은 사용자가 다시 요청할 때만 같은 기록으로 이어 대기시킨다.
+    """
+    try:
+        plan = plans.assert_renderable(plan_id, revision)
+    except (ValueError, FileNotFoundError) as exc:
+        raise AssetGenerationError(f"승인된 현재 revision만 생성할 수 있습니다: {exc}") from exc
+    store = ProductionStore(plans)
+    key = _key(plan, generator)
+    with store.tx(plan_id) as data:
+        generations = data.setdefault("asset_generations", [])
+        existing = next((g for g in generations if g["key"] == key), None)
+        if existing and existing["status"] in {"queued", "succeeded"}:
+            return "queued"
+        if existing and existing["status"] == "running" and _owner_is_alive(_workdir(store, plan_id, key)):
+            return "running"
+        record = {
+            "id": existing["id"] if existing and existing["status"] == "running" else str(uuid.uuid4()),
+            "key": key,
+            "plan_revision": revision,
+            "recipe_id": plan["match"].get("primary_recipe"),
+            "engine": {"id": generator.engine_id, "version": generator.version},
+            "status": "queued",
+            "requested_at": _now(),
+            "started_at": None,
+            "finished_at": None,
+            "progress": list(existing.get("progress", [])) if existing else [],
+            "assets": {},
+            "receipt": None,
+            "error": None,
+        }
+        if existing:
+            generations[generations.index(existing)] = record
+        else:
+            generations.append(record)
+    return "queued"
+
+
+def queued_requests(plans: PlanStore) -> list[dict[str, Any]]:
+    """대기 중인 요청을 요청 순서로 돌려준다. queued 만 보며 running 이던 기록은 후보가 아니다."""
+    found: list[dict[str, Any]] = []
+    for folder in sorted(plans.root.iterdir()):
+        path = folder / "production.json"
+        if not path.is_file():
+            continue
+        try:
+            raw = path.read_text()
+            if '"queued"' not in raw:
+                continue
+            data = json.loads(raw)
+            plan_id = str(uuid.UUID(folder.name))
+        except (OSError, ValueError):
+            continue
+        for item in data.get("asset_generations", []):
+            if item.get("status") == "queued":
+                found.append({
+                    "plan_id": plan_id, "revision": item["plan_revision"], "id": item["id"],
+                    "requested_at": item.get("requested_at") or "",
+                })
+    return sorted(found, key=lambda r: (r["requested_at"], r["plan_id"]))
+
+
+def fail_if_queued(plans: PlanStore, plan_id: str, record_id: str, error: str) -> bool:
+    """실행이 시작되지 못한 대기 요청을 실패로 닫는다. 맨 앞 요청이 영원히 소비자를 막지 못하게 한다."""
+    store = ProductionStore(plans)
+    with store.tx(plan_id) as data:
+        for item in data.get("asset_generations", []):
+            if item["id"] == record_id and item["status"] == "queued":
+                item.update(status="failed", finished_at=_now(), error=error)
+                return True
+    return False
 
 
 def generate_assets(
@@ -80,7 +178,7 @@ def generate_assets(
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise AssetGenerationError("같은 계획 revision의 자산 생성 작업이 이미 실행 중입니다.") from exc
+            raise AssetGenerationBusy("같은 계획 revision의 자산 생성 작업이 이미 실행 중입니다.") from exc
         try:
             return _generate_assets_locked(plans, plan_id, revision, generator)
         finally:
@@ -107,9 +205,14 @@ def _generate_assets_locked(
     with store.tx(plan_id) as data:
         generations = data.setdefault("asset_generations", [])
         existing = next((g for g in generations if g["key"] == generation_key), None)
+        if existing is None:
+            # API 가 접수한 뒤 실행부가 새 엔진 버전으로 교체되면 키가 달라진다. 같은 revision 의 대기 요청은 현재 엔진이 이어받는다.
+            existing = next(
+                (g for g in generations if g["status"] == "queued" and g["plan_revision"] == revision), None
+            )
         if existing and existing["status"] == "succeeded":
             return existing
-        if existing and existing["status"] == "running":
+        if existing and existing["status"] in {"running", "queued"}:
             record_id = existing["id"]
         generation = {
             "id": record_id,
@@ -118,6 +221,7 @@ def _generate_assets_locked(
             "recipe_id": recipe_id,
             "engine": {"id": generator.engine_id, "version": generator.version},
             "status": "running",
+            "requested_at": existing.get("requested_at") if existing else None,
             "started_at": _now(),
             "finished_at": None,
             "progress": list(existing.get("progress", [])) if existing else [],
@@ -232,6 +336,7 @@ def _generate_assets_locked(
             "recipe_id": recipe_id,
             "engine": {"id": generator.engine_id, "version": generator.version},
             "status": "succeeded",
+            "requested_at": generation["requested_at"],
             "started_at": generation["started_at"],
             "finished_at": _now(),
             "progress": [],

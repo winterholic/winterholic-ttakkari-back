@@ -1022,11 +1022,44 @@ async def test_keep_rejects_sentences_that_mention_keeping_without_asking_for_it
     assert await _artifact_rows(sid) == []
 
 
+@pytest.mark.parametrize(("sentence", "code"), [
+    ("report.md는 이제 그만 보관해줘", "quote_negated"),  # r5
+    ("Keep report.md out of my library", "quote_no_keep_request"),  # r5
+    ("Keep report.md unchanged", "quote_no_keep_request"),  # r5
+    ("Please keep report.md outside my library", "quote_no_keep_request"),  # r5
+    ("더 이상 report.md 보관하지 말고 그냥 둬", "quote_negated"),
+    ("report.md 보관 취소해줘", "quote_negated"),
+    ("report.md 보관 중단해줘", "quote_negated"),
+    ("report.md 보관 해제해 줘", "quote_negated"),
+    ("report.md 는 더는 보관함에 넣어줘 안 해도 돼", "quote_negated"),
+    ("Save report.md somewhere else", "quote_no_keep_request"),
+    ("Please save report.md away from my library", "quote_no_keep_request"),
+    ("Keep report.md in my library only if not needed", "quote_negated"),
+    ("report.md 그대로 남겨줘", "quote_no_keep_request"),  # 보관함 목적지가 없는 남겨/넣어
+    ("report.md 서랍에 넣어줘", "quote_no_keep_request"),
+])
+async def test_keep_rejects_anything_outside_the_allowed_templates(client, new_session, sentence, code):
+    """허용 템플릿(한국어 …보관해 줘 / …보관함에 넣어 줘, 영어 keep X in my library)에 맞지 않거나 중단·부정·제외 표지가 있으면 거부한다."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "report.md"
+    f.write_text("# x")
+    await _mk_run(ws["id"], sid, sentence, at=datetime.now(UTC) - timedelta(minutes=1))
+    run_id = await _mk_run(ws["id"], sid, "진행", status="running")
+    r = await _keep(client, sid, run_id, f, sentence)
+    assert r.status_code == 422 and r.json()["code"] == code, (sentence, r.text)
+    assert await _artifact_rows(sid) == []
+
+
 @pytest.mark.parametrize(("sentence", "name"), [
     ("보고서.md를 내 보관함에 보관해줘", "보고서.md"),
     ("정리해서 report.md 저장해줘", "report.md"),
     ("Please save report.md to my library", "report.md"),
     ("report.md 내 보관함에 남겨 둬 부탁해요", "report.md"),
+    ("Please keep report.md in my library", "report.md"),
+    ("Save report.md to my library", "report.md"),
+    ("Can you please store report.md in my vault", "report.md"),
+    ("Keep report.md in my saved files please.", "report.md"),
     ("이 파일 report.md 를 라이브러리에 넣어 주세요", "report.md"),
 ])
 async def test_keep_accepts_requests_whose_last_predicate_is_keeping(client, new_session, sentence, name):
@@ -1126,7 +1159,10 @@ def test_keep_quote_sentence_rules():
 
     for yes in ("내 보관함에 넣어줘", "저장해 줘", "간직해줘", "남겨 줘", "Keep it", "please archive this"):
         assert has_keep_expression(yes), yes
+    for yes in ("내 보관함에 넣어줘", "저장해 줘", "간직해줘", "내 보관함에 남겨 줘", "Keep it in my library", "please archive this to my files"):
         assert is_keep_request(yes), yes
+    for template_miss in ("남겨 줘", "Keep it", "please archive this"):  # 보관 표현은 있으나 템플릿이 아니다
+        assert not is_keep_request(template_miss), template_miss
     for no in ("The report was clear and useful.", "내용이 좋네요", "저장소를 확인해줘", "report.md 열어줘"):
         assert not has_keep_expression(no), no
         assert not is_keep_request(no), no
@@ -1136,7 +1172,16 @@ def test_keep_quote_sentence_rules():
         assert not is_keep_request(mention), mention
     assert is_keep_request("만들어서 보관함에 넣어줘") and is_keep_request("정리하고 저장해줘")
     assert is_keep_request("보관해 주세요") and is_keep_request("보관해줄래?") and is_keep_request("내 보관함에 넣어둬")
-    assert is_keep_request("Can you please store it") and not is_keep_request("Please explain how to save it")
+    assert is_keep_request("Can you please store it in my library") and not is_keep_request("Please explain how to save it")
+    assert not is_keep_request("Can you please store it")  # 라이브러리 목적지가 없다
+    assert is_keep_request("Please keep it in my library.") and is_keep_request("SAVE it into my saved files please")
+    for en in ("Keep it out of my library", "Keep it unchanged", "Keep it outside my library", "Save it somewhere else",
+               "Keep it in my library but not now", "Keep it away from my library"):
+        assert not is_keep_request(en) or is_negated(en), en
+    assert is_negated("이제 그만 보관해줘") and is_negated("보관 취소해줘") and is_negated("보관 해제해줘") and is_negated("보관 중단해줘")
+    assert is_negated("더 이상 보관 안 해도 돼") and is_negated("report 빼고 보관해줘") and is_negated("보관함에 안 넣어줘")
+    assert not is_negated("보관함 안에 넣어줘") and not is_negated("내 보관함에 보관해줘")
+    assert not is_keep_request("그대로 남겨줘") and not is_keep_request("서랍에 넣어줘") and is_keep_request("내 보관함에 남겨 둬")
     assert not is_negated('"하지 마"라고 쓴 문장을 보관해줘')  # 따옴표 안 텍스트는 판정에서 뺀다
     assert is_negated("보관하지 마") and is_negated("넣는 건 하지 말아줘") and is_negated("Don't save it") and is_negated("keep it without logs")
     assert not is_negated("보고서.md를 내 보관함에 보관해줘") and not is_negated("만들어서 보관함에 넣어줘")

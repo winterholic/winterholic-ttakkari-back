@@ -10,9 +10,10 @@
 1. 인용 단위: quote 는 사용자 발화의 한 문장(또는 한 줄)과 정규화 후 정확히 같아야 한다. 부분 단어 매칭은 없다.
    문장 경계는 줄바꿈, 마침표·물음표·느낌표(뒤에 공백이나 끝이 올 때만), 한국어 종결 어미(다·요·죠·까·줘·라·자·네) 뒤 공백이다.
    공백 제외 MIN_QUOTE_CHARS 자 이상이어야 한다.
-2. 보관 요청 형식: 따옴표 안 텍스트·파일명/경로 토큰·'…라는' 앞 구절을 지운 문장의 마지막 서술 요청이 보관 동작(…보관해 줘,
-   …보관함에 넣어 줘, …저장해 줘, …남겨 줘, 영어는 Please keep/save …)이어야 한다. 의도 추론이 아니라 문장 형식의 최소 요건이다.
-3. 부정 가드: (같은 정리를 거친) 보관 표현과 같은 문장에 부정·금지·제외 형태소(지 마, 말아, 말고, 하지, 않, 없이, 빼고, not, without 등)가 하나라도
+2. 허용 템플릿: 따옴표 안 텍스트·파일명/경로 토큰·'…라는' 앞 구절을 지운 문장이 한국어 …(보관함에) 보관/저장/간직해 줘, …보관함에 넣어/남겨 줘,
+   영어 (please) keep/save/store/archive <object> to|in|into (my) library|vault|saved files|files 형식으로 끝나야 한다. 맞지 않으면
+   모두 거부하고 사용자는 앱 버튼으로 보관한다. 의도 추론이 아니라 문장 형식의 최소 요건이다.
+3. 중단·부정·제외 표지: (같은 정리를 거친) 보관 표현과 같은 문장에 그만, 더 이상, 중단, 취소, 해제, 빼, 제외, 말고, 지 마, 하지, 안 , 않, 없이, not, without 등이 하나라도
    있으면 거부한다. 정상 요청이 막히는 쪽으로 틀리는 것은 허용한다.
 4. 대상 결속: (filename) 확장자를 포함한 전체 파일명이 단어 경계로 문장에 있고(폴더가 적혔다면 경로 끝부분이 일치, 같은 이름의
    다른 파일이 있으면 경로로 구분돼야 함), 또는 (same_run) 대상 파일이 발화를 담은 Run 자체, 혹은 그 Run 실행 중에 시작된 자식
@@ -122,16 +123,25 @@ _FILLER = frozenset({"부탁해요", "부탁해", "부탁합니다", "부탁드�
 _TRAIL_PUNCT = re.compile(r"[\s.!?~,…^ㅎㅋㅠ]+$")
 _REQ = r"(?:줘요?|주세요|주라|줘라|줄래요?|주실래요|주십시오|주시겠어요|줄수있(?:어요?|나요))"
 _HOLD = r"(?:둬요?|두세요|놔요?|놓아줘)"
-# 공백을 뺀 문장 끝이 보관 동작 + 요청·명령 어미인지.
+# 허용 템플릿. 이 형식에 맞지 않으면 모두 거부하고, 사용자는 앱의 '내 보관함에 보관' 버튼으로 대신 보관한다.
+# 한국어(공백을 뺀 문장 끝): [내] [보관함|라이브러리+에] + 보관/저장/간직/넣어/남겨 + 요청 어미.
+# 넣어·남겨 는 '그대로 남겨줘', '서랍에 넣어줘'처럼 보관이 아닌 뜻이 흔해 보관함/라이브러리 목적지가 있을 때만 쓴다.
 _KO_KEEP_REQUEST = re.compile(
     r"(?:"
     rf"(?:보관|저장|간직)(?:해{_REQ}|해(?:요|라)?|하세요|해{_HOLD})"
-    rf"|(?:보관함|라이브러리)에(?:넣|올려)(?:어|어서)?{_REQ}"
-    rf"|(?:보관함|라이브러리)에(?:넣|올려)(?:어|어서)?{_HOLD}"
-    rf"|남겨{_REQ}|남겨{_HOLD}"
+    rf"|(?:보관함|라이브러리)에(?:넣어|남겨)(?:{_REQ}|{_HOLD})"
     r")$")
+# 영어(문장 전체): (please |can you |could you )* keep|save|store|archive <object> to|in|into [my] library|vault|saved files|files [please]
 _EN_KEEP_REQUEST = re.compile(
-    r"^(?:(?:please|pls|plz)\s+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)?(?:keep|save|store|archive)\b")
+    r"^(?:(?:please|can you|could you)\s+)*(?:keep|save|store|archive)\s+(?:(?P<obj>.+?)\s+)?(?:to|in|into)\s+"
+    r"(?:my\s+)?(?:library|vault|saved files|files)(?:\s+please)?$")
+# 영어 목적어 자리에 이런 말이 있으면 보관 요청이 아니다(out of/outside/away/from/not/unchanged/else ...).
+_EN_OBJECT_BLOCK = re.compile(
+    r"\b(?:out|outside|away|from|not|never|no|don'?t|dont|unchanged|without|except|instead|else|elsewhere|somewhere|"
+    r"separate|apart|off|only)\b|n't\b")
+# 한국어에서 문장 어디에 있든 보관 요청을 무효로 하는 중단·제외 표지(공백을 뺀 문장에서 찾는다). '안 ' 은 단어로 따로 본다.
+_KO_STOP = ("그만", "더이상", "더는", "중단", "취소", "해제", "빼", "제외", "말고", "지마", "지말", "없이", "필요없")
+_KO_AN_WORD = re.compile(r"(?:^|\s)안(?:\s|$)")
 
 
 def scrub(sentence: str) -> str:
@@ -159,9 +169,10 @@ def has_keep_expression(sentence: str) -> bool:
 def is_keep_request(sentence: str) -> bool:
     """scrub 한 문장의 마지막 서술 요청이 보관 동작인지. 보관을 요청하는 문장 형식의 최소 요건이며 의도 추론이 아니다.
 
-    한국어: 문장 끝이 보관·저장·간직해 줘/주세요/줄래/해, (보관함|라이브러리)에 넣어 줘/주세요/둬, 남겨 줘/둬 같은 보관 동사 + 요청·명령 어미.
-    앞 절에 다른 동사가 있어도(만들어서 보관함에 넣어줘) 마지막이 보관이면 된다. 설명·요약·알려줘 같은 다른 요청으로 끝나면 아니다.
-    영어: keep/save/store/archive 가 문장 시작이나 please/can you/could you 직후에 명령 동사로 온다."""
+    허용 템플릿에 맞아야 한다. 한국어: 문장 끝이 [내] [보관함|라이브러리에] + 보관/저장/간직해 줘·주세요·줄래·해, (보관함|라이브러리)에
+    넣어/남겨 줘·주세요·둬. 앞 절에 다른 동사가 있어도(만들어서 보관함에 넣어줘) 마지막이 보관이면 된다.
+    영어: 문장 전체가 (please|can you|could you)* keep|save|store|archive <object> to|in|into [my] library|vault|saved files|files [please]
+    이고 object 에 out/outside/away/from/not/unchanged 같은 말이 없어야 한다. 중단·부정·제외 표지는 is_negated 가 따로 막는다."""
     text = scrub(sentence)
     if re.search(r"[가-힣]", text):
         words = _TRAIL_PUNCT.sub("", text).split()
@@ -171,13 +182,15 @@ def is_keep_request(sentence: str) -> bool:
         flat = "".join(words).casefold()
         flat = _TRAIL_PUNCT.sub("", flat)
         return _KO_KEEP_REQUEST.search(flat) is not None
-    return _EN_KEEP_REQUEST.search(_TRAIL_PUNCT.sub("", text.casefold())) is not None
+    m = _EN_KEEP_REQUEST.match(_TRAIL_PUNCT.sub("", text.casefold()))
+    return m is not None and not (m.group("obj") and _EN_OBJECT_BLOCK.search(m.group("obj")))
 
 
 def is_negated(sentence: str) -> bool:
     """scrub 한 문장에 부정·금지·제외 형태소가 하나라도 있는지."""
     text = scrub(sentence)
-    if any(token in "".join(text.split()).casefold() for token in _NEGATIVE_KO):
+    flat = "".join(text.split()).casefold()
+    if any(token in flat for token in (*_NEGATIVE_KO, *_KO_STOP)) or _KO_AN_WORD.search(text):
         return True
     return _NEGATIVE_EN.search(text.casefold()) is not None
 

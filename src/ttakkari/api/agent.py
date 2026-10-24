@@ -374,8 +374,8 @@ async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -
                             "인용한 문장에 부정·금지·제외 표현이 있어요. 사용자가 앱의 '내 보관함에 보관' 버튼으로 직접 보관할 수 있어요."})
     if not is_keep_request(body.quote):
         raise HTTPException(422, {"code": "quote_no_keep_request", "message":
-                            "인용한 문장이 보관을 요청하는 형식이 아니에요. 파일명·따옴표 안의 말·'…라는' 앞 구절을 뺀 문장이 "
-                            "'…보관해 줘', '…보관함에 넣어 줘', '…저장해 줘', '…남겨 줘'(영어는 Please keep/save …)처럼 보관 동작으로 끝나야 해요. "
+                            "인용한 문장이 허용된 보관 요청 템플릿이 아니에요. 파일명·따옴표 안의 말·'…라는' 앞 구절을 뺀 문장이 "
+                            "'…보관해 줘', '…보관함에 넣어 줘', '…저장해 줘'(영어는 Please keep X in my library)처럼 끝나야 해요. "
                             "사용자가 보관을 요청한 문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요."})
     match, binding, binding_detail = None, "", ""
     mention = names_file(body.quote, real)

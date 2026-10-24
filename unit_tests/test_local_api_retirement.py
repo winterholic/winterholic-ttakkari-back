@@ -322,58 +322,77 @@ async def test_legacy_runtime_runs_the_creative_and_game_consumers_so_rollback_l
 # ------------------------------------------------------------------ queued 행 보존 경로: drain 중 미착수 대기열 불변
 
 async def test_drain_preserves_queued_rows_for_notebooklm_reverse_and_context_index(monkeypatch):
-    """drain() 은 이미 running/in-flight 인 작업만 자연 완료(또는 상한 후 취소)를 기다리며,
-    아직 claim 되지 않은 queued 행(NotebookLM, Reverse, 수동색인)은 건드리지 않고 보존해야 한다."""
+    """실제 start() 로 구동 중인 소비자가 stop_claiming() 과 drain() 을 거칠 때,
+    이미 claim 된 in-flight 작업은 자연 완료를 기다리지만 아직 claim 되지 않은 queued 행은 소비하지 않고 보존해야 한다."""
     queued_store = {
         "notebooklm": ["job-queued-1", "job-queued-2"],
-        "reverse": ["rev-queued-1"],
-        "context-index": ["source-queued-1"],
+        "reverse": ["rev-queued-1", "rev-queued-2"],
+        "context-index": ["source-queued-1", "source-queued-2"],
     }
-    claimed = []
+    claimed: list[str] = []
+    inflight_counts = {"notebooklm": 0, "reverse": 0, "context-index": 0}
+    first_claimed = asyncio.Event()
+    release_first_jobs = asyncio.Event()
+    active_tasks: list[asyncio.Task] = []
 
-    async def fake_pump_notebooklm():
-        if queued_store["notebooklm"]:
-            job = queued_store["notebooklm"].pop(0)
+    async def fake_pump(domain: str) -> int:
+        if inflight_counts[domain] > 0:
+            return 0
+        if queued_store[domain]:
+            job = queued_store[domain].pop(0)
             claimed.append(job)
-            return 1
-        return 0
+            inflight_counts[domain] += 1
+            if len(claimed) >= 3:
+                first_claimed.set()
 
-    async def fake_pump_reverse():
-        if queued_store["reverse"]:
-            job = queued_store["reverse"].pop(0)
-            claimed.append(job)
-            return 1
-        return 0
+            async def _run() -> None:
+                try:
+                    await release_first_jobs.wait()
+                finally:
+                    inflight_counts[domain] -= 1
 
-    async def fake_pump_context():
-        if queued_store["context-index"]:
-            job = queued_store["context-index"].pop(0)
-            claimed.append(job)
+            active_tasks.append(asyncio.create_task(_run()))
             return 1
         return 0
 
     consumers = background_consumers.BackgroundConsumers()
     monkeypatch.setattr(background_consumers, "consumers", consumers)
     monkeypatch.setattr(background_consumers, "PUMPS", (
-        ("notebooklm", fake_pump_notebooklm),
-        ("reverse", fake_pump_reverse),
-        ("context-index", fake_pump_context),
+        ("notebooklm", lambda: fake_pump("notebooklm")),
+        ("reverse", lambda: fake_pump("reverse")),
+        ("context-index", lambda: fake_pump("context-index")),
     ))
-    monkeypatch.setattr(background_consumers, "inflight", lambda: 0)
+    monkeypatch.setattr(background_consumers, "inflight", lambda: sum(inflight_counts.values()))
     monkeypatch.setattr("ttakkari.reverse.resume_waiting_reverse_jobs", AsyncMock(return_value=0))
+    monkeypatch.setattr(generation_service.get_settings(), "runtime_poll_seconds", 0.01)
 
-    # 1. 종료 신호 도착: stop_claiming() 호출
-    consumers.stop_claiming()
+    # 1. 실제 소비자 시작 -> 각 도메인이 첫 번째 행을 claim 함
+    await consumers.start()
+    try:
+        await asyncio.wait_for(first_claimed.wait(), timeout=5)
+        assert set(claimed) == {"job-queued-1", "rev-queued-1", "source-queued-1"}
 
-    # 2. drain 실행 (소비자 루프는 정지된 상태에서 잔여 in-flight drain 대기)
-    drained = await consumers.drain(drain_seconds=0.1)
-    assert drained is True
+        # 2. 종료 신호 도착: stop_claiming() 호출 (새로운 행 claim 차단)
+        consumers.stop_claiming()
 
-    # 3. stop_claiming 이후이므로 queued 항목들은 소비/삭제/취소되지 않고 그대로 보존됨
-    assert queued_store["notebooklm"] == ["job-queued-1", "job-queued-2"]
-    assert queued_store["reverse"] == ["rev-queued-1"]
-    assert queued_store["context-index"] == ["source-queued-1"]
-    assert claimed == []
+        # 3. 1차 작업 완료 허용
+        release_first_jobs.set()
+
+        # 4. drain() 대기 (잔여 in-flight 작업 자연 완료)
+        drained = await consumers.drain(drain_seconds=1.0)
+        assert drained is True
+
+        # 5. stop_claiming() 이후이므로 2번째 queued 항목들은 전혀 claim 되지 않고 큐에 보존됨
+        assert queued_store["notebooklm"] == ["job-queued-2"]
+        assert queued_store["reverse"] == ["rev-queued-2"]
+        assert queued_store["context-index"] == ["source-queued-2"]
+        assert set(claimed) == {"job-queued-1", "rev-queued-1", "source-queued-1"}
+    finally:
+        release_first_jobs.set()
+        consumers.stop_claiming()
+        await consumers.stop(drain_seconds=0.1)
+        if active_tasks:
+            await asyncio.gather(*active_tasks, return_exceptions=True)
 
 
 # ------------------------------------------------------------------ pump 진행 중 stop 상한 (독립 검증 재현)

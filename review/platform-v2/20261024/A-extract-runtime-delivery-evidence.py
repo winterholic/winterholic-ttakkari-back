@@ -415,9 +415,21 @@ def build_evidence(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
         "generated_at": "2026-10-24T21:33:00+09:00",
         "worker": {
             "id": "A",
+            "session_id": "e65430e3-0775-4e2c-910a-5050cdb7d216",
             "role": "runtime / delivery / architecture",
             "worktree": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a",
             "branch": "audit/platform-v2-a-runtime-delivery-20261024",
+            "parallel_audit_workers": {
+                "A_runtime_delivery": "e65430e3-0775-4e2c-910a-5050cdb7d216",
+                "B_backend_data": "c1e9cd73-83ef-4240-99c8-809e500bd903",
+                "C_frontend_test": "9a3215de-01d4-4efd-b3ff-9e282de9b766",
+            },
+            "pms_project_id": "e62fbc3f-b2d3-40ad-b5fc-687c8ccff286",
+            "pms_p2_predecessors": [
+                "06d3fd18-d2b6-425c-b280-89afa6c3b836",
+                "9f414a3c-4533-4e1d-93ec-52ecb901864d",
+            ],
+            "audit_stage_policy": "Initial audit completion is not project completion and does not wait for user approval; root integrates A/B/C and dispatches P2->P3 immediately.",
         },
         "git_revisions": {
             "audited_origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",

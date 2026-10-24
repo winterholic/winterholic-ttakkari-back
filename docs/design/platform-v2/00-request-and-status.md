@@ -1,12 +1,29 @@
 # 따까리 플랫폼 V2 요구사항 정본 및 전체 진행 상태 원장 (`00-request-and-status.md`)
 
-- 문서 소유: Worker A (Runtime / Delivery / Architecture)
-- 갱신 시각: `2026-10-24T21:44:00+09:00`
-- 승인 상태: **2026-10-24 사용자 전면 구현 승인 완료** (본 단계는 P0/P1 초회 감사 및 P2 아키텍처 대안 수립 보고이며, 전체 리팩토링 완료가 아님. 메인이 감사 근거를 통합해 즉시 P2 확정 및 P3~P6 코드 구현을 배정함)
+- 문서 소유: Worker A (Runtime / Delivery / Architecture, 세션 ID `e65430e3-0775-4e2c-910a-5050cdb7d216`)
+- 갱신 시각: `2026-10-24T21:49:30+09:00`
+- 승인 및 단계 상태:
+  - **2026-10-24 사용자 전면 구현 승인 완료**.
+  - **초회 감사 완료는 전체 리팩토링 프로젝트 완료가 아니며, 다음 구현을 위한 추가 사용자 승인 대기 단계도 아니다.**
+  - 모든 병렬 워커(A, B, C)의 결과가 돌아와 통합되기 전에는 단독으로 모듈 경계를 최종 확정하거나 운영(Live) 전환을 수행하지 않는다.
+  - 루트(메인) 오케스트레이터가 A/B/C 감사 보고와 증거를 통합하여 즉시 `P2`(목표 아키텍처·계약 확정) → `P3`~`P6`(공용 기반 및 모듈 전환 코드 구현·배포·실증) 작업을 연속 배정한다.
 - 대상 저장소:
   - Backend: `/Users/winterholic/development/projects/winterholic-ttakkari/back` (`origin/main` = `c8f10156845d007ec6496a65d6d8417be19260bd`, Live = `9f82c9c16cd604e81ddf43180b0be2e895ec85cb`)
   - Frontend: `/Users/winterholic/development/projects/winterholic-ttakkari/front` (`origin/main` = `dbe0c9f042b006e2a627b8e59c295ad14b7a2caf`)
-- PMS 프로젝트 ID: `e62fbc3f-b2d3-40ad-b5fc-687c8ccff286` (개인 범위)
+- PMS 프로젝트 ID: `e62fbc3f-b2d3-40ad-b5fc-687c8ccff286` (개인 범위, `P2` 선행조건 = `P0` + `P1` 동시 충족)
+
+---
+
+## 0. 병렬 감사 워커 ID·담당·산출물 원장 (Parallel Audit Workers Ledger)
+
+후속 컨텍스트나 새 세션에서도 즉시 이어받을 수 있도록 3개 병렬 감사 워커의 확정 ID, 역할, 작업 공간, 담당 산출물을 기록한다.
+
+| 워커 구분 | 확정 Worker / Session ID | 담당 영역 | 격리 Worktree / 브랜치 | 담당 산출물 경로 (`back` 저장소 기준) | 현재 상태 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Worker A** | `e65430e3-0775-4e2c-910a-5050cdb7d216` | **Runtime / Delivery / Architecture 판단** (P0 운영 기준선, ADR0036/0066/세대배포/리스/펜싱, TTS·Qwen 결함, 전역 차단 경로, EvidenceCacheKey, 아키텍처 대안) | `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-a` (`audit/platform-v2-a-runtime-delivery-20261024`) | - `review/platform-v2/20261024/A-runtime-delivery.md`<br>- `review/platform-v2/20261024/A-runtime-delivery-evidence.json`<br>- `review/platform-v2/20261024/A-extract-runtime-delivery-evidence.py`<br>- `review/platform-v2/20261024/test_a_runtime_delivery_evidence.py`<br>- `docs/design/platform-v2/00-request-and-status.md`<br>- `docs/design/platform-v2/architecture-options.md` | **초회 감사·설계 납품 완료** (루트 통합 대기) |
+| **Worker B** | `c1e9cd73-83ef-4240-99c8-809e500bd903` | **Backend / Data / Dependency 감사** (모듈 인벤토리, 의존성 그래프, 순환 참조, DB 테이블·마이그레이션·파일 데이터 소유권) | `/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-b` (`audit/platform-v2-b-backend-20261024`) | - `docs/design/platform-v2/backend-module-inventory.{md,json,csv}`<br>- `docs/design/platform-v2/backend-dependency-graph.{md,json,mmd}`<br>- `docs/design/platform-v2/data-ownership.md`<br>- `review/platform-v2/20261024/backend/{audit_summary.json,unmatched_ledger.json}` | **초회 감사 산출물 기록됨** (`607f8bda` 기준 → `origin/main` `c8f10156` 증분과 루트에서 통합 예정) |
+| **Worker C** | `9a3215de-01d4-4efd-b3ff-9e282de9b766` | **Frontend / Test Architecture 감사** (프런트 라우트·API 호출 매핑, 백엔드/프런트 테스트 분류·실측 기준선, TIA 테스트 영향 제안) | 격리 분석 수행 | - `docs/design/platform-v2/frontend-feature-map.{md,json,csv}`<br>- `docs/design/platform-v2/test-architecture-and-baseline.md`<br>- `docs/design/platform-v2/test-impact-proposal.md`<br>- `review/platform-v2/20261024/frontend-tests/{summary.json,backend-test-classification.json,frontend-api-inventory.json,frontend-routes.json,frontend-test-inventory.json}` | **초회 감사 산출물 기록됨** (루트 통합 대기) |
+| *(참고)* 기존 UI 워커 | `6e33860e-3773-48bf-8df5-a3dc2c330a3e` | 메인 화면 카드 겹침·잘림 CSS 수정 (플랫폼 V2 범위 외 선행 종료 작업) | `front` 전용 격리 worktree (종료됨) | `front` 커밋 `dbe0c9f042b006e2a627b8e59c295ad14b7a2caf` (`back` 수정 및 배포 예약 0건 확인 완료) | 종료 (혼입 없음 확인) |
 
 ---
 
@@ -51,7 +68,7 @@ PMS 프로젝트 `e62fbc3f-b2d3-40ad-b5fc-687c8ccff286`의 7개 단계에 대해
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **`P0`** (`06d3fd18-d2b6-425c-b280-89afa6c3b836`) | **P0 운영·복구·성능 기준선** | `doing` | 완료 | 감사 추출기(`A-extract-runtime-delivery-evidence.py`) 및 백업/복원 스크립트 구현됨 | 추출기 단위 테스트 및 계약 테스트 39건 통과 (`5.00s`) | 활성 리비전(`9f82c9c1`, Slot 1 `8792`), 감독 리비전(`e817fc19`), 배포 소요(`1,576.48s`, pytest `1,045.97s`), 실패 분포(34그룹/56회 중 pytest 33그룹/54회), 호스트 부하(Swap `95.3%`), 프런트(`5.48s`) 실측 완료 | `~/.ttakkari-backups/latest.json` 실제 최근 백업 시각 및 `supervisor.json` 원문은 보호 영역 밖이라 `확인 필요` |
 | **`P1`** (`9f414a3c-4533-4e1d-93ec-52ecb901864d`) | **P1 전체 기능·데이터·의존성 감사** | `doing` | 완료 | A(런타임·배달), B(백엔드·데이터), C(프런트·테스트) 감사 스크립트 및 인벤토리 산출 완료 | 각 워커 정적 검증 통과 | `origin/main`(`c8f10156`, 385파일/94,439줄/67마이그레이션) 및 로컬 공유 작업 트리(`607f8bda`, 111커밋 차이) 정밀 대조 완료 | 메인 오케스트레이터에서 Worker B의 기준 커밋(`607f8bda`)과 `origin/main`(`c8f10156`) 사이 111커밋 증분 테이블·라우트 통합 필요 |
-| **`P2`** (`916a7835-b5e6-4daf-a687-3f3e647eb9ec`) | **P2 목표 아키텍처·계약·전환 전략** | `todo` | 초안 완료 (`architecture-options.md`) | 미착수 (현 단계 코드 변경 금지) | 미실행 (P2 확정 후 계약 테스트 추가) | 미적용 | A/B/C 감사 결과를 합쳐 최종 모듈 경계, Split vs Retain 결정표, API/Job/Event/Module 계약서 확정 필요 |
+| **`P2`** (`916a7835-b5e6-4daf-a687-3f3e647eb9ec`) | **P2 목표 아키텍처·계약·전환 전략** *(선행조건: `P0` + `P1` 모두 충족)* | `todo` | 대안·계약 초안 완료 (`architecture-options.md`, 모든 워커 결과 통합 전 경계 미확정) | 미착수 (현 단계 코드/운영 변경 금지) | 미실행 (P2 확정 후 계약 테스트 추가) | 미적용 | 루트 오케스트레이터가 A(`e65430e3`), B(`c1e9cd73`), C(`9a3215de`) 감사 결과를 통합해 최종 모듈 경계, Split vs Retain 결정표, API/Job/Event/Module 계약서 확정 후 즉시 P3 배정 (사용자 추가 승인 대기 아님) |
 | **`P3`** (`ec3786e9-27ba-4d49-9f35-65e6f21c0bf4`) | **P3 공용 기반·테스트·Delivery 구현** | `todo` | 설계 완료 (`A-runtime-delivery.md` 6.1절) | 기존 ADR 0036(`0064`)/0066(`0062`) 구현되어 있으나 `feature-off` 및 일부 결함(TTS/Qwen/전체 pytest) 존재 | 기존 단위 테스트 존재, 신규 기반 테스트는 구현 시 작성 | `feature-off` | 1) TTS payload DB 영속화 및 draining 보호, 2) Qwen 세대 외부 분리, 3) `conftest.py` 정적 게이트 DB 분리 + `EvidenceCacheKey` 연동, 4) `RunExecutor` 활성화 |
 | **`P4`** (`47f15831-5f97-4429-b381-fddd87be1549`) | **P4 첫 독립 모듈 실제 전환** | `todo` | 1순위 후보 `Creative Studio` 선정 및 전환 설계 완료 | 미착수 | 미실행 | 미적용 | `Creative Studio` 모듈 릴리스 번들/워커 분리 및 9대 실증 시나리오 실측 검증 필요 |
 | **`P5`** (`8fd29eab-c45f-4097-a6f5-35ab57515d8d`) | **P5 나머지 기능 단계 전환** | `todo` | 후보 우선순위(`Game Studio` → `Collector/KB` → 기타) 수립 | 미착수 | 미실행 | 미적용 | P4 실측 성공 후 순차 진행 |

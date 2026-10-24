@@ -1058,28 +1058,33 @@ class GenerationController:
         from ttakkari.tts_models import TtsJob
         async with sessionmaker()() as db:
             return int(await db.scalar(
-                select(func.count(TtsJob.id)).where(TtsJob.owner_id == previous, TtsJob.status == "queued")) or 0)
+                select(func.count(TtsJob.id)).where(
+                    TtsJob.owner_id == previous, TtsJob.status.in_(("queued", "running")))) or 0)
 
     async def drain_previous_tts(self, job, *, timeout: float = 120.0, poll: float = 0.5) -> None:
         """첫 혼합 세대 전환의 TTS 보호: 구세대가 queued 를 draining 으로 실패시키기 전에 접수 경로를 닫고 비운다.
 
         구세대 코드는 바꿀 수 없다. 구세대 POST 는 active 를 한 번 확인한 뒤 DB 를 조회하고 커밋하므로, 큐가
         0건이라는 관측만으로는 확인과 커밋 사이에 낀 요청을 막지 못한다. 그래서 (1) 프록시에서 새 TTS 접수를
-        503 재시도로 거절하고, (2) 구세대의 진행 HTTP 가 0이 된 뒤 (3) 큐가 0건임을 확인하고서야 activate 한다.
+        503 재시도로 거절하고, (2) 구세대의 진행 HTTP 가 0이 된 뒤 (3) queued/running 이 0건인지 확인한다.
+        이 관측은 아직 프록시에서 API 로 전달되지 않은 요청까지 증명하지는 않는다. 첫 전환의 별도
+        전송 장벽 검증이 필요하며, 고정 sleep 을 그 장벽의 증거로 사용해서는 안 된다.
         증명하지 못하면(시간 초과·조회 오류·구세대 확인 불가) activate 하지 않고 실패시키며 접수 경로는 다시 연다.
         """
         previous_slot, previous_id = job["previous_slot"], uuid.UUID(job["previous_generation"])
-        await self.slots.close_tts_ingress(previous_slot)
         try:
+            # /load can succeed before verification/persistence fails or is cancelled.
+            # Every partial close must therefore use the same restoration path.
+            await self.slots.close_tts_ingress(previous_slot)
             deadline = time.monotonic() + timeout
-            await asyncio.sleep(poll)  # 닫기 직전에 프록시를 통과한 요청이 구세대에 닿을 시간
+            await asyncio.sleep(poll)  # 폴링 유예일 뿐 전송 계층 quiescence 보증은 아니다.
             while True:
                 snapshot = await self.slots.snapshot(previous_slot)
                 if snapshot is None or snapshot.get("generation") != str(previous_id):
                     raise StageError("tts-drain", None, None,
                                      "previous generation unreachable; cannot prove its TTS queue is idle")
                 inflight = snapshot.get("http_inflight")
-                # 진행 HTTP 를 먼저 읽는다. 접수 경로가 닫혔으니 0 이 된 뒤의 큐는 늘지 않는다.
+                # 앱 HTTP 이후 활성 작업을 읽는다. 프록시의 미전달 요청은 별도 경계다.
                 queued = None
                 if inflight == 0:
                     try:
@@ -1095,8 +1100,10 @@ class GenerationController:
                                      f"http_inflight={inflight} queued_tts={queued}; activation refused")
                 await asyncio.sleep(poll)
         except BaseException:
-            with contextlib.suppress(Exception):
+            try:
                 await self.slots.switch(previous_slot)  # 거절 상태를 남기지 않는다
+            except Exception:
+                log.exception("TTS ingress restoration failed for previous slot %s", previous_slot)
             raise
 
     async def ensure_supervisor_capable(self, job) -> bool:

@@ -2,8 +2,8 @@
   "schema_version": "platform-v2-worker-a-evidence-v2",
   "generated_at": "2026-10-24T22:25:00+09:00",
   "snapshot_binding": {
-    "candidate_head_sha": "9847022df6100620d4b8eca465979dc23a4496d6",
-    "candidate_tree_sha": "618b9fb9a69b6142dafaf2ce9c22489e0dcb2949",
+    "candidate_head_sha": "0f23a683311b1a701d29248b94c9a1d05c33bfca",
+    "candidate_tree_sha": "4b9ab430e759997627b7284cd731e3930a1f9f8a",
     "candidate_src_ttakkari_tree_sha": "08e4cd624711e96012ae184c81ad98939bfed9af",
     "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
     "audited_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
@@ -2833,8 +2833,8 @@
       "creative_decision": {
         "status": "cache_miss_unverified_closure",
         "module_id": "creative",
-        "candidate_git_head_sha": "9847022df6100620d4b8eca465979dc23a4496d6",
-        "candidate_git_tree_sha": "618b9fb9a69b6142dafaf2ce9c22489e0dcb2949",
+        "candidate_git_head_sha": "0f23a683311b1a701d29248b94c9a1d05c33bfca",
+        "candidate_git_tree_sha": "4b9ab430e759997627b7284cd731e3930a1f9f8a",
         "closure_complete": false,
         "reasons": [
           "dynamic_import_in_closure:google_account:src/ttakkari/google_account/registry.py:['import_module']",
@@ -2843,13 +2843,13 @@
         "cache_decision": "broad_validation_fallback (conservative no-reuse due to dynamic import in transitive closure)"
       },
       "verified_sample_key": {
-        "cache_key": "evk-v2-design_system-eee6a0feb9311b9fb5a2450060ad9ab9",
-        "sha256": "eee6a0feb9311b9fb5a2450060ad9ab9dbbb68ce623ea09885fccd5ae79e6c69",
+        "cache_key": "evk-v2-design_system-30f369e1043d7c44f2d67d72eb94417d",
+        "sha256": "30f369e1043d7c44f2d67d72eb94417d058c7d1c23e4f680b7bd7bba85e65771",
         "components": {
           "schema_version": "platform-v2-evidence-key-v2",
           "module_id": "design_system",
-          "candidate_git_head_sha": "9847022df6100620d4b8eca465979dc23a4496d6",
-          "candidate_git_tree_sha": "618b9fb9a69b6142dafaf2ce9c22489e0dcb2949",
+          "candidate_git_head_sha": "0f23a683311b1a701d29248b94c9a1d05c33bfca",
+          "candidate_git_tree_sha": "4b9ab430e759997627b7284cd731e3930a1f9f8a",
           "changed_file_hashes": {
             "src/ttakkari/design_system.py": "c102adfebcbbffbec96801353fb56e012f17de4a658a371cff0ae28617016fba"
           },

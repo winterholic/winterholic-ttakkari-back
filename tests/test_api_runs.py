@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import signal
 import subprocess
 import time
 import uuid
@@ -274,14 +273,12 @@ async def _insert_runs(ws, sess, pid: int | None):
 
 
 async def test_recover_interrupted_marks_running_runs(client, auth, new_session):
-    from ttakkari.runs.manager import _looks_like_agent
-
     ws, sess = await new_session()
     child = _spawn_agent_like()
+    child.kill()  # FND-01: 살아 있거나 판정 불명인 프로세스는 보존하므로, 확실히 종료된(ABSENT) Run 만 마감한다.
+    child.wait()
     try:
         ids = await _insert_runs(ws, sess, child.pid)
-        await asyncio.sleep(0.5)  # ps 에 명령줄이 보일 때까지
-        identifiable = _looks_like_agent(child.pid)
         assert await recover_interrupted() == 1
 
         run = (await client.get(f"/api/runs/{ids[0]}", headers=auth)).json()
@@ -295,9 +292,6 @@ async def test_recover_interrupted_marks_running_runs(client, auth, new_session)
         evs = await run_events(client, auth, str(ids[0]))
         assert [e["seq"] for e in evs] == [3]  # last_seq=2 다음 번호
         assert evs[0]["type"] == "run.finished" and evs[0]["payload"]["status"] == "interrupted"
-        # ps 가 허용된 환경에서는 에이전트 프로세스 그룹에 SIGTERM 을 보낸다.
-        if identifiable:
-            assert child.wait(timeout=5) == -signal.SIGTERM
         assert await resume_queued() == 1
         assert (await wait_run(client, auth, str(ids[1])))["status"] == "succeeded"
         # interrupted 이후에는 같은 세션에 새 Run 을 받을 수 있다.
@@ -313,10 +307,11 @@ async def test_recover_does_not_kill_unrelated_process_with_reused_pid(client, a
     other = subprocess.Popen(["sleep", "60"], start_new_session=True)  # noqa: ASYNC220
     try:
         ids = await _insert_runs(ws, sess, other.pid)
-        assert await recover_interrupted() == 1
-        assert (await client.get(f"/api/runs/{ids[0]}", headers=auth)).json()["status"] == "interrupted"
+        # FND-01: 살아 있는 PID 의 Run 은 건드리지 않고 보존한다. 엉뚱한 프로세스도 죽이지 않는다.
+        assert await recover_interrupted() == 0
+        assert (await client.get(f"/api/runs/{ids[0]}", headers=auth)).json()["status"] == "running"
         await asyncio.sleep(0.3)
-        assert other.poll() is None  # PID 재사용으로 엉뚱한 프로세스를 죽이면 안 된다
+        assert other.poll() is None
     finally:
         other.kill()
         other.wait()
@@ -339,8 +334,8 @@ async def test_only_server_shutdown_interruption_is_queued_for_resume(client, au
 
     assert await recover_interrupted() == 1
     monkeypatch.setattr(manager_module, "RESTART_RESUME_BACKOFF_SECONDS", 600)
-    assert await resume_interrupted() == 1
-    assert await resume_interrupted() == 0  # the same Run is claimed only once
+    assert await resume_interrupted(force=True) == 1
+    assert await resume_interrupted(force=True) == 0  # the same Run is claimed only once
 
     async with sessionmaker()() as db:
         resumed = await db.get(Run, ids[0])
@@ -367,7 +362,7 @@ async def test_interrupted_resume_stops_after_max_attempts(client, auth, new_ses
         await db.commit()
         run_id = run.id
 
-    assert await resume_interrupted() == 0
+    assert await resume_interrupted(force=True) == 0
     async with sessionmaker()() as db:
         run = await db.get(Run, run_id)
         assert run.status == "interrupted"
@@ -436,7 +431,7 @@ async def test_restart_resume_uses_saved_engine_session_and_progress(client, aut
 
     monkeypatch.setattr(manager_module, "RESTART_RESUME_BACKOFF_SECONDS", 0)
     assert await recover_interrupted() == 1
-    assert await resume_interrupted() == 1
+    assert await resume_interrupted(force=True) == 1
     finished = await wait_run(client, auth, str(run_id))
 
     assert finished["status"] == "succeeded"

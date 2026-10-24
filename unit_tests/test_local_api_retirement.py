@@ -374,3 +374,99 @@ async def test_drain_preserves_queued_rows_for_notebooklm_reverse_and_context_in
     assert queued_store["reverse"] == ["rev-queued-1"]
     assert queued_store["context-index"] == ["source-queued-1"]
     assert claimed == []
+
+
+# ------------------------------------------------------------------ pump 진행 중 stop 상한 (독립 검증 재현)
+
+async def test_stop_respects_drain_seconds_when_pump_is_held(monkeypatch):
+    """fake pump를 이벤트로 붙잡고 stop(drain_seconds=0.01) 호출 시 100ms 뒤에도 stop이 끝나지 않는 결함을 재현.
+    교정 후에는 drain_seconds 상한 안에서 종료되고 timeout 결과(False)를 반환해야 한다."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_held_pump() -> int:
+        entered.set()
+        await release.wait()
+        return 0
+
+    consumers = background_consumers.BackgroundConsumers()
+    monkeypatch.setattr(background_consumers, "consumers", consumers)
+    monkeypatch.setattr(background_consumers, "PUMPS", (("held", fake_held_pump),))
+    monkeypatch.setattr(background_consumers, "inflight", lambda: 0)
+    monkeypatch.setattr("ttakkari.reverse.resume_waiting_reverse_jobs", AsyncMock(return_value=0))
+
+    await consumers.start()
+    await asyncio.wait_for(entered.wait(), 5)
+
+    stop_task = asyncio.create_task(consumers.stop(drain_seconds=0.01))
+    await asyncio.sleep(0.1)
+    try:
+        assert stop_task.done(), "stop() must finish within drain_seconds even if pump is held"
+        assert stop_task.result() is False
+    finally:
+        release.set()
+        await asyncio.gather(stop_task, return_exceptions=True)
+
+async def test_finish_claimed_work_respects_drain_seconds_when_pump_is_held(monkeypatch):
+    """pump가 붙잡혀 있어도 finish_claimed_work()는 상한 내에 반환하고 background에 timeout(False)이 기록된다."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_held_pump() -> int:
+        entered.set()
+        await release.wait()
+        return 0
+
+    consumers = background_consumers.BackgroundConsumers()
+    monkeypatch.setattr(background_consumers, "consumers", consumers)
+    monkeypatch.setattr(background_consumers, "PUMPS", (("held", fake_held_pump),))
+    monkeypatch.setattr(background_consumers, "inflight", lambda: 0)
+    monkeypatch.setattr("ttakkari.reverse.resume_waiting_reverse_jobs", AsyncMock(return_value=0))
+    from ttakkari.tts import jobs as tts_jobs
+    monkeypatch.setattr(tts_jobs, "drain", AsyncMock())
+    monkeypatch.setattr(queued_work, "drain", AsyncMock(return_value=True))
+
+    await consumers.start()
+    await asyncio.wait_for(entered.wait(), 5)
+
+    finish_task = asyncio.create_task(generation_service.finish_claimed_work(seconds=0.01))
+    await asyncio.sleep(0.1)
+    try:
+        assert finish_task.done(), "finish_claimed_work() must finish within seconds"
+        results = finish_task.result()
+        assert results.get("background") is False
+    finally:
+        release.set()
+        await asyncio.gather(finish_task, return_exceptions=True)
+
+
+async def test_stop_cancels_inflight_when_pump_times_out(monkeypatch):
+    """pump가 상한 내에 종료되지 않아 timeout될 때 남아있는 inflight 작업도 _cancel_inflight로 정리된다."""
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    cancelled = AsyncMock()
+
+    async def fake_held_pump() -> int:
+        entered.set()
+        await release.wait()
+        return 0
+
+    consumers = background_consumers.BackgroundConsumers()
+    monkeypatch.setattr(background_consumers, "consumers", consumers)
+    monkeypatch.setattr(background_consumers, "PUMPS", (("held", fake_held_pump),))
+    monkeypatch.setattr(background_consumers, "inflight", lambda: 1)
+    monkeypatch.setattr(background_consumers, "_cancel_inflight", cancelled)
+    monkeypatch.setattr("ttakkari.reverse.resume_waiting_reverse_jobs", AsyncMock(return_value=0))
+
+    await consumers.start()
+    await asyncio.wait_for(entered.wait(), 5)
+
+    stop_task = asyncio.create_task(consumers.stop(drain_seconds=0.01))
+    await asyncio.sleep(0.1)
+    try:
+        assert stop_task.done()
+        assert stop_task.result() is False
+        cancelled.assert_awaited_once()
+    finally:
+        release.set()
+        await asyncio.gather(stop_task, return_exceptions=True)

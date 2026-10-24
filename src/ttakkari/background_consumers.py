@@ -142,7 +142,8 @@ class BackgroundConsumers:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + drain_seconds if drain_seconds is not None else None
         while inflight() and (deadline is None or loop.time() < deadline):
-            await asyncio.sleep(0.1)
+            step = min(0.05, max(0.001, deadline - loop.time())) if deadline is not None else 0.05
+            await asyncio.sleep(step)
         if deadline is None:
             return True  # Executor replacement is natural completion, never timeout cancellation.
         if not inflight():
@@ -153,11 +154,43 @@ class BackgroundConsumers:
         return False
 
     async def stop(self, drain_seconds: float | None = DRAIN_SECONDS) -> bool:
-        """stop_claiming(), wait for the loops to leave, then drain(). Returns drain()'s result."""
+        """stop_claiming(), wait for loops to exit and in-flight work to drain within drain_seconds.
+
+        Returns True if everything finished naturally, False if deadline expired and work was cancelled.
+        """
         self.stop_claiming()
         loops, self._loops = self._loops, []
-        await asyncio.gather(*loops, return_exceptions=True)  # a pump is short; this never cancels a claim
-        return await self.drain(drain_seconds)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + drain_seconds if drain_seconds is not None else None
+
+        def time_left() -> float | None:
+            if deadline is None:
+                return None
+            return max(0.0, deadline - loop.time())
+
+        timed_out = False
+        if loops:
+            done, pending = await asyncio.wait(loops, timeout=time_left())
+            for t in done:
+                if not t.cancelled():
+                    with contextlib.suppress(Exception):
+                        t.exception()
+            if pending:
+                timed_out = True
+                log.warning("background consumers: stop timed out waiting for loops after %.2fs",
+                            drain_seconds if drain_seconds is not None else 0.0)
+                for t in pending:
+                    t.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        if timed_out:
+            if inflight():
+                log.warning("background consumers: cancelling %d in-flight jobs after %.0fs drain", inflight(),
+                            drain_seconds if drain_seconds is not None else 0.0)
+                await _cancel_inflight()
+            return False
+
+        return await self.drain(time_left())
 
 
 consumers = BackgroundConsumers()
@@ -172,5 +205,5 @@ async def start() -> None:
     await consumers.start()
 
 
-async def stop(drain_seconds: float | None = DRAIN_SECONDS) -> None:
-    await consumers.stop(drain_seconds)
+async def stop(drain_seconds: float | None = DRAIN_SECONDS) -> bool:
+    return await consumers.stop(drain_seconds)

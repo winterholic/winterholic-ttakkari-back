@@ -1189,3 +1189,73 @@ def test_realign_rewrites_only_a_known_alias_and_commits():
         other.commit()
         assert realign(other, aliases) is None  # 모르는 값은 건드리지 않는다
         assert other.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0099_unknown"
+
+
+class _QueueDb:
+    """구세대 queued TTS 개수를 차례로 돌려주는 가짜 세션. 항목이 예외면 던진다."""
+
+    def __init__(self, counts):
+        self.script, self.counts, self.calls = list(counts), list(counts), 0
+
+    def reset(self):
+        self.counts = list(self.script)
+
+    def __call__(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def scalar(self, _stmt):
+        self.calls += 1
+        value = self.counts.pop(0) if len(self.counts) > 1 else self.counts[0]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+
+async def _hold(tmp_path, monkeypatch, counts, timeout=0.05):
+    from ttakkari import generation_deployment as gd
+    db = _QueueDb(counts)
+    monkeypatch.setattr(gd, "sessionmaker", lambda: db)
+    store = JobStore(tmp_path)
+    job = store.request("a" * 40)
+    job["previous_generation"] = str(uuid.uuid4())
+    control = gd.GenerationController(store)
+    result = await control._wait_previous_tts_queue_empty(job["previous_generation"], timeout=timeout, poll=0.01)
+    db.reset()  # 같은 시나리오를 기록 경로로 한 번 더 돌린다
+    await control._hold_for_previous_tts(job, timeout=timeout, poll=0.01)
+    return result, store.get(job["id"]).get("warnings"), db
+
+
+async def test_previous_tts_queue_empty_passes_immediately_without_warning(tmp_path, monkeypatch):
+    result, warnings, db = await _hold(tmp_path, monkeypatch, [0])
+    assert result is None and warnings is None
+    assert db.calls == 2  # 두 호출이 각각 한 번씩만 조회했다
+
+
+async def test_previous_tts_queue_drains_before_timeout_without_warning(tmp_path, monkeypatch):
+    result, warnings, _ = await _hold(tmp_path, monkeypatch, [2, 1, 0], timeout=5)
+    assert result is None and warnings is None
+
+
+async def test_previous_tts_queue_timeout_proceeds_and_records_remaining_count(tmp_path, monkeypatch, caplog):
+    with caplog.at_level("WARNING", logger="ttakkari.generation_deployment"):
+        result, warnings, _ = await _hold(tmp_path, monkeypatch, [3])
+    assert result["reason"] == "timeout" and result["queued"] == 3
+    assert len(warnings) == 1
+    assert warnings[0]["stage"] == "previous_tts_queue"
+    assert warnings[0]["reason"] == "timeout" and warnings[0]["queued"] == 3
+    assert "still has 3 queued tts jobs" in caplog.text
+
+
+async def test_previous_tts_queue_db_error_proceeds_and_records_reason(tmp_path, monkeypatch, caplog):
+    with caplog.at_level("WARNING", logger="ttakkari.generation_deployment"):
+        result, warnings, _ = await _hold(tmp_path, monkeypatch, [2, RuntimeError("db down")])
+    assert result["reason"] == "db_error" and result["queued"] == 2
+    assert warnings[0]["reason"] == "db_error" and warnings[0]["queued"] == 2
+    assert "db down" in warnings[0]["detail"]
+    assert "queued tts check failed" in caplog.text

@@ -139,24 +139,6 @@ async def _active_run_count(own_run_id: str | None) -> int:
         return int(await db.scalar(stmt) or 0)
 
 
-async def check_tts_queue_empty() -> tuple[bool, int]:
-    """배포 전 TTS 큐 상태 점검. (비어있음 여부, 대기/실행 중 작업 수)"""
-    from sqlalchemy import func, select
-
-    from ttakkari.db import sessionmaker
-    try:
-        from ttakkari.tts_models import TtsJob
-        async with sessionmaker()() as db:
-            count = await db.scalar(
-                select(func.count(TtsJob.id)).where(
-                    TtsJob.status.in_(("queued", "running"))
-                )
-            ) or 0
-            return (count == 0, int(count))
-    except Exception:  # noqa: BLE001
-        return (True, 0)
-
-
 async def deploy_backend(own_run_id: str | None) -> bool:
     # 구형 호출도 직접 kickstart하지 않는다. 외부 감독이 활성 배포 전략을 선택한다.
     from ttakkari.deployment import JobStore, ensure_revision, revision, state_dir

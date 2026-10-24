@@ -986,22 +986,27 @@ class GenerationController:
             await self.slots.stop(job["previous_slot"])
             self.succeed(job)
 
-    async def _wait_previous_tts_queue_empty(self, previous_generation: str | None, *, timeout: float = 30.0) -> None:
+    async def _wait_previous_tts_queue_empty(
+            self, previous_generation: str | None, *, timeout: float = 30.0, poll: float = 0.5) -> dict | None:
         """혼합 세대 전환 완화: 구세대(0068 이전)는 draining 진입 시 queued 작업을 generation_draining으로 실패시킨다.
         구세대의 queued 작업이 모두 처리되어 비어있을 때까지 대기하여 전환 중 작업 유실을 방지한다.
+
+        배포가 TTS 하나 때문에 멈추면 안 되므로 timeout·DB 예외에서도 진행한다. 비어 있거나 확인할 대상이
+        없으면 None, 비우지 못한 채 진행하면 {"reason", "queued", "detail"} 를 돌려 호출부가 기록하게 한다.
         """
         if not previous_generation:
-            return
+            return None
         try:
             prev_id = uuid.UUID(previous_generation)
         except (ValueError, TypeError):
-            return
+            return None
         try:
             from ttakkari.tts_models import TtsJob
         except ImportError:
-            return
+            return None
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        count = None
+        while True:
             try:
                 async with sessionmaker()() as db:
                     count = await db.scalar(
@@ -1010,12 +1015,25 @@ class GenerationController:
                             TtsJob.status == "queued",
                         )
                     )
-            except Exception:  # noqa: BLE001
-                break
+            except Exception as exc:  # noqa: BLE001
+                log.warning("previous generation %s queued tts check failed; activating anyway: last_count=%s error=%s",
+                            previous_generation, count, exc)
+                return {"reason": "db_error", "queued": count, "detail": f"{type(exc).__name__}: {exc}"}
             if not count:
-                return
+                return None
+            if time.monotonic() >= deadline:
+                log.warning("previous generation %s still has %d queued tts jobs after %.0fs; activating anyway",
+                            previous_generation, count, timeout)
+                return {"reason": "timeout", "queued": int(count), "detail": f"waited {timeout:g}s"}
             log.info("waiting for previous generation %s queued tts jobs to finish before activate: count=%d", previous_generation, count)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(poll)
+
+    async def _hold_for_previous_tts(self, job, **kwargs) -> None:
+        """구세대 TTS 큐를 기다리되, 비우지 못한 채 진행하면 job.warnings 에 사유와 남은 개수를 남긴다."""
+        skipped = await self._wait_previous_tts_queue_empty(job["previous_generation"], **kwargs)
+        if skipped:
+            self.phase(job, job["status"], warnings=[*job.get("warnings", []), {
+                "stage": "previous_tts_queue", "at": _utcnow(), **skipped}])
 
     async def ensure_supervisor_capable(self, job) -> bool:
         """릴리스 요구조건과 실행 중 감독을 비교한다. 진행 가능하면 True.
@@ -1182,7 +1200,7 @@ class GenerationController:
                 current = await self.active()
                 if current != cid:
                     if job.get("previous_generation"):
-                        await self._wait_previous_tts_queue_empty(job["previous_generation"])
+                        await self._hold_for_previous_tts(job)
                     await self.activate(cid, expected=uuid.UUID(job["previous_generation"]))
             if job["status"] != "draining":
                 async with self._operation("cutover"):

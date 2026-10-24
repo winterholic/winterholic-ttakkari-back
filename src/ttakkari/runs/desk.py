@@ -84,7 +84,7 @@ async def handle(db: AsyncSession, run: Run, sess: ChatSession) -> None:
     pool = sorted((p for p in profiles if p.engine in order), key=lambda p: order[p.engine])
     leads = await _leads(db, sess)
     prompt = await _prompt(db, run, sess, leads)
-    system = instructions_mod.read("desk")
+    system = instructions_mod.read("desk") + "\n\n" + instructions_mod.DESK_ROUTING_CONTRACT
     observe_shadow_route(s, run, sess, leads, pool, prompt, system)
 
     decision: Decision | None = await _try_qwen(db, run, sess, leads)
@@ -383,6 +383,8 @@ def _parse(text: str) -> Decision | None:
     lead_id = obj.get("lead_id") if isinstance(obj.get("lead_id"), str) else None
     title = obj.get("title").strip()[:60] if isinstance(obj.get("title"), str) and obj.get("title").strip() else None
     new_session = obj.get("new_session") is True
+    if lead_id and (obj.get("same_project") != "yes" or obj.get("same_task") != "yes"):
+        lead_id, new_session = None, True
     return Decision(action, reply or "기획 세션에 넘겼어요.", lead_id, title, new_session)
 
 

@@ -77,7 +77,7 @@ async def run_eval(db: AsyncSession, limit: int | None = None, engine: str | Non
     accounts = sorted((p for p in profiles if p.engine in order), key=lambda p: order[p.engine])
     if not accounts:
         raise RuntimeError(f"쓸 수 있는 접수 계정이 없습니다(엔진: {', '.join(engines)}).")
-    system = instructions_mod.read("desk")
+    system = instructions_mod.read("desk") + "\n\n" + instructions_mod.DESK_ROUTING_CONTRACT
 
     report = Report()
     for message, expected in await eval_set(db, limit):

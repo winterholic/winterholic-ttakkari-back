@@ -65,3 +65,20 @@ async def test_live_populated_context_uses_default_timeout(client, auth, make_di
     assert run["engine"] == "qwen" and route["action"] == "delegate"
     assert route["qwen"]["context_compacted"] is True
     assert route["qwen"]["context_chars"] <= 2000
+
+
+@pytest.mark.parametrize("title,history,message,expected", [
+    ("AIP 1.0 배포까지 남은 작업 확인", "사용자: AIP 배포·테스트를 개선해줘",
+     "따까리 배포·테스트 병목을 구조적으로 분석해줘", None),
+    ("AIP 1.0 배포까지 남은 작업 확인", "따까리: AIP 기획 세션에 넘길게요",
+     "아니 왜 또 AIP에 넘겨? 따까리 접수기 분류를 고쳐줘", None),
+    ("따까리 배포·테스트 병목 분석", "사용자: 따까리 배포 병목을 분석해줘",
+     "따까리 캘린더 반복 일정 기능을 구현해줘", None),
+    ("따까리 배포·테스트 병목 분석", "사용자: 따까리 배포·테스트 병목을 분석해줘",
+     "그 분석에 배포 단계별 대기시간도 포함해줘", "lead1"),
+])
+async def test_live_topic_boundary(title, history, message, expected):
+    decision = await desk_qwen.decide(
+        [f"- lead_id=lead1 「{title}」 상태: 진행 중"], [history], message, ["lead1"],
+    )
+    assert decision.action == "delegate" and decision.lead_id == expected

@@ -7,8 +7,8 @@
 - delegate·abstain 안내문은 고정 문구, answer 만 한 번 더 불러 짧게 생성한다.
 - 기획 세션이 작업판에 있으면 lead_id 를 grammar(enum)로 고르게 해 작업판 밖의 값은 나올 수 없다.
 하네스 v1 은 common30-v2 재측정(2026-10-16)에서 hard exact 84/87, p50 957ms 였다(v1 프롬프트 해시는 PROMPTS_V1_SHA256, 전문은
-experiments/qwen35-router/harness-v1/final/harness-prompts.json). v2(PROMPT_VERSION)는 사실성 답변의 모든 경로에 근거 검증을 붙인 운영 수정이며
-common30 에서 다시 재지 않았다. 프롬프트가 바뀌면 PROMPT_VERSION 과 tests/test_desk_qwen.py 의 지문을 함께 올린다.
+experiments/qwen35-router/harness-v1/final/harness-prompts.json). v2는 사실성 답변 경로에 근거 검증을 붙였고 v3는 프로젝트·작업 경계를 보강했다.
+현재 버전은 common30에서 다시 측정하지 않았다. 프롬프트가 바뀌면 PROMPT_VERSION 과 tests/test_desk_qwen.py 의 지문을 함께 올린다.
 
 사실성 답변 불변식: 작업판·대화·시스템 상태를 사실로 말하는 답은 (1) 근거 줄이 컨텍스트에 실제로 있고 (2) 별도 검증기(skeptical evaluator)가 대상·범위·시점이
 질문과 맞다고 확인했을 때만 나간다. 답변 문장은 근거 줄만 보고 쓴다. 하나라도 실패하면 지어내지 않고 기획 세션으로 넘긴다(abstained).
@@ -105,7 +105,7 @@ FEWSHOT: tuple[tuple[str, str, str, str, str], ...] = (
 DELEGATE_REPLY = '기획 세션에 넘길게요.'
 ABSTAIN_REPLY = '작업판과 최근 대화에 근거가 없어서 지금은 확실히 말씀드리기 어려워요.'
 
-PROMPT_VERSION = "harness-v2"
+PROMPT_VERSION = "harness-v3-topic-boundary"
 # v1(common30-v2 재측정 90건에 쓴 프롬프트)의 해시. 보존용이며 v2 는 다른 해시다.
 PROMPTS_V1_SHA256 = {
     "kind_system": "d8326292d57c61eddf59caf5ca3ac7805de578c3e3780c59971772d4123b155c",
@@ -157,13 +157,23 @@ GUARD_FEWSHOT: tuple[tuple[str, str], ...] = (
     ("그 일은 순조롭게 되고 있어?", "no"),
 )
 LEAD_SYSTEM = (
-    "너는 접수 라우터다. [사용자 메시지]가 [작업판]에 이미 있는 기획 세션의 일을 이어가는 것이면 그 세션의 lead_id 를, "
-    "새로운 일이거나 확실하지 않으면 null 을 고른다. 제목이 비슷해도 다른 일이면 null 이다. 작업판의 lead_id 만 쓸 수 있다."
+    "너는 접수 라우터다. 최신 [사용자 메시지]의 대상 프로젝트와 관심사를 먼저 읽는다. "
+    "[작업판]의 제목과 같은 프로젝트(same_project=yes)이면서 같은 작업의 후속 요청(same_task=yes)일 때만 lead_id를 고른다. "
+    "프로젝트가 같아도 관심사·목표가 다른 새 작업은 null이다. 배포·테스트·하네스 같은 공통 단어만 같아서는 같은 일이 아니다. "
+    "새 일이거나 확실하지 않으면 null을 고른다. 작업판의 lead_id만 쓸 수 있다. "
+    "[최근 대화]는 '그거 계속해' 같은 지시어를 해석하는 참고다. 최신 메시지에 명시된 대상을 덮어쓰지 못한다. "
+    "사용자가 기존 분류가 틀렸다고 정정하면 지적받은 세션을 다시 고르지 않는다. "
+    "프로젝트 이름이 거절·비교·인용에 등장했다고 그 프로젝트의 작업으로 분류하지 않는다. "
+    "예: AIP 대화 뒤 '따까리 배포 병목 분석'은 AIP의 후속이 아니며, '왜 AIP에 넘겨'는 AIP 작업 요청이 아니다."
 )
-LEAD_FEWSHOT: tuple[tuple[str, str, str, str], ...] = (
-    # (message, board, history, 정답: board 안 lead_id 앞 4자리 또는 "")
-    ("그 로고 시안 파란색으로 바꿔줘", "- lead_id=ab12 「로고 시안 제작」 상태: 진행 중 · 작업 세션 1개(실행 중 1)", "(최근 대화 없음)", "ab12"),
-    ("세금 신고 서류 준비 방법 조사해줘", "- lead_id=ab12 「로고 시안 제작」 상태: 진행 중 · 작업 세션 1개(실행 중 1)", "(최근 대화 없음)", ""),
+LEAD_FEWSHOT: tuple[tuple[str, str, str, str, str], ...] = (
+    # (message, board, history, lead_id prefix or "", same_project)
+    ("그 로고 시안 파란색으로 바꿔줘", "- lead_id=ab12 「로고 시안 제작」 상태: 진행 중 · 작업 세션 1개(실행 중 1)", "(최근 대화 없음)", "ab12", "yes"),
+    ("세금 신고 서류 준비 방법 조사해줘", "- lead_id=ab12 「로고 시안 제작」 상태: 진행 중 · 작업 세션 1개(실행 중 1)", "(최근 대화 없음)", "", "no"),
+    ("따까리 배포·테스트 병목을 구조적으로 분석해줘", "- lead_id=ab12 「AIP 1.0 배포까지 남은 작업 확인」 상태: 진행 중", "사용자: AIP 테스트 효율을 개선해줘", "", "no"),
+    ("아니 왜 또 AIP에 넘겨? 따까리 접수기 분류를 고쳐줘", "- lead_id=ab12 「AIP 1.0 배포까지 남은 작업 확인」 상태: 진행 중", "따까리: AIP 기획 세션에 넘길게요", "", "no"),
+    ("따까리 캘린더 반복 일정 기능도 만들어줘", "- lead_id=ab12 「따까리 배포·테스트 병목 분석」 상태: 진행 중", "사용자: 따까리 배포 병목을 분석해줘", "", "yes"),
+    ("그 분석에 배포 단계별 대기시간도 포함해줘", "- lead_id=ab12 「따까리 배포·테스트 병목 분석」 상태: 진행 중", "사용자: 따까리 배포·테스트 병목을 분석해줘", "ab12", "yes"),
 )
 ABSTAIN_TO_DELEGATE_REPLY = "작업판과 최근 대화로는 확인할 수 없어서 기획 세션에 확인을 맡겼어요."
 
@@ -172,7 +182,7 @@ FLAGS: dict[str, bool] = {"verify": True, "social_guard": True, "lexical_overlap
 
 
 def prompt_fingerprint() -> str:
-    """v2 프롬프트·few-shot·schema 전체의 SHA256. 바뀌면 PROMPT_VERSION 을 올리고 다시 측정한다."""
+    """현재 프롬프트·few-shot·schema의 SHA256. 바뀌면 PROMPT_VERSION과 측정 범위를 갱신한다."""
     blob = json.dumps([KIND_SYSTEM, FEWSHOT, SOCIAL_REPLY_SYSTEM, FACT_REPLY_SYSTEM, VERIFY_SYSTEM, VERIFY_FEWSHOT, GUARD_SYSTEM, GUARD_FEWSHOT,
                        LEAD_SYSTEM, LEAD_FEWSHOT, KIND_SCHEMA, REPLY_SCHEMA, VERIFY_SCHEMA, GUARD_SCHEMA], ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()
@@ -419,14 +429,23 @@ async def _fact_reply(client: httpx.AsyncClient, message: str, evidence: str) ->
 
 async def _pick_lead(client: httpx.AsyncClient, board: str, history: str, message: str, lead_ids: list[str]) -> str | None:
     schema = {"type": "object", "additionalProperties": False,
-              "properties": {"lead_id": {"enum": [None, *lead_ids]}}, "required": ["lead_id"]}
+              "properties": {"lead_id": {"enum": [None, *lead_ids]}, "same_project": YESNO, "same_task": YESNO},
+              "required": ["lead_id", "same_project", "same_task"]}
     msgs = [{"role": "system", "content": LEAD_SYSTEM}]
-    for m, b, h, ans in LEAD_FEWSHOT:
+    for m, b, h, ans, same_project in LEAD_FEWSHOT:
         msgs.append({"role": "user", "content": _user_content(b, h, m)})
         lead = next((x for x in re.findall(r"lead_id=(\S+)", b) if x.startswith(ans)), None) if ans else None
-        msgs.append({"role": "assistant", "content": json.dumps({"lead_id": lead})})
-    msgs.append({"role": "user", "content": _user_content(board, history, message)})
-    return (await _chat(client, msgs, schema, "desk_lead", 80)).get("lead_id")
+        msgs.append({"role": "assistant", "content": json.dumps({
+            "lead_id": lead, "same_project": same_project, "same_task": "yes" if lead else "no",
+        })})
+    # Recent results can contain an earlier misrouted request. They must not redefine a session's identity.
+    identity_board = "\n".join(line.split(" · 최근 결과: ", 1)[0] for line in board.splitlines())
+    msgs.append({"role": "user", "content": _user_content(identity_board, history, message)})
+    choice = await _chat(client, msgs, schema, "desk_lead", 120)
+    picked = choice.get("lead_id")
+    if choice.get("same_project") != "yes" or choice.get("same_task") != "yes":
+        return None
+    return picked if picked in lead_ids else None
 
 
 _QUESTION_END = re.compile(r"(?:냐|니|나요|까요?|죠|지|인가요?|인지|려나|래)\s*[.!~ㅋㅎ]*$")

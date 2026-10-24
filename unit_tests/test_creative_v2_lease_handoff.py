@@ -191,8 +191,9 @@ def test_scene_generation_requests_bounded_lease_wait_from_controller(tmp_path):
     seen = {}
 
     class Controller:
-        def prepare(self, profile, *, prompt, seed, owner, lease_wait_seconds=0):
+        def prepare(self, profile, *, prompt, negative_prompt, seed, owner, lease_wait_seconds=0):
             seen["wait"] = lease_wait_seconds
+            seen["negative_prompt"] = negative_prompt
             return {"task_id": "b" * 32, "status": "starting"}
 
         def start(self, _task_id):
@@ -202,6 +203,7 @@ def test_scene_generation_requests_bounded_lease_wait_from_controller(tmp_path):
             return {"task_id": task_id, "profile": "wan22-5b-draft", "status": "succeeded",
                     "runner_job_id": "j1", "receipt": {
                         "prompt_sha256": hashlib.sha256(b"prompt").hexdigest(),
+                        "negative_prompt_sha256": hashlib.sha256(seen["negative_prompt"].encode()).hexdigest(),
                         "outputs": [{"sha256": "c" * 64}],
                     }}
 
@@ -213,3 +215,4 @@ def test_scene_generation_requests_bounded_lease_wait_from_controller(tmp_path):
 
     assert job["status"] == "succeeded"
     assert seen["wait"] == managed.LEASE_HANDOFF_WAIT_SECONDS > 0
+    assert seen["negative_prompt"] == managed.SCENE_NEGATIVE_PROMPT

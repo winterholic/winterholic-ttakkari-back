@@ -66,7 +66,8 @@ def desk_reply(prompt, engine):
         return "not json at all"
     if "DESK_CONTINUE" in msg:
         m = re.search(r"lead_id=([0-9a-f-]{36})", prompt)
-        return json.dumps({"action": "delegate", "reply": "이어서 넘겼어요", "lead_id": m.group(1) if m else None})
+        return json.dumps({"action": "delegate", "reply": "이어서 넘겼어요", "lead_id": m.group(1) if m else None,
+                           "same_project": "yes", "same_task": "yes"})
     if "DESK_NEWSESSION" in msg:
         # 작업판 첫 기획을 고르면서도 새 세션을 명시한다. 하네스가 기존 선택을 무시하는지 본다.
         m = re.search(r"lead_id=([0-9a-f-]{36})", prompt)

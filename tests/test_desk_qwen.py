@@ -13,7 +13,7 @@ from test_desk import _desk, _leads
 from ttakkari.config import get_settings
 from ttakkari.runs import desk_qwen
 
-EXPECTED_V2_FINGERPRINT = "2da6489597bf06326f19b1c72d24555388899443ba1ebd22d2bcf938064f9209"
+EXPECTED_V3_FINGERPRINT = "4483325c7c690b506fa5774e5befb046b795f3d6737ea383c126f3ab388965d4"
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +33,7 @@ def _server(kind: str, evidence: str = "", lead_pick: str | None = None, reply: 
         if calls is not None:
             calls.append((name, body))
         content = {"desk_kind": {"kind": kind, "evidence": evidence}, "desk_reply": {"reply": reply},
-                   "desk_lead": {"lead_id": lead_pick}, "desk_social_reply": {"reply": reply},
+                   "desk_lead": {"lead_id": lead_pick, "same_project": "yes", "same_task": "yes"}, "desk_social_reply": {"reply": reply},
                    "desk_verify": dict(zip(("subject_same", "scope_complete", "time_ok"), verify, strict=True)),
                    "desk_social_guard": {"pure_social": pure_social}}[name]
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(content, ensure_ascii=False)}}]})
@@ -45,13 +45,12 @@ def _use(monkeypatch, handler):
 
 
 def test_prompts_match_the_measured_harness():
-    # common30-v2 재측정(2026-10-16)에 쓴 프롬프트와 글자까지 같아야 한다. 바꾸면 다시 측정해야 한다.
-    # v1(common30-v2 재측정에 쓴 프롬프트)은 desk_qwen.PROMPTS_V1_SHA256 에 보존한다. v2 는 새 해시이며 common30 에서 재측정하지 않았다.
-    assert desk_qwen.PROMPT_VERSION == "harness-v2"
+    # Pin the revised topic-boundary harness; historical v1/v2 measurements do not apply to v3.
+    assert desk_qwen.PROMPT_VERSION == "harness-v3-topic-boundary"
     assert desk_qwen.PROMPTS_V1_SHA256 == {
         "kind_system": "d8326292d57c61eddf59caf5ca3ac7805de578c3e3780c59971772d4123b155c",
         "reply_system": "f3987845b414c20fe08ad407ad9ce3c8bc3bf4f1a92542b7edb670f479c53e90"}
-    assert desk_qwen.prompt_fingerprint() == EXPECTED_V2_FINGERPRINT
+    assert desk_qwen.prompt_fingerprint() == EXPECTED_V3_FINGERPRINT
 
 
 def test_grounded_requires_real_quote_about_the_same_task():
@@ -328,7 +327,7 @@ async def test_unsupported_status_through_the_api_hands_over_to_a_planner(client
     run = await wait_run(client, auth, (await start_run(client, auth, desk["id"], "에이전트들 지금 몇 개 돌아?"))["id"])
     route = next(e for e in await run_events(client, auth, run["id"]) if e["type"] == "desk.route")["payload"]
     assert run["engine"] == "qwen" and route["action"] == "delegate" and route["qwen"]["abstained"] is True
-    assert route["qwen"]["prompt_version"] == "harness-v2"
+    assert route["qwen"]["prompt_version"] == desk_qwen.PROMPT_VERSION
     assert run["result_text"].startswith(desk_qwen.ABSTAIN_TO_DELEGATE_REPLY)
     assert len(await _leads(client, auth, desk["id"])) == 1
 

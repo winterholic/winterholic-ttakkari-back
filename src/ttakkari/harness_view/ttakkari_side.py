@@ -78,6 +78,7 @@ def collect_prompts(ctx: Ctx) -> list[Item]:
         ("ORCHESTRATOR_NOTE", runtime.ORCHESTRATOR_NOTE, "orchestrator/runtime.py", "옛 메인 오케스트레이터(부모 없음) 역할 안내.", ("orchestrator",), "부모 없는 orchestrator 세션"),
         ("LEAD_NOTE", runtime.LEAD_NOTE, "orchestrator/runtime.py", "기획 세션 역할 안내(접수가 넘긴 요청을 맡는다).", ("lead",), "부모가 있는 orchestrator 세션"),
         ("DESK_DEFAULT", instructions_mod.DESK_DEFAULT, "runs/instructions.py", "접수 기본 지침. desk.md 가 있으면 대체된다.", ("desk",), "엔진 폴백 경로의 접수"),
+        ("DESK_ROUTING_CONTRACT", instructions_mod.DESK_ROUTING_CONTRACT, "runs/instructions.py", "접수의 프로젝트·작업 연속성 계약. 저장된 접수 지침 뒤에도 항상 붙는다.", ("desk",), "엔진 폴백과 평가 경로의 접수"),
         ("MODEL_ROUTING_NOTE", runtime.model_routing_note(), "orchestrator/runtime.py model_routing_note()", "Antigravity 라우팅 정책 + 현재 단계표(코드에서 생성).", ("lead", "orchestrator"), "orchestrator 세션만"),
         ("capabilities.prompt_note()", capabilities.prompt_note(), "runs/capabilities.py", "엔진별 실행 환경 측정 요약(측정 파일에서 생성). detail 문자열은 넣지 않는다.", ("lead", "worker", "orchestrator"), "모든 비접수 Run"),
     ]

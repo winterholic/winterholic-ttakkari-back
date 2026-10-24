@@ -264,13 +264,24 @@ def supervisor_satisfies(contract: dict) -> bool:
     return current["protocol"] == required["protocol"] and current["slots"] >= required["slots"]
 
 
-def proxy_config(slot: int) -> dict:
+TTS_JOBS_PATHS = ["/api/tts/jobs", "/api/tts/jobs/"]
+_TTS_CLOSED_BODY = json.dumps({"detail": {"code": "generation_not_active",
+                                          "message": "배포 전환 중이에요. 잠시 후 다시 시도해 주세요."}}, ensure_ascii=False)
+
+
+def proxy_config(slot: int, *, tts_ingress_closed: bool = False) -> dict:
     port = PORTS[slot]
+    routes = [
+        {"match": [{"path": ["/api/ready", "/api/bootstrap-ready"]}], "handle": [{"handler": "static_response", "status_code": 404}]},
+        {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": f"127.0.0.1:{port}"}],
+                     "flush_interval": -1, "stream_close_delay": 60_000_000_000}]}]
+    if tts_ingress_closed:
+        # 전환 직전 짧은 구간에만 새 TTS 접수를 명시적 재시도(503)로 거절한다. 원문은 어디에도 남지 않는다.
+        routes.insert(0, {"match": [{"method": ["POST"], "path": TTS_JOBS_PATHS}], "handle": [{
+            "handler": "static_response", "status_code": 503, "body": _TTS_CLOSED_BODY,
+            "headers": {"Retry-After": ["5"], "Content-Type": ["application/json"]}}]})
     return {"admin": {"listen": "127.0.0.1:20191", "config": {"persist": False}}, "apps": {"http": {"servers": {"ttakkari": {
-        "listen": ["127.0.0.1:8787"], "automatic_https": {"disable": True}, "routes": [
-            {"match": [{"path": ["/api/ready", "/api/bootstrap-ready"]}], "handle": [{"handler": "static_response", "status_code": 404}]},
-            {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": f"127.0.0.1:{port}"}],
-                         "flush_interval": -1, "stream_close_delay": 60_000_000_000}]}]}}}}}
+        "listen": ["127.0.0.1:8787"], "automatic_https": {"disable": True}, "routes": routes}}}}}
 
 
 class Slots:
@@ -492,17 +503,28 @@ class Slots:
             await asyncio.sleep(0.2)
         raise RuntimeError("proxy readiness timed out; generation was preserved")
 
-    async def switch(self, slot: int) -> None:
-        config = proxy_config(slot)
+    async def _load_proxy(self, slot: int, *, tts_ingress_closed: bool = False) -> None:
+        config = proxy_config(slot, tts_ingress_closed=tts_ingress_closed)
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post("http://127.0.0.1:20191/load", json=config)
             response.raise_for_status()
             response = await client.get("http://127.0.0.1:20191/config/")
             response.raise_for_status()
-            actual = response.json()["apps"]["http"]["servers"]["ttakkari"]["routes"][-1]["handle"][0]["upstreams"][0]["dial"]
+            routes = response.json()["apps"]["http"]["servers"]["ttakkari"]["routes"]
+            actual = routes[-1]["handle"][0]["upstreams"][0]["dial"]
             if actual != f"127.0.0.1:{PORTS[slot]}":
                 raise RuntimeError("proxy did not retain the selected upstream")
+            if tts_ingress_closed != (routes[0]["handle"][0].get("status_code") == 503):
+                raise RuntimeError("proxy did not retain the requested TTS ingress state")
+
+    async def switch(self, slot: int) -> None:
+        """업스트림을 바꾸고 영속한다. 열린 구성을 싣기 때문에 닫힌 TTS 접수도 여기서 다시 열린다."""
+        await self._load_proxy(slot)
         self.persist_proxy(slot)
+
+    async def close_tts_ingress(self, slot: int) -> None:
+        """같은 업스트림을 유지한 채 새 TTS 접수만 막는다. 영속하지 않는다(프록시가 재시작되면 열린 상태로 돌아간다)."""
+        await self._load_proxy(slot, tts_ingress_closed=True)
 
     async def verify(self, revision: str) -> None:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -986,54 +1008,50 @@ class GenerationController:
             await self.slots.stop(job["previous_slot"])
             self.succeed(job)
 
-    async def _wait_previous_tts_queue_empty(
-            self, previous_generation: str | None, *, timeout: float = 30.0, poll: float = 0.5) -> dict | None:
-        """혼합 세대 전환 완화: 구세대(0068 이전)는 draining 진입 시 queued 작업을 generation_draining으로 실패시킨다.
-        구세대의 queued 작업이 모두 처리되어 비어있을 때까지 대기하여 전환 중 작업 유실을 방지한다.
+    async def _previous_tts_queued(self, previous: uuid.UUID) -> int:
+        from ttakkari.tts_models import TtsJob
+        async with sessionmaker()() as db:
+            return int(await db.scalar(
+                select(func.count(TtsJob.id)).where(TtsJob.owner_id == previous, TtsJob.status == "queued")) or 0)
 
-        배포가 TTS 하나 때문에 멈추면 안 되므로 timeout·DB 예외에서도 진행한다. 비어 있거나 확인할 대상이
-        없으면 None, 비우지 못한 채 진행하면 {"reason", "queued", "detail"} 를 돌려 호출부가 기록하게 한다.
+    async def drain_previous_tts(self, job, *, timeout: float = 120.0, poll: float = 0.5) -> None:
+        """첫 혼합 세대 전환의 TTS 보호: 구세대가 queued 를 draining 으로 실패시키기 전에 접수 경로를 닫고 비운다.
+
+        구세대 코드는 바꿀 수 없다. 구세대 POST 는 active 를 한 번 확인한 뒤 DB 를 조회하고 커밋하므로, 큐가
+        0건이라는 관측만으로는 확인과 커밋 사이에 낀 요청을 막지 못한다. 그래서 (1) 프록시에서 새 TTS 접수를
+        503 재시도로 거절하고, (2) 구세대의 진행 HTTP 가 0이 된 뒤 (3) 큐가 0건임을 확인하고서야 activate 한다.
+        증명하지 못하면(시간 초과·조회 오류·구세대 확인 불가) activate 하지 않고 실패시키며 접수 경로는 다시 연다.
         """
-        if not previous_generation:
-            return None
+        previous_slot, previous_id = job["previous_slot"], uuid.UUID(job["previous_generation"])
+        await self.slots.close_tts_ingress(previous_slot)
         try:
-            prev_id = uuid.UUID(previous_generation)
-        except (ValueError, TypeError):
-            return None
-        try:
-            from ttakkari.tts_models import TtsJob
-        except ImportError:
-            return None
-        deadline = time.monotonic() + timeout
-        count = None
-        while True:
-            try:
-                async with sessionmaker()() as db:
-                    count = await db.scalar(
-                        select(func.count(TtsJob.id)).where(
-                            TtsJob.owner_id == prev_id,
-                            TtsJob.status == "queued",
-                        )
-                    )
-            except Exception as exc:  # noqa: BLE001
-                log.warning("previous generation %s queued tts check failed; activating anyway: last_count=%s error=%s",
-                            previous_generation, count, exc)
-                return {"reason": "db_error", "queued": count, "detail": f"{type(exc).__name__}: {exc}"}
-            if not count:
-                return None
-            if time.monotonic() >= deadline:
-                log.warning("previous generation %s still has %d queued tts jobs after %.0fs; activating anyway",
-                            previous_generation, count, timeout)
-                return {"reason": "timeout", "queued": int(count), "detail": f"waited {timeout:g}s"}
-            log.info("waiting for previous generation %s queued tts jobs to finish before activate: count=%d", previous_generation, count)
-            await asyncio.sleep(poll)
-
-    async def _hold_for_previous_tts(self, job, **kwargs) -> None:
-        """구세대 TTS 큐를 기다리되, 비우지 못한 채 진행하면 job.warnings 에 사유와 남은 개수를 남긴다."""
-        skipped = await self._wait_previous_tts_queue_empty(job["previous_generation"], **kwargs)
-        if skipped:
-            self.phase(job, job["status"], warnings=[*job.get("warnings", []), {
-                "stage": "previous_tts_queue", "at": _utcnow(), **skipped}])
+            deadline = time.monotonic() + timeout
+            await asyncio.sleep(poll)  # 닫기 직전에 프록시를 통과한 요청이 구세대에 닿을 시간
+            while True:
+                snapshot = await self.slots.snapshot(previous_slot)
+                if snapshot is None or snapshot.get("generation") != str(previous_id):
+                    raise StageError("tts-drain", None, None,
+                                     "previous generation unreachable; cannot prove its TTS queue is idle")
+                inflight = snapshot.get("http_inflight")
+                # 진행 HTTP 를 먼저 읽는다. 접수 경로가 닫혔으니 0 이 된 뒤의 큐는 늘지 않는다.
+                queued = None
+                if inflight == 0:
+                    try:
+                        queued = await self._previous_tts_queued(previous_id)
+                    except Exception as exc:
+                        raise StageError("tts-drain", None, None,
+                                         f"previous generation TTS queue check failed: {type(exc).__name__}") from exc
+                if inflight == 0 and queued == 0:
+                    return
+                if time.monotonic() >= deadline:
+                    raise StageError("tts-drain", None, None,
+                                     f"previous generation not idle after {timeout:g}s: "
+                                     f"http_inflight={inflight} queued_tts={queued}; activation refused")
+                await asyncio.sleep(poll)
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await self.slots.switch(previous_slot)  # 거절 상태를 남기지 않는다
+            raise
 
     async def ensure_supervisor_capable(self, job) -> bool:
         """릴리스 요구조건과 실행 중 감독을 비교한다. 진행 가능하면 True.
@@ -1200,7 +1218,7 @@ class GenerationController:
                 current = await self.active()
                 if current != cid:
                     if job.get("previous_generation"):
-                        await self._hold_for_previous_tts(job)
+                        await self.drain_previous_tts(job)
                     await self.activate(cid, expected=uuid.UUID(job["previous_generation"]))
             if job["status"] != "draining":
                 async with self._operation("cutover"):

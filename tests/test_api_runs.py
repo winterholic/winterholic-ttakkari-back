@@ -334,6 +334,9 @@ async def test_only_server_shutdown_interruption_is_queued_for_resume(client, au
 
     assert await recover_interrupted() == 1
     monkeypatch.setattr(manager_module, "RESTART_RESUME_BACKOFF_SECONDS", 600)
+    assert await resume_interrupted() == 0  # FND-01: 기본은 무-replay. 명시 force 일 때만 재큐잉한다
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, ids[0])).status == RunStatus.interrupted
     assert await resume_interrupted(force=True) == 1
     assert await resume_interrupted(force=True) == 0  # the same Run is claimed only once
 
@@ -431,6 +434,9 @@ async def test_restart_resume_uses_saved_engine_session_and_progress(client, aut
 
     monkeypatch.setattr(manager_module, "RESTART_RESUME_BACKOFF_SECONDS", 0)
     assert await recover_interrupted() == 1
+    assert await resume_interrupted() == 0  # 기본 무-replay
+    async with sessionmaker()() as db:
+        assert (await db.get(Run, run_id)).status == RunStatus.interrupted
     assert await resume_interrupted(force=True) == 1
     finished = await wait_run(client, auth, str(run_id))
 

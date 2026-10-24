@@ -178,7 +178,8 @@ class GenerationRuntime:
             control = await _control(db)
             if claim_owner(control) != self.id:
                 return None
-            run = await db.get(Run, run_id)
+            # Serialize admission with queued cancellation; re-read status after waiting.
+            run = await db.get(Run, run_id, with_for_update=True, populate_existing=True)
             if run is None or run.status != "queued" or (run.resume_after and run.resume_after > utcnow()):
                 return None
             if await db.get(RuntimeLease, run_id):

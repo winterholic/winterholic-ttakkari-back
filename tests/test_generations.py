@@ -453,3 +453,31 @@ async def test_desk_retry_cannot_commit_events_after_losing_ownership(tmp_path, 
                 await desk.handle(db, row, sess)
         async with sessionmaker()() as db:
             assert (await db.get(Run, run.id)).last_seq == 0
+
+
+async def test_claim_waits_for_pending_run_cancellation(tmp_path, new_session):
+    from sqlalchemy import text
+
+    run = await queued(new_session)
+    async with generations(tmp_path) as (owner, _):
+        await activate(owner.id, expected=None)
+        async with sessionmaker()() as cancel_db, sessionmaker()() as observer:
+            row = await cancel_db.get(Run, run.id, with_for_update=True)
+            row.status = "cancelled"
+            await cancel_db.flush()
+            cancel_pid = await cancel_db.scalar(text("select pg_backend_pid()"))
+            task = asyncio.create_task(owner.claim(run.id, "workers", 8))
+            try:
+                async with asyncio.timeout(5):
+                    while not await observer.scalar(text(
+                        "select exists(select 1 from pg_stat_activity where :pid = any(pg_blocking_pids(pid)))"
+                    ), {"pid": cancel_pid}):
+                        assert not task.done(), "claim bypassed the pending Run cancellation"
+                        await asyncio.sleep(0.01)
+                await cancel_db.commit()
+                assert await asyncio.wait_for(task, 5) is None
+            finally:
+                await cancel_db.rollback()
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)

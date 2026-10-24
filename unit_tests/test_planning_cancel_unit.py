@@ -68,7 +68,7 @@ async def test_after_run_on_cancelled_pauses_goal_and_cancels_contract_resumes()
     # scalars().all() returns [resume_sched, user_sched]
     scalars_mock = MagicMock()
     scalars_mock.all.return_value = [resume_sched, user_sched]
-    db.scalars.return_value = scalars_mock
+    db.scalars.side_effect = [scalars_mock, MagicMock(all=MagicMock(return_value=[]))]
 
     with patch("ttakkari.orchestrator.work.load", new=AsyncMock(return_value=contract_row.value)), \
          patch("ttakkari.orchestrator.work.events") as mock_events:

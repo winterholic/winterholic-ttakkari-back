@@ -1,0 +1,12 @@
+Dedicated test database: ttakkari_test_cancel_37cb9d01eaa9448d
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_cancelled_schedule_snapshot_stays_cancelled_after_explicit_goal_resume __
+tests/test_planning_contract.py:732: in test_cancelled_schedule_snapshot_stays_cancelled_after_explicit_goal_resume
+    assert result["status"] == "skipped", result
+           ^^^^^^^^^^^^^^^^
+E   KeyError: 'status'
+db reset: 1 selective (avg 3.0/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_planning_contract.py::test_cancelled_schedule_snapshot_stays_cancelled_after_explicit_goal_resume
+1 failed in 0.57s

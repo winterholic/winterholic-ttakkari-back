@@ -84,16 +84,22 @@
       "Acquire shared session row lock before reading contract, hold until Run queue commit",
       "Skip explicit continuation when no active contract exists"
     ],
-    "status": "previous solution rejected; see rework"
+    "status": "two earlier solutions rejected; scheduler_first_rework pending independent review"
   },
   "previous_verification_timestamp": "2026-10-25T02:05:00+09:00",
-  "status": "rework_tested_pending_independent_review",
+  "status": "scheduler_first_rework_tested_pending_independent_review",
   "independent_review": {
     "verifier_worker_id": "5f0a668c-28f9-4018-a20c-0cd466cae51e",
     "implementation_worker_id": "826d2939-5083-456d-8a33-d360051cf8d8",
     "original_result": "failed",
     "recorded": "verification_status=failed / false_completion=true",
-    "routing_evidence": "get_worker.routing.selected=codex/gpt-6-luna"
+    "routing_evidence": "get_worker.routing.selected=codex/gpt-6-luna",
+    "second_result": {
+      "commit": "64e90c96e3dc3f2fbbfc3cef48b94021a38c1979",
+      "result": "failed",
+      "reason": "scheduler-first committed continuation remained queued after goal paused",
+      "direct_dispatch_or_model_execution": "not measured by verifier"
+    }
   },
   "rework": {
     "changes": [
@@ -117,6 +123,39 @@
       "scope": "12 prior Muse/migration failures only; dedicated DB, PG env, archive release revision"
     },
     "full_suite_after_rework": "not rerun",
-    "deployment": "not requested for rework yet"
+    "deployment": "not requested for rework yet",
+    "status": "64e90c9 rejected by independent scheduler-first probe"
+  },
+  "scheduler_first_rework": {
+    "status": "tested_pending_independent_review",
+    "changes": [
+      "Tag scheduled continuation Runs with schedule_id/revision",
+      "Cancel unleased queued goal continuations, including legacy explicit schedule links; preserve personal/user/report Runs",
+      "Non-active checkpoint also removes queued goal followups",
+      "Leased queued continuations receive owner-generation cancel command without unfenced state/event mutation",
+      "Generation claim locks Run row and rechecks status after pending cancellation",
+      "Native execution checks queued status on entry and after profile selection under row lock",
+      "Recheck persisted schedule status so a cancelled leased snapshot cannot revive after explicit goal resume"
+    ],
+    "red": {
+      "logs": [
+        "scheduler-first-red.log",
+        "scheduler-first-owned-red.log",
+        "scheduler-first-claim-red.log",
+        "scheduler-first-profile-red.log",
+        "scheduler-first-stale-red.log"
+      ],
+      "failed_tests": 8
+    },
+    "focused": {
+      "log": "scheduler-first-green.log",
+      "result": "125 passed in 17.03s"
+    },
+    "lifecycle": {
+      "log": "scheduler-first-lifecycle-green.log",
+      "result": "140 passed in 37.26s"
+    },
+    "full_suite_after_rework": "not rerun",
+    "deployment": "not requested for this rework yet"
   }
 }

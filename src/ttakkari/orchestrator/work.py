@@ -14,12 +14,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari.audit import record
 from ttakkari.models import (
     AppSetting,
     ChatSession,
     Run,
     RunOrigin,
     RunStatus,
+    RuntimeCommand,
+    RuntimeLease,
     ScheduledAction,
     SessionKind,
     utcnow,
@@ -151,6 +154,8 @@ async def checkpoint(db: AsyncSession, sess: ChatSession, body: WorkIn) -> dict:
     else:
         row.value = saved
     await db.flush()
+    if value["status"] != "active":
+        await cancel_queued_continuations(db, sess.id, f"goal contract is {value['status']}: {value.get('blocker', '')}")
     return saved
 
 
@@ -177,6 +182,48 @@ def is_contract_resume_schedule(schedule: ScheduledAction) -> bool:
     the flag remain personal schedules rather than being retroactively claimed.
     """
     return schedule.action_type == "send_message" and (schedule.payload or {}).get("work_continuation") is True
+
+
+async def cancel_queued_continuations(db: AsyncSession, sid: uuid.UUID, reason: str) -> None:
+    """Caller holds the session lock. Stop only explicitly owned goal followups.
+
+    Lock each queued Run against generation claims. Already leased work must be
+    cancelled by its owner, without changing its status/event sequence unfenced.
+    """
+    rows = (await db.scalars(select(Run).where(
+        Run.session_id == sid, Run.origin == RunOrigin.orchestrator,
+        Run.status == RunStatus.queued).order_by(Run.id).with_for_update())).all()
+    for queued in rows:
+        marker = (queued.usage or {}).get("work_continuation")
+        owned = marker is True or isinstance(marker, dict) and bool(marker)
+        # Pre-marker scheduled Runs retain a durable link to their exact schedule.
+        if not owned and (queued.request_key or "").startswith("schedule:"):
+            try:
+                schedule_id = uuid.UUID(queued.request_key.removeprefix("schedule:"))
+            except ValueError:
+                continue
+            schedule = await db.get(ScheduledAction, schedule_id)
+            owned = (schedule is not None and is_contract_resume_schedule(schedule)
+                     and (schedule.payload or {}).get("session_id") == str(sid))
+        if not owned:
+            continue
+        lease = await db.get(RuntimeLease, queued.id)
+        if lease is not None:
+            from ttakkari.generation import wake
+            db.add(RuntimeCommand(key=str(uuid.uuid4()), kind="cancel", run_id=queued.id,
+                                  generation_id=lease.generation_id))
+            await wake(db, queued.id)
+            record(db, actor="system", action="work.cancel_requested", target_type="run",
+                   target_id=queued.id, detail={"reason": reason[:2000]})
+            continue
+        queued.status = RunStatus.cancelled
+        queued.finished_at = utcnow()
+        queued.resume_after = None
+        queued.error = reason[:2000]
+        events.append(db, queued, "run.finished", {"status": RunStatus.cancelled, "error": queued.error,
+                                                  "result_text": queued.result_text, "work_continuation": True})
+        record(db, actor="system", action="run.finished", outcome="error", target_type="run",
+               target_id=queued.id, detail={"status": RunStatus.cancelled, "reason": queued.error})
 
 
 async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:
@@ -215,6 +262,7 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
                         ps.status = "cancelled"
                         ps.last_error = f"cancelled due to session {sess.id} work pause on run cancel"
                         ps.updated_at = utcnow()
+                await cancel_queued_continuations(db, sess.id, reason)
         return None  # interrupted Runs use existing restart recovery, not a new duplicate Run.
 
     # User steering/reports already queued, and live child workers, are durable owners of the next step.

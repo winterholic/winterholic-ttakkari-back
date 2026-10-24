@@ -103,6 +103,10 @@ P1/P2는 이번 업무의 수정 우선도다. 실제 데이터 손실이나 전
 - 원 전체 suite 로그는 **13 failed, 4570 passed, 21 skipped, 2 xfailed** 기록 그대로다. 1건은 manage_work 분류 누락(앞선 수정/51건 통과 기록), 3건은 Muse, 9건은 migration이다. 이 합계만으로 기준선 동일 실패나 전체 통과를 보증하지 않는다.
 - 기준선 `917ea4b`를 git archive로 별도 경로에 복원하고 동일 interpreter, 전용 테스트 DB, PG 접속 환경, 명시적 release revision으로 과거 Muse 3+마이그레이션 9건을 실행: **12 passed in 14.25s** (`baseline-917ea4b-final.log`). 현재 코드의 같은 12건도 위 105건에 포함되어 통과했다. '기준선도 실패했다'는 이전 실행 주장은 근거 부족으로 철회한다. 최초 전체 검사와 환경이 달라 정확한 당시 실패 원인의 확정은 하지 않는다.
 - 기준선 비교 준비 중 공유 fixture DB reset deadlock, 임시 클러스터 initdb exit 1, archive에서 git revision 부재를 관측했다. 전용 DB 생성/제거와 명시적 revision으로 비교를 구성했다. Codex 실행 환경의 관측이며 운영 장애를 뜻하지 않는다.
+- ⚠️ 64e90c9도 독립 재검증 FAIL: scheduler-first로 이미 커밋된 자동 Run이 목표 paused 후 queued로 남았다. 105건 통과는 그 반례를 포함하지 않았다.
+- 추가 RED 8건: 이미 등록된 예약·직접/구버전 계약 후속·paused checkpoint 정리, cancelled 네이티브 재진입, leased queued 취소 명령 부재, generation claim 경합, 프로필 선택 중 취소 덮어쓰기, 취소 뒤 목표 재개를 만난 오래된 예약 스냅숏 부활. `scheduler-first-{red,owned-red,claim-red,profile-red,stale-red}.log`에 원 출력 기록.
+- 추가 교정: 신규 예약 Run에도 계약 표식 기록, queued 계약 후속 정리, 소유 lease는 기존 세대 cancel 명령 사용, generation claim Run 잠금, 네이티브 진입 및 프로필 선택 후 상태 재확인. 취소된 예약 스냅숏이 목표 재개 후 부활하지 않도록 현재 예약 행 상태도 확인. 사용자 요청/개인 예약/보고 Run은 정리 대상에서 제외한다.
+- 재수정 관련 검사 **125 passed in 17.03s** (`scheduler-first-green.log`), 실행·중지·복구 확대 검사 **140 passed in 37.26s** (`scheduler-first-lifecycle-green.log`). 전용 DB는 실행 후 제거했다. scheduler-first 테스트는 실제 dispatcher의 선택을 호출하되 프로세스 생성만 Mock으로 차단해, 취소된 후속이 선택되지 않음을 확인한다. 세대 소유 Run은 cancel 명령 생성/lease 보존까지만 이 신규 검사에서 확인했다.
 - 전체 suite는 이번 재수정 뒤 다시 실행하지 않았다. 최종 독립 재검증과 배포 컨트롤러 전체 gate는 별도 판정이다.
 
 A: 부분 Gate complete 거절, 미완료 식별, 실제 manager 종료에서 후속 큐 연결, 최종 complete 뒤 후속 없음.

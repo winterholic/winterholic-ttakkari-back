@@ -243,9 +243,20 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
                         "reason": f"goal contract is {(c_state or {}).get('status')}",
                         "session_id": str(session_id),
                     }
+                # A poller may still hold a leased snapshot after cancellation.
+                # Explicitly resuming the goal does not revive that cancelled schedule.
+                persisted = await db.get(ScheduledAction, schedule.id, populate_existing=True)
+                if persisted is None or persisted.status not in ("pending", "leased"):
+                    return {"status": "skipped", "reason": "contract schedule is no longer pending or leased",
+                            "session_id": str(session_id)}
             # 리스 만료 뒤 재실행돼도 Run 이 중복 생성되지 않도록 예약 id 를 멱등 키로 쓴다.
+            def mark_continuation(queued):
+                queued.usage = {**(queued.usage or {}), "work_continuation": {
+                    "schedule_id": str(schedule.id), "revision": contract["revision"]}}
+
             run = await queue_run(db, sess, prompt, origin=RunOrigin.orchestrator,
-                                  request_key=f"schedule:{schedule.id}")
+                                  request_key=f"schedule:{schedule.id}",
+                                  on_queued=mark_continuation if is_contract_resume_schedule(schedule) else None)
         log.info("scheduled send_message executed for session %s: run %s queued", session_id, run.id)
         return {"queued_run_id": str(run.id), "session_id": str(session_id)}
 

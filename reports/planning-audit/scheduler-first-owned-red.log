@@ -1,0 +1,24 @@
+Dedicated test database: ttakkari_test_cancel_aae841fb2600472f
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+________ test_already_cancelled_continuation_never_reenters_native_run _________
+tests/test_planning_contract.py:639: in test_already_cancelled_continuation_never_reenters_native_run
+    await runner._run(db, rid)
+src/ttakkari/runs/manager.py:893: in _run
+    profiles, blocked = await available_profiles()
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/ttakkari/runs/manager.py:864: in available_profiles
+    return await _available_profiles(db, sess, run, is_meeting)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../../.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/unittest/mock.py:2327: in _execute_mock_call
+    raise effect
+E   AssertionError: cancelled work reached profile selection
+______ test_owned_queued_continuation_is_cancelled_through_its_generation ______
+tests/test_planning_contract.py:671: in test_owned_queued_continuation_is_cancelled_through_its_generation
+    assert command and command.kind == "cancel" and command.generation_id == owner.id
+E   assert (None)
+db reset: 2 selective (avg 4.0/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_planning_contract.py::test_already_cancelled_continuation_never_reenters_native_run
+FAILED tests/test_planning_contract.py::test_owned_queued_continuation_is_cancelled_through_its_generation
+2 failed in 0.71s

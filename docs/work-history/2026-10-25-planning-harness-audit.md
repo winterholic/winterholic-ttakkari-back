@@ -82,7 +82,7 @@
 
 
 
-## 독립 FAIL 후 취소 경계 재수정 (2026-10-25)
+## 1차 독립 FAIL 후 취소 경계 재수정 — 이후 scheduler-first 반례로 재검증 FAIL
 
 - 현재 상태: 재수정·관련 회귀 확인, 최종 독립 재검증/배포 전. 위 과거 완료·정밀 식별·기준선 동일 실패·미해결 회귀 0건 주장은 현행 결론이 아니다.
 - `get_worker`로 verifier `5f0a668c`의 실제 routing.selected=`codex/gpt-6-luna` 확인. 원 구현자 `826d2939`에 verification_outcome=failed, verifier_worker_id를 기록했고 verification_status=failed/false_completion=true 응답을 확인했다.
@@ -92,3 +92,13 @@
 - 기준선 archive `917ea4b`, 동일 interpreter 및 PG 환경의 전용 DB에서 과거 12건은 12 passed in 14.25s (`baseline-917ea4b-final.log`). '기준선도 실패'라는 과거 주장은 철회. 최초 전체 로그의 13 failed 기록 자체는 유지하며, 이번 전체 suite 재실행으로 바꾸어 말하지 않는다.
 - 비교 준비 실패: 공유 DB fixture 초기화 deadlock, Codex 임시 PG initdb exit 1(stderr 미확보), archive git revision 부재. 전용 테스트 DB/PG 접속 환경/명시적 release revision으로 최종 비교. 운영 상태로 일반화하지 않음.
 - 기존 예약 11be2d66 대상은 17212d9이며 확인 시 testing. 재수정 코드 배포 성공은 미확인. 이후 검증 SHA를 따로 예약해야 한다.
+
+
+## scheduler-first 반례 재수정 (2026-10-25)
+
+- 독립 검증자 5f0a668c가 64e90c9에서 스케줄러가 먼저 커밋한 계약 Run이 paused 이후 queued로 남는 반례를 보고했다. 이전 105 pass는 그 경로를 포함하지 않았으며 최종 PASS 근거가 아니다.
+- 직접 재현한 RED: scheduler-first queued 잔존, 직접/구버전 계약 후속 미정리, paused checkpoint 미정리(3 failed); cancelled 네이티브 재진입/leased queued 소유자 취소 명령 부재(2 failed); 취소 Run 행과 generation claim의 경합(1 failed); 프로필 선택 도중 취소가 succeeded로 덮이는 경로(1 failed), 취소 후 명시적 목표 재개를 만나 오래된 예약 snapshot이 부활하는 경로(1 failed). raw 로그는 reports/planning-audit/scheduler-first-{red,owned-red,claim-red,profile-red,stale-red}.log.
+- work.cancel_queued_continuations는 세션 잠금 안에서 queued 계약 Run만 정리한다. usage 표식 또는 구버전 request_key→동일 세션 계약 예약 참조로 식별하고 개인 예약/user/report Run은 보존한다. Run 행을 잠근 후 lease가 있으면 소유 세대에 RuntimeCommand cancel을 남기고 상태·이벤트를 직접 수정하지 않는다. lease 없는 Run은 cancelled/finished_at/error 및 완료 이벤트·감사를 같은 트랜잭션에 남긴다. non-active checkpoint도 재사용한다.
+- 스케줄러는 신규 계약 Run에 schedule_id/revision 표식을 남기며 실행 전 현재 예약 행의 pending/leased 상태도 재확인한다. generation.claim은 Run 행을 잠그고 상태를 재검사한다. 네이티브 _run은 terminal 진입을 차단하고 프로필 선택 후 잠금+상태 재검사로 취소를 덮어쓰지 않는다.
+- 전용 DB 검사: scheduler-first-green.log **125 passed in 17.03s** (계약·예약·기획·generation·route). lifecycle-green.log **140 passed in 37.26s** (API/실패/실행기/세대 프로세스/전역 중지/context lifecycle/관련 unit). 양쪽 DB 모두 finally 제거. modified Python ruff 및 git diff --check 오류 없음.
+- 현재 재수정은 독립 재검증 전이며 전체 suite 재실행/최종 main 통합/새 배포는 아직이다. 모델 실행 자체를 이 검사 결과로 보증하지 않는다.

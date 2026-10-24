@@ -1,9 +1,10 @@
 {
   "summary": {
-    "backend_target_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
+    "backend_target_sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
+    "historical_product_baseline": "c8f10156845d007ec6496a65d6d8417be19260bd",
     "backend_registry_version": "20261024-v2-b-25modules",
     "frontend_local_head": "630040b1b7007a219a93c9d3d4491fab714c555d",
-    "frontend_remote_ref": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
+    "historical_frontend_reference": "dbe0c9f042b006e2a627b8e59c295ad14b7a2caf",
     "routes_count": 38,
     "concrete_routes_count": 37,
     "wildcard_routes_count": 1,

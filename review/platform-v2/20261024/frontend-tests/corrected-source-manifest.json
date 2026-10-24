@@ -1,10 +1,10 @@
 {
   "docs/design/platform-v2/frontend-feature-map.md": "0befc1c294a9b9252512f300c3102adf7422f27ae4a80f167b2e5a3fd6158ee8",
-  "docs/design/platform-v2/frontend-feature-map.json": "88623ee2cdcff4f56e837bfaab82264166e643b43d33bc1eeaf4b095099a096d",
+  "docs/design/platform-v2/frontend-feature-map.json": "9460a4fd9d5e01f757fac096421ecb1adb4fb533f41ad827ca1775ac4129b303",
   "docs/design/platform-v2/frontend-feature-map.csv": "c4506dc2e813d182665f56f1f5663c68b940ca52303107d1225b17ce02cd99a8",
-  "docs/design/platform-v2/test-architecture-and-baseline.md": "eca11b7fa8107d549a6924a91f472a223836b9f0ef133885b5856bc3e4a8f01e",
-  "docs/design/platform-v2/test-impact-proposal.md": "44d72fabe00217c4f025f05d7b102eedbecff95db42b3f01738f8d0f09779739",
-  "scripts/platform_v2_test_audit.py": "c62797db88e01db2e7aa0682be152f9ac51abe9a8061c0f67351e0aa24aa8be6",
+  "docs/design/platform-v2/test-architecture-and-baseline.md": "383540d7579ff2f11f10c1fbb6f3d61ebf86bd1a4ea19ac76de8bd76bcce3d62",
+  "docs/design/platform-v2/test-impact-proposal.md": "b48fac3cebcaceb0b2bb2acce48a8262dd371554cd433bee9b6ef1a0b1f6686e",
+  "scripts/platform_v2_test_audit.py": "e2cf23600f3103db172a1a7702a41fb5ba98d905f4af175ed2546fd024a62f74",
   "scripts/platform_v2_ts_ast.mjs": "4051e51e9b4feb113bfc7dc401bf624dcf3fbeefb3de4dc89ff17eed7b427125",
   "review/platform-v2/20261024/frontend-tests/frontend-routes.json": "bb2a338a22e459c1e0d5260161315faab667899f46cb1da2e8a78607d413c9ad",
   "review/platform-v2/20261024/frontend-tests/frontend-api-inventory.json": "676efcc213e7ad6ed652476245b4af5aefd60afa5fbb3081c1a30725100b7c33",
@@ -13,8 +13,8 @@
   "review/platform-v2/20261024/frontend-tests/baseline-manifest.json": "997611121ea44a5db2d820a534faab03be4b345fb9595098d89227af71af830e",
   "review/platform-v2/20261024/frontend-tests/c8f10156-test-inventory.json": "da30cae9e6572ccae5627ff8ecf9322dd7e0c731d7f97ae7162764805363ffb8",
   "review/platform-v2/20261024/frontend-tests/baseline-c8f10156-diff-ledger.json": "77499066bd5aeec137de045372fe7d6bd03ffbf90bab751e61e2ddebb69f479a",
-  "review/platform-v2/20261024/frontend-tests/summary.json": "752c406564a8e9840327a830c39950b50b60319213d1fc4933ad774f3c26c721",
+  "review/platform-v2/20261024/frontend-tests/summary.json": "579874d5baf49f19a51f6be05f757fac1c45dda622601320b1c827712703be6a",
   "unit_tests/test_platform_v2_route_audit.py": "ad1d74884c1bec9feecbfcfd532439013c2db4c118264a38c15e7498e23b6d89",
   "unit_tests/test_platform_v2_api_audit.py": "74665724f48e39ea3cfa1927ad2633b2594284d0c664da3b18aae03538c83a86",
-  "unit_tests/test_platform_v2_test_classification.py": "bc61c3b94f44650173202cdfa759683611cef12a46b03a658712a66609eced5e"
+  "unit_tests/test_platform_v2_test_classification.py": "5df9869ef441d119aefc762b051d4e2d93f467f5247c582f961d12deaded1d63"
 }

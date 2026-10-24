@@ -49,22 +49,21 @@
     },
     "back": {
       "repo": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration",
-      "sha": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+      "sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
       "branch": "fix/platform-v2-verified-integration-20261024",
       "dirty": true,
       "status_lines": [
-        "M docs/design/platform-v2/backend-dependency-graph.json",
-        " M docs/design/platform-v2/backend-dependency-graph.md",
-        " M docs/design/platform-v2/backend-dependency-graph.mmd",
+        "M docs/design/platform-v2/backend-dependency-graph.md",
         " M docs/design/platform-v2/backend-module-inventory.csv",
         " M docs/design/platform-v2/backend-module-inventory.json",
         " M docs/design/platform-v2/backend-module-inventory.md",
         " M docs/design/platform-v2/backend-scan-coverage.csv",
         " M docs/design/platform-v2/data-ownership.md",
+        " M docs/design/platform-v2/frontend-feature-map.json",
         " M review/platform-v2/20261024/backend/audit_summary.json",
-        " M review/platform-v2/20261024/backend/dynamic_imports_ledger.json",
-        " M review/platform-v2/20261024/backend/migration_ddl_ledger.json",
-        " M review/platform-v2/20261024/backend/source_manifest.json"
+        " M review/platform-v2/20261024/backend/source_manifest.json",
+        " M review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json",
+        " M review/platform-v2/20261024/frontend-tests/summary.json"
       ]
     }
   },
@@ -73,7 +72,7 @@
     "back_root": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration",
     "source_sha256": {
       "back/benchmark_tests/test_luna_benchmark_service.py": "f4f70149a6cc479cdd0aa7e2ed675de704f0e5be2a426ad45912fe917534389a",
-      "back/docs/design/platform-v2/backend-module-inventory.json": "dda86843e60a01b9d8afc1028a04563e0c76ffe9121672744e37478886e28303",
+      "back/docs/design/platform-v2/backend-module-inventory.json": "583ea675f8cfc36e092fbb501902501bc05979cf5051cabb5377e130eb1a7a56",
       "back/tests/authz03_canary.py": "950b0e2cb739356b5041aaa3b9eeb6f1541e6ade1f126c691773b6b0fd911a17",
       "back/tests/collector_support.py": "f6bab46029e23a232507d84d8c8fd69ee6e6444ec50cb1ecd4f877bbbf470bb5",
       "back/tests/conftest.py": "19211a4ab17e09879852cad517a3be65cd4d9787cfbf01c361726aa75d7a65d1",
@@ -83,7 +82,7 @@
       "back/tests/delivery/test_merge_queue_postgres.py": "64a70f7feaf646ed40e9fc2c7389c815b98f0f0d9a4d22215094cc11d5ddddf2",
       "back/tests/delivery/test_provenance.py": "3fdb331a392c84d82e09140f075b790bfedca83afedbc35a27e5765f1ab2728f",
       "back/tests/delivery/test_repair_policy.py": "b024885f9156feee828a462a3b7728a477f1726040b816901ad38dc6c1d4c7e3",
-      "back/tests/delivery/test_validation_cache.py": "9837dcf1e6997b737bf8c653ae459ac2efc8465d23c2ea8b00c9f54f23e101e9",
+      "back/tests/delivery/test_validation_cache.py": "038117f57fec4e6d54eca6e78ba20b7c025a17ee473861502cebcf8f2853f30c",
       "back/tests/delivery/test_validation_runner.py": "0aa2c37f5c71be8e1daae73024a4812a87db3a7ee78da1b2417a3239374890c2",
       "back/tests/delivery/test_worktree_isolation.py": "d4b5e36b5e92331ccdd93c88d61576cf587ad65f75e7986e4dd59ec3b6d289b0",
       "back/tests/fake_agents/fake_claude.py": "c228b496cb3ec35607298c4e35022b369d16daa70de84bd69f1a39ffa57e58e2",
@@ -374,9 +373,9 @@
       "back/unit_tests/test_oplog_scrub.py": "17e7959d9bd82423befb9cbc78e3c7f40265737d5329dff85c004010357ac5ce",
       "back/unit_tests/test_platform_v2_api_audit.py": "74665724f48e39ea3cfa1927ad2633b2594284d0c664da3b18aae03538c83a86",
       "back/unit_tests/test_platform_v2_corrections.py": "e529525061471002ad47b8c8a9741e75102607126562c24bc20406ca8f79c96b",
-      "back/unit_tests/test_platform_v2_inventory.py": "9b6b17a551773dab5469b2a6ccb2d4fba9d511424953bacddd17df695feb0aaa",
+      "back/unit_tests/test_platform_v2_inventory.py": "a4fcfe8fc4a5cade18e27e65b59dbbaef1e569a70a24d9c22b9240619d041c73",
       "back/unit_tests/test_platform_v2_route_audit.py": "ad1d74884c1bec9feecbfcfd532439013c2db4c118264a38c15e7498e23b6d89",
-      "back/unit_tests/test_platform_v2_test_classification.py": "bc61c3b94f44650173202cdfa759683611cef12a46b03a658712a66609eced5e",
+      "back/unit_tests/test_platform_v2_test_classification.py": "5df9869ef441d119aefc762b051d4e2d93f467f5247c582f961d12deaded1d63",
       "back/unit_tests/test_qwen_emergency.py": "b96c5520d94ec05a3377ec947b08e107451a32ec95a3da96c3af0e0b2d87fbfb",
       "back/unit_tests/test_qwen_flash_monitor.py": "4158f248c0a956b65cc2c7eb3b2721305d60cc3b37f2758ed0241aa483bf6d17",
       "back/unit_tests/test_qwen_flash_monitor_jobs.py": "25ff571d595fdb0dc80f29fd0c486368c4c9fc3c0f4c8abb3d5058a7bd318f95",

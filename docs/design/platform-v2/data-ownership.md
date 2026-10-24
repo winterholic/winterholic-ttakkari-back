@@ -1,5 +1,5 @@
 # 따까리 플랫폼 V2 데이터 소유권 및 분리 후보 분석 (Data Ownership - Corrected)
-> 기준 소스 SHA: `bbf62d5c1bd923dfc0c692692703b7cf5b7182c7` | 감사 시각: 2026-10-24 | 교정 검증: P1 B Backend 감사 교정
+> 기준 소스 SHA: `f304d1e60a746df1c17f7ad7cb2532baf3ad51ca` | 감사 시각: 2026-10-24 | 교정 검증: P1 B Backend 감사 교정
 
 ## 1. 개요 및 데이터 소유권 원칙 (Data Ownership Principles)
 플랫폼 V2는 모듈러 모놀리스 및 점진적 서비스 분리를 지향하며, 다음 불변식을 준수한다:
@@ -38,7 +38,7 @@
 | `ops_ingest_cursors` | `ops.monitoring` | 4 | `None` | Low (독립 테이블) |
 | `runs` | `exec.run_engine` | 28 | `workspace_id->workspaces.id, session_id->sessions.id` | High (외래키 결합) |
 | `run_events` | `exec.run_engine` | 6 | `run_id->runs.id` | High (외래키 결합) |
-| `runtime_leases` | `exec.run_engine` | 7 | `session_id->sessions.id, generation_id->runtime_generations.id, run_id->runs.id, account_id->engine_accounts.id` | High (외래키 결합) |
+| `runtime_leases` | `exec.run_engine` | 7 | `generation_id->runtime_generations.id, session_id->sessions.id, run_id->runs.id, account_id->engine_accounts.id` | High (외래키 결합) |
 | `runtime_process_groups` | `exec.run_engine` | 9 | `generation_id->runtime_generations.id, run_id->runs.id` | High (외래키 결합) |
 | `retired_integration_records` | `exec.run_engine` | 4 | `None` | Low (독립 테이블) |
 | `scheduled_actions` | `exec.durable_scheduler` | 15 | `None` | Low (독립 테이블) |
@@ -58,7 +58,7 @@
 | `knowledge_revisions` | `domain.knowledge_rag` | 11 | `source_id->ctx_sources.id` | High (외래키 결합) |
 | `knowledge_units` | `domain.knowledge_rag` | 15 | `revision_id->knowledge_revisions.id` | High (외래키 결합) |
 | `knowledge_evidence` | `domain.knowledge_rag` | 6 | `unit_id->knowledge_units.id` | High (외래키 결합) |
-| `knowledge_assertions` | `domain.knowledge_rag` | 18 | `supersedes_id->knowledge_assertions.id, subject_entity_id->ctx_entities.id, object_entity_id->ctx_entities.id` | High (외래키 결합) |
+| `knowledge_assertions` | `domain.knowledge_rag` | 18 | `subject_entity_id->ctx_entities.id, object_entity_id->ctx_entities.id, supersedes_id->knowledge_assertions.id` | High (외래키 결합) |
 | `knowledge_assertion_evidence` | `domain.knowledge_rag` | 3 | `assertion_id->knowledge_assertions.id, evidence_id->knowledge_evidence.id` | High (외래키 결합) |
 | `knowledge_review_events` | `domain.knowledge_rag` | 8 | `assertion_id->knowledge_assertions.id` | High (외래키 결합) |
 | `knowledge_extraction_jobs` | `domain.knowledge_rag` | 11 | `revision_id->knowledge_revisions.id, run_id->runs.id` | High (외래키 결합) |
@@ -115,7 +115,7 @@
 | `calendar_events` | `domain.personal_tools` | 16 | `None` | Low (독립 테이블) |
 | `tossinvest_sync_runs` | `domain.personal_tools` | 11 | `None` | Low (독립 테이블) |
 | `google_accounts` | `domain.external_connectors` | 11 | `None` | Low (독립 테이블) |
-| `artifacts` | `domain.shares_artifacts` | 23 | `session_id->sessions.id, run_id->runs.id, workspace_id->workspaces.id` | High (외래키 결합) |
+| `artifacts` | `domain.shares_artifacts` | 23 | `run_id->runs.id, session_id->sessions.id, workspace_id->workspaces.id` | High (외래키 결합) |
 | `public_shares` | `domain.shares_artifacts` | 19 | `None` | Low (독립 테이블) |
 
 ## 3. 크로스 모듈 외래키 결합 현황 (Cross-Module Foreign Keys)
@@ -130,8 +130,8 @@
 | `desk_feedback` | `core.system_routing` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runs` | `exec.run_engine` | `workspaces` | `core.workspaces_transfers` | `workspace_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runs` | `exec.run_engine` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
-| `runtime_leases` | `exec.run_engine` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runtime_leases` | `exec.run_engine` | `runtime_generations` | `core.generation_deploy` | `generation_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
+| `runtime_leases` | `exec.run_engine` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runtime_leases` | `exec.run_engine` | `engine_accounts` | `core.accounts_quota` | `account_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runtime_process_groups` | `exec.run_engine` | `runtime_generations` | `core.generation_deploy` | `generation_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `knowledge_revisions` | `domain.knowledge_rag` | `ctx_sources` | `domain.memory_ontology` | `source_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
@@ -159,8 +159,8 @@
 | `game_feedbacks` | `domain.game_studio` | `runs` | `exec.run_engine` | `run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `weather_briefings` | `domain.personal_tools` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `weather_briefings` | `domain.personal_tools` | `runs` | `exec.run_engine` | `run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
-| `artifacts` | `domain.shares_artifacts` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `artifacts` | `domain.shares_artifacts` | `runs` | `exec.run_engine` | `run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
+| `artifacts` | `domain.shares_artifacts` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `artifacts` | `domain.shares_artifacts` | `workspaces` | `core.workspaces_transfers` | `workspace_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 
 ## 4. 스키마 진화 및 마이그레이션 DDL 영향 분석

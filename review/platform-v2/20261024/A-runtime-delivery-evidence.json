@@ -2,17 +2,17 @@
   "schema_version": "platform-v2-worker-a-evidence-v2",
   "generated_at": "2026-10-24T22:25:00+09:00",
   "snapshot_binding": {
-    "candidate_head_sha": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
-    "candidate_tree_sha": "fe5f62a53eafd09a1276e6973406cb6de37afe62",
-    "candidate_src_ttakkari_tree_sha": "9aa984a4ad4b0377b77f0b382563513ab5c5c798",
+    "candidate_head_sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
+    "candidate_tree_sha": "c7a65ced609f7a325f541b6cc3129b4dd2e96b5f",
+    "candidate_src_ttakkari_tree_sha": "390484f301cab814d16c5464a164a639840265a4",
     "audited_commit_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
     "audited_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
     "audited_src_ttakkari_tree_sha": "f2e5572ce8d039341eacc4dad5a70db03c61553b",
     "checkout_branch": "fix/platform-v2-verified-integration-20261024",
-    "head_src_ttakkari_tree_sha": "9aa984a4ad4b0377b77f0b382563513ab5c5c798",
+    "head_src_ttakkari_tree_sha": "390484f301cab814d16c5464a164a639840265a4",
     "head_alembic_tree_sha": "5ba5ed46808b09daf2a28771c2bfdd4ef0f59e45",
-    "head_tests_tree_sha": "2fde8f1ef5d8004e56803da925185c3d20c35e4b",
-    "head_unit_tests_tree_sha": "e7004cfa26b31c73240efc4d43f9ca2c981f3737",
+    "head_tests_tree_sha": "98941bcb4ab2a35f004360b26edd03ddfef0ee48",
+    "head_unit_tests_tree_sha": "e297f315583775301bb2386730276616f8f1d21f",
     "head_deploy_tree_sha": "0a7c61a2aa1e17fd09036aaecf295abe1d045119",
     "origin_main_sha": "c8f10156845d007ec6496a65d6d8417be19260bd",
     "origin_main_tree_sha": "d224086fed586484437819bbe100c5b4d58195f1",
@@ -23,15 +23,7 @@
       "entries": [
         {
           "status": " M",
-          "path": "docs/design/platform-v2/backend-dependency-graph.json"
-        },
-        {
-          "status": " M",
           "path": "docs/design/platform-v2/backend-dependency-graph.md"
-        },
-        {
-          "status": " M",
-          "path": "docs/design/platform-v2/backend-dependency-graph.mmd"
         },
         {
           "status": " M",
@@ -55,7 +47,11 @@
         },
         {
           "status": " M",
-          "path": "docs/design/platform-v2/frontend-feature-map.md"
+          "path": "docs/design/platform-v2/frontend-feature-map.json"
+        },
+        {
+          "status": " M",
+          "path": "review/platform-v2/20261024/A-runtime-delivery-evidence.json"
         },
         {
           "status": " M",
@@ -63,31 +59,11 @@
         },
         {
           "status": " M",
-          "path": "review/platform-v2/20261024/backend/dynamic_imports_ledger.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/backend/migration_ddl_ledger.json"
-        },
-        {
-          "status": " M",
           "path": "review/platform-v2/20261024/backend/source_manifest.json"
         },
         {
           "status": " M",
-          "path": "review/platform-v2/20261024/frontend-tests/backend-test-classification.json"
-        },
-        {
-          "status": " M",
           "path": "review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/frontend-tests/frontend-api-inventory.json"
-        },
-        {
-          "status": " M",
-          "path": "review/platform-v2/20261024/frontend-tests/frontend-routes.json"
         },
         {
           "status": " M",
@@ -96,23 +72,17 @@
       ],
       "dirty_source_paths": [],
       "dirty_audit_doc_paths": [
-        "docs/design/platform-v2/backend-dependency-graph.json",
         "docs/design/platform-v2/backend-dependency-graph.md",
-        "docs/design/platform-v2/backend-dependency-graph.mmd",
         "docs/design/platform-v2/backend-module-inventory.csv",
         "docs/design/platform-v2/backend-module-inventory.json",
         "docs/design/platform-v2/backend-module-inventory.md",
         "docs/design/platform-v2/backend-scan-coverage.csv",
         "docs/design/platform-v2/data-ownership.md",
-        "docs/design/platform-v2/frontend-feature-map.md",
+        "docs/design/platform-v2/frontend-feature-map.json",
+        "review/platform-v2/20261024/A-runtime-delivery-evidence.json",
         "review/platform-v2/20261024/backend/audit_summary.json",
-        "review/platform-v2/20261024/backend/dynamic_imports_ledger.json",
-        "review/platform-v2/20261024/backend/migration_ddl_ledger.json",
         "review/platform-v2/20261024/backend/source_manifest.json",
-        "review/platform-v2/20261024/frontend-tests/backend-test-classification.json",
         "review/platform-v2/20261024/frontend-tests/corrected-source-manifest.json",
-        "review/platform-v2/20261024/frontend-tests/frontend-api-inventory.json",
-        "review/platform-v2/20261024/frontend-tests/frontend-routes.json",
         "review/platform-v2/20261024/frontend-tests/summary.json"
       ],
       "other_dirty_paths": [],
@@ -483,7 +453,7 @@
   },
   "codebase_metrics": {
     "total_python_files": 385,
-    "total_lines": 94894,
+    "total_lines": 94926,
     "top_level_unit_count": 80,
     "top_fan_in_units": [
       {
@@ -1395,7 +1365,7 @@
       },
       "delivery": {
         "file_count": 8,
-        "line_count": 1862,
+        "line_count": 1894,
         "depends_on": [
           "api",
           "config",
@@ -2922,8 +2892,8 @@
       "creative_decision": {
         "status": "cache_miss_unverified_closure",
         "module_id": "creative",
-        "candidate_git_head_sha": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
-        "candidate_git_tree_sha": "fe5f62a53eafd09a1276e6973406cb6de37afe62",
+        "candidate_git_head_sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
+        "candidate_git_tree_sha": "c7a65ced609f7a325f541b6cc3129b4dd2e96b5f",
         "closure_complete": false,
         "reasons": [
           "dynamic_import_in_closure:google_account:src/ttakkari/google_account/registry.py:['import_module']",
@@ -2932,13 +2902,13 @@
         "cache_decision": "broad_validation_fallback (conservative no-reuse due to dynamic import in transitive closure)"
       },
       "verified_sample_key": {
-        "cache_key": "evk-v2-design_system-5f22ccf7fce331a42c55469659729695",
-        "sha256": "5f22ccf7fce331a42c554696597296952609c9d16f1b245c710d2433dd6f541c",
+        "cache_key": "evk-v2-design_system-c040f8d04955b20d847442baad76d6b5",
+        "sha256": "c040f8d04955b20d847442baad76d6b55c54dce74605e3fa18d49bb5c25c9a2b",
         "components": {
           "schema_version": "platform-v2-evidence-key-v2",
           "module_id": "design_system",
-          "candidate_git_head_sha": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
-          "candidate_git_tree_sha": "fe5f62a53eafd09a1276e6973406cb6de37afe62",
+          "candidate_git_head_sha": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
+          "candidate_git_tree_sha": "c7a65ced609f7a325f541b6cc3129b4dd2e96b5f",
           "changed_file_hashes": {
             "src/ttakkari/design_system.py": "c102adfebcbbffbec96801353fb56e012f17de4a658a371cff0ae28617016fba"
           },
@@ -2971,7 +2941,7 @@
           "python_full_version": "3.13.15",
           "platform_tag": "darwin-arm64",
           "pytest_plugins_sha256": "480dcf078a9045bebd5f404f658060ec07c548ca9f12357ccdd758fc30ce2889",
-          "sanitized_env_sha256": "ca7f8b3e9c1d0582f5a46d37bf41f4928a0aca66cf68ea961556419f642a1127",
+          "sanitized_env_sha256": "5693f379b5b31f5ff321efb78d214ef65f6a2bf7faa619d05ae42e0e65c0bfa4",
           "models_py_sha256": "f77ad6600a9763d07a407cc465580f7b9e1a9fadbd829a2b7c2e71dab0f87f3e",
           "alembic_env_sha256": "f7282d5a0d0ffc78b33fdca6a6ef4eab85d78e01014da0f57fe225a193c3c966",
           "migration_file_hashes": {

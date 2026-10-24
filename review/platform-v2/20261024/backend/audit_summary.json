@@ -4,8 +4,8 @@
       "scanner_file": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration/scripts/platform_v2_inventory.py",
       "git": {
         "available": true,
-        "head": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
-        "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
+        "head": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
+        "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
         "src_dirty": false
       },
       "declared_baseline": {
@@ -285,7 +285,7 @@
     "migrations": 67,
     "configs": 231,
     "source_files": 385,
-    "total_lines": 94894
+    "total_lines": 94926
   },
   "limits_ledger": [
     "1. ORM Base.metadata(88/106 tables)를 검사하였으며, 실제 운영 PostgreSQL 물리 DB에 직접 연결하여 쿼리하지 않음.",

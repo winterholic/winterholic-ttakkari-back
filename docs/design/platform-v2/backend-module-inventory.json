@@ -11,8 +11,8 @@
     "difficulty": "medium",
     "benefit": "플랫폼 전반의 단일 신원 인증 및 세션 검증 토큰 분리로 다른 서비스들의 인증 위임 가능",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "POST",
@@ -426,8 +426,8 @@
     "difficulty": "low",
     "benefit": "정적 파일 서빙 및 업로드/다운로드 경로 분리 시 대용량 파일 전송 중 Core 이벤트 루프 차단 해소",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -632,8 +632,8 @@
     "difficulty": "medium",
     "benefit": "계정 회전 및 쿼터 차단 로직을 중앙 집중화하여 다중 런타임 간 계정 충돌 방지",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -1037,8 +1037,8 @@
     "difficulty": "high",
     "benefit": "세대 전환 시 기존 활성 Run의 안전한 드레인 및 zero-downtime 배포 보장",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -1247,8 +1247,8 @@
     "difficulty": "low",
     "benefit": "전역 설정 및 푸시 디스패처 모듈화로 도메인 모듈들이 비동기 이벤트로 알림 요청 가능",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -1672,8 +1672,8 @@
     "difficulty": "low",
     "benefit": "모니터링 시스템을 Core와 독립시켜 Core 장애 상황에서도 관측성 유지",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -1995,8 +1995,8 @@
     "difficulty": "high",
     "benefit": "Core 웹 서버와 긴 에이전트 CLI 실행의 수명주기 분리로 Core 배포 시 에이전트 중단 방지",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -2242,12 +2242,12 @@
         ],
         "foreign_keys": [
           {
-            "column": "session_id",
-            "target": "sessions.id"
-          },
-          {
             "column": "generation_id",
             "target": "runtime_generations.id"
+          },
+          {
+            "column": "session_id",
+            "target": "sessions.id"
           },
           {
             "column": "run_id",
@@ -2608,8 +2608,8 @@
     "difficulty": "medium",
     "benefit": "독립 프로세스 워커로 전환 시 스케줄러 재시작 없이 웹 서버만 단독 롤링 배포 가능",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [],
     "tools": [
       "cancel_scheduled_action",
@@ -2718,8 +2718,8 @@
     "difficulty": "medium",
     "benefit": "GPU llama-server 수명을 백엔드 재배포와 완전히 격리하여 가속기 로딩 오버헤드 0화",
     "status": "partial",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "POST",
@@ -2828,8 +2828,8 @@
     "difficulty": "high",
     "benefit": "무중단 배포 및 자동 검증 엔진의 독립 실행으로 배포 파이프라인 장애가 운영 서빙에 전파되지 않음",
     "status": "partial",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [],
     "tools": [],
     "tables": [
@@ -2917,7 +2917,7 @@
       "src/ttakkari/delivery/worktree.py",
       "src/ttakkari/delivery_models.py"
     ],
-    "lines": 1820,
+    "lines": 1852,
     "dependencies_internal": [
       "core.auth_session"
     ]
@@ -2934,8 +2934,8 @@
     "difficulty": "medium",
     "benefit": "RAG 엔진과 저장소 계층을 라이브러리화하여 다양한 에이전트에서 인프로세스 또는 경량 API로 공유",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -3480,8 +3480,8 @@
     "difficulty": "high",
     "benefit": "지식 추출 배치의 장시간 연산 분리로 Core API 지연 방지 및 지식 저장소 독립 마이그레이션",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "POST",
@@ -3862,16 +3862,16 @@
         ],
         "foreign_keys": [
           {
-            "column": "supersedes_id",
-            "target": "knowledge_assertions.id"
-          },
-          {
             "column": "subject_entity_id",
             "target": "ctx_entities.id"
           },
           {
             "column": "object_entity_id",
             "target": "ctx_entities.id"
+          },
+          {
+            "column": "supersedes_id",
+            "target": "knowledge_assertions.id"
           }
         ]
       },
@@ -4442,8 +4442,8 @@
     "difficulty": "medium",
     "benefit": "수집 파이프라인 크롤링 부하를 Core 웹 프로세스에서 완전히 격리하고 독자 재시작/스케일링",
     "status": "partial",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "POST",
@@ -5316,8 +5316,8 @@
     "difficulty": "high",
     "benefit": "세션 ID 분리 및 managed Comfy/ArtCraft 프로세스 decoupling 후 점진적 서비스화 가능 (현재 즉시 분리 불가)",
     "status": "partial",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -5866,8 +5866,8 @@
     "difficulty": "medium",
     "benefit": "헤드리스 브라우저의 메모리 누수 및 좀비 프로세스 문제를 Core로부터 완전 격리",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -6228,8 +6228,8 @@
     "difficulty": "low",
     "benefit": "연구 데이터 스키마와 실험 메트릭 독립 관리",
     "status": "prototype",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -6609,8 +6609,8 @@
     "difficulty": "medium",
     "benefit": "헤비한 분석 작업 단독 큐 분리",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "POST",
@@ -6814,8 +6814,8 @@
     "difficulty": "high",
     "benefit": "Whisper 모델 로딩 및 무거운 음성 전사 연산이 웹 요청 처리 지연을 유발하지 않도록 격리",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -7393,8 +7393,8 @@
     "difficulty": "low",
     "benefit": "도메인 데이터가 명확하고 부작용이 적어 서비스화 또는 코어 라이브러리로 유지 용이",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -7891,8 +7891,8 @@
     "difficulty": "low",
     "benefit": "프론트엔드 빌드 산출물과 정적 파일 동기화만으로 독립 배포 가능",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -7964,8 +7964,8 @@
     "difficulty": "medium",
     "benefit": "음성 합성 외부 API 또는 로컬 엔진 지연이 Core 요청 쓰레드를 잠식하지 않음",
     "status": "partial",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -8140,8 +8140,8 @@
     "difficulty": "low",
     "benefit": "게임 프로젝트 데이터 격리",
     "status": "prototype",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -8454,8 +8454,8 @@
     "difficulty": "low",
     "benefit": "개인 편의 기능들을 독립 도메인으로 묶어 비즈니스 로직과 분리",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -9055,8 +9055,8 @@
     "difficulty": "medium",
     "benefit": "외부 서비스 인증 프로토콜 변경 시 어댑터만 단독 업데이트",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -9338,8 +9338,8 @@
     "difficulty": "low",
     "benefit": "사용자에게 결과물을 노출하는 정적 게이트웨이 역할",
     "status": "implemented",
-    "src_tree": "0d7c3590e559e9740884c80d6097c1bc72607cdc",
-    "scan_commit": "bbf62d5c1bd923dfc0c692692703b7cf5b7182c7",
+    "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+    "scan_commit": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
     "routes": [
       {
         "method": "GET",
@@ -9492,12 +9492,12 @@
         ],
         "foreign_keys": [
           {
-            "column": "session_id",
-            "target": "sessions.id"
-          },
-          {
             "column": "run_id",
             "target": "runs.id"
+          },
+          {
+            "column": "session_id",
+            "target": "sessions.id"
           },
           {
             "column": "workspace_id",

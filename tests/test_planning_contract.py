@@ -330,7 +330,7 @@ async def test_persisted_resume_schedule_owns_next_step_without_duplicate_run(cl
     assert (await checkpoint(client, h, state())).status_code == 200
     async with sessionmaker()() as db:
         s = await db.get(ChatSession, UUID(sess['id']))
-        db.add(ScheduledAction(action_type='send_message', payload={'session_id': str(s.id), 'prompt': 'resume'},
+        db.add(ScheduledAction(action_type='send_message', payload={'session_id': str(s.id), 'prompt': 'resume', 'work_continuation': True},
                                status='pending', due_at=utcnow() + timedelta(minutes=10)))
         run = Run(session_id=s.id, workspace_id=s.workspace_id, engine='codex', prompt='partial', status='succeeded')
         db.add(run)
@@ -421,3 +421,101 @@ async def test_cancel_run_with_pending_schedule_pauses_goal_and_cancels_contract
     user_res = await execute_action(u_item)
     assert "queued_run_id" in user_res
 
+
+
+async def test_personal_resume_text_survives_cancellation_and_executes(client, auth, make_dir, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    from ttakkari.models import ScheduledAction, utcnow
+    from ttakkari.orchestrator import work
+    from ttakkari.runs.manager import manager
+    from ttakkari.schedules.service import execute_action
+
+    sess, h = await lead(client, auth, make_dir)
+    sid = UUID(sess["id"])
+    assert (await checkpoint(client, h, state())).status_code == 200
+    monkeypatch.setattr(manager, "dispatch", AsyncMock())
+    async with sessionmaker()() as db:
+        s = await db.get(ChatSession, sid)
+        personal = [ScheduledAction(action_type="send_message", payload={"session_id": str(sid), "prompt": text},
+                                    description="목표 계약 contract resume", due_at=utcnow(), status="pending")
+                    for text in ("resume", "continue", "[영속 목표 계약]")]
+        db.add_all(personal)
+        run = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="cancel", status="cancelled")
+        db.add(run)
+        await db.flush()
+        await work.after_run(db, s, run)
+        await db.commit()
+        assert all(item.status == "pending" for item in personal)
+    for item in personal:
+        assert "queued_run_id" in await execute_action(item)
+
+
+async def test_schedule_waits_for_cancellation_commit_before_reading_contract(client, auth, make_dir, monkeypatch):
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import text
+
+    from ttakkari.models import ScheduledAction, utcnow
+    from ttakkari.orchestrator import work
+    from ttakkari.runs.manager import manager
+    from ttakkari.schedules import service
+
+    sess, h = await lead(client, auth, make_dir)
+    sid = UUID(sess["id"])
+    assert (await checkpoint(client, h, state())).status_code == 200
+    monkeypatch.setattr(manager, "dispatch", AsyncMock())
+    async with sessionmaker()() as db:
+        s = await db.get(ChatSession, sid)
+        run = Run(session_id=sid, workspace_id=s.workspace_id, engine="codex", prompt="stop", status="cancelled")
+        schedule = ScheduledAction(action_type="send_message", payload={"session_id": str(sid), "prompt": "resume",
+                                   "work_continuation": True}, due_at=utcnow(), status="leased")
+        db.add_all([run, schedule])
+        await db.commit()
+        run_id = run.id
+
+    # Real independent PostgreSQL transactions. Hold the cancellation's session lock,
+    # wait until the scheduler is actually blocked by it, then commit cancellation.
+    async with sessionmaker()() as cancel_db, sessionmaker()() as observer:
+        await cancel_db.scalar(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
+        cancel_pid = await cancel_db.scalar(text("select pg_backend_pid()"))
+        task = asyncio.create_task(service.execute_action(schedule))
+        try:
+            async with asyncio.timeout(5):
+                while not await observer.scalar(text(
+                    "select exists(select 1 from pg_stat_activity where :pid = any(pg_blocking_pids(pid)))"
+                ), {"pid": cancel_pid}):
+                    if task.done():
+                        await task
+                        raise AssertionError("scheduler did not wait for the session lock")
+                    await asyncio.sleep(0.01)
+            s = await cancel_db.get(ChatSession, sid)
+            r = await cancel_db.get(Run, run_id)
+            await work.after_run(cancel_db, s, r)
+            await cancel_db.commit()
+            result = await asyncio.wait_for(task, 5)
+            assert result["status"] == "skipped", result
+        finally:
+            await cancel_db.rollback()
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+    async with sessionmaker()() as db:
+        assert not (await db.scalars(select(Run).where(Run.session_id == sid, Run.status.in_(("queued", "running"))))).all()
+
+
+async def test_personal_schedule_does_not_claim_goal_followup(client, auth, make_dir):
+    from ttakkari.models import ScheduledAction, utcnow
+    from ttakkari.orchestrator import work
+
+    sess, h = await lead(client, auth, make_dir)
+    assert (await checkpoint(client, h, state())).status_code == 200
+    async with sessionmaker()() as db:
+        s = await db.get(ChatSession, UUID(sess["id"]))
+        db.add(ScheduledAction(action_type="send_message", payload={"session_id": str(s.id), "prompt": "resume"},
+                               status="pending", due_at=utcnow()))
+        run = Run(session_id=s.id, workspace_id=s.workspace_id, engine="codex", prompt="partial", status="succeeded")
+        db.add(run)
+        await db.flush()
+        assert await work.after_run(db, s, run) is not None

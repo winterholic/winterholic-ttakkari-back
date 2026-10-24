@@ -1,0 +1,24 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_is_contract_resume_schedule_distinguishes_contract_and_user_actions ___
+unit_tests/test_planning_cancel_unit.py:20: in test_is_contract_resume_schedule_distinguishes_contract_and_user_actions
+    assert not is_contract_resume_schedule(ScheduledAction(
+E   AssertionError: assert not True
+E    +  where True = is_contract_resume_schedule(<ttakkari.models.ScheduledAction object at 0x1133b79d0>)
+E    +    where <ttakkari.models.ScheduledAction object at 0x1133b79d0> = ScheduledAction(action_type='send_message', payload={'prompt': 'resume'}, description='contract resume 목표 계약')
+_________ test_personal_resume_text_survives_cancellation_and_executes _________
+tests/test_planning_contract.py:449: in test_personal_resume_text_survives_cancellation_and_executes
+    assert all(item.status == "pending" for item in personal)
+E   assert False
+E    +  where False = all(<generator object test_personal_resume_text_survives_cancellation_and_executes.<locals>.<genexpr> at 0x11405f5e0>)
+_____ test_schedule_waits_for_cancellation_commit_before_reading_contract ______
+tests/test_planning_contract.py:498: in test_schedule_waits_for_cancellation_commit_before_reading_contract
+    assert result["status"] == "skipped", result
+           ^^^^^^^^^^^^^^^^
+E   KeyError: 'status'
+db reset: 2 selective (avg 5.5/106 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED unit_tests/test_planning_cancel_unit.py::test_is_contract_resume_schedule_distinguishes_contract_and_user_actions
+FAILED tests/test_planning_contract.py::test_personal_resume_text_survives_cancellation_and_executes
+FAILED tests/test_planning_contract.py::test_schedule_waits_for_cancellation_commit_before_reading_contract
+3 failed, 23 deselected in 0.72s

@@ -170,26 +170,13 @@ async def prompt_note(db: AsyncSession, sess: ChatSession) -> str:
 
 
 def is_contract_resume_schedule(schedule: ScheduledAction) -> bool:
-    """예약 작업이 기획 목표 계약의 자동 후속/재개 목적인지 판정한다.
+    """Only an explicit opt-in marks a schedule as a goal continuation.
 
-    사용자가 직접 등록한 무관한 예약(개인 리마인더, 회의 알림 등)을 오인 취소하지 않도록,
-    명시적인 계약 메타데이터(work_continuation 플래그, orchestrator/work_contract origin,
-    재개 프롬프트 키워드 또는 계약 설명)가 있는 예약만 계약 후속으로 분류한다.
+    Prompt/description text and generic Run origins are user content, not ownership.
+    Automatic goal followups currently create Runs directly; legacy schedules without
+    the flag remain personal schedules rather than being retroactively claimed.
     """
-    if schedule.action_type != "send_message":
-        return False
-    payload = schedule.payload or {}
-    if payload.get("work_continuation") is True:
-        return True
-    if payload.get("origin") in ("orchestrator", "work_contract"):
-        return True
-    prompt = (payload.get("prompt") or payload.get("message") or "").strip()
-    if prompt.lower() in ("resume", "continue", "재개", "이어가기"):
-        return True
-    if "[미완료 목표 자동 이어가기]" in prompt or "[영속 목표 계약]" in prompt:
-        return True
-    desc = (schedule.description or "").strip().lower()
-    return any(k in desc for k in ("목표 계약", "work continuation", "목표 자동 이어가기", "contract resume"))
+    return schedule.action_type == "send_message" and (schedule.payload or {}).get("work_continuation") is True
 
 
 async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID | None:
@@ -234,10 +221,10 @@ async def after_run(db: AsyncSession, sess: ChatSession, run: Run) -> uuid.UUID 
     children = select(ChatSession.id).where(ChatSession.parent_id == sess.id, ChatSession.archived_at.is_(None))
     existing = await db.scalar(select(Run.id).where(Run.id != run.id, Run.status.in_(ACTIVE),
                                 (Run.session_id == sess.id) | Run.session_id.in_(children)).limit(1))
-    scheduled = await db.scalar(select(ScheduledAction.id).where(
+    schedules = (await db.scalars(select(ScheduledAction).where(
         ScheduledAction.action_type == "send_message", ScheduledAction.status.in_(("pending", "leased")),
-        ScheduledAction.payload["session_id"].as_string() == str(sess.id)).limit(1))
-    if existing is not None or scheduled is not None:
+        ScheduledAction.payload["session_id"].as_string() == str(sess.id)))).all()
+    if existing is not None or any(is_contract_resume_schedule(item) for item in schedules):
         return None
 
     count = current.get("unchanged_continuations", 0)

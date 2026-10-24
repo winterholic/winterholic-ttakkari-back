@@ -230,14 +230,17 @@ async def execute_action(schedule: ScheduledAction, now: datetime | None = None)
                 raise ValueError(f"ChatSession {session_id} not found")
             # 계약 재개 예약인 경우, 현재 목표 상태가 active가 아니면(paused/blocked/complete 등) 새 Run을 큐잉하지 않고 건너뛴다.
             if is_contract_resume_schedule(schedule):
+                # Same session-row lock as checkpoint/after_run. Keep it through
+                # queue_run's commit so cancellation cannot interleave after load.
+                await db.scalar(select(ChatSession.id).where(ChatSession.id == session_id).with_for_update())
                 contract = await load(db, session_id)
                 c_state = contract.get("state")
-                if c_state and c_state.get("status") != "active":
+                if not c_state or c_state.get("status") != "active":
                     log.info("scheduled send_message skipped for session %s: goal contract is %s",
-                             session_id, c_state.get("status"))
+                             session_id, (c_state or {}).get("status"))
                     return {
                         "status": "skipped",
-                        "reason": f"goal contract is {c_state.get('status')}",
+                        "reason": f"goal contract is {(c_state or {}).get('status')}",
                         "session_id": str(session_id),
                     }
             # 리스 만료 뒤 재실행돼도 Run 이 중복 생성되지 않도록 예약 id 를 멱등 키로 쓴다.

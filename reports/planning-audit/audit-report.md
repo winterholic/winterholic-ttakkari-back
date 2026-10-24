@@ -96,30 +96,20 @@ P1/P2는 이번 업무의 수정 우선도다. 실제 데이터 손실이나 전
 상세 실행 결과는 `verification.json`과 원 로그(`planning-contract.log`, `automatic-dispatch.log`, `full-regression.log`)를 기준으로 기록한다.
 
 - 최초 RED: 목표 완료 API 부재로 Gate A 완료 요청 404 실패. 추가 RED: PMS 0%인데 done PATCH 200 허용, 작업판 succeeded→완료 오표시, live worker 있어도 목표 complete 허용, checkpoint 증거/PMS 연결 소실, 엔진 실패 후 active 방치가 각각 재현됨.
-- F-1 결함 교정 및 취소 경계 검증:
-  - 취소된 Run이 예약 메시지(ScheduledAction send_message)로 인해 목표를 active로 방치하고 미래 시점에 새 Run을 생성하던 결함 해결.
-  - `work.py`: `after_run`에서 취소/실패 시 예약 소유권 검사보다 먼저 목표 상태를 `paused`/`blocked`로 전이하고, `is_contract_resume_schedule`로 계약 자동 재개 예약만 식별하여 `cancelled` 처리 (무관한 사용자 개인 예약은 보존).
-  - `schedules/service.py`: `execute_action` 실행 시 계약 재개 예약은 목표 상태가 `active`가 아니면 건너뜀(`skipped`).
-  - 회귀 검증: `tests/test_planning_contract.py::test_cancel_run_with_pending_schedule_pauses_goal_and_cancels_contract_resume` 통합 테스트 및 `unit_tests/test_planning_cancel_unit.py` 단위 테스트 3건 전수 통과 (0.45s).
-- 신규 계약 회귀: `PYTHONPATH=src pytest tests/test_planning_contract.py` → 21 passed (신규 취소 경계 테스트 포함).
-- 관련 핵심 회귀: `PYTHONPATH=src pytest tests/test_planning_contract.py tests/test_orchestrator.py tests/test_route_inventory.py` → 66 passed in 12.82s.
-- 코드 스타일: `ruff check` (수정 대상 전체 파일) → All checks passed!
-- 전체 suite 재실행 완주 결과 (`reports/planning-audit/full-regression.log`):
-  `= 13 failed, 4570 passed, 21 skipped, 2 xfailed, 9 warnings in 751.50s (0:12:31) =` (총 4606개 수집).
-  이전 72% 중단 로그와 달리 100% 끝까지 완주했으며, 관측 실패 13건의 원인 분류 합계는 다음과 같다:
-
-|분류|건수|해당 테스트|원인 및 검증 결과|
-|---|---|---|---|
-|(a) 이번 변경 원인 (고침 완료)|1|`unit_tests/test_platform_v2_inventory.py::test_report_schema_separates_extraction_classification_scope_coverage`|신규 MCP 도구 `manage_work`가 `scripts/platform_v2_inventory.py`의 `classify_tool`에 누락되어 도구 미분류(`unmatched: 1`) 발생. `exec.run_engine` 매핑 추가 후 51 passed in 53.33s로 전수 통과 확인.|
-|(b) 기준선(917ea4b) 동일 실패 - SDK 부재|3|`tests/test_agent_token_security.py::test_muse_argv_hides_token_value`<br>`tests/test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise`<br>`tests/test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch`|`.muse-runtime` npm 패키지 미설치로 인한 `RuntimeError: Muse SDK runtime missing`. 기준선(917ea4b)에서도 동일하게 exit code 1로 실패 확인.|
-|(c) 기준선(917ea4b) 동일 실패 - 마이그레이션 서브프로세스|9|`tests/test_game_migration.py` (3건)<br>`tests/test_google_account.py` (2건)<br>`tests/test_knowledge_migration.py` (2건)<br>`tests/test_meeting_lineage_migration.py` (1건)<br>`tests/test_retire_clovanote_migration.py` (1건)|환경변수 `TTAKKARI_TEST_DB` 인증 정보가 Alembic 자식 프로세스에 전달되지 않아 DB 접속 실패(`CalledProcessError`). 기준선(917ea4b)과 동일한 마이그레이션 테스트 구현 및 환경 요인.|
-|**합계**|**13**|**총 실패 건수와 100% 일치** (1 + 3 + 9 = 13)|이번 변경으로 인한 미해결 회귀 실패 0건 확정.|
+- ⚠️ 이전 F-1 완료 판정과 '미해결 회귀 0건 확정'은 철회한다. 독립 검증 `5f0a668c`가 개인 예약 문구 오분류를 재현했고, 상태 확인→Run 등록 사이 잠금 누락을 지적했다. 원 구현 작업자 `826d2939`의 verification_status=failed를 기록했다.
+- 재수정 전 RED: 개인 예약 분류·취소 후 개인 예약 보존·실제 다중 DB 취소 경합 3개 테스트가 실패했다(`cancel-red.log`).
+- 재수정: 정확한 boolean `work_continuation=True`만 계약 예약으로 인정. 프롬프트/설명/origin 추정 제거. 개인 예약은 성공한 턴의 후속 실행 소유자로도 계산하지 않는다. 계약 예약은 상태 읽기 전 세션 행 잠금을 얻고 Run 등록 커밋까지 유지한다.
+- 독립 전용 DB에서 관련 계약·예약·기획·route 검사와 과거 실패 12건을 실행: **105 passed in 31.85s** (`cancel-dedicated-green.log`). 다중 DB 테스트는 `pg_blocking_pids`로 스케줄러가 취소 트랜잭션에 막혔음을 확인한 뒤 취소를 커밋하며, 결과 skipped와 새 활성 Run 부재를 검증한다.
+- 원 전체 suite 로그는 **13 failed, 4570 passed, 21 skipped, 2 xfailed** 기록 그대로다. 1건은 manage_work 분류 누락(앞선 수정/51건 통과 기록), 3건은 Muse, 9건은 migration이다. 이 합계만으로 기준선 동일 실패나 전체 통과를 보증하지 않는다.
+- 기준선 `917ea4b`를 git archive로 별도 경로에 복원하고 동일 interpreter, 전용 테스트 DB, PG 접속 환경, 명시적 release revision으로 과거 Muse 3+마이그레이션 9건을 실행: **12 passed in 14.25s** (`baseline-917ea4b-final.log`). 현재 코드의 같은 12건도 위 105건에 포함되어 통과했다. '기준선도 실패했다'는 이전 실행 주장은 근거 부족으로 철회한다. 최초 전체 검사와 환경이 달라 정확한 당시 실패 원인의 확정은 하지 않는다.
+- 기준선 비교 준비 중 공유 fixture DB reset deadlock, 임시 클러스터 initdb exit 1, archive에서 git revision 부재를 관측했다. 전용 DB 생성/제거와 명시적 revision으로 비교를 구성했다. Codex 실행 환경의 관측이며 운영 장애를 뜻하지 않는다.
+- 전체 suite는 이번 재수정 뒤 다시 실행하지 않았다. 최종 독립 재검증과 배포 컨트롤러 전체 gate는 별도 판정이다.
 
 A: 부분 Gate complete 거절, 미완료 식별, 실제 manager 종료에서 후속 큐 연결, 최종 complete 뒤 후속 없음.
 B: 공통 원인·검증 비용에 따른 계획 선택은 두 실제 모델 응답으로 한정 평가했다. 코드 테스트만으로 기획 능력 개선을 보증하지 않는다.
 C/D: 엔진 전환·context reset 뒤 목표/증거/다음 동작 복원, 실제 모델별 합성 응답, 기존 resume/context 회귀 유지.
 E: 전략 변경 사유 요구, 요구/완료 증거 보존, 중복/불필요 재실행 방지, stale revision 거절.
-F-1: 취소 시 목표 상태 paused 전이 및 계약 후속 예약 자동 취소, 스케줄러 실행 시점 스킵 방어선 완비.
+F-1: 정확한 계약 표식/개인 예약 보존/다중 DB 취소 경계 회귀를 추가했다. 최종 판정은 현재 verification.json의 재검증 상태를 따른다.
 
 배포 예약 접수는 운영 반영 성공과 구분하며, 예약 ID와 상태를 배포 단계에서 추적한다.
 
@@ -132,7 +122,7 @@ F-1: 취소 시 목표 상태 paused 전이 및 계약 후속 예약 자동 취�
 5. 외부 장애/권한의 해소는 기존 도구·재개 경로를 따르며 불가능한 환경을 우회하지 않는다.
 6. 실제 운영 완료율·요구 누락률·반복 검증·재지시·시간/토큰 개선은 동등 조건의 후속 운영 관측이 필요하다. 이번 결과는 실측 개선치가 아니다.
 7. V2 전체 리팩터링·AIP 포팅·Studio 검수 완성은 각 원 작업의 목표이며 이번 감사가 완료했다고 표시하지 않는다.
-8. 무관한 사용자 예약 보존 기준은 명시적 메타데이터(work_continuation, origin, 프롬프트 키워드)에 기반하므로, 사용자가 'resume' 등 예약어만 단독으로 프롬프트에 넣은 경우 계약 예약으로 오인될 수 있는 경계 위험이 존재한다.
+8. work_continuation=True는 명시적 계약 예약 opt-in이다. 표식 없는 과거 예약은 개인 예약으로 유지하며 자동 계약 소유로 추정하지 않는다. 새 API 권한 경계나 표식 생성자를 추가한 것은 아니다.
 
 
 ## 참고 근거

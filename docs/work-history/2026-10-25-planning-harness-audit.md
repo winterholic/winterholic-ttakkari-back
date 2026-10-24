@@ -4,7 +4,7 @@
 
 작업 위치: `back-planning-audit`, branch `fix/planning-completion-20261025`, baseline origin/main `917ea4b2fbe402efc3932885e3fe22c864057580`. 원래 back/main은 staged·unstaged·untracked 다량 변경이 있어 보존했다. V2 구현 자체는 별도 진행 중인 세션 소유이며 이번에는 감사 증거로만 읽는다.
 
-## 완료 계약과 현재 상태
+## 초기 완료 계약과 당시 상태 (현재 상태는 마지막 갱신 참고)
 
 |요구|상태|근거/다음 동작|
 |---|---|---|
@@ -42,7 +42,7 @@
 - HTML 현재산출 `/Users/winterholic/.ttakkari/data/outbox/4788bf44-a782-448e-b9fc-774858e2a800/2026-10-25-audit-planning-harness.html`는 아직 검증중 표기. 승인browser로390px라이트/1440px다크 screenshot 확인, console오류는favicon404뿐. browser닫음, 임시httpserver exec20089 Ctrl-C 종료확인.
 - 남은 순서: 전체검사 결과의 원인분류·필요교정 → 최종관련/계약게이트·lint → 커밋·최신origin통합·push → 배포예약. 최종verification.json/보고서 갱신·증거ZIP/outbox공유·사용자알림. 중간통과에서 종료하지 않는다.
 
-## 01:20 KST 진행 및 최종 완료
+## 01:20 KST 당시 완료 보고 — ⚠️ 이후 독립 검증 FAIL로 완료 판정 철회
 
 - 미완료 테스트 2건 완성 및 통과:
   - `test_persisted_resume_schedule_owns_next_step_without_duplicate_run`: `work.py`의 ScheduledAction 소유권 확인 로직 검증 통과 (GREEN).
@@ -59,7 +59,7 @@
 - 감사 보고서(`audit-report.md`) 6·7절 및 `verification.json` 작성 완료.
 - HTML 보고서 최종 결과 반영 및 outbox 공유.
 
-## 02:05 KST 독립 감사 결함(F-1) 교정 및 전체 회귀 완주 대조
+## 02:05 KST 당시 F-1 교정 보고 — ⚠️ 예약 보존·기준선 실패 주장은 아래 재검증으로 정정
 
 - **독립 검증 결함 F-1 교정 (취소 경계 및 예약 후속 정리)**:
   - 문제: 사용자가 Run을 취소(cancel)했음에도 pending 상태인 예약 메시지(ScheduledAction send_message)가 있으면 목표 계약이 active로 방치되어 예약 시각에 새 Run이 실행되는 결함.
@@ -80,3 +80,15 @@
   - 이번 변경으로 인한 미해결 회귀 0건 확인 완료.
 - **Ruff 코드 검사**: 수정 및 신규 대상 파일 5개 전수 통과 (All checks passed).
 
+
+
+## 독립 FAIL 후 취소 경계 재수정 (2026-10-25)
+
+- 현재 상태: 재수정·관련 회귀 확인, 최종 독립 재검증/배포 전. 위 과거 완료·정밀 식별·기준선 동일 실패·미해결 회귀 0건 주장은 현행 결론이 아니다.
+- `get_worker`로 verifier `5f0a668c`의 실제 routing.selected=`codex/gpt-6-luna` 확인. 원 구현자 `826d2939`에 verification_outcome=failed, verifier_worker_id를 기록했고 verification_status=failed/false_completion=true 응답을 확인했다.
+- RED `reports/planning-audit/cancel-red.log`: 개인 예약 문구 오분류/취소 때 개인 예약 손실/다중 DB 세션 경합 3 failed. 경합은 이제 코드 추론만이 아닌 실제 DB 반례다.
+- `work.py`: 정확한 boolean work_continuation=True만 계약 예약 opt-in. prompt/description/origin 추정 제거. 개인 예약은 후속 실행 소유권에서도 제외. `service.py`: 상태 읽기 전부터 queue_run commit까지 checkpoint/after_run과 같은 ChatSession 행 잠금을 유지. 계약 부재도 skipped.
+- GREEN `cancel-dedicated-green.log`: 계약·예약·기획·route 및 과거 Muse/migration 실패 12건 포함 105 passed in 31.85s. 전용 DB는 실행 후 제거했다.
+- 기준선 archive `917ea4b`, 동일 interpreter 및 PG 환경의 전용 DB에서 과거 12건은 12 passed in 14.25s (`baseline-917ea4b-final.log`). '기준선도 실패'라는 과거 주장은 철회. 최초 전체 로그의 13 failed 기록 자체는 유지하며, 이번 전체 suite 재실행으로 바꾸어 말하지 않는다.
+- 비교 준비 실패: 공유 DB fixture 초기화 deadlock, Codex 임시 PG initdb exit 1(stderr 미확보), archive git revision 부재. 전용 테스트 DB/PG 접속 환경/명시적 release revision으로 최종 비교. 운영 상태로 일반화하지 않음.
+- 기존 예약 11be2d66 대상은 17212d9이며 확인 시 testing. 재수정 코드 배포 성공은 미확인. 이후 검증 SHA를 따로 예약해야 한다.

@@ -15,27 +15,16 @@ def test_is_contract_resume_schedule_distinguishes_contract_and_user_actions():
     s1 = ScheduledAction(action_type="send_message", payload={"work_continuation": True})
     assert is_contract_resume_schedule(s1) is True
 
-    # 3. origin orchestrator/work_contract -> True
-    s2 = ScheduledAction(action_type="send_message", payload={"origin": "orchestrator"})
-    assert is_contract_resume_schedule(s2) is True
-    s3 = ScheduledAction(action_type="send_message", payload={"origin": "work_contract"})
-    assert is_contract_resume_schedule(s3) is True
-
-    # 4. prompt keywords -> True
+    # User text and a generic origin are never ownership evidence.
     for kw in ("resume", "continue", "재개", "이어가기", "[미완료 목표 자동 이어가기]", "[영속 목표 계약]"):
-        s = ScheduledAction(action_type="send_message", payload={"prompt": kw})
-        assert is_contract_resume_schedule(s) is True
-
-    # 5. description keywords -> True
-    s_desc = ScheduledAction(action_type="send_message", description="목표 계약 자동 재개")
-    assert is_contract_resume_schedule(s_desc) is True
-
-    # 6. Unrelated user actions -> False
-    u1 = ScheduledAction(action_type="send_message", payload={"message": "점심 약속 리마인더"}, description="개인 알림")
-    assert is_contract_resume_schedule(u1) is False
-
-    u2 = ScheduledAction(action_type="send_message", payload={"prompt": "회계 보고서 요약해줘"}, description="사용자 요청")
-    assert is_contract_resume_schedule(u2) is False
+        assert not is_contract_resume_schedule(ScheduledAction(
+            action_type="send_message", payload={"prompt": kw}, description="contract resume 목표 계약"))
+    for origin in ("orchestrator", "work_contract"):
+        assert not is_contract_resume_schedule(ScheduledAction(
+            action_type="send_message", payload={"origin": origin}))
+    for flag in (False, "true", 1, None):
+        assert not is_contract_resume_schedule(ScheduledAction(
+            action_type="send_message", payload={"work_continuation": flag}))
 
 
 @pytest.mark.asyncio

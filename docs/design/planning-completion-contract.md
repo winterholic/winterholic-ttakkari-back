@@ -38,18 +38,20 @@
 
 ## 턴 종료·후속·복구
 
-`RunManager._finish`는 `work.after_run`을 같은 트랜잭션에서 호출한다. 목표 active이고 기획 큐·직속 worker·자기 세션의 영속 send_message 예약에 다음 실행 소유자가 없으면 기존 Run 큐에 origin=orchestrator 후속을 만든다. 기존 `_execute` finally의 dispatch와 generation wake/owner·fence를 그대로 사용한다. 별도 폴링/새 에이전트/매 턴 LLM 심사는 없다.
+`RunManager._finish`는 `work.after_run`을 같은 트랜잭션에서 호출한다. 목표 active이고 기획 큐·직속 worker·자기 세션의 명시적 계약 send_message 예약(`payload.work_continuation is True`)에 다음 실행 소유자가 없으면 기존 Run 큐에 origin=orchestrator 후속을 만든다. 기존 `_execute` finally의 dispatch와 generation wake/owner·fence를 그대로 사용한다. 별도 폴링/새 에이전트/매 턴 LLM 심사는 없다.
 
 |관측|계약 상태/행동|
 |---|---|
 |Gate A만 통과|pending 요구 유지, complete 거절, next_action 실행/큐 연결|
 |작업자/새 사용자 Run이 대기·실행 중|중복 후속 생성 안 함; 작업자 결과 대기로 표시|
 |상태·증거의 진전 없이 자동 후속 2회|blocked와 이유/event 기록; 무한 자동 반복 차단|
-|엔진 Run failed/cancelled|다른 실행 소유자가 없으면 정확한 Run/engine/error를 blocker에 보존|
+|엔진 Run failed/cancelled|예약 소유권보다 먼저 blocked/paused 전이, 정확한 Run/engine/error를 blocker에 보존|
 |서버 종료 interrupted|새 Run을 중복 생성하지 않고 기존 interrupted recovery가 같은 Run을 재개|
 |모델/컨텍스트 교대|AppSetting 유지, 입력에 목표·전략·증거·미완료·다음 동작 복원|
 |사용자 명시 중단|paused+사용자 요청 근거; paused/blocked/complete는 자동 후속 안 함|
 |모든 조건 충족|complete; 후속 없음|
+
+예약 프롬프트·설명·일반 origin은 소유권 근거로 쓰지 않는다. 명시적 표식이 없는 개인 예약은 취소하지 않으며, 목표가 paused여도 실행한다. 계약 예약 실행은 checkpoint/after_run과 같은 세션 행 잠금을 **상태 읽기 전부터 Run 등록 커밋까지** 유지한다. 계약 자체가 없거나 active가 아니면 건너뛴다. 현재 자동 후속 생성자는 예약 대신 Run을 직접 만들므로 표식 없는 기존 예약을 계약 소유로 소급 분류하지 않는다.
 
 `active` 중 실제 대기 여부는 기존 queued/running Run 소유자로 구분한다. 외부 권한/인증 대기는 blocked의 이유와 다음 해소 동작으로 기록한다. paused를 단순 대기와 혼동하지 않는다.
 

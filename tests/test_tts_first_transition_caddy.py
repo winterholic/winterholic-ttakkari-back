@@ -11,13 +11,13 @@ import uuid
 import httpx
 import pytest
 from test_tts_first_transition import (
-    _Slots,
     _controller,
     _job,
     _job_row,
     _old_accept,
     _old_guard_pass,
     _seed,
+    _Slots,
 )
 
 from ttakkari.generation import activate

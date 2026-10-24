@@ -1,0 +1,8 @@
+revision=2a50c860ae94256d643a58d373d1291ecc7997ad
+cwd=/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-fnd-review-2a50c86
+command=['scripts/pytest_slots.py', '--timeout', '90', '--', '/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-executor-safety-20261025/.venv/bin/python', '-m', 'pytest', '-q', 'tests/test_tts_first_transition.py', 'tests/test_report_merge_real_db_race.py', 'unit_tests/test_fnd01_foundation.py', 'tests/test_generation_deployment.py']
+.....................................................................    [100%]
+db reset: 60 selective (avg 1.6/106 tables), 0 forced full, 0 fell back to full
+69 passed in 9.71s
+
+exit_code=0

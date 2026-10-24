@@ -32,9 +32,11 @@
 | 엔진별 실행 능력 | `host`(10-24 09:14), `codex`(10-23 14:48), `antigravity`(10-21 18:29), `muse`(10-21 17:55): `blocked=[]`; `claude`, `qwen-local`: 미측정 | `execution_capabilities` | `measured` (`claude`/`qwen-local`은 `확인 필요`) |
 | UI 워커 부작용 대조 | 세션 `6e33860e-3773-48bf-8df5-a3dc2c330a3e`는 `front` 저장소만 수정해 `dbe0c9f042b006e2a627b8e59c295ad14b7a2caf` 푸시 완료. `back` 수정 및 배포 예약 없음 | `read_session(6e33860e-3773-48bf-8df5-a3dc2c330a3e)` | `measured` |
 
-> **중요 발견 (공유 작업 트리와 `origin/main`의 111커밋 괴리)**:
-> `/Users/winterholic/development/projects/winterholic-ttakkari/back` 공유 작업 트리의 로컬 `HEAD`는 `607f8bda0df7dbdd458e4f0e54d703ce9edd3def`에 머물러 있으며, 실제 `origin/main`(`c8f10156845d007ec6496a65d6d8417be19260bd`)은 그보다 **111커밋 앞서 있다**.
-> `607f8bda` 기준 감사는 `321`개 파일(`71,985`줄), 마이그레이션 `62`개로 집계되나, 실제 `origin/main`(`c8f10156`) 정본은 **`385`개 파이썬 파일(`94,439`줄), 마이그레이션 `67`개(단일 head `0067_collector_outbox_retry`)**이다 (`Creative Studio v2`, `KB 도서관`, `Harness View`, `Local LLM Evaluator`, `0064_run_executor` 병합 포함). 본 감사는 `origin/main`(`c8f10156`) 정본을 기준으로 수행하였다.
+> **중요 발견 (공유 작업 트리 `607f8bda`와 `origin/main` `c8f10156`의 111커밋 Baseline Drift 및 Worker B 검증 대기 격리)**:
+> 1. `/Users/winterholic/development/projects/winterholic-ttakkari/back` 공유 작업 트리의 로컬 `HEAD`는 `607f8bda0df7dbdd458e4f0e54d703ce9edd3def`에 머물러 있으며, 실제 `origin/main`(`c8f10156845d007ec6496a65d6d8417be19260bd`)은 그보다 **111커밋 앞서 있다** (`253 files changed, 68,266 insertions(+), 1,568 deletions(-)`).
+> 2. Worker B(`c1e9cd73-83ef-4240-99c8-809e500bd903`, `back-platform-v2-b` HEAD `86373cedda20e298ad2b82d857352f845ae70980`)는 실제 실행 모델이 Flash였고 `607f8bda` 기준으로 추출하여 `25모듈 / 497 route / 102 tool / 88 table / 62 migration / 212 config / 321 .py / unmatched 0`, `Creative = artcraft_tasks 1 / FK 0`, `collector = 2 tables`, `cycle = 34`를 보고하였다.
+> 3. 루트 오케스트레이터가 **독립 검증 워커 `1d994e50-c900-4f90-9975-1ff082522a35` (`auto/verification`, GPT-6 Luna 예정)**를 시작했으므로, 검증 완료 전까지 B의 위 결론은 모두 **`확인 필요`(`verification_pending`)**로 격리하며 확정 모듈 경계나 구현 근거로 채택하지 않는다.
+> 4. 실제 `origin/main`(`c8f10156`) 정본은 `607f8bda` 대비 **`src/ttakkari` 파이썬 파일 `+64`개(`321` → `385`개, `71,985` → `94,439`줄), 마이그레이션 `+5`개(`62` → `67`개, `0063`~`0067`), 신규 DB 테이블 `+21`개(`collector_*` 14개 + `kb_*` 3개 + `run_executor_*` 4개)**가 추가되어 있다 (`A-runtime-delivery-evidence.json`의 `baseline_drift_607f8bda_to_c8f10156` 참조). 본 Worker A 감사는 `origin/main`(`c8f10156`) 정본을 기준으로 수행하였다.
 
 ### 1.2 배포 소요 시간 및 실패 이력 통계 (`measured`)
 

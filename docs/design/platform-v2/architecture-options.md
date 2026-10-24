@@ -189,19 +189,23 @@ flowchart TB
 
 ### 4.4 API & Frontend Compatibility Contract (외부 호환성 계약)
 
-- 프런트엔드가 호출하는 179개 API 엔드포인트 경로, 백엔드 497개 라우트 시그니처, 오케스트레이터 MCP 102개 도구 스키마는 모듈 분리 전후 동일하게 유지된다 (`pytest -m contract`로 강제).
+- 프런트엔드가 호출하는 179개 API 엔드포인트 경로 및 백엔드 전체 HTTP 라우트 시그니처, 오케스트레이터 MCP 도구 스키마(참고: Worker B가 보고한 `497 route / 102 tool` 수치는 `607f8bda` 기준 Flash 미검증 보고치이므로 `확인 필요` — 독립 검증 워커 `1d994e50-c900-4f90-9975-1ff082522a35` 검증 중)는 모듈 분리 전후 동일하게 유지된다 (`pytest -m contract`로 강제).
 
 ---
 
-## 5. 첫 독립 전환 모듈 후보 실측 평가 (First Independent Module Evaluation)
+## 5. 첫 독립 전환 모듈 후보 실측 평가 및 Worker B 미검증 수치 대조 (First Independent Module Evaluation)
+
+> **주의 (Worker B 산출물 검증 대기 격리)**:
+> Worker B(`c1e9cd73-83ef-4240-99c8-809e500bd903`, `back-platform-v2-b` HEAD `86373cedda20e298ad2b82d857352f845ae70980`)가 보고한 수치(`25모듈 / 497 route / 102 tool / 88 table / 62 migration / 212 config / 321 .py / unmatched 0`, `Creative = artcraft_tasks 1 / FK 0`, `collector = 2 tables`, `cycle = 34`)는 Flash 모델로 공유 `/back`의 과거 커밋(`607f8bda0df7dbdd458e4f0e54d703ce9edd3def`, `origin/main` 대비 111커밋 뒤처짐)에서 추출되었으며 현재 **독립 검증 워커 `1d994e50-c900-4f90-9975-1ff082522a35` (`auto/verification`, GPT-6 Luna 예정)**가 검증 중이다(`확인 필요`).
+> 따라서 본 문서에서는 Worker B의 수치를 확정 모듈 경계나 구현 근거로 채택하지 않고, Worker A가 `origin/main`(`c8f10156845d007ec6496a65d6d8417be19260bd`)에서 직접 추출·검증한 실측치와 Baseline Drift(`+64 .py`, `+5 migrations 0063~0067`, `+21 tables`)만을 근거로 평가한다.
 
 사용자 지침("첫 독립 모듈은 `Creative Studio`를 우선 평가하되, 데이터 결합도·변경 빈도·검사 비용·장애 이력·운영비 실측으로 다른 후보와 비교할 것")에 따라 `origin/main`(`c8f10156`)에서 4개 주요 후보를 정량 비교하였다.
 
 | 평가 지표 (`origin/main` `c8f10156` 실측) | **1순위: `Creative Studio` (`creative`)** | 2순위: `Game Studio` (`games`) | 3순위: `Collector Platform` (`collector`) | 기반 대상: `Local TTS` (`tts`) |
 | :--- | :--- | :--- | :--- | :--- |
-| **코드 규모** | **25개 파일 / 13,194줄** (가장 큰 단일 도메인) | 11개 파일 / 2,407줄 | 26개 파일 / 5,915줄 | 5개 파일 / 1,105줄 |
+| **코드 규모** | **25개 파일 / 13,194줄** (가장 큰 단일 도메인; `607f8bda` 대비 `creative/v2/*` 19개 파일 + `api/creative_v2.py` 신설) | 11개 파일 / 2,407줄 | 26개 파일 / 5,915줄 (`607f8bda` 대비 21개 파일 신설) | 5개 파일 / 1,105줄 |
 | **전용 테스트 파일 수** | **19개 파일** (`tests/` + `unit_tests/`) | 22개 파일 | 22개 파일 | 6개 파일 |
-| **PostgreSQL 테이블 결합도** | **전용 테이블 `0개`!** (파일시스템 JSON 매니페스트 + 불변 미디어 저장소 사용; V2 의도 추출만 공통 `runs` API 호출) | 높음 (`game_projects`, `game_builds`, `game_sessions` 등 다수 테이블 + `models.py` 강결합) | 매우 높음 (`collector_*` 테이블 다수 + `0060/0061/0063/0067` 최근 마이그레이션 집중 + `kb`와 양방향 결합) | 중간 (`tts_jobs` 1개 테이블, 단 `creative`와 `api`가 직접 호출하는 공용 실행 기능) |
+| **PostgreSQL 테이블 결합도** | **전용 테이블 `0개`** (파일시스템 JSON 매니페스트 + 불변 미디어 저장소 사용; 단, `creative/v2/run_extraction.py`가 공통 `ChatSession`/`Run`(`worker_task_type="creative_intent"`)을 생성하며, B가 보고한 `artcraft_tasks 1 / FK 0`(`확인 필요`)은 별도 레거시 `src/ttakkari/artcraft.py` 테이블임) | 높음 (`game_projects`, `game_builds`, `game_sessions` 등 다수 테이블 + `models.py` 강결합) | 매우 높음 (B의 `607f8bda` 보고치 `2 tables`(`확인 필요`)와 달리, `origin/main` `c8f10156`에서는 `0063`/`0065`/`0066`/`0067`로 **`collector_*` 16개 테이블 + 연관 `kb_*` 3개 테이블**이 존재함) | 중간 (`tts_jobs` 1개 테이블, 단 `creative`와 `api`가 직접 호출하는 공용 실행 기능) |
 | **타 도메인 역의존성 (`external_dep_reverse_modules`)** | **도메인 역참조 `0개`** (`api`, `generation_service`, `main`, `orchestrator`만 진입점으로 참조) | `cli`, `main`, `runs`(`manager.py` 자동 빌드·수리 훅과 결합) | `kb_delivery`, `kb_library`, `models`, `generation_service`와 강결합 | `creative`가 직접 호출 |
 | **최근 배포 전역 차단 사고 이력 (`ops_list_issues`)** | **최다 발생 (최근 `LOG-194`, `LOG-190`, `LOG-186` 등 3건 연속 전체 배포 차단)** | `LOG-185` 1건 | `LOG-191` 1건 (현재 `/back` 공유 트리에 미커밋 변경 30여 건 혼재) | 0건 (단, 세대 전환 시 `generation_draining` 결함 보유) |
 | **독립 전환 시 얻는 즉시 이득** | **최대**: 가장 빈번하게 수정되며 16분 이상 배포를 막던 주원인을 Core 배포에서 즉시 분리하고, DB 마이그레이션 위험 없이 파일·워커 경계만으로 9대 실증 시나리오를 가장 깨끗하게 증명 가능 | 중간 (`runs/manager.py` 내부 훅 분리 선행 필요) | 낮음 (공유 작업 트리 미커밋 정리 및 `kb` 결합 해소가 먼저 필요해 P5가 적합) | P3 공용 기반으로 먼저 수리해야 함 |

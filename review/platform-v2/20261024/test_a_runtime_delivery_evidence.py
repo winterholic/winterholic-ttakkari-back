@@ -31,6 +31,14 @@ def test_extractor_builds_valid_evidence_and_verifies_single_migration_head():
     assert evidence["contracts_and_manifests"]["generation_contract"]["run_executor"]["activation"] == "disabled"
     assert evidence["contracts_and_manifests"]["run_executor_manifest"]["activation"] == "disabled"
     assert evidence["contracts_and_manifests"]["maintenance_job_count"] == 15
+    b_info = evidence["worker"]["parallel_audit_workers"]["B_backend_data"]
+    assert b_info["worker_id"] == "c1e9cd73-83ef-4240-99c8-809e500bd903"
+    assert b_info["head_sha"] == "86373cedda20e298ad2b82d857352f845ae70980"
+    assert b_info["independent_verifier_worker_id"] == "1d994e50-c900-4f90-9975-1ff082522a35"
+    assert "verification_pending" in b_info["verification_status"]
+    drift = evidence["baseline_drift_607f8bda_to_c8f10156"]
+    assert drift["commit_count_delta"] == 111
+    assert len(drift["migrations_delta"]["added_migrations"]) == 5
 
 
 def test_change_impact_classifier_separates_module_scoped_and_fail_closed_broad_gate():

@@ -1,9 +1,12 @@
-"""TTS 전용 직렬 큐(설계 §6, §8, FND-01). STT·E5 큐는 건드리지 않는다.
+"""TTS 전용 직렬 큐(설계 §6, §8, FND-01, Step4). STT·E5 큐는 건드리지 않는다.
 
 - FND-01: 원문 청크는 `TtsJob.chunks_json`에 영속화되어 프로세스 재시작 및 드레인 중 복구를 지원한다.
-  접수한 프로세스는 `_pending_texts`에도 캐시하며 부모는 자식 종료까지 원문을 보유한다.
+  local 모드 접수 프로세스는 `_pending_texts`에도 캐시하며 부모는 자식 종료까지 원문을 보유한다.
+- Step4: remote API 는 job 을 `QUEUE_OWNER` 소유 queued 로 DB 에만 적재하고 합성 consumer 를 띄우지 않는다.
+  executor(또는 롤백한 local API)의 단일 consumer 가 FIFO 로 claim 하며, claim 시점에 owner_id 를 자기 id 로 바꾼다.
+  API 세대 교체는 이 job 의 소유·종료 사유가 아니다.
 - 모든 상태 전이는 `UPDATE ... WHERE id=:id AND status IN (...) [AND owner_id=:me]` 한 문장이고 영향 행 1일 때만 확정한다.
-- 소유 queued 가 있는 동안 세대 퇴역(`can_retire`)을 차단하여 기수락 작업(accepted work)을 끝까지 완수한다.
+- local 모드는 소유 queued 가 있는 동안 세대 퇴역(`can_retire`)을 차단하여 기수락 작업(accepted work)을 끝까지 완수한다.
 - 소유자 사망은 flock 획득 성공 또는 runtime_generations.state='offline' 만 증거로 쓴다. heartbeat 만료는 증거가 아니다.
 """
 from __future__ import annotations
@@ -42,6 +45,9 @@ CACHE_PRUNE_SECONDS = 3600.0
 STALE_RUNNING_GRACE_SECONDS = 60.0
 
 _process_owner = uuid.uuid4()
+# remote API 가 접수한 queued job 의 소유자. 세대 id 가 아니라서 어떤 소유자 사망 판정에도 걸리지 않고,
+# claim 한 consumer 가 owner_id 를 자기 id 로 바꾼 뒤에야 running 의 소유자 증거(flock/offline)가 의미를 갖는다.
+QUEUE_OWNER = uuid.uuid5(uuid.NAMESPACE_URL, "ttakkari:tts:executor-queue")
 _pending_texts: dict[uuid.UUID, list[str]] = {}
 _running: dict[uuid.UUID, asyncio.Task] = {}
 _dead_seen: dict[uuid.UUID, float] = {}
@@ -49,11 +55,18 @@ _task: asyncio.Task | None = None
 _guard_task: asyncio.Task | None = None
 _guard_lock = asyncio.Lock()
 _wake = asyncio.Event()
+_draining = False
 _last_prune = 0.0
 
 
 def owner_id() -> uuid.UUID:
     return generation.current.id if generation.current else _process_owner
+
+
+def remote_api() -> bool:
+    """remote API 는 접수·조회만 한다. 합성 consumer 와 원문 메모리 보관을 두지 않는다."""
+    runtime = generation.current
+    return runtime is not None and runtime.role == "api" and runtime.execution_mode == "remote"
 
 
 def parse_job_id(raw: str) -> uuid.UUID | None:
@@ -109,20 +122,25 @@ async def fail_owned(
     return ids
 
 
-async def _claim(me: uuid.UUID) -> uuid.UUID | None:
-    """세대별 원자적 claim(설계 §8.3.4). advisory xact lock 으로 두 claim 이 동시에 running 을 보지 못하는 틈을 막는다."""
+async def _claim(me: uuid.UUID, *, adopt_queue: bool = False) -> uuid.UUID | None:
+    """원자적 claim(설계 §8.3.4). advisory xact lock 으로 두 claim 이 동시에 running 을 보지 못하는 틈을 막는다.
+
+    기본은 소유 queued 만 잡는다. adopt_queue 면 remote API 가 적재한 QUEUE_OWNER queued 도 created_at 순서로
+    함께 보고, 잡은 job 의 owner_id 를 me 로 바꾼다. draining 세대는 adopt 하지 않고 자기 기수락 작업만 마무리한다.
+    """
+    queue = QUEUE_OWNER if adopt_queue else me
     async with sessionmaker()() as db:
         await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('tts_jobs_claim'))"))
         result = await db.execute(
             text(
-                "UPDATE tts_jobs SET status='running', started_at=now() "
-                "WHERE id = (SELECT id FROM tts_jobs WHERE status='queued' AND owner_id=:me "
+                "UPDATE tts_jobs SET status='running', started_at=now(), owner_id=:me "
+                "WHERE id = (SELECT id FROM tts_jobs WHERE status='queued' AND owner_id IN (:me, :queue) "
                 "            ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED) "
-                "AND status='queued' AND owner_id=:me "
+                "AND status='queued' AND owner_id IN (:me, :queue) "
                 "AND NOT EXISTS (SELECT 1 FROM tts_jobs WHERE status='running') "
                 "RETURNING id"
             ),
-            {"me": me},
+            {"me": me, "queue": queue},
         )
         row = result.first()
         await db.commit()
@@ -132,10 +150,11 @@ async def _claim(me: uuid.UUID) -> uuid.UUID | None:
 # ------------------------------------------------------------------ guard (§8.3.3)
 
 
-async def _has_owned_queued(me: uuid.UUID) -> bool:
+async def _has_owned_queued(me: uuid.UUID, *, adopt_queue: bool = False) -> bool:
+    owners = (me, QUEUE_OWNER) if adopt_queue else (me,)
     async with sessionmaker()() as db:
         return (
-            await db.scalar(select(TtsJob.id).where(TtsJob.status == "queued", TtsJob.owner_id == me).limit(1))
+            await db.scalar(select(TtsJob.id).where(TtsJob.status == "queued", TtsJob.owner_id.in_(owners)).limit(1))
         ) is not None
 
 
@@ -197,11 +216,15 @@ def _params(plan: Plan, *, cached: int) -> dict:
 
 
 async def accept(plan: Plan) -> dict:
-    """POST /jobs. 세대가 active 가 아니면 접수하지 않는다(503, 원문은 어디에도 남기지 않는다)."""
+    """POST /jobs. 세대가 active 가 아니면 접수하지 않는다(503, 원문은 어디에도 남기지 않는다).
+
+    remote API 는 QUEUE_OWNER queued 행(chunks_json 포함)만 커밋하고 executor 를 NOTIFY 로 깨운다.
+    """
     runtime = generation.current
     if runtime is not None and await runtime.refresh() != "active":
         raise TtsError("generation_not_active", "배포 전환 중이에요. 잠시 후 다시 시도해 주세요.", 503, retry_after=5)
-    me = owner_id()
+    remote = remote_api()
+    me = QUEUE_OWNER if remote else owner_id()
     async with sessionmaker()() as db:
         found = await cache.lookup_many(db, plan.keys)
     cached = sum(1 for k in plan.keys if k in found)
@@ -223,6 +246,11 @@ async def accept(plan: Plan) -> dict:
     if all_cached:
         async with sessionmaker()() as db:
             db.add(job)
+            await db.commit()
+    elif remote:
+        async with sessionmaker()() as db:
+            db.add(job)
+            await db.execute(select(func.pg_notify(generation.CHANNEL, "tts")))
             await db.commit()
     else:
         async with guard_scope():
@@ -439,7 +467,7 @@ async def _reap_stale_unknown_running() -> list[uuid.UUID]:
 
 async def maybe_reap(job: TtsJob) -> TtsJob:
     """GET·DELETE 의 읽기 시점 규칙. 다른 소유자의 non-terminal job 이면 사망 증거를 확인하고 CAS 로 확정한다."""
-    if job.status in ACTIVE and job.owner_id != owner_id():
+    if job.status in ACTIVE and job.owner_id not in (owner_id(), QUEUE_OWNER):
         if await reap_dead_owner(job.owner_id):
             async with sessionmaker()() as db:
                 fresh = await db.get(TtsJob, job.id, populate_existing=True)
@@ -491,6 +519,7 @@ async def _housekeeping(me: uuid.UUID) -> None:
     ttl = get_settings().local_tts_queued_ttl_seconds
     for job_id in await fail_owned(me, expected=("queued",), error_code="input_ttl_expired", older_than=ttl):
         _pending_texts.pop(job_id, None)
+    await fail_owned(QUEUE_OWNER, expected=("queued",), error_code="input_ttl_expired", older_than=ttl)
     # accept 는 이 락 안에서 원문을 넣고 커밋한다. 락 밖에서 보면 아직 커밋 전인 job 의 원문을 "행 없음"으로 보고 지운다.
     async with _guard_lock:
         if _pending_texts:
@@ -505,7 +534,9 @@ async def _housekeeping(me: uuid.UUID) -> None:
     if generation.current is not None:
         async with sessionmaker()() as db:
             owners = set(
-                await db.scalars(select(TtsJob.owner_id).where(TtsJob.status.in_(ACTIVE), TtsJob.owner_id != me))
+                await db.scalars(
+                    select(TtsJob.owner_id).where(TtsJob.status.in_(ACTIVE), TtsJob.owner_id.not_in((me, QUEUE_OWNER)))
+                )
             )
         for owner in owners:
             await reap_dead_owner(owner)
@@ -520,15 +551,19 @@ async def tick() -> bool:
     """한 번의 consumer 반복. job 을 하나 실행했으면 True."""
     me = owner_id()
     await _housekeeping(me)
+    if _draining:
+        return False  # executor 교체: 새 claim 은 멈추고 queued 는 DB 에 남겨 다음 consumer 가 처리한다.
     runtime = generation.current
-    if runtime is not None and await runtime.refresh() not in ("active", "draining"):
+    state = await runtime.refresh() if runtime is not None else "active"
+    if state not in ("active", "draining"):
         return False  # retired / offline 은 새 job 을 시작하지 않는다.
-    if not await _has_owned_queued(me):
+    adopt = {"adopt_queue": True} if state == "active" else {}  # draining 세대는 자기 기수락 작업만 마무리한다.
+    if not await _has_owned_queued(me, **adopt):
         return False
     async with service.budget(0, allow_draining=True) as outcome:
         if outcome != "ok":
             return False
-        job_id = await _claim(me)
+        job_id = await _claim(me, **adopt)
         if job_id is None:
             return False
         await run_claimed(job_id)
@@ -537,7 +572,7 @@ async def tick() -> bool:
 
 async def _loop() -> None:
     poll = get_settings().runtime_poll_seconds
-    while True:
+    while not _draining:
         _wake.clear()
         worked = False
         try:
@@ -552,22 +587,32 @@ async def _loop() -> None:
             await asyncio.wait_for(_wake.wait(), poll)
 
 
+def wake() -> None:
+    """executor consumer 를 깨운다. remote API 접수의 NOTIFY 가 generation listener 를 거쳐 여기로 온다."""
+    _wake.set()
+
+
 def kick() -> None:
     global _task
     _wake.set()
+    if remote_api():
+        return
     if get_settings().local_tts_enabled and (_task is None or _task.done()):
         _task = asyncio.create_task(_loop(), name="tts-consumer")
 
 
 async def start() -> None:
-    if not get_settings().local_tts_enabled:
+    global _draining
+    if not get_settings().local_tts_enabled or remote_api():
         return
+    _draining = False
     if generation.current is None:
         # 단일 프로세스를 가정한다(STT start() 가 running 을 queued 로 되돌리는 것과 같은 가정). 원문이 사라졌으므로 실패로 확정.
+        # QUEUE_OWNER 는 DB 에 원문이 있으므로 대상이 아니다. 롤백 뒤 이 프로세스의 consumer 가 이어서 처리한다.
         async with sessionmaker()() as db:
             await db.execute(
                 update(TtsJob)
-                .where(TtsJob.status.in_(ACTIVE), TtsJob.owner_id != _process_owner)
+                .where(TtsJob.status.in_(ACTIVE), TtsJob.owner_id.not_in((_process_owner, QUEUE_OWNER)))
                 .values(status="failed", error_code="server_restarted", finished_at=utcnow())
             )
             await db.commit()
@@ -577,8 +622,19 @@ async def start() -> None:
     kick()
 
 
+async def drain() -> None:
+    """executor 교체용 종료. 새 claim 을 멈추고 진행 중인 1건은 끝까지 마친다. queued 는 건드리지 않는다."""
+    global _draining
+    _draining = True
+    _wake.set()
+    task = _task
+    if task is not None and not task.done():
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
+
+
 async def stop() -> None:
-    global _task, _guard_task
+    global _task, _guard_task, _draining
     me = owner_id()
     for task in (_task, _guard_task):
         if task is not None:
@@ -586,6 +642,7 @@ async def stop() -> None:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
     _task = _guard_task = None
+    _draining = False
     with contextlib.suppress(Exception):
         await fail_owned(me, expected=ACTIVE, error_code="owner_shutdown")
     _pending_texts.clear()

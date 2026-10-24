@@ -387,9 +387,10 @@ async def test_generation_api_start_services_starts_the_qwen_service_in_every_mo
 
     await generation_service.start_api_services(mode)
 
-    assert "qwen" in calls and "tts" in calls
-    # Durable workers belong to the executor when the API is remote.
-    assert ("preview" in calls and "stt" in calls) == (mode == "local")
+    assert "qwen" in calls
+    # Durable workers (including the TTS consumer) belong to the executor when the API is remote.
+    assert ("preview" in calls and "stt" in calls and "tts" in calls) == (mode == "local")
+    assert ("preview" in calls or "stt" in calls or "tts" in calls) == (mode == "local")
 
 
 async def test_server_is_warmed_before_it_is_marked_ready(managed):

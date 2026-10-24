@@ -103,9 +103,11 @@ async def start_background_services() -> list[asyncio.Task]:
     from ttakkari.artifacts import preview
     from ttakkari.generation_service import maintenance_jobs, periodic
     from ttakkari.meetings.local_stt import jobs as stt_jobs
+    from ttakkari.tts import jobs as tts_jobs
 
     await preview.start_worker()
     await stt_jobs.start()
+    await tts_jobs.start()
     return [asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}")
             for name, operation, interval in maintenance_jobs(get_settings())]
 
@@ -117,6 +119,7 @@ async def serve(*, activate: bool = False) -> None:
     from ttakkari.meetings.local_stt import jobs as stt_jobs
     from ttakkari.runs import profiles, usage_store
     from ttakkari.runs.manager import manager
+    from ttakkari.tts import jobs as tts_jobs
 
     settings = get_settings()
     if not settings.release_revision:
@@ -124,7 +127,7 @@ async def serve(*, activate: bool = False) -> None:
     runtime = ExecutorRuntime(settings.home, revision=revision())
     stop = asyncio.Event()
     background_tasks: list[asyncio.Task] = []
-    preview_started = stt_started = False
+    preview_started = stt_started = tts_started = False
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
@@ -134,7 +137,7 @@ async def serve(*, activate: bool = False) -> None:
         await runtime.listen()
         usage_store.install()
         background_tasks = await start_background_services()
-        preview_started = stt_started = True
+        preview_started = stt_started = tts_started = True
         while not stop.is_set():
             try:
                 runtime.signal.clear()
@@ -162,6 +165,9 @@ async def serve(*, activate: bool = False) -> None:
             for task in background_tasks:
                 task.cancel()
             await asyncio.gather(*background_tasks, return_exceptions=True)
+            if tts_started:
+                # 진행 중인 합성 1건은 끝까지 마친다. queued 는 DB 에 남아 다음 executor 가 소비한다.
+                await tts_jobs.drain()
             if stt_started:
                 await stt_jobs.stop()
             if preview_started:

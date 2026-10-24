@@ -368,6 +368,8 @@ class GenerationRuntime:
             return False
         if snap["owned_runs"] or self._work or self.http_inflight or bool(self._accepted_work):
             return False
+        if self.role == "api" and self.execution_mode == "remote":
+            return True  # remote API 는 TTS job 을 소유하지 않는다(QUEUE_OWNER). executor 가 합성한다.
         return not await self._has_pending_tts_jobs()
 
     async def listen(self) -> None:
@@ -378,6 +380,9 @@ class GenerationRuntime:
         def received(_conn, _pid, _channel, payload):
             from ttakkari.runs import events
             self.signal.set()
+            if payload == "tts":  # remote API 가 TTS job 을 적재했다: executor consumer 를 깨운다.
+                from ttakkari.tts import jobs as tts_jobs
+                tts_jobs.wake()
             with contextlib.suppress(ValueError):
                 events.notify(uuid.UUID(payload))
         await self._listener.add_listener(CHANNEL, received)

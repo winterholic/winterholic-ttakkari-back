@@ -224,9 +224,8 @@ async def start_api_services(execution_mode: str) -> None:
     if execution_mode == "local":
         await preview.start_worker()
         await stt_jobs.start()
-    # TTS retains submitted source text in this process until its job finishes;
-    # moving only the consumer would lose the payload on API replacement.
-    await tts_jobs.start()
+        await tts_jobs.start()
+    # remote: the API only persists TTS jobs (queued + chunks_json); the executor consumes them.
     # The managed Qwen server is a request-time accelerator owned per API
     # generation, not a durable database queue consumer.
     await qwen_service.start()
@@ -315,7 +314,7 @@ async def lifespan(app):
         await asyncio.gather(*tasks, return_exceptions=True)
         if runtime.execution_mode == "local":
             await jobs.stop()
-        await tts_jobs.stop()
+            await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
         from ttakkari.notebooklm.service import service as notebooklm_service

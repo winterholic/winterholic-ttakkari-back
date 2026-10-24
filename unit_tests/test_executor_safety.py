@@ -103,13 +103,14 @@ async def test_ownership_loss_waits_for_natural_completion(tmp_path, monkeypatch
         await task
 
 
-async def test_serve_drain_timeout_is_not_permission_to_shutdown(tmp_path, monkeypatch):
+@pytest.mark.parametrize("state", ["active", "offline"])
+async def test_serve_drain_timeout_is_not_permission_to_shutdown(tmp_path, monkeypatch, state):
     from ttakkari.artifacts import preview
     from ttakkari.meetings.local_stt import jobs
     from ttakkari.runs import manager as managers
     from ttakkari.runs import profiles, usage_store
 
-    runtime = SimpleNamespace(state="active", register=AsyncMock(), listen=AsyncMock(), close=AsyncMock())
+    runtime = SimpleNamespace(state=state, register=AsyncMock(), listen=AsyncMock(), close=AsyncMock())
     monkeypatch.setattr(executor, "get_settings", lambda: SimpleNamespace(home=tmp_path, release_revision="a" * 40))
     monkeypatch.setattr(executor, "ExecutorRuntime", lambda *args, **kwargs: runtime)
     monkeypatch.setattr("ttakkari.deployment.revision", lambda: "a" * 40)

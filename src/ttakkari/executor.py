@@ -159,8 +159,10 @@ async def drain(
             await _commands(runtime, manager)
             await runtime.refresh()
         except generation.OwnershipLost:
-            log.warning("executor ownership changed during drain; aborting drain")
-            break
+            # Losing the pointer does not imply our subprocesses finished. Keep
+            # admission closed and wait for their own completion, never shutdown
+            # live children merely because another owner was recorded.
+            log.warning("executor ownership changed during drain; retaining in-flight work")
         except Exception:
             log.exception("error during executor drain iteration")
         await asyncio.sleep(poll_interval)
@@ -201,6 +203,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
     runtime = ExecutorRuntime(settings.home, revision=revision())
     stop = asyncio.Event()
     background_tasks: list[asyncio.Task] = []
+    registered = False
     preview_started = stt_started = False
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -208,6 +211,7 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
     generation.current = runtime
     try:
         await runtime.register(activate=activate)
+        registered = True
         await runtime.listen()
         usage_store.install()
         background_tasks = await start_background_services()
@@ -236,8 +240,9 @@ async def serve(*, activate: bool = False, drain_timeout: float | None = None) -
                 await asyncio.gather(waiter, stopper, return_exceptions=True)
     finally:
         try:
-            if runtime.state in ("active", "draining"):
-                await drain(runtime, manager, timeout=drain_timeout)
+            if registered and not await drain(runtime, manager, timeout=drain_timeout):
+                log.warning("executor drain deadline expired; waiting for natural completion")
+                await drain(runtime, manager, timeout=None)
         finally:
             try:
                 for task in background_tasks:

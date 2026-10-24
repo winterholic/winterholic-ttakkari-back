@@ -93,3 +93,52 @@
 
 1. **실제 GUI 화면/Chrome 프로세스 실행**: Mac 로컬 GUI 화면 상에서 실제 Chrome 창이 열리고 닫히는 화면 동작 및 `bin/artcraft` 바이너리 실행은 샌드박스 환경 특성상 단위 테스트 mock으로 검증되었으며, 실제 GUI 화면 실측은 미검증이다.
 2. **PostgreSQL 소켓 통합 테스트**: `tests/test_artcraft.py` 및 `tests/test_google_account.py`는 샌드박스 내부에서 PG DB 소켓 접근이 차단되어(`PermissionError: [Errno 1] Operation not permitted`) 실행하지 않았으며, DB 의존이 없는 `unit_tests/` 전체 및 격리된 단위 테스트로 검증을 대체했다.
+
+---
+
+## 6. 독립 검증자 결함 2건 TDD 추가 교정 (2026-10-25 06:15)
+
+### 6.1 결함 분석
+1. **결함 1: `drain_ready` 블로킹 및 상한 취소 부재**
+   - ArtCraft(최대 300초 smoke)와 Google 로그인(창 대기 기본 600초, 설정 최대 1800초) 작업 진행 중 세대가 draining 상태가 되면 `api_residual > 0`이 되어 `generation_service.py`의 `drain_ready`가 `False`를 유지한다.
+   - 배포 제어기(`generation_deployment.py:1052`)는 `drain_ready == True`일 때만 이전 세대를 정지(`slots.stop`)하므로, 상한 취소인 `artcraft.drain(30s)`와 `login_manager.drain(20s)`가 위치한 FastAPI `lifespan` 종료 블록에 진입하지 못하고 배포 퇴역이 수 분~수십 분간 블로킹되는 결함이 존재했다.
+2. **결함 2: remote lifespan 종료 결과 및 예외 검사 누락**
+   - remote lifespan 종료가 `gather(..., return_exceptions=True)`로 받은 결과를 검사하지 않아 drain `False`(상한 초과)나 예외 발생 시에도 경고 로그를 남기지 않았다 (local 모드는 `finish_claimed_work`에서 경고 로그 기록).
+
+### 6.2 설계 선택 및 근거: 별도 감시 Task (drain loop in `coordinate`)
+- **선택 방식**: `drain_ready` 평가 경로(GET /api/ready)에 상한 취소를 직접 두지 않고, **`coordinate` 루프의 draining 상태 전이 이벤트에서 별도 감시 태스크(`drain_residual_jobs`)를 구동하는 방식**을 선택했다.
+- **선택 근거**:
+  1. **부작용 없는 조회 보장 (CQS 원칙)**: `/api/ready`는 Liveness/Readiness 프로브 및 배포 제어기가 주기적으로 폴링하는 HTTP GET 엔드포인트다. 상태 조회를 호출한 행위 자체가 백그라운드 프로세스를 강제 종료(kill)하는 부작용을 일으키는 것은 책임 분리 원칙에 위배된다.
+  2. **기존 라이프사이클(`coordinate`)과의 일관성**: 기존 플랫폼 V2에서 draining 상태 전이(`state == "draining"`) 시 리소스 회수 및 새 claim 차단(`desk_pool.shutdown()`, `queued_work.begin_drain()`, `background_consumers.pause_claiming()`)은 모두 `coordinate` 루프가 총괄하고 있다. 잔여 작업의 drain 감시 및 상한 관리도 `coordinate`의 상태 전이 이벤트에 연결하는 것이 아키텍처적으로 가장 일관된다.
+  3. **폴링 독립적 적시 타이머**: 배포 제어기의 외부 HTTP 폴링 간격에 의존하지 않고, 프로세스 내부 이벤트 루프에서 상한 시간(`ARTCRAFT_DRAIN_TIMEOUT=30.0s`, `GOOGLE_LOGIN_DRAIN_TIMEOUT=20.0s`) 도래 시 즉시 안전한 취소 및 외부 Chrome 리소스 회수를 수행한다.
+  4. **롤백 안전성**: 세대가 다시 `active`로 롤백되는 경우, `coordinate`에서 감시 태스크를 즉시 취소하여 안전하게 작업을 유지한다.
+
+### 6.3 구현 요약
+1. `src/ttakkari/generation_service.py`:
+   - 모듈 상수 `ARTCRAFT_DRAIN_TIMEOUT = 30.0`, `GOOGLE_LOGIN_DRAIN_TIMEOUT = 20.0` 정의.
+   - `drain_residual_jobs(artcraft_timeout, login_timeout)`: ArtCraft와 Google 로그인 작업을 각각 상한 안에서 대기하고, 초과 시 안전하게 취소(`drain(timeout=...)`)하며 명시적 경고 로그 기록.
+   - `coordinate(runtime, manager)`: `state == "draining"` 진입 시 `residual_drain_task = asyncio.create_task(drain_residual_jobs(...))` 구동, `state == "active"`로 롤백 시 및 `finally` 블록에서 감시 태스크 취소.
+   - `lifespan(app)`: remote 모드 API 종료 시 `drain_results = await asyncio.gather(...)`의 결과와 예외를 전수 검사하여, 실패 또는 예외 시 `log.warning("remote shutdown cut residual work: %s", sorted(failed))` 경고 로그 기록.
+
+### 6.4 TDD Red -> Green 및 변이 검증
+- **신규 테스트 5건 추가** (`unit_tests/test_remote_api_residual_execution.py`, 총 15개 테스트):
+  - `test_draining_artcraft_job_cancelled_and_drain_ready_after_timeout`: 상한 초과 취소, 경고 로그, drain_ready True 검증.
+  - `test_draining_google_login_cancelled_and_stops_chrome_after_timeout`: 상한 초과 취소, Chrome 프로세스 종료 경로(`proc.terminate`), cancelled 상태, 경고 로그, drain_ready True 검증.
+  - `test_draining_jobs_finish_naturally_within_timeout`: 상한 내 자연 완료 유지 검증.
+  - `test_coordinate_monitors_residual_drain_and_cancels_on_rollback`: coordinate 감시 태스크 구동 및 rollback 취소 검증.
+  - `test_remote_lifespan_logs_warning_on_residual_drain_failure_or_exception`: remote lifespan 종료 결과 및 예외 경고 로그 검증.
+- **Red 단계**: 기능 구현 전 신규 5건 실패 확인 (`5 failed, 10 passed in 0.63s`).
+- **Green 단계**: 최소 교정 구현 후 15건 전수 통과 (`15 passed in 0.69s`).
+- **변이(Mutation) 검증**:
+  1. `coordinate` 내 감시 태스크 생성 줄 주석 처리 시: `test_coordinate_monitors_residual_drain_and_cancels_on_rollback` 실패 (TimeoutError).
+  2. `drain_residual_jobs` 내 `artcraft.drain` 상한 취소 무력화 시: `test_draining_artcraft_job_cancelled_and_drain_ready_after_timeout` 실패 (assert True is False).
+  3. remote lifespan 결과 검사 제거 시: `test_remote_lifespan_logs_warning_on_residual_drain_failure_or_exception` 실패 (assert False).
+
+### 6.5 회귀 테스트 결과
+- `unit_tests/test_remote_api_residual_execution.py`: 15 passed in 1.08s
+- `unit_tests/test_local_api_retirement.py`: 14 passed in 2.18s
+- `unit_tests/test_executor_queued_consumers.py`: 4 passed in 1.18s
+- `unit_tests/test_generation_hardening.py`: 32 passed in 9.57s
+- `unit_tests/test_fnd01_foundation.py`: 9 passed in 0.49s
+- `unit_tests/` 전체: 1832 passed in 302.47s (실패 27건은 기분류된 worktree `.venv` 부재 등 환경 의존 항목)
+- 코드 품질: `ruff check` 통과 (All checks passed!), `git diff --check` 통과.

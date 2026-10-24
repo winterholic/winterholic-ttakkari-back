@@ -74,46 +74,104 @@ async def coordinate_runs(runtime, manager, state) -> None:
         await resume_queued()
 
 
+ARTCRAFT_DRAIN_TIMEOUT: float = 30.0
+GOOGLE_LOGIN_DRAIN_TIMEOUT: float = 20.0
+
+
+async def drain_residual_jobs(
+    artcraft_timeout: float = ARTCRAFT_DRAIN_TIMEOUT,
+    login_timeout: float = GOOGLE_LOGIN_DRAIN_TIMEOUT,
+) -> dict[str, bool]:
+    """draining 상태에서 ArtCraft와 Google 로그인 작업을 상한 안에서 자연 완료까지 대기하고,
+    상한을 초과하면 안전하게 취소 및 정리한다.
+    """
+    from ttakkari import artcraft
+    from ttakkari.google_account.login import manager as login_manager
+
+    async def _drain_artcraft() -> bool:
+        if artcraft.inflight() == 0:
+            return True
+        ok = await artcraft.drain(timeout=artcraft_timeout)
+        if not ok:
+            log.warning("draining ArtCraft work timed out after %.1fs; cancelled in-flight jobs", artcraft_timeout)
+        return ok
+
+    async def _drain_login() -> bool:
+        if login_manager.inflight() == 0:
+            return True
+        ok = await login_manager.drain(timeout=login_timeout)
+        if not ok:
+            log.warning("draining Google login timed out after %.1fs; cancelled in-flight logins", login_timeout)
+        return ok
+
+    results = await asyncio.gather(_drain_artcraft(), _drain_login(), return_exceptions=True)
+    res_dict: dict[str, bool] = {}
+    for name, res in zip(["artcraft", "google_login"], results):
+        if isinstance(res, BaseException):
+            log.warning("draining residual %s raised error: %r", name, res)
+            res_dict[name] = False
+        else:
+            res_dict[name] = bool(res)
+    return res_dict
+
+
 async def coordinate(runtime, manager) -> None:
     from ttakkari import background_consumers, queued_work
     from ttakkari.runs import desk_pool, profiles, usage_store
     previous = "standby"
-    while True:
-        try:
-            runtime.signal.clear()
-            await runtime.listen()
-            state = await runtime.refresh()
-            if state == "draining" and previous != state:
-                if not manager.remote:
-                    # 이 세대가 소비자를 돌리는 local 모드다. 이미 맡은 일은 두고 새로 가져가는 것만 멈춘다.
-                    queued_work.begin_drain()
-                    background_consumers.consumers.pause_claiming()
-                # In-use exchanges were popped out of _warm; this only stops idle/refill.
-                await desk_pool.shutdown()
-            elif state == "active" and previous == "draining" and not manager.remote:
-                # 롤백으로 퇴역 중이던 세대가 다시 active 가 됐다.
-                queued_work.reopen()
-                background_consumers.consumers.resume_claiming()
-            previous = state
-            if state == "active":
-                async with sessionmaker()() as db:
-                    await profiles.load_cooldowns(db)
-                    await usage_store.load_latest(db, refresh=True)
-            await coordinate_runs(runtime, manager, state)
-            if state == "active" and not manager.remote and not getattr(runtime, "draining", False):
-                from ttakkari.schedules import process_due_schedules
-                # work 잠금으로 감싸 주기 작업(schedules)과 겹치지 않게 하고, 실행 중에는 세대가 퇴역하지 않게 한다.
-                async with generation.work("schedules") as acquired:
-                    if acquired:
-                        await process_due_schedules(owner_id=f"gen-{runtime.id}")
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            log.exception("generation coordinator failed; retrying without stealing work")
-        try:
-            await asyncio.wait_for(runtime.signal.wait(), get_settings().runtime_poll_seconds)
-        except TimeoutError:
-            pass
+    residual_drain_task: asyncio.Task | None = None
+    try:
+        while True:
+            try:
+                runtime.signal.clear()
+                await runtime.listen()
+                state = await runtime.refresh()
+                if state == "draining" and previous != state:
+                    if not manager.remote:
+                        # 이 세대가 소비자를 돌리는 local 모드다. 이미 맡은 일은 두고 새로 가져가는 것만 멈춘다.
+                        queued_work.begin_drain()
+                        background_consumers.consumers.pause_claiming()
+                    # In-use exchanges were popped out of _warm; this only stops idle/refill.
+                    await desk_pool.shutdown()
+                    if residual_drain_task is None or residual_drain_task.done():
+                        residual_drain_task = asyncio.create_task(
+                            drain_residual_jobs(
+                                artcraft_timeout=ARTCRAFT_DRAIN_TIMEOUT,
+                                login_timeout=GOOGLE_LOGIN_DRAIN_TIMEOUT,
+                            ),
+                            name="residual_drain_watcher",
+                        )
+                elif state == "active" and previous == "draining":
+                    # 롤백으로 퇴역 중이던 세대가 다시 active 가 됐다.
+                    if not manager.remote:
+                        queued_work.reopen()
+                        background_consumers.consumers.resume_claiming()
+                    if residual_drain_task and not residual_drain_task.done():
+                        residual_drain_task.cancel()
+                        residual_drain_task = None
+                previous = state
+                if state == "active":
+                    async with sessionmaker()() as db:
+                        await profiles.load_cooldowns(db)
+                        await usage_store.load_latest(db, refresh=True)
+                await coordinate_runs(runtime, manager, state)
+                if state == "active" and not manager.remote and not getattr(runtime, "draining", False):
+                    from ttakkari.schedules import process_due_schedules
+                    # work 잠금으로 감싸 주기 작업(schedules)과 겹치지 않게 하고, 실행 중에는 세대가 퇴역하지 않게 한다.
+                    async with generation.work("schedules") as acquired:
+                        if acquired:
+                            await process_due_schedules(owner_id=f"gen-{runtime.id}")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("generation coordinator failed; retrying without stealing work")
+            try:
+                await asyncio.wait_for(runtime.signal.wait(), get_settings().runtime_poll_seconds)
+            except TimeoutError:
+                pass
+    finally:
+        if residual_drain_task and not residual_drain_task.done():
+            residual_drain_task.cancel()
 
 
 async def periodic(name, operation, interval) -> None:
@@ -407,11 +465,20 @@ async def lifespan(app):
         else:
             from ttakkari import artcraft
             from ttakkari.google_account.login import manager as login_manager
-            await asyncio.gather(
-                artcraft.drain(min(30.0, SHUTDOWN_DRAIN_SECONDS)),
-                login_manager.drain(min(20.0, SHUTDOWN_DRAIN_SECONDS)),
+            drain_results = await asyncio.gather(
+                artcraft.drain(min(ARTCRAFT_DRAIN_TIMEOUT, SHUTDOWN_DRAIN_SECONDS)),
+                login_manager.drain(min(GOOGLE_LOGIN_DRAIN_TIMEOUT, SHUTDOWN_DRAIN_SECONDS)),
                 return_exceptions=True,
             )
+            labels = ["artcraft", "google_login"]
+            failed = []
+            for name, res in zip(labels, drain_results):
+                if isinstance(res, BaseException):
+                    failed.append(f"{name}(error: {type(res).__name__})")
+                elif not res:
+                    failed.append(name)
+            if failed:
+                log.warning("remote shutdown cut residual work: %s", sorted(failed))
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
         from ttakkari.notebooklm.service import service as notebooklm_service

@@ -272,3 +272,279 @@ async def test_google_login_drain_waits_for_completion_and_respects_timeout():
     login.manager._tasks["acc3"] = t2
     drained2 = await login.manager.drain(timeout=1.0)
     assert drained2 is True
+
+
+# ==============================================================================
+# 4. draining 상태 잔여 작업 감시, 상한 취소 및 퇴역 연결 (TDD)
+# ==============================================================================
+
+class _FakeProc:
+    def __init__(self):
+        self._poll = None
+        self.terminated = False
+        self.killed = False
+        self.stderr = None
+
+    def poll(self):
+        return self._poll
+
+    def terminate(self):
+        self.terminated = True
+        self._poll = -15
+
+    def kill(self):
+        self.killed = True
+        self._poll = -9
+
+    def wait(self, timeout=None):
+        return self._poll
+
+
+async def test_draining_artcraft_job_cancelled_and_drain_ready_after_timeout(monkeypatch, caplog):
+    monkeypatch.setattr(generation_service, "ARTCRAFT_DRAIN_TIMEOUT", 0.04)
+    monkeypatch.setattr(generation_service, "GOOGLE_LOGIN_DRAIN_TIMEOUT", 0.04)
+
+    release = asyncio.Event()
+
+    async def _runner(job):
+        await release.wait()
+
+    job = artcraft._start("smoke", "smoke-cli", ["test"], "cli", _runner)
+    assert artcraft.inflight() == 1
+
+    runtime = _DrainingRuntime()
+    # 처음에는 진행 중인 작업 때문에 drain_ready 가 False
+    ready_val = await generation_service.ready(runtime)
+    assert ready_val["drain_ready"] is False
+
+    # draining 감시 태스크 구동
+    watcher = asyncio.create_task(
+        generation_service.drain_residual_jobs(
+            artcraft_timeout=0.04,
+            login_timeout=0.04,
+        )
+    )
+
+    try:
+        results = await asyncio.wait_for(watcher, 2.0)
+        assert results["artcraft"] is False
+
+        # 1. 작업이 취소되고 정리됨
+        assert job.task.cancelled() or job.task.done()
+        assert job.state == "failed"
+        assert artcraft.inflight() == 0
+
+        # 2. drain_ready 가 True 가 됨
+        ready_val = await generation_service.ready(runtime)
+        assert ready_val["drain_ready"] is True
+        assert ready_val.get("api_residual", 0) == 0
+
+        # 3. 취소 사실이 명시적 로그로 남음
+        assert any("draining ArtCraft work timed out" in r.message for r in caplog.records)
+    finally:
+        release.set()
+        if not watcher.done():
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+
+
+async def test_draining_google_login_cancelled_and_stops_chrome_after_timeout(monkeypatch, caplog):
+    monkeypatch.setattr(generation_service, "ARTCRAFT_DRAIN_TIMEOUT", 0.04)
+    monkeypatch.setattr(generation_service, "GOOGLE_LOGIN_DRAIN_TIMEOUT", 0.04)
+
+    fake_proc = _FakeProc()
+    st = login.LoginState(account_id="drain_acc", state="waiting")
+    login.manager._states["drain_acc"] = st
+    cancel_ev = asyncio.Event()
+    complete_ev = asyncio.Event()
+    login.manager._cancel["drain_acc"] = cancel_ev
+    login.manager._complete["drain_acc"] = complete_ev
+
+    # 실제 _run 처럼 cancel 또는 CancelledError 시 proc 를 종료하는 태스크
+    async def _mock_login_run():
+        try:
+            await cancel_ev.wait()
+        except asyncio.CancelledError:
+            st.state, st.message = "cancelled", "로그인을 중단했습니다."
+            raise
+        finally:
+            if fake_proc.poll() is None:
+                fake_proc.terminate()
+            st.finished_at = 12345.0
+
+    t = asyncio.create_task(_mock_login_run())
+    login.manager._tasks["drain_acc"] = t
+    assert login.manager.inflight() == 1
+
+    runtime = _DrainingRuntime()
+    ready_val = await generation_service.ready(runtime)
+    assert ready_val["drain_ready"] is False
+
+    watcher = asyncio.create_task(
+        generation_service.drain_residual_jobs(
+            artcraft_timeout=0.04,
+            login_timeout=0.04,
+        )
+    )
+
+    try:
+        results = await asyncio.wait_for(watcher, 2.0)
+        assert results["google_login"] is False
+
+        # 1. 작업이 취소되고 Chrome 소유 프로세스 종료 경로를 탐
+        assert t.cancelled() or t.done()
+        assert fake_proc.terminated is True
+        assert st.state == "cancelled"
+        assert login.manager.inflight() == 0
+
+        # 2. drain_ready 가 True 가 됨
+        ready_val = await generation_service.ready(runtime)
+        assert ready_val["drain_ready"] is True
+        assert ready_val.get("api_residual", 0) == 0
+
+        # 3. 취소 사실이 명시적 로그로 남음
+        assert any("draining Google login timed out" in r.message for r in caplog.records)
+    finally:
+        cancel_ev.set()
+        if not watcher.done():
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+
+
+async def test_draining_jobs_finish_naturally_within_timeout():
+    # ArtCraft 빠른 자연 완료
+    async def _quick_runner(job):
+        await asyncio.sleep(0.01)
+        job.state = "succeeded"
+
+    job = artcraft._start("remote", "check", [], None, _quick_runner)
+
+    # Google 로그인 빠른 자연 완료
+    login.manager._states["quick_acc"] = login.LoginState(account_id="quick_acc", state="waiting")
+    quick_t = asyncio.create_task(asyncio.sleep(0.01))
+    login.manager._tasks["quick_acc"] = quick_t
+
+    runtime = _DrainingRuntime()
+    results = await generation_service.drain_residual_jobs(
+        artcraft_timeout=1.0,
+        login_timeout=1.0,
+    )
+    assert results == {"artcraft": True, "google_login": True}
+    assert job.state == "succeeded"
+    assert artcraft.inflight() == 0
+    assert login.manager.inflight() == 0
+
+    ready_val = await generation_service.ready(runtime)
+    assert ready_val["drain_ready"] is True
+
+
+async def test_coordinate_monitors_residual_drain_and_cancels_on_rollback(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    called_drain = asyncio.Event()
+
+    async def _mock_drain_residual(**kw):
+        called_drain.set()
+        await asyncio.sleep(10)  # long watcher
+        return {"artcraft": True, "google_login": True}
+
+    monkeypatch.setattr(generation_service, "drain_residual_jobs", _mock_drain_residual)
+    monkeypatch.setattr(generation_service, "coordinate_runs", AsyncMock())
+    monkeypatch.setattr("ttakkari.runs.desk_pool.shutdown", AsyncMock())
+
+    class _CoordRuntime:
+        def __init__(self):
+            self.signal = asyncio.Event()
+            self.state = "draining"
+
+        async def listen(self):
+            pass
+
+        async def refresh(self):
+            return self.state
+
+    runtime = _CoordRuntime()
+    manager = SimpleNamespace(remote=True)
+    coord_task = asyncio.create_task(generation_service.coordinate(runtime, manager))
+
+    try:
+        # 1. draining 진입 시 drain_residual_jobs 감시 태스크 시작
+        await asyncio.wait_for(called_drain.wait(), 1.0)
+        assert called_drain.is_set()
+
+        # 2. active 로 롤백 시 감시 태스크 취소 확인
+        runtime.state = "active"
+        runtime.signal.set()
+        await asyncio.sleep(0.05)
+    finally:
+        coord_task.cancel()
+        await asyncio.gather(coord_task, return_exceptions=True)
+
+
+async def test_remote_lifespan_logs_warning_on_residual_drain_failure_or_exception(monkeypatch, caplog):
+    app = FastAPI()
+    monkeypatch.setattr(generation_service.get_settings(), "release_revision", "rev")
+    monkeypatch.setattr("ttakkari.deployment.revision", lambda: "rev")
+    monkeypatch.setattr(generation_service, "sessionmaker", lambda: lambda: AsyncMock(__aenter__=AsyncMock(), __aexit__=AsyncMock()))
+    monkeypatch.setattr(generation_service, "start_api_services", AsyncMock())
+    monkeypatch.setattr(generation_service, "dispose_engine", AsyncMock())
+
+    # Mock runtime
+    class _MockRemoteRuntime:
+        def __init__(self, *a, **kw):
+            self.execution_mode = "remote"
+            self.role = "api"
+            self.id = "mock-remote"
+            self.http_inflight = 0
+            self.state = "active"
+            self.signal = asyncio.Event()
+
+        async def register(self):
+            pass
+
+        async def listen(self):
+            pass
+
+        async def close(self):
+            pass
+
+    monkeypatch.setattr(generation, "GenerationRuntime", _MockRemoteRuntime)
+    monkeypatch.setattr(generation_service, "coordinate", AsyncMock())
+
+    from ttakkari.runs import desk_pool, luna_benchmark, profiles, usage_store
+    from ttakkari.runs.desk_qwen_service import service as qwen_service
+    from ttakkari.runs.manager import manager
+    monkeypatch.setattr(luna_benchmark, "shutdown", AsyncMock())
+    monkeypatch.setattr(manager, "shutdown", AsyncMock())
+    monkeypatch.setattr(desk_pool, "shutdown", AsyncMock())
+    monkeypatch.setattr(qwen_service, "stop", AsyncMock())
+    monkeypatch.setattr(profiles, "flush_persist", AsyncMock())
+    monkeypatch.setattr(usage_store, "flush", AsyncMock())
+    monkeypatch.setattr("ttakkari.notebooklm.service.service.shutdown", AsyncMock())
+
+    # 1. ArtCraft drain False 반환 시 경고 로그
+    monkeypatch.setattr(artcraft, "drain", AsyncMock(return_value=False))
+    monkeypatch.setattr(login.manager, "drain", AsyncMock(return_value=True))
+
+    caplog.clear()
+    async with generation_service.lifespan(app):
+        pass
+    assert any("remote shutdown cut residual work" in r.message and "artcraft" in r.message for r in caplog.records)
+
+    # 2. Login drain 예외 발생 시 경고 로그
+    monkeypatch.setattr(artcraft, "drain", AsyncMock(return_value=True))
+    monkeypatch.setattr(login.manager, "drain", AsyncMock(side_effect=RuntimeError("login error")))
+
+    caplog.clear()
+    async with generation_service.lifespan(app):
+        pass
+    assert any("remote shutdown cut residual work" in r.message and "google_login" in r.message for r in caplog.records)
+
+    # 3. 모두 정상 완료 시 경고 로그 없음
+    monkeypatch.setattr(artcraft, "drain", AsyncMock(return_value=True))
+    monkeypatch.setattr(login.manager, "drain", AsyncMock(return_value=True))
+
+    caplog.clear()
+    async with generation_service.lifespan(app):
+        pass
+    assert not any("remote shutdown cut residual work" in r.message for r in caplog.records)

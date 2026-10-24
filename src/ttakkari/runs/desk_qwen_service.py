@@ -104,7 +104,11 @@ def _is_zombie(pid: int) -> bool:
 def reap_orphans(server: Path) -> list[int]:
     """소유자가 죽은 기록의 자식만 정리한다. 소유자가 살아 있는(다른 세대) 기록과 명령줄이 다른 프로세스는 건드리지 않는다."""
     reaped: list[int] = []
-    for f in sorted(_state_dir().glob("*.json")):
+    d = _state_dir()
+    active_path = d / "active.json"
+    for f in sorted(d.glob("*.json")):
+        if f.name.endswith(".tmp"):
+            continue
         try:
             rec = json.loads(f.read_text())
             owner, child, port = int(rec["owner_pid"]), int(rec["child_pid"]), int(rec["port"])
@@ -125,7 +129,37 @@ def reap_orphans(server: Path) -> list[int]:
                 log.warning("pid file %s points at a different process; not touching pid %s", f.name, child)
         with contextlib.suppress(OSError):
             f.unlink()
+    if active_path.is_file() and not any(f.name != "active.json" for f in d.glob("*.json")):
+        with contextlib.suppress(OSError):
+            active_path.unlink()
     return reaped
+
+
+def discover_managed_server() -> str | None:
+    """살아 있는 소유자와 자식 서버의 기록을 찾아 loopback 주소를 반환한다."""
+    d = _state_dir()
+    active_path = d / "active.json"
+    candidates: list[Path] = [active_path] if active_path.is_file() else []
+    try:
+        candidates.extend(sorted(d.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True))
+    except OSError:
+        pass
+
+    seen: set[str] = set()
+    for f in candidates:
+        if f.name.endswith(".tmp") or f.name in seen:
+            continue
+        seen.add(f.name)
+        try:
+            rec = json.loads(f.read_text())
+            owner = int(rec["owner_pid"])
+            child = int(rec["child_pid"])
+            port = int(rec["port"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if _same_process(owner, rec.get("owner_start")) and _same_process(child, rec.get("child_start")):
+            return f"http://127.0.0.1:{port}"
+    return None
 
 
 async def probe(base: str, timeout: float = 2.0) -> bool:
@@ -138,7 +172,11 @@ async def probe(base: str, timeout: float = 2.0) -> bool:
 
 
 class QwenServer:
-    """이 프로세스의 Qwen 서버 하나. start/stop 은 여러 번 불러도 안전하다."""
+    """이 프로세스의 Qwen 서버 하나. start/stop 은 여러 번 불러도 안전하다.
+
+    - owner=True (단일 executor 또는 local 모드): 직접 자식 프로세스를 spawn하고 stop 시 종료.
+    - owner=False (remote API 세대): 직접 spawn하지 않고 소유자가 띄운 managed 서버를 탐색·연결.
+    """
 
     def __init__(self) -> None:
         self.state = "stopped"  # stopped | disabled | external | starting | ready | failed
@@ -147,15 +185,22 @@ class QwenServer:
         self._child: asyncio.subprocess.Process | None = None
         self._task: asyncio.Task | None = None
         self._pidfile: Path | None = None
+        self._active_file: Path | None = None
         self._log: Any = None
         self.spawn_count = 0
+        self.stop_count = 0
         self.external_ready: bool | None = None
+        self._owner: bool = True
         self._token = uuid.uuid4().hex[:8]  # 같은 프로세스의 인스턴스(시험)끼리 pid 파일이 겹치지 않게
 
     # ---- 조회
     @property
     def endpoint(self) -> str | None:
-        return self._base if self.state == "ready" else None
+        if self.state == "ready":
+            return self._base
+        if self.state == "external" and self.external_ready is not False:
+            return self._base
+        return None
 
     def status(self) -> dict[str, Any]:
         s = get_settings()
@@ -164,8 +209,9 @@ class QwenServer:
                 "ready": self.state in ("ready", "external") and self.external_ready is not False}
 
     # ---- 수명주기
-    async def start(self) -> None:
+    async def start(self, owner: bool = True) -> None:
         s = get_settings()
+        self._owner = owner
         if self._task is not None and not self._task.done():
             return  # 중복 spawn 방지: 이미 돌고 있다
         if not s.desk_qwen_enabled:
@@ -173,10 +219,14 @@ class QwenServer:
             return
         if s.desk_qwen_base_url:
             self.state = "external"
+            self._base = s.desk_qwen_base_url
             self._task = asyncio.create_task(self._watch_external(s.desk_qwen_base_url), name="qwen-external")
         elif s.desk_qwen_manage:
             self.state = "starting"
-            self._task = asyncio.create_task(self._run_managed(), name="qwen-managed")
+            if self._owner:
+                self._task = asyncio.create_task(self._run_managed(), name="qwen-managed")
+            else:
+                self._task = asyncio.create_task(self._watch_managed_remote(), name="qwen-remote-client")
         else:
             self.state, self.reason = "disabled", "no base url and manage=false"
 
@@ -185,7 +235,8 @@ class QwenServer:
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        await self._kill_child()
+        if self._owner:
+            await self._kill_child()
         self.state = "stopped" if self.state != "disabled" else "disabled"
         self._base = None
         self.external_ready = None
@@ -196,7 +247,32 @@ class QwenServer:
             self.external_ready = await probe(base)
             await asyncio.sleep(HEALTH_INTERVAL if self.external_ready else 3.0)
 
-    # ---- 관리 서버
+    # ---- remote API 세대: 소유자가 띄운 관리형 서버 감시
+    async def _watch_managed_remote(self) -> None:
+        """remote API 세대: 직접 프로세스를 띄우지 않고 소유자가 관리하는 managed 서버를 탐색해 health probe를 유지한다."""
+        while True:
+            base = discover_managed_server()
+            if base:
+                if await probe(base):
+                    self._base = base
+                    self.state = "ready"
+                    self.reason = ""
+                    self.external_ready = True
+                    await asyncio.sleep(HEALTH_INTERVAL)
+                    continue
+                else:
+                    self.state = "starting"
+                    self.reason = f"managed server at {base} not responding"
+                    self.external_ready = False
+                    self._base = None
+            else:
+                self.state = "starting"
+                self.reason = "waiting for managed qwen server"
+                self.external_ready = False
+                self._base = None
+            await asyncio.sleep(min(HEALTH_INTERVAL, 1.0))
+
+    # ---- 관리 서버 (owner)
     async def _run_managed(self) -> None:
         s = get_settings()
         server, model = _expand(s.desk_qwen_server_path), _expand(s.desk_qwen_model_path)
@@ -252,6 +328,14 @@ class QwenServer:
                 if await probe(base, timeout=1.5):
                     await self._warm(base)
                     self._base, self.state = base, "ready"
+                    d = _state_dir()
+                    self._active_file = d / "active.json"
+                    tmp = self._active_file.with_suffix(".tmp")
+                    rec = {"owner_pid": os.getpid(), "owner_start": _proc_start(os.getpid()),
+                           "child_pid": self._child.pid, "child_start": _proc_start(self._child.pid),
+                           "port": port, "server": str(server), "model": str(model), "started_at": time.time()}
+                    tmp.write_text(json.dumps(rec))
+                    tmp.replace(self._active_file)
                     log.info("qwen server ready on %s (pid %s)", base, self._child.pid)
                     return True
                 await asyncio.sleep(0.5)
@@ -311,6 +395,7 @@ class QwenServer:
         child, self._child = self._child, None
         self._base = None
         if child is not None and child.returncode is None:
+            self.stop_count += 1
             await asyncio.to_thread(_terminate, child.pid)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(child.wait(), 3.0)
@@ -318,6 +403,10 @@ class QwenServer:
             with contextlib.suppress(Exception):
                 self._log.close()
             self._log = None
+        if self._active_file is not None:
+            with contextlib.suppress(OSError):
+                self._active_file.unlink()
+            self._active_file = None
         if self._pidfile is not None:
             with contextlib.suppress(OSError):
                 self._pidfile.unlink()
@@ -325,3 +414,17 @@ class QwenServer:
 
 
 service = QwenServer()
+
+
+async def start_owner(server: QwenServer | None = None) -> None:
+    srv = server or service
+    await srv.start(owner=True)
+
+
+async def start_client(server: QwenServer | None = None) -> None:
+    srv = server or service
+    await srv.start(owner=False)
+
+
+def is_owner(server: QwenServer | None = None) -> bool:
+    return (server or service)._owner

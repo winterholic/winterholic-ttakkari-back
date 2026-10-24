@@ -362,7 +362,8 @@ def test_lifespans_stop_the_qwen_service_and_the_generation_one_starts_it_throug
 
 @pytest.mark.parametrize("mode", ["local", "remote"])
 async def test_generation_api_start_services_starts_the_qwen_service_in_every_mode(monkeypatch, mode):
-    """Qwen is per-API-generation state, so remote-executor APIs must start it too.
+    """Qwen is request-accelerated, so remote-executor APIs start it in client mode (owner=False),
+    while local mode APIs own the managed process (owner=True).
 
     Not run through generation_service.lifespan: its teardown stops the shared RunManager and
     disposes the engine, which would leave every later test's Runs refused.
@@ -374,10 +375,13 @@ async def test_generation_api_start_services_starts_the_qwen_service_in_every_mo
     from ttakkari.tts import jobs as tts_jobs
 
     calls: list[str] = []
+    qwen_owners: list[bool] = []
 
     def recorder(name):
-        async def inner():
+        async def inner(*args, **kwargs):
             calls.append(name)
+            if name == "qwen":
+                qwen_owners.append(kwargs.get("owner", True))
         return inner
 
     monkeypatch.setattr(qwen_service, "start", recorder("qwen"))
@@ -388,6 +392,7 @@ async def test_generation_api_start_services_starts_the_qwen_service_in_every_mo
     await generation_service.start_api_services(mode)
 
     assert "qwen" in calls and "tts" in calls
+    assert qwen_owners == [mode == "local"]
     # Durable workers belong to the executor when the API is remote.
     assert ("preview" in calls and "stt" in calls) == (mode == "local")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -22,6 +23,17 @@ from ttakkari.api.planner import (
     new_event,
 )
 from ttakkari.artifacts import preview
+from ttakkari.artifacts.keep_evidence import (
+    build_evidence,
+    creator_run_id,
+    find_user_quotes,
+    has_keep_expression,
+    is_keep_request,
+    is_negated,
+    made_by_request_run,
+    object_binding,
+    same_basename_paths,
+)
 from ttakkari.artifacts.kinds import needs_server_preview
 from ttakkari.artifacts.service import refresh_from_original, register_file
 from ttakkari.audit import record
@@ -32,6 +44,9 @@ from ttakkari.context.library import library_catalog
 from ttakkari.models import (
     Artifact,
     ArtifactArea,
+    ArtifactKeepReason,
+    ArtifactOrigin,
+    AuditLog,
     ChatSession,
     CtxMemory,
     Memo,
@@ -47,7 +62,7 @@ from ttakkari.planner import kr_holidays
 from ttakkari.planner import service as planner
 from ttakkari.push.service import PushKind
 from ttakkari.push.service import notify as push_notify
-from ttakkari.schemas import ArtifactAreaIn, ArtifactOut
+from ttakkari.schemas import ArtifactAreaIn, ArtifactKeepIn, ArtifactOut
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -204,13 +219,17 @@ async def link(body: LinkIn, sid: AgentSession, db: Db) -> dict[str, Any]:
 
 @router.get("/artifacts")
 async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str | None = None, limit: int = 20,
-                    area: Literal["files", "agent"] | None = None) -> dict[str, Any]:
+                    category: str | None = None, area: Literal["files", "agent"] | None = None) -> dict[str, Any]:
     session = await _session(db, sid)
     stmt = select(Artifact).where(Artifact.deleted_at.is_(None), *_artifact_scope(session))
     if kind:
         stmt = stmt.where(Artifact.kind == kind)
+    if category:
+        stmt = stmt.where(Artifact.category == category)
     if area:
         stmt = stmt.where(Artifact.area == area)
+        if area == "files":
+            stmt = stmt.where(Artifact.keep_reason.is_not(None))
     if q:
         like = f"%{q.replace('%', r'\%').replace('_', r'\_')}%"
         stmt = stmt.where(or_(Artifact.filename.ilike(like), Artifact.rel_path.ilike(like)))
@@ -222,7 +241,9 @@ async def artifacts(sid: AgentSession, db: Db, q: str | None = None, kind: str |
 
 @router.patch("/artifacts/{art_id}")
 async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSession, db: Db) -> dict[str, Any]:
-    """보관함 분류를 옮긴다(파일 ↔ 에이전트 파일). 되돌릴 수 있다. 사용자가 올리거나 등록한 파일은 사용자만 옮긴다."""
+    """보관함 분류를 옮긴다(내 보관함 ↔ AI 작업 파일).
+    에이전트는 이 경로로 내 보관함(files)으로 승격할 수 없으며(keep_artifact 사용),
+    사용자가 보관한 파일(keep_reason 존재)이나 사용자가 올린 파일은 뺄 수 없다."""
     session = await _session(db, sid)
     art = await db.scalar(select(Artifact).where(
         Artifact.id == art_id,
@@ -231,20 +252,30 @@ async def move_artifact(art_id: uuid.UUID, body: ArtifactAreaIn, sid: AgentSessi
     ))
     if art is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Artifact 가 없습니다.")
-    if art.source in ("upload", "user_registered"):
+    if body.area == ArtifactArea.files:
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "use_keep_artifact", "message":
+                            "에이전트는 이 경로로 내 보관함에 넣을 수 없습니다. 사용자 요청 근거와 함께 keep_artifact 를 쓰세요."})
+    if art.source in ("upload", "user_registered") or art.origin == ArtifactOrigin.user:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_owned", "message":
                             "사용자가 올린 파일의 분류는 앱에서만 바꿀 수 있어요."})
+    if art.keep_reason is not None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "user_kept", "message":
+                            "사용자가 보관한 파일은 에이전트가 내 보관함에서 뺄 수 없어요. 내 보관함에서 빼기는 사용자 앱에서만 가능합니다."})
     if art.area != body.area:
         record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=art.id,
                detail={"from": art.area, "to": body.area, "session": str(sid)})
         art.area = body.area
+        art.keep_reason = None
+        art.keep_evidence = None
         await db.commit()
     return {"id": str(art.id), "filename": art.filename, "area": art.area}
 
 
 @router.post("/share")
 async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any]:
-    """에이전트가 만든(또는 찾은) 파일을 사용자 보관함(파일)에 올린다. 공유는 사용자에게 넘기겠다는 명시 신호다. 실행 위치·권한 폴더·inbox 안의 파일만."""
+    """에이전트가 만든(또는 찾은) 파일을 대화에서 사용자에게 전달한다(링크·미리보기·다운로드 제공).
+    내 보관함(files)에 자동으로 영구 보관되지 않으며 AI 작업 파일(agent)로 등록/유지된다.
+    실행 위치·권한 폴더·inbox 안의 파일만."""
     sid, token_run_id = caller
     sess = await _session(db, sid)
     ws = await db.get(Workspace, sess.workspace_id)
@@ -266,8 +297,8 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
     # Run 에 묶이지 않은 레거시 토큰만 실행 중인 가장 최근 Run 으로 대신한다.
     run_id = token_run_id or await db.scalar(select(Run.id).where(
         Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
-    # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않고 파일로 옮긴다. 같은 파일이 두 탭에 쌓이지 않게.
-    # 기존 행의 run_id 는 파일을 만든 Run 의 출처 기록이라 공유한 Run 으로 바꾸지 않는다(분류만 승격).
+    # 이미 이 세션에 등록된 경로(outbox 자동 수집 등)는 새 행을 만들지 않는다.
+    # 사용자가 보관함에서 뺀 파일을 share_file 로 재공유하더라도 다시 files 로 승격되지 않는다!
     existing = await db.scalar(select(Artifact).where(
         Artifact.deleted_at.is_(None), Artifact.session_id == sid,
         Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))
@@ -276,19 +307,15 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
             changed = await refresh_from_original(existing, real)
         except BrokerError as e:
             raise broker_http(e) from e
-        moved = existing.area != ArtifactArea.files
-        if moved:
-            record(db, actor="agent", action="artifact.move", target_type="artifact", target_id=existing.id,
-                   detail={"from": existing.area, "to": ArtifactArea.files, "via": "share", "session": str(sid)})
-            existing.area = ArtifactArea.files
-        if moved or changed:
+        if changed:
             await db.commit()
         if needs_server_preview(existing.kind) and (
                 changed or existing.preview_status not in (PreviewStatus.ready, PreviewStatus.processing)):
             preview.enqueue(existing.id)
         return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
     try:
-        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.files,
+        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.agent,
+                                  origin=ArtifactOrigin.agent, keep_reason=None,
                                   workspace_id=ws.id, session_id=sid, run_id=run_id, rel_path=str(real.relative_to(root)),
                                   export_allowed=ws.export_allowed)
     except BrokerError as e:
@@ -297,6 +324,131 @@ async def share(body: ShareIn, caller: OrchestratorRun, db: Db) -> dict[str, Any
     if needs_server_preview(art.kind):
         preview.enqueue(art.id)
     return {"artifact": ArtifactOut.from_model(art).model_dump(mode="json")}
+
+
+@router.post("/keep")
+async def keep_artifact(body: ArtifactKeepIn, caller: OrchestratorRun, db: Db) -> dict[str, Any]:
+    """사용자가 대화에서 보관을 요청했을 때 대상 파일을 내 보관함(files)에 영구 보관한다.
+
+    body.quote 는 사용자가 보관을 요청한 말의 그대로 인용이다. 이 세션의 실제 사용자 발화(사용자 메시지 또는 접수가 넘긴 사용자 요청)에
+    그 인용이 없으면 422(quote_not_found)로 거부하고 아무것도 바꾸지 않는다. 근거(발화 Run·세션·시각)는 keep_evidence 에 남는다."""
+    sid, token_run_id = caller
+    sess = await _session(db, sid)
+    ws = await db.get(Workspace, sess.workspace_id)
+    assert ws is not None
+    s = get_settings()
+    p = Path(body.path).expanduser()
+    if not p.is_absolute():
+        p = Path(ws.root_path) / p
+    real = p.resolve()
+    scope = [Path(ws.root_path).resolve(), s.inbox_root.resolve(), s.outbox_root.resolve(),
+             *[Path(x).resolve() for x in ws.extra_writable_roots]]
+    root = next((r for r in scope if is_within(real, r)), None)
+    if root is None or is_sensitive(real) or not real.is_file():
+        raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "outside_root",
+                                                        "message": "실행 위치·권한 폴더 안의 일반 파일만 보관할 수 있어요."})
+    await db.execute(select(ChatSession.id).where(ChatSession.id == sid).with_for_update())
+    run_id = token_run_id
+    if not run_id:
+        run_id = await db.scalar(select(Run.id).where(
+            Run.session_id == sid, Run.status == RunStatus.running).order_by(Run.created_at.desc()).limit(1))
+    if not run_id:
+        run_id = await db.scalar(select(Run.id).where(
+            Run.session_id == sid).order_by(Run.created_at.desc()).limit(1))
+    run = await db.get(Run, run_id) if run_id else None
+    if run is None or run.session_id != sid:
+        raise HTTPException(status.HTTP_409_CONFLICT, {"code": "run_not_found", "message": "보관 근거를 남길 Run을 찾을 수 없습니다."})
+
+    existing = await db.scalar(select(Artifact).where(
+        Artifact.deleted_at.is_(None), Artifact.session_id == sid,
+        Artifact.original_path == str(real)).order_by(Artifact.created_at.desc()).limit(1))
+
+    matches = await find_user_quotes(db, sid, run, body.quote)
+    if not matches:
+        raise HTTPException(422, {"code": "quote_not_found", "message":
+                            "이 세션의 사용자 발화에서 그 인용을 찾지 못했어요. 사용자가 보관을 요청한 말을 문장 하나(또는 한 줄) 그대로, "
+                            "공백 제외 8자 이상으로 인용하세요. 단어 일부만 인용하면 안 됩니다. 기획이 작업 세션에 쓴 지시는 사용자 발화가 아니므로 "
+                            "근거가 될 수 없고, 작업 세션이면 기획 세션이 직접 보관해야 합니다."})
+    if has_keep_expression(body.quote) and is_negated(body.quote):
+        raise HTTPException(422, {"code": "quote_negated", "message":
+                            "인용한 문장에 부정·금지·제외 표현이 있어요. 사용자가 앱의 '내 보관함에 보관' 버튼으로 직접 보관할 수 있어요."})
+    if not is_keep_request(body.quote):
+        raise HTTPException(422, {"code": "quote_no_keep_request", "message":
+                            "인용한 문장이 허용된 보관 요청 템플릿이 아니에요. 파일명·따옴표 안의 말·'…라는' 앞 구절을 뺀 문장이 "
+                            "'…보관해 줘', '…보관함에 넣어 줘', '…저장해 줘'(영어는 Please keep X in my library)처럼 끝나야 해요. "
+                            "사용자가 보관을 요청한 문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요."})
+    match, binding, binding_detail = None, "", ""
+    mention, names_another = object_binding(body.quote, real)  # filename 결속은 보관 서술어의 직접 목적어 자리에서만 성립한다
+    others = await same_basename_paths(db, session_id=sid, path=real, outbox_root=s.outbox_root)
+    if mention is not None:
+        if mention.path_token is not None:
+            clash = [o for o in others if o.casefold().endswith("/" + mention.path_token.lstrip("/")) or o.casefold() == mention.path_token]
+        else:
+            clash = others
+        if not clash:
+            match, binding, binding_detail = matches[0], "filename", mention.path_token or mention.token
+    if match is None and (mention is not None or not names_another):
+        created_by = creator_run_id(real, s.outbox_root, existing.run_id if existing is not None else None)
+        for cand in matches:
+            if await made_by_request_run(db, session_id=sid, match=cand, path=real, created_by=created_by):
+                match, binding, binding_detail = cand, "same_run", str(created_by)
+                break
+    if match is None and mention is not None and others:
+        raise HTTPException(422, {"code": "quote_ambiguous_file", "message":
+                            f"같은 이름 {real.name} 파일이 여러 개라 어느 파일인지 문장만으로 정할 수 없어요. 폴더가 들어간 경로가 적힌 "
+                            "문장을 인용하거나, 사용자에게 앱의 '내 보관함에 보관' 버튼을 안내하세요. 후보: " + ", ".join(others[:3])})
+    if match is None:
+        raise HTTPException(422, {"code": "quote_not_bound", "message":
+                            f"그 인용 문장이 {real.name} 을(를) 가리키지 않아요. 문장에 확장자까지 포함한 파일 이름이 있거나, 이 파일이 "
+                            "그 발화를 처리한 Run(또는 그 Run 중에 띄운 작업 세션)의 결과물이어야 합니다. 로그·스크린샷 같은 부산물은 "
+                            "파일 이름을 직접 쓴 문장이 필요해요."})
+    evidence = build_evidence(match, session_id=sid, run=run, quote=body.quote, kept_at=utcnow(),
+                              binding=binding, binding_detail=binding_detail)
+
+    if existing is not None:
+        if existing.area == ArtifactArea.files and existing.keep_reason is not None:
+            # 이미 내 보관함에 있다. 처음의 보관 사유·근거를 덮어쓰지 않는다(업로드·직접 등록이 chat_request 로 바뀌면 안 된다).
+            return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
+        removed_at = await _last_user_removal(db, existing.id)
+        if removed_at is not None and match.run.created_at <= removed_at:
+            raise HTTPException(status.HTTP_409_CONFLICT, {"code": "removed_after_request", "message":
+                                "사용자가 이 요청 뒤에 내 보관함에서 뺀 파일이에요. 새로 보관을 요청한 말이 필요합니다."})
+        try:
+            changed = await refresh_from_original(existing, real)
+        except BrokerError as e:
+            raise broker_http(e) from e
+        existing.area = ArtifactArea.files
+        existing.keep_reason = ArtifactKeepReason.chat_request
+        existing.keep_evidence = evidence
+        record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=existing.id,
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run.id), "message_id": evidence["message_id"]})
+        await db.commit()
+        if needs_server_preview(existing.kind) and (
+                changed or existing.preview_status not in (PreviewStatus.ready, PreviewStatus.processing)):
+            preview.enqueue(existing.id)
+        return {"artifact": ArtifactOut.from_model(existing).model_dump(mode="json")}
+    try:
+        art = await register_file(db, ResolvedPath(root=root, path=real), source="agent_output", area=ArtifactArea.files,
+                                  origin=ArtifactOrigin.agent, keep_reason=ArtifactKeepReason.chat_request,
+                                  keep_evidence=evidence,
+                                  workspace_id=ws.id, session_id=sid, run_id=run.id, rel_path=str(real.relative_to(root)),
+                                  export_allowed=ws.export_allowed)
+        record(db, actor="agent", action="artifact.keep", target_type="artifact", target_id=art.id,
+               detail={"via": "chat_request", "session": str(sid), "run_id": str(run.id), "message_id": evidence["message_id"]})
+    except BrokerError as e:
+        raise broker_http(e) from e
+    await db.commit()
+    if needs_server_preview(art.kind):
+        preview.enqueue(art.id)
+    return {"artifact": ArtifactOut.from_model(art).model_dump(mode="json")}
+
+
+async def _last_user_removal(db: Db, art_id: uuid.UUID) -> datetime | None:
+    """사용자가 앱에서 이 파일을 내 보관함에서 뺀 마지막 시각."""
+    return await db.scalar(select(AuditLog.at).where(
+        AuditLog.action == "artifact.move", AuditLog.actor == "user", AuditLog.outcome == "ok",
+        AuditLog.target_id == str(art_id), AuditLog.detail["to"].as_string() == ArtifactArea.agent)
+        .order_by(AuditLog.at.desc()).limit(1))
 
 
 # ---- 서버

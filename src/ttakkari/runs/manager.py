@@ -113,7 +113,8 @@ You are running unattended via Winterholic Ttakkari on the user's Mac Studio. Th
 and sees your messages and the files you produce in a web app.
 - Save every deliverable file meant for the user (documents, reports, exports, images, archives) into this outbox \
 directory: {outbox}. Files there are collected automatically into the agent area, so call `share_file` on each \
-deliverable you want the user to see in Files; the user can preview and download shared files.
+deliverable you want the user to open in the conversation; the user can preview and download shared files. Shared files \
+stay in AI work files; only keep_artifact (when the user asked in the conversation to keep it) puts a file in the user's library.
 - Editing code inside the workspace is fine as usual; changed files are tracked separately.
 - There is no TTY and nobody can answer interactive prompts. Never wait for confirmation.
 - A safety guard blocks a small set of irreversible operations (writes outside the workspace, force pushes, \
@@ -1739,9 +1740,9 @@ class RunManager:
         await db.execute(select(ChatSession.id).where(ChatSession.id == run.session_id).with_for_update())
         root = Path(ws.root_path).resolve()
         # outbox 자동 수집은 전부 에이전트 파일이다. 에이전트가 outbox 를 작업 공간처럼 써서
-        # 로그·증거 JSON·브라우저 캡처 같은 중간 산출물을 함께 두기 때문이다(경로만으로는
-        # 사용자가 요청한 결과물인지 판별할 수 없다). 사용자에게 넘길 것은 에이전트가
-        # share_file 로 명시적으로 올린 것만 파일이 된다.
+        # 로그·증거 JSON·브라우저 캡처 같은 중간 산출물을 함께 두기 때문이다.
+        # 사용자에게 전달하려고 share_file 로 공유한 파일도 AI 작업 파일로 유지되며,
+        # 대화에서 사용자가 명시적으로 보관을 요청한 파일만 내 보관함(files)에 보관된다.
         found: list[tuple[ResolvedPath, str, str | None]] = []
         to_preview: list[uuid.UUID] = []
         n = 0

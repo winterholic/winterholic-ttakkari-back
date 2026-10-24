@@ -980,6 +980,9 @@ class _FakeDb:
     async def scalar(self, _stmt):
         return self.version
 
+    async def scalars(self, _stmt):
+        return [self.version] if self.version is not None else []
+
 
 def _contract(**extra):
     return {"protocol": 1, "schema_revision": "0003_c", "online_migration_from": ["0001_a", "0002_b"],

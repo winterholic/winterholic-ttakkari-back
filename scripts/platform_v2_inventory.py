@@ -1602,6 +1602,7 @@ def classify_route(method: str, path: str) -> str:
             "/api/artifacts",
             "/api/agent/artifacts",
             "/api/agent/share",
+            "/api/agent/keep",
         )
     ):
         return "domain.shares_artifacts"
@@ -1695,7 +1696,7 @@ def classify_mcp_tool(name: str) -> str:
         return "domain.personal_tools"
     if n in ("google_account_status",):
         return "domain.external_connectors"
-    if n in ("list_artifacts", "set_artifact_area", "share_file"):
+    if n in ("list_artifacts", "set_artifact_area", "share_file", "keep_artifact"):
         return "domain.shares_artifacts"
     if n.startswith("ops_"):
         return "ops.monitoring"
@@ -1876,7 +1877,7 @@ def classify_migration(stem: str) -> str:
         return "domain.personal_tools"
     if "google_accounts" in s:
         return "domain.external_connectors"
-    if any(x in s for x in ("artifact", "public_shares")):
+    if any(x in s for x in ("artifact", "public_shares", "library_intent")):
         return "domain.shares_artifacts"
 
     # Control / Ops

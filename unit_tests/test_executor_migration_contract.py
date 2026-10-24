@@ -6,6 +6,58 @@ from alembic.script import ScriptDirectory
 from ttakkari.generation_deployment import Releases
 
 
+def test_deployed_library_and_v2_revisions_converge_without_rewriting_their_parents():
+    source = Path(__file__).resolve().parents[1]
+    config = Config(str(source / "alembic.ini"))
+    config.set_main_option("script_location", str(source / "alembic"))
+    directory = ScriptDirectory.from_config(config)
+    assert len(directory.get_heads()) == 1, "deployed main and V2 must converge before release"
+    ancestry = {revision.revision for revision in directory.walk_revisions()}
+    assert {"0068_library_intent", "0070_background_consumer_queue"} <= ancestry
+    # Both branches have already been published. Preserve their historical identity.
+    assert directory.get_revision("0068_library_intent").down_revision == "0067_collector_outbox_retry"
+    assert directory.get_revision("0068_tts_payload_chunks").down_revision == "0067_collector_outbox_retry"
+
+
+def test_deployed_library_and_previous_v2_schemas_are_declared_upgrade_sources():
+    source = Path(__file__).resolve().parents[1]
+    contract = Releases.contract(source)
+    assert {"0068_library_intent", "0070_background_consumer_queue"} <= set(contract["online_migration_from"])
+
+
+def test_deployed_library_upgrade_and_rollback_sql_do_not_reapply_its_data_migration(monkeypatch):
+    from io import StringIO
+    from types import SimpleNamespace
+
+    from alembic import command
+    from ttakkari import config as settings
+
+    source = Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(settings, "get_settings", lambda: SimpleNamespace(
+        database_url="postgresql+asyncpg://localhost/ttakkari_test"))
+
+    def sql(direction, revision):
+        output = StringIO()
+        config = Config(output_buffer=output)
+        config.set_main_option("script_location", str(source / "alembic"))
+        getattr(command, direction)(config, revision, sql=True)
+        return output.getvalue()
+
+    upgrade = sql("upgrade", "0068_library_intent:head")
+    rollback = sql("downgrade", "0071_library_platform_v2_merge:0068_library_intent")
+    for column in ("chunks_json", "queue_state", "claimed_at", "spec", "index_requested_at", "index_started_at"):
+        assert f"ADD COLUMN {column}" in upgrade
+        # Downgrading a merge to one parent preserves the other branch. It is
+        # not a physical rollback of V2; keep this limitation visible.
+        assert f"DROP COLUMN {column}" not in rollback
+    assert "VALUES ('0070_background_consumer_queue')" in rollback
+    assert "version_num='0068_library_intent'" in rollback
+    for plan in (upgrade, rollback):
+        assert "UPDATE artifacts" not in plan
+        assert "ALTER TABLE artifacts" not in plan
+        assert "artifact_area_backup_0068" not in plan
+
+
 def test_executor_migration_follows_tts_and_uses_reserved_integration_revision():
     source = Path(__file__).resolve().parents[1]
     config = Config(str(source / "alembic.ini"))

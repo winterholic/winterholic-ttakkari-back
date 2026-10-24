@@ -1,0 +1,60 @@
+"""A database left at multiple branch heads must not pass a single-head contract."""
+from pathlib import Path
+
+import pytest
+
+from ttakkari import generation_deployment as deployment
+from ttakkari.deployment import JobStore
+
+
+def database_with_heads(heads):
+    class Rows:
+        def all(self):
+            return heads
+
+        def __iter__(self):
+            return iter(heads)
+
+    class Database:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            pass
+
+        async def scalar(self, statement):
+            return heads[0]
+
+        async def scalars(self, statement):
+            return Rows()
+
+    return Database
+
+
+@pytest.mark.parametrize("heads", [
+    ["0068_library_intent", "0070_background_consumer_queue"],
+    ["0070_background_consumer_queue", "0068_library_intent"],
+    ["0071_library_platform_v2_merge", "unknown_branch"],
+])
+async def test_multiple_database_heads_refuse_deployment_without_choosing_first(tmp_path, monkeypatch, heads):
+    Database = database_with_heads(heads)
+    monkeypatch.setattr(deployment, "sessionmaker", lambda: Database)
+    controller = deployment.GenerationController(JobStore(tmp_path))
+    contract = deployment.Releases.contract(Path(__file__).resolve().parents[1])
+    with pytest.raises(deployment.StageError, match="multiple database schema heads") as raised:
+        await controller.schema_plan(contract)
+    assert raised.value.stage == "schema_contract"
+
+
+@pytest.mark.parametrize(("heads", "expected"), [
+    (["0068_library_intent"], ("online", "0068_library_intent")),
+    (["0071_library_platform_v2_merge"], ("current", "0071_library_platform_v2_merge")),
+    (["unknown_branch"], ("idle", "unknown_branch")),
+    ([], ("idle", None)),
+])
+async def test_single_or_missing_database_head_keeps_existing_policy(tmp_path, monkeypatch, heads, expected):
+    Database = database_with_heads(heads)
+    monkeypatch.setattr(deployment, "sessionmaker", lambda: Database)
+    controller = deployment.GenerationController(JobStore(tmp_path))
+    contract = deployment.Releases.contract(Path(__file__).resolve().parents[1])
+    assert await controller.schema_plan(contract) == expected

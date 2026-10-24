@@ -410,7 +410,7 @@ async def test_sidebar_hides_workers_and_parent_filter_lists_them(client, auth, 
 # ---- MCP 서버(stdio 프로토콜)
 
 AGENT_TOOLS = {"kb_search", "kb_documents", "kb_document", "kb_evidence","list_checklist", "create_checklist_item", "update_checklist_item", "delete_checklist_item",
-               "list_checklist_templates", "create_checklist_template", "update_checklist_template", "delete_checklist_template","request_backend_deploy", "backend_deploy_status", "library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file",
+               "list_checklist_templates", "create_checklist_template", "update_checklist_template", "delete_checklist_template","request_backend_deploy", "backend_deploy_status", "library_catalog", "recall", "remember", "get_entity", "describe_entity", "link", "forget", "list_artifacts", "share_file", "keep_artifact",
                "set_artifact_area", "server_resources", "tossinvest_status", "notify_user", "list_sessions", "read_session",
                "list_memo_categories", "list_memo_tags", "list_memos", "search_memos", "get_memo", "create_memo", "update_memo", "delete_memo",
                "list_events", "create_event", "update_event", "delete_event", "list_meetings", "get_meeting", "search_meeting_items",

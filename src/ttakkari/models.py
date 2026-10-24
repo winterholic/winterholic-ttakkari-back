@@ -58,6 +58,40 @@ class ArtifactArea(enum.StrEnum):
     agent = "agent"
 
 
+class ArtifactOrigin(enum.StrEnum):
+    # 사용자가 직접 올렸거나 워크스페이스에서 등록한 파일
+    user = "user"
+    # 에이전트가 작업 중 만들거나 고친 파일
+    agent = "agent"
+    # 외부 시스템·웹 등에서 수집된 파일
+    external = "external"
+    # 레거시나 불명확한 출처
+    unknown = "unknown"
+
+
+class ArtifactKeepReason(enum.StrEnum):
+    # 폰·웹에서 직접 업로드
+    direct_upload = "direct_upload"
+    # 워크스페이스 파일 직접 보관 등록
+    direct_register = "direct_register"
+    # 화면에서 '내 보관함에 보관' 버튼 클릭
+    user_button = "user_button"
+    # 대화 중 사용자의 명시적 보관 요청
+    chat_request = "chat_request"
+
+
+class ArtifactCategory(enum.StrEnum):
+    document = "document"
+    spreadsheet = "spreadsheet"
+    presentation = "presentation"
+    image = "image"
+    video = "video"
+    audio = "audio"
+    code = "code"
+    archive = "archive"
+    other = "other"
+
+
 def default_artifact_area(source: str) -> str:
     """등록 경로(source)만으로 정하는 기본 분류. 사용자가 직접 넣은 것만 파일, 나머지는 에이전트 쪽이다."""
     return ArtifactArea.files if source in ("upload", "user_registered") else ArtifactArea.agent
@@ -460,9 +494,13 @@ class Artifact(Base):
     filename: Mapped[str] = mapped_column(String(500))
     mime_type: Mapped[str] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(String(20))
+    category: Mapped[str] = mapped_column(String(30), default=ArtifactCategory.other, server_default=ArtifactCategory.other, index=True)
     source: Mapped[str] = mapped_column(String(30))
-    # 보관함 기본 목록(files)과 에이전트 파일(agent)의 구분. source 는 출처, area 는 사용자에게 보이는 분류다.
+    origin: Mapped[str] = mapped_column(String(20), default=ArtifactOrigin.agent, server_default=ArtifactOrigin.agent, index=True)
+    # 보관함 기본 목록(files)과 에이전트 파일(agent)의 구분. source 는 등록 경로, origin 은 실제 출처, area 는 사용자에게 보이는 분류다.
     area: Mapped[str] = mapped_column(String(10), default=ArtifactArea.agent, server_default=ArtifactArea.agent, index=True)
+    keep_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    keep_evidence: Mapped[dict[str, Any] | None] = mapped_column(default=None)
     # 서버 내부 전용. API 응답에는 rel_path 만 내보낸다.
     original_path: Mapped[str] = mapped_column(Text)
     rel_path: Mapped[str | None] = mapped_column(Text)

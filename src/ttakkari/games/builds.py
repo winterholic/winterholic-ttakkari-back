@@ -324,7 +324,7 @@ async def _snapshot(db: AsyncSession, game: GameProject, build: GameBuild, out: 
         zip_path = dest / f"{game.slug}-v{build.seq}.zip"
         await asyncio.to_thread(_pack_zip, bundle, zip_path)
         art = await register_file(
-            db, ResolvedPath(root=dest, path=zip_path), source=ARTIFACT_SOURCE, workspace_id=ws.id,
+            db, ResolvedPath(root=dest, path=zip_path), source=ARTIFACT_SOURCE, origin="agent", workspace_id=ws.id,
             session_id=run.session_id if run else None, run_id=run.id if run else None, rel_path=zip_path.name, force_copy=True)
         os.chmod(zip_path, 0o444)
     except BaseException:

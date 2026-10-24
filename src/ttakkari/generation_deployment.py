@@ -950,7 +950,11 @@ class GenerationController:
     async def schema_plan(self, contract: dict) -> tuple[str, str | None]:
         """현재 DB 스키마와 릴리스 계약을 비교한다. ("current"|"online"|"idle", 버전)."""
         async with sessionmaker()() as db:
-            schema = await db.scalar(text("SELECT version_num FROM alembic_version"))
+            heads = list(await db.scalars(text("SELECT version_num FROM alembic_version")))
+        if len(heads) > 1:
+            raise StageError("schema_contract", None, None,
+                             "multiple database schema heads; reconcile before deployment")
+        schema = heads[0] if heads else None
         resolved = contract.get("schema_aliases", {}).get(schema, schema)
         if resolved == contract["schema_revision"] and resolved == schema:
             return "current", schema

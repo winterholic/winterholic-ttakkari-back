@@ -583,13 +583,14 @@ async def test_agent_artifact_area_filter_and_move(client, auth, make_dir):
     # outbox 자동 수집은 에이전트 파일. share_file·분류 이동으로 넘긴 것만 파일이다.
     assert {a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "agent"}, headers=h)).json()["artifacts"]} == {"report.md"}
     report = next(a for a in everything if a["filename"] == "report.md")
+    # 에이전트는 이 경로로 내 보관함(files)에 넣을 수 없다. 승격은 keep_artifact 만 한다.
     moved = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "files"}, headers=h)
-    assert moved.status_code == 200 and moved.json()["area"] == "files"
-    assert {a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "files"}, headers=h)).json()["artifacts"]} == {"up.md", "report.md"}
-    assert (await client.get("/api/agent/artifacts", params={"area": "agent"}, headers=h)).json()["artifacts"] == []
-    assert (await client.get(f"/api/artifacts/{report['id']}", headers=auth)).json()["area"] == "files"
+    assert moved.status_code == 409 and moved.json()["code"] == "use_keep_artifact"
+    assert {a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "files"}, headers=h)).json()["artifacts"]} == {"up.md"}
+    assert {a["filename"] for a in (await client.get("/api/agent/artifacts", params={"area": "agent"}, headers=h)).json()["artifacts"]} == {"report.md"}
+    assert (await client.get(f"/api/artifacts/{report['id']}", headers=auth)).json()["area"] == "agent"
     back = await client.patch(f"/api/agent/artifacts/{report['id']}", json={"area": "agent"}, headers=h)
-    assert back.json()["area"] == "agent"
+    assert back.status_code == 200 and back.json()["area"] == "agent"
     # 사용자가 올린 파일은 에이전트가 옮기지 못한다. 잘못된 값·없는 파일도 거절.
     mine = next(a for a in everything if a["filename"] == "up.md")
     assert (await client.patch(f"/api/agent/artifacts/{mine['id']}", json={"area": "agent"}, headers=h)).status_code == 403

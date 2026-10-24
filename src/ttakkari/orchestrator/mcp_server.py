@@ -430,25 +430,74 @@ async def forget(memory_id: str) -> str:
 
 
 @query_tool
-async def list_artifacts(query: str | None = None, kind: str | None = None, limit: int = 20,
-                         area: Literal["files", "agent"] | None = None) -> str:
+async def list_artifacts(query: str | None = None, kind: str | None = None, category: str | None = None,
+                         limit: int = 20, area: Literal["files", "agent", "all"] | None = None) -> str:
     """List files in the user's library (results and uploads), newest first, with their paths on disk.
-    `area` keeps one tab: "files" (uploads and files handed to the user) or "agent" (files made while working)."""
-    return await _agent("GET", "/artifacts", q=query, kind=kind, limit=limit, area=area)
+    `area` filters tabs: "files" (user's personal library), "agent" (AI work files), or None/all for all files.
+    `category` filters document category: "document", "spreadsheet", "presentation", "image", "video", "audio", "code", "archive", "other"."""
+    params: dict[str, Any] = {"limit": limit}
+    if query:
+        params["q"] = query
+    if kind:
+        params["kind"] = kind
+    if category:
+        params["category"] = category
+    if area and area != "all":
+        params["area"] = area
+    return await _agent("GET", "/artifacts", **params)
 
 
 @server.tool()
-async def set_artifact_area(artifact_id: str, area: Literal["files", "agent"]) -> str:
-    """Move a library file between the "files" and "agent" tabs (reversible). Files the user uploaded or registered
-    cannot be moved by you."""
+async def set_artifact_area(artifact_id: str, area: Literal["agent"]) -> str:
+    """Move a file to 'agent' (AI work files). Agents can only demote files to 'agent' (cannot promote to 'files').
+    To save or keep a file in the user's personal library ('files') upon user request, use keep_artifact instead.
+    Files kept by the user (with keep_reason) or uploaded/registered by the user cannot be moved by agents."""
     return await _agent("PATCH", f"/artifacts/{artifact_id}", {"area": area})
 
 
 @server.tool()
 async def share_file(path: str) -> str:
-    """Put a file (inside the workspace, permission folders or inbox) into the user's library so they can open
-    and download it on their phone."""
+    """Hand over a file (inside workspace, permission folders or inbox) to the conversation so the user can open,
+    preview and download it.
+    Note: this registers the file under AI work files ('agent') and does NOT put it into the user's permanent personal library ('files').
+    If the user explicitly asked to keep/save it in their library ('보관함에 넣어줘' 등), use keep_artifact instead."""
     return await _agent("POST", "/share", {"path": path})
+
+
+@server.tool()
+async def keep_artifact(path: str, quote: str) -> str:
+    """Permanently save a file into the user's personal library ('files') because the user asked for it in the conversation.
+    Never call this on your own. When unsure, do not call it: tell the user to press '내 보관함에 보관' in the app instead.
+    `quote` must be ONE complete sentence (or line) of the user's own message, copied verbatim (at least 8 characters
+    without spaces), and it must match one of these ALLOWED TEMPLATES after the server removes quoted text, file names/paths
+    and any phrase before '…라는/…이라는/…란':
+    - Korean: the sentence ENDS with [내] [보관함|라이브러리에] + 보관/저장/간직해 줘·주세요·줄래·해, or with
+      (보관함|라이브러리)에 넣어/남겨 줘·주세요·둬. A clause before it is fine ('만들어서 보관함에 넣어줘', '정리하고 저장해줘').
+    - English: the WHOLE sentence is '(please|can you|could you) keep|save|store|archive <object> to|in|into [my]
+      library|vault|saved files|files [please]' with no out/outside/away/from/not/unchanged/else in <object>.
+    Anything else is rejected, e.g. a question about keeping, '보관 지시문을 요약해줘', 'Keep report.md unchanged',
+    '그대로 남겨줘'. If a request is rejected for ANY reason, do not look for a workaround: tell the user to press the
+    '내 보관함에 보관' button in the app. The server checks only strings, in this order, and rejects with 422 and changes nothing:
+    - quote_not_found: not a whole sentence/line of a real user message in this session (a fragment, a paraphrase, planner
+      text and worker prompts do not count). Quote the sentence exactly, or ask the user.
+    - quote_no_keep_request: the sentence is not in an allowed template. Quote a sentence that matches one, or tell the
+      user to use the app button.
+    - quote_negated: the sentence has any stop/negation/exclusion marker anywhere ('그만', '더 이상', '중단', '취소', '해제',
+      '빼', '제외', '말고', '하지', '않', '안 ', '없이', "don't", 'not', 'without' ...). Do not retry; tell the user to use the
+      app button.
+    - quote_ambiguous_file: several files share the name and the sentence does not tell them apart. Quote a sentence that
+      includes the folder path, or tell the user to use the app button.
+    - quote_not_bound: the sentence does not point at this file. Either the full file name with its extension (e.g.
+      '보고서.md를 내 보관함에 보관해줘') sits in the DIRECT OBJECT position of the keep verb: between the file name and the verb
+      only particles, '내', '보관함에/라이브러리에' and at most one plain noun ('기획서', '파일') may appear. A verb form or
+      time/order word in between ('요약한 다음', '읽고 나서', '요약하기 전에', '~할 때') breaks the link, so 'report.md를
+      요약한 다음 결과물은 보관함에 넣어줘' does not name report.md; if another file name sits in the object position, the
+      same-run route is closed too. In English the <object> must be exactly the file name (optionally after the/this/that), or the file is a result made by the Run that holds the user's message
+      (or by a worker session started during that Run). Files from later turns, logs, screenshots, captures and temp/evidence
+      files are never bound that way: the user's sentence must name them, otherwise tell the user to use the app button.
+    Only the planning (lead) session that received the user's request can keep: a worker session only sees instructions the
+    planner wrote, which are not user words, so ask the planning session to keep the file."""
+    return await _agent("POST", "/keep", {"path": path, "quote": quote})
 
 
 @server.tool()

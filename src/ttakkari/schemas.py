@@ -240,8 +240,12 @@ class ArtifactOut(ORM):
     filename: str
     mime_type: str
     kind: str
+    category: str = "other"
     source: str
+    origin: str = "agent"
     area: str
+    keep_reason: str | None = None
+    keep_evidence: dict[str, Any] | None = None
     rel_path: str | None
     storage_mode: str
     size_bytes: int
@@ -263,6 +267,12 @@ class ArtifactOut(ORM):
 
 class ArtifactAreaIn(BaseModel):
     area: Literal["files", "agent"]
+
+
+class ArtifactKeepIn(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)
+    # 사용자가 보관을 요청한 말의 그대로 인용. 서버가 이 세션의 실제 사용자 발화에서 찾는다.
+    quote: str = Field(min_length=1, max_length=2000)
 
 
 class ArtifactRegisterIn(BaseModel):

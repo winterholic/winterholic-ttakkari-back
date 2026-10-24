@@ -39,6 +39,70 @@ EXTRA_MIME = {
 # kind 는 프론트 뷰어 선택 키다. 값이 바뀌면 프론트 계약도 같이 바뀐다.
 KINDS = ("markdown", "html", "pdf", "pptx", "docx", "sheet", "image", "audio", "video", "code", "other")
 
+# category 는 보관함 탐색·필터용 분류다.
+CATEGORIES = (
+    "document",
+    "spreadsheet",
+    "presentation",
+    "image",
+    "video",
+    "audio",
+    "code",
+    "archive",
+    "other",
+)
+
+DOCUMENT_EXTS = {
+    ".md", ".markdown", ".txt", ".pdf", ".docx", ".doc", ".rtf", ".odt", ".pages", ".hwp",
+}
+
+SPREADSHEET_EXTS = {
+    ".xlsx", ".xls", ".csv", ".tsv", ".ods", ".parquet", ".numbers",
+}
+
+PRESENTATION_EXTS = {
+    ".pptx", ".ppt", ".key", ".odp",
+}
+
+ARCHIVE_EXTS = {
+    ".zip", ".tar", ".gz", ".tgz", ".bz2", ".tbz2", ".xz", ".txz", ".7z", ".rar",
+}
+
+
+def detect_category(path: Path, mime: str, kind: str) -> str:
+    """탐색용 카테고리를 판별한다.
+
+    애매한 형식 규칙:
+    - .txt: 뷰어는 code(Monaco)이나 카테고리는 document(텍스트 문서).
+    - .html: 뷰어는 html(인라인)이나 카테고리는 code(웹 코드).
+    - .json: 뷰어는 code이나 카테고리는 code(설정·구조화 데이터).
+    - .log: 뷰어는 code이나 카테고리는 code(로그 파일).
+    - .csv, .tsv: 뷰어는 sheet이나 카테고리는 spreadsheet.
+    - .zip, .tar 등: 뷰어는 other이나 카테고리는 archive.
+    """
+    ext = path.suffix.lower()
+    name = path.name.lower()
+    if ext in DOCUMENT_EXTS:
+        return "document"
+    if ext in SPREADSHEET_EXTS or kind == "sheet":
+        return "spreadsheet"
+    if ext in PRESENTATION_EXTS or kind == "pptx":
+        return "presentation"
+    if kind == "image" or mime.startswith("image/"):
+        return "image"
+    if kind == "video" or mime.startswith("video/") or ext in (".mp4", ".mov", ".mkv", ".webm", ".avi", ".wmv"):
+        return "video"
+    if kind == "audio" or mime.startswith("audio/") or ext in (
+        ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aif", ".aiff", ".aac"
+    ):
+        return "audio"
+    if ext in ARCHIVE_EXTS:
+        return "archive"
+    if kind in ("code", "html") or ext in CODE_EXTS or name in ("dockerfile", "makefile"):
+        return "code"
+    return "other"
+
+
 
 def detect(path: Path) -> tuple[str, str]:
     """(mime_type, kind)."""

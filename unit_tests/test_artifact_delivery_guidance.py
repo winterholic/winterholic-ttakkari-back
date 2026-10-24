@@ -21,7 +21,7 @@ def test_reverse_prompt_requires_share_for_zip_delivery():
     assert "outbox에도 저장해 사용자가 내려받게" not in src
     prompt = _reverse_prompt()
     assert "share_file" in prompt
-    assert "에이전트 파일" in prompt
+    assert "AI 작업 파일" in prompt
 
 
 def test_artcraft_note_requires_share_for_user_delivery():
@@ -46,4 +46,4 @@ def test_orchestrator_note_share_hands_to_user():
     src = Path(runtime.__file__).read_text(encoding="utf-8")
     flat = " ".join(src.replace("\\", " ").split())
     assert "that is not in the outbox, use `share_file`" not in flat
-    assert "call `share_file` on it so it appears in Files" in flat
+    assert "call `share_file` on it so the user can open it" in flat

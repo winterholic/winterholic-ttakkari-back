@@ -238,9 +238,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     with contextlib.suppress(Exception):
         await process_due_schedules()
     schedules_sync = asyncio.create_task(_schedules_loop(s.runtime_poll_seconds))
+    from ttakkari import queued_work
+    from ttakkari.generation_service import (
+        finish_claimed_work,
+        start_legacy_queued_consumers,
+    )
+    queued_work.reopen()  # 같은 프로세스에서 lifespan 이 다시 열리면 이전 종료의 claim 차단을 풀어 둔다
+    queued_consumers = start_legacy_queued_consumers(s.runtime_poll_seconds)
     try:
         yield
     finally:
+        # 새 claim 을 먼저 닫고, 이미 맡은 일은 아래에서 상한 안에 자연 완료를 기다린다.
+        queued_work.begin_drain()
+        background_consumers.consumers.stop_claiming()
+        tts_jobs.stop_claiming()
+        for consumer in queued_consumers:
+            consumer.cancel()
+        await asyncio.gather(*queued_consumers, return_exceptions=True)
         creative_worker.cancel()
         await asyncio.gather(creative_worker, return_exceptions=True)
         schedules_sync.cancel()
@@ -257,10 +271,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if lead_sweeper:
             lead_sweeper.cancel()
         await local_stt_jobs.stop()
+        await finish_claimed_work()
         await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
-        await background_consumers.stop(drain_seconds=0)
         from ttakkari.notebooklm.service import service as notebooklm_service
         await notebooklm_service.shutdown()
         await manager.shutdown()

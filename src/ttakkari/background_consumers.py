@@ -8,6 +8,8 @@ consumers below, which claim rows with a conditional update and run each to comp
 Contract
 - A claim moves ``queued`` to ``running`` once; ``running`` rows are never claimed again.
 - ``stop()`` stops claiming first and lets in-flight work finish; ``queued`` rows stay queued.
+- A draining local API pauses claiming (``pause_claiming``) and reports ``busy()`` work to readiness; only
+  after the bounded drain window does anything get cancelled, and ``drain``/``stop`` return False then.
 - Restarting or redeploying the API does not touch work owned by the executor.
 """
 from __future__ import annotations
@@ -72,15 +74,27 @@ class BackgroundConsumers:
     def __init__(self) -> None:
         self._loops: list[asyncio.Task] = []
         self._stopping: asyncio.Event | None = None
+        self._paused = False
+        self._pumping = 0
 
     @property
     def running(self) -> bool:
         return bool(self._loops)
 
+    @property
+    def claiming_paused(self) -> bool:
+        return self._paused
+
+    @property
+    def pumping(self) -> int:
+        """Pumps that are inside a claim round. Their rows may not be registered as tasks yet."""
+        return self._pumping
+
     async def start(self) -> None:
         if self._loops:
             return
         self._stopping = asyncio.Event()
+        self._paused = False
         # Quota-waiting Reverse jobs go back to the queue at start, as the old startup did.
         with contextlib.suppress(Exception):
             from ttakkari import reverse
@@ -93,44 +107,65 @@ class BackgroundConsumers:
         assert stopping is not None
         while not stopping.is_set():
             started = 0
-            try:
-                started = await pump()
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("background consumer failed: %s", name)
+            if not self._paused:
+                self._pumping += 1
+                try:
+                    started = await pump()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.exception("background consumer failed: %s", name)
+                finally:
+                    self._pumping -= 1
             if not started:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stopping.wait(), min(get_settings().runtime_poll_seconds,
                                                                IDLE_POLL_CAP_SECONDS))
+
+    def pause_claiming(self) -> None:
+        """A draining generation stops taking new rows but keeps its loops, so a rollback to active can resume."""
+        self._paused = True
+
+    def resume_claiming(self) -> None:
+        self._paused = False
 
     def stop_claiming(self) -> None:
         """Call as soon as a stop signal arrives. Claimed work is untouched; queued rows stay queued."""
         if self._stopping is not None:
             self._stopping.set()
 
-    async def drain(self, drain_seconds: float | None = DRAIN_SECONDS) -> None:
-        """Wait for work; None preserves it indefinitely, a finite window allows cancellation."""
+    async def drain(self, drain_seconds: float | None = DRAIN_SECONDS) -> bool:
+        """Wait for work. True: everything finished naturally. False: the bound expired and the rest was cancelled.
+
+        None preserves work indefinitely, so it can only return True.
+        """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + drain_seconds if drain_seconds is not None else None
         while inflight() and (deadline is None or loop.time() < deadline):
             await asyncio.sleep(0.1)
         if deadline is None:
-            return  # Executor replacement is natural completion, never timeout cancellation.
-        if inflight():
-            log.warning("background consumers: cancelling %d in-flight jobs after %.0fs drain", inflight(),
-                        drain_seconds)
+            return True  # Executor replacement is natural completion, never timeout cancellation.
+        if not inflight():
+            return True
+        log.warning("background consumers: cancelling %d in-flight jobs after %.0fs drain", inflight(),
+                    drain_seconds)
         await _cancel_inflight()
+        return False
 
-    async def stop(self, drain_seconds: float | None = DRAIN_SECONDS) -> None:
-        """stop_claiming(), wait for the loops to leave, then drain()."""
+    async def stop(self, drain_seconds: float | None = DRAIN_SECONDS) -> bool:
+        """stop_claiming(), wait for the loops to leave, then drain(). Returns drain()'s result."""
         self.stop_claiming()
         loops, self._loops = self._loops, []
         await asyncio.gather(*loops, return_exceptions=True)  # a pump is short; this never cancels a claim
-        await self.drain(drain_seconds)
+        return await self.drain(drain_seconds)
 
 
 consumers = BackgroundConsumers()
+
+
+def busy() -> int:
+    """Claimed work plus pumps still inside a claim round. A local generation retires only at zero."""
+    return inflight() + consumers.pumping
 
 
 async def start() -> None:

@@ -10,6 +10,7 @@ from collections.abc import Awaitable
 
 from ttakkari import generation
 
+DRAIN_SECONDS = 1800.0
 _draining = False
 _inflight: set[asyncio.Task] = set()
 
@@ -52,3 +53,27 @@ async def run_tracked[T](work: Awaitable[T]) -> T:
 async def wait_idle() -> None:
     while _inflight:
         await asyncio.gather(*tuple(_inflight), return_exceptions=True)
+
+
+def inflight() -> int:
+    """Claimed jobs that have not finished. A generation must not retire while this is non-zero."""
+    return sum(not task.done() for task in _inflight)
+
+
+async def drain(timeout: float | None = DRAIN_SECONDS) -> bool:
+    """Close claims and wait for claimed jobs. True: all finished naturally.
+
+    False: the bound expired and what was left got cancelled. None waits without a bound (executor replacement).
+    """
+    begin_drain()
+    loop = asyncio.get_running_loop()
+    deadline = None if timeout is None else loop.time() + timeout
+    while pending := tuple(task for task in _inflight if not task.done()):
+        remaining = None if deadline is None else max(0.0, deadline - loop.time())
+        _, unfinished = await asyncio.wait(pending, timeout=remaining)
+        if unfinished and deadline is not None and loop.time() >= deadline:
+            for task in unfinished:
+                task.cancel()
+            await asyncio.gather(*unfinished, return_exceptions=True)
+            return False
+    return True

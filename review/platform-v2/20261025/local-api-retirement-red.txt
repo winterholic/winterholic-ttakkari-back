@@ -1,0 +1,73 @@
+FFFFFFFFFF                                                               [100%]
+=================================== FAILURES ===================================
+__________ test_ready_is_blocked_by_inflight_background_consumer_work __________
+unit_tests/test_local_api_retirement.py:49: in test_ready_is_blocked_by_inflight_background_consumer_work
+    assert await _drain_ready() is False
+E   assert True is False
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.config:config.py:69 env가 'dev'인데 public_share_origin이 공개 도메인(https://ttakkari.winterholic.net)입니다. 개발용 서명키와 Secure 미적용 쿠키로 동작 중이니, 운영 트래픽을 받으면 TTAKKARI_ENV=prod와 32바이트 이상 서명키를 설정하세요.
+WARNING  ttakkari.config:config.py:77 cors_origins가 localhost/loopback 전용(http://localhost:5173,http://127.0.0.1:5173)입니다. 운영 프론트(별도 사이트)가 있으면 브라우저 호출이 막히니 구성을 확인하세요.
+___________ test_ready_is_blocked_by_inflight_creative_or_game_work ____________
+unit_tests/test_local_api_retirement.py:59: in test_ready_is_blocked_by_inflight_creative_or_game_work
+    assert await _drain_ready() is False
+E   assert True is False
+____________ test_ready_is_blocked_by_a_pump_that_is_still_claiming ____________
+unit_tests/test_local_api_retirement.py:82: in test_ready_is_blocked_by_a_pump_that_is_still_claiming
+    assert await _drain_ready() is False
+E   assert True is False
+_ test_draining_transition_stops_new_claims_and_returning_to_active_resumes_them _
+unit_tests/test_local_api_retirement.py:125: in test_draining_transition_stops_new_claims_and_returning_to_active_resumes_them
+    assert queued_work.draining() is True  # Creative/게임 소비자가 백로그를 더 가져가지 않는다
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   assert False is True
+E    +  where False = <function draining at 0x10d718f40>()
+E    +    where <function draining at 0x10d718f40> = queued_work.draining
+_______ test_local_api_shutdown_waits_for_a_claimed_creative_or_game_job _______
+unit_tests/test_local_api_retirement.py:221: in test_local_api_shutdown_waits_for_a_claimed_creative_or_game_job
+    assert not leaving.done() and finished == []  # 맡은 일이 끝나기 전에는 종료하지 않는다
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert (not True)
+E    +  where True = <built-in method done of _asyncio.Task object at 0x10f84ea40>()
+E    +    where <built-in method done of _asyncio.Task object at 0x10f84ea40> = <Task finished name='Task-11' coro=<_AsyncGeneratorContextManager.__aexit__() done, defined at /Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/contextlib.py:218> result=False>.done
+_____ test_local_api_shutdown_waits_for_inflight_background_consumer_work ______
+unit_tests/test_local_api_retirement.py:241: in test_local_api_shutdown_waits_for_inflight_background_consumer_work
+    assert not leaving.done()
+E   AssertionError: assert not True
+E    +  where True = <built-in method done of _asyncio.Task object at 0x10f84eaf0>()
+E    +    where <built-in method done of _asyncio.Task object at 0x10f84eaf0> = <Task finished name='Task-14' coro=<_AsyncGeneratorContextManager.__aexit__() done, defined at /Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/contextlib.py:218> result=False>.done
+------------------------------ Captured log call -------------------------------
+WARNING  ttakkari.background_consumers:background_consumers.py:121 background consumers: cancelling 1 in-flight jobs after 0s drain
+_ test_local_api_shutdown_lets_the_accepted_tts_job_finish_before_the_owner_stop _
+unit_tests/test_local_api_retirement.py:258: in test_local_api_shutdown_lets_the_accepted_tts_job_finish_before_the_owner_stop
+    assert order == ["drain", "stop"]
+E   AssertionError: assert ['stop'] == ['drain', 'stop']
+E     
+E     At index 0 diff: 'stop' != 'drain'
+E     Right contains one more item: 'stop'
+E     Use -v to get more diff
+_____ test_background_drain_reports_whether_work_finished_or_was_cancelled _____
+unit_tests/test_local_api_retirement.py:268: in test_background_drain_reports_whether_work_finished_or_was_cancelled
+    assert await consumers.drain(0.05) is True
+E   assert None is True
+_____ test_queued_work_drain_reports_timeout_after_cancelling_what_is_left _____
+unit_tests/test_local_api_retirement.py:277: in test_queued_work_drain_reports_timeout_after_cancelling_what_is_left
+    assert await queued_work.drain(1) is True and quick.done()
+                 ^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.queued_work' has no attribute 'drain'
+_ test_legacy_runtime_runs_the_creative_and_game_consumers_so_rollback_leaves_no_backlog _
+unit_tests/test_local_api_retirement.py:306: in test_legacy_runtime_runs_the_creative_and_game_consumers_so_rollback_leaves_no_backlog
+    tasks = generation_service.start_legacy_queued_consumers(0.02)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'ttakkari.generation_service' has no attribute 'start_legacy_queued_consumers'
+=========================== short test summary info ============================
+FAILED unit_tests/test_local_api_retirement.py::test_ready_is_blocked_by_inflight_background_consumer_work
+FAILED unit_tests/test_local_api_retirement.py::test_ready_is_blocked_by_inflight_creative_or_game_work
+FAILED unit_tests/test_local_api_retirement.py::test_ready_is_blocked_by_a_pump_that_is_still_claiming
+FAILED unit_tests/test_local_api_retirement.py::test_draining_transition_stops_new_claims_and_returning_to_active_resumes_them
+FAILED unit_tests/test_local_api_retirement.py::test_local_api_shutdown_waits_for_a_claimed_creative_or_game_job
+FAILED unit_tests/test_local_api_retirement.py::test_local_api_shutdown_waits_for_inflight_background_consumer_work
+FAILED unit_tests/test_local_api_retirement.py::test_local_api_shutdown_lets_the_accepted_tts_job_finish_before_the_owner_stop
+FAILED unit_tests/test_local_api_retirement.py::test_background_drain_reports_whether_work_finished_or_was_cancelled
+FAILED unit_tests/test_local_api_retirement.py::test_queued_work_drain_reports_timeout_after_cancelling_what_is_left
+FAILED unit_tests/test_local_api_retirement.py::test_legacy_runtime_runs_the_creative_and_game_consumers_so_rollback_leaves_no_backlog
+10 failed in 3.81s

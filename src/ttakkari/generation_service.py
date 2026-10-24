@@ -75,6 +75,7 @@ async def coordinate_runs(runtime, manager, state) -> None:
 
 
 async def coordinate(runtime, manager) -> None:
+    from ttakkari import background_consumers, queued_work
     from ttakkari.runs import desk_pool, profiles, usage_store
     previous = "standby"
     while True:
@@ -83,8 +84,16 @@ async def coordinate(runtime, manager) -> None:
             await runtime.listen()
             state = await runtime.refresh()
             if state == "draining" and previous != state:
+                if not manager.remote:
+                    # 이 세대가 소비자를 돌리는 local 모드다. 이미 맡은 일은 두고 새로 가져가는 것만 멈춘다.
+                    queued_work.begin_drain()
+                    background_consumers.consumers.pause_claiming()
                 # In-use exchanges were popped out of _warm; this only stops idle/refill.
                 await desk_pool.shutdown()
+            elif state == "active" and previous == "draining" and not manager.remote:
+                # 롤백으로 퇴역 중이던 세대가 다시 active 가 됐다.
+                queued_work.reopen()
+                background_consumers.consumers.resume_claiming()
             previous = state
             if state == "active":
                 async with sessionmaker()() as db:
@@ -245,14 +254,18 @@ async def start_api_services(execution_mode: str) -> None:
 
 
 async def ready(runtime) -> dict:
+    from ttakkari import background_consumers, queued_work
     from ttakkari.api.assistant import _tasks as indexing
     from ttakkari.meetings.vectors import _pending
     from ttakkari.runs import usage_store
     from ttakkari.runs.manager import _background, manager
     value = await runtime.snapshot()
     pending = sum(not t.done() for t in (*_background, *indexing, *usage_store._tasks, *_pending.values()))
+    # 로컬 API 가 소비자로 이미 맡은 일(NotebookLM/Reverse/색인 task, claim 중인 pump, Creative/게임 job).
+    consumer_work = background_consumers.busy() + queued_work.inflight()
     value["finalizers"] = pending
-    value["drain_ready"] = await runtime.can_retire() and not (manager._handles or pending)
+    value["consumer_work"] = consumer_work
+    value["drain_ready"] = await runtime.can_retire() and not (manager._handles or pending or consumer_work)
     value["ready"] = runtime._listener is not None and not runtime._listener.is_closed()
     return value
 
@@ -293,9 +306,51 @@ def maintenance_jobs(s) -> list[tuple[str, object, float]]:
     return jobs
 
 
+def start_legacy_queued_consumers(interval: float) -> list[asyncio.Task]:
+    """runtime_generation=false 로 내려도 API 가 접수해 둔 Creative 자산·게임 빌드 대기분이 남지 않게 한다.
+
+    세대 런타임이 없는 프로세스는 maintenance_jobs 를 돌리지 않는다. 두 소비자는 조건부 claim 이라
+    같은 대기분을 실행부와 함께 가져가도 한쪽만 실행한다.
+    """
+    return [asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}")
+            for name, operation in (("creative-assets", _creative_assets), ("game-builds", _game_builds))]
+
+
+SHUTDOWN_DRAIN_SECONDS = 1800.0
+
+
+async def finish_claimed_work(seconds: float = SHUTDOWN_DRAIN_SECONDS) -> dict[str, bool]:
+    """local 모드 종료: 이미 맡은 일을 상한 안에서 자연 완료까지 기다리고, 넘긴 일은 취소했다고 남긴다.
+
+    새 claim 은 호출 전에 이미 닫혀 있어야 한다. 값이 False 인 항목이 상한을 넘겨 취소된 일이다.
+    """
+    from ttakkari import background_consumers, queued_work
+    from ttakkari.tts import jobs as tts_jobs
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+
+    def left() -> float:
+        return max(0.0, deadline - loop.time())
+
+    results: dict[str, bool] = {}
+    tts_drain = asyncio.create_task(tts_jobs.drain())
+    done, _ = await asyncio.wait({tts_drain}, timeout=left())
+    results["tts"] = bool(done)
+    if not done:
+        # drain() 은 취소를 삼키므로 wait_for 로는 상한 초과를 구분할 수 없다. 진행 중 합성은 이어지는 stop() 이 끊는다.
+        tts_drain.cancel()
+        await asyncio.gather(tts_drain, return_exceptions=True)
+    results["creative_game"] = await queued_work.drain(left())
+    results["background"] = await background_consumers.stop(drain_seconds=left())
+    if not all(results.values()):
+        log.warning("local shutdown cut claimed work after %.0fs: %s", seconds,
+                    sorted(name for name, finished in results.items() if not finished))
+    return results
+
+
 @asynccontextmanager
 async def lifespan(app):
-    from ttakkari import background_consumers
+    from ttakkari import background_consumers, queued_work
     from ttakkari.artifacts import preview
     from ttakkari.deployment import revision
     from ttakkari.meetings.local_stt import jobs
@@ -309,6 +364,7 @@ async def lifespan(app):
     runtime = generation.GenerationRuntime(s.home, revision=revision(), api_url=s.runtime_api_url)
     tasks = []
     generation.current = runtime
+    queued_work.reopen()  # 같은 프로세스에서 lifespan 이 다시 열리면 이전 종료의 claim 차단을 풀어 둔다
     try:
         await runtime.register()
         await runtime.listen()
@@ -325,16 +381,21 @@ async def lifespan(app):
                 tasks.append(asyncio.create_task(periodic(name, operation, interval), name=f"periodic:{name}"))
         yield
     finally:
+        local = runtime.execution_mode == "local"
+        if local:
+            # 새 claim 을 먼저 닫는다. 이미 맡은 일은 아래에서 상한 안에 자연 완료를 기다린다.
+            queued_work.begin_drain()
+            background_consumers.consumers.stop_claiming()
+            tts_jobs.stop_claiming()
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        if runtime.execution_mode == "local":
+        if local:
             await jobs.stop()
+            await finish_claimed_work()
             await tts_jobs.stop()
         from ttakkari.runs import luna_benchmark
         await luna_benchmark.shutdown()
-        if runtime.execution_mode == "local":
-            await background_consumers.stop(drain_seconds=0)
         from ttakkari.notebooklm.service import service as notebooklm_service
         await notebooklm_service.shutdown()
         await manager.shutdown()

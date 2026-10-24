@@ -95,6 +95,17 @@ def test_old_contract_defaults_to_a_two_slot_supervisor():
     assert supervisor_satisfies({"protocol": 1})
 
 
+@pytest.fixture(autouse=True)
+def _no_previous_tts_queue(monkeypatch):
+    """이 파일의 대상은 배포 단계 기록이다. 구세대 TTS 큐 조회는 DB 없이 빈 큐로 둔다(전용 시험: tests/test_tts_first_transition.py)."""
+    from ttakkari.generation_deployment import GenerationController
+
+    async def empty(_self, _previous):
+        return 0
+
+    monkeypatch.setattr(GenerationController, "_previous_tts_queued", empty)
+
+
 class FakeSlots:
     def __init__(self):
         self.rows = {}
@@ -110,11 +121,14 @@ class FakeSlots:
 
     async def start(self, slot, release, revision):
         self.rows[slot] = {"generation": str(uuid.uuid4()), "revision": revision, "protocol": 1,
-                           "ready": True, "state": "standby", "drain_ready": False}
+                           "ready": True, "state": "standby", "drain_ready": False, "http_inflight": 0}
         return self.rows[slot]
 
     async def switch(self, slot):
         self.route = slot
+
+    async def close_tts_ingress(self, slot):
+        pass
 
     async def verify(self, revision):
         assert self.rows[self.route]["revision"] == revision

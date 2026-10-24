@@ -144,7 +144,12 @@ async def test_generation_can_retire_holds_while_tts_accepted_work_pending(tmp_p
     async with runtime.enter_accepted_work("tts", accepted_generation_id=runtime.id):
         assert await runtime.can_retire() is False
 
-    # 2. When no in-flight work and no pending DB jobs, can_retire must be True
+    # 2. When no in-flight work and no pending DB jobs, can_retire must be True.
+    # 실DB 조회(와 fail-closed)는 tests/test_generations.py 가 격리 DB 로 확인한다. 이 파일은 DB 에 의존하지 않는다.
+    async def no_pending():
+        return False
+
+    monkeypatch.setattr(runtime, "_has_pending_tts_jobs", no_pending)
     assert await runtime.can_retire() is True
 
 

@@ -4,8 +4,8 @@
       "scanner_file": "/Users/winterholic/development/projects/winterholic-ttakkari/back-platform-v2-integration/scripts/platform_v2_inventory.py",
       "git": {
         "available": true,
-        "head": "f304d1e60a746df1c17f7ad7cb2532baf3ad51ca",
-        "src_tree": "a32e4c95795a790216efe042796237fe0b948fa4",
+        "head": "1edfc43acc95c4e5a55045300e0b23b9f29b506a",
+        "src_tree": "c4e26743967676e610c0a1492685f45d00467a51",
         "src_dirty": false
       },
       "declared_baseline": {
@@ -65,14 +65,14 @@
           "unmatched_items": []
         },
         "migrations": {
-          "collected": 67,
-          "classified": 67,
+          "collected": 68,
+          "classified": 68,
           "unmatched": 0,
           "unmatched_items": []
         },
         "configs": {
-          "collected": 231,
-          "classified": 231,
+          "collected": 232,
+          "classified": 232,
           "unmatched": 0,
           "unmatched_items": []
         },
@@ -99,12 +99,12 @@
           "collected_ids_sha256": "2bd9ad3b800c1027ef1c719a01b249c3f486a4b3fcea217e4c16b26ff5991af1"
         },
         "migrations": {
-          "collected_count": 67,
-          "collected_ids_sha256": "3836b475116c3327193c42210664d9d23343b59075978b70c8c889a66d640192"
+          "collected_count": 68,
+          "collected_ids_sha256": "08462f224531ef1de2d660de30cee196045081456b1f408dc2f35d3ba27ffaea"
         },
         "configs": {
-          "collected_count": 231,
-          "collected_ids_sha256": "f4bfc38746e35d055bbd11e6b6d3d36e1f57b1caa5b3f5c1f572b54280c5b2ec"
+          "collected_count": 232,
+          "collected_ids_sha256": "b585bbe9d40f511646b4d69b756acf02dce4ba8c0ad388e21014cf357e1f62e9"
         },
         "source_files": {
           "collected_count": 385,
@@ -176,8 +176,8 @@
           "category": "migrations",
           "state": "reconciled",
           "reasons": [],
-          "collected_count": 67,
-          "candidate_count": 67,
+          "collected_count": 68,
+          "candidate_count": 68,
           "missing_from_collected": [],
           "extra_in_collected": [],
           "duplicates_in_collected": [],
@@ -193,8 +193,8 @@
             "Import source binding is unbound or outside target context root",
             "Loaded object/source-byte identity is unverified; static reconciliation only"
           ],
-          "collected_count": 231,
-          "candidate_count": 231,
+          "collected_count": 232,
+          "candidate_count": 232,
           "missing_from_collected": [],
           "extra_in_collected": [],
           "duplicates_in_collected": [],
@@ -282,10 +282,10 @@
     "routes": 579,
     "tools": 133,
     "tables": 106,
-    "migrations": 67,
-    "configs": 231,
+    "migrations": 68,
+    "configs": 232,
     "source_files": 385,
-    "total_lines": 94926
+    "total_lines": 95031
   },
   "limits_ledger": [
     "1. ORM Base.metadata(88/106 tables)를 검사하였으며, 실제 운영 PostgreSQL 물리 DB에 직접 연결하여 쿼리하지 않음.",

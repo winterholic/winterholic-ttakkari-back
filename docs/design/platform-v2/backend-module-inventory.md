@@ -1,5 +1,5 @@
 # 따까리 플랫폼 V2 백엔드 모듈 감사 인벤토리 (P1 Corrected Candidate)
-> 스캔 커밋: `f304d1e60a746df1c17f7ad7cb2532baf3ad51ca` | 소스 트리: `a32e4c95795a790216efe042796237fe0b948fa4` | 판정: `coverage_partially_unverified`  
+> 스캔 커밋: `1edfc43acc95c4e5a55045300e0b23b9f29b506a` | 소스 트리: `c4e26743967676e610c0a1492685f45d00467a51` | 판정: `coverage_partially_unverified`  
 > 공식 최신 기준: `c8f10156845d007ec6496a65d6d8417be19260bd` (`origin/main` 클린 스냅샷 전이 원장 포함)
 
 > [!IMPORTANT] **수집 범위 한정 및 대조 커버리지(Coverage) 분리 안내**
@@ -14,10 +14,10 @@
 | **Routes (API/WS)** | 579 | - | `unknown` | 0 |
 | **MCP Tools** | 133 | 133 | `unknown` | 0 |
 | **DB Tables (ORM)** | 106 | 106 | `unknown` | 0 |
-| **Alembic Migrations** | 67 | 67 | `reconciled` | 0 |
-| **Settings / Configs** | 231 | 231 | `unknown` | 0 |
+| **Alembic Migrations** | 68 | 68 | `reconciled` | 0 |
+| **Settings / Configs** | 232 | 232 | `unknown` | 0 |
 | **Source Files (.py)** | 385 | 385 | `reconciled` | 0 |
-| **총 코드 라인 수 (LoC)** | 94926 | - | - | - |
+| **총 코드 라인 수 (LoC)** | 95031 | - | - | - |
 
 ### 범위 밖 원장 (Out-of-Scope Limits Ledger)
 - 1. ORM Base.metadata(88/106 tables)를 검사하였으며, 실제 운영 PostgreSQL 물리 DB에 직접 연결하여 쿼리하지 않음.
@@ -30,13 +30,13 @@
 
 | ID | Plane | 모듈명 | 진입점 (API/MCP) | 규모 (Files/Lines) | DB 테이블 | 실행 모드 | 제안 역할 | 난이도 | 상태 |
 |---|---|---|---|---|---|---|---|---|---|
-| `core.auth_session` | Control | **인증·세션·보안 제어** | API 13개, MCP 2개 | 19개 / 5,202줄 | 7개 | `request` | `Core` | `medium` | `implemented` |
+| `core.auth_session` | Control | **인증·세션·보안 제어** | API 13개, MCP 2개 | 19개 / 5,205줄 | 7개 | `request` | `Core` | `medium` | `implemented` |
 | `core.workspaces_transfers` | Control | **워크스페이스·파일 전송** | API 22개, MCP 0개 | 6개 / 1,006줄 | 2개 | `request` | `Core` | `low` | `implemented` |
 | `core.accounts_quota` | Control | **계정 풀·쿼터·토큰 계측** | API 17개, MCP 1개 | 2개 / 1,076줄 | 4개 | `request` | `Core` | `medium` | `implemented` |
-| `core.generation_deploy` | Control | **세대 배포·수명주기 감독** | API 6개, MCP 2개 | 9개 / 4,005줄 | 3개 | `resident` | `Core` | `high` | `implemented` |
-| `core.system_routing` | Control | **시스템 상태·설정·알림** | API 26개, MCP 1개 | 26개 / 5,164줄 | 4개 | `request` | `Core` | `low` | `implemented` |
+| `core.generation_deploy` | Control | **세대 배포·수명주기 감독** | API 6개, MCP 2개 | 9개 / 4,060줄 | 3개 | `resident` | `Core` | `high` | `implemented` |
+| `core.system_routing` | Control | **시스템 상태·설정·알림** | API 26개, MCP 1개 | 26개 / 5,165줄 | 4개 | `request` | `Core` | `low` | `implemented` |
 | `ops.monitoring` | Control | **운영 관측성·오류 수집·배포 로그** | API 16개, MCP 6개 | 9개 / 1,485줄 | 5개 | `request` | `service` | `low` | `implemented` |
-| `exec.run_engine` | Execution | **에이전트 실행 엔진·런타임** | API 31개, MCP 12개 | 56개 / 15,762줄 | 5개 | `longjob` | `worker` | `high` | `implemented` |
+| `exec.run_engine` | Execution | **에이전트 실행 엔진·런타임** | API 31개, MCP 12개 | 56개 / 15,802줄 | 5개 | `longjob` | `worker` | `high` | `implemented` |
 | `exec.durable_scheduler` | Execution | **내구성 스케줄러·Lease 실행기** | API 0개, MCP 3개 | 2개 / 380줄 | 1개 | `resident` | `worker` | `medium` | `implemented` |
 | `exec.host_gpu` | Execution | **호스트 GPU 가속기·LLM 서빙** | API 4개, MCP 5개 | 5개 / 1,641줄 | 1개 | `resident` | `service` | `medium` | `partial` |
 | `delivery.git_cas` | Delivery | **코드 배포 파이프라인·Git CAS** | API 0개, MCP 0개 | 8개 / 1,852줄 | 1개 | `longjob` | `service` | `high` | `partial` |
@@ -50,7 +50,7 @@
 | `domain.meetings_stt` | Domain | **회의록·로컬 Whisper STT** | API 25개, MCP 4개 | 24개 / 4,142줄 | 6개 | `longjob` | `worker` | `high` | `implemented` |
 | `domain.pms_tasks` | Domain | **PMS·마일스톤·체크리스트** | API 40개, MCP 11개 | 13개 / 2,374줄 | 7개 | `request` | `library` | `low` | `implemented` |
 | `domain.design_system` | Domain | **디자인 시스템 카탈로그** | API 7개, MCP 3개 | 3개 / 514줄 | 0개 | `request` | `library` | `low` | `implemented` |
-| `domain.media_tts` | Domain | **로컬·클라우드 음성 합성(TTS)** | API 9개, MCP 0개 | 12개 / 2,302줄 | 2개 | `request` | `service` | `medium` | `partial` |
+| `domain.media_tts` | Domain | **로컬·클라우드 음성 합성(TTS)** | API 9개, MCP 0개 | 12개 / 2,308줄 | 2개 | `request` | `service` | `medium` | `partial` |
 | `domain.game_studio` | Domain | **게임 스튜디오 프로토타입** | API 14개, MCP 0개 | 12개 / 2,955줄 | 3개 | `request` | `library` | `low` | `prototype` |
 | `domain.personal_tools` | Domain | **개인 일상 도구(메모·일정·날씨·주식)** | API 42개, MCP 13개 | 7개 / 1,724줄 | 5개 | `request` | `library` | `low` | `implemented` |
 | `domain.external_connectors` | Domain | **외부 서비스 커넥터(Google·GitHub·RDP)** | API 36개, MCP 1개 | 29개 / 4,328줄 | 1개 | `request` | `shared adapter` | `medium` | `implemented` |
@@ -65,7 +65,7 @@
 - **V2 제안 역할**: `Core` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 플랫폼 전반의 단일 신원 인증 및 세션 검증 토큰 분리로 다른 서비스들의 인증 위임 가능
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 19개 파일, 5,202 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 19개 파일, 5,205 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.generation_deploy`, `core.system_routing`, `domain.collector`, `domain.knowledge_rag`, `domain.memory_ontology`, `domain.pms_tasks`, `domain.research_lab`, `domain.shares_artifacts`, `exec.run_engine`
 - **소유 DB 테이블 (7개)**: `credentials`, `refresh_tokens`, `login_throttle`, `login_bucket`, `login_attempts`, `sessions`, `audit_logs`
 - **대표 API 경로 (13개)**: `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `POST /api/auth/logout-all`, `GET /api/auth/me` 외 8개
@@ -78,7 +78,7 @@
 - **V2 제안 역할**: `Core` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 정적 파일 서빙 및 업로드/다운로드 경로 분리 시 대용량 파일 전송 중 Core 이벤트 루프 차단 해소
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 6개 파일, 1,006 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 6개 파일, 1,006 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `domain.shares_artifacts`, `exec.run_engine`
 - **소유 DB 테이블 (2개)**: `workspaces`, `transfer_tokens`
 - **대표 API 경로 (22개)**: `GET /api/workspaces`, `POST /api/workspaces`, `GET /api/workspaces/default`, `GET /api/workspaces/{ws_id}`, `PATCH /api/workspaces/{ws_id}` 외 17개
@@ -91,7 +91,7 @@
 - **V2 제안 역할**: `Core` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 계정 회전 및 쿼터 차단 로직을 중앙 집중화하여 다중 런타임 간 계정 충돌 방지
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 2개 파일, 1,076 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 2개 파일, 1,076 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `exec.run_engine`
 - **소유 DB 테이블 (4개)**: `engine_accounts`, `account_usage_samples`, `qwen_token_usage`, `qwen_flash_usage`
 - **대표 API 경로 (17개)**: `GET /api/accounts`, `GET /api/accounts/qwen-flash-usage`, `GET /api/accounts/qwen-usage`, `POST /api/accounts`, `GET /api/accounts/override` 외 12개
@@ -104,7 +104,7 @@
 - **V2 제안 역할**: `Core` (이전 난이도: `high`)
 - **측정 가능한 기대 이점**: 세대 전환 시 기존 활성 Run의 안전한 드레인 및 zero-downtime 배포 보장
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 9개 파일, 4,005 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 9개 파일, 4,060 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `core.workspaces_transfers`, `domain.collector`, `domain.creative_studio`, `domain.knowledge_rag`, `domain.media_tts`, `domain.meetings_stt`, `domain.memory_ontology`, `domain.notebooklm`, `domain.personal_tools`, `domain.pms_tasks`, `domain.shares_artifacts`, `exec.durable_scheduler`, `exec.host_gpu`, `exec.run_engine`, `ops.monitoring`
 - **소유 DB 테이블 (3개)**: `runtime_generations`, `runtime_control`, `runtime_commands`
 - **대표 API 경로 (6개)**: `GET /api/bootstrap-ready`, `GET /api/ready`, `GET /api/health`, `GET /api/version`, `POST /api/agent/deploy` 외 1개
@@ -117,7 +117,7 @@
 - **V2 제안 역할**: `Core` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 전역 설정 및 푸시 디스패처 모듈화로 도메인 모듈들이 비동기 이벤트로 알림 요청 가능
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 26개 파일, 5,164 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 26개 파일, 5,165 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.generation_deploy`, `core.workspaces_transfers`, `domain.creative_studio`, `domain.game_studio`, `domain.media_tts`, `domain.meetings_stt`, `domain.memory_ontology`, `domain.notebooklm`, `domain.personal_tools`, `domain.pms_tasks`, `domain.reverse_eng`, `domain.shares_artifacts`, `exec.durable_scheduler`, `exec.run_engine`, `ops.monitoring`
 - **소유 DB 테이블 (4개)**: `app_settings`, `desk_feedback`, `notifications`, `push_subscriptions`
 - **대표 API 경로 (26개)**: `GET /api/system/qwen-worker`, `PUT /api/system/qwen-worker`, `GET /api/system/info`, `GET /api/system/resources`, `GET /api/system/backup-status` 외 21개
@@ -130,7 +130,7 @@
 - **V2 제안 역할**: `service` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 모니터링 시스템을 Core와 독립시켜 Core 장애 상황에서도 관측성 유지
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 9개 파일, 1,485 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 9개 파일, 1,485 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.generation_deploy`, `core.system_routing`, `exec.run_engine`
 - **소유 DB 테이블 (5개)**: `ops_issues`, `ops_events`, `ops_event_receipts`, `ops_issue_stats`, `ops_ingest_cursors`
 - **대표 API 경로 (16개)**: `GET /api/ops-logs/issues`, `GET /api/ops-logs/issues/{issue}`, `PATCH /api/ops-logs/issues/{issue}`, `GET /api/ops-logs/events`, `GET /api/ops-logs/trend` 외 11개
@@ -143,7 +143,7 @@
 - **V2 제안 역할**: `worker` (이전 난이도: `high`)
 - **측정 가능한 기대 이점**: Core 웹 서버와 긴 에이전트 CLI 실행의 수명주기 분리로 Core 배포 시 에이전트 중단 방지
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 56개 파일, 15,762 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 56개 파일, 15,802 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.generation_deploy`, `core.system_routing`, `delivery.git_cas`, `domain.creative_studio`, `domain.game_studio`, `domain.knowledge_rag`, `domain.meetings_stt`, `domain.memory_ontology`, `domain.pms_tasks`, `domain.shares_artifacts`, `exec.durable_scheduler`, `ops.monitoring`
 - **소유 DB 테이블 (5개)**: `runs`, `run_events`, `runtime_leases`, `runtime_process_groups`, `retired_integration_records`
 - **대표 API 경로 (31개)**: `GET /api/runs/failed`, `GET /api/runs/{run_id}`, `POST /api/runs/{run_id}/cancel`, `GET /api/runs/{run_id}/events`, `GET /api/runs/{run_id}/stream` 외 26개
@@ -156,7 +156,7 @@
 - **V2 제안 역할**: `worker` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 독립 프로세스 워커로 전환 시 스케줄러 재시작 없이 웹 서버만 단독 롤링 배포 가능
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 2개 파일, 380 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 2개 파일, 380 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `exec.run_engine`
 - **소유 DB 테이블 (1개)**: `scheduled_actions`
 - **대표 API 경로 (0개)**: 없음
@@ -169,7 +169,7 @@
 - **V2 제안 역할**: `service` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: GPU llama-server 수명을 백엔드 재배포와 완전히 격리하여 가속기 로딩 오버헤드 0화
 - **현재 구현 상태**: `partial`
-- **소유 코드 규모**: 5개 파일, 1,641 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 5개 파일, 1,641 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `exec.run_engine`
 - **소유 DB 테이블 (1개)**: `system_resource_samples`
 - **대표 API 경로 (4개)**: `POST /api/agent/host-gpu/start`, `GET /api/agent/host-gpu/status`, `POST /api/agent/host-gpu/bench`, `POST /api/agent/host-gpu/stop`
@@ -182,7 +182,7 @@
 - **V2 제안 역할**: `service` (이전 난이도: `high`)
 - **측정 가능한 기대 이점**: 무중단 배포 및 자동 검증 엔진의 독립 실행으로 배포 파이프라인 장애가 운영 서빙에 전파되지 않음
 - **현재 구현 상태**: `partial`
-- **소유 코드 규모**: 8개 파일, 1,852 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 8개 파일, 1,852 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`
 - **소유 DB 테이블 (1개)**: `change_sets`
 - **대표 API 경로 (0개)**: 없음
@@ -195,7 +195,7 @@
 - **V2 제안 역할**: `library` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: RAG 엔진과 저장소 계층을 라이브러리화하여 다양한 에이전트에서 인프로세스 또는 경량 API로 공유
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 10개 파일, 1,675 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 10개 파일, 1,675 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `domain.knowledge_rag`, `domain.meetings_stt`, `exec.run_engine`
 - **소유 DB 테이블 (6개)**: `ctx_entities`, `ctx_relations`, `ctx_memories`, `ctx_sources`, `ctx_documents`, `ctx_chunks`
 - **대표 API 경로 (38개)**: `GET /api/agent/library`, `POST /api/agent/recall`, `POST /api/agent/remember`, `POST /api/agent/forget`, `POST /api/agent/entities` 외 33개
@@ -208,7 +208,7 @@
 - **V2 제안 역할**: `service` (이전 난이도: `high`)
 - **측정 가능한 기대 이점**: 지식 추출 배치의 장시간 연산 분리로 Core API 지연 방지 및 지식 저장소 독립 마이그레이션
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 33개 파일, 6,417 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 33개 파일, 6,417 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `domain.collector`, `domain.memory_ontology`, `exec.run_engine`
 - **소유 DB 테이블 (15개)**: `kb_sources`, `kb_documents`, `kb_revisions`, `kb_passages`, `kb_evidence`, `knowledge_revisions`, `knowledge_units`, `knowledge_evidence`, `knowledge_assertions`, `knowledge_assertion_evidence`, `knowledge_review_events`, `knowledge_extraction_jobs`, `kb_document_access`, `kb_observations`, `kb_passage_vectors`
 - **대표 API 경로 (35개)**: `POST /api/assistant/knowledge/imports`, `GET /api/assistant/knowledge/revisions`, `GET /api/assistant/knowledge/units`, `POST /api/assistant/knowledge/assertions`, `GET /api/assistant/knowledge/assertions` 외 30개
@@ -221,7 +221,7 @@
 - **V2 제안 역할**: `worker` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 수집 파이프라인 크롤링 부하를 Core 웹 프로세스에서 완전히 격리하고 독자 재시작/스케일링
 - **현재 구현 상태**: `partial`
-- **소유 코드 규모**: 29개 파일, 6,865 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 29개 파일, 6,865 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `domain.knowledge_rag`, `exec.run_engine`
 - **소유 DB 테이블 (16개)**: `collector_jobs`, `collector_outbox`, `collector_source_policies`, `collector_host_state`, `collector_fetch_cache`, `collector_items`, `collector_dedupe_bands`, `collector_budget_buckets`, `collector_budget_reservations`, `collector_cache`, `collector_runtime_flags`, `collector_sources`, `collector_deliveries`, `collector_daily_budgets`, `collector_reviews`, `collector_quality_models`
 - **대표 API 경로 (30개)**: `POST /api/assistant/collect/items/{item_id}/reviews`, `GET /api/assistant/collect/quality`, `POST /api/assistant/collect/quality/train`, `GET /api/assistant/collect/sources`, `POST /api/assistant/collect/sources` 외 25개
@@ -234,7 +234,7 @@
 - **V2 제안 역할**: `보류/단계적 격리 (FK cascade, file/process coupling 선행 해소 필요)` (이전 난이도: `high`)
 - **측정 가능한 기대 이점**: 세션 ID 분리 및 managed Comfy/ArtCraft 프로세스 decoupling 후 점진적 서비스화 가능 (현재 즉시 분리 불가)
 - **현재 구현 상태**: `partial`
-- **소유 코드 규모**: 34개 파일, 16,742 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 34개 파일, 16,742 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.generation_deploy`, `core.system_routing`, `core.workspaces_transfers`, `domain.shares_artifacts`, `exec.host_gpu`, `exec.run_engine`
 - **소유 DB 테이블 (1개)**: `artcraft_tasks`
 - **대표 API 경로 (81개)**: `GET /api/artcraft/apps`, `POST /api/artcraft/remote-check`, `POST /api/artcraft/smoke`, `POST /api/artcraft/apps/{app}/gui`, `GET /api/artcraft/jobs` 외 76개
@@ -247,7 +247,7 @@
 - **V2 제안 역할**: `worker` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 헤드리스 브라우저의 메모리 누수 및 좀비 프로세스 문제를 Core로부터 완전 격리
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 13개 파일, 1,913 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 13개 파일, 1,913 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `domain.external_connectors`, `exec.run_engine`
 - **소유 DB 테이블 (3개)**: `notebooklm_accounts`, `notebooklm_sources`, `notebooklm_jobs`
 - **대표 API 경로 (38개)**: `GET /api/notebooklm/auth/status`, `POST /api/notebooklm/auth/login-window`, `POST /api/notebooklm/auth/login-window/cancel`, `POST /api/notebooklm/auth/login-window/complete`, `POST /api/notebooklm/auth/resume` 외 33개
@@ -260,7 +260,7 @@
 - **V2 제안 역할**: `library` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 연구 데이터 스키마와 실험 메트릭 독립 관리
 - **현재 구현 상태**: `prototype`
-- **소유 코드 규모**: 7개 파일, 1,225 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 7개 파일, 1,225 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `domain.knowledge_rag`, `exec.run_engine`
 - **소유 DB 테이블 (5개)**: `research_studies`, `research_nodes`, `research_relations`, `research_experiments`, `research_events`
 - **대표 API 경로 (15개)**: `GET /api/research/studies`, `POST /api/research/studies`, `PATCH /api/research/studies/{study_id}`, `GET /api/research/studies/{study_id}/resume`, `POST /api/research/studies/{study_id}/sources` 외 10개
@@ -273,7 +273,7 @@
 - **V2 제안 역할**: `job` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 헤비한 분석 작업 단독 큐 분리
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 3개 파일, 2,352 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 3개 파일, 2,352 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `core.workspaces_transfers`, `exec.run_engine`
 - **소유 DB 테이블 (1개)**: `reverse_jobs`
 - **대표 API 경로 (11개)**: `POST /api/reverse`, `GET /api/reverse`, `GET /api/reverse/{job_id}`, `POST /api/reverse/{job_id}/retry`, `POST /api/reverse/{job_id}/messages` 외 6개
@@ -286,7 +286,7 @@
 - **V2 제안 역할**: `worker` (이전 난이도: `high`)
 - **측정 가능한 기대 이점**: Whisper 모델 로딩 및 무거운 음성 전사 연산이 웹 요청 처리 지연을 유발하지 않도록 격리
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 24개 파일, 4,142 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 24개 파일, 4,142 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.generation_deploy`, `core.system_routing`, `core.workspaces_transfers`, `domain.memory_ontology`, `domain.shares_artifacts`, `exec.run_engine`
 - **소유 DB 테이블 (6개)**: `meetings`, `local_stt_jobs`, `local_stt_segments`, `meeting_items`, `meeting_proposals`, `meeting_chunks`
 - **대표 API 경로 (25개)**: `GET /api/meetings/providers`, `GET /api/meetings`, `POST /api/meetings`, `GET /api/meetings/{mid}`, `GET /api/meetings/{mid}/stt` 외 20개
@@ -299,7 +299,7 @@
 - **V2 제안 역할**: `library` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 도메인 데이터가 명확하고 부작용이 적어 서비스화 또는 코어 라이브러리로 유지 용이
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 13개 파일, 2,374 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 13개 파일, 2,374 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `core.workspaces_transfers`, `exec.run_engine`, `ops.monitoring`
 - **소유 DB 테이블 (7개)**: `pms_projects`, `pms_tasks`, `pms_milestones`, `pms_notes`, `checklist_templates`, `checklist_items`, `checklist_reminders`
 - **대표 API 경로 (40개)**: `GET /api/pms/projects`, `POST /api/pms/projects`, `GET /api/pms/projects/{pid}`, `PATCH /api/pms/projects/{pid}`, `DELETE /api/pms/projects/{pid}` 외 35개
@@ -312,7 +312,7 @@
 - **V2 제안 역할**: `library` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 프론트엔드 빌드 산출물과 정적 파일 동기화만으로 독립 배포 가능
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 3개 파일, 514 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 3개 파일, 514 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `exec.run_engine`
 - **소유 DB 테이블 (0개)**: 없음
 - **대표 API 경로 (7개)**: `GET /api/design-systems`, `GET /api/design-systems/{system}/items`, `GET /api/design-systems/{system}/item`, `GET /api/design-systems/{system}/preview`, `GET /api/agent/design-systems` 외 2개
@@ -325,7 +325,7 @@
 - **V2 제안 역할**: `service` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 음성 합성 외부 API 또는 로컬 엔진 지연이 Core 요청 쓰레드를 잠식하지 않음
 - **현재 구현 상태**: `partial`
-- **소유 코드 규모**: 12개 파일, 2,302 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 12개 파일, 2,308 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `exec.run_engine`
 - **소유 DB 테이블 (2개)**: `tts_jobs`, `tts_cache`
 - **대표 API 경로 (9개)**: `GET /api/tts/status`, `GET /api/tts/voices`, `POST /api/tts/speak`, `POST /api/tts/jobs`, `GET /api/tts/jobs/{job_id}` 외 4개
@@ -338,7 +338,7 @@
 - **V2 제안 역할**: `library` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 게임 프로젝트 데이터 격리
 - **현재 구현 상태**: `prototype`
-- **소유 코드 규모**: 12개 파일, 2,955 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 12개 파일, 2,955 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `domain.shares_artifacts`, `exec.run_engine`
 - **소유 DB 테이블 (3개)**: `game_projects`, `game_builds`, `game_feedbacks`
 - **대표 API 경로 (14개)**: `GET /api/games`, `POST /api/games`, `POST /api/games/create`, `GET /api/games/{game_id}`, `POST /api/games/{game_id}/lock/approve` 외 9개
@@ -351,7 +351,7 @@
 - **V2 제안 역할**: `library` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 개인 편의 기능들을 독립 도메인으로 묶어 비즈니스 로직과 분리
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 7개 파일, 1,724 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 7개 파일, 1,724 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `core.workspaces_transfers`, `exec.run_engine`
 - **소유 DB 테이블 (5개)**: `weather_briefings`, `memo_categories`, `memos`, `calendar_events`, `tossinvest_sync_runs`
 - **대표 API 경로 (42개)**: `GET /api/agent/memo-categories`, `GET /api/agent/memos/tags`, `GET /api/agent/memos`, `GET /api/agent/memos/{memo_id}`, `POST /api/agent/memos` 외 37개
@@ -364,7 +364,7 @@
 - **V2 제안 역할**: `shared adapter` (이전 난이도: `medium`)
 - **측정 가능한 기대 이점**: 외부 서비스 인증 프로토콜 변경 시 어댑터만 단독 업데이트
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 29개 파일, 4,328 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 29개 파일, 4,328 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.system_routing`, `exec.run_engine`, `ops.monitoring`
 - **소유 DB 테이블 (1개)**: `google_accounts`
 - **대표 API 경로 (36개)**: `GET /api/google-accounts`, `GET /api/google-accounts/{account_id}`, `POST /api/google-accounts/{account_id}/login`, `POST /api/google-accounts/{account_id}/login/complete`, `POST /api/google-accounts/{account_id}/login/cancel` 외 31개
@@ -377,7 +377,7 @@
 - **V2 제안 역할**: `Core` (이전 난이도: `low`)
 - **측정 가능한 기대 이점**: 사용자에게 결과물을 노출하는 정적 게이트웨이 역할
 - **현재 구현 상태**: `implemented`
-- **소유 코드 규모**: 14개 파일, 1,825 라인 (src_tree: `a32e4c95795a790216efe042796237fe0b948fa4`)
+- **소유 코드 규모**: 14개 파일, 1,825 라인 (src_tree: `c4e26743967676e610c0a1492685f45d00467a51`)
 - **내부 의존 모듈**: `core.auth_session`, `core.generation_deploy`, `core.system_routing`, `domain.meetings_stt`, `exec.run_engine`
 - **소유 DB 테이블 (2개)**: `artifacts`, `public_shares`
 - **대표 API 경로 (23개)**: `GET /api/artifacts`, `POST /api/artifacts`, `POST /api/artifacts/resolve`, `GET /api/artifacts/{art_id}`, `PATCH /api/artifacts/{art_id}` 외 18개

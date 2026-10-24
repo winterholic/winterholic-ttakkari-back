@@ -1850,7 +1850,7 @@ def classify_migration(stem: str) -> str:
         return "domain.meetings_stt"
     if any(x in s for x in ("pms", "checklists")):
         return "domain.pms_tasks"
-    if "local_tts" in s:
+    if any(x in s for x in ("local_tts", "tts")):
         return "domain.media_tts"
     if any(x in s for x in ("game_studio", "game_active")):
         return "domain.game_studio"
@@ -1968,6 +1968,7 @@ def classify_config(field: str) -> str:
             "engine_profiles",
             "engine_seatbelt",
             "cancel_grace_seconds",
+            "resume",
             "peer_models",
             "model_counterparts",
             "profile_cooldown_seconds",

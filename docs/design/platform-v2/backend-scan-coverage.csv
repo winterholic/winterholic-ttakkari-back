@@ -2,6 +2,6 @@ category,collected_count,candidate_count,coverage_state,reasons
 routes,579,,unknown,Import source binding is unbound or outside target context root;Loaded object/source-byte identity is unverified; static reconciliation only
 tools,133,133,unknown,Import source binding is unbound or outside target context root;Loaded object/source-byte identity is unverified; static reconciliation only
 tables,106,106,unknown,Import source binding is unbound or outside target context root;Loaded object/source-byte identity is unverified; static reconciliation only
-migrations,67,67,reconciled,
-configs,231,231,unknown,Import source binding is unbound or outside target context root;Loaded object/source-byte identity is unverified; static reconciliation only
+migrations,68,68,reconciled,
+configs,232,232,unknown,Import source binding is unbound or outside target context root;Loaded object/source-byte identity is unverified; static reconciliation only
 source_files,385,385,reconciled,

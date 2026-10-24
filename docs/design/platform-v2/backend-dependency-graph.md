@@ -1,5 +1,5 @@
 # 따까리 플랫폼 V2 백엔드 의존성 그래프 및 구조 분석 (Dependency Graph - Corrected)
-> 기준 소스 SHA: `f304d1e60a746df1c17f7ad7cb2532baf3ad51ca` | 감사 시각: 2026-10-24
+> 기준 소스 SHA: `1edfc43acc95c4e5a55045300e0b23b9f29b506a` | 감사 시각: 2026-10-24
 
 ## 1. 아키텍처 다이어그램 (Mermaid)
 ```mermaid

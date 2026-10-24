@@ -1,5 +1,5 @@
 # 따까리 플랫폼 V2 데이터 소유권 및 분리 후보 분석 (Data Ownership - Corrected)
-> 기준 소스 SHA: `f304d1e60a746df1c17f7ad7cb2532baf3ad51ca` | 감사 시각: 2026-10-24 | 교정 검증: P1 B Backend 감사 교정
+> 기준 소스 SHA: `1edfc43acc95c4e5a55045300e0b23b9f29b506a` | 감사 시각: 2026-10-24 | 교정 검증: P1 B Backend 감사 교정
 
 ## 1. 개요 및 데이터 소유권 원칙 (Data Ownership Principles)
 플랫폼 V2는 모듈러 모놀리스 및 점진적 서비스 분리를 지향하며, 다음 불변식을 준수한다:
@@ -25,7 +25,7 @@
 | `qwen_token_usage` | `core.accounts_quota` | 10 | `run_id->runs.id` | High (외래키 결합) |
 | `qwen_flash_usage` | `core.accounts_quota` | 9 | `None` | Low (독립 테이블) |
 | `runtime_generations` | `core.generation_deploy` | 11 | `None` | Low (독립 테이블) |
-| `runtime_control` | `core.generation_deploy` | 4 | `active_generation->runtime_generations.id, executor_generation->runtime_generations.id` | High (외래키 결합) |
+| `runtime_control` | `core.generation_deploy` | 4 | `executor_generation->runtime_generations.id, active_generation->runtime_generations.id` | High (외래키 결합) |
 | `runtime_commands` | `core.generation_deploy` | 8 | `generation_id->runtime_generations.id, run_id->runs.id, session_id->sessions.id` | High (외래키 결합) |
 | `app_settings` | `core.system_routing` | 3 | `None` | Low (독립 테이블) |
 | `desk_feedback` | `core.system_routing` | 9 | `run_id->runs.id, session_id->sessions.id` | High (외래키 결합) |
@@ -38,28 +38,28 @@
 | `ops_ingest_cursors` | `ops.monitoring` | 4 | `None` | Low (독립 테이블) |
 | `runs` | `exec.run_engine` | 28 | `workspace_id->workspaces.id, session_id->sessions.id` | High (외래키 결합) |
 | `run_events` | `exec.run_engine` | 6 | `run_id->runs.id` | High (외래키 결합) |
-| `runtime_leases` | `exec.run_engine` | 7 | `generation_id->runtime_generations.id, session_id->sessions.id, run_id->runs.id, account_id->engine_accounts.id` | High (외래키 결합) |
+| `runtime_leases` | `exec.run_engine` | 7 | `session_id->sessions.id, generation_id->runtime_generations.id, run_id->runs.id, account_id->engine_accounts.id` | High (외래키 결합) |
 | `runtime_process_groups` | `exec.run_engine` | 9 | `generation_id->runtime_generations.id, run_id->runs.id` | High (외래키 결합) |
 | `retired_integration_records` | `exec.run_engine` | 4 | `None` | Low (독립 테이블) |
 | `scheduled_actions` | `exec.durable_scheduler` | 15 | `None` | Low (독립 테이블) |
 | `system_resource_samples` | `exec.host_gpu` | 8 | `None` | Low (독립 테이블) |
 | `change_sets` | `delivery.git_cas` | 27 | `None` | Low (독립 테이블) |
 | `ctx_entities` | `domain.memory_ontology` | 11 | `None` | Low (독립 테이블) |
-| `ctx_relations` | `domain.memory_ontology` | 7 | `object_id->ctx_entities.id, subject_id->ctx_entities.id` | High (외래키 결합) |
+| `ctx_relations` | `domain.memory_ontology` | 7 | `subject_id->ctx_entities.id, object_id->ctx_entities.id` | High (외래키 결합) |
 | `ctx_memories` | `domain.memory_ontology` | 12 | `None` | Low (독립 테이블) |
 | `ctx_sources` | `domain.memory_ontology` | 10 | `entity_id->ctx_entities.id` | High (외래키 결합) |
 | `ctx_documents` | `domain.memory_ontology` | 7 | `source_id->ctx_sources.id` | High (외래키 결합) |
 | `ctx_chunks` | `domain.memory_ontology` | 6 | `document_id->ctx_documents.id` | High (외래키 결합) |
 | `kb_sources` | `domain.knowledge_rag` | 11 | `None` | Low (독립 테이블) |
 | `kb_documents` | `domain.knowledge_rag` | 6 | `None` | Low (독립 테이블) |
-| `kb_revisions` | `domain.knowledge_rag` | 12 | `document_id->kb_documents.id, source_id->kb_sources.id, supersedes_id->kb_revisions.id` | High (외래키 결합) |
+| `kb_revisions` | `domain.knowledge_rag` | 12 | `source_id->kb_sources.id, supersedes_id->kb_revisions.id, document_id->kb_documents.id` | High (외래키 결합) |
 | `kb_passages` | `domain.knowledge_rag` | 9 | `revision_id->kb_revisions.id` | High (외래키 결합) |
 | `kb_evidence` | `domain.knowledge_rag` | 7 | `passage_id->kb_passages.id` | High (외래키 결합) |
 | `knowledge_revisions` | `domain.knowledge_rag` | 11 | `source_id->ctx_sources.id` | High (외래키 결합) |
 | `knowledge_units` | `domain.knowledge_rag` | 15 | `revision_id->knowledge_revisions.id` | High (외래키 결합) |
 | `knowledge_evidence` | `domain.knowledge_rag` | 6 | `unit_id->knowledge_units.id` | High (외래키 결합) |
 | `knowledge_assertions` | `domain.knowledge_rag` | 18 | `subject_entity_id->ctx_entities.id, object_entity_id->ctx_entities.id, supersedes_id->knowledge_assertions.id` | High (외래키 결합) |
-| `knowledge_assertion_evidence` | `domain.knowledge_rag` | 3 | `assertion_id->knowledge_assertions.id, evidence_id->knowledge_evidence.id` | High (외래키 결합) |
+| `knowledge_assertion_evidence` | `domain.knowledge_rag` | 3 | `evidence_id->knowledge_evidence.id, assertion_id->knowledge_assertions.id` | High (외래키 결합) |
 | `knowledge_review_events` | `domain.knowledge_rag` | 8 | `assertion_id->knowledge_assertions.id` | High (외래키 결합) |
 | `knowledge_extraction_jobs` | `domain.knowledge_rag` | 11 | `revision_id->knowledge_revisions.id, run_id->runs.id` | High (외래키 결합) |
 | `kb_document_access` | `domain.knowledge_rag` | 4 | `document_id->kb_documents.id` | High (외래키 결합) |
@@ -86,17 +86,17 @@
 | `notebooklm_sources` | `domain.notebooklm` | 11 | `None` | Low (독립 테이블) |
 | `notebooklm_jobs` | `domain.notebooklm` | 15 | `None` | Low (독립 테이블) |
 | `research_studies` | `domain.research_lab` | 11 | `None` | Low (독립 테이블) |
-| `research_nodes` | `domain.research_lab` | 11 | `supersedes_id->research_nodes.id, evidence_id->kb_evidence.id, study_id->research_studies.id` | High (외래키 결합) |
+| `research_nodes` | `domain.research_lab` | 11 | `evidence_id->kb_evidence.id, supersedes_id->research_nodes.id, study_id->research_studies.id` | High (외래키 결합) |
 | `research_relations` | `domain.research_lab` | 8 | `from_id->research_nodes.id, to_id->research_nodes.id, study_id->research_studies.id` | High (외래키 결합) |
 | `research_experiments` | `domain.research_lab` | 14 | `study_id->research_studies.id` | High (외래키 결합) |
 | `research_events` | `domain.research_lab` | 6 | `study_id->research_studies.id` | High (외래키 결합) |
 | `reverse_jobs` | `domain.reverse_eng` | 14 | `verifier_session_id->sessions.id, session_id->sessions.id, workspace_id->workspaces.id` | High (외래키 결합) |
-| `meetings` | `domain.meetings_stt` | 28 | `pms_project_id->pms_projects.id, analysis_run_id->runs.id, entity_id->ctx_entities.id, analysis_session_id->sessions.id, source_meeting_id->meetings.id, audio_artifact_id->artifacts.id` | High (외래키 결합) |
-| `local_stt_jobs` | `domain.meetings_stt` | 12 | `meeting_id->meetings.id, parent_job_id->local_stt_jobs.id, audio_artifact_id->artifacts.id` | High (외래키 결합) |
+| `meetings` | `domain.meetings_stt` | 28 | `audio_artifact_id->artifacts.id, analysis_run_id->runs.id, pms_project_id->pms_projects.id, entity_id->ctx_entities.id, analysis_session_id->sessions.id, source_meeting_id->meetings.id` | High (외래키 결합) |
+| `local_stt_jobs` | `domain.meetings_stt` | 12 | `parent_job_id->local_stt_jobs.id, audio_artifact_id->artifacts.id, meeting_id->meetings.id` | High (외래키 결합) |
 | `local_stt_segments` | `domain.meetings_stt` | 17 | `job_id->local_stt_jobs.id` | High (외래키 결합) |
 | `meeting_items` | `domain.meetings_stt` | 13 | `meeting_id->meetings.id` | High (외래키 결합) |
-| `meeting_proposals` | `domain.meetings_stt` | 10 | `item_id->meeting_items.id, meeting_id->meetings.id` | High (외래키 결합) |
-| `meeting_chunks` | `domain.meetings_stt` | 11 | `entity_id->ctx_entities.id, meeting_id->meetings.id` | High (외래키 결합) |
+| `meeting_proposals` | `domain.meetings_stt` | 10 | `meeting_id->meetings.id, item_id->meeting_items.id` | High (외래키 결합) |
+| `meeting_chunks` | `domain.meetings_stt` | 11 | `meeting_id->meetings.id, entity_id->ctx_entities.id` | High (외래키 결합) |
 | `pms_projects` | `domain.pms_tasks` | 10 | `None` | Low (독립 테이블) |
 | `pms_tasks` | `domain.pms_tasks` | 16 | `parent_id->pms_tasks.id, project_id->pms_projects.id` | High (외래키 결합) |
 | `pms_milestones` | `domain.pms_tasks` | 6 | `project_id->pms_projects.id` | High (외래키 결합) |
@@ -104,18 +104,18 @@
 | `checklist_templates` | `domain.pms_tasks` | 4 | `None` | Low (독립 테이블) |
 | `checklist_items` | `domain.pms_tasks` | 7 | `template_id->checklist_templates.id` | High (외래키 결합) |
 | `checklist_reminders` | `domain.pms_tasks` | 3 | `None` | Low (독립 테이블) |
-| `tts_jobs` | `domain.media_tts` | 9 | `None` | Low (독립 테이블) |
+| `tts_jobs` | `domain.media_tts` | 10 | `None` | Low (독립 테이블) |
 | `tts_cache` | `domain.media_tts` | 13 | `None` | Low (독립 테이블) |
 | `game_projects` | `domain.game_studio` | 11 | `pms_project_id->pms_projects.id, workspace_id->workspaces.id` | High (외래키 결합) |
-| `game_builds` | `domain.game_studio` | 19 | `run_id->runs.id, restored_from_id->game_builds.id, artifact_id->artifacts.id, game_id->game_projects.id` | High (외래키 결합) |
+| `game_builds` | `domain.game_studio` | 19 | `restored_from_id->game_builds.id, run_id->runs.id, artifact_id->artifacts.id, game_id->game_projects.id` | High (외래키 결합) |
 | `game_feedbacks` | `domain.game_studio` | 9 | `screenshot_artifact_id->artifacts.id, game_id->game_projects.id, run_id->runs.id, build_id->game_builds.id` | High (외래키 결합) |
-| `weather_briefings` | `domain.personal_tools` | 22 | `session_id->sessions.id, run_id->runs.id` | High (외래키 결합) |
+| `weather_briefings` | `domain.personal_tools` | 22 | `run_id->runs.id, session_id->sessions.id` | High (외래키 결합) |
 | `memo_categories` | `domain.personal_tools` | 5 | `None` | Low (독립 테이블) |
 | `memos` | `domain.personal_tools` | 12 | `category_id->memo_categories.id` | High (외래키 결합) |
 | `calendar_events` | `domain.personal_tools` | 16 | `None` | Low (독립 테이블) |
 | `tossinvest_sync_runs` | `domain.personal_tools` | 11 | `None` | Low (독립 테이블) |
 | `google_accounts` | `domain.external_connectors` | 11 | `None` | Low (독립 테이블) |
-| `artifacts` | `domain.shares_artifacts` | 23 | `run_id->runs.id, session_id->sessions.id, workspace_id->workspaces.id` | High (외래키 결합) |
+| `artifacts` | `domain.shares_artifacts` | 23 | `session_id->sessions.id, run_id->runs.id, workspace_id->workspaces.id` | High (외래키 결합) |
 | `public_shares` | `domain.shares_artifacts` | 19 | `None` | Low (독립 테이블) |
 
 ## 3. 크로스 모듈 외래키 결합 현황 (Cross-Module Foreign Keys)
@@ -130,8 +130,8 @@
 | `desk_feedback` | `core.system_routing` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runs` | `exec.run_engine` | `workspaces` | `core.workspaces_transfers` | `workspace_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runs` | `exec.run_engine` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
-| `runtime_leases` | `exec.run_engine` | `runtime_generations` | `core.generation_deploy` | `generation_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runtime_leases` | `exec.run_engine` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
+| `runtime_leases` | `exec.run_engine` | `runtime_generations` | `core.generation_deploy` | `generation_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runtime_leases` | `exec.run_engine` | `engine_accounts` | `core.accounts_quota` | `account_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `runtime_process_groups` | `exec.run_engine` | `runtime_generations` | `core.generation_deploy` | `generation_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `knowledge_revisions` | `domain.knowledge_rag` | `ctx_sources` | `domain.memory_ontology` | `source_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
@@ -144,11 +144,11 @@
 | `reverse_jobs` | `domain.reverse_eng` | `sessions` | `core.auth_session` | `verifier_session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `reverse_jobs` | `domain.reverse_eng` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `reverse_jobs` | `domain.reverse_eng` | `workspaces` | `core.workspaces_transfers` | `workspace_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
-| `meetings` | `domain.meetings_stt` | `pms_projects` | `domain.pms_tasks` | `pms_project_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
+| `meetings` | `domain.meetings_stt` | `artifacts` | `domain.shares_artifacts` | `audio_artifact_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `meetings` | `domain.meetings_stt` | `runs` | `exec.run_engine` | `analysis_run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
+| `meetings` | `domain.meetings_stt` | `pms_projects` | `domain.pms_tasks` | `pms_project_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `meetings` | `domain.meetings_stt` | `ctx_entities` | `domain.memory_ontology` | `entity_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `meetings` | `domain.meetings_stt` | `sessions` | `core.auth_session` | `analysis_session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
-| `meetings` | `domain.meetings_stt` | `artifacts` | `domain.shares_artifacts` | `audio_artifact_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `local_stt_jobs` | `domain.meetings_stt` | `artifacts` | `domain.shares_artifacts` | `audio_artifact_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `meeting_chunks` | `domain.meetings_stt` | `ctx_entities` | `domain.memory_ontology` | `entity_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `game_projects` | `domain.game_studio` | `pms_projects` | `domain.pms_tasks` | `pms_project_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
@@ -157,10 +157,10 @@
 | `game_builds` | `domain.game_studio` | `artifacts` | `domain.shares_artifacts` | `artifact_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `game_feedbacks` | `domain.game_studio` | `artifacts` | `domain.shares_artifacts` | `screenshot_artifact_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `game_feedbacks` | `domain.game_studio` | `runs` | `exec.run_engine` | `run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
-| `weather_briefings` | `domain.personal_tools` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `weather_briefings` | `domain.personal_tools` | `runs` | `exec.run_engine` | `run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
-| `artifacts` | `domain.shares_artifacts` | `runs` | `exec.run_engine` | `run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
+| `weather_briefings` | `domain.personal_tools` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `artifacts` | `domain.shares_artifacts` | `sessions` | `core.auth_session` | `session_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
+| `artifacts` | `domain.shares_artifacts` | `runs` | `exec.run_engine` | `run_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 | `artifacts` | `domain.shares_artifacts` | `workspaces` | `core.workspaces_transfers` | `workspace_id` | DDL 순서 종속, 삭제 cascade, 트랜잭션 경합 |
 
 ## 4. 스키마 진화 및 마이그레이션 DDL 영향 분석

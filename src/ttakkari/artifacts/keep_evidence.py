@@ -15,9 +15,10 @@
    모두 거부하고 사용자는 앱 버튼으로 보관한다. 의도 추론이 아니라 문장 형식의 최소 요건이다.
 3. 중단·부정·제외 표지: (같은 정리를 거친) 보관 표현과 같은 문장에 그만, 더 이상, 중단, 취소, 해제, 빼, 제외, 말고, 지 마, 하지, 안 , 않, 없이, not, without 등이 하나라도
    있으면 거부한다. 정상 요청이 막히는 쪽으로 틀리는 것은 허용한다.
-4. 대상 결속: (filename) 확장자를 포함한 전체 파일명이 단어 경계로 문장에 있고(폴더가 적혔다면 경로 끝부분이 일치, 같은 이름의
+4. 대상 결속: (filename) 확장자를 포함한 전체 파일명이 **보관 절**(연결어미·접속 표지로 나눈 절 중 보관 서술어가 있는 마지막 절)에
+   단어 경계로 있고(폴더가 적혔다면 경로 끝부분이 일치, 같은 이름의
    다른 파일이 있으면 경로로 구분돼야 함), 또는 (same_run) 대상 파일이 발화를 담은 Run 자체, 혹은 그 Run 실행 중에 시작된 자식
-   작업 세션 Run 이 만든 결과물이어야 한다. 부산물은 same_run 에서 제외한다.
+   작업 세션 Run 이 만든 결과물이어야 한다. 보관 절이 대상이 아닌 다른 파일을 지목하면 same_run 도 쓰지 않는다. 부산물은 same_run 에서 제외한다.
 """
 from __future__ import annotations
 
@@ -193,6 +194,29 @@ def is_negated(sentence: str) -> bool:
     if any(token in flat for token in (*_NEGATIVE_KO, *_KO_STOP)) or _KO_AN_WORD.search(text):
         return True
     return _NEGATIVE_EN.search(text.casefold()) is not None
+
+
+# 절을 나누는 연결어미·접속 표지: -고/-하고, -해서/-서, -며/-면서, -은 뒤/후, 그리고, 그다음, 그 후, 및, 쉼표·세미콜론, 영어 and/then/after.
+# '-서' 는 해서·어서·아서·가서처럼 용언 연결형일 때만 나눈다(기획서·보고서·문서 같은 명사는 나누지 않는다). '-고' 로 끝나는 명사 앞에서는
+# 나뉠 수 있지만, 그러면 파일명이 보관 절 밖으로 밀려 same_run 으로만 판단하는 거부 쪽으로 틀린다.
+_CLAUSE_SPLIT = re.compile(
+    r"\s*[,;，；]\s*"
+    r"|(?<=고)\s+|(?<=[해어아여라가와나워줘]서)\s+|(?<=며)\s+|(?<=면서)\s+|(?<=뒤)\s+|(?<=후)\s+"
+    r"|(?:^|\s)(?:그리고|그다음|및)\s+"
+    r"|\s+(?:and|then|after)\s+", re.IGNORECASE)
+
+
+def keep_clause(sentence: str) -> str:
+    """문장을 절로 나눠, 보관 서술어가 있는 마지막 절(보관 절)을 돌려준다. 보관 서술어가 있는 절이 없으면 마지막 절."""
+    clauses = [c.strip() for c in _CLAUSE_SPLIT.split(normalize(sentence)) if c and c.strip()]
+    if not clauses:
+        return ""
+    return next((c for c in reversed(clauses) if has_keep_expression(c)), clauses[-1])
+
+
+def names_other_file(clause: str) -> bool:
+    """보관 절에 파일명(확장자가 있는 토큰)이나 경로 토큰이 있는지. 대상 파일과 맞지 않을 때 다른 파일을 지목한 문장인지 가르는 데 쓴다."""
+    return _PATH_TOKEN.search(clause) is not None or _FILE_TOKEN.search(clause) is not None
 
 
 def names_file(sentence: str, path: Path) -> FileMention | None:

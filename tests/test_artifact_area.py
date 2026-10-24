@@ -1051,6 +1051,66 @@ async def test_keep_rejects_anything_outside_the_allowed_templates(client, new_s
     assert await _artifact_rows(sid) == []
 
 
+@pytest.mark.parametrize("sentence", [
+    "report.md를 요약하고 summary.md를 내 보관함에 보관해줘",  # r6
+    "report.md를 먼저 검토하고 결과물은 내 보관함에 보관해줘",  # r6
+    "report.md를 검토한 뒤 그걸 내 보관함에 보관해줘",
+    "report.md를 읽고, 내 보관함에 보관해줘",
+    "Summarize report.md and save it to my library",
+    "Read report.md, then keep the result in my library",
+])
+async def test_keep_filename_binding_is_limited_to_the_keep_clause(client, new_session, sentence):
+    """filename 결속은 보관 서술어가 있는 마지막 절 안에 대상 파일명이 있을 때만. 앞 절에서 언급만 된 파일은 보관할 수 없다."""
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    f = Path(ws["root_path"]) / "report.md"
+    f.write_text("# x")
+    await _mk_run(ws["id"], sid, sentence, at=datetime.now(UTC) - timedelta(minutes=1))
+    run_id = await _mk_run(ws["id"], sid, "진행", status="running")
+    r = await _keep(client, sid, run_id, f, sentence)
+    # 영어는 허용 템플릿(문장 전체가 keep … in my library)에 먼저 걸려 거부될 수 있다.
+    assert r.status_code == 422 and r.json()["code"] in ("quote_not_bound", "quote_no_keep_request"), (sentence, r.text)
+    if not sentence.isascii():
+        assert r.json()["code"] == "quote_not_bound"
+    assert await _artifact_rows(sid) == []
+
+
+async def test_keep_clause_naming_the_target_binds_and_generic_clause_needs_same_run(client, new_session):
+    ws, sess = await new_session()
+    sid = uuid.UUID(sess["id"])
+    root = Path(ws["root_path"])
+    for name in ("report.md", "summary.md"):
+        (root / name).write_text("# x")
+    first = "report.md를 요약하고 summary.md를 내 보관함에 보관해줘"
+    await _mk_run(ws["id"], sid, first, at=datetime.now(UTC) - timedelta(minutes=2))
+    keeper = await _mk_run(ws["id"], sid, "진행", status="running")
+    # 보관 절에 summary.md 가 있다 → summary.md 는 200, 앞 절의 report.md 는 422
+    r = await _keep(client, sid, keeper, root / "summary.md", first)
+    assert r.status_code == 200, r.text
+    assert r.json()["artifact"]["keep_evidence"]["binding"] == "filename"
+    assert r.json()["artifact"]["keep_evidence"]["binding_detail"] == "summary.md"
+    r = await _keep(client, sid, keeper, root / "report.md", first)
+    assert r.status_code == 422 and r.json()["code"] == "quote_not_bound"
+
+    # 보관 절에 파일명이 없고 일반 명사(결과물)뿐이면 same_run 으로만 판단한다.
+    second = "report.md 검토해서 결과물은 보관함에 넣어줘"
+    run = await _mk_run(ws["id"], sid, second, status="running", at=datetime.now(UTC) - timedelta(seconds=30))
+    result = _outbox_file(run, "review-result.md")
+    r = await _keep(client, sid, run, result, second)
+    assert r.status_code == 200, r.text
+    ev = r.json()["artifact"]["keep_evidence"]
+    assert ev["binding"] == "same_run" and ev["binding_detail"] == str(run)
+    # 앞 절의 report.md 는 그 Run 이 만든 파일이 아니므로 same_run 도 안 된다.
+    r = await _keep(client, sid, run, root / "report.md", second)
+    assert r.status_code == 422 and r.json()["code"] == "quote_not_bound"
+    # 보관 절이 다른 파일명을 적었다면, 그 Run 이 만든 다른 결과물도 same_run 으로 보관할 수 없다.
+    third = "report.md 요약해서 summary.md 보관함에 넣어줘"
+    run3 = await _mk_run(ws["id"], sid, third, status="running", at=datetime.now(UTC) - timedelta(seconds=10))
+    other = _outbox_file(run3, "something-else.md")
+    r = await _keep(client, sid, run3, other, third)
+    assert r.status_code == 422 and r.json()["code"] == "quote_not_bound"
+
+
 @pytest.mark.parametrize(("sentence", "name"), [
     ("보고서.md를 내 보관함에 보관해줘", "보고서.md"),
     ("정리해서 report.md 저장해줘", "report.md"),
@@ -1135,6 +1195,24 @@ async def test_keep_filename_must_be_the_full_name_and_unambiguous(client, new_s
     r = await _keep(client, sid2, keeper, two, "summary.md를 내 보관함에 보관해줘")
     assert r.status_code == 422 and r.json()["code"] == "quote_ambiguous_file", r.text
     assert one.exists()
+
+
+def test_keep_clause_splitting():
+    from ttakkari.artifacts.keep_evidence import keep_clause, names_other_file
+
+    assert keep_clause("report.md를 요약하고 summary.md를 내 보관함에 보관해줘") == "summary.md를 내 보관함에 보관해줘"
+    assert keep_clause("report.md를 먼저 검토하고 결과물은 내 보관함에 보관해줘") == "결과물은 내 보관함에 보관해줘"
+    assert keep_clause("report.md 검토해서 결과물은 보관함에 넣어줘") == "결과물은 보관함에 넣어줘"
+    assert keep_clause("report.md를 검토한 뒤 그걸 보관함에 넣어줘") == "그걸 보관함에 넣어줘"
+    assert keep_clause("정리하며 report.md 저장해줘") == "report.md 저장해줘"
+    assert keep_clause("이 plan.md 기획서 내 보관함에 넣어줘") == "이 plan.md 기획서 내 보관함에 넣어줘"  # 명사 '-서' 는 나누지 않는다
+    assert keep_clause("이 문서 보고서.md 보관해줘 부탁해요").endswith("보고서.md 보관해줘 부탁해요")
+    assert keep_clause("summarize report.md and save it to my library") == "save it to my library"
+    assert keep_clause("report.md 보관해줘, 부탁해요") == "report.md 보관해줘"  # 보관 서술어가 있는 절
+    assert keep_clause("MODIFY 그리고 만든 report.md 를 내 보관함에 보관해줘") == "만든 report.md 를 내 보관함에 보관해줘"
+    assert keep_clause("보고서.md를 내 보관함에 보관해줘") == "보고서.md를 내 보관함에 보관해줘"
+    assert names_other_file("summary.md를 보관해줘") and names_other_file("docs/a.md 를 보관해줘")
+    assert not names_other_file("결과물은 내 보관함에 보관해줘") and not names_other_file("save it to my library")
 
 
 def test_keep_quote_sentence_rules():

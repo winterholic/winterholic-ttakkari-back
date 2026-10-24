@@ -487,8 +487,11 @@ async def keep_artifact(path: str, quote: str) -> str:
       app button.
     - quote_ambiguous_file: several files share the name and the sentence does not tell them apart. Quote a sentence that
       includes the folder path, or tell the user to use the app button.
-    - quote_not_bound: the sentence does not point at this file. Either the sentence contains the full file name with its
-      extension (e.g. '보고서.md를 내 보관함에 보관해줘'), or the file is a result made by the Run that holds the user's message
+    - quote_not_bound: the sentence does not point at this file. Either the KEEP CLAUSE (the last clause, the one with the
+      keep verb; clauses are split at -고, -해서, -며, -은 뒤, 그리고, 그 후, 및, commas, and/then/after) contains the full file
+      name with its extension (e.g. '보고서.md를 내 보관함에 보관해줘'; a file named only in an earlier clause, as in
+      'report.md를 요약하고 summary.md를 …보관해줘', does not count, and if the keep clause names a different file the
+      same-run route is closed too), or the file is a result made by the Run that holds the user's message
       (or by a worker session started during that Run). Files from later turns, logs, screenshots, captures and temp/evidence
       files are never bound that way: the user's sentence must name them, otherwise tell the user to use the app button.
     Only the planning (lead) session that received the user's request can keep: a worker session only sees instructions the

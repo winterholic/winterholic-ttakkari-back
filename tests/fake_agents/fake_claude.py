@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """claude -p ... --output-format stream-json 을 흉내내는 가짜 엔진. 테스트 전용.
 
-프롬프트 키워드로 시나리오를 고른다: SLEEP, FAIL, GARBAGE, SENSITIVE, DOCX, MODIFY, CTX<n>, ART_OUT(ArtCraft out/ 에 결과 저장).
+프롬프트 키워드로 시나리오를 고른다: SLEEP, HOLD<n>(n초 지연 후 성공), FAIL, GARBAGE, SENSITIVE, DOCX, MODIFY, CTX<n>, ART_OUT(ArtCraft out/ 에 결과 저장).
 받은 argv 는 $FAKE_AGENT_LOG(JSONL) 에 기록한다. (매니저가 TTAKKARI_* env 를 지우므로 접두사를 달리 썼다.)
 """
 import json
@@ -153,6 +153,8 @@ def main():
         "seven_day": {"utilization": 0.1, "resetsAt": 1792000000},
         "seven_day_overage_included": {"utilization": 0, "resetsAt": 1792000000}}}})
 
+    if hold := re.search(r"HOLD(\d+)", prompt):
+        time.sleep(int(hold.group(1)))  # 지연 뒤 일반 성공 경로로 이어진다(실행부 교체 중 running 구간 확보)
     if "SLEEP" in prompt:
         time.sleep(60)
         return 0

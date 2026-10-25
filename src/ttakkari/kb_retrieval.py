@@ -99,32 +99,32 @@ async def index_pending(*, limit=16):
         return len(passages)
 
 
-async def status(db, scope="personal"):
+async def status(db, pool="personal"):
     total = await db.scalar(select(func.count()).select_from(KbPassage).join(KbRevision).join(KbDocument)
-                            .where(lib.scope_filter(scope))) or 0
+                            .where(lib.library_filter(pool))) or 0
     indexed = await db.scalar(select(func.count()).select_from(V).join(KbPassage).join(KbRevision).join(KbDocument)
                               .where(V.model_key == model_key(), V.text_sha256 == KbPassage.sha256,
-                                     lib.scope_filter(scope))) or 0
+                                     lib.library_filter(pool))) or 0
     passage_ids = {str(passage_id) for passage_id in await db.scalars(
-        select(KbPassage.id).join(KbRevision).join(KbDocument).where(lib.scope_filter(scope)))}
+        select(KbPassage.id).join(KbRevision).join(KbDocument).where(lib.library_filter(pool)))}
     failed = len(passage_ids.intersection(_failed_passages))
     return {"model": embedder.model_name(), "model_key": model_key(), "indexed": indexed, "total": total, "failed": failed,
             "enabled": get_settings().kb_semantic_enabled, "last_error": _last_error,
             "quality_gate": "unverified", "engine": "postgresql_exact_cosine"}
 
 
-async def search(db, *, query, limit=10, offset=0, document_id=None, current_only=True, scope="personal"):
+async def search(db, *, query, limit=10, offset=0, document_id=None, current_only=True, pool="personal"):
     if not get_settings().kb_semantic_enabled:
         raise RuntimeError("kb_semantic_disabled")
     if offset > 200:
         raise ValueError("kb_hybrid_offset_limit")
     [vector] = await embed_complete([query], query=True)
     lexical = await lib.search_passages(db, query=query, limit=200, offset=0,
-                                        document_id=document_id, current_only=current_only, scope=scope)
+                                        document_id=document_id, current_only=current_only, pool=pool)
     cosine = V.vector.cosine_distance(vector).label("distance")
     stmt = select(KbPassage, KbRevision, KbDocument, cosine).join(V, V.passage_id == KbPassage.id).join(
         KbRevision, KbPassage.revision_id == KbRevision.id).join(KbDocument, KbRevision.document_id == KbDocument.id).where(
-            V.model_key == model_key(), V.text_sha256 == KbPassage.sha256, lib.scope_filter(scope))
+            V.model_key == model_key(), V.text_sha256 == KbPassage.sha256, lib.library_filter(pool))
     if current_only:
         stmt = stmt.where(lib._current_revision_filter())
     if document_id is not None:
@@ -151,4 +151,4 @@ async def search(db, *, query, limit=10, offset=0, document_id=None, current_onl
     ranked = sorted(items, key=lambda pid: (-scores[pid], pid))
     hits = [{**items[pid], "score": scores[pid]} for pid in ranked[offset:offset + limit]]
     return {**lexical, "items": hits, "limit": limit, "offset": offset,
-            "has_more": len(ranked) > offset + limit, "retrieval": await status(db, scope)}
+            "has_more": len(ranked) > offset + limit, "retrieval": await status(db, pool)}

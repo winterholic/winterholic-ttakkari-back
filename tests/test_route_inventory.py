@@ -831,6 +831,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("PUT", "/api/accounts/override"): "owner-plain",
     ("PUT", "/api/artcraft/bugs/{bug_id}"): "owner-plain",
     ("PUT", "/api/assistant/instructions"): "owner-plain",
+    ("PUT", "/api/assistant/kb/documents/{document_id}/engine-access"): "owner-plain",
     ("PUT", "/api/meetings/{mid}/stt/{jid}/speakers"): "owner-plain",
     ("PUT", "/api/memo-categories/order"): "owner-plain",
     ("PUT", "/api/remote-desktop/devices/{device_id}"): "owner-plain",

@@ -16,6 +16,7 @@ from ttakkari.collector.contracts import (
 )
 from ttakkari.collector.control_models import CollectorDailyBudget, CollectorSource
 from ttakkari.collector.intake import submit_envelope
+from ttakkari.collector.library import LIBRARY_SCOPE, effective_pool, in_library
 from ttakkari.collector.netguard import normalize_url
 from ttakkari.collector.policy import CollectRequest, SourcePolicySpec
 from ttakkari.collector.quality import unmeasured_quality
@@ -46,14 +47,15 @@ async def register_source(db, ctx: AuthContext, *, source_key: str, title: str, 
         parsed = normalize_url(seed, allowed_schemes=spec.schemes, allowed_ports=spec.ports)
         if reason := spec.check_url(parsed):
             raise CollectorContractError(reason)
-    await store._lock(db, "control-source", ctx.tenant_id, ctx.scope, source_key)
+    await store._lock(db, "control-source", ctx.tenant_id, source_key)
     existing = await db.scalar(select(CollectorSource).where(
-        CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.tenant_id == ctx.tenant_id, in_library(CollectorSource.scope),
         CollectorSource.source_key == source_key))
     if existing is not None:
         raise SourceKeyExists(source_key)
-    await store.register_policy(db, ctx.tenant_id, ctx.scope, source_key, spec)
-    row = CollectorSource(tenant_id=ctx.tenant_id, scope=ctx.scope, source_key=source_key, title=title, request=request,
+    await store.register_policy(db, ctx.tenant_id, LIBRARY_SCOPE, source_key, spec)
+    row = CollectorSource(tenant_id=ctx.tenant_id, scope=LIBRARY_SCOPE, pool=ctx.pool, source_key=source_key,
+                          title=title, request=request,
                           interval_minutes=interval_minutes, auto_import=auto_import,
                           next_run_at=datetime.now(UTC) if interval_minutes else None)
     db.add(row)
@@ -67,7 +69,7 @@ def intake_envelope(source: CollectorSource, spec: SourcePolicySpec, now: dateti
         "producer": {"id": "collector-control", "version": "1"}, "recorded_at": now.isoformat(),
         "source": {"key": source.source_key, "kind": "web", "url": source.request["seeds"][0],
                    "collected_at": now.isoformat(), "published_at": None, "valid_from": None, "valid_to": None},
-        "access": {"tenant_id": source.tenant_id, "scope": source.scope, "principal_ids": ["owner"], "sensitivity": "normal"},
+        "access": {"tenant_id": source.tenant_id, "scope": LIBRARY_SCOPE, "principal_ids": ["owner"], "sensitivity": "normal"},
         "rights": spec.rights_block("intake", now, "not_applicable"),
         "raw": {"sha256": hashlib.sha256(b"").hexdigest(), "byte_size": 0,
                 "media_type": "application/octet-stream", "blob_handle": "intake:unfetched"},
@@ -77,6 +79,12 @@ def intake_envelope(source: CollectorSource, spec: SourcePolicySpec, now: dateti
         "decision": {"state": "hold", "reason_codes": ["awaiting_fetch"], "policy_version": "intake"},
         "errors": [], "lineage": [], "extensions": {"collector:request": source.request},
     }
+
+
+def source_context(source: CollectorSource) -> AuthContext:
+    """source 가 만드는 job 은 source 의 접근 pool 을 물려받는다. 병합 전 옛 work source 도 work 로 남는다."""
+    return AuthContext(tenant_id=source.tenant_id, scope=LIBRARY_SCOPE, principal_id="owner", kind="owner",
+                       pool=effective_pool(source.pool, source.scope))
 
 
 async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, extensions: dict | None = None) -> CollectorJob:
@@ -108,12 +116,9 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, e
     if model is not None:
         quality_service.install(model)
         request = dict(source.request)
-        request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(source.tenant_id, source.scope, model.digest)}
+        request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(model.tenant_id, model.scope, model.digest)}
         envelope["extensions"]["collector:request"] = request
-    result = await submit_envelope(
-        db, AuthContext(tenant_id=source.tenant_id, scope=source.scope, principal_id="owner", kind="owner"), str(ident),
-        envelope,
-    )
+    result = await submit_envelope(db, source_context(source), str(ident), envelope)
     source.last_job_id = result.job_id
     source.last_error = None
     if source.interval_minutes is not None:
@@ -146,7 +151,7 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
 
     now = now or datetime.now(UTC)
     item = await db.scalar(select(CollectorItem).where(
-        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, CollectorItem.scope == ctx.scope,
+        CollectorItem.id == item_id, CollectorItem.tenant_id == ctx.tenant_id, in_library(CollectorItem.scope),
     ).with_for_update())
     if item is None:
         raise JobStateError("item not found")
@@ -161,7 +166,7 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
         raise JobStateError("raw document retention has expired")
 
     source = await db.scalar(select(CollectorSource).where(
-        CollectorSource.tenant_id == ctx.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.tenant_id == ctx.tenant_id, in_library(CollectorSource.scope),
         CollectorSource.source_key == item.source_key,
     ).with_for_update())
     if source is None:
@@ -188,9 +193,9 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
                                                "profile_params": request["profile_params"]}).encode()).hexdigest()
     request_key = f"collector-reprocess:{item.id}:{policy_digest}:{processor_fingerprint}"
     existing = await db.scalar(select(CollectorJob).where(
-        CollectorJob.tenant_id == ctx.tenant_id, CollectorJob.scope == ctx.scope,
+        CollectorJob.tenant_id == ctx.tenant_id, in_library(CollectorJob.scope),
         CollectorJob.source_key == source.source_key, CollectorJob.request_key == request_key,
-    ))
+    ).order_by(CollectorJob.created_at).limit(1))
     if existing is not None:
         return existing
     ident = uuid.uuid5(uuid.NAMESPACE_URL, request_key)
@@ -202,12 +207,9 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
     if model is not None:
         quality_service.install(model)
         request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(
-            source.tenant_id, source.scope, model.digest)}
+            model.tenant_id, model.scope, model.digest)}
         envelope["extensions"]["collector:request"] = request
-    result = await submit_envelope(
-        db, AuthContext(tenant_id=source.tenant_id, scope=source.scope, principal_id="owner", kind="owner"),
-        request_key, envelope,
-    )
+    result = await submit_envelope(db, source_context(source), request_key, envelope)
     if result.status == "created":
         day = budget_day(now)
         await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
@@ -217,7 +219,7 @@ async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: da
         budget.reserved_pages += 1
         source.last_job_id = result.job_id
     from ttakkari.collector import jobs
-    return await jobs.get_job(db, ctx.tenant_id, ctx.scope, result.job_id)
+    return await jobs.get_job(db, ctx.tenant_id, ctx.pool, result.job_id)
 
 
 async def schedule_once(*, now: datetime | None = None) -> int:
@@ -243,7 +245,7 @@ async def schedule_once(*, now: datetime | None = None) -> int:
 
 
 async def retry_job(db, ctx: AuthContext, job_id: uuid.UUID) -> CollectorJob:
-    job = await jobs.get_job(db, ctx.tenant_id, ctx.scope, job_id)
+    job = await jobs.get_job(db, ctx.tenant_id, ctx.pool, job_id)
     job = await db.get(CollectorJob, job.id, with_for_update=True, populate_existing=True)
     if job.status in ACTIVE:
         raise JobStateError("job is already active")

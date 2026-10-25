@@ -31,6 +31,7 @@ from ttakkari.collector.contracts import (
     JobNotFoundError,
     JobStateError,
 )
+from ttakkari.collector.library import effective_pool, in_library, job_visible
 from ttakkari.collector_models import CollectorJob, CollectorOutbox
 
 CLAIMABLE = ("queued", "retry_wait")
@@ -61,6 +62,7 @@ class ClaimedJob:
     envelope: dict[str, Any]
     cursor: dict[str, Any] | None
     owner_generation: str
+    pool: str = "personal"
 
 
 @dataclass(frozen=True)
@@ -143,6 +145,7 @@ async def claim_batch(
                 envelope=job.envelope,
                 cursor=job.cursor,
                 owner_generation=owner_generation,
+                pool=effective_pool(job.pool, job.scope),
             )
         )
     await db.flush()
@@ -292,9 +295,10 @@ async def yield_attempt(db: AsyncSession, job_id: uuid.UUID, attempt_token: uuid
     return status
 
 
-async def _scoped_job(db: AsyncSession, tenant_id: str, scope: str, job_id: uuid.UUID, *, lock: bool = False) -> CollectorJob:
+async def _scoped_job(db: AsyncSession, tenant_id: str, pool: str, job_id: uuid.UUID, *, lock: bool = False) -> CollectorJob:
+    """C2: scope 가 아니라 읽기 pool 로 가린다. 회사 엔진 세션에 닫힌 job 은 없는 것과 같은 404 다."""
     stmt = select(CollectorJob).where(
-        CollectorJob.id == job_id, CollectorJob.tenant_id == tenant_id, CollectorJob.scope == scope
+        CollectorJob.id == job_id, CollectorJob.tenant_id == tenant_id, in_library(CollectorJob.scope), job_visible(pool)
     )
     job = (await db.execute(stmt.with_for_update() if lock else stmt)).scalar_one_or_none()
     if job is None:
@@ -302,8 +306,8 @@ async def _scoped_job(db: AsyncSession, tenant_id: str, scope: str, job_id: uuid
     return job
 
 
-async def get_job(db: AsyncSession, tenant_id: str, scope: str, job_id: uuid.UUID) -> CollectorJob:
-    return await _scoped_job(db, tenant_id, scope, job_id)
+async def get_job(db: AsyncSession, tenant_id: str, pool: str, job_id: uuid.UUID) -> CollectorJob:
+    return await _scoped_job(db, tenant_id, pool, job_id)
 
 
 def _encode_cursor(job: CollectorJob) -> str:
@@ -319,12 +323,12 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 
 
 async def list_jobs(
-    db: AsyncSession, tenant_id: str, scope: str, *, limit: int = 20, cursor: str | None = None
+    db: AsyncSession, tenant_id: str, pool: str, *, limit: int = 20, cursor: str | None = None
 ) -> tuple[list[CollectorJob], str | None]:
-    """Newest first, keyset paginated. Never returns another tenant/scope's rows."""
+    """Newest first, keyset paginated. Never returns another tenant's rows or rows closed to the caller's pool."""
     if not 1 <= limit <= MAX_LIST_LIMIT:
         raise CollectorContractError(f"limit must be between 1 and {MAX_LIST_LIMIT}")
-    stmt = select(CollectorJob).where(CollectorJob.tenant_id == tenant_id, CollectorJob.scope == scope)
+    stmt = select(CollectorJob).where(CollectorJob.tenant_id == tenant_id, in_library(CollectorJob.scope), job_visible(pool))
     if cursor:
         created, ident = _decode_cursor(cursor)
         stmt = stmt.where(
@@ -342,14 +346,14 @@ async def list_jobs(
 
 
 async def cancel(
-    db: AsyncSession, tenant_id: str, scope: str, job_id: uuid.UUID, now: datetime | None = None
+    db: AsyncSession, tenant_id: str, pool: str, job_id: uuid.UUID, now: datetime | None = None
 ) -> Literal["cancelled", "cancelling"]:
     """Cancel now when nobody runs the job; otherwise flag it so the running attempt stops at its next boundary.
 
     Cancelling an already cancelled job is idempotent. A finished job cannot be cancelled (409).
     """
     now = now or _now()
-    job = await _scoped_job(db, tenant_id, scope, job_id, lock=True)
+    job = await _scoped_job(db, tenant_id, pool, job_id, lock=True)
     if job.status == "cancelled":
         return "cancelled"
     if job.status in CANCELLABLE_NOW:

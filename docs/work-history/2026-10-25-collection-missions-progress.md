@@ -1,6 +1,58 @@
 # 수집 플랫폼 임무 중심 리팩토링 — 진행 중
 
-## 현재 이어받을 자리 — 2026-10-25 15:00 KST
+## 현재 이어받을 자리 — 2026-10-25 15:35 KST
+- 전체 C1–C7 진행 중. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
+- **C2 단일 지식 도서관 통합 및 프론트엔드 레거시 정리 완료**:
+  1. **단일 도서관 규약 및 정규화 (`src/ttakkari/collector/library.py`)**:
+     - `LIBRARY_SCOPE = "personal"`, `LEGACY_SCOPES = ("personal", "work", "shared")`.
+     - `in_library(col)`: 이전 scope 값 전부를 같은 도서관으로 단일 조회.
+     - `job_visible(pool)` / `effective_pool` / `narrowest_pool`: 회사 계정 엔진(`pool=work`)은 work pool 자료만 열람, 소유자 및 개인 엔진(`pool=personal`)은 전체 열람하는 보안 경계 보존.
+     - `collector_doc_keys(tenant, source_key, url)`: scope 구획 없는 표준 단일 doc_key와 레거시 doc_key 목록 산출.
+  2. **Additive/Online 마이그레이션 (`alembic/versions/0073_collection_single_library.py`)**:
+     - `collector_jobs`, `collector_sources`, `kb_document_access`에 `pool VARCHAR(16) NOT NULL DEFAULT 'personal'` 컬럼 추가. 기존 `scope='work'` 행의 pool을 'work'로 백필.
+     - `kb_document_aliases`: 지식 불변 원칙에 따라 중복 문서를 삭제하지 않고 canonical 하나로 연계 (`relation IN ('covered', 'variant')`).
+     - `collection_scope_ledger`: 변경된 행의 이전/이후 상태를 JSONB로 남기는 감사 추적 테이블 생성.
+     - `downgrade()`: rollback 시 pool='work' 정보를 바탕으로 legacy scope='work' 완벽 원복.
+  3. **중복 병합 및 Ledger 멱등 스크립트 (`src/ttakkari/collector/scope_merge.py`)**:
+     - `merge_scopes(db, run_id)`: 트랜잭션 advisory lock 하에 실행.
+     - `collector_jobs`: 중복 (tenant, source_key, request_key) 발생 시 탈락 행의 request_key를 `~merged:work:{hex}`로 재명명하여 둘 다 보존 (FK/이력 보존).
+     - `collector_sources`: 최신 설정, 짧은 주기, 좁은 pool(narrowest)로 통합하고 탈락 출처는 ledger에 기록 후 정리.
+     - `collector_fetch_cache`: 최신 last_fetched_at 하나만 남기고 중복 제거 및 ledger 기록.
+     - `collector_items` / `dedupe_bands`: `LIBRARY_SCOPE`로 일괄 정규화.
+     - `kb_documents`: 동일 출처/내용 문서를 `kb_document_aliases`에 `covered`로 등록하고, 소유자 검색 시 canonical만 노출.
+  4. **배포 계약 및 CLI (`deploy/generation-contract.json`, `src/ttakkari/cli.py`)**:
+     - 계약 스키마를 `0073_collection_single_library`로 승격, `0072_collection_missions`를 `online_migration_from`에 등록.
+     - `ttakkari collection-scope-merge` CLI 구현 (기본 dry-run, `--apply` 옵션 지원).
+  5. **API 및 모델 교정**:
+     - `src/ttakkari/api/collect.py`, `collect_control.py`: `scope` query param을 deprecated로 두고 무시, `in_library`를 통한 단일 조회.
+     - `src/ttakkari/api/kb_library.py`: 소유자 단일 도서관 검색 지원, `PUT /api/assistant/kb/documents/{document_id}/engine-access` 엔드포인트 추가(회사 엔진 열람 권한 토글), `kb_register` 시 `pool_for_scope(body.scope)` 연동.
+     - `src/ttakkari/api/kb_agent.py`: 세션 토큰의 `ctx.pool`을 기반으로 `kb_library`/`kb_retrieval` 격리 조회.
+     - `src/ttakkari/collector/quality_service.py`: 도서관 전체 범위 학습 및 레거시 모델 digest 해석 지원.
+     - `src/ttakkari/kb_library.py`: `access_filter`, `library_filter`, `document_aliases` 구현.
+  6. **프론트엔드 레거시 scope 정리 (`front-collection-scope`)**:
+     - `src/pages/KnowledgeLibraryPage.tsx`: 개인/회사 토글 버튼 제거, 단일 도서관 메타/요약 조회로 정리.
+     - `src/pages/CollectPage.tsx`: `scope="personal"` 하드코딩 제거, 운영 설정 패널 prop 간소화.
+     - `src/api/collector.ts` 및 하위 컴포넌트: 모든 수집 API의 `scope`를 optional로 변경하고 미전달 시 query에서 제외, `Overview`, `SourcesPanel`, `RunsPanel`, `Deliveries`, `Review`, `QualityPanel`의 `scope?: KbScope` 기본값 지원.
+
+### 이번 검증 범위 (C2)
+- **Backend 단위·통합 검증**:
+  - `tests/test_collection_scope_merge.py`: 0073 마이그레이션 왕복·ORM 일치, dry-run 롤백 격리, apply 시 중복 twin job request_key 보존, sources narrowest pool 통합, fetch cache 중복 정리, kb_document_aliases 생성 및 canonical 노출, ledger 추적, downgrade 복원, CLI 파서 등록 등 4개 종합 테스트 완료.
+  - 전체 수집·KB 회귀 테스트: `pytest tests/test_collection_scope_merge.py tests/test_collection_missions.py tests/test_collection_mission_migration.py tests/test_collector_jobs.py tests/test_collector_pipeline.py tests/test_collector_fetch.py tests/test_collector_product_flow.py tests/test_kb_library.py tests/test_kb_library_api.py tests/test_kb_agent_api.py tests/test_kb_retrieval.py tests/test_route_inventory.py tests/test_security_gate_inventory.py unit_tests/test_schema_head_admission.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py unit_tests/test_collection_plan.py`
+    → **270 passed, 66 subtests passed in 12.26s**.
+  - `ruff check`: 28개 변경 파일 대상 0 errors (clean).
+- **Frontend 단위·빌드 검증**:
+  - `vitest run src/pages/KnowledgeLibraryPage.test.tsx src/pages/CollectPage.test.tsx`: 19 passed in 903ms.
+  - `vitest run src/features/kb/Collection.test.tsx src/features/collector/Collector.test.tsx`: 12 passed in 660ms.
+  - 전체 vitest: **146 test files passed, 2 skipped (1379 tests passed, 10 skipped in 11.23s)**.
+  - `tsc -b`: 0 errors.
+  - `npm run build`: Vite 및 PWA Service Worker 프로덕션 빌드 성공.
+
+### 다음 실행 (원래 요구에서 남은 것)
+1. 경량 ML 실제 보수적 선별·독립 평가(C4): 입력 목적 관련성 평가 및 보수적 필터링.
+2. 원래 시나리오 A–E E2E 인수 기준 검증.
+3. clean main 통합·push·운영 배포 및 실제 기능 확인 (현재는 feature branch 커밋만 수행).
+
+## 이전 이어받을 자리 — 2026-10-25 15:00 KST
 - 전체 C1–C7는 여전히 진행 중. 아래 `2026-10-25 14:24 KST`와 `이번 코드`는 이전 이력이다. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
 - **C1/C6 임무 제어, 자동 분할, 공정 할당, 오류 격리 및 프론트엔드 UI 완료**:
   1. **임무 제어 API**: `pause`, `resume`, `cancel`, `extend`(추가 수집: 보존된 frontier 이어가기 + 예산 추가), `rerun`, `update_schedule` 엔드포인트 구현.

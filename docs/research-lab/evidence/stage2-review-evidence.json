@@ -1,0 +1,87 @@
+{
+  "review": {
+    "reviewer": "Codex independent cross-provider review",
+    "date": "2026-10-25",
+    "backend_head": "65de76a8089d9c59755c8d0ebb35eaa6bb3fa85c",
+    "frontend_head": "f9ea05bcd65e95be92c6c94d280348b68c06781f",
+    "backend_branch": "research-v2",
+    "frontend_branch": "research-v2",
+    "source_changes": false,
+    "production_db_touched": false,
+    "launchd_touched": false,
+    "push_or_deploy": false
+  },
+  "existing_stack_snapshot": {
+    "requested_postgres": "PostgreSQL 17, /tmp/rv2-stage2/pgdata, 127.0.0.1:58731/rv2stage2",
+    "observed_existing_cluster": "/tmp/rv2-stage2/pg1, PG_VERSION=17, state=shut down",
+    "pg_isready": "127.0.0.1:58731 - no response",
+    "backend_health_probe": {"url": "http://127.0.0.1:18793/health", "http_status": 0, "error": "curl: (7) Failed to connect; Couldn't connect to server"},
+    "frontend_probe": {"url": "http://127.0.0.1:5195/", "http_status": 0, "error": "curl: (7) Failed to connect; Couldn't connect to server"},
+    "configured_browser_probe": {"tool": "ttakkari_browser browser_navigate", "url": "http://127.0.0.1:5195", "error": "net::ERR_CONNECTION_REFUSED"},
+    "browser_closed": true,
+    "postgres_restore_attempt": {
+      "environment": "Codex command sandbox",
+      "command": "/opt/homebrew/opt/postgresql@17/bin/pg_ctl -D /tmp/rv2-stage2/pg1 -o \"-p 58731 -h 127.0.0.1 -k /tmp/rv2-stage2\" -l /tmp/rv2-stage2/review-pg.log start",
+      "result": "pg_ctl: could not start server; Examine the log output.",
+      "log_error": "FATAL: shmat(id=36896771, addr=0x0, flags=0x0) failed: Operation not permitted",
+      "follow_up": "No retry through another engine or browser; DB evidence remains unverified."
+    }
+  },
+  "host_gpu_path_probe": {
+    "purpose": "One minimum setup check only; not a substitute for historical A runs.",
+    "start": {
+      "execution_path": "host_gpu",
+      "phase": "starting",
+      "model": "qwen3.5-4b-q4_k_m",
+      "request": {"cache_type_k": "q8_0", "cache_type_v": "q8_0", "flash_attn": "on", "ctx_size": 4096, "parallel": 1, "spec_type": "none", "max_seconds": 120},
+      "port": 19300,
+      "ready": false,
+      "swap_peak_growth_bytes": 0,
+      "device_evidence": []
+    },
+    "ready_status": {
+      "phase": "ready",
+      "ready": true,
+      "request": {"cache_type_k": "q8_0", "cache_type_v": "q8_0", "flash_attn": "on", "ctx_size": 4096},
+      "device_evidence": [],
+      "launch_id_returned": false,
+      "bench_called": false
+    },
+    "stop": {
+      "phase": "stopped",
+      "running": false,
+      "stop_reason": "requested",
+      "server_exit_code": 0,
+      "elapsed_seconds": 23.4,
+      "swap_peak_growth_bytes": 0,
+      "device_evidence": [],
+      "stopped_now": true
+    }
+  },
+  "local_reproduction_outputs": {
+    "planner_command": ".venv/bin/python docs/research-lab/evidence/repro-stage2-planner-validation.py",
+    "planner": {
+      "python": "/Users/winterholic/development/projects/winterholic-ttakkari/back-research-v2/.venv/bin/python",
+      "module": "/Users/winterholic/development/projects/winterholic-ttakkari/back-research-v2/src/ttakkari/research/planner.py",
+      "database_target": null,
+      "missing_required": {"valid": false, "errors": ["required input missing: model"]},
+      "invalid_sweep_member": {"expanded": [{"n_ctx": 16}, {"n_ctx": 0}], "valid": false, "errors": ["n_ctx must be positive"]},
+      "validator_exception": {"valid": true, "errors": []},
+      "unknown_adapter": {"valid": true, "errors": []}
+    },
+    "external_source_command": ".venv/bin/python docs/research-lab/evidence/repro-stage2-external-source.py",
+    "external_source": {
+      "python": "/Users/winterholic/development/projects/winterholic-ttakkari/back-research-v2/.venv/bin/python",
+      "module": "/Users/winterholic/development/projects/winterholic-ttakkari/back-research-v2/src/ttakkari/research/adapters/external_report.py",
+      "database_target": null,
+      "config_has_source": {"source_title": false, "source_url": false, "source_year": false},
+      "validate_config_errors": []
+    }
+  },
+  "frontend_checks": {
+    "research_test_command": "pnpm exec vitest run src/pages/research/research.test.tsx",
+    "research_tests": "Test Files 1 passed; Tests 49 passed; Duration 3.44s",
+    "build_command": "pnpm build",
+    "build": "tsc -b and vite build succeeded; PWA generated; Vite emitted a >500 kB chunk advisory"
+  }
+}

@@ -75,6 +75,10 @@ class KbDocumentAccess(Base):
             "visibility IN ('global', 'work_only')",
             name="ck_kb_document_access_visibility",
         ),
+        CheckConstraint(
+            "(scope != 'work' OR visibility = 'work_only') AND (origin_scope != 'work' OR visibility = 'work_only')",
+            name="ck_kb_document_access_work_visibility",
+        ),
         Index("ix_kb_document_access_visibility", "visibility"),
         Index("ix_kb_document_access_origin_scope", "origin_scope"),
     )
@@ -84,8 +88,21 @@ class KbDocumentAccess(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), default="owner")
     scope: Mapped[str] = mapped_column(String(32), default="personal")
     origin_scope: Mapped[str] = mapped_column(String(16), default="personal")
-    visibility: Mapped[str] = mapped_column(String(16), default="global")
+    visibility: Mapped[str] = mapped_column(String(16), default="work_only")
     hidden: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    def __init__(self, **kwargs):
+        if "origin_scope" not in kwargs and "scope" in kwargs:
+            kwargs["origin_scope"] = kwargs["scope"]
+        if "visibility" not in kwargs:
+            kwargs["visibility"] = "work_only"
+        elif kwargs.get("visibility") == "global" and (
+            kwargs.get("scope") == "work" or kwargs.get("origin_scope") == "work"
+        ):
+            raise ValueError(
+                "Work scope document access cannot have global visibility (fail-closed leak protection)"
+            )
+        super().__init__(**kwargs)
 
 
 class KbObservation(Base):

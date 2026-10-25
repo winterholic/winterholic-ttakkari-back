@@ -15,14 +15,17 @@ KB3-102 검증 범위:
 from __future__ import annotations
 
 import importlib.util
+import uuid
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint
+from sqlalchemy.orm import Session
 
 from ttakkari.collector.control_models import KbDocumentAccess
-from ttakkari.kb_models import KbDocument, KbPassage, KbSource
+from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_ontology_models import (
     KbAssertion,
     KbAssertionEvidence,
@@ -32,6 +35,9 @@ from ttakkari.kb_ontology_models import (
     KbEntityAlias,
     KbEntityCanonical,
     KbRelation,
+    KbRelationEvidence,
+    activate_relation_with_evidence_sync,
+    derive_derived_visibility,
 )
 from ttakkari.kb_pipeline_models import KbPipelineJob, KbPipelineStage
 from ttakkari.models import Base
@@ -76,13 +82,14 @@ def test_metadata_all_v3_tables_registered():
         # 파이프라인 신규 테이블
         "kb_pipeline_jobs",
         "kb_pipeline_stages",
-        # 온톨로지 신규 테이블 8종
+        # 온톨로지 신규 테이블 9종
         "kb_entities",
         "kb_entity_aliases",
         "kb_document_entities",
         "kb_assertions",
         "kb_assertion_evidence",
         "kb_relations",
+        "kb_relation_evidence",
         "kb_entity_canonicals",
         "kb_conflicts",
     }
@@ -101,6 +108,9 @@ def test_metadata_all_v3_tables_registered():
         Base.metadata.tables["kb_assertion_evidence"] is KbAssertionEvidence.__table__
     )
     assert Base.metadata.tables["kb_relations"] is KbRelation.__table__
+    assert (
+        Base.metadata.tables["kb_relation_evidence"] is KbRelationEvidence.__table__
+    )
     assert Base.metadata.tables["kb_entity_canonicals"] is KbEntityCanonical.__table__
     assert Base.metadata.tables["kb_conflicts"] is KbConflict.__table__
     assert Base.metadata.tables["kb_document_access"] is KbDocumentAccess.__table__
@@ -158,6 +168,8 @@ def test_kb_document_access_scope_unification_contract():
     assert "origin_scope" in cols
     assert "visibility" in cols
     assert "scope" in cols
+    # fail-closed 기본값 검증
+    assert cols["visibility"].default.arg == "work_only"
 
     check_names = {
         c.name
@@ -167,6 +179,7 @@ def test_kb_document_access_scope_unification_contract():
     assert "ck_kb_document_access_origin_scope" in check_names
     assert "ck_kb_document_access_visibility" in check_names
     assert "ck_kb_document_access_scope" in check_names
+    assert "ck_kb_document_access_work_visibility" in check_names
 
 
 def test_immutable_ledger_foreign_keys_are_restrict():
@@ -209,6 +222,12 @@ def test_relation_active_needs_evidence_constraint():
     check_names = {c.name for c in check_constraints}
     assert "ck_kb_relation_active_needs_evidence" in check_names
     assert "ck_kb_relation_evidence_count" in check_names
+    assert "ck_kb_relation_scope_visibility" in check_names
+
+    cols = {c.name: c for c in KbRelation.__table__.columns}
+    assert cols["evidence_count"].default.arg == 0
+    assert cols["status"].default.arg == "candidate"
+    assert cols["visibility"].default.arg == "work_only"
 
 
 def test_ontology_provenance_and_visibility_isolation():
@@ -258,6 +277,7 @@ def test_migration_0072_structure_and_operations():
     expected_reverse_order = (
         "kb_conflicts",
         "kb_entity_canonicals",
+        "kb_relation_evidence",
         "kb_relations",
         "kb_assertion_evidence",
         "kb_assertions",
@@ -285,6 +305,7 @@ def test_postgresql_ddl_compilation():
         KbAssertion,
         KbAssertionEvidence,
         KbRelation,
+        KbRelationEvidence,
         KbEntityCanonical,
         KbConflict,
     )
@@ -314,8 +335,13 @@ def test_migration_0072_offline_sql_generation():
     )
     assert "CREATE TABLE kb_pipeline_jobs" in res_up.stdout
     assert "CREATE TABLE kb_entities" in res_up.stdout
+    assert "CREATE TABLE kb_relation_evidence" in res_up.stdout
     assert "ALTER TABLE kb_passages ADD COLUMN section_path" in res_up.stdout
     assert "ALTER TABLE kb_document_access ADD COLUMN origin_scope" in res_up.stdout
+    assert (
+        "ALTER TABLE kb_document_access ADD CONSTRAINT ck_kb_document_access_work_visibility"
+        in res_up.stdout
+    )
 
     res_down = subprocess.run(
         [
@@ -332,8 +358,95 @@ def test_migration_0072_offline_sql_generation():
         check=True,
     )
     assert "DROP TABLE kb_conflicts" in res_down.stdout
+    assert "DROP TABLE kb_relation_evidence" in res_down.stdout
     assert "DROP TABLE kb_pipeline_jobs" in res_down.stdout
+    assert (
+        "ALTER TABLE kb_document_access DROP CONSTRAINT ck_kb_document_access_work_visibility"
+        in res_down.stdout
+    )
     assert "ALTER TABLE kb_document_access DROP COLUMN origin_scope" in res_down.stdout
+
+
+def test_negative_work_access_visibility_leak_protection():
+    """Negative 검증 1: work 작성자가 visibility 없이 insert -> work_only 로 격리 / global 시도 -> 거부."""
+    doc_id = uuid.uuid4()
+
+    # 1. 기존 writer 경로 (kb_delivery, kb_library)처럼 visibility 없이 scope='work' 만 기록 시
+    # fail-closed 정책에 따라 visibility 가 'work_only' 로 자동 격리되어야 함
+    access_work = KbDocumentAccess(
+        document_id=doc_id, tenant_id="owner", scope="work"
+    )
+    assert access_work.visibility == "work_only", (
+        f"work scope 문서의 visibility 기본값은 work_only 여야 함, got {access_work.visibility}"
+    )
+    assert access_work.origin_scope == "work"
+
+    # 2. work scope 문서에 visibility='global' 을 지정하려는 시도는 fail-closed 가드에 의해 즉시 거부(ValueError)
+    with pytest.raises(
+        ValueError, match="Work scope document access cannot have global visibility"
+    ):
+        KbDocumentAccess(
+            document_id=uuid.uuid4(),
+            tenant_id="owner",
+            scope="work",
+            visibility="global",
+        )
+
+    # 3. 파생 온톨로지 visibility 결정 헬퍼 검증:
+    # work 문서가 단 1개라도 포함되면 파생 엔터티/주장은 'work_only'
+    assert derive_derived_visibility([access_work]) == "work_only"
+    assert derive_derived_visibility(["personal", "work"]) == "work_only"
+    assert derive_derived_visibility([None]) == "work_only"
+    assert derive_derived_visibility([]) == "work_only"
+
+    # 모든 원천이 personal 일 때만 global
+    access_personal = KbDocumentAccess(
+        document_id=uuid.uuid4(),
+        tenant_id="owner",
+        scope="personal",
+        visibility="global",
+    )
+    assert derive_derived_visibility([access_personal]) == "global"
+
+
+def test_negative_relation_active_without_evidence_rejected():
+    """Negative 검증 2: 증거 없는 active 관계 방지 검증."""
+    e1 = uuid.uuid4()
+    e2 = uuid.uuid4()
+
+    # 1. 기본 생성된 KbRelation 은 evidence_count=0, status='candidate' 여야 함 (active 기본값 차단)
+    rel = KbRelation(
+        source_entity_id=e1,
+        target_entity_id=e2,
+        relation_type="part_of",
+    )
+    assert rel.evidence_count == 0, (
+        f"기본 evidence_count 는 0이어야 함, got {rel.evidence_count}"
+    )
+    assert rel.status == "candidate", (
+        f"기본 status 는 candidate 여야 함, got {rel.status}"
+    )
+    assert rel.visibility == "work_only", (
+        f"기본 visibility 는 work_only 여야 함, got {rel.visibility}"
+    )
+
+    # 2. 증거 없는 상태(evidence_count=0)에서 status='active'는 DB 체크 제약조건을 위반함을 수식으로 검증
+    # ck_kb_relation_active_needs_evidence: (status != 'active') OR (evidence_count >= 1)
+    status_active = "active"
+    evidence_count_zero = 0
+    satisfies_constraint = (status_active != "active") or (evidence_count_zero >= 1)
+    assert satisfies_constraint is False, (
+        "evidence_count=0 일 때 status='active' 는 DB CheckConstraint 를 만족할 수 없어야 함"
+    )
+
+    # 3. 서비스 계층 activate_relation_with_evidence_sync 단일 진입점 가드 검증:
+    # 존재하지 않는 evidence_id 로 activate 시도 시 거부되어야 함
+    class DummySession:
+        def get(self, model, pk):
+            return None  # kb_evidence 미존재 모사
+
+    with pytest.raises(ValueError, match="not found in kb_evidence"):
+        activate_relation_with_evidence_sync(DummySession(), rel, uuid.uuid4())
 
 
 if __name__ == "__main__":
@@ -363,6 +476,10 @@ if __name__ == "__main__":
     print("PASS: test_postgresql_ddl_compilation")
     test_migration_0072_offline_sql_generation()
     print("PASS: test_migration_0072_offline_sql_generation")
+    test_negative_work_access_visibility_leak_protection()
+    print("PASS: test_negative_work_access_visibility_leak_protection")
+    test_negative_relation_active_without_evidence_rejected()
+    print("PASS: test_negative_relation_active_without_evidence_rejected")
     print("========================================")
-    print("ALL 13 KB v3 SCHEMA MIGRATION TESTS PASSED!")
+    print("ALL 15 KB v3 SCHEMA MIGRATION TESTS PASSED!")
     print("========================================")

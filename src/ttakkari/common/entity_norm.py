@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import math
 import re
 import unicodedata
 from typing import Any
@@ -267,3 +268,84 @@ def duplicate_suspects(
                 )
 
     return sorted(out, key=lambda d: -d["score"])[:30]
+
+
+def jaro_similarity(s1: str, s2: str) -> float:
+    """Calculate Jaro similarity between two strings."""
+    if not s1 and not s2:
+        return 1.0
+    if not s1 or not s2:
+        return 0.0
+    if s1 == s2:
+        return 1.0
+
+    len1, len2 = len(s1), len(s2)
+    max_dist = max(len1, len2) // 2 - 1
+    max_dist = max(max_dist, 0)
+
+    s1_matches = [False] * len1
+    s2_matches = [False] * len2
+
+    matches = 0
+    for i in range(len1):
+        start = max(0, i - max_dist)
+        end = min(i + max_dist + 1, len2)
+        for j in range(start, end):
+            if s2_matches[j]:
+                continue
+            if s1[i] == s2[j]:
+                s1_matches[i] = True
+                s2_matches[j] = True
+                matches += 1
+                break
+
+    if matches == 0:
+        return 0.0
+
+    k = 0
+    transpositions = 0
+    for i in range(len1):
+        if not s1_matches[i]:
+            continue
+        while not s2_matches[k]:
+            k += 1
+        if s1[i] != s2[k]:
+            transpositions += 1
+        k += 1
+
+    transpositions //= 2
+    return (matches / len1 + matches / len2 + (matches - transpositions) / matches) / 3.0
+
+
+def jaro_winkler_similarity(s1: str, s2: str, prefix_weight: float = 0.1) -> float:
+    """Calculate Jaro-Winkler distance/similarity between two strings (0.0 ~ 1.0)."""
+    j = jaro_similarity(s1, s2)
+    if j < 0.7:
+        return j
+
+    prefix = 0
+    for c1, c2 in zip(s1[:4], s2[:4]):
+        if c1 == c2:
+            prefix += 1
+        else:
+            break
+
+    return min(1.0, j + (prefix * prefix_weight * (1.0 - j)))
+
+
+def cosine_similarity(v1: list[float] | None, v2: list[float] | None) -> float:
+    """Calculate cosine similarity between two float vectors (-1.0 ~ 1.0).
+
+    Missing, empty, length-mismatched, zero-norm or non-finite vectors score 0.0 so that a broken
+    embedding can never produce a high similarity. The score only feeds merge-candidate generation.
+    """
+    if not v1 or not v2 or len(v1) != len(v2):
+        return 0.0
+    if not all(math.isfinite(x) for x in v1) or not all(math.isfinite(x) for x in v2):
+        return 0.0
+    dot = sum(a * b for a, b in zip(v1, v2, strict=True))
+    norm1 = sum(a * a for a in v1) ** 0.5
+    norm2 = sum(b * b for b in v2) ** 0.5
+    if norm1 == 0.0 or norm2 == 0.0:
+        return 0.0
+    return max(-1.0, min(1.0, dot / (norm1 * norm2)))

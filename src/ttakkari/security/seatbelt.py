@@ -22,6 +22,8 @@ SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
 # 자체 샌드박스가 없는 엔진만. muse 는 네이티브 샌드박스가 available 이어야 뜨므로(.muse-runtime/contract.mjs) 뺐다.
 WRAPPABLE_ENGINES = frozenset({"claude", "opencode", "copilot"})
+# These adapters approve tools in unattended mode and have no independent OS boundary.
+REQUIRED_ENGINES = frozenset({"opencode", "copilot"})
 
 # PostgreSQL, MySQL/MariaDB, Redis, MongoDB. 원격 호스트도 같은 포트면 막는다.
 DB_PORTS = (5432, 5433, 3306, 6379, 27017)
@@ -52,6 +54,8 @@ class SeatbeltPolicy:
     # ttakkari 홈 안에서 읽기·쓰기를 다시 여는 디렉터리와 낱개 파일.
     allowed: list[Path] = field(default_factory=list)
     allowed_files: list[Path] = field(default_factory=list)
+    write_roots: list[Path] | None = None
+    read_executables: list[Path] = field(default_factory=list)
     # 배포된 현재 릴리스의 Python·모듈만 읽는다. 계정/설정이나 다른 릴리스는 열지 않는다.
     runtime_root: Path | None = None
     # 워크스페이스의 전용 테스트 DB 디렉터리만 허용한다. 일반 쓰기 루트는 쓰지 않는다.
@@ -94,6 +98,13 @@ def render_profile(policy: SeatbeltPolicy) -> str:
         *(f'  (regex #"{rx}")' for rx in DB_SOCKET_REGEXES),
         "))",
     ]
+    if policy.write_roots is not None:
+        lines += [";; Workspace writes only (required engines)", "(deny file-write*)"]
+        writable = sorted({_real(p) for p in policy.write_roots if not _under(_real(p), ttk)})
+        if writable:
+            lines.append("(allow file-write*")
+            lines += [f"  (subpath {_q(p)})" for p in writable]
+            lines.append(")")
     roots = sorted({_real(p) for p in policy.socket_roots})
     if roots:
         lines.append("(allow network-outbound (remote unix-socket")
@@ -124,11 +135,21 @@ def render_profile(policy: SeatbeltPolicy) -> str:
         f'  (regex #"{ENV_FILE_REGEX}")',
         ")",
         # 예시 파일 예외로 다른 계정/자격 증명 디렉터리를 다시 열지 않는다.
-        f'(allow file-read-data file-write* (require-all (regex #"{ENV_EXAMPLE_REGEX}")',
+        f'(allow file-read-data {"file-write* " if policy.write_roots is None else ""}(require-all (regex #"{ENV_EXAMPLE_REGEX}")',
         *(f"  (require-not (subpath {_q(d)}))" for d in sorted(secret_dirs | {ttk})),
         *(f"  (require-not (literal {_q(p)}))" for p in sorted(secret_files)),
         "))",
     ]
+    for executable in policy.read_executables:
+        lines.append(f"(allow file-read-data (literal {_q(executable)}))")
+    if policy.write_roots:
+        lines += [f'(allow file-write* (require-all (regex #"{ENV_EXAMPLE_REGEX}")',
+                  "  (require-any",
+                  *(f"    (subpath {_q(_real(p))})" for p in policy.write_roots),
+                  "  )",
+                  *(f"  (require-not (subpath {_q(d)}))" for d in sorted(secret_dirs | {ttk})),
+                  *(f"  (require-not (literal {_q(p)}))" for p in sorted(secret_files)),
+                  "))"]
     return "\n".join(lines) + "\n"
 
 
@@ -175,7 +196,7 @@ def policy_for(*, home: Path, ttakkari_home: Path, outbox: Path, write_roots: It
             p = _real(Path(copilot_home))
             if _under(p, accounts) and p != accounts:
                 allowed.append(p)
-        else:
+        if not copilot_home or _real(Path(copilot_home)) == _real(home / ".copilot"):
             # System default copilot account uses ~/.copilot
             system_copilot = _real(home / ".copilot")
             allowed.append(system_copilot)
@@ -210,7 +231,24 @@ def policy_for(*, home: Path, ttakkari_home: Path, outbox: Path, write_roots: It
         if not _under(socket_root, workspace) or socket_root == workspace:
             raise ValueError("Seatbelt: test DB socket 디렉터리는 workspace 안이어야 한다")
         socket_roots.append(socket_root)
+    read_executables = []
+    if engine == "opencode":
+        # The official installer puts its executable in the otherwise protected config tree.
+        binary = home / ".opencode/bin/opencode"
+        if any(path.is_symlink() for path in (binary, *binary.parents)):
+            raise ValueError("Seatbelt: protected OpenCode executable cannot be a symlink")
+        read_executables.append(binary)
+    restricted_writes = None
+    if engine in REQUIRED_ENGINES:
+        # Protected Ttakkari/secret paths are denied later, even under broad workspace roots.
+        restricted_writes = [*write_roots, outbox, *allowed]
+        if workspace is not None:
+            restricted_writes.append(workspace)
+        # CLI scratch files stay in the configured temporary directory, not the host home.
+        if env.get("TMPDIR"):
+            restricted_writes.append(_real(Path(env["TMPDIR"])))
     return SeatbeltPolicy(home=home, ttakkari_home=ttk, allowed=allowed, allowed_files=allowed_files,
+                          write_roots=restricted_writes, read_executables=read_executables,
                           runtime_root=runtime_root, socket_roots=socket_roots,
                           deny_keychain=deny_keychain, secret_files=secret_files,
                           secret_dirs=tuple(secret_dirs))
@@ -220,7 +258,7 @@ def maybe_wrap(engine: str, cmd: list[str], *, enabled_engines: Iterable[str], h
                ttakkari_home: Path, outbox: Path, write_roots: Iterable[Path],
                env: Mapping[str, str], deny_keychain: bool = False, workspace: Path | None = None) -> list[str]:
     """기능 플래그에 든 엔진이면 sandbox-exec 로 감싼다. 감쌀 수 없으면 샌드박스 없이 띄우지 않는다."""
-    if engine not in set(enabled_engines):
+    if engine not in set(enabled_engines) | REQUIRED_ENGINES:
         return cmd
     if engine not in WRAPPABLE_ENGINES:
         raise RuntimeError(f"Seatbelt 래퍼를 {engine} 에 적용할 수 없다(자체 샌드박스와 중첩 불가). "

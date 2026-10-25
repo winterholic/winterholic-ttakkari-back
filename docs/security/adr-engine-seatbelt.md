@@ -31,6 +31,8 @@ threat-model에는 S-9(Seatbelt) 항목이 없다. B5 행은 Codex `workspace-wr
 
 ## 결정
 
+2026-10-25 OpenCode/Copilot 추가: 아래 Claude opt-in 설명은 기존 범위다. 두 신규 엔진은 설정 목록과 무관하게 필수 래핑하며, 전역 쓰기 거부 후 명시 workspace/write_roots·자기 계정·현재 outbox·임시 경로만 연다. XDG 4종의 관리 계정 하위 디렉터리와 Copilot 자기 홈을 별도 허용한다. 시스템 Copilot의 `COPILOT_HOME=~/.copilot`도 기본 인증 예외로 처리한다. 기본 OpenCode 실행 파일 `~/.opencode/bin/opencode`는 읽기 전용 낱개 예외이며 심링크면 거부한다. 다른 보호 경로와 DB 제한은 유지한다. 커널 적용 및 실제 모델 실행은 현재 중첩 Codex 환경에서 미검증이다.
+
 - 선택지 3을 **claude에만** 적용할 수 있게 구현했다. 기능 플래그 `TTAKKARI_ENGINE_SEATBELT`(목록, 기본 `[]`)로 켜고, 기본값은 꺼짐이다.
 - 자체 샌드박스가 있는 codex·antigravity·qwen-local·muse를 플래그에 넣으면 Run은 샌드박스 없이 뜨지 않고 `RuntimeError`로 실패한다(fail-closed).
 - 이들 엔진은 각자의 샌드박스 설정을 고치는 후속 작업으로 다룬다(롤아웃 순서 참고).

@@ -330,7 +330,7 @@ class Settings(BaseSettings):
     # 사용자 전역 hook 이 headless 실행에도 끼어든다. 필요하면 "project,local" 로 좁힌다.
     claude_setting_sources: str | None = None
     # 엔진 프로세스를 sandbox-exec 로 감싸 DB 포트·소켓과 비밀 경로를 커널에서 막는다. 단계 적용용으로 기본은 비어 있다.
-    # 지금은 claude 만 가능. 자체 샌드박스를 거는 엔진을 넣으면 Run 이 샌드박스 없이 뜨지 않고 실패한다.
+    # Claude는 opt-in. OpenCode·Copilot은 이 목록과 무관하게 필수 적용한다. 자체 샌드박스 엔진은 중첩 불가.
     # (docs/security/adr-engine-seatbelt.md) 예: TTAKKARI_ENGINE_SEATBELT='["claude"]'
     engine_seatbelt: list[str] = Field(default_factory=list)
     engine_seatbelt_deny_keychain: bool = False

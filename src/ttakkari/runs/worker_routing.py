@@ -146,7 +146,7 @@ def primary_target(session_engine: str, requested_model: str | None = None) -> t
     default_model = settings.worker_default_models[session_engine]["model"]
     if (
         requested_model
-        and profiles.model_engine(requested_model) == session_engine
+        and (session_engine in {"opencode", "copilot"} or profiles.model_engine(requested_model) == session_engine)
         and requested_model in settings.engine_models.get(session_engine, [])
     ):
         return session_engine, requested_model

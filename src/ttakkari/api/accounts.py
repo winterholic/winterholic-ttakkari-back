@@ -50,7 +50,7 @@ Pool = Literal["personal", "work"]
 
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
-    engine: Literal["claude", "codex", "antigravity", "muse", "opencode"]
+    engine: Literal["claude", "codex", "antigravity", "muse", "opencode", "copilot"]
     pool: Pool = "personal"
     config_dir: str | None = Field(default=None, max_length=1024)
     enabled: bool = True

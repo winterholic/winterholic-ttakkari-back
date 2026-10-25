@@ -36,11 +36,11 @@ PASSAGES = [
 ]
 
 
-async def main(engine: str) -> int:
+async def main(engine: str, limit: int | None = None) -> int:
     profile = Profile(id=uuid.uuid4(), name=f"smoke-{engine}", engine=engine, config_dir=None, pool="personal")
     config = SubscriptionCallConfig(engine=engine, timeout_seconds=150.0)
     report = []
-    for heading, body in PASSAGES:
+    for heading, body in PASSAGES[:limit]:
         prompt = f"[제목 / 헤딩]: {heading}\n[절 경로]: 없음\n[패시지 본문]:\n{body}"
         started = time.monotonic()
         entry = {"heading": heading, "body_chars": len(body)}
@@ -69,4 +69,5 @@ async def main(engine: str) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main(sys.argv[1] if len(sys.argv) > 1 else "codex")))
+    raise SystemExit(asyncio.run(main(
+        sys.argv[1] if len(sys.argv) > 1 else "codex", int(sys.argv[2]) if len(sys.argv) > 2 else None)))

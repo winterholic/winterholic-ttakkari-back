@@ -8,7 +8,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from test_kb_v3_l2_budget_concurrency import (
+from test_kb_v3_l2_budget_concurrency import (  # noqa: F401  (pause_default_kb_worker is an autouse fixture)
+    pause_default_kb_worker,
     ScriptedAdapter,
     _Unconsumed,
     _context,

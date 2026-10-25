@@ -344,3 +344,79 @@ async def test_finishing_a_requeued_run_clears_its_retry_counter(new_session, is
         assert run_id not in m._pool_retries
     finally:
         m._disarm(run_id)
+
+
+# ---- 접수: 기획 Run 이 이미 확정된 뒤의 풀 timeout 은 다시 접수하면 안 된다
+
+def _flaky_finish(monkeypatch, run_id: uuid.UUID) -> None:
+    orig = RunManager._finish
+    fired = {"n": 0}
+
+    async def finish(self, db, run, status, error=None):
+        if run.id == run_id and status == RunStatus.succeeded and fired["n"] == 0:
+            fired["n"] += 1
+            raise PoolTimeoutError(POOL_ERROR)  # _finish 의 첫 쿼리에서 풀이 말랐다
+        return await orig(self, db, run, status, error)
+
+    monkeypatch.setattr(RunManager, "_finish", finish)
+
+
+async def _lead_runs(run_id: uuid.UUID) -> list[Run]:
+    from ttakkari.models import ChatSession
+
+    async with sessionmaker()() as db:
+        desk_run = await db.get(Run, run_id)
+        leads = list(await db.scalars(select(ChatSession.id).where(ChatSession.parent_id == desk_run.session_id)))
+        return list(await db.scalars(select(Run).where(Run.session_id.in_(leads)))) if leads else []
+
+
+async def _run_desk(m: RunManager, run_id: uuid.UUID) -> None:
+    task = asyncio.create_task(m._execute_desk(run_id))
+    m._handles[run_id] = _Handle(task=task)
+    await task
+
+
+async def test_desk_is_not_requeued_after_the_lead_run_was_committed(
+        client, auth, make_dir, isolated_manager, desk_runtime_like, monkeypatch):
+    from ttakkari.runs import desk
+    from ttakkari.runs.manager import manager as global_manager
+
+    m = isolated_manager
+
+    async def no_dispatch(_session_id):
+        return None
+
+    monkeypatch.setattr(global_manager, "dispatch", no_dispatch)  # queue_run 이 쓰는 전역 manager
+
+    async def delegate(_prof, _system, _prompt, **_kw):
+        return desk.Attempt('{"action": "delegate", "reply": "넘겼어요", "title": "plan x"}', None, 1)
+
+    monkeypatch.setattr(desk, "_ask", delegate)
+    (run_id,) = await make_desk_runs(client, auth, make_dir, 1)
+    _flaky_finish(monkeypatch, run_id)
+
+    await _run_desk(m, run_id)
+    try:
+        if (await load(run_id)).status == RunStatus.queued:  # 교정 전: 다시 접수가 돈다
+            await _run_desk(m, run_id)
+        run = await load(run_id)
+        assert len(await _lead_runs(run_id)) == 1, "duplicate planning"
+        assert run.status == RunStatus.failed and "QueuePool" in (run.error or "")
+        assert run_id not in m._pool_retries and not m.is_waiting(run_id)
+    finally:
+        m._disarm(run_id)
+
+
+async def test_desk_is_still_requeued_when_nothing_was_committed_yet(
+        client, auth, make_dir, isolated_manager, desk_runtime_like, monkeypatch):
+    m = isolated_manager  # desk_runtime_like 의 답은 action=answer: 기획으로 넘기지 않는다
+    (run_id,) = await make_desk_runs(client, auth, make_dir, 1)
+    _flaky_finish(monkeypatch, run_id)
+
+    await _run_desk(m, run_id)
+    try:
+        run = await load(run_id)
+        assert run.status == RunStatus.queued and m.is_waiting(run_id), run.error
+        assert await _lead_runs(run_id) == []
+    finally:
+        m._disarm(run_id)

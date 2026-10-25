@@ -349,6 +349,11 @@ async def _delegate(db: AsyncSession, run: Run, sess: ChatSession, decision: Dec
     body = ["[접수에서 넘긴 사용자 요청]", run.prompt]
     if history:
         body += ["", "[최근 대화 — 참고만]", *history]
+    # queue_run 은 자기 커밋과 dispatch 로 기획 Run 을 바로 확정·실행한다. 이 뒤 풀 timeout 으로 접수를 다시 돌리면 기획이 둘 생긴다.
+    # 커밋 도중 실패해도 표식은 남는다. 되돌릴 수 없는 쪽으로 보수적이다.
+    from ttakkari.runs.manager import attempt_handle
+    if (handle := attempt_handle.get()) is not None:
+        handle.mark_side_effect()
     await queue_run(db, lead, "\n".join(body), origin=RunOrigin.desk,
                     context_artifact_ids=[uuid.UUID(str(a)) for a in run.context_artifact_ids or []])
     return lead, dedup

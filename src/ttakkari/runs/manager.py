@@ -141,6 +141,11 @@ class _Handle:
     token: uuid.UUID | None = None
     process_groups: list[tuple[int, float, int, uuid.UUID, uuid.UUID, int]] = field(default_factory=list)
     start_slot: asyncio.Semaphore | None = None
+    # 이 시도가 별도 커밋·dispatch 로 외부에 확정된 부수효과(예: 접수가 넘긴 기획 Run)를 이미 냈다. 있으면 다시 줄 세우지 않는다.
+    side_effect_committed: bool = False
+
+    def mark_side_effect(self) -> None:
+        self.side_effect_committed = True
 
     def release_start_slot(self) -> None:
         """엔진 프로세스가 뜨고 첫 커밋으로 연결을 돌려준 뒤 시작 슬롯을 반납한다. 여러 번 불러도 한 번만 반납한다."""
@@ -785,11 +790,12 @@ class RunManager:
     async def _requeue_after_pool_timeout(self, run_id: uuid.UUID, *, authorized: bool) -> bool:
         """풀 고갈로 죽은 Run 을 실패시키지 않고 지터 있는 백오프 뒤로 다시 줄 세운다. 다시 세웠으면 True.
 
-        엔진 프로세스가 이미 떴으면 부수효과가 있을 수 있어 하지 않는다(기존 실패 처리로 간다).
+        엔진 프로세스가 이미 떴거나(h.proc) 별도 커밋으로 부수효과가 확정됐으면(h.side_effect_committed) 하지 않는다.
+        그 경우는 기존 실패 처리로 간다. 다시 돌리면 같은 일을 두 번 하기 때문이다.
         authorized=False 는 claim 에서 죽어 이 Run 에 쓸 권한이 없다는 뜻이라 DB 는 건드리지 않고 깨우기만 건다."""
         attempt = self._pool_retries.get(run_id, 0) + 1
         h = self._handles.get(run_id)
-        if attempt > MAX_POOL_TIMEOUT_RETRIES or (h is not None and h.proc is not None):
+        if attempt > MAX_POOL_TIMEOUT_RETRIES or (h is not None and (h.proc is not None or h.side_effect_committed)):
             return False
         delay = POOL_TIMEOUT_BACKOFF_SECONDS * attempt + random.uniform(0, POOL_TIMEOUT_BACKOFF_SECONDS)
         until = time.time() + delay
@@ -920,8 +926,8 @@ class RunManager:
             raise
         except Exception as e:
             log.exception("desk run %s crashed", run_id)
-            # 접수의 DB 쓰기는 _finish 의 한 번의 커밋으로만 확정되고 외부 부수효과(LLM 호출 비용 제외)가 없다.
-            # 풀 고갈로 죽었다면 아직 아무것도 확정되지 않았으니 다시 줄 세워도 중복 기획이 생기지 않는다.
+            # 접수의 답·이벤트는 _finish 의 커밋으로 확정된다. 하지만 기획으로 넘기는 desk._delegate 는 queue_run 이
+            # 별도로 커밋하고 dispatch 까지 하므로 그 뒤에는 side_effect_committed 로 막아 기획 Run 이 둘 생기지 않게 한다.
             if isinstance(e, PoolTimeoutError) and await self._requeue_after_pool_timeout(
                     run_id, authorized=runtime is None or token is not None):
                 return

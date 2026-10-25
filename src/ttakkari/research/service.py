@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime
+from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 
 from ttakkari import kb_store
 from ttakkari.kb_models import KbEvidence as KnowledgeEvidence
@@ -43,6 +45,36 @@ def out(row) -> dict:
         for c in row.__table__.columns
         for v in [getattr(row, c.key)]
     }
+
+
+def run_out(row) -> dict:
+    """Run row; an externally reported run also exposes its `provenance` (kept inside raw_output) at the top level."""
+    d = out(row)
+    raw = d.get("raw_output")
+    if isinstance(raw, dict) and "provenance" in raw:
+        d["provenance"] = raw["provenance"]
+    return d
+
+
+def experiment_out(row) -> dict:
+    """Experiment row with the contract's `name` next to the stored `title`."""
+    d = out(row)
+    d["name"] = d.get("title")
+    return d
+
+
+def split_csv(value: str | list[str] | None) -> list[str]:
+    """Filter values arrive as `a,b`, repeated params, or both; blanks and duplicates are dropped."""
+    if value is None:
+        return []
+    items = [value] if isinstance(value, str) else list(value)
+    seen: dict[str, None] = {}
+    for item in items:
+        for part in str(item).split(","):
+            part = part.strip()
+            if part:
+                seen[part] = None
+    return list(seen)
 
 
 async def get_study(
@@ -267,6 +299,50 @@ async def import_source(db, study, body, actor):
 # ==========================================
 
 
+async def local_measurements_by_method(
+    db, method_ids: list[uuid.UUID], scope: str
+) -> dict[uuid.UUID, dict[str, Any]]:
+    """Scope-bound run history per method. `measured_run_count` counts only runs this machine measured itself."""
+    result: dict[uuid.UUID, dict[str, Any]] = {
+        mid: {
+            "total_runs": 0,
+            "succeeded_runs": 0,
+            "failed_runs": 0,
+            "measured_run_count": 0,
+            "locally_measured": False,
+            "best_improvement_summary": None,
+        }
+        for mid in method_ids
+    }
+    if not method_ids:
+        return result
+    rows = (
+        await db.execute(
+            select(
+                Experiment.method_id,
+                Run.status,
+                Run.execution_origin,
+                func.count(Run.id),
+            )
+            .join(Experiment, Experiment.id == Run.experiment_id)
+            .join(Study, Study.id == Run.study_id)
+            .where(Experiment.method_id.in_(method_ids), Study.scope == scope)
+            .group_by(Experiment.method_id, Run.status, Run.execution_origin)
+        )
+    ).all()
+    for method_id, status, origin, n in rows:
+        lm = result[method_id]
+        lm["total_runs"] += n
+        if status == "succeeded":
+            lm["succeeded_runs"] += n
+            if origin == "local_measured":
+                lm["measured_run_count"] += n
+                lm["locally_measured"] = True
+        elif status == "failed":
+            lm["failed_runs"] += n
+    return result
+
+
 async def get_method_details(
     db, ident_or_slug: str | uuid.UUID, scope: str = "personal"
 ) -> dict[str, Any]:
@@ -285,56 +361,45 @@ async def get_method_details(
     if not method:
         raise HTTPException(404, "research_method_not_found")
 
-    # Fetch relations
+    # Relations leaving this method. The other method is resolved here so callers need no second request.
     rel_rows = (
         await db.execute(
             select(MethodRelation, Method)
             .join(Method, Method.id == MethodRelation.to_method_id)
-            .where(MethodRelation.from_method_id == method.id)
+            .where(
+                MethodRelation.from_method_id == method.id,
+                Method.scope.in_(["system", scope]),
+            )
         )
     ).all()
 
-    relations = [
-        {
-            "id": str(r.id),
-            "relation_type": r.relation_type,
-            "to_method_id": str(r.to_method_id),
-            "to_method_slug": target_m.slug,
-            "to_method_name_ko": target_m.name_ko,
-            "conditions": r.conditions,
-            "note": r.note,
-        }
-        for r, target_m in rel_rows
-    ]
-
-    # Scope-bound Research History (past runs using this method)
-    history_runs = (
-        await db.execute(
-            select(Run)
-            .join(Experiment, Experiment.id == Run.experiment_id)
-            .join(Study, Study.id == Run.study_id)
-            .where(
-                Experiment.method_id == method.id,
-                Study.scope == scope,
-            )
+    relations = []
+    for r, target_m in rel_rows:
+        relations.append(
+            {
+                "id": str(r.id),
+                "relation_type": r.relation_type,
+                "from_method_id": str(r.from_method_id),
+                "to_method_id": str(r.to_method_id),
+                "to_method": {
+                    "id": str(target_m.id),
+                    "slug": target_m.slug,
+                    "name": target_m.name,
+                    "name_ko": target_m.name_ko,
+                    "execution_status": compute_execution_status(
+                        target_m, scope=scope
+                    ).status,
+                },
+                "to_method_slug": target_m.slug,
+                "to_method_name_ko": target_m.name_ko,
+                "conditions": r.conditions,
+                "note": r.note,
+            }
         )
-    ).scalars().all()
 
-    total_runs = len(history_runs)
-    succeeded_runs = len([r for r in history_runs if r.status == "succeeded"])
-    failed_runs = len([r for r in history_runs if r.status == "failed"])
-    locally_measured = any(
-        r.execution_origin == "local_measured" and r.status == "succeeded"
-        for r in history_runs
-    )
-
-    local_measurements = {
-        "total_runs": total_runs,
-        "succeeded_runs": succeeded_runs,
-        "failed_runs": failed_runs,
-        "locally_measured": locally_measured,
-        "best_improvement_summary": None,
-    }
+    local_measurements = (await local_measurements_by_method(db, [method.id], scope))[
+        method.id
+    ]
 
     # Related experiments
     rel_exps = (
@@ -357,7 +422,7 @@ async def get_method_details(
     m_dict["unsupported_params"] = exec_status.unsupported_params
     m_dict["relations"] = relations
     m_dict["local_measurements"] = local_measurements
-    m_dict["related_experiments"] = [out(e) for e in rel_exps]
+    m_dict["related_experiments"] = [experiment_out(e) for e in rel_exps]
 
     return m_dict
 
@@ -366,18 +431,21 @@ async def list_methods(
     db,
     scope: str = "personal",
     q: str | None = None,
-    target: str | None = None,
-    layer: str | None = None,
-    goal: str | None = None,
-    intervention: str | None = None,
-    research_method: str | None = None,
-    execution_status: str | None = None,
-    lifecycle_status: str | None = None,
-    origin: str | None = None,
+    target: str | list[str] | None = None,
+    layer: str | list[str] | None = None,
+    goal: str | list[str] | None = None,
+    intervention: str | list[str] | None = None,
+    research_method: str | list[str] | None = None,
+    execution_status: str | list[str] | None = None,
+    lifecycle_status: str | list[str] | None = None,
+    origin: str | list[str] | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    """Search and filter methods across 6 dimensions with facet counts."""
+    """Search and filter methods across 6 dimensions with facet counts.
+
+    Every filter takes several values (`a,b` or a repeated param): OR inside one axis, AND across axes.
+    """
     query = select(Method).where(Method.scope.in_(["system", scope]))
 
     if q:
@@ -388,20 +456,22 @@ async def list_methods(
             | Method.slug.ilike(f"%{q}%")
         )
 
-    if target:
-        query = query.where(Method.targets.contains([target]))
-    if layer:
-        query = query.where(Method.layers.contains([layer]))
-    if goal:
-        query = query.where(Method.goals.contains([goal]))
-    if intervention:
-        query = query.where(Method.interventions.contains([intervention]))
-    if research_method:
-        query = query.where(Method.research_methods.contains([research_method]))
-    if lifecycle_status:
-        query = query.where(Method.lifecycle_status == lifecycle_status)
-    if origin:
-        query = query.where(Method.origin == origin)
+    for column, values in (
+        (Method.targets, split_csv(target)),
+        (Method.layers, split_csv(layer)),
+        (Method.goals, split_csv(goal)),
+        (Method.interventions, split_csv(intervention)),
+        (Method.research_methods, split_csv(research_method)),
+    ):
+        if values:
+            query = query.where(or_(*[column.contains([v]) for v in values]))
+    lifecycle_values = split_csv(lifecycle_status)
+    if lifecycle_values:
+        query = query.where(Method.lifecycle_status.in_(lifecycle_values))
+    origin_values = split_csv(origin)
+    if origin_values:
+        query = query.where(Method.origin.in_(origin_values))
+    status_values = set(split_csv(execution_status))
 
     # Fetch all candidate methods for facets and runtime execution_status evaluation
     all_matched = (await db.execute(query.order_by(Method.name_ko, Method.slug))).scalars().all()
@@ -435,7 +505,7 @@ async def list_methods(
         facets["lifecycle_status"][m.lifecycle_status] = facets["lifecycle_status"].get(m.lifecycle_status, 0) + 1
 
         # Execution status filter (evaluated at runtime)
-        if execution_status and st.status != execution_status:
+        if status_values and st.status not in status_values:
             continue
 
         item_dict = out(m)
@@ -448,6 +518,21 @@ async def list_methods(
 
     total = len(annotated_items)
     paginated = annotated_items[offset : offset + limit]
+    measured = await local_measurements_by_method(
+        db, [uuid.UUID(item["id"]) for item in paginated], scope
+    )
+    for item in paginated:
+        item["local_measurements"] = measured[uuid.UUID(item["id"])]
+
+    # Singular keys match the `/taxonomy` axes and the filter parameters; plural keys stay for older callers.
+    for singular, plural in (
+        ("target", "targets"),
+        ("layer", "layers"),
+        ("goal", "goals"),
+        ("intervention", "interventions"),
+        ("research_method", "research_methods"),
+    ):
+        facets[singular] = facets[plural]
 
     return {
         "items": paginated,
@@ -806,25 +891,27 @@ async def export_study_report(
 
     report_content = "\n".join(lines)
 
-    # Save to temp file and register as artifact
+    # The report is copied into the artifact store (force_copy), so the temp directory can go away afterwards.
     import tempfile
     from pathlib import Path
-    from ttakkari.artifacts.paths import resolve_path
+
     from ttakkari.artifacts.service import register_file
+    from ttakkari.broker.policy import ResolvedPath
+    from ttakkari.models import ArtifactArea, ArtifactKeepReason
 
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as f:
-        f.write(report_content)
-        tmp_path = Path(f.name)
-
-    resolved = resolve_path(tmp_path)
-    artifact = await register_file(
-        db,
-        resolved,
-        source="research_report",
-        area="files" if promote_to_library else None,
-        category="research_report",
-        workspace_id=None,
-    )
+    with tempfile.TemporaryDirectory(prefix="research-report-") as tmp_dir:
+        root = Path(tmp_dir).resolve()
+        report_path = root / f"research-report-{study.id.hex[:8]}.md"
+        report_path.write_text(report_content, encoding="utf-8")
+        artifact = await register_file(
+            db,
+            ResolvedPath(root=root, path=report_path),
+            source="research_report",
+            area=ArtifactArea.files if promote_to_library else None,
+            keep_reason=ArtifactKeepReason.user_button if promote_to_library else None,
+            workspace_id=None,
+            force_copy=True,
+        )
 
     # Link artifact to study
     res_art = ResearchArtifact(
@@ -854,7 +941,50 @@ async def export_study_report(
         "label": res_art.label,
         "promoted_to_library": promote_to_library,
         "preview": report_content[:500],
+        "artifact": out(res_art),
     }
+
+
+async def adapter_readiness(
+    scope: str, only: set[str] | None = None
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any] | None]:
+    """Ask the registered adapters about this host. A failed probe is reported as not ready, never as ready."""
+    from ttakkari.research.adapters.registry import get_adapter_registry
+
+    status: dict[str, dict[str, Any]] = {}
+    gpu_lease: dict[str, Any] | None = None
+    for adapter in get_adapter_registry().list_adapters():
+        if only is not None and adapter.id not in only:
+            continue
+        info: dict[str, Any] = {
+            "adapter_id": adapter.id,
+            "name_ko": adapter.name_ko,
+            "version": adapter.version,
+            "domains": list(adapter.domains),
+            "supported_parameters": list(adapter.supported_parameters),
+            "required_inputs": list(adapter.required_inputs),
+        }
+        try:
+            env = await asyncio.to_thread(adapter.check_environment, scope=scope)
+            info.update(
+                ready=env.ready,
+                execution_mode=env.execution_mode,
+                reason=env.reason,
+                available_models=list(env.available_models),
+                details=env.details,
+            )
+        except Exception as exc:  # noqa: BLE001 - probe failures must surface as reasons
+            info.update(
+                ready=False,
+                execution_mode=None,
+                reason=f"환경 점검 실패: {type(exc).__name__}",
+                available_models=[],
+                details={},
+            )
+        status[adapter.id] = info
+        if adapter.id == "llm_inference" and "lease_currently_held" in info["details"]:
+            gpu_lease = {"held": bool(info["details"]["lease_currently_held"])}
+    return status, gpu_lease
 
 
 async def get_study_dashboard(
@@ -904,16 +1034,18 @@ async def get_study_dashboard(
         await db.execute(recent_runs_q.order_by(Run.created_at.desc()).limit(10))
     ).all()
 
+    # Same fields as `/runs` items (`id`, `study_id`, `execution_origin`, ...); `run_id` and `experiment_title` stay for older callers.
     recent_runs = [
         {
+            **{
+                k: v
+                for k, v in out(r).items()
+                if k not in ("raw_output", "environment_snapshot")
+            },
             "run_id": str(r.id),
-            "experiment_id": str(exp.id),
             "experiment_title": exp.title,
+            "experiment_name": exp.title,
             "configuration_label": c.label,
-            "adapter_id": r.adapter_id,
-            "status": r.status,
-            "wall_seconds": r.wall_seconds,
-            "created_at": r.created_at.isoformat(),
         }
         for r, c, exp in recent_runs_rows
     ]
@@ -934,30 +1066,27 @@ async def get_study_dashboard(
 
     best_results = [
         {
+            **out(b),
             "best_result_id": str(b.id),
-            "study_id": str(b.study_id),
             "experiment_title": exp.title,
+            "experiment_name": exp.title,
             "configuration_label": c.label,
-            "objective": b.objective,
-            "primary_metric": b.primary_metric,
-            "constraints": b.constraints,
-            "rationale": b.rationale,
-            "status": b.status,
-            "created_at": b.created_at.isoformat(),
         }
         for b, c, exp in best_res_rows
     ]
 
-    # Host readiness
-    host_readiness = {
-        "llm_inference": {
-            "ready": scope == "personal",
-            "reason": None if scope == "personal" else "개인 전용",
-        },
-        "retrieval_eval": {"ready": True, "reason": None},
-        "tts_synthesis": {"ready": True, "reason": None},
-        "external_report": {"ready": True, "reason": None},
-    }
+    host_readiness, gpu_lease = await adapter_readiness(scope)
+
+    all_methods = (
+        await db.execute(select(Method).where(Method.scope.in_(["system", scope])))
+    ).scalars().all()
+    statuses = [compute_execution_status(m, scope=scope) for m in all_methods]
+    # `executable_methods` counts everything a run can start on (partial support included, as designed in §3);
+    # `fully_executable_methods` counts only methods whose parameters all map onto the adapter.
+    executable_methods = sum(1 for s in statuses if s.is_executable)
+    fully_executable_methods = sum(
+        1 for s in statuses if s.status in ("immediately_executable", "tool_integrated")
+    )
 
     # 4 Quick start templates
     quick_start_templates = [
@@ -995,10 +1124,13 @@ async def get_study_dashboard(
         "counts": {
             "studies": studies_count,
             "methods": methods_count,
+            "executable_methods": executable_methods,
+            "fully_executable_methods": fully_executable_methods,
             "running_runs": running_runs,
             "completed_runs": completed_runs,
         },
         "host_readiness": host_readiness,
+        "gpu_lease": gpu_lease,
         "recent_runs": recent_runs,
         "best_results": best_results,
         "quick_start_templates": quick_start_templates,

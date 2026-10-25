@@ -96,11 +96,15 @@ async def test_vertical_e2e_rag_research_flow(client, auth):
     )
     assert series_res.status_code == 200
     series = series_res.json()
-    assert len(series["delta_bars"]) == 2
-    assert len(series["metric_bars"]) == 2
-    assert len(series["repeat_distributions"]) == 2
+    # 지표마다 설정 2개씩: 주요 지표 하나만 담던 이전 응답과 달리 측정된 모든 지표를 담는다
+    metric_keys = {m["metric_key"] for m in series["metrics"]}
+    assert {"recall_at_3", "mrr_at_3"} <= metric_keys
+    assert len(series["delta_bars"]) == 2 * len(metric_keys)
+    assert [g["metric_key"] for g in series["metric_bars"]] == [m["metric_key"] for m in series["metrics"]]
+    assert all(len(g["values"]) == 2 for g in series["metric_bars"])
+    assert len(series["repeat_distributions"]) == 2 * len(metric_keys)
     assert len(series["pareto_points"]) == 2
-    assert "config_diff_table" in series
+    assert series["config_diff_table"]["rows"]
 
     # 7. 최적 결과물 채택 (Adopt Best Result with Decision node)
     best_cfg_id = series["best_configuration_id"] or cfg_base["id"]

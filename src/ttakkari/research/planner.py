@@ -424,6 +424,8 @@ async def validate_experiment_plan(
     est_sec_per_run = 15 if adapter_id == "llm_inference" else 3 if adapter_id == "retrieval_eval" else 5
     resource_estimate = {
         "total_runs": runs_count,
+        # `estimated_seconds` is the contract name (adapters.base.ResourceEstimate); `estimated_total_seconds` stays for older callers.
+        "estimated_seconds": runs_count * est_sec_per_run,
         "estimated_total_seconds": runs_count * est_sec_per_run,
         "estimated_memory_mb": 4096 if adapter_id == "llm_inference" else 512,
         "requires_gpu_lease": adapter_id == "llm_inference",

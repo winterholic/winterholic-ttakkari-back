@@ -14,6 +14,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 
 from ttakkari.api.agent import _session
 from ttakkari.api.deps import Db
@@ -535,9 +536,11 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
 
     await db.commit()
 
-    out_dict = svc.out(row)
+    # Flat experiment fields stay at the top level for older callers; `experiment` is the contract's wrapper.
+    out_dict = svc.experiment_out(row)
+    out_dict["experiment"] = svc.experiment_out(row)
     out_dict["configurations"] = [svc.out(c) for c in created_configs]
-    out_dict["runs"] = [svc.out(r) for r in created_runs]
+    out_dict["runs"] = [svc.run_out(r) for r in created_runs]
     return out_dict
 
 
@@ -691,6 +694,18 @@ async def compare(
 # ==========================================
 
 
+async def ensure_catalog(db) -> None:
+    """Lazy seed load for read endpoints. It must commit: the session is discarded without commit, which would
+    roll the load back and hand every later request freshly generated method ids."""
+    try:
+        stats = await catalog_loader.ensure_catalog_loaded(db)
+        if stats["methods"] or stats["terms"]:
+            await db.commit()
+    except IntegrityError:
+        # A concurrent first request loaded the same seeds; read what it committed.
+        await db.rollback()
+
+
 @router.post("/catalog/sync")
 async def sync_catalog(_: User, db: Db, force: bool = Query(False)):
     """Synchronize catalog seed JSON files idempotently."""
@@ -707,13 +722,14 @@ async def dashboard(
     scope: Literal["personal", "work"] = Query("personal"),
 ):
     """Aggregate dashboard view: counts, readiness, recent runs, best results, and templates."""
-    await catalog_loader.ensure_catalog_loaded(db)
+    await ensure_catalog(db)
     return await svc.get_study_dashboard(db, study_id=study_id, scope=scope)
 
 
 @router.get("/taxonomy")
 async def get_taxonomy(_: User, db: Db, axis: str | None = Query(None)):
     """Retrieve taxonomy dictionary grouped by axis."""
+    await ensure_catalog(db)
     q = select(TaxonomyTerm).order_by(TaxonomyTerm.axis, TaxonomyTerm.sort_order)
     if axis:
         q = q.where(TaxonomyTerm.axis == axis)
@@ -765,20 +781,23 @@ async def list_methods(
     _: User,
     db: Db,
     q: str | None = Query(None),
-    target: str | None = Query(None),
-    layer: str | None = Query(None),
-    goal: str | None = Query(None),
-    intervention: str | None = Query(None),
-    research_method: str | None = Query(None),
-    execution_status: str | None = Query(None),
-    lifecycle_status: str | None = Query(None),
-    origin: str | None = Query(None),
+    target: list[str] | None = Query(None),
+    layer: list[str] | None = Query(None),
+    goal: list[str] | None = Query(None),
+    intervention: list[str] | None = Query(None),
+    research_method: list[str] | None = Query(None),
+    execution_status: list[str] | None = Query(None),
+    lifecycle_status: list[str] | None = Query(None),
+    origin: list[str] | None = Query(None),
     scope: Literal["personal", "work"] = Query("personal"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
-    """Search and filter methods across 6 dimensions with facet counts."""
-    await catalog_loader.ensure_catalog_loaded(db)
+    """Search and filter methods across 6 dimensions with facet counts.
+
+    A filter takes several values (`target=llm,tts` or `target=llm&target=tts`): OR inside an axis, AND across axes.
+    """
+    await ensure_catalog(db)
     return await svc.list_methods(
         db,
         scope=scope,
@@ -804,7 +823,7 @@ async def get_method(
     scope: Literal["personal", "work"] = Query("personal"),
 ):
     """Retrieve full method definition, relations, related experiments, and historical local measurements."""
-    await catalog_loader.ensure_catalog_loaded(db)
+    await ensure_catalog(db)
     return await svc.get_method_details(db, ident_or_slug=id_or_slug, scope=scope)
 
 
@@ -927,7 +946,10 @@ async def get_experiment_details(experiment_id: uuid.UUID, _: User, db: Db):
 
     latest_analysis = (
         await db.execute(
-            select(Analysis).where(Analysis.experiment_id == experiment_id)
+            select(Analysis)
+            .where(Analysis.experiment_id == experiment_id)
+            .order_by(Analysis.created_at.desc())
+            .limit(1)
         )
     ).scalar_one_or_none()
 
@@ -939,9 +961,23 @@ async def get_experiment_details(experiment_id: uuid.UUID, _: User, db: Db):
         )
     ).scalars().all()
 
-    out_dict = svc.out(exp)
+    measurements = (
+        await db.execute(
+            select(Measurement)
+            .where(Measurement.experiment_id == experiment_id)
+            .order_by(Measurement.created_at, Measurement.id)
+        )
+    ).scalars().all()
+    by_run: dict[uuid.UUID, list[dict[str, Any]]] = {}
+    for m in measurements:
+        by_run.setdefault(m.run_id, []).append(svc.out(m))
+
+    # Flat experiment fields stay at the top level for older callers; `experiment` is the contract's wrapper.
+    out_dict = svc.experiment_out(exp)
+    out_dict["experiment"] = svc.experiment_out(exp)
     out_dict["configurations"] = [svc.out(c) for c in configs]
-    out_dict["runs"] = [svc.out(r) for r in runs]
+    out_dict["runs"] = [{**svc.run_out(r), "measurements": by_run.get(r.id, [])} for r in runs]
+    out_dict["measurements"] = [m for r in runs for m in by_run.get(r.id, [])]
     out_dict["latest_analysis"] = svc.out(latest_analysis) if latest_analysis else None
     out_dict["artifacts"] = [svc.out(a) for a in artifacts]
     return out_dict
@@ -962,7 +998,7 @@ async def run_experiment(
         background=True,
     )
     await db.commit()
-    return {"runs": [svc.out(r) for r in runs]}
+    return {"runs": [svc.run_out(r) for r in runs]}
 
 
 @router.get("/runs")
@@ -976,7 +1012,12 @@ async def list_runs(
     offset: int = Query(0, ge=0),
 ):
     """List execution runs with optional study/experiment/status filters."""
-    q = select(Run)
+    q = (
+        select(Run, Experiment.title, Configuration.label, Study.title)
+        .join(Experiment, Experiment.id == Run.experiment_id)
+        .join(Configuration, Configuration.id == Run.configuration_id)
+        .join(Study, Study.id == Run.study_id)
+    )
     if study_id:
         q = q.where(Run.study_id == study_id)
     if experiment_id:
@@ -984,13 +1025,57 @@ async def list_runs(
     if status:
         q = q.where(Run.status == status)
 
-    runs = (
+    rows = (
         await db.execute(
             q.order_by(Run.created_at.desc()).limit(limit).offset(offset)
         )
-    ).scalars().all()
+    ).all()
 
-    return {"runs": [svc.out(r) for r in runs]}
+    # Locks held right now: one entry per running run, named after what that adapter needs exclusively.
+    lock_names = {
+        "llm_inference": "host_gpu_lease",
+        "tts_synthesis": "tts_lock",
+        "retrieval_eval": "cpu_lock",
+    }
+    running = (
+        await db.execute(select(Run).where(Run.status == "running"))
+    ).scalars().all()
+    active_locks = [
+        {
+            "lock": lock_names[r.adapter_id],
+            "adapter_id": r.adapter_id,
+            "run_id": str(r.id),
+            "experiment_id": str(r.experiment_id),
+        }
+        for r in running
+        if r.adapter_id in lock_names
+    ]
+    gpu_probe, gpu_lease = await svc.adapter_readiness("personal", only={"llm_inference"})
+    llm = gpu_probe.get("llm_inference")
+    host_gpu_status = (
+        {
+            "ready": llm["ready"],
+            "reason": llm["reason"],
+            "available_models": llm["available_models"],
+            "lease_held": bool(gpu_lease and gpu_lease.get("held")),
+        }
+        if llm
+        else None
+    )
+
+    return {
+        "runs": [
+            {
+                **svc.run_out(r),
+                "experiment_name": exp_title,
+                "configuration_label": cfg_label,
+                "study_title": study_title,
+            }
+            for r, exp_title, cfg_label, study_title in rows
+        ],
+        "host_gpu_status": host_gpu_status,
+        "active_locks": active_locks,
+    }
 
 
 @router.get("/runs/{run_id}")
@@ -1010,7 +1095,7 @@ async def get_run_details(run_id: uuid.UUID, _: User, db: Db):
         )
     ).scalars().all()
 
-    run_dict = svc.out(run)
+    run_dict = svc.run_out(run)
     if isinstance(run.raw_output, dict) and "provenance" in run.raw_output:
         run_dict["provenance"] = run.raw_output["provenance"]
     run_dict["measurements"] = [svc.out(m) for m in measurements]
@@ -1021,8 +1106,18 @@ async def get_run_details(run_id: uuid.UUID, _: User, db: Db):
 @router.post("/runs/{run_id}/cancel")
 async def cancel_run_endpoint(run_id: uuid.UUID, body: RunCancelIn, _: User, db: Db):
     """Cancel a running or queued run."""
+    run = await db.get(Run, run_id)
+    if run is None:
+        raise HTTPException(404, "research_run_not_found")
     cancelled = await runner.cancel_run(run_id, reason=body.reason)
-    return {"cancelled": cancelled, "run_id": str(run_id)}
+    # cancel_run commits on its own session; reload so `run` shows the stored state.
+    await db.refresh(run)
+    return {
+        "cancelled": cancelled,
+        "run_id": str(run_id),
+        "status": run.status,
+        "run": svc.run_out(run),
+    }
 
 
 @router.post("/experiments/{experiment_id}/external-report", status_code=201)
@@ -1077,6 +1172,7 @@ async def record_external_report(
     db.add(run)
     await db.flush()
 
+    measurement_rows = []
     for m in body.metrics:
         m_meta = dict(m.get("meta") or {})
         m_meta["provenance"] = body.provenance
@@ -1097,11 +1193,13 @@ async def record_external_report(
             created_at=utcnow(),
         )
         db.add(m_row)
+        measurement_rows.append(m_row)
 
     await db.commit()
-    res = svc.out(run)
+    res = svc.run_out(run)
     if isinstance(run.raw_output, dict) and "provenance" in run.raw_output:
         res["provenance"] = run.raw_output["provenance"]
+    res["measurements"] = [svc.out(m_row) for m_row in measurement_rows]
     return res
 
 
@@ -1136,17 +1234,20 @@ async def compare_series_endpoint(
     pareto_y_metric: str | None = Query(None),
     metrics: str | None = Query(None),
 ):
-    """Get chart-ready normalized series JSON for frontend SVG charts."""
+    """Get chart-ready normalized series JSON for frontend SVG charts.
+
+    `metrics` (comma separated) narrows the per-metric series; without it every measured metric is returned.
+    """
     metrics_filter = [m.strip() for m in metrics.split(",") if m.strip()] if metrics else None
-    eff_primary = primary_metric or pareto_y_metric
-    eff_secondary = secondary_metric or pareto_x_metric
     return await analyzer.build_compare_series(
         db,
         experiment_id=experiment_id,
         baseline_config_id=baseline_config_id,
-        primary_metric=eff_primary,
-        secondary_metric=eff_secondary,
+        primary_metric=primary_metric or pareto_y_metric,
+        secondary_metric=secondary_metric,
         metrics_filter=metrics_filter,
+        pareto_x_metric=pareto_x_metric,
+        pareto_y_metric=pareto_y_metric,
     )
 
 
@@ -1173,7 +1274,15 @@ async def adopt_best_result_endpoint(
         actor=str(_),
     )
     await db.commit()
-    return svc.out(best_res)
+    out_dict = svc.out(best_res)
+    node = await db.get(Node, best_res.decision_node_id)
+    out_dict["decision_node"] = svc.out(node) if node else None
+    # Same condition under which svc.adopt_best_result promoted the method.
+    exp = await db.get(Experiment, body.experiment_id)
+    promoted = body.promote_method and body.status == "adopted" and exp.method_id
+    method = await db.get(Method, exp.method_id) if promoted else None
+    out_dict["method"] = svc.out(method) if method else None
+    return out_dict
 
 
 @router.post("/studies/{study_id}/export-report")
@@ -1346,8 +1455,15 @@ async def agent_manage(body: AgentIn, sid: AgentSession, db: Db):
         if op == "compare_series":
             return await compare_series_endpoint(
                 exp.id, actor, db,
-                baseline_config_id=body.data.get("baseline_config_id"),
+                baseline_config_id=(
+                    uuid.UUID(str(body.data["baseline_config_id"]))
+                    if body.data.get("baseline_config_id")
+                    else None
+                ),
                 primary_metric=body.data.get("primary_metric"),
+                secondary_metric=None,
+                pareto_x_metric=body.data.get("pareto_x_metric"),
+                pareto_y_metric=body.data.get("pareto_y_metric"),
                 metrics=body.data.get("metrics"),
             )
         return await (

@@ -355,3 +355,21 @@ async def client_500():
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture
+def fake_muse_runtime(tmp_path):
+    """build_command 계약 테스트를 위한 격리된 최소 Muse SDK 패키지 fixture."""
+    from ttakkari.config import get_settings
+
+    settings = get_settings()
+    before = settings.muse_runtime_root
+    runtime_root = tmp_path / "fake_muse_runtime"
+    pkg = runtime_root / "node_modules/@muse-code/sdk/package.json"
+    pkg.parent.mkdir(parents=True, exist_ok=True)
+    pkg.write_text('{"name": "@muse-code/sdk", "version": "1.0.0"}', encoding="utf-8")
+    settings.muse_runtime_root = runtime_root
+    try:
+        yield runtime_root
+    finally:
+        settings.muse_runtime_root = before

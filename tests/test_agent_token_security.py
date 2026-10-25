@@ -129,7 +129,7 @@ def test_antigravity_argv_hides_token_value(tmp_path):
 
 # ---- AGT-01: Muse (기존 파일 방식 확인) ----
 
-def test_muse_argv_hides_token_value(tmp_path):
+def test_muse_argv_hides_token_value(tmp_path, fake_muse_runtime):
     token = issue_token(uuid.uuid4())
     spec = _spec(tmp_path, mcp_servers={"ttakkari": {"command": "python", "args": ["-m", "mcp"],
                                                     "env": {"TTK_ORCH_TOKEN": token}}})

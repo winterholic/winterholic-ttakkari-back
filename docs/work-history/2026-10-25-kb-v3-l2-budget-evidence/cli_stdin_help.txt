@@ -1,0 +1,37 @@
+# codex exec --help (excerpt: PROMPT/stdin), codex-cli codex-cli 0.162.1
+Run Codex non-interactively
+
+Usage: codex exec [OPTIONS] [PROMPT]
+       codex exec [OPTIONS] <COMMAND> [ARGS]
+
+Commands:
+  resume  Resume a previous session by id or pick the most recent with --last
+  fork    Fork a previous session by id into a new session
+  review  Run a code review against the current repository
+  help    Print this message or the help of the given subcommand(s)
+
+Arguments:
+  [PROMPT]
+          Initial instructions for the agent. If not provided as an argument (or if `-` is used),
+          instructions are read from stdin. If stdin is piped and a prompt is also provided, stdin
+          is appended as a `<stdin>` block
+
+
+# claude --help (excerpt: -p/--print, input-format), 2.1.285 (Claude Code)
+Usage: claude [options] [command] [prompt]
+
+Claude Code - starts an interactive session by default, use -p/--print for
+non-interactive output
+
+Arguments:
+129:  --input-format <format>               Input format (only works with --print):
+130-                                        "text" (default), or "stream-json"
+131-                                        (realtime streaming input) (choices:
+--
+176:  -p, --print                           Print response and exit (useful for
+177-                                        pipes). Note: The workspace trust dialog
+178-                                        is skipped when Claude is run in
+--
+198:                                        with --input-format=stream-json and
+199-                                        --output-format=stream-json)
+200-  --restricted                          Restricted mode: removes the built-in

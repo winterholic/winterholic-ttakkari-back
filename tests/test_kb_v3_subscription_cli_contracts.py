@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import delete
 
-from test_kb_v3_l2_budget_concurrency import _context, _ledger_counts
+from test_kb_v3_l2_budget_concurrency import _context, _ledger_counts, pause_default_kb_worker  # noqa: F401
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.kb_pipeline import ExtractingProcessor
@@ -43,8 +43,10 @@ import json, os, sys, time
 
 log_dir = os.environ["FAKE_L2_LOG"]
 argv = sys.argv[1:]
-prompt = argv[-1]
-record = {{"argv": argv, "cwd": os.getcwd(), "codex_home": os.environ.get("CODEX_HOME"), "pid": os.getpid(),
+prompt = sys.stdin.read() if argv[-1] == "-" else argv[-1]
+record = {{"argv": argv, "cwd": os.getcwd(), "codex_home": os.environ.get("CODEX_HOME"), "pid": os.getpid(), "prompt_on_stdin": argv[-1] == "-", "prompt_chars": len(prompt),
+          "marker_in_argv": any("SECRET-PASSAGE-BODY-7731" in a for a in argv),
+          "marker_in_stdin": "SECRET-PASSAGE-BODY-7731" in prompt,
           "paid_env": sorted(k for k in os.environ if k in ("OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_BASE_URL"))}}
 with open(os.path.join(log_dir, "calls.jsonl"), "a") as fh:
     fh.write(json.dumps(record) + "\n")
@@ -193,6 +195,53 @@ async def test_provenance_selects_only_permitted_account_pool(fake_cli, tmp_path
         assert excinfo.value.consumed is False
     assert len(fake_cli.calls()) == 1
     assert personal.config_dir not in [c["codex_home"] for c in fake_cli.calls()]
+
+
+async def test_personal_document_never_uses_a_work_pool_account(fake_cli, tmp_path):
+    """The app's personal mode lists work accounts too; L2 must still keep provenance strict."""
+    work = await _account(tmp_path, "work")
+    adapter = _adapter("personal", "global")
+
+    # Only a work account exists: personal source text must not be sent anywhere.
+    assert await adapter.availability() == (False, "scope_capacity_unavailable")
+    with pytest.raises(ScopeCapacityUnavailableError) as excinfo:
+        await adapter("personal text", L2_SCHEMA)
+    assert excinfo.value.consumed is False
+    assert fake_cli.calls() == []
+
+    personal = await _account(tmp_path, "personal")
+    await adapter("personal text", L2_SCHEMA)
+    assert [c["codex_home"] for c in fake_cli.calls()] == [personal.config_dir]
+    assert work.config_dir not in [c["codex_home"] for c in fake_cli.calls()]
+
+    # And the reverse: a work document never reaches the personal account.
+    await _adapter("work", "work_only")("work text", L2_SCHEMA)
+    assert fake_cli.calls()[-1]["codex_home"] == work.config_dir
+
+
+async def test_passage_body_travels_on_stdin_not_argv(fake_cli, tmp_path):
+    await _account(tmp_path, "personal")
+
+    await _adapter()(f"본문 {BODY_MARKER}", L2_SCHEMA)
+
+    [call] = fake_cli.calls()
+    assert call["prompt_on_stdin"] is True
+    assert call["marker_in_stdin"] is True
+    assert call["marker_in_argv"] is False
+
+
+def test_prompt_is_in_argv_only_when_stdin_is_not_requested(tmp_path):
+    from ttakkari.runs import desk
+
+    codex = desk._codex_cmd(profiles.Profile(id=uuid.uuid4(), name="x", engine="codex"), {}, "sys", "BODY", tmp_path)
+    assert codex[-2:] == ["--", "BODY"]
+    codex_stdin = desk._codex_cmd(
+        profiles.Profile(id=uuid.uuid4(), name="x", engine="codex"), {}, "sys", None, tmp_path
+    )
+    assert codex_stdin[-1] == "-" and "BODY" not in codex_stdin
+    assert "BODY" in desk._claude_cmd({}, "sys", "BODY")
+    claude_stdin = desk._claude_cmd({}, "sys", None)
+    assert claude_stdin[:2] == [get_settings().claude_bin, "-p"] and claude_stdin[2] == "--output-format"
 
 
 async def test_quota_response_cools_account_down_and_blocks_recall(fake_cli, tmp_path):

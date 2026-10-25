@@ -224,6 +224,20 @@ def resolve_target_pool(origin_scope: str, visibility: str) -> str | None:
     return None
 
 
+def restrict_to_pool(
+    free: list[Profile], blocked: list[tuple[Profile, float]], target_pool: str
+) -> tuple[list[Profile], list[tuple[Profile, float]]]:
+    """Keep only accounts that belong to the document's own pool.
+
+    The app's personal mode lists every account (work ones included); L2 extraction must not
+    send personal source text to a company account, so provenance decides, not mode.
+    """
+    return (
+        [p for p in free if p.pool == target_pool],
+        [(p, until) for p, until in blocked if p.pool == target_pool],
+    )
+
+
 async def check_scope_availability(
     db: AsyncSession,
     engine: str,
@@ -294,6 +308,7 @@ async def execute_subscription_l2_call(
                 output_schema=schema_path,
                 cwd=cwd,
                 subscription_only=True,
+                prompt_via_stdin=True,
             )
     finally:
         profiles.release(lease_id)

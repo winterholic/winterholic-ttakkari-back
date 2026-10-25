@@ -412,6 +412,12 @@ async def select_methods(study_id: uuid.UUID, body: SelectionIn, _: User, db: Db
     }
 
 
+async def require_catalog_methods(db, method_ids: list[uuid.UUID]) -> None:
+    missing = await planner.unknown_catalog_method_ids(db, method_ids)
+    if missing:
+        raise HTTPException(422, planner.unknown_method_message(missing))
+
+
 @router.post("/studies/{study_id}/experiments", status_code=201)
 async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     study = await svc.get_study(db, study_id)
@@ -427,6 +433,10 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
         ).one_or_none()
         if method is None:
             raise HTTPException(404, "research_method_not_found_in_scope")
+
+    await require_catalog_methods(
+        db, ([body.method_id] if body.method_id else []) + body.compared_method_ids
+    )
 
     adapter_id = body.adapter_id or body.adapter or "retrieval_eval"
     raw_budget = (
@@ -921,6 +931,9 @@ async def create_relation(
 @router.post("/experiments/validate")
 async def validate_experiment_plan(body: ExperimentValidateIn, _: User, db: Db):
     """Preview expanded configurations and validate budget, adapter constraints, and combination relations."""
+    await require_catalog_methods(
+        db, ([body.method_id] if body.method_id else []) + body.compared_method_ids
+    )
     res = await planner.validate_experiment_plan(
         db,
         study_id=body.study_id,

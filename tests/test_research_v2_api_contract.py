@@ -945,3 +945,57 @@ async def test_legacy_execute_applies_method_readiness_but_keeps_v1_experiments(
     ok = await client.post(f"{API}/experiments/{legacy['id']}/execute", headers=auth)
     assert ok.status_code == 200, ok.text
     assert evaluated == [1]
+
+
+async def _experiment_count():
+    from sqlalchemy import func, select
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.research.models import Experiment
+
+    async with sessionmaker()() as db:
+        return (await db.execute(select(func.count()).select_from(Experiment))).scalar()
+
+
+async def test_unknown_catalog_method_ids_are_rejected_with_422(client, auth, batch_calls):
+    study_id = await make_study(client, auth)
+    qlora = await _system_method(client, auth, "qlora")
+    ghost = str(uuid.uuid4())
+    plan = {
+        "study_id": study_id, "adapter_id": "retrieval_eval", "strategy": "single",
+        "search_space": {}, "fixed_inputs": {"k": 1}, "budget": {"max_runs": 1, "max_total_seconds": 60},
+    }
+    experiment = {"title": "ghost method", "primary_metric": "decode_tps", "config": {"k": 1}}
+    experiments_before, runs_before = await _experiment_count(), await _run_count()
+
+    for field, value in (
+        ("method_id", ghost),
+        ("compared_method_ids", [ghost]),
+        ("compared_method_ids", [qlora["id"], ghost]),
+    ):
+        validated = await client.post(f"{API}/experiments/validate", headers=auth, json={**plan, field: value})
+        assert validated.status_code == 422, (field, validated.text)
+        assert ghost in validated.text
+
+        created = await client.post(f"{API}/studies/{study_id}/experiments", headers=auth, json={**experiment, field: value})
+        assert created.status_code == 422, (field, created.text)
+        assert "research_catalog_method_not_found" in created.text
+        assert ghost in created.text
+
+    assert await _experiment_count() == experiments_before
+    assert await _run_count() == runs_before
+    assert batch_calls == []
+
+
+async def test_known_catalog_method_ids_still_pass_validation(client, auth):
+    study_id = await make_study(client, auth)
+    flash = await _system_method(client, auth, "flash_attention")
+    validated = await client.post(
+        f"{API}/experiments/validate", headers=auth,
+        json={
+            "study_id": study_id, "method_id": flash["id"], "adapter_id": "retrieval_eval",
+            "strategy": "single", "fixed_inputs": {"k": 1}, "budget": {"max_runs": 1, "max_total_seconds": 60},
+        },
+    )
+    assert validated.status_code == 200, validated.text
+    assert not any("research_catalog_method_not_found" in e for e in validated.json()["errors"])

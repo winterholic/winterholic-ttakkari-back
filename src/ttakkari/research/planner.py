@@ -357,6 +357,19 @@ def expand_configurations(
     return configs, errors, warnings
 
 
+async def unknown_catalog_method_ids(db, method_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+    """Ids in `method_ids` with no catalog Method row, in first-seen order."""
+    wanted = list(dict.fromkeys(method_ids))
+    if not wanted:
+        return []
+    found = set((await db.scalars(select(Method.id).where(Method.id.in_(wanted)))).all())
+    return [mid for mid in wanted if mid not in found]
+
+
+def unknown_method_message(ids: list[uuid.UUID]) -> str:
+    return "research_catalog_method_not_found: " + ", ".join(str(i) for i in ids)
+
+
 async def local_readiness_issues(
     db,
     method_ids: list[uuid.UUID],
@@ -418,6 +431,11 @@ async def validate_experiment_plan(
     if method_id:
         all_methods.append(method_id)
     all_methods.extend(compared_method_ids)
+
+    # A missing catalog row would otherwise skip the readiness check and dispatch.
+    missing = await unknown_catalog_method_ids(db, all_methods)
+    if missing:
+        errors.append(unknown_method_message(missing))
 
     rel_errors, rel_warnings = await validate_method_combinations(db, all_methods)
     errors.extend(rel_errors)

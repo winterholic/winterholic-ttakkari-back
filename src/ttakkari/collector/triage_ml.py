@@ -190,22 +190,54 @@ def score_document(artifact: dict[str, Any], goal_vec: list[float], doc_vec: lis
 
 
 _child_lock = asyncio.Lock()
+# The e5 child peaks near 2.1GB RSS, so it shares the Mac-wide slot file lock that already keeps local Qwen to one
+# heavy model at a time (runs.qwen_slot). Acquisition order, outermost first: `_child_lock` (this process), then the
+# machine slot via a non-blocking try-lock polled until a deadline. The slot is the only machine lock this path ever
+# takes and it is never held while waiting for anything else; the Qwen path never takes `_child_lock`. A bounded
+# try-lock cannot hold-and-wait, so no cycle with the Qwen teacher is possible.
+GATE_WAIT_SECONDS = 20.0
+GATE_POLL_SECONDS = 0.25
+
+
+class EmbedGateBusy(RuntimeError):
+    """Another process (a worker's e5 child or the Qwen teacher) owns the machine slot past the wait budget."""
+
+
+async def _acquire_gate(wait: float, poll: float) -> int:
+    # lazy: the runs package pulls models and profiles
+    from ttakkari.runs import qwen_slot
+
+    deadline = time.monotonic() + wait
+    while True:
+        fd = qwen_slot.acquire_process_lock()
+        if fd is not None:
+            return fd
+        if time.monotonic() >= deadline:
+            raise EmbedGateBusy("embedder_gate_busy")
+        await asyncio.sleep(poll)
 
 
 async def default_embed(texts: list[str], prefixes: list[str]) -> tuple[list[list[float]], dict[str, Any]]:
     """The existing disposable e5 child (ttakkari.context.embedder_worker, offline, parent-watched). It is named, not
-    imported: the collector package keeps no import dependency on the context/knowledge packages."""
+    imported: the collector package keeps no import dependency on the context/knowledge packages. The child is only
+    spawned while this process holds the machine slot; a busy slot raises EmbedGateBusy and no child starts."""
     from ttakkari.config import get_settings
     from ttakkari.model_process import run_json_worker
 
     s = get_settings()
     async with _child_lock:
-        result = await run_json_worker(
-            module="ttakkari.context.embedder_worker",
-            request={"texts": texts, "prefixes": prefixes, "query": False, "model": s.context_model,
-                     "cache_dir": str(s.models_dir), "threads": s.context_embedding_cpu_threads},
-            timeout=s.context_embedding_timeout_seconds, error_prefix="embedding_worker",
-        )
+        from ttakkari.runs import qwen_slot
+
+        fd = await _acquire_gate(GATE_WAIT_SECONDS, GATE_POLL_SECONDS)
+        try:
+            result = await run_json_worker(
+                module="ttakkari.context.embedder_worker",
+                request={"texts": texts, "prefixes": prefixes, "query": False, "model": s.context_model,
+                         "cache_dir": str(s.models_dir), "threads": s.context_embedding_cpu_threads},
+                timeout=s.context_embedding_timeout_seconds, error_prefix="embedding_worker",
+            )
+        finally:
+            qwen_slot.release_process_lock(fd)
     vectors = result.get("vectors", [])
     if len(vectors) != len(texts) or any(
         len(v) != EMBED_DIM or not all(isinstance(x, (int, float)) and math.isfinite(x) for x in v) for v in vectors
@@ -247,6 +279,9 @@ async def evaluate_documents(goal: str, docs: list[dict[str, str]], *, embed: Em
     started = time.perf_counter()
     try:
         vectors, meta = await (embed or default_embed)(texts, prefixes)
+    except EmbedGateBusy:
+        # Deferred, not judged: the rule stage decides conservatively and the page can be re-evaluated later.
+        return [_unavailable("unavailable", "embedder_gate_busy") for _ in docs]
     except Exception as exc:  # noqa: BLE001 - a model failure is an unavailable axis, never an accept or a crash
         return [_unavailable("unavailable", f"embedder_error:{type(exc).__name__}") for _ in docs]
     wall = time.perf_counter() - started

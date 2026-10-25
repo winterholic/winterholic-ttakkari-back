@@ -266,3 +266,89 @@ def test_committed_artifact_is_intact_and_matches_the_recorded_evaluation():
     assert report["relevance"]["n_test_queries"] == 100
     assert "HUMAN" in report["heads"]["label_source"].upper() or "human" in report["heads"]["label_source"]
     assert triage.TRIAGE_VERSION == "multiaxis-triage-v2"
+
+
+# --- cross-process resource gate for the e5 child (shares the Mac-wide Qwen slot file lock) ---
+
+_HOLDER = (
+    "import fcntl, os, sys\n"
+    "fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR, 0o600)\n"
+    "fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+    "print('held', flush=True)\n"
+    "sys.stdin.readline()\n"
+)
+
+
+@pytest.fixture
+def gate(monkeypatch, tmp_path):
+    from ttakkari.runs import qwen_slot
+
+    path = tmp_path / "run" / "qwen-local-slot.lock"
+    monkeypatch.setattr(qwen_slot, "process_lock_path", lambda: path)
+    monkeypatch.setattr(triage_ml, "GATE_WAIT_SECONDS", 0.6)
+    monkeypatch.setattr(triage_ml, "GATE_POLL_SECONDS", 0.05)
+    spawned: list[dict] = []
+
+    async def fake_worker(**kwargs):
+        spawned.append(kwargs)
+        n = len(kwargs["request"]["texts"])
+        return {"vectors": [[0.0] * triage_ml.EMBED_DIM for _ in range(n)], "snapshot": "snap", "metrics": {}}
+
+    monkeypatch.setattr("ttakkari.model_process.run_json_worker", fake_worker)
+    return path, spawned
+
+
+def _hold_in_other_process(path):
+    import subprocess
+    import sys
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen([sys.executable, "-c", _HOLDER, str(path)], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, text=True)
+    assert proc.stdout.readline().strip() == "held"
+    return proc
+
+
+def _release_other_process(proc):
+    proc.stdin.write("\n")
+    proc.stdin.flush()
+    proc.wait(timeout=10)
+
+
+def test_e5_child_is_not_started_and_pages_stay_unavailable_while_another_process_holds_the_slot(gate, monkeypatch):
+    path, spawned = gate
+    monkeypatch.setattr(triage_ml, "load_artifact", lambda: synthetic_artifact())
+    monkeypatch.setattr(triage_ml, "enabled", lambda: (True, ""))
+    other = _hold_in_other_process(path)
+    try:
+        docs = [{"title": "a", "text": "x" * 40, "language": "ko"}]
+        out = asyncio.run(triage_ml.evaluate_documents("목표", docs))
+    finally:
+        _release_other_process(other)
+    assert spawned == []
+    assert out[0]["status"] == "unavailable" and out[0]["reason"] == "embedder_gate_busy" and out[0]["axes"] == {}
+
+
+def test_e5_child_runs_after_the_slot_is_released_and_gives_it_back(gate):
+    from ttakkari.runs import qwen_slot
+
+    path, spawned = gate
+    other = _hold_in_other_process(path)
+    _release_other_process(other)
+    vectors, meta = asyncio.run(triage_ml.default_embed(["q", "p"], ["query: ", "passage: "]))
+    assert len(spawned) == 1 and len(vectors) == 2 and meta["snapshot"] == "snap"
+    assert qwen_slot.is_process_lock_busy(path) is False
+
+
+def test_e5_gate_is_released_when_the_child_raises(gate, monkeypatch):
+    from ttakkari.runs import qwen_slot
+
+    path, _ = gate
+
+    async def boom(**kwargs):
+        raise RuntimeError("embedding_worker_failed")
+
+    monkeypatch.setattr("ttakkari.model_process.run_json_worker", boom)
+    with pytest.raises(RuntimeError, match="embedding_worker_failed"):
+        asyncio.run(triage_ml.default_embed(["q"], ["query: "]))
+    assert qwen_slot.is_process_lock_busy(path) is False

@@ -52,8 +52,8 @@ from ttakkari.kb_ontology_models import (
     KbDocumentEntity,
     KbEntity,
     KbEntityAlias,
-    derive_derived_visibility,
 )
+from ttakkari.kb_visibility import derive_derived_policy
 
 logger = logging.getLogger(__name__)
 
@@ -155,46 +155,14 @@ class _Ctx:
 _UNSET: Any = object()
 
 
-def _visibility_token(item: Any) -> str | None:
-    """원천 하나를 derive_derived_visibility 가 해석하는 토큰('work_only'/'global'/None)으로 바꾼다."""
-    if item is None:
-        return None
-    if isinstance(item, str):
-        text = item.strip().lower()
-        if text in ("work", "work_only"):
-            return "work_only"
-        if text in ("personal", "global"):
-            return "global"
-        return None
-    scope = getattr(item, "scope", None)
-    origin = getattr(item, "origin_scope", None)
-    visibility = getattr(item, "visibility", None)
-    if scope == "work" or origin == "work":
-        return "work_only"
-    if scope == "personal":
-        # 확정 정책: personal 문서는 visibility 가 누락(미flush 객체의 None 포함)이어도 global.
-        # 명시적으로 work_only 로 숨긴 personal 문서는 그 의도를 따른다(fail-closed).
-        return "work_only" if visibility == "work_only" else "global"
-    if visibility == "global" and origin == "personal":
-        return "global"
-    return None
-
-
 def derive_scope(sources: Sequence[Any]) -> ResolutionScope:
     """원천 문서 접근(KbDocumentAccess 또는 'work'/'personal' 문자열)에서 파생 객체의 visibility·origin_scope 결정.
 
-    schema 의 derive_derived_visibility 를 그대로 쓴다: 원천 중 하나라도 work_only, 없음, 미상이면 work_only.
+    정책 구현은 kb_visibility.derive_derived_policy 한 곳이다(파이프라인·추출기·writer 와 공유).
+    원천 중 하나라도 work_only, 없음, 미상이면 work_only 다.
     """
-    tokens = [_visibility_token(item) for item in sources]
-    visibility = derive_derived_visibility(tokens)
-    explicit_work = any(
-        (isinstance(i, str) and i.strip().lower() in ("work", "work_only"))
-        or getattr(i, "scope", None) == "work"
-        or getattr(i, "origin_scope", None) == "work"
-        for i in sources
-        if i is not None
-    )
-    return ResolutionScope(visibility=visibility, origin_scope="work" if explicit_work else "personal")
+    origin_scope, visibility = derive_derived_policy(sources)
+    return ResolutionScope(visibility=visibility, origin_scope=origin_scope)
 
 
 async def _load_sources(

@@ -231,52 +231,135 @@ async def test_normal_stage_pipeline_to_ready(pipeline_db):
             assert st.finished_at is not None
 
 
-@pytest.mark.asyncio
-async def test_missing_processor_held_not_ready(pipeline_db):
-    """미구현 단계(기본 extracting)는 절대 ready/no-op 으로 처리하지 않고 held 및 capability_missing 을 남긴다."""
-    doc_id = uuid.uuid4()
-    rev_id = uuid.uuid4()
+def _registry_with(**procs):
+    """기본 레지스트리 위에 단계별 가짜 처리기를 올린다. 키는 단계 이름."""
+    registry = StageProcessorRegistry()
+    for stage, proc in procs.items():
+        registry.register(stage, proc)
+    return registry
 
+
+async def _new_job(pipeline_db, *, max_attempts=3, attempt_count=1):
     async with pipeline_db() as db:
         job = await enqueue_pipeline_job(
-            db, document_id=doc_id, revision_id=rev_id
+            db, document_id=uuid.uuid4(), revision_id=uuid.uuid4(), max_attempts=max_attempts
         )
         token = uuid.uuid4()
         job.attempt_token = token
+        job.attempt_count = attempt_count
         await db.commit()
-        job_id = job.id
+        return job.id, token
 
-    # parsing, chunking 만 성공하고 extracting 은 기본 missing processor (held)
-    registry = StageProcessorRegistry()
-    registry.register(STAGE_PARSING, FakeSuccessProcessor(STAGE_PARSING))
-    registry.register(STAGE_CHUNKING, FakeSuccessProcessor(STAGE_CHUNKING))
-    # extracting, linking, canonicalizing 은 기본 MissingStageProcessor
 
-    orchestrator = KbPipelineOrchestrator(
-        session_factory=pipeline_db, registry=registry
+async def _stage_statuses(pipeline_db, job_id):
+    async with pipeline_db() as db:
+        return {
+            s.stage: s.status
+            for s in await db.scalars(select(KbPipelineStage).where(KbPipelineStage.job_id == job_id))
+        }
+
+
+@pytest.mark.asyncio
+async def test_missing_processor_held_not_ready(pipeline_db):
+    """미구현 단계(extracting)는 ready/no-op 으로 위장하지 않는다. 검색 색인(indexing)은 막히지 않고 잡은 degraded 로 끝난다."""
+    job_id, token = await _new_job(pipeline_db)
+    registry = _registry_with(
+        **{
+            STAGE_PARSING: FakeSuccessProcessor(STAGE_PARSING),
+            STAGE_CHUNKING: FakeSuccessProcessor(STAGE_CHUNKING),
+            STAGE_INDEXING: FakeSuccessProcessor(STAGE_INDEXING),
+            STAGE_EXTRACTING: MissingStageProcessor(STAGE_EXTRACTING),
+            STAGE_LINKING: MissingStageProcessor(STAGE_LINKING),
+            STAGE_CANONICALIZING: MissingStageProcessor(STAGE_CANONICALIZING),
+        }
     )
+    orchestrator = KbPipelineOrchestrator(session_factory=pipeline_db, registry=registry)
     final_status = await orchestrator.execute_job(job_id, token)
 
-    assert final_status == JOB_STATUS_HELD
+    assert final_status == JOB_STATUS_DEGRADED
 
     async with pipeline_db() as db:
         job_after = await db.get(KbPipelineJob, job_id)
-        assert job_after.status == JOB_STATUS_HELD
+        assert job_after.status == JOB_STATUS_DEGRADED
+        assert job_after.status != JOB_STATUS_READY
         assert job_after.hold_reason == "extracting"
         assert "capability_missing" in (job_after.error_detail or "")
-        assert job_after.completed_at is None
+        assert job_after.metrics["stage_statuses"][STAGE_INDEXING] == STAGE_STATUS_SUCCEEDED
 
-        # stage 상태 대조: parsing, chunking 은 succeeded, extracting 은 held, 나머지는 pending
-        stages = {
-            s.stage: s.status
-            for s in await db.scalars(
-                select(KbPipelineStage).where(KbPipelineStage.job_id == job_id)
-            )
+    stages = await _stage_statuses(pipeline_db, job_id)
+    assert stages[STAGE_PARSING] == STAGE_STATUS_SUCCEEDED
+    assert stages[STAGE_CHUNKING] == STAGE_STATUS_SUCCEEDED
+    assert stages[STAGE_EXTRACTING] == STAGE_STATUS_HELD
+    assert stages[STAGE_INDEXING] == STAGE_STATUS_SUCCEEDED  # 추출 보류가 색인을 막지 않았다
+    assert stages[STAGE_LINKING] == "skipped"  # 의존 단계가 충족되지 않아 건너뜀(성공으로 위장 안 함)
+    assert stages[STAGE_CANONICALIZING] == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_core_stage_held_holds_the_job(pipeline_db):
+    """핵심 단계(chunking)가 보류되면 잡 전체가 held 이고 뒤 단계는 실행되지 않는다."""
+    job_id, token = await _new_job(pipeline_db)
+    indexing = FakeSuccessProcessor(STAGE_INDEXING)
+    registry = _registry_with(
+        **{
+            STAGE_PARSING: FakeSuccessProcessor(STAGE_PARSING),
+            STAGE_CHUNKING: MissingStageProcessor(STAGE_CHUNKING),
+            STAGE_INDEXING: indexing,
         }
-        assert stages[STAGE_PARSING] == STAGE_STATUS_SUCCEEDED
-        assert stages[STAGE_CHUNKING] == STAGE_STATUS_SUCCEEDED
-        assert stages[STAGE_EXTRACTING] == STAGE_STATUS_HELD
-        assert stages[STAGE_LINKING] == STAGE_STATUS_PENDING
+    )
+    final = await KbPipelineOrchestrator(session_factory=pipeline_db, registry=registry).execute_job(job_id, token)
+    assert final == JOB_STATUS_HELD
+    assert indexing.called_count == 0
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        assert job.status == JOB_STATUS_HELD and job.hold_reason == "chunking"
+
+
+@pytest.mark.asyncio
+async def test_extraction_failure_does_not_block_indexing(pipeline_db):
+    """추출이 계속 실패해도 같은 패스에서 indexing 은 끝나고, 시도를 다 쓰면 잡은 failed 가 아니라 degraded 다."""
+    job_id, token = await _new_job(pipeline_db, max_attempts=2, attempt_count=2)
+    indexing = FakeSuccessProcessor(STAGE_INDEXING)
+    registry = _registry_with(
+        **{
+            STAGE_PARSING: FakeSuccessProcessor(STAGE_PARSING),
+            STAGE_CHUNKING: FakeSuccessProcessor(STAGE_CHUNKING),
+            STAGE_EXTRACTING: FakeFailingProcessor(fail_until_attempt=999),
+            STAGE_LINKING: FakeSuccessProcessor(STAGE_LINKING),
+            STAGE_INDEXING: indexing,
+            STAGE_CANONICALIZING: FakeSuccessProcessor(STAGE_CANONICALIZING),
+        }
+    )
+    final = await KbPipelineOrchestrator(session_factory=pipeline_db, registry=registry).execute_job(job_id, token)
+    assert final == JOB_STATUS_DEGRADED
+    assert indexing.called_count == 1
+    stages = await _stage_statuses(pipeline_db, job_id)
+    assert stages[STAGE_EXTRACTING] == "failed"
+    assert stages[STAGE_LINKING] == "skipped"
+    assert stages[STAGE_INDEXING] == STAGE_STATUS_SUCCEEDED
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        assert job.error_code == "max_attempts_exceeded" and job.hold_reason == "simulated failure at call 1"[:64]
+
+
+@pytest.mark.asyncio
+async def test_core_stage_failure_with_attempts_left_schedules_retry_and_runs_nothing_after(pipeline_db):
+    job_id, token = await _new_job(pipeline_db, max_attempts=3, attempt_count=1)
+    chunking_after = FakeSuccessProcessor(STAGE_INDEXING)
+    registry = _registry_with(
+        **{
+            STAGE_PARSING: FakeFailingProcessor(fail_until_attempt=999),
+            STAGE_INDEXING: chunking_after,
+        }
+    )
+    final = await KbPipelineOrchestrator(
+        session_factory=pipeline_db, registry=registry, base_backoff_seconds=0.1
+    ).execute_job(job_id, token)
+    assert final == "retry_scheduled"
+    assert chunking_after.called_count == 0
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        assert job.status == JOB_STATUS_REGISTERED and job.current_stage == STAGE_PARSING
 
 
 @pytest.mark.asyncio
@@ -297,11 +380,14 @@ async def test_degraded_stage_provides_partial_availability(pipeline_db):
     registry = StageProcessorRegistry()
     registry.register(STAGE_PARSING, FakeSuccessProcessor(STAGE_PARSING))
     registry.register(STAGE_CHUNKING, FakeSuccessProcessor(STAGE_CHUNKING))
-    # extracting 단계를 degraded 로 반환하도록 설정
+    # extracting 단계를 degraded(부분 결과)로 반환하도록 설정. 부분 결과가 있으므로 linking/indexing 은 계속 진행한다.
     registry.register(
         STAGE_EXTRACTING,
         MissingStageProcessor(STAGE_EXTRACTING, as_degraded=True),
     )
+    registry.register(STAGE_LINKING, FakeSuccessProcessor(STAGE_LINKING))
+    registry.register(STAGE_INDEXING, FakeSuccessProcessor(STAGE_INDEXING))
+    registry.register(STAGE_CANONICALIZING, FakeSuccessProcessor(STAGE_CANONICALIZING))
 
     orchestrator = KbPipelineOrchestrator(
         session_factory=pipeline_db, registry=registry
@@ -548,7 +634,9 @@ async def test_failed_or_held_job_does_not_block_subsequent_jobs(pipeline_db):
     registry = StageProcessorRegistry()
     registry.register(STAGE_PARSING, FakeSuccessProcessor(STAGE_PARSING))
     registry.register(STAGE_CHUNKING, FakeSuccessProcessor(STAGE_CHUNKING))
-    # 첫 번째 잡은 held 가 되고, 두 번째 잡도 독립적으로 pump 가능
+    registry.register(STAGE_INDEXING, FakeSuccessProcessor(STAGE_INDEXING))
+    registry.register(STAGE_EXTRACTING, MissingStageProcessor(STAGE_EXTRACTING))
+    # 첫 번째 잡은 extracting 보류(degraded)가 되고, 두 번째 잡도 독립적으로 pump 가능
     worker = KbPipelineWorker(
         session_factory=pipeline_db,
         orchestrator=KbPipelineOrchestrator(
@@ -574,9 +662,9 @@ async def test_failed_or_held_job_does_not_block_subsequent_jobs(pipeline_db):
             )
         )
         assert len(jobs) == 2
-        # 두 작업 모두 missing extracting 단계로 인해 held 되었으며 서로 방해하지 않음
-        assert jobs[0].status == JOB_STATUS_HELD
-        assert jobs[1].status == JOB_STATUS_HELD
+        # 두 작업 모두 missing extracting 단계로 degraded(색인은 끝남)가 되었으며 서로 방해하지 않음
+        assert jobs[0].status == JOB_STATUS_DEGRADED
+        assert jobs[1].status == JOB_STATUS_DEGRADED
 
 
 @pytest.mark.asyncio
@@ -878,3 +966,207 @@ async def test_collector_delivery_queues_pipeline_job(pipeline_db, monkeypatch):
         assert job.document_id == doc_id
         assert job.status == JOB_STATUS_REGISTERED
         assert job.current_stage == STAGE_PARSING
+
+
+# ---------------------------------------------------------------------------
+# retry_pipeline_job / fenced writes / default registry wiring
+# ---------------------------------------------------------------------------
+from ttakkari.kb_pipeline import PipelineRetryError, retry_pipeline_job  # noqa: E402
+
+
+async def _run_to_degraded(pipeline_db):
+    job_id, token = await _new_job(pipeline_db)
+    procs = {
+        STAGE_PARSING: FakeSuccessProcessor(STAGE_PARSING),
+        STAGE_CHUNKING: FakeSuccessProcessor(STAGE_CHUNKING),
+        STAGE_EXTRACTING: FakeFailingProcessor(fail_until_attempt=1),
+        STAGE_LINKING: FakeSuccessProcessor(STAGE_LINKING),
+        STAGE_INDEXING: FakeSuccessProcessor(STAGE_INDEXING),
+        STAGE_CANONICALIZING: FakeSuccessProcessor(STAGE_CANONICALIZING),
+    }
+    # max_attempts=1: 첫 실패가 곧 최종이라 degraded 로 끝난다.
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        job.max_attempts = 1
+        await db.commit()
+    orch = KbPipelineOrchestrator(session_factory=pipeline_db, registry=_registry_with(**procs))
+    assert await orch.execute_job(job_id, token) == JOB_STATUS_DEGRADED
+    return job_id, token, procs, orch
+
+
+@pytest.mark.asyncio
+async def test_retry_pipeline_job_from_stage_reruns_only_from_that_stage(pipeline_db):
+    job_id, old_token, procs, orch = await _run_to_degraded(pipeline_db)
+    assert procs[STAGE_PARSING].called_count == 1
+
+    outcome = await retry_pipeline_job(pipeline_db, job_id, from_stage=STAGE_EXTRACTING)
+    assert outcome.requeued and outcome.from_stage == STAGE_EXTRACTING
+    assert outcome.reset_stages == (STAGE_EXTRACTING, STAGE_LINKING, STAGE_INDEXING, STAGE_CANONICALIZING)
+
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        assert job.status == JOB_STATUS_REGISTERED and job.current_stage == STAGE_EXTRACTING
+        assert job.attempt_token not in (None, old_token)
+        assert job.attempt_count == 0 and job.claimed_by is None and job.error_code is None
+        new_token = job.attempt_token
+        job.max_attempts = 3
+        await db.commit()
+    stages = await _stage_statuses(pipeline_db, job_id)
+    assert stages[STAGE_PARSING] == STAGE_STATUS_SUCCEEDED and stages[STAGE_CHUNKING] == STAGE_STATUS_SUCCEEDED
+    assert stages[STAGE_EXTRACTING] == STAGE_STATUS_PENDING and stages[STAGE_INDEXING] == STAGE_STATUS_PENDING
+
+    # 옛 토큰의 실행자는 막힌다
+    with pytest.raises(StaleWriterError):
+        await orch.execute_job(job_id, old_token)
+
+    assert await orch.execute_job(job_id, new_token) == JOB_STATUS_READY
+    assert procs[STAGE_PARSING].called_count == 1  # 앞선 성공 단계는 건너뛴다
+    assert procs[STAGE_CHUNKING].called_count == 1
+    assert procs[STAGE_EXTRACTING].called_count == 2  # failed 1회 + 재시도 성공
+    assert procs[STAGE_INDEXING].called_count == 2  # from_stage 이후는 다시 실행
+
+
+@pytest.mark.asyncio
+async def test_retry_pipeline_job_is_idempotent_and_default_resumes_at_first_unsettled(pipeline_db):
+    job_id, _tok, _procs, _orch = await _run_to_degraded(pipeline_db)
+    first = await retry_pipeline_job(pipeline_db, job_id)
+    assert first.requeued and first.from_stage == STAGE_EXTRACTING
+    async with pipeline_db() as db:
+        token_after_first = (await db.get(KbPipelineJob, job_id)).attempt_token
+    second = await retry_pipeline_job(pipeline_db, job_id)
+    assert not second.requeued and second.reason == "already_queued"
+    async with pipeline_db() as db:
+        assert (await db.get(KbPipelineJob, job_id)).attempt_token == token_after_first
+
+
+@pytest.mark.asyncio
+async def test_retry_pipeline_job_requeues_held_and_failed_and_worker_claims_them(pipeline_db):
+    # held(핵심 단계 보류)
+    job_id, token = await _new_job(pipeline_db)
+    registry = _registry_with(**{STAGE_PARSING: MissingStageProcessor(STAGE_PARSING)})
+    assert await KbPipelineOrchestrator(session_factory=pipeline_db, registry=registry).execute_job(job_id, token) == JOB_STATUS_HELD
+    # 워커는 held 를 claim 하지 않는다
+    worker = KbPipelineWorker(session_factory=pipeline_db, orchestrator=KbPipelineOrchestrator(
+        session_factory=pipeline_db, registry=_registry_with(**{STAGE_PARSING: FakeSuccessProcessor(STAGE_PARSING)})))
+    assert await worker.pump() == 0
+
+    out = await retry_pipeline_job(pipeline_db, job_id, from_stage=STAGE_PARSING)
+    assert out.requeued
+    assert await worker.pump() == 1
+    if worker._tasks:
+        await asyncio.gather(*worker._tasks)
+
+    # 최종 failed(핵심 단계 실패, 시도 소진)
+    job2, tok2 = await _new_job(pipeline_db, max_attempts=1, attempt_count=1)
+    reg2 = _registry_with(**{STAGE_PARSING: FakeFailingProcessor(fail_until_attempt=999)})
+    assert await KbPipelineOrchestrator(session_factory=pipeline_db, registry=reg2).execute_job(job2, tok2) == JOB_STATUS_FAILED
+    async with pipeline_db() as db:
+        assert (await db.get(KbPipelineJob, job2)).status == JOB_STATUS_FAILED
+    out2 = await retry_pipeline_job(pipeline_db, job2)
+    assert out2.requeued and out2.from_stage == STAGE_PARSING
+    async with pipeline_db() as db:
+        j = await db.get(KbPipelineJob, job2)
+        assert j.status == JOB_STATUS_REGISTERED and j.attempt_count == 0 and j.error_code is None
+
+
+@pytest.mark.asyncio
+async def test_retry_pipeline_job_rejects_running_unknown_stage_and_missing_job(pipeline_db):
+    job_id, _token = await _new_job(pipeline_db)
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        job.claimed_by = "worker-x"
+        job.lease_expires_at = utcnow() + timedelta(minutes=5)
+        await db.commit()
+    with pytest.raises(PipelineRetryError, match="job_running"):
+        await retry_pipeline_job(pipeline_db, job_id)
+    with pytest.raises(PipelineRetryError, match="unknown_stage"):
+        await retry_pipeline_job(pipeline_db, job_id, from_stage="nope")
+    with pytest.raises(PipelineRetryError, match="job_not_found"):
+        await retry_pipeline_job(pipeline_db, uuid.uuid4())
+    # 임차권이 만료되면 회수 가능
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        job.lease_expires_at = utcnow() - timedelta(minutes=1)
+        await db.commit()
+    assert (await retry_pipeline_job(pipeline_db, job_id, from_stage=STAGE_CHUNKING)).requeued
+
+
+@pytest.mark.asyncio
+async def test_fenced_session_blocks_side_writes_after_token_change(pipeline_db):
+    """처리기의 부수 DB 쓰기는 토큰이 바뀐 뒤에는 한 행도 남기지 못한다."""
+    job_id, token = await _new_job(pipeline_db)
+    rev_id = uuid.uuid4()
+
+    def ctx_for(tok):
+        return StageContext(
+            job_id=job_id, document_id=uuid.uuid4(), revision_id=rev_id, stage=STAGE_CHUNKING,
+            attempt_token=tok, session_factory=pipeline_db,
+        )
+
+    def passage():
+        return KbPassage(id=uuid.uuid4(), revision_id=rev_id, ord=0, body="x", char_start=0, char_end=1, sha256="s")
+
+    async with ctx_for(token).fenced_session() as db:
+        db.add(passage())
+    async with pipeline_db() as db:
+        assert len(list(await db.scalars(select(KbPassage).where(KbPassage.revision_id == rev_id)))) == 1
+
+    # 다른 실행자가 재임차해 토큰이 바뀌었다
+    async with pipeline_db() as db:
+        job = await db.get(KbPipelineJob, job_id)
+        job.attempt_token = uuid.uuid4()
+        await db.commit()
+    with pytest.raises(StaleWriterError):
+        async with ctx_for(token).fenced_session() as db:
+            db.add(KbPassage(id=uuid.uuid4(), revision_id=rev_id, ord=1, body="y", char_start=0, char_end=1, sha256="t"))
+    async with pipeline_db() as db:
+        assert len(list(await db.scalars(select(KbPassage).where(KbPassage.revision_id == rev_id)))) == 1
+
+    # 처리기 내부 예외로 빠져나가면 커밋하지 않는다
+    async with pipeline_db() as db:
+        live = (await db.get(KbPipelineJob, job_id)).attempt_token
+    with pytest.raises(RuntimeError):
+        async with ctx_for(live).fenced_session() as db:
+            db.add(KbPassage(id=uuid.uuid4(), revision_id=rev_id, ord=2, body="z", char_start=0, char_end=1, sha256="u"))
+            raise RuntimeError("boom")
+    async with pipeline_db() as db:
+        assert len(list(await db.scalars(select(KbPassage).where(KbPassage.revision_id == rev_id)))) == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_processor_cannot_commit_even_if_it_finishes_late(pipeline_db):
+    """실행 중 토큰이 바뀐 잡의 처리기가 늦게 쓰기를 시도하면 StaleWriterError 로 잡 전체가 펜싱된다."""
+    job_id, token = await _new_job(pipeline_db)
+    rev_id = uuid.uuid4()
+
+    class LateWriter:
+        async def __call__(self, ctx):
+            # 모델 호출이 길어지는 사이 다른 실행자가 토큰을 가져갔다
+            async with pipeline_db() as db:
+                job = await db.get(KbPipelineJob, ctx.job_id)
+                job.attempt_token = uuid.uuid4()
+                await db.commit()
+            async with ctx.fenced_session() as db:
+                db.add(KbPassage(id=uuid.uuid4(), revision_id=rev_id, ord=0, body="late", char_start=0, char_end=4, sha256="l"))
+            return StageResult.success()
+
+    orch = KbPipelineOrchestrator(session_factory=pipeline_db, registry=_registry_with(**{STAGE_PARSING: LateWriter()}))
+    with pytest.raises(StaleWriterError):
+        await orch.execute_job(job_id, token)
+    async with pipeline_db() as db:
+        assert list(await db.scalars(select(KbPassage).where(KbPassage.revision_id == rev_id))) == []
+
+
+def test_default_registry_registers_real_processors():
+    from ttakkari.kb_pipeline import ExtractingProcessor, LinkingProcessor
+
+    reg = StageProcessorRegistry()
+    assert isinstance(reg.get(STAGE_EXTRACTING), ExtractingProcessor)
+    assert isinstance(reg.get(STAGE_LINKING), LinkingProcessor)
+    assert not isinstance(reg.get(STAGE_INDEXING), MissingStageProcessor)
+    # 구현이 없는 정본 통합만 정직하게 held 로 남는다
+    assert isinstance(reg.get(STAGE_CANONICALIZING), MissingStageProcessor)
+    from ttakkari.kb_pipeline.types import STAGE_REQUIRES
+
+    assert STAGE_LINKING not in STAGE_REQUIRES[STAGE_INDEXING]
+    assert STAGE_EXTRACTING not in STAGE_REQUIRES[STAGE_INDEXING]

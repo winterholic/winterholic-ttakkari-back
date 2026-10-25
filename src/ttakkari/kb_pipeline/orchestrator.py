@@ -46,8 +46,8 @@ from ttakkari.kb_pipeline.types import (
     StageResult,
     StaleWriterError,
 )
-from ttakkari.kb_pipeline.visibility import derive_scope_and_visibility
 from ttakkari.kb_pipeline_models import KbPipelineJob, KbPipelineStage
+from ttakkari.kb_visibility import derive_scope_and_visibility
 from ttakkari.models import utcnow
 
 log = logging.getLogger(__name__)

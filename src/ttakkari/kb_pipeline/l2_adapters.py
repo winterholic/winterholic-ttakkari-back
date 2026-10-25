@@ -117,15 +117,14 @@ class OpenAICompatL2Adapter:
                 "json_schema": {"name": "kb_l2_extraction", "strict": True, "schema": schema},
             },
         }
-        async with self._gate.semaphore():
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(self.timeout, connect=3.0), trust_env=False
-            ) as client:
-                resp = await client.post(
-                    self.base_url + "/v1/chat/completions", json=payload
-                )
-                resp.raise_for_status()
-                content = resp.json()["choices"][0]["message"]["content"]
+        async with self._gate.semaphore(), httpx.AsyncClient(
+            timeout=httpx.Timeout(self.timeout, connect=3.0), trust_env=False
+        ) as client:
+            resp = await client.post(
+                self.base_url + "/v1/chat/completions", json=payload
+            )
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
         return json.loads(content)
 
 

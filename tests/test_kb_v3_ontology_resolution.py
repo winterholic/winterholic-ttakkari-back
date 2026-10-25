@@ -492,8 +492,9 @@ async def test_visibility_is_derived_from_document_access_never_defaulted_global
     cases = [
         (work_doc.kw(), "work_only", "work"),
         (personal_doc.kw(), "global", "personal"),
-        (no_access_doc.kw(), "work_only", "personal"),
-        ({}, "work_only", "personal"),  # 문서 정보 자체가 없음
+        # 통합 정책(kb_visibility): 접근 정보 없음/미상은 origin_scope 도 work 로 격리한다(파이프라인·추출기와 동일).
+        (no_access_doc.kw(), "work_only", "work"),
+        ({}, "work_only", "work"),  # 문서 정보 자체가 없음
     ]
     for i, (kw, vis, scope) in enumerate(cases):
         res = await resolve_entity(async_db, f"Isolated{i}Thing", entity_kind="technology", domain="dev", **kw)

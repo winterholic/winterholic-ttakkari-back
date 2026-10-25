@@ -40,8 +40,9 @@ class CandidateEntity:
     domain: str = "general"  # dev | infra | ai | security | business | science | general
     confidence: float = 0.8
     summary: str = ""
-    origin_scope: str = "personal"
-    visibility: str = "global"
+    origin_scope: str = "work"
+    visibility: str = "work_only"
+    alias_source: str = "extracted"  # extracted | seed (L1 시드 사전에서 온 별칭)
 
 
 @dataclass

@@ -5,8 +5,8 @@ Covers:
 2. Dictionary matching, key passage screening, and budget cap controls (L1)
 3. Structured JSON Schema extraction with fake LLM client and degradation fallback (L2)
 4. Deterministic quote anchor verification: 100% rejection of hallucinated quotes (quote_verifier)
-5. Idempotent persistence on replay (no duplicates, reuses existing rows)
-6. Work-only document provenance and visibility isolation (never leaks to global)
+5. (영속화·멱등·visibility 격리는 test_kb_v3_integration_flow.py 의 실 DB 시험)
+6. 정확 오프셋 인용 검증, L1 예산 비차감, L0 노이즈 필터
 7. Verification that production L2 path connection code exists and checks slot availability
 """
 
@@ -18,16 +18,7 @@ from typing import Any
 
 import pytest
 
-from ttakkari.collector.control_models import KbDocumentAccess
-from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision
-from ttakkari.kb_ontology_models import (
-    KbAssertion,
-    KbAssertionEvidence,
-    KbDocumentEntity,
-    KbEntity,
-    KbEntityAlias,
-    KbRelation,
-)
+from ttakkari.kb_models import KbPassage, KbRevision
 from ttakkari.kb_pipeline.extract_l0 import extract_l0_from_passages
 from ttakkari.kb_pipeline.extract_l1 import extract_l1_screen, score_passage_for_l2
 from ttakkari.kb_pipeline.extract_l2 import (
@@ -39,8 +30,6 @@ from ttakkari.kb_pipeline.extract_l2 import (
 from ttakkari.kb_pipeline.extractor_step import (
     ExtractionOptions,
     extract_revision_knowledge,
-    persist_extracted_knowledge,
-    resolve_document_scope_and_visibility,
 )
 from ttakkari.kb_pipeline.quote_verifier import (
     CandidateAssertion,
@@ -127,163 +116,6 @@ def sample_passages() -> list[KbPassage]:
     return passages
 
 
-class FakeScalarResult:
-    def __init__(self, items: list[Any]) -> None:
-        self._items = items
-
-    def first(self) -> Any | None:
-        return self._items[0] if self._items else None
-
-    def all(self) -> list[Any]:
-        return list(self._items)
-
-    def __iter__(self):
-        return iter(self._items)
-
-
-class FakeAsyncSession:
-    """In-memory AsyncSession simulator for deterministic isolated persistence tests."""
-
-    def __init__(self) -> None:
-        self.entities: dict[tuple[str, str, str, str], KbEntity] = {}  # (tenant, vis, kind, norm) -> KbEntity
-        self.aliases: list[KbEntityAlias] = []
-        self.evidence: dict[tuple[uuid.UUID, int, int], KbEvidence] = {}
-        self.doc_entities: dict[tuple[uuid.UUID, uuid.UUID], KbDocumentEntity] = {}
-        self.assertions: dict[tuple[uuid.UUID, uuid.UUID, str, str], KbAssertion] = {}
-        self.assertion_evidence: list[KbAssertionEvidence] = []
-        self.relations: dict[tuple[uuid.UUID, uuid.UUID, str], KbRelation] = {}
-        self.document_access: dict[uuid.UUID, KbDocumentAccess] = {}
-        self.documents: dict[uuid.UUID, KbDocument] = {}
-        self.revisions: dict[uuid.UUID, KbRevision] = {}
-        self._pending: list[Any] = []
-
-    def add(self, obj: Any) -> None:
-        self._pending.append(obj)
-
-    async def flush(self) -> None:
-        for obj in list(self._pending):
-            if isinstance(obj, KbEntity):
-                key = (obj.tenant_id, obj.visibility, obj.entity_kind, obj.norm_name)
-                self.entities[key] = obj
-            elif isinstance(obj, KbEntityAlias):
-                self.aliases.append(obj)
-            elif isinstance(obj, KbEvidence):
-                self.evidence[(obj.passage_id, obj.span_start, obj.span_end)] = obj
-            elif isinstance(obj, KbDocumentEntity):
-                self.doc_entities[(obj.passage_id, obj.entity_id)] = obj
-            elif isinstance(obj, KbAssertion):
-                key = (obj.revision_id, obj.subject_entity_id, obj.predicate, obj.norm_object_value)
-                self.assertions[key] = obj
-            elif isinstance(obj, KbAssertionEvidence):
-                self.assertion_evidence.append(obj)
-            elif isinstance(obj, KbRelation):
-                key = (obj.source_entity_id, obj.target_entity_id, obj.relation_type)
-                self.relations[key] = obj
-            elif isinstance(obj, KbDocumentAccess):
-                self.document_access[obj.document_id] = obj
-            elif isinstance(obj, KbDocument):
-                self.documents[obj.id] = obj
-            elif isinstance(obj, KbRevision):
-                self.revisions[obj.id] = obj
-        self._pending.clear()
-
-    async def commit(self) -> None:
-        await self.flush()
-
-    async def get(self, model: type, ident: Any) -> Any | None:
-        await self.flush()
-        if model is KbDocumentAccess:
-            return self.document_access.get(ident)
-        if model is KbDocument:
-            return self.documents.get(ident)
-        if model is KbRevision:
-            return self.revisions.get(ident)
-        if model is KbDocumentEntity and isinstance(ident, tuple):
-            return self.doc_entities.get(ident)
-        if model is KbAssertionEvidence and isinstance(ident, tuple):
-            for ae in self.assertion_evidence:
-                if ae.assertion_id == ident[0] and ae.evidence_id == ident[1]:
-                    return ae
-        return None
-
-    async def scalars(self, stmt: Any) -> FakeScalarResult:
-        await self.flush()
-        stmt_str = str(stmt).lower()
-
-        if "from kb_entities" in stmt_str:
-            items = list(self.entities.values())
-            # Simple matching for query by norm_name
-            # If stmt parameters or where expressions, filter
-            # For our test persistence helper, we match by (tenant_id, visibility, entity_kind, norm_name)
-            # Find in compiled parameters
-            params = stmt.compile().params
-            norm_param = params.get("norm_name_1") or params.get("norm_name")
-            vis_param = params.get("visibility_1") or params.get("visibility")
-            kind_param = params.get("entity_kind_1") or params.get("entity_kind")
-
-            filtered = items
-            if norm_param:
-                filtered = [e for e in filtered if e.norm_name == norm_param]
-            if vis_param:
-                filtered = [e for e in filtered if e.visibility == vis_param]
-            if kind_param:
-                filtered = [e for e in filtered if e.entity_kind == kind_param]
-            return FakeScalarResult(filtered)
-
-        if "from kb_entity_aliases" in stmt_str:
-            params = stmt.compile().params
-            ent_id = params.get("entity_id_1") or params.get("entity_id")
-            norm_a = params.get("norm_alias_1") or params.get("norm_alias")
-            res = [
-                a for a in self.aliases
-                if (not ent_id or a.entity_id == ent_id) and (not norm_a or a.norm_alias == norm_a)
-            ]
-            return FakeScalarResult(res)
-
-        if "from kb_evidence" in stmt_str:
-            params = stmt.compile().params
-            pid = params.get("passage_id_1") or params.get("passage_id")
-            start = params.get("span_start_1") or params.get("span_start")
-            end = params.get("span_end_1") or params.get("span_end")
-            res = [
-                ev for ev in self.evidence.values()
-                if (not pid or ev.passage_id == pid)
-                and (start is None or ev.span_start == start)
-                and (end is None or ev.span_end == end)
-            ]
-            return FakeScalarResult(res)
-
-        if "from kb_assertions" in stmt_str:
-            params = stmt.compile().params
-            rid = params.get("revision_id_1") or params.get("revision_id")
-            sid = params.get("subject_entity_id_1") or params.get("subject_entity_id")
-            pred = params.get("predicate_1") or params.get("predicate")
-            val = params.get("norm_object_value_1") or params.get("norm_object_value")
-            res = [
-                a for a in self.assertions.values()
-                if (not rid or a.revision_id == rid)
-                and (not sid or a.subject_entity_id == sid)
-                and (not pred or a.predicate == pred)
-                and (not val or a.norm_object_value == val)
-            ]
-            return FakeScalarResult(res)
-
-        if "from kb_relations" in stmt_str:
-            params = stmt.compile().params
-            s_id = params.get("source_entity_id_1") or params.get("source_entity_id")
-            t_id = params.get("target_entity_id_1") or params.get("target_entity_id")
-            rtype = params.get("relation_type_1") or params.get("relation_type")
-            res = [
-                r for r in self.relations.values()
-                if (not s_id or r.source_entity_id == s_id)
-                and (not t_id or r.target_entity_id == t_id)
-                and (not rtype or r.relation_type == rtype)
-            ]
-            return FakeScalarResult(res)
-
-        return FakeScalarResult([])
-
-
 class TestL0Extraction:
     def test_l0_korean_and_english_definitions(self, sample_passages):
         res = extract_l0_from_passages(sample_passages)
@@ -317,7 +149,50 @@ class TestL0Extraction:
 
         # Code symbols
         symbol_entities = {e.canonical_name for e in res.entities if e.kind in ("symbol", "api")}
-        assert any("kubectl apply" in s for s in symbol_entities)
+        # 명령행은 통째로 엔터티가 아니라 알려진 CLI 도구(kubectl)의 언급으로만 남는다.
+        assert "kubectl" in symbol_entities
+        assert not any("kubectl apply" in s for s in symbol_entities)
+
+
+class TestL0NoiseFilter:
+    def _passage(self, body, section_path=()):
+        return KbPassage(
+            id=uuid.uuid4(), revision_id=uuid.uuid4(), ord=0, body=body, char_start=0, char_end=len(body),
+            sha256=hashlib.sha256(body.encode()).hexdigest(), section_path=list(section_path),
+            heading=(section_path[-1] if section_path else None),
+        )
+
+    def test_generic_numbered_headings_and_plain_words_are_dropped(self):
+        body = (
+            "## 1. 개요 및 배경\n\n`files` 와 `agent` 와 `user` 를 쓴다. `deploy/run.json` 과 `--flag` 와 "
+            "`ttakkari executor --activate` 도 있다. `runtime_generation=false` 는 설정이다."
+        )
+        p = self._passage(body, ["문서 제목", "1. 개요 및 배경"])
+        res = extract_l0_from_passages([p])
+        names = {e.canonical_name for e in res.entities}
+        assert names == {"runtime_generation"}
+        assert res.relations == []
+        assert res.filtered["heading_not_concept"] >= 1
+        assert res.filtered["symbol_not_entity"] >= 3 and res.filtered["low_frequency"] >= 3
+
+    def test_concept_headings_keep_relation_with_cleaned_names(self):
+        body = "### 2.1 Pod 스케줄링\n\n본문"
+        p = self._passage(body, ["2. Kubernetes 구조", "2.1 Pod 스케줄링"])
+        res = extract_l0_from_passages([p])
+        assert [(r.source_name, r.target_name) for r in res.relations] == [("Pod 스케줄링", "Kubernetes 구조")]
+        r = res.relations[0]
+        assert body[r.span_start:r.span_end] == r.evidence_quote
+
+    def test_entity_cap(self):
+        body = "\n".join("`symbol_%03d`" % i for i in range(200))
+        res = extract_l0_from_passages([self._passage(body)])
+        from ttakkari.kb_pipeline.entity_filter import MAX_L0_ENTITIES
+
+        assert len(res.entities) == MAX_L0_ENTITIES
+
+    def test_default_scope_is_fail_closed(self):
+        res = extract_l0_from_passages([self._passage("`some_identifier` 가 있다.")])
+        assert {(e.origin_scope, e.visibility) for e in res.entities} == {("work", "work_only")}
 
 
 class TestL1ScreeningAndBudget:
@@ -334,6 +209,27 @@ class TestL1ScreeningAndBudget:
         res = extract_l1_screen(sample_passages, daily_budget_remaining=0)
         assert res.budget_exhausted
         assert len(res.selected_passages) == 0
+
+    def test_l1_does_not_spend_the_daily_budget(self, sample_passages):
+        res = extract_l1_screen(sample_passages, daily_budget_remaining=1)
+        assert len(res.selected_passages) == 1
+        assert res.budget_remaining == 1  # L1 은 비용 0이라 차감하지 않는다
+
+    @pytest.mark.asyncio
+    async def test_last_remaining_call_reaches_l2(self, sample_passages):
+        calls = []
+
+        async def caller(prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+            calls.append(prompt)
+            return {"entities": [], "assertions": [], "relations": []}
+
+        rev = KbRevision(id=sample_passages[0].revision_id, document_id=uuid.uuid4(), body="")
+        res = await extract_revision_knowledge(
+            rev, sample_passages, options=ExtractionOptions(llm_caller=caller, daily_budget_remaining=1)
+        )
+        assert len(calls) == 1
+        assert res.metrics["l2_calls_made"] == 1
+        assert res.status == "succeeded"
 
     def test_l1_known_dictionary_matching(self, sample_passages):
         aliases = {"kubernetes": "Kubernetes", "디플로이먼트": "Deployment"}
@@ -393,11 +289,9 @@ class TestQuoteVerifier:
         v_a = report.verified_assertions[0]
         assert valid_passage.body[v_a.span_start : v_a.span_end] == valid_quote
 
-    def test_quote_verifier_wrapped_quote_stripping(self, sample_passages):
+    def test_wrapped_quote_is_rejected_not_repaired(self, sample_passages):
         valid_passage = sample_passages[0]
-        # Quote wrapped in double quotes by LLM
         wrapped_quote = '"쿠버네티스(Kubernetes)는 컨테이너화된 애플리케이션의 자동 디프로이, 스케일링 등을 관리하는 오픈소스 시스템이다."'
-
         candidates_a = [
             CandidateAssertion(
                 subject_name="Kubernetes",
@@ -407,12 +301,67 @@ class TestQuoteVerifier:
                 passage_id=valid_passage.id,
             )
         ]
-
         report = verify_extraction_candidates(sample_passages, candidates_a, [])
+        assert len(report.verified_assertions) == 0
+        assert len(report.rejected_assertions) == 1
+
+    def test_wrong_offset_is_not_rescued_by_research(self, sample_passages):
+        p = sample_passages[1]
+        quote = "버전 v1.31 이상에서는 새로운 롤링 업데이트 전략이 권장된다."
+        true_start = p.body.index(quote)
+        for bad_start in (true_start + 1, true_start - 3, 0):
+            cand = CandidateAssertion(
+                subject_name="Deployment", predicate="p", object_value="v",
+                evidence_quote=quote, passage_id=p.id,
+                span_start=bad_start, span_end=bad_start + len(quote),
+            )
+            report = verify_extraction_candidates(sample_passages, [cand], [])
+            assert report.verified_assertions == [], bad_start
+            assert len(report.rejected_assertions) == 1
+        ok = CandidateAssertion(
+            subject_name="Deployment", predicate="p", object_value="v", evidence_quote=quote,
+            passage_id=p.id, span_start=true_start, span_end=true_start + len(quote),
+        )
+        report = verify_extraction_candidates(sample_passages, [ok], [])
         assert len(report.verified_assertions) == 1
-        verified = report.verified_assertions[0]
-        assert verified.evidence_quote not in ('""', "''")
-        assert valid_passage.body[verified.span_start : verified.span_end] == verified.evidence_quote
+
+    def test_duplicate_quote_keeps_given_offset_and_offsetless_duplicate_is_rejected(self):
+        rev_id = uuid.uuid4()
+        body = "alpha beta.\n\nalpha beta.\n\ntail"
+        passage = KbPassage(
+            id=uuid.uuid4(), revision_id=rev_id, ord=0, body=body, char_start=0, char_end=len(body),
+            sha256=hashlib.sha256(body.encode()).hexdigest(),
+        )
+        second = body.rindex("alpha beta.")
+        at_second = CandidateAssertion(
+            subject_name="A", predicate="p", object_value="v", evidence_quote="alpha beta.",
+            passage_id=passage.id, span_start=second, span_end=second + len("alpha beta."),
+        )
+        offsetless = CandidateAssertion(
+            subject_name="A", predicate="p", object_value="v2", evidence_quote="alpha beta.", passage_id=passage.id,
+        )
+        unique = CandidateAssertion(
+            subject_name="A", predicate="p", object_value="v3", evidence_quote="tail", passage_id=passage.id,
+        )
+        report = verify_extraction_candidates([passage], [at_second, offsetless, unique], [])
+        assert report.verified_assertions == [at_second, unique]
+        assert at_second.span_start == second  # 첫 위치(0)로 옮기지 않는다
+        assert unique.span_start == body.index("tail")
+        assert report.rejected_assertions == [offsetless]
+
+    def test_mentions_are_verified_too(self, sample_passages):
+        from ttakkari.kb_pipeline.quote_verifier import CandidateMention
+
+        p = sample_passages[2]
+        start = p.body.index("kube-apiserver")
+        good = CandidateMention(passage_id=p.id, entity_name="kube-apiserver", evidence_quote="kube-apiserver",
+                                span_start=start, span_end=start + len("kube-apiserver"))
+        bad = CandidateMention(passage_id=p.id, entity_name="kube-apiserver", evidence_quote="kube-apiserver",
+                               span_start=start + 2, span_end=start + 2 + len("kube-apiserver"))
+        report = verify_extraction_candidates(sample_passages, [], [], [good, bad])
+        assert report.verified_mentions == [good]
+        assert report.rejected_mentions == [bad]
+        assert any(e.span_start == start for e in report.verified_evidences)
 
 
 class TestL2ExtractionAndDegradation:
@@ -505,164 +454,7 @@ class TestL2ExtractionAndDegradation:
 
 
 class TestPersistenceAndIsolation:
-    @pytest.mark.asyncio
-    async def test_idempotent_replay_and_work_only_isolation(self, sample_passages):
-        db = FakeAsyncSession()
-
-        doc_id = uuid.uuid4()
-        rev_id = sample_passages[0].revision_id
-
-        doc = KbDocument(
-            id=doc_id,
-            doc_key="work:secret_architecture",
-            title="Secret Architecture Note",
-        )
-        db.add(doc)
-
-        # Explicit work_only access configuration
-        doc_access = KbDocumentAccess(
-            document_id=doc_id,
-            origin_scope="work",
-            visibility="work_only",
-            scope="work",
-        )
-        db.add(doc_access)
-
-        full_body = "".join(p.body for p in sample_passages)
-        rev = KbRevision(
-            id=rev_id,
-            document_id=doc_id,
-            source_id=uuid.uuid4(),
-            rev_no=1,
-            body=full_body,
-            text_sha256=hashlib.sha256(full_body.encode()).hexdigest(),
-            char_count=len(full_body),
-        )
-        db.add(rev)
-
-        for p in sample_passages:
-            p.revision_id = rev_id
-        await db.flush()
-
-        # 2. Extract knowledge using fake LLM caller
-        async def fake_caller(prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
-            return {
-                "entities": [
-                    {
-                        "name": "Deployment",
-                        "aliases": ["디플로이먼트"],
-                        "kind": "concept",
-                        "domain": "dev",
-                    }
-                ],
-                "assertions": [
-                    {
-                        "subject": "Deployment",
-                        "predicate": "definition",
-                        "object_entity": None,
-                        "object_value": "선언적 업데이트 제공",
-                        "modality": "fact",
-                        "polarity": "positive",
-                        "applies_version": "v1.31",
-                        "evidence_quote": "디플로이먼트(Deployment)는 파드와 레플리카셋에 대한 선언적 업데이트를 제공하는 워크로드 리소스이다.",
-                    }
-                ],
-                "relations": [
-                    {
-                        "source": "Deployment",
-                        "target": "쿠버네티스",
-                        "relation_type": "part_of",
-                        "evidence_quote": "디플로이먼트(Deployment)는 파드와 레플리카셋에 대한 선언적 업데이트를 제공하는 워크로드 리소스이다.",
-                    }
-                ],
-            }
-
-        extracted = await extract_revision_knowledge(
-            rev,
-            sample_passages,
-            options=ExtractionOptions(
-                llm_caller=fake_caller,
-                origin_scope="work",
-                visibility="work_only",
-            ),
-        )
-        assert extracted.status == "succeeded"
-
-        # 3. First persistence
-        p1 = await persist_extracted_knowledge(
-            db,
-            extracted,
-            document_id=doc_id,
-            revision_id=rev_id,
-            tenant_id="personal",
-        )
-        await db.commit()
-
-        assert p1.origin_scope == "work"
-        assert p1.visibility == "work_only"
-        assert p1.entities_created > 0
-        assert p1.assertions_created > 0
-
-        # Verify visibility isolation: NO global entities or assertions created
-        for ent in db.entities.values():
-            assert ent.visibility == "work_only"
-            assert ent.origin_scope == "work"
-
-        for a in db.assertions.values():
-            assert a.visibility == "work_only"
-            assert a.origin_scope == "work"
-
-        # Verify relations are strictly candidate and evidence_count == 0
-        for r in db.relations.values():
-            assert r.visibility == "work_only"
-            assert r.origin_scope == "work"
-            assert r.status == "candidate"
-            assert r.evidence_count == 0
-
-        # 4. Second persistence (Idempotent replay)
-        p2 = await persist_extracted_knowledge(
-            db,
-            extracted,
-            document_id=doc_id,
-            revision_id=rev_id,
-            tenant_id="personal",
-        )
-        await db.commit()
-
-        # No new entities or assertions created on second run; all reused
-        assert p2.entities_created == 0
-        assert p2.entities_reused > 0
-        assert p2.assertions_created == 0
-        assert p2.assertions_reused > 0
-
-    @pytest.mark.asyncio
-    async def test_resolve_document_scope_and_visibility_fallback(self):
-        db = FakeAsyncSession()
-        work_doc_id = uuid.uuid4()
-        personal_doc_id = uuid.uuid4()
-
-        work_doc = KbDocument(
-            id=work_doc_id,
-            doc_key="work:project-ezwork:spec",
-            title="EZ Work Spec",
-        )
-        personal_doc = KbDocument(
-            id=personal_doc_id,
-            doc_key="blog:my-thoughts",
-            title="My Blog Post",
-        )
-        db.add(work_doc)
-        db.add(personal_doc)
-        await db.flush()
-
-        w_scope, w_vis = await resolve_document_scope_and_visibility(db, work_doc_id)
-        assert w_scope == "work"
-        assert w_vis == "work_only"
-
-        p_scope, p_vis = await resolve_document_scope_and_visibility(db, personal_doc_id)
-        assert p_scope == "personal"
-        assert p_vis == "global"
-
+    # 영속화·멱등·visibility 격리는 실 PostgreSQL 로 tests/test_kb_v3_integration_flow.py 에서 시험한다.
     @pytest.mark.asyncio
     async def test_extract_empty_passages(self):
         rev = KbRevision(

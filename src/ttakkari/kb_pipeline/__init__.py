@@ -15,12 +15,16 @@ from ttakkari.kb_pipeline.adapters import (
     DefaultChunkingProcessor,
     DefaultIndexingProcessor,
     DefaultParsingProcessor,
+    ExtractingProcessor,
+    LinkingProcessor,
     MissingStageProcessor,
     StageProcessorRegistry,
 )
 from ttakkari.kb_pipeline.orchestrator import (
     KbPipelineOrchestrator,
-    derive_scope_and_visibility,
+    PipelineRetryError,
+    RetryOutcome,
+    retry_pipeline_job,
 )
 from ttakkari.kb_pipeline.types import (
     JOB_STATUS_DEGRADED,
@@ -53,6 +57,7 @@ from ttakkari.kb_pipeline.worker import (
     set_default_worker,
 )
 from ttakkari.kb_pipeline_models import KbPipelineJob, KbPipelineStage
+from ttakkari.kb_visibility import derive_scope_and_visibility
 
 
 async def enqueue_pipeline_job(
@@ -114,9 +119,13 @@ __all__ = [
     "DefaultChunkingProcessor",
     "DefaultIndexingProcessor",
     "DefaultParsingProcessor",
+    "ExtractingProcessor",
     "KbPipelineOrchestrator",
     "KbPipelineWorker",
+    "LinkingProcessor",
     "MissingStageProcessor",
+    "PipelineRetryError",
+    "RetryOutcome",
     "StageContext",
     "StageProcessor",
     "StageProcessorRegistry",
@@ -125,5 +134,6 @@ __all__ = [
     "derive_scope_and_visibility",
     "enqueue_pipeline_job",
     "get_default_worker",
+    "retry_pipeline_job",
     "set_default_worker",
 ]

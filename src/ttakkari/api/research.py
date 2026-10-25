@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import platform
@@ -127,6 +128,10 @@ class ExperimentIn(Strict):
     secondary_metrics: list[str] = Field(default_factory=list)
     seed: int = 42
     auto_start: bool = False
+    source_study_id: uuid.UUID | None = None
+    source_experiment_id: uuid.UUID | None = None
+    source_configuration_id: uuid.UUID | None = None
+    source_run_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def resolve_aliases(self):
@@ -424,6 +429,86 @@ async def require_catalog_methods(db, method_ids: list[uuid.UUID]) -> None:
 @router.post("/studies/{study_id}/experiments", status_code=201)
 async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     study = await svc.get_study(db, study_id)
+
+    # 1. Source provenance & reuse resolution
+    source_study_id: uuid.UUID | None = None
+    source_experiment_id: uuid.UUID | None = None
+    source_configuration_id: uuid.UUID | None = None
+    source_run_id: uuid.UUID | None = None
+
+    source_cfg: Configuration | None = None
+    source_exp: Experiment | None = None
+    source_std: Study | None = None
+
+    if body.source_configuration_id is None:
+        if (
+            body.source_run_id is not None
+            or body.source_experiment_id is not None
+            or body.source_study_id is not None
+        ):
+            raise HTTPException(422, "source_configuration_id_required")
+    else:
+        # source_configuration_id provided: must exist in DB
+        source_cfg = await db.get(Configuration, body.source_configuration_id)
+        if source_cfg is None:
+            raise HTTPException(404, "source_configuration_not_found")
+
+        source_exp = await db.get(Experiment, source_cfg.experiment_id)
+        if source_exp is None:
+            raise HTTPException(404, "source_experiment_not_found")
+
+        source_std = await db.get(Study, source_exp.study_id)
+        if source_std is None:
+            raise HTTPException(404, "source_study_not_found")
+
+        # Derive experiment and study IDs; check against request if provided
+        if body.source_experiment_id is not None and body.source_experiment_id != source_exp.id:
+            raise HTTPException(422, "source_experiment_id_mismatch")
+        if body.source_study_id is not None and body.source_study_id != source_std.id:
+            raise HTTPException(422, "source_study_id_mismatch")
+
+        # Validate source_run_id if provided (failed runs can also be reused)
+        if body.source_run_id is not None:
+            source_run = await db.get(Run, body.source_run_id)
+            if source_run is None:
+                raise HTTPException(404, "source_run_not_found")
+            if (
+                source_run.configuration_id != source_cfg.id
+                or source_run.experiment_id != source_exp.id
+                or source_run.study_id != source_std.id
+            ):
+                raise HTTPException(422, "source_run_lineage_mismatch")
+            source_run_id = source_run.id
+
+        # Scope validation: source scope must match target study scope
+        if source_std.scope != study.scope:
+            raise HTTPException(422, "source_scope_mismatch")
+
+        # Adapter validation: adapter_id must match source
+        target_adapter_id = body.adapter_id or body.adapter or "retrieval_eval"
+        source_adapter_id = source_exp.adapter_id or source_exp.adapter
+        if target_adapter_id != source_adapter_id:
+            raise HTTPException(
+                422,
+                f"source_adapter_mismatch: target '{target_adapter_id}' != source '{source_adapter_id}'",
+            )
+
+        source_study_id = source_std.id
+        source_experiment_id = source_exp.id
+        source_configuration_id = source_cfg.id
+
+    # 2. Methods inheritance & validation
+    target_method_id = body.method_id
+    if target_method_id is None and source_exp and source_exp.method_id:
+        target_method_id = source_exp.method_id
+
+    target_compared_method_ids = list(body.compared_method_ids)
+    if not target_compared_method_ids and source_exp and source_exp.compared_method_ids:
+        target_compared_method_ids = [
+            uuid.UUID(m) if isinstance(m, str) else m
+            for m in source_exp.compared_method_ids
+        ]
+
     for ident in body.method_ids:
         method = (
             await db.scalars(
@@ -438,10 +523,10 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
             raise HTTPException(404, "research_method_not_found_in_scope")
 
     await require_catalog_methods(
-        db, ([body.method_id] if body.method_id else []) + body.compared_method_ids
+        db, ([target_method_id] if target_method_id else []) + target_compared_method_ids
     )
 
-    adapter_id = body.adapter_id or body.adapter or "retrieval_eval"
+    adapter_id = body.adapter_id or body.adapter or (source_exp.adapter_id if source_exp else "retrieval_eval")
     raw_budget = (
         body.budget.model_dump()
         if hasattr(body.budget, "model_dump")
@@ -456,7 +541,17 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     }
 
     serialized_method_ids = [str(m) for m in body.method_ids]
-    serialized_compared_ids = [str(m) for m in body.compared_method_ids]
+    serialized_compared_ids = [str(m) for m in target_compared_method_ids]
+
+    # 3. Parameters cloning and override
+    if source_cfg:
+        effective_fixed_inputs = copy.deepcopy(source_cfg.parameters)
+        if body.fixed_inputs:
+            effective_fixed_inputs.update(body.fixed_inputs)
+        elif body.config:
+            effective_fixed_inputs.update(body.config)
+    else:
+        effective_fixed_inputs = body.fixed_inputs or body.config or {}
 
     row = Experiment(
         study_id=study.id,
@@ -466,18 +561,22 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
         adapter=adapter_id,
         adapter_id=adapter_id,
         state="queued",
-        config=body.config or {},
+        config=effective_fixed_inputs,
         environment=body.environment or {},
         budget=budget_dict,
         receipt={},
         method_ids=serialized_method_ids,
-        method_id=body.method_id,
+        method_id=target_method_id,
         compared_method_ids=serialized_compared_ids,
         strategy=body.strategy,
         search_space=body.search_space,
-        fixed_inputs=body.fixed_inputs,
+        fixed_inputs=effective_fixed_inputs,
         primary_metric=body.primary_metric,
         secondary_metrics=body.secondary_metrics,
+        source_study_id=source_study_id,
+        source_experiment_id=source_experiment_id,
+        source_configuration_id=source_configuration_id,
+        source_run_id=source_run_id,
         created_at=utcnow(),
     )
     db.add(row)
@@ -487,12 +586,12 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     expanded_configs, exp_errors, exp_warnings = planner.expand_configurations(
         strategy=body.strategy,
         search_space=body.search_space or ({"default": [body.config]} if body.config else {}),
-        fixed_inputs=body.fixed_inputs or body.config or {},
+        fixed_inputs=effective_fixed_inputs,
         max_runs=budget_dict.get("max_runs", 20),
         seed=body.seed,
     )
     if not expanded_configs:
-        cfg_params = body.config or body.fixed_inputs or {}
+        cfg_params = effective_fixed_inputs
         expanded_configs = [
             {
                 "label": "Baseline",
@@ -539,6 +638,20 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
         id=str(row.id),
         title=row.title,
         rationale=row.rationale,
+        source_study_id=str(row.source_study_id) if row.source_study_id else None,
+        source_experiment_id=str(row.source_experiment_id) if row.source_experiment_id else None,
+        source_configuration_id=str(row.source_configuration_id) if row.source_configuration_id else None,
+        source_run_id=str(row.source_run_id) if row.source_run_id else None,
+        configurations=[
+            {
+                "id": str(c.id),
+                "label": c.label,
+                "role": c.role,
+                "config_hash": c.config_hash,
+                "parameters": c.parameters,
+            }
+            for c in created_configs
+        ],
     )
 
     created_runs = []

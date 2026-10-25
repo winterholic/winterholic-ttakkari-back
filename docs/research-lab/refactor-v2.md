@@ -336,6 +336,10 @@ flowchart LR
    - `secondary_metrics`: `JSONB NOT NULL DEFAULT '[]'`
    - `budget`: `JSONB NOT NULL DEFAULT '{"max_runs": 20, "max_total_seconds": 300, "max_memory_mb": 4096}'`
    - `baseline_configuration_id`: `UUID NULL` (비교 기준이 되는 Configuration ID)
+   - `source_study_id`: `UUID NULL REFERENCES research_studies(id) ON DELETE SET NULL` (재사용 원본 Study)
+   - `source_experiment_id`: `UUID NULL REFERENCES research_experiments(id) ON DELETE SET NULL` (재사용 원본 Experiment)
+   - `source_configuration_id`: `UUID NULL REFERENCES research_configurations(id) ON DELETE SET NULL` (재사용 원본 Configuration — 구조적 재사용 필수 단위)
+   - `source_run_id`: `UUID NULL REFERENCES research_runs(id) ON DELETE SET NULL` (재사용 원본 Run — 실패 Run 포함)
 
 2. **`research_configurations` (개별 파라미터 조합)**
    - `id`: `UUID PK`
@@ -468,8 +472,8 @@ flowchart LR
 | | `POST /api/research/methods/{id}/promote` | `{ run_id, decision_note, target_status: "candidate" \| "validated" }` | 승격된 `Method` + 자동 생성된 `Decision` 노드 |
 | | `POST /api/research/methods/{id}/relations` | `{ to_method_id, relation_type, conditions, note }` | 생성된 `MethodRelation` |
 | **실험 설계·검증** | `POST /api/research/experiments/validate` | `{ study_id, method_id, compared_method_ids, adapter_id, strategy, search_space, fixed_inputs, primary_metric, budget }` | `valid: bool`, `errors: list[str]`, `warnings: list[str]`, `expanded_configurations: list[ConfigPreview]`, `resource_estimate: ResourceEstimate` |
-| | `POST /api/research/studies/{study_id}/experiments` | 위 검증 페이로드 + `{ name, hypothesis_node_id, dataset_version, seed, auto_start: bool }` | `experiment`, `configurations`, (`auto_start=True` 시 생성된 `runs`) |
-| | `GET /api/research/experiments/{experiment_id}` | — | `experiment`, `configurations`, `runs`, `measurements`, `latest_analysis`, `artifacts` |
+| | `POST /api/research/studies/{study_id}/experiments` | 위 검증 페이로드 + `{ name, hypothesis_node_id, dataset_version, seed, auto_start: bool, source_study_id?, source_experiment_id?, source_configuration_id?, source_run_id? }` | `experiment`, `configurations`, (`auto_start=True` 시 생성된 `runs`) |
+| | `GET /api/research/experiments/{experiment_id}` | — | `experiment`, `configurations`, `runs`, `measurements`, `latest_analysis`, `artifacts` (source 4필드는 최상위 평면 및 `experiment` 래퍼 모두에 포함) |
 | **실험 실행·모니터** | `POST /api/research/experiments/{experiment_id}/run` | `{ configuration_ids: list[UUID] \| null }` | 실행 시작된 `runs` 목록 및 초기 상태 |
 | | `GET /api/research/runs` | `?study_id=&experiment_id=&status=&limit=50` | `runs` 목록 + `host_gpu_status` + `active_locks` |
 | | `GET /api/research/runs/{run_id}` | — | `run` 상세 (`raw_output`, `environment_snapshot`, `measurements`, `artifacts`) |
@@ -479,6 +483,28 @@ flowchart LR
 | | `GET /api/research/experiments/{experiment_id}/compare-series` | `?baseline_config_id=&metrics=decode_tps,swap_peak_growth_mb` | 프론트엔드 SVG 차트가 즉시 그릴 수 있는 정규화 시리즈 JSON: `delta_bars`, `metric_bars`, `repeat_distributions`, `pareto_points`, `sweep_lines`, `ablation_impacts`, `config_diff_table` |
 | **채택·보관함·리포트** | `POST /api/research/studies/{study_id}/best-results` | `{ experiment_id, configuration_id, run_id, status: "adopted"\|"rejected", rationale, promote_method: bool }` | 생성된 `BestResult` + 자동 기록된 `Node(kind='decision')` + (`promote_method=True` 시 승격된 `Method`) |
 | | `POST /api/research/studies/{study_id}/export-report` | `{ experiment_ids: list[UUID], promote_to_library: bool }` | Markdown 리포트 생성 → `artifacts.register_file` 등록 → `research_artifacts` 및 반환된 `artifact` 메타데이터 |
+
+### 7.1.1 후속 실험 구조적 재사용(Lineage) 및 Configuration 복제 계약 (§12 C)
+후속 실험이 선행 연구·실험·설정·Run을 문자열 복사나 임의 메타가 아닌 타입 안전한 관계(typed foreign key)로 재참조하고, 원본 설정을 불변으로 보존하면서 복제·오버라이드하는 규칙:
+1. **필수 단위 및 식별자 유효성**:
+   - 재사용의 최소 기본 단위는 `Configuration`이다. `source_configuration_id` 없이 `source_run_id`, `source_experiment_id`, `source_study_id`만 전달된 요청은 HTTP 422(`source_configuration_id_required`)로 거부한다.
+   - `source_configuration_id`가 주어지면 DB에서 원본 `Experiment`와 `Study`를 자동으로 도출(derive)한다. 요청 바디에 제공된 `source_experiment_id` 또는 `source_study_id`가 실제 원본과 다르면 HTTP 422 불일치로 거부한다.
+   - 존재하지 않는 `source_configuration_id`, `source_run_id`는 HTTP 404로 거부한다.
+   - `source_run_id` 제공 시 해당 Run이 원본 Configuration, Experiment, Study에 소속되어 있는지 검증한다(불일치 시 HTTP 422). 단, 실패한 Run(`status='failed'`)도 설정 재사용 대상이 될 수 있으므로 정상 허용한다.
+2. **Scope 및 어댑터 일치 강제**:
+   - 원본 Study의 `scope`와 대상 Study의 `scope`가 다르면 HTTP 422(`source_scope_mismatch`)로 거부한다(`personal` vs `work` 격리 보장).
+   - 대상 실험의 `adapter_id`는 원본 Experiment의 `adapter_id`와 정확히 일치해야 한다(불일치 시 HTTP 422 거부).
+3. **방법론 상속**:
+   - `method_id`, `compared_method_ids`를 지정하지 않고 요청한 경우 원본 Experiment의 방법론 ID들을 복제하되, 카탈로그 유효성 검사(`require_catalog_methods`)를 동일하게 통과해야 한다.
+4. **Configuration 파라미터 복제 및 불변성(Immutability)**:
+   - 원본 `Configuration.parameters`를 대상의 `fixed_inputs` 초기값으로 복제(deepcopy)한다.
+   - 요청에 명시된 `body.fixed_inputs`가 있으면 해당 키로 덮어쓰고(override), `body.search_space`는 그 위에 기존 플래너 규칙으로 전개(expand)한다.
+   - 원본 DB 행(Study, Experiment, Configuration, Run)은 어떠한 부작용(side effect)도 없이 온전히 불변으로 보존된다.
+5. **관측성 및 영속성 보장**:
+   - 생성된 새 Experiment 행은 `source_study_id`, `source_experiment_id`, `source_configuration_id`, `source_run_id` 4개 컬럼을 보존한다(Alembic `0073_research_reuse_source`).
+   - `GET /experiments/{id}` 응답의 최상위 평면과 `experiment` 래퍼 딕셔너리 모두에 4개 필드가 직렬화되어 반환된다.
+   - `GET /studies/{id}/resume` 스냅샷의 `experiments` 목록 및 `timeline`의 `experiment_planned` 이벤트 payload에서도 복제된 config/해시와 원본 4대 ID를 확인할 수 있다.
+   - 원본 엔티티가 삭제될 경우 외래키 제약조건은 `ON DELETE SET NULL`로 안전하게 해제된다.
 
 ### 7.2 MCP `manage_research` 확장 ([orchestrator/mcp_server.py](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-research-v2/src/ttakkari/orchestrator/mcp_server.py#L465-L530))
 기존 `operation` 목록(`list_studies`, `create_study`, `get_study`, `update_study`, `add_node`, `add_relation`, `run_benchmark`, `discover_arxiv`, `ingest_source`, `evaluate_gate`, `lineage`)을 100% 하위 호환 유지하고 아래 `operation`을 추가한다:

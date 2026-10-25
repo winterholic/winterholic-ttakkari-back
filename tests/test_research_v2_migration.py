@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from ttakkari.db import sessionmaker
 from ttakkari.config import get_settings
+from ttakkari.research.models import Study, Experiment, Configuration, Run
 
 
 def get_alembic_config():
@@ -123,4 +124,147 @@ async def test_migration_0072_upgrade_downgrade_and_v1_data_preservation():
         assert not res
 
     # 6. Re-upgrade back to head for subsequent tests
-    await asyncio.to_thread(command.upgrade, cfg, "0072_research_lab_v2")
+    await asyncio.to_thread(command.upgrade, cfg, "0073_research_reuse_source")
+
+
+async def test_migration_0073_research_reuse_source_upgrade_downgrade_and_set_null():
+    cfg = get_alembic_config()
+    sm = sessionmaker()
+
+    # 1. Upgrade to 0073
+    await asyncio.to_thread(command.upgrade, cfg, "0073_research_reuse_source")
+
+    # 2. Verify 4 columns exist on research_experiments
+    async with sm() as db:
+        cols = (
+            await db.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'research_experiments'
+                      AND column_name LIKE 'source_%'
+                    ORDER BY column_name
+                    """
+                )
+            )
+        ).scalars().all()
+        assert set(cols) == {
+            "source_study_id",
+            "source_experiment_id",
+            "source_configuration_id",
+            "source_run_id",
+        }
+
+    # 3. Test foreign key and ON DELETE SET NULL behaviour
+    std1_id = uuid.uuid4()
+    exp1_id = uuid.uuid4()
+    cfg1_id = uuid.uuid4()
+    run1_id = uuid.uuid4()
+
+    std2_id = uuid.uuid4()
+    exp2_id = uuid.uuid4()
+
+    async with sm() as db:
+        std1 = Study(id=std1_id, title="Source Study", goal="Lineage test", scope="personal", phase="planning")
+        exp1 = Experiment(
+            id=exp1_id,
+            study_id=std1_id,
+            title="Source Exp",
+            hypothesis="H1",
+            rationale="R1",
+            adapter="retrieval_eval",
+            adapter_id="retrieval_eval",
+            state="completed",
+        )
+        cfg1 = Configuration(
+            id=cfg1_id,
+            experiment_id=exp1_id,
+            label="Source Cfg",
+            role="baseline",
+            parameters={"k": 5},
+            config_hash="hash1",
+        )
+        run1 = Run(
+            id=run1_id,
+            experiment_id=exp1_id,
+            configuration_id=cfg1_id,
+            study_id=std1_id,
+            adapter_id="retrieval_eval",
+        )
+
+        std2 = Study(id=std2_id, title="Target Study", goal="Lineage test target", scope="personal", phase="planning")
+        exp2 = Experiment(
+            id=exp2_id,
+            study_id=std2_id,
+            title="Derived Exp",
+            hypothesis="H2",
+            rationale="R2",
+            adapter="retrieval_eval",
+            adapter_id="retrieval_eval",
+            state="queued",
+            source_study_id=std1_id,
+            source_experiment_id=exp1_id,
+            source_configuration_id=cfg1_id,
+            source_run_id=run1_id,
+        )
+        db.add(std1)
+        await db.flush()
+        db.add(exp1)
+        await db.flush()
+        db.add(cfg1)
+        await db.flush()
+        db.add(run1)
+        await db.flush()
+        db.add(std2)
+        await db.flush()
+        db.add(exp2)
+        await db.commit()
+
+    # Delete source run and verify SET NULL on exp2.source_run_id
+    async with sm() as db:
+        await db.execute(text("DELETE FROM research_runs WHERE id = :id"), {"id": run1_id})
+        await db.commit()
+        exp2_row = (
+            await db.execute(
+                text("SELECT source_run_id, source_configuration_id FROM research_experiments WHERE id = :id"),
+                {"id": exp2_id},
+            )
+        ).mappings().one()
+        assert exp2_row["source_run_id"] is None
+        assert exp2_row["source_configuration_id"] == cfg1_id
+
+    # 4. Downgrade to 0072 and verify columns dropped
+    await asyncio.to_thread(command.downgrade, cfg, "0072_research_lab_v2")
+    async with sm() as db:
+        cols_after_down = (
+            await db.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'research_experiments'
+                      AND column_name LIKE 'source_%'
+                    """
+                )
+            )
+        ).scalars().all()
+        assert len(cols_after_down) == 0
+
+    # 5. Re-upgrade back to 0073
+    await asyncio.to_thread(command.upgrade, cfg, "0073_research_reuse_source")
+    async with sm() as db:
+        cols_after_up = (
+            await db.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'research_experiments'
+                      AND column_name LIKE 'source_%'
+                    """
+                )
+            )
+        ).scalars().all()
+        assert len(cols_after_up) == 4
+

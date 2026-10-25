@@ -1113,3 +1113,412 @@ async def test_known_catalog_method_ids_still_pass_validation(client, auth):
     )
     assert validated.status_code == 200, validated.text
     assert not any("research_catalog_method_not_found" in e for e in validated.json()["errors"])
+
+
+async def test_source_reuse_requires_configuration_id_when_other_source_fields_given(client, auth):
+    study_id = await make_study(client, auth)
+    random_id = str(uuid.uuid4())
+
+    # Providing source_run_id without source_configuration_id -> 422
+    r = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={"title": "No cfg", "source_run_id": random_id},
+    )
+    assert r.status_code == 422, r.text
+    assert "source_configuration_id_required" in r.text
+
+    # Providing source_experiment_id without source_configuration_id -> 422
+    r = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={"title": "No cfg", "source_experiment_id": random_id},
+    )
+    assert r.status_code == 422, r.text
+    assert "source_configuration_id_required" in r.text
+
+    # Providing source_study_id without source_configuration_id -> 422
+    r = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={"title": "No cfg", "source_study_id": random_id},
+    )
+    assert r.status_code == 422, r.text
+    assert "source_configuration_id_required" in r.text
+
+
+async def test_source_reuse_rejects_missing_entities(client, auth):
+    study_id = await make_study(client, auth)
+    random_id = str(uuid.uuid4())
+
+    # Non-existent source_configuration_id -> 404
+    r = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={"title": "Missing cfg", "source_configuration_id": random_id},
+    )
+    assert r.status_code == 404, r.text
+    assert "source_configuration_not_found" in r.text
+
+
+async def test_source_reuse_derives_experiment_and_study_and_rejects_mismatch(client, auth):
+    study_id = await make_study(client, auth)
+    exp = await make_experiment(
+        client, auth, study_id,
+        config={"k": 5, "retriever_mode": "bm25"},
+        adapter_id="retrieval_eval",
+    )
+    cfg_id = exp["configurations"][0]["id"]
+    exp_id = exp["id"]
+
+    # 1. Providing only source_configuration_id -> derives experiment and study
+    r = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Derived lineage",
+            "source_configuration_id": cfg_id,
+            "adapter_id": "retrieval_eval",
+        },
+    )
+    assert r.status_code == 201, r.text
+    created = r.json()
+    assert created["source_configuration_id"] == cfg_id
+    assert created["source_experiment_id"] == exp_id
+    assert created["source_study_id"] == study_id
+    assert created["experiment"]["source_configuration_id"] == cfg_id
+    assert created["experiment"]["source_experiment_id"] == exp_id
+    assert created["experiment"]["source_study_id"] == study_id
+
+    # 2. Providing mismatched source_experiment_id -> 422
+    fake_exp_id = str(uuid.uuid4())
+    r_bad_exp = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Mismatch exp",
+            "source_configuration_id": cfg_id,
+            "source_experiment_id": fake_exp_id,
+            "adapter_id": "retrieval_eval",
+        },
+    )
+    assert r_bad_exp.status_code == 422, r_bad_exp.text
+    assert "source_experiment_id_mismatch" in r_bad_exp.text
+
+    # 3. Providing mismatched source_study_id -> 422
+    fake_std_id = str(uuid.uuid4())
+    r_bad_std = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Mismatch study",
+            "source_configuration_id": cfg_id,
+            "source_study_id": fake_std_id,
+            "adapter_id": "retrieval_eval",
+        },
+    )
+    assert r_bad_std.status_code == 422, r_bad_std.text
+    assert "source_study_id_mismatch" in r_bad_std.text
+
+
+async def test_source_reuse_run_lineage_and_allows_failed_run(client, auth):
+    study_id = await make_study(client, auth)
+    exp = await make_experiment(
+        client, auth, study_id,
+        config={"k": 5},
+        adapter_id="retrieval_eval",
+    )
+    cfg_id = exp["configurations"][0]["id"]
+    exp_id = exp["id"]
+
+    # Insert two runs in DB directly: one matching (failed), one belonging to another config
+    run_matching_id = uuid.uuid4()
+    run_other_id = uuid.uuid4()
+    other_cfg_id = uuid.uuid4()
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.research.models import Configuration, Run
+    from ttakkari.models import utcnow
+
+    async with sessionmaker()() as db:
+        other_cfg = Configuration(
+            id=other_cfg_id,
+            experiment_id=uuid.UUID(exp_id),
+            label="Other",
+            role="candidate",
+            parameters={"k": 10},
+            config_hash="h10",
+            created_at=utcnow(),
+        )
+        db.add(other_cfg)
+        # matching failed run
+        matching_run = Run(
+            id=run_matching_id,
+            experiment_id=uuid.UUID(exp_id),
+            configuration_id=uuid.UUID(cfg_id),
+            study_id=uuid.UUID(study_id),
+            adapter_id="retrieval_eval",
+            status="failed",
+            error_code="test_failure",
+            created_at=utcnow(),
+        )
+        db.add(matching_run)
+        # other run on other cfg
+        other_run = Run(
+            id=run_other_id,
+            experiment_id=uuid.UUID(exp_id),
+            configuration_id=other_cfg_id,
+            study_id=uuid.UUID(study_id),
+            adapter_id="retrieval_eval",
+            status="succeeded",
+            created_at=utcnow(),
+        )
+        db.add(other_run)
+        await db.commit()
+
+    # 1. Non-existent source_run_id -> 404
+    r_not_found = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Missing run",
+            "source_configuration_id": cfg_id,
+            "source_run_id": str(uuid.uuid4()),
+            "adapter_id": "retrieval_eval",
+        },
+    )
+    assert r_not_found.status_code == 404, r_not_found.text
+    assert "source_run_not_found" in r_not_found.text
+
+    # 2. Run belonging to another configuration -> 422 lineage mismatch
+    r_mismatch = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Mismatch run",
+            "source_configuration_id": cfg_id,
+            "source_run_id": str(run_other_id),
+            "adapter_id": "retrieval_eval",
+        },
+    )
+    assert r_mismatch.status_code == 422, r_mismatch.text
+    assert "source_run_lineage_mismatch" in r_mismatch.text
+
+    # 3. Matching failed run -> succeeds and preserves source_run_id!
+    r_success = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Reuse failed run config",
+            "source_configuration_id": cfg_id,
+            "source_run_id": str(run_matching_id),
+            "adapter_id": "retrieval_eval",
+        },
+    )
+    assert r_success.status_code == 201, r_success.text
+    data = r_success.json()
+    assert data["source_run_id"] == str(run_matching_id)
+    assert data["source_configuration_id"] == cfg_id
+
+
+async def test_source_reuse_rejects_different_scope(client, auth):
+    study_personal = await make_study(client, auth, scope="personal")
+    study_work = await make_study(client, auth, scope="work")
+
+    exp_personal = await make_experiment(
+        client, auth, study_personal,
+        config={"k": 5},
+        adapter_id="retrieval_eval",
+    )
+    cfg_personal_id = exp_personal["configurations"][0]["id"]
+
+    # Reusing personal configuration in work study -> 422 source_scope_mismatch
+    r = await client.post(
+        f"{API}/studies/{study_work}/experiments",
+        headers=auth,
+        json={
+            "title": "Cross-scope reuse",
+            "source_configuration_id": cfg_personal_id,
+            "adapter_id": "retrieval_eval",
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert "source_scope_mismatch" in r.text
+
+
+async def test_source_reuse_rejects_adapter_mismatch(client, auth):
+    study_id = await make_study(client, auth)
+    exp = await make_experiment(
+        client, auth, study_id,
+        config={"k": 5},
+        adapter_id="retrieval_eval",
+    )
+    cfg_id = exp["configurations"][0]["id"]
+
+    # Source is retrieval_eval, but target requests external_report -> 422
+    r = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Adapter mismatch",
+            "source_configuration_id": cfg_id,
+            "adapter_id": "external_report",
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert "source_adapter_mismatch" in r.text
+
+
+async def test_source_reuse_inherits_methods_and_clones_configuration_with_override(client, auth):
+    study_id = await make_study(client, auth)
+    hybrid = await _system_method(client, auth, "hybrid_retrieval")
+    exp = await make_experiment(
+        client, auth, study_id,
+        method_id=hybrid["id"],
+        config={"k": 5, "retriever_mode": "bm25", "rrf_k": 60},
+        adapter_id="retrieval_eval",
+    )
+    cfg_id = exp["configurations"][0]["id"]
+    original_params = exp["configurations"][0]["parameters"]
+
+    # Create follow-up experiment without method_id (inherit), overriding k to 20
+    r = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Follow-up experiment",
+            "source_configuration_id": cfg_id,
+            "adapter_id": "retrieval_eval",
+            "fixed_inputs": {"k": 20},
+            "search_space": {"rrf_k": [30, 90]},
+            "strategy": "ab",
+        },
+    )
+    assert r.status_code == 201, r.text
+    data = r.json()
+
+    # 1. method_id inherited
+    assert data["method_id"] == hybrid["id"]
+    assert data["source_configuration_id"] == cfg_id
+
+    # 2. Parameters cloned from source with override
+    configs = data["configurations"]
+    assert len(configs) >= 2  # strategy=ab produces baseline + treatment
+    baseline_cfg = next(c for c in configs if c["role"] == "baseline")
+    assert baseline_cfg["parameters"]["k"] == 20
+    assert baseline_cfg["parameters"]["retriever_mode"] == "bm25"
+    assert baseline_cfg["parameters"]["rrf_k"] in (30, 60, 90)
+
+    # 3. Source configuration parameters in DB must remain unmodified (immutability)
+    from ttakkari.db import sessionmaker
+    from ttakkari.research.models import Configuration
+    async with sessionmaker()() as db:
+        src_row = await db.get(Configuration, uuid.UUID(cfg_id))
+        assert src_row.parameters == original_params
+        assert src_row.parameters["k"] == 5
+
+
+async def test_source_reuse_immutability_and_observability_across_get_resume_event_and_reload(client, auth):
+    study_id = await make_study(client, auth)
+    exp1 = await make_experiment(
+        client, auth, study_id,
+        config={"k": 5, "threshold": 0.8},
+        adapter_id="retrieval_eval",
+    )
+    cfg1_id = exp1["configurations"][0]["id"]
+    exp1_id = exp1["id"]
+
+    # Target experiment in new study
+    target_study_id = await make_study(client, auth)
+    r_target = await client.post(
+        f"{API}/studies/{target_study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Observability Exp",
+            "source_configuration_id": cfg1_id,
+            "adapter_id": "retrieval_eval",
+            "fixed_inputs": {"threshold": 0.95},
+        },
+    )
+    assert r_target.status_code == 201, r_target.text
+    target_exp = r_target.json()
+    target_exp_id = target_exp["id"]
+
+    # 1. Observable in GET /experiments/{id}
+    r_get = await client.get(f"{API}/experiments/{target_exp_id}", headers=auth)
+    assert r_get.status_code == 200
+    get_data = r_get.json()
+    assert get_data["source_study_id"] == study_id
+    assert get_data["source_experiment_id"] == exp1_id
+    assert get_data["source_configuration_id"] == cfg1_id
+    assert get_data["source_run_id"] is None
+    # Also in experiment wrapper
+    assert get_data["experiment"]["source_configuration_id"] == cfg1_id
+    assert get_data["experiment"]["source_experiment_id"] == exp1_id
+    assert get_data["experiment"]["source_study_id"] == study_id
+
+    # 2. Observable in Study resume GET /studies/{id}/resume
+    r_resume = await client.get(f"{API}/studies/{target_study_id}/resume", headers=auth)
+    assert r_resume.status_code == 200
+    resume_data = r_resume.json()
+    resumed_exp = next(e for e in resume_data["experiments"] if e["id"] == target_exp_id)
+    assert resumed_exp["source_configuration_id"] == cfg1_id
+    assert resumed_exp["source_experiment_id"] == exp1_id
+    assert resumed_exp["source_study_id"] == study_id
+
+    # 3. Observable in plan event
+    timeline = resume_data["timeline"]
+    plan_event = next(
+        e for e in timeline
+        if e["kind"] == "experiment_planned" and e.get("payload", {}).get("id") == target_exp_id
+    )
+    payload = plan_event["payload"]
+    assert payload["source_configuration_id"] == cfg1_id
+    assert payload["source_experiment_id"] == exp1_id
+    assert payload["source_study_id"] == study_id
+    assert len(payload["configurations"]) >= 1
+    assert payload["configurations"][0]["parameters"]["threshold"] == 0.95
+
+    # 4. Fresh DB session reload preserves lineage
+    from ttakkari.db import sessionmaker
+    from ttakkari.research.models import Experiment
+    async with sessionmaker()() as db:
+        loaded_exp = await db.get(Experiment, uuid.UUID(target_exp_id))
+        assert str(loaded_exp.source_configuration_id) == cfg1_id
+        assert str(loaded_exp.source_experiment_id) == exp1_id
+        assert str(loaded_exp.source_study_id) == study_id
+        assert loaded_exp.source_run_id is None
+
+
+async def test_source_reuse_preserves_lineage_after_run_execution(client, auth):
+    study_id = await make_study(client, auth)
+    exp1 = await make_experiment(
+        client, auth, study_id,
+        config={"preset_id": "ko_tech_docs_v1", "k": 5},
+        adapter_id="retrieval_eval",
+    )
+    cfg1_id = exp1["configurations"][0]["id"]
+    exp1_id = exp1["id"]
+
+    # Target experiment with auto_start=True
+    r_target = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Executed Target",
+            "source_configuration_id": cfg1_id,
+            "adapter_id": "retrieval_eval",
+            "auto_start": True,
+        },
+    )
+    assert r_target.status_code == 201, r_target.text
+    target_exp_id = r_target.json()["id"]
+
+    # Check after run dispatch that source 4-fields are intact
+    r_get = await client.get(f"{API}/experiments/{target_exp_id}", headers=auth)
+    assert r_get.status_code == 200
+    data = r_get.json()
+    assert data["source_configuration_id"] == cfg1_id
+    assert data["source_experiment_id"] == exp1_id
+    assert data["source_study_id"] == study_id
+

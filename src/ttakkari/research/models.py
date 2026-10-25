@@ -198,6 +198,41 @@ class Experiment(Base):
     primary_metric: Mapped[str] = mapped_column(String(64), default="recall_at_k")
     secondary_metrics: Mapped[list[str]] = mapped_column(JSONB, default=list)
     baseline_configuration_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    source_study_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("research_studies.id", ondelete="SET NULL", name="fk_research_experiments_source_study"),
+        nullable=True,
+        index=True,
+    )
+    source_experiment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "research_experiments.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_research_experiments_source_exp",
+        ),
+        nullable=True,
+        index=True,
+    )
+    source_configuration_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "research_configurations.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_research_experiments_source_cfg",
+        ),
+        nullable=True,
+        index=True,
+    )
+    source_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey(
+            "research_runs.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_research_experiments_source_run",
+        ),
+        nullable=True,
+        index=True,
+    )
 
 
 class Configuration(Base):

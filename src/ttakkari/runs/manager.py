@@ -1211,7 +1211,8 @@ class RunManager:
         self._disarm(run.id)
         run.status = RunStatus.running
         run.error = None
-        run.resume_handoff = None
+        # NOTE: resume_handoff 는 엔진 프로세스가 안내문을 받아 뜬 뒤(_attempt) 지운다. 여기서 지우면 시작 전 풀 timeout 재큐잉이
+        # 재시작 재개 안내문(이미 반영된 변경 확인·완료 작업 반복 금지)을 잃은 채 다시 돈다.
         run.resume_after = None
         run.started_at = run.started_at or utcnow()
         events.append(db, run, "run.status", {"status": RunStatus.running})
@@ -1766,6 +1767,7 @@ class RunManager:
         heartbeat_task: asyncio.Task | None = None
         timed_out = False
         try:
+            run.resume_handoff = None  # 안내문은 이 프로세스의 프롬프트에 실렸다
             await self._commit(db, run)
             if h:
                 h.release_start_slot()

@@ -152,12 +152,12 @@ if [[ "$ENCRYPT" -eq 1 ]]; then
   ENC_TMP="$ENC.partial.$$"
   openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
     -in "$DUMP" -out "$ENC_TMP" -pass "file:$PASSPHRASE_FILE"
-  "$PYTHON" - "$MANIFEST" "$ENC_TMP" "$ENC" <<'EOF'
+  "$PYTHON" - "$MANIFEST" "$ENC_TMP" "$ENC" "$PASSPHRASE_FILE" <<'EOF'
 import hashlib
 import json
 import sys
 
-manifest_path, enc_tmp, enc_path = sys.argv[1:]
+manifest_path, enc_tmp, enc_path, passfile = sys.argv[1:]
 with open(enc_tmp, "rb") as f:
     enc_digest = hashlib.file_digest(f, "sha256").hexdigest()
 with open(manifest_path, encoding="utf-8") as f:
@@ -166,6 +166,8 @@ m["plaintext_sha256"] = m["sha256"]
 m["sha256"] = enc_digest
 m["dump_file"] = enc_path
 m["encrypted"] = True
+with open(passfile, "rb") as f:
+    m["key_fingerprint"] = hashlib.pbkdf2_hmac("sha256", f.read().strip(), b"ttakkari-backup-key-fp-v1", 200_000).hex()[:16]
 with open(manifest_path, "w", encoding="utf-8") as f:
     json.dump(m, f, indent=2, sort_keys=True)
     f.write("\n")
@@ -190,6 +192,7 @@ latest = {
     "dump_file": m["dump_file"],
     "sha256": m["sha256"],
     "encrypted": bool(m.get("encrypted", False)),
+    "key_fingerprint": m.get("key_fingerprint"),
     "tables": len(m["tables"]),
     "rows": sum(m["tables"].values()),
 }

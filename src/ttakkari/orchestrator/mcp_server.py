@@ -889,6 +889,34 @@ async def backend_deploy_status(job_id: str) -> str:
     return await _agent("GET", f"/deploy/{job_id}")
 
 
+@server.tool()
+async def host_operation_start(kind: Literal["runtime_report", "performance_baseline", "backup_status", "backup_db",
+                                            "data_snapshot", "restore_rehearsal", "snapshot_verify"]) -> str:
+    """Run one approved host operation through the backend (no shell, paths or DB URLs; only `kind`).
+    Read-only and instant: runtime_report (execution ownership, generations, leases), performance_baseline
+    (short synthetic DB/event-loop/host probe), backup_status. Background: backup_db (read-only pg_dump, new
+    encrypted copy in the app backup dir), data_snapshot (encrypted copy of the app data dir only),
+    restore_rehearsal (restore the latest DB backup into a temporary isolated database, compare row counts,
+    drop it; production is never touched) and snapshot_verify (unpack the latest data snapshot in an isolated
+    temp dir, compare hashes, delete). One heavy job runs at a time; repeating the same kind returns the running
+    job. Poll host_operation_status; results hold counts/hashes/times only, never dumps or keys. Personal sessions."""
+    return await _agent("POST", "/operations", {"kind": kind})
+
+
+@server.tool()
+async def host_operation_status(job_id: str | None = None) -> str:
+    """Without job_id: the operation catalog and the 10 most recent jobs. With job_id: one job's status, summary
+    (counts, hashes, identities), scrubbed output tail and error. Durable across API restarts and deploys."""
+    return await _agent("GET", f"/operations/{quote(job_id, safe='')}" if job_id else "/operations")
+
+
+@server.tool()
+async def host_operation_cancel(job_id: str) -> str:
+    """Cancel a queued or running host operation. The runner stops its child process group; finished work and
+    already-written backups are preserved."""
+    return await _agent("POST", f"/operations/{quote(job_id, safe='')}/cancel", None)
+
+
 # ---- 운영 로그·오류 이슈(ADR 0033). 응답은 서버가 요약·마스킹·크기 제한하고, 여기서 한 번 더 16,000자로 막는다.
 
 async def _ops(method: str, path: str, body: dict[str, Any] | None = None, **params: Any) -> str:

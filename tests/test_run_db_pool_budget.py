@@ -23,6 +23,7 @@ from ttakkari import db as db_mod
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import Run, RunEvent, RunStatus, utcnow
+from ttakkari.runs import manager as manager_mod
 from ttakkari.runs.manager import (
     MAX_POOL_TIMEOUT_RETRIES,
     RunManager,
@@ -420,3 +421,55 @@ async def test_desk_is_still_requeued_when_nothing_was_committed_yet(
         assert await _lead_runs(run_id) == []
     finally:
         m._disarm(run_id)
+
+
+# ---- 시작 전 풀 timeout 재큐잉이 재개 안내문(resume_handoff)을 잃지 않는다
+
+@pytest.mark.parametrize("source", ["column", "waiting_event", "both"])
+async def test_requeue_before_spawn_keeps_the_resume_handoff(new_session, monkeypatch, source):
+    """재시작 재개는 resume_handoff 컬럼, 한도 대기는 컬럼과 run.waiting 이벤트에 안내문을 둔다.
+
+    _run 이 첫 커밋에서 컬럼을 지우면, 엔진이 뜨기 전 풀 timeout 으로 다시 돌 때 컬럼 쪽 안내문이 사라졌다."""
+    from conftest import agent_calls
+
+    from ttakkari.models import utcnow
+    from ttakkari.runs.manager import manager
+
+    monkeypatch.setattr(manager_mod, "POOL_TIMEOUT_BACKOFF_SECONDS", 0.2)
+    manager._routing = None
+    ws, sess = await new_session()
+    marker = f"[HANDOFF-{uuid.uuid4().hex[:8]}: files may already be changed; do not repeat finished work]"
+    async with sessionmaker()() as db:
+        run = Run(session_id=uuid.UUID(sess["id"]), workspace_id=uuid.UUID(ws["id"]), prompt="do the thing",
+                  engine="claude", status=RunStatus.queued, started_at=utcnow(), resume_attempts=1,
+                  resume_handoff=marker + "\n\n" if source in ("column", "both") else None,
+                  last_seq=1 if source != "column" else 0)
+        db.add(run)
+        await db.flush()
+        if source != "column":
+            db.add(RunEvent(run_id=run.id, seq=1, type="run.waiting",
+                            payload={"until": utcnow().isoformat(), "handoff": marker}))
+        await db.commit()
+        run_id = run.id
+
+    orig = RunManager._attempt
+    calls = {"n": 0}
+
+    async def flaky_attempt(self, db, run, *a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:  # _run 의 첫 커밋 뒤, 엔진 프로세스가 뜨기 전
+            raise PoolTimeoutError(POOL_ERROR)
+        return await orig(self, db, run, *a, **k)
+
+    monkeypatch.setattr(RunManager, "_attempt", flaky_attempt)
+    assert manager.start(run_id)
+    for _ in range(300):
+        if (await load(run_id)).status in (RunStatus.succeeded, RunStatus.failed):
+            break
+        await asyncio.sleep(0.1)
+
+    final = await load(run_id)
+    prompts = [c["argv"][c["argv"].index("-p") + 1] for c in agent_calls() if "-p" in c["argv"]]
+    assert calls["n"] == 2 and final.status == RunStatus.succeeded, (calls, final.status, final.error)
+    assert any(marker in p for p in prompts), "resume handoff was lost by the pool-timeout requeue"
+    assert final.resume_handoff is None  # 엔진이 뜬 뒤에는 지운다

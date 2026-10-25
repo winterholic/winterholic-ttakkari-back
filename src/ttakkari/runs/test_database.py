@@ -80,6 +80,10 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
+_PG_INTERLOCK_SEGSZ = 56
+_SHM_EXHAUSTED = ("no space left on device", "shmget", "shared memory")
+
+
 def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -183,6 +187,44 @@ def _release_orphan_shm(ref: tuple[int, int, int] | None) -> bool:
     return True
 
 
+def _sweep_orphan_shm() -> int:
+    """Remove unattached SysV segments left by dead postmasters, whatever folder they belonged to.
+
+    macOS allows only kern.sysv.shmmni=32 segments system-wide. A postmaster killed with SIGKILL, or
+    whose data dir was deleted first, leaves a 56-byte interlock segment that no per-folder reaper can
+    find, and once the table is full every initdb fails with shmget ENOSPC.
+    """
+    rows = _ipcs_rows()
+    ipcrm = shutil.which("ipcrm")
+    if not rows or not ipcrm:
+        return 0
+    allowed_owners = {str(os.getuid())}
+    try:
+        import pwd
+        allowed_owners.add(pwd.getpwuid(os.getuid()).pw_name)
+    except (ImportError, KeyError):
+        pass
+    removed = 0
+    for row in rows:
+        try:
+            shmid = int(row["id"])
+            cpid = int(row["cpid"])
+            nattch = int(row["nattch"])
+            segsz = int(row["segsz"])
+        except (KeyError, ValueError):
+            continue
+        # 56 bytes is PostgreSQL's PGShmemHeader interlock segment. Other sizes are not ours to touch.
+        if (row.get("owner") not in allowed_owners or nattch != 0 or segsz != _PG_INTERLOCK_SEGSZ
+                or cpid <= 0 or _pid_alive(cpid)):
+            continue
+        result = subprocess.run([ipcrm, "-m", str(shmid)], capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            removed += 1
+    if removed:
+        log.warning("removed %d orphan PostgreSQL SysV segment(s)", removed)
+    return removed
+
+
 def _valid_folder(folder: Path, root: Path = ROOT) -> tuple[int, int] | None:
     """Return (owner_pid, port) only for a canonical, marked directory we own."""
     try:
@@ -272,6 +314,8 @@ class RunTestDatabase:
             return self.url
         binary = _pg_bin(self.pg_bin)
         reap_stale(self.root)
+        _sweep_orphan_shm()
+        swept_after_failure = False
         self.root.mkdir(parents=True, exist_ok=True)
         folder = self.root / f"{PREFIX}{os.getpid()}-{uuid.uuid4().hex[:8]}"
         folder.mkdir(mode=0o700)
@@ -279,10 +323,11 @@ class RunTestDatabase:
         admin_password = secrets.token_urlsafe(32)
         test_password = secrets.token_urlsafe(32)
         password_file = folder / "initdb-password"
-        password_file.write_text(admin_password, encoding="utf-8")
-        password_file.chmod(0o600)
         for _ in range(8):
             port = _free_port()
+            # A retry removes the whole folder first, so the password file is rewritten every attempt.
+            password_file.write_text(admin_password, encoding="utf-8")
+            password_file.chmod(0o600)
             marker = folder / MARKER
             marker.write_text(f"prefix={PREFIX}\nfolder={folder.name}\nowner_pid={os.getpid()}\n"
                               f"run_id={self.run_id}\nport={port}\n", encoding="utf-8")
@@ -312,10 +357,18 @@ class RunTestDatabase:
                             f"127.0.0.1:{port}/ttakkari_test")
                 return self.url
             except subprocess.CalledProcessError as exc:
-                # Only retry a bind collision. Other failures are reported as-is.
-                if "address already in use" not in (exc.stderr or "").lower():
+                stderr = (exc.stderr or "").lower()
+                # Retry a bind collision, or once after freeing a full SysV segment table.
+                # Other failures are reported as-is.
+                shm_full = any(token in stderr for token in _SHM_EXHAUSTED)
+                if "address already in use" not in stderr and not (shm_full and not swept_after_failure):
                     self.close()
-                    raise
+                    raise RuntimeError(
+                        f"Run 전용 PostgreSQL 준비 실패 ({Path(str(exc.cmd[0])).name}, exit {exc.returncode}): "
+                        f"{(exc.stderr or '').strip()[-600:]}") from exc
+                if shm_full:
+                    swept_after_failure = True
+                    _sweep_orphan_shm()
                 _stop_owned(folder, binary, self.root)
                 folder.mkdir(mode=0o700, exist_ok=True)
         self.close()

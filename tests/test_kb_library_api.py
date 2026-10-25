@@ -178,14 +178,18 @@ async def test_unsegmented_revision_becomes_searchable_after_backfill(client, au
     async with sessionmaker()() as db:
         await ingest_source(db, source_key="file:legacy.md", data="레거시 문단은 격리 수준을 다룬다.\n".encode(), title="레거시")
         await db.commit()
-    before = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    # 접근 행이 없는 문서는 scope 를 알 수 없어 work_only 로 취급한다: 개인 검색에는 나뉘기 전·후 모두 나오지 않는다.
+    work = {"q": "격리 수준", "scope": "work"}
+    before = (await client.get(BASE + "/search", params=work, headers=auth)).json()
     assert before["items"] == []
     async with sessionmaker()() as db:
         assert await segment_unsegmented(db) == {"revisions_checked": 1, "passages": 1}
         await db.commit()
         assert await segment_unsegmented(db) == {"revisions_checked": 0, "passages": 0}
-    after = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    after = (await client.get(BASE + "/search", params=work, headers=auth)).json()
     assert [h["document"]["title"] for h in after["items"]] == ["레거시"]
+    personal = (await client.get(BASE + "/search", params={"q": "격리 수준"}, headers=auth)).json()
+    assert personal["items"] == []
 
 
 async def test_cli_kb_ingest_makes_the_document_searchable(client, auth, tmp_path):
@@ -201,7 +205,8 @@ async def test_cli_kb_ingest_makes_the_document_searchable(client, auth, tmp_pat
 
     def run():
         return subprocess.run(
-            [sys.executable, "-m", "ttakkari.cli", "kb-ingest", str(sample), "--source-key", "file:cli.md", "--title", "CLI 문서"],
+            [sys.executable, "-m", "ttakkari.cli", "kb-ingest", str(sample), "--source-key", "file:cli.md", "--title", "CLI 문서",
+             "--scope", "personal"],
             env=env, capture_output=True, text=True, timeout=120, check=False,
         )
 

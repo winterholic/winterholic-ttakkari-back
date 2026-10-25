@@ -45,6 +45,7 @@ from ttakkari.kb_ontology_models import (
     KbDocumentEntity,
     KbEntity,
 )
+from ttakkari.kb_store import source_domain, source_domain_expression
 from ttakkari.kb_vector_models import KbPassageVector as V
 from ttakkari.model_process import run_json_worker
 from ttakkari.models import EMBED_DIM
@@ -90,7 +91,7 @@ def _metadata_filter_predicates(
             raise ValueError("kb_filter_source_id_invalid") from exc
     domain = filters.get("domain")
     if domain:
-        source_conditions.append(KbSource.source_meta["domain"].astext == str(domain))
+        source_conditions.append(source_domain_expression() == str(domain).strip().lower().rstrip("."))
 
     for key, is_lower_bound in (("collected_after", True), ("collected_before", False)):
         value = filters.get(key)
@@ -675,22 +676,26 @@ async def search(
 
         conflict_a = aliased(KbAssertion)
         conflict_b = aliased(KbAssertion)
-        conflict_stmt = (
-            select(KbDocumentEntity.passage_id)
-            .join(KbConflict, KbConflict.entity_id == KbDocumentEntity.entity_id)
-            .join(conflict_a, conflict_a.id == KbConflict.assertion_a_id)
-            .join(conflict_b, conflict_b.id == KbConflict.assertion_b_id)
-            .where(
-                KbDocumentEntity.passage_id.in_(valid_pid_uuids),
-                KbConflict.status == "open",
-                KbConflict.visibility.in_(ctx.allowed_visibilities),
-                assertion_access_filter(ctx, conflict_a),
-                assertion_access_filter(ctx, conflict_b),
+        # has_conflict 는 열린 충돌의 당사자 주장(a 또는 b)을 뒷받침하는 근거 패시지에만 붙는다. 같은 엔터티를 언급할 뿐인
+        # 패시지에는 붙이지 않는다.
+        for party_column in (KbConflict.assertion_a_id, KbConflict.assertion_b_id):
+            conflict_stmt = (
+                select(KbEvidence.passage_id)
+                .join(KbAssertionEvidence, KbAssertionEvidence.evidence_id == KbEvidence.id)
+                .join(KbConflict, party_column == KbAssertionEvidence.assertion_id)
+                .join(conflict_a, conflict_a.id == KbConflict.assertion_a_id)
+                .join(conflict_b, conflict_b.id == KbConflict.assertion_b_id)
+                .where(
+                    KbEvidence.passage_id.in_(valid_pid_uuids),
+                    KbAssertionEvidence.relation == "supports",
+                    KbConflict.status == "open",
+                    KbConflict.visibility.in_(ctx.allowed_visibilities),
+                    assertion_access_filter(ctx, conflict_a),
+                    assertion_access_filter(ctx, conflict_b),
+                )
             )
-        )
-        conflict_pids = (await db.execute(conflict_stmt)).scalars().all()
-        for cp_id in conflict_pids:
-            passage_conflict_map[str(cp_id)] = True
+            for cp_id in (await db.execute(conflict_stmt)).scalars().all():
+                passage_conflict_map[str(cp_id)] = True
 
     # 패시지 메타데이터 구성 (RRF 랭킹 계산용)
     for pid in valid_pids:
@@ -751,7 +756,7 @@ async def search(
                 "id": str(doc.id),
                 "title": doc.title,
                 "lang": doc.lang,
-                "domain": getattr(doc, "domain", None),
+                "domain": source_domain(src),
             },
             "revision": {
                 "id": str(rev.id),

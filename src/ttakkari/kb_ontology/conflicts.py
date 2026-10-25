@@ -27,7 +27,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
+from ttakkari.collector.control_models import KbDocumentAccess
 from ttakkari.kb_access import (
     KbAccessContext,
     create_owner_context,
@@ -36,6 +36,7 @@ from ttakkari.kb_access import (
 )
 from ttakkari.kb_models import KbEvidence, KbPassage, KbRevision
 from ttakkari.kb_ontology.canonicals import synthesize_canonical_for_entity
+from ttakkari.kb_ontology.currency import current_revision_id
 from ttakkari.kb_ontology_models import (
     KbAssertion,
     KbAssertionEvidence,
@@ -108,24 +109,8 @@ def _periods_overlap(rev_a: KbRevision, rev_b: KbRevision) -> bool:
 async def _current_revision_id(
     db: AsyncSession, document_id: uuid.UUID
 ) -> uuid.UUID | None:
-    latest_observation = await db.scalar(
-        select(KbObservation.revision_id)
-        .where(KbObservation.document_id == document_id)
-        .order_by(
-            KbObservation.event_time.desc(),
-            KbObservation.recorded_at.desc(),
-            KbObservation.id.desc(),
-        )
-        .limit(1)
-    )
-    if latest_observation is not None:
-        return latest_observation
-    return await db.scalar(
-        select(KbRevision.id)
-        .where(KbRevision.document_id == document_id)
-        .order_by(KbRevision.rev_no.desc())
-        .limit(1)
-    )
+    """문서의 현재 리비전(rev_no 최대). 주장 생애주기와 같은 정의를 kb_ontology.currency 에서 쓴다."""
+    return await current_revision_id(db, document_id)
 
 
 async def detect_conflicts_for_entity(

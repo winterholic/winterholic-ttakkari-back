@@ -42,8 +42,8 @@ def scope_filter(scope: str = "personal"):
         KbDocumentAccess.hidden.is_(False),
     ).exists()
     any_access = select(KbDocumentAccess.document_id).where(KbDocumentAccess.document_id == KbDocument.id).exists()
-    # Existing unclassified rows stay visible only in personal scope, never also in work.
-    return or_(matched, ~any_access) if scope == "personal" else matched
+    # 접근 행이 없는 문서는 scope 를 알 수 없으므로 work_only 로 취급한다(kb_access 와 같은 규칙). personal 에는 보이지 않는다.
+    return or_(matched, ~any_access) if scope == "work" else matched
 
 
 async def require_document_scope(db, document_id, scope="personal"):
@@ -60,7 +60,9 @@ def _current_revision_filter():
     legacy = ~select(literal(1)).where(
         newer.c.document_id == KbRevision.document_id, newer.c.rev_no > KbRevision.rev_no
     ).exists()
-    return or_(KbRevision.id == observed, and_(observed.is_(None), legacy))
+    # 관측이 없으면 `id = NULL` 이 NULL 이라 not_() 도 NULL 이 되어 status=historical 이 전부 탈락한다. 관측 유무를 명시해
+    # 두 분기가 항상 참/거짓으로 평가되게 한다.
+    return or_(and_(observed.is_not(None), KbRevision.id == observed), and_(observed.is_(None), legacy))
 
 
 def snippet_with_highlights(body: str, words: list[str]) -> tuple[str, list[list[int]]]:
@@ -359,6 +361,31 @@ class RegisterResult:
     passage_count: int
 
 
+async def ensure_document_access(
+    db: AsyncSession, document_id: uuid.UUID, *, scope: str, tenant_id: str = "owner"
+) -> KbDocumentAccess:
+    """문서의 접근 행을 보장한다. 수집 경로(API·CLI·research import)가 모두 이 함수로 접근 행을 쓴다.
+
+    scope 'work' 는 (work, work_only), 'personal' 은 (personal, global) 이다. 알 수 없는 scope 는 거부한다(미상을 global 로 올리지 않는다).
+    이미 행이 있으면 새로 쓰지 않고 scope·tenant 가 같은지만 확인한다(다르면 document_scope_mismatch).
+    """
+    if scope not in ("personal", "work"):
+        raise KbInputError("document_scope_invalid")
+    access = await db.get(KbDocumentAccess, document_id)
+    if access is None:
+        access = KbDocumentAccess(
+            document_id=document_id,
+            tenant_id=tenant_id,
+            scope=scope,
+            origin_scope="work" if scope == "work" else "personal",
+            visibility="work_only" if scope == "work" else "global",
+        )
+        db.add(access)
+    elif access.scope != scope or access.tenant_id != tenant_id:
+        raise KbInputError("document_scope_mismatch")
+    return access
+
+
 async def register_text(
     db: AsyncSession, *, title: str, text: str, source_key: str | None, lang: str | None,
     locator: str | None, scope: str = "personal",
@@ -382,21 +409,7 @@ async def register_text(
         db, source_key=key, data=data, kind="upload", locator=locator, media_type="text/plain",
         title=title, lang=lang, origin_meta={"via": "kb_library_api"},
     )
-    access = await db.get(KbDocumentAccess, result.document_id)
-    origin_scope = "work" if scope == "work" else "personal"
-    visibility = "work_only" if scope == "work" else "global"
-    if access is None:
-        db.add(
-            KbDocumentAccess(
-                document_id=result.document_id,
-                tenant_id="owner",
-                scope=scope,
-                origin_scope=origin_scope,
-                visibility=visibility,
-            )
-        )
-    elif access.scope != scope or access.tenant_id != "owner":
-        raise KbInputError("document_scope_mismatch")
+    await ensure_document_access(db, result.document_id, scope=scope)
     passages = await segment_revision(db, result.revision_id)
     from ttakkari.kb_pipeline import enqueue_pipeline_job
 

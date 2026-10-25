@@ -9,7 +9,8 @@ Caller 유형(Role)과 신뢰된 컨텍스트(Trusted Context)에 따라 접근 
    - owner JWT web: tenant 내 authorized 'global' 및 'work_only' 모두 단일 목록/검색 조회.
    - work agent: 허용된 'global' + 'work_only' 조회.
    - personal agent: 'global'만 조회 ('work_only'는 비노출).
-   - access 레코드가 없거나 미상인 문서: fail-closed로 격리 (기본 제외).
+   - access 레코드가 없거나 미상인 문서: work_only 로 취급한다(kb_visibility 와 같은 규칙). personal 컨텍스트에서는 보이지 않고,
+     work_only 를 허용하는 컨텍스트에서만 보인다.
    - hidden=True 문서: 명시적 요청이 없는 한 기본 제외.
 2. Caller 임의 scope='all' 위조 방지:
    - caller가 임의 문자열 'all' 등을 보내더라도 보안 경계를 넓히지 못하도록
@@ -206,6 +207,17 @@ def document_access_conditions(ctx: KbAccessContext, access_model: Any = None) -
         conditions.append(access.origin_scope == ctx.origin_scope_filter)
     return conditions
 
+def unclassified_documents_visible(ctx: KbAccessContext) -> bool:
+    """access 행이 없는 문서(미상 = origin 'work', visibility 'work_only')를 ctx 가 볼 수 있는지.
+
+    문서 접근 행이 없다는 것은 scope 를 알 수 없다는 뜻이라 kb_visibility 와 똑같이 ('work', 'work_only') 로 본다.
+    work_only 를 허용하지 않는 컨텍스트(personal)나 origin_scope 가 personal 로 제한된 컨텍스트에서는 절대 보이지 않는다.
+    """
+    if VISIBILITY_WORK_ONLY not in ctx.allowed_visibilities:
+        return False
+    return ctx.origin_scope_filter in (None, SCOPE_WORK)
+
+
 def document_access_filter(ctx: KbAccessContext, doc_model: Any = None):
     """KbDocument 테이블 대상 접근 제어 필터 절 생성.
 
@@ -214,7 +226,7 @@ def document_access_filter(ctx: KbAccessContext, doc_model: Any = None):
     2. visibility IN ctx.allowed_visibilities
     3. hidden == False (include_hidden이 False일 때)
     4. origin_scope_filter가 지정된 경우 origin_scope == ctx.origin_scope_filter
-    5. 레거시 미분류 행: KbDocumentAccess 가 없는 행은 personal_agent/owner(global 허용 시)에만 보존.
+    5. 접근 행이 없는 문서는 work_only 로 취급한다(unclassified_documents_visible). personal 에는 보이지 않는다.
     """
     from ttakkari.collector.control_models import KbDocumentAccess
     from ttakkari.kb_models import KbDocument
@@ -233,8 +245,8 @@ def document_access_filter(ctx: KbAccessContext, doc_model: Any = None):
 
     matched = select(KbDocumentAccess.document_id).where(and_(*conditions)).exists()
 
-    # 레거시 호환: access 레코드가 아예 없는 과거 문서는 global 허용 시에만 노출
-    if VISIBILITY_GLOBAL in ctx.allowed_visibilities:
+    # access 행이 없거나 미상이면 work_only 로 취급한다: work_only 를 볼 수 있는 컨텍스트에만 노출한다.
+    if unclassified_documents_visible(ctx):
         any_access = select(KbDocumentAccess.document_id).where(
             KbDocumentAccess.document_id == target_doc.id
         ).exists()
@@ -268,7 +280,7 @@ def passage_access_filter(ctx: KbAccessContext, passage_model: Any = None):
         KbDocumentAccess, KbDocumentAccess.document_id == KbRevision.document_id
     ).where(and_(KbRevision.id == p.revision_id, *conditions[2:])).exists()
 
-    if VISIBILITY_GLOBAL in ctx.allowed_visibilities:
+    if unclassified_documents_visible(ctx):
         any_access = select(KbDocumentAccess.document_id).select_from(KbRevision).where(
             KbRevision.id == p.revision_id,
             KbDocumentAccess.document_id == KbRevision.document_id,

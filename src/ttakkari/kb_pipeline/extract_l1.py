@@ -6,6 +6,7 @@ to select top critical passages for L2 LLM deep extraction under doc/daily budge
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 
 from ttakkari.common.entity_norm import norm_name
@@ -129,11 +130,55 @@ def score_passage_for_l2(passage: KbPassage, *, is_first: bool = False) -> tuple
     return score, reasons
 
 
+def _is_word_char(ch: str) -> bool:
+    return ch.isalnum() or ch == "_"
+
+
+def _fold_with_origin(body: str) -> tuple[str, list[int]]:
+    """본문을 토큰과 같은 형태(NFKC + casefold)로 접고, 접힌 각 글자가 온 원문 인덱스를 함께 돌려준다."""
+    chars: list[str] = []
+    origin: list[int] = []
+    for i, ch in enumerate(body):
+        for folded in unicodedata.normalize("NFKC", ch).casefold():
+            chars.append(folded)
+            origin.append(i)
+    return "".join(chars), origin
+
+
+def _locate_original_span(
+    body: str, folded: str, origin: list[int], token: str
+) -> tuple[int, int] | None:
+    """접힌 토큰이 처음 나오는 단어 경계 위치를 원문 좌표 [start, end)로 돌려준다.
+
+    tokenize 는 토큰을 casefold 하므로 원문('Kubernetes')을 `body.find('kubernetes')` 로는 찾지 못한다. 접힌 본문에서 찾고
+    원문 인덱스로 되돌려, 인용이 항상 원문 그대로(body[start:end])가 되게 한다. 단어 중간의 부분 문자열은 언급이 아니다.
+    """
+    if not token:
+        return None
+    pos = folded.find(token)
+    while pos != -1:
+        end = pos + len(token)
+        before_ok = pos == 0 or not _is_word_char(folded[pos - 1])
+        # 라틴·숫자로 끝나는 토큰 뒤에 영숫자가 더 붙으면 다른 단어다. 한글 뒤의 조사는 허용한다(접미사 제거 토큰).
+        last = token[-1]
+        after_ok = end == len(folded) or not (last.isascii() and _is_word_char(last) and _is_word_char(folded[end]))
+        if before_ok and after_ok:
+            start_o, end_o = origin[pos], origin[end - 1] + 1
+            if unicodedata.normalize("NFKC", body[start_o:end_o]).casefold() == token:
+                return start_o, end_o
+        pos = folded.find(token, pos + 1)
+    return None
+
+
 def match_known_entities(
     passages: list[KbPassage],
     known_aliases: dict[str, str],  # norm_alias -> canonical_name
 ) -> list[CandidateMention]:
-    """Scan passages for known entity aliases and create mentions."""
+    """Scan passages for known entity aliases and create mentions.
+
+    언급의 인용(evidence_quote)과 span 은 원문 본문 좌표다. 원문에서 위치를 찾지 못한 별칭은 언급으로 만들지 않는다
+    (근거 없는 언급·별칭 금지).
+    """
     if not known_aliases:
         return []
 
@@ -144,42 +189,35 @@ def match_known_entities(
             continue
 
         tokens = tokenize(body)
+        folded, origin = _fold_with_origin(body)
         seen_in_passage: set[str] = set()
 
         for tok in tokens:
             stripped = strip_korean_suffix(tok)
             # Try both stripped and raw token
-            candidates = [norm_name(stripped), norm_name(tok)]
-            for c_norm in candidates:
-                if c_norm and c_norm in known_aliases:
-                    canonical = known_aliases[c_norm]
-                    if canonical in seen_in_passage:
-                        continue
-                    seen_in_passage.add(canonical)
-
-                    # Find position in passage body
-                    pos = body.find(tok)
-                    if pos == -1:
-                        pos = body.find(stripped)
-
-                    start, end = -1, -1
-                    q = ""
-                    if pos != -1:
-                        matched_str = tok if body.find(tok) != -1 else stripped
-                        start, end = pos, pos + len(matched_str)
-                        q = body[start:end]
-
-                    mentions.append(
-                        CandidateMention(
-                            passage_id=p.id,
-                            entity_name=canonical,
-                            role="mentioned",
-                            salience=0.6,
-                            evidence_quote=q,
-                            span_start=start,
-                            span_end=end,
-                        )
+            for candidate in (stripped, tok):
+                c_norm = norm_name(candidate)
+                if not c_norm or c_norm not in known_aliases:
+                    continue
+                canonical = known_aliases[c_norm]
+                if canonical in seen_in_passage:
+                    continue
+                span = _locate_original_span(body, folded, origin, candidate)
+                if span is None:
+                    continue
+                seen_in_passage.add(canonical)
+                start, end = span
+                mentions.append(
+                    CandidateMention(
+                        passage_id=p.id,
+                        entity_name=canonical,
+                        role="mentioned",
+                        salience=0.6,
+                        evidence_quote=body[start:end],
+                        span_start=start,
+                        span_end=end,
                     )
+                )
     return mentions
 
 

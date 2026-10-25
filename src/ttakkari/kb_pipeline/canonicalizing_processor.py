@@ -24,6 +24,7 @@ from ttakkari.kb_ontology.canonicals import (
     update_superseded_assertions,
 )
 from ttakkari.kb_ontology.conflicts import detect_conflicts_for_entity
+from ttakkari.kb_ontology.currency import older_revision_ids
 from ttakkari.kb_ontology_models import KbAssertion, KbDocumentEntity
 from ttakkari.kb_pipeline.types import (
     STAGE_CANONICALIZING,
@@ -73,11 +74,13 @@ class CanonicalizingProcessor:
                 if a.object_entity_id is not None:
                     affected_entity_ids.add(a.object_entity_id)
 
-            # 구버전 대체(supersedes_id) 대상 주어 엔터티도 포함
-            if rev.supersedes_id is not None:
+            # 구버전 대체 대상(supersedes_id 와 더 낮은 rev_no 전부) 주어 엔터티도 포함: 대체된 당사자 주장의 충돌을 닫고
+            # 정본의 has_open_conflict 를 다시 계산해야 한다.
+            older_ids = await older_revision_ids(db, rev)
+            if older_ids:
                 older_eids = await db.scalars(
                     select(KbAssertion.subject_entity_id).where(
-                        KbAssertion.revision_id == rev.supersedes_id
+                        KbAssertion.revision_id.in_(older_ids)
                     )
                 )
                 for eid in older_eids:

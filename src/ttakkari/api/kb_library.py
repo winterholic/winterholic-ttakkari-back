@@ -1,7 +1,7 @@
 """Owner KB API: scoped documents, citations, lexical search and optional dense fusion.
 
-New and collected documents have explicit access records. Legacy unclassified rows remain
-personal-only. Model rankings are evidence candidates; KB7 quality approval is separate.
+New and collected documents have explicit access records. Documents without an access row
+are treated as work_only (unknown scope never reaches personal). Model rankings are evidence candidates; KB7 quality approval is separate.
 """
 
 from __future__ import annotations

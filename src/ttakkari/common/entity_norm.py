@@ -45,6 +45,7 @@ def split_bilingual_label(label: str) -> tuple[str, list[str]]:
 
     Rules:
     - Supports multiple parentheses (e.g. 'Foo (Bar) (Baz)') and comma-separated aliases inside brackets.
+    - Nested or unbalanced parentheses (e.g. 'Foo (Bar (Baz))') are not split; the label is kept as is.
     - If label is 'Hangul (English)', prefer the standard English name as canonical_name for technical terms.
     - If label is 'English (Hangul)', English is canonical_name and Hangul is an alias.
     - If label is 'Name (Abbrev)', Name is canonical_name and Abbrev is an alias.
@@ -52,6 +53,21 @@ def split_bilingual_label(label: str) -> tuple[str, list[str]]:
     cleaned = label.strip()
     if not cleaned:
         return "", []
+
+    # Nested or unbalanced parentheses make the alias boundaries ambiguous: keep the original text
+    # instead of inventing aliases like "Bar (Baz".
+    depth = 0
+    for ch in cleaned:
+        if ch == "(":
+            depth += 1
+            if depth > 1:
+                return cleaned, [cleaned]
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return cleaned, [cleaned]
+    if depth != 0:
+        return cleaned, [cleaned]
 
     # Match all parenthesized blocks: e.g., "(Bar)", "(Baz)"
     bracket_pattern = re.compile(r"\(([^)]+)\)")

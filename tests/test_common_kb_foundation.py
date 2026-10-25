@@ -230,6 +230,12 @@ class TestEntityNorm:
         assert "Kubernetes" in aliases2
         assert "k8s" in aliases2
 
+    def test_nested_or_unbalanced_parentheses_are_not_split(self):
+        for label in ("Foo (Bar (Baz))", "Foo (Bar", "Foo Bar)", "((Foo))", "A (B) (C (D))"):
+            assert split_bilingual_label(label) == (label, [label])
+        # flat multi-parentheses keep working
+        assert split_bilingual_label("Foo (Bar) (Baz)") == ("Foo", ["Foo", "Bar", "Baz"])
+
     def test_adversarial_chunking_contracts(self):
         fence = chr(96) * 3
         cases = [

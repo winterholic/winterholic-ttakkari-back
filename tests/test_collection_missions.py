@@ -197,6 +197,237 @@ async def test_mission_input_reaches_kb_and_reports_real_delivery(client, auth, 
     assert (await client.get(BASE + "/missions")).status_code == 401
 
 
+async def test_precise_rescue_uses_reviewed_knowledge_delivery_contract(
+    client, auth, env, monkeypatch  # noqa: F811
+):
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from ttakkari.collector import pipeline, precise_eval
+    from ttakkari.collector.control_models import CollectorDelivery, CollectorReview
+    from ttakkari.collector_models import CollectorItem, CollectorOutbox
+
+    env.server.page(
+        "/held",
+        article_html(
+            "직렬화 설계",
+            [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."],
+        ),
+    )
+    url = env.server.url("/held")
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(
+        allowed_hosts=["docs.test"],
+        schemes=["http"],
+        ports=[env.server.port],
+        min_delay_seconds=0,
+    )
+    assert (
+        await client.post(BASE + "/sources", headers=auth, json=body)
+    ).status_code == 201
+    made = await client.post(
+        BASE + "/missions",
+        headers=auth,
+        json={"goal": "프로그래밍 언어 컴파일러 최적화", "urls": [url]},
+    )
+    assert made.status_code == 202, made.text
+    mission = made.json()
+
+    original_triage = pipeline.triage.evaluate_triage
+
+    def pending_hold(**kwargs):
+        outcome = original_triage(**kwargs)
+        signals = dict(outcome.signals)
+        signals["precise_eval"] = {
+            "needed": True,
+            "state": "pending",
+            "reasons": ["fixture"],
+        }
+        return SimpleNamespace(
+            action="hold", reasons=["triage:irrelevant_to_goal"], signals=signals
+        )
+
+    monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
+
+    monkeypatch.setattr(
+        precise_eval,
+        "engine_status",
+        lambda: {
+            "status": "ready",
+            "detail": "fixture",
+            "model": "fixture",
+            "endpoint": "http://127.0.0.1:19300",
+        },
+    )
+
+    async def fixture_verdict(**kwargs):
+        return {
+            "topic_relevance": 0.95,
+            "relevance_explanation": "fixture verdict",
+            "information_depth": 0.88,
+            "low_quality_signals": ["none"],
+            "recommendation": "accept",
+            "confidence": 0.95,
+        }
+
+    monkeypatch.setattr(precise_eval, "evaluate_document_guarded", fixture_verdict)
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    async with sessionmaker()() as db:
+        item = await db.scalar(
+            select(CollectorItem).where(
+                CollectorItem.job_id == uuid.UUID(mission["jobs"][0]["job_id"])
+            )
+        )
+        assert item is not None
+        assert item.signals["triage"]["precise_eval"]["state"] == "evaluated", (
+            item.signals
+        )
+        assert item.status == "accepted", item.status
+    assert await kb_delivery.deliver_once() == 1
+
+    detail = (
+        await client.get(BASE + "/missions/" + mission["id"], headers=auth)
+    ).json()
+    assert detail["counts"]["imported"] == 1, detail
+    result = detail["results"][0]
+    hits = (await client.get("/api/assistant/kb/search?q=직렬화", headers=auth)).json()[
+        "items"
+    ]
+    assert hits
+    async with sessionmaker()() as db:
+        item = await db.get(CollectorItem, uuid.UUID(result["id"]))
+        assert item.status == "accepted"
+        assert item.decision_state == "accept"
+        review = await db.scalar(
+            select(CollectorReview).where(CollectorReview.item_id == item.id)
+        )
+        assert (
+            review
+            and review.decision == "accept"
+            and review.text_sha256 == item.text_sha256
+        )
+        assert (
+            "utility review only" in review.reason
+            and "factuality unverified" in review.reason
+        )
+        outbox = await db.scalar(
+            select(CollectorOutbox).where(
+                CollectorOutbox.envelope_id == item.envelope_id,
+                CollectorOutbox.sink == "knowledge",
+            )
+        )
+        assert outbox and outbox.status == "delivered"
+        receipt = await db.get(CollectorDelivery, outbox.id)
+        assert receipt and receipt.outcome == "imported"
+        assert item.envelope["decision"]["state"] == "hold"
+        assert item.envelope["rights"]["permission"] == "allowed"
+        assert "knowledge" in item.envelope["rights"]["purposes"]
+        assert item.envelope["rights"]["retain_until"] is None
+
+
+async def test_precise_rescue_keeps_item_held_when_collection_rights_deny_knowledge(
+    client, auth, env, monkeypatch  # noqa: F811
+):
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from ttakkari.collector import pipeline, precise_eval
+    from ttakkari.collector.control_models import CollectorReview
+    from ttakkari.collector_models import CollectorItem, CollectorOutbox
+
+    env.server.page(
+        "/held-no-kb",
+        article_html(
+            "직렬화 설계",
+            [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."],
+        ),
+    )
+    url = env.server.url("/held-no-kb")
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(
+        allowed_hosts=["docs.test"],
+        schemes=["http"],
+        ports=[env.server.port],
+        min_delay_seconds=0,
+    )
+    body["policy"]["permissions"]["knowledge"] = "denied"
+    assert (
+        await client.post(BASE + "/sources", headers=auth, json=body)
+    ).status_code == 201
+    made = await client.post(
+        BASE + "/missions",
+        headers=auth,
+        json={"goal": "프로그래밍 언어 컴파일러 최적화", "urls": [url]},
+    )
+    assert made.status_code == 202, made.text
+
+    original_triage = pipeline.triage.evaluate_triage
+
+    def pending_hold(**kwargs):
+        outcome = original_triage(**kwargs)
+        signals = dict(outcome.signals)
+        signals["precise_eval"] = {
+            "needed": True,
+            "state": "pending",
+            "reasons": ["fixture"],
+        }
+        return SimpleNamespace(
+            action="hold", reasons=["triage:irrelevant_to_goal"], signals=signals
+        )
+
+    monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
+    monkeypatch.setattr(
+        precise_eval,
+        "engine_status",
+        lambda: {
+            "status": "ready",
+            "detail": "fixture",
+            "model": "fixture",
+            "endpoint": "http://127.0.0.1:19300",
+        },
+    )
+
+    async def fixture_verdict(**kwargs):
+        return {
+            "topic_relevance": 0.95,
+            "relevance_explanation": "fixture verdict",
+            "information_depth": 0.88,
+            "low_quality_signals": ["none"],
+            "recommendation": "accept",
+            "confidence": 0.95,
+        }
+
+    monkeypatch.setattr(precise_eval, "evaluate_document_guarded", fixture_verdict)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    async with sessionmaker()() as db:
+        item = await db.scalar(
+            select(CollectorItem).where(
+                CollectorItem.job_id == uuid.UUID(made.json()["jobs"][0]["job_id"])
+            )
+        )
+        assert item.status == "held"
+        assert item.decision_state == "hold"
+        assert item.signals["triage"]["precise_eval"]["state"] == "evaluated"
+        assert "policy:knowledge_import_not_permitted" in item.reason_codes
+        assert (
+            await db.scalar(
+                select(CollectorReview).where(CollectorReview.item_id == item.id)
+            )
+            is None
+        )
+        assert (
+            await db.scalar(
+                select(CollectorOutbox).where(
+                    CollectorOutbox.envelope_id == item.envelope_id
+                )
+            )
+            is None
+        )
+
+
 async def test_unknown_rights_is_visible_without_registering_fake_permission(client, auth):
     made = await client.post(BASE + "/missions", headers=auth, json={"goal": "문서 수집", "urls": ["https://unknown.example/docs/"]})
     assert made.status_code == 202, made.text

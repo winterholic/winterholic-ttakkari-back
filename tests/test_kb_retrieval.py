@@ -24,8 +24,9 @@ async def test_search_mode_is_validated(client, auth):
 
 
 async def test_hybrid_projection_is_idempotent_and_scope_filtered(client, auth):
+    """C2: 단일 지식 도서관에서 소유자 검색은 옛 scope 구분과 무관하게 모든 관련 자료를 함께 반환한다."""
     one = await register(client, auth, "트랜잭션 격리 수준과 직렬화 충돌을 설명한다.")
-    two = await register(client, auth, "기상청은 남부 지역에 많은 비가 내릴 것으로 예측했다.")
+    _two = await register(client, auth, "기상청은 남부 지역에 많은 비가 내릴 것으로 예측했다.")
     private = await register(client, auth, "트랜잭션 격리 회사전용기록", scope="work")
     from ttakkari import kb_retrieval
     assert await kb_retrieval.index_pending(limit=30) == 3
@@ -35,9 +36,18 @@ async def test_hybrid_projection_is_idempotent_and_scope_filtered(client, auth):
     body = hits.json()
     assert body["retrieval"]["quality_gate"] == "unverified"
     assert body["retrieval"]["model"] == "hash"
-    assert body["items"][0]["document"]["id"] == one["document_id"]
-    assert private["document_id"] not in {item["document"]["id"] for item in body["items"]}
-    assert two["document_id"] != one["document_id"]
+    matched_ids = {item["document"]["id"] for item in body["items"]}
+    # C2: 소유자는 단일 도서관 전체(one과 private 모두)를 읽는다.
+    assert one["document_id"] in matched_ids
+    assert private["document_id"] in matched_ids
+
+    # 회사 계정 엔진 pool=work 는 pool=work 인 private 만 보고 개인 자료 one 은 배제된다.
+    from ttakkari.db import sessionmaker
+    async with sessionmaker()() as db:
+        work_hits = await kb_retrieval.search(db, query="트랜잭션", pool="work")
+        work_doc_ids = {item["document"]["id"] for item in work_hits["items"]}
+        assert private["document_id"] in work_doc_ids
+        assert one["document_id"] not in work_doc_ids
 
 
 async def test_failed_dense_query_is_reported_not_silently_relabelled(client, auth, monkeypatch):

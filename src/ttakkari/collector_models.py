@@ -50,7 +50,9 @@ class CollectorJob(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # C2: 항상 단일 값(collector.library.LIBRARY_SCOPE). 읽을 수 있는 엔진 범위는 pool 이 정한다.
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    pool: Mapped[str] = mapped_column(String(16), nullable=False, default="personal", server_default="personal")
     source_key: Mapped[str] = mapped_column(String(256), nullable=False)
     request_key: Mapped[str] = mapped_column(String(256), nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)

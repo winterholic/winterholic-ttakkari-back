@@ -76,10 +76,15 @@ class AuthContext:
     principal_ids: tuple[str, ...] = ()
     is_admin: bool = False
     kind: str = "session"
+    # C2: 읽을 수 있는 엔진 범위. scope 는 저장 키가 아니라 envelope 주장 검증용 이름으로만 남는다.
+    # 소유자는 전체를 보므로 personal, work 세션만 회사 엔진 범위로 좁아진다.
+    pool: str | None = None
 
     def __post_init__(self):
         if not self.principal_ids:
             object.__setattr__(self, "principal_ids", (self.principal_id,))
+        if self.pool is None:
+            object.__setattr__(self, "pool", "work" if self.scope == "work" and self.kind != "owner" else "personal")
 
 
 # Regex patterns & enums
@@ -608,12 +613,18 @@ def derive_scope(auth: AuthContext | dict[str, Any]) -> dict[str, Any]:
         return {
             "tenant_id": auth.tenant_id,
             "scope": auth.scope,
+            "pool": auth.pool,
+            # 소유자는 두 이름의 주체였으므로 옛 클라이언트가 어느 쪽을 써도 권한 상승이 아니다. 세션은 자기 pool 만 주장한다.
+            "claims": {"personal", "work"} if auth.kind == "owner" else {auth.scope},
             "principal_ids": set(auth.principal_ids),
         }
     p_ids = {auth["principal_id"]} if "principal_id" in auth else set(auth.get("principal_ids", []))
+    scope = auth.get("session_pool") or auth["scope"]
     return {
         "tenant_id": auth["tenant_id"],
-        "scope": auth.get("session_pool") or auth["scope"],
+        "scope": scope,
+        "pool": "work" if scope == "work" else "personal",
+        "claims": {scope},
         "principal_ids": p_ids,
     }
 
@@ -637,7 +648,7 @@ def verify_auth_binding(auth: AuthContext | dict[str, Any], envelope: dict[str, 
         raise ScopeBindingMismatchError(
             f"reject:scope_binding_mismatch: tenant_id '{access.get('tenant_id')}' != '{derived['tenant_id']}'"
         )
-    if access.get("scope") != derived["scope"]:
+    if access.get("scope") not in derived["claims"]:
         raise ScopeBindingMismatchError(
             f"reject:scope_binding_mismatch: scope '{access.get('scope')}' != '{derived['scope']}'"
         )

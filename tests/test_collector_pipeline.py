@@ -34,6 +34,7 @@ from ttakkari.collector.contracts import (
 )
 from ttakkari.collector.fetcher import SafeFetcher
 from ttakkari.collector.intake import submit_envelope
+from ttakkari.collector.library import LIBRARY_SCOPE
 from ttakkari.collector.policy import SourcePolicySpec
 from ttakkari.collector.polite import PoliteFetcher
 from ttakkari.collector_models import (
@@ -545,21 +546,28 @@ async def test_same_bytes_without_validators_are_detected_by_content_hash(env):
     assert second.signals["not_modified_of"] == str(first.id) and env.server.count("/same") == 2
 
 
-async def test_dedupe_and_cache_never_cross_scope(env):
+async def test_library_is_single_but_company_engine_pool_never_reuses_personal_results(env):
+    """C2: 수집에 scope 구분은 없다. 저장은 한 도서관이고, 회사 엔진(work) 세션 job 만 개인 pool 의 사본·cache 를 대표로 쓰지 않는다."""
     env.server.page("/a", article_html("A", [LONG_KO]))
     await register(PERSONAL, "src-s", spec(env))
-    await register(WORK, "src-s", spec(env))
     env.server.page("/a-mirror", article_html("A", [LONG_KO], extra_head='<meta name="copy" content="mirror"/>'))
     personal = await run(await submit(env, PERSONAL, "src-s", ["/a"]))
+    env.clock.now += timedelta(seconds=1)
     work = await run(await submit(env, WORK, "src-s", ["/a"]))
+    env.clock.now += timedelta(seconds=1)
     p_item, w_item = (await items(personal.id))[0], (await items(work.id))[0]
-    assert p_item.status == "accepted" and w_item.status == "accepted"  # same text in another scope is not a duplicate
-    assert w_item.exact_of is None and w_item.scope == "work" and w_item.envelope["access"]["scope"] == "work"
-    assert env.server.count("/a") == 2  # the work scope did not reuse the personal fetch cache either
-    # a different URL with the same text is an exact duplicate only inside the scope that already holds the text
-    mirror_work = (await items((await run(await submit(env, WORK, "src-s", ["/a-mirror"]))).id))[0]
-    assert mirror_work.status == "held" and mirror_work.exact_of == w_item.id
-
+    assert p_item.status == "accepted" and w_item.status == "accepted"  # the work pool cannot be satisfied by a personal copy
+    assert (personal.scope, work.scope) == (LIBRARY_SCOPE, LIBRARY_SCOPE) and (personal.pool, work.pool) == ("personal", "work")
+    assert w_item.exact_of is None and w_item.scope == LIBRARY_SCOPE and w_item.envelope["access"]["scope"] == "work"
+    assert env.server.count("/a") == 2  # a validator left by a personal job is not reused by the work pool
+    personal_mirror = (await items((await run(await submit(env, PERSONAL, "src-s", ["/a-mirror"]))).id))[0]
+    assert personal_mirror.status == "held" and personal_mirror.exact_of == p_item.id  # the earliest visible copy
+    work_mirror = (await items((await run(await submit(env, WORK, "src-s", ["/a-mirror"]))).id))[0]
+    assert work_mirror.status == "held" and work_mirror.exact_of == w_item.id  # a work job only sees work-pool copies
+    # once the personal side has a copy, a later personal duplicate is found library-wide regardless of the legacy name
+    async with sessionmaker()() as db:
+        canonical = await store.canonical_by_text(db, "fixture-tenant", "personal", p_item.text_sha256, exclude_url_key="x")
+        assert canonical is not None and canonical.id == p_item.id
 
 
 # ---- retry, cooldown, resume, atomicity, cancel ------------------------------------------------------------------
@@ -777,7 +785,8 @@ def test_collector_package_has_no_llm_or_knowledge_dependency():
 async def test_host_state_is_public_data_only_and_policy_rows_are_tenant_scoped(env):
     await register(PERSONAL, "src-iso", spec(env))
     async with sessionmaker()() as db:
-        assert await store.active_policy(db, "fixture-tenant", "work", "src-iso") is None
+        # 정책은 출처의 권리라 도서관 하나에 하나다. 옛 work 이름으로 물어도 같은 정책이고 tenant 만 경계다.
+        assert await store.active_policy(db, "fixture-tenant", "work", "src-iso") is not None
         assert await store.active_policy(db, "other-tenant", "personal", "src-iso") is None
         cols = {c.name for c in CollectorHostState.__table__.columns}
     assert not cols & {"tenant_id", "scope", "job_id"}

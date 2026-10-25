@@ -50,7 +50,8 @@ async def test_multiple_database_heads_refuse_deployment_without_choosing_first(
     (["0068_library_intent"], ("online", "0068_library_intent")),
     (["0071_library_platform_v2_merge"], ("online", "0071_library_platform_v2_merge")),
     (["0072_collection_missions"], ("online", "0072_collection_missions")),
-    (["0073_collection_mission_runs"], ("current", "0073_collection_mission_runs")),
+    (["0073_collection_mission_runs"], ("online", "0073_collection_mission_runs")),
+    (["0074_collection_single_library"], ("current", "0074_collection_single_library")),
     (["unknown_branch"], ("idle", "unknown_branch")),
     ([], ("idle", None)),
 ])

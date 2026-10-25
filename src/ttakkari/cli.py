@@ -363,6 +363,30 @@ def _cmd_kb_verify(args: argparse.Namespace) -> int:
     return 0 if report.ok else 1
 
 
+def _cmd_collection_scope_merge(args: argparse.Namespace) -> int:
+    import json
+
+    from ttakkari import db
+    from ttakkari.collector.scope_merge import merge_scopes
+
+    async def run():
+        db.init_engine()
+        try:
+            async with db.sessionmaker()() as session:
+                report = await merge_scopes(session)
+                if args.apply:
+                    await session.commit()
+                else:
+                    await session.rollback()
+                report["applied"] = bool(args.apply)
+                return report
+        finally:
+            await db.dispose_engine()
+
+    print(json.dumps(asyncio.run(run()), ensure_ascii=False, default=str))
+    return 0
+
+
 def _cmd_desk_eval(args: argparse.Namespace) -> int:
     from ttakkari import db
     from ttakkari.runs import desk_eval
@@ -469,6 +493,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--orphan-grace-seconds", type=float, default=None,
                    help="이보다 어린 파일은 정리하지 않는다(기본 60초, 0 이면 즉시 정리)")
     p.set_defaults(func=_cmd_kb_verify)
+
+    p = sub.add_parser("collection-scope-merge", help="수집·지식 도서관의 personal/work 구분을 단일 도서관으로 합친다(멱등, 기본 dry-run)")
+    p.add_argument("--apply", action="store_true", help="없으면 같은 경로를 실행한 뒤 되돌려 집계만 보여준다. 이전 세대가 빠진 뒤에만 실행")
+    p.set_defaults(func=_cmd_collection_scope_merge)
 
     p = sub.add_parser("desk-eval", help="접수 판정 모음을 지금 접수 지침·모델로 다시 분류해 정확도를 잰다(계정 사용량을 쓴다)")
     p.add_argument("--limit", type=int, default=None, help="최근 판정 N개만")

@@ -19,6 +19,7 @@ from ttakkari.collector.contracts import (
     validate_envelope,
     verify_auth_binding,
 )
+from ttakkari.collector.library import LIBRARY_SCOPE, in_library, job_visible
 from ttakkari.collector_models import CollectorJob, CollectorOutbox
 
 DEFAULT_SINK = "default"
@@ -50,7 +51,7 @@ async def submit_envelope(
     2. Scope binding verification against derived auth context (raises ScopeBindingMismatchError, 403)
        - If mismatch: NO job, NO outbox, NO cross-scope dedupe lookup!
     3. Deterministic RFC 8785 JCS payload hash (excluding /recorded_at)
-    4. Idempotency lookup: (derived.tenant_id, derived.scope, source.key, request_key)
+    4. Idempotency lookup: (derived.tenant_id, source.key, request_key), 읽기 범위(pool) 안에서만
        - If identical hash: 202 replay (returns existing job ID, 0 new rows)
        - If different hash: 409 conflict (CollectorConflictError)
        - If the envelope_id is already registered in this tenant/scope under another request key: 409
@@ -73,7 +74,9 @@ async def submit_envelope(
     # 2. Scope binding verification (never trust envelope access directly)
     derived = verify_auth_binding(auth, validated_envelope)
     tenant_id = derived["tenant_id"]
-    scope = derived["scope"]
+    # C2: 저장 키는 단일 값이다. envelope.access.scope 는 주장 검증에만 쓰고, 읽기 범위는 pool 로 남긴다.
+    scope = LIBRARY_SCOPE
+    pool = derived["pool"]
     envelope_id = uuid.UUID(str(validated_envelope["envelope_id"]))
 
     # 3. Deterministic RFC 8785 JCS payload hash (excluding /recorded_at)
@@ -82,10 +85,11 @@ async def submit_envelope(
     # 4. Check for existing job under (tenant_id, scope, source_key, request_key)
     stmt = select(CollectorJob).where(
         CollectorJob.tenant_id == tenant_id,
-        CollectorJob.scope == scope,
+        in_library(CollectorJob.scope),
+        job_visible(pool),
         CollectorJob.source_key == source_key,
         CollectorJob.request_key == request_key,
-    )
+    ).order_by(CollectorJob.created_at, CollectorJob.id).limit(1)
     existing_job = (await db.execute(stmt)).scalar_one_or_none()
     if existing_job is not None:
         return _replay_or_conflict(existing_job, payload_hash, source_key, request_key)
@@ -99,6 +103,7 @@ async def submit_envelope(
         id=job_id,
         tenant_id=tenant_id,
         scope=scope,
+        pool=pool,
         source_key=source_key,
         request_key=request_key,
         payload_hash=payload_hash,
@@ -183,7 +188,7 @@ async def _envelope_id_registered(db: AsyncSession, tenant_id: str, scope: str, 
     found = await db.scalar(
         select(CollectorOutbox.id).where(
             CollectorOutbox.tenant_id == tenant_id,
-            CollectorOutbox.scope == scope,
+            in_library(CollectorOutbox.scope),
             CollectorOutbox.sink == DEFAULT_SINK,
             CollectorOutbox.envelope_id == envelope_id,
         )

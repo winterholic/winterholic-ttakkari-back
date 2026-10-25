@@ -25,6 +25,7 @@ from ttakkari.collector.contracts import (
     jcs,
 )
 from ttakkari.collector.control_models import CollectorDelivery, CollectorSource
+from ttakkari.collector.library import LIBRARY_SCOPE, effective_pool, in_library
 from ttakkari.collector.netguard import normalize_url
 from ttakkari.collector.pipeline import COUNT_KEYS
 from ttakkari.collector_models import (
@@ -147,7 +148,7 @@ async def queue_preparation(db, mission: CollectionMission, run_seq: int | None 
     ident = uuid.uuid4()
     run_seq = run_seq or mission.current_run_seq or 1
     envelope = {"mission_id": str(mission.id)}
-    job = CollectorJob(id=ident, tenant_id=mission.tenant_id, scope="personal",
+    job = CollectorJob(id=ident, tenant_id=mission.tenant_id, scope=LIBRARY_SCOPE,
                        source_key=f"mission-prepare:{mission.id}",
                        request_key=f"prepare:{mission.id}" if run_seq == 1 else f"prepare:{mission.id}:{run_seq}",
                        payload_hash=hashlib.sha256(jcs(envelope).encode()).hexdigest(), envelope_id=uuid.uuid4(),
@@ -212,11 +213,11 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
     ).with_for_update().execution_options(populate_existing=True))
     if mission is None or mission.status in ("cancelled", "paused"):
         return
-    ctx = AuthContext(tenant_id=mission.tenant_id, scope="personal", principal_id="owner", kind="owner")
+    ctx = AuthContext(tenant_id=mission.tenant_id, scope=LIBRARY_SCOPE, principal_id="owner", kind="owner")
     if any(urlsplit(entry["url"]).hostname == "docs.python.org" for entry in mission.plan["sources"]):
         await register_python_docs(db, ctx)
     sources = list(await db.scalars(select(CollectorSource).where(
-        CollectorSource.tenant_id == mission.tenant_id, CollectorSource.scope == ctx.scope,
+        CollectorSource.tenant_id == mission.tenant_id, in_library(CollectorSource.scope),
         CollectorSource.enabled.is_(True))))
 
     run = await get_run(db, mission)
@@ -343,7 +344,8 @@ async def reconcile_mission(db, mission: CollectionMission) -> None:
             child_job = CollectorJob(
                 id=ident,
                 tenant_id=source.tenant_id,
-                scope=source.scope,
+                scope=LIBRARY_SCOPE,
+                pool=effective_pool(source.pool, source.scope),
                 source_key=source.source_key,
                 request_key=f"split:{item['last_job'].id}:{uuid.uuid4().hex[:8]}",
                 payload_hash=hashlib.sha256(jcs(envelope).encode()).hexdigest(),
@@ -381,9 +383,9 @@ async def launch(db, mission: CollectionMission) -> None:
 async def register_python_docs(db, ctx):
     """Reviewed official grant, independent of user text; robots still applies at fetch."""
     key = "official:python-docs"
-    await store._lock(db, "control-source", ctx.tenant_id, ctx.scope, key)
+    await store._lock(db, "control-source", ctx.tenant_id, key)
     if await db.scalar(select(CollectorSource.id).where(CollectorSource.tenant_id == ctx.tenant_id,
-            CollectorSource.scope == ctx.scope, CollectorSource.source_key == key)):
+            in_library(CollectorSource.scope), CollectorSource.source_key == key)):
         return  # A paused/revoked source is never silently recreated.
     await control.register_source(db, ctx, source_key=key, title="Python 공식 문서", seeds=["https://docs.python.org/3/"],
         policy={"allowed_hosts": ["docs.python.org"],
@@ -499,7 +501,7 @@ async def register_document_license(db, mission, doc):
     parsed = input_url(doc["url"])
     key = f"license:{hashlib.sha256(doc['url'].encode()).hexdigest()}"
     exists = await db.scalar(select(CollectorSource.id).where(CollectorSource.tenant_id == mission.tenant_id,
-        CollectorSource.scope == "personal", CollectorSource.source_key == key))
+        in_library(CollectorSource.scope), CollectorSource.source_key == key))
     if exists:
         return
     policy = {"allowed_hosts": [parsed.host], "allowed_path_prefixes": [urlsplit(doc["url"]).path],
@@ -507,7 +509,7 @@ async def register_document_license(db, mission, doc):
               "license_id": license_info["id"], "policy_url": license_info["url"],
               "basis": f"GitHub commit-pinned license metadata: {license_info.get('metadata_sha')}; preserve source and license attribution.",
               "checked_at": datetime.now(UTC).isoformat(), "max_pages_per_job": 1, "max_depth": 0}
-    await control.register_source(db, AuthContext(tenant_id=mission.tenant_id, scope="personal", principal_id="owner", kind="owner"),
+    await control.register_source(db, AuthContext(tenant_id=mission.tenant_id, scope=LIBRARY_SCOPE, principal_id="owner", kind="owner"),
         source_key=key, title=doc.get("path", doc["url"]), seeds=[doc["url"]], policy=policy,
         interval_minutes=None, max_pages=1)
     await db.flush()
@@ -835,7 +837,7 @@ async def cancel(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> Coll
     for job in linked_jobs:
         if job.status not in TERMINAL:
             try:
-                await jobs.cancel(db, job.tenant_id, job.scope, job.id)
+                await jobs.cancel(db, job.tenant_id, "personal", job.id)
             except (CollectorContractError, JobStateError):
                 pass
     source_keys = {j.source_key for j in linked_jobs}
@@ -885,7 +887,7 @@ async def rerun(db, mission_id: uuid.UUID, *, tenant_id: str = "owner") -> Colle
     for job in linked:
         if job.status not in TERMINAL:
             try:
-                await jobs.cancel(db, job.tenant_id, job.scope, job.id)
+                await jobs.cancel(db, job.tenant_id, "personal", job.id)
             except (CollectorContractError, JobStateError):
                 pass
     mission.status = "queued"

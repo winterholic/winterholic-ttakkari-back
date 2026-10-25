@@ -1,5 +1,17 @@
 # 수집 플랫폼 임무 중심 리팩토링 — 진행 중
 
+## C2 backend 통합 및 migration 결합 검증 — 2026-10-25
+- 통합 대상은 `integ/collection-platform-20261025`의 시작 HEAD `071e9d04cfea1a4772244bdaebbbbe0a03cd1a3f`와 C2 source tip `f038438bc316ba77dce01811790fc3c23eb65e81`이다. 이번 단계는 backend C2만 포함하며 main push/merge/deploy 및 운영 DB 변경은 하지 않았다.
+- 동일 `0073` 번호의 실제 충돌을 선형화했다: C1 `0073_collection_mission_runs`는 `0072_collection_missions` 다음, C2 `0074_collection_single_library`는 C1 다음이다. `deploy/generation-contract.json`의 head를 0074로, online 출발점에 C1 0073을 추가했다. 기존 owner·generation compatibility·drain 검사 코드는 바꾸지 않았다.
+- C1의 run_seq별 budget/reconcile/rerun/due-lock 재확인과 C2의 단일 도서관 scope, 보수적 rights/provenance, 행별 engine pool 경계를 함께 유지했다. `collection-scope-merge`는 기본 dry-run이며 CLI `--apply`는 호출하지 않았다. rollback→apply→repeat 멱등 동작은 테스트 전용 PostgreSQL DB에서만 확인했고 운영 적용은 미실행이다.
+- 검증: `tests/test_collection_combined_migration_contract.py`, `tests/test_collection_mission_migration.py`, `tests/test_collection_scope_merge.py`, `unit_tests/test_schema_head_admission.py` → **19 passed**. 격리 테스트 DB 안 별도 schema에서 0072→0073→0074 upgrade, 빈 상태의 역순 downgrade, 재적용과 단일 최종 head를 확인했다. C1/C2 migration ORM 대조와 C2 rollback→apply→repeat, twin job/source·document alias·provenance·work pool 대표 검사가 포함된다.
+- 검증: C1의 fresh run budget/rerun/bypass, 두 stale scheduler tick 및 scheduler/reconcile 경합, C2의 work 엔진 pool 격리·rights/provenance 반례, generation contract와 drain gate 선택 검사를 각각 실행해 **11 passed**, **5 passed**, **6 passed**를 확인했다. 이 수치는 개별 실행 결과이며 중복 합산하지 않는다. 별도 broad C1/ML 전체 검증은 다시 돌리지 않았다.
+- 최종 결합 선택 실행: **37 passed, 4 warnings in 4.17s**. `ruff check` 변경 backend·migration·test 파일 **All checks passed!**, `alembic heads`는 단일 0074 head, JSON 계약 parse와 `git diff --check` 통과.
+- `alembic heads` 결과는 `0074_collection_single_library (head)`였다. 좁은 KB API 테스트에서는 4개의 기존 `DeprecationWarning`이 관찰됐고 이 단계에서 관련 API 동작을 바꾸지 않았다. 첫 ORM 대조 시 isolated schema 선택이 맞지 않아 실패했으며, 테스트 비교 범위를 격리 schema로 수정한 뒤 위 검증이 통과했다. 별도 DB 준비 보조 경로는 pytest test environment에서 `pg_sandbox.start_cluster()`가 `/opt/homebrew/opt/postgresql@17/bin/initdb -D /tmp/ttakkari-test-56706-65deabec/data -A trust -E UTF8 --locale=en_US.UTF-8 --no-sync` 단계 중 `CalledProcessError`(exit 1; stderr는 pytest traceback에 없음)로 끝났다. 이는 해당 새 cluster setup 시도만의 결과로 두고, 이미 격리된 pytest DB 안의 별도 schema에서 migration을 검증했다.
+- 커밋 직전 재확인: migration/schema 4개 파일 **19 passed**, missions·pipeline·product_flow·kb_agent_api·kb_retrieval·route_inventory 6개 파일 **81 passed**. 전체 backend suite는 실행하지 않았다.
+- C2 frontend `front-scope@39225dc`의 dirty 9개 파일은 이 통합에 포함하지 않았다. worker 82314의 마무리 commit을 기다린다. precise `774d`/`c53` 영속 pending 후속도 이번 범위 밖이며 검증 전 병합하지 않는다. 운영 DB의 실제 schema head, scope merge dry-run 결과, 운영 `--apply`는 미확인이다.
+- 다음은 C3 자율 연구·논문·브라우저, C5 관계, C6 UI를 진행한다. 전체 C1–C7과 A–E 인수 기준 및 최종 배포는 미완료다.
+
 ## 후속 좁은 독립 검증 — scheduler/reconcile 경합 (2026-10-25 15:23 KST)
 - 앞선 선택검증 6+19 backend와 front 9건은 범위 한정 PASS로 기록됨. C1 전체 및 운영 완료를 뜻하지 않는다. 이번에는 미검증 scheduler/reconcile 경합만 실행했고, 247회귀·ML 실험·기존 선택 검증은 재실행하지 않았다.
 - 실제 격리 PostgreSQL의 별도 세션으로 ① 같은 `now`를 쓰는 두 `schedule_due_runs`가 due 후보를 모두 먼저 읽은 뒤 시작, store 권한 철회로 reconcile child가 0개인 경우 ② scheduler가 due 후보를 확보한 직후 별도 세션 reconcile과 경쟁하는 경우를 검증했다. 양쪽 모두 5초 timeout으로 락 교착도 관찰했다.

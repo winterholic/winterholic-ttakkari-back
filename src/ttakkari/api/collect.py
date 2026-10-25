@@ -1,11 +1,12 @@
 """Collector intake API (CP-S2-02). 사용자(`/api/assistant/collect`)와 에이전트(`/api/agent/collect`)가 같은 핸들러를 쓴다.
 
 tenant/scope/principal 은 요청 본문이 아니라 인증 주체에서 산출한다(intake-binding.md).
-- 사용자(owner JWT): tenant "owner", principal "owner", scope 는 `?scope=personal|work`(기본 personal). owner 는 두 scope 의
-  주체이므로 선택은 권한 상승이 아니다. shared 는 이 API 로 만들지 않는다(승격은 별도 사용자 권한 API).
-- 에이전트(세션 토큰): scope 는 세션의 pool(work 이면 work, 아니면 personal). 쿼리로 바꿀 수 없다.
+- 사용자(owner JWT): tenant "owner", principal "owner". 도서관은 하나라 scope 쿼리는 받아도 무시한다(옛 클라이언트 호환).
+  owner 는 모든 자료의 주체이고 envelope.access.scope 는 personal/work 어느 쪽이든 받는다(권한 상승이 아니다).
+- 에이전트(세션 토큰): 세션의 pool(work 이면 work, 아니면 personal)이 읽기 범위다. 회사 엔진(work) 세션은 work pool 의 job 만 본다.
+  envelope.access.scope 는 자기 pool 이름이어야 하며 쿼리로 바꿀 수 없다.
 envelope.access 가 산출값과 다르면 403 scope_binding_mismatch 이고 job·outbox·멱등 조회가 일어나지 않는다.
-다른 scope/tenant 의 job 은 존재하지 않는 것과 같은 404 로 답해 존재 여부를 드러내지 않는다.
+다른 tenant 의 job, 그리고 회사 엔진 세션에 닫힌 job 은 존재하지 않는 것과 같은 404 로 답해 존재 여부를 드러내지 않는다.
 오류 본문은 {code, message}. 403/409 메시지는 고정 문구라 기존 hash·ID·산출 identity 를 싣지 않는다.
 """
 
@@ -13,7 +14,7 @@ envelope.access 가 산출값과 다르면 403 scope_binding_mismatch 이고 job
 # 만들기 때문에 주석을 문자열로 두면 FastAPI 가 의존성을 해석하지 못한다.
 import json
 import uuid
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Query, Request, status
 from fastapi.responses import JSONResponse
@@ -28,6 +29,7 @@ from ttakkari.collector.contracts import (
     ScopeBindingMismatchError,
 )
 from ttakkari.collector.intake import submit_envelope
+from ttakkari.collector.library import LIBRARY_SCOPE, PERSONAL_POOL, normalize_pool
 from ttakkari.collector_models import CollectorJob
 from ttakkari.models import ChatSession
 from ttakkari.orchestrator.runtime import OrchestratorSession
@@ -43,17 +45,18 @@ _FIXED_MESSAGES = {
 
 
 async def user_access(
-    _: User, scope: Annotated[Literal["personal", "work"], Query()] = "personal"
+    _: User, scope: Annotated[str | None, Query(deprecated=True, description="무시한다. 도서관은 하나다.")] = None
 ) -> AuthContext:
-    return AuthContext(tenant_id=OWNER_TENANT, scope=scope, principal_id="owner", kind="owner")
+    return AuthContext(tenant_id=OWNER_TENANT, scope=LIBRARY_SCOPE, principal_id="owner", kind="owner", pool=PERSONAL_POOL)
 
 
 async def agent_access(sid: OrchestratorSession, db: Db) -> AuthContext:
     session_row = await db.get(ChatSession, sid)
     if session_row is None:
         return await _no_session()
-    scope = "work" if session_row.pool == "work" else "personal"
-    return AuthContext(tenant_id=OWNER_TENANT, scope=scope, principal_id="owner", kind="session")
+    pool = normalize_pool(session_row.pool)
+    # scope 는 envelope 주장 검증용 이름(= pool)으로만 쓰고, 저장 키는 intake 가 단일 값으로 정한다.
+    return AuthContext(tenant_id=OWNER_TENANT, scope=pool, principal_id="owner", kind="session", pool=pool)
 
 
 async def _no_session() -> AuthContext:
@@ -152,16 +155,16 @@ def _routes(r: APIRouter, access: Any) -> None:
         cursor: Annotated[str | None, Query(max_length=300)] = None,
         limit: Annotated[int, Query()] = 20,
     ) -> dict[str, Any]:
-        rows, next_cursor = await jobs.list_jobs(db, ctx.tenant_id, ctx.scope, limit=limit, cursor=cursor)
+        rows, next_cursor = await jobs.list_jobs(db, ctx.tenant_id, ctx.pool, limit=limit, cursor=cursor)
         return {"jobs": [_view(j) for j in rows], "next_cursor": next_cursor}
 
     @r.get("/jobs/{job_id}")
     async def get_job(job_id: uuid.UUID, ctx: Annotated[AuthContext, Depends(access)], db: Db) -> dict[str, Any]:
-        return _view(await jobs.get_job(db, ctx.tenant_id, ctx.scope, job_id))
+        return _view(await jobs.get_job(db, ctx.tenant_id, ctx.pool, job_id))
 
     @r.post("/jobs/{job_id}/cancel")
     async def cancel_job(job_id: uuid.UUID, ctx: Annotated[AuthContext, Depends(access)], db: Db) -> dict[str, Any]:
-        outcome = await jobs.cancel(db, ctx.tenant_id, ctx.scope, job_id)
+        outcome = await jobs.cancel(db, ctx.tenant_id, ctx.pool, job_id)
         await db.commit()
         return {"job_id": str(job_id), "status": outcome}
 

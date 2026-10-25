@@ -139,6 +139,8 @@ async def test_external_report_adapter_lifecycle() -> None:
     assert records[0].metric_key == "mmlu_score"
     assert records[0].value == 0.825
     assert records[0].meta["execution_origin"] == "external_report"
+    for key in ("source_title", "source_url", "source_year"):
+        assert records[0].meta[key] == good_config[key]
 
 
 @pytest.mark.asyncio

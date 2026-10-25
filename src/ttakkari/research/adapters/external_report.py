@@ -91,6 +91,32 @@ class ExternalReportAdapter:
                 )
 
         measurements = config.get("measurements")
+        # One imported report has one source identity. Check before normalizing so
+        # conflicting input is rejected rather than silently losing its provenance.
+        locations = [("config", config)]
+        for name in ("raw_output", "environment_snapshot"):
+            if isinstance(config.get(name), dict):
+                locations.append((name, config[name]))
+        if isinstance(measurements, list):
+            for i, item in enumerate(measurements):
+                if isinstance(item, dict) and isinstance(item.get("meta"), dict):
+                    locations.append((f"measurements[{i}].meta", item["meta"]))
+        for aliases in (
+            ("source_title",), ("source_url", "source_locator"),
+            ("source_year",), ("provenance",), ("execution_origin",),
+        ):
+            values = set()
+            paths = []
+            if aliases == ("execution_origin",):
+                values.add("external_report")
+            for location, fields in locations:
+                for key in aliases:
+                    value = fields.get(key)
+                    if value is not None and str(value).strip():
+                        values.add(str(value).strip())
+                        paths.append(f"{location}.{key}")
+            if len(values) > 1:
+                errors.append("source conflict: " + ", ".join(paths))
         if measurements is None:
             errors.append("measurements 필드가 필요합니다.")
         elif not isinstance(measurements, list) or len(measurements) == 0:
@@ -213,6 +239,10 @@ class ExternalReportAdapter:
             meta = dict(item.get("meta") or {})
             meta["execution_origin"] = "external_report"
             meta["provenance"] = prov
+            for source_key in ("source_title", "source_url", "source_year"):
+                value = result.raw_output.get(source_key)
+                if value is not None:
+                    meta[source_key] = value
 
             records.append(
                 MeasurementRecord(

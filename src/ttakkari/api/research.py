@@ -1182,7 +1182,6 @@ async def record_external_report(
         cfg_id = cfg.id
 
     raw_output = dict(body.raw_output)
-    raw_output["provenance"] = body.provenance
 
     # Resolve source fields from top-level or nested dictionaries for backward compatibility
     source_title = (
@@ -1225,6 +1224,8 @@ async def record_external_report(
             "external_report_validation_failed: " + "; ".join(validation_errors),
         )
 
+    raw_output["provenance"] = body.provenance
+    raw_output["execution_origin"] = "external_report"
     if source_title is not None:
         raw_output["source_title"] = source_title
     if source_url is not None:
@@ -1233,15 +1234,13 @@ async def record_external_report(
         raw_output["source_year"] = source_year
 
     env_snapshot = dict(body.environment_snapshot)
-    if "execution_origin" not in env_snapshot:
-        env_snapshot["execution_origin"] = "external_report"
-    if "provenance" not in env_snapshot:
-        env_snapshot["provenance"] = body.provenance
-    if source_title is not None and "source_title" not in env_snapshot:
+    env_snapshot["execution_origin"] = "external_report"
+    env_snapshot["provenance"] = body.provenance
+    if source_title is not None:
         env_snapshot["source_title"] = source_title
-    if source_url is not None and "source_url" not in env_snapshot:
+    if source_url is not None:
         env_snapshot["source_url"] = source_url
-    if source_year is not None and "source_year" not in env_snapshot:
+    if source_year is not None:
         env_snapshot["source_year"] = source_year
 
     run = Run(
@@ -1268,10 +1267,13 @@ async def record_external_report(
     for m in body.metrics:
         m_meta = dict(m.get("meta") or {})
         m_meta["provenance"] = body.provenance
-        if source_title is not None and "source_title" not in m_meta:
+        m_meta["execution_origin"] = "external_report"
+        if source_title is not None:
             m_meta["source_title"] = source_title
-        if source_url is not None and "source_url" not in m_meta:
+        if source_url is not None:
             m_meta["source_url"] = source_url
+        if source_year is not None:
+            m_meta["source_year"] = source_year
         m_row = Measurement(
             id=uuid.uuid4(),
             run_id=run.id,

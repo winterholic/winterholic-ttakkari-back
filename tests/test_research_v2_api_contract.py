@@ -72,6 +72,7 @@ async def report(client, auth, exp_id, cfg_id, metrics, provenance="external_ben
 async def test_external_benchmark_requires_source_and_persists_it_across_requests(client, auth):
     """Exercise the real ASGI endpoint and PostgreSQL, beyond the StubDb regression."""
     from sqlalchemy import func, select
+
     from ttakkari.research.models import Measurement
 
     study_id = await make_study(client, auth)
@@ -107,6 +108,75 @@ async def test_external_benchmark_requires_source_and_persists_it_across_request
     assert stored_run["source_title"] == fields["source_title"]
     assert stored_run["source_url"] == fields["source_url"]
     assert stored_run["provenance"] == "external_benchmark"
+
+
+@pytest.mark.parametrize("location,field,value", [
+    ("raw_output", "source_title", "Another paper"),
+    ("environment_snapshot", "source_url", "https://example.invalid/another"),
+    ("environment_snapshot", "source_locator", "doi:10.1234/another"),
+    ("meta", "source_title", "Another metric source"),
+    ("meta", "source_year", 2023),
+    ("raw_output", "provenance", "manual_evaluation"),
+    ("environment_snapshot", "provenance", "manual_evaluation"),
+    ("environment_snapshot", "execution_origin", "local_execution"),
+])
+async def test_external_report_rejects_conflicting_source_before_persistence(client, auth, location, field, value):
+    from sqlalchemy import func, select
+
+    from ttakkari.research.models import Measurement
+
+    sid = await make_study(client, auth)
+    exp = await make_experiment(client, auth, sid, adapter_id="external_report", strategy="single")
+    body = {
+        "configuration_id": exp["configurations"][0]["id"],
+        "provenance": "external_benchmark",
+        "source_title": "Synthetic canonical source",
+        "source_url": "https://example.invalid/canonical",
+        "source_year": 2026,
+        "metrics": [{"metric_key": "decode_tps", "value": 12.0}],
+    }
+    if location == "meta":
+        body["metrics"][0]["meta"] = {field: value}
+    else:
+        body[location] = {field: value}
+    response = await client.post(f"{API}/experiments/{exp['id']}/external-report", headers=auth, json=body)
+    assert response.status_code == 422, response.text
+    assert "conflict" in response.text and field in response.text
+    async with sessionmaker()() as db:
+        eid = uuid.UUID(exp["id"])
+        assert await db.scalar(select(func.count()).select_from(Run).where(Run.experiment_id == eid)) == 0
+        assert await db.scalar(select(func.count()).select_from(Measurement).where(Measurement.experiment_id == eid)) == 0
+
+
+async def test_external_report_canonical_source_survives_fresh_read(client, auth):
+    from sqlalchemy import select
+
+    from ttakkari.research.models import Measurement
+
+    sid = await make_study(client, auth)
+    exp = await make_experiment(client, auth, sid, adapter_id="external_report", strategy="single")
+    source = {"source_title": "Synthetic canonical source", "source_url": "doi:10.1234/synthetic", "source_year": 2026}
+    body = {
+        "configuration_id": exp["configurations"][0]["id"],
+        "provenance": "external_benchmark",
+        "raw_output": {"source_title": source["source_title"], "source_locator": source["source_url"], "source_year": 2026},
+        "environment_snapshot": {"source_title": "", "hardware": "synthetic"},
+        "metrics": [{"metric_key": "decode_tps", "value": 12.0, "meta": {"slice_note": "preserve me"}}],
+    }
+    saved = await client.post(f"{API}/experiments/{exp['id']}/external-report", headers=auth, json=body)
+    assert saved.status_code == 201, saved.text
+    rid = uuid.UUID(saved.json()["id"])
+    reloaded = await client.get(f"{API}/runs/{rid}", headers=auth)
+    assert reloaded.status_code == 200, reloaded.text
+    async with sessionmaker()() as db:
+        run = await db.get(Run, rid)
+        measurement = await db.scalar(select(Measurement).where(Measurement.run_id == rid))
+        for stored in (reloaded.json(), run.raw_output, run.environment_snapshot, measurement.meta):
+            for key, value in source.items():
+                assert stored[key] == value
+            assert stored["provenance"] == "external_benchmark"
+        assert measurement.meta["slice_note"] == "preserve me"
+        assert run.environment_snapshot["hardware"] == "synthetic"
 
 
 SPEED = ("decode_tps", "tok/s", "higher_is_better")

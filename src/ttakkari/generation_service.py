@@ -276,13 +276,16 @@ async def _schedules() -> None:
 
 
 async def _collector_consume() -> None:
+    from ttakkari import collector_precise_runtime
     from ttakkari.collector import pipeline
     from ttakkari.collector.runner import consume_once
     pipeline.install()
+    collector_precise_runtime.install()
     await consume_once()
 
 
 async def _collector_control() -> None:
+    from ttakkari import collector_precise_runtime
     from ttakkari import kb_delivery as delivery
     from ttakkari.collector import budget, control, pilot, pipeline, runtime
     from ttakkari.collector.runner import consume_once
@@ -294,6 +297,7 @@ async def _collector_control() -> None:
     if not paused:
         await control.schedule_once()
         pipeline.install()
+        collector_precise_runtime.install()
         await consume_once(limit=1, managed_only=True)
     # A pause stops new fetching only. Already collected items still reach their permitted sink, which re-checks rights.
     await delivery.deliver_once()

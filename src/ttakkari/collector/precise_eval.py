@@ -18,17 +18,20 @@ import json
 import logging
 import math
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+from sqlalchemy import select
 
-from ttakkari.collector import budget
+from ttakkari.collector import budget, textproc
 from ttakkari.collector.budget import BudgetDenied, CallUsage, EngineBound
 from ttakkari.collector.control_models import CollectorReview
-from ttakkari.collector.jobs import ClaimedJob, OutboxItem
-from ttakkari.collector_models import CollectorItem
+from ttakkari.collector_models import CollectorItem, CollectorOutbox
 from ttakkari.config import get_settings
+from ttakkari.db import sessionmaker
 
 log = logging.getLogger(__name__)
 
@@ -93,6 +96,30 @@ SYSTEM_PROMPT = (
 )
 
 
+@dataclass(frozen=True)
+class EvaluatorRuntime:
+    """Engine readiness and machine-wide slot operations supplied from outside the collector package."""
+
+    status: Callable[[], dict[str, Any]]
+    acquire_process_lock: Callable[[], int | None]
+    release_process_lock: Callable[[int], None]
+
+
+_runtime: EvaluatorRuntime | None = None
+
+
+def register_runtime(runtime: EvaluatorRuntime | None) -> None:
+    global _runtime
+    _runtime = runtime
+
+
+def engine_status() -> dict[str, Any]:
+    """Readiness of the bounded evaluator; unavailable until a runtime registers itself."""
+    if _runtime is None:
+        return {"status": "unavailable", "detail": "evaluator runtime was not registered"}
+    return _runtime.status()
+
+
 class EvaluatorUnavailable(Exception):
     """Engine is not currently capable of serving bounded evaluation."""
 
@@ -103,61 +130,6 @@ class EvaluatorBusy(EvaluatorUnavailable):
 
 class MalformedEvaluatorOutput(Exception):
     """Engine returned malformed JSON or violated schema."""
-
-
-def engine_status() -> dict[str, Any]:
-    """Check readiness of the local bounded evaluation engine."""
-    s = get_settings()
-    if not s.collector_teacher_enabled:
-        return {
-            "status": "unavailable",
-            "detail": "collector_teacher_enabled is False; teacher/evaluator is disabled",
-            "model": s.desk_qwen_model,
-        }
-    if not s.desk_qwen_enabled:
-        return {
-            "status": "unavailable",
-            "detail": "desk_qwen_enabled is False",
-            "model": s.desk_qwen_model,
-        }
-    try:
-        from ttakkari.runs import desk_qwen
-
-        ep = desk_qwen.endpoint()
-    except (RuntimeError, ImportError, AttributeError, OSError) as exc:
-        return {
-            "status": "unavailable",
-            "detail": f"failed to check desk_qwen endpoint: {exc}",
-            "model": s.desk_qwen_model,
-        }
-    if ep is None:
-        return {
-            "status": "unavailable",
-            "detail": "local qwen server endpoint not ready",
-            "model": s.desk_qwen_model,
-        }
-    try:
-        from ttakkari.runs import qwen_slot
-
-        if qwen_slot.is_process_lock_busy():
-            return {
-                "status": "busy",
-                "detail": "local qwen slot is occupied by another process",
-                "model": s.desk_qwen_model,
-            }
-    except (OSError, RuntimeError) as exc:
-        return {
-            "status": "unavailable",
-            "detail": f"failed to check qwen_slot process lock: {exc}",
-            "model": s.desk_qwen_model,
-        }
-
-    return {
-        "status": "ready",
-        "detail": "bounded local qwen evaluator ready",
-        "model": s.desk_qwen_model,
-        "endpoint": ep,
-    }
 
 
 def _truncate_utf8(value: str, max_bytes: int) -> str:
@@ -340,11 +312,32 @@ async def evaluate_document_guarded(
     request_key: str,
     job_id: uuid.UUID | str | None = None,
     client: httpx.AsyncClient | None = None,
+    engine: dict[str, Any] | None = None,
+    acquire_process_lock: Callable[[], int | None] | None = None,
+    release_process_lock: Callable[[int], None] | None = None,
 ) -> dict[str, Any]:
-    """Execute bounded precise evaluation through budget.guarded_call."""
-    st = engine_status()
+    """Execute bounded precise evaluation through injected runtime capabilities."""
+    recovered, stored = await budget.recover_settled_result(
+        request_key=request_key,
+        purpose="judge",
+        engine=LOCAL_QWEN_ENGINE,
+        job_id=job_id,
+        result_key="precise_eval_result",
+    )
+    if recovered:
+        if not isinstance(stored, dict) or not isinstance(stored.get("_receipt"), dict):
+            raise MalformedEvaluatorOutput("stored precise result is malformed")
+        verdict = _validate_evaluator_result({k: v for k, v in stored.items() if k != "_receipt"})
+        return {**verdict, "_receipt": stored["_receipt"]}
+
+    st = engine if engine is not None else engine_status()
     if st["status"] != "ready":
         raise EvaluatorUnavailable(st["detail"])
+    if acquire_process_lock is None or release_process_lock is None:
+        if _runtime is None:
+            raise EvaluatorUnavailable("Qwen process-slot adapter was not provided")
+        acquire_process_lock = _runtime.acquire_process_lock
+        release_process_lock = _runtime.release_process_lock
 
     s = get_settings()
     endpoint = st["endpoint"]
@@ -375,12 +368,18 @@ async def evaluate_document_guarded(
                     max_output,
                     max_input_tokens=input_tokens,
                 )
-        parsed["_usage"] = usage
-        return parsed, usage
+        result = {
+            **parsed,
+            "_receipt": {"tokens": usage.tokens, **usage.receipt},
+        }
+        durable_usage = CallUsage(
+            tokens=usage.tokens,
+            micro_usd=usage.micro_usd,
+            receipt={**usage.receipt, "precise_eval_result": result},
+        )
+        return result, durable_usage
 
-    from ttakkari.runs import qwen_slot
-
-    process_lock_fd = qwen_slot.acquire_process_lock()
+    process_lock_fd = acquire_process_lock()
     if process_lock_fd is None:
         raise EvaluatorBusy("local qwen slot was claimed after readiness check")
     try:
@@ -391,9 +390,10 @@ async def evaluate_document_guarded(
             input_tokens=input_tokens,
             call=_execute,
             job_id=job_id,
+            replay_result_key="precise_eval_result",
         )
     finally:
-        qwen_slot.release_process_lock(process_lock_fd)
+        release_process_lock(process_lock_fd)
 
 
 def apply_precise_result(
@@ -429,6 +429,8 @@ def apply_precise_result(
     }
     if receipt:
         precise["receipt"] = receipt
+    elif "_receipt" in result:
+        precise["receipt"] = result["_receipt"]
     elif "_usage" in result:
         usage = result["_usage"]
         precise["receipt"] = {
@@ -468,54 +470,133 @@ def apply_precise_result(
     return rescued
 
 
-async def consume_prepared_precise_eval(
-    db: Any,
-    job: ClaimedJob,
-    pairs: list[tuple[Any, CollectorItem]],
-    *,
-    goal: str,
-    outbox: list[OutboxItem],
-    client: httpx.AsyncClient | None = None,
+PRECISE_CLAIM_LEASE_SECONDS = 120
+
+
+def _claimable(precise: dict[str, Any], now: datetime) -> bool:
+    if precise.get("state") == "pending":
+        return True
+    if precise.get("state") != "processing":
+        return False
+    expires = precise.get("claim_expires_at")
+    try:
+        return datetime.fromisoformat(expires) <= now if expires else True
+    except (TypeError, ValueError):
+        return True
+
+
+async def consume_pending_once(
+    *, limit: int = 1, owner: str = "collector-worker",
+    evaluator: Callable[..., Any] | None = None,
 ) -> int:
-    """Consume pending items during page finalization if engine is ready."""
-    st = engine_status()
-    if st["status"] != "ready":
+    """Claim persisted precise-eval items briefly, call outside DB transactions, then apply atomically."""
+    from datetime import timedelta
+
+    from ttakkari.collector import store
+
+    if limit <= 0:
         return 0
 
-    evaluated_count = 0
-    for p, row in pairs:
-        precise = row.signals.get("triage", {}).get("precise_eval")
-        if (
-            not precise
-            or not precise.get("needed")
-            or precise.get("state") != "pending"
-        ):
+    consumed = 0
+    for _ in range(limit):
+        now = datetime.now(UTC)
+        claim_token = str(uuid.uuid4())
+        claimed_id = None
+        goal = title = text = ""
+        async with sessionmaker()() as db:
+            candidates = list(await db.scalars(
+                select(CollectorItem)
+                .where(
+                    CollectorItem.kind == "document",
+                    CollectorItem.envelope.is_not(None),
+                    CollectorItem.signals["triage"]["precise_eval"]["state"].astext.in_(("pending", "processing")),
+                )
+                .order_by(CollectorItem.created_at, CollectorItem.id)
+                .limit(64)
+                .with_for_update(skip_locked=True)
+            ))
+            row = next((candidate for candidate in candidates
+                        if _claimable(candidate.signals.get("triage", {}).get("precise_eval") or {}, now)), None)
+            if row is None:
+                await db.rollback()
+                break
+
+            envelope = row.envelope or {}
+            normalized = envelope.get("normalized") or {}
+            text = normalized.get("text") or ""
+            if (
+                not isinstance(text, str)
+                or not text
+                or textproc.sha256_text(text) != row.text_sha256
+                or normalized.get("sha256") != row.text_sha256
+            ):
+                precise = dict(row.signals["triage"]["precise_eval"])
+                precise.update({"state": "unresolved", "reasons": [*precise.get("reasons", []), "stored_text_integrity_mismatch"]})
+                precise.pop("claim_token", None)
+                precise.pop("claim_owner", None)
+                precise.pop("claim_expires_at", None)
+                row.signals = {**row.signals, "triage": {**row.signals["triage"], "precise_eval": precise}}
+                await db.commit()
+                consumed += 1
+                continue
+
+            mission = (envelope.get("extensions") or {}).get("collector:mission") or {}
+            goal = str(mission.get("goal") or "")
+            title = str(((envelope.get("extensions") or {}).get("collector:page") or {}).get("title") or "")
+            precise = dict(row.signals["triage"]["precise_eval"])
+            precise.update({
+                "state": "processing",
+                "claim_token": claim_token,
+                "claim_owner": owner,
+                "claim_expires_at": (now + timedelta(seconds=PRECISE_CLAIM_LEASE_SECONDS)).isoformat(),
+            })
+            row.signals = {**row.signals, "triage": {**row.signals["triage"], "precise_eval": precise}}
+            claimed_id = row.id
+            await db.commit()
+
+        request_key = f"precise:{claimed_id}:{row.job_id}"
+        try:
+            evaluate = evaluator or evaluate_document_guarded
+            result = await evaluate(
+                goal=goal, title=title, text=text, request_key=request_key, job_id=row.job_id
+            )
+        except EvaluatorBusy as exc:
+            await _finish_pending_claim(claimed_id, claim_token, state="pending", detail=str(exc), status="busy")
+            continue
+        except EvaluatorUnavailable as exc:
+            await _finish_pending_claim(claimed_id, claim_token, state="pending", detail=str(exc), status="unavailable")
+            break
+        except BudgetDenied as exc:
+            state = "unresolved" if exc.code == "already_attempted" else "budget_denied"
+            await _finish_pending_claim(claimed_id, claim_token, state=state, detail=exc.code, status="budget_denied")
+            continue
+        except (httpx.HTTPError, MalformedEvaluatorOutput, ValueError, KeyError, OSError, RuntimeError) as exc:
+            log.warning("precise evaluation unresolved for item %s: %s", claimed_id, exc)
+            await _finish_pending_claim(
+                claimed_id, claim_token, state="unresolved", detail=type(exc).__name__, status="failed"
+            )
             continue
 
-        title = (
-            p.analysis.extracted.title if p.analysis and p.analysis.extracted else ""
-        )
-        text = p.analysis.text if p.analysis else ""
-        request_key = f"precise:{row.id}:{job.id}"
+        async with sessionmaker()() as db:
+            row = await db.scalar(select(CollectorItem).where(CollectorItem.id == claimed_id).with_for_update())
+            if row is None:
+                await db.rollback()
+                continue
+            precise = dict(row.signals.get("triage", {}).get("precise_eval") or {})
+            if precise.get("state") != "processing" or precise.get("claim_token") != claim_token:
+                await db.rollback()
+                continue
 
-        try:
-            result = await evaluate_document_guarded(
-                goal=goal,
-                title=title,
-                text=text,
-                request_key=request_key,
-                job_id=job.id,
-                client=client,
-            )
             rescued = apply_precise_result(row, result)
+            precise = dict(row.signals["triage"]["precise_eval"])
+            precise.pop("claim_token", None)
+            precise.pop("claim_owner", None)
+            precise.pop("claim_expires_at", None)
+            row.signals = {**row.signals, "triage": {**row.signals["triage"], "precise_eval": precise}}
             if rescued:
-                from ttakkari.collector import store
-
                 envelope = row.envelope or {}
                 rights = envelope.get("rights") or {}
-                active = await store.active_policy(
-                    db, row.tenant_id, row.scope, row.source_key
-                )
+                active = await store.active_policy(db, row.tenant_id, row.scope, row.source_key)
                 import_permitted = (
                     row.tenant_id == "owner"
                     and row.scope in ("personal", "work")
@@ -531,62 +612,58 @@ async def consume_prepared_precise_eval(
                 if not import_permitted:
                     row.status = "held"
                     row.decision_state = "hold"
-                    reasons = [
-                        r
-                        for r in (row.reason_codes or [])
-                        if r != "review:precise_eval_rescued"
-                    ]
+                    reasons = [r for r in (row.reason_codes or []) if r != "review:precise_eval_rescued"]
                     if "policy:knowledge_import_not_permitted" not in reasons:
                         reasons.append("policy:knowledge_import_not_permitted")
                     row.reason_codes = reasons
                 else:
-                    review = CollectorReview(
+                    db.add(CollectorReview(
                         item_id=row.id,
                         decision="accept",
                         reason="Precise utility review only; factuality unverified.",
                         actor="owner",
                         text_sha256=row.text_sha256,
-                    )
-                    db.add(review)
-                    outbox.append(
-                        OutboxItem("knowledge", row.envelope_id, row.payload_hash)
-                    )
-            evaluated_count += 1
-        except BudgetDenied as exc:
-            precise["state"] = "budget_denied"
-            precise["reasons"] = [*precise.get("reasons", []), f"budget:{exc.code}"]
-            row.signals = {
-                **row.signals,
-                "triage": {**row.signals.get("triage", {}), "precise_eval": precise},
-            }
-            log.info("precise eval budget denied for item %s: %s", row.id, exc.code)
-            break
-        except EvaluatorBusy as exc:
-            precise["state"] = "pending"
-            precise["engine"] = {"status": "busy", "detail": str(exc)[:200]}
-            row.signals = {
-                **row.signals,
-                "triage": {**row.signals.get("triage", {}), "precise_eval": precise},
-            }
-        except (
-            httpx.HTTPError,
-            MalformedEvaluatorOutput,
-            EvaluatorUnavailable,
-            ValueError,
-            KeyError,
-            OSError,
-            RuntimeError,
-        ) as exc:
-            log.warning("precise evaluation failed for item %s: %s", row.id, exc)
-            precise["state"] = "failed"
-            precise["reasons"] = [
-                *precise.get("reasons", []),
-                f"error:{type(exc).__name__}",
-            ]
-            precise["engine"] = {"status": "failed", "detail": str(exc)[:200]}
-            row.signals = {
-                **row.signals,
-                "triage": {**row.signals.get("triage", {}), "precise_eval": precise},
-            }
+                    ))
+                    existing = await db.scalar(select(CollectorOutbox.id).where(
+                        CollectorOutbox.tenant_id == row.tenant_id,
+                        CollectorOutbox.scope == row.scope,
+                        CollectorOutbox.sink == "knowledge",
+                        CollectorOutbox.envelope_id == row.envelope_id,
+                    ))
+                    if not existing:
+                        db.add(CollectorOutbox(
+                            job_id=row.job_id,
+                            tenant_id=row.tenant_id,
+                            scope=row.scope,
+                            sink="knowledge",
+                            envelope_id=row.envelope_id,
+                            payload_hash=row.payload_hash,
+                            status="pending",
+                        ))
+            await db.commit()
+        consumed += 1
+    return consumed
 
-    return evaluated_count
+
+async def _finish_pending_claim(
+    item_id: uuid.UUID, claim_token: str, *, state: str, detail: str, status: str
+) -> None:
+    async with sessionmaker()() as db:
+        row = await db.scalar(select(CollectorItem).where(CollectorItem.id == item_id).with_for_update())
+        if row is None:
+            await db.rollback()
+            return
+        signals = dict(row.signals or {})
+        triage = dict(signals.get("triage") or {})
+        precise = dict(triage.get("precise_eval") or {})
+        if precise.get("claim_token") != claim_token:
+            await db.rollback()
+            return
+        precise.update({"state": state, "engine": {"status": status, "detail": detail[:200]}})
+        precise.pop("claim_token", None)
+        precise.pop("claim_owner", None)
+        precise.pop("claim_expires_at", None)
+        triage["precise_eval"] = precise
+        signals["triage"] = triage
+        row.signals = signals
+        await db.commit()

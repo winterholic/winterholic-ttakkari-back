@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
 
+from ttakkari import collector_precise_runtime
 from ttakkari.collector import precise_eval
-from ttakkari.collector.budget import BudgetDenied
 from ttakkari.config import get_settings
 
 
@@ -38,21 +38,21 @@ def test_engine_status_reports_reasons_transparently(monkeypatch):
 
     # Case 1: collector_teacher_enabled is False
     monkeypatch.setattr(s, "collector_teacher_enabled", False)
-    st = precise_eval.engine_status()
+    st = collector_precise_runtime.engine_status()
     assert st["status"] == "unavailable"
     assert "collector_teacher_enabled is False" in st["detail"]
 
     # Case 2: desk_qwen_enabled is False
     monkeypatch.setattr(s, "collector_teacher_enabled", True)
     monkeypatch.setattr(s, "desk_qwen_enabled", False)
-    st = precise_eval.engine_status()
+    st = collector_precise_runtime.engine_status()
     assert st["status"] == "unavailable"
     assert "desk_qwen_enabled is False" in st["detail"]
 
     # Case 3: endpoint is None
     monkeypatch.setattr(s, "desk_qwen_enabled", True)
     with patch("ttakkari.runs.desk_qwen.endpoint", return_value=None):
-        st = precise_eval.engine_status()
+        st = collector_precise_runtime.engine_status()
         assert st["status"] == "unavailable"
         assert "not ready" in st["detail"]
 
@@ -63,7 +63,7 @@ def test_engine_status_reports_reasons_transparently(monkeypatch):
         ),
         patch("ttakkari.runs.qwen_slot.is_process_lock_busy", return_value=True),
     ):
-        st = precise_eval.engine_status()
+        st = collector_precise_runtime.engine_status()
         assert st["status"] == "busy"
         assert "occupied" in st["detail"]
 
@@ -74,9 +74,15 @@ def test_engine_status_reports_reasons_transparently(monkeypatch):
         ),
         patch("ttakkari.runs.qwen_slot.is_process_lock_busy", return_value=False),
     ):
-        st = precise_eval.engine_status()
+        st = collector_precise_runtime.engine_status()
         assert st["status"] == "ready"
         assert st["endpoint"] == "http://127.0.0.1:19300"
+
+
+def test_engine_status_is_unavailable_until_runtime_is_registered():
+    precise_eval.register_runtime(None)
+    st = precise_eval.engine_status()
+    assert st["status"] == "unavailable" and "not registered" in st["detail"]
 
 
 def test_untrusted_prompt_escaping_and_input_cap():
@@ -304,29 +310,27 @@ async def test_precise_call_holds_shared_qwen_slot_for_entire_budgeted_call(
     monkeypatch,
 ):
     from ttakkari.collector import budget
-    from ttakkari.runs import qwen_slot
 
     events = []
-    monkeypatch.setattr(
-        precise_eval,
-        "engine_status",
-        lambda: {
+    monkeypatch.setattr(precise_eval, "_runtime", None)
+    precise_eval.register_runtime(precise_eval.EvaluatorRuntime(
+        status=lambda: {
             "status": "ready",
             "endpoint": "http://127.0.0.1:19300",
             "model": "fixture",
         },
-    )
-    monkeypatch.setattr(
-        qwen_slot, "acquire_process_lock", lambda: events.append("acquire") or 101
-    )
-    monkeypatch.setattr(
-        qwen_slot, "release_process_lock", lambda fd: events.append(("release", fd))
-    )
+        acquire_process_lock=lambda: events.append("acquire") or 101,
+        release_process_lock=lambda fd: events.append(("release", fd)),
+    ))
+
+    async def recovered(**kwargs):
+        return False, None
 
     async def guarded(**kwargs):
         events.append("call")
         return {"recommendation": "review_needed"}
 
+    monkeypatch.setattr(budget, "recover_settled_result", recovered)
     monkeypatch.setattr(budget, "guarded_call", guarded)
     result = await precise_eval.evaluate_document_guarded(
         goal="goal", title="title", text="body", request_key="slot-test"
@@ -389,178 +393,3 @@ def test_apply_precise_result_retains_held_on_negative_verdict():
     assert item.status == "held"  # kept held, never deleted
     assert item.signals["triage"]["precise_eval"]["state"] == "evaluated"
     assert item.signals["triage"]["precise_eval"]["verdict"] == "hold"
-
-
-@pytest.mark.asyncio
-async def test_consume_prepared_precise_eval_when_engine_not_ready():
-    job = SimpleNamespace(id="job-1")
-    p = SimpleNamespace(
-        analysis=SimpleNamespace(
-            text="테스트 본문",
-            extracted=SimpleNamespace(title="테스트 제목"),
-        )
-    )
-    row = SimpleNamespace(
-        id="item-1",
-        status="held",
-        reason_codes=["triage:irrelevant_to_goal"],
-        signals={"triage": {"precise_eval": {"state": "pending", "needed": True}}},
-        envelope_id="env-1",
-        payload_hash="phash-1",
-    )
-    outbox = []
-
-    with patch(
-        "ttakkari.collector.precise_eval.engine_status",
-        return_value={"status": "unavailable", "detail": "test off"},
-    ):
-        count = await precise_eval.consume_prepared_precise_eval(
-            db=None,
-            job=job,
-            pairs=[(p, row)],
-            goal="테스트 목표",
-            outbox=outbox,
-        )
-
-    assert count == 0
-    assert row.status == "held"
-    assert row.signals["triage"]["precise_eval"]["state"] == "pending"
-    assert len(outbox) == 0
-
-
-@pytest.mark.asyncio
-async def test_consume_prepared_precise_eval_success_rescues_held_and_emits_outbox():
-    job = SimpleNamespace(id="job-1")
-    p = SimpleNamespace(
-        analysis=SimpleNamespace(
-            text="파이썬 asyncio 이벤트 루프 상세 설명",
-            extracted=SimpleNamespace(title="Asyncio 해설"),
-        )
-    )
-    row = SimpleNamespace(
-        id="item-1",
-        status="held",
-        reason_codes=["triage:irrelevant_to_goal"],
-        signals={"triage": {"precise_eval": {"state": "pending", "needed": True}}},
-        envelope_id="env-1",
-        payload_hash="phash-1",
-        envelope={"payload_hash": "phash-1"},
-        tenant_id="owner",
-        scope="personal",
-        source_key="source-1",
-        text_sha256="a" * 64,
-    )
-    row.envelope["rights"] = {
-        "permission": "allowed",
-        "purposes": ["knowledge"],
-        "retain_until": None,
-    }
-    outbox = []
-    reviews = []
-    db = SimpleNamespace(add=reviews.append)
-
-    eval_result = {
-        "topic_relevance": 0.95,
-        "relevance_explanation": "완벽하게 목표에 부합",
-        "information_depth": 0.88,
-        "low_quality_signals": ["none"],
-        "recommendation": "accept",
-        "confidence": 0.95,
-    }
-
-    with (
-        patch(
-            "ttakkari.collector.precise_eval.engine_status",
-            return_value={
-                "status": "ready",
-                "detail": "ready",
-                "model": "qwen3.5-4b-q4_k_m",
-                "endpoint": "http://127.0.0.1:19300",
-            },
-        ),
-        patch(
-            "ttakkari.collector.precise_eval.evaluate_document_guarded",
-            new_callable=AsyncMock,
-        ) as mock_eval,
-        patch(
-            "ttakkari.collector.store.active_policy",
-            new_callable=AsyncMock,
-            return_value=(
-                SimpleNamespace(
-                    allows=lambda purpose: purpose in {"store", "knowledge"}
-                ),
-                1,
-                "digest",
-            ),
-        ),
-    ):
-        mock_eval.return_value = eval_result
-
-        count = await precise_eval.consume_prepared_precise_eval(
-            db=db,
-            job=job,
-            pairs=[(p, row)],
-            goal="파이썬 asyncio",
-            outbox=outbox,
-        )
-
-    assert count == 1
-    assert row.status == "accepted"
-    assert "review:precise_eval_rescued" in row.reason_codes
-    assert row.signals["triage"]["precise_eval"]["state"] == "evaluated"
-    assert len(outbox) == 1
-    assert outbox[0].sink == "knowledge"
-    assert outbox[0].envelope_id == "env-1"
-    assert outbox[0].payload_hash == "phash-1"
-    assert reviews[0].decision == "accept" and reviews[0].actor == "owner"
-    assert reviews[0].text_sha256 == row.text_sha256
-
-
-@pytest.mark.asyncio
-async def test_consume_prepared_precise_eval_budget_denied_updates_state_gracefully():
-    job = SimpleNamespace(id="job-1")
-    p = SimpleNamespace(
-        analysis=SimpleNamespace(
-            text="본문",
-            extracted=SimpleNamespace(title="제목"),
-        )
-    )
-    row = SimpleNamespace(
-        id="item-1",
-        status="held",
-        reason_codes=["triage:irrelevant_to_goal"],
-        signals={"triage": {"precise_eval": {"state": "pending", "needed": True}}},
-        envelope_id="env-1",
-        payload_hash="phash-1",
-        envelope={},
-    )
-    outbox = []
-
-    with (
-        patch(
-            "ttakkari.collector.precise_eval.engine_status",
-            return_value={
-                "status": "ready",
-                "detail": "ready",
-                "model": "qwen3.5-4b-q4_k_m",
-                "endpoint": "http://127.0.0.1:19300",
-            },
-        ),
-        patch(
-            "ttakkari.collector.precise_eval.evaluate_document_guarded",
-            side_effect=BudgetDenied("day_budget"),
-        ),
-    ):
-        count = await precise_eval.consume_prepared_precise_eval(
-            db=None,
-            job=job,
-            pairs=[(p, row)],
-            goal="목표",
-            outbox=outbox,
-        )
-
-    assert count == 0
-    assert row.status == "held"  # kept held
-    assert row.signals["triage"]["precise_eval"]["state"] == "budget_denied"
-    assert "budget:day_budget" in row.signals["triage"]["precise_eval"]["reasons"]
-    assert len(outbox) == 0

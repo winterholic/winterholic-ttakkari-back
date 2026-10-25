@@ -716,11 +716,6 @@ async def _finalize_page(
         items.append(row)
         if ob is not None:
             outbox.append(ob)
-    from ttakkari.collector import precise_eval
-    mission = (job.envelope.get("extensions") or {}).get("collector:mission")
-    goal = mission.get("goal", "") if mission else ""
-    pairs = [(p, row) for p, row in zip([p for p in prepared if p.retry is None], items, strict=True)]
-    await precise_eval.consume_prepared_precise_eval(db, job, pairs, goal=goal, outbox=outbox)
     new_cursor = _advance(cursor, page, prepared, items, spec, req,
                           preserve_frontier=bool(job.envelope.get("extensions", {}).get("collector:mission")))
     result["cursor"] = new_cursor

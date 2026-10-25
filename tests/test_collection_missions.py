@@ -1,5 +1,7 @@
 """A mission must reach real collector jobs and KB receipts, not fabricated counts."""
+import asyncio
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from collector_support import article_html, prose
@@ -235,7 +237,6 @@ async def test_precise_rescue_uses_reviewed_knowledge_delivery_contract(
     mission = made.json()
 
     original_triage = pipeline.triage.evaluate_triage
-
     def pending_hold(**kwargs):
         outcome = original_triage(**kwargs)
         signals = dict(outcome.signals)
@@ -426,6 +427,189 @@ async def test_precise_rescue_keeps_item_held_when_collection_rights_deny_knowle
             )
             is None
         )
+
+
+async def test_precise_result_survives_worker_crash_after_budget_settlement(
+    client, auth, env, monkeypatch  # noqa: F811
+):
+    """A settled provider result must be recoverable before retrying the same pending item."""
+    from types import SimpleNamespace
+
+    from sqlalchemy import select
+
+    from ttakkari import collector_precise_runtime
+    from ttakkari.collector import budget, pipeline, precise_eval
+    from ttakkari.collector.budget_models import CollectorBudgetReservation
+    from ttakkari.collector_models import CollectorItem
+    from ttakkari.config import get_settings
+    from ttakkari.runs import qwen_slot
+
+    class SimulatedProcessCrash(BaseException):
+        pass
+
+    url = env.server.url("/precise-crash")
+    env.server.page(
+        "/precise-crash",
+        article_html("직렬화 설계", [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."]),
+    )
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(
+        allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0
+    )
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    made = await client.post(
+        BASE + "/missions", headers=auth,
+        json={"goal": "컴파일러 최적화", "urls": [url]},
+    )
+    assert made.status_code == 202, made.text
+
+    original_triage = pipeline.triage.evaluate_triage
+    triage_calls = []
+
+    def pending_hold(**kwargs):
+        triage_calls.append(True)
+        outcome = original_triage(**kwargs)
+        signals = dict(outcome.signals)
+        signals["precise_eval"] = {"needed": True, "state": "pending", "reasons": ["fixture"]}
+        return SimpleNamespace(action="hold", reasons=["triage:irrelevant_to_goal"], signals=signals)
+
+    monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
+    monkeypatch.setattr(get_settings(), "collector_teacher_enabled", True)
+    engine = {"status": "unavailable", "detail": "fixture unavailable"}
+    monkeypatch.setattr(precise_eval, "engine_status", lambda: engine)
+    verdict = {
+        "topic_relevance": 0.95,
+        "relevance_explanation": "fixture result",
+        "information_depth": 0.88,
+        "low_quality_signals": [],
+        "recommendation": "accept",
+        "confidence": 0.95,
+    }
+    calls = []
+    provider_entered = asyncio.Event()
+    release_provider = asyncio.Event()
+
+    async def provider_response(*args, **kwargs):
+        calls.append(True)
+        async with sessionmaker()() as db:
+            durable = await db.scalar(select(CollectorItem).where(CollectorItem.url == url))
+            assert durable is not None, "model call started before the page transaction committed"
+            assert durable.signals["triage"]["precise_eval"]["state"] == "processing"
+        mission_view = await client.get(BASE + "/missions/" + made.json()["id"], headers=auth)
+        assert mission_view.status_code == 200
+        provider_entered.set()
+        await release_provider.wait()
+        return verdict, budget.CallUsage(tokens=7, micro_usd=0, receipt={"provider": "fixture"})
+
+    monkeypatch.setattr(precise_eval, "_call_qwen_api", provider_response)
+    monkeypatch.setattr(qwen_slot, "acquire_process_lock", lambda: 101)
+    monkeypatch.setattr(qwen_slot, "release_process_lock", lambda fd: None)
+    monkeypatch.setattr(precise_eval, "_runtime", None)
+    collector_precise_runtime.install()
+    original_apply = precise_eval.apply_precise_result
+    crash_once = True
+
+    def crash_after_settlement(item, result):
+        nonlocal crash_once
+        if crash_once:
+            crash_once = False
+            raise SimulatedProcessCrash()
+        return original_apply(item, result)
+
+    monkeypatch.setattr(precise_eval, "apply_precise_result", crash_after_settlement)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    assert triage_calls, "collector worker did not score the fixture document"
+    assert calls == [], "an unavailable model must leave a durable pending item for a later tick"
+    engine.update({"status": "ready", "model": "fixture", "endpoint": "http://127.0.0.1:19300"})
+    worker = asyncio.create_task(runner.consume_once(limit=1, managed_only=True))
+    await provider_entered.wait()
+    assert await runner.consume_once(limit=1, managed_only=True) == 0
+    assert len(calls) == 1, "a concurrent worker duplicated the claimed model call"
+    release_provider.set()
+    with pytest.raises(SimulatedProcessCrash):
+        await worker
+
+    async with sessionmaker()() as db:
+        settled = list((await db.scalars(
+            select(CollectorBudgetReservation).where(CollectorBudgetReservation.purpose == "judge")
+        )).all())
+        assert len(settled) == 1 and settled[0].state == "settled"
+        item = await db.scalar(select(CollectorItem).where(CollectorItem.url == url))
+        assert item is not None, "page rollback discarded the pending item after charging the provider"
+        precise = dict(item.signals["triage"]["precise_eval"])
+        assert precise["state"] == "processing"
+        precise["claim_expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+        item.signals = {**item.signals, "triage": {**item.signals["triage"], "precise_eval": precise}}
+        await db.commit()
+
+    engine.update({"status": "unavailable", "detail": "endpoint became unavailable after the call"})
+    await runner.consume_once(limit=1, managed_only=True)
+    assert len(calls) == 1, "a settled evaluation was called again instead of recovering its stored result"
+    async with sessionmaker()() as db:
+        item = await db.scalar(select(CollectorItem).where(CollectorItem.url == url))
+        assert item.signals["triage"]["precise_eval"]["state"] == "evaluated"
+
+
+async def test_unknown_precise_call_is_unresolved_without_refund_or_retry(
+    client, auth, env, monkeypatch  # noqa: F811
+):
+    from types import SimpleNamespace
+
+    import httpx
+    from sqlalchemy import select
+
+    from ttakkari import collector_precise_runtime
+    from ttakkari.collector import pipeline, precise_eval, runner
+    from ttakkari.collector.budget_models import CollectorBudgetReservation
+    from ttakkari.collector_models import CollectorItem
+    from ttakkari.config import get_settings
+    from ttakkari.runs import qwen_slot
+
+    url = env.server.url("/precise-unknown")
+    env.server.page("/precise-unknown", article_html("직렬화", [prose("ko", 40, 12)]))
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(
+        allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0
+    )
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    made = await client.post(BASE + "/missions", headers=auth, json={"goal": "컴파일러 최적화", "urls": [url]})
+    assert made.status_code == 202, made.text
+
+    original_triage = pipeline.triage.evaluate_triage
+
+    def pending_hold(**kwargs):
+        outcome = original_triage(**kwargs)
+        signals = dict(outcome.signals)
+        signals["precise_eval"] = {"needed": True, "state": "pending", "reasons": ["fixture"]}
+        return SimpleNamespace(action="hold", reasons=["triage:irrelevant_to_goal"], signals=signals)
+
+    monkeypatch.setattr(pipeline.triage, "evaluate_triage", pending_hold)
+    monkeypatch.setattr(get_settings(), "collector_teacher_enabled", True)
+    monkeypatch.setattr(precise_eval, "engine_status", lambda: {
+        "status": "ready", "model": "fixture", "endpoint": "http://127.0.0.1:19300"
+    })
+    monkeypatch.setattr(qwen_slot, "acquire_process_lock", lambda: 101)
+    monkeypatch.setattr(qwen_slot, "release_process_lock", lambda fd: None)
+    monkeypatch.setattr(precise_eval, "_runtime", None)
+    collector_precise_runtime.install()
+    calls = []
+
+    async def unknown_response(*args, **kwargs):
+        calls.append(True)
+        raise httpx.ReadTimeout("fixture timeout")
+
+    monkeypatch.setattr(precise_eval, "_call_qwen_api", unknown_response)
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    assert await runner.consume_once(limit=1, managed_only=True) == 0
+    assert len(calls) == 1
+    async with sessionmaker()() as db:
+        item = await db.scalar(select(CollectorItem).where(CollectorItem.url == url))
+        reservation = await db.scalar(select(CollectorBudgetReservation).where(
+            CollectorBudgetReservation.request_key == f"precise:{item.id}:{item.job_id}"
+        ))
+        assert item.signals["triage"]["precise_eval"]["state"] == "unresolved"
+        assert reservation.state == "unknown"
+        assert reservation.charged_tokens == reservation.reserved_tokens
 
 
 async def test_unknown_rights_is_visible_without_registering_fake_permission(client, auth):

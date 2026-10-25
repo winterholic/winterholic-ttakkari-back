@@ -1572,3 +1572,59 @@ async def test_shadowed_k_sweep_detection_in_validate_and_create(client, auth):
     assert r_scalar.status_code == 201, r_scalar.text
 
 
+@pytest.mark.parametrize("adapter_id,strategy,search_space,fixed,blocked", [
+    ("retrieval_eval", "grid", {"k": [5, 20], "top_k": [5, 20]}, {}, True),
+    ("retrieval_eval", "ab", {"k": [5, 20], "top_k": [5, 20]}, {"top_k": 10}, True),
+    ("retrieval_eval", "single", {"k": [5, 20]}, {"top_k": 10}, False),
+    ("retrieval_eval", "repeat", {"k": [5, 20]}, {"top_k": 10}, False),
+    ("external_report", "grid", {"k": [5, 20], "top_k": [5, 20]}, {}, False),
+    ("external_report", "grid", {"k": [5, 20]}, {"top_k": 10}, False),
+    ("retrieval_eval", "grid", {"top_k": [5, 20]}, {"top_k": 10, "k": 5}, False),
+])
+async def test_shadowed_cutoff_validate_create_agree_on_adapter_and_strategy(
+    client, auth, adapter_id, strategy, search_space, fixed, blocked,
+):
+    study_id = await make_study(client, auth)
+    body = {"adapter_id": adapter_id, "strategy": strategy, "search_space": search_space,
+            "fixed_inputs": {"preset_id": "ko_tech_docs_v1", **fixed}}
+    val = await client.post(f"{API}/experiments/validate", headers=auth, json={"study_id": study_id, **body})
+    assert val.status_code == 200, val.text
+    assert val.json()["valid"] is (not blocked), val.text
+    assert any("shadowed" in e for e in val.json()["errors"]) is blocked
+    created = await client.post(f"{API}/studies/{study_id}/experiments", headers=auth, json=body)
+    assert created.status_code == (422 if blocked else 201), created.text
+    if not blocked and adapter_id == "retrieval_eval":
+        cutoffs = [c["parameters"]["top_k"] for c in created.json()["configurations"]]
+        assert cutoffs == ([5, 20] if strategy == "grid" else [10])
+
+
+@pytest.mark.parametrize("interpretation_type", ["success", "failure"])
+async def test_interpretation_node_is_saved_unverified_and_restored(client, auth, interpretation_type):
+    study_id = await make_study(client, auth)
+    exp_id, cfg_id, run_id = (str(uuid.uuid4()) for _ in range(3))
+    body = {"kind": "interpretation", "title": "Researcher note", "summary": "Unverified cause",
+            "conditions": {"experiment_id": exp_id, "configuration_id": cfg_id, "run_id": run_id},
+            "details": {"interpretation_type": interpretation_type, "hypothesis": "Unverified cause"}}
+    saved = await client.post(f"{API}/studies/{study_id}/nodes", headers=auth, json=body)
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["epistemic_status"] == "unverified"
+    restored = await client.get(f"{API}/studies/{study_id}/resume", headers=auth)
+    node = next(n for n in restored.json()["nodes"] if n["id"] == saved.json()["id"])
+    assert node["epistemic_status"] == "unverified"
+    assert node["conditions"] == body["conditions"]
+    assert node["details"] == body["details"]
+    rejected = await client.post(f"{API}/studies/{study_id}/nodes", headers=auth,
+                                 json={**body, "epistemic_status": "locally_measured"})
+    assert rejected.status_code == 422
+
+
+async def test_reuse_defaults_to_source_adapter_when_request_omits_adapter(client, auth):
+    study_id = await make_study(client, auth)
+    source = await make_experiment(client, auth, study_id, adapter_id="external_report", strategy="single")
+    response = await client.post(f"{API}/studies/{study_id}/experiments", headers=auth, json={
+        "title": "Reuse external definition", "source_configuration_id": source["configurations"][0]["id"],
+    })
+    assert response.status_code == 201, response.text
+    assert response.json()["adapter_id"] == "external_report"
+
+

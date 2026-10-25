@@ -139,7 +139,9 @@ class ExperimentIn(Strict):
             self.title = self.name
         if not self.title:
             self.title = "Untitled Experiment"
-        if not self.adapter_id and self.adapter:
+        if not self.adapter_id and self.adapter and (
+            self.source_configuration_id is None or "adapter" in self.model_fields_set
+        ):
             self.adapter_id = self.adapter
         return self
 
@@ -429,6 +431,8 @@ async def require_catalog_methods(db, method_ids: list[uuid.UUID]) -> None:
 @router.post("/studies/{study_id}/experiments", status_code=201)
 async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     study = await svc.get_study(db, study_id)
+    # The schema's default is not an explicit request to replace a source adapter.
+    requested_adapter = body.adapter_id or (body.adapter if "adapter" in body.model_fields_set else None)
 
     # 1. Source provenance & reuse resolution
     source_study_id: uuid.UUID | None = None
@@ -485,8 +489,8 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
             raise HTTPException(422, "source_scope_mismatch")
 
         # Adapter validation: adapter_id must match source
-        target_adapter_id = body.adapter_id or body.adapter or "retrieval_eval"
         source_adapter_id = source_exp.adapter_id or source_exp.adapter
+        target_adapter_id = requested_adapter or source_adapter_id
         if target_adapter_id != source_adapter_id:
             raise HTTPException(
                 422,
@@ -526,7 +530,8 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
         db, ([target_method_id] if target_method_id else []) + target_compared_method_ids
     )
 
-    adapter_id = body.adapter_id or body.adapter or (source_exp.adapter_id if source_exp else "retrieval_eval")
+    inherited_adapter = (source_exp.adapter_id or source_exp.adapter) if source_exp else None
+    adapter_id = requested_adapter or inherited_adapter or body.adapter or "retrieval_eval"
     raw_budget = (
         body.budget.model_dump()
         if hasattr(body.budget, "model_dump")
@@ -560,6 +565,7 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
         fixed_inputs=effective_fixed_inputs,
         max_runs=budget_dict.get("max_runs", 20),
         seed=body.seed,
+        adapter_id=adapter_id,
     )
     if exp_errors:
         raise HTTPException(422, "experiment_plan_invalid: " + "; ".join(exp_errors))

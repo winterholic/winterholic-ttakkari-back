@@ -27,6 +27,14 @@ from ttakkari.research.models import Experiment, Study
 import ttakkari.research.service as svc
 
 
+@pytest.fixture(autouse=True)
+def restore_adapter_registry_lookup():
+    """These probes replace a module lookup; do not leak the stub into later E2E tests."""
+    original = adapters.get_adapter_registry
+    yield
+    adapters.get_adapter_registry = original
+
+
 class StubDb:
     """In-memory database stub simulating async SQLAlchemy session for research entities."""
 

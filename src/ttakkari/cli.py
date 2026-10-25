@@ -322,11 +322,36 @@ def _cmd_kb_backfill(args: argparse.Namespace) -> int:
         default_report_dir,
         rollback_backfill,
         run_backfill,
+        run_enqueue_jobs_backfill,
     )
 
     if args.apply and get_settings().env == "prod" and not args.confirm_production:
         print("운영 환경(TTAKKARI_ENV=prod)에서 --apply 는 --confirm-production 이 있어야 한다.", file=sys.stderr)
         return 2
+
+    if getattr(args, "enqueue_jobs_only", False):
+        async def run_jobs():
+            db.init_engine()
+            stop = asyncio.Event()
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(sig, stop.set)
+            try:
+                summary = await run_enqueue_jobs_backfill(
+                    db.sessionmaker(), apply=args.apply, batch_size=args.batch_size, limit=args.limit,
+                    report_dir=Path(args.report_dir) if args.report_dir else default_report_dir(),
+                    include_hidden=args.include_hidden, stop=stop, pause_seconds=args.pause,
+                )
+                return summary.as_dict()
+            finally:
+                await db.dispose_engine()
+
+        try:
+            print(json.dumps(asyncio.run(run_jobs()), ensure_ascii=False, indent=2, default=str))
+            return 0
+        except BackfillAlreadyRunning as exc:
+            print(f"이미 실행 중인 잡 백필이 있다: {exc}", file=sys.stderr)
+            return 3
 
     async def run():
         db.init_engine()
@@ -350,6 +375,48 @@ def _cmd_kb_backfill(args: argparse.Namespace) -> int:
         print(json.dumps(asyncio.run(run()), ensure_ascii=False, indent=2, default=str))
     except BackfillAlreadyRunning as exc:
         print(f"이미 실행 중인 백필이 있다: {exc}", file=sys.stderr)
+        return 3
+    return 0
+
+
+def _cmd_kb_enqueue_jobs(args: argparse.Namespace) -> int:
+    """잡이 없는 현재 리비전에 파이프라인 잡을 만드는 멱등 백필(기본 dry-run, --apply 필요)."""
+    import json
+    import signal
+    from pathlib import Path
+
+    from ttakkari import db
+    from ttakkari.config import get_settings
+    from ttakkari.kb_backfill import (
+        BackfillAlreadyRunning,
+        default_report_dir,
+        run_enqueue_jobs_backfill,
+    )
+
+    if args.apply and get_settings().env == "prod" and not args.confirm_production:
+        print("운영 환경(TTAKKARI_ENV=prod)에서 --apply 는 --confirm-production 이 있어야 한다.", file=sys.stderr)
+        return 2
+
+    async def run():
+        db.init_engine()
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, stop.set)
+        try:
+            summary = await run_enqueue_jobs_backfill(
+                db.sessionmaker(), apply=args.apply, batch_size=args.batch_size, limit=args.limit,
+                report_dir=Path(args.report_dir) if args.report_dir else default_report_dir(),
+                include_hidden=args.include_hidden, stop=stop, pause_seconds=args.pause,
+            )
+            return summary.as_dict()
+        finally:
+            await db.dispose_engine()
+
+    try:
+        print(json.dumps(asyncio.run(run()), ensure_ascii=False, indent=2, default=str))
+    except BackfillAlreadyRunning as exc:
+        print(f"이미 실행 중인 잡 백필이 있다: {exc}", file=sys.stderr)
         return 3
     return 0
 
@@ -429,7 +496,7 @@ def _cmd_desk_eval(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ttakkari")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -511,6 +578,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("kb-backfill", help="기존 지식 도서관 문서를 KB v3 파이프라인으로 재처리(기본 dry-run, 멱등·재개 가능)")
     p.add_argument("--apply", action="store_true", help="실제로 쓴다(없으면 dry-run: 분류와 계획만 보고)")
+    p.add_argument("--enqueue-jobs-only", action="store_true", help="리비전 재청킹 없이 잡이 없는 현재 리비전에 파이프라인 작업만 등록")
     p.add_argument("--batch-size", type=int, default=10, help="한 번에 커밋하는 문서 수(기본 10)")
     p.add_argument("--limit", type=int, default=None, help="이번 실행에서 살펴볼 문서 최대 수")
     p.add_argument("--resume", default=None, metavar="RUN_ID", help="이전 실행의 run id 로 같은 보고서에 이어 쓴다(상태는 DB 에서 다시 계산하므로 같은 명령 재실행으로도 이어진다)")
@@ -521,6 +589,16 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--rollback", default=None, metavar="RUN_ID|all", help="백필이 쌓은 리비전을 이전 리비전으로 되돌린다(--apply 없으면 계획만)")
     p.add_argument("--confirm-production", action="store_true", help="TTAKKARI_ENV=prod 에서 --apply 를 허용")
     p.set_defaults(func=_cmd_kb_backfill)
+
+    p = sub.add_parser("kb-enqueue-jobs", help="잡이 없는 현재 리비전에 파이프라인 작업을 등록하는 멱등 백필(배포 겹침 구간 보충, 기본 dry-run)")
+    p.add_argument("--apply", action="store_true", help="실제로 쓴다(없으면 dry-run: 계획만 보고)")
+    p.add_argument("--batch-size", type=int, default=10, help="한 번에 커밋하는 문서 수(기본 10)")
+    p.add_argument("--limit", type=int, default=None, help="이번 실행에서 살펴볼 문서 최대 수")
+    p.add_argument("--report-dir", default=None, help="progress.jsonl/state.json 을 둘 디렉터리(기본: 데이터 폴더/backfill)")
+    p.add_argument("--include-hidden", action="store_true", help="숨겨진 문서도 처리(기본은 건너뜀)")
+    p.add_argument("--pause", type=float, default=0.0, help="묶음 사이 대기 초")
+    p.add_argument("--confirm-production", action="store_true", help="TTAKKARI_ENV=prod 에서 --apply 를 허용")
+    p.set_defaults(func=_cmd_kb_enqueue_jobs)
 
     p = sub.add_parser("kb-verify", help="지식 도서관 DB·원본 저장소 무결성 점검")
     p.add_argument("--clean-orphans", action="store_true", help="DB 에 없는 고아 원본 파일과 방치된 임시 파일을 디스크에서 정리")
@@ -533,6 +611,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--engine", choices=["codex", "claude"], default=None, help="이 엔진 계정만(기본: 접수 엔진 순서)")
     p.set_defaults(func=_cmd_desk_eval)
 
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
     args = parser.parse_args(argv)
     sys.exit(args.func(args))
 

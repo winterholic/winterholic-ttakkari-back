@@ -467,3 +467,157 @@ async def rollback_backfill(
 
 def default_report_dir() -> Path:
     return get_settings().kb_originals_dir.parent / "backfill"
+
+
+BACKFILL_JOBS_LOCK_KEY = "kb3-backfill-jobs"
+
+
+@dataclass
+class JobBackfillSummary:
+    run_id: str
+    apply: bool
+    examined: int = 0
+    enqueued: int = 0
+    skipped_has_job: int = 0
+    skipped_hidden: int = 0
+    skipped_no_revision: int = 0
+    batches: int = 0
+    status: str = "completed"
+    duration_seconds: float = 0.0
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+async def run_enqueue_jobs_backfill(
+    session_factory: Callable[[], AsyncSession],
+    *,
+    apply: bool = False,
+    batch_size: int = 10,
+    limit: int | None = None,
+    run_id: str | None = None,
+    report_dir: Path | None = None,
+    include_hidden: bool = False,
+    stop: asyncio.Event | None = None,
+    pause_seconds: float = 0.0,
+) -> JobBackfillSummary:
+    """구 세대 코드 혹은 배포 겹침 구간에 등록되어 파이프라인 잡이 없는 현재 리비전에 파이프라인 잡을 만드는 멱등 백필."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    start = time.monotonic()
+    summary = JobBackfillSummary(
+        run_id=run_id or time.strftime("%Y%m%dT%H%M%S") + "-jobs-" + uuid.uuid4().hex[:6],
+        apply=apply,
+    )
+    rep_dir: Path | None = None
+    progress = None
+    if report_dir is not None:
+        rep_dir = Path(report_dir) / summary.run_id
+        rep_dir.mkdir(parents=True, exist_ok=True)
+        progress = (rep_dir / "progress.jsonl").open("a", encoding="utf-8")
+
+    lock_session = session_factory()
+    try:
+        if apply:
+            got = await lock_session.scalar(
+                text("SELECT pg_try_advisory_lock(hashtextextended(:k, 0))"),
+                {"k": BACKFILL_JOBS_LOCK_KEY},
+            )
+            if not got:
+                raise BackfillAlreadyRunning("another kb job backfill holds the advisory lock")
+        cursor: tuple | None = None
+        while True:
+            if stop is not None and stop.is_set():
+                summary.status = "stopped"
+                break
+            async with session_factory() as db:
+                stmt = select(KbDocument).order_by(KbDocument.created_at, KbDocument.id).limit(batch_size)
+                if cursor is not None:
+                    stmt = stmt.where((KbDocument.created_at, KbDocument.id) > cursor)
+                docs = list(await db.scalars(stmt))
+                if not docs:
+                    break
+                for doc in docs:
+                    cursor = (doc.created_at, doc.id)
+                    if limit is not None and summary.examined >= limit:
+                        summary.status = "limit_reached"
+                        break
+                    if stop is not None and stop.is_set():
+                        summary.status = "stopped"
+                        break
+                    summary.examined += 1
+
+                    access = await db.get(KbDocumentAccess, doc.id)
+                    if access is not None and access.hidden and not include_hidden:
+                        summary.skipped_hidden += 1
+                        if progress is not None:
+                            progress.write(json.dumps({
+                                "ts": time.time(), "run_id": summary.run_id, "document_id": str(doc.id),
+                                "action": "skip_hidden", "title": doc.title,
+                            }, ensure_ascii=False) + "\n")
+                            progress.flush()
+                        continue
+
+                    rev = await _latest_revision(db, doc.id)
+                    if rev is None:
+                        summary.skipped_no_revision += 1
+                        if progress is not None:
+                            progress.write(json.dumps({
+                                "ts": time.time(), "run_id": summary.run_id, "document_id": str(doc.id),
+                                "action": "skip_no_revision", "title": doc.title,
+                            }, ensure_ascii=False) + "\n")
+                            progress.flush()
+                        continue
+
+                    existing_job = await db.scalar(
+                        select(KbPipelineJob.id).where(KbPipelineJob.revision_id == rev.id).limit(1)
+                    )
+                    if existing_job is not None:
+                        summary.skipped_has_job += 1
+                        if progress is not None:
+                            progress.write(json.dumps({
+                                "ts": time.time(), "run_id": summary.run_id, "document_id": str(doc.id),
+                                "revision_id": str(rev.id), "action": "skip_has_job", "title": doc.title,
+                            }, ensure_ascii=False) + "\n")
+                            progress.flush()
+                        continue
+
+                    if apply:
+                        await enqueue_pipeline_job(db, document_id=doc.id, revision_id=rev.id)
+                    summary.enqueued += 1
+                    if progress is not None:
+                        progress.write(json.dumps({
+                            "ts": time.time(), "run_id": summary.run_id, "document_id": str(doc.id),
+                            "revision_id": str(rev.id), "action": "enqueued" if apply else "plan_enqueue",
+                            "title": doc.title,
+                        }, ensure_ascii=False) + "\n")
+                        progress.flush()
+
+                if apply:
+                    await db.commit()
+                else:
+                    await db.rollback()
+            summary.batches += 1
+            if rep_dir is not None:
+                _write_json(rep_dir / "state.json", summary.as_dict())
+            if summary.status in ("stopped", "limit_reached"):
+                break
+            if pause_seconds:
+                await asyncio.sleep(pause_seconds)
+    finally:
+        if progress is not None:
+            progress.close()
+        if apply:
+            try:
+                await lock_session.execute(
+                    text("SELECT pg_advisory_unlock(hashtextextended(:k, 0))"),
+                    {"k": BACKFILL_JOBS_LOCK_KEY},
+                )
+            except Exception:
+                pass
+        await lock_session.close()
+
+    summary.duration_seconds = round(time.monotonic() - start, 3)
+    if rep_dir is not None:
+        _write_json(rep_dir / "state.json", summary.as_dict())
+    return summary

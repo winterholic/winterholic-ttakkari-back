@@ -332,3 +332,76 @@ async def test_small_legacy_html_is_not_left_held_even_when_its_plain_text_is_a_
         assert all(j.status in ("ready", "degraded") for j in jobs.values()), {str(k): (v.status, v.hold_reason) for k, v in jobs.items()}
         lost_rev = await _latest_revision(db, lost.document_id)
         assert lost_rev.parser_version == BACKFILL_PARSER_VERSION
+
+
+async def test_enqueue_jobs_backfill_dry_run_and_idempotent_apply(corpus, tmp_path):
+    from ttakkari.kb_backfill import run_enqueue_jobs_backfill
+
+    # 1) dry-run: 쓰기 없음
+    dry = await run_enqueue_jobs_backfill(sessionmaker(), apply=False, batch_size=3, report_dir=tmp_path)
+    # corpus 9건 중: done 1건(job 있음), hidden 1건(스킵) -> 7건 계획
+    assert dry.apply is False
+    assert dry.examined == 9
+    assert dry.skipped_has_job == 1
+    assert dry.skipped_hidden == 1
+    assert dry.enqueued == 7
+
+    async with sessionmaker()() as db:
+        # DB 에 새 작업이 생기지 않았음을 확인
+        jobs_count = await db.scalar(select(func.count()).select_from(KbPipelineJob))
+        assert jobs_count == 1  # corpus[done] 에 원래 있던 1건뿐
+
+    # 2) apply: 실제 작업 큐잉
+    done = await run_enqueue_jobs_backfill(sessionmaker(), apply=True, batch_size=3, report_dir=tmp_path)
+    assert done.apply is True
+    assert done.enqueued == 7
+    assert done.skipped_has_job == 1
+    assert done.skipped_hidden == 1
+
+    async with sessionmaker()() as db:
+        jobs_count_after = await db.scalar(select(func.count()).select_from(KbPipelineJob))
+        assert jobs_count_after == 8  # 1 + 7
+
+    # 3) 2회차 apply: 완전한 멱등성 (새 작업 0건)
+    again = await run_enqueue_jobs_backfill(sessionmaker(), apply=True, batch_size=3, report_dir=tmp_path)
+    assert again.enqueued == 0
+    assert again.skipped_has_job == 8
+    assert again.skipped_hidden == 1
+
+    async with sessionmaker()() as db:
+        jobs_count_final = await db.scalar(select(func.count()).select_from(KbPipelineJob))
+        assert jobs_count_final == 8
+
+
+async def test_enqueue_jobs_backfill_preserves_work_only_visibility_and_processes(tmp_path):
+    from ttakkari.kb_backfill import run_enqueue_jobs_backfill
+
+    async with sessionmaker()() as db:
+        work_doc = await _legacy_doc(
+            db, "upload:company_confidential", "# 사내 비밀\n\n대외비 프로젝트 명세입니다.",
+            kind="upload", media="text/plain", parser="raw-v1", passages="structured",
+            observe=False, scope="work", day=1,
+        )
+        await db.commit()
+
+    # 작업 등록 백필 실행
+    res = await run_enqueue_jobs_backfill(sessionmaker(), apply=True, report_dir=tmp_path)
+    assert res.enqueued >= 1
+
+    # work_only 접근 행이 유지되었는지 검증
+    async with sessionmaker()() as db:
+        access = await db.get(KbDocumentAccess, work_doc.document_id)
+        assert access is not None
+        assert access.scope == "work"
+        assert access.visibility == "work_only"
+
+        job = await db.scalar(select(KbPipelineJob).where(KbPipelineJob.document_id == work_doc.document_id))
+        assert job is not None
+        assert job.status in ("registered", "ready", "degraded")
+
+    # 워커로 소진 후 추출된 엔터티/주장의 가시성이 work_only 로 보존되는지 검증
+    await _drain(_worker(), rounds=10)
+    async with sessionmaker()() as db:
+        for entity in await db.scalars(select(KbEntity).where(KbEntity.tenant_id == "work")):
+            assert entity.visibility == "work_only"
+

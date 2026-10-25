@@ -89,6 +89,30 @@ async def validate_method_combinations(
     return errors, warnings
 
 
+def check_shadowed_k_sweep(search_space: dict[str, Any], fixed_inputs: dict[str, Any]) -> str | None:
+    """Detect when a sweep over 'k' is shadowed by a fixed scalar 'top_k'."""
+    k_val = search_space.get("k")
+    is_k_sweep = isinstance(k_val, (list, tuple)) and len(k_val) > 1
+    if not is_k_sweep:
+        return None
+
+    top_k_fixed = None
+    if "top_k" in fixed_inputs and fixed_inputs["top_k"] is not None:
+        if not isinstance(fixed_inputs["top_k"], (list, tuple)):
+            top_k_fixed = fixed_inputs["top_k"]
+    elif "top_k" in search_space:
+        top_k_val = search_space["top_k"]
+        if not isinstance(top_k_val, (list, tuple)) or len(top_k_val) <= 1:
+            top_k_fixed = top_k_val[0] if isinstance(top_k_val, (list, tuple)) and top_k_val else top_k_val
+
+    if top_k_fixed is not None:
+        return (
+            f"search_space의 'k' sweep({k_val})이 고정된 'top_k'({top_k_fixed})에 의해 완전히 가려집니다(shadowed). "
+            "의도하지 않은 동일 arm 실행을 방지하려면 top_k 고정을 제거하거나 top_k를 sweep 변수로 지정하세요."
+        )
+    return None
+
+
 def expand_configurations(
     strategy: str,
     search_space: dict[str, Any],
@@ -100,6 +124,10 @@ def expand_configurations(
     errors: list[str] = []
     warnings: list[str] = []
     configs: list[dict[str, Any]] = []
+
+    shadowed_err = check_shadowed_k_sweep(search_space, fixed_inputs)
+    if shadowed_err:
+        errors.append(shadowed_err)
 
     # Combine fixed_inputs and baseline search_space
     base_params = dict(fixed_inputs)

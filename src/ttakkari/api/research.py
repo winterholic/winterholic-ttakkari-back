@@ -553,6 +553,30 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     else:
         effective_fixed_inputs = body.fixed_inputs or body.config or {}
 
+    # Expand configurations and validate plan
+    expanded_configs, exp_errors, exp_warnings = planner.expand_configurations(
+        strategy=body.strategy,
+        search_space=body.search_space or ({"default": [body.config]} if body.config else {}),
+        fixed_inputs=effective_fixed_inputs,
+        max_runs=budget_dict.get("max_runs", 20),
+        seed=body.seed,
+    )
+    if exp_errors:
+        raise HTTPException(422, "experiment_plan_invalid: " + "; ".join(exp_errors))
+
+    if not expanded_configs:
+        cfg_params = effective_fixed_inputs
+        expanded_configs = [
+            {
+                "label": "Baseline",
+                "role": "baseline",
+                "order_index": 0,
+                "parameters": cfg_params,
+                "config_hash": planner.canonical_json_hash(cfg_params),
+                "ablation_factor": None,
+            }
+        ]
+
     row = Experiment(
         study_id=study.id,
         title=body.title,
@@ -581,27 +605,6 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     )
     db.add(row)
     await db.flush()
-
-    # Expand and create configurations
-    expanded_configs, exp_errors, exp_warnings = planner.expand_configurations(
-        strategy=body.strategy,
-        search_space=body.search_space or ({"default": [body.config]} if body.config else {}),
-        fixed_inputs=effective_fixed_inputs,
-        max_runs=budget_dict.get("max_runs", 20),
-        seed=body.seed,
-    )
-    if not expanded_configs:
-        cfg_params = effective_fixed_inputs
-        expanded_configs = [
-            {
-                "label": "Baseline",
-                "role": "baseline",
-                "order_index": 0,
-                "parameters": cfg_params,
-                "config_hash": planner.canonical_json_hash(cfg_params),
-                "ablation_factor": None,
-            }
-        ]
 
     created_configs = []
     baseline_cfg_id = None

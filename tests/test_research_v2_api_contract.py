@@ -1522,3 +1522,53 @@ async def test_source_reuse_preserves_lineage_after_run_execution(client, auth):
     assert data["source_experiment_id"] == exp1_id
     assert data["source_study_id"] == study_id
 
+
+async def test_shadowed_k_sweep_detection_in_validate_and_create(client, auth):
+    study_id = await make_study(client, auth)
+
+    # 1. k sweep [5, 20] with fixed scalar top_k=20 -> validate reports error
+    r_val = await client.post(
+        f"{API}/experiments/validate",
+        headers=auth,
+        json={
+            "study_id": study_id,
+            "adapter_id": "retrieval_eval",
+            "strategy": "ab",
+            "search_space": {"k": [5, 20]},
+            "fixed_inputs": {"top_k": 20, "preset_id": "ko_tech_docs_v1"},
+        },
+    )
+    assert r_val.status_code == 200
+    val_body = r_val.json()
+    assert val_body["valid"] is False
+    assert any("shadowed" in err for err in val_body["errors"])
+
+    # 2. k sweep [5, 20] with fixed scalar top_k=20 -> create is rejected with 422
+    r_create_bad = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Shadowed sweep create",
+            "adapter_id": "retrieval_eval",
+            "strategy": "ab",
+            "search_space": {"k": [5, 20]},
+            "fixed_inputs": {"top_k": 20, "preset_id": "ko_tech_docs_v1"},
+        },
+    )
+    assert r_create_bad.status_code == 422, r_create_bad.text
+    assert "shadowed" in r_create_bad.text
+
+    # 3. Scalar top_k=20 and k=5 (not a sweep) -> passes validation and creation (existing precedence contract preserved)
+    r_scalar = await client.post(
+        f"{API}/studies/{study_id}/experiments",
+        headers=auth,
+        json={
+            "title": "Scalar top_k and k",
+            "adapter_id": "retrieval_eval",
+            "strategy": "single",
+            "config": {"k": 5, "top_k": 20, "preset_id": "ko_tech_docs_v1"},
+        },
+    )
+    assert r_scalar.status_code == 201, r_scalar.text
+
+

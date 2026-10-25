@@ -5,16 +5,23 @@ does with it: a deprecated record must stay non-executable after loading, and th
 must keep their explicit tuples and adapter routing once they went through the loader.
 """
 
+import copy
 import json
+import uuid
 from pathlib import Path
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import select, update
 
+from ttakkari.models import utcnow
 from ttakkari.db import sessionmaker
 from ttakkari.research import catalog_loader
 from ttakkari.research.adapters.registry import get_adapter_registry
-from ttakkari.research.models import Method
+from ttakkari.research.models import BestResult, Configuration, Experiment, Method, Node, Run, Study
+from ttakkari.research.planner import validate_experiment_plan
 from ttakkari.research.readiness import compute_execution_status
+from ttakkari.research.service import adopt_best_result, promote_method
 
 SEED_DIR = Path(catalog_loader.__file__).parent / "catalog_seed"
 NOT_EXECUTABLE_STATUSES = {"hypothesis_stage", "adapter_required", "environment_unavailable"}
@@ -134,3 +141,273 @@ async def test_loader_round_trips_explicit_tuples_and_adapter_routing():
     assert spec.matched_adapter_id == "llm_inference"
     assert "spec_type" not in spec.unsupported_params
     assert {"draft_model", "draft_tokens"} <= set(spec.unsupported_params)
+
+
+async def test_readiness_and_planner_enforce_combinations_and_negative_control():
+    sm = sessionmaker()
+    async with sm() as db:
+        await catalog_loader.load_catalog_seeds(db)
+        await db.commit()
+        methods = {
+            r.slug: r
+            for r in (
+                await db.execute(
+                    select(Method).where(
+                        Method.scope == "system",
+                        Method.slug.in_(["flash_attention", "qlora"]),
+                    )
+                )
+            ).scalars()
+        }
+
+    reg = get_adapter_registry()
+
+    # 1. flash_attention: on Mac Studio (Darwin arm64) with llama.cpp,
+    # authoritative tuple (apple_silicon_metal x llama.cpp = local_executable) is satisfied.
+    fa_method = methods["flash_attention"]
+    st_fa = compute_execution_status(fa_method, reg)
+    assert st_fa.is_executable is True
+    assert st_fa.status in ("immediately_executable", "tool_integrated")
+
+    # 2. qlora: has no local_executable combination. Must be non-executable and environment_unavailable.
+    qlora_method = methods["qlora"]
+    st_qlora = compute_execution_status(qlora_method, reg)
+    assert st_qlora.is_executable is False
+    assert st_qlora.status == "environment_unavailable"
+    assert "로컬 실행 가능한" in (st_qlora.unavailable_reason or "")
+
+    # 3. Negative control (hypothetical tuple mutation):
+    # If the combination (apple_silicon_metal x llama.cpp) is downgraded to "unverified" or "upstream_supported",
+    # readiness must turn non-executable and fail-closed.
+    mutated_fa = copy.deepcopy(fa_method.compatibility)
+    for c in mutated_fa["combinations"]:
+        if c.get("hardware") == "apple_silicon_metal" and c.get("runtime") == "llama.cpp":
+            c["status"] = "upstream_supported"
+            c["note"] = "가상 다운그레이드 테스트"
+
+    hypothetical_method = {
+        "slug": "flash_attention",
+        "lifecycle_status": "validated",
+        "parameters": fa_method.parameters,
+        "metrics": fa_method.metrics,
+        "adapter_hints": fa_method.adapter_hints,
+        "compatibility": mutated_fa,
+    }
+    st_hypo = compute_execution_status(hypothetical_method, reg)
+    assert st_hypo.is_executable is False
+    assert st_hypo.status == "environment_unavailable"
+    assert "로컬 실행 불가" in (st_hypo.unavailable_reason or "")
+
+    # 4. Negative control: adapter details missing runtime/hardware identity -> fail-closed
+    class AmbiguousAdapter:
+        id = "llm_inference"
+        supported_methods = ["flash_attention"]
+        supported_parameters = ["flash_attn_enabled"]
+
+        def check_environment(self, *, scope="personal"):
+            from ttakkari.research.adapters.base import AdapterEnvironmentStatus
+
+            return AdapterEnvironmentStatus(
+                adapter_id="llm_inference",
+                ready=True,
+                execution_mode="host_supervisor",
+                details={},  # Missing runtime and hardware
+            )
+
+    class DummyRegistry:
+        def get_adapter(self, hint):
+            return AmbiguousAdapter() if hint == "llm_inference" else None
+
+    st_ambig = compute_execution_status(fa_method, DummyRegistry())
+    assert st_ambig.is_executable is False
+    assert st_ambig.status == "environment_unavailable"
+    assert "fail-closed" in (st_ambig.unavailable_reason or "")
+
+    # 5. Planner validation integration and negative control:
+    # validate_experiment_plan must pass for executable flash_attention, and fail for non-executable qlora
+    async with sm() as db:
+        study_id = uuid.uuid4()
+        plan_ok = await validate_experiment_plan(
+            db,
+            study_id=study_id,
+            method_id=fa_method.id,
+            compared_method_ids=[],
+            adapter_id="llm_inference",
+            strategy="grid",
+            search_space={"flash_attn_enabled": [True, False]},
+            fixed_inputs={"model": "qwen3.5-4b-q4_k_m"},
+            budget={"max_runs": 2},
+        )
+        assert plan_ok.valid is True
+        assert len(plan_ok.errors) == 0
+
+        plan_bad = await validate_experiment_plan(
+            db,
+            study_id=study_id,
+            method_id=qlora_method.id,
+            compared_method_ids=[],
+            adapter_id="external_report",
+            strategy="manual",
+            search_space={},
+            fixed_inputs={"model": "qwen"},
+            budget={"max_runs": 1},
+        )
+        assert plan_bad.valid is False
+        assert any("현재 환경에서 실행할 수 없습니다" in err for err in plan_bad.errors)
+
+
+async def test_system_seed_promotion_rejected_and_user_scope_promotion_preserved_across_sync():
+    """Verify system seed promotion is rejected (422) and user-scope promotion is preserved across catalog sync."""
+    sm = sessionmaker()
+    async with sm() as db:
+        await catalog_loader.load_catalog_seeds(db)
+        await db.commit()
+
+        # 1. Fetch a system seed method
+        sys_method = (
+            await db.execute(select(Method).where(Method.scope == "system", Method.slug == "flash_attention"))
+        ).scalar_one()
+
+        # Set up a succeeded run
+        study = Study(
+            id=uuid.uuid4(),
+            scope="personal",
+            title="Promotion Test Study",
+            goal="방법론 승격 거부 및 보존 테스트",
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(study)
+        await db.flush()
+
+        exp = Experiment(
+            id=uuid.uuid4(),
+            study_id=study.id,
+            title="Exp 1",
+            hypothesis="가설",
+            rationale="이유",
+            adapter="llm_inference",
+            adapter_id="llm_inference",
+            method_id=sys_method.id,
+            strategy="grid",
+            search_space={},
+            fixed_inputs={},
+            created_at=utcnow(),
+        )
+        db.add(exp)
+        await db.flush()
+
+        cfg = Configuration(
+            id=uuid.uuid4(),
+            experiment_id=exp.id,
+            label="Cfg 1",
+            parameters={"flash_attn_enabled": True},
+            config_hash="h1",
+            created_at=utcnow(),
+        )
+        db.add(cfg)
+        await db.flush()
+
+        succ_run = Run(
+            id=uuid.uuid4(),
+            study_id=study.id,
+            experiment_id=exp.id,
+            configuration_id=cfg.id,
+            adapter_id="llm_inference",
+            status="succeeded",
+            execution_origin="local_measured",
+            raw_output={},
+            environment_snapshot={},
+            created_at=utcnow(),
+        )
+        db.add(succ_run)
+        await db.flush()
+
+        # 2. Direct promotion of system seed method must be rejected with 422
+        with pytest.raises(HTTPException) as exc_info:
+            await promote_method(
+                db,
+                method_id=sys_method.id,
+                run_id=succ_run.id,
+                decision_note="시스템 시드 승격 시도",
+                target_status="validated",
+            )
+        assert exc_info.value.status_code == 422
+        assert "system_seed_methods_cannot_be_promoted" in str(exc_info.value.detail)
+
+        # 3. adopt_best_result with promote_method_flag=True on system seed method
+        # must be rejected with 422 without leaving partial/dirty state
+        with pytest.raises(HTTPException) as exc_info2:
+            await adopt_best_result(
+                db,
+                study_id=study.id,
+                experiment_id=exp.id,
+                configuration_id=cfg.id,
+                run_id=succ_run.id,
+                objective="maximize_tps",
+                primary_metric="decode_tps",
+                constraints={},
+                rationale="시스템 시드 채택 승격 시도",
+                promote_method_flag=True,
+            )
+        assert exc_info2.value.status_code == 422
+        assert "system_seed_methods_cannot_be_promoted" in str(exc_info2.value.detail)
+
+        # Verify no dirty decision nodes or best_result records were created
+        dec_nodes = (
+            await db.execute(select(Node).where(Node.study_id == study.id, Node.kind == "decision"))
+        ).scalars().all()
+        assert len(dec_nodes) == 0
+
+        best_records = (
+            await db.execute(select(BestResult).where(BestResult.study_id == study.id))
+        ).scalars().all()
+        assert len(best_records) == 0
+
+        # 4. User-scope method promotion works as intended
+        user_method = Method(
+            id=uuid.uuid4(),
+            scope="personal",
+            slug=f"custom_hypothesis_{uuid.uuid4().hex[:6]}",
+            version=1,
+            origin="user_registered",
+            lifecycle_status="hypothesis",
+            name="Custom Hypothesis",
+            name_ko="사용자 가설 방법론",
+            summary="사용자가 정의한 연구 가설",
+            category="llm_inference",
+            parameters=[],
+            metrics=[],
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(user_method)
+        await db.flush()
+
+        promoted_user_method = await promote_method(
+            db,
+            method_id=user_method.id,
+            run_id=succ_run.id,
+            decision_note="사용자 정의 가설 승격 성공",
+            target_status="validated",
+        )
+        assert promoted_user_method.lifecycle_status == "validated"
+        assert promoted_user_method.promoted_from_run_id == succ_run.id
+        await db.commit()
+
+        # 5. Catalog sync: user-scope method and its promotion must be preserved;
+        # and deprecated seed (Kokoro) must stay deprecated!
+        await catalog_loader.load_catalog_seeds(db)
+        await db.commit()
+
+        persisted_user_method = await db.get(Method, user_method.id)
+        assert persisted_user_method is not None
+        assert persisted_user_method.lifecycle_status == "validated"
+        assert persisted_user_method.promoted_from_run_id == succ_run.id
+
+        kokoro = (
+            await db.execute(
+                select(Method).where(Method.scope == "system", Method.slug == "tts_kokoro_pipeline_tuning")
+            )
+        ).scalar_one()
+        assert kokoro.lifecycle_status == "deprecated"

@@ -399,6 +399,18 @@ async def validate_experiment_plan(
     errors.extend(rel_errors)
     warnings.extend(rel_warnings)
 
+    # Execution readiness validation for participating methods
+    from ttakkari.research.readiness import compute_execution_status
+    for mid in all_methods:
+        m_obj = await db.get(Method, mid)
+        if m_obj:
+            m_status = compute_execution_status(m_obj, scope=scope)
+            if not m_status.is_executable:
+                m_label = m_obj.name_ko or m_obj.name or str(mid)
+                errors.append(
+                    f"방법론 '{m_label}'은(는) 현재 환경에서 실행할 수 없습니다: {m_status.unavailable_reason}"
+                )
+
     # Scope validation
     if scope == "work" and adapter_id == "llm_inference":
         errors.append(

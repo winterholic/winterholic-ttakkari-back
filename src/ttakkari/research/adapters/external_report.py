@@ -44,7 +44,12 @@ class ExternalReportAdapter:
             execution_mode="manual",
             reason="외부 결과 및 보고서 반입 상시 지원",
             available_models=[],
-            details={"scope": scope, "supported_provenance": sorted(VALID_PROVENANCE)},
+            details={
+                "scope": scope,
+                "runtime": "external_report",
+                "hardware": "external",
+                "supported_provenance": sorted(VALID_PROVENANCE),
+            },
         )
 
     def validate_config(self, config: dict[str, Any], *, scope: str) -> list[str]:

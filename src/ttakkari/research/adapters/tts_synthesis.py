@@ -158,6 +158,8 @@ class TtsSynthesisAdapter:
         """Check Supertonic 3 model, runtime venv, and STT availability."""
         details: dict[str, Any] = {
             "scope": scope,
+            "runtime": "onnxruntime",
+            "hardware": "cpu",
             "normalize_only_ready": True,
             "engine": "supertonic",
             "kokoro_supported": False,

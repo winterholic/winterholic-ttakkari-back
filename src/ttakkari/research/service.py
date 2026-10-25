@@ -671,6 +671,12 @@ async def promote_method(
     if not method:
         raise HTTPException(404, "research_method_not_found")
 
+    if method.scope == "system":
+        raise HTTPException(
+            422,
+            "시스템 시드 방법론은 직접 승격할 수 없습니다. 사용자 정의 방법론만 승격 가능합니다 (system_seed_methods_cannot_be_promoted).",
+        )
+
     final_status = "candidate" if run.execution_origin == "external_report" else target_status
     method.lifecycle_status = final_status
     method.promoted_from_run_id = run.id
@@ -766,6 +772,14 @@ async def adopt_best_result(
         raise HTTPException(400, "inconsistent_component_membership")
     if run.status != "succeeded":
         raise HTTPException(422, "only_succeeded_runs_can_be_adopted")
+
+    if status == "adopted" and promote_method_flag and exp.method_id:
+        exp_method = await db.get(Method, exp.method_id)
+        if exp_method and exp_method.scope == "system":
+            raise HTTPException(
+                422,
+                "시스템 시드 방법론은 직접 승격할 수 없습니다. 사용자 정의 방법론만 승격 가능합니다 (system_seed_methods_cannot_be_promoted).",
+            )
 
     if status == "adopted":
         dec_title = f"최적 결과물 채택: {cfg.label}"

@@ -161,6 +161,8 @@ class RetrievalEvalAdapter:
         available_models = ["hash_embedder"]
         details: dict[str, Any] = {
             "scope": scope,
+            "runtime": "scikit-learn",
+            "hardware": "cpu",
             "hash_embedder_ready": True,
             "bm25_ready": True,
         }

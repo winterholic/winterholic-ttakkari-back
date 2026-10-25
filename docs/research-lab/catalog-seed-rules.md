@@ -1,4 +1,4 @@
-# 카탈로그 시드 근거·수치·호환성 규칙 (3차 교정)
+# 카탈로그 시드 근거·수치·호환성 규칙 (4차 교정)
 
 대상: `src/ttakkari/research/catalog_seed/*.json`. 강제는 `tests/test_catalog_seed_contract.py`(JSON 의미 계약)와 `tests/test_catalog_seed_readiness_path.py`(loader→DB→readiness 경로)가 한다. 이 문서는 판단 기준과 항목별 결정을 남긴다.
 
@@ -81,3 +81,20 @@ methods 112개 유지. parameters 185 → 184(+`speculative_decoding.spec_type`,
 - `kernel_fusion`의 어댑터 힌트를 `external_report`로 바꿨다(어댑터가 `fused_*`를 거부하고 런타임 스위치가 없음).
 - `rag_retrieval`의 `normalize_embeddings` 파라미터는 지시에 따라 건드리지 않았다.
 - 어댑터 검증 `adapter-review-5e8f17e.md`가 기준 커밋에서도 실패했다고 기록한 `test_catalog_loader_full_112_matching`(`stats["relations"]` 126 != 128)은 시드·테스트 기대값 결함이 아니었다. 기준 커밋(HEAD~1) 시드를 현재 환경에서 loader로 적재하면 `{'methods': 112, 'relations': 128}`로 일치한다. 검증 worktree의 테스트는 그 worktree의 시드(128)를 읽고 loader는 editable 설치된 작업 중 worktree의 시드(Kokoro 관계 제거 중 126)를 읽어 생긴 동시 수정 경합으로 판단한다(추정). 3차 교정 후에는 `tests/test_research_v2_catalog.py`의 기대값을 methods 112, parameters 184, relations 126으로 맞췄다.
+
+## 8. 4차 교정 정책 및 결과 (TTS LUFS, combinations 실행 소비 게이팅, 시스템 시드 승격 거부)
+
+1. **TTS LUFS 방송 표준 정합**:
+   - `tts_audio_postprocessing`의 summary, principle, description, evidence에서 공식 방송 표준(EBU R128의 -23 LUFS)과 일반 선택 파라미터 목표값(-16 LUFS 기본값 및 -24~-10 범위)을 명확히 구분했다.
+   - -16 LUFS를 EBU R128 표준이나 특정 온라인 관행으로 단정하지 않고, 사용자가 선택하는 파라미터 목표 음량으로 정돈했다.
+   - 계약 검사기(`tests/test_catalog_seed_contract.py`)의 `NUMERIC_EFFECT_PATTERNS`에 `LUFS` 패턴을 추가하고, EBU R128과 -16 LUFS가 모순되게 결합된 문장을 주입할 경우 즉각 실패하는 음성 대조(negative control)를 추가했다.
+2. **combinations 하드웨어×런타임 실행 게이팅**:
+   - `readiness.py`가 `compatibility.combinations`를 정본으로 소비하도록 연결했다.
+   - 어댑터 `check_environment`의 `details`(`runtime`, `hardware`)를 읽어와 선언된 조합 튜플과 대조하며, 런타임 식별 정보가 모호하거나 미지원/미검증 조합일 경우 `environment_unavailable`(`is_executable=False`)로 fail-closed 처리한다.
+   - 이 Mac Studio(Apple Silicon Metal × llama.cpp)의 정상 실행 경로(`flash_attention`, `kv_cache_quantization`, `speculative_decoding`)는 `tool_integrated` 지원 표기를 정확히 유지한다.
+   - `planner.py`의 `validate_experiment_plan`에도 동일한 실행 가능성 검증을 연결하여 실행 불가 방법론 선택 시 `valid=False`를 반환하도록 했다.
+   - 가상 튜플 다운그레이드(hypothetical mutation) 및 식별 모호 어댑터 주입 시 fail-closed로 전환되는 음성 대조 테스트를 `tests/test_catalog_seed_readiness_path.py`에 추가했다.
+3. **System Seed 라이프사이클 보호 및 직접 승격 422 거부**:
+   - seed가 관리하는 system scope 행(`Method.scope == "system"`)에 대한 직접 승격을 `service.py`의 `promote_method` 및 `adopt_best_result`(채택+승격 플래그)에서 명시적 422(`system_seed_methods_cannot_be_promoted`)로 거부하도록 일관 정책을 적용했다.
+   - 채택 경로에서 거부 발생 시 선행 DB 플러시로 인한 중간 상태(BestResult, Decision Node)가 남지 않도록 사전 검증을 통해 완전 무결성을 보장했다.
+   - 사용자 scope 행(`scope != "system"`)은 정상 승격되며, 이후 `catalog_loader.load_catalog_seeds` 재실행(sync) 시에도 승격 상태, Run 연결, Decision 노드가 온전히 보존됨을 검증했다. Kokoro(`tts_kokoro_pipeline_tuning`)의 `deprecated` 상태도 sync 후 변함없이 유지된다.

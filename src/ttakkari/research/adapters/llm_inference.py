@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import platform
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -140,6 +142,10 @@ class LlmInferenceAdapter:
         except Exception:
             pass
 
+        is_darwin_arm64 = platform.system() == "Darwin" and platform.machine() in ("arm64", "aarch64")
+        hardware = "apple_silicon_metal" if is_darwin_arm64 else ("cuda" if shutil.which("nvidia-smi") else "cpu")
+        runtime = "llama.cpp"
+
         return AdapterEnvironmentStatus(
             adapter_id=self.id,
             ready=ready,
@@ -147,6 +153,8 @@ class LlmInferenceAdapter:
             reason=reason,
             available_models=available_models,
             details={
+                "runtime": runtime,
+                "hardware": hardware,
                 "server_path": str(server_path),
                 "server_exists": server_exists,
                 "allowlisted_aliases": list(models_dict.keys()),

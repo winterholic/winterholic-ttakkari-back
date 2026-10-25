@@ -806,8 +806,8 @@
       "slug": "tts_audio_postprocessing",
       "name": "Audio Postprocessing Pipeline (Loudness & De-essing)",
       "name_ko": "음성 오디오 후처리 파이프라인",
-      "summary": "합성된 음성 파형의 음량(LUFS)을 국제 방송 표준에 맞게 정규화하고, 치찰음(De-essing) 및 문장 앞뒤의 불필요한 무음(Silence)을 정밀 트리밍합니다.",
-      "principle": "EBU R128 표준에 따른 라우드니스 노멀라이제이션(-16 LUFS 등)을 적용하여 문장 간 볼륨 일관성을 유지하고, 하이패스/노치 필터로 보코더 고주파 잡음 및 팝핑을 억제합니다.",
+      "summary": "합성된 음성 파형의 음량(LUFS)을 목표치에 맞게 정규화하고, 치찰음(De-essing) 및 문장 앞뒤의 불필요한 무음(Silence)을 정밀 트리밍합니다.",
+      "principle": "EBU R128 등의 라우드니스 노멀라이제이션 원리를 적용하여 문장 간 볼륨 일관성을 유지(공식 방송 표준 권고 기준과 일반 선택 파라미터 목표값 분리)하고, 하이패스/노치 필터로 보코더 고주파 잡음 및 팝핑을 억제합니다.",
       "category": "tts",
       "targets": [
         "tts"
@@ -837,7 +837,7 @@
           "max": -10.0,
           "step": 0.5,
           "unit": "LUFS",
-          "description": "국제 오디오 방송 표준 목표 통합 음량",
+          "description": "후처리 정규화 목표 음량 (공식 방송 표준 EBU R128의 권고 기준과 구분되는 선택 파라미터)",
           "advanced": false,
           "required": false,
           "sweepable": true
@@ -891,7 +891,7 @@
           "title": "EBU R 128: Loudness normalisation and permitted maximum level of audio signals",
           "url": "https://tech.ebu.ch/publications/r128",
           "year": 2020,
-          "claim": "표준 문서: 방송 오디오 라우드니스 정규화 권고(프로그램 라우드니스 목표 -23 LUFS). 온라인·팟캐스트용 목표값은 이 문서가 아닌 별도 관행이며 이 카탈로그는 근거 없이 수치를 적지 않음."
+          "claim": "공식 표준 문서: 방송 오디오 라우드니스 정규화 권고(프로그램 라우드니스 목표 -23 LUFS, 조건: EBU R 128 표준 방송 오디오 규격). 파라미터 조절 범위 및 기본값은 사용자가 선택하는 목표 음량이며 공식 방송 표준과 구분됨."
         }
       ],
       "evidence_status": "source_reported",

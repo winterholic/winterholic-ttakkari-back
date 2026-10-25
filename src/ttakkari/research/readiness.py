@@ -142,6 +142,57 @@ def compute_execution_status(
             matched_adapter_id=matched_adapter.id,
         )
 
+    # Check hardware×runtime combinations if defined (combinations is authoritative over raw facet lists)
+    combos = compatibility.get("combinations")
+    if isinstance(combos, list) and combos:
+        # If matched adapter is external_report, it can never locally execute.
+        if matched_adapter.id == "external_report":
+            has_local_exec = any(c.get("status") == "local_executable" for c in combos)
+            if not has_local_exec:
+                return ExecutionStatusResult(
+                    status="environment_unavailable",
+                    status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+                    is_executable=False,
+                    unavailable_reason="로컬 실행 가능한 하드웨어/런타임 조합이 정의되지 않았습니다 (외부 결과 등록 전용).",
+                    matched_adapter_id=matched_adapter.id,
+                )
+
+        # For execution adapters, inspect adapter's runtime identity from check_environment details
+        details = getattr(env_status, "details", {}) or {}
+        adapter_hw = details.get("hardware")
+        adapter_rt = details.get("runtime")
+
+        # Fail-closed if runtime identity is missing or ambiguous
+        if not adapter_hw or not adapter_rt:
+            return ExecutionStatusResult(
+                status="environment_unavailable",
+                status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+                is_executable=False,
+                unavailable_reason="어댑터 환경의 하드웨어 또는 런타임 식별 정보(runtime/hardware identity)가 모호하여 fail-closed 처리되었습니다.",
+                matched_adapter_id=matched_adapter.id,
+            )
+
+        # Match against authoritative combinations
+        matching_tuple = None
+        for c in combos:
+            if c.get("hardware") == adapter_hw and c.get("runtime") == adapter_rt:
+                matching_tuple = c
+                break
+
+        if matching_tuple is None or matching_tuple.get("status") != "local_executable":
+            t_status = matching_tuple.get("status") if matching_tuple else "not_listed"
+            t_note = matching_tuple.get("note", "") if matching_tuple else ""
+            reason = f"조합 ({adapter_hw} × {adapter_rt})은 현재 환경에서 로컬 실행 불가 상태입니다 (상태: {t_status})."
+            if t_note:
+                reason = f"{reason} {t_note}".strip()
+            return ExecutionStatusResult(
+                status="environment_unavailable",
+                status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+                is_executable=False,
+                unavailable_reason=reason,
+                matched_adapter_id=matched_adapter.id,
+            )
+
     # 4. Check method whitelist support (fail-closed: missing or empty supported_methods denies Full Support)
     supported_methods = getattr(matched_adapter, "supported_methods", None)
     is_method_supported = False

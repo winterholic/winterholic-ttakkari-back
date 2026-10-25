@@ -93,6 +93,7 @@ NUMERIC_EFFECT_PATTERNS = [
     re.compile(_NOT_IDENT_BEFORE + r"\d+\.\d+\s*(?:비트|bit)(?![A-Za-z])"),
     re.compile(r"(?:TTFA|RTF|FID|MRR@?\d*|nDCG@?\d*|CER|WER|perplexity|pass@\d+)\s*[<>=:]?\s*" + _NUM, re.I),
     re.compile(_NOT_IDENT_BEFORE + _NUM + r"\s*(?:[~–-]\s*" + _NUM + r"\s*)?초(?![가-힣])\s*(?:이내|미만|만에|단축|소요)"),
+    re.compile(_NOT_IDENT_BEFORE + r"-?" + _NUM + r"\s*LUFS\b", re.I),
 ]
 # Words that mark "this number comes from a source" in the claim text itself.
 SOURCE_MARKER_PATTERN = re.compile(r"논문|원논문|초록|README|공식|문서|보고|evidence|산술")
@@ -610,6 +611,9 @@ def test_validators_accept_a_well_formed_method():
                          "claim": "처리량 2.4배 개선"}]), "need an explicit '조건:'"),
         (dict(expected_effects=["처리량 2.4배 개선"]), "must be attributed to its source"),
         (dict(expected_effects=["TTFA 0.70초 달성"]), "effect number"),
+        # LUFS claim without conditioned backing evidence (reviewer's EBU R128 -16 LUFS contradiction)
+        (dict(principle="EBU R128 표준에 따른 라우드니스 노멀라이제이션(-16 LUFS 등)을 적용"),
+         "effect number '-16 LUFS' is not backed by a conditioned evidence claim"),
         # unquantified magnitude
         (dict(summary="속도가 대폭 향상됩니다"), "unquantified magnitude word"),
         # deprecated

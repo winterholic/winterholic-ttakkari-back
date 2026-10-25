@@ -345,7 +345,8 @@ async def test_l2_adapter_runs_verifies_quotes_and_counts_the_budget():
         assert len(exposes) == 1 and exposes[0].extractor_tier == "L2"
         assert not list(await db.scalars(select(KbAssertion).where(KbAssertion.predicate == "hallucinated")))
         rel = (await db.scalars(select(KbRelation).where(KbRelation.relation_type == "uses"))).all()
-        assert len(rel) == 1 and rel[0].status == "candidate"
+        # 리드 결정 1: L2 가 낸 관계가 정확한 인용 검증을 통과해 근거 행이 있으면 단일 진입점으로 active 가 된다.
+        assert len(rel) == 1 and rel[0].status == "active" and rel[0].evidence_count >= 1
         # 정확 오프셋으로 검증된 근거: 저장된 구간이 패시지 본문과 글자 그대로 같다
         ev = (await db.scalars(select(KbEvidence).join(KbRelationEvidence, KbRelationEvidence.evidence_id == KbEvidence.id).where(
             KbRelationEvidence.relation_id == rel[0].id))).one()

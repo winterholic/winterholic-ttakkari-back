@@ -6,7 +6,9 @@ Provides:
 
 Scope/visibility are never defaulted to 'global': they come from the one shared policy (ttakkari.kb_visibility),
 and every derived row (assertion, relation) takes derive_derived_policy over its sources.
-Relations are stored as status='candidate' together with real kb_relation_evidence rows; nothing is activated here.
+Relations are stored as status='candidate' together with real kb_relation_evidence rows. Only relations from L2 or an
+explicit sentence pattern (basis in PROMOTABLE_BASES) that carry a quote-verified evidence row are promoted to active,
+and only through the schema's single entry point (kb_pipeline.relation_promotion). Heading-derived structure stays candidate.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from ttakkari.kb_ontology_models import (
 from ttakkari.kb_pipeline.extract_l0 import extract_l0_from_passages
 from ttakkari.kb_pipeline.extract_l1 import extract_l1_screen
 from ttakkari.kb_pipeline.extract_l2 import extract_l2_from_passages
+from ttakkari.kb_pipeline.extract_relations import build_label_index, extract_explicit_relations
 from ttakkari.kb_pipeline.quote_verifier import (
     CandidateAssertion,
     CandidateEntity,
@@ -43,6 +46,7 @@ from ttakkari.kb_pipeline.quote_verifier import (
     VerificationReport,
     verify_extraction_candidates,
 )
+from ttakkari.kb_pipeline.relation_promotion import normalize_relation_type, promote_with_evidence
 from ttakkari.kb_visibility import (
     FAIL_CLOSED,
     derive_derived_policy,
@@ -93,6 +97,7 @@ class PersistenceResult:
     relations_reused: int = 0
     relations_scope_blocked: int = 0
     relation_evidence_created: int = 0
+    relations_promoted: int = 0
     mentions_created: int = 0
     evidences_created: int = 0
     evidences_reused: int = 0
@@ -191,9 +196,34 @@ async def extract_revision_knowledge(
         else:
             merged_entities[key] = ent
 
+    # 명시적 서술 패턴 관계: 끝점은 시드 사전과 이번 문서 후보의 표기만 인정한다(새 개념을 만들지 않는다).
+    label_index = build_label_index(
+        opt.known_entities or {},
+        {ent.canonical_name: list(ent.aliases) for ent in merged_entities.values()},
+    )
+    explicit = extract_explicit_relations(
+        passages, label_index, known_candidates={ent.canonical_name for ent in merged_entities.values()}
+    )
+    for name in sorted(explicit.seed_endpoints):
+        meta = (opt.known_entities or {}).get(name)
+        if meta is None:
+            continue
+        merged_entities[(norm_name(name), meta.get("kind", "concept"))] = CandidateEntity(
+            name=name,
+            canonical_name=name,
+            aliases=list(meta.get("aliases", [])),
+            kind=meta.get("kind", "concept"),
+            domain=meta.get("domain", "general"),
+            summary=meta.get("summary", ""),
+            confidence=0.9,
+            origin_scope=opt.origin_scope,
+            visibility=opt.visibility,
+            alias_source="seed",
+        )
+
     candidate_assertions = [*l0_res.assertions, *l2_res.assertions]
-    candidate_relations = [*l0_res.relations, *l2_res.relations]
-    candidate_mentions = [*l0_res.mentions, *l1_res.mentions]
+    candidate_relations = [*l0_res.relations, *explicit.relations, *l2_res.relations]
+    candidate_mentions = [*l0_res.mentions, *l1_res.mentions, *explicit.mentions]
 
     v_report = verify_extraction_candidates(
         passages, candidate_assertions, candidate_relations, candidate_mentions
@@ -210,6 +240,7 @@ async def extract_revision_knowledge(
         "l2_calls_made": l2_res.calls_made,
         "l2_assertions_count": len(l2_res.assertions),
         "l2_relations_count": len(l2_res.relations),
+        "explicit_relations_count": len(explicit.relations),
         "verified_assertions": len(v_report.verified_assertions),
         "rejected_assertions": len(v_report.rejected_assertions),
         "verified_relations": len(v_report.verified_relations),
@@ -526,13 +557,14 @@ async def persist_extracted_knowledge(
         r_scope, r_vis = derive_derived_policy(
             [(origin_scope, visibility), entity_policy[src_id], entity_policy[tgt_id]]
         )
+        relation_type = normalize_relation_type(r.relation_type)
 
         rel = (
             await db.scalars(
                 select(KbRelation).where(
                     KbRelation.source_entity_id == src_id,
                     KbRelation.target_entity_id == tgt_id,
-                    KbRelation.relation_type == r.relation_type,
+                    KbRelation.relation_type == relation_type,
                 )
             )
         ).first()
@@ -547,7 +579,7 @@ async def persist_extracted_knowledge(
                 visibility=r_vis,
                 source_entity_id=src_id,
                 target_entity_id=tgt_id,
-                relation_type=r.relation_type,
+                relation_type=relation_type,
                 weight=r.weight,
                 evidence_count=0,
                 representative_evidence_id=ev_id,
@@ -559,7 +591,8 @@ async def persist_extracted_knowledge(
         else:
             summary.relations_reused += 1
 
-        if await db.get(KbRelationEvidence, (rel.id, ev_id)) is None:
+        had_evidence = await db.get(KbRelationEvidence, (rel.id, ev_id)) is not None
+        if not had_evidence:
             db.add(KbRelationEvidence(relation_id=rel.id, evidence_id=ev_id, confidence=r.weight, relation="supports"))
             await db.flush()
             summary.relation_evidence_created += 1
@@ -570,6 +603,11 @@ async def persist_extracted_knowledge(
                 )
                 or 0
             )
+        # 검증된 근거 행이 있는 L2/명시적 서술 관계만 단일 진입점으로 승격한다. 구조 유추 관계는 candidate 로 남는다.
+        if rel.status == "candidate" and await promote_with_evidence(
+            db, rel, ev_id, basis=r.basis, confidence=r.weight
+        ):
+            summary.relations_promoted += 1
 
     await db.flush()
 

@@ -75,6 +75,9 @@ class CandidateRelation:
     relation_type: str = "related_to"  # part_of | manages | depends_on | uses | implements | alternative_to | related_to
     weight: float = 1.0
     status: str = "candidate"  # Always candidate initially (schema single entrypoint)
+    # 어디서 나온 관계인가. structural(헤딩 계층 유추) 은 candidate 로 남고, explicit(문장 패턴)·l2(모델 추출)는
+    # 인용 검증을 통과하면 persist 단계가 active 로 승격한다(kb_pipeline.relation_promotion).
+    basis: str = "structural"  # structural | explicit | l2
     evidence_quote: str = ""
     passage_id: uuid.UUID | None = None
     span_start: int = -1

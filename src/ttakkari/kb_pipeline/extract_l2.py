@@ -351,6 +351,7 @@ async def extract_l2_from_passages(
                     relation_type=rtype,
                     weight=1.0,
                     status="candidate",
+                    basis="l2",
                     evidence_quote=quote,
                     passage_id=p.id,
                 )

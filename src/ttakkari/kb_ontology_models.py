@@ -518,14 +518,16 @@ async def activate_relation_with_evidence(
             f"Cannot activate relation {relation.id}: evidence {evidence_id} not found in kb_evidence"
         )
 
-    rel_ev = KbRelationEvidence(
-        relation_id=relation.id,
-        evidence_id=evidence_id,
-        confidence=confidence,
-        relation=relation_kind,
-    )
-    session.add(rel_ev)
-    await session.flush()
+    rel_ev = await session.get(KbRelationEvidence, (relation.id, evidence_id))
+    if rel_ev is None:
+        rel_ev = KbRelationEvidence(
+            relation_id=relation.id,
+            evidence_id=evidence_id,
+            confidence=confidence,
+            relation=relation_kind,
+        )
+        session.add(rel_ev)
+        await session.flush()
 
     count_res = await session.scalar(
         select(func.count())
@@ -533,7 +535,9 @@ async def activate_relation_with_evidence(
         .where(KbRelationEvidence.relation_id == relation.id)
     )
     relation.evidence_count = count_res or 1
-    relation.representative_evidence_id = evidence_id
+    # 이미 active 인 관계의 대표 근거는 덮어쓰지 않는다(재실행·추가 근거로 대표가 흔들리지 않게).
+    if relation.status != "active" or relation.representative_evidence_id is None:
+        relation.representative_evidence_id = evidence_id
     relation.status = "active"
     return rel_ev
 
@@ -555,14 +559,16 @@ def activate_relation_with_evidence_sync(
             f"Cannot activate relation {relation.id}: evidence {evidence_id} not found in kb_evidence"
         )
 
-    rel_ev = KbRelationEvidence(
-        relation_id=relation.id,
-        evidence_id=evidence_id,
-        confidence=confidence,
-        relation=relation_kind,
-    )
-    session.add(rel_ev)
-    session.flush()
+    rel_ev = session.get(KbRelationEvidence, (relation.id, evidence_id))
+    if rel_ev is None:
+        rel_ev = KbRelationEvidence(
+            relation_id=relation.id,
+            evidence_id=evidence_id,
+            confidence=confidence,
+            relation=relation_kind,
+        )
+        session.add(rel_ev)
+        session.flush()
 
     count_res = session.scalar(
         select(func.count())
@@ -570,6 +576,7 @@ def activate_relation_with_evidence_sync(
         .where(KbRelationEvidence.relation_id == relation.id)
     )
     relation.evidence_count = count_res or 1
-    relation.representative_evidence_id = evidence_id
+    if relation.status != "active" or relation.representative_evidence_id is None:
+        relation.representative_evidence_id = evidence_id
     relation.status = "active"
     return rel_ev

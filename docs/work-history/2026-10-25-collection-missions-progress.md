@@ -1,5 +1,15 @@
 # 수집 플랫폼 임무 중심 리팩토링 — 진행 중
 
+## 후속 좁은 독립 검증 — scheduler/reconcile 경합 (2026-10-25 15:23 KST)
+- 앞선 선택검증 6+19 backend와 front 9건은 범위 한정 PASS로 기록됨. C1 전체 및 운영 완료를 뜻하지 않는다. 이번에는 미검증 scheduler/reconcile 경합만 실행했고, 247회귀·ML 실험·기존 선택 검증은 재실행하지 않았다.
+- 실제 격리 PostgreSQL의 별도 세션으로 ① 같은 `now`를 쓰는 두 `schedule_due_runs`가 due 후보를 모두 먼저 읽은 뒤 시작, store 권한 철회로 reconcile child가 0개인 경우 ② scheduler가 due 후보를 확보한 직후 별도 세션 reconcile과 경쟁하는 경우를 검증했다. 양쪽 모두 5초 timeout으로 락 교착도 관찰했다.
+- **RED 재현:** `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_missions.py::test_two_stale_scheduler_ticks_do_not_start_two_runs_when_reconcile_queues_no_job --tb=short` → `FAILED`; 두 tick 반환값 `[1, 1]` (`sum=2`)로 같은 due 시각에 회차 2·3이 시작됐다. 실제 중복을 만드는 조건은 낡은 due 후보가 mission advisory lock 대기 후에도 다시 검증되지 않는 것이었다.
+- **교정:** `start_scheduled_run`이 mission/source lock을 얻은 뒤 잠긴 source 중 아직 `next_run_at <= now`인 활성 주기가 하나라도 있는지 재확인한다. 이미 앞선 tick이 due 시간을 이동했으면 새 회차를 만들지 않는다. 이전 회차가 진행 중이라 skip 기록을 남기는 기존 흐름은 유지한다.
+- **GREEN:** `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_missions.py::test_two_stale_scheduler_ticks_do_not_start_two_runs_when_reconcile_queues_no_job tests/test_collection_missions.py::test_scheduler_and_reconcile_race_keep_one_run_child_within_budget --tb=short` → `2 passed in 1.21s`; 출력 `db reset: 2 selective (avg 8.0/109 tables), 0 forced full, 0 fell back to full`. 첫 사례는 시작 1회·run_seq 2·child 0개, 두 번째는 별도 세션 경합 후 run_seq 2 child 1개·총 예약/사용량 ≤ 3쪽을 확인했다. timeout 내 완료되어 이 두 경로의 교착은 관찰되지 않았다.
+- `../back/.venv/bin/ruff check src/ttakkari/collector/missions.py tests/test_collection_missions.py` → `All checks passed!`; `git diff --check` 출력 없음.
+- 코드/테스트 커밋: `d2f5fc64a53519f9cc89372e9f93cb9def7f62b0` (`fix(collector): recheck scheduled run due time under lock`). push/merge/deploy 없음. 변경 파일은 `src/ttakkari/collector/missions.py`, `tests/test_collection_missions.py` 및 이 진행 기록뿐이다.
+- 운영 DB, 로그인 UI, C1 전체, 기타 미검증 범위는 계속 미검증이다.
+
 ## 현재 이어받을 자리 — 2026-10-25 15:15 KST
 - 전체 C1–C7는 여전히 진행 중. 아래 `2026-10-25 15:00 KST`는 이전 이력이다. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
 - **주기 갱신 회차(run) 단위 예산 격리 및 우회 방지 구현 완료**:

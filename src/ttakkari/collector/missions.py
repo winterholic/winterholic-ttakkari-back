@@ -959,6 +959,11 @@ async def start_scheduled_run(db, mission_id: uuid.UUID, *, now: datetime, tenan
     if mission.status in ("paused", "cancelled") or not interval:
         advance()
         return 0
+    # The due list is read before taking the mission lock. Another scheduler tick may have
+    # advanced these source rows while this tick waited, so only a still-due row may start a run.
+    if not any(source.enabled and source.interval_minutes is not None and source.next_run_at is not None
+               and source.next_run_at <= now for source in sources):
+        return 0
     in_progress = await db.scalar(select(func.count()).select_from(CollectorJob).join(
         CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id).where(
             CollectionMissionJob.mission_id == mission.id, CollectorJob.status.not_in(TERMINAL)))

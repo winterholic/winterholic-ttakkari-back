@@ -7,7 +7,11 @@
 
 from __future__ import annotations
 
-from ttakkari.kb_ontology.compat import KNOWN_HOMONYMS, is_domain_compatible, is_kind_compatible
+from ttakkari.kb_ontology.compat import (
+    KNOWN_HOMONYMS,
+    is_domain_compatible,
+    is_kind_compatible,
+)
 from ttakkari.kb_ontology.resolver import (
     EmbedFn,
     EntityResolutionStep,

@@ -440,7 +440,7 @@ async def test_reprocessing_same_passage_keeps_counts_links_and_aliases(async_db
 
     ids1 = await run()
     ent = (await async_db.execute(select(KbEntity).where(KbEntity.id == ids1[0]))).scalar_one()
-    snapshot = lambda: (  # noqa: E731
+    snapshot = lambda: (
         ent.mention_count, ent.document_count,
         None,
     )
@@ -471,8 +471,10 @@ async def test_mention_count_is_unique_entity_passage_rows_across_documents(asyn
 # ---------------------------------------------------------------------
 def test_derive_scope_policy() -> None:
     work = KbDocumentAccess(document_id=uuid.uuid4(), scope="work")
-    personal_default = KbDocumentAccess(document_id=uuid.uuid4(), scope="personal")  # visibility 누락 → 스키마 기본 work_only
-    assert personal_default.visibility == "work_only"
+    personal_default = KbDocumentAccess(document_id=uuid.uuid4(), scope="personal")  # visibility 누락(flush 시 스키마가 global 파생)
+    assert personal_default.visibility in (None, "global")
+    personal_hidden = KbDocumentAccess(document_id=uuid.uuid4(), scope="personal", visibility="work_only")
+    assert derive_scope([personal_hidden]).visibility == "work_only"  # 명시적으로 숨긴 personal 은 따른다
     assert derive_scope([work]).visibility == "work_only" and derive_scope([work]).origin_scope == "work"
     assert derive_scope([personal_default]).visibility == "global"  # 정책: personal→global(누락 시에도)
     assert derive_scope([personal_default, work]).visibility == "work_only"
@@ -572,24 +574,32 @@ PG_URL = os.environ.get("KB3_PG_URL")
 
 @pytest_asyncio.fixture
 async def pg_db() -> AsyncGenerator[AsyncSession]:
-    """pgvector/pgvector:pg17 컨테이너 등 실제 PostgreSQL(KB3_PG_URL=postgresql+asyncpg://...)에 kb_* 테이블을 만든다."""
+    """pgvector/pgvector:pg17 컨테이너 등 실제 PostgreSQL(KB3_PG_URL=postgresql+asyncpg://...)에 kb_* 테이블을 만든다.
+
+    기본은 SQLAlchemy create_all. KB3_PG_SCHEMA=migrated 이면 alembic 0072 까지 적용된 DB 를 그대로 쓴다."""
     if not PG_URL:
         pytest.skip("KB3_PG_URL 미지정: 실제 PostgreSQL 왕복은 Docker 컨테이너로 따로 실행")
-    import ttakkari.collector.control_models  # noqa: F401
-    import ttakkari.kb_models  # noqa: F401
-    import ttakkari.kb_ontology_models  # noqa: F401
-    import ttakkari.kb_pipeline_models  # noqa: F401
+    import ttakkari.collector.control_models
+    import ttakkari.kb_models
+    import ttakkari.kb_ontology_models
+    import ttakkari.kb_pipeline_models
     import ttakkari.kb_vector_models  # noqa: F401
     from ttakkari.models import Base
 
     engine = create_async_engine(PG_URL)
-    async with engine.begin() as conn:
-        await conn.execute(text("DROP SCHEMA public CASCADE"))
-        await conn.execute(text("CREATE SCHEMA public"))
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.run_sync(
-            lambda c: Base.metadata.create_all(c, tables=[t for t in Base.metadata.sorted_tables if t.name.startswith("kb_")])
-        )
+    if os.environ.get("KB3_PG_SCHEMA") == "migrated":
+        # alembic upgrade head 로 만든 새 DB(트리거·0072 제약 포함)를 그대로 쓴다. 비우지 않으므로 DB 는 실행마다 새로 만든다.
+        pass
+    else:
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP SCHEMA public CASCADE"))
+            await conn.execute(text("CREATE SCHEMA public"))
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await conn.run_sync(
+                lambda c: Base.metadata.create_all(
+                    c, tables=[t for t in Base.metadata.sorted_tables if t.name.startswith("kb_")]
+                )
+            )
     async with async_sessionmaker(engine, expire_on_commit=False)() as session:
         yield session
     await engine.dispose()
@@ -599,7 +609,13 @@ async def _pg_make_passage(db: AsyncSession, scope: str) -> Doc:
     """FK 를 만족하는 실제 문서·리비전·패시지·근거·접근 행을 만든다."""
     import hashlib
 
-    from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
+    from ttakkari.kb_models import (
+        KbDocument,
+        KbEvidence,
+        KbPassage,
+        KbRevision,
+        KbSource,
+    )
 
     n = uuid.uuid4().hex
     body = f"Kubernetes 쿠버네티스 {n}"

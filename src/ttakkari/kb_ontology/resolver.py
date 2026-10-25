@@ -172,8 +172,9 @@ def _visibility_token(item: Any) -> str | None:
     if scope == "work" or origin == "work":
         return "work_only"
     if scope == "personal":
-        # 확정 정책: personal 문서는 visibility 컬럼이 비었거나 기본값(work_only)이어도 global.
-        return "global"
+        # 확정 정책: personal 문서는 visibility 가 누락(미flush 객체의 None 포함)이어도 global.
+        # 명시적으로 work_only 로 숨긴 personal 문서는 그 의도를 따른다(fail-closed).
+        return "work_only" if visibility == "work_only" else "global"
     if visibility == "global" and origin == "personal":
         return "global"
     return None
@@ -517,7 +518,7 @@ async def _similarity_candidates(
                 raise ValueError("embedding count mismatch")
             for c, vec in zip(top, vectors[1:], strict=True):
                 cos_sims[c.id] = cosine_similarity(vectors[0], vec)
-        except Exception as exc:  # 임베딩 실패는 후보 생성만 약화시킨다. 철자 후보는 그대로 만든다.
+        except Exception as exc:  # noqa: BLE001 - 임베딩 실패는 후보 생성만 약화시킨다. 철자 후보는 그대로 만든다.
             logger.warning("entity similarity embedding unavailable: %s", exc)
             note_suffix = " (embedding unavailable)"
 
@@ -789,7 +790,7 @@ async def _link_and_recount(db: AsyncSession, ctx: _Ctx, entity: KbEntity) -> No
 async def recount_entity(db: AsyncSession, entity: KbEntity) -> None:
     """mention_count/document_count 를 kb_document_entities 의 유일 행에서 계산한다(증분 덧셈 금지).
 
-    global 엔터티는 personal 문서에서 온 행만 센다. work 문서나 접근 정보가 없는 문서의 행은
+    global 엔터티는 접근 행이 personal·global 인 문서에서 온 행만 센다. work 문서나 접근 정보가 없는 문서의 행은
     연결은 남아 있어도 global 카운트에 들어가지 않는다.
     """
     stmt = select(
@@ -799,7 +800,11 @@ async def recount_entity(db: AsyncSession, entity: KbEntity) -> None:
     if entity.visibility == "global":
         stmt = stmt.join(
             KbDocumentAccess, KbDocumentAccess.document_id == KbDocumentEntity.document_id
-        ).where(KbDocumentAccess.scope == "personal", KbDocumentAccess.origin_scope != "work")
+        ).where(
+            KbDocumentAccess.scope == "personal",
+            KbDocumentAccess.origin_scope != "work",
+            KbDocumentAccess.visibility == "global",
+        )
     mentions, documents = (await db.execute(stmt)).one()
     entity.mention_count = int(mentions)
     entity.document_count = int(documents)

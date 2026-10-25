@@ -534,7 +534,10 @@ async def _card_v3(db: AsyncSession, access: KbAccessContext, cards: list[dict[s
             "id": card["entity_id"],
             "name": card["canonical_name"],
             "aliases": aliases.get(ent_id, []),
-            "canonical": {"summary": card.get("canonical_definition") or "", "key_facts": _fact_strings(card.get("key_facts")), "updated_at": None},
+            # 근거 있는 정본이 아직 없는 개념은 canonical 을 null 로 둔다(프론트는 canonical?: null 을 처리한다).
+            "canonical": None if card.get("has_canonical") is False else {
+                "summary": card.get("canonical_definition") or "", "key_facts": _fact_strings(card.get("key_facts")), "updated_at": None,
+            },
             "neighbors": neighbors,
             "open_conflict_count": conflict_counts.get(ent_id, 1 if card.get("has_open_conflict") else 0),
             "document_count": ent.document_count if ent else None,
@@ -555,6 +558,7 @@ async def search_v3(
     result = await kb_retrieval.search(
         db, query=query, limit=limit, offset=offset, document_id=document_id, current_only=current_only,
         access_context=access, filters=filters or None, mode=mode, include_candidates=include_candidates,
+        include_uncanonical_entities=True,
     )
     result["matched_entities"] = await _card_v3(db, access, result.get("matched_entities") or [])
     for item in result["items"]:

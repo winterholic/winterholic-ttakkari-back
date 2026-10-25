@@ -509,6 +509,7 @@ async def search(
     filters: dict[str, Any] | None = None,
     mode: str = "hybrid",
     include_candidates: bool = False,
+    include_uncanonical_entities: bool = False,
 ) -> dict[str, Any]:
     """KB v3 5경로 그래프 통합 하이브리드 검색.
 
@@ -653,6 +654,33 @@ async def search(
             canonical_cards = await fetch_canonical_cards(
                 db, matched_ent_ids, ctx, expanded_relations
             )
+            if include_uncanonical_entities:
+                # 정본(근거 있는 정의·사실)이 아직 없는 일치 엔터티도 카드로 돌려준다. 정본을 지어내지 않고 canonical 이 비어 있음을
+                # 그대로 드러낸다(관계·문서 연결만 있는 개념). 기본 응답(에이전트·MCP)에는 영향이 없다.
+                have = {c["entity_id"] for c in canonical_cards}
+                rel_by_entity: dict[str, list[dict[str, Any]]] = {}
+                for rel in expanded_relations:
+                    rel_by_entity.setdefault(rel["source_entity"]["id"], []).append(rel)
+                    rel_by_entity.setdefault(rel["target_entity"]["id"], []).append(rel)
+                for raw in matched_entities_raw:
+                    eid = str(raw["entity_id"])
+                    if eid in have:
+                        continue
+                    canonical_cards.append({
+                        "entity_id": eid,
+                        "canonical_name": raw["canonical_name"],
+                        "norm_name": raw["norm_name"],
+                        "entity_kind": raw["entity_kind"],
+                        "domain": raw["domain"],
+                        "canonical_definition": "",
+                        "key_facts": [],
+                        "has_open_conflict": False,
+                        "version_no": None,
+                        "supporting_evidence_ids": [],
+                        "source_document_ids": [],
+                        "relations": rel_by_entity.get(eid, []),
+                        "has_canonical": False,
+                    })
 
     # -------------------------------------------------------------
     # 경로 3 & 4에서 추가된 패시지들의 메타데이터 일괄 로드

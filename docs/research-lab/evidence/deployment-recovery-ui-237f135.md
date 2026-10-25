@@ -49,3 +49,5 @@ Vite 개발 서버의 /sw.js가 text/html MIME으로 응답한 service-worker �
 ## 다음 실행
 
 기존 controller `2f8896ee`가 필수 전체 gate를 소유한다. 다음 보고/Run에서 결과를 한 번 복원하고, 활성 revision을 확인한 뒤 frontend main/Vercel → A 실제 Metal/RuntimeLease/raw → 운영 manage_research MCP → R1~R16/PMS 최종 대조를 잇는다. 원문 UX5/7의 위 격리 UI 공백은 보완했으며 운영 검증으로 확대하지 않는다. PMS7의 원래 확장 조건도 자동 done 처리하지 않는다.
+
+후속 2026-10-26: 위 testing 표시는 당시 상태다. 2f8896ee는 3161pass 뒤 transfer 진단 로그 수집 검사에서 실패했다. migration→transfer 순서로 별개 로그 격리 결함을 재현하고 시험 helper만 교정한 근거는 [migration-logging-isolation-fix.md](migration-logging-isolation-fix.md)다. 이 문서의 기존 실제 UI 인수는 유효하다. 다음 예약 ID/실행 소유자는 manage_work 최신 revision에서 복원한다.

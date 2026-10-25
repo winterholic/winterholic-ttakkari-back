@@ -37,7 +37,7 @@ from ttakkari.kb_pipeline import (
     KbPipelineWorker,
     LinkingProcessor,
     StageProcessorRegistry,
-    StageResult,
+    get_default_worker,
     retry_pipeline_job,
 )
 from ttakkari.kb_pipeline_models import KbPipelineJob, KbPipelineStage
@@ -72,7 +72,13 @@ def _env(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "kb_semantic_enabled", True)  # 해시 임베딩 백엔드(테스트 conftest) 로 실제 pgvector 행을 만든다
     monkeypatch.setattr(s, "kb_l2_adapter", "disabled")
+    # 앱이 띄운 백그라운드 소비자의 기본 워커가 이 시험의 잡을 먼저 가져가지 못하게 멈춘다(테스트가 쓰는 워커만 claim 한다).
+    default_worker = get_default_worker()
+    was_paused = default_worker.claiming_paused
+    default_worker.pause_claiming()
     yield
+    if not was_paused:
+        default_worker.resume_claiming()
     if root.exists():
         shutil.rmtree(root)
 
@@ -204,7 +210,7 @@ async def test_register_then_worker_runs_all_six_stages_with_real_processors():
 
 async def test_work_and_personal_documents_are_isolated_and_derived_rows_follow_sources():
     await _register(DOC_TEXT, scope="personal")
-    work_res, work_job = await _register(WORK_TEXT, scope="work")
+    work_res, _work_job = await _register(WORK_TEXT, scope="work")
     assert await _drain(_worker()) == 2
 
     async with sessionmaker()() as db:
@@ -238,7 +244,7 @@ async def test_work_and_personal_documents_are_isolated_and_derived_rows_follow_
 
 
 async def test_extracting_failure_isolated_then_retry_from_extracting_resumes():
-    res, job_id = await _register(DOC_TEXT)
+    _res, job_id = await _register(DOC_TEXT)
 
     class FailExtracting:
         calls = 0
@@ -371,7 +377,10 @@ async def test_daily_budget_is_shared_across_documents_and_exhaustion_degrades(m
 
 
 async def test_relation_without_verified_evidence_is_never_stored():
-    from ttakkari.kb_pipeline.extractor_step import ExtractionStageResult, persist_extracted_knowledge
+    from ttakkari.kb_pipeline.extractor_step import (
+        ExtractionStageResult,
+        persist_extracted_knowledge,
+    )
     from ttakkari.kb_pipeline.quote_verifier import CandidateEntity, CandidateRelation
 
     res, _job = await _register(DOC_TEXT)
@@ -390,7 +399,10 @@ async def test_relation_without_verified_evidence_is_never_stored():
 
 async def test_persistence_defaults_to_work_only_when_document_has_no_access_row():
     from ttakkari.collector.control_models import KbDocumentAccess
-    from ttakkari.kb_pipeline.extractor_step import ExtractionStageResult, persist_extracted_knowledge
+    from ttakkari.kb_pipeline.extractor_step import (
+        ExtractionStageResult,
+        persist_extracted_knowledge,
+    )
     from ttakkari.kb_pipeline.quote_verifier import CandidateEntity
 
     res, _job = await _register(DOC_TEXT)
@@ -410,3 +422,25 @@ async def test_persistence_defaults_to_work_only_when_document_has_no_access_row
     async with sessionmaker()() as db:
         ent = (await db.scalars(select(KbEntity).where(KbEntity.canonical_name == "Z"))).one()
         assert (ent.origin_scope, ent.visibility) == ("work", "work_only")
+
+
+async def test_binary_source_with_only_a_raw_decoded_revision_holds_at_parsing_not_succeeds():
+    """PDF 원본인데 리비전 본문이 원시 바이트 디코딩이면 파싱 단계는 성공으로 위장하지 않고 held 로 남는다."""
+    from ttakkari.kb_pipeline import enqueue_pipeline_job
+    from ttakkari.kb_store import ingest_source, segment_revision
+
+    async with sessionmaker()() as db:
+        res = await ingest_source(
+            db, source_key="upload:fake.pdf", data=b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n",
+            kind="upload", locator="fake.pdf", media_type="application/pdf", title="fake", lang=None,
+        )
+        await segment_revision(db, res.revision_id)
+        job = await enqueue_pipeline_job(db, document_id=res.document_id, revision_id=res.revision_id)
+        await db.commit()
+        job_id = job.id
+    assert await _drain(_worker()) == 1
+    st = await _stages(job_id)
+    assert st[STAGE_PARSING].status == "held" and st[STAGE_PARSING].detail["missing_capability"] == "parser_revision_required"
+    assert st[STAGE_CHUNKING].status == "skipped" and st[STAGE_INDEXING].status == "skipped"
+    job = await _job(job_id)
+    assert job.status == "held" and job.hold_reason == "parser_revision_required"

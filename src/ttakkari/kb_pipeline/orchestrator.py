@@ -54,7 +54,8 @@ log = logging.getLogger(__name__)
 
 DEFAULT_BASE_BACKOFF_SECONDS = 30.0
 DEFAULT_MAX_BACKOFF_SECONDS = 3600.0
-DEFAULT_LEASE_EXTENSION_SECONDS = 300.0
+# 한 단계(L2 호출 포함)가 임차권을 넘기지 않도록 단계 진입·종료마다 연장하는 길이.
+DEFAULT_LEASE_EXTENSION_SECONDS = 900.0
 
 # 이전 시도에서 이미 결론이 난 단계(재실행하지 않는다). failed/pending/running/skipped 만 다시 돈다.
 _SETTLED_STATUSES = (

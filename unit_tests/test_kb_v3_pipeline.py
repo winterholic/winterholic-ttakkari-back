@@ -971,7 +971,7 @@ async def test_collector_delivery_queues_pipeline_job(pipeline_db, monkeypatch):
 # ---------------------------------------------------------------------------
 # retry_pipeline_job / fenced writes / default registry wiring
 # ---------------------------------------------------------------------------
-from ttakkari.kb_pipeline import PipelineRetryError, retry_pipeline_job  # noqa: E402
+from ttakkari.kb_pipeline import PipelineRetryError, retry_pipeline_job
 
 
 async def _run_to_degraded(pipeline_db):

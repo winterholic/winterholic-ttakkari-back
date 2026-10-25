@@ -184,7 +184,7 @@ class TestL0NoiseFilter:
         assert body[r.span_start:r.span_end] == r.evidence_quote
 
     def test_entity_cap(self):
-        body = "\n".join("`symbol_%03d`" % i for i in range(200))
+        body = "\n".join(f"`symbol_{i:03d}`" for i in range(200))
         res = extract_l0_from_passages([self._passage(body)])
         from ttakkari.kb_pipeline.entity_filter import MAX_L0_ENTITIES
 

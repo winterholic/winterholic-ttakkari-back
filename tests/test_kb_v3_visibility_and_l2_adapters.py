@@ -17,7 +17,9 @@ from ttakkari.kb_pipeline.l2_adapters import (
     OpenAICompatL2Adapter,
     build_l2_adapter,
 )
-from ttakkari.kb_pipeline.orchestrator import derive_scope_and_visibility as orchestrator_derive
+from ttakkari.kb_pipeline.orchestrator import (
+    derive_scope_and_visibility as orchestrator_derive,
+)
 from ttakkari.kb_visibility import derive_derived_policy, derive_scope_and_visibility
 
 
@@ -141,7 +143,7 @@ async def test_openai_compat_adapter_posts_schema_request_and_limits_concurrency
     monkeypatch.setattr(httpx, "AsyncClient", Client)
     adapter = OpenAICompatL2Adapter("http://kb-l2.invalid", "model-x", timeout=3.0, concurrency=1)
     assert await adapter.availability() == (True, None)
-    results = await asyncio.gather(*[adapter("p%d" % i, {"type": "object"}) for i in range(3)])
+    results = await asyncio.gather(*[adapter(f"p{i}", {"type": "object"}) for i in range(3)])
     assert results == [{"entities": [], "assertions": [], "relations": []}] * 3
     assert active["max"] == 1  # 동시 호출 상한
     body = seen[0].read().decode()

@@ -14,7 +14,10 @@ from pathlib import Path
 
 from ttakkari.common.chunking import chunk_structured_document
 from ttakkari.kb_models import KbPassage, KbRevision
-from ttakkari.kb_pipeline.extractor_step import ExtractionOptions, extract_revision_knowledge
+from ttakkari.kb_pipeline.extractor_step import (
+    ExtractionOptions,
+    extract_revision_knowledge,
+)
 
 
 def _passages(text: str, rev_id: uuid.UUID) -> list[KbPassage]:
@@ -30,16 +33,18 @@ def _passages(text: str, rev_id: uuid.UUID) -> list[KbPassage]:
 
 async def measure(paths: list[Path], seed: bool) -> dict:
     known = None
+    meta = None
     if seed:
-        from ttakkari.kb_pipeline.alias_dictionary import load_seed_alias_dictionary
-        known = load_seed_alias_dictionary()
+        from ttakkari.kb_pipeline.alias_dictionary import load_seed_dictionary
+        sd = load_seed_dictionary()
+        known, meta = dict(sd.aliases), dict(sd.entities)
     total = {"passages": 0, "entities": 0, "assertions": 0, "relations": 0, "mentions": 0}
     per_file = {}
     for path in paths:
         text = path.read_text(encoding="utf-8")
         rev = KbRevision(id=uuid.uuid4(), document_id=uuid.uuid4(), body=text)
         passages = _passages(text, rev.id)
-        kwargs = {"known_aliases": known} if known is not None else {}
+        kwargs = {"known_aliases": known, "known_entities": meta} if known is not None else {}
         res = await extract_revision_knowledge(
             rev, passages, options=ExtractionOptions(origin_scope="personal", visibility="global", **kwargs))
         m = res.metrics
@@ -47,6 +52,10 @@ async def measure(paths: list[Path], seed: bool) -> dict:
             "passages": len(passages), "entities": len(res.entities), "assertions": len(res.assertions),
             "relations": len(res.relations), "mentions": len(res.mentions),
             "l0_entities_raw": m.get("l0_entities_count"),
+            "l0_filtered": m.get("l0_filtered"),
+            "l1_mentions": m.get("l1_mentions_count", 0),
+            "l1_seed_entities": m.get("l1_seed_entities", 0),
+            "l1_seed_names": [e.canonical_name for e in res.entities if e.alias_source == "seed"][:10],
             "relation_types": sorted({r.relation_type for r in res.relations}),
             "sample_entities": [e.canonical_name for e in res.entities[:12]],
             "status": res.status,

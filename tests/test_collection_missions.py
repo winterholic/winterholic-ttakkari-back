@@ -3,12 +3,19 @@ import uuid
 
 import pytest
 from collector_support import article_html, prose
+from sqlalchemy import select
 from test_collector_control import BASE, source_body
 from test_collector_pipeline import env  # noqa: F401
 
 from ttakkari import kb_delivery
 from ttakkari.collector import runner
-from ttakkari.collector_models import CollectorJob
+from ttakkari.collector.control_models import (
+    CollectorDelivery,
+    CollectorReview,
+    KbDocumentAccess,
+    KbObservation,
+)
+from ttakkari.collector_models import CollectorItem, CollectorJob, CollectorOutbox
 from ttakkari.db import sessionmaker
 from ttakkari.kb_models import KbRevision, KbSource
 
@@ -117,6 +124,137 @@ async def test_topic_mission_searches_in_worker_and_acquires_discovered_sources(
     assert len(detail["plan"]["search_history"]) == len(calls)
     assert detail["plan"]["search_history"][0]["new_sources"] == 2
     assert detail["plan"]["search_history"][-1]["new_sources"] == 0
+
+
+async def _make_held_mission(client, auth, fixture_env, *, knowledge_permission="allowed", retain_days=None):
+    url = fixture_env.server.url("/held-document")
+    fixture_env.server.page("/held-document", article_html("직렬화 설계", [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."]))
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[fixture_env.server.port], min_delay_seconds=0)
+    body["policy"]["permissions"]["knowledge"] = knowledge_permission
+    body["policy"]["retain_days"] = retain_days
+    source_response = await client.post(BASE + "/sources", headers=auth, json=body)
+    assert source_response.status_code == 201, source_response.text
+    mission_response = await client.post(
+        BASE + "/missions", headers=auth, json={"goal": "프로그래밍 언어 컴파일러 최적화", "urls": [url]}
+    )
+    assert mission_response.status_code == 202, mission_response.text
+    mission = mission_response.json()
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    detail = (await client.get(BASE + "/missions/" + mission["id"], headers=auth)).json()
+    assert detail["results"][0]["status"] == "held", detail
+    return source_response.json(), mission, detail["results"][0]
+
+
+async def test_unhold_imports_original_held_envelope_through_review_receipt_and_search(client, auth, env, monkeypatch):  # noqa: F811
+    _, mission, item = await _make_held_mission(client, auth, env)
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    item_id = uuid.UUID(item["id"])
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, item_id)
+        original_envelope = row.envelope
+        original_payload_hash = row.payload_hash
+        original_raw_hash = row.raw_sha256
+        assert original_envelope["decision"]["state"] == "hold"
+        assert original_envelope["rights"]["permission"] == "allowed"
+        assert "knowledge" in original_envelope["rights"]["purposes"]
+        assert original_envelope["rights"]["retain_until"] is None
+
+    unheld = await client.post(f"{BASE}/missions/{mission['id']}/items/{item['id']}/unhold", headers=auth)
+    assert unheld.status_code == 200, unheld.text
+    assert unheld.json()["delivery_queued"] is True
+    assert unheld.json()["review"]["factuality"] == "unverified"
+    assert await kb_delivery.deliver_once() == 1
+
+    detail = (await client.get(BASE + "/missions/" + mission["id"], headers=auth)).json()
+    assert detail["counts"]["imported"] == 1, detail
+    delivered = detail["results"][0]
+    assert delivered["delivery"] == "imported"
+    assert delivered["document_id"] and delivered["revision_id"]
+    hits = (await client.get("/api/assistant/kb/search?q=직렬화", headers=auth)).json()["items"]
+    assert hits
+
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, item_id)
+        assert row.envelope == original_envelope
+        assert row.payload_hash == original_payload_hash
+        assert row.raw_sha256 == original_raw_hash
+        review = await db.scalar(select(CollectorReview).where(CollectorReview.item_id == item_id))
+        assert review.decision == "accept" and review.actor == "owner"
+        assert review.text_sha256 == row.text_sha256
+        assert "utility review only" in review.reason and "factuality unverified" in review.reason
+        outbox = await db.scalar(select(CollectorOutbox).where(CollectorOutbox.envelope_id == row.envelope_id,
+                                                              CollectorOutbox.sink == "knowledge"))
+        receipt = await db.get(CollectorDelivery, outbox.id)
+        assert outbox.payload_hash == original_payload_hash
+        assert outbox.status == "delivered" and receipt.outcome == "imported"
+        access = await db.get(KbDocumentAccess, uuid.UUID(delivered["document_id"]))
+        observation = await db.scalar(select(KbObservation).where(KbObservation.envelope_id == row.envelope_id))
+        assert access.scope == "personal" and access.tenant_id == "owner" and not access.hidden
+        assert observation is not None and observation.provenance["rights"]["permission"] == "allowed"
+        revision = await db.get(KbRevision, uuid.UUID(delivered["revision_id"]))
+        kb_source = await db.get(KbSource, revision.source_id)
+        assert kb_source.origin_meta["mission"]["id"] == mission["id"]
+
+
+async def test_unhold_rejects_revoked_knowledge_rights_without_mutation(client, auth, env):  # noqa: F811
+    _, mission, item = await _make_held_mission(client, auth, env)
+    source_rows = (await client.get(BASE + "/sources", headers=auth)).json()["items"]
+    source_row = next(row for row in source_rows if item["url"] in row["seeds"])
+    policy = source_row["policy"]
+    policy["permissions"]["knowledge"] = "denied"
+    changed = await client.patch(BASE + "/sources/" + source_row["id"], headers=auth,
+                                json={"policy": policy, "expected_version": source_row["version"]})
+    assert changed.status_code == 200, changed.text
+
+    unheld = await client.post(f"{BASE}/missions/{mission['id']}/items/{item['id']}/unhold", headers=auth)
+    assert unheld.status_code == 403, unheld.text
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, uuid.UUID(item["id"]))
+        assert row.status == "held"
+        assert await db.scalar(select(CollectorReview).where(CollectorReview.item_id == row.id)) is None
+        assert await db.scalar(select(CollectorOutbox).where(CollectorOutbox.envelope_id == row.envelope_id,
+                                                              CollectorOutbox.sink == "knowledge")) is None
+
+
+async def test_unhold_cannot_grant_knowledge_denied_at_collection(client, auth, env):  # noqa: F811
+    _, mission, item = await _make_held_mission(client, auth, env, knowledge_permission="denied")
+    unheld = await client.post(f"{BASE}/missions/{mission['id']}/items/{item['id']}/unhold", headers=auth)
+    assert unheld.status_code == 403, unheld.text
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, uuid.UUID(item["id"]))
+        assert "knowledge" not in row.envelope["rights"]["purposes"]
+        assert row.status == "held"
+        assert await db.scalar(select(CollectorReview).where(CollectorReview.item_id == row.id)) is None
+
+
+async def test_unhold_cannot_import_under_finite_retention(client, auth, env):  # noqa: F811
+    _, mission, item = await _make_held_mission(client, auth, env, retain_days=30)
+    unheld = await client.post(f"{BASE}/missions/{mission['id']}/items/{item['id']}/unhold", headers=auth)
+    assert unheld.status_code == 422, unheld.text
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, uuid.UUID(item["id"]))
+        assert row.envelope["rights"]["retain_until"] is not None
+        assert row.status == "held"
+        assert await db.scalar(select(CollectorReview).where(CollectorReview.item_id == row.id)) is None
+
+
+async def test_unhold_requires_auth_and_rejects_cross_tenant_item(client, auth, env):  # noqa: F811
+    _, mission, item = await _make_held_mission(client, auth, env)
+    item_id = uuid.UUID(item["id"])
+    path = f"{BASE}/missions/{mission['id']}/items/{item['id']}/unhold"
+    assert (await client.post(path)).status_code == 401
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, item_id)
+        row.tenant_id = "tenant-b"
+        await db.commit()
+
+    denied = await client.post(path, headers=auth)
+    assert denied.status_code == 404, denied.text
+    async with sessionmaker()() as db:
+        row = await db.get(CollectorItem, item_id)
+        assert row.status == "held" and row.tenant_id == "tenant-b"
+        assert await db.scalar(select(CollectorReview).where(CollectorReview.item_id == item_id)) is None
 
 
 async def test_empty_research_result_never_reports_success(client, auth, env, monkeypatch):  # noqa: F811

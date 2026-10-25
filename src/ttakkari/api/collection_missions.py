@@ -68,4 +68,6 @@ async def unhold_mission_item(mission_id: uuid.UUID, item_id: uuid.UUID, _: User
     except ValueError as exc:
         if str(exc) == "item_not_found":
             raise HTTPException(404, "수집 문서를 찾을 수 없습니다.") from exc
+        if str(exc) == "knowledge_permission_missing":
+            raise HTTPException(403, "knowledge_permission_missing") from exc
         raise HTTPException(422, str(exc)) from exc

@@ -413,15 +413,31 @@ async def unhold_item(db, mission_id: uuid.UUID, item_id: uuid.UUID) -> dict:
     """Unhold (recover) a held document in the mission and enqueue for KB delivery."""
     from datetime import UTC, datetime
 
+    from ttakkari.collector import store
+    from ttakkari.collector.control_models import CollectorReview
+
     item = await db.scalar(
         select(CollectorItem)
         .join(CollectionMissionJob, CollectionMissionJob.job_id == CollectorItem.job_id)
-        .where(CollectionMissionJob.mission_id == mission_id, CollectorItem.id == item_id)
+        .join(CollectionMission, CollectionMission.id == CollectionMissionJob.mission_id)
+        .where(CollectionMissionJob.mission_id == mission_id, CollectionMission.tenant_id == "owner",
+               CollectorItem.tenant_id == CollectionMission.tenant_id, CollectorItem.id == item_id)
     )
     if item is None:
         raise ValueError("item_not_found")
     if item.status != "held":
         return {"item_id": str(item.id), "status": item.status, "message": "item_not_held"}
+
+    if not item.envelope_id or not item.envelope or not item.payload_hash or not item.text_sha256:
+        raise ValueError("item_not_importable")
+    rights = item.envelope.get("rights") or {}
+    if rights.get("permission") != "allowed" or "knowledge" not in (rights.get("purposes") or []):
+        raise ValueError("knowledge_permission_missing")
+    if rights.get("retain_until") is not None:
+        raise ValueError("kb_import_requires_unlimited_retention_policy")
+    active = await store.active_policy(db, item.tenant_id, item.scope, item.source_key)
+    if active is None or not active[0].allows("store") or not active[0].allows("knowledge"):
+        raise ValueError("knowledge_permission_missing")
 
     now = datetime.now(UTC)
     item.status = "accepted"
@@ -434,12 +450,21 @@ async def unhold_item(db, mission_id: uuid.UUID, item_id: uuid.UUID) -> dict:
     signals["unhold_override"] = {"at": now.isoformat(), "previous_status": "held"}
     item.signals = signals
 
+    review = CollectorReview(
+        item_id=item.id,
+        decision="accept",
+        reason="Manual unhold: utility review only; factuality unverified.",
+        actor="owner",
+        text_sha256=item.text_sha256,
+    )
+    db.add(review)
+
     outbox_created = False
     if item.envelope_id:
         existing_outbox = await db.scalar(
             select(CollectorOutbox).where(
                 CollectorOutbox.tenant_id == item.tenant_id,
-                CollectorOutbox.sink == "export",
+                CollectorOutbox.sink == "knowledge",
                 CollectorOutbox.scope == item.scope,
                 CollectorOutbox.envelope_id == item.envelope_id,
             )
@@ -449,9 +474,9 @@ async def unhold_item(db, mission_id: uuid.UUID, item_id: uuid.UUID) -> dict:
                 job_id=item.job_id,
                 tenant_id=item.tenant_id,
                 scope=item.scope,
-                sink="export",
+                sink="knowledge",
                 envelope_id=item.envelope_id,
-                payload_hash=item.payload_hash or "",
+                payload_hash=item.payload_hash,
                 status="pending",
             )
             db.add(outbox)
@@ -463,4 +488,5 @@ async def unhold_item(db, mission_id: uuid.UUID, item_id: uuid.UUID) -> dict:
         "status": "accepted",
         "delivery_queued": outbox_created,
         "reasons": item.reason_codes,
+        "review": {"decision": "accept", "meaning": "document_utility_review_only", "factuality": "unverified"},
     }

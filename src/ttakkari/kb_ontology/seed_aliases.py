@@ -1805,6 +1805,9 @@ async def ensure_seed_entity(
     - 슬롯이 비호환 도메인(동음이의) 엔터티로 점유되어 있으면 병합하지 않고 구분 키로 별도 생성한다.
     - 이미 다른 엔터티가 쓰는 표기는 별칭으로 가져가지 않는다(두 엔터티를 섞지 않기 위해).
     """
+    from ttakkari.kb_ontology.write_lock import lock_identity_writes
+
+    await lock_identity_writes(db, tenant_id)
     c_norm = norm_name(seed.canonical_name)
     created = False
     entity: KbEntity | None = None

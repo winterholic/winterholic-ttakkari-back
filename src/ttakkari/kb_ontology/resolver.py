@@ -242,6 +242,9 @@ async def resolve_entity(
     if not target_norm:
         raise ValueError("raw_name has no normalizable characters")
 
+    from ttakkari.kb_ontology.write_lock import lock_identity_writes
+
+    await lock_identity_writes(db, tenant_id)
     sources = await _load_sources(db, document_id, source_access)
     ctx = _Ctx(
         tenant_id=tenant_id,

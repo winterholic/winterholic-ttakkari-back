@@ -1,0 +1,15 @@
+Traceback (most recent call last):
+  File "<stdin>", line 7, in <module>
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 196, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 119, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/winterholic/.local/share/uv/python/cpython-3.13.15-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 726, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "<stdin>", line 5, in main
+  File "/Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-api/src/ttakkari/model_process.py", line 69, in run_json_worker
+    raise RuntimeError(f"{error_prefix}_failed")
+RuntimeError: kb_e5_failed

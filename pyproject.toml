@@ -71,5 +71,6 @@ asyncio_default_test_loop_scope = "session"
 testpaths = ["tests", "benchmark_tests", "unit_tests"]
 markers = [
     "security: security regression test suite (SEC2-GATE-01)",
+    "pg: needs Docker (pgvector/pgvector:pg17); skipped when Docker is unavailable",
     "contract: registry consistency contracts, fast pre-push gate (ADR 0066 D3a)",
 ]

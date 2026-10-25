@@ -1,8 +1,8 @@
-"""KB v3 0072 마이그레이션을 실제 PostgreSQL(Docker pgvector/pgvector:pg17)에서 검증한다.
+"""KB v3 0072/0073 마이그레이션을 실제 PostgreSQL(Docker pgvector/pgvector:pg17)에서 검증한다.
 
 시나리오(한 번의 Docker 컨테이너에서 순서대로 진행):
   1. 빈 DB 에 alembic upgrade 0071 -> 대표 기존 데이터 삽입(personal 2, work 2, revision/passage/evidence)
-  2. upgrade head(0072) -> 백필(personal->global, work->work_only)
+  2. upgrade head(0073) -> 백필(personal->global, work->work_only), L2 예산 원장 생성
   3. 반례: visibility 파생/모순 거부, 근거 없는 active 거부(INSERT·UPDATE), evidence_count 강제 동기화,
      activate_relation_with_evidence, 근거 삭제 시 강등
   4. downgrade: 신규 테이블 데이터가 있으면 거부, 비운 뒤 성공, 기존 데이터 보존, upgrade head 재실행
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.pg
 ROOT = Path(__file__).resolve().parents[1]
 SEED = ROOT / "tests" / "fixtures" / "kb_v3_seed_0071.sql"
 IMAGE = "pgvector/pgvector:pg17"
-HEAD = "0072_kb_v3_schema_and_scope"
+HEAD = "0073_kb_l2_budget_ledger"
 V3_TABLES = (
     "kb_pipeline_jobs",
     "kb_pipeline_stages",
@@ -50,6 +50,8 @@ V3_TABLES = (
     "kb_relation_evidence",
     "kb_entity_canonicals",
     "kb_conflicts",
+    "kb_l2_budget_usage",
+    "kb_l2_budget_reservations",
 )
 KB_MODEL_TABLES = (
     "kb_sources",
@@ -464,6 +466,29 @@ def test_real_db_upgrade_guards_downgrade_roundtrip(db: Db):
         "DELETE FROM kb_document_access WHERE document_id IN ("
         "SELECT id FROM kb_documents WHERE doc_key NOT LIKE '%-note-%' AND doc_key NOT LIKE '%-spec-%')"
     )
+    # 0073 은 예산 사용 원장이 남아 있으면 다운그레이드를 거부해야 한다.
+    reservation_id = uuid.uuid4()
+    db.execute(
+        "INSERT INTO kb_l2_budget_reservations "
+        "(id, budget_date, reservation_key, reserved_calls, status, lease_expires_at, "
+        "next_call_no, created_at, updated_at) "
+        "VALUES ($1, CURRENT_DATE, 'downgrade-safety-check', 1, 'completed', now(), 1, now(), now())",
+        reservation_id,
+    )
+    db.execute(
+        "INSERT INTO kb_l2_budget_usage "
+        "(id, reservation_id, call_no, status, started_at, finished_at) "
+        "VALUES ($1, $2, 1, 'consumed', now(), now())",
+        uuid.uuid4(),
+        reservation_id,
+    )
+    ledger_down = db.alembic("downgrade", "0072_kb_v3_schema_and_scope")
+    assert ledger_down.returncode != 0
+    assert "refusing to downgrade 0073 while L2 budget ledger data exists" in ledger_down.stderr
+    assert db.version() == HEAD
+    db.execute("DELETE FROM kb_l2_budget_usage WHERE reservation_id = $1", reservation_id)
+    db.execute("DELETE FROM kb_l2_budget_reservations WHERE id = $1", reservation_id)
+
     db.alembic_ok("downgrade", "0071_library_platform_v2_merge")
     assert db.version() == "0071_library_platform_v2_merge"
     for table in V3_TABLES:

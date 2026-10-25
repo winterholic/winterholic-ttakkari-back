@@ -168,12 +168,16 @@ class ExtractingProcessor:
     def __init__(self, adapter_factory: Callable[[], Any] | None = None) -> None:
         self._adapter_factory = adapter_factory
 
-    def _adapter(self) -> Any:
+    def _adapter(self, ctx: StageContext) -> Any:
         if self._adapter_factory is not None:
             return self._adapter_factory()
         from ttakkari.kb_pipeline.l2_adapters import build_l2_adapter
 
-        return build_l2_adapter()
+        return build_l2_adapter(
+            session_factory=ctx.session_factory,
+            origin_scope=ctx.origin_scope,
+            visibility=ctx.visibility,
+        )
 
     async def _l2_calls_today(self, ctx: StageContext) -> int:
         from ttakkari.kb_pipeline_models import KbPipelineStage
@@ -195,6 +199,38 @@ class ExtractingProcessor:
             if isinstance(calls, int):
                 total += calls
         return total
+
+    @staticmethod
+    def _budgeted_caller(adapter: Any, session_factory: Callable[[], Any], reservation_id: Any):
+        from ttakkari.kb_pipeline.daily_budget import (
+            begin_budgeted_call,
+            finish_budgeted_call,
+        )
+
+        class BudgetedCaller:
+            async def __call__(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+                async with session_factory() as db:
+                    usage_id = await begin_budgeted_call(db, reservation_id)
+                    await db.commit()
+                try:
+                    result = await adapter(prompt, schema)
+                except BaseException as exc:
+                    consumed = getattr(exc, "consumed", True) is not False
+                    async with session_factory() as db:
+                        await finish_budgeted_call(
+                            db,
+                            usage_id,
+                            consumed=consumed,
+                            error_code=getattr(exc, "diagnosis", type(exc).__name__),
+                        )
+                        await db.commit()
+                    raise
+                async with session_factory() as db:
+                    await finish_budgeted_call(db, usage_id, consumed=True)
+                    await db.commit()
+                return result
+
+        return BudgetedCaller()
 
     async def __call__(self, ctx: StageContext) -> StageResult:
         if ctx.session_factory is None:
@@ -223,22 +259,56 @@ class ExtractingProcessor:
             return StageResult.failed("no_passages_to_extract")
 
         s = get_settings()
-        adapter = self._adapter()
+        adapter = self._adapter(ctx)
         available, unavailable_reason = await adapter.availability()
         used_today = await self._l2_calls_today(ctx)
+        from ttakkari.kb_pipeline.daily_budget import (
+            finish_daily_reservation,
+            reserve_daily_budget,
+        )
+
+        reserved_calls = 0
+        reservation_id = None
         budget_remaining = max(0, s.kb_l2_daily_budget - used_today)
+        if available:
+            async with ctx.session_factory() as db:
+                grant = await reserve_daily_budget(
+                    db,
+                    reservation_key=str(ctx.attempt_token),
+                    requested_calls=min(s.kb_l2_max_calls_per_doc, len(passages)),
+                    max_budget=s.kb_l2_daily_budget,
+                    already_used=used_today,
+                )
+                await db.commit()
+            reserved_calls = grant.granted_calls
+            reservation_id = grant.reservation_id
+            budget_remaining = grant.remaining_calls
         seeds = load_seed_dictionary()
 
         options = ExtractionOptions(
-            llm_caller=adapter if available else None,
+            llm_caller=(
+                self._budgeted_caller(adapter, ctx.session_factory, reservation_id)
+                if available and reservation_id is not None and reserved_calls > 0
+                else None
+            ),
             known_aliases=seeds.aliases,
             known_entities=seeds.entities,
             max_l2_calls_per_doc=s.kb_l2_max_calls_per_doc,
-            daily_budget_remaining=budget_remaining if available else None,
+            daily_budget_remaining=reserved_calls if available else None,
             origin_scope=ctx.origin_scope,
             visibility=ctx.visibility,
         )
-        extraction = await extract_revision_knowledge(rev, passages, options=options)
+        cancelled = False
+        try:
+            extraction = await extract_revision_knowledge(rev, passages, options=options)
+        except BaseException:
+            cancelled = True
+            raise
+        finally:
+            if reservation_id is not None:
+                async with ctx.session_factory() as db:
+                    await finish_daily_reservation(db, reservation_id, cancelled=cancelled)
+                    await db.commit()
 
         async with ctx.fenced_session() as db:
             persisted = await persist_extracted_knowledge(
@@ -261,7 +331,16 @@ class ExtractingProcessor:
                 "available": available,
                 "reason": reason,
                 "calls_made": extraction.metrics.get("l2_calls_made", 0),
-                "daily_budget_remaining_before": budget_remaining,
+                **(
+                    {"daily_budget_remaining_after_reservation": budget_remaining}
+                    if available
+                    else {"daily_budget_remaining_before": budget_remaining}
+                ),
+                **(
+                    {"retry_after": adapter.retry_after}
+                    if getattr(adapter, "retry_after", None) is not None
+                    else {}
+                ),
             },
         }
         if extraction.status == STAGE_STATUS_SUCCEEDED and available:

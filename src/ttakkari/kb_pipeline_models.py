@@ -14,6 +14,7 @@ from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -126,3 +127,52 @@ class KbPipelineStage(Base):
     duration_ms: Mapped[int | None] = mapped_column(Integer, default=None)
     detail: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     error_message: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class KbL2BudgetReservation(Base):
+    """Cluster-wide daily call allocation with a lease and idempotent owner key."""
+
+    __tablename__ = "kb_l2_budget_reservations"
+    __table_args__ = (
+        UniqueConstraint("reservation_key", name="uq_kb_l2_budget_reservation_key"),
+        CheckConstraint("reserved_calls > 0", name="ck_kb_l2_budget_reserved_positive"),
+        CheckConstraint(
+            "status IN ('active', 'completed', 'cancelled', 'expired')",
+            name="ck_kb_l2_budget_reservation_status",
+        ),
+        Index("ix_kb_l2_budget_reservations_day_status", "budget_date", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    budget_date: Mapped[Any] = mapped_column(Date, nullable=False)
+    reservation_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    reserved_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    next_call_no: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class KbL2BudgetUsage(Base):
+    """Per-call ledger; uncertain in-flight calls remain charged after cancellation/crash."""
+
+    __tablename__ = "kb_l2_budget_usage"
+    __table_args__ = (
+        UniqueConstraint("reservation_id", "call_no", name="uq_kb_l2_budget_usage_call"),
+        CheckConstraint(
+            "status IN ('in_flight', 'consumed', 'released')",
+            name="ck_kb_l2_budget_usage_status",
+        ),
+        Index("ix_kb_l2_budget_usage_reservation", "reservation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    reservation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("kb_l2_budget_reservations.id", ondelete="RESTRICT"), nullable=False
+    )
+    call_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="in_flight")
+    error_code: Mapped[str | None] = mapped_column(String(64), default=None)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

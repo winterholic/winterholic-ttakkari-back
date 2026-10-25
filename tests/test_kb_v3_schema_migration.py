@@ -62,7 +62,8 @@ def test_alembic_v3_single_head_and_lineage():
     script = ScriptDirectory.from_config(config)
     heads = script.get_heads()
     assert len(heads) == 1, f"Alembic heads must be exactly 1, got: {heads}"
-    assert heads[0] == "0072_kb_v3_schema_and_scope"
+    assert heads[0] == "0073_kb_l2_budget_ledger"
+    assert _load_migration("0073_kb_l2_budget_ledger").down_revision == "0072_kb_v3_schema_and_scope"
 
     mod_0072 = _load_migration("0072_kb_v3_schema_and_scope")
     assert mod_0072.revision == "0072_kb_v3_schema_and_scope"

@@ -65,7 +65,7 @@
    - `tests/test_knowledge_migration.py::test_populated_ledger_cannot_be_destroyed_by_application_rollback`
    - `tests/test_meeting_lineage_migration.py::test_lineage_migration_backfills_valid_full_jobs_and_preserves_sources`
    - `tests/test_retire_clovanote_migration.py::test_retirement_preserves_every_source_row_and_meetings_and_downgrades`
-   - *원인 및 분석*: 개별 격리 환경에서는 모두 PASS였으나(res_c2, res_cur 실증), 전체 suite 실행 시 전역 env 및 임시 디렉터리 오염으로 실패했던 항목.
+   - *원인 및 상태*: 현재 개별 PASS 요약만 존재하며 원시 traceback 및 baseline rev가 미확보된 상태이므로 원인은 잠정 추론 단계임. 최종 full suite green 검증 전까지는 45개 전건 해결로 단정하지 않고 최종 1회 full suite 실행을 통해 실증함.
    *(소계: 10개)*
 
 5. **백업 스크립트 임시 디렉토리/환경 격리 (16개)**:
@@ -75,4 +75,14 @@
    *(소계: 16개)*
 
 **총합: 15 + 2 + 2 + 10 + 16 = 45개**
-근거 없는 "신규 0", "DB 충돌 100%" 등 비체계적 단정을 배제하고 원인별로 정확히 실증 분류 및 교정 완료함.
+근거 없는 "신규 0", "DB 충돌 100%" 등 비체계적 단정을 배제하고 원인별로 엄밀히 분류함 (10개 마이그레이션 항목은 최종 full suite 완주를 통해 해결 여부 실증).
+
+---
+
+## 3. 전체 마이그레이션 체인(0072→0073→0074) 라운드트립 계약 확인
+독립 검증자(77a)의 '전체 chain 증거 없음' 지적에 대해 root 정정 확인:
+- 파일 경로: [`tests/test_collection_combined_migration_contract.py`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/test_collection_combined_migration_contract.py)
+- 핵심 테스트: `test_0072_to_0074_migrations_roundtrip_in_isolated_database_and_match_orm`
+- 검증 내용: 격리된 PostgreSQL 스키마에서 0072(collection_missions) → 0073(collection_mission_runs) → 0074(collection_single_library)의 순차 upgrade, 역순 downgrade(0074→0073→0072), 그리고 재적용(re-upgrade)을 실제 ORM/DB 컬럼 수준에서 검증.
+- 실행 증거: `uv run pytest tests/test_collection_combined_migration_contract.py` → 3 passed (0.94s). 새 테스트 복제 없이 기존 계약 테스트로 검증 확보.
+

@@ -25,6 +25,7 @@ ACTIVE = ("queued", "running", "cleanup_pending")
 TERMINAL = ("succeeded", "failed", "cancelled", "timeout")
 KEEP_TERMINAL = 100
 QUEUED_GRACE_SECONDS = 30
+GROUP_EXIT_WAIT_SECONDS = 2.0
 RUNNER_MARKER = "ttakkari.operations.runner"
 
 
@@ -47,14 +48,23 @@ def locked():
 
 @asynccontextmanager
 async def audit_locked():
+    """감사 커밋을 한 번에 하나씩 하게 하는 프로세스 간 잠금.
+
+    대기를 스레드 풀에서 blocking flock 으로 하면 대기자가 풀을 다 차지해 보유자의 해제 작업이 못 돌아 교착한다.
+    LOCK_NB 재시도로 대기하며 스레드를 쓰지 않는다. 취소돼도 finally 에서 핸들을 닫아 잠금이 새지 않는다.
+    """
     # 작업 슬롯 잠금(operations.lock)과 분리한다. DB 커밋이 느려도 시작·취소·재조회가 막히지 않게 한다.
     handle = (root() / "audit.lock").open("a")
     try:
-        await asyncio.to_thread(fcntl.flock, handle, fcntl.LOCK_EX)
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                await asyncio.sleep(0.05)
         yield
     finally:
-        await asyncio.to_thread(fcntl.flock, handle, fcntl.LOCK_UN)
-        handle.close()
+        handle.close()  # close 가 flock 도 푼다
 
 
 def _path(job_id: str) -> Path:
@@ -129,8 +139,16 @@ def _clean_child_process_group(job: dict) -> tuple[bool, str | None]:
     cmdline_hash = job.get("child_cmdline_sha256")
     pgid = job.get("child_pgid")
     if not pid and not pgid:
-        return True, None  # 자식이 기록되기 전에 러너가 사라진 경우: 정리할 기록된 대상이 없다
+        if job.get("child_starting"):
+            return False, "child start was in progress but its identity is unrecorded (cannot verify or signal)"
+        return True, None  # 자식을 띄우기 전에 러너가 사라진 경우: 정리할 대상이 없다
     if not pid or not pgid or started is None or (not cmdline and not cmdline_hash) or pgid != pid:
+        try:
+            os.killpg(pgid or pid, 0)
+        except ProcessLookupError:
+            return True, None  # 신원은 불완전해도 그룹이 이미 없어 신호가 필요 없다
+        except OSError:
+            pass
         return False, f"child identity record incomplete or unbound (pid={pid}, pgid={pgid})"
     try:
         proc = psutil.Process(pid)
@@ -159,6 +177,7 @@ def _clean_child_process_group(job: dict) -> tuple[bool, str | None]:
             or actual_pgid != pgid):
         return False, f"child identity mismatch (pid={pid}, pgid={pgid})"
 
+    last = "process group remains alive"
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
             os.killpg(pgid, sig)
@@ -168,25 +187,32 @@ def _clean_child_process_group(job: dict) -> tuple[bool, str | None]:
             return False, f"signal {sig} denied for verified process group (pid={pid}, pgid={pgid}, PermissionError)"
         except OSError as exc:
             return False, f"signal {sig} failed for verified process group (pid={pid}, pgid={pgid}, {type(exc).__name__})"
-        for _ in range(10):
-            try:
-                os.killpg(pgid, 0)
-            except ProcessLookupError:
-                return True, None
-            except PermissionError:
-                return False, f"process group status denied (pid={pid}, pgid={pgid}, PermissionError)"
-            except OSError as exc:
-                return False, f"process group status failed (pid={pid}, pgid={pgid}, {type(exc).__name__})"
-            time.sleep(0.05)
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return True, None
-    except PermissionError:
-        return False, f"process group status denied after SIGKILL (pid={pid}, pgid={pgid}, PermissionError)"
-    except OSError as exc:
-        return False, f"process group status failed after SIGKILL (pid={pid}, pgid={pgid}, {type(exc).__name__})"
-    return False, f"process group remains alive after SIGKILL (pid={pid}, pgid={pgid})"
+        gone, last = _wait_group_gone(pgid)
+        if gone:
+            return True, None
+    return False, f"{last} after SIGKILL (pid={pid}, pgid={pgid})"
+
+
+def _wait_group_gone(pgid: int) -> tuple[bool, str]:
+    """신호를 보낸 그룹이 사라질 때까지 기다린다. 회수 전 좀비는 macOS 에서 EPERM 을 돌려주므로 한동안 재시도한다.
+
+    창이 끝나도 EPERM·기타 오류·생존이면 사라졌다고 보지 않고 마지막 사유를 돌려준다.
+    """
+    last = "process group remains alive"
+    deadline = time.monotonic() + GROUP_EXIT_WAIT_SECONDS
+    while True:
+        try:
+            os.killpg(pgid, 0)
+            last = "process group remains alive"
+        except ProcessLookupError:
+            return True, ""
+        except PermissionError:
+            last = "process group status denied (PermissionError)"
+        except OSError as exc:
+            last = f"process group status failed ({type(exc).__name__})"
+        if time.monotonic() >= deadline:
+            return False, last
+        time.sleep(0.05)
 
 
 async def audit_finish(job_id: str) -> dict:

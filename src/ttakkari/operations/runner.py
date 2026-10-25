@@ -43,25 +43,62 @@ def _libpq(url: str) -> str:
     return re.sub(r"^([a-zA-Z][a-zA-Z0-9.-]*)(\+[a-zA-Z0-9_.-]+)?://", r"\1://", url)
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
-    for sig, wait in ((signal.SIGTERM, 15), (signal.SIGKILL, 5)):
+_TERM_GRACE = 15
+_KILL_GRACE = 5
+GROUP_UNCONFIRMED = "cleanup_pending"
+
+
+def _lower_priority() -> None:
+    os.setpriority(os.PRIO_PROCESS, 0, 10)
+
+
+def _group_gone(proc: subprocess.Popen) -> bool:
+    """리더를 회수한 뒤 그룹 전체가 사라졌는지 본다. 권한 거부·기타 오류는 사라졌다고 보지 않는다."""
+    proc.poll()  # 회수하지 않은 좀비는 macOS 에서 killpg(pgid, 0) 이 EPERM 을 돌려준다
+    try:
+        os.killpg(proc.pid, 0)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def _kill_group(proc: subprocess.Popen) -> bool:
+    """TERM 뒤 KILL 로 그룹 전체를 정리하고, 그룹이 실제로 사라졌을 때만 True 를 돌려준다.
+
+    리더만 죽는 것으로는 충분하지 않다. 리더가 TERM 에 죽어도 TERM 을 무시하는 손자는 남을 수 있다.
+    """
+    for sig, grace in ((signal.SIGTERM, _TERM_GRACE), (signal.SIGKILL, _KILL_GRACE)):
         try:
             os.killpg(proc.pid, sig)
         except ProcessLookupError:
-            return
-        try:
-            proc.wait(timeout=wait)
-            return
-        except subprocess.TimeoutExpired:
+            return _group_gone(proc)
+        except OSError:
             continue
+        deadline = time.monotonic() + grace
+        while True:
+            if _group_gone(proc):
+                return True
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(0.05)
+    return _group_gone(proc)
 
 
 def _execute(plan: plans.Plan, out, *, job_id: str | None = None) -> tuple[str, int | None]:
-    """(status, exit_code). 출력은 파일로 받아 파이프가 차서 멈추는 일을 피한다."""
-    # nice 로 낮은 우선순위: 백업이 다른 사용자 Run 의 CPU 를 빼앗지 않게 한다
-    proc = subprocess.Popen(["/usr/bin/nice", "-n", "10", *plan.argv], cwd=plans.BACK, env=plan.env,
+    """(status, exit_code). 출력은 파일로 받아 파이프가 차서 멈추는 일을 피한다.
+
+    취소·시간 초과에서 그룹 종료를 확인하지 못하면 cancelled/timeout 대신 cleanup_pending 을 돌려준다.
+    """
+    if job_id:
+        # Popen 과 신원 기록 사이에 러너가 죽어도 reconcile 이 미기록 자식을 성공으로 오해하지 않게 먼저 표식을 남긴다
+        jobs.update(job_id, child_starting=True)
+    # 낮은 우선순위: 백업이 다른 사용자 Run 의 CPU 를 빼앗지 않게 한다. nice 래퍼는 exec 로 cmdline 이 바뀌어
+    # 신원 해시가 어긋나므로 쓰지 않고 자식이 exec 하기 전에 우선순위만 낮춘다.
+    proc = subprocess.Popen(plan.argv, cwd=plans.BACK, env=plan.env, preexec_fn=_lower_priority,  # noqa: PLW1509
                             stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
-    # 자식 프로세스 신원 기록 (SIGKILL 시 정리용)
+    # 자식 프로세스 신원 기록 (SIGKILL 시 정리용). Popen 은 exec 가 끝난 뒤 돌아오므로 cmdline 이 안정된 값이다
     if job_id:
         try:
             p = psutil.Process(proc.pid)
@@ -70,17 +107,20 @@ def _execute(plan: plans.Plan, out, *, job_id: str | None = None) -> tuple[str, 
         except (psutil.Error, ProcessLookupError):
             started = None
             cmdline = None
-        jobs.update(job_id, child_pid=proc.pid, child_pgid=proc.pid, child_started=started,
-                    child_cmdline_sha256=hashlib.sha256(cmdline.encode()).hexdigest() if cmdline else None)
+        try:
+            jobs.update(job_id, child_pid=proc.pid, child_pgid=proc.pid, child_started=started,
+                        child_cmdline_sha256=hashlib.sha256(cmdline.encode()).hexdigest() if cmdline else None,
+                        child_starting=False)
+        except Exception:
+            _kill_group(proc)  # 기록하지 못한 자식을 남기지 않는다
+            raise
 
     deadline = time.monotonic() + plan.timeout
     while proc.poll() is None:
         if _cancelled:
-            _kill_group(proc)
-            return "cancelled", proc.returncode
+            return ("cancelled" if _kill_group(proc) else GROUP_UNCONFIRMED), proc.returncode
         if time.monotonic() > deadline:
-            _kill_group(proc)
-            return "timeout", proc.returncode
+            return ("timeout" if _kill_group(proc) else GROUP_UNCONFIRMED), proc.returncode
         time.sleep(0.25)
     return ("succeeded" if proc.returncode == 0 else "failed"), proc.returncode
 
@@ -238,10 +278,13 @@ async def _run(job_id: str) -> int:
                     error = (error + " " if error else "") + "임시 평문 검증 디렉터리 정리 실패(잔여물 보존)"
                     summary["cleanup_dir_retained"] = True
 
+    if status == GROUP_UNCONFIRMED:
+        error = "cleanup_pending: 취소·시간 초과 뒤에도 자식 프로세스 그룹 종료를 확인하지 못했습니다(작업 슬롯 유지)"
     tail = scrub(_redact_paths(output, plan), []) if plan else ""
     finished = {"status": status, "exit_code": code, "summary": summary,
                 "error": scrub(error) if error else (f"종료 코드 {code}" if status == "failed" else None),
-                "output_tail": tail[-OUTPUT_TAIL_CHARS:], "finished_at": jobs.now(),
+                "output_tail": tail[-OUTPUT_TAIL_CHARS:],
+                "finished_at": None if status == GROUP_UNCONFIRMED else jobs.now(),
                 "duration_s": round(time.monotonic() - started, 2)}
     with jobs.locked():
         jobs.write(jobs.get(job_id) | finished | {"finish_audited": False})

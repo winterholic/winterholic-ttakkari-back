@@ -6,13 +6,17 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import contextlib
 import json
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import psutil
@@ -559,7 +563,7 @@ def test_reconcile_keeps_slot_when_group_survives_sigkill(monkeypatch):
     monkeypatch.setattr(jobs.psutil, "Process", lambda _: Child())
     monkeypatch.setattr(jobs.os, "getpgid", lambda _: job["child_pgid"])
     monkeypatch.setattr(jobs.os, "killpg", lambda pgid, sig: None)
-    monkeypatch.setattr(jobs.time, "sleep", lambda _: None)
+    monkeypatch.setattr(jobs, "GROUP_EXIT_WAIT_SECONDS", 0.1)
     reconciled = jobs.reconciled(job["id"])
     assert reconciled["status"] == "cleanup_pending"
     assert "remains alive" in reconciled["error"]
@@ -627,7 +631,7 @@ def test_reconcile_blocks_when_child_record_lacks_start_time_or_cmdline(monkeypa
         reconciled = jobs.reconciled(job["id"])
         assert reconciled["status"] == "cleanup_pending" and "incomplete" in reconciled["error"]
         jobs.write(reconciled | {"status": "cancelled", "finished_at": jobs.now()})
-    assert sent == []
+    assert [call for call in sent if call[1] != 0] == []  # 존재 확인(0)만 하고 신호는 보내지 않는다
 
 
 def test_reconcile_without_recorded_child_finishes_as_runner_lost(monkeypatch):
@@ -780,3 +784,247 @@ async def test_finish_audit_database_commit_failure_keeps_marker_pending_then_re
     monkeypatch.setattr(db_module, "sessionmaker", lambda: lambda: SuccessfulSession())
     retried = await jobs.audit_finish(job["id"])
     assert retried["finish_audited"] is True and retried["audit_error"] is None
+
+
+# ---- 독립 검증 회귀: 러너 SIGKILL 신원 결속·감사 잠금 교착·러너 종료 경로의 그룹 확인 ----
+
+_RUNNER_CHILD = """
+import os, sys, tempfile, pathlib, time
+from ttakkari.operations import jobs, plans, runner
+tmp = pathlib.Path(sys.argv[1]); jobs.root = lambda: tmp
+jid = sys.argv[2]
+jobs.write({"id": jid, "kind": "backup_db", "status": "running", "created_at": jobs.now(), "inline": False,
+            "requested_by_session": "s", "identity": {}, "runner_pid": os.getpid(),
+            "runner_started": jobs.process_identity(os.getpid())})
+plan = plans.Plan("backup_db", ["/bin/bash", "-c", "sleep 8; true"], dict(os.environ), 60)
+if len(sys.argv) > 3:  # 자식 기록 직전의 틈을 넓혀 재현한다
+    _update = jobs.update
+    def slow(job_id, **fields):
+        if "child_pid" in fields:
+            time.sleep(float(sys.argv[3]))
+        return _update(job_id, **fields)
+    jobs.update = slow
+with tempfile.TemporaryFile() as out:
+    runner._execute(plan, out, job_id=jid)
+"""
+
+
+def _spawn_real_runner(tmp_path, monkeypatch, *extra):
+    root = tmp_path / "ops"
+    (root / "jobs").mkdir(parents=True)
+    monkeypatch.setattr(jobs, "root", lambda: root)
+    script = tmp_path / "runner_child.py"
+    script.write_text(_RUNNER_CHILD)
+    job_id = str(uuid.uuid4())
+    env = {**os.environ, "PYTHONPATH": str(Path(jobs.__file__).resolve().parents[2])}
+    proc = subprocess.Popen([sys.executable, str(script), str(root), job_id, *extra], env=env,
+                            start_new_session=True)
+    return proc, job_id
+
+
+def _group_exists(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for(predicate, seconds=10):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(0.05)
+    raise AssertionError("조건이 시간 안에 충족되지 않았다")
+
+
+def _job_field(job_id: str, field: str):
+    try:
+        return jobs.get(job_id).get(field)
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def test_real_runner_sigkill_leaves_verifiable_child_identity(tmp_path, monkeypatch):
+    proc, job_id = _spawn_real_runner(tmp_path, monkeypatch)
+    leader = None
+    try:
+        leader = _wait_for(lambda: _job_field(job_id, "child_pid"))
+        time.sleep(0.6)  # nice 같은 래퍼가 있었다면 exec 이후 cmdline 이 달라지는 시점
+        os.kill(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=5)
+        reconciled = jobs.reconciled(job_id)
+        assert reconciled["status"] == "failed", reconciled.get("error")
+        assert reconciled["error"].startswith("runner_lost")
+        _wait_for(lambda: not _group_exists(leader), 5)
+    finally:
+        if leader:
+            with contextlib.suppress(OSError):
+                os.killpg(leader, signal.SIGKILL)
+        proc.kill()
+
+
+def test_runner_sigkill_before_child_identity_is_recorded_blocks_slot(tmp_path, monkeypatch):
+    proc, job_id = _spawn_real_runner(tmp_path, monkeypatch, "3")
+    leader = None
+    try:
+        children = _wait_for(lambda: psutil.Process(proc.pid).children())
+        leader = children[0].pid
+        time.sleep(0.3)
+        assert not _job_field(job_id, "child_pid")  # 기록 전 창
+        os.kill(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=5)
+        reconciled = jobs.reconciled(job_id)
+        assert reconciled["status"] == "cleanup_pending", reconciled
+        assert "unrecorded" in reconciled["error"]
+        assert _group_exists(leader)  # 기록 없는 그룹에는 신호를 보내지 않는다
+        with pytest.raises(jobs.Conflict, match="backup_db"):
+            jobs.prepare_heavy("restore_rehearsal", "other")
+    finally:
+        if leader:
+            with contextlib.suppress(OSError):
+                os.killpg(leader, signal.SIGKILL)
+        proc.kill()
+
+
+_LEADER_DIES_GRANDCHILD_IGNORES_TERM = "(trap '' TERM; exec sleep 60) & exec sleep 60"
+
+
+def test_runner_timeout_confirms_whole_group_gone_not_just_leader(monkeypatch):
+    monkeypatch.setattr(runner, "_TERM_GRACE", 1)
+    monkeypatch.setattr(runner, "_KILL_GRACE", 3)
+    plan = plans.Plan("backup_db", ["/bin/bash", "-c", _LEADER_DIES_GRANDCHILD_IGNORES_TERM],
+                      {"PATH": "/usr/bin:/bin"}, 1)
+    seen = {}
+    real_killpg = runner.os.killpg
+
+    def spy(pgid, sig):
+        seen.setdefault("pgid", pgid)
+        return real_killpg(pgid, sig)
+
+    monkeypatch.setattr(runner.os, "killpg", spy)
+    try:
+        with __import__("tempfile").TemporaryFile() as out:
+            status, _ = runner._execute(plan, out)
+        assert status == "timeout"
+        assert not _group_exists(seen["pgid"])  # 리더만 죽고 TERM 무시 손자가 남으면 안 된다
+    finally:
+        if "pgid" in seen:
+            with contextlib.suppress(OSError):
+                real_killpg(seen["pgid"], signal.SIGKILL)
+
+
+def test_runner_reports_cleanup_pending_when_group_survives_sigkill(monkeypatch):
+    monkeypatch.setattr(runner, "_TERM_GRACE", 0.3)
+    monkeypatch.setattr(runner, "_KILL_GRACE", 0.3)
+    plan = plans.Plan("backup_db", ["/bin/bash", "-c", "trap '' TERM; sleep 60"], {"PATH": "/usr/bin:/bin"}, 1)
+    seen = {}
+    real_killpg = runner.os.killpg
+
+    def refuse_kill(pgid, sig):
+        seen.setdefault("pgid", pgid)
+        if sig == signal.SIGKILL:
+            return None
+        return real_killpg(pgid, sig)
+
+    monkeypatch.setattr(runner.os, "killpg", refuse_kill)
+    try:
+        with __import__("tempfile").TemporaryFile() as out:
+            status, _ = runner._execute(plan, out)
+        assert status == "cleanup_pending"
+        assert _group_exists(seen["pgid"])
+    finally:
+        if "pgid" in seen:
+            with contextlib.suppress(OSError):
+                real_killpg(seen["pgid"], signal.SIGKILL)
+
+
+async def test_run_keeps_heavy_slot_when_runner_cannot_confirm_group_exit(monkeypatch):
+    monkeypatch.setattr(plans, "make_plan", lambda kind, job_id: _fake_plan("true"))
+    monkeypatch.setattr(runner, "_execute", lambda plan, out, job_id=None: ("cleanup_pending", None))
+    job = jobs.create("backup_db", "s")
+    assert await runner._run(job["id"]) == 0
+    done = jobs.get(job["id"])
+    assert done["status"] == "cleanup_pending" and not done.get("finished_at")
+    assert "cleanup_pending" in done["error"]
+    assert not done.get("finish_audited")
+    # 러너가 사라진 뒤 재조회에서도 그룹 종료 증거가 없으면 슬롯을 유지한다
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+    monkeypatch.setattr(jobs, "_clean_child_process_group", lambda _: (False, "group exit unconfirmed"))
+    with pytest.raises(jobs.Conflict, match="backup_db"):
+        jobs.prepare_heavy("restore_rehearsal", "other")
+
+
+def _audit_deadlock_probe(pool_size: int) -> bool:
+    async def main() -> bool:
+        job = jobs.write(jobs.create("backup_db", "session") | {
+            "status": "failed", "finished_at": jobs.now(), "error": "x", "finish_audited": False})
+
+        async def slow_commit(_job, _db, _record):
+            await asyncio.sleep(0.3)
+
+        class Session:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_): return False
+
+        from ttakkari import db as db_module
+        monkeypatched = pytest.MonkeyPatch()
+        monkeypatched.setattr(jobs, "_commit_finish_audit", slow_commit)
+        monkeypatched.setattr(db_module, "sessionmaker", lambda: lambda: Session())
+        try:
+            asyncio.get_running_loop().set_default_executor(
+                concurrent.futures.ThreadPoolExecutor(max_workers=pool_size))
+            await asyncio.wait_for(
+                asyncio.gather(*(jobs.audit_finish(job["id"]) for _ in range(pool_size + 3))), 8)
+            return jobs.get(job["id"]).get("finish_audited") is True
+        except TimeoutError:
+            return False
+        finally:
+            monkeypatched.undo()
+
+    # 교착이 재발해도 테스트가 멈추지 않도록 데몬 스레드에서 돌려 시간 안에 끝나는지만 본다
+    result: list[bool] = []
+    runner_thread = threading.Thread(target=lambda: result.append(asyncio.run(main())), daemon=True)
+    runner_thread.start()
+    runner_thread.join(timeout=20)
+    return bool(result and result[0])
+
+
+def test_audit_lock_waiters_do_not_starve_the_thread_pool():
+    assert _audit_deadlock_probe(4) is True
+
+
+def _run_with_deadline(coro_factory, seconds=15) -> bool:
+    """잠금 회귀가 생겨도 테스트가 멈추지 않도록 데몬 스레드의 별도 루프에서 돌린다."""
+    outcome: list[bool] = []
+
+    def target():
+        try:
+            asyncio.run(coro_factory())
+            outcome.append(True)
+        except BaseException:  # noqa: BLE001
+            outcome.append(False)
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    worker.join(timeout=seconds)
+    return bool(outcome and outcome[0])
+
+
+def test_audit_lock_is_released_when_a_waiter_is_cancelled():
+    async def main():
+        async with jobs.audit_locked():
+            waiter = asyncio.create_task(jobs.audit_locked().__aenter__())
+            await asyncio.sleep(0.2)
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+        reacquired = jobs.audit_locked()
+        await asyncio.wait_for(reacquired.__aenter__(), 2)
+        await reacquired.__aexit__(None, None, None)
+
+    assert _run_with_deadline(main) is True

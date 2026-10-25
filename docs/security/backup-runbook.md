@@ -62,7 +62,8 @@ cd back
   러너가 사라지면 기록된 자식 PID·생성 시각·명령행·프로세스 그룹을 모두 확인한 뒤에만 그룹을 정리한다. 신원 확인·권한·그룹 종료를
   확인할 수 없으면 `cleanup_pending` 으로 남아 무거운 작업 슬롯을 유지한다. 이는 운영자가 `/api/agent/operations/{id}` 상태를 다시 조회해도
   증거가 확보되기 전에는 실패 종결로 바뀌지 않는다. 오류 문구의 pid·pgid 를 호스트에서 직접 확인해(`ps -g <pgid>`) 그룹이 실제로 없음이 분명할 때만
-  운영자가 해당 작업 기록(`~/.ttakkari/operations/jobs/<id>.json`)을 정리한다. 앱은 신원 결속이 안 된 그룹에는 신호를 보내지 않는다. 취소는 자식 프로세스 그룹이 종료된 뒤 `cancelled` 로 남긴다.
+  운영자가 해당 작업 기록(`~/.ttakkari/operations/jobs/<id>.json`)을 정리한다. 앱은 신원 결속이 안 된 그룹에는 신호를 보내지 않는다. 취소·시간 초과도 러너가 그룹 전체(리더만이 아니라 손자까지)의 소멸을 확인한 뒤에만 `cancelled`/`timeout` 으로 남기며, 확인하지 못하면 `cleanup_pending` 으로 슬롯을 유지한다.
+  자식을 띄우는 순간 러너가 죽어 신원이 기록되지 않은 경우(`unrecorded`)도 신호를 보내지 않고 `cleanup_pending` 으로 남는다.
   종료 감사는 DB 커밋 뒤 `finish_audited` 표식을 기록한다. 감사 커밋에 실패하면 terminal 상태와 `audit_pending`/`audit_error` 를 보존하고
   다음 상태·목록 조회에서 재시도한다. 요청·취소·종료는 감사 로그(`operation.request|cancel|finish`)에 남는다.
 - 결과에는 개수·해시·시각·대상 identity 만 담는다. 출력 꼬리는 `scrub` 마스킹 후 경로를 `<home>` 등으로 치환해 1500자만 보존한다.

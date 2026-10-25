@@ -101,7 +101,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from argon2 import PasswordHasher
-from sqlalchemy import text
+from sqlalchemy import MetaData, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from ttakkari.config import get_settings
@@ -190,14 +190,21 @@ def pytest_terminal_summary(terminalreporter):
             f"{s['full']} forced full, {s['fallback']} fell back to full")
 
 
+def rebuild_test_schema(connection, metadata):
+    """Drop the actual old schema, whose constraints may predate today's models."""
+    existing = MetaData(schema=metadata.schema)
+    existing.reflect(bind=connection)
+    existing.drop_all(connection)
+    metadata.create_all(connection)
+
+
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
 async def _schema_and_app():
     eng = create_async_engine(TEST_DB)
     async with eng.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(rebuild_test_schema, Base.metadata)
     await eng.dispose()
     async with app.router.lifespan_context(app):
         yield

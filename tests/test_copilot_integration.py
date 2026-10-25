@@ -42,13 +42,15 @@ async def test_system_auth_failure_falls_back_and_persists_reauthentication(clie
     copilot_accounts.record_run(second['config_dir'], success=True)
     attempts = []
 
-    async def attempt(db, run, adapter, spec, env, root, handle, profile_id):
+    async def attempt(self, db, run, adapter, spec, env, root, handle, profile_id):
         attempts.append(str(profile_id))
         if str(profile_id) == first['id']:
             return ParseState(is_error=True, error='401 Unauthorized'), 1, False, False
         return ParseState(result_text='done'), 0, False, False
 
-    monkeypatch.setattr(manager, '_attempt', attempt)
+    # Patch the defining class: restoring an inherited method on the singleton
+    # leaves a bound instance attribute that hides later class-level patches.
+    monkeypatch.setattr(type(manager), '_attempt', attempt)
     session = await _session(client, auth, make_dir, engine='copilot', model='gpt-5.6-luna', kind='chat', strict_engine=True)
     run = await run_to_end(client, auth, session['id'], 'hello')
     assert run['status'] == 'succeeded', run

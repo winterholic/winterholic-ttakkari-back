@@ -32,12 +32,21 @@ ENGINES = {"claude", "codex", "antigravity", "muse", "opencode", "copilot"}
 # Claude: "You've hit your session|weekly|usage limit · resets 7:20pm (Asia/Seoul)", "Claude AI usage limit reached|<epoch>".
 # Codex: "You've hit your usage limit. ... try again at Oct 12th, 2026 12:16 AM."
 USAGE_LIMIT_RE = re.compile(
-    r"usage limit|hit your (\w+ )?limit|reached your (\w+ )?limit|limit reached|rate.?limit|quota|too many requests|"
-    r"\b429\b|credit balance|out of (extra )?(credits|usage)|overloaded",
+    r"usage limit|hit your ([\w\-]+ )*limit|reached your ([\w\-]+ )*limit|limit reached|rate.?limit|quota|too many requests|"
+    r"\b429\b|credit balance|out of (extra )?(credits|usage)|overloaded|"
+    r"premium (model )?request(s)? (allowance )?exceeded|premium request(s)? limit|"
+    r"monthly limit of premium requests|exhausted your ([\w\-]+ )*(quota|allowance|limit)|"
+    r"resource.*exhausted",
     re.IGNORECASE,
 )
 PERMISSION_ERROR_RE = re.compile(
     r"permission denied|operation not permitted|access denied|authorization failed|forbidden|\[ttakkari-guard\]",
+    re.IGNORECASE,
+)
+AUTH_ERROR_RE = re.compile(
+    r"\bunauthorized\b|\b401\b|token expired|not authenticated|login required|"
+    r"bad credentials|invalid credentials|device code expired|authentication failed|"
+    r"sign in|re-authenticate|auth_expired|setup_required",
     re.IGNORECASE,
 )
 
@@ -671,6 +680,12 @@ def is_usage_limit(*texts: str | None) -> bool:
     # must not replay side effects through another provider. Check separate lines
     # so an actual provider rejection after an earlier tool error is still detected.
     return any(USAGE_LIMIT_RE.search(line) and not PERMISSION_ERROR_RE.search(line)
+               for text in texts if text for line in text.splitlines())
+
+
+def is_auth_error(*texts: str | None) -> bool:
+    """인증 실패, 만료, 로그인 필요 오류인지 판별한다."""
+    return any(AUTH_ERROR_RE.search(line) and not PERMISSION_ERROR_RE.search(line)
                for text in texts if text for line in text.splitlines())
 
 

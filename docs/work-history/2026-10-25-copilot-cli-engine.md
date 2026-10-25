@@ -25,3 +25,11 @@
 4. **단위 테스트**:
    - `unit_tests/test_copilot_accounts.py`: 9개 테스트 통과.
    - `unit_tests/test_copilot_adapter.py`: 7개 테스트 통과.
+
+5. **독립 검증 결함 교정 (OpenCode & Copilot 공통)**:
+   - 권한 경계: OpenCode `--auto` 위험 플래그 제거, `seatbelt.py`의 `WRAPPABLE_ENGINES`에 `opencode` 및 `copilot` 등록하여 `sandbox-exec` 커널 격리 강제.
+   - MCP 로드: `OPENCODE_CONFIG` 환경변수를 통해 임시 `opencode.json`(`type: "local"`, `enabled: true`)을 프로젝트 루트 외부에 격리 주입.
+   - 인증 실패 폴백: `runs/manager.py`에 `auth_failed` 감지 및 재시도 대상 제외, 남은 계정 핸드오프·폴백 연동.
+   - 에러 파서: 중첩된 `error.data.message`, `cause.body.message`를 누락 없이 추출하도록 `_extract_error_message` 구현.
+   - 한도 문구: `USAGE_LIMIT_RE`에 Copilot premium requests 초과 및 월간 한도 문구 정규식 추가.
+   - 단위 테스트 7개 추가: `unit_tests/test_opencode_defects.py` (6개), `unit_tests/test_opencode_seatbelt.py` (3개), `unit_tests/test_account_fallback.py` (1개) 전원 통과.

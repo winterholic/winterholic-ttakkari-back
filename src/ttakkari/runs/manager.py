@@ -1369,6 +1369,14 @@ class RunManager:
                     "account": prof.name, "engine": prof.engine, "model": prof.model,
                     "detail": (state.error or tail or "")[:300],
                 })
+            auth_failed = (failed and not stopped and profiles_mod.is_auth_error(*texts))
+            if auth_failed:
+                # 인증 만료/실패한 계정은 재시도 대상에서 즉시 제외하고 다음 계정으로 폴백
+                remaining = [p for p in remaining if p.id != prof.id]
+                events.append(db, run, "account.auth_failed", {
+                    "account": prof.name, "engine": prof.engine, "model": model,
+                    "detail": (state.error or tail or "")[:300],
+                })
             # 이 Run 이 도는 동안 다른 Run 이 한도에 걸린 계정은 넘어갈 후보에서 뺀다.
             remaining = [p for p in remaining if not profiles_mod.profile_limited_until(p)]
             if missing and task_type:
@@ -1417,7 +1425,7 @@ class RunManager:
                     # 대기 사유에는 Qwen 실패를 정확히 남긴다(선택 당시 "ready"가 아님).
                     qwen_state = "qwen_attempt_failed"
                     break
-            if stopped or not failed or not (missing or limited or invalid_model) or not remaining:
+            if stopped or not failed or not (missing or limited or invalid_model or auth_failed) or not remaining:
                 if missing and not remaining:
                     await self._finish(db, run, RunStatus.failed, error=f"{prof.engine} 실행 파일을 찾을 수 없습니다.")
                     return
@@ -1440,7 +1448,7 @@ class RunManager:
             last_fallback = {
                 "from": prof.name, "from_engine": prof.engine, "from_model": from_model,
                 "to": nxt.name, "to_engine": nxt.engine, "to_model": nxt.model,
-                "reason": "missing" if missing else "invalid_model" if invalid_model else "usage_limit",
+                "reason": "missing" if missing else "invalid_model" if invalid_model else "auth_failed" if auth_failed else "usage_limit",
                 "fallback_tier": tier,
                 "detail": (state.error or tail or "")[:500], "reset_at": _iso(reset_at),
                 # resume: 그 계정의 엔진 대화를 이어감 · handoff: 대화·진행 요약을 새 대화에 실어 보냄

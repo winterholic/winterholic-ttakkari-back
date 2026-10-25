@@ -29,7 +29,7 @@ class OpencodeAdapterTests(unittest.TestCase):
         self.assertIn("--format", cmd)
         self.assertIn("json", cmd)
         self.assertIn("--pure", cmd)
-        self.assertIn("--auto", cmd)
+        self.assertNotIn("--auto", cmd)
         self.assertIn("--model", cmd)
         self.assertIn("github-copilot/gpt-5.6-sol", cmd)
         self.assertNotIn("--session", cmd)

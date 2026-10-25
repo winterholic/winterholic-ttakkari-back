@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,12 @@ log = logging.getLogger(__name__)
 
 DEFAULT_COPILOT_MODEL = "auto"
 FILE_WRITE_TOOLS = {"write", "edit", "patch", "file_write", "write_to_file", "replace_file_content"}
+
+
+def _get_session_dir(session_id: str) -> Path:
+    dev_tmp = Path("/Users/winterholic/development/.tmp")
+    root = dev_tmp if dev_tmp.is_dir() else Path(tempfile.gettempdir())
+    return root / "ttakkari-copilot" / session_id
 
 
 class CopilotAdapter:
@@ -73,7 +80,7 @@ class CopilotAdapter:
         except ValueError as exc:
             raise ValueError("Copilot session requires a UUID workspace key") from exc
 
-        base = Path("/private/tmp/ttakkari-copilot") / session_id
+        base = _get_session_dir(session_id)
         base.mkdir(mode=0o700, parents=True, exist_ok=True)
         if base.is_symlink():
             raise ValueError("Copilot session directory cannot be a symlink")
@@ -100,7 +107,7 @@ class CopilotAdapter:
     def cleanup(self, spec: LaunchSpec) -> None:
         if not spec.session_id:
             return
-        config = Path("/private/tmp/ttakkari-copilot") / spec.session_id / "mcp-config.json"
+        config = _get_session_dir(spec.session_id) / "mcp-config.json"
         try:
             config.unlink(missing_ok=True)
         except OSError:

@@ -21,12 +21,14 @@
 
 3. **헤드리스 NDJSON 이벤트 스트림 어댑터 (`CopilotAdapter`)**:
    - 실행 명령: `copilot -p <prompt> --output-format json --allow-all-tools --no-ask-user -C <cwd>`
+   - Seatbelt 샌드박스: 자체 샌드박스가 없으므로 `sandbox-exec`로 래핑하여 워크스페이스 외부 쓰기 및 보호 디렉터리, DB 포트 접근을 커널 수준에서 차단.
    - 세션 재개: CLI의 `--session-id <UUID>` 플래그를 통한 상태 지속. 세션 ID 불일치 발생 시 즉각 중단(fail-closed).
    - 이벤트 정규화:
      - `assistant.message_delta` -> 스트리밍 텍스트 델타 (`Normalized("message")`)
      - `tool.execution_start` / `tool.execution_complete` -> 도구 호출 및 결과 추적
      - `result` -> 종료 코드, 세션 ID, 토큰 사용량(`usage`) 추출
-     - 한도 초과/오류 감지 및 자동 쿨다운 연동.
+     - 한도 초과(monthly limit of premium requests, 429 등) 감지 및 자동 쿨다운 연동. 공식 잔여 quota API가 없으므로 오류 이벤트 기반으로 쿨다운 및 계정 회피를 수행.
+     - 인증 실패(401, unauthorized) 감지 시 해당 계정 `auth_expired` 설정 및 남은 계정으로 핸드오프·폴백.
    - MCP 서버 연동: `--additional-mcp-config` 플래그를 통해 세션별 임시 MCP 설정 파일 주입.
 
 4. **프론트엔드 연동**:

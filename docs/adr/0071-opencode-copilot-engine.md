@@ -21,12 +21,15 @@ Ttakkari(Mac Studio 무인 운영 비서)에 새로운 실행기 엔진으로 Op
 
 - 바이너리: 공식 배포 바이너리(`~/.opencode/bin/opencode`)를 사용하며, 기본 경로는 `config.opencode_bin`으로 제어한다.
 - 헤드리스 실행 명령:
-  `opencode run --format json --pure --auto --dir <workspace> --model github-copilot/<model>`
+  `opencode run --format json --pure --dir <workspace> --model github-copilot/<model>`
   - `--format json`: 라인 단위 NDJSON(JSON stream) 이벤트 출력.
   - `--pure`: 외부 임의 플러그인 로드 방지.
-  - `--auto`: 무인 환경에서 파일 수정 및 도구 실행 자동 승인.
+  - 위험한 `--auto` 플래그는 제거되었으며, 세션별 `OPENCODE_CONFIG`를 통해 통제된 도구 권한(`read/edit/bash`)을 주입하고 OS 수준에서 `sandbox-exec`(Seatbelt) 워크스페이스 샌드박스로 커널 격리를 강제한다.
   - `--session <id>`: 기존 세션 재개.
 - stdin 처리: OpenCode CLI는 TTY가 아닐 때 stdin EOF를 대기하므로, 백엔드 subprocess 실행 시 stdin을 `/dev/null`로 연결하여 블로킹을 방지한다.
+- MCP 및 세션 설정: `OPENCODE_CONFIG` 환경변수로 세션별 격리된 임시 `opencode.json`(`type: "local"`, `enabled: true`)을 프로젝트 루트 외부에 주입하여 워크스페이스 오염 없이 MCP 및 권한을 로드한다.
+- 사용량 및 한도 수집 정책: GitHub Copilot은 공식 잔여 quota/사용량 쿼리 REST API를 제공하지 않으므로, 오류 이벤트(Copilot premium requests 한도, rate limit 429 등) 기반 쿨다운(1시간 또는 리셋 시각 파싱)으로 계정 회피 및 전환을 관리한다.
+- 인증 실패 처리: 401/토큰 만료/unauthorized 등 인증 실패 시 해당 계정을 `auth_expired`로 기록하고, 재시도 대상에서 즉시 제외한 뒤 남은 계정으로 핸드오프·폴백한다.
 - 이벤트 정규화:
   - `step_start`: `sessionID` 추출 및 `agent.session` 이벤트 발행. 요청 세션 ID와 일치하지 않으면 `resume_mismatch=True`로 즉시 중단(fail-closed).
   - `text`: 증분 텍스트를 `message` 이벤트로 발행하고 최종 결과 텍스트 누적.

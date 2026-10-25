@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,12 @@ log = logging.getLogger(__name__)
 
 DEFAULT_COPILOT_MODEL = "github-copilot/gpt-5.6-sol"
 FILE_WRITE_TOOLS = {"write", "edit", "patch", "file_write", "write_to_file", "replace_file_content"}
+
+
+def _get_session_dir(session_id: str) -> Path:
+    dev_tmp = Path("/Users/winterholic/development/.tmp")
+    root = dev_tmp if dev_tmp.is_dir() else Path(tempfile.gettempdir())
+    return root / "ttakkari-opencode" / session_id
 
 
 class OpencodeAdapter:
@@ -47,7 +54,6 @@ class OpencodeAdapter:
             binary, "run",
             "--format", "json",
             "--pure",
-            "--auto",
             "--dir", str(spec.cwd.resolve()),
             "--model", model,
         ]
@@ -58,31 +64,41 @@ class OpencodeAdapter:
         if spec.effort and spec.effort in {"low", "medium", "high", "max"}:
             cmd += ["--variant", spec.effort]
 
-        if spec.session_id and spec.mcp_servers:
-            self._prepare_mcp(spec.session_id, spec.mcp_servers)
+        if spec.session_id:
+            config_file = self._prepare_session_config(spec.session_id, spec.mcp_servers or {}, spec.cwd, spec.write_roots)
+            extra_env["OPENCODE_CONFIG"] = str(config_file)
 
         cmd.append(prompt)
         return cmd
 
     def working_directory(self, spec: LaunchSpec) -> Path:
-        if spec.session_id and spec.mcp_servers:
-            return Path("/private/tmp/ttakkari-opencode") / spec.session_id
         return spec.cwd
 
-    def _prepare_mcp(self, session_id: str, servers: dict[str, dict[str, Any]]) -> Path:
+    def _prepare_session_config(
+        self,
+        session_id: str,
+        servers: dict[str, dict[str, Any]],
+        cwd: Path,
+        write_roots: list[Path] | None = None,
+    ) -> Path:
         try:
             uuid.UUID(session_id)
         except ValueError as exc:
             raise ValueError("OpenCode session requires a UUID workspace key") from exc
 
-        base = Path("/private/tmp/ttakkari-opencode") / session_id
+        base = _get_session_dir(session_id)
         base.mkdir(mode=0o700, parents=True, exist_ok=True)
         if base.is_symlink():
             raise ValueError("OpenCode session directory cannot be a symlink")
 
-        mcp_config = {
+        mcp_config: dict[str, Any] = {
             "$schema": "https://opencode.ai/config.json",
-            "mcp": {}
+            "mcp": {},
+            "permission": {
+                "read": "allow",
+                "edit": "allow",
+                "bash": "allow",
+            },
         }
         for name, srv in servers.items():
             cmd_args = [srv.get("command", "")]
@@ -92,6 +108,7 @@ class OpencodeAdapter:
                 "type": "local",
                 "command": cmd_args,
                 "environment": srv.get("env", {}),
+                "enabled": True,
             }
 
         config_path = base / "opencode.json"
@@ -99,12 +116,12 @@ class OpencodeAdapter:
         fd = os.open(config_path, flags, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(mcp_config, stream, ensure_ascii=False, indent=2)
-        return base
+        return config_path
 
     def cleanup(self, spec: LaunchSpec) -> None:
         if not spec.session_id:
             return
-        config = Path("/private/tmp/ttakkari-opencode") / spec.session_id / "opencode.json"
+        config = _get_session_dir(spec.session_id) / "opencode.json"
         try:
             config.unlink(missing_ok=True)
         except OSError:
@@ -210,10 +227,9 @@ class OpencodeAdapter:
             return [Normalized("usage", {"cost_usd": state.cost_usd, **state.usage})]
 
         if event_type == "error":
-            err = obj.get("error") or {}
-            msg = err.get("message") if isinstance(err, dict) else str(err)
+            msg = _extract_error_message(obj)
             state.is_error = True
-            state.error = msg or "OpenCode stream error"
+            state.error = msg
 
             # Check if this error was a usage limit or rate limit
             if profiles_mod.is_usage_limit(state.error):
@@ -224,6 +240,36 @@ class OpencodeAdapter:
             return [Normalized("error", {"message": state.error})]
 
         return []
+
+
+def _extract_error_message(obj: dict[str, Any]) -> str:
+    err = obj.get("error")
+    if isinstance(err, dict):
+        data = err.get("data")
+        if isinstance(data, dict):
+            if data.get("message"):
+                return str(data["message"])
+            if data.get("error"):
+                return str(data["error"])
+        elif isinstance(data, str) and data.strip():
+            return data.strip()
+
+        cause = err.get("cause")
+        if isinstance(cause, dict):
+            cause_body = cause.get("body")
+            if isinstance(cause_body, dict) and cause_body.get("message"):
+                return str(cause_body["message"])
+            if cause.get("message"):
+                return str(cause["message"])
+
+        if err.get("message"):
+            return str(err["message"])
+    elif isinstance(err, str) and err.strip():
+        return err.strip()
+
+    if obj.get("message"):
+        return str(obj["message"])
+    return "OpenCode stream error"
 
 
 def _slim_input(name: str, params: dict[str, Any]) -> dict[str, Any]:

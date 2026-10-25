@@ -21,7 +21,7 @@ from pathlib import Path
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 
 # 자체 샌드박스가 없는 엔진만. muse 는 네이티브 샌드박스가 available 이어야 뜨므로(.muse-runtime/contract.mjs) 뺐다.
-WRAPPABLE_ENGINES = frozenset({"claude"})
+WRAPPABLE_ENGINES = frozenset({"claude", "opencode", "copilot"})
 
 # PostgreSQL, MySQL/MariaDB, Redis, MongoDB. 원격 호스트도 같은 포트면 막는다.
 DB_PORTS = (5432, 5433, 3306, 6379, 27017)
@@ -58,6 +58,7 @@ class SeatbeltPolicy:
     socket_roots: list[Path] = field(default_factory=list)
     deny_keychain: bool = False
     secret_files: tuple[str, ...] = SECRET_FILES
+    secret_dirs: tuple[str, ...] = SECRET_DIRS
 
 
 def _q(path: Path | str) -> str:
@@ -111,7 +112,7 @@ def render_profile(policy: SeatbeltPolicy) -> str:
         lines.append(f"(allow file-read-data (subpath {_q(_real(policy.runtime_root))}))")
 
     # 심링크로 옮긴 저장소도 실제 대상 경로를 막는다. 기존 이름도 함께 닫아 둔다.
-    secret_dirs = {p for d in SECRET_DIRS for p in (home / d, _real(home / d))}
+    secret_dirs = {p for d in policy.secret_dirs for p in (home / d, _real(home / d))}
     if policy.deny_keychain:
         secret_dirs.update((home / KEYCHAIN_DIR, _real(home / KEYCHAIN_DIR)))
     secret_files = {p for f in policy.secret_files for p in (home / f, _real(home / f))}
@@ -149,16 +150,41 @@ def policy_for(*, home: Path, ttakkari_home: Path, outbox: Path, write_roots: It
     allowed = [p for p in map(_real, [outbox, *write_roots]) if
                (_under(p, outbox) or any(_under(p, r) for r in transfer_roots[1:]))
                and _under(p, ttk) and p != ttk]
+    accounts = ttk / "accounts"
     config_dir = _real(Path(env.get("CLAUDE_CONFIG_DIR") or home / ".claude")) if engine == "claude" else None
     if config_dir is not None:
-        accounts = ttk / "accounts"
         protected = [home, ttk, accounts, *(_real(home / d) for d in SECRET_DIRS)]
         if any(_under(p, config_dir) for p in protected) or any(
             _under(config_dir, _real(home / d)) for d in SECRET_DIRS
         ) or (_under(config_dir, ttk) and not _under(config_dir, accounts)):
             raise ValueError("Seatbelt: CLAUDE_CONFIG_DIR는 독립된 Claude 계정 폴더여야 한다")
         allowed.append(config_dir)
+
+    secret_dirs = list(SECRET_DIRS)
+    if engine == "opencode":
+        # OpenCode isolated account directories
+        for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"):
+            val = env.get(key)
+            if val:
+                p = _real(Path(val))
+                if _under(p, accounts) and p != accounts:
+                    allowed.append(p)
+    elif engine == "copilot":
+        copilot_home = env.get("COPILOT_HOME")
+        if copilot_home:
+            p = _real(Path(copilot_home))
+            if _under(p, accounts) and p != accounts:
+                allowed.append(p)
+        else:
+            # System default copilot account uses ~/.copilot
+            system_copilot = _real(home / ".copilot")
+            allowed.append(system_copilot)
+            if ".copilot" in secret_dirs:
+                secret_dirs.remove(".copilot")
+
     allowed_files = []
+    if env.get("OPENCODE_CONFIG"):
+        allowed_files.append(_real(Path(env["OPENCODE_CONFIG"])))
     if env.get("TTAKKARI_GUARD_LOG"):
         # PreToolUse 훅이 엔진의 자식이라 같은 샌드박스에서 가드 로그를 쓴다.
         log = _real(Path(env["TTAKKARI_GUARD_LOG"]))
@@ -186,7 +212,8 @@ def policy_for(*, home: Path, ttakkari_home: Path, outbox: Path, write_roots: It
         socket_roots.append(socket_root)
     return SeatbeltPolicy(home=home, ttakkari_home=ttk, allowed=allowed, allowed_files=allowed_files,
                           runtime_root=runtime_root, socket_roots=socket_roots,
-                          deny_keychain=deny_keychain, secret_files=secret_files)
+                          deny_keychain=deny_keychain, secret_files=secret_files,
+                          secret_dirs=tuple(secret_dirs))
 
 
 def maybe_wrap(engine: str, cmd: list[str], *, enabled_engines: Iterable[str], home: Path,

@@ -134,7 +134,9 @@ async def test_catalog_loader_full_112_matching():
             total_seed_parameters += len(m.get("parameters", []))
 
     assert len(all_seed_methods) == 112, "Seed files must contain exactly 112 methods"
-    assert total_seed_parameters == 185, "Seed files must contain exactly 185 parameters"
+    assert total_seed_parameters == 184, "Seed files must contain exactly 184 parameters"
+    # 128 before the third catalog calibration: tts_kokoro_pipeline_tuning (deprecated) dropped its 2 relations.
+    assert total_seed_relations == 126, "Seed files must contain exactly 126 relations"
 
     sm = sessionmaker()
     async with sm() as db:

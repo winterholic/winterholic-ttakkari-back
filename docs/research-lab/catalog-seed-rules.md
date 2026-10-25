@@ -80,3 +80,4 @@ methods 112개 유지. parameters 185 → 184(+`speculative_decoding.spec_type`,
 - hardware×runtime 조합을 4개 메서드 밖으로 확장하지 않았다. 나머지 메서드의 배열은 필터용 합집합이며 계약은 `combinations`가 있을 때만 일관성을 검사한다.
 - `kernel_fusion`의 어댑터 힌트를 `external_report`로 바꿨다(어댑터가 `fused_*`를 거부하고 런타임 스위치가 없음).
 - `rag_retrieval`의 `normalize_embeddings` 파라미터는 지시에 따라 건드리지 않았다.
+- 어댑터 검증 `adapter-review-5e8f17e.md`가 기준 커밋에서도 실패했다고 기록한 `test_catalog_loader_full_112_matching`(`stats["relations"]` 126 != 128)은 시드·테스트 기대값 결함이 아니었다. 기준 커밋(HEAD~1) 시드를 현재 환경에서 loader로 적재하면 `{'methods': 112, 'relations': 128}`로 일치한다. 검증 worktree의 테스트는 그 worktree의 시드(128)를 읽고 loader는 editable 설치된 작업 중 worktree의 시드(Kokoro 관계 제거 중 126)를 읽어 생긴 동시 수정 경합으로 판단한다(추정). 3차 교정 후에는 `tests/test_research_v2_catalog.py`의 기대값을 methods 112, parameters 184, relations 126으로 맞췄다.

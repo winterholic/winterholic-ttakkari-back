@@ -228,4 +228,3 @@ async def test_other_errors_still_fail_the_run(new_session, isolated_manager, mo
 
     run = await load(run_id)
     assert run.status == RunStatus.failed and "boom" in (run.error or "")
-

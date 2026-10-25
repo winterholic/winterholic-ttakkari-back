@@ -162,14 +162,37 @@ def test_kb_passages_location_metadata():
     assert "ck_kb_passage_chunk_kind" in check_names
 
 
+class _FakeInsertContext:
+    def __init__(self, params):
+        self._params = params
+
+    def get_current_parameters(self):
+        return self._params
+
+
+def _derived_access(**params):
+    """INSERT 시점 컬럼 기본값 함수가 돌려주는 (origin_scope, visibility)."""
+    cols = {c.name: c for c in KbDocumentAccess.__table__.columns}
+    ctx = _FakeInsertContext(params)
+    origin = params.get("origin_scope") or cols["origin_scope"].default.arg(ctx)
+    visibility = cols["visibility"].default.arg(_FakeInsertContext({**params, "origin_scope": origin}))
+    return origin, visibility
+
+
 def test_kb_document_access_scope_unification_contract():
     """kb_document_access 에 origin_scope 와 visibility 컬럼 및 체크 제약조건이 존재하는지 검증."""
     cols = {c.name: c for c in KbDocumentAccess.__table__.columns}
     assert "origin_scope" in cols
     assert "visibility" in cols
     assert "scope" in cols
-    # fail-closed 기본값 검증
-    assert cols["visibility"].default.arg == "work_only"
+    # visibility/origin_scope 는 입력 생략 시 scope 에서 파생된다(고정 work_only 기본값이 아니다)
+    assert cols["visibility"].server_default is None
+    assert cols["origin_scope"].server_default is None
+    assert cols["visibility"].default.is_callable
+    assert _derived_access(scope="personal") == ("personal", "global")
+    assert _derived_access(scope="work") == ("work", "work_only")
+    assert _derived_access(scope="unknown") == ("work", "work_only")
+    assert _derived_access(scope="personal", origin_scope="work") == ("work", "work_only")
 
     check_names = {
         c.name
@@ -367,6 +390,28 @@ def test_migration_0072_offline_sql_generation():
     assert "ALTER TABLE kb_document_access DROP COLUMN origin_scope" in res_down.stdout
 
 
+def test_migration_0072_executes_one_statement_per_op_execute():
+    """asyncpg 는 prepared statement 하나에 여러 명령을 넣지 못한다. op.execute 하나에는 명령이 하나여야 한다."""
+    import re
+    from unittest import mock
+
+    mod = _load_migration("0072_kb_v3_schema_and_scope")
+    recorded: list[str] = []
+    for fn in (mod.upgrade, mod.downgrade):
+        fake_op = mock.MagicMock()
+        fake_op.execute.side_effect = lambda sql: recorded.append(str(sql))
+        fake_op.get_context.return_value.as_sql = True  # downgrade 의 데이터 가드(DB 조회)는 건너뛴다
+        with mock.patch.object(mod, "op", fake_op):
+            fn()
+    assert len(recorded) >= 10
+    for sql in recorded:
+        outside_bodies = re.sub(r"\$\$.*?\$\$", "", sql, flags=re.DOTALL)  # 함수 본문 안의 세미콜론은 허용
+        assert outside_bodies.strip().rstrip(";").count(";") == 0, sql
+    joined = "\n".join(recorded)
+    assert "BEFORE INSERT OR UPDATE ON kb_relations" in joined
+    assert "BEFORE INSERT ON kb_document_access" in joined
+
+
 def test_negative_work_access_visibility_leak_protection():
     """Negative 검증 1: work 작성자가 visibility 없이 insert -> work_only 로 격리 / global 시도 -> 거부."""
     doc_id = uuid.uuid4()
@@ -376,10 +421,12 @@ def test_negative_work_access_visibility_leak_protection():
     access_work = KbDocumentAccess(
         document_id=doc_id, tenant_id="owner", scope="work"
     )
-    assert access_work.visibility == "work_only", (
-        f"work scope 문서의 visibility 기본값은 work_only 여야 함, got {access_work.visibility}"
-    )
-    assert access_work.origin_scope == "work"
+    # 생성자는 값을 고정하지 않는다. flush 시점에 기본값 함수/DB 트리거가 scope 에서 파생한다
+    assert access_work.visibility is None
+    assert _derived_access(scope="work") == ("work", "work_only")
+    # personal writer 가 visibility 를 넘기지 않아도 통합 공간(global)에서 사라지지 않는다
+    assert KbDocumentAccess(document_id=uuid.uuid4(), scope="personal").visibility is None
+    assert _derived_access(scope="personal") == ("personal", "global")
 
     # 2. work scope 문서에 visibility='global' 을 지정하려는 시도는 fail-closed 가드에 의해 즉시 거부(ValueError)
     with pytest.raises(
@@ -462,6 +509,8 @@ if __name__ == "__main__":
     print("PASS: test_kb_passages_location_metadata")
     test_kb_document_access_scope_unification_contract()
     print("PASS: test_kb_document_access_scope_unification_contract")
+    test_migration_0072_executes_one_statement_per_op_execute()
+    print("PASS: test_migration_0072_executes_one_statement_per_op_execute")
     test_immutable_ledger_foreign_keys_are_restrict()
     print("PASS: test_immutable_ledger_foreign_keys_are_restrict")
     test_relation_active_needs_evidence_constraint()

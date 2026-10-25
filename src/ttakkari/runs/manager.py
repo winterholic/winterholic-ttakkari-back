@@ -339,8 +339,8 @@ class RunManager:
                 # 접수는 대화를 이어 쓰지 않는다. 메시지마다 따로, 바로 돈다(바쁜 접수 뒤에 줄 서지 않는다).
                 queued = list(await db.scalars(select(Run.id).where(Run.session_id == session_id,
                                                                     Run.status == RunStatus.queued)))
-                started = [rid for rid in queued if self.start(rid, lane="desk")]
                 await db.commit()
+                started = [rid for rid in queued if self.start(rid, lane="desk")]
                 return started[0] if started else None
             rows = list(await db.scalars(
                 select(Run).where(Run.session_id == session_id, Run.status.in_([RunStatus.queued, RunStatus.running]))
@@ -362,8 +362,13 @@ class RunManager:
                     return None
                 if nxt.resume_after and nxt.resume_after <= now_dt:
                     nxt.resume_after = None
-            started = nxt is not None and self.start(nxt.id)
+            # A scheduled task can lock Run before this transaction flushes
+            # resume_after, then wait on the ChatSession lock we still hold.
+            # Commit first to avoid that lock cycle and never launch on a failed
+            # commit. start() is synchronous and deduplicates local handles;
+            # generation execution also requires its persisted ownership claim.
             await db.commit()
+            started = nxt is not None and self.start(nxt.id)
             return nxt.id if started else None
 
     async def cancel_queued(self, db: AsyncSession, run: Run) -> None:

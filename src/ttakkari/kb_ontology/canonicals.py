@@ -27,7 +27,11 @@ from ttakkari.kb_access import (
     document_access_conditions,
 )
 from ttakkari.kb_models import KbEvidence, KbPassage, KbRevision
-from ttakkari.kb_ontology.currency import current_revision_ids, older_revision_ids
+from ttakkari.kb_ontology.currency import (
+    current_revision_id,
+    current_revision_ids,
+    older_revision_ids,
+)
 from ttakkari.kb_ontology_models import (
     KbAssertion,
     KbAssertionEvidence,
@@ -56,7 +60,8 @@ SUPERSESSION_RESOLVER = "system:revision_supersession"
 async def update_superseded_assertions(
     db: AsyncSession, revision_id: uuid.UUID
 ) -> int:
-    """새 리비전이 구버전 리비전을 대체(supersedes_id 또는 rev_no 갱신)할 때 과거 주장을 superseded 로 전환.
+    """새 리비전 또는 재관측된 리비전으로 인해 대체되는 과거 주장을 superseded 로 전환하고,
+    현재 리비전의 주장은 active 로 유지/복원한다.
 
     원장(kb_revisions, kb_passages, kb_evidence)은 절대 UPDATE/DELETE 하지 않으며,
     파생 프로젝션인 kb_assertions.status 와 kb_conflicts 만 변경한다.
@@ -66,32 +71,74 @@ async def update_superseded_assertions(
     if rev is None:
         return 0
 
-    older_rev_ids = await older_revision_ids(db, rev)
-    if not older_rev_ids:
+    curr_id = await current_revision_id(db, rev.document_id)
+    if curr_id is None:
         return 0
 
-    # 과거 리비전에 속한 active/disputed 주장들을 superseded 로 전환
-    older_assertions = list(
+    # 1. 만약 rev 가 문서의 현재 리비전인 경우:
+    if curr_id == rev.id:
+        # A->B->A 복귀 시 이전에 superseded 처리되었을 수 있는 현재 리비전의 주장을 active 로 복원
+        restored = list(
+            await db.scalars(
+                select(KbAssertion).where(
+                    KbAssertion.revision_id == rev.id,
+                    KbAssertion.status == "superseded",
+                )
+            )
+        )
+        for assertion in restored:
+            assertion.status = "active"
+
+        # 동일 문서의 다른 모든 과거 리비전의 주장을 superseded 로 전환
+        older_rev_ids = await older_revision_ids(db, rev)
+        if not older_rev_ids:
+            return len(restored)
+
+        older_assertions = list(
+            await db.scalars(
+                select(KbAssertion).where(
+                    KbAssertion.revision_id.in_(list(older_rev_ids)),
+                    KbAssertion.status.in_(("active", "disputed")),
+                )
+            )
+        )
+        for assertion in older_assertions:
+            assertion.status = "superseded"
+            assertion.is_canonical = False
+
+        if older_assertions:
+            await _close_conflicts_of_superseded(db, {a.id for a in older_assertions})
+            log.info(
+                "revision %s superseded %d assertions from older revisions %s",
+                revision_id,
+                len(older_assertions),
+                older_rev_ids,
+            )
+        return len(older_assertions) + len(restored)
+
+    # 2. 만약 rev 가 현재 리비전이 아닌 경우 (오래된 스냅샷 늦은 수집 등):
+    # rev 자신의 active/disputed 주장은 비현재 리비전이므로 superseded 로 전환한다.
+    # 현재 리비전(curr_id)의 주장은 절대 건드리지 않는다.
+    rev_assertions = list(
         await db.scalars(
             select(KbAssertion).where(
-                KbAssertion.revision_id.in_(list(older_rev_ids)),
+                KbAssertion.revision_id == rev.id,
                 KbAssertion.status.in_(("active", "disputed")),
             )
         )
     )
-    for assertion in older_assertions:
+    for assertion in rev_assertions:
         assertion.status = "superseded"
         assertion.is_canonical = False
 
-    if older_assertions:
-        await _close_conflicts_of_superseded(db, {a.id for a in older_assertions})
+    if rev_assertions:
+        await _close_conflicts_of_superseded(db, {a.id for a in rev_assertions})
         log.info(
-            "revision %s superseded %d assertions from older revisions %s",
+            "non-current revision %s assertions (%d) set to superseded",
             revision_id,
-            len(older_assertions),
-            older_rev_ids,
+            len(rev_assertions),
         )
-    return len(older_assertions)
+    return len(rev_assertions)
 
 
 async def _close_conflicts_of_superseded(
@@ -99,10 +146,12 @@ async def _close_conflicts_of_superseded(
 ) -> list[KbConflict]:
     """당사자 주장이 대체된 열린 충돌을 닫는다.
 
-    kb_conflicts.status 의 허용값에 'stale' 이 없어 resolved_* 로 전환한다. 살아남은 당사자가 있으면 그쪽(resolved_a/b),
-    둘 다 대체됐으면 resolved_both_valid 이고 의미는 resolution_note 와 resolved_by 에 남긴다. 살아남은 당사자가 다른 열린
-    충돌에 걸려 있지 않으면 disputed 에서 active 로 되돌린다(개인 세션에 영향을 주지 않도록 work_only 충돌에서
-    active 로 남겨 둔 global 주장은 그대로다).
+    - 한쪽 당사자만 대체된 경우: 살아남은 당사자 쪽으로 resolved_a / resolved_b 로 전환.
+      살아남은 당사자가 다른 열린 충돌에 걸려 있지 않으면 disputed 에서 active 로 되돌린다.
+    - 양쪽 당사자가 모두 대체된 경우: resolved_both_valid 는 둘 다 유효하다는 오해를 주므로
+      사용하지 않고, 기존 상태값 중 특정 주장을 채택하지 않고 종결함을 나타내는 kept_separate 를 쓴다.
+    - 사유는 resolution_note ('both_parties_superseded_by_newer_revision' 등)에 남기고,
+      resolved_by 에 SUPERSESSION_RESOLVER 를 남긴다.
     """
     conflicts = list(
         await db.scalars(
@@ -121,7 +170,7 @@ async def _close_conflicts_of_superseded(
         a_gone = conflict.assertion_a_id in superseded_ids
         b_gone = conflict.assertion_b_id in superseded_ids
         if a_gone and b_gone:
-            conflict.status = "resolved_both_valid"
+            conflict.status = "kept_separate"
             note = "both_parties_superseded_by_newer_revision"
         elif a_gone:
             conflict.status = "resolved_b"

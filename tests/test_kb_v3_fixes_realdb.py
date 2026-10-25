@@ -28,6 +28,7 @@ from ttakkari.kb_access import (
     create_work_agent_context,
 )
 from ttakkari.kb_library import register_text
+import ttakkari.kb_library as lib
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
 from ttakkari.kb_ontology.canonicals import (
     synthesize_canonical_for_entity,
@@ -422,24 +423,198 @@ async def _entity(db, name="Valkey") -> KbEntity:
 
 
 async def test_higher_rev_no_with_older_event_time_keeps_current_claims_and_canonical():
+    """rev_no 가 크더라도 event_time 이 더 과거(오래된 스냅샷)이면 최신 관측 리비전이 현재다."""
     now = datetime(2026, 10, 20, tzinfo=UTC)
     async with sessionmaker()() as db:
         ent = await _entity(db)
-        _doc, revs = await _make_doc_with_claims(
+        doc, revs = await _make_doc_with_claims(
             db, key="doc:inversion", entity=ent,
             revisions=[(1, "port is 6379", now), (2, "port is 6380", now - timedelta(days=30))],
         )
         rev2, a2, _ev2 = revs[2]
-        _rev1, a1, _ev1 = revs[1]
+        rev1, a1, _ev1 = revs[1]
         await update_superseded_assertions(db, rev2.id)
         await detect_conflicts_for_entity(db, ent.id)
         card = await synthesize_canonical_for_entity(db, ent.id)
         await db.flush()
         await db.refresh(a1)
         await db.refresh(a2)
-        assert (a2.status, a1.status) == ("active", "superseded"), (a2.status, a1.status)
-        assert card is not None and [f["assertion_id"] for f in card.key_facts] == [str(a2.id)]
-        assert card.canonical_definition == "" and card.key_facts[0]["value"] == "port is 6380"
+        # 최신 관측인 rev1 의 주장이 active 로 유지되고, 과거 스냅샷인 rev2 의 주장이 superseded 된다.
+        assert (a1.status, a2.status) == ("active", "superseded"), (a1.status, a2.status)
+        assert card is not None and [f["assertion_id"] for f in card.key_facts] == [str(a1.id)]
+        assert card.canonical_definition == "" and card.key_facts[0]["value"] == "port is 6379"
+        # 검색 현재 패시지도 rev1 이다.
+        hits = await lib.search_passages(db, query="port", limit=10, offset=0, document_id=None, current_only=True)
+        assert len(hits["items"]) == 1
+        assert hits["items"][0]["revision"]["id"] == str(rev1.id)
+        await db.rollback()
+
+
+async def test_counterexample_a_late_old_snapshot():
+    """반례 (a): 늦게 도착한 오래된 스냅샷. 검색 현재 패시지와 정본 근거 리비전이 일치하고 정본이 비지 않는다."""
+    now = datetime(2026, 10, 20, tzinfo=UTC)
+    async with sessionmaker()() as db:
+        ent = await _entity(db, "PostgreSQL")
+        doc, revs = await _make_doc_with_claims(
+            db, key="doc:counter_a", entity=ent,
+            revisions=[
+                (1, "PostgreSQL port is 5432", now),
+                (2, "PostgreSQL port is 5431", now - timedelta(days=60)),  # 늦게 수집된 과거 스냅샷
+            ],
+            predicate="port",
+        )
+        rev2, a2, _ev2 = revs[2]
+        rev1, a1, _ev1 = revs[1]
+        await update_superseded_assertions(db, rev2.id)
+        await detect_conflicts_for_entity(db, ent.id)
+        card = await synthesize_canonical_for_entity(db, ent.id)
+        await db.flush()
+
+        # 1. 정본이 비지 않고 최신 관측 rev1 을 가리킨다.
+        assert card is not None
+        assert len(card.key_facts) == 1
+        assert card.key_facts[0]["assertion_id"] == str(a1.id)
+        assert card.key_facts[0]["value"] == "PostgreSQL port is 5432"
+
+        # 2. 검색 현재 패시지가 동일한 rev1 을 가리킨다.
+        hits = await lib.search_passages(db, query="PostgreSQL", limit=10, offset=0, document_id=None, current_only=True)
+        assert len(hits["items"]) == 1
+        assert hits["items"][0]["revision"]["id"] == str(rev1.id)
+        assert hits["items"][0]["revision"]["current"] is True
+
+        # 3. 비현재(과거) 스냅샷은 current_only=False 일 때만 나온다.
+        all_hits = await lib.search_passages(db, query="PostgreSQL", limit=10, offset=0, document_id=None, current_only=False)
+        assert len(all_hits["items"]) == 2
+        await db.rollback()
+
+
+async def test_counterexample_b_aba_return():
+    """반례 (b): A->B->A 복귀. 검색 현재 패시지와 정본 근거 리비전이 동일한 rev1 을 가리키고 정본이 비지 않는다."""
+    start = datetime(2026, 10, 1, tzinfo=UTC)
+    async with sessionmaker()() as db:
+        ent = await _entity(db, "Elasticsearch")
+        # 1. A 수집 (day 1)
+        doc, revs = await _make_doc_with_claims(
+            db, key="doc:counter_b", entity=ent,
+            revisions=[(1, "Elasticsearch cluster port 9200", start + timedelta(days=1))],
+            predicate="port",
+        )
+        rev1, a1, _ev1 = revs[1]
+        await update_superseded_assertions(db, rev1.id)
+        card1 = await synthesize_canonical_for_entity(db, ent.id)
+        assert card1 is not None and card1.key_facts[0]["assertion_id"] == str(a1.id)
+
+        # 2. B 수집 (day 2, 새 리비전 rev2: 9201)
+        body2 = "Elasticsearch cluster port 9201"
+        sha2 = hashlib.sha256(body2.encode()).hexdigest()
+        src = await db.get(KbSource, rev1.source_id)
+        rev2 = KbRevision(document_id=doc.id, source_id=src.id, rev_no=2, parser_version="t", body=body2,
+                          text_sha256=sha2, char_count=len(body2), supersedes_id=rev1.id)
+        db.add(rev2)
+        await db.flush()
+        p2 = KbPassage(revision_id=rev2.id, ord=0, body=body2, char_start=0, char_end=len(body2), sha256=sha2, token_estimate=3)
+        db.add(p2)
+        await db.flush()
+        ev2 = KbEvidence(passage_id=p2.id, span_start=0, span_end=len(body2), sha256=sha2)
+        db.add(ev2)
+        await db.flush()
+        a2 = KbAssertion(document_id=doc.id, revision_id=rev2.id, origin_scope="personal", visibility="global",
+                         subject_entity_id=ent.id, predicate="port", object_value=body2,
+                         norm_object_value=body2.casefold(), modality="fact", polarity="positive",
+                         status="active", trust_score=0.9)
+        db.add(a2)
+        await db.flush()
+        db.add(KbAssertionEvidence(assertion_id=a2.id, evidence_id=ev2.id, relation="supports"))
+        db.add(KbObservation(document_id=doc.id, revision_id=rev2.id, envelope_id=uuid.uuid4(), event_time=start + timedelta(days=2)))
+        await db.flush()
+        await update_superseded_assertions(db, rev2.id)
+        await db.refresh(a1)
+        assert a1.status == "superseded" and a2.status == "active"
+        card2 = await synthesize_canonical_for_entity(db, ent.id)
+        assert card2 is not None and card2.key_facts[0]["assertion_id"] == str(a2.id)
+
+        # 3. A 재관측 (day 3, 다시 rev1 재사용하여 관측 원장에 추가)
+        db.add(KbObservation(document_id=doc.id, revision_id=rev1.id, envelope_id=uuid.uuid4(), event_time=start + timedelta(days=3)))
+        await db.flush()
+        await update_superseded_assertions(db, rev1.id)
+        await db.refresh(a1)
+        await db.refresh(a2)
+        # a1 은 active 로 복원되고 a2 는 superseded 로 전환된다!
+        assert (a1.status, a2.status) == ("active", "superseded")
+        card3 = await synthesize_canonical_for_entity(db, ent.id)
+
+        # 4. 검증: 정본 근거 리비전과 검색 현재 패시지가 모두 rev1 을 가리킨다.
+        assert card3 is not None
+        assert card3.key_facts[0]["assertion_id"] == str(a1.id)
+        assert card3.key_facts[0]["value"] == "Elasticsearch cluster port 9200"
+
+        hits = await lib.search_passages(db, query="Elasticsearch", limit=10, offset=0, document_id=None, current_only=True)
+        assert len(hits["items"]) == 1
+        assert hits["items"][0]["revision"]["id"] == str(rev1.id)
+        assert hits["items"][0]["revision"]["current"] is True
+        await db.rollback()
+
+
+async def test_counterexample_c_higher_rev_no_older_event_time_inversion():
+    """반례 (c): rev_no↑·event_time↓ 역전. 검색 현재 패시지와 정본 근거 리비전이 같고 정본이 비지 않는다."""
+    now = datetime(2026, 10, 20, tzinfo=UTC)
+    async with sessionmaker()() as db:
+        ent = await _entity(db, "RabbitMQ")
+        doc, revs = await _make_doc_with_claims(
+            db, key="doc:counter_c", entity=ent,
+            revisions=[
+                (1, "RabbitMQ port is 5672", now),
+                (2, "RabbitMQ port is 5673", now - timedelta(days=10)),  # rev_no=2 가 더 크지만 event_time 은 과거
+            ],
+            predicate="port",
+        )
+        rev2, a2, _ev2 = revs[2]
+        rev1, a1, _ev1 = revs[1]
+        await update_superseded_assertions(db, rev2.id)
+        await detect_conflicts_for_entity(db, ent.id)
+        card = await synthesize_canonical_for_entity(db, ent.id)
+        await db.flush()
+
+        assert card is not None
+        assert card.key_facts[0]["assertion_id"] == str(a1.id)
+        assert card.key_facts[0]["value"] == "RabbitMQ port is 5672"
+
+        hits = await lib.search_passages(db, query="RabbitMQ", limit=10, offset=0, document_id=None, current_only=True)
+        assert len(hits["items"]) == 1
+        assert hits["items"][0]["revision"]["id"] == str(rev1.id)
+        await db.rollback()
+
+
+async def test_conflict_closed_when_both_parties_superseded_is_not_resolved_both_valid():
+    """충돌 당사자 둘 다 대체된 경우: resolved_both_valid 가 아닌 kept_separate 로 닫히고 사유가 남는다."""
+    now = datetime(2026, 10, 20, tzinfo=UTC)
+    async with sessionmaker()() as db:
+        ent = await _entity(db, "Cassandra")
+        _da, ra = await _make_doc_with_claims(db, key="doc:c_both_a", entity=ent, revisions=[(1, "Cassandra port 9042", now)])
+        _db, rb = await _make_doc_with_claims(db, key="doc:c_both_b", entity=ent, revisions=[(1, "Cassandra port 9043", now)])
+        found = await detect_conflicts_for_entity(db, ent.id)
+        await db.flush()
+        assert len(found) == 1 and found[0].status == "open"
+        _rev_b1, b1, _ = rb[1]
+        _rev_a1, a1, _ = ra[1]
+
+        # 두 당사자 모두 대체된다
+        a1.status = "superseded"
+        b1.status = "superseded"
+        await db.flush()
+
+        from ttakkari.kb_ontology.canonicals import _close_conflicts_of_superseded
+        closed = await _close_conflicts_of_superseded(db, {a1.id, b1.id})
+        await db.flush()
+
+        assert len(closed) == 1
+        conflict = await db.get(KbConflict, found[0].id)
+        # 핵심 검증: resolved_both_valid 가 아니어야 한다!
+        assert conflict.status != "resolved_both_valid", conflict.status
+        assert conflict.status == "kept_separate"
+        assert conflict.resolution_note == "both_parties_superseded_by_newer_revision"
+        assert conflict.resolved_by == "system:revision_supersession"
+        assert conflict.resolved_at is not None
         await db.rollback()
 
 
@@ -488,6 +663,7 @@ async def test_conflict_is_not_left_open_after_a_correcting_revision_supersedes_
         db.add(b2)
         await db.flush()
         db.add(KbAssertionEvidence(assertion_id=b2.id, evidence_id=ev2.id, relation="supports"))
+        db.add(KbObservation(document_id=doc_b.id, revision_id=rev2.id, envelope_id=uuid.uuid4(), event_time=now + timedelta(seconds=1)))
         await db.flush()
 
         await update_superseded_assertions(db, rev2.id)

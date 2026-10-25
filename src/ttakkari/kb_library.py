@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ttakkari.collector.control_models import KbDocumentAccess, KbObservation
 from ttakkari.context.search import lexical, terms
 from ttakkari.kb_models import KbDocument, KbEvidence, KbPassage, KbRevision, KbSource
+from ttakkari.kb_ontology.currency import current_revision, current_revision_filter
 from ttakkari.kb_store import (
     KbInputError,
     ingest_source,
@@ -52,17 +53,7 @@ async def require_document_scope(db, document_id, scope="personal"):
 
 
 def _current_revision_filter():
-    newer = KbRevision.__table__.alias("newer")
-    obs = KbObservation.__table__.alias("current_observation")
-    observed = select(obs.c.revision_id).where(obs.c.document_id == KbRevision.document_id).order_by(
-        obs.c.event_time.desc(), obs.c.recorded_at.desc(), obs.c.id.desc(),
-    ).limit(1).correlate(KbRevision).scalar_subquery()
-    legacy = ~select(literal(1)).where(
-        newer.c.document_id == KbRevision.document_id, newer.c.rev_no > KbRevision.rev_no
-    ).exists()
-    # 관측이 없으면 `id = NULL` 이 NULL 이라 not_() 도 NULL 이 되어 status=historical 이 전부 탈락한다. 관측 유무를 명시해
-    # 두 분기가 항상 참/거짓으로 평가되게 한다.
-    return or_(and_(observed.is_not(None), KbRevision.id == observed), and_(observed.is_(None), legacy))
+    return current_revision_filter()
 
 
 def snippet_with_highlights(body: str, words: list[str]) -> tuple[str, list[list[int]]]:
@@ -143,13 +134,7 @@ async def list_documents(db: AsyncSession, *, q: str | None, limit: int, offset:
 
 
 async def _latest_revision(db: AsyncSession, document_id: uuid.UUID) -> KbRevision | None:
-    observed = await db.scalar(select(KbObservation.revision_id).where(KbObservation.document_id == document_id)
-                               .order_by(KbObservation.event_time.desc(), KbObservation.recorded_at.desc(), KbObservation.id.desc()).limit(1))
-    if observed is not None:
-        return await db.get(KbRevision, observed)
-    return await db.scalar(
-        select(KbRevision).where(KbRevision.document_id == document_id).order_by(KbRevision.rev_no.desc()).limit(1)
-    )
+    return await current_revision(db, document_id)
 
 
 async def _document_row(db: AsyncSession, doc: KbDocument) -> dict:

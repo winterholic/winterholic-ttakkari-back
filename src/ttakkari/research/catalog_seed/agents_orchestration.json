@@ -73,7 +73,7 @@
         "cost",
         "latency"
       ],
-      "expected_effects": "에이전트 무한 루프로 인한 토큰 폭탄 방지 및 복합 다단계 태스크 완수율 20% 향상",
+      "expected_effects": "무한 루프로 인한 토큰 낭비를 줄이고 다단계 과업 완수율 변화를 비교(ReAct 원논문: ALFWorld 절대 성공률 34%, WebShop 10% 앞섬, 조건은 evidence 참조. max_iterations 튜닝 효과 수치는 아님)",
       "side_effects": "max_iterations가 너무 작으면 복잡한 조사/코딩 과업 도중 조기 포기 발생",
       "relations": [
         {
@@ -93,7 +93,7 @@
           "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
           "url": "https://arxiv.org/abs/2210.03629",
           "year": 2022,
-          "claim": "논문 보고: 추론(Reasoning)과 행동(Action)의 결합을 통해 지식 집약적 태스크 및 상호작용 의사결정 성능 대폭 향상"
+          "claim": "논문 초록 보고: 추론과 행동을 번갈아 생성하는 ReAct가 ALFWorld와 WebShop에서 모방·강화학습 기반선보다 절대 성공률 34%, 10% 앞섬(조건: 프롬프트 내 예시 1~2개, 해당 벤치마크). HotpotQA·Fever에서는 Wikipedia API 상호작용으로 chain-of-thought의 환각·오류 전파 문제를 완화한다고 보고."
         }
       ],
       "evidence_status": "source_reported",
@@ -112,7 +112,7 @@
       "name": "Tool Schema Prompt & Argument Optimization",
       "name_ko": "도구 정의 스키마 및 프롬프트 최적화",
       "summary": "에이전트에게 제공되는 도구(Tool/Function)의 이름, 한국어/영어 설명문, 인자(Arguments) 타입 및 JSON 스키마를 명료하게 다듬어 환각 인자 생성 및 잘못된 도구 호출을 줄입니다.",
-      "principle": "LLM은 도구 설명문의 뉘앙스에 따라 호출 여부를 결정합니다. 각 도구의 사용 목적(When to use), 비사용 조건(When NOT to use), 필수 인자 예시를 스키마 description에 명시하여 모델의 함수 호출 의사결정 엔트로피를 낮춥니다.",
+      "principle": "LLM은 도구 이름·설명·인자 스키마를 읽고 호출 여부와 인자를 결정합니다. 사용 목적(When to use), 비사용 조건(When NOT to use), 필수 인자 예시를 스키마 description에 명시하면 모호한 호출 결정을 줄일 수 있다는 것이 공식 문서의 안내 방향입니다(효과 크기는 모델·도구 세트별 실측 필요).",
       "category": "agents_orchestration",
       "targets": [
         "agent_orchestration",
@@ -170,14 +170,14 @@
           "llama.cpp",
           "vllm"
         ],
-        "notes": "OpenAI 호환 function-calling API 및 llama.cpp JSON 문법 제약(Grammar-based sampling)과 연동 가능."
+        "notes": "OpenAI 호환 function-calling API 및 llama.cpp JSON 문법 제약(grammar-based sampling)과 함께 사용할 수 있음. 실행은 외부 결과 등록(external_report) 경로이며 자동 실행 어댑터는 없음."
       },
       "metrics": [
         "accuracy",
         "consistency"
       ],
       "expected_effects": [
-        "도구 스키마 및 인자 설명의 명확화를 통해 모델의 잘못된 도구 선택 및 필수 파라미터 누락을 완화하고 호출 성공률 향상 유도"
+        "도구 스키마·인자 설명을 명확히 하면 잘못된 도구 선택과 필수 인자 누락이 줄어들 것으로 기대(효과 크기는 모델·도구 세트별 실측 필요)"
       ],
       "side_effects": "도구 설명문이 너무 길어지면 프롬프트 컨텍스트 창을 과도하게 점유",
       "relations": [
@@ -187,7 +187,22 @@
           "note": "문법 기반 디코딩 제약과 결합하여 스키마 정합성 강화"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "OpenAI Function Calling Guide",
+          "url": "https://platform.openai.com/docs/guides/function-calling",
+          "year": 2024,
+          "claim": "공식 문서: 도구(함수) 이름·설명·JSON 스키마 인자로 모델이 호출할 도구와 인자를 결정하며, strict 스키마 모드를 제공한다는 사용 방법. 효과 수치 주장은 포함하지 않음."
+        },
+        {
+          "kind": "doc",
+          "title": "Anthropic Tool Use Overview",
+          "url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/overview",
+          "year": 2024,
+          "claim": "공식 문서: 도구 정의(name, description, input_schema)가 모델의 도구 선택에 쓰이며 설명을 구체적으로 쓰도록 안내. 효과 수치 주장은 포함하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "external_report"
@@ -260,7 +275,7 @@
         "accuracy",
         "quality"
       ],
-      "expected_effects": "복잡한 코딩 태스크(HumanEval 등)에서 1차 통과율 대비 최종 성공률 25~35% 상승",
+      "expected_effects": "실패 원인을 메모리에 기록해 재시도 품질을 높일 수 있음(Reflexion 원논문: HumanEval pass@1 91% vs 당시 GPT-4 80%, 조건은 evidence 참조. 자체 모델·과업 효과는 실측 필요)",
       "side_effects": "교정 루프가 돌 때마다 추가 LLM 호출이 발생하여 전체 토큰 비용 증가",
       "relations": [
         {
@@ -275,7 +290,7 @@
           "title": "Reflexion: Language Agents with Verbal Reinforcement Learning",
           "url": "https://arxiv.org/abs/2303.11366",
           "year": 2023,
-          "claim": "논문 보고: 언어적 피드백 기반 자기 성찰을 통해 가중치 업데이트 없이도 다양한 추론 벤치마크 점수 대폭 개선"
+          "claim": "논문 초록 보고: 가중치 갱신 없이 언어적 피드백을 에피소드 메모리에 쌓는 Reflexion이 HumanEval 코딩 벤치마크 pass@1 91%로, 당시 GPT-4 기준 80%를 넘어섬(조건: HumanEval, 논문 설정·모델)."
         }
       ],
       "evidence_status": "source_reported",
@@ -346,7 +361,7 @@
         "accuracy",
         "reproducibility"
       ],
-      "expected_effects": "10단계 이상의 긴 워크플로에서 중간 목표 망각 및 방향성 상실 방지",
+      "expected_effects": "긴 워크플로에서 계획 단계를 분리해 중간 목표 누락을 줄이도록 설계(효과 크기는 과업·모델별 실측 필요)",
       "side_effects": "사소하고 단순한 작업에서도 불필요하게 계획을 수립하여 초기 응답 지연 발생",
       "relations": [
         {
@@ -361,7 +376,7 @@
           "title": "Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models",
           "url": "https://arxiv.org/abs/2305.04091",
           "year": 2023,
-          "claim": "논문 보고: 계획 수립과 세부 해결의 분리를 통해 산술 및 다단계 추론 벤치마크에서 제로샷 CoT 대비 뛰어난 정확도 입증"
+          "claim": "논문 초록 보고: GPT-3에서 10개 데이터셋(3개 추론 유형) 전체에서 Zero-shot-CoT를 상회하고 수학 추론에서 8-shot CoT와 비슷한 성능(조건: GPT-3, 논문 데이터셋)."
         }
       ],
       "evidence_status": "source_reported",
@@ -380,7 +395,7 @@
       "name": "Multi-Agent Role Delegation (Supervisor & Workers)",
       "name_ko": "멀티 에이전트 역할 분담 및 오케스트레이션",
       "summary": "총괄 감독자(Supervisor) 에이전트가 사용자의 목표를 해석하고, 코드 작성 전문가, 웹 리서처, 데이터 분석가 등 특화된 하위 워커 에이전트에게 작업을 위임 조율합니다.",
-      "principle": "단일 프롬프트에 모든 책임을 부여하는 대신, 개별 에이전트의 시스템 프롬프트와 가용 도구를 역할에 맞게 엄격히 한정(Role Specialization)하여 도구 선택 혼선과 환각을 차단합니다.",
+      "principle": "단일 프롬프트에 모든 책임을 두는 대신 개별 에이전트의 시스템 프롬프트와 가용 도구를 역할에 맞게 한정하고, 감독자가 작업을 분해·위임합니다. 도구 선택 혼선을 줄일 수 있다는 가정이며 효과는 과업별 실측이 필요합니다.",
       "category": "agents_orchestration",
       "targets": [
         "agent_orchestration"
@@ -440,14 +455,16 @@
           "llama.cpp",
           "vllm"
         ],
-        "notes": "따까리의 invoke_subagent 및 send_message 메커니즘과 일치."
+        "notes": "메시지 전달 구조는 따까리 서브에이전트 호출 개념과 대응되지만 연구실 어댑터는 연결되어 있지 않음(external_report 경로)."
       },
       "metrics": [
         "quality",
         "accuracy",
         "cost"
       ],
-      "expected_effects": "단일 에이전트가 감당하기 어려운 거대 프로젝트를 모듈화하여 성공률 극대화",
+      "expected_effects": [
+        "복잡한 과업을 역할별로 모듈화해 도구 선택 범위를 좁히고 결과를 교차 점검할 수 있음(성공률 개선 폭은 과업·모델별 실측 필요)"
+      ],
       "side_effects": "에이전트 간 메시지 전달 과정에서 컨텍스트 복제 및 통신 비용(토큰) 급증",
       "relations": [
         {
@@ -456,7 +473,22 @@
           "note": "감독자 에이전트가 계획을 세운 뒤 워커들에게 하위 태스크를 위임"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation",
+          "url": "https://arxiv.org/abs/2308.08155",
+          "year": 2023,
+          "claim": "논문: 서로 대화하는 복수 에이전트를 조합해 수학·코딩·질의응답 등 여러 응용을 구성하는 프레임워크 제시. 이 카탈로그의 supervisor-worker 구성 효과 수치를 보고하는 것은 아님."
+        },
+        {
+          "kind": "doc",
+          "title": "Building effective agents (orchestrator-workers workflow)",
+          "url": "https://www.anthropic.com/engineering/building-effective-agents",
+          "year": 2024,
+          "claim": "공식 엔지니어링 글: 중앙 LLM이 작업을 분해해 워커 LLM에 위임하는 orchestrator-workers 워크플로를 하나의 패턴으로 소개. 효과 수치 주장은 포함하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "external_report"
@@ -538,7 +570,7 @@
           "llama.cpp",
           "vllm"
         ],
-        "notes": "따까리 세션 메모리 관리의 표준 메커니즘."
+        "notes": "세션 메모리 관리에서 요약 치환 방식으로 사용되는 일반 설계. 연구실 어댑터는 연결되어 있지 않음(external_report 경로)."
       },
       "metrics": [
         "cost",
@@ -556,7 +588,15 @@
           "note": "장기 반복 실행 루프의 메모리 안정 장치로 결합"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "MemGPT: Towards LLMs as Operating Systems",
+          "url": "https://arxiv.org/abs/2310.08560",
+          "year": 2023,
+          "claim": "논문: 제한된 컨텍스트 창을 넘기 위해 메모리 계층 간 데이터 이동으로 확장 컨텍스트를 제공하는 virtual context management 제안(문서 분석·다중 세션 대화 평가). 오래된 턴을 요약 치환하는 이 카탈로그 방식의 비용 절감 수치는 포함하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "external_report"
@@ -643,7 +683,7 @@
         "speed"
       ],
       "expected_effects": [
-        "JSON 파싱 실패율을 크게 줄여 다운스트림 오케스트레이션 안정성 확보"
+        "문법을 만족하는 토큰만 샘플링하도록 제한해 구문 오류를 줄일 수 있음(효과는 모델·스키마별 실측 필요)"
       ],
       "side_effects": "복잡한 재귀 문법의 경우 토큰당 로짓 마스크 계산 오버헤드로 생성 속도가 소폭 감소할 수 있음",
       "relations": [
@@ -656,10 +696,10 @@
       "evidence": [
         {
           "kind": "doc",
-          "title": "llama.cpp GBNF Grammar Guide",
-          "url": "https://github.com/ggerganov/llama.cpp",
+          "title": "llama.cpp GBNF grammars",
+          "url": "https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md",
           "year": 2023,
-          "claim": "공식 문서 보고: GBNF 문법 기반 디코딩을 통해 지정된 정규 문법 및 JSON 스키마에 부합하는 토큰만 샘플링 제어"
+          "claim": "공식 문서: GBNF 문법으로 모델 출력 형식을 제한하는 방법과 JSON 스키마 변환 안내. 파싱 성공률 수치는 포함하지 않음."
         }
       ],
       "evidence_status": "source_reported",
@@ -729,7 +769,7 @@
           "scikit-learn",
           "llama.cpp"
         ],
-        "notes": "도구 수가 30개 이상인 대규모 MCP 서버 환경에서 필수."
+        "notes": "도구 수가 많아 모든 스키마를 프롬프트에 넣기 부담스러운 환경(대규모 MCP 서버 등)에서 고려하는 방식. 임베딩 검색 실패 시 필요한 도구가 누락될 수 있어 top_k 설정 실측이 필요함."
       },
       "metrics": [
         "accuracy",
@@ -747,7 +787,15 @@
           "note": "선별된 소수 도구의 스키마를 정밀하게 공급"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs",
+          "url": "https://arxiv.org/abs/2307.16789",
+          "year": 2023,
+          "claim": "논문: 대량 API 중 지시에 관련된 API를 검색하는 retriever 구성을 포함한 도구 사용 프레임워크. 이 카탈로그의 top_k_tools 설정에 대한 토큰 절감 수치는 포함하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "external_report"
@@ -763,7 +811,7 @@
       "slug": "chain_of_thought_prompting",
       "name": "Chain-of-Thought & Few-Shot In-Context Learning",
       "name_ko": "생각의 사슬 (CoT) 및 퓨샷 인컨텍스트 학습",
-      "summary": "프롬프트에 단계별 추론 과정('Let's think step by step')을 유도하거나 질의-추론-정답 예시를 2~3개 제공하여 복잡한 논리 및 수학적 문제의 정답률을 극적으로 높입니다.",
+      "summary": "프롬프트에 단계별 추론 과정('Let's think step by step')을 유도하거나 질의-추론-정답 예시를 2~3개 제공하여 복잡한 논리 및 수학적 문제의 정답률을 높일 수 있습니다.",
       "principle": "트랜스포머는 중간 추론 토큰을 생성할 때 계산량(FLOPs)과 어텐션 상태 공간을 확장합니다. 직접 정답을 출력하게 하는 것보다 단계별 추론을 출력하게 하면 연산 깊이가 늘어나 정답에 수렴합니다.",
       "category": "agents_orchestration",
       "targets": [
@@ -820,7 +868,7 @@
         "accuracy",
         "quality"
       ],
-      "expected_effects": "수학, 기호 논리, 코드 디버깅 정답률 20~40% 대폭 상승",
+      "expected_effects": "충분히 큰 모델에서 중간 추론 단계가 다단계 문제 정확도를 높일 수 있음(CoT 원논문: 540B 모델·예시 8개로 GSM8K 최고 정확도, 조건은 evidence 참조. 소형 로컬 모델 효과는 실측 필요)",
       "side_effects": "추론 토큰이 길어짐에 따라 응답 지연시간 및 토큰 비용 증가",
       "relations": [
         {
@@ -835,7 +883,7 @@
           "title": "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models",
           "url": "https://arxiv.org/abs/2201.11903",
           "year": 2022,
-          "claim": "논문 보고: 생각의 사슬 프롬프팅을 통해 대규모 언어 모델의 다단계 산술 및 상식 추론 능력 비약적 향상"
+          "claim": "논문 초록 보고: 충분히 큰 언어 모델에서 중간 추론 단계 예시가 산술·상식·기호 추론 성능을 높이며, 540B 모델에 CoT 예시 8개를 준 프롬프트가 GSM8K에서 당시 최고 정확도를 달성해 검증기를 붙인 미세조정 GPT-3를 넘어섬(조건: 540B 파라미터 모델, GSM8K, 예시 8개)."
         }
       ],
       "evidence_status": "source_reported",
@@ -901,7 +949,7 @@
           "pytorch",
           "scikit-learn"
         ],
-        "notes": "프로덕션 배포 및 기업용 서비스 연동 시 필수 보안 요건."
+        "notes": "정규식 룰셋과 분류 모델을 조합하는 전후처리 구성이 일반적. 차단 범위는 규칙·분류기 적용 범위에 한정되며 외부 서비스 배포 시 별도 보안 검토가 필요함."
       },
       "metrics": [
         "stability",
@@ -918,7 +966,15 @@
           "note": "출력 형식 안전성과 내용 안전성을 함께 점검"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Llama Guard: LLM-based Input-Output Safeguard for Human-AI Conversations",
+          "url": "https://arxiv.org/abs/2312.06674",
+          "year": 2023,
+          "claim": "논문: 프롬프트·응답 분류를 위한 LLM 기반 입출력 안전장치 모델. OpenAI Moderation Evaluation dataset과 ToxicChat에서 기존 콘텐츠 중재 도구와 비슷하거나 더 나은 성능을 보고(논문 평가 조건). 공격 차단율 수치 주장은 아님."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "external_report"
@@ -990,14 +1046,16 @@
         "runtimes": [
           "llama.cpp"
         ],
-        "notes": "따까리 세션 트랜스크립트(transcript.jsonl)와 연동하여 자동 분석 가능."
+        "notes": "세션 트랜스크립트(transcript.jsonl)를 입력으로 삼는 분석 방식은 가설이며 파서·어댑터는 구현되어 있지 않음."
       },
       "metrics": [
         "accuracy",
         "cost",
         "latency"
       ],
-      "expected_effects": "에이전트 개발 시 비효율적인 도구 호출 경로와 방황을 객관적으로 가시화하고 최적화",
+      "expected_effects": [
+        "도구 호출 순서·단계 수를 지표로 기록해 비효율 경로를 확인할 수 있다는 가설(효과는 검증 전)"
+      ],
       "side_effects": "LLM 심사위원 모드 사용 시 평가 자체에 추가 토큰 소모",
       "relations": [
         {

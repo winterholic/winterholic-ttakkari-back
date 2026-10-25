@@ -4,7 +4,7 @@
       "slug": "document_chunking_strategy",
       "name": "Document Chunking Strategy (Fixed / Sentence / Semantic)",
       "name_ko": "문서 청킹 전략 튜닝",
-      "summary": "원문 문서를 임베딩 및 검색 단위로 분할할 때 고정 크기(Fixed), 문장 단위(Sentence), 의미론적 유사도(Semantic) 분할 기법을 비교하여 문맥 절단 및 노이즈 유입을 차단합니다.",
+      "summary": "원문 문서를 임베딩·검색 단위로 분할할 때 고정 크기, 문장 단위, 의미 기반 분할을 비교해 문맥 절단과 노이즈 유입을 줄이는 설정을 찾습니다.",
       "principle": "너무 작은 청크는 핵심 문맥(Context)을 상실하고, 너무 큰 청크는 불필요한 노이즈가 섞여 벡터 표현의 밀도를 떨어뜨립니다. 오버랩(Overlap) 윈도우와 문단 경계를 인식하여 검색 적합성과 정보 밀도를 최적화합니다.",
       "category": "rag_retrieval",
       "targets": [
@@ -93,7 +93,7 @@
           "pytorch",
           "scikit-learn"
         ],
-        "notes": "한국어 문서의 경우 문장 분리기(kss 등) 또는 마크다운 헤더 인식이 필수적임."
+        "notes": "한국어 문서는 문장 분리기(예: kss) 또는 마크다운 헤더 인식을 함께 검토할 수 있음(분리기 성능은 별도 확인 필요)."
       },
       "metrics": [
         "recall_at_k",
@@ -101,7 +101,7 @@
         "ndcg"
       ],
       "expected_effects": [
-        "문서 특성에 맞는 최적 청크 크기와 오버랩 설정을 통해 문맥 단절을 완화하고 검색 재현율(Recall@k) 개선 기대"
+        "문서 특성에 맞는 청크 크기와 오버랩 설정으로 문맥 단절을 줄이고 검색 재현율(Recall@k) 변화를 비교(개선 폭은 코퍼스·질의별 실측 필요)"
       ],
       "side_effects": "오버랩 비율이 과도하면 인덱스 크기가 비대해지고 중복 검색 결과 증가",
       "relations": [
@@ -111,7 +111,15 @@
           "note": "청킹된 결과물을 밀집 및 희소 인덱스에 함께 주입"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "LangChain: Text splitters",
+          "url": "https://python.langchain.com/docs/concepts/text_splitters/",
+          "year": 2024,
+          "claim": "공식 문서: 길이 기반, 재귀 문자, 문서 구조(마크다운 헤더 등), 의미 기반 분할 방식과 chunk_size·chunk_overlap 설정 개념. 검색 성능 수치는 포함하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "retrieval_eval"
@@ -200,8 +208,8 @@
         "mrr",
         "ndcg"
       ],
-      "expected_effects": "단독 Dense 검색 대비 도메인 고유명사 및 코드 검색 누락 40% 이상 감소",
-      "side_effects": "두 가지 인덱스를 동시 유지해야 하므로 인덱싱 시간 및 저장 공간 2배 소요",
+      "expected_effects": "키워드 검색(BM25)과 Dense 검색의 결과를 결합해 한쪽만 쓸 때 놓치는 고유명사·코드 질의를 보완할 수 있음(개선 폭은 코퍼스·질의별 실측 필요)",
+      "side_effects": "두 가지 인덱스를 함께 유지해야 하므로 인덱싱 시간과 저장 공간이 늘어남",
       "relations": [
         {
           "type": "combines_with",
@@ -217,10 +225,10 @@
       "evidence": [
         {
           "kind": "paper",
-          "title": "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods",
+          "title": "Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods (SIGIR 2009)",
           "url": "https://dl.acm.org/doi/10.1145/1571941.1572114",
           "year": 2009,
-          "claim": "키워드(BM25)와 밀집 벡터(Dense) 순위를 역순위 가중합(RRF)으로 결합하여 단일 검색기 대비 견고한 검색 성능 달성"
+          "claim": "논문: 여러 검색 시스템의 순위를 결합하는 RRF가 개별 시스템보다 일관되게 나은 결과를 낸다고 TREC 실험 결합으로 보고. 이 논문은 BM25와 Dense 임베딩의 결합을 다루지 않음(조건: 논문 TREC 데이터)."
         }
       ],
       "evidence_status": "source_reported",
@@ -291,7 +299,7 @@
         "recall_at_k",
         "mrr"
       ],
-      "expected_effects": "약어나 비표준어로 검색 시 일치 문서 누락 대폭 감소",
+      "expected_effects": "약어나 비표준어 질의에서 일치 문서 누락이 줄 수 있음(효과는 코퍼스·질의별 실측 필요)",
       "side_effects": "부적절한 단어 확장 시 검색 주제가 왜곡(Query Drift)되어 정밀도(Precision) 하락 위험",
       "relations": [
         {
@@ -303,10 +311,17 @@
       "evidence": [
         {
           "kind": "paper",
+          "title": "A Survey of Automatic Query Expansion in Information Retrieval (ACM Computing Surveys)",
+          "url": "https://doi.org/10.1145/2071389.2071390",
+          "year": 2012,
+          "claim": "서베이: 질의 확장 기법(동의어·의사 관련 피드백 등) 분류. ACM 페이지가 봇 차단으로 열리지 않아 제목과 DOI 대응은 확인 필요."
+        },
+        {
+          "kind": "paper",
           "title": "Precise Zero-Shot Dense Retrieval without Relevance Labels (HyDE)",
           "url": "https://arxiv.org/abs/2212.10496",
           "year": 2022,
-          "claim": "가상 답변(Hypothetical Document) 생성을 통한 질의 확장으로 제로샷 밀집 검색 회상률 개선"
+          "claim": "관련 기법: 질의에서 LLM으로 가상 문서를 생성해 검색하는 HyDE. 동의어 사전·PRF 방식과는 구성이 다르며 제로샷 밀집 검색 개선을 주장(조건: InstructGPT+Contriever)."
         }
       ],
       "evidence_status": "source_reported",
@@ -323,7 +338,7 @@
       "slug": "query_rewriting",
       "name": "LLM-based Query Rewriting",
       "name_ko": "LLM 기반 질의 재작성",
-      "summary": "사용자의 멀티턴 대화 맥락, 지시대명사, 불완전한 문맥을 소형 LLM이 분석하여 독립적으로 검색 가능한 명확한 단일 질의문으로 재작성합니다.",
+      "summary": "사용자의 멀티턴 맥락과 지시대명사, 불완전한 질의를 소형 LLM으로 분석해 독립적으로 검색 가능한 질의로 재작성합니다.",
       "principle": "이전 대화 턴의 대명사('그거', '앞서 말한 모델')를 실제 엔티티 명칭으로 치환하고, 다중 질문의 경우 복수의 하위 검색 질의로 분해하여 검색 엔진에 전달합니다.",
       "category": "rag_retrieval",
       "targets": [
@@ -374,7 +389,7 @@
           "llama.cpp",
           "vllm"
         ],
-        "notes": "지연시간을 줄이기 위해 1B~3B급 경량 SLM을 재작성 전용으로 사용하는 것이 이상적임."
+        "notes": "재작성기로 소형 모델을 쓰는 구성이 논문에 있으나 어떤 크기가 적절한지는 지연·품질 실측이 필요함."
       },
       "metrics": [
         "recall_at_k",
@@ -392,7 +407,15 @@
           "note": "재작성된 명확한 텍스트를 하이브리드 검색 엔진에 입력"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "Query Rewriting for Retrieval-Augmented Large Language Models",
+          "url": "https://arxiv.org/abs/2305.14283",
+          "year": 2023,
+          "claim": "논문: 질의를 먼저 재작성한 뒤 검색하는 Rewrite-Retrieve-Read 프레임워크. 소형 언어 모델을 학습 가능한 재작성기로 쓰고 오픈 도메인 QA·객관식 QA에서 일관된 개선을 보고(조건: 논문 설정). 수치 이득이나 지연 비용은 초록에 없음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "retrieval_eval"
@@ -464,7 +487,7 @@
         "ndcg",
         "latency"
       ],
-      "expected_effects": "전문적 질의나 복잡한 개념 질문에서 제로샷 검색 성능 유의미한 향상",
+      "expected_effects": "전문적 질의에서 가상 문서 임베딩이 제로샷 검색 결과를 바꿀 수 있음(HyDE 논문 결과는 evidence 조건 참조. 로컬 코퍼스 효과는 실측 필요)",
       "side_effects": "가상 문서 자체가 심각한 거짓 환각을 담고 있을 경우 엉뚱한 문서가 검색되는 왜곡 발생",
       "relations": [
         {
@@ -476,10 +499,10 @@
       "evidence": [
         {
           "kind": "paper",
-          "title": "Precise Zero-Shot Dense Retrieval without Relevance Labels",
+          "title": "Precise Zero-Shot Dense Retrieval without Relevance Labels (HyDE)",
           "url": "https://arxiv.org/abs/2212.10496",
           "year": 2022,
-          "claim": "논문 보고: 가상 문서 임베딩(HyDE)을 통해 관련성 라벨 없이도 다양한 벤치마크에서 강력한 제로샷 검색 정확도 달성"
+          "claim": "논문 초록 보고: 질의로 가상 문서를 생성하고 대조 학습 인코더(Contriever)로 임베딩해 실제 문서를 검색하는 HyDE가 비지도 Contriever를 크게 앞서고 파인튜닝된 검색기와 비슷한 성능(조건: InstructGPT+Contriever, 웹 검색·QA·사실 검증, sw/ko/ja 포함)."
         }
       ],
       "evidence_status": "source_reported",
@@ -497,8 +520,8 @@
       "slug": "cross_encoder_reranking",
       "name": "Cross-Encoder Reranking",
       "name_ko": "크로스 인코더 리랭킹",
-      "summary": "1차 검색에서 빠르게 추출된 20~50개의 후보 문서들을 질의와 함께 통째로 교차 어텐션(Cross-Attention) 인코더에 통과시켜 최종 상위 3~5개 문서의 순위를 정밀 재배열합니다.",
-      "principle": "이중 인코더(Bi-Encoder)는 질의와 문서를 독립적으로 벡터화하므로 단어 간 상호작용을 포착하지 못합니다. 크로스 인코더는 질의와 문서를 [SEP] 토큰으로 연결하여 풀 어텐션을 계산하므로 극도로 정밀한 관련도 점수를 산출합니다.",
+      "summary": "1차 검색으로 가져온 후보 문서들을 질의와 함께 교차 어텐션 인코더에 통과시켜 순위를 정밀하게 재배열합니다(후보 수와 최종 문서 수는 설정 값).",
+      "principle": "이중 인코더(Bi-Encoder)는 질의와 문서를 독립적으로 벡터화하므로 단어 간 상호작용을 포착하지 못합니다. 크로스 인코더는 질의와 문서를 [SEP] 토큰으로 연결하여 풀 어텐션을 계산하므로 더 정밀한 관련도 점수를 얻을 수 있습니다.",
       "category": "rag_retrieval",
       "targets": [
         "reranker",
@@ -561,7 +584,7 @@
           "pytorch",
           "scikit-learn"
         ],
-        "notes": "후보 문서 수가 많을수록(>50) 리랭킹 지연시간이 선형 증가하므로 Top-K와의 조율 필수."
+        "notes": "후보 문서 수가 늘수록 재랭킹 지연이 비례해 늘어나므로 Top-K 설정과 함께 조율해야 함."
       },
       "metrics": [
         "mrr",
@@ -569,8 +592,8 @@
         "recall_at_k",
         "latency"
       ],
-      "expected_effects": "MRR@10 및 nDCG 지표 20~35% 대폭 향상, 무관한 청크 유입 차단",
-      "side_effects": "단순 벡터 코사인 유사도 연산 대비 수십 배의 추가 연산 지연시간 소요",
+      "expected_effects": "1차 검색 순위를 질의-문서 교차 인코딩으로 재정렬해 상위 문서 품질을 높일 수 있음(Passage Re-ranking with BERT: MS MARCO MRR@10 27% 상대 개선, 조건은 evidence 참조. 로컬 코퍼스는 실측 필요)",
+      "side_effects": "단순 벡터 유사도보다 후보 문서 수에 비례한 추가 연산 지연이 발생함",
       "relations": [
         {
           "type": "combines_with",
@@ -589,7 +612,7 @@
           "title": "Passage Re-ranking with BERT",
           "url": "https://arxiv.org/abs/1901.04085",
           "year": 2019,
-          "claim": "질의와 문서를 교차 인코딩(Cross-Encoder)하여 문맥 상호작용 어텐션을 적용함으로써 1차 검색 순위를 대폭 개선"
+          "claim": "논문 초록 보고: BERT 기반 재랭킹이 TREC-CAR 최고 수준이며 MS MARCO 패시지 검색 리더보드 1위, 이전 최고 대비 MRR@10 27%(상대) 개선(조건: 2019년 시점 MS MARCO·TREC-CAR, BERT 재랭커). 다른 코퍼스·모델 수치가 아님."
         }
       ],
       "evidence_status": "source_reported",
@@ -673,7 +696,7 @@
         "tokens_per_sec",
         "peak_memory_mb"
       ],
-      "expected_effects": "도메인에 최적화된 임베딩 백본 선택으로 제로샷 검색 성능 10~25% 개선",
+      "expected_effects": "단일 임베딩 모델이 모든 태스크에서 우세하지 않다는 MTEB 결과에 따라 도메인 평가셋에서 모델을 비교해 선택할 수 있음(선택 효과는 코퍼스별 실측 필요)",
       "side_effects": "기존 저장된 벡터 인덱스가 있을 경우 모델 변경 시 전체 코퍼스 재임베딩 비용 발생",
       "relations": [
         {
@@ -688,7 +711,7 @@
           "title": "MTEB: Massive Text Embedding Benchmark",
           "url": "https://arxiv.org/abs/2210.07316",
           "year": 2022,
-          "claim": "다양한 도메인 및 언어에 걸친 임베딩 모델의 검색, 분류, 군집화 성능 다각도 평가 벤치마크"
+          "claim": "논문 초록 보고: 8개 임베딩 태스크, 58개 데이터셋, 112개 언어에서 33개 모델을 평가했고 모든 태스크에서 지배적인 단일 임베딩 방법은 없다는 결론(조건: MTEB 벤치마크)."
         }
       ],
       "evidence_status": "source_reported",
@@ -778,8 +801,8 @@
         "latency",
         "peak_memory_mb"
       ],
-      "expected_effects": "밀리초(ms) 단위의 초고속 검색을 유지하면서 무손실 전수 조사(Flat) 대비 98% 이상의 재현율 달성",
-      "side_effects": "M 값이 너무 크면 RAM 사용량이 수 배로 급증하여 대규모 데이터셋에서 OOM 발생",
+      "expected_effects": "ef_search·M 같은 파라미터로 재현율과 검색 지연 사이 균형을 조절할 수 있음(재현율 수준은 데이터·파라미터별 실측 필요)",
+      "side_effects": "M 값이 커지면 메모리 사용량이 늘어 대규모 데이터셋에서 OOM 위험이 커질 수 있음",
       "relations": [
         {
           "type": "combines_with",
@@ -793,7 +816,7 @@
           "title": "Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs",
           "url": "https://arxiv.org/abs/1603.09320",
           "year": 2018,
-          "claim": "논문 보고: HNSW 그래프 구조를 통해 기존 ANN 알고리즘 대비 수배 높은 탐색 효율과 안정적인 재현율 확인"
+          "claim": "논문 초록: 다층 근접 그래프 구조로 로그 복잡도 스케일링을 주장하며 평가에서 당시 오픈소스 벡터 전용 기법을 크게 앞선다고 보고(조건: 논문 벤치마크)."
         }
       ],
       "evidence_status": "source_reported",
@@ -811,7 +834,7 @@
       "slug": "context_compression",
       "name": "Context Compression & Token Pruning (LLMLingua)",
       "name_ko": "검색 컨텍스트 압축 및 프롬프트 경량화",
-      "summary": "검색된 다수의 문서 청크 중 질문과 무관한 수식어, 불필요한 공백, 중복 문장을 소형 언어 모델의 정보 엔트로피를 이용해 선택적으로 제거하여 LLM 프롬프트 토큰을 30~50% 압축합니다.",
+      "summary": "검색된 청크 중 질문과 무관한 수식어와 중복 문장 등을 소형 언어 모델의 정보량 기준으로 선택 제거해 LLM 프롬프트 토큰을 줄입니다.",
       "principle": "소형 모델(GPT-2/Qwen)을 이용해 프롬프트 토큰들의 당혹도(Perplexity)와 상호 정보량을 계산하고, 엔트로피 기여도가 극히 낮은 불필요한 토큰들을 선별적으로 제거합니다.",
       "category": "rag_retrieval",
       "targets": [
@@ -844,7 +867,7 @@
           "min": 0.2,
           "max": 0.9,
           "step": 0.05,
-          "description": "보존할 프롬프트 토큰의 비율 (0.5는 50%로 축소)",
+          "description": "보존할 프롬프트 토큰의 비율(0.5는 절반 보존, 하한 이하로 낮추면 정보 손실 위험)",
           "advanced": false,
           "required": false,
           "sweepable": true
@@ -870,8 +893,8 @@
         "accuracy",
         "ttft_ms"
       ],
-      "expected_effects": "LLM 입력 토큰 수 절감으로 API 비용 절약 및 TTFT 대폭 단축",
-      "side_effects": "과도한 압축(0.3 이하) 시 중요한 숫자나 핵심 논리 단어가 누락되어 답변 정확도 저하",
+      "expected_effects": "입력 토큰 수를 줄여 API 비용과 TTFT를 낮출 수 있음(압축률과 정확도 사이 trade-off는 과업별 실측 필요)",
+      "side_effects": "압축이 과도하면 중요한 숫자나 핵심 논리 단어가 누락되어 답변 정확도가 낮아질 수 있음",
       "relations": [
         {
           "type": "combines_with",
@@ -885,7 +908,7 @@
           "title": "LLMLingua: Compressing Prompts for Accelerated Inference of Large Language Models",
           "url": "https://arxiv.org/abs/2310.05736",
           "year": 2023,
-          "claim": "논문 보고: 프롬프트 길이를 최대 20배까지 압축하면서도 원래 LLM의 추론 성능을 견고하게 보존"
+          "claim": "논문 초록 보고: GSM8K, BBH, ShareGPT, Arxiv-March23 4개 데이터셋에서 최대 20배 압축에도 성능 손실이 적다고 보고(조건: 논문 데이터셋·압축 모델)."
         }
       ],
       "evidence_status": "source_reported",
@@ -936,7 +959,7 @@
           "min": 0.8,
           "max": 0.99,
           "step": 0.01,
-          "description": "캐시 히트를 판정할 질의 임베딩 코사인 유사도 하한선",
+          "description": "캐시 히트를 판정할 질의 임베딩 코사인 유사도 하한선(예시 기본값이며 코퍼스·임베딩 모델별로 튜닝 필요)",
           "advanced": false,
           "required": false,
           "sweepable": true
@@ -954,7 +977,7 @@
         "runtimes": [
           "scikit-learn"
         ],
-        "notes": "Redis + RediSearch 또는 로컬 인메모리 벡터 캐시로 구축."
+        "notes": "로컬 인메모리 벡터 캐시 또는 Redis 등 외부 저장소로 구성할 수 있음. similarity_threshold의 기본값은 예시 설정이며 보편 권장값이 아님."
       },
       "metrics": [
         "latency",
@@ -962,7 +985,7 @@
         "throughput"
       ],
       "expected_effects": [
-        "반복적이거나 유사한 질문 유입 시 인덱스 탐색 및 언어 모델 호출을 우회하여 응답 지연시간 단축 및 연산 비용 절감 기대"
+        "반복적이거나 유사한 질문에서 검색·LLM 호출을 우회해 지연과 비용을 줄일 수 있음(캐시 적중률과 오답 반환 위험은 임계값·질의 분포별 실측 필요)"
       ],
       "side_effects": "임계값이 너무 낮으면 다른 의도의 질문에 이전 답변이 오반환되는 캐시 오염 주의",
       "relations": [
@@ -972,7 +995,15 @@
           "note": "캐시 미스 발생 시 표준 하이브리드 검색으로 폴백"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "zilliztech/GPTCache",
+          "url": "https://github.com/zilliztech/GPTCache",
+          "year": 2023,
+          "claim": "대표 구현: 질의 임베딩 유사도로 LLM 응답을 캐시하는 시맨틱 캐시 라이브러리(README). 유사도 임계값 설정과 캐시 적중 조건은 사용자 설정이며 지연·비용 절감 수치는 이 카탈로그가 주장하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "retrieval_eval"
@@ -989,7 +1020,7 @@
       "name": "Reciprocal Rank Fusion (RRF)",
       "name_ko": "역순위 결합 (RRF)",
       "summary": "서로 다른 스케일을 가진 복수의 검색기(Dense 벡터 점수, BM25 스코어 등) 결과 점수를 정규화하지 않고, 오직 각 문서의 순위(Rank) 역수만을 이용해 로버스트하게 결합합니다.",
-      "principle": "각 검색 엔진에서 문서 d의 순위 r(d)에 대해 RRF 점수 Score(d) = sum(1 / (k + r(d)))를 계산합니다. 점수 분포의 극단값이나 단위 차이에 영향을 받지 않아 매우 안정적인 랭킹 통합을 제공합니다.",
+      "principle": "각 검색 엔진에서 문서 d의 순위 r(d)에 대해 RRF 점수 Score(d) = sum(1 / (k + r(d)))를 계산합니다. 점수 분포의 극단값이나 단위 차이에 영향을 받지 않아 안정적인 랭킹 통합을 제공합니다.",
       "category": "rag_retrieval",
       "targets": [
         "rag",
@@ -1036,7 +1067,7 @@
         "runtimes": [
           "scikit-learn"
         ],
-        "notes": "순수 랭킹 정렬 연산이므로 하드웨어 가속 없이도 CPU에서 1ms 미만에 완료됨."
+        "notes": "순위 정렬 연산만 필요해 하드웨어 가속 없이 CPU에서 수행됨(지연은 후보 수별 실측 필요)."
       },
       "metrics": [
         "mrr",
@@ -1044,7 +1075,7 @@
         "recall_at_k"
       ],
       "expected_effects": "점수 정규화(Min-Max 등) 오류 없이 이종 검색기 결과의 최고 순위 일치도 확보",
-      "side_effects": "단순 순위만 보므로 한 검색기에서 압도적인 신뢰도 점수를 받은 문서가 덜 반영될 수 있음",
+      "side_effects": "단순 순위만 보므로 한 검색기에서 매우 높은 신뢰도 점수를 받은 문서가 덜 반영될 수 있음",
       "relations": [
         {
           "type": "specializes",
@@ -1055,10 +1086,10 @@
       "evidence": [
         {
           "kind": "paper",
-          "title": "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods",
+          "title": "Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods (SIGIR 2009)",
           "url": "https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf",
           "year": 2009,
-          "claim": "논문 보고: 단순 순위 역수 합산 방식이 복잡한 머신러닝 학습 기반 순위 결합보다 더 우수하고 안정적임을 입증"
+          "claim": "논문: 여러 검색 시스템의 순위만 사용하는 RRF가 개별 시스템보다 일관되게 나은 결과를 낸다고 TREC 실험 결합으로 보고(조건: 논문 TREC 데이터)."
         }
       ],
       "evidence_status": "source_reported",
@@ -1076,7 +1107,7 @@
       "slug": "hierarchical_parent_document_retrieval",
       "name": "Hierarchical Parent Document Retrieval",
       "name_ko": "계층형 부모 문서 검색",
-      "summary": "검색 인덱싱은 의미가 응축된 작은 자식 청크(128토큰)로 수행하고, 검색 완료 후 실제 LLM 컨텍스트에는 그 청크를 포함하는 넓은 부모 문서(1024토큰)를 주입합니다.",
+      "summary": "검색 인덱싱은 의미가 응축된 작은 자식 청크로 수행하고, 검색 후 LLM 컨텍스트에는 그 청크를 포함하는 더 넓은 부모 문서를 주입합니다(청크 크기는 설정 값).",
       "principle": "검색 정확도(Precision)는 세부 내용이 담긴 작은 청크가 높고, LLM의 이해력(Comprehension)은 넓은 전후 맥락이 포함된 부모 문서가 높습니다. 작은 청크로 인덱스를 뒤진 뒤 부모 ID를 추적해 원문 문맥을 복원합니다.",
       "category": "rag_retrieval",
       "targets": [
@@ -1146,7 +1177,7 @@
         "ndcg",
         "quality"
       ],
-      "expected_effects": "검색 정확도와 풍부한 주변 문맥 보존을 동시에 달성하여 답변 환각 억제",
+      "expected_effects": "작은 청크로 정밀 검색하고 넓은 문맥으로 답변하도록 구성해 문맥 보존과 검색 정밀도의 균형을 노림(개선 폭은 코퍼스별 실측 필요)",
       "side_effects": "동일 부모에 속한 자식 청크 여러 개가 검색될 경우 중복 제거 로직 필수",
       "relations": [
         {
@@ -1158,10 +1189,10 @@
       "evidence": [
         {
           "kind": "doc",
-          "title": "LlamaIndex Hierarchical / Auto-Merging Retriever Documentation",
+          "title": "LlamaIndex documentation",
           "url": "https://docs.llamaindex.ai",
           "year": 2023,
-          "claim": "작은 청크로 정밀 검색 후 상위 부모 청크로 문맥을 자동 병합하여 RAG 생성 정확도와 일관성 확보"
+          "claim": "공식 문서 포털: 계층적 노드 파서와 자동 병합(auto-merging) 검색기 등 부모-자식 청크 검색 구성을 제공한다고 안내. 구체 문서 경로는 확인 필요(포털 URL만 확인)."
         }
       ],
       "evidence_status": "source_reported",
@@ -1237,8 +1268,8 @@
         "ndcg",
         "peak_memory_mb"
       ],
-      "expected_effects": "단일 벡터 Bi-Encoder 대비 도메인 전이 검색 정확도 15~25% 향상",
-      "side_effects": "토큰당 벡터를 보관하므로 일반 밀집 인덱스 대비 저장 용량(RAM/디스크)이 5~10배 증가",
+      "expected_effects": "토큰 단위 후기 상호작용으로 단일 벡터 검색보다 세밀한 매칭이 가능함(효과 크기는 코퍼스별 실측 필요. ColBERT 논문 수치는 evidence 조건 참조)",
+      "side_effects": "토큰당 벡터를 보관하므로 단일 벡터 밀집 인덱스보다 저장 용량이 크게 늘어남(배수는 코퍼스·압축 설정별 실측 필요)",
       "relations": [
         {
           "type": "alternative_to",
@@ -1252,7 +1283,7 @@
           "title": "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT",
           "url": "https://arxiv.org/abs/2004.12832",
           "year": 2020,
-          "claim": "논문 보고: 지연 상호작용(Late Interaction)을 통해 BERT 크로스 인코더 대비 수백 배 빠른 속도로 동등한 검색 정확도 달성"
+          "claim": "논문 초록 보고: 두 passage search 데이터셋에서 BERT 기반 모델과 경쟁적인 효과를 내면서 쿼리 처리가 두 자릿수(two orders of magnitude) 빠르고 쿼리당 FLOPs가 네 자릿수 적다고 보고(조건: 논문 데이터셋, BERT 재랭킹 모델 대비)."
         }
       ],
       "evidence_status": "source_reported",

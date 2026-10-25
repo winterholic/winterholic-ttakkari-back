@@ -5,7 +5,7 @@
       "name": "Voice Activity Detection (Silero VAD)",
       "name_ko": "음성 활동 감지 (VAD)",
       "summary": "입력 오디오 스트림에서 실제 인간 음성이 존재하는 발화 구간만을 정밀하게 감지하고 긴 무음이나 배경 잡음 구간을 STT 디코더 진입 전에 필터링합니다.",
-      "principle": "Silero VAD 등 신경망 기반 확률 추정기를 통해 30ms 오디오 프레임 단위로 음성 존재 확률(0.0~1.0)을 계산합니다. 임계값을 초과하는 연속 프레임을 음성 세그먼트로 추출하여 STT 엔진에 넘김으로써 무음 환각을 근본적으로 차단합니다.",
+      "principle": "Silero VAD 등 신경망 기반 확률 추정기가 짧은 오디오 프레임 단위로 음성 존재 확률(0.0~1.0)을 계산하고, 임계값을 넘는 연속 구간을 음성 세그먼트로 추출해 STT 엔진에 넘깁니다. 무음 구간 환각 감소 효과는 가설이며 데이터별 측정이 필요합니다.",
       "category": "stt",
       "targets": [
         "stt",
@@ -85,7 +85,7 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "whisper.cpp 및 faster-whisper 파이프라인에서 기본 내장 또는 옵션으로 지원."
+        "notes": "whisper.cpp는 --vad와 -vm(VAD 모델) 옵션으로 Silero-VAD를 지원한다고 README가 설명함. faster-whisper의 vad_filter 연동은 확인 필요."
       },
       "metrics": [
         "rtf",
@@ -94,7 +94,7 @@
         "cer"
       ],
       "expected_effects": [
-        "무음 구간 디코딩 낭비를 없애 전체 STT 처리 속도 가속 및 무음 환각 억제"
+        "무음 구간을 STT 디코딩에서 제외해 처리량을 높이고 무음 환각 가능성을 줄이는 것을 목표로 함(효과는 오디오별 실측 필요)"
       ],
       "side_effects": "임계값이 너무 높으면 말끝의 작은 속삭임이나 어미가 잘려나갈 수 있음",
       "relations": [
@@ -112,10 +112,10 @@
       "evidence": [
         {
           "kind": "repo",
-          "title": "Silero VAD: pre-trained enterprise-grade Voice Activity Detector",
+          "title": "snakers4/silero-vad",
           "url": "https://github.com/snakers4/silero-vad",
           "year": 2021,
-          "claim": "경량 신경망 기반 고정밀 음성 구간 검출로 무음 추론 비용 절감 및 환각 억제"
+          "claim": "대표 구현 README: 사전학습 VAD 모델과 사용법 제공. 환각 억제 효과와 처리 속도 수치는 이 카탈로그가 주장하지 않음."
         }
       ],
       "evidence_status": "source_reported",
@@ -134,7 +134,7 @@
       "slug": "stt_chunk_window_overlap",
       "name": "Audio Chunk Window & Overlap Tuning",
       "name_ko": "오디오 청크 윈도우 및 오버랩 최적화",
-      "summary": "장시간 오디오를 모델 입력 윈도우(Whisper 30초 규격 등) 단위로 분할할 때 오버랩(Overlap) 길이와 경계 윈도우 스케줄을 최적화하여 경계면 단어 절단 및 중복 전사를 방지합니다.",
+      "summary": "장시간 오디오를 모델 입력 윈도우(Whisper는 30초) 단위로 분할할 때 오버랩 길이와 경계 처리를 조정해 경계 단어 절단과 중복 전사를 줄입니다.",
       "principle": "Whisper 모델은 30초 고정 길이의 멜-스펙트로그램을 입력으로 받습니다. 긴 오디오를 처리할 때 슬라이딩 윈도우의 겹치는 구간을 설정하고, 이전 윈도우의 타임스탬프와 일치하는 중복 토큰을 디스태킹(De-duplication)하여 병합합니다.",
       "category": "stt",
       "targets": [
@@ -199,7 +199,7 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "회의록 분석 등 수십 분 이상의 음성 파일 전사에 필수적인 설정."
+        "notes": "긴 오디오 전사에서 윈도우 경계 처리가 필요함. 오버랩 병합 로직은 구현마다 다르며 어댑터는 연결되어 있지 않음."
       },
       "metrics": [
         "wer",
@@ -207,7 +207,7 @@
         "latency"
       ],
       "expected_effects": [
-        "청크 분할 경계면에서의 음절 절단 및 단어 누락 오류를 완화하여 전사 연속성 확보"
+        "청크 경계의 단어 절단·누락을 줄여 전사 연속성을 높이는 것을 목표로 함(개선 폭은 오디오·모델별 실측 필요)"
       ],
       "side_effects": "오버랩 길이가 길어질수록 중복 디코딩으로 인해 전체 전사 시간이 늘어남",
       "relations": [
@@ -217,7 +217,15 @@
           "note": "고정 30초 대신 VAD의 자연스러운 묵음 경계에서 윈도우를 분할하도록 연계"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "openai/whisper (audio.py: SAMPLE_RATE, CHUNK_LENGTH)",
+          "url": "https://github.com/openai/whisper/blob/main/whisper/audio.py",
+          "year": 2022,
+          "claim": "대표 구현 코드: SAMPLE_RATE=16000, CHUNK_LENGTH=30(초)로 30초 윈도우 단위 처리. 오버랩 길이 효과 수치는 포함하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "stt_transcription"
@@ -261,7 +269,7 @@
           "label": "오디오 게인 정규화",
           "type": "boolean",
           "default": true,
-          "description": "최대 피크가 -1.0dBFS에 도달하도록 디지털 게인 자동 조정",
+          "description": "최대 피크를 설정한 dBFS(기본 -1.0 dBFS 예시)로 맞추는 디지털 게인 자동 조정",
           "advanced": false,
           "required": false,
           "sweepable": true
@@ -293,14 +301,14 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "순수 CPU에서 전처리 수행."
+        "notes": "순수 CPU에서 ffmpeg/torchaudio로 전처리. 노이즈가 큰 오디오에서 무차별 증폭은 환각을 늘릴 수 있어 실측 필요."
       },
       "metrics": [
         "wer",
         "cer",
         "accuracy"
       ],
-      "expected_effects": "저음량 발화나 마이크 팝핑으로 인한 미인식 현상 대폭 완화",
+      "expected_effects": "모델 입력 형식(16kHz 모노)에 맞추고 극단적 저볼륨 신호를 보정해 인식 실패를 줄이는 것을 목표로 함(개선 폭은 오디오별 실측 필요)",
       "side_effects": "노이즈가 심한 오디오에서 무차별 증폭 시 잡음까지 함께 커져 환각 유발 위험",
       "relations": [
         {
@@ -309,7 +317,22 @@
           "note": "게인 정규화가 완료된 오디오 신호에 VAD를 적용해야 감지 정확도가 높아짐"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "openai/whisper (audio.py: SAMPLE_RATE=16000)",
+          "url": "https://github.com/openai/whisper/blob/main/whisper/audio.py",
+          "year": 2022,
+          "claim": "대표 구현 코드: 입력을 16000Hz로 처리하는 상수 SAMPLE_RATE=16000."
+        },
+        {
+          "kind": "repo",
+          "title": "ggml-org/whisper.cpp README (ffmpeg -ar 16000 -ac 1)",
+          "url": "https://github.com/ggml-org/whisper.cpp",
+          "year": 2022,
+          "claim": "공식 README: 입력 오디오를 ffmpeg -ar 16000 -ac 1 로 16kHz 모노 WAV로 변환하는 예시를 안내."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "stt_transcription"
@@ -325,7 +348,7 @@
       "slug": "stt_beam_search_decoding",
       "name": "Beam Search Decoding Tuning (Whisper)",
       "name_ko": "빔 서치 디코딩 파라미터 튜닝",
-      "summary": "Whisper 텍스트 디코더에서 beam_size와 patience 파라미터를 튜닝하여 단순 탐욕(Greedy) 디코딩의 조기 오판을 방지하고 정확한 문맥 전사를 달성합니다.",
+      "summary": "Whisper 디코더에서 beam_size와 patience를 조정해 탐욕(Greedy) 디코딩의 조기 오판을 줄이고 문맥 일관성을 높이는 설정을 비교합니다.",
       "principle": "각 타임스텝마다 확률이 가장 높은 단일 토큰만 쫓는 Greedy 방식과 달리, 상위 K(beam_size)개의 가설 경로를 동시에 유지 탐색하여 전역적으로 가장 누적 확률이 높은 문장을 최종 채택합니다.",
       "category": "stt",
       "targets": [
@@ -387,7 +410,7 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "whisper.cpp의 -b 플래그. 저지연 스트리밍 전사에서는 beam_size=1~2 권장."
+        "notes": "whisper.cpp의 빔 서치 옵션과 openai/whisper의 beam_size 옵션이 대응됨. 지연 대비 품질 trade-off는 실측 필요."
       },
       "metrics": [
         "cer",
@@ -396,7 +419,7 @@
         "latency"
       ],
       "expected_effects": [
-        "Greedy 검색 대비 다중 가설 탐색을 통해 난청 구간 및 복잡한 어휘에서의 음절 오류율(CER) 감소 기대"
+        "Greedy 대비 다중 가설 탐색으로 일부 구간의 오류율(CER/WER)이 달라질 수 있음(개선 여부와 폭은 오디오·모델별 실측 필요)"
       ],
       "side_effects": "beam_size가 커질수록 디코딩 계산량이 비례 증가하여 전사 속도가 느려짐",
       "relations": [
@@ -406,7 +429,22 @@
           "note": "빔 서치 실패 시(반복 루프 감지 시) 온도 폴백으로 전환"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "openai/whisper (transcribe.py: beam_size, patience)",
+          "url": "https://github.com/openai/whisper/blob/main/whisper/transcribe.py",
+          "year": 2022,
+          "claim": "대표 구현 코드: decode 옵션으로 beam_size, patience를 제공하고 온도 0(t=0)에서만 beam search를 쓴다는 구현 주석(온도 폴백 시 beam_size·patience 비활성화)."
+        },
+        {
+          "kind": "doc",
+          "title": "whisper.cpp whisper-cli README (-bs/--beam-size)",
+          "url": "https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/README.md",
+          "year": 2024,
+          "claim": "공식 README: -bs/--beam-size 옵션(문서 기본값 5)으로 빔 서치 크기를 지정. 정확도·속도 수치는 포함하지 않음."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "stt_transcription"
@@ -482,15 +520,15 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "whisper.cpp의 --max-temperatures 및 --fallback-threshold 플래그로 튜닝 가능."
+        "notes": "whisper.cpp는 -tp/--temperature, -tpi/--temperature-inc(문서 기본 0.20), --no-fallback, -et, -lpt 옵션으로 폴백을 제어함. 이전 시드에 적힌 --max-temperatures, --fallback-threshold 플래그는 README에서 확인되지 않아 제거함."
       },
       "metrics": [
         "cer",
         "wer",
         "latency"
       ],
-      "expected_effects": "'감사합니다 감사합니다 감사합니다...' 같은 무한 반복 디코딩 버그 탈출",
-      "side_effects": "폴백이 여러 번 발동하면 동일 구간을 2~3회 이상 재디코딩하므로 지연시간 급증",
+      "expected_effects": "기본 디코딩에서 반복·저신뢰 출력이 감지될 때 온도를 올려 재시도하므로 일부 반복 루프 실패에서 벗어날 수 있음(해결 비율은 오디오별 실측 필요)",
+      "side_effects": "폴백이 여러 번 발동하면 같은 구간을 재디코딩하므로 지연시간이 늘어남",
       "relations": [
         {
           "type": "combines_with",
@@ -500,11 +538,18 @@
       ],
       "evidence": [
         {
+          "kind": "repo",
+          "title": "openai/whisper (transcribe.py: temperature fallback)",
+          "url": "https://github.com/openai/whisper/blob/main/whisper/transcribe.py",
+          "year": 2022,
+          "claim": "대표 구현 코드: temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0) 기본 튜플과 compression_ratio_threshold·logprob_threshold 미달 시 다음 온도로 재시도하는 폴백. 반복 오류 감소율 수치는 포함하지 않음."
+        },
+        {
           "kind": "paper",
           "title": "Robust Speech Recognition via Large-Scale Weak Supervision (Whisper)",
           "url": "https://arxiv.org/abs/2212.04356",
           "year": 2022,
-          "claim": "논문 보고: 온도 폴백 휴리스틱을 통해 노이즈 오디오에서의 반복 루프 및 전사 실패율 대폭 감소"
+          "claim": "논문: 680,000시간 다국어·다과업 약지도 학습 Whisper 모델. 초록은 온도 폴백을 다루지 않음(확인 필요: 본문 절)."
         }
       ],
       "evidence_status": "source_reported",
@@ -559,7 +604,7 @@
           "label": "초기 힌트 프롬프트 (initial_prompt)",
           "type": "text",
           "default": "따까리 AI 비서, Mac Studio, LLM 추론, Supertonic 3 음성 합성",
-          "description": "고유명사 및 도메인 전문 어휘를 쉼표로 나열한 사전 힌트",
+          "description": "고유명사·도메인 전문 어휘를 쉼표로 나열한 사전 힌트(예시 문자열이며 도메인 데이터로 교체해야 함)",
           "advanced": false,
           "required": false,
           "sweepable": false
@@ -578,7 +623,7 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "whisper.cpp의 --prompt 옵션으로 직접 전달 가능."
+        "notes": "whisper.cpp는 --prompt 옵션(초기 프롬프트)을 제공하며 condition_on_previous_text에 해당하는 옵션은 README에서 확인하지 못함(확인 필요). openai/whisper의 condition_on_previous_text 기본값은 True이며 환각 전파 위험이 있음."
       },
       "metrics": [
         "cer",
@@ -586,7 +631,7 @@
         "accuracy"
       ],
       "expected_effects": [
-        "전문 용어(고유명사, 기술 용어, 인명)의 오인식을 완화하고 일관된 표기 유도"
+        "전문 용어·고유명사의 표기 일관성이 달라질 수 있음(개선 폭은 도메인·오디오별 실측 필요)"
       ],
       "side_effects": "condition_on_previous_text=true 상태에서 한 번 환각이 발생하면 다음 윈도우까지 환각이 전파되는 루프 발생 위험",
       "relations": [
@@ -596,7 +641,22 @@
           "note": "환각 전파를 방어하기 위해 조건화 플래그를 정밀하게 통제"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "openai/whisper (transcribe.py: initial_prompt, condition_on_previous_text)",
+          "url": "https://github.com/openai/whisper/blob/main/whisper/transcribe.py",
+          "year": 2022,
+          "claim": "대표 구현 코드: initial_prompt 옵션, condition_on_previous_text 옵션(구현 기본값 True)과 carry_initial_prompt 옵션. 정확도 개선 수치는 포함하지 않음."
+        },
+        {
+          "kind": "doc",
+          "title": "whisper.cpp whisper-cli README (--prompt)",
+          "url": "https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/README.md",
+          "year": 2024,
+          "claim": "공식 README: --prompt 옵션으로 초기 프롬프트 전달(최대 n_text_ctx/2 토큰)."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "stt_transcription"
@@ -676,7 +736,7 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "whisper.cpp 및 faster-whisper의 표준 메타데이터 필터."
+        "notes": "openai/whisper는 gzip 압축률(compression_ratio) 임계값을, whisper.cpp는 엔트로피 임계값(-et)을 사용해 구현이 다름. 기본값은 구현 기본값이며 최적값 근거는 아님."
       },
       "metrics": [
         "cer",
@@ -684,7 +744,7 @@
         "quality"
       ],
       "expected_effects": [
-        "무음 구간 및 배경 소음 환경에서 발생하는 무한 루프 반복 및 비음성 환각 텍스트 필터링 (임계치 튜닝에 따른 정밀도-재현율 트레이드오프 수반)"
+        "무음·잡음 구간의 반복 환각 텍스트를 임계값 기준으로 걸러낼 수 있음(정밀도-재현율 trade-off는 데이터셋별 실측 필요)"
       ],
       "side_effects": "발음이 불명확하거나 배경 잡음이 섞인 실제 유효 발화가 무음으로 오판되어 누락될 위험",
       "relations": [
@@ -694,7 +754,22 @@
           "note": "VAD로 앞단에서 무음을 1차 거르고, 남은 미세 무음의 환각을 후단에서 2차 차단"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "openai/whisper (transcribe.py: thresholds)",
+          "url": "https://github.com/openai/whisper/blob/main/whisper/transcribe.py",
+          "year": 2022,
+          "claim": "대표 구현 코드: compression_ratio_threshold=2.4, logprob_threshold=-1.0, no_speech_threshold=0.6을 기본값으로 쓰며 기준 미달 시 온도 폴백/무음 처리. 환각 차단율 수치는 포함하지 않음."
+        },
+        {
+          "kind": "doc",
+          "title": "whisper.cpp whisper-cli README (-et, -lpt, -nth)",
+          "url": "https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/README.md",
+          "year": 2024,
+          "claim": "공식 README: 엔트로피 임계값(-et, 문서 기본값 2.40), 로그 확률 임계값(-lpt, -1.00), 무음 임계값(-nth, 0.60) 옵션 정의."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "stt_transcription"
@@ -766,7 +841,7 @@
         "latency"
       ],
       "expected_effects": "회의록 전사 시 참석자 발화가 뒤섞이지 않고 화자별로 명확하게 구조화된 텍스트 생성",
-      "side_effects": "화자 분리 신경망 연산으로 인해 순수 STT 대비 추가 연산 시간 30~50% 소요",
+      "side_effects": "화자 분리 신경망 연산이 추가되어 순수 STT 대비 처리 시간이 늘어남(증가 폭은 모델·오디오 길이별 실측 필요)",
       "relations": [
         {
           "type": "combines_with",
@@ -779,8 +854,8 @@
           "kind": "paper",
           "title": "pyannote.audio: neural building blocks for speaker diarization",
           "url": "https://arxiv.org/abs/1911.01255",
-          "year": 2020,
-          "claim": "화자 분리(Diarization)를 위한 엔드투엔드 신경망 기반 음성 분할 및 임베딩 군집화"
+          "year": 2019,
+          "claim": "논문: 음성 활동 검출, 화자 변경 검출, 중첩 발화 검출, 화자 임베딩을 위한 end-to-end 신경 구성요소와 사전학습 모델을 제공하는 오픈소스 툴킷. 대부분 구성요소에서 최고 수준 성능이라고 보고(조건: 논문 평가)."
         }
       ],
       "evidence_status": "source_reported",
@@ -840,7 +915,7 @@
               "label": "영어 (English 고정)"
             }
           ],
-          "description": "언어를 미리 알고 있는 경우 고정 지정하여 언어 감지 오버헤드 생략",
+          "description": "언어를 미리 알고 있는 경우 고정 지정(auto는 감지 단계를 수행). 기본값 ko는 한국어 위주 사용 환경을 가정한 설정",
           "advanced": false,
           "required": false,
           "sweepable": true
@@ -859,13 +934,13 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "whisper.cpp의 -l ko 플래그."
+        "notes": "whisper.cpp -l/--language(기본 en, auto 허용) 또는 openai/whisper --language 옵션으로 지정. 한국어 고정 시 외국어 혼용 구간 전사 품질은 실측 필요."
       },
       "metrics": [
         "accuracy",
         "latency"
       ],
-      "expected_effects": "한국어 전사 시 영어로 오감지되어 영어 철자로 발음이 표기되는 참사 방지 및 언어 감지 연산 절약",
+      "expected_effects": "언어를 알고 있을 때 고정 지정하면 언어 감지 단계가 생략되고 오감지 가능성을 피할 수 있음(영향 크기는 오디오별 실측 필요)",
       "side_effects": "다국어 혼용 발화에서 고정 언어를 지정하면 외국어 어절 전사 성능 저하",
       "relations": [
         {
@@ -874,7 +949,22 @@
           "note": "지정된 언어에 맞춘 초기 프롬프트 힌트 연동"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "openai/whisper (README / language detection)",
+          "url": "https://github.com/openai/whisper",
+          "year": 2022,
+          "claim": "공식 저장소: 다국어 모델이 언어 토큰으로 언어를 식별하고 --language 옵션으로 언어를 고정할 수 있음(README). 오감지율 수치는 포함하지 않음."
+        },
+        {
+          "kind": "doc",
+          "title": "whisper.cpp whisper-cli README (-l/--language)",
+          "url": "https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/README.md",
+          "year": 2024,
+          "claim": "공식 README: -l/--language 옵션(문서 기본값 en, auto는 자동 감지)."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "stt_transcription"
@@ -890,8 +980,8 @@
       "slug": "stt_word_level_timestamps",
       "name": "Word-Level Timestamps via Cross-Attention",
       "name_ko": "단어 단위 정밀 타임스탬프 정렬",
-      "summary": "크로스 어텐션 가중치 매트릭스 및 동적 시간 워핑(DTW)을 적용하여 전사된 텍스트와 원본 오디오 간의 단어 단위 정밀 정렬 타임스탬프를 추출합니다.",
-      "principle": "디코더가 텍스트 토큰을 생성할 때 오디오 프레임에 주는 어텐션 피크 위치를 Dynamic Time Warping (DTW) 알고리즘으로 추적하여 정확한 오디오-텍스트 정렬 타임스탬프를 복원합니다.",
+      "summary": "교차 어텐션 가중치에 동적 시간 워핑(DTW)을 적용하는 방식 등으로 전사 텍스트와 오디오 사이 단어 단위 타임스탬프를 추출합니다.",
+      "principle": "디코더가 텍스트 토큰을 생성할 때 오디오 프레임에 주는 어텐션 패턴을 DTW로 추적해 단어 경계를 추정합니다(openai/whisper의 방식). whisper.cpp의 -ml 1은 별도 구현이며 README가 experimental로 표기하므로 두 방식을 같은 것으로 취급하지 않습니다.",
       "category": "stt",
       "targets": [
         "stt"
@@ -937,14 +1027,14 @@
           "whisper.cpp",
           "pytorch"
         ],
-        "notes": "whisper.cpp의 --max-len 1 및 -ml 플래그 또는 faster-whisper word_timestamps 옵션."
+        "notes": "openai/whisper의 word_timestamps는 교차 어텐션 DTW 방식이고, whisper.cpp는 -ml 1(experimental)과 -dtw(토큰 단위) 옵션으로 구현이 다름. faster-whisper의 방식은 확인 필요."
       },
       "metrics": [
         "accuracy",
         "quality"
       ],
       "expected_effects": [
-        "음성-자막 동기화 하이라이팅 및 특정 단어 클릭 시 해당 오디오 위치 탐색 편의 제공"
+        "음성-자막 동기화와 단어 클릭 시 해당 오디오 위치 탐색에 쓸 수 있음(정렬 정확도는 오디오·모델별 실측 필요)"
       ],
       "side_effects": "어텐션 맵 유지 및 DTW 후처리 연산으로 메모리와 시간이 약간 증가",
       "relations": [
@@ -954,7 +1044,29 @@
           "note": "화자 분리 구간과 단어 타임스탬프를 결합하여 화자별 단어 단위 스크립트 완성"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "openai/whisper (timing.py: cross-attention DTW)",
+          "url": "https://github.com/openai/whisper/blob/main/whisper/timing.py",
+          "year": 2022,
+          "claim": "대표 구현 코드: 교차 어텐션 가중치에 동적 시간 워핑(dtw)을 적용해 단어 타임스탬프를 구하는 word_timestamps 구현. 정렬 오차 수치는 포함하지 않음."
+        },
+        {
+          "kind": "repo",
+          "title": "ggml-org/whisper.cpp README (word-level timestamp, experimental)",
+          "url": "https://github.com/ggml-org/whisper.cpp",
+          "year": 2022,
+          "claim": "공식 README: -ml 1(--max-len)로 단어 단위 타임스탬프를 얻는 방식을 experimental로 표기."
+        },
+        {
+          "kind": "doc",
+          "title": "whisper.cpp whisper-cli README (-dtw)",
+          "url": "https://github.com/ggml-org/whisper.cpp/blob/master/examples/cli/README.md",
+          "year": 2024,
+          "claim": "공식 README: -dtw 옵션으로 토큰 단위 타임스탬프 계산(문서 설명 기준)."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "stt_transcription"
@@ -970,8 +1082,8 @@
       "slug": "stt_whisper_metal_inference_tuning",
       "name": "Apple Silicon Metal Whisper Tuning (whisper.cpp)",
       "name_ko": "Apple Silicon Metal Whisper 추론 튜닝",
-      "summary": "C/C++ 기반 whisper.cpp를 Apple Silicon의 Metal GPU 가속 및 NEON 벡터 연산으로 구동하며 스레드 수(-t)와 프로세서 분담을 최적화하여 초고속 저전력 음성 전사를 실현합니다.",
-      "principle": "Python 오버헤드와 PyTorch 런타임 종속성을 배제하고, Apple Metal Shading Language로 작성된 고속 행렬곱 커널과 통합 메모리(Zero-Copy)를 활용하여 대기 시간을 극소화합니다.",
+      "summary": "C/C++ 기반 whisper.cpp를 Apple Silicon의 Metal GPU 가속과 NEON 벡터 연산으로 구동하고 스레드 수(-t)와 프로세서 분담을 조정합니다.",
+      "principle": "whisper.cpp는 의존성 없는 C/C++ 구현이며 README가 Apple Silicon을 first-class citizen으로 안내하고 ARM NEON, Accelerate, Metal, Core ML로 최적화한다고 설명합니다. 대기 시간과 메모리 이득은 모델 크기·칩별 실측이 필요합니다.",
       "category": "stt",
       "targets": [
         "stt",
@@ -1019,7 +1131,7 @@
           "options": [
             {
               "value": "tiny",
-              "label": "Tiny (39M 파라미터 - 초고속)"
+              "label": "Tiny (39M 파라미터, 가장 작은 모델)"
             },
             {
               "value": "base",
@@ -1027,7 +1139,7 @@
             },
             {
               "value": "small",
-              "label": "Small (244M 파라미터 - 온디바이스 균형)"
+              "label": "Small (244M 파라미터)"
             },
             {
               "value": "medium",
@@ -1035,7 +1147,7 @@
             },
             {
               "value": "large_v3",
-              "label": "Large-v3 (1550M 파라미터 - 최고 정확도)"
+              "label": "Large-v3 (1550M 파라미터, 가장 큰 모델)"
             }
           ],
           "description": "whisper.cpp 구동 모델 가중치 규격",
@@ -1054,7 +1166,7 @@
         "runtimes": [
           "whisper.cpp"
         ],
-        "notes": "Mac Studio M2 Max/Ultra 등 Apple Silicon 환경에서 고속 추론 가능."
+        "notes": "Apple Silicon 환경 대상이며 칩 세대·모델 크기별 성능은 호스트에서 실측해야 함."
       },
       "metrics": [
         "rtf",
@@ -1062,7 +1174,7 @@
         "peak_memory_mb",
         "cer"
       ],
-      "expected_effects": "Python 기반 대비 메모리 점유 70% 감소 및 1분 음성을 3초 이내에 전사 완료 (RTF < 0.05)",
+      "expected_effects": "Python 런타임 의존성을 줄이고 Apple Silicon 가속 경로로 전사 처리 시간을 단축할 수 있음(RTF와 메모리 점유는 모델·칩별 실측 필요)",
       "side_effects": "CPU 스레드를 최대 코어 수 이상으로 과도하게 잡으면 코어 스위칭 오버헤드로 속도 저하",
       "relations": [
         {
@@ -1074,10 +1186,10 @@
       "evidence": [
         {
           "kind": "repo",
-          "title": "whisper.cpp: Port of OpenAI's Whisper model in C/C++",
-          "url": "https://github.com/ggerganov/whisper.cpp",
+          "title": "ggml-org/whisper.cpp README",
+          "url": "https://github.com/ggml-org/whisper.cpp",
           "year": 2022,
-          "claim": "저장소 보고: 고유 C/C++ 구현 및 Apple Silicon Metal 가속을 통해 무의존성 고속 추론 달성"
+          "claim": "공식 README: 의존성 없는 순수 C/C++ 구현, Apple Silicon에서 ARM NEON·Accelerate·Metal·Core ML 최적화, Core ML 인코더가 CPU 전용 대비 3배 이상 빠를 수 있다고 안내(조건: README가 명시한 Core ML 인코더 실행, 모델·칩 의존). 이 카탈로그의 RTF·메모리 수치가 아님."
         }
       ],
       "evidence_status": "source_reported",

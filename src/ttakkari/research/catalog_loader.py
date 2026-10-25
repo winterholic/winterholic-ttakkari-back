@@ -169,6 +169,8 @@ async def load_catalog_seeds(db) -> dict[str, int]:
         evidence_status = m.get("evidence_status", "source_reported")
         adapter_hints = m.get("adapter_hints", [])
         tags = m.get("tags", [])
+        # deprecated 시드(예: Kokoro)가 로드 후 validated로 둔갑해 readiness가 실행 후보로 취급하지 않도록 시드 값을 그대로 쓴다.
+        lifecycle_status = m.get("lifecycle_status", "validated")
 
         # Check existing system seed method to retain UUID and version
         existing = (
@@ -202,6 +204,7 @@ async def load_catalog_seeds(db) -> dict[str, int]:
             existing.evidence_status = evidence_status
             existing.adapter_hints = adapter_hints
             existing.tags = tags
+            existing.lifecycle_status = lifecycle_status
             existing.updated_at = utcnow()
         else:
             m_id = uuid.uuid4()
@@ -212,7 +215,7 @@ async def load_catalog_seeds(db) -> dict[str, int]:
                 version=1,
                 supersedes_id=None,
                 origin="system_seed",
-                lifecycle_status="validated",
+                lifecycle_status=lifecycle_status,
                 name=name,
                 name_ko=name_ko,
                 summary=summary,

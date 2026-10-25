@@ -4,8 +4,8 @@
       "slug": "lora",
       "name": "LoRA (Low-Rank Adaptation)",
       "name_ko": "저순위 어댑터 미세조정",
-      "summary": "사전학습된 신경망 가중치는 동결한 채 어텐션 가중치 행렬에 두 개의 저순위(Low-Rank) 분해 행렬만을 삽입하여 미세조정합니다. 학습 대상 파라미터와 메모리 소모를 1% 미만으로 줄이면서도 전파라미터 학습에 버금가는 성능을 냅니다.",
-      "principle": "파라미터 적응 시 실질적 랭크(Intrinsic Rank)가 매우 낮다는 점을 이용하여 d x d 크기의 가중치 변위(Delta W)를 d x r 및 r x d 크기의 두 작은 행렬(A, B, r << d)의 곱으로 분해 학습합니다. 학습 완료 후 가중치를 원본 모델과 무손실 합성(Merge)할 수 있습니다.",
+      "summary": "사전학습된 신경망 가중치는 동결한 채 어텐션 가중치 행렬 등에 두 개의 저순위(Low-Rank) 분해 행렬만을 삽입해 미세조정합니다. 학습 대상 파라미터와 옵티마이저 메모리를 줄이면서 전체 미세조정과 비슷한 품질을 노립니다.",
+      "principle": "파라미터 적응에서 실질적 랭크(Intrinsic Rank)가 낮다는 점을 이용해 d x d 크기의 가중치 변화량(Delta W)을 d x r 및 r x d 크기의 두 작은 행렬(A, B, r << d)의 곱으로 분해해 학습합니다. 학습 후 가중치를 원본 모델에 합성(Merge)할 수 있으며 양자화 모델에서는 수치 오차가 생길 수 있습니다.",
       "category": "training",
       "targets": [
         "llm",
@@ -121,14 +121,33 @@
         ],
         "hardware": [
           "cuda",
-          "apple_silicon_metal",
-          "cpu"
+          "apple_silicon_metal"
         ],
         "runtimes": [
           "pytorch",
           "mlx"
         ],
-        "notes": "Hugging Face PEFT, Unsloth, Apple Silicon MLX 환경에서 널리 지원됨."
+        "notes": "연구실에는 학습 실행 어댑터가 없어 외부 보고 등록 경로(external_report)만 있음.",
+        "combinations": [
+          {
+            "hardware": "cuda",
+            "runtime": "pytorch",
+            "status": "upstream_supported",
+            "note": "Hugging Face PEFT 등으로 널리 사용됨."
+          },
+          {
+            "hardware": "apple_silicon_metal",
+            "runtime": "mlx",
+            "status": "upstream_supported",
+            "note": "mlx-lm 가이드가 LoRA 미세조정을 지원한다고 설명함. 이 호스트의 학습 어댑터는 없어 외부 결과 등록만 가능."
+          },
+          {
+            "hardware": "apple_silicon_metal",
+            "runtime": "pytorch",
+            "status": "unverified",
+            "note": "PyTorch MPS 경로의 LoRA 학습 지원 범위는 확인하지 못함(확인 필요)."
+          }
+        ]
       },
       "metrics": [
         "peak_memory_mb",
@@ -136,7 +155,7 @@
         "speed"
       ],
       "expected_effects": [
-        "학습 대상 파라미터 수 및 옵티마이저 메모리 소모를 대폭 줄여 단일 GPU 환경에서의 효율적인 미세조정 지원 (원논문 보고 기준)"
+        "학습 대상 파라미터 수와 옵티마이저 메모리를 줄여 단일 GPU에서의 미세조정을 지원(LoRA 논문: GPT-3 175B 기준 학습 파라미터 10,000배·GPU 메모리 3배 감소, 조건은 evidence 참조. 이 카탈로그 모델 값은 실측 필요)"
       ],
       "side_effects": "극소 랭크(r=2, 4) 설정 시 복잡한 지식 습득이나 다국어 전이 성능이 제한될 수 있음",
       "relations": [
@@ -157,7 +176,7 @@
           "title": "LoRA: Low-Rank Adaptation of Large Language Models",
           "url": "https://arxiv.org/abs/2106.09685",
           "year": 2021,
-          "claim": "논문 보고: 학습 가능 파라미터를 10,000배, GPU 메모리 요구량을 3배 줄이면서도 Full Fine-tuning과 동등한 성능 달성"
+          "claim": "논문 초록 보고: GPT-3 175B(Adam 미세조정 기준) 대비 학습 파라미터 수 10,000배, GPU 메모리 요구량 3배 감소. RoBERTa, DeBERTa, GPT-2, GPT-3에서 미세조정과 동등하거나 더 나은 품질이며 어댑터와 달리 추가 추론 지연 없음(조건: 논문 모델·설정, GPT-3 175B 비교 기준)."
         }
       ],
       "evidence_status": "source_reported",
@@ -175,7 +194,7 @@
       "slug": "qlora",
       "name": "QLoRA (Quantized Low-Rank Adaptation)",
       "name_ko": "양자화 기반 저순위 어댑터 미세조정",
-      "summary": "4비트 NormalFloat 양자화와 LoRA를 결합하여 GPU VRAM 요구량을 대폭 낮춥니다. 단일 48GB GPU(A100) 환경에서 65B 모델 파인튜닝이 가능하며, 33B 모델은 24GB VRAM 환경에서 튜닝을 수행할 수 있습니다.",
+      "summary": "4비트 NormalFloat 양자화와 LoRA를 결합하여 미세조정 시 GPU 메모리 요구량을 줄입니다. 논문은 단일 48GB GPU에서 65B 모델 미세조정을 보고합니다.",
       "principle": "정규분포 데이터에 정보이론적으로 최적화된 NF4(4-bit NormalFloat) 데이터 타입, 양자화 상수 자체를 다시 양자화하는 이중 양자화(Double Quantization), 메모리 스파이크 시 CPU로 페이지를 내리는 페이징 옵티마이저를 결합합니다.",
       "category": "training",
       "targets": [
@@ -216,7 +235,7 @@
               "label": "FP4 (Floating Point 4)"
             }
           ],
-          "description": "기본 모델을 동결 적재할 4비트 양자화 유형",
+          "description": "기본 모델을 동결 적재할 4비트 양자화 유형(bitsandbytes 경로 기준)",
           "advanced": false,
           "required": false,
           "sweepable": true
@@ -226,7 +245,7 @@
           "label": "이중 양자화 (Double Quant)",
           "type": "boolean",
           "default": true,
-          "description": "양자화 스케일 상수를 다시 8비트로 양자화하여 파라미터당 0.37비트 추가 절감",
+          "description": "양자화 상수를 다시 양자화해 메모리를 추가 절감하는 옵션(bitsandbytes 경로 기준, 절감 폭 수치는 논문 본문 확인 필요)",
           "advanced": false,
           "required": false,
           "sweepable": true
@@ -257,7 +276,27 @@
           "pytorch",
           "mlx"
         ],
-        "notes": "CUDA 환경에서는 bitsandbytes 라이브러리가 필요하며, Apple Silicon에서는 MLX 네이티브 4비트 학습을 통해 유사 메커니즘 제공."
+        "notes": "이 연구실에는 학습 실행 어댑터가 없어 어느 조합도 이 호스트에서 자동 실행되지 않으며 외부 보고 등록(external_report)만 가능합니다. quant_type/double_quant 파라미터는 bitsandbytes 경로에만 해당합니다. 논문 초록 외 본문 수치는 이 시드에서 검증하지 않았습니다(확인 필요).",
+        "combinations": [
+          {
+            "hardware": "cuda",
+            "runtime": "pytorch",
+            "status": "upstream_supported",
+            "note": "논문 구성(bitsandbytes NF4, double quantization, paged optimizer). 65B/48GB 수치는 이 조합의 논문 조건. 이 호스트에서 실행 불가."
+          },
+          {
+            "hardware": "apple_silicon_metal",
+            "runtime": "pytorch",
+            "status": "upstream_supported",
+            "note": "bitsandbytes README가 macOS arm64 CPU/Metal에서 QLoRA 4-bit를 지원 표시. 이 호스트 설치·메모리·속도는 미검증(확인 필요). 논문 수치는 이 조합에 적용되지 않음."
+          },
+          {
+            "hardware": "apple_silicon_metal",
+            "runtime": "mlx",
+            "status": "upstream_supported",
+            "note": "mlx-lm 가이드의 양자화 모델 LoRA. 논문의 NF4/double quantization과 동일 구성인지 확인 필요. 논문 수치는 이 조합에 적용되지 않음."
+          }
+        ]
       },
       "metrics": [
         "peak_memory_mb",
@@ -265,7 +304,7 @@
         "speed"
       ],
       "expected_effects": [
-        "16비트 LoRA 대비 기본 모델 VRAM 요구량 대폭 절감 (원논문 기준 단일 48GB GPU에서 65B 모델 파인튜닝 실현)"
+        "동결한 4비트 모델 위에서 LoRA를 학습해 16비트 LoRA보다 기본 모델 메모리를 줄임(QLoRA 논문: 단일 48GB GPU에서 65B 모델 미세조정, 조건은 evidence 참조)"
       ],
       "side_effects": [
         "양자화/역양자화 연산 오버헤드로 인해 순수 16비트 LoRA 대비 스텝당 학습 속도가 다소 느려질 수 있음"
@@ -288,7 +327,21 @@
           "title": "QLoRA: Efficient Finetuning of Quantized LLMs",
           "url": "https://arxiv.org/abs/2305.14314",
           "year": 2023,
-          "claim": "논문 보고: 단일 48GB GPU에서 65B 파라미터 모델을 파인튜닝 실현"
+          "claim": "논문 초록 보고: 동결한 4비트 양자화 모델로 그래디언트를 역전파해 LoRA를 학습하며 단일 48GB GPU에서 65B 파라미터 모델 미세조정, 16비트 미세조정 성능 유지(조건: 논문 CUDA 구현·bitsandbytes 커널, NF4·double quantization·paged optimizer 구성). Apple Silicon/MLX 조건이 아님."
+        },
+        {
+          "kind": "repo",
+          "title": "bitsandbytes README (support matrix)",
+          "url": "https://github.com/bitsandbytes-foundation/bitsandbytes",
+          "year": 2024,
+          "claim": "공식 README: macOS 14+ arm64의 CPU와 Metal(mps)에서 QLoRA 4-bit가 지원 표시됨(Metal에서 8-bit optimizer는 진행 중 표기, 일부 기능은 성능 최적화 미비 주석). 이 호스트에서의 설치·성능은 미검증."
+        },
+        {
+          "kind": "doc",
+          "title": "mlx-lm LoRA/QLoRA guide",
+          "url": "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md",
+          "year": 2024,
+          "claim": "공식 가이드: --model이 양자화 모델이면 QLoRA로 학습한다고 설명하고 QLoRA 논문을 인용. MLX 양자화와 논문의 NF4/double quantization이 같은 구성인지는 확인 필요."
         }
       ],
       "evidence_status": "source_reported",
@@ -306,7 +359,7 @@
       "slug": "full_parameter_finetuning",
       "name": "Full Parameter Fine-tuning",
       "name_ko": "전체 파라미터 미세조정",
-      "summary": "모델의 모든 가중치를 동결 없이 학습 데이터셋으로 역전파 갱신합니다. 도메인 지식의 전이와 문체/추론 행동의 근본적 재정립에 가장 높은 표현력을 제공합니다.",
+      "summary": "모델의 모든 가중치를 동결 없이 학습 데이터셋으로 역전파 갱신합니다. 어댑터 방식보다 학습 가능한 파라미터가 많아 도메인 적응 폭이 넓지만 비용이 큽니다.",
       "principle": "사전학습된 신경망의 전체 가중치 행렬에 대해 그래디언트를 계산하고 옵티마이저 상태(모멘텀, 분산 등)를 유지하며 전체 모델을 최적화합니다.",
       "category": "training",
       "targets": [
@@ -379,7 +432,7 @@
       "expected_effects": [
         "특화 태스크에서 어댑터 방식 대비 높은 일관성과 도메인 어휘 및 지식의 전면 적응력 확보 기대"
       ],
-      "side_effects": "기존에 학습된 일반 상식이나 지식을 망각하는 파괴적 망각(Catastrophic Forgetting) 위험 및 막대한 GPU 비용",
+      "side_effects": "기존에 학습된 일반 상식이나 지식을 망각하는 파괴적 망각(Catastrophic Forgetting) 위험 및 큰 GPU 비용",
       "relations": [
         {
           "type": "alternative_to",
@@ -393,7 +446,7 @@
           "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
           "url": "https://arxiv.org/abs/1810.04805",
           "year": 2018,
-          "claim": "전체 신경망 파라미터를 하류 태스크(Downstream Task) 데이터로 미세조정하여 최첨단 성능 달성"
+          "claim": "논문 초록 보고: 사전학습 BERT를 출력층 하나만 추가해 미세조정해 11개 NLP 과제에서 최고 성능을 보고, GLUE 80.5%(절대 7.7%p 향상) 등(조건: BERT, 2018년 시점 벤치마크). 최신 LLM 전체 미세조정 수치가 아님."
         }
       ],
       "evidence_status": "source_reported",
@@ -493,7 +546,7 @@
         "accuracy",
         "stability"
       ],
-      "expected_effects": "PPO 대비 극도로 안정적인 수렴과 절반 이하의 학습 시간으로 고품질 대화/지시 튜닝 달성",
+      "expected_effects": "보상 모델 학습과 RL 루프 없이 선호 데이터로 정렬할 수 있어 파이프라인이 단순해짐(DPO 논문: 감성 제어에서 PPO 기반 RLHF 상회, 조건은 evidence 참조. 학습 시간·안정성 차이는 설정별 실측 필요)",
       "side_effects": "데이터셋에 라벨 노이즈가 있거나 Beta가 너무 크면 특정 토큰 확률이 붕괴하는 과적합 발생 가능",
       "relations": [
         {
@@ -513,7 +566,7 @@
           "title": "Direct Preference Optimization: Your Language Model is Secretly a Reward Model",
           "url": "https://arxiv.org/abs/2305.18290",
           "year": 2023,
-          "claim": "논문 보고: 복잡한 강화학습 없이도 RLHF(PPO) 이상의 인간 선호 일치도와 뛰어난 학습 안정성 확보"
+          "claim": "논문 초록 보고: 보상 모델과 RL 샘플링 없이 단순 분류 손실로 선호 정렬을 푸는 DPO가 PPO 기반 RLHF보다 감성 제어 능력이 높고 요약·단일턴 대화 품질은 동등하거나 나으며 구현·학습이 훨씬 단순(조건: 논문 모델·데이터셋)."
         }
       ],
       "evidence_status": "source_reported",
@@ -531,8 +584,8 @@
       "slug": "ppo_rlhf",
       "name": "PPO-based RLHF (Proximal Policy Optimization)",
       "name_ko": "PPO 기반 인간 피드백 강화학습",
-      "summary": "인간 선호도로 학습된 보상 모델(Reward Model)의 피드백을 기반으로 근사 정책 최적화(PPO)를 수행하여 모델의 유용성과 무해성을 극대화합니다.",
-      "principle": "액터(Actor), 크리틱(Critic), 보상 모델(Reward), 참조 모델(Reference)의 4개 신경망을 상호작용시키며, 클리핑된 목적 함수를 통해 정책이 이전 정책에서 과도하게 벗어나지 않도록 규제하며 보상을 극대화합니다.",
+      "summary": "인간 선호도로 학습된 보상 모델의 피드백으로 근사 정책 최적화(PPO)를 수행해 모델의 유용성과 무해성을 높이는 것을 목표로 합니다.",
+      "principle": "액터, 크리틱, 보상 모델, 참조 모델 등 여러 신경망을 상호작용시키며, 클리핑된 목적 함수로 정책이 이전 정책에서 과도하게 벗어나지 않도록 제한하면서 보상을 최대화합니다.",
       "category": "training",
       "targets": [
         "llm"
@@ -590,7 +643,7 @@
         "runtimes": [
           "pytorch"
         ],
-        "notes": "4개의 대형 모델을 동시에 GPU 클러스터에 유지해야 하므로 막대한 인프라 리소스 필요."
+        "notes": "4개의 대형 모델을 동시에 GPU 클러스터에 유지해야 하므로 많은 인프라 리소스 필요."
       },
       "metrics": [
         "quality",
@@ -598,21 +651,21 @@
         "stability"
       ],
       "expected_effects": "복잡한 보상 함수 기반의 오픈엔드 추론 및 복합 다목적 지시 정렬",
-      "side_effects": "하이퍼파라미터에 극도로 민감하며 보상 해킹(Reward Hacking) 또는 정책 붕괴 현상이 빈번함",
+      "side_effects": "하이퍼파라미터에 민감하며 보상 해킹(Reward Hacking)이나 정책 붕괴가 보고됨(빈도는 설정별 실측 필요)",
       "relations": [
         {
           "type": "alternative_to",
           "target": "dpo",
-          "note": "선호 정렬의 고전적 방식이나 DPO 대비 복잡도가 매우 높음"
+          "note": "선호 정렬의 고전적 방식이나 DPO 대비 복잡도가 높음"
         }
       ],
       "evidence": [
         {
           "kind": "paper",
-          "title": "Training language models to follow instructions with human feedback",
+          "title": "Training language models to follow instructions with human feedback (InstructGPT)",
           "url": "https://arxiv.org/abs/2203.02155",
           "year": 2022,
-          "claim": "논문 보고: PPO 기반 RLHF를 통해 175B 모델의 지시 수행 능력 및 진실성을 대폭 개선"
+          "claim": "논문 초록 보고: 인간 평가에서 1.3B 파라미터 InstructGPT 출력이 175B GPT-3보다 선호되고(파라미터 100배 적음), 진실성 향상과 독성 감소, 공개 NLP 데이터셋 성능 저하는 최소(조건: 논문 프롬프트 분포 대상 인간 평가)."
         }
       ],
       "evidence_status": "source_reported",
@@ -725,7 +778,7 @@
         "accuracy",
         "stability"
       ],
-      "expected_effects": "손실 진동 방지 및 최종 벤치마크 평가 지표 2~5% 추가 향상",
+      "expected_effects": "학습률 스케줄에 따라 손실 진동과 최종 평가 지표가 달라지는지 비교함(개선 폭은 과업별 실측 필요)",
       "side_effects": "웜업 구간이 너무 짧으면 초기 발산, 너무 길면 학습 진행 지연",
       "relations": [
         {
@@ -740,7 +793,7 @@
           "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
           "url": "https://arxiv.org/abs/1608.03983",
           "year": 2016,
-          "claim": "코사인 감쇄(Cosine Annealing) 스케줄링을 통한 학습 후반부 수렴성 및 일반화 성능 개선"
+          "claim": "논문: SGD에 웜 리스타트와 코사인 감쇄를 쓰는 기법. CIFAR-10 3.14%, CIFAR-100 16.21% 오류율의 최고 수준 결과를 보고(조건: 논문 CIFAR 데이터셋·모델, 웜업 아님)."
         }
       ],
       "evidence_status": "source_reported",
@@ -836,14 +889,14 @@
           "pytorch",
           "mlx"
         ],
-        "notes": "Lion 사용 시 AdamW 대비 통상 3~5배 낮은 학습률을 적용해야 안정적으로 수렴함."
+        "notes": "Lion은 AdamW와 최적 학습률 범위가 다르다고 알려져 있어 학습률을 따로 탐색해야 함(권장 배수는 이 항목이 주장하지 않음)."
       },
       "metrics": [
         "peak_memory_mb",
         "speed",
         "accuracy"
       ],
-      "expected_effects": "Lion/Adafactor 채택 시 옵티마이저 VRAM 점유 50% 절감",
+      "expected_effects": "옵티마이저 종류에 따라 상태 메모리와 수렴 특성이 달라짐(Lion 논문: Adam보다 메모리 효율적, 조건은 evidence 참조. 본 카탈로그 모델 값은 실측 필요)",
       "side_effects": "새로운 옵티마이저는 하이퍼파라미터(특히 학습률)에 민감하여 잘못 설정 시 발산 가능성",
       "relations": [
         {
@@ -858,7 +911,7 @@
           "title": "Symbolic Discovery of Optimization Algorithms (Lion)",
           "url": "https://arxiv.org/abs/2302.06675",
           "year": 2023,
-          "claim": "논문 보고: AdamW 대비 메모리를 절감하고 다양한 비전/언어 태스크에서 더 빠른 수렴 속도 확인"
+          "claim": "논문 초록 보고: Lion은 Adam보다 메모리 효율적(모멘텀만 유지). ImageNet에서 ViT 정확도 최대 2% 향상, JFT 사전학습 연산 최대 5배 절감, 확산 모델 학습 연산 최대 2.3배 절감(조건: 논문 모델·데이터셋, 비교 대상 Adam/Adafactor). LLM 미세조정 일반 수치가 아님."
         }
       ],
       "evidence_status": "source_reported",
@@ -877,7 +930,7 @@
       "name": "Gradient Accumulation",
       "name_ko": "그래디언트 누적",
       "summary": "물리적 GPU VRAM 한계로 인해 배치 크기를 크게 잡지 못할 때, 여러 개의 마이크로 배치 동안 그래디언트를 누적한 뒤 한 번에 가중치를 업데이트하여 거대 유효 배치 크기를 구현합니다.",
-      "principle": "역전파 시 계산된 그래디언트를 옵티마이저 스텝마다 0으로 초기화하지 않고 N회 동안 더한 다음, N회째에 누적 그래디언트를 N으로 나누어 옵티마이저를 갱신합니다. 수학적으로 큰 배치를 한 번에 연산한 것과 동일한 효과를 냅니다.",
+      "principle": "역전파로 계산한 그래디언트를 옵티마이저 스텝마다 초기화하지 않고 N회 누적한 뒤 한 번 갱신합니다. 손실을 N으로 나누어 누적하면 큰 배치와 거의 같은 갱신이 되지만, 배치 통계에 의존하는 층(BatchNorm 등)이나 손실 정규화 방식에 따라 완전히 같지는 않습니다.",
       "category": "training",
       "targets": [
         "llm",
@@ -928,7 +981,7 @@
           "pytorch",
           "mlx"
         ],
-        "notes": "모든 프레임워크에서 지원되는 기본적 메모리 제어 기법."
+        "notes": "PyTorch(Accelerate 등)와 mlx-lm에서 지원됨. 연구실 학습 어댑터는 없어 외부 결과 등록 경로임."
       },
       "metrics": [
         "peak_memory_mb",
@@ -936,9 +989,9 @@
         "stability"
       ],
       "expected_effects": [
-        "메모리 제약이 있는 단일 GPU 환경에서도 가상 유효 배치를 구성하여 수렴 안정성 확보 지원"
+        "VRAM 한계로 큰 배치를 못 쓸 때 유효 배치를 키워 학습 안정성을 확보하는 데 도움이 될 수 있음(효과는 과업별 실측 필요)"
       ],
-      "side_effects": "누적 스텝이 커질수록 가중치 동기화 빈도가 줄어들어 통신/동기화 불균형이 발생할 수 있음",
+      "side_effects": "누적 스텝이 커지면 업데이트 빈도가 줄어 같은 에폭 수에서 갱신 횟수가 감소함",
       "relations": [
         {
           "type": "combines_with",
@@ -946,7 +999,22 @@
           "note": "혼합 정밀도와 함께 사용하여 메모리 사용량을 최소화"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "doc",
+          "title": "Hugging Face Accelerate: Gradient accumulation",
+          "url": "https://huggingface.co/docs/accelerate/usage_guides/gradient_accumulation",
+          "year": 2024,
+          "claim": "공식 문서: 여러 마이크로 배치의 그래디언트를 누적한 뒤 옵티마이저 스텝을 수행하는 방법."
+        },
+        {
+          "kind": "doc",
+          "title": "mlx-lm LoRA fine-tuning guide (--grad-accumulation-steps)",
+          "url": "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md",
+          "year": 2024,
+          "claim": "공식 가이드: --grad-accumulation-steps로 메모리 증가 없이 유효 배치 크기를 늘리는 방법."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "external_report"
@@ -961,8 +1029,8 @@
       "slug": "mixed_precision_training",
       "name": "Mixed Precision Training (BF16 / FP16 / FP8)",
       "name_ko": "혼합 정밀도 학습",
-      "summary": "신경망 순전파와 역전파 연산을 16비트(BF16/FP16) 또는 8비트(FP8)로 수행하고 중요 가중치 누적 상태만 32비트 마스터 가중치로 유지하여 연산 속도를 가속하고 VRAM을 절약합니다.",
-      "principle": "현대 텐서 코어/매트릭스 연산기는 저정밀도 행렬곱에서 최고 성능(FLOPs)을 발휘합니다. BF16(Bfloat16)은 FP32와 동일한 8비트 지수부를 가져 언더플로 위험 없이 손실 스케일링 없이도 안정적으로 수렴합니다.",
+      "summary": "신경망 순전파와 역전파 연산을 16비트(BF16/FP16) 또는 FP8로 수행하고 가중치 누적 상태는 32비트 마스터 가중치로 유지해 연산 속도와 VRAM을 개선하는 것을 목표로 합니다.",
+      "principle": "현대 텐서 코어/행렬 연산기는 저정밀도 행렬곱에서 높은 처리량을 낼 수 있습니다. BF16은 FP32와 같은 지수부 크기를 가져 FP16보다 언더플로 위험이 낮아 손실 스케일링 없이 쓰는 경우가 많지만, 안정성은 모델별로 확인해야 합니다.",
       "category": "training",
       "targets": [
         "llm",
@@ -1029,7 +1097,7 @@
           "pytorch",
           "mlx"
         ],
-        "notes": "Apple Silicon(M1/M2/M3/M4) 및 NVIDIA Ampere 이상(RTX 3090, A100 등)에서 BF16 하드웨어 네이티브 가속 기본 지원."
+        "notes": "BF16/FP16 네이티브 지원은 하드웨어·프레임워크별로 다르며 Apple Silicon MLX/PyTorch MPS의 BF16 지원 범위는 칩 세대·버전별 확인 필요."
       },
       "metrics": [
         "speed",
@@ -1053,7 +1121,7 @@
           "title": "Mixed Precision Training",
           "url": "https://arxiv.org/abs/1710.03740",
           "year": 2017,
-          "claim": "FP16 연산과 FP32 마스터 가중치를 결합하여 정확도 손실 없이 메모리 절감 및 연산 가속 달성"
+          "claim": "논문 초록 보고: 가중치·활성화·그래디언트를 FP16으로 저장하고 FP32 마스터 가중치와 손실 스케일링을 쓰며, 메모리 소비를 거의 2배 줄임(조건: 1억 파라미터 이상 대규모 모델 포함 논문 실험, FP16)."
         }
       ],
       "evidence_status": "source_reported",
@@ -1071,8 +1139,8 @@
       "slug": "training_data_sampling_augmentation",
       "name": "Training Data Sampling & Augmentation",
       "name_ko": "학습 데이터 샘플링 및 증강 기법",
-      "summary": "도메인별 데이터 비율 혼합(Data Mixing), 역번역, 무작위 마스킹, 난이도별 커리큘럼 샘플링을 적용하여 소량의 고품질 데이터로도 강력한 일반화 성능을 달성합니다.",
-      "principle": "단순 데이터 전수 순차 학습 대신 고품질/희소 도메인 데이터를 업샘플링하고 합성 데이터(Synthetic Data)를 선별 주입하여 데이터 표현 다양성을 확장하고 과적합을 방지합니다.",
+      "summary": "도메인별 데이터 비율 혼합, 역번역, 무작위 마스킹, 난이도별 커리큘럼 샘플링 등을 적용해 데이터 다양성과 균형을 조정합니다.",
+      "principle": "데이터를 순서대로 전부 학습하는 대신 도메인 비율을 조정하고 증강·합성 데이터를 선별 주입해 표현 다양성을 넓히는 접근입니다. 합성 데이터 비율의 적정값은 과업별 실측이 필요합니다.",
       "category": "training",
       "targets": [
         "llm",
@@ -1140,17 +1208,32 @@
         "quality"
       ],
       "expected_effects": [
-        "도메인별 고품질 정제 데이터 및 선별된 합성 데이터를 효율적으로 조합하여 데이터 다양성 확장 및 일반화 성능 개선 기대"
+        "도메인 비율·증강 구성을 바꿔 일반화 성능과 편향이 달라지는지 비교(개선 폭은 과업별 실측 필요)"
       ],
       "side_effects": "저품질 합성 데이터 과다 주입 시 모델 환각 및 표현 붕괴 초래 가능",
       "relations": [
         {
           "type": "combines_with",
           "target": "lora",
-          "note": "선별된 고품질 데이터셋으로 LoRA 미세조정 효율 극대화"
+          "note": "선별된 고품질 데이터셋으로 LoRA 미세조정 효율 개선"
         }
       ],
-      "evidence": [],
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "DoReMi: Optimizing Data Mixtures Speeds Up Language Model Pretraining",
+          "url": "https://arxiv.org/abs/2305.10429",
+          "year": 2023,
+          "claim": "논문: 소형 proxy 모델로 도메인 혼합 비율을 정해 큰 모델 학습에 적용하는 방법. 사전학습 데이터 혼합 비율에 관한 연구이며 이 카탈로그의 미세조정 샘플링 비율 효과 수치가 아님."
+        },
+        {
+          "kind": "paper",
+          "title": "Improving Neural Machine Translation Models with Monolingual Data (back-translation)",
+          "url": "https://arxiv.org/abs/1511.06709",
+          "year": 2015,
+          "claim": "논문: 단일언어 데이터를 역번역해 병렬 데이터처럼 쓰는 데이터 증강. NMT 설정의 결과이며 LLM 미세조정에 일반화한 수치가 아님."
+        }
+      ],
       "evidence_status": "widely_practiced",
       "adapter_hints": [
         "external_report"
@@ -1252,7 +1335,7 @@
           "title": "Optuna: A Next-generation Hyperparameter Optimization Framework",
           "url": "https://arxiv.org/abs/1907.10902",
           "year": 2019,
-          "claim": "논문 보고: 효율적인 샘플링과 강력한 조기 중단(Pruning)으로 대규모 ML 탐색 비용 절감"
+          "claim": "논문 초록: define-by-run API, 탐색·가지치기(pruning) 전략의 효율적 구현, 분산부터 경량 실험까지 쓸 수 있는 구조를 설계 기준으로 제시. 정량 수치는 초록에 없음."
         }
       ],
       "evidence_status": "source_reported",
@@ -1268,9 +1351,9 @@
     {
       "slug": "peft_ia3_tuning",
       "name": "IA3 (Inhibiting & Amplifying Inner Activations)",
-      "name_ko": "IA3 초경량 어댑터 미세조정",
-      "summary": "어텐션 Key, Value 벡터 및 피드포워드 신경망 활성화에 학습 가능한 스케일링 벡터만을 곱하여, 모델 전체 파라미터의 0.01% 미만만을 학습하는 초극소 어댑터 기법입니다.",
-      "principle": "행렬곱 분해를 수행하는 LoRA와 달리, 활성화 벡터에 원소별 곱(Element-wise multiplication)을 수행하는 학습 벡터만을 도입하여 가중치 크기를 수십 킬로바이트(KB) 수준으로 경량화합니다.",
+      "name_ko": "IA3 경량 어댑터 미세조정",
+      "summary": "어텐션 Key, Value와 피드포워드 활성화에 학습 가능한 스케일링 벡터만을 곱해 학습 파라미터를 매우 적게 유지하는 어댑터 기법입니다(정확한 학습 파라미터 비율은 논문 본문 확인 필요).",
+      "principle": "행렬 분해를 쓰는 LoRA와 달리 활성화에 원소별 곱을 하는 학습 벡터만 도입해 어댑터 크기를 작게 유지합니다.",
       "category": "training",
       "targets": [
         "llm",
@@ -1328,7 +1411,7 @@
         "speed"
       ],
       "expected_effects": [
-        "체크포인트 크기 대폭 절감(수십 KB)으로 태스크별 경량 어댑터 효율적 관리 및 서빙 가능 (원논문 보고 기준)"
+        "태스크별 어댑터 크기가 작아 관리·서빙이 쉬울 수 있음(체크포인트 크기는 모델별 실측 필요)"
       ],
       "side_effects": "LoRA 대비 자유도(Rank)가 낮아 아주 방대한 도메인 지식 습득 능력은 제한적",
       "relations": [
@@ -1341,10 +1424,10 @@
       "evidence": [
         {
           "kind": "paper",
-          "title": "Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning (T-Few / IA3)",
+          "title": "Few-Shot Parameter-Efficient Fine-Tuning is Better and Cheaper than In-Context Learning",
           "url": "https://arxiv.org/abs/2205.05638",
           "year": 2022,
-          "claim": "논문 보고: 모델 파라미터의 0.01% 미만만을 튜닝하여 LoRA 및 전체 파라미터 미세조정에 상응하는 퓨샷 성능 달성"
+          "claim": "논문 초록 보고: (IA)^3가 학습 벡터로 활성화를 스케일링해 매우 적은 신규 파라미터로 강한 성능을 내고, T-Few 레시피가 RAFT 벤치마크에서 사람 수준을 처음 넘어 기존 최고 대비 6%p(절대) 앞섬(조건: T0 기반 T-Few, RAFT 벤치마크). 학습 파라미터 비율 수치는 초록에 없음(확인 필요)."
         }
       ],
       "evidence_status": "source_reported",

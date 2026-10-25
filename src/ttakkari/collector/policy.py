@@ -36,7 +36,7 @@ MAX_SEEDS = 50
 POLICY_FIELDS = {
     "allowed_hosts", "schemes", "ports", "permissions", "license_id", "policy_url", "checked_at", "basis",
     "robots_required", "min_delay_seconds", "max_pages_per_job", "max_depth", "store_raw", "retain_days",
-    "excluded_path_prefixes", "default_profile", "allowed_profiles",
+    "excluded_path_prefixes", "allowed_path_prefixes", "default_profile", "allowed_profiles",
 }
 REQUEST_FIELDS = {"seeds", "profile", "profile_params", "max_pages", "max_depth", "l1"}
 
@@ -62,6 +62,7 @@ class SourcePolicySpec:
     store_raw: bool = True
     retain_days: int | None = None
     excluded_path_prefixes: tuple[str, ...] = ()
+    allowed_path_prefixes: tuple[str, ...] = ()
     default_profile: str = "general"
     allowed_profiles: tuple[str, ...] = tuple(sorted(PROFILES))
 
@@ -123,6 +124,9 @@ class SourcePolicySpec:
         excluded = tuple(d.get("excluded_path_prefixes", ()))
         if not all(isinstance(p, str) and p.startswith("/") for p in excluded):
             raise _fail("excluded_path_prefixes entries must start with /")
+        allowed_paths = d.get("allowed_path_prefixes", [])
+        if not isinstance(allowed_paths, list) or not all(isinstance(p, str) and p.startswith("/") for p in allowed_paths):
+            raise _fail("allowed_path_prefixes must be a list of paths starting with /")
         allowed_profiles = tuple(d.get("allowed_profiles", sorted(PROFILES)))
         default_profile = d.get("default_profile", "general")
         for name in (*allowed_profiles, default_profile):
@@ -134,11 +138,12 @@ class SourcePolicySpec:
             schemes=schemes, ports=ports, license_id=d.get("license_id"), policy_url=policy_url,
             robots_required=d.get("robots_required", True), min_delay_seconds=float(delay),
             max_pages_per_job=pages, max_depth=depth, store_raw=d.get("store_raw", True), retain_days=retain,
-            excluded_path_prefixes=excluded, default_profile=default_profile, allowed_profiles=allowed_profiles,
+            excluded_path_prefixes=excluded, allowed_path_prefixes=tuple(allowed_paths),
+            default_profile=default_profile, allowed_profiles=allowed_profiles,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "allowed_hosts": list(self.allowed_hosts), "schemes": list(self.schemes), "ports": list(self.ports),
             "permissions": dict(self.permissions), "license_id": self.license_id, "policy_url": self.policy_url,
             "checked_at": self.checked_at.isoformat(), "basis": self.basis, "robots_required": self.robots_required,
@@ -147,6 +152,10 @@ class SourcePolicySpec:
             "excluded_path_prefixes": list(self.excluded_path_prefixes), "default_profile": self.default_profile,
             "allowed_profiles": list(self.allowed_profiles),
         }
+        # Omit the additive empty field to preserve hashes of existing policy versions.
+        if self.allowed_path_prefixes:
+            value["allowed_path_prefixes"] = list(self.allowed_path_prefixes)
+        return value
 
     def spec_hash(self) -> str:
         return hashlib.sha256(jcs(self.to_dict()).encode("utf-8")).hexdigest()
@@ -176,6 +185,9 @@ class SourcePolicySpec:
         if url.port not in self.ports:
             return "port_not_allowed"
         path = url.target.split("?", 1)[0]
+        if self.allowed_path_prefixes and not any(path == p.rstrip("/") or path.startswith(p.rstrip("/") + "/")
+                                                   for p in self.allowed_path_prefixes):
+            return "path_outside_policy"
         if any(path.startswith(p) for p in self.excluded_path_prefixes):
             return "path_excluded_by_policy"
         return None

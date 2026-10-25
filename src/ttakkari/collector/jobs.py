@@ -93,7 +93,9 @@ async def claim_batch(
     """Lock up to `limit` runnable jobs for this owner. Jobs with no attempts left are not claimed."""
     now = now or _now()
     from ttakkari.collector.control_models import CollectorSource
-    managed = select(CollectorSource.id).where(CollectorSource.last_job_id == CollectorJob.id).exists()
+    from ttakkari.collector_models import CollectionMissionJob
+    managed = or_(select(CollectorSource.id).where(CollectorSource.last_job_id == CollectorJob.id).exists(),
+                  select(CollectionMissionJob.job_id).where(CollectionMissionJob.job_id == CollectorJob.id).exists())
     rows = (
         await db.scalars(
             select(CollectorJob)
@@ -259,6 +261,21 @@ async def finish(
         else:
             not_before = now + retry_delay(job.attempts, retry_after)
     _release(job, status, now=now, error=error, not_before=not_before)
+    await db.flush()
+    return status
+
+
+async def yield_attempt(db: AsyncSession, job_id: uuid.UUID, attempt_token: uuid.UUID) -> str:
+    """Release a successful bounded batch for the next tick, without spending a retry.
+
+    Cursor/items were already committed at a fenced page boundary. Crashes still spend
+    an attempt; only this explicit healthy yield restores it. Cancellation wins.
+    """
+    job = await _fenced_job(db, job_id, attempt_token)
+    status = "cancelled" if job.cancel_requested else "queued"
+    job.attempts = max(0, job.attempts - 1)
+    job.last_error = None
+    _release(job, status, now=_now())
     await db.flush()
     return status
 

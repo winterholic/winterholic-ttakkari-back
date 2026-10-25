@@ -86,6 +86,7 @@ async def deliver_item(db, outbox, item):
         origin_meta={"via": "collector", "tenant_id": item.tenant_id, "scope": item.scope,
                      "item_id": str(item.id), "raw_handle": env["raw"]["blob_handle"], "rights": rights,
                      "collector_source_key": item.source_key,
+                     "mission": (env.get("extensions") or {}).get("collector:mission"),
                      "normalizer_version": normalized["normalizer_version"],
                      "raw_alignment_handle": normalized["raw_alignment_handle"]},
     )

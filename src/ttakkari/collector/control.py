@@ -79,7 +79,7 @@ def intake_envelope(source: CollectorSource, spec: SourcePolicySpec, now: dateti
     }
 
 
-async def enqueue(db, source: CollectorSource, *, now: datetime | None = None) -> CollectorJob:
+async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, extensions: dict | None = None) -> CollectorJob:
     """Caller holds source row lock; repeated clicks or schedule ticks share an active job."""
     now = now or datetime.now(UTC)
     if not source.enabled:
@@ -102,6 +102,8 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None) -
     ident = uuid.uuid4()
     from ttakkari.collector import quality_service
     envelope = intake_envelope(source, policy[0], now, ident)
+    if extensions:
+        envelope["extensions"].update(extensions)
     model = await quality_service.latest_model(db, source.tenant_id, source.scope)
     if model is not None:
         quality_service.install(model)

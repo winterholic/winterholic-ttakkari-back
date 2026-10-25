@@ -19,11 +19,11 @@ from charset_normalizer import from_bytes
 from lxml import etree
 from lxml import html as lxml_html
 
-PARSER_VERSION = f"trafilatura-{trafilatura.__version__}+parse-1"
+PARSER_VERSION = f"trafilatura-{trafilatura.__version__}+parse-2"
 MAX_DISCOVERED_PER_DOCUMENT = 500
 MAX_TEXT_CHARS = 1_000_000
 _BINARY_EXTENSIONS = (
-    ".pdf", ".zip", ".gz", ".tar", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".mp3", ".mp4",
+    ".zip", ".gz", ".tar", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".mp3", ".mp4",
     ".webm", ".mov", ".avi", ".woff", ".woff2", ".ttf", ".eot", ".exe", ".dmg", ".css", ".js", ".json", ".xml",
 )
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
@@ -62,7 +62,7 @@ def detect_kind(raw: bytes, declared_media_type: str) -> DetectedKind:
     declared = declared_media_type.split(";")[0].strip().lower()
     stripped = head.lstrip()
     if head.startswith(b"%PDF-"):
-        return DetectedKind("unsupported", "application/pdf", "pdf_not_supported")
+        return DetectedKind("pdf", "application/pdf")
     if head[:4] in (b"\x89PNG", b"GIF8", b"PK\x03\x04") or head[:3] == b"\xff\xd8\xff":
         return DetectedKind("unsupported", declared or "application/octet-stream", "binary_content")
     if b"\x00" in head:
@@ -247,7 +247,8 @@ def extract_links(raw: bytes, base_url: str, charset: str | None = None) -> list
     except (etree.ParserError, ValueError):
         return []
     out: list[str] = []
-    for href in tree.xpath("//a[@href]/@href"):
+    primary = tree.xpath('//main//a[@href]/@href | //article//a[@href]/@href | //*[@role="main"]//a[@href]/@href')
+    for href in [*primary, *tree.xpath("//a[@href]/@href")]:
         href = href.strip()
         if not href or href.startswith(("#", "mailto:", "javascript:", "tel:", "data:")):
             continue

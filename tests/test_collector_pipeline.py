@@ -403,7 +403,7 @@ async def test_unsupported_empty_missing_and_forbidden_responses_are_recorded_no
     await register(PERSONAL, "src-f", spec(env))
     job = await run(await submit(env, PERSONAL, "src-f", ["/pdf", "/empty", "/missing", "/forbidden", "/scripts"]))
     got = by_path(await items(job.id))
-    assert got["/pdf"].status == "held" and got["/pdf"].reason_codes == ["unsupported_media:pdf_not_supported"] and got["/pdf"].envelope["decision"]["state"] == "hold"
+    assert got["/pdf"].status == "held" and got["/pdf"].reason_codes == ["pdf_invalid"] and got["/pdf"].envelope["decision"]["state"] == "hold"
     assert env.blobs.get(got["/pdf"].raw_handle).startswith(b"%PDF-")  # preserved even though it is not parsed
     assert got["/empty"].status == "failed" and got["/empty"].errors[0]["code"] == "empty_response" and got["/empty"].envelope is None
     assert got["/missing"].status == "failed" and got["/missing"].errors[0]["code"] == "not_found"

@@ -161,9 +161,12 @@ async def run_one(job: ClaimedJob, handler: JobHandler) -> str | None:
         result = HandlerResult("retry_wait", {"code": "handler_error", "type": type(e).__name__})
     try:
         async with sessionmaker()() as db:
-            stored = await jobs.finish(
-                db, job.id, job.attempt_token, status=result.status, error=result.error, retry_after=result.retry_after
-            )
+            if result.status == "yielded":
+                stored = await jobs.yield_attempt(db, job.id, job.attempt_token)
+            else:
+                stored = await jobs.finish(
+                    db, job.id, job.attempt_token, status=result.status, error=result.error, retry_after=result.retry_after
+                )
             await db.commit()
         return stored
     except AttemptFencedError:

@@ -102,7 +102,7 @@ class DiscoveryParseTests(unittest.TestCase):
         urlset = b"""<urlset xmlns="s"><url><loc>https://x.test/p</loc></url></urlset>"""
         self.assertEqual(parse.parse_sitemap(urlset, "https://x.test/"), (["https://x.test/p"], []))
         links = parse.extract_links(html("<a href='/ok'>a</a><a href='mailto:a@b'>m</a><a href='/f.pdf'>p</a><a href='#top'>t</a><a href='/ok'>dup</a>"), "https://x.test/")
-        self.assertEqual(links, ["https://x.test/ok"])
+        self.assertEqual(links, ["https://x.test/ok", "https://x.test/f.pdf"])
 
     def test_xml_entities_are_not_expanded_or_fetched(self):
         bomb = b"""<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;"><!ENTITY x SYSTEM "file:///etc/passwd">]>

@@ -4,6 +4,28 @@ import json
 
 import pytest
 
+MIT_BODY = '''MIT License
+
+Copyright (c) 2026 Example
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.'''
+
 
 def adapter():
     try:
@@ -54,6 +76,82 @@ async def test_github_never_calls_missing_license_permission_allowed():
     result = await adapter().github_repository("https://github.com/owner/unlicensed", fetch_json=fetch)
     assert result["license"]["permission"] == "unknown"
     assert result["coverage"]["truncated"] is True
+
+
+@pytest.mark.parametrize("prefix,extra,allowed", [("", "", True), ("", "\nAdditional restriction: personal use only.", False),
+                                                ("Personal use only.\n", "", False)])
+async def test_nested_license_overrides_repository_grant_and_is_commit_pinned(prefix, extra, allowed):
+    calls, raw_calls = [], []
+    async def fetch_license(url):
+        raw_calls.append(url)
+        return (prefix + MIT_BODY + extra).encode() if "/skills/open/LICENSE" in url else b"All rights reserved."
+    async def fetch(url):
+        calls.append(url)
+        if url == "https://api.github.com/licenses/mit":
+            return {"spdx_id": "MIT", "body": MIT_BODY}
+        if "/git/trees/" in url:
+            return {"tree": [
+                {"path": "skills/open/SKILL.md", "type": "blob"},
+                {"path": "skills/open/LICENSE", "type": "blob"},
+                {"path": "skills/restricted/SKILL.md", "type": "blob"},
+                {"path": "skills/restricted/LICENSE", "type": "blob"},
+            ]}
+        if "/license?" in url:
+            return {"license": {"spdx_id": "MIT"}, "path": "LICENSE"}
+        if "/commits/" in url:
+            return {"sha": "d" * 40, "commit": {"tree": {"sha": "c" * 40}}}
+        return {"default_branch": "main"}
+    result = await adapter().github_repository("https://github.com/owner/skills", fetch_json=fetch, fetch_license=fetch_license)
+    docs = {entry["path"]: entry for entry in result["documents"]}
+    assert docs["skills/open/SKILL.md"]["license"]["permission"] == ("allowed" if allowed else "unknown")
+    assert docs["skills/restricted/SKILL.md"]["license"]["permission"] == "unknown"
+    assert len(raw_calls) == 2
+    assert all("/" + "d" * 40 + "/" in url for url in raw_calls)
+    assert len(calls) <= 5  # License lookup must not consume an API call per file/directory.
+
+
+def test_automatic_license_policy_cannot_authorize_neighboring_paths():
+    from ttakkari.collector.netguard import normalize_url
+    from ttakkari.collector.policy import SourcePolicySpec
+
+    spec = SourcePolicySpec.from_dict({
+        "allowed_hosts": ["raw.githubusercontent.com"], "allowed_path_prefixes": ["/owner/repo/sha/SKILL.md"],
+        "permissions": {"store": "allowed"}, "license_id": "MIT", "policy_url": "https://github.com/owner/repo/blob/sha/LICENSE",
+        "checked_at": "2026-10-25T00:00:00Z", "basis": "commit-pinned file license",
+    })
+    assert spec.check_url(normalize_url("https://raw.githubusercontent.com/owner/repo/sha/SKILL.md")) is None
+    assert spec.check_url(normalize_url("https://raw.githubusercontent.com/other/repo/sha/SKILL.md")) == "path_outside_policy"
+    assert spec.check_url(normalize_url("https://raw.githubusercontent.com/owner/repo/sha/SKILL.md-secret")) == "path_outside_policy"
+
+
+async def test_search_results_retain_query_provider_and_never_grant_rights():
+    async def fetch(url):
+        return b'''<html><body><a class="result__a" href="https://example.org/paper.pdf">Original paper</a>
+        <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fowner%2Frepo">Skill</a>
+        <a class="result__a" href="https://example.org/paper.pdf">Duplicate</a></body></html>'''
+    result = await adapter().search_web("harness engineering papers", fetch_bytes=fetch)
+    assert len(result) == 2
+    assert result[0]["query"] == "harness engineering papers"
+    assert result[0]["adapter"] == "paper_pdf"
+    assert result[1]["adapter"] == "github"
+    assert result[1]["provider"] == "duckduckgo_html"
+    assert all(entry["provenance"] == "web_search" and "license" not in entry for entry in result)
+
+
+def test_html_discovery_keeps_pdf_references_and_filters_archives():
+    from ttakkari.collector.parse import extract_links
+
+    result = extract_links(b'<a href="paper.pdf">Paper</a><a href="bundle.zip">Archive</a>', "https://example.org/docs/")
+    assert result == ["https://example.org/docs/paper.pdf"]
+
+
+def test_document_navigation_precedes_unrelated_site_chrome():
+    from ttakkari.collector.parse import extract_links
+
+    raw = b'''<html><body><nav><a href="/changelog">Release history</a></nav>
+    <main><a href="chapter.html">Chapter</a><a href="paper.pdf">Paper</a></main></body></html>'''
+    assert extract_links(raw, "https://example.org/docs/") == [
+        "https://example.org/docs/chapter.html", "https://example.org/docs/paper.pdf", "https://example.org/changelog"]
 
 
 async def test_pdf_process_extracts_text_and_rejects_encrypted_bytes():

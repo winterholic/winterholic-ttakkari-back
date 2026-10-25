@@ -6,11 +6,15 @@ are data, including SKILL.md and scripts; no fetched instruction is executed.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
 import re
 import sys
 from collections.abc import Awaitable, Callable
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
+
+from lxml import html as lxml_html
 
 from ttakkari.collector.fetcher import FetchError, FetchLimits, SafeFetcher
 from ttakkari.collector.netguard import NetGuard, normalize_url
@@ -36,7 +40,52 @@ async def fetch_json(url: str) -> dict:
     return value
 
 
-async def github_repository(url: str, *, fetch_json: Callable[[str], Awaitable[dict]] = fetch_json, limit: int = 200) -> dict:
+async def fetch_bytes(url: str) -> bytes:
+    parsed = normalize_url(url)
+    fetcher = SafeFetcher(NetGuard(), user_agent="TtakkariCollector/1.0", limits=FetchLimits(max_bytes=2 * 1024 * 1024))
+    try:
+        response = await fetcher.fetch(parsed, host_check=lambda target: None if target.host == parsed.host else "search_redirect_host_changed")
+        return response.body
+    finally:
+        await fetcher.aclose()
+
+
+async def search_web(query: str, *, fetch_bytes: Callable[[str], Awaitable[bytes]] = fetch_bytes, limit: int = 8) -> list[dict]:
+    """Public HTML search. Results are untrusted candidates, never a license grant.
+
+    Provider failures propagate to the durable job retry path; an empty result stays
+    observable instead of becoming a successful collection.
+    """
+    url = "https://html.duckduckgo.com/html/?" + urlencode({"q": query[:500]})
+    raw = await fetch_bytes(url)
+    tree = lxml_html.fromstring(raw)
+    links = tree.xpath('//a[contains(concat(" ", normalize-space(@class), " "), " result__a ")]')
+    if not links and (b"anomaly.js" in raw or b"challenge-form" in raw):
+        raise FetchError("search_provider_challenge", "DuckDuckGo returned an anti-bot challenge")
+    result, seen = [], set()
+    for link in links:
+        candidate = link.get("href", "")
+        redirect = urlsplit("https:" + candidate if candidate.startswith("//") else candidate)
+        if (redirect.hostname or "").endswith("duckduckgo.com"):
+            candidate = parse_qs(redirect.query).get("uddg", [""])[0]
+        try:
+            parsed = normalize_url(candidate)
+        except ValueError:
+            continue
+        if parsed.url in seen:
+            continue
+        seen.add(parsed.url)
+        parts = urlsplit(parsed.url)
+        kind = "github" if parts.hostname == "github.com" and len(parts.path.strip("/").split("/")) >= 2 else "paper_pdf" if parts.path.lower().endswith(".pdf") or parts.hostname in {"arxiv.org", "doi.org"} else "website"
+        result.append({"url": parsed.url, "adapter": kind, "provenance": "web_search", "query": query,
+                       "provider": "duckduckgo_html", "title": link.text_content().strip()[:500], "rank": len(result) + 1})
+        if len(result) >= limit:
+            break
+    return result
+
+
+async def github_repository(url: str, *, fetch_json: Callable[[str], Awaitable[dict]] = fetch_json,
+                            fetch_license: Callable[[str], Awaitable[bytes]] = fetch_bytes, limit: int = 200) -> dict:
     parsed = urlsplit(url)
     parts = [unquote(part) for part in parsed.path.strip("/").split("/")]
     if parsed.hostname != "github.com" or len(parts) < 2 or not 1 <= limit <= 2000:
@@ -65,6 +114,67 @@ async def github_repository(url: str, *, fetch_json: Callable[[str], Awaitable[d
         license_info = {}
     license_id = (license_info.get("license") or {}).get("spdx_id")
     license_path = license_info.get("path", "LICENSE")
+    root_license = {"id": license_id, "permission": "allowed" if license_id in PERMISSIVE_LICENSES else "unknown",
+                    "url": f"https://github.com/{quote(owner)}/{quote(repo)}/blob/{revision}/{quote(license_path, safe='/')}",
+                    "metadata_sha": license_info.get("sha")}
+    if license_info.get("encoding") == "base64":
+        try:
+            root_license["notice"] = base64.b64decode(license_info.get("content", "")).decode("utf-8")[:32_000]
+        except (ValueError, UnicodeDecodeError):
+            root_license["permission"] = "unknown"
+    license_files = {entry.get("path"): entry for entry in tree.get("tree", [])
+                     if entry.get("type") == "blob" and entry.get("path", "").rsplit("/", 1)[-1].lower()
+                     in {"license", "license.txt", "license.md", "copying"}}
+    licenses, templates = {}, {}
+
+    async def identify_license(content):
+        # Require the complete standard grant, including warranty/conditions, rather
+        # than a few matching words. Added restrictions make the match unknown.
+        compact = " ".join(content.split())
+        candidate = ("mit" if "Permission is hereby granted, free of charge" in compact
+                     else "apache-2.0" if compact.startswith("Apache License Version 2.0,") else None)
+        if not candidate:
+            return None
+        if candidate not in templates:
+            templates[candidate] = await fetch_json(f"https://api.github.com/licenses/{candidate}")
+        template = templates[candidate]
+        standard = " ".join(template.get("body", "").split())
+        if candidate == "mit":
+            marker = "Permission is hereby granted, free of charge"
+            prefix = content[:content.index(marker)]
+            if any(line.strip() and not re.fullmatch(r"(?:#+\s*)?(?:MIT License|The MIT License(?: \(MIT\))?|Copyright.*)", line.strip(), re.IGNORECASE)
+                   for line in prefix.splitlines()):
+                return None
+            compact, standard = compact[compact.index(marker):], standard[standard.index(marker):] if marker in standard else ""
+        return template.get("spdx_id") if standard and compact == standard else None
+
+    async def file_license(path):
+        # A nearer license always overrides the repository grant, including unknown grants.
+        parts = path.split("/")[:-1]
+        for depth in range(len(parts), 0, -1):
+            prefix = "/".join(parts[:depth]) + "/"
+            matches = sorted(p for p in license_files if p.startswith(prefix) and "/" not in p[len(prefix):])
+            if not matches:
+                continue
+            if prefix not in licenses:
+                observations = []
+                for license_file in matches:
+                    raw = await fetch_license(f"https://raw.githubusercontent.com/{quote(owner)}/{quote(repo)}/{revision}/{quote(license_file, safe='/')}")
+                    blob_sha = license_files[license_file].get("sha")
+                    observed_sha = hashlib.sha1(f"blob {len(raw)}\0".encode() + raw).hexdigest()
+                    if blob_sha and re.fullmatch(r"[0-9a-f]{40}", blob_sha) and blob_sha != observed_sha:
+                        raise ValueError("github_license_hash_mismatch")
+                    try:
+                        content = raw.decode("utf-8")
+                    except UnicodeDecodeError:
+                        content = ""
+                    spdx = await identify_license(content)
+                    observations.append({"id": spdx, "permission": "allowed" if spdx else "unknown",
+                                         "url": f"https://github.com/{quote(owner)}/{quote(repo)}/blob/{revision}/{quote(license_file, safe='/')}",
+                                         "metadata_sha": blob_sha, "sha256": hashlib.sha256(raw).hexdigest(), "notice": content[:32_000]})
+                licenses[prefix] = observations[0] if len(observations) == 1 else {**observations[0], "permission": "unknown"}
+            return licenses[prefix]
+        return root_license
     candidates = []
     for entry in tree.get("tree", []):
         path = entry.get("path", "")
@@ -75,6 +185,8 @@ async def github_repository(url: str, *, fetch_json: Callable[[str], Awaitable[d
             continue
         if entry.get("size", 0) > 1_000_000:
             continue
+        if path in license_files:
+            continue  # The license is provenance, not a separate knowledge document.
         lower = path.lower()
         is_skill = segments[-1] == "SKILL.md"
         is_doc = lower.endswith(_DOC_SUFFIXES)
@@ -87,14 +199,12 @@ async def github_repository(url: str, *, fetch_json: Callable[[str], Awaitable[d
     documents = [{"url": f"https://raw.githubusercontent.com/{quote(owner)}/{quote(repo)}/{revision}/{quote(path, safe='/')}",
                   "path": path, "blob_sha": entry.get("sha"), "repository": f"{owner}/{repo}",
                   "revision": revision, "kind": "skill" if path.endswith("/SKILL.md") or path == "SKILL.md" else "reference",
-                  "provenance": "github_api", "adapter": "website"}
+                  "provenance": "github_api", "adapter": "website", "license": await file_license(path)}
                  for _, path, entry in candidates[:limit]]
     return {
         "repository": f"{owner}/{repo}", "revision": revision, "ref": ref,
         "documents": documents,
-        "license": {"id": license_id, "permission": "allowed" if license_id in PERMISSIVE_LICENSES else "unknown",
-                    "url": f"https://github.com/{quote(owner)}/{quote(repo)}/blob/{revision}/{quote(license_path, safe='/')}",
-                    "metadata_sha": license_info.get("sha")},
+        "license": root_license,
         "coverage": {"eligible_files": len(candidates), "selected_files": len(documents),
                      "truncated": bool(tree.get("truncated")), "limited": len(candidates) > limit,
                      "excluded_directories": sorted(_EXCLUDED)},

@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 
-from ttakkari.collector import control, store
+from ttakkari.collector import control, jobs, store
 from ttakkari.collector.contracts import AuthContext, CollectorConflictError, jcs
 from ttakkari.collector.control_models import CollectorDelivery, CollectorSource
 from ttakkari.collector.netguard import normalize_url
@@ -94,18 +94,50 @@ async def create(db, *, goal: str, context: str = "", urls: list[str] | None = N
     db.add(mission)
     await db.flush()
     await launch(db, mission)
+    if mission.plan["mode"] == "research" or any(entry["adapter"] == "github" for entry in mission.plan["sources"]):
+        await queue_preparation(db, mission)
     return mission
+
+
+async def queue_preparation(db, mission: CollectionMission) -> None:
+    """Internal orchestration job. No document rights or delivery outbox are manufactured.
+
+    Only the server can create its stage and mission relation. It uses the same claim,
+    cancellation, attempt fence and generation drain as acquisition jobs.
+    """
+    ident = uuid.uuid4()
+    envelope = {"mission_id": str(mission.id)}
+    job = CollectorJob(id=ident, tenant_id=mission.tenant_id, scope="personal",
+                       source_key=f"mission-prepare:{mission.id}", request_key=f"prepare:{mission.id}",
+                       payload_hash=hashlib.sha256(jcs(envelope).encode()).hexdigest(), envelope_id=uuid.uuid4(),
+                       envelope=envelope, stage="mission_prepare", status="queued")
+    db.add(job)
+    await db.flush()
+    db.add(CollectionMissionJob(mission_id=mission.id, job_id=ident))
+    mission.status = "running"
 
 
 async def launch(db, mission: CollectionMission) -> None:
     """Queue existing policy-backed sources without fetching or running models in the API."""
     ctx = AuthContext(tenant_id=mission.tenant_id, scope="personal", principal_id="owner", kind="owner")
+    if any(urlsplit(entry["url"]).hostname == "docs.python.org" for entry in mission.plan["sources"]):
+        await register_python_docs(db, ctx)
     sources = list(await db.scalars(select(CollectorSource).where(
         CollectorSource.tenant_id == mission.tenant_id, CollectorSource.scope == ctx.scope,
         CollectorSource.enabled.is_(True))))
     gaps, queued = [], 0
+    linked = list(await db.scalars(select(CollectorJob).join(CollectionMissionJob,
+        CollectionMissionJob.job_id == CollectorJob.id).where(CollectionMissionJob.mission_id == mission.id)))
+    existing_keys = {job.source_key for job in linked}
     remaining = mission.plan["budget"]["pages"]
-    for entry in mission.plan["sources"]:
+    remaining -= sum((job.envelope.get("extensions", {}).get("collector:request") or {}).get("max_pages", 0) for job in linked)
+    entries = mission.plan["sources"]
+    for index, entry in enumerate(entries):
+        if entry["adapter"] == "github":
+            continue  # Expanded by the durable preparation job, never fetched as HTML.
+        key = f"mission:{mission.id}:{hashlib.sha256(entry['url'].encode()).hexdigest()[:16]}"
+        if key in existing_keys:
+            continue
         parsed = input_url(entry["url"])
         policy = None
         for candidate in sources:
@@ -122,20 +154,138 @@ async def launch(db, mission: CollectionMission) -> None:
         if remaining <= 0:
             gaps.append({"url": entry["url"], "reason": "mission_page_budget", "message": "임무의 수집 예산에 도달했습니다."})
             continue
-        pages = min(remaining, policy.max_pages_per_job)
-        key = f"mission:{mission.id}:{hashlib.sha256(entry['url'].encode()).hexdigest()[:16]}"
+        pages = min(policy.max_pages_per_job, max(1, remaining // max(1, len(entries) - index)))
         source, _ = await control.register_source(
             db, ctx, source_key=key, title=mission.plan["title"], seeds=[entry["url"]], policy=policy.to_dict(),
             interval_minutes=None, max_pages=pages, max_depth=min(policy.max_depth, mission.plan["budget"]["depth"]),
             profile="general", auto_import=True)
         await db.flush()  # Apply source defaults before enqueue checks enabled/auto-import.
         job = await control.enqueue(db, source, extensions={"collector:mission": {
-            "id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided"}})
+            "id": str(mission.id), "goal": mission.goal, "context_provenance": "user_provided",
+            "reference": entry}})
         db.add(CollectionMissionJob(mission_id=mission.id, job_id=job.id))
         remaining -= pages
         queued += 1
     mission.gaps = gaps
-    mission.status = "running" if queued else "discovery_pending" if mission.plan["mode"] == "research" else "waiting_sources"
+    mission.status = "running" if queued or linked else "discovery_pending" if mission.plan["mode"] == "research" else "waiting_sources"
+
+
+async def register_python_docs(db, ctx):
+    """Reviewed official grant, independent of user text; robots still applies at fetch."""
+    key = "official:python-docs"
+    await store._lock(db, "control-source", ctx.tenant_id, ctx.scope, key)
+    if await db.scalar(select(CollectorSource.id).where(CollectorSource.tenant_id == ctx.tenant_id,
+            CollectorSource.scope == ctx.scope, CollectorSource.source_key == key)):
+        return  # A paused/revoked source is never silently recreated.
+    await control.register_source(db, ctx, source_key=key, title="Python 공식 문서", seeds=["https://docs.python.org/3/"],
+        policy={"allowed_hosts": ["docs.python.org"],
+                "permissions": {"store": "allowed", "knowledge": "allowed", "export": "allowed", "train": "unknown"},
+                "license_id": "PSF-2.0", "policy_url": "https://docs.python.org/3/license.html",
+                "checked_at": "2026-10-25T05:22:17Z", "max_pages_per_job": 500, "max_depth": 3,
+                "basis": "Official History and License: Python software and documentation are PSF License v2; preserve attribution and license URL. Code examples since 3.8.6 are also 0BSD.",
+                "excluded_path_prefixes": ["/dev/", "/_static/", "/_images/"]},
+        interval_minutes=None, max_pages=500, max_depth=3)
+    await db.flush()
+
+
+async def prepare(job, ctx):
+    """Inventory outside transactions; persist progress, policy and child jobs atomically."""
+    from ttakkari.collector import adapters
+    from ttakkari.collector.runner import HandlerResult
+    from ttakkari.db import sessionmaker
+
+    async with sessionmaker()() as db:
+        mission = await db.scalar(select(CollectionMission).join(CollectionMissionJob,
+            CollectionMissionJob.mission_id == CollectionMission.id).where(
+                CollectionMissionJob.job_id == job.id, CollectionMission.tenant_id == job.tenant_id))
+        if mission is None or str(mission.id) != job.envelope.get("mission_id"):
+            return HandlerResult("quarantined", {"code": "unbound_mission_preparation"})
+        strategy = mission.plan
+    done = list((job.cursor or {}).get("prepared", []))
+    search_cursor = int((job.cursor or {}).get("search_cursor", 0))
+    no_new = int((job.cursor or {}).get("no_new", 0))
+    queries = strategy["queries"][:strategy["budget"]["searches"]]
+    for query_index, query in enumerate(queries[search_cursor:] if no_new < 2 else [], start=search_cursor):
+        candidates = await adapters.search_web(query)
+        await ctx.heartbeat()
+        progress = {}
+
+        async def record_search(db, _candidates=candidates, _query=query, _index=query_index, _progress=progress, _no_new=no_new):
+            owned = await jobs._fenced_job(db, job.id, job.attempt_token)
+            if owned.cancel_requested:
+                return owned.cursor, []
+            current = await db.get(CollectionMission, mission.id, with_for_update=True)
+            known = {source["url"] for source in current.plan["sources"]}
+            additions = [candidate for candidate in _candidates if candidate["url"] not in known]
+            _progress["no_new"] = _no_new + 1 if not additions else 0
+            history = [*(current.plan.get("search_history") or []),
+                       {"query": _query, "candidates": len(_candidates), "new_sources": len(additions), "provider": "duckduckgo_html"}]
+            current.plan = {**current.plan, "sources": current.plan["sources"] + additions, "search_history": history,
+                            "search_stop": "diminishing_returns" if _progress["no_new"] >= 2 else "query_budget" if _index + 1 == len(queries) else None}
+            await launch(db, current)
+            if not current.plan["sources"]:
+                current.gaps = [{"reason": "no_search_candidates", "message": "검색에서 수집할 출처를 찾지 못했습니다."}]
+            _progress["strategy"] = current.plan
+            return {"prepared": list(done), "search_cursor": _index + 1, "no_new": _progress["no_new"]}, []
+
+        if await ctx.commit_work(record_search, stage="mission_prepare") == "cancelled":
+            return HandlerResult("failed", {"code": "cancelled"})
+        strategy, no_new = progress["strategy"], progress["no_new"]
+        search_cursor = query_index + 1
+        if no_new >= 2:
+            break
+    for entry in strategy["sources"]:
+        if entry["adapter"] != "github" or entry["url"] in done:
+            continue
+        inventory = await adapters.github_repository(entry["url"], limit=min(2000, strategy["budget"]["pages"]))
+        await ctx.heartbeat()
+        done.append(entry["url"])
+
+        async def persist(db, _inventory=inventory, _entry=entry, _done=tuple(done)):
+            owned = await jobs._fenced_job(db, job.id, job.attempt_token)
+            if owned.cancel_requested:
+                return owned.cursor, []
+            current = await db.get(CollectionMission, mission.id, with_for_update=True)
+            additions = _inventory["documents"]
+            known = {source["url"] for source in current.plan["sources"]}
+            current.plan = {**current.plan, "sources": current.plan["sources"] + [doc for doc in additions if doc["url"] not in known],
+                            "repositories": [*(current.plan.get("repositories") or []),
+                                             {k: v for k, v in _inventory.items() if k != "documents"}]}
+            for doc in additions:
+                await register_document_license(db, current, doc)
+            await launch(db, current)
+            if _inventory["coverage"].get("limited") or _inventory["coverage"].get("truncated"):
+                current.gaps = [*current.gaps, {"url": _entry["url"], "reason": "repository_coverage_limited",
+                                               "coverage": _inventory["coverage"]}]
+            return {"prepared": list(_done), "search_cursor": search_cursor, "no_new": no_new}, []
+
+        if await ctx.commit_work(persist, stage="mission_prepare") == "cancelled":
+            return HandlerResult("failed", {"code": "cancelled"})
+    return HandlerResult("succeeded")
+
+
+async def register_document_license(db, mission, doc):
+    """An observed file grant is scoped to that exact commit/file, never the raw host."""
+    from datetime import UTC, datetime
+
+    license_info = doc.get("license") or {}
+    if license_info.get("permission") != "allowed":
+        return
+    parsed = input_url(doc["url"])
+    key = f"license:{hashlib.sha256(doc['url'].encode()).hexdigest()}"
+    exists = await db.scalar(select(CollectorSource.id).where(CollectorSource.tenant_id == mission.tenant_id,
+        CollectorSource.scope == "personal", CollectorSource.source_key == key))
+    if exists:
+        return
+    policy = {"allowed_hosts": [parsed.host], "allowed_path_prefixes": [urlsplit(doc["url"]).path],
+              "permissions": {"store": "allowed", "knowledge": "allowed", "export": "allowed", "train": "unknown"},
+              "license_id": license_info["id"], "policy_url": license_info["url"],
+              "basis": f"GitHub commit-pinned license metadata: {license_info.get('metadata_sha')}; preserve source and license attribution.",
+              "checked_at": datetime.now(UTC).isoformat(), "max_pages_per_job": 1, "max_depth": 0}
+    await control.register_source(db, AuthContext(tenant_id=mission.tenant_id, scope="personal", principal_id="owner", kind="owner"),
+        source_key=key, title=doc.get("path", doc["url"]), seeds=[doc["url"]], policy=policy,
+        interval_minutes=None, max_pages=1)
+    await db.flush()
 
 
 async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict:
@@ -174,6 +324,8 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
     state = mission.status
     if jobs and all(job.status in TERMINAL for job in jobs) and not counts["pending_delivery"]:
         state = "partial" if mission.gaps or counts["failed"] or counts["blocked"] or counts["not_imported"] or (counts["held"] and not counts["accepted"]) or any(j.status != "succeeded" for j in jobs) else "succeeded"
+        if not counts["acquired"]:
+            state = "partial"
     return {
         "id": str(mission.id), "goal": mission.goal, "title": mission.plan["title"], "status": state,
         "plan": mission.plan if detailed else {k: v for k, v in mission.plan.items() if k != "context"},

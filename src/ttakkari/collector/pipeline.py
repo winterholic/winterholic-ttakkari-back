@@ -58,6 +58,7 @@ PRODUCER_ID = "ttakkari-collector"
 CHUNKER_VERSION = "whole-document-1"
 PRODUCT_TOKEN = "TtakkariCollector"
 PAGE_SIZE = 5
+MISSION_BATCH_PAGES = 25
 MAX_URL_TRIES = 3  # architecture 4: at most three attempts per URL
 MAX_SEEN = 2000
 MAX_NEST = 2  # feed/sitemap -> nested sitemap -> pages
@@ -566,7 +567,7 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
 
 
 def _advance(cursor: dict[str, Any], page: list[dict[str, Any]], prepared: list[Prepared], items: list[CollectorItem],
-             spec: SourcePolicySpec, req: CollectRequest) -> dict[str, Any]:
+             spec: SourcePolicySpec, req: CollectRequest, *, preserve_frontier: bool = False) -> dict[str, Any]:
     """The cursor after this page: processed entries leave the frontier, deferred ones go to its tail, newly
     discovered URLs enter it (policy-filtered, de-duplicated, capped) and counters follow the final item statuses."""
     counts = dict(cursor["counts"])
@@ -601,7 +602,7 @@ def _advance(cursor: dict[str, Any], page: list[dict[str, Any]], prepared: list[
                 continue
             seen_set.add(key)
             discovered += 1
-            if len(seen) >= MAX_SEEN or processed + len(frontier) + len(deferred) >= req.max_pages:
+            if len(seen) >= MAX_SEEN or (not preserve_frontier and processed + len(frontier) + len(deferred) >= req.max_pages):
                 counts["skipped_limit"] += 1
                 continue
             seen.append(key)
@@ -625,7 +626,8 @@ async def _finalize_page(
         items.append(row)
         if ob is not None:
             outbox.append(ob)
-    new_cursor = _advance(cursor, page, prepared, items, spec, req)
+    new_cursor = _advance(cursor, page, prepared, items, spec, req,
+                          preserve_frontier=bool(job.envelope.get("extensions", {}).get("collector:mission")))
     result["cursor"] = new_cursor
     return new_cursor, outbox
 
@@ -663,6 +665,9 @@ def _summary(cursor: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
+    if job.stage == "mission_prepare":
+        from ttakkari.collector import missions
+        return await missions.prepare(job, ctx)
     deps = get_deps()
     source = job.envelope.get("source") or {}
     if source.get("kind") not in ("web", "feed"):
@@ -696,6 +701,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
             return HandlerResult("quarantined", {"code": "invalid_reprocess_request"})
         return await _handle_reprocess(job, ctx, spec, label, req, original_id, expected_raw_sha256, deps)
     cursor = job.cursor if job.cursor and job.cursor.get("v") == 1 else _new_cursor(req, spec)
+    mission = bool(job.envelope.get("extensions", {}).get("collector:mission"))
+    batch_start = cursor["processed"]
 
     while cursor["frontier"] and cursor["processed"] < req.max_pages:
         # Move quota-blocked entries behind candidates that may dedupe to already durable orphans.
@@ -711,7 +718,8 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
             return HandlerResult("retry_wait", {"code": "storage_cap_reached", **_summary(cursor)}, retry_after=3600)
         if ordered != cursor["frontier"]:
             cursor = {**cursor, "frontier": ordered}
-        page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"], ready_count)]
+        batch_remaining = MISSION_BATCH_PAGES - (cursor["processed"] - batch_start) if mission else PAGE_SIZE
+        page = cursor["frontier"][: min(PAGE_SIZE, req.max_pages - cursor["processed"], ready_count, batch_remaining)]
         prepared: list[Prepared] = []
         for entry in page:
             try:
@@ -767,8 +775,14 @@ async def handle_job(job: ClaimedJob, ctx: JobContext) -> HandlerResult:
                 "retry_wait", {"code": "fetch_deferred", "reason": waits[0][1], **_summary(cursor)},
                 retry_after=max(w[0] for w in waits) or None,
             )
+        if mission and cursor["frontier"] and cursor["processed"] < req.max_pages and cursor["processed"] - batch_start >= MISSION_BATCH_PAGES:
+            return HandlerResult("yielded")
 
     if cursor["frontier"]:  # page limit reached with URLs left: counted, never silently dropped
+        if mission:
+            if await ctx.commit_page(cursor, stage="budget_reached") == "cancelled":
+                return HandlerResult("failed", {"code": "cancelled"})
+            return HandlerResult("partial", {"code": "mission_page_budget", "remaining_urls": len(cursor["frontier"]), **_summary(cursor)})
         left = len(cursor["frontier"])
         cursor = {**cursor, "frontier": [], "counts": {**cursor["counts"], "skipped_limit": cursor["counts"]["skipped_limit"] + left}}
     if await ctx.commit_page(cursor, stage="done") == "cancelled":

@@ -15,6 +15,156 @@ from ttakkari.kb_models import KbRevision, KbSource
 pytestmark = pytest.mark.security
 
 
+async def test_github_mission_preparation_is_durable_and_provenance_reaches_kb(client, auth, env, monkeypatch):  # noqa: F811
+    from ttakkari.collector import adapters
+
+    called = []
+    url = env.server.url("/SKILL.md")
+    env.server.page("/SKILL.md", "# Durable tools\n" + prose("en", 90, 15), "text/plain")
+    body = source_body(seeds=[url], max_pages=2)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+
+    async def inventory(repo, **kwargs):
+        called.append(repo)
+        return {"repository": "owner/skills", "revision": "d" * 40,
+                "documents": [{"url": url, "path": "skills/example/SKILL.md", "revision": "d" * 40,
+                               "repository": "owner/skills", "adapter": "website", "provenance": "github_api"}],
+                "license": {"id": None, "permission": "unknown"},
+                "coverage": {"eligible_files": 1, "selected_files": 1, "truncated": False}}
+    monkeypatch.setattr(adapters, "github_repository", inventory)
+    made = await client.post(BASE + "/missions", headers=auth, json={"goal": "스킬 수집", "urls": ["https://github.com/owner/skills"]})
+    assert made.status_code == 202, made.text
+    assert called == []  # API must only enqueue; no network or model invocation here.
+    assert len(made.json()["jobs"]) == 1
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    assert called == ["https://github.com/owner/skills"]
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await kb_delivery.deliver_once() == 1
+    detail = (await client.get(BASE + "/missions/" + made.json()["id"], headers=auth)).json()
+    assert detail["counts"]["imported"] == 1, detail
+    async with sessionmaker()() as db:
+        revision = await db.get(KbRevision, uuid.UUID(detail["results"][0]["revision_id"]))
+        source = await db.get(KbSource, revision.source_id)
+        assert source.origin_meta["mission"]["reference"]["path"] == "skills/example/SKILL.md"
+        assert source.origin_meta["mission"]["reference"]["revision"] == "d" * 40
+    assert (await client.get("/api/assistant/kb/search?q=Durable", headers=auth)).json()["items"]
+
+
+async def test_file_scoped_policy_can_read_origin_robots_without_widening_content_access(client, auth, env):  # noqa: F811
+    url = env.server.url("/licensed/document")
+    env.server.page("/licensed/document", article_html("Scoped license", [prose("en", 310, 15)]))
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0,
+                          allowed_path_prefixes=["/licensed/document"])
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "파일 권리 검증", "urls": [url]})).json()
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    detail = (await client.get(BASE + "/missions/" + made["id"], headers=auth)).json()
+    assert detail["counts"]["acquired"] == 1, detail
+    assert env.server.count("/robots.txt") == 1
+
+
+async def test_cancelled_preparation_does_not_enqueue_new_acquisition(client, auth, env, monkeypatch):  # noqa: F811
+    from sqlalchemy import select
+
+    from ttakkari.collector import adapters, jobs
+
+    url = env.server.url("/SKILL.md")
+    body = source_body(seeds=[url], max_pages=1)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port])
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    async def inventory(repo, **kwargs):
+        async with sessionmaker()() as db:
+            job = await db.scalar(select(CollectorJob).where(CollectorJob.stage == "mission_prepare"))
+            await jobs.cancel(db, job.tenant_id, job.scope, job.id)
+            await db.commit()
+        return {"documents": [{"url": url, "adapter": "website"}], "coverage": {}}
+    monkeypatch.setattr(adapters, "github_repository", inventory)
+    made = (await client.post(BASE + "/missions", headers=auth,
+                              json={"goal": "취소 중 추가 실행 방지", "urls": ["https://github.com/owner/skills"]})).json()
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    detail = (await client.get(BASE + "/missions/" + made["id"], headers=auth)).json()
+    assert len(detail["jobs"]) == 1
+    assert detail["jobs"][0]["status"] == "cancelled"
+
+
+async def test_topic_mission_searches_in_worker_and_acquires_discovered_sources(client, auth, env, monkeypatch):  # noqa: F811
+    from ttakkari.collector import adapters
+
+    urls = [env.server.url("/theory"), env.server.url("/practice")]
+    for index, url in enumerate(urls):
+        env.server.page("/" + url.rsplit("/", 1)[1], article_html("Harness research", [prose("en", 130 + index, 15)]))
+    body = source_body(seeds=urls, max_pages=10)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    calls = []
+
+    async def search(query, **kwargs):
+        calls.append(query)
+        return [{"url": url, "adapter": "website", "provenance": "web_search", "query": query} for url in urls]
+    monkeypatch.setattr(adapters, "search_web", search, raising=False)
+    made = await client.post(BASE + "/missions", headers=auth, json={"goal": "하네스 엔지니어링 이론과 실무 연구"})
+    assert calls == []
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    assert len(calls) >= 2
+    assert await runner.consume_once(limit=2, managed_only=True) == 2
+    monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
+    assert await kb_delivery.deliver_once() == 2
+    detail = (await client.get(BASE + "/missions/" + made.json()["id"], headers=auth)).json()
+    assert detail["counts"]["imported"] == 2
+    assert len(detail["plan"]["search_history"]) == len(calls)
+    assert detail["plan"]["search_history"][0]["new_sources"] == 2
+    assert detail["plan"]["search_history"][-1]["new_sources"] == 0
+
+
+async def test_empty_research_result_never_reports_success(client, auth, env, monkeypatch):  # noqa: F811
+    from ttakkari.collector import adapters
+
+    async def empty(query, **kwargs):
+        return []
+    monkeypatch.setattr(adapters, "search_web", empty, raising=False)
+    made = await client.post(BASE + "/missions", headers=auth, json={"goal": "자료가 없는 주제"})
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    detail = (await client.get(BASE + "/missions/" + made.json()["id"], headers=auth)).json()
+    assert detail["status"] != "succeeded"
+    assert detail["gaps"][0]["reason"] == "no_search_candidates"
+
+
+async def test_mission_batches_yield_without_spending_retry_attempts_or_losing_frontier(client, auth, env, monkeypatch):  # noqa: F811
+    from ttakkari.collector import pipeline
+
+    monkeypatch.setattr(pipeline, "MISSION_BATCH_PAGES", 1, raising=False)
+    monkeypatch.setattr(pipeline, "PAGE_SIZE", 1)
+    html = article_html("Document index", [prose("en", 220, 15)])
+    html = html.replace("<nav><a href='/'>home</a> <a href='/about'>about</a></nav>", "")
+    env.server.page("/index", html + '<a href="/child">Child</a>')
+    env.server.page("/child", article_html("Child document", [prose("en", 221, 15)]))
+    url = env.server.url("/index")
+    body = source_body(seeds=[url], max_pages=2)
+    body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0, max_depth=2)
+    body["max_depth"] = 2
+    assert (await client.post(BASE + "/sources", headers=auth, json=body)).status_code == 201
+    made = (await client.post(BASE + "/missions", headers=auth, json={"goal": "문서 전체 수집", "urls": [url], "max_pages": 2})).json()
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    async with sessionmaker()() as db:
+        job = await db.get(CollectorJob, uuid.UUID(made["jobs"][0]["job_id"]))
+        assert job.status == "queued"
+        assert job.attempts == 0
+        assert any(entry["u"].endswith("/child") for entry in job.cursor["frontier"])
+    assert await runner.consume_once(limit=1, managed_only=True) == 1
+    assert env.server.count("/index") == 1
+    assert env.server.count("/child") == 1
+    detail = (await client.get(BASE + "/missions/" + made["id"], headers=auth)).json()
+    assert detail["counts"]["acquired"] == 2
+    async with sessionmaker()() as db:
+        job = await db.get(CollectorJob, uuid.UUID(made["jobs"][0]["job_id"]))
+        assert job.status == "partial"  # Home/about remain; page budget must not claim coverage complete.
+        assert job.last_error["code"] == "mission_page_budget"
+        assert job.cursor["frontier"]
+
+
 async def test_mission_input_reaches_kb_and_reports_real_delivery(client, auth, env, monkeypatch):  # noqa: F811
     env.server.page("/document", article_html("직렬화 설계", [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."]))
     url = env.server.url("/document")
@@ -69,6 +219,23 @@ async def test_mission_plan_preview_does_not_enqueue_and_create_is_idempotent(cl
     assert a.json()["id"] == b.json()["id"]
     conflict = await client.post(BASE + "/missions", headers=auth, json={**body, "goal": "다른 주제"})
     assert conflict.status_code == 409
+
+
+async def test_python_docs_use_verified_official_policy_without_manual_registration(client, auth):
+    made = await client.post(BASE + "/missions", headers=auth,
+                             json={"goal": "Python 공식 문서를 체계적으로 수집", "urls": ["https://docs.python.org/3/"]})
+    assert made.status_code == 202, made.text
+    detail = made.json()
+    assert detail["status"] == "running"
+    assert detail["gaps"] == []
+    async with sessionmaker()() as db:
+        from ttakkari.collector import store
+        job = await db.get(CollectorJob, uuid.UUID(detail["jobs"][0]["job_id"]))
+        policy = await store.active_policy(db, job.tenant_id, job.scope, job.source_key)
+        assert policy[0].license_id == "PSF-2.0"
+        assert policy[0].allows("knowledge")
+        assert job.envelope["extensions"]["collector:request"]["max_depth"] == 3
+        assert job.envelope["extensions"]["collector:request"]["max_pages"] == 200
 
 
 async def test_exported_material_does_not_wait_forever_or_count_as_kb_import(client, auth, env, monkeypatch):  # noqa: F811

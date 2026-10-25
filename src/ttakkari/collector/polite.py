@@ -189,9 +189,16 @@ class PoliteFetcher:
                 await self.sleep(wait)
 
         status, body = "unreachable", None
+        def robots_hop(target: ParsedUrl) -> str | None:
+            # A file-scoped grant still needs the origin's control file. This
+            # exception applies only to robots acquisition, never document fetch.
+            if target.origin == robots_url.origin and target.target == "/robots.txt":
+                return None
+            return policy.check_url(target)
+
         try:
             fetched = await self.fetcher.fetch(
-                robots_url, allowed_schemes=policy.schemes, allowed_ports=policy.ports, host_check=policy.check_url,
+                robots_url, allowed_schemes=policy.schemes, allowed_ports=policy.ports, host_check=robots_hop,
                 before_request=pace, accept="text/plain,*/*;q=0.1", max_bytes=robots.MAX_ROBOTS_BYTES,
             )
             status = "parse"

@@ -7,11 +7,31 @@
       "summary": "16비트 부동소수점 모델 가중치를 4비트 또는 8비트 정밀도로 변환하여 메모리 점유량을 대폭 낮추고 메모리 대역폭 병목을 완화합니다. 적은 GPU VRAM 또는 통합 메모리 환경에서도 대형 모델을 원활하게 로드하고 추론할 수 있게 만듭니다.",
       "principle": "트랜스포머 추론의 디코딩 단계는 주로 메모리 대역폭에 종속(Memory-bound)됩니다. 가중치 비트 수를 줄이면 연산당 메모리 이동량이 감소하여 토큰 생성 속도가 빨라지고, 양자화 오차 보정 알고리즘(AWQ, GPTQ, GGUF k-quants)을 통해 출력 품질 손실을 최소화합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["model_architecture", "memory", "runtime"],
-      "goals": ["memory", "speed", "throughput", "cost"],
-      "interventions": ["compression_quantization", "parameter_tuning"],
-      "research_methods": ["baseline", "ab_test", "parameter_sweep", "error_analysis"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "model_architecture",
+        "memory",
+        "runtime"
+      ],
+      "goals": [
+        "memory",
+        "speed",
+        "throughput",
+        "cost"
+      ],
+      "interventions": [
+        "compression_quantization",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "baseline",
+        "ab_test",
+        "parameter_sweep",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "quant_type",
@@ -19,14 +39,31 @@
           "type": "enum",
           "default": "Q4_K_M",
           "options": [
-            {"value": "Q4_K_M", "label": "Q4_K_M (4비트 중간 정밀도)"},
-            {"value": "Q4_K_S", "label": "Q4_K_S (4비트 경량)"},
-            {"value": "Q5_K_M", "label": "Q5_K_M (5비트 균형)"},
-            {"value": "Q8_0", "label": "Q8_0 (8비트 준무손실)"},
-            {"value": "F16", "label": "F16 (16비트 원본 부동소수점)"}
+            {
+              "value": "Q4_K_M",
+              "label": "Q4_K_M (4비트 중간 정밀도)"
+            },
+            {
+              "value": "Q4_K_S",
+              "label": "Q4_K_S (4비트 경량)"
+            },
+            {
+              "value": "Q5_K_M",
+              "label": "Q5_K_M (5비트 균형)"
+            },
+            {
+              "value": "Q8_0",
+              "label": "Q8_0 (8비트 준무손실)"
+            },
+            {
+              "value": "F16",
+              "label": "F16 (16비트 원본 부동소수점)"
+            }
           ],
           "description": "GGUF 포맷 기준 가중치 양자화 타입",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "quant_method",
@@ -34,23 +71,51 @@
           "type": "enum",
           "default": "gguf_kquants",
           "options": [
-            {"value": "gguf_kquants", "label": "llama.cpp k-quants"},
-            {"value": "awq", "label": "Activation-aware Weight Quantization (AWQ)"},
-            {"value": "gptq", "label": "GPTQ (Second-order optimization)"}
+            {
+              "value": "gguf_kquants",
+              "label": "llama.cpp k-quants"
+            },
+            {
+              "value": "awq",
+              "label": "Activation-aware Weight Quantization (AWQ)"
+            },
+            {
+              "value": "gptq",
+              "label": "GPTQ (Second-order optimization)"
+            }
           ],
           "description": "가중치 압축 시 사용된 양자화 알고리즘 체계",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["quantized_weights_file"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp", "vllm", "exllamav2"],
+        "requires": [
+          "quantized_weights_file"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm",
+          "exllamav2"
+        ],
         "notes": "GGUF k-quants는 llama.cpp 및 Apple Silicon Metal에 최적화되어 있으며, AWQ와 GPTQ는 CUDA 환경에서 고속 텐서 코어를 활용합니다."
       },
-      "metrics": ["peak_memory_mb", "tokens_per_sec", "ttft_ms", "accuracy"],
+      "metrics": [
+        "peak_memory_mb",
+        "tokens_per_sec",
+        "ttft_ms",
+        "accuracy"
+      ],
       "expected_effects": "F16 대비 메모리 사용량 최대 60~75% 절감 및 메모리 대역폭 제한 환경에서 토큰 생성 속도 향상",
-      "side_effects": "극단적 3비트/2비트 양자화 적용 시 언어 모델의 추론 능력 및 MMLU/코딩 정밀도 저하 발생 가능",
+      "side_effects": [
+        "극단적 3비트/2비트 이하 초저비트 양자화 적용 시 언어 모델의 복합 추론 능력 및 MMLU/코딩 정밀도 저하 발생 가능"
+      ],
       "relations": [
         {
           "type": "combines_with",
@@ -73,8 +138,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["quantization", "gguf", "awq", "vram_reduction"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "quantization",
+        "gguf",
+        "awq",
+        "vram_reduction"
+      ]
     },
     {
       "slug": "kv_cache_quantization",
@@ -83,11 +155,29 @@
       "summary": "트랜스포머 어텐션 연산에 보관되는 Key/Value 벡터 캐시를 16비트 대신 8비트나 4비트로 양자화하여 컨텍스트 메모리 점유를 획기적으로 줄입니다. 긴 컨텍스트 윈도우나 대규모 동시 배치 환경에서 VRAM 고갈을 방지합니다.",
       "principle": "디코딩 과정에서 이전 토큰들의 Key, Value 상태는 시퀀스 길이에 비례해 증가합니다. FP16 대신 q8_0 또는 q4_0 정밀도로 변환하여 캐시 크기를 50~75% 절감합니다. llama.cpp 등에서는 V 캐시 압축 시 Flash Attention 커널을 필요로 합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["kv_cache", "attention", "memory"],
-      "goals": ["memory", "scalability", "latency"],
-      "interventions": ["compression_quantization", "parameter_tuning"],
-      "research_methods": ["ab_test", "parameter_sweep", "repeated_measurement"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "kv_cache",
+        "attention",
+        "memory"
+      ],
+      "goals": [
+        "memory",
+        "scalability",
+        "latency"
+      ],
+      "interventions": [
+        "compression_quantization",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "cache_type_k",
@@ -95,12 +185,23 @@
           "type": "enum",
           "default": "f16",
           "options": [
-            {"value": "f16", "label": "f16 (FP16 기본 정밀도)"},
-            {"value": "q8_0", "label": "q8_0 (8비트 양자화)"},
-            {"value": "q4_0", "label": "q4_0 (4비트 양자화)"}
+            {
+              "value": "f16",
+              "label": "f16 (FP16 기본 정밀도)"
+            },
+            {
+              "value": "q8_0",
+              "label": "q8_0 (8비트 양자화)"
+            },
+            {
+              "value": "q4_0",
+              "label": "q4_0 (4비트 양자화)"
+            }
           ],
           "description": "llama.cpp Key 캐시 양자화 타입",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "cache_type_v",
@@ -108,21 +209,45 @@
           "type": "enum",
           "default": "f16",
           "options": [
-            {"value": "f16", "label": "f16 (FP16 기본 정밀도)"},
-            {"value": "q8_0", "label": "q8_0 (8비트 양자화)"},
-            {"value": "q4_0", "label": "q4_0 (4비트 양자화)"}
+            {
+              "value": "f16",
+              "label": "f16 (FP16 기본 정밀도)"
+            },
+            {
+              "value": "q8_0",
+              "label": "q8_0 (8비트 양자화)"
+            },
+            {
+              "value": "q4_0",
+              "label": "q4_0 (4비트 양자화)"
+            }
           ],
           "description": "llama.cpp Value 캐시 양자화 타입 (q8_0/q4_0은 Flash Attention 필요)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["flash_attention"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp", "vllm"],
+        "requires": [
+          "flash_attention"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm"
+        ],
         "notes": "llama.cpp에서 Value 캐시를 q8_0 또는 q4_0으로 양자화할 경우 --flash-attn 플래그가 필수입니다. 일반 어텐션 경로에서는 지원되지 않음."
       },
-      "metrics": ["peak_memory_mb", "tokens_per_sec", "accuracy"],
+      "metrics": [
+        "peak_memory_mb",
+        "tokens_per_sec",
+        "accuracy"
+      ],
       "expected_effects": "긴 컨텍스트(8k, 32k 등) 실행 시 KV 캐시 VRAM 사용량을 50~75% 절감하여 OOM 방지",
       "side_effects": "4비트 V 캐시 사용 시 미세한 perplexity 상승 및 부동소수점 오차 누적 가능성 있음",
       "relations": [
@@ -146,22 +271,48 @@
           "claim": "공식 문서 보고: --cache-type-k 및 --cache-type-v q8_0/q4_0 옵션으로 컨텍스트 메모리 대폭 절감 가능"
         }
       ],
-      "evidence_status": "widely_practiced",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["kv_cache", "quantization", "llama.cpp", "vram_reduction"]
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "kv_cache",
+        "quantization",
+        "llama.cpp",
+        "vram_reduction"
+      ]
     },
     {
       "slug": "flash_attention",
       "name": "FlashAttention Optimization",
       "name_ko": "플래시 어텐션 최적화",
       "summary": "트랜스포머 어텐션 행렬 연산을 고속 SRAM 타일링 기법으로 재구성하여 HBM 메모리 접근 횟수를 O(N^2)에서 O(N) 수준으로 줄입니다. 연산 속도를 가속하고 어텐션 메모리 점유를 최소화합니다.",
-      "principle": "표준 소프트맥스 어텐션은 N x N 크기의 중간 어텐션 맵을 전역 메모리에 읽고 쓰는 병목이 있습니다. FlashAttention은 온라인 소프트맥스 트릭과 GPU 블록 단위 타일링을 결합하여 고속 SRAM 내부에서 융합 연산합니다.",
+      "principle": "표준 소프트맥스 어텐션은 N x N 크기의 중간 어텐션 맵을 전역 메모리에 읽고 쓰는 병목이 있습니다. FlashAttention은 온라인 소프트맥스 트릭과 GPU 블록 단위 타일링을 결합하여 고속 SRAM 내부에서 융합 연산합니다. 원논문의 CUDA/ROCm 커널(Linux)과 달리, Apple Silicon Metal에서는 llama.cpp 등의 MSL 타일링 구현으로 동작하며 환경에 따른 가속 차이가 있습니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["attention", "gpu_kernel", "runtime"],
-      "goals": ["speed", "latency", "memory", "throughput"],
-      "interventions": ["kernel_optimization", "algorithm_change"],
-      "research_methods": ["baseline", "ab_test", "profiling"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "attention",
+        "gpu_kernel",
+        "runtime"
+      ],
+      "goals": [
+        "speed",
+        "latency",
+        "memory",
+        "throughput"
+      ],
+      "interventions": [
+        "kernel_optimization",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "baseline",
+        "ab_test",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "flash_attn_enabled",
@@ -169,17 +320,34 @@
           "type": "boolean",
           "default": true,
           "description": "FlashAttention 커널 활성화 플래그 (llama.cpp -fa / --flash-attn)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["supported_gpu_architecture"],
-        "hardware": ["apple_silicon_metal", "cuda"],
-        "runtimes": ["llama.cpp", "vllm", "pytorch"],
-        "notes": "CUDA 환경에서는 Ampere(RTX 30xx/A100) 이상 아키텍처 지원. Apple Silicon Metal에서는 Metal Shading Language 타일링 커널로 구현됨."
+        "requires": [
+          "supported_gpu_architecture"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm",
+          "pytorch"
+        ],
+        "notes": "원논문(Dao et al., 2022 / Dao 2023 FlashAttention-2)의 2~4배 가속 수치는 NVIDIA Ampere/Hopper GPU (Linux/CUDA) 환경의 공식 결과입니다. Apple Silicon Metal(macOS)의 경우 llama.cpp의 독자적 Metal Shading Language(MSL) 타일링 구현(-fa 플래그)으로 동작하며, 시퀀스 길이 및 환경에 따라 가속 및 VRAM 절감 효과가 다르므로 로컬 실측 평가가 필요합니다."
       },
-      "metrics": ["ttft_ms", "tokens_per_sec", "peak_memory_mb"],
-      "expected_effects": "긴 시퀀스 프롬프트 처리 시간(TTFT) 대폭 단축 및 중간 어텐션 버퍼 VRAM 절감",
+      "metrics": [
+        "ttft_ms",
+        "tokens_per_sec",
+        "peak_memory_mb"
+      ],
+      "expected_effects": [
+        "긴 시퀀스 프롬프트 처리 시간(TTFT) 단축 및 중간 어텐션 버퍼 VRAM 절감 (CUDA 환경 기준 2~4배 가속 보고, Apple Silicon Metal은 실측 필요)"
+      ],
       "side_effects": "아주 짧은 시퀀스(<128 토큰)에서는 커널 런치 오버헤드로 인해 성능 차이가 미미할 수 있음",
       "relations": [
         {
@@ -203,21 +371,46 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["flash_attention", "metal", "cuda", "attention_kernel"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "flash_attention",
+        "metal",
+        "cuda",
+        "attention_kernel"
+      ]
     },
     {
       "slug": "speculative_decoding",
       "name": "Speculative Decoding",
       "name_ko": "투기적 디코딩",
-      "summary": "가볍고 빠른 보조 모델(Draft Model)이 다음 여러 토큰을 추측 생성하고, 대형 주 모델(Target Model)이 단 한 번의 순전파로 이를 병렬 검증합니다. 출력 분포를 완벽히 유지하면서 토큰당 지연시간을 단축합니다.",
+      "summary": "가볍고 빠른 보조 모델(Draft Model)이 다음 여러 토큰을 추측 생성하고, 대형 주 모델(Target Model)이 단 한 번의 순전파로 이를 병렬 검증합니다. 수용-거부 샘플링을 통해 원본 모델의 출력 분포를 보존하면서 토큰당 지연시간을 단축합니다.",
       "principle": "LLM 디코딩은 메모리 병목으로 인해 1개 토큰을 생성할 때마다 전체 가중치를 HBM에서 읽어야 합니다. 투기적 디코딩은 K개 토큰을 초고속 초소형 모델로 미리 생성한 뒤 주 모델의 병렬 검증을 거치므로 토큰당 유효 디코딩 단계를 크게 줄입니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["decoding", "runtime", "system_architecture"],
-      "goals": ["latency", "speed", "throughput"],
-      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
-      "research_methods": ["ab_test", "parameter_sweep", "repeated_measurement"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "decoding",
+        "runtime",
+        "system_architecture"
+      ],
+      "goals": [
+        "latency",
+        "speed",
+        "throughput"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "draft_model",
@@ -225,7 +418,9 @@
           "type": "model",
           "default": "none",
           "description": "보조 추측 모델 경로 또는 모델 식별자 (예: Qwen 0.5B draft for Qwen 7B)",
-          "advanced": false
+          "advanced": false,
+          "required": true,
+          "sweepable": false
         },
         {
           "key": "draft_tokens",
@@ -236,16 +431,31 @@
           "max": 16,
           "step": 1,
           "description": "한 스텝당 초안 모델이 추측 생성할 최대 토큰 수 (확인 필요: llama.cpp 버전에 따라 플래그명 차이)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["compatible_tokenizer_vocabulary"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp", "vllm"],
+        "requires": [
+          "compatible_tokenizer_vocabulary"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm"
+        ],
         "notes": "Target 모델과 Draft 모델은 동일하거나 호환되는 토크나이저 어휘 사전을 공유해야 합니다."
       },
-      "metrics": ["tokens_per_sec", "latency", "peak_memory_mb"],
+      "metrics": [
+        "tokens_per_sec",
+        "latency",
+        "peak_memory_mb"
+      ],
       "expected_effects": "수학적 동등성을 유지한 채 단일 스트림 생성 속도 1.5배~2.5배 가속",
       "side_effects": "Draft 모델을 동시에 VRAM에 올려야 하므로 추가 메모리가 소요되며, 수락률이 낮으면 오히려 속도 저하 발생",
       "relations": [
@@ -265,8 +475,14 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["speculative_decoding", "draft_model", "latency_reduction"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "speculative_decoding",
+        "draft_model",
+        "latency_reduction"
+      ]
     },
     {
       "slug": "continuous_batching",
@@ -275,11 +491,29 @@
       "summary": "기존의 정적 요청 단위 배칭 대신 토큰 반복(Iteration) 단위로 새로운 요청을 삽입하고 완료된 요청을 즉시 방출하는 스케줄링 기법입니다. GPU 유휴 시간을 없애 처리량을 극대화합니다.",
       "principle": "요청마다 생성 토큰 길이가 다르기 때문에 정적 배칭에서는 가장 긴 응답이 끝날 때까지 짧은 요청이 GPU 자원을 점유한 채 대기합니다. 연속 배칭은 매 토큰 생성 스텝마다 완료된 슬롯을 회수하고 대기열의 새 요청 prefill/decode를 동적으로 삽입합니다.",
       "category": "llm_inference",
-      "targets": ["serving_infra", "llm"],
-      "layers": ["scheduler", "serving", "runtime"],
-      "goals": ["throughput", "gpu_utilization", "latency"],
-      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
-      "research_methods": ["ab_test", "profiling", "combination_experiment"],
+      "targets": [
+        "serving_infra",
+        "llm"
+      ],
+      "layers": [
+        "scheduler",
+        "serving",
+        "runtime"
+      ],
+      "goals": [
+        "throughput",
+        "gpu_utilization",
+        "latency"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling",
+        "combination_experiment"
+      ],
       "parameters": [
         {
           "key": "max_num_seqs",
@@ -290,7 +524,9 @@
           "max": 256,
           "step": 1,
           "description": "배치 엔진이 동시에 처리할 수 있는 최대 활성 시퀀스 수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "waiting_served_ratio",
@@ -301,16 +537,31 @@
           "max": 5.0,
           "step": 0.1,
           "description": "Prefill 요청 대기 시간과 Decode 진행 요청 간의 스케줄링 가중치",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["dynamic_memory_allocator"],
-        "hardware": ["cuda", "apple_silicon_metal"],
-        "runtimes": ["vllm", "llama.cpp"],
+        "requires": [
+          "dynamic_memory_allocator"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "vllm",
+          "llama.cpp"
+        ],
         "notes": "PagedAttention이나 가변 블록 메모리 풀이 갖춰진 서빙 엔진에서 효과적으로 구동됩니다."
       },
-      "metrics": ["throughput", "tokens_per_sec", "latency", "gpu_utilization"],
+      "metrics": [
+        "throughput",
+        "tokens_per_sec",
+        "latency",
+        "gpu_utilization"
+      ],
       "expected_effects": "다중 동시 사용자 환경에서 정적 배칭 대비 처리량 2배~4배 향상",
       "side_effects": "동시 시퀀스가 많아지면 개별 요청의 디코딩 간격(ITL: Inter-token latency)이 약간 증가할 수 있음",
       "relations": [
@@ -335,8 +586,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["continuous_batching", "serving", "vllm", "scheduler"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "continuous_batching",
+        "serving",
+        "vllm",
+        "scheduler"
+      ]
     },
     {
       "slug": "prefix_caching",
@@ -345,11 +603,31 @@
       "summary": "시스템 프롬프트, 도구 명세, 대화 이력 등 반복적으로 주입되는 공통 접두사의 KV 캐시를 메모리에 보관하여 다음 요청 시 재계산 없이 즉시 로드합니다. TTFT(첫 토큰 생성 지연)를 거의 0에 가깝게 단축합니다.",
       "principle": "이전 요청들과 공통된 토큰 접두사의 Key-Value 상태를 라딕스 트리(Radix Tree) 등의 구조로 관리합니다. 새로운 요청이 들어오면 접두사 매칭을 수행하여 일치하는 구간의 어텐션 상태를 즉시 복원합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "agent_orchestration", "serving_infra"],
-      "layers": ["kv_cache", "runtime", "serving"],
-      "goals": ["latency", "speed", "cost", "gpu_utilization"],
-      "interventions": ["caching", "pipeline_reconfiguration"],
-      "research_methods": ["ab_test", "repeated_measurement", "profiling"],
+      "targets": [
+        "llm",
+        "agent_orchestration",
+        "serving_infra"
+      ],
+      "layers": [
+        "kv_cache",
+        "runtime",
+        "serving"
+      ],
+      "goals": [
+        "latency",
+        "speed",
+        "cost",
+        "gpu_utilization"
+      ],
+      "interventions": [
+        "caching",
+        "pipeline_reconfiguration"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "prefix_cache_enabled",
@@ -357,7 +635,9 @@
           "type": "boolean",
           "default": true,
           "description": "런타임의 Radix/Prefix 캐시 활성화 여부 (vLLM --enable-prefix-caching / llama.cpp --prompt-cache)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "cache_ttl_seconds",
@@ -368,16 +648,31 @@
           "max": 86400,
           "step": 10,
           "description": "미사용 접두사 캐시가 메모리에 유지되는 최대 시간",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["paged_kv_cache_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["vllm", "llama.cpp"],
+        "requires": [
+          "paged_kv_cache_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "vllm",
+          "llama.cpp"
+        ],
         "notes": "llama.cpp에서는 슬롯별 프롬프트 캐시 파일 저장 및 메모리 캐싱으로 지원됨."
       },
-      "metrics": ["ttft_ms", "latency", "peak_memory_mb"],
+      "metrics": [
+        "ttft_ms",
+        "latency",
+        "peak_memory_mb"
+      ],
       "expected_effects": "긴 시스템 프롬프트를 공유하는 멀티턴 대화나 에이전트 루프에서 TTFT 최대 80~95% 단축",
       "side_effects": "공통 접두사 KV 상태를 RAM/VRAM에 상주시키므로 가용 디코딩 메모리가 줄어들 수 있음",
       "relations": [
@@ -402,8 +697,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["prefix_caching", "radix_attention", "ttft", "sglang"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "prefix_caching",
+        "radix_attention",
+        "ttft",
+        "sglang"
+      ]
     },
     {
       "slug": "kv_cache_reuse",
@@ -412,11 +714,27 @@
       "summary": "연속된 요청이나 동일 세션에서 계산된 트랜스포머 디코더 상태를 버리지 않고 재사용하여 동일 텍스트에 대한 재계산(Prefill) 낭비를 제거합니다.",
       "principle": "이전 턴의 컨텍스트 토큰 벡터들을 메모리에 유지하고, 추가된 사용자 입력 토큰에 대해서만 추가적인 Key, Value 벡터를 계산하여 어펜드합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["kv_cache", "runtime"],
-      "goals": ["latency", "speed", "energy"],
-      "interventions": ["caching", "pipeline_reconfiguration"],
-      "research_methods": ["ab_test", "repeated_measurement"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "kv_cache",
+        "runtime"
+      ],
+      "goals": [
+        "latency",
+        "speed",
+        "energy"
+      ],
+      "interventions": [
+        "caching",
+        "pipeline_reconfiguration"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "preserve_context",
@@ -424,16 +742,30 @@
           "type": "boolean",
           "default": true,
           "description": "대화형 세션에서 이전 대화 KV 캐시 버퍼를 초기화하지 않고 보존",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["stateful_session_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp", "vllm"],
+        "requires": [
+          "stateful_session_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm"
+        ],
         "notes": "llama.cpp의 대화형 모드(-i) 및 슬롯 캐시 기능에서 직접 활용됨."
       },
-      "metrics": ["ttft_ms", "tokens_per_sec"],
+      "metrics": [
+        "ttft_ms",
+        "tokens_per_sec"
+      ],
       "expected_effects": "대화형 챗봇에서 이전 대화 길이에 상관없이 즉각적인 답변 시작 가능",
       "side_effects": "세션별로 메모리가 묶여 동시 활성 세션 수가 제한될 수 있음",
       "relations": [
@@ -445,8 +777,14 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["kv_cache", "cache_reuse", "latency"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "kv_cache",
+        "cache_reuse",
+        "latency"
+      ]
     },
     {
       "slug": "memory_layout_optimization",
@@ -455,11 +793,29 @@
       "summary": "가상 메모리 페이징 원리를 KV 캐시에 도입하여 연속된 물리 메모리 할당 요구를 제거하고 내부/외부 메모리 단편화를 4% 미만으로 억제합니다.",
       "principle": "기존 시스템은 시퀀스의 최대 길이만큼 연속된 물리 공간을 미리 예약하여 극심한 메모리 낭비가 발생했습니다. PagedAttention은 고정 크기 블록(블록 테이블) 단위로 불연속 메모리를 매핑하여 실제 사용되는 토큰 페이지만 할당합니다.",
       "category": "llm_inference",
-      "targets": ["serving_infra", "llm"],
-      "layers": ["memory", "runtime", "gpu_kernel"],
-      "goals": ["memory", "throughput", "scalability"],
-      "interventions": ["kernel_optimization", "algorithm_change"],
-      "research_methods": ["baseline", "profiling", "ab_test"],
+      "targets": [
+        "serving_infra",
+        "llm"
+      ],
+      "layers": [
+        "memory",
+        "runtime",
+        "gpu_kernel"
+      ],
+      "goals": [
+        "memory",
+        "throughput",
+        "scalability"
+      ],
+      "interventions": [
+        "kernel_optimization",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "baseline",
+        "profiling",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "block_size",
@@ -467,12 +823,23 @@
           "type": "enum",
           "default": "16",
           "options": [
-            {"value": "8", "label": "8 토큰"},
-            {"value": "16", "label": "16 토큰 (표준)"},
-            {"value": "32", "label": "32 토큰"}
+            {
+              "value": "8",
+              "label": "8 토큰"
+            },
+            {
+              "value": "16",
+              "label": "16 토큰 (표준)"
+            },
+            {
+              "value": "32",
+              "label": "32 토큰"
+            }
           ],
           "description": "한 페이지 블록에 저장할 토큰 수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "gpu_memory_utilization",
@@ -483,16 +850,30 @@
           "max": 0.98,
           "step": 0.05,
           "description": "vLLM 등이 KV 캐시 블록 풀로 미리 예약할 GPU 메모리 상한",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["paged_attention_kernel"],
-        "hardware": ["cuda", "apple_silicon_metal"],
-        "runtimes": ["vllm", "llama.cpp"],
+        "requires": [
+          "paged_attention_kernel"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "vllm",
+          "llama.cpp"
+        ],
         "notes": "vLLM의 핵심 엔진이며 llama.cpp에서도 유사한 청크 메모리 매핑 기법을 적용 중."
       },
-      "metrics": ["peak_memory_mb", "throughput", "gpu_utilization"],
+      "metrics": [
+        "peak_memory_mb",
+        "throughput",
+        "gpu_utilization"
+      ],
       "expected_effects": "KV 캐시 메모리 낭비 제거로 동일 GPU에서 동시 처리 가능 배치 크기 2~4배 확장",
       "side_effects": "블록 테이블 룩업으로 인한 약간의 주소 변환 오버헤드 존재",
       "relations": [
@@ -512,8 +893,14 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["paged_attention", "vllm", "memory_management"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "paged_attention",
+        "vllm",
+        "memory_management"
+      ]
     },
     {
       "slug": "kernel_fusion",
@@ -522,11 +909,28 @@
       "summary": "RMSNorm, 활성화 함수(SwiGLU), 로터리 임베딩(RoPE) 등 연속된 복수의 저수준 연산을 단일 GPU 커널로 병합하여 전역 메모리 왕복(Read/Write) 횟수를 줄입니다.",
       "principle": "개별 연산자를 따로 실행하면 중간 텐서를 매번 VRAM에 썼다가 다음 커널에서 다시 읽어야 합니다. 커널 융합을 통해 레지스터나 공유 메모리 내에서 데이터가 머문 채 다음 연산을 완료하도록 컴파일합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["gpu_kernel", "compiler", "runtime"],
-      "goals": ["speed", "latency", "gpu_utilization"],
-      "interventions": ["kernel_optimization", "compiler_optimization"],
-      "research_methods": ["profiling", "ab_test"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "gpu_kernel",
+        "compiler",
+        "runtime"
+      ],
+      "goals": [
+        "speed",
+        "latency",
+        "gpu_utilization"
+      ],
+      "interventions": [
+        "kernel_optimization",
+        "compiler_optimization"
+      ],
+      "research_methods": [
+        "profiling",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "fused_layernorm",
@@ -534,7 +938,9 @@
           "type": "boolean",
           "default": true,
           "description": "LayerNorm/RMSNorm과 잔차 연결(Residual add) 연산자 융합 여부",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "fused_rotary_emb",
@@ -542,16 +948,30 @@
           "type": "boolean",
           "default": true,
           "description": "쿼리/키 RoPE 회전 변환 커널 통합",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["metal_or_cuda_compiler"],
-        "hardware": ["apple_silicon_metal", "cuda"],
-        "runtimes": ["llama.cpp", "vllm", "pytorch"],
+        "requires": [
+          "metal_or_cuda_compiler"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm",
+          "pytorch"
+        ],
         "notes": "llama.cpp의 ggml-metal 및 ggml-cuda 백엔드에 기본 탑재되어 있으며 컴파일 플래그에 따라 최적화됨."
       },
-      "metrics": ["tokens_per_sec", "latency"],
+      "metrics": [
+        "tokens_per_sec",
+        "latency"
+      ],
       "expected_effects": "메모리 대역폭 의존형 레이어의 실행 지연 10~25% 감소",
       "side_effects": "레지스터 사용량 증가 시 커널 동시성(Occupancy)이 저하될 수 있으므로 정밀한 튜닝 필요",
       "relations": [
@@ -563,8 +983,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["kernel_fusion", "gpu_kernel", "metal", "cuda"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "kernel_fusion",
+        "gpu_kernel",
+        "metal",
+        "cuda"
+      ]
     },
     {
       "slug": "prefill_decode_disaggregation",
@@ -573,11 +1000,28 @@
       "summary": "연산 집약적인 프롬프트 계산(Prefill) 단계와 메모리 대역폭 집약적인 토큰 생성(Decode) 단계를 서로 다른 노드로 분리하거나 시간 축에서 잘게 쪼개어(Chunked) 상호 간섭을 차단합니다.",
       "principle": "동일 인스턴스에서 긴 프롬프트 요청이 유입되면 진행 중이던 디코딩 요청들의 토큰 생성 주기가 순간적으로 멈추는 지터(Jitter)가 발생합니다. 프롬프트 계산을 여러 청크로 나누어 디코딩 스텝 사이에 균등하게 배치하거나 분리된 전용 인스턴스에서 처리합니다.",
       "category": "llm_inference",
-      "targets": ["serving_infra", "llm"],
-      "layers": ["serving", "scheduler", "runtime"],
-      "goals": ["latency", "throughput", "stability"],
-      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
-      "research_methods": ["ab_test", "profiling"],
+      "targets": [
+        "serving_infra",
+        "llm"
+      ],
+      "layers": [
+        "serving",
+        "scheduler",
+        "runtime"
+      ],
+      "goals": [
+        "latency",
+        "throughput",
+        "stability"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "chunked_prefill_size",
@@ -588,16 +1032,30 @@
           "max": 4096,
           "step": 128,
           "description": "한 번의 서빙 반복에서 처리할 최대 프롬프트 토큰 수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["chunked_prefill_engine"],
-        "hardware": ["cuda", "apple_silicon_metal"],
-        "runtimes": ["vllm", "llama.cpp"],
+        "requires": [
+          "chunked_prefill_engine"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "vllm",
+          "llama.cpp"
+        ],
         "notes": "vLLM 및 llama-server(ubatch 설정)에서 지원됨."
       },
-      "metrics": ["latency", "ttft_ms", "throughput"],
+      "metrics": [
+        "latency",
+        "ttft_ms",
+        "throughput"
+      ],
       "expected_effects": "대용량 프롬프트 유입 시에도 기존 사용자들의 토큰 간 지연 시간(ITL)을 안정적으로 유지",
       "side_effects": "청킹 오버헤드로 인해 단일 요청의 절대적인 첫 토큰 생성 시간(TTFT)은 소폭 증가할 수 있음",
       "relations": [
@@ -617,8 +1075,14 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["chunked_prefill", "splitwise", "serving_architecture"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "chunked_prefill",
+        "splitwise",
+        "serving_architecture"
+      ]
     },
     {
       "slug": "cpu_gpu_offloading",
@@ -627,11 +1091,29 @@
       "summary": "GPU VRAM 용량을 초과하는 대형 모델을 실행할 때, 일부 레이어는 고속 GPU에 적재하고 나머지 레이어는 시스템 RAM과 CPU에서 실행하도록 분할 분배합니다.",
       "principle": "트랜스포머의 N개 블록 중 앞선 k개 레이어를 GPU VRAM에 로드하고 잔여 N-k개 레이어를 시스템 메인 메모리에 둡니다. 순전파 과정에서 PCIe/버스를 통해 은닉 상태 텐서만 전송하며 레이어별 연산을 분담합니다. Apple Silicon에서는 통합 메모리 아키텍처로 인해 데이터 복사 오버헤드가 없습니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["memory", "runtime", "hardware"],
-      "goals": ["memory", "stability", "cost"],
-      "interventions": ["parallelization", "parameter_tuning"],
-      "research_methods": ["parameter_sweep", "baseline", "ab_test"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "memory",
+        "runtime",
+        "hardware"
+      ],
+      "goals": [
+        "memory",
+        "stability",
+        "cost"
+      ],
+      "interventions": [
+        "parallelization",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "baseline",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "n_gpu_layers",
@@ -642,7 +1124,9 @@
           "max": 128,
           "step": 1,
           "description": "GPU(Metal/CUDA)로 오프로드할 트랜스포머 레이어 수 (0은 CPU 전용, 999는 전체 로드)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "main_gpu",
@@ -653,16 +1137,30 @@
           "max": 8,
           "step": 1,
           "description": "주요 연산을 담당할 기본 GPU 인덱스",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["offload_capable_runtime"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp"],
+        "requires": [
+          "offload_capable_runtime"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp"
+        ],
         "notes": "llama.cpp의 대표적 플래그(-ngl). Apple Silicon에서는 통합 메모리(Unified Memory) 덕분에 전체 레이어(-ngl 999)를 Metal로 손쉽게 로드 가능."
       },
-      "metrics": ["peak_memory_mb", "tokens_per_sec", "ttft_ms"],
+      "metrics": [
+        "peak_memory_mb",
+        "tokens_per_sec",
+        "ttft_ms"
+      ],
       "expected_effects": "단일 GPU VRAM에 들어가지 않는 거대 모델(70B 등)을 OOM 없이 안전하게 구동",
       "side_effects": "부분 오프로드 시 CPU-GPU 간 데이터 전송 대역폭 병목으로 인해 100% GPU 적재 대비 생성 속도 급감",
       "relations": [
@@ -681,9 +1179,16 @@
           "claim": "공식 문서 보고: -ngl 플래그를 통해 CPU와 GPU 간 레이어 분할 실행 제어"
         }
       ],
-      "evidence_status": "widely_practiced",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["offloading", "llama.cpp", "ngl", "vram"]
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "offloading",
+        "llama.cpp",
+        "ngl",
+        "vram"
+      ]
     },
     {
       "slug": "runtime_backend_comparison",
@@ -692,11 +1197,29 @@
       "summary": "동일 모델 및 동일 하드웨어 환경에서 서로 다른 실행 엔진(llama.cpp, vLLM, Ollama, ONNX Runtime 등)의 지연시간, 메모리 풋프린트, 동시 처리량을 계측 비교합니다.",
       "principle": "엔진마다 메모리 관리 방식, C++ 네이티브 최적화 여부, 배치 스케줄러, Metal/CUDA 백엔드 구현의 차이로 인해 단일 스트림 및 동시성 환경에서의 성능 특성이 상이합니다.",
       "category": "llm_inference",
-      "targets": ["serving_infra", "llm"],
-      "layers": ["runtime", "serving"],
-      "goals": ["speed", "throughput", "memory", "latency"],
-      "interventions": ["model_replacement", "algorithm_change"],
-      "research_methods": ["ab_test", "repeated_measurement", "profiling"],
+      "targets": [
+        "serving_infra",
+        "llm"
+      ],
+      "layers": [
+        "runtime",
+        "serving"
+      ],
+      "goals": [
+        "speed",
+        "throughput",
+        "memory",
+        "latency"
+      ],
+      "interventions": [
+        "model_replacement",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "runtime_engine",
@@ -704,21 +1227,46 @@
           "type": "enum",
           "default": "llama.cpp",
           "options": [
-            {"value": "llama.cpp", "label": "llama.cpp (C/C++ 네이티브)"},
-            {"value": "vllm", "label": "vLLM (PagedAttention 기반 서빙)"},
-            {"value": "ollama", "label": "Ollama (래퍼 런타임)"}
+            {
+              "value": "llama.cpp",
+              "label": "llama.cpp (C/C++ 네이티브)"
+            },
+            {
+              "value": "vllm",
+              "label": "vLLM (PagedAttention 기반 서빙)"
+            },
+            {
+              "value": "ollama",
+              "label": "Ollama (래퍼 런타임)"
+            }
           ],
           "description": "실행할 백엔드 추론 런타임",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["engine_binaries_installed"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp", "vllm"],
+        "requires": [
+          "engine_binaries_installed"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm"
+        ],
         "notes": "Apple Silicon 환경에서는 llama.cpp가 네이티브 Metal 최적화로 인해 단일 사용자 속도가 뛰어나며, Linux 서버 환경에서는 vLLM의 처리량이 우수함."
       },
-      "metrics": ["tokens_per_sec", "ttft_ms", "peak_memory_mb", "throughput"],
+      "metrics": [
+        "tokens_per_sec",
+        "ttft_ms",
+        "peak_memory_mb",
+        "throughput"
+      ],
       "expected_effects": "단일 요청 지연시간 우선인지 대규모 동시 처리량 우선인지에 따른 최적 런타임 선택",
       "side_effects": "엔진별 지원 가중치 포맷(GGUF vs Safetensors) 및 환경 설정 차이 발생",
       "relations": [
@@ -730,8 +1278,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["runtime", "llama.cpp", "vllm", "benchmark"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "runtime",
+        "llama.cpp",
+        "vllm",
+        "benchmark"
+      ]
     },
     {
       "slug": "prompt_context_length_tuning",
@@ -740,11 +1295,27 @@
       "summary": "모델 로드 시 예약할 최대 컨텍스트 윈도우 크기(-c)와 프롬프트 처리 배치 크기(-b, -ub)를 최적화하여 불필요한 메모리 할당을 줄이고 프리필 처리 속도를 향상시킵니다.",
       "principle": "컨텍스트 크기를 무작정 128k 등으로 크게 잡으면 초기 KV 캐시 할당 메모리가 급증합니다. 실제 워크로드에 맞는 컨텍스트 길이와 메모리 버스 대역폭을 극대화하는 ubatch 크기를 튜닝합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["runtime", "kv_cache", "memory"],
-      "goals": ["memory", "speed", "latency"],
-      "interventions": ["parameter_tuning"],
-      "research_methods": ["parameter_sweep", "grid_search"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "runtime",
+        "kv_cache",
+        "memory"
+      ],
+      "goals": [
+        "memory",
+        "speed",
+        "latency"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "grid_search"
+      ],
       "parameters": [
         {
           "key": "ctx_size",
@@ -756,7 +1327,9 @@
           "step": 512,
           "unit": "tokens",
           "description": "llama.cpp 컨텍스트 윈도우 크기",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "batch_size",
@@ -768,7 +1341,9 @@
           "step": 128,
           "unit": "tokens",
           "description": "프롬프트 처리 논리적 배치 크기",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "ubatch_size",
@@ -780,16 +1355,30 @@
           "step": 64,
           "unit": "tokens",
           "description": "물리적 마이크로 배치 크기 (하드웨어 캐시 적중률에 영향)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["llama_cpp_runtime"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp"],
+        "requires": [
+          "llama_cpp_runtime"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp"
+        ],
         "notes": "Apple Silicon Metal에서는 -ub 512 또는 1024 설정 시 연산 효율이 극대화되는 경향이 있음."
       },
-      "metrics": ["peak_memory_mb", "ttft_ms", "tokens_per_sec"],
+      "metrics": [
+        "peak_memory_mb",
+        "ttft_ms",
+        "tokens_per_sec"
+      ],
       "expected_effects": "필요한 컨텍스트만큼만 메모리를 예약하여 수 GB의 VRAM을 절약하고, ubatch 최적화로 TTFT 단축",
       "side_effects": "실제 입력 프롬프트가 설정된 ctx_size를 초과하면 컨텍스트 잘림이나 오류 발생",
       "relations": [
@@ -801,8 +1390,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["context_size", "batch_size", "ubatch", "llama.cpp"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "context_size",
+        "batch_size",
+        "ubatch",
+        "llama.cpp"
+      ]
     },
     {
       "slug": "model_pruning",
@@ -811,11 +1407,28 @@
       "summary": "신경망 가중치 중 중요도가 낮은 연결이나 레이어/헤드를 제거하여 연산 파라미터 수를 줄이고 추론을 경량화합니다.",
       "principle": "가중치 크기나 헤시안 행렬 기반 민감도 분석(Wanda, SparseGPT)을 통해 성능 기여도가 미미한 가중치를 0으로 만들거나(비구조적) 블록/헤드를 완전히 잘라냅니다(구조적).",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["model_architecture", "memory"],
-      "goals": ["memory", "speed", "cost"],
-      "interventions": ["compression_quantization", "algorithm_change"],
-      "research_methods": ["ablation", "ab_test", "error_analysis"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "model_architecture",
+        "memory"
+      ],
+      "goals": [
+        "memory",
+        "speed",
+        "cost"
+      ],
+      "interventions": [
+        "compression_quantization",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ablation",
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "sparsity_ratio",
@@ -826,7 +1439,9 @@
           "max": 0.8,
           "step": 0.05,
           "description": "제거할 가중치 또는 채널의 비율",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "pruning_method",
@@ -834,21 +1449,44 @@
           "type": "enum",
           "default": "wanda",
           "options": [
-            {"value": "wanda", "label": "Wanda (가중치 및 활성화 크기 기반)"},
-            {"value": "sparsegpt", "label": "SparseGPT (2차 테일러 근사)"},
-            {"value": "magnitude", "label": "Magnitude Pruning (단순 크기 기준)"}
+            {
+              "value": "wanda",
+              "label": "Wanda (가중치 및 활성화 크기 기반)"
+            },
+            {
+              "value": "sparsegpt",
+              "label": "SparseGPT (2차 테일러 근사)"
+            },
+            {
+              "value": "magnitude",
+              "label": "Magnitude Pruning (단순 크기 기준)"
+            }
           ],
           "description": "중요도 판정 및 가지치기 알고리즘",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["sparse_kernel_or_retraining"],
-        "hardware": ["cuda", "cpu"],
-        "runtimes": ["pytorch", "vllm"],
+        "requires": [
+          "sparse_kernel_or_retraining"
+        ],
+        "hardware": [
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "vllm"
+        ],
         "notes": "비구조적 희소성은 특수 희소 커널(NVIDIA 2:4 Sparse Tensor Core)이 지원되어야 실제 가속 효과를 얻을 수 있음."
       },
-      "metrics": ["peak_memory_mb", "tokens_per_sec", "accuracy"],
+      "metrics": [
+        "peak_memory_mb",
+        "tokens_per_sec",
+        "accuracy"
+      ],
       "expected_effects": "파라미터 수 감소에 따른 모델 크기 절감 및 연산량 감소",
       "side_effects": "50% 이상의 과도한 희소성 적용 시 추론 지능 및 언어 모델 성능 급격한 저하 발생",
       "relations": [
@@ -868,8 +1506,14 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["pruning", "wanda", "compression"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "pruning",
+        "wanda",
+        "compression"
+      ]
     },
     {
       "slug": "knowledge_distillation",
@@ -878,11 +1522,28 @@
       "summary": "대형 교사 모델(Teacher)의 출력 로짓 분포와 중간 표현을 소형 학생 모델(Student)이 모방하도록 학습시켜, 작은 모델 크기에서도 높은 지능을 발휘하게 만듭니다.",
       "principle": "단순 원-핫 레이블 대신 교사 모델이 생성하는 부드러운 확률 분포(Soft targets)와 다크 지식(Dark knowledge)을 KL 다이버전스 손실 함수로 전달하여 학생 모델이 풍부한 상관관계를 학습하도록 유도합니다.",
       "category": "llm_inference",
-      "targets": ["slm_on_device", "llm"],
-      "layers": ["training", "model_architecture"],
-      "goals": ["quality", "speed", "memory", "cost"],
-      "interventions": ["fine_tuning_training", "algorithm_change"],
-      "research_methods": ["ab_test", "ablation"],
+      "targets": [
+        "slm_on_device",
+        "llm"
+      ],
+      "layers": [
+        "training",
+        "model_architecture"
+      ],
+      "goals": [
+        "quality",
+        "speed",
+        "memory",
+        "cost"
+      ],
+      "interventions": [
+        "fine_tuning_training",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "ablation"
+      ],
       "parameters": [
         {
           "key": "temperature",
@@ -893,7 +1554,9 @@
           "max": 10.0,
           "step": 0.5,
           "description": "교사 모델 로짓의 소프트맥스를 평활화하는 온도 계수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "alpha",
@@ -904,16 +1567,29 @@
           "max": 1.0,
           "step": 0.05,
           "description": "증류 손실과 정답 레이블 교차 엔트로피 손실의 혼합 비율",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["teacher_student_pair"],
-        "hardware": ["cuda", "apple_silicon_metal"],
-        "runtimes": ["pytorch"],
+        "requires": [
+          "teacher_student_pair"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
         "notes": "교사 모델 추론 연산과 학생 모델 역전파가 동시에 수행되어야 하므로 학습 시 충분한 VRAM 확보 필요."
       },
-      "metrics": ["accuracy", "tokens_per_sec", "peak_memory_mb"],
+      "metrics": [
+        "accuracy",
+        "tokens_per_sec",
+        "peak_memory_mb"
+      ],
       "expected_effects": "1B~3B 소형 모델이 8B~14B급 대형 모델에 근접하는 도메인 추론 성능 확보",
       "side_effects": "증류 파이프라인 구성 및 교사 모델 연산 비용이 추가로 발생",
       "relations": [
@@ -933,8 +1609,14 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["distillation", "slm", "compression"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "distillation",
+        "slm",
+        "compression"
+      ]
     },
     {
       "slug": "decoding_strategy_tuning",
@@ -943,11 +1625,27 @@
       "summary": "온도(temperature), Top-P, Top-K, Min-P, 반복 페널티 등의 샘플링 파라미터를 튜닝하여 환각과 반복을 줄이고 응답의 창의성과 결정론적 정확도 균형을 제어합니다.",
       "principle": "트랜스포머의 최종 어휘 로짓 분포에서 토큰을 추출할 때, 누적 확률 절단(Top-P), 상위 후보 제한(Top-K), 최상위 확률 대비 상대 컷오프(Min-P) 등을 적용하여 꼬리(Tail) 부분의 무의미하거나 환각을 유발하는 토큰을 효과적으로 배제합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["decoding", "postprocessing"],
-      "goals": ["quality", "consistency", "accuracy"],
-      "interventions": ["parameter_tuning"],
-      "research_methods": ["parameter_sweep", "grid_search", "error_analysis"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "decoding",
+        "postprocessing"
+      ],
+      "goals": [
+        "quality",
+        "consistency",
+        "accuracy"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "grid_search",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "temperature",
@@ -958,7 +1656,9 @@
           "max": 2.0,
           "step": 0.05,
           "description": "로짓 분포 평활화 계수 (0.0은 Greedy 디코딩)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "top_p",
@@ -969,7 +1669,9 @@
           "max": 1.0,
           "step": 0.05,
           "description": "누적 확률 상한 컷오프",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "top_k",
@@ -980,7 +1682,9 @@
           "max": 200,
           "step": 5,
           "description": "선택 대상 상위 토큰 후보 개수 (0은 비활성화)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "min_p",
@@ -991,7 +1695,9 @@
           "max": 1.0,
           "step": 0.01,
           "description": "최상위 토큰 확률 대비 최소 허용 확률 비율 (확인 필요: 최신 llama.cpp 지원)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "repeat_penalty",
@@ -1002,16 +1708,31 @@
           "max": 2.0,
           "step": 0.05,
           "description": "기존 생성 토큰의 재출현 억제 계수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["sampler_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["llama.cpp", "vllm"],
+        "requires": [
+          "sampler_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "llama.cpp",
+          "vllm"
+        ],
         "notes": "모든 표준 추론 엔진에서 지원하는 보편적 파라미터 세트."
       },
-      "metrics": ["quality", "accuracy", "consistency"],
+      "metrics": [
+        "quality",
+        "accuracy",
+        "consistency"
+      ],
       "expected_effects": "정형화된 작업(코딩/추론)에서 일관된 정답률 확보 및 자유 대화에서 반복 버그 퇴치",
       "side_effects": "반복 페널티가 지나치게 높으면 문법적 필수 조사나 고유명사까지 회피하여 어색한 문장 유발",
       "relations": [
@@ -1031,8 +1752,16 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["sampling", "decoding", "temperature", "top_p", "min_p"]
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "sampling",
+        "decoding",
+        "temperature",
+        "top_p",
+        "min_p"
+      ]
     },
     {
       "slug": "structured_generation_xgrammar",
@@ -1041,11 +1770,27 @@
       "summary": "JSON 스키마나 정규식을 어휘 트리(Trie) 및 선행 푸시다운 오토마타로 전처리하여 디코딩 스텝마다 10마이크로초 미만으로 로짓 마스크를 고속 적용합니다.",
       "principle": "기존 GBNF나 단순 인터프리터 방식의 문법 파싱 오버헤드를 해소하기 위해 오프라인 어휘 사전 컴파일과 토큰 마스크 인덱싱을 활용하여 GPU 커널 레벨에서 즉시 마스킹을 수행합니다.",
       "category": "llm_inference",
-      "targets": ["llm", "serving_infra"],
-      "layers": ["decoding", "runtime"],
-      "goals": ["speed", "consistency", "latency"],
-      "interventions": ["kernel_optimization", "algorithm_change"],
-      "research_methods": ["ab_test", "repeated_measurement"],
+      "targets": [
+        "llm",
+        "serving_infra"
+      ],
+      "layers": [
+        "decoding",
+        "runtime"
+      ],
+      "goals": [
+        "speed",
+        "consistency",
+        "latency"
+      ],
+      "interventions": [
+        "kernel_optimization",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "grammar_backend",
@@ -1053,21 +1798,45 @@
           "type": "enum",
           "default": "xgrammar",
           "options": [
-            {"value": "xgrammar", "label": "XGrammar (초고속 어휘 트리 컴파일)"},
-            {"value": "outlines", "label": "Outlines (정규식 FSM 유도)"},
-            {"value": "gbnf", "label": "llama.cpp GBNF 네이티브"}
+            {
+              "value": "xgrammar",
+              "label": "XGrammar (초고속 어휘 트리 컴파일)"
+            },
+            {
+              "value": "outlines",
+              "label": "Outlines (정규식 FSM 유도)"
+            },
+            {
+              "value": "gbnf",
+              "label": "llama.cpp GBNF 네이티브"
+            }
           ],
           "description": "문법 마스크 계산 엔진",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["xgrammar_or_outlines_engine"],
-        "hardware": ["cuda", "apple_silicon_metal", "cpu"],
-        "runtimes": ["vllm", "llama.cpp"],
+        "requires": [
+          "xgrammar_or_outlines_engine"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal",
+          "cpu"
+        ],
+        "runtimes": [
+          "vllm",
+          "llama.cpp"
+        ],
         "notes": "최신 vLLM 및 MLC-LLM 런타임에서 기본 탑재 시작. llama.cpp 연동 시 빌드 플래그 확인 필요."
       },
-      "metrics": ["tokens_per_sec", "latency", "consistency"],
+      "metrics": [
+        "tokens_per_sec",
+        "latency",
+        "consistency"
+      ],
       "expected_effects": "정형 출력 생성 시 비제약 일반 텍스트 생성 속도 대비 95% 이상의 속도 보존 (지연시간 감소)",
       "side_effects": "극도로 거대한 JSON 스키마의 경우 초기 FSM 빌드 시 수백 밀리초의 준비 시간 소요",
       "relations": [
@@ -1077,10 +1846,25 @@
           "note": "온도 및 샘플링 규칙과 결합되어 정형 데이터 생성"
         }
       ],
-      "evidence": [],
-      "evidence_status": "unverified",
-      "adapter_hints": ["llm_inference"],
-      "tags": ["xgrammar", "outlines", "structured_output", "json_schema"]
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "XGrammar: Flexible and Efficient Structured Generation Engine for Large Language Models",
+          "url": "https://arxiv.org/abs/2411.15100",
+          "year": 2024,
+          "claim": "문맥 무관 문법(CFG) 및 JSON 스키마를 사전 컴파일하여 토큰 마스킹 오버헤드를 대폭 경감"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "llm_inference"
+      ],
+      "tags": [
+        "xgrammar",
+        "outlines",
+        "structured_output",
+        "json_schema"
+      ]
     }
   ]
 }

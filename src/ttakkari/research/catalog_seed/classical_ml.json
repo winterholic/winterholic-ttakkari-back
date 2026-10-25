@@ -7,11 +7,28 @@
       "summary": "정형(Tabular) 테이블 데이터의 분류 및 회귀 태스크에서 트리 깊이(max_depth), 잎사귀 수(num_leaves), 학습률, 피처 부분 샘플링을 최적화하여 최고 예측 정확도를 달성합니다.",
       "principle": "이전 트리가 범한 잔차(Residual) 오차를 다음 트리가 경사 하강법으로 예측 학습하는 부스팅 원리입니다. LightGBM의 리프 중심(Leaf-wise) 분할과 히스토그램 기반 고속 연속 변수 양자화로 학습 속도와 일반화 성능을 동시에 잡습니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml", "recommender_search"],
-      "layers": ["training", "model_architecture"],
-      "goals": ["accuracy", "speed", "reproducibility"],
-      "interventions": ["parameter_tuning", "algorithm_change"],
-      "research_methods": ["bayesian_optimization", "grid_search", "ab_test"],
+      "targets": [
+        "classical_ml",
+        "recommender_search"
+      ],
+      "layers": [
+        "training",
+        "model_architecture"
+      ],
+      "goals": [
+        "accuracy",
+        "speed",
+        "reproducibility"
+      ],
+      "interventions": [
+        "parameter_tuning",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "bayesian_optimization",
+        "grid_search",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "num_leaves",
@@ -22,7 +39,9 @@
           "max": 255,
           "step": 8,
           "description": "단일 트리가 가질 수 있는 최대 리프 노드 수 (과적합 제어 핵심)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "learning_rate",
@@ -33,7 +52,9 @@
           "max": 0.3,
           "step": 0.01,
           "description": "각 트리의 잔차 기여도 수축 계수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "colsample_bytree",
@@ -44,16 +65,30 @@
           "max": 1.0,
           "step": 0.05,
           "description": "각 트리를 구성할 때 무작위 추출할 피처 비율",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["lightgbm_or_xgboost"],
-        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "lightgbm_or_xgboost"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "정형 데이터 분석의 사실상 표준이며 Apple Silicon 멀티코어 CPU에서 초고속 병렬 학습 지원."
       },
-      "metrics": ["accuracy", "speed", "latency"],
+      "metrics": [
+        "accuracy",
+        "speed",
+        "latency"
+      ],
       "expected_effects": "단순 랜덤 포레스트나 기본 트리 대비 ROC-AUC 및 F1 점수 5~15% 향상",
       "side_effects": "num_leaves가 과도하게 크고 정규화가 약하면 학습 데이터에 쉽게 과적합(Overfitting)",
       "relations": [
@@ -78,8 +113,16 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["gbdt", "lightgbm", "xgboost", "tabular", "classification"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "gbdt",
+        "lightgbm",
+        "xgboost",
+        "tabular",
+        "classification"
+      ]
     },
     {
       "slug": "feature_selection_recursive_elimination",
@@ -88,11 +131,27 @@
       "summary": "수백 개의 입력 특성 중 모델의 예측 기여도가 미미하거나 다중공선성을 유발하는 노이즈 특성을 중요도(Feature Importance) 및 순열 중요도(Permutation)를 통해 점진 제거합니다.",
       "principle": "전체 피처로 초기 모델을 학습한 후 중요도가 가장 낮은 피처를 순차 제거(RFE)하거나, 특성 값을 무작위 셔플했을 때의 검증 점수 하락폭(Permutation Importance)을 측정하여 유의미한 정예 피처 셋을 선별합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml", "data_pipeline"],
-      "layers": ["data", "preprocessing"],
-      "goals": ["accuracy", "speed", "reproducibility"],
-      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
-      "research_methods": ["ablation", "ab_test"],
+      "targets": [
+        "classical_ml",
+        "data_pipeline"
+      ],
+      "layers": [
+        "data",
+        "preprocessing"
+      ],
+      "goals": [
+        "accuracy",
+        "speed",
+        "reproducibility"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ablation",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "n_features_to_select",
@@ -103,16 +162,28 @@
           "max": 150,
           "step": 5,
           "description": "최종 유지할 최상위 중요 피처 개수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["scikit_learn_feature_selection"],
-        "hardware": ["cpu"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "scikit_learn_feature_selection"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "순수 CPU scikit-learn 환경에서 완벽 지원."
       },
-      "metrics": ["accuracy", "speed", "peak_memory_mb"],
+      "metrics": [
+        "accuracy",
+        "speed",
+        "peak_memory_mb"
+      ],
       "expected_effects": "차원의 저주(Curse of Dimensionality) 해소, 과적합 억제 및 모델 추론 지연시간 50% 단축",
       "side_effects": "피처 간 복잡한 비선형 상호작용이 있을 때 단일 중요도 평가에서 유용한 조합이 누락될 수 있음",
       "relations": [
@@ -124,8 +195,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["feature_selection", "rfe", "permutation_importance", "tabular"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "feature_selection",
+        "rfe",
+        "permutation_importance",
+        "tabular"
+      ]
     },
     {
       "slug": "target_encoding_smoothing",
@@ -134,11 +212,25 @@
       "summary": "원-핫 인코딩 시 차원이 폭발하는 고카디널리티(High-cardinality) 범주형 변수를 해당 카테고리별 목적 변수(Target)의 평균값으로 치환하되, 과적합을 막기 위해 베이즈 스무딩을 적용합니다.",
       "principle": "샘플 수가 적은 범주가 극단적인 타깃 평균값을 가져 과적합되는 현상을 방지하기 위해, 전체 데이터의 글로벌 타깃 평균(Global Mean)과 카테고리별 평균을 신뢰도 가중치 m(m-estimate)으로 부드럽게 가중 평균합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml"],
-      "layers": ["preprocessing", "data"],
-      "goals": ["accuracy", "memory"],
-      "interventions": ["pre_postprocessing_addition", "algorithm_change"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "classical_ml"
+      ],
+      "layers": [
+        "preprocessing",
+        "data"
+      ],
+      "goals": [
+        "accuracy",
+        "memory"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "smoothing",
@@ -149,7 +241,9 @@
           "max": 100.0,
           "step": 5.0,
           "description": "샘플 수가 적은 카테고리를 전체 평균에 가깝게 당기는 정규화 강도",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "cv_folds",
@@ -160,16 +254,27 @@
           "max": 10,
           "step": 1,
           "description": "Out-of-fold 방식으로 타깃 인코딩을 계산할 분할 수",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": false
         }
       ],
       "compatibility": {
-        "requires": ["category_encoders_or_sklearn"],
-        "hardware": ["cpu"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "category_encoders_or_sklearn"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "scikit-learn 1.3+ 내장 TargetEncoder에서 OOF 스무딩 지원."
       },
-      "metrics": ["accuracy", "peak_memory_mb"],
+      "metrics": [
+        "accuracy",
+        "peak_memory_mb"
+      ],
       "expected_effects": "원-핫 인코딩 대비 수천 차원의 희소 행렬을 단 1개의 연속형 수치 컬럼으로 압축하면서도 강한 상관관계 보존",
       "side_effects": "교차 검증 분할(OOF) 없이 학습 데이터 전체로 계산하면 치명적인 타깃 정보 누수(Data Leakage) 발생",
       "relations": [
@@ -181,8 +286,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["target_encoding", "categorical", "preprocessing", "smoothing"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "target_encoding",
+        "categorical",
+        "preprocessing",
+        "smoothing"
+      ]
     },
     {
       "slug": "imbalanced_data_resampling",
@@ -191,11 +303,25 @@
       "summary": "이상치 탐지나 이탈 예측 등 소수 클래스 비율이 1% 미만인 극심한 불균형 데이터셋에서 SMOTE 합성 오버샘플링 및 클래스 비용 가중치(Class Weight)를 적용하여 소수 클래스 재현율을 확보합니다.",
       "principle": "SMOTE(Synthetic Minority Over-sampling Technique)는 k-최근접 이웃 사이의 특성 공간 선분 상에서 가상의 합성 샘플을 보간 생성합니다. 또한 손실 함수에서 소수 클래스 오분류에 더 큰 벌점을 부여합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml"],
-      "layers": ["data", "training"],
-      "goals": ["accuracy", "consistency"],
-      "interventions": ["data_augmentation", "parameter_tuning"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "classical_ml"
+      ],
+      "layers": [
+        "data",
+        "training"
+      ],
+      "goals": [
+        "accuracy",
+        "consistency"
+      ],
+      "interventions": [
+        "data_augmentation",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "resampling_strategy",
@@ -203,21 +329,41 @@
           "type": "enum",
           "default": "class_weight_balanced",
           "options": [
-            {"value": "class_weight_balanced", "label": "손실 함수 비용 가중치 (Balanced Weight)"},
-            {"value": "smote", "label": "SMOTE 소수 클래스 합성 증강"},
-            {"value": "random_undersample", "label": "다수 클래스 랜덤 언더샘플링"}
+            {
+              "value": "class_weight_balanced",
+              "label": "손실 함수 비용 가중치 (Balanced Weight)"
+            },
+            {
+              "value": "smote",
+              "label": "SMOTE 소수 클래스 합성 증강"
+            },
+            {
+              "value": "random_undersample",
+              "label": "다수 클래스 랜덤 언더샘플링"
+            }
           ],
           "description": "불균형 대응 알고리즘 선택",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["imbalanced_learn_library"],
-        "hardware": ["cpu"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "imbalanced_learn_library"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "평가 데이터셋(Test Set)에는 절대로 SMOTE를 적용해서는 안 되며 학습셋에만 적용해야 함."
       },
-      "metrics": ["recall_at_k", "accuracy"],
+      "metrics": [
+        "recall_at_k",
+        "accuracy"
+      ],
       "expected_effects": "단순 정확도 역설(다수로만 찍는 문제)을 타파하고 소수 희귀 케이스 탐지율 30~50% 향상",
       "side_effects": "오버샘플링이 과도하면 결정 경계가 흐려져 정밀도(Precision)가 떨어질 수 있음",
       "relations": [
@@ -237,8 +383,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["smote", "imbalanced_data", "resampling", "classification"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "smote",
+        "imbalanced_data",
+        "resampling",
+        "classification"
+      ]
     },
     {
       "slug": "dimensionality_reduction_umap_pca",
@@ -247,11 +400,27 @@
       "summary": "수백 차원의 고차원 임베딩 및 피처 공간을 분산 보존 주성분 분석(PCA) 또는 매니폴드 위상 보존(UMAP)을 통해 저차원으로 축소하여 시각화 및 고속 군집화를 수행합니다.",
       "principle": "PCA는 공분산 행렬의 고유벡터를 찾아 선형적으로 최대 분산 축으로 직교 투영하며, UMAP은 리만 기하학에 기반하여 고차원 데이터의 국소적 이웃 구조와 전역적 연결 위상을 2D/3D 공간에 왜곡 없이 매핑합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml", "embedding"],
-      "layers": ["preprocessing", "encoding"],
-      "goals": ["memory", "speed", "quality"],
-      "interventions": ["algorithm_change", "compression_quantization"],
-      "research_methods": ["ab_test", "profiling"],
+      "targets": [
+        "classical_ml",
+        "embedding"
+      ],
+      "layers": [
+        "preprocessing",
+        "encoding"
+      ],
+      "goals": [
+        "memory",
+        "speed",
+        "quality"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "compression_quantization"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "method",
@@ -259,11 +428,19 @@
           "type": "enum",
           "default": "pca",
           "options": [
-            {"value": "pca", "label": "PCA (선형 직교 주성분 분석)"},
-            {"value": "umap", "label": "UMAP (비선형 매니폴드 학습)"}
+            {
+              "value": "pca",
+              "label": "PCA (선형 직교 주성분 분석)"
+            },
+            {
+              "value": "umap",
+              "label": "UMAP (비선형 매니폴드 학습)"
+            }
           ],
           "description": "적용할 차원 축소 수학적 모델",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "n_components",
@@ -274,16 +451,29 @@
           "max": 128,
           "step": 2,
           "description": "축소 후 남길 최종 차원 개수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["scikit_learn_or_umap_learn"],
-        "hardware": ["cpu", "apple_silicon_metal"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "scikit_learn_or_umap_learn"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "대용량 데이터셋에서 UMAP은 CPU 멀티스레드를 집중 활용."
       },
-      "metrics": ["peak_memory_mb", "speed", "accuracy"],
+      "metrics": [
+        "peak_memory_mb",
+        "speed",
+        "accuracy"
+      ],
       "expected_effects": "임베딩 인덱스 용량 80% 이상 절감 및 2차원 공간 시각화를 통한 클러스터 패턴 직관적 확인",
       "side_effects": "과도한 차원 축소 시 원래 고차원 벡터가 갖고 있던 세부 변별력 손실",
       "relations": [
@@ -303,8 +493,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["pca", "umap", "dimensionality_reduction", "clustering"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "pca",
+        "umap",
+        "dimensionality_reduction",
+        "clustering"
+      ]
     },
     {
       "slug": "ensemble_stacking_blending",
@@ -313,11 +510,26 @@
       "summary": "서로 다른 가정을 가진 복수의 베이스 모델(GBDT, 선형 회귀, 신경망)의 예측값을 메타 피처로 구성하여 상위 메타 모델(Meta-learner)이 최종 결과를 예측하도록 결합합니다.",
       "principle": "단일 모델의 구조적 편향(Bias)을 상호 보완하기 위해 K-Fold Out-of-fold 예측을 생성하고, 로지스틱 회귀나 Ridge 등의 정규화 선형 모델을 메타 학습기로 사용하여 가중치를 최적 배분합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml", "recommender_search"],
-      "layers": ["model_architecture", "postprocessing"],
-      "goals": ["accuracy", "stability"],
-      "interventions": ["pipeline_reconfiguration", "model_replacement"],
-      "research_methods": ["ab_test", "repeated_measurement"],
+      "targets": [
+        "classical_ml",
+        "recommender_search"
+      ],
+      "layers": [
+        "model_architecture",
+        "postprocessing"
+      ],
+      "goals": [
+        "accuracy",
+        "stability"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "model_replacement"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "meta_model_type",
@@ -325,21 +537,42 @@
           "type": "enum",
           "default": "ridge",
           "options": [
-            {"value": "ridge", "label": "Ridge 회귀 (L2 정규화)"},
-            {"value": "logistic_regression", "label": "Logistic Regression"},
-            {"value": "lightgbm", "label": "LightGBM 메타 학습기"}
+            {
+              "value": "ridge",
+              "label": "Ridge 회귀 (L2 정규화)"
+            },
+            {
+              "value": "logistic_regression",
+              "label": "Logistic Regression"
+            },
+            {
+              "value": "lightgbm",
+              "label": "LightGBM 메타 학습기"
+            }
           ],
           "description": "하위 모델 예측값을 통합할 최상위 학습기",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["scikit_learn_stacking"],
-        "hardware": ["cpu", "apple_silicon_metal"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "scikit_learn_stacking"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "캐글 및 정형 대회에서 최상위권 앙상블 표준 기법."
       },
-      "metrics": ["accuracy", "stability"],
+      "metrics": [
+        "accuracy",
+        "stability"
+      ],
       "expected_effects": "단일 최강 단독 모델 대비 1~3%의 추가 예측 오차 감소 및 예측 분산 안정화",
       "side_effects": "파이프라인 복잡도 증가 및 여러 모델을 순차 실행해야 하므로 추론 지연시간 증가",
       "relations": [
@@ -356,8 +589,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["stacking", "blending", "ensemble", "meta_learning"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "stacking",
+        "blending",
+        "ensemble",
+        "meta_learning"
+      ]
     },
     {
       "slug": "collaborative_filtering_matrix_factorization",
@@ -366,11 +606,26 @@
       "summary": "사용자-아이템 간의 클릭, 시청 등 암묵적 피드백(Implicit Feedback) 행렬을 잠재 요인(Latent Factors) 행렬로 분해하여 개인화 추천 순위를 고속 생성합니다.",
       "principle": "교대 최소제곱법(Alternating Least Squares)을 통해 희소한 상호작용 행렬 R을 사용자 행렬 U와 아이템 행렬 V의 내적으로 근사합니다. 신뢰도 가중치를 부여하여 클릭 수가 많은 항목의 확신도를 높입니다.",
       "category": "classical_ml",
-      "targets": ["recommender_search", "classical_ml"],
-      "layers": ["encoding", "model_architecture"],
-      "goals": ["accuracy", "speed"],
-      "interventions": ["algorithm_change", "parameter_tuning"],
-      "research_methods": ["ab_test", "parameter_sweep"],
+      "targets": [
+        "recommender_search",
+        "classical_ml"
+      ],
+      "layers": [
+        "encoding",
+        "model_architecture"
+      ],
+      "goals": [
+        "accuracy",
+        "speed"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep"
+      ],
       "parameters": [
         {
           "key": "factors",
@@ -381,7 +636,9 @@
           "max": 256,
           "step": 16,
           "description": "사용자/아이템 잠재 벡터 크기",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "regularization",
@@ -392,16 +649,29 @@
           "max": 0.5,
           "step": 0.01,
           "description": "L2 정규화 파라미터",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["implicit_library"],
-        "hardware": ["cpu", "apple_silicon_metal"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "implicit_library"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "Apple Silicon 환경에서 OpenMP 멀티코어 가속을 통해 수백만 상호작용을 수 초 만에 학습."
       },
-      "metrics": ["recall_at_k", "ndcg", "speed"],
+      "metrics": [
+        "recall_at_k",
+        "ndcg",
+        "speed"
+      ],
       "expected_effects": "개인화 추천 적합도(Precision@K) 대폭 향상 및 잠재 벡터 기반 초고속 후보 생성",
       "side_effects": "새로 유입된 신규 사용자나 아이템에 대한 콜드 스타트(Cold-start) 문제 발생",
       "relations": [
@@ -421,21 +691,43 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["als", "matrix_factorization", "collaborative_filtering", "recsys"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "als",
+        "matrix_factorization",
+        "collaborative_filtering",
+        "recsys"
+      ]
     },
     {
       "slug": "approximate_nearest_neighbor_annoy_hnsw",
       "name": "ANN Search Tuning for Recommendations (Annoy / HNSW)",
       "name_ko": "추천 시스템용 근사 최근접 이웃 탐색 파라미터 튜닝",
-      "summary": "추천 및 검색 시스템의 후보 생성(Candidate Retrieval) 단계에서 수십만~수백만 개 아이템 벡터를 실시간(10ms 미만)으로 쿼리하기 위한 ANN 인덱스 트리 수와 탐색 깊이를 최적화합니다.",
-      "principle": "랜덤 투영 트리 숲(Annoy) 또는 HNSW 그래프를 메모리에 상주시키고, 검색 시 방문할 노드 수(search_k / ef_search)를 조절하여 정확도(Recall)와 실시간 응답 지연시간 사이의 최적점을 튜닝합니다.",
+      "summary": "추천 및 검색 시스템의 후보 생성(Candidate Retrieval) 단계에서 대규모 아이템 벡터를 신속하게 쿼리하기 위한 ANN 인덱스 트리 수와 탐색 깊이를 최적화합니다.",
+      "principle": "랜덤 투영 트리 숲(Annoy) 또는 HNSW 그래프를 메모리에 상주시키고, 검색 시 방문할 노드 수(search_k / ef_search)를 조절하여 정확도(Recall)와 응답 지연시간 사이의 최적점을 튜닝합니다.",
       "category": "classical_ml",
-      "targets": ["recommender_search", "classical_ml"],
-      "layers": ["runtime", "memory"],
-      "goals": ["latency", "accuracy", "speed"],
-      "interventions": ["parameter_tuning"],
-      "research_methods": ["parameter_sweep", "repeated_measurement"],
+      "targets": [
+        "recommender_search",
+        "classical_ml"
+      ],
+      "layers": [
+        "runtime",
+        "memory"
+      ],
+      "goals": [
+        "latency",
+        "accuracy",
+        "speed"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "n_trees",
@@ -446,7 +738,9 @@
           "max": 200,
           "step": 10,
           "description": "구축할 무작위 이진 투영 트리의 수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "search_k",
@@ -457,17 +751,31 @@
           "max": 10000,
           "step": 100,
           "description": "검색 쿼리 시 순회할 최대 노드 수 (-1은 자동 계산)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["annoy_or_faiss"],
-        "hardware": ["cpu"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "annoy_or_faiss"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "순수 CPU 인메모리 mmap 지원으로 수 기가바이트 인덱스를 프로세스 간 공유 가능."
       },
-      "metrics": ["recall_at_k", "latency", "peak_memory_mb"],
-      "expected_effects": "100만 개 아이템 풀에서 5ms 이내에 상위 100개 추천 후보 벡터 추출",
+      "metrics": [
+        "recall_at_k",
+        "latency",
+        "peak_memory_mb"
+      ],
+      "expected_effects": [
+        "대규모 아이템 풀에서 빠른 응답 속도로 상위 추천 후보 벡터 추출 가능 (지연시간과 회상률 트레이드오프 실측 필요)"
+      ],
       "side_effects": "트리 수가 너무 많으면 인덱스 파일 크기와 빌드 시간이 급증",
       "relations": [
         {
@@ -478,8 +786,16 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["ann", "annoy", "hnsw", "candidate_generation", "recsys"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "ann",
+        "annoy",
+        "hnsw",
+        "candidate_generation",
+        "recsys"
+      ]
     },
     {
       "slug": "regularized_linear_models",
@@ -488,11 +804,26 @@
       "summary": "설명 가능성(Interpretability)이 중요한 고위험 도메인에서 L1 정규화(Lasso), L2 정규화(Ridge), 혼합형(ElasticNet)의 일반화 성능과 계수 축소 거동을 비교합니다.",
       "principle": "Lasso는 불필요한 계수를 정확히 0으로 만들어 자동 피처 선택 효과를 내며, Ridge는 상관관계가 높은 다중공선성 변수들의 가중치를 균등 분산시킵니다. ElasticNet은 l1_ratio를 통해 둘의 장점을 블렌딩합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml"],
-      "layers": ["model_architecture", "training"],
-      "goals": ["accuracy", "consistency", "reproducibility"],
-      "interventions": ["algorithm_change", "parameter_tuning"],
-      "research_methods": ["ab_test", "parameter_sweep"],
+      "targets": [
+        "classical_ml"
+      ],
+      "layers": [
+        "model_architecture",
+        "training"
+      ],
+      "goals": [
+        "accuracy",
+        "consistency",
+        "reproducibility"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep"
+      ],
       "parameters": [
         {
           "key": "model_type",
@@ -500,12 +831,23 @@
           "type": "enum",
           "default": "elastic_net",
           "options": [
-            {"value": "ridge", "label": "Ridge (L2 정규화)"},
-            {"value": "lasso", "label": "Lasso (L1 희소 정규화)"},
-            {"value": "elastic_net", "label": "ElasticNet (L1 + L2 혼합)"}
+            {
+              "value": "ridge",
+              "label": "Ridge (L2 정규화)"
+            },
+            {
+              "value": "lasso",
+              "label": "Lasso (L1 희소 정규화)"
+            },
+            {
+              "value": "elastic_net",
+              "label": "ElasticNet (L1 + L2 혼합)"
+            }
           ],
           "description": "가중치 벌점 함수 형태",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "alpha",
@@ -516,16 +858,28 @@
           "max": 100.0,
           "step": 0.1,
           "description": "벌점 가중치 계수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["scikit_learn_linear_model"],
-        "hardware": ["cpu"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "scikit_learn_linear_model"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "학습 및 추론이 밀리초 미만으로 완료되는 초고속 베이스라인."
       },
-      "metrics": ["accuracy", "speed", "reproducibility"],
+      "metrics": [
+        "accuracy",
+        "speed",
+        "reproducibility"
+      ],
       "expected_effects": "과적합 방지 및 비즈니스 현업에서 설명 가능한 수학적 계수(Beta) 확보",
       "side_effects": "비선형적 특성 관계를 스스로 학습하지 못하므로 복잡한 상호작용 피처 엔지니어링이 선행되어야 함",
       "relations": [
@@ -537,8 +891,16 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["linear_models", "lasso", "ridge", "elastic_net", "interpretability"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "linear_models",
+        "lasso",
+        "ridge",
+        "elastic_net",
+        "interpretability"
+      ]
     },
     {
       "slug": "time_series_cross_validation",
@@ -547,11 +909,27 @@
       "summary": "주가 예측, 매출 수요 예측 등 시간 종속성이 있는 시계열 데이터에서 미래 데이터가 과거로 누출(Look-ahead Bias)되지 않도록 시간 순서를 엄격히 유지하는 전진 분할 검증을 수행합니다.",
       "principle": "일반 무작위 K-Fold 교차 검증은 미래 데이터를 보고 과거를 맞추는 심각한 과적합을 유발합니다. 고정 크기 또는 확장 윈도우(Rolling/Expanding Window)를 통해 t 시점 이전 데이터로만 학습하고 t+1 시점을 예측 평가합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml", "data_pipeline"],
-      "layers": ["data", "training"],
-      "goals": ["reproducibility", "accuracy", "stability"],
-      "interventions": ["algorithm_change", "pipeline_reconfiguration"],
-      "research_methods": ["repeated_measurement", "ab_test"],
+      "targets": [
+        "classical_ml",
+        "data_pipeline"
+      ],
+      "layers": [
+        "data",
+        "training"
+      ],
+      "goals": [
+        "reproducibility",
+        "accuracy",
+        "stability"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "pipeline_reconfiguration"
+      ],
+      "research_methods": [
+        "repeated_measurement",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "n_splits",
@@ -562,7 +940,9 @@
           "max": 12,
           "step": 1,
           "description": "순차 전진 검증 폴드 개수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": false
         },
         {
           "key": "gap",
@@ -574,16 +954,28 @@
           "step": 1,
           "unit": "steps",
           "description": "학습 데이터 끝과 테스트 데이터 시작 사이의 지연 버퍼 (정보 누수 완충)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": false
         }
       ],
       "compatibility": {
-        "requires": ["scikit_learn_model_selection"],
-        "hardware": ["cpu"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "scikit_learn_model_selection"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "시계열/금융 머신러닝의 필수적 검증 프로토콜."
       },
-      "metrics": ["accuracy", "reproducibility", "stability"],
+      "metrics": [
+        "accuracy",
+        "reproducibility",
+        "stability"
+      ],
       "expected_effects": "백테스트 과적합을 방지하고 실제 실전 운영(Live Deployment) 환경에서의 실제 예측 성능과 일치",
       "side_effects": "초기 폴드에서는 학습에 투입되는 데이터 양이 상대적으로 적음",
       "relations": [
@@ -595,8 +987,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["time_series", "cross_validation", "walk_forward", "leakage_prevention"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "time_series",
+        "cross_validation",
+        "walk_forward",
+        "leakage_prevention"
+      ]
     },
     {
       "slug": "feature_scaling_outlier_clipping",
@@ -605,11 +1004,26 @@
       "summary": "극단적 이상치(Outlier)로 인한 왜곡을 방지하기 위해 사분위수(IQR) 기반 RobustScaler 또는 상하위 1% 윈저화(Winsorization/Clipping)를 적용하여 수치 피처의 안정적인 분포를 형성합니다.",
       "principle": "StandardScaler(Z-score)는 이상치가 존재할 때 평균과 표준편차 자체가 왜곡됩니다. 중앙값과 사분위 범위(IQR)를 기준으로 스케일링하거나 상한/하한 백분위수로 클리핑하여 극단값의 부정적 영향을 차단합니다.",
       "category": "classical_ml",
-      "targets": ["classical_ml", "data_pipeline"],
-      "layers": ["preprocessing", "data"],
-      "goals": ["stability", "accuracy"],
-      "interventions": ["pre_postprocessing_addition", "parameter_tuning"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "classical_ml",
+        "data_pipeline"
+      ],
+      "layers": [
+        "preprocessing",
+        "data"
+      ],
+      "goals": [
+        "stability",
+        "accuracy"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "quantile_clip_low",
@@ -620,7 +1034,9 @@
           "max": 0.05,
           "step": 0.005,
           "description": "이 비율보다 작은 값을 하한값으로 고정",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "quantile_clip_high",
@@ -631,17 +1047,30 @@
           "max": 1.0,
           "step": 0.005,
           "description": "이 비율보다 큰 값을 상한값으로 고정",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["scikit_learn_preprocessing"],
-        "hardware": ["cpu"],
-        "runtimes": ["scikit-learn"],
+        "requires": [
+          "scikit_learn_preprocessing"
+        ],
+        "hardware": [
+          "cpu"
+        ],
+        "runtimes": [
+          "scikit-learn"
+        ],
         "notes": "모든 수치형 데이터 전처리 파이프라인의 기초 단계."
       },
-      "metrics": ["accuracy", "stability"],
-      "expected_effects": "신경망 및 선형 모델의 경사 폭주 방지 및 수렴 속도 2배 향상",
+      "metrics": [
+        "accuracy",
+        "stability"
+      ],
+      "expected_effects": [
+        "신경망 및 선형 모델의 경사 폭주 방지 및 수렴 안정성 향상"
+      ],
       "side_effects": "실제 유의미한 희귀 이벤트 데이터까지 이상치로 오판되어 잘려나갈 수 있음",
       "relations": [
         {
@@ -652,8 +1081,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["scaling", "outlier_clipping", "robust_scaler", "preprocessing"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "scaling",
+        "outlier_clipping",
+        "robust_scaler",
+        "preprocessing"
+      ]
     }
   ]
 }

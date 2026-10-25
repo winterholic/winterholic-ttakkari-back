@@ -7,11 +7,30 @@
       "summary": "사전학습된 신경망 가중치는 동결한 채 어텐션 가중치 행렬에 두 개의 저순위(Low-Rank) 분해 행렬만을 삽입하여 미세조정합니다. 학습 대상 파라미터와 메모리 소모를 1% 미만으로 줄이면서도 전파라미터 학습에 버금가는 성능을 냅니다.",
       "principle": "파라미터 적응 시 실질적 랭크(Intrinsic Rank)가 매우 낮다는 점을 이용하여 d x d 크기의 가중치 변위(Delta W)를 d x r 및 r x d 크기의 두 작은 행렬(A, B, r << d)의 곱으로 분해 학습합니다. 학습 완료 후 가중치를 원본 모델과 무손실 합성(Merge)할 수 있습니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device", "multimodal"],
-      "layers": ["training", "model_architecture"],
-      "goals": ["memory", "cost", "speed", "quality"],
-      "interventions": ["fine_tuning_training", "algorithm_change"],
-      "research_methods": ["ab_test", "parameter_sweep", "baseline"],
+      "targets": [
+        "llm",
+        "slm_on_device",
+        "multimodal"
+      ],
+      "layers": [
+        "training",
+        "model_architecture"
+      ],
+      "goals": [
+        "memory",
+        "cost",
+        "speed",
+        "quality"
+      ],
+      "interventions": [
+        "fine_tuning_training",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep",
+        "baseline"
+      ],
       "parameters": [
         {
           "key": "lora_r",
@@ -22,7 +41,9 @@
           "max": 256,
           "step": 4,
           "description": "저순위 분해 행렬의 차원 크기 (작을수록 경량, 클수록 표현력 증가)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "lora_alpha",
@@ -33,7 +54,9 @@
           "max": 512,
           "step": 4,
           "description": "어댑터 가중치의 학습 반영 스케일 (보통 2*r로 설정)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "lora_dropout",
@@ -44,34 +67,77 @@
           "max": 0.5,
           "step": 0.05,
           "description": "어댑터 레이어 과적합 방지 드롭아웃",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "target_modules",
           "label": "적용 모듈",
           "type": "multi_enum",
-          "default": ["q_proj", "v_proj"],
+          "default": [
+            "q_proj",
+            "v_proj"
+          ],
           "options": [
-            {"value": "q_proj", "label": "Query Projection"},
-            {"value": "k_proj", "label": "Key Projection"},
-            {"value": "v_proj", "label": "Value Projection"},
-            {"value": "o_proj", "label": "Output Projection"},
-            {"value": "gate_proj", "label": "Gate Projection (MLP)"},
-            {"value": "up_proj", "label": "Up Projection (MLP)"},
-            {"value": "down_proj", "label": "Down Projection (MLP)"}
+            {
+              "value": "q_proj",
+              "label": "Query Projection"
+            },
+            {
+              "value": "k_proj",
+              "label": "Key Projection"
+            },
+            {
+              "value": "v_proj",
+              "label": "Value Projection"
+            },
+            {
+              "value": "o_proj",
+              "label": "Output Projection"
+            },
+            {
+              "value": "gate_proj",
+              "label": "Gate Projection (MLP)"
+            },
+            {
+              "value": "up_proj",
+              "label": "Up Projection (MLP)"
+            },
+            {
+              "value": "down_proj",
+              "label": "Down Projection (MLP)"
+            }
           ],
           "description": "LoRA 어댑터를 삽입할 트랜스포머 선형 레이어 대상",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": false
         }
       ],
       "compatibility": {
-        "requires": ["peft_framework"],
-        "hardware": ["cuda", "apple_silicon_metal", "cpu"],
-        "runtimes": ["pytorch", "mlx"],
+        "requires": [
+          "peft_framework"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "mlx"
+        ],
         "notes": "Hugging Face PEFT, Unsloth, Apple Silicon MLX 환경에서 널리 지원됨."
       },
-      "metrics": ["peak_memory_mb", "accuracy", "speed"],
-      "expected_effects": "옵티마이저 메모리 소모 70% 이상 절감 및 단일 GPU에서 7B/13B 모델 미세조정 가능",
+      "metrics": [
+        "peak_memory_mb",
+        "accuracy",
+        "speed"
+      ],
+      "expected_effects": [
+        "학습 대상 파라미터 수 및 옵티마이저 메모리 소모를 대폭 줄여 단일 GPU 환경에서의 효율적인 미세조정 지원 (원논문 보고 기준)"
+      ],
       "side_effects": "극소 랭크(r=2, 4) 설정 시 복잡한 지식 습득이나 다국어 전이 성능이 제한될 수 있음",
       "relations": [
         {
@@ -95,21 +161,45 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["peft", "lora", "finetuning", "low_rank"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "peft",
+        "lora",
+        "finetuning",
+        "low_rank"
+      ]
     },
     {
       "slug": "qlora",
       "name": "QLoRA (Quantized Low-Rank Adaptation)",
       "name_ko": "양자화 기반 저순위 어댑터 미세조정",
-      "summary": "기본 모델을 4비트 NormalFloat(NF4) 정밀도로 동결 적재하고 그 위에 16비트 LoRA 어댑터를 연결하여, 일반 소비자용 단일 GPU(24GB)에서도 65B/70B급 거대 모델을 미세조정할 수 있게 만듭니다.",
+      "summary": "기본 모델을 4비트 NormalFloat(NF4) 정밀도로 동결 적재하고 그 위에 16비트 LoRA 어댑터를 연결하여 가중치를 학습합니다. 원논문(Dettmers et al., 2023) 실증 결과, 33B 모델은 24GB GPU 환경에서 미세조정이 가능하며, 65B 거대 모델은 단일 48GB GPU(A100) 환경에서 튜닝을 수행할 수 있습니다.",
       "principle": "정규분포 데이터에 정보이론적으로 최적화된 NF4(4-bit NormalFloat) 데이터 타입, 양자화 상수 자체를 다시 양자화하는 이중 양자화(Double Quantization), 메모리 스파이크 시 CPU로 페이지를 내리는 페이징 옵티마이저를 결합합니다.",
       "category": "training",
-      "targets": ["llm", "multimodal"],
-      "layers": ["training", "memory", "model_architecture"],
-      "goals": ["memory", "cost", "quality"],
-      "interventions": ["compression_quantization", "fine_tuning_training"],
-      "research_methods": ["ab_test", "baseline"],
+      "targets": [
+        "llm",
+        "multimodal"
+      ],
+      "layers": [
+        "training",
+        "memory",
+        "model_architecture"
+      ],
+      "goals": [
+        "memory",
+        "cost",
+        "quality"
+      ],
+      "interventions": [
+        "compression_quantization",
+        "fine_tuning_training"
+      ],
+      "research_methods": [
+        "ab_test",
+        "baseline"
+      ],
       "parameters": [
         {
           "key": "quant_type",
@@ -117,11 +207,19 @@
           "type": "enum",
           "default": "nf4",
           "options": [
-            {"value": "nf4", "label": "NF4 (NormalFloat 4)"},
-            {"value": "fp4", "label": "FP4 (Floating Point 4)"}
+            {
+              "value": "nf4",
+              "label": "NF4 (NormalFloat 4)"
+            },
+            {
+              "value": "fp4",
+              "label": "FP4 (Floating Point 4)"
+            }
           ],
           "description": "기본 모델을 동결 적재할 4비트 양자화 유형",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "double_quant",
@@ -129,7 +227,9 @@
           "type": "boolean",
           "default": true,
           "description": "양자화 스케일 상수를 다시 8비트로 양자화하여 파라미터당 0.37비트 추가 절감",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "lora_r",
@@ -140,18 +240,36 @@
           "max": 128,
           "step": 4,
           "description": "LoRA 어댑터 랭크",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["bitsandbytes_or_mlx_quant"],
-        "hardware": ["cuda", "apple_silicon_metal"],
-        "runtimes": ["pytorch", "mlx"],
+        "requires": [
+          "bitsandbytes_or_mlx_quant"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "pytorch",
+          "mlx"
+        ],
         "notes": "CUDA 환경에서는 bitsandbytes 라이브러리가 필요하며, Apple Silicon에서는 MLX 네이티브 4비트 학습을 통해 유사 메커니즘 제공."
       },
-      "metrics": ["peak_memory_mb", "accuracy", "speed"],
-      "expected_effects": "16비트 LoRA 대비 기본 모델 VRAM 요구량 50~60% 추가 절감",
-      "side_effects": "양자화/역양자화 연산 오버헤드로 인해 순수 16비트 LoRA 대비 스텝당 학습 속도가 약 20~30% 느려짐",
+      "metrics": [
+        "peak_memory_mb",
+        "accuracy",
+        "speed"
+      ],
+      "expected_effects": [
+        "16비트 LoRA 대비 기본 모델 VRAM 요구량 대폭 절감 (원논문 기준 단일 48GB GPU에서 65B 모델 파인튜닝 실현)"
+      ],
+      "side_effects": [
+        "양자화/역양자화 연산 오버헤드로 인해 순수 16비트 LoRA 대비 스텝당 학습 속도가 다소 느려질 수 있음"
+      ],
       "relations": [
         {
           "type": "specializes",
@@ -174,8 +292,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["qlora", "nf4", "peft", "vram_reduction"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "qlora",
+        "nf4",
+        "peft",
+        "vram_reduction"
+      ]
     },
     {
       "slug": "full_parameter_finetuning",
@@ -184,22 +309,40 @@
       "summary": "모델의 모든 가중치를 동결 없이 학습 데이터셋으로 역전파 갱신합니다. 도메인 지식의 전이와 문체/추론 행동의 근본적 재정립에 가장 높은 표현력을 제공합니다.",
       "principle": "사전학습된 신경망의 전체 가중치 행렬에 대해 그래디언트를 계산하고 옵티마이저 상태(모멘텀, 분산 등)를 유지하며 전체 모델을 최적화합니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device", "tts", "stt"],
-      "layers": ["training", "model_architecture"],
-      "goals": ["quality", "accuracy"],
-      "interventions": ["fine_tuning_training"],
-      "research_methods": ["baseline", "ab_test"],
+      "targets": [
+        "llm",
+        "slm_on_device",
+        "tts",
+        "stt"
+      ],
+      "layers": [
+        "training",
+        "model_architecture"
+      ],
+      "goals": [
+        "quality",
+        "accuracy"
+      ],
+      "interventions": [
+        "fine_tuning_training"
+      ],
+      "research_methods": [
+        "baseline",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "learning_rate",
           "label": "학습률 (Learning Rate)",
           "type": "number",
-          "default": 0.00002,
-          "min": 0.000001,
+          "default": 2e-05,
+          "min": 1e-06,
           "max": 0.001,
-          "step": 0.000005,
+          "step": 5e-06,
           "description": "가중치 갱신 보폭",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "weight_decay",
@@ -210,17 +353,32 @@
           "max": 0.2,
           "step": 0.01,
           "description": "L2 가중치 정규화 계수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["high_vram_cluster_or_zero"],
-        "hardware": ["cuda", "apple_silicon_metal"],
-        "runtimes": ["pytorch"],
+        "requires": [
+          "high_vram_cluster_or_zero"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
         "notes": "가중치, 그래디언트, 옵티마이저 상태가 모두 메모리에 유지되므로 대규모 VRAM 또는 DeepSpeed ZeRO-3 클러스터가 필요함."
       },
-      "metrics": ["accuracy", "quality", "peak_memory_mb"],
-      "expected_effects": "특화 태스크에서 어댑터 방식보다 높은 일관성과 완벽한 도메인 어휘 적응력 확보",
+      "metrics": [
+        "accuracy",
+        "quality",
+        "peak_memory_mb"
+      ],
+      "expected_effects": [
+        "특화 태스크에서 어댑터 방식 대비 높은 일관성과 도메인 어휘 및 지식의 전면 적응력 확보 기대"
+      ],
       "side_effects": "기존에 학습된 일반 상식이나 지식을 망각하는 파괴적 망각(Catastrophic Forgetting) 위험 및 막대한 GPU 비용",
       "relations": [
         {
@@ -229,10 +387,24 @@
           "note": "자원 소모와 성능 표현력 간의 트레이드오프 관계"
         }
       ],
-      "evidence": [],
-      "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["finetuning", "full_param", "training"]
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+          "url": "https://arxiv.org/abs/1810.04805",
+          "year": 2018,
+          "claim": "전체 신경망 파라미터를 하류 태스크(Downstream Task) 데이터로 미세조정하여 최첨단 성능 달성"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "finetuning",
+        "full_param",
+        "training"
+      ]
     },
     {
       "slug": "dpo",
@@ -241,11 +413,28 @@
       "summary": "별도의 보상 모델(Reward Model) 학습과 복잡한 강화학습 PPO 루프 없이, 선호/비선호 응답 쌍 데이터셋을 활용해 교차 엔트로피 손실 함수 하나로 인간 선호도를 모델에 직접 정렬합니다.",
       "principle": "RLHF의 최적화 문제를 수학적으로 변환하여 보상 함수를 모델의 암묵적 로짓 비율(Implicit Reward)로 표현합니다. 기준 참조 모델(Reference Model)과의 KL 다이버전스 제약을 건 채 단순 분류 손실로 선호 응답의 확률을 높이고 비선호 응답 확률을 낮춥니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["training"],
-      "goals": ["quality", "consistency", "stability", "cost"],
-      "interventions": ["fine_tuning_training", "algorithm_change"],
-      "research_methods": ["ab_test", "parameter_sweep", "baseline"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "training"
+      ],
+      "goals": [
+        "quality",
+        "consistency",
+        "stability",
+        "cost"
+      ],
+      "interventions": [
+        "fine_tuning_training",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep",
+        "baseline"
+      ],
       "parameters": [
         {
           "key": "beta",
@@ -256,7 +445,9 @@
           "max": 0.5,
           "step": 0.01,
           "description": "참조 모델로부터의 이탈을 제어하는 암묵적 보상 스케일 (작을수록 참조 모델에 가까움)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "loss_type",
@@ -264,21 +455,44 @@
           "type": "enum",
           "default": "sigmoid",
           "options": [
-            {"value": "sigmoid", "label": "Sigmoid (기본 DPO)"},
-            {"value": "hinge", "label": "Hinge Loss"},
-            {"value": "ipo", "label": "IPO (Identity Preference Optimization)"}
+            {
+              "value": "sigmoid",
+              "label": "Sigmoid (기본 DPO)"
+            },
+            {
+              "value": "hinge",
+              "label": "Hinge Loss"
+            },
+            {
+              "value": "ipo",
+              "label": "IPO (Identity Preference Optimization)"
+            }
           ],
           "description": "선호도 확률 마진 계산 방식",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["preference_dataset_paired"],
-        "hardware": ["cuda", "apple_silicon_metal"],
-        "runtimes": ["pytorch", "mlx"],
+        "requires": [
+          "preference_dataset_paired"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "pytorch",
+          "mlx"
+        ],
         "notes": "학습 중 참조 모델(Reference Model)의 로짓을 함께 계산해야 하므로 동결된 원본 모델을 메모리에 동시에 올려야 함."
       },
-      "metrics": ["quality", "accuracy", "stability"],
+      "metrics": [
+        "quality",
+        "accuracy",
+        "stability"
+      ],
       "expected_effects": "PPO 대비 극도로 안정적인 수렴과 절반 이하의 학습 시간으로 고품질 대화/지시 튜닝 달성",
       "side_effects": "데이터셋에 라벨 노이즈가 있거나 Beta가 너무 크면 특정 토큰 확률이 붕괴하는 과적합 발생 가능",
       "relations": [
@@ -303,8 +517,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["dpo", "preference_alignment", "rlhf", "training"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "dpo",
+        "preference_alignment",
+        "rlhf",
+        "training"
+      ]
     },
     {
       "slug": "ppo_rlhf",
@@ -313,11 +534,24 @@
       "summary": "인간 선호도로 학습된 보상 모델(Reward Model)의 피드백을 기반으로 근사 정책 최적화(PPO)를 수행하여 모델의 유용성과 무해성을 극대화합니다.",
       "principle": "액터(Actor), 크리틱(Critic), 보상 모델(Reward), 참조 모델(Reference)의 4개 신경망을 상호작용시키며, 클리핑된 목적 함수를 통해 정책이 이전 정책에서 과도하게 벗어나지 않도록 규제하며 보상을 극대화합니다.",
       "category": "training",
-      "targets": ["llm"],
-      "layers": ["training"],
-      "goals": ["quality", "consistency"],
-      "interventions": ["fine_tuning_training", "algorithm_change"],
-      "research_methods": ["ab_test", "profiling"],
+      "targets": [
+        "llm"
+      ],
+      "layers": [
+        "training"
+      ],
+      "goals": [
+        "quality",
+        "consistency"
+      ],
+      "interventions": [
+        "fine_tuning_training",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "clip_range",
@@ -328,7 +562,9 @@
           "max": 0.4,
           "step": 0.05,
           "description": "정책 비율(ratio) 클리핑 한계값",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "kl_penalty_coef",
@@ -339,16 +575,28 @@
           "max": 0.2,
           "step": 0.005,
           "description": "참조 모델과의 괴리에 부과되는 적응형 감점 가중치",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["reward_model_checkpoint"],
-        "hardware": ["cuda"],
-        "runtimes": ["pytorch"],
+        "requires": [
+          "reward_model_checkpoint"
+        ],
+        "hardware": [
+          "cuda"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
         "notes": "4개의 대형 모델을 동시에 GPU 클러스터에 유지해야 하므로 막대한 인프라 리소스 필요."
       },
-      "metrics": ["quality", "peak_memory_mb", "stability"],
+      "metrics": [
+        "quality",
+        "peak_memory_mb",
+        "stability"
+      ],
       "expected_effects": "복잡한 보상 함수 기반의 오픈엔드 추론 및 복합 다목적 지시 정렬",
       "side_effects": "하이퍼파라미터에 극도로 민감하며 보상 해킹(Reward Hacking) 또는 정책 붕괴 현상이 빈번함",
       "relations": [
@@ -368,8 +616,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["rlhf", "ppo", "alignment", "training"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "rlhf",
+        "ppo",
+        "alignment",
+        "training"
+      ]
     },
     {
       "slug": "learning_rate_scheduling",
@@ -378,11 +633,27 @@
       "summary": "학습 초기에는 학습률을 0에서 서서히 올리고(Warmup), 이후 코사인 곡선 또는 선형 방식으로 점진적 감쇠(Decay)시켜 최적 가중치 수렴 지점을 정밀하게 탐색합니다.",
       "principle": "초기 무작위 상태에서 높은 학습률은 사전학습 가중치를 파괴할 수 있으므로 선형 웜업으로 안정성을 확보하고, 후반부에는 학습률을 미세하게 낮춰 손실 함수의 가파른 골짜기에 안착하도록 유도합니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device", "classical_ml"],
-      "layers": ["training"],
-      "goals": ["accuracy", "stability", "reproducibility"],
-      "interventions": ["parameter_tuning"],
-      "research_methods": ["parameter_sweep", "grid_search", "ab_test"],
+      "targets": [
+        "llm",
+        "slm_on_device",
+        "classical_ml"
+      ],
+      "layers": [
+        "training"
+      ],
+      "goals": [
+        "accuracy",
+        "stability",
+        "reproducibility"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "grid_search",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "lr_scheduler_type",
@@ -390,12 +661,23 @@
           "type": "enum",
           "default": "cosine",
           "options": [
-            {"value": "cosine", "label": "Cosine Annealing with Warmup"},
-            {"value": "linear", "label": "Linear Decay with Warmup"},
-            {"value": "constant_with_warmup", "label": "Constant with Warmup"}
+            {
+              "value": "cosine",
+              "label": "Cosine Annealing with Warmup"
+            },
+            {
+              "value": "linear",
+              "label": "Linear Decay with Warmup"
+            },
+            {
+              "value": "constant_with_warmup",
+              "label": "Constant with Warmup"
+            }
           ],
           "description": "학습 진행에 따른 학습률 감쇠 함수 곡선",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "warmup_ratio",
@@ -406,7 +688,9 @@
           "max": 0.2,
           "step": 0.01,
           "description": "전체 학습 스텝 중 학습률을 점진 상승시키는 구간 비율",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "min_lr_ratio",
@@ -417,16 +701,30 @@
           "max": 0.5,
           "step": 0.05,
           "description": "최종 감쇠 단계에서 도달할 최소 학습률(초기 LR 대비)",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["standard_optimizer_scheduler"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["pytorch", "mlx"],
+        "requires": [
+          "standard_optimizer_scheduler"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "mlx"
+        ],
         "notes": "모든 딥러닝 프레임워크에 내장된 필수 메커니즘."
       },
-      "metrics": ["accuracy", "stability"],
+      "metrics": [
+        "accuracy",
+        "stability"
+      ],
       "expected_effects": "손실 진동 방지 및 최종 벤치마크 평가 지표 2~5% 추가 향상",
       "side_effects": "웜업 구간이 너무 짧으면 초기 발산, 너무 길면 학습 진행 지연",
       "relations": [
@@ -436,10 +734,25 @@
           "note": "옵티마이저 알고리즘과 결합하여 학습 곡선을 형성"
         }
       ],
-      "evidence": [],
-      "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["lr_schedule", "cosine", "warmup", "optimization"]
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
+          "url": "https://arxiv.org/abs/1608.03983",
+          "year": 2016,
+          "claim": "코사인 감쇄(Cosine Annealing) 스케줄링을 통한 학습 후반부 수렴성 및 일반화 성능 개선"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "lr_schedule",
+        "cosine",
+        "warmup",
+        "optimization"
+      ]
     },
     {
       "slug": "optimizer_comparison",
@@ -448,11 +761,29 @@
       "summary": "AdamW, Lion, Sophia 등 서로 다른 옵티마이저의 수렴 속도, 메모리 풋프린트, 일반화 성능을 비교 평가하여 한정된 자원에서 최적의 학습 효율을 도출합니다.",
       "principle": "AdamW는 1차/2차 모멘텀을 모두 추적하므로 파라미터당 8바이트의 추가 메모리를 소모합니다. Lion은 부호(Sign) 기반 모멘텀만 추적하여 메모리를 절감하고, Sophia는 대각 헤시안(Hessian) 곡률을 추정하여 가파른 계곡을 빠르게 탈출합니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device", "classical_ml"],
-      "layers": ["training", "memory"],
-      "goals": ["speed", "memory", "accuracy", "stability"],
-      "interventions": ["algorithm_change", "parameter_tuning"],
-      "research_methods": ["ab_test", "repeated_measurement"],
+      "targets": [
+        "llm",
+        "slm_on_device",
+        "classical_ml"
+      ],
+      "layers": [
+        "training",
+        "memory"
+      ],
+      "goals": [
+        "speed",
+        "memory",
+        "accuracy",
+        "stability"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "optimizer_name",
@@ -460,12 +791,23 @@
           "type": "enum",
           "default": "adamw",
           "options": [
-            {"value": "adamw", "label": "AdamW (표준 1차/2차 모멘텀)"},
-            {"value": "lion", "label": "Lion (Sign Momentum 경량 옵티마이저)"},
-            {"value": "adafactor", "label": "Adafactor (메모리 절약형 팩토라이즈드)"}
+            {
+              "value": "adamw",
+              "label": "AdamW (표준 1차/2차 모멘텀)"
+            },
+            {
+              "value": "lion",
+              "label": "Lion (Sign Momentum 경량 옵티마이저)"
+            },
+            {
+              "value": "adafactor",
+              "label": "Adafactor (메모리 절약형 팩토라이즈드)"
+            }
           ],
           "description": "가중치 업데이트 최적화 알고리즘",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "weight_decay",
@@ -476,16 +818,31 @@
           "max": 0.2,
           "step": 0.01,
           "description": "가중치 감쇠율",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["optimizer_library"],
-        "hardware": ["cuda", "apple_silicon_metal", "cpu"],
-        "runtimes": ["pytorch", "mlx"],
+        "requires": [
+          "optimizer_library"
+        ],
+        "hardware": [
+          "cuda",
+          "apple_silicon_metal",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "mlx"
+        ],
         "notes": "Lion 사용 시 AdamW 대비 통상 3~5배 낮은 학습률을 적용해야 안정적으로 수렴함."
       },
-      "metrics": ["peak_memory_mb", "speed", "accuracy"],
+      "metrics": [
+        "peak_memory_mb",
+        "speed",
+        "accuracy"
+      ],
       "expected_effects": "Lion/Adafactor 채택 시 옵티마이저 VRAM 점유 50% 절감",
       "side_effects": "새로운 옵티마이저는 하이퍼파라미터(특히 학습률)에 민감하여 잘못 설정 시 발산 가능성",
       "relations": [
@@ -505,8 +862,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["optimizer", "adamw", "lion", "memory_efficiency"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "optimizer",
+        "adamw",
+        "lion",
+        "memory_efficiency"
+      ]
     },
     {
       "slug": "gradient_accumulation",
@@ -515,11 +879,27 @@
       "summary": "물리적 GPU VRAM 한계로 인해 배치 크기를 크게 잡지 못할 때, 여러 개의 마이크로 배치 동안 그래디언트를 누적한 뒤 한 번에 가중치를 업데이트하여 거대 유효 배치 크기를 구현합니다.",
       "principle": "역전파 시 계산된 그래디언트를 옵티마이저 스텝마다 0으로 초기화하지 않고 N회 동안 더한 다음, N회째에 누적 그래디언트를 N으로 나누어 옵티마이저를 갱신합니다. 수학적으로 큰 배치를 한 번에 연산한 것과 동일한 효과를 냅니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device", "multimodal"],
-      "layers": ["training", "memory"],
-      "goals": ["memory", "stability", "accuracy"],
-      "interventions": ["parameter_tuning"],
-      "research_methods": ["ab_test", "parameter_sweep"],
+      "targets": [
+        "llm",
+        "slm_on_device",
+        "multimodal"
+      ],
+      "layers": [
+        "training",
+        "memory"
+      ],
+      "goals": [
+        "memory",
+        "stability",
+        "accuracy"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep"
+      ],
       "parameters": [
         {
           "key": "accumulation_steps",
@@ -530,17 +910,34 @@
           "max": 64,
           "step": 1,
           "description": "가중치 업데이트 1회를 위해 그래디언트를 합산할 미니배치 횟수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["gradient_accumulation_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["pytorch", "mlx"],
+        "requires": [
+          "gradient_accumulation_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "mlx"
+        ],
         "notes": "모든 프레임워크에서 지원되는 기본적 메모리 제어 기법."
       },
-      "metrics": ["peak_memory_mb", "accuracy", "stability"],
-      "expected_effects": "단일 16GB/24GB 디바이스에서도 유효 배치 64~128을 시뮬레이션하여 학습 수렴 안정성 확보",
+      "metrics": [
+        "peak_memory_mb",
+        "accuracy",
+        "stability"
+      ],
+      "expected_effects": [
+        "메모리 제약이 있는 단일 GPU 환경에서도 가상 유효 배치를 구성하여 수렴 안정성 확보 지원"
+      ],
       "side_effects": "누적 스텝이 커질수록 가중치 동기화 빈도가 줄어들어 통신/동기화 불균형이 발생할 수 있음",
       "relations": [
         {
@@ -551,21 +948,45 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["gradient_accumulation", "batch_size", "vram"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "gradient_accumulation",
+        "batch_size",
+        "vram"
+      ]
     },
     {
       "slug": "mixed_precision_training",
       "name": "Mixed Precision Training (BF16 / FP16 / FP8)",
       "name_ko": "혼합 정밀도 학습",
-      "summary": "신경망 순전파와 역전파 연산을 16비트(BF16/FP16) 또는 8비트(FP8)로 수행하고 중요 가중치 누적 상태만 32비트 마스터 가중치로 유지하여 연산 속도를 2배 이상 가속하고 VRAM을 절약합니다.",
+      "summary": "신경망 순전파와 역전파 연산을 16비트(BF16/FP16) 또는 8비트(FP8)로 수행하고 중요 가중치 누적 상태만 32비트 마스터 가중치로 유지하여 연산 속도를 가속하고 VRAM을 절약합니다.",
       "principle": "현대 텐서 코어/매트릭스 연산기는 저정밀도 행렬곱에서 최고 성능(FLOPs)을 발휘합니다. BF16(Bfloat16)은 FP32와 동일한 8비트 지수부를 가져 언더플로 위험 없이 손실 스케일링 없이도 안정적으로 수렴합니다.",
       "category": "training",
-      "targets": ["llm", "multimodal", "systems"],
-      "layers": ["training", "memory", "hardware"],
-      "goals": ["speed", "memory", "throughput"],
-      "interventions": ["compression_quantization", "parameter_tuning"],
-      "research_methods": ["ab_test", "profiling"],
+      "targets": [
+        "llm",
+        "multimodal",
+        "systems"
+      ],
+      "layers": [
+        "training",
+        "memory",
+        "hardware"
+      ],
+      "goals": [
+        "speed",
+        "memory",
+        "throughput"
+      ],
+      "interventions": [
+        "compression_quantization",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "precision_mode",
@@ -573,23 +994,51 @@
           "type": "enum",
           "default": "bf16",
           "options": [
-            {"value": "bf16", "label": "BF16 (Bfloat16 - 권장)"},
-            {"value": "fp16", "label": "FP16 (Half Precision with Loss Scaling)"},
-            {"value": "fp8", "label": "FP8 (Transformer Engine)"},
-            {"value": "fp32", "label": "FP32 (전정밀도 기준선)"}
+            {
+              "value": "bf16",
+              "label": "BF16 (Bfloat16 - 권장)"
+            },
+            {
+              "value": "fp16",
+              "label": "FP16 (Half Precision with Loss Scaling)"
+            },
+            {
+              "value": "fp8",
+              "label": "FP8 (Transformer Engine)"
+            },
+            {
+              "value": "fp32",
+              "label": "FP32 (전정밀도 기준선)"
+            }
           ],
           "description": "순전파/역전파 행렬곱에 사용할 부동소수점 포맷",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["native_bf16_or_fp16_hardware"],
-        "hardware": ["apple_silicon_metal", "cuda"],
-        "runtimes": ["pytorch", "mlx"],
+        "requires": [
+          "native_bf16_or_fp16_hardware"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "pytorch",
+          "mlx"
+        ],
         "notes": "Apple Silicon(M1/M2/M3/M4) 및 NVIDIA Ampere 이상(RTX 3090, A100 등)에서 BF16 하드웨어 네이티브 가속 완벽 지원."
       },
-      "metrics": ["speed", "peak_memory_mb", "throughput"],
-      "expected_effects": "FP32 대비 VRAM 사용량 50% 절감 및 텐서 코어 연산 속도 2배~3배 향상",
+      "metrics": [
+        "speed",
+        "peak_memory_mb",
+        "throughput"
+      ],
+      "expected_effects": [
+        "FP32 대비 모델 및 그래디언트 VRAM 절감 및 텐서 코어 가속 지원 (원논문 기준, 하드웨어 아키텍처 의존)"
+      ],
       "side_effects": "FP16 모드에서는 그래디언트 언더플로로 인한 NaN 발생 위험이 있어 동적 손실 스케일러 필수",
       "relations": [
         {
@@ -604,12 +1053,19 @@
           "title": "Mixed Precision Training",
           "url": "https://arxiv.org/abs/1710.03740",
           "year": 2017,
-          "claim": "논문 보고: 정확도 손실 없이 신경망 학습 속도 2~3배 가속 및 메모리 절감 달성"
+          "claim": "FP16 연산과 FP32 마스터 가중치를 결합하여 정확도 손실 없이 메모리 절감 및 연산 가속 달성"
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["mixed_precision", "bf16", "fp16", "hardware_acceleration"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "mixed_precision",
+        "bf16",
+        "fp16",
+        "hardware_acceleration"
+      ]
     },
     {
       "slug": "training_data_sampling_augmentation",
@@ -618,11 +1074,28 @@
       "summary": "도메인별 데이터 비율 혼합(Data Mixing), 역번역, 무작위 마스킹, 난이도별 커리큘럼 샘플링을 적용하여 소량의 고품질 데이터로도 강력한 일반화 성능을 달성합니다.",
       "principle": "단순 데이터 전수 순차 학습 대신 고품질/희소 도메인 데이터를 업샘플링하고 합성 데이터(Synthetic Data)를 선별 주입하여 데이터 표현 다양성을 확장하고 과적합을 방지합니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device", "rag"],
-      "layers": ["data", "preprocessing"],
-      "goals": ["quality", "accuracy", "stability"],
-      "interventions": ["data_augmentation", "pipeline_reconfiguration"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "llm",
+        "slm_on_device",
+        "rag"
+      ],
+      "layers": [
+        "data",
+        "preprocessing"
+      ],
+      "goals": [
+        "quality",
+        "accuracy",
+        "stability"
+      ],
+      "interventions": [
+        "data_augmentation",
+        "pipeline_reconfiguration"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "synthetic_ratio",
@@ -633,7 +1106,9 @@
           "max": 0.8,
           "step": 0.05,
           "description": "LLM이 생성한 합성 지시 데이터의 혼합 비율",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "curriculum_learning",
@@ -641,16 +1116,29 @@
           "type": "boolean",
           "default": false,
           "description": "쉬운 예제부터 어려운 예제 순서로 정렬하여 학습 주입",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["dataset_pipeline_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["pytorch"],
+        "requires": [
+          "dataset_pipeline_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
         "notes": "데이터 로더 수준에서 동적 샘플러로 구현됨."
       },
-      "metrics": ["accuracy", "quality"],
+      "metrics": [
+        "accuracy",
+        "quality"
+      ],
       "expected_effects": "적은 수의 고품질 정제 데이터(10k~50k)로 대규모 저품질 데이터 능가",
       "side_effects": "저품질 합성 데이터 과다 주입 시 모델 환각 및 표현 붕괴 초래 가능",
       "relations": [
@@ -662,8 +1150,14 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["external_report"],
-      "tags": ["data_sampling", "augmentation", "synthetic_data"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "data_sampling",
+        "augmentation",
+        "synthetic_data"
+      ]
     },
     {
       "slug": "hyperparameter_tuning_optuna",
@@ -672,11 +1166,28 @@
       "summary": "트리 구조 파르젠 추정기(TPE)를 활용하여 학습률, 배치 크기, 가중치 감쇠 등의 하이퍼파라미터 공간을 효율적으로 탐색하고 성능 미달 실험을 조기 종료(Pruning)합니다.",
       "principle": "이전 시도들의 목적 함수 결과를 가우시안 혼합 또는 TPE 모델로 피팅하여, 성능 개선 가능성이 가장 높은 파라미터 영역을 확률적으로 추정 탐색합니다. 중간 손실이 불량한 시도는 즉시 가지치기하여 컴퓨팅 자원을 보존합니다.",
       "category": "training",
-      "targets": ["classical_ml", "llm", "slm_on_device"],
-      "layers": ["training"],
-      "goals": ["accuracy", "quality", "cost", "speed"],
-      "interventions": ["parameter_tuning", "algorithm_change"],
-      "research_methods": ["bayesian_optimization", "ablation"],
+      "targets": [
+        "classical_ml",
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "training"
+      ],
+      "goals": [
+        "accuracy",
+        "quality",
+        "cost",
+        "speed"
+      ],
+      "interventions": [
+        "parameter_tuning",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "bayesian_optimization",
+        "ablation"
+      ],
       "parameters": [
         {
           "key": "n_trials",
@@ -687,7 +1198,9 @@
           "max": 500,
           "step": 5,
           "description": "베이지안 최적화가 수행할 총 실험 횟수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "pruning_enabled",
@@ -695,17 +1208,34 @@
           "type": "boolean",
           "default": true,
           "description": "중간 에포크 성능이 하위권인 시도를 조기 중단",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["optuna_library"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["pytorch", "scikit-learn"],
+        "requires": [
+          "optuna_library"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch",
+          "scikit-learn"
+        ],
         "notes": "온디맨드로 Optuna 스터디를 생성하여 백그라운드 탐색 가능."
       },
-      "metrics": ["accuracy", "cost", "speed"],
-      "expected_effects": "무작위 탐색(Random) 대비 3~5배 적은 시도로 글로벌 최적 하이퍼파라미터 조합 발견",
+      "metrics": [
+        "accuracy",
+        "cost",
+        "speed"
+      ],
+      "expected_effects": [
+        "TPE(Tree-structured Parzen Estimator) 베이지안 최적화 및 조기 종료(Pruning)를 통해 무작위 탐색 대비 효율적인 하이퍼파라미터 탐색 지원"
+      ],
       "side_effects": "조기 가지치기가 너무 엄격하면 후반 수렴형 모델이 조기 탈락할 위험",
       "relations": [
         {
@@ -724,8 +1254,14 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["optuna", "bayesian", "hyperparameter_tuning"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "optuna",
+        "bayesian",
+        "hyperparameter_tuning"
+      ]
     },
     {
       "slug": "peft_ia3_tuning",
@@ -734,11 +1270,27 @@
       "summary": "어텐션 Key, Value 벡터 및 피드포워드 신경망 활성화에 학습 가능한 스케일링 벡터만을 곱하여, 모델 전체 파라미터의 0.01% 미만만을 학습하는 초극소 어댑터 기법입니다.",
       "principle": "행렬곱 분해를 수행하는 LoRA와 달리, 활성화 벡터에 원소별 곱(Element-wise multiplication)을 수행하는 학습 벡터만을 도입하여 가중치 크기를 수십 킬로바이트(KB) 수준으로 경량화합니다.",
       "category": "training",
-      "targets": ["llm", "slm_on_device"],
-      "layers": ["model_architecture", "training"],
-      "goals": ["memory", "cost", "speed"],
-      "interventions": ["fine_tuning_training", "algorithm_change"],
-      "research_methods": ["ab_test", "baseline"],
+      "targets": [
+        "llm",
+        "slm_on_device"
+      ],
+      "layers": [
+        "model_architecture",
+        "training"
+      ],
+      "goals": [
+        "memory",
+        "cost",
+        "speed"
+      ],
+      "interventions": [
+        "fine_tuning_training",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "baseline"
+      ],
       "parameters": [
         {
           "key": "init_scale",
@@ -749,17 +1301,33 @@
           "max": 1.5,
           "step": 0.05,
           "description": "원소별 곱셈 벡터의 초기값 (1.0은 초기 항등 함수 유지)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["peft_framework"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["pytorch"],
+        "requires": [
+          "peft_framework"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
         "notes": "Hugging Face PEFT 라이브러리에서 기본 지원."
       },
-      "metrics": ["peak_memory_mb", "accuracy", "speed"],
-      "expected_effects": "체크포인트 크기 99% 절감(수십 KB)으로 수천 개의 태스크별 어댑터를 실시간 스왑 서빙 가능",
+      "metrics": [
+        "peak_memory_mb",
+        "accuracy",
+        "speed"
+      ],
+      "expected_effects": [
+        "체크포인트 크기 대폭 절감(수십 KB)으로 태스크별 경량 어댑터 효율적 관리 및 서빙 가능 (원논문 보고 기준)"
+      ],
       "side_effects": "LoRA 대비 자유도(Rank)가 낮아 아주 방대한 도메인 지식 습득 능력은 제한적",
       "relations": [
         {
@@ -778,8 +1346,15 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["external_report"],
-      "tags": ["ia3", "peft", "extreme_lightweight", "few_shot"]
+      "adapter_hints": [
+        "external_report"
+      ],
+      "tags": [
+        "ia3",
+        "peft",
+        "extreme_lightweight",
+        "few_shot"
+      ]
     }
   ]
 }

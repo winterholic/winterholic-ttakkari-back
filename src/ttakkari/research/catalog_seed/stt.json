@@ -7,11 +7,29 @@
       "summary": "입력 오디오 스트림에서 실제 인간 음성이 존재하는 발화 구간만을 정밀하게 감지하고 긴 무음이나 배경 잡음 구간을 STT 디코더 진입 전에 필터링합니다.",
       "principle": "Silero VAD 등 신경망 기반 확률 추정기를 통해 30ms 오디오 프레임 단위로 음성 존재 확률(0.0~1.0)을 계산합니다. 임계값을 초과하는 연속 프레임을 음성 세그먼트로 추출하여 STT 엔진에 넘김으로써 무음 환각을 근본적으로 차단합니다.",
       "category": "stt",
-      "targets": ["stt", "data_pipeline"],
-      "layers": ["preprocessing", "data"],
-      "goals": ["latency", "speed", "accuracy", "cost"],
-      "interventions": ["pre_postprocessing_addition", "algorithm_change"],
-      "research_methods": ["ab_test", "parameter_sweep", "error_analysis"],
+      "targets": [
+        "stt",
+        "data_pipeline"
+      ],
+      "layers": [
+        "preprocessing",
+        "data"
+      ],
+      "goals": [
+        "latency",
+        "speed",
+        "accuracy",
+        "cost"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "parameter_sweep",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "threshold",
@@ -22,7 +40,9 @@
           "max": 0.9,
           "step": 0.05,
           "description": "음성으로 판정할 신경망 출력 확률 기준치",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "min_speech_duration_ms",
@@ -34,7 +54,9 @@
           "step": 50,
           "unit": "ms",
           "description": "단순 클릭 잡음을 무시하기 위한 최소 발화 길이",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "min_silence_duration_ms",
@@ -46,16 +68,31 @@
           "step": 50,
           "unit": "ms",
           "description": "한 문장이 끝났다고 판정할 후속 무음 길이",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["silero_vad_onnx"],
-        "hardware": ["cpu", "apple_silicon_metal"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "silero_vad_onnx"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "whisper.cpp 및 faster-whisper 파이프라인에서 기본 내장 또는 옵션으로 지원."
       },
-      "metrics": ["rtf", "latency", "wer", "cer"],
+      "metrics": [
+        "rtf",
+        "latency",
+        "wer",
+        "cer"
+      ],
       "expected_effects": "무음 구간 디코딩 낭비를 없애 전체 STT 처리 속도 2배 이상 가속 및 무음 환각 박멸",
       "side_effects": "임계값이 너무 높으면 말끝의 작은 속삭임이나 어미가 잘려나갈 수 있음",
       "relations": [
@@ -70,10 +107,26 @@
           "note": "VAD와 환각 감지기를 상호 보완적으로 배치하여 무음 환각 완벽 억제"
         }
       ],
-      "evidence": [],
-      "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["vad", "silero", "speech_detection", "whisper", "preprocessing"]
+      "evidence": [
+        {
+          "kind": "repo",
+          "title": "Silero VAD: pre-trained enterprise-grade Voice Activity Detector",
+          "url": "https://github.com/snakers4/silero-vad",
+          "year": 2021,
+          "claim": "경량 신경망 기반 고정밀 음성 구간 검출로 무음 추론 비용 절감 및 환각 억제"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "vad",
+        "silero",
+        "speech_detection",
+        "whisper",
+        "preprocessing"
+      ]
     },
     {
       "slug": "stt_chunk_window_overlap",
@@ -82,11 +135,25 @@
       "summary": "장시간 오디오를 30초 단위 윈도우로 분할할 때 오버랩(Overlap) 길이와 경계 윈도우 스케줄을 최적화하여 경계면 단어 절단 및 중복 전사를 방지합니다.",
       "principle": "Whisper 모델은 30초 고정 길이의 멜-스펙트로그램을 입력으로 받습니다. 긴 오디오를 처리할 때 슬라이딩 윈도우의 겹치는 구간을 설정하고, 이전 윈도우의 타임스탬프와 일치하는 중복 토큰을 디스태킹(De-duplication)하여 병합합니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["preprocessing", "decoding"],
-      "goals": ["accuracy", "consistency"],
-      "interventions": ["pipeline_reconfiguration", "parameter_tuning"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "preprocessing",
+        "decoding"
+      ],
+      "goals": [
+        "accuracy",
+        "consistency"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "chunk_length",
@@ -98,7 +165,9 @@
           "step": 5,
           "unit": "s",
           "description": "한 번에 STT 인코더로 전달할 최대 오디오 길이",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "overlap_duration",
@@ -110,16 +179,31 @@
           "step": 0.5,
           "unit": "s",
           "description": "인접한 윈도우 간 중첩하여 보존할 시간 길이",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["chunked_audio_reader"],
-        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "chunked_audio_reader"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "회의록 분석 등 수십 분 이상의 음성 파일 전사에 필수적인 설정."
       },
-      "metrics": ["wer", "cer", "latency"],
+      "metrics": [
+        "wer",
+        "cer",
+        "latency"
+      ],
       "expected_effects": "청크 경계면에서 문장이 중간에 잘려 발생하는 오인식 90% 이상 제거",
       "side_effects": "오버랩 길이가 길어질수록 중복 디코딩으로 인해 전체 전사 시간이 늘어남",
       "relations": [
@@ -131,8 +215,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["chunking", "sliding_window", "overlap", "whisper"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "chunking",
+        "sliding_window",
+        "overlap",
+        "whisper"
+      ]
     },
     {
       "slug": "stt_audio_preprocessing",
@@ -141,11 +232,25 @@
       "summary": "다양한 형식의 입력 음성을 16kHz 단일 채널(모노)로 리샘플링하고, RMS 기반 피크 정규화 및 대역 통과(Bandpass) 필터를 적용하여 모델 입력 신호의 품질을 균일화합니다.",
       "principle": "Whisper 모델은 16kHz 모노 파형을 기준으로 학습되었습니다. 비표준 샘플레이트(44.1kHz, 48kHz)의 고품질 변환(Sinc 보간)과 마이크 거리 차이로 인한 극단적 저볼륨 신호를 디지털 게인으로 증폭하여 인식 감도를 맞춥니다.",
       "category": "stt",
-      "targets": ["stt", "data_pipeline"],
-      "layers": ["preprocessing"],
-      "goals": ["accuracy", "consistency"],
-      "interventions": ["pre_postprocessing_addition", "parameter_tuning"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "stt",
+        "data_pipeline"
+      ],
+      "layers": [
+        "preprocessing"
+      ],
+      "goals": [
+        "accuracy",
+        "consistency"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "normalize_gain",
@@ -153,7 +258,9 @@
           "type": "boolean",
           "default": true,
           "description": "최대 피크가 -1.0dBFS에 도달하도록 디지털 게인 자동 조정",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "highpass_filter_hz",
@@ -165,16 +272,30 @@
           "step": 20,
           "unit": "Hz",
           "description": "마이크 험 노이즈 및 저주파 진동을 억제하는 컷오프 주파수",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["ffmpeg_or_torchaudio"],
-        "hardware": ["cpu", "apple_silicon_metal"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "ffmpeg_or_torchaudio"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "순수 CPU에서 전처리 수행."
       },
-      "metrics": ["wer", "cer", "accuracy"],
+      "metrics": [
+        "wer",
+        "cer",
+        "accuracy"
+      ],
       "expected_effects": "저음량 발화나 마이크 팝핑으로 인한 미인식 현상 대폭 완화",
       "side_effects": "노이즈가 심한 오디오에서 무차별 증폭 시 잡음까지 함께 커져 환각 유발 위험",
       "relations": [
@@ -186,8 +307,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["audio_preprocessing", "resampling", "normalization", "gain"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "audio_preprocessing",
+        "resampling",
+        "normalization",
+        "gain"
+      ]
     },
     {
       "slug": "stt_beam_search_decoding",
@@ -196,11 +324,24 @@
       "summary": "Whisper 텍스트 디코더에서 beam_size와 patience 파라미터를 튜닝하여 단순 탐욕(Greedy) 디코딩의 조기 오판을 방지하고 정확한 문맥 전사를 달성합니다.",
       "principle": "각 타임스텝마다 확률이 가장 높은 단일 토큰만 쫓는 Greedy 방식과 달리, 상위 K(beam_size)개의 가설 경로를 동시에 유지 탐색하여 전역적으로 가장 누적 확률이 높은 문장을 최종 채택합니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["decoding"],
-      "goals": ["accuracy", "quality", "speed"],
-      "interventions": ["parameter_tuning"],
-      "research_methods": ["parameter_sweep", "ab_test"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "decoding"
+      ],
+      "goals": [
+        "accuracy",
+        "quality",
+        "speed"
+      ],
+      "interventions": [
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "parameter_sweep",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "beam_size",
@@ -211,7 +352,9 @@
           "max": 10,
           "step": 1,
           "description": "동시에 탐색할 가설 경로 수 (1은 Greedy 디코딩)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "patience",
@@ -222,16 +365,32 @@
           "max": 2.0,
           "step": 0.1,
           "description": "더 나은 빔 탐색을 위해 추가 탐색을 지속하는 계수 (1.0 기준)",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["whisper_decoder_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "whisper_decoder_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "beam_size=5는 Whisper의 표준 기본값이며, 실시간 음성 비서에는 beam_size=1(Greedy)이 선호됨."
       },
-      "metrics": ["cer", "wer", "rtf", "latency"],
+      "metrics": [
+        "cer",
+        "wer",
+        "rtf",
+        "latency"
+      ],
       "expected_effects": "Greedy 대비 모호한 발음이나 웅얼거림에서 음소 오류율(CER) 10~15% 개선",
       "side_effects": "beam_size가 커질수록 디코딩 계산량이 비례 증가하여 전사 속도가 느려짐",
       "relations": [
@@ -243,8 +402,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["beam_search", "whisper", "decoding", "accuracy"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "beam_search",
+        "whisper",
+        "decoding",
+        "accuracy"
+      ]
     },
     {
       "slug": "stt_temperature_fallback",
@@ -253,11 +419,25 @@
       "summary": "기본 디코딩(온도 0.0)에서 반복 버그나 낮은 신뢰도가 감지될 때, 온도를 단계적으로 0.2, 0.4, 0.6 등으로 높여가며 재시도하여 디코더의 국소 최적해 갇힘을 탈출합니다.",
       "principle": "Whisper의 기본 권장 알고리즘으로, temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0) 순서로 폴백을 수행합니다. 생성된 텍스트의 반복 압축률(compression_ratio)이나 평균 로그 확률(avg_logprob)이 기준 이하일 때 자동으로 온도를 높여 다양성을 부여합니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["decoding"],
-      "goals": ["accuracy", "stability", "quality"],
-      "interventions": ["algorithm_change", "parameter_tuning"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "decoding"
+      ],
+      "goals": [
+        "accuracy",
+        "stability",
+        "quality"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "temperature_fallback",
@@ -265,7 +445,9 @@
           "type": "boolean",
           "default": true,
           "description": "반복 환각 감지 시 온도를 순차 증가시키며 재시도",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "compression_ratio_threshold",
@@ -276,16 +458,31 @@
           "max": 4.0,
           "step": 0.1,
           "description": "gzip 압축률이 이 값을 초과하면 반복 루프로 간주하고 폴백 트리거",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["whisper_standard_decoding"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "whisper_standard_decoding"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "whisper.cpp의 --max-temperatures 및 --fallback-threshold 플래그로 튜닝 가능."
       },
-      "metrics": ["cer", "wer", "latency"],
+      "metrics": [
+        "cer",
+        "wer",
+        "latency"
+      ],
       "expected_effects": "'감사합니다 감사합니다 감사합니다...' 같은 무한 반복 디코딩 버그 탈출",
       "side_effects": "폴백이 여러 번 발동하면 동일 구간을 2~3회 이상 재디코딩하므로 지연시간 급증",
       "relations": [
@@ -305,8 +502,14 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["temperature_fallback", "whisper", "hallucination_mitigation"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "temperature_fallback",
+        "whisper",
+        "hallucination_mitigation"
+      ]
     },
     {
       "slug": "stt_context_prompt_conditioning",
@@ -315,11 +518,25 @@
       "summary": "initial_prompt에 회의 주제, 참석자 이름, 도메인 전문 용어를 미리 주입하고, condition_on_previous_text 옵션으로 이전 30초 윈도우의 문맥을 연속 디코딩에 반영합니다.",
       "principle": "Whisper 디코더는 이전 텍스트 토큰을 프롬프트 프리픽스로 입력받을 수 있습니다. 도메인 어휘를 프롬프트에 제공하면 고유명사의 철자 정확도가 올라가고, 이전 문맥 조건화를 통해 대화의 흐름과 문체 일관성이 유지됩니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["preprocessing", "decoding"],
-      "goals": ["accuracy", "consistency"],
-      "interventions": ["parameter_tuning", "pre_postprocessing_addition"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "preprocessing",
+        "decoding"
+      ],
+      "goals": [
+        "accuracy",
+        "consistency"
+      ],
+      "interventions": [
+        "parameter_tuning",
+        "pre_postprocessing_addition"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "condition_on_previous_text",
@@ -327,7 +544,9 @@
           "type": "boolean",
           "default": false,
           "description": "이전 윈도우의 전사 결과를 다음 윈도우 프롬프트로 주입 (환각 전파 위험 시 false 권장)",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "initial_prompt",
@@ -335,16 +554,31 @@
           "type": "text",
           "default": "따까리 AI 비서, Mac Studio, LLM 추론, Kokoro 음성 합성",
           "description": "고유명사 및 도메인 전문 어휘를 쉼표로 나열한 사전 힌트",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": false
         }
       ],
       "compatibility": {
-        "requires": ["whisper_prompt_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "whisper_prompt_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "whisper.cpp의 --prompt 옵션으로 직접 전달 가능."
       },
-      "metrics": ["cer", "wer", "accuracy"],
+      "metrics": [
+        "cer",
+        "wer",
+        "accuracy"
+      ],
       "expected_effects": "전문 용어(모델명, 회사명, 인명)의 전사 정확도 50% 이상 극적 개선",
       "side_effects": "condition_on_previous_text=true 상태에서 한 번 환각이 발생하면 다음 윈도우까지 환각이 전파되는 루프 발생 위험",
       "relations": [
@@ -355,9 +589,16 @@
         }
       ],
       "evidence": [],
-      "evidence_status": "unverified",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["initial_prompt", "context_conditioning", "whisper", "terminology"]
+      "evidence_status": "widely_practiced",
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "initial_prompt",
+        "context_conditioning",
+        "whisper",
+        "terminology"
+      ]
     },
     {
       "slug": "stt_hallucination_detection",
@@ -366,11 +607,26 @@
       "summary": "무음이나 배경음악 구간에서 발생하는 Whisper 특유의 환각 자막('MBC 뉴스...', '구독과 좋아요...')과 동일 어절 반복을 압축률 및 로그 확률로 즉시 감지하여 제거합니다.",
       "principle": "전사된 텍스트의 gzip 압축률(compression_ratio), 토큰 무음 확률(no_speech_prob), 평균 토큰 로그 확률(avg_logprob)의 복합 조건을 판정하여 환각 패턴과 일치하면 해당 세그먼트를 전사 결과에서 삭제합니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["postprocessing", "decoding"],
-      "goals": ["accuracy", "quality", "stability"],
-      "interventions": ["pre_postprocessing_addition", "algorithm_change"],
-      "research_methods": ["error_analysis", "ab_test"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "postprocessing",
+        "decoding"
+      ],
+      "goals": [
+        "accuracy",
+        "quality",
+        "stability"
+      ],
+      "interventions": [
+        "pre_postprocessing_addition",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "error_analysis",
+        "ab_test"
+      ],
       "parameters": [
         {
           "key": "no_speech_threshold",
@@ -381,7 +637,9 @@
           "max": 0.9,
           "step": 0.05,
           "description": "무음 확률이 이 값을 넘고 logprob가 낮으면 세그먼트 전사 폐기",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "logprob_threshold",
@@ -392,16 +650,31 @@
           "max": -0.2,
           "step": 0.1,
           "description": "토큰 평균 로그 확률 하한선",
-          "advanced": true
+          "advanced": true,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["whisper_metrics_output"],
-        "hardware": ["cpu", "apple_silicon_metal", "cuda"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "whisper_metrics_output"
+        ],
+        "hardware": [
+          "cpu",
+          "apple_silicon_metal",
+          "cuda"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "whisper.cpp 및 faster-whisper의 표준 메타데이터 필터."
       },
-      "metrics": ["cer", "wer", "quality"],
+      "metrics": [
+        "cer",
+        "wer",
+        "quality"
+      ],
       "expected_effects": "침묵 구간에서 엉뚱한 자막이나 유튜브 인사말이 생성되는 유령 환각 99% 차단",
       "side_effects": "발음이 불명확하거나 배경 잡음이 섞인 실제 유효 발화가 무음으로 오판되어 누락될 위험",
       "relations": [
@@ -413,8 +686,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["hallucination_detection", "no_speech_prob", "whisper", "filtering"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "hallucination_detection",
+        "no_speech_prob",
+        "whisper",
+        "filtering"
+      ]
     },
     {
       "slug": "stt_speaker_diarization",
@@ -423,11 +703,25 @@
       "summary": "다수의 참석자가 대화하는 회의 음성에서 '누가 언제 발화했는가'를 시간 단위로 구분하고 화자별 음성 임베딩을 클러스터링하여 전사 텍스트에 화자 태그(화자 1, 화자 2 등)를 부여합니다.",
       "principle": "음성 세그멘테이션 모델로 발화 구간을 감지하고, 화자 임베딩(X-vector 등)을 추출한 뒤 계층적 군집화(Agglomerative Clustering)를 통해 동일 화자의 발화들을 묶고 STT 타임스탬프와 매핑합니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["postprocessing", "system_architecture"],
-      "goals": ["quality", "accuracy"],
-      "interventions": ["model_replacement", "pipeline_reconfiguration"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "postprocessing",
+        "system_architecture"
+      ],
+      "goals": [
+        "quality",
+        "accuracy"
+      ],
+      "interventions": [
+        "model_replacement",
+        "pipeline_reconfiguration"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "num_speakers",
@@ -438,16 +732,29 @@
           "max": 10,
           "step": 1,
           "description": "알려진 화자 수가 있을 때 고정 클러스터 개수로 지정",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["pyannote_audio_weights"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["pytorch"],
+        "requires": [
+          "pyannote_audio_weights"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "pytorch"
+        ],
         "notes": "PyAnnote 3.x 파이프라인과 연동하여 고정밀 화자 분리 지원."
       },
-      "metrics": ["accuracy", "latency"],
+      "metrics": [
+        "accuracy",
+        "latency"
+      ],
       "expected_effects": "회의록 전사 시 참석자 발화가 뒤섞이지 않고 화자별로 명확하게 구조화된 텍스트 생성",
       "side_effects": "화자 분리 신경망 연산으로 인해 순수 STT 대비 추가 연산 시간 30~50% 소요",
       "relations": [
@@ -457,10 +764,25 @@
           "note": "단어 단위 정밀 타임스탬프와 화자 발화 시간 구간을 교차 매핑"
         }
       ],
-      "evidence": [],
-      "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["diarization", "pyannote", "meeting_transcription", "speaker_id"]
+      "evidence": [
+        {
+          "kind": "paper",
+          "title": "pyannote.audio: neural building blocks for speaker diarization",
+          "url": "https://arxiv.org/abs/1911.01255",
+          "year": 2020,
+          "claim": "화자 분리(Diarization)를 위한 엔드투엔드 신경망 기반 음성 분할 및 임베딩 군집화"
+        }
+      ],
+      "evidence_status": "source_reported",
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "diarization",
+        "pyannote",
+        "meeting_transcription",
+        "speaker_id"
+      ]
     },
     {
       "slug": "stt_language_detection_routing",
@@ -469,11 +791,25 @@
       "summary": "오디오 시작 30초 내의 음향 특징을 기반으로 발화 언어(한국어, 영어, 일본어 등)를 자동 판별하고, 감지된 언어에 최적화된 STT 모델 또는 프롬프트 설정으로 즉시 라우팅합니다.",
       "principle": "Whisper의 인코더 출력에서 언어 토큰 예측 확률 분포를 계산하여 최대 확률 언어를 선택합니다. 한국어로 판정되면 한국어 특화 파라미터(beam_size 등)를 활성화합니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["preprocessing", "decoding"],
-      "goals": ["accuracy", "speed"],
-      "interventions": ["pipeline_reconfiguration", "algorithm_change"],
-      "research_methods": ["ab_test", "error_analysis"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "preprocessing",
+        "decoding"
+      ],
+      "goals": [
+        "accuracy",
+        "speed"
+      ],
+      "interventions": [
+        "pipeline_reconfiguration",
+        "algorithm_change"
+      ],
+      "research_methods": [
+        "ab_test",
+        "error_analysis"
+      ],
       "parameters": [
         {
           "key": "language",
@@ -481,21 +817,44 @@
           "type": "enum",
           "default": "ko",
           "options": [
-            {"value": "auto", "label": "자동 감지 (Auto Detect)"},
-            {"value": "ko", "label": "한국어 (Korean 고정)"},
-            {"value": "en", "label": "영어 (English 고정)"}
+            {
+              "value": "auto",
+              "label": "자동 감지 (Auto Detect)"
+            },
+            {
+              "value": "ko",
+              "label": "한국어 (Korean 고정)"
+            },
+            {
+              "value": "en",
+              "label": "영어 (English 고정)"
+            }
           ],
           "description": "언어를 미리 알고 있는 경우 고정 지정하여 언어 감지 오버헤드 생략",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["whisper_language_tokens"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "whisper_language_tokens"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "whisper.cpp의 -l ko 플래그."
       },
-      "metrics": ["accuracy", "latency"],
+      "metrics": [
+        "accuracy",
+        "latency"
+      ],
       "expected_effects": "한국어 전사 시 영어로 오감지되어 영어 철자로 발음이 표기되는 참사 방지 및 언어 감지 연산 절약",
       "side_effects": "다국어 혼용 발화에서 고정 언어를 지정하면 외국어 어절 전사 성능 저하",
       "relations": [
@@ -507,8 +866,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["language_detection", "routing", "whisper", "korean"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "language_detection",
+        "routing",
+        "whisper",
+        "korean"
+      ]
     },
     {
       "slug": "stt_word_level_timestamps",
@@ -517,11 +883,25 @@
       "summary": "문장 단위 대략적 시간 정보에 그치지 않고, 디코더의 교차 어텐션(Cross-Attention) 가중치 맵을 분석하여 개별 단어 및 음절 단위의 밀리초 수준 시작/종료 시간을 추출합니다.",
       "principle": "디코더가 텍스트 토큰을 생성할 때 오디오 프레임에 주는 어텐션 피크 위치를 Dynamic Time Warping (DTW) 알고리즘으로 추적하여 정확한 오디오-텍스트 정렬 타임스탬프를 복원합니다.",
       "category": "stt",
-      "targets": ["stt"],
-      "layers": ["attention", "postprocessing"],
-      "goals": ["accuracy", "quality"],
-      "interventions": ["algorithm_change", "pre_postprocessing_addition"],
-      "research_methods": ["ab_test", "profiling"],
+      "targets": [
+        "stt"
+      ],
+      "layers": [
+        "attention",
+        "postprocessing"
+      ],
+      "goals": [
+        "accuracy",
+        "quality"
+      ],
+      "interventions": [
+        "algorithm_change",
+        "pre_postprocessing_addition"
+      ],
+      "research_methods": [
+        "ab_test",
+        "profiling"
+      ],
       "parameters": [
         {
           "key": "word_timestamps_enabled",
@@ -529,16 +909,30 @@
           "type": "boolean",
           "default": true,
           "description": "개별 단어의 시작(start) 및 종료(end) 시간 메타데이터 생성",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["dtw_cross_attention_support"],
-        "hardware": ["apple_silicon_metal", "cuda", "cpu"],
-        "runtimes": ["whisper.cpp", "pytorch"],
+        "requires": [
+          "dtw_cross_attention_support"
+        ],
+        "hardware": [
+          "apple_silicon_metal",
+          "cuda",
+          "cpu"
+        ],
+        "runtimes": [
+          "whisper.cpp",
+          "pytorch"
+        ],
         "notes": "whisper.cpp의 --max-len 1 및 -ml 플래그 또는 faster-whisper word_timestamps 옵션."
       },
-      "metrics": ["accuracy", "quality"],
+      "metrics": [
+        "accuracy",
+        "quality"
+      ],
       "expected_effects": "음성-자막 실시간 하이라이팅 및 특정 단어 클릭 시 해당 음성 위치로 즉각 점프 가능",
       "side_effects": "어텐션 맵 유지 및 DTW 후처리 연산으로 메모리와 시간이 약간 증가",
       "relations": [
@@ -550,8 +944,15 @@
       ],
       "evidence": [],
       "evidence_status": "widely_practiced",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["word_timestamps", "dtw", "subtitles", "whisper"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "word_timestamps",
+        "dtw",
+        "subtitles",
+        "whisper"
+      ]
     },
     {
       "slug": "stt_whisper_metal_inference_tuning",
@@ -560,11 +961,30 @@
       "summary": "C/C++ 기반 whisper.cpp를 Apple Silicon의 Metal GPU 가속 및 NEON 벡터 연산으로 구동하며 스레드 수(-t)와 프로세서 분담을 최적화하여 초고속 저전력 음성 전사를 실현합니다.",
       "principle": "Python 오버헤드와 PyTorch 런타임 종속성을 완전히 걷어내고, Apple Metal Shading Language로 작성된 고속 행렬곱 커널과 통합 메모리(Zero-Copy)를 활용하여 대기 시간을 극소화합니다.",
       "category": "stt",
-      "targets": ["stt", "slm_on_device"],
-      "layers": ["runtime", "gpu_kernel", "hardware"],
-      "goals": ["speed", "latency", "memory", "energy"],
-      "interventions": ["kernel_optimization", "parameter_tuning"],
-      "research_methods": ["baseline", "parameter_sweep", "repeated_measurement"],
+      "targets": [
+        "stt",
+        "slm_on_device"
+      ],
+      "layers": [
+        "runtime",
+        "gpu_kernel",
+        "hardware"
+      ],
+      "goals": [
+        "speed",
+        "latency",
+        "memory",
+        "energy"
+      ],
+      "interventions": [
+        "kernel_optimization",
+        "parameter_tuning"
+      ],
+      "research_methods": [
+        "baseline",
+        "parameter_sweep",
+        "repeated_measurement"
+      ],
       "parameters": [
         {
           "key": "threads",
@@ -575,7 +995,9 @@
           "max": 24,
           "step": 1,
           "description": "인코더 및 전처리에 할당할 CPU 코어 스레드 수",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         },
         {
           "key": "whisper_model_size",
@@ -583,23 +1005,51 @@
           "type": "enum",
           "default": "small",
           "options": [
-            {"value": "tiny", "label": "Tiny (39M 파라미터 - 초고속)"},
-            {"value": "base", "label": "Base (74M 파라미터)"},
-            {"value": "small", "label": "Small (244M 파라미터 - 온디바이스 균형)"},
-            {"value": "medium", "label": "Medium (769M 파라미터)"},
-            {"value": "large_v3", "label": "Large-v3 (1550M 파라미터 - 최고 정확도)"}
+            {
+              "value": "tiny",
+              "label": "Tiny (39M 파라미터 - 초고속)"
+            },
+            {
+              "value": "base",
+              "label": "Base (74M 파라미터)"
+            },
+            {
+              "value": "small",
+              "label": "Small (244M 파라미터 - 온디바이스 균형)"
+            },
+            {
+              "value": "medium",
+              "label": "Medium (769M 파라미터)"
+            },
+            {
+              "value": "large_v3",
+              "label": "Large-v3 (1550M 파라미터 - 최고 정확도)"
+            }
           ],
           "description": "whisper.cpp 구동 모델 가중치 규격",
-          "advanced": false
+          "advanced": false,
+          "required": false,
+          "sweepable": true
         }
       ],
       "compatibility": {
-        "requires": ["whisper_cpp_binary_metal"],
-        "hardware": ["apple_silicon_metal"],
-        "runtimes": ["whisper.cpp"],
+        "requires": [
+          "whisper_cpp_binary_metal"
+        ],
+        "hardware": [
+          "apple_silicon_metal"
+        ],
+        "runtimes": [
+          "whisper.cpp"
+        ],
         "notes": "Mac Studio M2 Max/Ultra 등 Apple Silicon 환경에서 실시간 대비 15~20배 속도로 전사 가능."
       },
-      "metrics": ["rtf", "speed", "peak_memory_mb", "cer"],
+      "metrics": [
+        "rtf",
+        "speed",
+        "peak_memory_mb",
+        "cer"
+      ],
       "expected_effects": "Python 기반 대비 메모리 점유 70% 감소 및 1분 음성을 3초 이내에 전사 완료 (RTF < 0.05)",
       "side_effects": "CPU 스레드를 최대 코어 수 이상으로 과도하게 잡으면 코어 스위칭 오버헤드로 속도 저하",
       "relations": [
@@ -619,8 +1069,16 @@
         }
       ],
       "evidence_status": "source_reported",
-      "adapter_hints": ["stt_transcription"],
-      "tags": ["whisper_cpp", "apple_silicon", "metal", "c_cpp", "on_device"]
+      "adapter_hints": [
+        "stt_transcription"
+      ],
+      "tags": [
+        "whisper_cpp",
+        "apple_silicon",
+        "metal",
+        "c_cpp",
+        "on_device"
+      ]
     }
   ]
 }

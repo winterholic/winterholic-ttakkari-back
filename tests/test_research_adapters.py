@@ -113,6 +113,7 @@ async def test_external_report_adapter_lifecycle() -> None:
     good_config = {
         "provenance": "external_benchmark",
         "source_title": "Llama 3 Technical Report",
+        "source_url": "https://arxiv.org/abs/2407.21783",
         "source_year": 2024,
         "measurements": [
             {

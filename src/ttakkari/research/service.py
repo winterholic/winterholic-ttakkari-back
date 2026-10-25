@@ -48,11 +48,18 @@ def out(row) -> dict:
 
 
 def run_out(row) -> dict:
-    """Run row; an externally reported run also exposes its `provenance` (kept inside raw_output) at the top level."""
+    """Run row; an externally reported run also exposes its `provenance` and source metadata (kept inside raw_output) at the top level."""
     d = out(row)
     raw = d.get("raw_output")
-    if isinstance(raw, dict) and "provenance" in raw:
-        d["provenance"] = raw["provenance"]
+    if isinstance(raw, dict):
+        if "provenance" in raw:
+            d["provenance"] = raw["provenance"]
+        if "source_title" in raw:
+            d["source_title"] = raw["source_title"]
+        if "source_url" in raw:
+            d["source_url"] = raw["source_url"]
+        if "source_year" in raw:
+            d["source_year"] = raw["source_year"]
     return d
 
 

@@ -242,6 +242,9 @@ class ExternalReportIn(Strict):
     provenance: Literal["external_benchmark", "manual_evaluation", "imported_log"] = Field(
         default="external_benchmark"
     )
+    source_title: str | None = None
+    source_url: str | None = None
+    source_year: int | None = None
     environment_snapshot: dict[str, Any] = Field(default_factory=dict)
     metrics: list[dict[str, Any]] = Field(default_factory=list)
     raw_output: dict[str, Any] = Field(default_factory=dict)
@@ -1181,6 +1184,66 @@ async def record_external_report(
     raw_output = dict(body.raw_output)
     raw_output["provenance"] = body.provenance
 
+    # Resolve source fields from top-level or nested dictionaries for backward compatibility
+    source_title = (
+        body.source_title
+        or raw_output.get("source_title")
+        or body.environment_snapshot.get("source_title")
+    )
+    source_url = (
+        body.source_url
+        or raw_output.get("source_url")
+        or raw_output.get("source_locator")
+        or body.environment_snapshot.get("source_url")
+        or body.environment_snapshot.get("source_locator")
+    )
+    source_year = (
+        body.source_year
+        or raw_output.get("source_year")
+        or body.environment_snapshot.get("source_year")
+    )
+
+    from ttakkari.research.adapters.external_report import ExternalReportAdapter
+
+    adapter = ExternalReportAdapter()
+    validation_config = {
+        "provenance": body.provenance,
+        "source_title": source_title,
+        "source_url": source_url,
+        "source_year": source_year,
+        "raw_output": raw_output,
+        "environment_snapshot": body.environment_snapshot,
+        "measurements": body.metrics,
+    }
+    study = await db.get(Study, exp.study_id)
+    validation_errors = adapter.validate_config(
+        validation_config, scope=study.scope if study else "personal"
+    )
+    if validation_errors:
+        raise HTTPException(
+            422,
+            "external_report_validation_failed: " + "; ".join(validation_errors),
+        )
+
+    if source_title is not None:
+        raw_output["source_title"] = source_title
+    if source_url is not None:
+        raw_output["source_url"] = source_url
+    if source_year is not None:
+        raw_output["source_year"] = source_year
+
+    env_snapshot = dict(body.environment_snapshot)
+    if "execution_origin" not in env_snapshot:
+        env_snapshot["execution_origin"] = "external_report"
+    if "provenance" not in env_snapshot:
+        env_snapshot["provenance"] = body.provenance
+    if source_title is not None and "source_title" not in env_snapshot:
+        env_snapshot["source_title"] = source_title
+    if source_url is not None and "source_url" not in env_snapshot:
+        env_snapshot["source_url"] = source_url
+    if source_year is not None and "source_year" not in env_snapshot:
+        env_snapshot["source_year"] = source_year
+
     run = Run(
         id=uuid.uuid4(),
         experiment_id=exp.id,
@@ -1192,7 +1255,7 @@ async def record_external_report(
         seed=42,
         status="succeeded",
         progress=1.0,
-        environment_snapshot=body.environment_snapshot,
+        environment_snapshot=env_snapshot,
         raw_output=raw_output,
         started_at=body.started_at or utcnow(),
         finished_at=body.finished_at or utcnow(),
@@ -1205,6 +1268,10 @@ async def record_external_report(
     for m in body.metrics:
         m_meta = dict(m.get("meta") or {})
         m_meta["provenance"] = body.provenance
+        if source_title is not None and "source_title" not in m_meta:
+            m_meta["source_title"] = source_title
+        if source_url is not None and "source_url" not in m_meta:
+            m_meta["source_url"] = source_url
         m_row = Measurement(
             id=uuid.uuid4(),
             run_id=run.id,

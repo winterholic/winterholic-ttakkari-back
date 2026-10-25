@@ -6,8 +6,11 @@ import hashlib
 import importlib.util
 import itertools
 import json
+import logging
 import random
 import uuid
+
+logger = logging.getLogger(__name__)
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -472,20 +475,45 @@ async def validate_experiment_plan(
     warnings.extend(exp_warnings)
 
     # Validate expanded configurations against adapter constraints
-    if local_dispatch and adapter_id:
-        from ttakkari.research.adapters import get_adapter_registry
+    if local_dispatch:
+        if not adapter_id:
+            errors.append("실행 어댑터 ID가 지정되지 않았습니다.")
+        else:
+            from ttakkari.research.adapters import get_adapter_registry
 
-        try:
-            adapter = get_adapter_registry().get_adapter(adapter_id)
-            if adapter:
+            adapter = None
+            try:
+                adapter = get_adapter_registry().get_adapter(adapter_id)
+            except Exception as exc:
+                logger.warning(
+                    "Adapter registry lookup for '%s' failed: %s",
+                    adapter_id,
+                    type(exc).__name__,
+                )
+                errors.append(
+                    f"어댑터 '{adapter_id}' 조회 중 오류가 발생했습니다: {type(exc).__name__}"
+                )
+
+            if adapter is None:
+                if not any(f"'{adapter_id}'" in e for e in errors):
+                    errors.append(f"알 수 없는 실행 어댑터입니다: '{adapter_id}'")
+            else:
                 for cfg in expanded_configs:
                     params_dict = cfg.get("parameters", cfg)
-                    cfg_errors = adapter.validate_config(params_dict, scope=scope)
-                    for ce in cfg_errors:
-                        if ce not in errors:
-                            errors.append(ce)
-        except Exception:
-            pass
+                    try:
+                        cfg_errors = adapter.validate_config(params_dict, scope=scope)
+                        for ce in cfg_errors:
+                            if ce not in errors:
+                                errors.append(ce)
+                    except Exception as exc:
+                        logger.warning(
+                            "Adapter '%s' validate_config failed: %s",
+                            adapter_id,
+                            type(exc).__name__,
+                        )
+                        err_msg = f"어댑터 '{adapter_id}' 설정 검증 중 오류가 발생했습니다: {type(exc).__name__}"
+                        if err_msg not in errors:
+                            errors.append(err_msg)
 
     # Resource estimate
     runs_count = len(expanded_configs)

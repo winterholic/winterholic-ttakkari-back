@@ -59,6 +59,36 @@ class ExternalReportAdapter:
             errors.append("provenance 필드가 필요합니다 (external_benchmark, manual_evaluation, imported_log 중 하나).")
         elif prov not in VALID_PROVENANCE:
             errors.append(f"지원되지 않는 provenance: '{prov}'. 허용 값: {sorted(VALID_PROVENANCE)}")
+        elif prov == "external_benchmark":
+            raw = config.get("raw_output") if isinstance(config.get("raw_output"), dict) else {}
+            env = (
+                config.get("environment_snapshot")
+                if isinstance(config.get("environment_snapshot"), dict)
+                else {}
+            )
+
+            title = (
+                config.get("source_title")
+                or raw.get("source_title")
+                or env.get("source_title")
+            )
+            if not title or not str(title).strip():
+                errors.append(
+                    "external_benchmark는 최소한 비어있지 않은 출처 제목(source_title)이 필요합니다."
+                )
+
+            locator = (
+                config.get("source_url")
+                or config.get("source_locator")
+                or raw.get("source_url")
+                or raw.get("source_locator")
+                or env.get("source_url")
+                or env.get("source_locator")
+            )
+            if not locator or not str(locator).strip():
+                errors.append(
+                    "external_benchmark는 명확한 출처 위치(source_url 또는 locator)가 필요합니다."
+                )
 
         measurements = config.get("measurements")
         if measurements is None:
@@ -107,27 +137,55 @@ class ExternalReportAdapter:
                 wall_seconds=0.0,
             )
 
+        raw_cfg = config.get("raw_output") if isinstance(config.get("raw_output"), dict) else {}
+        env_cfg = (
+            config.get("environment_snapshot")
+            if isinstance(config.get("environment_snapshot"), dict)
+            else {}
+        )
+
+        source_title = (
+            config.get("source_title")
+            or raw_cfg.get("source_title")
+            or env_cfg.get("source_title")
+        )
+        source_url = (
+            config.get("source_url")
+            or config.get("source_locator")
+            or raw_cfg.get("source_url")
+            or raw_cfg.get("source_locator")
+            or env_cfg.get("source_url")
+            or env_cfg.get("source_locator")
+        )
+        source_year = (
+            config.get("source_year")
+            or raw_cfg.get("source_year")
+            or env_cfg.get("source_year")
+        )
+
         env_snapshot = {
             "execution_origin": "external_report",
             "provenance": config.get("provenance"),
-            "source_title": config.get("source_title"),
-            "source_url": config.get("source_url"),
-            "source_year": config.get("source_year"),
+            "source_title": source_title,
+            "source_url": source_url,
+            "source_year": source_year,
             "imported_at": time.time(),
             "scope": scope,
         }
 
+        raw_out = {
+            "execution_origin": "external_report",
+            "provenance": config.get("provenance"),
+            "source_title": source_title,
+            "source_url": source_url,
+            "source_year": source_year,
+            "notes": config.get("notes") or raw_cfg.get("notes") or raw_cfg.get("note"),
+            "measurements": config.get("measurements", []),
+        }
+
         return AdapterRunResult(
             status="succeeded",
-            raw_output={
-                "execution_origin": "external_report",
-                "provenance": config.get("provenance"),
-                "source_title": config.get("source_title"),
-                "source_url": config.get("source_url"),
-                "source_year": config.get("source_year"),
-                "notes": config.get("notes"),
-                "measurements": config.get("measurements", []),
-            },
+            raw_output=raw_out,
             environment_snapshot=env_snapshot,
             wall_seconds=0.0,
         )

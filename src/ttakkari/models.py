@@ -32,7 +32,11 @@ def utcnow() -> datetime:
 
 
 class Base(DeclarativeBase):
-    type_annotation_map = {dict[str, Any]: JSONB, list[Any]: JSONB, datetime: DateTime(timezone=True)}  # noqa: RUF012
+    type_annotation_map = {
+        dict[str, Any]: JSONB,
+        list[Any]: JSONB,
+        datetime: DateTime(timezone=True),
+    }  # noqa: RUF012
 
 
 class Engine(enum.StrEnum):
@@ -94,7 +98,11 @@ class ArtifactCategory(enum.StrEnum):
 
 def default_artifact_area(source: str) -> str:
     """등록 경로(source)만으로 정하는 기본 분류. 사용자가 직접 넣은 것만 파일, 나머지는 에이전트 쪽이다."""
-    return ArtifactArea.files if source in ("upload", "user_registered") else ArtifactArea.agent
+    return (
+        ArtifactArea.files
+        if source in ("upload", "user_registered")
+        else ArtifactArea.agent
+    )
 
 
 class RunOrigin(enum.StrEnum):
@@ -118,7 +126,12 @@ class RunStatus(enum.StrEnum):
     interrupted = "interrupted"
 
 
-TERMINAL_RUN_STATUSES = {RunStatus.succeeded, RunStatus.failed, RunStatus.cancelled, RunStatus.interrupted}
+TERMINAL_RUN_STATUSES = {
+    RunStatus.succeeded,
+    RunStatus.failed,
+    RunStatus.cancelled,
+    RunStatus.interrupted,
+}
 
 
 class PreviewStatus(enum.StrEnum):
@@ -152,7 +165,9 @@ class SystemResourceSample(Base):
     __table_args__ = (Index("ix_system_resource_samples_sampled_at", "sampled_at"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sampled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     gpu_percent: Mapped[float | None] = mapped_column(Float)
     gpu_memory_used_bytes: Mapped[int | None] = mapped_column(BigInteger)
     gpu_status: Mapped[str] = mapped_column(String(24), nullable=False)
@@ -199,7 +214,9 @@ class LoginBucket(Base):
     """시간 기반 토큰 버킷. 잠금 상태가 없어 공격자의 요청 수가 해제를 늦출 수 없다."""
 
     __tablename__ = "login_bucket"
-    key: Mapped[str] = mapped_column(String(32), primary_key=True)  # acct:u | cpu:u | cpu:t
+    key: Mapped[str] = mapped_column(
+        String(32), primary_key=True
+    )  # acct:u | cpu:u | cpu:t
     tokens: Mapped[float] = mapped_column(Float)
     refilled_at: Mapped[datetime]
     blocked_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -214,10 +231,14 @@ class LoginAttempt(Base):
     lane: Mapped[str] = mapped_column(String(4))
     src_key: Mapped[str | None] = mapped_column(String(100))
     reserved_at: Mapped[datetime]
-    would_block: Mapped[str | None] = mapped_column(String(24))  # shadow 에서 enforce 였다면 거절됐을 사유
+    would_block: Mapped[str | None] = mapped_column(
+        String(24)
+    )  # shadow 에서 enforce 였다면 거절됐을 사유
     charged_src: Mapped[bool] = mapped_column(Boolean, default=False)
     charged_acct: Mapped[bool] = mapped_column(Boolean, default=False)
-    outcome: Mapped[str] = mapped_column(String(10), default="pending")  # pending | ok | fail | abandoned
+    outcome: Mapped[str] = mapped_column(
+        String(10), default="pending"
+    )  # pending | ok | fail | abandoned
 
 
 class Workspace(Base):
@@ -238,7 +259,9 @@ class Workspace(Base):
 class ChatSession(Base):
     __tablename__ = "sessions"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
     title: Mapped[str] = mapped_column(String(300))
     engine: Mapped[str] = mapped_column(String(16))
     model: Mapped[str | None] = mapped_column(String(100))
@@ -246,7 +269,9 @@ class ChatSession(Base):
     # NULL is inferred for legacy auto workers; native main/desk routing stays separate.
     worker_task_type: Mapped[str | None] = mapped_column(String(20))
     # 고정 엔진 세션에서 한도 도달 시 다른 경로 대체 허용 여부(False=대체 허용, True=해당 엔진만 유지 후 대기).
-    strict_engine: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    strict_engine: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     # 엔진 쪽 대화 ID(claude session_id / codex thread_id). 후속 지시를 resume 하는 데 쓴다.
     engine_session_id: Mapped[str | None] = mapped_column(String(100))
     # 엔진 프로필 이름 → 그 프로필의 엔진 대화 ID. 프로필을 오가도 각자 이어간다(ADR 0006).
@@ -254,7 +279,9 @@ class ChatSession(Base):
     kind: Mapped[str] = mapped_column(String(16), default=SessionKind.chat, index=True)
     # 이 대화가 쓸 수 있는 계정 범위(personal=전체 목록, work=회사 그룹만). 작업 세션은 오케스트레이터 것을 물려받는다.
     pool: Mapped[str] = mapped_column(String(16), default="personal", index=True)
-    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     archived_at: Mapped[datetime | None]
@@ -272,7 +299,9 @@ class EngineAccount(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     # 신규 작업 배정은 5시간·주간 중 하나라도 이 사용률 이상이면 초기화까지 쉰다.
-    max_used_percent: Mapped[int] = mapped_column(Integer, default=100, server_default="100")
+    max_used_percent: Mapped[int] = mapped_column(
+        Integer, default=100, server_default="100"
+    )
     # 회사 모드 포함 여부(personal | work). 모든 계정은 개인 목록에 있고, work 는 그중 회사 모드에도 쓰려고 고른 계정이다.
     pool: Mapped[str] = mapped_column(String(16), default="personal", index=True)
     # 회사 모드 전용 켜기·순서. enabled·priority(개인 모드)와 독립이고, pool=work 인 계정에만 의미가 있다.
@@ -286,9 +315,13 @@ class AccountUsageSample(Base):
     """계정 사용량 측정값. 계정별 가장 최근 행이 '최신값', 나머지는 추세 판단용 이력이다(보존 기간 제한)."""
 
     __tablename__ = "account_usage_samples"
-    __table_args__ = (Index("ix_account_usage_samples_account_measured", "account_id", "measured_at"),)
+    __table_args__ = (
+        Index("ix_account_usage_samples_account_measured", "account_id", "measured_at"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("engine_accounts.id", ondelete="CASCADE"))
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("engine_accounts.id", ondelete="CASCADE")
+    )
     measured_at: Mapped[datetime] = mapped_column(index=True)
     source: Mapped[str] = mapped_column(String(16))  # api | stream | session_log
     plan: Mapped[str | None] = mapped_column(String(40))
@@ -324,17 +357,25 @@ class Run(Base):
     """사용자 지시 1회 = 에이전트 프로세스 1회."""
 
     __tablename__ = "runs"
-    __table_args__ = (UniqueConstraint("session_id", "request_key", name="uq_runs_session_request"),)
+    __table_args__ = (
+        UniqueConstraint("session_id", "request_key", name="uq_runs_session_request"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
-    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
     prompt: Mapped[str] = mapped_column(Text)
     request_key: Mapped[str | None] = mapped_column(String(120))
     context_artifact_ids: Mapped[list[Any]] = mapped_column(default=list)
     engine: Mapped[str] = mapped_column(String(16))
     model: Mapped[str | None] = mapped_column(String(100))
     effort: Mapped[str | None] = mapped_column(String(16))
-    status: Mapped[str] = mapped_column(String(16), default=RunStatus.queued, index=True)
+    status: Mapped[str] = mapped_column(
+        String(16), default=RunStatus.queued, index=True
+    )
     origin: Mapped[str] = mapped_column(String(16), default=RunOrigin.user)
     # 실제로 실행한 엔진 프로필(폴백하면 마지막 프로필)
     profile: Mapped[str | None] = mapped_column(String(40))
@@ -372,7 +413,9 @@ class QwenTokenUsage(Base):
 
     __tablename__ = "qwen_token_usage"
     __table_args__ = (
-        UniqueConstraint("request_id", "call_index", name="uq_qwen_token_usage_request_call"),
+        UniqueConstraint(
+            "request_id", "call_index", name="uq_qwen_token_usage_request_call"
+        ),
         Index("ix_qwen_token_usage_recorded_at", "recorded_at"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -391,11 +434,11 @@ class QwenFlashUsage(Base):
     """Persisted usage increments and observation samples for standalone Qwen Flash Next."""
 
     __tablename__ = "qwen_flash_usage"
-    __table_args__ = (
-        Index("ix_qwen_flash_usage_recorded_at", "recorded_at"),
-    )
+    __table_args__ = (Index("ix_qwen_flash_usage_recorded_at", "recorded_at"),)
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, nullable=False
+    )
     input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -411,7 +454,9 @@ class RuntimeGeneration(Base):
     revision: Mapped[str] = mapped_column(String(40))
     role: Mapped[str] = mapped_column(String(16), default="api", server_default="api")
     protocol: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
-    execution_mode: Mapped[str] = mapped_column(String(16), default="local", server_default="local")
+    execution_mode: Mapped[str] = mapped_column(
+        String(16), default="local", server_default="local"
+    )
     api_url: Mapped[str] = mapped_column(String(150))
     pid: Mapped[int] = mapped_column(Integer)
     process_started_at: Mapped[float] = mapped_column(Float)
@@ -423,30 +468,46 @@ class RuntimeGeneration(Base):
 class RuntimeControl(Base):
     __tablename__ = "runtime_control"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    active_generation: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"))
+    active_generation: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runtime_generations.id")
+    )
     executor_generation: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("runtime_generations.id", name="fk_runtime_control_executor"))
+        ForeignKey("runtime_generations.id", name="fk_runtime_control_executor")
+    )
     epoch: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class RuntimeLease(Base):
     __tablename__ = "runtime_leases"
-    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
-    generation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runtime_generations.id"), index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    generation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runtime_generations.id"), index=True
+    )
     token: Mapped[uuid.UUID] = mapped_column(default=uuid.uuid4)
-    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
     lane: Mapped[str] = mapped_column(String(16), index=True)
-    account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("engine_accounts.id", ondelete="SET NULL"))
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("engine_accounts.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
 class RuntimeProcessGroup(Base):
     """Durable PID/start-time/PGID evidence for one fenced executor attempt."""
+
     __tablename__ = "runtime_process_groups"
     __table_args__ = (UniqueConstraint("run_id", "lease_token", "attempt"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
-    generation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runtime_generations.id"), index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), index=True
+    )
+    generation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runtime_generations.id"), index=True
+    )
     lease_token: Mapped[uuid.UUID] = mapped_column()
     attempt: Mapped[int] = mapped_column(Integer)
     pid: Mapped[int] = mapped_column(Integer)
@@ -460,9 +521,15 @@ class RuntimeCommand(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     key: Mapped[str] = mapped_column(String(120), unique=True)
     kind: Mapped[str] = mapped_column(String(24))
-    generation_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runtime_generations.id"), index=True)
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
-    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"))
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runtime_generations.id"), index=True
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE")
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE")
+    )
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     acknowledged_at: Mapped[datetime | None]
 
@@ -474,31 +541,58 @@ class DeskFeedback(Base):
 
     __tablename__ = "desk_feedback"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), unique=True)
-    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("runs.id", ondelete="CASCADE"), unique=True
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), index=True
+    )
     message: Mapped[str] = mapped_column(Text)
     decided: Mapped[str] = mapped_column(String(16))  # answer | delegate
     expected: Mapped[str] = mapped_column(String(16))  # answer | delegate
     note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=utcnow, onupdate=utcnow, index=True
+    )
 
 
 class Artifact(Base):
     __tablename__ = "artifacts"
     __table_args__ = (Index("ix_artifacts_created", "created_at"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id", ondelete="SET NULL"), index=True)
-    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"), index=True)
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), index=True)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"), index=True
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL"), index=True
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), index=True
+    )
     filename: Mapped[str] = mapped_column(String(500))
     mime_type: Mapped[str] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(String(20))
-    category: Mapped[str] = mapped_column(String(30), default=ArtifactCategory.other, server_default=ArtifactCategory.other, index=True)
+    category: Mapped[str] = mapped_column(
+        String(30),
+        default=ArtifactCategory.other,
+        server_default=ArtifactCategory.other,
+        index=True,
+    )
     source: Mapped[str] = mapped_column(String(30))
-    origin: Mapped[str] = mapped_column(String(20), default=ArtifactOrigin.agent, server_default=ArtifactOrigin.agent, index=True)
+    origin: Mapped[str] = mapped_column(
+        String(20),
+        default=ArtifactOrigin.agent,
+        server_default=ArtifactOrigin.agent,
+        index=True,
+    )
     # 보관함 기본 목록(files)과 에이전트 파일(agent)의 구분. source 는 등록 경로, origin 은 실제 출처, area 는 사용자에게 보이는 분류다.
-    area: Mapped[str] = mapped_column(String(10), default=ArtifactArea.agent, server_default=ArtifactArea.agent, index=True)
+    area: Mapped[str] = mapped_column(
+        String(10),
+        default=ArtifactArea.agent,
+        server_default=ArtifactArea.agent,
+        index=True,
+    )
     keep_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
     keep_evidence: Mapped[dict[str, Any] | None] = mapped_column(default=None)
     # 서버 내부 전용. API 응답에는 rel_path 만 내보낸다.
@@ -508,7 +602,9 @@ class Artifact(Base):
     stored_path: Mapped[str] = mapped_column(Text)
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     sha256: Mapped[str] = mapped_column(String(64))
-    preview_status: Mapped[str] = mapped_column(String(16), default=PreviewStatus.not_required)
+    preview_status: Mapped[str] = mapped_column(
+        String(16), default=PreviewStatus.not_required
+    )
     preview_path: Mapped[str | None] = mapped_column(Text)
     preview_mime: Mapped[str | None] = mapped_column(String(100))
     preview_error: Mapped[str | None] = mapped_column(Text)
@@ -546,8 +642,14 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     read_at: Mapped[datetime | None]
 
-    __table_args__ = (Index("uq_notifications_dedupe_key", "dedupe_key", unique=True,
-                            postgresql_where=text("dedupe_key IS NOT NULL")),)
+    __table_args__ = (
+        Index(
+            "uq_notifications_dedupe_key",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("dedupe_key IS NOT NULL"),
+        ),
+    )
 
 
 class WeatherBriefing(Base):
@@ -566,10 +668,16 @@ class WeatherBriefing(Base):
     # 분석에 실제로 쓴 엔진·모델(dispatch 중에는 요청 경로 auto|antigravity)과 선택·전환 이력.
     analysis_engine: Mapped[str | None] = mapped_column(String(20))
     analysis_model: Mapped[str | None] = mapped_column(String(100))
-    analysis_route: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, default=None)
+    analysis_route: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB, default=None
+    )
     failure: Mapped[str | None] = mapped_column(Text)
-    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"))
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL")
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL")
+    )
     lease_until: Mapped[datetime | None]
     scheduled_at: Mapped[datetime | None]
     generated_at: Mapped[datetime | None]
@@ -614,13 +722,19 @@ class Memo(Base):
     title: Mapped[str] = mapped_column(String(200), default="")
     body: Mapped[str] = mapped_column(Text, default="")
     tags: Mapped[list[Any]] = mapped_column(default=list)
-    category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("memo_categories.id", ondelete="SET NULL"), index=True)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("memo_categories.id", ondelete="SET NULL"), index=True
+    )
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
-    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", index=True
+    )
     rev: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=utcnow, onupdate=utcnow, index=True
+    )
     deleted_at: Mapped[datetime | None]
 
 
@@ -643,7 +757,9 @@ class CalendarEvent(Base):
     remind_at: Mapped[datetime | None] = mapped_column(index=True)
     reminded_at: Mapped[datetime | None]
     source: Mapped[str] = mapped_column(String(20), default="user")  # user | agent
-    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", index=True
+    )
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     deleted_at: Mapped[datetime | None]
@@ -662,7 +778,9 @@ class CtxEntity(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     type: Mapped[str] = mapped_column(String(30), index=True)
     name: Mapped[str] = mapped_column(String(200))
-    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", index=True
+    )
     aliases: Mapped[list[Any]] = mapped_column(default=list)
     summary: Mapped[str | None] = mapped_column(Text)
     attributes: Mapped[dict[str, Any]] = mapped_column(default=dict)
@@ -678,9 +796,13 @@ class CtxRelation(Base):
     __tablename__ = "ctx_relations"
     __table_args__ = (UniqueConstraint("subject_id", "predicate", "object_id"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    subject_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_entities.id", ondelete="CASCADE"), index=True)
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ctx_entities.id", ondelete="CASCADE"), index=True
+    )
     predicate: Mapped[str] = mapped_column(String(60))
-    object_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_entities.id", ondelete="CASCADE"), index=True)
+    object_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ctx_entities.id", ondelete="CASCADE"), index=True
+    )
     note: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(20), default="manual")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
@@ -692,7 +814,9 @@ class CtxMemory(Base):
     __tablename__ = "ctx_memories"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     kind: Mapped[str] = mapped_column(String(20), default="fact", index=True)
-    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", index=True
+    )
     content: Mapped[str] = mapped_column(Text)
     entity_ids: Mapped[list[Any]] = mapped_column(default=list)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
@@ -710,9 +834,15 @@ class CtxSource(Base):
     __tablename__ = "ctx_sources"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     path: Mapped[str] = mapped_column(Text, unique=True)
-    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
-    category: Mapped[str] = mapped_column(String(30), default="knowledge", server_default="knowledge")
-    entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", index=True
+    )
+    category: Mapped[str] = mapped_column(
+        String(30), default="knowledge", server_default="knowledge"
+    )
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True
+    )
     pattern: Mapped[str] = mapped_column(String(100), default="**/*.md")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     last_indexed_at: Mapped[datetime | None]
@@ -727,7 +857,9 @@ class CtxSource(Base):
 class CtxDocument(Base):
     __tablename__ = "ctx_documents"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_sources.id", ondelete="CASCADE"), index=True)
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ctx_sources.id", ondelete="CASCADE"), index=True
+    )
     path: Mapped[str] = mapped_column(Text, unique=True)
     title: Mapped[str] = mapped_column(String(500))
     sha256: Mapped[str] = mapped_column(String(64))
@@ -738,7 +870,9 @@ class CtxDocument(Base):
 class CtxChunk(Base):
     __tablename__ = "ctx_chunks"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ctx_documents.id", ondelete="CASCADE"), index=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ctx_documents.id", ondelete="CASCADE"), index=True
+    )
     ord: Mapped[int] = mapped_column(Integer)
     heading: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
@@ -768,35 +902,59 @@ class Meeting(Base):
     __table_args__ = (Index("ix_meetings_created", "created_at"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(200))
-    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
-    status: Mapped[str] = mapped_column(String(16), default=MeetingStatus.uploaded, index=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default=MeetingStatus.uploaded, index=True
+    )
     # 연결한 프로젝트(ctx_entities). 없어도 된다.
-    entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True)
-    pms_project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_projects.id", ondelete="SET NULL"), index=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True
+    )
+    pms_project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pms_projects.id", ondelete="SET NULL"), index=True
+    )
     held_at: Mapped[datetime | None]
     participants: Mapped[list[Any]] = mapped_column(default=list)
     source: Mapped[str] = mapped_column(String(10), default="text")  # audio | text
-    audio_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
+    audio_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifacts.id", ondelete="SET NULL")
+    )
     # Direct source of a retranscribed version; independent of transcription attempts.
     source_meeting_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("meetings.id", ondelete="SET NULL", name="fk_meetings_source_meeting_id"), index=True)
+        ForeignKey(
+            "meetings.id", ondelete="SET NULL", name="fk_meetings_source_meeting_id"
+        ),
+        index=True,
+    )
     # 전사 Provider 요청 기록. 인증 정보는 여기에 두지 않는다.
     provider: Mapped[str | None] = mapped_column(String(30))
     provider_job_id: Mapped[str | None] = mapped_column(String(200))
     transcript: Mapped[str | None] = mapped_column(Text)
-    transcript_source: Mapped[str | None] = mapped_column(String(40))  # paste | file | provider:<id>
+    transcript_source: Mapped[str | None] = mapped_column(
+        String(40)
+    )  # paste | file | provider:<id>
     summary: Mapped[str | None] = mapped_column(Text)
-    analysis_run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))
-    analysis_session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"))
+    analysis_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL")
+    )
+    analysis_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL")
+    )
     # 분석 프롬프트에 넣은 기존 맥락 후보 {"M1": {type, id, text}, "A1": ...}. 충돌 참조는 이 표로만 해석한다.
     analysis_context: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    failed_stage: Mapped[str | None] = mapped_column(String(20))  # transcription | analysis
+    failed_stage: Mapped[str | None] = mapped_column(
+        String(20)
+    )  # transcription | analysis
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     analyzed_at: Mapped[datetime | None]
     # 맥락 도서관 벡터 저장(ADR 0021). none | pending | ready | failed. 조각은 meeting_chunks.
-    vector_status: Mapped[str] = mapped_column(String(10), default="none", server_default="none")
+    vector_status: Mapped[str] = mapped_column(
+        String(10), default="none", server_default="none"
+    )
     vector_chunks: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     vector_error: Mapped[str | None] = mapped_column(Text)
     embedded_at: Mapped[datetime | None]
@@ -804,11 +962,18 @@ class Meeting(Base):
 
 class LocalSttJob(Base):
     """Immutable transcription attempts; child jobs are candidates, never replacements."""
+
     __tablename__ = "local_stt_jobs"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
-    audio_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
-    parent_job_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("local_stt_jobs.id", ondelete="CASCADE"))
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("meetings.id", ondelete="CASCADE"), index=True
+    )
+    audio_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifacts.id", ondelete="SET NULL")
+    )
+    parent_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("local_stt_jobs.id", ondelete="CASCADE")
+    )
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
     params: Mapped[dict[str, Any]] = mapped_column(default=dict)
     result_metadata: Mapped[dict[str, Any]] = mapped_column(default=dict)
@@ -823,7 +988,9 @@ class LocalSttSegment(Base):
     __tablename__ = "local_stt_segments"
     __table_args__ = (UniqueConstraint("job_id", "position"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("local_stt_jobs.id", ondelete="CASCADE"), index=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("local_stt_jobs.id", ondelete="CASCADE"), index=True
+    )
     position: Mapped[int] = mapped_column(Integer)
     start: Mapped[float] = mapped_column(Float)
     end: Mapped[float] = mapped_column(Float)
@@ -845,7 +1012,9 @@ class LocalSttSegment(Base):
 class MeetingItem(Base):
     __tablename__ = "meeting_items"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("meetings.id", ondelete="CASCADE"), index=True
+    )
     kind: Mapped[str] = mapped_column(String(16), index=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     text: Mapped[str] = mapped_column(Text)
@@ -866,9 +1035,15 @@ class MeetingProposal(Base):
 
     __tablename__ = "meeting_proposals"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
-    item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("meeting_items.id", ondelete="SET NULL"))
-    kind: Mapped[str] = mapped_column(String(24))  # add_memory | supersede_memory | update_action_item
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("meetings.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("meeting_items.id", ondelete="SET NULL")
+    )
+    kind: Mapped[str] = mapped_column(
+        String(24)
+    )  # add_memory | supersede_memory | update_action_item
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
     payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
     reason: Mapped[str | None] = mapped_column(Text)
@@ -883,13 +1058,19 @@ class MeetingChunk(Base):
 
     __tablename__ = "meeting_chunks"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    meeting_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("meetings.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(16))  # summary | decision | action | open_issue | discussion | transcript
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("meetings.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(
+        String(16)
+    )  # summary | decision | action | open_issue | discussion | transcript
     ord: Mapped[int] = mapped_column(Integer, default=0)
     heading: Mapped[str | None] = mapped_column(Text)
     content: Mapped[str] = mapped_column(Text)
     scope: Mapped[str] = mapped_column(String(20), default="personal", index=True)
-    entity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ctx_entities.id", ondelete="SET NULL"), index=True
+    )
     embedding: Mapped[Any] = mapped_column(Vector(EMBED_DIM), nullable=True)
     model: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
@@ -897,6 +1078,7 @@ class MeetingChunk(Base):
 
 class RetiredIntegrationRecord(Base):
     """Migration-only source snapshots; never used to connect to a retired service."""
+
     __tablename__ = "retired_integration_records"
     source: Mapped[str] = mapped_column(String(40), primary_key=True)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
@@ -911,9 +1093,13 @@ class PmsProject(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
-    scope: Mapped[str] = mapped_column(String(20), default="personal", server_default="personal", index=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), default="personal", server_default="personal", index=True
+    )
     # planning | active | on_hold | done
-    status: Mapped[str] = mapped_column(String(12), default="planning", server_default="planning", index=True)
+    status: Mapped[str] = mapped_column(
+        String(12), default="planning", server_default="planning", index=True
+    )
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     # 사람 이름 텍스트 목록. 계정이 아니라 담당자 자동완성에 쓰는 이름표다.
@@ -928,16 +1114,24 @@ class PmsTask(Base):
     __tablename__ = "pms_tasks"
     __table_args__ = (Index("ix_pms_tasks_project_parent", "project_id", "parent_id"),)
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True)
-    parent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_tasks.id", ondelete="CASCADE"))
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pms_tasks.id", ondelete="CASCADE")
+    )
     # 같은 부모 아래 순서. 0 부터 빈틈없이 매긴다.
     position: Mapped[int] = mapped_column(Integer, default=0)
     title: Mapped[str] = mapped_column(String(300))
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
     # todo | doing | review | done
-    status: Mapped[str] = mapped_column(String(10), default="todo", server_default="todo")
+    status: Mapped[str] = mapped_column(
+        String(10), default="todo", server_default="todo"
+    )
     # low | normal | high | urgent
-    priority: Mapped[str] = mapped_column(String(10), default="normal", server_default="normal")
+    priority: Mapped[str] = mapped_column(
+        String(10), default="normal", server_default="normal"
+    )
     assignee: Mapped[str | None] = mapped_column(String(100))
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
@@ -952,7 +1146,9 @@ class PmsTask(Base):
 class PmsMilestone(Base):
     __tablename__ = "pms_milestones"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True
+    )
     title: Mapped[str] = mapped_column(String(200))
     due_date: Mapped[date]
     done: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
@@ -964,12 +1160,18 @@ class PmsNote(Base):
 
     __tablename__ = "pms_notes"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True)
-    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_tasks.id", ondelete="SET NULL"))
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("pms_projects.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pms_tasks.id", ondelete="SET NULL")
+    )
     kind: Mapped[str] = mapped_column(String(8), default="issue")  # issue | risk | note
     title: Mapped[str] = mapped_column(String(300))
     body: Mapped[str] = mapped_column(Text, default="", server_default="")
-    severity: Mapped[str] = mapped_column(String(8), default="medium")  # low | medium | high
+    severity: Mapped[str] = mapped_column(
+        String(8), default="medium"
+    )  # low | medium | high
     status: Mapped[str] = mapped_column(String(10), default="open")  # open | resolved
     owner: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
@@ -987,10 +1189,15 @@ class ChecklistTemplate(Base):
 
 class ChecklistItem(Base):
     __tablename__ = "checklist_items"
-    __table_args__ = (UniqueConstraint("day", "template_id"), Index("ix_checklist_items_day", "day"))
+    __table_args__ = (
+        UniqueConstraint("day", "template_id"),
+        Index("ix_checklist_items_day", "day"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     day: Mapped[date] = mapped_column(Date)
-    template_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("checklist_templates.id"), default=None)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("checklist_templates.id"), default=None
+    )
     title: Mapped[str] = mapped_column(String(300))
     checked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
@@ -1006,10 +1213,16 @@ class ChecklistReminder(Base):
 
 class PublicShare(Base):
     """Only approved DTOs; bindings and resource IDs never enter public responses."""
+
     __tablename__ = "public_shares"
     __table_args__ = (
-        Index("uq_public_shares_active_root", "resource_type", "resource_id", unique=True,
-              postgresql_where=text("state = 'active'")),
+        Index(
+            "uq_public_shares_active_root",
+            "resource_type",
+            "resource_id",
+            unique=True,
+            postgresql_where=text("state = 'active'"),
+        ),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     resource_type: Mapped[str] = mapped_column(String(20))
@@ -1031,9 +1244,12 @@ class PublicShare(Base):
     published_at: Mapped[datetime] = mapped_column(default=utcnow)
     expires_at: Mapped[datetime]
 
+
 # Register ledger and knowledge-library tables in the shared metadata used by tests and Alembic.
 from ttakkari import collector_models as _collector_models  # noqa: F401
 from ttakkari import kb_models as _kb_models  # noqa: F401
+from ttakkari import kb_ontology_models as _kb_ontology_models  # noqa: F401
+from ttakkari import kb_pipeline_models as _kb_pipeline_models  # noqa: F401
 from ttakkari import knowledge_models as _knowledge_models  # noqa: F401
 from ttakkari import tts_models as _tts_models
 from ttakkari.collector import budget_models as _collector_budget_models  # noqa: F401
@@ -1055,9 +1271,13 @@ class OpsIssue(Base):
     fingerprint: Mapped[str] = mapped_column(String(40))
     title: Mapped[str] = mapped_column(Text)
     culprit: Mapped[str | None] = mapped_column(String(200))
-    source: Mapped[str] = mapped_column(String(24), index=True)  # deploy | run | api | process | worker | code
+    source: Mapped[str] = mapped_column(
+        String(24), index=True
+    )  # deploy | run | api | process | worker | code
     level: Mapped[str] = mapped_column(String(10))  # warning | error | fatal
-    status: Mapped[str] = mapped_column(String(12), default="unresolved")  # unresolved | resolved | ignored
+    status: Mapped[str] = mapped_column(
+        String(12), default="unresolved"
+    )  # unresolved | resolved | ignored
     first_seen: Mapped[datetime]
     last_seen: Mapped[datetime] = mapped_column(index=True)
     event_count: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -1068,7 +1288,9 @@ class OpsIssue(Base):
     regressed_count: Mapped[int] = mapped_column(Integer, default=0)
     last_regressed_at: Mapped[datetime | None]
     notes: Mapped[list[Any]] = mapped_column(default=list)  # [{at, by, text}]
-    tags: Mapped[dict[str, Any]] = mapped_column(default=dict)  # 가장 최근 이벤트의 태그
+    tags: Mapped[dict[str, Any]] = mapped_column(
+        default=dict
+    )  # 가장 최근 이벤트의 태그
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -1079,7 +1301,9 @@ class OpsEvent(Base):
         Index("ix_ops_events_issue_occurred", "issue_id", "occurred_at"),
     )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    issue_id: Mapped[int] = mapped_column(ForeignKey("ops_issues.id", ondelete="CASCADE"))
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("ops_issues.id", ondelete="CASCADE")
+    )
     occurred_at: Mapped[datetime] = mapped_column(index=True)
     source: Mapped[str] = mapped_column(String(24))
     level: Mapped[str] = mapped_column(String(10))
@@ -1089,7 +1313,9 @@ class OpsEvent(Base):
     breadcrumbs: Mapped[list[Any]] = mapped_column(default=list)
     stack: Mapped[str | None] = mapped_column(Text)
     excerpt: Mapped[str | None] = mapped_column(Text)
-    ref: Mapped[str | None] = mapped_column(String(200), index=True)  # deploy_job:<id> · run:<id> · file:<name>
+    ref: Mapped[str | None] = mapped_column(
+        String(200), index=True
+    )  # deploy_job:<id> · run:<id> · file:<name>
     dedupe_key: Mapped[str | None] = mapped_column(String(120))
 
 
@@ -1105,7 +1331,9 @@ class OpsIssueStat(Base):
     """이슈별 시간 단위 발생 수. 저장 이벤트가 샘플링으로 줄어도 추이는 정확하다."""
 
     __tablename__ = "ops_issue_stats"
-    issue_id: Mapped[int] = mapped_column(ForeignKey("ops_issues.id", ondelete="CASCADE"), primary_key=True)
+    issue_id: Mapped[int] = mapped_column(
+        ForeignKey("ops_issues.id", ondelete="CASCADE"), primary_key=True
+    )
     bucket: Mapped[datetime] = mapped_column(primary_key=True)
     count: Mapped[int] = mapped_column(Integer, default=0)
     __table_args__ = (Index("ix_ops_issue_stats_bucket", "bucket"),)
@@ -1127,18 +1355,30 @@ class ReverseJob(Base):
     __tablename__ = "reverse_jobs"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     target: Mapped[str] = mapped_column(Text)
-    kind: Mapped[str] = mapped_column(String(16))  # reconstruction | git_url/local_path(이전 기록)
-    workspace_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workspaces.id", ondelete="SET NULL"))
-    session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"), index=True)
-    verifier_session_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sessions.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(
+        String(16)
+    )  # reconstruction | git_url/local_path(이전 기록)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL")
+    )
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL"), index=True
+    )
+    verifier_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sessions.id", ondelete="SET NULL")
+    )
     output_path: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)  # queued|running|done|failed
+    status: Mapped[str] = mapped_column(
+        String(16), default="queued", index=True
+    )  # queued|running|done|failed
     revision: Mapped[str | None] = mapped_column(String(64))
     stages: Mapped[list[Any]] = mapped_column(default=list)
     result: Mapped[dict[str, Any] | None]
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=utcnow, onupdate=utcnow, index=True
+    )
 
 
 class TossInvestSyncRun(Base):
@@ -1147,7 +1387,9 @@ class TossInvestSyncRun(Base):
     __tablename__ = "tossinvest_sync_runs"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     kind: Mapped[str] = mapped_column(String(10))  # check | sync
-    status: Mapped[str] = mapped_column(String(20), index=True)  # running | ready | login_required | login_window | unknown | disabled | error | failed
+    status: Mapped[str] = mapped_column(
+        String(20), index=True
+    )  # running | ready | login_required | login_window | unknown | disabled | error | failed
     message: Mapped[str | None] = mapped_column(Text)
     logged_in: Mapped[bool | None]
     page_title: Mapped[str | None] = mapped_column(String(200))
@@ -1167,7 +1409,9 @@ class GoogleAccount(Base):
     __tablename__ = "google_accounts"
     account_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     label: Mapped[str | None] = mapped_column(String(80))
-    state: Mapped[str] = mapped_column(String(20), default="login_required")  # login_required|session_saved|ready|reauth_required
+    state: Mapped[str] = mapped_column(
+        String(20), default="login_required"
+    )  # login_required|session_saved|ready|reauth_required
     message: Mapped[str | None] = mapped_column(Text)
     last_error_code: Mapped[str | None] = mapped_column(String(40))
     last_login_at: Mapped[datetime | None]
@@ -1185,7 +1429,9 @@ class NotebookLMAccount(Base):
 
     __tablename__ = "notebooklm_accounts"
     account_id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    state: Mapped[str] = mapped_column(String(20), default="login_required")  # login_required|session_saved|ready|reauth_required|cooldown|blocked
+    state: Mapped[str] = mapped_column(
+        String(20), default="login_required"
+    )  # login_required|session_saved|ready|reauth_required|cooldown|blocked
     message: Mapped[str | None] = mapped_column(Text)
     cooldown_until: Mapped[datetime | None]
     last_error_code: Mapped[str | None] = mapped_column(String(40))
@@ -1201,7 +1447,11 @@ class NotebookLMSource(Base):
     reserved=등록 요청 진행 중, added=등록됨, unknown=요청은 나갔으나 결과를 모름(재전송 금지)."""
 
     __tablename__ = "notebooklm_sources"
-    __table_args__ = (UniqueConstraint("account_id", "notebook_id", "dedupe_key", name="uq_notebooklm_sources_key"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id", "notebook_id", "dedupe_key", name="uq_notebooklm_sources_key"
+        ),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     account_id: Mapped[str] = mapped_column(String(32), index=True)
     notebook_id: Mapped[str] = mapped_column(String(100))
@@ -1220,12 +1470,18 @@ class NotebookLMJob(Base):
     답변·인용을 둔다(화면 복구용). 쿠키·토큰은 어떤 job 에도 두지 않는다."""
 
     __tablename__ = "notebooklm_jobs"
-    __table_args__ = (Index("ix_notebooklm_jobs_account_status", "account_id", "status"),)
+    __table_args__ = (
+        Index("ix_notebooklm_jobs_account_status", "account_id", "status"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     account_id: Mapped[str] = mapped_column(String(32))
-    kind: Mapped[str] = mapped_column(String(24))  # source_add_url | source_add_text | source_add_file | query
+    kind: Mapped[str] = mapped_column(
+        String(24)
+    )  # source_add_url | source_add_text | source_add_file | query
     notebook_id: Mapped[str] = mapped_column(String(100))
-    status: Mapped[str] = mapped_column(String(12), default="queued")  # queued|running|succeeded|failed|cancelled|unknown
+    status: Mapped[str] = mapped_column(
+        String(12), default="queued"
+    )  # queued|running|succeeded|failed|cancelled|unknown
     params: Mapped[dict[str, Any]] = mapped_column(default=dict)
     # 실행부가 이어받을 입력 원본(질문·텍스트·업로드 경로). 응답에는 싣지 않고 끝나면 비운다(Step 6).
     spec: Mapped[dict[str, Any] | None]
@@ -1237,16 +1493,22 @@ class NotebookLMJob(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     started_at: Mapped[datetime | None]
     finished_at: Mapped[datetime | None]
-    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=utcnow, onupdate=utcnow, index=True
+    )
 
 
 class ArtcraftTask(Base):
     """ArtCraft 작업(ADR 0039). 작업 세션 1개에 범주·연결 앱·옵션을 붙인 것이고 라운드는 그 세션의 Run 이다."""
 
     __tablename__ = "artcraft_tasks"
-    __table_args__ = (Index("ix_artcraft_tasks_category_updated", "category", "updated_at"),)
+    __table_args__ = (
+        Index("ix_artcraft_tasks_category_updated", "category", "updated_at"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id", ondelete="CASCADE"), unique=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), unique=True
+    )
     category: Mapped[str] = mapped_column(String(20))
     apps: Mapped[list[Any]] = mapped_column(default=list)
     title: Mapped[str] = mapped_column(String(200))
@@ -1267,8 +1529,12 @@ class GameProject(Base):
     slug: Mapped[str] = mapped_column(String(40), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     engine_id: Mapped[str] = mapped_column(String(40))  # web-phaser 등. 어댑터 선택 키
-    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="RESTRICT"), unique=True)
-    pms_project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("pms_projects.id", ondelete="SET NULL"), index=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="RESTRICT"), unique=True
+    )
+    pms_project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("pms_projects.id", ondelete="SET NULL"), index=True
+    )
     # 사용자가 승인한 ttakkari-game.json 의 sha256. 저장소 파일은 에이전트가 고칠 수 있으므로 승인본은 DB 에 해시로 고정한다.
     locked_decisions_sha256: Mapped[str | None] = mapped_column(String(64))
     locked_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -1283,25 +1549,45 @@ class GameBuild(Base):
     """불변 빌드 스냅샷 기록. 성공 빌드의 번들은 data_dir/game-builds/<game_id>/<id>/bundle 에 읽기 전용으로 보관한다."""
 
     __tablename__ = "game_builds"
-    __table_args__ = (UniqueConstraint("game_id", "seq", name="uq_game_builds_game_seq"),)
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)  # str(id) 가 빌드 ID
-    game_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("game_projects.id", ondelete="CASCADE"), index=True)
+    __table_args__ = (
+        UniqueConstraint("game_id", "seq", name="uq_game_builds_game_seq"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, default=uuid.uuid4
+    )  # str(id) 가 빌드 ID
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("game_projects.id", ondelete="CASCADE"), index=True
+    )
     seq: Mapped[int] = mapped_column(Integer)  # 게임별 순번(v1, v2 ...)
-    status: Mapped[str] = mapped_column(String(10), default="building")  # building | succeeded | failed
+    status: Mapped[str] = mapped_column(
+        String(10), default="building"
+    )  # building | succeeded | failed
     source_commit: Mapped[str | None] = mapped_column(String(40))
-    source_dirty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    source_dirty: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     manifest_sha256: Mapped[str | None] = mapped_column(String(64))
-    lock_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    bundle_rel_path: Mapped[str | None] = mapped_column(Text)  # data_dir/game-builds 기준 상대 경로
+    lock_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    bundle_rel_path: Mapped[str | None] = mapped_column(
+        Text
+    )  # data_dir/game-builds 기준 상대 경로
     bundle_sha256: Mapped[str | None] = mapped_column(String(64))
     bundle_bytes: Mapped[int | None] = mapped_column(BigInteger)
     bundle_files: Mapped[int | None] = mapped_column(Integer)
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), index=True)
-    artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL"), index=True
+    )
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifacts.id", ondelete="SET NULL")
+    )
     log_tail: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     # 롤백으로 소스를 복구해 만든 빌드이면 복구 대상이던 이전 빌드. 원래 빌드는 그대로 남는다.
-    restored_from_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("game_builds.id", ondelete="SET NULL"))
+    restored_from_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("game_builds.id", ondelete="SET NULL")
+    )
     # 원격 API 가 접수한 빌드의 실행부 인계 표식. queued(실행부 대기) → claimed(실행부가 맡음). NULL 은 API/Run 이 직접 돌린
     # 빌드와 이 표식 이전의 기존 행이라 실행부가 절대 집지 않는다. status 는 계속 building 이라 API 응답 계약은 그대로다.
     queue_state: Mapped[str | None] = mapped_column(String(10))
@@ -1315,13 +1601,23 @@ class GameFeedback(Base):
 
     __tablename__ = "game_feedbacks"
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    game_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("game_projects.id", ondelete="CASCADE"), index=True)
-    build_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("game_builds.id", ondelete="SET NULL"))
-    kind: Mapped[str] = mapped_column(String(20))  # annotation | object | video | compare
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("game_projects.id", ondelete="CASCADE"), index=True
+    )
+    build_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("game_builds.id", ondelete="SET NULL")
+    )
+    kind: Mapped[str] = mapped_column(
+        String(20)
+    )  # annotation | object | video | compare
     comment: Mapped[str] = mapped_column(Text, default="", server_default="")
     payload: Mapped[dict[str, Any]] = mapped_column(default=dict)
-    screenshot_artifact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id", ondelete="SET NULL"))
-    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"))
+    screenshot_artifact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("artifacts.id", ondelete="SET NULL")
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("runs.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -1329,9 +1625,7 @@ class ScheduledAction(Base):
     """영속 예약 작업. 재배포·세대 전환·재시작 뒤에도 영속 저장소(PostgreSQL)에 남아 정확히 1회 실행된다."""
 
     __tablename__ = "scheduled_actions"
-    __table_args__ = (
-        Index("ix_scheduled_actions_status_due", "status", "due_at"),
-    )
+    __table_args__ = (Index("ix_scheduled_actions_status_due", "status", "due_at"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     action_type: Mapped[str] = mapped_column(String(64), index=True)
@@ -1339,7 +1633,9 @@ class ScheduledAction(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(24), default="pending", index=True)
     owner_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    leased_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     max_attempts: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1347,5 +1643,6 @@ class ScheduledAction(Base):
     result: Mapped[dict[str, Any] | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
-    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
+    executed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -93,7 +93,11 @@
 
 ## 4. 아티팩트 보존 및 API 조회 검증
 
-생성된 모든 WAV 음성은 기존 아티팩트 파이프라인을 통해 정식 등록되었으며, `GET /api/artifacts/{id}` 및 `GET /api/artifacts/{id}/content` 엔드포인트 조회를 통해 완전성을 검증했습니다.
+> [!WARNING]
+> **[정정 안내: 식별자 불일치 및 실행 철회]**
+> 아래 표에 기재되었던 ResearchArtifact ID(`8b5ff3f8...`) 및 Artifact ID(`f2fc8c52...`)는 초안 작성 시 별도 시험 실행의 식별자가 혼용 기재되어 동반된 raw JSON(`stage2-b-supplement-evidence.json`의 `5274f149...` / `7b566d18...`)과 불일치하는 결함이 있었습니다.
+> 또한 해당 실행은 정규화 무조건 호출 결함으로 인해 Baseline과 Candidate의 WAV SHA가 동일하게 생성된 결함이 있어 공식 철회되었습니다.
+> 정규화 분기 교정 및 동일 실행에서 표가 자동 산출되어 JSON과 100% 일치하는 신규 결과는 [integration-stage2-b-norm-fix.md](integration-stage2-b-norm-fix.md) 및 [stage2-b-norm-fix-evidence.json](stage2-b-norm-fix-evidence.json)을 참조하십시오.
 
 | Run / 설정 | ResearchArtifact ID | Artifact ID | 파일명 | 크기 (bytes) | SHA256 (앞 12자리) | Content API 응답 | WAV Magic 헤더 |
 |---|---|---|---|---:|:---:|:---:|:---:|

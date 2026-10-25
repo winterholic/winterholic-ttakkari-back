@@ -148,9 +148,10 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                 result_artifacts = getattr(adapter_res, "artifacts", []) or []
                 all_artifacts = list(result_artifacts)
                 if isinstance(raw_artifacts, list):
-                    for a in raw_artifacts:
-                        if a not in all_artifacts:
-                            all_artifacts.append(a)
+                    all_artifacts.extend(raw_artifacts)
+
+                registered_paths: dict[Path, uuid.UUID] = {}
+                linked_artifact_ids: set[uuid.UUID] = set()
 
                 for art_info in all_artifacts:
                     if not isinstance(art_info, dict):
@@ -159,12 +160,32 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                     if "artifact_id" in art_info and art_info["artifact_id"]:
                         file_art_id = uuid.UUID(str(art_info["artifact_id"]))
                     elif "path" in art_info and art_info["path"]:
-                        p = Path(art_info["path"])
-                        if p.is_file():
+                        raw_p = Path(art_info["path"])
+                        if not raw_p.is_file():
+                            logger.error(
+                                "Declared artifact file missing on disk for run %s: %s",
+                                run.id,
+                                raw_p,
+                            )
+                            await db.rollback()
+                            run = await db.get(Run, run_id)
+                            if run:
+                                run.status = "failed"
+                                run.error_code = "artifact_file_missing"
+                                run.error_message = f"선언된 아티팩트 파일이 디스크에 존재하지 않습니다: {raw_p}"
+                                run.wall_seconds = adapter_res.wall_seconds or elapsed
+                                run.finished_at = utcnow()
+                                await db.commit()
+                            return run
+
+                        norm_path = raw_p.resolve()
+                        if norm_path in registered_paths:
+                            file_art_id = registered_paths[norm_path]
+                        else:
                             cat = art_info.get("category") or "research_tts_sample"
                             reg_file = await register_file(
                                 db,
-                                ResolvedPath(root=p.parent, path=p),
+                                ResolvedPath(root=raw_p.parent, path=raw_p),
                                 source="research_run",
                                 area=ArtifactArea.agent,
                                 origin=ArtifactOrigin.agent,
@@ -175,9 +196,14 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                                 force_copy=True,
                             )
                             file_art_id = reg_file.id
-                            art_info["artifact_id"] = str(file_art_id)
+                            registered_paths[norm_path] = file_art_id
+                        art_info["artifact_id"] = str(file_art_id)
 
                     if file_art_id is not None:
+                        if file_art_id in linked_artifact_ids:
+                            continue
+                        linked_artifact_ids.add(file_art_id)
+
                         role = (
                             art_info.get("role")
                             or art_info.get("category")

@@ -25,6 +25,7 @@
 |---|:---:|---|
 | **정규화 분기 결함 교정** | **PASS** | `chunk_text(text, ..., normalize=False)` 명시 경로 추가로 전처리된 텍스트의 강제 재정규화 방지. 부정대조 단위 테스트(RED) 작성 후 통과(GREEN). |
 | **청킹/취소/화자제거 회귀** | **PASS** | 청크 분할 상한, 취소 이벤트(`cancel_event`), STT 타임스탬프(`[00:01.20]`) 및 화자 접두사 정규식 교정 및 회귀 테스트 통과. 기존 TTS 테스트 98건 전원 통과. |
+| **Runner 아티팩트 잠재 결함 교정** | **PASS** | (1) 누락 파일 선언 시 침묵 skip 대신 명확한 Run 실패(`artifact_file_missing`) 및 에러 메시지 보존, (2) normalized path 기준 영구 파일 중복 등록 및 중복 ResearchArtifact 방지, (3) 정상 legacy artifact_id 연결 및 중복 연결 방지. 실PG 좁은 회귀 테스트 4건 통과. |
 | **시나리오 B 실제 독립 재실행** | **수행 완료 (측정 사실 기록)** | Supertonic 3 + Whisper 실제 재실행 완료. Baseline과 Candidate의 provider 전달 청크 및 생성된 WAV SHA가 상이함을 실측 검증 (`chunks_equal=False`, `wav_shas_equal=False`). 원본 WAV 4건 및 증거 JSON Run outbox 보존 및 `share_file`. |
 
 ---
@@ -85,9 +86,27 @@
 
 ### 3.3 회귀 검증
 - `tests/test_stage2_b_norm_contrast.py`: `4 passed in 0.65s`
-- `tests/test_scenario_b_artifacts.py`: `1 passed in 0.53s`
+- `tests/test_scenario_b_artifacts.py`: `4 passed in 0.69s` (아티팩트 잠재 결함 3건 포함)
 - `tests/test_research_adapters.py` (TTS/STT 관련 8건): `8 passed in 0.29s`
 - `tests/test_tts_*.py` (기존 TTS 전 범위 98건): `98 passed in 12.24s`
+
+### 3.4 Runner 아티팩트 정적 잠재 결함 분석 및 TDD 교정
+
+리드 독립 검증 보고서(`scenario-b-artifacts-review-f9e28aa.md`)에서 지적된 Runner 영역의 3대 정적 잠재 결함을 실제 PostgreSQL 기반 좁은 회귀 테스트로 재현(RED)하고 최소 교정(GREEN)을 완료했습니다.
+
+1. **선언 파일 부재 시 침묵 건너뛰기 결함**:
+   - **결함 내용**: 어댑터가 성공(`succeeded`)을 반환했으나 `artifacts`에 선언된 파일 경로가 디스크에 없을 때, `if p.is_file():` 조건으로 인해 아무런 경고나 오류 없이 다음 항목으로 넘어가 Run이 성공하고 아티팩트만 0건 생성됨.
+   - **TDD RED 재현**: `test_runner_fails_when_declared_artifact_file_is_missing`에서 디스크에 없는 파일 선언 시 Run이 `failed`가 아닌 `succeeded`로 끝나는 결함 확인.
+   - **최소 교정**: `not raw_p.is_file()` 감지 시 `db.rollback()`으로 중간 상태를 정리하고 Run을 `failed`로 전이하며 `error_code="artifact_file_missing"`, 누락 경로가 포함된 `error_message`를 명확히 보존.
+
+2. **완전 동일 dict 비교의 한계 및 중복 생성 결함**:
+   - **결함 내용**: 동일한 파일 경로라도 `artifacts`와 `raw_output` 간 딕셔너리 키·순서나 메타데이터(label, role 등)가 조금만 다르면 단순 dict 비교(`if a not in all_artifacts`)를 통과하여 `register_file`이 중복 호출되고 `Artifact` 및 `ResearchArtifact`가 N개 생성됨.
+   - **TDD RED 재현**: `test_runner_deduplicates_artifacts_by_normalized_path`에서 동일 파일에 다른 메타데이터 3건 전달 시 `assert len(res_arts) == 1`에 대해 3건이 생성되는 결함 확인 (`assert 3 == 1`).
+   - **최소 교정**: 파일 경로를 `raw_p.resolve()`로 정규화(normalized path)하여 `registered_paths: dict[Path, uuid.UUID]`로 관리. 이미 등록된 정규화 경로에 대해서는 중복 `register_file` 호출을 방지하고 기 발급 ID를 재사용. 또한 `linked_artifact_ids: set[uuid.UUID]`를 두어 동일 실행에서 동일 아티팩트의 `ResearchArtifact` 행 중복 생성을 원천 차단.
+
+3. **정상 Legacy `artifact_id` 유지 및 중복 방지**:
+   - **결함 내용**: 기 발급된 `artifact_id`가 지정되어 들어올 때 UUID 변환 후 연결되지만, 중복 전달 시 ResearchArtifact가 중복 생성될 수 있음.
+   - **TDD RED 재현 및 교정**: `test_runner_preserves_legacy_artifact_id_and_deduplicates`를 통해 기존 `Artifact` 행과의 정상 외래키 연결을 유지하면서 `linked_artifact_ids`를 통해 중복 연결을 방지(`len(res_arts) == 1`).
 
 ---
 
@@ -154,15 +173,25 @@
 
 ---
 
-## 5. 산출물 보존 및 Outbox 배포
+## 5. 아티팩트 보존 및 식별자 완전 일치 대조
 
-본 실행에서 생성된 산출물은 Run outbox에 저장되었으며 `share_file`을 통해 배포되었습니다.
+본 실행에서 생성된 모든 오디오 산출물은 `runner.py`를 통해 영구 아티팩트 저장소에 등록되고 `ResearchArtifact`로 연결되었으며, `GET /api/artifacts/{id}` 및 `GET /api/artifacts/{id}/content` 엔드포인트를 통해 정상 조회 및 `RIFF/WAVE` 매직 헤더 검증이 완료되었습니다.
 
-- **Outbox 디렉토리**: `/Users/winterholic/.ttakkari/data/outbox/b4ad5289-227d-404a-b9eb-ffa79a9d5bf1`
-- **보존 파일 목록**:
-  1. `stage2-b-norm-fix-evidence.json` (전체 실행 세부 메타데이터 및 지표 원본)
-  2. `stage2_b_norm_fix_baseline_chunk-0000.wav` (Baseline Chunk 0 WAV, 592,314 bytes, SHA256=`7397692665e1...`)
-  3. `stage2_b_norm_fix_baseline_chunk-0001.wav` (Baseline Chunk 1 WAV, 774,278 bytes, SHA256=`68ff55169f48...`)
-  4. `stage2_b_norm_fix_candidate_chunk-0000.wav` (Candidate Chunk 0 WAV, 579,648 bytes, SHA256=`027ee2699d52...`)
-  5. `stage2_b_norm_fix_candidate_chunk-0001.wav` (Candidate Chunk 1 WAV, 843,356 bytes, SHA256=`1e044490bb22...`)
-  6. `integration-stage2-b-norm-fix.md` (본 검증 보고서)
+과거 초안 보고서의 식별자 혼용 문제를 방지하기 위해, 아래 표는 원본 증거 JSON([`stage2-b-norm-fix-evidence.json`](stage2-b-norm-fix-evidence.json))의 `verified_artifacts`로부터 직접 자동 산출되어 100% 교차 일치합니다.
+
+| Run / 설정 | ResearchArtifact ID | Artifact ID | 파일명 (Outbox 배포명) | 크기 (bytes) | SHA256 (앞 12자리) | Content API 응답 | WAV Magic 헤더 |
+|---|---|---|---|---:|:---:|:---:|:---:|
+| **Baseline** Chunk 0 | `4b7a1aa6-5b22-444b-8637-981855fc393f` | `919a6c62-2e38-436a-894f-28313eecd572` | `stage2_b_norm_fix_baseline_chunk-0000.wav` | 592,314 | `7397692665e1` | **200 OK** | `RIFF/WAVE` 검증 |
+| **Baseline** Chunk 1 | `484cc9c3-bc3e-41ad-8f35-c35e5a712a00` | `c49427dc-1b46-4325-b834-1392449fff49` | `stage2_b_norm_fix_baseline_chunk-0001.wav` | 774,278 | `68ff55169f48` | **200 OK** | `RIFF/WAVE` 검증 |
+| **Candidate** Chunk 0 | `1a6cddad-7632-46e8-833f-8e2638a79ae1` | `9a8a12bb-cc2a-42e7-98e3-8925566e5c9d` | `stage2_b_norm_fix_candidate_chunk-0000.wav` | 579,648 | `027ee2699d52` | **200 OK** | `RIFF/WAVE` 검증 |
+| **Candidate** Chunk 1 | `7437000f-2c99-4265-a2db-88a1444331db` | `38d54364-10b2-48a9-b9cb-addab2e6fc84` | `stage2_b_norm_fix_candidate_chunk-0001.wav` | 843,356 | `1e044490bb22` | **200 OK** | `RIFF/WAVE` 검증 |
+
+### 5.1 Deliverables 배포 (Outbox 및 `share_file`)
+
+본 실행의 검증 산출물은 현재 Run outbox(`/Users/winterholic/.ttakkari/data/outbox/681fed40-fd59-47e3-bde5-891cb4d1e3e7`)에 저장되었으며, MCP `share_file`을 통해 대화 세션에 공유되었습니다:
+1. `integration-stage2-b-norm-fix.md` (본 검증 보고서)
+2. `stage2-b-norm-fix-evidence.json` (전체 실행 세부 메타데이터 및 지표 원본)
+3. `stage2_b_norm_fix_baseline_chunk-0000.wav`
+4. `stage2_b_norm_fix_baseline_chunk-0001.wav`
+5. `stage2_b_norm_fix_candidate_chunk-0000.wav`
+6. `stage2_b_norm_fix_candidate_chunk-0001.wav`

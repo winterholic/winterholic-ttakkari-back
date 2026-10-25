@@ -1,6 +1,6 @@
 # 수집 플랫폼 임무 중심 리팩토링 — 진행 중
 
-## 현재 이어받을 자리 — 2026-10-25 15:35 KST
+## 현재 이어받을 자리 — 2026-10-25 15:38 KST
 - 전체 C1–C7 진행 중. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
 - **C2 단일 지식 도서관 통합 및 프론트엔드 레거시 정리 완료**:
   1. **단일 도서관 규약 및 정규화 (`src/ttakkari/collector/library.py`)**:
@@ -40,6 +40,11 @@
   - 전체 수집·KB 회귀 테스트: `pytest tests/test_collection_scope_merge.py tests/test_collection_missions.py tests/test_collection_mission_migration.py tests/test_collector_jobs.py tests/test_collector_pipeline.py tests/test_collector_fetch.py tests/test_collector_product_flow.py tests/test_kb_library.py tests/test_kb_library_api.py tests/test_kb_agent_api.py tests/test_kb_retrieval.py tests/test_route_inventory.py tests/test_security_gate_inventory.py unit_tests/test_schema_head_admission.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py unit_tests/test_collection_plan.py`
     → **270 passed, 66 subtests passed in 12.26s**.
   - `ruff check`: 28개 변경 파일 대상 0 errors (clean).
+- **통합 순서 주의 (2026-10-25 15:38 KST 재확인)**:
+  - C2 커밋 `104c9b0`의 `0073_collection_single_library`와 C1 커밋 `90c326a`의 `0073_collection_mission_runs`가 각각 `0072_collection_missions`를 `down_revision`으로 선언한다. 두 커밋을 그대로 합치면 Alembic revision 중복/다중 head가 된다.
+  - 이 worktree는 C1 migration 및 모델 변경을 포함하지 않는 C2 전용 브랜치이므로 revision을 여기서 임의 변경하지 않았다. 통합 시 순서를 `0073_collection_mission_runs` → `0074_collection_single_library`로 재번호화하고, generation-contract 및 schema-head admission 기준을 `0074`로 함께 갱신해야 한다. 이 순서로 적용하는 것은 통합 검증 전제이며 아직 검증된 통합 결과가 아니다.
+  - C1 진행 기록의 broad 회귀 실행은 migration 테스트와 `unit_tests/test_schema_head_admission.py`를 포함해 **247 passed, 66 subtests passed**로 기록되어 있다. C1 migration을 현재 C2 전용 브랜치에 가져오거나 그 검증을 중복 실행하지 않았다.
+  - 이번 C2 재검증: `tests/test_collection_scope_merge.py`, KB agent/retrieval, collector pipeline/product flow, route inventory, schema-head admission 선택 실행 → **58 passed, 6 deprecation warnings**. 변경 파일 `ruff check`와 `git diff --check` 통과. 운영 DB 데이터 분포는 조회하지 않았고 미검증이다.
 - **Frontend 단위·빌드 검증**:
   - `vitest run src/pages/KnowledgeLibraryPage.test.tsx src/pages/CollectPage.test.tsx`: 19 passed in 903ms.
   - `vitest run src/features/kb/Collection.test.tsx src/features/collector/Collector.test.tsx`: 12 passed in 660ms.

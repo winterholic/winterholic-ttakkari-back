@@ -314,4 +314,3 @@ async def _merge_documents(db, run_id: str, report: dict) -> None:
 async def _text_hashes(db, document_id) -> set[str]:
     return set((await db.execute(text("SELECT text_sha256 FROM kb_revisions WHERE document_id = :d"),
                                  {"d": document_id})).scalars())
-

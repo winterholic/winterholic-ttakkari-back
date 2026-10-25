@@ -320,4 +320,3 @@ def test_cli_collection_scope_merge_parser_registered():
     with pytest.raises(SystemExit) as exc:
         main(["collection-scope-merge", "--help"])
     assert exc.value.code == 0
-

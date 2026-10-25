@@ -33,6 +33,7 @@ from ttakkari.kb_pipeline.subscription_transport import (
     SubscriptionCallConfig,
     execute_subscription_l2_call,
     resolve_target_pool,
+    restrict_to_pool,
 )
 from ttakkari.runs import profiles
 
@@ -171,6 +172,7 @@ class SubscriptionCliL2Adapter:
             return False, "scope_capacity_unavailable"
         async with self.session_factory() as db:
             free, blocked = await profiles.availability(db, self.engine, self.target_pool, model=self.model or None)
+        free, blocked = restrict_to_pool(free, blocked, self.target_pool)
         if free:
             return True, None
         self.retry_after = min((until for _, until in blocked), default=None)
@@ -189,6 +191,7 @@ class SubscriptionCliL2Adapter:
                 candidates, blocked = await profiles.availability(
                     db, self.engine, self.target_pool, model=self.model or None
                 )
+                candidates, blocked = restrict_to_pool(candidates, blocked, self.target_pool)
                 if not candidates:
                     retry_after = min((until for _, until in blocked), default=None)
                     self.retry_after = retry_after

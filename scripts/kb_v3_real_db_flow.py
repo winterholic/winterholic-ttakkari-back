@@ -2,12 +2,13 @@
 
 운영 DB 에는 절대 붙이지 않는다. 이 스크립트는 직접 띄운 임시 pgvector 컨테이너(alembic upgrade head 완료)에만 쓴다.
 필수 환경: KB_V3_FLOW_DB_URL=postgresql+asyncpg://...127.0.0.1:<port>/<db>  (DB 이름에 'kbv3' 포함, 호스트는 loopback)
-사용: KB_V3_FLOW_DB_URL=... uv run python scripts/kb_v3_real_db_flow.py DOC_A.md DOC_B.md [DOC_C.html [CONFLICT_1.md CONFLICT_2.md ...]]
+사용: KB_V3_FLOW_DB_URL=... uv run python scripts/kb_v3_real_db_flow.py DOC_A.md DOC_B.md [DOC_C.html [CONFLICT_1.md CONFLICT_2.md [L2_1.md L2_2.md]]]
  - DOC_A: 정상 흐름(6단계 전부 진행)
  - DOC_B: extracting 처리기를 강제로 실패시킨 뒤 retry_pipeline_job(from_stage='extracting')로 재개
  - DOC_C(선택): HTML. Collector 파서(extract_document + 제목 구조 보존)로 정규화한 본문을 kb_delivery.deliver_item 과 같은 순서로 ingest 한다.
    HTTP fetch·outbox 는 거치지 않는다(그 전체 경로는 tests/test_collector_integration.py 가 격리 PG 에서 검증).
  - CONFLICT_*(선택): 같은 엔터티·술어에 상반된 정의를 담은 문서들. canonicalizing 이 충돌 행을 만드는지 본다.
+ - L2_1/L2_2(선택): 가짜 L2 어댑터로 동시 처리할 두 문서(일일 예산 1). 실제 구독 CLI·모델 서버는 부르지 않는다.
  모든 문서 처리 뒤에 정본·충돌·근거 없는 alias·heading_spans 를 세고, 검색 함수(kb_retrieval.search)로 어휘·alias·1-hop 결과를 확인한다.
  임베딩은 결정적 해시(TTAKKARI_CONTEXT_EMBEDDER=hash)다: 벡터 경로는 의미 품질 증거가 아니다.
 """
@@ -279,12 +280,67 @@ async def search_report() -> None:
             say(f"  personal ctx graph passages={len(personal_hop['items'])}")
 
 
+class FakeL2:
+    """L2 가짜 어댑터. 구독 CLI·모델 서버를 부르지 않는다(실제 L2 호출 없음). 근거 인용이 본문에 있는 항목만 검증기를 통과한다."""
+
+    name = "fake_l2"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def availability(self):
+        return True, None
+
+    async def __call__(self, prompt: str, schema: dict):
+        self.calls += 1
+        quote = "Ingress policy keeps routes together."
+        if quote not in prompt:
+            return {"entities": [], "assertions": [], "relations": []}
+        return {
+            "entities": [{"name": "Ingress policy", "aliases": [], "kind": "concept", "domain": "infra"}],
+            "assertions": [
+                {"subject": "Ingress policy", "predicate": "keeps", "object_entity": None, "object_value": "routes together",
+                 "modality": "fact", "polarity": "positive", "applies_version": None, "evidence_quote": quote},
+                {"subject": "Ingress policy", "predicate": "hallucinated", "object_entity": None, "object_value": "none",
+                 "modality": "fact", "polarity": "positive", "applies_version": None, "evidence_quote": "This sentence is not in the body."},
+            ],
+            "relations": [],
+        }
+
+
+async def l2_phase(path_a: Path, path_b: Path) -> None:
+    """가짜 L2 로 두 문서를 동시에 처리한다. 일일 예산 1 이면 호출은 전체에서 1번뿐이어야 한다(원장으로 직렬화)."""
+    from ttakkari.config import get_settings
+    from ttakkari.kb_pipeline import ExtractingProcessor
+
+    settings = get_settings()
+    settings.kb_l2_daily_budget, settings.kb_l2_max_calls_per_doc = 1, 8
+    fake = FakeL2()
+    reg = StageProcessorRegistry()
+    reg.register(STAGE_EXTRACTING, ExtractingProcessor(adapter_factory=lambda: fake))
+    jobs = [(await register(p))[1] for p in (path_a, path_b)]
+    # 두 워커가 동시에 같은 예산을 다툰다
+    pumped = await asyncio.gather(drain(make_worker(reg)), drain(make_worker(reg)))
+    say(f"concurrent workers pumped={pumped} fake_l2.calls={fake.calls} (budget=1)")
+    for jid in jobs:
+        async with sessionmaker()() as db:
+            st = await db.scalar(select(KbPipelineStage).where(KbPipelineStage.job_id == jid, KbPipelineStage.stage == STAGE_EXTRACTING))
+            l2 = (st.detail or {}).get("l2", {})
+            say(f"  job {jid} extracting={st.status} l2={ {k: l2.get(k) for k in ('adapter', 'reason', 'calls_made')} } "
+                f"rejected_assertions={(st.detail or {}).get('rejected_assertions')}")
+    async with sessionmaker()() as db:
+        res = (await db.execute(text("select status, count(*), sum(reserved_calls) from kb_l2_budget_reservations group by 1"))).all()
+        use = (await db.execute(text("select status, count(*) from kb_l2_budget_usage group by 1"))).all()
+        tier = (await db.execute(text("select extractor_tier, count(*) from kb_assertions group by 1 order by 1"))).all()
+        say(f"  ledger reservations(status,count,reserved)={res} usage(status,count)={use} assertions by tier={tier}")
+
+
 class ForcedExtractingFailure:
     async def __call__(self, ctx):
         raise RuntimeError("forced extracting failure (demo)")
 
 
-async def main(doc_a: Path, doc_b: Path, doc_c: Path | None, doc_conflicts: list[Path]) -> None:
+async def main(doc_a: Path, doc_b: Path, doc_c: Path | None, doc_conflicts: list[Path], l2_docs: list[Path]) -> None:
     get_default_worker().pause_claiming()  # 이 스크립트의 워커만 claim 한다
     say(f"db={parsed.host}:{parsed.port}/{parsed.database}  home={HOME}")
 
@@ -331,6 +387,10 @@ async def main(doc_a: Path, doc_b: Path, doc_c: Path | None, doc_conflicts: list
         say(f"registered {path.name} document={res_d.document_id}")
     say(f"worker pumped jobs: {await drain(make_worker())}")
 
+    if len(l2_docs) == 2:
+        say("\n=== E. 가짜 L2 어댑터 + 일일 예산 1 + 동시 워커 2개(실제 구독 CLI 호출 없음) ===")
+        await l2_phase(*l2_docs)
+
     await final_report(html_job)
     await search_report()
 
@@ -343,4 +403,4 @@ async def main(doc_a: Path, doc_b: Path, doc_c: Path | None, doc_conflicts: list
 
 if __name__ == "__main__":
     asyncio.run(main(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]) if len(sys.argv) > 3 else None,
-                     [Path(a) for a in sys.argv[4:]]))
+                     [Path(a) for a in sys.argv[4:6]], [Path(a) for a in sys.argv[6:8]]))

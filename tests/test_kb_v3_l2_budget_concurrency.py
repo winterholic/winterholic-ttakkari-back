@@ -16,6 +16,20 @@ from ttakkari.kb_store import segment_revision
 from ttakkari.db import sessionmaker
 
 
+@pytest.fixture(autouse=True)
+def pause_default_kb_worker():
+    """The session app runs a live kb-pipeline worker that claims registered jobs and rotates their
+    attempt token; direct-processor tests would then race it (observed as StaleWriterError flakes)."""
+    from ttakkari.kb_pipeline import get_default_worker
+
+    worker = get_default_worker()
+    was_paused = worker.claiming_paused
+    worker.pause_claiming()
+    yield
+    if not was_paused:
+        worker.resume_claiming()
+
+
 class BarrierAdapter:
     def __init__(self, name: str) -> None:
         self.name = name

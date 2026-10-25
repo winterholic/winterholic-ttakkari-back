@@ -1,0 +1,58 @@
+FFF                                                                      [100%]
+=================================== FAILURES ===================================
+____________ test_personal_document_never_uses_a_work_pool_account _____________
+
+fake_cli = <test_kb_v3_subscription_cli_contracts.fake_cli.<locals>.Fake object at 0x112282270>
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5066/test_personal_document_never_u0')
+
+    async def test_personal_document_never_uses_a_work_pool_account(fake_cli, tmp_path):
+        """The app's personal mode lists work accounts too; L2 must still keep provenance strict."""
+        work = await _account(tmp_path, "work")
+        adapter = _adapter("personal", "global")
+    
+        # Only a work account exists: personal source text must not be sent anywhere.
+>       assert await adapter.availability() == (False, "scope_capacity_unavailable")
+E       AssertionError: assert (True, None) == (False, 'scop..._unavailable')
+E         
+E         At index 0 diff: True != False
+E         Use -v to get more diff
+
+tests/test_kb_v3_subscription_cli_contracts.py:206: AssertionError
+_________________ test_passage_body_travels_on_stdin_not_argv __________________
+
+fake_cli = <test_kb_v3_subscription_cli_contracts.fake_cli.<locals>.Fake object at 0x112283770>
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5066/test_passage_body_travels_on_s0')
+
+    async def test_passage_body_travels_on_stdin_not_argv(fake_cli, tmp_path):
+        await _account(tmp_path, "personal")
+    
+        await _adapter()(f"본문 {BODY_MARKER}", L2_SCHEMA)
+    
+        [call] = fake_cli.calls()
+>       assert call["prompt_on_stdin"] is True
+E       assert False is True
+
+tests/test_kb_v3_subscription_cli_contracts.py:228: AssertionError
+___________ test_prompt_is_in_argv_only_when_stdin_is_not_requested ____________
+
+tmp_path = PosixPath('/private/var/folders/7_/5w7y5vq9329g81pk_fv8_mhh0000gn/T/pytest-of-winterholic/pytest-5066/test_prompt_is_in_argv_only_wh0')
+
+    def test_prompt_is_in_argv_only_when_stdin_is_not_requested(tmp_path):
+        from ttakkari.runs import desk
+    
+        codex = desk._codex_cmd(profiles.Profile(id=uuid.uuid4(), name="x", engine="codex"), {}, "sys", "BODY", tmp_path)
+        assert codex[-2:] == ["--", "BODY"]
+        codex_stdin = desk._codex_cmd(
+            profiles.Profile(id=uuid.uuid4(), name="x", engine="codex"), {}, "sys", None, tmp_path
+        )
+>       assert codex_stdin[-1] == "-" and "BODY" not in codex_stdin
+E       AssertionError: assert (None == '-')
+
+tests/test_kb_v3_subscription_cli_contracts.py:241: AssertionError
+db reset: 3 selective (avg 1.7/119 tables), 0 forced full, 0 fell back to full
+=========================== short test summary info ============================
+FAILED tests/test_kb_v3_subscription_cli_contracts.py::test_personal_document_never_uses_a_work_pool_account
+FAILED tests/test_kb_v3_subscription_cli_contracts.py::test_passage_body_travels_on_stdin_not_argv
+FAILED tests/test_kb_v3_subscription_cli_contracts.py::test_prompt_is_in_argv_only_when_stdin_is_not_requested
+3 failed, 11 deselected in 1.32s
+exit=1

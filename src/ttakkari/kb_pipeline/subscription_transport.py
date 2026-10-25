@@ -224,6 +224,20 @@ def resolve_target_pool(origin_scope: str, visibility: str) -> str | None:
     return None
 
 
+def restrict_to_pool(
+    free: list[Profile], blocked: list[tuple[Profile, float]], target_pool: str
+) -> tuple[list[Profile], list[tuple[Profile, float]]]:
+    """Keep only accounts that belong to the document's own pool.
+
+    The app's personal mode lists every account (work ones included); L2 extraction must not
+    send personal source text to a company account, so provenance decides, not mode.
+    """
+    return (
+        [p for p in free if p.pool == target_pool],
+        [(p, until) for p, until in blocked if p.pool == target_pool],
+    )
+
+
 async def check_scope_availability(
     db: AsyncSession,
     engine: str,
@@ -293,6 +307,8 @@ async def execute_subscription_l2_call(
                 use_warm=False,
                 output_schema=schema_path,
                 cwd=cwd,
+                subscription_only=True,
+                prompt_via_stdin=True,
             )
     finally:
         profiles.release(lease_id)
@@ -304,7 +320,9 @@ async def execute_subscription_l2_call(
             profiles.cool_down(prof.id, retry_seconds_from_error(attempt.error))
             retry_after = profiles.cooldown_until(prof.id)
         log.warning("Subscription L2 CLI execution failed: diagnosis=%s, elapsed_ms=%d", diag, attempt.elapsed_ms)
-        raise L2TransportError(diag, "subscription CLI call failed", retry_after)
+        # desk._ask reports a missing binary before any process starts: nothing was sent, so refund the slot.
+        never_started = "실행 파일을 찾을 수 없습니다" in (attempt.error or "")
+        raise L2TransportError(diag, "subscription CLI call failed", retry_after, consumed=not never_started)
 
     try:
         raw_obj = json.loads(attempt.text)

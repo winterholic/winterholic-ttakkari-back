@@ -11,6 +11,11 @@
   - `/private/tmp/res_main.txt` (`1008117beb8bd24edf08fa172dfdb75f011c56b57101d2359cc644b98624dd6e`): main 브랜치 기준 결과 (45 PASS)
   - `/private/tmp/run_ids.sh` (`3cfb91bf6189422fc50bbd8962848ae005aca9342e9880f17b34c31fc0e918ae`): 테스트 개별 격리 실행 스크립트
   - `/private/tmp/failed_ids.txt`: 실패 대상 45개 고유 pytest nodeid 목록
+  - `review/collection-final/failed_45_stdout.txt` (`b9e24b58ed40044ee2c54e5b8e853b6e36166ecd596c7a29a648347778410c5e`): 45개 실패 항목 선택 회귀 실제 stdout
+  - `review/collection-final/chain3_stdout.txt` (`88d66d08ce77ae6ce66a974f9487069b9b82512d34b7be2300db988af9a8f83d`): 마이그레이션 chain3 실제 stdout
+  - `review/collection-final/muse3_stdout.txt` (`a4ed0a1f7e89919faed86525776669366f00041b057ef0bb6e6c4d68d227ba55`): Muse 3 계약 테스트 실제 stdout
+  - `review/collection-final/full_run_raw.txt` (`eba2020771df3d7b1b197bd25d15aecadcb15d7a055513c3f24701c559487657`): 1차 5,236개 전체 회귀 원시 출력 (5 failed)
+  - `review/collection-final/full_run_final.txt` (`c7944674dbeb5601a6bf636b0a552d4e2296f472913fed27fbf1dba72ed46819`): 최종 1회 전체 회귀 원시 출력 (5213 passed, 0 failed, ALL GREEN)
 - **실행 명령 및 환경**:
   - 스크립트: `run_ids.sh <checkout-dir> <label>`
   - 파이썬: `/Users/winterholic/development/projects/winterholic-ttakkari/back/.venv/bin/python` (Python 3.13.15)
@@ -65,7 +70,7 @@
    - `tests/test_knowledge_migration.py::test_populated_ledger_cannot_be_destroyed_by_application_rollback`
    - `tests/test_meeting_lineage_migration.py::test_lineage_migration_backfills_valid_full_jobs_and_preserves_sources`
    - `tests/test_retire_clovanote_migration.py::test_retirement_preserves_every_source_row_and_meetings_and_downgrades`
-   - *원인 및 실증*: 이전 개별 PASS 요약에 이어, 전체 5,236개 full suite 완주 및 45개 묶음 전건 실행(`task-170`)을 통해 10건 모두 격리 DB 환경에서 에러/충돌 없이 완전 통과(GREEN)함을 최종 실증 완료.
+   - *검증 범위 및 한계*: 45개 실패 목록 선택 회귀 실행 범위에서 10건 모두 격리 DB 환경에서 통과(GREEN)함을 실증하였으며, 이 통과 결과를 임의의 migration10 원인 확정으로 확대 해석하지 않고 선택 회귀 범위 내 통과 사실로만 엄밀히 기록함.
    *(소계: 10개)*
 
 5. **백업 스크립트 임시 디렉토리/환경 격리 (16개)**:
@@ -201,6 +206,43 @@
     tests/test_collection_render.py .                                        [100%]
     1 passed, 10 deselected in 0.08s
     ```
+
+---
+
+## 10. Muse SDK 명령 계약 테스트 환경 격리 주입 및 원시 증거 보존
+- **원인 규명**:
+  - 1차 full run(`full_run_raw.txt`)에서 관측된 Muse 관련 3건 실패는 `build_command` 단계에서 `(settings.muse_runtime_root / 'node_modules/@muse-code/sdk/package.json').is_file()` 검사에 걸려 발생한 것임.
+  - 이는 배포된 Muse의 부재 증거가 아니며, 테스트 러너의 HOME 환경 변수에 따라 `settings.muse_runtime_root`가 가리키는 경로에 node_modules가 부재하여 발생한 테스트 환경 격리 결함임.
+  - 해당 3건(`test_agent_token_security.py::test_muse_argv_hides_token_value`, `test_muse_effort_pinned.py::test_adapter_spec_is_max_even_when_the_launch_spec_says_otherwise`, `test_muse_observation_ping.py::test_effort_of_the_ping_launch_is_pinned_like_every_muse_launch`)은 argv token 노출 차단 및 effort=max command 생성 계약 테스트임.
+- **교정 내역**:
+  - 프로덕션 코드의 `RuntimeError` 거부 보안 게이트를 온전히 보존하고 전역 skip/xfail/Path.is_file mock을 일절 배제함.
+  - [`tests/conftest.py`](file:///Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration/tests/conftest.py)에 `fake_muse_runtime` fixture를 추가하여, 격리된 `tmp_path` 디렉터리에 최소 패키지(`node_modules/@muse-code/sdk/package.json`)를 생성하고 `settings.muse_runtime_root`에 주입 후 테스트 종료 시 복원하는 정당한 격리 적용.
+  - 프로덕션 보안 대조군 검증(`adapter.build_command` 실행 시 runtime missing일 때 `RuntimeError` 정상 발생)을 통해 실 product readiness gate가 온전히 유지됨을 실증.
+- **원시 증거**:
+  - 원시 파일: `review/collection-final/muse3_stdout.txt`
+  - SHA256: `a4ed0a1f7e89919faed86525776669366f00041b057ef0bb6e6c4d68d227ba55`
+  - 결과: `3 passed in 0.61s`
+
+---
+
+## 11. 백엔드 전체 테스트 스위트 최종 1회 완주 (`full_run_final.txt`)
+- **실행 명령**:
+  ```bash
+  zsh -c 'set -o pipefail; cd /Users/winterholic/development/projects/winterholic-ttakkari/back-collection-integration && uv run pytest -q --tb=short 2>&1 | tee review/collection-final/full_run_final.txt; exit_code=$?; echo "PYTEST_EXIT_CODE=$exit_code" >> review/collection-final/full_run_final.txt; exit $exit_code'
+  ```
+- **원시 출력 파일 및 SHA256 체크섬**:
+  - 파일: `review/collection-final/full_run_final.txt`
+  - SHA256: `c7944674dbeb5601a6bf636b0a552d4e2296f472913fed27fbf1dba72ed46819`
+- **완주 결과**:
+  ```text
+  db reset: 3120 selective (avg 3.7/111 tables), 1 forced full, 1 fell back to full
+  5213 passed, 27 skipped, 2 xfailed, 30 warnings, 5018 subtests passed in 892.67s (0:14:52)
+  PYTEST_EXIT_CODE=0
+  ```
+- **최종 판정**: **0 failed, ALL GREEN (100% 무결점 완주)**
+  - 1차 `full_run_raw.txt`의 잔여 실패 5건(C2 단일 도서관 변조 403 / 중복 출처 키 409 방어 2건, Muse SDK 격리 fixture 3건)이 전건 완벽히 해소됨.
+  - 5,213개 테스트 전건 통과, 0건 실패, `PYTEST_EXIT_CODE=0`으로 완결.
+
 
 
 

@@ -14,9 +14,11 @@ ML can only move a document towards review/precise evaluation or rescue it from 
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import hashlib
 import json
 import math
+import os
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -191,9 +193,10 @@ def score_document(artifact: dict[str, Any], goal_vec: list[float], doc_vec: lis
 
 _child_lock = asyncio.Lock()
 # The e5 child peaks near 2.1GB RSS, so concurrent worker processes serialize it through a dedicated file lock in the
-# same run directory as the agent harness slot, using the same helpers (runs.qwen_slot.acquire_process_lock(path)).
-# `qwen-local-slot.lock` belongs to the agent harness: a qwen-local Run try-locks it once at start and fails with
-# QwenSlotBusy, then holds it for the whole Run. The collector therefore never takes, probes or waits on it.
+# same run directory as the agent harness slot, using the same flock method as runs.qwen_slot (inlined because the
+# collector package must not import ttakkari.runs; tests/test_collector_pipeline.py enforces that boundary).
+# `qwen-local-slot.lock` belongs to the agent harness: a qwen-local Run try-locks it at start (busy sends a
+# worker session back to its queue) and holds it for the whole Run, so the collector never takes, probes or waits on it.
 # KNOWN LIMIT: this does not stop an e5 child from peaking at the same time as a Qwen teacher Run; that is accepted.
 # Acquisition order, outermost first: `_child_lock` (this process), then the e5 file lock via a non-blocking try-lock
 # polled until a deadline. No other lock is held or awaited while holding it, so no cycle is possible.
@@ -212,14 +215,32 @@ def embed_lock_path() -> Path:
     return get_settings().home / "run" / EMBED_LOCK_NAME
 
 
-async def _acquire_gate(wait: float, poll: float) -> int:
-    # lazy: the runs package pulls models and profiles
-    from ttakkari.runs import qwen_slot
+def _try_lock(path: Path) -> int | None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        return None
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
 
+
+def _unlock(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+async def _acquire_gate(wait: float, poll: float) -> int:
     path = embed_lock_path()
     deadline = time.monotonic() + wait
     while True:
-        fd = qwen_slot.acquire_process_lock(path)
+        fd = _try_lock(path)
         if fd is not None:
             return fd
         if time.monotonic() >= deadline:
@@ -236,8 +257,6 @@ async def default_embed(texts: list[str], prefixes: list[str]) -> tuple[list[lis
 
     s = get_settings()
     async with _child_lock:
-        from ttakkari.runs import qwen_slot
-
         fd = await _acquire_gate(GATE_WAIT_SECONDS, GATE_POLL_SECONDS)
         try:
             result = await run_json_worker(
@@ -247,7 +266,7 @@ async def default_embed(texts: list[str], prefixes: list[str]) -> tuple[list[lis
                 timeout=s.context_embedding_timeout_seconds, error_prefix="embedding_worker",
             )
         finally:
-            qwen_slot.release_process_lock(fd)
+            _unlock(fd)
     vectors = result.get("vectors", [])
     if len(vectors) != len(texts) or any(
         len(v) != EMBED_DIM or not all(isinstance(x, (int, float)) and math.isfinite(x) for x in v) for v in vectors

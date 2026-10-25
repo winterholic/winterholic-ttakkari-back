@@ -611,6 +611,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         if not counts["acquired"]:
             state = "partial"
 
+    engine_state = precise_eval.engine_status()  # {"status": ready|busy|unavailable, "detail": ...}; endpoint stays internal
     triage_summary = {
         "accepted": counts["auto_accepted"],
         "review_needed": counts["review_needed"],
@@ -626,7 +627,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         "ml": _ml_summary(stage2_status),
         "precise_eval": {
             **precise_counts, "cap_per_job": get_settings().collector_triage_precise_queue_cap,
-            "engine": precise_eval.engine_status(),
+            "engine": engine_state.get("status", "unavailable"), "engine_detail": engine_state.get("detail"),
             "note": "bounded local qwen evaluator for uncertain candidates",
         },
     }

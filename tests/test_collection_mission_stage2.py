@@ -61,6 +61,7 @@ async def test_validated_semantic_axis_rescues_a_lexical_hold_and_is_recorded_ev
     assert tri["precise_eval"]["state"] == "pending" and tri["precise_eval"]["engine"]["status"] == "unavailable"
     summary = detail["triage"]
     assert summary["precise_eval"]["pending"] == 1 and summary["precise_eval"]["skipped_cap"] == 0
+    assert summary["precise_eval"]["engine"] == "unavailable" and isinstance(summary["precise_eval"]["engine_detail"], str)
     assert summary["ml"]["documents_by_status"] == {"evaluated": 1}
     assert summary["ml"]["axes_validation"]["topic_relevance_semantic"]["status"] == "validated"
     assert summary["ml"]["axes_validation"]["information_value"]["label_source"].startswith("FineWeb-C")

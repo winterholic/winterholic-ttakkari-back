@@ -1277,11 +1277,11 @@ async def adopt_best_result_endpoint(
     out_dict = svc.out(best_res)
     node = await db.get(Node, best_res.decision_node_id)
     out_dict["decision_node"] = svc.out(node) if node else None
-    # Same condition under which svc.adopt_best_result promoted the method.
-    exp = await db.get(Experiment, body.experiment_id)
-    promoted = body.promote_method and body.status == "adopted" and exp.method_id
-    method = await db.get(Method, exp.method_id) if promoted else None
+    promotion = (node.conditions or {}).get("method_promotion", {}) if node else {}
+    method_id = promotion.get("method_id") if promotion.get("status") == "promoted" else None
+    method = await db.get(Method, uuid.UUID(method_id)) if method_id else None
     out_dict["method"] = svc.out(method) if method else None
+    out_dict["method_promotion"] = promotion
     return out_dict
 
 

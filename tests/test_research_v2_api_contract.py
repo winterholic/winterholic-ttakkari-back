@@ -680,6 +680,7 @@ async def test_best_result_response_includes_decision_node_and_promoted_method(c
 
     rejected = (await client.post(f"{API}/studies/{study_id}/best-results", headers=auth, json={**payload, "status": "rejected", "promote_method": True})).json()
     assert rejected["status"] == "rejected" and rejected["method"] is None
+    assert rejected["method_promotion"] == {"requested": True, "status": "skipped", "reason": "result_not_adopted"}
     assert rejected["decision_node"]["kind"] == "decision" and rejected["decision_node"]["epistemic_status"] == "rejected"
 
     adopted = (await client.post(f"{API}/studies/{study_id}/best-results", headers=auth, json={**payload, "promote_method": True})).json()
@@ -687,6 +688,90 @@ async def test_best_result_response_includes_decision_node_and_promoted_method(c
     assert adopted["decision_node"]["id"] == adopted["decision_node_id"]
     assert adopted["method"]["id"] == method["id"] and adopted["method"]["lifecycle_status"] == "candidate"
     assert adopted["method"]["promoted_from_run_id"] == run["id"]
+    assert adopted["method_promotion"]["status"] == "promoted"
+
+
+async def test_system_seed_best_result_is_adopted_while_method_promotion_is_skipped(client, auth):
+    study_id = await make_study(client, auth)
+    sync = await client.post(f"{API}/catalog/sync", headers=auth)
+    assert sync.status_code == 200, sync.text
+    methods = (await client.get(f"{API}/methods?target=rag&limit=100", headers=auth)).json()["items"]
+    method = next(item for item in methods if item["origin"] == "system_seed")
+    exp = await make_experiment(
+        client, auth, study_id, method_id=method["id"], adapter_id="external_report"
+    )
+    cfg = exp["configurations"][0]
+    run = await report(client, auth, exp["id"], cfg["id"], [point(SPEED, 15.0)])
+
+    direct_promotion = await client.post(
+        f"{API}/methods/{method['id']}/promote",
+        headers=auth,
+        json={"run_id": run["id"], "decision_note": "직접 승격 거부 확인"},
+    )
+    assert direct_promotion.status_code == 422, direct_promotion.text
+    assert "system_seed_methods_cannot_be_promoted" in direct_promotion.text
+
+    response = await client.post(
+        f"{API}/studies/{study_id}/best-results",
+        headers=auth,
+        json={
+            "experiment_id": exp["id"], "configuration_id": cfg["id"], "run_id": run["id"],
+            "objective": "RAG 검색 품질", "primary_metric": "decode_tps", "constraints": {},
+            "rationale": "system seed 결과 채택", "promote_method": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "adopted"
+    assert body["decision_node"]["conditions"]["method_promotion"] == {
+        "requested": True, "status": "skipped", "reason": "system_seed_method"
+    }
+    assert body["method"] is None
+
+    method_after = (await client.get(f"{API}/methods/{method['id']}", headers=auth)).json()
+    assert method_after["lifecycle_status"] == method["lifecycle_status"]
+    assert method_after["promoted_from_run_id"] == method["promoted_from_run_id"]
+
+
+async def test_external_report_only_hypothesis_can_validate_save_and_accept_report(client, auth):
+    study_id = await make_study(client, auth)
+    method = await make_method(client, auth, targets=[f"zh_{uuid.uuid4().hex[:6]}"])
+    validation = await client.post(
+        f"{API}/experiments/validate",
+        headers=auth,
+        json={
+            "study_id": study_id, "method_id": method["id"], "adapter_id": "external_report",
+            "strategy": "single", "search_space": {}, "fixed_inputs": {},
+            "budget": {"max_runs": 1, "max_total_seconds": 60},
+        },
+    )
+    assert validation.status_code == 200, validation.text
+    assert validation.json()["valid"] is True
+    assert validation.json()["warnings"]
+
+    exp = await make_experiment(
+        client, auth, study_id, method_id=method["id"], adapter_id="external_report"
+    )
+    run = await report(client, auth, exp["id"], exp["configurations"][0]["id"], [point(SPEED, 8.0)])
+    assert run["execution_origin"] == "external_report"
+
+
+async def test_non_executable_local_method_is_rejected_before_run_dispatch(client, auth):
+    study_id = await make_study(client, auth)
+    await client.post(f"{API}/catalog/sync", headers=auth)
+    methods = (await client.get(f"{API}/methods?q=qlora&limit=100", headers=auth)).json()["items"]
+    method = next(item for item in methods if item["slug"] == "qlora")
+    exp = await make_experiment(
+        client, auth, study_id, method_id=method["id"], adapter_id="llm_inference",
+        fixed_inputs={"model": "qwen"},
+        budget={"max_runs": 1, "max_total_seconds": 60},
+    )
+
+    response = await client.post(f"{API}/experiments/{exp['id']}/run", headers=auth, json={})
+    assert response.status_code == 422, response.text
+    assert "로컬 자동 실행을 지원하지 않습니다" in response.text
+    detail = (await client.get(f"{API}/experiments/{exp['id']}", headers=auth)).json()
+    assert detail["runs"] == []
 
 
 async def test_export_report_returns_artifact_metadata(client, auth):

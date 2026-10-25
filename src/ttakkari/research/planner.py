@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from ttakkari.research.models import Method, MethodRelation
+from ttakkari.research.models import Method, MethodRelation, Study
 
 
 @dataclass
@@ -399,17 +399,32 @@ async def validate_experiment_plan(
     errors.extend(rel_errors)
     warnings.extend(rel_warnings)
 
-    # Execution readiness validation for participating methods
+    study = await db.get(Study, study_id)
+    if study is not None:
+        scope = study.scope
+
+    # Design validity and local execution readiness are separate. Manual external
+    # reports can carry hypotheses and methods without a local adapter.
     from ttakkari.research.readiness import compute_execution_status
-    for mid in all_methods:
+    for index, mid in enumerate(all_methods):
         m_obj = await db.get(Method, mid)
         if m_obj:
-            m_status = compute_execution_status(m_obj, scope=scope)
+            is_primary = index == 0 and method_id is not None
+            m_status = compute_execution_status(
+                m_obj,
+                scope=scope,
+                adapter_id=adapter_id if is_primary and adapter_id != "external_report" else None,
+            )
             if not m_status.is_executable:
                 m_label = m_obj.name_ko or m_obj.name or str(mid)
-                errors.append(
-                    f"방법론 '{m_label}'은(는) 현재 환경에서 실행할 수 없습니다: {m_status.unavailable_reason}"
+                message = (
+                    f"방법론 '{m_label}'은(는) 로컬 자동 실행을 지원하지 않습니다: "
+                    f"{m_status.unavailable_reason}"
                 )
+                if is_primary and adapter_id != "external_report":
+                    errors.append(message)
+                else:
+                    warnings.append(message)
 
     # Scope validation
     if scope == "work" and adapter_id == "llm_inference":

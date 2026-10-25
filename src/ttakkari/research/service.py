@@ -773,13 +773,35 @@ async def adopt_best_result(
     if run.status != "succeeded":
         raise HTTPException(422, "only_succeeded_runs_can_be_adopted")
 
-    if status == "adopted" and promote_method_flag and exp.method_id:
-        exp_method = await db.get(Method, exp.method_id)
-        if exp_method and exp_method.scope == "system":
-            raise HTTPException(
-                422,
-                "시스템 시드 방법론은 직접 승격할 수 없습니다. 사용자 정의 방법론만 승격 가능합니다 (system_seed_methods_cannot_be_promoted).",
-            )
+    promotion_result: dict[str, Any]
+    if not promote_method_flag:
+        promotion_result = {"requested": False, "status": "not_requested"}
+    elif status != "adopted":
+        promotion_result = {"requested": True, "status": "skipped", "reason": "result_not_adopted"}
+    elif not exp.method_id:
+        promotion_result = {"requested": True, "status": "skipped", "reason": "experiment_has_no_method"}
+    else:
+        promotion_method = await db.get(Method, exp.method_id)
+        if promotion_method and promotion_method.scope == "system":
+            promotion_result = {"requested": True, "status": "skipped", "reason": "system_seed_method"}
+        else:
+            promotion_result = {"requested": True, "status": "pending"}
+
+    if status == "adopted" and promote_method_flag and exp.method_id and promotion_result["status"] == "pending":
+        promoted_method = await promote_method(
+            db,
+            method_id=exp.method_id,
+            run_id=run.id,
+            decision_note=f"연구 최적 결과물 채택 기반 승격: {rationale}",
+            target_status="validated",
+            actor=actor,
+        )
+        promotion_result = {
+            "requested": True,
+            "status": "promoted",
+            "method_id": str(promoted_method.id),
+            "lifecycle_status": promoted_method.lifecycle_status,
+        }
 
     if status == "adopted":
         dec_title = f"최적 결과물 채택: {cfg.label}"
@@ -804,6 +826,7 @@ async def adopt_best_result(
             "run_id": str(run.id),
             "configuration_id": str(cfg.id),
             "decision": status,
+            "method_promotion": promotion_result,
         },
         details={"parameters": cfg.parameters},
         epistemic_status=dec_epistemic,
@@ -841,16 +864,6 @@ async def adopt_best_result(
         primary_metric=primary_metric,
         status=status,
     )
-
-    if status == "adopted" and promote_method_flag and exp.method_id:
-        await promote_method(
-            db,
-            method_id=exp.method_id,
-            run_id=run.id,
-            decision_note=f"연구 최적 결과물 채택 기반 승격: {rationale}",
-            target_status="validated",
-            actor=actor,
-        )
 
     await db.flush()
     return best_res

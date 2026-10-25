@@ -41,6 +41,7 @@ def compute_execution_status(
     method: Method | dict[str, Any],
     adapter_registry: Any = None,
     scope: str = "personal",
+    adapter_id: str | None = None,
 ) -> ExecutionStatusResult:
     """Compute Axis F status deterministically in order of criteria."""
     reg = adapter_registry or _get_registry()
@@ -81,9 +82,10 @@ def compute_execution_status(
 
     matched_adapter = None
     if reg is not None and hasattr(reg, "get_adapter"):
-        for hint in adapter_hints:
+        hints = [adapter_id] if adapter_id else adapter_hints
+        for hint in hints:
             ad = reg.get_adapter(hint)
-            if ad is not None:
+            if ad is not None and (not adapter_id or adapter_id in adapter_hints):
                 matched_adapter = ad
                 break
 
@@ -143,8 +145,30 @@ def compute_execution_status(
         )
 
     # Check hardware×runtime combinations if defined (combinations is authoritative over raw facet lists)
+    has_combinations = "combinations" in compatibility
     combos = compatibility.get("combinations")
-    if isinstance(combos, list) and combos:
+    if has_combinations and (
+        not isinstance(combos, list)
+        or not combos
+        or any(
+            not isinstance(c, dict)
+            or not all(isinstance(c.get(key), str) and c[key].strip() for key in ("hardware", "runtime", "status"))
+            or c.get("status") not in {
+                "local_executable", "upstream_supported", "different_mechanism",
+                "external_only", "unsupported", "unverified",
+            }
+            for c in combos
+        )
+    ):
+        return ExecutionStatusResult(
+            status="environment_unavailable",
+            status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+            is_executable=False,
+            unavailable_reason="호환성 조합 선언이 비어 있거나 잘못되어 fail-closed 처리되었습니다.",
+            matched_adapter_id=matched_adapter.id,
+        )
+
+    if has_combinations:
         # If matched adapter is external_report, it can never locally execute.
         if matched_adapter.id == "external_report":
             has_local_exec = any(c.get("status") == "local_executable" for c in combos)
@@ -173,11 +197,40 @@ def compute_execution_status(
             )
 
         # Match against authoritative combinations
-        matching_tuple = None
-        for c in combos:
-            if c.get("hardware") == adapter_hw and c.get("runtime") == adapter_rt:
-                matching_tuple = c
-                break
+        matching_tuples = [
+            c for c in combos
+            if c.get("hardware") == adapter_hw and c.get("runtime") == adapter_rt
+        ]
+        # Model-conditioned tuples are independent variants. Match an explicitly
+        # identified model, or any model available in this adapter environment.
+        adapter_model = details.get("model")
+        available_models = set(getattr(env_status, "available_models", []) or [])
+        if adapter_model or available_models:
+            matching_tuples = [
+                c for c in matching_tuples
+                if not (c.get("model") or c.get("model_id"))
+                or (c.get("model") or c.get("model_id")) in ({adapter_model} if adapter_model else available_models)
+            ]
+        tuple_groups: dict[tuple[Any, ...], set[str]] = {}
+        for c in matching_tuples:
+            identity = (
+                c.get("hardware"), c.get("runtime"),
+                c.get("model"), c.get("model_id"),
+            )
+            tuple_groups.setdefault(identity, set()).add(c["status"])
+        if any(len(statuses) > 1 for statuses in tuple_groups.values()):
+            return ExecutionStatusResult(
+                status="environment_unavailable",
+                status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+                is_executable=False,
+                unavailable_reason=f"조합 ({adapter_hw} × {adapter_rt})에 동일 조건의 상충하는 status 선언이 있어 fail-closed 처리되었습니다.",
+                matched_adapter_id=matched_adapter.id,
+            )
+
+        matching_tuple = next(
+            (c for c in matching_tuples if c["status"] == "local_executable"),
+            matching_tuples[0] if matching_tuples else None,
+        )
 
         if matching_tuple is None or matching_tuple.get("status") != "local_executable":
             t_status = matching_tuple.get("status") if matching_tuple else "not_listed"

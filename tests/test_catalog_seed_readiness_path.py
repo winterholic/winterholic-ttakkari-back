@@ -224,7 +224,8 @@ async def test_readiness_and_planner_enforce_combinations_and_negative_control()
     assert "fail-closed" in (st_ambig.unavailable_reason or "")
 
     # 5. Planner validation integration and negative control:
-    # validate_experiment_plan must pass for executable flash_attention, and fail for non-executable qlora
+    # Local execution must reject non-executable methods, while external-report
+    # designs remain valid and carry their local-readiness gap as a warning.
     async with sm() as db:
         study_id = uuid.uuid4()
         plan_ok = await validate_experiment_plan(
@@ -247,13 +248,184 @@ async def test_readiness_and_planner_enforce_combinations_and_negative_control()
             method_id=qlora_method.id,
             compared_method_ids=[],
             adapter_id="external_report",
-            strategy="manual",
+            strategy="single",
             search_space={},
             fixed_inputs={"model": "qwen"},
             budget={"max_runs": 1},
         )
-        assert plan_bad.valid is False
-        assert any("현재 환경에서 실행할 수 없습니다" in err for err in plan_bad.errors)
+        assert plan_bad.valid is True
+        assert any("로컬 자동 실행을 지원하지 않습니다" in warning for warning in plan_bad.warnings)
+
+        plan_local = await validate_experiment_plan(
+            db,
+            study_id=study_id,
+            method_id=qlora_method.id,
+            compared_method_ids=[],
+            adapter_id="llm_inference",
+            strategy="single",
+            search_space={},
+            fixed_inputs={"model": "qwen"},
+            budget={"max_runs": 1},
+        )
+        assert plan_local.valid is False
+        assert any("로컬 자동 실행을 지원하지 않습니다" in err for err in plan_local.errors)
+
+
+@pytest.mark.parametrize("combos", [[], None, {}, [None], [{"hardware": "apple_silicon_metal"}]])
+async def test_explicit_malformed_or_empty_combinations_fail_closed(combos):
+    class LocalAdapter:
+        id = "llm_inference"
+        supported_methods = ["sample"]
+        supported_parameters = ["enabled"]
+
+        def check_environment(self, *, scope="personal"):
+            from ttakkari.research.adapters.base import AdapterEnvironmentStatus
+
+            return AdapterEnvironmentStatus(
+                adapter_id=self.id,
+                ready=True,
+                execution_mode="host_supervisor",
+                details={"hardware": "apple_silicon_metal", "runtime": "llama.cpp"},
+            )
+
+    class Registry:
+        def get_adapter(self, hint):
+            return LocalAdapter() if hint == "llm_inference" else None
+
+    compatibility = {"hardware": ["apple_silicon_metal"], "runtimes": ["llama.cpp"]}
+    compatibility["combinations"] = combos
+    method = {
+        "slug": "sample",
+        "lifecycle_status": "validated",
+        "parameters": [{"key": "enabled"}],
+        "metrics": ["quality"],
+        "adapter_hints": ["llm_inference"],
+        "compatibility": compatibility,
+    }
+    result = compute_execution_status(method, Registry())
+    assert result.is_executable is False
+    assert result.status == "environment_unavailable"
+
+
+@pytest.mark.parametrize(
+    "combos",
+    [
+        [
+            {"hardware": "apple_silicon_metal", "runtime": "llama.cpp", "status": "local_executable"},
+            {"hardware": "apple_silicon_metal", "runtime": "llama.cpp", "status": "upstream_supported"},
+        ],
+        [
+            {"hardware": "apple_silicon_metal", "runtime": "llama.cpp", "status": "upstream_supported"},
+            {"hardware": "apple_silicon_metal", "runtime": "llama.cpp", "status": "local_executable"},
+        ],
+    ],
+)
+async def test_conflicting_duplicate_hardware_runtime_tuples_fail_closed(combos):
+    class LocalAdapter:
+        id = "llm_inference"
+        supported_methods = ["sample"]
+        supported_parameters = ["enabled"]
+
+        def check_environment(self, *, scope="personal"):
+            from ttakkari.research.adapters.base import AdapterEnvironmentStatus
+
+            return AdapterEnvironmentStatus(
+                adapter_id=self.id,
+                ready=True,
+                execution_mode="host_supervisor",
+                details={"hardware": "apple_silicon_metal", "runtime": "llama.cpp"},
+            )
+
+    class Registry:
+        def get_adapter(self, hint):
+            return LocalAdapter() if hint == "llm_inference" else None
+
+    result = compute_execution_status(
+        {
+            "slug": "sample",
+            "lifecycle_status": "validated",
+            "parameters": [{"key": "enabled"}],
+            "metrics": ["quality"],
+            "adapter_hints": ["llm_inference"],
+            "compatibility": {"combinations": combos},
+        },
+        Registry(),
+    )
+    assert result.is_executable is False
+    assert result.status == "environment_unavailable"
+    assert "상충" in (result.unavailable_reason or "")
+
+
+async def test_model_conditioned_tuples_are_not_duplicate_hardware_runtime_tuples():
+    class LocalAdapter:
+        id = "llm_inference"
+        supported_methods = ["sample"]
+        supported_parameters = ["enabled"]
+
+        def check_environment(self, *, scope="personal"):
+            from ttakkari.research.adapters.base import AdapterEnvironmentStatus
+
+            return AdapterEnvironmentStatus(
+                adapter_id=self.id,
+                ready=True,
+                execution_mode="host_supervisor",
+                available_models=["model-a", "model-b"],
+                details={"hardware": "apple_silicon_metal", "runtime": "llama.cpp"},
+            )
+
+    class Registry:
+        def get_adapter(self, hint):
+            return LocalAdapter() if hint == "llm_inference" else None
+
+    result = compute_execution_status(
+        {
+            "slug": "sample",
+            "lifecycle_status": "validated",
+            "parameters": [{"key": "enabled"}],
+            "metrics": ["quality"],
+            "adapter_hints": ["llm_inference"],
+            "compatibility": {
+                "combinations": [
+                    {"hardware": "apple_silicon_metal", "runtime": "llama.cpp", "model": "model-a", "status": "local_executable"},
+                    {"hardware": "apple_silicon_metal", "runtime": "llama.cpp", "model": "model-b", "status": "upstream_supported"},
+                ]
+            },
+        },
+        Registry(),
+    )
+    assert result.is_executable is True
+
+
+async def test_omitted_combinations_preserves_legacy_compatibility_meaning():
+    class LocalAdapter:
+        id = "llm_inference"
+        supported_methods = ["sample"]
+        supported_parameters = ["enabled"]
+
+        def check_environment(self, *, scope="personal"):
+            from ttakkari.research.adapters.base import AdapterEnvironmentStatus
+
+            return AdapterEnvironmentStatus(
+                adapter_id=self.id,
+                ready=True,
+                execution_mode="host_supervisor",
+                details={"hardware": "apple_silicon_metal", "runtime": "llama.cpp"},
+            )
+
+    class Registry:
+        def get_adapter(self, hint):
+            return LocalAdapter() if hint == "llm_inference" else None
+
+    result = compute_execution_status(
+        {
+            "slug": "sample", "lifecycle_status": "validated",
+            "parameters": [{"key": "enabled"}], "metrics": ["quality"],
+            "adapter_hints": ["llm_inference"],
+            "compatibility": {"hardware": ["apple_silicon_metal"], "runtimes": ["llama.cpp"]},
+        },
+        Registry(),
+    )
+    assert result.is_executable is True
 
 
 async def test_system_seed_promotion_rejected_and_user_scope_promotion_preserved_across_sync():
@@ -335,34 +507,32 @@ async def test_system_seed_promotion_rejected_and_user_scope_promotion_preserved
         assert exc_info.value.status_code == 422
         assert "system_seed_methods_cannot_be_promoted" in str(exc_info.value.detail)
 
-        # 3. adopt_best_result with promote_method_flag=True on system seed method
-        # must be rejected with 422 without leaving partial/dirty state
-        with pytest.raises(HTTPException) as exc_info2:
-            await adopt_best_result(
-                db,
-                study_id=study.id,
-                experiment_id=exp.id,
-                configuration_id=cfg.id,
-                run_id=succ_run.id,
-                objective="maximize_tps",
-                primary_metric="decode_tps",
-                constraints={},
-                rationale="시스템 시드 채택 승격 시도",
-                promote_method_flag=True,
-            )
-        assert exc_info2.value.status_code == 422
-        assert "system_seed_methods_cannot_be_promoted" in str(exc_info2.value.detail)
-
-        # Verify no dirty decision nodes or best_result records were created
+        # 3. BestResult adoption is independent from the optional seed promotion.
+        adopted = await adopt_best_result(
+            db,
+            study_id=study.id,
+            experiment_id=exp.id,
+            configuration_id=cfg.id,
+            run_id=succ_run.id,
+            objective="maximize_tps",
+            primary_metric="decode_tps",
+            constraints={},
+            rationale="시스템 시드 채택 및 승격 생략",
+            promote_method_flag=True,
+        )
+        assert adopted.status == "adopted"
         dec_nodes = (
             await db.execute(select(Node).where(Node.study_id == study.id, Node.kind == "decision"))
         ).scalars().all()
-        assert len(dec_nodes) == 0
+        assert len(dec_nodes) == 1
+        assert dec_nodes[0].conditions["method_promotion"] == {
+            "requested": True, "status": "skipped", "reason": "system_seed_method"
+        }
 
         best_records = (
             await db.execute(select(BestResult).where(BestResult.study_id == study.id))
         ).scalars().all()
-        assert len(best_records) == 0
+        assert len(best_records) == 1
 
         # 4. User-scope method promotion works as intended
         user_method = Method(

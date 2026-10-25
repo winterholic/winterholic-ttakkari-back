@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy import select, update
 
 from ttakkari import generation
@@ -267,6 +268,30 @@ async def start_experiment_runs(
     exp = await db.get(Experiment, experiment_id)
     if not exp:
         raise ValueError(f"Experiment {experiment_id} not found")
+
+    # Persisted definitions and direct /run requests must pass the same local
+    # execution checks as the planner preview before any Run rows are created.
+    if exp.adapter_id != "external_report":
+        from ttakkari.research.planner import validate_experiment_plan
+
+        study = await db.get(Study, exp.study_id)
+        plan = await validate_experiment_plan(
+            db,
+            study_id=exp.study_id,
+            method_id=exp.method_id,
+            compared_method_ids=[uuid.UUID(str(value)) for value in (exp.compared_method_ids or [])],
+            adapter_id=exp.adapter_id,
+            strategy=exp.strategy,
+            search_space=exp.search_space or {},
+            fixed_inputs=exp.fixed_inputs or {},
+            budget=exp.budget or {},
+            scope=study.scope if study else "personal",
+        )
+        if not plan.valid:
+            raise HTTPException(
+                422,
+                "experiment_plan_not_executable: " + "; ".join(plan.errors),
+            )
 
     q = select(Configuration).where(Configuration.experiment_id == experiment_id)
     if configuration_ids:

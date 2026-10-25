@@ -89,7 +89,7 @@ def test_conflicting_report_requires_review_only_in_relevant_or_unknown_conditio
         "id": "familiar", "title": "A familiar method", "conditions": {"backend": "metal"},
         "cost_seconds": 1, "evidence_count": 100,
         "research_context": {"truncated": False, "relations": [{
-            "id": "conflict", "predicate": "challenges_under_conditions", "conditions": {"dataset": "A"},
+            "id": "conflict", "from_id": "claim", "to_id": "familiar", "predicate": "challenges_under_conditions", "conditions": {"dataset": "A"},
             "other_node": {"id": "claim", "kind": "claim", "epistemic_status": "source_reported"},
         }]},
     }, {"id": "novel", "title": "Z new hypothesis", "conditions": {"backend": "metal"},
@@ -125,3 +125,34 @@ def test_truncated_context_requires_review_and_preserves_hard_exclusion():
                 "cost_seconds": 2, "research_context": {"relations": [], "truncated": True}}]
     assert rank_methods(methods, {"backend": "metal"}, 10)[0]["eligibility"] == "needs_review"
     assert rank_methods(methods, {"backend": "cuda"}, 10)[0]["eligibility"] == "excluded"
+
+
+@pytest.mark.parametrize('predicate,expected', [('challenges_under_conditions', 'candidate'), ('conflicts_with', 'needs_review'), ('contradicts', 'needs_review')])
+def test_directed_challenge_affects_only_target_but_symmetric_conflicts_affect_both(predicate, expected):
+    method = {'id': 'method', 'title': 'method', 'conditions': {'backend': 'metal'}, 'cost_seconds': 1,
+              'research_context': {'relations': [{'id': 'edge', 'predicate': predicate,
+                  'from_id': 'method', 'to_id': 'hypothesis', 'conditions': {'dataset': 'B'},
+                  'other_node': {'id': 'hypothesis', 'conditions': {'dataset': 'B'}}}], 'truncated': False}}
+    result = rank_methods([method], {'backend': 'metal', 'dataset': 'B'}, 10)[0]
+    assert result['eligibility'] == expected
+    edge = result['reason']['research_context']['relations'][0]
+    assert edge['affects_selection'] is (predicate != 'challenges_under_conditions')
+
+
+@pytest.mark.parametrize('edge_conditions,node_conditions,environment,expected', [
+    ({'dataset': 'B'}, {'dataset': 'A'}, {'backend': 'metal', 'dataset': 'B'}, 'candidate'),
+    ({}, {'dataset': 'A'}, {'backend': 'metal', 'dataset': 'A'}, 'needs_review'),
+    ({'dataset': 'A'}, {}, {'backend': 'metal', 'dataset': 'A'}, 'needs_review'),
+    ({'dataset': 'A'}, {'hardware': 'm5'}, {'backend': 'metal', 'dataset': 'A'}, 'needs_review'),
+    ({'dataset': 'A'}, {'hardware': 'm5'}, {'backend': 'metal', 'dataset': 'A', 'hardware': 'm4'}, 'candidate'),
+])
+def test_relation_and_other_node_conditions_are_conjunctive_without_overwriting(edge_conditions, node_conditions, environment, expected):
+    method = {'id': 'method', 'title': 'method', 'conditions': {'backend': 'metal'}, 'cost_seconds': 1,
+              'research_context': {'relations': [{'id': 'edge', 'predicate': 'challenges_under_conditions',
+                  'from_id': 'hypothesis', 'to_id': 'method', 'conditions': edge_conditions,
+                  'other_node': {'id': 'hypothesis', 'conditions': node_conditions}}], 'truncated': False}}
+    result = rank_methods([method], environment, 10)[0]
+    assert result['eligibility'] == expected
+    edge = result['reason']['research_context']['relations'][0]
+    assert edge['conditions'] == edge_conditions and edge['other_node']['conditions'] == node_conditions
+    assert 'other_node_applicability' in edge

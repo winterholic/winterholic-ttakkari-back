@@ -6,6 +6,7 @@ import os
 import uuid
 from pathlib import Path
 
+import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
@@ -97,3 +98,31 @@ async def test_selection_scopes_relations_and_flags_incomplete_context(client, a
     assert row['reason']['research_context']['truncated'] is True
     assert len(row['reason']['research_context']['relations']) == 200
     assert {r['predicate'] for r in row['reason']['research_context']['relations']} == {'combination_hypothesis'}
+
+
+@pytest.mark.parametrize('outbound,node_dataset', [(True, 'B'), (False, 'A')])
+async def test_selection_does_not_invert_challenge_or_override_other_node_conditions(client, auth, outbound, node_dataset):
+    async def post(path, body):
+        r = await client.post('/api/research' + path, headers=auth, json=body)
+        assert r.status_code in (200, 201), r.text
+        return r.json()
+
+    study = await post('/studies', {'title': 'Independent review regressions', 'goal': 'Preserve direction and conditions', 'scope': 'personal'})
+    sid = study['id']
+    method = await post(f'/studies/{sid}/nodes', {'kind': 'method', 'title': 'Method', 'conditions': {'backend': 'metal'}, 'details': {'cost_seconds': 1}})
+    other = await post(f'/studies/{sid}/nodes', {'kind': 'hypothesis', 'title': 'Condition-bound claim', 'conditions': {'dataset': node_dataset}})
+    edge = await post(f'/studies/{sid}/relations', {'from_id': method['id'] if outbound else other['id'],
+        'to_id': other['id'] if outbound else method['id'], 'predicate': 'challenges_under_conditions',
+        'conditions': {'dataset': 'B'}, 'rationale': 'Do not reverse direction or overwrite the node condition'})
+    result = await post(f'/studies/{sid}/select', {'environment': {'backend': 'metal', 'dataset': 'B'}})
+    row = result['candidates'][0]
+    assert row['id'] == method['id'] and row['eligibility'] == 'candidate'
+    context = row['reason']['research_context']['relations'][0]
+    assert context['id'] == edge['id'] and context['other_node']['conditions'] == {'dataset': node_dataset}
+    assert context['affects_selection'] is False
+    if receipt_path := os.environ.get('RESEARCH_SELECTION_DIRECTION_RECEIPT'):
+        path = Path(receipt_path)
+        receipts = [] if outbound else json.loads(path.read_text())
+        receipts.append({'outbound': outbound, 'node_dataset': node_dataset, 'method': method,
+                         'other_node': other, 'relation': edge, 'fresh_selection': result})
+        path.write_text(json.dumps(receipts, ensure_ascii=False, indent=2) + '\n')

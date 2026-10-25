@@ -68,6 +68,39 @@ def comparable(a: dict, b: dict, vary: list[str] | None = None) -> dict:
     }
 
 
+def _selection_relation(relation: dict, method_id: str, environment: dict) -> dict:
+    """A directed challenge targets to_id; edge and endpoint conditions both restrict it."""
+    relation_conditions = relation.get("conditions", {})
+    node_conditions = relation.get("other_node", {}).get("conditions", {})
+    relation_fit = applicability(relation_conditions, environment)
+    node_fit = applicability(node_conditions, environment)
+    # An empty condition adds no constraint. If both are empty, applicability is unknown.
+    fits = [fit for conditions, fit in [(relation_conditions, relation_fit), (node_conditions, node_fit)] if conditions]
+    fits = fits or [applicability({}, environment)]
+    status = (
+        "incompatible" if any(f["status"] == "incompatible" for f in fits)
+        else "unknown" if any(f["status"] == "unknown" for f in fits)
+        else "applicable"
+    )
+    applicable = {
+        "status": status,
+        "missing": sorted({key for fit in fits for key in fit["missing"]}),
+        "mismatches": sorted({key for fit in fits for key in fit["mismatches"]}),
+        "unspecified_conditions": not bool(relation_conditions or node_conditions),
+    }
+    predicate = relation.get("predicate")
+    relevant_direction = predicate in {"contradicts", "conflicts_with"} or (
+        predicate == "challenges_under_conditions" and relation.get("to_id") == method_id
+    )
+    return {
+        **relation,
+        "relation_applicability": relation_fit,
+        "other_node_applicability": node_fit,
+        "applicability": applicable,
+        "affects_selection": relevant_direction and status != "incompatible",
+    }
+
+
 def rank_methods(
     methods: list[dict], environment: dict, budget_seconds: int
 ) -> list[dict]:
@@ -76,14 +109,13 @@ def rank_methods(
         fit = applicability(method.get("conditions", {}), environment)
         stored_context = method.get("research_context", {})
         relations = [
-            {**relation, "applicability": applicability(relation.get("conditions", {}), environment)}
+            _selection_relation(relation, method.get("id"), environment)
             for relation in stored_context.get("relations", [])
         ]
         context = {"relations": relations, "truncated": bool(stored_context.get("truncated"))}
         # A challenge is an unresolved report, not proof that a method cannot work.
         unresolved = context["truncated"] or any(
-            r.get("predicate") in {"challenges_under_conditions", "contradicts", "conflicts_with"}
-            and r["applicability"]["status"] != "incompatible"
+            r["affects_selection"]
             for r in relations
         )
         cost = method.get("cost_seconds")

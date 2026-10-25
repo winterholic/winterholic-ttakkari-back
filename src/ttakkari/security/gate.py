@@ -65,6 +65,7 @@ SECURITY_TEST_FILES: frozenset[str] = frozenset({
     "unit_tests/test_antigravity_account_isolation.py",
     "unit_tests/test_antigravity_managed_profiles.py",
     "unit_tests/test_opencode_accounts.py",
+    "unit_tests/test_copilot_accounts.py",
     # 깃허브 API 및 도구 하드닝
     "unit_tests/test_github_hardening.py",
 })

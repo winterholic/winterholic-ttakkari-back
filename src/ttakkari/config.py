@@ -13,6 +13,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ttakkari.model_catalog import (
     ANTIGRAVITY_DEFAULT,
     ANTIGRAVITY_MODELS,
+    COPILOT_DEFAULT,
+    COPILOT_MODELS,
     MUSE_EFFORT,
     OPENCODE_COPILOT_MODELS,
     OPENCODE_DEFAULT,
@@ -169,6 +171,7 @@ class Settings(BaseSettings):
         "antigravity": {"model": ANTIGRAVITY_DEFAULT, "effort": "high"},
         "muse": {"model": "muse-spark-1.3", "effort": MUSE_EFFORT},
         "opencode": {"model": OPENCODE_DEFAULT, "effort": "medium"},
+        "copilot": {"model": COPILOT_DEFAULT, "effort": "medium"},
         "auto": {"model": "gpt-6-luna", "effort": "high"},
         "qwen-local": {"model": "Qwen3.8-Flash-Next-Q2_K", "effort": "high"},
     }
@@ -190,6 +193,7 @@ class Settings(BaseSettings):
         "codex": ["gpt-6-luna", "gpt-6.1-sol"],
         "antigravity": ANTIGRAVITY_MODELS,
         "opencode": OPENCODE_COPILOT_MODELS,
+        "copilot": COPILOT_MODELS,
         # Only the subscriber model with a successful response on this account is admitted.
         "muse": ["muse-spark-1.3"],
         # This local engine is explicitly selectable; it is never a ROUTES auto stage.
@@ -313,6 +317,7 @@ class Settings(BaseSettings):
     # Ask each account's own CLI which models it can run (`agy models`); off in tests.
     antigravity_model_probe: bool = True
     opencode_bin: str = str(HOME / ".opencode/bin/opencode")
+    copilot_bin: str = "/opt/homebrew/bin/copilot"
     # Muse coding, MCP and resume passed on deployed 6d5f580 (2026-10-18).
     muse_enabled: bool = True
     # Joins Muse to auto worker routing (general/routine). Also requires the code acceptance latch;

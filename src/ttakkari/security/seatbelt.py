@@ -35,7 +35,7 @@ DB_SOCKET_REGEXES = (
 
 # 홈 기준 상대 경로. 디렉터리는 subpath, 파일은 literal 로 쓴다.
 SECRET_DIRS = (".ssh", ".aws", ".gnupg", ".kube", ".config/gh", ".config/gcloud", ".azure", ".password-store",
-               ".gemini", ".codex", ".docker", ".opencode")
+               ".gemini", ".codex", ".docker", ".opencode", ".copilot")
 SECRET_FILES = (".netrc", ".pgpass", ".git-credentials", ".npmrc", ".pypirc", ".my.cnf")
 # 계정 폴더 없이 뜨는 기본 claude 계정은 이 파일로 인증한다. 그때만 열어 둔다.
 CLAUDE_DEFAULT_CREDENTIALS = ".claude/.credentials.json"

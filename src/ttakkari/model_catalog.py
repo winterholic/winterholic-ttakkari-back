@@ -26,6 +26,15 @@ OPENCODE_COPILOT_MODELS = [
 
 OPENCODE_DEFAULT = "github-copilot/gpt-5.6-sol"
 
+COPILOT_MODELS = [
+    "auto",
+    "gpt-5.6-luna",
+    "gpt-5.4",
+    "claude-sonnet-5.5",
+]
+
+COPILOT_DEFAULT = "auto"
+
 
 # Muse 는 생각 수준을 max 로 고정한다(사용자 결정 2026-10-19). 세션·Run·API 요청이 다른 값을 줘도 실행 직전에 이 값으로 바꾼다.
 MUSE_EFFORT = "max"

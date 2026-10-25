@@ -26,6 +26,7 @@ from ttakkari.agents.antigravity import AntigravityAdapter
 from ttakkari.agents.base import AgentAdapter, LaunchSpec, ParseState
 from ttakkari.agents.claude import ClaudeAdapter
 from ttakkari.agents.codex import CodexAdapter
+from ttakkari.agents.copilot import CopilotAdapter
 from ttakkari.agents.muse import MuseAdapter
 from ttakkari.agents.opencode import OpencodeAdapter
 from ttakkari.agents.qwen_local import MODEL as QWEN_LOCAL_MODEL
@@ -79,7 +80,7 @@ log = logging.getLogger(__name__)
 
 ADAPTERS: dict[str, AgentAdapter] = {
     "claude": ClaudeAdapter(), "codex": CodexAdapter(), "antigravity": AntigravityAdapter(),
-    "muse": MuseAdapter(), "opencode": OpencodeAdapter(),
+    "muse": MuseAdapter(), "opencode": OpencodeAdapter(), "copilot": CopilotAdapter(),
 }
 QWEN_LOCAL_ADAPTER = QwenLocalAdapter(worker_path=get_settings().qwen_local_worker_path,
                                       enabled=get_settings().qwen_local_enabled,
@@ -1057,7 +1058,7 @@ class RunManager:
         def conversation_key(profile):
             if is_meeting:
                 return meeting_routing.conversation_key(profile)
-            if task_type or profile.engine in {"antigravity", "muse", "opencode"} or (pinned_fallback and profile.engine != sess.engine):
+            if task_type or profile.engine in {"antigravity", "muse", "opencode", "copilot"} or (pinned_fallback and profile.engine != sess.engine):
                 return worker_routing.conversation_key(profile)
             return profile.key
 
@@ -1073,7 +1074,7 @@ class RunManager:
             # Legacy account-only IDs identify the original model. They cannot be
             # reused for another model sharing the same provider account.
             if profile.engine == sess.engine and (
-                profile.engine not in {"antigravity", "muse", "opencode"}
+                profile.engine not in {"antigravity", "muse", "opencode", "copilot"}
                 or profile.model == worker_routing.primary_target(sess.engine, requested_model)[1]
             ):
                 return es.get(profile.key)
@@ -1340,6 +1341,13 @@ class RunManager:
                     await asyncio.to_thread(
                         managed_oc.record_run, prof.config_dir, success=not failed,
                         error=" ".join(t for t in texts if t)[:2000] if failed else None)
+            if prof.engine == "copilot" and not stopped:
+                from ttakkari import copilot_accounts as managed_cp
+                with contextlib.suppress(ValueError, OSError):
+                    await asyncio.to_thread(
+                        managed_cp.record_run, prof.config_dir, success=not failed,
+                        error=" ".join(t for t in texts if t)[:2000] if failed else None,
+                        is_system=prof.config_dir is None)
             limited = (failed and prof.engine != "qwen-local"
                        and (state.limit_hit or profiles_mod.is_usage_limit(*texts)))
             reset_at: float | None = None
@@ -2176,7 +2184,7 @@ def _looks_like_agent(pid: int) -> bool:
                              check=False).stdout
     except (OSError, subprocess.SubprocessError):
         return False
-    return any(name in out for name in ("claude", "codex", "/agy ", "antigravity", "/muse ", "muse-runtime/bridge.mjs", "opencode"))
+    return any(name in out for name in ("claude", "codex", "/agy ", "antigravity", "/muse ", "muse-runtime/bridge.mjs", "opencode", "copilot"))
 
 def _tmp_dirs() -> list[Path]:
     dirs = {Path("/tmp").resolve(), Path(tempfile.gettempdir()).resolve()}
@@ -2279,6 +2287,8 @@ def _launch_model(sess: ChatSession, run: Run, prof: profiles_mod.Profile, first
     s = get_settings()
     if prof.engine == "opencode" and sess.kind != SessionKind.orchestrator:
         return prof.model or run.model or s.worker_default_models["opencode"]["model"], run.effort or "medium"
+    if prof.engine == "copilot" and sess.kind != SessionKind.orchestrator:
+        return prof.model or run.model or s.worker_default_models["copilot"]["model"], run.effort or "medium"
     if prof.engine == "muse" and sess.kind != SessionKind.orchestrator:
         return prof.model or run.model or s.worker_default_models["muse"]["model"], MUSE_EFFORT
     if prof.engine == "antigravity" and sess.kind != SessionKind.orchestrator:

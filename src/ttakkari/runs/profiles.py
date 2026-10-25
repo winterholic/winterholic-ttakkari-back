@@ -27,7 +27,7 @@ from ttakkari.models import AppSetting, ChatSession, EngineAccount, utcnow
 
 log = logging.getLogger(__name__)
 
-ENGINES = {"claude", "codex", "antigravity", "muse", "opencode"}
+ENGINES = {"claude", "codex", "antigravity", "muse", "opencode", "copilot"}
 # 엔진이 사용량·속도 한도로 거절할 때의 문구. 문구가 바뀌면 폴백 없이 그냥 실패한다(ADR 0006 한계).
 # Claude: "You've hit your session|weekly|usage limit · resets 7:20pm (Asia/Seoul)", "Claude AI usage limit reached|<epoch>".
 # Codex: "You've hit your usage limit. ... try again at Oct 12th, 2026 12:16 AM."
@@ -80,6 +80,11 @@ class Profile:
                 return managed_oc.execution_env(self.config_dir, base_env)
             root = get_settings().home / "accounts" / str(self.id) / "opencode"
             return base_env | {f"XDG_{kind.upper()}_HOME": str(root / kind) for kind in ("config", "data", "state", "cache")}
+        if self.engine == "copilot":
+            from ttakkari import copilot_accounts as managed_cp
+            if self.config_dir:
+                return managed_cp.execution_env(self.config_dir, base_env, is_system=False)
+            return managed_cp.execution_env(None, base_env, is_system=True)
         if self.config_dir is None:
             return base_env.copy()
         if self.engine == "antigravity":
@@ -95,6 +100,14 @@ class Profile:
 
 
 def execution_ready(profile: Profile) -> bool:
+    if profile.engine == "copilot":
+        from ttakkari import copilot_accounts as managed_cp
+        if profile.config_dir is None:
+            return managed_cp.is_ready(None, is_system=True)
+        try:
+            return managed_cp.load(profile.config_dir).account_id == profile.id and managed_cp.is_ready(profile.config_dir)
+        except (OSError, ValueError):
+            return False
     if profile.engine == "opencode":
         if profile.config_dir is None:
             return True
@@ -213,7 +226,7 @@ async def availability(db: AsyncSession, session_engine: str, pool: str = "perso
         p = _profile(a)
         if not execution_ready(p):
             continue
-        if p.engine in {"antigravity", "muse", "opencode"}:
+        if p.engine in {"antigravity", "muse", "opencode", "copilot"}:
             p = replace(p, model=model or get_settings().worker_default_models[p.engine]["model"])
         if p.engine == "antigravity":
             from ttakkari.runs import agy_models
@@ -668,6 +681,14 @@ def identity(engine: str, config_dir: str | None) -> tuple[str, str | None]:
     codex: <config_dir 또는 ~/.codex>/auth.json 존재 여부만(키체인 저장이면 알 수 없다).
     """
     base = Path(config_dir).expanduser() if config_dir else None
+    if engine == "copilot":
+        from ttakkari import copilot_accounts as managed_cp
+        try:
+            state = managed_cp.status(base, is_system=(base is None))
+            st = state.get("auth_state")
+            return ("ok" if st == "authenticated" else "missing" if st == "setup_required" else "unknown"), state.get("principal")
+        except (ValueError, OSError):
+            return "missing", None
     if engine == "opencode":
         if base:
             from ttakkari import opencode_accounts as managed_oc
@@ -714,6 +735,8 @@ def model_engine(model: str | None) -> str | None:
     m = model.lower()
     if m.startswith(("github-copilot/", "opencode/")):
         return "opencode"
+    if m.startswith("copilot/"):
+        return "copilot"
     if m in ANTIGRAVITY_MODELS:
         return "antigravity"
     if m.startswith(("muse-wonder-", "muse-spark-")):

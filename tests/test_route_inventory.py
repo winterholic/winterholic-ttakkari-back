@@ -609,6 +609,7 @@ ROUTE_SCOPE: dict[tuple[str, str], str] = {
     ("POST", "/api/accounts/reorder"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/antigravity/check"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/opencode/check"): "owner-plain",
+    ("POST", "/api/accounts/{account_id}/copilot/check"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/codex-reset"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/cooldown/clear"): "owner-plain",
     ("POST", "/api/accounts/{account_id}/usage/refresh"): "owner-plain",

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from collector_support import article_html, prose
-from sqlalchemy import select
+from sqlalchemy import select, text
 from test_collector_control import BASE, source_body
 from test_collector_pipeline import env  # noqa: F401
 
@@ -308,12 +308,13 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
         envelope_id = row.envelope_id
 
     # [순서 1 실증]: claim -> txn 밖 평가 대기 -> unhold commit -> precise apply 재조회 잠금 진입
+    TIMEOUT = 10.0
     eval_started = asyncio.Event()
     unhold_done = asyncio.Event()
 
     async def fake_evaluator(*, goal, title, text, request_key, job_id):
         eval_started.set()  # Session 2: production claim 완료 후 txn 밖 평가 진입
-        await unhold_done.wait()  # Session 1: unhold_item이 실행되어 commit될 때까지 대기
+        await asyncio.wait_for(unhold_done.wait(), timeout=TIMEOUT)  # Session 1: unhold commit까지 유한 대기
         return {
             "topic_relevance": 0.88,
             "relevance_explanation": "직렬화 트랜잭션 설계 목표와 부합함",
@@ -325,12 +326,14 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
 
     # 세션 1 워커: missions.unhold_item 실행
     async def session1_unhold_worker():
-        await eval_started.wait()  # Session 2가 claim(state="processing")한 후 unhold 진입
-        async with sessionmaker()() as db1:
-            res = await missions.unhold_item(db1, mission_id, item_id)
-            await db1.commit()
-        unhold_done.set()  # unhold commit 완료 신호
-        return res
+        await asyncio.wait_for(eval_started.wait(), timeout=TIMEOUT)  # Session 2 claim 대기
+        try:
+            async with sessionmaker()() as db1:
+                res = await missions.unhold_item(db1, mission_id, item_id)
+                await db1.commit()
+            return res
+        finally:
+            unhold_done.set()  # unhold commit 완료 신호 (예외 시에도 hang 방지)
 
     # 세션 2 워커: 실제 production consume_pending_once 실행 (자체 잠금/outbox 재구현 일절 없음)
     async def session2_precise_worker():
@@ -436,11 +439,62 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
         orig_rights = copy.deepcopy(row.envelope.get("rights"))
         envelope_id = row.envelope_id
 
-    # [순서 2 실증]: Session 2가 consume_pending_once로 먼저 claim 및 apply 완료 -> Session 1이 unhold_item 시도
-    eval_started = asyncio.Event()
+    # [순서 2 실증]: precise가 먼저 row lock을 점유한 상태에서 unhold가 진입·대기하고 commit 후 item_not_held 확인되는 경계
+    TIMEOUT = 10.0
+    real_precise_sessionmaker = precise_eval.sessionmaker
+
+    precise_row_locked = asyncio.Event()
+    unhold_query_invoked = asyncio.Event()
+    allow_precise_commit = asyncio.Event()
+    precise_committed = asyncio.Event()
+    lock_wait_observed = False
+
+    class PreciseSessionProbe:
+        """실제 AsyncSession을 래핑하여 apply 트랜잭션의 with_for_update 락 획득 시점을 관측하고 동기화한다."""
+
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        async def scalar(self, statement, *args, **kwargs):
+            res = await self._session.scalar(statement, *args, **kwargs)
+            # apply 단계에서 CollectorItem row lock(FOR UPDATE)을 획득한 직후 감지
+            is_for_update = getattr(statement, "_for_update_arg", None) is not None
+            if is_for_update and getattr(res, "id", None) == item_id:
+                # 1. Session 2가 PostgreSQL에서 item_id의 row lock을 획득했음을 신호
+                precise_row_locked.set()
+                # 2. Session 1이 unhold_item 호출에 진입할 때까지 유한 timeout 대기
+                await asyncio.wait_for(unhold_query_invoked.wait(), timeout=TIMEOUT)
+                # 3. unhold 쿼리가 PostgreSQL에 진입하여 row lock 대기 상태에 들어간 것을 관측할 때까지 대기
+                await asyncio.wait_for(allow_precise_commit.wait(), timeout=TIMEOUT)
+            return res
+
+        async def commit(self):
+            try:
+                await self._session.commit()
+            finally:
+                precise_committed.set()
+
+        async def __aenter__(self):
+            await self._session.__aenter__()
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            return await self._session.__aexit__(exc_type, exc_val, exc_tb)
+
+    def probed_sessionmaker():
+        real_factory = real_precise_sessionmaker()
+
+        def factory(*args, **kwargs):
+            return PreciseSessionProbe(real_factory(*args, **kwargs))
+
+        return factory
+
+    monkeypatch.setattr(precise_eval, "sessionmaker", probed_sessionmaker)
 
     async def fake_evaluator(*, goal, title, text, request_key, job_id):
-        eval_started.set()  # Session 2: claim 완료 후 평가 진입 신호
         return {
             "topic_relevance": 0.92,
             "relevance_explanation": "분산합의 팍소스 트랜잭션 설계 목표와 부합함",
@@ -450,12 +504,13 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
             "confidence": 0.98,
         }
 
-    # 세션 1 워커: Session 2가 apply 트랜잭션에 진입한 후 경합하며 unhold_item 호출
+    # 세션 1 워커: Session 2가 row lock을 획득한 상태에서 unhold_item을 호출하여 DB lock wait에 진입
     async def session1_unhold_worker():
-        await eval_started.wait()
-        # Session 2가 evaluator를 마치고 두 번째 DB 트랜잭션(with_for_update)에 먼저 진입하도록 미세 대기
-        await asyncio.sleep(0.02)
+        # Session 2가 apply 트랜잭션에서 with_for_update row lock을 획득할 때까지 결정적 대기 (sleep 전혀 없음)
+        await asyncio.wait_for(precise_row_locked.wait(), timeout=TIMEOUT)
+        unhold_query_invoked.set()
         async with sessionmaker()() as db1:
+            # unhold_item 내부의 with_for_update(of=CollectorItem) 쿼리는 Session 2가 commit할 때까지 DB에서 대기함
             res = await missions.unhold_item(db1, mission_id, item_id)
             await db1.commit()
         return res
@@ -464,8 +519,35 @@ async def test_concurrent_two_db_sessions_precise_first_then_unhold_race(client,
     async def session2_precise_worker():
         return await precise_eval.consume_pending_once(limit=1, evaluator=fake_evaluator)
 
-    # 2개 독립 세션을 비동기로 동시 경합 실행
-    res1, res2 = await asyncio.gather(session1_unhold_worker(), session2_precise_worker())
+    # 락 대기 상태 관측 태스크 (Probe Task)
+    async def lock_wait_observer():
+        nonlocal lock_wait_observed
+        try:
+            # Session 1이 unhold 쿼리에 진입할 때까지 대기
+            await asyncio.wait_for(unhold_query_invoked.wait(), timeout=TIMEOUT)
+            # unhold_item 쿼리가 PostgreSQL 서버에 도달하여 row lock 대기 상태(granted=false)가 되는지 관측
+            async with sessionmaker()() as db_probe:
+                for _ in range(100):  # 0.01초 간격으로 최대 1초간 관측
+                    waiting_locks = (await db_probe.execute(
+                        text("SELECT count(*) FROM pg_locks WHERE NOT granted")
+                    )).scalar()
+                    if waiting_locks and waiting_locks > 0:
+                        lock_wait_observed = True
+                        break
+                    await asyncio.sleep(0.01)
+        finally:
+            # 관측 후 Session 2에게 commit을 허용하여 lock을 해제하도록 신호
+            allow_precise_commit.set()
+
+    # 3개 태스크를 비동기로 동시 실행
+    res1, res2, _ = await asyncio.gather(
+        session1_unhold_worker(), session2_precise_worker(), lock_wait_observer()
+    )
+    # 경합 완료 후 원래 sessionmaker 복원
+    monkeypatch.setattr(precise_eval, "sessionmaker", real_precise_sessionmaker)
+
+    # 실제 PostgreSQL pg_locks에서 granted=false 인 row lock 대기가 관측되었음을 입증
+    assert lock_wait_observed is True
     assert res2 == 1  # Session 2가 1개 item 정상 소비 완결
     # Session 1은 이미 accepted 상태로 변경되었음을 확인하여 안전하게 item_not_held 응답 반환
     assert res1.get("status") == "accepted"

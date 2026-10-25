@@ -15,6 +15,7 @@
   - `review/collection-final/chain3_stdout.txt` (`88d66d08ce77ae6ce66a974f9487069b9b82512d34b7be2300db988af9a8f83d`): 마이그레이션 chain3 실제 stdout
   - `review/collection-final/muse3_stdout.txt` (`a4ed0a1f7e89919faed86525776669366f00041b057ef0bb6e6c4d68d227ba55`): Muse 3 계약 테스트 실제 stdout
   - `review/collection-final/race_stdout.txt` (`a9dc0c4240b95d1ae194ec0218f38c53cb4f74e8d1f3d7c8798087a89d435342`): 실 production consume_pending_once ↔ unhold 양방향 순서(2케이스) 동시 경합 실제 stdout
+  - `review/collection-final/race_deterministic_stdout.txt` (`c686854edebb9cf818ad6e245ab23a450de6f66c97a587521f5a95cf5dc8b9c5`): sleep 배제, `PreciseSessionProbe` 관측 및 `pg_locks` 실제 row lock 대기 실측 보완 후 2개 동시 경합 실제 stdout (2 passed in 1.12s)
   - `review/collection-final/full_run_raw.txt` (`eba2020771df3d7b1b197bd25d15aecadcb15d7a055513c3f24701c559487657`): 1차 5,236개 전체 회귀 원시 출력 (5 failed)
   - `review/collection-final/full_run_final.txt` (`c7944674dbeb5601a6bf636b0a552d4e2296f472913fed27fbf1dba72ed46819`): 최종 1회 전체 회귀 원시 출력 (5213 passed, 0 failed, ALL GREEN)
 - **실행 명령 및 환경**:
@@ -166,6 +167,32 @@
 
     db reset: 2 selective (avg 12.0/111 tables), 0 forced full, 0 fell back to full
     ======================= 2 passed, 40 deselected in 1.01s =======================
+    ```
+
+### 6.1. sleep 배제 및 관측 가능한 트랜잭션/잠금 단계 Event 결정적 순서 동기화 + PostgreSQL Row Lock 대기 실측 보완 (최신)
+- **교정 배경 및 지적 사항**:
+  - 케이스 2(`test_concurrent_two_db_sessions_precise_first_then_unhold_race`)의 session 1이 `eval_started.wait()` 후 `asyncio.sleep(0.02)`만으로 precise apply-first를 가정하던 속도 의존성 결함 교정.
+  - 두 테스트 모두에서 `event.wait()` 무제한 대기로 인한 실패 시 hang 가능성을 제거하고 유한 timeout 및 cleanup 도입.
+- **결정적 동기화 및 실측 프로브 적용**:
+  1. **속도 의존적 sleep 완전 제거 및 유한 timeout**: 모든 이벤트 대기에 `TIMEOUT = 10.0`초를 적용하여 hang 위험을 원천 차단하고 `try...finally`로 이벤트 해제 보장.
+  2. **트랜잭션/잠금 단계 Session Probe Wrapper**: production `precise_eval.consume_pending_once`의 claim/outbox/apply 로직을 일절 재작성하거나 DB/rowlock을 mock하지 않고, 테스트 측에서 실제 AsyncSession을 래핑하는 `PreciseSessionProbe`를 구현. apply 트랜잭션에서 `CollectorItem`의 `with_for_update` row lock을 획득한 직후 `precise_row_locked` 이벤트를 발생시키고 unhold의 DB lock 대기 진입을 동기화.
+  3. **실제 PostgreSQL Row Lock Wait 실측 (`pg_locks`)**: Session 1이 `missions.unhold_item`을 호출하여 `with_for_update(of=CollectorItem)` 쿼리를 날렸을 때, 독립 DB 세션에서 `SELECT count(*) FROM pg_locks WHERE NOT granted`를 쿼리하여 Session 1이 Session 2의 row lock으로 인해 PostgreSQL 서버 수준에서 실제 락 대기(`granted=false`) 상태에 돌입했음을 직접 실측 증명 (`assert lock_wait_observed is True`).
+  4. **Commit 후 언락 및 `item_not_held` 안전 전환 경계**: Session 2가 commit하여 row lock을 해제하자 대기 중이던 Session 1의 쿼리가 완료되어 이미 `item.status == "accepted"`임을 확인하고 `message: "item_not_held"` 응답 반환 및 outbox 추가 생성 0건 보장.
+  5. **순서 1 동기화 및 멱등/불변성 유지**: 반대 순서(unhold 먼저 commit -> precise apply 재조회)에서도 동일하게 유한 timeout 동기화 및 단 1건 outbox 생성, KB receipt(`imported`), 단일 검색 색인, rights/hash/retention 불변 유지 확인.
+- **기존 원시 증거 보존**: `review/collection-final/race_stdout.txt` (SHA256: `a9dc0c4240b95d1ae194ec0218f38c53cb4f74e8d1f3d7c8798087a89d435342`) 온전히 보존.
+- **신규 결정적 실행 증거**:
+  - 파일: `review/collection-final/race_deterministic_stdout.txt` (SHA256: `c686854edebb9cf818ad6e245ab23a450de6f66c97a587521f5a95cf5dc8b9c5`)
+  - 실행 명령:
+    ```bash
+    uv run pytest tests/test_collection_missions.py -k test_concurrent_two_db_sessions -v
+    ```
+  - 실행 결과:
+    ```text
+    tests/test_collection_missions.py::test_concurrent_two_db_sessions_unhold_and_precise_apply_race PASSED [ 50%]
+    tests/test_collection_missions.py::test_concurrent_two_db_sessions_precise_first_then_unhold_race PASSED [100%]
+
+    db reset: 2 selective (avg 12.0/111 tables), 0 forced full, 0 fell back to full
+    ======================= 2 passed, 40 deselected in 1.12s =======================
     ```
 
 ---

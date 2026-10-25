@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 
-from ttakkari.collector import control, jobs, store
+from ttakkari.collector import control, jobs, store, triage
 from ttakkari.collector.contracts import AuthContext, CollectorConflictError, jcs
 from ttakkari.collector.control_models import CollectorDelivery, CollectorSource
 from ttakkari.collector.netguard import normalize_url
@@ -291,17 +291,21 @@ async def register_document_license(db, mission, doc):
 async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict:
     jobs = list(await db.scalars(select(CollectorJob).join(CollectionMissionJob, CollectionMissionJob.job_id == CollectorJob.id)
                                  .where(CollectionMissionJob.mission_id == mission.id, CollectorJob.tenant_id == mission.tenant_id)))
-    counts = dict.fromkeys(("discovered", "acquired", "accepted", "held", "failed", "blocked", "duplicate", "imported", "pending_delivery", "not_imported"), 0)
+    counts = dict.fromkeys(("discovered", "acquired", "accepted", "held", "failed", "blocked", "duplicate", "imported", "pending_delivery", "not_imported", "review_needed", "auto_accepted", "auto_held"), 0)
     for job in jobs:
         counts["discovered"] += (job.cursor or {}).get("discovered", 0)
     results = []
+    triage_reasons: dict[str, int] = {}
     if jobs:
         filters = (CollectorItem.job_id.in_([job.id for job in jobs]), CollectorItem.tenant_id == mission.tenant_id)
         measures = {name: CollectorItem.status == name for name in ("accepted", "held", "failed", "blocked")}
-        measures.update(acquired=CollectorItem.raw_sha256.is_not(None), duplicate=CollectorItem.reason_codes.contains(["exact_duplicate"]))
+        measures.update(acquired=CollectorItem.raw_sha256.is_not(None), duplicate=CollectorItem.reason_codes.contains(["exact_duplicate"]),
+                        review_needed=CollectorItem.reason_codes.contains(["review_needed"]))
         totals = (await db.execute(select(*(func.count(CollectorItem.id).filter(condition).label(name)
                                             for name, condition in measures.items())).where(*filters))).one()
         counts.update(dict(totals._mapping))
+        counts["auto_accepted"] = max(0, counts["accepted"] - counts["review_needed"])
+        counts["auto_held"] = counts["held"]
         counts["imported"] = await db.scalar(select(func.count(CollectorItem.id.distinct())).join(
             CollectorDelivery, CollectorDelivery.item_id == CollectorItem.id).where(*filters, CollectorDelivery.outcome == "imported")) or 0
         counts["pending_delivery"] = await db.scalar(select(func.count(CollectorItem.id.distinct())).join(
@@ -312,26 +316,114 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
             # Select bounded metadata in SQL: polling a large mission must never load all normalized bodies.
             rows = (await db.execute(select(
                 CollectorItem.id, CollectorItem.url, CollectorItem.final_url, CollectorItem.status,
-                CollectorItem.reason_codes,
+                CollectorItem.reason_codes, CollectorItem.signals,
                 CollectorItem.envelope["extensions"]["collector:page"]["title"].astext.label("title"),
                 CollectorDelivery.outcome, CollectorDelivery.revision_id,
                 CollectorDelivery.detail["document_id"].astext.label("document_id"),
             ).outerjoin(CollectorDelivery, CollectorDelivery.item_id == CollectorItem.id).where(*filters)
                 .ext(distinct_on(CollectorItem.id)).order_by(CollectorItem.id, CollectorDelivery.created_at.desc().nulls_last()).limit(100))).all()
-            results = [{"id": str(row.id), "url": row.final_url or row.url, "title": row.title or row.url,
-                        "status": row.status, "reasons": row.reason_codes, "delivery": row.outcome,
-                        "document_id": row.document_id, "revision_id": str(row.revision_id) if row.revision_id else None} for row in rows]
+            for row in rows:
+                item_reasons = row.reason_codes or []
+                triage_sig = (row.signals or {}).get("triage") or {}
+                for r in item_reasons:
+                    if r.startswith("triage:") or r in ("review_needed", "exact_duplicate"):
+                        triage_reasons[r] = triage_reasons.get(r, 0) + 1
+                results.append({
+                    "id": str(row.id), "url": row.final_url or row.url, "title": row.title or row.url,
+                    "status": row.status, "reasons": item_reasons,
+                    "triage": {
+                        "status": triage_sig.get("triage_status", "auto_held" if row.status == "held" else "auto_accepted"),
+                        "scores": triage_sig.get("scores", {}),
+                        "reasons": triage_sig.get("reasons", item_reasons),
+                        "mode": triage_sig.get("mode", "active"),
+                        "verified": triage_sig.get("verified", False),
+                    },
+                    "delivery": row.outcome,
+                    "document_id": row.document_id, "revision_id": str(row.revision_id) if row.revision_id else None
+                })
     state = mission.status
     if jobs and all(job.status in TERMINAL for job in jobs) and not counts["pending_delivery"]:
         state = "partial" if mission.gaps or counts["failed"] or counts["blocked"] or counts["not_imported"] or (counts["held"] and not counts["accepted"]) or any(j.status != "succeeded" for j in jobs) else "succeeded"
         if not counts["acquired"]:
             state = "partial"
+
+    triage_summary = {
+        "accepted": counts["auto_accepted"],
+        "review_needed": counts["review_needed"],
+        "held": counts["held"],
+        "reasons": triage_reasons,
+        "policy": {
+            "mode": "conservative",
+            "model": triage.MODEL_ID,
+            "revision": triage.MODEL_REVISION,
+            "status": "active",
+            "verified": False,
+        },
+    }
+
     return {
         "id": str(mission.id), "goal": mission.goal, "title": mission.plan["title"], "status": state,
         "plan": mission.plan if detailed else {k: v for k, v in mission.plan.items() if k != "context"},
-        "gaps": mission.gaps, "counts": counts, "results": results,
+        "gaps": mission.gaps, "counts": counts, "triage": triage_summary, "results": results,
         "jobs": [{"job_id": str(job.id), "status": job.status, "stage": job.stage,
                   "error": job.last_error} for job in jobs],
         "knowledge_processing": {"storage": "verified" if counts["imported"] else "pending", "semantic": "unverified"},
         "created_at": mission.created_at.isoformat(), "updated_at": mission.updated_at.isoformat(),
+    }
+
+
+async def unhold_item(db, mission_id: uuid.UUID, item_id: uuid.UUID) -> dict:
+    """Unhold (recover) a held document in the mission and enqueue for KB delivery."""
+    from datetime import UTC, datetime
+
+    item = await db.scalar(
+        select(CollectorItem)
+        .join(CollectionMissionJob, CollectionMissionJob.job_id == CollectorItem.job_id)
+        .where(CollectionMissionJob.mission_id == mission_id, CollectorItem.id == item_id)
+    )
+    if item is None:
+        raise ValueError("item_not_found")
+    if item.status != "held":
+        return {"item_id": str(item.id), "status": item.status, "message": "item_not_held"}
+
+    now = datetime.now(UTC)
+    item.status = "accepted"
+    item.decision_state = "accept"
+    reasons = list(item.reason_codes or [])
+    if "manual_unhold" not in reasons:
+        reasons.append("manual_unhold")
+    item.reason_codes = reasons
+    signals = dict(item.signals or {})
+    signals["unhold_override"] = {"at": now.isoformat(), "previous_status": "held"}
+    item.signals = signals
+
+    outbox_created = False
+    if item.envelope_id:
+        existing_outbox = await db.scalar(
+            select(CollectorOutbox).where(
+                CollectorOutbox.tenant_id == item.tenant_id,
+                CollectorOutbox.sink == "export",
+                CollectorOutbox.scope == item.scope,
+                CollectorOutbox.envelope_id == item.envelope_id,
+            )
+        )
+        if not existing_outbox:
+            outbox = CollectorOutbox(
+                job_id=item.job_id,
+                tenant_id=item.tenant_id,
+                scope=item.scope,
+                sink="export",
+                envelope_id=item.envelope_id,
+                payload_hash=item.payload_hash or "",
+                status="pending",
+            )
+            db.add(outbox)
+            outbox_created = True
+
+    await db.flush()
+    return {
+        "item_id": str(item.id),
+        "status": "accepted",
+        "delivery_queued": outbox_created,
+        "reasons": item.reason_codes,
     }

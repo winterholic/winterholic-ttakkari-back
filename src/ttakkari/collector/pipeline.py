@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from ttakkari.collector import parse, quality, store, textproc
+from ttakkari.collector import parse, quality, store, textproc, triage
 from ttakkari.collector import profiles as profiles_module
 from ttakkari.collector.blobs import BlobQuotaExceeded, BlobStore, default_blob_store
 from ttakkari.collector.contracts import (
@@ -359,7 +359,7 @@ async def _analyze(
 
 # ---- page transaction: dedupe, decision, envelope, persistence --------------------------------------------------
 
-def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]], req: CollectRequest) -> tuple[str, list[str], list[dict]]:
+def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]], req: CollectRequest, *, goal: str = "") -> tuple[str, list[str], list[dict]]:
     """(state, reason_codes, extra_errors). Only 'hold' reasons can come from quality; nothing here deletes a document."""
     errors: list[dict] = []
     analysis = p.analysis
@@ -375,11 +375,23 @@ def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]]
         holds.append("exact_duplicate")
     if req.l1.mode == "gate" and analysis.l1.error:
         holds.append("l1_unavailable")
+    # C4: Lightweight multi-axis triage & goal relevance
+    triage_outcome = triage.evaluate_triage(
+        goal=goal, title=analysis.extracted.title or "", text=analysis.text,
+        l0_signals=analysis.l0.signals, exact_duplicate=exact is not None,
+        near_duplicates=near, truncated=analysis.truncated, shadow_mode=req.l1.mode == "shadow",
+    )
+    p.signals["triage"] = triage_outcome.signals
+    if triage_outcome.action == "hold":
+        holds.extend([r for r in triage_outcome.reasons if r not in holds])
     if holds:
         return "hold", holds, errors
     notes = ["l0_pass", *analysis.profile_result.notes, *analysis.l1.notes]
     if near:
         notes.append("near_duplicate_candidate")
+    for r in triage_outcome.reasons:
+        if r not in notes:
+            notes.append(r)
     return "accept", notes, errors
 
 
@@ -447,7 +459,20 @@ def _build_envelope(
         lineage.append(f"mission:{mission['id']}")
     quality_axes = quality.unmeasured_quality(textproc.NORMALIZER_VERSION)
     if a is not None:
-        quality_axes = a.l1.quality
+        quality_axes = dict(a.l1.quality)
+        if p.signals.get("triage"):
+            ext["collector:triage"] = p.signals["triage"]
+            goal = (mission or {}).get("goal", "").strip()
+            if goal and quality_axes.get("relevance", {}).get("status") == "unmeasured":
+                rel_score = float(p.signals["triage"]["scores"]["relevance"])
+                query_id = hashlib.sha256(goal.encode("utf-8")).hexdigest()[:16]
+                quality_axes["relevance"] = {
+                    "status": "measured", "value": rel_score, "scale": "similarity",
+                    "model_id": triage.MODEL_ID, "model_revision": triage.MODEL_REVISION,
+                    "preprocess_version": triage.PREPROCESS_VERSION, "calibration_id": None,
+                    "calibration_gold_hash": None, "calibrated_probability": None,
+                    "query_id": query_id, "evidence": [f"relevance={rel_score:.3f}"],
+                }
         if a.extracted.meta.get("adapter") == "pypdf":
             ext["collector:pdf"] = {"pages": json.loads(a.extracted.meta["pdf_pages"]),
                                     "total_pages": int(a.extracted.meta["pdf_total_pages"]),
@@ -513,7 +538,9 @@ async def _persist(db, job: ClaimedJob, spec: SourcePolicySpec, label: str, req:
     envelope: dict[str, Any] | None = None
     # An envelope exists whenever raw bytes exist for a document: accepted, held (incl. unsupported media) or error.
     if p.kind == "document" and p.raw_sha256 and (a is not None or p.status in ("held", "failed")):
-        state, reasons, extra_errors = _decide(p, exact, near, req)
+        mission = (job.envelope.get("extensions") or {}).get("collector:mission")
+        goal = mission.get("goal", "") if mission else ""
+        state, reasons, extra_errors = _decide(p, exact, near, req, goal=goal)
         status = {"accept": "accepted", "hold": "held", "error": "failed"}[state]
         try:
             envelope = validate_envelope(

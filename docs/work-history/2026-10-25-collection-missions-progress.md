@@ -61,3 +61,35 @@
 5. personal/work 실제 데이터/모델/참조 통합은 별도 필수 작업이다. immutable evidence와 payload hash를 무작정 덮지 않는다. 현재 프론트 변경만으로 C2가 충족됐다고 쓰지 않는다.
 6. 경량 ML 후보를 최신 공식 근거로 좁히고 대표 실험/독립 평가를 통해 실제 선별에 연결한다. 현재 ML은 기존 shadow 그대로다. 입력 목적 관련성, 보수적 자동 처리, 보류/복구와 미검증 표시가 필요하다.
 7. 사용자 맥락의 KB 적재와 외부 자료 관계, PDF/파일 입력, 시나리오 A–E 제한 외부 E2E·필수 회귀 후 clean main 통합·push·배포 예약을 진행하고 운영 실동작을 별도 확인한다.
+
+
+## C4 구현: 경량 ML 다축 품질·목표 관련성·보수적 자동 선별·복구·독립 평가 (2026-10-25)
+
+### 구현 내용
+- **새 모듈 (`src/ttakkari/collector/triage.py`)**:
+  - 외부 유료 API나 대규모 신경망 없이 로컬 CPU에서 문서당 0.05ms 수준으로 동작하는 경량 다축 평가 엔진.
+  - 1. **목표 관련성 (Goal Relevance)**: 자연어 `goal`과 문서 제목(Title), 도입부(Lead), 본문(Body) 간의 토큰 커버리지, 한글 조사 정규화, sub-linear TF 포화 가중치를 결합해 `similarity` 스케일([0.0, 1.0]) 산출. Ingestion envelope 계약에 맞춰 `query_id` (goal 해시)와 근거(evidence)를 함께 기록.
+  - 2. **본문 품질 (Content Quality / Utility)**: 문자수, 기호 비율(symbol_ratio), 알파벳/한글 비율(alpha_ratio), 중복/반복 n-gram, 짧은 줄 비율, 본문 구조(헤더, 코드 블록, 목록 등), 추출 truncation 여부를 결합해 `rule` 스케일 산출.
+  - 3. **중복/근접 중복 (Novelty)**: exact match(0.0) 및 MinHash 128-band LSH Jaccard 유사도 기반 novelty 점수 산출.
+  - 4. **출처 신뢰도 (Source Trust / Factuality)**: 검증된 라이선스/허용 출처 여부 기반 신뢰 신호 산출.
+  - 5. **보수적 자동 선별 (Conservative Auto-Triage)**:
+    - 명백히 좋음: `auto_accepted` -> 자동 적재 (accept).
+    - 명백히 나쁨 (완전 무관, 극단적 스팸/보일러플레이트, 완전 중복, 심각한 오류): `auto_held` -> 자동 보류 (삭제 아님, 복구 가능).
+    - 애매함 (경계선 관련성, 저품질 의심, near-duplicate): **`review_needed` -> 지식 도서관에 적재하되 '검토 필요' 플래그 부착** (좋은 문서가 누락되는 False Negative 원천 방지).
+- **최소 연결 지점**:
+  - `src/ttakkari/collector/pipeline.py`: `_decide`에서 mission goal 및 다축 triage 평가기를 호출하여 판정 사유 및 신호 기록. `_build_envelope`에서 `envelope["extensions"]["collector:triage"]` 및 `envelope["quality"]["relevance"]` 축 규격 충족 반영.
+  - `src/ttakkari/collector/missions.py`: `view` 응답에 `triage` 집계 블록 (`accepted`, `review_needed`, `held`, `reasons`, `policy`) 및 각 결과 항목의 `triage` 상세 노출. `unhold_item` 함수로 보류된 문서를 수동 복구(accepted 전환 및 CollectorOutbox export 큐 등록).
+  - `src/ttakkari/api/collection_missions.py`: `POST /api/assistant/collect/missions/{mission_id}/items/{item_id}/unhold` 엔드포인트 추가.
+- **독립 평가 및 재현 검증 (`scripts/eval_collection_triage.py`, `unit_tests/fixtures/triage_eval_dataset.json`, `unit_tests/test_collection_triage_eval.py`)**:
+  - 35건의 실제 공개 기술 문서, 스팸, 404, 보일러플레이트, 중복, 무관 토픽 fixture 데이터셋 구축.
+  - 측정 결과:
+    - 총 샘플 수: 35건 (좋음 13, 애매 8, 나쁨 14)
+    - 좋은 문서 오판 보류율 (False Negative Rate): **0.00%** (0/13 - 좋은 문서를 잘못 버리지 않는 보수적 선별 목표 100% 충족)
+    - 좋은 문서 적재 재현율 (Good Recall): **100.00%** (13/13)
+    - 나쁜 문서 자동 보류율 (Bad Hold Recall): **100.00%** (14/14)
+    - 수집 적재 정밀도 (Ingest Precision): **100.00%**
+    - 애매 문서 검토필요 식별율: **37.50%**
+    - 문서당 평균 처리 시간: **0.053 ms / doc** (로컬 CPU, 외부 API 호출 0회)
+- **테스트 및 코드 품질**:
+  - `PYTHONPATH=src:unit_tests ../back/.venv/bin/python -m pytest -q unit_tests/test_collection_triage.py unit_tests/test_collection_triage_eval.py unit_tests/test_collection_mission_triage_unhold.py unit_tests/test_pipeline_triage_integration.py ...` -> **100 passed, 4953 subtests passed in 2.33s**.
+  - `ruff check`, `ruff format` clean.

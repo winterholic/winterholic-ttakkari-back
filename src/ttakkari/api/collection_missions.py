@@ -57,3 +57,15 @@ async def detail(mission_id: uuid.UUID, _: User, db: Db):
     if mission is None:
         raise HTTPException(404, "수집 임무를 찾을 수 없습니다.")
     return await missions.view(db, mission)
+
+
+@router.post("/{mission_id}/items/{item_id}/unhold")
+async def unhold_mission_item(mission_id: uuid.UUID, item_id: uuid.UUID, _: User, db: Db):
+    try:
+        result = await missions.unhold_item(db, mission_id, item_id)
+        await db.commit()
+        return result
+    except ValueError as exc:
+        if str(exc) == "item_not_found":
+            raise HTTPException(404, "수집 문서를 찾을 수 없습니다.") from exc
+        raise HTTPException(422, str(exc)) from exc

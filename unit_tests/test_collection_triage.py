@@ -119,3 +119,64 @@ def test_quality_envelope_conforms_to_collector_contracts():
     edu_axis = out.quality_envelope["education"]
     assert edu_axis["status"] == "unmeasured"
     assert edu_axis["value"] is None
+
+
+def test_near_duplicate_is_reviewed_instead_of_automatically_held():
+    text = "PostgreSQL MVCC transaction isolation notes. " * 8
+    outcome = evaluate_triage(
+        goal="PostgreSQL MVCC transaction isolation",
+        title="PostgreSQL MVCC",
+        text=text,
+        near_duplicates=[{"jaccard": 0.90}],
+    )
+
+    assert outcome.action == "accept"
+    assert outcome.triage_status == "review_needed"
+    assert "review:near_duplicate" in outcome.reasons
+
+
+def test_one_term_mission_goal_does_not_auto_hold_a_document_without_lexical_overlap():
+    outcome = evaluate_triage(
+        goal="스킬 수집",
+        title="Durable tools reference",
+        text="""A technical reference documenting durable tool execution and safe recovery.
+        It explains how state is committed across retries and how source provenance is preserved.""",
+    )
+
+    assert outcome.action == "accept"
+    assert outcome.triage_status == "review_needed"
+
+
+def test_korean_goal_and_english_document_without_shared_tokens_are_reviewed():
+    outcome = evaluate_triage(
+        goal="하네스 엔지니어링 이론과 실무 연구",
+        title="Harness research",
+        text="A technical reference on harness engineering theory and practical research.",
+    )
+
+    assert outcome.action == "accept"
+    assert outcome.triage_status == "review_needed"
+
+
+def test_short_code_reference_is_kept_for_review():
+    outcome = evaluate_triage(
+        goal="Python retry job resume",
+        title="retry helper",
+        text="def retry(job): return job.resume()",
+    )
+
+    assert outcome.action == "accept"
+    assert outcome.triage_status == "review_needed"
+
+
+def test_novelty_is_not_labeled_as_similarity_and_policy_trust_is_not_factuality():
+    outcome = evaluate_triage(
+        goal="PostgreSQL MVCC",
+        title="PostgreSQL MVCC",
+        text="PostgreSQL MVCC transactions use versioned rows for consistent reads. "
+        * 5,
+        near_duplicates=[{"jaccard": 0.90}],
+    )
+
+    assert outcome.quality_envelope["novelty"]["scale"] == "rule"
+    assert outcome.quality_envelope["factuality"]["status"] == "unmeasured"

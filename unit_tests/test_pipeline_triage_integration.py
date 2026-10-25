@@ -73,6 +73,41 @@ def test_decide_integrates_triage_with_goal():
     assert p_unrel.signals["triage"]["triage_status"] == "auto_held"
 
 
+def test_triage_mode_reports_active_when_legacy_l1_scorer_is_shadowed():
+    norm = textproc.normalize_text(
+        "Python asyncio event loop and coroutine guide. The event loop schedules async tasks."
+    )
+    analysis = SimpleNamespace(
+        text=norm.text,
+        extracted=SimpleNamespace(title="Python asyncio guide", truncated=False),
+        profile_result=SimpleNamespace(hold_reasons=[], notes=[]),
+        l1=SimpleNamespace(hold_reasons=[], notes=[], error=None),
+        l0=SimpleNamespace(flags=(), signals={}),
+        truncated=False,
+    )
+    prepared = SimpleNamespace(
+        analysis=analysis, signals={}, reasons=[], kind="document"
+    )
+    request = CollectRequest(
+        seeds=("https://docs.test/",),
+        profile="general",
+        profile_params={},
+        max_pages=1,
+        max_depth=0,
+        l1=L1Policy(mode="shadow", scorer="legacy-shadow"),
+    )
+
+    pipeline._decide(
+        prepared,
+        exact=None,
+        near=[],
+        req=request,
+        goal="Python asyncio coroutine",
+    )
+
+    assert prepared.signals["triage"]["mode"] == "active"
+
+
 def test_build_envelope_includes_triage_extension_and_measured_relevance():
     import uuid
     from datetime import datetime

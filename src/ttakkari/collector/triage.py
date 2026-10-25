@@ -476,12 +476,6 @@ def evaluate_triage(
 
     # Source Trust
     trust_score = 1.0 if source_policy_allowed else 0.5
-    trust_evidence = [
-        "source_policy_verified"
-        if source_policy_allowed
-        else "source_policy_unverified"
-    ]
-
     # Composite score
     composite = round(
         0.40 * rel_score + 0.35 * qual_score + 0.15 * nov_score + 0.10 * trust_score,
@@ -505,28 +499,22 @@ def evaluate_triage(
         action = "hold"
         status = "auto_held"
         reasons.append("exact_duplicate")
-    elif chars < 60:
-        action = "hold"
-        status = "auto_held"
-        reasons.append("triage:too_short")
     elif qual_score < t.max_hold_quality and chars < 300:
         action = "hold"
         status = "auto_held"
         reasons.append("triage:low_quality")
     elif (
-        goal.strip()
+        len(set(_tokenize(goal))) >= 2
+        and any("\uac00" <= char <= "\ud7a3" for char in goal)
+        == any("\uac00" <= char <= "\ud7a3" for char in text)
         and rel_score <= t.max_hold_relevance
         and "term_coverage=0.00" in rel_evidence
     ):
-        # Completely irrelevant with zero term overlap
+        # Zero lexical overlap is only a hard hold when the goal and text use the
+        # same script; cross-language retrieval is uncertain, not clearly irrelevant.
         action = "hold"
         status = "auto_held"
         reasons.append("triage:irrelevant_to_goal")
-    elif nov_score < 0.15 and near_duplicates:
-        # Extremely close duplicate (Jaccard > 0.85)
-        action = "hold"
-        status = "auto_held"
-        reasons.append("triage:near_duplicate")
     # Ambiguous / Review Needed conditions (Conservative: keep document, flag review)
     elif (
         rel_score < t.min_accept_relevance
@@ -565,7 +553,6 @@ def evaluate_triage(
         rel_evidence=rel_evidence,
         qual_evidence=qual_evidence,
         nov_evidence=nov_evidence,
-        trust_evidence=trust_evidence,
         shadow_mode=shadow_mode,
     )
 
@@ -583,7 +570,6 @@ def _make_outcome(
     rel_evidence: list[str] | None = None,
     qual_evidence: list[str] | None = None,
     nov_evidence: list[str] | None = None,
-    trust_evidence: list[str] | None = None,
     shadow_mode: bool = False,
 ) -> TriageOutcome:
     threshold_dict = {
@@ -659,7 +645,7 @@ def _make_outcome(
             quality_env[axis] = {
                 "status": "measured",
                 "value": float(scores["novelty"]),
-                "scale": "similarity",
+                "scale": "rule",
                 "model_id": MODEL_ID,
                 "model_revision": MODEL_REVISION,
                 "preprocess_version": PREPROCESS_VERSION,
@@ -671,17 +657,17 @@ def _make_outcome(
             }
         elif axis == "factuality":
             quality_env[axis] = {
-                "status": "measured",
-                "value": float(scores["trust"]),
-                "scale": "rule",
-                "model_id": MODEL_ID,
-                "model_revision": MODEL_REVISION,
+                "status": "unmeasured",
+                "value": None,
+                "scale": "none",
+                "model_id": None,
+                "model_revision": None,
                 "preprocess_version": PREPROCESS_VERSION,
                 "calibration_id": None,
                 "calibration_gold_hash": None,
                 "calibrated_probability": None,
                 "query_id": None,
-                "evidence": trust_evidence or [],
+                "evidence": [],
             }
         elif axis == "spam":
             spam_score = round(max(0.0, 1.0 - scores["quality"]), 4)

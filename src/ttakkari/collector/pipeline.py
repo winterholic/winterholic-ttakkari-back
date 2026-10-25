@@ -379,7 +379,7 @@ def _decide(p: Prepared, exact: CollectorItem | None, near: list[dict[str, Any]]
     triage_outcome = triage.evaluate_triage(
         goal=goal, title=analysis.extracted.title or "", text=analysis.text,
         l0_signals=analysis.l0.signals, exact_duplicate=exact is not None,
-        near_duplicates=near, truncated=analysis.truncated, shadow_mode=req.l1.mode == "shadow",
+        near_duplicates=near, truncated=analysis.truncated,
     )
     p.signals["triage"] = triage_outcome.signals
     if triage_outcome.action == "hold":

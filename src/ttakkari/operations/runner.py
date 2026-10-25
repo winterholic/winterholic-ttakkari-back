@@ -7,6 +7,7 @@ API 프로세스와 별도 세션이라 API 재시작·세대 교체에 죽지 �
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import re
 import signal
@@ -69,7 +70,8 @@ def _execute(plan: plans.Plan, out, *, job_id: str | None = None) -> tuple[str, 
         except (psutil.Error, ProcessLookupError):
             started = None
             cmdline = None
-        jobs.update(job_id, child_pid=proc.pid, child_pgid=proc.pid, child_started=started, child_cmdline=cmdline)
+        jobs.update(job_id, child_pid=proc.pid, child_pgid=proc.pid, child_started=started,
+                    child_cmdline_sha256=hashlib.sha256(cmdline.encode()).hexdigest() if cmdline else None)
 
     deadline = time.monotonic() + plan.timeout
     while proc.poll() is None:
@@ -185,22 +187,6 @@ def _redact_paths(text: str, plan: plans.Plan) -> str:
     return text
 
 
-async def _audit(job: dict) -> str | None:
-    try:
-        from ttakkari.audit import record
-        from ttakkari.db import sessionmaker
-        async with sessionmaker()() as db:
-            record(db, actor="operation", action="operation.finish",
-                   outcome="ok" if job["status"] == "succeeded" else "error", target_type="operation",
-                   target_id=job["id"],
-                   detail={"kind": job["kind"], "status": job["status"], "exit_code": job.get("exit_code"),
-                           "duration_s": job.get("duration_s"), "session_id": job.get("requested_by_session")})
-            await db.commit()
-        return None
-    except Exception as exc:  # noqa: BLE001 -- 감사 실패가 작업 결과 기록을 막지 않는다. 사실만 남긴다
-        return type(exc).__name__
-
-
 async def _run(job_id: str) -> int:
     with jobs.locked():
         job = jobs.get(job_id)
@@ -258,10 +244,8 @@ async def _run(job_id: str) -> int:
                 "output_tail": tail[-OUTPUT_TAIL_CHARS:], "finished_at": jobs.now(),
                 "duration_s": round(time.monotonic() - started, 2)}
     with jobs.locked():
-        final = jobs.write(jobs.get(job_id) | finished | {"finish_audited": True})
-    audit_error = await _audit(final)
-    if audit_error:
-        jobs.update(job_id, audit_error=audit_error)
+        jobs.write(jobs.get(job_id) | finished | {"finish_audited": False})
+    await jobs.audit_finish(job_id)
     return 0
 
 

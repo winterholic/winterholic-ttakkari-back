@@ -4,22 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import hashlib
 import json
 import os
 import signal
 import subprocess
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import psutil
+from sqlalchemy import select
 
 from ttakkari.config import get_settings
 from ttakkari.operations import plans
 
-ACTIVE = ("queued", "running")
+ACTIVE = ("queued", "running", "cleanup_pending")
 TERMINAL = ("succeeded", "failed", "cancelled", "timeout")
 KEEP_TERMINAL = 100
 QUEUED_GRACE_SECONDS = 30
@@ -41,6 +43,18 @@ def locked():
     with (root() / "operations.lock").open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
+
+
+@asynccontextmanager
+async def audit_locked():
+    # 작업 슬롯 잠금(operations.lock)과 분리한다. DB 커밋이 느려도 시작·취소·재조회가 막히지 않게 한다.
+    handle = (root() / "audit.lock").open("a")
+    try:
+        await asyncio.to_thread(fcntl.flock, handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        await asyncio.to_thread(fcntl.flock, handle, fcntl.LOCK_UN)
+        handle.close()
 
 
 def _path(job_id: str) -> Path:
@@ -86,99 +100,151 @@ def process_identity(pid: int) -> float | None:
         return None
 
 
-def runner_alive(job: dict) -> bool:
+def _runner_state(job: dict) -> tuple[bool | None, str | None]:
     pid, started = job.get("runner_pid"), job.get("runner_started")
     if not pid or started is None:
-        return False
+        return False, None
     try:
         proc = psutil.Process(pid)
         if abs(proc.create_time() - started) > 2 or proc.status() == psutil.STATUS_ZOMBIE:
-            return False
-        return RUNNER_MARKER in " ".join(proc.cmdline())
-    except (psutil.Error, ProcessLookupError):
-        return False
+            return False, None
+        return RUNNER_MARKER in " ".join(proc.cmdline()), None
+    except psutil.NoSuchProcess:
+        return False, "NoSuchProcess"
+    except (psutil.AccessDenied, PermissionError) as exc:
+        return None, type(exc).__name__
+    except (psutil.Error, OSError) as exc:
+        return None, type(exc).__name__
 
 
-def _clean_child_process_group(job: dict) -> None:
-    """러너가 비정상 종료(SIGKILL 등)했을 때 자식 프로세스 그룹을 신원 검증 후 정리한다."""
+def runner_alive(job: dict) -> bool:
+    return _runner_state(job)[0] is True
+
+
+def _clean_child_process_group(job: dict) -> tuple[bool, str | None]:
+    """기록된 leader·생성시각·명령행·pgid를 결속 검증한 뒤 그룹을 정리한다."""
     pid = job.get("child_pid")
     started = job.get("child_started")
     cmdline = job.get("child_cmdline")
+    cmdline_hash = job.get("child_cmdline_sha256")
     pgid = job.get("child_pgid")
-    if not pid or not pgid or started is None:
-        return
-    verified = False
+    if not pid and not pgid:
+        return True, None  # 자식이 기록되기 전에 러너가 사라진 경우: 정리할 기록된 대상이 없다
+    if not pid or not pgid or started is None or (not cmdline and not cmdline_hash) or pgid != pid:
+        return False, f"child identity record incomplete or unbound (pid={pid}, pgid={pgid})"
     try:
         proc = psutil.Process(pid)
-        # 신원 검증: create_time 과 cmdline 이 일치하는지
-        if abs(proc.create_time() - started) <= 2 and (
-            not cmdline or cmdline in " ".join(proc.cmdline()) or " ".join(proc.cmdline()) in cmdline
-        ):
-            verified = True
-    except (psutil.Error, ProcessLookupError):
-        # 프로세스 리더가 이미 죽었을 수 있음. pgid 확인
-        verified = True
+        actual_started = proc.create_time()
+        actual_cmdline = " ".join(proc.cmdline())
+        actual_pgid = os.getpgid(pid)
+    except psutil.NoSuchProcess:
+        try:
+            os.killpg(pgid, 0)
+            return False, f"recorded child leader missing while process group remains (pid={pid}, pgid={pgid})"
+        except ProcessLookupError:
+            return True, None
+        except PermissionError:
+            return False, f"process group existence check denied (pid={pid}, pgid={pgid}, PermissionError)"
+        except OSError as exc:
+            return False, f"process group existence check failed (pid={pid}, pgid={pgid}, {type(exc).__name__})"
+    except (psutil.AccessDenied, PermissionError) as exc:
+        return False, f"child identity lookup denied (pid={pid}, pgid={pgid}, {type(exc).__name__})"
+    except (psutil.Error, OSError) as exc:
+        return False, f"child identity lookup failed (pid={pid}, pgid={pgid}, {type(exc).__name__})"
 
-    if not verified:
-        return
+    actual_hash = hashlib.sha256(actual_cmdline.encode()).hexdigest()
+    if (abs(actual_started - started) > 2
+            or (cmdline and actual_cmdline != cmdline)
+            or (cmdline_hash and actual_hash != cmdline_hash)
+            or actual_pgid != pgid):
+        return False, f"child identity mismatch (pid={pid}, pgid={pgid})"
 
-    # 신원 확인됨: 프로세스 그룹 전체 정리
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
             os.killpg(pgid, sig)
-        except (ProcessLookupError, PermissionError):
-            break
-        # 자식 프로세스들이 완전히 종료될 때까지 대기
+        except ProcessLookupError:
+            return True, None
+        except PermissionError:
+            return False, f"signal {sig} denied for verified process group (pid={pid}, pgid={pgid}, PermissionError)"
+        except OSError as exc:
+            return False, f"signal {sig} failed for verified process group (pid={pid}, pgid={pgid}, {type(exc).__name__})"
         for _ in range(10):
             try:
                 os.killpg(pgid, 0)
-                time.sleep(0.05)
-            except (ProcessLookupError, PermissionError):
-                break
-
-
-def _audit_finish_sync(job: dict) -> None:
+            except ProcessLookupError:
+                return True, None
+            except PermissionError:
+                return False, f"process group status denied (pid={pid}, pgid={pgid}, PermissionError)"
+            except OSError as exc:
+                return False, f"process group status failed (pid={pid}, pgid={pgid}, {type(exc).__name__})"
+            time.sleep(0.05)
     try:
-        from ttakkari.audit import record
-        from ttakkari.db import sessionmaker
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return True, None
+    except PermissionError:
+        return False, f"process group status denied after SIGKILL (pid={pid}, pgid={pgid}, PermissionError)"
+    except OSError as exc:
+        return False, f"process group status failed after SIGKILL (pid={pid}, pgid={pgid}, {type(exc).__name__})"
+    return False, f"process group remains alive after SIGKILL (pid={pid}, pgid={pgid})"
 
-        async def _do():
-            async with sessionmaker()() as db:
-                record(
-                    db,
-                    actor="operation",
-                    action="operation.finish",
-                    outcome="error",
-                    target_type="operation",
-                    target_id=job["id"],
-                    detail={
-                        "kind": job["kind"],
-                        "status": job["status"],
-                        "error": job.get("error"),
-                        "session_id": job.get("requested_by_session"),
-                    },
-                )
-                await db.commit()
 
+async def audit_finish(job_id: str) -> dict:
+    """DB 감사 커밋 후 파일 marker를 갱신한다. 실패는 pending 상태와 오류로 남긴다."""
+    from ttakkari.audit import record
+    from ttakkari.db import sessionmaker
+    from ttakkari.oplog.scrub import scrub
+
+    async with audit_locked():
+        job = get(job_id)
+        if job.get("status") not in TERMINAL or job.get("finish_audited"):
+            return job
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(_do())
-        except RuntimeError:
-            asyncio.run(_do())
-    except Exception:  # noqa: BLE001, S110
-        pass
+            async with sessionmaker()() as db:
+                await _commit_finish_audit(job, db, record)
+            return update(job_id, finish_audited=True, audit_error=None)
+        except Exception as exc:  # noqa: BLE001 -- 작업 결과는 보존하고 완료 감사만 재시도 가능하게 둔다
+            return update(job_id, finish_audited=False,
+                          audit_error=scrub(f"{type(exc).__name__}: {exc}")[:300])
+
+
+async def _commit_finish_audit(job: dict, db, record_fn) -> None:
+    from ttakkari.models import AuditLog
+
+    existing = await db.scalar(select(AuditLog.id).where(
+        AuditLog.actor == "operation", AuditLog.action == "operation.finish",
+        AuditLog.target_type == "operation", AuditLog.target_id == job["id"],
+    ).limit(1))
+    if existing is None:
+        record_fn(db, actor="operation", action="operation.finish",
+                  outcome="ok" if job["status"] == "succeeded" else "error",
+                  target_type="operation", target_id=job["id"],
+                  detail={"kind": job["kind"], "status": job["status"], "error": job.get("error"),
+                          "exit_code": job.get("exit_code"), "duration_s": job.get("duration_s"),
+                          "session_id": job.get("requested_by_session")})
+    await db.commit()
 
 
 def _reconcile(job: dict) -> dict:
     """러너가 사라졌는데 끝나지 않은 기록은 실패로 남긴다. 결과를 지어내지 않는다."""
-    if job["status"] not in ACTIVE or job.get("inline") or runner_alive(job):
+    if job["status"] not in ACTIVE or job.get("inline"):
         return job
     if job["status"] == "queued":
         age = datetime.now(UTC) - datetime.fromisoformat(job["created_at"])
         if age < timedelta(seconds=QUEUED_GRACE_SECONDS) and not job.get("runner_pid"):
             return job
+    runner_state, runner_error = _runner_state(job)
+    if runner_state is True:
+        return job
+    if runner_state is None:
+        return write(job | {"status": "cleanup_pending", "finished_at": None,
+                            "error": f"runner_lost_cleanup_pending: runner identity lookup unavailable "
+                                     f"(pid={job.get('runner_pid')}, {runner_error})"})
     # runner_lost: 자식 프로세스 그룹 정리
-    _clean_child_process_group(job)
+    cleaned, cleanup_error = _clean_child_process_group(job)
+    if not cleaned:
+        return write(job | {"status": "cleanup_pending", "finished_at": None,
+                            "error": f"runner_lost_cleanup_pending: {cleanup_error}"})
     plans.clean_residuals()
     updated = write(
         job
@@ -188,9 +254,6 @@ def _reconcile(job: dict) -> dict:
             "finished_at": now(),
         }
     )
-    if not updated.get("finish_audited"):
-        _audit_finish_sync(updated)
-        updated = write(updated | {"finish_audited": True})
     return updated
 
 
@@ -209,8 +272,11 @@ def view(job: dict) -> dict:
     """API 로 내보내는 필드. 경로·pid·환경은 내지 않는다."""
     keys = ("id", "kind", "status", "created_at", "started_at", "finished_at", "updated_at", "duration_s",
             "exit_code", "error", "summary", "identity", "output_tail", "cancel_requested_at", "inline",
-            "requested_by_session", "deduplicated")
-    return {k: job[k] for k in keys if k in job}
+            "requested_by_session", "deduplicated", "audit_error")
+    out = {k: job[k] for k in keys if k in job}
+    if job.get("status") in TERMINAL:
+        out["audit_pending"] = not job.get("finish_audited", False)
+    return out
 
 
 def _prune() -> None:
@@ -303,12 +369,14 @@ def cancel(job_id: str) -> dict:
         job = _reconcile(get(job_id))
         if job["status"] not in ACTIVE:
             raise Conflict("이미 끝난 작업입니다.")
+        if job["status"] == "cleanup_pending":
+            raise Conflict("자식 프로세스 그룹 종료를 확인하지 못해 작업 슬롯이 차단된 상태입니다.")
         job = write(job | {"cancel_requested_at": now()})
-        if job.get("inline") or not runner_alive(job):
+        runner_state, _ = _runner_state(job)
+        if runner_state is None:
+            raise Conflict("러너 신원을 확인할 수 없어 작업 슬롯이 차단된 상태입니다.")
+        if job.get("inline") or runner_state is False:
             updated = write(job | {"status": "cancelled", "finished_at": now()})
-            if not updated.get("finish_audited"):
-                _audit_finish_sync(updated)
-                updated = write(updated | {"finish_audited": True})
             return updated
         os.kill(job["runner_pid"], signal.SIGTERM)  # 러너가 자식 프로세스 그룹을 정리하고 cancelled 로 기록한다
         return job

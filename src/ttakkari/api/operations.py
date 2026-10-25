@@ -52,6 +52,10 @@ def _job_id(job_id: str) -> str:
 async def list_operations(sid: AgentSession, db: Db) -> dict:
     await personal(sid, db)
     recent = await asyncio.to_thread(jobs.recent, 10)
+    for job in recent:
+        if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
+            await jobs.audit_finish(job["id"])
+    recent = await asyncio.gather(*(asyncio.to_thread(jobs.get, j["id"]) for j in recent))
     return {"kinds": DESCRIPTIONS, "jobs": [jobs.view(j) for j in recent]}
 
 
@@ -68,13 +72,8 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
             fields = {"status": "succeeded", "summary": summary}
         except Exception as exc:  # noqa: BLE001 -- 실패도 기록에 남긴다
             fields = {"status": "failed", "error": scrub(f"{type(exc).__name__}: {exc}")[:500]}
-        job = await asyncio.to_thread(jobs.update, job["id"], finished_at=jobs.now(), finish_audited=True, **fields)
-        record(db, actor="operation", action="operation.finish",
-               outcome="ok" if fields["status"] == "succeeded" else "error",
-               target_type="operation", target_id=job["id"],
-               detail={"kind": body.kind, "status": fields["status"], "session_id": str(sid),
-                       "error": fields.get("error")})
-        await db.commit()
+        job = await asyncio.to_thread(jobs.update, job["id"], finished_at=jobs.now(), finish_audited=False, **fields)
+        job = await jobs.audit_finish(job["id"])
         return jobs.view(job | {"deduplicated": False})
 
     try:
@@ -120,7 +119,10 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
 async def operation_status(job_id: str, sid: AgentSession, db: Db) -> dict:
     await personal(sid, db)
     try:
-        return jobs.view(await asyncio.to_thread(jobs.reconciled, _job_id(job_id)))
+        job = await asyncio.to_thread(jobs.reconciled, _job_id(job_id))
+        if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
+            job = await jobs.audit_finish(job["id"])
+        return jobs.view(job)
     except FileNotFoundError as exc:
         raise HTTPException(404, "운영 작업이 없습니다.") from exc
 
@@ -136,11 +138,7 @@ async def cancel_operation(job_id: str, sid: AgentSession, db: Db) -> dict:
         raise HTTPException(409, str(exc)) from exc
     record(db, actor="agent", action="operation.cancel", target_type="operation", target_id=job["id"],
            detail={"kind": job["kind"], "session_id": str(sid)})
-    if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
-        record(db, actor="operation", action="operation.finish", outcome="error",
-               target_type="operation", target_id=job["id"],
-               detail={"kind": job["kind"], "status": job["status"], "session_id": str(sid),
-                       "reason": "cancelled"})
-        await asyncio.to_thread(jobs.update, job["id"], finish_audited=True)
     await db.commit()
+    if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
+        job = await jobs.audit_finish(job["id"])
     return jobs.view(job)

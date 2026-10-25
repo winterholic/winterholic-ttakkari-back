@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 DB_STATUS_FILE = "latest.json"
@@ -24,14 +25,20 @@ _COMMON_FIELDS: dict[str, type] = {
 }
 _DB_FIELDS: dict[str, type] = {
     **_COMMON_FIELDS,
+    "key_fingerprint": str,
     "tables": int,
     "rows": int,
 }
 _DATA_FIELDS: dict[str, type] = {
     **_COMMON_FIELDS,
+    "key_fingerprint": str,
     "file_count": int,
     "total_bytes": int,
 }
+
+
+# 키 신원 표시(PBKDF2 파생 값 앞 16자 hex)만 허용한다. 키 내용·경로가 섞인 값은 형식이 달라 버려진다.
+_KEY_FINGERPRINT = re.compile(r"[0-9a-f]{16}")
 
 
 def backup_dir() -> Path:
@@ -59,8 +66,11 @@ def sanitize(section: str, body: dict | None) -> dict | None:
     clean: dict = {}
     for key, want in allow.items():
         value = body.get(key)
-        if isinstance(value, want):
-            clean[key] = value
+        if not isinstance(value, want):
+            continue
+        if key == "key_fingerprint" and not _KEY_FINGERPRINT.fullmatch(value):
+            continue
+        clean[key] = value
     if not clean.get("created_at"):
         return None
     return clean

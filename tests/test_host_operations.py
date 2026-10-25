@@ -10,6 +10,7 @@ import json
 import os
 import signal
 import subprocess
+import threading
 import time
 import uuid
 from types import SimpleNamespace
@@ -115,9 +116,10 @@ async def test_inline_reports_are_recorded(client, env):
     hdr = _hdr(env.personal_session_id)
     runtime = (await _start(client, hdr, "runtime_report")).json()
     assert runtime["status"] == "succeeded" and runtime["inline"] is True
+    assert runtime["audit_pending"] is False
     assert {"this_process", "control", "generations", "runs_running", "recent_deploys"} <= set(runtime["summary"])
     perf = (await _start(client, hdr, "performance_baseline")).json()
-    assert perf["status"] == "succeeded"
+    assert perf["status"] == "succeeded", perf.get("error")
     s = perf["summary"]
     assert s["synthetic"] and s["readonly"] and s["db_roundtrip"]["n"] == 20 and s["event_loop_lag"]["n"] == 20
     state = (await _start(client, hdr, "backup_status")).json()["summary"]
@@ -136,6 +138,24 @@ async def test_inline_reports_are_recorded(client, env):
     assert finish_audited >= 3
 
 
+async def test_inline_failure_is_finished_and_audited(client, env, monkeypatch):
+    from ttakkari.operations import inline
+
+    async def fail(*_):
+        raise RuntimeError("read-only probe failure")
+
+    monkeypatch.setattr(inline, "run", fail)
+    response = await _start(client, _hdr(env.personal_session_id), "runtime_report")
+    body = response.json()
+    assert response.status_code == 202
+    assert body["status"] == "failed" and body["audit_pending"] is False
+    assert body["error"].startswith("RuntimeError")
+    async with sessionmaker()() as db:
+        row = await db.scalar(select(AuditLog.id).where(
+            AuditLog.action == "operation.finish", AuditLog.target_id == body["id"]))
+    assert row is not None
+
+
 # ---- 단일 실행·취소·상태 보존 ----
 
 def _active_job(kind: str, **extra) -> dict:
@@ -144,7 +164,7 @@ def _active_job(kind: str, **extra) -> dict:
 
 
 async def test_duplicate_and_conflicting_starts(client, env, monkeypatch):
-    monkeypatch.setattr(jobs, "runner_alive", lambda job: True)
+    monkeypatch.setattr(jobs, "_runner_state", lambda job: (True, None))
     hdr = _hdr(env.personal_session_id)
     running = _active_job("backup_db")
     again = await _start(client, hdr, "backup_db")
@@ -170,7 +190,7 @@ def test_start_heavy_unexpected_exception_cleans_queue(monkeypatch):
 
 
 async def test_cancel_signals_runner_and_keeps_record(client, env, monkeypatch):
-    monkeypatch.setattr(jobs, "runner_alive", lambda job: True)
+    monkeypatch.setattr(jobs, "_runner_state", lambda job: (True, None))
     sent = []
     monkeypatch.setattr(jobs.os, "kill", lambda pid, sig: sent.append((pid, sig)))
     job = _active_job("data_snapshot")
@@ -200,11 +220,22 @@ async def test_lost_runner_is_preserved_as_failed_not_succeeded(client, env):
                                                                       "runner_started": 1.0})
     body = (await client.get(f"/api/agent/operations/{job['id']}", headers=_hdr(env.personal_session_id))).json()
     assert body["status"] == "failed" and body["error"].startswith("runner_lost") and body["finished_at"]
+    assert body["audit_pending"] is False
+
+
+def _reap_in_background(proc: subprocess.Popen) -> threading.Thread:
+    """실제 러너가 죽으면 고아 자식은 init(launchd)이 바로 회수한다. 테스트의 부모는 따로 회수해 같은 조건을 만든다.
+
+    macOS 는 회수되지 않은 좀비만 남은 그룹에 killpg(pgid, 0) 이 EPERM 을 돌려주므로 회수 전에는 종료 확인이 불가능하다.
+    """
+    reaper = threading.Thread(target=proc.wait, daemon=True)
+    reaper.start()
+    return reaper
 
 
 def test_runner_sigkill_cleans_orphaned_child_and_residuals():
     # 1. 자식 프로세스를 별도 세션/그룹으로 기동
-    proc = subprocess.Popen(["/bin/bash", "-c", "sleep 30"], start_new_session=True)
+    proc = subprocess.Popen(["/bin/sleep", "30"], start_new_session=True)
     try:
         p = psutil.Process(proc.pid)
         child_started = p.create_time()
@@ -230,8 +261,9 @@ def test_runner_sigkill_cleans_orphaned_child_and_residuals():
         assert psutil.pid_exists(proc.pid)
 
         # 4. reconciled 실행 -> 러너 사망 감지, 신원 검증 후 자식 프로세스 그룹 정리
+        _reap_in_background(proc)
         reconciled = jobs.reconciled(job_id)
-        assert reconciled["status"] == "failed"
+        assert reconciled["status"] == "failed", reconciled.get("error")
         assert "runner_lost" in reconciled["error"]
         assert not stale_file.exists()
 
@@ -240,7 +272,7 @@ def test_runner_sigkill_cleans_orphaned_child_and_residuals():
             if not psutil.pid_exists(proc.pid) or proc.poll() is not None:
                 break
             time.sleep(0.05)
-        assert not psutil.pid_exists(proc.pid) or proc.poll() is not None
+        assert proc.poll() is not None
 
         # 6. 시작 시 잔여 평문 파일 정리 함수 독립 검증
         stale_file2 = ops_tmp / "rehearse-decrypt-mock456"
@@ -285,6 +317,7 @@ async def test_failed_run_keeps_error_and_masks_secrets(monkeypatch):
     assert await runner._run(job["id"]) == 0
     done = jobs.get(job["id"])
     assert done["status"] == "failed" and done["exit_code"] == 7 and done["finished_at"]
+    assert done["finish_audited"] is True
     blob = json.dumps(done, ensure_ascii=False)
     assert secret not in blob and home_marker not in blob and "boom" in done["output_tail"]
     assert "<home>" in done["output_tail"] and not key.exists()
@@ -403,6 +436,17 @@ def test_runbook_contains_key_loss_warning():
     assert "key_fingerprint" in runbook
 
 
+def test_backup_status_preserves_only_key_fingerprint_from_status_files():
+    digest = "a" * 16
+    db = backup_status.sanitize("db", {"created_at": "20261025", "encrypted": True,
+                                       "key_fingerprint": digest, "manifest": "/private/secret.json"})
+    data = backup_status.sanitize("data", {"created_at": "20261025", "encrypted": True,
+                                           "key_fingerprint": digest, "archive": "/private/secret.enc"})
+    assert db["key_fingerprint"] == digest
+    assert data["key_fingerprint"] == digest
+    assert "manifest" not in db and "archive" not in data
+
+
 # ---- 실제 격리 통합: 암호화 백업 → 격리 복원 → 데이터 스냅샷 → 격리 검증 ----
 
 @needs_venv
@@ -416,7 +460,7 @@ async def test_backup_restore_snapshot_end_to_end(client, env, isolated_state):
     assert done["status"] == "succeeded", done
     s = done["summary"]
     assert s["encrypted"] is True and s["tables"] > 10 and s["rows"] > 0 and len(s["sha256"]) == 64
-    assert len(s.get("key_fingerprint", "")) == 16
+    assert len(s.get("key_fingerprint", "")) == 16, s
     assert list(isolated_state.glob("ttakkari-*.dump.enc")) and not list(isolated_state.glob("ttakkari-*.dump"))
     key = get_settings().home / "backup.key"
     assert key.stat().st_mode & 0o777 == 0o600
@@ -458,3 +502,281 @@ async def test_backup_restore_snapshot_end_to_end(client, env, isolated_state):
         actions = (await db.execute(select(AuditLog.action, AuditLog.outcome)
                                     .where(AuditLog.target_id == created.json()["id"]))).all()
     assert ("operation.request", "ok") in actions and ("operation.finish", "ok") in actions
+
+# ---- P0 회귀: 프로세스 그룹 정리와 finish audit의 durable marker ----
+
+def test_reconcile_keeps_heavy_slot_when_child_identity_is_unavailable(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0,
+        "child_pid": 2 ** 22 + 1, "child_pgid": 2 ** 22 + 1,
+        "child_started": 123.0, "child_cmdline": "expected-child --flag",
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+    monkeypatch.setattr(jobs.psutil, "Process", lambda _: (_ for _ in ()).throw(psutil.AccessDenied()))
+
+    reconciled = jobs.reconciled(job["id"])
+
+    assert reconciled["status"] == "cleanup_pending"
+    assert "identity" in reconciled["error"]
+    assert not reconciled.get("finished_at")
+    assert any(j["id"] == job["id"] for j in jobs.all_jobs() if j["status"] in jobs.ACTIVE)
+
+
+def test_reconcile_keeps_slot_when_kill_is_denied_or_group_remains(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0,
+        "child_pid": 2 ** 22 + 1, "child_pgid": 2 ** 22 + 1,
+        "child_started": 123.0, "child_cmdline": "expected-child --flag",
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+
+    class Child:
+        def create_time(self): return 123.0
+        def cmdline(self): return ["expected-child", "--flag"]
+
+    monkeypatch.setattr(jobs.psutil, "Process", lambda _: Child())
+    monkeypatch.setattr(jobs.os, "getpgid", lambda _: job["child_pgid"])
+    monkeypatch.setattr(jobs.os, "killpg", lambda pgid, sig: (_ for _ in ()).throw(PermissionError())
+                        if sig != 0 else None)
+    reconciled = jobs.reconciled(job["id"])
+    assert reconciled["status"] == "cleanup_pending"
+    assert "PermissionError" in reconciled["error"]
+    assert not reconciled.get("finished_at")
+
+
+def test_reconcile_keeps_slot_when_group_survives_sigkill(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0,
+        "child_pid": 2 ** 22 + 1, "child_pgid": 2 ** 22 + 1,
+        "child_started": 123.0, "child_cmdline": "expected-child --flag",
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+
+    class Child:
+        def create_time(self): return 123.0
+        def cmdline(self): return ["expected-child", "--flag"]
+
+    monkeypatch.setattr(jobs.psutil, "Process", lambda _: Child())
+    monkeypatch.setattr(jobs.os, "getpgid", lambda _: job["child_pgid"])
+    monkeypatch.setattr(jobs.os, "killpg", lambda pgid, sig: None)
+    monkeypatch.setattr(jobs.time, "sleep", lambda _: None)
+    reconciled = jobs.reconciled(job["id"])
+    assert reconciled["status"] == "cleanup_pending"
+    assert "remains alive" in reconciled["error"]
+
+
+def test_reconcile_does_not_signal_group_when_recorded_identity_mismatches(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0,
+        "child_pid": 2 ** 22 + 1, "child_pgid": 2 ** 22 + 1,
+        "child_started": 123.0, "child_cmdline": "expected-child --flag",
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+
+    class ReusedPid:
+        def create_time(self): return 456.0
+        def cmdline(self): return ["unrelated", "process"]
+
+    sent = []
+    monkeypatch.setattr(jobs.psutil, "Process", lambda _: ReusedPid())
+    monkeypatch.setattr(jobs.os, "getpgid", lambda _: job["child_pgid"])
+    monkeypatch.setattr(jobs.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+    reconciled = jobs.reconciled(job["id"])
+    assert reconciled["status"] == "cleanup_pending"
+    assert "identity mismatch" in reconciled["error"]
+    assert sent == []
+
+
+def test_reconcile_after_actual_runner_sigkill_handles_verified_child_group(tmp_path):
+    child = subprocess.Popen(["/bin/sleep", "30"], start_new_session=True)
+    runner_proc = subprocess.Popen(["/bin/sleep", "30"], start_new_session=True)
+    try:
+        identity = psutil.Process(child.pid)
+        job = jobs.write(jobs.create("backup_db", "session") | {
+            "status": "running", "runner_pid": runner_proc.pid,
+            "runner_started": psutil.Process(runner_proc.pid).create_time(),
+            "child_pid": child.pid, "child_pgid": os.getpgid(child.pid),
+            "child_started": identity.create_time(), "child_cmdline": " ".join(identity.cmdline()),
+        })
+        os.kill(runner_proc.pid, signal.SIGKILL)
+        runner_proc.wait(timeout=2)
+        assert runner_proc.returncode == -signal.SIGKILL
+
+        reaped = _reap_in_background(child)
+        reconciled = jobs.reconciled(job["id"])
+        assert reconciled["status"] == "failed", reconciled
+        assert "runner_lost" in reconciled["error"]
+        reaped.join(timeout=2)
+        assert child.returncode == -signal.SIGTERM
+    finally:
+        for proc in (child, runner_proc):
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+
+
+def test_reconcile_blocks_when_child_record_lacks_start_time_or_cmdline(monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+    sent = []
+    monkeypatch.setattr(jobs.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+    base = {"status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0,
+            "child_pid": 2 ** 22 + 1, "child_pgid": 2 ** 22 + 1}
+    for extra in ({"child_cmdline": "x"}, {"child_started": 123.0}):  # 시작 시각 없음 / 명령행 없음
+        job = jobs.write(jobs.create("backup_db", "session") | base | extra)
+        reconciled = jobs.reconciled(job["id"])
+        assert reconciled["status"] == "cleanup_pending" and "incomplete" in reconciled["error"]
+        jobs.write(reconciled | {"status": "cancelled", "finished_at": jobs.now()})
+    assert sent == []
+
+
+def test_reconcile_without_recorded_child_finishes_as_runner_lost(monkeypatch):
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0})
+    assert jobs.reconciled(job["id"])["status"] == "failed"
+
+
+def test_cleanup_pending_finalizes_after_group_is_confirmed_gone(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0,
+        "child_pid": 2 ** 22 + 1, "child_pgid": 2 ** 22 + 1,
+        "child_started": 123.0, "child_cmdline": "expected-child --flag",
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+    monkeypatch.setattr(jobs.psutil, "Process", lambda _: (_ for _ in ()).throw(psutil.NoSuchProcess(1)))
+    state = {"denied": True}
+
+    def probe(pgid, sig):
+        if state["denied"]:
+            raise PermissionError()
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(jobs.os, "killpg", probe)
+    assert jobs.reconciled(job["id"])["status"] == "cleanup_pending"
+    state["denied"] = False  # 좀비가 회수돼 그룹이 실제로 사라진 뒤의 재조회
+    final = jobs.reconciled(job["id"])
+    assert final["status"] == "failed" and final["error"].startswith("runner_lost") and final["finished_at"]
+
+
+def test_reconcile_blocks_when_leader_is_gone_but_recorded_group_exists(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22, "runner_started": 1.0,
+        "child_pid": 2 ** 22 + 1, "child_pgid": 2 ** 22 + 1,
+        "child_started": 123.0, "child_cmdline": "expected-child --flag",
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+    monkeypatch.setattr(jobs.psutil, "Process", lambda _: (_ for _ in ()).throw(psutil.NoSuchProcess(1)))
+    calls = []
+
+    def group_probe(pgid, sig):
+        calls.append((pgid, sig))
+        if sig != 0:
+            raise AssertionError("must not signal group without live leader identity")
+
+    monkeypatch.setattr(jobs.os, "killpg", group_probe)
+    reconciled = jobs.reconciled(job["id"])
+    assert reconciled["status"] == "cleanup_pending"
+    assert "leader missing while process group remains" in reconciled["error"]
+    assert calls == [(job["child_pgid"], 0)]
+
+
+def test_cleanup_pending_keeps_heavy_slot_and_cannot_be_cancelled(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "cleanup_pending", "error": "runner_lost_cleanup_pending: identity unavailable",
+        "runner_pid": 2 ** 22, "runner_started": 1.0,
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
+    monkeypatch.setattr(jobs, "_clean_child_process_group", lambda _: (False, "identity unavailable"))
+    with pytest.raises(jobs.Conflict, match="슬롯이 차단"):
+        jobs.cancel(job["id"])
+    with pytest.raises(jobs.Conflict, match="backup_db"):
+        jobs.prepare_heavy("restore_rehearsal", "other-session")
+    assert jobs.get(job["id"])["status"] == "cleanup_pending"
+
+
+def test_runner_identity_lookup_failure_blocks_reconciliation(monkeypatch):
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "running", "runner_pid": 2 ** 22 + 2, "runner_started": 123.0,
+    })
+    monkeypatch.setattr(jobs, "_runner_state", lambda _: (None, "AccessDenied"))
+    reconciled = jobs.reconciled(job["id"])
+    assert reconciled["status"] == "cleanup_pending"
+    assert "runner identity lookup unavailable" in reconciled["error"]
+    assert "AccessDenied" in reconciled["error"]
+    assert not reconciled.get("finished_at")
+
+
+async def test_cancel_queued_audit_failure_leaves_finish_pending_then_status_retries(client, env, monkeypatch):
+    job = jobs.create("data_snapshot", str(env.personal_session_id))
+    real_finish = jobs.audit_finish
+
+    async def failed_commit(job_id):
+        return jobs.update(job_id, finish_audited=False,
+                           audit_error="RuntimeError: simulated audit commit failure")
+
+    monkeypatch.setattr(jobs, "audit_finish", failed_commit)
+    body = (await client.post(f"/api/agent/operations/{job['id']}/cancel",
+                              headers=_hdr(env.personal_session_id))).json()
+    saved = jobs.get(job["id"])
+    assert body["status"] == "cancelled"
+    assert saved.get("finish_audited") is not True
+    assert "RuntimeError" in saved.get("audit_error", "")
+
+    monkeypatch.setattr(jobs, "audit_finish", real_finish)
+    retried = (await client.get(f"/api/agent/operations/{job['id']}",
+                                headers=_hdr(env.personal_session_id))).json()
+    assert retried["status"] == "cancelled"
+    assert retried["audit_pending"] is False
+    assert jobs.get(job["id"])["finish_audited"] is True
+
+
+async def test_finish_audit_marker_follows_commit_and_retry_is_idempotent(monkeypatch):
+    from ttakkari import db as db_module
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "failed", "finished_at": jobs.now(), "error": "runner_error: ValueError",
+        "finish_audited": False,
+    })
+    added = []
+    commits = []
+
+    class AuditSession:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+        async def scalar(self, _): return 41 if commits else None
+        def add(self, row): added.append(row)
+        async def commit(self):
+            assert jobs.get(job["id"]).get("finish_audited") is not True
+            await asyncio.sleep(0)
+            commits.append(True)
+
+    monkeypatch.setattr(db_module, "sessionmaker", lambda: lambda: AuditSession())
+    first, second = await asyncio.gather(jobs.audit_finish(job["id"]), jobs.audit_finish(job["id"]))
+    assert commits == [True] and first["finish_audited"] and second["finish_audited"] and len(added) == 1
+
+
+async def test_finish_audit_database_commit_failure_keeps_marker_pending_then_retries(monkeypatch):
+    from ttakkari import db as db_module
+    job = jobs.write(jobs.create("backup_db", "session") | {
+        "status": "failed", "finished_at": jobs.now(), "error": "runner_error: ValueError",
+        "finish_audited": False,
+    })
+
+    class FailedSession:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *_): return False
+        async def scalar(self, _): return None
+        def add(self, _): pass
+        async def commit(self): raise RuntimeError("deliberate commit failure")
+
+    monkeypatch.setattr(db_module, "sessionmaker", lambda: lambda: FailedSession())
+    failed = await jobs.audit_finish(job["id"])
+    assert failed["finish_audited"] is False
+    assert "RuntimeError" in failed["audit_error"]
+
+    class SuccessfulSession(FailedSession):
+        async def commit(self): pass
+
+    monkeypatch.setattr(db_module, "sessionmaker", lambda: lambda: SuccessfulSession())
+    retried = await jobs.audit_finish(job["id"])
+    assert retried["finish_audited"] is True and retried["audit_error"] is None

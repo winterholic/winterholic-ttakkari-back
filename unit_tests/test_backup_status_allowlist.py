@@ -96,3 +96,16 @@ def test_backup_status_endpoint_hides_secrets_and_paths(tmp_path: Path, monkeypa
         assert r.status_code == 200
         assert r.json()["db"]["rows"] == 8
         _assert_no_leak(r.json())
+
+
+def test_backup_status_keeps_only_well_formed_key_fingerprint(tmp_path: Path) -> None:
+    from ttakkari import backup_status as mod
+
+    digest = "0123456789abcdef"
+    db = mod.sanitize("db", _poisoned_db(tmp_path) | {"key_fingerprint": digest})
+    data = mod.sanitize("data", _poisoned_data(tmp_path) | {"key_fingerprint": digest})
+    assert db["key_fingerprint"] == digest and data["key_fingerprint"] == digest
+    _assert_no_leak({"db": db, "data": data})
+    for bad in (str(tmp_path / "backup.key"), "s3cr3t-pw1234", "ABCDEF0123456789", digest + "0", ""):
+        assert "key_fingerprint" not in mod.sanitize("db", _poisoned_db(tmp_path) | {"key_fingerprint": bad})
+        assert "key_fingerprint" not in mod.sanitize("data", _poisoned_data(tmp_path) | {"key_fingerprint": bad})

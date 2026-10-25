@@ -59,8 +59,12 @@ cd back
 - 개인 세션만 호출할 수 있다(work 세션 403). 무거운 작업은 한 번에 하나이고, 같은 kind 를 다시 부르면 진행 중 작업을
   돌려준다(`deduplicated`). 다른 kind 는 409. 시간 제한: backup_db 15분, 나머지 30분. 러너는 `nice 10` 으로 돈다.
 - 분리된 러너 프로세스가 돌고 상태는 `~/.ttakkari/operations/jobs/*.json` 에 남아 API 재시작·세대 교체를 견딘다.
-  러너가 사라진 기록은 `runner_lost` 실패로 남기며 성공으로 바꾸지 않는다. 취소는 자식 프로세스 그룹을 정리하고 `cancelled` 로 남긴다.
-  요청·취소·종료는 감사 로그(`operation.request|cancel|finish`)에 남는다.
+  러너가 사라지면 기록된 자식 PID·생성 시각·명령행·프로세스 그룹을 모두 확인한 뒤에만 그룹을 정리한다. 신원 확인·권한·그룹 종료를
+  확인할 수 없으면 `cleanup_pending` 으로 남아 무거운 작업 슬롯을 유지한다. 이는 운영자가 `/api/agent/operations/{id}` 상태를 다시 조회해도
+  증거가 확보되기 전에는 실패 종결로 바뀌지 않는다. 오류 문구의 pid·pgid 를 호스트에서 직접 확인해(`ps -g <pgid>`) 그룹이 실제로 없음이 분명할 때만
+  운영자가 해당 작업 기록(`~/.ttakkari/operations/jobs/<id>.json`)을 정리한다. 앱은 신원 결속이 안 된 그룹에는 신호를 보내지 않는다. 취소는 자식 프로세스 그룹이 종료된 뒤 `cancelled` 로 남긴다.
+  종료 감사는 DB 커밋 뒤 `finish_audited` 표식을 기록한다. 감사 커밋에 실패하면 terminal 상태와 `audit_pending`/`audit_error` 를 보존하고
+  다음 상태·목록 조회에서 재시도한다. 요청·취소·종료는 감사 로그(`operation.request|cancel|finish`)에 남는다.
 - 결과에는 개수·해시·시각·대상 identity 만 담는다. 출력 꼬리는 `scrub` 마스킹 후 경로를 `<home>` 등으로 치환해 1500자만 보존한다.
 - 백업은 항상 암호화한다. 키는 `TTAKKARI_BACKUP_PASSPHRASE_FILE`(0600 파일 경로, 설정으로 주입)이 있으면 그것을 쓰고, 없으면
   첫 `backup_db`/`data_snapshot` 때 앱이 `~/.ttakkari/backup.key` 를 임시파일+rename 방식으로 0600 원자 생성한다. 키 내용은 읽어서 출력하지 않으며,

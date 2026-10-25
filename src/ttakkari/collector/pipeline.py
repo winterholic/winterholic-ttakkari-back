@@ -424,6 +424,7 @@ def _build_envelope(
             "pipeline_version": PIPELINE_VERSION, "raw_preserved": not p.raw_unpreserved,
             "extracted_sha256": a.extracted_sha256 if a is not None else None,
             "normalizer_steps": [list(s) for s in a.normalized_steps] if a is not None else [],
+            "heading_structure": (a.extracted.meta.get("heading_structure") if a is not None else None),
             "revision_of": p.signals.get("revision_of"),
         },
     }

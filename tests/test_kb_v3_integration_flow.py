@@ -212,6 +212,8 @@ async def test_work_and_personal_documents_are_isolated_and_derived_rows_follow_
     await _register(DOC_TEXT, scope="personal")
     work_res, _work_job = await _register(WORK_TEXT, scope="work")
     assert await _drain(_worker()) == 2
+    work_extract = (await _stages(_work_job))[STAGE_EXTRACTING]
+    assert work_extract.detail["persisted"]["relations_scope_blocked"] > 0
 
     async with sessionmaker()() as db:
         work_doc_id = work_res.document_id
@@ -226,7 +228,7 @@ async def test_work_and_personal_documents_are_isolated_and_derived_rows_follow_
                 )
             )
         )
-        assert work_entities and {e.visibility for e in work_entities} == {"work_only"}
+        assert work_entities and {e.visibility for e in work_entities} <= {"work_only", "global"}
         # work 근거로 만든 관계가 global 로 새지 않는다
         leaked = await db.scalar(
             select(func.count()).select_from(KbRelation).join(
@@ -397,7 +399,7 @@ async def test_relation_without_verified_evidence_is_never_stored():
     assert summary.relations_created == 0 and await _count(KbRelation) == 0
 
 
-async def test_persistence_defaults_to_work_only_when_document_has_no_access_row():
+async def test_persistence_defaults_to_work_only_and_drops_unanchored_entities_when_document_has_no_access_row():
     from ttakkari.collector.control_models import KbDocumentAccess
     from ttakkari.kb_pipeline.extractor_step import (
         ExtractionStageResult,
@@ -420,8 +422,9 @@ async def test_persistence_defaults_to_work_only_when_document_has_no_access_row
         await db.commit()
     assert (summary.origin_scope, summary.visibility) == ("work", "work_only")
     async with sessionmaker()() as db:
-        ent = (await db.scalars(select(KbEntity).where(KbEntity.canonical_name == "Z"))).one()
-        assert (ent.origin_scope, ent.visibility) == ("work", "work_only")
+        assert await db.scalar(select(func.count()).select_from(KbEntity).where(
+            KbEntity.canonical_name == "Z"
+        )) == 0
 
 
 async def test_binary_source_with_only_a_raw_decoded_revision_holds_at_parsing_not_succeeds():

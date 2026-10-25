@@ -19,7 +19,7 @@ from charset_normalizer import from_bytes
 from lxml import etree
 from lxml import html as lxml_html
 
-PARSER_VERSION = f"trafilatura-{trafilatura.__version__}+parse-1"
+PARSER_VERSION = f"trafilatura-{trafilatura.__version__}+parse-2"
 MAX_DISCOVERED_PER_DOCUMENT = 500
 MAX_TEXT_CHARS = 1_000_000
 _BINARY_EXTENSIONS = (
@@ -143,9 +143,12 @@ def extract_document(raw: bytes, *, url: str, kind: str, charset: str | None = N
     )
     if doc is None or not (doc.text or "").strip():
         raise ValueError("empty_extraction")
-    text = doc.text
+    text = preserve_heading_structure(decoded, doc.text)
     published, precision = _parse_date(doc.date)
     meta = _html_meta(decoded)
+    meta["heading_structure"] = (
+        "dom-headings-to-markdown-v1" if text != doc.text else "no-heading-mapped"
+    )
     return ExtractedDocument(
         text=text[:MAX_TEXT_CHARS],
         title=doc.title,
@@ -158,6 +161,61 @@ def extract_document(raw: bytes, *, url: str, kind: str, charset: str | None = N
         truncated=len(text) > MAX_TEXT_CHARS,
         meta=meta,
     )
+
+
+def _normalized_dom_text(element) -> str:
+    return " ".join(" ".join(element.itertext()).split())
+
+
+def preserve_heading_structure(html_text: str, extracted_text: str) -> str:
+    """Add Markdown heading lines where their following DOM text maps exactly to extracted text.
+
+    Collector's normalized body is the revision body consumed downstream. Trafilatura's plain
+    text omits heading levels, so retain only headings whose next paragraph/list/pre block can be
+    located verbatim after whitespace normalization. This avoids inventing offsets for unmatched
+    or reordered source content; the raw HTML remains the immutable provenance source.
+    """
+    try:
+        tree = lxml_html.fromstring(html_text)
+    except (etree.ParserError, ValueError):
+        return extracted_text
+
+    insertions: dict[int, list[str]] = {}
+    all_elements = list(tree.iter())
+    block_positions: dict[int, int] = {}
+    search_from = 0
+    for index, heading in enumerate(all_elements):
+        tag = _local(heading.tag)
+        if tag not in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            continue
+        title = _normalized_dom_text(heading)
+        if not title:
+            continue
+        for following in all_elements[index + 1 :]:
+            next_tag = _local(following.tag)
+            if next_tag not in {"p", "li", "pre", "blockquote"}:
+                continue
+            block = _normalized_dom_text(following)
+            if len(block) < 8:
+                continue
+            element_id = id(following)
+            at = block_positions.get(element_id)
+            if at is None:
+                at = extracted_text.find(block, search_from)
+                if at < 0:
+                    continue
+                block_positions[element_id] = at
+                search_from = at + len(block)
+            line_start = extracted_text.rfind("\n", 0, at) + 1
+            level = int(tag[1])
+            insertions.setdefault(line_start, []).append(f"{'#' * level} {title}\n")
+            break
+
+    # Same-position headings retain source order; reverse application keeps offsets stable.
+    for at in sorted(insertions, reverse=True):
+        heading_lines = "".join(insertions[at])
+        extracted_text = extracted_text[:at] + heading_lines + extracted_text[at:]
+    return extracted_text
 
 
 def _html_meta(decoded: str) -> dict[str, str]:

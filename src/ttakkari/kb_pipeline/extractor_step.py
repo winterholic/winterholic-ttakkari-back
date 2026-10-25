@@ -11,6 +11,7 @@ Relations are stored as status='candidate' together with real kb_relation_eviden
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
@@ -27,7 +28,6 @@ from ttakkari.kb_ontology_models import (
     KbAssertionEvidence,
     KbDocumentEntity,
     KbEntity,
-    KbEntityAlias,
     KbRelation,
     KbRelationEvidence,
 )
@@ -91,6 +91,7 @@ class PersistenceResult:
     assertions_reused: int = 0
     relations_created: int = 0
     relations_reused: int = 0
+    relations_scope_blocked: int = 0
     relation_evidence_created: int = 0
     mentions_created: int = 0
     evidences_created: int = 0
@@ -261,96 +262,12 @@ async def persist_extracted_knowledge(
     entity_policy: dict[uuid.UUID, tuple[str, str]] = {}
     touched_entities: dict[uuid.UUID, KbEntity] = {}
 
-    async def _find_entity(norm: str, kind: str | None = None) -> KbEntity | None:
-        stmt = select(KbEntity).where(
-            KbEntity.tenant_id == tenant_id,
-            KbEntity.visibility == visibility,
-            KbEntity.norm_name == norm,
-        )
-        if kind is not None:
-            stmt = stmt.where(KbEntity.entity_kind == kind)
-        return (await db.scalars(stmt)).first()
+    def _resolved_entity_id(name: str) -> uuid.UUID | None:
+        """Return only identities resolved from this extraction's verified mentions."""
+        return entity_map.get(name)
 
-    async def _ensure_entity(name: str, kind: str = "concept", domain: str = "general") -> uuid.UUID:
-        if name in entity_map:
-            return entity_map[name]
-        norm = norm_name(name)
-        row = await _find_entity(norm) or None
-        if row is None:
-            row = KbEntity(
-                tenant_id=tenant_id,
-                origin_scope=origin_scope,
-                visibility=visibility,
-                canonical_name=name,
-                norm_name=norm,
-                entity_kind=kind,
-                domain=domain,
-                status="active",
-            )
-            db.add(row)
-            await db.flush()
-            summary.entities_created += 1
-        entity_map[name] = row.id
-        entity_policy[row.id] = (row.origin_scope, row.visibility)
-        touched_entities[row.id] = row
-        return row.id
-
-    # 1. Entities & aliases
-    for cand_ent in extraction.entities:
-        norm = norm_name(cand_ent.canonical_name)
-        existing_ent = await _find_entity(norm, cand_ent.kind)
-        if existing_ent is not None:
-            entity_id = existing_ent.id
-            entity_row = existing_ent
-            summary.entities_reused += 1
-        else:
-            entity_row = KbEntity(
-                tenant_id=tenant_id,
-                origin_scope=origin_scope,
-                visibility=visibility,
-                canonical_name=cand_ent.canonical_name,
-                norm_name=norm,
-                entity_kind=cand_ent.kind,
-                domain=cand_ent.domain,
-                summary=cand_ent.summary,
-                confidence=cand_ent.confidence,
-                mention_count=0,
-                status="active",
-            )
-            db.add(entity_row)
-            await db.flush()
-            entity_id = entity_row.id
-            summary.entities_created += 1
-
-        entity_map[cand_ent.canonical_name] = entity_id
-        entity_policy[entity_id] = (entity_row.origin_scope, entity_row.visibility)
-        touched_entities[entity_id] = entity_row
-
-        for alias in cand_ent.aliases:
-            if not alias:
-                continue
-            norm_a = norm_name(alias)
-            if not norm_a:
-                continue
-            alias_stmt = select(KbEntityAlias).where(
-                KbEntityAlias.entity_id == entity_id,
-                KbEntityAlias.norm_alias == norm_a,
-            )
-            if (await db.scalars(alias_stmt)).first() is None:
-                db.add(
-                    KbEntityAlias(
-                        entity_id=entity_id,
-                        alias=alias,
-                        norm_alias=norm_a,
-                        alias_kind="canonical" if alias == cand_ent.canonical_name else "synonym",
-                        source=cand_ent.alias_source if cand_ent.alias_source in ("seed", "extracted", "user_verified") else "extracted",
-                    )
-                )
-                summary.aliases_created += 1
-
-    await db.flush()
-
-    # 2. Evidence
+    # 1. Evidence anchors are persisted first so identity resolution can only learn aliases from
+    #    verified passage spans. Never trust CandidateEntity.alias_source as a provenance claim.
     evidence_id_map: dict[tuple[uuid.UUID, int, int], uuid.UUID] = {}
     for cand_ev in extraction.evidences:
         ev_key = (cand_ev.passage_id, cand_ev.span_start, cand_ev.span_end)
@@ -379,18 +296,133 @@ async def persist_extracted_knowledge(
             evidence_id_map[ev_key] = new_ev.id
             summary.evidences_created += 1
 
-    # 3. Mentions (KbDocumentEntity): 검증된 언급만, 근거 id 와 함께
+    # Claims and relations can anchor entity mentions when the entity's exact label occurs inside
+    # their independently verified quote. This gives endpoints their own exact evidence span.
+    anchored_mentions = list(extraction.mentions)
+    candidate_by_norm: dict[str, CandidateEntity] = {}
+    for candidate in extraction.entities:
+        candidate_by_norm[norm_name(candidate.canonical_name)] = candidate
+        candidate_by_norm[norm_name(candidate.name)] = candidate
+        for alias in candidate.aliases:
+            candidate_by_norm.setdefault(norm_name(alias), candidate)
+
+    async def _add_claim_anchor(name: str | None, evidence: CandidateEvidence | None, role: str) -> None:
+        if not name or evidence is None:
+            return
+        passage = await db.get(KbPassage, evidence.passage_id)
+        if passage is None or passage.body[evidence.span_start : evidence.span_end] != evidence.quote:
+            return
+        # Exact matching avoids inventing offsets through Unicode normalization or fuzzy spelling.
+        pos = evidence.quote.find(name)
+        if pos < 0:
+            return
+        start = evidence.span_start + pos
+        end = start + len(name)
+        ev_key = (evidence.passage_id, start, end)
+        ev_id = evidence_id_map.get(ev_key)
+        if ev_id is None:
+            row = (
+                await db.scalars(select(KbEvidence).where(
+                    KbEvidence.passage_id == evidence.passage_id,
+                    KbEvidence.span_start == start,
+                    KbEvidence.span_end == end,
+                ))
+            ).first()
+            if row is None:
+                row = KbEvidence(
+                    passage_id=evidence.passage_id,
+                    span_start=start,
+                    span_end=end,
+                    sha256=hashlib.sha256(name.encode("utf-8")).hexdigest(),
+                    note="entity identity span within verified claim evidence",
+                )
+                db.add(row)
+                await db.flush()
+                summary.evidences_created += 1
+            ev_id = row.id
+            evidence_id_map[ev_key] = ev_id
+        anchored_mentions.append(CandidateMention(
+            passage_id=evidence.passage_id,
+            entity_name=name,
+            role=role,
+            evidence_quote=name,
+            span_start=start,
+            span_end=end,
+            evidence=CandidateEvidence(
+                passage_id=evidence.passage_id,
+                span_start=start,
+                span_end=end,
+                quote=name,
+                sha256=hashlib.sha256(name.encode("utf-8")).hexdigest(),
+            ),
+        ))
+
+    for assertion in extraction.assertions:
+        await _add_claim_anchor(assertion.subject_name, assertion.evidence, "mentioned")
+        await _add_claim_anchor(assertion.object_entity_name, assertion.evidence, "mentioned")
+    for relation in extraction.relations:
+        await _add_claim_anchor(relation.source_name, relation.evidence, "mentioned")
+        await _add_claim_anchor(relation.target_name, relation.evidence, "mentioned")
+
+    # 2. Entities & aliases: resolve only evidence-verified mentions through the ontology resolver.
+    #    Candidate entities without a mention anchor are discarded, preventing mention_count=0
+    #    nodes and keeping document-derived identity out of the resolver's bypass path.
+    from ttakkari.kb_ontology.resolver import resolve_entity
+
+    for mention in anchored_mentions:
+        verified = mention.evidence
+        if verified is None:
+            continue
+        passage = await db.get(KbPassage, mention.passage_id)
+        if passage is None or passage.body[mention.span_start : mention.span_end] != mention.evidence_quote:
+            continue
+        evidence_id = evidence_id_map.get((mention.passage_id, mention.span_start, mention.span_end))
+        if evidence_id is None:
+            continue
+        candidate = candidate_by_norm.get(norm_name(mention.entity_name))
+        grounded_aliases = candidate.aliases if candidate is not None else []
+        resolution_kind = candidate.kind if candidate is not None else "concept"
+        resolution_domain = candidate.domain if candidate is not None else "general"
+        resolution = await resolve_entity(
+            db,
+            mention.entity_name,
+            aliases=grounded_aliases,
+            entity_kind=resolution_kind,
+            domain=resolution_domain,
+            summary=candidate.summary if candidate is not None else "",
+            passage_text=passage.body,
+            tenant_id=tenant_id,
+            document_id=document_id,
+            revision_id=revision_id,
+            passage_id=mention.passage_id,
+            evidence_id=evidence_id,
+            role=mention.role,
+            salience=mention.salience,
+        )
+        entity_id = resolution.entity.id
+        entity_map[mention.entity_name] = entity_id
+        if candidate is not None:
+            entity_map[candidate.name] = entity_id
+            entity_map[candidate.canonical_name] = entity_id
+        entity_policy[entity_id] = (resolution.entity.origin_scope, resolution.entity.visibility)
+        touched_entities[entity_id] = resolution.entity
+        if resolution.created:
+            summary.entities_created += 1
+        else:
+            summary.entities_reused += 1
+        summary.aliases_created += len(resolution.learned_aliases)
+
+    await db.flush()
+
+    # 3. Mentions: resolve_entity created the anchored link and recounted it. Keep this idempotent
+    #    fallback for verified links, without attaching an unverified candidate mention.
     seen_doc_entities: set[tuple[uuid.UUID, uuid.UUID]] = set()
     for m in extraction.mentions:
+        if m.evidence is None:
+            continue
         ent_id = entity_map.get(m.entity_name)
         if ent_id is None:
-            e_row = await _find_entity(norm_name(m.entity_name))
-            if e_row is None:
-                continue
-            ent_id = e_row.id
-            entity_map[m.entity_name] = ent_id
-            entity_policy[ent_id] = (e_row.origin_scope, e_row.visibility)
-            touched_entities[ent_id] = e_row
+            continue
 
         doc_ent_key = (m.passage_id, ent_id)
         if doc_ent_key in seen_doc_entities:
@@ -416,7 +448,9 @@ async def persist_extracted_knowledge(
 
     # 4. Assertions & AssertionEvidence
     for a in extraction.assertions:
-        subj_id = await _ensure_entity(a.subject_name)
+        subj_id = _resolved_entity_id(a.subject_name)
+        if subj_id is None:
+            continue
         obj_ent_id = entity_map.get(a.object_entity_name) if a.object_entity_name else None
         norm_val = norm_name(a.object_value)[:240]
 
@@ -477,9 +511,9 @@ async def persist_extracted_knowledge(
 
     # 5. Relation candidates + their evidence rows
     for r in extraction.relations:
-        src_id = await _ensure_entity(r.source_name)
-        tgt_id = await _ensure_entity(r.target_name)
-        if src_id == tgt_id:
+        src_id = _resolved_entity_id(r.source_name)
+        tgt_id = _resolved_entity_id(r.target_name)
+        if src_id is None or tgt_id is None or src_id == tgt_id:
             continue
 
         ev_id = None
@@ -488,6 +522,10 @@ async def persist_extracted_knowledge(
         if ev_id is None:
             # 검증된 근거가 없는 관계는 저장하지 않는다(근거 없는 관계를 만들지 않는다).
             continue
+
+        r_scope, r_vis = derive_derived_policy(
+            [(origin_scope, visibility), entity_policy[src_id], entity_policy[tgt_id]]
+        )
 
         rel = (
             await db.scalars(
@@ -498,10 +536,12 @@ async def persist_extracted_knowledge(
                 )
             )
         ).first()
+        if rel is not None and rel.visibility != r_vis:
+            # uq_kb_relation_edge spans visibility. Never attach work-only evidence to an existing
+            # global edge (or vice versa); the schema cannot represent two scoped copies yet.
+            summary.relations_scope_blocked += 1
+            continue
         if rel is None:
-            r_scope, r_vis = derive_derived_policy(
-                [(origin_scope, visibility), entity_policy[src_id], entity_policy[tgt_id]]
-            )
             rel = KbRelation(
                 origin_scope=r_scope,
                 visibility=r_vis,

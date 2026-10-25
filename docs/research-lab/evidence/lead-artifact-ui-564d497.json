@@ -1,0 +1,33 @@
+{
+  "revision": "564d497ccee2222cfede9c1dfa1fd687c3603716",
+  "study_id": "d16ce6ec-9dd3-498b-abd9-b9e2fc33891b",
+  "experiment_id": "254e8981-cc34-4ea3-a07e-bf63d134b5e0",
+  "best_id": "3130245e-8ac0-4c5b-b366-ae473de95d13",
+  "run_ids": [
+    "cc30e0ce-305a-4b4b-8a84-fd4d71ff4811",
+    "9913b206-7d88-4891-b80a-00caab27b519"
+  ],
+  "database_identity": [
+    "ttakkari_test",
+    "ttk_test"
+  ],
+  "adapter": "retrieval_eval",
+  "fixture": "ko_tech_docs_v1",
+  "status": "actual_ui_export_and_fresh_api_db_file_check_passed",
+  "artifacts": [
+    {
+      "artifact_id": "77f520b9-03e8-4703-84d9-cfec2137cda5",
+      "metadata_http": 200,
+      "content_http": 200,
+      "bytes": 662,
+      "sha256": "4964ec0cfabebfd8735b6b912c94b0595ff1221472883c1d27f4657136ccffb6",
+      "area": "files",
+      "best_result_preserved": true
+    }
+  ],
+  "browser_download": {
+    "filename": "research-report-d16ce6ec.md",
+    "sha256": "4964ec0cfabebfd8735b6b912c94b0595ff1221472883c1d27f4657136ccffb6",
+    "matches_content_api_and_stored_file": true
+  }
+}

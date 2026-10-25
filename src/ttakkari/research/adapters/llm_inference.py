@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from pathlib import Path
@@ -334,7 +335,7 @@ class LlmInferenceAdapter:
 
         started_wall = time.monotonic()
         server_started = False
-        launch_id: str | None = None
+        launch: dict[str, Any] = {}
         start_ownership_error: str | None = None
         cleanup_info: dict[str, Any] = {
             "attempted": False, "success": True, "stopped": False, "skipped_reason": "server_not_started",
@@ -360,7 +361,7 @@ class LlmInferenceAdapter:
             server_started = True
             # start() does not return the launch id; read it right away. HostGpu allows one live
             # instance, so the state written by the start() that just returned is ours.
-            launch_id = await asyncio.to_thread(self._current_launch_id, host_gpu)
+            launch = await asyncio.to_thread(self._read_launch, host_gpu)
 
             deadline = time.monotonic() + 45.0
             ready = False
@@ -374,6 +375,13 @@ class LlmInferenceAdapter:
                     )
                     return run_result
                 st = await asyncio.to_thread(host_gpu.status)
+                if launch.get("launch_id") and launch.get("server_pid") is None:
+                    # server pid/start are recorded by the supervisor after it spawns llama-server; they are
+                    # the evidence that our server is gone if our launch is later replaced.
+                    with contextlib.suppress(Exception):
+                        fresh = await asyncio.to_thread(self._read_launch, host_gpu)
+                        if fresh.get("launch_id") == launch["launch_id"]:
+                            launch = fresh
                 if st.get("ready"):
                     ready = True
                     break
@@ -434,7 +442,7 @@ class LlmInferenceAdapter:
 
         finally:
             if server_started:
-                cleanup_info = await asyncio.to_thread(self._cleanup_owned_launch, host_gpu, s.data_dir, launch_id)
+                cleanup_info = await asyncio.to_thread(self._cleanup_owned_launch, host_gpu, s.data_dir, launch)
             elif start_ownership_error:
                 cleanup_info = {
                     "attempted": False, "success": False, "stopped": False, "ownership": "unverified",
@@ -445,20 +453,38 @@ class LlmInferenceAdapter:
                 run_result.raw_output["cleanup"] = cleanup_info
 
     @staticmethod
-    def _current_launch_id(host_gpu: Any) -> str | None:
+    def _read_launch(host_gpu: Any) -> dict[str, Any]:
+        """launch id and supervisor/server process identity (pid + create_time) of the current state."""
         state = host_gpu._current() or {}
-        launch_id = state.get("launch_id")
-        return str(launch_id) if launch_id else None
+        keys = ("launch_id", "supervisor_pid", "supervisor_start", "server_pid", "server_start")
+        launch = {key: state.get(key) for key in keys}
+        if launch["launch_id"]:
+            launch["launch_id"] = str(launch["launch_id"])
+        return launch
 
     @staticmethod
-    def _cleanup_owned_launch(host_gpu: Any, data_dir: Path, launch_id: str | None) -> dict[str, Any]:
+    def _launch_processes_absent(launch: dict[str, Any]) -> tuple[bool, dict[str, str]]:
+        """Is every recorded process of our launch proven gone? Only ABSENT counts, as in HostGpu's own checks."""
+        from ttakkari.host_gpu_guard import ProcState, process_state
+
+        evidence = {
+            "supervisor": process_state(launch.get("supervisor_pid"), launch.get("supervisor_start")).value,
+            "server": process_state(launch.get("server_pid"), launch.get("server_start")).value,
+        }
+        return all(v == ProcState.ABSENT.value for v in evidence.values()), evidence
+
+    @staticmethod
+    def _cleanup_owned_launch(host_gpu: Any, data_dir: Path, launch: dict[str, Any]) -> dict[str, Any]:
         """Stop the server only if it is the launch this run started, and judge the stop result.
 
         Ownership is enforced inside HostGpu.stop(expected_launch_id=...) on the single state it reads,
-        so there is no check-then-stop window here.
+        so there is no check-then-stop window here. If HostGpu refuses because another launch is now
+        current, that proves nothing about our processes, so success requires the recorded supervisor and
+        server identities (pid + start time) to be observed absent.
         """
         from ttakkari.host_gpu import LaunchMismatch, _lock_held, state_dir
 
+        launch_id = launch.get("launch_id")
         info: dict[str, Any] = {"attempted": True, "success": False, "launch_id": launch_id, "stopped": False}
         if launch_id is None:
             info["error"] = "ownership_unverified: start() 직후 상태에서 launch_id를 읽지 못해 stop을 호출하지 않았습니다."
@@ -477,8 +503,19 @@ class LlmInferenceAdapter:
             else:
                 info.update(success=True, skipped_reason="already_stopped")
         except LaunchMismatch as exc:
-            # HostGpu keeps a single state; ours is no longer the current (hence not the live) launch.
-            info.update(success=True, skipped_reason="launch_replaced", detail=str(exc))
+            info.update(skipped_reason="launch_replaced", detail=str(exc))
+            try:
+                absent, evidence = LlmInferenceAdapter._launch_processes_absent(launch)
+            except Exception as probe_exc:
+                info["error"] = f"termination_unverified: {type(probe_exc).__name__}: {probe_exc}"
+                return info
+            info["process_evidence"] = evidence
+            if absent:
+                info["success"] = True
+            elif "present" in evidence.values():
+                info["error"] = f"launch_replaced_but_process_present: {evidence} — 다른 launch가 현재라 stop하지 않았습니다."
+            else:
+                info["error"] = f"termination_unverified: {evidence} — 종료를 관측하지 못했습니다."
         except Exception as exc:
             info["error"] = f"{type(exc).__name__}: {exc}"
         return info

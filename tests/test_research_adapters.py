@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import subprocess
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -386,14 +388,19 @@ _STOPPED = {"phase": "stopped", "running": False, "stopped_now": True}
 def _autospecced_host_gpu(*, owner_states, stop_result=None, stop_error=None, lock_held=False):
     """Replace HostGpu methods with autospec'd mocks so a wrong call signature fails the test.
 
-    `owner_states` is the sequence of values `HostGpu._current()` returns: the first is read
-    right after start() (ownership capture), the later ones are read by the cleanup.
+    `owner_states` is the sequence of values `HostGpu._current()` returns (the last one repeats):
+    the adapter reads it right after start() and again once the server is ready, to record the
+    launch id and the supervisor/server process identity of its own launch.
     """
-    states = iter(owner_states)
+    pending = list(owner_states)
+
+    def next_state(self):
+        return pending.pop(0) if len(pending) > 1 else (pending[0] if pending else None)
+
     with patch.object(HostGpu, "start", autospec=True, return_value={"ready": True}) as start, \
          patch.object(HostGpu, "status", autospec=True, return_value={"ready": True}), \
          patch.object(HostGpu, "bench", autospec=True, return_value=dict(_BENCH_RESULT)) as bench, \
-         patch.object(HostGpu, "_current", autospec=True, side_effect=lambda self: next(states)) as current, \
+         patch.object(HostGpu, "_current", autospec=True, side_effect=next_state) as current, \
          patch.object(HostGpu, "stop", autospec=True, return_value=stop_result, side_effect=stop_error) as stop, \
          patch("ttakkari.host_gpu._lock_held", autospec=True, return_value=lock_held):
         yield SimpleNamespace(start=start, bench=bench, current=current, stop=stop)
@@ -415,19 +422,110 @@ async def test_llm_cleanup_stops_the_launch_this_run_started() -> None:
     assert cleanup["launch_id"] == "launch-A"
 
 
+@pytest.fixture
+def child_process():
+    """A real process whose pid + create_time identity the adapter can later look up (no GPU server)."""
+    from ttakkari import host_gpu_guard
+
+    procs: list[subprocess.Popen] = []
+
+    def spawn(*, alive: bool) -> tuple[int, float]:
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        procs.append(proc)
+        start = None
+        for _ in range(100):  # create_time becomes readable right after exec
+            start = host_gpu_guard.proc_start(proc.pid)
+            if start is not None:
+                break
+            time.sleep(0.02)
+        assert start is not None
+        if not alive:
+            proc.kill()
+            proc.wait()
+        return proc.pid, start
+
+    yield spawn
+    for proc in procs:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
+def _launch_state(sup, srv, launch_id: str = "launch-A") -> dict:
+    return {
+        "launch_id": launch_id, "phase": "ready",
+        "supervisor_pid": sup[0] if sup else None, "supervisor_start": sup[1] if sup else None,
+        "server_pid": srv[0] if srv else None, "server_start": srv[1] if srv else None,
+    }
+
+
+_REFUSAL = LaunchMismatch("current host GPU launch 'launch-B' is not the expected launch 'launch-A'")
+
+
 @pytest.mark.asyncio
-async def test_llm_cleanup_does_not_stop_another_runs_launch() -> None:
-    mine = {"launch_id": "launch-A", "phase": "ready"}
-    refusal = LaunchMismatch("current host GPU launch 'launch-B' is not the expected launch 'launch-A'")
-    with _autospecced_host_gpu(owner_states=[mine], stop_error=refusal) as m:
+async def test_llm_launch_replaced_is_success_only_when_our_processes_are_proven_absent(child_process) -> None:
+    mine = _launch_state(child_process(alive=False), child_process(alive=False))
+    with _autospecced_host_gpu(owner_states=[mine], stop_error=_REFUSAL) as m:
         result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
 
-    assert m.stop.call_count == 1
+    assert m.stop.call_count == 1  # attempted with our launch id, refused by HostGpu
     cleanup = result.raw_output["cleanup"]
     assert cleanup["launch_id"] == "launch-A"
     assert cleanup["stopped"] is False
     assert cleanup["skipped_reason"] == "launch_replaced"
-    assert cleanup["success"] is True  # HostGpu keeps one state; ours is no longer the live launch
+    assert cleanup["process_evidence"] == {"supervisor": "absent", "server": "absent"}
+    assert cleanup["success"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("alive", ["supervisor", "server"])
+async def test_llm_launch_replaced_with_our_process_still_present_is_failure(child_process, alive) -> None:
+    sup = child_process(alive=alive == "supervisor")
+    srv = child_process(alive=alive == "server")
+    with _autospecced_host_gpu(owner_states=[_launch_state(sup, srv)], stop_error=_REFUSAL):
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["success"] is False
+    assert cleanup["process_evidence"][alive] == "present"
+    assert "process_present" in cleanup["error"]
+
+
+@pytest.mark.asyncio
+async def test_llm_launch_replaced_without_recorded_server_identity_is_unverified(child_process) -> None:
+    # supervisor is gone but the server pid was never recorded: absence of the server is not proven
+    mine = _launch_state(child_process(alive=False), None)
+    with _autospecced_host_gpu(owner_states=[mine], stop_error=_REFUSAL):
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["success"] is False
+    assert cleanup["process_evidence"] == {"supervisor": "absent", "server": "unknown"}
+    assert "termination_unverified" in cleanup["error"]
+
+
+@pytest.mark.asyncio
+async def test_llm_server_identity_recorded_after_start_is_picked_up_before_cleanup(child_process) -> None:
+    sup = child_process(alive=False)
+    at_start = _launch_state(sup, None)  # supervisor has not spawned llama-server yet
+    when_ready = _launch_state(sup, child_process(alive=False))
+    with _autospecced_host_gpu(owner_states=[at_start, when_ready], stop_error=_REFUSAL):
+        result = await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    cleanup = result.raw_output["cleanup"]
+    assert cleanup["process_evidence"] == {"supervisor": "absent", "server": "absent"}
+    assert cleanup["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_llm_launch_replaced_never_signals_the_replacing_launch(child_process) -> None:
+    mine = _launch_state(child_process(alive=True), child_process(alive=True))
+    with _autospecced_host_gpu(owner_states=[mine], stop_error=_REFUSAL) as m, \
+         patch("ttakkari.host_gpu.os.kill", autospec=True) as kill:
+        await LlmInferenceAdapter().execute_run(uuid4(), _LLM_CONFIG, scope="personal")
+
+    assert m.stop.call_count == 1
+    assert kill.call_count == 0
 
 
 @pytest.mark.asyncio

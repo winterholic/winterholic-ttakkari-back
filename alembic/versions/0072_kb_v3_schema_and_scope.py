@@ -30,6 +30,7 @@ depends_on = None
 _V3_TABLES = (
     "kb_conflicts",
     "kb_entity_canonicals",
+    "kb_relation_evidence",
     "kb_relations",
     "kb_assertion_evidence",
     "kb_assertions",
@@ -113,7 +114,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "kb_document_access",
-        sa.Column("visibility", sa.String(16), server_default="global", nullable=False),
+        sa.Column(
+            "visibility", sa.String(16), server_default="work_only", nullable=False
+        ),
     )
     op.create_check_constraint(
         "ck_kb_document_access_origin_scope",
@@ -138,6 +141,13 @@ def upgrade() -> None:
         "SET origin_scope = scope, "
         "    visibility = CASE WHEN scope = 'work' THEN 'work_only' ELSE 'global' END "
         "WHERE origin_scope IS NOT NULL"
+    )
+
+    # Fail-closed scope & visibility consistency check
+    op.create_check_constraint(
+        "ck_kb_document_access_work_visibility",
+        "kb_document_access",
+        "(scope != 'work' OR visibility = 'work_only') AND (origin_scope != 'work' OR visibility = 'work_only')",
     )
 
     # 4. Pipeline Tables: kb_pipeline_jobs & kb_pipeline_stages
@@ -266,7 +276,9 @@ def upgrade() -> None:
         sa.Column(
             "origin_scope", sa.String(16), server_default="personal", nullable=False
         ),
-        sa.Column("visibility", sa.String(16), server_default="global", nullable=False),
+        sa.Column(
+            "visibility", sa.String(16), server_default="work_only", nullable=False
+        ),
         sa.Column("canonical_name", sa.String(200), nullable=False),
         sa.Column("norm_name", sa.String(200), nullable=False),
         sa.Column("norm_form", sa.String(16), server_default="NFKC", nullable=False),
@@ -309,6 +321,10 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "origin_scope IN ('personal', 'work')", name="ck_kb_entities_origin_scope"
+        ),
+        sa.CheckConstraint(
+            "(origin_scope != 'work') OR (visibility = 'work_only')",
+            name="ck_kb_entities_scope_visibility",
         ),
         sa.CheckConstraint(
             "status IN ('active', 'merged', 'archived')", name="ck_kb_entities_status"
@@ -450,7 +466,9 @@ def upgrade() -> None:
         sa.Column(
             "origin_scope", sa.String(16), server_default="personal", nullable=False
         ),
-        sa.Column("visibility", sa.String(16), server_default="global", nullable=False),
+        sa.Column(
+            "visibility", sa.String(16), server_default="work_only", nullable=False
+        ),
         sa.Column(
             "subject_entity_id",
             postgresql.UUID(as_uuid=True),
@@ -500,6 +518,10 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "origin_scope IN ('personal', 'work')", name="ck_kb_assertions_origin_scope"
+        ),
+        sa.CheckConstraint(
+            "(origin_scope != 'work') OR (visibility = 'work_only')",
+            name="ck_kb_assertions_scope_visibility",
         ),
         sa.CheckConstraint(
             "status IN ('active', 'superseded', 'disputed', 'rejected')",
@@ -560,7 +582,9 @@ def upgrade() -> None:
         sa.Column(
             "origin_scope", sa.String(16), server_default="personal", nullable=False
         ),
-        sa.Column("visibility", sa.String(16), server_default="global", nullable=False),
+        sa.Column(
+            "visibility", sa.String(16), server_default="work_only", nullable=False
+        ),
         sa.Column(
             "source_entity_id",
             postgresql.UUID(as_uuid=True),
@@ -575,14 +599,14 @@ def upgrade() -> None:
         ),
         sa.Column("relation_type", sa.String(48), nullable=False),
         sa.Column("weight", sa.Float(), server_default="1.0", nullable=False),
-        sa.Column("evidence_count", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("evidence_count", sa.Integer(), server_default="0", nullable=False),
         sa.Column(
             "representative_evidence_id",
             postgresql.UUID(as_uuid=True),
             sa.ForeignKey("kb_evidence.id", ondelete="RESTRICT"),
             nullable=True,
         ),
-        sa.Column("status", sa.String(16), server_default="active", nullable=False),
+        sa.Column("status", sa.String(16), server_default="candidate", nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -617,6 +641,10 @@ def upgrade() -> None:
             "origin_scope IN ('personal', 'work')", name="ck_kb_relation_origin_scope"
         ),
         sa.CheckConstraint(
+            "(origin_scope != 'work') OR (visibility = 'work_only')",
+            name="ck_kb_relation_scope_visibility",
+        ),
+        sa.CheckConstraint(
             "relation_type IN ('part_of', 'manages', 'depends_on', 'uses', 'implements', 'alternative_to', 'related_to')",
             name="ck_kb_relation_type",
         ),
@@ -629,7 +657,41 @@ def upgrade() -> None:
     )
     op.create_index("ix_kb_relations_visibility", "kb_relations", ["visibility"])
 
-    # 5.7 kb_entity_canonicals
+    # 5.7 kb_relation_evidence (M:N evidence binding for kb_relations)
+    op.create_table(
+        "kb_relation_evidence",
+        sa.Column(
+            "relation_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("kb_relations.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
+        sa.Column(
+            "evidence_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("kb_evidence.id", ondelete="RESTRICT"),
+            primary_key=True,
+        ),
+        sa.Column("confidence", sa.Float(), server_default="1.0", nullable=False),
+        sa.Column("relation", sa.String(16), server_default="supports", nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "relation IN ('supports', 'refutes', 'qualifies')",
+            name="ck_kb_relation_evidence_rel",
+        ),
+    )
+    op.create_index(
+        "ix_kb_relation_evidence_evidence_id",
+        "kb_relation_evidence",
+        ["evidence_id"],
+    )
+
+    # 5.8 kb_entity_canonicals
     op.create_table(
         "kb_entity_canonicals",
         sa.Column(
@@ -638,7 +700,9 @@ def upgrade() -> None:
             sa.ForeignKey("kb_entities.id", ondelete="RESTRICT"),
             primary_key=True,
         ),
-        sa.Column("visibility", sa.String(16), server_default="global", nullable=False),
+        sa.Column(
+            "visibility", sa.String(16), server_default="work_only", nullable=False
+        ),
         sa.Column("canonical_definition", sa.Text(), nullable=False),
         sa.Column(
             "key_facts",
@@ -681,11 +745,13 @@ def upgrade() -> None:
         "ix_kb_entity_canonicals_visibility", "kb_entity_canonicals", ["visibility"]
     )
 
-    # 5.8 kb_conflicts
+    # 5.9 kb_conflicts
     op.create_table(
         "kb_conflicts",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("visibility", sa.String(16), server_default="global", nullable=False),
+        sa.Column(
+            "visibility", sa.String(16), server_default="work_only", nullable=False
+        ),
         sa.Column("conflict_kind", sa.String(24), nullable=False),
         sa.Column(
             "entity_id",
@@ -741,6 +807,49 @@ def upgrade() -> None:
     )
     op.create_index("ix_kb_conflicts_entity_id", "kb_conflicts", ["entity_id"])
 
+    # 6. PostgreSQL triggers for relation evidence synchronization and active relation guard
+    op.execute("""
+    CREATE OR REPLACE FUNCTION kb_sync_relation_evidence_count() RETURNS trigger AS $$
+    DECLARE
+        target_rel_id uuid;
+    BEGIN
+        target_rel_id := COALESCE(NEW.relation_id, OLD.relation_id);
+        UPDATE kb_relations
+        SET evidence_count = (
+            SELECT count(*) FROM kb_relation_evidence WHERE relation_id = target_rel_id
+        )
+        WHERE id = target_rel_id;
+        RETURN NULL;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_kb_relation_evidence_sync ON kb_relation_evidence;
+    CREATE TRIGGER trg_kb_relation_evidence_sync
+        AFTER INSERT OR DELETE ON kb_relation_evidence
+        FOR EACH ROW EXECUTE FUNCTION kb_sync_relation_evidence_count();
+    """)
+
+    op.execute("""
+    CREATE OR REPLACE FUNCTION kb_relations_active_guard() RETURNS trigger AS $$
+    BEGIN
+        IF NEW.status = 'active' THEN
+            IF NOT EXISTS (SELECT 1 FROM kb_relation_evidence WHERE relation_id = NEW.id) THEN
+                RAISE EXCEPTION 'Cannot activate kb_relation % without supporting kb_relation_evidence row'
+                    USING ERRCODE = '23514';
+            END IF;
+        END IF;
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_kb_relations_active_guard ON kb_relations;
+    CREATE TRIGGER trg_kb_relations_active_guard
+        BEFORE UPDATE OF status ON kb_relations
+        FOR EACH ROW
+        WHEN (NEW.status = 'active')
+        EXECUTE FUNCTION kb_relations_active_guard();
+    """)
+
 
 def downgrade() -> None:
     # Guard against accidental downgrade if KB v3 data exists
@@ -765,11 +874,20 @@ def downgrade() -> None:
                         "Set ALLOW_KB_DESTRUCTIVE_DOWNGRADE=1 to override."
                     )
 
+    # 0. Drop triggers and functions
+    op.execute("DROP TRIGGER IF EXISTS trg_kb_relations_active_guard ON kb_relations;")
+    op.execute("DROP FUNCTION IF EXISTS kb_relations_active_guard();")
+    op.execute("DROP TRIGGER IF EXISTS trg_kb_relation_evidence_sync ON kb_relation_evidence;")
+    op.execute("DROP FUNCTION IF EXISTS kb_sync_relation_evidence_count();")
+
     # 1. Drop v3 tables in reverse dependency order
     for table in _V3_TABLES:
         op.drop_table(table)
 
     # 2. Revert kb_document_access columns & constraints
+    op.drop_constraint(
+        "ck_kb_document_access_work_visibility", "kb_document_access", type_="check"
+    )
     op.drop_index("ix_kb_document_access_origin_scope", table_name="kb_document_access")
     op.drop_index("ix_kb_document_access_visibility", table_name="kb_document_access")
     op.drop_constraint(

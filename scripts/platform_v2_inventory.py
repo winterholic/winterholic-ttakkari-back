@@ -1976,6 +1976,8 @@ def classify_config(field: str) -> str:
             "probe",
             "antigravity_bin",
             "claude_bin",
+            "copilot_bin",
+            "opencode_bin",
             "claude_setting",
             "engine_models",
             "engine_profiles",
@@ -2059,7 +2061,12 @@ def classify_source_file(rel_path: str) -> str:
         or "/transfers/" in p
     ):
         return "core.workspaces_transfers"
-    if "/api/accounts" in p or "antigravity_accounts" in p or "account_usage" in p:
+    if (
+        "/api/accounts" in p
+        or "antigravity_accounts" in p
+        or "account_usage" in p
+        or p.endswith(("/copilot_accounts.py", "/opencode_accounts.py"))
+    ):
         return "core.accounts_quota"
     if (
         "/api/deployments" in p

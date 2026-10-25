@@ -116,6 +116,11 @@ async def test_real_claude_run_mcp_call_and_resume_across_executor_replacement(t
             assert codeword in (done2.result_text or "")
             saved2 = await engine_sessions(sess["id"])
             resumed = saved2.get(next(iter(saved1)))
+            # codeword 정답만으로는 재개가 증명되지 않는다. 재개 ID가 없으면 _handoff_context 가 Run1 대화를
+            # 프롬프트에 붙여 답할 수 있기 때문이다. 같은 계정이 같은 engine session 을 이어받았을 때만
+            # handoff 가 비므로(manager._handoff_context resumed_profile 분기) 두 조건을 함께 고정한다.
+            assert resumed == engine_session, (resumed, engine_session)
+            assert done2.profile == done1.profile, (done1.profile, done2.profile)
             assert not await events(run2, "tool.call")  # 두 번째 답은 도구 없이 기억만으로 나왔다
             window = obs.window(mark, 20)
             await assert_core_untouched(core_proc, core, core_generation, core_proc.pid)

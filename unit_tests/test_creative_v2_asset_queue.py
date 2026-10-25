@@ -375,7 +375,12 @@ async def test_remote_api_persists_the_request_and_owns_no_task(tmp_path, monkey
     assert second["status"] == "queued"
     await asyncio.sleep(0)
     assert started == [] and creative_v2._ASSET_GENERATION_TASKS == {}
-    assert set(asyncio.all_tasks()) == tasks_before  # API 가 장시간 작업 task 를 소유하지 않는다
+    # API 가 장시간 작업 task 를 소유하지 않는다. 다른 테스트가 남긴 DB 세션 정리 task 등은
+    # 실행 순서에 따라 끼어들 수 있으므로 creative 생성 코드가 만든 task 만 판정한다.
+    spawned = [t.get_coro() for t in asyncio.all_tasks() - tasks_before]
+    assert not [c for c in spawned
+                if getattr(c, "cr_code", None) and "creative" in c.cr_code.co_filename
+                or "asset" in getattr(c, "__qualname__", "")]
     assert len(records(plans, plan["id"])) == 1
 
 

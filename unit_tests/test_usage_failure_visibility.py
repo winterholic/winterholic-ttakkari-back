@@ -14,8 +14,12 @@ from ttakkari.runs import usage, usage_collector
 
 
 def _old_sample(hours: float = 20) -> usage.Usage:
-    return usage.Usage(windows=[usage.Window("five_hour", "5시간", 0, None), usage.Window("seven_day", "주간", 0, 1792933199)],
-                       source="api", updated_at=time.time() - hours * 3600)
+    now = time.time()
+    # The observation is old, but its weekly window has not reset yet.
+    # A calendar timestamp eventually tests expiry instead of stale data.
+    return usage.Usage(windows=[usage.Window("five_hour", "5시간", 0, None),
+                               usage.Window("seven_day", "주간", 0, int(now + 7 * 86400))],
+                       source="api", updated_at=now - hours * 3600)
 
 
 def test_reseed_does_not_replace_a_failed_live_fetch_with_an_old_sample():
@@ -155,8 +159,11 @@ def _patch_profiles(monkeypatch):
     return api
 
 
-def test_old_claude_value_is_marked_stale_with_the_reason_not_shown_as_current(monkeypatch):
+@pytest.mark.parametrize("now", [1792929600, 1793016000, 2100000000],
+                         ids=["before_original_reset", "after_original_reset", "far_future"])
+def test_old_claude_value_is_marked_stale_with_the_reason_not_shown_as_current(monkeypatch, now):
     api = _patch_profiles(monkeypatch)
+    monkeypatch.setattr(api.time, "time", lambda: now)
 
     out = api._usage_out(0, _claude_account(), {}, _old_sample())
 
@@ -182,11 +189,14 @@ def test_fresh_claude_value_is_current(monkeypatch):
     assert not out.stale and out.error is None and out.windows[0].state == "current"
 
 
-def test_claude_window_past_its_reset_is_unavailable_not_a_percent(monkeypatch):
+@pytest.mark.parametrize("observation_age_hours", [0, 20], ids=["fresh", "stale"])
+def test_claude_window_past_its_reset_is_unavailable_not_a_percent(monkeypatch, observation_age_hours):
     api = _patch_profiles(monkeypatch)
-    fresh = usage.Usage(windows=[usage.Window("five_hour", "5시간", 92, int(time.time()) - 60)], source="api", updated_at=time.time())
+    now = time.time()
+    sample = usage.Usage(windows=[usage.Window("five_hour", "5시간", 92, int(now) - 60)],
+                         source="api", updated_at=now - observation_age_hours * 3600)
 
-    out = api._usage_out(0, _claude_account(), {}, fresh)
+    out = api._usage_out(0, _claude_account(), {}, sample)
 
     assert out.windows[0].state == "unavailable"
 

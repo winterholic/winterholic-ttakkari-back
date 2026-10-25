@@ -19,7 +19,7 @@
 
 | 항목 | 판정 | 핵심 검증 결과 |
 |---|:---:|---|
-| **시나리오 B (TTS 발음·속도 및 산출물)** | **PASS** | 실제 Supertonic 3 음성 합성 및 Whisper STT 재인식 실행 성공. Baseline 대비 Candidate 정규화 설정의 전사/CER/WER 실측 보존. 원본 WAV 4건의 ResearchArtifact 정식 보관함 등록 및 `GET /api/artifacts/{id}/content` 200 OK + `RIFF/WAVE` 매직 바이트 검증 완료. Outbox 공유 완료. |
+| **시나리오 B (TTS 발음·속도 및 산출물)** | ~~PASS~~ **철회 (정정 보고서 대체)** | **[정정/철회 안내]** 과거 실측 시 `chunk_text(norm_s)`가 `normalize_text`를 강제 재호출하여 Baseline 설정에서도 약어/숫자가 강제 정규화되어 Candidate와 동일 청크/오디오(`baseline_candidate_synthesis_equal=True`, WAV SHA 일치)가 합성되는 결함이 발견되어 PASS가 철회되었습니다. 정규화 분기 명시화(`normalize=False`) 및 실제 독립 재실행 증거는 신규 보고서 [integration-stage2-b-norm-fix.md](integration-stage2-b-norm-fix.md) 및 [stage2-b-norm-fix-evidence.json](stage2-b-norm-fix-evidence.json)을 참조하십시오. |
 | **산출물 연결 결함 교정** | **PASS** | `runner.execute_run_instance`의 `AdapterRunResult.artifacts` 미소비 결함 재현 후 기존 `register_file`(`force_copy=True`)을 통한 정식 등록 최소 교정 적용. Narrow regression test 통과. |
 
 ---

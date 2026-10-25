@@ -589,11 +589,17 @@ def _split_by_space(text: str, limit: int) -> list[str]:
     return out
 
 
-def chunk_text(text: str, max_chars: int = 120) -> list[str]:
-    """원문 → 정규화 → 문장 → 상한 이내 청크. 청크는 캐시의 최소 단위이므로 문장 단위로 유지한다."""
+def chunk_text(text: str, max_chars: int = 120, *, normalize: bool = True) -> list[str]:
+    """원문 → 정규화(선택) → 문장 → 상한 이내 청크. 청크는 캐시의 최소 단위이므로 문장 단위로 유지한다."""
     if max_chars < 1:
         raise ValueError("max_chars must be positive")
+    source = normalize_text(text) if normalize else text
     chunks: list[str] = []
-    for sentence in split_sentences(normalize_text(text)):
+    for sentence in split_sentences(source):
         chunks.extend(_split_long(sentence, max_chars))
     return chunks
+
+
+def chunk_preprocessed_text(text: str, max_chars: int = 120) -> list[str]:
+    """이미 전처리/정규화된 텍스트를 재정규화 없이 문장 분할 및 상한 이내 청크로 분할한다."""
+    return chunk_text(text, max_chars=max_chars, normalize=False)

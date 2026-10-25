@@ -398,7 +398,7 @@ class TtsSynthesisAdapter:
                 case_sensitive=case_sensitive,
             )
             normalized_char_count += len(norm_s)
-            chunks = chunk_text(norm_s, max_chars=max_chunk_chars)
+            chunks = chunk_text(norm_s, max_chars=max_chunk_chars, normalize=False)
             all_chunks.extend(chunks)
             chunk_sentence_map.extend([s_idx] * len(chunks))
 
@@ -573,7 +573,7 @@ class TtsSynthesisAdapter:
                             or ""
                         ).strip()
                         if transcript.startswith("[") and "]" in transcript:
-                            transcript = re.sub(r"^\[[\d\.\–\- ]+\]\s*(화자\s*\d+:)?\s*", "", transcript).strip()
+                            transcript = re.sub(r"^\[[\d\.\:\–\- ]+\]\s*(화자\s*\d+:)?\s*", "", transcript).strip()
                         norm_ref = all_chunks[idx] if idx < len(all_chunks) else ""
                         sent_idx = chunk_sentence_map[idx] if idx < len(chunk_sentence_map) else 0
                         raw_ref = raw_texts[sent_idx] if sent_idx < len(raw_texts) else norm_ref

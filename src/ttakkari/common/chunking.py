@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import itertools
 import re
+import unicodedata
 from typing import Any
 
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+# Kept for import compatibility; fence detection is line based (see parse_markdown_spans).
 FENCE_CODE_PATTERN = re.compile(
     r"^```[^\n]*\n[\s\S]*?\n```|^~~~[^\n]*\n[\s\S]*?\n~~~", re.MULTILINE
 )
 TABLE_ROW_PATTERN = re.compile(r"^\|.*\|[ \t]*$", re.MULTILINE)
+# A table has a header only when its second row is a delimiter row such as |---|:--:|
+TABLE_DELIMITER_PATTERN = re.compile(r"^\|(?:\s*:?-+:?\s*\|)+\s*$")
+
+_LINE_PATTERN = re.compile(r"[^\n]*\n|[^\n]+")
+_FENCE_OPEN_PATTERN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_LIST_MARKER_PATTERN = re.compile(r"^\s*([-*+]|\d+\.)\s+")
+_SENTENCE_BOUNDARY_PATTERN = re.compile(r"[.!?。！？][\"'”’)\]]*\s+|\n[ \t\r]*\n\s*")
+_MAX_PREFIX_CHARS = 200
 
 
 @dataclasses.dataclass(frozen=True)
@@ -71,432 +82,238 @@ def _build_search_text(
     return "\n".join(parts)
 
 
+def _trim(text: str, start: int, end: int) -> tuple[int, int]:
+    """Shrink [start, end) past leading/trailing whitespace; empty result when only whitespace."""
+    raw = text[start:end]
+    stripped = raw.lstrip()
+    if not stripped:
+        return start, start
+    lead = len(raw) - len(stripped)
+    trail = len(stripped) - len(stripped.rstrip())
+    return start + lead, end - trail
+
+
 def parse_markdown_spans(text: str) -> list[LocatorSpan]:
-    """Parse raw markdown text into structural LocatorSpans tracking heading trail and full text coverage."""
+    """Parse markdown into structural LocatorSpans (heading trail, code, table, list, prose).
+
+    The text is first cut into whole lines and every line belongs to exactly one block, so every
+    non-whitespace character lands in exactly one span; trimming only ever removes whitespace.
+    """
     if not text:
         return []
 
     spans: list[LocatorSpan] = []
     trail: list[tuple[int, str]] = []  # (level, title)
+    section_path: list[str] = []
+    block_start: int | None = None
+    block_kind = "prose"
 
-    # First find all code blocks so we don't misinterpret markdown inside fences
-    code_intervals: list[tuple[int, int]] = []
-    for m in FENCE_CODE_PATTERN.finditer(text):
-        code_intervals.append((m.start(), m.end()))
-
-    def is_in_code(idx: int) -> tuple[int, int] | None:
-        for s, e in code_intervals:
-            if s <= idx < e:
-                return (s, e)
-        return None
-
-    # Line-by-line scanning while tracking positions
-    lines = text.splitlines(keepends=True)
-    pos = 0
-    cur_block_start: int | None = None
-    cur_block_kind = "prose"
-    cur_section_path: list[str] = []
-
-    def flush_block(end_pos: int):
-        nonlocal cur_block_start, cur_block_kind
-        if cur_block_start is not None and end_pos > cur_block_start:
-            raw = text[cur_block_start:end_pos]
-            if raw.strip():
-                lead = len(raw) - len(raw.lstrip())
-                trail_ws = len(raw) - len(raw.rstrip())
-                s = cur_block_start + lead
-                e = end_pos - trail_ws
-                if e > s:
-                    spans.append(
-                        LocatorSpan(
-                            start_offset=s,
-                            end_offset=e,
-                            section_path=list(cur_section_path),
-                            chunk_kind=cur_block_kind,
-                            extra={"exact_text": text[s:e]},
-                        )
-                    )
-        cur_block_start = None
-        cur_block_kind = "prose"
-
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        line_start = pos
-        line_end = pos + len(line)
-
-        code_box = is_in_code(line_start)
-        if code_box:
-            flush_block(line_start)
-            c_start, c_end = code_box
-            raw = text[c_start:c_end]
-            lead = len(raw) - len(raw.lstrip())
-            trail_ws = len(raw) - len(raw.rstrip())
-            s = c_start + lead
-            e = c_end - trail_ws
-            # Extract opening fence prefix (e.g. ```py) for contextual prefixing
-            first_line = raw.split("\n")[0].strip()
-            fence_match = re.match(r"^(`{3,}|~{3,})(\S*)", first_line)
-            fence_prefix = first_line if fence_match else "```"
-            if e > s:
-                spans.append(
-                    LocatorSpan(
-                        start_offset=s,
-                        end_offset=e,
-                        section_path=list(cur_section_path),
-                        chunk_kind="code",
-                        context_prefix=fence_prefix,
-                        extra={"exact_text": text[s:e]},
-                    )
+    def emit(start: int, end: int, kind: str, prefix: str | None = None) -> None:
+        s, e = _trim(text, start, end)
+        if e > s:
+            spans.append(
+                LocatorSpan(
+                    start_offset=s,
+                    end_offset=e,
+                    section_path=list(section_path),
+                    chunk_kind=kind,
+                    context_prefix=prefix,
+                    extra={"exact_text": text[s:e]},
                 )
-            # Advance pos and i past the code block
-            while i < len(lines) and pos < c_end:
-                pos += len(lines[i])
-                i += 1
+            )
+
+    def flush(end: int) -> None:
+        nonlocal block_start
+        if block_start is not None:
+            emit(block_start, end, block_kind)
+            block_start = None
+
+    lines = [(m.start(), m.end()) for m in _LINE_PATTERN.finditer(text)]
+    total = len(lines)
+    k = 0
+    while k < total:
+        line_start, line_end = lines[k]
+        content = text[line_start:line_end].rstrip("\r\n")
+
+        fence = _FENCE_OPEN_PATTERN.match(content)
+        if fence and not (fence.group(1)[0] == "`" and "`" in fence.group(2)):
+            flush(line_start)
+            marker = fence.group(1)
+            closing = re.compile(
+                rf"^ {{0,3}}{re.escape(marker[0])}{{{len(marker)},}}[ \t]*$"
+            )
+            k += 1
+            while k < total:  # an unclosed fence runs to the end of the document
+                inner = text[lines[k][0] : lines[k][1]].rstrip("\r\n")
+                k += 1
+                if closing.match(inner):
+                    break
+            emit(
+                line_start,
+                lines[k - 1][1],
+                "code",
+                content.strip()[:_MAX_PREFIX_CHARS],
+            )
             continue
 
-        # Check heading
-        hm = HEADING_PATTERN.match(line)
-        if hm:
-            flush_block(line_start)
-            level = len(hm.group(1))
-            title = hm.group(2).strip()
+        heading = HEADING_PATTERN.match(content)
+        if heading:
+            flush(line_start)
+            level = len(heading.group(1))
             while trail and trail[-1][0] >= level:
                 trail.pop()
-            trail.append((level, title))
-            cur_section_path = [t for _, t in trail]
-
-            # Preserve heading as span so non-whitespace text is covered
-            lead = len(line) - len(line.lstrip())
-            trail_ws = len(line) - len(line.rstrip())
-            s = line_start + lead
-            e = line_end - trail_ws
-            if e > s:
-                spans.append(
-                    LocatorSpan(
-                        start_offset=s,
-                        end_offset=e,
-                        section_path=list(cur_section_path),
-                        chunk_kind="heading",
-                        extra={"exact_text": text[s:e]},
-                    )
-                )
-            pos = line_end
-            i += 1
-            continue
-
-        # Check table row
-        if TABLE_ROW_PATTERN.match(line):
-            if cur_block_kind != "table":
-                flush_block(line_start)
-                cur_block_start = line_start
-                cur_block_kind = "table"
+            trail.append((level, heading.group(2).strip()))
+            section_path = [t for _, t in trail]
+            emit(line_start, line_end, "heading")
+        elif TABLE_ROW_PATTERN.match(content):
+            if block_start is None or block_kind != "table":
+                flush(line_start)
+                block_start, block_kind = line_start, "table"
+        elif not content.strip():
+            flush(line_start)
         else:
-            # Blank line separates paragraphs
-            if not line.strip():
-                flush_block(line_start)
-            else:
-                if cur_block_start is None:
-                    cur_block_start = line_start
-                    cur_block_kind = (
-                        "list" if re.match(r"^\s*([-*+]|\d+\.)\s+", line) else "prose"
-                    )
+            if block_kind == "table":
+                flush(line_start)
+            if block_start is None:
+                block_start = line_start
+                block_kind = "list" if _LIST_MARKER_PATTERN.match(content) else "prose"
+        k += 1
 
-        pos = line_end
-        i += 1
-
-    flush_block(pos)
+    flush(len(text))
     return spans
 
 
-def _force_hard_split(
-    body: str,
-    span: LocatorSpan,
-    max_chars: int,
-    context_prefix: str | None = None,
-) -> list[LocatorSpan]:
-    """Force split any span strictly into pieces <= max_chars without gaps in non-whitespace characters."""
-    total_len = span.end_offset - span.start_offset
-    if total_len <= max_chars:
-        return [span]
-
-    sub_spans: list[LocatorSpan] = []
-    offset = span.start_offset
-    prefix = context_prefix if context_prefix is not None else span.context_prefix
-
-    while offset < span.end_offset:
-        target_end = min(offset + max_chars, span.end_offset)
-        # Attempt word break if not at the very end and feasible
-        if target_end < span.end_offset:
-            # Look for whitespace or boundary to break cleanly
-            break_pt = body.rfind(" ", offset, target_end)
-            if break_pt > offset + (max_chars // 2):
-                target_end = break_pt + 1
-
-        sub_spans.append(
-            dataclasses.replace(
-                span,
-                start_offset=offset,
-                end_offset=target_end,
-                context_prefix=prefix,
-                extra={**span.extra, "exact_text": body[offset:target_end]},
-            )
-        )
-        offset = target_end
-
-    return sub_spans
+def _is_unsafe_cut(body: str, pos: int) -> bool:
+    """True when cutting between body[pos-1] and body[pos] would split a grapheme/surrogate pair."""
+    if pos <= 0 or pos >= len(body):
+        return False
+    ch, prev = body[pos], body[pos - 1]
+    if unicodedata.category(ch) in ("Mn", "Me", "Mc") or ch == "‍":
+        return True
+    if prev == "‍" or "\U0001f3fb" <= ch <= "\U0001f3ff":
+        return True
+    return "\udc00" <= ch <= "\udfff" and "\ud800" <= prev <= "\udbff"
 
 
-def _split_long_span(
-    body: str, span: LocatorSpan, *, target_chars: int, max_chars: int
-) -> list[LocatorSpan]:
-    """Split a single span exceeding max_chars into valid sub-spans adhering to KB v3 contracts."""
-    span_text = body[span.start_offset : span.end_offset]
-    if len(span_text) <= max_chars:
-        return [span]
-
-    sub_spans: list[LocatorSpan] = []
-
-    if span.chunk_kind == "table":
-        # Split table by rows preserving headers in context_prefix and covering all rows
-        lines = span_text.splitlines(keepends=True)
-        header_lines: list[str] = []
-        for idx, l in enumerate(lines):
-            if idx < 2 and ("---" in l or idx == 0):
-                header_lines.append(l.strip())
-
-        header_prefix = "\n".join(header_lines).strip()
-        rel_pos = 0
-        cur_start: int | None = None
-        cur_end: int = 0
-        cur_len = 0
-        chunk_idx = 0
-
-        for l in lines:
-            l_len = len(l)
-            l_start = rel_pos
-            l_end = rel_pos + l_len
-            rel_pos = l_end
-
-            # If a single row exceeds max_chars, flush current and hard split the row
-            if l_len > max_chars:
-                if cur_start is not None and cur_end > cur_start:
-                    s = span.start_offset + cur_start
-                    e = span.start_offset + cur_end
-                    prefix = header_prefix if chunk_idx > 0 else span.context_prefix
-                    sub_spans.append(
-                        dataclasses.replace(
-                            span,
-                            start_offset=s,
-                            end_offset=e,
-                            context_prefix=prefix,
-                            extra={**span.extra, "exact_text": body[s:e]},
-                        )
-                    )
-                    chunk_idx += 1
-                    cur_start = None
-                    cur_len = 0
-
-                row_span = dataclasses.replace(
-                    span,
-                    start_offset=span.start_offset + l_start,
-                    end_offset=span.start_offset + l_end,
-                )
-                prefix = header_prefix if chunk_idx > 0 else span.context_prefix
-                sub_spans.extend(
-                    _force_hard_split(
-                        body, row_span, max_chars=max_chars, context_prefix=prefix
-                    )
-                )
-                chunk_idx += 1
-                continue
-
-            if cur_start is None:
-                cur_start = l_start
-                cur_end = l_end
-                cur_len = l_len
-            elif cur_len + l_len <= max_chars:
-                cur_end = l_end
-                cur_len += l_len
+def _hard_cuts(
+    body: str, start: int, end: int, max_chars: int
+) -> list[tuple[int, int]]:
+    """Partition [start, end) into consecutive pieces of at most max_chars characters."""
+    pieces: list[tuple[int, int]] = []
+    pos = start
+    while pos < end:
+        hi = min(pos + max_chars, end)
+        if hi < end:
+            window_hi = hi
+            # Prefer a whitespace break in the second half of the window, then a cluster-safe cut
+            for q in range(window_hi, pos + max_chars // 2, -1):
+                if body[q - 1].isspace():
+                    hi = q
+                    break
             else:
-                s = span.start_offset + cur_start
-                e = span.start_offset + cur_end
-                prefix = header_prefix if chunk_idx > 0 else span.context_prefix
-                sub_spans.append(
-                    dataclasses.replace(
-                        span,
-                        start_offset=s,
-                        end_offset=e,
-                        context_prefix=prefix,
-                        extra={**span.extra, "exact_text": body[s:e]},
-                    )
-                )
-                chunk_idx += 1
-                cur_start = l_start
-                cur_end = l_end
-                cur_len = l_len
+                while hi > pos + 1 and _is_unsafe_cut(body, hi):
+                    hi -= 1
+                if _is_unsafe_cut(body, hi):
+                    hi = window_hi
+        pieces.append((pos, hi))
+        pos = hi
+    return pieces
 
-        if cur_start is not None and cur_end > cur_start:
-            s = span.start_offset + cur_start
-            e = span.start_offset + cur_end
-            prefix = header_prefix if chunk_idx > 0 else span.context_prefix
-            sub_spans.append(
-                dataclasses.replace(
-                    span,
-                    start_offset=s,
-                    end_offset=e,
-                    context_prefix=prefix,
-                    extra={**span.extra, "exact_text": body[s:e]},
-                )
-            )
 
-    elif span.chunk_kind == "code":
-        # Split code by lines or hard characters, providing fence language in context_prefix
-        lines = span_text.splitlines(keepends=True)
-        fence_prefix = span.context_prefix
-        if not fence_prefix and lines:
-            first_line = lines[0].strip()
-            if first_line.startswith(("```", "~~~")):
-                fence_prefix = first_line
+def _boundary_offsets(body: str, start: int, end: int, kind: str) -> list[int]:
+    """Candidate cut offsets strictly inside (start, end) for the given block kind."""
+    if kind in ("code", "table"):
+        return [i + 1 for i in range(start, end - 1) if body[i] == "\n"]
+    return [
+        m.end() + start
+        for m in _SENTENCE_BOUNDARY_PATTERN.finditer(body[start:end])
+        if start < m.end() + start < end
+    ]
 
-        rel_pos = 0
-        cur_start: int | None = None
-        cur_end: int = 0
-        cur_len = 0
 
-        for l in lines:
-            l_len = len(l)
-            l_start = rel_pos
-            l_end = rel_pos + l_len
-            rel_pos = l_end
+def _split_ranges(
+    body: str, start: int, end: int, kind: str, max_chars: int
+) -> list[tuple[int, int]]:
+    """Split [start, end) into a contiguous partition of ranges, each at most max_chars long.
 
-            if l_len > max_chars:
-                if cur_start is not None and cur_end > cur_start:
-                    s = span.start_offset + cur_start
-                    e = span.start_offset + cur_end
-                    sub_spans.append(
-                        dataclasses.replace(
-                            span,
-                            start_offset=s,
-                            end_offset=e,
-                            context_prefix=fence_prefix,
-                            extra={**span.extra, "exact_text": body[s:e]},
-                        )
-                    )
-                    cur_start = None
-                    cur_len = 0
-
-                row_span = dataclasses.replace(
-                    span,
-                    start_offset=span.start_offset + l_start,
-                    end_offset=span.start_offset + l_end,
-                )
-                sub_spans.extend(
-                    _force_hard_split(
-                        body, row_span, max_chars=max_chars, context_prefix=fence_prefix
-                    )
-                )
-                continue
-
-            if cur_start is None:
-                cur_start = l_start
-                cur_end = l_end
-                cur_len = l_len
-            elif cur_len + l_len <= max_chars:
-                cur_end = l_end
-                cur_len += l_len
-            else:
-                s = span.start_offset + cur_start
-                e = span.start_offset + cur_end
-                sub_spans.append(
-                    dataclasses.replace(
-                        span,
-                        start_offset=s,
-                        end_offset=e,
-                        context_prefix=fence_prefix,
-                        extra={**span.extra, "exact_text": body[s:e]},
-                    )
-                )
-                cur_start = l_start
-                cur_end = l_end
-                cur_len = l_len
-
-        if cur_start is not None and cur_end > cur_start:
-            s = span.start_offset + cur_start
-            e = span.start_offset + cur_end
-            sub_spans.append(
-                dataclasses.replace(
-                    span,
-                    start_offset=s,
-                    end_offset=e,
-                    context_prefix=fence_prefix,
-                    extra={**span.extra, "exact_text": body[s:e]},
-                )
-            )
-
-    else:
-        # Generic text splitting by sentences or paragraphs
-        pattern = re.compile(r"(\.\s+|\.\n|\!\s+|\?\s+|다\.\s+|요\.\s+|\n\n+)")
-        pieces: list[tuple[int, int]] = []
-        last_idx = 0
-        for m in pattern.finditer(span_text):
-            m_end = m.end()
-            pieces.append((last_idx, m_end))
-            last_idx = m_end
-        if last_idx < len(span_text):
-            pieces.append((last_idx, len(span_text)))
-
-        cur_start = None
-        cur_end = 0
-
-        for p_start, p_end in pieces:
-            piece_len = p_end - p_start
-            if cur_start is None:
-                cur_start = p_start
-                cur_end = p_end
-            elif (cur_end - cur_start) + piece_len <= max_chars:
-                cur_end = p_end
-            else:
-                s = span.start_offset + cur_start
-                e = span.start_offset + cur_end
-                raw = body[s:e]
-                if raw.strip():
-                    sub_spans.append(
-                        dataclasses.replace(
-                            span,
-                            start_offset=s,
-                            end_offset=e,
-                            extra={**span.extra, "exact_text": body[s:e]},
-                        )
-                    )
-                cur_start = p_start
-                cur_end = p_end
-
-        if cur_start is not None and cur_end > cur_start:
-            s = span.start_offset + cur_start
-            e = span.start_offset + cur_end
-            raw = body[s:e]
-            if raw.strip():
-                sub_spans.append(
-                    dataclasses.replace(
-                        span,
-                        start_offset=s,
-                        end_offset=e,
-                        extra={**span.extra, "exact_text": body[s:e]},
-                    )
-                )
-
-    # Final guarantee: ensure strictly <= max_chars for all sub-spans
-    guaranteed: list[LocatorSpan] = []
-    for sp in sub_spans:
-        if (sp.end_offset - sp.start_offset) > max_chars:
-            guaranteed.extend(_force_hard_split(body, sp, max_chars=max_chars))
+    Boundary candidates are computed first, the whole range is cut into atoms at them, and atoms
+    are packed greedily; an atom longer than max_chars falls back to hard cuts. The result is a
+    partition of [start, end), so no character can be dropped or duplicated.
+    """
+    if end - start <= max_chars:
+        return [(start, end)]
+    edges = [start, *_boundary_offsets(body, start, end, kind), end]
+    out: list[tuple[int, int]] = []
+    cur_start: int | None = None
+    cur_end = start
+    for a, b in itertools.pairwise(edges):
+        if b <= a:
+            continue
+        if b - a > max_chars:
+            if cur_start is not None:
+                out.append((cur_start, cur_end))
+                cur_start = None
+            parts = _hard_cuts(body, a, b, max_chars)
+            out.extend(parts[:-1])
+            cur_start, cur_end = parts[-1]
+        elif cur_start is None:
+            cur_start, cur_end = a, b
+        elif b - cur_start <= max_chars:
+            cur_end = b
         else:
-            guaranteed.append(sp)
+            out.append((cur_start, cur_end))
+            cur_start, cur_end = a, b
+    if cur_start is not None:
+        out.append((cur_start, cur_end))
+    return out
 
-    return (
-        guaranteed if guaranteed else _force_hard_split(body, span, max_chars=max_chars)
-    )
+
+def _table_header_prefix(text: str, max_chars: int) -> str | None:
+    """Header rows to repeat on continuation chunks; only when row 2 is a |---| delimiter row."""
+    lines = text.split("\n")
+    if len(lines) < 2:
+        return None
+    first, second = lines[0].strip(), lines[1].strip()
+    if not TABLE_ROW_PATTERN.match(first) or not TABLE_DELIMITER_PATTERN.match(second):
+        return None
+    prefix = f"{first}\n{second}"
+    return prefix if len(prefix) <= max_chars else None
+
+
+def _partition_spans(body: str, spans: list[LocatorSpan]) -> list[LocatorSpan]:
+    """Turn arbitrary (unsorted, overlapping, gapped) spans into ordered disjoint segments.
+
+    Overlapped parts are credited to the earlier span. A gap that holds non-whitespace text
+    (e.g. a "---" slide separator a parser left outside its spans) is never dropped: it is absorbed
+    by the previous (else the next) span unless that one is code/table, otherwise it becomes a
+    metadata-less prose segment.
+    """
+    size = len(body)
+    atomic = ("code", "table")
+    out: list[LocatorSpan] = []
+    cursor = 0
+
+    def absorb_gap(upto: int, nxt: LocatorSpan | None) -> LocatorSpan | None:
+        """Cover non-whitespace text in [cursor, upto); returns the adjusted next span."""
+        if not body[cursor:upto].strip():
+            return nxt
+        if out and out[-1].chunk_kind not in atomic:
+            out[-1] = dataclasses.replace(out[-1], end_offset=upto)
+        elif nxt is not None and nxt.chunk_kind not in atomic:
+            return dataclasses.replace(nxt, start_offset=cursor)
+        else:
+            out.append(LocatorSpan(start_offset=cursor, end_offset=upto))
+        return nxt
+
+    for sp in sorted(spans, key=lambda s: (s.start_offset, s.end_offset)):
+        s, e = max(sp.start_offset, cursor), min(sp.end_offset, size)
+        if e <= s:
+            continue
+        adjusted = absorb_gap(s, dataclasses.replace(sp, start_offset=s, end_offset=e))
+        out.append(adjusted)
+        cursor = e
+    absorb_gap(size, None)
+    return out
 
 
 def chunk_structured_document(
@@ -507,125 +324,114 @@ def chunk_structured_document(
     max_chars: int = 1200,
     min_chars: int = 180,
 ) -> list[StructuredChunk]:
-    """Chunk document body adhering to ledger invariants: exact offsets, SHA-256, and structure."""
+    """Chunk document body adhering to ledger invariants: exact offsets, SHA-256, and structure.
+
+    Guarantees, for any body and any spans:
+    - chunk.body == body[char_start:char_end] and len(chunk.body) <= max_chars
+    - chunk ranges are ordered and disjoint
+    - every non-whitespace character of body belongs to exactly one chunk
+    """
     if not body:
         return []
+    max_chars = max(1, max_chars)
 
-    # If no locator_spans provided, discover markdown structure
-    if not locator_spans:
-        base_spans = parse_markdown_spans(body)
-        if not base_spans:
-            # Fallback for plain unformatted string
-            raw = body.strip()
-            if not raw:
-                return []
-            s = body.find(raw)
-            base_spans = [LocatorSpan(start_offset=s, end_offset=s + len(raw))]
-    else:
-        # Sort spans by start_offset
-        base_spans = sorted(locator_spans, key=lambda s: (s.start_offset, s.end_offset))
+    segments = _partition_spans(
+        body, list(locator_spans) if locator_spans else parse_markdown_spans(body)
+    )
 
-    # Split spans exceeding max_chars
-    normalized_spans: list[LocatorSpan] = []
-    for sp in base_spans:
-        if (sp.end_offset - sp.start_offset) > max_chars:
-            normalized_spans.extend(
-                _split_long_span(
-                    body, sp, target_chars=target_chars, max_chars=max_chars
+    # Split oversized segments; pieces form a partition so non-whitespace text is never lost
+    pieces: list[LocatorSpan] = []
+    for seg in segments:
+        s, e = _trim(body, seg.start_offset, seg.end_offset)
+        if e <= s:
+            continue
+        prefix = seg.context_prefix
+        if seg.chunk_kind == "code" and not prefix:
+            first_line = body[s:e].split("\n", 1)[0].strip()
+            if first_line.startswith(("```", "~~~")):
+                prefix = first_line[:_MAX_PREFIX_CHARS]
+        header = (
+            _table_header_prefix(body[s:e], max_chars)
+            if seg.chunk_kind == "table" and e - s > max_chars
+            else None
+        )
+        first = True
+        for ps, pe in _split_ranges(body, s, e, seg.chunk_kind, max_chars):
+            ps, pe = _trim(body, ps, pe)
+            if pe <= ps:
+                continue
+            if seg.chunk_kind == "table":
+                piece_prefix = seg.context_prefix if first else header
+            else:
+                piece_prefix = prefix
+            pieces.append(
+                dataclasses.replace(
+                    seg, start_offset=ps, end_offset=pe, context_prefix=piece_prefix
                 )
             )
-        else:
-            # Trim whitespace offsets while preserving exact slice
-            raw = body[sp.start_offset : sp.end_offset]
-            if raw.strip():
-                lead = len(raw) - len(raw.lstrip())
-                trail_ws = len(raw) - len(raw.rstrip())
-                s = sp.start_offset + lead
-                e = sp.end_offset - trail_ws
-                if e > s:
-                    normalized_spans.append(
-                        dataclasses.replace(sp, start_offset=s, end_offset=e)
-                    )
+            first = False
 
-    if not normalized_spans:
+    if not pieces:
         return []
 
-    # Merge adjacent short spans that share context
-    merged_spans: list[LocatorSpan] = []
-    cur_span: LocatorSpan | None = None
-
-    for sp in normalized_spans:
-        if cur_span is None:
-            cur_span = sp
+    # Merge adjacent short pieces that share context (only whitespace lies between them)
+    merged: list[LocatorSpan] = []
+    cur: LocatorSpan | None = None
+    for sp in pieces:
+        if cur is None:
+            cur = sp
             continue
-
-        cur_len = cur_span.end_offset - cur_span.start_offset
-
-        # Check if merge is eligible
         can_merge = (
-            cur_len < min_chars
-            and cur_span.section_path == sp.section_path
-            and cur_span.page_no == sp.page_no
-            and cur_span.slide_no == sp.slide_no
+            cur.end_offset - cur.start_offset < min_chars
+            and cur.section_path == sp.section_path
+            and cur.page_no == sp.page_no
+            and cur.slide_no == sp.slide_no
             and (
-                cur_span.chunk_kind == sp.chunk_kind
-                or (cur_span.chunk_kind == "heading" and sp.chunk_kind == "prose")
+                cur.chunk_kind == sp.chunk_kind
+                or (cur.chunk_kind == "heading" and sp.chunk_kind == "prose")
             )
-            and cur_span.chunk_kind not in ("code", "table")
+            and cur.chunk_kind not in ("code", "table")
             and sp.chunk_kind not in ("code", "table")
-            and (sp.end_offset - cur_span.start_offset) <= max_chars
-            and body[cur_span.end_offset : sp.start_offset].strip() == ""
+            and sp.end_offset - cur.start_offset <= max_chars
+            and body[cur.end_offset : sp.start_offset].strip() == ""
         )
-
         if can_merge:
-            cur_span = dataclasses.replace(
-                cur_span,
+            cur = dataclasses.replace(
+                cur,
                 end_offset=sp.end_offset,
                 chunk_kind=sp.chunk_kind,
-                time_end_ms=sp.time_end_ms or cur_span.time_end_ms,
+                time_end_ms=sp.time_end_ms or cur.time_end_ms,
             )
         else:
-            merged_spans.append(cur_span)
-            cur_span = sp
+            merged.append(cur)
+            cur = sp
+    if cur is not None:
+        merged.append(cur)
 
-    if cur_span is not None:
-        merged_spans.append(cur_span)
-
-    # Final hard limit enforcement ensuring strictly <= max_chars for every chunk
-    final_spans: list[LocatorSpan] = []
-    for sp in merged_spans:
-        if (sp.end_offset - sp.start_offset) > max_chars:
-            final_spans.extend(_force_hard_split(body, sp, max_chars=max_chars))
-        else:
-            final_spans.append(sp)
-
-    # Convert to StructuredChunk and compute invariants
     chunks: list[StructuredChunk] = []
-    for idx, sp in enumerate(final_spans):
+    for idx, sp in enumerate(merged):
         chunk_body = body[sp.start_offset : sp.end_offset]
-        digest = hashlib.sha256(
-            chunk_body.encode("utf-8", errors="replace")
-        ).hexdigest()
-        tokens = _estimate_tokens(chunk_body)
-        search_txt = _build_search_text(chunk_body, sp.section_path, sp.context_prefix)
-
-        chunk = StructuredChunk(
-            ord=idx,
-            char_start=sp.start_offset,
-            char_end=sp.end_offset,
-            body=chunk_body,
-            sha256=digest,
-            section_path=list(sp.section_path),
-            chunk_kind=sp.chunk_kind,
-            page_no=sp.page_no,
-            slide_no=sp.slide_no,
-            time_start_ms=sp.time_start_ms,
-            time_end_ms=sp.time_end_ms,
-            token_estimate=tokens,
-            search_text=search_txt,
-            context_prefix=sp.context_prefix,
-            extra=dict(sp.extra),
+        chunks.append(
+            StructuredChunk(
+                ord=idx,
+                char_start=sp.start_offset,
+                char_end=sp.end_offset,
+                body=chunk_body,
+                sha256=hashlib.sha256(
+                    chunk_body.encode("utf-8", errors="replace")
+                ).hexdigest(),
+                section_path=list(sp.section_path),
+                chunk_kind=sp.chunk_kind,
+                page_no=sp.page_no,
+                slide_no=sp.slide_no,
+                time_start_ms=sp.time_start_ms,
+                time_end_ms=sp.time_end_ms,
+                token_estimate=_estimate_tokens(chunk_body),
+                search_text=_build_search_text(
+                    chunk_body, sp.section_path, sp.context_prefix
+                ),
+                context_prefix=sp.context_prefix,
+                extra={**sp.extra, "exact_text": chunk_body},
+            )
         )
-        chunks.append(chunk)
-
     return chunks

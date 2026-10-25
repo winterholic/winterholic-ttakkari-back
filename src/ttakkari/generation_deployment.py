@@ -1076,6 +1076,26 @@ class GenerationController:
                 select(func.count(TtsJob.id)).where(
                     TtsJob.owner_id == previous, TtsJob.status.in_(("queued", "running")))) or 0)
 
+    async def _candidate_stays_local(self, job) -> bool:
+        """후보가 local 실행으로 남는다고 신뢰할 수 있게 확인될 때만 True. 그 외 모든 경우는 False(fail-closed).
+
+        근거는 후보 프로세스 자신이 보고한 execution_mode 와 그 릴리스 계약의 executor activation 이다.
+        후보 식별이 기록과 다르거나, 값이 없거나, 계약을 읽지 못하거나, activation 이 enabled 이면 remote 로 간주한다.
+        """
+        slot, generation, release = (job.get("candidate_slot"), job.get("candidate_generation"),
+                                     job.get("release_path"))
+        if slot is None or not generation or not release:
+            return False
+        try:
+            candidate = await self.slots.snapshot(slot)
+            if (candidate is None or candidate.get("generation") != generation
+                    or candidate.get("execution_mode") != "local"):
+                return False
+            executor = Releases.contract(Path(release)).get("run_executor")
+        except (OSError, ValueError, TypeError):
+            return False
+        return not executor or executor.get("activation") == "disabled"
+
     async def drain_previous_tts(self, job, *, timeout: float = 120.0, poll: float = 0.5) -> None:
         """첫 혼합 세대 전환의 TTS 보호: 구세대가 queued 를 draining 으로 실패시키기 전에 접수 경로를 닫고 비운다.
 
@@ -1085,6 +1105,10 @@ class GenerationController:
         HTTP 관측 전 구 프록시 경로 전체의 전송 완료 확인이 필수다. 현재 stock Caddy 는 이를 제공하지
         않으므로 실제 전환은 명시적으로 거절한다. 고정 sleep/업스트림 카운터를 완료 확인으로 사용하지 않는다.
         증명하지 못하면(시간 초과·조회 오류·구세대 확인 불가) activate 하지 않고 실패시키며 접수 경로는 다시 연다.
+
+        후보가 local 로 확인된 local→local 교체는 remote executor 로의 최초 전환이 아니므로 전송 완료 확인을
+        요구하지 않는다. 그 경우 2fde901 이전과 같이 짧은 유예 뒤 진행 HTTP 와 queued/running 0건만 확인한다.
+        후보 모드를 신뢰할 수 있게 확인하지 못하면 remote 로 간주해 아래 거절 경계를 그대로 적용한다.
         """
         previous_slot, previous_id = job["previous_slot"], uuid.UUID(job["previous_generation"])
         close_attempted = False
@@ -1097,20 +1121,25 @@ class GenerationController:
                 # Remote API commits chunks to QUEUE_OWNER; the executor, not
                 # this API generation, owns their completion across cutover.
                 return
+            local_replacement = (previous.get("execution_mode") != "remote"
+                                 and await self._candidate_stays_local(job))
             # /load can succeed before verification/persistence fails or is cancelled.
             # Every partial close must therefore use the same restoration path.
             close_attempted = True
             await self.slots.close_tts_ingress(previous_slot)
             deadline = time.monotonic() + timeout
-            try:
-                async with asyncio.timeout(max(0, timeout)):
-                    completed = await self.slots.wait_tts_transport_drained(previous_slot)
-            except TimeoutError as exc:
-                raise StageError("tts-drain", None, None,
-                                 "TTS transport completion timed out; activation refused") from exc
-            if completed is not True:
-                raise StageError("tts-drain", None, None,
-                                 "TTS transport completion not acknowledged; activation refused")
+            if local_replacement:
+                await asyncio.sleep(poll)  # 2fde901 이전 동작. 전송 계층 quiescence 보증은 아니다.
+            else:
+                try:
+                    async with asyncio.timeout(max(0, timeout)):
+                        completed = await self.slots.wait_tts_transport_drained(previous_slot)
+                except TimeoutError as exc:
+                    raise StageError("tts-drain", None, None,
+                                     "TTS transport completion timed out; activation refused") from exc
+                if completed is not True:
+                    raise StageError("tts-drain", None, None,
+                                     "TTS transport completion not acknowledged; activation refused")
             while True:
                 snapshot = await self.slots.snapshot(previous_slot)
                 if snapshot is None or snapshot.get("generation") != str(previous_id):

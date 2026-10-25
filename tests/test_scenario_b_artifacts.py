@@ -400,3 +400,115 @@ async def test_runner_preserves_legacy_artifact_id_and_deduplicates():
         assert len(res_arts) == 1
         assert res_arts[0].artifact_id == existing_art_id
 
+
+
+async def _seed_run(adapter_id: str) -> uuid.UUID:
+    study_id, exp_id, cfg_id, run_id = (uuid.uuid4() for _ in range(4))
+    async with sessionmaker()() as db:
+        db.add(Study(id=study_id, title="Artifact failure", goal="evidence kept", scope="personal"))
+        await db.flush()
+        db.add(
+            Experiment(
+                id=exp_id,
+                study_id=study_id,
+                title="Artifact failure",
+                hypothesis="h",
+                rationale="r",
+                adapter=adapter_id,
+                adapter_id=adapter_id,
+                primary_metric="rtf",
+            )
+        )
+        await db.flush()
+        db.add(Configuration(id=cfg_id, experiment_id=exp_id, label="default", config_hash=str(cfg_id), parameters={}))
+        await db.flush()
+        db.add(
+            Run(
+                id=run_id,
+                study_id=study_id,
+                experiment_id=exp_id,
+                configuration_id=cfg_id,
+                adapter_id=adapter_id,
+                status="queued",
+            )
+        )
+        await db.commit()
+    return run_id
+
+
+def _declaring_adapter(artifacts: list[dict]):
+    class _Adapter:
+        id = "declaring_adapter"
+
+        async def execute_run(self, config, *, run_id, scope, cancel_event=None):
+            return AdapterRunResult(
+                status="succeeded",
+                raw_output={"transcript": "kept"},
+                artifacts=artifacts,
+                environment_snapshot={"engine": "test"},
+                wall_seconds=0.1,
+            )
+
+        def to_measurements(self, adapter_res, config_params):
+            return [MeasurementRecord(metric_key="rtf", metric_label="RTF", value=0.2, unit="ratio", direction="lower_is_better")]
+
+    return _Adapter()
+
+
+async def _assert_failed_with_evidence(run_id: uuid.UUID, error_code: str) -> None:
+    from ttakkari.research.models import Measurement
+
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        assert run.status == "failed"
+        assert run.error_code == error_code
+        assert run.finished_at is not None
+        assert run.raw_output.get("transcript") == "kept"
+        assert run.environment_snapshot == {"engine": "test"}
+        ms = (await db.scalars(select(Measurement).where(Measurement.run_id == run_id))).all()
+        assert [m.metric_key for m in ms] == ["rtf"]
+        links = (await db.scalars(select(ResearchArtifact).where(ResearchArtifact.run_id == run_id))).all()
+        assert links == []
+
+
+@pytest.mark.asyncio
+async def test_missing_second_file_keeps_evidence_and_copies_nothing(monkeypatch):
+    from ttakkari.artifacts import service as art_service
+
+    calls: list[str] = []
+    real_register = art_service.register_file
+
+    async def spy(*args, **kwargs):
+        calls.append("register")
+        return await real_register(*args, **kwargs)
+
+    monkeypatch.setattr(art_service, "register_file", spy)
+    present = Path(tempfile.mkdtemp(prefix="art_present_")) / "first.wav"
+    present.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+    run_id = await _seed_run("declaring_adapter")
+    adapter = _declaring_adapter([{"path": str(present)}, {"path": "/tmp/missing_second_artifact_98765.wav"}])
+
+    await runner.execute_run_instance(run_id, MockRegistry(adapter))
+
+    await _assert_failed_with_evidence(run_id, "artifact_file_missing")
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_legacy_artifact_id_fails_run_instead_of_hanging():
+    run_id = await _seed_run("declaring_adapter")
+    adapter = _declaring_adapter([{"artifact_id": str(uuid.uuid4())}])
+
+    await runner.execute_run_instance(run_id, MockRegistry(adapter))
+
+    await _assert_failed_with_evidence(run_id, "artifact_not_found")
+
+
+@pytest.mark.asyncio
+async def test_malformed_legacy_artifact_id_fails_with_evidence():
+    run_id = await _seed_run("declaring_adapter")
+    adapter = _declaring_adapter([{"artifact_id": "not-a-uuid"}])
+
+    await runner.execute_run_instance(run_id, MockRegistry(adapter))
+
+    await _assert_failed_with_evidence(run_id, "artifact_invalid")

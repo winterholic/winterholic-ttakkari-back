@@ -219,6 +219,8 @@ async def test_external_report_integrity_and_measurement_immutability(client, au
         headers=auth,
         json={
             "provenance": "external_benchmark",
+            "source_title": "Synthetic core fixture",
+            "source_url": "https://example.invalid/research-core-fixture",
             "environment_snapshot": {"cluster": "h100-cloud"},
             "metrics": [
                 {
@@ -294,6 +296,7 @@ async def test_compare_series_structure_and_pareto(client, auth):
         f"/api/research/experiments/{exp_id}/external-report",
         headers=auth,
         json={
+            "provenance": "manual_evaluation",
             "configuration_id": cfg_base["id"],
             "metrics": [
                 {"metric_key": "decode_tps", "value": 30.0, "direction": "higher_is_better"},
@@ -305,6 +308,7 @@ async def test_compare_series_structure_and_pareto(client, auth):
         f"/api/research/experiments/{exp_id}/external-report",
         headers=auth,
         json={
+            "provenance": "manual_evaluation",
             "configuration_id": cfg_treat["id"],
             "metrics": [
                 {"metric_key": "decode_tps", "value": 45.0, "direction": "higher_is_better"},
@@ -385,6 +389,8 @@ async def test_adopt_best_result_and_method_promote(client, auth):
             headers=auth,
             json={
                 "provenance": "external_benchmark",
+                "source_title": "Synthetic core fixture",
+                "source_url": "https://example.invalid/research-core-fixture",
                 "metrics": [{"metric_key": "recall_at_k", "value": 0.92}],
             },
         )
@@ -575,6 +581,7 @@ async def test_regression_best_result_status_and_consistency(client, auth):
         f"/api/research/experiments/{exp['id']}/external-report",
         headers=auth,
         json={
+            "provenance": "manual_evaluation",
             "configuration_id": cfg_id,
             "metrics": [{"metric_key": "accuracy", "value": 0.5}],
         },
@@ -694,6 +701,7 @@ async def test_regression_pareto_single_metric_and_x_metric_passthrough(client, 
             f"/api/research/experiments/{exp_multi['id']}/external-report",
             headers=auth,
             json={
+                "provenance": "manual_evaluation",
                 "configuration_id": cfg["id"],
                 "metrics": [
                     {"metric_key": "latency", "value": lat, "direction": "lower_is_better"},

@@ -99,6 +99,7 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             return run
 
         start_time = asyncio.get_event_loop().time()
+        adapter_res = None
         try:
             adapter_res = await adapter.execute_run(
                 run_id=run.id,
@@ -142,7 +143,7 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                 from pathlib import Path
                 from ttakkari.artifacts.service import register_file
                 from ttakkari.broker.policy import ResolvedPath
-                from ttakkari.models import ArtifactArea, ArtifactOrigin
+                from ttakkari.models import Artifact, ArtifactArea, ArtifactOrigin
 
                 raw_artifacts = adapter_res.raw_output.get("artifacts", [])
                 result_artifacts = getattr(adapter_res, "artifacts", []) or []
@@ -150,34 +151,42 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                 if isinstance(raw_artifacts, list):
                     all_artifacts.extend(raw_artifacts)
 
-                registered_paths: dict[Path, uuid.UUID] = {}
-                linked_artifact_ids: set[uuid.UUID] = set()
-
+                # Validate every declaration before copying anything: a late failure must not
+                # leave orphan copies, and the adapter's output and measurements stay as evidence.
+                declared: list[tuple[dict, uuid.UUID | None, Path | None]] = []
+                failure: tuple[str, str] | None = None
                 for art_info in all_artifacts:
                     if not isinstance(art_info, dict):
                         continue
-                    file_art_id = None
-                    if "artifact_id" in art_info and art_info["artifact_id"]:
-                        file_art_id = uuid.UUID(str(art_info["artifact_id"]))
-                    elif "path" in art_info and art_info["path"]:
+                    if art_info.get("artifact_id"):
+                        try:
+                            legacy_id = uuid.UUID(str(art_info["artifact_id"]))
+                        except ValueError:
+                            failure = ("artifact_invalid", f"아티팩트 ID 형식이 올바르지 않습니다: {art_info['artifact_id']}")
+                            break
+                        if await db.get(Artifact, legacy_id) is None:
+                            failure = ("artifact_not_found", f"선언된 아티팩트가 파일 보관함에 없습니다: {legacy_id}")
+                            break
+                        declared.append((art_info, legacy_id, None))
+                    elif art_info.get("path"):
                         raw_p = Path(art_info["path"])
                         if not raw_p.is_file():
-                            logger.error(
-                                "Declared artifact file missing on disk for run %s: %s",
-                                run.id,
-                                raw_p,
-                            )
-                            await db.rollback()
-                            run = await db.get(Run, run_id)
-                            if run:
-                                run.status = "failed"
-                                run.error_code = "artifact_file_missing"
-                                run.error_message = f"선언된 아티팩트 파일이 디스크에 존재하지 않습니다: {raw_p}"
-                                run.wall_seconds = adapter_res.wall_seconds or elapsed
-                                run.finished_at = utcnow()
-                                await db.commit()
-                            return run
+                            logger.error("Declared artifact file missing on disk for run %s: %s", run.id, raw_p)
+                            failure = ("artifact_file_missing", f"선언된 아티팩트 파일이 디스크에 존재하지 않습니다: {raw_p}")
+                            break
+                        declared.append((art_info, None, raw_p))
 
+                if failure is not None:
+                    run.status = "failed"
+                    run.error_code, run.error_message = failure
+                    await db.commit()
+                    return run
+
+                registered_paths: dict[Path, uuid.UUID] = {}
+                linked_artifact_ids: set[uuid.UUID] = set()
+
+                for art_info, file_art_id, raw_p in declared:
+                    if raw_p is not None:
                         norm_path = raw_p.resolve()
                         if norm_path in registered_paths:
                             file_art_id = registered_paths[norm_path]
@@ -236,6 +245,12 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
         except Exception as e:
             logger.exception("Error executing run %s", run_id)
             elapsed = asyncio.get_event_loop().time() - start_time
+            # A failed flush poisons the session; reset it so the run still reaches a terminal state.
+            await db.rollback()
+            run = await db.get(Run, run_id)
+            if adapter_res is not None:
+                run.raw_output = adapter_res.raw_output or {}
+                run.environment_snapshot = adapter_res.environment_snapshot or {}
             run.status = "failed"
             run.error_code = type(e).__name__
             run.error_message = str(e)

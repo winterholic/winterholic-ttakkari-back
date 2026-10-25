@@ -118,7 +118,7 @@ class _ClaimSession:
 @pytest.mark.asyncio
 async def test_real_db_merge_lock_precedes_claim_and_claim_reads_merged_prompt(monkeypatch):
     runtime, _, parent_id, worker_id, report_id, completion_id = await _seed()
-    merge_done, allow_merge_commit = asyncio.Event(), asyncio.Event()
+    merge_done = asyncio.Event()
     claim_read = asyncio.Event()
     real_factory = sessionmaker()
 

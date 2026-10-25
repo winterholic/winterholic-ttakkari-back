@@ -159,6 +159,9 @@
     uv run pytest tests/test_collection_render.py -k test_borrowed_polite_fetcher_is_not_closed_by_renderer_and_supports_subsequent_pages
     ```
     ```text
+    tests/test_collection_render.py .                                        [100%]
+    1 passed, 10 deselected in 0.03s
+    ```
 ---
 
 ## 8. Redirect 매 Hop 단위 robots.txt 및 Pacing 검사 실증 (77a 피드백 반영)

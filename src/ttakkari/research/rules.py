@@ -113,6 +113,8 @@ def rank_methods(
             for relation in stored_context.get("relations", [])
         ]
         context = {"relations": relations, "truncated": bool(stored_context.get("truncated"))}
+        if "evidence" in stored_context:
+            context["evidence"] = stored_context["evidence"]
         failures = []
         for failure in stored_context.get("failures", []):
             declared = failure.get("declared_environment", {})
@@ -178,7 +180,7 @@ def rank_methods(
         out,
         key=lambda m: (
             m["priority"],
-            -(min(m.get("evidence_count", 0), 3)),
             m["title"],
+            m.get("id", ""),
         ),
     )

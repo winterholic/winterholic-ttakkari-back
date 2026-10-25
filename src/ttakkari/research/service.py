@@ -12,7 +12,7 @@ from sqlalchemy import cast, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import aliased
 
-from ttakkari import kb_store
+from ttakkari import kb_library, kb_store
 from ttakkari.kb_models import KbEvidence as KnowledgeEvidence
 from ttakkari.kb_models import KbPassage as KnowledgeUnit
 from ttakkari.kb_models import KbRevision as KnowledgeRevision
@@ -110,6 +110,10 @@ async def selection_context(db, nodes: list[Node], scope: str, limit: int = 200)
     context = {str(ident): {"relations": [], "truncated": False} for ident in ids}
     if not ids:
         return context
+    evidence = await selection_evidence(db, nodes, scope)
+    for node in nodes:
+        if node.evidence_id:
+            context[str(node.id)]["evidence"] = evidence.get(str(node.evidence_id), {"status": "unavailable"})
     source, target = aliased(Node), aliased(Node)
     rows = (await db.execute(
         select(Relation, source, target)
@@ -146,6 +150,31 @@ async def selection_context(db, nodes: list[Node], scope: str, limit: int = 200)
             item["failures"] = failures[ident]
         item["truncated"] |= failures_truncated
     return context
+
+
+async def selection_evidence(db, nodes: list[Node], scope: str) -> dict:
+    """Inspect stored quotation provenance, never source truth or research quality."""
+    evidence_ids = {node.evidence_id for node in nodes if node.evidence_id}
+    if not evidence_ids:
+        return {}
+    entries = (await db.execute(
+        select(KnowledgeEvidence, KnowledgeUnit, KnowledgeRevision, KbSource,
+               func.coalesce(kb_library._current_revision_filter(), False).label("current"))
+        .join(KnowledgeUnit, KnowledgeUnit.id == KnowledgeEvidence.passage_id)
+        .join(KnowledgeRevision, KnowledgeRevision.id == KnowledgeUnit.revision_id)
+        .join(KbSource, KbSource.id == KnowledgeRevision.source_id)
+        .where(KnowledgeEvidence.id.in_(evidence_ids),
+               KbSource.origin_meta["research_scope"].astext == scope)
+    )).all()
+    return {str(e.id): {
+        "status": "available", "evidence_id": str(e.id),
+        "quote": unit.body[e.span_start:e.span_end],
+        "quote_sha256": e.sha256,
+        "quote_integrity": kb_store.span_digest(unit.body, e.span_start, e.span_end) == e.sha256,
+        "source_sha256": source.sha256, "source_key": source.source_key, "locator": source.locator,
+        "revision_id": str(revision.id), "current": current,
+        "start": e.span_start, "end": e.span_end,
+    } for e, unit, revision, source, current in entries}
 
 
 async def selection_failures(db, node_ids: list[uuid.UUID], scope: str, limit: int) -> tuple[dict, bool]:

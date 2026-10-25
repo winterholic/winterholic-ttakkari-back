@@ -421,6 +421,7 @@ AGENT_TOOLS = {"kb_search", "kb_documents", "kb_document", "kb_evidence","list_c
                "design_system_catalog", "design_system_search", "design_system_item",
                "execution_capabilities", "begin_environment_probe", "report_execution_environment", "host_gpu_start",
                "host_gpu_status", "host_gpu_bench", "host_gpu_stop",
+               "host_operation_start", "host_operation_status", "host_operation_cancel",
                "reverse_start", "reverse_list", "reverse_get", "reverse_retry", "reverse_message",
                "notebooklm_status", "notebooklm_list", "notebooklm_get", "notebooklm_create", "notebooklm_rename",
                "notebooklm_delete", "notebooklm_add_source", "notebooklm_delete_source", "notebooklm_query",

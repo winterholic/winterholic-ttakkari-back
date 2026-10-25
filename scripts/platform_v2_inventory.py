@@ -1475,6 +1475,7 @@ def classify_route(method: str, path: str) -> str:
             "/api/notifications",
             "/api/desk",
             "/api/agent/system",
+            "/api/agent/operations",
             "/api/agent/notify",
             "/api/harness",
         )
@@ -1622,7 +1623,7 @@ def classify_mcp_tool(name: str) -> str:
         return "core.accounts_quota"
     if n in ("request_backend_deploy", "backend_deploy_status"):
         return "core.generation_deploy"
-    if n in ("notify_user",):
+    if n in ("notify_user", "host_operation_start", "host_operation_status", "host_operation_cancel"):
         return "core.system_routing"
     if n in (
         "manage_work",
@@ -1956,6 +1957,7 @@ def classify_config(field: str) -> str:
             "runtime_api_url",
             "runtime_poll_seconds",
             "trust_proxy_ip_header",
+            "backup_passphrase_file",
             "harness_view",
         )
     ):
@@ -2086,6 +2088,8 @@ def classify_source_file(rel_path: str) -> str:
                 "/push/",
                 "/desk_feedback.py",
                 "/backup_status.py",
+                "/operations/",
+                "/api/operations.py",
                 "/sysinfo.py",
                 "/schema_aliases.py",
                 "/textsafe.py",

@@ -36,6 +36,41 @@ cd back
 
 암호 없이 도 기존처럼 된다(평문 보관, 기존 테스트 대조군).
 
+## 에이전트 호스트 운영 작업 (사용자 셸 불필요)
+
+위 "지금 바로 하기"의 셸 명령은 수동 대안이다. 배포된 백엔드는 같은 스크립트를 고정 argv 로 재사용하는
+승인된 작업 API 를 제공한다. 에이전트는 MCP 도구 `host_operation_start` / `host_operation_status` /
+`host_operation_cancel` 로 호출하고, 사용자는 아무것도 직접 실행하지 않는다.
+
+| kind | 하는 일 | 쓰기 |
+| --- | --- | --- |
+| `runtime_report` | 활성/실행기 세대, 세대별 lease·프로세스 그룹 수, 최근 배포 예약 | 없음 |
+| `performance_baseline` | DB 왕복 20회·이벤트 루프 지연 20회·호스트 압박(수 초, 합성) | 없음 |
+| `backup_status` | 마지막 DB 백업·스냅샷 시각/개수/해시, 키 출처 | 없음 |
+| `backup_db` | 운영 DB 읽기 전용 `pg_dump` 새 사본을 암호화해 백업 디렉터리에 저장 | 새 파일만 |
+| `data_snapshot` | `data_dir` 만 암호화 스냅샷(설정·계정·키 제외) | 새 파일만 |
+| `restore_rehearsal` | 최근 DB 백업을 `ttakkari_restore_rehearsal_<12hex>` 임시 DB 에 복원, 행 수 대조 후 삭제 | 임시 DB 만 |
+| `snapshot_verify` | 최근 스냅샷을 백업 디렉터리 `.verify/` 임시 위치에 풀어 해시 대조 후 삭제 | 임시 폴더만 |
+
+- 호출자가 고르는 값은 `kind` 하나다. 경로·DB URL·대상 DB 이름·셸 문자열은 받지 않고(`extra=forbid`), 모두 설정과
+  manifest 에서 백엔드가 정한다. 최근 백업 manifest 는 백업 디렉터리 안의 정해진 파일명·비심볼릭 파일만 허용한다.
+- 복원은 로컬 PostgreSQL 에서만, 접두사+작업 id 로 만든 새 DB 에만 한다. 운영 DB 이름과 같거나 접두사가 다르면 거부한다.
+  운영 DB·원본 파일은 덮어쓰거나 지우지 않는다. 러너가 끝난 뒤 남은 격리 DB 가 있으면 규칙에 맞는 이름만 지운다.
+- 개인 세션만 호출할 수 있다(work 세션 403). 무거운 작업은 한 번에 하나이고, 같은 kind 를 다시 부르면 진행 중 작업을
+  돌려준다(`deduplicated`). 다른 kind 는 409. 시간 제한: backup_db 15분, 나머지 30분. 러너는 `nice 10` 으로 돈다.
+- 분리된 러너 프로세스가 돌고 상태는 `~/.ttakkari/operations/jobs/*.json` 에 남아 API 재시작·세대 교체를 견딘다.
+  러너가 사라진 기록은 `runner_lost` 실패로 남기며 성공으로 바꾸지 않는다. 취소는 자식 프로세스 그룹을 정리하고 `cancelled` 로 남긴다.
+  요청·취소·종료는 감사 로그(`operation.request|cancel|finish`)에 남는다.
+- 결과에는 개수·해시·시각·대상 identity 만 담는다. 출력 꼬리는 `scrub` 마스킹 후 경로를 `<home>` 등으로 치환해 1500자만 보존한다.
+- 백업은 항상 암호화한다. 키는 `TTAKKARI_BACKUP_PASSPHRASE_FILE`(0600 파일 경로, 설정으로 주입)이 있으면 그것을, 없으면
+  첫 `backup_db`/`data_snapshot` 때 앱이 `~/.ttakkari/backup.key` 를 0600 으로 만든다. 키 내용은 읽어서 출력하지 않는다.
+  한계: 키와 백업이 같은 호스트에 있다. 호스트 밖 보관(외장 디스크·Time Machine)은 위 "Time Machine" 절의 별도 과제다.
+- 백업 디렉터리는 `backup_status.backup_dir()`(환경 변수 `BACKUP_DIR`, 기본 `~/.ttakkari-backups`)이며 `GET /api/system/backup-status` 가 읽는
+  곳과 같다. 보존 기간은 30일(기존 14일 기본 대신 더 오래 둔다).
+
+배포 후 호출 순서: `backup_status` → `runtime_report` → `performance_baseline` → `backup_db` → (완료 확인) `restore_rehearsal` →
+`data_snapshot` → `snapshot_verify`. 모든 호출은 `host_operation_status` 로 결과를 확인한다.
+
 ## 데이터 스냅샷 (격리 위치에서 먼저 시험)
 
 ```sh

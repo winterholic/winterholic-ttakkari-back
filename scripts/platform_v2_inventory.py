@@ -1856,7 +1856,7 @@ def classify_migration(stem: str) -> str:
         return "domain.creative_studio"
     if "notebooklm" in s:
         return "domain.notebooklm"
-    if "research_lab" in s:
+    if "research_lab" in s or s == "0073_research_reuse_source":
         return "domain.research_lab"
     if "reverse" in s:
         return "domain.reverse_eng"

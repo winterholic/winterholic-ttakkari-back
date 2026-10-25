@@ -31,7 +31,7 @@ def run(cmd, env_extra=None):
     env.setdefault("LC_ALL", "C.UTF-8")
     return subprocess.run(
         cmd, capture_output=True, text=True, encoding="utf-8",
-        env=env, timeout=120)
+        env=env, timeout=120, check=False)
 
 
 @pytest.fixture()
@@ -203,6 +203,27 @@ def test_data_snapshot_encrypted_roundtrip(
              "--passphrase-file", str(passphrase_file)])
     assert r.returncode == 0, r.stdout + r.stderr
     assert "스냅샷 검증 통과" in r.stdout
+
+
+def test_data_snapshot_skips_links_in_both_archive_and_manifest(tmp_path, sample_data):
+    import tarfile
+
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside must stay unchanged")
+    (sample_data / "file-link").symlink_to(outside)
+    (sample_data / "dir-link").symlink_to(outside.parent, target_is_directory=True)
+    (sample_data / "broken-link").symlink_to(tmp_path / "missing")
+    out = tmp_path / "snapshots"
+    created = run([str(SNAPSHOT_SH), "--source", str(sample_data), "--dir", str(out)])
+    assert created.returncode == 0, created.stdout + created.stderr
+    manifest = next(out.glob("*.manifest.json"))
+    body = json.loads(manifest.read_text())
+    restored = run([str(SNAPSHOT_SH), "--verify", str(manifest), "--target", str(tmp_path / "restored")])
+    assert restored.returncode == 0, restored.stdout + restored.stderr
+    with tarfile.open(body["archive"]) as archive:
+        assert not any(member.issym() or member.islnk() for member in archive)
+    assert body["file_count"] == 3
+    assert outside.read_text() == "outside must stay unchanged"
 
 
 def test_data_snapshot_verify_detects_tamper(tmp_path: Path, sample_data: Path) -> None:

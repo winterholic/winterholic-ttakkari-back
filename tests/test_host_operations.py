@@ -453,6 +453,32 @@ def test_backup_status_preserves_only_key_fingerprint_from_status_files():
 
 # ---- 실제 격리 통합: 암호화 백업 → 격리 복원 → 데이터 스냅샷 → 격리 검증 ----
 
+@pytest.mark.parametrize("link_kind", ["file", "directory", "broken"])
+def test_secure_cleanup_unlinks_symlinks_without_touching_the_target(tmp_path, link_kind):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel.txt"
+    sentinel.write_text("must remain unchanged")
+    sentinel.chmod(0o640)
+    target = tmp_path / "verify"
+    target.mkdir()
+    destination = {"file": sentinel, "directory": outside, "broken": outside / "missing"}[link_kind]
+    (target / "link").symlink_to(destination, target_is_directory=link_kind == "directory")
+    assert runner._secure_rmtree(target)
+    assert not target.exists()
+    assert sentinel.read_text() == "must remain unchanged"
+    assert sentinel.stat().st_mode & 0o777 == 0o640
+
+
+def test_residual_cleanup_unlinks_symlink_without_touching_its_target(tmp_path):
+    sentinel = tmp_path / "outside.txt"
+    sentinel.write_text("must remain unchanged")
+    sentinel.chmod(0o640)
+    (plans.ops_tmp() / "snapshot-verify-stale").symlink_to(sentinel)
+    assert plans.clean_residuals()["cleaned_files"] == 1
+    assert sentinel.read_text() == "must remain unchanged"
+    assert sentinel.stat().st_mode & 0o777 == 0o640
+
 @needs_venv
 async def test_backup_restore_snapshot_end_to_end(client, env, isolated_state):
     hdr = _hdr(env.personal_session_id)
@@ -490,7 +516,7 @@ async def test_backup_restore_snapshot_end_to_end(client, env, isolated_state):
     assert snap["summary"]["encrypted"] and snap["summary"]["file_count"] >= 1
     assert snap["summary"]["key_fingerprint"] == s["key_fingerprint"]
     verify = await _wait(client, hdr, (await _start(client, hdr, "snapshot_verify")).json()["id"])
-    assert verify["status"] == "succeeded", verify
+    assert verify["status"] == "succeeded", json.dumps(verify, ensure_ascii=False)
     assert verify["summary"]["files_verified"] == snap["summary"]["file_count"]
     assert not any((isolated_state / plans.VERIFY_DIR).glob("*"))
 

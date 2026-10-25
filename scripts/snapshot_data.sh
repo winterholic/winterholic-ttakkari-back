@@ -6,7 +6,7 @@
 #   끝나면 복호화 임시 파일은 지운다.
 #
 # 운영 데이터를 건드리지 않는다. tar와 해시 읽기는 읽기 전용이다.
-# 스냅샷 대상에 소켓·pid 파일(*.sock, *.pid)은 넣지 않는다.
+# 스냅샷 대상에 소켓·pid 파일(*.sock, *.pid)과 심볼릭 링크는 넣지 않는다.
 # 암호화는 backup_db.sh와 같은 방식(openssl enc -aes-256-cbc -pbkdf2,
 #   0600 암호 파일)이며, 암호화하면 평문 tar.gz는 디스크에서 지운다.
 #
@@ -187,31 +187,40 @@ MANIFEST_TMP="$MANIFEST.partial.$$"
 cleanup_partial() { rm -f "$ARCH_TMP" "$MANIFEST_TMP" "${ENC_TMP:-}"; }
 trap cleanup_partial EXIT
 
-tar -czf "$ARCH_TMP" --exclude='*.sock' --exclude='*.pid' -C "$SOURCE" .
 "$PYTHON" - "$SOURCE" "$ARCH_TMP" "$ARCH" "$MANIFEST_TMP" "$TS" <<'EOF'
 import hashlib
 import json
 import os
+import stat
 import sys
+import tarfile
 
 source, arch_tmp, arch_path, manifest_tmp, timestamp = sys.argv[1:]
 entries = []
 total = 0
-for root, _dirs, names in os.walk(source):
-    for name in names:
-        if name.endswith((".sock", ".pid")):
-            continue
-        disk = os.path.join(root, name)
-        if not os.path.isfile(disk) or os.path.islink(disk) and not os.path.isfile(disk):
-            continue
-        if os.path.islink(disk):
-            continue
-        with open(disk, "rb") as f:
-            digest = hashlib.file_digest(f, "sha256").hexdigest()
-        rel = os.path.relpath(disk, source)
-        size = os.path.getsize(disk)
-        entries.append({"path": rel, "size": size, "sha256": digest})
-        total += size
+# 아카이브와 manifest 가 같은 범위를 담도록 링크·특수 파일을 양쪽에서 제외한다.
+with tarfile.open(arch_tmp, "w:gz", dereference=True) as archive:
+    for root, dirs, names in os.walk(source):
+        dirs[:] = sorted(d for d in dirs if not d.endswith((".sock", ".pid"))
+                         and not os.path.islink(os.path.join(root, d)))
+        for name in dirs:
+            disk = os.path.join(root, name)
+            archive.add(disk, arcname=os.path.relpath(disk, source), recursive=False)
+        for name in sorted(names):
+            disk = os.path.join(root, name)
+            if name.endswith((".sock", ".pid")) or not stat.S_ISREG(os.lstat(disk).st_mode):
+                continue
+            with open(disk, "rb", opener=lambda p, flags: os.open(p, flags | os.O_NOFOLLOW)) as f:
+                member = archive.gettarinfo(fileobj=f, arcname=os.path.relpath(disk, source))
+                archive.addfile(member, f)
+# 캡처 뒤 원본이 바뀌어도 manifest 는 실제 보관한 바이트의 해시여야 한다.
+with tarfile.open(arch_tmp, "r:gz") as archive:
+    for member in archive:
+        if member.isfile():
+            with archive.extractfile(member) as f:
+                digest = hashlib.file_digest(f, "sha256").hexdigest()
+            entries.append({"path": member.name, "size": member.size, "sha256": digest})
+            total += member.size
 entries.sort(key=lambda e: e["path"])
 with open(arch_tmp, "rb") as f:
     arch_digest = hashlib.file_digest(f, "sha256").hexdigest()

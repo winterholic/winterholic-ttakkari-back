@@ -178,21 +178,25 @@ async def drop_all_leftover_dbs() -> list[str]:
 
 def _secure_rmtree(target: Path) -> bool:
     try:
+        if target.is_symlink():
+            target.unlink()
+            return True
         if not target.exists():
             return True
         for root, dirs, files in os.walk(target, topdown=False):
             for name in files:
                 fpath = Path(root) / name
                 try:
-                    fpath.chmod(0o600)
-                    with open(fpath, "wb") as f:
-                        f.write(b"\x00" * fpath.stat().st_size)
-                    fpath.unlink(missing_ok=True)
+                    plans.secure_unlink(fpath)
                 except OSError:
                     pass
             for name in dirs:
                 try:
-                    (Path(root) / name).rmdir()
+                    dpath = Path(root) / name
+                    if dpath.is_symlink():
+                        dpath.unlink()
+                    else:
+                        dpath.rmdir()
                 except OSError:
                     pass
         target.rmdir()

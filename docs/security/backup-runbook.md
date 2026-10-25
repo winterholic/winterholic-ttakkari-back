@@ -9,6 +9,8 @@
   암호화 산출물이면 같은 암호 파일로 임시 위치에 복호화한 뒤 대조하고 지운다.
 - `scripts/snapshot_data.sh`: 데이터 디렉터리 tar.gz 스냅샷 + 파일별 sha256 manifest.
   `--verify`로 격리 위치에 풀어 대조한다. 암호화·`latest-data.json` 갱신을 지원한다.
+  심볼릭 링크·특수 파일과 `*.sock`·`*.pid`는 제외하며, manifest는 아카이브에 실제 담긴 파일의 바이트로 계산한다.
+  검증 뒤 정리와 이전 잔여 파일 정리는 링크 자체만 지우며 링크 대상의 내용·권한을 바꾸지 않는다.
 - `deploy/com.apple.ttakkari.backup.plist.example`: 매일 03:17 실행 launchd 예시.
 - `deploy/com.apple.ttakkari.data-snapshot.plist.example`: 매주 일요일 03:47 실행 launchd 예시.
 - `unit_tests/test_backup_restore.py`: 기존 재현·회귀 테스트(비암호화 대조군).

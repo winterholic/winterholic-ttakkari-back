@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,6 +158,19 @@ def ops_tmp() -> Path:
     return path
 
 
+def secure_unlink(path: Path) -> None:
+    """평문 일반 파일만 덮어쓰고 삭제한다. 링크의 대상에는 쓰거나 chmod 하지 않는다."""
+    if not path.is_symlink():
+        fd = os.open(path, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "wb") as f:
+            info = os.fstat(f.fileno())
+            if stat.S_ISREG(info.st_mode):
+                os.fchmod(f.fileno(), 0o600)
+                f.write(b"\x00" * info.st_size)
+                f.truncate()
+    path.unlink(missing_ok=True)
+
+
 def clean_residuals() -> dict[str, int]:
     """이전 비정상 종료(SIGKILL 등)로 남은 평문 임시 파일·디렉터리를 이름 규칙 일치 항목만 안전 정리한다."""
     cleaned_files = 0
@@ -168,9 +182,7 @@ def clean_residuals() -> dict[str, int]:
                 try:
                     if item.is_file() or item.is_symlink():
                         try:
-                            item.chmod(0o600)
-                            with open(item, "wb") as f:
-                                f.write(b"\x00" * item.stat().st_size)
+                            secure_unlink(item)
                         except OSError:
                             pass
                         item.unlink(missing_ok=True)

@@ -44,6 +44,12 @@ CACHE_PRUNE_SECONDS = 3600.0
 # 런타임 행이 없는 소유자의 running 행 마감 여유분. local_tts_timeout_seconds(기본 600초)에 더해 적용한다.
 STALE_RUNNING_GRACE_SECONDS = 60.0
 
+# FND1: /api/ready 로 보고하는 접수 계약. 이 값을 보고하는 local 구세대는 accepted work(커밋된 tts_jobs 행)를
+# 프록시 전송 완료 없이 보존한다. accept 는 커밋 전에 DB 상태가 active 인지 다시 읽어 아니면 503 으로 거절하고,
+# 원문을 chunks_json 에 커밋하며, draining 중에도 소유 queued/running 을 끝낸다. can_retire 는 진행 HTTP 와 소유
+# 활성 job 이 0일 때까지 퇴역을 막는다. 이 의미가 바뀌면 값을 바꾼다. 그래야 controller 가 옛 값만 신뢰한다.
+ADMISSION_CONTRACT = "generation-state-v1"
+
 _process_owner = uuid.uuid4()
 # remote API 가 접수한 queued job 의 소유자. 세대 id 가 아니라서 어떤 소유자 사망 판정에도 걸리지 않고,
 # claim 한 consumer 가 owner_id 를 자기 id 로 바꾼 뒤에야 running 의 소유자 증거(flock/offline)가 의미를 갖는다.

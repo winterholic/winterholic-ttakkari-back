@@ -355,6 +355,8 @@ async def ready(runtime) -> dict:
         manager._handles or pending or consumer_work or api_residual
     )
     value["ready"] = runtime._listener is not None and not runtime._listener.is_closed()
+    from ttakkari.tts.jobs import ADMISSION_CONTRACT
+    value["tts_admission"] = ADMISSION_CONTRACT
     return value
 
 

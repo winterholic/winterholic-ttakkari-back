@@ -14,7 +14,7 @@ API는 접수·조회·인증·응답, 독립 executor는 장기/백그라운드
 | 모든 잡에 공통 `pinned_module_revision`/새 lease·fence 필드 의무화 | 기각. 각 도메인의 기존 영속 레코드와 소유권/원자 claim 사용. 없는 필드를 구현된 것으로 가정하지 않음 |
 | Creative API 세대 finalizer에 장기 작업을 묶기 | 실행부 큐 이관으로 대체. 기존 파일 원자 쓰기와 체크포인트는 유지; 신규 태스크별 fence 플랫폼 도입 안 함 |
 | HMAC 영수증/동적 클로저를 배포 shortcut 필수 기반으로 연결 | 현재 운영 전환 요건에서 제외. 기존 prototype은 자동 통과 근거가 아님. 관련 코드·역사 증거는 보존 |
-| FND-01에서 TTS queued 0만 확인해 첫 전환 허용 | 기각. pre-counter 요청 반례 보존, stock 전송 완료 ack가 없어 전환 명시 거절 |
+| FND-01에서 TTS queued 0만 확인해 첫 전환 허용 | 기각. pre-counter 요청 반례 보존. 접수 계약을 보고하지 않는 구세대는 stock 전송 완료 ack가 없어 전환 명시 거절 |
 | P4·P6 자체 삭제 | **요구 유지.** 번들 메커니즘만 폐기. Core 무배포, accepted work 보존, 요청 전환, 실패 격리, rollback/restart와 E2E 실증은 여전히 필수 |
 
 ## API·Job·Event·자원 경계
@@ -49,7 +49,7 @@ flowchart LR
 
 1. **기본값은 실행부 활성화 아님.** `deploy/generation-contract.json.run_executor`는 protocol2, activation disabled다. `config.py`의 local/runtime_generation 기본값과 운영 환경 적용값은 구별한다. source 기본값 확인이 현재 운영 활성화 증거가 아니다.
 2. **API local→remote 최초 전환**: 등록된 구세대 identity·실행 모드를 확인한다. 구세대가 이미 remote/executor_protocol2이면 legacy TTS gate만 생략한다. 전체 ownership/기동/DB/E2E 검증 면제를 뜻하지 않는다.
-3. **FND1**: legacy local TTS는 입구 close→구 route 전체의 전송 완료 ack→HTTP0→queued와running0 순서를 만족해야 activate할 수 있다. identity 변경·ack 없음/False·timeout·오류는 거절한다. 부분 close/취소도 원래 route 복원을 시도하며 복원 실패는 로그와 원오류를 보존한다. stock Caddy 구현은 ack 없이 거절한다. 이는 배포 가능한 자동 장벽이 아니다.
+3. **FND1**: legacy local TTS는 입구 close→구 route 전체의 전송 완료 ack→HTTP0→queued와running0 순서를 만족해야 activate할 수 있다. identity 변경·ack 없음/False·timeout·오류는 거절한다. 부분 close/취소도 원래 route 복원을 시도하며 복원 실패는 로그와 원오류를 보존한다. stock Caddy 구현은 ack 없이 거절한다. 단, 구세대가 `/api/ready`로 `tts_admission=generation-state-v1`을 보고하고 같은 응답의 generation이 기록과, revision이 `previous_revision`과 같으면 전송 ack 대신 이 접수 계약을 경계로 쓴다. accepted work는 구세대가 커밋한 `tts_jobs` 행이다. 구세대 accept는 커밋 전에 DB 상태가 active가 아니면 503으로 거절한다. 커밋한 일은 draining 중에 끝내며, 같은 identity의 `drain_ready`가 그때까지 퇴역을 막는다. 이 경로는 프록시를 조작하지 않는다. 계약을 보고하지 않는 23e0cbe 이하는 첫 remote 전환을 받을 수 없다. 계약을 보고하는 local 릴리스를 먼저 활성화한 뒤 remote를 활성화한다([검증](../../../review/platform-v2/20261025/fnd1-admission-handoff.md)).
 4. **기각된 장벽**: proxy counter0, app HTTP0, DB queue0, 고정 sleep, `/stop` 응답, 프로세스 exit0만으로 완료를 선언하지 않는다. 격리 Caddy native graceful 무제한은 새 접속 가용성을 잃고, 유한 grace는 미완료 POST/SSE에도 exit0을 반환했다. 이 경로는 채택하지 않는다. 운영 proxy는 조작하지 않는다.
 5. **executor 교체**: signal/ownership 종료 경로에서 queued_work/background/TTS 새 claim을 먼저 닫는다. 진행 Run/runtime work/각 pending drain 완료를 기다리고 이후 자식·서비스를 정리한다. 유한 drain timeout 후 자연 완료를 계속 기다릴 수 있다. 무기한 cleanup 실패를 퇴역 성공으로 보고하지 않는다.
 6. **local rollback**: API local 경로는 STT/TTS/background/주기 및 Creative/Game 소비자를 다시 시작할 수 있어야 한다. 세대 draining→active는 claim pause를 resume하고 residual watcher를 취소·join한다. lifespan 재진입은 claim 스위치를 reopen한다. 종료의 1,800초 예산 초과 취소는 executor 자연 완료와 다른 계약이다. 실서비스 rollback/restart 증거는 아직 없다.
@@ -64,7 +64,7 @@ flowchart LR
 | P1 | backend 현 snapshot + 이번 frontend/runtime/tests delta | helper15, 신규 화면 의미/권한/상태, loader byte binding, 배포 shell/설정 의미 및 실시간 자원 소유권 |
 | P2 | 본 계약과 원래 요구/13산출물/9시나리오의 연결 | 운영 E2E 근거·전체 산출물/PMS 최종 대조; 문서 통합만으로 done 아님 |
 | P3/S2/INT | 3a49526 residual 교정, a3a29ec merge, 2fde901 fail-closed. 각 범위의 과거 검사는 기존 원문 재사용 | 후속 격리 DB9건·library 통합 통과는 아래 참조. 현재 후보 전체 gate·독립 residual은 미완료; 과거 전체gate 수치를 현재 후보로 인용하지 않음 |
-| FND1 | `fnd1-transport-completion-guard.md`, `fnd1-native-graceful-verdict.md` 및 반례 JSON | 요구와 양립하는 최초 전환 경로 미해결; 새 lease/fence/번들로 우회하지 않음 |
+| FND1 | `fnd1-transport-completion-guard.md`, `fnd1-native-graceful-verdict.md`, `fnd1-admission-handoff.md` 및 반례 JSON | 2단계 전환의 운영 실증(계약 보고 local 릴리스 활성 → 새 controller 코드의 supervisor → remote activation·rollback). 현재는 격리 실제 Caddy·앱·PostgreSQL 검증만 있음 |
 | P4/P5/P6 | Step2~6 source 배선과 도메인별 좁은 증거 | Core 무배포 독립 변경/릴리스, 진행 accepted work·장기 Run 보존, 요청 전환·격리·rollback/restart, 실제 모델 응답/MCP/재개·보안·사용자 E2E·검증된 재배포 |
 
 known `initdb shmget Operation not permitted`은 Codex 명령 샌드박스에서의 관측이다. 변경 없는 재시도나 다른 interpreter/engine을 통한 동일 거부 우회를 하지 않는다. 승인된 기존 DB 검증 경로/영수증을 먼저 찾고 그 범위 안에서 진행한다. main push와 배포 예약은 계속 보류한다.

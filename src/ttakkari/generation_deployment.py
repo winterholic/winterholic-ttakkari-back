@@ -1096,6 +1096,18 @@ class GenerationController:
             return False
         return not executor or executor.get("activation") == "disabled"
 
+    @staticmethod
+    def _previous_preserves_admission(job, previous) -> bool:
+        """구세대 프로세스가 스스로 보고한 TTS 접수 계약이 기록된 identity 와 함께 확인될 때만 True.
+
+        같은 응답의 generation 은 호출자가 이미 대조했다. revision 도 배포 기록과 일치해야 한다.
+        값이 없거나 다르면(23e0cbe 이하 포함) 기존 전송 완료 거절 경계를 그대로 적용한다.
+        """
+        from ttakkari.tts.jobs import ADMISSION_CONTRACT
+        recorded = job.get("previous_revision")
+        return (previous.get("tts_admission") == ADMISSION_CONTRACT and bool(recorded)
+                and previous.get("revision") == recorded)
+
     async def drain_previous_tts(self, job, *, timeout: float = 120.0, poll: float = 0.5) -> None:
         """첫 혼합 세대 전환의 TTS 보호: 구세대가 queued 를 draining 으로 실패시키기 전에 접수 경로를 닫고 비운다.
 
@@ -1109,6 +1121,10 @@ class GenerationController:
         후보가 local 로 확인된 local→local 교체는 remote executor 로의 최초 전환이 아니므로 전송 완료 확인을
         요구하지 않는다. 그 경우 2fde901 이전과 같이 짧은 유예 뒤 진행 HTTP 와 queued/running 0건만 확인한다.
         후보 모드를 신뢰할 수 있게 확인하지 못하면 remote 로 간주해 아래 거절 경계를 그대로 적용한다.
+
+        구세대가 tts_jobs.ADMISSION_CONTRACT 를 기록된 generation·revision 과 함께 보고하면 전송 완료 대신 그
+        계약을 경계로 쓴다(_previous_preserves_admission). 그래서 첫 remote 전환은 계약을 보고하는 local 릴리스가
+        먼저 active 여야 한다. 보고하지 않는 구세대는 위 stock 거절을 그대로 받는다.
         """
         previous_slot, previous_id = job["previous_slot"], uuid.UUID(job["previous_generation"])
         close_attempted = False
@@ -1123,6 +1139,10 @@ class GenerationController:
                 return
             local_replacement = (previous.get("execution_mode") != "remote"
                                  and await self._candidate_stays_local(job))
+            if not local_replacement and self._previous_preserves_admission(job, previous):
+                # 접수 경계는 구세대 앱의 상태 확인과 커밋이다. activate 가 이를 닫고, 커밋된 일은 구세대가
+                # draining 중에 끝내며 같은 identity 의 drain_ready(retire) 가 완료를 확인한다. 프록시는 건드리지 않는다.
+                return
             # /load can succeed before verification/persistence fails or is cancelled.
             # Every partial close must therefore use the same restoration path.
             close_attempted = True

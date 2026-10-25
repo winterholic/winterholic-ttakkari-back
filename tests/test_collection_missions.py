@@ -134,10 +134,10 @@ async def test_topic_mission_searches_in_worker_and_acquires_discovered_sources(
     assert detail["plan"]["search_history"][-1]["new_sources"] == 0
 
 
-async def _make_held_mission(client, auth, fixture_env, *, knowledge_permission="allowed", retain_days=None):
-    url = fixture_env.server.url("/held-document")
-    fixture_env.server.page("/held-document", article_html("직렬화 설계", [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."]))
-    body = source_body(seeds=[url], max_pages=1)
+async def _make_held_mission(client, auth, fixture_env, *, path: str = "/held-document", source_key: str = "postgres-docs", knowledge_permission="allowed", retain_days=None):
+    url = fixture_env.server.url(path)
+    fixture_env.server.page(path, article_html("직렬화 설계", [prose("ko", 33, 12) + " 직렬화 트랜잭션 설계 근거를 설명한다."]))
+    body = source_body(source_key=source_key, seeds=[url], max_pages=1)
     body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[fixture_env.server.port], min_delay_seconds=0)
     body["policy"]["permissions"]["knowledge"] = knowledge_permission
     body["policy"]["retain_days"] = retain_days
@@ -266,8 +266,9 @@ async def test_unhold_requires_auth_and_rejects_cross_tenant_item(client, auth, 
 
 
 async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, auth, env, monkeypatch):  # noqa: F811
-    """실 2개 DB 세션 동시 경합 시 row lock(with_for_update)과 멱등 outbox 등록을 통해
-    중복 없는 knowledge outbox -> receipt/search 전달 및 원본 hash/rights/retention 불변을 검증한다."""
+    """실 2개 DB 세션 경합 시 production consume_pending_once(claim -> txn밖평가 -> 재조회잠금 -> 멱등 apply)와
+    missions.unhold_item(with_for_update)의 상호 배제 및 멱등 outbox 등록,
+    중복 없는 knowledge outbox -> receipt/search 전달 및 원본 hash/rights/retention 보존을 검증한다."""
     import copy
 
     from ttakkari.collector import precise_eval
@@ -277,8 +278,16 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
     item_id = uuid.UUID(item["id"])
     mission_id = uuid.UUID(mission["id"])
 
+    # item이 production consume_pending_once의 후보로 claim되도록 precise_eval 상태를 pending으로 설정
     async with sessionmaker()() as db:
         row = await db.get(CollectorItem, item_id)
+        signals = dict(row.signals or {})
+        triage = dict(signals.get("triage") or {})
+        triage["precise_eval"] = {"state": "pending", "needed": True}
+        signals["triage"] = triage
+        row.signals = signals
+        await db.commit()
+
         orig_env = copy.deepcopy(row.envelope)
         orig_payload_hash = row.payload_hash
         orig_raw_sha256 = row.raw_sha256
@@ -286,64 +295,41 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
         orig_rights = copy.deepcopy(row.envelope.get("rights"))
         envelope_id = row.envelope_id
 
-    # 세션 1: missions.unhold_item 실행
-    async def session1_worker():
+    # [순서 1 실증]: claim -> txn 밖 평가 대기 -> unhold commit -> precise apply 재조회 잠금 진입
+    eval_started = asyncio.Event()
+    unhold_done = asyncio.Event()
+
+    async def fake_evaluator(*, goal, title, text, request_key, job_id):
+        eval_started.set()  # Session 2: production claim 완료 후 txn 밖 평가 진입
+        await unhold_done.wait()  # Session 1: unhold_item이 실행되어 commit될 때까지 대기
+        return {
+            "topic_relevance": 0.88,
+            "relevance_explanation": "직렬화 트랜잭션 설계 목표와 부합함",
+            "information_depth": 0.90,
+            "low_quality_signals": ["none"],
+            "recommendation": "accept",
+            "confidence": 0.95,
+        }
+
+    # 세션 1 워커: missions.unhold_item 실행
+    async def session1_unhold_worker():
+        await eval_started.wait()  # Session 2가 claim(state="processing")한 후 unhold 진입
         async with sessionmaker()() as db1:
             res = await missions.unhold_item(db1, mission_id, item_id)
             await db1.commit()
-            return res
+        unhold_done.set()  # unhold commit 완료 신호
+        return res
 
-    # 세션 2: 동시 precise apply 실행 및 outbox 멱등 생성 로직 수행
-    async def session2_worker():
-        async with sessionmaker()() as db2:
-            item_row = await db2.scalar(
-                select(CollectorItem).where(CollectorItem.id == item_id).with_for_update(of=CollectorItem)
-            )
-            if item_row.status == "held":
-                precise_eval.apply_precise_result(
-                    item_row,
-                    {
-                        "recommendation": "accept",
-                        "topic_relevance": 0.88,
-                        "information_depth": 0.90,
-                        "low_quality_signals": [],
-                    },
-                )
-            existing_outbox = await db2.scalar(
-                select(CollectorOutbox).where(
-                    CollectorOutbox.tenant_id == item_row.tenant_id,
-                    CollectorOutbox.sink == "knowledge",
-                    CollectorOutbox.scope == item_row.scope,
-                    CollectorOutbox.envelope_id == item_row.envelope_id,
-                )
-            )
-            if not existing_outbox and item_row.envelope_id:
-                outbox = CollectorOutbox(
-                    job_id=item_row.job_id,
-                    tenant_id=item_row.tenant_id,
-                    scope=item_row.scope,
-                    sink="knowledge",
-                    envelope_id=item_row.envelope_id,
-                    payload_hash=item_row.payload_hash,
-                    status="pending",
-                )
-                db2.add(outbox)
-                db2.add(CollectorReview(
-                    item_id=item_row.id,
-                    decision="accept",
-                    reason="Precise utility review only; factuality unverified.",
-                    actor="owner",
-                    text_sha256=item_row.text_sha256,
-                ))
-            await db2.commit()
-            return True
+    # 세션 2 워커: 실제 production consume_pending_once 실행 (자체 잠금/outbox 재구현 일절 없음)
+    async def session2_precise_worker():
+        return await precise_eval.consume_pending_once(limit=1, evaluator=fake_evaluator)
 
     # 2개 독립 세션을 비동기로 동시 경합 실행
-    res1, res2 = await asyncio.gather(session1_worker(), session2_worker())
+    res1, res2 = await asyncio.gather(session1_unhold_worker(), session2_precise_worker())
     assert res1.get("status") == "accepted" or res1.get("delivery_queued") is True
-    assert res2 is True
+    assert res2 == 1  # 1개 item 정상 소비 완결
 
-    # 1. 중복 없는 knowledge outbox 확인
+    # 1. 중복 없는 knowledge outbox 확인 (정확히 단 1건)
     async with sessionmaker()() as db:
         outboxes = (await db.scalars(select(CollectorOutbox).where(
             CollectorOutbox.envelope_id == envelope_id,
@@ -375,6 +361,28 @@ async def test_concurrent_two_db_sessions_unhold_and_precise_apply_race(client, 
     # 4. KB 검색을 통해 중복 없이 1건 정상 색인/검색 확인
     hits = (await client.get("/api/assistant/kb/search?q=직렬화", headers=auth)).json()["items"]
     assert len(hits) == 1
+
+    # [순서 2 및 유한 retention 경계 실증]: 유한 retention 문서의 unhold 거부 및 불변 보존
+    _, finite_mission, finite_item = await _make_held_mission(
+        client, auth, env, path="/held-document-finite", source_key="postgres-docs-finite", retain_days=7
+    )
+    finite_item_id = uuid.UUID(finite_item["id"])
+    finite_mission_id = uuid.UUID(finite_mission["id"])
+
+    async with sessionmaker()() as db_finite:
+        row_finite = await db_finite.get(CollectorItem, finite_item_id)
+        assert row_finite.envelope.get("rights", {}).get("retain_until") is not None
+        orig_retain_until = row_finite.envelope["rights"]["retain_until"]
+
+        # 유한 retention 항목은 unhold_item 호출 시 kb_import_requires_unlimited_retention_policy 로 명확히 거부됨
+        with pytest.raises(ValueError, match="kb_import_requires_unlimited_retention_policy"):
+            await missions.unhold_item(db_finite, finite_mission_id, finite_item_id)
+        await db_finite.rollback()
+
+        # 거부 후에도 유한 retention 및 status가 훼손 없이 온전히 보존됨
+        refreshed = await db_finite.get(CollectorItem, finite_item_id)
+        assert refreshed.status == "held"
+        assert refreshed.envelope["rights"]["retain_until"] == orig_retain_until
 
 
 

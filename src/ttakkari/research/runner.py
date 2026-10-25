@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -27,6 +29,21 @@ logger = logging.getLogger(__name__)
 # In-memory cancel events and background task registry
 _CANCEL_EVENTS: dict[uuid.UUID, asyncio.Event] = {}
 _ACTIVE_TASKS: dict[uuid.UUID, asyncio.Task] = {}
+
+
+def _remove_run_copies(paths: list[Path]) -> list[str]:
+    """Remove only directories allocated by this artifact transaction."""
+    failures = []
+    for path in reversed(paths):
+        try:
+            shutil.rmtree(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.exception("Failed to remove rolled-back research artifact copy: %s", path)
+            failures.append(str(path))
+    return failures
+
 
 def _get_registry():
     try:
@@ -100,6 +117,7 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
 
         start_time = asyncio.get_event_loop().time()
         adapter_res = None
+        created_copies: list[Path] = []
         try:
             adapter_res = await adapter.execute_run(
                 run_id=run.id,
@@ -140,7 +158,6 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                     db.add(m_row)
 
                 # Connect any artifacts produced
-                from pathlib import Path
                 from ttakkari.artifacts.service import register_file
                 from ttakkari.broker.policy import ResolvedPath
                 from ttakkari.models import Artifact, ArtifactArea, ArtifactOrigin
@@ -182,6 +199,13 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                     await db.commit()
                     return run
 
+                # File I/O and DB artifact registration can fail independently of inference.
+                # Preserve completed measurements first, without announcing success until
+                # every artifact has been linked and the artifact transaction commits.
+                run.status = "running"
+                run.finished_at = None
+                await db.commit()
+
                 registered_paths: dict[Path, uuid.UUID] = {}
                 linked_artifact_ids: set[uuid.UUID] = set()
 
@@ -203,10 +227,10 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                                 session_id=None,
                                 run_id=None,
                                 force_copy=True,
+                                created_copies=created_copies,
                             )
                             file_art_id = reg_file.id
                             registered_paths[norm_path] = file_art_id
-                        art_info["artifact_id"] = str(file_art_id)
 
                     if file_art_id is not None:
                         if file_art_id in linked_artifact_ids:
@@ -232,13 +256,25 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                         )
                         db.add(art_row)
 
+                run.status = "succeeded"
+                run.finished_at = utcnow()
+
             await db.commit()
+            created_copies.clear()
             return run
 
         except asyncio.CancelledError:
+            await db.rollback()
+            cleanup_failures = _remove_run_copies(created_copies)
+            run = await db.get(Run, run_id)
+            if adapter_res is not None:
+                run.raw_output = adapter_res.raw_output or {}
+                run.environment_snapshot = adapter_res.environment_snapshot or {}
             run.status = "cancelled"
             run.error_code = "cancelled"
             run.error_message = "Task cancelled by system"
+            if cleanup_failures:
+                run.error_message += "; artifact cleanup failed: " + ", ".join(cleanup_failures)
             run.finished_at = utcnow()
             await db.commit()
             return run
@@ -247,6 +283,7 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             elapsed = asyncio.get_event_loop().time() - start_time
             # A failed flush poisons the session; reset it so the run still reaches a terminal state.
             await db.rollback()
+            cleanup_failures = _remove_run_copies(created_copies)
             run = await db.get(Run, run_id)
             if adapter_res is not None:
                 run.raw_output = adapter_res.raw_output or {}
@@ -254,6 +291,8 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
             run.status = "failed"
             run.error_code = type(e).__name__
             run.error_message = str(e)
+            if cleanup_failures:
+                run.error_message += "; artifact cleanup failed: " + ", ".join(cleanup_failures)
             run.wall_seconds = elapsed
             run.finished_at = utcnow()
             await db.commit()

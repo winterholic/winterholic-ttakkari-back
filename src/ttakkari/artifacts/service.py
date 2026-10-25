@@ -68,11 +68,13 @@ async def register_file(
     export_allowed: bool = True,
     force_copy: bool = False,
     keep_in_place: bool = False,
+    created_copies: list[Path] | None = None,
 ) -> Artifact:
     """검증된 경로를 Artifact 로 등록한다.
 
     작은 파일은 관리 영역으로 복사해 원본이 나중에 바뀌어도 결과물을 보존한다.
     큰 파일은 참조만 하고 sha256 으로 변경 여부를 판별한다.
+    created_copies가 주어지면 호출자가 rollback 시 제거할 새 디렉터리를 복사 전에 기록한다.
     """
     s = get_settings()
     st = ensure_regular_file(resolved.path)
@@ -86,7 +88,9 @@ async def register_file(
     copy = not keep_in_place and (force_copy or st.st_size <= s.copy_max_bytes)
     if copy:
         dest_dir = s.artifact_store / str(art_id)
-        dest_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        dest_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
+        if created_copies is not None:
+            created_copies.append(dest_dir)
         dest = dest_dir / _safe_filename(resolved.path.name)
         await asyncio.to_thread(shutil.copy2, resolved.path, dest)
         stored, mode = dest, "copy"

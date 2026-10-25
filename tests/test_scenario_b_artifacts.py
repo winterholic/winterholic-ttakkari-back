@@ -512,3 +512,77 @@ async def test_malformed_legacy_artifact_id_fails_with_evidence():
     await runner.execute_run_instance(run_id, MockRegistry(adapter))
 
     await _assert_failed_with_evidence(run_id, "artifact_invalid")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_stage", ["after_register", "during_copy", "during_flush", "during_commit", "cancelled"])
+async def test_artifact_registration_failure_keeps_measurements_and_removes_only_new_copies(
+    monkeypatch, tmp_path, failure_stage,
+):
+    import asyncio
+
+    from ttakkari.artifacts import service as art_service
+    from ttakkari.config import get_settings
+    from ttakkari.research.models import Measurement
+
+    store = get_settings().artifact_store
+    marker = store / str(uuid.uuid4()) / "existing.wav"
+    marker.parent.mkdir(parents=True)
+    marker.write_bytes(b"existing unrelated artifact")
+    before = set(store.rglob("*"))
+    async with sessionmaker()() as db:
+        before_ids = set(await db.scalars(select(Artifact.id)))
+
+    sources = [tmp_path / f"{i}.wav" for i in range(2)]
+    for path in sources:
+        path.write_bytes(b"RIFF\x00\x00\x00\x00WAVE")
+    real_register = art_service.register_file
+    real_copy = art_service.shutil.copy2
+    calls = 0
+
+    def fail_copy(src, dest, *args, **kwargs):
+        if Path(src) == sources[1]:
+            Path(dest).write_bytes(b"partial copy")
+            raise OSError("copy failed after partial write")
+        return real_copy(src, dest, *args, **kwargs)
+
+    async def interrupted_register(db, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        art = await real_register(db, *args, **kwargs)
+        if calls == 2:
+            if failure_stage == "after_register":
+                raise RuntimeError("registration failed after copying")
+            if failure_stage == "cancelled":
+                raise asyncio.CancelledError()
+            if failure_stage in {"during_flush", "during_commit"}:
+                # A real PostgreSQL FK failure poisons the artifact transaction.
+                db.add(ResearchArtifact(
+                    id=uuid.uuid4(), study_id=uuid.uuid4(), artifact_id=art.id,
+                    role="invalid_fk", label="invalid FK injection",
+                ))
+                if failure_stage == "during_flush":
+                    await db.flush()
+        return art
+
+    monkeypatch.setattr(art_service, "register_file", interrupted_register)
+    if failure_stage == "during_copy":
+        monkeypatch.setattr(art_service.shutil, "copy2", fail_copy)
+    run_id = await _seed_run("declaring_adapter")
+    await runner.execute_run_instance(
+        run_id, MockRegistry(_declaring_adapter([{"path": str(p)} for p in sources])),
+    )
+
+    async with sessionmaker()() as db:
+        run = await db.get(Run, run_id)
+        assert run.status == ("cancelled" if failure_stage == "cancelled" else "failed")
+        assert run.finished_at is not None
+        assert run.raw_output == {"transcript": "kept"}
+        assert run.environment_snapshot == {"engine": "test"}
+        rows = list(await db.scalars(select(Measurement).where(Measurement.run_id == run_id)))
+        assert [m.value for m in rows] == [0.2]
+        assert list(await db.scalars(select(ResearchArtifact).where(ResearchArtifact.run_id == run_id))) == []
+        assert set(await db.scalars(select(Artifact.id))) == before_ids
+    assert set(store.rglob("*")) == before
+    assert marker.read_bytes() == b"existing unrelated artifact"
+    assert all(p.is_file() for p in sources)

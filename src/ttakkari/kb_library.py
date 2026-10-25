@@ -383,11 +383,26 @@ async def register_text(
         title=title, lang=lang, origin_meta={"via": "kb_library_api"},
     )
     access = await db.get(KbDocumentAccess, result.document_id)
+    origin_scope = "work" if scope == "work" else "personal"
+    visibility = "work_only" if scope == "work" else "global"
     if access is None:
-        db.add(KbDocumentAccess(document_id=result.document_id, tenant_id="owner", scope=scope))
+        db.add(
+            KbDocumentAccess(
+                document_id=result.document_id,
+                tenant_id="owner",
+                scope=scope,
+                origin_scope=origin_scope,
+                visibility=visibility,
+            )
+        )
     elif access.scope != scope or access.tenant_id != "owner":
         raise KbInputError("document_scope_mismatch")
     passages = await segment_revision(db, result.revision_id)
+    from ttakkari.kb_pipeline import enqueue_pipeline_job
+
+    await enqueue_pipeline_job(
+        db, document_id=result.document_id, revision_id=result.revision_id
+    )
     return RegisterResult(
         document_id=result.document_id, revision_id=result.revision_id, rev_no=result.rev_no,
         created=result.created, passage_count=len(passages),

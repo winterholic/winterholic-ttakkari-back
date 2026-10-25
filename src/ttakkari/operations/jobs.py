@@ -26,6 +26,9 @@ TERMINAL = ("succeeded", "failed", "cancelled", "timeout")
 KEEP_TERMINAL = 100
 QUEUED_GRACE_SECONDS = 30
 GROUP_EXIT_WAIT_SECONDS = 2.0
+# fork 직후 자식이 pid 파일을 쓰기 전 창이 닫힐 때까지 기다리는 시간. 이 안에서는 파일이 없어도 자식이 없다고 보지 않는다
+PIDFILE_GRACE_SECONDS = 10.0
+PID_MAX = 2**31 - 1
 RUNNER_MARKER = "ttakkari.operations.runner"
 
 
@@ -152,17 +155,21 @@ def child_pidfile(job_id: str) -> Path:
 def _recover_unrecorded_child(job: dict) -> tuple[dict | None, str | None]:
     """(복원한 신원 기록, 차단 사유). 둘 다 None 이면 띄워진 자식이 없었다는 뜻이다."""
     clue = f"child start was in progress but its identity is unrecorded ({_unrecorded_clue(job)})"
+    planned, since = job.get("child_planned_sha256"), job.get("child_starting_at")
     try:
         text = child_pidfile(job["id"]).read_text(encoding="utf-8").strip()
     except FileNotFoundError:
-        return None, None  # exec 전 단계에 이르지 못했다: 띄워진 자식이 없다
+        if since is None or time.time() - since < PIDFILE_GRACE_SECONDS:
+            return None, f"{clue}; pid file not written yet (within {PIDFILE_GRACE_SECONDS:g}s grace, retried on next poll)"
+        return None, None  # 유예가 지나도 pid 파일이 없다: 띄워진 자식이 없다
     except OSError as exc:
         return None, f"{clue}; pid file unreadable ({type(exc).__name__})"
     try:
         pid = int(text)
     except ValueError:
         return None, f"{clue}; pid file malformed"
-    planned, since = job.get("child_planned_sha256"), job.get("child_starting_at")
+    if not 1 < pid <= PID_MAX:
+        return None, f"{clue}; pid file holds an out-of-range pid ({pid})"
     if not planned or since is None:
         return None, f"{clue}; pid file found (pid={pid}) but planned command was not recorded"
     try:
@@ -170,7 +177,7 @@ def _recover_unrecorded_child(job: dict) -> tuple[dict | None, str | None]:
         started = live.create_time()
     except psutil.NoSuchProcess:
         return {"child_pid": pid, "child_pgid": pid, "child_started": None, "child_cmdline_sha256": planned}, None
-    except (psutil.Error, OSError) as exc:
+    except (psutil.Error, OSError, ValueError, OverflowError) as exc:
         return None, f"{clue}; pid file found (pid={pid}) but lookup failed ({type(exc).__name__})"
     if started < since - 2:
         return None, f"{clue}; pid file found (pid={pid}) but that process predates the start (pid reused)"

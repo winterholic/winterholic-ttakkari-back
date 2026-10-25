@@ -280,8 +280,10 @@ async def _run(job_id: str) -> int:
                 error = (error or "") + f" 격리 DB 정리 확인 실패: {type(exc).__name__}"
     except plans.Refused as exc:
         status, error = "failed", f"refused: {exc}"
-    except GroupCleanupUnconfirmed:
+    except GroupCleanupUnconfirmed as exc:
         status = GROUP_UNCONFIRMED
+        error = (f"cleanup_pending: 자식 신원 기록 실패({exc}) 뒤 선정리에서 프로세스 그룹 종료를 확인하지 못했습니다"
+                 "(작업 슬롯 유지)")
     except Exception as exc:  # noqa: BLE001 -- 어떤 오류도 기록에 남기고 끝낸다
         status, error = "failed", f"runner_error: {type(exc).__name__}"
     finally:
@@ -295,7 +297,7 @@ async def _run(job_id: str) -> int:
                     error = (error + " " if error else "") + "임시 평문 검증 디렉터리 정리 실패(잔여물 보존)"
                     summary["cleanup_dir_retained"] = True
 
-    if status == GROUP_UNCONFIRMED:
+    if status == GROUP_UNCONFIRMED and not error:
         error = "cleanup_pending: 취소·시간 초과 뒤에도 자식 프로세스 그룹 종료를 확인하지 못했습니다(작업 슬롯 유지)"
     tail = scrub(_redact_paths(output, plan), []) if plan else ""
     finished = {"status": status, "exit_code": code, "summary": summary,

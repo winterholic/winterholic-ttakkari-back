@@ -854,6 +854,7 @@ def test_real_runner_sigkill_leaves_verifiable_child_identity(tmp_path, monkeypa
     leader = None
     try:
         leader = _wait_for(lambda: _job_field(job_id, "child_pid"))
+        assert not jobs.child_pidfile(job_id).exists()  # 정상 기록 후 pid 파일은 지워진다
         time.sleep(0.6)  # nice 같은 래퍼가 있었다면 exec 이후 cmdline 이 달라지는 시점
         os.kill(proc.pid, signal.SIGKILL)
         proc.wait(timeout=5)
@@ -947,7 +948,7 @@ async def test_run_keeps_heavy_slot_when_runner_cannot_confirm_group_exit(monkey
     assert await runner._run(job["id"]) == 0
     done = jobs.get(job["id"])
     assert done["status"] == "cleanup_pending" and not done.get("finished_at")
-    assert "cleanup_pending" in done["error"]
+    assert "취소·시간 초과" in done["error"]
     assert not done.get("finish_audited")
     # 러너가 사라진 뒤 재조회에서도 그룹 종료 증거가 없으면 슬롯을 유지한다
     monkeypatch.setattr(jobs, "_runner_state", lambda _: (False, None))
@@ -1069,15 +1070,50 @@ def test_incomplete_identity_record_needs_every_recorded_id_gone(override):
         proc.wait()
 
 
-def _starting_job(planned_argv: list[str], **extra) -> dict:
+def _starting_job(planned_argv: list[str], age: float = 1, **extra) -> dict:
     import hashlib
-    return _lost_runner_job(child_starting=True, child_starting_at=time.time() - 1,
+    return _lost_runner_job(child_starting=True, child_starting_at=time.time() - age,
                             child_planned_sha256=hashlib.sha256(" ".join(planned_argv).encode()).hexdigest(), **extra)
 
 
-def test_unrecorded_child_without_pid_file_never_forked_closes_as_runner_lost():
-    job = _starting_job(["/bin/sh", "-c", "sleep 60; :"])
-    assert jobs.reconciled(job["id"])["status"] == "failed"
+def test_unrecorded_child_without_pid_file_closes_only_after_the_grace_period(monkeypatch):
+    argv = ["/bin/sh", "-c", "sleep 60; :"]
+    fresh = _starting_job(argv, age=1)  # fork 직후 pid 파일을 쓰기 전 창일 수 있다
+    pending = jobs.reconciled(fresh["id"])
+    assert pending["status"] == "cleanup_pending" and "grace" in pending["error"], pending
+    old = _starting_job(argv, age=jobs.PIDFILE_GRACE_SECONDS + 5)  # 유예가 지나도 파일이 없으면 자식이 없었다
+    assert jobs.reconciled(old["id"])["status"] == "failed"
+    monkeypatch.setattr(jobs, "PIDFILE_GRACE_SECONDS", 0.5)  # 상수라 주입할 수 있다
+    short = _starting_job(argv, age=0)
+    assert jobs.reconciled(short["id"])["status"] == "cleanup_pending"
+    time.sleep(0.6)
+    assert jobs.reconciled(short["id"])["status"] == "failed"
+
+
+def test_pid_file_written_during_grace_is_picked_up_and_child_cleaned():
+    argv = ["/bin/sh", "-c", "sleep 60; :"]
+    job = _starting_job(argv, age=0)
+    child = _spawn_sleeper()
+    try:
+        assert jobs.reconciled(job["id"])["status"] == "cleanup_pending"  # 아직 pid 파일이 없다
+        jobs.child_pidfile(job["id"]).write_text(str(child.pid))  # 자식이 뒤늦게 적었다
+        _reap_in_background(child)
+        closed = jobs.reconciled(job["id"])
+        assert closed["status"] == "failed" and child.wait(timeout=3) == -signal.SIGTERM, closed.get("error")
+    finally:
+        with contextlib.suppress(OSError):
+            os.killpg(child.pid, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("content", ["-1", "0", "1", "99999999999999999999", "4294967296"])
+def test_pid_file_with_out_of_range_pid_blocks_without_raising_or_signalling(monkeypatch, content):
+    sent = []
+    monkeypatch.setattr(jobs.os, "killpg", lambda pgid, sig: sent.append((pgid, sig)))
+    job = _starting_job(["/bin/true"])
+    jobs.child_pidfile(job["id"]).write_text(content)
+    pending = jobs.reconciled(job["id"])
+    assert pending["status"] == "cleanup_pending" and "pid file" in pending["error"], pending
+    assert sent == []
 
 
 def test_unrecorded_child_is_verified_via_its_own_pid_file_then_cleaned():
@@ -1143,6 +1179,7 @@ async def test_run_keeps_slot_when_pre_cleanup_after_record_failure_is_unconfirm
         assert await runner._run(job["id"]) == 0
         done = jobs.get(job["id"])
         assert done["status"] == "cleanup_pending" and not done.get("finished_at"), done
+        assert "기록" in done["error"] and "취소·시간 초과" not in done["error"], done["error"]
     finally:
         if "pgid" in seen:
             with contextlib.suppress(OSError):

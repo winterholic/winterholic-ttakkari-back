@@ -24,7 +24,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import KbDocumentAccess
@@ -110,7 +110,7 @@ def _periods_overlap(rev_a: KbRevision, rev_b: KbRevision) -> bool:
 async def _current_revision_id(
     db: AsyncSession, document_id: uuid.UUID
 ) -> uuid.UUID | None:
-    """문서의 현재 리비전(rev_no 최대). 주장 생애주기와 같은 정의를 kb_ontology.currency 에서 쓴다."""
+    """관측 원장 기준 현재 리비전. 주장 생애주기와 같은 kb_ontology.currency 정의를 쓴다."""
     return await current_revision_id(db, document_id)
 
 
@@ -167,12 +167,22 @@ async def detect_conflicts_for_entity(
     if len(assertions) < 2:
         return []
 
-    # 기존 오픈된 충돌 쌍 조회 (중복 생성 방지)
+    # 열린 쌍과 사람이 양쪽 유효로 판단한 동일 주장 쌍은 다시 열지 않는다.
+    # 새 주장 ID는 별도 쌍이며, 리비전 대체로 자동 종결된 쌍은 복귀 시 재탐지할 수 있다.
     existing_conflicts = list(
         await db.scalars(
             select(KbConflict).where(
                 KbConflict.entity_id == entity.id,
-                KbConflict.status == "open",
+                or_(
+                    KbConflict.status == "open",
+                    and_(
+                        KbConflict.status == "resolved_both_valid",
+                        or_(
+                            KbConflict.resolved_by.is_(None),
+                            KbConflict.resolved_by != "system:revision_supersession",
+                        ),
+                    ),
+                ),
             )
         )
     )

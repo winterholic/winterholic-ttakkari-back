@@ -6,12 +6,13 @@
 - 온라인 마이그레이션은 statement timeout 안에서 끝나야 하지만 이 백필은 배치로 나눠 커밋한다.
 
 분류 규칙(위에서부터 처음 맞는 것):
-1. research 문서: doc_key 가 `research:work:` 면 work, `research:personal:` 이면 personal (source_key 에 scope 가 들어 있다).
-2. Collector 문서: 최신 원본의 origin_meta.via == 'collector' 이고 origin_meta.scope 가 personal/work 면 그 값.
-3. 운영자가 `--personal-doc-key-prefix` 로 지목한 doc_key 접두사는 personal.
-4. 그 밖은 미상이다. 미상은 work(work_only)로 채운다(fail-closed). 이미 조회 쪽 규칙이 접근 행이 없는 문서를 work_only 로
+1. research 문서 키 또는 Collector 출처 중 work 신호가 하나라도 있으면 work. 개인 키나 운영자 접두사로 덮어쓰지 않는다.
+2. research 문서: doc_key 가 `research:personal:` 이면 personal (source_key 에 scope 가 들어 있다).
+3. Collector 문서: 최신 원본의 origin_meta.via == 'collector' 이고 origin_meta.scope 가 personal/work 면 그 값.
+4. 운영자가 `--personal-doc-key-prefix` 로 지목한 doc_key 접두사는 personal.
+5. 그 밖은 미상이다. 미상은 work(work_only)로 채운다(fail-closed). 이미 조회 쪽 규칙이 접근 행이 없는 문서를 work_only 로
    취급하므로 이 백필은 가시성을 넓히지 않고, 파이프라인이 접근 행 없는 문서의 엔터티를 버리는 문제를 풀어 준다.
-personal 로 올리는 것은 위 1~3 처럼 근거가 있는 경우뿐이다.
+personal 로 올리는 것은 위 2~4 처럼 근거가 있고 work 신호가 없는 경우뿐이다.
 """
 
 from __future__ import annotations
@@ -83,6 +84,8 @@ def classify(doc_key: str, origin_meta: dict | None, personal_prefixes: Sequence
     meta = origin_meta or {}
     if doc_key.startswith("research:work:"):
         return "work", RULE_RESEARCH
+    if meta.get("via") == "collector" and meta.get("scope") == "work":
+        return "work", RULE_COLLECTOR
     if doc_key.startswith("research:personal:"):
         return "personal", RULE_RESEARCH
     if meta.get("via") == "collector" and meta.get("scope") in ("personal", "work"):

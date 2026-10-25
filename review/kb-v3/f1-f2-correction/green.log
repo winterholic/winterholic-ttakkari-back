@@ -1,0 +1,5 @@
+BASE ca23a42 + F1/F2 working diff
+COMMAND ['.venv/bin/pytest', '-q', 'unit_tests/test_kb_v3_provenance_policy.py', 'unit_tests/test_kb_v3_conflict_redetection.py', 'unit_tests/test_kb_access.py', 'unit_tests/test_kb_backfill_pure.py']
+EXIT 0
+...........................                                              [100%]
+27 passed in 0.45s

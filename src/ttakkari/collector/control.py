@@ -79,9 +79,24 @@ def intake_envelope(source: CollectorSource, spec: SourcePolicySpec, now: dateti
     }
 
 
-async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, extensions: dict | None = None) -> CollectorJob:
-    """Caller holds source row lock; repeated clicks or schedule ticks share an active job."""
+async def link_mission_job(db, mission_id: uuid.UUID, job_id: uuid.UUID, run_seq: int) -> None:
+    from ttakkari.collector_models import CollectionMissionJob
+    if not await db.scalar(select(CollectionMissionJob.mission_id).where(
+            CollectionMissionJob.mission_id == mission_id, CollectionMissionJob.job_id == job_id)):
+        db.add(CollectionMissionJob(mission_id=mission_id, job_id=job_id, run_seq=run_seq))
+
+
+async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, extensions: dict | None = None,
+                  max_pages: int | None = None, cursor: dict | None = None) -> CollectorJob:
+    """Caller holds source row lock; repeated clicks or schedule ticks share an active job.
+
+    A mission-owned source is only enqueued by its mission (extensions carry the run), because the mission
+    enforces the per-run page budget. `max_pages` is that run's allocation for this source and `cursor` an
+    optional preseeded frontier for an incremental refresh."""
     now = now or datetime.now(UTC)
+    mission_ext = (extensions or {}).get("collector:mission")
+    if source.source_key.startswith("mission:") and not mission_ext:
+        raise JobStateError("mission sources are scheduled and budgeted by their mission")
     if not source.enabled:
         raise JobStateError("source is paused")
     if source.last_job_id:
@@ -91,11 +106,14 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, e
     policy = await store.active_policy(db, source.tenant_id, source.scope, source.source_key)
     if policy is None or not policy[0].allows("store"):
         raise JobStateError("source store policy is not allowed")
+    request = dict(source.request)
+    if max_pages is not None:
+        request["max_pages"] = max_pages
     # A hard, global page admission ceiling: every new attempt is reserved before enqueue.
     day = budget_day(now)
     await db.execute(insert(CollectorDailyBudget).values(day=day, reserved_pages=0).on_conflict_do_nothing())
     budget = await db.get(CollectorDailyBudget, day, with_for_update=True)
-    pages = source.request["max_pages"]
+    pages = request["max_pages"]
     if budget.reserved_pages + pages > get_settings().collector_daily_page_cap:
         raise JobStateError("daily collection page budget reached")
     budget.reserved_pages += pages
@@ -107,9 +125,8 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, e
     model = await quality_service.latest_model(db, source.tenant_id, source.scope)
     if model is not None:
         quality_service.install(model)
-        request = dict(source.request)
         request["l1"] = {"mode": "shadow", "scorer": quality_service.scorer_name(source.tenant_id, source.scope, model.digest)}
-        envelope["extensions"]["collector:request"] = request
+    envelope["extensions"]["collector:request"] = request
     result = await submit_envelope(
         db, AuthContext(tenant_id=source.tenant_id, scope=source.scope, principal_id="owner", kind="owner"), str(ident),
         envelope,
@@ -118,8 +135,16 @@ async def enqueue(db, source: CollectorSource, *, now: datetime | None = None, e
     source.last_error = None
     if source.interval_minutes is not None:
         source.next_run_at = now + timedelta(minutes=source.interval_minutes)
+    if mission_ext:
+        try:
+            await link_mission_job(db, uuid.UUID(str(mission_ext["id"])), result.job_id, int(mission_ext.get("run_seq", 1)))
+        except (ValueError, TypeError, KeyError):
+            pass
     await db.flush()
-    return await db.get(CollectorJob, result.job_id)
+    job = await db.get(CollectorJob, result.job_id)
+    if cursor is not None and job is not None and job.cursor is None:
+        job.cursor = cursor
+    return job
 
 
 async def enqueue_reprocess(db, ctx: AuthContext, item_id: uuid.UUID, *, now: datetime | None = None) -> CollectorJob:
@@ -212,7 +237,7 @@ async def schedule_once(*, now: datetime | None = None) -> int:
     async with sessionmaker()() as db:
         sources = list(await db.scalars(select(CollectorSource).where(
             CollectorSource.enabled.is_(True), CollectorSource.interval_minutes.is_not(None),
-            CollectorSource.next_run_at <= now,
+            CollectorSource.next_run_at <= now, ~CollectorSource.source_key.startswith("mission:"),
         ).order_by(CollectorSource.next_run_at).limit(10).with_for_update(skip_locked=True)))
         for source in sources:
             try:
@@ -225,11 +250,17 @@ async def schedule_once(*, now: datetime | None = None) -> int:
                 source.last_error = str(exc)[:500]
                 source.next_run_at = now + timedelta(minutes=source.interval_minutes)
         await db.commit()
-    return count
+    # Mission sources are refreshed as whole runs with their own per-run budget, never one source at a time.
+    from ttakkari.collector import missions
+    return count + await missions.schedule_due_runs(now=now)
 
 
 async def retry_job(db, ctx: AuthContext, job_id: uuid.UUID) -> CollectorJob:
     job = await jobs.get_job(db, ctx.tenant_id, ctx.scope, job_id)
+    from ttakkari.collector_models import CollectionMissionJob
+    if await db.scalar(select(CollectionMissionJob.mission_id).where(CollectionMissionJob.job_id == job.id)):
+        # A retried job would spend its original allocation again after the mission reclaimed unused pages.
+        raise JobStateError("mission jobs are restarted through mission resume, extend or rerun")
     job = await db.get(CollectorJob, job.id, with_for_update=True, populate_existing=True)
     if job.status in ACTIVE:
         raise JobStateError("job is already active")

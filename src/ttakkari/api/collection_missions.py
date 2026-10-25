@@ -26,6 +26,16 @@ class MissionInput(BaseModel):
     request_key: str | None = Field(default=None, min_length=1, max_length=256)
 
 
+class ExtendInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    add_pages: int = Field(default=50, ge=1, le=100_000)
+
+
+class ScheduleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    interval_minutes: int | None = Field(default=None, ge=15, le=43_200)
+
+
 @router.post("/plan")
 async def preview(body: MissionInput, _: User):
     try:
@@ -71,3 +81,63 @@ async def unhold_mission_item(mission_id: uuid.UUID, item_id: uuid.UUID, _: User
         if str(exc) == "knowledge_permission_missing":
             raise HTTPException(403, "knowledge_permission_missing") from exc
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/{mission_id}/pause")
+async def pause_mission(mission_id: uuid.UUID, _: User, db: Db):
+    try:
+        mission = await missions.pause(db, mission_id)
+        await db.commit()
+        return await missions.view(db, mission)
+    except ValueError as exc:
+        raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc
+
+
+@router.post("/{mission_id}/resume")
+async def resume_mission(mission_id: uuid.UUID, _: User, db: Db):
+    try:
+        mission = await missions.resume(db, mission_id)
+        await db.commit()
+        return await missions.view(db, mission)
+    except ValueError as exc:
+        raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc
+
+
+@router.post("/{mission_id}/cancel")
+async def cancel_mission(mission_id: uuid.UUID, _: User, db: Db):
+    try:
+        mission = await missions.cancel(db, mission_id)
+        await db.commit()
+        return await missions.view(db, mission)
+    except ValueError as exc:
+        raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc
+
+
+@router.post("/{mission_id}/extend")
+async def extend_mission(mission_id: uuid.UUID, body: ExtendInput, _: User, db: Db):
+    try:
+        mission = await missions.extend(db, mission_id, add_pages=body.add_pages)
+        await db.commit()
+        return await missions.view(db, mission)
+    except ValueError as exc:
+        raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc
+
+
+@router.post("/{mission_id}/rerun")
+async def rerun_mission(mission_id: uuid.UUID, _: User, db: Db):
+    try:
+        mission = await missions.rerun(db, mission_id)
+        await db.commit()
+        return await missions.view(db, mission)
+    except ValueError as exc:
+        raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc
+
+
+@router.post("/{mission_id}/schedule")
+async def schedule_mission(mission_id: uuid.UUID, body: ScheduleInput, _: User, db: Db):
+    try:
+        mission = await missions.update_schedule(db, mission_id, interval_minutes=body.interval_minutes)
+        await db.commit()
+        return await missions.view(db, mission)
+    except ValueError as exc:
+        raise HTTPException(404 if "찾을 수 없습니다" in str(exc) else 422, str(exc)) from exc

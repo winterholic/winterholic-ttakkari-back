@@ -93,9 +93,20 @@ async def claim_batch(
     """Lock up to `limit` runnable jobs for this owner. Jobs with no attempts left are not claimed."""
     now = now or _now()
     from ttakkari.collector.control_models import CollectorSource
-    from ttakkari.collector_models import CollectionMissionJob
-    managed = or_(select(CollectorSource.id).where(CollectorSource.last_job_id == CollectorJob.id).exists(),
-                  select(CollectionMissionJob.job_id).where(CollectionMissionJob.job_id == CollectorJob.id).exists())
+    from ttakkari.collector_models import CollectionMission, CollectionMissionJob
+    mission_paused = select(CollectionMissionJob.job_id).join(
+        CollectionMission, CollectionMission.id == CollectionMissionJob.mission_id
+    ).where(
+        CollectionMissionJob.job_id == CollectorJob.id,
+        CollectionMission.status == "paused",
+    ).exists()
+    managed = and_(
+        or_(
+            select(CollectorSource.id).where(CollectorSource.last_job_id == CollectorJob.id).exists(),
+            select(CollectionMissionJob.job_id).where(CollectionMissionJob.job_id == CollectorJob.id).exists(),
+        ),
+        ~mission_paused,
+    )
     rows = (
         await db.scalars(
             select(CollectorJob)
@@ -103,6 +114,7 @@ async def claim_batch(
                 CollectorJob.status.in_(CLAIMABLE),
                 CollectorJob.cancel_requested.is_(False),
                 CollectorJob.attempts < CollectorJob.max_attempts,
+                ~mission_paused,
                 managed if managed_only else True,
                 or_(CollectorJob.not_before.is_(None), CollectorJob.not_before <= now),
             )

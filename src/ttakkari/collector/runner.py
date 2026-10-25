@@ -24,7 +24,11 @@ from ttakkari import generation as generation_module
 from ttakkari.collector import jobs
 from ttakkari.collector.contracts import AttemptFencedError
 from ttakkari.collector.jobs import ClaimedJob, OutboxItem, OwnerState
-from ttakkari.collector_models import CollectorJob
+from ttakkari.collector_models import (
+    CollectionMission,
+    CollectionMissionJob,
+    CollectorJob,
+)
 from ttakkari.config import get_settings
 from ttakkari.db import sessionmaker
 from ttakkari.models import RuntimeGeneration
@@ -167,6 +171,15 @@ async def run_one(job: ClaimedJob, handler: JobHandler) -> str | None:
                 stored = await jobs.finish(
                     db, job.id, job.attempt_token, status=result.status, error=result.error, retry_after=result.retry_after
                 )
+                if stored in ("succeeded", "partial"):
+                    mission_id = await db.scalar(
+                        select(CollectionMissionJob.mission_id).where(CollectionMissionJob.job_id == job.id)
+                    )
+                    if mission_id:
+                        mission = await db.get(CollectionMission, mission_id)
+                        if mission and mission.status not in ("paused", "cancelled"):
+                            from ttakkari.collector import missions
+                            await missions.reconcile_mission(db, mission)
             await db.commit()
         return stored
     except AttemptFencedError:

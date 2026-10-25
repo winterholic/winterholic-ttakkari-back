@@ -1,6 +1,82 @@
 # 수집 플랫폼 임무 중심 리팩토링 — 진행 중
 
-## 현재 이어받을 자리 — 2026-10-25 14:24 KST
+## 현재 이어받을 자리 — 2026-10-25 15:15 KST
+- 전체 C1–C7는 여전히 진행 중. 아래 `2026-10-25 15:00 KST`는 이전 이력이다. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
+- **주기 갱신 회차(run) 단위 예산 격리 및 우회 방지 구현 완료**:
+  1. **회차(Run) 정체성과 예산 상한 격리**:
+     - 마이그레이션 `0073_collection_mission_runs`: `collection_missions.current_run_seq`, `collection_mission_jobs.run_seq`, `collection_mission_runs` 테이블을 추가하고 기존 임무를 1회차('initial')로 백필(additive, 온라인 호환).
+     - `deploy/generation-contract.json` 및 `unit_tests/test_schema_head_admission.py`에 0073 스키마 헤드 반영.
+     - 임무 소유의 source는 임무를 통하지 않고 직접 enqueue/retry 불가하도록 `control.py` 및 `jobs.py`에서 우회 차단.
+     - 임무 작업의 생성 및 할당 시 `run_seq`를 기록하고, `reconcile_mission`, `extend`, fair_share는 같은 회차 내 실제 사용량만 합산하여 예산 상한을 강제.
+  2. **증분 재수집(Incremental Refresh) 및 불변 문서 재적재 방지**:
+     - 기존 저장소의 fetch cache(ETag, Last-Modified, raw SHA256) 및 dedupe 계약을 연결.
+     - `refresh_cursor`를 통해 직전 회차의 미방문 frontier -> 미수집 seed -> 기존 방문 URL(오래된 순) 순으로 frontier를 구성하되, 조건부 요청(conditional fetch)으로 변경 없는 문서는 `not_modified` 처리하여 outbox 및 KB 전달을 건너뜀.
+  3. **회차 중첩 실행 방지 (Skip 처리)**:
+     - 이전 회차의 미완료 작업(`TERMINAL` 외 상태)이 존재하면 새 예약 회차를 시작하지 않고 `skipped_runs` 증가 및 `last_skip` 원인(`previous_run_in_progress`)을 기록.
+  4. **회차 제어 및 상세 응답**:
+     - `extend`는 현재 회차의 예산(`extra_pages`)만 증가시키고, `rerun`은 새로운 회차(`run_seq + 1`, trigger: `rerun`)를 시작.
+     - `view()` 상세 응답에 `run_seq`, `runs` 배열(회차별 수집 `collected`, 변경 없음 `unchanged`, 적재 `imported`, 사용 쪽수 등) 포함.
+  5. **프론트엔드 UI 반영**:
+     - `collectionMissions.ts`에 `CollectionMissionRun` 타입 추가.
+     - `Missions.tsx` 상세 헤더에 `마지막 갱신 회차: N회차` 및 최근 회차 수집/적재 성과 표시.
+     - `CollectPage.test.tsx`에 회차 표시 검증 테스트 추가.
+
+### 이번 검증 범위
+- **Backend 단위·통합 검증**:
+  - `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_missions.py tests/test_collection_mission_migration.py tests/test_collector_jobs.py tests/test_collector_pipeline.py tests/test_collector_fetch.py tests/test_collector_product_flow.py tests/test_route_inventory.py tests/test_security_gate_inventory.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py unit_tests/test_executor_migration_contract.py unit_tests/test_schema_head_admission.py --tb=short` → **247 passed, 66 subtests passed in 11.75s** (반례 테스트 6종 포함).
+  - `ruff check`: 변경된 7개 파일 검사 통과 (0 errors).
+- **Frontend 단위·빌드 검증**:
+  - `vitest run src/pages/CollectPage.test.tsx src/features/collector/` → **18 passed in 0.91s** (회차 표시 검증 포함).
+  - `tsc -b`: 0 errors.
+  - `vite build`: 프로덕션 빌드 성공 및 PWA 서비스 워커 생성 완료.
+
+### 다음 실행 (원래 요구에서 남은 것)
+1. personal/work 실제 데이터·참조·모델 통합(C2): 맥락 문서 및 파일 연계, immutable provenance 보존.
+2. 경량 ML 실제 보수적 선별·독립 평가(C4): 입력 목적 관련성 평가 및 보수적 필터링.
+3. 원래 시나리오 A–E E2E 인수 기준 검증.
+4. clean main 통합·push·운영 배포 및 실제 기능 확인 (현재는 feature branch 커밋만 수행).
+
+## 이전 이어받을 자리 — 2026-10-25 15:00 KST
+- 전체 C1–C7는 여전히 진행 중. 아래 `2026-10-25 14:24 KST`와 `이번 코드`는 이전 이력이다. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
+- **C1/C6 임무 제어, 자동 분할, 공정 할당, 오류 격리 및 프론트엔드 UI 완료**:
+  1. **임무 제어 API**: `pause`, `resume`, `cancel`, `extend`(추가 수집: 보존된 frontier 이어가기 + 예산 추가), `rerun`, `update_schedule` 엔드포인트 구현.
+     - `CollectorJob`의 `claim_batch`에서 일시정지된 임무(`mission.status == "paused"`)의 작업을 claim에서 배제.
+     - `cancel` 시 진행 중/대기 중인 작업을 취소하고 후속 자식 생성을 방지.
+     - `extend` 시 frontier가 보존된 상태에서 추가 예산을 배정하여 즉시 다음 자식 작업을 생성·재개.
+     - `rerun` 시 기존 `CollectorSource`를 멱등하게 재사용하며 새 임무 주기를 시작.
+     - `route_inventory`에 6개 엔드포인트를 `owner-plain`으로 등록 완료.
+  2. **자동 하위 작업 분할 및 재개 (Auto-split on Policy Page Limit)**:
+     - 한 source/job의 정책 한도(`max_pages_per_job`)에 도달하여 작업이 partial로 종료될 때, 보존된 frontier(`cursor["frontier"]`)를 seed로 삼아 다음 child job을 자동 생성하고 인큐.
+     - `runner.py`의 `finish` 직후 mission job인 경우 `reconcile_mission`을 자동 호출하여 즉각적인 분할 재개 트리거.
+     - 출처별 최신 job(`latest_jobs`)을 기준으로 출처 완료 여부 및 임무 전체 완료(`succeeded`)를 판정하도록 뷰 로직 교정.
+  3. **실제 사용량 기반 공정 예산 재할당 (Fair Share Budget Allocation)**:
+     - 단순 예약 페이지 기준 선점 결함을 해소. 종료된 job의 실제 수집 페이지(`cursor["processed"]`)를 집계하여 미사용 예약분을 회수하고, 남은 출처들에게 공정하게 분배(`fair_share`).
+  4. **준비 단계 독립 출처 오류 격리**:
+     - 복수 출처 준비 단계에서 GitHub API 실패 등 단일 출처의 메타데이터 수집 예외 발생 시 `gaps`에 `reason="github_metadata_failed"`로 기록하고 후속 출처 준비를 중단 없이 계속 진행.
+  5. **프론트엔드 UI 제어 컨트롤 및 반응형 디자인**:
+     - 임무 상세 화면에 일시정지/재개/취소/더 수집하기(쪽수 입력 인라인 폼)/다시 실행/주기 설정 버튼 및 패널 구현.
+     - 320px 모바일 환경부터 데스크톱까지 일관된 버튼 래핑 및 배치(`collector.css`).
+     - 상태 뱃지("일시 중지됨", "수집 종료" 등) 및 한국어 에러 메시지 노출.
+
+### 이번 검증 범위 (C1/C6)
+- **Backend 단위·통합 검증**:
+  - `PYTHONPATH=src ../back/.venv/bin/python -m pytest -q tests/test_collection_missions.py tests/test_collector_jobs.py tests/test_collector_pipeline.py tests/test_collector_fetch.py unit_tests/test_collection_adapters.py unit_tests/test_collector_policy.py unit_tests/test_collector_parser.py --tb=short` → **208 passed, 66 subtests passed in 11.49s**.
+  - `tests/test_collection_missions.py`: 8개 신규 제어·분할·공정할당·격리 검증 테스트 추가 (20 passed in 2.95s).
+  - `tests/test_route_inventory.py`: 7 passed in 1.35s.
+  - `ruff check`: 0 errors (clean).
+- **Frontend 단위·빌드 검증**:
+  - `vitest run src/pages/CollectPage.test.tsx src/features/collector/ --reporter=dot` → **16 passed in 1.05s** (제어 액션 및 스케줄 갱신 테스트 4건 추가).
+  - `tsc -b`: 0 errors.
+  - `eslint`: 0 errors.
+  - `npm run build`: Vite 및 PWA Service Worker(`dist/sw.js`, `dist/workbox-e217238d.js`) 프로덕션 빌드 성공.
+
+### 다음 실행 (원래 요구에서 남은 것)
+1. personal/work 실제 데이터·참조·모델 통합(C2): 맥락 문서 및 파일 연계, immutable provenance 보존.
+2. 경량 ML 실제 보수적 선별·독립 평가(C4): 입력 목적 관련성 평가 및 보수적 필터링.
+3. 원래 시나리오 A–E E2E 인수 기준 검증.
+4. clean main 통합·push·운영 배포 및 실제 기능 확인 (현재는 feature branch 커밋만 수행).
+
+## 이전 이어받을 자리 — 2026-10-25 14:24 KST
 - 전체 C1–C7는 여전히 진행 중. 아래 `이번 코드`와 `실행 근거`는 첫 기능 묶음 f33c9be의 이력이다. 이번 추가 구현은 이 절이 최신이다. 기존 back/front dirty checkout은 계속 보존한다.
 - GitHub/URL 없는 연구 임무를 내부 `mission_prepare` CollectorJob으로 영속 큐에 연결했다. API에서는 네트워크·모델을 실행하지 않는다. managed claim에 임무 관계를 포함하며 기존 attempt fence·orphan recovery·cancel·generation drain을 재사용한다. 준비 취소가 먼저 기록되면 새 자식 수집을 만들지 않는 재현 검사도 통과했다.
 - 연구 준비는 DuckDuckGo HTML 검색→후보 URL/검색어/제공자/순위 보존→기존 정책-backed acquisition을 연결한다. 검색 진전은 매 쿼리마다 원자적으로 보존하고 새 후보가 두 번 연속 없으면 종료한다. 현재 쿼리는 기존 결정적 시작안이며, **하위 주제 의미 분해·문서에서 새 개념을 읽어 후속 검색하는 자율 연구는 아직 미완성**이다. 알려지지 않은 권리의 후보는 gap으로 남으므로 URL 없는 외부 임무 전체 성공을 아직 검증하지 않았다.

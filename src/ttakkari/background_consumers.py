@@ -48,25 +48,53 @@ async def _pump_context_index() -> int:
     return await index_queue.pump()
 
 
+async def _pump_kb_pipeline() -> int:
+    from ttakkari.kb_pipeline import get_default_worker
+    return await get_default_worker().pump()
+
+
 PUMPS: tuple[tuple[str, Callable[[], Awaitable[int]]], ...] = (
-    ("notebooklm", _pump_notebooklm), ("reverse", _pump_reverse), ("context-index", _pump_context_index))
+    ("notebooklm", _pump_notebooklm),
+    ("reverse", _pump_reverse),
+    ("context-index", _pump_context_index),
+    ("kb-pipeline", _pump_kb_pipeline),
+)
 
 
 def inflight() -> int:
     from ttakkari import reverse
     from ttakkari.context import index_queue
+    from ttakkari.kb_pipeline import get_default_worker
     from ttakkari.notebooklm.service import service
-    return service.inflight() + reverse.inflight() + index_queue.inflight()
+
+    return (
+        service.inflight()
+        + reverse.inflight()
+        + index_queue.inflight()
+        + get_default_worker().inflight()
+    )
 
 
 async def _cancel_inflight() -> None:
     """Only after the drain window. Each domain's own cancel path records what is known."""
     from ttakkari import reverse
     from ttakkari.context import index_queue
+    from ttakkari.kb_pipeline import get_default_worker
     from ttakkari.notebooklm.service import service
-    tasks = [t for t in (*reverse._tasks, *index_queue._tasks, *service._tasks.values()) if not t.done()]
+
+    tasks = [
+        t
+        for t in (
+            *reverse._tasks,
+            *index_queue._tasks,
+            *service._tasks.values(),
+        )
+        if not t.done()
+    ]
     for task in tasks:
         task.cancel()
+    with contextlib.suppress(Exception):
+        await get_default_worker().cancel_inflight()
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
@@ -125,14 +153,26 @@ class BackgroundConsumers:
     def pause_claiming(self) -> None:
         """A draining generation stops taking new rows but keeps its loops, so a rollback to active can resume."""
         self._paused = True
+        with contextlib.suppress(Exception):
+            from ttakkari.kb_pipeline import get_default_worker
+
+            get_default_worker().pause_claiming()
 
     def resume_claiming(self) -> None:
         self._paused = False
+        with contextlib.suppress(Exception):
+            from ttakkari.kb_pipeline import get_default_worker
+
+            get_default_worker().resume_claiming()
 
     def stop_claiming(self) -> None:
         """Call as soon as a stop signal arrives. Claimed work is untouched; queued rows stay queued."""
         if self._stopping is not None:
             self._stopping.set()
+        with contextlib.suppress(Exception):
+            from ttakkari.kb_pipeline import get_default_worker
+
+            get_default_worker().stop_claiming()
 
     async def drain(self, drain_seconds: float | None = DRAIN_SECONDS) -> bool:
         """Wait for work. True: everything finished naturally. False: the bound expired and the rest was cancelled.

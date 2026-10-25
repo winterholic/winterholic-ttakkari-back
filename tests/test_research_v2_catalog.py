@@ -111,3 +111,117 @@ async def test_readiness_axis_f_computation():
     st4 = compute_execution_status(rag_method, scope="personal")
     assert st4.status in ("immediately_executable", "partially_supported")
     assert st4.is_executable
+
+
+async def test_catalog_loader_full_112_matching():
+    """Verify that catalog_loader loads all 112 methods, all parameters, and relations with 100% integrity."""
+    from pathlib import Path
+    import json
+    from sqlalchemy import select
+    from ttakkari.research.models import Method, MethodRelation, TaxonomyTerm
+
+    seed_dir = Path(__file__).parent.parent / "src/ttakkari/research/catalog_seed"
+    all_seed_methods = []
+    total_seed_relations = 0
+    total_seed_parameters = 0
+    for p in sorted(seed_dir.glob("*.json")):
+        if p.name == "taxonomy.json":
+            continue
+        data = json.loads(p.read_text(encoding="utf-8"))
+        for m in data.get("methods", []):
+            all_seed_methods.append(m)
+            total_seed_relations += len(m.get("relations", []))
+            total_seed_parameters += len(m.get("parameters", []))
+
+    assert len(all_seed_methods) == 112, "Seed files must contain exactly 112 methods"
+    assert total_seed_parameters == 185, "Seed files must contain exactly 185 parameters"
+
+    sm = sessionmaker()
+    async with sm() as db:
+        stats = await catalog_loader.load_catalog_seeds(db)
+        await db.commit()
+
+        assert stats["methods"] == 112
+        assert stats["terms"] > 0
+        assert stats["relations"] == total_seed_relations
+
+        # Verify DB records
+        db_methods = (
+            await db.execute(select(Method).where(Method.scope == "system"))
+        ).scalars().all()
+        assert len(db_methods) == 112
+
+        db_slugs = {m.slug: m for m in db_methods}
+        for seed_m in all_seed_methods:
+            slug = seed_m["slug"]
+            assert slug in db_slugs, f"Missing method slug in DB: {slug}"
+            db_m = db_slugs[slug]
+            assert db_m.name_ko == (seed_m.get("name_ko") or seed_m.get("name"))
+            assert db_m.category == seed_m.get("category", "general")
+            assert len(db_m.parameters) == len(seed_m.get("parameters", []))
+            assert len(db_m.targets) == len(seed_m.get("targets", []))
+            assert len(db_m.goals) == len(seed_m.get("goals", []))
+
+        # Verify relations
+        db_relations = (
+            await db.execute(
+                select(MethodRelation).where(MethodRelation.scope == "system")
+            )
+        ).scalars().all()
+        assert len(db_relations) == total_seed_relations
+        id_to_slug = {m.id: m.slug for m in db_methods}
+        for rel in db_relations:
+            assert rel.from_method_id in id_to_slug
+            assert rel.to_method_id in id_to_slug
+
+
+async def test_readiness_strict_partial_support_for_unwhitelisted_and_unsupported_params():
+    """Verify that methods not in adapter whitelist or with unsupported params are strictly partially_supported."""
+    from ttakkari.research.adapters import get_adapter_registry
+
+    reg = get_adapter_registry(populate_builtins=True)
+
+    # 1. Method with adapter hint 'tts_synthesis' but not in whitelist (e.g. tts_kokoro_pipeline_tuning)
+    kokoro_method = {
+        "slug": "tts_kokoro_pipeline_tuning",
+        "lifecycle_status": "validated",
+        "adapter_hints": ["tts_synthesis"],
+        "parameters": [
+            {"key": "inference_backend"},
+            {"key": "sample_rate"},
+        ],
+        "metrics": ["rtf", "latency"],
+    }
+    st_kokoro = compute_execution_status(kokoro_method, adapter_registry=reg, scope="personal")
+    # Must NOT be immediately_executable or tool_integrated
+    assert st_kokoro.status == "partially_supported"
+    assert st_kokoro.is_executable is True
+    assert "inference_backend" in st_kokoro.unsupported_params
+    assert "sample_rate" in st_kokoro.unsupported_params
+
+    # 2. Whitelisted method with 100% matched params -> immediately_executable
+    whitelisted_norm = {
+        "slug": "tts_korean_text_normalization",
+        "lifecycle_status": "validated",
+        "adapter_hints": ["tts_synthesis"],
+        "parameters": [
+            {"key": "handle_measure_units"},
+            {"key": "english_acronym_mode"},
+        ],
+        "metrics": ["rtf", "normalized_char_delta"],
+    }
+    st_norm = compute_execution_status(whitelisted_norm, adapter_registry=reg, scope="personal")
+    assert st_norm.status == "immediately_executable"
+    assert len(st_norm.unsupported_params) == 0
+
+    # 3. Method with unmapped adapter hint -> adapter_required
+    unmapped_method = {
+        "slug": "vlm_document_ocr",
+        "lifecycle_status": "validated",
+        "adapter_hints": ["vlm_eval_adapter"],
+        "parameters": [{"key": "resolution"}],
+        "metrics": ["accuracy"],
+    }
+    st_unmapped = compute_execution_status(unmapped_method, adapter_registry=reg, scope="personal")
+    assert st_unmapped.status == "adapter_required"
+    assert st_unmapped.is_executable is False

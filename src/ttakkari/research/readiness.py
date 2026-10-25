@@ -47,12 +47,14 @@ def compute_execution_status(
 
     # Extract method attributes (handles both ORM model and dict)
     if isinstance(method, dict):
+        slug = method.get("slug", "")
         lifecycle = method.get("lifecycle_status", "validated")
         params = method.get("parameters", [])
         metrics = method.get("metrics", [])
         adapter_hints = method.get("adapter_hints", [])
         compatibility = method.get("compatibility", {})
     else:
+        slug = getattr(method, "slug", "")
         lifecycle = getattr(method, "lifecycle_status", "validated")
         params = getattr(method, "parameters", []) or []
         metrics = getattr(method, "metrics", []) or []
@@ -140,13 +142,36 @@ def compute_execution_status(
             matched_adapter_id=matched_adapter.id,
         )
 
-    # 4. Check parameter support (partially_supported vs fully supported)
+    # 4. Check method whitelist support
+    supported_methods = getattr(matched_adapter, "supported_methods", None)
+    is_method_supported = True
+    if supported_methods is not None and "*" not in supported_methods:
+        is_method_supported = False
+        if slug in supported_methods:
+            is_method_supported = True
+        else:
+            for pattern in supported_methods:
+                if pattern.endswith("*") and slug.startswith(pattern[:-1]):
+                    is_method_supported = True
+                    break
+
+    # Check parameter support (partially_supported vs fully supported)
     supported_params = set(getattr(matched_adapter, "supported_parameters", []))
     unsupported: list[str] = []
     for p in params:
         pkey = p.get("key") if isinstance(p, dict) else getattr(p, "key", None)
         if pkey and pkey not in supported_params:
             unsupported.append(pkey)
+
+    if not is_method_supported:
+        return ExecutionStatusResult(
+            status="partially_supported",
+            status_label_ko=STATUS_LABELS_KO["partially_supported"],
+            is_executable=True,
+            unavailable_reason=f"기법 '{slug}'는 어댑터 '{matched_adapter.id}'의 직접 지원 목록에 없어 대리 실행(proxy execution) 모드로 분류됩니다.",
+            unsupported_params=unsupported,
+            matched_adapter_id=matched_adapter.id,
+        )
 
     if unsupported:
         return ExecutionStatusResult(
@@ -160,7 +185,7 @@ def compute_execution_status(
 
     # 5. tool_integrated vs immediately_executable
     exec_mode = getattr(env_status, "execution_mode", "in_process") if env_status else "in_process"
-    if exec_mode in ("host_supervisor", "subprocess_worker") or matched_adapter.id in ("llm_inference", "qwen_local"):
+    if exec_mode == "host_supervisor" or matched_adapter.id in ("llm_inference", "qwen_local"):
         return ExecutionStatusResult(
             status="tool_integrated",
             status_label_ko=STATUS_LABELS_KO["tool_integrated"],

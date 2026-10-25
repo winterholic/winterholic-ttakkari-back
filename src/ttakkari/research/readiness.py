@@ -142,12 +142,13 @@ def compute_execution_status(
             matched_adapter_id=matched_adapter.id,
         )
 
-    # 4. Check method whitelist support
+    # 4. Check method whitelist support (fail-closed: missing or empty supported_methods denies Full Support)
     supported_methods = getattr(matched_adapter, "supported_methods", None)
-    is_method_supported = True
-    if supported_methods is not None and "*" not in supported_methods:
-        is_method_supported = False
-        if slug in supported_methods:
+    is_method_supported = False
+    if supported_methods:
+        if "*" in supported_methods:
+            is_method_supported = True
+        elif slug in supported_methods:
             is_method_supported = True
         else:
             for pattern in supported_methods:
@@ -164,11 +165,16 @@ def compute_execution_status(
             unsupported.append(pkey)
 
     if not is_method_supported:
+        reason = (
+            f"어댑터 '{matched_adapter.id}'에 지원 기법 목록(supported_methods)이 선언되지 않았거나 비어 있어 Full Support를 부여할 수 없습니다."
+            if not supported_methods
+            else f"기법 '{slug}'는 어댑터 '{matched_adapter.id}'의 직접 지원 목록에 없어 대리 실행(proxy execution) 모드로 분류됩니다."
+        )
         return ExecutionStatusResult(
             status="partially_supported",
             status_label_ko=STATUS_LABELS_KO["partially_supported"],
             is_executable=True,
-            unavailable_reason=f"기법 '{slug}'는 어댑터 '{matched_adapter.id}'의 직접 지원 목록에 없어 대리 실행(proxy execution) 모드로 분류됩니다.",
+            unavailable_reason=reason,
             unsupported_params=unsupported,
             matched_adapter_id=matched_adapter.id,
         )

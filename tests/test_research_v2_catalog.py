@@ -158,9 +158,10 @@ async def test_catalog_loader_full_112_matching():
             db_m = db_slugs[slug]
             assert db_m.name_ko == (seed_m.get("name_ko") or seed_m.get("name"))
             assert db_m.category == seed_m.get("category", "general")
-            assert len(db_m.parameters) == len(seed_m.get("parameters", []))
-            assert len(db_m.targets) == len(seed_m.get("targets", []))
-            assert len(db_m.goals) == len(seed_m.get("goals", []))
+            assert db_m.parameters == seed_m.get("parameters", [])
+            assert db_m.targets == seed_m.get("targets", [])
+            assert db_m.goals == seed_m.get("goals", [])
+            assert db_m.layers == seed_m.get("layers", [])
 
         # Verify relations
         db_relations = (
@@ -170,9 +171,16 @@ async def test_catalog_loader_full_112_matching():
         ).scalars().all()
         assert len(db_relations) == total_seed_relations
         id_to_slug = {m.id: m.slug for m in db_methods}
-        for rel in db_relations:
-            assert rel.from_method_id in id_to_slug
-            assert rel.to_method_id in id_to_slug
+        db_rel_tuples = {
+            (id_to_slug[rel.from_method_id], id_to_slug[rel.to_method_id], rel.relation_type)
+            for rel in db_relations
+        }
+        seed_rel_tuples = {
+            (m["slug"], r.get("target") or r.get("to_slug"), r.get("type") or r.get("relation_type", "combines_with"))
+            for m in all_seed_methods
+            for r in m.get("relations", [])
+        }
+        assert db_rel_tuples == seed_rel_tuples
 
 
 async def test_readiness_strict_partial_support_for_unwhitelisted_and_unsupported_params():
@@ -225,3 +233,57 @@ async def test_readiness_strict_partial_support_for_unwhitelisted_and_unsupporte
     st_unmapped = compute_execution_status(unmapped_method, adapter_registry=reg, scope="personal")
     assert st_unmapped.status == "adapter_required"
     assert st_unmapped.is_executable is False
+
+
+def test_readiness_fail_closed_when_supported_methods_undeclared_or_empty():
+    """Defect F-1: adapter with missing or empty supported_methods must fail-closed and not grant Full Support."""
+    from ttakkari.research.adapters.base import AdapterEnvironmentStatus
+
+    # Mock adapter with check_environment returning ready, but missing supported_methods and supported_parameters
+    class MockAdapterMissingDeclarations:
+        id = "retrieval_eval"
+
+        def check_environment(self, scope="personal"):
+            return AdapterEnvironmentStatus(adapter_id="retrieval_eval", ready=True, execution_mode="in_process")
+
+    class MockRegistry:
+        def get_adapter(self, hint):
+            if hint == "retrieval_eval":
+                return MockAdapterMissingDeclarations()
+            return None
+
+    method = {
+        "slug": "unlisted_demo",
+        "lifecycle_status": "validated",
+        "adapter_hints": ["retrieval_eval"],
+        "parameters": [],
+        "metrics": ["score"],
+    }
+
+    # 1. When supported_methods attribute is completely omitted
+    reg = MockRegistry()
+    st = compute_execution_status(method, adapter_registry=reg, scope="personal")
+    # Must NOT be immediately_executable or tool_integrated
+    assert st.status != "immediately_executable"
+    assert st.status != "tool_integrated"
+    assert st.status == "partially_supported"
+    assert "supported_methods" in st.unavailable_reason or "직접 지원" in st.unavailable_reason
+
+    # 2. When supported_methods is explicitly empty list []
+    class MockAdapterEmptyDeclarations:
+        id = "retrieval_eval"
+        supported_methods = []
+        supported_parameters = []
+
+        def check_environment(self, scope="personal"):
+            return AdapterEnvironmentStatus(adapter_id="retrieval_eval", ready=True, execution_mode="in_process")
+
+    class MockEmptyRegistry:
+        def get_adapter(self, hint):
+            return MockAdapterEmptyDeclarations()
+
+    st_empty = compute_execution_status(method, adapter_registry=MockEmptyRegistry(), scope="personal")
+    assert st_empty.status != "immediately_executable"
+    assert st_empty.status != "tool_integrated"
+    assert st_empty.status == "partially_supported"
+

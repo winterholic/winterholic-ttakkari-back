@@ -6,7 +6,15 @@ from sqlalchemy import text
 
 from ttakkari.db import sessionmaker
 from ttakkari.research import planner
-from ttakkari.research.models import Method, Measurement, Study
+from ttakkari.research.models import (
+    BestResult,
+    Configuration,
+    Experiment,
+    Measurement,
+    Method,
+    Run,
+    Study,
+)
 
 
 async def create_test_study(client, auth, scope="personal"):
@@ -448,3 +456,264 @@ async def test_scope_isolation_and_system_catalog_sharing(client, auth):
         )
     ).json()
     assert work_search["total"] == 0
+
+
+async def test_regression_runner_gate_rejection(client, auth):
+    """Defect 1: runner must not execute runs when generation accepted-work gate yields False."""
+    from unittest.mock import patch
+    from contextlib import asynccontextmanager
+    from ttakkari.research import runner
+
+    study_id = await create_test_study(client, auth)
+    exp = (
+        await client.post(
+            f"/api/research/studies/{study_id}/experiments",
+            headers=auth,
+            json={
+                "title": "Gate Rejection Test",
+                "strategy": "single",
+                "search_space": {"param": [1]},
+            },
+        )
+    ).json()
+
+    exp_id = uuid.UUID(exp["id"])
+    cfg_id = uuid.UUID(exp["configurations"][0]["id"])
+
+    # Create a queued run in DB
+    sm = sessionmaker()
+    run_id = uuid.uuid4()
+    async with sm() as db:
+        run_obj = Run(
+            id=run_id,
+            experiment_id=exp_id,
+            configuration_id=cfg_id,
+            study_id=uuid.UUID(study_id),
+            adapter_id="retrieval_eval",
+            status="queued",
+        )
+        db.add(run_obj)
+        await db.commit()
+
+    @asynccontextmanager
+    async def mock_gate(kind: str, accepted_generation_id=None):
+        yield False
+
+    with patch("ttakkari.research.runner.generation.enter_accepted_work", mock_gate):
+        await runner.run_experiment_batch(exp_id, [run_id])
+
+    async with sm() as db:
+        updated_exp = await db.get(Experiment, exp_id)
+        updated_run = await db.get(Run, run_id)
+        assert updated_exp.state == "cancelled"
+        assert updated_run.status == "cancelled"
+        assert updated_run.error_code == "GENERATION_REJECTED"
+        assert updated_run.error_message is not None
+        assert "rejected" in updated_run.error_message.lower() or "gate" in updated_run.error_message.lower()
+
+
+async def test_regression_external_report_provenance_roundtrip(client, auth):
+    """Defect 2: external report must validate and preserve provenance in raw_output and measurement meta."""
+    study_id = await create_test_study(client, auth)
+    exp = (
+        await client.post(
+            f"/api/research/studies/{study_id}/experiments",
+            headers=auth,
+            json={"title": "Provenance Test", "strategy": "single"},
+        )
+    ).json()
+
+    # 1. Invalid provenance must be rejected with 422
+    bad_res = await client.post(
+        f"/api/research/experiments/{exp['id']}/external-report",
+        headers=auth,
+        json={
+            "provenance": "unknown_source_forge",
+            "metrics": [{"metric_key": "score", "value": 1.0}],
+        },
+    )
+    assert bad_res.status_code == 422
+
+    # 2. Valid provenance (e.g. manual_evaluation) must round-trip
+    rep_res = await client.post(
+        f"/api/research/experiments/{exp['id']}/external-report",
+        headers=auth,
+        json={
+            "provenance": "manual_evaluation",
+            "metrics": [{"metric_key": "user_rating", "value": 4.5}],
+            "raw_output": {"note": "Human rating session"},
+        },
+    )
+    assert rep_res.status_code == 201
+    run_data = rep_res.json()
+    assert run_data["raw_output"].get("provenance") == "manual_evaluation"
+
+    # Query run details
+    run_details = (
+        await client.get(f"/api/research/runs/{run_data['id']}", headers=auth)
+    ).json()
+    assert run_details["raw_output"].get("provenance") == "manual_evaluation"
+    assert run_details["measurements"][0]["meta"].get("provenance") == "manual_evaluation"
+
+
+async def test_regression_best_result_status_and_consistency(client, auth):
+    """Defect 3: best result must preserve rejected status and enforce membership consistency."""
+    study_id = await create_test_study(client, auth)
+    other_study_id = await create_test_study(client, auth)
+
+    exp = (
+        await client.post(
+            f"/api/research/studies/{study_id}/experiments",
+            headers=auth,
+            json={"title": "Best Result Consistency Test", "strategy": "single"},
+        )
+    ).json()
+    cfg_id = exp["configurations"][0]["id"]
+
+    # External report run
+    rep_res = await client.post(
+        f"/api/research/experiments/{exp['id']}/external-report",
+        headers=auth,
+        json={
+            "configuration_id": cfg_id,
+            "metrics": [{"metric_key": "accuracy", "value": 0.5}],
+        },
+    )
+    run_id = rep_res.json()["id"]
+
+    # Other experiment in other study
+    other_exp = (
+        await client.post(
+            f"/api/research/studies/{other_study_id}/experiments",
+            headers=auth,
+            json={"title": "Other Study Exp", "strategy": "single"},
+        )
+    ).json()
+
+    # 1. Membership mismatch: experiment belongs to other study -> must fail with 4xx
+    mismatch_res = await client.post(
+        f"/api/research/studies/{study_id}/best-results",
+        headers=auth,
+        json={
+            "experiment_id": other_exp["id"],
+            "configuration_id": cfg_id,
+            "run_id": run_id,
+            "objective": "Max accuracy",
+            "primary_metric": "accuracy",
+            "rationale": "Mismatched components",
+            "status": "adopted",
+        },
+    )
+    assert 400 <= mismatch_res.status_code < 500
+
+    # 2. Rejected status: must be recorded as rejected, decision node marked as rejected, and study.best_result_id not set
+    reject_res = await client.post(
+        f"/api/research/studies/{study_id}/best-results",
+        headers=auth,
+        json={
+            "experiment_id": exp["id"],
+            "configuration_id": cfg_id,
+            "run_id": run_id,
+            "objective": "Target accuracy >= 0.9",
+            "primary_metric": "accuracy",
+            "rationale": "Accuracy 0.5 did not meet threshold",
+            "status": "rejected",
+        },
+    )
+    assert reject_res.status_code == 201
+    best_res_data = reject_res.json()
+    assert best_res_data["status"] == "rejected"
+
+    study_after = (
+        await client.get(f"/api/research/studies/{study_id}", headers=auth)
+    ).json()
+    assert study_after.get("best_result_id") != best_res_data["id"]
+
+
+async def test_regression_pareto_single_metric_and_x_metric_passthrough(client, auth):
+    """Defect 4: single metric must not produce Pareto using same metric on both axes; pareto_x_metric must pass through."""
+    study_id = await create_test_study(client, auth)
+
+    # 1. Experiment with single metric only
+    exp_single = (
+        await client.post(
+            f"/api/research/studies/{study_id}/experiments",
+            headers=auth,
+            json={
+                "title": "Single Metric Exp",
+                "strategy": "ab",
+                "search_space": {"opt": [1, 2]},
+                "primary_metric": "accuracy_only",
+                "secondary_metrics": [],
+            },
+        )
+    ).json()
+
+    cfg1, cfg2 = exp_single["configurations"][0], exp_single["configurations"][1]
+    await client.post(
+        f"/api/research/experiments/{exp_single['id']}/external-report",
+        headers=auth,
+        json={"configuration_id": cfg1["id"], "metrics": [{"metric_key": "accuracy_only", "value": 0.8}]},
+    )
+    await client.post(
+        f"/api/research/experiments/{exp_single['id']}/external-report",
+        headers=auth,
+        json={"configuration_id": cfg2["id"], "metrics": [{"metric_key": "accuracy_only", "value": 0.9}]},
+    )
+
+    series_single = (
+        await client.get(
+            f"/api/research/experiments/{exp_single['id']}/compare-series",
+            headers=auth,
+        )
+    ).json()
+
+    # Must NOT compute Pareto frontier using single metric as both axes
+    assert series_single["pareto_frontier"] == []
+    assert series_single.get("pareto_status") == "unavailable"
+    assert "pareto_unavailable_reason" in series_single
+    assert "2개" in series_single["pareto_unavailable_reason"] or "단일" in series_single["pareto_unavailable_reason"]
+
+    # 2. Multi-metric experiment with pareto_x_metric passthrough to analyze
+    exp_multi = (
+        await client.post(
+            f"/api/research/studies/{study_id}/experiments",
+            headers=auth,
+            json={
+                "title": "Multi Metric Exp",
+                "strategy": "ab",
+                "search_space": {"opt": [1, 2]},
+                "primary_metric": "latency",
+                "secondary_metrics": ["vram", "cost"],
+            },
+        )
+    ).json()
+    m_cfg1, m_cfg2 = exp_multi["configurations"][0], exp_multi["configurations"][1]
+    for cfg, lat, vram in [(m_cfg1, 50.0, 1000.0), (m_cfg2, 30.0, 1500.0)]:
+        await client.post(
+            f"/api/research/experiments/{exp_multi['id']}/external-report",
+            headers=auth,
+            json={
+                "configuration_id": cfg["id"],
+                "metrics": [
+                    {"metric_key": "latency", "value": lat, "direction": "lower_is_better"},
+                    {"metric_key": "vram", "value": vram, "direction": "lower_is_better"},
+                ],
+            },
+        )
+
+    # Analyze with explicit pareto_x_metric="vram" and pareto_y_metric="latency"
+    analyze_res = await client.post(
+        f"/api/research/experiments/{exp_multi['id']}/analyze",
+        headers=auth,
+        json={
+            "pareto_x_metric": "vram",
+            "pareto_y_metric": "latency",
+        },
+    )
+    assert analyze_res.status_code == 200
+    summary = analyze_res.json()["summary"]
+    assert summary["secondary_metric"] == "vram"
+    assert summary["primary_metric"] == "latency"
+    assert len(summary["pareto_frontier"]) > 0
+

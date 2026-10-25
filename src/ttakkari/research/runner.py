@@ -185,8 +185,30 @@ async def run_experiment_batch(
     adapter_registry: Any = None,
 ) -> None:
     """Execute a batch of runs under generation work context and auto-analyze."""
-    async with generation.enter_accepted_work("research"):
+    async with generation.enter_accepted_work("research") as acquired:
         sm = sessionmaker()
+        if not acquired:
+            logger.warning(
+                "Generation rejected accepted work gate for experiment %s", experiment_id
+            )
+            async with sm() as db:
+                exp = await db.get(Experiment, experiment_id)
+                if exp:
+                    exp.state = "cancelled"
+                    exp.finished_at = utcnow()
+                    exp.receipt = {
+                        "error_code": "GENERATION_REJECTED",
+                        "error_message": "Generation accepted-work gate rejected (not active or draining)",
+                    }
+                for rid in run_ids:
+                    r = await db.get(Run, rid)
+                    if r and r.status == "queued":
+                        r.status = "cancelled"
+                        r.error_code = "GENERATION_REJECTED"
+                        r.error_message = "Generation accepted-work gate rejected (not active or draining)"
+                        r.finished_at = utcnow()
+                await db.commit()
+            return
         # Mark experiment as running
         async with sm() as db:
             exp = await db.get(Experiment, experiment_id)

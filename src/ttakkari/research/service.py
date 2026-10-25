@@ -660,9 +660,10 @@ async def adopt_best_result(
     constraints: dict[str, Any],
     rationale: str,
     promote_method_flag: bool = False,
+    status: str = "adopted",
     actor: str = "user",
 ) -> BestResult:
-    """Adopt an optimal configuration run for a study, recording goal, metric, and constraints."""
+    """Adopt or reject an optimal configuration run for a study, recording goal, metric, and constraints."""
     study = await get_study(db, study_id)
     exp = await db.get(Experiment, experiment_id)
     cfg = await db.get(Configuration, configuration_id)
@@ -670,15 +671,32 @@ async def adopt_best_result(
 
     if not exp or not cfg or not run:
         raise HTTPException(404, "referenced_experiment_components_not_found")
+    if (
+        exp.study_id != study.id
+        or cfg.experiment_id != exp.id
+        or run.experiment_id != exp.id
+        or run.configuration_id != cfg.id
+        or run.study_id != study.id
+    ):
+        raise HTTPException(400, "inconsistent_component_membership")
     if run.status != "succeeded":
         raise HTTPException(422, "only_succeeded_runs_can_be_adopted")
+
+    if status == "adopted":
+        dec_title = f"최적 결과물 채택: {cfg.label}"
+        dec_epistemic = "validated"
+        event_name = "best_result_adopted"
+    else:
+        dec_title = f"결과물 채택 거절: {cfg.label}"
+        dec_epistemic = "rejected"
+        event_name = "best_result_rejected"
 
     # Record Decision node in study
     dec_node = Node(
         id=uuid.uuid4(),
         study_id=study.id,
         kind="decision",
-        title=f"최적 결과물 채택: {cfg.label}",
+        title=dec_title,
         summary=rationale,
         conditions={
             "objective": objective,
@@ -686,9 +704,10 @@ async def adopt_best_result(
             "constraints": constraints,
             "run_id": str(run.id),
             "configuration_id": str(cfg.id),
+            "decision": status,
         },
         details={"parameters": cfg.parameters},
-        epistemic_status="validated",
+        epistemic_status=dec_epistemic,
         created_at=utcnow(),
     )
     db.add(dec_node)
@@ -701,7 +720,7 @@ async def adopt_best_result(
         configuration_id=cfg.id,
         run_id=run.id,
         decision_node_id=dec_node.id,
-        status="adopted",
+        status=status,
         objective=objective,
         primary_metric=primary_metric,
         constraints=constraints,
@@ -709,20 +728,22 @@ async def adopt_best_result(
         created_at=utcnow(),
     )
     db.add(best_res)
-    study.best_result_id = best_res.id
+    if status == "adopted":
+        study.best_result_id = best_res.id
 
     event(
         db,
         study.id,
-        "best_result_adopted",
+        event_name,
         actor,
         best_result_id=str(best_res.id),
         run_id=str(run.id),
         objective=objective,
         primary_metric=primary_metric,
+        status=status,
     )
 
-    if promote_method_flag and exp.method_id:
+    if status == "adopted" and promote_method_flag and exp.method_id:
         await promote_method(
             db,
             method_id=exp.method_id,

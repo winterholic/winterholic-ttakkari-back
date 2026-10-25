@@ -107,6 +107,7 @@ async def build_compare_series(
     experiment_id: uuid.UUID,
     baseline_config_id: uuid.UUID | None = None,
     primary_metric: str | None = None,
+    secondary_metric: str | None = None,
     metrics_filter: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build normalized chart-ready JSON structures for frontend SVG rendering."""
@@ -256,24 +257,51 @@ async def build_compare_series(
         })
 
     # Pareto calculation
-    # Default secondary metric
+    # Determine secondary metric
     sec_metrics = exp.secondary_metrics or []
-    sec_metric = sec_metrics[0] if sec_metrics else None
+    sec_metric = secondary_metric or (sec_metrics[0] if sec_metrics else None)
+
+    # If the chosen sec_metric is identical to p_metric, do not use it
+    if sec_metric == p_metric:
+        sec_metric = None
+
     if not sec_metric:
-        # Pick another metric if available
+        # Pick another metric if available in metric_meta (excluding p_metric)
         candidates = [m for m in metric_meta.keys() if m != p_metric]
-        sec_metric = candidates[0] if candidates else p_metric
+        sec_metric = candidates[0] if candidates else None
 
-    sec_meta = metric_meta.get(sec_metric, {})
-    sec_higher_is_better = sec_meta.get("direction", "lower_is_better") == "higher_is_better"
+    # Check if we have two distinct metrics with valid data
+    pareto_points: list[dict[str, Any]] = []
+    pareto_frontier: list[dict[str, Any]] = []
+    pareto_status: str
+    pareto_unavailable_reason: str | None
 
-    pareto_points, pareto_frontier = find_pareto_frontier(
-        points=points_for_pareto,
-        x_metric=sec_metric,
-        y_metric=p_metric,
-        x_higher_is_better=sec_higher_is_better,
-        y_higher_is_better=higher_is_better,
-    )
+    if not sec_metric or sec_metric == p_metric:
+        sec_metric = None
+        sec_meta = {}
+        pareto_status = "unavailable"
+        pareto_unavailable_reason = (
+            f"다목적 Pareto 분석에는 서로 다른 2개 이상의 지표가 필요합니다 "
+            f"(현재 유효 지표: {p_metric} 1개). 단일 지표 순위(delta_bars/metric_bars)를 참고하세요."
+        )
+    else:
+        sec_meta = metric_meta.get(sec_metric, {})
+        sec_higher_is_better = sec_meta.get("direction", "lower_is_better") == "higher_is_better"
+        pareto_points, pareto_frontier = find_pareto_frontier(
+            points=points_for_pareto,
+            x_metric=sec_metric,
+            y_metric=p_metric,
+            x_higher_is_better=sec_higher_is_better,
+            y_higher_is_better=higher_is_better,
+        )
+        if not pareto_points:
+            pareto_status = "unavailable"
+            pareto_unavailable_reason = (
+                f"선택된 보조 지표({sec_metric})의 유효한 측정 데이터가 부족하여 Pareto 분석을 생성할 수 없습니다."
+            )
+        else:
+            pareto_status = "available"
+            pareto_unavailable_reason = None
 
     # 5. Ablation impacts
     ablation_impacts: list[dict[str, Any]] = []
@@ -349,6 +377,8 @@ async def build_compare_series(
         "repeat_distributions": repeat_distributions,
         "pareto_points": pareto_points,
         "pareto_frontier": pareto_frontier,
+        "pareto_status": pareto_status,
+        "pareto_unavailable_reason": pareto_unavailable_reason,
         "ablation_impacts": ablation_impacts,
         "config_diff_table": config_diff_table,
         "sweep_lines": sweep_lines,
@@ -369,6 +399,7 @@ async def analyze_experiment(
         experiment_id=experiment_id,
         baseline_config_id=baseline_configuration_id,
         primary_metric=pareto_y_metric,
+        secondary_metric=pareto_x_metric,
     )
 
     p_metric = series["primary_metric"]

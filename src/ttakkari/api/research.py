@@ -238,7 +238,9 @@ class RunCancelIn(Strict):
 
 class ExternalReportIn(Strict):
     configuration_id: uuid.UUID | None = None
-    provenance: str = Field(default="external_benchmark", max_length=64)
+    provenance: Literal["external_benchmark", "manual_evaluation", "imported_log"] = Field(
+        default="external_benchmark"
+    )
     environment_snapshot: dict[str, Any] = Field(default_factory=dict)
     metrics: list[dict[str, Any]] = Field(default_factory=list)
     raw_output: dict[str, Any] = Field(default_factory=dict)
@@ -1009,6 +1011,8 @@ async def get_run_details(run_id: uuid.UUID, _: User, db: Db):
     ).scalars().all()
 
     run_dict = svc.out(run)
+    if isinstance(run.raw_output, dict) and "provenance" in run.raw_output:
+        run_dict["provenance"] = run.raw_output["provenance"]
     run_dict["measurements"] = [svc.out(m) for m in measurements]
     run_dict["artifacts"] = [svc.out(a) for a in artifacts]
     return run_dict
@@ -1050,6 +1054,9 @@ async def record_external_report(
         await db.flush()
         cfg_id = cfg.id
 
+    raw_output = dict(body.raw_output)
+    raw_output["provenance"] = body.provenance
+
     run = Run(
         id=uuid.uuid4(),
         experiment_id=exp.id,
@@ -1062,7 +1069,7 @@ async def record_external_report(
         status="succeeded",
         progress=1.0,
         environment_snapshot=body.environment_snapshot,
-        raw_output=body.raw_output,
+        raw_output=raw_output,
         started_at=body.started_at or utcnow(),
         finished_at=body.finished_at or utcnow(),
         created_at=utcnow(),
@@ -1071,6 +1078,8 @@ async def record_external_report(
     await db.flush()
 
     for m in body.metrics:
+        m_meta = dict(m.get("meta") or {})
+        m_meta["provenance"] = body.provenance
         m_row = Measurement(
             id=uuid.uuid4(),
             run_id=run.id,
@@ -1084,13 +1093,16 @@ async def record_external_report(
             is_proxy=m.get("is_proxy", False),
             aggregator=m.get("aggregator", "single"),
             slice_key=m.get("slice_key", "overall"),
-            meta=m.get("meta", {}),
+            meta=m_meta,
             created_at=utcnow(),
         )
         db.add(m_row)
 
     await db.commit()
-    return svc.out(run)
+    res = svc.out(run)
+    if isinstance(run.raw_output, dict) and "provenance" in run.raw_output:
+        res["provenance"] = run.raw_output["provenance"]
+    return res
 
 
 @router.post("/experiments/{experiment_id}/analyze")
@@ -1119,15 +1131,21 @@ async def compare_series_endpoint(
     db: Db,
     baseline_config_id: uuid.UUID | None = Query(None),
     primary_metric: str | None = Query(None),
+    secondary_metric: str | None = Query(None),
+    pareto_x_metric: str | None = Query(None),
+    pareto_y_metric: str | None = Query(None),
     metrics: str | None = Query(None),
 ):
     """Get chart-ready normalized series JSON for frontend SVG charts."""
     metrics_filter = [m.strip() for m in metrics.split(",") if m.strip()] if metrics else None
+    eff_primary = primary_metric or pareto_y_metric
+    eff_secondary = secondary_metric or pareto_x_metric
     return await analyzer.build_compare_series(
         db,
         experiment_id=experiment_id,
         baseline_config_id=baseline_config_id,
-        primary_metric=primary_metric,
+        primary_metric=eff_primary,
+        secondary_metric=eff_secondary,
         metrics_filter=metrics_filter,
     )
 
@@ -1151,6 +1169,7 @@ async def adopt_best_result_endpoint(
         constraints=body.constraints,
         rationale=body.rationale,
         promote_method_flag=body.promote_method,
+        status=body.status,
         actor=str(_),
     )
     await db.commit()

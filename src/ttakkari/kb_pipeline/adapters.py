@@ -1,13 +1,15 @@
 """KB v3 자동 지식화 파이프라인 단계 처리기 레지스트리.
 
-기본 레지스트리는 실제 처리기를 등록한다: parsing/chunking/extracting/linking/indexing.
-canonicalizing(다문서 정본 통합·상충 감지)은 아직 구현이 없으므로 성공/ready 로 위장하지 않고 held(capability_missing)로 남긴다.
+기본 레지스트리는 실제 처리기를 등록한다: parsing/chunking/extracting/linking/indexing/canonicalizing.
 """
 
 from __future__ import annotations
 
 import logging
 
+from ttakkari.kb_pipeline.canonicalizing_processor import (
+    CanonicalizingProcessor,
+)
 from ttakkari.kb_pipeline.stages import (
     DefaultChunkingProcessor,
     DefaultIndexingProcessor,
@@ -30,6 +32,7 @@ from ttakkari.kb_pipeline.types import (
 log = logging.getLogger(__name__)
 
 __all__ = [
+    "CanonicalizingProcessor",
     "DefaultChunkingProcessor",
     "DefaultIndexingProcessor",
     "DefaultParsingProcessor",
@@ -77,10 +80,7 @@ class StageProcessorRegistry:
         self.register(STAGE_EXTRACTING, ExtractingProcessor())
         self.register(STAGE_LINKING, LinkingProcessor())
         self.register(STAGE_INDEXING, DefaultIndexingProcessor())
-        # 구현이 없는 단계는 held(capability_missing)로 남긴다.
-        self.register(
-            STAGE_CANONICALIZING, MissingStageProcessor(STAGE_CANONICALIZING)
-        )
+        self.register(STAGE_CANONICALIZING, CanonicalizingProcessor())
 
     def register(self, stage: str, processor: StageProcessor) -> None:
         self._processors[stage] = processor

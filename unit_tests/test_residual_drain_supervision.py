@@ -7,7 +7,15 @@ from unittest.mock import AsyncMock
 import pytest
 
 from ttakkari import artcraft, generation_service
+from ttakkari.google_account import login as login_module
 from ttakkari.google_account.login import manager as login_manager
+
+
+@pytest.fixture(autouse=True)
+def _pin_login_manager(monkeypatch):
+    # tests/test_google_account.py 의 wipe() 가 login.manager 를 새 객체로 바꾸고 되돌리지 않는다.
+    # 제품은 호출 시점에 login.manager 를 다시 import 하므로, 이 모듈이 패치하는 객체로 고정한다.
+    monkeypatch.setattr(login_module, "manager", login_manager)
 
 
 class Runtime:

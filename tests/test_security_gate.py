@@ -229,6 +229,8 @@ async def test_security_gate_allows_passing_candidate(tmp_path, monkeypatch):
     # DB schema 일치 모킹
     from sqlalchemy.ext.asyncio import AsyncSession
     monkeypatch.setattr(AsyncSession, "scalar", AsyncMock(return_value="0001_initial"))
+    # schema_plan 은 복수 head 를 거절하려고 alembic_version 전체 행을 scalars 로 읽는다(a3a29ec).
+    monkeypatch.setattr(AsyncSession, "scalars", AsyncMock(return_value=["0001_initial"]))
 
     result = await controller.prepare(job)
     assert result == release_dir

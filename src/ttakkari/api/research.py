@@ -342,9 +342,16 @@ async def patch_study(study_id: uuid.UUID, body: StudyPatch, _: User, db: Db):
     return svc.out(row)
 
 
+class ResumePageIn(Strict):
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=500, ge=1, le=500)
+
+
 @router.get("/studies/{study_id}/resume")
-async def resume(study_id: uuid.UUID, _: User, db: Db):
-    return await svc.snapshot(db, await svc.get_study(db, study_id))
+async def resume(study_id: uuid.UUID, _: User, db: Db,
+                 offset: Annotated[int, Query(ge=0)] = 0,
+                 limit: Annotated[int, Query(ge=1, le=500)] = 500):
+    return await svc.snapshot(db, await svc.get_study(db, study_id), offset=offset, limit=limit)
 
 
 @router.post("/studies/{study_id}/sources", status_code=201)
@@ -1696,7 +1703,8 @@ async def agent_manage(body: AgentIn, sid: AgentSession, db: Db):
 
     study = await svc.get_study(db, body.study_id, scope)
     if op == "resume":
-        return await resume(study.id, actor, db)
+        page = validate(ResumePageIn, body.data)
+        return await resume(study.id, actor, db, offset=page.offset, limit=page.limit)
     if op == "experiment_create":
         return await experiment(study.id, validate(ExperimentIn, body.data), actor, db)
     if op == "adopt_best_result":

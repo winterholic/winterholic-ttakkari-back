@@ -1,0 +1,176 @@
+"""Runtime determination of Axis F (Execution Status) for Research Lab v2."""
+
+from __future__ import annotations
+
+import platform
+from dataclasses import dataclass, field
+from typing import Any
+
+from ttakkari.research.models import Method
+
+# Adapter registry accessor
+def _get_registry():
+    try:
+        from ttakkari.research.adapters.registry import get_adapter_registry
+        return get_adapter_registry()
+    except ImportError:
+        return None
+
+
+@dataclass(frozen=True)
+class ExecutionStatusResult:
+    status: str
+    status_label_ko: str
+    is_executable: bool
+    unavailable_reason: str | None = None
+    unsupported_params: list[str] = field(default_factory=list)
+    matched_adapter_id: str | None = None
+
+
+STATUS_LABELS_KO = {
+    "hypothesis_stage": "가설 단계",
+    "adapter_required": "어댑터 필요",
+    "environment_unavailable": "현재 환경 불가",
+    "partially_supported": "일부 지원",
+    "tool_integrated": "기존 도구 연동",
+    "immediately_executable": "즉시 실행 가능",
+}
+
+
+def compute_execution_status(
+    method: Method | dict[str, Any],
+    adapter_registry: Any = None,
+    scope: str = "personal",
+) -> ExecutionStatusResult:
+    """Compute Axis F status deterministically in order of criteria."""
+    reg = adapter_registry or _get_registry()
+
+    # Extract method attributes (handles both ORM model and dict)
+    if isinstance(method, dict):
+        lifecycle = method.get("lifecycle_status", "validated")
+        params = method.get("parameters", [])
+        metrics = method.get("metrics", [])
+        adapter_hints = method.get("adapter_hints", [])
+        compatibility = method.get("compatibility", {})
+    else:
+        lifecycle = getattr(method, "lifecycle_status", "validated")
+        params = getattr(method, "parameters", []) or []
+        metrics = getattr(method, "metrics", []) or []
+        adapter_hints = getattr(method, "adapter_hints", []) or []
+        compatibility = getattr(method, "compatibility", {}) or {}
+
+    # 1. hypothesis_stage
+    if lifecycle == "hypothesis" or (not params and not metrics):
+        return ExecutionStatusResult(
+            status="hypothesis_stage",
+            status_label_ko=STATUS_LABELS_KO["hypothesis_stage"],
+            is_executable=False,
+            unavailable_reason="실험 프로토콜 구체화 필요 (가설 편집 또는 외부 결과 기록만 가능)",
+        )
+
+    # If registry is missing or has no get_adapter function, treat as adapter_required unless adapter hints empty
+    if not adapter_hints:
+        return ExecutionStatusResult(
+            status="adapter_required",
+            status_label_ko=STATUS_LABELS_KO["adapter_required"],
+            is_executable=False,
+            unavailable_reason="연결 가능한 어댑터 힌트가 지정되지 않았습니다.",
+        )
+
+    matched_adapter = None
+    if reg is not None and hasattr(reg, "get_adapter"):
+        for hint in adapter_hints:
+            ad = reg.get_adapter(hint)
+            if ad is not None:
+                matched_adapter = ad
+                break
+
+    # 2. adapter_required
+    if matched_adapter is None:
+        return ExecutionStatusResult(
+            status="adapter_required",
+            status_label_ko=STATUS_LABELS_KO["adapter_required"],
+            is_executable=False,
+            unavailable_reason=f"매칭되는 실행 어댑터가 아직 구현되지 않았습니다 (힌트: {', '.join(adapter_hints)})",
+        )
+
+    # 3. environment_unavailable check
+    # Check hardware compatibility (e.g., CUDA-only on macOS Apple Silicon)
+    hw_reqs = compatibility.get("hardware", [])
+    if isinstance(hw_reqs, list) and hw_reqs:
+        # If hardware is exclusively cuda and we are on darwin (Apple Silicon / CPU)
+        if all(h.lower() == "cuda" for h in hw_reqs) and platform.system() == "Darwin":
+            return ExecutionStatusResult(
+                status="environment_unavailable",
+                status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+                is_executable=False,
+                unavailable_reason="CUDA 전용 하드웨어를 요구하는 기법으로 현재 Mac 환경에서는 실행 불가합니다.",
+                matched_adapter_id=matched_adapter.id,
+            )
+
+    # Scope constraint: host_gpu / llm_inference is personal-only
+    if scope == "work" and matched_adapter.id == "llm_inference":
+        return ExecutionStatusResult(
+            status="environment_unavailable",
+            status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+            is_executable=False,
+            unavailable_reason="회사(work) 범위에서는 개인 전용 호스트 GPU 실행기를 사용할 수 없습니다.",
+            matched_adapter_id=matched_adapter.id,
+        )
+
+    # Check adapter's check_environment
+    env_status = None
+    try:
+        env_status = matched_adapter.check_environment(scope=scope)
+    except Exception as e:
+        return ExecutionStatusResult(
+            status="environment_unavailable",
+            status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+            is_executable=False,
+            unavailable_reason=f"환경 확인 실패: {e}",
+            matched_adapter_id=matched_adapter.id,
+        )
+
+    if env_status and not env_status.ready:
+        return ExecutionStatusResult(
+            status="environment_unavailable",
+            status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+            is_executable=False,
+            unavailable_reason=env_status.reason or "어댑터 실행 환경이 준비되지 않았습니다.",
+            matched_adapter_id=matched_adapter.id,
+        )
+
+    # 4. Check parameter support (partially_supported vs fully supported)
+    supported_params = set(getattr(matched_adapter, "supported_parameters", []))
+    unsupported: list[str] = []
+    for p in params:
+        pkey = p.get("key") if isinstance(p, dict) else getattr(p, "key", None)
+        if pkey and pkey not in supported_params:
+            unsupported.append(pkey)
+
+    if unsupported:
+        return ExecutionStatusResult(
+            status="partially_supported",
+            status_label_ko=STATUS_LABELS_KO["partially_supported"],
+            is_executable=True,
+            unavailable_reason=f"일부 파라미터 미지원 ({', '.join(unsupported)})",
+            unsupported_params=unsupported,
+            matched_adapter_id=matched_adapter.id,
+        )
+
+    # 5. tool_integrated vs immediately_executable
+    exec_mode = getattr(env_status, "execution_mode", "in_process") if env_status else "in_process"
+    if exec_mode in ("host_supervisor", "subprocess_worker") or matched_adapter.id in ("llm_inference", "qwen_local"):
+        return ExecutionStatusResult(
+            status="tool_integrated",
+            status_label_ko=STATUS_LABELS_KO["tool_integrated"],
+            is_executable=True,
+            matched_adapter_id=matched_adapter.id,
+        )
+
+    return ExecutionStatusResult(
+        status="immediately_executable",
+        status_label_ko=STATUS_LABELS_KO["immediately_executable"],
+        is_executable=True,
+        matched_adapter_id=matched_adapter.id,
+    )

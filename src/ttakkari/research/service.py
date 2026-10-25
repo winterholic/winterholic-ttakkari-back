@@ -13,7 +13,24 @@ from ttakkari.kb_models import KbEvidence as KnowledgeEvidence
 from ttakkari.kb_models import KbPassage as KnowledgeUnit
 from ttakkari.kb_models import KbRevision as KnowledgeRevision
 from ttakkari.kb_models import KbSource
-from ttakkari.research.models import Event, Experiment, Node, Relation, Study
+from ttakkari.models import utcnow
+from ttakkari.research.models import (
+    Analysis,
+    BestResult,
+    Configuration,
+    Event,
+    Experiment,
+    Measurement,
+    Method,
+    MethodRelation,
+    Node,
+    Relation,
+    ResearchArtifact,
+    Run,
+    Study,
+    TaxonomyTerm,
+)
+from ttakkari.research.readiness import compute_execution_status
 
 
 def out(row) -> dict:
@@ -243,3 +260,726 @@ async def import_source(db, study, body, actor):
         "normalization": "KB NFKC+LF; quote offsets are passage-local Unicode codepoints",
         "note": "Original bytes are retained by Knowledge Library. No claims have been verified.",
     }
+
+
+# ==========================================
+# Research Lab v2 Service Functions
+# ==========================================
+
+
+async def get_method_details(
+    db, ident_or_slug: str | uuid.UUID, scope: str = "personal"
+) -> dict[str, Any]:
+    """Retrieve full method definition, relations, related experiments, and historical local measurements."""
+    q = select(Method).where(Method.scope.in_(["system", scope]))
+    if isinstance(ident_or_slug, uuid.UUID):
+        q = q.where(Method.id == ident_or_slug)
+    else:
+        try:
+            val_uuid = uuid.UUID(str(ident_or_slug))
+            q = q.where((Method.id == val_uuid) | (Method.slug == ident_or_slug))
+        except ValueError:
+            q = q.where(Method.slug == ident_or_slug)
+
+    method = (await db.execute(q.order_by(Method.version.desc()).limit(1))).scalar_one_or_none()
+    if not method:
+        raise HTTPException(404, "research_method_not_found")
+
+    # Fetch relations
+    rel_rows = (
+        await db.execute(
+            select(MethodRelation, Method)
+            .join(Method, Method.id == MethodRelation.to_method_id)
+            .where(MethodRelation.from_method_id == method.id)
+        )
+    ).all()
+
+    relations = [
+        {
+            "id": str(r.id),
+            "relation_type": r.relation_type,
+            "to_method_id": str(r.to_method_id),
+            "to_method_slug": target_m.slug,
+            "to_method_name_ko": target_m.name_ko,
+            "conditions": r.conditions,
+            "note": r.note,
+        }
+        for r, target_m in rel_rows
+    ]
+
+    # Scope-bound Research History (past runs using this method)
+    history_runs = (
+        await db.execute(
+            select(Run)
+            .join(Experiment, Experiment.id == Run.experiment_id)
+            .join(Study, Study.id == Run.study_id)
+            .where(
+                Experiment.method_id == method.id,
+                Study.scope == scope,
+            )
+        )
+    ).scalars().all()
+
+    total_runs = len(history_runs)
+    succeeded_runs = len([r for r in history_runs if r.status == "succeeded"])
+    failed_runs = len([r for r in history_runs if r.status == "failed"])
+    locally_measured = any(
+        r.execution_origin == "local_measured" and r.status == "succeeded"
+        for r in history_runs
+    )
+
+    local_measurements = {
+        "total_runs": total_runs,
+        "succeeded_runs": succeeded_runs,
+        "failed_runs": failed_runs,
+        "locally_measured": locally_measured,
+        "best_improvement_summary": None,
+    }
+
+    # Related experiments
+    rel_exps = (
+        await db.execute(
+            select(Experiment)
+            .join(Study, Study.id == Experiment.study_id)
+            .where(Experiment.method_id == method.id, Study.scope == scope)
+            .order_by(Experiment.created_at.desc())
+            .limit(5)
+        )
+    ).scalars().all()
+
+    exec_status = compute_execution_status(method, scope=scope)
+
+    m_dict = out(method)
+    m_dict["execution_status"] = exec_status.status
+    m_dict["execution_status_label_ko"] = exec_status.status_label_ko
+    m_dict["is_executable"] = exec_status.is_executable
+    m_dict["unavailable_reason"] = exec_status.unavailable_reason
+    m_dict["unsupported_params"] = exec_status.unsupported_params
+    m_dict["relations"] = relations
+    m_dict["local_measurements"] = local_measurements
+    m_dict["related_experiments"] = [out(e) for e in rel_exps]
+
+    return m_dict
+
+
+async def list_methods(
+    db,
+    scope: str = "personal",
+    q: str | None = None,
+    target: str | None = None,
+    layer: str | None = None,
+    goal: str | None = None,
+    intervention: str | None = None,
+    research_method: str | None = None,
+    execution_status: str | None = None,
+    lifecycle_status: str | None = None,
+    origin: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Search and filter methods across 6 dimensions with facet counts."""
+    query = select(Method).where(Method.scope.in_(["system", scope]))
+
+    if q:
+        query = query.where(
+            Method.name.ilike(f"%{q}%")
+            | Method.name_ko.ilike(f"%{q}%")
+            | Method.summary.ilike(f"%{q}%")
+            | Method.slug.ilike(f"%{q}%")
+        )
+
+    if target:
+        query = query.where(Method.targets.contains([target]))
+    if layer:
+        query = query.where(Method.layers.contains([layer]))
+    if goal:
+        query = query.where(Method.goals.contains([goal]))
+    if intervention:
+        query = query.where(Method.interventions.contains([intervention]))
+    if research_method:
+        query = query.where(Method.research_methods.contains([research_method]))
+    if lifecycle_status:
+        query = query.where(Method.lifecycle_status == lifecycle_status)
+    if origin:
+        query = query.where(Method.origin == origin)
+
+    # Fetch all candidate methods for facets and runtime execution_status evaluation
+    all_matched = (await db.execute(query.order_by(Method.name_ko, Method.slug))).scalars().all()
+
+    # Compute execution status and facets
+    facets: dict[str, dict[str, int]] = {
+        "targets": {},
+        "layers": {},
+        "goals": {},
+        "interventions": {},
+        "research_methods": {},
+        "execution_status": {},
+        "lifecycle_status": {},
+    }
+
+    annotated_items = []
+    for m in all_matched:
+        st = compute_execution_status(m, scope=scope)
+        # Update facets
+        for t in m.targets or []:
+            facets["targets"][t] = facets["targets"].get(t, 0) + 1
+        for l in m.layers or []:
+            facets["layers"][l] = facets["layers"].get(l, 0) + 1
+        for g in m.goals or []:
+            facets["goals"][g] = facets["goals"].get(g, 0) + 1
+        for i in m.interventions or []:
+            facets["interventions"][i] = facets["interventions"].get(i, 0) + 1
+        for rm in m.research_methods or []:
+            facets["research_methods"][rm] = facets["research_methods"].get(rm, 0) + 1
+        facets["execution_status"][st.status] = facets["execution_status"].get(st.status, 0) + 1
+        facets["lifecycle_status"][m.lifecycle_status] = facets["lifecycle_status"].get(m.lifecycle_status, 0) + 1
+
+        # Execution status filter (evaluated at runtime)
+        if execution_status and st.status != execution_status:
+            continue
+
+        item_dict = out(m)
+        item_dict["execution_status"] = st.status
+        item_dict["execution_status_label_ko"] = st.status_label_ko
+        item_dict["is_executable"] = st.is_executable
+        item_dict["unavailable_reason"] = st.unavailable_reason
+        item_dict["unsupported_params"] = st.unsupported_params
+        annotated_items.append(item_dict)
+
+    total = len(annotated_items)
+    paginated = annotated_items[offset : offset + limit]
+
+    return {
+        "items": paginated,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "facets": facets,
+    }
+
+
+async def create_method(db, data: dict[str, Any], scope: str) -> Method:
+    """Create a user-registered method or hypothesis."""
+    slug = data.get("slug")
+    if not slug:
+        raise HTTPException(422, "method_slug_required")
+
+    # Check conflict in same scope
+    existing = (
+        await db.execute(
+            select(Method).where(Method.scope == scope, Method.slug == slug)
+        )
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(409, f"Method with slug '{slug}' already exists in scope '{scope}'")
+
+    method = Method(
+        id=uuid.uuid4(),
+        scope=scope,
+        slug=slug,
+        version=1,
+        origin=data.get("origin", "user_registered"),
+        lifecycle_status=data.get("lifecycle_status", "hypothesis"),
+        name=data.get("name", slug),
+        name_ko=data.get("name_ko", data.get("name", slug)),
+        summary=data.get("summary", ""),
+        principle=data.get("principle", ""),
+        category=data.get("category", "general"),
+        targets=data.get("targets", []),
+        layers=data.get("layers", []),
+        goals=data.get("goals", []),
+        interventions=data.get("interventions", []),
+        research_methods=data.get("research_methods", []),
+        parameters=data.get("parameters", []),
+        compatibility=data.get("compatibility", {}),
+        metrics=data.get("metrics", []),
+        expected_effects=data.get("expected_effects", []),
+        side_effects=data.get("side_effects", []),
+        evidence=data.get("evidence", []),
+        evidence_status=data.get("evidence_status", "unverified"),
+        adapter_hints=data.get("adapter_hints", []),
+        tags=data.get("tags", []),
+        source_study_id=data.get("source_study_id"),
+        source_node_id=data.get("source_node_id"),
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+    db.add(method)
+    await db.flush()
+    return method
+
+
+async def update_method(
+    db,
+    method_id: uuid.UUID,
+    patch_data: dict[str, Any],
+    create_new_version: bool = False,
+    scope: str = "personal",
+) -> Method:
+    """Update method in-place or branch into a new version when modifying system seeds."""
+    method = await db.get(Method, method_id)
+    if not method:
+        raise HTTPException(404, "research_method_not_found")
+
+    should_fork = (method.origin == "system_seed") or create_new_version
+
+    if should_fork:
+        # Create a new version in current user scope
+        new_method = Method(
+            id=uuid.uuid4(),
+            scope=scope,
+            slug=method.slug,
+            version=method.version + 1,
+            supersedes_id=method.id,
+            origin="user_registered",
+            lifecycle_status=patch_data.get("lifecycle_status", method.lifecycle_status),
+            name=patch_data.get("name", method.name),
+            name_ko=patch_data.get("name_ko", method.name_ko),
+            summary=patch_data.get("summary", method.summary),
+            principle=patch_data.get("principle", method.principle),
+            category=patch_data.get("category", method.category),
+            targets=patch_data.get("targets", method.targets),
+            layers=patch_data.get("layers", method.layers),
+            goals=patch_data.get("goals", method.goals),
+            interventions=patch_data.get("interventions", method.interventions),
+            research_methods=patch_data.get("research_methods", method.research_methods),
+            parameters=patch_data.get("parameters", method.parameters),
+            compatibility=patch_data.get("compatibility", method.compatibility),
+            metrics=patch_data.get("metrics", method.metrics),
+            expected_effects=patch_data.get("expected_effects", method.expected_effects),
+            side_effects=patch_data.get("side_effects", method.side_effects),
+            evidence=patch_data.get("evidence", method.evidence),
+            evidence_status=patch_data.get("evidence_status", method.evidence_status),
+            adapter_hints=patch_data.get("adapter_hints", method.adapter_hints),
+            tags=patch_data.get("tags", method.tags),
+            source_study_id=method.source_study_id,
+            source_node_id=method.source_node_id,
+            created_at=utcnow(),
+            updated_at=utcnow(),
+        )
+        db.add(new_method)
+        await db.flush()
+        return new_method
+
+    for k, v in patch_data.items():
+        if hasattr(method, k) and k not in ("id", "scope", "slug", "version", "created_at"):
+            setattr(method, k, v)
+    method.updated_at = utcnow()
+    await db.flush()
+    return method
+
+
+async def promote_method(
+    db,
+    method_id: uuid.UUID,
+    run_id: uuid.UUID,
+    decision_note: str,
+    target_status: str = "validated",
+    actor: str = "user",
+) -> Method:
+    """Promote a hypothesis method to candidate or validated status upon succeeded run."""
+    run = await db.get(Run, run_id)
+    if not run or run.status != "succeeded":
+        raise HTTPException(422, "succeeded_run_required_for_promotion")
+
+    method = await db.get(Method, method_id)
+    if not method:
+        raise HTTPException(404, "research_method_not_found")
+
+    final_status = "candidate" if run.execution_origin == "external_report" else target_status
+    method.lifecycle_status = final_status
+    method.promoted_from_run_id = run.id
+    method.updated_at = utcnow()
+
+    # Create immutable Decision node in study
+    study = await db.get(Study, run.study_id)
+    if study:
+        d_node = Node(
+            id=uuid.uuid4(),
+            study_id=study.id,
+            kind="decision",
+            title=f"방법론 승격: {method.name_ko or method.name} ({final_status})",
+            summary=decision_note,
+            conditions={"run_id": str(run.id), "origin": run.execution_origin},
+            details={"method_id": str(method.id), "method_slug": method.slug},
+            epistemic_status="validated",
+            created_at=utcnow(),
+        )
+        db.add(d_node)
+        event(
+            db,
+            study.id,
+            "method_promoted",
+            actor,
+            method_id=str(method.id),
+            run_id=str(run.id),
+            lifecycle_status=final_status,
+        )
+
+    await db.flush()
+    return method
+
+
+async def create_method_relation(
+    db,
+    from_method_id: uuid.UUID,
+    to_method_id: uuid.UUID,
+    relation_type: str,
+    conditions: dict[str, Any] | None = None,
+    note: str = "",
+    scope: str = "personal",
+) -> MethodRelation:
+    """Create a relation between two methods."""
+    from_m = await db.get(Method, from_method_id)
+    to_m = await db.get(Method, to_method_id)
+    if not from_m or not to_m:
+        raise HTTPException(404, "referenced_method_not_found")
+
+    rel = MethodRelation(
+        id=uuid.uuid4(),
+        scope=scope,
+        from_method_id=from_method_id,
+        to_method_id=to_method_id,
+        relation_type=relation_type,
+        conditions=conditions or {},
+        note=note,
+    )
+    db.add(rel)
+    await db.flush()
+    return rel
+
+
+async def adopt_best_result(
+    db,
+    study_id: uuid.UUID,
+    experiment_id: uuid.UUID,
+    configuration_id: uuid.UUID,
+    run_id: uuid.UUID,
+    objective: str,
+    primary_metric: str,
+    constraints: dict[str, Any],
+    rationale: str,
+    promote_method_flag: bool = False,
+    actor: str = "user",
+) -> BestResult:
+    """Adopt an optimal configuration run for a study, recording goal, metric, and constraints."""
+    study = await get_study(db, study_id)
+    exp = await db.get(Experiment, experiment_id)
+    cfg = await db.get(Configuration, configuration_id)
+    run = await db.get(Run, run_id)
+
+    if not exp or not cfg or not run:
+        raise HTTPException(404, "referenced_experiment_components_not_found")
+    if run.status != "succeeded":
+        raise HTTPException(422, "only_succeeded_runs_can_be_adopted")
+
+    # Record Decision node in study
+    dec_node = Node(
+        id=uuid.uuid4(),
+        study_id=study.id,
+        kind="decision",
+        title=f"최적 결과물 채택: {cfg.label}",
+        summary=rationale,
+        conditions={
+            "objective": objective,
+            "primary_metric": primary_metric,
+            "constraints": constraints,
+            "run_id": str(run.id),
+            "configuration_id": str(cfg.id),
+        },
+        details={"parameters": cfg.parameters},
+        epistemic_status="validated",
+        created_at=utcnow(),
+    )
+    db.add(dec_node)
+    await db.flush()
+
+    best_res = BestResult(
+        id=uuid.uuid4(),
+        study_id=study.id,
+        experiment_id=exp.id,
+        configuration_id=cfg.id,
+        run_id=run.id,
+        decision_node_id=dec_node.id,
+        status="adopted",
+        objective=objective,
+        primary_metric=primary_metric,
+        constraints=constraints,
+        rationale=rationale,
+        created_at=utcnow(),
+    )
+    db.add(best_res)
+    study.best_result_id = best_res.id
+
+    event(
+        db,
+        study.id,
+        "best_result_adopted",
+        actor,
+        best_result_id=str(best_res.id),
+        run_id=str(run.id),
+        objective=objective,
+        primary_metric=primary_metric,
+    )
+
+    if promote_method_flag and exp.method_id:
+        await promote_method(
+            db,
+            method_id=exp.method_id,
+            run_id=run.id,
+            decision_note=f"연구 최적 결과물 채택 기반 승격: {rationale}",
+            target_status="validated",
+            actor=actor,
+        )
+
+    await db.flush()
+    return best_res
+
+
+async def export_study_report(
+    db,
+    study_id: uuid.UUID,
+    experiment_ids: list[uuid.UUID] | None = None,
+    promote_to_library: bool = False,
+    actor: str = "user",
+) -> dict[str, Any]:
+    """Generate Markdown report for study, register as artifact, and link."""
+    study = await get_study(db, study_id)
+
+    # Fetch experiments
+    q = select(Experiment).where(Experiment.study_id == study.id)
+    if experiment_ids:
+        q = q.where(Experiment.id.in_(experiment_ids))
+    exps = (await db.execute(q.order_by(Experiment.created_at))).scalars().all()
+
+    # Generate Markdown report
+    lines = [
+        f"# AI Research Lab v2 리포트: {study.title}",
+        f"- 연구 목표: {study.goal}",
+        f"- 범위: {study.scope}",
+        f"- 단계: {study.phase}",
+        f"- 생성 일시: {utcnow().isoformat()}",
+        "",
+        "## 실험 및 측정 요약",
+    ]
+
+    for exp in exps:
+        lines.append(f"### 실험: {exp.title} (전략: {exp.strategy}, 어댑터: {exp.adapter_id})")
+        lines.append(f"- 가설: {exp.hypothesis}")
+        lines.append(f"- 주요 지표: {exp.primary_metric}")
+
+        # Fetch runs & measurements
+        runs = (
+            await db.execute(
+                select(Run, Configuration)
+                .join(Configuration, Configuration.id == Run.configuration_id)
+                .where(Run.experiment_id == exp.id)
+            )
+        ).all()
+
+        lines.append("| 설정 라벨 | 역할 | 상태 | 소요 시간(s) |")
+        lines.append("| :--- | :--- | :--- | :--- |")
+        for r, c in runs:
+            lines.append(f"| {c.label} | {c.role} | {r.status} | {r.wall_seconds or 0:.2f} |")
+        lines.append("")
+
+    report_content = "\n".join(lines)
+
+    # Save to temp file and register as artifact
+    import tempfile
+    from pathlib import Path
+    from ttakkari.artifacts.paths import resolve_path
+    from ttakkari.artifacts.service import register_file
+
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as f:
+        f.write(report_content)
+        tmp_path = Path(f.name)
+
+    resolved = resolve_path(tmp_path)
+    artifact = await register_file(
+        db,
+        resolved,
+        source="research_report",
+        area="files" if promote_to_library else None,
+        category="research_report",
+        workspace_id=None,
+    )
+
+    # Link artifact to study
+    res_art = ResearchArtifact(
+        id=uuid.uuid4(),
+        study_id=study.id,
+        experiment_id=exps[0].id if exps else None,
+        run_id=None,
+        artifact_id=artifact.id,
+        role="report_markdown",
+        label=f"연구 리포트: {study.title}",
+        promoted_to_library=promote_to_library,
+        created_at=utcnow(),
+    )
+    db.add(res_art)
+    event(
+        db,
+        study.id,
+        "report_exported",
+        actor,
+        artifact_id=str(artifact.id),
+        promoted_to_library=promote_to_library,
+    )
+    await db.flush()
+
+    return {
+        "artifact_id": str(artifact.id),
+        "label": res_art.label,
+        "promoted_to_library": promote_to_library,
+        "preview": report_content[:500],
+    }
+
+
+async def get_study_dashboard(
+    db, study_id: uuid.UUID | None = None, scope: str = "personal"
+) -> dict[str, Any]:
+    """Aggregate dashboard view: counts, readiness, recent runs, best results, and templates."""
+    # Counts
+    studies_count = (
+        await db.execute(
+            select(func.count(Study.id)).where(Study.scope == scope)
+        )
+    ).scalar() or 0
+
+    methods_count = (
+        await db.execute(
+            select(func.count(Method.id)).where(Method.scope.in_(["system", scope]))
+        )
+    ).scalar() or 0
+
+    running_runs = (
+        await db.execute(
+            select(func.count(Run.id))
+            .join(Study, Study.id == Run.study_id)
+            .where(Run.status == "running", Study.scope == scope)
+        )
+    ).scalar() or 0
+
+    completed_runs = (
+        await db.execute(
+            select(func.count(Run.id))
+            .join(Study, Study.id == Run.study_id)
+            .where(Run.status == "succeeded", Study.scope == scope)
+        )
+    ).scalar() or 0
+
+    # Recent runs
+    recent_runs_q = (
+        select(Run, Configuration, Experiment)
+        .join(Configuration, Configuration.id == Run.configuration_id)
+        .join(Experiment, Experiment.id == Run.experiment_id)
+        .join(Study, Study.id == Run.study_id)
+        .where(Study.scope == scope)
+    )
+    if study_id:
+        recent_runs_q = recent_runs_q.where(Run.study_id == study_id)
+    recent_runs_rows = (
+        await db.execute(recent_runs_q.order_by(Run.created_at.desc()).limit(10))
+    ).all()
+
+    recent_runs = [
+        {
+            "run_id": str(r.id),
+            "experiment_id": str(exp.id),
+            "experiment_title": exp.title,
+            "configuration_label": c.label,
+            "adapter_id": r.adapter_id,
+            "status": r.status,
+            "wall_seconds": r.wall_seconds,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r, c, exp in recent_runs_rows
+    ]
+
+    # Best results
+    best_results_q = (
+        select(BestResult, Configuration, Experiment)
+        .join(Configuration, Configuration.id == BestResult.configuration_id)
+        .join(Experiment, Experiment.id == BestResult.experiment_id)
+        .join(Study, Study.id == BestResult.study_id)
+        .where(Study.scope == scope)
+    )
+    if study_id:
+        best_results_q = best_results_q.where(BestResult.study_id == study_id)
+    best_res_rows = (
+        await db.execute(best_results_q.order_by(BestResult.created_at.desc()).limit(5))
+    ).all()
+
+    best_results = [
+        {
+            "best_result_id": str(b.id),
+            "study_id": str(b.study_id),
+            "experiment_title": exp.title,
+            "configuration_label": c.label,
+            "objective": b.objective,
+            "primary_metric": b.primary_metric,
+            "constraints": b.constraints,
+            "rationale": b.rationale,
+            "status": b.status,
+            "created_at": b.created_at.isoformat(),
+        }
+        for b, c, exp in best_res_rows
+    ]
+
+    # Host readiness
+    host_readiness = {
+        "llm_inference": {
+            "ready": scope == "personal",
+            "reason": None if scope == "personal" else "개인 전용",
+        },
+        "retrieval_eval": {"ready": True, "reason": None},
+        "tts_synthesis": {"ready": True, "reason": None},
+        "external_report": {"ready": True, "reason": None},
+    }
+
+    # 4 Quick start templates
+    quick_start_templates = [
+        {
+            "id": "llm_speed_memory",
+            "title": "LLM KV 캐시 양자화 & Flash Attention 속도·메모리 탐색",
+            "adapter_id": "llm_inference",
+            "strategy": "grid",
+            "target": "llm",
+        },
+        {
+            "id": "rag_retrieval_eval",
+            "title": "한국어 하이브리드 검색 (BM25 vs Dense Hash RRF) 정확도 비교",
+            "adapter_id": "retrieval_eval",
+            "strategy": "ab",
+            "target": "rag",
+        },
+        {
+            "id": "tts_pronunciation_ablation",
+            "title": "Supertonic 한국어 발음사전 & 전처리 Ablation 실험",
+            "adapter_id": "tts_synthesis",
+            "strategy": "ablation",
+            "target": "tts",
+        },
+        {
+            "id": "custom_hypothesis",
+            "title": "신규 연구 가설 및 외부 실험 보고서 등록",
+            "adapter_id": "external_report",
+            "strategy": "single",
+            "target": "general",
+        },
+    ]
+
+    return {
+        "counts": {
+            "studies": studies_count,
+            "methods": methods_count,
+            "running_runs": running_runs,
+            "completed_runs": completed_runs,
+        },
+        "host_readiness": host_readiness,
+        "recent_runs": recent_runs,
+        "best_results": best_results,
+        "quick_start_templates": quick_start_templates,
+    }
+

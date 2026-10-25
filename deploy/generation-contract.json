@@ -4,7 +4,7 @@
     "protocol": 1,
     "slots": 3
   },
-  "schema_revision": "0071_library_platform_v2_merge",
+  "schema_revision": "0072_research_lab_v2",
   "online_migration_from": [
     "0032_weather_briefings",
     "0033_weather_analysis_engine",
@@ -46,7 +46,8 @@
     "0068_tts_payload_chunks",
     "0069_game_build_executor_handoff",
     "0068_library_intent",
-    "0070_background_consumer_queue"
+    "0070_background_consumer_queue",
+    "0071_library_platform_v2_merge"
   ],
   "schema_aliases": {
     "0059_kb_immutability_truncate": "0059_collector_intake"

@@ -328,12 +328,16 @@ class TtsSynthesisAdapter:
 
         # Load texts
         preset_id = config.get("preset_id")
-        if preset_id:
+        custom_texts = config.get("texts")
+        if custom_texts and isinstance(custom_texts, list) and len(custom_texts) > 0:
+            raw_texts = custom_texts
+            dataset_name = f"{preset_id} (selected subset)" if preset_id else "custom_texts"
+        elif preset_id:
             preset_data = load_tts_preset(str(preset_id))
             raw_texts = preset_data.get("sentences", [])
             dataset_name = preset_data.get("name", preset_id)
         else:
-            raw_texts = config.get("texts", [])
+            raw_texts = []
             dataset_name = "custom_texts"
 
         # Parameter Mapping (Seed -> Adapter)
@@ -507,6 +511,7 @@ class TtsSynthesisAdapter:
                 chunk_file = Path(cr.path)
                 artifacts_to_register.append({
                     "kind": "audio",
+                    "role": "audio_sample",
                     "category": "research_tts_sample",
                     "path": str(chunk_file),
                     "filename": chunk_file.name,
@@ -537,7 +542,8 @@ class TtsSynthesisAdapter:
                         status="failed",
                         raw_output={
                             "error": f"STT 런타임 환경(local_stt_python={stt_py}) 부재로 음성 재인식 평가 불가",
-                            "audio_chunks": audio_chunks_info,
+                            "artifacts": artifacts_to_register,
+                "audio_chunks": audio_chunks_info,
                         },
                         environment_snapshot={"scope": scope, "engine": "supertonic"},
                         error_code="stt_runtime_missing",
@@ -560,7 +566,14 @@ class TtsSynthesisAdapter:
                         )
                         if stt_cancelled:
                             return _cancelled_result("cancelled_during_stt_eval", artifacts=artifacts_to_register)
-                        transcript = str(stt_out.get("text") or stt_out.get("transcript") or "").strip()
+                        transcript = str(
+                            stt_out.get("original_text")
+                            or stt_out.get("text")
+                            or stt_out.get("transcript")
+                            or ""
+                        ).strip()
+                        if transcript.startswith("[") and "]" in transcript:
+                            transcript = re.sub(r"^\[[\d\.\–\- ]+\]\s*(화자\s*\d+:)?\s*", "", transcript).strip()
                         norm_ref = all_chunks[idx] if idx < len(all_chunks) else ""
                         sent_idx = chunk_sentence_map[idx] if idx < len(chunk_sentence_map) else 0
                         raw_ref = raw_texts[sent_idx] if sent_idx < len(raw_texts) else norm_ref
@@ -597,7 +610,8 @@ class TtsSynthesisAdapter:
                             "failed_chunks": failed_chunks,
                             "stt_chunk_count": len(audio_chunks_info),
                             "stt_eval": stt_eval_results,
-                            "audio_chunks": audio_chunks_info,
+                            "artifacts": artifacts_to_register,
+                "audio_chunks": audio_chunks_info,
                         },
                         environment_snapshot={"scope": scope, "engine": "supertonic"},
                         error_code="stt_worker_failed",
@@ -632,6 +646,7 @@ class TtsSynthesisAdapter:
                     "peak_rss_mb": round(peak_rss / 1048576.0, 2),
                     "wall_seconds": round(total_wall, 3),
                 },
+                "artifacts": artifacts_to_register,
                 "audio_chunks": audio_chunks_info,
                 "stt_eval": stt_eval_results,
                 "sentences": sentence_reports,

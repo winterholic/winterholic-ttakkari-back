@@ -139,22 +139,63 @@ async def execute_run_instance(run_id: uuid.UUID, adapter_registry: Any = None) 
                     db.add(m_row)
 
                 # Connect any artifacts produced
-                artifacts_data = adapter_res.raw_output.get("artifacts", [])
-                if isinstance(artifacts_data, list):
-                    for art_info in artifacts_data:
-                        if isinstance(art_info, dict) and "artifact_id" in art_info:
-                            art_row = ResearchArtifact(
-                                id=uuid.uuid4(),
-                                study_id=run.study_id,
-                                experiment_id=run.experiment_id,
-                                run_id=run.id,
-                                artifact_id=uuid.UUID(str(art_info["artifact_id"])),
-                                role=art_info.get("role", "audio_sample"),
-                                label=art_info.get("label", "Run Artifact"),
-                                promoted_to_library=False,
-                                created_at=utcnow(),
+                from pathlib import Path
+                from ttakkari.artifacts.service import register_file
+                from ttakkari.broker.policy import ResolvedPath
+                from ttakkari.models import ArtifactArea, ArtifactOrigin
+
+                raw_artifacts = adapter_res.raw_output.get("artifacts", [])
+                result_artifacts = getattr(adapter_res, "artifacts", []) or []
+                all_artifacts = list(result_artifacts)
+                if isinstance(raw_artifacts, list):
+                    for a in raw_artifacts:
+                        if a not in all_artifacts:
+                            all_artifacts.append(a)
+
+                for art_info in all_artifacts:
+                    if not isinstance(art_info, dict):
+                        continue
+                    file_art_id = None
+                    if "artifact_id" in art_info and art_info["artifact_id"]:
+                        file_art_id = uuid.UUID(str(art_info["artifact_id"]))
+                    elif "path" in art_info and art_info["path"]:
+                        p = Path(art_info["path"])
+                        if p.is_file():
+                            cat = art_info.get("category") or "research_tts_sample"
+                            reg_file = await register_file(
+                                db,
+                                ResolvedPath(root=p.parent, path=p),
+                                source="research_run",
+                                area=ArtifactArea.agent,
+                                origin=ArtifactOrigin.agent,
+                                category=cat,
+                                workspace_id=None,
+                                session_id=None,
+                                run_id=None,
+                                force_copy=True,
                             )
-                            db.add(art_row)
+                            file_art_id = reg_file.id
+                            art_info["artifact_id"] = str(file_art_id)
+
+                    if file_art_id is not None:
+                        role = (
+                            art_info.get("role")
+                            or art_info.get("category")
+                            or ("audio_sample" if art_info.get("kind") == "audio" else "run_artifact")
+                        )
+                        label = art_info.get("label") or art_info.get("filename") or f"Run {run.id} Artifact"
+                        art_row = ResearchArtifact(
+                            id=uuid.uuid4(),
+                            study_id=run.study_id,
+                            experiment_id=run.experiment_id,
+                            run_id=run.id,
+                            artifact_id=file_art_id,
+                            role=role,
+                            label=label,
+                            promoted_to_library=False,
+                            created_at=utcnow(),
+                        )
+                        db.add(art_row)
 
             await db.commit()
             return run

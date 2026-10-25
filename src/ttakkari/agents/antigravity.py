@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -11,6 +12,70 @@ from ttakkari.config import get_settings
 from ttakkari.model_catalog import supports_effort
 
 FILE_WRITE_TOOLS = {"write_to_file", "replace_file_content", "multi_replace_file_content", "notebook_edit"}
+DIAGRAM_SKILLS = ("diagram-design", "ttakkari-diagram")
+DIAGRAM_MANIFEST = "ttakkari-diagram-skills.json"
+log = logging.getLogger(__name__)
+
+
+def _diagram_skill_sources(write_roots: list[Path]) -> dict[str, Path]:
+    """Use only the shared skill root already authorized by this workspace.
+
+    Never discover through an account HOME or grant a new filesystem root.
+    Both siblings are necessary for the thin brand skill's relative references.
+    """
+    for root in write_roots:
+        if root.name != ".claude":
+            continue
+        sources = {name: root / "skills" / name for name in DIAGRAM_SKILLS}
+        for source in sources.values():
+            if not source.resolve().is_relative_to(root.resolve()):
+                raise ValueError("Antigravity diagram skill escapes authorized shared root")
+            if not (source / "SKILL.md").resolve().is_relative_to(root.resolve()):
+                raise ValueError("Antigravity diagram skill file escapes authorized shared root")
+        if all((source / "SKILL.md").is_file() for source in sources.values()):
+            return {name: source.resolve() for name, source in sources.items()}
+        log.info("Antigravity diagram skills skipped: shared dependency pair is incomplete")
+    return {}
+
+
+def _clear_diagram_skills(agents: Path) -> None:
+    manifest = agents / DIAGRAM_MANIFEST
+    skills = agents / "skills"
+    if agents.is_symlink() or skills.is_symlink() or manifest.is_symlink():
+        raise ValueError("Antigravity diagram skill metadata cannot be a symlink")
+    if not manifest.exists():
+        return
+    entries = json.loads(manifest.read_text(encoding="utf-8"))
+    if not isinstance(entries, dict) or not set(entries).issubset(DIAGRAM_SKILLS):
+        raise ValueError("Invalid Antigravity diagram skill manifest")
+    for name, target in entries.items():
+        link = skills / name
+        # Delete only links owned by this bridge, never source assets or replacements.
+        if isinstance(target, str) and link.is_symlink() and str(link.readlink()) == target:
+            link.unlink()
+    manifest.unlink()
+
+
+def _sync_diagram_skills(agents: Path, sources: dict[str, Path]) -> None:
+    _clear_diagram_skills(agents)
+    if not sources:
+        return
+    skills = agents / "skills"
+    skills.mkdir(mode=0o700, exist_ok=True)
+    for name in sources:
+        if (skills / name).exists() or (skills / name).is_symlink():
+            raise ValueError(f"Antigravity diagram skill conflicts with existing entry: {name}")
+    manifest = agents / DIAGRAM_MANIFEST
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(manifest, flags, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        json.dump({name: str(source) for name, source in sources.items()}, stream)
+    try:
+        for name, source in sources.items():
+            (skills / name).symlink_to(source, target_is_directory=True)
+    except OSError:
+        _clear_diagram_skills(agents)
+        raise
 
 
 class AntigravityAdapter:
@@ -23,7 +88,8 @@ class AntigravityAdapter:
         run_id = extra_env.get("TTAKKARI_RUN_ID", "standalone")
         log_file = Path("/private/tmp") / f"ttakkari-agy-{run_id}.log"
         if spec.session_id and spec.mcp_servers:
-            self._session_project(spec.session_id, spec.mcp_servers)
+            self._session_project(spec.session_id, spec.mcp_servers,
+                                  _diagram_skill_sources(spec.write_roots))
         prompt = (
             f"<ttakkari_system_instructions>\n{spec.system_note}\n</ttakkari_system_instructions>\n\n"
             f"Workspace root: {spec.cwd.resolve()}\n"
@@ -55,12 +121,15 @@ class AntigravityAdapter:
             return Path("/private/tmp/ttakkari-antigravity") / spec.session_id
         return spec.cwd
 
-    def _session_project(self, session_id: str, servers: dict[str, dict[str, Any]]) -> Path:
+    def _session_project(self, session_id: str, servers: dict[str, dict[str, Any]],
+                         skill_sources: dict[str, Path] | None = None) -> Path:
         try:
             uuid.UUID(session_id)
         except ValueError as exc:
             raise ValueError("Antigravity session requires a UUID workspace key") from exc
         base = Path("/private/tmp/ttakkari-antigravity") / session_id
+        if base.parent.is_symlink():
+            raise ValueError("Antigravity session parent cannot be a symlink")
         base.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         if base.is_symlink():
             raise ValueError("Antigravity session directory cannot be a symlink")
@@ -69,6 +138,7 @@ class AntigravityAdapter:
         if agents.is_symlink():
             raise ValueError("Antigravity session MCP directory cannot be a symlink")
         agents.mkdir(mode=0o700, exist_ok=True)
+        _sync_diagram_skills(agents, skill_sources or {})
         config = {
             "mcpServers": {
                 name: {
@@ -90,11 +160,16 @@ class AntigravityAdapter:
     def cleanup(self, spec: LaunchSpec) -> None:
         if not spec.session_id:
             return
-        config = Path("/private/tmp/ttakkari-antigravity") / spec.session_id / ".agents" / "mcp_config.json"
         try:
+            uuid.UUID(spec.session_id)
+            base = Path("/private/tmp/ttakkari-antigravity") / spec.session_id
+            config = base / ".agents" / "mcp_config.json"
+            if base.parent.is_symlink() or base.is_symlink() or config.parent.is_symlink():
+                raise ValueError("Antigravity cleanup directory cannot be a symlink")
+            _clear_diagram_skills(config.parent)
             config.unlink(missing_ok=True)
-        except OSError:
-            pass
+        except (OSError, ValueError):
+            log.warning("Antigravity session cleanup could not remove its private metadata", exc_info=True)
 
     def finalize_process(self, state: ParseState, *, return_code: int | None, stderr: str) -> None:
         """Treat a silent zero-exit CLI as a failed run and preserve its diagnostic."""

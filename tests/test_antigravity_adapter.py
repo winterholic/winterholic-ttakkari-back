@@ -1,6 +1,8 @@
 import uuid
 from pathlib import Path
 
+import pytest
+
 from ttakkari.agents.antigravity import AntigravityAdapter
 from ttakkari.agents.base import LaunchSpec, ParseState
 
@@ -215,3 +217,115 @@ def test_session_mcp_config_is_private_and_removed_by_terminal_cleanup(monkeypat
 
     adapter.cleanup(run_spec)
     assert not config.exists()
+
+
+def diagram_spec(tmp_path):
+    shared = tmp_path / '.claude'
+    for name in ('diagram-design', 'ttakkari-diagram'):
+        folder = shared / 'skills' / name
+        folder.mkdir(parents=True)
+        (folder / 'SKILL.md').write_text(f'---\nname: {name}\n---\n')
+    return spec(session_id=str(uuid.uuid4()), write_roots=[tmp_path, shared],
+                mcp_servers={'fixture': {'command': 'fixture-only'}}), shared
+
+
+def test_session_workspace_discovers_diagram_pair_from_explicit_shared_root(tmp_path):
+    run_spec, shared = diagram_spec(tmp_path)
+    adapter = AntigravityAdapter()
+    project = adapter.working_directory(run_spec)
+    try:
+        adapter.build_command(run_spec, {})
+        skills = project / '.agents' / 'skills'
+        for name in ('diagram-design', 'ttakkari-diagram'):
+            assert (skills / name).is_symlink()
+            assert (skills / name).resolve() == (shared / 'skills' / name).resolve()
+        # Thin-skill sibling references must resolve through the same discovery root.
+        assert (skills / 'ttakkari-diagram' / '..' / 'diagram-design' / 'SKILL.md').is_file()
+        adapter.cleanup(run_spec)
+        assert not (skills / 'ttakkari-diagram').exists()
+        assert not (skills / 'diagram-design').exists()
+        assert (shared / 'skills' / 'ttakkari-diagram' / 'SKILL.md').is_file()
+    finally:
+        adapter.cleanup(run_spec)
+
+
+def test_bridge_does_not_guess_a_global_home_without_an_explicit_root(tmp_path):
+    run_spec, _ = diagram_spec(tmp_path)
+    run_spec.write_roots = [tmp_path]
+    adapter = AntigravityAdapter()
+    try:
+        adapter.build_command(run_spec, {})
+        assert not (adapter.working_directory(run_spec) / '.agents' / 'skills').exists()
+    finally:
+        adapter.cleanup(run_spec)
+
+
+def test_bridge_refuses_conflicting_files_and_leaves_them_untouched(tmp_path):
+    run_spec, _ = diagram_spec(tmp_path)
+    adapter = AntigravityAdapter()
+    skills = adapter.working_directory(run_spec) / '.agents' / 'skills'
+    skills.mkdir(parents=True)
+    conflict = skills / 'ttakkari-diagram'
+    conflict.mkdir()
+    sentinel = conflict / 'keep.txt'
+    sentinel.write_text('keep')
+    try:
+        with pytest.raises(ValueError, match='diagram skill'):
+            adapter.build_command(run_spec, {})
+        assert sentinel.read_text() == 'keep'
+    finally:
+        adapter.cleanup(run_spec)
+
+
+def test_bridge_revokes_stale_links_when_shared_root_is_removed(tmp_path):
+    run_spec, _ = diagram_spec(tmp_path)
+    adapter = AntigravityAdapter()
+    try:
+        adapter.build_command(run_spec, {})
+        skills = adapter.working_directory(run_spec) / '.agents' / 'skills'
+        assert (skills / 'ttakkari-diagram').exists()
+        run_spec.write_roots = [tmp_path]
+        adapter.build_command(run_spec, {})
+        assert not (skills / 'ttakkari-diagram').exists()
+        assert not (skills / 'diagram-design').exists()
+    finally:
+        adapter.cleanup(run_spec)
+
+
+def test_bridge_rejects_skill_symlinks_that_escape_authorized_shared_root(tmp_path):
+    run_spec, shared = diagram_spec(tmp_path)
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'SKILL.md').write_text('outside')
+    folder = shared / 'skills' / 'ttakkari-diagram'
+    (folder / 'SKILL.md').unlink()
+    folder.rmdir()
+    folder.symlink_to(outside, target_is_directory=True)
+    adapter = AntigravityAdapter()
+    try:
+        with pytest.raises(ValueError, match='shared root'):
+            adapter.build_command(run_spec, {})
+    finally:
+        adapter.cleanup(run_spec)
+
+
+def test_bridge_cleanup_does_not_follow_replaced_agents_directory(tmp_path):
+    run_spec, _ = diagram_spec(tmp_path)
+    adapter = AntigravityAdapter()
+    project = adapter.working_directory(run_spec)
+    agents = project / '.agents'
+    adapter.build_command(run_spec, {})
+    adapter.cleanup(run_spec)
+    # Simulate another actor replacing the private directory after the run.
+    import shutil
+    shutil.rmtree(agents)
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    sentinel = elsewhere / 'mcp_config.json'
+    sentinel.write_text('keep')
+    agents.symlink_to(elsewhere, target_is_directory=True)
+    try:
+        adapter.cleanup(run_spec)
+        assert sentinel.read_text() == 'keep'
+    finally:
+        agents.unlink()

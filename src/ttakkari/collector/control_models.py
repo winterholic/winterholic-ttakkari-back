@@ -61,6 +61,19 @@ class CollectorSource(Base):
     )
 
 
+def _derive_access_origin_scope(context) -> str:
+    scope = context.get_current_parameters().get("scope") or "personal"
+    return "personal" if scope == "personal" else "work"
+
+
+def _derive_access_visibility(context) -> str:
+    """personal -> global, work/알 수 없음 -> work_only (0072 트리거와 같은 fail-closed 규칙)."""
+    params = context.get_current_parameters()
+    scope = params.get("scope") or "personal"
+    origin = params.get("origin_scope") or scope
+    return "global" if scope == "personal" and origin == "personal" else "work_only"
+
+
 class KbDocumentAccess(Base):
     __tablename__ = "kb_document_access"
     __table_args__ = (
@@ -87,16 +100,18 @@ class KbDocumentAccess(Base):
     )
     tenant_id: Mapped[str] = mapped_column(String(64), default="owner")
     scope: Mapped[str] = mapped_column(String(32), default="personal")
-    origin_scope: Mapped[str] = mapped_column(String(16), default="personal")
-    visibility: Mapped[str] = mapped_column(String(16), default="work_only")
+    # origin_scope/visibility 는 입력을 생략하면 scope 에서 파생된다. DB 쪽은 BEFORE INSERT 트리거
+    # (0072 kb_document_access_derive_visibility)가, create_all 로 만든 스키마와 ORM 은 아래 기본값 함수가 맡는다.
+    origin_scope: Mapped[str] = mapped_column(
+        String(16), default=_derive_access_origin_scope
+    )
+    visibility: Mapped[str] = mapped_column(
+        String(16), default=_derive_access_visibility
+    )
     hidden: Mapped[bool] = mapped_column(Boolean, default=False)
 
     def __init__(self, **kwargs):
-        if "origin_scope" not in kwargs and "scope" in kwargs:
-            kwargs["origin_scope"] = kwargs["scope"]
-        if "visibility" not in kwargs:
-            kwargs["visibility"] = "work_only"
-        elif kwargs.get("visibility") == "global" and (
+        if kwargs.get("visibility") == "global" and (
             kwargs.get("scope") == "work" or kwargs.get("origin_scope") == "work"
         ):
             raise ValueError(

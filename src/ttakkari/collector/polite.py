@@ -127,18 +127,26 @@ class PoliteFetcher:
         until = await self.host_state.get_cooldown(url.origin)
         if until is not None and until > now:
             raise FetchError("host_cooldown", url.origin, retryable=True, retry_after=(until - now).total_seconds())
+
         robots_state = "not_applicable"
-        delay = policy.min_delay_seconds
-        if policy.robots_required:
-            rules = await self._rules(url, policy)
-            if rules.unavailable:
-                raise PolicyBlocked("robots_forbidden", url.origin)
-            if not rules.allowed(url.target):
-                raise PolicyBlocked("robots_disallowed", url.target)
-            robots_state = "allowed"
-            delay = max(delay, rules.crawl_delay or 0.0)
 
         async def pace(hop: ParsedUrl) -> None:
+            nonlocal robots_state
+            hop_now = self.clock()
+            hop_until = await self.host_state.get_cooldown(hop.origin)
+            if hop_until is not None and hop_until > hop_now:
+                raise FetchError("host_cooldown", hop.origin, retryable=True, retry_after=(hop_until - hop_now).total_seconds())
+
+            delay = policy.min_delay_seconds
+            if policy.robots_required:
+                rules = await self._rules(hop, policy)
+                if rules.unavailable:
+                    raise PolicyBlocked("robots_forbidden", hop.origin)
+                if not rules.allowed(hop.target):
+                    raise PolicyBlocked("robots_disallowed", hop.target)
+                robots_state = "allowed"
+                delay = max(delay, rules.crawl_delay or 0.0)
+
             wait = await self.host_state.reserve_slot(hop.origin, delay, self.clock())
             if wait > 0:
                 await self.sleep(wait)

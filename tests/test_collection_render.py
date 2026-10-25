@@ -291,6 +291,28 @@ async def test_borrowed_polite_fetcher_is_not_closed_by_renderer_and_supports_su
     assert mock_polite.fetcher.aclose.await_count == 0
 
 
+async def test_default_fetch_without_polite_uses_owned_policy_aware_client_and_closes():
+    from datetime import UTC, datetime
+
+    from ttakkari.collector.policy import SourcePolicySpec
+
+    policy = SourcePolicySpec(
+        allowed_hosts=("cdn.test",),
+        schemes=("https",),
+        ports=(443,),
+        permissions={"store": "allowed"},
+        basis="contract",
+        checked_at=datetime.now(UTC),
+    )
+    # polite=None 이더라도 policy 가 전달되면 owned policy-aware client 가 생성되고 closer 로 정상 cleanup 됨
+    fetch, closer = render.default_fetch(policy=policy, polite=None)
+    with pytest.raises(render.PolicyBlocked) as err:
+        await fetch("https://evil.test/exploit.js")
+    assert err.value.code == "host_not_allowed"
+
+    await closer()
+
+
 def _runtime():
     candidates = [os.environ.get("TTAKKARI_TEST_RENDER_RUNTIME"), str(Path(__file__).parents[2] / "back" / ".browser-runtime"),
                   str(Path(__file__).parents[1] / ".browser-runtime")]

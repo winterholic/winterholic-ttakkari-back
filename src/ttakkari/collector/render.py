@@ -28,7 +28,7 @@ from ttakkari.collector import parse
 from ttakkari.collector.fetcher import FetchError, FetchLimits, SafeFetcher
 from ttakkari.collector.netguard import NetGuard, UrlRejected, normalize_url
 from ttakkari.collector.policy import SourcePolicySpec
-from ttakkari.collector.polite import PolicyBlocked, PoliteFetcher
+from ttakkari.collector.polite import MemoryHostState, PolicyBlocked, PoliteFetcher
 from ttakkari.config import get_settings
 
 MIN_STATIC_CHARS = 200
@@ -154,21 +154,41 @@ def default_fetch(
     policy: SourcePolicySpec | None = None,
     polite: PoliteFetcher | None = None,
 ) -> tuple[Fetch, Callable[[], Awaitable[None]]]:
-    if polite is not None and policy is not None:
+    if policy is not None:
+        # policy 가 제공된 경우 항상 policy-aware client(PoliteFetcher)로 robots/pacing 을 보장한다.
+        owned_fetcher: SafeFetcher | None = None
+        if polite is not None:
+            active_polite = polite
+        else:
+            owned_fetcher = SafeFetcher(
+                guard or NetGuard(),
+                user_agent="TtakkariCollector/1.0 (render)",
+                limits=FetchLimits(total_timeout=10.0, max_bytes=MAX_RESOURCE_BYTES),
+            )
+            active_polite = PoliteFetcher(
+                owned_fetcher,
+                MemoryHostState(),
+                product_token="TtakkariCollector/1.0 (render)",
+            )
+
         async def fetch(url: str) -> tuple[int, dict[str, str], bytes]:
             parsed = normalize_url(url, allowed_schemes=policy.schemes, allowed_ports=policy.ports, strip_tracking=False)
             if (reason := policy.check_url(parsed)) is not None:
                 raise PolicyBlocked(reason, url)
-            res = await polite.fetch(parsed, policy, accept="*/*")
+            res = await active_polite.fetch(parsed, policy, accept="*/*")
             body = res.result.body
             headers = {"content-type": res.result.headers.get("content-type", "application/octet-stream")}
             return res.result.status, headers, body
 
-        # borrowed polite 는 수명 소유권이 호출자에게 있으므로 렌더러가 닫지 않는다.
-        async def noop_closer() -> None:
-            pass
+        # borrowed polite 면 렌더러가 닫지 않고, 렌더러가 직접 생성한 owned_fetcher 만 close 한다.
+        if owned_fetcher is not None:
+            closer = owned_fetcher.aclose
+        else:
+            async def noop_closer() -> None:
+                pass
+            closer = noop_closer
 
-        return fetch, noop_closer
+        return fetch, closer
 
     fetcher = SafeFetcher(
         guard or NetGuard(),
@@ -177,15 +197,8 @@ def default_fetch(
     )
 
     async def fetch(url: str) -> tuple[int, dict[str, str], bytes]:
-        schemes = policy.schemes if policy else ("http", "https")
-        ports = policy.ports if policy else None
-        host_check = policy.check_url if policy else None
-        parsed = normalize_url(url, allowed_schemes=schemes, allowed_ports=ports, strip_tracking=False)
-        if policy and (reason := policy.check_url(parsed)) is not None:
-            raise PolicyBlocked(reason, url)
-        response = await fetcher.fetch(
-            parsed, allowed_schemes=schemes, allowed_ports=ports, host_check=host_check, accept="*/*"
-        )
+        parsed = normalize_url(url, allowed_schemes=("http", "https"), strip_tracking=False)
+        response = await fetcher.fetch(parsed, accept="*/*")
         return response.status, {"content-type": response.headers.get("content-type", "application/octet-stream")}, response.body
 
     return fetch, fetcher.aclose

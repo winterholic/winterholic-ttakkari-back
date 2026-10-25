@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
+import pytest
+
 from ttakkari.opencode_accounts import (
     allocate,
     check_auth,
@@ -17,6 +19,8 @@ from ttakkari.opencode_accounts import (
     record_run,
     status,
 )
+
+pytestmark = [pytest.mark.security]
 
 
 class OpencodeAccountsTests(unittest.TestCase):

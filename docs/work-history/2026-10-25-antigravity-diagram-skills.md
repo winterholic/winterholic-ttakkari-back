@@ -29,3 +29,7 @@ TDD로 등록/충돌/범위 이탈/권한 철회 테스트의 실패를 먼저 �
 독립 검증 세션 `fbbe2558-4b50-44a2-abfd-9149e1ede116`에서도 32개 테스트·Ruff와 추가 symlink 반례를 확인했고 수정이 필요한 결함은 발견하지 않았다. 기본 워크스페이스 생성 시의 기본값만으로 기존 저장 설정을 보증할 수 없다는 검토에 따라, 현재 기획 Run의 실제 `TTAKKARI_GUARD_WRITE_ROOTS`에 `/Users/winterholic/.claude`가 명시돼 있음을 확인했다. 이는 현재 Run의 실행 경로 증거이며 모든 저장 워크스페이스에 대한 주장은 아니다.
 
 이 증거는 로컬 adapter·fake CLI lifecycle 범위다. 배포와 실제 Antigravity의 스킬 목록·선택·생성은 아직 미검증이다. 배포 성공 후 새 Run에서 확인해야 하며, 요청 접수만으로 배포 성공을 기록하지 않는다.
+
+## 통합 main의 계약 누락 보완
+
+푸시 전 실제 계약 게이트에서 최신 main `fb68a86`의 OpenCode 추가분에 두 누락이 드러났다. `POST /api/accounts/{account_id}/opencode/check`의 실제 User 인증 의존성과 일치하는 `owner-plain` 인벤토리 행, 이미 보안 게이트 파일 목록에 포함된 `test_opencode_accounts.py`의 `pytest.mark.security` 선언을 추가했다. 테스트·인벤토리 표식만 수정하며 OpenCode 실행 코드는 변경하지 않는다.

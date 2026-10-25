@@ -67,3 +67,47 @@ migration `0072_research_lab_v2`; the original 0071 single-head observation is
 historical, and the cumulative candidate needs its current schema contract gate.
 Existing research acceptance evidence remains scoped to that project's records.
 The controller must validate the whole cumulative candidate, not just this fix.
+
+## Cumulative schema preparation failures and correction
+
+The incoming main actually contains both 0072 and 0073; its current head is
+`0073_research_reuse_source`. The existing local Run-owned test DB predates the
+new named `use_alter` foreign keys. On the cumulative candidate, test setup's
+`Base.metadata.drop_all` attempted to drop a new constraint absent in that older
+schema: `UndefinedObjectError: fk_research_experiments_source_exp` (the source_run
+constraint also appears in the gate errors). The 21 selected cases therefore
+reported setup errors, not failures of their behavior. Normal pre-push failed
+in the contract and changed-test stages for the same fixture reason; nothing
+was pushed. Its ruff stage passed.
+
+Trying the documented independent-cluster mode once (`env -u TTAKKARI_TEST_DB`)
+failed in Codex at `pg_sandbox.start_cluster -> initdb`, exit1; stderr was not
+shown by conftest. Cause unknown, not evidence of host-wide failure. That path
+was not retried or moved to another engine. Subsequent verification uses the
+provided Run-owned disposable DB; no production DB access or URL disclosure.
+
+Test setup now reflects actual existing constraints before dropping tables,
+then creates current model metadata. This handles old/new/empty schemas without
+assuming that old tables already have today's named constraints. The existing
+production-DB guard remains in place. Add two regression cases in a unique
+transactional probe schema: empty schema and legacy tables missing a newly named
+alter-FK. Both must rebuild with the expected FK. The startup failure itself
+provided RED before this fixture correction.
+
+The incoming schema-policy unit test also had a stale expected current head:
+`unit_tests/test_schema_head_admission.py` RED was `1 failed, 7 passed in 0.32s`,
+0072 reported online instead of the test's expected current. Update 0072 to online
+and add 0073 as current without weakening multiple-head rejection.
+
+Cumulative GREEN:
+```
+PYTHONPATH="$PWD/src" .venv/bin/python -m pytest -q --tb=short -x \
+  tests/test_fixture_reset.py tests/test_copilot_integration.py \
+  tests/test_run_db_pool_budget.py unit_tests/test_schema_head_admission.py
+# 40 passed in 5.22s
+# 32 selective resets, 1 forced full, 1 fallback; 115 model tables
+```
+Ruff on all four touched Python files and diff-check pass after import sorting.
+The 21-pass result above belongs to the original 320e351 base plus method fix;
+the 40-pass result is the cumulative e9e32609 integration plus schema corrections.
+Full regression, actual deployment, production P0, and remote remain unverified.

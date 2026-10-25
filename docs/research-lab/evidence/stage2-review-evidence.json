@@ -3,6 +3,7 @@
     "reviewer": "Codex independent cross-provider review",
     "date": "2026-10-25",
     "backend_head": "65de76a8089d9c59755c8d0ebb35eaa6bb3fa85c",
+    "review_commit": "5b16e91",
     "frontend_head": "f9ea05bcd65e95be92c6c94d280348b68c06781f",
     "backend_branch": "research-v2",
     "frontend_branch": "research-v2",
@@ -83,5 +84,21 @@
     "research_tests": "Test Files 1 passed; Tests 49 passed; Duration 3.44s",
     "build_command": "pnpm build",
     "build": "tsc -b and vite build succeeded; PWA generated; Vite emitted a >500 kB chunk advisory"
+  },
+  "main_ref_movement_during_review": {
+    "backend_initial_origin_main": "da69e40c65c23d672db1c06fe2ed7850969f3be7",
+    "backend_observed_origin_main_after_push_update": "44f88f83975124ca6b3f9d2ca66e212231cfd23e",
+    "reflog_observation": "2026-10-25 20:19:45 +0900 update by push",
+    "commits_after_initial_ref": [
+      "7505dd2 feat(operations): approved host operations API+MCP (backup, isolated restore, ownership, baseline)",
+      "b9a87e0 fix(operations): robust runner orphan cleanup, strict local checks, audit & key safety",
+      "76cfe46 fix(operations): block heavy slot on unverified child cleanup, durable finish audit, key_fingerprint allowlist",
+      "d3bd35c fix(operations): stable child identity, no thread-pool audit lock, confirm whole group exit",
+      "d79cd94 fix(operations): bind partial identity to every recorded id, recover unrecorded child, keep slot on failed pre-cleanup",
+      "44f88f8 fix(operations): pidfile grace period against fail-open, reject invalid pid, distinguish cleanup_pending reason"
+    ],
+    "diff_in_research_paths": [],
+    "frontend_origin_main": "ad6149d200304017d9bf04afe41bca0609373a04",
+    "fetch_rebase_checkout": false
   }
 }

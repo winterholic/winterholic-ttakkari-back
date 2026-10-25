@@ -26,7 +26,7 @@
 - **back:** `e289cf3` planner 검증 보완 1건, `65de76a` stage 2 보고서. 보고서의 4번 절은 frontend enum 정규화 및 지표·예산 동작을 열거하지 않았다.
 - **front:** `5dec55e` enum `{value,label}` 정규화, `8aa0822` 실행 예산 상한 및 측정 지표 필터, `164dfef` LLM model 파라미터, `83a78ef` TTS 기본 프리셋, `7b1dddf` RAG 기본 프리셋, `f9ea05b` stage 2 스크린샷. 즉 backend 1건과 frontend 기능 변경 5건이 보고서의 “4건” 목록에 전부 대응하지 않는다.
 - rebase 전 보고서 SHA에 대해 이 검토는 stage 1이 기록한 rebase 후 기준과 현재 브랜치의 ancestry/diff를 대조했다. 이 검토에서 rebase 또는 checkout은 하지 않았다.
-- 로컬 `origin/main` 참조 기준 back에는 `da69e40` 1개가 추가되어 있었고, 변경 파일은 `runs/manager.py`, `tests/test_run_db_pool_budget.py`뿐이다. front의 로컬 `origin/main`은 현재 연구 브랜치보다 뒤처져 있었다. 원격 fetch는 하지 않았으므로 원격 최신성은 미확인이다.
+- 첫 비교 시점의 로컬 back `origin/main`은 `da69e40`이었다. 검토 중 reflog에 `2026-10-25 20:19:45 +0900 update by push`가 기록되어 `origin/main`이 `44f88f8`로 이동했다. 이는 이 검토에서 실행한 fetch가 아니다. `da69e40..44f88f8`의 6개 first-parent commit은 host operations/backup·restore와 runner 종료 안전성 변경이며, 해당 범위의 `src/ttakkari/research`, `docs/research-lab`, migration 0072, research API/test 파일 diff는 없다. 새 tracking ref를 기준으로 back은 7 commits behind로 표시된다(당시 main 기준 1개 + 이후 6개). front의 로컬 `origin/main`은 `ad6149d`로 reflog상 검토 중 갱신되지 않았고, front main 추가 commit도 관찰되지 않았다. 원격 fetch·rebase·checkout은 하지 않았다.
 
 ## 환경 및 증거 경계
 

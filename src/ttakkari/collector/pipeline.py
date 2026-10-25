@@ -413,18 +413,15 @@ async def _ml_page(job: ClaimedJob, prepared: list[Prepared]) -> None:
 
 
 def _admit_precise(p: Prepared, pending_now: int) -> None:
-    """Stage 3 state. The queue is capped per job; no precise-evaluation engine is attached, so entries stay `pending`."""
+    """Stage 3 state. The queue is capped per job; bounded evaluator status is recorded."""
     precise = p.signals.get("triage", {}).get("precise_eval")
     if not precise or not precise["needed"]:
         return
+    from ttakkari.collector import precise_eval
     settings = get_settings()
     cap = settings.collector_triage_precise_queue_cap
     precise["cap"] = cap
-    precise["engine"] = {
-        "status": "unavailable",
-        "detail": "no bounded precise-evaluation engine is registered "
-                  f"(collector_teacher_enabled={settings.collector_teacher_enabled}); entries stay pending",
-    }
+    precise["engine"] = precise_eval.engine_status()
     if pending_now >= cap:
         precise["state"] = "skipped_cap"
         precise["reasons"] = [*precise["reasons"], "precise_queue_cap_reached"]
@@ -719,6 +716,11 @@ async def _finalize_page(
         items.append(row)
         if ob is not None:
             outbox.append(ob)
+    from ttakkari.collector import precise_eval
+    mission = (job.envelope.get("extensions") or {}).get("collector:mission")
+    goal = mission.get("goal", "") if mission else ""
+    pairs = [(p, row) for p, row in zip([p for p in prepared if p.retry is None], items, strict=True)]
+    await precise_eval.consume_prepared_precise_eval(db, job, pairs, goal=goal, outbox=outbox)
     new_cursor = _advance(cursor, page, prepared, items, spec, req,
                           preserve_frontier=bool(job.envelope.get("extensions", {}).get("collector:mission")))
     result["cursor"] = new_cursor

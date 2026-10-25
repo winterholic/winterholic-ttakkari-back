@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 
-from ttakkari.collector import control, jobs, store, triage, triage_ml
+from ttakkari.collector import control, jobs, precise_eval, store, triage, triage_ml
 from ttakkari.collector.contracts import AuthContext, CollectorConflictError, jcs
 from ttakkari.collector.control_models import CollectorDelivery, CollectorSource
 from ttakkari.collector.netguard import normalize_url
@@ -311,7 +311,7 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         counts["discovered"] += (job.cursor or {}).get("discovered", 0)
     results = []
     triage_reasons: dict[str, int] = {}
-    precise_counts = {"pending": 0, "skipped_cap": 0}
+    precise_counts = {"pending": 0, "skipped_cap": 0, "evaluated": 0, "failed": 0, "budget_denied": 0}
     stage2_status: dict[str, int] = {}
     if jobs:
         filters = (CollectorItem.job_id.in_([job.id for job in jobs]), CollectorItem.tenant_id == mission.tenant_id)
@@ -393,8 +393,8 @@ async def view(db, mission: CollectionMission, *, detailed: bool = True) -> dict
         "ml": _ml_summary(stage2_status),
         "precise_eval": {
             **precise_counts, "cap_per_job": get_settings().collector_triage_precise_queue_cap,
-            "engine": "unavailable" if not get_settings().collector_teacher_enabled else "enabled_without_registered_engine",
-            "note": "pending entries are persisted, not evaluated: no bounded precise-evaluation engine is attached",
+            "engine": precise_eval.engine_status(),
+            "note": "bounded local qwen evaluator for uncertain candidates",
         },
     }
 

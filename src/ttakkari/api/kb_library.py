@@ -412,8 +412,11 @@ async def kb_conflicts(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     scope: LegacyScope = None,
+    entity_id: uuid.UUID | None = None,
 ) -> dict:
-    return await kb_v3_ontology_views.conflicts_v3(db, web_access(scope), status=status, kind=kind, limit=limit, offset=offset)
+    return await kb_v3_ontology_views.conflicts_v3(
+        db, web_access(scope), status=status, kind=kind, limit=limit, offset=offset, entity_id=entity_id
+    )
 
 
 @router.post("/conflicts/{conflict_id}/resolve")

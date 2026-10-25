@@ -8,7 +8,7 @@
 분류 규칙(위에서부터 처음 맞는 것):
 1. research 문서 키 또는 Collector 출처 중 work 신호가 하나라도 있으면 work. 개인 키나 운영자 접두사로 덮어쓰지 않는다.
 2. research 문서: doc_key 가 `research:personal:` 이면 personal (source_key 에 scope 가 들어 있다).
-3. Collector 문서: 최신 원본의 origin_meta.via == 'collector' 이고 origin_meta.scope 가 personal/work 면 그 값.
+3. Collector 문서: 현재 원본(공통 관측 원장 기준)의 origin_meta.via == 'collector' 이고 origin_meta.scope 가 personal/work 면 그 값.
 4. 운영자가 `--personal-doc-key-prefix` 로 지목한 doc_key 접두사는 personal.
 5. 그 밖은 미상이다. 미상은 work(work_only)로 채운다(fail-closed). 이미 조회 쪽 규칙이 접근 행이 없는 문서를 work_only 로
    취급하므로 이 백필은 가시성을 넓히지 않고, 파이프라인이 접근 행 없는 문서의 엔터티를 버리는 문제를 풀어 준다.
@@ -21,12 +21,14 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.collector.control_models import KbDocumentAccess
+from ttakkari.kb_models import KbRevision, KbSource
+from ttakkari.kb_ontology.currency import current_revision_ids
 
 RULE_RESEARCH = "research_doc_key"
 RULE_COLLECTOR = "collector_origin_meta"
@@ -37,12 +39,8 @@ BATCH = 500
 
 _UNCLASSIFIED_SQL = text(
     """
-    SELECT d.id, d.doc_key, src.origin_meta
+    SELECT d.id, d.doc_key
     FROM kb_documents d
-    LEFT JOIN LATERAL (
-        SELECT s.origin_meta FROM kb_revisions r JOIN kb_sources s ON s.id = r.source_id
-        WHERE r.document_id = d.id ORDER BY r.rev_no DESC LIMIT 1
-    ) src ON true
     WHERE NOT EXISTS (SELECT 1 FROM kb_document_access a WHERE a.document_id = d.id)
       AND d.id > :after
     ORDER BY d.id
@@ -111,11 +109,18 @@ async def plan_backfill(
     items: list[BackfillItem] = []
     after = uuid.UUID(int=0)
     while limit is None or len(items) < limit:
-        rows = (await db.execute(_UNCLASSIFIED_SQL, {"after": after, "n": BATCH})).all()
+        batch_size = BATCH if limit is None else min(BATCH, limit - len(items))
+        rows = (await db.execute(_UNCLASSIFIED_SQL, {"after": after, "n": batch_size})).all()
         if not rows:
             break
-        for document_id, doc_key, origin_meta in rows:
-            scope, rule = classify(doc_key, origin_meta, personal_prefixes)
+        current = await current_revision_ids(db, [document_id for document_id, _ in rows])
+        origins = dict((await db.execute(
+            select(KbRevision.id, KbSource.origin_meta)
+            .join(KbSource, KbSource.id == KbRevision.source_id)
+            .where(KbRevision.id.in_(current.values()))
+        )).all()) if current else {}
+        for document_id, doc_key in rows:
+            scope, rule = classify(doc_key, origins.get(current.get(document_id)), personal_prefixes)
             items.append(BackfillItem(document_id, doc_key, scope, rule))
             if limit is not None and len(items) >= limit:
                 break

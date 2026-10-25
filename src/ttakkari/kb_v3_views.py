@@ -421,7 +421,11 @@ async def document_detail_v3(
         for c in listed:
             if {str(c.assertion_a_id), str(c.assertion_b_id)} & wanted:
                 ent = await db.get(KbEntity, c.entity_id)
-                conflicts.append({"id": str(c.id), "kind": c.conflict_kind, "status": c.status, "entity_name": ent.canonical_name if ent else None})
+                conflicts.append({
+                    "id": str(c.id), "kind": c.conflict_kind, "status": c.status,
+                    "entity_name": ent.canonical_name if ent else None,
+                    "resolved_by": c.resolved_by, "note": c.resolution_note,
+                })
 
     # 처리 이력(리비전별 작업)과 현재 리비전 작업의 단계 상태
     jobs = list(await db.scalars(

@@ -434,7 +434,6 @@ def assertion_access_filter(ctx: KbAccessContext, assertion_model: Any = None):
     return and_(base_cond, has_valid_evidence)
 
 
-RELATION_STATUS_ACTIVE: tuple[str, ...] = ("active",)
 RELATION_STATUS_WITH_CANDIDATES: tuple[str, ...] = ("active", "candidate")
 
 
@@ -454,7 +453,7 @@ def relation_access_filter(
 
     base_cond = and_(
         r.visibility.in_(ctx.allowed_visibilities),
-        r.status.in_(RELATION_STATUS_WITH_CANDIDATES if include_candidates else RELATION_STATUS_ACTIVE),
+        r.status.in_(RELATION_STATUS_WITH_CANDIDATES) if include_candidates else r.status == "active",
         r.evidence_count >= 1,
     )
     if ctx.origin_scope_filter:

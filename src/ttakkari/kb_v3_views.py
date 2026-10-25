@@ -169,12 +169,11 @@ async def summary_v3(db: AsyncSession, access: KbAccessContext) -> dict[str, Any
     counts["pipeline_failed"] = by_status.get("failed", 0)
 
     # v3 지표: 통짜 패시지 문서, 처리 이력이 없는 문서(백필 대상), 임베딩 적용 범위
-    revisions = [
-        (rev.id, rev.char_count)
-        for rev in [await lib._latest_revision(db, d_id) for d_id in await db.scalars(
-            select(KbDocument.id).where(lib.scope_filter("personal", access)))]
-        if rev is not None
-    ]
+    revisions = list((await db.execute(
+        select(KbRevision.id, KbRevision.char_count)
+        .join(KbDocument, KbDocument.id == KbRevision.document_id)
+        .where(lib.scope_filter("personal", access), lib._current_revision_filter())
+    )).all())
     rev_ids = [r for r, _ in revisions]
     passage_counts: dict[uuid.UUID, int] = {}
     job_revs: set[uuid.UUID] = set()

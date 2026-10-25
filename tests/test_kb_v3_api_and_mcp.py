@@ -656,3 +656,23 @@ async def test_all_new_routes_require_authentication(client):
 
 
 pytestmark = pytest.mark.security
+
+
+async def test_one_hop_neighbor_pages_do_not_overlap_and_report_has_more(client, auth):
+    text = ("# 쿠버네티스(Kubernetes)\n\n## 디플로이먼트(Deployment)\n\n"
+            "Deployment manages ReplicaSet objects. Deployment uses ConfigMap. Deployment uses Secret.\n")
+    await _ingest_text_and_drain(client, auth, text, "hop")
+    hubs = (await client.get(f"{BASE}/ontology/graph", headers=auth)).json()
+    deployment = next(n for n in hubs["nodes"] if n["name"] == "Deployment")
+    first = (await client.get(f"{BASE}/ontology/graph", headers=auth, params={"center_entity_id": deployment["id"], "limit": 2, "offset": 0})).json()
+    second = (await client.get(f"{BASE}/ontology/graph", headers=auth, params={"center_entity_id": deployment["id"], "limit": 2, "offset": 2})).json()
+    assert first["total_neighbors"] == second["total_neighbors"] == 3
+    assert first["has_more"] is True and second["has_more"] is False
+    neighbors = [n["name"] for n in first["nodes"] if n["id"] != deployment["id"]]
+    neighbors2 = [n["name"] for n in second["nodes"] if n["id"] != deployment["id"]]
+    assert len(neighbors) == 2 and len(neighbors2) == 1 and not set(neighbors) & set(neighbors2)
+    assert {*neighbors, *neighbors2} == {"ReplicaSet", "ConfigMap", "Secret"}
+    # 모든 에지의 끝점은 그 페이지의 노드 안에 있다(고아 에지 없음)
+    for page in (first, second):
+        ids = {n["id"] for n in page["nodes"]}
+        assert all(e["source"] in ids and e["target"] in ids for e in page["edges"])

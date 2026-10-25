@@ -200,6 +200,7 @@ class AdapterRunResult:
     error_code: str | None = None
     error_message: str | None = None
     wall_seconds: float = 0.0
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
 
 @dataclass(frozen=True)
 class MeasurementRecord:

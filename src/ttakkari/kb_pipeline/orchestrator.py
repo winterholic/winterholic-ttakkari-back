@@ -43,6 +43,30 @@ DEFAULT_BASE_BACKOFF_SECONDS = 30.0
 DEFAULT_MAX_BACKOFF_SECONDS = 3600.0
 
 
+def derive_scope_and_visibility(
+    access: KbDocumentAccess | None,
+) -> tuple[str, str]:
+    """원천 문서의 접근 권한(KbDocumentAccess)으로부터 origin_scope와 visibility를 fail-closed로 유도한다.
+
+    규칙:
+    1. access 행이 없으면 fail-closed 원칙에 따라 ('work', 'work_only') 반환.
+    2. access.scope == 'work' 이거나 origin_scope == 'work' 인 경우 visibility='work_only' 강제 (global 승격 금지).
+    3. personal 스코프이면서 visibility=='global'로 명시 설정된 경우에만 ('personal', 'global') 허용.
+       그 외 불확실하거나 미설정된 경우 fail-closed로 ('personal', 'work_only') 반환.
+    """
+    if access is None:
+        return "work", "work_only"
+
+    origin_scope = getattr(access, "origin_scope", None) or access.scope or "work"
+    if access.scope == "work" or origin_scope == "work":
+        return "work", "work_only"
+
+    visibility = getattr(access, "visibility", None)
+    if visibility == "global":
+        return "personal", "global"
+    return "personal", "work_only"
+
+
 class KbPipelineOrchestrator:
     """6단계 지식화 파이프라인 작업 실행기."""
 
@@ -84,8 +108,7 @@ class KbPipelineOrchestrator:
             revision_id = job.revision_id
 
             access = await db.get(KbDocumentAccess, document_id)
-            origin_scope = access.origin_scope if access else "personal"
-            visibility = access.visibility if access else "global"
+            origin_scope, visibility = derive_scope_and_visibility(access)
 
             # 기존 단계별 상태 맵 조회
             existing_stages = list(

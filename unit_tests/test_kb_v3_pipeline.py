@@ -627,10 +627,17 @@ async def test_chunking_processor_preserves_immutable_ledger(pipeline_db):
 
 @pytest.mark.asyncio
 async def test_access_scope_unification_and_work_boundary():
-    """work 스코프 자료는 origin_scope='work', visibility='work_only' 가 되며 global 로 승격되지 않는다."""
-    doc_work = uuid.uuid4()
-    doc_personal = uuid.uuid4()
+    """work 스코프 자료는 origin_scope='work', visibility='work_only' 가 되며 global 로 승격되지 않는다.
 
+    또한 derive_scope_and_visibility 헬퍼를 통해 fail-closed 규칙을 엄격히 준수한다.
+    """
+    from ttakkari.kb_pipeline import derive_scope_and_visibility
+
+    # 1. access 행이 전혀 없는 경우 -> fail-closed ('work', 'work_only')
+    assert derive_scope_and_visibility(None) == ("work", "work_only")
+
+    # 2. scope == 'work' 인 경우 -> 무조건 ('work', 'work_only') 강제 (global 승격 불가)
+    doc_work = uuid.uuid4()
     access_work = KbDocumentAccess(
         document_id=doc_work,
         tenant_id="owner",
@@ -640,7 +647,20 @@ async def test_access_scope_unification_and_work_boundary():
     )
     assert access_work.origin_scope == "work"
     assert access_work.visibility == "work_only"
+    assert derive_scope_and_visibility(access_work) == ("work", "work_only")
 
+    # 만약 불법적으로 visibility='global'로 설정되어 있어도 derive 헬퍼는 work_only 강제
+    access_work_tampered = KbDocumentAccess(
+        document_id=uuid.uuid4(),
+        tenant_id="owner",
+        scope="work",
+        origin_scope="work",
+        visibility="global",
+    )
+    assert derive_scope_and_visibility(access_work_tampered) == ("work", "work_only")
+
+    # 3. personal 스코프이면서 명시적으로 global 설정된 경우 -> ('personal', 'global')
+    doc_personal = uuid.uuid4()
     access_personal = KbDocumentAccess(
         document_id=doc_personal,
         tenant_id="owner",
@@ -650,6 +670,17 @@ async def test_access_scope_unification_and_work_boundary():
     )
     assert access_personal.origin_scope == "personal"
     assert access_personal.visibility == "global"
+    assert derive_scope_and_visibility(access_personal) == ("personal", "global")
+
+    # 4. personal 스코프이지만 visibility 가 비어있거나 누락된 경우 -> fail-closed ('personal', 'work_only')
+    access_personal_unclear = KbDocumentAccess(
+        document_id=uuid.uuid4(),
+        tenant_id="owner",
+        scope="personal",
+        origin_scope="personal",
+        visibility="",
+    )
+    assert derive_scope_and_visibility(access_personal_unclear) == ("personal", "work_only")
 
 
 @pytest.mark.asyncio

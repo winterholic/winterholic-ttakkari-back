@@ -18,7 +18,10 @@ from ttakkari.kb_pipeline.adapters import (
     MissingStageProcessor,
     StageProcessorRegistry,
 )
-from ttakkari.kb_pipeline.orchestrator import KbPipelineOrchestrator
+from ttakkari.kb_pipeline.orchestrator import (
+    KbPipelineOrchestrator,
+    derive_scope_and_visibility,
+)
 from ttakkari.kb_pipeline.types import (
     JOB_STATUS_DEGRADED,
     JOB_STATUS_FAILED,
@@ -119,6 +122,7 @@ __all__ = [
     "StageProcessorRegistry",
     "StageResult",
     "StaleWriterError",
+    "derive_scope_and_visibility",
     "enqueue_pipeline_job",
     "get_default_worker",
     "set_default_worker",

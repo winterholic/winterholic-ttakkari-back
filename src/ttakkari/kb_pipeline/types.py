@@ -90,15 +90,19 @@ class CapabilityMissingError(PipelineError):
 
 @dataclass
 class StageContext:
-    """개별 단계 프로세서가 전달받는 실행 맥락."""
+    """개별 단계 프로세서가 전달받는 실행 맥락.
+
+    visibility 와 origin_scope 는 기본값 'global'에 의존하지 않고,
+    원천 문서 접근(KbDocumentAccess)에서 유도된 fail-closed 값('work_only')을 기본으로 취한다.
+    """
 
     job_id: uuid.UUID
     document_id: uuid.UUID
     revision_id: uuid.UUID
     stage: str
     attempt_token: uuid.UUID
-    origin_scope: str = "personal"
-    visibility: str = "global"
+    origin_scope: str = "work"
+    visibility: str = "work_only"
     session_factory: Callable[[], AsyncSession] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 

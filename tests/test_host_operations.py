@@ -8,8 +8,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
+import subprocess
+import time
 import uuid
+from types import SimpleNamespace
 
+import psutil
 import pytest
 from authz03_canary import ensure_authz03
 from sqlalchemy import func, select, text
@@ -74,6 +79,14 @@ async def test_work_session_cannot_use_operations(client, env):
     assert (await client.post(f"/api/agent/operations/{uuid.uuid4()}/cancel", headers=work)).status_code == 403
 
 
+async def test_non_personal_pool_cannot_use_operations(client, env, monkeypatch):
+    from ttakkari.api import operations
+    monkeypatch.setattr(operations, "_session", lambda db, sid: asyncio.sleep(0, result=SimpleNamespace(pool="shared")))
+    hdr = _hdr(env.personal_session_id)
+    assert (await _start(client, hdr, "runtime_report")).status_code == 403
+    assert (await client.get("/api/agent/operations", headers=hdr)).status_code == 403
+
+
 async def test_unauthenticated_call_is_rejected(client):
     assert (await client.post("/api/agent/operations", json={"kind": "backup_status"})).status_code in (401, 403)
 
@@ -116,7 +129,11 @@ async def test_inline_reports_are_recorded(client, env):
         audited = (await db.execute(select(func.count()).select_from(AuditLog)
                                     .where(AuditLog.action == "operation.request",
                                            AuditLog.actor == "agent"))).scalar()
+        finish_audited = (await db.execute(select(func.count()).select_from(AuditLog)
+                                           .where(AuditLog.action == "operation.finish",
+                                                  AuditLog.actor == "operation"))).scalar()
     assert audited >= 3
+    assert finish_audited >= 3
 
 
 # ---- 단일 실행·취소·상태 보존 ----
@@ -138,6 +155,20 @@ async def test_duplicate_and_conflicting_starts(client, env, monkeypatch):
     assert (await _start(client, hdr, "backup_status")).status_code == 202
 
 
+def test_start_heavy_unexpected_exception_cleans_queue(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("simulated unexpected runner spawn failure")
+
+    monkeypatch.setattr(subprocess, "Popen", boom)
+    with pytest.raises(Exception) as exc:
+        jobs.start_heavy("backup_db", "test-session")
+    assert "simulated" in str(exc.value)
+
+    # 대기 큐에 작업이 남아있지 않고 락이 해제되어 있어야 한다
+    assert not any(j["status"] == "queued" for j in jobs.all_jobs())
+    assert not any(j.get("kind") == "backup_db" and j["status"] in jobs.ACTIVE for j in jobs.all_jobs())
+
+
 async def test_cancel_signals_runner_and_keeps_record(client, env, monkeypatch):
     monkeypatch.setattr(jobs, "runner_alive", lambda job: True)
     sent = []
@@ -157,6 +188,11 @@ async def test_cancel_queued_job_before_runner_starts(client, env):
     body = (await client.post(f"/api/agent/operations/{job['id']}/cancel", headers=hdr)).json()
     assert body["status"] == "cancelled" and body["finished_at"]
     assert (await client.post(f"/api/agent/operations/{job['id']}/cancel", headers=hdr)).status_code == 409
+    async with sessionmaker()() as db:
+        actions = (await db.execute(select(AuditLog.action, AuditLog.outcome)
+                                    .where(AuditLog.target_id == job["id"]))).all()
+    assert ("operation.cancel", "ok") in actions
+    assert ("operation.finish", "error") in actions
 
 
 async def test_lost_runner_is_preserved_as_failed_not_succeeded(client, env):
@@ -164,6 +200,59 @@ async def test_lost_runner_is_preserved_as_failed_not_succeeded(client, env):
                                                                       "runner_started": 1.0})
     body = (await client.get(f"/api/agent/operations/{job['id']}", headers=_hdr(env.personal_session_id))).json()
     assert body["status"] == "failed" and body["error"].startswith("runner_lost") and body["finished_at"]
+
+
+def test_runner_sigkill_cleans_orphaned_child_and_residuals():
+    # 1. 자식 프로세스를 별도 세션/그룹으로 기동
+    proc = subprocess.Popen(["/bin/bash", "-c", "sleep 30"], start_new_session=True)
+    try:
+        p = psutil.Process(proc.pid)
+        child_started = p.create_time()
+        child_cmdline = " ".join(p.cmdline())
+
+        # 2. 러너가 SIGKILL 로 사망했다고 가정한 작업 기록 생성
+        job_id = str(uuid.uuid4())
+        jobs.write({
+            "id": job_id, "kind": "restore_rehearsal", "status": "running",
+            "created_at": jobs.now(), "started_at": jobs.now(),
+            "runner_pid": 2 ** 22, "runner_started": 1.0,  # 존재하지 않는 러너 pid
+            "child_pid": proc.pid, "child_pgid": proc.pid,
+            "child_started": child_started, "child_cmdline": child_cmdline,
+        })
+
+        # 3. 작업 전용 0700 디렉터리에 잔여 평문 덤프 모의 파일 생성
+        ops_tmp = plans.ops_tmp()
+        stale_file = ops_tmp / "rehearse-decrypt-mock123"
+        stale_file.write_text("sensitive decrypted data")
+        assert stale_file.is_file()
+
+        # 자식이 살아있음을 확인
+        assert psutil.pid_exists(proc.pid)
+
+        # 4. reconciled 실행 -> 러너 사망 감지, 신원 검증 후 자식 프로세스 그룹 정리
+        reconciled = jobs.reconciled(job_id)
+        assert reconciled["status"] == "failed"
+        assert "runner_lost" in reconciled["error"]
+        assert not stale_file.exists()
+
+        # 5. 자식 프로세스가 종료되었음을 확인
+        for _ in range(20):
+            if not psutil.pid_exists(proc.pid) or proc.poll() is not None:
+                break
+            time.sleep(0.05)
+        assert not psutil.pid_exists(proc.pid) or proc.poll() is not None
+
+        # 6. 시작 시 잔여 평문 파일 정리 함수 독립 검증
+        stale_file2 = ops_tmp / "rehearse-decrypt-mock456"
+        stale_file2.write_text("another plain")
+        cleaned = plans.clean_residuals()
+        assert not stale_file2.exists()
+        assert cleaned["cleaned_files"] >= 1
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            pass
 
 
 # ---- 러너: 시간 초과·취소·실패 보존·비밀 마스킹 ----
@@ -201,6 +290,29 @@ async def test_failed_run_keeps_error_and_masks_secrets(monkeypatch):
     assert "<home>" in done["output_tail"] and not key.exists()
 
 
+def test_snapshot_verify_retains_residual_on_cleanup_failure(monkeypatch, tmp_path):
+    target_dir = tmp_path / "verify_leftover"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "plain.txt").write_text("secret")
+
+    plan = plans.Plan("snapshot_verify", ["true"], {}, 30, cleanup_dir=target_dir)
+    monkeypatch.setattr(runner, "_secure_rmtree", lambda p: False)
+    monkeypatch.setattr(runner, "_execute", lambda p, out, **kw: ("succeeded", 0))
+    monkeypatch.setattr(runner, "_summarize", lambda p, s, o, b: ("succeeded", {"files_verified": 1}, None))
+
+    job = jobs.create("snapshot_verify", "test-session")
+    monkeypatch.setattr(plans, "make_plan", lambda k, j: plan)
+    monkeypatch.setattr(plans, "backup_dir", lambda: tmp_path)
+    monkeypatch.setattr(plans, "VERIFY_DIR", "")
+
+    asyncio.run(runner._run(job["id"]))
+    done = jobs.get(job["id"])
+    assert done["status"] == "failed"
+    assert "임시 평문 검증 디렉터리 정리 실패" in done["error"]
+    assert done["summary"].get("cleanup_dir_retained") is True
+    assert target_dir.exists()
+
+
 async def test_run_never_starts_twice(monkeypatch):
     job = jobs.write(jobs.create("backup_db", "s") | {"status": "cancelled", "finished_at": jobs.now()})
     called = []
@@ -215,6 +327,17 @@ async def test_restore_refuses_remote_database(client, env, monkeypatch):
     r = await _start(client, _hdr(env.personal_session_id), "restore_rehearsal")
     assert r.status_code == 409 and "로컬" in r.text
     assert "pw" not in r.text and "prod.example.com" not in r.text
+
+    assert not plans.is_local_url("postgresql://localhost/ttakkari?host=remote.example.com")
+    assert not plans.is_local_url("postgresql://localhost/ttakkari?hostaddr=10.0.0.1")
+    assert not plans.is_local_url("postgresql://localhost/ttakkari?service=secret_remote")
+    assert not plans.is_local_url("postgresql:///ttakkari", environ={"PGHOST": "remote.example.com"})
+    assert not plans.is_local_url("postgresql:///ttakkari", environ={"PGHOSTADDR": "192.168.1.100"})
+    assert not plans.is_local_url("postgresql:///ttakkari", environ={"PGSERVICE": "remote_service"})
+    assert plans.is_local_url("postgresql://localhost/ttakkari")
+    assert plans.is_local_url("postgresql://127.0.0.1:5432/ttakkari")
+    assert plans.is_local_url("postgresql:///ttakkari")
+    assert plans.is_local_url("postgresql:///ttakkari?host=/tmp")
 
 
 def test_restore_manifest_must_live_in_backup_dir(isolated_state, tmp_path):
@@ -256,6 +379,30 @@ def test_snapshot_never_includes_home_or_backup_dir(monkeypatch, isolated_state)
         plans.make_plan("data_snapshot", str(uuid.uuid4()))
 
 
+def test_atomic_key_creation_and_fingerprint(tmp_path):
+    key_path = tmp_path / "test.key"
+    assert not key_path.exists()
+    plans._create_key(key_path)
+    assert key_path.is_file()
+    assert key_path.stat().st_mode & 0o777 == 0o600
+    content1 = key_path.read_text()
+    assert len(content1.strip()) > 30
+
+    plans._create_key(key_path)
+    assert key_path.read_text() == content1
+
+    fp = plans.key_fingerprint(key_path)
+    assert len(fp) == 16 and all(c in "0123456789abcdef" for c in fp)
+
+
+def test_runbook_contains_key_loss_warning():
+    runbook = (plans.BACK / "docs/security/backup-runbook.md").read_text(encoding="utf-8")
+    assert "키 파일을 분실하면" in runbook
+    assert "복호화할 수 없다" in runbook
+    assert "backup.key" in runbook
+    assert "key_fingerprint" in runbook
+
+
 # ---- 실제 격리 통합: 암호화 백업 → 격리 복원 → 데이터 스냅샷 → 격리 검증 ----
 
 @needs_venv
@@ -269,6 +416,7 @@ async def test_backup_restore_snapshot_end_to_end(client, env, isolated_state):
     assert done["status"] == "succeeded", done
     s = done["summary"]
     assert s["encrypted"] is True and s["tables"] > 10 and s["rows"] > 0 and len(s["sha256"]) == 64
+    assert len(s.get("key_fingerprint", "")) == 16
     assert list(isolated_state.glob("ttakkari-*.dump.enc")) and not list(isolated_state.glob("ttakkari-*.dump"))
     key = get_settings().home / "backup.key"
     assert key.stat().st_mode & 0o777 == 0o600
@@ -292,6 +440,7 @@ async def test_backup_restore_snapshot_end_to_end(client, env, isolated_state):
     snap = await _wait(client, hdr, (await _start(client, hdr, "data_snapshot")).json()["id"])
     assert snap["status"] == "succeeded", snap
     assert snap["summary"]["encrypted"] and snap["summary"]["file_count"] >= 1
+    assert snap["summary"]["key_fingerprint"] == s["key_fingerprint"]
     verify = await _wait(client, hdr, (await _start(client, hdr, "snapshot_verify")).json()["id"])
     assert verify["status"] == "succeeded", verify
     assert verify["summary"]["files_verified"] == snap["summary"]["file_count"]

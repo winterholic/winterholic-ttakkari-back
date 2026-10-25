@@ -36,8 +36,9 @@ class StartIn(BaseModel):
 
 
 async def personal(sid: uuid.UUID, db: Db) -> None:
-    if (await _session(db, sid)).pool == "work":
-        raise HTTPException(403, "회사 세션에서는 개인 서버 운영 작업을 쓸 수 없습니다.")
+    session = await _session(db, sid)
+    if session.pool != "personal":
+        raise HTTPException(403, "개인 세션에서만 호스트 운영 작업을 쓸 수 있습니다.")
 
 
 def _job_id(job_id: str) -> str:
@@ -59,32 +60,60 @@ async def start_operation(body: StartIn, sid: AgentSession, db: Db) -> dict:
     await personal(sid, db)
     if body.kind in plans.INLINE:
         job = await asyncio.to_thread(jobs.create, body.kind, str(sid), inline=True)
+        record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
+               detail={"kind": body.kind, "session_id": str(sid), "inline": True})
+        await db.commit()
         try:
             summary = await inline.run(body.kind, db)
             fields = {"status": "succeeded", "summary": summary}
         except Exception as exc:  # noqa: BLE001 -- 실패도 기록에 남긴다
             fields = {"status": "failed", "error": scrub(f"{type(exc).__name__}: {exc}")[:500]}
-        job = await asyncio.to_thread(jobs.update, job["id"], finished_at=jobs.now(), **fields)
-        reused = False
-    else:
-        try:
-            job, reused = await asyncio.to_thread(jobs.start_heavy, body.kind, str(sid))
-        except jobs.Conflict as exc:
-            record(db, actor="agent", action="operation.request", outcome="error", target_type="operation",
-                   detail={"kind": body.kind, "session_id": str(sid), "reason": "conflict"})
-            await db.commit()
-            raise HTTPException(409, str(exc)) from exc
-        except plans.Refused as exc:
-            record(db, actor="agent", action="operation.request", outcome="error", target_type="operation",
-                   detail={"kind": body.kind, "session_id": str(sid), "reason": str(exc)[:200]})
-            await db.commit()
-            raise HTTPException(exc.status, str(exc)) from exc
-        except OSError as exc:
-            raise HTTPException(503, f"작업 러너를 시작하지 못했습니다: {type(exc).__name__}") from exc
-    record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
-           detail={"kind": body.kind, "session_id": str(sid), "deduplicated": reused})
-    await db.commit()
-    return jobs.view(job | {"deduplicated": reused})
+        job = await asyncio.to_thread(jobs.update, job["id"], finished_at=jobs.now(), finish_audited=True, **fields)
+        record(db, actor="operation", action="operation.finish",
+               outcome="ok" if fields["status"] == "succeeded" else "error",
+               target_type="operation", target_id=job["id"],
+               detail={"kind": body.kind, "status": fields["status"], "session_id": str(sid),
+                       "error": fields.get("error")})
+        await db.commit()
+        return jobs.view(job | {"deduplicated": False})
+
+    try:
+        job, reused = await asyncio.to_thread(jobs.prepare_heavy, body.kind, str(sid))
+    except jobs.Conflict as exc:
+        record(db, actor="agent", action="operation.request", outcome="error", target_type="operation",
+               detail={"kind": body.kind, "session_id": str(sid), "reason": "conflict"})
+        await db.commit()
+        raise HTTPException(409, str(exc)) from exc
+    except plans.Refused as exc:
+        record(db, actor="agent", action="operation.request", outcome="error", target_type="operation",
+               detail={"kind": body.kind, "session_id": str(sid), "reason": str(exc)[:200]})
+        await db.commit()
+        raise HTTPException(exc.status, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, f"작업 준비 실패: {type(exc).__name__}") from exc
+
+    if reused:
+        record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
+               detail={"kind": body.kind, "session_id": str(sid), "deduplicated": True})
+        await db.commit()
+        return jobs.view(job | {"deduplicated": True})
+
+    try:
+        record(db, actor="agent", action="operation.request", target_type="operation", target_id=job["id"],
+               detail={"kind": body.kind, "session_id": str(sid), "deduplicated": False})
+        await db.commit()
+    except Exception:
+        await asyncio.to_thread(jobs.clean_failed_queue, job["id"])
+        raise
+
+    try:
+        job = await asyncio.to_thread(jobs.spawn_heavy, job["id"])
+    except OSError as exc:
+        raise HTTPException(503, f"작업 러너를 시작하지 못했습니다: {type(exc).__name__}") from exc
+    except Exception as exc:
+        raise HTTPException(500, f"작업 러너 시작 실패: {type(exc).__name__}") from exc
+
+    return jobs.view(job | {"deduplicated": False})
 
 
 @router.get("/{job_id}")
@@ -107,5 +136,11 @@ async def cancel_operation(job_id: str, sid: AgentSession, db: Db) -> dict:
         raise HTTPException(409, str(exc)) from exc
     record(db, actor="agent", action="operation.cancel", target_type="operation", target_id=job["id"],
            detail={"kind": job["kind"], "session_id": str(sid)})
+    if job.get("status") in jobs.TERMINAL and not job.get("finish_audited"):
+        record(db, actor="operation", action="operation.finish", outcome="error",
+               target_type="operation", target_id=job["id"],
+               detail={"kind": job["kind"], "status": job["status"], "session_id": str(sid),
+                       "reason": "cancelled"})
+        await asyncio.to_thread(jobs.update, job["id"], finish_audited=True)
     await db.commit()
     return jobs.view(job)

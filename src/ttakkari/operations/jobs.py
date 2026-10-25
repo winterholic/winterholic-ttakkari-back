@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import fcntl
 import json
 import os
 import signal
 import subprocess
+import time
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -97,6 +99,76 @@ def runner_alive(job: dict) -> bool:
         return False
 
 
+def _clean_child_process_group(job: dict) -> None:
+    """러너가 비정상 종료(SIGKILL 등)했을 때 자식 프로세스 그룹을 신원 검증 후 정리한다."""
+    pid = job.get("child_pid")
+    started = job.get("child_started")
+    cmdline = job.get("child_cmdline")
+    pgid = job.get("child_pgid")
+    if not pid or not pgid or started is None:
+        return
+    verified = False
+    try:
+        proc = psutil.Process(pid)
+        # 신원 검증: create_time 과 cmdline 이 일치하는지
+        if abs(proc.create_time() - started) <= 2 and (
+            not cmdline or cmdline in " ".join(proc.cmdline()) or " ".join(proc.cmdline()) in cmdline
+        ):
+            verified = True
+    except (psutil.Error, ProcessLookupError):
+        # 프로세스 리더가 이미 죽었을 수 있음. pgid 확인
+        verified = True
+
+    if not verified:
+        return
+
+    # 신원 확인됨: 프로세스 그룹 전체 정리
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except (ProcessLookupError, PermissionError):
+            break
+        # 자식 프로세스들이 완전히 종료될 때까지 대기
+        for _ in range(10):
+            try:
+                os.killpg(pgid, 0)
+                time.sleep(0.05)
+            except (ProcessLookupError, PermissionError):
+                break
+
+
+def _audit_finish_sync(job: dict) -> None:
+    try:
+        from ttakkari.audit import record
+        from ttakkari.db import sessionmaker
+
+        async def _do():
+            async with sessionmaker()() as db:
+                record(
+                    db,
+                    actor="operation",
+                    action="operation.finish",
+                    outcome="error",
+                    target_type="operation",
+                    target_id=job["id"],
+                    detail={
+                        "kind": job["kind"],
+                        "status": job["status"],
+                        "error": job.get("error"),
+                        "session_id": job.get("requested_by_session"),
+                    },
+                )
+                await db.commit()
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_do())
+        except RuntimeError:
+            asyncio.run(_do())
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+
 def _reconcile(job: dict) -> dict:
     """러너가 사라졌는데 끝나지 않은 기록은 실패로 남긴다. 결과를 지어내지 않는다."""
     if job["status"] not in ACTIVE or job.get("inline") or runner_alive(job):
@@ -105,8 +177,21 @@ def _reconcile(job: dict) -> dict:
         age = datetime.now(UTC) - datetime.fromisoformat(job["created_at"])
         if age < timedelta(seconds=QUEUED_GRACE_SECONDS) and not job.get("runner_pid"):
             return job
-    return write(job | {"status": "failed", "error": "runner_lost: 러너 프로세스가 끝나기 전에 사라졌습니다.",
-                        "finished_at": now()})
+    # runner_lost: 자식 프로세스 그룹 정리
+    _clean_child_process_group(job)
+    plans.clean_residuals()
+    updated = write(
+        job
+        | {
+            "status": "failed",
+            "error": "runner_lost: 러너 프로세스가 끝나기 전에 사라졌습니다.",
+            "finished_at": now(),
+        }
+    )
+    if not updated.get("finish_audited"):
+        _audit_finish_sync(updated)
+        updated = write(updated | {"finish_audited": True})
+    return updated
 
 
 def reconciled(job_id: str) -> dict:
@@ -147,8 +232,15 @@ def create(kind: str, session_id: str, *, inline: bool = False, identity: dict |
     return write(job)
 
 
-def start_heavy(kind: str, session_id: str) -> tuple[dict, bool]:
-    """(기록, 기존 작업 재사용 여부). 무거운 작업은 한 번에 하나만 돈다."""
+def clean_failed_queue(job_id: str) -> None:
+    """예상 외 예외 시 queued 기록 정리 (락 해제)."""
+    with locked():
+        _path(job_id).unlink(missing_ok=True)
+
+
+def prepare_heavy(kind: str, session_id: str) -> tuple[dict, bool]:
+    """(기록, 기존 작업 재사용 여부). 무거운 작업은 한 번에 하나만 돈다.
+    새 작업이면 queued 기록과 계획만 세우고 러너는 띄우지 않는다."""
     with locked():
         active = [j for j in (_reconcile(j) for j in all_jobs()) if j["status"] in ACTIVE and not j.get("inline")]
         if active:
@@ -159,20 +251,51 @@ def start_heavy(kind: str, session_id: str) -> tuple[dict, bool]:
         job = create(kind, session_id)
         try:
             plan = plans.make_plan(kind, job["id"])
+            updated = write(job | {"identity": plan.identity})
+            return updated, False
+        except Exception:
+            _path(job["id"]).unlink(missing_ok=True)
+            raise
+
+
+def spawn_heavy(job_id: str) -> dict:
+    """감사 기록 커밋 후 분리된 러너 프로세스를 기동한다."""
+    with locked():
+        job = get(job_id)
+        if job["status"] != "queued":
+            raise Conflict("작업이 대기 상태가 아닙니다.")
+        plans.clean_residuals()
+        try:
             proc = subprocess.Popen(
-                plans.runner_argv(job["id"]), cwd=plans.BACK, start_new_session=True,
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])})
-        except plans.Refused as exc:
-            write(job | {"status": "failed", "error": f"refused: {exc}", "finished_at": now()})
-            raise
-        except OSError as exc:
-            write(job | {"status": "failed", "error": f"spawn_failed: {type(exc).__name__}", "finished_at": now()})
-            raise
-        write(job | {"runner_pid": proc.pid, "runner_started": process_identity(proc.pid),
-                     "identity": plan.identity})
+                plans.runner_argv(job_id),
+                cwd=plans.BACK,
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])},
+            )
+        except Exception as exc:
+            _path(job_id).unlink(missing_ok=True)
+            if isinstance(exc, OSError):
+                raise
+            raise OSError(f"러너 기동 실패: {exc}") from exc
+        write(job | {"runner_pid": proc.pid, "runner_started": process_identity(proc.pid)})
         _prune()
-        return get(job["id"]), False
+        return get(job_id)
+
+
+def start_heavy(kind: str, session_id: str) -> tuple[dict, bool]:
+    """(기록, 기존 작업 재사용 여부). prepare_heavy 와 spawn_heavy 를 차례로 실행한다."""
+    job, reused = prepare_heavy(kind, session_id)
+    if reused:
+        return job, True
+    try:
+        job = spawn_heavy(job["id"])
+        return job, False
+    except Exception:
+        clean_failed_queue(job["id"])
+        raise
 
 
 def cancel(job_id: str) -> dict:
@@ -182,6 +305,10 @@ def cancel(job_id: str) -> dict:
             raise Conflict("이미 끝난 작업입니다.")
         job = write(job | {"cancel_requested_at": now()})
         if job.get("inline") or not runner_alive(job):
-            return write(job | {"status": "cancelled", "finished_at": now()})
+            updated = write(job | {"status": "cancelled", "finished_at": now()})
+            if not updated.get("finish_audited"):
+                _audit_finish_sync(updated)
+                updated = write(updated | {"finish_audited": True})
+            return updated
         os.kill(job["runner_pid"], signal.SIGTERM)  # 러너가 자식 프로세스 그룹을 정리하고 cancelled 로 기록한다
         return job

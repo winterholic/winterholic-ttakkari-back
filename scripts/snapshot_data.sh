@@ -63,6 +63,13 @@ secure_delete() {
 }
 
 ENCRYPT=0
+if [[ -z "${TMPDIR:-}" ]]; then
+  DEFAULT_OPS_TMP="$HOME/.ttakkari/operations/tmp"
+  if [[ -d "$DEFAULT_OPS_TMP" ]]; then
+    TMPDIR="$DEFAULT_OPS_TMP"
+  fi
+fi
+
 if [[ -n "$PASSPHRASE_FILE" ]]; then
   check_passphrase_file "$PASSPHRASE_FILE"
   command -v openssl >/dev/null || { echo "openssl 없음. 암호화 스냅샷을 만들 수 없다." >&2; exit 3; }
@@ -227,12 +234,12 @@ if [[ "$ENCRYPT" -eq 1 ]]; then
   ENC_TMP="$ENC.partial.$$"
   openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
     -in "$ARCH" -out "$ENC_TMP" -pass "file:$PASSPHRASE_FILE"
-  "$PYTHON" - "$MANIFEST" "$ENC_TMP" "$ENC" <<'EOF'
+  "$PYTHON" - "$MANIFEST" "$ENC_TMP" "$ENC" "$PASSPHRASE_FILE" <<'EOF'
 import hashlib
 import json
 import sys
 
-manifest_path, enc_tmp, enc_path = sys.argv[1:]
+manifest_path, enc_tmp, enc_path, passfile = sys.argv[1:]
 with open(enc_tmp, "rb") as f:
     enc_digest = hashlib.file_digest(f, "sha256").hexdigest()
 with open(manifest_path, encoding="utf-8") as f:
@@ -241,6 +248,8 @@ m["plaintext_sha256"] = m["sha256"]
 m["sha256"] = enc_digest
 m["archive"] = enc_path
 m["encrypted"] = True
+with open(passfile, "rb") as f:
+    m["key_fingerprint"] = hashlib.pbkdf2_hmac("sha256", f.read().strip(), b"ttakkari-backup-key-fp-v1", 200_000).hex()[:16]
 with open(manifest_path, "w", encoding="utf-8") as f:
     json.dump(m, f, indent=2, sort_keys=True)
     f.write("\n")
@@ -265,6 +274,7 @@ latest = {
     "archive": m["archive"],
     "sha256": m["sha256"],
     "encrypted": bool(m.get("encrypted", False)),
+    "key_fingerprint": m.get("key_fingerprint"),
     "file_count": m["file_count"],
     "total_bytes": m["total_bytes"],
 }

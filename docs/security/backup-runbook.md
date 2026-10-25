@@ -62,9 +62,12 @@ cd back
   러너가 사라진 기록은 `runner_lost` 실패로 남기며 성공으로 바꾸지 않는다. 취소는 자식 프로세스 그룹을 정리하고 `cancelled` 로 남긴다.
   요청·취소·종료는 감사 로그(`operation.request|cancel|finish`)에 남는다.
 - 결과에는 개수·해시·시각·대상 identity 만 담는다. 출력 꼬리는 `scrub` 마스킹 후 경로를 `<home>` 등으로 치환해 1500자만 보존한다.
-- 백업은 항상 암호화한다. 키는 `TTAKKARI_BACKUP_PASSPHRASE_FILE`(0600 파일 경로, 설정으로 주입)이 있으면 그것을, 없으면
-  첫 `backup_db`/`data_snapshot` 때 앱이 `~/.ttakkari/backup.key` 를 0600 으로 만든다. 키 내용은 읽어서 출력하지 않는다.
-  한계: 키와 백업이 같은 호스트에 있다. 호스트 밖 보관(외장 디스크·Time Machine)은 위 "Time Machine" 절의 별도 과제다.
+- 백업은 항상 암호화한다. 키는 `TTAKKARI_BACKUP_PASSPHRASE_FILE`(0600 파일 경로, 설정으로 주입)이 있으면 그것을 쓰고, 없으면
+  첫 `backup_db`/`data_snapshot` 때 앱이 `~/.ttakkari/backup.key` 를 임시파일+rename 방식으로 0600 원자 생성한다. 키 내용은 읽어서 출력하지 않으며,
+  manifest 와 상태 파일에는 느린 PBKDF2 로 파생한 키 지문(`key_fingerprint`, 16자리 hex, 내용 아님)만 기록해 일치 여부를 대조한다.
+  **경고**: 키 파일을 분실하면 암호화된 기존 DB 덤프와 데이터 스냅샷을 절대 복호화할 수 없다(복원 영구 불가). 따라서 보관 위치인
+  `~/.ttakkari/backup.key`(또는 지정 경로)의 키 파일은 외장 디스크나 안전한 오프머신 백업 저장소에 반드시 함께 복사·보관해야 한다.
+  한계: 기본 상태에서는 키와 백업이 같은 호스트에 있다. 호스트 밖 보관(외장 디스크·Time Machine)은 아래 "Time Machine" 절을 따른다.
 - 백업 디렉터리는 `backup_status.backup_dir()`(환경 변수 `BACKUP_DIR`, 기본 `~/.ttakkari-backups`)이며 `GET /api/system/backup-status` 가 읽는
   곳과 같다. 보존 기간은 30일(기존 14일 기본 대신 더 오래 둔다).
 

@@ -96,11 +96,13 @@ async def performance_baseline(db: AsyncSession) -> dict:
 def backup_state() -> dict:
     status = backup_status.backup_status()
     try:
-        _, source = plans.passphrase_file(create=False)
+        key_path, source = plans.passphrase_file(create=False)
+        fp = plans.key_fingerprint(key_path)
     except plans.Refused:
         source = None
+        fp = None
     root = plans.backup_dir()
-    return {**status, "key_source": source, "backup_dir_exists": root.is_dir(),
+    return {**status, "key_source": source, "key_fingerprint": fp, "backup_dir_exists": root.is_dir(),
             "disk_free_gb": round(shutil.disk_usage(root if root.is_dir() else root.parent).free / 1e9, 1)}
 
 

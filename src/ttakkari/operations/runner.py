@@ -9,15 +9,16 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shutil
 import signal
 import subprocess
 import sys
 import tempfile
 import time
 import uuid
+from pathlib import Path
 
 import asyncpg
+import psutil
 
 from ttakkari import backup_status
 from ttakkari.config import get_settings
@@ -54,11 +55,22 @@ def _kill_group(proc: subprocess.Popen) -> None:
             continue
 
 
-def _execute(plan: plans.Plan, out) -> tuple[str, int | None]:
+def _execute(plan: plans.Plan, out, *, job_id: str | None = None) -> tuple[str, int | None]:
     """(status, exit_code). 출력은 파일로 받아 파이프가 차서 멈추는 일을 피한다."""
     # nice 로 낮은 우선순위: 백업이 다른 사용자 Run 의 CPU 를 빼앗지 않게 한다
     proc = subprocess.Popen(["/usr/bin/nice", "-n", "10", *plan.argv], cwd=plans.BACK, env=plan.env,
                             stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+    # 자식 프로세스 신원 기록 (SIGKILL 시 정리용)
+    if job_id:
+        try:
+            p = psutil.Process(proc.pid)
+            started = p.create_time()
+            cmdline = " ".join(p.cmdline())
+        except (psutil.Error, ProcessLookupError):
+            started = None
+            cmdline = None
+        jobs.update(job_id, child_pid=proc.pid, child_pgid=proc.pid, child_started=started, child_cmdline=cmdline)
+
     deadline = time.monotonic() + plan.timeout
     while proc.poll() is None:
         if _cancelled:
@@ -86,6 +98,50 @@ async def _drop_leftover(target: str) -> bool:
         return True
     finally:
         await conn.close()
+
+
+async def drop_all_leftover_dbs() -> list[str]:
+    """이전 작업이 남긴 모든 격리 DB(이름 규칙 일치)를 시작 시 정리한다."""
+    url, prod = plans.local_database()
+    conn = await asyncpg.connect(dsn=_libpq(url), database="postgres", timeout=10)
+    dropped = []
+    try:
+        rows = await conn.fetch("SELECT datname FROM pg_database WHERE datname LIKE $1", f"{plans.RESTORE_DB_PREFIX}%")
+        for row in rows:
+            name = row["datname"]
+            if _TARGET.match(name) and name != prod:
+                await conn.execute(f'DROP DATABASE "{name}"')
+                dropped.append(name)
+        return dropped
+    except Exception:  # noqa: BLE001
+        return dropped
+    finally:
+        await conn.close()
+
+
+def _secure_rmtree(target: Path) -> bool:
+    try:
+        if not target.exists():
+            return True
+        for root, dirs, files in os.walk(target, topdown=False):
+            for name in files:
+                fpath = Path(root) / name
+                try:
+                    fpath.chmod(0o600)
+                    with open(fpath, "wb") as f:
+                        f.write(b"\x00" * fpath.stat().st_size)
+                    fpath.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            for name in dirs:
+                try:
+                    (Path(root) / name).rmdir()
+                except OSError:
+                    pass
+        target.rmdir()
+        return not target.exists()
+    except Exception:  # noqa: BLE001
+        return not target.exists()
 
 
 def _status_section(section: str) -> dict | None:
@@ -152,6 +208,14 @@ async def _run(job_id: str) -> int:
             return 0  # 시작 전에 취소됐거나 이미 처리됨
         job = jobs.write(job | {"status": "running", "started_at": jobs.now(), "runner_pid": os.getpid(),
                                 "runner_started": jobs.process_identity(os.getpid())})
+
+    # 시작 시 이전 비정상 종료 잔여물(격리 DB 및 평문 임시 파일) 정리
+    try:
+        await drop_all_leftover_dbs()
+    except Exception:  # noqa: BLE001, S110
+        pass
+    plans.clean_residuals()
+
     started = time.monotonic()
     plan: plans.Plan | None = None
     status, code, output, error, summary = "failed", None, "", None, {}
@@ -162,7 +226,7 @@ async def _run(job_id: str) -> int:
         if plan.cleanup_dir:
             plan.cleanup_dir.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.TemporaryFile() as out:
-            status, code = _execute(plan, out)
+            status, code = _execute(plan, out, job_id=job_id)
             out.seek(0, os.SEEK_END)
             out.seek(max(0, out.tell() - 200_000))
             output = out.read().decode("utf-8", "replace")
@@ -181,14 +245,20 @@ async def _run(job_id: str) -> int:
         if plan and plan.cleanup_dir:
             root = (plans.backup_dir() / plans.VERIFY_DIR).resolve()
             if plan.cleanup_dir.resolve().parent == root:
-                shutil.rmtree(plan.cleanup_dir, ignore_errors=True)
+                cleaned_ok = _secure_rmtree(plan.cleanup_dir)
+                if not cleaned_ok and plan.cleanup_dir.exists():
+                    if status == "succeeded":
+                        status = "failed"
+                    error = (error + " " if error else "") + "임시 평문 검증 디렉터리 정리 실패(잔여물 보존)"
+                    summary["cleanup_dir_retained"] = True
+
     tail = scrub(_redact_paths(output, plan), []) if plan else ""
     finished = {"status": status, "exit_code": code, "summary": summary,
                 "error": scrub(error) if error else (f"종료 코드 {code}" if status == "failed" else None),
                 "output_tail": tail[-OUTPUT_TAIL_CHARS:], "finished_at": jobs.now(),
                 "duration_s": round(time.monotonic() - started, 2)}
     with jobs.locked():
-        final = jobs.write(jobs.get(job_id) | finished)
+        final = jobs.write(jobs.get(job_id) | finished | {"finish_audited": True})
     audit_error = await _audit(final)
     if audit_error:
         jobs.update(job_id, audit_error=audit_error)

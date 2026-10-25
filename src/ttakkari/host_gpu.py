@@ -120,7 +120,9 @@ class StartRequest(BaseModel):
 def build_args(server: Path, model: Path, port: int, req: StartRequest) -> list[str]:
     """argv 는 이 함수만 만든다. 값은 검증된 정수·열거형뿐이라 요청 문자열이 셸이나 플래그로 해석될 길이 없다."""
     args = [str(server), "--model", str(model), "--alias", ALIAS, "--host", "127.0.0.1", "--port", str(port),
-            "--parallel", str(req.parallel), "--no-webui", "--metrics",
+            # GGML INFO backend-placement messages map to verbosity 4 in current llama.cpp.
+            # The default 3 leaves device_evidence empty even when model loading succeeds.
+            "--parallel", str(req.parallel), "--no-webui", "--metrics", "--log-verbosity", "4",
             "--ctx-size", str(req.ctx_size), "--threads", str(req.threads), "--threads-batch", str(req.threads)]
     if req.device == "none":
         args += ["--device", "none"]

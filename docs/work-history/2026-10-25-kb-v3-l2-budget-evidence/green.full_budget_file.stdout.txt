@@ -1,0 +1,21 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0 -- /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-l2/.venv/bin/python
+rootdir: /Users/winterholic/development/projects/winterholic-ttakkari/back-kb-v3-l2
+configfile: pyproject.toml
+plugins: timeout-2.4.0, asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 9 items
+
+tests/test_kb_v3_l2_budget_concurrency.py::test_two_extractors_share_one_daily_call_budget[legacy_cli] PASSED [ 11%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_two_extractors_share_one_daily_call_budget[subscription_cli] PASSED [ 22%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_failed_unconsumed_call_releases_slot_and_retry_is_idempotent PASSED [ 33%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_crashed_lease_charges_inflight_call_and_releases_unused_capacity PASSED [ 44%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_finished_stage_call_is_not_double_counted_with_its_ledger_row PASSED [ 55%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_cancelled_inflight_call_stays_charged_on_attempt_resume PASSED [ 66%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_unconsumed_failure_at_budget_one_leaves_slot_for_next_document PASSED [ 77%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_cancelled_call_at_budget_one_stays_charged_after_resume PASSED [ 88%]
+tests/test_kb_v3_l2_budget_concurrency.py::test_redelivered_attempt_does_not_double_call_or_double_count PASSED [100%]
+
+db reset: 9 selective (avg 7.0/119 tables), 0 forced full, 0 fell back to full
+============================== 9 passed in 1.08s ===============================
+exit=0

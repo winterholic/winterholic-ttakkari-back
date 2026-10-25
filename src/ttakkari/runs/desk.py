@@ -404,7 +404,8 @@ def _parse(text: str) -> Decision | None:
 
 async def _ask(prof: profiles_mod.Profile, system: str, prompt: str, *,
                cfg_override: dict[str, str] | None = None, timeout_seconds: float | None = None,
-               use_warm: bool = True, output_schema: Path | None = None) -> Attempt:
+               use_warm: bool = True, output_schema: Path | None = None,
+               cwd: Path | None = None) -> Attempt:
     s = get_settings()
     from ttakkari import generation
     from ttakkari.runs.manager import attempt_handle
@@ -418,8 +419,9 @@ async def _ask(prof: profiles_mod.Profile, system: str, prompt: str, *,
             return warm
     cfg = cfg_override if cfg_override is not None else (s.desk_models.get(prof.engine) or {})
     timeout = timeout_seconds or s.desk_timeout_seconds
-    cwd = s.home / "desk"
-    cwd.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if cwd is None:
+        cwd = s.home / "desk"
+        cwd.mkdir(parents=True, exist_ok=True, mode=0o700)
     cmd = (_codex_cmd(prof, cfg, system, prompt, cwd, output_schema=output_schema)
            if prof.engine == "codex" else _claude_cmd(cfg, system, prompt))
     start = time.monotonic()

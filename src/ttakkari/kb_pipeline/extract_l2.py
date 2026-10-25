@@ -255,9 +255,15 @@ async def extract_l2_from_passages(
         try:
             raw_res = await active_caller(prompt, L2_SCHEMA)
         except Exception as exc:  # noqa: BLE001
-            log.warning("L2 extraction call failed on passage %s: %s", p.id, exc)
+            diagnosis = getattr(exc, "diagnosis", None)
+            if getattr(exc, "consumed", True) is False:
+                result.calls_made -= 1
+            reason = diagnosis or "adapter_error"
+            log.warning("L2 extraction call failed: diagnosis=%s error_type=%s", reason, type(exc).__name__)
             result.degraded = True
-            result.degradation_reason = f"llm_call_error: {exc}"
+            result.degradation_reason = reason
+            if diagnosis in {"usage_limit", "scope_capacity_unavailable"}:
+                break
             continue
 
         if not isinstance(raw_res, dict):

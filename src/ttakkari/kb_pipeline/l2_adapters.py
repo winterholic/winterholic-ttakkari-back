@@ -6,6 +6,7 @@ degraded(사유 포함)로 끝나며, 호출 실패도 같은 방식으로 격�
 - disabled: 호출하지 않는다(기본). 추출 단계는 degraded('l2_disabled').
 - desk_qwen: 접수용 로컬 Qwen(runs/desk_qwen) 재사용. 접수와 같은 단일 슬롯이라 Qwen 슬롯이 바쁘거나 서버가 없으면 건너뛴다.
 - openai_compat: 전용 OpenAI 호환 서버(kb_l2_base_url, 예: 별도 llama-server). 접수 슬롯과 경합하지 않는다.
+- subscription_cli: 기존 Codex/Claude 구독 CLI를 tool-free JSON 호출로 사용하며 문서 provenance에 맞는 계정만 선택한다.
 """
 
 from __future__ import annotations
@@ -13,7 +14,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
+from collections.abc import Callable
 from typing import Any, Protocol
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.config import Settings, get_settings
 from ttakkari.kb_pipeline.extract_l2 import (
@@ -21,6 +26,15 @@ from ttakkari.kb_pipeline.extract_l2 import (
     check_qwen_availability,
     default_qwen_llm_call,
 )
+from ttakkari.kb_pipeline.subscription_transport import (
+    DIAG_TIMEOUT,
+    L2TransportError,
+    ScopeCapacityUnavailableError,
+    SubscriptionCallConfig,
+    execute_subscription_l2_call,
+    resolve_target_pool,
+)
+from ttakkari.runs import profiles
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +63,9 @@ class _ConcurrencyGate:
             self._loop = loop
             self._sem = asyncio.Semaphore(self.limit)
         return self._sem
+
+
+_SUBSCRIPTION_GATES: dict[str, _ConcurrencyGate] = {}
 
 
 class DisabledL2Adapter:
@@ -128,7 +145,76 @@ class OpenAICompatL2Adapter:
         return json.loads(content)
 
 
-def build_l2_adapter(settings: Settings | None = None) -> L2Adapter:
+class SubscriptionCliL2Adapter:
+    """Tool-free bounded JSON calls through an enabled, scope-compatible CLI account."""
+
+    name = "subscription_cli"
+
+    def __init__(self, session_factory: Callable[[], AsyncSession], *, engine: str,
+                 model: str = "", effort: str = "", timeout: float = 90.0,
+                 concurrency: int = 1, origin_scope: str, visibility: str) -> None:
+        self.session_factory = session_factory
+        self.engine = engine
+        self.model = model
+        self.effort = effort
+        self.timeout = timeout
+        self.origin_scope = origin_scope
+        self.visibility = visibility
+        self.target_pool = resolve_target_pool(origin_scope, visibility)
+        self.retry_after: float | None = None
+        self._gate = _SUBSCRIPTION_GATES.setdefault(engine, _ConcurrencyGate(concurrency))
+        if self._gate.limit != concurrency:
+            log.warning("KB L2 concurrency setting differs from existing process gate; using existing limit")
+
+    async def availability(self) -> tuple[bool, str | None]:
+        if self.target_pool is None:
+            return False, "scope_capacity_unavailable"
+        async with self.session_factory() as db:
+            free, blocked = await profiles.availability(db, self.engine, self.target_pool, model=self.model or None)
+        if free:
+            return True, None
+        self.retry_after = min((until for _, until in blocked), default=None)
+        return False, "scope_capacity_unavailable"
+
+    async def __call__(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        if self.target_pool is None:
+            raise ScopeCapacityUnavailableError("document provenance is not permitted for subscription cloud")
+        semaphore = self._gate.semaphore()
+        try:
+            await asyncio.wait_for(semaphore.acquire(), timeout=self.timeout)
+        except TimeoutError as exc:
+            raise L2TransportError(DIAG_TIMEOUT, "subscription concurrency wait timed out", consumed=False) from exc
+        try:
+            async with self.session_factory() as db:
+                candidates, blocked = await profiles.availability(
+                    db, self.engine, self.target_pool, model=self.model or None
+                )
+                if not candidates:
+                    retry_after = min((until for _, until in blocked), default=None)
+                    self.retry_after = retry_after
+                    raise ScopeCapacityUnavailableError("no enabled subscription profile for document scope", retry_after)
+                run_id = uuid.uuid4()
+                profile = await profiles.choose_async(candidates, run_id)
+            try:
+                return await execute_subscription_l2_call(
+                    profile,
+                    prompt,
+                    schema,
+                    SubscriptionCallConfig(self.engine, self.model, self.effort, self.timeout),
+                    run_id=run_id,
+                )
+            except Exception as exc:
+                if getattr(exc, "diagnosis", None) == "usage_limit":
+                    self.retry_after = getattr(exc, "retry_after", None)
+                raise
+            finally:
+                profiles.release(run_id)
+        finally:
+            semaphore.release()
+
+
+def build_l2_adapter(settings: Settings | None = None, *, session_factory: Callable[[], AsyncSession] | None = None,
+                     origin_scope: str = "work", visibility: str = "work_only") -> L2Adapter:
     """kb_l2_adapter 설정으로 어댑터를 만든다. 알 수 없는 값이나 설정 누락은 꺼진 어댑터가 된다."""
     s = settings or get_settings()
     kind = getattr(s, "kb_l2_adapter", "disabled")
@@ -143,5 +229,16 @@ def build_l2_adapter(settings: Settings | None = None) -> L2Adapter:
             s.kb_l2_model,
             timeout=s.kb_l2_timeout_seconds,
             concurrency=s.kb_l2_concurrency,
+        )
+    if kind == "subscription_cli" and session_factory is not None:
+        return SubscriptionCliL2Adapter(
+            session_factory,
+            engine=s.kb_l2_subscription_engine,
+            model=s.kb_l2_subscription_model,
+            effort=s.kb_l2_subscription_effort,
+            timeout=s.kb_l2_subscription_timeout_seconds,
+            concurrency=s.kb_l2_subscription_concurrency,
+            origin_scope=origin_scope,
+            visibility=visibility,
         )
     return DisabledL2Adapter()

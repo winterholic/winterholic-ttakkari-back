@@ -145,7 +145,7 @@ async def test_intake_fixtures_give_same_result_over_http(client, auth, agent_he
         pytest.param(lambda e: e["access"].update(tenant_id="someone-else"), id="tenant"),
         pytest.param(lambda e: e["access"].update(principal_ids=["other"]), id="principal"),
         pytest.param(lambda e: e["access"].update(principal_ids=["owner", "admin"]), id="principal-escalation"),
-        pytest.param(lambda e: e["access"].update(scope="unauthorized_scope"), id="scope"),
+        pytest.param(lambda e: e["access"].update(scope="shared"), id="scope"),
     ],
 )
 async def test_tampered_access_is_403_without_side_effects(client, auth, envelope, mutate):

@@ -110,8 +110,14 @@ async def test_same_source_key_in_two_scopes_never_mixes_documents_or_search(cli
     monkeypatch.setattr(kb_delivery, "default_blob_store", lambda: env.blobs)
     env.server.page("/shared", article_html("공유 제목", [prose("ko", 5, 12) + " 구별 표지 알파벳."]))
     url = env.server.url("/shared")
+    # C2 단일 도서관: 출처는 단일 도서관에 등록되며, 동일 키 중복 등록은 409 거절된다.
+    source = await make_source(client, auth, env, [url], scope="personal", key="postgres-docs")
+    dup_body = source_body(seeds=[url], max_pages=1, source_key="postgres-docs")
+    dup_body["policy"].update(allowed_hosts=["docs.test"], schemes=["http"], ports=[env.server.port], min_delay_seconds=0)
+    dup = await client.post(BASE + "/sources", headers=auth, params={"scope": "work"}, json=dup_body)
+    assert dup.status_code == 409
+
     for scope in ("personal", "work"):
-        source = await make_source(client, auth, env, [url], scope=scope)
         await client.post(BASE + f"/sources/{source['id']}/run", headers=auth, params={"scope": scope})
     for _ in range(2):
         await runner.consume_once(limit=1, managed_only=True)

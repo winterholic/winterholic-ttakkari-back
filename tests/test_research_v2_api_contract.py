@@ -810,3 +810,138 @@ async def test_validate_resource_estimate_uses_contract_field_names(client, auth
     assert est["total_runs"] == 3
     assert est["estimated_seconds"] == est["estimated_total_seconds"] == 9
     assert est["estimated_memory_mb"] > 0 and est["requires_cpu_lock"] is True
+
+
+# ---- 독립 검증 D2~D4: 로컬 실행 경로는 모두 같은 readiness 검사를 거친다 ----
+
+
+@pytest.fixture
+def batch_calls(monkeypatch):
+    from ttakkari.research import runner
+
+    calls = []
+
+    async def fake_batch(experiment_id, run_ids, adapter_registry=None):
+        calls.append((str(experiment_id), len(run_ids)))
+
+    monkeypatch.setattr(runner, "run_experiment_batch", fake_batch)
+    return calls
+
+
+async def _system_method(client, auth, slug):
+    await client.post(f"{API}/catalog/sync", headers=auth)
+    items = (await client.get(f"{API}/methods?q={slug}&limit=100", headers=auth)).json()["items"]
+    return next(item for item in items if item["slug"] == slug)
+
+
+async def _run_count():
+    from sqlalchemy import func, select
+
+    from ttakkari.db import sessionmaker
+    from ttakkari.research.models import Run
+
+    async with sessionmaker()() as db:
+        return (await db.execute(select(func.count()).select_from(Run))).scalar()
+
+
+async def test_external_report_adapter_experiment_cannot_be_dispatched_as_local_run(client, auth, batch_calls):
+    study_id = await make_study(client, auth)
+    method = await _system_method(client, auth, "flash_attention")
+    exp = await make_experiment(
+        client, auth, study_id, method_id=method["id"], adapter_id="external_report",
+        fixed_inputs={"provenance": "external_benchmark", "measurements": [{"metric_key": "decode_tps", "value": 99.0}]},
+    )
+    before = await _run_count()
+
+    response = await client.post(f"{API}/experiments/{exp['id']}/run", headers=auth, json={})
+
+    assert response.status_code == 422, response.text
+    assert "external_report" in response.text
+    assert await _run_count() == before
+    assert batch_calls == []
+    # 외부 결과는 external-report API로만, external 출처로 저장된다.
+    run = await report(client, auth, exp["id"], exp["configurations"][0]["id"], [point(SPEED, 99.0)])
+    assert run["execution_origin"] == "external_report"
+
+
+async def test_auto_start_does_not_dispatch_external_report_experiment(client, auth, batch_calls):
+    study_id = await make_study(client, auth)
+    method = await _system_method(client, auth, "qlora")
+    before = await _run_count()
+    exp = await make_experiment(
+        client, auth, study_id, method_id=method["id"], adapter_id="external_report", auto_start=True
+    )
+    assert exp["runs"] == []
+    assert await _run_count() == before
+    assert batch_calls == []
+
+
+async def test_compared_only_non_executable_method_cannot_bypass_local_readiness(client, auth, batch_calls):
+    study_id = await make_study(client, auth)
+    qlora = await _system_method(client, auth, "qlora")
+    body = {
+        "study_id": study_id, "compared_method_ids": [qlora["id"]], "adapter_id": "llm_inference",
+        "strategy": "single", "search_space": {}, "fixed_inputs": {"model": "qwen"},
+        "budget": {"max_runs": 1, "max_total_seconds": 60},
+    }
+    validation = await client.post(f"{API}/experiments/validate", headers=auth, json=body)
+    assert validation.status_code == 200, validation.text
+    assert validation.json()["valid"] is False
+    assert any("로컬 자동 실행을 지원하지 않습니다" in e for e in validation.json()["errors"])
+
+    exp = await make_experiment(
+        client, auth, study_id, compared_method_ids=[qlora["id"]], adapter_id="llm_inference",
+        fixed_inputs={"model": "qwen"}, budget={"max_runs": 1, "max_total_seconds": 60},
+    )
+    before = await _run_count()
+    response = await client.post(f"{API}/experiments/{exp['id']}/run", headers=auth, json={})
+    assert response.status_code == 422, response.text
+    assert await _run_count() == before
+    assert batch_calls == []
+
+
+async def test_primary_executable_with_non_executable_compared_method_is_rejected_for_local_run(client, auth, batch_calls):
+    study_id = await make_study(client, auth)
+    flash = await _system_method(client, auth, "flash_attention")
+    qlora = await _system_method(client, auth, "qlora")
+    exp = await make_experiment(
+        client, auth, study_id, method_id=flash["id"], compared_method_ids=[qlora["id"]],
+        adapter_id="llm_inference", fixed_inputs={"model": "qwen"},
+        budget={"max_runs": 1, "max_total_seconds": 60},
+    )
+    response = await client.post(f"{API}/experiments/{exp['id']}/run", headers=auth, json={})
+    assert response.status_code == 422, response.text
+    assert batch_calls == []
+
+
+async def test_legacy_execute_applies_method_readiness_but_keeps_v1_experiments(client, auth, monkeypatch):
+    from ttakkari.api import research as research_api
+
+    evaluated = []
+    monkeypatch.setattr(research_api.benchmark, "evaluate", lambda cfg, secs: evaluated.append(1) or {"stub": True})
+    monkeypatch.setattr(research_api.benchmark, "code_digest", lambda: "stub")
+
+    study_id = await make_study(client, auth)
+    qlora = await _system_method(client, auth, "qlora")
+    linked = await make_experiment(
+        client, auth, study_id, method_id=qlora["id"], adapter_id="retrieval_eval", config={"k": 1}
+    )
+    blocked = await client.post(f"{API}/experiments/{linked['id']}/execute", headers=auth)
+    assert blocked.status_code == 422, blocked.text
+    assert "로컬 자동 실행을 지원하지 않습니다" in blocked.text
+    assert evaluated == []
+    state = (await client.get(f"{API}/experiments/{linked['id']}", headers=auth)).json()
+    assert state["state"] == "queued"
+
+    compared_only = await make_experiment(
+        client, auth, study_id, compared_method_ids=[qlora["id"]], adapter_id="retrieval_eval", config={"k": 1}
+    )
+    blocked = await client.post(f"{API}/experiments/{compared_only['id']}/execute", headers=auth)
+    assert blocked.status_code == 422, blocked.text
+    assert evaluated == []
+
+    # v1 experiment without any method link keeps the legacy behaviour.
+    legacy = await make_experiment(client, auth, study_id, adapter_id="retrieval_eval", config={"k": 1})
+    ok = await client.post(f"{API}/experiments/{legacy['id']}/execute", headers=auth)
+    assert ok.status_code == 200, ok.text
+    assert evaluated == [1]

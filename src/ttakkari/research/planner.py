@@ -357,6 +357,30 @@ def expand_configurations(
     return configs, errors, warnings
 
 
+async def local_readiness_issues(
+    db,
+    method_ids: list[uuid.UUID],
+    *,
+    adapter_id: str | None,
+    scope: str,
+) -> list[str]:
+    """Messages for catalog methods that cannot run locally (on `adapter_id` when given)."""
+    from ttakkari.research.readiness import compute_execution_status
+
+    issues: list[str] = []
+    for mid in method_ids:
+        m_obj = await db.get(Method, mid)
+        if m_obj is None:
+            continue
+        status = compute_execution_status(m_obj, scope=scope, adapter_id=adapter_id)
+        if not status.is_executable:
+            label = m_obj.name_ko or m_obj.name or str(mid)
+            issues.append(
+                f"방법론 '{label}'은(는) 로컬 자동 실행을 지원하지 않습니다: {status.unavailable_reason}"
+            )
+    return issues
+
+
 async def validate_experiment_plan(
     db,
     *,
@@ -404,27 +428,13 @@ async def validate_experiment_plan(
         scope = study.scope
 
     # Design validity and local execution readiness are separate. Manual external
-    # reports can carry hypotheses and methods without a local adapter.
-    from ttakkari.research.readiness import compute_execution_status
-    for index, mid in enumerate(all_methods):
-        m_obj = await db.get(Method, mid)
-        if m_obj:
-            is_primary = index == 0 and method_id is not None
-            m_status = compute_execution_status(
-                m_obj,
-                scope=scope,
-                adapter_id=adapter_id if is_primary and adapter_id != "external_report" else None,
-            )
-            if not m_status.is_executable:
-                m_label = m_obj.name_ko or m_obj.name or str(mid)
-                message = (
-                    f"방법론 '{m_label}'은(는) 로컬 자동 실행을 지원하지 않습니다: "
-                    f"{m_status.unavailable_reason}"
-                )
-                if is_primary and adapter_id != "external_report":
-                    errors.append(message)
-                else:
-                    warnings.append(message)
+    # reports can carry hypotheses and methods without a local adapter, but every
+    # method a local adapter would run (primary and compared) must be executable.
+    local_dispatch = adapter_id != "external_report"
+    for message in await local_readiness_issues(
+        db, all_methods, adapter_id=adapter_id if local_dispatch else None, scope=scope
+    ):
+        (errors if local_dispatch else warnings).append(message)
 
     # Scope validation
     if scope == "work" and adapter_id == "llm_inference":

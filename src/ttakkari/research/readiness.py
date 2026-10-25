@@ -37,6 +37,48 @@ STATUS_LABELS_KO = {
 }
 
 
+_COMBINATION_STATUSES = {
+    "local_executable", "upstream_supported", "different_mechanism",
+    "external_only", "unsupported", "unverified",
+}
+
+
+def _combination_model(combination: dict[str, Any]) -> str | None:
+    """Normalize the `model` / `model_id` spellings into one model condition."""
+    for key in ("model_id", "model"):
+        value = combination.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _valid_combination(entry: Any) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if not all(isinstance(entry.get(key), str) and entry[key].strip() for key in ("hardware", "runtime", "status")):
+        return False
+    if entry["status"] not in _COMBINATION_STATUSES:
+        return False
+    declared = []
+    for key in ("model", "model_id"):
+        value = entry.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not value.strip():
+            return False
+        declared.append(value.strip())
+    return len(set(declared)) <= 1
+
+
+def _model_identity(details: dict[str, Any]) -> str | None:
+    """Adapter model identity; conflicting spellings count as unidentified."""
+    found = {
+        value.strip() for key in ("model_id", "model")
+        if isinstance(value := details.get(key), str) and value.strip()
+    }
+    return found.pop() if len(found) == 1 else None
+
+
 def compute_execution_status(
     method: Method | dict[str, Any],
     adapter_registry: Any = None,
@@ -148,17 +190,7 @@ def compute_execution_status(
     has_combinations = "combinations" in compatibility
     combos = compatibility.get("combinations")
     if has_combinations and (
-        not isinstance(combos, list)
-        or not combos
-        or any(
-            not isinstance(c, dict)
-            or not all(isinstance(c.get(key), str) and c[key].strip() for key in ("hardware", "runtime", "status"))
-            or c.get("status") not in {
-                "local_executable", "upstream_supported", "different_mechanism",
-                "external_only", "unsupported", "unverified",
-            }
-            for c in combos
-        )
+        not isinstance(combos, list) or not combos or any(not _valid_combination(c) for c in combos)
     ):
         return ExecutionStatusResult(
             status="environment_unavailable",
@@ -201,24 +233,23 @@ def compute_execution_status(
             c for c in combos
             if c.get("hardware") == adapter_hw and c.get("runtime") == adapter_rt
         ]
-        # Model-conditioned tuples are independent variants. Match an explicitly
-        # identified model, or any model available in this adapter environment.
-        adapter_model = details.get("model")
-        available_models = set(getattr(env_status, "available_models", []) or [])
-        if adapter_model or available_models:
-            matching_tuples = [
-                c for c in matching_tuples
-                if not (c.get("model") or c.get("model_id"))
-                or (c.get("model") or c.get("model_id")) in ({adapter_model} if adapter_model else available_models)
-            ]
-        tuple_groups: dict[tuple[Any, ...], set[str]] = {}
-        for c in matching_tuples:
-            identity = (
-                c.get("hardware"), c.get("runtime"),
-                c.get("model"), c.get("model_id"),
+        # A tuple with a model condition is a more specific declaration than the
+        # generic hardware/runtime tuple. The adapter's own model decides which
+        # level applies; an unidentified model leaves model conditions uncertain.
+        adapter_model = _model_identity(details)
+        generic = [c for c in matching_tuples if _combination_model(c) is None]
+        specific = [c for c in matching_tuples if _combination_model(c) is not None]
+        if specific and adapter_model is None:
+            return ExecutionStatusResult(
+                status="environment_unavailable",
+                status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
+                is_executable=False,
+                unavailable_reason=f"조합 ({adapter_hw} × {adapter_rt})에 모델 조건이 있으나 어댑터가 사용 모델을 식별하지 못해 fail-closed 처리되었습니다.",
+                matched_adapter_id=matched_adapter.id,
             )
-            tuple_groups.setdefault(identity, set()).add(c["status"])
-        if any(len(statuses) > 1 for statuses in tuple_groups.values()):
+        model_level = [c for c in specific if _combination_model(c) == adapter_model]
+        applicable = model_level or generic
+        if len({c["status"] for c in applicable}) > 1:
             return ExecutionStatusResult(
                 status="environment_unavailable",
                 status_label_ko=STATUS_LABELS_KO["environment_unavailable"],
@@ -226,11 +257,7 @@ def compute_execution_status(
                 unavailable_reason=f"조합 ({adapter_hw} × {adapter_rt})에 동일 조건의 상충하는 status 선언이 있어 fail-closed 처리되었습니다.",
                 matched_adapter_id=matched_adapter.id,
             )
-
-        matching_tuple = next(
-            (c for c in matching_tuples if c["status"] == "local_executable"),
-            matching_tuples[0] if matching_tuples else None,
-        )
+        matching_tuple = applicable[0] if applicable else None
 
         if matching_tuple is None or matching_tuple.get("status") != "local_executable":
             t_status = matching_tuple.get("status") if matching_tuple else "not_listed"

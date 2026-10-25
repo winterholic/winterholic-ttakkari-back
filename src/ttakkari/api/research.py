@@ -529,7 +529,8 @@ async def experiment(study_id: uuid.UUID, body: ExperimentIn, _: User, db: Db):
     )
 
     created_runs = []
-    if body.auto_start:
+    # External-report experiments wait for a registered external result.
+    if body.auto_start and adapter_id != "external_report":
         created_runs = await runner.start_experiment_runs(
             db, experiment_id=row.id, background=True
         )
@@ -567,6 +568,21 @@ async def execute(experiment_id: uuid.UUID, _: User, db: Db):
         raise HTTPException(409, "research_experiment_not_queued")
     if row.adapter != "retrieval_eval":
         raise HTTPException(422, "adapter_not_locally_executable_use_external_report")
+    # v1 experiments without a catalog method link keep the legacy behaviour.
+    linked_method_ids = [
+        uuid.UUID(str(value))
+        for value in ([row.method_id] if row.method_id else []) + list(row.compared_method_ids or [])
+    ]
+    if linked_method_ids:
+        study = await db.get(Study, row.study_id)
+        issues = await planner.local_readiness_issues(
+            db,
+            linked_method_ids,
+            adapter_id=row.adapter,
+            scope=study.scope if study else "personal",
+        )
+        if issues:
+            raise HTTPException(422, "experiment_plan_not_executable: " + "; ".join(issues))
     started = utcnow()
     row.state = "running"
     svc.event(db, row.study_id, "execution_started", str(_), id=str(row.id))

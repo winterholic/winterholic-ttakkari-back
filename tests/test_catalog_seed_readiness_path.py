@@ -370,7 +370,7 @@ async def test_model_conditioned_tuples_are_not_duplicate_hardware_runtime_tuple
                 ready=True,
                 execution_mode="host_supervisor",
                 available_models=["model-a", "model-b"],
-                details={"hardware": "apple_silicon_metal", "runtime": "llama.cpp"},
+                details={"hardware": "apple_silicon_metal", "runtime": "llama.cpp", "model": "model-a"},
             )
 
     class Registry:
@@ -581,3 +581,91 @@ async def test_system_seed_promotion_rejected_and_user_scope_promotion_preserved
             )
         ).scalar_one()
         assert kokoro.lifecycle_status == "deprecated"
+
+
+# ---- D1: model-conditioned combinations must fail closed ----
+
+_HW, _RT = "apple_silicon_metal", "llama.cpp"
+
+
+def _model_status(combos, *, model=None, model_id=None, available=()):
+    class LocalAdapter:
+        id = "llm_inference"
+        supported_methods = ["sample"]
+        supported_parameters = ["enabled"]
+
+        def check_environment(self, *, scope="personal"):
+            from ttakkari.research.adapters.base import AdapterEnvironmentStatus
+
+            details = {"hardware": _HW, "runtime": _RT}
+            if model:
+                details["model"] = model
+            if model_id:
+                details["model_id"] = model_id
+            return AdapterEnvironmentStatus(
+                adapter_id=self.id, ready=True, execution_mode="host_supervisor",
+                available_models=list(available), details=details,
+            )
+
+    class Registry:
+        def get_adapter(self, hint):
+            return LocalAdapter() if hint == "llm_inference" else None
+
+    return compute_execution_status(
+        {
+            "slug": "sample", "lifecycle_status": "validated",
+            "parameters": [{"key": "enabled"}], "metrics": ["quality"],
+            "adapter_hints": ["llm_inference"],
+            "compatibility": {"combinations": combos},
+        },
+        Registry(),
+    )
+
+
+def _t(status, **extra):
+    return {"hardware": _HW, "runtime": _RT, "status": status, **extra}
+
+
+@pytest.mark.parametrize(
+    "combos,kwargs,expected",
+    [
+        # generic local + specific unsupported for the adapter's model -> specific wins, blocked
+        ([_t("local_executable"), _t("unsupported", model="X")], {"model": "X"}, False),
+        ([_t("local_executable"), _t("unsupported", model="X")], {"model_id": "X"}, False),
+        ([_t("unsupported", model="X"), _t("local_executable")], {"model": "X"}, False),
+        # model / model_id spelling of the same model must be one condition (conflict)
+        ([_t("unsupported", model="X"), _t("local_executable", model_id="X")], {"model": "X"}, False),
+        ([_t("local_executable", model="X"), _t("unsupported", model_id="X")], {"model_id": "X"}, False),
+        # same tuple declares two different model names
+        ([_t("local_executable", model="X", model_id="Y")], {"model": "X"}, False),
+        # adapter cannot identify its model: model-conditioned tuples are uncertain
+        ([_t("local_executable", model="X")], {}, False),
+        ([_t("local_executable"), _t("unsupported", model="X")], {}, False),
+        ([_t("local_executable", model="X")], {"available": ["X"]}, False),
+        # specific declaration overrides the generic one in both directions
+        ([_t("unsupported"), _t("local_executable", model="X")], {"model": "X"}, True),
+        ([_t("unsupported"), _t("local_executable", model_id="X")], {"model_id": "X"}, True),
+        ([_t("local_executable"), _t("unsupported", model="Y")], {"model": "X"}, True),
+        # conflict inside the same level is still fail-closed
+        ([_t("local_executable", model="X"), _t("unsupported", model="X")], {"model": "X"}, False),
+        # model with no declaration at all for it
+        ([_t("local_executable", model="Y")], {"model": "X"}, False),
+        # generic only: unchanged
+        ([_t("local_executable")], {}, True),
+    ],
+)
+async def test_model_conditioned_combinations_fail_closed(combos, kwargs, expected):
+    assert _model_status(combos, **kwargs).is_executable is expected
+
+
+async def test_unidentified_model_with_multiple_available_models_is_not_full_support():
+    combos = [_t("local_executable", model="a"), _t("upstream_supported", model="b")]
+    assert _model_status(combos, available=["a", "b"]).is_executable is False
+    assert _model_status(combos, model="a", available=["a", "b"]).is_executable is True
+    assert _model_status(combos, model="b", available=["a", "b"]).is_executable is False
+
+
+@pytest.mark.parametrize("model_value", [123, "", "  ", ["x"]])
+async def test_invalid_model_condition_value_fails_closed(model_value):
+    combos = [_t("local_executable", model=model_value)]
+    assert _model_status(combos, model="x").is_executable is False

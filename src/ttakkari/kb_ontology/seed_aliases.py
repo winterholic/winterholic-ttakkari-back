@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ttakkari.common.entity_norm import norm_name
+from ttakkari.kb_ontology.compat import disambiguated_norm, is_domain_compatible
 from ttakkari.kb_ontology_models import KbEntity, KbEntityAlias
 
 logger = logging.getLogger(__name__)
@@ -34,7 +36,7 @@ class SeedEntity:
     # alias_kind: 'canonical', 'synonym', 'abbrev', 'translation'
 
 
-# 170개 핵심 기술 시드 정의 목록
+# 핵심 기술 시드 정의 목록. 별칭은 '같은 대상의 다른 표기'만 담는다(상위 개념·유사 개념·일반어는 넣지 않는다).
 RAW_SEED_ENTITIES: list[SeedEntity] = [
     # -------------------------------------------------------------
     # 1. Kubernetes & Container Ecosystem (25개)
@@ -47,7 +49,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("쿠버네티스", "ko", "translation"),
             ("k8s", "en", "abbrev"),
-            ("컨테이너 오케스트레이션", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -57,7 +58,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="쿠버네티스에서 생성하고 관리할 수 있는 배포 가능한 가장 작은 컴퓨팅 단위.",
         aliases=[
             ("파드", "ko", "translation"),
-            ("배포 단위", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -67,7 +67,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="파드와 레플리카셋에 대한 선언적 업데이트를 제공하는 쿠버네티스 워크로드 리소스.",
         aliases=[
             ("디플로이먼트", "ko", "translation"),
-            ("배포 컨트롤러", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -147,7 +146,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="기밀이 아닌 데이터를 키-값 쌍으로 저장하여 환경설정을 파드와 분리하는 리소스.",
         aliases=[
             ("컨피그맵", "ko", "translation"),
-            ("cm", "en", "abbrev"),
             ("설정 맵", "ko", "synonym"),
         ],
     ),
@@ -169,7 +167,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("퍼시스턴트 볼륨", "ko", "translation"),
             ("영구 볼륨", "ko", "synonym"),
-            ("PV", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -191,7 +188,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("스토리지클래스", "ko", "translation"),
             ("저장소 클래스", "ko", "synonym"),
-            ("sc", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -202,7 +198,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("네임스페이스", "ko", "translation"),
             ("이름 공간", "ko", "synonym"),
-            ("ns", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -222,7 +217,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="쿠버네티스 애플리케이션을 패키징, 구성 및 배포하기 위한 패키지 관리자.",
         aliases=[
             ("헬름", "ko", "translation"),
-            ("쿠버네티스 패키지 매니저", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -232,7 +226,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="애플리케이션을 가벼운 컨테이너 단위로 빌드, 공유 및 실행할 수 있는 오픈소스 플랫폼.",
         aliases=[
             ("도커", "ko", "translation"),
-            ("컨테이너 엔진", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -269,7 +262,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="각 노드에서 실행되며 쿠버네티스 서비스 추상화를 위한 네트워크 라우팅 및 패킷 포워딩을 수행하는 네트워크 프록시.",
         aliases=[
             ("쿠브프록시", "ko", "translation"),
-            ("kube proxy", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -289,7 +281,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="마이크로서비스 간 트래픽 관리, 보안, 관측성을 제공하는 오픈소스 서비스 메시 플랫폼.",
         aliases=[
             ("이스티오", "ko", "translation"),
-            ("서비스 메시", "ko", "synonym"),
         ],
     ),
     # -------------------------------------------------------------
@@ -302,8 +293,16 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="선언적 구성 파일을 사용하여 인프라를 안전하고 효율적으로 빌드, 변경, 버전 관리하는 IaC 도구.",
         aliases=[
             ("테라폼", "ko", "translation"),
+        ],
+    ),
+    SeedEntity(
+        canonical_name="Infrastructure as Code",
+        entity_kind="concept",
+        domain="infra",
+        summary="인프라를 선언적 코드로 정의하고 버전 관리하며 자동 프로비저닝하는 방식. Terraform, Ansible 같은 도구는 이 개념의 구현체이며 동일 대상이 아니다.",
+        aliases=[
             ("IaC", "en", "abbrev"),
-            ("Infrastructure as Code", "en", "synonym"),
+            ("코드형 인프라", "ko", "translation"),
         ],
     ),
     SeedEntity(
@@ -360,8 +359,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="쿠버네티스를 위한 선언적 GitOps 지속적 배포(CD) 도구.",
         aliases=[
             ("아르고CD", "ko", "translation"),
-            ("Argo CD", "en", "synonym"),
-            ("GitOps 배포기", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -409,7 +406,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="시계열 데이터 모델과 강력한 PromQL 쿼리 언어를 갖춘 오픈소스 모니터링 및 경보 툴킷.",
         aliases=[
             ("프로메테우스", "ko", "translation"),
-            ("시계열 모니터링", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -438,7 +434,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="마이크로서비스 기반 분산 시스템의 트랜잭션을 추적하고 성능 병목을 모니터링하는 분산 추적 시스템.",
         aliases=[
             ("예거", "ko", "translation"),
-            ("분산 트레이싱", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -527,7 +522,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("로드 밸런서", "ko", "translation"),
             ("부하 분산기", "ko", "synonym"),
-            ("LB", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -601,7 +595,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="데이터베이스, 캐시, 메시징 브로커, 스트리밍 엔진으로 사용되는 초고속 인메모리 데이터 구조 저장소.",
         aliases=[
             ("레디스", "ko", "translation"),
-            ("인메모리 캐시", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -679,7 +672,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="Lucene 기반으로 JSON 문서를 실시간 색인하고 분산 검색·분석을 제공하는 검색 엔진.",
         aliases=[
             ("엘라스틱서치", "ko", "translation"),
-            ("ES", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -698,7 +690,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="노드, 관계, 속성으로 이루어진 그래프 구조를 효율적으로 쿼리할 수 있는 오픈소스 그래프 데이터베이스.",
         aliases=[
             ("네오포제이", "ko", "translation"),
-            ("그래프DB", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -746,7 +737,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="수십억 개의 벡터 임베딩을 저장, 색인, 관리하도록 설계된 오픈소스 벡터 데이터베이스.",
         aliases=[
             ("밀버스", "ko", "translation"),
-            ("벡터 데이터베이스", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -775,7 +765,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="PostgreSQL에 오픈소스 벡터 유사도 검색 기능을 추가하는 익스텐션.",
         aliases=[
             ("피지벡터", "ko", "translation"),
-            ("pg_vector", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -926,7 +915,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("노드제이에스", "ko", "translation"),
             ("Node", "en", "synonym"),
-            ("노드", "ko", "translation"),
         ],
     ),
     SeedEntity(
@@ -944,7 +932,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         domain="dev",
         summary="번들러, 트랜스파일러, 패키지 매니저를 통합한 초고속 일체형 JavaScript 런타임.",
         aliases=[
-            ("번", "ko", "translation"),
         ],
     ),
     SeedEntity(
@@ -1019,7 +1006,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="TCP 대신 UDP 기반의 QUIC 전송 계층을 사용하여 HOL 블로킹을 해결한 3세대 웹 프로토콜.",
         aliases=[
             ("에이치티티피3", "ko", "translation"),
-            ("QUIC", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1042,7 +1028,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="Python 표준 타입 힌트를 기반으로 초고속 성능과 자동 OpenAPI 문서를 제공하는 최신 웹 프레임워크.",
         aliases=[
             ("패스트API", "ko", "translation"),
-            ("fastapi", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1080,7 +1065,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="효율적이고 확장 가능한 Node.js 서버 애플리케이션을 구축하기 위한 진보적인 TypeScript 프레임워크.",
         aliases=[
             ("네스트제이에스", "ko", "translation"),
-            ("Nest", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1090,7 +1074,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="독립 실행형 프로덕션 등급의 스프링 기반 애플리케이션을 쉽게 만들 수 있는 자바 프레임워크.",
         aliases=[
             ("스프링 부트", "ko", "translation"),
-            ("스프링부트", "ko", "translation"),
         ],
     ),
     SeedEntity(
@@ -1110,8 +1093,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="서버 사이드 렌더링(SSR)과 정적 사이트 생성을 지원하는 대표적인 풀스택 React 프레임워크.",
         aliases=[
             ("넥스트제이에스", "ko", "translation"),
-            ("NextJS", "en", "synonym"),
-            ("Next", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1122,7 +1103,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("뷰제이에스", "ko", "translation"),
             ("Vue", "en", "synonym"),
-            ("뷰", "ko", "translation"),
         ],
     ),
     SeedEntity(
@@ -1161,7 +1141,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="데이터베이스 작업을 추상화하고 강력한 객체 관계형 매핑을 제공하는 Python SQL 툴킷 및 ORM.",
         aliases=[
             ("에스큐엘알케미", "ko", "translation"),
-            ("알케미", "ko", "translation"),
         ],
     ),
     SeedEntity(
@@ -1225,8 +1204,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         domain="dev",
         summary="기본 ES 모듈과 Rollup을 기반으로 번개처럼 빠른 로컬 서버 구동과 빌드를 제공하는 프론트엔드 도구.",
         aliases=[
-            ("비트", "ko", "translation"),
-            ("바이트", "ko", "translation"),
         ],
     ),
     # -------------------------------------------------------------
@@ -1320,7 +1297,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         domain="ai",
         summary="사전 학습된 가중치를 동결하고 계층별 저순위 분해 행렬만을 훈련하여 매개변수 효율적 파인튜닝을 달성하는 기법.",
         aliases=[
-            ("로라", "ko", "translation"),
             ("Low-Rank Adaptation", "en", "synonym"),
         ],
     ),
@@ -1397,7 +1373,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="머신러닝 커뮤니티가 모델, 데이터셋, 데모 애플리케이션을 공유하고 협업할 수 있는 글로벌 허브 및 오픈소스 플랫폼.",
         aliases=[
             ("허깅페이스", "ko", "translation"),
-            ("HF", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -1407,7 +1382,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="동적 계산 그래프와 GPU 가속을 제공하여 연구와 프로덕션에서 널리 쓰이는 오픈소스 딥러닝 프레임워크.",
         aliases=[
             ("파이토치", "ko", "translation"),
-            ("Torch", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1418,7 +1392,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("텐서플로우", "ko", "translation"),
             ("텐서플로", "ko", "translation"),
-            ("TF", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -1474,7 +1447,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="OpenAI의 GPT 시리즈 기반으로 대화형 질의응답과 추론을 수행하는 생성형 인공지능 서비스.",
         aliases=[
             ("챗지피티", "ko", "translation"),
-            ("GPT", "en", "abbrev"),
         ],
     ),
     SeedEntity(
@@ -1504,7 +1476,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="Meta가 오픈소스로 공개하여 널리 채택된 대표적인 기반 대형 언어 모델 제품군.",
         aliases=[
             ("라마", "ko", "translation"),
-            ("LLaMA", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1534,9 +1505,7 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         domain="security",
         summary="비밀번호를 직접 제공하지 않고 서드파티 애플리케이션에 리소스 접근 권한을 위임하는 오픈 표준 프로토콜.",
         aliases=[
-            ("오스", "ko", "translation"),
             ("OAuth 2.0", "en", "synonym"),
-            ("인증 인가 표준", "ko", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1567,7 +1536,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("전송 계층 보안", "ko", "translation"),
             ("TLS", "en", "abbrev"),
-            ("SSL", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1628,7 +1596,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         summary="내부망이라도 신뢰하지 않고 모든 접근 요청에 대해 엄격한 신원 검증과 최소 권한을 부여하는 보안 모델 패러다임.",
         aliases=[
             ("제로 트러스트", "ko", "translation"),
-            ("제로트러스트", "ko", "translation"),
         ],
     ),
     SeedEntity(
@@ -1649,7 +1616,6 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
         aliases=[
             ("다중 요소 인증", "ko", "translation"),
             ("MFA", "en", "abbrev"),
-            ("2FA", "en", "synonym"),
         ],
     ),
     SeedEntity(
@@ -1736,18 +1702,48 @@ RAW_SEED_ENTITIES: list[SeedEntity] = [
 
 
 # -------------------------------------------------------------
-# 빠른 조회를 위한 정규화 인덱스 빌드
+# 빠른 조회를 위한 정규화 인덱스. 한 표기가 둘 이상의 시드를 가리키면(동음이의어) 시드로 확정하지 않는다.
 # -------------------------------------------------------------
-_NORM_TO_SEED: dict[str, SeedEntity] = {}
+_NORM_TO_SEEDS: dict[str, list[SeedEntity]] = defaultdict(list)
+
+
+def _seed_norms(seed: SeedEntity) -> list[str]:
+    norms = [norm_name(seed.canonical_name)]
+    norms.extend(norm_name(a) for a, _lang, _kind in seed.aliases)
+    return [n for n in dict.fromkeys(norms) if n]
+
 
 for _entry in RAW_SEED_ENTITIES:
-    _canon_norm = norm_name(_entry.canonical_name)
-    if _canon_norm:
-        _NORM_TO_SEED[_canon_norm] = _entry
-    for _alias, _lang, _kind in _entry.aliases:
-        _a_norm = norm_name(_alias)
-        if _a_norm and _a_norm not in _NORM_TO_SEED:
-            _NORM_TO_SEED[_a_norm] = _entry
+    for _n in _seed_norms(_entry):
+        if _entry not in _NORM_TO_SEEDS[_n]:
+            _NORM_TO_SEEDS[_n].append(_entry)
+
+
+def validate_seed_inventory() -> list[str]:
+    """시드 사전 자체 결함 목록. 비어 있어야 정상이다.
+
+    - 같은 시드 안에서 정규화하면 같은 표기가 둘 이상(정본 포함)인 경우
+    - 서로 다른 시드가 같은 정규화 표기를 공유하는 경우(동음이의어 표제어는 KNOWN_HOMONYMS 에 있어야 한다)
+    - (정본 norm, kind) 중복
+    """
+    problems: list[str] = []
+    seen_slots: set[tuple[str, str]] = set()
+    for seed in RAW_SEED_ENTITIES:
+        slot = (norm_name(seed.canonical_name), seed.entity_kind)
+        if slot in seen_slots:
+            problems.append(f"duplicate canonical slot: {slot}")
+        seen_slots.add(slot)
+        seen: dict[str, str] = {norm_name(seed.canonical_name): seed.canonical_name}
+        for alias, _lang, _kind in seed.aliases:
+            n = norm_name(alias)
+            if n in seen:
+                problems.append(f"{seed.canonical_name}: '{alias}' duplicates '{seen[n]}'")
+            else:
+                seen[n] = alias
+    for n, seeds in _NORM_TO_SEEDS.items():
+        if len(seeds) > 1:
+            problems.append(f"shared norm '{n}': {[s.canonical_name for s in seeds]}")
+    return problems
 
 
 def get_seed_entities() -> list[SeedEntity]:
@@ -1755,17 +1751,134 @@ def get_seed_entities() -> list[SeedEntity]:
     return list(RAW_SEED_ENTITIES)
 
 
-def find_seed_by_norm(norm: str) -> SeedEntity | None:
-    """정규화된 이름 또는 별칭으로 시드 엔터티 조회."""
+def find_seeds_by_norm(norm: str) -> list[SeedEntity]:
+    """정규화된 이름 또는 별칭으로 시드 후보 전체를 조회한다. 2개 이상이면 동음이의어다."""
     if not norm:
-        return None
-    return _NORM_TO_SEED.get(norm)
+        return []
+    return list(_NORM_TO_SEEDS.get(norm, ()))
+
+
+def find_seed_by_norm(norm: str) -> SeedEntity | None:
+    """정규화된 표기가 정확히 하나의 시드를 가리킬 때만 그 시드를 반환한다."""
+    seeds = find_seeds_by_norm(norm)
+    return seeds[0] if len(seeds) == 1 else None
 
 
 def is_seed_alias(alias: str) -> bool:
     """주어진 문자열이 시드 사전에 등록된 이름/별칭인지 확인."""
     n = norm_name(alias)
-    return bool(n and n in _NORM_TO_SEED)
+    return bool(n and n in _NORM_TO_SEEDS)
+
+
+async def _norm_owners(
+    db: AsyncSession, tenant_id: str, visibility: str, norms: set[str]
+) -> dict[str, set[uuid.UUID]]:
+    """같은 (tenant, visibility) 공간에서 표기(norm)를 이미 정본명·별칭으로 쓰는 엔터티 id."""
+    owners: dict[str, set[uuid.UUID]] = defaultdict(set)
+    if not norms:
+        return owners
+    rows = await db.execute(
+        select(KbEntityAlias.norm_alias, KbEntity.id)
+        .join(KbEntity, KbEntity.id == KbEntityAlias.entity_id)
+        .where(
+            KbEntity.tenant_id == tenant_id,
+            KbEntity.visibility == visibility,
+            KbEntity.status == "active",
+            KbEntityAlias.norm_alias.in_(norms),
+        )
+    )
+    for n, eid in rows.all():
+        owners[n].add(eid)
+    return owners
+
+
+async def ensure_seed_entity(
+    db: AsyncSession,
+    seed: SeedEntity,
+    tenant_id: str,
+    visibility: str,
+    origin_scope: str,
+) -> tuple[KbEntity, bool]:
+    """시드 엔터티를 (tenant, visibility, kind, norm) 슬롯에 멱등하게 보장한다. 반환: (entity, 신규 생성 여부).
+
+    - 같은 슬롯에 호환 도메인 엔터티가 있으면 재사용하고 빠진 시드 별칭만 보충한다.
+    - 슬롯이 비호환 도메인(동음이의) 엔터티로 점유되어 있으면 병합하지 않고 구분 키로 별도 생성한다.
+    - 이미 다른 엔터티가 쓰는 표기는 별칭으로 가져가지 않는다(두 엔터티를 섞지 않기 위해).
+    """
+    c_norm = norm_name(seed.canonical_name)
+    created = False
+    entity: KbEntity | None = None
+    for key in (c_norm, disambiguated_norm(c_norm, seed.domain)):
+        row = (
+            await db.execute(
+                select(KbEntity).where(
+                    KbEntity.tenant_id == tenant_id,
+                    KbEntity.visibility == visibility,
+                    KbEntity.entity_kind == seed.entity_kind,
+                    KbEntity.norm_name == key,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            entity = KbEntity(
+                id=uuid.uuid4(),
+                tenant_id=tenant_id,
+                origin_scope=origin_scope,
+                visibility=visibility,
+                canonical_name=seed.canonical_name,
+                norm_name=key,
+                norm_form="NFKC",
+                entity_kind=seed.entity_kind,
+                domain=seed.domain,
+                summary=seed.summary,
+                confidence=1.0,
+                status="active",
+            )
+            db.add(entity)
+            await db.flush()
+            created = True
+            break
+        if row.status == "active" and is_domain_compatible(row.domain, seed.domain, c_norm):
+            entity = row
+            break
+    if entity is None:
+        raise RuntimeError(f"seed slot exhausted for {seed.canonical_name}")
+
+    existing = {
+        r[0]
+        for r in (
+            await db.execute(select(KbEntityAlias.norm_alias).where(KbEntityAlias.entity_id == entity.id))
+        ).all()
+    }
+    wanted: list[tuple[str, str | None, str, str]] = [
+        (seed.canonical_name, "en" if seed.canonical_name.isascii() else None, "canonical", c_norm)
+    ]
+    for alias_text, lang, alias_kind in seed.aliases:
+        a_norm = norm_name(alias_text)
+        if a_norm:
+            wanted.append((alias_text, lang, alias_kind, a_norm))
+    owners = await _norm_owners(db, tenant_id, visibility, {w[3] for w in wanted} - existing)
+    for alias_text, lang, alias_kind, a_norm in wanted:
+        if a_norm in existing:
+            continue
+        if owners.get(a_norm, set()) - {entity.id}:
+            logger.info("seed alias '%s' skipped: owned by another entity", alias_text)
+            continue
+        existing.add(a_norm)
+        db.add(
+            KbEntityAlias(
+                id=uuid.uuid4(),
+                entity_id=entity.id,
+                alias=alias_text,
+                norm_alias=a_norm,
+                norm_form="NFKC",
+                lang=lang,
+                alias_kind=alias_kind,
+                source="seed",
+            )
+        )
+    await db.flush()
+    return entity, created
 
 
 async def bootstrap_seed_aliases(
@@ -1774,85 +1887,15 @@ async def bootstrap_seed_aliases(
     visibility: str = "global",
     origin_scope: str = "personal",
 ) -> int:
-    """시드 사전을 DB kb_entities 및 kb_entity_aliases 에 멱등하게 적재.
+    """시드 사전을 DB kb_entities 및 kb_entity_aliases 에 멱등하게 적재한다.
 
-    이미 존재하는 엔터티는 건너뛰고, 신규 생성된 엔터티 개수를 반환한다.
+    시드는 공개 지식이라 기본 visibility 는 global 이다(문서에서 파생된 값이 아님).
+    새로 생성된 엔터티 개수를 반환하며, 재실행하면 0이다.
     """
     created_count = 0
-
-    # 1. 기존 엔터티의 norm_name 집합 조회
-    stmt = select(KbEntity.norm_name).where(
-        KbEntity.tenant_id == tenant_id,
-        KbEntity.visibility == visibility,
-    )
-    res = await db.execute(stmt)
-    existing_norms = {r[0] for r in res.all()}
-
     for seed in RAW_SEED_ENTITIES:
-        c_norm = norm_name(seed.canonical_name)
-        if not c_norm or c_norm in existing_norms:
-            continue
-
-        # 새 엔터티 생성
-        entity = KbEntity(
-            id=uuid.uuid4(),
-            tenant_id=tenant_id,
-            origin_scope=origin_scope,
-            visibility=visibility,
-            canonical_name=seed.canonical_name,
-            norm_name=c_norm,
-            norm_form="NFKC",
-            entity_kind=seed.entity_kind,
-            domain=seed.domain,
-            summary=seed.summary,
-            confidence=1.0,
-            status="active",
-        )
-        db.add(entity)
-        existing_norms.add(c_norm)
-        created_count += 1
-
-        # 대표 정본 별칭 등록
-        db.add(
-            KbEntityAlias(
-                id=uuid.uuid4(),
-                entity_id=entity.id,
-                alias=seed.canonical_name,
-                norm_alias=c_norm,
-                norm_form="NFKC",
-                lang="en" if seed.canonical_name.isascii() else None,
-                alias_kind="canonical",
-                source="seed",
-            )
-        )
-
-        # 등록된 별칭들 추가
-        registered_alias_norms = {c_norm}
-        for alias_text, lang, alias_kind in seed.aliases:
-            a_norm = norm_name(alias_text)
-            if not a_norm or a_norm in registered_alias_norms:
-                continue
-            registered_alias_norms.add(a_norm)
-            db.add(
-                KbEntityAlias(
-                    id=uuid.uuid4(),
-                    entity_id=entity.id,
-                    alias=alias_text,
-                    norm_alias=a_norm,
-                    norm_form="NFKC",
-                    lang=lang,
-                    alias_kind=alias_kind,
-                    source="seed",
-                )
-            )
-
+        _entity, created = await ensure_seed_entity(db, seed, tenant_id, visibility, origin_scope)
+        created_count += int(created)
     if created_count > 0:
-        await db.flush()
-        logger.info(
-            "Bootstrapped %d seed entities into %s/%s",
-            created_count,
-            tenant_id,
-            visibility,
-        )
-
+        logger.info("Bootstrapped %d seed entities into %s/%s", created_count, tenant_id, visibility)
     return created_count

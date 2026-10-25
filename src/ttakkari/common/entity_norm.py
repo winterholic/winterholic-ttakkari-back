@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import math
 import re
 import unicodedata
 from typing import Any
@@ -333,13 +334,18 @@ def jaro_winkler_similarity(s1: str, s2: str, prefix_weight: float = 0.1) -> flo
 
 
 def cosine_similarity(v1: list[float] | None, v2: list[float] | None) -> float:
-    """Calculate cosine similarity between two float vectors (-1.0 ~ 1.0)."""
+    """Calculate cosine similarity between two float vectors (-1.0 ~ 1.0).
+
+    Missing, empty, length-mismatched, zero-norm or non-finite vectors score 0.0 so that a broken
+    embedding can never produce a high similarity. The score only feeds merge-candidate generation.
+    """
     if not v1 or not v2 or len(v1) != len(v2):
         return 0.0
-    dot = sum(a * b for a, b in zip(v1, v2))
+    if not all(math.isfinite(x) for x in v1) or not all(math.isfinite(x) for x in v2):
+        return 0.0
+    dot = sum(a * b for a, b in zip(v1, v2, strict=True))
     norm1 = sum(a * a for a in v1) ** 0.5
     norm2 = sum(b * b for b in v2) ** 0.5
     if norm1 == 0.0 or norm2 == 0.0:
         return 0.0
-    return dot / (norm1 * norm2)
-
+    return max(-1.0, min(1.0, dot / (norm1 * norm2)))

@@ -1,16 +1,20 @@
-"""4단계 결정적 엔터티 해소기 (4-Stage Deterministic Entity Resolver).
+"""결정적 엔터티 해소기 (KB3-301).
 
-설계 사양 (knowledge-library-refactor.md 2.4 2)):
-1단계 (Step 1): 정규화 이름 정확 일치 (norm_name)
-2단계 (Step 2): 등록된 한·영 별칭 사전(kb_entity_aliases) 및 시드 사전 일치
-3단계 (Step 3): 문맥 임베딩 유사도 및 편집 거리 비교 (동일 entity_kind & domain 내)
-4단계 (Step 4): 모호성 격리 (오병합 방지 불변 규칙) -> kb_conflicts('ambiguous_entity') 격리
+원칙: 이름·철자·임베딩이 비슷하다는 사실만으로 동일성을 확정하지 않는다. 비슷하면 '병합 후보'로 남긴다.
 
-증분 연결 및 가시성 경계 불변 조건:
-- 새 문서의 언급을 기존 엔터티에 증분 연결(kb_document_entities).
-- 새 별칭 학습은 근거(evidence_id 또는 괄호 병기 등 명시적 텍스트 출현)가 있을 때만 수행.
-- visibility='work_only' 언급은 global 엔터티의 별칭 사전(kb_entity_aliases)이나 카운트를
-  절대 오염시키지 않는다 (fail-closed 가시성 격리).
+자동 연결(=기존 엔터티에 언급을 붙이는 것)은 아래 세 경우뿐이다.
+  (a) Step 1: 정규화 키(norm_name) 정확 일치, 단 entity_kind 가 같고 도메인이 호환될 때
+  (b) Step 2: 등록 별칭(kb_entity_aliases) 또는 시드 별칭 일치, 같은 kind·도메인 조건
+  (c) 별칭 학습: 같은 패시지 안의 명시적 괄호 병기, 또는 패시지 원문에 실제로 나타나는 별칭
+Step 3(철자·임베딩 유사도)은 병합 후보(kb_conflicts 'ambiguous_entity')만 만든다.
+이름이 같아도 kind 나 도메인이 다르면(Swift 언어 vs SWIFT 금융망) 병합하지 않고 후보로 남긴다.
+
+가시성: 신규 엔터티·충돌의 visibility 는 입력이 아니라 원천 문서 접근에서 파생한다
+(work→work_only, 접근 정보 없음/미상→work_only, personal→global). work_only 언급은 global 엔터티의
+별칭·카운트를 바꾸지 않는다.
+
+멱등성: mention_count/document_count 는 증분 덧셈이 아니라 kb_document_entities 의 (entity, passage)
+유일 행에서 다시 계산한다. 같은 revision/passage 를 다시 처리해도 행·별칭·충돌이 늘지 않는다.
 """
 
 from __future__ import annotations
@@ -18,40 +22,93 @@ from __future__ import annotations
 import enum
 import logging
 import uuid
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ttakkari.collector.control_models import KbDocumentAccess
 from ttakkari.common.entity_norm import (
     cosine_similarity,
     jaro_winkler_similarity,
     norm_name,
     split_bilingual_label,
 )
+from ttakkari.kb_ontology.compat import (
+    KNOWN_HOMONYMS,
+    disambiguated_norm,
+    is_domain_compatible,
+    is_kind_compatible,
+)
 from ttakkari.kb_ontology.seed_aliases import (
     SeedEntity,
-    find_seed_by_norm,
+    ensure_seed_entity,
+    find_seeds_by_norm,
 )
 from ttakkari.kb_ontology_models import (
     KbConflict,
     KbDocumentEntity,
     KbEntity,
     KbEntityAlias,
+    derive_derived_visibility,
 )
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "KNOWN_HOMONYMS",
+    "EmbedFn",
+    "EntityResolutionStep",
+    "ResolutionResult",
+    "derive_scope",
+    "is_domain_compatible",
+    "kb_embed_fn",
+    "recount_entity",
+    "resolve_entity",
+]
+
+# 후보 생성 임계값. 후보만 만들 뿐 자동 연결에 쓰이지 않는다. 실데이터로 보정하지 않은 초기값이다(확인 필요).
+NAME_SIM_CANDIDATE = 0.85
+COSINE_CANDIDATE = 0.90
+MAX_SIMILARITY_CANDIDATES = 3
+MAX_EMBED_CANDIDATES = 64
+MAX_NAME_SCAN = 5000
+
+# 괄호 안 내용이 별칭이 아니라 분류 꼬리표인 경우(예: "Python (programming language)")는 별칭으로 배우지 않는다.
+_QUALIFIER_NORMS = {
+    norm_name(w)
+    for w in (
+        "programming language", "language", "framework", "library", "software", "database",
+        "tool", "platform", "프로그래밍 언어", "언어", "프레임워크", "라이브러리", "소프트웨어",
+        "데이터베이스", "도구", "플랫폼",
+    )
+}
+
+EmbedFn = Callable[[list[str]], Awaitable[list[list[float]]]]
+
+
+async def kb_embed_fn(texts: list[str]) -> list[list[float]]:
+    """운영 KB 검색이 쓰는 임베딩 경로(ttakkari.kb_retrieval.embed_complete: 운영은 로컬 multilingual-e5-large)에 연결한 어댑터.
+
+    resolve_entity(embed_fn=kb_embed_fn)처럼 명시적으로 넘길 때만 쓰인다. 기본값이 아닌 이유:
+    E5 는 호출마다 자식 프로세스에서 모델을 로드하므로 언급 단위로 부르면 비싸다.
+    파이프라인 단계가 배치로 묶어 호출하는 것을 전제로 한다.
+    """
+    from ttakkari import kb_retrieval
+
+    return await kb_retrieval.embed_complete(texts, query=False)
 
 
 class EntityResolutionStep(enum.IntEnum):
     """해소 단계 구분."""
 
-    NEW_ENTITY = 0  # 신규 생성
-    EXACT_NORM_NAME = 1  # 1단계: 정규화 이름 일치
-    ALIAS_OR_PARENTHETICAL = 2  # 2단계: 별칭 또는 괄호 병기 일치
-    SIMILARITY_MATCH = 3  # 3단계: 문맥 임베딩 및 철자 유사도 일치
-    AMBIGUOUS_ISOLATED = 4  # 4단계: 동음이의어 또는 경계 구간 모호성 격리
+    NEW_ENTITY = 0  # 일치 없음 → 신규 생성
+    EXACT_NORM_NAME = 1  # 정규화 이름 일치로 자동 연결
+    ALIAS_OR_PARENTHETICAL = 2  # 등록/시드 별칭 일치로 자동 연결
+    SIMILARITY_CANDIDATE = 3  # 철자·임베딩 유사: 자동 연결 없이 신규 생성 + 병합 후보 기록
+    AMBIGUOUS_ISOLATED = 4  # 이름은 같거나 겹치지만 kind/도메인/별칭 소유가 달라 격리 + 후보 기록
 
 
 @dataclass
@@ -62,84 +119,120 @@ class ResolutionResult:
     step: EntityResolutionStep
     created: bool
     learned_aliases: list[str] = field(default_factory=list)
-    conflict: KbConflict | None = None
+    rejected_aliases: list[str] = field(default_factory=list)
+    conflicts: list[KbConflict] = field(default_factory=list)
     note: str = ""
 
-
-# 명백한 동음이의어(Homonyms) 키워드: 도메인이 다르면 절대로 동일 엔터티로 병합하지 않는다.
-# key: norm_name, value: {도메인: 개념 설명}
-KNOWN_HOMONYMS: dict[str, dict[str, str]] = {
-    "python": {
-        "dev": "Python 프로그래밍 언어",
-        "science": "비단뱀 (파이톤 파충류)",
-        "general": "비단뱀 또는 일반 용어",
-    },
-    "파이썬": {
-        "dev": "Python 프로그래밍 언어",
-        "science": "비단뱀 (파이톤 파충류)",
-        "general": "비단뱀 또는 일반 용어",
-    },
-    "go": {
-        "dev": "Go 프로그래밍 언어 (Golang)",
-        "general": "동사 go 또는 바둑(Baduk/Go)",
-    },
-    "고": {
-        "dev": "Go 프로그래밍 언어 (Golang)",
-        "general": "동사 go 또는 바둑(Baduk/Go)",
-    },
-    "rust": {
-        "dev": "Rust 시스템 프로그래밍 언어",
-        "science": "녹, 철의 산화물 (Rust)",
-        "general": "녹 또는 부식",
-    },
-    "러스트": {
-        "dev": "Rust 시스템 프로그래밍 언어",
-        "science": "녹, 철의 산화물 (Rust)",
-        "general": "녹 또는 부식",
-    },
-    "service": {
-        "infra": "쿠버네티스 Service 리소스",
-        "business": "고객 서비스 또는 비즈니스 용역",
-    },
-    "서비스": {
-        "infra": "쿠버네티스 Service 리소스",
-        "business": "고객 서비스 또는 비즈니스 용역",
-    },
-    "java": {
-        "dev": "Java 객체지향 언어",
-        "general": "자바 섬 또는 자바 커피",
-    },
-    "자바": {
-        "dev": "Java 객체지향 언어",
-        "general": "자바 섬 또는 자바 커피",
-    },
-}
+    @property
+    def conflict(self) -> KbConflict | None:
+        return self.conflicts[0] if self.conflicts else None
 
 
-def is_domain_compatible(d1: str, d2: str, key_norm: str = "") -> bool:
-    """두 도메인 간의 호환성 검사.
+@dataclass(frozen=True)
+class ResolutionScope:
+    visibility: str
+    origin_scope: str
 
-    동음이의어 사전(KNOWN_HOMONYMS)에 속한 경우 도메인이 다르면 명백히 비호환 처리.
-    일반적인 경우 'general'은 모든 도메인과 호환되며, dev와 infra는 기술 공유를 허용한다.
+
+@dataclass
+class _Ctx:
+    tenant_id: str
+    scope: ResolutionScope
+    entity_kind: str
+    domain: str
+    document_id: uuid.UUID | None
+    revision_id: uuid.UUID | None
+    passage_id: uuid.UUID | None
+    evidence_id: uuid.UUID | None
+    role: str
+    salience: float
+
+    @property
+    def visibility(self) -> str:
+        return self.scope.visibility
+
+
+_UNSET: Any = object()
+
+
+def _visibility_token(item: Any) -> str | None:
+    """원천 하나를 derive_derived_visibility 가 해석하는 토큰('work_only'/'global'/None)으로 바꾼다."""
+    if item is None:
+        return None
+    if isinstance(item, str):
+        text = item.strip().lower()
+        if text in ("work", "work_only"):
+            return "work_only"
+        if text in ("personal", "global"):
+            return "global"
+        return None
+    scope = getattr(item, "scope", None)
+    origin = getattr(item, "origin_scope", None)
+    visibility = getattr(item, "visibility", None)
+    if scope == "work" or origin == "work":
+        return "work_only"
+    if scope == "personal":
+        # 확정 정책: personal 문서는 visibility 컬럼이 비었거나 기본값(work_only)이어도 global.
+        return "global"
+    if visibility == "global" and origin == "personal":
+        return "global"
+    return None
+
+
+def derive_scope(sources: Sequence[Any]) -> ResolutionScope:
+    """원천 문서 접근(KbDocumentAccess 또는 'work'/'personal' 문자열)에서 파생 객체의 visibility·origin_scope 결정.
+
+    schema 의 derive_derived_visibility 를 그대로 쓴다: 원천 중 하나라도 work_only, 없음, 미상이면 work_only.
     """
-    if d1 == d2:
-        return True
+    tokens = [_visibility_token(item) for item in sources]
+    visibility = derive_derived_visibility(tokens)
+    explicit_work = any(
+        (isinstance(i, str) and i.strip().lower() in ("work", "work_only"))
+        or getattr(i, "scope", None) == "work"
+        or getattr(i, "origin_scope", None) == "work"
+        for i in sources
+        if i is not None
+    )
+    return ResolutionScope(visibility=visibility, origin_scope="work" if explicit_work else "personal")
 
-    # 동음이의어 검사: 등록된 동음이의어이고 도메인이 상충하면 비호환!
-    if key_norm and key_norm in KNOWN_HOMONYMS:
-        homonym_domains = KNOWN_HOMONYMS[key_norm]
-        if d1 in homonym_domains and d2 in homonym_domains and d1 != d2:
-            return False
 
-    if d1 == "general" or d2 == "general":
-        return True
+async def _load_sources(
+    db: AsyncSession, document_id: uuid.UUID | None, source_access: Any
+) -> list[Any]:
+    if source_access is _UNSET:
+        if document_id is None:
+            return []
+        return [await db.get(KbDocumentAccess, document_id)]
+    if source_access is None:
+        return [None]
+    if isinstance(source_access, (list, tuple, set, frozenset)):
+        return list(source_access)
+    return [source_access]
 
-    # 개발과 인프라는 기술 용어의 상호 호환을 허용
-    if {d1, d2} <= {"dev", "infra"}:
-        return True
 
-    # 개발과 AI도 기술 용어 상호 호환을 허용
-    return {d1, d2} <= {"dev", "ai"}
+def _restrict_visible(stmt: Any, ctx: _Ctx) -> Any:
+    """global 컨텍스트는 global 엔터티만, work 컨텍스트는 work_only 와 global 을 본다(fail-closed)."""
+    if ctx.visibility == "global":
+        return stmt.where(KbEntity.visibility == "global")
+    return stmt.where(KbEntity.visibility.in_(("work_only", "global")))
+
+
+def _base_norm(entity: KbEntity) -> str:
+    return entity.norm_name.split("~", 1)[0]
+
+
+def _lang(text: str) -> str | None:
+    if text.isascii():
+        return "en"
+    return "ko" if any(0xAC00 <= ord(c) <= 0xD7A3 for c in text) else None
+
+
+def _prefer_work(entities: list[KbEntity], ctx: _Ctx) -> list[KbEntity]:
+    if ctx.visibility == "work_only":
+        work = [e for e in entities if e.visibility == "work_only"]
+        if work:
+            return work
+    return entities
 
 
 async def resolve_entity(
@@ -150,11 +243,12 @@ async def resolve_entity(
     entity_kind: str = "concept",
     domain: str = "general",
     summary: str = "",
+    passage_text: str | None = None,
+    embed_fn: EmbedFn | None = None,
     embedding: list[float] | None = None,
     candidate_embeddings: dict[uuid.UUID, list[float]] | None = None,
     tenant_id: str = "personal",
-    visibility: str = "global",
-    origin_scope: str = "personal",
+    source_access: Any = _UNSET,
     document_id: uuid.UUID | None = None,
     revision_id: uuid.UUID | None = None,
     passage_id: uuid.UUID | None = None,
@@ -162,700 +256,551 @@ async def resolve_entity(
     role: str = "mentioned",
     salience: float = 0.5,
 ) -> ResolutionResult:
-    """4단계 결정적 엔터티 해소 알고리즘 실행.
+    """언급 하나를 엔터티에 해소한다.
 
-    오병합 방지, 멱등성, 증분 연결, 가시성 격리를 보장한다.
+    source_access: 원천 문서 접근(KbDocumentAccess 등)이나 그 목록. 생략하면 document_id 로 kb_document_access 를
+        조회하고, 접근 정보가 없으면 work_only(fail-closed)다. visibility 를 호출자가 직접 정하는 인자는 없다.
+    aliases/passage_text: 호출자가 같은 패시지에서 뽑은 별칭 후보. 패시지 원문에 실제로 나타나고(passage_text)
+        패시지·근거에 닻이 있을 때만 별칭으로 인정한다. raw_name 의 괄호 병기는 닻이 있으면 인정한다.
+    embed_fn/embedding/candidate_embeddings: Step 3 후보 생성 전용. 운영 경로는 kb_embed_fn, 테스트는 주입 벡터.
     """
     if not raw_name or not raw_name.strip():
         raise ValueError("raw_name cannot be empty")
 
-    cleaned_input = raw_name.strip()
-
-    # 1. 괄호 병기 라벨 분리 (예: '디플로이먼트(Deployment)' -> canonical: 'Deployment', aliases: ['디플로이먼트', 'Deployment'])
-    canonical_label, extracted_aliases = split_bilingual_label(cleaned_input)
+    cleaned = raw_name.strip()
+    canonical_label, pieces = split_bilingual_label(cleaned)
     target_norm = norm_name(canonical_label)
+    if not target_norm:
+        raise ValueError("raw_name has no normalizable characters")
 
-    # 추가 전달받은 별칭들과 괄호 분리 별칭들의 정규화 풀 구성
-    all_input_aliases: list[str] = []
-    if aliases:
-        all_input_aliases.extend(aliases)
-    all_input_aliases.extend(extracted_aliases)
-    if cleaned_input not in all_input_aliases:
-        all_input_aliases.append(cleaned_input)
-
-    # 정규화된 별칭 집합 (주 이름 norm 제외)
-    norm_alias_set: set[str] = {
-        norm_name(a) for a in all_input_aliases if a and norm_name(a)
-    }
-
-    # -----------------------------------------------------------------
-    # Step 1: 정규화 이름 일치 (norm_name)
-    # -----------------------------------------------------------------
-    step1_stmt = select(KbEntity).where(
-        KbEntity.tenant_id == tenant_id,
-        KbEntity.norm_name == target_norm,
-        KbEntity.status == "active",
+    sources = await _load_sources(db, document_id, source_access)
+    ctx = _Ctx(
+        tenant_id=tenant_id,
+        scope=derive_scope(sources),
+        entity_kind=entity_kind,
+        domain=domain,
+        document_id=document_id,
+        revision_id=revision_id,
+        passage_id=passage_id,
+        evidence_id=evidence_id,
+        role=role,
+        salience=salience,
     )
-    if visibility == "global":
-        step1_stmt = step1_stmt.where(KbEntity.visibility == "global")
-    else:
-        # work_only 컨텍스트: work_only 우선 또는 global 조회
-        step1_stmt = step1_stmt.where(
-            KbEntity.visibility.in_(["work_only", "global"])
-        ).order_by(
-            # work_only 를 우선 선택
-            KbEntity.visibility.desc()
-        )
 
-    res = await db.execute(step1_stmt)
-    existing_entities = res.scalars().all()
+    anchored = passage_id is not None or evidence_id is not None
+    has_bracket = "(" in cleaned
+    # 같은 문자열 안의 병기 표기(괄호 병기)는 원문 근거가 있는 별칭 후보다.
+    bracket_aliases = [p for p in pieces if has_bracket and norm_name(p) and norm_name(p) != target_norm]
+    grounded_extra: list[str] = []
+    rejected: list[str] = []
+    if aliases:
+        text_norm = norm_name(passage_text) if passage_text else ""
+        for a in aliases:
+            a_norm = norm_name(a)
+            if not a_norm or a_norm == target_norm:
+                continue
+            if anchored and text_norm and a_norm in text_norm:
+                grounded_extra.append(a)
+            else:
+                rejected.append(a.strip())
+    learnable: list[str] = []
+    if anchored:
+        for a in [*bracket_aliases, *grounded_extra]:
+            if norm_name(a) not in {norm_name(x) for x in learnable}:
+                learnable.append(a.strip())
+    elif bracket_aliases:
+        rejected.extend(a.strip() for a in bracket_aliases)
+    # 조회에는 이름 본문과 같은 문자열 안의 병기만 쓴다(닻 없는 외부 별칭은 조회에도 쓰지 않는다).
+    piece_norms = [norm_name(a) for a in [*bracket_aliases, *grounded_extra]]
 
-    for candidate in existing_entities:
-        # 동음이의어이고 도메인이 상충하는지 확인
-        if target_norm in KNOWN_HOMONYMS and not is_domain_compatible(
-            candidate.domain, domain, target_norm
-        ):
-            # 동음이의어이므로 Step 1에서 바로 합치지 않고 Step 4로 넘겨 격리한다.
-            return await _isolate_ambiguous(
-                db=db,
-                existing_entity=candidate,
-                canonical_name=canonical_label,
-                norm_name_val=target_norm,
-                entity_kind=entity_kind,
-                domain=domain,
-                summary=summary,
-                tenant_id=tenant_id,
-                visibility=visibility,
-                origin_scope=origin_scope,
-                aliases=all_input_aliases,
-                document_id=document_id,
-                revision_id=revision_id,
-                passage_id=passage_id,
-                evidence_id=evidence_id,
-                role=role,
-                salience=salience,
-                note=f"Homonym collision on '{target_norm}': existing domain '{candidate.domain}' vs requested '{domain}'",
-            )
+    collisions: list[tuple[KbEntity, str]] = []
 
-        # 도메인이 호환되고 엔터티 종류가 호환되면 Step 1 일치!
-        if is_domain_compatible(candidate.domain, domain, target_norm):
+    def _collide(entity: KbEntity, reason: str) -> None:
+        if all(entity.id != e.id for e, _ in collisions):
+            collisions.append((entity, reason))
+
+    # -----------------------------------------------------------------
+    # Step 1: 정규화 이름 정확 일치 (kind·도메인 호환 필수)
+    # -----------------------------------------------------------------
+    step1 = _restrict_visible(
+        select(KbEntity).where(
+            KbEntity.tenant_id == tenant_id,
+            KbEntity.status == "active",
+            or_(
+                KbEntity.norm_name == target_norm,
+                KbEntity.norm_name.startswith(target_norm + "~", autoescape=True),
+            ),
+        ),
+        ctx,
+    ).order_by(KbEntity.visibility.desc(), KbEntity.created_at, KbEntity.id)
+    same_name = list((await db.execute(step1)).scalars().all())
+    compatible: list[KbEntity] = []
+    for cand in same_name:
+        if not is_kind_compatible(cand.entity_kind, entity_kind):
+            _collide(cand, f"same name '{target_norm}' but entity_kind {cand.entity_kind} != {entity_kind}")
+        elif not is_domain_compatible(cand.domain, domain, target_norm):
+            _collide(cand, f"same name '{target_norm}' but domain {cand.domain} incompatible with {domain}")
+        else:
+            compatible.append(cand)
+    if compatible:
+        exact_domain = [e for e in compatible if e.domain == domain]
+        pool = _prefer_work(exact_domain or compatible, ctx)
+        if len(pool) == 1:
             return await _finalize_match(
-                db=db,
-                entity=candidate,
-                step=EntityResolutionStep.EXACT_NORM_NAME,
-                context_visibility=visibility,
-                aliases=all_input_aliases,
-                evidence_id=evidence_id,
-                document_id=document_id,
-                revision_id=revision_id,
-                passage_id=passage_id,
-                role=role,
-                salience=salience,
-                note="Exact norm_name matched",
+                db, ctx, pool[0], EntityResolutionStep.EXACT_NORM_NAME, learnable, rejected,
+                "Exact norm_name matched",
             )
+        for e in pool:
+            _collide(e, f"{len(pool)} compatible entities share name '{target_norm}'")
 
     # -----------------------------------------------------------------
-    # Step 2: 등록된 별칭 사전 (kb_entity_aliases) 및 시드 사전 일치
+    # Step 2-A: 등록 별칭 일치 (kind·도메인 호환 필수). 이름 본문 일치를 병기 일치보다 우선한다.
     # -----------------------------------------------------------------
-    all_query_norms = norm_alias_set | {target_norm}
-
-    # 2-A: DB kb_entity_aliases 테이블 조회
-    step2_stmt = (
-        select(KbEntity, KbEntityAlias)
+    query_norms = {target_norm, *piece_norms}
+    step2 = _restrict_visible(
+        select(KbEntity, KbEntityAlias.norm_alias)
         .join(KbEntityAlias, KbEntity.id == KbEntityAlias.entity_id)
         .where(
             KbEntity.tenant_id == tenant_id,
             KbEntity.status == "active",
-            KbEntityAlias.norm_alias.in_(all_query_norms),
-        )
-    )
-    if visibility == "global":
-        step2_stmt = step2_stmt.where(KbEntity.visibility == "global")
-    else:
-        step2_stmt = step2_stmt.where(
-            KbEntity.visibility.in_(["work_only", "global"])
-        ).order_by(KbEntity.visibility.desc())
-
-    res2 = await db.execute(step2_stmt)
-    alias_matches = res2.all()
-
-    for matched_entity, matched_alias in alias_matches:
-        alias_norm = matched_alias.norm_alias
-        # 동음이의어 도메인 충돌 검사
-        if alias_norm in KNOWN_HOMONYMS and not is_domain_compatible(
-            matched_entity.domain, domain, alias_norm
-        ):
-            return await _isolate_ambiguous(
-                db=db,
-                existing_entity=matched_entity,
-                canonical_name=canonical_label,
-                norm_name_val=target_norm,
-                entity_kind=entity_kind,
-                domain=domain,
-                summary=summary,
-                tenant_id=tenant_id,
-                visibility=visibility,
-                origin_scope=origin_scope,
-                aliases=all_input_aliases,
-                document_id=document_id,
-                revision_id=revision_id,
-                passage_id=passage_id,
-                evidence_id=evidence_id,
-                role=role,
-                salience=salience,
-                note=f"Homonym alias collision on '{alias_norm}': existing domain '{matched_entity.domain}' vs requested '{domain}'",
-            )
-
-        if is_domain_compatible(matched_entity.domain, domain, alias_norm):
-            return await _finalize_match(
-                db=db,
-                entity=matched_entity,
-                step=EntityResolutionStep.ALIAS_OR_PARENTHETICAL,
-                context_visibility=visibility,
-                aliases=all_input_aliases,
-                evidence_id=evidence_id,
-                document_id=document_id,
-                revision_id=revision_id,
-                passage_id=passage_id,
-                role=role,
-                salience=salience,
-                note=f"Alias matched via '{matched_alias.alias}'",
-            )
-
-    # 2-B: 시드 사전(seed_aliases) 조회
-    for q_norm in all_query_norms:
-        seed = find_seed_by_norm(q_norm)
-        if seed:
-            # 동음이의어 도메인 상충 검사
-            if q_norm in KNOWN_HOMONYMS and not is_domain_compatible(
-                seed.domain, domain, q_norm
-            ):
-                continue
-
-            if is_domain_compatible(seed.domain, domain, q_norm):
-                # 시드 엔터티를 DB에 생성하거나 기존 엔터티에 결속
-                seed_entity, is_seed_created = await _ensure_seed_entity_in_db(
-                    db=db,
-                    seed=seed,
-                    tenant_id=tenant_id,
-                    visibility=visibility,
-                    origin_scope=origin_scope,
-                )
-                return await _finalize_match(
-                    db=db,
-                    entity=seed_entity,
-                    step=EntityResolutionStep.ALIAS_OR_PARENTHETICAL,
-                    context_visibility=visibility,
-                    aliases=all_input_aliases,
-                    evidence_id=evidence_id,
-                    document_id=document_id,
-                    revision_id=revision_id,
-                    passage_id=passage_id,
-                    role=role,
-                    salience=salience,
-                    created=is_seed_created,
-                    note=f"Seed dictionary matched on '{seed.canonical_name}'",
-                )
-
-    # -----------------------------------------------------------------
-    # Step 3: 문맥 임베딩 & 이름 유사도 비교 (동일 entity_kind & domain 내)
-    # -----------------------------------------------------------------
-    # 동일 kind와 호환 domain의 활성 엔터티 후보 조회
-    step3_stmt = select(KbEntity).where(
-        KbEntity.tenant_id == tenant_id,
-        KbEntity.status == "active",
-        KbEntity.entity_kind == entity_kind,
-    )
-    if visibility == "global":
-        step3_stmt = step3_stmt.where(KbEntity.visibility == "global")
-    else:
-        step3_stmt = step3_stmt.where(KbEntity.visibility.in_(["work_only", "global"]))
-
-    res3 = await db.execute(step3_stmt)
-    candidates = res3.scalars().all()
-
-    best_candidate: KbEntity | None = None
-    best_cos_sim = 0.0
-    best_name_sim = 0.0
-
-    for cand in candidates:
-        if not is_domain_compatible(cand.domain, domain, target_norm):
+            KbEntityAlias.norm_alias.in_(query_norms),
+        ),
+        ctx,
+    ).order_by(KbEntity.visibility.desc(), KbEntity.created_at, KbEntity.id)
+    by_entity: dict[uuid.UUID, tuple[KbEntity, set[str]]] = {}
+    for entity, a_norm in (await db.execute(step2)).all():
+        by_entity.setdefault(entity.id, (entity, set()))[1].add(a_norm)
+    alias_compat: list[tuple[KbEntity, set[str]]] = []
+    for entity, hit_norms in by_entity.values():
+        if any(entity.id == c.id for c, _ in collisions):
             continue
-
-        # 이름 유사도 (Jaro-Winkler)
-        name_sim = jaro_winkler_similarity(target_norm, cand.norm_name)
-
-        # 코사인 유사도
-        cos_sim = 0.0
-        if embedding is not None and candidate_embeddings:
-            cand_vec = candidate_embeddings.get(cand.id)
-            if cand_vec:
-                cos_sim = cosine_similarity(embedding, cand_vec)
-
-        if name_sim > best_name_sim or cos_sim > best_cos_sim:
-            best_candidate = cand
-            best_cos_sim = max(best_cos_sim, cos_sim)
-            best_name_sim = max(best_name_sim, name_sim)
-
-    # 설계 기준:
-    # 코사인 유사도 >= 0.88 AND 이름 편집거리 >= 0.85 이면 동일 엔터티로 연결 (Step 3)
-    if best_candidate and best_cos_sim >= 0.88 and best_name_sim >= 0.85:
-        return await _finalize_match(
-            db=db,
-            entity=best_candidate,
-            step=EntityResolutionStep.SIMILARITY_MATCH,
-            context_visibility=visibility,
-            aliases=all_input_aliases,
-            evidence_id=evidence_id,
-            document_id=document_id,
-            revision_id=revision_id,
-            passage_id=passage_id,
-            role=role,
-            salience=salience,
-            note=f"Similarity matched (cos: {best_cos_sim:.2f}, name: {best_name_sim:.2f})",
-        )
-
-    # -----------------------------------------------------------------
-    # Step 4: 모호성 격리 (오병합 방지 불변 규칙) 또는 신규 엔터티 생성
-    # -----------------------------------------------------------------
-    # 오병합 방지 불변 조건:
-    # 1) 경계 유사도 구간(0.78 <= cos_sim < 0.88)
-    # 2) 또는 이름 유사도만 높고(name_sim >= 0.85) 문맥 유사도가 미달인 경우
-    # 절대 자동 병합하지 않고 ambiguous_entity 로 격리한다!
-    if best_candidate and (
-        (0.78 <= best_cos_sim < 0.88)
-        or (best_name_sim >= 0.85 and best_cos_sim < 0.88)
-    ):
-        return await _isolate_ambiguous(
-            db=db,
-            existing_entity=best_candidate,
-            canonical_name=canonical_label,
-            norm_name_val=target_norm,
-            entity_kind=entity_kind,
-            domain=domain,
-            summary=summary,
-            tenant_id=tenant_id,
-            visibility=visibility,
-            origin_scope=origin_scope,
-            aliases=all_input_aliases,
-            document_id=document_id,
-            revision_id=revision_id,
-            passage_id=passage_id,
-            evidence_id=evidence_id,
-            role=role,
-            salience=salience,
-            note=f"Borderline similarity suspect (cos: {best_cos_sim:.2f}, name: {best_name_sim:.2f}) - isolated without auto-merge",
-        )
-
-    # 완전히 새로운 엔터티 생성
-    return await _create_new_entity(
-        db=db,
-        canonical_name=canonical_label,
-        norm_name_val=target_norm,
-        entity_kind=entity_kind,
-        domain=domain,
-        summary=summary,
-        tenant_id=tenant_id,
-        visibility=visibility,
-        origin_scope=origin_scope,
-        aliases=all_input_aliases,
-        document_id=document_id,
-        revision_id=revision_id,
-        passage_id=passage_id,
-        evidence_id=evidence_id,
-        role=role,
-        salience=salience,
-    )
-
-
-async def _finalize_match(
-    db: AsyncSession,
-    entity: KbEntity,
-    step: EntityResolutionStep,
-    context_visibility: str,
-    aliases: list[str],
-    evidence_id: uuid.UUID | None,
-    document_id: uuid.UUID | None,
-    revision_id: uuid.UUID | None,
-    passage_id: uuid.UUID | None,
-    role: str,
-    salience: float,
-    note: str,
-    created: bool = False,
-) -> ResolutionResult:
-    """기존 엔터티와 매칭 확정 및 증분 연결, 가시성 안전 규칙 적용."""
-    learned_aliases: list[str] = []
-
-    # 1. 가시성 오염 방지 규칙:
-    # context_visibility == 'work_only' 이고 entity.visibility == 'global' 인 경우,
-    # global 엔터티의 별칭 사전(kb_entity_aliases)이나 카운트를 절대 오염시키지 않는다!
-    is_cross_scope_pollution_risk = (
-        context_visibility == "work_only" and entity.visibility == "global"
-    )
-
-    if not is_cross_scope_pollution_risk:
-        # 카운트 갱신
-        entity.mention_count += 1
-        entity.updated_at = datetime.now(UTC)
-
-        # 새 별칭 학습: 근거(evidence_id)가 있거나 명시적인 별칭/유사도 매칭인 경우 추가
-        if evidence_id is not None or step in (
-            EntityResolutionStep.ALIAS_OR_PARENTHETICAL,
-            EntityResolutionStep.SIMILARITY_MATCH,
-        ):
-            # 기존 등록된 별칭 조회
-            stmt = select(KbEntityAlias.norm_alias).where(
-                KbEntityAlias.entity_id == entity.id
+        if not is_kind_compatible(entity.entity_kind, entity_kind):
+            _collide(entity, f"alias match but entity_kind {entity.entity_kind} != {entity_kind}")
+        elif not any(is_domain_compatible(entity.domain, domain, n) for n in hit_norms):
+            _collide(entity, f"alias match but domain {entity.domain} incompatible with {domain}")
+        else:
+            alias_compat.append((entity, hit_norms))
+    if alias_compat:
+        by_name = [(e, h) for e, h in alias_compat if target_norm in h]
+        tier = [e for e, _ in (by_name or alias_compat)]
+        pool = _prefer_work(tier, ctx)
+        if len(pool) == 1:
+            return await _finalize_match(
+                db, ctx, pool[0], EntityResolutionStep.ALIAS_OR_PARENTHETICAL, learnable, rejected,
+                "Registered alias matched",
             )
-            res = await db.execute(stmt)
-            existing_alias_norms = {r[0] for r in res.all()}
-            existing_alias_norms.add(entity.norm_name)
+        for e in pool:
+            _collide(e, f"alias shared by {len(pool)} entities")
 
-            for a in aliases:
-                a_norm = norm_name(a)
-                if not a_norm or a_norm in existing_alias_norms:
-                    continue
-                alias_row = KbEntityAlias(
-                    id=uuid.uuid4(),
-                    entity_id=entity.id,
-                    alias=a.strip(),
-                    norm_alias=a_norm,
-                    norm_form="NFKC",
-                    lang="en" if a.isascii() else ("ko" if any(0xAC00 <= ord(c) <= 0xD7A3 for c in a) else None),
-                    alias_kind="synonym",
-                    source="extracted",
-                )
-                db.add(alias_row)
-                existing_alias_norms.add(a_norm)
-                learned_aliases.append(a.strip())
-
-    # 2. 증분 연결: kb_document_entities 에 연결 (중복 방지)
-    if passage_id is not None and document_id is not None and revision_id is not None:
-        await _link_document_entity(
-            db=db,
-            passage_id=passage_id,
-            entity_id=entity.id,
-            document_id=document_id,
-            revision_id=revision_id,
-            evidence_id=evidence_id,
-            role=role,
-            salience=salience,
+    # -----------------------------------------------------------------
+    # Step 2-B: 시드 사전 일치 (한 표기가 둘 이상의 시드를 가리키면 확정하지 않는다)
+    # -----------------------------------------------------------------
+    seed_hit: SeedEntity | None = None
+    seed_tiers = [[target_norm], sorted(set(piece_norms))]
+    for tier_norms in seed_tiers:
+        seeds: list[SeedEntity] = []
+        for n in tier_norms:
+            for s in find_seeds_by_norm(n):
+                if s not in seeds:
+                    seeds.append(s)
+        if len(seeds) == 1:
+            seed_hit = seeds[0]
+            break
+        if len(seeds) > 1:
+            break
+    if seed_hit is not None:
+        hit_norm = next(
+            (n for n in [target_norm, *piece_norms] if seed_hit in find_seeds_by_norm(n)), target_norm
         )
+        kind_ok = is_kind_compatible(seed_hit.entity_kind, entity_kind)
+        domain_ok = is_domain_compatible(seed_hit.domain, domain, hit_norm)
+        seed_entity, seed_created = await ensure_seed_entity(
+            db, seed_hit, tenant_id, ctx.visibility, ctx.scope.origin_scope
+        )
+        if kind_ok and domain_ok:
+            result = await _finalize_match(
+                db, ctx, seed_entity, EntityResolutionStep.ALIAS_OR_PARENTHETICAL, learnable, rejected,
+                f"Seed dictionary matched on '{seed_hit.canonical_name}'",
+            )
+            result.created = seed_created
+            return result
+        reason = (
+            f"seed '{seed_hit.canonical_name}' kind {seed_hit.entity_kind} != {entity_kind}"
+            if not kind_ok
+            else f"seed '{seed_hit.canonical_name}' domain {seed_hit.domain} incompatible with {domain}"
+        )
+        _collide(seed_entity, reason)
 
-    await db.flush()
+    # -----------------------------------------------------------------
+    # Step 3: 철자·임베딩 유사도 → 병합 후보만 생성 (자동 연결 없음)
+    # -----------------------------------------------------------------
+    similar = await _similarity_candidates(
+        db, ctx, canonical_label, target_norm, summary, embed_fn, embedding, candidate_embeddings,
+        exclude_ids={e.id for e, _ in collisions},
+    )
 
-    return ResolutionResult(
-        entity=entity,
-        step=step,
-        created=created,
-        learned_aliases=learned_aliases,
-        conflict=None,
-        note=note,
+    # -----------------------------------------------------------------
+    # Step 4/신규: 일치가 없으면 독립 엔터티를 만들고 충돌·후보를 남긴다.
+    # -----------------------------------------------------------------
+    return await _create_entity_with_candidates(
+        db, ctx, canonical_label, target_norm, summary, learnable, rejected, collisions, similar
     )
 
 
-async def _isolate_ambiguous(
+async def _similarity_candidates(
     db: AsyncSession,
-    existing_entity: KbEntity,
-    canonical_name: str,
-    norm_name_val: str,
-    entity_kind: str,
-    domain: str,
+    ctx: _Ctx,
+    canonical_label: str,
+    target_norm: str,
     summary: str,
-    tenant_id: str,
-    visibility: str,
-    origin_scope: str,
-    aliases: list[str],
-    document_id: uuid.UUID | None,
-    revision_id: uuid.UUID | None,
-    passage_id: uuid.UUID | None,
-    evidence_id: uuid.UUID | None,
-    role: str,
-    salience: float,
-    note: str,
-) -> ResolutionResult:
-    """Step 4: 모호성/동음이의어 격리.
-
-    기존 엔터티와 병합하지 않고 독립 엔터티를 신규 생성한 뒤,
-    kb_conflicts(conflict_kind='ambiguous_entity') 에 격리 등록한다.
-    """
-    new_entity = KbEntity(
-        id=uuid.uuid4(),
-        tenant_id=tenant_id,
-        origin_scope=origin_scope,
-        visibility=visibility,
-        canonical_name=canonical_name,
-        norm_name=norm_name_val,
-        norm_form="NFKC",
-        entity_kind=entity_kind,
-        domain=domain,
-        summary=summary,
-        mention_count=1,
-        document_count=1 if document_id else 0,
-        confidence=0.7,
-        status="active",
-    )
-    db.add(new_entity)
-
-    # 대표 별칭 추가
-    db.add(
-        KbEntityAlias(
-            id=uuid.uuid4(),
-            entity_id=new_entity.id,
-            alias=canonical_name,
-            norm_alias=norm_name_val,
-            norm_form="NFKC",
-            lang="en" if canonical_name.isascii() else None,
-            alias_kind="canonical",
-            source="extracted",
+    embed_fn: EmbedFn | None,
+    embedding: list[float] | None,
+    candidate_embeddings: dict[uuid.UUID, list[float]] | None,
+    exclude_ids: set[uuid.UUID],
+) -> list[tuple[KbEntity, str]]:
+    """같은 kind·호환 도메인 엔터티 중 철자나 임베딩이 비슷한 것을 (엔터티, 사유)로 돌려준다. 연결은 하지 않는다."""
+    stmt = _restrict_visible(
+        select(KbEntity).where(
+            KbEntity.tenant_id == ctx.tenant_id,
+            KbEntity.status == "active",
+            KbEntity.entity_kind == ctx.entity_kind,
+        ),
+        ctx,
+    ).order_by(KbEntity.mention_count.desc(), KbEntity.id).limit(MAX_NAME_SCAN)
+    pool = [
+        c
+        for c in (await db.execute(stmt)).scalars().all()
+        if c.id not in exclude_ids
+        and _base_norm(c) != target_norm
+        and is_domain_compatible(c.domain, ctx.domain, target_norm)
+    ]
+    if not pool:
+        return []
+    alias_rows = (
+        await db.execute(
+            _restrict_visible(
+                select(KbEntityAlias.entity_id, KbEntityAlias.norm_alias)
+                .join(KbEntity, KbEntity.id == KbEntityAlias.entity_id)
+                .where(
+                    KbEntity.tenant_id == ctx.tenant_id,
+                    KbEntity.status == "active",
+                    KbEntity.entity_kind == ctx.entity_kind,
+                ),
+                ctx,
+            )
         )
-    )
+    ).all()
+    names_of: dict[uuid.UUID, set[str]] = {c.id: {_base_norm(c)} for c in pool}
+    for entity_id, a_norm in alias_rows:
+        if entity_id in names_of:
+            names_of[entity_id].add(a_norm)
+    # 정본명뿐 아니라 등록 별칭과도 비교한다(예: 별칭 'spark' 와 새 표기 'Spark AR').
+    name_sims = {
+        c.id: max(jaro_winkler_similarity(target_norm, n) for n in names_of[c.id] if n != target_norm)
+        if names_of[c.id] - {target_norm}
+        else 0.0
+        for c in pool
+    }
+    cos_sims: dict[uuid.UUID, float] = {}
+    note_suffix = ""
+    if embedding is not None and candidate_embeddings:
+        for c in pool:
+            vec = candidate_embeddings.get(c.id)
+            if vec:
+                cos_sims[c.id] = cosine_similarity(embedding, vec)
+    elif embed_fn is not None:
+        top = sorted(pool, key=lambda c: (-name_sims[c.id], -c.mention_count))[:MAX_EMBED_CANDIDATES]
+        texts = [f"{canonical_label}. {summary}".strip()] + [f"{c.canonical_name}. {c.summary}".strip() for c in top]
+        try:
+            vectors = await embed_fn(texts)
+            if len(vectors) != len(texts):
+                raise ValueError("embedding count mismatch")
+            for c, vec in zip(top, vectors[1:], strict=True):
+                cos_sims[c.id] = cosine_similarity(vectors[0], vec)
+        except Exception as exc:  # 임베딩 실패는 후보 생성만 약화시킨다. 철자 후보는 그대로 만든다.
+            logger.warning("entity similarity embedding unavailable: %s", exc)
+            note_suffix = " (embedding unavailable)"
 
-    # 충돌 격리 행 생성 (kb_conflicts)
+    ranked: list[tuple[float, KbEntity, str]] = []
+    for c in pool:
+        ns = name_sims[c.id]
+        cs = cos_sims.get(c.id, 0.0)
+        if ns >= NAME_SIM_CANDIDATE or cs >= COSINE_CANDIDATE:
+            ranked.append(
+                (max(ns, cs), c, f"similarity candidate (name {ns:.2f}, cosine {cs:.2f}); not auto-merged{note_suffix}")
+            )
+    ranked.sort(key=lambda t: (-t[0], str(t[1].id)))
+    return [(c, why) for _s, c, why in ranked[:MAX_SIMILARITY_CANDIDATES]]
+
+
+async def _ensure_conflict(
+    db: AsyncSession, ctx: _Ctx, existing: KbEntity, candidate: KbEntity, note: str
+) -> KbConflict | None:
+    """(existing, candidate) 쌍의 ambiguous_entity 충돌을 중복 없이 보장한다(순서 무관)."""
+    if existing.id == candidate.id:
+        return None
+    found = (
+        await db.execute(
+            select(KbConflict).where(
+                KbConflict.conflict_kind == "ambiguous_entity",
+                or_(
+                    (KbConflict.entity_id == existing.id) & (KbConflict.candidate_entity_id == candidate.id),
+                    (KbConflict.entity_id == candidate.id) & (KbConflict.candidate_entity_id == existing.id),
+                ),
+            )
+        )
+    ).scalars().first()
+    if found is not None:
+        return found
     conflict = KbConflict(
         id=uuid.uuid4(),
-        visibility=visibility,
+        visibility=ctx.visibility,
         conflict_kind="ambiguous_entity",
-        entity_id=existing_entity.id,
-        candidate_entity_id=new_entity.id,
+        entity_id=existing.id,
+        candidate_entity_id=candidate.id,
         status="open",
         resolution_note=note,
     )
     db.add(conflict)
-
-    # 증분 연결
-    if passage_id is not None and document_id is not None and revision_id is not None:
-        await _link_document_entity(
-            db=db,
-            passage_id=passage_id,
-            entity_id=new_entity.id,
-            document_id=document_id,
-            revision_id=revision_id,
-            evidence_id=evidence_id,
-            role=role,
-            salience=salience,
-        )
-
     await db.flush()
-    logger.info(
-        "Ambiguous entity isolated: '%s' vs '%s' (conflict_id=%s)",
-        existing_entity.canonical_name,
-        new_entity.canonical_name,
-        conflict.id,
+    return conflict
+
+
+def _alias_row(entity: KbEntity, text: str, norm: str, *, kind: str, source: str, lang: str | None) -> KbEntityAlias:
+    return KbEntityAlias(
+        id=uuid.uuid4(),
+        entity_id=entity.id,
+        alias=text,
+        norm_alias=norm,
+        norm_form="NFKC",
+        lang=lang,
+        alias_kind=kind,
+        source=source,
     )
 
+
+async def _filter_learnable_aliases(
+    db: AsyncSession, ctx: _Ctx, entity: KbEntity, candidates: list[str], rejected: list[str]
+) -> tuple[list[tuple[str, str]], list[tuple[KbEntity, str]]]:
+    """학습할 별칭을 걸러낸다. 다른 엔터티가 이미 쓰는 표기, 다른 시드의 이름, 분류 꼬리표는 배우지 않는다.
+
+    반환: ([(별칭, norm)], 병합 후보로 남길 [(다른 엔터티, 사유)])
+    """
+    keep: list[tuple[str, str]] = []
+    others: list[tuple[KbEntity, str]] = []
+    norms = {norm_name(a) for a in candidates}
+    if not norms:
+        return keep, others
+    existing_norms = {
+        r[0]
+        for r in (
+            await db.execute(select(KbEntityAlias.norm_alias).where(KbEntityAlias.entity_id == entity.id))
+        ).all()
+    }
+    owner_rows = (
+        await db.execute(
+            select(KbEntity, KbEntityAlias.norm_alias)
+            .join(KbEntityAlias, KbEntity.id == KbEntityAlias.entity_id)
+            .where(
+                KbEntity.tenant_id == ctx.tenant_id,
+                KbEntity.visibility == entity.visibility,
+                KbEntity.status == "active",
+                KbEntity.id != entity.id,
+                KbEntityAlias.norm_alias.in_(norms),
+            )
+        )
+    ).all()
+    owners: dict[str, list[KbEntity]] = {}
+    for other, a_norm in owner_rows:
+        owners.setdefault(a_norm, []).append(other)
+    own_seed_norm = _base_norm(entity)
+    for text in candidates:
+        a_norm = norm_name(text)
+        if a_norm in existing_norms or any(a_norm == k[1] for k in keep):
+            continue
+        if a_norm in _QUALIFIER_NORMS:
+            rejected.append(text)
+            continue
+        if a_norm in owners:
+            rejected.append(text)
+            for other in owners[a_norm]:
+                others.append((other, f"alias '{text}' is already owned by another entity"))
+            continue
+        foreign_seed = [s for s in find_seeds_by_norm(a_norm) if norm_name(s.canonical_name) != own_seed_norm]
+        if foreign_seed:
+            rejected.append(text)
+            continue
+        keep.append((text, a_norm))
+    return keep, others
+
+
+async def _finalize_match(
+    db: AsyncSession,
+    ctx: _Ctx,
+    entity: KbEntity,
+    step: EntityResolutionStep,
+    learnable: list[str],
+    rejected: list[str],
+    note: str,
+) -> ResolutionResult:
+    """자동 연결 확정: 별칭 학습(조건부), (entity, passage) 연결, 카운트 재계산."""
+    learned: list[str] = []
+    conflicts: list[KbConflict] = []
+    # work_only 언급은 global 엔터티의 별칭 사전을 바꾸지 않는다.
+    polluting = ctx.visibility == "work_only" and entity.visibility == "global"
+    if polluting:
+        rejected = [*rejected, *learnable]
+    elif learnable:
+        keep, others = await _filter_learnable_aliases(db, ctx, entity, learnable, rejected)
+        for text, a_norm in keep:
+            db.add(_alias_row(entity, text, a_norm, kind="synonym", source="extracted", lang=_lang(text)))
+            learned.append(text)
+        for other, why in others:
+            conflict = await _ensure_conflict(db, ctx, entity, other, why)
+            if conflict is not None:
+                conflicts.append(conflict)
+        await db.flush()
+
+    await _link_and_recount(db, ctx, entity)
     return ResolutionResult(
-        entity=new_entity,
-        step=EntityResolutionStep.AMBIGUOUS_ISOLATED,
-        created=True,
-        conflict=conflict,
+        entity=entity,
+        step=step,
+        created=False,
+        learned_aliases=learned,
+        rejected_aliases=rejected,
+        conflicts=conflicts,
         note=note,
     )
 
 
-async def _create_new_entity(
+async def _create_entity_with_candidates(
     db: AsyncSession,
-    canonical_name: str,
-    norm_name_val: str,
-    entity_kind: str,
-    domain: str,
+    ctx: _Ctx,
+    canonical_label: str,
+    target_norm: str,
     summary: str,
-    tenant_id: str,
-    visibility: str,
-    origin_scope: str,
-    aliases: list[str],
-    document_id: uuid.UUID | None,
-    revision_id: uuid.UUID | None,
-    passage_id: uuid.UUID | None,
-    evidence_id: uuid.UUID | None,
-    role: str,
-    salience: float,
+    learnable: list[str],
+    rejected: list[str],
+    collisions: list[tuple[KbEntity, str]],
+    similar: list[tuple[KbEntity, str]],
 ) -> ResolutionResult:
-    """새로운 엔터티 및 별칭 등록."""
-    new_entity = KbEntity(
-        id=uuid.uuid4(),
-        tenant_id=tenant_id,
-        origin_scope=origin_scope,
-        visibility=visibility,
-        canonical_name=canonical_name,
-        norm_name=norm_name_val,
-        norm_form="NFKC",
-        entity_kind=entity_kind,
-        domain=domain,
-        summary=summary,
-        mention_count=1,
-        document_count=1 if document_id else 0,
-        confidence=0.85,
-        status="active",
-    )
-    db.add(new_entity)
-
-    # 기본 canonical 별칭 등록
-    db.add(
-        KbEntityAlias(
-            id=uuid.uuid4(),
-            entity_id=new_entity.id,
-            alias=canonical_name,
-            norm_alias=norm_name_val,
-            norm_form="NFKC",
-            lang="en" if canonical_name.isascii() else None,
-            alias_kind="canonical",
-            source="extracted",
-        )
-    )
-
-    registered_norms = {norm_name_val}
-    learned_aliases: list[str] = []
-
-    for a in aliases:
-        a_norm = norm_name(a)
-        if not a_norm or a_norm in registered_norms:
-            continue
-        registered_norms.add(a_norm)
-        db.add(
-            KbEntityAlias(
-                id=uuid.uuid4(),
-                entity_id=new_entity.id,
-                alias=a.strip(),
-                norm_alias=a_norm,
-                norm_form="NFKC",
-                lang="en" if a.isascii() else ("ko" if any(0xAC00 <= ord(c) <= 0xD7A3 for c in a) else None),
-                alias_kind="synonym",
-                source="extracted",
-            )
-        )
-        learned_aliases.append(a.strip())
-
-    # 증분 연결
-    if passage_id is not None and document_id is not None and revision_id is not None:
-        await _link_document_entity(
-            db=db,
-            passage_id=passage_id,
-            entity_id=new_entity.id,
-            document_id=document_id,
-            revision_id=revision_id,
-            evidence_id=evidence_id,
-            role=role,
-            salience=salience,
-        )
-
-    await db.flush()
-
-    return ResolutionResult(
-        entity=new_entity,
-        step=EntityResolutionStep.NEW_ENTITY,
-        created=True,
-        learned_aliases=learned_aliases,
-        conflict=None,
-        note="New entity created",
-    )
-
-
-async def _link_document_entity(
-    db: AsyncSession,
-    passage_id: uuid.UUID,
-    entity_id: uuid.UUID,
-    document_id: uuid.UUID,
-    revision_id: uuid.UUID,
-    evidence_id: uuid.UUID | None,
-    role: str,
-    salience: float,
-) -> None:
-    """kb_document_entities 에 중복 없이 안전하게 증분 연결."""
-    stmt = select(KbDocumentEntity).where(
-        KbDocumentEntity.passage_id == passage_id,
-        KbDocumentEntity.entity_id == entity_id,
-    )
-    existing = (await db.execute(stmt)).scalar_one_or_none()
-    if existing is not None:
-        # 이미 연결되어 있음
-        return
-
-    doc_ent = KbDocumentEntity(
-        passage_id=passage_id,
-        entity_id=entity_id,
-        document_id=document_id,
-        revision_id=revision_id,
-        evidence_id=evidence_id,
-        role=role,
-        salience=salience,
-    )
-    db.add(doc_ent)
-
-
-async def _ensure_seed_entity_in_db(
-    db: AsyncSession,
-    seed: SeedEntity,
-    tenant_id: str,
-    visibility: str,
-    origin_scope: str,
-) -> tuple[KbEntity, bool]:
-    """시드 엔터티가 DB에 없으면 생성하고, 이미 있으면 기존 엔터티 반환.
-
-    Returns:
-        (entity, is_created)
-    """
-    c_norm = norm_name(seed.canonical_name)
-
-    stmt = select(KbEntity).where(
-        KbEntity.tenant_id == tenant_id,
-        KbEntity.visibility == visibility,
-        KbEntity.norm_name == c_norm,
-        KbEntity.status == "active",
-    )
-    existing = (await db.execute(stmt)).scalar_one_or_none()
-    if existing is not None:
-        return existing, False
-
-    # 신규 시드 엔터티 삽입
+    """독립 엔터티를 만들고 이름 충돌·유사 후보를 ambiguous_entity 로 남긴다."""
+    key = await _free_slot_key(db, ctx, target_norm)
     entity = KbEntity(
         id=uuid.uuid4(),
-        tenant_id=tenant_id,
-        origin_scope=origin_scope,
-        visibility=visibility,
-        canonical_name=seed.canonical_name,
-        norm_name=c_norm,
+        tenant_id=ctx.tenant_id,
+        origin_scope=ctx.scope.origin_scope,
+        visibility=ctx.visibility,
+        canonical_name=canonical_label,
+        norm_name=key,
         norm_form="NFKC",
-        entity_kind=seed.entity_kind,
-        domain=seed.domain,
-        summary=seed.summary,
-        confidence=1.0,
+        entity_kind=ctx.entity_kind,
+        domain=ctx.domain,
+        summary=summary,
+        mention_count=0,
+        document_count=0,
+        confidence=0.7 if (collisions or similar) else 0.85,
         status="active",
     )
     db.add(entity)
-
-    # canonical alias
+    await db.flush()
     db.add(
-        KbEntityAlias(
-            id=uuid.uuid4(),
-            entity_id=entity.id,
-            alias=seed.canonical_name,
-            norm_alias=c_norm,
-            norm_form="NFKC",
-            lang="en" if seed.canonical_name.isascii() else None,
-            alias_kind="canonical",
-            source="seed",
-        )
+        _alias_row(entity, canonical_label, target_norm, kind="canonical", source="extracted", lang=_lang(canonical_label))
+    )
+    await db.flush()
+
+    keep, others = await _filter_learnable_aliases(db, ctx, entity, learnable, rejected)
+    learned: list[str] = []
+    for text, a_norm in keep:
+        db.add(_alias_row(entity, text, a_norm, kind="synonym", source="extracted", lang=_lang(text)))
+        learned.append(text)
+    await db.flush()
+
+    conflicts: list[KbConflict] = []
+    for other, why in [*collisions, *similar, *others]:
+        conflict = await _ensure_conflict(db, ctx, other, entity, why)
+        if conflict is not None and all(conflict.id != c.id for c in conflicts):
+            conflicts.append(conflict)
+
+    await _link_and_recount(db, ctx, entity)
+    if collisions or others:
+        step = EntityResolutionStep.AMBIGUOUS_ISOLATED
+    elif similar:
+        step = EntityResolutionStep.SIMILARITY_CANDIDATE
+    else:
+        step = EntityResolutionStep.NEW_ENTITY
+    note = "; ".join(why for _e, why in [*collisions, *similar, *others]) or "New entity created"
+    return ResolutionResult(
+        entity=entity,
+        step=step,
+        created=True,
+        learned_aliases=learned,
+        rejected_aliases=rejected,
+        conflicts=conflicts,
+        note=note,
     )
 
-    registered_norms = {c_norm}
-    for alias_text, lang, alias_kind in seed.aliases:
-        a_norm = norm_name(alias_text)
-        if not a_norm or a_norm in registered_norms:
-            continue
-        registered_norms.add(a_norm)
-        db.add(
-            KbEntityAlias(
-                id=uuid.uuid4(),
-                entity_id=entity.id,
-                alias=alias_text,
-                norm_alias=a_norm,
-                norm_form="NFKC",
-                lang=lang,
-                alias_kind=alias_kind,
-                source="seed",
-            )
-        )
 
+async def _free_slot_key(db: AsyncSession, ctx: _Ctx, target_norm: str) -> str:
+    """kb_entities 유일 키 (tenant, visibility, kind, norm_name) 에서 비어 있는 norm_name 을 고른다."""
+    for key in (target_norm, disambiguated_norm(target_norm, ctx.domain)):
+        taken = (
+            await db.execute(
+                select(KbEntity.id).where(
+                    KbEntity.tenant_id == ctx.tenant_id,
+                    KbEntity.visibility == ctx.visibility,
+                    KbEntity.entity_kind == ctx.entity_kind,
+                    KbEntity.norm_name == key,
+                )
+            )
+        ).first()
+        if taken is None:
+            return key
+    return f"{disambiguated_norm(target_norm, ctx.domain)}~{uuid.uuid4().hex[:8]}"
+
+
+async def _link_and_recount(db: AsyncSession, ctx: _Ctx, entity: KbEntity) -> None:
+    """(entity, passage) 연결을 중복 없이 만들고 카운트를 유일 행 수로 다시 계산한다."""
+    if ctx.passage_id is not None and ctx.document_id is not None and ctx.revision_id is not None:
+        existing = (
+            await db.execute(
+                select(KbDocumentEntity.passage_id).where(
+                    KbDocumentEntity.passage_id == ctx.passage_id,
+                    KbDocumentEntity.entity_id == entity.id,
+                )
+            )
+        ).first()
+        if existing is None:
+            db.add(
+                KbDocumentEntity(
+                    passage_id=ctx.passage_id,
+                    entity_id=entity.id,
+                    document_id=ctx.document_id,
+                    revision_id=ctx.revision_id,
+                    evidence_id=ctx.evidence_id,
+                    role=ctx.role,
+                    salience=ctx.salience,
+                )
+            )
+            await db.flush()
+    await recount_entity(db, entity)
+
+
+async def recount_entity(db: AsyncSession, entity: KbEntity) -> None:
+    """mention_count/document_count 를 kb_document_entities 의 유일 행에서 계산한다(증분 덧셈 금지).
+
+    global 엔터티는 personal 문서에서 온 행만 센다. work 문서나 접근 정보가 없는 문서의 행은
+    연결은 남아 있어도 global 카운트에 들어가지 않는다.
+    """
+    stmt = select(
+        func.count(KbDocumentEntity.passage_id),
+        func.count(func.distinct(KbDocumentEntity.document_id)),
+    ).where(KbDocumentEntity.entity_id == entity.id)
+    if entity.visibility == "global":
+        stmt = stmt.join(
+            KbDocumentAccess, KbDocumentAccess.document_id == KbDocumentEntity.document_id
+        ).where(KbDocumentAccess.scope == "personal", KbDocumentAccess.origin_scope != "work")
+    mentions, documents = (await db.execute(stmt)).one()
+    entity.mention_count = int(mentions)
+    entity.document_count = int(documents)
     await db.flush()
-    return entity, True

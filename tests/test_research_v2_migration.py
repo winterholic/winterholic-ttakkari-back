@@ -18,12 +18,27 @@ from ttakkari.research.models import Configuration, Experiment, Run, Study
 
 def get_alembic_config():
     settings = get_settings()
-    # These migrations run inside pytest's application process. Loading the CLI
-    # .ini also runs fileConfig(), which disables existing application loggers.
+    # These commands share pytest's process. A file config calls logging.fileConfig
+    # in env.py, which replaces capture handlers and disables application loggers.
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "alembic"))
     cfg.set_main_option("sqlalchemy.url", settings.database_url)
     return cfg
+
+
+async def test_embedded_migration_preserves_application_logging(caplog):
+    logger = logging.getLogger("uvicorn.error.transfer")
+    caplog.set_level(logging.INFO, logger=logger.name)
+    root_handlers = tuple(logging.getLogger().handlers)
+    assert not logger.disabled
+
+    await asyncio.to_thread(command.stamp, get_alembic_config(), "head")
+
+    assert not logger.disabled, "embedded migrations must not disable application loggers"
+    assert tuple(logging.getLogger().handlers) == root_handlers
+    logger.info("migration logging continuity probe")
+    assert any(rec.name == logger.name and rec.message == "migration logging continuity probe"
+               for rec in caplog.records)
 
 
 async def test_migration_0072_upgrade_downgrade_and_v1_data_preservation():
@@ -273,15 +288,4 @@ async def test_migration_0073_research_reuse_source_upgrade_downgrade_and_set_nu
             )
         ).scalars().all()
         assert len(cols_after_up) == 4
-
-
-async def test_programmatic_migration_preserves_application_diagnostic_logging(caplog):
-    """Migration tests must not disable the application loggers used by later tests."""
-    from ttakkari.transfer.diagnostics import log
-
-    marker = f"migration-log-continuity-{uuid.uuid4().hex}"
-    caplog.set_level(logging.INFO, logger=log.name)
-    await asyncio.to_thread(command.stamp, get_alembic_config(), "0073_research_reuse_source")
-    log.info(marker)
-    assert any(record.name == log.name and record.getMessage() == marker for record in caplog.records)
 
